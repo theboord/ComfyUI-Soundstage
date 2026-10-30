@@ -551,3 +551,187 @@ export function filterRows(rows, query) {
 export const SETUP_COLORS = ["#d43a3a", "#2463c9", "#17915a", "#d97706", "#7c3aed", "#0e8f9e", "#c0267a", "#5e7d0b", "#8a5a2b",
   "#3f4fb5", "#b8860b", "#475569"];
 export const setupColor = (idx) => SETUP_COLORS[((idx % SETUP_COLORS.length) + SETUP_COLORS.length) % SETUP_COLORS.length];
+
+// ------------------------------------------------------------------------------------------------------ approvals
+//
+// Every take (a frame, a draft or a final) can carry a review status with a short note, kept in the workflow
+// (node.properties.ss_approvals): {shotId: {takeKey: {s, note?, t?, kind?}}}. takeKey is the render's file (stable across
+// reloads and across views: the same frame in ④ Frame, the bin and the Ladder has one status). Unreviewed = no entry.
+
+export const STATUS_ORDER = ["", "approved", "changes", "rejected"];
+export const STATUS_META = {
+  "": { label: "Unreviewed", sym: "", word: "unreviewed" },
+  approved: { label: "Approved", sym: "✓", word: "approved" },
+  changes: { label: "Needs changes", sym: "↺", word: "needs changes" },
+  rejected: { label: "Rejected", sym: "✕", word: "rejected" },
+};
+export const STATUS_FILTERS = [["all", "All"], ["approved", "Approved"], ["changes", "Needs changes"], ["", "Unreviewed"]];
+
+/** "approved" | "changes" | "rejected" | "" (unreviewed). Accepts aliases (ok, yes, no, redo, needs changes...). */
+export function normStatus(s) {
+  const v = String(s ?? "").toLowerCase().trim();
+  if (/^(approved?|ok|yes|good|✓|circle[d]?)$/.test(v)) return "approved";
+  if (/^(changes|needs[ _-]?changes|change|redo|fix|↺)$/.test(v)) return "changes";
+  if (/^(rejected?|no|ng|nogood|no[ _-]good|✕|x)$/.test(v)) return "rejected";
+  return "";
+}
+
+/** Next status on a quick click: unreviewed → approved → needs changes → rejected → unreviewed. */
+export const nextStatus = (s) => STATUS_ORDER[(STATUS_ORDER.indexOf(normStatus(s)) + 1) % STATUS_ORDER.length];
+
+const hashStr = (s) => { let x = 2166136261; for (let i = 0; i < s.length; i++) x = Math.imul(x ^ s.charCodeAt(i), 16777619); return (x >>> 0).toString(36); };
+
+/**
+ * The stable key of a take: a ComfyUI /view?filename=..&subfolder=..&type=.. URL -> "type:subfolder/filename" (cache
+ * busters and the host part dropped); a data: URL -> a short hash; anything else -> the URL without its query string.
+ * Takes a take record ({url}) or a URL.
+ */
+export function takeKey(takeOrUrl) {
+  const u = String(typeof takeOrUrl === "string" ? takeOrUrl : takeOrUrl?.url || "");
+  if (!u) return "";
+  if (u.startsWith("data:")) return `data:${hashStr(u)}`;
+  const qi = u.indexOf("?");
+  if (qi >= 0) {
+    try {
+      const q = new URLSearchParams(u.slice(qi + 1).split("#")[0]);
+      const fn = q.get("filename");
+      if (fn) return `${q.get("type") || "output"}:${q.get("subfolder") ? `${q.get("subfolder")}/` : ""}${fn}`;
+    } catch { /* not a query */ }
+    return u.slice(0, qi);
+  }
+  return u.split("#")[0];
+}
+
+/** One take's review: {status, note, t}. Unreviewed: {status: "", note: ""}. */
+export function getTakeStatus(store, shotId, takeOrUrl) {
+  const rec = store?.[shotId]?.[takeKey(takeOrUrl)];
+  return { status: normStatus(rec?.s), note: String(rec?.note || ""), t: rec?.t ?? null };
+}
+
+/**
+ * A new store with one take's status set (status "" with no note removes the entry). The note is kept when only the
+ * status changes (pass note to replace it). Does not touch the input.
+ */
+export function withTakeStatus(store, shotId, takeOrUrl, status, note = undefined, extra = {}) {
+  const key = takeKey(takeOrUrl);
+  const out = { ...(store || {}) };
+  if (!key || !shotId) return out;
+  const shot = { ...(out[shotId] || {}) };
+  const prev = shot[key] || {};
+  const s = normStatus(status);
+  const n = String(note !== undefined ? note : prev.note || "").slice(0, 500);
+  if (!s && !n.trim()) delete shot[key];
+  else shot[key] = { ...prev, ...extra, s, ...(n.trim() ? { note: n } : { note: undefined }), t: extra.t ?? Date.now() };
+  if (shot[key] && shot[key].note === undefined) delete shot[key].note;
+  if (Object.keys(shot).length) out[shotId] = shot; else delete out[shotId];
+  return out;
+}
+
+/**
+ * The take a shot is judged on: the latest final, else the latest draft, else the circled (chosen) frame, else the
+ * latest frame. Clay previz is never reviewed. null when the shot has no frame or video yet.
+ */
+export function currentTake(takes) {
+  const of = (k) => (takes || []).filter((t) => t.kind === k);
+  const last = (a) => a[a.length - 1] || null;
+  return last(of("final")) || last(of("draft")) || of("look").find((t) => t.circled) || last(of("look")) || null;
+}
+
+/**
+ * A shot's status = its current take's status (a new take after a "needs changes" is unreviewed until looked at).
+ * statusOfTake(take) -> {status, note}. Returns {status, note, take} (take null: nothing to review yet).
+ */
+export function shotStatus(takes, statusOfTake) {
+  const take = currentTake(takes);
+  if (!take) return { status: "", note: "", take: null };
+  const st = statusOfTake(take) || {};
+  return { status: normStatus(st.status), note: String(st.note || ""), take };
+}
+
+/** Counts over rows [{status}]: {total, approved, changes, rejected, unreviewed}. */
+export function statusCounts(rows) {
+  const c = { total: 0, approved: 0, changes: 0, rejected: 0, unreviewed: 0 };
+  for (const r of rows || []) { c.total++; const s = normStatus(r?.status); c[s || "unreviewed"]++; }
+  return c;
+}
+
+/** "Sc 3 · 4/6 approved" (+ " · 1 to fix" when some need changes). */
+export function progressLabel(scene, counts) {
+  const fix = counts.changes ? ` · ${counts.changes} to fix` : "";
+  return `Sc ${scene?.number ?? "?"} · ${counts.approved}/${counts.total} approved${fix}`;
+}
+
+/** Rows kept by a status filter: "all" | "approved" | "changes" | "rejected" | "" (unreviewed). */
+export function filterByStatus(rows, filter) {
+  if (filter == null || filter === "all") return rows;
+  const f = normStatus(filter);
+  return (rows || []).filter((r) => normStatus(r?.status) === f);
+}
+
+// ------------------------------------------------------------------------------------------------------ scene bins
+//
+// Bins named the way an assistant editor preps an Avid project: one bin per scene, in script order, the scene number
+// zero-padded so the bins sort, then a one-line description of what the scene is about: "SC 03 – Mara confronts the
+// sheriff". The description is written from the script breakdown and can be edited.
+
+/** "3" -> "03", "12A" -> "12A", "2a" -> "02A"; width 3 for scripts past scene 99. Non-numbered stays as is. */
+export function padSceneNumber(number, width = 2) {
+  const m = /^(\d+)(.*)$/.exec(String(number ?? "").trim());
+  if (!m) return String(number ?? "").trim().toUpperCase() || "?";
+  return m[1].padStart(width, "0") + m[2].toUpperCase();
+}
+
+/** The pad width for a script: 3 when any scene number reaches 100. */
+export const sceneNumberWidth = (scenes) => ((scenes || []).some((s) => parseInt(String(s?.number ?? ""), 10) >= 100) ? 3 : 2);
+
+const SMALL = new Set(["a", "an", "the", "of", "and", "or", "in", "on", "at", "to", "for", "by", "with", "from"]);
+const titleCase = (s) => String(s || "").toLowerCase().split(/(\s+)/).map((w, i) => (i && SMALL.has(w) ? w : w.replace(/^[a-z]/, (c) => c.toUpperCase()))).join("");
+
+/** Screenplay CAPS -> sentence case: cast names Title Case, other shouted words lower case. */
+function unshout(text, cast) {
+  const names = new Set((cast || []).flatMap((c) => words(c)));
+  return String(text || "").replace(/\b[A-Z][A-Z'’.-]+\b/g, (w) => (names.has(w.toLowerCase().replace(/[’']s$/, "")) ? w[0] + w.slice(1).toLowerCase() : w.toLowerCase()));
+}
+
+/** Shorten to ~max chars: the first sentence, then the first clause, then a word boundary with "…". */
+function shortLine(text, max = 60) {
+  let s = String(text || "").replace(/\s+/g, " ").trim();
+  s = (s.match(/^.*?[.!?](?=\s|$)/)?.[0] || s).replace(/[.!?]+$/, "").trim();
+  if (s.length > max) {
+    const comma = s.indexOf(",", 20);
+    if (comma > 0 && comma <= max) s = s.slice(0, comma);
+  }
+  if (s.length > max) s = `${s.slice(0, max).replace(/\s+\S*$/, "")}…`;
+  return s.replace(/^(a|an|the)\s+/i, "").replace(/^[a-z]/, (c) => c.toUpperCase());
+}
+
+/**
+ * A one-line description of what a scene is about, from the script breakdown: the synopsis's first sentence when
+ * there is one, else the first action line that puts the cast (or the scene's vehicles, props or stunts) in motion,
+ * else the location. "Mara faces down the old sheriff for her father's car key".
+ */
+export function autoSceneDescription(scene) {
+  if (!scene) return "";
+  const cast = scene.breakdown?.cast?.length ? scene.breakdown.cast : (scene.characters || []);
+  if (String(scene.synopsis || "").trim()) return shortLine(unshout(scene.synopsis, cast));
+  const b = scene.breakdown || {};
+  const things = [...(b.vehicles || []), ...(b.stunts || []), ...(b.props || []), ...(b.animals || [])].flatMap((x) => words(x)).filter((w) => w.length > 2 && !STOP.has(w));
+  const castWords = cast.flatMap((c) => words(c)).filter((w) => w.length > 2);
+  let best = null, bestScore = 0;
+  const sentences = (scene.elements || []).filter((e) => e?.type === "action").flatMap((e) => String(e.text || "").match(/[^.!?]+[.!?]*/g) || []);
+  for (const line of sentences) {
+    const ws = new Set(words(line));
+    const score = (castWords.some((w) => ws.has(w)) ? 3 : 0) + (things.some((w) => ws.has(w)) ? 2 : 0);
+    if (score > bestScore) { best = line; bestScore = score; }
+    if (score >= 3) break;
+  }
+  if (best) return shortLine(unshout(best, cast));
+  const where = scene.location || String(scene.heading || "").replace(/^(INT|EXT|INT\.?\/EXT|I\/E)\.?\s*/i, "").replace(/\s+-\s+(DAY|NIGHT|DUSK|DAWN|SUNSET|MORNING|EVENING|CONTINUOUS|LATER).*$/i, "");
+  return titleCase(where).trim();
+}
+
+/** The bin name: "SC 03 – Mara confronts the sheriff" (no description: "SC 03"). */
+export function sceneBinName(scene, description = null, width = 2) {
+  const d = String(description ?? autoSceneDescription(scene) ?? "").trim();
+  return `SC ${padSceneNumber(scene?.number ?? (scene?.index != null ? scene.index + 1 : "?"), width)}${d ? ` – ${d}` : ""}`;
+}

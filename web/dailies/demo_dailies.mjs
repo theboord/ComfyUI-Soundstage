@@ -316,3 +316,24 @@ function setupKindOf(setup) {
 
 function hash(str) { let x = 2166136261; for (let i = 0; i < str.length; i++) { x ^= str.charCodeAt(i); x = Math.imul(x, 16777619); } return x >>> 0; }
 function mulberry(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+// ------------------------------------------------------------------------------------------------ approvals
+
+// Demo review statuses (invented): [sceneId, setup index, status, note]. Applied to each setup's current take.
+const DEMO_REVIEWS = [
+  ["sc_4", 0, "approved"], ["sc_4", 1, "changes", "Hold the door a beat longer before he comes in"], ["sc_4", 2, "approved"],
+  ["sc_4", 3, "approved"], ["sc_4", 5, "changes", "Warmer neon on her face, less blue"], ["sc_4", 6, "rejected"],
+  ["sc_4", 8, "approved"], ["sc_1", 0, "approved"], ["sc_1", 1, "changes", "Dust kicks up too early"],
+];
+
+/** A demo approvals store ({shotId: {takeKey: {s, note}}}) for the preview: a mix of approved, to-fix and rejected. */
+export async function demoApprovals(shots, renders) {
+  const { takesFor, currentTake, withTakeStatus } = await import("./model.mjs");
+  let store = {};
+  for (const [sceneId, idx, s, note] of DEMO_REVIEWS) {
+    const shot = shots.filter((x) => x.scene_id === sceneId)[idx];
+    const take = shot && currentTake(takesFor(shot, renders[shot.id] || []));
+    if (take) store = withTakeStatus(store, shot.id, take, s, note || "", { kind: take.kind, t: 1 });
+  }
+  return store;
+}

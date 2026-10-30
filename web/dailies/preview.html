@@ -48,7 +48,8 @@
   import { applyTheme } from "../ui/theme.mjs";
   import { DailiesBin } from "./bin.mjs";
   import { LinedScript } from "./lined.mjs";
-  import { demoDailies } from "./demo_dailies.mjs";
+  import { demoDailies, demoApprovals } from "./demo_dailies.mjs";
+  import { initApprovals } from "./approval.mjs";
   import { clipName, sceneShots, fmtDuration, KIND_LABEL } from "./model.mjs";
 
   applyTheme();
@@ -82,7 +83,14 @@
   viewer.addEventListener("click", (e) => { if (e.target === viewer) viewer.hidden = true; });
   addEventListener("keydown", (e) => { if (e.key === "Escape") viewer.hidden = true; });
 
+  // Approvals: an in-memory store seeded with demo statuses (?fresh=1 still shows them; ?noreviews=1 starts clean).
+  const props = { ss_approvals: q.has("noreviews") ? {} : await demoApprovals(shots, renders), ss_scene_desc: {} };
+  initApprovals({ props: () => props, getRenders: (id) => renders[id] || [],
+    onRedo: (shotId, take, step, note) => { window.__lastRedo = { shotId, take: take.id, step, note }; say(`Redo ${step}: ${note || "(no note)"}`); } });
   const host = {
+    getScenes: () => script.scenes,
+    getAllShots: () => shots,
+    onPickScene: (id) => { sceneId = id; sel.value = id; },
     getScene: scene,
     getShots: () => shots,
     getRenders: (id) => renders[id] || [],
@@ -100,7 +108,7 @@
     bin = new DailiesBin(document.getElementById("bin"), host);
   }
   sel.addEventListener("change", () => { sceneId = sel.value; bin?.refresh(); lined?.refresh(); });
-  window.__preview = { get bin() { return bin; }, get lined() { return lined; }, shots, renders, script, layouts };
+  window.__preview = { get bin() { return bin; }, get lined() { return lined; }, shots, renders, script, layouts, props };
 </script>
 </body>
 </html>

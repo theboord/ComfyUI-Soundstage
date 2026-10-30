@@ -34,6 +34,7 @@ import { DEMO_SCRIPT } from "./script/demo_script.mjs";
 import { planSceneSetup, blockingSpots } from "./script/scenesetup.mjs";
 import { SceneStrip } from "./script/scenestrip.mjs";
 import { DailiesBin } from "./dailies/bin.mjs";
+import { initApprovals, mountPipelineApprovals, showRedoNote } from "./dailies/approval.mjs";
 import { CastPanel } from "./cast/cast.mjs";
 import { stageSetupForScene } from "./script/parse.mjs";
 import { NO_SCENE, scopeShots, stageSig, listShots, keyOfShot, packScript, unpackScript, sceneNumberOf, retireScenes } from "./script/scenes.mjs";
@@ -2280,10 +2281,23 @@ function createStageWidget(node, inputName) {
   const dailiesHost = document.createElement("div");
   dailiesView.append(dailiesHost);
   try { mountSwitcher(dailiesHead); } catch { /* switchers unavailable */ }
+  // Approvals: every frame / draft / final can be Approved, Needs changes (with a note) or Rejected; kept in
+  // node.properties.ss_approvals. "Redo" on a take that needs changes opens its shot on ④ Frame or ⑤ Motion with the note.
+  const takeRenders = (sid) => ({ ...rendersFor(sid), candidates: pipeline.candidates?.[sid], chosen: pipeline.chosen?.[sid] });
+  initApprovals({ props: () => (node.properties ||= {}), save: () => nudgeTracker(), getRenders: takeRenders,
+    onRedo: (sid, take, step, note) => {
+      if (!openShot(sid)) { status.textContent = "That shot is not in this script any more."; return; }
+      pipeline.go(step);
+      showRedoNote(pipeline, step, take, note);
+    } });
+  try { mountPipelineApprovals(pipeline); } catch { /* pipeline views not built */ }
   dailies = new DailiesBin(dailiesHost, {
     getScene: dailiesScene,
     getShots: dailiesShots,
-    getRenders: (sid) => ({ ...rendersFor(sid), candidates: pipeline.candidates?.[sid], chosen: pipeline.chosen?.[sid] }),
+    getScenes: () => script?.scenes || [],
+    getAllShots: () => getShots(),
+    onPickScene: (id) => { if (!switchScene(id).ok) refreshScriptUI(); },
+    getRenders: (sid) => takeRenders(sid),
     getLayout: () => dailiesLayouts()[dailiesScene().id] || null,
     setLayout: (v) => { dailiesLayouts()[dailiesScene().id] = v; nudgeTracker(); },
     onOpenTake: (shot, take, at) => showTake(shot, take, at),

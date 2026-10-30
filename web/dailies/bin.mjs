@@ -22,9 +22,15 @@
 //   onStatus(msg)                one-line feedback.
 // Optional: getCoverage(shot) / setCoverage(shotId, cov) to keep coverage outside the layout (default: layout.coverage,
 // then shot.coverage, then the model's default).
+// Optional scene bins (the Avid project window): getScenes() -> every script scene in order, getAllShots() -> every
+// shot of every scene, onPickScene(sceneId) -> open that scene's bin. Each bin is named "SC 03 – what the scene is
+// about" (model.sceneBinName; the description is written from the breakdown and editable inline) with its approval
+// progress. Every take carries a review status (approval.mjs): badges on cards, takes and list rows, a status filter.
 import { takesFor, heroTake, setupLabel, sceneShots, setupKind, SETUP_KIND_LABEL, KIND_LABEL, fmtDuration, coverageFor,
   binRows, sortRows, filterRows, arrangeByScript, arrangeBySetup, tidyGrid, fillPositions, columnsFor, snap, SNAP, CARD_W, CARD_H,
-  CELL_W, CELL_H, GAP, setupColor, clipName, isOffscreen } from "./model.mjs";
+  CELL_W, CELL_H, GAP, setupColor, clipName, isOffscreen, STATUS_META, STATUS_FILTERS, statusCounts, progressLabel, filterByStatus,
+  normStatus, sceneBinName, autoSceneDescription, padSceneNumber, sceneNumberWidth } from "./model.mjs";
+import { approvalBadge, statusOf, onApprovalsChange, sceneDescription, setSceneDescription } from "./approval.mjs";
 import { LinedScript } from "./lined.mjs";
 import { icon as lucide } from "../ui/icons.mjs";
 
@@ -56,6 +62,8 @@ const PATHS = {
   sortup: '<path d="m7 14 5-5 5 5"/>',
   sortdown: '<path d="m7 10 5 5 5-5"/>',
   small: '<rect x="4" y="6" width="16" height="12" rx="2"/>',
+  bin: '<path d="M3 7.5h18"/><path d="M5 7.5v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-11"/><path d="M8.5 3.5h7l1.5 4h-10z"/><path d="M9.5 12h5"/>',
+  folder: '<path d="M3 6.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
 };
 function svg(name, size = 16, fill = false) {
   if (!PATHS[name]) return lucide(name, size);
@@ -231,6 +239,55 @@ const STYLE = `
 .ss-dailies .dl-empty { display:grid; place-items:center; min-height:300px; border:1.5px dashed var(--dl-line2); border-radius:16px; color:var(--dl-muted);
   text-align:center; padding:30px; }
 .ss-dailies .dl-empty h3 { margin:0 0 4px; color:var(--dl-text); font-size:17px; font-weight:600; }
+
+/* Scene bins (the project window) + approvals */
+.ss-dailies.dl-hasrail { display:grid; grid-template-columns:minmax(220px, 280px) minmax(0, 1fr); align-items:stretch; gap:14px; }
+.ss-dailies .dl-main { display:flex; flex-direction:column; gap:12px; min-width:0; min-height:0; }
+.ss-dailies .dl-rail { display:flex; flex-direction:column; min-height:0; border-radius:14px; border:1px solid var(--dl-line); background:#1d1722; overflow:hidden; }
+.ss-dailies .dl-rail .rh { display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--dl-line); font:700 11.5px/1.2 ${MONO};
+  letter-spacing:.06em; color:var(--dl-muted); }
+.ss-dailies .dl-rail .rh small { margin-left:auto; font:500 11px/1 ${FONT}; letter-spacing:0; color:var(--dl-faint); }
+.ss-dailies .dl-rail ol { list-style:none; margin:0; padding:6px; overflow:auto; display:flex; flex-direction:column; gap:2px; }
+.ss-dailies .dl-rail li { position:relative; }
+.ss-dailies .dl-rail button.bn { width:100%; display:grid; grid-template-columns:18px minmax(0, 1fr); gap:3px 9px; align-items:start; text-align:left;
+  background:transparent !important; border:1px solid transparent !important; border-radius:10px !important; padding:7px 8px !important; color:var(--dl-text) !important; }
+.ss-dailies .dl-rail button.bn:hover { background:rgba(255,255,255,.04) !important; }
+.ss-dailies .dl-rail button.bn[aria-current=true] { background:var(--dl-raised) !important; border-color:var(--dl-line2) !important; }
+.ss-dailies .dl-rail button.bn[aria-current=true] .ic { color:var(--dl-accent); }
+.ss-dailies .dl-rail .ic { color:var(--dl-faint); margin-top:1px; }
+.ss-dailies .dl-rail .nm { font:600 12.5px/1.3 ${FONT}; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.ss-dailies .dl-rail .nm b { font:700 12px/1.3 ${MONO}; margin-right:2px; }
+.ss-dailies .dl-rail .pg { grid-column:2; display:flex; align-items:center; gap:7px; color:var(--dl-faint); font-size:11.5px; white-space:nowrap; }
+.ss-dailies .dl-rail .pg .fx { color:#fcd34d; }
+.ss-dailies .dl-prog { position:relative; flex:0 0 54px; height:5px; border-radius:3px; background:rgba(255,255,255,.08); overflow:hidden; display:flex; }
+.ss-dailies .dl-prog i { display:block; height:100%; }
+.ss-dailies .dl-prog i.a { background:#2fbf71; } .ss-dailies .dl-prog i.c { background:#f59e0b; } .ss-dailies .dl-prog i.r { background:#e5534b; }
+.ss-dailies .dl-rail input.ren { grid-column:2; width:100%; font:600 12.5px/1.3 ${FONT}; color:var(--dl-text); background:rgba(0,0,0,.3); border:1px solid var(--dl-accent);
+  border-radius:6px; padding:3px 6px; outline:none; }
+.ss-dailies .dl-ttl .dl-tx { flex:1 1 auto; }
+.ss-dailies .dl-desc { margin:0; width:auto; max-width:100%; min-width:0; font:600 16px/1.3 ${FONT}; color:var(--dl-text); background:transparent; border:1px solid transparent;
+  border-radius:7px; padding:1px 5px; margin-left:-6px; text-overflow:ellipsis; }
+.ss-dailies .dl-desc:hover { border-color:var(--dl-line2); }
+.ss-dailies .dl-desc:focus { outline:none; border-color:var(--dl-accent); background:rgba(0,0,0,.25); }
+.ss-dailies .dl-stat.ap b { color:#57d68d; }
+.ss-dailies .dl-stat.fx b { color:#fcd34d; }
+.ss-dailies .dl-sseg { display:inline-flex; gap:2px; padding:2px; border-radius:999px; background:rgba(0,0,0,.22); border:1px solid var(--dl-line); }
+.ss-dailies .dl-sseg button { display:inline-flex; align-items:center; gap:5px; background:transparent !important; color:var(--dl-muted) !important; border:0 !important;
+  border-radius:999px !important; padding:4px 10px !important; font-size:12px; font-weight:500 !important; white-space:nowrap; }
+.ss-dailies .dl-sseg button small { color:var(--dl-faint); font-size:11px; }
+.ss-dailies .dl-sseg button[aria-pressed=true] { background:var(--dl-raised) !important; color:var(--dl-text) !important; }
+.ss-dailies .dl-sseg button[aria-pressed=true] small { color:var(--dl-accent); }
+.ss-dailies .dl-card .dl-kind { right:34px; }
+.ss-dailies .dl-card[data-status=approved] { border-color:rgba(87,214,141,.55); }
+.ss-dailies .dl-card[data-status=changes] { border-color:rgba(252,211,77,.6); }
+.ss-dailies .dl-card[data-status=rejected] .dl-th > img, .ss-dailies .dl-card[data-status=rejected] .dl-th > video { opacity:.45; filter:grayscale(.6); }
+.ss-dailies .dl-cap .nt { color:#fcd34d; font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ss-dailies .dl-takes .row { grid-template-columns:44px minmax(0, 1fr) auto auto; }
+.ss-dailies .dl-takes .row .ss-appr { --ab:22px; }
+.ss-dailies .dl-list .stc { display:inline-flex; align-items:center; gap:7px; max-width:240px; }
+.ss-dailies .dl-list .stc span { overflow:hidden; text-overflow:ellipsis; }
+.ss-dailies .dl-list .stc .nt { color:#fcd34d; font-size:12px; }
+@media (max-width: 820px) { .ss-dailies.dl-hasrail { grid-template-columns:minmax(0, 1fr); } .ss-dailies .dl-rail ol { max-height:200px; } }
 `;
 
 function injectCss() {
@@ -257,12 +314,15 @@ export class DailiesBin {
     this._onDocDown = (e) => { if (this.menu && !this.menu.hidden && !e.target.closest?.(".dl-menuwrap")) this._closeMenu(); };
     document.addEventListener("pointerdown", this._onDocDown, true);
     this._ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => this._sizePlane()) : null;
+    // A status changed anywhere (here, ④ Frame, ⑤ Motion): redraw, keeping the scroll and the focus.
+    this._offAppr = onApprovalsChange(() => { if (this.el.isConnected) { clearTimeout(this._ar); this._ar = setTimeout(() => this.softRefresh(), 30); } });
     this.refresh();
   }
 
   destroy() {
     document.removeEventListener("pointerdown", this._onDocDown, true);
     this._ro?.disconnect();
+    this._offAppr?.();
     this.lined?.destroy();
     this.el.remove();
   }
@@ -302,37 +362,146 @@ export class DailiesBin {
     const sc = this.scene;
     const shots = sceneShots(sc, this.o.getShots());
     const L = this.layout;
-    this.rows = binRows(sc, this.o.getShots(), (shot) => this._takes(shot)).map((r) => ({ ...r, coverage: this._coverage(r.shot), color: setupColor(r.idx) }));
+    this.rows = binRows(sc, this.o.getShots(), (shot) => this._takes(shot)).map((r) => {
+      const st = statusOf(r.id, r.takes);
+      return { ...r, coverage: this._coverage(r.shot), color: setupColor(r.idx), status: st.status, note: st.note, judged: st.take };
+    });
     this.lined?.destroy();
     this.lined = null;
     this._ro?.disconnect();
+    const rail = this._rail();
+    this.el.classList.toggle("dl-hasrail", !!rail);
+    const put = (...kids) => this.el.replaceChildren(...(rail ? [rail, h("div", { class: "dl-main" }, ...kids)] : kids));
     if (!sc) {
-      this.el.replaceChildren(h("div", { class: "dl-empty" }, h("div", {}, h("h3", {}, "No scene picked"), "Pick a scene to see its dailies.")));
+      put(h("div", { class: "dl-empty" }, h("div", {}, h("h3", {}, "No scene picked"), "Pick a scene to see its dailies.")));
       return;
     }
     const nTakes = this.rows.reduce((a, r) => a + r.take_count, 0), nCirc = this.rows.filter((r) => r.circled).length;
     const seg = h("div", { class: "dl-seg", role: "group", "aria-label": "Bin view" },
       ...VIEWS.map(([k, label, ic]) => h("button", { type: "button", "aria-pressed": String(L.view === k), title: `${label} view`,
         on: { click: () => this.setView(k) } }, svg(ic, 15), label)));
+    const counts = statusCounts(this.rows);
+    const width = sceneNumberWidth(this.o.getScenes?.() || [sc]);
     const head = h("div", { class: "dl-head" },
-      h("div", { class: "dl-ttl" }, h("div", { class: "dl-badge", title: `Scene ${sc.number}` }, String(sc.number || "?")),
-        h("div", { class: "dl-tx" }, h("span", { class: "k" }, "Dailies · Scene " + (sc.number || "?")), h("h2", { title: sc.heading || "" }, sc.heading || "Untitled scene"))),
+      h("div", { class: "dl-ttl" }, h("div", { class: "dl-badge", title: `Scene ${sc.number}` }, padSceneNumber(sc.number || "?", width)),
+        h("div", { class: "dl-tx" }, h("span", { class: "k", title: sc.heading || "" }, `SC ${padSceneNumber(sc.number || "?", width)} · ${sc.heading || "Untitled scene"}`),
+          this._descInput(sc))),
       h("div", { class: "dl-stats" },
         h("span", { class: "dl-stat" }, h("b", {}, String(shots.length)), shots.length === 1 ? "setup" : "setups"),
         h("span", { class: "dl-stat" }, h("b", {}, String(nTakes)), nTakes === 1 ? "take" : "takes"),
-        h("span", { class: "dl-stat c" }, h("b", {}, String(nCirc)), "circled")),
+        h("span", { class: "dl-stat c" }, h("b", {}, String(nCirc)), "circled"),
+        h("span", { class: "dl-stat ap", title: progressLabel(sc, counts) }, h("b", {}, `${counts.approved}/${counts.total}`), "approved"),
+        counts.changes ? h("span", { class: "dl-stat fx", title: "Takes that need changes" }, h("b", {}, String(counts.changes)), "to fix") : null),
       seg);
     let body;
     if (!shots.length) {
       body = h("div", { class: "dl-empty" }, h("div", {}, h("h3", {}, "No setups in this scene yet"),
         "Add camera setups for this scene; every render becomes a take here."));
-      this.el.replaceChildren(head, body);
+      put(head, body);
       return;
     }
     if (L.view === "list") body = this._listView();
     else if (L.view === "script") body = this._scriptView();
     else body = this._frameView();
-    this.el.replaceChildren(head, ...body);
+    put(head, ...body);
+  }
+
+  /** Refresh keeping the board / list / rail scroll and the focused card or row. */
+  softRefresh() {
+    const sc = (sel) => { const e = this.el.querySelector(sel); return e ? [e.scrollLeft, e.scrollTop] : null; };
+    const keep = { board: sc(".dl-board"), list: sc(".dl-listwrap"), rail: sc(".dl-rail ol") };
+    const focusId = document.activeElement?.closest?.(".dl-card, tr[data-id]")?.dataset?.id;
+    const openId = this.el.querySelector(".dl-card[data-open]")?.dataset?.id;
+    if (this.el.contains(document.activeElement) && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+    this.refresh();
+    for (const [k, s] of [["board", ".dl-board"], ["list", ".dl-listwrap"], ["rail", ".dl-rail ol"]]) {
+      const e = this.el.querySelector(s);
+      if (e && keep[k]) { e.scrollLeft = keep[k][0]; e.scrollTop = keep[k][1]; }
+    }
+    if (openId && this.cards?.get(openId)) this._toggleTakes(this.cards.get(openId), true);
+    if (focusId) (this.cards?.get(focusId) || this.tbody?.querySelector(`tr[data-id="${cssEsc(focusId)}"]`))?.focus({ preventScroll: true });
+  }
+
+  // ---------------------------------------------------------------- scene bins
+
+  _descOf(scene) { return sceneDescription(scene.id) ?? autoSceneDescription(scene); }
+
+  _saveDesc(scene, text) {
+    const t = String(text || "").replace(/\s+/g, " ").trim();
+    setSceneDescription(scene.id, t && t !== autoSceneDescription(scene) ? t : "");
+    this.o.onStatus(t ? `Scene ${scene.number}: “${t}”.` : `Scene ${scene.number}: back to the description from the script.`);
+  }
+
+  /** The scene description as an inline-editable title ("" puts the automatic one back). */
+  _descInput(sc) {
+    const inp = h("input", { class: "dl-desc", type: "text", value: this._descOf(sc), maxlength: "120", size: String(Math.max(16, this._descOf(sc).length + 2)), "aria-label": `What scene ${sc.number} is about (bin name)`,
+      title: "What this scene is about: click to edit. Clear it to use the line from the script.", placeholder: autoSceneDescription(sc) || "What happens in this scene" });
+    inp.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); inp.blur(); }
+      else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); inp.value = this._descOf(sc); inp.blur(); }
+    });
+    inp.addEventListener("change", () => this._saveDesc(sc, inp.value));
+    return inp;
+  }
+
+  /** The project window: one bin per scene, in script order, with its approval progress. null without scenes. */
+  _rail() {
+    const scenes = this.o.getScenes?.() || [];
+    if (!scenes.length) return null;
+    const all = this.o.getAllShots?.() || this.o.getShots() || [];
+    const width = sceneNumberWidth(scenes);
+    const cur = this.scene?.id;
+    const ol = h("ol", { role: "list" });
+    for (const sc of scenes) {
+      const rows = sceneShots(sc, all).map((shot) => ({ status: statusOf(shot.id, this._takes(shot)).status }));
+      const c = statusCounts(rows);
+      const pct = (n) => (c.total ? (n / c.total) * 100 : 0);
+      const name = sceneBinName(sc, this._descOf(sc), width);
+      const num = `SC ${padSceneNumber(sc.number ?? sc.index + 1, width)}`;
+      const btn = h("button", { type: "button", class: "bn", "aria-current": String(sc.id === cur), "data-scene": sc.id,
+        title: `${name}\n${progressLabel(sc, c)}${c.rejected ? ` · ${c.rejected} rejected` : ""}\nDouble-click to rename`,
+        on: { click: () => { if (sc.id !== this.scene?.id) { this.o.onPickScene?.(sc.id); this.refresh(); this.el.querySelector(`.dl-rail button[data-scene="${cssEsc(sc.id)}"]`)?.focus(); } } } },
+        h("span", { class: "ic" }, svg("bin", 16)),
+        h("span", { class: "nm" }, h("b", {}, num), name.slice(num.length)),
+        h("span", { class: "pg" }, h("span", { class: "dl-prog", "aria-hidden": "true" },
+          h("i", { class: "a", style: `width:${pct(c.approved)}%` }), h("i", { class: "c", style: `width:${pct(c.changes)}%` }), h("i", { class: "r", style: `width:${pct(c.rejected)}%` })),
+          c.total ? `${c.approved}/${c.total} approved` : "no setups", c.changes ? h("span", { class: "fx" }, `· ${c.changes} to fix`) : null));
+      btn.addEventListener("dblclick", (e) => { e.preventDefault(); this._renameBin(btn, sc); });
+      btn.addEventListener("keydown", (e) => {
+        if (e.key === "F2") { e.preventDefault(); this._renameBin(btn, sc); }
+        else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); (e.key === "ArrowDown" ? btn.parentElement.nextElementSibling : btn.parentElement.previousElementSibling)?.querySelector("button")?.focus(); }
+      });
+      ol.append(h("li", {}, btn));
+    }
+    return h("nav", { class: "dl-rail", "aria-label": "Scene bins" },
+      h("div", { class: "rh" }, svg("folder", 15), "01_SCENES", h("small", {}, plural(scenes.length, "bin"))), ol);
+  }
+
+  _renameBin(btn, sc) {
+    const nm = btn.querySelector(".nm");
+    if (!nm) return;
+    const inp = h("input", { class: "ren", type: "text", value: this._descOf(sc), maxlength: "120", "aria-label": `Rename scene ${sc.number}'s bin` });
+    let done = false;
+    const finish = (save) => { if (done) return; done = true; if (save) this._saveDesc(sc, inp.value); this.refresh(); this.el.querySelector(`.dl-rail button[data-scene="${cssEsc(sc.id)}"]`)?.focus(); };
+    inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); finish(true); } else if (e.key === "Escape") { e.preventDefault(); finish(false); } });
+    inp.addEventListener("blur", () => finish(true));
+    for (const ev of ["click", "dblclick", "pointerdown"]) inp.addEventListener(ev, (e) => e.stopPropagation());
+    nm.replaceWith(inp);
+    inp.focus(); inp.select();
+  }
+
+  // ---------------------------------------------------------------- status filter
+
+  _statusSeg() {
+    const cur = this.layout.status ?? "all";
+    const counts = statusCounts(this.rows);
+    const n = { all: counts.total, approved: counts.approved, changes: counts.changes, "": counts.unreviewed };
+    const seg = h("div", { class: "dl-sseg", role: "group", "aria-label": "Show setups by review status" },
+      ...STATUS_FILTERS.map(([k, label]) => h("button", { type: "button", "aria-pressed": String(cur === k), "data-f": k,
+        title: k === "all" ? "Every setup" : `Setups whose current take is ${STATUS_META[k].word}`,
+        on: { click: () => { this._save({ status: k }); for (const b of seg.children) b.setAttribute("aria-pressed", String(b.dataset.f === k)); this._applyFilter(); } } },
+        label, h("small", {}, String(n[k] ?? 0)))));
+    return seg;
   }
 
   // ---------------------------------------------------------------- toolbar bits
@@ -392,17 +561,20 @@ export class DailiesBin {
     const sizeIn = h("input", { type: "range", min: "0.7", max: "1.5", step: "0.05", value: String(size), "aria-label": "Thumbnail size" });
     sizeIn.addEventListener("input", () => { this.board.style.setProperty("--sz", sizeIn.value); this._placeAll(+sizeIn.value); });
     sizeIn.addEventListener("change", () => this._save({ size: +sizeIn.value }));
-    const bar = h("div", { class: "dl-bar" }, this._arrangeMenu(), this._find(),
+    const bar = h("div", { class: "dl-bar" }, this._arrangeMenu(), this._find(), this._statusSeg(),
       h("label", { class: "dl-size", title: "Thumbnail size" }, svg("small", 12), sizeIn, svg("small", 17)),
       h("span", { class: "dl-grow" }),
-      h("span", { class: "dl-tip" }, "Drag to arrange · double-click opens the circled take · Space shows takes"));
+      h("span", { class: "dl-tip" }, "Drag to arrange · double-click opens · Space shows takes · click a badge to review"));
     this.board = h("div", { class: "dl-board", role: "listbox", "aria-label": "Setups (frame view)", style: `--sz:${size}` });
     this.plane = h("div", { class: "dl-plane" });
     this.board.append(this.plane);
     // First visit: script order. Afterwards new setups append below.
     let positions = L.positions || {};
     const ids = this.rows.map((r) => r.id);
-    const cols = columnsFor((this.el.clientWidth || 1200) - 4, size);
+    // The board's width: the bin minus the scene-bin rail beside it.
+    const railW = !this.el.classList.contains("dl-hasrail") || (this.el.clientWidth || 1200) <= 820 ? 0
+      : this.el.querySelector(".dl-rail")?.offsetWidth || 280;
+    const cols = columnsFor((this.el.clientWidth || 1200) - (railW ? railW + 14 : 0) - 4, size);
     if (!ids.some((id) => positions[id])) {
       positions = arrangeByScript(this.rows.map((r) => ({ id: r.id, kind: r.kind, coverage: r.coverage })), cols);
       this._save({ positions });
@@ -457,8 +629,8 @@ export class DailiesBin {
     const tkBtn = h("button", { type: "button", class: "tk", "aria-expanded": "false", title: "Show the takes",
       on: { click: (e) => { e.stopPropagation(); this._toggleTakes(card); } } }, plural(r.take_count, "take"), svg("chevron", 12));
     const card = h("div", { class: "dl-card", tabindex: "0", role: "option", "aria-selected": "false", "data-id": r.id, "data-sel": "false",
-      style: `--c:${r.color}`,
-      "aria-label": `${r.label}, ${r.name}. ${SETUP_KIND_LABEL[r.kind]}. ${plural(r.take_count, "take")}${circ ? `, take ${circ.n} circled` : ""}. Enter opens, Space shows takes, arrows move.` },
+      style: `--c:${r.color}`, "data-status": r.status || "none",
+      "aria-label": `${r.label}, ${r.name}. ${SETUP_KIND_LABEL[r.kind]}. ${plural(r.take_count, "take")}${circ ? `, take ${circ.n} circled` : ""}${r.judged ? `, ${STATUS_META[r.status].word}` : ""}. Enter opens, Space shows takes, arrows move.` },
       h("div", { class: "dl-th" }, media,
         h("span", { class: "dl-slate" }, h("i"), r.label),
         hero ? h("span", { class: "dl-kind", "data-k": hero.kind }, KIND_LABEL[hero.kind]) : null,
@@ -467,8 +639,12 @@ export class DailiesBin {
         hero?.seconds ? h("span", { class: "dl-dur ss-mono" }, fmtDuration(hero.seconds)) : null),
       h("div", { class: "dl-cap" },
         h("div", { class: "nm", title: r.name }, r.name),
+        r.status === "changes" && r.note ? h("div", { class: "nt", title: r.note }, `↺ ${r.note}`) : null,
         h("div", { class: "mt" }, h("span", { class: "ty" }, SETUP_KIND_LABEL[r.kind]), tkBtn, star)),
       this._takesPop(r));
+    // The review badge judges the shot's current take (latest final, else draft, else the circled frame).
+    if (r.judged) approvalBadge(card.querySelector(".dl-th"), r.judged, { shotId: r.id, place: true,
+      label: `${clipName(this.scene, r.idx, r.judged.n, r.shot)} · ${KIND_LABEL[r.judged.kind]}` });
     this._wireCard(card, r);
     return card;
   }
@@ -484,6 +660,7 @@ export class DailiesBin {
           on: { click: (e) => { e.stopPropagation(); this.o.onOpenTake(r.shot, t); } } },
           h("span", { class: "mini", style: t.thumb ? `background-image:url("${cssUrl(t.thumb)}")` : "" }),
           h("span", { class: "lb" }, h("b", {}, name), h("span", {}, [KIND_LABEL[t.kind], fmtDuration(t.seconds), t.sound ? "sound" : ""].filter(Boolean).join(" · ")))),
+        t.kind === "previz" ? h("span") : approvalBadge(null, t, { shotId: r.id, label: `${name} · ${KIND_LABEL[t.kind]}` }),
         h("button", { type: "button", class: "cir", "aria-pressed": String(t.circled), title: t.circled ? "Uncircle" : `Circle take ${t.n}`,
           "aria-label": t.circled ? `Uncircle take ${t.n}` : `Circle take ${t.n}`,
           on: { click: (e) => { e.stopPropagation(); this.circle(r.shot, t.circled ? null : t); } } }, String(t.n))));
@@ -572,7 +749,7 @@ export class DailiesBin {
   }
 
   _applyFilter() {
-    const keep = new Set(filterRows(this.rows, this.query).map((r) => r.id));
+    const keep = new Set(filterByStatus(filterRows(this.rows, this.query), this.layout.status ?? "all").map((r) => r.id));
     for (const [id, c] of this.cards || []) c.hidden = !keep.has(id);
     for (const tr of this.tbody?.querySelectorAll("tr") || []) tr.hidden = !keep.has(tr.dataset.id);
   }
@@ -609,7 +786,7 @@ export class DailiesBin {
     const L = this.layout;
     const sort = L.sort || { key: "label", dir: 1 };
     const cols = [["", null], ["Setup", "label"], ["Name", "name"], ["Type", "kind"], ["Takes", "takes"], ["Circled", "circled"],
-      ["Kind", "take_kind"], ["Duration", "seconds"], ["Coverage", null]];
+      ["Status", null], ["Kind", "take_kind"], ["Duration", "seconds"], ["Coverage", null]];
     const thead = h("thead", {}, h("tr", {}, ...cols.map(([label, key]) => {
       if (!key) return h("th", { class: "nosort", scope: "col" }, label);
       const on = sort.key === key;
@@ -635,6 +812,9 @@ export class DailiesBin {
         h("td", {}, h("button", { type: "button", class: "cr", "data-c": String(!!circ), title: circ ? `Take ${circ.n} circled: click to uncircle` : hero ? `Circle take ${hero.n}` : "",
           disabled: hero ? null : "", on: { click: (e) => { e.stopPropagation(); this.circle(r.shot, circ ? null : hero); } } },
           svg("star", 13, !!circ), circ ? `Tk ${circ.n}` : "—")),
+        h("td", {}, r.judged ? h("span", { class: "stc" }, approvalBadge(null, r.judged, { shotId: r.id, size: 20,
+          label: `${clipName(this.scene, r.idx, r.judged.n, r.shot)} · ${KIND_LABEL[r.judged.kind]}` }),
+          h("span", {}, STATUS_META[r.status].label), r.note ? h("span", { class: "nt", title: r.note }, r.note) : null) : h("span", { class: "mut" }, "—")),
         h("td", {}, hero ? h("span", { class: "kd", "data-k": hero.kind }, KIND_LABEL[hero.kind]) : h("span", { class: "mut" }, "—")),
         h("td", { class: "num mut ss-mono" }, fmtDuration(r.seconds) || "—"),
         h("td", {}, bar));
@@ -652,7 +832,7 @@ export class DailiesBin {
       this.tbody.append(tr);
     }
     const table = h("table", { class: "dl-list" }, thead, this.tbody);
-    const bar = h("div", { class: "dl-bar" }, this._find(), h("span", { class: "dl-grow" }),
+    const bar = h("div", { class: "dl-bar" }, this._find(), this._statusSeg(), h("span", { class: "dl-grow" }),
       h("span", { class: "dl-tip" }, "Click a column to sort · double-click or Enter opens · C circles"));
     this._applyFilter();
     return [bar, h("div", { class: "dl-listwrap" }, table)];
