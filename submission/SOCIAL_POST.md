@@ -152,18 +152,22 @@ Soundstage turns ComfyUI into a film set: import your script, cast it, block eve
 💻 GitHub (code, workflows, install, models): https://github.com/theboord/ComfyUI-Soundstage
 🖥️ Try the App in your browser: https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq
 
-Chapters (adjust to the final cut):
-0:00 Clay to final: same blocking, same camera
-0:08 ① Script: import, breakdown, auto scene setup
-0:18 ② Cast & Locations: generate all missing with FLUX 3 Klein
-0:28 ③ Set: clay actors, Pose in 3D, camera rigs, Top view
-0:45 Motion capture from any video or webcam (SAM 3D Body)
-0:55 ④ Frame + Paint Studio: fill, remove, extend
-1:05 ⑤ Motion: LTX-2.5 with sound, lip-sync from a typed line
-1:20 Film-look swatches: same animation, any look
-1:30 ⑥ Review: 3-way Ladder, approvals, dailies, lined script
-1:42 ⑦ Deliver: Premiere / Avid / Resolve, VFX Layer Pack
-1:52 Open source, open weights, runs locally
+Chapters:
+0:00 Soundstage: a film set inside ComfyUI
+0:08 ① Script import + lined script
+0:16 ② Cast & Locations (FLUX 3 Klein character sheets)
+0:22 Pick a scene: the stage builds itself
+0:30 ③ Block it in clay: camera rigs, camera keys, Top view
+0:38 Pose in 3D to the fingertip + motion capture
+0:45 Video to 3D world
+0:57 ④ Paint Studio: the first frame
+1:03 ⑤ Animate with LTX-2.5, shot for shot
+1:10 Same scene, any look
+1:18 Type a line, they say it (LTX voice)
+1:26 ⑥ 3-way Ladder + approvals
+1:32 Dailies binned by scene
+1:38 ⑦ Cut & deliver at source spec
+1:44 100% open weights
 
 Models: FLUX 3 Klein, Krea 2 (optional), LTX-2.5 + Layout-to-Render IC-LoRA, SAM 3D Body, Chatterbox, and more; full list with licenses in MODELS.md.
 
