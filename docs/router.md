@@ -1,6 +1,6 @@
 # Soundstage model router
 
-One picker node per stage. Each dropdown lists only the models valid for that stage that are actually runnable on this install: partner nodes must be loaded (not `--disable-partner-nodes`), local models need their weight files. Set `SOUNDSTAGE_OPEN_WEIGHTS_ONLY=1` to hide every paid option.
+One picker node per stage. Each dropdown lists only the models valid for that stage that are actually runnable on this install: partner nodes must be loaded (not `--disable-partner-nodes`), local models need their weight files. Open weights only by default: paid partner/API models are hidden unless ComfyUI starts with `SOUNDSTAGE_PARTNER_MODELS=1`.
 
 Badges in the label: **API** = paid partner/cloud node (your Comfy credits), **NC** = non-commercial licence, **<$1M / <$5M / <$10M / <$20M** = free only below that annual revenue, **GEO** = territory restricted, **DL** = the node pack downloads its weights on first run.
 

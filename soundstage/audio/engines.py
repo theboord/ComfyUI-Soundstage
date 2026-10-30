@@ -3,13 +3,17 @@
 Open weights come first and are the default; partner nodes carry [API] and use the user's Comfy
 credits. An engine is listed only when it can run here: its node classes are loaded, its weight files
 are installed (folder_paths) and, for in-process engines, its Python package imports.
-SOUNDSTAGE_OPEN_WEIGHTS_ONLY=1 hides every [API] engine (same switch as the router).
+Open weights only by default (same switch as the router): [API] engines are hidden unless
+SOUNDSTAGE_PARTNER_MODELS=1 (or the legacy SOUNDSTAGE_OPEN_WEIGHTS_ONLY=0) is set.
 
 Pure Python: the node module passes in the loaded class names and a file lister.
 """
 import os
 
 OPEN_ONLY_ENV = "SOUNDSTAGE_OPEN_WEIGHTS_ONLY"
+PARTNER_ENV = "SOUNDSTAGE_PARTNER_MODELS"
+PARTNER_OFF_MSG = ("partner API models are off in this open-weights build; set SOUNDSTAGE_PARTNER_MODELS=1 "
+                   "(and restart ComfyUI) to use them, or pick an open-weights engine")
 
 LTX_WEIGHTS = [
     {"role": "unet", "folder": "diffusion_models",
@@ -90,7 +94,9 @@ ENGINES = {
 
 
 def open_weights_only() -> bool:
-    return os.environ.get(OPEN_ONLY_ENV, "").strip().lower() in ("1", "true", "yes", "on")
+    if os.environ.get(PARTNER_ENV, "").strip().lower() in ("1", "true", "yes", "on"):
+        return False
+    return os.environ.get(OPEN_ONLY_ENV, "").strip().lower() not in ("0", "false", "no", "off")
 
 
 def resolve_weights(engine, list_files) -> dict:

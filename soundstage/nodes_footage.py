@@ -296,12 +296,16 @@ def _engine_input():
                              tooltip="Use the recast frame 1 as Openjutsu's anchor image."),
         ]),
     ]
+    from .router import registry as R
+    if R.open_weights_only():  # open weights only by default; SOUNDSTAGE_PARTNER_MODELS=1 lists the API engine
+        opts = [o for o in opts if o.key != ENGINE_OJ_API]
     return IO.DynamicCombo.Input(
         "engine", options=opts,
         tooltip="LTX-2.5 union control: open weights, local, keeps the original audio (default). "
                 "Wan 2.2 Animate 2: open weights (Apache-2.0), needs its weights installed. "
                 "Openjutsu · MiniMax H3 API: Comfy's Openjutsu model (H3 reference-to-video) hosted by MiniMax "
-                "through the Comfy partner node; paid (Comfy credits), covered by MiniMax's API terms. "
+                "through the Comfy partner node; paid (Comfy credits), covered by MiniMax's API terms; listed only "
+                "with SOUNDSTAGE_PARTNER_MODELS=1. "
                 "Openjutsu · local H3: Comfy's Openjutsu workflow on local H3 weights + the GPL h3_character_swap "
                 "node pack. The H3 Community License excludes the USA, EU, UK and South Korea, so it only runs "
                 f"when {GR.H3_LICENSE_ENV}=1 says you are licensed (outside those territories, or a MiniMax/Comfy "
@@ -466,7 +470,7 @@ class SoundstageRecast(IO.ComfyNode):
     def _openjutsu_api(cls, g, p, params, character, first_frame):
         from .router import registry as R
         if R.open_weights_only():
-            raise RecastError(f"Openjutsu · MiniMax H3 API is a paid partner node and {R.OPEN_ONLY_ENV}=1 is set.")
+            raise RecastError(f"Openjutsu · MiniMax H3 API: {R.PARTNER_OFF_MSG}.")
         if "MinimaxHailuo03ReferenceNode" not in nodes.NODE_CLASS_MAPPINGS:
             raise RecastError("The MiniMax H3 partner node is not available here (offline or partner nodes off).")
         if not (cls.hidden.auth_token_comfy_org or cls.hidden.api_key_comfy_org):
@@ -492,7 +496,7 @@ class SoundstageRecast(IO.ComfyNode):
                 "Openjutsu · local H3 runs MiniMax H3's open weights, whose Community License (§I.5, §V.4) "
                 "excludes the USA, EU, UK and South Korea, outputs included. Set "
                 f"{GR.H3_LICENSE_ENV}=1 only if you are licensed (outside those territories under $20M revenue, "
-                "or with a MiniMax / Comfy commercial licence). Otherwise use Openjutsu · MiniMax H3 API.")
+                "or with a MiniMax / Comfy commercial licence). Otherwise use an open engine (or Openjutsu · MiniMax H3 API with SOUNDSTAGE_PARTNER_MODELS=1).")
         w = GR.resolve(GR.OPENJUTSU_WEIGHTS, _list_files)
         miss = GR.missing(w) + [c for c in GR.OPENJUTSU_CLASSES if c not in nodes.NODE_CLASS_MAPPINGS]
         if miss:

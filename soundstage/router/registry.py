@@ -8,7 +8,10 @@ import os
 import re
 
 REGISTRY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "registry.json")
-OPEN_ONLY_ENV = "SOUNDSTAGE_OPEN_WEIGHTS_ONLY"
+OPEN_ONLY_ENV = "SOUNDSTAGE_OPEN_WEIGHTS_ONLY"  # legacy switch: "0" also opts back in to partner models
+PARTNER_ENV = "SOUNDSTAGE_PARTNER_MODELS"
+PARTNER_OFF_MSG = ("partner API models are off in this open-weights build; set SOUNDSTAGE_PARTNER_MODELS=1 "
+                   "(and restart ComfyUI) to use them, or pick an open-weights model")
 PAID_KINDS = {"partner", "cloud"}
 LOCAL_KINDS = {"local", "custom_node"}
 NONE_KEY = "(no model installed for this stage)"
@@ -27,8 +30,16 @@ def load_registry(path=None):
     return _registry
 
 
+def partner_models_enabled():
+    """Open weights only by default: paid partner/API models are opt-in with SOUNDSTAGE_PARTNER_MODELS=1
+    (or the legacy SOUNDSTAGE_OPEN_WEIGHTS_ONLY=0)."""
+    if os.environ.get(PARTNER_ENV, "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    return os.environ.get(OPEN_ONLY_ENV, "").strip().lower() in ("0", "false", "no", "off")
+
+
 def open_weights_only():
-    return os.environ.get(OPEN_ONLY_ENV, "0").strip().lower() in ("1", "true", "yes", "on")
+    return not partner_models_enabled()
 
 
 def badges_for(m):
