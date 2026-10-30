@@ -854,6 +854,8 @@ export class Stage {
         g.userData.gaitCycle = cycle;
         if (rig === "biped" && g.userData.joints && !air) this._bodyMotion(g, a, moving, speed, cycle);
       }
+      if (this.water) this._waterPhysics(a, g);
+      if (g.userData.flames) this._animateFire(g, a);
       if (g.userData.mixer) g.userData.mixer.setTime(this.frame / (this.state.shot?.fps || 24));
       if (g.userData.horseRig) this._driveHorse(g, a, speed, dist);
       if (g.userData.wheelRig) for (const w of g.userData.wheelRig) w.rotation.x = dist / w.userData.radius;
@@ -2290,6 +2292,125 @@ export class Stage {
       set(J.neck, 0.5 * br, 2 * Math.sin((t + seed * 0.7) * 2 * Math.PI / 5.3), 0);
       set(J.head, 0, 3 * Math.sin((t + seed * 0.3) * 2 * Math.PI / 6.1), 0);
       for (const l of limbs) if (l.part === "elbow") l.pivot.rotation.x = -(0.14 + 0.03 * br);
+    }
+  }
+
+  // ------------------------------------------------------------------ physics: water, fire
+  /** Is a world (x, z) over the water surface? */
+  _overWater(x, z) {
+    const w = this.water;
+    if (!w) return false;
+    const geo = w.geometry.parameters, cx = w.position.x, cz = w.position.z;
+    return Math.abs(x - cx) < geo.width / 2 && Math.abs(z - cz) < geo.height / 2;
+  }
+
+  /**
+   * Buoyancy, deterministic per frame. Something over the water that starts above the surface falls in (gravity),
+   * splashes, then either floats (dips with the impact, bobs and settles at its own waterline) or sinks (slows to a
+   * terminal speed and settles on the bottom). Something placed in the water starts already floating / on the bottom.
+   * People and animals tread water with their head above the surface.
+   */
+  _waterPhysics(a, g) {
+    if (a.mount_id || a.carry_id || LIBRARY[a.kind]?.flies) return;
+    const level = this.water.position.y;
+    if (level < 0.3) return;                                    // the beach's sea is a surface, not a pool
+    const p = this._actorPosAt(a, this.frame);
+    if (!this._overWater(p[0], p[2])) { g.userData.inWater = false; return; }
+    const fps = this.state.shot?.fps || 24, G = 9.8;
+    const box = new THREE.Box3().setFromObject(g), h = Math.max(0.05, box.max.y - box.min.y);
+    const kind = a.kind;
+    if (LIBRARY[kind]?.boat) {
+      // A boat sits at its waterline and rides the swell: heave, pitch and roll, the bow lifting with speed.
+      const t = this.frame / fps, seed2 = [...String(a.id)].reduce((n, ch) => n + ch.charCodeAt(0), 0);
+      const draft = kind === "jetski" ? 0.3 : kind === "boat" ? 0.45 : 0.6;
+      const sp = g.userData.speed || 0, plane = Math.min(1, sp / 8);
+      g.position.y = level - draft + 0.06 * Math.sin(2 * Math.PI * t / 3.1 + seed2) + 0.12 * plane;
+      g.rotation.order = "YXZ";
+      g.rotation.x = -0.035 * Math.sin(2 * Math.PI * t / 2.7 + seed2) - 0.09 * plane * (kind === "sailboat" || kind === "catamaran" ? 0.3 : 1);
+      g.rotation.z = (kind === "sailboat" ? 0.12 : 0.04) * Math.sin(2 * Math.PI * t / 4.3 + seed2 * 0.7) + (kind === "sailboat" ? 0.1 : 0);
+      g.userData.inWater = true;
+      return;
+    }
+    const swimmer = PERSON_KINDS.has(kind) || ["dog", "horse", "cat", "bird"].includes(kind);
+    const SINK = ["rock", "car", "police_car", "sports_car", "hatchback", "truck", "motorcycle", "bicycle", "flashlight", "lamp", "wall", "pyramid", "cube", "fire"];
+    const sinks = !swimmer && (SINK.includes(kind) || a.buoyancy === "sink");
+    // Fraction of its height that sits under water when floating (wood ~0.5, a ball ~0.2, a bird ~0.3).
+    const sub = { crate: 0.55, sphere: 0.25, bird: 0.3, tree: 0.35, bush: 0.4, chair: 0.6, table: 0.6, bench: 0.6, cylinder: 0.5 }[kind] ?? 0.55;
+    const seed = [...String(a.id)].reduce((n, ch) => n + ch.charCodeAt(0), 0);
+    // When does it enter, and from how high? (first frame over the water; keyed height = drop height)
+    const keys = this._actorKeys(a);
+    let f0 = 0;
+    for (let f = 0; f <= this.frame; f++) { const q = this._actorPosAt(a, f); if (this._overWater(q[0], q[2])) { f0 = f; break; } }
+    const y0 = Math.max(0, this._actorPosAt(a, f0)[1] || 0);
+    const t = (this.frame - f0) / fps;
+    const yEq = swimmer ? level - (PERSON_KINDS.has(kind) ? 0.84 : 0.7) * h : sinks ? 0 : level - sub * h;
+    let y;
+    const dropping = y0 > level + 0.05;
+    const tHit = dropping ? Math.sqrt(2 * (y0 - level) / G) : 0;
+    if (dropping && t < tHit) {
+      y = y0 - 0.5 * G * t * t;                                  // falling toward the surface
+    } else {
+      const ti = t - tHit;                                      // time since it hit (or was placed in) the water
+      const vImp = dropping ? G * tHit : 0;
+      if (sinks) {
+        const vt = { rock: 1.4, flashlight: 0.9 }[kind] ?? 0.55;  // terminal speed in water (m/s)
+        const tau = 0.35;
+        const start = dropping ? level : Math.min(level, y0 || level);
+        const dist = vt * ti + (vImp - vt) * tau * (1 - Math.exp(-ti / tau));
+        y = Math.max(0, (dropping || y0 > 0 ? start : 0) - dist - (dropping ? 0 : 0));
+        if (!dropping && !(y0 > 0)) y = 0;                        // placed in the tank: already on the bottom
+      } else {
+        const w0 = 2 * Math.PI / 1.6, z = 0.28;                   // ~1.6 s bob, under-damped
+        const dip = dropping ? Math.min(0.9 * h + 0.4, vImp / w0) : 0;
+        const bob = 0.025 * Math.sin(2 * Math.PI * (this.frame / fps) / 2.4 + seed);
+        y = yEq - dip * Math.exp(-z * w0 * ti) * Math.sin(w0 * Math.sqrt(1 - z * z) * ti) + bob;
+        const wob = Math.exp(-0.6 * ti) * 0.15 + 0.03;          // a settling rock-and-roll, then a gentle sway
+        if (!swimmer) { g.rotation.x = wob * Math.sin(2.1 * ti + seed); g.rotation.z = wob * Math.cos(1.7 * ti + seed * 0.3); }
+      }
+    }
+    g.position.y = y - (box.min.y - g.position.y);                // put the object's bottom at y
+    g.userData.inWater = true;
+    // Splash ring on entry: expands and fades over ~1.2 s.
+    const ring = this._splash?.get(a.id);
+    if (ring) {
+      const tr = (this.frame - f0) / fps - tHit;
+      ring.visible = dropping && tr >= 0 && tr < 1.2;
+      if (ring.visible) {
+        ring.position.set(p[0], level + 0.01, p[2]);
+        const r = 0.3 + 1.6 * tr;
+        ring.scale.set(r, r, 1);
+        ring.material.opacity = 0.75 * (1 - tr / 1.2);
+      }
+    } else if (dropping) {
+      const m = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 40), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
+      m.rotation.x = -Math.PI / 2;
+      m.userData.splash = true;
+      this.root.add(m);
+      (this._splash = this._splash || new Map()).set(a.id, m);
+      m.visible = false;
+    }
+  }
+
+  /** Flames flicker, the fire light breathes, embers rise, drift and fade: all a pure function of the frame. */
+  _animateFire(g, a) {
+    const f = this.frame, fps = this.state.shot?.fps || 24, t = f / fps;
+    const seed = [...String(a.id)].reduce((n, ch) => n + ch.charCodeAt(0), 0);
+    const n1 = (x) => Math.sin(x * 12.9898 + seed) * 0.5 + Math.sin(x * 4.1 + seed * 0.7) * 0.3 + Math.sin(x * 23.3) * 0.2;
+    g.userData.flames.forEach((fl, i) => {
+      const k = 1 + 0.22 * n1(t * 3 + i * 1.7);
+      fl.scale.set(1 + 0.08 * n1(t * 5 + i), k, 1 + 0.08 * n1(t * 4.3 + i * 2.1));
+      fl.rotation.z = 0.08 * n1(t * 2.2 + i * 3.1);
+    });
+    if (g.userData.fireLight) g.userData.fireLight.intensity = g.userData.fireBase * (0.82 + 0.18 * n1(t * 7));
+    const em = g.userData.embers;
+    if (em) {
+      const pos = em.geometry.attributes.position, N = pos.count, H = g.userData.fireH || 1;
+      for (let i = 0; i < N; i++) {
+        const life = 1.6 + (i % 7) * 0.25, age = ((t + i * 0.37) % life) / life;   // 0..1, staggered
+        const ang = i * 2.399, r = 0.15 * H + 0.25 * H * age;
+        pos.setXYZ(i, Math.cos(ang + age * 3) * r * 0.6 + 0.12 * Math.sin(t * 2 + i), 0.3 * H + age * 2.6 * H, Math.sin(ang + age * 3) * r * 0.6);
+      }
+      pos.needsUpdate = true;
     }
   }
 

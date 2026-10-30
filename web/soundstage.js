@@ -118,12 +118,21 @@ async function designObject(name, onStatus) {
       sampling_mode: "off", thinking: false, use_default_template: true, system_prompt: ["ss2", 0] } },
     ss4: { class_type: "PreviewAny", inputs: { source: ["ss3", 0] } },
   };
+  // Say so when a render holds the GPU: the design job goes to the front of the queue but waits for it to finish.
+  try {
+    const q = await (await api.fetchApi("/queue")).json();
+    if ((q.queue_running || []).length) onStatus(`Designing “${name}”: the GPU is finishing a render, your design is next in line…`);
+  } catch { /* queue unknown */ }
   const resp = await api.fetchApi("/prompt", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt: graph, client_id: api.clientId }) });
+    body: JSON.stringify({ prompt: graph, client_id: api.clientId, front: true }) });
   const { prompt_id, error } = await resp.json();
   if (!prompt_id) throw new Error(error?.message || "the server refused the design job");
   const text = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { cleanup(); reject(new Error("timed out after 3 minutes")); }, 180000);
+    const timer = setTimeout(() => {
+      cleanup();
+      api.fetchApi("/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delete: [prompt_id] }) }).catch(() => {});
+      reject(new Error("the GPU was busy for 15 minutes; try again when the render finishes"));
+    }, 900000);
     const onExec = (ev) => {
       const d = ev.detail || {};
       if (d.prompt_id === prompt_id && d.node === "ss4") { cleanup(); resolve(d.output?.text?.[0] || ""); }
