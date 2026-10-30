@@ -374,6 +374,14 @@ def runway_aleph2(g, m, p):
 
 # ---------------------------------------------------------------- local: images
 
+def _with_lora(g, model, p):
+    """Apply the node's optional LoRA (character / product / style) to an image model."""
+    if p.get("lora"):
+        model = g.node("LoraLoaderModelOnly", model=model, lora_name=p["lora"],
+                       strength_model=float(p.get("lora_strength", 1.0))).out(0)
+    return model
+
+
 def _loaders(g, w, clip_type):
     unet = g.node("UNETLoader", unet_name=w["unet"], weight_dtype="default").out(0)
     clip = g.node("CLIPLoader", clip_name=w["text_encoder"], type=clip_type, device="default").out(0)
@@ -393,6 +401,7 @@ def krea2(g, m, p):
     (img2img from the clay frame + Krea2 depth-control LoRA, docs/decisions.md 2026-10-27)."""
     w = p["weights"]
     model, clip, vae = _loaders(g, w, "krea2")
+    model = _with_lora(g, model, p)
     pos, neg = _text(g, clip, p["prompt"], p.get("negative"))
     if p["stage"] == "edit_image":
         src = need(p, "image", "Krea 2 edit", "an image (e.g. the stage clay frame)")
@@ -434,6 +443,7 @@ def z_image(g, m, p):
 def flux3_klein(g, m, p):
     """Templates image_flux3_klein_distilled_t2i / _image_edit."""
     model, clip, vae = _loaders(g, p["weights"], "flux3")
+    model = _with_lora(g, model, p)
     pos = g.node("CLIPTextEncode", text=p["prompt"], clip=clip).out(0)
     images = ([need(p, "image", "FLUX 3 Klein edit", "an image")] if p["stage"] == "edit_image" else [])
     images += list(p.get("refs") or [])
