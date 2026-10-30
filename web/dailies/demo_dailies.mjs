@@ -72,7 +72,7 @@ const CIRCLED = { sc_4: { 0: 4, 2: 5, 3: 3, 5: 3, 6: 4, 8: 2 }, sc_1: { 0: 3, 2:
 const KIND_SECONDS = { previz: 5.04, draft: 5.04, final: 6.04 };
 
 /** Script with the diner scene appended, shots for scenes 1 and 4, and their takes (take-list form) with drawn thumbs. */
-export function demoDailies({ thumbs = true } = {}) {
+export function demoDailies({ thumbs = true, real = null } = {}) {   // real: {sc_4: [url per setup], sc_1: [...]} = rendered frames
   const script = demoScript();
   script.scenes.push(structuredClone(DINER_SCENE));
   script.characters = script.characters.map((c) => (c.name === "MARA" || c.name === "EZRA" ? { ...c, scenes: [...c.scenes, "sc_4"] } : c));
@@ -83,7 +83,7 @@ export function demoDailies({ thumbs = true } = {}) {
     const circ = CIRCLED[sceneId]?.[idx];
     renders[id] = kinds.map((kind, k) => {
       const n = k + 1;
-      const thumb = thumbs ? drawThumb({ look, setup, name, kind, take: n, subject: extra.subject || extra.character || name }) : null;
+      const thumb = real?.[sceneId]?.[idx] || (thumbs ? drawThumb({ look, setup, name, kind, take: n, subject: extra.subject || extra.character || name }) : null);
       return { id: `t${n}`, kind, n, url: kind === "look" ? thumb : `demo/${sceneId}/${idx}-${n}.mp4`, thumb, video: kind !== "look",
         seconds: KIND_SECONDS[kind] || null, circled: circ === n, created: 1000 + n };
     });
