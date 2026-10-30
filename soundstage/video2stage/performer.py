@@ -189,3 +189,32 @@ def cutout(take: dict, mpu: float, pad: float = 0.18) -> dict | None:
     box = [max(0.0, x0 - dx), max(0.0, y0 - dy), min(1.0, x1 + dx), min(1.0, y1 + dy)]
     return {"box": [round(v, 4) for v in box], "max_depth": round(float((np.median(z) + 0.8) / mpu), 4),
             "min_depth": round(float(max(0.05, np.median(z) - 1.2) / mpu), 4)}
+
+
+def camera_drifted(scene: dict, breakdown: dict, max_rise: float = 0.8, max_travel: float = 2.5) -> bool:
+    """A handheld / locked-off camera (by the vision model's read) whose solved track climbs or travels more than a
+    person could carry it: mono depth mistook the subject's motion for the camera's."""
+    keys = (scene.get("shots") or [{}])[0].get("camera_keys") or []
+    if len(keys) < 2:
+        return False
+    kind = ((breakdown.get("camera") or {}).get("type") or "").lower()
+    if kind and not any(w in kind for w in ("handheld", "static", "locked", "tripod", "fixed")):
+        return False   # a dolly, drone or car mount really moves
+    ys = [k["position"][1] for k in keys]
+    p0 = keys[0]["position"]
+    travel = max(math.hypot(k["position"][0] - p0[0], k["position"][2] - p0[2]) for k in keys)
+    return max(ys) - min(ys) > max_rise or travel > max_travel
+
+
+def drop_background_people(scene: dict, keep_id: str, min_height: float = 0.2) -> int:
+    """Other people the vision model saw who are tiny in frame (far background walkers): mono depth puts them metres
+    too close, so leave them out once the performer is captured. Returns how many were dropped."""
+    out, n = [], 0
+    for a in scene["actors"]:
+        bb = (a.get("source") or {}).get("bbox_start")
+        if a.get("id") != keep_id and a.get("kind") in ("man", "woman", "child") and bb and (bb[3] - bb[1]) / 1000 < min_height:
+            n += 1
+            continue
+        out.append(a)
+    scene["actors"] = out
+    return n
