@@ -69,6 +69,10 @@ function injectCss(doc) {
   background:${T.raised}; color:${T.muted}; border:1px solid ${T.line}; font:inherit; font-size:12px; }
 .ss-coach-toggle[aria-pressed=true] { color:${T.text}; border-color:${T.lineStrong}; }
 .ss-coach-toggle[aria-pressed=true] .ss-icon { color:${T.accent}; }
+.ss-coach-toggle[data-count]:not([data-count="0"]) { color:${T.text}; border-color:${T.accent}; }
+.ss-coach-toggle[data-level=error] { border-color:${T.danger}; }
+.ss-coach-cards { max-height:calc(100% - 46px); overflow:auto; }
+.ss-coach-off { align-self:flex-end; background:none; border:none; color:${T.faint}; font:inherit; font-size:12px; cursor:pointer; text-decoration:underline; }
 .ss-coach-card { width:100%; box-sizing:border-box; background:rgba(33,25,39,.94); backdrop-filter:blur(8px); color:${T.text};
   border:1px solid ${T.line}; border-left:3px solid ${T.lineStrong}; border-radius:12px; padding:10px 12px 10px 12px;
   box-shadow:0 8px 24px rgba(0,0,0,.35); animation:ss-coach-in .18s ease-out; }
@@ -128,8 +132,16 @@ export class Coach {
     this.toggle.title = "Coach: tips and checks as you work";
     this.toggle.append(icon("lightbulb", 14), doc.createTextNode("Coach"));
     this.toggle.addEventListener("pointerdown", (e) => e.stopPropagation());
-    this.toggle.addEventListener("click", () => this.setEnabled(!this.engine.enabled));
+    // Tips never pop up over the stage on their own: they collect behind the pill ("Coach · 2") and open on click.
+    this.open = false;
+    this._items = [];
+    this.toggle.addEventListener("click", () => {
+      if (!this.engine.enabled) { this.open = true; this.setEnabled(true); return; }
+      this.open = !this.open;
+      this._syncToggle();
+    });
     this.cards = doc.createElement("div");
+    this.cards.className = "ss-coach-cards";
     this.cards.style.cssText = "display:flex;flex-direction:column;gap:8px;width:100%";
     this.root.append(this.toggle, this.cards);
     container?.append(this.root);
@@ -252,13 +264,23 @@ export class Coach {
   }
 
   _syncToggle() {
+    const n = this.engine.enabled ? this._items.length : 0;
     this.toggle.setAttribute("aria-pressed", String(this.engine.enabled));
+    this.toggle.setAttribute("aria-expanded", String(this.open && n > 0));
+    this.toggle.dataset.count = String(n);
+    this.toggle.dataset.level = this._items.some((i) => i.level === "error") ? "error" : "";
+    this.toggle.lastChild.textContent = !this.engine.enabled ? "Coach off" : n ? `Coach · ${n}` : "Coach";
+    this.toggle.title = !this.engine.enabled ? "Coach is off: click to turn tips back on"
+      : n ? (this.open ? "Hide tips" : `${n} tip${n > 1 ? "s" : ""}: click to show`) : "Coach: tips and checks as you work";
+    this.cards.hidden = !(this.open && n > 0);
   }
 
   // ------------------------------------------------------------------ render
   render(items, ctx) {
     const d = this.doc;
-    this.cards.replaceChildren(...items.map((item) => {
+    this._items = items || [];
+    if (!this._items.length) this.open = false;
+    this.cards.replaceChildren(...this._items.map((item) => {
       const card = d.createElement("div");
       card.className = "ss-coach-card";
       card.dataset.level = item.level;
@@ -306,12 +328,21 @@ export class Coach {
       card.append(head, text, row);
       return card;
     }));
+    if (this._items.length) {
+      const off = d.createElement("button");
+      off.type = "button";
+      off.className = "ss-coach-off";
+      off.textContent = "Turn tips off";
+      off.addEventListener("click", () => { this.open = false; this.setEnabled(false); });
+      this.cards.append(off);
+    }
+    this._syncToggle();
   }
 
   _dismiss(item, ctx) {
     if (item.rule === "tour") this.engine.tourDone();
     else this.engine.snooze(item.key, (ctx || this.context()).sceneHash);
-    this.render([...this.cards.children].length > 1 ? this.engine.pick("stage", this.context()) : []);
+    this.render(this._items.length > 1 ? this.engine.pick("stage", this.context()) : []);
   }
 
   dispose() {
