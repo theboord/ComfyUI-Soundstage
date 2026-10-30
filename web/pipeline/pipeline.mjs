@@ -600,13 +600,13 @@ export class Pipeline {
     if (!P.pool.length) note = "No cast yet: add characters, locations, wardrobe and props in ② Cast & Locations (or upload pictures there), then tick who is in each shot.";
     else if (!used.length) note = keys.length ? "The cast ticked for this shot has no pictures yet: add one (or generate it in ② Cast & Locations)." : "Nobody is ticked for this shot: the frame is painted from the prompt and the clay alone.";
     else note = where === "motion" && !h3
-      ? `LTX animates your chosen frame, so the cast is already in it (painted with ${names}). Ticks here change the next frames you generate in ④ Frame.`
+      ? `LTX animates this shot's first frame, so the cast comes in through the frame: ④ Frame paints it with ${names}. Ticks here change the next frames you generate (a chosen frame keeps the references it was painted with).`
       : `${h3 ? "H3 sees" : "Sent to the image model"}: ${used.map((it) => refLabel(it)).join(" · ")}.`;
     const warn = over.length ? `${keys.length} ticked, only ${lim} go to the model (characters first, then the location, wardrobe, props): not sent ${over.map((it) => it.name).join(", ")}.` : "";
     const krea = where === "frame" && this.f?.model?.value === STILL_KREA;
     const noNode = where === "frame" && !this.w(9081, "ref_files");
     host.style.setProperty("--ss-sc-tile", `${px}px`);
-    host.replaceChildren(
+    host.replaceChildren(...[
       h("div", { class: "ss-sc-head" }, icon("users", 16), h("strong", {}, "Cast in this shot"),
         h("span", { class: "status" }, `${shot.name}: ${keys.length} ticked`), sizes,
         this.ctx.openCast ? h("button", { type: "button", class: "ghost", style: "font-size:12px;padding:3px 9px", title: "Add people, places, wardrobe and props, with pictures",
@@ -615,7 +615,7 @@ export class Pipeline {
       h("div", { class: "ss-sc-note" }, note),
       warn ? h("div", { class: "ss-sc-note warn" }, warn) : null,
       krea ? h("div", { class: "ss-sc-note warn" }, "Krea 2 + stage depth doesn't take references: pick FLUX 3 Klein to use the cast pictures.") : null,
-      noNode ? h("div", { class: "ss-sc-note warn" }, "References need the updated Soundstage nodes (restart ComfyUI once).") : null);
+      noNode ? h("div", { class: "ss-sc-note warn" }, "References need the updated Soundstage nodes (restart ComfyUI once).") : null].filter(Boolean));
   }
 
   /** A cast picture in ④ Frame's Paint Studio; "Save to reference" stores the edit on the cast item. */
