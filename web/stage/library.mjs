@@ -30,6 +30,7 @@ export const LIBRARY = {
   rock: { label: "Rock", height: 0.8, rig: "static" },
   crate: { label: "Crate", height: 0.8, rig: "static" },
   flashlight: { label: "Flashlight", height: 0.08, rig: "static", light: true },
+  ufo: { label: "Flying saucer", height: 3, rig: "static", light: true },
   wall: { label: "Wall", height: 2.4, rig: "static" },
   cube: { label: "Cube", height: 1, rig: "static" },
   sphere: { label: "Sphere", height: 1, rig: "static" },
@@ -89,6 +90,8 @@ const SYNONYMS = {
   van: "truck", lorry: "truck", bus: "truck", "pickup truck": "truck", pickup: "truck", bike: "bicycle", motorbike: "motorcycle",
   scooter: "motorcycle", vespa: "motorcycle", shrub: "bush", hedge: "bush", plant: "bush",
   home: "house", cabin: "house", hut: "house", seat: "chair", lamppost: "lamp",
+  saucer: "ufo", "flying saucer": "ufo", spaceship: "ufo", "space ship": "ufo", mothership: "ufo", "alien ship": "ufo",
+  alien: "man", martian: "man", invader: "man",
   torch: "flashlight", "flash light": "flashlight", "electric torch": "flashlight", "maglite": "flashlight",
   streetlight: "lamp", "street lamp": "lamp", boulder: "rock", stone: "rock", box: "crate",
   fence: "wall", palm: "tree", oak: "tree", pine: "tree", ball: "sphere", block: "cube", column: "cylinder",
@@ -140,7 +143,7 @@ export const OBJECT_COLORS = {
   motorcycle: ["#1f2a44", "#1b1b1d"], tree: ["#3e6b35", "#5b4029"], bush: ["#4a7a3e", "#4a7a3e"],
   house: ["#d8cbb2", "#7a3b2e"], bench: ["#8a5a35", "#2d2d2d"], table: ["#8a5a35", "#8a5a35"],
   chair: ["#7a5232", "#7a5232"], lamp: ["#2f3236", "#f3e3b0"], rock: ["#8c877e", "#8c877e"],
-  crate: ["#a7814f", "#a7814f"], flashlight: ["#2b2d31", "#d9dde2"], wall: ["#bdb7ad", "#bdb7ad"], flat: ["#cfc8bb", "#7a6a55"],
+  crate: ["#a7814f", "#a7814f"], flashlight: ["#2b2d31", "#d9dde2"], ufo: ["#8d949c", "#b8f5c4"], wall: ["#bdb7ad", "#bdb7ad"], flat: ["#cfc8bb", "#7a6a55"],
   bed: ["#8a6a4c", "#e9e4da"], single_bed: ["#8a6a4c", "#e9e4da"], sofa: ["#5d6b78", "#7d8a96"], armchair: ["#8a5a3c", "#8a5a3c"],
   coffee_table: ["#6e4f35", "#6e4f35"], tv: ["#3a3a3c", "#111214"], kitchen_counter: ["#e8e4dc", "#9a9590"], fridge: ["#d9dcdf", "#8a8d90"],
   bath: ["#f1f1ee", "#dfe7ea"], toilet: ["#f3f3f0", "#f3f3f0"], washbasin: ["#e8e4dc", "#f3f3f0"], wardrobe: ["#a8865f", "#5a4630"],
@@ -396,6 +399,27 @@ export function buildObject(kind, height, mesh, appearance = null) {
       g.add(beam, beam.target);
       g.userData.beam = beam;
       g.userData.beamBase = 30;
+      break;
+    }
+    case "ufo": {
+      // A flying saucer about 4x as wide as it is tall: hull, dome, glowing rim lights and a tractor beam pointing down.
+      // It hovers wherever its keys put it (key Y is height), so it can drop in over a set.
+      const r = h * 2;
+      const hull = add(new THREE.SphereGeometry(r, 40, 14), 0, 0, 0);
+      hull.scale.set(1, 0.18, 1);
+      add(new THREE.SphereGeometry(r * 0.38, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2), 0, r * 0.12, 0, 0, 0, 0, accent);
+      add(new THREE.TorusGeometry(r * 0.98, h * 0.05, 8, 48), 0, 0, 0, Math.PI / 2, 0, 0, accent);
+      for (let i = 0; i < 12; i++) {
+        const t = (i / 12) * Math.PI * 2;
+        add(new THREE.SphereGeometry(h * 0.06, 10, 8), Math.cos(t) * r * 0.82, -r * 0.08, Math.sin(t) * r * 0.82, 0, 0, 0, accent);
+      }
+      const beam = new THREE.SpotLight(0xb8ffc8, 400, 80, THREE.MathUtils.degToRad(16), 0.35, 1.2);
+      beam.position.set(0, -r * 0.15, 0);
+      beam.castShadow = true;
+      beam.target.position.set(0, -50, 0);
+      g.add(beam, beam.target);
+      g.userData.beam = beam;
+      g.userData.beamBase = 400;
       break;
     }
     case "lamp":

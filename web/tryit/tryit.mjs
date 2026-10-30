@@ -240,5 +240,7 @@ for (const p of PRESETS) {
   $("presets").append(b);
 }
 
-loadPreset(PRESETS[0]);
+// Every visitor lands on a different scene (a #token in the link picks one, e.g. #aliens).
+const pick = PRESETS.find((p) => location.hash === `#${p.id}`) || PRESETS[Math.floor(Math.random() * PRESETS.length)];
+loadPreset(pick);
 window.__tryit = { loadPreset: (i) => loadPreset(PRESETS[i]), setPlaying, showFrame };
