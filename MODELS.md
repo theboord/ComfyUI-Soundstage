@@ -4,7 +4,17 @@ The Soundstage App (`example_workflows/Soundstage_App.json`) needs the models be
 
 Rung 1 (Stage) needs no models at all. Rung 2 (Look still) needs the Krea 2 group. Rungs 3–4 (Draft, Final) need the LTX-2.5 group. Rung 5 (Layers) needs SAM 3.1 and BiRefNet (below) to cut mattes from the final frames; without them it falls back to the stage's own mattes.
 
-## Look still: Krea 2 Turbo, depth-steered
+## First frame, cast sheets and Paint Studio: FLUX 3 Klein (default)
+
+The App's default image model: the ④ Frame first frame (with up to 4 cast references), ② Cast & Locations sheets, and Paint Studio's Generative Fill. Distilled: CFG 1, 20 steps by default.
+
+| File | Folder | Source | License |
+|---|---|---|---|
+| `flux3-image-klein-int8-convrot.safetensors` | `diffusion_models/` | FLUX 3 Klein from [Black Forest Labs](https://huggingface.co/black-forest-labs) (int8 repackage) | FLUX Kommunity License: free non-commercial; commercial use of outputs OK below $5M annual revenue |
+| `qwen3vl_4b_int8_convrot.safetensors` (or `qwen3vl_4b_fp8_scaled.safetensors`, shared with Krea 2) | `text_encoders/` | Qwen3-VL 4B text encoder | Apache-2.0 |
+| `flux2-vae.safetensors` | `vae/` | [Black Forest Labs](https://huggingface.co/black-forest-labs) FLUX.2 VAE | Apache-2.0 |
+
+## Look still, alternative: Krea 2 Turbo, depth-steered
 
 | File | Folder | Source | License |
 |---|---|---|---|
