@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dailies Bin Preview</title>
+<meta name="description" content="Standalone preview of the Soundstage dailies bin (frame, list and lined-script views) on the sample script with drawn takes.">
+<script>
+  // Collected for headless checks: window.__errs lists page errors, rejected promises and console.error calls.
+  window.__errs = [];
+  addEventListener("error", (e) => __errs.push(String(e.message || e)));
+  addEventListener("unhandledrejection", (e) => __errs.push("rejection: " + (e.reason?.message || e.reason)));
+  const ce = console.error; console.error = (...a) => { __errs.push(a.map(String).join(" ")); ce(...a); };
+</script>
+<style>
+  html, body { margin: 0; background: #18151b; color: #f0efed; color-scheme: dark; }
+  body { font: 14px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  .wrap { max-width: 1560px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; height: 100vh; box-sizing: border-box; }
+  .ss-stage { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+  .top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .top .step { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; color: rgba(240,239,237,.56); }
+  .top select { background: rgba(0,0,0,.22); color: #f0efed; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 5px 12px; font: inherit; }
+  #bin { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  #bin > .ss-dailies { flex: 1 1 auto; }
+  #status { margin: 0 2px; font-size: 12px; color: rgba(240,239,237,.56); min-height: 18px; }
+  /* Stand-in viewer for onOpenTake. */
+  .viewer { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(10,8,12,.72); z-index: 100; }
+  .viewer[hidden] { display: none; }
+  .viewer .box { width: min(760px, 92vw); background: #2a2330; border: 1px solid rgba(255,255,255,.16); border-radius: 16px; padding: 12px; box-shadow: 0 30px 90px rgba(0,0,0,.6); }
+  .viewer img { width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 10px; display: block; background: #120e15; }
+  .viewer .cap { display: flex; gap: 12px; align-items: baseline; margin-top: 10px; }
+  .viewer .cap b { font: 700 15px/1 ui-monospace, Menlo, monospace; color: #f2ff59; }
+  .viewer .cap span { color: rgba(240,239,237,.7); }
+  .viewer button { margin-left: auto; background: #342c3b; color: #f0efed; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; padding: 5px 14px; font: inherit; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><span class="step">Dailies</span>
+    <label>Scene <select id="scene"></select></label>
+    <span style="flex:1"></span>
+    <p id="status" role="status" aria-live="polite"></p>
+  </div>
+  <div class="ss-stage"><div id="bin"></div></div>
+</div>
+<div class="viewer" id="viewer" hidden><div class="box"><img alt="" id="vimg"><div class="cap"><b id="vname"></b><span id="vinfo"></span><button type="button" id="vclose">Close</button></div></div></div>
+<script type="module">
+  import { applyTheme } from "../ui/theme.mjs";
+  import { DailiesBin } from "./bin.mjs";
+  import { LinedScript } from "./lined.mjs";
+  import { demoDailies } from "./demo_dailies.mjs";
+  import { clipName, sceneShots, fmtDuration, KIND_LABEL } from "./model.mjs";
+
+  applyTheme();
+  const q = new URLSearchParams(location.search);
+  const { script, shots, renders } = demoDailies();
+  let sceneId = q.get("scene") || "sc_4";
+  const layouts = {};
+  try { Object.assign(layouts, q.has("fresh") ? {} : JSON.parse(localStorage.getItem("ss_dailies_preview") || "{}")); } catch { /* storage blocked */ }
+  if (q.get("view")) for (const id of ["sc_1", "sc_4"]) layouts[id] = { ...(layouts[id] || {}), view: q.get("view") };
+  const status = document.getElementById("status");
+  const say = (m) => { status.textContent = m; };
+  const scene = () => script.scenes.find((s) => s.id === sceneId) || null;
+
+  const sel = document.getElementById("scene");
+  for (const s of script.scenes) sel.append(Object.assign(document.createElement("option"), { value: s.id, textContent: `${s.number} · ${s.heading}` }));
+  sel.value = sceneId;
+
+  const viewer = document.getElementById("viewer");
+  const openTake = (shot, take, at) => {
+    const sc = scene();
+    const idx = sceneShots(sc, shots).findIndex((s) => s.id === shot.id);
+    document.getElementById("vimg").src = take.thumb || "";
+    document.getElementById("vname").textContent = clipName(sc, idx, take.n, shot);
+    const where = at ? ` · from element ${at.elementIndex + 1}${at.offset != null ? ` (${at.offset.toFixed(1)} s in)` : ""}` : "";
+    document.getElementById("vinfo").textContent = `${shot.name} · ${KIND_LABEL[take.kind]}${take.seconds ? ` · ${fmtDuration(take.seconds)}` : ""}${take.circled ? " · circled" : ""}${where}`;
+    viewer.hidden = false;
+    window.__lastOpen = { shot: shot.id, take: take.id, n: take.n, at };
+    say(`Open ${clipName(sc, idx, take.n, shot)}${where}`);
+  };
+  document.getElementById("vclose").addEventListener("click", () => { viewer.hidden = true; });
+  viewer.addEventListener("click", (e) => { if (e.target === viewer) viewer.hidden = true; });
+  addEventListener("keydown", (e) => { if (e.key === "Escape") viewer.hidden = true; });
+
+  const host = {
+    getScene: scene,
+    getShots: () => shots,
+    getRenders: (id) => renders[id] || [],
+    getLayout: () => layouts[sceneId] || {},
+    setLayout: (l) => { layouts[sceneId] = l; try { localStorage.setItem("ss_dailies_preview", JSON.stringify(layouts)); } catch { /* storage blocked */ } },
+    onOpenTake: openTake,
+    onCircle: (shot, take) => { window.__lastCircle = { shot: shot.id, take: take?.id ?? null }; },
+    onStatus: say,
+  };
+  let bin = null, lined = null;
+  if (q.get("standalone") === "lined") {
+    lined = new LinedScript(document.getElementById("bin"), { getScene: scene, getShots: () => shots, getRenders: (id) => renders[id] || [],
+      onOpenTake: openTake, onStatus: say });
+  } else {
+    bin = new DailiesBin(document.getElementById("bin"), host);
+  }
+  sel.addEventListener("change", () => { sceneId = sel.value; bin?.refresh(); lined?.refresh(); });
+  window.__preview = { get bin() { return bin; }, get lined() { return lined; }, shots, renders, script, layouts };
+</script>
+</body>
+</html>
