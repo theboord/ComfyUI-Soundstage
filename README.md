@@ -2,7 +2,7 @@
 
 # Soundstage
 
-Soundstage is a ComfyUI custom node pack plus an App-mode workflow that turns ComfyUI into a small film set. You block a scene in a 3D stage (actors, horses, cars, props, lights, cameras), and the App paints a first frame for every shot with FLUX 3 Klein (or Krea 2 locked to the stage's depth), keeping your framing and blocking. LTX-2.5 with the Layout-to-Render IC-LoRA then animates each shot with sound, following your blocking. You compare every step on a Ladder and deliver per-object layers for VFX, plus one cut video or an NLE export. Everything runs locally in ComfyUI on open models.
+Soundstage is a ComfyUI custom node pack plus an App-mode workflow that turns ComfyUI into a small film set, in production order: bring in your script, cast it (characters, props and locations with reference sheets), block each scene in a 3D stage, paint the first frame, animate it, review it as dailies and cut it. You block a scene in a 3D stage (actors, horses, cars, props, lights, cameras), and the App paints a first frame for every shot with FLUX 3 Klein (or Krea 2 locked to the stage's depth), keeping your framing and blocking. LTX-2.5 with the Layout-to-Render IC-LoRA then animates each shot with sound, following your blocking. You compare every step on a Ladder and deliver per-object layers for VFX, plus one cut video or an NLE export. Everything runs locally in ComfyUI on open models.
 
 Built for Comfy Org's *Open Source Higgsfield* challenge (#OpenSourceHiggsfield).
 
@@ -23,6 +23,30 @@ Built for Comfy Org's *Open Source Higgsfield* challenge (#OpenSourceHiggsfield)
 
 <p align="center"><img src="docs/media/mocap.gif" width="900" alt="Left: a video of a person dancing, climbing a wall, doing a front flip, walking. Right: the Soundstage clay actor doing the same moves"></p>
 <p align="center"><em>Motion capture: any clip, or you acting it out on the webcam, drives a clay actor (body, hands, fingers, the path and the jumps). SAM 3D Body runs in ComfyUI; the clay then directs LTX. Clips: Pexels, free licence.</em></p>
+
+### Script to screen
+
+<table>
+<tr>
+<td width="50%"><img src="docs/media/script_tab.jpg" alt="The Script tab: scenes, outline, director's notes, breakdown, the screenplay page"><br><sub><b>&#9312; Script.</b> Import Fountain, Final Draft (.fdx), PDF or text. Each scene gets an outline, a colour-coded breakdown (cast, props, vehicles, animals, SFX, extras) and your director's notes. <b>Build this scene on the stage</b> blocks it in 3D.</sub></td>
+<td width="50%"><img src="docs/media/cast.jpg" alt="Cast and Locations: characters, locations and props from the script breakdown"><br><sub><b>&#9313; Cast &amp; Locations.</b> Every character, prop and location from the breakdown, each with a reference picture: upload a character sheet or generate one with FLUX 3 Klein (7 s). They feed the image model, so faces, costumes, cars and places match in every shot.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/media/pose_3d.jpg" alt="Pose in 3D: a rotate ring on the head, dots on every joint"><br><sub><b>Pose in 3D.</b> Click any body part and turn it with the ring (fingers too), or drag a hand or foot and the arm or leg follows (IK). Same pose keys as the per-joint sliders.</sub></td>
+<td><img src="docs/media/paint_studio.jpg" alt="Paint Studio: tool rail, layers, history, Generative Fill bar, variations"><br><sub><b>Paint Studio.</b> A small Photoshop for the first frame, on our own Generative Fill (FLUX 3 Klein, crop and stitch, ~8 s): Fill, Remove, Extend to any aspect, magic select, layers, history, variations with before/after, <b>Use as first frame</b>.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/media/dailies.jpg" alt="Dailies: an Avid-style bin of setups and takes"><br><sub><b>Dailies.</b> Each scene's setups and takes as an Avid-style bin (slates 12, 12A, 12B; circled takes; drag to arrange; list view).</sub></td>
+<td><img src="docs/media/lined_script.jpg" alt="Lined script with coverage lines and setup thumbnails"><br><sub><b>Lined script.</b> ScriptSync-style coverage lines per setup over the scene's page (squiggle = off camera); click a line to play that take from that line.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/media/video_to_stage.jpg" alt="A source clip next to the rebuilt 3D stage with a mocap clay actor"><br><sub><b>Video &rarr; Stage.</b> One job turns a clip into a 3D scene: the location (Depth Anything 3), the tracked camera, the set pieces (vision model) and the performer (SAM 3D Body), standing where they stood.</sub></td>
+<td><img src="docs/media/camera_rigs.gif" alt="The same push-in on four rigs: free, dolly, jib, handheld"><br><sub><b>Camera rigs.</b> Tripod, dolly, Chapman, slider, jib, Steadicam, handheld, drone: the keys say where, the rig says how (push-off lag, overshoot and settle, rail rumble, arm arcs, breathing and shake).</sub></td>
+</tr>
+</table>
+
+<p align="center"><img src="docs/media/paint_results.jpg" width="700" alt="Paint Studio results: remove a cowboy, fill a barrel, extend to 2.39"></p>
+<p align="center"><em>Paint Studio, real FLUX 3 Klein results: remove, fill (a barrel), extend 1.9:1 &rarr; 2.39:1. Pixels outside the area never change.</em></p>
 
 ### The App, step by step
 
@@ -46,20 +70,31 @@ Built for Comfy Org's *Open Source Higgsfield* challenge (#OpenSourceHiggsfield)
 
 <p align="center"><img src="docs/media/exports.jpg" width="900" alt="Exports: Avid EDL, Premiere XML, FCPXML, OTIO, Layer Pack with ProRes 4444 and alpha, depth EXR, camera, AE/Nuke/Blender builders, GLB"></p>
 
-## The five steps
+## The seven steps
 
-The App has one step bar. Every step works on every shot in the scene.
+The App has one step bar, in production order. Every step works on every shot in the scene; with a script, every step has a scene switcher.
 
-1. **Set.** Block the scene in 3D: cast, set, light, cameras and timing. Add several camera setups to cover the scene.
-2. **Frame.** Paint the first frame of each shot from its clay render with FLUX 3 Klein (default) or Krea 2 + stage depth.
-3. **Motion.** Animate each shot with LTX-2.5 Layout-to-Render, with sound. The video follows the staged blocking and camera. LTX is the default; MiniMax H3 is an optional second engine in the same list (richer motion and its own sound, looser blocking, slower), with first + last frame, reference images and the clay as a motion reference.
-4. **Review.** Scrub clay, frame, draft and final for each shot on the Ladder, with a wipe/fade compare.
-5. **Deliver.** Export a Layer Pack for VFX, assemble the cut into one video, or export the edit to your NLE.
+1. **Script.** Optional. Import a screenplay; browse it scene by scene (outline, breakdown, page, director's notes). Each scene keeps its own stage, shots and cut. No writing tools: it is your script.
+2. **Cast & Locations.** Characters, props and locations from the breakdown (or the stage), each with a reference picture (upload or generate). They become the image model's references.
+3. **Set.** Block the scene in 3D: cast, set, light, cameras and timing. Add several camera setups to cover the scene.
+4. **Frame.** Paint the first frame of each shot from its clay render with FLUX 3 Klein (default) or Krea 2 + stage depth.
+5. **Motion.** Animate each shot with LTX-2.5 Layout-to-Render, with sound. The video follows the staged blocking and camera. LTX is the default; MiniMax H3 is an optional second engine in the same list (richer motion and its own sound, looser blocking, slower), with first + last frame, reference images and the clay as a motion reference.
+6. **Review.** Scrub clay, frame, draft and final for each shot on the Ladder, with a wipe/fade compare.
+7. **Deliver.** Export a Layer Pack for VFX, assemble the cut into one video, or export the edit to your NLE.
 
 ComfyUI's cache means each Run only does the new work.
 
 ## Features
 
+- **Script import.** Fountain, Final Draft, PDF or plain text: scenes, outlines, a breakdown sheet per scene, director's notes, a scene switcher in every step, scene numbers in the cut and NLE export.
+- **Cast & Locations.** Reference sheets per character, prop and location, generated with FLUX 3 Klein or uploaded; they flow into the Frame step's references by name.
+- **Pose in 3D and Pose Studio.** Click a body part to turn it, drag hands and feet (IK), or use a slider for every joint and finger knuckle; a pose gallery; interactions between people, animals and objects (look at, talk, shake hands, hug, hold hands, point, pet, lead by the reins).
+- **Motion capture.** Capture from video or act it out on the webcam: SAM 3D Body (ComfyUI core) retargets body, hands and fingers onto the clay actor, with the path and the jumps.
+- **Video → Stage.** A clip becomes a 3D scene: location mesh, tracked camera, set pieces and the performer on the rebuilt floor, dressed from the vision model's description.
+- **Paint Studio.** Inpaint and outpaint the first frame with Soundstage's own Generative Fill nodes (`SoundstageFill`, crop and stitch): fill, remove, replace with a reference, extend to any aspect.
+- **Camera rigs.** Real camera supports with their physics, deterministic per frame, so the clay, the frame and the video all see the same move.
+- **Dailies and lined script.** Setups and takes as an Avid-style bin with circled takes; a ScriptSync-style lined script with coverage lines and thumbnails.
+- **Tool dock.** Every Set feature has a labelled icon (Build with AI, Add object, Person, Interact, Capture motion, Video → Stage, Photo → 3D, Camera, Set & weather, Lighting, Phone camera).
 - **Multi-shot through every step.** One scene, several camera setups. Frame, Motion, Review and Deliver all run per shot.
 - **3D stage.** Add objects by name ("cowboy on a horse", "police car"). Riders sit astride horses, bikes and motorcycles. Sets include a plaza, a night street, interiors, a studio, forest, desert, beach and a water tank, with rain, snow, fog, smoke, dust and sparks. GLB import and export.
 - **Rigged CC0 models.** A rigged horse (idle, walk, gallop) and three cars (hatchback, police car, sports car) by Quaternius, CC0.
