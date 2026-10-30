@@ -2982,6 +2982,7 @@ export class Stage {
     }
     // Measurement aids are for the viewport only.
     if (!forCapture) this._measureOverlay(cam, this.measure !== false);
+    if (this.poser?.active && this._ghost) this._ghost.visible = false;   // posing: the scale figure would sit beside them
     else { if (this._grid) this._grid.visible = false; if (this._ghost) this._ghost.visible = false; }
     // With a backdrop plate the photo is the ground: the floor becomes a shadow catcher in Color, and is
     // hidden behind the clay while blocking in the viewport (the clay/depth captures keep the real floor).
