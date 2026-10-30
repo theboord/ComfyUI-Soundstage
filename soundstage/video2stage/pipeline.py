@@ -177,9 +177,20 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
             with open(os.path.join(folder_paths.get_output_directory(), info["file"])) as f:
                 take = _json.load(f)
             xf = scene["video2stage"]["xform"]
-            placed = performer.place(take, poses, times, np.array(xf["A"]), np.array(xf["b"]), K, (w, h), clip["fps"])
+            cam_poses = poses
+            if performer.camera_drifted(scene, breakdown):
+                # Mono tracking on a near-static shot drifts when the subject walks at the lens (the camera "rises" and
+                # backs off). Lock the camera to its first pose for the shot and for placing the performer.
+                keys = scene["shots"][0]["camera_keys"]
+                scene["shots"][0]["camera_keys"] = [keys[0]]
+                cam_poses = [poses[0]] * len(poses)
+                notes.append("camera: the track drifted on a near-static shot (moving subject); locked to the first frame")
+            placed = performer.place(take, cam_poses, times, np.array(xf["A"]), np.array(xf["b"]), K, (w, h), clip["fps"])
             if placed:
                 aid = performer.attach(scene, info["file"], take, placed)
+                dropped = performer.drop_background_people(scene, aid)
+                if dropped:
+                    notes.append(f"performer: left out {dropped} small background figure(s) the depth could not place")
                 cut = performer.cutout(take, scene["video2stage"]["metres_per_unit"])
                 bd = next((a for a in scene["actors"] if a.get("id") == "v2s_backdrop"), None)
                 if cut and bd and min(times) < 0.25:   # the set mesh is the first frame's
