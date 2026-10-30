@@ -48,7 +48,7 @@ const v = data.widgets || {};
 const stageNode = g.add(new Node(9045, "SoundstageStage", "stage"));
 stageNode.properties = JSON.parse(JSON.stringify(data.props || {}));
 g.add(new Node(9056, "KSampler", "Look still (Krea 2, depth-steered)", [W("seed", v.seed ?? 205204803), W("denoise", v.denoise ?? 0.85)]));
-g.add(new Node(9081, "SoundstageEditImage", "Still model (any)", [W("model", v.still_model || data.stillModels?.[1] || "", { values: data.stillModels || [] }), W("seed", 0), W("ref_files", "")]));
+g.add(new Node(9081, "SoundstageEditImage", "Still model (any)", [W("model", v.still_model || data.stillModels?.[1] || "", { values: data.stillModels || [] }), W("seed", 0), W("lora", "None", { values: ["None", "your_character.safetensors", "your_house_style.safetensors"] }), W("lora_strength", 1), W("ref_files", "")]));
 g.add(new Node(9082, "ComfySwitchNode", "Still model · use picker", [W("switch", false)]));
 g.add(new Node(9083, "SoundstageGenerateVideo", "Video model (any)", [W("model", data.videoModels?.[0] || "", { values: data.videoModels || [] }), W("seed", 0)]));
 g.add(new Node(9084, "ComfySwitchNode", "Video model · use picker", [W("switch", false)]));

@@ -74,6 +74,13 @@ const CSS = `
 .ss-ladderview > .ss-shotrow { margin:0 0 8px; }
 .ss-pipeview .two { display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:start; }
 @media (max-width: 640px) { .ss-pipeview .two { grid-template-columns:1fr; } }
+.ss-pipeview .ss-studio { display:grid; grid-template-columns:minmax(260px, 340px) minmax(0, 1fr); gap:12px; align-items:start; }
+.ss-pipeview .ss-studio-side { display:flex; flex-direction:column; gap:10px; min-width:0; position:sticky; top:8px; max-height:calc(100vh - 40px); overflow:auto; }
+.ss-pipeview .ss-studio-main { display:flex; flex-direction:column; gap:10px; min-width:0; }
+.ss-pipeview .ss-studio-side details > summary { cursor:pointer; font-weight:600; list-style:none; }
+.ss-pipeview .ss-editbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.ss-pipeview .ss-edithost:empty { display:none; }
+@media (max-width: 860px) { .ss-pipeview .ss-studio { grid-template-columns:1fr; } .ss-pipeview .ss-studio-side { position:static; max-height:none; } }
 `;
 
 const h = (tag, attrs = {}, ...kids) => {
@@ -252,29 +259,46 @@ export class Pipeline {
       this.touched[this.ctx.stage.activeShot().id] = f.useTouch.checked;
       this.set(9086, "switch", f.useTouch.checked);
     } } });
+    // LoRA for the image model (FLUX 3 Klein / Krea 2): a character, product or house style.
+    f.lora = h("select", { on: { change: () => this.set(9081, "lora", f.lora.value) } });
+    f.loraStrength = h("input", { type: "range", min: "0", max: "1.5", step: "0.05", value: "1",
+      on: { input: () => { this.set(9081, "lora_strength", +f.loraStrength.value); f.loraOut.textContent = (+f.loraStrength.value).toFixed(2); } } });
+    f.loraOut = h("span", { class: "status" }, "1.00");
+    f.refsCard = h("div", { class: "card" });
+    f.editHost = h("div", { class: "ss-edithost" });
+    f.editBtn = h("button", { type: "button", class: "go", title: "Inpaint (paint a mask, describe the change) or outpaint (drag the box past the edge) right here",
+      on: { click: () => this._openEditor() } }, "Edit this frame: inpaint / outpaint");
+    f.closeEdit = h("button", { type: "button", class: "ghost", hidden: "", on: { click: () => this._closeEditor() } }, "Close editor");
     v.append(
       h("h3", {}, "② Frame: paint the first frame from your clay"),
-      h("p", { class: "lede" }, "The image model keeps your blocking (layout, camera, who stands where) and adds the photography. Generate a few, pick one, and the video starts from it. Every shot gets its own frame: pick a shot below."),
+      h("p", { class: "lede" }, "Generate a few frames from your clay, pick one, touch it up right here (inpaint, outpaint), then animate it. Every shot gets its own frame: pick a shot below."),
       this._shotRow("frame"),
-      h("div", { class: "card" }, h("div", { class: "row" }, h("strong", {}, "Style"),
-        h("span", { class: "status" }, "One click sets film stock, lens, palette and grade for a genre or movement (★ = suggested).")),
-        f.styleHost = h("div")),
-      h("div", { class: "card" }, h("div", { class: "row" }, h("strong", {}, "Camera"),
-        h("span", { class: "status" }, "Body, lens, focal length and aperture: what the frame is shot on. Same as the Look tab.")),
-        f.gearHost = h("div")),
-      f.refsCard = h("div", { class: "card" }),
-      h("div", { class: "two" },
-        h("div", { class: "card" }, f.clayCap = h("div", { class: "status" }, "Your clay, frame 1"), f.clay),
-        h("div", { class: "card" },
-          h("label", { class: "f" }, "Image model", f.model),
-          h("label", { class: "f" }, h("span", { class: "row" }, "Follow the clay", f.followOut), f.follow),
-          h("label", { class: "f" }, "Describe the frame (shared with the Look tab)", f.desc),
-          h("div", { class: "row" }, h("span", { class: "status" }, "Variations"), f.countSeg, f.goBtn, f.allBtn)),
-      ),
-      f.status,
-      f.grid,
-      h("div", { class: "row" }, f.touch, h("label", { class: "row status" }, f.useTouch, "Use my touched-up frame"),
-        h("span", { style: "flex:1" }), this._next("③ Animate this frame", "motion")),
+      h("div", { class: "ss-studio" },
+        h("div", { class: "ss-studio-side" },
+          h("div", { class: "card" },
+            h("label", { class: "f" }, "Image model", f.model),
+            h("label", { class: "f" }, "Describe the frame (shared with the Look tab)", f.desc),
+            h("label", { class: "f" }, h("span", { class: "row" }, "Follow the clay", f.followOut), f.follow),
+            h("label", { class: "f" }, "LoRA (character, product, style)", f.lora),
+            h("label", { class: "f" }, h("span", { class: "row" }, "LoRA strength", f.loraOut), f.loraStrength),
+            h("div", { class: "row" }, h("span", { class: "status" }, "Variations"), f.countSeg),
+            h("div", { class: "row" }, f.goBtn, f.allBtn)),
+          f.refsCard,
+          h("details", { class: "card" }, h("summary", {}, "Style"),
+            h("span", { class: "status" }, "One click sets film stock, lens, palette and grade (★ = suggested)."), f.styleHost = h("div")),
+          h("details", { class: "card" }, h("summary", {}, "Camera"),
+            h("span", { class: "status" }, "Body, lens, focal length and aperture. Same as the Look tab."), f.gearHost = h("div")),
+          h("div", { class: "card" }, f.clayCap = h("div", { class: "status" }, "Your clay, frame 1"), f.clay)),
+        h("div", { class: "ss-studio-main" },
+          f.status,
+          f.hero = h("img", { alt: "The chosen frame for this shot", hidden: "",
+            style: "width:100%;aspect-ratio:16/9;object-fit:contain;background:#0f0d11;border-radius:14px;border:1px solid rgba(255,255,255,.08)" }),
+          f.grid,
+          h("div", { class: "card" },
+            h("div", { class: "ss-editbar" }, h("strong", {}, "Edit"), f.editBtn, f.closeEdit,
+              h("label", { class: "row status" }, f.useTouch, "Animate my edited frame")),
+            f.editHost))),
+      h("div", { class: "row" }, h("span", { style: "flex:1" }), this._next("③ Animate this frame", "motion")),
     );
     return v;
   }
@@ -358,6 +382,26 @@ export class Pipeline {
       f.refsStatus);
   }
 
+  /** The Canvas editor (inpaint, outpaint, masks, layers) mounted inside ② Frame, on the chosen frame. */
+  _openEditor() {
+    const f = this.f, sid = this.ctx.stage.activeShot().id;
+    const url = this.chosen?.[sid]?.url || (this.ctx.getRenders(sid) || {}).look || null;
+    if (!this.ctx.mountCanvas) { this.ctx.openCanvas(url); return; }
+    this.ctx.mountCanvas(f.editHost, url);
+    if (f.hero) f.hero.hidden = true;
+    f.closeEdit.hidden = false;
+    f.editBtn.hidden = true;
+    f.status.textContent = url ? "Your chosen frame is loaded. Mask brush + prompt = inpaint; drag the box past the edge = outpaint." : "Pick a frame first, or paint from scratch.";
+  }
+
+  _closeEditor() {
+    const f = this.f;
+    this.ctx.unmountCanvas?.();
+    f.closeEdit.hidden = true;
+    f.editBtn.hidden = false;
+    this._drawCandidates();
+  }
+
   _followLabel() {
     const d = +this.f.follow.value;
     return d >= 0.95 ? "free: new details, looser layout" : d >= 0.8 ? "balanced (recommended)" : "strict: stays very close to the clay";
@@ -389,6 +433,13 @@ export class Pipeline {
     }
     const usePicker = !!this.w(9082, "switch")?.value;
     f.model.value = usePicker ? (this.w(9081, "model")?.value || STILL_KREA) : STILL_KREA;
+    const loraW = this.w(9081, "lora");
+    if (loraW && !f.lora.options.length) {
+      const vals = loraW.options?.values || ["None"];
+      for (const v of (Array.isArray(vals) ? vals : ["None"])) f.lora.append(new Option(v === "None" ? "None" : String(v).replace(/\.safetensors$/, ""), v));
+    }
+    f.lora.disabled = !loraW;
+    if (loraW) { f.lora.value = loraW.value || "None"; f.loraStrength.value = String(this.w(9081, "lora_strength")?.value ?? 1); f.loraOut.textContent = (+f.loraStrength.value).toFixed(2); }
     const dn = this.w(9056, "denoise")?.value;
     if (dn != null) f.follow.value = String(dn);
     f.followOut.textContent = this._followLabel();
@@ -473,6 +524,8 @@ export class Pipeline {
     const sid = this.ctx.stage.activeShot().id;
     const list = this.candidates[sid] || [];
     const chosen = this.chosen?.[sid];
+    const heroSrc = chosen?.url || (this.ctx.getRenders(sid) || {}).look || "";
+    if (f.hero) { if (heroSrc && f.hero.getAttribute("src") !== heroSrc) f.hero.src = heroSrc; f.hero.hidden = !heroSrc || !f.editHost?.isConnected || !!f.editHost.firstChild; }
     f.grid.replaceChildren(...list.map((c) => {
       const isChosen = chosen && chosen.url === c.url;
       return h("div", { class: "cand", "data-chosen": String(!!isChosen), title: c.seed != null ? `seed ${c.seed}` : "",
