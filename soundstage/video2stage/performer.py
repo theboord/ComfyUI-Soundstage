@@ -197,9 +197,11 @@ def camera_drifted(scene: dict, breakdown: dict, max_rise: float = 0.8, max_trav
     keys = (scene.get("shots") or [{}])[0].get("camera_keys") or []
     if len(keys) < 2:
         return False
-    kind = ((breakdown.get("camera") or {}).get("type") or "").lower()
-    if kind and not any(w in kind for w in ("handheld", "static", "locked", "tripod", "fixed")):
-        return False   # a dolly, drone or car mount really moves
+    kinds = " ".join(((breakdown.get(k) or {}).get("type") or "") for k in ("camera", "camera_end")).lower()
+    if any(w in kinds for w in ("drone", "crane", "aerial", "jib", "helicopter")):
+        return False   # these really climb and travel
+    if any(w in kinds for w in ("dolly", "tracking", "car", "vehicle", "steadicam", "gimbal")):
+        max_travel = 8.0   # a moving camera may travel, but it does not climb metres
     ys = [k["position"][1] for k in keys]
     p0 = keys[0]["position"]
     travel = max(math.hypot(k["position"][0] - p0[0], k["position"][2] - p0[2]) for k in keys)
