@@ -76,6 +76,12 @@ export function buildHuman(kind, heightM, appearance, mesh) {
   N(new THREE.CylinderGeometry(0.045 * s, 0.05 * s, 0.1 * s, 12), skin, 0, 1.53 * s, 0);
   const headY = 1.67 * s;
   H(new THREE.SphereGeometry(0.105 * s, 20, 16), skin, 0, headY, 0.005 * s, 0.9, 1.08, 1);
+  // Directional cues, still anonymous (no eyes or mouth): nose, brow, chin and ears, so a head turn reads in
+  // the clay and the video model can follow which way someone is looking.
+  H(new THREE.ConeGeometry(0.018 * s, 0.045 * s, 10), skin, 0, headY - 0.012 * s, 0.103 * s).rotation.x = Math.PI / 2;
+  H(new THREE.BoxGeometry(0.15 * s, 0.018 * s, 0.03 * s), skin, 0, headY + 0.032 * s, 0.085 * s);
+  H(new THREE.SphereGeometry(0.05 * s, 14, 10), skin, 0, headY - 0.07 * s, 0.05 * s, 1.2, 0.8, 1);
+  for (const ex of [-1, 1]) H(new THREE.SphereGeometry(0.024 * s, 10, 8), skin, ex * 0.095 * s, headY - 0.005 * s, -0.005 * s, 0.45, 1, 0.8);
 
   // Hair / headwear.
   const hc = ap.hair_color;

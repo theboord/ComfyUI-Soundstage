@@ -938,7 +938,11 @@ export class Stage {
     }
     // Look at: the head and neck turn toward a target every frame (from look_at_frame on), within a natural range.
     for (const a of this.state.actors) {
-      if (!a.look_at || this.frame < (a.look_at_frame || 0)) continue;
+      if (!a.look_at || this.frame < (a.look_at_frame || 0) - 8) continue;
+      if (a.look_until != null && this.frame > a.look_until + 8) continue;
+      // Ease in over 8 frames from look_at_frame, and back out over 8 frames after look_until.
+      const ease = (x) => { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t); };
+      const w = ease((this.frame - (a.look_at_frame || 0) + 8) / 8) * (a.look_until != null ? ease((a.look_until + 8 - this.frame) / 8) : 1);
       const g = this.actorMeshes.get(a.id), t = this.actorMeshes.get(a.look_at);
       if (!g?.userData?.joints?.head || !t) continue;
       g.updateMatrixWorld(true);
@@ -953,9 +957,10 @@ export class Stage {
       const spine = Math.max(-40, Math.min(40, yaw - Math.max(-110, Math.min(110, yaw))));   // past 110 the chest turns too
       const rest = yaw - spine, neckY = rest * 0.3, headY = rest * 0.7;
       const cur = this.poseAt(a, this.frame) || {};
-      applyJoints(g, { head: [Math.max(-40, Math.min(40, pitch * 0.7)), Math.max(-80, Math.min(80, headY)), cur.head?.[2] || 0],
-        neck: [Math.max(-20, Math.min(20, pitch * 0.3)), Math.max(-35, Math.min(35, neckY)), cur.neck?.[2] || 0],
-        ...(spine ? { spine: [cur.spine?.[0] || 0, spine, cur.spine?.[2] || 0] } : {}) });
+      const mix = (base, v) => base + (v - base) * w;
+      applyJoints(g, { head: [mix(cur.head?.[0] || 0, Math.max(-40, Math.min(40, pitch * 0.7))), mix(cur.head?.[1] || 0, Math.max(-80, Math.min(80, headY))), cur.head?.[2] || 0],
+        neck: [mix(cur.neck?.[0] || 0, Math.max(-20, Math.min(20, pitch * 0.3))), mix(cur.neck?.[1] || 0, Math.max(-35, Math.min(35, neckY))), cur.neck?.[2] || 0],
+        ...(spine ? { spine: [cur.spine?.[0] || 0, mix(cur.spine?.[1] || 0, spine), cur.spine?.[2] || 0] } : {}) });
     }
     if (this.weather) {
       const cam = this._cameraAt(this.frame);
@@ -2316,11 +2321,17 @@ export class Stage {
     const name = (x) => x.name || LIBRARY[x.kind]?.label || x.kind;
     const fps = this.state.shot?.fps || 24, when = this.frame > 0 ? ` from ${(this.frame / fps).toFixed(1)} s` : "";
     if (action === "look_at") {
-      a.look_at = b.id; a.look_at_frame = this.frame;
+      a.look_at = b.id; a.look_at_frame = this.frame; delete a.look_until;
       this.setFrame(this.frame); this.onChange(this.toJSON());
       return `${name(a)} looks at ${name(b)}${when}.`;
     }
-    if (action === "stop_look") { delete a.look_at; delete a.look_at_frame; this._buildSet(); this.setFrame(this.frame); this.onChange(this.toJSON()); return `${name(a)} stops looking.`; }
+    if (action === "stop_look") {
+      // From the playhead on they look away again (eased); before it, the look stays.
+      if (a.look_at && this.frame > (a.look_at_frame || 0)) a.look_until = this.frame;
+      else { delete a.look_at; delete a.look_at_frame; delete a.look_until; this._buildSet(); }
+      this.setFrame(this.frame); this.onChange(this.toJSON());
+      return `${name(a)} looks away at ${(this.frame / fps).toFixed(1)} s.`;
+    }
     const pa = this._actorPosAt(a, this.frame), pb = this._actorPosAt(b, this.frame);
     const dir = new THREE.Vector2(pb[0] - pa[0], pb[2] - pa[2]);
     if (dir.length() < 1e-3) dir.set(0, 1);
