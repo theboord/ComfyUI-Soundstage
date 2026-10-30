@@ -102,11 +102,11 @@ function maskNodes(g, img, alphaMask, bg) {
 }
 
 /** Queue a graph and wait for it in /history (robust to missed websocket events). Returns {outputs, seconds, prompt_id}. */
-export async function runGraph(graph, { api = defaultApi, timeoutMs = 900000, onStatus = () => {} } = {}) {
+export async function runGraph(graph, { api = defaultApi, timeoutMs = 900000, onStatus = () => {}, front = false } = {}) {
   if (!api) throw new Error("maker: call useApi(api) first or pass {api}");
   const t0 = Date.now();
   const q = await json(api, "/prompt", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt: graph, client_id: api.clientId }) });
+    body: JSON.stringify({ prompt: graph, client_id: api.clientId, front }) });
   if (!q.prompt_id) throw new Error(q.error?.message || "the server refused the job");
   const pid = q.prompt_id;
   let lastQueueCheck = Date.now();
