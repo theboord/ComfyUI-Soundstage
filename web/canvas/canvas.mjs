@@ -286,7 +286,8 @@ const TOOLS = [
 const KEYS = Object.fromEntries(TOOLS.filter((t) => t !== "|").map((t) => [t[3].toLowerCase(), t[0]]));
 const BRUSH_TOOLS = ["mask", "eraser", "paint"];
 const ASPECT_PRESETS = [["16:9", 16 / 9], ["2.39", 2.39], ["1.85", 1.85], ["9:16", 9 / 16], ["4:3", 4 / 3]];
-const FILL_TUNE = { grow: 8, feather: 24, steps: 0, megapixels: 1.0 };
+const FILL_TUNE = { grow: 8, feather: 24, steps: 0, megapixels: 1.0, fit: true };
+const useRefEarly = (f, mode) => mode === "fill" && f.refs?.size > 0;
 
 const HISTORY_LIMIT = 40;
 const HISTORY_BYTES = 360 * 1024 * 1024;
@@ -1568,9 +1569,9 @@ export class CanvasPanel {
       if (this.brush.hardness < 0.95) { ctx.setLineDash([3 / s, 3 / s]); ctx.beginPath(); ctx.arc(hx, hy, r * Math.max(0.05, this.brush.hardness), 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
     }
     const a = this.active;
-    this.hud.replaceChildren(el("span", { class: "ss-cv-chip" }, `${Math.round(s * 100)}%`),
+    this.hud.replaceChildren(...[el("span", { class: "ss-cv-chip" }, `${Math.round(s * 100)}%`),
       el("span", { class: "ss-cv-chip" }, `${R.w}×${R.h}`), a ? el("span", { class: "ss-cv-chip" }, a.name) : null,
-      pr ? el("span", { class: "ss-cv-chip hot" }, `Variation ${this.fill.pick + 1} of ${this.fill.results.length}: Keep it, or pick another`) : null);
+      pr ? el("span", { class: "ss-cv-chip hot" }, `Variation ${this.fill.pick + 1} of ${this.fill.results.length}: Keep it, or pick another`) : null].filter(Boolean));
   }
 
   /** Tint of an alpha canvas (masks red, selection yellow), cached per canvas until the next edit. */
@@ -1720,6 +1721,23 @@ export class CanvasPanel {
     const maskC = newCanvas(W, H), mc = maskC.getContext("2d");
     mc.fillStyle = "#000"; mc.fillRect(0, 0, W, H);
     if (mode !== "extend" || hasArea) mc.drawImage(area, 0, 0);
+    // Adding something (Fill / a reference): the model only paints inside the area, so a quick stroke would clip the
+    // object (a car with no roof). Fill the stroke's whole box instead, wider and with headroom above: objects stand
+    // on what you painted. Remove keeps the exact area.
+    if ((mode === "fill" || useRefEarly(f, mode)) && f.tune.fit !== false) {
+      const md = mc.getImageData(0, 0, W, H).data;
+      let x0 = W, y0 = H, x1 = -1, y1 = -1;
+      for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) if (md[(y * W + x) * 4] > 127) {
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+      if (x1 >= 0) {
+        const bw = x1 - x0 + 1, bh = y1 - y0 + 1, size = Math.max(bw, bh);
+        const gx = Math.round(Math.max(bw * 0.15, size * 0.08)), up = Math.round(Math.max(bh * 0.9, size * 0.35)), down = Math.round(bh * 0.15);
+        const fx = Math.max(0, x0 - gx), fy = Math.max(0, y0 - up), fw = Math.min(W, x1 + gx) - fx, fh = Math.min(H, y1 + down) - fy;
+        mc.fillStyle = "#fff";
+        mc.beginPath(); mc.roundRect ? mc.roundRect(fx, fy, fw, fh, Math.min(fw, fh) * 0.12) : mc.rect(fx, fy, fw, fh); mc.fill();
+      }
+    }
     if (mode === "extend") {   // the transparent canvas is the hole; mark it white too
       const cd = ctx2d(comp).getImageData(0, 0, W, H), md = mc.getImageData(0, 0, W, H);
       for (let i = 0; i < cd.data.length; i += 4) if (cd.data[i + 3] <= 8) md.data[i] = md.data[i + 1] = md.data[i + 2] = 255;
