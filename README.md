@@ -75,7 +75,7 @@ Every character, location, wardrobe piece and prop from the breakdown gets a ref
 
 <table>
 <tr>
-<td width="50%"><img src="docs/media/pose_3d.jpg" alt="Pose in 3D: a rotate ring on the head, dots on every joint"></td>
+<td width="50%"><img src="docs/media/pose_3d.gif" alt="Pose in 3D: click the head, shoulder and elbow and turn them with the ring, curl every finger knuckle into a point, drag the yellow hand and foot dots (IK), the same values in the Pose sliders, two keys playing as motion"></td>
 <td width="50%"><img src="docs/media/video_to_stage.jpg" alt="A source clip next to the rebuilt 3D stage with a mocap clay actor"></td>
 </tr>
 <tr>
