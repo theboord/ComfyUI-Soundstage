@@ -25,8 +25,8 @@ Built for Comfy Org's *Open Source Higgsfield* challenge (#OpenSourceHiggsfield)
 <p align="center"><img src="docs/media/genres.gif" width="900" alt="Left the clay stage, right the final: a man under a streetlamp in the rain as a car pulls in, then a hiker with a flashlight in a haunted forest"></p>
 <p align="center"><em>Any genre: left the 3D stage, right the final. Film noir in the rain, then horror in the woods.</em></p>
 
-<p align="center"><img src="docs/media/mocap.gif" width="900" alt="Left: a video of a person dancing, climbing a wall, doing a front flip, walking. Right: the Soundstage clay actor doing the same moves"></p>
-<p align="center"><em>Motion capture: any clip, or you acting it out on the webcam, drives a clay actor (body, hands, fingers, the path and the jumps). SAM 3D Body runs in ComfyUI; the clay then directs LTX. Clips: Pexels, free licence.</em></p>
+<p align="center"><img src="docs/media/mocap.gif" width="720" alt="Three source clips (a street dance, a walk, kicks), each playing beside a person in an existing Soundstage set doing the same moves: the dancer in her Video to Stage set, a detective on the rainy noir street, a gunslinger on the western main street"></p>
+<p align="center"><em>Motion capture into the set you already have: open your set, click a person, <b>Capture motion</b> &rarr; <b>Capture from video</b> (or <b>Act it out</b> on your webcam). The take plays on that person, right where they stand in your blocking, in your set's light and camera: body, hands, fingers and path, for the whole clip (the shot stretches to fit). SAM 3D Body runs in ComfyUI; the clay then directs LTX. Clips: Pexels, free licence.</em></p>
 
 ## Script to screen, step by step
 
