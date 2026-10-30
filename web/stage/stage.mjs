@@ -3098,11 +3098,9 @@ export class Stage {
    * and put the viewport back the way it was.
    */
   renderFrameTo(mode, frame) {
-    if (!this._snap) {
-      this._snap = document.createElement("canvas");
-      this._snap.width = this.fw;
-      this._snap.height = this.fh;
-    }
+    if (!this._snap) this._snap = document.createElement("canvas");
+    // Follow the shot's aspect: a snapshot canvas kept at the first aspect crops every later render.
+    if (this._snap.width !== this.fw || this._snap.height !== this.fh) { this._snap.width = this.fw; this._snap.height = this.fh; }
     const prev = new THREE.Vector2();
     this.renderer.getSize(prev);
     const keep = this.frame;

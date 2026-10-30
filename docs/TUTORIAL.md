@@ -412,7 +412,7 @@ Keyboard: Cmd/Ctrl+Z / Shift+Cmd/Ctrl+Z undo and redo, Cmd/Ctrl+A select all, Cm
 | **Starts from your frame** | The frame this shot will animate. |
 | **Video model** | **LTX-2.5 Layout-to-Render (local, follows your clay; recommended)**. Other installed image-to-video models are listed after it, and **MiniMax H3** if you installed it (see below). |
 | **Motion freedom** | How freely the video moves away from the clay: **exact** (copies the clay motion), **natural (recommended)** (real weight, same blocking), **loose** (more invention, framing may drift). Default 0.5. |
-| **Quality** | **Draft**, **Final** (default) or **Final HQ**. See the table below. |
+| **Quality** | **Draft** (the default while you build), **Final** or **Final HQ**. It sets the quality of what you render next, so switch to **Final** before your keeper render. See the table below. |
 | **Advanced: steps, CFG, sampler** | CFG, sampler and a negative prompt. LTX-2.5 here is distilled: CFG 1 is its tuned setting. |
 | **Sound (generated with the final)** | The sound effects ("hooves galloping on packed dirt, wind…"). Left empty, it is filled in from what's on the stage. |
 | **Music mood (optional)** | With **Music ideas** chips: tense western strings, pulsing synth chase, eerie horror drones, and more. |
@@ -427,8 +427,8 @@ Keyboard: Cmd/Ctrl+Z / Shift+Cmd/Ctrl+Z undo and redo, Cmd/Ctrl+A select all, Cm
 
 | Tier | Steps | Use it for |
 |---|---|---|
-| **Draft** | 8 + 3 | A quick look at the motion: is the blocking right, does the car go the right way? Faces are readable. |
-| **Final** | 12 + 6 | The default. Clean fast motion, faces and hands. |
+| **Draft** | 8 + 3 | The default. A quick look at the motion: is the blocking right, does the car go the right way? Faces are readable. |
+| **Final** | 12 + 6 | Clean fast motion, faces and hands. Your keeper renders. |
 | **Final HQ** | 18 + 12 | Hero shots. About twice as long as Final. |
 
 **Lip sync: type the line.** A line pasted over a mouth that never heard it doesn't sync. So when you type or pick a **Dialogue line**, Soundstage turns on **Let the sound/dialogue drive the video** for you, and the final is rendered *from* the line (LTX audio-driven): the status line says "Lip sync on: the final is driven by the line, so the mouth follows the words." You can still untick it on purpose.
@@ -1019,7 +1019,7 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 
 **Motion and sound**
 
-20. **Draft to check the motion, then Final.** A **Draft** (8 + 3 steps) tells you whether the blocking, the direction of travel and the camera are right. Only then spend the time on **Final**, and keep **Final HQ** for hero shots.
+20. **Draft to check the motion, then Final.** A **Draft** (8 + 3 steps) tells you whether the blocking, the direction of travel and the camera are right. Quality starts on Draft; once it looks right, click **Final** and render again, and keep **Final HQ** for hero shots.
 21. **Type the dialogue line to get lip sync.** A line typed into **Dialogue line** turns on **Let the sound/dialogue drive the video**, so the mouth is animated *from* the words. A voice added afterwards never syncs.
 22. **Lower Motion freedom for precise action.** Car chases and stunts follow the clay more exactly near **exact**; dialogue and walking look more natural around the default **natural**.
 23. **Describe the sound you want.** **Sound (generated with the final)** is filled from the stage if you leave it empty, but "hooves on packed dirt, distant thunder" beats a guess.
