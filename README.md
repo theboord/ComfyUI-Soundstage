@@ -13,7 +13,7 @@ Built for Comfy Org's *Open Source Higgsfield* challenge (#OpenSourceHiggsfield)
 
 <table>
 <tr>
-<td width="50%"><img src="docs/media/in_the_car.gif" alt="Left the clay stage, right the final: three people in a car"><br><sub><b>In the car, before and after:</b> left the 3D stage, right the final (driver profile, over the shoulders). One click adds every interior angle.</sub></td>
+<td width="50%"><img src="docs/media/car_chase.gif" alt="Left the clay stage, right the final: a police car chasing a red sports car on a wet night street"><br><sub><b>Car chase, before and after:</b> left the 3D stage, right the final. Same cars, same positions, same camera: a crane wide, then a tracking shot.</sub></td>
 <td width="50%"><img src="docs/media/western.gif" alt="Riders galloping off at sunset"><br><sub><b>Western:</b> riders run to rigged horses, vault on and gallop off. Three camera setups, joined into one cut.</sub></td>
 </tr>
 </table>
