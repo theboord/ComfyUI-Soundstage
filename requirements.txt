@@ -1,3 +1,5 @@
 # ComfyUI already provides torch, numpy, Pillow, av, aiohttp, transformers, huggingface_hub.
 soundfile>=0.12        # audio department (WAV/FLAC read/write)
 pyaaf2>=1.7            # optional: Avid AAF export from the Cut tab (EDL/XML/OTIO need nothing)
+opencv-python-headless>=4.8   # Video → Stage / Photo → 3D image ops (skip if ComfyUI already has an OpenCV)
+scipy>=1.10            # mocap smoothing, Video → Stage geometry
