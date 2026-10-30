@@ -43,7 +43,7 @@ The App has one step bar. Every step works on every shot in the scene.
 
 1. **Set.** Block the scene in 3D: cast, set, light, cameras and timing. Add several camera setups to cover the scene.
 2. **Frame.** Paint the first frame of each shot from its clay render with FLUX 3 Klein (default) or Krea 2 + stage depth.
-3. **Motion.** Animate each shot with LTX-2.5 Layout-to-Render, with sound. The video follows the staged blocking and camera. LTX is the default; MiniMax H3 is an optional second engine in the same list (richer motion and its own sound, looser blocking, slower).
+3. **Motion.** Animate each shot with LTX-2.5 Layout-to-Render, with sound. The video follows the staged blocking and camera. LTX is the default; MiniMax H3 is an optional second engine in the same list (richer motion and its own sound, looser blocking, slower), with first + last frame, reference images and the clay as a motion reference.
 4. **Review.** Scrub clay, frame, draft and final for each shot on the Ladder, with a wipe/fade compare.
 5. **Deliver.** Export a Layer Pack for VFX, assemble the cut into one video, or export the edit to your NLE.
 

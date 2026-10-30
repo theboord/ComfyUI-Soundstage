@@ -166,10 +166,11 @@ WIRED = [
               {"role": "ref_unet", "folder": "diffusion_models",
                "any": ["minimax_h3_ref2va_pruned_int8_convrot.safetensors", "minimax_h3_ref2va_bf16.safetensors"],
                "classes": ["MiniMaxH3ReferenceToVideo"]}],
-          notes="Optional second engine (LTX-2.5 stays the default). Image → video from the look still with "
-                "H3's own sound in the same pass; follows the clay blocking only loosely. motion_ref = clay previz "
-                "as <Video 1> (ref2va model, 20 steps, slow). Text encoder on CPU (32B). ≤362 frames, 17k+5 grid, "
-                "trimmed back to the shot length. 8-step fl2v turbo LoRA used when installed.",
+          notes="Optional second engine (LTX-2.5 stays the default). Video + its own sound in one pass; follows "
+                "the clay blocking only loosely. first / last frame (either or both) -> fl2va (8-step turbo LoRA "
+                "when installed). Reference images (ref_1..3 + ref_files, up to 9 pictures with the frames) and/or "
+                "motion_ref = clay previz as <Video 1> -> ref2va, 20 steps, slow. Text encoder on CPU (32B). "
+                "≤362 frames, 17k+5 grid, trimmed back to the shot length.",
           source_ids=["open.minimax_h3_local"]),
     local("open.wan_animate_2", "Wan Animate 2 distilled", "Alibaba Wan-AI", ["generate_video"], "wan_animate2",
           ["UNETLoader", "CLIPLoader", "VAELoader", "CLIPVisionLoader", "CLIPVisionEncode", "CLIPTextEncode",

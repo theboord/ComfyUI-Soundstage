@@ -145,3 +145,65 @@ def test_prompt_formats():
     # an already structured prompt passes through untouched
     own = "subject_definitions:\n<Subject 1> ..."
     assert A.h3_prompt({**p, "prompt": own}, True) == own
+
+
+# ------------------------------------------------------------------ first + last frame, references
+
+@pytest.mark.skipif(not OBJECT_INFO, reason="no object_info snapshot")
+def test_first_and_last_frame_use_fl2va():
+    g, _ = build(first=link("img"), last=link("img_last"))
+    assert check_graph(g) == []
+    (i2v,) = of(g, "MiniMaxH3ImageToVideo")
+    assert "first_frame" in i2v.inputs and "last_frame" in i2v.inputs
+    assert "fl2va" in of(g, "UNETLoader")[0].inputs["unet_name"]
+    assert i2v.inputs["prompt"].startswith("How the reference pictures align with the target video — Picture 1")
+    assert "aligns with the 4.04-second mark" in i2v.inputs["prompt"]  # 97 frames / 24 fps
+
+
+@pytest.mark.skipif(not OBJECT_INFO, reason="no object_info snapshot")
+def test_last_frame_only_is_l2va():
+    g, _ = build(last=link("img_last"))
+    assert check_graph(g) == []
+    (i2v,) = of(g, "MiniMaxH3ImageToVideo")
+    assert "last_frame" in i2v.inputs and "first_frame" not in i2v.inputs
+    assert "<Picture 1> (from [Shot 1]) aligns with the 4.04-second mark" in i2v.inputs["prompt"]
+
+
+@pytest.mark.skipif(not OBJECT_INFO, reason="no object_info snapshot")
+def test_references_use_ref2va_with_frames_first():
+    g, _ = build(first=link("img"), last=link("img_last"), refs=[link("ref1"), link("ref2")])
+    assert check_graph(g) == []
+    assert not of(g, "MiniMaxH3ImageToVideo")
+    (ref,) = of(g, "MiniMaxH3ReferenceToVideo")
+    pics = sorted(k for k in ref.inputs if k.startswith("ref_images."))
+    assert pics == [f"ref_images.ref_image_{i}" for i in range(4)]
+    assert ref.inputs["ref_images.ref_image_2"] == link("ref1")  # references keep their own framing
+    assert "ref_videos.ref_video_0" not in ref.inputs
+    text = ref.inputs["prompt"]
+    assert text.startswith("subject_definitions:") and "[keyframe completion + reference generation]" in text
+    assert "opens exactly on <Picture 1>" in text and "ends exactly on <Picture 2>" in text
+    assert "<Picture 3>" in text and "<Picture 4>" in text
+
+
+@pytest.mark.skipif(not OBJECT_INFO, reason="no object_info snapshot")
+def test_references_plus_clay():
+    g, _ = build(first=link("img"), refs=[link("ref1")], control=link("ctrl"), params={"motion_ref": A.H3_CLAY_REF})
+    assert check_graph(g) == []
+    (ref,) = of(g, "MiniMaxH3ReferenceToVideo")
+    assert "ref_videos.ref_video_0" in ref.inputs and "ref_images.ref_image_1" in ref.inputs
+    assert "<Video 1>" in ref.inputs["prompt"]
+
+
+def test_too_many_pictures_is_a_friendly_error():
+    with pytest.raises(A.RouterError, match="at most 9 pictures"):
+        build(first=link("img"), last=link("img_last"), refs=[link("ref1")] * 8)
+
+
+def test_app_feeds_last_frame_and_references_by_file_name():
+    src = open(os.path.join(ROOT, "web", "pipeline", "pipeline.mjs")).read()
+    assert 'this.set(9083, "last_file", loadName(c?.last))' in src
+    assert 'this.set(9083, "ref_files"' in src
+    # choosing a new first frame keeps the shot's last frame and references
+    assert "this.chosen[sid] = { ...this.chosen[sid], url: c.url" in src
+    node = open(os.path.join(ROOT, "soundstage", "nodes_router.py")).read()
+    assert '"last_file"' in node and '"ref_files"' in node and 'g.node("LoadImage", image=' in node

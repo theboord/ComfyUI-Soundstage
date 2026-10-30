@@ -18,6 +18,14 @@ const H3_KEY = "MiniMax H3 · local";
 const H3_LABEL = "MiniMax H3 (local, looser blocking, rich motion, own sound; ~20+ min)";
 const H3_CLAY_REF = "clay previz as <Video 1>";
 const isH3 = (v) => typeof v === "string" && v.startsWith(H3_KEY);
+const H3_MAX_REFS = 7;   // H3 takes 9 pictures: first + last frame + up to 7 references
+/** A saved image ({filename, subfolder, type} or {file: ...}) as LoadImage's annotated name. */
+const loadName = (x) => {
+  const f = x?.file || x;
+  if (!f) return "";
+  if (typeof f === "string") return f;
+  return f.filename ? `${f.subfolder ? f.subfolder + "/" : ""}${f.filename} [${f.type || "input"}]` : "";
+};
 
 const CSS = `
 .ss-pipe { display:flex; gap:6px; align-items:stretch; margin:0 0 8px; flex-wrap:wrap; }
@@ -424,7 +432,12 @@ export class Pipeline {
     m.h3Ref = h("input", { type: "checkbox", on: { change: () => this._applyVideo() } });
     m.h3Box = h("div", { class: "status", hidden: "" },
       "MiniMax H3 paints rich motion and its own sound in one pass, but follows your clay blocking only loosely, and a final takes about 20+ min. Drafts still preview with LTX. Your sound, music and line below go into H3's prompt.",
-      h("label", { class: "row", style: "margin-top:6px" }, m.h3Ref, "Use the clay as a motion reference (<Video 1>; slower, closer blocking)"));
+      h("label", { class: "row", style: "margin-top:6px" }, m.h3Ref, "Use the clay as a motion reference (<Video 1>; slower, closer blocking)"),
+      m.h3Last = h("div", { style: "margin-top:6px" }),
+      h("div", { style: "margin-top:6px" }, `Reference images for this shot (character or prop sheets, up to ${H3_MAX_REFS}). H3 sees them as <Picture 2>, <Picture 3>…`),
+      m.h3Refs = h("div", { class: "row", style: "flex-wrap:wrap;gap:6px;margin-top:4px" }),
+      h("label", { class: "row", style: "margin-top:4px" }, "Add images",
+        m.h3RefIn = h("input", { type: "file", accept: "image/*", multiple: "", on: { change: (e) => this._addRefs(e.target.files) } })));
     m.quality = "Draft";
     m.qSeg = h("span", { class: "seg row" }, ...["Draft", "Final HQ"].map((q) => h("button", { type: "button", "aria-pressed": String(q === "Draft"),
       title: q === "Draft" ? "8 + 3 distilled steps: fast previews" : "18 + 12 steps on the same curve: finer detail and steadier motion, about 2x slower",
@@ -497,6 +510,7 @@ export class Pipeline {
     if (!m.engine.value) m.engine.value = VIDEO_L2R;   // a saved picker model that isn't installed here
     m.h3Ref.checked = this.w(9083, "model.motion_ref")?.value === H3_CLAY_REF;
     this._showEngine();
+    this._drawRefs();
     const fr = this.w(9096, "motion_freedom")?.value;
     if (fr != null) m.freedom.value = String(fr);
     m.freeOut.textContent = this._freeLabel();
@@ -528,6 +542,44 @@ export class Pipeline {
     this.set(9096, "motion_freedom", +m.freedom.value);
     this.set(9096, "quality", m.quality === "Draft" ? "Draft" : "Final HQ");
   }
+
+  /** This shot's H3 reference images: thumbnails with a remove button. */
+  _drawRefs() {
+    const m = this.m, sid = this.ctx.stage.activeShot().id, c = this.chosen[sid] || {};
+    const refs = c.refs || [];
+    m.h3Refs.replaceChildren(...refs.map((r, i) => h("span", { style: "position:relative;display:inline-block" },
+      h("img", { src: r.url || "", alt: `Picture ${i + 2}`, title: `<Picture ${i + 2}>`, style: "height:56px;border-radius:6px;display:block" }),
+      h("button", { type: "button", class: "ghost", title: "Remove", style: "position:absolute;top:-6px;right:-6px;padding:0 6px;font-size:11px",
+        on: { click: () => { c.refs = refs.filter((_, j) => j !== i); this._saveChosen(); this._drawRefs(); } } }, "×"))));
+    m.h3RefIn.disabled = refs.length >= H3_MAX_REFS;
+    m.h3Last.textContent = loadName(c.last) ? "Ends on this shot's chosen last frame (first + last frame)." : "";
+  }
+
+  async _addRefs(fileList) {
+    const sid = this.ctx.stage.activeShot().id;
+    const c = this.chosen[sid] = this.chosen[sid] || {};
+    c.refs = c.refs || [];
+    const api = this.ctx.api;
+    for (const f of [...(fileList || [])].slice(0, Math.max(0, H3_MAX_REFS - c.refs.length))) {
+      try {
+        const body = new FormData();
+        body.append("image", f);
+        body.append("type", "input");
+        body.append("subfolder", "soundstage_refs");
+        const r = await api.fetchApi("/upload/image", { method: "POST", body });
+        if (r.status !== 200) throw new Error(`upload failed (${r.status})`);
+        const j = await r.json();
+        const file = { filename: j.name, subfolder: j.subfolder || "", type: j.type || "input" };
+        const q = new URLSearchParams({ filename: file.filename, subfolder: file.subfolder, type: file.type });
+        c.refs.push({ file, url: api.apiURL ? api.apiURL(`/view?${q}`) : `/view?${q}` });
+      } catch (e) { this.m.status.textContent = `Couldn't add ${f.name}: ${e.message}`; }
+    }
+    this.m.h3RefIn.value = "";
+    this._saveChosen();
+    this._drawRefs();
+  }
+
+  _saveChosen() { this.ctx.saveChosen?.({ chosen: this.chosen, touched: this.touched }); }
 
   _showEngine() {
     const m = this.m, h3 = isH3(m.engine.value);
@@ -623,10 +675,12 @@ export class Pipeline {
     }
     if (c?.seed != null) this.set(c.seedNode || 9056, "seed", c.seed);
     this.set(9086, "switch", !!this.touched[sid]);
+    this.set(9083, "last_file", loadName(c?.last));
+    this.set(9083, "ref_files", (c?.refs || []).map(loadName).filter(Boolean).join("\n"));
   }
 
   _setChosen(sid, c) {
-    this.chosen[sid] = { url: c.url, file: c.file, seed: c.seed, model: c.model, seedNode: c.seedNode };
+    this.chosen[sid] = { ...this.chosen[sid], url: c.url, file: c.file, seed: c.seed, model: c.model, seedNode: c.seedNode };
     if (c.file) this.ctx.rememberRender?.(sid, "look", c.file);
     this.ctx.saveChosen?.({ chosen: this.chosen, touched: this.touched });
   }

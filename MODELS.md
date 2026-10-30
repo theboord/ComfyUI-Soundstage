@@ -27,7 +27,11 @@ If the LTX API key field is left blank, the prompt is encoded locally with Gemma
 
 ## Motion, optional second engine: MiniMax H3
 
-LTX-2.5 Layout-to-Render stays the default. With these files installed, **MiniMax H3 (local, looser blocking, rich motion)** also appears in ③ Motion's **Video model** list. H3 animates the chosen frame and makes its own sound in the same pass. It follows your clay blocking only loosely, and a final takes about 20+ minutes on a 48 GB card. Turn on **Use the clay as a motion reference** to pass the previz as `<Video 1>` (the ref2va model; slower, closer blocking). Drafts still preview with LTX. Shots are capped at 362 frames (~15 s).
+LTX-2.5 Layout-to-Render stays the default. With these files installed, **MiniMax H3 (local, looser blocking, rich motion)** also appears in ③ Motion's **Video model** list. H3 animates the shot and makes its own sound in the same pass. It follows your clay blocking only loosely, and a final takes about 20+ minutes on a 48 GB card (the first run also spends several minutes encoding the prompt on the CPU). Drafts still preview with LTX. Shots are capped at 362 frames (~15 s).
+
+- **First frame, or first + last frame**: the shot's chosen frame (and its chosen last frame, when it has one) drive the fl2va model.
+- **References**: add character or prop sheets to the shot in the H3 panel (up to 7; H3 takes 9 pictures with the first and last frame). They switch the shot to the ref2va model, addressed as `<Picture 2>`, `<Picture 3>`… in the prompt Soundstage writes for you.
+- **Clay as motion reference**: turn on **Use the clay as a motion reference** to pass the previz as `<Video 1>` (ref2va; slower, closer blocking).
 
 | File | Folder | Source | License |
 |---|---|---|---|
