@@ -1526,13 +1526,16 @@ export class Stage {
       if (hitId && !e.altKey && (inside(hitId) || (hitActor?.mount_id && inside(hitActor.mount_id)))) {
         if (hitActor?.mount_id) this.select(hitId);
         drag = { mode: e.shiftKey || e.button === 1 ? "pan" : "orbit", look: true, x: e.clientX, y: e.clientY };
-      } else if (hitId && !e.altKey) {
+      } else if (hitId && !e.altKey && hitId === this.selected && !this._isSetPiece(hitId)) {
+        // Already selected: now a drag moves it (click once to pick it, then drag it).
         drag = { mode: "actor", id: hitId };
-        this.select(hitId);
       } else {
-        drag = { mode: e.shiftKey || e.button === 1 ? "pan" : "orbit", look: e.altKey, x: e.clientX, y: e.clientY };
+        // Anything else is the camera's: a drag orbits (or pans), and a click without a drag selects what was under it.
+        // So nothing moves by accident while you look around.
+        drag = { mode: e.shiftKey || e.button === 1 ? "pan" : "orbit", look: e.altKey, x: e.clientX, y: e.clientY,
+          x0: e.clientX, y0: e.clientY, pickId: e.altKey ? null : hitId };
       }
-      this.canvas.setPointerCapture(e.pointerId);
+      try { this.canvas.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
       this.canvas.style.cursor = "grabbing";
       this._dragging = true;
     });
@@ -1610,6 +1613,16 @@ export class Stage {
       this._dragging = false;
       if (!drag) return;
       if (drag.mode === "pose") { this.poser.pointerUp(); drag = null; return; }
+      if ((drag.mode === "orbit" || drag.mode === "pan") && e?.clientX != null && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 5) {
+        // A click, not a drag: select what was under the pointer (or clear the selection on empty space).
+        const id = drag.pickId;
+        drag = null;
+        this._dragging = false;
+        this.canvas.style.cursor = "grab";
+        this.select(id || null);
+        if (id && !this._isSetPiece(id)) this.onInteract?.("Selected. Drag it (or its arrows) to move it; drag anywhere else to look around.");
+        return;
+      }
       if (drag.mode === "actor") {
         // What's under the cursor on release is what you dropped onto (the floor point can land metres behind a car).
         let under = null;
@@ -1696,6 +1709,12 @@ export class Stage {
       if (!this.freeView) { clearTimeout(this._wheelT); this._wheelT = setTimeout(() => this.onChange(this.toJSON()), 200); }
     };
     installWheelRouter();
+  }
+
+  /** Set dressing that shouldn't move from a drag: the rebuilt location, walls, sidewalks, big set pieces. */
+  _isSetPiece(id) {
+    const a = this.state.actors.find((x) => x.id === id);
+    return !!a && (a.set_piece || a.set_xform || a.locked);
   }
 
   /** Close in (target within ~2.5 m) or inside a vehicle / building: drag looks around instead of orbiting. */
