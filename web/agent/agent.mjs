@@ -153,13 +153,18 @@ export async function runLocalModel(api, { system, prompt, max_length, model }, 
   const timer = setTimeout(() => settle.reject(new Error(`no answer after ${Math.round(timeoutMs / 1000)} s`)), timeoutMs);
   try {
     const resp = await api.fetchApi("/prompt", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: graph, client_id: api.clientId }) });
+      // front: a short text job goes ahead of queued renders (it still waits for the one running).
+      body: JSON.stringify({ prompt: graph, client_id: api.clientId, front: true }) });
     const j = await resp.json();
     if (!j.prompt_id) throw new Error(j.error?.message || "the server refused the model job");
     pid = j.prompt_id;
     const hit = early.find((d) => d.prompt_id === pid);
     if (hit) return hit.output?.text?.[0] ?? "";
     return await done;
+  } catch (err) {
+    // Gave up waiting: take the job out of the queue so it doesn't run later for nobody.
+    if (pid) api.fetchApi("/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delete: [pid] }) }).catch(() => {});
+    throw err;
   } finally {
     clearTimeout(timer);
     api.removeEventListener("executed", onExec);
