@@ -262,6 +262,7 @@ export class Pipeline {
       h("div", { class: "card" }, h("div", { class: "row" }, h("strong", {}, "Camera"),
         h("span", { class: "status" }, "Body, lens, focal length and aperture: what the frame is shot on. Same as the Look tab.")),
         f.gearHost = h("div")),
+      f.refsCard = h("div", { class: "card" }),
       h("div", { class: "two" },
         h("div", { class: "card" }, f.clayCap = h("div", { class: "status" }, "Your clay, frame 1"), f.clay),
         h("div", { class: "card" },
@@ -276,6 +277,85 @@ export class Pipeline {
         h("span", { style: "flex:1" }), this._next("③ Animate this frame", "motion")),
     );
     return v;
+  }
+
+  // ------------------------------------------------------------------ references (character sheets, location, style)
+  /** One slot per cast member on the stage (people, animals, vehicles) plus location and style. An image added to a
+   *  slot is uploaded to ComfyUI's input folder and passed to the image model as a reference for every shot. */
+  _refSlots() {
+    let actors = [];
+    try { actors = this.ctx.stage.toJSON().actors || []; } catch { /* stage not ready */ }
+    const CAST = /^(man|woman|child|horse|dog|cat|car|police_car|sports_car|hatchback|truck|bicycle|motorcycle|ufo|custom)$/;
+    const slots = actors.filter((a) => CAST.test(a.kind || "") && !a.carry_id).map((a) => ({ key: `actor:${a.id}`, label: a.name || a.kind }));
+    slots.push({ key: "location", label: "Location / background" }, { key: "style", label: "Style / look" });
+    return slots;
+  }
+
+  _refNode() { return this.ctx.app?.graph?.getNodeById?.(9081) || null; }
+
+  _refs() { return { ...(this._refNode()?.properties?.ss_refs || {}) }; }
+
+  _saveRefs(refs) {
+    const node = this._refNode();
+    if (!node) return;
+    node.properties = { ...(node.properties || {}), ss_refs: refs };
+    const labels = Object.fromEntries(this._refSlots().map((s) => [s.key, s.label]));
+    const lines = Object.entries(refs).filter(([, f]) => f).map(([k, f]) => `${f} | ${labels[k] || k.replace(/^actor:/, "")}`);
+    this.set(9081, "ref_files", lines.join("\n"));
+    this.ctx.app?.graph?.setDirtyCanvas?.(true, true);
+  }
+
+  async _uploadRef(key, file) {
+    const body = new FormData();
+    body.append("image", file, file.name);
+    body.append("subfolder", "soundstage_refs");
+    body.append("type", "input");
+    const r = await this.ctx.api.fetchApi("/upload/image", { method: "POST", body });
+    if (!r.ok) throw new Error(`upload failed (${r.status})`);
+    const j = await r.json();
+    const refs = this._refs();
+    refs[key] = j.subfolder ? `${j.subfolder}/${j.name}` : j.name;
+    this._saveRefs(refs);
+    this._drawCastRefs();
+  }
+
+  _drawCastRefs() {
+    const f = this.f;
+    if (!f?.refsCard) return;
+    const refs = this._refs();
+    const slots = this._refSlots();
+    const has = this.w(9081, "ref_files") != null;
+    const url = (file) => {
+      const i = file.lastIndexOf("/");
+      const q = new URLSearchParams({ filename: file.slice(i + 1), subfolder: i > 0 ? file.slice(0, i) : "", type: "input" });
+      return this.ctx.api?.apiURL ? this.ctx.api.apiURL(`/view?${q}`) : `/view?${q}`;
+    };
+    const tiles = slots.map((s) => {
+      const file = refs[s.key];
+      const pick = h("input", { type: "file", accept: "image/*", hidden: "", on: { change: async (e) => {
+        const fl = e.target.files?.[0];
+        if (!fl) return;
+        f.refsStatus.textContent = `Uploading ${fl.name}…`;
+        try { await this._uploadRef(s.key, fl); f.refsStatus.textContent = `${s.label}: reference added. It is used for every shot.`; }
+        catch (err) { f.refsStatus.textContent = `Couldn't add that image: ${err.message}`; }
+      } } });
+      const thumb = file ? h("img", { src: url(file), alt: `${s.label} reference`, style: "width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px" })
+        : h("div", { style: "width:100%;aspect-ratio:1;border:1px dashed rgba(255,255,255,.25);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:24px;opacity:.6" }, "+");
+      const btn = h("button", { type: "button", class: "ghost", style: "font-size:12px;padding:3px 8px", on: { click: () => pick.click() } }, file ? "Replace" : "Add reference");
+      const clear = file ? h("button", { type: "button", class: "ghost", style: "font-size:12px;padding:3px 8px", title: "Remove this reference",
+        on: { click: () => { const r = this._refs(); delete r[s.key]; this._saveRefs(r); this._drawCastRefs(); } } }, "Remove") : null;
+      return h("div", { style: "display:flex;flex-direction:column;gap:6px;min-width:0" },
+        h("div", { style: "font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis", title: s.label }, s.label),
+        thumb, h("div", { class: "row", style: "gap:4px;flex-wrap:wrap" }, btn, clear), pick);
+    });
+    f.refsStatus = h("div", { class: "status" }, has
+      ? "Character sheets, photos or a location: each image is shown to the image model for every shot, so faces, wardrobe, horses and cars stay the same. Up to 4 work best."
+      : "References need the updated Soundstage nodes (restart ComfyUI once).");
+    f.refsCard.replaceChildren(
+      h("div", { class: "row" }, h("strong", {}, "References"),
+        h("span", { class: "status" }, "Keep characters consistent: the cast comes from your stage.")),
+      h("div", { style: "display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px" }, ...tiles),
+      f.refsStatus);
   }
 
   _followLabel() {
@@ -317,6 +397,7 @@ export class Pipeline {
     f.useTouch.checked = !!this.touched[sid];
     this.set(9086, "switch", f.useTouch.checked);
     f.clayCap.textContent = `${this.ctx.stage.activeShot().name}: your clay, frame 1`;
+    this._drawCastRefs();
     this._drawShotRows();
     try {
       const c = this.ctx.stage.renderFrameTo("clay", 0);
