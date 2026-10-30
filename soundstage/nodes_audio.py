@@ -663,7 +663,7 @@ class SoundstageChatterboxVC(IO.ComfyNode):
 
 # ---------------------------------------------------------------- App: one node for the shot's sound
 
-APP_GAINS = {"dialogue": 0.0, "sfx": -6.0, "music": -14.0}
+APP_GAINS = {"dialogue": 0.0, "sfx": -8.0, "music": -4.0}   # music was -14 under SFX at -6: inaudible
 
 
 def _engine_defaults(dept, label):

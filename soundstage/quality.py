@@ -9,7 +9,8 @@ Motion freedom (0..1)
 
 Quality
   draft   today's sampling: distilled 8 + 3 steps, the Look's motion prompt unchanged.
-  hq      denser distilled schedules (11 + 6 steps on the same sigma curve) and a subject-aware physical-motion
+  hq      denser distilled schedules (18 + 12 steps on the same sigma curve: every gap of the draft curve halved
+          twice in the detail-forming tail) and a subject-aware physical-motion
           paragraph appended to the motion prompt. The full (non-distilled) LTX-2.5 model would allow CFG/STG
           (Lightricks: CFG 3, STG block 28, rescale 0.7), but only the distilled transformer is installed.
 """
@@ -20,8 +21,10 @@ import math
 DRAFT_SIGMAS_1 = "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
 DRAFT_SIGMAS_2 = "0.909375, 0.725, 0.421875, 0.0"
 # Same curve, midpoints added where the distilled schedule takes its big jumps (the detail-forming tail).
-HQ_SIGMAS_1 = "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.8171875, 0.725, 0.5734375, 0.421875, 0.2109375, 0.0"
-HQ_SIGMAS_2 = "0.909375, 0.8171875, 0.725, 0.5734375, 0.421875, 0.2109375, 0.0"
+HQ_SIGMAS_1 = ("1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.9421875, 0.909375, 0.8632813, 0.8171875, 0.7710938, 0.725, 0.6492188, "
+               "0.5734375, 0.4976563, 0.421875, 0.3164063, 0.2109375, 0.1054688, 0.0")
+HQ_SIGMAS_2 = ("0.909375, 0.8632813, 0.8171875, 0.7710938, 0.725, 0.6492188, 0.5734375, 0.4976563, 0.421875, 0.3164063, "
+               "0.2109375, 0.1054688, 0.0")
 
 
 def knobs(freedom: float = 0.0, hq: bool = False) -> dict:
