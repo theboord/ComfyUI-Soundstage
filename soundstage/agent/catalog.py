@@ -17,6 +17,12 @@ LIBRARY = {
     "dog": {"label": "Dog", "height": 0.6, "rig": "quadruped", "foot": [0.3, 0.9]},
     "horse": {"label": "Horse", "height": 1.6, "rig": "quadruped", "foot": [0.6, 2.5]},
     "cat": {"label": "Cat", "height": 0.3, "rig": "quadruped", "foot": [0.15, 0.45]},
+    "bird": {"label": "Bird", "height": 0.35, "rig": "static", "foot": [0.25, 0.35]},
+    "police_car": {"label": "Police car", "height": 1.6, "rig": "vehicle", "foot": [1.9, 4.8]},
+    "sports_car": {"label": "Sports car", "height": 1.2, "rig": "vehicle", "foot": [1.9, 4.5]},
+    "hatchback": {"label": "Hatchback", "height": 1.5, "rig": "vehicle", "foot": [1.75, 4.2]},
+    "flashlight": {"label": "Flashlight", "height": 0.08, "rig": "static", "foot": [0.06, 0.26]},
+    "ufo": {"label": "Flying saucer", "height": 3, "rig": "static", "foot": [12.0, 12.0]},
     "car": {"label": "Car", "height": 1.45, "rig": "vehicle", "foot": [1.8, 4.5]},
     "truck": {"label": "Truck", "height": 2.6, "rig": "vehicle", "foot": [2.3, 6.5]},
     "bicycle": {"label": "Bicycle", "height": 1.05, "rig": "vehicle", "foot": [0.5, 1.8]},
@@ -41,6 +47,9 @@ MOUNTS = {"horse": "ride", "bicycle": "cycle", "motorcycle": "cycle", "car": "si
 
 SYNONYMS = {
     "person": "man", "guy": "man", "cowboy": "man", "driver": "man", "rider": "man", "male": "man", "boy": "child", "girl": "child", "kid": "child", "female": "woman",
+    "crow": "bird", "raven": "bird", "eagle": "bird", "hawk": "bird", "owl": "bird", "pigeon": "bird", "seagull": "bird", "gull": "bird",
+    "parrot": "bird", "chicken": "bird", "duck": "bird",
+    "torch": "flashlight", "saucer": "ufo", "spaceship": "ufo", "flying saucer": "ufo",
     "lady": "woman", "puppy": "dog", "pony": "horse", "kitten": "cat", "sedan": "car", "suv": "car", "taxi": "car",
     "cab": "car", "van": "truck", "lorry": "truck", "bike": "bicycle", "cyclist": "bicycle", "motorbike": "motorcycle",
     "scooter": "motorcycle", "vespa": "motorcycle", "shrub": "bush", "hedge": "bush", "plant": "bush",

@@ -852,6 +852,7 @@ export class Stage {
         g.position.y = this._heightAt(a, this.frame) +
           (moving && !air && rig !== "vehicle" ? 0.014 * (a.height_m || 1.8) * Math.abs(Math.sin(cycle)) : 0);
         g.userData.gaitCycle = cycle;
+        if (rig === "biped" && g.userData.joints && !air) this._bodyMotion(g, a, moving, speed, cycle);
       }
       if (g.userData.mixer) g.userData.mixer.setTime(this.frame / (this.state.shot?.fps || 24));
       if (g.userData.horseRig) this._driveHorse(g, a, speed, dist);
@@ -878,6 +879,7 @@ export class Stage {
       const hopStart = (a.mount_at || 0) - HOP_FRAMES;
       if (a.mount_at > 0 && this.frame < hopStart) { applyPose(g, "stand", h); continue; } // still on foot
       const drop = applyPose(g, a.pose || m.pose, h);
+      for (const jn of ["spine", "neck", "head"]) g.userData.joints?.[jn]?.rotation.set(0, 0, 0);   // seated: no walk / idle sway left over
       const seatPos = new THREE.Vector3(hg.position.x + seat.x, hg.position.y + seat.y - drop, hg.position.z + seat.z);
       if (a.mount_at > 0 && this.frame < a.mount_at) {
         // Hop on: arc from where they stand up into the saddle, turning to face the mount's way.
@@ -2242,6 +2244,53 @@ export class Stage {
     return a ? { id: a.id, name: a.name, kind: a.kind, rotation_deg: a.rotation_deg || 0, height_m: a.height_m, scale: a.scale || 1,
       appearance: a.appearance || null, mount_id: a.mount_id || null, pose: a.pose || null, seat: a.seat ?? null,
       beam: a.beam || "steady" } : null;
+  }
+
+  /**
+   * Secondary motion for people (the rig's spine, neck, head and elbows), so the clay reads like a person and the
+   * video copies a believable body: walk = chest counter-twist, soft swinging elbows, head bob; run (> ~3 m/s) =
+   * forward lean, elbows ~85° pumping, high knees and heel kick; idle = breathing, weight shift, small head moves.
+   * Pose Studio keys run after this and override any joint they name.
+   */
+  _bodyMotion(g, a, moving, speed, cycle) {
+    const J = g.userData.joints, D = Math.PI / 180;
+    const fps = this.state.shot?.fps || 24, t = this.frame / fps;
+    const seed = [...String(a.id)].reduce((n, ch) => n + ch.charCodeAt(0), 0) % 97;   // people don't breathe in sync
+    const set = (j, x, y, z) => { if (j) { j.rotation.order = "XYZ"; j.rotation.set(x * D, y * D, z * D); } };
+    const limbs = g.userData.limbs || [];
+    const run = moving && speed > 3;
+    if (moving) {
+      const sw = Math.sin(cycle);
+      if (run) {
+        const k = Math.min(1, (speed - 3) / 3);
+        for (const l of limbs) {
+          const ph = Math.sin(cycle + l.phase);
+          if (l.part === "shoulder") l.pivot.rotation.x = 0.75 * ph;
+          if (l.part === "elbow") l.pivot.rotation.x = -(1.35 + 0.15 * ph);
+          if (l.part === "hip") l.pivot.rotation.x = (0.55 + 0.25 * k) * ph - 0.15;
+          if (l.part === "knee") l.pivot.rotation.x = 0.25 + (1.1 + 0.4 * k) * Math.max(0, Math.sin(cycle + l.phase));
+        }
+        set(J.spine, 10 + 8 * k, -8 * sw, 0);
+        set(J.neck, -6 - 4 * k, 4 * sw, 0);
+        set(J.head, -4, 0, 0);
+      } else {
+        for (const l of limbs) {
+          const ph = Math.sin(cycle + l.phase);
+          if (l.part === "elbow") l.pivot.rotation.x = -(0.25 + 0.2 * Math.max(0, ph));
+          if (l.part === "knee") l.pivot.rotation.x = 0.08 + 0.6 * Math.max(0, Math.sin(cycle + l.phase));   // knees bend backward only
+        }
+        set(J.spine, 3, -5 * sw, 1.5 * Math.cos(cycle * 2));
+        set(J.neck, 0, 3 * sw, 0);
+        set(J.head, 1.5 * Math.sin(cycle * 2), 0, 0);
+      }
+    } else if (!limbs.some((l) => Math.abs(l.pivot.rotation.x) > 0.3)) {
+      // Standing (not seated or posed by a mount): breathe, shift weight, look around a little.
+      const br = Math.sin((t + seed * 0.13) * 2 * Math.PI / 3.6), sh = Math.sin((t + seed) * 2 * Math.PI / 7.5);
+      set(J.spine, 1.2 * br, 1.5 * sh, 1.2 * sh);
+      set(J.neck, 0.5 * br, 2 * Math.sin((t + seed * 0.7) * 2 * Math.PI / 5.3), 0);
+      set(J.head, 0, 3 * Math.sin((t + seed * 0.3) * 2 * Math.PI / 6.1), 0);
+      for (const l of limbs) if (l.part === "elbow") l.pivot.rotation.x = -(0.14 + 0.03 * br);
+    }
   }
 
   // ------------------------------------------------------------------ Pose Studio
