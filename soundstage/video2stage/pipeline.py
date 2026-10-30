@@ -121,7 +121,7 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
     if not multiview:
         notes.append(f"{model} is mono-only: the camera is tracked from its depth. A DA3 Small/Base checkpoint "
                      "would give multi-view poses directly")
-    say("Measuring depth (Depth Anything 3)", 0.15)
+    say("Measuring depth (Depth Anything 3)", 0.08)
     g = graphs.da3_graph(model, names, f"v2s_{tag}", multiview,
                          backdrop_prefix=f"soundstage/v2s_{tag}_set" if backdrop else None)
     out, t = await queue.run_graph(base_url, g, "depth")
@@ -131,7 +131,7 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
         packet = {k: z[k] for k in z.files}
     glb = graphs.saved_glb(out) if backdrop else None
 
-    say("Tracking the camera", 0.4)
+    say("Tracking the camera", 0.18)
     t1 = time.perf_counter()
     poses, scales, K, ground, tn, lin = await asyncio.to_thread(solve, packet, files)
     packet["depth"] = lin
@@ -143,7 +143,7 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
     if use_vlm and not vmodel:
         notes.append("no local vision model (qwen3.5_4b): camera move only, no subjects or set pieces")
     if vmodel:
-        say("Reading the shot (vision model)", 0.55)
+        say("Reading the shot (vision model)", 0.2)
         try:
             vo, vt = await queue.run_graph(base_url, vlm.graph(vmodel, names[0], names[-1]), "shot breakdown")
             timings["vlm_ms"] = vt.get("exec_ms", vt["total_ms"])
@@ -156,7 +156,7 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
         except Exception as exc:  # noqa: BLE001 - still deliver the camera move
             notes.append(f"vision model failed ({exc}); camera move only")
 
-    say("Building the set", 0.85)
+    say("Building the set", 0.45)
     h, w = packet["depth"].shape[1:]
     view = lambda f: {"filename": os.path.basename(f), "subfolder": sub, "type": "input"}  # noqa: E731
     reference = {"video": video, "fps": clip["fps"], "frames": clip["frames"], "duration": clip["duration"],
@@ -176,7 +176,7 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
     has_person = not vmodel or any(any(w in (o.get("label") or "").lower().split() for w in PEOPLE)
                                    for o in breakdown.get("objects") or [])
     if mocap and has_person and performer.available(_detection_models()):
-        say("Capturing the performance (SAM 3D Body)", 0.9)
+        say("Capturing the performance (SAM 3D Body)", 0.47)
         try:
             mo, mt = await queue.run_graph(base_url, performer.mocap_graph(video, f"v2s_{tag}"), "motion capture")
             timings["mocap_ms"] = mt.get("exec_ms", mt["total_ms"])
@@ -217,5 +217,7 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
     return {"scene": scene, "notes": notes, "timings": timings, "breakdown": breakdown,
             "summary": {"objects": len([a for a in scene["actors"] if not a.get("set_piece") and a["kind"] != "glb"]),
                         "set_pieces": len([a for a in scene["actors"] if a.get("set_piece")]),
-                        "movers": len(movers), "camera_keys": len(scene["camera_keys"]),
+                        "movers": len(movers),
+                        "camera_keys": len((scene.get("shots") or [{}])[0].get("camera_keys") or scene["camera_keys"]),
+                        "performer": next((a["name"] for a in scene["actors"] if a.get("mocap")), None),
                         "frames": scene["shot"]["frames"], "depth_model": model, "vision_model": vmodel}}

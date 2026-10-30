@@ -23,6 +23,23 @@ const H3_LABEL = "MiniMax H3 (local, looser blocking, rich motion, own sound; ~2
 const H3_CLAY_REF = "clay previz as <Video 1>";
 const isH3 = (v) => typeof v === "string" && v.startsWith(H3_KEY);
 const H3_MAX_REFS = 7;   // H3 takes 9 pictures: first + last frame + up to 7 references
+/**
+ * A first-frame prompt for a scene rebuilt from a clip (Video → Stage): the performer as the vision model described
+ * them, and the set pieces it found. "" for any other scene.
+ */
+export function suggestFromVideo(scene) {
+  if (!scene?.video2stage && !scene?.reference?.video) return "";
+  const actors = scene.actors || [];
+  const who = actors.find((a) => a.mocap) || actors.find((a) => ["man", "woman", "child"].includes(a.kind));
+  const label = String(who?.source?.label || who?.label || "").trim();
+  const pieces = [...new Set(actors.filter((a) => a.set_piece).map((a) => String(a.name || "").replace(/\s*\((left|right)\)\s*$/i, "").toLowerCase()))]
+    .filter(Boolean).slice(0, 5);
+  const subj = label ? (/^(a|an|the)\b/i.test(label) ? label : `a ${label}`) : who ? `a ${who.kind === "child" ? "child" : who.kind}` : "";
+  if (!subj && !pieces.length) return "";
+  const where = pieces.length ? ` on location: ${pieces.join(", ")}` : " on location";
+  return `${subj ? subj[0].toUpperCase() + subj.slice(1) + ", full body," : "The location"}${where}. Natural daylight, real photograph, shot on a cinema camera.`;
+}
+
 /** A saved image ({filename, subfolder, type} or {file: ...}) as LoadImage's annotated name. */
 const loadName = (x) => {
   const f = x?.file || x;
@@ -256,6 +273,19 @@ export class Pipeline {
       this.stopBtn.hidden = n === 0;
       this.stopBtn.textContent = n > 1 ? `■ Stop (${n})` : "■ Stop";
     } catch { /* server away */ }
+  }
+
+  /**
+   * Keep a status line alive during a long wait: "<text> · 42 s". Returns a stop function. One ticker per element;
+   * any other text written to the element (a result, an error) also ends it.
+   */
+  _tick(el, text) {
+    clearInterval(el._ssTick);
+    const t0 = Date.now();
+    const draw = () => { el.textContent = `${text} · ${Math.round((Date.now() - t0) / 1000)} s`; el._ssLast = el.textContent; };
+    draw();
+    el._ssTick = setInterval(() => { if (el.textContent !== el._ssLast) { clearInterval(el._ssTick); return; } draw(); }, 1000);
+    return () => clearInterval(el._ssTick);
   }
 
   _say(m) {
@@ -766,6 +796,12 @@ export class Pipeline {
     if (dn != null) f.follow.value = String(dn);
     f.followOut.textContent = this._followLabel();
     f.desc.value = this.ctx.look?.state?.description || "";
+    // A clip brought in with Video → Stage: start the prompt from what the vision model saw (who, and the set), so the
+    // first frame looks like the clip instead of a generic street. Only when the prompt is still empty.
+    if (!f.desc.value.trim()) {
+      const sug = suggestFromVideo(this.ctx.stage.toJSON());
+      if (sug) { f.desc.value = sug; this._setDescription(sug); }
+    }
     const sid = this.ctx.stage.activeShot().id;
     f.useTouch.checked = !!this.touched[sid];
     this.set(9086, "switch", f.useTouch.checked);
@@ -809,7 +845,7 @@ export class Pipeline {
       for (let i = 0; i < f.count; i++) {
         const seed = base + i * 7919;
         this.set(seedNode, "seed", seed);
-        f.status.textContent = `Queueing ${n > 1 ? `${shot.name} (${si + 1}/${n}), ` : ""}frame ${i + 1}/${f.count}${i === 0 ? " (the first one renders the clay passes too)" : ""}…`;
+        this._tick(f.status, `Queueing ${n > 1 ? `${shot.name} (${si + 1}/${n}), ` : ""}frame ${i + 1}/${f.count}${i === 0 ? ": capturing your clay passes for the whole shot first" : ""}…`);
         await this.queueAt(2, { seed, model: f.model.value, seedNode, refFiles });
       }
     };
@@ -818,7 +854,7 @@ export class Pipeline {
       if (allShots) await this.forEachShot((s, i) => one(s, i, n));
       else await one(this.ctx.stage.activeShot(), 0, 1);
       const total = f.count * n;
-      f.status.textContent = `Rendering ${total} frame${total > 1 ? "s" : ""}${n > 1 ? ` for ${n} shots` : ""}: about 6–10 s each once the models are warm (a new shot also renders its clay passes).`;
+      this._tick(f.status, `Rendering ${total} frame${total > 1 ? "s" : ""}${n > 1 ? ` for ${n} shots` : ""} on the GPU: the first can take 1–3 min while the model loads and the clay passes render, then about 6–10 s each`);
     } catch (e) {
       f.status.textContent = `Couldn't queue: ${e.message}`;
     } finally {
@@ -827,6 +863,12 @@ export class Pipeline {
   }
 
   _onRung(ev) {
+    if (ev.rung === 2 && this.f?.status && !this.pending.size) clearInterval(this.f.status._ssTick);
+    if (ev.rung >= 3 && this.m?.status?._ssTick && ev.shotId === this.ctx.stage.activeShot().id) {
+      clearInterval(this.m.status._ssTick);
+      this.m.status.textContent = ev.rung === 3 ? "Draft ready: it plays below and sits on the Ladder (⑥ Review). Happy with the motion? Render the final." :
+        "Final ready: it plays below and sits on the Ladder (⑥ Review).";
+    }
     if (ev.rung === 2) {
       const meta = this.pending.get(ev.promptId);
       const list = (this.candidates[ev.shotId] = this.candidates[ev.shotId] || []);
@@ -1199,10 +1241,11 @@ export class Pipeline {
       if (!allShots) {
         this._applyShot(this.ctx.stage.activeShot().id);
         await this._queueVideo(step);
-        m.status.textContent = step === 3
-          ? "Draft queued: about 2–4 min warm. It appears below and on the Ladder."
+        const t = step === 3
+          ? "Draft rendering: about 2–4 min warm (longer on a cold GPU or a long shot). It appears below and on the Ladder."
           : h3 ? "MiniMax H3 final queued: about 20–30 min (picture + its own sound). It appears below and on the Ladder."
-          : "Final queued: about 4–6 min warm (upscale + sound). It appears below and on the Ladder.";
+          : "Final rendering: about 4–6 min warm (upscale + sound). It appears below and on the Ladder.";
+        this._tick(m.status, t);
       } else {
         const has = (sid) => { const r = this.ctx.getRenders(sid) || {}; return step === 3 ? !!r.draft : !!(r.final_sound || r.final_audio || r.final); };
         const todo = this.shots().filter((s) => !has(s.id));
