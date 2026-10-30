@@ -12,7 +12,10 @@
 <a href="https://github.com/comfyanonymous/ComfyUI"><img src="https://img.shields.io/badge/ComfyUI-custom%20nodes%20%2B%20App-blue" alt="ComfyUI"></a>
 <a href="MODELS.md"><img src="https://img.shields.io/badge/100%25-open%20weights-brightgreen" alt="100% open weights"></a>
 <a href="https://x.com/hashtag/OpenSourceHiggsfield"><img src="https://img.shields.io/badge/%23-OpenSourceHiggsfield-purple" alt="#OpenSourceHiggsfield"></a>
+<img src="https://img.shields.io/badge/built%20in-3%20days-orange" alt="Built in 3 days">
 </p>
+
+<p align="center"><b>Built in 3 days. This is only the beginning:</b> more features are coming. &#11088; Star the repo and build with us.</p>
 
 Import your screenplay. Cast it. Block every scene in 3D clay with real camera rigs, then watch FLUX 3 Klein paint the frame and LTX-2.5 bring it to life **with sound, following your blocking shot for shot**. Approve takes like dailies and hand the cut to Premiere, Avid or Resolve. No cloud, no credits, no paid API: it all runs locally in ComfyUI.<sup>[1](#partner-footnote)</sup>
 
