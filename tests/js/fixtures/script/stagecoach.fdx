@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<FinalDraft DocumentType="Script" Template="No" Version="5">
+
+  <Content>
+    <Paragraph Type="Transition">
+      <Text>FADE IN:</Text>
+    </Paragraph>
+    <Paragraph Number="1" Type="Scene Heading">
+      <SceneProperties Length="1 2/8" Page="1" Title=""/>
+      <Text>EXT. DRY CREEK - MAIN STREET - HIGH NOON</Text>
+    </Paragraph>
+    <Paragraph Type="Action">
+      <Text>Dust devils skitter down an empty street. A horse-drawn </Text><Text Style="Bold">STAGECOACH</Text><Text> rattles to a stop outside the Dry Creek Savings &amp; Loan. Townsfolk duck behind shutters.</Text>
+    </Paragraph>
+    <Paragraph Type="Action">
+      <Text>SHERIFF ADA COLE (60s), dust-caked duster and a tin star, steps off the boardwalk. Her spurs </Text><Text Style="AllCaps">jingle</Text><Text>.</Text>
+    </Paragraph>
+    <Paragraph Type="Character">
+      <Text>ADA</Text>
+    </Paragraph>
+    <Paragraph Type="Parenthetical">
+      <Text>(calm)</Text>
+    </Paragraph>
+    <Paragraph Type="Dialogue">
+      <Text>Step down from the coach, </Text><Text Style="Italic">Mister</Text><Text> Vance.</Text>
+    </Paragraph>
+    <Paragraph Type="Character">
+      <Text>VANCE (O.S.)</Text>
+    </Paragraph>
+    <Paragraph Type="Dialogue">
+      <Text>Make me, Sheriff.</Text>
+    </Paragraph>
+    <Paragraph Type="Transition">
+      <Text>CUT TO:</Text>
+    </Paragraph>
+    <Paragraph Number="2" Type="Scene Heading">
+      <SceneProperties Length="4/8" Page="2" Title=""/>
+      <Text>INT. STAGECOACH - CONTINUOUS</Text>
+    </Paragraph>
+    <Paragraph Type="Action">
+      <Text>VANCE (40s), black hat, checks the cylinder of his revolver. Across from him, a nervous banker clutches a strongbox.</Text>
+    </Paragraph>
+    <Paragraph Type="Character">
+      <Text>VANCE</Text>
+    </Paragraph>
+    <Paragraph Type="Dialogue">
+      <Text>When I say jump, you jump. That&#8217;s the deal.</Text>
+    </Paragraph>
+    <Paragraph Type="Shot">
+      <Text>CLOSE ON THE STRONGBOX</Text>
+    </Paragraph>
+    <Paragraph Type="Action">
+      <Text>Its lock is already broken.</Text>
+    </Paragraph>
+    <Paragraph Number="3" Type="Scene Heading">
+      <Text>EXT. DRY CREEK - MAIN STREET - CONTINUOUS</Text>
+    </Paragraph>
+    <Paragraph Type="Action">
+      <Text>The door flies open. Vance leaps from the coach and tackles a deputy into the water trough. A gunshot cracks. The horses rear.</Text>
+    </Paragraph>
+    <Paragraph>
+      <DualDialogue>
+        <Paragraph Type="Character">
+          <Text>ADA</Text>
+        </Paragraph>
+        <Paragraph Type="Dialogue">
+          <Text>Drop it!</Text>
+        </Paragraph>
+        <Paragraph Type="Character">
+          <Text>VANCE</Text>
+        </Paragraph>
+        <Paragraph Type="Dialogue">
+          <Text>You first!</Text>
+        </Paragraph>
+      </DualDialogue>
+    </Paragraph>
+    <Paragraph Type="Transition">
+      <Text>SMASH CUT TO:</Text>
+    </Paragraph>
+    <Paragraph Number="3A" Type="Scene Heading">
+      <Text>EXT. RIDGE ABOVE TOWN - DUSK</Text>
+    </Paragraph>
+    <Paragraph Type="Action">
+      <Text>A lone rider watches through binoculars as storm clouds gather. Rain begins to fall.</Text>
+    </Paragraph>
+    <Paragraph Type="General">
+      <Text>THE END</Text>
+    </Paragraph>
+  </Content>
+
+  <HeaderAndFooter FooterFirstPage="Yes" FooterVisible="No" HeaderFirstPage="No" HeaderVisible="Yes" StartingPage="1">
+    <Header>
+      <Paragraph Alignment="Right" Type="Action">
+        <Text>HEADER TEXT THAT MUST NOT APPEAR</Text>
+      </Paragraph>
+    </Header>
+  </HeaderAndFooter>
+
+  <TitlePage>
+    <Content>
+      <Paragraph Alignment="Center" FirstIndent="0.00" Leading="Regular" LeftIndent="1.00" RightIndent="7.50" SpaceBefore="0" Spacing="1" StartsNewPage="No">
+        <Text>THE LAST STAGECOACH</Text>
+      </Paragraph>
+      <Paragraph Alignment="Center">
+        <Text></Text>
+      </Paragraph>
+      <Paragraph Alignment="Center">
+        <Text>Written by</Text>
+      </Paragraph>
+      <Paragraph Alignment="Center">
+        <Text>John Doe</Text>
+      </Paragraph>
+      <Paragraph Alignment="Left">
+        <Text>john@example.com</Text>
+      </Paragraph>
+    </Content>
+  </TitlePage>
+
+  <SmartType>
+    <Characters>
+      <Character>ADA</Character>
+      <Character>VANCE</Character>
+    </Characters>
+  </SmartType>
+</FinalDraft>
