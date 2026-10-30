@@ -12,6 +12,8 @@ export const SETS = {
   desert: { label: "Desert" },
   beach: { label: "Beach & ocean" },
   water_tank: { label: "Water tank" },
+  open_water: { label: "Open water (sea / lake)" },
+  stadium: { label: "Stadium / ballfield" },
   empty: { label: "Empty stage" },
 };
 
@@ -112,6 +114,39 @@ export function buildSet(preset, mesh, opts = {}) {
       box(0.4, H, D, -W / 2, H / 2, 0);
       box(0.4, H, D, W / 2, H / 2, 0);
       water = { level: opts.water_level ?? 2.5, size: [W - 0.4, D - 0.4], center: [0, 0] };
+      break;
+    }
+    case "stadium": {
+      // A ballfield: grass, an infield diamond (home plate at the origin, facing +Z), bases and a mound,
+      // tiered stands around the outfield and light towers. Real-ish scale: 27.4 m between bases.
+      const flat = (w, d, x, z, y = 0.01, rot = 0) => { const m = box(w, 0.02, d, x, y, z); m.rotation.y = rot; return m; };
+      flat(140, 140, 0, 45);                                            // field
+      flat(27.4 * 1.45, 27.4 * 1.45, 0, 19.4, 0.02, Math.PI / 4);       // infield dirt
+      flat(19, 19, 0, 19.4, 0.03, Math.PI / 4);                         // infield grass
+      for (const [x, z] of [[0, 0], [19.4, 19.4], [0, 38.8], [-19.4, 19.4]]) box(0.4, 0.08, 0.4, x, 0.05, z);   // bases
+      const mound = mesh(new THREE.CylinderGeometry(2.7, 2.9, 0.25, 24)); mound.position.set(0, 0.12, 18.4); g.add(mound);
+      for (let i = 0; i < 9; i++) {                                     // stands: three tiers on an arc behind the field
+        const ang = -Math.PI * 0.42 + (i / 8) * Math.PI * 0.84, R = 92;
+        for (let t = 0; t < 3; t++) {
+          const m = box(26, 3 + t * 3, 6, Math.sin(ang) * (R + t * 6), (3 + t * 3) / 2, 30 + Math.cos(ang) * (R + t * 6));
+          m.rotation.y = ang;
+        }
+      }
+      for (const [x, z] of [[-60, 10], [60, 10], [-55, 95], [55, 95]]) {
+        box(1, 38, 1, x, 19, z);
+        box(8, 3, 1, x, 38, z);
+      }
+      break;
+    }
+    case "open_water": {
+      // Sea to the horizon over a seabed 1.5 m down; a few low headlands far off give the eye a horizon line.
+      for (let i = 0; i < 5; i++) {
+        const d = mesh(new THREE.SphereGeometry(1, 18, 10));
+        d.scale.set(40 + rand() * 60, 6 + rand() * 10, 30 + rand() * 30);
+        d.position.set((rand() - 0.5) * 700, 0, 260 + rand() * 120);
+        g.add(d);
+      }
+      water = { level: opts.water_level ?? 1.5, size: [900, 900], center: [0, 0] };
       break;
     }
     case "empty":

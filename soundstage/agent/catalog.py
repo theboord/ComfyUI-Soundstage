@@ -158,6 +158,17 @@ SETS = {
         "label": "Water tank", "interior": True, "bounds": [-7.4, 7.4, -7.4, 7.4],
         "obstacles": [], "anchors": {"tank wall": [0, 7.3], "wall": [0, 7.3], "centre": [0, 0]}, "stage": [0, 0],
     },
+    "open_water": {
+        "label": "Open water (sea / lake)", "interior": False, "bounds": [-40, 40, -40, 40],
+        "obstacles": [], "anchors": {"water": [0, 0], "horizon": [0, 40], "centre": [0, 0]}, "stage": [0, 0],
+    },
+    "stadium": {
+        "label": "Stadium / ballfield", "interior": False, "bounds": [-30, 30, -6, 60],
+        "obstacles": [], "anchors": {"home plate": [0, 0], "pitcher's mound": [0, 18.4], "mound": [0, 18.4], "first base": [19.4, 19.4],
+                                     "second base": [0, 38.8], "third base": [-19.4, 19.4], "outfield": [0, 60], "dugout": [-14, -4],
+                                     "stands": [0, 90], "centre": [0, 19.4], "field": [0, 19.4]},
+        "stage": [0, 19.4],
+    },
     "empty": {
         "label": "Empty stage", "interior": False, "bounds": [-15, 15, -15, 15],
         "obstacles": [], "anchors": {"centre": [0, 0]}, "stage": [0, 0],
@@ -174,7 +185,11 @@ PLAZA_PROPS = [
 
 SET_WORDS = [  # first match wins; order matters (specific before generic)
     ("water_tank", ["underwater", "water tank", "tank", "pool", "submerged", "diver", "scuba"]),
-    ("beach", ["beach", "ocean", "shore", "seaside", "surf", "coast", "pier"]),
+    ("beach", ["beach", "shore", "seaside", "surf", "coast", "pier", "sand"]),
+    ("open_water", ["open water", "out on the water", "on the water", "out at sea", "at sea", "ocean", "sea", "lake",
+                    "water", "boat", "sailboat", "sailing", "catamaran", "jet ski", "jetski", "yacht", "speedboat", "fishing"]),
+    ("stadium", ["stadium", "ballpark", "ballfield", "baseball", "football field", "soccer field", "pitch", "arena", "field",
+                 "bleachers", "home plate", "pitcher", "batter", "touchdown", "goal"]),
     ("studio", ["studio", "green screen", "greenscreen", "cyc", "product shot", "photo shoot", "soundstage"]),
     ("forest", ["forest", "woods", "jungle", "trees", "woodland", "glade"]),
     ("desert", ["desert", "dunes", "wasteland", "badlands", "sahara"]),

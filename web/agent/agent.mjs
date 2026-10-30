@@ -215,7 +215,11 @@ export class SceneAgent {
     if (!this.useModel || !(await this.info()).available) return null;
     const p = await postJSON(this.api, "/soundstage/agent/prompt", { mode, ...payload });
     try {
-      return await runLocalModel(this.api, p, { timeoutMs: this.modelTimeoutMs });
+      try {
+        const q = await (await this.api.fetchApi("/queue")).json();
+        if ((q.queue_running || []).length) this.onStatus("The GPU is finishing a render; your scene is next in line…");
+      } catch { /* queue unknown */ }
+      return await runLocalModel(this.api, p, { timeoutMs: Math.max(this.modelTimeoutMs || 0, 900000) });
     } catch (err) {
       this.onStatus(`Model unavailable (${err.message}); using the rules.`);
       return null;

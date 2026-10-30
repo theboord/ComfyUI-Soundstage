@@ -36,7 +36,8 @@ _LIBRARY_FALLBACK = {
 SET_PLACES = {
     "plaza": ("EXT", "a city plaza"), "street_night": ("EXT", "a city street"), "interior": ("INT", "an interior room"),
     "studio": ("INT", "a studio cyclorama"), "forest": ("EXT", "a forest"), "desert": ("EXT", "a desert"),
-    "beach": ("EXT", "a beach by the ocean"), "water_tank": ("EXT", "a water tank"), "empty": ("EXT", ""),
+    "beach": ("EXT", "a beach by the ocean"), "water_tank": ("EXT", "a water tank"),
+    "open_water": ("EXT", "open water out at sea"), "stadium": ("EXT", "a baseball stadium with a manicured ballfield and packed stands"), "empty": ("EXT", ""),
 }
 WEATHER_WORDS = {
     "rain": "rain falling", "snow": "snow falling", "fog": "fog and haze in the air", "smoke": "drifting smoke",

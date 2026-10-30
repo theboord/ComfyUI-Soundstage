@@ -13,12 +13,17 @@ export const LIBRARY = {
   horse: { label: "Horse", height: 1.6, rig: "quadruped" },
   cat: { label: "Cat", height: 0.3, rig: "quadruped" },
   bird: { label: "Bird", height: 0.35, rig: "static" },
+  fire: { label: "Campfire", height: 1.1, rig: "static", light: true },
   car: { label: "Car", height: 1.45, rig: "vehicle" },
   truck: { label: "Truck", height: 2.6, rig: "vehicle" },
   // Real-car looks (CC0, Quaternius): closed bodies over the built sedan's seats. `length` is bumper to bumper.
   police_car: { label: "Police car", height: 1.6, rig: "vehicle", model: "police_car.glb", length: 4.8 },
   sports_car: { label: "Sports car", height: 1.2, rig: "vehicle", model: "sports_car.glb", length: 4.5 },
   hatchback: { label: "Hatchback", height: 1.5, rig: "vehicle", model: "car.glb", length: 4.2 },
+  boat: { label: "Motorboat", height: 1.7, rig: "vehicle", length: 6.5, boat: true },
+  sailboat: { label: "Sailboat", height: 11, rig: "vehicle", length: 9, boat: true },
+  catamaran: { label: "Catamaran", height: 13, rig: "vehicle", length: 12, boat: true },
+  jetski: { label: "Jet ski", height: 1.1, rig: "vehicle", length: 3.2, boat: true },
   bicycle: { label: "Bicycle", height: 1.05, rig: "vehicle" },
   motorcycle: { label: "Motorcycle", height: 1.15, rig: "vehicle" },
   tree: { label: "Tree", height: 6.5, rig: "static" },
@@ -92,6 +97,9 @@ const SYNONYMS = {
   scooter: "motorcycle", vespa: "motorcycle", shrub: "bush", hedge: "bush", plant: "bush",
   home: "house", cabin: "house", hut: "house", seat: "chair", lamppost: "lamp",
   crow: "bird", raven: "bird", eagle: "bird", hawk: "bird", owl: "bird", pigeon: "bird", seagull: "bird", gull: "bird", parrot: "bird",
+  motorboat: "boat", speedboat: "boat", "speed boat": "boat", yacht: "boat", dinghy: "boat", "fishing boat": "boat", ship: "boat",
+  "sail boat": "sailboat", "sailing boat": "sailboat", sloop: "sailboat", cat: "cat", "jet ski": "jetski", "jet-ski": "jetski", waverunner: "jetski",
+  campfire: "fire", bonfire: "fire", flames: "fire", flame: "fire", "camp fire": "fire", "fire pit": "fire", firepit: "fire",
   saucer: "ufo", "flying saucer": "ufo", spaceship: "ufo", "space ship": "ufo", mothership: "ufo", "alien ship": "ufo",
   alien: "man", martian: "man", invader: "man",
   torch: "flashlight", "flash light": "flashlight", "electric torch": "flashlight", "maglite": "flashlight",
@@ -145,7 +153,8 @@ export const OBJECT_COLORS = {
   motorcycle: ["#1f2a44", "#1b1b1d"], tree: ["#3e6b35", "#5b4029"], bush: ["#4a7a3e", "#4a7a3e"],
   house: ["#d8cbb2", "#7a3b2e"], bench: ["#8a5a35", "#2d2d2d"], table: ["#8a5a35", "#8a5a35"],
   chair: ["#7a5232", "#7a5232"], lamp: ["#2f3236", "#f3e3b0"], rock: ["#8c877e", "#8c877e"],
-  crate: ["#a7814f", "#a7814f"], flashlight: ["#2b2d31", "#d9dde2"], bird: ["#1d1d22", "#c9a227"], ufo: ["#8d949c", "#b8f5c4"], wall: ["#bdb7ad", "#bdb7ad"], flat: ["#cfc8bb", "#7a6a55"],
+  crate: ["#a7814f", "#a7814f"], flashlight: ["#2b2d31", "#d9dde2"], fire: ["#ff8a2a", "#5a3a22"], boat: ["#f2f0ea", "#1f3b5c"], sailboat: ["#f4f1e8", "#7a5a3a"],
+  catamaran: ["#f4f4f0", "#2c3e50"], jetski: ["#e8e8e8", "#c23b22"], bird: ["#1d1d22", "#c9a227"], ufo: ["#8d949c", "#b8f5c4"], wall: ["#bdb7ad", "#bdb7ad"], flat: ["#cfc8bb", "#7a6a55"],
   bed: ["#8a6a4c", "#e9e4da"], single_bed: ["#8a6a4c", "#e9e4da"], sofa: ["#5d6b78", "#7d8a96"], armchair: ["#8a5a3c", "#8a5a3c"],
   coffee_table: ["#6e4f35", "#6e4f35"], tv: ["#3a3a3c", "#111214"], kitchen_counter: ["#e8e4dc", "#9a9590"], fridge: ["#d9dcdf", "#8a8d90"],
   bath: ["#f1f1ee", "#dfe7ea"], toilet: ["#f3f3f0", "#f3f3f0"], washbasin: ["#e8e4dc", "#f3f3f0"], wardrobe: ["#a8865f", "#5a4630"],
@@ -166,6 +175,28 @@ export const SEATS = {
   truck: [
     { name: "Driver", pos: [0.5, 1.25, 2.3] },
     { name: "Passenger", pos: [-0.5, 1.25, 2.3] },
+  ],
+  boat: [
+    { name: "Skipper", pos: [0.45, 0.7, 0.4] },
+    { name: "Passenger", pos: [-0.45, 0.7, 0.4] },
+    { name: "Stern left", pos: [0.5, 0.65, -1.6] },
+    { name: "Stern right", pos: [-0.5, 0.65, -1.6] },
+  ],
+  sailboat: [
+    { name: "Helm", pos: [0, 0.95, -3.2] },
+    { name: "Cockpit left", pos: [0.6, 0.9, -2.4] },
+    { name: "Cockpit right", pos: [-0.6, 0.9, -2.4] },
+    { name: "Foredeck", pos: [0, 1.15, 2.4] },
+  ],
+  catamaran: [
+    { name: "Helm", pos: [1.6, 1.25, -3.6] },
+    { name: "Trampoline left", pos: [1.4, 1.1, 3.6] },
+    { name: "Trampoline right", pos: [-1.4, 1.1, 3.6] },
+    { name: "Deck", pos: [0, 1.25, -2.0] },
+  ],
+  jetski: [
+    { name: "Rider", pos: [0, 0.7, -0.15] },
+    { name: "Pillion", pos: [0, 0.72, -0.75] },
   ],
 };SEATS.police_car = SEATS.sports_car = SEATS.hatchback = SEATS.car;
 
@@ -401,6 +432,73 @@ export function buildObject(kind, height, mesh, appearance = null) {
       g.add(beam, beam.target);
       g.userData.beam = beam;
       g.userData.beamBase = 30;
+      break;
+    }
+    case "boat": case "jetski": {
+      // Hull (a box tapering to a bow wedge), deck, windscreen / console. Length along +Z.
+      const L = (LIBRARY[kind].length || 6) * (h / LIBRARY[kind].height), B = kind === "jetski" ? 0.9 : L * 0.36, D = kind === "jetski" ? 0.55 : 0.85;
+      add(new THREE.BoxGeometry(B, D, L * 0.72), 0, D / 2, -L * 0.14);
+      const bow = add(new THREE.ConeGeometry(B * 0.58, L * 0.32, 4, 1), 0, D / 2, L * 0.36, Math.PI / 2, Math.PI / 4);
+      bow.scale.set(1, 1, D / (B * 0.82));
+      if (kind === "boat") {
+        add(new THREE.BoxGeometry(B * 0.9, 0.05, L * 0.6), 0, D, -L * 0.15, 0, 0, 0, accent);
+        add(new THREE.BoxGeometry(B * 0.7, 0.5, 0.06), 0, D + 0.25, L * 0.05, -0.5, 0, 0, accent);   // windscreen
+        add(new THREE.BoxGeometry(0.6, 0.8, 0.5), 0.45, D + 0.4, -0.1 * L, 0, 0, 0, accent);          // console
+      } else {
+        add(new THREE.BoxGeometry(0.5, 0.25, 1.2), 0, D + 0.1, -0.2, 0, 0, 0, accent);                // seat
+        add(new THREE.CylinderGeometry(0.03, 0.03, 0.8, 8), 0, D + 0.35, 0.55, 0, 0, Math.PI / 2, accent);   // handlebar
+      }
+      break;
+    }
+    case "sailboat": {
+      const L = 9 * (h / 11), B = 2.8 * (h / 11), D = 1.1 * (h / 11);
+      add(new THREE.BoxGeometry(B, D, L * 0.7), 0, D / 2, -L * 0.12);
+      const bow = add(new THREE.ConeGeometry(B * 0.58, L * 0.34, 4, 1), 0, D / 2, L * 0.4, Math.PI / 2, Math.PI / 4);
+      bow.scale.set(1, 1, D / (B * 0.82));
+      add(new THREE.BoxGeometry(B * 0.6, 0.5, L * 0.3), 0, D + 0.25, 0.2, 0, 0, 0, accent);           // cabin
+      add(new THREE.CylinderGeometry(0.07, 0.09, h * 0.85, 10), 0, D + h * 0.42, 0.9, 0, 0, 0, accent);   // mast
+      const sail = add(new THREE.ConeGeometry(L * 0.28, h * 0.78, 3, 1, true), 0, D + h * 0.42, -0.6);  // mainsail
+      sail.scale.set(0.06, 1, 1);
+      const jib = add(new THREE.ConeGeometry(L * 0.18, h * 0.62, 3, 1, true), 0, D + h * 0.34, 2.6); jib.scale.set(0.05, 1, 1);
+      break;
+    }
+    case "catamaran": {
+      const L = 12 * (h / 13), k = h / 13;
+      for (const sx of [-1, 1]) {
+        add(new THREE.BoxGeometry(0.9 * k, 1.0 * k, L * 0.8), sx * 2.2 * k, 0.5 * k, -L * 0.05);
+        const bow = add(new THREE.ConeGeometry(0.5 * k, L * 0.2, 4, 1), sx * 2.2 * k, 0.5 * k, L * 0.45, Math.PI / 2, Math.PI / 4);
+        bow.scale.set(1, 1, 1.1);
+      }
+      add(new THREE.BoxGeometry(5.0 * k, 0.25 * k, L * 0.45), 0, 1.1 * k, -L * 0.15, 0, 0, 0, accent);   // bridge deck
+      add(new THREE.BoxGeometry(3.4 * k, 0.9 * k, L * 0.25), 0, 1.65 * k, -L * 0.12);                      // cabin
+      add(new THREE.CylinderGeometry(0.09 * k, 0.11 * k, h * 0.85, 10), 0, 1.2 * k + h * 0.42, 0.6 * k, 0, 0, 0, accent);
+      const sail = add(new THREE.ConeGeometry(L * 0.3, h * 0.78, 3, 1, true), 0, 1.2 * k + h * 0.42, -1.2 * k); sail.scale.set(0.05, 1, 1);
+      break;
+    }
+    case "fire": {
+      // Crossed logs, a ring of stones, flame cones (animated by the stage), a warm flickering light and rising embers.
+      const k = h / 1.1;
+      for (let i = 0; i < 4; i++) add(new THREE.CylinderGeometry(0.07 * k, 0.08 * k, 0.9 * k, 8), 0, 0.08 * k, 0, Math.PI / 2, (i * Math.PI) / 4, 0, accent);
+      for (let i = 0; i < 9; i++) { const a2 = (i / 9) * Math.PI * 2; add(new THREE.DodecahedronGeometry(0.11 * k, 0), Math.cos(a2) * 0.55 * k, 0.06 * k, Math.sin(a2) * 0.55 * k, 0, 0, 0, "#6f6a62"); }
+      const flames = [];
+      for (const [x, z, sc] of [[0, 0, 1], [0.12, 0.06, 0.7], [-0.12, -0.04, 0.75], [0.04, -0.13, 0.6], [-0.06, 0.12, 0.65]]) {
+        const fl = new THREE.Group();
+        fl.position.set(x * k, 0.12 * k, z * k);
+        const m = mesh(new THREE.ConeGeometry(0.16 * k * sc, 0.9 * k * sc, 10), mainCol);
+        m.position.y = 0.45 * k * sc;
+        fl.add(m); g.add(fl); flames.push(fl);
+      }
+      g.userData.flames = flames;
+      const light = new THREE.PointLight(0xff9a40, 18, 14 * k, 1.6);
+      light.position.set(0, 0.6 * k, 0);
+      light.castShadow = true;
+      g.add(light);
+      g.userData.fireLight = light; g.userData.fireBase = 18; g.userData.fireH = h;
+      const N = 70, geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+      const embers = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffb060, size: 0.035 * k, transparent: true, opacity: 0.9, depthWrite: false }));
+      g.add(embers);
+      g.userData.embers = embers;
       break;
     }
     case "bird": {
