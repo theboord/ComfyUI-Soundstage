@@ -161,6 +161,13 @@ export class Pipeline {
       this.btns[s.k] = b;
       this.bar.append(b);
     }
+    // Stop: cancel what this App queued and interrupt the running render. Shown only while something renders.
+    this.stopBtn = h("button", { type: "button", class: "ss-stop", hidden: "", title: "Stop: cancel the queued renders and interrupt the one running now",
+      on: { click: () => this.stopAll() } }, "■ Stop");
+    this.bar.append(this.stopBtn);
+    if (!document.getElementById("ss-stop-css")) document.head.append(h("style", { id: "ss-stop-css" },
+      ".ss-pipe .ss-stop{flex:0 0 auto!important;align-self:center;border-radius:999px!important;padding:8px 16px!important;background:#ff453a!important;color:#fff!important;border:none!important;font-weight:700!important;cursor:pointer}"));
+    this._stopPoll = setInterval(() => this._refreshStop(), 2000);
     host.prepend(this.bar);
     this.shotRows = [];              // one shot picker per step screen (every step works on every shot)
     this.candidates = {};            // shotId -> [{seed, model, url, file}]
@@ -196,6 +203,40 @@ export class Pipeline {
     if (pid) { this.inflight.set(pid, { sid: this.ctx.stage.activeShot().id, step, t: Date.now() }); this._drawShotRows(); }
     this.ctx.app.graph.setDirtyCanvas(true);
     return r;
+  }
+
+  async _refreshStop() {
+    try {
+      const q = await (await this.ctx.api.fetchApi("/queue")).json();
+      const n = (q.queue_running || []).length + (q.queue_pending || []).length;
+      this.stopBtn.hidden = n === 0;
+      this.stopBtn.textContent = n > 1 ? `■ Stop (${n})` : "■ Stop";
+    } catch { /* server away */ }
+  }
+
+  _say(m) {
+    this.ctx.onStatus?.(m);
+    for (const v of Object.values(this.views || {})) { const st = v.querySelector?.(".status"); if (st && !v.hidden) { st.textContent = m; break; } }
+    const s = this.ctx.app?.graph && document.querySelector(".ss-stage .ss-status");
+    if (s) s.textContent = m;
+  }
+
+  /** Cancel every queued render and interrupt the running one; the step rows clear their "painting…" marks. */
+  async stopAll() {
+    const api = this.ctx.api;
+    this.stopBtn.disabled = true;
+    try {
+      const q = await (await api.fetchApi("/queue")).json();
+      const pending = (q.queue_pending || []).map((x) => x[1]);
+      if (pending.length) await api.fetchApi("/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delete: pending }) });
+      if ((q.queue_running || []).length) await api.fetchApi("/interrupt", { method: "POST" });
+      this.inflight.clear();
+      this._drawShotRows();
+      this.ctx.setBatch?.(false);
+      this._say(`Stopped: ${pending.length} queued render${pending.length === 1 ? "" : "s"} cancelled${(q.queue_running || []).length ? ", the running one interrupted" : ""}.`);
+    } catch (e) { this._say(`Couldn't stop: ${e.message}`); }
+    this.stopBtn.disabled = false;
+    this._refreshStop();
   }
 
   /** A render this App queued is still waiting or running (entries older than an hour are taken as lost events). */
@@ -269,6 +310,15 @@ export class Pipeline {
     f.count = 4;
     f.countSeg = h("span", { class: "seg row" }, ...[1, 2, 4].map((n) => h("button", { type: "button", "aria-pressed": String(n === 4),
       on: { click: (e) => { f.count = n; for (const b of f.countSeg.children) b.setAttribute("aria-pressed", String(b === e.currentTarget)); } } }, `${n}`)));
+    // Quality = step count, up front (the same Steps field as in Advanced). More steps add fine detail, slower.
+    const QUALITY = { klein: [["Fast", 8], ["Standard", 0], ["High", 28], ["Max", 40]], krea: [["Fast", 6], ["Standard", 0], ["High", 14], ["Max", 20]] };
+    f.qualSeg = h("span", { class: "seg row", title: "Steps for the image model: more = finer detail, slower (Standard = the model's tuned default)" });
+    f.drawQuality = () => {
+      const krea = f.model.value === STILL_KREA, cur = Math.round(+f.steps.value || 0);
+      f.qualSeg.replaceChildren(...QUALITY[krea ? "krea" : "klein"].map(([label, st]) => h("button", { type: "button", "aria-pressed": String(cur === st),
+        title: st ? `${st} steps` : "the model's tuned default",
+        on: { click: () => { f.steps.value = String(st); this._applySampling(); f.drawQuality(); } } }, label)));
+    };
     f.goBtn = h("button", { type: "button", class: "go", on: { click: () => this.generateFrames() } }, "Generate frames");
     f.allBtn = h("button", { type: "button", class: "ghost", title: "Queue the same number of variations for every shot in the scene",
       on: { click: () => this.generateFrames(true) } }, "…for every shot");
@@ -316,6 +366,7 @@ export class Pipeline {
             h("label", { class: "f" }, "LoRA (character, product, style)", f.lora),
             h("label", { class: "f" }, h("span", { class: "row" }, "LoRA strength", f.loraOut), f.loraStrength),
             h("div", { class: "row" }, h("span", { class: "status" }, "Variations"), f.countSeg),
+            h("div", { class: "row" }, h("span", { class: "status" }, "Quality"), f.qualSeg),
             h("div", { class: "row" }, f.goBtn, f.allBtn)),
           f.refsCard,
           h("details", { class: "card" }, h("summary", {}, "Advanced: steps & CFG"),
@@ -472,6 +523,7 @@ export class Pipeline {
     f.steps.value = sw ? String(sw.value || 0) : "";
     f.cfg.value = cw ? String(cw.value || 0) : "";
     this._samplingNote();
+    try { f.drawQuality?.(); } catch { /* not built */ }
   }
 
   _samplingNote() {
