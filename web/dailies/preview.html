@@ -54,7 +54,11 @@
 
   applyTheme();
   const q = new URLSearchParams(location.search);
-  const { script, shots, renders } = demoDailies();
+  // ?real=1: thumbnails are rendered frames on the server (FLUX 3 Klein, one per setup), not drawn placeholders.
+  const rv = (f) => `/api/view?filename=${f}&subfolder=soundstage/dailies_real&type=output`;
+  const real = q.has("real") ? { sc_4: Array.from({ length: 11 }, (_, i) => rv(`diner_${String(i).padStart(2, "0")}_00003_.png`)),
+    sc_1: Array.from({ length: 6 }, (_, i) => rv(`desert_${String(i).padStart(2, "0")}_00003_.png`)) } : null;
+  const { script, shots, renders } = demoDailies({ real });
   let sceneId = q.get("scene") || "sc_4";
   const layouts = {};
   try { Object.assign(layouts, q.has("fresh") ? {} : JSON.parse(localStorage.getItem("ss_dailies_preview") || "{}")); } catch { /* storage blocked */ }
