@@ -430,7 +430,8 @@ export class Pipeline {
     let actors = [];
     try { actors = this.ctx.stage.toJSON().actors || []; } catch { /* stage not ready */ }
     const CAST = /^(man|woman|child|horse|dog|cat|car|police_car|sports_car|hatchback|truck|bicycle|motorcycle|ufo|custom)$/;
-    const slots = actors.filter((a) => CAST.test(a.kind || "") && !a.carry_id).map((a) => ({ key: `actor:${a.id}`, label: a.name || a.kind }));
+    const slots = actors.filter((a) => CAST.test(a.kind || "") && !a.carry_id && !a.set_piece && !a.set_xform)   // the cast, not the set dressing
+      .map((a) => ({ key: `actor:${a.id}`, label: a.name || a.kind }));
     slots.push({ key: "location", label: "Location / background" }, { key: "style", label: "Style / look" });
     return slots;
   }
