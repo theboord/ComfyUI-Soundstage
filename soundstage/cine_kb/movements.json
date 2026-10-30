@@ -1,0 +1,584 @@
+[
+  {
+    "id": "movement.french_new_wave",
+    "type": "movement",
+    "name": "French New Wave",
+    "aliases": ["Nouvelle Vague", "Cahiers du cinema directors", "new wave"],
+    "keywords": ["paris", "parisian", "boulevard", "cafe", "café", "jump cut", "jump cuts", "breaks the fourth wall", "talks to camera", "petty thief", "young lovers", "bantering", "cigarette", "1960s paris", "freeze frame", "runs away"],
+    "parent": null,
+    "era": "1958-1968, France",
+    "summary": "Critics turned directors rejected studio polish: lightweight cameras on real Paris streets, available light, small crews, improvised energy, self-aware references to cinema, and editing that breaks continuity on purpose with jump cuts and direct address. The camera is a curious companion, not an invisible narrator, and the film is allowed to admit it is a film. Spontaneity matters more than perfection: passers-by look into the lens, the light changes mid-scene, and the rhythm is nervous and modern.",
+    "intent_tags": ["realism", "energy", "romance", "melancholy"],
+    "signature": {
+      "shot_size": {"WS": 0.2, "MS": 0.4, "MCU": 0.25, "CU": 0.15},
+      "framing": {"single": 0.4, "two_shot": 0.4, "group": 0.2},
+      "angle": {"eye": 0.85, "high": 0.05, "low": 0.1},
+      "camera_height": {"eye": 0.7, "chest": 0.3},
+      "lens_mm_ff": [25, 50],
+      "lens_look": {"spherical": 1.0},
+      "movement": {"handheld": 0.35, "track_follow": 0.25, "static": 0.25, "pan_left": 0.075, "pan_right": 0.075},
+      "rig": {"handheld": 0.5, "wheelchair_or_car_dolly": 0.3, "sticks": 0.2},
+      "lighting": {"available_light": 0.8, "natural_daylight": 0.6, "practical": 0.3},
+      "color": ["black-and-white high-grain (early)", "primary red/blue/white accents (later color films)"],
+      "composition": {"off_center": 0.5, "rule_of_thirds": 0.3, "center": 0.2},
+      "aspect_ratio": ["1.37:1", "1.66:1", "2.35:1 (Franscope / scope titles)"],
+      "asl_seconds": [3, 12],
+      "editing": ["jump cuts within a continuous take", "direct address to camera", "intertitles", "freeze-frame ending", "cinephile homage inserts", "elliptical time"],
+      "sound": ["location sound or post-sync", "jazz or lyrical orchestral score", "sudden music drop-outs"]
+    },
+    "rules": [
+      {"when": "a long conversation in a moving car or on a street", "then": "keep one continuous following take and remove beats with jump cuts on the same axis and size", "why": "jump cuts compress time while keeping spontaneity, and they announce the film's freedom from continuity rules", "hard": false},
+      {"when": "an emotional peak", "then": "consider a look or line to camera, or a freeze frame, instead of a score swell", "why": "the movement prefers reflexive distance to melodrama; breaking the frame makes the audience think about what they feel", "hard": false},
+      {"when": "lighting", "then": "shoot with the light that is there (window, street, overcast sky) and accept its changes", "why": "available light is the visible proof that this is the real city, not a set", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "Street walk-and-talk with jump cuts",
+        "beat": "two lovers banter while walking a city boulevard",
+        "cast": 2,
+        "shots": [
+          {"purpose": "handheld lead-tracking two-shot as they walk toward camera", "subject": "both", "size": "MS", "framing": "two_shot", "angle": "eye", "horizontal": "front", "height": "eye", "lens_mm_ff": 35, "dof": "deep", "movement": "track_lead", "speed": "regular", "lighting": "available daylight, overcast or sun", "composition": "loose, passers-by crossing frame", "duration_s": 6},
+          {"purpose": "jump cut: same framing, later moment, a line overlaps the cut", "subject": "both", "size": "MS", "framing": "two_shot", "angle": "eye", "horizontal": "front", "height": "eye", "lens_mm_ff": 35, "dof": "deep", "movement": "track_lead", "speed": "regular", "duration_s": 3, "note": "same axis and size so the cut reads as a jump, not a new setup"},
+          {"purpose": "a second jump cut: he has lit a cigarette, she has moved to his other side", "subject": "both", "size": "MS", "framing": "two_shot", "angle": "eye", "horizontal": "front", "height": "eye", "lens_mm_ff": 35, "dof": "deep", "movement": "handheld", "speed": "regular", "duration_s": 2.5},
+          {"purpose": "B stops, turns and speaks straight into the lens", "subject": "B", "size": "MCU", "framing": "single", "angle": "eye", "horizontal": "front", "height": "eye", "lens_mm_ff": 40, "dof": "medium", "movement": "static", "lighting": "flat overcast daylight", "duration_s": 3, "note": "direct address breaks the fourth wall"}
+        ],
+        "why": "Real streets and a handheld companion camera create spontaneity; same-angle jump cuts compress the walk and give it a nervous, modern rhythm; direct address makes the audience complicit and reminds them they are watching a film, which is the movement's point."
+      },
+      {
+        "name": "Freeze-frame ending",
+        "beat": "a runaway boy reaches the sea and turns back toward the camera",
+        "cast": 1,
+        "shots": [
+          {"purpose": "long lateral tracking shot as A runs along a country road", "subject": "A", "size": "FS", "framing": "single", "angle": "eye", "horizontal": "profile", "height": "chest", "lens_mm_ff": 32, "dof": "deep", "movement": "truck_right", "speed": "regular", "lighting": "flat winter daylight", "duration_s": 15},
+          {"purpose": "wide: he reaches the beach, small against the water", "subject": "A", "size": "WS", "framing": "single", "angle": "high", "horizontal": "back", "height": "high", "lens_mm_ff": 28, "dof": "deep", "movement": "pan_left", "speed": "slow", "duration_s": 8},
+          {"purpose": "he turns; the camera pushes in and the image freezes on his look into the lens", "subject": "A", "size": "CU", "framing": "single", "angle": "eye", "horizontal": "front", "height": "eye", "lens_mm_ff": 50, "dof": "medium", "movement": "zoom_in", "speed": "slow", "duration_s": 5, "note": "end on a freeze frame; no resolution"}
+        ],
+        "why": "The long run gives the escape duration and real effort; the freeze on a direct look refuses closure and hands the unanswered question to the viewer, which feels more honest than a resolved ending."
+      }
+    ],
+    "avoid": [
+      {"what": "glossy three-point studio lighting", "why": "the look is available light and street realism"},
+      {"what": "heavy crane or Steadicam glide", "why": "too polished; use handheld or improvised dollies (wheelchairs, cars)"},
+      {"what": "invisible continuity editing everywhere", "why": "the movement's energy comes from visible breaks in the rules; seamless cutting erases its voice"}
+    ],
+    "prompt_fragments": {
+      "ltx": "1960s French New Wave look, black-and-white film with visible high-speed grain, natural available daylight, slightly loose handheld framing, 1.37:1 frame.",
+      "still": "1960s French New Wave film still, black and white, visible high-speed film grain, natural overcast daylight, 35mm lens, loose off-center framing, real Paris street location, passers-by in the background, 1.37:1",
+      "h3": "Live-action, black-and-white 1960s French New Wave look with visible grain and natural daylight."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.5, "yaw_deg": 0, "pitch_deg": 0, "distance_m": 2.2, "roll_deg": 0, "focal_mm_ff": 35, "vfov_deg": 30.7},
+    "reference_works": [
+      {"title": "The 400 Blows", "year": 1959, "note": "freeze-frame ending"},
+      {"title": "Breathless", "year": 1960, "note": "jump cuts, handheld street shooting"},
+      {"title": "Cleo from 5 to 7", "year": 1962, "note": "real-time city walk"},
+      {"title": "Pierrot le Fou", "year": 1965, "note": "primary color, direct address"}
+    ],
+    "sources": [
+      {"url": "https://en.wikipedia.org/wiki/French_New_Wave", "supports": "movement history and techniques"},
+      {"url": "https://ltx.io/blog/camera-movement-prompt-guide", "supports": "LTX documented camera vocabulary (handheld movement, tracks)"},
+      {"url": "https://huggingface.co/MiniMaxAI/MiniMax-H3", "supports": "H3 motion type + amplitude + speed syntax"}
+    ],
+    "confidence": "craft_consensus",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  },
+  {
+    "id": "movement.korean_thriller",
+    "type": "national_cinema",
+    "name": "Korean New Wave Thriller",
+    "aliases": ["Korean revenge thriller", "K-thriller", "Korean New Wave", "Hallyu thriller", "Korean crime thriller"],
+    "keywords": ["serial killer", "revenge", "vengeance", "detective chases", "alley chase", "rain-soaked alley", "back alley", "semi-basement", "basement", "hammer", "kidnapped", "seoul", "rural police", "interrogation", "rich family", "stairs down", "foot chase"],
+    "parent": null,
+    "era": "1999-present",
+    "summary": "South Korean genre cinema that mixes crime, horror, satire and black comedy inside a single scene. Night streets are soaked in rain and lit with cold blue-green mixed with sodium orange; foot chases through cramped hillside alleys are shot handheld from close behind the runner, so the audience is lost in the maze with them. Violence is staged in wide, unflinching, often unbroken frames that refuse to cut away. Tone swings without warning from slapstick police incompetence to horror. Class is drawn vertically: the rich live up the hill and the stairs, the poor down in semi-basements, and the camera keeps measuring the climb.",
+    "intent_tags": ["tension", "dread", "menace", "chaos", "comedy"],
+    "signature": {
+      "shot_size": {"EWS": 0.1, "WS": 0.3, "MS": 0.25, "MCU": 0.15, "CU": 0.15, "INSERT": 0.05},
+      "framing": {"single": 0.4, "two_shot": 0.2, "group": 0.15, "establishing": 0.15, "pov": 0.1},
+      "angle": {"eye": 0.6, "high": 0.2, "low": 0.15, "overhead": 0.05},
+      "camera_height": {"eye": 0.45, "chest": 0.25, "high": 0.2, "knee": 0.1},
+      "lens_mm_ff": [21, 85],
+      "lens_look": {"spherical": 0.6, "anamorphic": 0.4},
+      "movement": {"handheld": 0.3, "track_follow": 0.2, "static": 0.3, "truck_right": 0.1, "crane_down": 0.05, "rack_focus": 0.05},
+      "rig": {"handheld": 0.35, "sticks": 0.35, "dolly": 0.2, "crane": 0.1},
+      "lighting": {"night_rain_backlight": 0.6, "sodium_streetlight": 0.5, "cold_fluorescent": 0.4, "overcast_daylight": 0.3},
+      "color": ["cold blue-green shadows", "sodium-orange streetlight", "wet black asphalt", "muddy rural greens and browns by day"],
+      "composition": {"vertical_class_geography": 0.25, "deep_staging": 0.3, "symmetrical_baroque": 0.2, "cramped_frames": 0.25},
+      "aspect_ratio": ["2.39:1", "1.85:1"],
+      "asl_seconds": [2, 15],
+      "editing": ["tonal whiplash: comedy cut hard against horror", "held unbroken wides for violence", "rack-focus reveals", "elaborate match-cut transitions"],
+      "sound": ["heavy rain", "sudden silence", "melancholy strings or ironic upbeat music against violence"]
+    },
+    "rules": [
+      {"when": "violence happens", "then": "stage it in a wide or medium-wide held shot, ideally without cutting, and let it run longer than is comfortable", "why": "refusing to cut away denies the audience the relief of editing, so brutality feels physical and morally weighty rather than exciting", "hard": false},
+      {"when": "a foot chase through alleys", "then": "go handheld close behind the pursuer at the nape of the neck, with blind corners and dead ends", "why": "the audience sees only what the runner sees and gets lost in the same maze, which turns the chase into panic", "hard": false},
+      {"when": "a scene is tense", "then": "allow a beat of awkward comedy (a slip, an absurd argument) right before the worst moment", "why": "the laugh lowers the audience's guard, so the following horror hits harder and the world feels absurd and real at once", "hard": false},
+      {"when": "characters of different classes share a scene or space", "then": "stage the difference vertically: stairs, hillsides, basements, windows looking up or down", "why": "verticality makes class visible as physical position, so status reads in every frame without dialogue", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "Rain-alley foot chase",
+        "beat": "a detective chases a suspect through rain-soaked hillside alleys at night and loses him",
+        "cast": 2,
+        "shots": [
+          {"purpose": "high wide: the hillside maze of alleys and rooftops in the rain", "subject": "env", "size": "EWS", "framing": "establishing", "angle": "high", "horizontal": "front", "height": "aerial", "lens_mm_ff": 35, "dof": "deep", "movement": "static", "lighting": "sodium streetlights in pools, cold blue-green elsewhere", "composition": "tangle of alleys, two tiny running figures", "duration_s": 4},
+          {"purpose": "tail-track: handheld at the back of A's neck as he runs", "subject": "A", "size": "MS", "framing": "single", "angle": "eye", "horizontal": "back", "height": "eye", "lens_mm_ff": 24, "dof": "deep", "movement": "handheld", "speed": "fast", "lighting": "rain backlit by streetlight", "composition": "cramped walls on both sides, the suspect a blur ahead", "duration_s": 6},
+          {"purpose": "lead-track on B, glancing back, alley walls scraping past", "subject": "B", "size": "MS", "framing": "single", "angle": "eye", "horizontal": "front", "height": "eye", "lens_mm_ff": 28, "dof": "medium", "movement": "track_lead", "speed": "fast", "lighting": "sodium orange flaring through rain", "duration_s": 3},
+          {"purpose": "A slips and goes down hard in a puddle (the comic beat)", "subject": "A", "size": "FS", "framing": "single", "angle": "eye", "horizontal": "profile", "height": "knee", "lens_mm_ff": 28, "dof": "deep", "movement": "static", "duration_s": 2.5},
+          {"purpose": "A at a fork: wide, both alleys empty, rain hammering", "subject": "A", "size": "WS", "framing": "single", "angle": "high", "horizontal": "back", "height": "high", "lens_mm_ff": 24, "dof": "deep", "movement": "static", "lighting": "two pools of light, black between", "composition": "A small at the center, two dark exits", "duration_s": 5},
+          {"purpose": "CU: A's soaked, furious face as he realizes he has lost him", "subject": "A", "size": "CU", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "eye", "lens_mm_ff": 50, "dof": "shallow", "movement": "static", "lighting": "cold green-blue side light", "duration_s": 3},
+          {"purpose": "reveal: B crouched in shadow a few meters behind A, out of focus, then the rack", "subject": "B", "size": "WS", "framing": "dirty_single", "angle": "eye", "horizontal": "three_quarter_front", "height": "eye", "lens_mm_ff": 50, "dof": "shallow", "movement": "rack_focus", "speed": "slow", "composition": "A soft in the foreground, B sharpening in the background", "duration_s": 4}
+        ],
+        "why": "The high wide shows a maze the pursuer cannot see, the tail-tracking handheld traps the audience inside it, and the slapstick fall drops the tension a notch just before the empty fork makes failure feel absolute. The final rack focus reveals the suspect was close all along, which recasts the chase as cruel irony and leaves dread instead of relief."
+      },
+      {
+        "name": "Down the stairs (class verticality)",
+        "beat": "a poor family's son leaves a rich hilltop house in the rain and walks all the way down to his flooded semi-basement",
+        "cast": 1,
+        "shots": [
+          {"purpose": "the rich house above, lit warm through glass, A small at the gate", "subject": "A", "size": "WS", "framing": "single", "angle": "low", "horizontal": "back", "height": "knee", "lens_mm_ff": 28, "dof": "deep", "movement": "static", "lighting": "warm interior glow, cold rain outside", "composition": "the house dominating the upper frame", "duration_s": 5},
+          {"purpose": "a long flight of stone steps, A descending into the frame", "subject": "A", "size": "WS", "framing": "single", "angle": "high", "horizontal": "back", "height": "high", "lens_mm_ff": 24, "dof": "deep", "movement": "crane_down", "speed": "slow", "lighting": "streetlight in heavy rain", "composition": "steep diagonal of stairs, water running down them", "duration_s": 7},
+          {"purpose": "lower streets: water flowing past his ankles, following downhill", "subject": "A", "size": "MS", "framing": "single", "angle": "eye", "horizontal": "three_quarter_back", "height": "chest", "lens_mm_ff": 35, "dof": "medium", "movement": "track_follow", "speed": "slow", "lighting": "sodium orange and cold green", "duration_s": 6},
+          {"purpose": "the semi-basement window at street level, water pouring in", "subject": "env", "size": "MS", "framing": "establishing", "angle": "high", "horizontal": "front", "height": "chest", "lens_mm_ff": 35, "dof": "deep", "movement": "static", "lighting": "flickering bare bulb inside", "composition": "window half below the waterline", "duration_s": 4},
+          {"purpose": "inside: A waist-deep, looking up at the window to the street", "subject": "A", "size": "MS", "framing": "single", "angle": "low", "horizontal": "front", "height": "knee", "lens_mm_ff": 28, "dof": "deep", "movement": "static", "lighting": "single bulb, cold water reflections", "composition": "street-level window high in the frame", "duration_s": 6}
+        ],
+        "why": "Every shot moves down: the house above, the stairs, the street, the basement, so the audience physically feels the social distance as a descent. The same rain that was atmosphere on the hill becomes a flood at the bottom, which turns the class metaphor into a literal consequence without a line of dialogue."
+      }
+    ],
+    "avoid": [
+      {"what": "quick cutting during violence", "why": "fragmenting the brutality makes it exciting; the style insists on unflinching duration"},
+      {"what": "a single consistent tone", "why": "the signature is tonal whiplash; a straight procedural loses the absurdity that makes the horror land"},
+      {"what": "warm, clean, high-key nights", "why": "the look depends on cold rain light and mixed sodium color"}
+    ],
+    "prompt_fragments": {
+      "ltx": "Korean thriller night look in 2.39:1 widescreen, heavy rain backlit by streetlight, cold blue-green shadows mixed with sodium-orange light, wet black asphalt reflections, gritty realistic texture with fine grain.",
+      "still": "Korean thriller film still, 2.39:1, night, heavy rain backlit by streetlights, cold blue-green shadows, sodium vapor orange highlights, wet asphalt reflections, cramped hillside alley, gritty realistic texture, fine film grain",
+      "h3": "Live-action, Korean-thriller night look with heavy backlit rain, cold blue-green shadow and sodium-orange light."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.5, "yaw_deg": 180, "pitch_deg": 0, "distance_m": 1.8, "roll_deg": 0, "focal_mm_ff": 24, "vfov_deg": 43.6},
+    "reference_works": [
+      {"title": "Memories of Murder", "year": 2003, "note": "rural rain, police incompetence satire"},
+      {"title": "Oldboy", "year": 2003, "note": "one-take corridor fight in a lateral wide"},
+      {"title": "The Chaser", "year": 2008, "note": "alley foot chases"},
+      {"title": "I Saw the Devil", "year": 2010},
+      {"title": "Parasite", "year": 2019, "note": "class verticality, flood descent"}
+    ],
+    "sources": [
+      {"url": "https://en.wikipedia.org/wiki/Cinema_of_South_Korea", "supports": "national cinema history"}
+    ],
+    "confidence": "interpretive",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  },
+  {
+    "id": "movement.italian_neorealism",
+    "type": "movement",
+    "name": "Italian Neorealism",
+    "aliases": ["neorealism", "neorealismo", "postwar Italian cinema"],
+    "keywords": ["postwar", "post-war", "ruins", "bombed-out", "working class", "unemployed", "poverty", "stolen bicycle", "bicycle", "father and son", "tenement", "rome streets", "non-actors", "pawnshop", "looking for work"],
+    "parent": null,
+    "era": "1943-1952, Italy",
+    "summary": "Postwar Italian filmmakers took the camera out of destroyed studios into real ruined streets, cast non-professional actors, and told small stories of working people trying to survive: a job, a bicycle, a room. The camera observes at eye level from a respectful distance, often in wide and medium shots that keep people embedded in their surroundings and in crowds. Light is whatever the day provides. Sound was frequently dubbed afterward, which freed the camera to shoot anywhere. The drama is everyday and unresolved, and the dignity of the subjects comes from patience rather than from rhetoric.",
+    "intent_tags": ["realism", "grief", "melancholy", "isolation"],
+    "signature": {
+      "shot_size": {"WS": 0.35, "FS": 0.2, "MS": 0.3, "MCU": 0.1, "CU": 0.05},
+      "framing": {"single": 0.3, "two_shot": 0.3, "group": 0.3, "establishing": 0.1},
+      "angle": {"eye": 0.85, "high": 0.1, "low": 0.05},
+      "camera_height": {"eye": 0.7, "chest": 0.2, "high": 0.1},
+      "lens_mm_ff": [28, 50],
+      "lens_look": {"spherical": 1.0},
+      "movement": {"static": 0.5, "track_follow": 0.25, "pan_left": 0.1, "pan_right": 0.1, "handheld": 0.05},
+      "rig": {"sticks": 0.6, "dolly_or_truck": 0.3, "handheld": 0.1},
+      "lighting": {"available_daylight": 0.9, "flat_overcast": 0.5},
+      "color": ["black-and-white, gray mid-tones", "dusty, unglamorous, slightly soft image"],
+      "composition": {"people_embedded_in_environment": 0.5, "crowd": 0.3, "center": 0.2},
+      "aspect_ratio": ["1.37:1"],
+      "asl_seconds": [5, 15],
+      "editing": ["unhurried cutting", "minimal coverage", "open, unresolved endings"],
+      "sound": ["post-synchronized dialogue", "street noise", "sparse, melancholy score"]
+    },
+    "rules": [
+      {"when": "placing the characters", "then": "frame them wide enough to include the street, crowd or ruin around them", "why": "the movement's argument is that people are shaped by their circumstances; isolating them in close-up would make the story about personality instead of society", "hard": false},
+      {"when": "an emotional climax", "then": "stay at observational distance and eye level instead of pushing in or swelling the score", "why": "restraint lets the audience reach the emotion themselves, and it preserves the subjects' dignity", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "Search through the crowd",
+        "beat": "a father and his young son search a crowded Sunday market for their stolen bicycle",
+        "cast": 2,
+        "shots": [
+          {"purpose": "wide: the crowded market street in flat daylight, father and son entering", "subject": "env", "size": "WS", "framing": "establishing", "angle": "high", "horizontal": "front", "height": "high", "lens_mm_ff": 32, "dof": "deep", "movement": "static", "lighting": "flat overcast daylight", "composition": "dense crowd, the pair barely distinguishable", "duration_s": 6},
+          {"purpose": "follow the pair through stalls of bicycle parts", "subject": "both", "size": "FS", "framing": "two_shot", "angle": "eye", "horizontal": "three_quarter_back", "height": "eye", "lens_mm_ff": 35, "dof": "deep", "movement": "track_follow", "speed": "slow", "lighting": "available daylight", "composition": "strangers crossing in front", "duration_s": 8},
+          {"purpose": "insert: piles of frames and wheels, impossible to search", "subject": "prop", "size": "INSERT", "framing": "insert", "angle": "high", "horizontal": "front", "height": "chest", "lens_mm_ff": 50, "dof": "medium", "movement": "pan_right", "speed": "slow", "duration_s": 3},
+          {"purpose": "the son watching his father's face, in a two-shot at the boy's height", "subject": "both", "size": "MS", "framing": "two_shot", "angle": "low", "horizontal": "three_quarter_front", "height": "chest", "lens_mm_ff": 40, "dof": "medium", "movement": "static", "duration_s": 5},
+          {"purpose": "wide: the two stand still as the crowd flows around them", "subject": "both", "size": "WS", "framing": "two_shot", "angle": "eye", "horizontal": "front", "height": "eye", "lens_mm_ff": 32, "dof": "deep", "movement": "static", "composition": "small figures, the market indifferent around them", "duration_s": 7}
+        ],
+        "why": "Keeping the pair in wide frames among strangers shows the scale of the problem: the city does not care. The child's-height two-shot makes the father's failure something witnessed by his son, and ending on stillness in a moving crowd lets the audience feel the helplessness without a single expressive camera move."
+      }
+    ],
+    "avoid": [
+      {"what": "glamorous lighting or stars' close-ups", "why": "it turns ordinary people into icons and breaks the documentary trust the movement depends on"},
+      {"what": "built sets and controlled backgrounds", "why": "the real street and ruin are the film's evidence"}
+    ],
+    "prompt_fragments": {
+      "ltx": "1940s Italian neorealist look, black-and-white film with soft gray mid-tones and natural grain, flat available daylight on real streets, unglamorous documentary texture in a 1.37:1 frame.",
+      "still": "1940s Italian neorealism film still, black and white, soft gray tonal range, natural film grain, flat available daylight, real postwar street location, non-professional faces, eye-level 35mm, deep focus, 1.37:1",
+      "h3": "Live-action, black-and-white 1940s neorealist look in flat natural daylight on real streets."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.4, "yaw_deg": 15, "pitch_deg": 0, "distance_m": 4.5, "roll_deg": 0, "focal_mm_ff": 35, "vfov_deg": 30.7},
+    "reference_works": [
+      {"title": "Rome, Open City", "year": 1945},
+      {"title": "Paisan", "year": 1946},
+      {"title": "Bicycle Thieves", "year": 1948},
+      {"title": "Umberto D.", "year": 1952}
+    ],
+    "sources": [
+      {"url": "https://en.wikipedia.org/wiki/Italian_neorealism", "supports": "movement history and characteristics"}
+    ],
+    "confidence": "craft_consensus",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  },
+  {
+    "id": "movement.german_expressionism",
+    "type": "movement",
+    "name": "German Expressionism",
+    "aliases": ["expressionist cinema", "Weimar cinema", "German expressionist film"],
+    "keywords": ["shadow on the wall", "long shadow", "sleepwalker", "somnambulist", "vampire", "mad doctor", "madman", "crooked streets", "twisted staircase", "silent film", "asylum", "nightmare", "doppelganger", "puppet master"],
+    "parent": null,
+    "era": "1919-1933, Weimar Germany",
+    "summary": "Interior states projected onto the world. Sets are painted and built at impossible angles, streets lean, windows are jagged, and light and shadow are as much a part of the design as the walls: a hard light low or to the side throws enormous shadows of a character ahead of the character himself. Performances are stylized and theatrical with heavy makeup, frames are composed graphically like woodcuts, and iris shots open and close on details. The camera is mostly fixed, so the distortion lives inside the frame. It became the visual ancestor of horror and film noir.",
+    "intent_tags": ["dread", "menace", "disorientation", "paranoia"],
+    "signature": {
+      "shot_size": {"WS": 0.35, "FS": 0.3, "MS": 0.2, "CU": 0.15},
+      "framing": {"single": 0.4, "establishing": 0.3, "two_shot": 0.2, "insert": 0.1},
+      "angle": {"eye": 0.4, "low": 0.3, "high": 0.2, "dutch": 0.1},
+      "camera_height": {"eye": 0.4, "knee": 0.2, "high": 0.3, "ground": 0.1},
+      "lens_mm_ff": [24, 50],
+      "lens_look": {"spherical": 1.0},
+      "movement": {"static": 0.85, "dolly_in": 0.1, "pan_left": 0.05},
+      "rig": {"sticks": 0.9, "dolly": 0.1},
+      "lighting": {"extreme_chiaroscuro": 0.9, "hard_low_side_light": 0.7, "cast_shadow_as_character": 0.6, "painted_light": 0.3},
+      "color": ["black-and-white or monochrome tints (amber, blue, green)", "painted shadows and highlights on sets"],
+      "composition": {"distorted_diagonals": 0.5, "graphic_woodcut_shapes": 0.3, "iris_vignette": 0.2},
+      "aspect_ratio": ["1.33:1 silent"],
+      "asl_seconds": [4, 12],
+      "editing": ["iris in / iris out", "intertitles", "slow theatrical rhythm"],
+      "sound": ["silent with live orchestral accompaniment", "modern scores: dissonant strings"]
+    },
+    "rules": [
+      {"when": "a threat approaches", "then": "show its shadow on a wall or stair before the figure itself", "why": "a cast shadow is bigger, more distorted and less specific than the person, so the audience imagines something worse than any actor could be", "hard": false},
+      {"when": "designing the space", "then": "build the madness into the set (leaning walls, oblique doors, painted streaks of light) and keep the camera still", "why": "a locked frame on a distorted world makes the distortion read as reality rather than as a camera trick", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "The shadow on the stairs",
+        "beat": "a gaunt figure climbs a stairway toward a sleeping woman's room",
+        "cast": 2,
+        "shots": [
+          {"purpose": "the stairway: crooked walls, a hard low light from below", "subject": "env", "size": "WS", "framing": "establishing", "angle": "low", "horizontal": "profile", "height": "knee", "lens_mm_ff": 28, "dof": "deep", "movement": "static", "lighting": "single hard source low and to the side", "composition": "steep diagonal stair, leaning walls", "duration_s": 5},
+          {"purpose": "the elongated shadow of A climbing the wall, the man himself unseen", "subject": "A", "size": "FS", "framing": "single", "angle": "eye", "horizontal": "profile", "height": "eye", "lens_mm_ff": 35, "dof": "deep", "movement": "static", "lighting": "hard side light throwing a huge silhouette", "composition": "shadow on a blank wall, clawed hand reaching forward", "duration_s": 6},
+          {"purpose": "B asleep in bed, high angle, her room boxed by angular walls", "subject": "B", "size": "MS", "framing": "single", "angle": "high", "horizontal": "front", "height": "high", "lens_mm_ff": 35, "dof": "deep", "movement": "static", "lighting": "pale soft key, dark corners", "duration_s": 4},
+          {"purpose": "the shadow of the hand falls across her, iris closing in", "subject": "B", "size": "CU", "framing": "single", "angle": "high", "horizontal": "front", "height": "high", "lens_mm_ff": 50, "dof": "medium", "movement": "static", "lighting": "hard light, shadow of the hand moving over the face", "composition": "iris vignette tightening", "duration_s": 4}
+        ],
+        "why": "Showing the shadow instead of the man turns him into a pure shape of threat, larger than life and impossible to fight. The high angle on the sleeper makes her small and defenseless, and the closing iris narrows the world to the moment of contact, so the horror is suggested rather than shown."
+      }
+    ],
+    "avoid": [
+      {"what": "naturalistic real locations and soft light", "why": "the style is about an artificial world that expresses a mind, not about recording reality"},
+      {"what": "handheld or fluid camera", "why": "the stillness of the camera lets the distortion belong to the world"}
+    ],
+    "prompt_fragments": {
+      "ltx": "1920s German Expressionist silent-film look, high-contrast black-and-white with extreme chiaroscuro, hard low side light casting long distorted shadows, painted angular sets, soft vignette and flickering early-film grain in a 1.33:1 frame.",
+      "still": "1920s German Expressionist silent film still, high-contrast black and white, extreme chiaroscuro, long distorted cast shadows on walls, painted angular set with leaning walls, theatrical makeup, iris vignette, flickering nitrate grain, 1.33:1",
+      "h3": "Live-action, 1920s Expressionist silent-film look with extreme chiaroscuro and long distorted shadows."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.4, "yaw_deg": 90, "pitch_deg": -8, "distance_m": 4.0, "roll_deg": 0, "focal_mm_ff": 35, "vfov_deg": 30.7},
+    "reference_works": [
+      {"title": "The Cabinet of Dr. Caligari", "year": 1920, "note": "painted, distorted sets"},
+      {"title": "Nosferatu", "year": 1922, "note": "shadow on the stairs"},
+      {"title": "Metropolis", "year": 1927},
+      {"title": "M", "year": 1931, "note": "bridge to sound-era crime and noir"}
+    ],
+    "sources": [
+      {"url": "https://en.wikipedia.org/wiki/German_Expressionism", "supports": "movement history and visual characteristics"}
+    ],
+    "confidence": "craft_consensus",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  },
+  {
+    "id": "movement.hong_kong_action",
+    "type": "national_cinema",
+    "name": "Hong Kong Action Cinema",
+    "aliases": ["heroic bloodshed", "Hong Kong New Wave action", "HK action", "wire-fu", "gun-fu (Hong Kong)"],
+    "keywords": ["triad", "triads", "two pistols", "dual pistols", "doves", "church shootout", "wire-work", "wirework", "kung fu", "wuxia", "swordsman", "mexican standoff", "brotherhood", "undercover cop", "gangster", "teahouse", "hong kong"],
+    "parent": null,
+    "era": "1979-1997, Hong Kong",
+    "summary": "Hong Kong's action cinema turned violence into choreography and melodrama. Martial-arts and wire-work fights are framed wide and full-body so the performers' skill reads, cut on the beat of impacts and sped up with undercranking. In the gangster 'heroic bloodshed' strand, gunfights become ballets: slow motion at the peak of a dive, two pistols firing, doves scattering in a church, a Mexican standoff with guns pressed to faces in tight profile two-shots. Emotion is operatic (loyalty, brotherhood, betrayal), so cross-cut close-ups and freeze frames are used without embarrassment, and neon city nights frame it all.",
+    "intent_tags": ["energy", "spectacle", "tension", "triumph"],
+    "signature": {
+      "shot_size": {"WS": 0.25, "FS": 0.25, "MS": 0.2, "CU": 0.2, "INSERT": 0.1},
+      "framing": {"single": 0.4, "two_shot": 0.25, "fifty_fifty": 0.1, "group": 0.15, "insert": 0.1},
+      "angle": {"eye": 0.5, "low": 0.35, "high": 0.1, "dutch": 0.05},
+      "camera_height": {"eye": 0.4, "hip": 0.25, "knee": 0.2, "high": 0.15},
+      "lens_mm_ff": [21, 135],
+      "lens_look": {"spherical": 0.8, "anamorphic": 0.2},
+      "movement": {"static": 0.35, "track_follow": 0.2, "dolly_in": 0.15, "crane_up": 0.1, "whip_pan": 0.1, "zoom_in": 0.1},
+      "rig": {"sticks": 0.4, "dolly": 0.3, "crane": 0.15, "handheld": 0.15},
+      "lighting": {"hard_backlight_in_smoke": 0.6, "neon_night": 0.4, "candlelit_church": 0.2},
+      "color": ["neon blues and reds at night", "warm tungsten interiors", "smoke and muzzle flash highlights"],
+      "composition": {"profile_face_off": 0.3, "full_body_choreography": 0.4, "symmetrical_standoff": 0.3},
+      "aspect_ratio": ["2.35:1", "1.85:1"],
+      "asl_seconds": [0.8, 5],
+      "editing": ["slow motion at the apex of action", "cut on impacts, intercutting multiple speeds", "freeze frames on emotional peaks", "cross-cut close-ups of eyes in standoffs"],
+      "sound": ["exaggerated gunshot and impact foley", "Cantopop ballads over the aftermath", "sudden silence in standoffs"]
+    },
+    "rules": [
+      {"when": "martial arts or wire-work choreography", "then": "frame full-body and wide enough for both fighters, and cut on the impact beat", "why": "the performer's skill is the spectacle; wide framing proves it and impact-cutting gives the fight a musical pulse", "hard": false},
+      {"when": "the peak of a gunfight move (a dive, a slide, a two-handed volley)", "then": "drop into slow motion for that one beat, then snap back to real speed", "why": "slowing the apex lets the audience savor the grace of the action and turns the hero into an icon before the fury resumes", "hard": false},
+      {"when": "a Mexican standoff", "then": "use tight profile two-shots with guns at faces and cross-cut close-ups of eyes", "why": "the pistols touching skin compress the distance to zero, so the tension is about loyalty and nerve rather than aim", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "Church shootout to standoff",
+        "beat": "a hitman and the cop hunting him are cornered together by gangsters in a candlelit church",
+        "cast": 2,
+        "shots": [
+          {"purpose": "wide: the nave, candles, white doves on the rafters", "subject": "env", "size": "WS", "framing": "establishing", "angle": "low", "horizontal": "front", "height": "knee", "lens_mm_ff": 24, "dof": "deep", "movement": "crane_down", "speed": "slow", "lighting": "candles and hard backlight through stained glass, smoke", "composition": "symmetrical aisle", "duration_s": 5},
+          {"purpose": "A dives sideways firing two pistols, slow motion at the apex", "subject": "A", "size": "FS", "framing": "single", "angle": "low", "horizontal": "profile", "height": "knee", "lens_mm_ff": 28, "dof": "deep", "movement": "track_follow", "speed": "fast", "lighting": "muzzle flashes, backlit smoke", "duration_s": 3, "note": "overcrank the dive, real speed on landing"},
+          {"purpose": "doves burst from the rafters in slow motion", "subject": "env", "size": "MS", "framing": "insert", "angle": "low", "horizontal": "front", "height": "ground", "lens_mm_ff": 50, "dof": "medium", "movement": "static", "lighting": "backlit through smoke", "duration_s": 2},
+          {"purpose": "B rolls behind a pew, returns fire", "subject": "B", "size": "MS", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "knee", "lens_mm_ff": 35, "dof": "medium", "movement": "whip_pan", "speed": "fast", "duration_s": 1.5},
+          {"purpose": "the standoff: profile 50/50 two-shot, each pistol pressed to the other's head", "subject": "both", "size": "MS", "framing": "fifty_fifty", "angle": "eye", "horizontal": "profile", "height": "eye", "lens_mm_ff": 50, "dof": "medium", "movement": "static", "lighting": "candlelight, smoke drifting", "composition": "faces at the edges, the two guns crossing in the center", "duration_s": 5},
+          {"purpose": "cross-cut CU: A's eyes", "subject": "A", "size": "CU", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "eye", "lens_mm_ff": 85, "dof": "shallow", "movement": "dolly_in", "speed": "slow", "duration_s": 2},
+          {"purpose": "cross-cut CU: B's eyes, the first trace of a smile", "subject": "B", "size": "CU", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "eye", "lens_mm_ff": 85, "dof": "shallow", "movement": "dolly_in", "speed": "slow", "duration_s": 2}
+        ],
+        "why": "The sacred setting, the doves and the slow-motion apex turn a gunfight into a ritual of grace, so the violence is felt as beauty and loss rather than mere excitement. Collapsing into a touching-distance standoff with mirrored close-ups reframes the enemies as twins, which is the genre's real subject: loyalty between men on opposite sides."
+      }
+    ],
+    "avoid": [
+      {"what": "shaky long-lens fragments that hide the choreography", "why": "the performers' physical skill is the attraction; obscuring it wastes the action"},
+      {"what": "slow motion throughout", "why": "slow motion works as punctuation at an apex; continuous slow motion loses the contrast and the rhythm"}
+    ],
+    "prompt_fragments": {
+      "ltx": "1980s Hong Kong action film look, hard backlight through thick smoke, warm tungsten and candlelight against neon blue night, bright muzzle flashes, saturated colors and coarse 35mm grain.",
+      "still": "1980s Hong Kong action film still, hard backlight through thick smoke, warm candlelight and tungsten against neon blue night, saturated color, muzzle flash highlights, low angle, coarse 35mm film grain, 2.35:1",
+      "h3": "Live-action, 1980s Hong Kong action look with smoky backlight, neon and muzzle flashes."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.2, "yaw_deg": 90, "pitch_deg": -4, "distance_m": 3.5, "roll_deg": 0, "focal_mm_ff": 35, "vfov_deg": 30.7},
+    "reference_works": [
+      {"title": "A Better Tomorrow", "year": 1986},
+      {"title": "The Killer", "year": 1989, "note": "church shootout, doves, standoffs"},
+      {"title": "Once Upon a Time in China", "year": 1991, "note": "wire-work martial arts"},
+      {"title": "Hard Boiled", "year": 1992, "note": "hospital long take"}
+    ],
+    "sources": [
+      {"url": "https://en.wikipedia.org/wiki/Heroic_bloodshed", "supports": "heroic bloodshed subgenre and conventions"},
+      {"url": "https://en.wikipedia.org/wiki/Hong_Kong_action_cinema", "supports": "history of Hong Kong action and wire-work"}
+    ],
+    "confidence": "craft_consensus",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  },
+  {
+    "id": "movement.dogme_95",
+    "type": "movement",
+    "name": "Dogme 95",
+    "aliases": ["Dogma 95", "Dogme", "vow of chastity"],
+    "keywords": ["family gathering", "family reunion", "birthday dinner", "dinner party", "toast", "speech at dinner", "dark secret", "confession at the table", "home video", "raw", "awkward family", "country house"],
+    "parent": null,
+    "era": "1995-2005, Denmark (international followers)",
+    "summary": "A Danish manifesto that stripped filmmaking to its essentials as a challenge to polished, effects-driven cinema. Its rules: shoot on location only with props found there, use direct sound only, handheld camera only, no special lighting (one lamp on the camera at most), no optical work or filters, no genre or superficial action, set here and now, and no director credit. The result is raw, close, mobile footage on early consumer video, where the camera hunts for faces in real time and the cutting is rough. The drama tends to be emotional crisis among small groups, and the restriction makes it feel unfiltered and intrusive.",
+    "intent_tags": ["realism", "chaos", "tension", "intimacy"],
+    "signature": {
+      "shot_size": {"WS": 0.1, "MS": 0.35, "MCU": 0.3, "CU": 0.25},
+      "framing": {"single": 0.45, "two_shot": 0.2, "group": 0.25, "reaction": 0.1},
+      "angle": {"eye": 0.8, "high": 0.1, "low": 0.1},
+      "camera_height": {"eye": 0.6, "chest": 0.3, "seated": 0.1},
+      "lens_mm_ff": [24, 50],
+      "lens_look": {"spherical": 1.0},
+      "movement": {"handheld": 0.85, "whip_pan": 0.1, "zoom_in": 0.05},
+      "rig": {"handheld": 1.0},
+      "lighting": {"available_light_only": 1.0},
+      "color": ["early standard-definition video texture", "blown highlights and muddy shadows", "mixed color temperatures left uncorrected"],
+      "composition": {"loose_hunting_frame": 0.6, "faces_cut_off": 0.2, "crowded_group": 0.2},
+      "aspect_ratio": ["1.33:1 (video) blown up to 1.85:1 35mm"],
+      "asl_seconds": [1.5, 8],
+      "editing": ["jump cuts and rough continuity", "cut for performance, not for matching", "no optical transitions"],
+      "sound": ["direct location sound only", "music only if played in the scene"]
+    },
+    "rules": [
+      {"when": "always", "then": "camera is handheld and light is only what is at the location; no added lamps, filters, or non-diegetic music", "why": "these are the manifesto's vows; following them is the style, and the visible limits make the drama feel unmediated", "hard": true},
+      {"when": "a confrontation in a group", "then": "let the operator swing between speakers and listeners in real time rather than covering it with set-ups", "why": "the camera's searching mirrors the room's panic, and missed moments feel like truth rather than error", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "The toast that detonates",
+        "beat": "at his father's birthday dinner, a son stands and accuses his father in front of the family",
+        "cast": 3,
+        "shots": [
+          {"purpose": "handheld wide of the long table, guests laughing, glasses raised", "subject": "all", "size": "WS", "framing": "group", "angle": "eye", "horizontal": "front", "height": "chest", "lens_mm_ff": 28, "dof": "deep", "movement": "handheld", "speed": "regular", "lighting": "the room's chandeliers and candles only", "duration_s": 5},
+          {"purpose": "A stands with his glass, the camera finds him late", "subject": "A", "size": "MS", "framing": "single", "angle": "low", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 35, "dof": "deep", "movement": "handheld", "speed": "regular", "duration_s": 6},
+          {"purpose": "whip to the father, B, still smiling", "subject": "B", "size": "MCU", "framing": "reaction", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 35, "movement": "whip_pan", "speed": "fast", "duration_s": 2},
+          {"purpose": "A's accusation in a close, unsteady single", "subject": "A", "size": "CU", "framing": "single", "angle": "low", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 40, "dof": "medium", "movement": "handheld", "speed": "slow", "duration_s": 6},
+          {"purpose": "jump cut: C, the mother, frozen, then reaching for her glass", "subject": "C", "size": "MCU", "framing": "reaction", "angle": "eye", "horizontal": "front", "height": "seated", "lens_mm_ff": 40, "movement": "handheld", "speed": "slow", "duration_s": 3},
+          {"purpose": "back to the wide: the table silent, someone laughs nervously", "subject": "all", "size": "WS", "framing": "group", "angle": "eye", "horizontal": "front", "height": "chest", "lens_mm_ff": 28, "dof": "deep", "movement": "handheld", "speed": "slow", "duration_s": 5}
+        ],
+        "why": "Because the camera arrives late and swings between faces, the audience experiences the toast like a guest who cannot believe what is being said, with no cinematic distance to hide behind. The candlelit available light and rough jump cuts make the family's façade look as fragile as the footage, so the revelation feels caught rather than performed."
+      }
+    ],
+    "avoid": [
+      {"what": "tripods, dollies, added lighting or filters", "why": "these are explicitly forbidden by the manifesto and erase its raw look"},
+      {"what": "non-diegetic score", "why": "the vow allows only sound recorded with the image; music must come from within the scene"}
+    ],
+    "prompt_fragments": {
+      "ltx": "Raw late-1990s handheld digital video look, available light only with blown highlights and muddy shadows, uncorrected mixed color temperatures, soft standard-definition texture and video noise.",
+      "still": "late 1990s raw film frame, handheld standard-definition digital video, available light only, blown highlights, muddy shadows, uncorrected mixed tungsten and daylight, video noise, loose imperfect framing",
+      "h3": "Live-action, raw late-1990s handheld digital-video look in available light only."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.2, "yaw_deg": 25, "pitch_deg": 3, "distance_m": 1.8, "roll_deg": 2, "focal_mm_ff": 35, "vfov_deg": 30.7},
+    "reference_works": [
+      {"title": "The Celebration (Festen)", "year": 1998, "note": "the birthday dinner"},
+      {"title": "The Idiots", "year": 1998},
+      {"title": "Mifune's Last Song", "year": 1999},
+      {"title": "Italian for Beginners", "year": 2000}
+    ],
+    "sources": [
+      {"url": "https://en.wikipedia.org/wiki/Dogme_95", "supports": "the manifesto's rules and history"}
+    ],
+    "confidence": "craft_consensus",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  },
+  {
+    "id": "movement.new_hollywood",
+    "type": "movement",
+    "name": "New Hollywood",
+    "aliases": ["American New Wave", "Hollywood Renaissance", "1970s American cinema", "movie brats"],
+    "keywords": ["1970s", "seventies", "vietnam veteran", "antihero", "drifter", "cab driver", "road trip", "small-town diner", "bank robbery", "cop on the edge", "new york streets", "counterculture", "hippie", "motel room", "paranoid"],
+    "parent": null,
+    "era": "1967-1980, United States",
+    "summary": "A generation of American directors, influenced by European art cinema, took over a collapsing studio system and made personal, morally ambiguous films about antiheroes. Shooting moved to real locations, often grimy cities and highways. Long telephoto zooms surveil characters from across the street, sometimes picking them out of crowds; interiors are dark and naturalistically underexposed, with eyes lost in top-light shadow; warm 1970s film stock has heavy grain. Overlapping dialogue, handheld energy and endings without uplift reflect a country in disillusionment.",
+    "intent_tags": ["realism", "paranoia", "melancholy", "isolation", "tension"],
+    "signature": {
+      "shot_size": {"WS": 0.25, "MS": 0.3, "MCU": 0.2, "CU": 0.2, "INSERT": 0.05},
+      "framing": {"single": 0.4, "two_shot": 0.2, "group": 0.25, "pov": 0.15},
+      "angle": {"eye": 0.75, "high": 0.15, "low": 0.1},
+      "camera_height": {"eye": 0.6, "chest": 0.2, "high": 0.2},
+      "lens_mm_ff": [25, 300],
+      "lens_look": {"spherical": 0.7, "anamorphic": 0.3},
+      "movement": {"zoom_in": 0.25, "static": 0.3, "handheld": 0.2, "pan_left": 0.1, "track_follow": 0.1, "dolly_in": 0.05},
+      "rig": {"sticks_with_zoom": 0.45, "handheld": 0.3, "dolly": 0.15, "car_mount": 0.1},
+      "lighting": {"naturalistic_underexposure": 0.6, "top_light_eyes_in_shadow": 0.4, "available_location_light": 0.6},
+      "color": ["warm amber and brown 1970s stock", "heavy grain", "muted, earthy palette", "sodium streetlight at night"],
+      "composition": {"telephoto_compression": 0.35, "off_center": 0.35, "crowd_obstruction": 0.3},
+      "aspect_ratio": ["1.85:1", "2.39:1"],
+      "asl_seconds": [4, 12],
+      "editing": ["slow zooms as the camera's attention", "overlapping dialogue held in wide shots", "abrupt, unresolved endings", "pop and rock needle-drops"],
+      "sound": ["overlapping multitrack dialogue", "city noise", "rock and folk songs"]
+    },
+    "rules": [
+      {"when": "watching a character in public", "then": "shoot from far away on a long lens and slowly zoom in, letting passers-by cross the frame", "why": "the zoom feels like someone noticing, so the audience becomes an observer or a watcher, which suits the decade's paranoia", "hard": false},
+      {"when": "interiors", "then": "let them go dark, with a top light that leaves eyes in shadow, and resist fill", "why": "underexposure makes characters unknowable and the world morally murky", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "The drifter in the city",
+        "beat": "a lonely night-shift driver walks through a crowded city street and sits alone in a diner",
+        "cast": 1,
+        "shots": [
+          {"purpose": "long-lens street: A picked out of the crowd by a slow zoom", "subject": "A", "size": "WS", "framing": "single", "angle": "eye", "horizontal": "front", "height": "eye", "lens_mm_ff": 200, "dof": "shallow", "movement": "zoom_in", "speed": "slow", "lighting": "flat afternoon daylight", "composition": "compressed crowd, strangers crossing", "duration_s": 8},
+          {"purpose": "handheld following A along the sidewalk, neon and steam", "subject": "A", "size": "MS", "framing": "single", "angle": "eye", "horizontal": "three_quarter_back", "height": "eye", "lens_mm_ff": 35, "dof": "medium", "movement": "handheld", "speed": "regular", "lighting": "early evening, sodium light and signs", "duration_s": 6},
+          {"purpose": "diner: A alone in a booth, wide from across the room", "subject": "A", "size": "WS", "framing": "single", "angle": "high", "horizontal": "three_quarter_front", "height": "high", "lens_mm_ff": 40, "dof": "deep", "movement": "static", "lighting": "fluorescent overheads, dark corners", "composition": "A small and off-center, empty booths around him", "duration_s": 6},
+          {"purpose": "insert: a tablet dropped into a glass of water, bubbles rising", "subject": "prop", "size": "INSERT", "framing": "insert", "angle": "high", "horizontal": "front", "height": "seated", "lens_mm_ff": 100, "dof": "shallow", "movement": "zoom_in", "speed": "slow", "duration_s": 4},
+          {"purpose": "CU: A's face, eyes in top-light shadow, staring at nothing", "subject": "A", "size": "CU", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 85, "dof": "shallow", "movement": "static", "lighting": "hard top light, eyes in shadow", "duration_s": 5}
+        ],
+        "why": "The long-lens zoom finds him as one stranger among many, which makes isolation the theme before he speaks. The empty diner and the slow zoom into the glass push the audience into his inward drift, and the top-lit close-up keeps his eyes unreadable, so viewers are both inside his loneliness and wary of him."
+      }
+    ],
+    "avoid": [
+      {"what": "bright, even studio fill and glossy color", "why": "the decade's look is underexposed realism and warm grain; gloss reads as 1980s commercial filmmaking"},
+      {"what": "neat, uplifting resolutions in the shot design", "why": "the movement leaves things open and uneasy; a triumphant crane-up contradicts its spirit"}
+    ],
+    "prompt_fragments": {
+      "ltx": "1970s American film look, warm amber and brown color on grainy 35mm stock, naturalistic underexposed interiors with top light leaving eyes in shadow, long-lens telephoto compression and soft halation.",
+      "still": "1970s New Hollywood film still, warm amber and brown 35mm color, heavy film grain, naturalistic underexposure, top light with eyes in shadow, long telephoto lens compression, real city location, soft halation, 1.85:1",
+      "h3": "Live-action, gritty 1970s American film look with warm grainy color and underexposed naturalism."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.5, "yaw_deg": 10, "pitch_deg": 0, "distance_m": 8.0, "roll_deg": 0, "focal_mm_ff": 85, "vfov_deg": 12.9},
+    "reference_works": [
+      {"title": "Bonnie and Clyde", "year": 1967},
+      {"title": "The French Connection", "year": 1971, "note": "documentary-style handheld and zooms"},
+      {"title": "The Conversation", "year": 1974, "note": "surveillance zooms"},
+      {"title": "Taxi Driver", "year": 1976},
+      {"title": "Nashville", "year": 1975, "note": "zoom-driven ensemble, overlapping sound"}
+    ],
+    "sources": [
+      {"url": "https://en.wikipedia.org/wiki/New_Hollywood", "supports": "movement history and stylistic characteristics"}
+    ],
+    "confidence": "craft_consensus",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  },
+  {
+    "id": "movement.nordic_noir",
+    "type": "national_cinema",
+    "name": "Nordic Noir",
+    "aliases": ["Scandi noir", "Scandinavian noir", "Scandinavian crime drama"],
+    "keywords": ["scandinavia", "copenhagen", "stockholm", "fjord", "missing girl", "body found", "frozen lake", "bridge", "detective", "police inspector", "wool sweater", "long winter", "forest", "investigation", "overcast"],
+    "parent": null,
+    "era": "2000s-present, Denmark / Sweden / Norway / Iceland",
+    "summary": "Crime drama as quiet melancholy. Overcast, desaturated blue-gray light hangs over flat landscapes, minimalist modern architecture and dark forests; detectives are introverted and unglamorous, in practical clothes. The camera is slow and patient, often watching through glass, across empty spaces or from a distance on a long lens, and interiors are lit low with practicals that leave cool pools. Pacing is unhurried and procedural, revealing institutional and social rot behind the tidy welfare-state surface. The mood is withheld emotion: long silences, reflective surfaces, and landscapes that feel cold and indifferent.",
+    "intent_tags": ["melancholy", "isolation", "dread", "realism"],
+    "signature": {
+      "shot_size": {"EWS": 0.15, "WS": 0.25, "MS": 0.25, "MCU": 0.2, "CU": 0.15},
+      "framing": {"single": 0.5, "two_shot": 0.2, "establishing": 0.2, "dirty_single": 0.1},
+      "angle": {"eye": 0.75, "high": 0.15, "overhead": 0.1},
+      "camera_height": {"eye": 0.6, "chest": 0.2, "aerial": 0.2},
+      "lens_mm_ff": [24, 150],
+      "lens_look": {"spherical": 0.8, "anamorphic": 0.2},
+      "movement": {"static": 0.5, "dolly_in": 0.2, "track_follow": 0.15, "pan_right": 0.05, "crane_up": 0.1},
+      "rig": {"sticks": 0.5, "dolly": 0.25, "drone": 0.15, "handheld": 0.1},
+      "lighting": {"overcast_flat_daylight": 0.7, "cool_low_key_interiors": 0.6, "practical_lamps": 0.4},
+      "color": ["desaturated blue-gray and slate", "muted greens and browns", "one warm practical against cool surroundings"],
+      "composition": {"through_glass_and_reflections": 0.3, "minimalist_architecture": 0.3, "tiny_figure_in_landscape": 0.2, "off_center": 0.2},
+      "aspect_ratio": ["1.78:1", "2:1", "2.39:1"],
+      "asl_seconds": [4, 12],
+      "editing": ["slow procedural rhythm", "aerial landscape interludes between scenes", "long silent holds on faces"],
+      "sound": ["sparse ambient score", "wind and silence", "muted dialogue"]
+    },
+    "rules": [
+      {"when": "an investigator thinks, waits or grieves", "then": "frame them through glass, a doorway or a reflection, holding in silence", "why": "a barrier between camera and character mirrors the emotional reserve of the genre, so the audience senses feeling the character will not show", "hard": false},
+      {"when": "moving between locations", "then": "use a high or aerial wide of the flat landscape, road or bridge with tiny figures or cars", "why": "the indifferent cold landscape sets the mood of isolation and reminds the audience how small the investigation is", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "The body by the lake",
+        "beat": "a detective arrives at a frozen lake shore where a body has been found and looks at it with her partner",
+        "cast": 2,
+        "shots": [
+          {"purpose": "aerial: a single car on a straight road through dark pines to the gray lake", "subject": "env", "size": "EWS", "framing": "establishing", "angle": "overhead", "horizontal": "front", "height": "aerial", "lens_mm_ff": 24, "dof": "deep", "movement": "static", "lighting": "flat overcast", "composition": "geometric road line, the car tiny", "duration_s": 6},
+          {"purpose": "wide: police tape, figures small at the shore, mist on the ice", "subject": "all", "size": "WS", "framing": "group", "angle": "eye", "horizontal": "profile", "height": "eye", "lens_mm_ff": 50, "dof": "deep", "movement": "static", "lighting": "cold flat daylight", "composition": "low horizon, gray sky", "duration_s": 5},
+          {"purpose": "A walks toward the body, long-lens follow from behind", "subject": "A", "size": "MS", "framing": "single", "angle": "eye", "horizontal": "back", "height": "eye", "lens_mm_ff": 100, "dof": "shallow", "movement": "track_follow", "speed": "slow", "duration_s": 5},
+          {"purpose": "A looking down, MCU; B soft in the background", "subject": "A", "size": "MCU", "framing": "dirty_single", "angle": "eye", "horizontal": "three_quarter_front", "height": "eye", "lens_mm_ff": 85, "dof": "shallow", "movement": "dolly_in", "speed": "slow", "lighting": "cold flat light, breath visible", "duration_s": 6},
+          {"purpose": "B watches her from beside the car, through the car window", "subject": "B", "size": "MS", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "eye", "lens_mm_ff": 75, "dof": "shallow", "movement": "static", "composition": "framed through glass with gray reflections", "duration_s": 5}
+        ],
+        "why": "The aerial and the low-horizon wide set the cold, indifferent landscape as the scene's emotional temperature. The long-lens follow and the slow push on the detective keep her emotion internal, and the shot through the car window shows her partner watching her across a barrier, so the audience senses the private cost of the job without any dialogue."
+      }
+    ],
+    "avoid": [
+      {"what": "warm, saturated, glossy grading", "why": "the genre's mood depends on cool desaturated light and reserve"},
+      {"what": "fast cutting and flashy movement", "why": "the slow patient camera matches the procedural, contemplative rhythm"}
+    ],
+    "prompt_fragments": {
+      "ltx": "Nordic noir look, flat overcast northern daylight, desaturated blue-gray and slate palette, cool low-key interiors with a single warm practical, clean minimalist textures and reflections in glass.",
+      "still": "Nordic noir film still, flat overcast northern light, desaturated blue-gray slate palette, muted greens, cool low-key interior with one warm practical lamp, minimalist architecture, reflections in glass, long lens shallow depth of field, clean digital image",
+      "h3": "Live-action, Nordic-noir look with flat overcast light and a desaturated blue-gray palette."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.6, "yaw_deg": 30, "pitch_deg": 0, "distance_m": 4.0, "roll_deg": 0, "focal_mm_ff": 75, "vfov_deg": 14.6},
+    "reference_works": [
+      {"title": "Insomnia (Norwegian)", "year": 1997},
+      {"title": "The Killing (Forbrydelsen)", "year": 2007, "note": "TV; wool-sweater realism"},
+      {"title": "The Girl with the Dragon Tattoo (Swedish)", "year": 2009},
+      {"title": "The Bridge (Bron/Broen)", "year": 2011, "note": "TV; aerial bridge interludes"}
+    ],
+    "sources": [
+      {"url": "https://en.wikipedia.org/wiki/Nordic_noir", "supports": "genre definition and history"}
+    ],
+    "confidence": "craft_consensus",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  }
+]

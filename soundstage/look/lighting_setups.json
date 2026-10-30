@@ -1,0 +1,1185 @@
+{
+ "version": 1,
+ "notes": "Lighting glossary and one-click setups. All descriptions are original wording compiled from public cinematography sources; no text copied from the American Cinematographer Manual. azimuth_deg: 0 = from camera, +90 = camera-left, -90 = camera-right, 180 = behind subject. elevation_deg relative to subject eye line.",
+ "terms": [
+  {
+   "id": "key",
+   "term": "Key light",
+   "meaning": "The main, brightest source on the subject; it sets the exposure, direction and mood of the shot.",
+   "prompt_words": "strong directional key light"
+  },
+  {
+   "id": "fill",
+   "term": "Fill light",
+   "meaning": "A weaker source on the opposite side from the key that lifts the shadows the key creates, controlling how dark they get.",
+   "prompt_words": "soft fill light, open shadows"
+  },
+  {
+   "id": "backlight",
+   "term": "Backlight / rim light",
+   "meaning": "A source behind the subject aimed toward camera that outlines the head and shoulders, separating them from the background.",
+   "prompt_words": "rim light outlining the subject, backlit"
+  },
+  {
+   "id": "kicker",
+   "term": "Kicker",
+   "meaning": "A back-side light from roughly three-quarters behind the subject that skims one cheek or jaw edge, usually on the shadow side.",
+   "prompt_words": "kicker light grazing the cheek"
+  },
+  {
+   "id": "hair",
+   "term": "Hair light",
+   "meaning": "A light placed above and behind the subject that adds sheen and shape to the hair and top of the head.",
+   "prompt_words": "glowing hair light from above and behind"
+  },
+  {
+   "id": "edge",
+   "term": "Edge light",
+   "meaning": "A narrow, grazing light that draws a thin bright line along the silhouette of a face or object.",
+   "prompt_words": "thin bright edge light"
+  },
+  {
+   "id": "eyelight",
+   "term": "Eye light / catchlight",
+   "meaning": "A small reflection of a light source in the eyes that makes them look alive; often added with a small lamp near the lens.",
+   "prompt_words": "sparkling catchlights in the eyes"
+  },
+  {
+   "id": "motivated",
+   "term": "Motivated light",
+   "meaning": "Lighting designed so it appears to come from a believable source in the scene, like a window, lamp or screen.",
+   "prompt_words": "naturalistic motivated lighting from the window"
+  },
+  {
+   "id": "practical",
+   "term": "Practical",
+   "meaning": "A light fixture visible in the frame (table lamp, sconce, neon sign) that also contributes to the scene's illumination.",
+   "prompt_words": "glowing practical lamps in frame"
+  },
+  {
+   "id": "ambient",
+   "term": "Ambient light",
+   "meaning": "The general, non-directional light already present in a space, from sky, walls and surroundings.",
+   "prompt_words": "soft ambient room light"
+  },
+  {
+   "id": "bounce",
+   "term": "Bounce",
+   "meaning": "Light reflected off a white card, foamcore or wall to create a larger, softer, less directional source.",
+   "prompt_words": "soft bounced light"
+  },
+  {
+   "id": "negfill",
+   "term": "Negative fill",
+   "meaning": "Black material placed near the subject to absorb stray light and deepen shadows on one side, increasing contrast.",
+   "prompt_words": "deep shadow side, negative fill, sculpted contrast"
+  },
+  {
+   "id": "flag",
+   "term": "Flag",
+   "meaning": "An opaque black panel on a stand used to block light from hitting part of the set, lens or subject.",
+   "prompt_words": "controlled light, shadows cut by flags"
+  },
+  {
+   "id": "cutter",
+   "term": "Cutter",
+   "meaning": "A long, narrow flag used to slice a straight-edged band of light off a wall or background.",
+   "prompt_words": "hard-edged shadow cut across the wall"
+  },
+  {
+   "id": "silk",
+   "term": "Silk / diffusion",
+   "meaning": "Translucent fabric or gel placed in front of a lamp to spread and soften the light and reduce harsh shadows.",
+   "prompt_words": "diffused soft light through silk"
+  },
+  {
+   "id": "booklight",
+   "term": "Book light",
+   "meaning": "A source bounced into a reflector and then passed through a diffusion frame, producing a very large, wrapping, controllable soft key.",
+   "prompt_words": "very soft wrapping book light"
+  },
+  {
+   "id": "softhard",
+   "term": "Soft vs hard source",
+   "meaning": "A large source relative to the subject gives gradual shadow edges (soft); a small or distant source gives crisp, defined shadows (hard).",
+   "prompt_words": "soft diffused light / hard crisp shadows"
+  },
+  {
+   "id": "ratio",
+   "term": "Contrast (lighting) ratio",
+   "meaning": "Compares the lit side with the shadow side. 2:1 is one stop of difference and reads gentle and bright; 4:1 is two stops and reads dramatic but natural; 8:1 is three stops and reads moody, with deep shadows.",
+   "prompt_words": "high-contrast 8:1 lighting / gentle 2:1 lighting"
+  },
+  {
+   "id": "highkey",
+   "term": "High-key",
+   "meaning": "Bright, even lighting with low contrast and few shadows, typical of comedy, commercials and upbeat scenes.",
+   "prompt_words": "bright high-key lighting, minimal shadows"
+  },
+  {
+   "id": "lowkey",
+   "term": "Low-key",
+   "meaning": "Dark, high-contrast lighting dominated by shadow, with only selected areas lit; common in noir, thriller and horror.",
+   "prompt_words": "low-key lighting, deep shadows, high contrast"
+  },
+  {
+   "id": "chiaroscuro",
+   "term": "Chiaroscuro",
+   "meaning": "A painterly approach built on strong contrast between bright light and deep darkness to model form and create drama.",
+   "prompt_words": "chiaroscuro, dramatic light and shadow"
+  },
+  {
+   "id": "rembrandt",
+   "term": "Rembrandt lighting",
+   "meaning": "Key placed about 45 degrees to the side and above eye level so a small triangle of light appears on the shadow-side cheek.",
+   "prompt_words": "Rembrandt lighting, triangle of light on cheek"
+  },
+  {
+   "id": "butterfly",
+   "term": "Butterfly / Paramount",
+   "meaning": "Key placed high and directly in line with the lens, casting a small symmetrical shadow under the nose; a classic glamour look.",
+   "prompt_words": "butterfly lighting, Paramount glamour light"
+  },
+  {
+   "id": "loop",
+   "term": "Loop lighting",
+   "meaning": "Key placed slightly off-axis (around 30 to 40 degrees) and above, so the nose shadow forms a small loop toward the cheek.",
+   "prompt_words": "loop lighting, flattering portrait light"
+  },
+  {
+   "id": "split",
+   "term": "Split lighting",
+   "meaning": "Key placed 90 degrees to the side so exactly half of the face is lit and the other half falls into shadow.",
+   "prompt_words": "split lighting, half face in shadow"
+  },
+  {
+   "id": "broadshort",
+   "term": "Broad vs short lighting",
+   "meaning": "Broad lighting lights the side of the face turned toward camera (widens the face); short lighting lights the side turned away (slims and adds mood).",
+   "prompt_words": "short lighting, far side of face lit"
+  },
+  {
+   "id": "clamshell",
+   "term": "Clamshell",
+   "meaning": "A beauty setup with a key above the lens and a fill or reflector below it, wrapping the face in soft, nearly shadowless light.",
+   "prompt_words": "clamshell beauty lighting, soft glow"
+  },
+  {
+   "id": "toplight",
+   "term": "Top light",
+   "meaning": "Light coming straight down from overhead, shading the eye sockets and creating a hard, oppressive or mysterious mood.",
+   "prompt_words": "harsh overhead top light, shadowed eyes"
+  },
+  {
+   "id": "underlight",
+   "term": "Underlight / horror light",
+   "meaning": "Light from below the face, which reverses natural shadows and makes features look unsettling.",
+   "prompt_words": "eerie underlighting from below"
+  },
+  {
+   "id": "crosslight",
+   "term": "Cross-light",
+   "meaning": "Two sources from opposite sides, each acting as key for one side or as rim for the other; common for two-person scenes.",
+   "prompt_words": "cross-lighting from both sides"
+  },
+  {
+   "id": "silhouette",
+   "term": "Silhouette",
+   "meaning": "The subject is unlit against a bright background so it reads as a dark shape with no interior detail.",
+   "prompt_words": "dark silhouette against bright background"
+  },
+  {
+   "id": "d4n",
+   "term": "Day-for-night",
+   "meaning": "Shooting in daylight and underexposing, often with a cool tint, to simulate night.",
+   "prompt_words": "day-for-night, underexposed blue night look"
+  },
+  {
+   "id": "golden",
+   "term": "Magic hour / golden hour",
+   "meaning": "The period just after sunrise or before sunset when the sun is low, warm and soft, with long shadows.",
+   "prompt_words": "golden hour, warm low sun, long shadows"
+  },
+  {
+   "id": "blue",
+   "term": "Blue hour",
+   "meaning": "Twilight just before sunrise or after sunset when the sun is below the horizon and the sky casts deep blue, shadowless light.",
+   "prompt_words": "blue hour twilight, deep blue sky light"
+  },
+  {
+   "id": "overcast",
+   "term": "Overcast / soft daylight",
+   "meaning": "Cloud cover turns the sky into a huge diffuser, giving even, soft, low-contrast daylight.",
+   "prompt_words": "overcast soft daylight, diffused sky"
+  },
+  {
+   "id": "noon",
+   "term": "Hard noon sun",
+   "meaning": "High midday sun produces small, dark shadows directly beneath features and high contrast.",
+   "prompt_words": "harsh midday sun, hard shadows"
+  },
+  {
+   "id": "colortemp",
+   "term": "Color temperature",
+   "meaning": "Describes the warmth or coolness of white light in Kelvin; tungsten film lights are about 3200K (warm), daylight about 5600K (cool).",
+   "prompt_words": "warm 3200K tungsten light / cool 5600K daylight"
+  },
+  {
+   "id": "gels",
+   "term": "Gels: CTO / CTB",
+   "meaning": "Color-correction filters: CTO (orange) warms a daylight source toward tungsten; CTB (blue) cools a tungsten source toward daylight.",
+   "prompt_words": "warm CTO-gelled light / cool blue CTB light"
+  },
+  {
+   "id": "mixed",
+   "term": "Mixed color temperature",
+   "meaning": "Deliberately combining warm and cool sources in one frame, such as warm lamps inside against blue dusk outside.",
+   "prompt_words": "mixed warm and cool lighting, teal and orange"
+  },
+  {
+   "id": "sodium",
+   "term": "Sodium vapor",
+   "meaning": "Orange-yellow streetlight with a narrow spectrum, a signature of urban night exteriors.",
+   "prompt_words": "orange sodium vapor streetlights"
+  },
+  {
+   "id": "moonlight",
+   "term": "Moonlight convention",
+   "meaning": "Film convention renders moonlight as a cool blue backlight or side light, even though real moonlight is close to sunlight in color.",
+   "prompt_words": "cool blue moonlight, night"
+  },
+  {
+   "id": "firelight",
+   "term": "Firelight / flicker",
+   "meaning": "Warm, low-angle, constantly shifting light from flames, mimicked on set with flicker effects on orange sources.",
+   "prompt_words": "flickering warm firelight"
+  },
+  {
+   "id": "falloff",
+   "term": "Inverse-square falloff",
+   "meaning": "Light intensity drops with the square of distance, so a close source falls off quickly across the scene while a distant one stays even.",
+   "prompt_words": "rapid light falloff into darkness"
+  },
+  {
+   "id": "flare",
+   "term": "Lens flare / backlight flare",
+   "meaning": "Streaks, veils or ghosts caused when a bright source shines into the lens, often from a backlight or sun.",
+   "prompt_words": "backlit lens flare, sun flare"
+  },
+  {
+   "id": "haze",
+   "term": "Volumetric haze / atmosphere",
+   "meaning": "Haze or smoke in the air makes light beams visible and adds depth and softness.",
+   "prompt_words": "volumetric light beams through haze"
+  },
+  {
+   "id": "led",
+   "term": "LED panel / tube light",
+   "meaning": "Modern LED fixtures, including flat panels and handheld tubes, with adjustable color temperature and full color output.",
+   "prompt_words": "colored LED tube lights"
+  },
+  {
+   "id": "available",
+   "term": "Available light",
+   "meaning": "Shooting with whatever light already exists at the location, without adding film lights.",
+   "prompt_words": "natural available light, documentary feel"
+  }
+ ],
+ "setups": [
+  {
+   "id": "three_point",
+   "label": "Classic three-point",
+   "summary": "Key at 45 degrees, fill on the opposite side at lower level, and a backlight for separation; the foundation of most interview and drama lighting.",
+   "good_for": [
+    "interview",
+    "drama",
+    "corporate",
+    "general"
+   ],
+   "ratio": "4:1",
+   "lights": [
+    {
+     "type": "key",
+     "role": "key",
+     "azimuth_deg": 45,
+     "elevation_deg": 30,
+     "distance_m": 2.5,
+     "kelvin": 3200,
+     "intensity": 3,
+     "softness": 0.5
+    },
+    {
+     "type": "fill",
+     "role": "fill",
+     "azimuth_deg": -40,
+     "elevation_deg": 10,
+     "distance_m": 3,
+     "kelvin": 3200,
+     "intensity": 0.9,
+     "softness": 0.8
+    },
+    {
+     "type": "rim",
+     "role": "back",
+     "azimuth_deg": 160,
+     "elevation_deg": 45,
+     "distance_m": 3,
+     "kelvin": 3200,
+     "intensity": 2,
+     "softness": 0.2
+    }
+   ],
+   "sun": {
+    "use": "off",
+    "notes": "Interior or controlled stage; sun disabled."
+   },
+   "prompt_words": "classic three-point lighting, key fill and rim light",
+   "sources": [
+    "https://en.wikipedia.org/wiki/Three-point_lighting",
+    "https://www.studiobinder.com/blog/film-lighting-terms/"
+   ]
+  },
+  {
+   "id": "rembrandt",
+   "label": "Rembrandt",
+   "summary": "Single high key around 45 to 50 degrees to the side with little fill, leaving a lit triangle on the shadow cheek.",
+   "good_for": [
+    "drama",
+    "period",
+    "portrait",
+    "moody"
+   ],
+   "ratio": "6:1",
+   "lights": [
+    {
+     "type": "key",
+     "role": "key",
+     "azimuth_deg": 50,
+     "elevation_deg": 40,
+     "distance_m": 2,
+     "kelvin": 3200,
+     "intensity": 3,
+     "softness": 0.4
+    },
+    {
+     "type": "fill",
+     "role": "fill",
+     "azimuth_deg": -30,
+     "elevation_deg": 5,
+     "distance_m": 3.5,
+     "kelvin": 3200,
+     "intensity": 0.5,
+     "softness": 0.9
+    },
+    {
+     "type": "rim",
+     "role": "hair",
+     "azimuth_deg": 170,
+     "elevation_deg": 55,
+     "distance_m": 2.5,
+     "kelvin": 3200,
+     "intensity": 1,
+     "softness": 0.3
+    }
+   ],
+   "sun": {
+    "use": "off",
+    "notes": "Interior or controlled stage; sun disabled."
+   },
+   "prompt_words": "Rembrandt lighting, triangle of light on the cheek, painterly shadows",
+   "sources": [
+    "https://en.wikipedia.org/wiki/Rembrandt_lighting",
+    "https://www.photoworkout.com/?p=128244",
+    "https://filmdaft.com/portrait-lighting-setup-guide-rembrandt-loop-beyond/"
+   ]
+  },
+  {
+   "id": "butterfly",
+   "label": "Butterfly / Paramount",
+   "summary": "Key directly above the lens pointing down at the face, producing a symmetrical shadow under the nose; old-Hollywood glamour.",
+   "good_for": [
+    "glamour",
+    "beauty",
+    "classic Hollywood",
+    "fashion"
+   ],
+   "ratio": "3:1",
+   "lights": [
+    {
+     "type": "key",
+     "role": "key",
+     "azimuth_deg": 0,
+     "elevation_deg": 45,
+     "distance_m": 2,
+     "kelvin": 3200,
+     "intensity": 3,
+     "softness": 0.3
+    },
+    {
+     "type": "fill",
+     "role": "fill",
+     "azimuth_deg": 0,
+     "elevation_deg": -10,
+     "distance_m": 2,
+     "kelvin": 3200,
+     "intensity": 0.8,
+     "softness": 0.8
+    },
+    {
+     "type": "rim",
+     "role": "hair",
+     "azimuth_deg": 180,
+     "elevation_deg": 55,
+     "distance_m": 2.5,
+     "kelvin": 3200,
+     "intensity": 1.5,
+     "softness": 0.3
+    }
+   ],
+   "sun": {
+    "use": "off",
+    "notes": "Interior or controlled stage; sun disabled."
+   },
+   "prompt_words": "Paramount butterfly lighting, glamorous old Hollywood portrait",
+   "sources": [
+    "https://www.photoworkout.com/?p=128244",
+    "https://filmdaft.com/portrait-lighting-setup-guide-rembrandt-loop-beyond/"
+   ]
+  },
+  {
+   "id": "loop",
+   "label": "Loop",
+   "summary": "Key about 35 degrees off-axis and slightly high, so the nose shadow forms a small loop toward the cheek; flattering and natural.",
+   "good_for": [
+    "drama",
+    "interview",
+    "romance",
+    "portrait"
+   ],
+   "ratio": "3:1",
+   "lights": [
+    {
+     "type": "key",
+     "role": "key",
+     "azimuth_deg": 35,
+     "elevation_deg": 30,
+     "distance_m": 2.5,
+     "kelvin": 3200,
+     "intensity": 3,
+     "softness": 0.6
+    },
+    {
+     "type": "fill",
+     "role": "fill",
+     "azimuth_deg": -35,
+     "elevation_deg": 5,
+     "distance_m": 3,
+     "kelvin": 3200,
+     "intensity": 1,
+     "softness": 0.8
+    },
+    {
+     "type": "rim",
+     "role": "back",
+     "azimuth_deg": 155,
+     "elevation_deg": 40,
+     "distance_m": 3,
+     "kelvin": 3200,
+     "intensity": 1.5,
+     "softness": 0.3
+    }
+   ],
+   "sun": {
+    "use": "off",
+    "notes": "Interior or controlled stage; sun disabled."
+   },
+   "prompt_words": "loop lighting, flattering soft portrait light",
+   "sources": [
+    "https://www.photoworkout.com/?p=128244",
+    "https://filmdaft.com/portrait-lighting-setup-guide-rembrandt-loop-beyond/"
+   ]
+  },
+  {
+   "id": "split",
+   "label": "Split",
+   "summary": "Key at 90 degrees to the side lights exactly half the face; the other half falls into darkness. Signals conflict or a divided character.",
+   "good_for": [
+    "thriller",
+    "drama",
+    "noir",
+    "villain"
+   ],
+   "ratio": "8:1",
+   "lights": [
+    {
+     "type": "key",
+     "role": "key",
+     "azimuth_deg": 90,
+     "elevation_deg": 10,
+     "distance_m": 2,
+     "kelvin": 3200,
+     "intensity": 3,
+     "softness": 0.3
+    },
+    {
+     "type": "rim",
+     "role": "kicker",
+     "azimuth_deg": -130,
+     "elevation_deg": 20,
+     "distance_m": 3,
+     "kelvin": 3200,
+     "intensity": 0.8,
+     "softness": 0.3
+    }
+   ],
+   "sun": {
+    "use": "off",
+    "notes": "Interior or controlled stage; sun disabled."
+   },
+   "prompt_words": "split lighting, half of the face in deep shadow",
+   "sources": [
+    "https://www.photoworkout.com/?p=128244",
+    "https://filmdaft.com/portrait-lighting-setup-guide-rembrandt-loop-beyond/"
+   ]
+  },
+  {
+   "id": "clamshell",
+   "label": "Clamshell beauty",
+   "summary": "Soft key above the lens and a soft fill or reflector below, wrapping the face evenly with bright catchlights.",
+   "good_for": [
+    "beauty",
+    "commercial",
+    "cosmetics",
+    "music video"
+   ],
+   "ratio": "2:1",
+   "lights": [
+    {
+     "type": "key",
+     "role": "key",
+     "azimuth_deg": 0,
+     "elevation_deg": 35,
+     "distance_m": 1.5,
+     "kelvin": 5600,
+     "intensity": 3,
+     "softness": 0.9
+    },
+    {
+     "type": "fill",
+     "role": "bounce",
+     "azimuth_deg": 0,
+     "elevation_deg": -25,
+     "distance_m": 1.2,
+     "kelvin": 5600,
+     "intensity": 1.5,
+     "softness": 1
+    },
+    {
+     "type": "rim",
+     "role": "hair",
+     "azimuth_deg": 175,
+     "elevation_deg": 50,
+     "distance_m": 2.5,
+     "kelvin": 5600,
+     "intensity": 1.5,
+     "softness": 0.4
+    }
+   ],
+   "sun": {
+    "use": "off",
+    "notes": "Interior or controlled stage; sun disabled."
+   },
+   "prompt_words": "clamshell beauty lighting, flawless soft glow, bright catchlights",
+   "sources": [
+    "https://www.studiobinder.com/blog/film-lighting-terms/",
+    "https://filmdaft.com/portrait-lighting-setup-guide-rembrandt-loop-beyond/"
+   ]
+  },
+  {
+   "id": "high_key_sitcom",
+   "label": "High-key comedy / sitcom",
+   "summary": "Bright, flat, even light from several soft frontal sources so every actor and corner reads clearly with almost no shadow.",
+   "good_for": [
+    "sitcom",
+    "comedy",
+    "commercial",
+    "family"
+   ],
+   "ratio": "2:1",
+   "lights": [
+    {
+     "type": "key",
+     "role": "key",
+     "azimuth_deg": 30,
+     "elevation_deg": 30,
+     "distance_m": 3,
+     "kelvin": 5600,
+     "intensity": 3,
+     "softness": 0.9
+    },
+    {
+     "type": "fill",
+     "role": "fill",
+     "azimuth_deg": -30,
+     "elevation_deg": 25,
+     "distance_m": 3,
+     "kelvin": 5600,
+     "intensity": 2,
+     "softness": 0.9
+    },
+    {
+     "type": "rim",
+     "role": "back",
+     "azimuth_deg": 170,
+     "elevation_deg": 45,
+     "distance_m": 4,
+     "kelvin": 5600,
+     "intensity": 1.5,
+     "softness": 0.5
+    },
+    {
+     "type": "key",
+     "role": "background",
+     "azimuth_deg": 180,
+     "elevation_deg": 20,
+     "distance_m": 5,
+     "kelvin": 5600,
+     "intensity": 1.5,
+     "softness": 0.9
+    }
+   ],
+   "sun": {
+    "use": "off",
+    "notes": "Interior or controlled stage; sun disabled."
+   },
+   "prompt_words": "bright high-key lighting, even and cheerful, minimal shadows",
+   "sources": [
+    "https://en.wikipedia.org/wiki/High-key_lighting",
+    "https://www.studiobinder.com/blog/lighting-ratios/"
+   ]
+  },
+  {
+   "id": "low_key_noir",
+   "label": "Low-key noir",
+   "summary": "A single hard key with no fill, deep pools of black and hard-edged patterns on walls (blinds, cutters).",
+   "good_for": [
+    "film noir",
+    "crime",
+    "thriller",
+    "mystery"
+   ],
+   "ratio": "16:1",
+   "lights": [
+    {
+     "type": "spot",
+     "role": "key",
+     "azimuth_deg": 60,
+     "elevation_deg": 35,
+     "distance_m": 3,
+     "kelvin": 3200,
+     "intensity": 3,
+     "softness": 0.05
+    },
+    {
+     "type": "rim",
+     "role": "back",
+     "azimuth_deg": -150,
+     "elevation_deg": 30,
+     "distance_m": 3.5,
+     "kelvin": 3200,
+     "intensity": 1.2,
+     "softness": 0.1
+    },
+    {
+     "type": "spot",
+     "role": "background",
+     "azimuth_deg": 70,
+     "elevation_deg": 20,
+     "distance_m": 5,
+     "kelvin": 3200,
+     "intensity": 1,
+     "softness": 0.0
+    }
+   ],
+   "sun": {
+    "use": "off",
+    "notes": "Interior or controlled stage; sun disabled."
+   },
+   "prompt_words": "film noir low-key lighting, hard shadows, venetian blind patterns, high contrast",
+   "sources": [
+    "https://en.wikipedia.org/wiki/Low-key_lighting",
+    "https://en.wikipedia.org/wiki/Chiaroscuro"
+   ]
+  },
+  {
+   "id": "silhouette",
+   "label": "Silhouette backlight",
+   "summary": "Subject left unlit against a brightly lit background or a strong backlight, reading only as a shape.",
+   "good_for": [
+    "drama",
+    "mystery",
+    "music video",
+    "reveal"
+   ],
+   "ratio": "key off (shape only)",
+   "lights": [
+    {
+     "type": "key",
+     "role": "background",
+     "azimuth_deg": 180,
+     "elevation_deg": 0,
+     "distance_m": 5,
+     "kelvin": 5600,
+     "intensity": 6,
+     "softness": 0.7
+    },
+    {
+     "type": "rim",
+     "role": "back",
+     "azimuth_deg": 175,
+     "elevation_deg": 15,
+     "distance_m": 3,
+     "kelvin": 5600,
+     "intensity": 2,
+     "softness": 0.2
+    }
+   ],
+   "sun": {
+    "use": "keep",
+    "notes": "Can use the sun or a bright window behind the subject as the background source."
+   },
+   "prompt_words": "dark silhouette against a bright glowing background",
+   "sources": [
+    "https://www.studiobinder.com/blog/film-lighting-terms/"
+   ]
+  },
+  {
+   "id": "window_soft",
+   "label": "Motivated window light",
+   "summary": "A large soft daylight source from one side, as if from a window, with low fill and negative fill on the far side.",
+   "good_for": [
+    "drama",
+    "indie",
+    "romance",
+    "period"
+   ],
+   "ratio": "4:1",
+   "lights": [
+    {
+     "type": "key",
+     "role": "key",
+     "azimuth_deg": 70,
+     "elevation_deg": 15,
+     "distance_m": 2.5,
+     "kelvin": 5600,
+     "intensity": 3,
+     "softness": 0.9
+    },
+    {
+     "type": "fill",
+     "role": "bounce",
+     "azimuth_deg": -50,
+     "elevation_deg": 0,
+     "distance_m": 3,
+     "kelvin": 5600,
+     "intensity": 0.6,
+     "softness": 1
+    },
+    {
+     "type": "practical",
+     "role": "practical",
+     "azimuth_deg": -120,
+     "elevation_deg": 0,
+     "distance_m": 3,
+     "kelvin": 2700,
+     "intensity": 0.5,
+     "softness": 0.6
+    }
+   ],
+   "sun": {
+    "use": "keep",
+    "notes": "Align sun direction with the window side."
+   },
+   "prompt_words": "soft natural window light from the side, motivated daylight",
+   "sources": [
+    "https://www.studiobinder.com/blog/film-lighting-terms/",
+    "https://neiloseman.com/what-is-negative-fill-and-how-do-you-use-it"
+   ]
+  },
+  {
+   "id": "book_light",
+   "label": "Book light (soft key)",
+   "summary": "Key bounced into a reflector and then pushed through a diffusion frame; very large, wrapping, controllable soft light.",
+   "good_for": [
+    "drama",
+    "interview",
+    "prestige TV",
+    "beauty"
+   ],
+   "ratio": "3:1",
+   "lights": [
+    {
+     "type": "key",
+     "role": "key",
+     "azimuth_deg": 40,
+     "elevation_deg": 20,
+     "distance_m": 2,
+     "kelvin": 4300,
+     "intensity": 3,
+     "softness": 1.0
+    },
+    {
+     "type": "rim",
+     "role": "back",
+     "azimuth_deg": 160,
+     "elevation_deg": 40,
+     "distance_m": 3.5,
+     "kelvin": 4300,
+     "intensity": 1.2,
+     "softness": 0.4
+    }
+   ],
+   "sun": {
+    "use": "off",
+    "notes": "Interior or controlled stage; sun disabled."
+   },
+   "prompt_words": "very soft wrapping book light, gentle falloff, prestige drama",
+   "sources": [
+    "https://filmdaft.com/tag/book-lighting/",
+    "https://www.studiobinder.com/blog/film-lighting-terms/"
+   ]
+  },
+  {
+   "id": "practical_night",
+   "label": "Practical-only night interior",
+   "summary": "The room is lit only by visible lamps; warm pools of light, falloff into darkness, faces lit from the nearest lamp.",
+   "good_for": [
+    "drama",
+    "indie",
+    "thriller",
+    "intimate"
+   ],
+   "ratio": "8:1",
+   "lights": [
+    {
+     "type": "practical",
+     "role": "practical",
+     "azimuth_deg": 60,
+     "elevation_deg": 0,
+     "distance_m": 1.5,
+     "kelvin": 2700,
+     "intensity": 2.5,
+     "softness": 0.6
+    },
+    {
+     "type": "practical",
+     "role": "practical",
+     "azimuth_deg": -110,
+     "elevation_deg": -5,
+     "distance_m": 3,
+     "kelvin": 2700,
+     "intensity": 1.2,
+     "softness": 0.6
+    },
+    {
+     "type": "fill",
+     "role": "fill",
+     "azimuth_deg": 0,
+     "elevation_deg": 10,
+     "distance_m": 4,
+     "kelvin": 4300,
+     "intensity": 0.2,
+     "softness": 1
+    }
+   ],
+   "sun": {
+    "use": "off",
+    "notes": "Night; no sun."
+   },
+   "prompt_words": "night interior lit only by warm practical lamps, pools of light, deep shadows",
+   "sources": [
+    "https://www.studiobinder.com/blog/film-lighting-terms/",
+    "https://en.wikipedia.org/wiki/Inverse-square_law"
+   ]
+  },
+  {
+   "id": "moonlight_exterior",
+   "label": "Moonlight night exterior",
+   "summary": "Cool blue backlight and side light as moonlight, very low fill, so shapes read in rims rather than full faces.",
+   "good_for": [
+    "thriller",
+    "horror",
+    "fantasy",
+    "romance"
+   ],
+   "ratio": "8:1",
+   "lights": [
+    {
+     "type": "rim",
+     "role": "back",
+     "azimuth_deg": 150,
+     "elevation_deg": 40,
+     "distance_m": 5,
+     "kelvin": 7000,
+     "intensity": 2.5,
+     "softness": 0.2
+    },
+    {
+     "type": "key",
+     "role": "key",
+     "azimuth_deg": -60,
+     "elevation_deg": 30,
+     "distance_m": 5,
+     "kelvin": 6500,
+     "intensity": 1.2,
+     "softness": 0.4
+    },
+    {
+     "type": "fill",
+     "role": "fill",
+     "azimuth_deg": 20,
+     "elevation_deg": 5,
+     "distance_m": 4,
+     "kelvin": 6000,
+     "intensity": 0.2,
+     "softness": 1
+    }
+   ],
+   "sun": {
+    "use": "off",
+    "notes": "Night; sun off, moon simulated by cool backlight."
+   },
+   "prompt_words": "cool blue moonlight backlight, night exterior, low fill",
+   "sources": [
+    "https://neiloseman.com/tag/day-for-night/",
+    "https://cinematography.net/edited-pages/MOONLIGH.htm",
+    "https://www.bhphotovideo.com/explora/video/tips-and-solutions/lighting-tips-basics-day-night-cinematography",
+    "https://en.wikipedia.org/wiki/Day_for_night"
+   ]
+  },
+  {
+   "id": "neon_mixed",
+   "label": "Neon / mixed-color night",
+   "summary": "Saturated colored sources (magenta, cyan, sodium orange) from opposite sides with haze; city-night mood.",
+   "good_for": [
+    "cyberpunk",
+    "neo-noir",
+    "music video",
+    "crime"
+   ],
+   "ratio": "6:1",
+   "lights": [
+    {
+     "type": "neon",
+     "role": "key",
+     "azimuth_deg": 70,
+     "elevation_deg": 10,
+     "distance_m": 2,
+     "kelvin": 4000,
+     "intensity": 2.5,
+     "softness": 0.4
+    },
+    {
+     "type": "neon",
+     "role": "kicker",
+     "azimuth_deg": -130,
+     "elevation_deg": 15,
+     "distance_m": 2.5,
+     "kelvin": 9000,
+     "intensity": 2,
+     "softness": 0.3
+    },
+    {
+     "type": "practical",
+     "role": "background",
+     "azimuth_deg": 180,
+     "elevation_deg": 10,
+     "distance_m": 5,
+     "kelvin": 2000,
+     "intensity": 1.5,
+     "softness": 0.6
+    }
+   ],
+   "sun": {
+    "use": "off",
+    "notes": "Night exterior or interior."
+   },
+   "prompt_words": "neon-lit night, magenta and cyan light, sodium vapor streetlights, wet reflections, haze",
+   "sources": [
+    "https://cinematography.net/edited-pages/MOONLIGH.htm",
+    "https://howtofilmschool.com/dictionary/ctb-gel-color-temperature-blue/",
+    "https://howtofilmschool.com/dictionary/cto-gel-color-temperature-orange/"
+   ]
+  },
+  {
+   "id": "firelight",
+   "label": "Firelight / campfire flicker",
+   "summary": "Warm, low key from the fire below and in front, flickering, with a faint cool ambience behind.",
+   "good_for": [
+    "western",
+    "survival",
+    "period",
+    "horror"
+   ],
+   "ratio": "8:1",
+   "lights": [
+    {
+     "type": "practical",
+     "role": "key",
+     "azimuth_deg": 30,
+     "elevation_deg": -20,
+     "distance_m": 1.5,
+     "kelvin": 1900,
+     "intensity": 3,
+     "softness": 0.5
+    },
+    {
+     "type": "rim",
+     "role": "back",
+     "azimuth_deg": 170,
+     "elevation_deg": 20,
+     "distance_m": 4,
+     "kelvin": 6500,
+     "intensity": 0.5,
+     "softness": 0.4
+    }
+   ],
+   "sun": {
+    "use": "off",
+    "notes": "Night; firelight only."
+   },
+   "prompt_words": "flickering warm campfire light on faces, dark night around",
+   "sources": [
+    "https://www.studiobinder.com/blog/film-lighting-terms/",
+    "https://en.wikipedia.org/wiki/Color_temperature"
+   ]
+  },
+  {
+   "id": "horror_under",
+   "label": "Horror underlight",
+   "summary": "Hard light from below the face reverses natural shadows; minimal fill, darkness around.",
+   "good_for": [
+    "horror",
+    "thriller",
+    "campfire story"
+   ],
+   "ratio": "10:1",
+   "lights": [
+    {
+     "type": "spot",
+     "role": "under",
+     "azimuth_deg": 0,
+     "elevation_deg": -45,
+     "distance_m": 1.2,
+     "kelvin": 3200,
+     "intensity": 3,
+     "softness": 0.1
+    },
+    {
+     "type": "rim",
+     "role": "back",
+     "azimuth_deg": 180,
+     "elevation_deg": 30,
+     "distance_m": 3,
+     "kelvin": 5600,
+     "intensity": 0.8,
+     "softness": 0.2
+    }
+   ],
+   "sun": {
+    "use": "off",
+    "notes": "Interior or controlled stage; sun disabled."
+   },
+   "prompt_words": "eerie horror underlighting from below, menacing shadows",
+   "sources": [
+    "https://www.studiobinder.com/blog/film-lighting-terms/"
+   ]
+  },
+  {
+   "id": "interrogation",
+   "label": "Interrogation hard top light",
+   "summary": "Single bare bulb or hard spot straight overhead; eye sockets go black, background falls to darkness.",
+   "good_for": [
+    "crime",
+    "thriller",
+    "war",
+    "dystopian"
+   ],
+   "ratio": "12:1",
+   "lights": [
+    {
+     "type": "spot",
+     "role": "top",
+     "azimuth_deg": 0,
+     "elevation_deg": 80,
+     "distance_m": 1.5,
+     "kelvin": 3000,
+     "intensity": 3,
+     "softness": 0.1
+    },
+    {
+     "type": "fill",
+     "role": "fill",
+     "azimuth_deg": 0,
+     "elevation_deg": 0,
+     "distance_m": 4,
+     "kelvin": 4300,
+     "intensity": 0.15,
+     "softness": 1
+    }
+   ],
+   "sun": {
+    "use": "off",
+    "notes": "Interior or controlled stage; sun disabled."
+   },
+   "prompt_words": "harsh overhead single bulb, interrogation room, eyes in shadow, smoky haze",
+   "sources": [
+    "https://www.studiobinder.com/blog/film-lighting-terms/",
+    "https://en.wikipedia.org/wiki/Low-key_lighting"
+   ]
+  },
+  {
+   "id": "golden_backlit",
+   "label": "Golden-hour backlit rim",
+   "summary": "Low warm sun behind the subject creates a glowing rim and flare; a bounce fills the face.",
+   "good_for": [
+    "romance",
+    "drama",
+    "commercial",
+    "nostalgia"
+   ],
+   "ratio": "3:1",
+   "lights": [
+    {
+     "type": "rim",
+     "role": "back",
+     "azimuth_deg": 165,
+     "elevation_deg": 10,
+     "distance_m": 6,
+     "kelvin": 3200,
+     "intensity": 4,
+     "softness": 0.2
+    },
+    {
+     "type": "fill",
+     "role": "bounce",
+     "azimuth_deg": 20,
+     "elevation_deg": 0,
+     "distance_m": 2,
+     "kelvin": 4000,
+     "intensity": 1.2,
+     "softness": 1
+    }
+   ],
+   "sun": {
+    "use": "keep",
+    "notes": "Place the sun low behind the subject, about 5 to 10 degrees elevation."
+   },
+   "prompt_words": "golden hour backlight, warm glowing rim light, sun flare, soft bounce fill",
+   "sources": [
+    "https://en.wikipedia.org/wiki/Golden_hour_(photography)",
+    "https://www.studiobinder.com/blog/film-lighting-terms/"
+   ]
+  }
+ ]
+}

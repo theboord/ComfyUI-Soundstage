@@ -1,0 +1,19 @@
+[project]
+name = "comfyui-soundstage"
+description = "A film set in a box: block a shot in 3D (actors, horses, cars, sets, water tank, real sun and film lights, keyframed camera, phone/Quest virtual camera), pick a cinematic look, then press Run to climb a preview ladder from clay to final LTX-2.5 video and per-object layers for AE/Nuke/Resolve/Blender. Includes a scene agent, director's advisor, editing timeline with Avid/Premiere/Resolve export, and an audio department."
+version = "0.1.0"
+license = { file = "LICENSE" }
+dependencies = ["soundfile>=0.12"]
+
+[project.optional-dependencies]
+aaf = ["pyaaf2>=1.7"]
+sdk = ["comfy-sdk>=0.5", "comfy-api-proxy>=0.1.6"]
+
+[project.urls]
+Repository = "https://github.com/theboord/ComfyUI-Soundstage"
+
+[tool.comfy]
+PublisherId = ""
+DisplayName = "Soundstage"
+Icon = "docs/icon.svg"
+includes = ["web", "docs", "example_workflows"]

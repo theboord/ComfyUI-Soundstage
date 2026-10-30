@@ -1,0 +1,2379 @@
+[
+  {
+    "id": "coverage.dialogue_triangle",
+    "type": "coverage_pattern",
+    "name": "Two-person dialogue: triangle system shot/reverse-shot",
+    "aliases": [
+      "shot reverse shot",
+      "Arijon triangle",
+      "external/internal reverses",
+      "standard dialogue coverage",
+      "shot/reverse"
+    ],
+    "keywords": [
+      "conversation",
+      "talk",
+      "talks",
+      "talking",
+      "argue",
+      "argument",
+      "discuss",
+      "dialogue",
+      "asks",
+      "tells",
+      "confronts",
+      "interview",
+      "face to face",
+      "two people"
+    ],
+    "parent": null,
+    "era": "classical continuity (1910s-present)",
+    "summary": "Draw the line of interest through both actors' eyes and keep every camera on one side of it. Cameras sit on a triangle: the apex gives the two-shot master; external reverses (over-the-shoulder) and internal reverses (clean singles) are mirrored pairs at matched size, lens and height; parallel positions give profile singles. Matched pairs code equality; deliberately mismatched pairs code power. Change size or angle by at least 30 degrees between consecutive shots of the same subject.",
+    "intent_tags": [
+      "realism",
+      "intimacy",
+      "power_imbalance",
+      "tension"
+    ],
+    "signature": {
+      "shot_size": {
+        "MS": 0.25,
+        "MCU": 0.45,
+        "CU": 0.2,
+        "WS": 0.1
+      },
+      "framing": {
+        "master": 0.1,
+        "ots": 0.4,
+        "single": 0.4,
+        "two_shot": 0.1
+      },
+      "angle": {
+        "eye": 0.9,
+        "low": 0.05,
+        "high": 0.05
+      },
+      "camera_height": {
+        "eye": 0.6,
+        "seated": 0.3,
+        "chest": 0.1
+      },
+      "lens_mm_ff": [
+        35,
+        100
+      ],
+      "lens_look": {
+        "spherical": 0.8,
+        "anamorphic": 0.2
+      },
+      "movement": {
+        "static": 0.8,
+        "dolly_in": 0.2
+      },
+      "rig": {
+        "sticks": 0.6,
+        "dolly": 0.4
+      },
+      "lighting": {
+        "motivated_soft_key": 0.7,
+        "short_lighting": 0.5
+      },
+      "color": [
+        "scene-dependent"
+      ],
+      "composition": {
+        "short_side_avoided": 0.8,
+        "lead_room_toward_partner": 0.9
+      },
+      "aspect_ratio": [
+        "any"
+      ],
+      "asl_seconds": [
+        2,
+        6
+      ],
+      "editing": [
+        "cut on line or reaction",
+        "L-cuts and J-cuts",
+        "progress from OTS to clean singles as intimacy or conflict rises",
+        "return to master to reset geography"
+      ],
+      "sound": [
+        "dialogue-led",
+        "room tone continuity"
+      ]
+    },
+    "rules": [
+      {
+        "when": "always",
+        "then": "all cameras stay on one side of the line through the two actors' eyes (side A)",
+        "why": "keeps screen direction and eyelines consistent: A always looks screen-right, B screen-left",
+        "hard": true
+      },
+      {
+        "when": "consecutive shots of the same actor",
+        "then": "change angle by at least 30 degrees or change size by at least one step",
+        "why": "smaller changes read as a jump cut",
+        "hard": true
+      },
+      {
+        "when": "equal relationship",
+        "then": "match size, lens and height across the reverse pair",
+        "why": "symmetrical coverage codes equality",
+        "hard": false
+      },
+      {
+        "when": "power shift",
+        "then": "tighten or lower the dominant actor's reverse and widen or raise the weaker one's; or move from OTS (dirty) to clean singles as they emotionally separate",
+        "why": "breaking symmetry tells the audience the balance has changed",
+        "hard": false
+      },
+      {
+        "when": "need to cross the line",
+        "then": "cross via an on-axis neutral shot, a visible camera move across the line, or an actor move that redefines it",
+        "why": "an unmotivated crossing flips screen direction and disorients",
+        "hard": true
+      }
+    ],
+    "recipes": [
+      {
+        "name": "Five-setup dialogue",
+        "beat": "two characters talk across a table; tension rises then breaks",
+        "cast": 2,
+        "shots": [
+          {
+            "purpose": "apex master two-shot (profile-ish) for geography",
+            "subject": "both",
+            "size": "WS",
+            "framing": "master",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "seated",
+            "lens_mm_ff": 35,
+            "dof": "deep",
+            "movement": "static",
+            "composition": "A on the left looking screen-right, B on the right looking screen-left",
+            "duration_s": 5
+          },
+          {
+            "purpose": "external reverse on A (OTS from behind B)",
+            "subject": "A",
+            "size": "MS",
+            "framing": "ots",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 50,
+            "dof": "medium",
+            "movement": "static",
+            "composition": "B's shoulder soft in the right foreground, no more than a third of frame",
+            "duration_s": 4
+          },
+          {
+            "purpose": "external reverse on B (OTS from behind A), matched",
+            "subject": "B",
+            "size": "MS",
+            "framing": "ots",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 50,
+            "dof": "medium",
+            "movement": "static",
+            "composition": "A's shoulder soft in the left foreground, no more than a third of frame",
+            "duration_s": 4
+          },
+          {
+            "purpose": "internal reverse on A (clean single, tighter) as stakes rise",
+            "subject": "A",
+            "size": "MCU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 75,
+            "dof": "shallow",
+            "movement": "dolly_in",
+            "speed": "slow",
+            "duration_s": 4
+          },
+          {
+            "purpose": "internal reverse on B (clean single) for the reaction",
+            "subject": "B",
+            "size": "MCU",
+            "framing": "reaction",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 75,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 3
+          },
+          {
+            "purpose": "back to the apex master after the break to reset geography",
+            "subject": "both",
+            "size": "WS",
+            "framing": "master",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "seated",
+            "lens_mm_ff": 35,
+            "dof": "deep",
+            "movement": "static",
+            "duration_s": 4
+          }
+        ],
+        "why": "Moving from shared OTS frames to isolated clean singles visually separates the characters as conflict grows; the master is held in reserve to reset geography after the break."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "mixing side-A and side-B setups",
+        "why": "eyelines flip; the audience loses who is talking to whom"
+      },
+      {
+        "what": "OTS shots where the foreground shoulder covers more than about a third of frame",
+        "why": "crowds the speaker and hides the face"
+      },
+      {
+        "what": "cutting between two singles of the same actor that differ by less than 30 degrees and less than one size",
+        "why": "it reads as a jump cut, not a new angle"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "Naturalistic motivated soft key with short lighting, neutral contemporary palette, medium depth of field on a 50mm lens, static frame.",
+      "still": "cinematic dialogue film still, motivated soft key, short lighting, neutral naturalistic palette, over-the-shoulder composition, 50mm lens, f/2.8, medium depth of field",
+      "h3": "Live-action, cinematic naturalistic dialogue look, motivated soft key, static frame."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.15,
+      "yaw_deg": 30,
+      "pitch_deg": 0,
+      "distance_m": 2.2,
+      "roll_deg": 0,
+      "focal_mm_ff": 50,
+      "vfov_deg": 21.7
+    },
+    "reference_works": [
+      {
+        "title": "Heat",
+        "year": 1995,
+        "note": "diner scene: matched reverses as equality between cop and thief"
+      },
+      {
+        "title": "The Social Network",
+        "year": 2010,
+        "note": "opening bar dialogue: rapid matched reverses"
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://en.wikipedia.org/wiki/180-degree_rule",
+        "supports": "axis of action and screen direction"
+      },
+      {
+        "url": "https://en.wikipedia.org/wiki/30-degree_rule",
+        "supports": "30-degree rule and relation to 180-degree rule"
+      },
+      {
+        "url": "https://docs.comfy.org/built-in-nodes/CreateCameraInfo.md",
+        "supports": "orbit camera parameters for camera3d"
+      }
+    ],
+    "confidence": "craft_consensus",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  },
+  {
+    "id": "coverage.master_and_coverage",
+    "type": "coverage_pattern",
+    "name": "Master and coverage",
+    "aliases": [
+      "master shot coverage",
+      "standard coverage",
+      "wide to tight",
+      "cover the scene"
+    ],
+    "keywords": [
+      "scene",
+      "meeting",
+      "living room",
+      "kitchen",
+      "office",
+      "family",
+      "three people",
+      "group",
+      "gathered",
+      "argument",
+      "they discuss",
+      "conference room",
+      "party"
+    ],
+    "parent": null,
+    "era": "classical studio era to present",
+    "summary": "The safest, most editor-friendly way to shoot any scene: run the whole scene in a wide master that shows everyone and the geography, then repeat it in progressively tighter setups (two-shots, over-the-shoulders, singles), then pick up inserts and cutaways. Every setup respects the same axis of action, and every principal gets matched singles at the sizes the scene will need. The editor can then build rhythm and emphasis in the cut, returning to the master whenever geography changes or the audience needs to breathe.",
+    "intent_tags": [
+      "realism",
+      "tension",
+      "intimacy"
+    ],
+    "signature": {
+      "shot_size": {
+        "WS": 0.2,
+        "MS": 0.3,
+        "MCU": 0.3,
+        "CU": 0.1,
+        "INSERT": 0.1
+      },
+      "framing": {
+        "master": 0.15,
+        "two_shot": 0.15,
+        "ots": 0.25,
+        "single": 0.3,
+        "insert": 0.1,
+        "reaction": 0.05
+      },
+      "angle": {
+        "eye": 0.9,
+        "high": 0.05,
+        "low": 0.05
+      },
+      "camera_height": {
+        "eye": 0.7,
+        "seated": 0.3
+      },
+      "lens_mm_ff": [
+        24,
+        85
+      ],
+      "lens_look": {
+        "spherical": 0.9,
+        "anamorphic": 0.1
+      },
+      "movement": {
+        "static": 0.75,
+        "dolly_in": 0.15,
+        "pan_left": 0.05,
+        "pan_right": 0.05
+      },
+      "rig": {
+        "sticks": 0.6,
+        "dolly": 0.4
+      },
+      "lighting": {
+        "motivated_naturalistic": 0.8,
+        "lit_for_all_angles": 0.5
+      },
+      "color": [
+        "scene-dependent"
+      ],
+      "composition": {
+        "rule_of_thirds": 0.5,
+        "lead_room_toward_partner": 0.5
+      },
+      "aspect_ratio": [
+        "any"
+      ],
+      "asl_seconds": [
+        2,
+        10
+      ],
+      "editing": [
+        "open on the master",
+        "move in as the scene intensifies",
+        "return to the master when blocking changes",
+        "inserts and cutaways as rhythm and cover"
+      ],
+      "sound": [
+        "consistent overlapping-free takes so lines cut",
+        "room tone recorded per setup"
+      ]
+    },
+    "rules": [
+      {
+        "when": "always",
+        "then": "all setups stay on the same side of the axis of action established in the master",
+        "why": "keeps screen direction and eyelines consistent so any setup cuts to any other",
+        "hard": true
+      },
+      {
+        "when": "cutting between two shots of the same subject",
+        "then": "change angle by at least 30 degrees or size by at least one step",
+        "why": "smaller changes read as a jump cut",
+        "hard": true
+      },
+      {
+        "when": "an actor moves to a new position in the master",
+        "then": "re-establish with the master (or a new wide) before cutting to coverage at the new position",
+        "why": "the audience needs to see the new geography or eyelines will seem wrong",
+        "hard": false
+      },
+      {
+        "when": "scheduling setups",
+        "then": "shoot wide to tight and match singles in lens and height for every principal",
+        "why": "lighting and continuity are set once for the wide; matched singles give the editor freedom to balance the scene",
+        "hard": false
+      }
+    ],
+    "recipes": [
+      {
+        "name": "Three-hander in a room",
+        "beat": "three siblings argue in their late father's living room about selling the house",
+        "cast": 3,
+        "shots": [
+          {
+            "purpose": "wide master: all three, the room and their positions",
+            "subject": "all",
+            "size": "WS",
+            "framing": "master",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 28,
+            "dof": "deep",
+            "movement": "static",
+            "composition": "triangle staging: A standing left, B seated center, C at the window right",
+            "duration_s": 8
+          },
+          {
+            "purpose": "two-shot A and B, the main pair of the argument",
+            "subject": "both",
+            "size": "MS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 40,
+            "dof": "medium",
+            "movement": "static",
+            "duration_s": 5
+          },
+          {
+            "purpose": "OTS on A from behind B",
+            "subject": "A",
+            "size": "MCU",
+            "framing": "ots",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 50,
+            "dof": "medium",
+            "movement": "static",
+            "duration_s": 4
+          },
+          {
+            "purpose": "matched OTS on B from behind A",
+            "subject": "B",
+            "size": "MCU",
+            "framing": "ots",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 50,
+            "dof": "medium",
+            "movement": "static",
+            "duration_s": 4
+          },
+          {
+            "purpose": "single on C at the window, the silent one, for reactions",
+            "subject": "C",
+            "size": "MCU",
+            "framing": "reaction",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 65,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 3
+          },
+          {
+            "purpose": "insert: the real-estate listing on the coffee table",
+            "subject": "prop",
+            "size": "INSERT",
+            "framing": "insert",
+            "angle": "high",
+            "horizontal": "front",
+            "height": "seated",
+            "lens_mm_ff": 75,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 2
+          },
+          {
+            "purpose": "CU on A for the line that ends it",
+            "subject": "A",
+            "size": "CU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 75,
+            "dof": "shallow",
+            "movement": "dolly_in",
+            "speed": "slow",
+            "duration_s": 4
+          },
+          {
+            "purpose": "back to the master as C turns and leaves",
+            "subject": "all",
+            "size": "WS",
+            "framing": "master",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 28,
+            "dof": "deep",
+            "movement": "static",
+            "duration_s": 5
+          }
+        ],
+        "why": "The master fixes everyone's place, so the tighter setups never confuse; the pair carrying the argument gets matched OTS coverage, the silent third gets reaction singles that let the editor comment on the fight, and the master returns for the exit because the geography changes."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "skipping the master to save time",
+        "why": "the editor loses the only shot that resets geography and covers continuity errors"
+      },
+      {
+        "what": "singles at different lenses or heights for characters of equal status",
+        "why": "the mismatch will read as a power statement the scene did not intend"
+      },
+      {
+        "what": "covering every line in every setup with no plan",
+        "why": "it multiplies setups without adding choices; decide which beats need which size"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "Naturalistic motivated lighting that holds from every angle, neutral balanced palette, clean classical framing with deep focus on a 28mm lens.",
+      "still": "cinematic drama still, naturalistic motivated lighting, neutral balanced palette, classical composition, 28mm lens, deep focus, 35mm film grain",
+      "h3": "Live-action, cinematic naturalistic drama look, motivated light, clean classical framing."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.2,
+      "yaw_deg": 0,
+      "pitch_deg": -3,
+      "distance_m": 5.0,
+      "roll_deg": 0,
+      "focal_mm_ff": 28,
+      "vfov_deg": 37.8
+    },
+    "reference_works": [
+      {
+        "title": "12 Angry Men",
+        "year": 1957,
+        "note": "masters giving way to tighter, lower coverage as pressure rises"
+      },
+      {
+        "title": "The Godfather",
+        "year": 1972,
+        "note": "classical master-and-coverage in the family meeting scenes"
+      },
+      {
+        "title": "August: Osage County",
+        "year": 2013,
+        "note": "family argument across a room and a table"
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://en.wikipedia.org/wiki/180-degree_rule",
+        "supports": "axis of action"
+      },
+      {
+        "url": "https://en.wikipedia.org/wiki/30-degree_rule",
+        "supports": "30-degree rule"
+      }
+    ],
+    "confidence": "craft_consensus",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  },
+  {
+    "id": "coverage.walk_and_talk",
+    "type": "coverage_pattern",
+    "name": "Walk-and-talk",
+    "aliases": [
+      "walk and talk",
+      "Sorkin walk-and-talk",
+      "pedeconference",
+      "Steadicam lead"
+    ],
+    "keywords": [
+      "walk",
+      "walks",
+      "walking",
+      "while walking",
+      "walk and talk",
+      "corridor",
+      "hallway",
+      "down the street",
+      "stroll",
+      "strolling",
+      "sidewalk",
+      "through the office",
+      "on foot"
+    ],
+    "parent": null,
+    "era": "Steadicam era (1976-present); TV codified in the 1990s-2000s",
+    "summary": "Two (or more) characters talk while moving, and the camera moves with them so the scene gains energy, shows the world, and never stops for coverage. The core setup is a Steadicam or gimbal leading the pair, walking backward in front of them in a two-shot. Add a matched pair of leading singles or OTS shots, a lateral profile track alongside, and a following shot from behind for exits and reveals. Extras crossing the frame and the route itself (turns, doors, stairs) give the edit natural cut points and the scene a sense of purpose.",
+    "intent_tags": [
+      "energy",
+      "realism",
+      "tension"
+    ],
+    "signature": {
+      "shot_size": {
+        "MS": 0.4,
+        "MCU": 0.3,
+        "WS": 0.2,
+        "COWBOY": 0.1
+      },
+      "framing": {
+        "two_shot": 0.4,
+        "single": 0.3,
+        "ots": 0.2,
+        "group": 0.1
+      },
+      "angle": {
+        "eye": 0.9,
+        "low": 0.1
+      },
+      "camera_height": {
+        "eye": 0.8,
+        "chest": 0.2
+      },
+      "lens_mm_ff": [
+        24,
+        50
+      ],
+      "lens_look": {
+        "spherical": 0.9,
+        "anamorphic": 0.1
+      },
+      "movement": {
+        "track_lead": 0.45,
+        "truck_left": 0.15,
+        "truck_right": 0.15,
+        "track_follow": 0.15,
+        "steadicam_follow": 0.1
+      },
+      "rig": {
+        "steadicam": 0.6,
+        "gimbal": 0.2,
+        "dolly": 0.2
+      },
+      "lighting": {
+        "practical_location": 0.6,
+        "even_wraparound": 0.4
+      },
+      "color": [
+        "scene-dependent",
+        "busy, lived-in backgrounds"
+      ],
+      "composition": {
+        "pair_centered": 0.5,
+        "extras_crossing_foreground": 0.3,
+        "depth_ahead_of_walkers": 0.2
+      },
+      "aspect_ratio": [
+        "1.78:1",
+        "1.85:1",
+        "2.39:1"
+      ],
+      "asl_seconds": [
+        6,
+        40
+      ],
+      "editing": [
+        "long takes",
+        "cut at doors, turns and handoffs",
+        "cut on a step so the pace matches",
+        "a third character can join or peel off mid-shot"
+      ],
+      "sound": [
+        "fast overlapping dialogue",
+        "busy ambience",
+        "footsteps carrying rhythm"
+      ]
+    },
+    "rules": [
+      {
+        "when": "the pair walks side by side",
+        "then": "keep the line through the two walkers and their direction of travel consistent; cover from in front (leading) and keep the same screen order of A and B in every setup",
+        "why": "if A is screen-left in one shot and screen-right in the next, the audience feels the pair swapped places",
+        "hard": true
+      },
+      {
+        "when": "cutting between moving shots",
+        "then": "match the walking pace and cut on a step or at a turn, door or handoff",
+        "why": "the route supplies motivated cut points and the matching cadence hides the cut",
+        "hard": false
+      },
+      {
+        "when": "the conversation reaches its point",
+        "then": "let the pair stop and play the key line in a static two-shot or singles",
+        "why": "stopping after constant motion is itself emphasis; the audience leans in",
+        "hard": false
+      }
+    ],
+    "recipes": [
+      {
+        "name": "Corridor walk-and-talk",
+        "beat": "a chief of staff briefs a senior aide while striding through a busy office corridor",
+        "cast": 2,
+        "shots": [
+          {
+            "purpose": "leading two-shot: camera backs up ahead of the pair, the corridor alive behind them",
+            "subject": "both",
+            "size": "MS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 28,
+            "dof": "medium",
+            "movement": "track_lead",
+            "speed": "regular",
+            "lighting": "overhead office practicals",
+            "composition": "pair centered, A screen-left, B screen-right; staff crossing behind",
+            "duration_s": 15
+          },
+          {
+            "purpose": "leading single on A, B's shoulder at frame edge",
+            "subject": "A",
+            "size": "MCU",
+            "framing": "ots",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 40,
+            "dof": "medium",
+            "movement": "track_lead",
+            "speed": "regular",
+            "duration_s": 6
+          },
+          {
+            "purpose": "matched leading single on B",
+            "subject": "B",
+            "size": "MCU",
+            "framing": "ots",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 40,
+            "dof": "medium",
+            "movement": "track_lead",
+            "speed": "regular",
+            "duration_s": 6
+          },
+          {
+            "purpose": "lateral profile track alongside through a glass wall: the pace and the place",
+            "subject": "both",
+            "size": "WS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "eye",
+            "lens_mm_ff": 50,
+            "dof": "medium",
+            "movement": "truck_right",
+            "speed": "regular",
+            "composition": "foreground desks and people wiping past",
+            "duration_s": 5
+          },
+          {
+            "purpose": "they stop at a door: static two-shot for the key line",
+            "subject": "both",
+            "size": "MS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 40,
+            "dof": "medium",
+            "movement": "static",
+            "duration_s": 5
+          },
+          {
+            "purpose": "A peels off through the door; follow B from behind as they walk on alone",
+            "subject": "B",
+            "size": "MS",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "back",
+            "height": "eye",
+            "lens_mm_ff": 28,
+            "dof": "medium",
+            "movement": "steadicam_follow",
+            "speed": "regular",
+            "duration_s": 6
+          }
+        ],
+        "why": "The leading two-shot carries most of the scene in one take so performance and pace stay alive; matched leading singles give the editor emphasis without breaking stride, the stop lands the key line, and the follow shot hands the scene to the next location."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "covering a walk-and-talk in static setups at stops along the route",
+        "why": "the energy and the sense of purpose disappear; the scene becomes a series of standing conversations"
+      },
+      {
+        "what": "long lenses on the leading shot",
+        "why": "operating is shaky and the pair's distance to camera shifts focus constantly; 24-40mm keeps them stable and the world visible"
+      },
+      {
+        "what": "the pair swapping screen sides between setups",
+        "why": "breaks the walkers' axis and the audience feels a jump"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "Smooth Steadicam movement through a busy practical-lit location, naturalistic contemporary palette, medium depth of field on a 28mm lens.",
+      "still": "cinematic TV drama still, smooth Steadicam leading two-shot, busy office corridor with overhead practicals, naturalistic palette, 28mm lens, medium depth of field, motion and depth",
+      "h3": "Live-action, cinematic, smooth Steadicam leading the walkers through a busy practical-lit location."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.5,
+      "yaw_deg": 0,
+      "pitch_deg": 0,
+      "distance_m": 2.6,
+      "roll_deg": 0,
+      "focal_mm_ff": 28,
+      "vfov_deg": 37.8
+    },
+    "reference_works": [
+      {
+        "title": "The West Wing",
+        "year": 1999,
+        "note": "the TV template for corridor walk-and-talks"
+      },
+      {
+        "title": "Goodfellas",
+        "year": 1990,
+        "note": "Copacabana Steadicam journey"
+      },
+      {
+        "title": "Before Sunrise",
+        "year": 1995,
+        "note": "long lateral and leading tracks of a conversation through a city"
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://laughingsquid.com/the-spielberg-oner-a-study-of-steven-spielbergs-fascinating-long-takes-in-movies/",
+        "supports": "moving camera and blocking replacing cut coverage"
+      }
+    ],
+    "confidence": "craft_consensus",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  },
+  {
+    "id": "coverage.table_scene",
+    "type": "coverage_pattern",
+    "name": "Table scene (booth, dinner table)",
+    "aliases": [
+      "dinner table coverage",
+      "booth coverage",
+      "circle coverage",
+      "dinner scene"
+    ],
+    "keywords": [
+      "diner",
+      "booth",
+      "table",
+      "dinner",
+      "restaurant",
+      "cafe",
+      "lunch",
+      "breakfast",
+      "dinner party",
+      "bar",
+      "across the table",
+      "around the table",
+      "family dinner",
+      "meal"
+    ],
+    "parent": null,
+    "era": "classical continuity to present",
+    "summary": "A table puts two to four people in a fixed circle where every pair has its own axis of action. Pick the dominant axis for the conversation that matters, cover that pair with matched reverses at seated height, and treat the others as reactions shot from the same side of that line. When the conversation moves to a different pair, re-establish: a wider shot or an overhead 'neutral' that shows the whole table resets the geography before a new axis takes over. A booth simplifies it to two facing pairs; a round table needs the most care.",
+    "intent_tags": [
+      "realism",
+      "intimacy",
+      "tension"
+    ],
+    "signature": {
+      "shot_size": {
+        "WS": 0.15,
+        "MS": 0.3,
+        "MCU": 0.35,
+        "CU": 0.1,
+        "INSERT": 0.1
+      },
+      "framing": {
+        "master": 0.1,
+        "ots": 0.35,
+        "single": 0.3,
+        "two_shot": 0.1,
+        "insert": 0.1,
+        "reaction": 0.05
+      },
+      "angle": {
+        "eye": 0.8,
+        "overhead": 0.1,
+        "high": 0.1
+      },
+      "camera_height": {
+        "seated": 0.85,
+        "aerial": 0.05,
+        "high": 0.1
+      },
+      "lens_mm_ff": [
+        28,
+        85
+      ],
+      "lens_look": {
+        "spherical": 0.8,
+        "anamorphic": 0.2
+      },
+      "movement": {
+        "static": 0.75,
+        "dolly_in": 0.15,
+        "arc_left": 0.05,
+        "arc_right": 0.05
+      },
+      "rig": {
+        "sticks": 0.6,
+        "dolly": 0.3,
+        "overhead_rig": 0.1
+      },
+      "lighting": {
+        "motivated_overhead_pendant": 0.6,
+        "window_light": 0.4,
+        "warm_practicals": 0.5
+      },
+      "color": [
+        "warm practicals over the table",
+        "scene-dependent"
+      ],
+      "composition": {
+        "table_edge_foreground": 0.3,
+        "lead_room_toward_partner": 0.5,
+        "dirty_ots": 0.2
+      },
+      "aspect_ratio": [
+        "1.85:1",
+        "2.39:1"
+      ],
+      "asl_seconds": [
+        2,
+        8
+      ],
+      "editing": [
+        "one dominant axis per conversation",
+        "overhead or wide reset when the axis shifts",
+        "reactions from listeners on the same side of the active line",
+        "inserts of food, glasses, hands as rhythm"
+      ],
+      "sound": [
+        "cutlery and room ambience as continuity",
+        "restaurant walla under dialogue"
+      ]
+    },
+    "rules": [
+      {
+        "when": "a conversation between two people at the table",
+        "then": "choose that pair's line of action and keep every setup for that exchange on one side of it",
+        "why": "with several people at a table there are several lines; picking one per exchange keeps eyelines readable",
+        "hard": true
+      },
+      {
+        "when": "the conversation shifts to a different pair",
+        "then": "re-establish with a wide or an overhead neutral of the whole table before cutting to the new pair's reverses",
+        "why": "the overhead has no screen direction, so it resets the audience before a new axis takes over",
+        "hard": false
+      },
+      {
+        "when": "covering seated characters",
+        "then": "keep cameras at seated eye height and match the reverses in size and lens",
+        "why": "a standing-height camera looks down on everyone and unintentionally diminishes them",
+        "hard": false
+      },
+      {
+        "when": "cutting between two shots of the same diner",
+        "then": "change angle by at least 30 degrees or size by at least one step",
+        "why": "smaller changes read as a jump cut",
+        "hard": true
+      }
+    ],
+    "recipes": [
+      {
+        "name": "Booth for two",
+        "beat": "two people face each other across a diner booth",
+        "cast": 2,
+        "shots": [
+          {
+            "purpose": "profile two-shot along the table: the booth, the window, both faces",
+            "subject": "both",
+            "size": "MS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "seated",
+            "lens_mm_ff": 35,
+            "dof": "medium",
+            "movement": "static",
+            "lighting": "pendant over the table, window behind",
+            "composition": "A screen-left facing right, B screen-right facing left, table between",
+            "duration_s": 6
+          },
+          {
+            "purpose": "OTS on A over B's shoulder",
+            "subject": "A",
+            "size": "MCU",
+            "framing": "ots",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 65,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 4
+          },
+          {
+            "purpose": "matched OTS on B over A's shoulder",
+            "subject": "B",
+            "size": "MCU",
+            "framing": "ots",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 65,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 4
+          },
+          {
+            "purpose": "insert: coffee poured, cups and hands on the table",
+            "subject": "prop",
+            "size": "INSERT",
+            "framing": "insert",
+            "angle": "high",
+            "horizontal": "profile",
+            "height": "seated",
+            "lens_mm_ff": 85,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 2
+          },
+          {
+            "purpose": "clean single on A, tighter, for the turn",
+            "subject": "A",
+            "size": "CU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 85,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 4
+          },
+          {
+            "purpose": "matched clean single on B",
+            "subject": "B",
+            "size": "CU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 85,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 4
+          }
+        ],
+        "why": "A booth has one obvious axis across the table; the profile two-shot shows it, matched OTS frames keep the pair connected and equal, and the step to clean singles marks the moment the conversation turns serious."
+      },
+      {
+        "name": "Dinner for three, axis shifts",
+        "beat": "three friends at dinner; a talk between two turns into a confrontation with the third",
+        "cast": 3,
+        "shots": [
+          {
+            "purpose": "overhead neutral of the whole table: plates, hands and all three positions",
+            "subject": "all",
+            "size": "WS",
+            "framing": "establishing",
+            "angle": "overhead",
+            "horizontal": "front",
+            "height": "aerial",
+            "lens_mm_ff": 24,
+            "dof": "deep",
+            "movement": "static",
+            "composition": "table centered, top of frame toward the window",
+            "duration_s": 4
+          },
+          {
+            "purpose": "first axis A-B: OTS on A from behind B",
+            "subject": "A",
+            "size": "MCU",
+            "framing": "ots",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 50,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 4
+          },
+          {
+            "purpose": "matched OTS on B from behind A",
+            "subject": "B",
+            "size": "MCU",
+            "framing": "ots",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 50,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 4
+          },
+          {
+            "purpose": "C's reaction, from the same side of the A-B line",
+            "subject": "C",
+            "size": "MCU",
+            "framing": "reaction",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 50,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 3
+          },
+          {
+            "purpose": "reset as C cuts in: wide three-shot showing the new A-C line",
+            "subject": "all",
+            "size": "MS",
+            "framing": "three_shot",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 32,
+            "dof": "deep",
+            "movement": "static",
+            "duration_s": 4
+          },
+          {
+            "purpose": "new axis A-C: single on C",
+            "subject": "C",
+            "size": "CU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 75,
+            "dof": "shallow",
+            "movement": "dolly_in",
+            "speed": "slow",
+            "duration_s": 4
+          },
+          {
+            "purpose": "matched single on A on the A-C axis",
+            "subject": "A",
+            "size": "CU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 75,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 4
+          }
+        ],
+        "why": "Each conversation pair owns its own line; the overhead and the three-shot are the hinges that let the audience follow the shift from A-B to A-C without eyelines appearing to flip."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "standing-height cameras on a seated scene",
+        "why": "everyone is looked down on, flattening the scene and implying a power the story did not intend"
+      },
+      {
+        "what": "cutting between pairs on different axes with no reset",
+        "why": "a character who looked screen-right now appears to look screen-left and the table geography collapses"
+      },
+      {
+        "what": "centerpieces, bottles or lamps blocking faces in OTS frames",
+        "why": "the table is crowded with objects; clear sightlines before rolling"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "Warm pendant light pooling over the table with practical glow in the background, naturalistic palette, shallow depth of field at seated eye height on a 65mm lens.",
+      "still": "cinematic restaurant scene still, warm pendant light pooled over the table, background practicals in soft bokeh, naturalistic warm palette, seated eye-level camera, 65mm lens, f/2, shallow depth of field",
+      "h3": "Live-action, cinematic, warm pendant light over the table, seated eye-level camera, soft background bokeh."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.15,
+      "yaw_deg": 30,
+      "pitch_deg": 0,
+      "distance_m": 1.8,
+      "roll_deg": 0,
+      "focal_mm_ff": 65,
+      "vfov_deg": 16.8
+    },
+    "reference_works": [
+      {
+        "title": "Heat",
+        "year": 1995,
+        "note": "two-hander across a diner table in matched reverses"
+      },
+      {
+        "title": "Reservoir Dogs",
+        "year": 1992,
+        "note": "opening diner: circling camera around a table of eight"
+      },
+      {
+        "title": "Pulp Fiction",
+        "year": 1994,
+        "note": "booth coverage in the opening and the diner finale"
+      },
+      {
+        "title": "The Celebration",
+        "year": 1998,
+        "note": "dinner-party confrontation with shifting axes"
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://en.wikipedia.org/wiki/180-degree_rule",
+        "supports": "axis of action"
+      },
+      {
+        "url": "https://en.wikipedia.org/wiki/30-degree_rule",
+        "supports": "30-degree rule"
+      }
+    ],
+    "confidence": "craft_consensus",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  },
+  {
+    "id": "coverage.car_interior",
+    "type": "coverage_pattern",
+    "name": "Car interior",
+    "aliases": [
+      "car coverage",
+      "driving scene",
+      "in-car dialogue",
+      "process trailer coverage"
+    ],
+    "keywords": [
+      "car",
+      "driving",
+      "drives",
+      "drive",
+      "passenger",
+      "front seat",
+      "back seat",
+      "steering wheel",
+      "highway",
+      "road trip",
+      "parked car",
+      "windshield",
+      "cab",
+      "taxi"
+    ],
+    "parent": null,
+    "era": "rear projection (1930s-60s), process trailer and car mounts, LED volume (2019-present)",
+    "summary": "Two people side by side facing the same way, inside a box the camera cannot enter freely. The standard kit: a hood-mount two-shot through the windshield (the master), side-window singles from outside each door or a three-quarter single from the opposite seat, a back-seat POV/OTS that shows the road ahead, inserts of hands on the wheel and mirrors, and exterior tracking shots for geography and speed. Keep the driver on the same screen side in every frame, motivate light from the windows, and remember the road outside is the background of every shot.",
+    "intent_tags": [
+      "realism",
+      "intimacy",
+      "tension"
+    ],
+    "signature": {
+      "shot_size": {
+        "MS": 0.35,
+        "MCU": 0.3,
+        "CU": 0.1,
+        "WS": 0.15,
+        "INSERT": 0.1
+      },
+      "framing": {
+        "two_shot": 0.3,
+        "single": 0.35,
+        "ots": 0.1,
+        "pov": 0.1,
+        "insert": 0.1,
+        "establishing": 0.05
+      },
+      "angle": {
+        "eye": 0.8,
+        "low": 0.1,
+        "high": 0.1
+      },
+      "camera_height": {
+        "seated": 0.8,
+        "eye": 0.1,
+        "aerial": 0.1
+      },
+      "lens_mm_ff": [
+        24,
+        85
+      ],
+      "lens_look": {
+        "spherical": 0.8,
+        "anamorphic": 0.2
+      },
+      "movement": {
+        "static": 0.7,
+        "track_follow": 0.1,
+        "truck_left": 0.05,
+        "truck_right": 0.05,
+        "track_lead": 0.1
+      },
+      "rig": {
+        "hood_mount": 0.3,
+        "door_mount": 0.3,
+        "process_trailer": 0.2,
+        "drone": 0.1,
+        "handheld_in_back_seat": 0.1
+      },
+      "lighting": {
+        "window_light": 0.6,
+        "passing_interactive_light": 0.5,
+        "dashboard_glow_at_night": 0.4
+      },
+      "color": [
+        "day: bright exterior, contrast held by fill",
+        "night: dashboard glow, passing streetlight sweeps"
+      ],
+      "composition": {
+        "windshield_frame_within_frame": 0.4,
+        "road_visible_in_background": 0.4,
+        "a_pillar_edges": 0.2
+      },
+      "aspect_ratio": [
+        "2.39:1",
+        "1.85:1"
+      ],
+      "asl_seconds": [
+        2,
+        10
+      ],
+      "editing": [
+        "windshield two-shot as the master",
+        "singles from the side windows for emphasis",
+        "exterior tracking to reset geography and speed",
+        "inserts as rhythm"
+      ],
+      "sound": [
+        "road and engine hum as room tone",
+        "turn signal and wipers as rhythm",
+        "radio as source music"
+      ]
+    },
+    "rules": [
+      {
+        "when": "always",
+        "then": "keep the driver on the same screen side in every interior setup (driver screen-left through the windshield means passenger screen-right) and do not mix windshield and back-seat setups without a cutaway",
+        "why": "front and back views flip left and right; the audience will feel the occupants swapped seats",
+        "hard": true
+      },
+      {
+        "when": "the car is moving",
+        "then": "match the background direction of travel in every setup and cut to an exterior tracking shot when the route or speed changes",
+        "why": "backgrounds moving in contradictory directions break the illusion of a single journey",
+        "hard": false
+      },
+      {
+        "when": "singles of driver and passenger",
+        "then": "match the two singles in size and lens even though the camera positions differ (door mount vs opposite seat)",
+        "why": "equal framing keeps the two equal; a looser single on one will read as diminishing them",
+        "hard": false
+      }
+    ],
+    "recipes": [
+      {
+        "name": "Night drive, two in front",
+        "beat": "a driver and a passenger argue on a dark highway",
+        "cast": 2,
+        "shots": [
+          {
+            "purpose": "exterior: the car alone on the night highway, tracked from behind",
+            "subject": "env",
+            "size": "WS",
+            "framing": "establishing",
+            "angle": "high",
+            "horizontal": "three_quarter_back",
+            "height": "aerial",
+            "lens_mm_ff": 35,
+            "dof": "deep",
+            "movement": "track_follow",
+            "speed": "regular",
+            "lighting": "headlights and distant sodium lights",
+            "duration_s": 5
+          },
+          {
+            "purpose": "hood-mount two-shot through the windshield: the master",
+            "subject": "both",
+            "size": "MS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "seated",
+            "lens_mm_ff": 28,
+            "dof": "medium",
+            "movement": "static",
+            "lighting": "dashboard glow, streetlights sweeping across both faces",
+            "composition": "driver screen-left, passenger screen-right, windshield as frame within frame",
+            "duration_s": 8
+          },
+          {
+            "purpose": "driver single from the passenger-side position",
+            "subject": "A",
+            "size": "MCU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 50,
+            "dof": "shallow",
+            "movement": "static",
+            "lighting": "dashboard glow, passing light sweeps",
+            "composition": "driver's window and dark road beyond",
+            "duration_s": 5
+          },
+          {
+            "purpose": "matched passenger single from the driver-side position",
+            "subject": "B",
+            "size": "MCU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 50,
+            "dof": "shallow",
+            "movement": "static",
+            "lighting": "dashboard glow, passing light sweeps",
+            "composition": "passenger window and dark road beyond",
+            "duration_s": 5
+          },
+          {
+            "purpose": "insert: driver's hands tightening on the wheel",
+            "subject": "A_hands",
+            "size": "INSERT",
+            "framing": "insert",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "seated",
+            "lens_mm_ff": 50,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 2
+          },
+          {
+            "purpose": "back-seat view between the headrests to the road ahead, the silence after",
+            "subject": "both",
+            "size": "MS",
+            "framing": "ots",
+            "angle": "eye",
+            "horizontal": "back",
+            "height": "seated",
+            "lens_mm_ff": 24,
+            "dof": "deep",
+            "movement": "static",
+            "composition": "two headrests framing the windshield and the empty road",
+            "duration_s": 6,
+            "note": "use after a cutaway or the exterior so the left-right flip is not felt"
+          }
+        ],
+        "why": "The windshield two-shot holds both people and the world rushing at them; matched window singles give the argument its emphasis; the hands insert carries what neither says, and the back-seat view after an exterior reset shows the road they still have to share."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "cutting straight from the windshield two-shot to the back-seat view",
+        "why": "the driver jumps from screen-left to screen-right and the cut feels like a mistake"
+      },
+      {
+        "what": "static, unlit night backgrounds on a supposedly moving car",
+        "why": "without passing light and motion in the windows the car reads as parked on a stage"
+      },
+      {
+        "what": "wide lenses tight on faces from the dashboard",
+        "why": "the cramped distance distorts faces; keep wide lenses for the two-shot and use the opposite seat or window positions for singles"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "Night car interior lighting with soft dashboard glow and streetlights sweeping across the cabin, dark blue exterior, sodium orange accents, medium depth of field on a 28mm lens.",
+      "still": "cinematic night car interior still, soft dashboard glow, streetlight sweeps across the cabin, dark blue night outside the windows, sodium orange accents, windshield framing, 28mm lens, medium depth of field, film grain",
+      "h3": "Live-action, cinematic night car interior, dashboard glow and streetlights sweeping through the cabin."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.1,
+      "yaw_deg": 0,
+      "pitch_deg": 0,
+      "distance_m": 1.4,
+      "roll_deg": 0,
+      "focal_mm_ff": 28,
+      "vfov_deg": 37.8
+    },
+    "reference_works": [
+      {
+        "title": "Collateral",
+        "year": 2004,
+        "note": "night taxi two-hander, digital night exteriors in the windows"
+      },
+      {
+        "title": "Drive",
+        "year": 2011,
+        "note": "silent driver singles and windshield frames"
+      },
+      {
+        "title": "Children of Men",
+        "year": 2006,
+        "note": "the car ambush oner from a rig inside the car"
+      },
+      {
+        "title": "Taxi Driver",
+        "year": 1976,
+        "note": "mirror and back-seat views of the city"
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://en.wikipedia.org/wiki/180-degree_rule",
+        "supports": "screen direction and axis of action"
+      }
+    ],
+    "confidence": "craft_consensus",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  },
+  {
+    "id": "coverage.single_character_scene",
+    "type": "coverage_pattern",
+    "name": "Single-character scene",
+    "aliases": [
+      "solo scene",
+      "one-hander",
+      "covering a solo actor",
+      "process scene"
+    ],
+    "keywords": [
+      "alone",
+      "by himself",
+      "by herself",
+      "solo",
+      "on his own",
+      "on her own",
+      "searches",
+      "packs",
+      "waits",
+      "gets ready",
+      "prepares",
+      "wakes up",
+      "monologue",
+      "home alone",
+      "apartment"
+    ],
+    "parent": null,
+    "era": "timeless",
+    "summary": "With no dialogue partner there is no shot/reverse, so the coverage has to come from the character's relationship to the space and to objects. Establish the environment, then cover the actor at varied sizes and angles (each change at least 30 degrees or one size step), and replace the missing reverse with what they look at: POVs, inserts of hands and props, details of the room. Action defines the axis here: the line runs along their eyeline or direction of movement, and the POV must match the eyeline that precedes it. Cut on action and on looks, and let a few shots hold long.",
+    "intent_tags": [
+      "isolation",
+      "realism",
+      "suspense"
+    ],
+    "signature": {
+      "shot_size": {
+        "EWS": 0.05,
+        "WS": 0.2,
+        "MS": 0.25,
+        "MCU": 0.15,
+        "CU": 0.1,
+        "INSERT": 0.25
+      },
+      "framing": {
+        "establishing": 0.1,
+        "single": 0.45,
+        "pov": 0.15,
+        "insert": 0.3
+      },
+      "angle": {
+        "eye": 0.7,
+        "high": 0.2,
+        "low": 0.1
+      },
+      "camera_height": {
+        "eye": 0.5,
+        "seated": 0.3,
+        "high": 0.2
+      },
+      "lens_mm_ff": [
+        24,
+        100
+      ],
+      "lens_look": {
+        "spherical": 0.9,
+        "anamorphic": 0.1
+      },
+      "movement": {
+        "static": 0.6,
+        "dolly_in": 0.15,
+        "pan_left": 0.05,
+        "pan_right": 0.05,
+        "track_follow": 0.1,
+        "rack_focus": 0.05
+      },
+      "rig": {
+        "sticks": 0.6,
+        "dolly": 0.3,
+        "handheld": 0.1
+      },
+      "lighting": {
+        "motivated_practicals": 0.7,
+        "window_light": 0.5
+      },
+      "color": [
+        "scene-dependent"
+      ],
+      "composition": {
+        "figure_in_environment": 0.4,
+        "object_focus": 0.3,
+        "negative_space": 0.3
+      },
+      "aspect_ratio": [
+        "any"
+      ],
+      "asl_seconds": [
+        2,
+        15
+      ],
+      "editing": [
+        "cut on action",
+        "look then POV (eyeline match)",
+        "inserts compress process time",
+        "one long hold as the anchor"
+      ],
+      "sound": [
+        "room tone and action sound carry the scene",
+        "practical sounds (kettle, keys, phone) as punctuation"
+      ]
+    },
+    "rules": [
+      {
+        "when": "the character looks at something",
+        "then": "cut to a POV or insert that matches the eyeline direction and height, then back to the character",
+        "why": "the look-object-reaction triad (eyeline match) replaces the missing reverse shot and tells the audience what they are thinking",
+        "hard": false
+      },
+      {
+        "when": "cutting between two shots of the actor",
+        "then": "change angle by at least 30 degrees or size by at least one step",
+        "why": "with only one person on screen every jump cut is exposed; the variation is what makes it read as coverage",
+        "hard": true
+      },
+      {
+        "when": "the character moves through space",
+        "then": "keep screen direction consistent across cuts (exiting frame right means entering the next frame from the left)",
+        "why": "the direction of movement is the axis of action in a solo scene",
+        "hard": true
+      },
+      {
+        "when": "a process (packing, searching, cooking)",
+        "then": "compress it with a sequence of hand and prop inserts cut on action, anchored by one wider shot",
+        "why": "inserts carry the information and the rhythm while the wide keeps the audience oriented",
+        "hard": false
+      }
+    ],
+    "recipes": [
+      {
+        "name": "Alone in the apartment at night",
+        "beat": "a man comes home late to his apartment, finds a letter, and reads it",
+        "cast": 1,
+        "shots": [
+          {
+            "purpose": "establishing: the dark apartment, door opening, his silhouette in the hall light",
+            "subject": "env",
+            "size": "WS",
+            "framing": "establishing",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 24,
+            "dof": "deep",
+            "movement": "static",
+            "lighting": "hall light through the door, city spill through the window",
+            "duration_s": 6
+          },
+          {
+            "purpose": "MS as he switches on a lamp and drops his keys, three-quarter",
+            "subject": "A",
+            "size": "MS",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 40,
+            "dof": "medium",
+            "movement": "static",
+            "lighting": "one warm lamp",
+            "duration_s": 5
+          },
+          {
+            "purpose": "his look down: POV of an envelope on the floor",
+            "subject": "prop",
+            "size": "INSERT",
+            "framing": "pov",
+            "angle": "high",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 50,
+            "dof": "medium",
+            "movement": "static",
+            "duration_s": 3
+          },
+          {
+            "purpose": "insert: hands tearing it open",
+            "subject": "A_hands",
+            "size": "INSERT",
+            "framing": "insert",
+            "angle": "high",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 85,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 2
+          },
+          {
+            "purpose": "wide from across the room: he sits on the couch reading, small in the space",
+            "subject": "A",
+            "size": "WS",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "seated",
+            "lens_mm_ff": 32,
+            "dof": "deep",
+            "movement": "static",
+            "composition": "60 degrees around from the MS, lamp the only island of light",
+            "duration_s": 6
+          },
+          {
+            "purpose": "CU as he reads, slow creep in",
+            "subject": "A",
+            "size": "CU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 85,
+            "dof": "shallow",
+            "movement": "dolly_in",
+            "speed": "slow",
+            "duration_s": 6
+          },
+          {
+            "purpose": "insert: the line on the page that matters (handwriting, no legible text needed)",
+            "subject": "prop",
+            "size": "INSERT",
+            "framing": "insert",
+            "angle": "high",
+            "horizontal": "front",
+            "height": "seated",
+            "lens_mm_ff": 100,
+            "dof": "shallow",
+            "movement": "rack_focus",
+            "speed": "slow",
+            "duration_s": 3
+          },
+          {
+            "purpose": "hold: back to the wide, he lowers the letter and sits still",
+            "subject": "A",
+            "size": "WS",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "seated",
+            "lens_mm_ff": 32,
+            "dof": "deep",
+            "movement": "static",
+            "duration_s": 8
+          }
+        ],
+        "why": "The environment and objects stand in for a scene partner: look, POV, hands and page form the conversation. Sizes and angles step by at least 30 degrees or one size so every cut reads as coverage, and the final held wide gives the moment room."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "covering a solo scene from one angle with zooms or minor reframes",
+        "why": "small changes on a lone actor read as jump cuts and the scene feels unshot"
+      },
+      {
+        "what": "a POV whose angle does not match the preceding look",
+        "why": "the eyeline match breaks and the audience no longer believes it is what they see"
+      },
+      {
+        "what": "filling the silence with score",
+        "why": "the scene's sounds (keys, paper, breathing) are its dialogue; music talks over them"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "Motivated practical lighting from a single warm lamp with cool city spill through the window, naturalistic palette, deep shadows, quiet still framing.",
+      "still": "cinematic interior still, motivated practical lighting, single warm lamp, cool city light through the window, naturalistic palette, deep shadows, quiet composition, 35mm film grain",
+      "h3": "Live-action, cinematic quiet interior, a single warm lamp and cool window spill, still framing."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.2,
+      "yaw_deg": 35,
+      "pitch_deg": -3,
+      "distance_m": 2.8,
+      "roll_deg": 0,
+      "focal_mm_ff": 40,
+      "vfov_deg": 27.0
+    },
+    "reference_works": [
+      {
+        "title": "A Man Escaped",
+        "year": 1956,
+        "note": "Bresson: process told through hands and objects"
+      },
+      {
+        "title": "Jeanne Dielman, 23 quai du Commerce, 1080 Bruxelles",
+        "year": 1975,
+        "note": "solo domestic routine in long fixed frames"
+      },
+      {
+        "title": "All Is Lost",
+        "year": 2013,
+        "note": "a near-wordless film of one man, covered entirely through action, POV and inserts"
+      },
+      {
+        "title": "The Conversation",
+        "year": 1974,
+        "note": "a man alone in his apartment searching it"
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://en.wikipedia.org/wiki/30-degree_rule",
+        "supports": "30-degree rule"
+      },
+      {
+        "url": "https://en.wikipedia.org/wiki/180-degree_rule",
+        "supports": "screen direction"
+      }
+    ],
+    "confidence": "craft_consensus",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  },
+  {
+    "id": "coverage.chase_escape",
+    "type": "coverage_pattern",
+    "name": "Chase and escape (mount up and ride off)",
+    "aliases": [
+      "chase coverage",
+      "getaway",
+      "ride off",
+      "escape sequence",
+      "foot chase",
+      "mount up"
+    ],
+    "keywords": [
+      "action",
+      "chase",
+      "chases",
+      "escape",
+      "escapes",
+      "getaway",
+      "flee",
+      "flees",
+      "sprint",
+      "sprints",
+      "gallop",
+      "gallops",
+      "ride off",
+      "rides off",
+      "ride away",
+      "horses",
+      "horseback",
+      "saddle",
+      "saddles",
+      "pursuit",
+      "pursued",
+      "run for",
+      "races",
+      "on the run"
+    ],
+    "parent": null,
+    "era": "silent-era chase grammar to present",
+    "summary": "Movement scenes are covered for direction, speed and continuity of action. Establish where the movers start and where they are going, keep them travelling the same screen direction in every shot, cut on the action (a hand grabs, a leg swings, the next shot finishes the move), and sell speed with lens choice: a wide lens close to the subject makes the ground rush past, a long lens from far away stacks the background and shows effort. End on a wide that lets them leave the frame or shrink into the distance.",
+    "intent_tags": [
+      "energy",
+      "tension",
+      "spectacle"
+    ],
+    "signature": {
+      "shot_size": {
+        "EWS": 0.2,
+        "WS": 0.3,
+        "FS": 0.15,
+        "MS": 0.15,
+        "INSERT": 0.2
+      },
+      "framing": {
+        "establishing": 0.2,
+        "two_shot": 0.3,
+        "single": 0.3,
+        "insert": 0.2
+      },
+      "angle": {
+        "eye": 0.5,
+        "low": 0.4,
+        "high": 0.1
+      },
+      "camera_height": {
+        "hip": 0.4,
+        "eye": 0.3,
+        "ground": 0.2,
+        "high": 0.1
+      },
+      "lens_mm_ff": [
+        24,
+        200
+      ],
+      "lens_look": {
+        "spherical": 0.6,
+        "anamorphic": 0.4
+      },
+      "movement": {
+        "track_lead": 0.25,
+        "truck_right": 0.25,
+        "static": 0.3,
+        "track_follow": 0.1,
+        "pan_right": 0.1
+      },
+      "rig": {
+        "car_mount": 0.4,
+        "sticks": 0.3,
+        "steadicam": 0.2,
+        "drone": 0.1
+      },
+      "lighting": {
+        "natural_sun": 0.7,
+        "backlight": 0.3
+      },
+      "color": [
+        "warm low sun",
+        "dust kicked up into the light"
+      ],
+      "composition": {
+        "lead_room_in_direction_of_travel": 0.8,
+        "horizon_low": 0.2
+      },
+      "aspect_ratio": [
+        "2.39:1"
+      ],
+      "asl_seconds": [
+        1,
+        5
+      ],
+      "editing": [
+        "cut on the action",
+        "constant screen direction",
+        "accelerate into the getaway, hold the final wide"
+      ],
+      "sound": [
+        "hooves or footfalls in sync",
+        "breath",
+        "wind"
+      ]
+    },
+    "rules": [
+      {
+        "when": "always",
+        "then": "keep everyone travelling the same screen direction (left-to-right or right-to-left) in every shot",
+        "why": "a flip in screen direction reads as turning back or as a different chase; the audience loses who is going where",
+        "hard": true
+      },
+      {
+        "when": "a physical action spans two shots (grab, step, vault)",
+        "then": "start the action in the first shot and complete it in the second, cutting mid-movement",
+        "why": "the eye follows the motion across the cut, so the edit disappears and the action feels faster than either shot alone",
+        "hard": false
+      },
+      {
+        "when": "the getaway begins",
+        "then": "establish the start point and the destination direction in one wide before going close",
+        "why": "speed only reads against a known space; inserts without geography are just noise",
+        "hard": false
+      },
+      {
+        "when": "the end of the sequence",
+        "then": "hold a wide while they leave frame or shrink to the horizon",
+        "why": "letting them go gives the escape its release and tells the audience they made it",
+        "hard": false
+      }
+    ],
+    "recipes": [
+      {
+        "name": "Mount up and ride off",
+        "beat": "two riders sprint to their horses, vault into the saddles and gallop away across open country",
+        "cast": 2,
+        "shots": [
+          {
+            "purpose": "establishing: the horses waiting in open country, the riders running in from the edge of frame",
+            "subject": "env",
+            "size": "EWS",
+            "framing": "establishing",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "eye",
+            "lens_mm_ff": 28,
+            "dof": "deep",
+            "movement": "static",
+            "composition": "horses on the far third, lead room in the direction they will ride",
+            "duration_s": 4
+          },
+          {
+            "purpose": "the sprint: the camera tracks alongside both runners toward the horses",
+            "subject": "both",
+            "size": "WS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "hip",
+            "lens_mm_ff": 35,
+            "movement": "truck_right",
+            "speed": "fast",
+            "composition": "runners on the trailing third, open space ahead",
+            "duration_s": 3
+          },
+          {
+            "purpose": "insert: a boot finds the stirrup, a hand grabs the saddle horn",
+            "subject": "A_hands",
+            "size": "INSERT",
+            "framing": "insert",
+            "angle": "low",
+            "horizontal": "three_quarter_front",
+            "height": "hip",
+            "lens_mm_ff": 85,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 1,
+            "note": "the swing starts here and finishes in the next shot"
+          },
+          {
+            "purpose": "the vault: A swings up into the saddle, cut on the action from the insert",
+            "subject": "A",
+            "size": "FS",
+            "framing": "single",
+            "angle": "low",
+            "horizontal": "three_quarter_front",
+            "height": "knee",
+            "lens_mm_ff": 32,
+            "movement": "static",
+            "duration_s": 2
+          },
+          {
+            "purpose": "B already up, wheeling the horse toward open ground",
+            "subject": "B",
+            "size": "MS",
+            "framing": "single",
+            "angle": "low",
+            "horizontal": "three_quarter_front",
+            "height": "hip",
+            "lens_mm_ff": 50,
+            "movement": "pan_right",
+            "speed": "fast",
+            "duration_s": 1.5
+          },
+          {
+            "purpose": "alongside the riders at full gallop, matched speed from a camera car",
+            "subject": "both",
+            "size": "WS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "hip",
+            "lens_mm_ff": 75,
+            "movement": "truck_right",
+            "speed": "fast",
+            "composition": "riders on the trailing third, dust streaming behind",
+            "duration_s": 3
+          },
+          {
+            "purpose": "the gallop away: they ride into the low sun and shrink toward the horizon",
+            "subject": "env",
+            "size": "EWS",
+            "framing": "establishing",
+            "angle": "eye",
+            "horizontal": "three_quarter_back",
+            "height": "eye",
+            "lens_mm_ff": 135,
+            "dof": "deep",
+            "movement": "static",
+            "composition": "horizon low, riders small, dust hanging in the backlight",
+            "duration_s": 5
+          }
+        ],
+        "why": "The opening wide gives the destination and direction, the tracking sprint sells urgency, and the insert-to-vault cut on action makes the mount feel faster than it is. The side track at gallop keeps screen direction constant, and the long-lens wide lets them go, which is the release the sequence has been building toward."
+      },
+      {
+        "name": "Foot chase escape",
+        "beat": "a fugitive runs from a pursuer through streets and alleys and gets away",
+        "cast": 2,
+        "shots": [
+          {
+            "purpose": "establishing: where the chase starts and the open route ahead",
+            "subject": "env",
+            "size": "WS",
+            "framing": "establishing",
+            "angle": "high",
+            "horizontal": "profile",
+            "height": "high",
+            "lens_mm_ff": 28,
+            "dof": "deep",
+            "movement": "static",
+            "duration_s": 3
+          },
+          {
+            "purpose": "leading A as they run straight at the lens, the world streaming past",
+            "subject": "A",
+            "size": "MS",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 24,
+            "movement": "track_lead",
+            "speed": "fast",
+            "duration_s": 2.5
+          },
+          {
+            "purpose": "the pursuer B gaining, same screen direction",
+            "subject": "B",
+            "size": "MS",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 35,
+            "movement": "handheld",
+            "duration_s": 2
+          },
+          {
+            "purpose": "insert: a hand on the top of a fence as A vaults it",
+            "subject": "A_hands",
+            "size": "INSERT",
+            "framing": "insert",
+            "angle": "low",
+            "horizontal": "profile",
+            "height": "hip",
+            "lens_mm_ff": 50,
+            "movement": "static",
+            "duration_s": 1
+          },
+          {
+            "purpose": "long-lens compression: both in the same frame, the gap between them closing",
+            "subject": "both",
+            "size": "WS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 150,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 3
+          },
+          {
+            "purpose": "the escape: A disappears into the crowd while B stops and loses them",
+            "subject": "B",
+            "size": "WS",
+            "framing": "single",
+            "angle": "high",
+            "horizontal": "three_quarter_back",
+            "height": "high",
+            "lens_mm_ff": 35,
+            "movement": "crane_up",
+            "speed": "slow",
+            "duration_s": 4
+          }
+        ],
+        "why": "Leading the fugitive on a wide lens makes the street rush past and puts us in their panic; the long-lens two-shot shows the gap closing without lying about distance. The rising wide on the pursuer, alone and searching, is how the audience learns the escape worked."
+      },
+      {
+        "name": "Lone getaway",
+        "beat": "a lone rider or runner escapes across open ground with pursuers somewhere behind",
+        "cast": 1,
+        "shots": [
+          {
+            "purpose": "establishing: the open ground and the direction of escape",
+            "subject": "env",
+            "size": "EWS",
+            "framing": "establishing",
+            "angle": "high",
+            "horizontal": "profile",
+            "height": "high",
+            "lens_mm_ff": 28,
+            "dof": "deep",
+            "movement": "static",
+            "duration_s": 3
+          },
+          {
+            "purpose": "leading A head-on, the ground streaming past on a wide lens",
+            "subject": "A",
+            "size": "MS",
+            "framing": "single",
+            "angle": "low",
+            "horizontal": "front",
+            "height": "hip",
+            "lens_mm_ff": 24,
+            "movement": "track_lead",
+            "speed": "fast",
+            "duration_s": 2.5
+          },
+          {
+            "purpose": "insert: hands driving the reins or arms pumping, the effort of the escape",
+            "subject": "A_hands",
+            "size": "INSERT",
+            "framing": "insert",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "hip",
+            "lens_mm_ff": 85,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 1
+          },
+          {
+            "purpose": "alongside at full speed, same screen direction as the opening wide",
+            "subject": "A",
+            "size": "WS",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "hip",
+            "lens_mm_ff": 75,
+            "movement": "truck_left",
+            "speed": "fast",
+            "duration_s": 3
+          },
+          {
+            "purpose": "a look back over the shoulder: the threat is still there",
+            "subject": "A",
+            "size": "MCU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 85,
+            "movement": "track_lead",
+            "speed": "fast",
+            "duration_s": 1.5
+          },
+          {
+            "purpose": "the getaway: A shrinks toward the horizon and is gone",
+            "subject": "env",
+            "size": "EWS",
+            "framing": "establishing",
+            "angle": "eye",
+            "horizontal": "three_quarter_back",
+            "height": "eye",
+            "lens_mm_ff": 135,
+            "dof": "deep",
+            "movement": "static",
+            "duration_s": 4
+          }
+        ],
+        "why": "Leading the escaper on a wide lens puts the audience in their effort; the look back keeps the unseen pursuit alive without showing it. The long-lens wide that lets them disappear is the payoff: distance itself becomes the escape."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "cutting between shots where the runners travel opposite screen directions",
+        "why": "it reads as a reversal or a second chase"
+      },
+      {
+        "what": "shaky close-ups with no establishing geography",
+        "why": "speed needs a known space to be felt; otherwise it is just blur"
+      },
+      {
+        "what": "slowing the cutting at the moment of the mount",
+        "why": "the cut on action is where the energy peaks; holding there deflates it"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "Kinetic action-film look with low warm sun, dust kicked up into the backlight, strong directional movement and anamorphic widescreen.",
+      "still": "action film still, kinetic motion, low warm sun, dust in the backlight, strong lead room in the direction of travel, anamorphic widescreen 2.39:1",
+      "h3": "Live-action, kinetic action-film look in 2.39:1."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.2,
+      "yaw_deg": 90,
+      "pitch_deg": 0,
+      "distance_m": 8,
+      "roll_deg": 0,
+      "focal_mm_ff": 35,
+      "vfov_deg": 30.7
+    },
+    "reference_works": [
+      {
+        "title": "Butch Cassidy and the Sundance Kid",
+        "year": 1969,
+        "note": "riders and posse across open country"
+      },
+      {
+        "title": "Stagecoach",
+        "year": 1939,
+        "note": "classic cut-on-action riding stunts"
+      },
+      {
+        "title": "Casino Royale",
+        "year": 2006,
+        "note": "foot chase that keeps geography and screen direction clear"
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://en.wikipedia.org/wiki/Match_cut",
+        "supports": "cutting on action / match cuts"
+      }
+    ],
+    "confidence": "craft_consensus",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  }
+]

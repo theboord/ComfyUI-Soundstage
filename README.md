@@ -1,0 +1,144 @@
+<p align="center"><img src="docs/icon.svg" width="120" alt="Soundstage"></p>
+
+# Soundstage
+
+Soundstage is a ComfyUI custom node pack plus an App-mode workflow that turns ComfyUI into a small film set. You block a scene in a 3D stage (actors, horses, cars, props, lights, cameras), and the App paints a first frame for every shot with Krea 2, steered by the stage's depth. LTX-2.5 with the Layout-to-Render IC-LoRA then animates each shot with sound, following your blocking. You compare every step on a Ladder and deliver per-object layers for VFX, plus one cut video or an NLE export. Everything runs locally in ComfyUI on open models.
+
+Built for Comfy Org's *Open Source Higgsfield* challenge (#OpenSourceHiggsfield).
+
+## The five steps
+
+The App has one step bar. Every step works on every shot in the scene.
+
+1. **Set.** Block the scene in 3D: cast, set, light, cameras and timing. Add several camera setups to cover the scene.
+2. **Frame.** Paint the first frame of each shot from its clay render with Krea 2, steered by the stage's depth.
+3. **Motion.** Animate each shot with LTX-2.5 Layout-to-Render, with sound. The video follows the staged blocking and camera.
+4. **Review.** Scrub clay, frame, draft and final for each shot on the Ladder, with a wipe/fade compare.
+5. **Deliver.** Export a Layer Pack for VFX, assemble the cut into one video, or export the edit to your NLE.
+
+ComfyUI's cache means each Run only does the new work.
+
+## Features
+
+- **Multi-shot through every step.** One scene, several camera setups. Frame, Motion, Review and Deliver all run per shot.
+- **3D stage.** Add objects by name ("cowboy on a horse", "police car"). Riders sit astride horses, bikes and motorcycles. Sets include a plaza, a night street, interiors, a studio, forest, desert, beach and a water tank, with rain, snow, fog, smoke, dust and sparks. GLB import and export.
+- **Rigged CC0 models.** A rigged horse (idle, walk, gallop) and three cars (hatchback, police car, sports car) by Quaternius, CC0.
+- **Flashlight prop.** A handheld flashlight with a real beam. Drag it onto a person to hand it to them.
+- **In-car camera presets.** The shot camera can ride along inside a vehicle, with interior framings. **＋ All interior shots** adds one shot per interior angle in a single click.
+- **Camera.** Real lenses and aspect ratios (1.85, 2.39, 16:9, 9:16 and more), Catmull-Rom keyframes, free-fly view. A virtual camera turns a phone, iPad, Quest or Vision Pro into the shot camera; its stabilizer smooths your move rather than replacing it.
+- **Light.** Solar-accurate time of day for any place and date. Film lights (key, fill, rim, practical, spot, neon) with Kelvin, power and softness.
+- **Look tab.** 31 genre style presets and 18 ASC-style lighting setups (three-point, Rembrandt, low-key noir, book light and more), plus camera body, lens, film stock, era and grade. It compiles the still prompt and the LTX motion prompt from the stage itself.
+- **Coach.** Watches the stage, the cut and the App and shows at most two small cards: what looks wrong, why, and a one-click fix. It never blocks a Run. See [docs/coach.md](docs/coach.md).
+- **Director's Advisor.** Turns a scene description into a shot list with the reasoning, citing a film-language knowledge base. See [docs/advisor.md](docs/advisor.md).
+- **Scene agent.** "Describe your scene" builds the stage; then edit it by chat. See [docs/agent.md](docs/agent.md).
+- **Cut editor.** A timeline over your coverage with J/K/L and temp sound. Right-click a clip and choose **edit original** to jump back to the step that made it (stage, frame, touch-up or motion), then return to the cut. Exports one video, Avid EDL and markers, Premiere XML, FCPXML, OTIO and AAF. See [docs/cut.md](docs/cut.md).
+- **Layer Pack.** Per-object mattes, PNG/EXR/ProRes 4444 layers, depth AOVs and the exact staged camera as `.chan`/JSON, with builders for After Effects, Nuke, Blender, Resolve and Photoshop. See [docs/layerpack.md](docs/layerpack.md).
+- **Audio department.** DX/FX/MX tracks; TTS, voice clone and voice change (Chatterbox, or ElevenLabs through ComfyUI partner nodes). Audio can drive the video. See [docs/audio.md](docs/audio.md).
+- **Footage and Recast.** Bring in real footage and recast one person; the plate and its audio stay real. See [docs/recast.md](docs/recast.md).
+- **Model router.** Stage-aware model pickers with license badges. See [docs/router.md](docs/router.md).
+- **Headless runner.** `tools/soundstage_sdk.py` renders a saved shot through the Comfy SDK.
+
+## Try it
+
+- **App demo:** https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq. This is the real App UI running in the browser on a stand-in ComfyUI, replaying real GPU renders of the four demo scenes (Western, Car chase, In the car, Flashlight search). No install needed.
+- **Stage only:** https://claude.ai/artifact/U9dJ7h8s6tL1Tq8bAvWkpc. The 3D stage on its own.
+
+These links only open for other people once the owner shares them publicly.
+
+## Install
+
+**Requirements**
+
+- ComfyUI, a recent version with App mode.
+- An NVIDIA GPU. 48 GB of VRAM is recommended (tested on an RTX 6000 Ada). 24 GB cards need offloading and are untested.
+- About 60 GB of disk for the models.
+- The stage, Look tab and Cut tab run in any browser and need no GPU models.
+
+**Steps**
+
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/theboord/ComfyUI-Soundstage
+git clone https://github.com/Lightricks/ComfyUI-LTXVideo
+git clone https://github.com/facok/comfyui-krea2-controlnet
+pip install -r ComfyUI-Soundstage/requirements.txt
+pip install -r ComfyUI-LTXVideo/requirements.txt
+```
+
+Use the same Python environment that runs ComfyUI. Then download the models listed in [MODELS.md](MODELS.md) into `ComfyUI/models/`. Some repos are gated: accept the license on Hugging Face first, then `hf auth login`.
+
+**Linux / RunPod:** one script installs the node packs, copies the workflows and downloads the models:
+
+```bash
+bash ComfyUI/custom_nodes/ComfyUI-Soundstage/tools/install_runpod.sh /path/to/ComfyUI
+# SKIP_MODELS=1 to install the node packs only; SKIP_LLM=1 to skip the optional Qwen3.5 file
+```
+
+## Run it locally
+
+1. Start ComfyUI as usual (`python main.py`) and open it in the browser.
+2. Load a workflow from `example_workflows/` (drag the JSON onto the canvas, or copy it into `ComfyUI/user/default/workflows/` and open it from **Workflows**):
+   - `Soundstage_App_Full.json`: the full App with the five steps. Start here.
+   - `Soundstage_Western.json`, `Soundstage_Car_Chase.json`, `Soundstage_In_The_Car.json`, `Soundstage_Three_In_A_Car.json`: the same App with a demo scene already blocked (riders on horses at sunset; a three-shot car chase; four in-car angles). They carry the scene and the cut, not the renders.
+   - `Soundstage_App.json`: a leaner App with the ladder only.
+3. Open the workflow in the graph view once, then switch to **App** mode.
+4. **Set:** describe the scene or add objects and drag them into place. Add shots, move the playhead and set camera keys.
+5. Press **Run** (labelled **Next**) to climb the ladder: Frame, then Motion, for every shot.
+6. **Review** the shots on the Ladder, then **Deliver**: Layer Packs are written to `ComfyUI/output/soundstage_layerpacks/`, and the Cut tab renders one video or exports to your NLE.
+
+**Without GPU models** you can still use the stage (Set), the Look tab and the Cut tab, including the NLE exports. Frame needs the Krea 2 group, Motion needs the LTX-2.5 group, and the Layer Pack uses SAM 3.1 and BiRefNet for mattes from the final frames (it falls back to the stage's own mattes without them).
+
+### Headless (Comfy SDK)
+
+```bash
+pip install comfy-sdk comfy-api-proxy
+comfy-api-proxy start --comfyui http://127.0.0.1:8188 --port 8190
+export COMFY_BASE_URL=http://127.0.0.1:8190
+python tools/soundstage_sdk.py shot_api.json --rung 4 --look "Korean thriller, anamorphic" --look "70s New Hollywood"
+```
+
+`shot_api.json` is **Workflow → Export (API)** of the App with your shot blocked.
+
+### Tests
+
+```bash
+python3 -m pytest -q
+for f in tests/js/*.test.mjs; do node --test "$f"; done
+```
+
+## Models and licenses
+
+The full list, with folders, sources and licenses, is in [MODELS.md](MODELS.md). In short:
+
+| Step | Models | License |
+|---|---|---|
+| Set | none | |
+| Frame | Krea 2 Turbo, Qwen3-VL 4B text encoder, Qwen Image VAE, Krea 2 depth-control LoRA | Krea 2 Community License; Apache-2.0 |
+| Motion | LTX-2.5 22B distilled, Gemma text encoder, LTX-2.5 video and audio VAEs, x2 latent upscaler, Layout-to-Render IC-LoRA | LTX-2 Community License; Gemma terms |
+| Deliver (layers) | SAM 3.1, BiRefNet | SAM License; MIT |
+| Optional | Qwen3.5 4B (object designer, scene agent), Chatterbox (TTS), ElevenLabs via partner nodes | Apache-2.0; MIT; ElevenLabs terms |
+
+Model weights are not included in this repo. Check each license before commercial use.
+
+## Credits
+
+- [ComfyUI](https://github.com/comfyanonymous/ComfyUI): the host app and App mode.
+- [Krea 2](https://huggingface.co/krea/Krea-2-Turbo) (Comfy-Org repackage) and the [Krea 2 depth ControlNet](https://github.com/facok/comfyui-krea2-controlnet): the first frame.
+- [LTX-2.5](https://huggingface.co/Lightricks/LTX-2.5) and the [Layout-to-Render IC-LoRA](https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-Layout-To-Render) by Lightricks, via [ComfyUI-LTXVideo](https://github.com/Lightricks/ComfyUI-LTXVideo): video with sound.
+- Gemma (LTX text encoder) and Qwen3-VL / Qwen3.5 (Krea text encoder, object designer, scene agent).
+- [SAM 3.1](https://huggingface.co/facebook/sam3) by Meta and [BiRefNet](https://github.com/ZhengPeng7/BiRefNet): mattes for the Layer Pack.
+- Chatterbox by Resemble AI (open TTS) and ElevenLabs (optional, through ComfyUI partner nodes).
+- [three.js](https://threejs.org) and [Spark](https://sparkjs.dev): the 3D stage and splat rendering.
+- [Quaternius](https://quaternius.com): the CC0 horse and car models.
+- [Lucide](https://lucide.dev): icons. [Space Grotesk](https://fonts.google.com/specimen/Space+Grotesk): the UI font.
+
+Vendored components and their licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Docs
+
+- [decisions.md](docs/decisions.md): the development log, with every design decision and its reason.
+- Components: [look](docs/look.md), [agent](docs/agent.md), [advisor](docs/advisor.md), [coach](docs/coach.md), [layerpack](docs/layerpack.md), [cut](docs/cut.md), [audio](docs/audio.md), [recast](docs/recast.md), [vcam](docs/vcam.md), [router](docs/router.md), [assets3d](docs/assets3d.md).
+
+## License
+
+MIT for the code in this repo; see [LICENSE](LICENSE). Models and node packs keep their own licenses; see [MODELS.md](MODELS.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Previz figures are deliberately faceless and no real person's likeness is used. Clone voices only with consent.

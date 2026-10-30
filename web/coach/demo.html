@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soundstage Coach demo</title>
+<style>
+  body { margin:0; background:#16111b; color:#f0efed; font:13px/1.4 system-ui, sans-serif; }
+  #wrap { max-width:1000px; margin:24px auto; padding:0 16px; }
+  #view { position:relative; border-radius:12px; overflow:hidden; background:#211927; }
+  .bar { display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; }
+  .bar button { background:#2a2330; color:#f0efed; border:1px solid rgba(255,255,255,.12); border-radius:999px; padding:5px 12px; cursor:pointer; }
+  #log { color:rgba(240,239,237,.56); font-size:12px; min-height:1.4em; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="view"></div>
+  <div class="bar">
+    <button id="run">Run (queuePrompt)</button>
+    <button id="undo">Undo</button>
+    <button id="reset-tour">Reset tips</button>
+    <button id="clean">Load a clean scene</button>
+  </div>
+  <div id="log"></div>
+</div>
+<script type="module">
+// Standalone: the real Stage + Coach with a stand-in ComfyUI app (Step, Look and Quality widgets) and cut.
+import { Stage } from "../stage/stage.mjs";
+import { Coach } from "./coach.mjs";
+
+const log = (m) => (document.getElementById("log").textContent = m);
+const stage = new Stage(document.getElementById("view"), () => {});
+const key = (frame, position, target, focal_mm = 35) => ({ frame, position, target, focal_mm });
+const troubled = {
+  version: 2, shot: { frames: 97, fps: 24 }, environment: { set: "interior", weather: "none", density: 0.5, water_level: 2.5 },
+  lighting: { mode: "time", hour: 21, day_of_year: 300, latitude: 34.05, north_deg: 0, overcast: false, preset: "night", lights: [] },
+  sun: { azimuth_deg: 250, elevation_deg: -18 },
+  actors: [
+    { id: "ann", name: "Ann", kind: "woman", position: [-1, 0, 0], keys: [{ frame: 0, position: [-1, 0, 0] }], height_m: 1.68, rotation_deg: 90 },
+    { id: "bob", name: "Bob", kind: "man", position: [1, 0, 0], keys: [{ frame: 0, position: [1, 0, 0] }, { frame: 20, position: [3.4, 0, 3] }], height_m: 1.8, rotation_deg: -90 },
+  ],
+  props: [],
+  shots: [
+    { id: "w", name: "Wide", setup: "wide", advisor: { shot: 1 }, camera_keys: [key(0, [0, 1.5, -7], [0, 1.2, 0], 24)] },
+    { id: "a", name: "Single on Ann", setup: "single_a", advisor: { shot: 2 }, camera_keys: [key(0, [0.6, 1.6, -2], [-1, 1.5, 0], 65)] },
+    { id: "b", name: "Single on Bob", setup: "single_b", advisor: { shot: 3 }, camera_keys: [key(0, [-0.5, 1.6, 6.5], [1, 1.5, 0], 65)] },
+  ],
+  active_shot: "w",
+};
+troubled.camera = troubled.shots[0].camera_keys[0];
+stage.load(troubled);
+stage.onChange(stage.toJSON()); // record it, like the widget does after loading, so Undo returns here
+let cut = { cut: [{ shot_id: "w", in: 0, out: 96 }, { shot_id: "b", in: 0, out: 96 }, { shot_id: "a", in: 0, out: 96 }] };
+
+// Stand-in ComfyUI app: the widgets the Coach reads, and queuePrompt it wraps.
+const W = (name, value) => ({ name, value, callback: () => {} });
+const nodes = [{ type: "SoundstageStep", widgets: [W("step", 4)] }, { type: "SoundstageLook", widgets: [W("look", "")] },
+  { type: "SoundstageQuality", widgets: [W("motion_freedom", 0.4)] }];
+const app = { graph: { _nodes: nodes, getNodeById: () => null, setDirtyCanvas() {} }, queuePrompt: async () => log("queued (stand-in)") };
+
+const coach = new Coach(document.getElementById("view"), {
+  stage, app, getCut: () => cut,
+  onAction: (kind, payload) => {
+    log(`onAction ${kind} ${JSON.stringify(payload)}`);
+    if (kind === "reorder_cut") { const by = new Map(cut.cut.map((e) => [e.shot_id, e])); cut = { cut: payload.order.map((id) => by.get(id)).filter(Boolean) }; return true; }
+    if (kind === "trim_shot") { cut = { cut: cut.cut.map((e) => (e.shot_id === payload.shot_id ? { ...e, out: payload.out } : e)) }; return true; }
+    if (kind === "open_tab" || kind === "describe") return true;
+    return false;
+  },
+});
+window.__coach = coach;
+document.getElementById("run").onclick = () => app.queuePrompt(0, 1);
+document.getElementById("undo").onclick = () => { stage.undo?.(); coach.check("stage"); };
+document.getElementById("reset-tour").onclick = () => { try { localStorage.removeItem("ss.coach.tour"); localStorage.removeItem("ss.coach.muted"); } catch {} location.reload(); };
+document.getElementById("clean").onclick = () => { stage.load({ ...troubled, environment: { ...troubled.environment, set: "plaza" }, shots: [troubled.shots[0]], active_shot: "w" }); cut = { cut: [{ shot_id: "w", in: 0, out: 96 }] }; nodes[2].widgets[0].value = 0; nodes[1].widgets[0].value = '{"camera_body":"film_35mm"}'; };
+</script>
+</body>
+</html>

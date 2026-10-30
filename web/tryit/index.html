@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soundstage Try It</title>
+<meta name="description" content="Browser-only blocking stage from Soundstage, a ComfyUI film-set app.">
+<style>
+  @font-face { font-family: "Space Grotesk"; font-weight: 400; font-display: swap; src: url("../vendor/fonts/space-grotesk-400.woff2") format("woff2"); }
+  @font-face { font-family: "Space Grotesk"; font-weight: 500; font-display: swap; src: url("../vendor/fonts/space-grotesk-500.woff2") format("woff2"); }
+  @font-face { font-family: "Space Grotesk"; font-weight: 600; font-display: swap; src: url("../vendor/fonts/space-grotesk-600.woff2") format("woff2"); }
+  @font-face { font-family: "Space Grotesk"; font-weight: 700; font-display: swap; src: url("../vendor/fonts/space-grotesk-700.woff2") format("woff2"); }
+  :root {
+    --bg: #211927; --card: #2a2330; --card-2: #322a39; --text: #f0efed; --muted: #a9a3ad; --accent: #F2FF59;
+    --line: rgba(255,255,255,.10); --line-2: rgba(255,255,255,.18);
+    --ss-text: var(--text); --ss-muted: var(--muted); --ss-accent: var(--accent);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font: 14px/1.45 "Space Grotesk", ui-sans-serif, system-ui, sans-serif; overflow-x: hidden; }
+  main { max-width: 1240px; margin: 0 auto; padding: 20px 16px 48px; }
+  header h1 { font-size: 24px; font-weight: 700; margin: 0 0 4px; letter-spacing: -.01em; }
+  header h1 span { color: var(--accent); }
+  header p { margin: 0; color: var(--muted); max-width: 72ch; }
+  .muted { color: var(--muted); }
+  button, select, input { font: inherit; color: var(--text); }
+  button { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 6px 13px; cursor: pointer; min-height: 34px; }
+  button:hover { border-color: var(--line-2); }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: rgba(242,255,89,.07); }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  #presets { margin: 0; }
+  .scenes { margin: 14px 0 12px; }
+  .scenes .lbl { color: var(--muted); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+  .ba { margin: 14px 0 0; display: grid; gap: 6px; max-width: 760px; }
+  .ba img { width: 100%; height: auto; max-width: 100%; border-radius: 10px; display: block; background: var(--card); }
+  .ba figcaption { color: var(--muted); font-size: 12px; }
+  @media (max-width: 640px) { .ba img + img { display: none; } }
+  #presets button { font-weight: 600; padding: 8px 16px; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+  @media (max-width: 960px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; min-width: 0; }
+  #viewport { position: relative; border-radius: 10px; overflow: hidden; background: #16111b; }
+  #viewport canvas { max-width: 100%; }
+  .transport { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+  @media (max-width: 560px) { .transport { flex-wrap: wrap; } .transport #scrub { flex: 1 1 calc(100% - 64px); order: 1; } .transport #play { order: 0; } .transport #tc { order: 2; flex: 1; } .transport #undo { order: 3; } }
+  #play { width: 40px; height: 40px; padding: 0; display: grid; place-items: center; flex: none; background: var(--accent); color: #211927; border-color: var(--accent); }
+  #scrub { flex: 1; min-width: 0; accent-color: var(--accent); }
+  #tc { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+  #status { margin-top: 8px; min-height: 1.45em; color: var(--text); font-size: 13px; }
+  #status::before { content: "● "; color: var(--accent); }
+  .ctl { margin-top: 12px; }
+  .ctl h3, aside h3 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
+  .ctrls { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 4px 18px; }
+  aside { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .ss-stage .ss-lenscards button { background: var(--card-2); border: 1px solid var(--line); color: var(--text); min-height: 0; }
+  .sun { display: flex; gap: 12px; align-items: center; }
+  .sun .sl { flex: 1; min-width: 0; display: grid; gap: 6px; }
+  .sun label { display: grid; grid-template-columns: 52px minmax(0,1fr) 38px; gap: 6px; align-items: center; font-size: 12.5px; color: var(--muted); }
+  .sun input[type=range] { width: 100%; accent-color: var(--accent); }
+  select, input[type=text] { width: 100%; background: var(--card-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; min-height: 38px; }
+  #addForm { display: flex; gap: 8px; }
+  #addForm input { flex: 1; min-width: 0; }
+  #prompt { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+  #prompt:empty { display: none; }
+  #styles { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
+  .chip { white-space: nowrap; font-size: 12.5px; padding: 5px 11px; min-height: 30px; flex: none; }
+  #styleInfo p { margin: 4px 0 0; font-size: 13px; }
+  #styleInfo:empty::before { content: "Pick a genre to see its suggested lens, stock and lighting; the lens is applied to the current shot."; color: var(--muted); font-size: 13px; }
+  ol.steps { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+  ol.steps li::marker { color: var(--accent); font-weight: 700; }
+  ol.steps b { font-weight: 600; }
+  .hint { font-size: 12.5px; color: var(--muted); margin: 8px 0 0; }
+  footer { margin-top: 24px; color: var(--muted); font-size: 12px; }
+
+  .steps-card .step { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; display: grid; gap: 8px; }
+  .steps-card h4 { margin: 0; font-size: 15px; display: flex; gap: 8px; align-items: center; }
+  .steps-card h4 .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #1a1420; font-size: 12px; font-weight: 700; }
+  .steps-card p { margin: 0; }
+  .frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 8px; }
+  .frames figure { margin: 0; display: grid; gap: 4px; min-width: 0; }
+  .frames img, .frames video, .cutbox video { width: 100%; max-width: 100%; aspect-ratio: 1.82; object-fit: cover; border-radius: 8px; background: var(--card-2); display: block; }
+  .frames figcaption { font-size: 12px; color: var(--muted); }
+  .cutbox { max-width: 760px; }
+  .wipe-wrap { display: grid; gap: 8px; max-width: 760px; }
+  .wipe { position: relative; aspect-ratio: 1.82; max-width: 100%; border-radius: 8px; overflow: hidden; background: var(--card-2); }
+  .wipe video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .wipe-top { position: absolute; inset: 0; }
+  .wipe::after { content: ""; position: absolute; top: 0; bottom: 0; left: var(--split, 50%); width: 2px; background: var(--accent); }
+  .wipe .wl, .wipe .wr { position: absolute; top: 8px; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,.55); color: #fff; }
+  .wipe .wl { left: 8px; } .wipe .wr { right: 8px; }
+  .wipe-wrap input[type=range] { flex: 1; accent-color: var(--accent); min-width: 120px; }
+</style>
+</head>
+<body>
+<main class="ss-stage">
+  <header>
+    <h1><span>Soundstage</span> — try the stage</h1>
+    <p>Plan a film scene in 3D: who goes where, how the camera moves, how it's lit. Inside ComfyUI, Soundstage turns that plan into photoreal video that keeps your exact framing and timing. This page is the 3D planning stage on its own, running in your browser: no install, nothing is generated here.</p>
+  </header>
+
+  <figure class="ba">
+    <img src="./clay_to_final_1.jpg" alt="Left: two people walking to two horses on the clay stage. Right: the same moment as photoreal video, desert at sunset." width="1280" height="346" loading="eager">
+    <img src="./clay_to_final_2.jpg" alt="Left: the two riders galloping away on the clay stage. Right: the same shot as photoreal video with dust." width="1280" height="346">
+    <figcaption>Left: this stage. Right: what ComfyUI renders from it (Krea 2 frame, LTX-2.5 motion). Same blocking, same camera.</figcaption>
+  </figure>
+
+  <div class="row scenes"><span class="lbl">Pick a scene</span><div id="presets" class="row" role="group" aria-label="Preset scenes"></div></div>
+
+  <div class="layout">
+    <section class="card" aria-label="Stage">
+      <div id="viewport"></div>
+      <div class="transport">
+        <button id="play" type="button" aria-label="Play"></button>
+        <input id="scrub" type="range" min="0" max="96" value="0" aria-label="Frame">
+        <span id="tc">00:00:00:00</span>
+        <button id="undo" type="button" title="Undo the last change (Cmd/Ctrl+Z)">Undo</button>
+      </div>
+      <div id="status" role="status" aria-live="polite"></div>
+      <div id="selection" hidden>
+        <p class="hint">Selected: <b id="selName"></b></p>
+        <div id="beam" hidden><div id="beamBtns" class="row" role="group" aria-label="Flashlight beam" style="margin-top:6px"></div></div>
+      </div>
+
+      <div class="ctrls">
+        <div class="ctl"><h3>View</h3><div id="views" class="row" role="group" aria-label="View mode"></div></div>
+        <div class="ctl"><h3>Camera</h3><div id="camMode" class="row" role="group" aria-label="Camera"></div></div>
+        <div class="ctl"><h3>Shots</h3><div id="shots" class="row" role="group" aria-label="Shots"></div></div>
+        <div class="ctl"><h3>Lens</h3><div id="lens"></div></div>
+      </div>
+      <p class="hint"><strong>Shot cam</strong> shows what each shot films; dragging there re-aims that shot at the playhead (Undo puts it back). Use <strong>Free view</strong> to look around without changing a shot. Drag empty space to orbit, Shift+drag to pan, wheel to dolly. Drag a person onto a horse or car to mount it; drag a small prop onto a person to hand it over. Space plays, arrow keys step frames.</p>
+    </section>
+
+    <aside>
+      <section class="card">
+        <h3>Sun</h3>
+        <div class="sun">
+          <div id="dome"></div>
+          <div class="sl">
+            <label>Direction <input id="sunAz" type="range" min="0" max="359" value="235"><span id="sunAzV">235°</span></label>
+            <label>Height <input id="sunEl" type="range" min="-20" max="85" value="18"><span id="sunElV">18°</span></label>
+          </div>
+        </div>
+      </section>
+      <section class="card">
+        <h3>Light it like…</h3>
+        <select id="lightLike" aria-label="Lighting setup"><option value="">Choose a lighting setup</option></select>
+        <p id="prompt"></p>
+      </section>
+      <section class="card">
+        <h3>Add to the set</h3>
+        <form id="addForm"><input id="addText" type="text" placeholder="horse, police car, flashlight…" aria-label="Object to add"><button type="submit">Add</button></form>
+      </section>
+    </aside>
+  </div>
+
+  <section class="card ctl steps-card" style="margin-top:16px" aria-labelledby="stepsTitle">
+    <h3 id="stepsTitle">Steps 2&ndash;5: what ComfyUI made from this scene</h3>
+    <p class="muted">Step 1 is the stage above. These are the real renders from Soundstage running in ComfyUI on a GPU: nothing here is generated in your browser.</p>
+    <div id="steps"></div>
+  </section>
+
+  <section class="card ctl" style="margin-top:16px">
+    <h3>Genre styles</h3>
+    <div id="styles"></div>
+    <div id="styleInfo"></div>
+  </section>
+
+
+  <footer>Rigged horse and car models: CC0 (Quaternius). Three.js r170. Runs offline from static files.</footer>
+</main>
+<script type="module" src="./tryit.mjs"></script>
+</body>
+</html>

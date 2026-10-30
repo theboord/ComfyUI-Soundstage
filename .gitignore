@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Local outputs and scratch
+output/
+outputs/
+temp/
+tmp/
+scratch/
+*.log
+*.mov
+*.exr
+# render outputs at the repo root only (web/cut/demo_media ships tiny demo clips)
+/*.mp4
+/*.wav
+*.safetensors
+*.ckpt
+*.zip

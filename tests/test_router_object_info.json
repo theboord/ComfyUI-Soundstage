@@ -1,0 +1,7615 @@
+{
+"BasicScheduler": {
+"input": {
+"required": {
+"denoise": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 1.0,
+"min": 0.0,
+"step": 0.01
+}
+],
+"model": [
+"MODEL",
+{}
+],
+"scheduler": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"simple",
+"sgm_uniform",
+"karras",
+"exponential",
+"ddim_uniform",
+"beta",
+"normal",
+"linear_quadratic",
+"kl_optimal"
+]
+}
+],
+"steps": [
+"INT",
+{
+"default": 20,
+"max": 10000,
+"min": 1
+}
+]
+}
+},
+"output": [
+"SIGMAS"
+]
+},
+"BiRefNetRMBG": {
+"input": {
+"optional": {
+"background": [
+[
+"Alpha",
+"Color"
+],
+{
+"default": "Alpha",
+"tooltip": "Choose background type: Alpha (transparent) or Color (custom background color)."
+}
+],
+"background_color": [
+"COLORCODE",
+{
+"default": "#222222",
+"tooltip": "Choose background color (Alpha = transparent)"
+}
+],
+"invert_output": [
+"BOOLEAN",
+{
+"default": false,
+"tooltip": "Enable to invert both the image and mask output (useful for certain effects)."
+}
+],
+"mask_blur": [
+"INT",
+{
+"default": 0,
+"max": 64,
+"min": 0,
+"step": 1,
+"tooltip": "Specify the amount of blur to apply to the mask edges (0 for no blur, higher values for more blur)."
+}
+],
+"mask_offset": [
+"INT",
+{
+"default": 0,
+"max": 20,
+"min": -20,
+"step": 1,
+"tooltip": "Adjust the mask boundary (positive values expand the mask, negative values shrink it)."
+}
+],
+"refine_foreground": [
+"BOOLEAN",
+{
+"default": false,
+"tooltip": "Use Fast Foreground Colour Estimation to optimize transparent background"
+}
+],
+"sensitivity": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 1.0,
+"min": 0.0,
+"step": 0.01,
+"tooltip": "Adjust the strength of mask detection (higher values result in more aggressive detection)."
+}
+]
+},
+"required": {
+"image": [
+"IMAGE",
+{
+"tooltip": "Input image to be processed for background removal."
+}
+],
+"model": [
+[
+"BiRefNet-general",
+"BiRefNet_512x512",
+"BiRefNet-HR",
+"BiRefNet-portrait",
+"BiRefNet-matting",
+"BiRefNet-HR-matting",
+"BiRefNet_lite",
+"BiRefNet_lite-2K",
+"BiRefNet_dynamic",
+"BiRefNet_lite-matting",
+"BiRefNet_toonout",
+"Lucida"
+],
+{
+"tooltip": "Select the BiRefNet model variant to use."
+}
+]
+}
+},
+"output": [
+"IMAGE",
+"MASK",
+"IMAGE"
+]
+},
+"BriaTransparentVideoBackground": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 0,
+"display": "number",
+"max": 2147483647,
+"min": 0,
+"tooltip": "Seed controls whether the node should re-run; results are non-deterministic regardless of seed."
+}
+],
+"video": [
+"VIDEO",
+{}
+]
+}
+},
+"output": [
+"IMAGE",
+"MASK"
+]
+},
+"BriaVideoEraser": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"optional": {
+"mask": [
+"MASK",
+{
+"tooltip": "One mask per frame of the video, white where the object to erase is. Provide either a mask or a mask video, not both."
+}
+],
+"mask_video": [
+"VIDEO",
+{
+"tooltip": "An already encoded mask video with the same dimensions and frame count as the video. Provide either a mask or a mask video, not both."
+}
+]
+},
+"required": {
+"preserve_audio": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Keep the input's audio track."
+}
+],
+"video": [
+"VIDEO",
+{
+"tooltip": "Clip to erase from."
+}
+]
+}
+},
+"output": [
+"VIDEO"
+]
+},
+"ByteDance2FirstLastFrameNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"dynprompt": [
+"DYNPROMPT"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"optional": {
+"first_frame": [
+"IMAGE",
+{
+"tooltip": "First frame image for the video."
+}
+],
+"first_frame_asset_id": [
+"STRING",
+{
+"default": "",
+"multiline": false,
+"tooltip": "Seedance asset_id to use as the first frame. Mutually exclusive with the first_frame image input."
+}
+],
+"last_frame": [
+"IMAGE",
+{
+"tooltip": "Last frame image for the video."
+}
+],
+"last_frame_asset_id": [
+"STRING",
+{
+"default": "",
+"multiline": false,
+"tooltip": "Seedance asset_id to use as the last frame. Mutually exclusive with the last_frame image input."
+}
+]
+},
+"required": {
+"model": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {
+"duration": [
+"INT",
+{
+"default": 5,
+"display": "slider",
+"max": 30,
+"min": 4,
+"step": 1,
+"tooltip": "Duration of the output video in seconds (4-30)."
+}
+],
+"generate_audio": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Enable audio generation for the output video."
+}
+],
+"output_format": [
+"COMBO",
+{
+"default": "mp4",
+"multiselect": false,
+"options": [
+"mp4"
+],
+"tooltip": "Container format of the output video."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for video generation. Put spoken lines in double quotes to steer the generated dialogue."
+}
+],
+"resolution": [
+"COMBO",
+{
+"default": "720p",
+"multiselect": false,
+"options": [
+"480p",
+"720p",
+"1080p"
+],
+"tooltip": "Resolution of the output video."
+}
+]
+}
+},
+"key": "Seedance 2.5"
+},
+{
+"inputs": {
+"required": {
+"duration": [
+"INT",
+{
+"default": 5,
+"display": "slider",
+"max": 30,
+"min": 4,
+"step": 1,
+"tooltip": "Duration of the output video in seconds (4-30)."
+}
+],
+"generate_audio": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Enable audio generation for the output video."
+}
+],
+"output_format": [
+"COMBO",
+{
+"default": "mp4",
+"multiselect": false,
+"options": [
+"mp4"
+],
+"tooltip": "Container format of the output video."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for video generation. Put spoken lines in double quotes to steer the generated dialogue."
+}
+],
+"resolution": [
+"COMBO",
+{
+"default": "480p",
+"multiselect": false,
+"options": [
+"480p"
+],
+"tooltip": "Resolution of the output video."
+}
+]
+}
+},
+"key": "Seedance 2.5 Draft"
+},
+{
+"inputs": {
+"required": {
+"duration": [
+"INT",
+{
+"default": 7,
+"display": "slider",
+"max": 15,
+"min": 4,
+"step": 1,
+"tooltip": "Duration of the output video in seconds (4-15)."
+}
+],
+"generate_audio": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Enable audio generation for the output video."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for video generation."
+}
+],
+"ratio": [
+"COMBO",
+{
+"default": "adaptive",
+"multiselect": false,
+"options": [
+"16:9",
+"4:3",
+"1:1",
+"3:4",
+"9:16",
+"21:9",
+"adaptive"
+],
+"tooltip": "Aspect ratio of the output video."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"480p",
+"720p",
+"1080p",
+"4k"
+],
+"tooltip": "Resolution of the output video."
+}
+]
+}
+},
+"key": "Seedance 2.0"
+},
+{
+"inputs": {
+"required": {
+"duration": [
+"INT",
+{
+"default": 7,
+"display": "slider",
+"max": 15,
+"min": 4,
+"step": 1,
+"tooltip": "Duration of the output video in seconds (4-15)."
+}
+],
+"generate_audio": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Enable audio generation for the output video."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for video generation."
+}
+],
+"ratio": [
+"COMBO",
+{
+"default": "adaptive",
+"multiselect": false,
+"options": [
+"16:9",
+"4:3",
+"1:1",
+"3:4",
+"9:16",
+"21:9",
+"adaptive"
+],
+"tooltip": "Aspect ratio of the output video."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"480p",
+"720p"
+],
+"tooltip": "Resolution of the output video."
+}
+]
+}
+},
+"key": "Seedance 2.0 Fast"
+},
+{
+"inputs": {
+"required": {
+"duration": [
+"INT",
+{
+"default": 7,
+"display": "slider",
+"max": 15,
+"min": 4,
+"step": 1,
+"tooltip": "Duration of the output video in seconds (4-15)."
+}
+],
+"generate_audio": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Enable audio generation for the output video."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for video generation."
+}
+],
+"ratio": [
+"COMBO",
+{
+"default": "adaptive",
+"multiselect": false,
+"options": [
+"16:9",
+"4:3",
+"1:1",
+"3:4",
+"9:16",
+"21:9",
+"adaptive"
+],
+"tooltip": "Aspect ratio of the output video."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"480p",
+"720p"
+],
+"tooltip": "Resolution of the output video."
+}
+]
+}
+},
+"key": "Seedance 2.0 Mini"
+}
+],
+"tooltip": "Seedance 2.5 for the newest model, videos up to 30 seconds and mp4/mov output; Seedance 2.5 Draft for a quick 480p preview whose draft_task_id renders the 1080p final in the Seedance 2.5 Draft to Final Video node; Seedance 2.0 for maximum quality and 4k; Fast for speed optimization; Mini for the fastest, lowest-cost generation."
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 0,
+"display": "number",
+"max": 2147483647,
+"min": 0,
+"step": 1,
+"tooltip": "Seed controls whether the node should re-run; results are non-deterministic regardless of seed."
+}
+],
+"watermark": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": false,
+"tooltip": "Whether to add a watermark to the video."
+}
+]
+}
+},
+"output": [
+"VIDEO",
+"STRING"
+]
+},
+"ByteDance2TextToVideoNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"dynprompt": [
+"DYNPROMPT"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"model": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {
+"duration": [
+"INT",
+{
+"default": 5,
+"display": "slider",
+"max": 30,
+"min": 4,
+"step": 1,
+"tooltip": "Duration of the output video in seconds (4-30)."
+}
+],
+"generate_audio": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Enable audio generation for the output video."
+}
+],
+"output_format": [
+"COMBO",
+{
+"default": "mp4",
+"multiselect": false,
+"options": [
+"mp4"
+],
+"tooltip": "Container format of the output video."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for video generation. Put spoken lines in double quotes to steer the generated dialogue."
+}
+],
+"ratio": [
+"COMBO",
+{
+"default": "16:9",
+"multiselect": false,
+"options": [
+"16:9",
+"4:3",
+"1:1",
+"3:4",
+"9:16",
+"21:9",
+"adaptive"
+],
+"tooltip": "Aspect ratio of the output video."
+}
+],
+"resolution": [
+"COMBO",
+{
+"default": "720p",
+"multiselect": false,
+"options": [
+"480p",
+"720p",
+"1080p"
+],
+"tooltip": "Resolution of the output video."
+}
+]
+}
+},
+"key": "Seedance 2.5"
+},
+{
+"inputs": {
+"required": {
+"duration": [
+"INT",
+{
+"default": 5,
+"display": "slider",
+"max": 30,
+"min": 4,
+"step": 1,
+"tooltip": "Duration of the output video in seconds (4-30)."
+}
+],
+"generate_audio": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Enable audio generation for the output video."
+}
+],
+"output_format": [
+"COMBO",
+{
+"default": "mp4",
+"multiselect": false,
+"options": [
+"mp4"
+],
+"tooltip": "Container format of the output video."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for video generation. Put spoken lines in double quotes to steer the generated dialogue."
+}
+],
+"ratio": [
+"COMBO",
+{
+"default": "16:9",
+"multiselect": false,
+"options": [
+"16:9",
+"4:3",
+"1:1",
+"3:4",
+"9:16",
+"21:9",
+"adaptive"
+],
+"tooltip": "Aspect ratio of the output video."
+}
+],
+"resolution": [
+"COMBO",
+{
+"default": "480p",
+"multiselect": false,
+"options": [
+"480p"
+],
+"tooltip": "Resolution of the output video."
+}
+]
+}
+},
+"key": "Seedance 2.5 Draft"
+},
+{
+"inputs": {
+"required": {
+"duration": [
+"INT",
+{
+"default": 7,
+"display": "slider",
+"max": 15,
+"min": 4,
+"step": 1,
+"tooltip": "Duration of the output video in seconds (4-15)."
+}
+],
+"generate_audio": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Enable audio generation for the output video."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for video generation."
+}
+],
+"ratio": [
+"COMBO",
+{
+"default": "16:9",
+"multiselect": false,
+"options": [
+"16:9",
+"4:3",
+"1:1",
+"3:4",
+"9:16",
+"21:9",
+"adaptive"
+],
+"tooltip": "Aspect ratio of the output video."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"480p",
+"720p",
+"1080p",
+"4k"
+],
+"tooltip": "Resolution of the output video."
+}
+]
+}
+},
+"key": "Seedance 2.0"
+},
+{
+"inputs": {
+"required": {
+"duration": [
+"INT",
+{
+"default": 7,
+"display": "slider",
+"max": 15,
+"min": 4,
+"step": 1,
+"tooltip": "Duration of the output video in seconds (4-15)."
+}
+],
+"generate_audio": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Enable audio generation for the output video."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for video generation."
+}
+],
+"ratio": [
+"COMBO",
+{
+"default": "16:9",
+"multiselect": false,
+"options": [
+"16:9",
+"4:3",
+"1:1",
+"3:4",
+"9:16",
+"21:9",
+"adaptive"
+],
+"tooltip": "Aspect ratio of the output video."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"480p",
+"720p"
+],
+"tooltip": "Resolution of the output video."
+}
+]
+}
+},
+"key": "Seedance 2.0 Fast"
+},
+{
+"inputs": {
+"required": {
+"duration": [
+"INT",
+{
+"default": 7,
+"display": "slider",
+"max": 15,
+"min": 4,
+"step": 1,
+"tooltip": "Duration of the output video in seconds (4-15)."
+}
+],
+"generate_audio": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Enable audio generation for the output video."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for video generation."
+}
+],
+"ratio": [
+"COMBO",
+{
+"default": "16:9",
+"multiselect": false,
+"options": [
+"16:9",
+"4:3",
+"1:1",
+"3:4",
+"9:16",
+"21:9",
+"adaptive"
+],
+"tooltip": "Aspect ratio of the output video."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"480p",
+"720p"
+],
+"tooltip": "Resolution of the output video."
+}
+]
+}
+},
+"key": "Seedance 2.0 Mini"
+}
+],
+"tooltip": "Seedance 2.5 for the newest model, videos up to 30 seconds and mp4/mov output; Seedance 2.5 Draft for a quick 480p preview whose draft_task_id renders the 1080p final in the Seedance 2.5 Draft to Final Video node; Seedance 2.0 for maximum quality and 4k; Fast for speed optimization; Mini for the fastest, lowest-cost generation."
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 0,
+"display": "number",
+"max": 2147483647,
+"min": 0,
+"step": 1,
+"tooltip": "Seed controls whether the node should re-run; results are non-deterministic regardless of seed."
+}
+],
+"watermark": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": false,
+"tooltip": "Whether to add a watermark to the video."
+}
+]
+}
+},
+"output": [
+"VIDEO",
+"STRING"
+]
+},
+"ByteDanceSeedreamNodeV3": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"model": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {
+"height": [
+"INT",
+{
+"default": 2048,
+"max": 4514,
+"min": 1024,
+"step": 2,
+"tooltip": "Custom height for image. Value is working only if `size_preset` is set to `Custom`"
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10"
+]
+},
+"tooltip": "Optional reference image(s) for image-to-image or multi-reference generation. Up to 10 images."
+}
+],
+"prompt_optimization": [
+"COMBO",
+{
+"advanced": true,
+"default": "standard",
+"multiselect": false,
+"options": [
+"standard",
+"fast"
+],
+"tooltip": "Prompt-optimization mode when reference images are provided: 'standard' gives higher quality, 'fast' shorter generation time."
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 42,
+"display": "number",
+"max": 2147483647,
+"min": 0,
+"step": 1,
+"tooltip": "Seed to use for generation."
+}
+],
+"size_preset": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"(1K) 1024x1024 (1:1)",
+"(1K) 864x1152 (3:4)",
+"(1K) 1152x864 (4:3)",
+"(1K) 1312x736 (16:9)",
+"(1K) 736x1312 (9:16)",
+"(1K) 832x1248 (2:3)",
+"(1K) 1248x832 (3:2)",
+"(1K) 1568x672 (21:9)",
+"(2K) 2048x2048 (1:1)",
+"(2K) 1728x2304 (3:4)",
+"(2K) 2304x1728 (4:3)",
+"(2K) 2848x1600 (16:9)",
+"(2K) 1600x2848 (9:16)",
+"(2K) 1664x2496 (2:3)",
+"(2K) 2496x1664 (3:2)",
+"(2K) 3136x1344 (21:9)",
+"Custom"
+],
+"tooltip": "Pick a recommended size. Select Custom to use the width and height below."
+}
+],
+"thinking": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": true,
+"tooltip": "Enable the model's prompt-optimization reasoning ('thinking') for better adherence. Can substantially increase generation time \u2014 notably on Seedream 5.0 Pro. Can only be disabled for text-to-image (not when reference images are provided)."
+}
+],
+"watermark": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": false,
+"tooltip": "Whether to add an \"AI generated\" watermark to the image."
+}
+],
+"width": [
+"INT",
+{
+"default": 2048,
+"max": 4514,
+"min": 1024,
+"step": 2,
+"tooltip": "Custom width for image. Value is working only if `size_preset` is set to `Custom`"
+}
+]
+}
+},
+"key": "seedream 5.0 pro"
+},
+{
+"inputs": {
+"required": {
+"height": [
+"INT",
+{
+"default": 2048,
+"max": 4514,
+"min": 1024,
+"step": 2,
+"tooltip": "Custom height for image. Value is working only if `size_preset` is set to `Custom`"
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10"
+]
+},
+"tooltip": "Optional reference image(s) for image-to-image or multi-reference generation. Up to 10 images."
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 42,
+"display": "number",
+"max": 2147483647,
+"min": 0,
+"step": 1,
+"tooltip": "Seed to use for generation."
+}
+],
+"size_preset": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"(1K) 1024x1024 (1:1)",
+"(1K) 864x1152 (3:4)",
+"(1K) 1152x864 (4:3)",
+"(1K) 1424x800 (16:9)",
+"(1K) 800x1424 (9:16)",
+"(1K) 832x1248 (2:3)",
+"(1K) 1248x832 (3:2)",
+"(1K) 1568x672 (21:9)",
+"(1.5K) 1536x1536 (1:1)",
+"(1.5K) 1344x1792 (3:4)",
+"(1.5K) 1792x1344 (4:3)",
+"(1.5K) 2048x1152 (16:9)",
+"(1.5K) 1152x2048 (9:16)",
+"(1.5K) 1248x1872 (2:3)",
+"(1.5K) 1872x1248 (3:2)",
+"(1.5K) 2352x1008 (21:9)",
+"(2K) 2048x2048 (1:1)",
+"(2K) 1776x2368 (3:4)",
+"(2K) 2368x1776 (4:3)",
+"(2K) 2816x1584 (16:9)",
+"(2K) 1584x2816 (9:16)",
+"(2K) 1664x2496 (2:3)",
+"(2K) 2496x1664 (3:2)",
+"(2K) 3136x1344 (21:9)",
+"Custom"
+],
+"tooltip": "Pick a recommended size. Select Custom to use the width and height below."
+}
+],
+"watermark": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": false,
+"tooltip": "Whether to add an \"AI generated\" watermark to the image."
+}
+],
+"width": [
+"INT",
+{
+"default": 2048,
+"max": 4514,
+"min": 1024,
+"step": 2,
+"tooltip": "Custom width for image. Value is working only if `size_preset` is set to `Custom`"
+}
+]
+}
+},
+"key": "seedream 5.0 flash"
+},
+{
+"inputs": {
+"required": {
+"fail_on_partial": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": false,
+"tooltip": "If enabled, abort execution if any requested images are missing or return an error."
+}
+],
+"height": [
+"INT",
+{
+"default": 2048,
+"max": 4992,
+"min": 1024,
+"step": 2,
+"tooltip": "Custom height for image. Value is working only if `size_preset` is set to `Custom`"
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10",
+"image_11",
+"image_12",
+"image_13",
+"image_14"
+]
+},
+"tooltip": "Optional reference image(s) for image-to-image or multi-reference generation. Up to 14 images."
+}
+],
+"max_images": [
+"INT",
+{
+"default": 1,
+"display": "number",
+"max": 14,
+"min": 1,
+"step": 1,
+"tooltip": "Maximum number of images to generate. With 1, exactly one image is produced. With >1, the model generates between 1 and max_images related images (e.g., story scenes, character variations). Total images (input + generated) cannot exceed 15."
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 42,
+"display": "number",
+"max": 2147483647,
+"min": 0,
+"step": 1,
+"tooltip": "Seed to use for generation."
+}
+],
+"size_preset": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"(2K) 2048x2048 (1:1)",
+"(2K) 1728x2304 (3:4)",
+"(2K) 2304x1728 (4:3)",
+"(2K) 2848x1600 (16:9)",
+"(2K) 1600x2848 (9:16)",
+"(2K) 1664x2496 (2:3)",
+"(2K) 2496x1664 (3:2)",
+"(2K) 3136x1344 (21:9)",
+"(3K) 3072x3072 (1:1)",
+"(3K) 2592x3456 (3:4)",
+"(3K) 3456x2592 (4:3)",
+"(3K) 4096x2304 (16:9)",
+"(3K) 2304x4096 (9:16)",
+"(3K) 2496x3744 (2:3)",
+"(3K) 3744x2496 (3:2)",
+"(3K) 4704x2016 (21:9)",
+"(4K) 4096x4096 (1:1)",
+"(4K) 3520x4704 (3:4)",
+"(4K) 4704x3520 (4:3)",
+"(4K) 5504x3040 (16:9)",
+"(4K) 3040x5504 (9:16)",
+"(4K) 3328x4992 (2:3)",
+"(4K) 4992x3328 (3:2)",
+"(4K) 6240x2656 (21:9)",
+"Custom"
+],
+"tooltip": "Pick a recommended size. Select Custom to use the width and height below."
+}
+],
+"thinking": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": true,
+"tooltip": "Enable the model's prompt-optimization reasoning ('thinking') for better adherence. Can substantially increase generation time \u2014 notably on Seedream 5.0 Pro. Can only be disabled for text-to-image (not when reference images are provided)."
+}
+],
+"watermark": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": false,
+"tooltip": "Whether to add an \"AI generated\" watermark to the image."
+}
+],
+"width": [
+"INT",
+{
+"default": 2048,
+"max": 6240,
+"min": 1024,
+"step": 2,
+"tooltip": "Custom width for image. Value is working only if `size_preset` is set to `Custom`"
+}
+]
+}
+},
+"key": "seedream 5.0 lite"
+},
+{
+"inputs": {
+"required": {
+"fail_on_partial": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": false,
+"tooltip": "If enabled, abort execution if any requested images are missing or return an error."
+}
+],
+"height": [
+"INT",
+{
+"default": 2048,
+"max": 4992,
+"min": 1024,
+"step": 2,
+"tooltip": "Custom height for image. Value is working only if `size_preset` is set to `Custom`"
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10"
+]
+},
+"tooltip": "Optional reference image(s) for image-to-image or multi-reference generation. Up to 10 images."
+}
+],
+"max_images": [
+"INT",
+{
+"default": 1,
+"display": "number",
+"max": 10,
+"min": 1,
+"step": 1,
+"tooltip": "Maximum number of images to generate. With 1, exactly one image is produced. With >1, the model generates between 1 and max_images related images (e.g., story scenes, character variations). Total images (input + generated) cannot exceed 15."
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 42,
+"display": "number",
+"max": 2147483647,
+"min": 0,
+"step": 1,
+"tooltip": "Seed to use for generation."
+}
+],
+"size_preset": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"(2K) 2048x2048 (1:1)",
+"(2K) 1728x2304 (3:4)",
+"(2K) 2304x1728 (4:3)",
+"(2K) 2848x1600 (16:9)",
+"(2K) 1600x2848 (9:16)",
+"(2K) 1664x2496 (2:3)",
+"(2K) 2496x1664 (3:2)",
+"(2K) 3136x1344 (21:9)",
+"(4K) 4096x4096 (1:1)",
+"(4K) 3520x4704 (3:4)",
+"(4K) 4704x3520 (4:3)",
+"(4K) 5504x3040 (16:9)",
+"(4K) 3040x5504 (9:16)",
+"(4K) 3328x4992 (2:3)",
+"(4K) 4992x3328 (3:2)",
+"(4K) 6240x2656 (21:9)",
+"Custom"
+],
+"tooltip": "Pick a recommended size. Select Custom to use the width and height below."
+}
+],
+"thinking": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": true,
+"tooltip": "Enable the model's prompt-optimization reasoning ('thinking') for better adherence. Can substantially increase generation time \u2014 notably on Seedream 5.0 Pro. Can only be disabled for text-to-image (not when reference images are provided)."
+}
+],
+"watermark": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": false,
+"tooltip": "Whether to add an \"AI generated\" watermark to the image."
+}
+],
+"width": [
+"INT",
+{
+"default": 2048,
+"max": 6240,
+"min": 1024,
+"step": 2,
+"tooltip": "Custom width for image. Value is working only if `size_preset` is set to `Custom`"
+}
+]
+}
+},
+"key": "seedream-4-5-251128"
+},
+{
+"inputs": {
+"required": {
+"fail_on_partial": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": false,
+"tooltip": "If enabled, abort execution if any requested images are missing or return an error."
+}
+],
+"height": [
+"INT",
+{
+"default": 2048,
+"max": 4992,
+"min": 1024,
+"step": 2,
+"tooltip": "Custom height for image. Value is working only if `size_preset` is set to `Custom`"
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10"
+]
+},
+"tooltip": "Optional reference image(s) for image-to-image or multi-reference generation. Up to 10 images."
+}
+],
+"max_images": [
+"INT",
+{
+"default": 1,
+"display": "number",
+"max": 10,
+"min": 1,
+"step": 1,
+"tooltip": "Maximum number of images to generate. With 1, exactly one image is produced. With >1, the model generates between 1 and max_images related images (e.g., story scenes, character variations). Total images (input + generated) cannot exceed 15."
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 42,
+"display": "number",
+"max": 2147483647,
+"min": 0,
+"step": 1,
+"tooltip": "Seed to use for generation."
+}
+],
+"size_preset": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"(1K) 1024x1024 (1:1)",
+"(1K) 864x1152 (3:4)",
+"(1K) 1152x864 (4:3)",
+"(1K) 1312x736 (16:9)",
+"(1K) 736x1312 (9:16)",
+"(1K) 832x1248 (2:3)",
+"(1K) 1248x832 (3:2)",
+"(1K) 1568x672 (21:9)",
+"(2K) 2048x2048 (1:1)",
+"(2K) 1728x2304 (3:4)",
+"(2K) 2304x1728 (4:3)",
+"(2K) 2848x1600 (16:9)",
+"(2K) 1600x2848 (9:16)",
+"(2K) 1664x2496 (2:3)",
+"(2K) 2496x1664 (3:2)",
+"(2K) 3136x1344 (21:9)",
+"(4K) 4096x4096 (1:1)",
+"(4K) 3520x4704 (3:4)",
+"(4K) 4704x3520 (4:3)",
+"(4K) 5504x3040 (16:9)",
+"(4K) 3040x5504 (9:16)",
+"(4K) 3328x4992 (2:3)",
+"(4K) 4992x3328 (3:2)",
+"(4K) 6240x2656 (21:9)",
+"Custom"
+],
+"tooltip": "Pick a recommended size. Select Custom to use the width and height below."
+}
+],
+"thinking": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": true,
+"tooltip": "Enable the model's prompt-optimization reasoning ('thinking') for better adherence. Can substantially increase generation time \u2014 notably on Seedream 5.0 Pro. Can only be disabled for text-to-image (not when reference images are provided)."
+}
+],
+"watermark": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": false,
+"tooltip": "Whether to add an \"AI generated\" watermark to the image."
+}
+],
+"width": [
+"INT",
+{
+"default": 2048,
+"max": 6240,
+"min": 1024,
+"step": 2,
+"tooltip": "Custom width for image. Value is working only if `size_preset` is set to `Custom`"
+}
+]
+}
+},
+"key": "seedream-4-0-250828"
+}
+]
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for creating or editing an image."
+}
+]
+}
+},
+"output": [
+"IMAGE"
+]
+},
+"CFGGuider": {
+"input": {
+"required": {
+"cfg": [
+"FLOAT",
+{
+"default": 8.0,
+"max": 100.0,
+"min": 0.0,
+"round": 0.01,
+"step": 0.1
+}
+],
+"model": [
+"MODEL",
+{}
+],
+"negative": [
+"CONDITIONING",
+{}
+],
+"positive": [
+"CONDITIONING",
+{}
+]
+}
+},
+"output": [
+"GUIDER"
+]
+},
+"CLIPLoader": {
+"input": {
+"optional": {
+"device": [
+[
+"default",
+"cpu"
+],
+{
+"advanced": true
+}
+]
+},
+"required": {
+"clip_name": [
+[
+"Huihui-Qwen3-VL-4B-Instruct-abliterated/model-00001-of-00002.safetensors",
+"Huihui-Qwen3-VL-4B-Instruct-abliterated/model-00002-of-00002.safetensors",
+"gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+"gemma4_e2b_it_bf16.safetensors",
+"qwen3-vl-4b-heretic_int8_dynamic_convrot.safetensors",
+"qwen3.5_4b_bf16.safetensors",
+"qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+"qwen3vl_4b_fp8_scaled.safetensors",
+"qwen3vl_8b_fp8_scaled.safetensors",
+"qwen_3_4b.safetensors",
+"sd3m/clip_l.safetensors",
+"split_files/text_encoders/qwen_3_8b.safetensors",
+"t5/google_t5-v1_1-xxl_encoderonly-fp8_e4m3fn.safetensors",
+"umt5_xxl_fp16.safetensors",
+"umt5_xxl_fp8_e4m3fn_scaled.safetensors"
+]
+],
+"type": [
+[
+"stable_diffusion",
+"stable_cascade",
+"sd3",
+"stable_audio",
+"mochi",
+"ltxv",
+"pixart",
+"cosmos",
+"lumina2",
+"wan",
+"hidream",
+"chroma",
+"ace",
+"omnigen2",
+"qwen_image",
+"hunyuan_image",
+"flux2",
+"ovis",
+"longcat_image",
+"cogvideox",
+"lens",
+"pixeldit",
+"ideogram4",
+"boogu",
+"krea2",
+"joyimage",
+"mage",
+"minimax",
+"yue2",
+"flux3",
+"moss_image",
+"fibo2"
+]
+]
+}
+},
+"output": [
+"CLIP"
+]
+},
+"CLIPTextEncode": {
+"input": {
+"required": {
+"clip": [
+"CLIP",
+{
+"tooltip": "The CLIP model used for encoding the text."
+}
+],
+"text": [
+"STRING",
+{
+"dynamicPrompts": true,
+"multiline": true,
+"tooltip": "The text to be encoded."
+}
+]
+}
+},
+"output": [
+"CONDITIONING"
+]
+},
+"CLIPVisionEncode": {
+"input": {
+"required": {
+"clip_vision": [
+"CLIP_VISION"
+],
+"crop": [
+[
+"center",
+"none"
+]
+],
+"image": [
+"IMAGE"
+]
+}
+},
+"output": [
+"CLIP_VISION_OUTPUT"
+]
+},
+"CLIPVisionLoader": {
+"input": {
+"required": {
+"clip_name": [
+[
+"clip_vision_h.safetensors",
+"dino_v3_vit_h.safetensors"
+]
+]
+}
+},
+"output": [
+"CLIP_VISION"
+]
+},
+"CheckpointLoaderSimple": {
+"input": {
+"required": {
+"ckpt_name": [
+[
+"Illustrious/ILFlatMix.safetensors",
+"sam3.1_multiplex_fp16.safetensors"
+],
+{
+"tooltip": "The name of the checkpoint (model) to load."
+}
+]
+}
+},
+"output": [
+"MODEL",
+"CLIP",
+"VAE"
+]
+},
+"ComfyCloudZImageTurboNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"aspect_ratio": [
+"COMBO",
+{
+"default": "1:1",
+"multiselect": false,
+"options": [
+"1:1",
+"3:4",
+"2:3",
+"3:2",
+"4:3",
+"16:9",
+"9:16",
+"21:9"
+],
+"socketless": false
+}
+],
+"megapixels": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 16.0,
+"min": 0.1,
+"socketless": false,
+"step": 0.1,
+"tooltip": "Total pixel budget. 1.0 is about 1024x1024 at a square ratio."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"socketless": false
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 42,
+"max": 18446744073709551615,
+"min": 0,
+"socketless": false
+}
+]
+}
+},
+"output": [
+"IMAGE"
+]
+},
+"ConditioningZeroOut": {
+"input": {
+"required": {
+"conditioning": [
+"CONDITIONING"
+]
+}
+},
+"output": [
+"CONDITIONING"
+]
+},
+"CreateVideo": {
+"input": {
+"optional": {
+"audio": [
+"AUDIO",
+{
+"tooltip": "The audio to add to the video."
+}
+],
+"bit_depth": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+8,
+10
+],
+"tooltip": "Auto uses 8-bit for sRGB and 10-bit for HDR. Explicit 8-bit and 10-bit choices are independent of colorspace."
+}
+],
+"codec": [
+"COMBO",
+{
+"advanced": true,
+"default": "none",
+"multiselect": false,
+"options": [
+"none",
+"auto",
+"h264",
+"av1"
+],
+"tooltip": "Optionally encode the video immediately. None keeps the images in tensor form; Auto uses H.264."
+}
+],
+"color_space": [
+"COMBO",
+{
+"default": "sRGB",
+"multiselect": false,
+"options": [
+"sRGB",
+"HDR",
+"HDR PQ"
+],
+"tooltip": "Colorspace of the input images. HDR selects BT.2020/HLG and HDR PQ selects BT.2020/PQ."
+}
+]
+},
+"required": {
+"fps": [
+"FLOAT",
+{
+"default": 30.0,
+"max": 120.0,
+"min": 1.0,
+"step": 1.0
+}
+],
+"images": [
+"IMAGE",
+{
+"tooltip": "The images to create a video from."
+}
+]
+}
+},
+"output": [
+"VIDEO"
+]
+},
+"EmptyFlux2LatentImage": {
+"input": {
+"required": {
+"batch_size": [
+"INT",
+{
+"default": 1,
+"max": 4096,
+"min": 1
+}
+],
+"height": [
+"INT",
+{
+"default": 1024,
+"max": 16384,
+"min": 16,
+"step": 16
+}
+],
+"width": [
+"INT",
+{
+"default": 1024,
+"max": 16384,
+"min": 16,
+"step": 16
+}
+]
+}
+},
+"output": [
+"LATENT"
+]
+},
+"EmptyLTXVLatentVideo": {
+"input": {
+"required": {
+"batch_size": [
+"INT",
+{
+"default": 1,
+"max": 4096,
+"min": 1
+}
+],
+"height": [
+"INT",
+{
+"default": 512,
+"max": 16384,
+"min": 64,
+"step": 32
+}
+],
+"length": [
+"INT",
+{
+"default": 97,
+"max": 16384,
+"min": 1,
+"step": 8
+}
+],
+"width": [
+"INT",
+{
+"default": 768,
+"max": 16384,
+"min": 64,
+"step": 32
+}
+]
+}
+},
+"output": [
+"LATENT"
+]
+},
+"EmptyLatentImage": {
+"input": {
+"required": {
+"batch_size": [
+"INT",
+{
+"default": 1,
+"max": 4096,
+"min": 1,
+"tooltip": "The number of latent images in the batch."
+}
+],
+"height": [
+"INT",
+{
+"default": 1024,
+"max": 16384,
+"min": 16,
+"step": 8,
+"tooltip": "The height of the latent images in pixels."
+}
+],
+"width": [
+"INT",
+{
+"default": 1024,
+"max": 16384,
+"min": 16,
+"step": 8,
+"tooltip": "The width of the latent images in pixels."
+}
+]
+}
+},
+"output": [
+"LATENT"
+]
+},
+"EmptySD3LatentImage": {
+"input": {
+"required": {
+"batch_size": [
+"INT",
+{
+"default": 1,
+"max": 4096,
+"min": 1
+}
+],
+"height": [
+"INT",
+{
+"default": 1024,
+"max": 16384,
+"min": 16,
+"step": 16
+}
+],
+"width": [
+"INT",
+{
+"default": 1024,
+"max": 16384,
+"min": 16,
+"step": 16
+}
+]
+}
+},
+"output": [
+"LATENT"
+]
+},
+"Flux3ImageNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"optional": {
+"bounding_boxes": [
+"ARRAY",
+{
+"tooltip": "Optional boxes from Create Bounding Boxes that place objects or text in the output. Positions are relative to the canvas, so give it the output's aspect ratio."
+}
+]
+},
+"required": {
+"aspect_ratio": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+"21:9",
+"2:1",
+"16:9",
+"3:2",
+"7:5",
+"4:3",
+"5:4",
+"1:1",
+"4:5",
+"3:4",
+"5:7",
+"2:3",
+"9:16",
+"1:2",
+"9:21"
+],
+"tooltip": "'auto' follows the first reference image, or picks a ratio from the prompt."
+}
+],
+"grounding": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Let the model research the prompt with web and image search before generating."
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10"
+]
+},
+"tooltip": "Optional reference images, up to 10 in total, at least 256x256 pixels each."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "What to generate, or the edit to make. The prompt is interpreted and expanded before generation."
+}
+],
+"resolution": [
+"COMBO",
+{
+"default": "2K",
+"multiselect": false,
+"options": [
+"0.75K",
+"1K",
+"1.5K",
+"2K",
+"4K"
+],
+"tooltip": "Output size at the chosen aspect ratio: 0.75K is about 0.6 megapixels, 1K 1 MP, 1.5K 2.4 MP, 2K 4.2 MP, 4K 16.8 MP."
+}
+],
+"safety_tolerance": [
+"INT",
+{
+"advanced": true,
+"default": 4,
+"max": 4,
+"min": 0,
+"tooltip": "Moderation tolerance, 0 is the strictest."
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 42,
+"max": 4294967295,
+"min": 0,
+"tooltip": "Seed to determine if node should re-run; FLUX 3 picks its own seed, so actual results are nondeterministic regardless of this value."
+}
+]
+}
+},
+"output": [
+"IMAGE"
+]
+},
+"GeminiNanoBanana2V2": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"optional": {
+"system_prompt": [
+"STRING",
+{
+"advanced": true,
+"default": "You are an expert image-generation engine. You must ALWAYS produce an image.\nInterpret all user input\u2014regardless of format, intent, or abstraction\u2014as literal visual directives for image composition.\nIf a prompt is conversational or lacks specific visual details, you must creatively invent a concrete visual scenario that depicts the concept.\nPrioritize generating the visual representation above any text, formatting, or conversational requests.",
+"multiline": true,
+"tooltip": "Foundational instructions that dictate an AI's behavior."
+}
+],
+"temperature": [
+"FLOAT",
+{
+"advanced": true,
+"default": 1.0,
+"max": 2.0,
+"min": 0.0,
+"step": 0.01,
+"tooltip": "Controls randomness in generation. Lower is more focused/deterministic."
+}
+],
+"top_p": [
+"FLOAT",
+{
+"advanced": true,
+"default": 0.95,
+"max": 1.0,
+"min": 0.0,
+"step": 0.01,
+"tooltip": "Nucleus sampling threshold. Lower is more focused, higher more diverse."
+}
+]
+},
+"required": {
+"model": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"optional": {
+"files": [
+"GEMINI_INPUT_FILES",
+{
+"tooltip": "Optional file(s) to use as context for the model. Accepts inputs from the Gemini Generate Content Input Files node."
+}
+]
+},
+"required": {
+"aspect_ratio": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+"1:1",
+"2:3",
+"3:2",
+"3:4",
+"4:3",
+"4:5",
+"5:4",
+"9:16",
+"16:9",
+"21:9",
+"1:4",
+"4:1",
+"8:1",
+"1:8"
+],
+"tooltip": "If set to 'auto', matches your input image's aspect ratio; if no image is provided, a 16:9 square is usually generated."
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10",
+"image_11",
+"image_12",
+"image_13",
+"image_14"
+]
+},
+"tooltip": "Optional reference image(s). Up to 14 images total."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"1K",
+"2K",
+"4K"
+],
+"tooltip": "Target output resolution."
+}
+],
+"thinking_level": [
+"COMBO",
+{
+"default": "MEDIUM",
+"multiselect": false,
+"options": [
+"MINIMAL",
+"MEDIUM",
+"HIGH"
+]
+}
+]
+}
+},
+"key": "Gemini Nano Banana 2.1"
+},
+{
+"inputs": {
+"optional": {
+"files": [
+"GEMINI_INPUT_FILES",
+{
+"tooltip": "Optional file(s) to use as context for the model. Accepts inputs from the Gemini Generate Content Input Files node."
+}
+]
+},
+"required": {
+"aspect_ratio": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+"1:1",
+"2:3",
+"3:2",
+"3:4",
+"4:3",
+"4:5",
+"5:4",
+"9:16",
+"16:9",
+"21:9",
+"1:4",
+"4:1",
+"8:1",
+"1:8"
+],
+"tooltip": "If set to 'auto', matches your input image's aspect ratio; if no image is provided, a 16:9 square is usually generated."
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10",
+"image_11",
+"image_12",
+"image_13",
+"image_14"
+]
+},
+"tooltip": "Optional reference image(s). Up to 14 images total."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"1K",
+"2K",
+"4K"
+],
+"tooltip": "Target output resolution."
+}
+],
+"thinking_level": [
+"COMBO",
+{
+"default": "MINIMAL",
+"multiselect": false,
+"options": [
+"MINIMAL",
+"HIGH"
+]
+}
+]
+}
+},
+"key": "Nano Banana 2 (Gemini 3.1 Flash Image)"
+},
+{
+"inputs": {
+"optional": {
+"files": [
+"GEMINI_INPUT_FILES",
+{
+"tooltip": "Optional file(s) to use as context for the model. Accepts inputs from the Gemini Generate Content Input Files node."
+}
+]
+},
+"required": {
+"aspect_ratio": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+"1:1",
+"2:3",
+"3:2",
+"3:4",
+"4:3",
+"4:5",
+"5:4",
+"9:16",
+"16:9",
+"21:9",
+"1:4",
+"4:1",
+"8:1",
+"1:8"
+],
+"tooltip": "If set to 'auto', matches your input image's aspect ratio; if no image is provided, a 16:9 square is usually generated."
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10",
+"image_11",
+"image_12",
+"image_13",
+"image_14"
+]
+},
+"tooltip": "Optional reference image(s). Up to 14 images total."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"1K"
+],
+"tooltip": "Target output resolution."
+}
+],
+"thinking_level": [
+"COMBO",
+{
+"default": "MINIMAL",
+"multiselect": false,
+"options": [
+"MINIMAL",
+"HIGH"
+]
+}
+]
+}
+},
+"key": "Nano Banana 2 Lite"
+}
+]
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt describing the image to generate or the edits to apply. Include any constraints, styles, or details the model should follow."
+}
+],
+"response_modalities": [
+"COMBO",
+{
+"advanced": true,
+"multiselect": false,
+"options": [
+"IMAGE",
+"IMAGE+TEXT"
+]
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 42,
+"max": 18446744073709551615,
+"min": 0,
+"tooltip": "When the seed is fixed to a specific value, the model makes a best effort to provide the same response for repeated requests. Deterministic output isn't guaranteed. Also, changing the model or parameter settings, such as the temperature, can cause variations in the response even when you use the same seed value. By default, a random seed value is used."
+}
+]
+}
+},
+"output": [
+"IMAGE",
+"STRING",
+"IMAGE"
+]
+},
+"GetImageSize": {
+"input": {
+"hidden": {
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"output": [
+"INT",
+"INT",
+"INT"
+]
+},
+"GetVideoComponents": {
+"input": {
+"required": {
+"video": [
+"VIDEO",
+{
+"tooltip": "The video to extract components from."
+}
+]
+}
+},
+"output": [
+"IMAGE",
+"AUDIO",
+"FLOAT",
+"COMBO",
+"COMBO"
+]
+},
+"ImageFromBatch": {
+"input": {
+"required": {
+"batch_index": [
+"INT",
+{
+"default": 0,
+"max": 16384,
+"min": -16384
+}
+],
+"image": [
+"IMAGE",
+{}
+],
+"length": [
+"INT",
+{
+"default": 1,
+"max": 4096,
+"min": 1
+}
+]
+}
+},
+"output": [
+"IMAGE"
+]
+},
+"ImageToMask": {
+"input": {
+"required": {
+"channel": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"red",
+"green",
+"blue",
+"alpha"
+]
+}
+],
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"output": [
+"MASK"
+]
+},
+"InvertMask": {
+"input": {
+"required": {
+"mask": [
+"MASK",
+{}
+]
+}
+},
+"output": [
+"MASK"
+]
+},
+"JoinImageWithAlpha": {
+"input": {
+"required": {
+"alpha": [
+"MASK",
+{}
+],
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"output": [
+"IMAGE"
+]
+},
+"KSampler": {
+"input": {
+"required": {
+"cfg": [
+"FLOAT",
+{
+"default": 8.0,
+"max": 100.0,
+"min": 0.0,
+"round": 0.01,
+"step": 0.1,
+"tooltip": "The Classifier-Free Guidance scale balances creativity and adherence to the prompt. Higher values result in images more closely matching the prompt however too high values will negatively impact quality."
+}
+],
+"denoise": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 1.0,
+"min": 0.0,
+"step": 0.01,
+"tooltip": "The amount of denoising applied, lower values will maintain the structure of the initial image allowing for image to image sampling."
+}
+],
+"latent_image": [
+"LATENT",
+{
+"tooltip": "The latent image to denoise."
+}
+],
+"model": [
+"MODEL",
+{
+"tooltip": "The model used for denoising the input latent."
+}
+],
+"negative": [
+"CONDITIONING",
+{
+"tooltip": "The conditioning describing the attributes you want to exclude from the image."
+}
+],
+"positive": [
+"CONDITIONING",
+{
+"tooltip": "The conditioning describing the attributes you want to include in the image."
+}
+],
+"sampler_name": [
+[
+"euler",
+"euler_cfg_pp",
+"euler_ancestral",
+"euler_ancestral_cfg_pp",
+"heun",
+"heunpp2",
+"exp_heun_2_x0",
+"exp_heun_2_x0_sde",
+"dpm_2",
+"dpm_2_ancestral",
+"lms",
+"dpm_fast",
+"dpm_adaptive",
+"dpmpp_2s_ancestral",
+"dpmpp_2s_ancestral_cfg_pp",
+"dpmpp_sde",
+"dpmpp_sde_gpu",
+"dpmpp_2m",
+"dpmpp_2m_cfg_pp",
+"dpmpp_2m_sde",
+"dpmpp_2m_sde_gpu",
+"dpmpp_2m_sde_heun",
+"dpmpp_2m_sde_heun_gpu",
+"dpmpp_3m_sde",
+"dpmpp_3m_sde_gpu",
+"ddpm",
+"lcm",
+"ipndm",
+"ipndm_v",
+"deis",
+"cfgpp_ud10_ab",
+"res_multistep",
+"res_multistep_cfg_pp",
+"res_multistep_ancestral",
+"res_multistep_ancestral_cfg_pp",
+"gradient_estimation",
+"gradient_estimation_cfg_pp",
+"er_sde",
+"seeds_2",
+"seeds_3",
+"sa_solver",
+"sa_solver_pece",
+"ddim",
+"uni_pc",
+"uni_pc_bh2"
+],
+{
+"tooltip": "The algorithm used when sampling, this can affect the quality, speed, and style of the generated output."
+}
+],
+"scheduler": [
+[
+"simple",
+"sgm_uniform",
+"karras",
+"exponential",
+"ddim_uniform",
+"beta",
+"normal",
+"linear_quadratic",
+"kl_optimal"
+],
+{
+"tooltip": "The scheduler controls how noise is gradually removed to form the image."
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 0,
+"max": 18446744073709551615,
+"min": 0,
+"tooltip": "The random seed used for creating the noise."
+}
+],
+"steps": [
+"INT",
+{
+"default": 20,
+"max": 10000,
+"min": 1,
+"tooltip": "The number of steps used in the denoising process."
+}
+]
+}
+},
+"output": [
+"LATENT"
+]
+},
+"KSamplerSelect": {
+"input": {
+"required": {
+"sampler_name": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"euler",
+"euler_cfg_pp",
+"euler_ancestral",
+"euler_ancestral_cfg_pp",
+"heun",
+"heunpp2",
+"exp_heun_2_x0",
+"exp_heun_2_x0_sde",
+"dpm_2",
+"dpm_2_ancestral",
+"lms",
+"dpm_fast",
+"dpm_adaptive",
+"dpmpp_2s_ancestral",
+"dpmpp_2s_ancestral_cfg_pp",
+"dpmpp_sde",
+"dpmpp_sde_gpu",
+"dpmpp_2m",
+"dpmpp_2m_cfg_pp",
+"dpmpp_2m_sde",
+"dpmpp_2m_sde_gpu",
+"dpmpp_2m_sde_heun",
+"dpmpp_2m_sde_heun_gpu",
+"dpmpp_3m_sde",
+"dpmpp_3m_sde_gpu",
+"ddpm",
+"lcm",
+"ipndm",
+"ipndm_v",
+"deis",
+"cfgpp_ud10_ab",
+"res_multistep",
+"res_multistep_cfg_pp",
+"res_multistep_ancestral",
+"res_multistep_ancestral_cfg_pp",
+"gradient_estimation",
+"gradient_estimation_cfg_pp",
+"er_sde",
+"seeds_2",
+"seeds_3",
+"sa_solver",
+"sa_solver_pece",
+"ddim",
+"uni_pc",
+"uni_pc_bh2"
+]
+}
+]
+}
+},
+"output": [
+"SAMPLER"
+]
+},
+"Kling4EditVideoNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"model": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {
+"aspect_ratio": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"adaptive",
+"16:9",
+"9:16",
+"1:1",
+"21:9"
+],
+"tooltip": "adaptive keeps the aspect ratio of the input video."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Describe what to change and what to keep. Refer to the input video as @Video1, the reference videos as @Video2, ... and the images as @Image1, ..."
+}
+],
+"reference_images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"reference_image": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10"
+]
+}
+}
+],
+"reference_videos": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"reference_video": [
+"VIDEO",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"video_2",
+"video_3",
+"video_4",
+"video_5"
+]
+},
+"tooltip": "Each video and all videos together must be 3-30 seconds long."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"720p",
+"1080p"
+]
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 42,
+"display": "number",
+"max": 2147483647,
+"min": 0,
+"tooltip": "Seed controls whether the node should re-run; results are non-deterministic regardless of seed."
+}
+],
+"video_1": [
+"VIDEO",
+{
+"tooltip": "The video to edit, 3-30 seconds. The output keeps its length."
+}
+]
+}
+},
+"key": "kling-4.0"
+}
+]
+}
+]
+}
+},
+"output": [
+"VIDEO"
+]
+},
+"Kling4ImageToVideoNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"model": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"optional": {
+"first_frame": [
+"IMAGE",
+{}
+],
+"last_frame": [
+"IMAGE",
+{}
+],
+"middle_frames": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"middle_frame": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"middle_frame_1",
+"middle_frame_2",
+"middle_frame_3",
+"middle_frame_4",
+"middle_frame_5",
+"middle_frame_6",
+"middle_frame_7",
+"middle_frame_8"
+]
+}
+}
+]
+},
+"required": {
+"duration": [
+"INT",
+{
+"default": 5,
+"display": "slider",
+"max": 30,
+"min": 3
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Optional. Refer to the frames as @Image1, @Image2, ... in order: first frame, middle frames, last frame."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"720p",
+"1080p"
+]
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 42,
+"display": "number",
+"max": 2147483647,
+"min": 0,
+"tooltip": "Seed controls whether the node should re-run; results are non-deterministic regardless of seed."
+}
+]
+}
+},
+"key": "kling-4.0"
+}
+]
+}
+]
+}
+},
+"output": [
+"VIDEO"
+]
+},
+"Kling4ReferenceToVideoNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"model": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"optional": {
+"first_frame": [
+"IMAGE",
+{
+"tooltip": "Counts toward the 10-image limit together with the reference images."
+}
+],
+"last_frame": [
+"IMAGE",
+{
+"tooltip": "Counts toward the 10-image limit together with the reference images."
+}
+]
+},
+"required": {
+"aspect_ratio": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"adaptive",
+"16:9",
+"9:16",
+"1:1",
+"21:9"
+],
+"tooltip": "adaptive follows the prompt, then the first frame or the reference videos, otherwise 16:9."
+}
+],
+"duration": [
+"INT",
+{
+"default": 5,
+"display": "slider",
+"max": 30,
+"min": 3
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Refer to the inputs as @Image1, @Image2, ... and @Video1, @Video2, ..."
+}
+],
+"reference_images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"reference_image": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10"
+]
+}
+}
+],
+"reference_videos": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"reference_video": [
+"VIDEO",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"video_1",
+"video_2",
+"video_3",
+"video_4",
+"video_5"
+]
+},
+"tooltip": "Each video and all videos together must be 3-30 seconds long."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"720p",
+"1080p"
+]
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 42,
+"display": "number",
+"max": 2147483647,
+"min": 0,
+"tooltip": "Seed controls whether the node should re-run; results are non-deterministic regardless of seed."
+}
+]
+}
+},
+"key": "kling-4.0"
+}
+]
+}
+]
+}
+},
+"output": [
+"VIDEO"
+]
+},
+"Kling4TextToVideoNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"model": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {
+"aspect_ratio": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"16:9",
+"9:16",
+"1:1",
+"21:9"
+]
+}
+],
+"duration": [
+"INT",
+{
+"default": 5,
+"display": "slider",
+"max": 30,
+"min": 3
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"720p",
+"1080p"
+]
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 42,
+"display": "number",
+"max": 2147483647,
+"min": 0,
+"tooltip": "Seed controls whether the node should re-run; results are non-deterministic regardless of seed."
+}
+]
+}
+},
+"key": "kling-4.0"
+}
+]
+}
+]
+}
+},
+"output": [
+"VIDEO"
+]
+},
+"Krea2ControlApply": {
+"input": {
+"required": {
+"control_latent": [
+"LATENT"
+],
+"model": [
+"MODEL"
+]
+}
+},
+"output": [
+"MODEL"
+]
+},
+"Krea2ControlImageEncode": {
+"input": {
+"optional": {
+"latent": [
+"LATENT"
+]
+},
+"required": {
+"batch_mode": [
+[
+"independent_images",
+"video_frames"
+],
+{
+"default": "independent_images"
+}
+],
+"channel_mode": [
+[
+"rgb",
+"grayscale"
+],
+{
+"default": "rgb"
+}
+],
+"control_image": [
+"IMAGE"
+],
+"crop": [
+[
+"center",
+"disabled"
+],
+{
+"default": "center"
+}
+],
+"invert": [
+"BOOLEAN",
+{
+"default": false
+}
+],
+"normalize": [
+[
+"none",
+"per_image_minmax"
+],
+{
+"default": "none"
+}
+],
+"resize": [
+[
+"keep_control_image_size",
+"match_latent_size"
+],
+{
+"default": "match_latent_size"
+}
+],
+"upscale_method": [
+[
+"lanczos",
+"bicubic",
+"bilinear",
+"area",
+"nearest-exact"
+],
+{
+"default": "lanczos"
+}
+],
+"vae": [
+"VAE"
+]
+}
+},
+"output": [
+"LATENT",
+"IMAGE"
+]
+},
+"Krea2ControlLoRALoader": {
+"input": {
+"required": {
+"lora_name": [
+[
+"1940's style.safetensors",
+"1950'sTechnicolor style v1.2.safetensors",
+"3DREAL-strong-v2.safetensors",
+"DMD2/dmd2_sdxl_4step_lora_fp16.safetensors",
+"Downloads/ltx-2.5-22b-ic-lora-pixel-spatial-upscaler-x2-1.0.safetensors",
+"Garage Force Lora_v1.safetensors",
+"Garage Force Lora_v1_000007500.safetensors",
+"Garage Force Lora_v1_000007750.safetensors",
+"Klein9b/VNCCS/VNCCS_PoseStudioKlein9b_V1.safetensors",
+"Klein9b/VNCCS/VNCCS_PoseStudioKlein9b_V2.safetensors",
+"LTX25_Ripple_v11.safetensors",
+"Lenovo_UltraReal.safetensors",
+"MINIMAX/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
+"UltraRealPhoto.safetensors",
+"Wan2.2-T2V-A14B-4steps-lora-250928/low_noise_model.safetensors",
+"Wan2/Lightx2/I2V/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
+"Wan2_2/Wan2.2-Fun-A14B-InP-low-noise-HPS2.1.safetensors",
+"Wan2_2/WanAnimate_relight_lora_fp16.safetensors",
+"Wan2_2/wan2.2_t2v_A14b_low_noise_lora_rank64_lightx2v_4step_1217.safetensors",
+"WanVideo/Wan14B_RealismBoost.safetensors",
+"WanVideo/Wan2.1_T2V_14B_FusionX_LoRA.safetensors",
+"WanVideo/lightx2v_I2V_14B_480p_cfg_step_distill_rank256_bf16.safetensors",
+"harmonize/lora_weights_step_01250.safetensors",
+"harmonize/lora_weights_step_01500.safetensors",
+"harmonize/v2_lora_weights_step_02500.safetensors",
+"harmonize/v2_lora_weights_step_03000.safetensors",
+"head_swap_ltx25_v1_1_r128.safetensors",
+"jonface/jon_face_step_00750.safetensors",
+"jonface/jon_face_step_01000.safetensors",
+"jonface/jon_face_step_01250.safetensors",
+"jonface/jon_face_step_01500.safetensors",
+"jonface/jon_face_step_02000.safetensors",
+"jonface_v2/jon_v2_step_00500.safetensors",
+"jonface_v2/jon_v2_step_01000.safetensors",
+"jonface_v2/jon_v2_step_01500.safetensors",
+"jonface_v2/jon_v2_step_02000.safetensors",
+"jonface_v3/jon_v3_step_00500.safetensors",
+"jonface_v3/jon_v3_step_01000.safetensors",
+"jonface_v3/jon_v3_step_01500.safetensors",
+"jonface_v3/jon_v3_step_02000.safetensors",
+"krea2/cn/depth-control-lora.safetensors",
+"krea2/krea-detail-enhancer-exp.safetensors",
+"krea2/krea2_identity_edit_v1_1.safetensors",
+"krea2/lenovo_krea2.safetensors",
+"lenovo_flux2.safetensors",
+"lenovo_flux_klein9b.safetensors",
+"ltx-2-19b-distilled-lora-384.safetensors",
+"ltx-2-19b-ic-lora-canny-control.safetensors",
+"ltx-2-19b-ic-lora-depth-control.safetensors",
+"ltx-2-19b-ic-lora-detailer.safetensors",
+"ltx-2-19b-ic-lora-pose-control.safetensors",
+"ltx-2-19b-lora-camera-control-dolly-in.safetensors",
+"ltx-2-19b-lora-camera-control-dolly-left.safetensors",
+"ltx-2-19b-lora-camera-control-dolly-out.safetensors",
+"ltx-2-19b-lora-camera-control-dolly-right.safetensors",
+"ltx-2-19b-lora-camera-control-jib-down.safetensors",
+"ltx-2-19b-lora-camera-control-jib-up.safetensors",
+"ltx-2-19b-lora-camera-control-static.safetensors",
+"ltx2.5/LTX-2.5-Licon-MSR-V1.safetensors",
+"ltx2.5/ltx-2.5-22b-distilled-lora-450-bf16.safetensors",
+"ltx2.5/ltx-2.5-22b-ic-lora-alpha-gen-0.9.safetensors",
+"ltx2.5/ltx-2.5-22b-ic-lora-clean-plate-1.0.safetensors",
+"ltx2.5/ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors",
+"ltxv/ltx2/90sAnimationStyle.safetensors",
+"ltxv/ltx2/ltx-2.3-22b-ic-lora-in-outpainting-0.9.safetensors",
+"ltxv/ltx2/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors",
+"minimax_h3_DMAD_4step_full_lora_avg_rank_39_bf16.safetensors",
+"minimax_h3_fl2v_turbo_silver_dareties_comfy_pruned_v1.safetensors",
+"minimax_h3_turbo_4step_v01.safetensors"
+]
+],
+"model": [
+"MODEL"
+],
+"strength": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 100.0,
+"min": -100.0,
+"step": 0.01
+}
+]
+}
+},
+"output": [
+"MODEL"
+]
+},
+"Krea2ImageNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"model": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"optional": {
+"moodboard_id": [
+"STRING",
+{
+"default": "",
+"multiline": false,
+"tooltip": "Optional Krea moodboard UUID (e.g. from the Krea website). Leave empty to disable. Only one moodboard is supported per request."
+}
+],
+"moodboard_strength": [
+"FLOAT",
+{
+"default": 0.35,
+"max": 1.5,
+"min": -0.5,
+"step": 0.05,
+"tooltip": "Moodboard influence; ignored when moodboard_id is empty."
+}
+],
+"style_reference": [
+"KREA_STYLE_REF",
+{
+"tooltip": "Optional chain of style references (max 10) from Krea 2 Style Reference nodes."
+}
+]
+},
+"required": {
+"aspect_ratio": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"1:1",
+"4:3",
+"3:2",
+"16:9",
+"2.35:1",
+"4:5",
+"2:3",
+"9:16"
+],
+"tooltip": "Output aspect ratio."
+}
+],
+"creativity": [
+"COMBO",
+{
+"default": "medium",
+"multiselect": false,
+"options": [
+"raw",
+"low",
+"medium",
+"high"
+],
+"tooltip": "Prompt interpretation strength: raw stays closest to the prompt; high is most creative."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"1K"
+],
+"tooltip": "Resolution scale."
+}
+]
+}
+},
+"key": "Krea 2 Medium"
+},
+{
+"inputs": {
+"optional": {
+"moodboard_id": [
+"STRING",
+{
+"default": "",
+"multiline": false,
+"tooltip": "Optional Krea moodboard UUID (e.g. from the Krea website). Leave empty to disable. Only one moodboard is supported per request."
+}
+],
+"moodboard_strength": [
+"FLOAT",
+{
+"default": 0.35,
+"max": 1.5,
+"min": -0.5,
+"step": 0.05,
+"tooltip": "Moodboard influence; ignored when moodboard_id is empty."
+}
+],
+"style_reference": [
+"KREA_STYLE_REF",
+{
+"tooltip": "Optional chain of style references (max 10) from Krea 2 Style Reference nodes."
+}
+]
+},
+"required": {
+"aspect_ratio": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"1:1",
+"4:3",
+"3:2",
+"16:9",
+"2.35:1",
+"4:5",
+"2:3",
+"9:16"
+],
+"tooltip": "Output aspect ratio."
+}
+],
+"creativity": [
+"COMBO",
+{
+"default": "medium",
+"multiselect": false,
+"options": [
+"raw",
+"low",
+"medium",
+"high"
+],
+"tooltip": "Prompt interpretation strength: raw stays closest to the prompt; high is most creative."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"1K"
+],
+"tooltip": "Resolution scale."
+}
+]
+}
+},
+"key": "Krea 2 Medium Turbo"
+},
+{
+"inputs": {
+"optional": {
+"moodboard_id": [
+"STRING",
+{
+"default": "",
+"multiline": false,
+"tooltip": "Optional Krea moodboard UUID (e.g. from the Krea website). Leave empty to disable. Only one moodboard is supported per request."
+}
+],
+"moodboard_strength": [
+"FLOAT",
+{
+"default": 0.35,
+"max": 1.5,
+"min": -0.5,
+"step": 0.05,
+"tooltip": "Moodboard influence; ignored when moodboard_id is empty."
+}
+],
+"style_reference": [
+"KREA_STYLE_REF",
+{
+"tooltip": "Optional chain of style references (max 10) from Krea 2 Style Reference nodes."
+}
+]
+},
+"required": {
+"aspect_ratio": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"1:1",
+"4:3",
+"3:2",
+"16:9",
+"2.35:1",
+"4:5",
+"2:3",
+"9:16"
+],
+"tooltip": "Output aspect ratio."
+}
+],
+"creativity": [
+"COMBO",
+{
+"default": "medium",
+"multiselect": false,
+"options": [
+"raw",
+"low",
+"medium",
+"high"
+],
+"tooltip": "Prompt interpretation strength: raw stays closest to the prompt; high is most creative."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"1K"
+],
+"tooltip": "Resolution scale."
+}
+]
+}
+},
+"key": "Krea 2 Large"
+}
+],
+"tooltip": "Krea 2 Medium is best for expressive illustrations; Krea 2 Large is best for expressive photorealism."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for the image."
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 0,
+"max": 2147483647,
+"min": 0,
+"tooltip": "Random seed for reproducibility."
+}
+]
+}
+},
+"output": [
+"IMAGE"
+]
+},
+"LTXAddVideoICLoRAGuide": {
+"input": {
+"optional": {
+"tile_frames": [
+"INT",
+{
+"default": 97,
+"max": 1000,
+"min": 0,
+"step": 1,
+"tooltip": "Window length in pixel frames, used only when use_streaming is on. Snapped to 8n+1. Must match LTXVTiledFusionSampler. Ignored when use_streaming is off."
+}
+],
+"use_streaming": [
+"BOOLEAN",
+{
+"default": false,
+"tooltip": "Off (default): encode the whole clip as one IC-LoRA guide. On: re-encode one fresh guide per LTXVTiledFusionSampler temporal window and write the plan the sampler reads. Set tile_frames on this node and the sampler to the same value (97 for LTX)."
+}
+]
+},
+"required": {
+"crop": [
+"COMBO",
+{
+"default": "disabled",
+"multiselect": false,
+"options": [
+"disabled",
+"center"
+],
+"tooltip": "Crop mode when resizing. 'center' crops to fit, 'disabled' stretches to fit."
+}
+],
+"frame_idx": [
+"INT",
+{
+"default": 0,
+"max": 9999,
+"min": -9999,
+"tooltip": "RoPE position of the reference, in pixel frames.\n0 aligns the reference with the generated clip. Use for video references.\n>0 places the reference at a specific pixel-frame position in the clip.\n-1 places the reference outside the generated frame range, while still using it for attention conditioning. Use for single-image references.\nFor multi-frame references, >0 values are rounded down to 1 mod 8."
+}
+],
+"image": [
+"IMAGE",
+{}
+],
+"latent": [
+"LATENT",
+{
+"tooltip": "Video-only latent to condition. Must be a 5D video latent (batch, channels, frames, height, width)."
+}
+],
+"latent_downscale_factor": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 10.0,
+"min": 1.0,
+"step": 1.0,
+"tooltip": "For IC-LoRA on small grid. 1 means original size, 2 means half size, 3 means third, etc."
+}
+],
+"negative": [
+"CONDITIONING",
+{}
+],
+"positive": [
+"CONDITIONING",
+{}
+],
+"strength": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 1.0,
+"min": 0.0,
+"step": 0.01
+}
+],
+"tile_overlap": [
+"INT",
+{
+"default": 64,
+"max": 256,
+"min": 16,
+"step": 16,
+"tooltip": "Overlap between tiles for tiled encoding. Only used when use_tiled_encode is enabled."
+}
+],
+"tile_size": [
+"INT",
+{
+"default": 256,
+"max": 512,
+"min": 64,
+"step": 32,
+"tooltip": "Spatial tile size for tiled encoding. Only used when use_tiled_encode is enabled."
+}
+],
+"use_tiled_encode": [
+"BOOLEAN",
+{
+"default": false,
+"tooltip": "Enable tiled VAE encoding for large resolutions/long videos to reduce memory usage."
+}
+],
+"vae": [
+"VAE",
+{}
+]
+}
+},
+"output": [
+"CONDITIONING",
+"CONDITIONING",
+"LATENT"
+]
+},
+"LTXICLoRALoaderModelOnly": {
+"input": {
+"required": {
+"lora_name": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"1940's style.safetensors",
+"1950'sTechnicolor style v1.2.safetensors",
+"3DREAL-strong-v2.safetensors",
+"DMD2/dmd2_sdxl_4step_lora_fp16.safetensors",
+"Downloads/ltx-2.5-22b-ic-lora-pixel-spatial-upscaler-x2-1.0.safetensors",
+"Garage Force Lora_v1.safetensors",
+"Garage Force Lora_v1_000007500.safetensors",
+"Garage Force Lora_v1_000007750.safetensors",
+"Klein9b/VNCCS/VNCCS_PoseStudioKlein9b_V1.safetensors",
+"Klein9b/VNCCS/VNCCS_PoseStudioKlein9b_V2.safetensors",
+"LTX25_Ripple_v11.safetensors",
+"Lenovo_UltraReal.safetensors",
+"MINIMAX/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
+"UltraRealPhoto.safetensors",
+"Wan2.2-T2V-A14B-4steps-lora-250928/low_noise_model.safetensors",
+"Wan2/Lightx2/I2V/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
+"Wan2_2/Wan2.2-Fun-A14B-InP-low-noise-HPS2.1.safetensors",
+"Wan2_2/WanAnimate_relight_lora_fp16.safetensors",
+"Wan2_2/wan2.2_t2v_A14b_low_noise_lora_rank64_lightx2v_4step_1217.safetensors",
+"WanVideo/Wan14B_RealismBoost.safetensors",
+"WanVideo/Wan2.1_T2V_14B_FusionX_LoRA.safetensors",
+"WanVideo/lightx2v_I2V_14B_480p_cfg_step_distill_rank256_bf16.safetensors",
+"harmonize/lora_weights_step_01250.safetensors",
+"harmonize/lora_weights_step_01500.safetensors",
+"harmonize/v2_lora_weights_step_02500.safetensors",
+"harmonize/v2_lora_weights_step_03000.safetensors",
+"head_swap_ltx25_v1_1_r128.safetensors",
+"jonface/jon_face_step_00750.safetensors",
+"jonface/jon_face_step_01000.safetensors",
+"jonface/jon_face_step_01250.safetensors",
+"jonface/jon_face_step_01500.safetensors",
+"jonface/jon_face_step_02000.safetensors",
+"jonface_v2/jon_v2_step_00500.safetensors",
+"jonface_v2/jon_v2_step_01000.safetensors",
+"jonface_v2/jon_v2_step_01500.safetensors",
+"jonface_v2/jon_v2_step_02000.safetensors",
+"jonface_v3/jon_v3_step_00500.safetensors",
+"jonface_v3/jon_v3_step_01000.safetensors",
+"jonface_v3/jon_v3_step_01500.safetensors",
+"jonface_v3/jon_v3_step_02000.safetensors",
+"krea2/cn/depth-control-lora.safetensors",
+"krea2/krea-detail-enhancer-exp.safetensors",
+"krea2/krea2_identity_edit_v1_1.safetensors",
+"krea2/lenovo_krea2.safetensors",
+"lenovo_flux2.safetensors",
+"lenovo_flux_klein9b.safetensors",
+"ltx-2-19b-distilled-lora-384.safetensors",
+"ltx-2-19b-ic-lora-canny-control.safetensors",
+"ltx-2-19b-ic-lora-depth-control.safetensors",
+"ltx-2-19b-ic-lora-detailer.safetensors",
+"ltx-2-19b-ic-lora-pose-control.safetensors",
+"ltx-2-19b-lora-camera-control-dolly-in.safetensors",
+"ltx-2-19b-lora-camera-control-dolly-left.safetensors",
+"ltx-2-19b-lora-camera-control-dolly-out.safetensors",
+"ltx-2-19b-lora-camera-control-dolly-right.safetensors",
+"ltx-2-19b-lora-camera-control-jib-down.safetensors",
+"ltx-2-19b-lora-camera-control-jib-up.safetensors",
+"ltx-2-19b-lora-camera-control-static.safetensors",
+"ltx2.5/LTX-2.5-Licon-MSR-V1.safetensors",
+"ltx2.5/ltx-2.5-22b-distilled-lora-450-bf16.safetensors",
+"ltx2.5/ltx-2.5-22b-ic-lora-alpha-gen-0.9.safetensors",
+"ltx2.5/ltx-2.5-22b-ic-lora-clean-plate-1.0.safetensors",
+"ltx2.5/ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors",
+"ltxv/ltx2/90sAnimationStyle.safetensors",
+"ltxv/ltx2/ltx-2.3-22b-ic-lora-in-outpainting-0.9.safetensors",
+"ltxv/ltx2/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors",
+"minimax_h3_DMAD_4step_full_lora_avg_rank_39_bf16.safetensors",
+"minimax_h3_fl2v_turbo_silver_dareties_comfy_pruned_v1.safetensors",
+"minimax_h3_turbo_4step_v01.safetensors"
+]
+}
+],
+"model": [
+"MODEL",
+{}
+],
+"strength_model": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 100.0,
+"min": -100.0,
+"step": 0.01
+}
+]
+}
+},
+"output": [
+"MODEL",
+"FLOAT"
+]
+},
+"LTXVAudioVAEDecode": {
+"input": {
+"required": {
+"audio_vae": [
+"VAE",
+{
+"display_name": "Audio VAE",
+"tooltip": "The Audio VAE model used for decoding the latent."
+}
+],
+"samples": [
+"LATENT",
+{
+"tooltip": "The latent to be decoded."
+}
+]
+}
+},
+"output": [
+"AUDIO"
+]
+},
+"LTXVConcatAVLatent": {
+"input": {
+"required": {
+"audio_latent": [
+"LATENT",
+{}
+],
+"video_latent": [
+"LATENT",
+{}
+]
+}
+},
+"output": [
+"LATENT"
+]
+},
+"LTXVConditioning": {
+"input": {
+"required": {
+"frame_rate": [
+"FLOAT",
+{
+"default": 25.0,
+"max": 1000.0,
+"min": 0.0,
+"step": 0.01
+}
+],
+"negative": [
+"CONDITIONING",
+{}
+],
+"positive": [
+"CONDITIONING",
+{}
+]
+}
+},
+"output": [
+"CONDITIONING",
+"CONDITIONING"
+]
+},
+"LTXVCropGuides": {
+"input": {
+"required": {
+"latent": [
+"LATENT",
+{}
+],
+"negative": [
+"CONDITIONING",
+{}
+],
+"positive": [
+"CONDITIONING",
+{}
+]
+}
+},
+"output": [
+"CONDITIONING",
+"CONDITIONING",
+"LATENT"
+]
+},
+"LTXVDualCFGGuider": {
+"input": {
+"required": {
+"audio_cfg": [
+"FLOAT",
+{
+"default": 7.0,
+"max": 100.0,
+"min": 0.0,
+"round": 0.01,
+"step": 0.1
+}
+],
+"model": [
+"MODEL",
+{}
+],
+"negative": [
+"CONDITIONING",
+{}
+],
+"positive": [
+"CONDITIONING",
+{}
+],
+"video_cfg": [
+"FLOAT",
+{
+"default": 3.0,
+"max": 100.0,
+"min": 0.0,
+"round": 0.01,
+"step": 0.1
+}
+]
+}
+},
+"output": [
+"GUIDER"
+]
+},
+"LTXVEmptyLatentAudio": {
+"input": {
+"required": {
+"audio_vae": [
+"VAE",
+{
+"display_name": "Audio VAE",
+"tooltip": "The Audio VAE model to get configuration from."
+}
+],
+"batch_size": [
+"INT",
+{
+"default": 1,
+"display": "number",
+"max": 4096,
+"min": 1,
+"tooltip": "The number of latent audio samples in the batch."
+}
+],
+"frame_rate": [
+"FLOAT,INT",
+{
+"default": 25.0,
+"display": "number",
+"max": 1000.0,
+"min": 1.0,
+"step": 0.01,
+"tooltip": "Number of frames per second.",
+"widgetType": "FLOAT"
+}
+],
+"frames_number": [
+"INT",
+{
+"default": 97,
+"display": "number",
+"max": 1000,
+"min": 1,
+"step": 1,
+"tooltip": "Number of frames."
+}
+]
+}
+},
+"output": [
+"LATENT"
+]
+},
+"LTXVImgToVideoInplace": {
+"input": {
+"required": {
+"bypass": [
+"BOOLEAN",
+{
+"default": false,
+"tooltip": "Bypass the conditioning."
+}
+],
+"image": [
+"IMAGE",
+{}
+],
+"latent": [
+"LATENT",
+{}
+],
+"strength": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 1.0,
+"min": 0.0
+}
+],
+"vae": [
+"VAE",
+{}
+]
+}
+},
+"output": [
+"LATENT"
+]
+},
+"LTXVLatentUpsampler": {
+"input": {
+"required": {
+"samples": [
+"LATENT",
+{}
+],
+"upscale_model": [
+"LATENT_UPSCALE_MODEL",
+{}
+],
+"vae": [
+"VAE",
+{}
+]
+}
+},
+"output": [
+"LATENT"
+]
+},
+"LTXVPreprocess": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+],
+"img_compression": [
+"INT",
+{
+"default": 35,
+"max": 100,
+"min": 0,
+"tooltip": "Amount of compression to apply on image."
+}
+]
+}
+},
+"output": [
+"IMAGE"
+]
+},
+"LTXVSeparateAVLatent": {
+"input": {
+"required": {
+"av_latent": [
+"LATENT",
+{}
+]
+}
+},
+"output": [
+"LATENT",
+"LATENT"
+]
+},
+"LatentUpscaleModelLoader": {
+"input": {
+"required": {
+"model_name": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"ltx-2-spatial-upscaler-x2-1.0.safetensors",
+"ltx-2-temporal-upscaler-x2-1.0.safetensors",
+"ltx-2.3-spatial-upscaler-x2-1.1.safetensors",
+"ltx-2.3-temporal-upscaler-x2-1.0.safetensors",
+"ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+"ltx-2.5-latent-temporal-upscaler-x2-bf16-1.0.safetensors",
+"minimax_h3_latent_upscaler_3d_bf16.safetensors"
+]
+}
+]
+}
+},
+"output": [
+"LATENT_UPSCALE_MODEL"
+]
+},
+"LoadBackgroundRemovalModel": {
+"input": {
+"required": {
+"bg_removal_name": [
+"COMBO",
+{
+"multiselect": false,
+"options": [],
+"tooltip": "The model used to remove backgrounds from images"
+}
+]
+}
+},
+"output": [
+"BACKGROUND_REMOVAL"
+]
+},
+"LtxApi25ImageToVideo": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"optional": {
+"last_frame": [
+"IMAGE",
+{
+"tooltip": "Last frame to be used for the video."
+}
+]
+},
+"required": {
+"image": [
+"IMAGE",
+{
+"tooltip": "First frame to be used for the video."
+}
+],
+"model": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {
+"duration": [
+"COMBO",
+{
+"default": "8",
+"multiselect": false,
+"options": [
+"2",
+"3",
+"4",
+"5",
+"6",
+"8",
+"10",
+"12",
+"14",
+"16",
+"18",
+"20"
+],
+"tooltip": "Video duration in seconds. Durations over 10s require a 720p/1080p resolution and 24/25 FPS."
+}
+],
+"fps": [
+"COMBO",
+{
+"default": "25",
+"multiselect": false,
+"options": [
+"24",
+"25",
+"48",
+"50"
+]
+}
+],
+"generate_audio": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": true,
+"tooltip": "When true, the generated video will include AI-generated audio matching the scene."
+}
+],
+"resolution": [
+"COMBO",
+{
+"default": "1920x1080",
+"multiselect": false,
+"options": [
+"1280x720",
+"720x1280",
+"1920x1080",
+"1080x1920",
+"2560x1440",
+"1440x2560",
+"3840x2160",
+"2160x3840"
+]
+}
+]
+}
+},
+"key": "LTX-2.5 (Fast)"
+},
+{
+"inputs": {
+"required": {
+"duration": [
+"COMBO",
+{
+"default": "8",
+"multiselect": false,
+"options": [
+"2",
+"3",
+"4",
+"5",
+"6",
+"8",
+"10"
+],
+"tooltip": "Video duration in seconds."
+}
+],
+"fps": [
+"COMBO",
+{
+"default": "25",
+"multiselect": false,
+"options": [
+"24",
+"25",
+"50"
+]
+}
+],
+"generate_audio": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": true,
+"tooltip": "When true, the generated video will include AI-generated audio matching the scene."
+}
+],
+"resolution": [
+"COMBO",
+{
+"default": "1920x1080",
+"multiselect": false,
+"options": [
+"1280x720",
+"720x1280",
+"1920x1080",
+"1080x1920"
+]
+}
+]
+}
+},
+"key": "LTX-2.5 (Pro)"
+}
+]
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 42,
+"max": 4294967295,
+"min": 0,
+"tooltip": "Seed to determine if node should re-run; actual results are nondeterministic regardless of seed."
+}
+]
+}
+},
+"output": [
+"VIDEO"
+]
+},
+"LtxApi25TextToVideo": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"model": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {
+"duration": [
+"COMBO",
+{
+"default": "8",
+"multiselect": false,
+"options": [
+"2",
+"3",
+"4",
+"5",
+"6",
+"8",
+"10",
+"12",
+"14",
+"16",
+"18",
+"20"
+],
+"tooltip": "Video duration in seconds. Durations over 10s require a 720p/1080p resolution and 24/25 FPS."
+}
+],
+"fps": [
+"COMBO",
+{
+"default": "25",
+"multiselect": false,
+"options": [
+"24",
+"25",
+"48",
+"50"
+]
+}
+],
+"generate_audio": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": true,
+"tooltip": "When true, the generated video will include AI-generated audio matching the scene."
+}
+],
+"resolution": [
+"COMBO",
+{
+"default": "1920x1080",
+"multiselect": false,
+"options": [
+"1280x720",
+"720x1280",
+"1920x1080",
+"1080x1920",
+"2560x1440",
+"1440x2560",
+"3840x2160",
+"2160x3840"
+]
+}
+]
+}
+},
+"key": "LTX-2.5 (Fast)"
+},
+{
+"inputs": {
+"required": {
+"duration": [
+"COMBO",
+{
+"default": "8",
+"multiselect": false,
+"options": [
+"2",
+"3",
+"4",
+"5",
+"6",
+"8",
+"10"
+],
+"tooltip": "Video duration in seconds."
+}
+],
+"fps": [
+"COMBO",
+{
+"default": "25",
+"multiselect": false,
+"options": [
+"24",
+"25",
+"50"
+]
+}
+],
+"generate_audio": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": true,
+"tooltip": "When true, the generated video will include AI-generated audio matching the scene."
+}
+],
+"resolution": [
+"COMBO",
+{
+"default": "1920x1080",
+"multiselect": false,
+"options": [
+"1280x720",
+"720x1280",
+"1920x1080",
+"1080x1920"
+]
+}
+]
+}
+},
+"key": "LTX-2.5 (Pro)"
+}
+]
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 42,
+"max": 4294967295,
+"min": 0,
+"tooltip": "Seed to determine if node should re-run; actual results are nondeterministic regardless of seed."
+}
+]
+}
+},
+"output": [
+"VIDEO"
+]
+},
+"LumaRay32ImageToVideoNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"optional": {
+"end_frame": [
+"IMAGE",
+{
+"tooltip": "Last frame of the generated video."
+}
+],
+"start_frame": [
+"IMAGE",
+{
+"tooltip": "First frame of the generated video."
+}
+]
+},
+"required": {
+"loop": [
+"BOOLEAN",
+{
+"default": false,
+"tooltip": "Make the video loop seamlessly. Not available when an end_frame is set."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for the video generation."
+}
+],
+"resolution": [
+"COMBO",
+{
+"default": "720p",
+"multiselect": false,
+"options": [
+"360p",
+"540p",
+"720p",
+"1080p"
+]
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 0,
+"max": 18446744073709551615,
+"min": 0,
+"tooltip": "Seed to determine if node should re-run; results are nondeterministic regardless of seed."
+}
+]
+}
+},
+"output": [
+"VIDEO",
+"STRING"
+]
+},
+"LumaRay32TextToVideoNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"aspect_ratio": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"16:9",
+"9:16",
+"1:1",
+"4:3",
+"3:4",
+"21:9"
+]
+}
+],
+"duration": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"5s",
+"10s"
+]
+}
+],
+"loop": [
+"BOOLEAN",
+{
+"default": false,
+"tooltip": "Make the video loop seamlessly. Only available with 5s duration."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for the video generation."
+}
+],
+"resolution": [
+"COMBO",
+{
+"default": "720p",
+"multiselect": false,
+"options": [
+"360p",
+"540p",
+"720p",
+"1080p"
+]
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 0,
+"max": 18446744073709551615,
+"min": 0,
+"tooltip": "Seed to determine if node should re-run; results are nondeterministic regardless of seed."
+}
+]
+}
+},
+"output": [
+"VIDEO",
+"STRING"
+]
+},
+"ManualSigmas": {
+"input": {
+"required": {
+"sigmas": [
+"STRING",
+{
+"default": "1, 0.5",
+"multiline": false
+}
+]
+}
+},
+"output": [
+"SIGMAS"
+]
+},
+"MinimaxHailuo03FirstLastFrameNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"optional": {
+"last_frame": [
+"IMAGE",
+{
+"tooltip": "Optional last frame image for the video."
+}
+]
+},
+"required": {
+"first_frame": [
+"IMAGE",
+{
+"tooltip": "First frame image for the video."
+}
+],
+"model": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {
+"duration": [
+"INT",
+{
+"default": 5,
+"display": "slider",
+"max": 15,
+"min": 4,
+"step": 1,
+"tooltip": "Duration of the output video in seconds (4-15)."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for video generation."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"768P",
+"2K"
+],
+"tooltip": "Resolution of the output video."
+}
+]
+}
+},
+"key": "MiniMax H3"
+},
+{
+"inputs": {
+"required": {
+"duration": [
+"INT",
+{
+"default": 5,
+"display": "slider",
+"max": 15,
+"min": 5,
+"step": 1,
+"tooltip": "Duration of the output video in seconds (5-15)."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for video generation."
+}
+],
+"prompt_expansion_mode": [
+"COMBO",
+{
+"default": "balanced",
+"multiselect": false,
+"options": [
+"balanced",
+"quality"
+],
+"tooltip": "How much effort is spent rewriting the prompt before generation."
+}
+],
+"resolution": [
+"COMBO",
+{
+"default": "768P",
+"multiselect": false,
+"options": [
+"480P",
+"768P"
+],
+"tooltip": "Resolution of the output video."
+}
+]
+}
+},
+"key": "MiniMax H3 Max"
+},
+{
+"inputs": {
+"required": {
+"duration": [
+"INT",
+{
+"default": 5,
+"display": "slider",
+"max": 15,
+"min": 5,
+"step": 1,
+"tooltip": "Duration of the output video in seconds (5-15)."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for video generation."
+}
+],
+"prompt_expansion_mode": [
+"COMBO",
+{
+"default": "balanced",
+"multiselect": false,
+"options": [
+"balanced",
+"quality"
+],
+"tooltip": "How much effort is spent rewriting the prompt before generation."
+}
+],
+"resolution": [
+"COMBO",
+{
+"default": "768P",
+"multiselect": false,
+"options": [
+"480P",
+"768P"
+],
+"tooltip": "Resolution of the output video."
+}
+]
+}
+},
+"key": "MiniMax H3 Max Turbo"
+}
+],
+"tooltip": "Model to use for video generation."
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 42,
+"display": "number",
+"max": 4294967295,
+"min": 0,
+"step": 1,
+"tooltip": "Random seed. The same request with the same seed gives similar, but not guaranteed identical, results."
+}
+],
+"watermark": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": false,
+"tooltip": "Whether to add an AIGC watermark to the video."
+}
+]
+}
+},
+"output": [
+"VIDEO"
+]
+},
+"MinimaxHailuo03TextToVideoNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"model": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {
+"duration": [
+"INT",
+{
+"default": 5,
+"display": "slider",
+"max": 15,
+"min": 4,
+"step": 1,
+"tooltip": "Duration of the output video in seconds (4-15)."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for video generation."
+}
+],
+"ratio": [
+"COMBO",
+{
+"default": "16:9",
+"multiselect": false,
+"options": [
+"16:9",
+"4:3",
+"1:1",
+"3:4",
+"9:16",
+"21:9"
+],
+"tooltip": "Aspect ratio of the output video."
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"768P",
+"2K"
+],
+"tooltip": "Resolution of the output video."
+}
+]
+}
+},
+"key": "MiniMax H3"
+},
+{
+"inputs": {
+"required": {
+"duration": [
+"INT",
+{
+"default": 5,
+"display": "slider",
+"max": 15,
+"min": 5,
+"step": 1,
+"tooltip": "Duration of the output video in seconds (5-15)."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for video generation."
+}
+],
+"prompt_expansion_mode": [
+"COMBO",
+{
+"default": "balanced",
+"multiselect": false,
+"options": [
+"balanced",
+"quality"
+],
+"tooltip": "How much effort is spent rewriting the prompt before generation."
+}
+],
+"ratio": [
+"COMBO",
+{
+"default": "16:9",
+"multiselect": false,
+"options": [
+"16:9",
+"4:3",
+"1:1",
+"3:4",
+"9:16",
+"21:9"
+],
+"tooltip": "Aspect ratio of the output video."
+}
+],
+"resolution": [
+"COMBO",
+{
+"default": "768P",
+"multiselect": false,
+"options": [
+"480P",
+"768P"
+],
+"tooltip": "Resolution of the output video."
+}
+]
+}
+},
+"key": "MiniMax H3 Max"
+},
+{
+"inputs": {
+"required": {
+"duration": [
+"INT",
+{
+"default": 5,
+"display": "slider",
+"max": 15,
+"min": 5,
+"step": 1,
+"tooltip": "Duration of the output video in seconds (5-15)."
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for video generation."
+}
+],
+"prompt_expansion_mode": [
+"COMBO",
+{
+"default": "balanced",
+"multiselect": false,
+"options": [
+"balanced",
+"quality"
+],
+"tooltip": "How much effort is spent rewriting the prompt before generation."
+}
+],
+"ratio": [
+"COMBO",
+{
+"default": "16:9",
+"multiselect": false,
+"options": [
+"16:9",
+"4:3",
+"1:1",
+"3:4",
+"9:16",
+"21:9"
+],
+"tooltip": "Aspect ratio of the output video."
+}
+],
+"resolution": [
+"COMBO",
+{
+"default": "768P",
+"multiselect": false,
+"options": [
+"480P",
+"768P"
+],
+"tooltip": "Resolution of the output video."
+}
+]
+}
+},
+"key": "MiniMax H3 Max Turbo"
+}
+],
+"tooltip": "Model to use for video generation."
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 42,
+"display": "number",
+"max": 4294967295,
+"min": 0,
+"step": 1,
+"tooltip": "Random seed. The same request with the same seed gives similar, but not guaranteed identical, results."
+}
+],
+"watermark": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": false,
+"tooltip": "Whether to add an AIGC watermark to the video."
+}
+]
+}
+},
+"output": [
+"VIDEO"
+]
+},
+"ModelSamplingAuraFlow": {
+"input": {
+"optional": {
+"sampling": [
+[
+"flow",
+"img_to_img_velocity"
+],
+{
+"advanced": true,
+"default": "flow"
+}
+]
+},
+"required": {
+"model": [
+"MODEL"
+],
+"shift": [
+"FLOAT",
+{
+"default": 1.73,
+"max": 100.0,
+"min": 0.0,
+"step": 0.01
+}
+]
+}
+},
+"output": [
+"MODEL"
+]
+},
+"ModelSamplingSD3": {
+"input": {
+"required": {
+"model": [
+"MODEL"
+],
+"shift": [
+"FLOAT",
+{
+"default": 3.0,
+"max": 100.0,
+"min": 0.0,
+"step": 0.01
+}
+]
+}
+},
+"output": [
+"MODEL"
+]
+},
+"OpenAIGPTImageNodeV2": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"model": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"optional": {
+"mask": [
+"MASK",
+{
+"tooltip": "Optional mask for inpainting (white areas will be replaced). Requires exactly one reference image."
+}
+]
+},
+"required": {
+"background": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+"opaque",
+"transparent"
+],
+"tooltip": "Return image with or without background."
+}
+],
+"custom_height": [
+"INT",
+{
+"default": 1024,
+"max": 3840,
+"min": 480,
+"step": 16,
+"tooltip": "Used only when `size` is 'Custom'. Must be a multiple of 16."
+}
+],
+"custom_width": [
+"INT",
+{
+"default": 1024,
+"max": 3840,
+"min": 480,
+"step": 16,
+"tooltip": "Used only when `size` is 'Custom'. Must be a multiple of 16."
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10",
+"image_11",
+"image_12",
+"image_13",
+"image_14",
+"image_15",
+"image_16"
+]
+},
+"tooltip": "Optional reference image(s) for image editing. Up to 16 images."
+}
+],
+"quality": [
+"COMBO",
+{
+"default": "low",
+"multiselect": false,
+"options": [
+"low",
+"medium",
+"high",
+"xhigh",
+"max"
+],
+"tooltip": "Image quality, affects cost and generation time."
+}
+],
+"size": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+"1024x1024",
+"1024x1536",
+"1536x1024",
+"2048x2048",
+"2048x1152",
+"1152x2048",
+"3840x2160",
+"2160x3840",
+"Custom"
+],
+"tooltip": "Image size. Select 'Custom' to use the custom width and height."
+}
+]
+}
+},
+"key": "gpt-image-2.5-flare"
+},
+{
+"inputs": {
+"optional": {
+"mask": [
+"MASK",
+{
+"tooltip": "Optional mask for inpainting (white areas will be replaced). Requires exactly one reference image."
+}
+]
+},
+"required": {
+"background": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+"opaque",
+"transparent"
+],
+"tooltip": "Return image with or without background."
+}
+],
+"custom_height": [
+"INT",
+{
+"default": 1024,
+"max": 3840,
+"min": 480,
+"step": 16,
+"tooltip": "Used only when `size` is 'Custom'. Must be a multiple of 16."
+}
+],
+"custom_width": [
+"INT",
+{
+"default": 1024,
+"max": 3840,
+"min": 480,
+"step": 16,
+"tooltip": "Used only when `size` is 'Custom'. Must be a multiple of 16."
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10",
+"image_11",
+"image_12",
+"image_13",
+"image_14",
+"image_15",
+"image_16"
+]
+},
+"tooltip": "Optional reference image(s) for image editing. Up to 16 images."
+}
+],
+"quality": [
+"COMBO",
+{
+"default": "low",
+"multiselect": false,
+"options": [
+"low",
+"medium",
+"high",
+"xhigh",
+"max"
+],
+"tooltip": "Image quality, affects cost and generation time."
+}
+],
+"size": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+"1024x1024",
+"1024x1536",
+"1536x1024",
+"2048x2048",
+"2048x1152",
+"1152x2048",
+"3840x2160",
+"2160x3840",
+"Custom"
+],
+"tooltip": "Image size. Select 'Custom' to use the custom width and height."
+}
+]
+}
+},
+"key": "gpt-image-2.5-sunburst"
+},
+{
+"inputs": {
+"optional": {
+"mask": [
+"MASK",
+{
+"tooltip": "Optional mask for inpainting (white areas will be replaced). Requires exactly one reference image."
+}
+]
+},
+"required": {
+"background": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+"opaque"
+],
+"tooltip": "Return image with or without background."
+}
+],
+"custom_height": [
+"INT",
+{
+"default": 1024,
+"max": 3840,
+"min": 480,
+"step": 16,
+"tooltip": "Used only when `size` is 'Custom'. Must be a multiple of 16."
+}
+],
+"custom_width": [
+"INT",
+{
+"default": 1024,
+"max": 3840,
+"min": 480,
+"step": 16,
+"tooltip": "Used only when `size` is 'Custom'. Must be a multiple of 16."
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10",
+"image_11",
+"image_12",
+"image_13",
+"image_14",
+"image_15",
+"image_16"
+]
+},
+"tooltip": "Optional reference image(s) for image editing. Up to 16 images."
+}
+],
+"quality": [
+"COMBO",
+{
+"default": "low",
+"multiselect": false,
+"options": [
+"low",
+"medium",
+"high"
+],
+"tooltip": "Image quality, affects cost and generation time."
+}
+],
+"size": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+"1024x1024",
+"1024x1536",
+"1536x1024",
+"2048x2048",
+"2048x1152",
+"1152x2048",
+"3840x2160",
+"2160x3840",
+"Custom"
+],
+"tooltip": "Image size. Select 'Custom' to use the custom width and height."
+}
+]
+}
+},
+"key": "gpt-image-2"
+},
+{
+"inputs": {
+"optional": {
+"mask": [
+"MASK",
+{
+"tooltip": "Optional mask for inpainting (white areas will be replaced). Requires exactly one reference image."
+}
+]
+},
+"required": {
+"background": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+"opaque",
+"transparent"
+],
+"tooltip": "Return image with or without background."
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10",
+"image_11",
+"image_12",
+"image_13",
+"image_14",
+"image_15",
+"image_16"
+]
+},
+"tooltip": "Optional reference image(s) for image editing. Up to 16 images."
+}
+],
+"quality": [
+"COMBO",
+{
+"default": "low",
+"multiselect": false,
+"options": [
+"low",
+"medium",
+"high"
+],
+"tooltip": "Image quality, affects cost and generation time."
+}
+],
+"size": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+"1024x1024",
+"1024x1536",
+"1536x1024"
+],
+"tooltip": "Image size."
+}
+]
+}
+},
+"key": "gpt-image-1.5"
+},
+{
+"inputs": {
+"optional": {
+"mask": [
+"MASK",
+{
+"tooltip": "Optional mask for inpainting (white areas will be replaced). Requires exactly one reference image."
+}
+]
+},
+"required": {
+"background": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+"opaque",
+"transparent"
+],
+"tooltip": "Return image with or without background."
+}
+],
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"min": 0,
+"names": [
+"image_1",
+"image_2",
+"image_3",
+"image_4",
+"image_5",
+"image_6",
+"image_7",
+"image_8",
+"image_9",
+"image_10",
+"image_11",
+"image_12",
+"image_13",
+"image_14",
+"image_15",
+"image_16"
+]
+},
+"tooltip": "Optional reference image(s) for image editing. Up to 16 images."
+}
+],
+"quality": [
+"COMBO",
+{
+"default": "low",
+"multiselect": false,
+"options": [
+"low",
+"medium",
+"high"
+],
+"tooltip": "Image quality, affects cost and generation time."
+}
+],
+"size": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+"1024x1024",
+"1024x1536",
+"1536x1024"
+],
+"tooltip": "Image size."
+}
+]
+}
+},
+"key": "gpt-image-1"
+}
+]
+}
+],
+"n": [
+"INT",
+{
+"default": 1,
+"display": "number",
+"max": 8,
+"min": 1,
+"step": 1,
+"tooltip": "How many images to generate"
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for GPT Image"
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 0,
+"display": "number",
+"max": 2147483647,
+"min": 0,
+"step": 1,
+"tooltip": "not implemented yet in backend"
+}
+]
+}
+},
+"output": [
+"IMAGE"
+]
+},
+"RMBG": {
+"input": {
+"optional": {
+"background": [
+[
+"Alpha",
+"Color"
+],
+{
+"default": "Alpha",
+"tooltip": "Choose output type: Alpha (transparent) or Color (custom background color)."
+}
+],
+"background_color": [
+"COLORCODE",
+{
+"default": "#222222",
+"tooltip": "Pick background color (supports alpha, use color picker)."
+}
+],
+"invert_output": [
+"BOOLEAN",
+{
+"default": false,
+"tooltip": "Enable to invert both the image and mask output (useful for certain effects)."
+}
+],
+"mask_blur": [
+"INT",
+{
+"default": 0,
+"max": 64,
+"min": 0,
+"step": 1,
+"tooltip": "Specify the amount of blur to apply to the mask edges (0 for no blur, higher values for more blur)."
+}
+],
+"mask_offset": [
+"INT",
+{
+"default": 0,
+"max": 64,
+"min": -64,
+"step": 1,
+"tooltip": "Adjust the mask boundary (positive values expand the mask, negative values shrink it)."
+}
+],
+"process_res": [
+"INT",
+{
+"default": 1024,
+"max": 2048,
+"min": 256,
+"step": 128,
+"tooltip": "Set the processing resolution (higher values require more VRAM and may increase processing time)."
+}
+],
+"refine_foreground": [
+"BOOLEAN",
+{
+"default": false,
+"tooltip": "Use Fast Foreground Colour Estimation to optimize transparent background"
+}
+],
+"sensitivity": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 1.0,
+"min": 0.0,
+"step": 0.01,
+"tooltip": "Adjust the strength of mask detection (higher values result in more aggressive detection)."
+}
+]
+},
+"required": {
+"image": [
+"IMAGE",
+{
+"tooltip": "Input image to be processed for background removal."
+}
+],
+"model": [
+[
+"RMBG-2.0",
+"INSPYRENET",
+"BEN",
+"BEN2"
+],
+{
+"tooltip": "Select the background removal model to use (RMBG-2.0, INSPYRENET, BEN)."
+}
+]
+}
+},
+"output": [
+"IMAGE",
+"MASK",
+"IMAGE"
+]
+},
+"RandomNoise": {
+"input": {
+"required": {
+"noise_seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 0,
+"max": 18446744073709551615,
+"min": 0
+}
+]
+}
+},
+"output": [
+"NOISE"
+]
+},
+"ReferenceMultiLatent": {
+"input": {
+"optional": {
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"optional": {
+"image": [
+"IMAGE",
+{}
+]
+},
+"required": {}
+},
+"max": 100,
+"min": 1,
+"prefix": "image"
+}
+}
+],
+"negative": [
+"CONDITIONING",
+{}
+],
+"vae": [
+"VAE",
+{
+"tooltip": "Reference images are ignored when no VAE is connected."
+}
+]
+},
+"required": {
+"positive": [
+"CONDITIONING",
+{}
+],
+"resolution": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "keep resolution"
+},
+{
+"inputs": {
+"required": {
+"megapixels": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 16.0,
+"min": 0.01,
+"step": 0.01,
+"tooltip": "Target size of each reference image, preserving aspect ratio. 1.0 is about 1024 x 1024 pixels."
+}
+]
+}
+},
+"key": "resize"
+}
+]
+}
+]
+}
+},
+"output": [
+"CONDITIONING",
+"CONDITIONING",
+"LATENT"
+]
+},
+"RemoveBackground": {
+"input": {
+"required": {
+"bg_removal_model": [
+"BACKGROUND_REMOVAL",
+{
+"tooltip": "Background removal model used to generate the mask"
+}
+],
+"image": [
+"IMAGE",
+{
+"tooltip": "Input image to remove the background from"
+}
+]
+}
+},
+"output": [
+"MASK"
+]
+},
+"ResizeImageMaskNode": {
+"input": {
+"required": {
+"input": [
+"COMFY_MATCHTYPE_V3",
+{
+"template": {
+"allowed_types": "IMAGE,MASK",
+"template_id": "input_type"
+}
+}
+],
+"resize_type": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {
+"crop": [
+"COMBO",
+{
+"default": "center",
+"multiselect": false,
+"options": [
+"disabled",
+"center"
+],
+"tooltip": "How to handle aspect ratio mismatch: 'disabled' stretches to fit, 'center' crops to maintain aspect ratio."
+}
+],
+"height": [
+"INT",
+{
+"default": 512,
+"max": 16384,
+"min": 0,
+"step": 1,
+"tooltip": "Target height in pixels. Set to 0 to auto-calculate from width while preserving aspect ratio."
+}
+],
+"width": [
+"INT",
+{
+"default": 512,
+"max": 16384,
+"min": 0,
+"step": 1,
+"tooltip": "Target width in pixels. Set to 0 to auto-calculate from height while preserving aspect ratio."
+}
+]
+}
+},
+"key": "scale dimensions"
+},
+{
+"inputs": {
+"required": {
+"multiplier": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 8.0,
+"min": 0.01,
+"step": 0.01,
+"tooltip": "Scale factor (e.g., 2.0 doubles size, 0.5 halves size)."
+}
+]
+}
+},
+"key": "scale by multiplier"
+},
+{
+"inputs": {
+"required": {
+"longer_size": [
+"INT",
+{
+"default": 512,
+"max": 16384,
+"min": 0,
+"step": 1,
+"tooltip": "The longer edge will be resized to this value. Aspect ratio is preserved."
+}
+]
+}
+},
+"key": "scale longer dimension"
+},
+{
+"inputs": {
+"required": {
+"shorter_size": [
+"INT",
+{
+"default": 512,
+"max": 16384,
+"min": 0,
+"step": 1,
+"tooltip": "The shorter edge will be resized to this value. Aspect ratio is preserved."
+}
+]
+}
+},
+"key": "scale shorter dimension"
+},
+{
+"inputs": {
+"required": {
+"width": [
+"INT",
+{
+"default": 512,
+"max": 16384,
+"min": 0,
+"step": 1,
+"tooltip": "Target width in pixels. Height auto-adjusts to preserve aspect ratio."
+}
+]
+}
+},
+"key": "scale width"
+},
+{
+"inputs": {
+"required": {
+"height": [
+"INT",
+{
+"default": 512,
+"max": 16384,
+"min": 0,
+"step": 1,
+"tooltip": "Target height in pixels. Width auto-adjusts to preserve aspect ratio."
+}
+]
+}
+},
+"key": "scale height"
+},
+{
+"inputs": {
+"required": {
+"megapixels": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 16.0,
+"min": 0.01,
+"step": 0.01,
+"tooltip": "Target total megapixels (e.g., 1.0 \u2248 1024\u00d71024). Aspect ratio is preserved."
+}
+]
+}
+},
+"key": "scale total pixels"
+},
+{
+"inputs": {
+"required": {
+"crop": [
+"COMBO",
+{
+"default": "center",
+"multiselect": false,
+"options": [
+"disabled",
+"center"
+],
+"tooltip": "How to handle aspect ratio mismatch: 'disabled' stretches to fit, 'center' crops to maintain aspect ratio."
+}
+],
+"match": [
+"IMAGE,MASK",
+{
+"tooltip": "Resize input to match the dimensions of this reference image or mask."
+}
+]
+}
+},
+"key": "match size"
+},
+{
+"inputs": {
+"required": {
+"multiple": [
+"INT",
+{
+"default": 8,
+"max": 16384,
+"min": 1,
+"step": 1,
+"tooltip": "Resize so width and height are divisible by this number. Useful for latent alignment (e.g., 8 or 64)."
+}
+]
+}
+},
+"key": "scale to multiple"
+}
+],
+"tooltip": "Select how to resize: by exact dimensions, scale factor, matching another image, etc."
+}
+],
+"scale_method": [
+"COMBO",
+{
+"default": "area",
+"multiselect": false,
+"options": [
+"nearest-exact",
+"bilinear",
+"area",
+"bicubic",
+"lanczos"
+],
+"tooltip": "Interpolation algorithm. 'area' is best for downscaling, 'lanczos' for upscaling, 'nearest-exact' for pixel art."
+}
+]
+}
+},
+"output": [
+"COMFY_MATCHTYPE_V3"
+]
+},
+"RunwayAleph2VideoToVideoNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"optional": {
+"keyframes": [
+"RUNWAY_ALEPH2_KEYFRAME",
+{
+"tooltip": "Guidance images anchored to the input video, from Aleph2 Keyframe nodes (up to 5). Use keyframes or prompt images, not both."
+}
+],
+"prompt_images": [
+"RUNWAY_ALEPH2_PROMPT_IMAGE",
+{
+"tooltip": "Guidance images anchored to the output video, from Aleph2 Prompt Image nodes (up to 5). Use keyframes or prompt images, not both."
+}
+]
+},
+"required": {
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Describes what should appear in the output (1-1000 characters)."
+}
+],
+"public_figure_threshold": [
+"COMBO",
+{
+"default": "low",
+"multiselect": false,
+"options": [
+"auto",
+"low"
+],
+"tooltip": "Content moderation for recognizable public figures."
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 0,
+"display": "number",
+"max": 4294967295,
+"min": 0,
+"step": 1,
+"tooltip": "Random seed for generation"
+}
+],
+"video": [
+"VIDEO",
+{
+"tooltip": "Input video to edit. Must be 2-30 seconds at 30 fps or lower."
+}
+]
+}
+},
+"output": [
+"VIDEO"
+]
+},
+"RunwayImageToVideoNodeGen4": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"duration": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+5,
+10
+]
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text prompt for the generation"
+}
+],
+"ratio": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"1280:720",
+"720:1280",
+"1104:832",
+"832:1104",
+"960:960",
+"1584:672"
+]
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 0,
+"display": "number",
+"max": 4294967295,
+"min": 0,
+"step": 1,
+"tooltip": "Random seed for generation"
+}
+],
+"start_frame": [
+"IMAGE",
+{
+"tooltip": "Start frame to be used for the video"
+}
+]
+}
+},
+"output": [
+"VIDEO"
+]
+},
+"SAM3_Detect": {
+"input": {
+"optional": {
+"bboxes": [
+"BOUNDING_BOX",
+{
+"default": {
+"height": 512,
+"width": 512,
+"x": 0,
+"y": 0
+},
+"display_name": "bboxes",
+"forceInput": true,
+"socketless": true,
+"tooltip": "Bounding boxes to segment within"
+}
+],
+"conditioning": [
+"CONDITIONING",
+{
+"display_name": "conditioning",
+"tooltip": "Text conditioning from CLIPTextEncode"
+}
+],
+"negative_coords": [
+"STRING",
+{
+"display_name": "negative_coords",
+"forceInput": true,
+"multiline": false,
+"tooltip": "Negative point prompts as JSON [{\"x\": int, \"y\": int}, ...] (pixel coords)"
+}
+],
+"positive_coords": [
+"STRING",
+{
+"display_name": "positive_coords",
+"forceInput": true,
+"multiline": false,
+"tooltip": "Positive point prompts as JSON [{\"x\": int, \"y\": int}, ...] (pixel coords)"
+}
+]
+},
+"required": {
+"image": [
+"IMAGE",
+{
+"display_name": "image"
+}
+],
+"individual_masks": [
+"BOOLEAN",
+{
+"default": false,
+"display_name": "individual_masks",
+"tooltip": "Output per-object masks instead of union"
+}
+],
+"model": [
+"MODEL",
+{
+"display_name": "model"
+}
+],
+"refine_iterations": [
+"INT",
+{
+"default": 2,
+"display_name": "refine_iterations",
+"max": 5,
+"min": 0,
+"tooltip": "SAM decoder refinement passes (0=use raw detector masks)"
+}
+],
+"threshold": [
+"FLOAT",
+{
+"default": 0.5,
+"display_name": "threshold",
+"max": 1.0,
+"min": 0.0,
+"step": 0.01
+}
+]
+}
+},
+"output": [
+"MASK",
+"BOUNDING_BOX"
+]
+},
+"SamplerCustom": {
+"input": {
+"required": {
+"add_noise": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": true
+}
+],
+"cfg": [
+"FLOAT",
+{
+"default": 8.0,
+"max": 100.0,
+"min": 0.0,
+"round": 0.01,
+"step": 0.1
+}
+],
+"latent_image": [
+"LATENT",
+{}
+],
+"model": [
+"MODEL",
+{}
+],
+"negative": [
+"CONDITIONING",
+{}
+],
+"noise_seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 0,
+"max": 18446744073709551615,
+"min": 0
+}
+],
+"positive": [
+"CONDITIONING",
+{}
+],
+"sampler": [
+"SAMPLER",
+{}
+],
+"sigmas": [
+"SIGMAS",
+{}
+]
+}
+},
+"output": [
+"LATENT",
+"LATENT"
+]
+},
+"SamplerCustomAdvanced": {
+"input": {
+"required": {
+"guider": [
+"GUIDER",
+{}
+],
+"latent_image": [
+"LATENT",
+{}
+],
+"noise": [
+"NOISE",
+{}
+],
+"sampler": [
+"SAMPLER",
+{}
+],
+"sigmas": [
+"SIGMAS",
+{}
+]
+}
+},
+"output": [
+"LATENT",
+"LATENT"
+]
+},
+"TrimVideoLatent": {
+"input": {
+"required": {
+"samples": [
+"LATENT",
+{}
+],
+"trim_amount": [
+"INT",
+{
+"default": 0,
+"max": 99999,
+"min": 0
+}
+]
+}
+},
+"output": [
+"LATENT"
+]
+},
+"UNETLoader": {
+"input": {
+"required": {
+"unet_name": [
+[
+"Krea-2-Turbo.safetensors",
+"MelBandRoFormer_comfy/MelBandRoformer_fp16.safetensors",
+"flux-2-klein-9b.safetensors",
+"flux3-image-klein-int8-convrot.safetensors",
+"ideogram4_fp8_scaled.safetensors",
+"ideogram4_unconditional_fp8_scaled.safetensors",
+"ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+"minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+"minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+"triposplat_fp16.safetensors",
+"wan2.2_animate_14B_bf16.safetensors",
+"z_image_turbo_bf16.safetensors"
+]
+],
+"weight_dtype": [
+[
+"default",
+"fp8_e4m3fn",
+"fp8_e4m3fn_fast",
+"fp8_e5m2"
+],
+{
+"advanced": true
+}
+]
+}
+},
+"output": [
+"MODEL"
+]
+},
+"VAEDecode": {
+"input": {
+"required": {
+"samples": [
+"LATENT",
+{
+"tooltip": "The latent to be decoded."
+}
+],
+"vae": [
+"VAE",
+{
+"tooltip": "The VAE model used for decoding the latent."
+}
+]
+}
+},
+"output": [
+"IMAGE"
+]
+},
+"VAEDecodeTiled": {
+"input": {
+"required": {
+"overlap": [
+"INT",
+{
+"advanced": true,
+"default": 64,
+"max": 4096,
+"min": 0,
+"step": 32
+}
+],
+"samples": [
+"LATENT"
+],
+"temporal_overlap": [
+"INT",
+{
+"advanced": true,
+"default": 8,
+"max": 4096,
+"min": 4,
+"step": 4,
+"tooltip": "Only used for video VAEs: Amount of frames to overlap."
+}
+],
+"temporal_size": [
+"INT",
+{
+"advanced": true,
+"default": 64,
+"max": 4096,
+"min": 8,
+"step": 4,
+"tooltip": "Only used for video VAEs: Amount of frames to decode at a time."
+}
+],
+"tile_size": [
+"INT",
+{
+"advanced": true,
+"default": 512,
+"max": 4096,
+"min": 64,
+"step": 32
+}
+],
+"vae": [
+"VAE"
+]
+}
+},
+"output": [
+"IMAGE"
+]
+},
+"VAEEncode": {
+"input": {
+"required": {
+"pixels": [
+"IMAGE"
+],
+"vae": [
+"VAE"
+]
+}
+},
+"output": [
+"LATENT"
+]
+},
+"VAELoader": {
+"input": {
+"required": {
+"vae_name": [
+[
+"flux/ae.safetensors",
+"flux2-vae-triposplat.safetensors",
+"flux2-vae.safetensors",
+"kj-Wan2_1_VAE_fp32.safetensors",
+"ltx-2.5-audio-vae-bf16.safetensors",
+"ltx-2.5-video-vae-bf16.safetensors",
+"ltx-2.5-video-vae-conv-bf16.safetensors",
+"minimax_h3_audio_vae_fp32.safetensors",
+"minimax_h3_video_vae_fp16.safetensors",
+"minimax_h3_video_vae_int8_convrot.safetensors",
+"qwen_image_vae.safetensors",
+"triposplat_vae_decoder_fp16.safetensors",
+"vae-ft-mse-840000-ema-pruned.safetensors",
+"wan_2.1_vae.safetensors",
+"pixel_space"
+]
+]
+}
+},
+"output": [
+"VAE"
+]
+},
+"VeedRemoveVideoBackgroundNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"model": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {
+"refine_foreground_edges": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Cleaner edges on hair, fur and fine detail. Turning it off lowers the price."
+}
+],
+"subject_is_person": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Turn off when the subject is an object or animal."
+}
+],
+"video": [
+"VIDEO",
+{}
+]
+}
+},
+"key": "standard"
+},
+{
+"inputs": {
+"required": {
+"refine_foreground_edges": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Cleaner edges on hair, fur and fine detail. Turning it off lowers the price."
+}
+],
+"subject_is_person": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Turn off when the subject is an object or animal."
+}
+],
+"video": [
+"VIDEO",
+{}
+]
+}
+},
+"key": "fast"
+},
+{
+"inputs": {
+"required": {
+"spill_suppression_strength": [
+"FLOAT",
+{
+"default": 0.8,
+"max": 1.0,
+"min": 0.0,
+"step": 0.01,
+"tooltip": "How strongly green cast is removed from the subject. Raise it when green spots remain; lower it when the subject's colors shift."
+}
+],
+"video": [
+"VIDEO",
+{
+"tooltip": "Footage shot against a green screen."
+}
+]
+}
+},
+"key": "green screen"
+}
+],
+"tooltip": "standard: any background, best edges, output up to 3840x2160. fast: quicker, output up to 1920x1080. green screen: keys out a green backdrop, output up to 3840x2160. Larger videos are downscaled."
+}
+]
+}
+},
+"output": [
+"IMAGE",
+"MASK"
+]
+},
+"Veo3FirstLastFrameNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"aspect_ratio": [
+"COMBO",
+{
+"default": "16:9",
+"multiselect": false,
+"options": [
+"16:9",
+"9:16"
+],
+"tooltip": "Aspect ratio of the output video"
+}
+],
+"duration": [
+"INT",
+{
+"default": 8,
+"display": "slider",
+"max": 8,
+"min": 4,
+"step": 2,
+"tooltip": "Duration of the output video in seconds"
+}
+],
+"first_frame": [
+"IMAGE",
+{
+"tooltip": "Start frame"
+}
+],
+"generate_audio": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Generate audio for the video."
+}
+],
+"last_frame": [
+"IMAGE",
+{
+"tooltip": "End frame"
+}
+],
+"model": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"veo-3.1-generate",
+"veo-3.1-fast-generate",
+"veo-3.1-lite"
+]
+}
+],
+"negative_prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Negative text prompt to guide what to avoid in the video"
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text description of the video"
+}
+],
+"resolution": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"720p",
+"1080p",
+"4k"
+]
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 0,
+"display": "number",
+"max": 4294967295,
+"min": 0,
+"step": 1,
+"tooltip": "Seed for video generation"
+}
+]
+}
+},
+"output": [
+"VIDEO"
+]
+},
+"Veo3VideoGenerationNode": {
+"input": {
+"hidden": {
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"comfy_usage_source": [
+"COMFY_USAGE_SOURCE"
+],
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"optional": {
+"duration_seconds": [
+"INT",
+{
+"default": 8,
+"display": "number",
+"max": 8,
+"min": 4,
+"step": 2,
+"tooltip": "Duration of the output video in seconds"
+}
+],
+"enhance_prompt": [
+"BOOLEAN",
+{
+"advanced": true,
+"default": true,
+"tooltip": "This parameter is deprecated and ignored."
+}
+],
+"generate_audio": [
+"BOOLEAN",
+{
+"default": false,
+"tooltip": "Generate audio for the video. Supported by all Veo 3 models."
+}
+],
+"image": [
+"IMAGE",
+{
+"tooltip": "Optional reference image to guide video generation"
+}
+],
+"model": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"veo-3.1-generate",
+"veo-3.1-fast-generate",
+"veo-3.1-lite"
+],
+"tooltip": "Veo 3 model to use for video generation"
+}
+],
+"negative_prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Negative text prompt to guide what to avoid in the video"
+}
+],
+"person_generation": [
+"COMBO",
+{
+"advanced": true,
+"default": "ALLOW",
+"multiselect": false,
+"options": [
+"ALLOW",
+"BLOCK"
+],
+"tooltip": "Whether to allow generating people in the video"
+}
+],
+"resolution": [
+"COMBO",
+{
+"default": "720p",
+"multiselect": false,
+"options": [
+"720p",
+"1080p",
+"4k"
+],
+"tooltip": "Output video resolution. 4K is not available for the veo-3.1-lite model."
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 0,
+"display": "number",
+"max": 4294967295,
+"min": 0,
+"step": 1,
+"tooltip": "Seed for video generation (0 for random)"
+}
+]
+},
+"required": {
+"aspect_ratio": [
+"COMBO",
+{
+"default": "16:9",
+"multiselect": false,
+"options": [
+"16:9",
+"9:16"
+],
+"tooltip": "Aspect ratio of the output video"
+}
+],
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Text description of the video"
+}
+]
+}
+},
+"output": [
+"VIDEO"
+]
+},
+"WanAnimate2Cache": {
+"input": {
+"required": {
+"device": [
+"COMBO",
+{
+"default": "cpu",
+"multiselect": false,
+"options": [
+"cpu",
+"gpu"
+],
+"tooltip": "Where to keep the cache. cpu (RAM) is the safe choice, the cache will not fit in VRAM alongside the model at typical sizes. gpu (VRAM) can be faster if it fits."
+}
+],
+"dtype": [
+"COMBO",
+{
+"default": "default",
+"multiselect": false,
+"options": [
+"default",
+"int8",
+"int4"
+],
+"tooltip": "Storage precision. default stores the activations in the model's compute dtype. int8 halves the cache, int4 quarters it, convrot is used to retain accuracy."
+}
+],
+"model": [
+"MODEL",
+{}
+]
+}
+},
+"output": [
+"MODEL"
+]
+},
+"WanAnimate2ToVideo": {
+"input": {
+"optional": {
+"clip_vision_output": [
+"CLIP_VISION_OUTPUT",
+{
+"tooltip": "CLIP vision of the reference image."
+}
+],
+"clip_vision_output_pose": [
+"CLIP_VISION_OUTPUT",
+{
+"tooltip": "CLIP vision of the pose video's first frame. Defaults to clip_vision_output."
+}
+],
+"continue_motion": [
+"IMAGE",
+{
+"tooltip": "Previous motion sequence to continue from for temporal consistency."
+}
+],
+"pose_video": [
+"IMAGE",
+{
+"tooltip": "The video whose motion is transferred to the reference character."
+}
+],
+"positive_pose": [
+"CONDITIONING",
+{
+"tooltip": "Prompt for the pose-video branch, describing the motion rather than the character. Defaults to positive. Used for both the cond and uncond passes."
+}
+],
+"reference_image": [
+"IMAGE",
+{
+"tooltip": "The character to animate."
+}
+]
+},
+"required": {
+"batch_size": [
+"INT",
+{
+"default": 1,
+"max": 4096,
+"min": 1,
+"tooltip": "Number of videos to generate simultaneously."
+}
+],
+"height": [
+"INT",
+{
+"default": 480,
+"max": 16384,
+"min": 16,
+"step": 16,
+"tooltip": "Output video height in pixels."
+}
+],
+"length": [
+"INT",
+{
+"default": 81,
+"max": 16384,
+"min": 1,
+"step": 4,
+"tooltip": "Number of frames to generate."
+}
+],
+"negative": [
+"CONDITIONING",
+{}
+],
+"pose_end_percent": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 1.0,
+"min": 0.0,
+"step": 0.01,
+"tooltip": "Sampling percent at which the pose influence ends. Motion is mostly established early, so e.g. 0.7 can loosen fine detail while keeping the choreography."
+}
+],
+"pose_start_percent": [
+"FLOAT",
+{
+"default": 0.0,
+"max": 1.0,
+"min": 0.0,
+"step": 0.01,
+"tooltip": "Sampling percent at which the pose influence starts. Outside the window the pose branch is skipped entirely, which also speeds those steps up."
+}
+],
+"pose_strength": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 10.0,
+"min": 0.0,
+"step": 0.01,
+"tooltip": "Scales the pose video's influence on the motion. 1.0 is the trained behavior; below weakens adherence, above amplifies. 0.0 mutes it but does not fully remove it."
+}
+],
+"positive": [
+"CONDITIONING",
+{}
+],
+"reference_image_strength": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 10.0,
+"min": 0.0,
+"step": 0.01,
+"tooltip": "Scales how strongly generated frames attend to the reference image's latent frame. Below 1.0 loosens identity/appearance adherence (e.g. to let the prompt restyle), above tightens it against drift."
+}
+],
+"vae": [
+"VAE",
+{}
+],
+"video_frame_offset": [
+"INT",
+{
+"default": 0,
+"max": 16384,
+"min": 0,
+"step": 1,
+"tooltip": "Frames to seek into the pose video. Connect to the video_frame_offset output of the previous node when extending."
+}
+],
+"width": [
+"INT",
+{
+"default": 832,
+"max": 16384,
+"min": 16,
+"step": 16,
+"tooltip": "Output video width in pixels."
+}
+]
+}
+},
+"output": [
+"CONDITIONING",
+"CONDITIONING",
+"LATENT",
+"INT",
+"INT",
+"INT"
+]
+}
+}
