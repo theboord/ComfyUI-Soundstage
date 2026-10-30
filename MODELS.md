@@ -25,6 +25,20 @@ Rung 1 (Stage) needs no models at all. Rung 2 (Look still) needs the Krea 2 grou
 
 If the LTX API key field is left blank, the prompt is encoded locally with Gemma. That is the default, and it is free.
 
+## Motion, optional second engine: MiniMax H3
+
+LTX-2.5 Layout-to-Render stays the default. With these files installed, **MiniMax H3 (local, looser blocking, rich motion)** also appears in ③ Motion's **Video model** list. H3 animates the chosen frame and makes its own sound in the same pass. It follows your clay blocking only loosely, and a final takes about 20+ minutes on a 48 GB card. Turn on **Use the clay as a motion reference** to pass the previz as `<Video 1>` (the ref2va model; slower, closer blocking). Drafts still preview with LTX. Shots are capped at 362 frames (~15 s).
+
+| File | Folder | Source | License |
+|---|---|---|---|
+| `minimax_h3_fl2va_pruned_int8_convrot.safetensors` (or `minimax_h3_fl2va_bf16`) | `diffusion_models/` | int8 repackage of [MiniMaxAI/MiniMax-H3](https://huggingface.co/MiniMaxAI/MiniMax-H3); bf16 in [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) | MiniMax H3 Community License |
+| `minimax_h3_ref2va_pruned_int8_convrot.safetensors` (only for the clay reference) | `diffusion_models/` | as above | MiniMax H3 Community License |
+| `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors` (or `_bf16`) | `text_encoders/` | as above | MiniMax H3 Community License |
+| `minimax_h3_video_vae_fp16.safetensors`, `minimax_h3_audio_vae_fp32.safetensors` | `vae/` | Comfy-Org/MiniMax-H3 | MiniMax H3 Community License |
+| `minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors` (optional, 8 steps instead of 20) | `loras/` (any subfolder) | community turbo LoRA for H3 fl2v | see its model card |
+
+The 32B text encoder is loaded on the CPU so it fits next to the video model on a 48 GB card. **License:** the MiniMax H3 Community License excludes the USA, EU, UK and South Korea, caps commercial use elsewhere at $20M annual revenue, and asks commercial products to show "MiniMax H3". In excluded regions you need MiniMax's commercial license (Comfy resells one). The Router labels it `[<$20M GEO]`.
+
 ## Layers: mattes from the final frames
 
 | File | Folder | Source | License |

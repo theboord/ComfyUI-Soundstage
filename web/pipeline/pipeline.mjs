@@ -13,6 +13,11 @@ const STEPS = [
 ];
 const STILL_KREA = "__krea_depth__";
 const VIDEO_L2R = "__ltx_l2r__";
+// Optional second engine: MiniMax H3 through the video picker (router key starts with this). LTX stays the default.
+const H3_KEY = "MiniMax H3 · local";
+const H3_LABEL = "MiniMax H3 (local, looser blocking, rich motion, own sound; ~20+ min)";
+const H3_CLAY_REF = "clay previz as <Video 1>";
+const isH3 = (v) => typeof v === "string" && v.startsWith(H3_KEY);
 
 const CSS = `
 .ss-pipe { display:flex; gap:6px; align-items:stretch; margin:0 0 8px; flex-wrap:wrap; }
@@ -416,6 +421,10 @@ export class Pipeline {
     m.freedom = h("input", { type: "range", min: "0", max: "0.8", step: "0.05", value: "0.5",
       on: { input: () => { m.freeOut.textContent = this._freeLabel(); this._applyVideo(); } } });
     m.freeOut = h("span", { class: "status" });
+    m.h3Ref = h("input", { type: "checkbox", on: { change: () => this._applyVideo() } });
+    m.h3Box = h("div", { class: "status", hidden: "" },
+      "MiniMax H3 paints rich motion and its own sound in one pass, but follows your clay blocking only loosely, and a final takes about 20+ min. Drafts still preview with LTX. Your sound, music and line below go into H3's prompt.",
+      h("label", { class: "row", style: "margin-top:6px" }, m.h3Ref, "Use the clay as a motion reference (<Video 1>; slower, closer blocking)"));
     m.quality = "Draft";
     m.qSeg = h("span", { class: "seg row" }, ...["Draft", "Final HQ"].map((q) => h("button", { type: "button", "aria-pressed": String(q === "Draft"),
       title: q === "Draft" ? "8 + 3 distilled steps: fast previews" : "18 + 12 steps on the same curve: finer detail and steadier motion, about 2x slower",
@@ -452,6 +461,7 @@ export class Pipeline {
         h("div", { class: "card" }, h("div", { class: "status" }, "Starts from your frame"), m.frame),
         h("div", { class: "card" },
           h("label", { class: "f" }, "Video model", m.engine),
+          m.h3Box,
           h("label", { class: "f" }, h("span", { class: "row" }, "Motion freedom", m.freeOut), m.freedom),
           h("div", { class: "row" }, h("span", { class: "status" }, "Quality"), m.qSeg),
           h("label", { class: "f" }, "Sound (generated with the final)", m.sfx),
@@ -480,10 +490,13 @@ export class Pipeline {
       const vals = this.w(9083, "model")?.options?.values || [];
       for (const val of (Array.isArray(vals) ? vals : [])) {
         const key = typeof val === "string" ? val : val?.key;
-        if (key) m.engine.append(new Option(key.replace(" · local", " (local, image → video)").replace(/ \[[^\]]*\]$/, ""), key));
+        if (key) m.engine.append(new Option(isH3(key) ? H3_LABEL : key.replace(" · local", " (local, image → video)").replace(/ \[[^\]]*\]$/, ""), key));
       }
     }
     m.engine.value = this.w(9084, "switch")?.value ? (this.w(9083, "model")?.value || VIDEO_L2R) : VIDEO_L2R;
+    if (!m.engine.value) m.engine.value = VIDEO_L2R;   // a saved picker model that isn't installed here
+    m.h3Ref.checked = this.w(9083, "model.motion_ref")?.value === H3_CLAY_REF;
+    this._showEngine();
     const fr = this.w(9096, "motion_freedom")?.value;
     if (fr != null) m.freedom.value = String(fr);
     m.freeOut.textContent = this._freeLabel();
@@ -510,21 +523,51 @@ export class Pipeline {
     const l2r = m.engine.value === VIDEO_L2R;
     this.set(9084, "switch", !l2r);
     if (!l2r) this.set(9083, "model", m.engine.value);
+    if (isH3(m.engine.value)) this.set(9083, "model.motion_ref", m.h3Ref.checked ? H3_CLAY_REF : "off");
+    this._showEngine();
     this.set(9096, "motion_freedom", +m.freedom.value);
     this.set(9096, "quality", m.quality === "Draft" ? "Draft" : "Final HQ");
+  }
+
+  _showEngine() {
+    const m = this.m, h3 = isH3(m.engine.value);
+    m.h3Box.hidden = !h3;
+    m.draftBtn.textContent = h3 ? "Preview motion (LTX draft)" : "Preview motion (draft)";
+  }
+
+  /** H3 makes its own sound: hand it the sound fields and keep the Soundstage mix (and the LTX audio-driven
+   *  final) out of this queue, so the H3 final with its own audio is the one that lands. Restored afterwards. */
+  async _queueVideo(step) {
+    if (step !== 4 || !isH3(this.m.engine.value)) return this.queueAt(step);
+    const keep = { sfx: this.w(9087, "sfx_prompt")?.value, music: this.w(9087, "music_mood")?.value,
+      line: this.w(9087, "line")?.value, driven: this.w(9092, "enabled")?.value };
+    this.set(9083, "sound", keep.sfx || "");
+    this.set(9083, "music", keep.music || "");
+    this.set(9083, "line", keep.line || "");
+    for (const k of ["sfx_prompt", "music_mood", "line"]) this.set(9087, k, "");
+    this.set(9092, "enabled", false);
+    try { return await this.queueAt(step); } finally {
+      this.set(9087, "sfx_prompt", keep.sfx ?? "");
+      this.set(9087, "music_mood", keep.music ?? "");
+      this.set(9087, "line", keep.line ?? "");
+      if (keep.driven != null) this.set(9092, "enabled", keep.driven);
+    }
   }
 
   async _render(step, allShots = false) {
     const m = this.m;
     this._applyVideo();
+    const h3 = step === 4 && isH3(m.engine.value);
+    const each = h3 ? "about 20–30 min" : step === 3 ? "about 2–4 min" : "about 4–6 min";
     const btns = [m.draftBtn, m.finalBtn, m.allDraft, m.allFinal];
     for (const b of btns) b.disabled = true;
     try {
       if (!allShots) {
         this._applyShot(this.ctx.stage.activeShot().id);
-        await this.queueAt(step);
+        await this._queueVideo(step);
         m.status.textContent = step === 3
           ? "Draft queued: about 2–4 min warm. It appears below and on the Ladder."
+          : h3 ? "MiniMax H3 final queued: about 20–30 min (picture + its own sound). It appears below and on the Ladder."
           : "Final queued: about 4–6 min warm (upscale + sound). It appears below and on the Ladder.";
       } else {
         const has = (sid) => { const r = this.ctx.getRenders(sid) || {}; return step === 3 ? !!r.draft : !!(r.final_sound || r.final_audio || r.final); };
@@ -534,9 +577,9 @@ export class Pipeline {
         await this.forEachShot(async (s, i) => {
           m.status.textContent = `Queueing ${step === 3 ? "draft" : "final"} ${i + 1}/${todo.length}: ${s.name} (capturing the stage)…`;
           this._applyShot(s.id);
-          await this.queueAt(step);
+          await this._queueVideo(step);
         }, todo);
-        m.status.textContent = `${todo.length} ${step === 3 ? "draft" : "final"}${todo.length > 1 ? "s" : ""} queued, one after another (about ${step === 3 ? "2–4" : "4–6"} min each). Each lands on its shot.` +
+        m.status.textContent = `${todo.length} ${step === 3 ? "draft" : "final"}${todo.length > 1 ? "s" : ""} queued, one after another (${each} each). Each lands on its shot.` +
           (noFrame.length ? ` No frame chosen yet for ${noFrame.join(", ")}: those paint a new one.` : "");
       }
     } catch (e) {

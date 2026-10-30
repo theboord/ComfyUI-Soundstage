@@ -43,7 +43,7 @@ The App has one step bar. Every step works on every shot in the scene.
 
 1. **Set.** Block the scene in 3D: cast, set, light, cameras and timing. Add several camera setups to cover the scene.
 2. **Frame.** Paint the first frame of each shot from its clay render with FLUX 3 Klein (default) or Krea 2 + stage depth.
-3. **Motion.** Animate each shot with LTX-2.5 Layout-to-Render, with sound. The video follows the staged blocking and camera.
+3. **Motion.** Animate each shot with LTX-2.5 Layout-to-Render, with sound. The video follows the staged blocking and camera. LTX is the default; MiniMax H3 is an optional second engine in the same list (richer motion and its own sound, looser blocking, slower).
 4. **Review.** Scrub clay, frame, draft and final for each shot on the Ladder, with a wipe/fade compare.
 5. **Deliver.** Export a Layer Pack for VFX, assemble the cut into one video, or export the edit to your NLE.
 
@@ -146,6 +146,7 @@ The full list, with folders, sources and licenses, is in [MODELS.md](MODELS.md).
 | Set | none | |
 | Frame | Krea 2 Turbo, Qwen3-VL 4B text encoder, Qwen Image VAE, Krea 2 depth-control LoRA | Krea 2 Community License; Apache-2.0 |
 | Motion | LTX-2.5 22B distilled, Gemma text encoder, LTX-2.5 video and audio VAEs, x2 latent upscaler, Layout-to-Render IC-LoRA | LTX-2 Community License; Gemma terms |
+| Motion, optional | MiniMax H3 (int8 fl2va / ref2va, Qwen3-VL 32B text encoder, H3 video and audio VAEs). Off by default: pick it in ③ Motion's Video model list. Rich motion with its own sound, looser blocking, ~20+ min per final | MiniMax H3 Community License (region-limited, <$20M) |
 | Deliver (layers) | SAM 3.1, BiRefNet | SAM License; MIT |
 | Optional | Qwen3.5 4B (object designer, scene agent), Chatterbox (TTS), ElevenLabs via partner nodes | Apache-2.0; MIT; ElevenLabs terms |
 
@@ -156,6 +157,7 @@ Model weights are not included in this repo. Check each license before commercia
 - [ComfyUI](https://github.com/comfyanonymous/ComfyUI): the host app and App mode.
 - [Krea 2](https://huggingface.co/krea/Krea-2-Turbo) (Comfy-Org repackage) and the [Krea 2 depth ControlNet](https://github.com/facok/comfyui-krea2-controlnet): the first frame.
 - [LTX-2.5](https://huggingface.co/Lightricks/LTX-2.5) and the [Layout-to-Render IC-LoRA](https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-Layout-To-Render) by Lightricks, via [ComfyUI-LTXVideo](https://github.com/Lightricks/ComfyUI-LTXVideo): video with sound.
+- [MiniMax H3](https://huggingface.co/MiniMaxAI/MiniMax-H3) by MiniMax: the optional second video engine, with its own sound.
 - Gemma (LTX text encoder) and Qwen3-VL / Qwen3.5 (Krea text encoder, object designer, scene agent).
 - [SAM 3.1](https://huggingface.co/facebook/sam3) by Meta and [BiRefNet](https://github.com/ZhengPeng7/BiRefNet): mattes for the Layer Pack.
 - Chatterbox by Resemble AI (open TTS) and ElevenLabs (optional, through ComfyUI partner nodes).

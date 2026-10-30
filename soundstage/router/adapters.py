@@ -9,7 +9,7 @@ Partner adapters emit Comfy's own partner nodes (auth, upload, polling and billi
 Local adapters rebuild the official template graphs (sources noted per adapter). Input keys and
 combo values are checked against a live /object_info snapshot in tests/test_router_adapters.py.
 
-p keys: stage, prompt, negative, seed, width, height, frames, fps, first, last, control, refs (list),
+p keys: stage, prompt, negative, sound, music, line, seed, width, height, frames, fps, first, last, control, refs (list),
 image, images, mask, params (the chosen option's nested widgets), weights {role: file|None}, variant.
 """
 import math
@@ -641,6 +641,111 @@ def wan_animate2(g, m, p):
     return {"video": to_video(g, images, p["fps"])}
 
 
+# ---------------------------------------------------------------- local: MiniMax H3
+
+H3_AREA = 1344 * 768        # H3's native 16:9 size; other aspects keep about this pixel count
+H3_MAX_FRAMES = 362         # ~15 s at 24 fps, the trained ceiling
+H3_CLAY_REF = "clay previz as <Video 1>"
+
+
+def h3_length(frames):
+    """H3 frame grid: 17k + 5 (5, 22, 39, ... 362), the smallest one that covers `frames`."""
+    n = max(5, int(frames))
+    return n + (5 - n % 17) % 17
+
+
+def h3_size(width, height):
+    r = (width or 1920) / float(height or 1088)
+    h = math.sqrt(H3_AREA / r)
+    return snap(h * r, 32), snap(h, 32)
+
+
+def h3_prompt(p, clay_ref):
+    """Wrap the shot prompt in H3's structured form (I2VA, T2VA, or full-reference when the clay rides along
+    as <Video 1>). A prompt that is already structured passes through untouched."""
+    text = (p["prompt"] or "").strip()
+    if text.startswith("For the target video") or "integrated_multimodal_description:" in text \
+            or "subject_definitions:" in text:
+        return text
+    sound = (p.get("sound") or "").strip() or "Natural diegetic sound of the action and the place, in sync with the picture."
+    music = (p.get("music") or "").strip() or "N/A"
+    line = (p.get("line") or "").strip()
+    if line:
+        text += f" (S1) speaks in a natural voice, lips in sync: <d>[English] {line}</d>"
+    if clay_ref:
+        return (
+            "subject_definitions:\n"
+            "<Subject 1> is the world of <Picture 1>: its characters, wardrobe, props, set, lighting and colour "
+            "grade.\n"
+            "<Subject 2> is the blocking in <Video 1>, an untextured grey clay previz: where each figure stands and "
+            "moves, the timing of every move and the camera's framing and motion. Only positions, paths, timing and "
+            "camera come from it; its grey clay surfaces, flat lighting and simple shapes never appear.\n\n"
+            "summary:\n[reference generation] A live-action shot in the world of <Subject 1>, opening on "
+            "<Picture 1>, staged and framed exactly as <Subject 2>.\n\n"
+            "retention_analysis:\n<Subject 1>: partially_preserved\n<Subject 2>: attribute_transfer\n\n"
+            f"detailed_description:\nCinematic live-action in the look of <Picture 1>. [Shot 1] {text}\n\n"
+            f"overall_soundscape:\n{sound}\n\nnon_diegetic_music:\n{music}")
+    head = ("For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully "
+            "referenced.\n\n" if p.get("first") is not None else "")
+    return (f"{head}integrated_multimodal_description: [Shot 1] {text}\n\n"
+            f"overall_soundscape: {sound}\n\nnon_diegetic_music: {music}")
+
+
+def minimax_h3_local(g, m, p):
+    """MiniMax H3 local, after Comfy's video_minimax_h3_i2v / _r2v templates. Image → video from the look still
+    (fl2va), or with motion_ref on, the ref2va model with the look still as <Picture 1> and the stage clay as
+    <Video 1>. Video and audio come out of one pass. The 8-step fl2v turbo LoRA is used when installed."""
+    w = p["weights"]
+    if p["frames"] > H3_MAX_FRAMES:
+        raise RouterError(f"MiniMax H3 renders at most {H3_MAX_FRAMES} frames (~15 s); this shot has "
+                          f"{p['frames']}. Shorten it or use LTX-2.5.")
+    clay_ref = p["params"].get("motion_ref") == H3_CLAY_REF
+    W, H = h3_size(p["width"], p["height"])
+    length = h3_length(p["frames"])
+    clip = g.node("CLIPLoader", clip_name=w["text_encoder"], type="minimax", device="cpu").out(0)  # 32B: keep off the GPU
+    vae = g.node("VAELoader", vae_name=w["vae"]).out(0)
+    audio_vae = g.node("VAELoader", vae_name=w["audio_vae"]).out(0)
+    prompt = h3_prompt(p, clay_ref)
+    if clay_ref:
+        control = need(p, "control", "MiniMax H3 with the clay reference", "a control_video (the stage clay pass)")
+        if p["frames"] / max(p["fps"], 1e-6) < 2.0:
+            raise RouterError("MiniMax H3 takes a reference video of 2 s or more; this shot is shorter. "
+                              "Turn the clay reference off.")
+        if not w.get("ref_unet"):
+            raise RouterError("The clay reference needs minimax_h3_ref2va_pruned_int8_convrot.safetensors "
+                              "in diffusion_models.")
+        model = g.node("UNETLoader", unet_name=w["ref_unet"], weight_dtype="default").out(0)
+        kw = {"clip": clip, "prompt": prompt, "width": W, "height": H, "length": length, "ref_image_size": "match",
+              "vae": vae, "audio_vae": audio_vae, "ref_videos.ref_video_0": resize(g, control, W, H)}
+        if p.get("first") is not None:
+            kw["ref_images.ref_image_0"] = resize(g, p["first"], W, H)
+        cond = g.node("MiniMaxH3ReferenceToVideo", **kw)
+        sampler, scheduler, steps = "res_multistep", "simple", 20
+    else:
+        model = g.node("UNETLoader", unet_name=w["unet"], weight_dtype="default").out(0)
+        kw = {"clip": clip, "vae": vae, "prompt": prompt, "width": W, "height": H, "length": length}
+        if p.get("first") is not None:
+            kw["first_frame"] = resize(g, p["first"], W, H)
+        cond = g.node("MiniMaxH3ImageToVideo", **kw)
+        if w.get("turbo_lora"):
+            model = g.node("LoraLoaderModelOnly", model=model, lora_name=w["turbo_lora"], strength_model=1.0).out(0)
+            sampler, scheduler, steps = "er_sde", "beta", 8
+        else:
+            sampler, scheduler, steps = "res_multistep", "simple", 20
+    sigmas = g.node("BasicScheduler", model=model, scheduler=scheduler, steps=steps, denoise=1.0).out(0)
+    guider = g.node("BasicGuider", model=model, conditioning=cond.out(0)).out(0)
+    lat = g.node("SamplerCustomAdvanced", noise=g.node("RandomNoise", noise_seed=int(p["seed"])).out(0),
+                 guider=guider, sampler=g.node("KSamplerSelect", sampler_name=sampler).out(0), sigmas=sigmas,
+                 latent_image=cond.out(1)).out(0)
+    images = g.node("VAEDecode", samples=lat, vae=vae).out(0)
+    audio = g.node("VAEDecodeAudio", samples=lat, vae=audio_vae).out(0)
+    # Back to the shot's own length and size, so the Cut, Ladder and Layer pack see what LTX would give them.
+    images = g.node("ImageFromBatch", image=images, batch_index=0, length=int(p["frames"])).out(0)
+    images = resize(g, images, p["width"] or W, p["height"] or H)
+    audio = g.node("TrimAudioDuration", audio=audio, start_index=0.0, duration=float(seconds(p))).out(0)
+    return {"video": g.node("CreateVideo", images=images, fps=float(p["fps"]), audio=audio).out(0)}
+
+
 # ---------------------------------------------------------------- local: mattes
 
 def sam3(g, m, p):
@@ -683,7 +788,7 @@ ADAPTERS = {
     "z_image_cloud": z_image_cloud,
     # video
     "ltx25": ltx25, "wan_animate2": wan_animate2, "kling4": kling4, "veo3": veo3, "seedance2": seedance2,
-    "minimax_h3": minimax_h3, "runway_gen4": runway_gen4, "luma_ray32": luma_ray32, "ltx25_api": ltx25_api,
+    "minimax_h3": minimax_h3, "minimax_h3_local": minimax_h3_local, "runway_gen4": runway_gen4, "luma_ray32": luma_ray32, "ltx25_api": ltx25_api,
     # matte
     "sam3": sam3, "birefnet_core": birefnet_core, "rmbg_pack": rmbg_pack, "birefnet_pack": birefnet_pack,
     "ltx_alpha_gen": ltx_alpha_gen, "veed_rmbg": veed_rmbg, "bria_transparent": bria_transparent,

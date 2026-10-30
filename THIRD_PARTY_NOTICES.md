@@ -25,7 +25,7 @@
 
 Openjutsu's patched node pack is GPL. Soundstage links to it as an optional install and does not include any of its code.
 
-Model weights are not included. Each model has its own license: see `MODELS.md`. In the Router, every model shows its license badge, and non-commercial models are marked.
+Model weights are not included. Each model has its own license: see `MODELS.md`. MiniMax H3 (the optional second video engine) is by MiniMax, under the MiniMax H3 Community License; the App names it "MiniMax H3" wherever it can be picked. In the Router, every model shows its license badge, and non-commercial models are marked.
 
 ## Data
 

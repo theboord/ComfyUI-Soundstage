@@ -27,6 +27,8 @@ STAGES = {
 
 LTX_LICENSE = "LTX-2.x Community License: free incl. commercial for entities <$10M annual revenue; paid above"
 API_LICENSE = "Provider ToS via Comfy partner proxy (paid Comfy credits)"
+H3_LICENSE = ("MiniMax H3 Community License: EXCLUDES USA, EU, UK, South Korea; <$20M revenue elsewhere; "
+              "must display 'MiniMax H3' in commercial UI. US users need the commercial license Comfy resells")
 CLOUD_LICENSE = "Open-weights model run on Comfy Cloud GPUs, billed per GPU-second through the partner proxy"
 
 LTX_BASE_WEIGHTS = [
@@ -146,6 +148,29 @@ WIRED = [
                 "connected (needs the ComfyUI-LTXVideo pack + L2R LoRA), else the official two-stage i2v/t2v "
                 "template with audio. first_frame = look still.",
           source_ids=["open.ltx_2_5"]),
+    local("open.minimax_h3_local", "MiniMax H3", "MiniMax", ["generate_video"], "minimax_h3_local",
+          ["UNETLoader", "CLIPLoader", "VAELoader", "MiniMaxH3ImageToVideo", "BasicScheduler", "BasicGuider",
+           "RandomNoise", "KSamplerSelect", "SamplerCustomAdvanced", "VAEDecode", "VAEDecodeAudio", "ImageFromBatch",
+           "TrimAudioDuration", "CreateVideo", "LoraLoaderModelOnly"],
+          [{"role": "unet", "folder": "diffusion_models",
+            "any": ["minimax_h3_fl2va_pruned_int8_convrot.safetensors", "minimax_h3_fl2va_bf16.safetensors"]},
+           {"role": "text_encoder", "folder": "text_encoders",
+            "any": ["qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors", "qwen3vl_32b_minimax_h3_bf16.safetensors"]},
+           {"role": "vae", "folder": "vae",
+            "any": ["minimax_h3_video_vae_fp16.safetensors", "minimax_h3_video_vae_int8_convrot.safetensors"]},
+           {"role": "audio_vae", "folder": "vae", "any": ["minimax_h3_audio_vae_fp32.safetensors"]}],
+          H3_LICENSE,
+          params={"motion_ref": {"options": ["off", "clay previz as <Video 1>"], "default": "off"}},
+          optional_weights=[
+              {"role": "turbo_lora", "folder": "loras", "any": ["minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"]},
+              {"role": "ref_unet", "folder": "diffusion_models",
+               "any": ["minimax_h3_ref2va_pruned_int8_convrot.safetensors", "minimax_h3_ref2va_bf16.safetensors"],
+               "classes": ["MiniMaxH3ReferenceToVideo"]}],
+          notes="Optional second engine (LTX-2.5 stays the default). Image → video from the look still with "
+                "H3's own sound in the same pass; follows the clay blocking only loosely. motion_ref = clay previz "
+                "as <Video 1> (ref2va model, 20 steps, slow). Text encoder on CPU (32B). ≤362 frames, 17k+5 grid, "
+                "trimmed back to the shot length. 8-step fl2v turbo LoRA used when installed.",
+          source_ids=["open.minimax_h3_local"]),
     local("open.wan_animate_2", "Wan Animate 2 distilled", "Alibaba Wan-AI", ["generate_video"], "wan_animate2",
           ["UNETLoader", "CLIPLoader", "VAELoader", "CLIPVisionLoader", "CLIPVisionEncode", "CLIPTextEncode",
            "WanAnimate2ToVideo", "WanAnimate2Cache", "ModelSamplingSD3", "BasicScheduler", "KSamplerSelect",
