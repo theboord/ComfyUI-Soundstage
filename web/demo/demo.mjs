@@ -10,6 +10,10 @@ const SCENES = [
   { key: "chase", label: "Car chase" },
   { key: "car", label: "In the car" },
   { key: "three", label: "Three in a car" },
+  { key: "aliens", label: "Sci-fi: Alien invasion" },
+  { key: "horror", label: "Horror: Haunted woods" },
+  { key: "romance", label: "Romance: Beach at sunset" },
+  { key: "kaiju", label: "Monster: Kaiju attack" },
   { key: "torch", label: "Flashlight search" },
 ];
 const key = SCENES.some((s) => s.key === location.hash.slice(1)) ? location.hash.slice(1) : "western";

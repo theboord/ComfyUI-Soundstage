@@ -71,10 +71,9 @@ ComfyUI's cache means each Run only does the new work.
 
 ## Try it
 
-- **App demo:** https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq. This is the real App UI running in the browser on a stand-in ComfyUI, replaying real GPU renders of the four demo scenes (Western, Car chase, In the car, Flashlight search). No install needed.
-- **Stage only:** https://claude.ai/artifact/U9dJ7h8s6tL1Tq8bAvWkpc. The 3D stage on its own.
+- **App demo:** https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq. This is the real App UI running in the browser on a stand-in ComfyUI, replaying real GPU renders: Western, Car chase, In the car, Three in a car, plus Sci-fi, Horror, Romance and Monster genre scenes. Every step, from the 3D stage to the FLUX 3 Klein frame to the LTX video, the Cut and the exports. No install needed.
 
-These links only open for other people once the owner shares them publicly.
+This link only opens for other people once the owner shares them publicly.
 
 ## Install
 
