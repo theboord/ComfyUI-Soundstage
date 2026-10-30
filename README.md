@@ -34,7 +34,7 @@ One step bar, in production order. Every step works on every shot in the scene. 
 
 ### &#9312; Script: bring in your screenplay
 
-Import Fountain, Final Draft (.fdx), PDF or plain text, or try the sample script. Each scene gets an outline, a colour-coded breakdown (cast, extras, props, vehicles, animals, wardrobe, effects, sound) and a box for your director's notes. **Build this scene on the stage** blocks it in 3D, and every scene keeps its own stage, shots and cut, so a feature-length script stays organised. *Why it matters:* everything downstream (cast, locations, slates, the cut) is named after your script. → [Tutorial: ① Script](docs/TUTORIAL.md#step-1-script)
+Import Fountain, Final Draft (.fdx), PDF or plain text, or try the sample script. Each scene gets an outline, a colour-coded breakdown (cast, extras, props, vehicles, animals, wardrobe, effects, sound) and a box for your director's notes. Picking a scene puts its set, time of day, characters and vehicles on the stage by itself; **Build this scene on the stage** blocks the action and cameras too, and every scene keeps its own stage, shots and cut, so a feature-length script stays organised. *Why it matters:* everything downstream (cast, locations, slates, the cut) is named after your script. → [Tutorial: ① Script](docs/TUTORIAL.md#step-1-script)
 
 <p align="center"><img src="docs/media/cast.jpg" width="960" alt="Cast and Locations: characters, locations and props with reference pictures"></p>
 
@@ -88,7 +88,7 @@ The Ladder compares the same frame across stages with a **3-way slider**: Clay (
 </tr>
 </table>
 
-**Dailies and the lined script.** Every render is a take: setups slated like a real shoot (12, 12A, 12B), circled takes, frame and list views. The lined script draws each setup's coverage over the page, ScriptSync-style (zig-zag = off camera); click a line to play that take from that point. → [Tutorial: Dailies](docs/TUTORIAL.md#dailies-and-the-lined-script)
+**Dailies and the lined script.** Every render is a take: setups slated like a real shoot (12, 12A, 12B), circled takes, frame and list views. Approve each frame, draft and final, or mark it **Needs changes** with a note and send it straight back to Frame or Motion. The lined script draws each setup's coverage over the page, ScriptSync-style (zig-zag = off camera); click a line to play that take from that point. → [Tutorial: Dailies](docs/TUTORIAL.md#dailies-and-the-lined-script)
 
 <p align="center"><img src="docs/media/cut_editor.gif" width="960" alt="The Cut editor: a clip is split at the playhead, then dragged to the end of the timeline"></p>
 
