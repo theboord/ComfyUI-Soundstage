@@ -757,7 +757,7 @@ Cars drive between their position keys and their wheels turn; horses walk or gal
 
 Select a car (or truck, horse, motorcycle, bicycle or boat) and pick an **In-car camera**. The shot camera then rides along in the vehicle's own space: move the car and the world goes by outside.
 
-<p align="center"><img src="media/in_the_car.gif" width="760" alt="In-car camera angles"></p>
+
 
 | Option | Framing |
 |---|---|
