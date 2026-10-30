@@ -18,7 +18,7 @@ from comfy_api.latest import IO
 
 from . import quality as Q
 
-QUALITIES = ["Draft", "Final HQ"]
+QUALITIES = ["Draft", "Final HQ", "Final"]   # appended, so saved workflows keep their values
 
 
 def _gaussian_blur(images: torch.Tensor, radius: int) -> torch.Tensor:
@@ -51,9 +51,10 @@ class SoundstageQuality(IO.ComfyNode):
                                tooltip="0 = follow the blocking exactly. Higher = a looser, softer clay guide so LTX "
                                        "redraws stiff previz motion (gait, limbs, weight) while keeping composition "
                                        "and camera. 0.3-0.5 is a good range for animals and action."),
-                IO.Combo.Input("quality", options=QUALITIES, default="Draft",
-                               tooltip="Draft = today's 8 + 3 distilled steps. Final HQ = 18 + 12 steps on the same "
-                                       "schedule plus physical-motion language for the cast in the prompt."),
+                IO.Combo.Input("quality", options=QUALITIES, default="Final",
+                               tooltip="Draft = 8 + 3 distilled steps (quick look, faces readable). Final = 12 + 6 "
+                                       "(clean motion and detail, the default). Final HQ = 18 + 12 for hero shots. "
+                                       "Final and Final HQ add physical-motion language for the cast."),
                 IO.Image.Input("guide", tooltip="The stage clay frames that steer LTX (IC-LoRA guide)."),
                 IO.String.Input("motion_prompt", multiline=True, force_input=True),
                 IO.String.Input("scene_json", multiline=True, force_input=True, optional=True),
@@ -71,10 +72,10 @@ class SoundstageQuality(IO.ComfyNode):
 
     @classmethod
     def execute(cls, motion_freedom, quality, guide, motion_prompt, scene_json=None) -> IO.NodeOutput:
-        hq = quality == "Final HQ"
-        k = Q.knobs(motion_freedom, hq)
+        tier = {"Final HQ": "hq", "Final": "final"}.get(quality, "draft")
+        k = Q.knobs(motion_freedom, tier=tier)
         prompt = motion_prompt
-        if hq and scene_json:
+        if tier != "draft" and scene_json:
             try:
                 scene = json.loads(scene_json)
                 extra = Q.motion_prompt(scene.get("scene", scene) if isinstance(scene, dict) else {})

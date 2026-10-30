@@ -4,6 +4,7 @@
 // Every view ends with one "Next →" button. Renders come back per shot and land on the Ladder (⑥ Review).
 import { icon } from "../ui/icons.mjs";
 import { setTouchupStill } from "../touchup/touchup.mjs";
+import { castPool, shotSelection, pickRefs, refLines, refLabel, shotKind, refViewParams, REF_LIMIT } from "../cast/shotcast.mjs";
 
 const STEPS = [
   { k: "script", n: 1, label: "Script", view: "script", hint: "Bring in your screenplay: scenes, breakdown, director's notes. Optional." },
@@ -97,6 +98,31 @@ const CSS = `
 .ss-stage .ss-pipeview button.go.ss-paint-open { padding:11px 20px !important; font-size:14px; display:inline-flex; align-items:center; gap:8px; }
 .ss-pipeview .ss-studio.ss-painting { grid-template-columns:minmax(0, 1fr); }
 .ss-pipeview .ss-studio.ss-painting > .ss-studio-side { display:none; }
+/* Cast in this shot (④ Frame, ⑤ Motion) */
+.ss-pipeview .ss-sc-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.ss-pipeview .ss-sc-head strong { font-size:15px; }
+.ss-pipeview .ss-sc-sizes { display:inline-flex; gap:3px; margin-left:auto; }
+.ss-stage .ss-pipeview .ss-sc-sizes button { border-radius:999px; border:1px solid rgba(255,255,255,.15); background:transparent; color:var(--ss-text,#f0efed); padding:2px 9px; font-size:11px; cursor:pointer; }
+.ss-stage .ss-pipeview .ss-sc-sizes button[aria-pressed="true"] { background:var(--ss-accent,#F2FF59) !important; color:#1a1420 !important; border-color:transparent !important; }
+.ss-pipeview .ss-sc-group { display:flex; flex-direction:column; gap:6px; }
+.ss-pipeview .ss-sc-gh { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ss-muted,#a9a3ad); font-weight:700; display:flex; gap:6px; align-items:center; }
+.ss-pipeview .ss-sc-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(var(--ss-sc-tile,140px), 1fr)); gap:8px; }
+.ss-pipeview .ss-sc-tile { display:flex; flex-direction:column; gap:5px; padding:5px; border-radius:12px; border:2px solid rgba(255,255,255,.08); background:rgba(255,255,255,.03); min-width:0; }
+.ss-pipeview .ss-sc-tile[data-on="true"] { border-color:var(--ss-accent,#F2FF59); background:rgba(242,255,89,.06); }
+.ss-pipeview .ss-sc-tile[data-over="true"] { border-color:rgba(255,170,60,.8); }
+.ss-pipeview .ss-sc-pic { position:relative; aspect-ratio:1; border-radius:8px; overflow:hidden; background:#121015; cursor:pointer; }
+.ss-pipeview .ss-sc-pic img { width:100%; height:100%; object-fit:cover; display:block; }
+.ss-pipeview .ss-sc-pic .ph { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; font-size:11px; opacity:.6; border:1px dashed rgba(255,255,255,.2); border-radius:8px; text-align:center; padding:4px; }
+.ss-pipeview .ss-sc-badge { position:absolute; left:5px; top:5px; background:var(--ss-accent,#F2FF59); color:#1a1420; border-radius:999px; padding:1px 7px; font-size:11px; font-weight:700; }
+.ss-pipeview .ss-sc-badge.over { background:#ffaa3c; }
+.ss-pipeview .ss-sc-nm { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ss-pipeview .ss-sc-tile label { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--ss-muted,#a9a3ad); cursor:pointer; }
+.ss-pipeview .ss-sc-tile input[type=checkbox] { accent-color:var(--ss-accent,#F2FF59); }
+.ss-stage .ss-pipeview .ss-sc-acts button { font-size:11px !important; padding:2px 8px !important; }
+.ss-pipeview .ss-sc-strip { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; }
+.ss-pipeview .ss-sc-strip .ss-sc-tile { flex:0 0 96px; }
+.ss-pipeview .ss-sc-note { font-size:12px; color:var(--ss-muted,#a9a3ad); }
+.ss-pipeview .ss-sc-note.warn { color:#ffc27a; }
 @media (max-width: 860px) { .ss-pipeview .ss-studio { grid-template-columns:1fr; } .ss-pipeview .ss-studio-side { position:static; max-height:none; } }
 `;
 
@@ -404,7 +430,7 @@ export class Pipeline {
     const prev = this.chosen[sid] || {};
     const i = name.lastIndexOf("/");
     const file = { filename: name.slice(i + 1), subfolder: i > 0 ? name.slice(0, i) : "", type: "input" };
-    const cand = { url, file, edited: name, seed: prev.seed, model: prev.model, seedNode: prev.seedNode };
+    const cand = { url, file, edited: name, seed: prev.seed, model: prev.model, seedNode: prev.seedNode, refFiles: prev.refFiles };
     this.candidates[sid] = [cand, ...(this.candidates[sid] || []).filter((c) => c.edited !== name)];
     this.chosen[sid] = { ...prev, url, file, edited: name };
     this.touched[sid] = true;
@@ -440,13 +466,17 @@ export class Pipeline {
 
   _refs() { return { ...(this._refNode()?.properties?.ss_refs || {}) }; }
 
+  /** ref_files as every shot used to get them (all of ss_refs), for frames chosen before "Cast in this shot". */
+  _legacyRefLines(refs = this._refs()) {
+    const labels = Object.fromEntries(this._refSlots().map((s) => [s.key, s.label]));
+    return Object.entries(refs).filter(([, f]) => f).map(([k, f]) => `${f} | ${labels[k] || k.replace(/^actor:/, "")}`).join("\n");
+  }
+
   _saveRefs(refs) {
     const node = this._refNode();
     if (!node) return;
     node.properties = { ...(node.properties || {}), ss_refs: refs };
-    const labels = Object.fromEntries(this._refSlots().map((s) => [s.key, s.label]));
-    const lines = Object.entries(refs).filter(([, f]) => f).map(([k, f]) => `${f} | ${labels[k] || k.replace(/^actor:/, "")}`);
-    this.set(9081, "ref_files", lines.join("\n"));
+    this.set(9081, "ref_files", this._legacyRefLines(refs));
     this.ctx.app?.graph?.setDirtyCanvas?.(true, true);
   }
 
@@ -464,43 +494,144 @@ export class Pipeline {
     this._drawCastRefs();
   }
 
-  _drawCastRefs() {
-    const f = this.f;
-    if (!f?.refsCard) return;
-    const refs = this._refs();
-    const slots = this._refSlots();
-    const has = this.w(9081, "ref_files") != null;
-    const url = (file) => {
-      const i = file.lastIndexOf("/");
-      const q = new URLSearchParams({ filename: file.slice(i + 1), subfolder: i > 0 ? file.slice(0, i) : "", type: "input" });
-      return this.ctx.api?.apiURL ? this.ctx.api.apiURL(`/view?${q}`) : `/view?${q}`;
+  /** Old name, still called by Cast & Locations when a picture changes. */
+  _drawCastRefs() { this._drawShotCast(); }
+
+  // ------------------------------------------------------------------ Cast in this shot
+  /** Everything a shot can use: ② Cast & Locations items + stage actors with a ④ Frame reference + the style ref. */
+  _shotPool() {
+    let actors = [];
+    try { actors = this.ctx.stage.toJSON().actors || []; } catch { /* stage not ready */ }
+    const keys = new Set(this._refSlots().map((s) => s.key));
+    const cast = actors.filter((a) => keys.has(`actor:${a.id}`));
+    return { pool: castPool(this.ctx.castItems?.() || [], cast, this._refs(), (f) => this._refURL(f)), actors: cast };
+  }
+
+  _refURL(ref) {
+    const q = new URLSearchParams(refViewParams(ref));
+    return this.ctx.api?.apiURL ? this.ctx.api.apiURL(`/view?${q}`) : `/view?${q}`;
+  }
+
+  /** The shot's cast keys: what you ticked for it, else who is on its stage + its scene's characters and location. */
+  _shotCastKeys(sid, P = this._shotPool()) {
+    const saved = (this.ctx.loadShotCast?.() || {})[sid];
+    return shotSelection(P.pool, saved, { actors: P.actors, sceneLabel: this.ctx.sceneLabel?.() || null });
+  }
+
+  _toggleShotCast(sid, key, on) {
+    const P = this._shotPool();
+    const keys = this._shotCastKeys(sid, P).filter((k) => k !== key);
+    if (on) keys.push(key);
+    this.ctx.saveShotCast?.({ ...(this.ctx.loadShotCast?.() || {}), [sid]: keys });
+    this._drawShotCast();
+  }
+
+  /** Write this shot's references into the image picker (9081 ref_files, at most 4, characters first). */
+  _applyShotCast(sid, P = this._shotPool()) {
+    const pick = pickRefs(P.pool, this._shotCastKeys(sid, P), REF_LIMIT);
+    if (this.w(9081, "ref_files")) this.set(9081, "ref_files", refLines(pick.use));
+    return pick;
+  }
+
+  /** The current 9081 ref_files text (recorded with each frame, so Motion reproduces exactly that frame). */
+  _refFilesNow() { const x = this.w(9081, "ref_files"); return x ? String(x.value || "") : undefined; }
+
+  _castSize() { try { return localStorage.getItem("ss-shotcast-size") || "M"; } catch { return "M"; } }
+
+  _drawShotCast() {
+    try {
+      if (this.f?.refsCard) this._drawShotCastInto(this.f.refsCard, "frame");
+      if (this.m?.castCard) this._drawShotCastInto(this.m.castCard, "motion");
+    } catch (e) { console.warn("[Soundstage] cast in this shot", e); }
+  }
+
+  _drawShotCastInto(host, where) {
+    const shot = this.ctx.stage.activeShot(), sid = shot.id;
+    const P = this._shotPool();
+    const keys = this._shotCastKeys(sid, P);
+    // On screen in ④ Frame, the picker node always shows (and generates with) this shot's picks.
+    const pick = where === "frame" && !this.views?.frame?.hidden ? this._applyShotCast(sid, P) : pickRefs(P.pool, keys, REF_LIMIT);
+    const h3 = where === "motion" && isH3(this.m?.engine?.value);
+    const h3pick = h3 ? pickRefs(P.pool, keys, Math.max(0, H3_MAX_REFS - ((this.chosen[sid] || {}).refs || []).length)) : null;
+    const used = h3 ? h3pick.use : pick.use, over = h3 ? h3pick.dropped : pick.dropped;
+    const compact = where === "motion";
+    const size = this._castSize();
+    const px = { S: 92, M: 150, L: 300 }[size] || 150;
+    const tile = (it) => {
+      const on = keys.includes(it.key), n = used.indexOf(it) + 1, isOver = over.includes(it);
+      const cb = h("input", { type: "checkbox", on: { change: () => this._toggleShotCast(sid, it.key, cb.checked) } });
+      cb.checked = on;
+      const pic = h("div", { class: "ss-sc-pic", title: on ? `${it.name}: in this shot (click to take out)` : `${it.name}: click to put in this shot`,
+        on: { click: () => this._toggleShotCast(sid, it.key, !on) } },
+        it.url ? h("img", { src: it.url, alt: `${it.name} reference` })
+          : h("div", { class: "ph" }, icon(shotKind(it) === "character" ? "user" : shotKind(it) === "location" ? "compass" : shotKind(it) === "wardrobe" ? "shirt" : "box", 20), "no picture yet"),
+        n ? h("span", { class: "ss-sc-badge", title: `Sent to the model as reference ${n}` }, `#${n}`) : isOver ? h("span", { class: "ss-sc-badge over", title: `Over the limit of ${h3 ? H3_MAX_REFS : REF_LIMIT}: not sent` }, "over") : null);
+      const kids = [pic, h("div", { class: "ss-sc-nm", title: refLabel(it) }, it.name)];
+      if (!compact) {
+        const up = h("input", { type: "file", accept: "image/*", hidden: "", on: { change: async (e) => {
+          const fl = e.target.files?.[0]; e.target.value = "";
+          if (!fl || !this.ctx.uploadRef) return;
+          this._say(`Uploading ${fl.name} for ${it.name}…`);
+          try { const r = await this.ctx.uploadRef(fl); this.ctx.setCastRef?.(it, r); this._drawShotCast(); this._say(`${it.name}: picture added.`); }
+          catch (err) { this._say(`Couldn't add that picture: ${err.message}`); }
+        } } });
+        const b = (label, title, fn) => h("button", { type: "button", class: "ghost", title, on: { click: fn } }, label);
+        kids.push(h("label", {}, cb, on ? "In this shot" : "Not in this shot"),
+          h("div", { class: "row ss-sc-acts", style: "gap:4px" },
+            it.url && this.ctx.editRef ? b("Edit", `Open ${it.name}'s picture in Paint Studio; “Save to reference” keeps the edit`, () => this._editRefImage(it)) : null,
+            it.src === "stage" ? null : b(it.url ? "Replace" : "Add picture", "Upload a picture for this reference", () => up.click()), up));
+      }
+      return h("div", { class: "ss-sc-tile", "data-on": String(on), "data-over": String(isOver) }, ...kids);
     };
-    const tiles = slots.map((s) => {
-      const file = refs[s.key];
-      const pick = h("input", { type: "file", accept: "image/*", hidden: "", on: { change: async (e) => {
-        const fl = e.target.files?.[0];
-        if (!fl) return;
-        f.refsStatus.textContent = `Uploading ${fl.name}…`;
-        try { await this._uploadRef(s.key, fl); f.refsStatus.textContent = `${s.label}: reference added. It is used for every shot.`; }
-        catch (err) { f.refsStatus.textContent = `Couldn't add that image: ${err.message}`; }
-      } } });
-      const thumb = file ? h("img", { src: url(file), alt: `${s.label} reference`, style: "width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px" })
-        : h("div", { style: "width:100%;aspect-ratio:1;border:1px dashed rgba(255,255,255,.25);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:24px;opacity:.6" }, "+");
-      const btn = h("button", { type: "button", class: "ghost", style: "font-size:12px;padding:3px 8px", on: { click: () => pick.click() } }, file ? "Replace" : "Add reference");
-      const clear = file ? h("button", { type: "button", class: "ghost", style: "font-size:12px;padding:3px 8px", title: "Remove this reference",
-        on: { click: () => { const r = this._refs(); delete r[s.key]; this._saveRefs(r); this._drawCastRefs(); } } }, "Remove") : null;
-      return h("div", { style: "display:flex;flex-direction:column;gap:6px;min-width:0" },
-        h("div", { style: "font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis", title: s.label }, s.label),
-        thumb, h("div", { class: "row", style: "gap:4px;flex-wrap:wrap" }, btn, clear), pick);
-    });
-    f.refsStatus = h("div", { class: "status" }, has
-      ? "Character sheets, photos or a location: each image is shown to the image model for every shot, so faces, wardrobe, horses and cars stay the same. Up to 4 work best."
-      : "References need the updated Soundstage nodes (restart ComfyUI once).");
-    f.refsCard.replaceChildren(
-      h("div", { class: "row" }, h("strong", {}, "References"),
-        h("span", { class: "status" }, "Keep characters consistent: the cast comes from your stage.")),
-      h("div", { style: "display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px" }, ...tiles),
-      f.refsStatus);
+    const GROUPS = [["character", "Characters", "user"], ["location", "Location", "compass"], ["wardrobe", "Wardrobe", "shirt"], ["prop", "Props & vehicles", "box"], ["style", "Style", "sparkles"]];
+    const groups = GROUPS.map(([k, label, ic]) => {
+      const list = P.pool.filter((it) => shotKind(it) === k);
+      if (!list.length) return null;
+      if (compact) return list.map(tile);
+      return h("div", { class: "ss-sc-group" }, h("div", { class: "ss-sc-gh" }, icon(ic, 13), label, h("span", { style: "opacity:.6" }, String(list.length))),
+        h("div", { class: "ss-sc-grid" }, ...list.map(tile)));
+    }).filter(Boolean);
+    const sizes = compact ? null : h("span", { class: "ss-sc-sizes", role: "group", "aria-label": "Thumbnail size" }, ...["S", "M", "L"].map((k) =>
+      h("button", { type: "button", "aria-pressed": String(size === k), title: `${k} thumbnails`,
+        on: { click: () => { try { localStorage.setItem("ss-shotcast-size", k); } catch { /* storage blocked */ } this._drawShotCast(); } } }, k)));
+    const names = used.map((it) => it.name).join(", ");
+    const lim = h3 ? H3_MAX_REFS : REF_LIMIT;
+    let note;
+    if (!P.pool.length) note = "No cast yet: add characters, locations, wardrobe and props in ② Cast & Locations (or upload pictures there), then tick who is in each shot.";
+    else if (!used.length) note = keys.length ? "The cast ticked for this shot has no pictures yet: add one (or generate it in ② Cast & Locations)." : "Nobody is ticked for this shot: the frame is painted from the prompt and the clay alone.";
+    else note = where === "motion" && !h3
+      ? `LTX animates your chosen frame, so the cast is already in it (painted with ${names}). Ticks here change the next frames you generate in ④ Frame.`
+      : `${h3 ? "H3 sees" : "Sent to the image model"}: ${used.map((it) => refLabel(it)).join(" · ")}.`;
+    const warn = over.length ? `${keys.length} ticked, only ${lim} go to the model (characters first, then the location, wardrobe, props): not sent ${over.map((it) => it.name).join(", ")}.` : "";
+    const krea = where === "frame" && this.f?.model?.value === STILL_KREA;
+    const noNode = where === "frame" && !this.w(9081, "ref_files");
+    host.style.setProperty("--ss-sc-tile", `${px}px`);
+    host.replaceChildren(
+      h("div", { class: "ss-sc-head" }, icon("users", 16), h("strong", {}, "Cast in this shot"),
+        h("span", { class: "status" }, `${shot.name}: ${keys.length} ticked`), sizes,
+        this.ctx.openCast ? h("button", { type: "button", class: "ghost", style: "font-size:12px;padding:3px 9px", title: "Add people, places, wardrobe and props, with pictures",
+          on: { click: () => this.ctx.openCast() } }, "② Cast & Locations") : null),
+      ...(compact ? [h("div", { class: "ss-sc-strip" }, ...groups.flat())] : groups),
+      h("div", { class: "ss-sc-note" }, note),
+      warn ? h("div", { class: "ss-sc-note warn" }, warn) : null,
+      krea ? h("div", { class: "ss-sc-note warn" }, "Krea 2 + stage depth doesn't take references: pick FLUX 3 Klein to use the cast pictures.") : null,
+      noNode ? h("div", { class: "ss-sc-note warn" }, "References need the updated Soundstage nodes (restart ComfyUI once).") : null);
+  }
+
+  /** A cast picture in ④ Frame's Paint Studio; "Save to reference" stores the edit on the cast item. */
+  async _editRefImage(it) {
+    const f = this.f;
+    if (!this.ctx.editRef || !it?.url || !f) return;
+    const tok = {};
+    this._refTok = tok;
+    await this.ctx.editRef(it, { host: f.editHost, onExit: () => {
+      if (this._refTok !== tok) return;
+      this._refTok = null;
+      this._closeEditor();
+      this._drawShotCast();
+    } });
+    if (this._refTok !== tok) return;
+    this._paintingUI(`Editing ${it.name}'s reference: mask an area and Generative Fill, Remove or Extend, then “Save to reference”. Cancel leaves it unchanged.`);
   }
 
   /** Steps / CFG for the frame model: Krea 2 lives on the App's KSampler (9056), the other models on the picker node. */
@@ -544,6 +675,12 @@ export class Pipeline {
     const url = this.chosen?.[sid]?.url || (this.ctx.getRenders(sid) || {}).look || null;
     if (!this.ctx.mountCanvas) { this.ctx.openCanvas(url); return; }
     this.ctx.mountCanvas(f.editHost, url);
+    this._paintingUI(url ? "Paint Studio: mask or select an area (B, M, L, W), describe it, Generative Fill. Drag the canvas edge out (C) and Extend. Then “Use as first frame”."
+      : "Pick a frame first, or paint from scratch.");
+  }
+
+  _paintingUI(msg) {
+    const f = this.f;
     if (f.hero) f.hero.hidden = true;
     f.closeEdit.hidden = false;
     f.editBtn.hidden = true;
@@ -551,8 +688,7 @@ export class Pipeline {
     f.grid.hidden = true;
     f.studio.classList.add("ss-painting");
     f.paintCard.scrollIntoView?.({ block: "start", behavior: "smooth" });
-    f.status.textContent = url ? "Paint Studio: mask or select an area (B, M, L, W), describe it, Generative Fill. Drag the canvas edge out (C) and Extend. Then “Use as first frame”."
-      : "Pick a frame first, or paint from scratch.";
+    f.status.textContent = msg;
   }
 
   _closeEditor() {
@@ -633,6 +769,7 @@ export class Pipeline {
     this.set(9082, "switch", !krea);
     if (!krea) this.set(9081, "model", f.model.value);
     this.set(9056, "denoise", +f.follow.value);
+    queueMicrotask(() => { try { this._drawShotCast(); } catch { /* view not built */ } });
   }
 
   _setDescription(text) {
@@ -648,11 +785,14 @@ export class Pipeline {
     const one = async (shot, si, n) => {
       const base = Math.floor(Math.random() * 1e9);
       this.set(9086, "switch", !!this.touched[shot.id]);
+      const cast = this._applyShotCast(shot.id);
+      if (cast.dropped.length && n === 1) this._say(`Only ${REF_LIMIT} references go to the model: ${cast.dropped.map((x) => x.name).join(", ")} left out.`);
+      const refFiles = this._refFilesNow();
       for (let i = 0; i < f.count; i++) {
         const seed = base + i * 7919;
         this.set(seedNode, "seed", seed);
         f.status.textContent = `Queueing ${n > 1 ? `${shot.name} (${si + 1}/${n}), ` : ""}frame ${i + 1}/${f.count}${i === 0 ? " (the first one renders the clay passes too)" : ""}…`;
-        await this.queueAt(2, { seed, model: f.model.value, seedNode });
+        await this.queueAt(2, { seed, model: f.model.value, seedNode, refFiles });
       }
     };
     try {
@@ -672,7 +812,7 @@ export class Pipeline {
     if (ev.rung === 2) {
       const meta = this.pending.get(ev.promptId);
       const list = (this.candidates[ev.shotId] = this.candidates[ev.shotId] || []);
-      const cand = { url: ev.url, file: ev.file, seed: meta?.seed, model: meta?.model, seedNode: meta?.seedNode };
+      const cand = { url: ev.url, file: ev.file, seed: meta?.seed, model: meta?.model, seedNode: meta?.seedNode, refFiles: meta?.refFiles };
       list.unshift(cand);
       if (meta) this.pending.delete(ev.promptId);
       // A shot's first frame is its pick until you choose another, so "every shot" flows straight into Motion.
@@ -747,8 +887,9 @@ export class Pipeline {
       m.h3Refs = h("div", { class: "row", style: "flex-wrap:wrap;gap:6px;margin-top:4px" }),
       h("label", { class: "row", style: "margin-top:4px" }, "Add images",
         m.h3RefIn = h("input", { type: "file", accept: "image/*", multiple: "", on: { change: (e) => this._addRefs(e.target.files) } })));
-    m.quality = "Final HQ";   // finals render at full quality unless you pick Draft for a quick look
-    m.qSeg = h("span", { class: "seg row" }, ...["Draft", "Final HQ"].map((q) => h("button", { type: "button", "aria-pressed": String(q === "Final HQ"),
+    m.quality = "Final";   // Draft = quick look (8+3), Final = clean motion and detail (12+6), Final HQ = hero shots (18+12)
+    m.qSeg = h("span", { class: "seg row" }, ...["Draft", "Final", "Final HQ"].map((q) => h("button", { type: "button", "aria-pressed": String(q === "Final"),
+      title: { Draft: "8 + 3 steps: a quick look, faces readable", Final: "12 + 6 steps: clean motion and detail (recommended)", "Final HQ": "18 + 12 steps: hero shots, about twice as long" }[q],
       title: q === "Draft" ? "8 + 3 distilled steps: fast previews" : "18 + 12 steps on the same curve: finer detail and steadier motion, about 2x slower",
       on: { click: (e) => { m.quality = q; for (const b of m.qSeg.children) b.setAttribute("aria-pressed", String(b === e.currentTarget)); this._applyVideo(); this._motionNote?.(); } } }, q)));
     m.cfg = h("input", { type: "number", min: "1", max: "10", step: "0.1", style: "width:90px",
@@ -804,6 +945,7 @@ export class Pipeline {
           h("label", { class: "row status" }, m.audio, "Let the sound/dialogue drive the video"),
           h("div", { class: "row" }, m.draftBtn, m.finalBtn),
           h("div", { class: "row" }, m.allDraft, m.allFinal))),
+      m.castCard = h("div", { class: "card" }),
       m.status,
       h("div", { class: "card" }, m.vidCap = h("div", { class: "status" }, "Latest result for this shot"), m.video),
       h("div", { class: "row" }, h("span", { style: "flex:1" }), this._next("⑥ Review on the Ladder", "review")),
@@ -839,6 +981,7 @@ export class Pipeline {
     m.h3Ref.checked = this.w(9083, "model.motion_ref")?.value === H3_CLAY_REF;
     this._showEngine();
     this._drawRefs();
+    this._drawShotCast();
     m.cfg.value = String(this.w(5516, "cfg")?.value ?? 1);
     m.sampler.value = this.w(5516, "sampler_name")?.value || "euler_ancestral";
     m.neg.value = this.w(5509, "value")?.value || "";
@@ -871,8 +1014,9 @@ export class Pipeline {
     if (!l2r) this.set(9083, "model", m.engine.value);
     if (isH3(m.engine.value)) this.set(9083, "model.motion_ref", m.h3Ref.checked ? H3_CLAY_REF : "off");
     this._showEngine();
+    this._drawShotCast();
     this.set(9096, "motion_freedom", +m.freedom.value);
-    this.set(9096, "quality", m.quality === "Draft" ? "Draft" : "Final HQ");
+    this.set(9096, "quality", m.quality);
   }
 
   /** This shot's H3 reference images: thumbnails with a remove button. */
@@ -1021,11 +1165,21 @@ export class Pipeline {
     this.set(9086, "switch", !!this.touched[sid]);
     if (this.touched[sid] && c?.edited) setTouchupStill(this.ctx.app, c.edited);   // each shot keeps its own painted frame
     this.set(9083, "last_file", loadName(c?.last));
-    this.set(9083, "ref_files", (c?.refs || []).map(loadName).filter(Boolean).join("\n"));
+    // The image picker gets the references the chosen frame was painted with (so it comes back from cache);
+    // a shot without a chosen frame gets its "Cast in this shot" picks.
+    const P = this._shotPool();
+    if (c?.refFiles != null && this.w(9081, "ref_files")) this.set(9081, "ref_files", c.refFiles);
+    else if (c?.seed != null && !c.edited && this.w(9081, "ref_files")) this.set(9081, "ref_files", this._legacyRefLines());   // a frame from before per-shot cast
+    else this._applyShotCast(sid, P);
+    const manual = (c?.refs || []).map(loadName).filter(Boolean);
+    const h3 = !!this.w(9084, "switch")?.value && isH3(this.w(9083, "model")?.value);
+    const cast = h3 ? pickRefs(P.pool, this._shotCastKeys(sid, P), Math.max(0, H3_MAX_REFS - manual.length)).use.map((it) => it.ref) : [];
+    this.set(9083, "ref_files", [...new Set([...cast, ...manual])].join("\n"));
   }
 
   _setChosen(sid, c) {
-    this.chosen[sid] = { ...this.chosen[sid], url: c.url, file: c.file, seed: c.seed, model: c.model, seedNode: c.seedNode, edited: c.edited || undefined };
+    this.chosen[sid] = { ...this.chosen[sid], url: c.url, file: c.file, seed: c.seed, model: c.model, seedNode: c.seedNode, edited: c.edited || undefined,
+      refFiles: c.refFiles };
     if (c.file) this.ctx.rememberRender?.(sid, "look", c.file);
     this.ctx.saveChosen?.({ chosen: this.chosen, touched: this.touched });
   }
