@@ -320,3 +320,27 @@ export function mirrorPose(pose) {
   }
   return out;
 }
+
+/** The inverse of applyJoints for one joint: its current rotation as plain-word degrees [a, b, c] (posing in 3D). */
+export function jointDegrees(j) {
+  const R = 180 / Math.PI, sd = j.userData.side || 1;
+  const e = new THREE.Euler().setFromQuaternion(j.quaternion, "XYZ");
+  let x = e.x * R, y = e.y * R, z = e.z * R;
+  // XYZ angles have a twin (x+180, 180-y, z+180) for the same rotation: keep the smaller one, so a pose dragged in 3D
+  // reads like a slider pose (-13°, not -167° with a 180° flip) and blends cleanly between keys.
+  const wrap = (v) => ((v + 540) % 360) - 180;
+  const alt = [wrap(x + 180), wrap(180 - y), wrap(z + 180)];
+  if (Math.abs(alt[0]) + Math.abs(alt[1]) + Math.abs(alt[2]) < Math.abs(x) + Math.abs(y) + Math.abs(z) - 1e-6) [x, y, z] = alt;
+  switch (j.userData.jkind) {
+    case "trunk": return [x, y, -z];
+    case "shoulder": case "wrist": case "hip": return [-x, sd * z, sd * y];
+    case "elbow": return [-x, sd * y, 0];
+    case "knee": return [x, 0, 0];
+    case "finger": {
+      const rest = (j.userData.rest || [0, 0, 0])[0] * R, thumb = j.userData.finger === "thumb";
+      const a = -z / sd / (thumb ? 0.5 : 1);
+      return [a, rest - x - (thumb ? a * 0.6 : 0), 0];
+    }
+    default: return [0, 0, 0];
+  }
+}

@@ -7,6 +7,7 @@ import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompo
 import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./humans.mjs";
 import * as Mocap from "./mocap.mjs";
 import { applyRig, RIGS } from "./camrig.mjs";
+import { PoseGizmo } from "./posegizmo.mjs";
 import { buildSet, buildWater, buildWeather } from "./environments.mjs";
 import { buildCard, loadBackdrop, coverFit } from "./cards.mjs";
 import { buildInterior, fixtureActors, interiorCamera, normalizeSpec, toStage } from "./interior.mjs";
@@ -863,7 +864,7 @@ export class Stage {
   setFrame(frame) {
     this.frame = Math.max(0, Math.min(this._lastFrame(), Math.round(frame)));
     // The set may have been rebuilt (new meshes): keep the gizmo on the selected object.
-    if (this.tc && this.tc.object !== (this.selected ? this.actorMeshes.get(this.selected) : undefined)) this._attachGizmo();
+    if (this.tc && this.tc.object !== (this.poser?.target() ?? (this.selected ? this.actorMeshes.get(this.selected) : undefined))) this._attachGizmo();
     for (const a of this.state.actors) {
       const g = this.actorMeshes.get(a.id);
       if (!g) continue;
@@ -1063,9 +1064,13 @@ export class Stage {
         this.selRing.position.set(sel.position.x, 0.02, sel.position.z);
       }
     }
+    try { this.poser?.update(); } catch { /* not built yet */ }
     this._applyCamera();
     this.render();
   }
+
+  /** Pose in 3D on / off for the selected person (P). Returns whether it is on. */
+  setPoseMode(on) { return this.poser?.setActive(on ?? !this.poser.active) || false; }
 
   /** Jump to the first ("start") or last ("end") camera key. Kept for the Start/End buttons. */
   setKey(key) {
@@ -1476,6 +1481,7 @@ export class Stage {
     this.setGizmoMode("translate");
     this.tc.addEventListener("change", () => { if (!this._inRender) this.render(); });
     this.tc.addEventListener("objectChange", () => this._gizmoToActor());
+    this.poser = new PoseGizmo(this);   // pose in 3D: click a body part, turn it; drag a hand / foot dot (IK)
     this.tc.addEventListener("dragging-changed", (e) => {
       this._gizmoDragging = e.value;
       if (e.value) this._gizmoScale0 = this.tc.object?.scale.x || 1;
@@ -1496,6 +1502,12 @@ export class Stage {
       this.canvas.focus({ preventScroll: true });
       if (this.tcHelper.visible && (this.tc.axis || this.tc.dragging)) return; // the gizmo has this drag
       pick(e);
+      if (this.poser?.active && !e.altKey && this.poser.pointerDown(e, ray)) {
+        drag = { mode: "pose" };
+        this.canvas.setPointerCapture(e.pointerId);
+        this._dragging = true;
+        return;
+      }
       const lhit = ray.intersectObjects([...(this.lightHandles?.values() || [])], false)[0];
       if (lhit && !e.altKey) {
         drag = { mode: "light", id: lhit.object.userData.lightId };
@@ -1528,6 +1540,7 @@ export class Stage {
     this.canvas.addEventListener("pointermove", (e) => {
       if (!drag) return;
       e.stopPropagation();
+      if (drag.mode === "pose") { pick(e); this.poser.pointerMove(ray); return; }
       if (drag.mode === "light") {
         pick(e);
         const l = (this.state.lighting?.lights || []).find((x) => x.id === drag.id);
@@ -1596,6 +1609,7 @@ export class Stage {
     const end = (e) => {
       this._dragging = false;
       if (!drag) return;
+      if (drag.mode === "pose") { this.poser.pointerUp(); drag = null; return; }
       if (drag.mode === "actor") {
         // What's under the cursor on release is what you dropped onto (the floor point can land metres behind a car).
         let under = null;
@@ -1628,6 +1642,14 @@ export class Stage {
         this.setFreeView(!this.freeView);
         return;
       }
+      if (k === "p" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault(); e.stopPropagation();
+        const on = this.setPoseMode();
+        this.onInteract?.(on ? "Pose in 3D: click a body part and turn the ring; drag a yellow dot to move a hand or foot. P or Esc to finish." :
+          (this.selected ? "Pose mode off." : "Select a person first, then press P to pose them in 3D."));
+        return;
+      }
+      if (k === "escape" && this.poser?.active) { e.preventDefault(); e.stopPropagation(); this.setPoseMode(false); this.onInteract?.("Pose mode off."); return; }
       if ((k === "g" || k === "r" || k === "t") && !e.metaKey && !e.ctrlKey && this.selected) {
         e.preventDefault(); e.stopPropagation();
         this.setGizmoMode({ g: "translate", r: "rotate", t: "scale" }[k]);
@@ -2318,7 +2340,13 @@ export class Stage {
   }
 
   select(id) {
+    const prev = this.selected;
     this.selected = id && this.actorMeshes.has(id) ? id : null;
+    if (this.poser?.active && prev !== this.selected) {
+      this.poser.joint = null;
+      const a = this.state.actors.find((x) => x.id === this.selected);
+      if (!a || !PERSON_KINDS.has(a.kind)) this.poser.setActive(false);
+    }
     this._attachGizmo();
     this.setFrame(this.frame);
     this.onSelect?.(this.selectedInfo());
@@ -2336,6 +2364,14 @@ export class Stage {
   }
 
   _attachGizmo() {
+    const pj = this.poser?.target();
+    if (pj) {   // pose mode: the ring sits on the picked joint, turning in its own axes
+      this.tc.attach(pj); this._gizmoOn = true;
+      this.tc.setMode("rotate"); this.tc.setSpace("local"); this.tc.showX = this.tc.showY = this.tc.showZ = true;
+      this.tcHelper.visible = true;
+      return;
+    }
+    if (this.tc.space === "local") { this.tc.setSpace("world"); this.setGizmoMode(this.gizmoMode || "translate"); }
     const a = this.state.actors.find((x) => x.id === this.selected);
     const g = a && this.actorMeshes.get(a.id);
     if (g && !a.mount_id && !a.set_xform) { this.tc.attach(g); this._gizmoOn = true; }
@@ -2343,6 +2379,7 @@ export class Stage {
   }
 
   _gizmoToActor() {
+    if (this.poser?.target() && this.tc.object === this.poser.target()) { this.poser.fromGizmo(); return; }
     const a = this.state.actors.find((x) => x.id === this.selected);
     const g = this.tc.object;
     if (!a || !g) return;
@@ -2960,7 +2997,7 @@ export class Stage {
     }
     this._inRender = true;
     this.renderer.render(this.scene, cam);
-    if (!forCapture && this.tcHelper?.visible) {
+    if (!forCapture && (this.tcHelper?.visible || this.poser?.active)) {
       const auto = this.renderer.autoClear;
       this.renderer.autoClear = false;
       this.renderer.clearDepth();

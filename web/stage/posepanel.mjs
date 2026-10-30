@@ -38,7 +38,8 @@ const CSS = `
 .ss-pose .sect > .lbl { display:inline-flex; align-items:center; gap:6px; min-width:84px; font-size:11px; font-weight:600;
   text-transform:uppercase; letter-spacing:.08em; opacity:.62; }
 .ss-pose .head { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
-.ss-pose .head strong { font-size:15px; font-weight:600; margin-right:4px; }`;
+.ss-pose .head strong { font-size:15px; font-weight:600; margin-right:4px; }
+.ss-pose .ss-tool[aria-pressed="true"] { border-color:#f2ff59; color:#f2ff59; background:rgba(242,255,89,.1); }`;
 
 export class PosePanel {
   constructor(container, { stage, api = null, onStatus = () => {} } = {}) {
@@ -184,7 +185,15 @@ export class PosePanel {
     const lead = Object.assign(document.createElement("div"), { className: "lead" });
     lead.setAttribute("role", "toolbar");
     lead.setAttribute("aria-label", "Person actions");
+    // Pose in 3D: the body parts become handles in the stage view (rings on joints, dots on hands and feet). Key: P.
+    this.pose3d = this._tool("move-3d", "Pose in 3D", "Click a body part in the view and turn it; drag a yellow dot to move a hand or foot (P)", () => {
+      const on = this.stage.setPoseMode?.(!this.stage.poser?.active);
+      this.pose3d.setAttribute("aria-pressed", String(!!on));
+      this.onStatus(on ? "Pose in 3D: click a body part and turn the ring; drag a yellow dot to move a hand or foot. P or Esc to finish." : "Pose mode off.");
+    });
+    this.pose3d.setAttribute("aria-pressed", "false");
     lead.append(
+      this.pose3d,
       this._tool("person-standing", "Pose", "Pick a pose from the gallery at the playhead", () => this.focusSection("pose")),
       this._tool("handshake", "Interact", "Look at, talk to, shake hands, hug, hold hands, point at, pet or lead", () => this.focusSection("interact")),
       this.mcFile, this.mcAct,
@@ -265,6 +274,7 @@ export class PosePanel {
 
   refresh() {
     if (!this.id) return;
+    this.pose3d?.setAttribute("aria-pressed", String(!!this.stage.poser?.active));
     this._lastFrame = this.stage.frame;
     this._lastSig = this._sig();
     const pose = this.stage.poseInfo(this.id)?.pose || {};
