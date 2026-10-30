@@ -35,6 +35,9 @@ Built for Comfy Org's *Open Source Higgsfield* challenge (#OpenSourceHiggsfield)
 </tr>
 </table>
 
+<p align="center"><img src="docs/media/cut_editor.gif" width="900" alt="The Cut editor: a clip is split at the playhead, then dragged to the end of the timeline"></p>
+<p align="center"><em>The Cut editor: split a clip at the playhead (B), drag it anywhere on the timeline, then export to your NLE.</em></p>
+
 <p align="center"><img src="docs/media/exports.jpg" width="900" alt="Exports: Avid EDL, Premiere XML, FCPXML, OTIO, Layer Pack with ProRes 4444 and alpha, depth EXR, camera, AE/Nuke/Blender builders, GLB"></p>
 
 ## The five steps

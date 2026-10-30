@@ -1700,6 +1700,7 @@ function createStageWidget(node, inputName) {
   });
   for (const v of Object.values(pipeline.views)) el.append(v);
   node.ssPipeline = pipeline;
+  node.ssCut = cut;
   node.ssLadder = ladder;
   for (const ms of [500, 2500]) setTimeout(() => { try { pipeline.restoreLadder(); } catch { /* ladder not ready */ } }, ms);
 
