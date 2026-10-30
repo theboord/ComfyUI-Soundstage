@@ -1573,8 +1573,8 @@ export class CutPanel {
     head.textContent = `Edit original: ${name}`;
     head.style.cssText = "font-size:11px;color:#a9a3ad;padding:4px 8px;text-transform:uppercase;letter-spacing:.05em";
     m.append(head);
-    for (const [where, label] of [["stage", "Edit the shot on the Stage (blocking, camera)"], ["frame", "Repaint its frame (② Frame)"],
-      ["canvas", "Touch up its frame in Canvas"], ["motion", "Re-render its motion (③ Motion)"], ["review", "Compare on the Ladder (④ Review)"]]) {
+    for (const [where, label] of [["stage", "Edit the shot on the Stage (blocking, camera)"], ["frame", "Repaint its frame (④ Frame)"],
+      ["canvas", "Touch up its frame in Canvas"], ["motion", "Re-render its motion (⑤ Motion)"], ["review", "Compare on the Ladder (⑥ Review)"]]) {
       const b = document.createElement("button");
       b.type = "button";
       b.textContent = label;

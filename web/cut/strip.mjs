@@ -942,10 +942,10 @@ export class ShotStrip {
     this._openMenu([
       { icon: "camera", label: "Edit this setup on the stage", run: () => this._select(index) },
       ...(this._onEditShot ? [
-        { icon: "image", label: "Repaint its frame (② Frame)", title: "New stills for this shot; the clip updates when you re-render", run: () => this._onEditShot(row.shot.id, "frame") },
+        { icon: "image", label: "Repaint its frame (④ Frame)", title: "New stills for this shot; the clip updates when you re-render", run: () => this._onEditShot(row.shot.id, "frame") },
         { icon: "wand-sparkles", label: "Touch up its frame in Canvas", title: "Paint, mask or regenerate this shot's frame, then re-render", run: () => this._onEditShot(row.shot.id, "canvas") },
-        { icon: "film", label: "Re-render its motion (③ Motion)", title: "Draft or final for this shot; the cut picks up the new render", run: () => this._onEditShot(row.shot.id, "motion") },
-        { icon: "eye", label: "Compare on the Ladder (④ Review)", run: () => this._onEditShot(row.shot.id, "review") },
+        { icon: "film", label: "Re-render its motion (⑤ Motion)", title: "Draft or final for this shot; the cut picks up the new render", run: () => this._onEditShot(row.shot.id, "motion") },
+        { icon: "eye", label: "Compare on the Ladder (⑥ Review)", run: () => this._onEditShot(row.shot.id, "review") },
       ] : []),
       { icon: "copy", label: "Duplicate setup", title: "A new camera setup with this one's moves, right after it", run: () => this.duplicateSetup(index) },
       { icon: "layers", label: "Duplicate clip", title: "The same setup again, right after it", run: () => this.duplicateClip(index) },

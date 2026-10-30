@@ -1506,7 +1506,15 @@ export class Stage {
       let hitId = ray.intersectObjects([...this.actorMeshes.values()], true)[0]?.object?.userData?.actorId || null;
       // Far-away people are a few pixels wide: a click within ~12 px of an object's on-screen outline still grabs it.
       if (!hitId && !e.altKey) hitId = this._nearOnScreen(e, 12);
-      if (hitId && !e.altKey) {
+      // From inside a car (or any object the camera sits in), a drag is the camera's, never the car's: everything
+      // around you is the car. A seated rider can still be clicked to select (pose them), but not dragged off the seat.
+      const camPos = this._viewportCamera().getWorldPosition(new THREE.Vector3());
+      const inside = (id) => { const g = this.actorMeshes.get(id); return !!g && new THREE.Box3().setFromObject(g).expandByScalar(0.05).containsPoint(camPos); };
+      const hitActor = hitId && this.state.actors.find((x) => x.id === hitId);
+      if (hitId && !e.altKey && (inside(hitId) || (hitActor?.mount_id && inside(hitActor.mount_id)))) {
+        if (hitActor?.mount_id) this.select(hitId);
+        drag = { mode: e.shiftKey || e.button === 1 ? "pan" : "orbit", look: true, x: e.clientX, y: e.clientY };
+      } else if (hitId && !e.altKey) {
         drag = { mode: "actor", id: hitId };
         this.select(hitId);
       } else {

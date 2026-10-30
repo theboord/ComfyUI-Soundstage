@@ -1,15 +1,18 @@
-// The guided pipeline: ① Set → ② Frame → ③ Motion → ④ Review → ⑤ Deliver.
+// The guided pipeline: ① Script → ② Cast & Locations → ③ Set → ④ Frame → ⑤ Motion → ⑥ Review → ⑦ Deliver.
 // A step bar over the stage, plus three new views (Frame, Motion, Deliver) that drive the App graph's own widgets
 // (the step gate, the look-still sampler, the model pickers, Quality) so the user never touches raw switches.
-// Every view ends with one "Next →" button. Renders come back per shot and land on the Ladder (④ Review).
+// Every view ends with one "Next →" button. Renders come back per shot and land on the Ladder (⑥ Review).
 import { icon } from "../ui/icons.mjs";
+import { setTouchupStill } from "../touchup/touchup.mjs";
 
 const STEPS = [
-  { k: "set", n: 1, label: "Set", view: "stage", hint: "Block the scene in 3D: cast, camera, timing." },
-  { k: "frame", n: 2, label: "Frame", view: "frame", hint: "Paint the first frame from your clay with an image model." },
-  { k: "motion", n: 3, label: "Motion", view: "motion", hint: "Animate it with LTX, following your blocking." },
-  { k: "review", n: 4, label: "Review", view: "ladder", hint: "Scrub clay → frame → draft → final on the Ladder." },
-  { k: "deliver", n: 5, label: "Deliver", view: "deliver", hint: "Layers for VFX, the cut as one video, NLE export." },
+  { k: "script", n: 1, label: "Script", view: "script", hint: "Bring in your screenplay: scenes, breakdown, director's notes. Optional." },
+  { k: "cast", n: 2, label: "Cast & Locations", view: "cast", hint: "Characters, props and locations with reference pictures, so every shot matches." },
+  { k: "set", n: 3, label: "Set", view: "stage", hint: "Block the scene in 3D clay: cast, camera, timing." },
+  { k: "frame", n: 4, label: "Frame", view: "frame", hint: "Paint the first frame from your clay with an image model." },
+  { k: "motion", n: 5, label: "Motion", view: "motion", hint: "Animate it with LTX, following your blocking." },
+  { k: "review", n: 6, label: "Review", view: "ladder", hint: "Scrub clay → frame → draft → final on the Ladder." },
+  { k: "deliver", n: 7, label: "Deliver", view: "deliver", hint: "Layers for VFX, the cut as one video, NLE export." },
 ];
 const STILL_KREA = "__krea_depth__";
 const VIDEO_L2R = "__ltx_l2r__";
@@ -80,6 +83,20 @@ const CSS = `
 .ss-pipeview .ss-studio-side details > summary { cursor:pointer; font-weight:600; list-style:none; }
 .ss-pipeview .ss-editbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
 .ss-pipeview .ss-edithost:empty { display:none; }
+/* Paint Studio: the headline way to fix a first frame. */
+.ss-pipeview .ss-paintcard { border-color:rgba(242,255,89,.4); background:linear-gradient(135deg, rgba(242,255,89,.10), rgba(242,255,89,.02) 60%); }
+.ss-pipeview .ss-paint-head { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.ss-pipeview .ss-paint-badge { width:46px; height:46px; border-radius:14px; display:grid; place-items:center; flex:none;
+  background:var(--ss-accent,#F2FF59); color:#1a1420; box-shadow:0 6px 22px rgba(242,255,89,.25); }
+.ss-pipeview .ss-paint-txt { display:flex; flex-direction:column; gap:2px; flex:1; min-width:220px; }
+.ss-pipeview .ss-paint-txt strong { font-size:17px; letter-spacing:.01em; }
+.ss-pipeview .ss-paint-feats { display:flex; gap:6px; flex-wrap:wrap; }
+.ss-pipeview .ss-paint-feats span { display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:4px 10px; border-radius:999px;
+  background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); color:var(--ss-text,#f0efed); }
+.ss-pipeview .ss-paint-feats .ss-icon { color:var(--ss-accent,#F2FF59); }
+.ss-stage .ss-pipeview button.go.ss-paint-open { padding:11px 20px !important; font-size:14px; display:inline-flex; align-items:center; gap:8px; }
+.ss-pipeview .ss-studio.ss-painting { grid-template-columns:minmax(0, 1fr); }
+.ss-pipeview .ss-studio.ss-painting > .ss-studio-side { display:none; }
 @media (max-width: 860px) { .ss-pipeview .ss-studio { grid-template-columns:1fr; } .ss-pipeview .ss-studio-side { position:static; max-height:none; } }
 `;
 
@@ -210,7 +227,7 @@ export class Pipeline {
   mark(k) {
     this.current = k;
     const r = this.ctx.getRenders(this.ctx.stage.activeShot().id) || {};
-    const done = { set: !!r.previz, frame: !!r.look, motion: !!(r.final || r.final_sound || r.draft), review: !!(r.final || r.final_sound),
+    const done = { script: !!this.ctx.hasScript?.(), cast: !!this.ctx.castDone?.(), set: !!r.previz, frame: !!r.look, motion: !!(r.final || r.final_sound || r.draft), review: !!(r.final || r.final_sound),
       deliver: false };
     for (const s of STEPS) {
       this.btns[s.k].setAttribute("aria-current", s.k === k ? "step" : "false");
@@ -237,7 +254,7 @@ export class Pipeline {
     return h("button", { type: "button", class: "go next", on: { click: () => this.go(k) } }, `${label} →`);
   }
 
-  // ------------------------------------------------------------------ ② Frame
+  // ------------------------------------------------------------------ ④ Frame
   _frameView() {
     const v = h("section", { class: "ss-pipeview ss-frameview", hidden: "" });
     this.f = {};
@@ -279,14 +296,18 @@ export class Pipeline {
     f.neg = h("textarea", { placeholder: "Negative prompt: what to keep out (extra people, text, blur…)", style: "min-height:44px",
       on: { change: () => { this.set(9081, "negative", f.neg.value); } } });
     f.editHost = h("div", { class: "ss-edithost" });
-    f.editBtn = h("button", { type: "button", class: "go", title: "Inpaint (paint a mask, describe the change) or outpaint (drag the box past the edge) right here",
-      on: { click: () => this._openEditor() } }, "Edit this frame: inpaint / outpaint");
-    f.closeEdit = h("button", { type: "button", class: "ghost", hidden: "", on: { click: () => this._closeEditor() } }, "Close editor");
+    f.editBtn = h("button", { type: "button", class: "go ss-paint-open", title: "Open your chosen frame in Paint Studio: Generative Fill, Remove, Extend the canvas, layers and masks",
+      on: { click: () => this._openEditor() } }, icon("wand-sparkles", 17), "Open Paint Studio");
+    f.closeEdit = h("button", { type: "button", class: "ghost", hidden: "", on: { click: () => this._closeEditor() } }, "Close Paint Studio");
+    const feat = (ic, t) => h("span", {}, icon(ic, 14), t);
+    f.paintFeats = h("div", { class: "ss-paint-feats" }, feat("sparkles", "Generative Fill: mask it, describe it"),
+      feat("x", "Remove people, signs, rigs"), feat("maximize-2", "Extend 16:9 → 2.39, 9:16…"),
+      feat("wand-sparkles", "Magic select (SAM 3.1)"), feat("users", "Put a cast member in"), feat("layers", "Layers, history, variations"));
     v.append(
-      h("h3", {}, "② Frame: paint the first frame from your clay"),
-      h("p", { class: "lede" }, "Generate a few frames from your clay, pick one, touch it up right here (inpaint, outpaint), then animate it. Every shot gets its own frame: pick a shot below."),
+      h("h3", {}, "④ Frame: paint the first frame from your clay"),
+      h("p", { class: "lede" }, "Generate a few frames from your clay, pick one, fix it in Paint Studio (fill, remove, extend the canvas), then animate it. Every shot gets its own frame: pick a shot below."),
       this._shotRow("frame"),
-      h("div", { class: "ss-studio" },
+      f.studio = h("div", { class: "ss-studio" },
         h("div", { class: "ss-studio-side" },
           h("div", { class: "card" },
             h("label", { class: "f" }, "Image model", f.model),
@@ -311,13 +332,44 @@ export class Pipeline {
           f.hero = h("img", { alt: "The chosen frame for this shot", hidden: "",
             style: "width:100%;aspect-ratio:16/9;object-fit:contain;background:#0f0d11;border-radius:14px;border:1px solid rgba(255,255,255,.08)" }),
           f.grid,
-          h("div", { class: "card" },
-            h("div", { class: "ss-editbar" }, h("strong", {}, "Edit"), f.editBtn, f.closeEdit,
-              h("label", { class: "row status" }, f.useTouch, "Animate my edited frame")),
+          f.paintCard = h("div", { class: "card ss-paintcard" },
+            h("div", { class: "ss-paint-head" },
+              h("span", { class: "ss-paint-badge" }, icon("wand-sparkles", 24)),
+              h("div", { class: "ss-paint-txt" }, h("strong", {}, "Paint Studio"),
+                h("span", { class: "status" }, "Get the first frame right before you animate it: a small Photoshop for this frame.")),
+              f.editBtn, f.closeEdit),
+            f.paintFeats,
+            h("label", { class: "row status" }, f.useTouch, "Animate my edited frame (Paint Studio's “Use as first frame” turns this on)"),
             f.editHost))),
-      h("div", { class: "row" }, h("span", { style: "flex:1" }), this._next("③ Animate this frame", "motion")),
+      h("div", { class: "row" }, h("span", { style: "flex:1" }), this._next("⑤ Animate this frame", "motion")),
     );
     return v;
+  }
+
+  /** Paint Studio's "Use as first frame": the painted picture (input/-relative `name`) becomes this shot's chosen
+   *  frame and its touch-up still, so Motion animates it. Returns the shot id. */
+  useEditedFrame({ name, url }) {
+    const sid = this.ctx.stage.activeShot().id;
+    const prev = this.chosen[sid] || {};
+    const i = name.lastIndexOf("/");
+    const file = { filename: name.slice(i + 1), subfolder: i > 0 ? name.slice(0, i) : "", type: "input" };
+    const cand = { url, file, edited: name, seed: prev.seed, model: prev.model, seedNode: prev.seedNode };
+    this.candidates[sid] = [cand, ...(this.candidates[sid] || []).filter((c) => c.edited !== name)];
+    this.chosen[sid] = { ...prev, url, file, edited: name };
+    this.touched[sid] = true;
+    this.set(9086, "switch", true);
+    setTouchupStill(this.ctx.app, name);
+    this.ctx.rememberRender?.(sid, "look", file);
+    this._saveChosen();
+    try { this.ctx.ladder.setSource(2, "image", url); } catch { /* ladder not ready */ }
+    this._drawCandidates();
+    this._drawShotRows();
+    if (this.f) {
+      this.f.useTouch.checked = true;
+      this.f.status.textContent = "Your painted frame is this shot's first frame. Animate it next (Motion), or keep painting.";
+    }
+    this.mark(this.current);
+    return sid;
   }
 
   // ------------------------------------------------------------------ references (character sheets, location, style)
@@ -430,7 +482,7 @@ export class Pipeline {
       "CFG 1 is right; more steps add fine detail, slower." + (cf > 1.5 ? " CFG above ~1.5 tends to burn and roughly doubles the time." : "");
   }
 
-  /** The Canvas editor (inpaint, outpaint, masks, layers) mounted inside ② Frame, on the chosen frame. */
+  /** The Canvas editor (inpaint, outpaint, masks, layers) mounted inside ④ Frame, on the chosen frame. */
   _openEditor() {
     const f = this.f, sid = this.ctx.stage.activeShot().id;
     const url = this.chosen?.[sid]?.url || (this.ctx.getRenders(sid) || {}).look || null;
@@ -439,7 +491,12 @@ export class Pipeline {
     if (f.hero) f.hero.hidden = true;
     f.closeEdit.hidden = false;
     f.editBtn.hidden = true;
-    f.status.textContent = url ? "Your chosen frame is loaded. Mask brush + prompt = inpaint; drag the box past the edge = outpaint." : "Pick a frame first, or paint from scratch.";
+    f.paintFeats.hidden = true;
+    f.grid.hidden = true;
+    f.studio.classList.add("ss-painting");
+    f.paintCard.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    f.status.textContent = url ? "Paint Studio: mask or select an area (B, M, L, W), describe it, Generative Fill. Drag the canvas edge out (C) and Extend. Then “Use as first frame”."
+      : "Pick a frame first, or paint from scratch.";
   }
 
   _closeEditor() {
@@ -447,6 +504,9 @@ export class Pipeline {
     this.ctx.unmountCanvas?.();
     f.closeEdit.hidden = true;
     f.editBtn.hidden = false;
+    f.paintFeats.hidden = false;
+    f.grid.hidden = false;
+    f.studio.classList.remove("ss-painting");
     this._drawCandidates();
   }
 
@@ -584,7 +644,7 @@ export class Pipeline {
       return h("div", { class: "cand", "data-chosen": String(!!isChosen), title: c.seed != null ? `seed ${c.seed}` : "",
         on: { click: () => this.choose(c) } },
         h("img", { src: c.url, alt: "candidate frame" }),
-        h("div", { class: "cap" }, h("span", {}, (c.model === STILL_KREA || !c.model) ? "Krea 2" : String(c.model).split(" ·")[0]),
+        h("div", { class: "cap" }, h("span", {}, c.edited ? "Paint Studio" : (c.model === STILL_KREA || !c.model) ? "Krea 2" : String(c.model).split(" ·")[0]),
           h("span", { class: "pill" }, isChosen ? "✓ Chosen" : "Use this frame")));
     }));
   }
@@ -593,6 +653,12 @@ export class Pipeline {
   choose(c) {
     const sid = this.ctx.stage.activeShot().id;
     this._setChosen(sid, c);
+    // A Paint Studio frame animates through the touch-up still; a generated one through its model + seed.
+    this.touched[sid] = !!c.edited;
+    this.set(9086, "switch", !!c.edited);
+    if (c.edited) setTouchupStill(this.ctx.app, c.edited);
+    if (this.f?.useTouch) this.f.useTouch.checked = !!c.edited;
+    this._saveChosen();
     if (c.model) {
       const krea = c.model === STILL_KREA;
       this.set(9082, "switch", !krea);
@@ -603,11 +669,11 @@ export class Pipeline {
     try { this.ctx.ladder.setSource(2, "image", c.url); } catch { /* ladder not ready */ }
     this._drawCandidates();
     this._drawShotRows();
-    this.f.status.textContent = "Frame chosen. Next: ③ Animate this frame.";
+    this.f.status.textContent = "Frame chosen. Next: ⑤ Animate this frame.";
     this.mark("frame");
   }
 
-  // ------------------------------------------------------------------ ③ Motion
+  // ------------------------------------------------------------------ ⑤ Motion
   _motionView() {
     const v = h("section", { class: "ss-pipeview ss-motionview", hidden: "" });
     this.m = {};
@@ -661,7 +727,7 @@ export class Pipeline {
     m.video = h("video", { controls: "", loop: "", muted: "", playsinline: "" });
     m.video.muted = true;   // the attribute alone doesn't mute a video created in script; unmute with its controls
     v.append(
-      h("h3", {}, "③ Motion: animate it with LTX-2.5"),
+      h("h3", {}, "⑤ Motion: animate it with LTX-2.5"),
       h("p", { class: "lede" }, "LTX follows your clay animation (positions, camera, timing) and paints it in the style of your chosen frame. Pick a shot below, or render them all."),
       this._shotRow("motion"),
       h("div", { class: "two" },
@@ -684,7 +750,7 @@ export class Pipeline {
           h("div", { class: "row" }, m.allDraft, m.allFinal))),
       m.status,
       h("div", { class: "card" }, m.vidCap = h("div", { class: "status" }, "Latest result for this shot"), m.video),
-      h("div", { class: "row" }, h("span", { style: "flex:1" }), this._next("④ Review on the Ladder", "review")),
+      h("div", { class: "row" }, h("span", { style: "flex:1" }), this._next("⑥ Review on the Ladder", "review")),
     );
     return v;
   }
@@ -885,12 +951,13 @@ export class Pipeline {
     }
     if (c?.seed != null) this.set(c.seedNode || 9056, "seed", c.seed);
     this.set(9086, "switch", !!this.touched[sid]);
+    if (this.touched[sid] && c?.edited) setTouchupStill(this.ctx.app, c.edited);   // each shot keeps its own painted frame
     this.set(9083, "last_file", loadName(c?.last));
     this.set(9083, "ref_files", (c?.refs || []).map(loadName).filter(Boolean).join("\n"));
   }
 
   _setChosen(sid, c) {
-    this.chosen[sid] = { ...this.chosen[sid], url: c.url, file: c.file, seed: c.seed, model: c.model, seedNode: c.seedNode };
+    this.chosen[sid] = { ...this.chosen[sid], url: c.url, file: c.file, seed: c.seed, model: c.model, seedNode: c.seedNode, edited: c.edited || undefined };
     if (c.file) this.ctx.rememberRender?.(sid, "look", c.file);
     this.ctx.saveChosen?.({ chosen: this.chosen, touched: this.touched });
   }
@@ -966,7 +1033,7 @@ export class Pipeline {
     }
   }
 
-  // ------------------------------------------------------------------ ⑤ Deliver
+  // ------------------------------------------------------------------ ⑦ Deliver
   _deliverView() {
     const v = h("section", { class: "ss-pipeview ss-deliverview", hidden: "" });
     const status = h("div", { class: "status" });
@@ -975,7 +1042,7 @@ export class Pipeline {
     const mk = (label, lede, btn, fn) => h("div", { class: "card" }, h("strong", {}, label), h("p", { class: "lede" }, lede),
       h("div", { class: "row" }, h("button", { type: "button", class: "go", on: { click: fn } }, btn)));
     v.append(
-      h("h3", {}, "⑤ Deliver"),
+      h("h3", {}, "⑦ Deliver"),
       h("p", { class: "lede" }, "Hand the shot to post, or the whole cut to an editor. The Layer Pack is for the shot picked below."),
       this._shotRow("deliver"),
       mk("Layer Pack for VFX", "One layer per actor with mattes cut from the final frames (SAM 3.1 + BiRefNet edges), depth, the camera, and builders for After Effects, Nuke, Resolve, Blender and Photoshop.",
@@ -983,7 +1050,7 @@ export class Pipeline {
       h("div", { class: "row" }, h("button", { type: "button", class: "ghost", on: { click: async () => {
         const fin = (sid) => { const r = this.ctx.getRenders(sid) || {}; return !!(r.final_sound || r.final_audio || r.final); };
         const list = this.shots().filter((s) => fin(s.id));
-        if (!list.length) { status.textContent = "No shot has a final yet: render them in ③ Motion first."; return; }
+        if (!list.length) { status.textContent = "No shot has a final yet: render them in ⑤ Motion first."; return; }
         await this.forEachShot(async (s) => { this._applyShot(s.id); await this.queueAt(5); }, list);
         status.textContent = `${list.length} Layer Pack${list.length > 1 ? "s" : ""} queued (${list.map((s) => s.name).join(", ")}).`;
       } } }, "Layer Packs for every shot with a final")),
