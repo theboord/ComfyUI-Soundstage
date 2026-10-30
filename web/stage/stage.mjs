@@ -936,6 +936,27 @@ export class Stage {
       const g = this.actorMeshes.get(a.id);
       if (g) applyJoints(g, this.poseAt(a, this.frame));
     }
+    // Look at: the head and neck turn toward a target every frame (from look_at_frame on), within a natural range.
+    for (const a of this.state.actors) {
+      if (!a.look_at || this.frame < (a.look_at_frame || 0)) continue;
+      const g = this.actorMeshes.get(a.id), t = this.actorMeshes.get(a.look_at);
+      if (!g?.userData?.joints?.head || !t) continue;
+      g.updateMatrixWorld(true);
+      const head = new THREE.Vector3(); g.userData.joints.head.getWorldPosition(head);
+      const box = new THREE.Box3().setFromObject(t), tgt = box.getCenter(new THREE.Vector3());
+      tgt.y = Math.min(box.max.y - 0.12, PERSON_KINDS.has(this.state.actors.find((x) => x.id === a.look_at)?.kind) ? box.max.y - 0.12 : tgt.y);
+      const local = g.worldToLocal(tgt.clone()), lh = g.worldToLocal(head.clone());
+      const dx = local.x - lh.x, dy = local.y - lh.y, dz = local.z - lh.z;
+      let yaw = Math.atan2(dx, dz) * 180 / Math.PI;               // + = toward the figure's left
+      const pitch = -Math.atan2(dy, Math.hypot(dx, dz)) * 180 / Math.PI;
+      yaw = Math.max(-150, Math.min(150, yaw));
+      const spine = Math.max(-40, Math.min(40, yaw - Math.max(-110, Math.min(110, yaw))));   // past 110 the chest turns too
+      const rest = yaw - spine, neckY = rest * 0.3, headY = rest * 0.7;
+      const cur = this.poseAt(a, this.frame) || {};
+      applyJoints(g, { head: [Math.max(-40, Math.min(40, pitch * 0.7)), Math.max(-80, Math.min(80, headY)), cur.head?.[2] || 0],
+        neck: [Math.max(-20, Math.min(20, pitch * 0.3)), Math.max(-35, Math.min(35, neckY)), cur.neck?.[2] || 0],
+        ...(spine ? { spine: [cur.spine?.[0] || 0, spine, cur.spine?.[2] || 0] } : {}) });
+    }
     if (this.weather) {
       const cam = this._cameraAt(this.frame);
       this.weather.update(this.frame, { x: cam.target[0], z: cam.target[2] });
@@ -2286,6 +2307,89 @@ export class Stage {
     this._buildSet();
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
+  }
+
+  /** Person-to-person / person-to-animal / look-at interactions, built from positions + Pose Studio keys. */
+  interact(id, targetId, action) {
+    const a = this.state.actors.find((x) => x.id === id), b = this.state.actors.find((x) => x.id === targetId);
+    if (!a || !b || a === b) return null;
+    const name = (x) => x.name || LIBRARY[x.kind]?.label || x.kind;
+    const fps = this.state.shot?.fps || 24, when = this.frame > 0 ? ` from ${(this.frame / fps).toFixed(1)} s` : "";
+    if (action === "look_at") {
+      a.look_at = b.id; a.look_at_frame = this.frame;
+      this.setFrame(this.frame); this.onChange(this.toJSON());
+      return `${name(a)} looks at ${name(b)}${when}.`;
+    }
+    if (action === "stop_look") { delete a.look_at; delete a.look_at_frame; this._buildSet(); this.setFrame(this.frame); this.onChange(this.toJSON()); return `${name(a)} stops looking.`; }
+    const pa = this._actorPosAt(a, this.frame), pb = this._actorPosAt(b, this.frame);
+    const dir = new THREE.Vector2(pb[0] - pa[0], pb[2] - pa[2]);
+    if (dir.length() < 1e-3) dir.set(0, 1);
+    dir.normalize();
+    // Place A at a set distance from B, facing B (and B facing A for two people), at the playhead.
+    const face = (who, toX, toZ) => { const p = this._actorPosAt(who, this.frame); who.rotation_deg = Math.round(Math.atan2(toX - p[0], toZ - p[2]) * 180 / Math.PI); };
+    // Distances are surface to surface: a non-person target adds its own half-length along the approach.
+    const reach = (() => {
+      if (PERSON_KINDS.has(b.kind)) return 0;
+      const g = this.actorMeshes.get(b.id);
+      if (!g) return 0.5;
+      const sz = new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3());
+      return Math.abs(dir.x) * sz.x / 2 + Math.abs(dir.y) * sz.z / 2;
+    })();
+    const place = (dist) => {
+      dist += reach;
+      const k = this._editActorKey(a);
+      k.position = [+(pb[0] - dir.x * dist).toFixed(2), k.position[1], +(pb[2] - dir.y * dist).toFixed(2)];
+      face(a, pb[0], pb[2]);
+      if (PERSON_KINDS.has(b.kind)) face(b, k.position[0], k.position[2]);
+    };
+    const poseBoth = (pa2, pb2) => {
+      Object.assign(this._poseKeyHere(a).joints, pa2);
+      if (pb2 && PERSON_KINDS.has(b.kind)) Object.assign(this._poseKeyHere(b).joints, pb2);
+    };
+    const grip = (lr) => Object.fromEntries(["index", "middle", "ring", "pinky"].flatMap((f) => [1, 2, 3].map((i) => [`${lr}_${f}_${i}`, [45, 0]])));
+    let msg = null;
+    switch (action) {
+      case "talk":
+        place(1.0); poseBoth({ r_shoulder: [25, 10, 0], r_elbow: [60, 0] }, { l_shoulder: [10, 8, 0], l_elbow: [30, 0] });
+        a.look_at = b.id; a.look_at_frame = this.frame; if (PERSON_KINDS.has(b.kind)) { b.look_at = a.id; b.look_at_frame = this.frame; }
+        msg = `${name(a)} and ${name(b)} talk face to face${when}.`; break;
+      case "handshake":
+        place(0.8); poseBoth({ r_shoulder: [45, 8, 0], r_elbow: [40, 0], ...grip("r") }, { r_shoulder: [45, 8, 0], r_elbow: [40, 0], ...grip("r") });
+        msg = `${name(a)} shakes hands with ${name(b)}${when}.`; break;
+      case "hug":
+        // Arms raised forward and turned in (negative twist) so the forearms wrap around the other person's back.
+        place(0.3); poseBoth({ l_shoulder: [70, 22, -70], r_shoulder: [70, 22, -70], l_elbow: [70, 0], r_elbow: [70, 0], head: [0, 30, 0] },
+          { l_shoulder: [62, 26, -65], r_shoulder: [62, 26, -65], l_elbow: [75, 0], r_elbow: [75, 0], head: [0, -30, 0] });
+        msg = `${name(a)} hugs ${name(b)}${when}.`; break;
+      case "hold_hands": {
+        const k = this._editActorKey(a), side = new THREE.Vector2(-dir.y, dir.x);
+        k.position = [+(pb[0] - side.x * 0.55).toFixed(2), k.position[1], +(pb[2] - side.y * 0.55).toFixed(2)];
+        a.rotation_deg = b.rotation_deg || 0;
+        poseBoth({ l_shoulder: [10, 22, 0], l_elbow: [15, 0], ...grip("l") }, { r_shoulder: [10, 22, 0], r_elbow: [15, 0], ...grip("r") });
+        msg = `${name(a)} holds hands with ${name(b)}${when}.`; break;
+      }
+      case "point_at":
+        face(a, pb[0], pb[2]);
+        Object.assign(this._poseKeyHere(a).joints, POSE_PRESETS.Point);
+        a.look_at = b.id; a.look_at_frame = this.frame;
+        msg = `${name(a)} points at ${name(b)}${when}.`; break;
+      case "pet":
+        place(0.55); Object.assign(this._poseKeyHere(a).joints, { spine: [40, 0, 0], r_shoulder: [60, 5, 0], r_elbow: [20, 0], l_hip: [20, 0, 0], r_hip: [20, 0, 0], l_knee: [35], r_knee: [35] });
+        a.look_at = b.id; a.look_at_frame = this.frame;
+        msg = `${name(a)} pets ${name(b)}${when}.`; break;
+      case "lead": {
+        const k = this._editActorKey(a), side = new THREE.Vector2(-dir.y, dir.x);
+        k.position = [+(pb[0] + side.x * 0.7 + dir.x * 0.6).toFixed(2), k.position[1], +(pb[2] + side.y * 0.7 + dir.y * 0.6).toFixed(2)];
+        a.rotation_deg = b.rotation_deg || 0;
+        Object.assign(this._poseKeyHere(a).joints, { r_shoulder: [35, 25, 0], r_elbow: [25, 0], ...grip("r") });
+        msg = `${name(a)} leads ${name(b)} by the reins${when}: walk them together with the same path.`; break;
+      }
+      default: return null;
+    }
+    this._yCache?.delete(a);
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    return msg;
   }
 
   poseInfo(id) {

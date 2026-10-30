@@ -61,6 +61,20 @@ export class PosePanel {
     gallery.className = "row";
     gallery.append(Object.assign(document.createElement("span"), { className: "note", textContent: "Gallery:" }),
       ...Object.keys(POSE_PRESETS).map((n) => this._btn(n, `Apply “${n}” at the playhead`, () => this._do(() => this.stage.applyPosePreset(this.id, n), `${n} at frame ${this.stage.frame}.`))));
+    // Interact: look at / talk / shake hands / hug / hold hands / point / pet / lead.
+    const inter = document.createElement("div");
+    inter.className = "row";
+    this.target = document.createElement("select");
+    this.action = document.createElement("select");
+    for (const [v, l] of [["look_at", "Look at"], ["talk", "Talk to (face each other)"], ["handshake", "Shake hands"], ["hug", "Hug"],
+      ["hold_hands", "Hold hands"], ["point_at", "Point at"], ["pet", "Pet (dog, cat, horse)"], ["lead", "Lead by the reins (horse)"], ["stop_look", "Stop looking"]])
+      this.action.append(new Option(l, v));
+    for (const el of [this.target, this.action]) el.addEventListener("pointerdown", (e) => e.stopPropagation());
+    inter.append(Object.assign(document.createElement("span"), { className: "note", textContent: "Interact:" }), this.action,
+      Object.assign(document.createElement("span"), { className: "note", textContent: "with" }), this.target,
+      this._btn("Do it at the playhead", "Positions, faces and poses them for the interaction at the playhead",
+        () => { const m = this.stage.interact(this.id, this.target.value, this.action.value); this.refresh(); this.onStatus(m || "Pick someone or something to interact with."); }));
+    this.el.append(inter);
     const hint = Object.assign(document.createElement("div"), { className: "note",
       textContent: "Every slider keys the pose at the playhead. One key holds for the whole shot; add more at other frames and the pose eases between them (a head turn at 2 s). The video follows the clay pose." });
     this.el.append(head, gallery, hint);
@@ -119,7 +133,14 @@ export class PosePanel {
     const person = info && ["man", "woman", "child"].includes(info.kind);
     this.el.hidden = !person;
     this.id = person ? info.id : null;
-    if (person) { this.title.textContent = `Pose · ${info.name}`; this.refresh(); }
+    if (person) {
+      this.title.textContent = `Pose · ${info.name}`;
+      const others = (this.stage.toJSON().actors || []).filter((a) => a.id !== info.id && !a.carry_id);
+      const keep = this.target.value;
+      this.target.replaceChildren(...others.map((a) => new Option(a.name || a.kind, a.id)));
+      if (others.some((a) => a.id === keep)) this.target.value = keep;
+      this.refresh();
+    }
   }
 
   _sig() {
