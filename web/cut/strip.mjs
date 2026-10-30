@@ -387,6 +387,21 @@ export class ShotStrip {
     this.render();
   }
 
+  /** A fresh scene (Video → Stage): one clip per setup, each the whole shot, nothing excluded. */
+  resetToShots() {
+    const { frames } = this._clock();
+    this._set({ cut: this._setups().map((s) => ({ shot_id: String(s.id), in: 0, out: frames })), excluded_shots: [] });
+  }
+
+  /** The shot got longer (a motion take stretched it): a clip that ran to the old end now runs to the new one. */
+  growWithShot(oldFrames) {
+    const { frames } = this._clock();
+    const cut = this.saved.cut || [];
+    const old = oldFrames || Math.max(0, ...cut.map((e) => e.out));
+    if (!(frames > old) || !cut.some((e) => e.out >= old - 1)) return;
+    this._set({ cut: cut.map((e) => (e.out >= old - 1 ? { ...e, out: frames } : e)) });
+  }
+
   /** One edit: patch the saved cut, persist, redraw. eids: the event ids after the edit, when known. */
   _set(patch, { undo = true, eids = null } = {}) {
     if (undo) {

@@ -39,6 +39,7 @@ import { CastPanel } from "./cast/cast.mjs";
 import { stageSetupForScene } from "./script/parse.mjs";
 import { NO_SCENE, scopeShots, stageSig, listShots, keyOfShot, packScript, unpackScript, sceneNumberOf, retireScenes } from "./script/scenes.mjs";
 import { VIDEO_ACCEPT, cameraRaw, fetchSourceSpec, rawExplainer, sourceLine } from "./ui/sourcespec.mjs";
+import { JobCard, chooseVideoUse, clipSeconds, v2sPlan, wireVideoDrop, isVideoFile } from "./ui/videoimport.mjs";
 
 const CSS = `
 .ss-stage { display:flex; flex-direction:column; gap:6px; padding:6px; background:#16191e; border-radius:6px;
@@ -70,6 +71,8 @@ const CSS = `
 .ss-rungs { display:flex; justify-content:space-between; color:#7d8694; font-size:11px; padding:0 2px; }
 .ss-rungs span[data-ready=true] { color:#e39a40; }
 .ss-stageview { position:relative; }
+.ss-stage .ss-vi-tabbtn { flex:1 0 100%; justify-content:center; order:-1; margin:2px 0 4px; padding:8px 12px !important; font-size:13px; }
+.ss-stage[data-ws=wide] .ss-vi-tabbtn, .ss-stage.ss-full .ss-vi-tabbtn { display:none !important; }
 .ss-stage [hidden] { display:none !important; }
 .ss-stage.ss-cutmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-cutview) { display:none !important; }
 .ss-stage.ss-scriptmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-scriptview):not(.ss-status) { display:none !important; }
@@ -1198,38 +1201,59 @@ function createStageWidget(node, inputName) {
   // Video → Stage (Magnific "3D Scenes from video"): the clip becomes an editable layout — real-size subjects
   // with start/end marks, primitive set pieces, and the source camera move as keys you can drag in Top view.
   const videoIn = Object.assign(document.createElement("input"), { type: "file", accept: VIDEO_ACCEPT, hidden: true });
-  videoIn.addEventListener("change", async () => {
+  videoIn.addEventListener("change", () => {
     const f = videoIn.files?.[0];
     videoIn.value = "";
+    const then = videoIn.dataset.then || "stage";
+    delete videoIn.dataset.then;
     if (!f) return;
+    if (then === "ask") importVideo(f);
+    else rebuildFromVideo(f);
+  });
+  // The job card over the 3D view: the step, a bar that keeps moving, elapsed time and an estimate, then the result.
+  const job = new JobCard(view);
+  job.onTick = (line) => { status.textContent = line; };
+  let videoBusy = false;
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  /** Video → Stage: the clip becomes the set, the camera move and the performer (SAM 3D Body). */
+  async function rebuildFromVideo(f) {
     const say = (m) => (status.textContent = m);
     // Camera RAW (docs/source_fidelity.md): no SDK to decode it, so the next clip picked is its proxy.
     if (cameraRaw(f.name)) { videoIn.dataset.original = f.name; say(`${rawExplainer(f.name)} Choose "Video clip" again and pick the proxy.`); return; }
+    if (videoBusy) { say("Still bringing in the last video…"); return; }
     const original = videoIn.dataset.original || "";
     delete videoIn.dataset.original;
+    videoBusy = true;
     photoSel.sel.disabled = true;
+    videoCta.hidden = true;
+    const secs = await clipSeconds(f);
+    job.start(`Video → Stage: ${f.name}`, v2sPlan(Math.round((secs || 8) * 25)));
+    job.step("upload");
     try {
-      say(`Uploading ${f.name}…`);
       const body = new FormData();
       body.append("image", f, f.name);
       body.append("type", "input"); // the input root, so Soundstage · Footage lists it as the reference plate
       const up = await api.fetchApi("/upload/image", { method: "POST", body });
-      if (up.status !== 200) throw new Error(`upload failed (${up.status})`);
+      if (up.status !== 200) throw new Error(`the upload failed (${up.status}); is the ComfyUI server reachable?`);
       const video = (await up.json()).name;
       const r = await api.fetchApi("/soundstage/video2stage", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ video, original }) });
       const j = await r.json().catch(() => ({}));
       if (r.status === 404 || r.status === 405) throw new Error("Video → Stage isn't installed on this server yet (restart ComfyUI)");
       if (r.status >= 400 || !j.job) throw new Error(j.error || `start failed (${r.status})`);
-      let res = null;
+      job.step("queued");
+      let res = null, misses = 0;
       for (let t = 0; t < 1200 && !res; t++) {
         await new Promise((ok) => setTimeout(ok, 1500));
-        const s = await (await api.fetchApi(`/soundstage/video2stage/job?id=${j.job}`)).json();
+        let s;
+        try { s = await (await api.fetchApi(`/soundstage/video2stage/job?id=${j.job}`)).json(); misses = 0; }
+        catch { if (++misses > 20) throw new Error("lost touch with the server for 30 s (tunnel down?)"); continue; }
+        if (s.error === "no such job") throw new Error("the server forgot the job (ComfyUI restarted?). Try again");
         if (s.state === "error") throw new Error(s.error);
         if (s.state === "done") res = s.result;
-        else say(`Video → Stage: ${s.step || "queued"}… ${Math.round((s.progress || 0) * 100)}%`);
+        else job.step(s.step || "queued");
       }
-      if (!res) throw new Error("timed out");
+      if (!res) throw new Error("it took longer than 30 minutes (is the GPU queue stuck?)");
       const scene = res.scene;
       for (const a of scene.actors || []) if (a.kind === "glb" && a.url?.startsWith("/view")) a.url = api.apiURL(a.url);
       if (scene.reference?.samples?.[0]) {
@@ -1238,18 +1262,93 @@ function createStageWidget(node, inputName) {
       }
       loadScene(stage, scene);
       try { syncEnv(); syncLight(); syncShots(); } catch { /* rows not built yet */ }
+      try { strip?.resetToShots(); } catch { /* strip not built */ }   // the cut is the whole clip, not the old shot's length
+      stage.setFreeView(false);                                         // look through the clip's own camera
+      const performer = (stage.toJSON().actors || []).find((a) => a.mocap);
+      if (performer) { stage.select(performer.id); inspect("obj"); }
+      stage.setFrame(0); afterTimeChange();
       const m = res.summary || {};
-      say((scene.reference?.source ? `${sourceLine(scene.reference.source)}. ` : "") +
-        `Rebuilt ${f.name}: ${m.objects || 0} subjects (${m.movers || 0} moving), ${m.set_pieces || 0} set pieces, ` +
-        `the camera move as ${m.camera_keys || 0} keys over ${m.frames} frames. Drag the keys in Top view to re-shoot it. ` +
-        `The clip is in the input folder as ${video} for Soundstage · Footage / Recast.` +
-        (res.notes?.length ? ` Notes: ${res.notes.slice(0, 4).join("; ")}.` : ""));
+      const sh = stage.toJSON().shot, keys = stage.activeShot()?.camera_keys?.length || 0;
+      const secsTxt = `${(sh.frames / sh.fps).toFixed(1)} s`;
+      const props = (m.objects || 0) - (performer ? 1 : 0);
+      const pieces = (m.set_pieces || 0) + Math.max(0, props);
+      const summary = (performer ? `The performer has ${secsTxt} of SAM 3D Body motion` : "No performer was captured") +
+        ` in a set of ${plural(pieces, "piece")} rebuilt from the clip, seen ` +
+        (keys > 1 ? `through the clip's camera move (${keys} keys).` : "from the clip's camera (locked off).") +
+        ` Took ${Math.round(job.elapsed())} s.`;
+      const notes = [...(scene.reference?.source ? [sourceLine(scene.reference.source)] : []), ...(res.notes || []),
+        `The clip is in the input folder as ${video} (Soundstage · Footage / Recast).`];
+      say(summary);
+      job.done("Your clip is now a 3D set", summary, [
+        ...(performer ? [{ key: "play", label: "Play the take", icon: "play", go: true, close: false, run: () => playTake() }] : []),
+        { key: "frame", label: "Shoot it → Frame", icon: "image", go: !performer, run: () => pipeline?.go("frame") },
+        { key: "top", label: "Move the camera", icon: "move-3d", run: () => { if (topView.el.hidden) topBtn.click(); } },
+      ], notes);
+      if (performer) playTake();
     } catch (err) {
-      say(`Couldn't rebuild ${f.name}: ${err.message}`);
+      const msg = String(err?.message || err).replace(/^(\w+Error): /, "");
+      say(`Couldn't rebuild ${f.name}: ${msg}`);
+      job.fail(`Couldn't rebuild ${f.name}`, `${msg}. Your set is unchanged.`, [
+        { key: "retry", label: "Try another clip", icon: "upload", run: () => pickVideo("stage") }]);
     } finally {
       photoSel.sel.disabled = false;
+      videoBusy = false;
+      syncVideoCta();
     }
-  });
+  }
+  /** Play the shot from the top (the take with it). */
+  function playTake() {
+    if (playing) play.click();   // stop first, so it restarts from frame 0
+    stage.setFrame(0); afterTimeChange();
+    play.click();
+  }
+  /** Pick a clip: then = "stage" (Video → Stage), "ask" (which one?). */
+  function pickVideo(then = "ask") { videoIn.dataset.then = then; videoIn.click(); }
+  /** Any video that comes in (the Import button, a drop on the stage): ask what it is for, then do it. */
+  async function importVideo(f) {
+    if (!isVideoFile(f)) { status.textContent = `${f.name} isn't a video clip.`; return; }
+    if (videoBusy) { status.textContent = "Still bringing in the last video…"; return; }
+    const cur = stage.selectedInfo?.();
+    const sel = cur && isPerson(cur.kind) ? cur : null;
+    const anyone = sel || people()[0];
+    const choice = await chooseVideoUse(f, { person: anyone?.name || null, selected: !!sel });
+    if (choice === "stage") rebuildFromVideo(f);
+    else if (choice === "capture") {
+      if (!pickPerson()) return;
+      inspect("obj");
+      try { posePanel.focusSection("capture"); } catch { /* panel not built */ }
+      posePanel._capture(f, 0);
+    }
+  }
+  // The obvious way in: a bright "Import video" button in the viewport header, a call to action on the 3D view
+  // (big on an empty stage), and dropping a clip anywhere on the stage widget. All three ask what the clip is for.
+  const importHead = Object.assign(document.createElement("button"), { type: "button", className: "ss-vi-head",
+    title: "Bring a video into 3D: rebuild it as a set with its camera and performer, or put its motion on a person (SAM 3D Body)" });
+  importHead.dataset.ssIcon = "file-video-camera";
+  importHead.append(icon("file-video-camera", 14), "Import video (SAM 3D)");
+  importHead.addEventListener("pointerdown", (e) => e.stopPropagation());
+  importHead.addEventListener("click", () => pickVideo("ask"));
+  const videoCta = Object.assign(document.createElement("button"), { type: "button", className: "ss-vi-cta",
+    title: "Drop a video file here, or click to pick one" });
+  videoCta.append(icon("file-video-camera", 15), Object.assign(document.createElement("span"), { textContent: "Drop a video here → 3D" }),
+    Object.assign(document.createElement("small"), { textContent: "Rebuild a clip as a 3D set with its camera and performer, or copy its motion onto a person (SAM 3D Body)." }));
+  videoCta.addEventListener("pointerdown", (e) => e.stopPropagation());
+  videoCta.addEventListener("click", () => pickVideo("ask"));
+  view.append(videoCta);
+  // In the App's narrow side panel the viewport header is far down: the same button leads the Soundstage header there.
+  const importTab = importHead.cloneNode(true);
+  importTab.classList.add("ss-vi-tabbtn");
+  importTab.addEventListener("pointerdown", (e) => e.stopPropagation());
+  importTab.addEventListener("click", () => { if (view.hidden) showView("stage"); pickVideo("ask"); });
+  tabs.querySelector(".ss-brand") ? tabs.querySelector(".ss-brand").after(importTab) : tabs.prepend(importTab);
+  const syncVideoCta = () => {
+    const actors = (stage.toJSON().actors || []).length;
+    videoCta.dataset.big = String(actors === 0);
+    videoCta.lastChild.previousSibling.textContent = actors === 0 ? "Start from a video: drop it here or click" : "Drop a video here → 3D";
+    videoCta.hidden = !job.el.hidden;
+  };
+  job.onShow = job.onHide = () => syncVideoCta();
+  wireVideoDrop(el, view, (f) => { if (view.hidden) showView("stage"); importVideo(f); });
   photoIn.addEventListener("change", async () => {
     const f = photoIn.files?.[0], kind = photoIn.dataset.kind;
     photoIn.value = "";
@@ -1383,7 +1482,10 @@ function createStageWidget(node, inputName) {
   apRow.append(...personCtl, cMain.wrap, followSel.wrap, beamSel.wrap);
   // Pose Studio: every joint (fingers too), a gallery and keys, under the selected person's appearance controls.
   const poseHost = document.createElement("div");
-  const posePanel = new PosePanel(poseHost, { stage, api, onStatus: (m) => { status.textContent = m; } });
+  const posePanel = new PosePanel(poseHost, { stage, api, onStatus: (m) => { status.textContent = m; },
+    job: () => job, onTake: (old) => { try { strip?.growWithShot(old); } catch { /* strip not built */ } },
+    actions: () => [{ key: "play", label: "Play the take", icon: "play", go: true, close: false, run: () => playTake() },
+      { key: "frame", label: "Shoot it → Frame", icon: "image", run: () => pipeline?.go("frame") }] });
   stage.fetchApi = (u) => api.fetchApi(u);
   stage.onMocap = () => { try { posePanel._drawTake(); } catch { /* panel gone */ } };
   const isPerson = (k) => k === "man" || k === "woman" || k === "child";
@@ -1737,9 +1839,9 @@ function createStageWidget(node, inputName) {
     { k: "video", ic: "file-video-camera", label: "Video → Stage",
       tip: "Rebuild a location and its performer from a video clip, with the camera move as keys you can re-shoot.",
       run: () => {
-        if (photoSel.sel.disabled) { status.textContent = "Still working on the last import…"; return; }
-        status.textContent = "Pick a video clip: Soundstage rebuilds the set, the performer and the camera move (about a minute).";
-        videoIn.click();
+        if (videoBusy) { status.textContent = "Still bringing in the last video…"; return; }
+        status.textContent = "Pick a video clip (one person, head to toe, 3–10 s is best): Soundstage rebuilds the set, the camera move and the performer with SAM 3D Body (2–3 min). You can also drop a clip on the stage.";
+        pickVideo("stage");
       } },
     { k: "photo", ic: "image-up", label: "Photo → 3D",
       tip: "Turn a photo into the whole 3D set, a solid object, a splat, a cut-out card, a backdrop or a floor plan.",
@@ -1784,6 +1886,7 @@ function createStageWidget(node, inputName) {
 
   function syncControls() {
     const s = stage.toJSON();
+    try { syncVideoCta(); } catch { /* not built yet */ }
     const cam = stage._cameraAt(stage.frame || 0);
     lens.input.value = cam.focal_mm; lens.out.textContent = `${Math.round(cam.focal_mm)}mm`;
     try { lensPick.set(cam.focal_mm); syncDome(); } catch { /* not built yet */ }
@@ -2653,7 +2756,7 @@ function createStageWidget(node, inputName) {
 
     // Viewport: a slim header (shot / free / top, display mode, the navigation hint), then the picture, fitted.
     hint.title = hint.textContent;
-    vphead.append(camMode, hint, views);
+    vphead.append(importHead, camMode, hint, views);
     vpCell.append(view);
     center.append(vphead, vpCell, ladderView, lookView);
     bottomScroll.append(tracksHost, stripHost, cutBar);

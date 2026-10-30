@@ -2874,6 +2874,7 @@ export class Stage {
     if (!scene || typeof scene !== "object" || !scene.camera) return;
     this.state = clone(scene);
     if (!this.state.shot) this.state.shot = { frames: 97, fps: 24 };
+    for (const a of this.state.actors || []) if (!a.kind) a.kind = "man";   // older scenes: drawn as a man, so a person
     this.camera.aspect = this.fw / this.fh;
     if (this.viewCam) { this.viewCam.aspect = this.fw / this.fh; this.viewCam.updateProjectionMatrix(); }
     this._snap = null;
