@@ -31,6 +31,7 @@ import { PosePanel } from "./stage/posepanel.mjs";
 import { listenVcam, LiveVcam, listTakes, fetchTake, takeToCamera, anchorFromCamera } from "./vcam/live.mjs";
 import { ScriptPanel, SceneSwitcher } from "./script/panel.mjs";
 import { DEMO_SCRIPT } from "./script/demo_script.mjs";
+import { DailiesBin } from "./dailies/bin.mjs";
 import { stageSetupForScene } from "./script/parse.mjs";
 import { NO_SCENE, scopeShots, stageSig, listShots, keyOfShot, packScript, unpackScript, sceneNumberOf, retireScenes } from "./script/scenes.mjs";
 
@@ -67,6 +68,11 @@ const CSS = `
 .ss-stage [hidden] { display:none !important; }
 .ss-stage.ss-cutmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-cutview) { display:none !important; }
 .ss-stage.ss-scriptmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-scriptview):not(.ss-status) { display:none !important; }
+.ss-stage.ss-dailiesmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-dailiesview):not(.ss-status) { display:none !important; }
+.ss-dailiesview { min-width:0; display:flex; flex-direction:column; gap:8px; }
+.ss-take-view { position:fixed; inset:0; z-index:10000; background:rgba(8,8,10,.86); display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; }
+.ss-take-view video, .ss-take-view img { max-width:90vw; max-height:78vh; border-radius:10px; background:#000; }
+.ss-take-view .cap { color:#f4f4f5; font-weight:600; }
 .ss-scriptview { min-width:0; }
 .ss-scenehead { display:flex; align-items:center; gap:8px; min-width:0; }
 .ss-cutview > .ss-scenehead { margin:0 0 6px; }
@@ -310,7 +316,7 @@ function createStageWidget(node, inputName) {
   ladderView.append(rungs);
   const tabBtns = {};
   let dock = null;   // the Set step's tool dock (built with the rows it leads to, further down)
-  for (const [k, label] of [["script", "Script"], ["stage", "Stage"], ["canvas", "Canvas"], ["advisor", "Advisor"], ["look", "Look"], ["ladder", "Ladder"], ["cut", "Cut"]]) {
+  for (const [k, label] of [["script", "Script"], ["stage", "Stage"], ["canvas", "Canvas"], ["advisor", "Advisor"], ["look", "Look"], ["ladder", "Ladder"], ["dailies", "Dailies"], ["cut", "Cut"]]) {
     const b = Object.assign(document.createElement("button"), { type: "button", textContent: label });
     b.setAttribute("aria-pressed", String(k === "stage"));
     b.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -328,6 +334,11 @@ function createStageWidget(node, inputName) {
   const scriptView = Object.assign(document.createElement("div"), { className: "ss-scriptview" });
   scriptView.hidden = true;
   el.append(scriptView);
+  // Dailies tab: each scene's setups and takes as an Avid-style bin (frame / list) and a lined script.
+  const dailiesView = Object.assign(document.createElement("div"), { className: "ss-dailiesview" });
+  dailiesView.hidden = true;
+  el.append(dailiesView);
+  let dailies = null;
   const look = new LookPanel(lookView, () => ({ ...stage.toJSON(), lighting_prompt: stage.lightingPrompt() }),
     { fetchApi: (path, init) => api.fetchApi(path, init),
       getFocal: () => stage._cameraAt(stage.frame || 0).focal_mm,
@@ -667,6 +678,9 @@ function createStageWidget(node, inputName) {
     lookView.hidden = !isLook;
     scriptView.hidden = k !== "script";
     el.classList.toggle("ss-scriptmode", k === "script");
+    dailiesView.hidden = k !== "dailies";
+    el.classList.toggle("ss-dailiesmode", k === "dailies");
+    if (k === "dailies") { try { dailies?.refresh(); } catch { /* not built yet */ } }
     if (k === "script") { try { scriptPanel?.render(); } catch { /* not built yet */ } }
     cutView.hidden = k !== "cut";
     advisorView.hidden = k !== "advisor";
@@ -830,7 +844,20 @@ function createStageWidget(node, inputName) {
   syncDome();
   sunAz.input.addEventListener("input", syncDome);
   sunEl.input.addEventListener("input", syncDome);
-  bar.append(camMode, lens.wrap, lensPick.el, sunAz.wrap, sunEl.wrap, dome.el, views);
+  // Camera rig: how the camera physically gets from key to key (dolly inertia and settle, jib arc, handheld shake...).
+  const rigWrap = Object.assign(document.createElement("label"), { title: "Camera support: the keys say where the camera goes, the rig says how a real dolly, jib, Steadicam or operator gets it there" });
+  const rigSel = document.createElement("select");
+  for (const o of stage.rigInfo().options) rigSel.append(new Option(o.label, o.id));
+  rigSel.addEventListener("pointerdown", (e) => e.stopPropagation());
+  const rigAmt = Object.assign(document.createElement("input"), { type: "range", min: 0, max: 2, step: 0.1, value: 1, title: "How much of the rig's feel (shake, sway, settle)" });
+  rigAmt.addEventListener("pointerdown", (e) => e.stopPropagation());
+  rigSel.addEventListener("change", () => { stage.setRig(rigSel.value, +rigAmt.value); status.textContent = rigSel.value === "free" ? "Camera follows the keys exactly." : `Camera on a ${rigSel.selectedOptions[0].text.toLowerCase()}: press play to feel it.`; });
+  rigAmt.addEventListener("change", () => stage.setRig(rigSel.value, +rigAmt.value));
+  rigWrap.append("Rig", rigSel, rigAmt);
+  const syncRig = () => { const r = stage.rigInfo(); rigSel.value = r.type; rigAmt.value = r.amount; rigAmt.hidden = r.type === "free"; };
+  syncRig();
+  rigSel.addEventListener("change", syncRig);
+  bar.append(camMode, lens.wrap, lensPick.el, rigWrap, sunAz.wrap, sunEl.wrap, dome.el, views);
 
   // Timeline: which key you are editing, scrub, play, shot length.
   const time = document.createElement("div");
@@ -1410,6 +1437,7 @@ function createStageWidget(node, inputName) {
     shotSel.replaceChildren(...shots.map((x) => new Option(x.name, x.id, false, x.id === st.active_shot)));
     delShot.disabled = shots.length < 2;
     badge.textContent = stage.freeView ? "Free view · shot camera shown" : `Shot cam · ${stage.activeShot().name}`;
+    try { syncRig(); } catch { /* bar not built yet */ }
   }
   stage.onShots = () => {
     tagLiveShots();   // a script scene's new shots get its scene_id (and agent ids a scene-scoped id) before anyone keys on them
@@ -2124,6 +2152,7 @@ function createStageWidget(node, inputName) {
       if (!scriptView.hidden && !typing) scriptPanel.render();
     } finally { syncingPanel = false; }
     try { pipeline._drawShotRows(); } catch { /* not built */ }
+    try { if (!dailiesView.hidden) dailies?.refresh(); } catch { /* not built */ }
   }
 
   scriptPanel = new ScriptPanel(scriptView, {
@@ -2158,6 +2187,43 @@ function createStageWidget(node, inputName) {
     onStatus: (m) => (status.textContent = m),
     sample: DEMO_SCRIPT,
   });
+  // Dailies: the scene on view (the switchers' scene, else the stage's own; without a script, the stage as one scene).
+  const dailiesScene = () => sceneById(filterScene) || sceneById(liveKey) ||
+    { id: "__stage", number: "1", heading: stage.activeShot?.()?.name ? "The stage" : "Scene", elements: [], characters: [] };
+  const dailiesShots = () => {
+    const sc = dailiesScene();
+    if (!script || sc.id === "__stage") return (stage.toJSON().shots || []).map((x) => ({ id: x.id, name: x.name, setup: x.setup, scene_id: sc.id }));
+    return getShots().filter((x) => x.scene_id === sc.id);
+  };
+  const dailiesLayouts = () => { node.properties = node.properties || {}; return (node.properties.ss_dailies ||= {}); };
+  function showTake(shot, take, at = {}) {
+    if (!take?.url) { status.textContent = `${shot.name}: no take rendered yet.`; return; }
+    const wrap = Object.assign(document.createElement("div"), { className: "ss-take-view" });
+    const media = take.video ? Object.assign(document.createElement("video"), { src: take.url, controls: true, autoplay: true })
+      : Object.assign(document.createElement("img"), { src: take.url });
+    if (take.video && at.fraction != null) media.addEventListener("loadedmetadata", () => { media.currentTime = (media.duration || 0) * at.fraction; });
+    const cap = Object.assign(document.createElement("div"), { className: "cap", textContent: `${shot.name} · Tk ${take.n || 1} · ${take.kind || ""}  (click to close)` });
+    wrap.append(media, cap);
+    wrap.addEventListener("pointerdown", (e) => { e.stopPropagation(); if (e.target === wrap || e.target === cap) wrap.remove(); });
+    document.body.append(wrap);
+  }
+  const dailiesHead = document.createElement("div");
+  dailiesHead.className = "ss-bar";
+  dailiesView.append(dailiesHead);
+  const dailiesHost = document.createElement("div");
+  dailiesView.append(dailiesHost);
+  try { mountSwitcher(dailiesHead); } catch { /* switchers unavailable */ }
+  dailies = new DailiesBin(dailiesHost, {
+    getScene: dailiesScene,
+    getShots: dailiesShots,
+    getRenders: (sid) => ({ ...rendersFor(sid), candidates: pipeline.candidates?.[sid], chosen: pipeline.chosen?.[sid] }),
+    getLayout: () => dailiesLayouts()[dailiesScene().id] || null,
+    setLayout: (v) => { dailiesLayouts()[dailiesScene().id] = v; nudgeTracker(); },
+    onOpenTake: (shot, take, at) => showTake(shot, take, at),
+    onCircle: (shot, take) => { status.textContent = take ? `Circled ${shot.name} Tk ${take.n}.` : `${shot.name}: circle cleared.`; },
+    onStatus: (m) => (status.textContent = m),
+  });
+
   node.ssScript = { get script() { return script; }, get liveKey() { return liveKey; }, get filter() { return filterScene; },
     get stages() { return sceneStages; }, get cuts() { return sceneCuts; }, switchScene, buildScene, newShotIn, getShots,
     openShot, panel: scriptPanel, switchers, persist: persistScript };
