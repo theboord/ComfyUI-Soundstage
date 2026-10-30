@@ -222,12 +222,21 @@ def shot_size(z: float, height: float, focal_mm: float) -> str:
     return "ECU"
 
 
-def _facing_words(direction, cam, plural: bool = False, animal: bool = False) -> str:
+def _facing_words(direction, cam, plural: bool = False, animal: bool = False, vehicle: bool = False) -> str:
     fwd, right, _ = G.basis(cam["position"], cam["target"])
     d = G.flat(direction)
     if G.length(d) < 1e-6:
         return ""
     a = G.dot(d, G.flat(fwd))
+    if vehicle:
+        # A grey clay sedan reads the same nose or tail first: name the lights and the direction of travel, or the
+        # video model drives it in reverse.
+        if a > 0.55:
+            return "seen from behind, rear bumper and red tail lights toward the camera, nose pointing away, driving forward away from us"
+        if a < -0.55:
+            return "front toward the camera, headlights and grille facing us, driving forward toward the camera"
+        side = "screen-right" if G.dot(d, right) > 0 else "screen-left"
+        return f"in profile, its nose pointing {side}, driving forward to {side}"
     if a > 0.55:
         # Animals and vehicles: say it bluntly; a clay horse from behind reads as a horse facing us otherwise.
         return ("seen from behind, facing away from the camera" + (", tails toward us" if animal else "")) if animal is not None and animal \
@@ -454,7 +463,8 @@ def groups(entries: list[dict], cam: dict) -> list[dict]:
         out.append({"nouns": _group_nouns([e["noun"] for e in g]), "plural": len(g) > 1, "where": screen_words(sx),
                     "far": h < 0.18, "distance": _distance_words(h, all(e.get("rig") == "biped" for e in g)),
                     "facing": _facing_words(g[0]["heading"], cam, len(g) > 1,
-                                            animal=g[0].get("rig") not in (None, "biped")),
+                                            animal=g[0].get("rig") not in (None, "biped", "vehicle"),
+                                            vehicle=g[0].get("rig") == "vehicle"),
                     "moving": any(G.length(G.sub(e["end"], e["start"])) > 0.3 for e in g)})
     return out
 
@@ -652,7 +662,7 @@ def actor_marks(scene: dict) -> list[dict]:
             continue
         v = dist / max(0.1, seconds)
         if c["rig"] == "vehicle":
-            verb = "drives" if v > 2 else "rolls"
+            verb = "drives forward" if v > 2 else "rolls forward"   # "forward": a clay car reads either way round
         elif c["rig"] == "quadruped":
             verb = "trots" if v < 3 else "runs"
         else:
