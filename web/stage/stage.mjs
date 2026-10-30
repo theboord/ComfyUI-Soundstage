@@ -3,7 +3,7 @@
 // Drag empty space = orbit, Shift+drag = pan, wheel = dolly, drag an actor = move it on the floor.
 import * as THREE from "../vendor/three.module.min.mjs";
 import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompound } from "./library.mjs";
-import { applyPose, MOUNTS } from "./humans.mjs";
+import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./humans.mjs";
 import { buildSet, buildWater, buildWeather } from "./environments.mjs";
 import { buildCard, loadBackdrop, coverFit } from "./cards.mjs";
 import { buildInterior, fixtureActors, interiorCamera, normalizeSpec, toStage } from "./interior.mjs";
@@ -929,6 +929,12 @@ export class Stage {
         if (l.part === "shoulder") l.pivot.rotation.x = -1.15;
         if (l.part === "elbow") l.pivot.rotation.x = -0.6;
       }
+    }
+    // Pose Studio keys last: they override the walk cycle / seat pose for the joints they name.
+    for (const a of this.state.actors) {
+      if (!a.pose_keys?.length) continue;
+      const g = this.actorMeshes.get(a.id);
+      if (g) applyJoints(g, this.poseAt(a, this.frame));
     }
     if (this.weather) {
       const cam = this._cameraAt(this.frame);
@@ -2210,6 +2216,82 @@ export class Stage {
     return a ? { id: a.id, name: a.name, kind: a.kind, rotation_deg: a.rotation_deg || 0, height_m: a.height_m, scale: a.scale || 1,
       appearance: a.appearance || null, mount_id: a.mount_id || null, pose: a.pose || null, seat: a.seat ?? null,
       beam: a.beam || "steady" } : null;
+  }
+
+  // ------------------------------------------------------------------ Pose Studio
+  /** The actor's pose at a frame: each joint eased between its neighbouring keys (held before the first / after the last). */
+  poseAt(a, frame) {
+    const keys = (a?.pose_keys || []).slice().sort((x, y) => x.frame - y.frame);
+    if (!keys.length) return null;
+    if (frame <= keys[0].frame) return keys[0].joints || {};
+    const last = keys[keys.length - 1];
+    if (frame >= last.frame) return last.joints || {};
+    const i = keys.findIndex((k) => k.frame > frame);
+    const k0 = keys[i - 1], k1 = keys[i];
+    let t = (frame - k0.frame) / Math.max(1, k1.frame - k0.frame);
+    t = t * t * (3 - 2 * t);
+    const out = {}, ids = new Set([...Object.keys(k0.joints || {}), ...Object.keys(k1.joints || {})]);
+    for (const id of ids) {
+      const v0 = k0.joints?.[id] || [0, 0, 0], v1 = k1.joints?.[id] || [0, 0, 0];
+      out[id] = [0, 1, 2].map((n) => (v0[n] || 0) + ((v1[n] || 0) - (v0[n] || 0)) * t);
+    }
+    return out;
+  }
+
+  /** The pose key at the playhead, created from the current pose when there is none. */
+  _poseKeyHere(a) {
+    a.pose_keys = a.pose_keys || [];
+    let k = a.pose_keys.find((x) => x.frame === this.frame);
+    if (!k) {
+      k = { frame: this.frame, joints: JSON.parse(JSON.stringify(this.poseAt(a, this.frame) || {})) };
+      a.pose_keys.push(k);
+      a.pose_keys.sort((x, y) => x.frame - y.frame);
+    }
+    return k;
+  }
+
+  /** Set one joint (degrees, plain-word axes) at the playhead; with one key the pose holds for the whole shot. */
+  setJoint(id, joint, value) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a) return;
+    this._poseKeyHere(a).joints[joint] = value.map((v) => Math.round(v * 10) / 10);
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  /** Apply a gallery pose (merged over the current one) at the playhead. */
+  applyPosePreset(id, name) {
+    const a = this.state.actors.find((x) => x.id === id), p = POSE_PRESETS[name];
+    if (!a || !p) return;
+    Object.assign(this._poseKeyHere(a).joints, JSON.parse(JSON.stringify(p)));
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  mirrorPoseAt(id) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a) return;
+    const k = this._poseKeyHere(a);
+    k.joints = mirrorPose(k.joints);
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  /** Remove the key at the playhead (all keys = back to the plain walk / seat pose). */
+  clearPose(id, all = false) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a?.pose_keys) return;
+    a.pose_keys = all ? [] : a.pose_keys.filter((k) => k.frame !== this.frame);
+    if (!a.pose_keys.length) delete a.pose_keys;
+    this._buildSet();
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  poseInfo(id) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a) return null;
+    return { pose: this.poseAt(a, this.frame) || {}, keys: (a.pose_keys || []).map((k) => k.frame), here: !!a.pose_keys?.some((k) => k.frame === this.frame) };
   }
 
   /** Which seat a rider takes in a vehicle (index into SEATS[kind]). */
