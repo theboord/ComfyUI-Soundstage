@@ -12,6 +12,7 @@ export const LIBRARY = {
   dog: { label: "Dog", height: 0.6, rig: "quadruped" },
   horse: { label: "Horse", height: 1.6, rig: "quadruped" },
   cat: { label: "Cat", height: 0.3, rig: "quadruped" },
+  bird: { label: "Bird", height: 0.35, rig: "static" },
   car: { label: "Car", height: 1.45, rig: "vehicle" },
   truck: { label: "Truck", height: 2.6, rig: "vehicle" },
   // Real-car looks (CC0, Quaternius): closed bodies over the built sedan's seats. `length` is bumper to bumper.
@@ -90,6 +91,7 @@ const SYNONYMS = {
   van: "truck", lorry: "truck", bus: "truck", "pickup truck": "truck", pickup: "truck", bike: "bicycle", motorbike: "motorcycle",
   scooter: "motorcycle", vespa: "motorcycle", shrub: "bush", hedge: "bush", plant: "bush",
   home: "house", cabin: "house", hut: "house", seat: "chair", lamppost: "lamp",
+  crow: "bird", raven: "bird", eagle: "bird", hawk: "bird", owl: "bird", pigeon: "bird", seagull: "bird", gull: "bird", parrot: "bird",
   saucer: "ufo", "flying saucer": "ufo", spaceship: "ufo", "space ship": "ufo", mothership: "ufo", "alien ship": "ufo",
   alien: "man", martian: "man", invader: "man",
   torch: "flashlight", "flash light": "flashlight", "electric torch": "flashlight", "maglite": "flashlight",
@@ -143,7 +145,7 @@ export const OBJECT_COLORS = {
   motorcycle: ["#1f2a44", "#1b1b1d"], tree: ["#3e6b35", "#5b4029"], bush: ["#4a7a3e", "#4a7a3e"],
   house: ["#d8cbb2", "#7a3b2e"], bench: ["#8a5a35", "#2d2d2d"], table: ["#8a5a35", "#8a5a35"],
   chair: ["#7a5232", "#7a5232"], lamp: ["#2f3236", "#f3e3b0"], rock: ["#8c877e", "#8c877e"],
-  crate: ["#a7814f", "#a7814f"], flashlight: ["#2b2d31", "#d9dde2"], ufo: ["#8d949c", "#b8f5c4"], wall: ["#bdb7ad", "#bdb7ad"], flat: ["#cfc8bb", "#7a6a55"],
+  crate: ["#a7814f", "#a7814f"], flashlight: ["#2b2d31", "#d9dde2"], bird: ["#1d1d22", "#c9a227"], ufo: ["#8d949c", "#b8f5c4"], wall: ["#bdb7ad", "#bdb7ad"], flat: ["#cfc8bb", "#7a6a55"],
   bed: ["#8a6a4c", "#e9e4da"], single_bed: ["#8a6a4c", "#e9e4da"], sofa: ["#5d6b78", "#7d8a96"], armchair: ["#8a5a3c", "#8a5a3c"],
   coffee_table: ["#6e4f35", "#6e4f35"], tv: ["#3a3a3c", "#111214"], kitchen_counter: ["#e8e4dc", "#9a9590"], fridge: ["#d9dcdf", "#8a8d90"],
   bath: ["#f1f1ee", "#dfe7ea"], toilet: ["#f3f3f0", "#f3f3f0"], washbasin: ["#e8e4dc", "#f3f3f0"], wardrobe: ["#a8865f", "#5a4630"],
@@ -399,6 +401,17 @@ export function buildObject(kind, height, mesh, appearance = null) {
       g.add(beam, beam.target);
       g.userData.beam = beam;
       g.userData.beamBase = 30;
+      break;
+    }
+    case "bird": {
+      // A perched bird about h tall: body, head, beak, folded wings, tail, two legs.
+      const k = h / 0.35;
+      const body = add(new THREE.SphereGeometry(0.09 * k, 14, 10), 0, 0.15 * k, 0); body.scale.set(0.8, 0.85, 1.35);
+      add(new THREE.SphereGeometry(0.055 * k, 12, 10), 0, 0.25 * k, 0.09 * k);
+      add(new THREE.ConeGeometry(0.018 * k, 0.06 * k, 8), 0, 0.245 * k, 0.16 * k, Math.PI / 2, 0, 0, accent);
+      for (const sx of [-1, 1]) { const w = add(new THREE.SphereGeometry(0.07 * k, 10, 8), sx * 0.06 * k, 0.16 * k, -0.02 * k); w.scale.set(0.3, 0.7, 1.5); }
+      add(new THREE.BoxGeometry(0.08 * k, 0.012 * k, 0.12 * k), 0, 0.13 * k, -0.15 * k, -0.35);
+      for (const sx of [-1, 1]) add(new THREE.CylinderGeometry(0.006 * k, 0.006 * k, 0.07 * k, 6), sx * 0.025 * k, 0.035 * k, 0, 0, 0, 0, accent);
       break;
     }
     case "ufo": {
