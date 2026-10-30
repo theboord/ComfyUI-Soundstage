@@ -18,6 +18,9 @@ Built for Comfy Org's *Open Source Higgsfield* challenge (#OpenSourceHiggsfield)
 </tr>
 </table>
 
+<p align="center"><img src="docs/media/genres.gif" width="900" alt="Left the clay stage, right the final: an alien saucer over a city street, then a hiker with a flashlight in a haunted forest"></p>
+<p align="center"><em>Any genre: left the 3D stage, right the final. Sci-fi invasion, then horror in the woods.</em></p>
+
 ### The App, step by step
 
 <table>
