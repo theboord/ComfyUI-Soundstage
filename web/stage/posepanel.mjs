@@ -3,6 +3,8 @@
 // can change during the shot; LTX copies the clay pose, so this is how a head turn or a gesture gets directed.
 import { jointGroups, JOINT_AXES, jointKind, jointRange, POSE_PRESETS } from "./humans.mjs";
 import { captureTake, recordTake } from "./mocapcapture.mjs";
+import { clipSeconds, capturePlan } from "../ui/videoimport.mjs";
+import { sourceLine } from "../ui/sourcespec.mjs";
 
 import { icon } from "../ui/icons.mjs";
 import { spotlight } from "../ui/theme.mjs";
@@ -42,8 +44,9 @@ const CSS = `
 .ss-pose .ss-tool[aria-pressed="true"] { border-color:#f2ff59; color:#f2ff59; background:rgba(242,255,89,.1); }`;
 
 export class PosePanel {
-  constructor(container, { stage, api = null, onStatus = () => {} } = {}) {
+  constructor(container, { stage, api = null, onStatus = () => {}, ...opts } = {}) {
     this.stage = stage; this.api = api; this.onStatus = onStatus; this.id = null; this.inputs = new Map();
+    this.opts = opts;   // job: () => JobCard, actions: () => result buttons, onTake: (oldFrames) => {}
     if (!document.getElementById("ss-pose-css")) {
       const st = Object.assign(document.createElement("style"), { id: "ss-pose-css", textContent: CSS });
       document.head.append(st);
@@ -117,13 +120,31 @@ export class PosePanel {
     if (!id) return;
     if (!this.api) { this.onStatus("Motion capture needs the ComfyUI server (it runs SAM 3D Body on the GPU)."); return; }
     this.mcFile.disabled = this.mcAct.disabled = true;
-    const say = (m) => { this.mcTake.textContent = m; this.onStatus(m); };
+    const job = this.opts.job?.();   // the progress card over the 3D view (web/ui/videoimport.mjs), when there is one
+    const who = this.stage.selectedInfo?.()?.name || "this person";
+    const say = (m) => { this.mcTake.textContent = m; if (!job) this.onStatus(m); };
+    const frames0 = this.stage.state.shot?.frames || 0;
     try {
-      const take = await captureTake(this.api, blob, { name: blob.name, duration, onStatus: say });
+      if (job) {
+        const secs = duration || await clipSeconds(blob);
+        job.start(`Capture motion → ${who}`, capturePlan(Math.round((secs || 6) * 25)));
+        job.step("upload");
+      }
+      const take = await captureTake(this.api, blob, { name: blob.name, duration, onStatus: (m) => {
+        say(m);
+        if (job && !/^Uploading/.test(m)) job.step("mocap", /Queued \(/.test(m) ? `Waiting for the GPU (${m.replace(/^Motion capture: /, "").replace(/…$/, "")})` : undefined);
+      } });
       const msg = this.stage.setMocap(id, take, { start: this.stage.frame });
+      if ((this.stage.state.shot?.frames || 0) !== frames0) this.opts.onTake?.(frames0);
       say(`${msg} Captured in ${Math.round(take.seconds)} s.`);
+      this.onStatus(`${msg} Captured in ${Math.round(take.seconds)} s.`);
+      job?.done(`${who} has the take`, `${msg} SAM 3D Body read it in ${Math.round(take.seconds)} s. It plays from the playhead, moving through your set as the performer did.`,
+        this.opts.actions?.() || [], take.source ? [sourceLine(take.source)] : []);
+      if (job) this.opts.actions?.()[0]?.run();
     } catch (e) {
       say(`Motion capture failed: ${e.message}`);
+      this.onStatus(`Motion capture failed: ${e.message}`);
+      job?.fail("Motion capture failed", `${e.message}. Try a clip where one person is clearly visible, head to toe.`, []);
     } finally {
       this.mcFile.disabled = this.mcAct.disabled = false;
       this._drawTake();
