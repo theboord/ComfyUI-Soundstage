@@ -302,3 +302,24 @@ def test_interior_answers_keep_furniture():
     r = vlm.parse_reply(_fix("drevil_first.txt"))
     assert [o["kind"] for o in r["objects"]] == ["person", "person", "person"]
     assert "table" in [s["type"] for s in r["set"]]          # "desk" -> library table
+
+
+def test_performer_wardrobe_and_placement():
+    """Video -> Stage performer: wardrobe from the vision model's words; feet rays land on the floor in front."""
+    import numpy as np
+    from soundstage.video2stage import performer as P
+    kind, ap = P.appearance_from_label("person in yellow plaid shirt and tiger-striped leggings", "#ffcc00")
+    assert kind == "woman" and ap["top"] == "shirt" and ap["bottom"] == "trousers" and ap["bottom_color"] == "#e07a24"
+    # A level camera 1.6 m up (cam0 = stage axes with y flipped), a person standing 5 m ahead, facing the camera.
+    n = 4
+    body = np.zeros((n, 18, 3)); body[:, 11] = [0.15, 0.9, 0]; body[:, 8] = [-0.15, 0.9, 0]
+    take = {"frames": n, "fps": 24, "source_frames": list(range(n)), "image_size": [480, 640],
+            "body": body.tolist(), "root": [[0, -1.6, -5.0]] * n,
+            "px": [[[320, 400], [330, 400], [310, 300], [330, 300]]] * n}
+    K = np.array([[500.0, 0, 320], [0, 500.0, 240], [0, 0, 1]])
+    A, b = np.diag([-1.0, -1.0, 1.0]), np.array([0.0, 1.6, 0.0])   # track.world_frame for a level camera
+    poses = [np.hstack([np.eye(3), np.zeros((3, 1))])] * 2
+    out = P.place(take, poses, [0.0, 1.0], A, b, K, (640, 480), 24.0)
+    x, z = out["path"][0]
+    assert abs(z - 1.6 * 500 / 160) < 0.2 and abs(x) < 0.3      # the ray through the feet hits the floor 5 m out
+    assert abs(abs(out["yaw"][0]) - 180) < 1                      # facing back toward the camera
