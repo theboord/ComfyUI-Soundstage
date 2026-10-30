@@ -447,6 +447,17 @@ Shot length comes from **Length** in ③ Set, frame size from **Aspect**, and th
 
 Use it to check that the final still matches your blocking: the same people in the same places, the car going the right way, the camera doing what you keyed. A stage that hasn't been rendered yet says so on the picture. If something's off, right-click the shot in the strip and use **Edit original** to go straight back to the step that made it.
 
+The bar above the picture picks what you compare and how:
+
+| Control | What it does |
+|---|---|
+| **3-way** (default) | The same frame cut into three slices, **Left** \| **Middle** \| **Right**, with two handles you drag across it. Left is **Clay** (or **Color**, **Wire**, **Frame**), Middle is **Frame** or **Draft** (click it again to drop the middle), Right is **Draft** or **Final**. Every layer is cropped to the render's own aspect, so they line up while you drag: what changes between them is only what the model changed. |
+| **Wipe** | Two stages, **A** and **vs B** (any of Wire, Clay, Color, Frame, Draft, Final), split by one handle. |
+| **Side by side** | A and B next to each other. |
+| **Fade** | Drag to mix from A to B. |
+
+Drag anywhere on the picture and the nearest handle follows; a click jumps it there. Greyed-out buttons are stages not rendered yet.
+
 <a id="step-7-deliver"></a>
 
 ### ⑦ Deliver
