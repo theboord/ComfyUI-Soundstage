@@ -165,6 +165,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     props = [f"{p['word']} {p['where']}" for p in f1["props"][:3]]
     desc = frame1_safe(look.get("description", ""))
     vcam = S.vehicle_camera(scene)
+    lock = S.traffic_lock(scene)
     shot = vcam["still"] if vcam else SIZE_STILL[f1["size"]] + ("" if who else " of the location")
     prompt = _join([
         (vcam or {}).get("lead", ""),          # where the camera is goes first: depth alone reads a dashboard as a hood
@@ -174,7 +175,8 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         *brief_parts(look, still=True),
         shot,
         "; ".join(who),
-        _still_count(n),
+        lock["still"] if lock else "",
+        "" if lock else _still_count(n),     # drivers sit inside the cars: a head count makes Krea paint pedestrians
         S.ANGLE_STILL[f1["angle"]] if f1["angle"] != "eye" else "eye-level camera",
         f"{round(f1['focal_mm'])}mm lens",
         c.get("lens", {}).get("still", ""),
@@ -191,7 +193,8 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         _join(_grade_words(look)),
     ])
     negative = _join([FRAME1_NEGATIVE + ("" if n > 0 else ", people, person, figure") if n <= 3 else "extra people",
-                      BASE_NEGATIVE, facing_neg, vcam["negative"] if vcam else "", *parts["negatives"], look.get("negative", "")])
+                      BASE_NEGATIVE, facing_neg, vcam["negative"] if vcam else "", lock["negative"] if lock else "",
+                      *parts["negatives"], look.get("negative", "")])
     return _dedupe(prompt), _dedupe(negative)
 
 
@@ -335,9 +338,11 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
     tech_s = c.get("technique", {}).get("motion", "")
     mood_s = _intensity(c.get("mood", {}).get("motion", ""), look) if c.get("mood") else ""
     vcam = S.vehicle_camera(scene)
+    lock = S.traffic_lock(scene)
     sentences = [
         _cap(head) + ".",
         vcam["motion"] if vcam else "",
+        lock["motion"] if lock else "",
         _cap(light) + "." if light else "",
         blocking_s,
         set_s,

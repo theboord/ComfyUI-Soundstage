@@ -33,3 +33,12 @@ def test_outside_or_no_follow_is_none():
 def test_looking_back_inside():
     assert "from the dashboard looking back" in S.vehicle_camera(_scene([0, 1.12, 0.78], [0, 1.1, -0.3]))["still"]
     assert "back seat" in S.vehicle_camera(_scene([0, 1.18, 0.15], [0, 1.0, -1.0]))["still"]
+
+
+def test_traffic_lock_only_when_nobody_on_foot():
+    cars = [{"id": "s", "kind": "sports_car"}, {"id": "p", "kind": "police_car"},
+            {"id": "d", "kind": "man", "mount_id": "s"}]
+    lock = S.traffic_lock({"actors": cars})
+    assert "the only vehicles are a sports car and a police car" in lock["still"] and "pedestrians" in lock["negative"]
+    assert S.traffic_lock({"actors": cars + [{"id": "w", "kind": "woman"}]}) is None   # someone on foot: leave the street alone
+    assert S.traffic_lock({"actors": [{"id": "m", "kind": "man"}]}) is None
