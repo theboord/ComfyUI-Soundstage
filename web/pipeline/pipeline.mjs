@@ -311,12 +311,12 @@ export class Pipeline {
     f.countSeg = h("span", { class: "seg row" }, ...[1, 2, 4].map((n) => h("button", { type: "button", "aria-pressed": String(n === 4),
       on: { click: (e) => { f.count = n; for (const b of f.countSeg.children) b.setAttribute("aria-pressed", String(b === e.currentTarget)); } } }, `${n}`)));
     // Quality = step count, up front (the same Steps field as in Advanced). More steps add fine detail, slower.
-    const QUALITY = { klein: [["Fast", 8], ["Standard", 0], ["High", 28], ["Max", 40]], krea: [["Fast", 6], ["Standard", 0], ["High", 14], ["Max", 20]] };
-    f.qualSeg = h("span", { class: "seg row", title: "Steps for the image model: more = finer detail, slower (Standard = the model's tuned default)" });
+    const QUALITY = { klein: [["Fast", 8], ["Standard", 20], ["High", 28], ["Max", 40]], krea: [["Fast", 6], ["Standard", 8], ["High", 14], ["Max", 20]] };
+    f.qualSeg = h("span", { class: "seg row", title: "Steps for the image model: more = finer detail, slower. CFG stays 1 (these models are distilled)" });
     f.drawQuality = () => {
       const krea = f.model.value === STILL_KREA, cur = Math.round(+f.steps.value || 0);
       f.qualSeg.replaceChildren(...QUALITY[krea ? "krea" : "klein"].map(([label, st]) => h("button", { type: "button", "aria-pressed": String(cur === st),
-        title: st ? `${st} steps` : "the model's tuned default",
+        title: `${st} steps, CFG 1`,
         on: { click: () => { f.steps.value = String(st); this._applySampling(); f.drawQuality(); } } }, label)));
     };
     f.goBtn = h("button", { type: "button", class: "go", on: { click: () => this.generateFrames() } }, "Generate frames");
@@ -506,7 +506,7 @@ export class Pipeline {
   /** Steps / CFG for the frame model: Krea 2 lives on the App's KSampler (9056), the other models on the picker node. */
   _samplingTarget() {
     const krea = this.f.model.value === STILL_KREA;
-    return krea ? { id: 9056, steps: "steps", cfg: "cfg", defSteps: 8, label: "Krea 2 Turbo" } : { id: 9081, steps: "steps", cfg: "cfg", defSteps: 16, label: "FLUX 3 Klein" };
+    return krea ? { id: 9056, steps: "steps", cfg: "cfg", defSteps: 8, label: "Krea 2 Turbo" } : { id: 9081, steps: "steps", cfg: "cfg", defSteps: 20, label: "FLUX 3 Klein" };
   }
 
   _applySampling() {
@@ -521,6 +521,9 @@ export class Pipeline {
     const f = this.f, t = this._samplingTarget();
     const sw = this.w(t.id, t.steps), cw = this.w(t.id, t.cfg);
     f.steps.disabled = !sw; f.cfg.disabled = !cw;
+    // 0 used to mean "the model's default", which read as broken: write the real numbers instead.
+    if (sw && !+sw.value) { sw.value = t.defSteps; sw.callback?.(t.defSteps); }
+    if (cw && !+cw.value) { cw.value = 1; cw.callback?.(1); }
     f.steps.value = sw ? String(sw.value || 0) : "";
     f.cfg.value = cw ? String(cw.value || 0) : "";
     this._samplingNote();
@@ -744,8 +747,8 @@ export class Pipeline {
       m.h3Refs = h("div", { class: "row", style: "flex-wrap:wrap;gap:6px;margin-top:4px" }),
       h("label", { class: "row", style: "margin-top:4px" }, "Add images",
         m.h3RefIn = h("input", { type: "file", accept: "image/*", multiple: "", on: { change: (e) => this._addRefs(e.target.files) } })));
-    m.quality = "Draft";
-    m.qSeg = h("span", { class: "seg row" }, ...["Draft", "Final HQ"].map((q) => h("button", { type: "button", "aria-pressed": String(q === "Draft"),
+    m.quality = "Final HQ";   // finals render at full quality unless you pick Draft for a quick look
+    m.qSeg = h("span", { class: "seg row" }, ...["Draft", "Final HQ"].map((q) => h("button", { type: "button", "aria-pressed": String(q === "Final HQ"),
       title: q === "Draft" ? "8 + 3 distilled steps: fast previews" : "18 + 12 steps on the same curve: finer detail and steadier motion, about 2x slower",
       on: { click: (e) => { m.quality = q; for (const b of m.qSeg.children) b.setAttribute("aria-pressed", String(b === e.currentTarget)); this._applyVideo(); this._motionNote?.(); } } }, q)));
     m.cfg = h("input", { type: "number", min: "1", max: "10", step: "0.1", style: "width:90px",
