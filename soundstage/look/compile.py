@@ -147,6 +147,26 @@ def _still_count(n: int) -> str:
             3: "exactly three people in frame"}.get(n, f"exactly {n} people in frame")
 
 
+NUM = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+# Image and video models like to fill a street with bystanders and parked cars the blocking never had.
+NOTHING_EXTRA_NEG = "background pedestrians, bystanders, passers-by, extra people in the background, extra vehicles, additional cars"
+
+
+def _vehicle_count(n: int) -> str:
+    if n <= 0:
+        return "no vehicles"
+    return f"exactly {NUM.get(n, n)} vehicle{'s' if n > 1 else ''}, no other cars"
+
+
+def _only_blocking(n_people: int, n_vehicles: int) -> str:
+    """The frame holds what the stage holds, nothing more."""
+    bits = []
+    if n_people:
+        bits.append("nobody else in the background")
+    bits.append(_vehicle_count(n_vehicles) if n_vehicles else "no other vehicles")
+    return ", ".join(bits)
+
+
 def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     f1 = S.frame1_facts(scene)
     c = parts["chosen"]
@@ -188,6 +208,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         "; ".join(who),
         lock["still"] if lock else "",
         "" if lock else _still_count(n),     # drivers sit inside the cars: a head count makes Krea paint pedestrians
+        "" if lock else _only_blocking(n, sum(1 for e in f1["others"] if e.get("rig") == "vehicle")),
         S.ANGLE_STILL[f1["angle"]] if f1["angle"] != "eye" else "eye-level camera",
         f"{round(f1['focal_mm'])}mm lens",
         c.get("lens", {}).get("still", ""),
@@ -204,7 +225,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         _join(_grade_words(look)),
     ])
     negative = _join([FRAME1_NEGATIVE + ("" if n > 0 else ", people, person, figure") if n <= 3 else "extra people",
-                      BASE_NEGATIVE, facing_neg, vcam["negative"] if vcam else "", lock["negative"] if lock else "",
+                      BASE_NEGATIVE, facing_neg, NOTHING_EXTRA_NEG, vcam["negative"] if vcam else "", lock["negative"] if lock else "",
                       *parts["negatives"], look.get("negative", "")])
     return _dedupe(prompt), _dedupe(negative)
 
@@ -369,6 +390,7 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
         _cap(mood_s) + "." if mood_s else "",
         c.get("energy", {}).get("motion", ""),
         _sound(parts, loc),
+        "Nobody and nothing else enters the frame: no bystanders, no extra cars." if (f1["people"] or f1["others"]) else "",
         LOCK_CLAUSE,
     ]
     text = " ".join(s for s in sentences if s and s != ".")
