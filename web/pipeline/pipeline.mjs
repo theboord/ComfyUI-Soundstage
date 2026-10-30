@@ -418,13 +418,20 @@ export class Pipeline {
     m.freeOut = h("span", { class: "status" });
     m.quality = "Draft";
     m.qSeg = h("span", { class: "seg row" }, ...["Draft", "Final HQ"].map((q) => h("button", { type: "button", "aria-pressed": String(q === "Draft"),
-      title: q === "Draft" ? "8-step distilled: the quality we recommend" : "More steps; slower, rarely better on the distilled model",
+      title: q === "Draft" ? "8 + 3 distilled steps: fast previews" : "18 + 12 steps on the same curve: finer detail and steadier motion, about 2x slower",
       on: { click: (e) => { m.quality = q; for (const b of m.qSeg.children) b.setAttribute("aria-pressed", String(b === e.currentTarget)); this._applyVideo(); } } }, q)));
     m.audio = h("input", { type: "checkbox", on: { change: () => this.set(9092, "enabled", m.audio.checked) } });
     m.sfx = h("textarea", { placeholder: "Sound effects: hooves galloping on packed dirt, wind…", style: "min-height:44px",
       on: { change: () => this.set(9087, "sfx_prompt", m.sfx.value) } });
     m.music = h("input", { type: "text", placeholder: "Music mood (optional): tense western strings", style: "background:#1a1420;color:inherit;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:7px 9px",
       on: { change: () => this.set(9087, "music_mood", m.music.value) } });
+    // One-click suggestions: a click fills the field (and the node), the user can still edit it.
+    const chips = (field, key, list) => h("div", { class: "row", style: "flex-wrap:wrap;gap:6px" }, ...list.map((t) =>
+      h("button", { type: "button", class: "ghost", style: "font-size:12px;padding:3px 9px", title: `Use: ${t}`,
+        on: { click: () => { m[field].value = t; this.set(9087, key, t); } } }, t)));
+    m.musicIdeas = chips("music", "music_mood", ["tense western strings", "pulsing synth chase", "eerie horror drones",
+      "warm romantic piano", "epic orchestral sci-fi", "1970s funk heist groove", "lonely solo cello", "upbeat indie road-trip guitar"]);
+    m.lineIdeas = chips("line", "line", ["We're not alone.", "Drive. Don't look back.", "Did you hear that?", "I'd follow you anywhere."]);
     m.line = h("input", { type: "text", placeholder: "Dialogue line (optional)", style: "background:#1a1420;color:inherit;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:7px 9px",
       on: { change: () => this.set(9087, "line", m.line.value) } });
     m.draftBtn = h("button", { type: "button", class: "ghost", on: { click: () => this._render(3) } }, "Preview motion (draft)");
@@ -449,6 +456,8 @@ export class Pipeline {
           h("div", { class: "row" }, h("span", { class: "status" }, "Quality"), m.qSeg),
           h("label", { class: "f" }, "Sound (generated with the final)", m.sfx),
           h("div", { class: "row" }, m.music, m.line),
+          h("div", { class: "status" }, "Music ideas"), m.musicIdeas,
+          h("div", { class: "status" }, "Line ideas"), m.lineIdeas,
           h("label", { class: "row status" }, m.audio, "Let the sound/dialogue drive the video"),
           h("div", { class: "row" }, m.draftBtn, m.finalBtn),
           h("div", { class: "row" }, m.allDraft, m.allFinal))),

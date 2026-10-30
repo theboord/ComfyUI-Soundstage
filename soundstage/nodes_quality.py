@@ -52,7 +52,7 @@ class SoundstageQuality(IO.ComfyNode):
                                        "redraws stiff previz motion (gait, limbs, weight) while keeping composition "
                                        "and camera. 0.3-0.5 is a good range for animals and action."),
                 IO.Combo.Input("quality", options=QUALITIES, default="Draft",
-                               tooltip="Draft = today's 8 + 3 distilled steps. Final HQ = 11 + 6 steps on the same "
+                               tooltip="Draft = today's 8 + 3 distilled steps. Final HQ = 18 + 12 steps on the same "
                                        "schedule plus physical-motion language for the cast in the prompt."),
                 IO.Image.Input("guide", tooltip="The stage clay frames that steer LTX (IC-LoRA guide)."),
                 IO.String.Input("motion_prompt", multiline=True, force_input=True),
