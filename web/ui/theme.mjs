@@ -24,7 +24,7 @@ export const TOKENS = {
 /** The one UI typeface (canvas text too): Space Grotesk, then the platform UI font while it loads. */
 export const FONT = `"Soundstage Grotesk", "PP Formula", ui-sans-serif, system-ui, sans-serif`;
 // Kept in their own face: timecodes (an NLE convention) and the screenplay page (Courier, like every script).
-const OWN_FONT = ".ss-mono, .ss-cut-tc, .ss-cut-ro, .ss-strip-tc, .ss-strip-dur, .ss-pip-bar output, .ss-prev textarea, .ss-script .page, .ss-script .page *";
+const OWN_FONT = ".ss-mono, .ss-cut-tc, .ss-cut-ro, .ss-strip-tc, .ss-strip-dur, .ss-pip-bar output, .ss-prev textarea, .ss-script .page, .ss-script .page *, .ss-wordmark";
 
 const T = TOKENS;
 const CSS = `
@@ -89,6 +89,9 @@ const CSS = `
 .ss-stage .ss-brand { display:inline-flex; align-items:center; gap:7px; margin:0 auto 0 8px; font-weight:600; font-size:14px;
   color:var(--ss-text); letter-spacing:.01em; }
 .ss-stage .ss-brand .ss-icon { color:var(--ss-accent); }
+.ss-stage .ss-brand .ss-logo { display:inline-flex; line-height:0; }
+.ss-stage .ss-brand .ss-wordmark { font-family:"Futura Condensed ExtraBold","Futura-CondensedExtraBold","Bebas Neue","Oswald","DIN Condensed","Avenir Next Condensed",Impact,sans-serif;
+  font-weight:800; font-stretch:condensed; text-transform:uppercase; letter-spacing:.04em; font-size:17px; line-height:1; color:var(--ss-accent); }
 
 /* Fields */
 .ss-stage input[type=text], .ss-stage input[type=number], .ss-stage select, .ss-stage textarea {

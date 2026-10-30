@@ -2748,7 +2748,10 @@ function createStageWidget(node, inputName) {
   decorate(el);
   // App title at the left of the tab bar, like the hub apps' panel headers.
   const brand = Object.assign(document.createElement("span"), { className: "ss-brand" });
-  brand.append(icon("clapperboard", 15), "Soundstage");
+  // Brand mark (docs/media/logo.svg): a clapperboard whose sticks double as light beams, with a play cut-out.
+  const mark = Object.assign(document.createElement("span"), { className: "ss-icon ss-logo" });
+  mark.innerHTML = '<svg viewBox="0 0 64 64" width="20" height="20" aria-hidden="true"><g fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><polygon points="4.9,17.8 51,1.1 53.7,8.6 7.7,25.4" fill="none"/><polygon points="8,28 57,28 57,35 8,35" fill="none"/></g><g fill="currentColor"><polygon points="11.4,24 13.4,14.8 18.6,12.9 16.6,22.1"/><polygon points="22.2,20.1 24.2,10.8 29.4,8.9 27.4,18.2"/><polygon points="33,16.1 35,6.9 40.2,5 38.2,14.2"/><polygon points="43.9,12.2 45.8,3 51,1.1 49,10.3"/><polygon points="12,35 8,28 12.5,28 17.5,35"/><polygon points="23.5,35 18.5,28 24,28 29,35"/><polygon points="35,35 30,28 35.5,28 40.5,35"/><polygon points="46.5,35 41.5,28 47,28 52,35"/><path fill-rule="evenodd" d="M10,38H54A3,3 0 0 1 57,41V58A3,3 0 0 1 54,61H10A3,3 0 0 1 7,58V41A3,3 0 0 1 10,38ZM27.5,42.5L27.5,56.5L40,49.5Z"/><circle cx="9" cy="26" r="2.6"/></g></svg>';
+  brand.append(mark, Object.assign(document.createElement("span"), { className: "ss-wordmark", textContent: "Soundstage" }));
   tabs.prepend(brand);
   return { widget };
 }
