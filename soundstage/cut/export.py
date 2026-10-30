@@ -97,6 +97,57 @@ def normalize_audio(lst) -> list:
     return out
 
 
+_TC_RE = re.compile(r"\d\d:\d\d:\d\d[:;.]\d\d")
+
+
+def _fnum(v) -> float:
+    try:
+        f = float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return 0.0 if f != f else f
+
+
+def normalize_source(src):
+    """A shot's source footage (docs/source_fidelity.md), or None. Mirrors timeline.mjs normalizeSource."""
+    if not isinstance(src, dict):
+        return None
+    path = str(src.get("camera_original") or src.get("path") or src.get("file") or "")
+    if not path:
+        return None
+    tc = str(src.get("tc_start") or "")
+    return {
+        "path": path,
+        "proxy": str(src["path"]) if src.get("proxy") and src.get("path") and str(src["path"]) != path else "",
+        "reel": str(src.get("reel") or ""),
+        "tc_start": tc if _TC_RE.fullmatch(tc) else "",
+        "fps": _num(_round(_fnum(src.get("fps")) * 1000) / 1000),
+        "width": _round(_fnum(src.get("width"))),
+        "height": _round(_fnum(src.get("height"))),
+        "frames": _round(_fnum(src.get("frames"))),
+        "colour": str(src.get("colour") or ""),
+        "primaries": str(src.get("primaries") or ""),
+        "transfer": str(src.get("transfer") or ""),
+        "matrix": str(src.get("matrix") or ""),
+        "use": "original" if src.get("use") == "original" else "plate",
+    }
+
+
+def _match_source(project) -> None:
+    """Deliver at source spec: the first source's size, and its exact rate when it is the same speed."""
+    if project.get("match_source") is False:
+        return
+    s = next((x for x in project["shots"] if x.get("source") and x["source"]["width"] and x["source"]["height"]), None)
+    if not s:
+        return
+    src = s["source"]
+    project["width"], project["height"] = src["width"], src["height"]
+    if src["fps"] and abs(src["fps"] - _fnum(project["fps"])) < 0.05:
+        project["fps"] = src["fps"]
+    project["delivery"] = {"from": s["name"], "width": src["width"], "height": src["height"], "fps": _num(project["fps"]),
+                           "colour": src["colour"]}
+
+
 def normalize_project(p) -> dict:
     project = dict(p or {})
     project["name"] = project.get("name") or "Soundstage cut"
@@ -106,6 +157,7 @@ def normalize_project(p) -> dict:
     shots = []
     for i, s in enumerate(project.get("shots") or []):
         sid = _js_str(s["id"]) if s.get("id") is not None else f"shot{i + 1}"
+        src = normalize_source(s.get("source"))
         shots.append({
             "id": sid,
             "name": s.get("name") or sid,
@@ -116,8 +168,10 @@ def normalize_project(p) -> dict:
             "renders": dict(s.get("renders") or {}),
             "notes": s.get("notes") or "",
             "markers": _normalize_markers(s.get("markers")),
+            **({"source": src} if src else {}),
         })
     project["shots"] = shots
+    _match_source(project)
     by_id = {s["id"]: s for s in shots}
     cut = []
     for e in project.get("cut") or []:
@@ -295,6 +349,10 @@ def resolve_media(raw, media_root="") -> dict:
 
 def media_for(shot, media_root="") -> dict:
     rung = best_rung(shot)
+    src = shot.get("source")
+    if src and (src["use"] == "original" or rung in ("clay", "look")):
+        r = resolve_media(src["path"])   # the camera original, never under media_root
+        return {"rung": "source", "kind": "video", "path": r["path"], "url": r["url"], "offline": False, "source": src}
     raw = str(shot["renders"].get("clay") or "") if rung == "clay" else str(shot["renders"][rung])
     offline = not resolve_media(raw)["path"]
     r = resolve_media(f"{shot['name']}.mov" if offline else raw, media_root)
@@ -304,6 +362,8 @@ def media_for(shot, media_root="") -> dict:
 def relink_note(media) -> str:
     if media["rung"] == "final":
         return ""
+    if media["rung"] == "source":
+        return "" if media["source"]["use"] == "original" else "SOURCE plate stand-in: relink to the Final render"
     if media["offline"]:
         return "CLAY offline: render the shot, then relink"
     return f"{media['rung'].upper()} stand-in: relink to the Final render"
@@ -315,6 +375,43 @@ def audio_media(a, media_root="") -> dict:
 
 def _audio_src_frames(a) -> int:
     return max(a["frames"] or 0, a["out"])
+
+
+def source_timing(src, project) -> dict:
+    """A source clip's own rate, first frame (its start timecode) and cut frame -> source frame."""
+    fi = fps_info(project["fps"])
+    sfi = fps_info(src["fps"] or project["fps"])
+    same = sfi["base"] == fi["base"]
+
+    def mp(f):
+        return f if same else _round((f * sfi["num"] * fi["den"]) / (sfi["den"] * fi["num"]))
+    return {"sfi": sfi, "same": same, "start": tc_to_frames(src["tc_start"], sfi["base"]) if src["tc_start"] else 0, "map": mp}
+
+
+def _src_spec_text(src) -> str:
+    return (f"{src['width']}x{src['height']} {_js_str(src['fps']) if src['fps'] else '?'} FPS"
+            + (" " + src["colour"].upper() if src["colour"] else ""))
+
+
+def _js_num(v) -> str:
+    return _js_str(_num(_fnum(v)))
+
+
+def source_notes(src, project) -> list:
+    out = []
+    if src["proxy"]:
+        out.append(f"cut from the proxy {src['proxy'].split('/')[-1]}: relink to the camera original {src['path'].split('/')[-1]}")
+    if not source_timing(src, project)["same"]:
+        out.append(f"source is {_js_num(src['fps'])} fps in a {_js_num(project['fps'])} fps sequence: convert the rate on conform")
+    return out
+
+
+def _reel_base(name, width) -> str:
+    return (re.sub(r"[^A-Z0-9_]+", "_", name.upper()).strip("_") or "AX")[:width]
+
+
+def source_reel(src, width=8) -> str:
+    return _reel_base(src["reel"] or re.sub(r"\.[^.]+$", "", src["path"].split("/")[-1]), width)
 
 
 def reel_names(project, width=8) -> dict:
@@ -359,18 +456,34 @@ def to_edl(project, reel_width=8, source_start=0, media_root="") -> str:
     title = re.sub(r"[^\x20-\x7e]", "", _one_line(project["name"]))[:70] or "SOUNDSTAGE CUT"
     lines = [f"TITLE: {title}", "FCM: NON-DROP FRAME", ""]
 
-    def event(num, reel, ch, si, so, ri, ro):
+    def event(num, reel, ch, si, so, ri, ro, stc=None):
+        stc = stc or (lambda f: tc(source_start + f))
         return (f"{num:03d}  {reel.ljust(reel_width)} {ch:<5} {'C':<4} {'':<3} "
-                f"{tc(source_start + si)} {tc(source_start + so)} {tc(start + ri)} {tc(start + ro)}")
+                f"{stc(si)} {stc(so)} {tc(start + ri)} {tc(start + ro)}")
 
     num = 0
     for row in layout(project):
         num += 1
-        lines.append(event(num, reels[row["shot"]["id"]], "V", row["in"], row["out"], row["recIn"], row["recOut"]))
-        lines.append(f"* FROM CLIP NAME: {_one_line(row['shot']['name'])}")
         m = media_for(row["shot"], media_root)
+        src = row["shot"].get("source")
+        if m["rung"] == "source":
+            st = source_timing(src, project)
+            lines.append(event(num, source_reel(src, reel_width), "V", st["start"] + st["map"](row["in"]),
+                               st["start"] + st["map"](row["out"]), row["recIn"], row["recOut"],
+                               lambda f, b=st["sfi"]["base"]: frames_to_tc(f, b)))
+        else:
+            lines.append(event(num, reels[row["shot"]["id"]], "V", row["in"], row["out"], row["recIn"], row["recOut"]))
+        lines.append(f"* FROM CLIP NAME: {_one_line(row['shot']['name'])}")
         if not m["offline"]:
             lines.append(f"* SOURCE FILE: {m['path']}")
+        if m["rung"] == "source":
+            lines.append(f"* SOUNDSTAGE: CAMERA ORIGINAL {_src_spec_text(src)}")
+            for n in source_notes(src, project):
+                lines.append(f"* SOUNDSTAGE: {n}")
+        elif src:
+            st = source_timing(src, project)
+            lines.append(f"* SOUNDSTAGE PLATE: {src['path']} REEL {source_reel(src, 32)} "
+                         f"TC {frames_to_tc(st['start'] + st['map'](row['in']), st['sfi']['base'])} {_src_spec_text(src)}")
         if relink_note(m):
             lines.append(f"* SOUNDSTAGE: {relink_note(m)}")
         locs = []  # one LOC per frame: Avid keeps a single locator per frame
@@ -474,6 +587,36 @@ def to_otio(project, media_root="") -> dict:
     for row in layout(project):
         shot = row["shot"]
         m = media_for(shot, media_root)
+        src = shot.get("source")
+        meta = {"shot_id": shot["id"], "scene": shot["scene_name"], "setup": shot["setup"], "rung": m["rung"],
+                "relink": relink_note(m)}
+        if src:
+            meta["source"] = dict(src, notes=source_notes(src, project))
+        if m["rung"] == "source":
+            st = source_timing(src, project)
+            srate = st["sfi"]["num"] / st["sfi"]["den"]
+            mp = st["map"]
+            n_src = max(src["frames"], mp(shot["frames"]))
+            clips.append({
+                "OTIO_SCHEMA": "Clip.2",
+                "metadata": {"soundstage": meta},
+                "name": shot["name"],
+                "source_range": _tr(st["start"] + mp(row["in"]), mp(row["out"]) - mp(row["in"]), srate),
+                "effects": [],
+                "markers": [{"OTIO_SCHEMA": "Marker.2", "metadata": {}, "name": it["text"][:60],
+                             "color": str(it["color"]).upper() if str(it.get("color") or "").upper() in _OTIO_COLORS else "RED",
+                             "marked_range": _tr(st["start"] + mp(it["src"]), 0, srate), "comment": it["text"]}
+                            for it in note_items(row)],
+                "enabled": True,
+                "color": None,
+                "media_references": {"DEFAULT_MEDIA": {
+                    "OTIO_SCHEMA": "ExternalReference.1",
+                    "metadata": {"soundstage": {"camera_original": True, "reel": source_reel(src, 32)}},
+                    "name": src["path"].split("/")[-1], "available_range": _tr(st["start"], n_src, srate),
+                    "available_image_bounds": None, "target_url": m["url"]}},
+                "active_media_reference_key": "DEFAULT_MEDIA",
+            })
+            continue
         if m["offline"]:
             ref = {"OTIO_SCHEMA": "MissingReference.1", "metadata": {}, "name": shot["name"],
                    "available_range": _tr(0, shot["frames"], rate), "available_image_bounds": None}
@@ -483,8 +626,7 @@ def to_otio(project, media_root="") -> dict:
                    "target_url": m["url"]}
         clips.append({
             "OTIO_SCHEMA": "Clip.2",
-            "metadata": {"soundstage": {"shot_id": shot["id"], "scene": shot["scene_name"], "setup": shot["setup"],
-                                        "rung": m["rung"], "relink": relink_note(m)}},
+            "metadata": {"soundstage": meta},
             "name": shot["name"],
             "source_range": _tr(row["in"], row["len"], rate),
             "effects": [],
@@ -531,7 +673,8 @@ def to_otio(project, media_root="") -> dict:
         audio_tracks.append(track(lane["name"], "Audio", children))
     return {
         "OTIO_SCHEMA": "Timeline.1",
-        "metadata": {"soundstage": {"fps": _num(project["fps"]), "width": project["width"], "height": project["height"]}},
+        "metadata": {"soundstage": {"fps": _num(project["fps"]), "width": project["width"], "height": project["height"],
+                                    **({"delivery": project["delivery"]} if project.get("delivery") else {})}},
         "name": project["name"],
         "global_start_time": _rt(record_start(fi["base"]), rate),
         "tracks": {
@@ -549,6 +692,22 @@ def _esc(s) -> str:
             .replace('"', "&quot;").replace("'", "&apos;"))
 
 
+def _fcp_colour(src) -> str:
+    if src["primaries"] == "bt2020" or src["matrix"].startswith("bt2020"):
+        return {"smpte2084": "9-16-9 (Rec. 2020 PQ)", "arib-std-b67": "9-18-9 (Rec. 2020 HLG)"}.get(src["transfer"], "9-1-9 (Rec. 2020)")
+    return "1-1-1 (Rec. 709)"
+
+
+def _fcp_sum(fa, fia, fb, fib) -> str:
+    """Rational seconds a + b, a in one timebase and b in another, as FCPXML time."""
+    n = fa * fia["den"] * fib["num"] + fb * fib["den"] * fia["num"]
+    d = fia["num"] * fib["num"]
+    if n == 0:
+        return "0s"
+    g = math.gcd(abs(n), d)
+    return f"{n // g}s" if d // g == 1 else f"{n // g}/{d // g}s"
+
+
 def to_fcpxml(project, media_root="") -> str:
     project = normalize_project(project)
     fi = fps_info(project["fps"])
@@ -562,11 +721,21 @@ def to_fcpxml(project, media_root="") -> str:
         next_id[0] += 1
         return f"r{next_id[0] - 1}"
 
-    assets = {}
+    assets, formats = {}, []
     for row in rows:
         sid = row["shot"]["id"]
-        if sid not in assets:
-            assets[sid] = {"id": new_id(), "shot": row["shot"], "media": media_for(row["shot"], media_root)}
+        if sid in assets:
+            continue
+        media = media_for(row["shot"], media_root)
+        src = None
+        if media["rung"] == "source":
+            sp = row["shot"]["source"]
+            st = source_timing(sp, project)
+            src = {"st": st, "fid": new_id(), "frames": max(sp["frames"], st["map"](row["shot"]["frames"]))}
+            formats.append(f'    <format id="{src["fid"]}" frameDuration="{fcp_time(1, st["sfi"])}" '
+                           f'width="{sp["width"] or project["width"]}" height="{sp["height"] or project["height"]}" '
+                           f'colorSpace="{_fcp_colour(sp)}"/>')
+        assets[sid] = {"id": new_id(), "shot": row["shot"], "media": media, "src": src}
     lanes = audio_lanes(project)
     audio_assets = {}
     for lane in lanes:
@@ -577,10 +746,21 @@ def to_fcpxml(project, media_root="") -> str:
             else:
                 audio_assets[url] = {"id": new_id(), "name": a["label"], "frames": _audio_src_frames(a), "url": url}
     w, h = project["width"], project["height"]
+    dl = project.get("delivery")
+    seq_src = next((x["source"] for x in project["shots"] if x.get("source") and dl and x["name"] == dl["from"]), None)
     out = ['<?xml version="1.0" encoding="UTF-8"?>', "<!DOCTYPE fcpxml>", '<fcpxml version="1.10">', "  <resources>",
-           f'    <format id="r1" frameDuration="{t(1)}" width="{w}" height="{h}" colorSpace="1-1-1 (Rec. 709)"/>']
+           f'    <format id="r1" frameDuration="{t(1)}" width="{w}" height="{h}" '
+           f'colorSpace="{_fcp_colour(seq_src) if seq_src else "1-1-1 (Rec. 709)"}"/>', *formats]
     for a in assets.values():
         still = a["media"]["kind"] == "image"
+        if a["src"]:
+            st = a["src"]["st"]
+            out.append(f'    <asset id="{a["id"]}" name="{_esc(a["media"]["path"].split("/")[-1])}" '
+                       f'start="{fcp_time(st["start"], st["sfi"])}" duration="{fcp_time(a["src"]["frames"], st["sfi"])}" '
+                       f'hasVideo="1" format="{a["src"]["fid"]}" videoSources="1">')
+            out.append(f'      <media-rep kind="original-media" src="{_esc(a["media"]["url"])}"/>')
+            out.append("    </asset>")
+            continue
         out.append(f'    <asset id="{a["id"]}" name="{_esc(a["shot"]["name"])}" start="0s" '
                    f'duration="{"0s" if still else t(a["shot"]["frames"])}" hasVideo="1" format="r1" videoSources="1">')
         out.append(f'      <media-rep kind="original-media" src="{_esc(a["media"]["url"])}"/>')
@@ -597,9 +777,16 @@ def to_fcpxml(project, media_root="") -> str:
                f'tcFormat="NDF" audioLayout="stereo" audioRate="48k">')
     out.append("          <spine>")
 
-    items = [{"row": r, "recIn": r["recIn"], "recOut": r["recOut"], "local": r["in"]} for r in rows]
+    def local_fn(r):
+        src = assets[r["shot"]["id"]]["src"]
+        if src:
+            st = src["st"]
+            return lambda d: _fcp_sum(st["start"] + st["map"](r["in"]), st["sfi"], d, fi)
+        return lambda d: t(r["in"] + d)
+
+    items = [{"row": r, "recIn": r["recIn"], "recOut": r["recOut"], "local": local_fn(r)} for r in rows]
     if seq_len > total:
-        items.append({"gap": True, "recIn": total, "recOut": seq_len, "local": 0})
+        items.append({"gap": True, "recIn": total, "recOut": seq_len, "local": t})
     anchored = [[] for _ in items]
     for k, lane in enumerate(lanes):
         for a in lane["clips"]:
@@ -608,7 +795,7 @@ def to_fcpxml(project, media_root="") -> str:
 
     def audio_xml(a, lane_no, it):
         asset = audio_assets[audio_media(a, media_root)["url"]]
-        attrs = (f'ref="{asset["id"]}" lane="-{lane_no}" offset="{t(it["local"] + a["start_frame"] - it["recIn"])}" '
+        attrs = (f'ref="{asset["id"]}" lane="-{lane_no}" offset="{it["local"](a["start_frame"] - it["recIn"])}" '
                  f'name="{_esc(a["label"])}" start="{t(a["in"])}" duration="{t(audio_len(a))}" audioRole="effects"'
                  + ("" if audible(project, a["track"]) else ' enabled="0"'))
         if not a["gain_db"] and not a["fade_in"] and not a["fade_out"]:
@@ -641,7 +828,7 @@ def to_fcpxml(project, media_root="") -> str:
         a = assets[row["shot"]["id"]]
         still = a["media"]["kind"] == "image"
         timing = (f'offset="{t(start + row["recIn"])}" name="{_esc(row["shot"]["name"])}" '
-                  f'start="{t(row["in"])}" duration="{t(row["len"])}"')
+                  f'start="{it["local"](0)}" duration="{t(row["len"])}"')
         note = relink_note(a["media"])
         if note:
             inner.append(f"              <note>{_esc(note)}</note>")
@@ -651,7 +838,7 @@ def to_fcpxml(project, media_root="") -> str:
         for au, k in anchored[i]:
             inner += audio_xml(au, k, it)
         for n in note_items(row):
-            inner.append(f'              <marker start="{t(n["src"])}" duration="{t(1)}" value="{_esc(n["text"])}"/>')
+            inner.append(f'              <marker start="{it["local"](n["src"] - row["in"])}" duration="{t(1)}" value="{_esc(n["text"])}"/>')
         opening = (f'<clip {timing} format="r1" tcFormat="NDF"' if still
                    else f'<asset-clip ref="{a["id"]}" {timing} tcFormat="NDF"')
         if not inner:
@@ -670,37 +857,43 @@ def to_xmeml(project, media_root="") -> str:
     start = record_start(fi["base"])
     W, H = project["width"], project["height"]
 
-    def rate(ind):
-        return [f"{ind}<rate>", f"{ind}  <timebase>{fi['base']}</timebase>",
-                f"{ind}  <ntsc>{'TRUE' if fi['den'] == 1001 else 'FALSE'}</ntsc>", f"{ind}</rate>"]
+    def rate(ind, f=fi):
+        return [f"{ind}<rate>", f"{ind}  <timebase>{f['base']}</timebase>",
+                f"{ind}  <ntsc>{'TRUE' if f['den'] == 1001 else 'FALSE'}</ntsc>", f"{ind}</rate>"]
 
-    def tc_block(ind, frames):
-        return [f"{ind}<timecode>", *rate(ind + "  "), f"{ind}  <string>{frames_to_tc(frames, fi['base'])}</string>",
-                f"{ind}  <frame>{frames}</frame>", f"{ind}  <displayformat>NDF</displayformat>", f"{ind}</timecode>"]
+    def tc_block(ind, frames, f=fi, reel=""):
+        return [f"{ind}<timecode>", *rate(ind + "  ", f), f"{ind}  <string>{frames_to_tc(frames, f['base'])}</string>",
+                f"{ind}  <frame>{frames}</frame>", f"{ind}  <displayformat>NDF</displayformat>",
+                *([f"{ind}  <reel>", f"{ind}    <name>{_esc(reel)}</name>", f"{ind}  </reel>"] if reel else []), f"{ind}</timecode>"]
 
     def pathurl(p):
         return "file://localhost" + _encode_uri(p) if p.startswith("/") else _encode_uri(p)
 
     files, counters = {}, {"file": 0, "clip": 0}
 
-    def file_xml(ind, path, frames, kind):
+    def file_xml(ind, path, frames, kind, src=None):
+        """src: a camera original, described at its own size, rate, timecode and reel."""
         if path in files:
             return [f'{ind}<file id="{files[path]}"/>']
         counters["file"] += 1
         fid = f"file-{counters['file']}"
         files[path] = fid
+        f = src["st"]["sfi"] if src else fi
+        fw = (src["s"]["width"] or W) if src else W
+        fh = (src["s"]["height"] or H) if src else H
         if kind == "audio":
             media = [f"{ind}    <audio>", f"{ind}      <samplecharacteristics>", f"{ind}        <depth>24</depth>",
                      f"{ind}        <samplerate>48000</samplerate>", f"{ind}      </samplecharacteristics>",
                      f"{ind}      <channelcount>2</channelcount>", f"{ind}    </audio>"]
         else:
-            media = [f"{ind}    <video>", f"{ind}      <samplecharacteristics>", *rate(f"{ind}        "),
-                     f"{ind}        <width>{W}</width>", f"{ind}        <height>{H}</height>",
+            media = [f"{ind}    <video>", f"{ind}      <samplecharacteristics>", *rate(f"{ind}        ", f),
+                     f"{ind}        <width>{fw}</width>", f"{ind}        <height>{fh}</height>",
                      f"{ind}        <pixelaspectratio>square</pixelaspectratio>", f"{ind}      </samplecharacteristics>",
                      f"{ind}    </video>"]
         return [f'{ind}<file id="{fid}">', f"{ind}  <name>{_esc(path.split('/')[-1])}</name>",
-                f"{ind}  <pathurl>{_esc(pathurl(path))}</pathurl>", *rate(ind + "  "), f"{ind}  <duration>{frames}</duration>",
-                *tc_block(ind + "  ", 0), f"{ind}  <media>", *media, f"{ind}  </media>", f"{ind}</file>"]
+                f"{ind}  <pathurl>{_esc(pathurl(path))}</pathurl>", *rate(ind + "  ", f), f"{ind}  <duration>{frames}</duration>",
+                *tc_block(ind + "  ", src["st"]["start"] if src else 0, f, source_reel(src["s"], 32) if src else ""),
+                f"{ind}  <media>", *media, f"{ind}  </media>", f"{ind}</file>"]
 
     def clip_id():
         counters["clip"] += 1
@@ -716,12 +909,24 @@ def to_xmeml(project, media_root="") -> str:
     I = "            "  # noqa: E741
     for row in layout(project):
         m = media_for(row["shot"], media_root)
-        out += [f'          <clipitem id="{clip_id()}">', f"{I}<name>{_esc(row['shot']['name'])}</name>", f"{I}<enabled>TRUE</enabled>",
-                f"{I}<duration>{row['shot']['frames']}</duration>", *rate(I), f"{I}<start>{row['recIn']}</start>",
-                f"{I}<end>{row['recOut']}</end>", f"{I}<in>{row['in']}</in>", f"{I}<out>{row['out']}</out>",
-                *file_xml(I, m["path"], row["shot"]["frames"], "video")]
-        if relink_note(m):
-            out += [f"{I}<comments>", f"{I}  <mastercomment1>{_esc(relink_note(m))}</mastercomment1>", f"{I}</comments>"]
+        sp = row["shot"].get("source")
+        if m["rung"] == "source":
+            st = source_timing(sp, project)
+            n_src = max(sp["frames"], st["map"](row["shot"]["frames"]))
+            out += [f'          <clipitem id="{clip_id()}">', f"{I}<name>{_esc(row['shot']['name'])}</name>",
+                    f"{I}<enabled>TRUE</enabled>", f"{I}<duration>{n_src}</duration>", *rate(I, st["sfi"]),
+                    f"{I}<start>{row['recIn']}</start>", f"{I}<end>{row['recOut']}</end>", f"{I}<in>{st['map'](row['in'])}</in>",
+                    f"{I}<out>{st['map'](row['out'])}</out>", *file_xml(I, m["path"], n_src, "video", {"s": sp, "st": st})]
+        else:
+            out += [f'          <clipitem id="{clip_id()}">', f"{I}<name>{_esc(row['shot']['name'])}</name>",
+                    f"{I}<enabled>TRUE</enabled>", f"{I}<duration>{row['shot']['frames']}</duration>", *rate(I),
+                    f"{I}<start>{row['recIn']}</start>", f"{I}<end>{row['recOut']}</end>", f"{I}<in>{row['in']}</in>",
+                    f"{I}<out>{row['out']}</out>", *file_xml(I, m["path"], row["shot"]["frames"], "video")]
+        said = [x for x in [relink_note(m), *(source_notes(sp, project) if sp else []),
+                            *([f"plate: {sp['path']} (reel {source_reel(sp, 32)})"] if sp and m["rung"] != "source" else [])] if x]
+        if said:
+            out += [f"{I}<comments>", *[f"{I}  <mastercomment{k + 1}>{_esc(c)}</mastercomment{k + 1}>" for k, c in enumerate(said[:4])],
+                    f"{I}</comments>"]
         for n in note_items(row):
             out += [f"{I}<marker>", f"{I}  <comment>{_esc(n['text'])}</comment>", f"{I}  <name>{_esc(n['text'][:60])}</name>",
                     f"{I}  <in>{n['src']}</in>", f"{I}  <out>-1</out>", f"{I}</marker>"]
@@ -772,9 +977,10 @@ def to_relink_list(project, media_root="") -> str:
             continue
         seen.add(row["shot"]["id"])
         m = media_for(row["shot"], media_root)
-        if m["rung"] == "final":
+        if m["rung"] == "final" or (m["rung"] == "source" and not relink_note(m)):
             continue
-        lines.append("\t".join([row["shot"]["name"], "clay (offline)" if m["offline"] else m["rung"], m["path"], relink_note(m)]))
+        rung = "clay (offline)" if m["offline"] else "camera original" if m["rung"] == "source" else m["rung"]
+        lines.append("\t".join([row["shot"]["name"], rung, m["path"], relink_note(m)]))
     if len(lines) == 4:
         lines.append("(none: every clip is on its Final)")
     return "\n".join(lines) + "\n"

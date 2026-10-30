@@ -38,6 +38,7 @@ import { initApprovals, mountPipelineApprovals, showRedoNote } from "./dailies/a
 import { CastPanel } from "./cast/cast.mjs";
 import { stageSetupForScene } from "./script/parse.mjs";
 import { NO_SCENE, scopeShots, stageSig, listShots, keyOfShot, packScript, unpackScript, sceneNumberOf, retireScenes } from "./script/scenes.mjs";
+import { VIDEO_ACCEPT, cameraRaw, fetchSourceSpec, rawExplainer, sourceLine } from "./ui/sourcespec.mjs";
 
 const CSS = `
 .ss-stage { display:flex; flex-direction:column; gap:6px; padding:6px; background:#16191e; border-radius:6px;
@@ -450,7 +451,8 @@ function createStageWidget(node, inputName) {
         // With a script, clips carry the script's scene number into the NLE ("Sc 12A · Master", scene SC12A).
         const num = sceneNumOfShot(sh.id);
         return { id: sh.id, name: num ? `Sc ${num} · ${sh.name || sh.id}` : sh.name || sh.id, frames: sc.shot?.frames || 97,
-          scene_name: num ? `SC${num}` : "SC1", setup: sh.setup || "master", renders: rendersFor(sh.id) };
+          scene_name: num ? `SC${num}` : "SC1", setup: sh.setup || "master", renders: rendersFor(sh.id),
+          ...(sh.source ? { source: sh.source } : {}) }; // imported footage: exports link the camera original
       }),
     };
   };
@@ -1195,12 +1197,16 @@ function createStageWidget(node, inputName) {
   });
   // Video → Stage (Magnific "3D Scenes from video"): the clip becomes an editable layout — real-size subjects
   // with start/end marks, primitive set pieces, and the source camera move as keys you can drag in Top view.
-  const videoIn = Object.assign(document.createElement("input"), { type: "file", accept: "video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.mkv", hidden: true });
+  const videoIn = Object.assign(document.createElement("input"), { type: "file", accept: VIDEO_ACCEPT, hidden: true });
   videoIn.addEventListener("change", async () => {
     const f = videoIn.files?.[0];
     videoIn.value = "";
     if (!f) return;
     const say = (m) => (status.textContent = m);
+    // Camera RAW (docs/source_fidelity.md): no SDK to decode it, so the next clip picked is its proxy.
+    if (cameraRaw(f.name)) { videoIn.dataset.original = f.name; say(`${rawExplainer(f.name)} Choose "Video clip" again and pick the proxy.`); return; }
+    const original = videoIn.dataset.original || "";
+    delete videoIn.dataset.original;
     photoSel.sel.disabled = true;
     try {
       say(`Uploading ${f.name}…`);
@@ -1211,7 +1217,7 @@ function createStageWidget(node, inputName) {
       if (up.status !== 200) throw new Error(`upload failed (${up.status})`);
       const video = (await up.json()).name;
       const r = await api.fetchApi("/soundstage/video2stage", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ video }) });
+        body: JSON.stringify({ video, original }) });
       const j = await r.json().catch(() => ({}));
       if (r.status === 404 || r.status === 405) throw new Error("Video → Stage isn't installed on this server yet (restart ComfyUI)");
       if (r.status >= 400 || !j.job) throw new Error(j.error || `start failed (${r.status})`);
@@ -1233,7 +1239,8 @@ function createStageWidget(node, inputName) {
       loadScene(stage, scene);
       try { syncEnv(); syncLight(); syncShots(); } catch { /* rows not built yet */ }
       const m = res.summary || {};
-      say(`Rebuilt ${f.name}: ${m.objects || 0} subjects (${m.movers || 0} moving), ${m.set_pieces || 0} set pieces, ` +
+      say((scene.reference?.source ? `${sourceLine(scene.reference.source)}. ` : "") +
+        `Rebuilt ${f.name}: ${m.objects || 0} subjects (${m.movers || 0} moving), ${m.set_pieces || 0} set pieces, ` +
         `the camera move as ${m.camera_keys || 0} keys over ${m.frames} frames. Drag the keys in Top view to re-shoot it. ` +
         `The clip is in the input folder as ${video} for Soundstage · Footage / Recast.` +
         (res.notes?.length ? ` Notes: ${res.notes.slice(0, 4).join("; ")}.` : ""));
@@ -1263,8 +1270,12 @@ function createStageWidget(node, inputName) {
         const url = api.apiURL(`/view?filename=${encodeURIComponent(file)}&subfolder=${encodeURIComponent(sub)}&type=input`);
         if (kind === "backdrop") {
           stage.setBackdrop(url);
+          // The plate's own spec rides with the scene, so the Layer Pack can deliver at it (docs/source_fidelity.md).
+          const plate = await fetchSourceSpec(api, { filename: file, subfolder: sub });
+          if (plate && stage.state.backdrop?.url === url) stage.state.backdrop.source = plate;
           if ((stage.toJSON().environment || {}).set !== "empty") { stage.setEnvironment({ set: "empty" }); syncEnv(); } // the photo is the world
-          say(`${f.name} is the backdrop plate: it shows in Color view and behind the clay while you block. Place actors in it; the depth/clay passes stay clean.`);
+          else stage.onChange?.(stage.toJSON());
+          say(`${plate ? sourceLine(plate) + ". " : ""}${f.name} is the backdrop plate: it shows in Color view and behind the clay while you block. Place actors in it; the depth/clay passes stay clean.`);
         } else {
           stage.addCard(name, url);
           say(`Added ${name} as a card. Drag to place, Turn to face the camera, Scale to size.`);

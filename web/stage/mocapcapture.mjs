@@ -2,6 +2,7 @@
 // input folder and through SAM 3D Body (body, hands and fingers in 3D) into Soundstage · Mocap to Stage, which writes
 // the take the clay figure plays (web/stage/mocap.mjs).
 import { runGraph } from "../assets3d/maker.mjs";
+import { fetchSourceSpec, sourceLine } from "../ui/sourcespec.mjs";
 
 export const MOCAP_MODEL = "sam_3d_body_dinov3_bf16.safetensors";
 
@@ -32,14 +33,17 @@ async function upload(api, blob, fileName) {
 }
 
 /**
- * Turn a clip into a take. Returns {file, name, data, frames, fps}. duration (s) is passed for webcam recordings.
+ * Turn a clip into a take. Returns {file, name, data, frames, fps, source}. duration (s) is passed for webcam
+ * recordings. source = the clip's spec (docs/source_fidelity.md); the take runs at the clip's own frame rate.
  */
 export async function captureTake(api, blob, { name, duration = 0, onStatus = () => {} } = {}) {
   const base = safeName(name || blob.name || "take");
   const ext = (blob.name?.match(/\.[A-Za-z0-9]+$/)?.[0] || (blob.type.includes("mp4") ? ".mp4" : ".webm")).toLowerCase();
   onStatus("Uploading the clip…");
   const stored = await upload(api, blob, `mocap_${base}_${Date.now().toString(36)}${ext}`);
-  onStatus("Reading the performance on the GPU (body, hands, fingers)…");
+  const cut = stored.lastIndexOf("/");
+  const source = await fetchSourceSpec(api, { filename: stored.slice(cut + 1), subfolder: cut > 0 ? stored.slice(0, cut) : "" });
+  onStatus(`${source ? sourceLine(source) + ". " : ""}Reading the performance on the GPU (body, hands, fingers)…`);
   const res = await runGraph(mocapGraph(stored, base, duration), { api, front: true, timeoutMs: 900000,
     onStatus: (m) => onStatus(`Motion capture: ${m}`) });
   const raw = res.outputs?.["6"]?.text?.[0];
@@ -48,7 +52,7 @@ export async function captureTake(api, blob, { name, duration = 0, onStatus = ()
   const i = info.file.lastIndexOf("/");
   const r = await api.fetchApi(`/view?filename=${encodeURIComponent(info.file.slice(i + 1))}&subfolder=${encodeURIComponent(info.file.slice(0, i))}&type=output`);
   const data = await r.json();
-  return { file: info.file, name: base, data, frames: info.frames, fps: info.fps, seconds: res.seconds };
+  return { file: info.file, name: base, data, frames: info.frames, fps: info.fps, seconds: res.seconds, source };
 }
 
 // ------------------------------------------------------------------ act it out (webcam)

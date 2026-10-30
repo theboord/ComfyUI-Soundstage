@@ -25,6 +25,7 @@ from fractions import Fraction
 import numpy as np
 from PIL import Image
 
+from ..footage import sourcespec
 from . import camera as cammath
 from . import dcc
 from .exr import FLOAT, srgb_to_linear, write_exr
@@ -33,7 +34,34 @@ from .psd import write_psd
 
 VERSION = "0.1"
 DEFAULTS = dict(prores=True, psd=True, camera=True, ae=True, blender=True, nuke=True, otio=True,
-                multilayer_exr=False, comp_preview=True)
+                multilayer_exr=False, comp_preview=True, match_source=True, source=None)
+
+
+def _scene_source(camera):
+    """The source spec a scene carries (Video -> Stage: reference.source; a backdrop plate: backdrop.source)."""
+    try:
+        c = json.loads(camera) if isinstance(camera, str) else camera
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(c, dict):
+        return None
+    return (c.get("reference") or {}).get("source") or (c.get("backdrop") or {}).get("source")
+
+
+def _fill(img: np.ndarray, w: int, h: int, resample=Image.LANCZOS) -> np.ndarray:
+    """Scale an HxW(xC) float frame to cover w x h (lanczos by default) and centre-crop the overflow."""
+    ih, iw = img.shape[:2]
+    if (iw, ih) == (w, h):
+        return img
+    k = max(w / iw, h / ih)
+    sw, sh = max(w, int(round(iw * k))), max(h, int(round(ih * k)))
+
+    def one(ch):
+        return np.asarray(Image.fromarray(np.ascontiguousarray(ch, dtype=np.float32)).resize((sw, sh), resample),
+                          dtype=np.float32)
+    out = one(img) if img.ndim == 2 else np.stack([one(img[..., c]) for c in range(img.shape[2])], axis=-1)
+    x0, y0 = (sw - w) // 2, (sh - h) // 2
+    return out[y0:y0 + h, x0:x0 + w]
 
 
 def _fps_arg(fps: float) -> str:
@@ -110,10 +138,26 @@ def export_pack(pack: LayerPack, out_dir: str, *, hero_frame: int = -1, timestam
     opt = {**DEFAULTS, **options}
     if not pack.layers:
         raise ValueError("The Layer Pack has no layers. Add at least one with Layer Pack: Add Layer.")
-    W, H = pack.resolution()
+    gW, gH = pack.resolution()
     N = pack.length()
     fs = int(pack.frame_start)
-    fps = float(pack.fps)
+    gen_fps = float(pack.fps)
+    # Deliver at source spec (docs/source_fidelity.md): the size, rate and timecode of the footage the shot came from.
+    spec = None
+    if opt["match_source"]:
+        spec = opt["source"] or (pack.meta or {}).get("source") or _scene_source(pack.camera)
+        if isinstance(spec, str):
+            try:
+                spec = json.loads(spec) if spec.strip() else None
+            except ValueError:
+                spec = None
+        spec = spec if isinstance(spec, dict) else None
+    plan = sourcespec.deliver_plan(spec, gW, gH, gen_fps)
+    W, H, fps = plan["width"], plan["height"], float(plan["fps"])
+    scaled = (W, H) != (gW, gH)
+
+    def up(a, resample=Image.LANCZOS):
+        return _fill(a, W, H, resample) if scaled else a
     shot = safe_name(pack.shot)
     stamp = timestamp or _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     root = os.path.join(out_dir, f"{shot}_{stamp}")
@@ -124,6 +168,8 @@ def export_pack(pack: LayerPack, out_dir: str, *, hero_frame: int = -1, timestam
     # Camera ---------------------------------------------------------------------------------
     cams, cam_info = cammath.parse_camera(pack.camera, N)
     sensor_w = cam_info.get("sensor_width_mm", cammath.SENSOR_W_MM)
+    if scaled and gW * plan["scale"] > W + 0.5:   # the fill cropped the sides: a narrower lens view
+        sensor_w = round(sensor_w * W / (gW * plan["scale"]), 4)
     cam_frames = cammath.build_frames(cams, W, H, fs, sensor_w) if cams else []
 
     # Layer folders, bottom (lowest z) first --------------------------------------------------
@@ -162,7 +208,9 @@ def export_pack(pack: LayerPack, out_dir: str, *, hero_frame: int = -1, timestam
         comp = np.zeros((H, W, 4), np.float32)
         ml, rgbas, z = {}, [], None
         for L, e in zip(layers, entries):
-            rgba = L.rgba(i, W, H)
+            rgba = L.rgba(i, gW, gH)
+            if scaled:
+                rgba = np.clip(up(rgba), 0.0, 1.0)
             Image.fromarray(_u8(rgba), "RGBA").save(os.path.join(root, e["folder"], "png", f"{e['id']}.{fr:04d}.png"),
                                                     compress_level=4)
             Image.fromarray((rgba[..., 3] * 65535 + 0.5).astype(np.uint16)).save(
@@ -176,7 +224,7 @@ def export_pack(pack: LayerPack, out_dir: str, *, hero_frame: int = -1, timestam
                     ml[f"{e['id']}.{ch}"] = lin[..., c]
                 ml[f"{e['id']}.A"] = rgba[..., 3]
         if depth_aov is not None:
-            z = depth_aov.depth_m(i, W, H)
+            z = up(depth_aov.depth_m(i, gW, gH), Image.BILINEAR)
             write_exr(os.path.join(root, f"aovs/depth/depth.{fr:04d}.exr"), {"Z": z}, attrs=exr_attrs, fps=fps)
             zmin, zmax = float(z.min()), float(z.max())
             vis = 1.0 - (z - zmin) / max(zmax - zmin, 1e-6)   # near = white
@@ -185,7 +233,7 @@ def export_pack(pack: LayerPack, out_dir: str, *, hero_frame: int = -1, timestam
             if opt["multilayer_exr"]:
                 ml["depth.Z"] = z
         for a in other_aovs:
-            img = fit(frame(a.images, i), W, H)
+            img = np.clip(up(fit(frame(a.images, i), gW, gH)), 0.0, 1.0)
             Image.fromarray(_u8(img[..., :3])).save(os.path.join(root, "aovs", a.kind, f"{a.kind}.{fr:04d}.png"),
                                                      compress_level=4)
         if opt["multilayer_exr"]:
@@ -233,16 +281,17 @@ def export_pack(pack: LayerPack, out_dir: str, *, hero_frame: int = -1, timestam
             e["depth_source"] = "camera focus distance (no depth AOV)"
         e["depth_m"] = round(max(d, 0.05), 4)
 
-    # ProRes 4444 per layer ----------------------------------------------------------------------
+    # ProRes 4444 per layer (at the source's timecode when matching it, so it conforms over the plate) -----------
+    tc_start = plan["timecode"] or _timecode(fs, fps)
     if opt["prores"]:
         def prores():
             for e in entries:
                 mov = f"{e['folder']}/{e['id']}_4444.mov"
-                _ffmpeg(["-framerate", _fps_arg(fps), "-start_number", str(fs),
+                _ffmpeg(["-framerate", plan["fps_arg"], "-start_number", str(fs),
                          "-i", os.path.join(root, e["folder"], "png", f"{e['id']}.%04d.png"),
                          "-vf", "scale=out_color_matrix=bt709:out_range=tv",
                          "-c:v", "prores_ks", "-profile:v", "4444", "-pix_fmt", "yuva444p10le", "-alpha_bits", "16",
-                         "-vendor", "apl0", *_bt709(), "-timecode", _timecode(fs, fps),
+                         "-vendor", "apl0", *_bt709(), "-timecode", tc_start,
                          "-metadata", f"comment=Soundstage {shot} layer {e['name']} straight alpha",
                          os.path.join(root, mov)])
                 e["mov"] = mov
@@ -251,9 +300,9 @@ def export_pack(pack: LayerPack, out_dir: str, *, hero_frame: int = -1, timestam
     if tmp_comp:
         os.makedirs(os.path.join(root, "preview"), exist_ok=True)
         status.run("comp_preview", _ffmpeg, [
-            "-framerate", _fps_arg(fps), "-start_number", str(fs), "-i", os.path.join(tmp_comp, "comp.%04d.png"),
+            "-framerate", plan["fps_arg"], "-start_number", str(fs), "-i", os.path.join(tmp_comp, "comp.%04d.png"),
             "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2,scale=out_color_matrix=bt709:out_range=tv",
-            "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", *_bt709(), "-timecode", _timecode(fs, fps),
+            "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", *_bt709(), "-timecode", tc_start,
             os.path.join(root, "preview", "comp_preview.mp4")])
         shutil.rmtree(tmp_comp, ignore_errors=True)
 
@@ -312,9 +361,15 @@ def export_pack(pack: LayerPack, out_dir: str, *, hero_frame: int = -1, timestam
     manifest = {
         "layerpack_version": VERSION,
         "generator": {"app": "Soundstage", "created": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")},
-        "shot": {"name": shot, "fps": fps, "frame_start": fs, "frame_end": fs + N - 1, "frames": N,
-                 "resolution": [W, H], "pixel_aspect": 1.0, "hero_frame": fs + hero},
-        "color": {"png": "sRGB display-referred (as generated)", "mov": "Rec.709, tagged bt709",
+        "shot": {"name": shot, "fps": fps, "fps_rational": plan["fps_arg"], "frame_start": fs, "frame_end": fs + N - 1,
+                 "frames": N, "resolution": [W, H], "pixel_aspect": 1.0, "hero_frame": fs + hero, "timecode": tc_start},
+        "delivery": {"match_source": bool(opt["match_source"]), "matched": plan["matched"],
+                     "source": None if not spec else {k: spec.get(k) for k in (
+                         "file", "path", "line", "width", "height", "fps", "fps_rational", "tc_start", "reel", "codec_label",
+                         "colour", "bit_depth", "camera_original", "proxy")},
+                     "generated": {"resolution": [gW, gH], "fps": gen_fps},
+                     "resize": f"{plan['resample']} cover fill" if scaled else None, "notes": plan["notes"]},
+        "color": {"png": "sRGB display-referred (as generated)", "mov": "Rec.709, tagged bt709 (ProRes 4444 10-bit)",
                   "exr": "lin_rec709 (inverse sRGB EOTF; not HDR)"},
         "alpha": {"png": "straight", "mov": "straight", "exr": "premultiplied",
                   "matte": "16-bit grey, white = opaque"},
@@ -370,8 +425,11 @@ def _contact_sheet(comp, rgbas, entries, depth, tile_w: int = 480) -> np.ndarray
 
 def _readme(m: dict) -> str:
     s = m["shot"]
-    return f"""Soundstage Layer Pack — {s['name']}  ({s['resolution'][0]}x{s['resolution'][1]}, {s['fps']} fps, frames {s['frame_start']}-{s['frame_end']})
-
+    d = m.get("delivery") or {}
+    src = (d.get("source") or {}).get("line") or ""
+    delivery = (f"Delivered at source spec. {src}\n" if d.get("matched") else "") + "".join(f"  - {n}\n" for n in d.get("notes") or [])
+    return f"""Soundstage Layer Pack — {s['name']}  ({s['resolution'][0]}x{s['resolution'][1]}, {s['fps']} fps, frames {s['frame_start']}-{s['frame_end']}, TC {s.get('timecode', '')})
+{delivery}
 Every layer is in layers/<z>_<name>/ : png/ (RGBA, straight alpha), matte/ (16-bit), and a ProRes 4444 .mov.
 manifest.json lists every file, the colour/alpha conventions and the camera.
 

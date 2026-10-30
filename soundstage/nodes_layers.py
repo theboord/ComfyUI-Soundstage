@@ -149,6 +149,11 @@ class LayerPackAddAll(IO.ComfyNode):
         for e in entries:
             pack = pack.add_layer(Layer(name=e["name"], images=images, mask=e["mask"], z=e["z"], kind=e["kind"],
                                         source_id=e["id"]))
+        src = ((scene.get("reference") or {}).get("source") or (scene.get("backdrop") or {}).get("source")) \
+            if isinstance(scene, dict) else None
+        if src and not (pack.meta or {}).get("source"):   # Video -> Stage footage: Export can match its spec
+            import dataclasses
+            pack = dataclasses.replace(pack, meta={**(pack.meta or {}), "source": src})
         summary = ", ".join(f"{e['name']} (z {e['z']}; {e.get('matte', 'stage ID pass')})" for e in entries) + note
         return IO.NodeOutput(pack, summary, ui={"text": [f"{len(entries)} layers: {summary}"]})
 
@@ -211,6 +216,13 @@ class LayerPackExport(IO.ComfyNode):
                                  tooltip="One multi-layer EXR per frame (beauty + every layer + depth) for Nuke."),
                 IO.Int.Input("hero_frame", default=-1, min=-1, max=100000,
                              tooltip="Frame index (0 = first) for the PSD and preview; -1 = middle frame."),
+                IO.Boolean.Input("match_source", default=True, optional=True,
+                                 tooltip="Deliver at the source footage's spec: its resolution (lanczos), frame rate "
+                                         "and timecode, Rec.709 tags. Anything that can't match is written in the "
+                                         "manifest and README. Uses the Video -> Stage clip, or source_spec."),
+                IO.String.Input("source_spec", optional=True, force_input=True,
+                                tooltip="Source spec JSON (GET /soundstage/source_spec). Optional: a Video -> Stage "
+                                        "scene already carries it."),
             ],
             outputs=[
                 IO.String.Output(display_name="folder"),
@@ -219,16 +231,22 @@ class LayerPackExport(IO.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, pack, prores_4444, psd, app_builders, otio, multilayer_exr, hero_frame) -> IO.NodeOutput:
+    def execute(cls, pack, prores_4444, psd, app_builders, otio, multilayer_exr, hero_frame, match_source=True,
+                source_spec=None) -> IO.NodeOutput:
         out_dir = os.path.join(folder_paths.get_output_directory(), OUTPUT_SUBDIR)
         res = export_pack(pack, out_dir, hero_frame=int(hero_frame), prores=bool(prores_4444), psd=bool(psd),
                           camera=bool(app_builders), ae=bool(app_builders), blender=bool(app_builders),
-                          nuke=bool(app_builders), otio=bool(otio), multilayer_exr=bool(multilayer_exr))
+                          nuke=bool(app_builders), otio=bool(otio), multilayer_exr=bool(multilayer_exr),
+                          match_source=match_source is not False, source=source_spec or None)
         preview = torch.from_numpy(res["preview"])[None]
         failed = {k: v for k, v in res["manifest"]["exports"].items() if v != "ok"}
         summary = f"Layer Pack written: {res['root']}"
         if failed:
             summary += "\n" + "\n".join(f"{k}: {v}" for k, v in failed.items())
+        dl = res["manifest"].get("delivery") or {}
+        if dl.get("matched"):
+            summary += "\n" + ((dl.get("source") or {}).get("line") or "Delivered at source spec")
+        summary += "".join(f"\n- {n}" for n in dl.get("notes") or [])
         ui = UI.PreviewImage(preview, cls=cls).as_dict()
         ui["text"] = [summary]
         return IO.NodeOutput(res["root"], preview, ui=ui)

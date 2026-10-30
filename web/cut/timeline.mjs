@@ -23,8 +23,10 @@ export function normalizeProject(p) {
       renders: { ...(s.renders || {}) },
       notes: s.notes || "",
       markers: normalizeMarkers(s.markers),
+      ...(normalizeSource(s.source) ? { source: normalizeSource(s.source) } : {}),
     };
   });
+  matchSource(project);
   const byId = shotMap(project);
   project.cut = (project.cut || [])
     .filter((e) => byId.has(String(e.shot_id)))
@@ -40,6 +42,49 @@ export function normalizeProject(p) {
   project.audio_tracks = (project.audio_tracks || [])
     .map((t) => ({ track: Math.max(1, Math.round(t.track || 1)), name: t.name ? String(t.name) : "", mute: !!t.mute, solo: !!t.solo }));
   return project;
+}
+
+/**
+ * A shot's source footage (docs/source_fidelity.md): the camera original it came from, with its own reel,
+ * timecode, rate and size, or null. use: "plate" (Soundstage generates over it) or "original" (cut the footage).
+ * path = the camera original (a RED/BRAW/ARRIRAW name when Soundstage worked from a proxy), proxy = that proxy.
+ */
+export function normalizeSource(src) {
+  if (!src || typeof src !== "object") return null;
+  const path = String(src.camera_original || src.path || src.file || "");
+  if (!path) return null;
+  const tc = String(src.tc_start || "");
+  return {
+    path,
+    proxy: src.proxy && src.path && String(src.path) !== path ? String(src.path) : "",
+    reel: String(src.reel || ""),
+    tc_start: /^\d\d:\d\d:\d\d[:;.]\d\d$/.test(tc) ? tc : "",
+    fps: Math.round((Number(src.fps) || 0) * 1000) / 1000,
+    width: Math.round(Number(src.width) || 0),
+    height: Math.round(Number(src.height) || 0),
+    frames: Math.round(Number(src.frames) || 0),
+    colour: String(src.colour || ""),
+    primaries: String(src.primaries || ""),
+    transfer: String(src.transfer || ""),
+    matrix: String(src.matrix || ""),
+    use: src.use === "original" ? "original" : "plate",
+  };
+}
+
+/**
+ * Deliver at source spec: unless the project says match_source: false, a cut with imported footage takes the
+ * first source's size, and its exact rate when it is the same speed (24 -> 23.976 is a conform; 25 is not, and
+ * the exports say so). Sets project.delivery = {from, width, height, fps, colour} when it matched.
+ */
+function matchSource(project) {
+  if (project.match_source === false) return;
+  const s = project.shots.find((x) => x.source && x.source.width && x.source.height);
+  if (!s) return;
+  const src = s.source;
+  project.width = src.width;
+  project.height = src.height;
+  if (src.fps && Math.abs(src.fps - Number(project.fps)) < 0.05) project.fps = src.fps;
+  project.delivery = { from: s.name, width: src.width, height: src.height, fps: project.fps, colour: src.colour };
 }
 
 function normalizeMarkers(list) {
