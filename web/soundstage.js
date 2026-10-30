@@ -32,6 +32,7 @@ import { listenVcam, LiveVcam, listTakes, fetchTake, takeToCamera, anchorFromCam
 import { ScriptPanel, SceneSwitcher } from "./script/panel.mjs";
 import { DEMO_SCRIPT } from "./script/demo_script.mjs";
 import { DailiesBin } from "./dailies/bin.mjs";
+import { CastPanel } from "./cast/cast.mjs";
 import { stageSetupForScene } from "./script/parse.mjs";
 import { NO_SCENE, scopeShots, stageSig, listShots, keyOfShot, packScript, unpackScript, sceneNumberOf, retireScenes } from "./script/scenes.mjs";
 
@@ -69,6 +70,8 @@ const CSS = `
 .ss-stage.ss-cutmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-cutview) { display:none !important; }
 .ss-stage.ss-scriptmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-scriptview):not(.ss-status) { display:none !important; }
 .ss-stage.ss-dailiesmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-dailiesview):not(.ss-status) { display:none !important; }
+.ss-stage.ss-castmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-castview):not(.ss-status) { display:none !important; }
+.ss-castview { min-width:0; }
 .ss-dailiesview { min-width:0; display:flex; flex-direction:column; gap:8px; }
 .ss-take-view { position:fixed; inset:0; z-index:10000; background:rgba(8,8,10,.86); display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; }
 .ss-take-view video, .ss-take-view img { max-width:90vw; max-height:78vh; border-radius:10px; background:#000; }
@@ -316,7 +319,7 @@ function createStageWidget(node, inputName) {
   ladderView.append(rungs);
   const tabBtns = {};
   let dock = null;   // the Set step's tool dock (built with the rows it leads to, further down)
-  for (const [k, label] of [["script", "Script"], ["stage", "Stage"], ["canvas", "Canvas"], ["advisor", "Advisor"], ["look", "Look"], ["ladder", "Ladder"], ["dailies", "Dailies"], ["cut", "Cut"]]) {
+  for (const [k, label] of [["script", "Script"], ["cast", "Cast"], ["stage", "Stage"], ["canvas", "Canvas"], ["advisor", "Advisor"], ["look", "Look"], ["ladder", "Ladder"], ["dailies", "Dailies"], ["cut", "Cut"]]) {
     const b = Object.assign(document.createElement("button"), { type: "button", textContent: label });
     b.setAttribute("aria-pressed", String(k === "stage"));
     b.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -339,6 +342,11 @@ function createStageWidget(node, inputName) {
   dailiesView.hidden = true;
   el.append(dailiesView);
   let dailies = null;
+  // Cast & Locations tab: characters, props and locations with reference pictures (from the script or the stage).
+  const castView = Object.assign(document.createElement("div"), { className: "ss-castview" });
+  castView.hidden = true;
+  el.append(castView);
+  let castPanel = null;
   const look = new LookPanel(lookView, () => ({ ...stage.toJSON(), lighting_prompt: stage.lightingPrompt() }),
     { fetchApi: (path, init) => api.fetchApi(path, init),
       getFocal: () => stage._cameraAt(stage.frame || 0).focal_mm,
@@ -484,11 +492,11 @@ function createStageWidget(node, inputName) {
   function editShot(id, where) {
     if (id !== stage.activeShot().id) stage.setActiveShot(id);
     const name = shotName(id);
-    if (where === "stage") { showView("stage"); status.textContent = `Editing ${name} on the stage. Re-render it in ③ Motion and the cut updates.`; return; }
+    if (where === "stage") { showView("stage"); status.textContent = `Editing ${name} on the stage. Re-render it in ⑤ Motion and the cut updates.`; return; }
     if (where === "canvas") {
       pipeline.selectShot(id);
       pipeline.ctx.openCanvas(pipeline.chosen[id]?.url || rendersFor(id).look || null);
-      status.textContent = `Touching up ${name}'s frame. “Use my edited frame”, then re-render it in ③ Motion: the cut picks it up.`;
+      status.textContent = `Touching up ${name}'s frame. “Use my edited frame”, then re-render it in ⑤ Motion: the cut picks it up.`;
       return;
     }
     pipeline.go(where);
@@ -635,9 +643,9 @@ function createStageWidget(node, inputName) {
   const cbTip = Object.assign(document.createElement("span"), { textContent: "Touch-up: paint, mask or regenerate parts of the frame. Your edits are kept here; use them as the frame when you're happy." });
   cbTip.style.cssText = "font-size:12px;color:var(--ss-muted,#a9a3ad);flex:1;min-width:200px";
   canvasBack.append(
-    cbBtn("arrow-left", "Back to ② Frame", "Return to the frame step (your canvas edits are kept)", () => pipeline?.go("frame")),
+    cbBtn("arrow-left", "Back to ④ Frame", "Return to the frame step (your canvas edits are kept)", () => pipeline?.go("frame")),
     cbTip,
-    cbBtn("check", "Use my edited frame in ③ Motion", "Animate the touched-up image instead of the generated one", () => {
+    cbBtn("check", "Use my edited frame in ⑤ Motion", "Animate the touched-up image instead of the generated one", () => {
       const sw = app.graph?.getNodeById?.(9086)?.widgets?.find((w) => w.name === "switch");
       if (sw) { sw.value = true; sw.callback?.(true); }
       try { pipeline.touched[stage.activeShot().id] = true; pipeline.ctx.saveChosen?.({ chosen: pipeline.chosen, touched: pipeline.touched }); } catch { /* pipeline not built */ }
@@ -679,12 +687,15 @@ function createStageWidget(node, inputName) {
     scriptView.hidden = k !== "script";
     el.classList.toggle("ss-scriptmode", k === "script");
     dailiesView.hidden = k !== "dailies";
+    castView.hidden = k !== "cast";
+    el.classList.toggle("ss-castmode", k === "cast");
+    if (k === "cast") { try { castPanel?.render(); } catch { /* not built yet */ } }
     el.classList.toggle("ss-dailiesmode", k === "dailies");
     if (k === "dailies") { try { dailies?.refresh(); } catch { /* not built yet */ } }
     if (k === "script") { try { scriptPanel?.render(); } catch { /* not built yet */ } }
     cutView.hidden = k !== "cut";
     advisorView.hidden = k !== "advisor";
-    if (k === "canvas" && canvasView.parentElement !== el) el.append(canvasView);   // back from the ② Frame editor
+    if (k === "canvas" && canvasView.parentElement !== el) el.append(canvasView);   // back from the ④ Frame editor
     if (canvasView.parentElement === el) canvasView.hidden = k !== "canvas";
     el.classList.toggle("ss-canvasmode", k === "canvas");
     if (k === "canvas") canvasPanel.refreshStage();
@@ -1311,7 +1322,7 @@ function createStageWidget(node, inputName) {
     else if (v === "all") {
       const names = stage.addInteriorShots(sel.id);
       status.textContent = names.length
-        ? `Added ${names.length} interior shots riding with ${sel.name}: ${names.join(", ")}. They're in the cut; render them all in ③ Motion.`
+        ? `Added ${names.length} interior shots riding with ${sel.name}: ${names.join(", ")}. They're in the cut; render them all in ⑤ Motion.`
         : "Pick a car (or another vehicle) first.";
       try { syncShots(); } catch { /* not built yet */ }
     }
@@ -1839,11 +1850,13 @@ function createStageWidget(node, inputName) {
   camMode.append(topBtn);
 
   // Coach: contextual tips with one-click fixes (story order, camera through a wall, 180° line, stale renders…).
-  let canvasFrom = null; // the frame last brought into the Canvas from ② Frame
-  // The guided pipeline: ① Set → ② Frame → ③ Motion → ④ Review → ⑤ Deliver, with a Next button on every step.
+  let canvasFrom = null; // the frame last brought into the Canvas from ④ Frame
+  // The guided pipeline: ③ Set → ④ Frame → ⑤ Motion → ⑥ Review → ⑦ Deliver, with a Next button on every step.
   var pipeline = new Pipeline(el, {
     app, api, stage, look, ladder,
     showView: (k) => showView(k),
+    hasScript: () => !!script,
+    castDone: () => Object.values(node.properties?.ss_cast?.items || {}).some((x) => x?.ref),
     getRenders: (sid) => rendersFor(sid),
     rememberRender: (sid, kind, f) => { if (f?.filename) { rememberRender(sid, kind, f); shotRenders[sid] = { ...shotRenders[sid], [kind]: viewURL(f) }; } },
     onRung: (fn) => rungListeners.push(fn),
@@ -1858,7 +1871,7 @@ function createStageWidget(node, inputName) {
         status.textContent = "Your chosen frame is the top layer. Paint, mask or regenerate, then “Use my edited frame”.";
       }
     },
-    // ② Frame's inline editor: the Canvas panel mounted inside the frame step, loaded with the chosen frame.
+    // ④ Frame's inline editor: the Canvas panel mounted inside the frame step, loaded with the chosen frame.
     mountCanvas: (host, url) => {
       host.append(canvasView);
       canvasView.hidden = false;
@@ -2061,7 +2074,7 @@ function createStageWidget(node, inputName) {
     if (agentBusy) throw new Error("the scene agent is already building a scene");
     const r = switchScene(sc.id);
     if (!r.ok) throw new Error(r.why ? `the stage is busy: ${r.why}` : "no script");
-    describeInput.value = prompt;             // what the agent was asked, editable on ① Set
+    describeInput.value = prompt;             // what the agent was asked, editable on ③ Set
     describeBtn.disabled = true;
     agentBusy = true;
     try {
@@ -2071,7 +2084,7 @@ function createStageWidget(node, inputName) {
     applySceneSetup(sc);
     freshSig = null;
     try { syncShots(); strip.refresh(); pipeline.restoreLadder(); } catch { /* not built */ }
-    status.textContent = `Scene ${sc.number} is blocked on the stage: ${liveShots().length} camera setup${liveShots().length === 1 ? "" : "s"}. Open ① Set to adjust it.`;
+    status.textContent = `Scene ${sc.number} is blocked on the stage: ${liveShots().length} camera setup${liveShots().length === 1 ? "" : "s"}. Open ③ Set to adjust it.`;
     persistScript();
     refreshScriptUI();
   }
@@ -2082,10 +2095,10 @@ function createStageWidget(node, inputName) {
     if (!r.ok) throw new Error(r.why ? `the stage is busy: ${r.why}` : "no script");
     if (r.fresh || untouchedFresh()) {        // the fresh stage's Master becomes the scene's first shot
       freshSig = null;
-      status.textContent = `Scene ${sc.number} has its first shot (Master). Frame it on ① Set.`;
+      status.textContent = `Scene ${sc.number} has its first shot (Master). Frame it on ③ Set.`;
     } else {
       const name = stage.addShot("single");
-      status.textContent = `New setup “${name}” in scene ${sc.number}, starting from the current camera. Frame it on ① Set.`;
+      status.textContent = `New setup “${name}” in scene ${sc.number}, starting from the current camera. Frame it on ③ Set.`;
     }
     persistScript();
     refreshScriptUI();
@@ -2099,8 +2112,8 @@ function createStageWidget(node, inputName) {
     return true;
   }
 
-  // Scene switchers: one in the header of every step (① Set's shot row, ② Frame, ③ Motion, ④ Review, ⑤ Deliver, Cut),
-  // all in sync. Hidden while there is no script. ① Set and the Cut work on the stage's own scene (its shots, its
+  // Scene switchers: one in the header of every step (③ Set's shot row, ④ Frame, ⑤ Motion, ⑥ Review, ⑦ Deliver, Cut),
+  // all in sync. Hidden while there is no script. ③ Set and the Cut work on the stage's own scene (its shots, its
   // cut), so theirs always names the scene on the stage; the step screens can also show All scenes.
   const switchers = [], sceneHeads = [], stageBound = new Set();
   const mountSwitcher = (host, { prepend = false, bound = false } = {}) => {
@@ -2221,6 +2234,55 @@ function createStageWidget(node, inputName) {
     setLayout: (v) => { dailiesLayouts()[dailiesScene().id] = v; nudgeTracker(); },
     onOpenTake: (shot, take, at) => showTake(shot, take, at),
     onCircle: (shot, take) => { status.textContent = take ? `Circled ${shot.name} Tk ${take.n}.` : `${shot.name}: circle cleared.`; },
+    onStatus: (m) => (status.textContent = m),
+  });
+
+  // Cast & Locations: pictures go into ④ Frame's references by name (people and objects on the stage, the location).
+  const castSlug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const viewUrl = (filename, subfolder, type) => api.apiURL(`/view?${new URLSearchParams({ filename, subfolder: subfolder || "", type })}`);
+  function applyCastRefs(items) {
+    const refs = pipeline._refs();
+    const withRef = items.filter((x) => x.ref);
+    for (const a of stage.toJSON().actors || []) {
+      const n = castSlug(a.name || a.kind);
+      const kind = ["man", "woman", "child"].includes(a.kind) ? "character" : "prop";
+      const hit = withRef.find((x) => x.kind === kind && (castSlug(x.name) === n || n.startsWith(castSlug(x.name) + " ") || castSlug(x.name).startsWith(n + " ")))
+        || (kind === "prop" && withRef.find((x) => x.kind === "prop" && castSlug(x.name).includes(String(a.kind).replace(/_/g, " "))));
+      if (hit) refs[`actor:${a.id}`] = hit.ref;
+    }
+    const sc = sceneById(liveKey);
+    const loc = withRef.find((x) => x.kind === "location" && sc && x.scenes?.includes(`Sc ${sc.number || sc.index + 1}`)) || withRef.find((x) => x.kind === "location");
+    if (loc) refs.location = loc.ref;
+    pipeline._saveRefs(refs);
+    try { pipeline._drawCastRefs(); } catch { /* frame not built */ }
+  }
+  castPanel = new CastPanel(castView, {
+    getScript: () => script,
+    getStage: () => stage.toJSON(),
+    load: () => node.properties?.ss_cast || null,
+    save: (d) => { node.properties = node.properties || {}; node.properties.ss_cast = d; nudgeTracker(); try { pipeline.mark(pipeline.current); } catch { /* */ } },
+    upload: async (file) => {
+      const body = new FormData();
+      body.append("image", file, file.name);
+      body.append("subfolder", "soundstage_refs");
+      body.append("type", "input");
+      const r = await api.fetchApi("/upload/image", { method: "POST", body });
+      if (!r.ok) throw new Error(`upload failed (${r.status})`);
+      const j = await r.json();
+      return { ref: j.subfolder ? `${j.subfolder}/${j.name}` : j.name, url: viewUrl(j.name, j.subfolder, "input") };
+    },
+    generate: async (prompt, name, onStatus) => {
+      const graph = {
+        1: { class_type: "SoundstageGenerateImage", inputs: { prompt, width: 1024, height: 1024, model: "FLUX 3 Klein · local [<$5M]",
+          seed: Math.floor(Math.random() * 2 ** 31) } },
+        2: { class_type: "SaveImage", inputs: { images: ["1", 0], filename_prefix: `soundstage/cast/${castSlug(name).replace(/ /g, "_") || "ref"}` } },
+      };
+      const res = await maker.runGraph(graph, { api, front: true, timeoutMs: 900000, onStatus });
+      const im = res.outputs?.["2"]?.images?.[0];
+      if (!im) throw new Error("the model returned no picture");
+      return { ref: `${im.subfolder ? im.subfolder + "/" : ""}${im.filename} [output]`, url: viewUrl(im.filename, im.subfolder, "output") };
+    },
+    applyRefs: applyCastRefs,
     onStatus: (m) => (status.textContent = m),
   });
 
