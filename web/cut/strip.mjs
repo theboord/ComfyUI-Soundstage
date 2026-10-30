@@ -222,7 +222,7 @@ export class ShotStrip {
    * load/save: the shared saved cut ({cut, audio, audio_tracks, excluded_shots}, node.properties.ss_cut).
    */
   constructor(container, { stage, api = null, getRenders = null, onSelect = null, onStatus = null, load = null, save = null,
-                           onOpenEditor = null, renderPreviewFrame = null, onEditShot = null } = {}) {
+                           onOpenEditor = null, renderPreviewFrame = null, onEditShot = null, getSceneName = null } = {}) {
     injectCSS();
     installWheelRouter();
     this.stage = stage;
@@ -233,6 +233,7 @@ export class ShotStrip {
     this._load = load;
     this._save = save;
     this._onOpenEditor = onOpenEditor;
+    this._sceneName = getSceneName || (() => null);   // shot id -> "SC12A" (a script's scene number) for the NLE scene field
     this._onEditShot = onEditShot;   // "edit original" (Dynamic Link style): jump to the step that made this clip
     this._renderPreview = renderPreviewFrame || ((id, f) => this._clay(id, f));
     this._mem = {}; // saved cut when no load/save is given
@@ -371,7 +372,7 @@ export class ShotStrip {
     const renders = this._getRenders() || {};
     return TL.normalizeProject({
       fps, cut: this.saved.cut || [], audio: this.saved.audio || [], audio_tracks: this.saved.audio_tracks || [],
-      shots: this._setups().map((s) => ({ id: s.id, name: s.name, frames, scene_name: "SC1", setup: s.setup, renders: renders[s.id] || {} })),
+      shots: this._setups().map((s) => ({ id: s.id, name: s.name, frames, scene_name: this._sceneName(s.id) || "SC1", setup: s.setup, renders: renders[s.id] || {} })),
     });
   }
 

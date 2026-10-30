@@ -176,9 +176,16 @@ export class Pipeline {
     try { r = await this.ctx.app.queuePrompt(0, 1); } finally { if (held) { this._holding = false; this.ctx.setBatch?.(false); } }
     const pid = this.ctx.lastPromptId?.();
     if (pid && Object.keys(extra).length) this.pending.set(pid, extra);
-    if (pid) { this.inflight.set(pid, { sid: this.ctx.stage.activeShot().id, step }); this._drawShotRows(); }
+    if (pid) { this.inflight.set(pid, { sid: this.ctx.stage.activeShot().id, step, t: Date.now() }); this._drawShotRows(); }
     this.ctx.app.graph.setDirtyCanvas(true);
     return r;
+  }
+
+  /** A render this App queued is still waiting or running (entries older than an hour are taken as lost events). */
+  busy() {
+    const now = Date.now();
+    for (const [pid, x] of this.inflight) if (x.t && now - x.t > 3600000) this.inflight.delete(pid);
+    return this.inflight.size > 0;
   }
 
   // ------------------------------------------------------------------ navigation
@@ -931,25 +938,29 @@ export class Pipeline {
   _drawShotRows() {
     if (!this.shotRows?.length) return;
     const act = this.ctx.stage.activeShot().id;
-    const shots = this.shots();
+    // The host may list more than the stage holds (a script's "All scenes": every scene's shots, each with its scene
+    // label). A shot that is not on the stage (live === false) opens its scene through ctx.openShot when picked.
+    const shots = this.ctx.rowShots?.() || this.shots();
     this._thumbs = this._thumbs || {};
     for (const { row, where } of this.shotRows) {
       const cards = shots.map((s, i) => {
         const r = this.ctx.getRenders(s.id) || {};
         const pic = this.chosen[s.id]?.url || r.look;
+        const away = s.live === false;
         let thumb;
         if (pic) thumb = h("img", { src: pic, alt: "" });
         else {
           thumb = h("canvas", { width: "185", height: "100" });
           try {
-            const c = this.ctx.renderPreviewFrame?.(s.id, 0);
+            const c = away ? null : this.ctx.renderPreviewFrame?.(s.id, 0);
             if (c) thumb.getContext("2d").drawImage(c, 0, 0, 185, 100);
           } catch { /* stage not ready */ }
         }
         const [cls, txt] = this._shotState(where, s.id);
-        return h("button", { type: "button", class: "shot", "aria-pressed": String(s.id === act), title: `Work on ${s.name}`,
-          on: { click: () => this.selectShot(s.id) } },
-          thumb, h("span", { class: "nm" }, `${i + 1}. ${s.name}`), h("span", { class: `st ${cls}` }, txt));
+        const name = s.scene ? `${s.scene} · ${s.name}` : `${i + 1}. ${s.name}`;
+        return h("button", { type: "button", class: "shot", "aria-pressed": String(s.id === act), title: away ? `Open ${name} (switches the stage to its scene)` : `Work on ${name}`,
+          on: { click: () => (away ? this.ctx.openShot?.(s.id) : this.selectShot(s.id)) } },
+          thumb, h("span", { class: "nm" }, name), h("span", { class: `st ${cls}` }, txt));
       });
       row.replaceChildren(h("span", { class: "lbl" }, shots.length > 1 ? `${shots.length} shots` : "1 shot"), ...cards);
     }
