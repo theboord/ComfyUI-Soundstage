@@ -763,12 +763,12 @@ export class Pipeline {
     // One-click suggestions: a click fills the field (and the node), the user can still edit it.
     const chips = (field, key, list) => h("div", { class: "row", style: "flex-wrap:wrap;gap:6px" }, ...list.map((t) =>
       h("button", { type: "button", class: "ghost", style: "font-size:12px;padding:3px 9px", title: `Use: ${t}`,
-        on: { click: () => { m[field].value = t; this.set(9087, key, t); } } }, t)));
+        on: { click: () => { m[field].value = t; this.set(9087, key, t); if (field === "line") this._lipSync(); } } }, t)));
     m.musicIdeas = chips("music", "music_mood", ["tense western strings", "pulsing synth chase", "eerie horror drones",
       "warm romantic piano", "epic orchestral sci-fi", "1970s funk heist groove", "lonely solo cello", "upbeat indie road-trip guitar"]);
     m.lineIdeas = chips("line", "line", ["We're not alone.", "Drive. Don't look back.", "Did you hear that?", "I'd follow you anywhere."]);
     m.line = h("input", { type: "text", placeholder: "Dialogue line (optional)", style: "background:#1a1420;color:inherit;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:7px 9px",
-      on: { change: () => this.set(9087, "line", m.line.value) } });
+      on: { change: () => { this.set(9087, "line", m.line.value); this._lipSync(); } } });
     m.draftBtn = h("button", { type: "button", class: "ghost", on: { click: () => this._render(3) } }, "Preview motion (draft)");
     m.finalBtn = h("button", { type: "button", class: "go", on: { click: () => this._render(4) } }, "Render final + sound");
     m.allDraft = h("button", { type: "button", class: "ghost", title: "Queue a draft for every shot, each from its own chosen frame",
@@ -935,9 +935,21 @@ export class Pipeline {
     }
   }
 
+  /** A spoken line must drive the video (LTX audio-driven, audio latent mask 0.3), or the voice is pasted over a
+   *  mouth that never heard it. Typing a line turns it on; the checkbox can still turn it off on purpose. */
+  _lipSync() {
+    const line = (this.w(9087, "line")?.value || "").trim();
+    if (line && !this.w(9092, "enabled")?.value) {
+      this.set(9092, "enabled", true);
+      if (this.m?.audio) this.m.audio.checked = true;
+      this._say?.("Lip sync on: the final is driven by the line, so the mouth follows the words.");
+    }
+  }
+
   async _render(step, allShots = false) {
     const m = this.m;
     this._applyVideo();
+    if (step === 4 && !isH3(m.engine?.value)) this._lipSync();
     const h3 = step === 4 && isH3(m.engine.value);
     const each = h3 ? "about 20–30 min" : step === 3 ? "about 2–4 min" : "about 4–6 min";
     const btns = [m.draftBtn, m.finalBtn, m.allDraft, m.allFinal];
