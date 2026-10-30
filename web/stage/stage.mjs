@@ -2962,6 +2962,9 @@ export class Stage {
     } else {
       this.scene.fog = null;
     }
+    // The backdrop plate is the shot camera's picture: it only lines up when looking through that camera. In Free view
+    // it would hang behind the orbiting set as a giant flat photo, so the set is shown on its own there.
+    const plate = !!this._backdropTex && (forCapture || !this.freeView);
     if (mode === "depth") {
       this.scene.background = new THREE.Color(0x000000);
       this.scene.overrideMaterial = depthMaterial;
@@ -2975,7 +2978,7 @@ export class Stage {
       const sky = { night: 0x0b1020, "blue hour": 0x26324d, "dawn/dusk": 0x4a3a44, "magic hour": 0xd9a46a,
         "golden hour": 0xc9b89a, overcast: 0xb9bec4, daylight: 0x9cc3e6 }[this.skyPhase] ?? 0x9cc3e6;
       this.scene.background = new THREE.Color(underwater ? 0x1f4256 : env.set === "studio" ? 0xd8d8d8 : sky);
-      if (this._backdropTex) { coverFit(this._backdropTex, this.renderer.domElement.width / this.renderer.domElement.height); this.scene.background = this._backdropTex; }
+      if (plate) { coverFit(this._backdropTex, this.renderer.domElement.width / this.renderer.domElement.height); this.scene.background = this._backdropTex; }
       this.scene.overrideMaterial = null;
     } else {
       const env = this.state.environment || {};
@@ -2983,7 +2986,7 @@ export class Stage {
       const underwater = this._isUnderwater(vc);
       this.scene.background = new THREE.Color(underwater ? 0x2f4a5c : env.set === "studio" ? 0x8e9298 : 0x2b2f36);
       // While blocking, show the plate behind the clay so actors can be placed in it; captures stay clean.
-      if (this._backdropTex && !forCapture) { coverFit(this._backdropTex, this.renderer.domElement.width / this.renderer.domElement.height); this.scene.background = this._backdropTex; }
+      if (plate && !forCapture) { coverFit(this._backdropTex, this.renderer.domElement.width / this.renderer.domElement.height); this.scene.background = this._backdropTex; }
       this.scene.overrideMaterial = this.clayMat;
     }
     const cam = forCapture ? this.camera : this._viewportCamera?.() || this.camera;
@@ -3015,7 +3018,7 @@ export class Stage {
     // With a backdrop plate the photo is the ground: the floor becomes a shadow catcher in Color, and is
     // hidden behind the clay while blocking in the viewport (the clay/depth captures keep the real floor).
     let groundMat = null, groundVis = null;
-    if (this._backdropTex && this.ground) {
+    if (plate && this.ground) {
       if (mode === "color") {
         groundMat = this.ground.material;
         this.ground.material = this._shadowCatcher ||= new THREE.ShadowMaterial({ opacity: 0.38 });
