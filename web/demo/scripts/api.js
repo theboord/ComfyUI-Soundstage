@@ -4,6 +4,7 @@
 
 const bus = new EventTarget();
 const BASE = new URL("../", import.meta.url);            // the demo root (index.html, r/)
+const uploads = new Map();   // demo uploads: name -> blob: URL
 let seq = 0;
 
 export const demo = {
@@ -26,7 +27,9 @@ export const api = {
   /** /view?filename=X -> the shipped copy of X; anything else stays as it is. */
   apiURL(path) {
     const m = /^\/view\?filename=([^&]+)/.exec(path);
-    return m ? asset(decodeURIComponent(m[1])) : path;
+    if (!m) return path;
+    const name = decodeURIComponent(m[1]);
+    return uploads.get(name) || asset(name);
   },
   fileURL(path) { return path; },
 
@@ -49,7 +52,14 @@ export const api = {
     }
     if (p === "/queue") return json({ queue_running: [], queue_pending: [] });
     if (p.startsWith("/object_info")) return json({});
-    if (p === "/upload/image") return json({ name: "demo.png", subfolder: "", type: "temp" });
+    if (p === "/upload/image") {
+      // Kept in this browser tab only: the image shows in the App like a real upload (nothing leaves the page).
+      const file = init.body?.get?.("image");
+      const name = `${++seq}_${(file?.name || "image.png").replace(/[^\w.-]/g, "_")}`;
+      if (file) uploads.set(name, URL.createObjectURL(file));
+      const sub = init.body?.get?.("subfolder") || "";
+      return json({ name, subfolder: sub, type: "input" });
+    }
     return json({ error: "This needs the ComfyUI server (the demo runs without one)." }, 404);
   },
 
