@@ -629,6 +629,7 @@ export class Stage {
    * (g = 9.8 m/s²), starting before the obstacle and landing after it. Vehicles/animals stay on the ground.
    */
   _heightAt(a, frame) {
+    if (LIBRARY[a.kind]?.flies) return this._actorPosAt(a, frame)[1] || 0;   // aircraft hover at their keyed height
     if (!PERSON_KINDS.has(a.kind)) return 0;
     const keys = this._actorKeys(a);
     const obs = this._obstacles();

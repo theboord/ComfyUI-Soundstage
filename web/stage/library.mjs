@@ -30,7 +30,7 @@ export const LIBRARY = {
   rock: { label: "Rock", height: 0.8, rig: "static" },
   crate: { label: "Crate", height: 0.8, rig: "static" },
   flashlight: { label: "Flashlight", height: 0.08, rig: "static", light: true },
-  ufo: { label: "Flying saucer", height: 3, rig: "static", light: true },
+  ufo: { label: "Flying saucer", height: 3, rig: "static", light: true, flies: true },
   wall: { label: "Wall", height: 2.4, rig: "static" },
   cube: { label: "Cube", height: 1, rig: "static" },
   sphere: { label: "Sphere", height: 1, rig: "static" },
