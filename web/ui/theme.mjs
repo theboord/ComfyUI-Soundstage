@@ -21,6 +21,11 @@ export const TOKENS = {
   danger: "#ff7a7a",
 };
 
+/** The one UI typeface (canvas text too): Space Grotesk, then the platform UI font while it loads. */
+export const FONT = `"Soundstage Grotesk", "PP Formula", ui-sans-serif, system-ui, sans-serif`;
+// Kept in their own face: timecodes (an NLE convention) and the screenplay page (Courier, like every script).
+const OWN_FONT = ".ss-mono, .ss-cut-tc, .ss-cut-ro, .ss-strip-tc, .ss-strip-dur, .ss-pip-bar output, .ss-prev textarea, .ss-script .page, .ss-script .page *";
+
 const T = TOKENS;
 const CSS = `
 @font-face { font-family:"Soundstage Grotesk"; font-weight:400; font-display:swap; src:url(${FONT_URL}space-grotesk-400.woff2) format("woff2"); }
@@ -33,10 +38,14 @@ const CSS = `
   --ss-text:${T.text}; --ss-muted:${T.muted}; --ss-faint:${T.faint}; --ss-accent:${T.accent}; --ss-accent-ink:${T.accentInk};
   background:var(--ss-bg) !important; color:var(--ss-text) !important; gap:10px !important; padding:12px !important;
   border-radius:16px !important; border:1px solid var(--ss-line);
-  font:13px/1.4 "Soundstage Grotesk", "PP Formula", ui-sans-serif, system-ui, sans-serif !important;
+  --ss-font:${FONT};
+  font:13px/1.4 ${FONT} !important;
   letter-spacing:.005em;
 }
-.ss-stage *, .ss-stage button, .ss-stage input, .ss-stage select, .ss-stage textarea { font-family:inherit; }
+/* One typeface everywhere in the App, whatever a panel's own CSS asks for (they were -apple-system, system-ui…). */
+.ss-stage :not(:is(${OWN_FONT})) { font-family:var(--ss-font) !important; }
+/* One type scale: 11 caption · 12 secondary · 13 body and controls · 15 section title · 18 step title. */
+.ss-stage .ss-look, .ss-stage .ss-advisor { font-size:13px !important; line-height:1.4 !important; }
 .ss-icon { flex:none; vertical-align:-3px; }
 
 /* Rows read as glass cards, like Cinematic Studio's settings list. */
@@ -112,6 +121,36 @@ const CSS = `
 .ss-stage .ss-look-row, .ss-stage .ss-adv-shot, .ss-stage .ss-adv-row, .ss-stage .ss-cut-bar, .ss-stage .ss-cut-insp, .ss-stage .ss-prev {
   background:var(--ss-card) !important; border:1px solid var(--ss-line) !important; border-radius:12px !important;
 }
+/* Tool buttons: the icon on top, a short label under it, a one-sentence tooltip (like Keynote's / Freeform's toolbar).
+   Used by the Set step's tool dock and the selected person's actions. */
+.ss-stage .ss-dock { display:flex; flex-wrap:wrap; gap:4px; align-items:stretch; padding:6px; background:var(--ss-card);
+  border:1px solid var(--ss-line); border-radius:14px; }
+.ss-stage .ss-dock[hidden] { display:none !important; }
+.ss-stage button.ss-tool { flex:1 1 0; min-width:76px; max-width:136px; flex-direction:column !important; justify-content:flex-start;
+  gap:5px !important; padding:8px 6px 7px !important; border-radius:10px !important; background:transparent !important;
+  border:1px solid transparent !important; color:var(--ss-text) !important; font-size:12px !important; font-weight:500 !important;
+  line-height:1.2 !important; text-align:center; white-space:normal; }
+.ss-stage button.ss-tool .ss-icon { color:var(--ss-text); opacity:.92; }
+.ss-stage button.ss-tool:hover:not(:disabled) { background:var(--ss-raised) !important; border-color:var(--ss-line) !important; }
+.ss-stage button.ss-tool:hover .ss-icon, .ss-stage button.ss-tool[aria-pressed=true] .ss-icon { color:var(--ss-accent); opacity:1; }
+.ss-stage button.ss-tool[aria-pressed=true] { background:var(--ss-raised) !important; border-color:var(--ss-line-strong) !important; }
+.ss-stage button.ss-tool.ss-tool-ai .ss-icon { color:var(--ss-accent); }
+.ss-stage .ss-dock .ss-dock-sep { width:1px; align-self:stretch; margin:6px 2px; background:var(--ss-line); }
+
+/* The two scene-agent boxes and the Add box get room to show their example text. */
+.ss-stage .ss-add input[type=text] { flex:1 1 220px; min-width:180px; max-width:440px; width:auto !important; }
+
+/* Row heads: the same icon and name as the dock tool that leads here, so a row is easy to find again. */
+.ss-stage .ss-rowhead { display:inline-flex; align-items:center; gap:6px; min-width:118px; color:var(--ss-muted);
+  text-transform:uppercase; letter-spacing:.08em; font-size:11px !important; font-weight:600; white-space:nowrap; }
+.ss-stage .ss-rowhead .ss-icon { color:var(--ss-text); opacity:.8; }
+
+/* A tool brings you to its control and lights it up for a moment. */
+@keyframes ss-spot { 0% { box-shadow:0 0 0 0 rgba(242,255,89,0); } 12%, 55% { box-shadow:0 0 0 3px rgba(242,255,89,.9); }
+  100% { box-shadow:0 0 0 3px rgba(242,255,89,0); } }
+.ss-stage .ss-spot { animation:ss-spot 2.2s ease-out 1; border-radius:12px; }
+@media (prefers-reduced-motion: reduce) { .ss-stage .ss-spot { animation:none; outline:2px solid var(--ss-accent); } }
+
 .ss-stage.ss-full { border-radius:20px !important; box-shadow:0 30px 90px rgba(0,0,0,.6) !important; }
 `;
 
@@ -121,4 +160,40 @@ export function applyTheme() {
   s.id = "soundstage-theme";
   s.textContent = CSS;
   document.head.appendChild(s); // after the panels' own <style> tags, so it wins ties
+}
+
+/**
+ * Bring a control into view and light it up for a moment (what a tool in the dock does), optionally focusing a field.
+ * Scrolls only a real scroll container (the App panel, or the page when it scrolls): never an overflow:hidden parent,
+ * which would shift ComfyUI's canvas under its DOM widgets.
+ */
+export function spotlight(target, focusEl = null, { scroll = true, instant = false } = {}) {
+  if (!target) return;
+  if (scroll) scrollToView(target, instant);
+  target.classList.remove("ss-spot");
+  void target.offsetWidth;   // restart the animation
+  target.classList.add("ss-spot");
+  clearTimeout(target._ssSpotT);
+  target._ssSpotT = setTimeout(() => target.classList.remove("ss-spot"), 2300);
+  if (focusEl) {
+    const go = () => { try { focusEl.focus({ preventScroll: true }); } catch { /* detached */ } };
+    if (instant) go(); else setTimeout(go, 280);
+  }
+}
+
+function scrollToView(t, instant) {
+  const behavior = instant ? "auto" : "smooth";
+  const r = t.getBoundingClientRect();
+  for (let p = t.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY;
+    if ((oy === "auto" || oy === "scroll") && p.scrollHeight > p.clientHeight + 4) {
+      const pr = p.getBoundingClientRect();
+      if (r.top < pr.top + 8 || r.bottom > pr.bottom - 8) p.scrollBy({ top: r.top - pr.top - Math.max(16, (pr.height - r.height) / 3), behavior });
+      return;
+    }
+  }
+  // No scrolling panel: the page itself, only when it really scrolls (ComfyUI's page never does).
+  const root = document.scrollingElement;
+  if (!root || getComputedStyle(document.body).overflowY === "hidden" || root.scrollHeight <= innerHeight + 4) return;
+  if (r.top < 8 || r.bottom > innerHeight - 8) scrollBy({ top: r.top - Math.max(16, (innerHeight - r.height) / 3), behavior });
 }

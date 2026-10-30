@@ -6,6 +6,15 @@
 
 import * as TL from "./timeline.mjs";
 import { exportAll, fpsInfo, framesToTC, recordStart } from "./exporters.mjs";
+import { icon } from "../ui/icons.mjs";
+
+/** A transport button's face: a Lucide icon (plus an optional speed like "2×"); the title names it for screen readers. */
+const face = (b, name, extra = "") => {
+  if (b.dataset.face === name + extra) return;
+  b.dataset.face = name + extra;
+  b.replaceChildren(icon(name, 14), ...(extra ? [extra] : []));
+  b.setAttribute("aria-label", b.title || name);
+};
 
 export const RUNG_COLORS = { clay: "#5b6475", look: "#3d6ea8", draft: "#7652b3", final: "#3c9561" };
 const ACCENT = "#e39a40";
@@ -22,7 +31,7 @@ const SNAP_PX = 8;
 const SHUTTLE = [1, 2, 4, 8];
 
 const CSS = `
-.ss-cut{display:flex;flex-direction:column;gap:6px;color:#cfd5de;font:12px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;outline:none;background:#16191e;padding:6px;border-radius:6px;box-sizing:border-box;min-width:0}
+.ss-cut{display:flex;flex-direction:column;gap:6px;color:#cfd5de;font:12px/1.3 "Soundstage Grotesk", ui-sans-serif, system-ui, sans-serif;outline:none;background:#16191e;padding:6px;border-radius:6px;box-sizing:border-box;min-width:0}
 .ss-cut:focus-visible{box-shadow:0 0 0 1px #e39a4088}
 .ss-cut-viewer{background:#0d1117;border-radius:4px;overflow:hidden;display:flex;justify-content:center}
 .ss-cut-viewer canvas{display:block;width:100%;height:auto;max-height:52vh;object-fit:contain}
@@ -548,11 +557,12 @@ export class CutPanel {
     this.tcEl.title = "Record timecode (24 fps non-drop, starts 01:00:00:00)";
     bar.append(this.tcEl);
     this.b = {};
-    this.b.prev = btn("⏮", "Previous edit (↑)", () => this.gotoEdit(-1));
-    this.b.rev = btn("◀◀", "Shuttle reverse (J)", () => this.shuttle(-1));
-    this.b.play = btn("▶", "Play / stop (Space)", () => this.togglePlay());
-    this.b.fwd = btn("▶▶", "Shuttle forward (L)", () => this.shuttle(1));
-    this.b.next = btn("⏭", "Next edit (↓)", () => this.gotoEdit(1));
+    this.b.prev = btn("", "Previous edit (↑)", () => this.gotoEdit(-1));
+    this.b.rev = btn("", "Shuttle reverse (J)", () => this.shuttle(-1));
+    this.b.play = btn("", "Play / stop (Space)", () => this.togglePlay());
+    this.b.fwd = btn("", "Shuttle forward (L)", () => this.shuttle(1));
+    this.b.next = btn("", "Next edit (↓)", () => this.gotoEdit(1));
+    face(this.b.prev, "skip-back"); face(this.b.rev, "rewind"); face(this.b.play, "play"); face(this.b.fwd, "fast-forward"); face(this.b.next, "skip-forward");
     this.b.loop = btn("Loop", "Loop playback (the I/O range when marked)", () => { this.loop = !this.loop; this._updateButtons(); }, true);
     this.b.audio = btn("Audio", "Play the audio of Draft/Final clips at 1x", () => { this.audio = !this.audio; this._updateButtons(); }, true);
     sep();
@@ -701,12 +711,12 @@ export class CutPanel {
   _updateButtons() {
     if (!this.b) return;
     const n = this.project.cut.length;
-    this.b.play.textContent = this.speed ? "❚❚" : "▶";
+    face(this.b.play, this.speed ? "pause" : "play");
     this.b.play.setAttribute("aria-pressed", String(this.speed === 1));
     this.b.rev.setAttribute("aria-pressed", String(this.speed < 0));
     this.b.fwd.setAttribute("aria-pressed", String(this.speed > 1));
-    this.b.rev.textContent = this.speed < -1 ? `◀◀ ${-this.speed}×` : "◀◀";
-    this.b.fwd.textContent = this.speed > 1 ? `▶▶ ${this.speed}×` : "▶▶";
+    face(this.b.rev, "rewind", this.speed < -1 ? `${-this.speed}×` : "");
+    face(this.b.fwd, "fast-forward", this.speed > 1 ? `${this.speed}×` : "");
     this.b.loop.setAttribute("aria-pressed", String(this.loop));
     this.b.audio.setAttribute("aria-pressed", String(this.audio));
     this.b.action.setAttribute("aria-pressed", String(this.action));
@@ -855,9 +865,9 @@ export class CutPanel {
     c.width = 480; c.height = 270;
     const g = c.getContext("2d");
     g.fillStyle = "#262b33"; g.fillRect(0, 0, 480, 270);
-    g.fillStyle = "#cfd5de"; g.font = "600 28px system-ui, sans-serif"; g.textAlign = "center";
+    g.fillStyle = "#cfd5de"; g.font = "600 28px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif"; g.textAlign = "center";
     g.fillText(shot.name, 240, 125);
-    g.font = "16px system-ui, sans-serif"; g.fillStyle = "#8b94a1";
+    g.font = "16px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif"; g.fillStyle = "#8b94a1";
     g.fillText([shot.scene_name, shot.setup, `f ${f}`].filter(Boolean).join(" · "), 240, 155);
     return c;
   }
@@ -1146,7 +1156,7 @@ export class CutPanel {
   }
 
   _label(ctx, text, x, y, align, color = "#e9edf2") {
-    ctx.font = "600 16px system-ui, -apple-system, sans-serif";
+    ctx.font = "600 16px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
     ctx.textAlign = align;
     ctx.textBaseline = "middle";
     ctx.lineWidth = 4;
@@ -1157,7 +1167,7 @@ export class CutPanel {
   }
 
   _badge(ctx, text, color, right, top) {
-    ctx.font = "700 12px system-ui, -apple-system, sans-serif";
+    ctx.font = "700 12px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
     const w = ctx.measureText(text).width + 14;
     roundRect(ctx, right - w, top, w, 20, 4);
     ctx.fillStyle = color;
@@ -1385,7 +1395,7 @@ export class CutPanel {
     ctx.fillRect(0, 0, HEADER_W, TL_H);
     ctx.fillStyle = "#2a3038";
     ctx.fillRect(HEADER_W - 1, 0, 1, TL_H);
-    ctx.font = "600 11px system-ui, -apple-system, sans-serif";
+    ctx.font = "600 11px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
     ctx.textBaseline = "middle";
     ctx.textAlign = "left";
     ctx.fillStyle = "#cfd5de";
@@ -1393,7 +1403,7 @@ export class CutPanel {
     for (let t = 1; t <= nTracks; t++) {
       const y = this._trackTop(t), st = TL.trackState(p, t), heard = TL.audible(p, t);
       ctx.fillStyle = heard ? "#cfd5de" : "#6b737e";
-      ctx.font = "600 11px system-ui, -apple-system, sans-serif";
+      ctx.font = "600 11px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
       ctx.textAlign = "left";
       ctx.fillText("A" + t, 8, y + A_H / 2);
       for (const [label, on, x, col] of [["M", st.mute, HEADER_W - 36, "#d9534f"], ["S", st.solo, HEADER_W - 19, "#e6c34a"]]) {
@@ -1401,7 +1411,7 @@ export class CutPanel {
         ctx.fillStyle = on ? col : "#262b33";
         ctx.fill();
         ctx.fillStyle = on ? "#16191e" : "#8b94a1";
-        ctx.font = "700 9px system-ui, -apple-system, sans-serif";
+        ctx.font = "700 9px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(label, x + 7.5, y + A_H / 2 + 0.5);
       }
@@ -1437,7 +1447,7 @@ export class CutPanel {
       }
     } else if (entry && entry.state === "error") {
       ctx.fillStyle = "rgba(255,120,100,.8)";
-      ctx.font = "10px system-ui, sans-serif";
+      ctx.font = "10px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
       ctx.textBaseline = "middle";
       ctx.fillText("can't load", x0 + 6, y + h / 2 + 5);
     }
@@ -1447,7 +1457,7 @@ export class CutPanel {
     if (a.fade_in) { ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(fx(a.fade_in), y); ctx.lineTo(x0, y + h); ctx.fill(); }
     if (a.fade_out) { ctx.beginPath(); ctx.moveTo(fx(len), y); ctx.lineTo(fx(len - a.fade_out), y); ctx.lineTo(fx(len), y + h); ctx.fill(); }
     ctx.fillStyle = "#fff";
-    ctx.font = "600 10px system-ui, -apple-system, sans-serif";
+    ctx.font = "600 10px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
     ctx.textBaseline = "top";
     ctx.textAlign = "left";
     if (cw > 30) ctx.fillText(a.label, x0 + Math.max(6, a.fade_in * this.ppf + 2), y + 2);
@@ -1495,17 +1505,17 @@ export class CutPanel {
     }
     if (cw > 24) {
       ctx.fillStyle = "#fff";
-      ctx.font = "600 11px system-ui, -apple-system, sans-serif";
+      ctx.font = "600 11px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
       ctx.textAlign = "left";
       ctx.textBaseline = "top";
       ctx.fillText(r.shot.name, tx, y + 5);
       const nameW = ctx.measureText(r.shot.name).width;
-      ctx.font = "10px system-ui, -apple-system, sans-serif";
+      ctx.font = "10px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
       ctx.fillStyle = "rgba(255,255,255,.75)";
       if (r.shot.setup) ctx.fillText(r.shot.setup, tx, y + 19);
       ctx.fillText(`${this._dur(r.len)}  [${r.in}-${r.out - 1}]`, tx, y + h - 14);
       // rung badge
-      ctx.font = "700 9px system-ui, -apple-system, sans-serif";
+      ctx.font = "700 9px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
       const label = rung.toUpperCase();
       const bw = ctx.measureText(label).width + 8;
       if (cw - (tx - x0) > nameW + bw + 14) {

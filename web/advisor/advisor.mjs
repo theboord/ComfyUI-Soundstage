@@ -13,7 +13,7 @@
 
 const CSS = `
 .ss-advisor { display:flex; flex-direction:column; gap:8px; padding:6px; background:#16191e; border-radius:6px;
-  font:12px/1.35 -apple-system, "Segoe UI", sans-serif; color:#cfd5de; box-sizing:border-box; width:100%; min-width:0; }
+  font:13px/1.4 "Soundstage Grotesk", ui-sans-serif, system-ui, sans-serif; color:#cfd5de; box-sizing:border-box; width:100%; min-width:0; }
 .ss-advisor * { box-sizing:border-box; }
 .ss-advisor h4 { margin:2px 0 0; font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:#7d8694; }
 .ss-advisor textarea, .ss-advisor input[type=text], .ss-advisor input[type=number], .ss-advisor select {

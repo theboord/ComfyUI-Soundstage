@@ -24,7 +24,7 @@ import { Coach } from "./coach/coach.mjs";
 import { castSig } from "./coach/rules.mjs";
 import { AdvisorPanel } from "./advisor/advisor.mjs";
 import * as maker from "./assets3d/maker.mjs";
-import { applyTheme } from "./ui/theme.mjs";
+import { applyTheme, spotlight } from "./ui/theme.mjs";
 import { icon } from "./ui/icons.mjs";
 import * as THREE from "./vendor/three.module.min.mjs";
 import { PosePanel } from "./stage/posepanel.mjs";
@@ -36,7 +36,7 @@ import { NO_SCENE, scopeShots, stageSig, listShots, keyOfShot, packScript, unpac
 
 const CSS = `
 .ss-stage { display:flex; flex-direction:column; gap:6px; padding:6px; background:#16191e; border-radius:6px;
-  font:12px/1.3 -apple-system, "Segoe UI", sans-serif; color:#cfd5de; box-sizing:border-box; width:100%; }
+  font:12px/1.3 "Soundstage Grotesk", ui-sans-serif, system-ui, sans-serif; color:#cfd5de; box-sizing:border-box; width:100%; }
 .ss-bar { display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; }
 .ss-bar label { display:flex; align-items:center; gap:6px; white-space:nowrap; }
 .ss-bar input[type=range] { width:110px; accent-color:#e39a40; }
@@ -79,7 +79,7 @@ const CSS = `
 .ss-expand { margin-left:auto; }
 .ss-lightnote { color:#cfa36b; font-size:11px; font-style:italic; }
 .ss-gizmo { position:absolute; top:8px; right:8px; width:84px; height:84px; cursor:pointer; }
-.ss-viewbadge { position:absolute; top:8px; left:8px; font:600 11px/1 -apple-system,sans-serif; letter-spacing:.06em;
+.ss-viewbadge { position:absolute; top:8px; left:8px; font:600 11px/1 "Soundstage Grotesk", ui-sans-serif, system-ui, sans-serif; letter-spacing:.06em;
   text-transform:uppercase; padding:5px 8px; border-radius:4px; background:rgba(0,0,0,.55); color:#e6e9ee; pointer-events:none; }
 .ss-viewbadge[data-free=true] { background:#e39a40; color:#16191e; }
 `;
@@ -309,6 +309,7 @@ function createStageWidget(node, inputName) {
   ladderBar.append(fid.wrap, blend);
   ladderView.append(rungs);
   const tabBtns = {};
+  let dock = null;   // the Set step's tool dock (built with the rows it leads to, further down)
   for (const [k, label] of [["script", "Script"], ["stage", "Stage"], ["canvas", "Canvas"], ["advisor", "Advisor"], ["look", "Look"], ["ladder", "Ladder"], ["cut", "Cut"]]) {
     const b = Object.assign(document.createElement("button"), { type: "button", textContent: label });
     b.setAttribute("aria-pressed", String(k === "stage"));
@@ -528,9 +529,11 @@ function createStageWidget(node, inputName) {
       const notFinal = clips.filter((c) => !/^final/.test(c.kind || "")).length;
       cutOut.textContent = "";
       const a = (label, extra) => Object.assign(document.createElement("a"), { href: url, textContent: label, ...extra });
-      const watch = a("▶ Watch", { target: "_blank", rel: "noopener" });
-      const dl = a("⬇ Download", { download: j.filename });
-      for (const x of [watch, dl]) { x.style.color = "var(--ss-accent, #F2FF59)"; x.addEventListener("pointerdown", (e) => e.stopPropagation()); }
+      const watch = a("", { target: "_blank", rel: "noopener" });
+      const dl = a("", { download: j.filename });
+      watch.append(icon("play", 13), "Watch");
+      dl.append(icon("download", 13), "Download");
+      for (const x of [watch, dl]) { x.style.cssText = "color:var(--ss-accent, #F2FF59);display:inline-flex;gap:4px;align-items:center;margin-right:8px"; x.addEventListener("pointerdown", (e) => e.stopPropagation()); }
       cutOut.append(watch, dl, document.createTextNode(`${j.seconds}s · ${clips.length} clips` +
         (notFinal ? ` · ${notFinal} not Final yet (${j.missing?.length || 0} black slate${(j.missing?.length || 0) === 1 ? "" : "s"})` : "")));
       status.textContent = `The cut is one video now: ${j.filename}.`;
@@ -609,8 +612,10 @@ function createStageWidget(node, inputName) {
   const canvasBack = document.createElement("div");
   canvasBack.className = "ss-canvasback";
   canvasBack.style.cssText = "display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 8px;padding:8px 10px;border-radius:12px;background:rgba(242,255,89,.06);border:1px solid rgba(242,255,89,.25)";
-  const cbBtn = (label, title, fn, primary) => {
-    const b = Object.assign(document.createElement("button"), { type: "button", textContent: label, title });
+  const cbBtn = (ic, label, title, fn, primary) => {
+    const b = Object.assign(document.createElement("button"), { type: "button", title });
+    b.append(icon(ic, 14), label);
+    b.dataset.ssIcon = ic;
     if (primary) b.className = "ss-primary";
     b.addEventListener("pointerdown", (e) => e.stopPropagation());
     b.addEventListener("click", fn);
@@ -619,9 +624,9 @@ function createStageWidget(node, inputName) {
   const cbTip = Object.assign(document.createElement("span"), { textContent: "Touch-up: paint, mask or regenerate parts of the frame. Your edits are kept here; use them as the frame when you're happy." });
   cbTip.style.cssText = "font-size:12px;color:var(--ss-muted,#a9a3ad);flex:1;min-width:200px";
   canvasBack.append(
-    cbBtn("← Back to ② Frame", "Return to the frame step (your canvas edits are kept)", () => pipeline?.go("frame")),
+    cbBtn("arrow-left", "Back to ② Frame", "Return to the frame step (your canvas edits are kept)", () => pipeline?.go("frame")),
     cbTip,
-    cbBtn("✓ Use my edited frame → ③ Motion", "Animate the touched-up image instead of the generated one", () => {
+    cbBtn("check", "Use my edited frame in ③ Motion", "Animate the touched-up image instead of the generated one", () => {
       const sw = app.graph?.getNodeById?.(9086)?.widgets?.find((w) => w.name === "switch");
       if (sw) { sw.value = true; sw.callback?.(true); }
       try { pipeline.touched[stage.activeShot().id] = true; pipeline.ctx.saveChosen?.({ chosen: pipeline.chosen, touched: pipeline.touched }); } catch { /* pipeline not built */ }
@@ -657,6 +662,7 @@ function createStageWidget(node, inputName) {
     Object.entries(tabBtns).forEach(([kk, b]) => b.setAttribute("aria-pressed", String(kk === k)));
     const isLadder = k === "ladder", isLook = k === "look", isStage = k === "stage";
     bar.hidden = !isStage; view.hidden = !isStage;
+    if (dock) dock.hidden = !isStage;
     ladderBar.hidden = !isLadder; ladderView.hidden = !isLadder;
     lookView.hidden = !isLook;
     scriptView.hidden = k !== "script";
@@ -684,18 +690,20 @@ function createStageWidget(node, inputName) {
   function offerLayerPack(folder) {
     const name = String(folder).split(/[\\/]/).filter(Boolean).pop();
     if (!name) return;
-    const link = (label, lite, title) => Object.assign(document.createElement("a"), {
-      textContent: label, title, className: "ss-btn",
-      href: api.apiURL(`/soundstage/layerpack/download?name=${encodeURIComponent(name)}${lite ? "&lite=1" : ""}`),
-      download: `${name}${lite ? "_lite" : ""}.zip`,
-    });
+    const link = (label, lite, title) => {
+      const a = Object.assign(document.createElement("a"), { title, className: "ss-btn",
+        href: api.apiURL(`/soundstage/layerpack/download?name=${encodeURIComponent(name)}${lite ? "&lite=1" : ""}`),
+        download: `${name}${lite ? "_lite" : ""}.zip` });
+      a.append(icon("download", 14), label);
+      return a;
+    };
     packBtns.replaceChildren(
-      link("⬇ Layers", false, `Download the whole Layer Pack ${name} (layers, mattes, depth, camera, AE/Nuke/Blender/Resolve/PS builders)`),
-      link("⬇ Lite", true, "Same pack without the per-frame PNG sequences (ProRes 4444 MOVs, EXRs, camera and builders kept)"));
+      link("Layers", false, `Download the whole Layer Pack ${name} (layers, mattes, depth, camera, AE/Nuke/Blender/Resolve/PS builders)`),
+      link("Lite", true, "Same pack without the per-frame PNG sequences (ProRes 4444 MOVs, EXRs, camera and builders kept)"));
     for (const a of packBtns.children) a.addEventListener("pointerdown", (e) => e.stopPropagation());
     packBtns.hidden = false;
     try { pipeline?.showPack([...packBtns.children].map((a) => { const c = a.cloneNode(true); c.addEventListener("pointerdown", (e) => e.stopPropagation()); return c; })); } catch { /* not built */ }
-    status.textContent = `Layer Pack ${name} is ready: ⬇ Layers (everything) or ⬇ Lite (no PNG frame sequences), top right.`;
+    status.textContent = `Layer Pack ${name} is ready: download Layers (everything) or Lite (no PNG frame sequences), top right.`;
   }
 
   // Each Run that finishes a rung feeds the viewer (rung output nodes are titled "Rung N · …").
@@ -832,19 +840,22 @@ function createStageWidget(node, inputName) {
   keys.className = "ss-views";
   keys.style.marginLeft = "0";
   const keyBtns = {};
-  const kb = (id, label, title, fn) => {
-    const b = Object.assign(document.createElement("button"), { type: "button", textContent: label, title });
+  const kb = (id, ic, label, title, fn) => {
+    const b = Object.assign(document.createElement("button"), { type: "button", title });
+    b.append(icon(ic, 14), ...(label ? [label] : []));
+    b.dataset.ssIcon = ic;
+    if (!label) b.setAttribute("aria-label", title);
     b.addEventListener("pointerdown", (e) => e.stopPropagation());
     b.addEventListener("click", () => { fn(); afterTimeChange(); });
     keyBtns[id] = b;
     keys.append(b);
   };
-  kb("first", "|◀", "First key", () => stage.setKey("start"));
-  kb("prev", "◀", "Previous key", () => stage.gotoKey(-1));
-  kb("set", "◆ Key", "Set a key here for the camera (and the selected object)", () => stage.setKeyHere());
-  kb("del", "✕", "Delete the key here", () => stage.deleteKeyHere());
-  kb("next", "▶", "Next key", () => stage.gotoKey(1));
-  kb("last", "▶|", "Last key", () => stage.setKey("end"));
+  kb("first", "skip-back", "", "First key", () => stage.setKey("start"));
+  kb("prev", "step-back", "", "Previous key", () => stage.gotoKey(-1));
+  kb("set", "diamond", "Key", "Set a key here for the camera (and the selected object)", () => stage.setKeyHere());
+  kb("del", "x", "", "Delete the key here", () => stage.deleteKeyHere());
+  kb("next", "step-forward", "", "Next key", () => stage.gotoKey(1));
+  kb("last", "skip-forward", "", "Last key", () => stage.setKey("end"));
   // Per-object tracks under the time bar (open by default; remembered per viewer).
   let tracks = null;
   const tracksHost = document.createElement("div");
@@ -1034,7 +1045,7 @@ function createStageWidget(node, inputName) {
     const items = stage.outline();
     const cur = outlineSelEl.value;
     outlineSelEl.replaceChildren(new Option(`— ${items.length} items —`, ""),
-      ...items.map((it) => new Option(`${it.type === "light" ? "💡 " : ""}${it.name}`, `${it.type}|${it.id}`)));
+      ...items.map((it) => new Option(`${it.name}${it.type === "light" ? " (light)" : ""}`, `${it.type}|${it.id}`)));
     outlineSelEl.value = cur;
   }
   // Bring your own models (GLB/glTF, FBX incl. Mixamo, OBJ, PLY, STL; animation kept) and Gaussian splats
@@ -1514,8 +1525,9 @@ function createStageWidget(node, inputName) {
   // Virtual camera: a phone / Quest / Vision Pro at /soundstage/vcam drives the shot camera; takes are stabilized.
   const vcamRow = document.createElement("div");
   vcamRow.className = "ss-bar";
-  const vcamBtn = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn", textContent: "VCam: off",
+  const vcamBtn = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn", textContent: "Connect a phone",
     title: "Listen to a device running /soundstage/vcam (phone, iPad, Quest, Vision Pro)" });
+  vcamBtn.setAttribute("aria-pressed", "false");
   const vcamInfo = Object.assign(document.createElement("span"), { className: "ss-hint", textContent: "Open /soundstage/vcam on the device" });
   const takeSel = mkSelect("Take", { "": { label: "—" } }, "", () => {});
   const strength = slider("Steady", 0, 1, 0.05, 0.6, (v) => `${Math.round(v * 100)}%`, () => {});
@@ -1552,11 +1564,13 @@ function createStageWidget(node, inputName) {
     if (vcamOff) {
       vcamOff(); vcamOff = null;
       stage.previewCamera(null);
-      vcamBtn.textContent = "VCam: off";
+      vcamBtn.textContent = "Connect a phone";
+      vcamBtn.setAttribute("aria-pressed", "false");
       vcamInfo.textContent = "Open /soundstage/vcam on the device";
       return;
     }
-    vcamBtn.textContent = "VCam: on";
+    vcamBtn.textContent = "Stop listening";
+    vcamBtn.setAttribute("aria-pressed", "true");
     vcamInfo.textContent = "Waiting for the device…";
     refreshTakes();
     vcamOff = listenVcam(api, {
@@ -1604,6 +1618,97 @@ function createStageWidget(node, inputName) {
   hint.className = "ss-hint";
   hint.textContent = "Move the playhead, then frame the shot or drag objects: a ◆ key is set there automatically · Drag to orbit (all the way round) · Shift/middle-drag to pan · scroll to dolly · W A S D fly, Q/E down/up (Shift = fast) · 0 toggles Free view · drag an object to place it";
   el.append(agentRow, time, tracksHost, shotRow, envRow, lightRow, lightSel, lightNote, addRow, apRow, poseHost, vcamRow, hint, status);
+
+  // Row heads: each settings row starts with the same icon and name as the dock tool that brings you to it.
+  const rowHead = (row, ic, label) => {
+    const hd = Object.assign(document.createElement("span"), { className: "ss-rowhead" });
+    hd.append(icon(ic, 14), label);
+    row.prepend(hd);
+    row.dataset.section = label;
+  };
+  rowHead(agentRow, "sparkles", "Build with AI");
+  rowHead(shotRow, "camera", "Camera");
+  rowHead(envRow, "cloud-sun", "Set & weather");
+  rowHead(lightRow, "lightbulb", "Lighting");
+  rowHead(addRow, "package-plus", "Objects");
+  rowHead(apRow, "user", "Appearance");
+  rowHead(vcamRow, "smartphone", "Phone camera");
+
+  // Tool dock (Set step): every way to build the shot, as a labelled icon. A tool never re-implements a feature: it
+  // brings you to the control that does it (scrolls, lights it up, focuses it) and picks a sensible target.
+  dock = Object.assign(document.createElement("nav"), { className: "ss-dock" });
+  dock.setAttribute("aria-label", "Set tools");
+  const people = () => (stage.toJSON().actors || []).filter((a) => isPerson(a.kind) && !a.carry_id);
+  // The selected person, else the first one on the set, else a new one (a person tool needs someone to work on).
+  const pickPerson = () => {
+    const cur = stage.selectedInfo?.();
+    if (cur && isPerson(cur.kind)) return cur;
+    const p = people()[0];
+    if (p) { stage.select(p.id); return stage.selectedInfo(); }
+    const name = stage.addObject("woman");
+    status.textContent = `Added ${name} to work on. Drag her into place on the set.`;
+    try { syncOutline(); } catch { /* not built */ }
+    return stage.selectedInfo();
+  };
+  const TOOLS = [
+    { k: "ai", ic: "sparkles", label: "Build with AI", ai: true,
+      tip: "Describe a scene in plain words and AI blocks it for you: cast, set, light and camera.",
+      run: () => { spotlight(agentRow, describeInput); status.textContent = "Describe the scene, then Build scene. Change it afterwards in the box next to it (\"add rain\", \"lower the camera\")."; } },
+    "|",
+    { k: "add", ic: "package-plus", label: "Add object",
+      tip: "Put anything on the set: type a name (dog, food truck, man on a horse…); things the library doesn't have are designed by AI.",
+      run: () => { spotlight(addRow, addInput); status.textContent = "Type what to add and press Enter: \"dog\", \"food truck\", \"man on a horse\"…"; } },
+    { k: "person", ic: "person-standing", label: "Person",
+      tip: "Pose a person: pick a pose from the gallery or move any joint, fingers included, keyed on the timeline.",
+      run: () => { if (pickPerson()) posePanel.focusSection("pose"); } },
+    { k: "interact", ic: "handshake", label: "Interact",
+      tip: "Make people look at, talk to, shake hands, hug, hold hands, point at, pet or lead someone or something.",
+      run: () => { if (pickPerson()) posePanel.focusSection("interact"); } },
+    { k: "capture", ic: "webcam", label: "Capture motion",
+      tip: "Copy a real performance onto a person: from a video clip, or act it out on your webcam.",
+      run: () => { if (pickPerson()) posePanel.focusSection("capture"); } },
+    "|",
+    { k: "video", ic: "file-video-camera", label: "Video → Stage",
+      tip: "Rebuild a location and its performer from a video clip, with the camera move as keys you can re-shoot.",
+      run: () => {
+        if (photoSel.sel.disabled) { status.textContent = "Still working on the last import…"; return; }
+        status.textContent = "Pick a video clip: Soundstage rebuilds the set, the performer and the camera move (about a minute).";
+        videoIn.click();
+      } },
+    { k: "photo", ic: "image-up", label: "Photo → 3D",
+      tip: "Turn a photo into the whole 3D set, a solid object, a splat, a cut-out card, a backdrop or a floor plan.",
+      run: () => {
+        spotlight(photoSel.wrap, photoSel.sel, { instant: true });
+        try { photoSel.sel.showPicker(); } catch { /* older browser: the menu is focused instead */ }
+        status.textContent = "Choose what the photo should become, then pick the photo.";
+      } },
+    "|",
+    { k: "camera", ic: "camera", label: "Camera",
+      tip: "Lens, camera setups (wide, over-the-shoulder, insert…), aspect ratio; drag in the view to frame, keys make the move.",
+      run: () => { spotlight(bar); spotlight(shotRow, null, { scroll: false }); status.textContent = "Frame in the view (drag, scroll), pick a lens, add setups for coverage. A key at the playhead records the move."; } },
+    { k: "set", ic: "cloud-sun", label: "Set & weather",
+      tip: "Where it happens (desert, street at night, interior, water tank…) and the elements: rain, snow, fog, dust.",
+      run: () => { spotlight(envRow, setSel.sel); } },
+    { k: "light", ic: "lightbulb", label: "Lighting",
+      tip: "Time of day with a real sun, film lights (key, fill, rim, practicals) and classic setups like Rembrandt.",
+      run: () => { spotlight(lightRow, presetSel.sel); } },
+    { k: "vcam", ic: "smartphone", label: "Phone camera",
+      tip: "Hand-hold the shot camera with your phone or headset: open /soundstage/vcam on the device.",
+      run: () => { spotlight(vcamRow, vcamBtn); } },
+  ];
+  for (const t of TOOLS) {
+    if (t === "|") { const sp = Object.assign(document.createElement("span"), { className: "ss-dock-sep" }); sp.setAttribute("aria-hidden", "true"); dock.append(sp); continue; }
+    const b = Object.assign(document.createElement("button"), { type: "button", className: `ss-tool${t.ai ? " ss-tool-ai" : ""}`, title: t.tip });
+    b.append(icon(t.ic, 22), Object.assign(document.createElement("span"), { textContent: t.label }));
+    b.dataset.ssIcon = t.ic;
+    b.dataset.tool = t.k;
+    b.setAttribute("aria-label", `${t.label}: ${t.tip}`);
+    b.addEventListener("pointerdown", (e) => e.stopPropagation());
+    b.addEventListener("click", () => { if (view.hidden) showView("stage"); t.run(); });
+    dock.append(b);
+  }
+  el.insertBefore(dock, bar);
+  dock.hidden = bar.hidden;
 
   function selectKey(k) {
     stage.setKey(k);

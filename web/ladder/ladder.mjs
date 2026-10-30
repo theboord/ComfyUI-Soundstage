@@ -105,7 +105,7 @@ export class LadderViewer {
       ctx.fillStyle = "#11151b";
       ctx.fillRect(0, 0, W, H);
       ctx.fillStyle = "#7d8694";
-      ctx.font = "22px -apple-system, Segoe UI, sans-serif";
+      ctx.font = "22px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.fillText(`${RUNG_NAMES[rung]} not rendered yet — press Run to climb the ladder`, W / 2, H / 2);
       ctx.textAlign = "start";
@@ -146,7 +146,7 @@ export class LadderViewer {
       }
     }
     // Rung labels
-    ctx.font = "600 18px -apple-system, Segoe UI, sans-serif";
+    ctx.font = "600 18px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
     const label = (txt, x, align) => {
       ctx.textAlign = align;
       const w = ctx.measureText(txt).width + 16;

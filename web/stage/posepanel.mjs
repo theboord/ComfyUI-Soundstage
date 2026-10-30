@@ -4,11 +4,8 @@
 import { jointGroups, JOINT_AXES, jointKind, jointRange, POSE_PRESETS } from "./humans.mjs";
 import { captureTake, recordTake } from "./mocapcapture.mjs";
 
-const ICON = {
-  film: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></svg>',
-  person: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4.5" r="2"/><path d="M12 7v6M12 9l-4 3M12 9l4-2.5M12 13l-3 7M12 13l3.5 6.5"/></svg>',
-  record: '<svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="4.5" fill="#ff453a"/></svg>',
-};
+import { icon } from "../ui/icons.mjs";
+import { spotlight } from "../ui/theme.mjs";
 
 const CSS = `
 .ss-pose { display:flex; flex-direction:column; gap:8px; padding:10px 12px; border-radius:12px; background:rgba(255,255,255,.035);
@@ -35,7 +32,13 @@ const CSS = `
 .ss-pose .big:hover:not(:disabled) { border-color:#f2ff59; }
 .ss-pose .big:disabled { opacity:.45; cursor:default; }
 .ss-pose .take { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
-.ss-pose .take b { font-weight:600; }`;
+.ss-pose .take b { font-weight:600; }
+.ss-pose .lead { display:flex; flex-wrap:wrap; gap:4px; padding:4px; border-radius:12px; background:rgba(0,0,0,.18); }
+.ss-pose .sect { display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:2px 0; border-radius:10px; }
+.ss-pose .sect > .lbl { display:inline-flex; align-items:center; gap:6px; min-width:84px; font-size:11px; font-weight:600;
+  text-transform:uppercase; letter-spacing:.08em; opacity:.62; }
+.ss-pose .head { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.ss-pose .head strong { font-size:15px; font-weight:600; margin-right:4px; }`;
 
 export class PosePanel {
   constructor(container, { stage, api = null, onStatus = () => {} } = {}) {
@@ -64,32 +67,47 @@ export class PosePanel {
     return b;
   }
 
+  /** A labelled tool button: icon on top, a short label under it (the App's tool style, ui/theme.mjs). */
+  _tool(ic, label, title, fn) {
+    const b = Object.assign(document.createElement("button"), { type: "button", className: "ss-tool", title });
+    b.append(icon(ic, 20), Object.assign(document.createElement("span"), { textContent: label }));
+    b.dataset.ssIcon = ic;
+    b.setAttribute("aria-label", `${label}: ${title}`);
+    if (fn) b.addEventListener("click", fn);
+    return b;
+  }
+
+  /** Bring a section of the panel into view and light it up: "pose" | "interact" | "capture" | "joints". */
+  focusSection(k) {
+    if (this.el.hidden) return false;
+    if (k === "capture") spotlight(this.mocapBox, this.mcFile);
+    else if (k === "interact") spotlight(this.interRow, this.action);
+    else if (k === "joints") { const d = this.el.querySelector("details"); if (d) { d.open = true; spotlight(d, d.querySelector("summary")); } }
+    else spotlight(this.galleryRow, this.galleryRow.querySelector("button"));
+    return true;
+  }
+
   // Motion capture: a performance from a clip (phone video, an existing scene) or acted out on the webcam drives this
   // person's whole body, hands and path. Runs SAM 3D Body in ComfyUI.
   _buildMocap() {
     const box = Object.assign(document.createElement("div"), { className: "mocap" });
     const title = Object.assign(document.createElement("div"), { className: "title" });
-    title.innerHTML = `${ICON.person}<span>Motion capture</span>`;
+    title.append(icon("webcam", 16), Object.assign(document.createElement("span"), { textContent: "Motion capture" }));
     const note = Object.assign(document.createElement("div"), { className: "note",
-      textContent: "Copy a real performance onto this person: a clip from your phone or an existing video, or act it out on the webcam. Body, hands, fingers and the path all come across." });
+      textContent: "Copy a real performance onto this person: Capture from video (a clip from your phone or an existing scene) or Act it out on the webcam, above. Body, hands, fingers and the path all come across." });
     const file = Object.assign(document.createElement("input"), { type: "file", accept: "video/*,.mp4,.mov,.webm,.mkv", hidden: true });
-    const big = (icon, label, title) => {
-      const b = Object.assign(document.createElement("button"), { type: "button", className: "big", title });
-      b.innerHTML = `${icon}<span>${label}</span>`;
-      return b;
-    };
-    this.mcFile = big(ICON.film, "Capture from video…", "Pick a video of one person performing the action (a few seconds is best)");
-    this.mcAct = big(ICON.record, "Act it out", "Record yourself on the webcam with a 3-2-1 countdown");
+    this.mcFile = this._tool("file-video-camera", "Capture from video", "Capture a performance from a video of one person (a few seconds is best)");
+    this.mcAct = this._tool("circle-dot", "Act it out", "Record yourself on the webcam with a 3-2-1 countdown; your body, hands and path drive this person");
+    this.mcAct.querySelector("svg").style.color = "#ff453a";
     this.mcFile.addEventListener("click", () => file.click());
     file.addEventListener("change", () => { const f = file.files?.[0]; file.value = ""; if (f) this._capture(f, 0); });
     this.mcAct.addEventListener("click", async () => {
       const r = await recordTake({ seconds: 6 });
       if (r?.blob) this._capture(r.blob, r.duration);
     });
-    const row = Object.assign(document.createElement("div"), { className: "row" });
-    row.append(this.mcFile, this.mcAct, file);
     this.mcTake = Object.assign(document.createElement("div"), { className: "take" });
-    box.append(title, note, row, this.mcTake);
+    box.append(title, note, file, this.mcTake);   // the two capture buttons sit in the lead row (see _build)
+    this.mocapBox = box;
     return box;
   }
 
@@ -127,37 +145,53 @@ export class PosePanel {
   }
 
   _build() {
-    this.el.append(this._buildMocap());
+    const mocap = this._buildMocap();
     const head = document.createElement("div");
-    head.className = "row";
+    head.className = "head";
     this.title = Object.assign(document.createElement("strong"), { textContent: "Pose" });
     this.keyInfo = Object.assign(document.createElement("span"), { className: "note" });
     head.append(this.title, this.keyInfo,
       this._btn("Mirror L↔R", "Swap the left and right side of the pose at the playhead", () => this._do(() => this.stage.mirrorPoseAt(this.id), "Mirrored.")),
       this._btn("Clear key here", "Remove the pose key at the playhead", () => this._do(() => this.stage.clearPose(this.id), "Key removed.")),
       this._btn("Reset pose", "Remove every pose key: back to the plain walk / seat pose", () => this._do(() => this.stage.clearPose(this.id, true), "Pose reset.")));
+    const sectLabel = (ic, text) => {
+      const l = Object.assign(document.createElement("span"), { className: "lbl" });
+      l.append(icon(ic, 14), text);
+      return l;
+    };
     const gallery = document.createElement("div");
-    gallery.className = "row";
-    gallery.append(Object.assign(document.createElement("span"), { className: "note", textContent: "Gallery:" }),
+    gallery.className = "sect";
+    this.galleryRow = gallery;
+    gallery.append(sectLabel("person-standing", "Poses"),
       ...Object.keys(POSE_PRESETS).map((n) => this._btn(n, `Apply “${n}” at the playhead`, () => this._do(() => this.stage.applyPosePreset(this.id, n), `${n} at frame ${this.stage.frame}.`))));
     // Interact: look at / talk / shake hands / hug / hold hands / point / pet / lead.
     const inter = document.createElement("div");
-    inter.className = "row";
+    inter.className = "sect";
+    this.interRow = inter;
     this.target = document.createElement("select");
     this.action = document.createElement("select");
     for (const [v, l] of [["look_at", "Look at"], ["talk", "Talk to (face each other)"], ["handshake", "Shake hands"], ["hug", "Hug"],
       ["hold_hands", "Hold hands"], ["point_at", "Point at"], ["pet", "Pet (dog, cat, horse)"], ["lead", "Lead by the reins (horse)"], ["stop_look", "Stop looking"]])
       this.action.append(new Option(l, v));
     for (const el of [this.target, this.action]) el.addEventListener("pointerdown", (e) => e.stopPropagation());
-    inter.append(Object.assign(document.createElement("span"), { className: "note", textContent: "Interact:" }), this.action,
+    this.action.setAttribute("aria-label", "Interaction");
+    this.target.setAttribute("aria-label", "With whom or what");
+    inter.append(sectLabel("handshake", "Interact"), this.action,
       Object.assign(document.createElement("span"), { className: "note", textContent: "with" }), this.target,
       this._btn("Do it at the playhead", "Positions, faces and poses them for the interaction at the playhead",
         () => { const m = this.stage.interact(this.id, this.target.value, this.action.value); this.refresh(); this.onStatus(m || "Pick someone or something to interact with."); }));
-    this.el.append(inter);
+    // The person's big actions lead the panel; each brings you to its section below (or starts a capture).
+    const lead = Object.assign(document.createElement("div"), { className: "lead" });
+    lead.setAttribute("role", "toolbar");
+    lead.setAttribute("aria-label", "Person actions");
+    lead.append(
+      this._tool("person-standing", "Pose", "Pick a pose from the gallery at the playhead", () => this.focusSection("pose")),
+      this._tool("handshake", "Interact", "Look at, talk to, shake hands, hug, hold hands, point at, pet or lead", () => this.focusSection("interact")),
+      this.mcFile, this.mcAct,
+      this._tool("sliders-horizontal", "Joints", "Move any joint, fingers included; every slider keys the pose at the playhead", () => this.focusSection("joints")));
     const hint = Object.assign(document.createElement("div"), { className: "note",
       textContent: "Every slider keys the pose at the playhead. One key holds for the whole shot; add more at other frames and the pose eases between them (a head turn at 2 s). The video follows the clay pose." });
-    this.el.prepend(head);
-    this.el.append(gallery, hint);
+    this.el.append(head, lead, gallery, inter, mocap, hint);
     for (const grp of jointGroups()) {
       const d = document.createElement("details");
       d.append(Object.assign(document.createElement("summary"), { textContent: grp.label }));
