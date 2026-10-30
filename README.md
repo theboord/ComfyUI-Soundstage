@@ -77,7 +77,7 @@ Every character, location, wardrobe piece and prop from the breakdown gets a ref
 </tr>
 <tr>
 <td><img src="docs/media/camera_rigs.gif" alt="The same push-in on four rigs: free, dolly, jib, handheld"></td>
-<td><img src="docs/media/in_the_car.gif" alt="In-car camera angles"></td>
+<td><img src="docs/media/camera_keys.jpg" alt="A numbered camera at every camera key in the 3D stage"></td>
 </tr>
 </table>
 
