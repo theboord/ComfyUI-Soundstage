@@ -76,7 +76,7 @@ function frameXZ(xRaw, zRaw) {
  * folds the next bone toward local +Z (elbow: forearm forward), -1 toward -Z (knee: shin back). fallbackZ keeps a
  * straight limb from spinning (the parent's forward).
  */
-function hingeFrame(yDir, bend, sign, fallbackZ, prevZ) {
+export function hingeFrame(yDir, bend, sign, fallbackZ, prevZ) {
   const y = yDir.clone().normalize();
   const perp = bend.clone().addScaledVector(y, -bend.dot(y));
   const len = bend.length() || 1;
