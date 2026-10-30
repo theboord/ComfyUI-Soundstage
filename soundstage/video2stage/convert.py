@@ -683,7 +683,9 @@ def assemble(*, poses, scales, times, K, size, depths, ground, breakdown, clip, 
     scene["video2stage"] = {"metres_per_unit": round(mpu, 5), "ground": None if ground is None else
                             {"normal": [round(float(v), 4) for v in ground[0]], "height_units": round(float(ground[1]), 4)},
                             "camera_keys_raw": raw_keys, "drift_correction": corrections, "setting": breakdown.get("setting", ""),
-                            "camera_type": (breakdown.get("camera") or {}).get("type", "")}
+                            "camera_type": (breakdown.get("camera") or {}).get("type", ""),
+                            # cam0 -> stage (after recentring): the performer is placed through the same transform
+                            "xform": {"A": np.round(A, 6).tolist(), "b": np.round(b, 5).tolist()}}
     if backdrop:
         scene["actors"].append(backdrop_actor(backdrop, A, b))
     return scene

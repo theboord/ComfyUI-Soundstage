@@ -277,12 +277,21 @@ export function apply(g, take, mocap, frame, base, heightM = 1.8, fps = 24) {
   const yaw = f0.yaw + (f1.yaw - f0.yaw) * t;
   const turn = (base.yaw || 0) - first.yaw;
   const hip = f0.hip.clone().lerp(f1.hip, t);
-  const travel = mocap.travel === false ? new THREE.Vector3() : hip.sub(first.hip).setY(0).multiplyScalar(k).applyAxisAngle(UP, turn);
+  let travel = mocap.travel === false ? new THREE.Vector3() : hip.sub(first.hip).setY(0).multiplyScalar(k).applyAxisAngle(UP, turn);
   g.rotation.order = "YXZ";
   g.rotation.x = 0;
   g.rotation.z = 0;
   g.rotation.y = turn + yaw;
   g.position.set(base.x + travel.x, base.y, base.z + travel.z);
+  // A take placed by Video -> Stage: where the performer stood in the rebuilt set, frame by frame (feet on its floor,
+  // facing through the tracked camera), so the clay lines up with the source shot.
+  const W = mocap.world;
+  if (W?.path?.length === take.n && W.yaw?.length === take.n) {
+    const p0 = W.path[i0], p1 = W.path[i1];
+    g.position.set(p0[0] + (p1[0] - p0[0]) * t, base.y, p0[1] + (p1[1] - p0[1]) * t);
+    g.rotation.y = (W.yaw[i0] + (W.yaw[i1] - W.yaw[i0]) * t) * Math.PI / 180;
+    travel = new THREE.Vector3(g.position.x - base.x, 0, g.position.z - base.z);
+  }
   // Feet: put the lowest sole on the ground, plus however high the performer's feet are off it (a jump).
   const feetLift = Math.max(0, (f0.feet + (f1.feet - f0.feet) * t) - take.ground) * k;
   g.updateMatrixWorld(true);

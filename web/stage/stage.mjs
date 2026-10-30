@@ -17,6 +17,31 @@ import { STLLoader } from "../vendor/addons/STLLoader.mjs";
 import * as SkeletonUtils from "../vendor/addons/SkeletonUtils.mjs";
 import { TransformControls } from "../vendor/addons/TransformControls.mjs";
 
+/**
+ * Video → Stage: the set mesh is the first frame's depth, so the person in the shot is frozen into it. The clay actor
+ * replaces them: drop the triangles that land inside their box in that frame at their distance. Mesh vertices are in
+ * glTF camera axes (x right, y up, looking down -z) and depth units; cut = {box, K: [fx/w, fy/h, cx/w, cy/h], min_depth, max_depth}.
+ */
+function cutPerformer(model, cut) {
+  const [fx, fy, cx, cy] = cut.K, [u0, v0, u1, v1] = cut.box;
+  model.traverse((o) => {
+    if (!o.isMesh || !o.geometry?.attributes?.position) return;
+    const geo = o.geometry, pos = geo.attributes.position;
+    const idx = geo.index ? geo.index.array : Array.from({ length: pos.count }, (_, i) => i);
+    const keep = [];
+    const v = new THREE.Vector3();
+    for (let t = 0; t + 2 < idx.length; t += 3) {
+      let x = 0, y = 0, z = 0;
+      for (let k = 0; k < 3; k++) { v.fromBufferAttribute(pos, idx[t + k]).applyMatrix4(o.matrix); x += v.x / 3; y += v.y / 3; z += v.z / 3; }
+      const d = -z;
+      const u = cx + (fx * x) / d, w = cy - (fy * y) / d;
+      const hit = d > 0 && d < cut.max_depth * 2.5 && u > u0 && u < u1 && w > v0 && w < v1;
+      if (!hit) keep.push(idx[t], idx[t + 1], idx[t + 2]);
+    }
+    geo.setIndex(keep);
+  });
+}
+
 /** File extensions the stage can import. Gaussian splats render with Spark (loaded on first use). */
 export const MESH_FORMATS = ["glb", "gltf", "fbx", "obj", "ply", "stl"];
 export const SPLAT_FORMATS = ["spz", "splat", "ksplat", "sog"];
@@ -1762,6 +1787,7 @@ export class Stage {
         model.position.set(...offset);
         if (a.set_xform.quat) model.quaternion.set(...a.set_xform.quat); // Video → Stage: the first camera's tilt
         model.traverse((o) => { if (o.isMesh) o.castShadow = false; });
+        if (a.set_xform.cut) cutPerformer(model, a.set_xform.cut);
         g.clear();
         g.add(model);
         this.setFrame(this.frame);

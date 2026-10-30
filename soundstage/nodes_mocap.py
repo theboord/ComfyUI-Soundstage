@@ -51,8 +51,27 @@ def mocap_from_pose_data(pose_data, fps=24.0, track=0, duration=0.0):
         if t is not None:
             t = np.asarray(t, dtype=np.float32).reshape(-1)[:3]
             cam[k] = (t[0], -t[1], -t[2])                       # same y/z un-flip as the keypoints
+    # Where the feet and hips are in the picture (pixels of the source video): Video -> Stage stands the performer
+    # on the rebuilt floor by casting a ray through the feet from the tracked camera.
+    px = []
+    try:
+        from comfy_extras.sam3d_body.export.glb_openpose import OPENPOSE18_TO_MHR70 as M
+        for f in idx:
+            k2 = frames_all[f][track].get("pred_keypoints_2d")
+            if k2 is None:
+                px = []
+                break
+            k2 = np.asarray(k2, dtype=np.float32).reshape(-1, 2)
+            px.append([[round(float(v), 1) for v in k2[M[j]]] for j in (10, 13, 8, 11)])   # r/l ankle, r/l hip
+    except Exception:  # noqa: BLE001 - the 3D take still works without the picture positions
+        px = []
+    focal = frames_all[idx[0]][track].get("focal_length")
+    try:
+        focal = float(np.asarray(focal, dtype=np.float32).reshape(-1)[0]) if focal is not None else None
+    except Exception:  # noqa: BLE001
+        focal = None
     return {
-        "version": 1, "fps": float(fps), "frames": len(idx), "source_frames": idx,
+        "version": 1, "fps": float(fps), "frames": len(idx), "source_frames": idx, "px": px, "focal_px": focal,
         "body_names": ["nose", "neck", "r_shoulder", "r_elbow", "r_wrist", "l_shoulder", "l_elbow", "l_wrist",
                        "r_hip", "r_knee", "r_ankle", "l_hip", "l_knee", "l_ankle", "r_eye", "l_eye", "r_ear", "l_ear"],
         "body": np.round(body, 4).tolist(), "hands": np.round(hands, 4).tolist(), "root": np.round(cam, 4).tolist(),
