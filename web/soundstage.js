@@ -31,6 +31,8 @@ import { PosePanel } from "./stage/posepanel.mjs";
 import { listenVcam, LiveVcam, listTakes, fetchTake, takeToCamera, anchorFromCamera } from "./vcam/live.mjs";
 import { ScriptPanel, SceneSwitcher } from "./script/panel.mjs";
 import { DEMO_SCRIPT } from "./script/demo_script.mjs";
+import { planSceneSetup, blockingSpots } from "./script/scenesetup.mjs";
+import { SceneStrip } from "./script/scenestrip.mjs";
 import { DailiesBin } from "./dailies/bin.mjs";
 import { CastPanel } from "./cast/cast.mjs";
 import { stageSetupForScene } from "./script/parse.mjs";
@@ -347,6 +349,7 @@ function createStageWidget(node, inputName) {
   castView.hidden = true;
   el.append(castView);
   let castPanel = null;
+  let sceneStrip = null;     // the scene strip over ③ Set / ④ Frame / ⑤ Motion (built with the script UI)
   const look = new LookPanel(lookView, () => ({ ...stage.toJSON(), lighting_prompt: stage.lightingPrompt() }),
     { fetchApi: (path, init) => api.fetchApi(path, init),
       getFocal: () => stage._cameraAt(stage.frame || 0).focal_mm,
@@ -683,6 +686,7 @@ function createStageWidget(node, inputName) {
     curView = k;
     try { coach?.notify("tab", k); } catch { /* coach not built yet */ }
     try { pipeline?.onView(k); } catch { /* pipeline not built yet */ }
+    try { if (sceneStrip) { sceneStrip.el.hidden = !["stage", "frame", "motion"].includes(k); sceneStrip.render(); } } catch { /* strip not built */ }
     Object.entries(tabBtns).forEach(([kk, b]) => b.setAttribute("aria-pressed", String(kk === k)));
     const isLadder = k === "ladder", isLook = k === "look", isStage = k === "stage";
     bar.hidden = !isStage; view.hidden = !isStage;
@@ -2048,7 +2052,7 @@ function createStageWidget(node, inputName) {
   }
 
   /** Put scene `id` on the stage (null: All scenes, the stage stays). keepFilter: the switchers stay where they are. */
-  function switchScene(id, { keepFilter = false } = {}) {
+  function switchScene(id, { keepFilter = false, setup = true } = {}) {
     if (!script) return { ok: false };
     id = id || null;
     if (id === null) { filterScene = null; refreshScriptUI(); persistScript(); return { ok: true }; }
@@ -2074,6 +2078,15 @@ function createStageWidget(node, inputName) {
     if (snap) { loadScene(stage, snap); freshSig = null; }
     else { freshStage(id); fresh = true; }
     stage.resetHistory();                     // Undo never reaches into another scene
+    lastSetup = null;
+    // A scene's untouched stage (or an empty one) is set up from its heading and breakdown right away: set, light,
+    // its characters blocked, its vehicles. A stage someone worked on keeps everything; the strip offers the setup.
+    const scNow = sceneById(id);
+    let setupMsg = "";
+    if (setup && scNow && (fresh || !(stage.toJSON().actors || []).length)) {
+      try { setUpScene(scNow, { fresh, auto: true }); setupMsg = status.textContent; } catch (e) { console.warn("[Soundstage] scene setup", e); }
+      if (fresh) freshSig = stageSig(stage.toJSON());   // still untouched: leaving drops it, coming back sets it up again
+    }
     agent.undoStack = []; agent.redoStack = [];
     sceneJSON = stage.toJSON();
     try { syncControls(); syncShots(); aspectSel.sel.value = stage.toJSON().shot?.aspect || "1.85"; } catch { /* not built */ }
@@ -2083,8 +2096,8 @@ function createStageWidget(node, inputName) {
     try { pipeline._applyShot(stage.activeShot().id); pipeline.restoreLadder(); if (pipeline.current === "frame") pipeline._refreshFrame(); if (pipeline.current === "motion") pipeline._refreshMotion(); } catch { /* pipeline */ }
     if (!keepFilter) filterScene = sceneById(id) ? id : null;
     const sc = sceneById(id);
-    status.textContent = sc ? `Scene ${sc.number} is on the stage${fresh ? ": a fresh set from its heading. Build it from the Script tab, or block it yourself." : "."}`
-      : "The stage you had before the script is back.";
+    status.textContent = setupMsg || (sc ? `Scene ${sc.number} is on the stage${fresh ? ": a fresh set from its heading. Build it from the Script tab, or block it yourself." : "."}`
+      : "The stage you had before the script is back.");
     refreshScriptUI();
     persistScript();
     return { ok: true, fresh };
@@ -2093,7 +2106,7 @@ function createStageWidget(node, inputName) {
   /** The scene agent blocks this scene on its own stage; its shots get scene-scoped ids and the heading's set and light. */
   async function buildScene(sc, prompt) {
     if (agentBusy) throw new Error("the scene agent is already building a scene");
-    const r = switchScene(sc.id);
+    const r = switchScene(sc.id, { setup: false });
     if (!r.ok) throw new Error(r.why ? `the stage is busy: ${r.why}` : "no script");
     describeInput.value = prompt;             // what the agent was asked, editable on ③ Set
     describeBtn.disabled = true;
@@ -2176,6 +2189,7 @@ function createStageWidget(node, inputName) {
   // panel: also bring the Script panel to the switchers' scene and redraw it (not while the director types a note).
   let syncingPanel = false;
   function refreshScriptUI({ panel = true } = {}) {
+    try { sceneStrip?.render(); } catch { /* strip not built */ }
     for (const hd of sceneHeads) hd.hidden = !script;
     for (const sw of switchers) sw.setCurrent(stageBound.has(sw) ? (sceneById(liveKey) ? liveKey : null) : filterScene);
     if (!panel || !scriptPanel || syncingPanel) return;
@@ -2277,6 +2291,106 @@ function createStageWidget(node, inputName) {
     pipeline._saveRefs(refs);
     try { pipeline._drawCastRefs(); } catch { /* frame not built */ }
   }
+  // ---------------------------------------------------------------- Scene setup
+  // A script scene on the stage in one action: the heading's set and weather, the slugline's time of day, the scene's
+  // characters as named actors (looks from Cast & Locations) in simple blocking, the vehicles / animals it calls for.
+  // Adds what is missing and renames nothing; only a fresh stage's stand-ins (the default Man / Woman) leave.
+  let lastSetup = null;      // {key, before: stage state JSON, label}: the strip's "Undo setup"
+  function scenePlan(sc, { fresh = false } = {}) {
+    const j = stage.toJSON();
+    let castItems = [];
+    try { castItems = castPanel?.items() || []; } catch { /* cast not built */ }
+    return planSceneSetup(sc, { actors: j.actors || [], castItems, fresh, env: j.environment || {}, lightingPreset: j.lighting?.preset || null });
+  }
+  function setUpScene(sc, { fresh = false, auto = false } = {}) {
+    if (!sc) return null;
+    const plan = scenePlan(sc, { fresh });
+    const before = JSON.stringify(stage.state);
+    const env = stage.toJSON().environment || {};
+    if (plan.env.set && SETS[plan.env.set] && (env.set !== plan.env.set || (env.weather || "none") !== plan.env.weather))
+      stage.setEnvironment({ set: plan.env.set, weather: plan.env.weather });
+    if (plan.time_preset && TIME_PRESETS[plan.time_preset] && stage.toJSON().lighting?.preset !== plan.time_preset) stage.applyTimePreset(plan.time_preset);
+    const st = stage.state;
+    if (plan.removeIds.length) st.actors = st.actors.filter((a) => !plan.removeIds.includes(a.id));
+    // Where the group stands: a fresh stage gets a clean static master on the middle of the set; otherwise new people
+    // join where the shot's camera looks, clear of who is already there.
+    let center = [0, -4], camXZ = [0, -11.5];
+    const newPeople = plan.people.filter((p) => !p.reuseId);
+    if (fresh) {
+      const shot = stage.activeShot();
+      const n = plan.people.length;
+      const cam = { position: [0, 1.6, n >= 4 ? -12.5 : -11.5], target: [0, 1.35, -4], focal_mm: n >= 4 ? 28 : 35 };
+      shot.camera_keys = [{ frame: 0, ...cam }];
+      st.camera_keys = shot.camera_keys;
+      st.camera = { ...cam }; st.camera_end = { ...cam };
+    } else {
+      try {
+        const c = stage._cameraAt(0);
+        const look = [c.target[0] - c.position[0], c.target[1] - c.position[1], c.target[2] - c.position[2]];
+        const t = look[1] < -0.05 ? Math.min(14, -c.position[1] / look[1]) : 6 / Math.max(0.2, Math.hypot(look[0], look[2]));
+        center = [c.position[0] + look[0] * t, c.position[2] + look[2] * t];
+        camXZ = [c.position[0], c.position[2]];
+      } catch { /* camera not ready */ }
+    }
+    const spots = blockingFor(fresh ? plan.people.length : newPeople.length, center, camXZ, fresh ? [] : st.actors.map((a) => a.keys?.[0]?.position || a.position || [0, 0, 0]));
+    let k = 0;
+    const H = { man: 1.78, woman: 1.68, child: 1.2 };
+    for (const p of plan.people) {
+      const a = p.reuseId && st.actors.find((x) => x.id === p.reuseId);
+      if (a) {
+        a.name = p.name;
+        a.appearance = { ...p.appearance, ...(a.appearance || {}) };   // what the user set on this actor wins
+        if (fresh) { const sp = spots[k++]; a.position = sp.position; a.keys = [{ frame: 0, position: [...sp.position] }]; delete a.position_end; a.rotation_deg = sp.rotation_deg; }
+        continue;
+      }
+      const sp = spots[k++] || { position: [center[0], 0, center[1]], rotation_deg: 0 };
+      const id = `${p.kind}_${castSlug(p.name).replace(/ /g, "_") || "cast"}_${Date.now().toString(36)}${k}`;
+      st.actors.push({ id, name: p.name, kind: p.kind, position: [...sp.position], keys: [{ frame: 0, position: [...sp.position] }],
+        height_m: H[p.kind] || 1.75, rotation_deg: sp.rotation_deg, appearance: Object.keys(p.appearance).length ? p.appearance : undefined });
+    }
+    // Vehicles and animals the heading calls for, parked behind the group, spread out.
+    let vi = 0;
+    for (const kind of plan.objects) {
+      const before = st.actors.length;
+      try { stage.addObject(kind.replace(/_/g, " ")); } catch { /* unknown kind */ }
+      const o = st.actors.length > before ? st.actors[st.actors.length - 1] : null;
+      if (!o) continue;
+      const dx = center[0] - camXZ[0], dz = center[1] - camXZ[1], L = Math.hypot(dx, dz) || 1;
+      const side = ((vi++ % 2) ? -1 : 1) * (3.2 + 1.6 * Math.floor(vi / 2));
+      const pos = [+(center[0] + (dx / L) * 4.5 + (-dz / L) * side).toFixed(2), 0, +(center[1] + (dz / L) * 4.5 + (dx / L) * side).toFixed(2)];
+      o.position = pos; o.keys = [{ frame: 0, position: [...pos] }];
+      o.rotation_deg = Math.round(Math.atan2(-dz, dx) * 180 / Math.PI);   // side-on to the camera
+    }
+    stage._buildSet();
+    try { stage.select(null); } catch { /* nothing selected */ }
+    stage.setFrame?.(stage.frame || 0);
+    stage.onChange(stage.toJSON());
+    try { syncControls(); syncEnv(); syncLight(); syncShots(); } catch { /* rows not built */ }
+    try { applyCastRefs(castPanel?.items() || []); } catch { /* cast not built */ }
+    try { pipeline._drawShotCast?.(); } catch { /* frame not built */ }
+    lastSetup = { key: liveKey, before, label: plan.label };
+    const who = plan.names.length ? plan.names.join(", ") : "nobody speaking";
+    status.textContent = `${auto ? "Set up" : "Done:"} scene ${sc.number}: ${plan.env.set ? plan.env.set.replace(/_/g, " ") : "the set"}${plan.time_preset ? `, ${TIME_PRESETS[plan.time_preset]?.label?.toLowerCase() || plan.time_preset}` : ""}, ${who}` +
+      `${plan.objects.length ? `, ${plan.objects.map((x) => x.replace(/_/g, " ")).join(", ")}` : ""}. Undo it from the scene strip.`;
+    persistScript();
+    try { sceneStrip?.render(); } catch { /* strip */ }
+    return plan;
+  }
+  function undoSetup() {
+    if (!lastSetup || lastSetup.key !== liveKey) return false;
+    const { before, label } = lastSetup;
+    lastSetup = null;
+    stage._restore(before);
+    stage._record();
+    try { syncControls(); syncEnv(); syncLight(); syncShots(); } catch { /* rows not built */ }
+    if (freshSig != null) freshSig = stageSig(stage.toJSON());
+    status.textContent = `Undone: ${label.replace(/^Set up/, "set up")}.`;
+    persistScript();
+    try { sceneStrip?.render(); pipeline._drawShotCast?.(); } catch { /* strip */ }
+    return true;
+  }
+  const blockingFor = (n, center, cam, avoid) => (n > 0 ? blockingSpots(n, { center, cam, avoid }) : []);
+
   /** A new picture for a cast item (or a stage-only ④ Frame reference): Cast & Locations, then the Frame refs. */
   function setRefFor(it, r) {
     if (!it?.key) return;
@@ -2342,7 +2456,60 @@ function createStageWidget(node, inputName) {
 
   node.ssScript = { get script() { return script; }, get liveKey() { return liveKey; }, get filter() { return filterScene; },
     get stages() { return sceneStages; }, get cuts() { return sceneCuts; }, switchScene, buildScene, newShotIn, getShots,
-    openShot, panel: scriptPanel, switchers, persist: persistScript };
+    openShot, panel: scriptPanel, switchers, persist: persistScript, setUpScene: (sc) => { const f = untouchedFresh(); const r = setUpScene(sc || sceneById(liveKey), { fresh: f }); if (f) freshSig = stageSig(stage.toJSON()); return r; },
+    undoSetup: () => undoSetup(), get strip() { return sceneStrip; } };
+
+  // ---------------------------------------------------------------- Scene strip
+  // One row over ③ Set, ④ Frame and ⑤ Motion: a chip per scene (click = set it up on the stage), the scene's shots.
+  const shotDot = (id) => {
+    const busy = [...(pipeline.inflight?.values?.() || [])].some((x) => x.sid === id);
+    if (busy) return { cls: "busy", title: "rendering…" };
+    const ap = Object.values(node.properties?.ss_approvals?.[id] || {}).filter((x) => x?.s).sort((a, b) => (b.t || 0) - (a.t || 0))[0];
+    if (ap?.s === "approved") return { cls: "approved", title: "approved" };
+    if (ap?.s === "rejected") return { cls: "rejected", title: "rejected" };
+    if (ap?.s === "changes") return { cls: "changes", title: "needs changes" };
+    const r = rendersFor(id);
+    if (r.final_sound || r.final_audio || r.final) return { cls: "final", title: "final rendered" };
+    if (r.draft) return { cls: "draft", title: "draft only" };
+    if (pipeline.chosen?.[id] || r.look) return { cls: "frame", title: "frame chosen" };
+    return null;
+  };
+  sceneStrip = new SceneStrip(el, {
+    getScript: () => script,
+    current: () => (sceneById(liveKey) ? liveKey : null),
+    // An untouched scene's Master shows too (it becomes a shot when touched), so every scene shows what it has.
+    getShots: () => {
+      const live = () => liveShots().map((sh) => ({ id: sh.id, name: sh.name || sh.id, live: true, scene_id: sceneById(liveKey) ? liveKey : null,
+        thumb: picOf(sh.id) || (() => renderClay(sh.id, 0)) }));
+      if (!script) return live();
+      const all = getShots();
+      return untouchedFresh() ? [...all, ...live()] : all;
+    },
+    activeShot: () => stage.activeShot()?.id,
+    onScene: (id) => {
+      const r = switchScene(id);
+      if (!r.ok && r.why) status.textContent = `The stage stays on this scene while ${r.why}.`;
+    },
+    onShot: (id) => { if (!openShot(id) && !script) { pipeline.selectShot(id); } sceneStrip.render(); },
+    shotStatus: shotDot,
+    setupInfo: () => {
+      const sc = sceneById(liveKey);
+      if (!sc) return null;
+      let plan = null;
+      try { plan = scenePlan(sc, { fresh: untouchedFresh() }); } catch { /* stage not ready */ }
+      return { label: plan?.label, changes: plan?.changes || 0, canUndo: !!lastSetup && lastSetup.key === liveKey, undoLabel: lastSetup?.label };
+    },
+    onSetup: () => { const sc = sceneById(liveKey); if (!sc) return; const fresh = untouchedFresh(); setUpScene(sc, { fresh }); if (fresh) freshSig = stageSig(stage.toJSON()); },
+    onUndo: () => undoSetup(),
+  });
+  pipeline.bar.after(sceneStrip.el);
+  sceneStrip.el.hidden = !["stage", "frame", "motion"].includes(curView);
+  {
+    // Every redraw of the step shot rows (renders landing, a shot picked) redraws the strip too.
+    const draw = pipeline._drawShotRows.bind(pipeline);
+    pipeline._drawShotRows = () => { draw(); try { sceneStrip.render(); } catch { /* strip */ } };
+  }
+  sceneStrip.render();
 
   const coach = new Coach(view, {
     stage, app, api,
