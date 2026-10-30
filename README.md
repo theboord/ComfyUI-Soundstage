@@ -1,19 +1,40 @@
 <p align="center"><img src="docs/icon.svg" width="120" alt="Soundstage"></p>
 
-# Soundstage
+<h1 align="center">Soundstage</h1>
 
-Soundstage is a ComfyUI custom node pack plus an App-mode workflow that turns ComfyUI into a small film set, in production order: bring in your script, cast it (characters, props and locations with reference sheets), block each scene in a 3D stage, paint the first frame, animate it, review it as dailies and cut it. You block a scene in a 3D stage (actors, horses, cars, props, lights, cameras), and the App paints a first frame for every shot with FLUX 3 Klein (or Krea 2 locked to the stage's depth), keeping your framing and blocking. LTX-2.5 with the Layout-to-Render IC-LoRA then animates each shot with sound, following your blocking. You compare every step on a Ladder and deliver per-object layers for VFX, plus one cut video or an NLE export. Everything runs locally in ComfyUI on open models.
+<p align="center"><b>A film set inside ComfyUI. Script in, finished scene out, on 100% open weights.</b></p>
 
-**100% open weights: every model runs locally.** No paid API is needed or offered by default.<sup>[1](#partner-footnote)</sup>
+<p align="center">
+<a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+<a href="https://github.com/comfyanonymous/ComfyUI"><img src="https://img.shields.io/badge/ComfyUI-custom%20nodes%20%2B%20App-blue" alt="ComfyUI"></a>
+<a href="MODELS.md"><img src="https://img.shields.io/badge/100%25-open%20weights-brightgreen" alt="100% open weights"></a>
+<a href="https://x.com/hashtag/OpenSourceHiggsfield"><img src="https://img.shields.io/badge/%23-OpenSourceHiggsfield-purple" alt="#OpenSourceHiggsfield"></a>
+</p>
 
-Built for Comfy Org's *Open Source Higgsfield* challenge (#OpenSourceHiggsfield).
+Import your screenplay. Cast it. Block every scene in 3D clay with real camera rigs, then watch FLUX 3 Klein paint the frame and LTX-2.5 bring it to life **with sound, following your blocking shot for shot**. Approve takes like dailies and hand the cut to Premiere, Avid or Resolve. No cloud, no credits, no paid API: it all runs locally in ComfyUI.<sup>[1](#partner-footnote)</sup>
 
 <p align="center"><img src="docs/media/clay_to_final.gif" width="900" alt="Left: the clay stage render. Right: the final LTX-2.5 video of the same shot, same blocking and camera."></p>
 <p align="center"><em>Left: the 3D stage's clay render. Right: what Soundstage renders from it. Same blocking, same camera.</em></p>
 
-**[Watch the 100-second showcase](docs/media/soundstage_showcase.mp4)** &middot; [the longer walkthrough](docs/media/soundstage_demo.mp4) &middot; **[Try the App in your browser](https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq)** (the real App UI, replaying real GPU renders)
+<p align="center">
+<a href="docs/media/soundstage_showcase.mp4"><b>&#9654;&#65039; Watch the trailer</b></a> &nbsp;&middot;&nbsp;
+<a href="https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq"><b>&#128421;&#65039; Try it in your browser</b></a> &nbsp;&middot;&nbsp;
+<a href="docs/TUTORIAL.md"><b>&#128214; Read the tutorial</b></a> &nbsp;&middot;&nbsp;
+<a href="#install"><b>&#9881;&#65039; Install</b></a>
+</p>
 
-**New here? [Read the full tutorial](docs/TUTORIAL.md):** install, a tour of every panel and button, each production step, the 3D stage in depth, a keyboard cheat sheet, 31 tips and troubleshooting.
+<p align="center"><sub>The browser demo is the real App UI replaying real GPU renders, no install needed. Also: <a href="docs/media/soundstage_demo.mp4">the longer walkthrough</a>. Built for Comfy Org's <i>Open Source Higgsfield</i> challenge.</sub></p>
+
+### What you get
+
+| | |
+|---|---|
+| &#128221; **Import a script** (Fountain, Final Draft, PDF, text) and get a breakdown, a scene strip and auto scene setup | &#127917; **Cast every character and location** in one click with FLUX 3 Klein, then pick who is in each shot |
+| &#129521; **Block scenes in 3D clay**: actors with sculpted hair, horses, cars, props, lights and weather | &#9995; **Pose to the fingertips** in 3D with IK, or **capture motion** from any video or your webcam (SAM 3D Body) |
+| &#127909; **Shoot with real camera rigs**: dolly, jib, Steadicam, handheld, drone, with a Top plan view | &#127916; **Turn any clip into a 3D set** with Video &rarr; Stage: rebuilt location, tracked camera, the performer |
+| &#127912; **Paint the first frame** in Paint Studio: fill, remove, extend to any aspect | &#128266; **Animate with sound** on LTX-2.5; type a line and LTX speaks it, lip-synced |
+| &#127902;&#65039; **Swap the film look** with one swatch: same animation, any look | &#9878;&#65039; **Compare Clay &#124; Draft &#124; Final** on a 3-way Ladder, approve or Redo every take |
+| &#128450;&#65039; **Review as dailies**: Avid-style scene bins and a lined script | &#128228; **Deliver to Premiere, Avid or Resolve** at the source spec (4K, 8K, RED via proxy relink), plus a VFX Layer Pack |
 
 <table>
 <tr>
@@ -21,6 +42,9 @@ Built for Comfy Org's *Open Source Higgsfield* challenge (#OpenSourceHiggsfield)
 <td width="50%"><img src="docs/media/western.gif" alt="Riders galloping off at sunset"><br><sub><b>Western:</b> riders run to rigged horses, vault on and gallop off. Two camera setups, joined into one cut.</sub></td>
 </tr>
 </table>
+
+<p align="center"><img src="docs/media/looks.gif" width="720" alt="The same animated shot rendered in four different film looks"></p>
+<p align="center"><em>Film-look swatches: one animation, four looks. Pick a swatch and the same blocking and motion come back in a new style.</em></p>
 
 <p align="center"><img src="docs/media/genres.gif" width="900" alt="Left the clay stage, right the final: a man under a streetlamp in the rain as a car pulls in, then a hiker with a flashlight in a haunted forest"></p>
 <p align="center"><em>Any genre: left the 3D stage, right the final. Film noir in the rain, then horror in the woods.</em></p>
