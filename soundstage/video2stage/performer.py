@@ -104,6 +104,40 @@ def place(take: dict, poses, times, A, b, K, size, clip_fps: float) -> dict | No
             "start_frame": int(round(src[0] / float(clip_fps) * C.FPS))}
 
 
+COLORS = {"black": "#1d1d1f", "white": "#ecebe7", "grey": "#8a8a8a", "gray": "#8a8a8a", "red": "#b3302b", "blue": "#2e4f8a",
+          "navy": "#1f2b4a", "green": "#3f6b3a", "olive": "#6b6b3a", "yellow": "#e3b622", "orange": "#e07a24", "tiger": "#e07a24",
+          "brown": "#6b4a32", "tan": "#b89470", "beige": "#d8c8a8", "pink": "#e39ab0", "purple": "#6a4a8a", "denim": "#3a4d6e",
+          "khaki": "#a89a6a", "gold": "#c9a227", "silver": "#b8b8bc", "plaid": None, "striped": None}
+TOPS = {"t-shirt": "tshirt", "tshirt": "tshirt", "tee": "tshirt", "shirt": "shirt", "blouse": "shirt", "jacket": "jacket",
+        "hoodie": "hoodie", "sweater": "sweater", "jumper": "sweater", "coat": "coat", "dress": "dress", "tank": "tank",
+        "suit": "suit", "uniform": "uniform", "vest": "tank", "top": "tshirt"}
+BOTTOMS = {"jeans": "jeans", "trousers": "trousers", "pants": "trousers", "leggings": "trousers", "shorts": "shorts",
+           "skirt": "skirt", "joggers": "trousers", "sweatpants": "trousers"}
+
+
+def appearance_from_label(label: str, color: str | None = None) -> tuple[str, dict]:
+    """'person in yellow plaid shirt and tiger-striped leggings' -> (kind, clay wardrobe). Words before a garment colour it."""
+    import re
+    words = re.findall(r"[a-z]+(?:-[a-z]+)?", (label or "").lower())
+    kind = C.person_kind(label or "")
+    if kind == "man" and any(w in words for w in ("dress", "skirt", "leggings", "blouse", "she", "her")):
+        kind = "woman"
+    ap: dict = {}
+    for i, w in enumerate(words):
+        garment, slot = (TOPS.get(w), "top") if w in TOPS else ((BOTTOMS.get(w), "bottom") if w in BOTTOMS else (None, None))
+        if not garment or slot in ap:
+            continue
+        ap[slot] = garment
+        for prev in reversed(words[max(0, i - 3):i]):
+            c = COLORS.get(prev.split("-")[0])
+            if c:
+                ap[f"{slot}_color"] = c
+                break
+    if "top" in ap and "top_color" not in ap and color:
+        ap["top_color"] = color
+    return kind, ap
+
+
 def attach(scene: dict, take_file: str, take: dict, placed: dict, name: str = "Performer") -> str:
     """Give the clip's person (the VLM's nearest person, else a new one) the take, standing on its path."""
     people = [a for a in scene["actors"] if a.get("kind") in ("man", "woman", "child") and not a.get("mount_id")]
@@ -116,6 +150,11 @@ def attach(scene: dict, take_file: str, take: dict, placed: dict, name: str = "P
     a["position"] = [x0, 0.0, z0]
     a["keys"] = [{"frame": 0, "position": [x0, 0.0, z0]}]
     a["rotation_deg"] = placed["yaw"][0]
+    label = (a.get("source") or {}).get("label") or a.get("label") or a.get("name") or ""
+    if label:
+        kind, ap = appearance_from_label(label, (a.get("appearance") or {}).get("color") or a.get("color"))
+        a["kind"] = kind
+        a["appearance"] = {**(a.get("appearance") or {}), **ap}
     a["mocap"] = {"file": take_file, "name": take_file.rsplit("/", 1)[-1].split("_2")[0], "start": placed["start_frame"],
                   "travel": True, "speed": 1, "loop": False, "world": {"path": placed["path"], "yaw": placed["yaw"]}}
     return a["id"]
