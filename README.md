@@ -2,16 +2,47 @@
 
 # Soundstage
 
-Soundstage is a ComfyUI custom node pack plus an App-mode workflow that turns ComfyUI into a small film set. You block a scene in a 3D stage (actors, horses, cars, props, lights, cameras), and the App paints a first frame for every shot with Krea 2, steered by the stage's depth. LTX-2.5 with the Layout-to-Render IC-LoRA then animates each shot with sound, following your blocking. You compare every step on a Ladder and deliver per-object layers for VFX, plus one cut video or an NLE export. Everything runs locally in ComfyUI on open models.
+Soundstage is a ComfyUI custom node pack plus an App-mode workflow that turns ComfyUI into a small film set. You block a scene in a 3D stage (actors, horses, cars, props, lights, cameras), and the App paints a first frame for every shot with FLUX 3 Klein (or Krea 2 locked to the stage's depth), keeping your framing and blocking. LTX-2.5 with the Layout-to-Render IC-LoRA then animates each shot with sound, following your blocking. You compare every step on a Ladder and deliver per-object layers for VFX, plus one cut video or an NLE export. Everything runs locally in ComfyUI on open models.
 
 Built for Comfy Org's *Open Source Higgsfield* challenge (#OpenSourceHiggsfield).
+
+<p align="center"><img src="docs/media/clay_to_final.gif" width="900" alt="Left: the clay stage render. Right: the final LTX-2.5 video of the same shot, same blocking and camera."></p>
+<p align="center"><em>Left: the 3D stage's clay render. Right: what Soundstage renders from it. Same blocking, same camera.</em></p>
+
+**[Watch the 90-second demo](docs/media/soundstage_demo.mp4)** &middot; **[Try the App in your browser](https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq)** (the real App UI, replaying real GPU renders)
+
+<table>
+<tr>
+<td width="50%"><img src="docs/media/in_the_car.gif" alt="Three people in a car, cameras inside the car"><br><sub><b>In the car:</b> one click adds every interior angle; each shot is rendered from its own clay camera.</sub></td>
+<td width="50%"><img src="docs/media/western.gif" alt="Riders galloping off at sunset"><br><sub><b>Western:</b> riders run to rigged horses, vault on and gallop off. Three camera setups, joined into one cut.</sub></td>
+</tr>
+</table>
+
+### The App, step by step
+
+<table>
+<tr>
+<td width="50%"><img src="docs/media/step1_set.jpg" alt="Step 1 Set: the 3D stage"><br><sub><b>&#9312; Set.</b> Block the scene in 3D at true scale: cast, rigged horses and cars, lenses, sun, lights, several camera setups.</sub></td>
+<td width="50%"><img src="docs/media/step2_frame.jpg" alt="Step 2 Frame"><br><sub><b>&#9313; Frame.</b> A first frame for every shot. 31 genre styles and a real camera/lens/aperture picker.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/media/step3_motion.jpg" alt="Step 3 Motion"><br><sub><b>&#9314; Motion.</b> LTX-2.5 Layout-to-Render animates each shot from its frame, with generated sound. Draft or final, one shot or every shot.</sub></td>
+<td><img src="docs/media/step4_ladder.jpg" alt="Step 4 Review on the Ladder"><br><sub><b>&#9315; Review.</b> The Ladder wipes from clay to frame to final for any shot.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/media/step5_cut.jpg" alt="Step 5 the Cut editor"><br><sub><b>&#9316; Deliver.</b> The Cut editor: right-click a clip to edit its original; Cut &rarr; one video; Avid, Premiere, FCPXML and OTIO export.</sub></td>
+<td><img src="docs/media/app_mode.jpg" alt="Soundstage in ComfyUI App mode"><br><sub>Running inside ComfyUI's App mode: one Run button climbs the ladder.</sub></td>
+</tr>
+</table>
+
+<p align="center"><img src="docs/media/exports.jpg" width="900" alt="Exports: Avid EDL, Premiere XML, FCPXML, OTIO, Layer Pack with ProRes 4444 and alpha, depth EXR, camera, AE/Nuke/Blender builders, GLB"></p>
 
 ## The five steps
 
 The App has one step bar. Every step works on every shot in the scene.
 
 1. **Set.** Block the scene in 3D: cast, set, light, cameras and timing. Add several camera setups to cover the scene.
-2. **Frame.** Paint the first frame of each shot from its clay render with Krea 2, steered by the stage's depth.
+2. **Frame.** Paint the first frame of each shot from its clay render with FLUX 3 Klein (default) or Krea 2 + stage depth.
 3. **Motion.** Animate each shot with LTX-2.5 Layout-to-Render, with sound. The video follows the staged blocking and camera.
 4. **Review.** Scrub clay, frame, draft and final for each shot on the Ladder, with a wipe/fade compare.
 5. **Deliver.** Export a Layer Pack for VFX, assemble the cut into one video, or export the edit to your NLE.
