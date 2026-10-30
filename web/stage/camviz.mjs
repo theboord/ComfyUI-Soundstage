@@ -18,6 +18,7 @@ const COLORS = {
   pathStart: new THREE.Color("#ddd3ff"),    // soft violet, light at the start of the move ...
   pathEnd: new THREE.Color("#8b6cff"),      // ... deeper at the end
   key: new THREE.Color("#efe9ff"),
+  keyCam: new THREE.Color("#c9bcff"),       // camera models at the keys (the one at the playhead: accent)
   arrow: new THREE.Color("#5aa9ff"),        // Jutsu-style blue start / end handles
   tick: new THREE.Color("#c9c3d6"),
   bg: new THREE.Color(TOKENS.bg),
@@ -96,17 +97,98 @@ function disposeTree(obj) {
   });
 }
 
+// ---------------------------------------------------------------- key cameras
+// A small film camera at a camera key: body (each face its own shade: the overlay has no lights), lens, two reels
+// on top and a short frustum in the shot's aspect with an "up" tick. Unit size, looking down -Z with +Y up, like a
+// THREE camera; CameraViz scales it per render. Viewport-only: it lives in the CameraViz overlay scene.
+const FACE_SHADE = [0.8, 0.62, 1, 0.45, 0.7, 0.9]; // BoxGeometry groups: +x -x +y -y +z (back) -z (front)
+const KEYCAM_FRUSTUM = 1.25;                         // frustum depth in model units
+
+/** Half width / half height of the key camera's frustum end, in model units (36 mm sensor). */
+export function keyCamFrustum(focal_mm, aspect, depth = KEYCAM_FRUSTUM) {
+  const x = ((SENSOR_W_MM / 2) / Math.max(1, focal_mm || 35)) * depth;
+  return { x, y: x / Math.max(0.1, aspect || 16 / 9) };
+}
+
+/** Smallest world size (m) of a key camera for a camera move / scene this many metres across. */
+export function keyCamBase(span) {
+  return Math.min(1.5, Math.max(0.25, (Number.isFinite(span) ? span : 0) * 0.04));
+}
+
+/** Index of the key at the playhead, or else the nearest one in time (the earlier on a tie); -1 when none. */
+export function nearestKey(keys, frame) {
+  let best = -1, bd = Infinity;
+  (keys || []).forEach((k, i) => { const d = Math.abs(k.frame - frame); if (d < bd) { bd = d; best = i; } });
+  return best;
+}
+
+function keyCamModel(focal_mm, aspect) {
+  const g = new THREE.Group();
+  const solid = () => new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: true, depthWrite: true });
+  const faces = FACE_SHADE.map(solid);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.56, 0.8), faces);
+  body.position.z = 0.52;
+  const lensMat = new THREE.MeshBasicMaterial({ color: 0x2a2233, depthTest: true, depthWrite: true });
+  const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 0.32, 18).rotateX(Math.PI / 2), lensMat);
+  lens.position.z = -0.04;
+  const reelMats = [solid(), solid()];
+  const reelGeo = new THREE.CylinderGeometry(0.21, 0.21, 0.08, 22).rotateZ(Math.PI / 2);
+  const reels = reelMats.map((m, i) => { const r = new THREE.Mesh(reelGeo, m); r.position.set(0, 0.5, 0.3 + i * 0.44); return r; });
+  for (const o of [body, lens, ...reels]) o.renderOrder = 3;
+  // Frustum from the lens front to a frame in the shot's aspect, with a faint fill and an up tick.
+  const z0 = -0.2, z = z0 - KEYCAM_FRUSTUM, { x, y } = keyCamFrustum(focal_mm, aspect);
+  const v = [[0, 0, z0, x, y, z], [0, 0, z0, -x, y, z], [0, 0, z0, -x, -y, z], [0, 0, z0, x, -y, z],
+    [x, y, z, -x, y, z], [-x, y, z, -x, -y, z], [-x, -y, z, x, -y, z], [x, -y, z, x, y, z]].flat();
+  const lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(v), 3));
+  const lineMat = new THREE.LineBasicMaterial(overlayMat({ color: 0xffffff, opacity: 0.8 }));
+  const lines = new THREE.LineSegments(lineGeo, lineMat);
+  const fillMat = new THREE.MeshBasicMaterial(overlayMat({ color: 0xffffff, opacity: 0.07, side: THREE.DoubleSide }));
+  const fill = new THREE.Mesh(new THREE.PlaneGeometry(2 * x, 2 * y), fillMat);
+  fill.position.z = z;
+  fill.raycast = () => {}; // clicks go to the camera body, not the big frame in front of it
+  const triGeo = new THREE.BufferGeometry();
+  triGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array([-x * 0.3, y * 1.06, z, x * 0.3, y * 1.06, z, 0, y * 1.4, z]), 3));
+  const triMat = new THREE.MeshBasicMaterial(overlayMat({ color: 0xffffff, side: THREE.DoubleSide, opacity: 0.9 }));
+  const tri = new THREE.Mesh(triGeo, triMat);
+  tri.raycast = () => {};
+  for (const o of [lines, fill, tri]) o.renderOrder = 4;
+  g.add(body, lens, ...reels, lines, fill, tri);
+  g.userData.mats = { faces, reels: reelMats, lines: lineMat, fill: fillMat, tri: triMat };
+  g.userData.hot = null;
+  paintKeyCam(g, false);
+  return g;
+}
+
+function paintKeyCam(g, hot) {
+  if (g.userData.hot === hot) return;
+  g.userData.hot = hot;
+  const base = hot ? COLORS.accent : COLORS.keyCam;
+  const { faces, reels, lines, fill, tri } = g.userData.mats;
+  faces.forEach((m, i) => m.color.copy(base).multiplyScalar(FACE_SHADE[i]));
+  for (const m of reels) m.color.copy(base).multiplyScalar(0.72);
+  for (const m of [lines, fill, tri]) m.color.copy(base);
+  lines.opacity = hot ? 1 : 0.75;
+  fill.opacity = hot ? 0.16 : 0.06;
+}
+
 // ---------------------------------------------------------------- CameraViz
 export class CameraViz {
   /**
    * @param stage  the Stage
    * @param opts.showInShot  also draw the path / keys when looking through the shot camera (default false)
    * @param opts.replaceHelper  hide the stage's plain CameraHelper while mounted (default true)
+   * @param opts.keyCams  draw a little camera at every camera key in Free view (default true)
+   * @param opts.onKeyClick  called with (frame, index) when a key camera is clicked in Free view
+   *                         (default: jump the stage's playhead there)
    */
-  constructor(stage, { showInShot = false, replaceHelper = true } = {}) {
+  constructor(stage, { showInShot = false, replaceHelper = true, keyCams = true, onKeyClick = null } = {}) {
     this.stage = stage;
     this.showInShot = showInShot;
     this.visible = true;
+    this.keyCamsOn = !!keyCams;
+    this.onKeyClick = onKeyClick;
+    this.keyCams = [];
     this.scene = new THREE.Scene(); // overlay scene, drawn on top after the main pass
     this.root = new THREE.Group();
     this.scene.add(this.root);
@@ -117,6 +199,16 @@ export class CameraViz {
     this._buildPlayhead();
     if (replaceHelper && stage.camHelper) { this._helper = stage.camHelper; stage.camHelper.layers.set(31); }
     this._unhook = onAfterRender(stage, 10, (mode, cam) => this._draw(mode, cam));
+    // Click a key camera (Free view) = jump the playhead to that key. Capture phase, so the stage's own
+    // pointerdown (select / orbit) never sees that click.
+    this._onDown = (e) => this._pickKeyCam(e);
+    stage.canvas?.addEventListener?.("pointerdown", this._onDown, true);
+  }
+
+  /** Show / hide the camera models at the keys (the path, diamonds and playhead frustum stay). */
+  setKeyCams(on) {
+    this.keyCamsOn = !!on;
+    this.stage.render();
   }
 
   /** Call after camera keys, the frame or the active shot change (it also self-syncs on every render). */
@@ -137,9 +229,45 @@ export class CameraViz {
 
   dispose() {
     this._unhook?.();
+    this.stage.canvas?.removeEventListener?.("pointerdown", this._onDown, true);
     if (this._helper) this._helper.layers.set(0);
     disposeTree(this.scene);
     this.stage.render();
+  }
+
+  /** Key camera under a pointer event (Free view only): {frame, i} or null. */
+  _keyCamAt(e) {
+    const st = this.stage;
+    if (!this.visible || !this.keyCamsOn || !st.freeView || !this.keyCams.length) return null;
+    const cv = st.canvas, r = cv.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    const cam = st._viewportCamera?.() || st.camera;
+    const px = e.clientX - r.left, py = e.clientY - r.top;
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2((px / r.width) * 2 - 1, -(py / r.height) * 2 + 1), cam);
+    let o = ray.intersectObjects(this.keyCams, true).find((h) => h.object.isMesh)?.object || null;
+    while (o && o.userData.keyFrame === undefined) o = o.parent;
+    if (o) return { frame: o.userData.keyFrame, i: o.userData.keyIndex };
+    // Far away the model is a few pixels: a click within 14 px of its centre still counts.
+    let best = null, bd = 14;
+    const v = new THREE.Vector3();
+    for (const g of this.keyCams) {
+      v.copy(g.position).project(cam);
+      if (v.z > 1 || v.z < -1) continue;
+      const d = Math.hypot(((v.x + 1) / 2) * r.width - px, ((1 - v.y) / 2) * r.height - py);
+      if (d < bd) { bd = d; best = { frame: g.userData.keyFrame, i: g.userData.keyIndex }; }
+    }
+    return best;
+  }
+
+  _pickKeyCam(e) {
+    if (e.button !== 0 || e.altKey || e.shiftKey) return;
+    const hit = this._keyCamAt(e);
+    if (!hit) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    if (this.onKeyClick) this.onKeyClick(hit.frame, hit.i);
+    else this.stage.setFrame(hit.frame);
   }
 
   // ---- building
@@ -182,20 +310,38 @@ export class CameraViz {
       this.pathGroup.add(this.tube);
     }
 
-    // Key diamonds with their numbers.
+    // Key diamonds with their numbers, and a little camera at every key (where it stands, where it looks).
     this.keyMarks = [];
+    this.keyTags = [];
+    this.keyCams = [];
     const diamondGeo = new THREE.OctahedronGeometry(1, 0);
+    const aspect = st.fw / Math.max(1, st.fh), look = new THREE.Matrix4();
+    let lo = null, hi = null;
     keys.forEach((k, i) => {
+      const c = st._cameraAt(k.frame);
       const m = new THREE.Mesh(diamondGeo, new THREE.MeshBasicMaterial(overlayMat({ color: COLORS.key, opacity: 0.95 })));
-      m.position.set(...st._cameraAt(k.frame).position);
+      m.position.set(...c.position);
       m.scale.set(0.7, 1, 0.7);
       m.renderOrder = 5;
       m.userData.base = 1;
       const tag = label(String(i + 1));
       tag.position.copy(m.position);
-      this.pathGroup.add(m, tag);
+      const kc = keyCamModel(c.focal_mm, aspect);
+      kc.position.copy(m.position);
+      const tgt = new THREE.Vector3(...c.target);
+      if (tgt.distanceToSquared(kc.position) > 1e-8) kc.quaternion.setFromRotationMatrix(look.lookAt(kc.position, tgt, UP));
+      kc.userData.keyFrame = k.frame;
+      kc.userData.keyIndex = i;
+      this.pathGroup.add(m, kc, tag);
       this.keyMarks.push(m);
+      this.keyTags.push(tag);
+      this.keyCams.push(kc);
+      lo = lo ? lo.min(kc.position) : kc.position.clone();
+      hi = hi ? hi.max(kc.position) : kc.position.clone();
     });
+    // Smallest size of a key camera: grows with how far the keys are spread (a car chase vs. a close-up).
+    for (const p of pts) { lo = lo ? lo.min(p) : p.clone(); hi = hi ? hi.max(p) : p.clone(); }
+    this._keyCamBase = keyCamBase(lo && hi ? hi.clone().sub(lo).length() : 0);
 
     // Blue start / end arrows along the direction of travel.
     this.arrows = [];
@@ -324,6 +470,19 @@ export class CameraViz {
     // Constant on-screen size for diamonds and arrows.
     for (const m of this.keyMarks || []) m.scale.set(0.7, 1, 0.7).multiplyScalar(dist(m.position) * 0.011);
     for (const a of this.arrows || []) a.scale.setScalar(dist(a.position) * 0.034);
+
+    // Key cameras (Free view only: the shot camera must never see itself). They replace the diamonds; the
+    // number sits above each one; the key at (or nearest) the playhead is in the accent colour.
+    const cams = free && this.keyCamsOn;
+    const hot = cams ? nearestKey(this.keyCams.map((g) => ({ frame: g.userData.keyFrame })), st.frame) : -1;
+    const base = this._keyCamBase || 0.3;
+    this.keyCams.forEach((g, i) => {
+      g.visible = cams;
+      const s = cams ? THREE.MathUtils.clamp(dist(g.position) * 0.06, base, base * 8) : 0;
+      if (cams) { g.scale.setScalar(s); paintKeyCam(g, i === hot); }
+      if (this.keyMarks[i]) this.keyMarks[i].visible = !cams;
+      if (this.keyTags?.[i]) this.keyTags[i].position.copy(g.position).y += cams ? s * 0.78 : 0;
+    });
 
     const r = st.renderer, auto = r.autoClear;
     r.autoClear = false;
@@ -518,7 +677,7 @@ const TOP_CSS = `
   font:500 10px/1.3 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif; color:${TOKENS.faint}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 `;
 
-const HINT_IDLE = "Drag keys · Alt-drag = height · drag ● to aim · click path = new key · right-click = delete";
+const HINT_IDLE = "Drag ◆ camera keys or ■ cast keys · Alt-drag = height · drag ● to aim · click path = new key · right-click = delete";
 
 export class TopView {
   /**
@@ -538,6 +697,7 @@ export class TopView {
     const el = (this.el = document.createElement("div"));
     el.className = "ss-top";
     el.hidden = !visible;
+    el.ssTopView = this; // for tests and tools
     const head = document.createElement("div");
     head.className = "ss-top-head";
     const title = Object.assign(document.createElement("span"), { textContent: "Top view · N ↑" });
@@ -580,6 +740,26 @@ export class TopView {
 
   // ---- data
   _keys() { return this.stage._camKeys(); }
+
+  /** The shot's ride-along host (its camera keys are in that vehicle's own space), or null. */
+  _host() { return this.stage._followActor?.() || null; }
+
+  /** A camera key's position and target in the world (a ride-along key moves with its vehicle). */
+  _kw(k) {
+    const h = this._host();
+    if (!h) return { position: k.position, target: k.target };
+    const toW = this.stage._actorFrame(h, k.frame);
+    return { position: toW(k.position), target: toW(k.target) };
+  }
+
+  /** A world point in a camera key's own space. */
+  _kl(k, w) {
+    const h = this._host();
+    return h ? this.stage._actorFrameInverse(h, k.frame)(w) : w;
+  }
+
+  /** Cast that can be moved from here: not riders (they sit on their mount) and not set pieces. */
+  _movable(a) { return !a.mount_id && !this.stage._isSetPiece?.(a.id); }
 
   _north() {
     // Stage convention: world azimuth a points along (sin a, cos a) in X/Z; true north sits at lighting.north_deg.
@@ -631,7 +811,8 @@ export class TopView {
     this._refresh();
     const { up, right } = this._north();
     // Frame the camera move, its aims (clamped to 8 m out) and the cast where they are now.
-    const aim = (k) => {
+    const aim = (k0) => {
+      const k = this._kw(k0);
       const d = [k.target[0] - k.position[0], k.target[2] - k.position[2]], l = Math.hypot(d[0], d[1]), s = l > 8 ? 8 / l : 1;
       return [k.position[0] + d[0] * s, 0, k.position[2] + d[1] * s];
     };
@@ -664,11 +845,18 @@ export class TopView {
 
   // ---- hit testing
   _hit(sx, sy) {
-    const keys = this._keys();
+    const st = this.stage, keys = this._keys().map((k) => this._kw(k));
     const near = (p, r) => { const [x, y] = this._toScreen(p[0], p[2]); return Math.hypot(x - sx, y - sy) <= r; };
     for (let i = keys.length - 1; i >= 0; i--) if (near(keys[i].target, 7)) return { kind: "target", i };
     for (let i = keys.length - 1; i >= 0; i--) if (near(keys[i].position, 9)) return { kind: "key", i };
-    if (near(this.stage.camera.position.toArray(), 9)) return { kind: "playhead" };
+    if (near(st.camera.position.toArray(), 9)) return { kind: "playhead" };
+    // The cast: a key on a moving one's dashed path, then anyone where they stand now.
+    const cast = (this.actors || []).filter(({ a }) => this._movable(a));
+    for (const { a } of cast) {
+      const ak = st._actorKeys(a);
+      if (ak.length > 1) for (let j = ak.length - 1; j >= 0; j--) if (near(ak[j].position, 6)) return { kind: "akey", a, j };
+    }
+    for (const { a } of cast) if (near(st._actorPosAt(a, st.frame), 7)) return { kind: "actor", a };
     const f = this._nearestFrame(sx, sy, 7);
     if (f !== null) return { kind: "path", frame: f };
     return null;
@@ -717,6 +905,13 @@ export class TopView {
     this._commit();
   }
 
+  _deleteActorKey(a, j) {
+    const keys = this.stage._actorKeys(a);
+    if (keys.length < 2) return;
+    keys.splice(j, 1);
+    this._commit();
+  }
+
   _hint(text) { this.hintEl.textContent = text || HINT_IDLE; }
 
   _bind() {
@@ -731,6 +926,7 @@ export class TopView {
       const hit = this._hit(sx, sy);
       if (e.button === 2) {
         if (hit?.kind === "key") this._deleteKey(hit.i);
+        else if (hit?.kind === "akey") this._deleteActorKey(hit.a, hit.j);
         return;
       }
       if (e.button !== 0) return;
@@ -738,11 +934,20 @@ export class TopView {
       const keys = this._keys();
       this.drag = { hit, sx, sy, moved: false, alt: e.altKey, shift: e.shiftKey, view: { ...this.view } };
       if (hit?.kind === "key") {
-        const k = keys[hit.i];
-        this.drag.start = { position: [...k.position], target: [...k.target] };
+        const k = keys[hit.i], w = this._kw(k);
+        this.drag.start = { position: [...w.position], target: [...w.target] };   // world
+        this.drag.startL = { position: [...k.position], target: [...k.target] };  // the key's own space
         this._scrub(k.frame); // show what that key sees
       } else if (hit?.kind === "target") {
-        this.drag.start = { target: [...keys[hit.i].target] };
+        this.drag.start = { target: [...this._kw(keys[hit.i]).target] };
+      } else if (hit?.kind === "akey") {
+        const k = this.stage._actorKeys(hit.a)[hit.j];
+        this.drag.start = { position: [...k.position] };
+        this.stage.select?.(hit.a.id);
+        this._scrub(k.frame); // see the cast where that key puts them
+      } else if (hit?.kind === "actor") {
+        this.drag.start = { position: [...this.stage._actorPosAt(hit.a, this.stage.frame)] };
+        this.stage.select?.(hit.a.id);
       }
       this.draw();
     });
@@ -753,11 +958,14 @@ export class TopView {
       if (!d) {
         this.hover = this.view ? this._hit(sx, sy) : null;
         cv.style.cursor = !this.hover ? "grab" : this.hover.kind === "path" ? "copy" : this.hover.kind === "playhead" ? "ew-resize" : "grab";
+        const who = this.hover?.a ? this.hover.a.name || this.hover.a.kind || this.hover.a.id : "";
         this._hint(!this.hover ? null : {
           key: `Key ${this.hover.i + 1} · drag to move · Alt-drag = height · Shift = carry the aim · right-click = delete`,
           target: `Aim of key ${this.hover.i + 1} · drag to re-aim`,
           playhead: "Playhead · drag along the path to scrub",
           path: `Frame ${this.hover.frame} · click = new key here · drag = scrub`,
+          akey: `${who} · key ${this.hover.j + 1} (frame ${this.stage._actorKeys(this.hover.a)[this.hover.j]?.frame}) · drag to move · right-click = delete`,
+          actor: `${who} · drag to move (keys it at the playhead)`,
         }[this.hover.kind]);
         this.draw();
         return;
@@ -768,24 +976,34 @@ export class TopView {
       const keys = this._keys(), h = d.hit;
       const [wx, wz] = this._toWorld(sx, sy), [w0x, w0z] = this._toWorld(d.sx, d.sy);
       const r3 = (v) => +v.toFixed(3);
+      const r3v = (p) => p.map(r3);
       if (h?.kind === "key") {
         const k = keys[h.i];
         if (d.alt) {
-          const y = Math.max(0.05, d.start.position[1] + (d.sy - sy) * 0.01); // 1 cm per pixel
-          k.position = [d.start.position[0], r3(y), d.start.position[2]];
+          const y = Math.max(0.05, d.startL.position[1] + (d.sy - sy) * 0.01); // 1 cm per pixel
+          k.position = [d.startL.position[0], r3(y), d.startL.position[2]];
           this._hint(`Key ${h.i + 1} height ${y.toFixed(2)} m`);
         } else {
           const dx = wx - w0x, dz = wz - w0z;
-          k.position = [r3(d.start.position[0] + dx), d.start.position[1], r3(d.start.position[2] + dz)];
-          if (d.shift) k.target = [r3(d.start.target[0] + dx), d.start.target[1], r3(d.start.target[2] + dz)];
-          else k.target = [...d.start.target];
-          this._hint(`Key ${h.i + 1} → x ${k.position[0].toFixed(2)}  z ${k.position[2].toFixed(2)} m`);
+          const p = [d.start.position[0] + dx, d.start.position[1], d.start.position[2] + dz];
+          k.position = r3v(this._kl(k, p));
+          if (d.shift) k.target = r3v(this._kl(k, [d.start.target[0] + dx, d.start.target[1], d.start.target[2] + dz]));
+          else k.target = [...d.startL.target];
+          this._hint(`Key ${h.i + 1} → x ${p[0].toFixed(2)}  z ${p[2].toFixed(2)} m`);
         }
         this.stage.setFrame(this.stage.frame); // live 3D update; committed once on release
       } else if (h?.kind === "target") {
         const k = keys[h.i];
-        k.target = [r3(d.start.target[0] + wx - w0x), d.start.target[1], r3(d.start.target[2] + wz - w0z)];
+        k.target = r3v(this._kl(k, [d.start.target[0] + wx - w0x, d.start.target[1], d.start.target[2] + wz - w0z]));
         this.stage.setFrame(this.stage.frame);
+      } else if (h?.kind === "akey" || h?.kind === "actor") {
+        // A cast key moves in X/Z (its height stays); dragging someone between keys keys them at the playhead.
+        const k = h.kind === "akey" ? this.stage._actorKeys(h.a)[h.j] : (d.key ||= this.stage._editActorKey(h.a));
+        if (k) {
+          k.position = [r3(d.start.position[0] + wx - w0x), k.position[1], r3(d.start.position[2] + wz - w0z)];
+          this._hint(`${h.a.name || h.a.kind || h.a.id} → x ${k.position[0].toFixed(2)}  z ${k.position[2].toFixed(2)} m · frame ${k.frame}`);
+          this.stage.setFrame(this.stage.frame);
+        }
       } else if (h?.kind === "path" || h?.kind === "playhead") {
         const f = this._nearestFrame(sx, sy, Infinity);
         if (f !== null && f !== this.stage.frame) this._scrub(f);
@@ -804,7 +1022,7 @@ export class TopView {
       this.drag = null;
       cv.style.cursor = "grab";
       const h = d.hit;
-      if (d.moved && (h?.kind === "key" || h?.kind === "target")) this._commit();
+      if (d.moved && ["key", "target", "akey", "actor"].includes(h?.kind)) this._commit();
       else if (!d.moved && h?.kind === "path") this._insertKey(h.frame);
       this._hint(null);
       this.draw();
@@ -882,14 +1100,26 @@ export class TopView {
       placed.push([lx, ly, w]);
       g.fillText(text, lx, ly);
     };
-    for (const k of this._keys()) { const [kx, ky] = S(k.position); placed.push([kx - 9, ky, 18]); } // key diamonds draw on top
+    for (const k of this._keys()) { const [kx, ky] = S(this._kw(k).position); placed.push([kx - 9, ky, 18]); } // key diamonds draw on top
+    const hovA = this.hover, drgA = this.drag?.hit;
     for (const { a, path } of this.actors) {
       if (path.length > 1) {
         g.strokeStyle = "rgba(240,239,237,.28)"; g.setLineDash([3, 3]); g.beginPath();
         path.forEach((p, i) => { const [x, y] = S(p); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke(); g.setLineDash([]);
       }
+      // Its keys as small squares on the path (drag to move one, right-click to delete).
+      const ak = st._actorKeys(a);
+      if (ak.length > 1 && this._movable(a)) {
+        ak.forEach((k, j) => {
+          const hot = [hovA, drgA].some((x) => x?.kind === "akey" && x.a === a && x.j === j);
+          const [kx, ky] = S(k.position), r = hot ? 5 : 3.5;
+          g.fillStyle = hot ? TOKENS.accent : "#539bf5";
+          g.fillRect(kx - r, ky - r, 2 * r, 2 * r);
+          g.strokeStyle = TOKENS.bg; g.lineWidth = 1; g.strokeRect(kx - r, ky - r, 2 * r, 2 * r);
+        });
+      }
       const [x, y] = S(st._actorPosAt(a, st.frame));
-      const sel = a.id === st.selected;
+      const sel = a.id === st.selected || [hovA, drgA].some((h) => h?.kind === "actor" && h.a === a);
       g.fillStyle = sel ? TOKENS.accent : TOKENS.text;
       g.beginPath(); g.arc(x, y, sel ? 5 : 4, 0, Math.PI * 2); g.fill();
       g.fillStyle = TOKENS.muted; g.textAlign = "left"; g.textBaseline = "middle";
@@ -923,8 +1153,9 @@ export class TopView {
       g.lineTo(x + Math.cos(ang + half) * len, y + Math.sin(ang + half) * len);
       g.closePath(); g.fillStyle = color; g.fill();
     };
-    keys.forEach((k, i) => {
-      const isHot = (hov?.i === i && (hov.kind === "key" || hov.kind === "target")) || (drg?.i === i);
+    keys.forEach((k0, i) => {
+      const k = { ...k0, ...this._kw(k0) }; // world position / target (a ride-along key moves with its vehicle)
+      const isHot = (hov?.i === i && (hov.kind === "key" || hov.kind === "target")) || (drg?.i === i && (drg.kind === "key" || drg.kind === "target"));
       const [x, y] = S(k.position), [tx, ty] = S(k.target);
       wedge(k.position, k.target, k.focal_mm || 35, isHot ? "rgba(242,255,89,.22)" : "rgba(221,211,255,.14)", 34);
       g.strokeStyle = isHot ? "rgba(242,255,89,.6)" : "rgba(221,211,255,.3)"; g.lineWidth = 1; g.setLineDash([2, 3]);

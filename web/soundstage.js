@@ -90,6 +90,8 @@ const CSS = `
 .ss-expand { margin-left:auto; }
 .ss-lightnote { color:#cfa36b; font-size:11px; font-style:italic; }
 .ss-gizmo { position:absolute; top:8px; right:8px; width:84px; height:84px; cursor:pointer; }
+.ss-stageview > .ss-coach { top:10px; right:100px; max-width:min(340px, calc(100% - 110px)); }
+.ss-stageview[data-narrow=true] > .ss-coach { top:100px; right:8px; max-width:calc(100% - 16px); }
 .ss-viewbadge { position:absolute; top:8px; left:8px; font:600 11px/1 "Soundstage Grotesk", ui-sans-serif, system-ui, sans-serif; letter-spacing:.06em;
   text-transform:uppercase; padding:5px 8px; border-radius:4px; background:rgba(0,0,0,.55); color:#e6e9ee; pointer-events:none; }
 .ss-viewbadge[data-free=true] { background:#e39a40; color:#16191e; }
@@ -1854,14 +1856,31 @@ function createStageWidget(node, inputName) {
   // Camera path you can see (spline, numbered keys, lens frustum), a picture-in-picture shot-camera
   // preview while flying in Free view, and a top view where camera keys are dragged around.
   const syncFrame = (f) => { scrub.value = f; tc.textContent = fmtTc(f); drawKeys(); if (!ladderView.hidden) ladder.setFrame(f); };
-  const camViz = new CameraViz(stage);
+  // A little camera at every camera key in Free view (click one to jump the playhead to that key).
+  let keyCamsOn = true;
+  try { keyCamsOn = localStorage.getItem("ss.keycams") !== "0"; } catch { /* storage blocked */ }
+  const camViz = new CameraViz(stage, { keyCams: keyCamsOn, onKeyClick: (f) => { stage.setFrame(f); afterTimeChange(); } });
   const pip = new PipViewer(view, stage, { onFrame: syncFrame });
   const topView = new TopView(view, stage, { onFrame: syncFrame, onKeysChanged: () => drawKeys() });
   const topBtn = Object.assign(document.createElement("button"), { type: "button", textContent: "Top",
-    title: "Top view: drag camera keys, re-aim, add or delete keys on the path" });
+    title: "Top view: the camera move and the cast's paths as lines with keys. Drag a camera key or a cast key, re-aim, add or delete keys" });
   topBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
   topBtn.addEventListener("click", () => { topView.toggle(); topBtn.setAttribute("aria-pressed", String(!topView.el.hidden)); });
-  camMode.append(topBtn);
+  topView.setVisible = ((orig) => function (on) { orig.call(this, on); topBtn.setAttribute("aria-pressed", String(!!on)); })(topView.setVisible);
+  const camsBtn = Object.assign(document.createElement("button"), { type: "button", textContent: "Cams",
+    title: "Free view: show a small camera at every camera key (where it stands, where it looks). Click one to jump there" });
+  camsBtn.setAttribute("aria-pressed", String(keyCamsOn));
+  camsBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  camsBtn.addEventListener("click", () => {
+    keyCamsOn = !keyCamsOn;
+    camViz.setKeyCams(keyCamsOn);
+    camsBtn.setAttribute("aria-pressed", String(keyCamsOn));
+    try { localStorage.setItem("ss.keycams", keyCamsOn ? "1" : "0"); } catch { /* storage blocked */ }
+    if (keyCamsOn && !stage.freeView) stage.setFreeView(true); // they only show in Free view
+  });
+  camMode.append(topBtn, camsBtn);
+  // The Coach pill sits left of the axis gizmo (never on top of it); in a narrow view it drops below the gizmo.
+  new ResizeObserver(() => { view.dataset.narrow = String(view.clientWidth > 0 && view.clientWidth < 560); }).observe(view);
 
   // Coach: contextual tips with one-click fixes (story order, camera through a wall, 180° line, stale renders…).
   let canvasFrom = null; // the frame last brought into the Canvas from ④ Frame
