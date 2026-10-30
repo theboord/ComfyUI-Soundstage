@@ -204,6 +204,14 @@ const CSS = `
 .ss-stage .ss-bottomscroll .ss-tracks { margin-top:0 !important; }
 .ss-stage .ss-bottomscroll .ss-cutbar { margin:0 !important; }
 
+/* Narrow (the App's side panel): the parts stack; header and transport wrap; one button opens the full workspace. */
+.ss-stage .ss-ws > .ss-wsopen { display:none !important; }
+.ss-stage[data-ws=narrow]:not(.ss-full) .ss-ws > .ss-wsopen { display:inline-flex !important; justify-content:center; width:100%;
+  background:var(--ss-accent) !important; color:var(--ss-accent-ink) !important; border-color:var(--ss-accent) !important; font-weight:700 !important; }
+.ss-stage[data-ws=narrow] .ss-vphead, .ss-stage[data-ws=narrow] .ss-vphead .ss-views { flex-wrap:wrap; }
+.ss-stage[data-ws=narrow] .ss-vphead .ss-hint { display:none; }
+.ss-stage[data-ws=narrow] .ss-time, .ss-stage[data-ws=narrow] .ss-time .ss-views { flex-wrap:wrap; }
+
 /* Inspector: section tabs, then one section at a time; long sections scroll here, not the page. */
 .ss-stage .ss-insp-tabs { display:flex; gap:2px; padding:3px; background:rgba(0,0,0,.18); border-radius:12px; flex:none; }
 .ss-stage .ss-insp-tabs button.ss-insp-tab { flex:1 1 0; min-width:0; flex-direction:column !important; justify-content:center; gap:3px !important;

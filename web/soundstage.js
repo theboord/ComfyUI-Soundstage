@@ -2405,7 +2405,14 @@ function createStageWidget(node, inputName) {
     bottom.append(time, bottomScroll);
     rail.append(dock);
     insp.append(inspTabs, inspBody);
-    ws.append(rail, center, bottom, insp);
+    // In a narrow panel the parts have to stack: one tap opens the full one-screen workspace (same as Expand).
+    const wsOpen = Object.assign(document.createElement("button"), { type: "button", className: "ss-wsopen",
+      title: "Fill the window: tools left, the 3D view in the middle, settings right, timeline below (Esc to return)" });
+    wsOpen.dataset.ssIcon = "maximize-2";
+    wsOpen.append(icon("maximize-2", 15), "Open the full workspace");
+    wsOpen.addEventListener("pointerdown", (e) => e.stopPropagation());
+    wsOpen.addEventListener("click", () => setFull(true));
+    ws.append(wsOpen, rail, center, bottom, insp);
     tabs.after(ws);
     bar.remove();
     ladderBar.remove();
