@@ -27,7 +27,14 @@ HQ_SIGMAS_2 = ("0.909375, 0.8632813, 0.8171875, 0.7710938, 0.725, 0.6492188, 0.5
                "0.2109375, 0.1054688, 0.0")
 
 
-def knobs(freedom: float = 0.0, hq: bool = False) -> dict:
+# Final: the draft curve with each big tail jump halved once (12 + 6 steps): clean fast motion (a running dog stays one
+# dog), faces and hands resolve, at about 60% of HQ's time. The default for finals.
+FINAL_SIGMAS_1 = ("1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.9421875, 0.909375, 0.8171875, 0.725, 0.5734375, 0.421875, "
+                  "0.2109375, 0.0")
+FINAL_SIGMAS_2 = "0.909375, 0.8171875, 0.725, 0.5734375, 0.421875, 0.2109375, 0.0"
+
+
+def knobs(freedom: float = 0.0, hq: bool = False, tier: str | None = None) -> dict:
     """Live-tested 2026-10-28 on the horse scene: the IC-LoRA guide strength MUST stay 1.0. Below 1 the guide tokens
     are blended into the generation and LTX renders the grey clay itself (f=0.4 at strength 0.8/0.72 came out as clay).
     Freedom therefore softens the guide content (spatial blur: composition and camera stay, limb detail goes) and
@@ -41,8 +48,8 @@ def knobs(freedom: float = 0.0, hq: bool = False) -> dict:
         # IC-LoRA model strength: loosens how literally LTX copies the previz animation (0.75 turned the clay
         # rig's stiff run into a natural walk in the horse test, still photoreal, same camera).
         "lora_strength": round(1.0 - 0.35 * f, 3),
-        "sigmas_1": HQ_SIGMAS_1 if hq else DRAFT_SIGMAS_1,
-        "sigmas_2": HQ_SIGMAS_2 if hq else DRAFT_SIGMAS_2,
+        "sigmas_1": {"hq": HQ_SIGMAS_1, "final": FINAL_SIGMAS_1}.get(tier or ("hq" if hq else "draft"), DRAFT_SIGMAS_1),
+        "sigmas_2": {"hq": HQ_SIGMAS_2, "final": FINAL_SIGMAS_2}.get(tier or ("hq" if hq else "draft"), DRAFT_SIGMAS_2),
         "sampler": "euler_ancestral",
     }
 
