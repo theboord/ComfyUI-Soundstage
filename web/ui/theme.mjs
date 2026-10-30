@@ -152,6 +152,88 @@ const CSS = `
 @media (prefers-reduced-motion: reduce) { .ss-stage .ss-spot { animation:none; outline:2px solid var(--ss-accent); } }
 
 .ss-stage.ss-full { border-radius:20px !important; box-shadow:0 30px 90px rgba(0,0,0,.6) !important; }
+
+/* ---- The one-screen workspace (Stage / Set step, Look, Ladder): like Blender, Maya or After Effects. Tool rail left,
+   viewport centre (never pushed down), properties inspector right (scrolls on its own), timeline docked under the
+   viewport, status line last. The page itself does not scroll. Narrow (the App's side panel): the parts stack. ---- */
+.ss-stage.ss-ws-on { gap:8px !important; }
+.ss-stage.ss-wsmode[data-ws=wide] { height:clamp(640px, calc(100vh - 96px), 1600px); overflow:hidden !important; }
+.ss-stage.ss-full.ss-wsmode { height:auto !important; overflow:hidden !important; padding:10px !important; }
+.ss-stage.ss-wsmode[data-ws=wide] > .ss-ws { flex:1 1 auto; min-height:0; }
+.ss-stage.ss-wsmode[data-ws=wide] > :is(.ss-tabs, .ss-pipe, .ss-status) { flex:none; }
+.ss-stage .ss-ws { display:flex; flex-direction:column; gap:8px; min-width:0; }
+.ss-stage[data-ws=wide] .ss-ws { display:grid; grid-template-columns:auto minmax(0,1fr) var(--ss-insp-w,340px);
+  grid-template-rows:minmax(0,1fr) auto; grid-template-areas:"rail center insp" "rail bottom insp"; }
+.ss-ws > .ss-rail { grid-area:rail; min-height:0; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; }
+.ss-ws > .ss-center { grid-area:center; min-height:0; min-width:0; display:flex; flex-direction:column; gap:6px; }
+.ss-stage[data-ws=wide] .ss-ws > .ss-center { overflow:auto; scrollbar-width:thin; }
+.ss-ws > .ss-bottom { grid-area:bottom; min-width:0; display:flex; flex-direction:column; gap:4px; }
+.ss-ws > .ss-insp { grid-area:insp; min-height:0; min-width:0; display:flex; flex-direction:column; gap:6px;
+  background:var(--ss-card); border:1px solid var(--ss-line); border-radius:14px; padding:6px; }
+
+/* Steps and tabs: one compact line each. */
+.ss-stage.ss-wsmode[data-ws=wide] .ss-pipe { margin:0 !important; gap:4px; }
+.ss-stage.ss-wsmode[data-ws=wide] .ss-pipe button { flex-direction:row !important; align-items:center !important; gap:8px !important;
+  padding:5px 12px !important; min-height:0; }
+.ss-stage.ss-wsmode[data-ws=wide] .ss-pipe button { min-width:0 !important; white-space:nowrap; overflow:hidden; }
+.ss-stage.ss-wsmode[data-ws=wide] .ss-pipe button .t { font-size:13px; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.ss-stage.ss-wsmode[data-ws=wide] .ss-pipe button .n { flex:none; }
+.ss-stage.ss-wsmode[data-ws=wide] .ss-pipe button .n { font-size:10px; }
+.ss-stage.ss-wsmode[data-ws=wide] .ss-tabs { padding:2px; }
+.ss-stage.ss-wsmode[data-ws=wide] .ss-tabs button { padding:4px 11px !important; }
+
+/* Tool rail: the dock, stood up as a column of icon + label buttons. */
+.ss-stage[data-ws=wide] .ss-rail .ss-dock { flex-direction:column; flex-wrap:nowrap; width:80px; box-sizing:border-box; padding:4px;
+  gap:1px; min-height:100%; }
+.ss-stage[data-ws=wide] .ss-rail button.ss-tool { flex:none; min-width:0; max-width:none; width:100%; padding:7px 2px 6px !important;
+  font-size:10.5px !important; gap:4px !important; }
+.ss-stage[data-ws=wide] .ss-rail .ss-dock-sep { width:auto; height:1px; margin:3px 10px; align-self:auto; flex:none; }
+
+/* Viewport: slim header, then the picture fitted to the cell at the shot's aspect. */
+.ss-stage .ss-vphead { display:flex; align-items:center; gap:8px; min-width:0; flex:none; }
+.ss-stage .ss-vphead .ss-views { flex:none; }
+.ss-stage .ss-vphead .ss-hint { flex:1 1 0; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:11px; }
+.ss-stage .ss-vpcell { flex:1 1 auto; min-height:0; min-width:0; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.ss-stage[data-ws=narrow] .ss-vpcell { flex:none; display:block; }
+.ss-stage .ss-vpcell > .ss-stageview { flex:none; max-width:100%; }
+
+/* Timeline dock: transport always shown; tracks and the shot strip scroll inside their own band. */
+.ss-stage .ss-bottom > .ss-time { padding:6px 10px; }
+.ss-stage[data-ws=wide] .ss-bottomscroll { max-height:clamp(64px, 19vh, 240px); overflow-y:auto; overflow-x:hidden; scrollbar-width:thin;
+  display:flex; flex-direction:column; gap:4px; }
+.ss-stage .ss-bottomscroll .ss-tracks { margin-top:0 !important; }
+.ss-stage .ss-bottomscroll .ss-cutbar { margin:0 !important; }
+
+/* Inspector: section tabs, then one section at a time; long sections scroll here, not the page. */
+.ss-stage .ss-insp-tabs { display:flex; gap:2px; padding:3px; background:rgba(0,0,0,.18); border-radius:12px; flex:none; }
+.ss-stage .ss-insp-tabs button.ss-insp-tab { flex:1 1 0; min-width:0; flex-direction:column !important; justify-content:center; gap:3px !important;
+  padding:6px 2px !important; border-radius:9px !important; background:transparent !important; border:1px solid transparent !important;
+  color:var(--ss-muted) !important; font-size:11px !important; line-height:1.1 !important; }
+.ss-stage .ss-insp-tabs button.ss-insp-tab[aria-pressed=true] { background:var(--ss-raised) !important; color:var(--ss-text) !important;
+  border-color:var(--ss-line-strong) !important; }
+.ss-stage .ss-insp-tabs button.ss-insp-tab[aria-pressed=true] .ss-icon { color:var(--ss-accent); }
+.ss-stage .ss-insp-body { flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; padding:1px; }
+.ss-stage[data-ws=narrow] .ss-insp-body { max-height:70vh; }
+.ss-stage .ss-pane { display:flex; flex-direction:column; gap:8px; }
+.ss-stage .ss-insp :is(.ss-bar, .ss-sel) { background:var(--ss-card); border:1px solid var(--ss-line); border-radius:12px; padding:8px 10px;
+  display:flex; flex-wrap:wrap; gap:8px 10px; align-items:center; }
+.ss-stage .ss-insp .ss-sel[hidden] { display:none !important; }
+.ss-stage .ss-insp .ss-rowhead { flex:1 1 100%; min-width:0; }
+/* Property rows, like Blender's: name on the left, the control filling the rest; a colour swatch sits beside its menu. */
+.ss-stage .ss-insp :is(.ss-bar, .ss-sel) > label { flex:1 1 100%; min-width:0; display:grid; grid-template-columns:62px minmax(0,1fr) auto;
+  align-items:center; gap:8px; white-space:normal; font-size:12px; }
+.ss-stage .ss-insp :is(.ss-bar, .ss-sel) > label:has(+ label > input[type=color]) { flex-basis:calc(100% - 50px); }
+.ss-stage .ss-insp :is(.ss-bar, .ss-sel) > label:has(+ label > input[type=color]) + label:has(> input[type=color]) { flex:0 0 40px; display:flex;
+  font-size:0; gap:0; }
+.ss-stage .ss-insp label > input[type=color] { width:36px !important; height:26px !important; }
+.ss-stage .ss-insp label > input[type=range] { width:100% !important; min-width:0; }
+.ss-stage .ss-insp label > select { width:100%; min-width:0; }
+.ss-stage .ss-insp label > output { min-width:40px; text-align:right; }
+.ss-stage .ss-insp .ss-add input[type=text] { flex:1 1 100% !important; max-width:none !important; min-width:0 !important; }
+.ss-stage .ss-insp .ss-views { margin-left:0 !important; }
+.ss-stage .ss-insp .ss-sel > .ss-chip { flex:1 1 100%; font-weight:600; padding:4px 10px; }
+.ss-stage .ss-insp .ss-sundome { width:84px; height:84px; }
+.ss-stage .ss-insp .ss-objhint { padding:2px 4px; }
 `;
 
 export function applyTheme() {

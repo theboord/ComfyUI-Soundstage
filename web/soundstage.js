@@ -84,7 +84,7 @@ const CSS = `
 .ss-stage.ss-canvasmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-canvasview):not(.ss-striphost):not(.ss-status) { display:none !important; }
 .ss-stage.ss-full { position:fixed !important; inset:12px !important; z-index:10000 !important; width:auto !important;
   height:auto !important; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,.6); border:1px solid #39404b; }
-.ss-stage.ss-full .ss-stageview canvas:not(.ss-gizmo), .ss-stage.ss-full .ss-ladder canvas { max-height:calc(100vh - 260px); object-fit:contain; }
+.ss-stage.ss-full:not(.ss-ws) .ss-ladder canvas { max-height:calc(100vh - 260px); object-fit:contain; }
 .ss-expand { margin-left:auto; }
 .ss-lightnote { color:#cfa36b; font-size:11px; font-style:italic; }
 .ss-gizmo { position:absolute; top:8px; right:8px; width:84px; height:84px; cursor:pointer; }
@@ -675,14 +675,19 @@ function createStageWidget(node, inputName) {
   canvasPanel.load(node.properties?.soundstage_canvas || null);
   canvasPanel.onChange = (json) => { node.properties = node.properties || {}; node.properties.soundstage_canvas = json; };
 
+  // The one-screen workspace (built at the end): which view is up, and how it lays itself out for it.
+  let curView = "stage";
+  let syncWorkspace = () => {};
+  let inspect = () => {};   // switch the right-hand inspector to a section (dock tools call it)
   function showView(k) {
+    curView = k;
     try { coach?.notify("tab", k); } catch { /* coach not built yet */ }
     try { pipeline?.onView(k); } catch { /* pipeline not built yet */ }
     Object.entries(tabBtns).forEach(([kk, b]) => b.setAttribute("aria-pressed", String(kk === k)));
     const isLadder = k === "ladder", isLook = k === "look", isStage = k === "stage";
     bar.hidden = !isStage; view.hidden = !isStage;
     if (dock) dock.hidden = !isStage;
-    ladderBar.hidden = !isLadder; ladderView.hidden = !isLadder;
+    ladderBar.hidden = true; ladderView.hidden = !isLadder;   // the Ladder draws its own compare bar now
     lookView.hidden = !isLook;
     scriptView.hidden = k !== "script";
     el.classList.toggle("ss-scriptmode", k === "script");
@@ -704,6 +709,7 @@ function createStageWidget(node, inputName) {
     el.classList.toggle("ss-cutmode", k === "cut"); // the timeline has its own transport; hide the stage rows
     el.classList.toggle("ss-pipemode", ["frame", "motion", "deliver"].includes(k)); // step screens stand alone
     if (k === "cut") { cut.refresh(); cut.resize(); } else cut.stop();
+    try { syncWorkspace(k); } catch { /* workspace not built yet */ }
     if (isLadder) ladder.setFrame(stage.frame || 0);
     else if (isLook) look.refresh();
     else stage.resize();
@@ -869,6 +875,9 @@ function createStageWidget(node, inputName) {
   syncRig();
   rigSel.addEventListener("change", syncRig);
   bar.append(camMode, lens.wrap, lensPick.el, rigWrap, sunAz.wrap, sunEl.wrap, dome.el, views);
+  // In the workspace these live in the inspector: lens and rig under Camera, the sun under Lighting.
+  const lensRow = Object.assign(document.createElement("div"), { className: "ss-bar ss-lensrow" });
+  const sunRow = Object.assign(document.createElement("div"), { className: "ss-bar ss-sunrow" });
 
   // Timeline: which key you are editing, scrub, play, shot length.
   const time = document.createElement("div");
@@ -1692,20 +1701,20 @@ function createStageWidget(node, inputName) {
   const TOOLS = [
     { k: "ai", ic: "sparkles", label: "Build with AI", ai: true,
       tip: "Describe a scene in plain words and AI blocks it for you: cast, set, light and camera.",
-      run: () => { spotlight(agentRow, describeInput); status.textContent = "Describe the scene, then Build scene. Change it afterwards in the box next to it (\"add rain\", \"lower the camera\")."; } },
+      run: () => { inspect("ai"); spotlight(agentRow, describeInput); status.textContent = "Describe the scene, then Build scene. Change it afterwards in the box next to it (\"add rain\", \"lower the camera\")."; } },
     "|",
     { k: "add", ic: "package-plus", label: "Add object",
       tip: "Put anything on the set: type a name (dog, food truck, man on a horse…); things the library doesn't have are designed by AI.",
-      run: () => { spotlight(addRow, addInput); status.textContent = "Type what to add and press Enter: \"dog\", \"food truck\", \"man on a horse\"…"; } },
+      run: () => { inspect("obj"); spotlight(addRow, addInput); status.textContent = "Type what to add and press Enter: \"dog\", \"food truck\", \"man on a horse\"…"; } },
     { k: "person", ic: "person-standing", label: "Person",
       tip: "Pose a person: pick a pose from the gallery or move any joint, fingers included, keyed on the timeline.",
-      run: () => { if (pickPerson()) posePanel.focusSection("pose"); } },
+      run: () => { if (pickPerson()) { inspect("obj"); posePanel.focusSection("pose"); } } },
     { k: "interact", ic: "handshake", label: "Interact",
       tip: "Make people look at, talk to, shake hands, hug, hold hands, point at, pet or lead someone or something.",
-      run: () => { if (pickPerson()) posePanel.focusSection("interact"); } },
+      run: () => { if (pickPerson()) { inspect("obj"); posePanel.focusSection("interact"); } } },
     { k: "capture", ic: "webcam", label: "Capture motion",
       tip: "Copy a real performance onto a person: from a video clip, or act it out on your webcam.",
-      run: () => { if (pickPerson()) posePanel.focusSection("capture"); } },
+      run: () => { if (pickPerson()) { inspect("obj"); posePanel.focusSection("capture"); } } },
     "|",
     { k: "video", ic: "file-video-camera", label: "Video → Stage",
       tip: "Rebuild a location and its performer from a video clip, with the camera move as keys you can re-shoot.",
@@ -1717,6 +1726,7 @@ function createStageWidget(node, inputName) {
     { k: "photo", ic: "image-up", label: "Photo → 3D",
       tip: "Turn a photo into the whole 3D set, a solid object, a splat, a cut-out card, a backdrop or a floor plan.",
       run: () => {
+        inspect("obj");
         spotlight(photoSel.wrap, photoSel.sel, { instant: true });
         try { photoSel.sel.showPicker(); } catch { /* older browser: the menu is focused instead */ }
         status.textContent = "Choose what the photo should become, then pick the photo.";
@@ -1724,16 +1734,16 @@ function createStageWidget(node, inputName) {
     "|",
     { k: "camera", ic: "camera", label: "Camera",
       tip: "Lens, camera setups (wide, over-the-shoulder, insert…), aspect ratio; drag in the view to frame, keys make the move.",
-      run: () => { spotlight(bar); spotlight(shotRow, null, { scroll: false }); status.textContent = "Frame in the view (drag, scroll), pick a lens, add setups for coverage. A key at the playhead records the move."; } },
+      run: () => { inspect("cam"); spotlight(lensRow); spotlight(shotRow, null, { scroll: false }); status.textContent = "Frame in the view (drag, scroll), pick a lens, add setups for coverage. A key at the playhead records the move."; } },
     { k: "set", ic: "cloud-sun", label: "Set & weather",
       tip: "Where it happens (desert, street at night, interior, water tank…) and the elements: rain, snow, fog, dust.",
-      run: () => { spotlight(envRow, setSel.sel); } },
+      run: () => { inspect("set"); spotlight(envRow, setSel.sel); } },
     { k: "light", ic: "lightbulb", label: "Lighting",
       tip: "Time of day with a real sun, film lights (key, fill, rim, practicals) and classic setups like Rembrandt.",
-      run: () => { spotlight(lightRow, presetSel.sel); } },
+      run: () => { inspect("light"); spotlight(lightRow, presetSel.sel); } },
     { k: "vcam", ic: "smartphone", label: "Phone camera",
       tip: "Hand-hold the shot camera with your phone or headset: open /soundstage/vcam on the device.",
-      run: () => { spotlight(vcamRow, vcamBtn); } },
+      run: () => { inspect("cam"); spotlight(vcamRow, vcamBtn); } },
   ];
   for (const t of TOOLS) {
     if (t === "|") { const sp = Object.assign(document.createElement("span"), { className: "ss-dock-sep" }); sp.setAttribute("aria-hidden", "true"); dock.append(sp); continue; }
@@ -2295,7 +2305,7 @@ function createStageWidget(node, inputName) {
     getCut: () => ({ ...buildCutProject(), ...loadCut() }),
     onAction: (kind, payload = {}) => {
       if (kind === "open_tab") { showView(payload.tab); return true; }
-      if (kind === "describe") { showView("stage"); describeInput.focus(); return true; }
+      if (kind === "describe") { showView("stage"); inspect("ai"); describeInput.focus(); return true; }
       if (kind === "clear_description") { setDescription("", false); return true; }
       if (kind === "keep_description") { setDescription(look.state.description, true); return true; }
       if (kind === "reorder_cut" || kind === "trim_shot") {
@@ -2317,6 +2327,162 @@ function createStageWidget(node, inputName) {
     },
   });
 
+  // ---------------------------------------------------------------- Workspace
+  // One screen, like Blender / Maya / After Effects: the tool rail on the left, the viewport in the middle (as big as
+  // the window allows, never pushed down), a properties inspector on the right that scrolls on its own, and the
+  // timeline docked under the viewport. Every control is the same element as before, only moved, so the viewport
+  // keeps updating live while a slider beside it moves. Narrow (the App's side panel), the same parts stack.
+  function buildWorkspace() {
+    const mk = (tag, cls) => Object.assign(document.createElement(tag), { className: cls });
+    const ws = mk("div", "ss-ws");
+    const rail = mk("div", "ss-rail");
+    const center = mk("div", "ss-center");
+    const vphead = mk("div", "ss-vphead");
+    const vpCell = mk("div", "ss-vpcell");
+    const bottom = mk("div", "ss-bottom");
+    const bottomScroll = mk("div", "ss-bottomscroll");
+    const insp = mk("aside", "ss-insp");
+    insp.setAttribute("aria-label", "Properties");
+    const inspTabs = mk("div", "ss-insp-tabs");
+    inspTabs.setAttribute("role", "tablist");
+    const inspBody = mk("div", "ss-insp-body");
+    // Scrolling panels scroll themselves (never ComfyUI's canvas zoom under them).
+    for (const x of [inspBody, bottomScroll, rail, center]) x.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
+
+    // Inspector sections: one at a time, picked by its tab, a dock tool, or by selecting something in the view.
+    const PANES = [
+      ["obj", "box", "Object", "Add and import things; the selected object or person: look, pose, interactions, motion capture"],
+      ["cam", "camera", "Camera", "Shots and setups, aspect, lens, camera rig, phone camera"],
+      ["set", "cloud-sun", "Set", "The set, weather and elements"],
+      ["light", "lightbulb", "Light", "Time of day, the sun, film lights and lighting setups"],
+      ["ai", "sparkles", "AI", "Describe the scene and AI blocks it; change it by chat"],
+    ];
+    const panes = {}, paneBtns = {};
+    for (const [k, ic, label, tip] of PANES) {
+      const b = Object.assign(document.createElement("button"), { type: "button", className: "ss-insp-tab", title: tip });
+      b.dataset.ssIcon = ic;
+      b.append(icon(ic, 16), Object.assign(document.createElement("span"), { textContent: label }));
+      b.setAttribute("role", "tab");
+      b.addEventListener("pointerdown", (e) => e.stopPropagation());
+      b.addEventListener("click", () => inspect(k));
+      paneBtns[k] = b;
+      inspTabs.append(b);
+      const pane = mk("div", "ss-pane");
+      pane.dataset.pane = k;
+      pane.setAttribute("role", "tabpanel");
+      pane.hidden = true;
+      panes[k] = pane;
+      inspBody.append(pane);
+    }
+    const objHint = mk("div", "ss-hint ss-objhint");
+    objHint.textContent = "Click anything in the view to select it: its look, pose and moves show here.";
+    lensRow.append(lens.wrap, lensPick.el, rigWrap);
+    rowHead(lensRow, "aperture", "Lens & rig");
+    sunRow.append(sunAz.wrap, sunEl.wrap, dome.el);
+    rowHead(sunRow, "sun", "Sun");
+    sel.classList.add("ss-selcard");
+    panes.obj.append(addRow, objHint, sel, apRow, poseHost);
+    panes.cam.append(shotRow, lensRow, vcamRow);
+    panes.set.append(envRow);
+    panes.light.append(lightRow, sunRow, lightSel, lightNote);
+    panes.ai.append(agentRow);
+    // A section's name first (a scene switcher was prepended into the Camera row after its head).
+    for (const row of [shotRow, envRow, lightRow, addRow, apRow, vcamRow, agentRow]) {
+      const hd = row.querySelector(":scope > .ss-rowhead");
+      if (hd && row.firstElementChild !== hd) row.prepend(hd);
+    }
+
+    for (const inp of insp.querySelectorAll("label > input[type=color]")) {
+      if (!inp.title) inp.title = `${inp.parentElement.textContent.trim()} colour`;
+    }
+
+    // Viewport: a slim header (shot / free / top, display mode, the navigation hint), then the picture, fitted.
+    hint.title = hint.textContent;
+    vphead.append(camMode, hint, views);
+    vpCell.append(view);
+    center.append(vphead, vpCell, ladderView, lookView);
+    bottomScroll.append(tracksHost, stripHost, cutBar);
+    bottom.append(time, bottomScroll);
+    rail.append(dock);
+    insp.append(inspTabs, inspBody);
+    ws.append(rail, center, bottom, insp);
+    tabs.after(ws);
+    bar.remove();
+    ladderBar.remove();
+    el.append(status);
+    for (const x of [inspBody, bottomScroll]) x.addEventListener("pointerdown", (e) => e.stopPropagation());
+
+    let pane = null;
+    try { pane = localStorage.getItem("ss_insp_pane"); } catch { /* storage blocked */ }
+    inspect = (k) => {
+      if (!panes[k]) k = "obj";
+      for (const [kk, p] of Object.entries(panes)) p.hidden = kk !== k;
+      for (const [kk, b] of Object.entries(paneBtns)) { b.setAttribute("aria-selected", String(kk === k)); b.setAttribute("aria-pressed", String(kk === k)); }
+      if (pane !== k) inspBody.scrollTop = 0;
+      pane = k;
+      try { localStorage.setItem("ss_insp_pane", k); } catch { /* storage blocked */ }
+    };
+    inspect(pane || "obj");
+
+    // Selecting something brings up its properties (an object or person → Object, a light → Light).
+    let lastSel = stage.selectedInfo?.()?.id ?? null, lastLight = null;
+    const onSel0 = stage.onSelect, onLight0 = stage.onSelectLight;
+    stage.onSelect = (info) => {
+      onSel0?.(info);
+      objHint.hidden = !!info;
+      const id = info?.id ?? null;
+      if (id && id !== lastSel) inspect("obj");
+      lastSel = id;
+    };
+    stage.onSelectLight = (l) => {
+      onLight0?.(l);
+      const id = l?.id ?? l?.name ?? null;
+      if (id && id !== lastLight) inspect("light");
+      lastLight = id;
+    };
+    objHint.hidden = !!lastSel;
+
+    // Fit the picture into its cell at the shot's aspect (letterboxed, never cropped or stretched), so the canvas
+    // element is exactly the picture and clicks land where they look. stage.resize() follows via its own observer.
+    const fitView = () => {
+      if (view.hidden || !vpCell.isConnected) return;
+      const cw = vpCell.clientWidth, ch = vpCell.clientHeight;
+      if (!cw) return;
+      const ar = (stage.fw || 16) / (stage.fh || 9);
+      let w = cw;
+      if (el.dataset.ws === "wide" && ch > 60) w = Math.min(cw, Math.floor(ch * ar));
+      w = `${Math.max(200, w)}px`;
+      if (view.style.width !== w) { view.style.width = w; requestAnimationFrame(() => { try { stage.resize(); } catch { /* disposed */ } }); }
+    };
+    new ResizeObserver(() => fitView()).observe(vpCell);
+    const setAspect0 = stage.setAspect.bind(stage);
+    stage.setAspect = (...a) => { const r = setAspect0(...a); fitView(); return r; };
+    // Wide enough for rail + viewport + inspector side by side? Else stack (the App's side panel).
+    const fitWs = () => {
+      const w = el.clientWidth;
+      const mode = w >= 900 ? "wide" : "narrow";
+      if (el.dataset.ws !== mode) el.dataset.ws = mode;
+      el.style.setProperty("--ss-insp-w", `${w >= 1700 ? 380 : w >= 1300 ? 340 : 300}px`);
+      fitView();
+    };
+    new ResizeObserver(() => fitWs()).observe(el);
+    fitWs();
+    el.classList.add("ss-ws-on");
+
+    syncWorkspace = (k) => {
+      const inWs = k === "stage" || k === "look" || k === "ladder";
+      el.classList.toggle("ss-wsmode", inWs);
+      el.classList.toggle("ss-wsstage", k === "stage");
+      vphead.hidden = vpCell.hidden = k !== "stage";
+      // The shot strip also docks under the Advisor and the Canvas (their screens hide the workspace).
+      if (k === "advisor" || k === "canvas") { if (stripHost.parentElement !== el) el.insertBefore(stripHost, status); }
+      else if (stripHost.parentElement !== bottomScroll) tracksHost.after(stripHost);
+      requestAnimationFrame(fitView);
+    };
+    syncWorkspace(curView);
+  }
+
+  buildWorkspace();
   decorate(el);
   // App title at the left of the tab bar, like the hub apps' panel headers.
   const brand = Object.assign(document.createElement("span"), { className: "ss-brand" });
