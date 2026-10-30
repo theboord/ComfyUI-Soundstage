@@ -2,6 +2,13 @@
 // Pose Studio (head & spine, each arm, each hand finger by finger, each leg). Values are keyed at the playhead, so a pose
 // can change during the shot; LTX copies the clay pose, so this is how a head turn or a gesture gets directed.
 import { jointGroups, JOINT_AXES, jointKind, jointRange, POSE_PRESETS } from "./humans.mjs";
+import { captureTake, recordTake } from "./mocapcapture.mjs";
+
+const ICON = {
+  film: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></svg>',
+  person: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4.5" r="2"/><path d="M12 7v6M12 9l-4 3M12 9l4-2.5M12 13l-3 7M12 13l3.5 6.5"/></svg>',
+  record: '<svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="4.5" fill="#ff453a"/></svg>',
+};
 
 const CSS = `
 .ss-pose { display:flex; flex-direction:column; gap:8px; padding:10px 12px; border-radius:12px; background:rgba(255,255,255,.035);
@@ -19,11 +26,20 @@ const CSS = `
 .ss-pose .ax span { opacity:.7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .ss-pose .ax output { text-align:right; font-variant-numeric:tabular-nums; opacity:.85; }
 .ss-pose input[type=range] { width:100%; accent-color:#f2ff59; }
-.ss-pose .note { opacity:.7; }`;
+.ss-pose .note { opacity:.7; }
+.ss-pose .mocap { display:flex; flex-direction:column; gap:8px; padding:10px; border-radius:10px; background:rgba(242,255,89,.05);
+  border:1px solid rgba(242,255,89,.18); }
+.ss-pose .mocap .title { display:flex; align-items:center; gap:6px; font-weight:650; font-size:13px; }
+.ss-pose .big { display:inline-flex; align-items:center; gap:8px; border-radius:10px; padding:8px 14px; font:inherit; font-weight:600;
+  cursor:pointer; background:rgba(255,255,255,.07); color:inherit; border:1px solid rgba(255,255,255,.16); }
+.ss-pose .big:hover:not(:disabled) { border-color:#f2ff59; }
+.ss-pose .big:disabled { opacity:.45; cursor:default; }
+.ss-pose .take { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.ss-pose .take b { font-weight:600; }`;
 
 export class PosePanel {
-  constructor(container, { stage, onStatus = () => {} } = {}) {
-    this.stage = stage; this.onStatus = onStatus; this.id = null; this.inputs = new Map();
+  constructor(container, { stage, api = null, onStatus = () => {} } = {}) {
+    this.stage = stage; this.api = api; this.onStatus = onStatus; this.id = null; this.inputs = new Map();
     if (!document.getElementById("ss-pose-css")) {
       const st = Object.assign(document.createElement("style"), { id: "ss-pose-css", textContent: CSS });
       document.head.append(st);
@@ -48,7 +64,70 @@ export class PosePanel {
     return b;
   }
 
+  // Motion capture: a performance from a clip (phone video, an existing scene) or acted out on the webcam drives this
+  // person's whole body, hands and path. Runs SAM 3D Body in ComfyUI.
+  _buildMocap() {
+    const box = Object.assign(document.createElement("div"), { className: "mocap" });
+    const title = Object.assign(document.createElement("div"), { className: "title" });
+    title.innerHTML = `${ICON.person}<span>Motion capture</span>`;
+    const note = Object.assign(document.createElement("div"), { className: "note",
+      textContent: "Copy a real performance onto this person: a clip from your phone or an existing video, or act it out on the webcam. Body, hands, fingers and the path all come across." });
+    const file = Object.assign(document.createElement("input"), { type: "file", accept: "video/*,.mp4,.mov,.webm,.mkv", hidden: true });
+    const big = (icon, label, title) => {
+      const b = Object.assign(document.createElement("button"), { type: "button", className: "big", title });
+      b.innerHTML = `${icon}<span>${label}</span>`;
+      return b;
+    };
+    this.mcFile = big(ICON.film, "Capture from video…", "Pick a video of one person performing the action (a few seconds is best)");
+    this.mcAct = big(ICON.record, "Act it out", "Record yourself on the webcam with a 3-2-1 countdown");
+    this.mcFile.addEventListener("click", () => file.click());
+    file.addEventListener("change", () => { const f = file.files?.[0]; file.value = ""; if (f) this._capture(f, 0); });
+    this.mcAct.addEventListener("click", async () => {
+      const r = await recordTake({ seconds: 6 });
+      if (r?.blob) this._capture(r.blob, r.duration);
+    });
+    const row = Object.assign(document.createElement("div"), { className: "row" });
+    row.append(this.mcFile, this.mcAct, file);
+    this.mcTake = Object.assign(document.createElement("div"), { className: "take" });
+    box.append(title, note, row, this.mcTake);
+    return box;
+  }
+
+  async _capture(blob, duration) {
+    const id = this.id;
+    if (!id) return;
+    if (!this.api) { this.onStatus("Motion capture needs the ComfyUI server (it runs SAM 3D Body on the GPU)."); return; }
+    this.mcFile.disabled = this.mcAct.disabled = true;
+    const say = (m) => { this.mcTake.textContent = m; this.onStatus(m); };
+    try {
+      const take = await captureTake(this.api, blob, { name: blob.name, duration, onStatus: say });
+      const msg = this.stage.setMocap(id, take, { start: this.stage.frame });
+      say(`${msg} Captured in ${Math.round(take.seconds)} s.`);
+    } catch (e) {
+      say(`Motion capture failed: ${e.message}`);
+    } finally {
+      this.mcFile.disabled = this.mcAct.disabled = false;
+      this._drawTake();
+    }
+  }
+
+  _drawTake() {
+    const info = this.id && this.stage.mocapInfo?.(this.id);
+    if (!info) { if (!this.mcFile?.disabled) this.mcTake.replaceChildren(); return; }
+    const label = Object.assign(document.createElement("span"), {
+      innerHTML: `<b>${info.name.replace(/[<&]/g, "")}</b> · ${info.loaded ? `${info.seconds.toFixed(1)} s · frames ${info.start}–${info.end}` : "loading…"}` });
+    const travel = Object.assign(document.createElement("label"), { className: "chip", title: "Move through the set as the performer did (off: perform on the spot)" });
+    const tc = Object.assign(document.createElement("input"), { type: "checkbox", checked: info.travel });
+    tc.addEventListener("change", () => { this.stage.setMocapOption(this.id, "travel", tc.checked); this._drawTake(); });
+    travel.append(tc, document.createTextNode(" Travel"));
+    this.mcTake.replaceChildren(label,
+      this._btn("Start at playhead", "The take begins at the current frame", () => { this.stage.setMocapOption(this.id, "start", this.stage.frame); this._drawTake(); this.onStatus(`Take starts at frame ${this.stage.frame}.`); }),
+      travel,
+      this._btn("Remove take", "Back to the walk / pose keys", () => { this.stage.clearMocap(this.id); this._drawTake(); this.onStatus("Motion take removed."); }));
+  }
+
   _build() {
+    this.el.append(this._buildMocap());
     const head = document.createElement("div");
     head.className = "row";
     this.title = Object.assign(document.createElement("strong"), { textContent: "Pose" });
@@ -77,7 +156,8 @@ export class PosePanel {
     this.el.append(inter);
     const hint = Object.assign(document.createElement("div"), { className: "note",
       textContent: "Every slider keys the pose at the playhead. One key holds for the whole shot; add more at other frames and the pose eases between them (a head turn at 2 s). The video follows the clay pose." });
-    this.el.append(head, gallery, hint);
+    this.el.prepend(head);
+    this.el.append(gallery, hint);
     for (const grp of jointGroups()) {
       const d = document.createElement("details");
       d.append(Object.assign(document.createElement("summary"), { textContent: grp.label }));
@@ -135,6 +215,7 @@ export class PosePanel {
     this.id = person ? info.id : null;
     if (person) {
       this.title.textContent = `Pose · ${info.name}`;
+      this._drawTake();
       const others = (this.stage.toJSON().actors || []).filter((a) => a.id !== info.id && !a.carry_id);
       const keep = this.target.value;
       this.target.replaceChildren(...others.map((a) => new Option(a.name || a.kind, a.id)));

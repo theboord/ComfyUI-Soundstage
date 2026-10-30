@@ -4,6 +4,7 @@
 import * as THREE from "../vendor/three.module.min.mjs";
 import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompound } from "./library.mjs";
 import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./humans.mjs";
+import * as Mocap from "./mocap.mjs";
 import { buildSet, buildWater, buildWeather } from "./environments.mjs";
 import { buildCard, loadBackdrop, coverFit } from "./cards.mjs";
 import { buildInterior, fixtureActors, interiorCamera, normalizeSpec, toStage } from "./interior.mjs";
@@ -940,8 +941,23 @@ export class Stage {
       const g = this.actorMeshes.get(a.id);
       if (g) applyJoints(g, this.poseAt(a, this.frame));
     }
+    // Motion capture last: a take recorded from video drives the whole body (and its path) while it plays, and holds
+    // its first / last pose before and after.
+    const mocapIds = new Set();
+    for (const a of this.state.actors) {
+      if (!a.mocap || a.mount_id) continue;
+      const take = Mocap.takeFor(a.mocap);
+      if (!take) { this._loadMocap(a); continue; }
+      const g = this.actorMeshes.get(a.id);
+      if (!g) continue;
+      const p = this._actorPosAt(a, this.frame);
+      Mocap.apply(g, take, a.mocap, this.frame, { x: p[0], y: this._heightAt(a, this.frame), z: p[2], yaw: this._headingAt(a, this.frame) },
+        (a.height_m || 1.8) * (a.scale || 1), this.state.shot?.fps || 24);
+      mocapIds.add(a.id);
+    }
     // Look at: the head and neck turn toward a target every frame (from look_at_frame on), within a natural range.
     for (const a of this.state.actors) {
+      if (mocapIds.has(a.id)) continue;
       if (!a.look_at || this.frame < (a.look_at_frame || 0) - 8) continue;
       if (a.look_until != null && this.frame > a.look_until + 8) continue;
       // Ease in over 8 frames from look_at_frame, and back out over 8 frames after look_until.
@@ -2571,6 +2587,72 @@ export class Stage {
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
     return msg;
+  }
+
+  // ------------------------------------------------------------------ motion capture
+  /** Fetch a take the scene names but this page has not loaded yet; redraw when it arrives. */
+  _loadMocap(a) {
+    const file = a.mocap?.file;
+    if (!file || a.mocap.data) return;
+    this._mocapLoading = this._mocapLoading || new Set();
+    if (this._mocapLoading.has(file)) return;
+    this._mocapLoading.add(file);
+    Mocap.load(file, { fetchApi: this.fetchApi || ((u) => fetch(u)) })
+      .then(() => { this.setFrame(this.frame); this.onMocap?.(a.id); })
+      .catch((e) => { this.onInteract?.(`Couldn't load the motion take ${file}: ${e.message}`); })
+      .finally(() => this._mocapLoading.delete(file));
+  }
+
+  /**
+   * Put a captured take on a person. take: {file, data?} (data = the take JSON, cached so playback is instant).
+   * It starts at the playhead unless opts.start is given; it plays from where they stand, turned to their facing.
+   */
+  setMocap(id, take, opts = {}) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a || !PERSON_KINDS.has(a.kind)) return "Pick a person first.";
+    if (take.data && take.file) Mocap.remember(take.file, take.data);
+    a.mocap = { file: take.file, start: opts.start ?? this.frame, travel: opts.travel ?? true, speed: opts.speed || 1,
+      loop: !!opts.loop, ...(take.file ? {} : { data: take.data }), name: take.name || take.file?.split("/").pop()?.replace(/_\d{8}_\d{6}\.json$/, "") };
+    const t = Mocap.takeFor(a.mocap);
+    // A take longer than the shot: stretch the shot so the whole performance fits (up to 20 s).
+    if (t) {
+      const fps = this.state.shot?.fps || 24;
+      const need = Math.ceil(a.mocap.start + (t.n - 1) * fps / t.fps / (a.mocap.speed || 1)) + 1;
+      if (need > (this.state.shot?.frames || 97) && need <= fps * 20) this.state.shot.frames = need;
+    }
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    return t ? `Motion take on ${a.name || a.kind}: ${t.n} frames (${(t.n / t.fps).toFixed(1)} s) from frame ${a.mocap.start}.` : "Motion take added (loading…).";
+  }
+
+  /** Change a take's start frame, travel (move through the set) or speed. */
+  setMocapOption(id, key, value) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a?.mocap) return;
+    if (key === "start") a.mocap.start = Math.max(0, Math.round(value));
+    else if (key === "travel") a.mocap.travel = !!value;
+    else if (key === "loop") a.mocap.loop = !!value;
+    else if (key === "speed") a.mocap.speed = Math.max(0.25, Math.min(4, +value || 1));
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  clearMocap(id) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a?.mocap) return;
+    delete a.mocap;
+    for (const j of Object.values(this.actorMeshes.get(id)?.userData?.joints || {})) j.rotation.set(...(j.userData.rest || [0, 0, 0]));
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  mocapInfo(id) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a?.mocap) return null;
+    const t = Mocap.takeFor(a.mocap), fps = this.state.shot?.fps || 24;
+    return { name: a.mocap.name || "take", file: a.mocap.file, start: a.mocap.start || 0, travel: a.mocap.travel !== false,
+      speed: a.mocap.speed || 1, loop: !!a.mocap.loop, loaded: !!t, frames: t?.n || 0, seconds: t ? t.n / t.fps : 0,
+      end: t ? Math.round((a.mocap.start || 0) + (t.n - 1) * fps / t.fps / (a.mocap.speed || 1)) : null };
   }
 
   poseInfo(id) {
