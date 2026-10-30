@@ -21,6 +21,210 @@ export const DEFAULT_APPEARANCE = {
     bottom: "shorts", bottom_color: "#38536b", shoes_color: "#f2f2f2" },
 };
 
+// ------------------------------------------------------------------ sculpted hair
+// Hair is modelled as clay would be: a shell over the skull whose thickness carries the volume, a defined hairline,
+// a parting and clumped locks (grooves), plus hanging curtains for long hair. Everything is written at 1.8 m around
+// the head centre; x is the figure's left, y up, z the face.
+const HEAD_R = [0.0945, 0.1134, 0.105];   // the head ellipsoid's semi-axes
+const HIDE = -0.012;                       // shell thickness where there's no hair: tucked under the scalp
+const DEG = Math.PI / 180;
+const sstep = (a, b, v) => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+const table = (tab, v) => {
+  if (v <= tab[0][0]) return tab[0][1];
+  for (let i = 1; i < tab.length; i++) if (v <= tab[i][0]) {
+    const [x0, y0] = tab[i - 1], [x1, y1] = tab[i];
+    return y0 + ((y1 - y0) * (v - x0)) / (x1 - x0);
+  }
+  return tab[tab.length - 1][1];
+};
+const azDeg = (x, z) => Math.abs(Math.atan2(x, z)) / DEG;   // 0 = the face, 180 = the back
+
+/** Outward triangles (optional) and smooth normals across UV seams and poles. */
+function finishGeo(geo, orient) {
+  const p = geo.attributes.position, P = p.array, idx = geo.index.array;
+  if (orient) {
+    let vol = 0;
+    for (let i = 0; i < idx.length; i += 3) {
+      const a = idx[i] * 3, b = idx[i + 1] * 3, c = idx[i + 2] * 3;
+      vol += P[a] * (P[b + 1] * P[c + 2] - P[b + 2] * P[c + 1]) - P[a + 1] * (P[b] * P[c + 2] - P[b + 2] * P[c])
+        + P[a + 2] * (P[b] * P[c + 1] - P[b + 1] * P[c]);
+    }
+    if (vol < 0) for (let i = 0; i < idx.length; i += 3) { const t = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = t; }
+  }
+  geo.computeVertexNormals();
+  const n = geo.attributes.normal, groups = new Map();
+  for (let i = 0; i < p.count; i++) {
+    const key = `${Math.round(P[i * 3] * 1e5)},${Math.round(P[i * 3 + 1] * 1e5)},${Math.round(P[i * 3 + 2] * 1e5)}`;
+    const g = groups.get(key);
+    if (g) g.push(i); else groups.set(key, [i]);
+  }
+  for (const ids of groups.values()) {
+    if (ids.length < 2) continue;
+    let x = 0, y = 0, z = 0;
+    for (const i of ids) { x += n.getX(i); y += n.getY(i); z += n.getZ(i); }
+    const l = Math.hypot(x, y, z);
+    if (l < 1e-6) continue;
+    for (const i of ids) n.setXYZ(i, x / l, y / l, z / l);
+  }
+  return geo;
+}
+
+/** A shell over the head: thick(x, y, z) of a unit direction gives the hair thickness there (HIDE = no hair). */
+function headShell(thick, ws = 64, hs = 48) {
+  const geo = new THREE.SphereGeometry(1, ws, hs);
+  const p = geo.attributes.position, tv = new Float32Array(p.count);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const t = (tv[i] = thick(x, y, z));
+    const r = 1 / Math.hypot(x / HEAD_R[0], y / HEAD_R[1], z / HEAD_R[2]) + t;
+    p.setXYZ(i, x * r, y * r, z * r);
+  }
+  // Triangles wholly under the scalp are never seen: drop them (about half the sphere).
+  const idx = geo.index.array, keep = [];
+  for (let i = 0; i < idx.length; i += 3) {
+    if (tv[idx[i]] > -0.002 || tv[idx[i + 1]] > -0.002 || tv[idx[i + 2]] > -0.002) keep.push(idx[i], idx[i + 1], idx[i + 2]);
+  }
+  geo.setIndex(keep);
+  return finishGeo(geo, false);
+}
+
+/**
+ * A hanging curtain of hair: a closed band (lens cross-section) wrapped round the vertical axis at azimuth az ± span
+ * (0 = the face, 180 = the back), from yTop down by len(a), with grooved locks on the outside and pointed tips.
+ * a runs -1..1 across, t 0..1 down; rx/rz(t) are the wrap radii, th(t) the half thickness, w(t) narrows the span.
+ */
+function hairDrape(o, ws = 40, hs = 26) {
+  const geo = new THREE.SphereGeometry(1, ws, hs);
+  const p = geo.attributes.position, uv = geo.attributes.uv;
+  for (let i = 0; i < p.count; i++) {
+    const phi = uv.getX(i) * Math.PI * 2, t = 1 - uv.getY(i);
+    const a = Math.cos(phi), b = Math.sin(phi);
+    const ridge = Math.abs(Math.cos((o.locks * Math.PI * (a + 1)) / 2)) ** 0.7;
+    const end = Math.min(1, Math.sin(Math.PI * t) * 4);                  // close the top and bottom to a thin edge
+    const y = o.yTop - t * (o.len(a) + o.tip * ridge ** 3);
+    const th = o.th(t) * end * (b > 0 ? 1 - o.groove * (1 - ridge) : 1);
+    const az = (o.az + a * o.span * (o.w ? o.w(t) : 1)) * DEG;
+    const off = b * th;
+    p.setXYZ(i, (o.rx(t) + off) * Math.sin(az), y, (o.rz(t) + off) * Math.cos(az));
+  }
+  return finishGeo(geo, true);
+}
+
+/** Locks radiating from a whorl / tie point: ridge 1 on a lock, 0 in the groove between two. */
+function radial(cx, cy, cz, n) {
+  const w = new THREE.Vector3(cx, cy, cz).normalize();
+  const e1 = new THREE.Vector3(0, 0, 1).cross(w);
+  if (e1.lengthSq() < 1e-6) e1.set(1, 0, 0);
+  e1.normalize();
+  const e2 = new THREE.Vector3().crossVectors(w, e1);
+  return (x, y, z) => {
+    const phi = Math.atan2(x * e2.x + y * e2.y + z * e2.z, x * e1.x + y * e1.y + z * e1.z);
+    return [Math.abs(Math.cos((n * phi) / 2)) ** 0.7, sstep(0.96, 0.7, x * w.x + y * w.y + z * w.z)];
+  };
+}
+
+// Where a cap's crown ends (unit-sphere height by azimuth) and where a hat presses the hair flat.
+const CAP_TAB = [[0, 0.36], [50, 0.32], [90, 0.22], [130, 0.08], [180, 0.02]];
+const CAP_EDGE = (A) => table(CAP_TAB, A);
+const HAT_EDGE = () => 0.45;
+const pressed = (T, y, A, compress) => (compress ? Math.min(T, y > compress(A) - 0.1 ? 0.01 : 0.017) : T);
+
+/** Short cut: volume on top, a lifted front, a side parting, tapered sides and nape; ears and sideburns show. */
+function shortShell({ female = false, child = false, compress = null } = {}) {
+  const crown = radial(0.12, 0.78, -0.62, child ? 11 : 13);
+  const front = female ? 0.4 : child ? 0.38 : 0.5;
+  const tab = female
+    ? [[0, front], [22, front + 0.03], [40, front], [54, 0.3], [64, 0.18], [74, 0.0], [84, 0.12], [104, 0.18], [116, -0.1], [140, -0.5], [180, -0.7]]
+    : [[0, front], [22, front + 0.02], [40, front - 0.02], [54, 0.34], [64, 0.12], [72, -0.1], [80, -0.08], [85, 0.25],
+      [104, 0.26], [114, 0.02], [128, -0.3], [150, -0.5], [180, -0.56]];
+  return (x, y, z) => {
+    const A = azDeg(x, z);
+    const [ridge, fade] = crown(x, y, z);
+    const hl = table(tab, A) - (female || child ? 0.1 : 0.06) * ridge ** 3 * sstep(58, 20, A);   // fringe breaks into locks
+    let T = 0.01 + 0.024 * sstep(0.05, 0.85, y) + 0.012 * sstep(0.25, 0.7, z) * sstep(0.35, 0.8, y);
+    T -= 0.004 * sstep(-0.1, -0.5, y);
+    T -= 0.01 * Math.exp(-(((x + 0.34) / 0.08) ** 2)) * sstep(-0.5, 0.1, z) * sstep(0.4, 0.62, y);   // parting
+    T *= 1 - 0.38 * fade * (1 - ridge);
+    T = pressed(T, y, A, compress);
+    const m = sstep(hl - 0.035, hl + 0.035, y);
+    return HIDE + (T - HIDE) * m;
+  };
+}
+
+/** Long hair over the skull: crown volume, a parting, a side-swept fringe, fuller towards the bottom; ears covered. */
+function longShell(compress) {
+  return (x, y, z) => {
+    const A = azDeg(x, z);
+    let hl = table([[0, 0.56], [20, 0.6], [34, 0.5], [46, 0.25], [54, -1.5]], A);
+    if (A < 46) hl = Math.max(0.33, hl - 0.24 * sstep(0.3, -0.3, x));                       // the fringe sweeps across
+    let T = 0.02 + 0.014 * sstep(0.2, 0.9, y) + 0.012 * sstep(0.1, -0.7, z) * sstep(0.7, 0, y) + 0.012 * sstep(0.1, -0.8, y);
+    T -= 0.012 * Math.exp(-(((x - 0.28) / 0.08) ** 2)) * sstep(-0.6, 0.2, z) * sstep(0.45, 0.7, y);   // parting
+    T += 0.006 * sstep(0.3, -0.3, x) * sstep(40, 10, A) * sstep(0.75, 0.45, y);
+    const strands = Math.abs(Math.cos(13 * Math.atan2(x, z))) ** 0.7;
+    T *= 1 - 0.3 * sstep(0.92, 0.55, y) * (1 - strands);
+    T = pressed(T, y, A, compress);
+    const m = sstep(hl - 0.035, hl + 0.035, y);
+    return HIDE + (T - HIDE) * m;
+  };
+}
+
+/** Hair pulled back to a tie (ponytail, bun): close to the head, combed towards the tie. */
+function slickShell(tieY) {
+  const tie = radial(0, tieY, -1, 16);
+  const tab = [[0, 0.55], [30, 0.5], [50, 0.38], [62, 0.2], [74, 0.0], [84, 0.2], [104, 0.22], [116, -0.1], [140, -0.5], [180, -0.62]];
+  return (x, y, z) => {
+    const A = azDeg(x, z);
+    const [ridge, fade] = tie(x, y, z);
+    const T = (0.011 + 0.01 * sstep(0.2, 0.9, y)) * (1 - 0.4 * fade * (1 - ridge));
+    const m = sstep(table(tab, A) - 0.03, table(tab, A) + 0.03, y);
+    return HIDE + (T - HIDE) * m;
+  };
+}
+
+const CURLS = Array.from({ length: 110 }, (_, i) => {
+  const y = 1 - (2 * (i + 0.5)) / 110, r = Math.sqrt(1 - y * y), th = i * 2.399963;
+  return [r * Math.cos(th), y, r * Math.sin(th)];
+});
+/** Curly: a full rounded mass of curls (bigger and down to the jaw for women). */
+function curlyShell(female) {
+  const c0 = Math.cos(0.24);
+  const tab = female ? [[0, 0.48], [30, 0.45], [48, 0.2], [58, -0.5], [90, -0.6], [180, -0.85]]
+    : [[0, 0.46], [35, 0.42], [55, 0.3], [70, 0.15], [85, 0.24], [105, 0.24], [125, -0.2], [180, -0.5]];
+  return (x, y, z) => {
+    const A = azDeg(x, z);
+    let b = 0;
+    for (const p of CURLS) {
+      const c = x * p[0] + y * p[1] + z * p[2];
+      if (c > c0) { const f = (c - c0) / (1 - c0); b = Math.max(b, f * f * (3 - 2 * f)); }
+    }
+    let T = (female ? 0.034 : 0.022) + (female ? 0.016 : 0.012) * sstep(0, 0.8, y) + 0.016 * b;
+    if (female) T += 0.012 * sstep(0.2, -0.6, y);
+    const hl = table(tab, A);
+    return HIDE + (T - HIDE) * sstep(hl - 0.04, hl + 0.03, y);
+  };
+}
+
+/** A baseball cap's crown: six panels, a crisp edge above the ears. */
+function capShell(x, y, z) {
+  const az = Math.atan2(x, z), e = CAP_EDGE(Math.abs(az) / DEG);
+  let T = 0.026 + 0.006 * sstep(0.3, 0.9, y);
+  T -= 0.004 * Math.exp(-((Math.sin(3 * az) / 0.1) ** 2)) * sstep(0.95, 0.7, y) * sstep(e + 0.02, e + 0.12, y);
+  return HIDE + (T - HIDE) * sstep(e - 0.02, e + 0.02, y);
+}
+
+/** Long hair down the back, past the shoulder blades, standing off the chest so it never sinks into the back. */
+function backFall(torsoBack) {
+  const rzLow = Math.max(0.12, torsoBack + 0.032), rxLow = rzLow * 1.12;
+  return { az: 180, span: 60, yTop: 0, len: (a) => 0.44 - 0.07 * a * a, locks: 7, groove: 0.4, tip: 0.04,
+    rx: (t) => 0.082 + (rxLow - 0.082) * sstep(0.08, 0.42, t), rz: (t) => 0.098 + (rzLow - 0.098) * sstep(0.12, 0.42, t),
+    th: (t) => 0.008 + 0.016 * Math.sin(Math.PI * t ** 0.8) };
+}
+/** Hair framing the face on one side (side = +1 the figure's left), down to the shoulders. */
+function sideLock(side) {
+  return { az: side * 84, span: 24, yTop: 0, len: (a) => 0.14 + 0.015 * a * side, locks: 3, groove: 0.35, tip: 0.025,
+    rx: (t) => 0.098 + 0.012 * t, rz: (t) => 0.098 + 0.012 * t, th: (t) => 0.008 + 0.012 * Math.sin(Math.PI * t ** 0.7) };
+}
+
 /**
  * Build a figure. mesh(geom, color) returns a shadowed mesh with that colour.
  * Returns a Group (origin on the floor, facing +Z) with userData.limbs for the walk cycle.
@@ -64,7 +268,12 @@ export function buildHuman(kind, heightM, appearance, mesh) {
   const shoulderR = (female ? 0.17 : 0.2) * bw * s, waistR = (female ? 0.13 : 0.15) * bw * s;
   U(new THREE.CylinderGeometry(shoulderR, waistR, 0.52 * s, 20), topCol, 0, 1.24 * s, 0, 1, 1, 0.62);
   add(g, new THREE.SphereGeometry(waistR * 1.12, 18, 12), ap.top === "dress" ? topCol : botCol, 0, 0.96 * s, 0, female ? 1.15 : 1.02, 0.7, 0.75);
-  if (female && ap.top !== "uniform") U(new THREE.SphereGeometry(0.06 * s * bw, 12, 10), topCol, 0, 1.33 * s, 0.07 * s, 1.9, 0.9, 0.9);
+  // Rounded shoulders: a low yoke over the flat top of the torso and deltoid caps, so the clay doesn't read as a can.
+  U(new THREE.SphereGeometry(shoulderR, 24, 6, 0, Math.PI * 2, 0, Math.PI / 2), topCol, 0, 1.496 * s, -0.01 * s, 1, 0.13, 0.62);
+  for (const sx of [-1, 1]) U(new THREE.SphereGeometry(0.056 * bw * s, 14, 10), topCol, sx * (shoulderR + 0.014 * s), 1.468 * s, 0, 1, 0.95, 0.9);
+  if (female && ap.top !== "uniform") {
+    for (const sx of [-1, 1]) U(new THREE.SphereGeometry(0.05 * s * bw, 14, 10), topCol, sx * 0.036 * s * bw, 1.325 * s, 0.064 * s * bw, 1.05, 0.9, 0.72);
+  }
   // Long garments: coat hem, dress, skirt.
   if (ap.top === "coat") add(g, new THREE.CylinderGeometry(waistR * 1.05, waistR * 1.45, 0.42 * s, 20), topCol, 0, 0.86 * s, 0, 1, 1, 0.7);
   if (ap.top === "suit" || ap.top === "jacket") add(g, new THREE.CylinderGeometry(waistR * 1.02, waistR * 1.1, 0.12 * s, 20), topCol, 0, 0.93 * s, 0, 1, 1, 0.68);
@@ -72,48 +281,79 @@ export function buildHuman(kind, heightM, appearance, mesh) {
   if (ap.bottom === "skirt" && ap.top !== "dress") add(g, new THREE.ConeGeometry(waistR * 1.9, 0.34 * s, 22, 1, true), botCol, 0, 0.8 * s, 0, 1, 1, 0.8);
   if (ap.top === "hoodie") U(new THREE.TorusGeometry(0.1 * s, 0.035 * s, 8, 16), topCol, 0, 1.5 * s, -0.04 * s, 1, 1, 0.8);
 
-  // Neck and head (no face: previz stays anonymous).
+  // Neck and head. No eyes or mouth (previz stays anonymous), but a brow, nose, jaw, chin and ears, so a head turn
+  // reads in the clay and the video model can follow which way someone is looking.
   N(new THREE.CylinderGeometry(0.045 * s, 0.05 * s, 0.1 * s, 12), skin, 0, 1.53 * s, 0);
-  const headY = 1.67 * s;
-  H(new THREE.SphereGeometry(0.105 * s, 20, 16), skin, 0, headY, 0.005 * s, 0.9, 1.08, 1);
-  // Directional cues, still anonymous (no eyes or mouth): nose, brow, chin and ears, so a head turn reads in
-  // the clay and the video model can follow which way someone is looking.
-  H(new THREE.ConeGeometry(0.018 * s, 0.045 * s, 10), skin, 0, headY - 0.012 * s, 0.103 * s).rotation.x = Math.PI / 2;
-  H(new THREE.BoxGeometry(0.15 * s, 0.018 * s, 0.03 * s), skin, 0, headY + 0.032 * s, 0.085 * s);
-  H(new THREE.SphereGeometry(0.05 * s, 14, 10), skin, 0, headY - 0.07 * s, 0.05 * s, 1.2, 0.8, 1);
-  for (const ex of [-1, 1]) H(new THREE.SphereGeometry(0.024 * s, 10, 8), skin, ex * 0.095 * s, headY - 0.005 * s, -0.005 * s, 0.45, 1, 0.8);
+  const hk = kind === "child" ? 1.1 : 1;                  // children: a bigger head for their height, crown kept in place
+  const k = s * hk;
+  const headY = (1.67 + HEAD_R[1] * (1 - hk)) * s;
+  // F: a head part written at 1.8 m around the head centre, scaled into place.
+  const F = (geom, color, x, y, z, sx = 1, sy = 1, sz = 1) => H(geom, color, x * k, headY + y * k, z * k, sx * k, sy * k, sz * k);
+  F(new THREE.SphereGeometry(0.105, 28, 20), skin, 0, 0, 0.005, 0.9, 1.08, 1);
+  F(new THREE.SphereGeometry(0.06, 18, 8), skin, 0, 0.03, 0.086, 1.15, female ? 0.18 : 0.23, 0.34);                // brow ridge
+  F(new THREE.SphereGeometry(0.016, 12, 10), skin, 0, -0.008, 0.1, 0.75, 1.65, 0.95).rotation.x = -0.32;        // nose bridge
+  F(new THREE.SphereGeometry(0.013, 10, 8), skin, 0, -0.03, 0.106);                                             // nose tip
+  F(new THREE.SphereGeometry(0.05, 16, 12), skin, 0, -0.066, 0.04, female ? 1.15 : 1.32, 0.78, 0.95);            // jaw
+  F(new THREE.SphereGeometry(female ? 0.017 : 0.02, 12, 10), skin, 0, -0.084, 0.062, 1.3, 0.85, 0.85);           // chin
+  for (const ex of [-1, 1]) F(new THREE.SphereGeometry(0.024, 10, 8), skin, ex * 0.095, -0.005, -0.005, 0.45, 1, 0.8);
 
-  // Hair / headwear.
+  // Hair and headwear: sculpted shells over the skull (volume, a hairline, a parting, clumped locks) plus hanging
+  // hair, so it reads as hair in the grey clay pass from any angle, not as a skull cap. Long hair below the head
+  // hangs from the NECK, so it stays on the back when the head turns instead of swinging through the shoulders.
   const hc = ap.hair_color;
-  const cap = (r, sy) => H(new THREE.SphereGeometry(r, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), hc, 0, headY + 0.01 * s, -0.005 * s, 0.95, sy, 1.02);
-  switch (ap.hair) {
+  const style = ap.hair;
+  const torsoBack = (shoulderR / s) * 0.62;                 // the back of the chest, for hair falling down the back
+  const shell = (fn, col = hc) => { const m = F(headShell(fn), col, 0, 0, 0.005); m.userData.part = "hair"; return m; };
+  const hang = (o, col = hc, onNeck = true) => {
+    const geo = hairDrape(o);
+    const m = onNeck ? N(geo, col, 0, headY, 0.005 * k, k, k, k) : F(geo, col, 0, 0, 0.005);
+    m.userData.part = "hair";
+    return m;
+  };
+  const longHair = (col, compress) => {
+    shell(longShell(compress), col);
+    hang(backFall(torsoBack), col);
+    for (const side of [-1, 1]) hang(sideLock(side), col, false);
+  };
+  // Under a hat the hair is pressed flat; for a hat the colour picker colours the hat, so the hair keeps the default.
+  const underCol = (DEFAULT_APPEARANCE[kind] || DEFAULT_APPEARANCE.man).hair_color;
+  switch (style) {
     case "bald":
       break;
     case "long":
-      cap(0.112 * s, 1.05);
-      H(new THREE.BoxGeometry(0.2 * s, 0.32 * s, 0.07 * s), hc, 0, headY - 0.13 * s, -0.07 * s);
+      longHair(hc, 0);
       break;
-    case "bun":
-      cap(0.11 * s, 1);
-      H(new THREE.SphereGeometry(0.05 * s, 12, 10), hc, 0, headY + 0.06 * s, -0.1 * s);
+    case "bun": {
+      shell(slickShell(0.3));
+      const bun = F(new THREE.TorusGeometry(0.03, 0.021, 10, 20), hc, 0, 0.075, -0.112, 1, 1, 0.9);
+      bun.rotation.x = -0.5;
+      F(new THREE.SphereGeometry(0.034, 14, 10), hc, 0, 0.078, -0.118, 1, 1, 0.9);
       break;
+    }
     case "ponytail":
-      cap(0.11 * s, 1);
-      H(new THREE.CapsuleGeometry(0.03 * s, 0.18 * s, 4, 8), hc, 0, headY - 0.08 * s, -0.12 * s);
+      shell(slickShell(-0.05));
+      hang({ az: 180, span: 13, yTop: 0.03, len: () => 0.3, rx: (t) => 0.125 + 0.02 * Math.sin(Math.PI * t * 0.8), rz: (t) => 0.125 + 0.02 * Math.sin(Math.PI * t * 0.8),
+        th: (t) => 0.024 * (1 - 0.55 * t), w: (t) => 1 - 0.45 * t * t, locks: 4, groove: 0.35, tip: 0.03 }, hc, false);
       break;
     case "curly":
-      H(new THREE.IcosahedronGeometry(0.13 * s, 1), hc, 0, headY + 0.03 * s, -0.01 * s, 1, 0.9, 1);
+      shell(curlyShell(female));
       break;
-    case "cap":
-      cap(0.112 * s, 0.9);
-      H(new THREE.BoxGeometry(0.16 * s, 0.015 * s, 0.1 * s), topCol, 0, headY + 0.03 * s, 0.11 * s);
+    case "cap": {
+      if (female) longHair(hc, CAP_EDGE); else shell(shortShell({ female, child: kind === "child", compress: CAP_EDGE }));
+      shell(capShell, topCol);
+      const brim = F(new THREE.CylinderGeometry(0.11, 0.11, 0.011, 24, 1, false, -Math.PI / 2, Math.PI), topCol, 0, 0.04, 0.07, 1, 1, 1.15);
+      brim.rotation.x = 0.14;
+      F(new THREE.SphereGeometry(0.009, 8, 6), topCol, 0, 0.148, -0.01);                       // the button on top
       break;
+    }
     case "hat":
-      H(new THREE.CylinderGeometry(0.2 * s, 0.2 * s, 0.015 * s, 24), hc, 0, headY + 0.06 * s, 0);
-      H(new THREE.CylinderGeometry(0.1 * s, 0.11 * s, 0.11 * s, 20), hc, 0, headY + 0.12 * s, 0);
+      if (female) longHair(underCol, HAT_EDGE); else shell(shortShell({ female, child: kind === "child", compress: HAT_EDGE }), underCol);
+      F(new THREE.CylinderGeometry(0.2, 0.2, 0.015, 32), hc, 0, 0.06, 0);
+      F(new THREE.CylinderGeometry(0.098, 0.112, 0.11, 24), hc, 0, 0.12, 0);
+      F(new THREE.CylinderGeometry(0.113, 0.113, 0.022, 24), hc, 0, 0.078, 0, 1, 1, 1);           // band
       break;
     default: // short
-      cap(0.11 * s, 0.95);
+      shell(shortShell({ female, child: kind === "child" }));
   }
 
   // Limbs: pivot groups at shoulders/hips, with elbow/knee pivots so the walk bends naturally.
