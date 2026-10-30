@@ -57,3 +57,29 @@ async def designer_info(request):
     import folder_paths
     available = DESIGNER_MODEL in (folder_paths.get_filename_list("text_encoders") or [])
     return web.json_response({"system_prompt": od.SYSTEM_PROMPT, "model": DESIGNER_MODEL, "available": available})
+
+
+@routes.get("/soundstage/source_spec")
+async def source_spec(request):
+    """?filename=&subfolder=&type=input|output[&original=A001_C002.R3D] -> the clip's source spec (ffprobe).
+    original = the camera RAW file this proxy was made from (the exports relink to it). docs/source_fidelity.md"""
+    import asyncio
+    import os
+
+    import folder_paths
+
+    from .footage import sourcespec
+    q = request.query
+    name, sub = q.get("filename", ""), q.get("subfolder", "")
+    base = folder_paths.get_directory_by_type(q.get("type", "input") or "input")
+    if not name or base is None:
+        return web.json_response({"error": "send ?filename=&subfolder=&type="}, status=400)
+    base = os.path.abspath(base)
+    path = os.path.abspath(os.path.join(base, sub, name))
+    if os.path.commonpath([base, path]) != base or not os.path.isfile(path):
+        return web.json_response({"error": "no such file"}, status=404)
+    try:
+        spec = await asyncio.to_thread(sourcespec.probe, path)
+    except Exception as exc:  # noqa: BLE001 - reported to the browser
+        return web.json_response({"error": str(exc)}, status=422)
+    return web.json_response(sourcespec.link_original(spec, q.get("original", "")))

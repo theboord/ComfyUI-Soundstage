@@ -91,7 +91,7 @@ def solve(npz: dict, frame_files: list[str], seed: int = 0):
 
 
 async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = True, backdrop: bool = True,
-              progress=None, mocap: bool = True) -> dict:
+              progress=None, mocap: bool = True, original: str = "") -> dict:
     say = progress or (lambda step, frac: None)
     t0 = time.perf_counter()
     timings: dict = {}
@@ -100,6 +100,13 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
     clip = frames.probe(path)
     if clip["duration"] <= 0:
         raise ValueError("the clip has no duration")
+    # Source spec (docs/source_fidelity.md): what the clip really is, so Deliver hands it back the same.
+    try:
+        from ..footage import sourcespec
+        source = sourcespec.link_original(sourcespec.probe(path), original)
+    except Exception as exc:  # noqa: BLE001 - the rebuild never depends on it
+        source = None
+        notes.append(f"source spec: could not read it ({exc})")
     tag = hashlib.sha1(f"{video}:{os.path.getsize(path)}:{os.path.getmtime(path)}".encode()).hexdigest()[:10]
     sub = f"soundstage/v2s_{tag}"
     say("Sampling frames", 0.05)
@@ -154,13 +161,15 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
     view = lambda f: {"filename": os.path.basename(f), "subfolder": sub, "type": "input"}  # noqa: E731
     reference = {"video": video, "fps": clip["fps"], "frames": clip["frames"], "duration": clip["duration"],
                  "width": clip["width"], "height": clip["height"], "sample_times": times,
-                 "samples": [view(f) for f in files], "footage_node": "SoundstageFootage"}
+                 "samples": [view(f) for f in files], "footage_node": "SoundstageFootage", "source": source}
     scene = convert.assemble(poses=poses, scales=scales, times=times, K=K, size=(w, h), depths=list(packet["depth"]),
                              ground=ground, breakdown=breakdown, clip=clip, reference=reference, notes=notes,
                              skies=None if packet.get("sky") is None else list(packet["sky"].astype(np.float32)),
                              repin=any(n.startswith("depth: straightened") for n in notes),
                              backdrop={"url": "/view?filename={}&subfolder={}&type={}".format(
                                  glb["filename"], glb.get("subfolder", ""), glb.get("type", "output"))} if glb else None)
+    if source and scene.get("shots"):
+        scene["shots"][0]["source"] = source   # the setup that re-shoots the clip: its plate, for the NLE export
     # The performer: SAM 3D Body copies the person's whole performance onto a clay actor standing in the rebuilt set.
     PEOPLE = ("person", "man", "woman", "boy", "girl", "child", "kid", "people", "dancer", "runner", "athlete", "rider",
               "driver", "player", "boxer", "fighter", "skater", "hiker", "actor", "guy", "lady")

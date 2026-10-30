@@ -7,6 +7,7 @@
 import * as TL from "./timeline.mjs";
 import { exportAll, fpsInfo, framesToTC, recordStart } from "./exporters.mjs";
 import { icon } from "../ui/icons.mjs";
+import { sourceLine } from "../ui/sourcespec.mjs";
 
 /** A transport button's face: a Lucide icon (plus an optional speed like "2×"); the title names it for screen readers. */
 const face = (b, name, extra = "") => {
@@ -59,6 +60,8 @@ const CSS = `
 .ss-cut-chip i{width:8px;height:8px;border-radius:2px;display:inline-block}
 .ss-cut-chip small{color:#8b94a1}
 .ss-cut-help{color:#6f7985;font-size:11px}
+.ss-cut-src{flex-basis:100%;color:#8fb8ad;font-size:11px;line-height:1.35}
+.ss-cut-chip em{font-style:normal;font-size:9px;letter-spacing:.04em;color:#0d1117;background:#7fd1c0;border-radius:3px;padding:0 3px}
 `;
 
 function injectCSS() {
@@ -703,8 +706,27 @@ export class CutPanel {
       const meta = document.createElement("small");
       meta.textContent = [s.setup, this._dur(s.frames)].filter(Boolean).join(" · ");
       chip.append(dot, name, meta);
+      if (s.source) {
+        // Imported footage (docs/source_fidelity.md): the exports point at the camera original.
+        const tag = document.createElement("em");
+        tag.textContent = "SRC";
+        chip.append(tag);
+        chip.title += `\n${sourceLine(s.source)}`;
+      }
       chip.addEventListener("pointerdown", (e) => this._chipDown(e, s.id));
       this.bin.append(chip);
+    }
+    const srcShots = this.project.shots.filter((s) => s.source);
+    if (srcShots.length) {
+      const line = document.createElement("div");
+      line.className = "ss-cut-src";
+      const d = this.project.delivery;
+      line.textContent = [...new Set(srcShots.map((s) => sourceLine(s.source)))].join("\n") + "\n" +
+        (d ? `Exports deliver at the source spec: ${d.width}×${d.height} at ${d.fps} fps; imported shots link to the camera original with its own reel and timecode.`
+           : "Exports keep the project's size; imported shots still link to the camera original.") +
+        (srcShots.some((s) => s.source.proxy) ? " Working from a proxy; your export relinks to the camera original." : "");
+      line.style.whiteSpace = "pre-line";
+      this.bin.append(line);
     }
   }
 

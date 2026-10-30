@@ -1,6 +1,7 @@
 """HTTP routes for Video → Stage. register() is idempotent.
 
-POST /soundstage/video2stage          {video: <input-folder file>, samples?: 8-24, vlm?: bool, backdrop?: bool}
+POST /soundstage/video2stage          {video: <input-folder file>, samples?: 8-24, vlm?: bool, backdrop?: bool,
+                                       original?: camera RAW name the video is a proxy of}
                                       -> {job}
 GET  /soundstage/video2stage/job?id=  -> {state: queued|running|done|error, step, progress, result?, error?}
 """
@@ -51,7 +52,8 @@ def register(routes=None) -> bool:
         try:
             job["result"] = await pipeline.run(
                 base, str(body.get("video") or ""), samples=min(max(int(body.get("samples") or 16), 8), 24),
-                use_vlm=bool(body.get("vlm", True)), backdrop=bool(body.get("backdrop", True)), progress=progress)
+                use_vlm=bool(body.get("vlm", True)), backdrop=bool(body.get("backdrop", True)), progress=progress,
+                original=str(body.get("original") or ""))
             job["state"] = "done"
         except Exception as exc:  # noqa: BLE001 - reported to the browser
             job["state"], job["error"] = "error", f"{type(exc).__name__}: {exc}" if not isinstance(exc, ValueError) else str(exc)
