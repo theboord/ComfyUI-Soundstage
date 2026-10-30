@@ -6,6 +6,7 @@ import * as THREE from "../vendor/three.module.min.mjs";
 import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompound } from "./library.mjs";
 import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./humans.mjs";
 import * as Mocap from "./mocap.mjs";
+import { applyRig, RIGS } from "./camrig.mjs";
 import { buildSet, buildWater, buildWeather } from "./environments.mjs";
 import { buildCard, loadBackdrop, coverFit } from "./cards.mjs";
 import { buildInterior, fixtureActors, interiorCamera, normalizeSpec, toStage } from "./interior.mjs";
@@ -509,6 +510,40 @@ export class Stage {
       cam.target = toWorld(cam.target);
     }
     return cam;
+  }
+
+  /**
+   * The camera as the shot actually sees it: the keys run through the shot's camera rig (dolly inertia and settle,
+   * jib arc, handheld shake...). Keys / editing use _cameraAt; display, capture and exports use this.
+   */
+  _shotCameraAt(frame) {
+    const shot = this.activeShot?.();
+    const rig = shot?.rig;
+    if (!rig?.type || rig.type === "free") return this._cameraAt(frame);
+    const last = this._lastFrame();
+    const sig = JSON.stringify([shot.id, this._camKeys(), rig, last, shot.camera_follow || "", this.state.shot?.fps]);
+    if (this._rigCache?.sig !== sig) {
+      const path = [];
+      for (let f = 0; f <= last; f++) path.push(this._cameraAt(f));
+      this._rigCache = { sig, path: applyRig(path, rig, this.state.shot?.fps || 24) };
+    }
+    const p = this._rigCache.path;
+    return p[Math.max(0, Math.min(p.length - 1, Math.round(frame)))];
+  }
+
+  /** Put the active shot's camera on a rig: free, tripod, dolly, chapman, slider, jib, steadicam, handheld, drone. */
+  setRig(type, amount) {
+    const shot = this.activeShot?.();
+    if (!shot || !RIGS[type]) return;
+    shot.rig = { type, amount: amount ?? shot.rig?.amount ?? 1 };
+    this._rigCache = null;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  rigInfo() {
+    const r = this.activeShot?.()?.rig;
+    return { type: r?.type || "free", amount: r?.amount ?? 1, options: Object.entries(RIGS).map(([id, v]) => ({ id, label: v.label })) };
   }
 
   _followActor() {
@@ -1105,16 +1140,17 @@ export class Stage {
   /** Per-frame shot camera (for exports: Layer Pack camera, Nuke .chan, etc.). */
   cameraTrack() {
     const out = [];
-    for (let f = 0; f <= this._lastFrame(); f++) out.push({ frame: f, ...this._cameraAt(f) });
+    for (let f = 0; f <= this._lastFrame(); f++) out.push({ frame: f, ...this._shotCameraAt(f) });
     return out;
   }
 
   _applyCamera() {
-    const c = this._preview || this._cameraAt(this.frame || 0);
+    const c = this._preview || this._shotCameraAt(this.frame || 0);
     this.camera.position.set(...c.position);
     this.camera.fov = vfovFromFocal(c.focal_mm, this.fw / this.fh);
     this.camera.updateProjectionMatrix();
     this.camera.lookAt(new THREE.Vector3(...c.target));
+    if (c.roll) this.camera.rotateZ(c.roll);
   }
 
   _applySun() {
