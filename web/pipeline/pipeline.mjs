@@ -890,7 +890,6 @@ export class Pipeline {
     m.quality = "Draft";   // Draft = quick look (8+3, the default while building), Final = clean motion and detail (12+6), Final HQ = hero shots (18+12)
     m.qSeg = h("span", { class: "seg row" }, ...["Draft", "Final", "Final HQ"].map((q) => h("button", { type: "button", "aria-pressed": String(q === "Draft"),
       title: { Draft: "8 + 3 steps: a quick look, faces readable", Final: "12 + 6 steps: clean motion and detail (recommended)", "Final HQ": "18 + 12 steps: hero shots, about twice as long" }[q],
-      title: q === "Draft" ? "8 + 3 distilled steps: fast previews" : "18 + 12 steps on the same curve: finer detail and steadier motion, about 2x slower",
       on: { click: (e) => { m.quality = q; for (const b of m.qSeg.children) b.setAttribute("aria-pressed", String(b === e.currentTarget)); this._applyVideo(); this._motionNote?.(); } } }, q)));
     m.cfg = h("input", { type: "number", min: "1", max: "10", step: "0.1", style: "width:90px",
       on: { change: () => { const v = Math.max(1, +m.cfg.value || 1); this.set(5516, "cfg", v); this.set(9034, "cfg", v); this._motionNote(); } } });

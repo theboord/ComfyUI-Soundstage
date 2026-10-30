@@ -176,7 +176,7 @@ export class CastPanel {
   _card(it) {
     const pick = h("input", { type: "file", accept: "image/*", hidden: true, on: { change: (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) this._upload(it, f); } } });
     const busy = this.busy.has(it.key);
-    const ph = h("div", { class: "ph" }, h("span"), it.kind === "character" ? "No character sheet yet" : it.kind === "prop" ? "No reference yet" : "No location photo yet");
+    const ph = h("div", { class: "ph" }, h("span"), it.kind === "character" ? "No character sheet yet" : it.kind === "prop" ? "No reference yet" : it.kind === "wardrobe" ? "No wardrobe picture yet" : "No location photo yet");
     ph.firstChild.replaceWith(icon(it.kind === "character" ? "user" : it.kind === "location" ? "compass" : it.kind === "wardrobe" ? "shirt" : "box", 26));
     const img = it.url ? h("img", { src: it.url, alt: `${it.name} reference`, title: "Open full size" }) : null;
     img?.addEventListener("click", () => window.open(it.url, "_blank", "noopener"));
