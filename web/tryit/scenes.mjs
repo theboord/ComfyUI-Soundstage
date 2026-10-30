@@ -183,10 +183,49 @@ export function threeInACar() {
   });
 }
 
+
+/** (f) Alien invasion: a saucer drops out of the night sky over a city street; people run, a squad car skids to a stop. */
+export function alienInvasion() {
+  const lamp = (x, z, i) => ({ id: `sodium_${i}`, type: "practical", name: `Street lamp ${i + 1}`, position: [x, 4.3, z],
+    target: [x, 0, z], kelvin: 2100, intensity: 2.2, softness: 1, angle: 180 });
+  return finish({
+    version: 2,
+    shot: { frames: 121, fps: 24 },
+    environment: { set: "street_night", weather: "none", density: 0.5, water_level: 2.5 },
+    lighting: { mode: "time", hour: 20.6, day_of_year: 200, latitude: 34.05, north_deg: 0, overcast: false, preset: "night",
+      lights: [lamp(-5.4, -11, 0), lamp(5.4, 0, 1), lamp(-5.4, 11, 2)] },
+    sun: { azimuth_deg: 290, elevation_deg: -8 },
+    actors: [
+      { id: "saucer", name: "Flying saucer", kind: "ufo", height_m: 3,
+        keys: [at(0, [0, 26, -26]), at(70, [0, 12, -12]), at(120, [0, 10, -9])] },
+      { id: "runner_a", name: "Woman running", kind: "woman", height_m: 1.68,
+        keys: [at(0, [-1.2, 0, -6]), at(120, [-2.4, 0, 12])] },
+      { id: "runner_b", name: "Man running", kind: "man", height_m: 1.8,
+        keys: [at(0, [1.4, 0, -8]), at(120, [0.8, 0, 11])] },
+      { id: "kid", name: "Kid", kind: "child", height_m: 1.2, keys: [at(0, [-0.6, 0, -5]), at(120, [-1.6, 0, 10])] },
+      { id: "officer", name: "Officer", kind: "man", height_m: 1.82, keys: [at(0, [3.2, 0, 2.5])], mount_id: "squad", seat: 0, pose: "sit" },
+      { id: "squad", name: "Police car", kind: "police_car", height_m: 1.6, rotation_deg: 60,
+        keys: [at(0, [4, 0, -14]), at(60, [2.6, 0, 1.5]), at(120, [2.6, 0, 2.2])] },
+      { id: "parked", name: "Parked car", kind: "hatchback", height_m: 1.5, appearance: { color: "#6d7f8f" }, keys: [at(0, [-4.2, 0, 4])] },
+    ],
+    props: [],
+    shots: [
+      { id: "low_wide", name: "Low wide, looking up", setup: "wide",
+        camera_keys: [key(0, [1.5, 0.5, 15], [0, 9, -14], 16), key(120, [1.5, 0.5, 13], [0, 7, -8], 16)] },
+      { id: "run", name: "Runners, front tracking", setup: "single_a",
+        camera_keys: [key(0, [0.4, 1.5, 4], [0, 1.4, -6], 28), key(120, [0, 1.5, 20], [-1, 1.6, 10], 28)] },
+      { id: "sky", name: "POV: the sky opens", setup: "pov",
+        camera_keys: [key(0, [-1, 1.6, 3], [0, 22, -24], 24), key(120, [-1.4, 1.6, 6], [0, 10, -9], 24)] },
+    ],
+    active_shot: "low_wide",
+  });
+}
+
 export const PRESETS = [
   { id: "riders", label: "Riders at sunset", make: ridersAtSunset, view: "color" },
   { id: "chase", label: "Police chase", make: policeChase, view: "color" },
   { id: "car", label: "In the car", make: inTheCar, view: "color" },
   { id: "three", label: "Three in a car", make: threeInACar, view: "color" },
   { id: "torch", label: "Flashlight search", make: flashlightSearch, view: "color" },
+  { id: "aliens", label: "Alien invasion", make: alienInvasion, view: "color" },
 ];

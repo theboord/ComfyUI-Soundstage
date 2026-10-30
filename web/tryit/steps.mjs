@@ -53,7 +53,7 @@ export async function showSteps(presetId) {
   host.replaceChildren();
   if (!scene) {
     host.append(el("p", { class: "muted", text: manifest
-      ? "This scene hasn't been rendered yet. Pick Riders at sunset, Police chase or In the car to see the real ComfyUI output for every step."
+      ? "This scene is blocked on the stage but hasn't been rendered on the GPU for this page. Pick Riders at sunset, Police chase or a car scene to see the real ComfyUI output for every step."
       : "The rendered examples aren't bundled with this copy of the page." }));
     return;
   }
@@ -71,7 +71,7 @@ export async function showSteps(presetId) {
     el("p", { class: "muted", text: scene.note }),
     el("div", { class: "step" },
       el("h4", {}, el("span", { class: "n", text: "2" }), "Frame: a photoreal first frame for every shot"),
-      el("p", { class: "muted", text: "Krea 2 paints each shot from its clay depth, so the framing and who-stands-where stay exactly as staged." }),
+      el("p", { class: "muted", text: "FLUX 3 Klein (or Krea 2 locked to the clay depth) paints each shot from its clay render, so the framing and who-stands-where stay as staged." }),
       el("div", { class: "frames" }, shots.map((s) => el("figure", {}, el("img", { src: s.frame, alt: `${s.name}: chosen first frame`, loading: "lazy" }),
         el("figcaption", { text: s.name }))))),
     el("div", { class: "step" },
