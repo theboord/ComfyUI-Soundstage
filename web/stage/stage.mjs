@@ -909,6 +909,12 @@ export class Stage {
       if (a.mount_at > 0 && this.frame < hopStart) { applyPose(g, "stand", h); continue; } // still on foot
       const drop = applyPose(g, a.pose || m.pose, h);
       for (const jn of ["spine", "neck", "head"]) g.userData.joints?.[jn]?.rotation.set(0, 0, 0);   // seated: no walk / idle sway left over
+      // The driver of a car holds the wheel (both hands forward and up), so the clay reads as driving.
+      if (seats && (a.seat ?? 0) === 0 && ["car", "police_car", "sports_car", "hatchback"].includes(host.kind) && !a.pose)
+        for (const l of g.userData.limbs || []) {
+          if (l.part === "shoulder") { l.pivot.rotation.x = -1.05; l.pivot.rotation.z = -l.side * 0.12; }
+          if (l.part === "elbow") l.pivot.rotation.x = -0.55;
+        }
       const seatPos = new THREE.Vector3(hg.position.x + seat.x, hg.position.y + seat.y - drop, hg.position.z + seat.z);
       if (a.mount_at > 0 && this.frame < a.mount_at) {
         // Hop on: arc from where they stand up into the saddle, turning to face the mount's way.

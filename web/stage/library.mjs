@@ -323,10 +323,35 @@ export function buildObject(kind, height, mesh, appearance = null) {
       prof.quadraticCurveTo(rz, 0.9 * s, rz, 0.7 * s);
       prof.lineTo(rz, sill + 0.15 * s);
       prof.quadraticCurveTo(rz, sill, rz + 0.12 * s, sill);
-      const bodyGeom = new THREE.ExtrudeGeometry(prof, { depth: W - 0.08 * s, bevelEnabled: true, bevelThickness: 0.04 * s,
-        bevelSize: 0.04 * s, bevelSegments: 3, curveSegments: 18 });
-      bodyGeom.translate(0, 0, -(W - 0.08 * s) / 2);
-      add(bodyGeom, 0, 0, 0, 0, -Math.PI / 2, 0);
+      // The cabin is hollow, so the people inside read in the clay (torsos, laps, hands on the wheel), not just heads:
+      // a centre tub that drops to a floor between the windshield base and the rear seat, plus thin door panels
+      // with the full side profile on each side. From outside the silhouette is the same sedan.
+      const tub = new THREE.Shape();
+      const floorY = 0.36 * s, cabF = 0.92 * s, cabR = -1.55 * s;
+      tub.moveTo(rz + 0.12 * s, sill);
+      tub.lineTo(fz - 0.1 * s, sill);
+      tub.quadraticCurveTo(fz, sill, fz, sill + 0.18 * s);
+      tub.lineTo(fz, 0.68 * s);
+      tub.quadraticCurveTo(fz - 0.05 * s, 0.8 * s, fz - 0.35 * s, 0.82 * s);
+      tub.quadraticCurveTo(1.2 * s, 0.86 * s, cabF, 0.87 * s);            // cowl a touch under the beltline
+      tub.lineTo(cabF, floorY);                                            // firewall down to the floor
+      tub.lineTo(cabR, floorY);                                            // cabin floor
+      tub.lineTo(cabR - 0.05 * s, belt + 0.02 * s);                        // up behind the rear seat
+      tub.quadraticCurveTo(-1.9 * s, 0.98 * s, -2.15 * s, 0.93 * s);
+      tub.quadraticCurveTo(rz, 0.9 * s, rz, 0.7 * s);
+      tub.lineTo(rz, sill + 0.15 * s);
+      tub.quadraticCurveTo(rz, sill, rz + 0.12 * s, sill);
+      const inner = W - 0.3 * s;
+      const tubGeom = new THREE.ExtrudeGeometry(tub, { depth: inner, bevelEnabled: false, curveSegments: 18 });
+      tubGeom.translate(0, 0, -inner / 2);
+      add(tubGeom, 0, 0, 0, 0, -Math.PI / 2, 0);
+      const door = 0.09 * s;
+      for (const side of [-1, 1]) {
+        const panel = new THREE.ExtrudeGeometry(prof, { depth: door, bevelEnabled: true, bevelThickness: 0.04 * s,
+          bevelSize: 0.03 * s, bevelSegments: 3, curveSegments: 18 });
+        panel.translate(0, 0, -door / 2);
+        add(panel, side * (W / 2 - 0.04 * s - door / 2), 0, 0, 0, -Math.PI / 2, 0);
+      }
       // Greenhouse frame: A, B, C pillars and the roof (both sides), no glass.
       const strut = (x, y1, z1, y2, z2, th = 0.1 * s) => {
         const len = Math.hypot(y2 - y1, z2 - z1);
@@ -347,8 +372,8 @@ export function buildObject(kind, height, mesh, appearance = null) {
         add(new THREE.BoxGeometry(0.5 * s, 0.12 * s, 0.5 * s), x, 0.46 * s, z, 0, 0, 0, accent);
         add(new THREE.BoxGeometry(0.5 * s, 0.62 * s, 0.1 * s), x, 0.8 * s, z - 0.28 * s, -0.18, 0, 0, accent);
       }
-      add(new THREE.BoxGeometry(W - 0.2 * s, 0.22 * s, 0.35 * s), 0, 0.88 * s, 0.75 * s, 0, 0, 0, accent);  // dash
-      add(new THREE.TorusGeometry(0.19 * s, 0.022 * s, 8, 24), 0.37 * s, 0.98 * s, 0.52 * s, -0.45, 0, 0, accent);
+      add(new THREE.BoxGeometry(W - 0.2 * s, 0.16 * s, 0.35 * s), 0, 0.8 * s, 0.75 * s, 0, 0, 0, accent);  // dash (top ~0.88 m: chests show through the windshield)
+      add(new THREE.TorusGeometry(0.19 * s, 0.022 * s, 8, 24), 0.37 * s, 0.93 * s, 0.5 * s, -0.45, 0, 0, accent);
       // Wheels: tyre + rim + hub, inside the arches.
       for (const x of [-(W / 2 - 0.12 * s), W / 2 - 0.12 * s]) for (const z of [wf, wr]) {
         add(new THREE.CylinderGeometry(r, r, 0.24 * s, 28), x, r, z, 0, 0, Math.PI / 2, "#1b1b1d");
