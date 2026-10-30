@@ -11,6 +11,8 @@ Built for Comfy Org's *Open Source Higgsfield* challenge (#OpenSourceHiggsfield)
 
 **[Watch the 100-second showcase](docs/media/soundstage_showcase.mp4)** &middot; [the longer walkthrough](docs/media/soundstage_demo.mp4) &middot; **[Try the App in your browser](https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq)** (the real App UI, replaying real GPU renders)
 
+**New here? [Read the full tutorial](docs/TUTORIAL.md):** install, a tour of every panel and button, each production step, the 3D stage in depth, a keyboard cheat sheet, 31 tips and troubleshooting.
+
 <table>
 <tr>
 <td width="50%"><img src="docs/media/car_chase.gif" alt="Left the clay stage, right the final: a police car chasing a red sports car on a wet night street"><br><sub><b>Car chase, before and after:</b> left the 3D stage, right the final. Same cars, same positions, same camera: a crane wide, then a tracking shot.</sub></td>
