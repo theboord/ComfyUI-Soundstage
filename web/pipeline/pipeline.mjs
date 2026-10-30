@@ -271,14 +271,18 @@ export class Pipeline {
   }
 
   _stillOptions() {
-    const opts = [{ value: STILL_KREA, label: "Krea 2 Turbo + stage depth (local, recommended)" }];
+    // FLUX 3 Klein (local, steered by the stage image + control) is the default; Krea 2 + depth is the strict depth lock.
+    const KLEIN = "FLUX 3 Klein · local [<$5M]";
+    const opts = [];
     const pick = this.w(9081, "model");
     const values = pick?.options?.values || [];
-    for (const val of (Array.isArray(values) ? values : [])) {
-      const key = typeof val === "string" ? val : val?.key;
-      if (key && !/^Krea 2 Turbo/.test(key)) opts.push({ value: key, label: key.replace(" · local", " (local)").replace(/ \[[^\]]*\]$/, "") });
+    const keys = (Array.isArray(values) ? values : []).map((v) => (typeof v === "string" ? v : v?.key)).filter(Boolean);
+    const klein = keys.find((k) => /^FLUX 3 Klein/.test(k)) || KLEIN;
+    opts.push({ value: klein, label: "FLUX 3 Klein (local, recommended)" });
+    opts.push({ value: STILL_KREA, label: "Krea 2 Turbo + stage depth (local, strict depth lock)" });
+    for (const key of keys) {
+      if (key !== klein && !/^Krea 2 Turbo/.test(key)) opts.push({ value: key, label: key.replace(" · local", " (local)").replace(/ \[[^\]]*\]$/, "") });
     }
-    if (opts.length === 1) for (const key of ["FLUX 3 Klein · local [<$5M]"]) opts.push({ value: key, label: "FLUX 3 Klein (local)" });
     return opts;
   }
 

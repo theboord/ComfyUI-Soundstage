@@ -481,6 +481,27 @@ def blocking_sentence(entries: list[dict], cam: dict) -> str:
     return " ".join(out)
 
 
+def traffic_lock(scene: dict) -> dict | None:
+    """Vehicles on stage and nobody on foot: say the road holds only those vehicles (video models add traffic,
+    pedestrians and duplicate cars that drive through each other). Returns {"still", "motion", "negative"} or None."""
+    lib = library()
+    actors = scene.get("actors") or []
+    cars = [a for a in actors if lib.get(a.get("kind"), ("", 0, ""))[2] == "vehicle"]
+    if not cars:
+        return None
+    on_foot = [a for a in actors if a.get("kind") in ("man", "woman", "child") and not a.get("mount_id")]
+    if on_foot:
+        return None
+    names = [lib.get(a["kind"], (a["kind"].replace("_", " "),))[0].lower() for a in cars]
+    count = {n: names.count(n) for n in names}
+    words = " and ".join(_article(n) if c == 1 else f"{c} {n}s" for n, c in count.items())
+    # Krea 2 Turbo has no negative prompt, and naming what's absent invites it: describe the empty street instead.
+    return {"still": f"a deserted street with empty sidewalks, the only vehicles are {words}",
+            "motion": f"The street is deserted apart from {words}, the sidewalks empty; each car stays whole and keeps its own lane.",
+            "negative": "pedestrians, people walking in the road, people crossing the street, extra cars, duplicate cars, a second police car, "
+                        "cars passing through each other, merging cars"}
+
+
 def vehicle_camera(scene: dict) -> dict | None:
     """Where a ride-along camera sits on its vehicle, in words for the image and video models.
 

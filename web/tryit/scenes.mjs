@@ -79,8 +79,8 @@ export function policeChase() {
     props: [],
     shots: [
       { id: "crane", name: "Wide crane", setup: "wide",
-        camera_keys: [key(0, [-4.5, 6, 18], [1.2, 0.8, -28], 28), key(60, [-4.5, 6, 18], [0, 0.8, -2], 28),
-          key(120, [-4.5, 6, 18], [0.5, 0.8, 30], 28)] },
+        camera_keys: [key(0, [-5, 6, -40], [1.2, 0.8, -28], 28), key(60, [-5, 5.5, -18], [0, 0.8, -6], 28),
+          key(120, [-5, 5, 4], [0.4, 0.8, 22], 28)] },   // travels with the chase, always looking down the street
       { id: "tracking", name: "Tracking, front 3/4", setup: "single_a", camera_follow: "sports_car",
         camera_keys: [key(0, [2.8, 1.05, 4.6], [0, 0.7, 0], 30)] },
       { id: "chase", name: "Chase cam (police hood)", setup: "pov", camera_follow: "police_car",
