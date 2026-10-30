@@ -30,7 +30,11 @@ const CSS = `
   border:1px dashed rgba(255,255,255,.18); display:flex; align-items:center; justify-content:center; }
 .ss-cast .card.has .pic { border-style:solid; border-color:rgba(255,255,255,.1); }
 .ss-cast .pic img { width:100%; height:100%; object-fit:cover; }
-.ss-cast .pic .ph { display:flex; flex-direction:column; align-items:center; gap:6px; opacity:.55; font-size:12px; }
+.ss-cast .pic .ph { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; font-size:12px; width:100%; height:100%; color:rgba(255,255,255,.75); }
+.ss-cast .pic .ph .ini { font-size:calc(var(--ss-cast-tile, 150px) * .32); font-weight:800; letter-spacing:-.02em; color:rgba(255,255,255,.92); line-height:1; text-shadow:0 2px 12px rgba(0,0,0,.35); }
+.ss-cast .pic .ph .gen { margin-top:4px; padding:4px 10px; border-radius:999px; background:rgba(0,0,0,.35); font-weight:600; }
+.ss-cast .genall { background:#f2ff59 !important; color:#111 !important; border-color:#f2ff59 !important; font-weight:700; border-radius:999px; padding:6px 14px; cursor:pointer; display:inline-flex; gap:6px; align-items:center; }
+.ss-cast .genall:disabled { opacity:.5; cursor:default; }
 .ss-cast .pic .busy { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.55); font-size:12px; text-align:center; padding:8px; }
 .ss-cast .name { font-weight:700; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .ss-cast .meta { font-size:11px; opacity:.6; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -116,6 +120,21 @@ export function refPrompt(it, desc) {
     "no people, cinematic still, natural light, photographic, no text";
 }
 
+const initials = (n) => String(n || "?").replace(/^(the|a)\s+/i, "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+const hue = (n) => { let x = 0; for (const c of String(n)) x = (x * 31 + c.charCodeAt(0)) % 360; return x; };
+const TOD = [[/night|midnight/i, "#0b1530", "#2a3f7a"], [/dusk|evening|sunset|magic/i, "#3a1530", "#e0703a"], [/dawn|morning/i, "#2a2a4a", "#f0b07a"],
+  [/day|noon|afternoon/i, "#2f6fa8", "#cfe3ef"]];
+/** A placeholder background: a character's own colour, a location's time of day from its slugline. */
+function placeholderBg(it) {
+  if (it.kind === "location") {
+    const s = `${it.name} ${(it.scenes || []).join(" ")} ${it.hint || ""}`;
+    const t = TOD.find(([re]) => re.test(s)) || [null, "#2b2440", "#6a5a8a"];
+    return `linear-gradient(180deg, ${t[2]} 0%, ${t[1]} 100%)`;
+  }
+  const h0 = hue(it.name);
+  return `radial-gradient(120% 90% at 30% 20%, hsl(${h0} 55% 45%) 0%, hsl(${(h0 + 40) % 360} 45% 22%) 70%)`;
+}
+
 export class CastPanel {
   /**
    * opts: getScript() -> Script|null; getStage() -> stage JSON; load() -> saved {items: {key: {description, ref, url}}};
@@ -162,6 +181,23 @@ export class CastPanel {
     this.busy.delete(it.key); this.render();
   }
 
+  /** Generate every picture that is missing, one after another. */
+  async generateAll() {
+    if (this._genAll || !this.o.generate) return;
+    const todo = this.items().filter((x) => !x.url && !this.busy.has(x.key));
+    if (!todo.length) { this.o.onStatus?.("Every card already has a picture."); return; }
+    this._genAll = true; this.render();
+    let n = 0;
+    for (const it of todo) {
+      if (!this._genAll) break;
+      n += 1;
+      this.o.onStatus?.(`Generating ${n} of ${todo.length}: ${it.name}…`);
+      await this._generate(it);
+    }
+    this._genAll = false; this.render();
+    this.o.onStatus?.(`Generated ${n} pictures. Edit any description and Regenerate, or upload your own.`);
+  }
+
   async _generate(it) {
     this.busy.add(it.key); this.render();
     try {
@@ -178,6 +214,9 @@ export class CastPanel {
     const busy = this.busy.has(it.key);
     const ph = h("div", { class: "ph" }, h("span"), it.kind === "character" ? "No character sheet yet" : it.kind === "prop" ? "No reference yet" : it.kind === "wardrobe" ? "No wardrobe picture yet" : "No location photo yet");
     ph.firstChild.replaceWith(icon(it.kind === "character" ? "user" : it.kind === "location" ? "compass" : it.kind === "wardrobe" ? "shirt" : "box", 26));
+    // An empty card still looks like something: initials on a colour of their own, a location in its time of day.
+    ph.style.background = placeholderBg(it);
+    if (it.kind === "character") ph.prepend(h("div", { class: "ini" }, initials(it.name)));
     const img = it.url ? h("img", { src: it.url, alt: `${it.name} reference`, title: "Open full size" }) : null;
     img?.addEventListener("click", () => window.open(it.url, "_blank", "noopener"));
     const pic = h("div", { class: "pic" }, img || ph,
@@ -259,7 +298,16 @@ export class CastPanel {
           h("div", { class: "sub" }, `Everyone and everything that must look the same in every shot, ${src}. Add a character sheet, a photo, or generate one; ④ Frame shows each picture to the image model, so faces, costumes, cars and places stay consistent.`)),
         h("div", { class: "grow" }),
         this._sizes(),
-        h("div", { class: "meta" }, `${done} of ${all.length} have a reference`)),
+        h("div", { class: "meta" }, `${done} of ${all.length} have a reference`),
+        (() => {
+          const missing = all.length - done;
+          const b = h("button", { type: "button", class: "genall", disabled: !this.o.generate || !missing || this._genAll,
+            title: "FLUX 3 Klein makes a character sheet or location picture for every empty card (about 7 s each)" },
+            h("span"), this._genAll ? "Generating…" : missing ? `Generate all missing (${missing})` : "All generated");
+          b.firstChild.replaceWith(icon("sparkles", 14));
+          b.addEventListener("click", () => this.generateAll());
+          return b;
+        })()),
       this._section("character", "Characters", "user", by("character")),
       this._section("location", "Locations", "compass", by("location")),
       this._section("wardrobe", "Wardrobe", "shirt", by("wardrobe")),
