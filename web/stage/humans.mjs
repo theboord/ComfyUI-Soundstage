@@ -297,7 +297,7 @@ export const POSE_PRESETS = {
   "Wave": { r_shoulder: [20, 115, 0], r_elbow: [70, 0], r_wrist: [0, 0, 0], ...open("r") },
   "Hands up": { l_shoulder: [10, 165, 0], r_shoulder: [10, 165, 0], l_elbow: [15, 0], r_elbow: [15, 0], ...open("l"), ...open("r") },
   "Phone to ear": { r_shoulder: [35, 30, -40], r_elbow: [145, 0], r_wrist: [10, 0, 0], ...fist("r", 55), head: [0, 0, -8] },
-  "Arms crossed": { l_shoulder: [40, 10, 60], r_shoulder: [40, 10, 60], l_elbow: [110, 0], r_elbow: [110, 0], ...fist("l", 40), ...fist("r", 40) },
+  "Arms crossed": { l_shoulder: [35, 6, -80], r_shoulder: [38, 6, -80], l_elbow: [100, 0], r_elbow: [100, 0], ...fist("l", 40), ...fist("r", 40) },
   "Fists": { ...fist("l"), ...fist("r"), l_elbow: [35, 0], r_elbow: [35, 0] },
   "Thinking": { r_shoulder: [40, 0, -30], r_elbow: [150, 0], ...fist("r", 50), head: [8, 0, 10] },
   "Hold flashlight up": { r_shoulder: [80, 10, 0], r_elbow: [20, 0], ...fist("r", 80), head: [0, -5, 0] },
