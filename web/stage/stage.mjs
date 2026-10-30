@@ -2774,11 +2774,19 @@ export class Stage {
     a.mocap = { file: take.file, start: opts.start ?? this.frame, travel: opts.travel ?? true, speed: opts.speed || 1,
       loop: !!opts.loop, ...(take.file ? {} : { data: take.data }), name: take.name || take.file?.split("/").pop()?.replace(/_\d{8}_\d{6}\.json$/, "") };
     const t = Mocap.takeFor(a.mocap);
-    // A take longer than the shot: stretch the shot so the whole performance fits (up to 20 s).
-    if (t) {
+    // A take longer than the shot: stretch the shot so the whole performance fits (up to 20 s). A take named by file
+    // that is not loaded yet is stretched for when it arrives (otherwise setFrame clamps it at the old shot end).
+    const fit = (tk) => {
+      if (a.mocap?.file !== take.file && take.file) return;
       const fps = this.state.shot?.fps || 24;
-      const need = Math.ceil(a.mocap.start + (t.n - 1) * fps / t.fps / (a.mocap.speed || 1)) + 1;
-      if (need > (this.state.shot?.frames || 97) && need <= fps * 20) this.state.shot.frames = need;
+      const need = Math.ceil((a.mocap?.start || 0) + (tk.n - 1) * fps / tk.fps / (a.mocap?.speed || 1)) + 1;
+      if (need > (this.state.shot?.frames || 97) && need <= fps * 20) { this.state.shot.frames = need; return true; }
+    };
+    if (t) fit(t);
+    else if (take.file) {
+      Mocap.load(take.file, { fetchApi: this.fetchApi || ((u) => fetch(u)) })
+        .then((tk) => { if (fit(tk)) { this.setFrame(this.frame); this.onChange(this.toJSON()); } })
+        .catch(() => { /* reported by _loadMocap */ });
     }
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
