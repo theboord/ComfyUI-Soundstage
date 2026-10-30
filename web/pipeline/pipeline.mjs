@@ -375,7 +375,7 @@ export class Pipeline {
     this.f = {};
     const f = this.f;
     f.clay = h("canvas", { class: "clay" });
-    f.model = h("select", { on: { change: () => this._applyStillModel() } });
+    f.model = h("select", { on: { change: () => { const sw = this.node(9082); if (sw) (sw.properties ||= {}).ssStillPicked = true; this._applyStillModel(); } } });
     f.follow = h("input", { type: "range", min: "0.55", max: "1", step: "0.01", value: "0.85",
       on: { input: () => { f.followOut.textContent = this._followLabel(); this._applyStillModel(); } } });
     f.followOut = h("span", { class: "status" });
@@ -780,7 +780,15 @@ export class Pipeline {
       for (const o of this._stillOptions()) f.model.append(new Option(o.label, o.value));
     }
     const usePicker = !!this.w(9082, "switch")?.value;
-    f.model.value = usePicker ? (this.w(9081, "model")?.value || STILL_KREA) : STILL_KREA;
+    // FLUX 3 Klein is the default image model. Krea 2 + depth only when someone picked it in this workflow.
+    const picked = !!this.node(9082)?.properties?.ssStillPicked;
+    const klein = [...f.model.options].find((o) => /^FLUX 3 Klein/.test(o.value))?.value;
+    if (!usePicker && !picked && klein && this.w(9081, "model")) {
+      f.model.value = klein;
+      this._applyStillModel();
+    } else {
+      f.model.value = usePicker ? (this.w(9081, "model")?.value || STILL_KREA) : STILL_KREA;
+    }
     const loraW = this.w(9081, "lora");
     if (loraW && !f.lora.options.length) {
       const vals = loraW.options?.values || ["None"];
