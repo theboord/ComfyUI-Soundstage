@@ -151,6 +151,7 @@ def attach(scene: dict, take_file: str, take: dict, placed: dict, name: str = "P
     a["keys"] = [{"frame": 0, "position": [x0, 0.0, z0]}]
     a["rotation_deg"] = placed["yaw"][0]
     label = (a.get("source") or {}).get("label") or a.get("label") or a.get("name") or ""
+    a["name"] = short_name(label) or name   # "Person in yellow plaid shirt and tiger-s" (cut at 40) reads badly
     if label:
         kind, ap = appearance_from_label(label, (a.get("appearance") or {}).get("color") or a.get("color"))
         a["kind"] = kind
@@ -158,6 +159,14 @@ def attach(scene: dict, take_file: str, take: dict, placed: dict, name: str = "P
     a["mocap"] = {"file": take_file, "name": take_file.rsplit("/", 1)[-1].split("_2")[0], "start": placed["start_frame"],
                   "travel": True, "speed": 1, "loop": False, "world": {"path": placed["path"], "yaw": placed["yaw"]}}
     return a["id"]
+
+
+def short_name(label: str, limit: int = 24) -> str:
+    """A person's name for the timeline and outliner: the vision model's label when it is short, else "Performer"."""
+    label = " ".join(str(label or "").split())
+    if not label or len(label) > limit:
+        return "Performer"
+    return label[:1].upper() + label[1:]
 
 
 def cutout(take: dict, mpu: float, pad: float = 0.18) -> dict | None:

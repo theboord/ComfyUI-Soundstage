@@ -323,3 +323,17 @@ def test_performer_wardrobe_and_placement():
     x, z = out["path"][0]
     assert abs(z - 1.6 * 500 / 160) < 0.2 and abs(x) < 0.3      # the ray through the feet hits the floor 5 m out
     assert abs(abs(out["yaw"][0]) - 180) < 1                      # facing back toward the camera
+
+
+def test_performer_gets_a_readable_name():
+    from soundstage.video2stage import performer as P
+    assert P.short_name("person in yellow plaid shirt and tiger-s") == "Performer"
+    assert P.short_name("dancer") == "Dancer"
+    assert P.short_name("") == "Performer"
+    scene = {"actors": [{"id": "p", "name": "Person in yellow plaid shirt and tiger-s", "kind": "woman", "position": [0, 0, 0],
+                         "source": {"label": "person in yellow plaid shirt and tiger-striped leggings"}}]}
+    placed = {"path": [[1.0, 2.0], [1.1, 2.0]], "yaw": [0.0, 1.0], "start_frame": 0}
+    aid = P.attach(scene, "soundstage/mocap/x_20261030_120000.json", {}, placed)
+    a = scene["actors"][0]
+    assert aid == "p" and a["name"] == "Performer" and a["mocap"]["world"]["path"][0] == [1.0, 2.0]
+    assert a["appearance"].get("top") == "shirt"

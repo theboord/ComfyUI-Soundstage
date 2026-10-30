@@ -34,3 +34,13 @@ test("helpers", () => {
   assert.ok(isVideoFile({ name: "x", type: "video/webm" }));
   assert.ok(!isVideoFile({ name: "a.png", type: "image/png" }));
 });
+
+test("Frame prompt for a clip rebuilt with Video → Stage", async () => {
+  const { suggestFromVideo } = await import("../../web/pipeline/pipeline.mjs");
+  const scene = { video2stage: {}, actors: [
+    { name: "Performer", kind: "woman", mocap: { file: "x" }, source: { label: "person in yellow plaid shirt" } },
+    { name: "Sidewalk (left)", set_piece: true }, { name: "Sidewalk (right)", set_piece: true }, { name: "Tree", set_piece: true }] };
+  const p = suggestFromVideo(scene);
+  assert.match(p, /^A person in yellow plaid shirt, full body, on location: sidewalk, tree\./);
+  assert.equal(suggestFromVideo({ actors: [{ kind: "man" }] }), "");   // not from a clip: leave the prompt alone
+});
