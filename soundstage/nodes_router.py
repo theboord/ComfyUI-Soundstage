@@ -93,6 +93,7 @@ class _Router(IO.ComfyNode):
             raise RouterError(f"{m['name']} is missing: {', '.join(missing)}")
         params = {k: val for k, val in model.items() if k != "model"} if isinstance(model, dict) else {}
         p = {"stage": cls.STAGE, "prompt": v.get("prompt") or "", "negative": v.get("negative") or "",
+             "sound": v.get("sound") or "", "music": v.get("music") or "", "line": v.get("line") or "",
              "seed": int(v.get("seed") or 0), "width": int(v.get("width") or 0), "height": int(v.get("height") or 0),
              "frames": int(v.get("frames") or 97), "fps": float(v.get("fps") or 24.0),
              "first": v.get("first_frame"), "last": v.get("last_frame"),
@@ -206,6 +207,14 @@ class SoundstageGenerateVideo(_Router):
                 IO.Float.Input("fps", default=24.0, min=1.0, max=60.0, step=0.001),
                 _model_input(cls.STAGE),
                 *_common_tail(),
+                # Added last so saved workflows keep their widget order.
+                IO.String.Input("sound", multiline=True, default="", optional=True, advanced=True,
+                                tooltip="What the shot sounds like, for models that make their own audio in the same "
+                                        "pass (MiniMax H3). Blank = the natural sound of the action."),
+                IO.String.Input("music", default="", optional=True, advanced=True,
+                                tooltip="Score mood for models that make their own audio. Blank = no music."),
+                IO.String.Input("line", default="", optional=True, advanced=True,
+                                tooltip="A spoken line for models that make their own audio. Blank = no dialogue."),
             ],
             outputs=[IO.Video.Output(display_name="video"), IO.Image.Output(display_name="frames")],
             hidden=HIDDEN,

@@ -564,6 +564,102 @@
    ]
   },
   {
+   "id": "open.minimax_h3_local",
+   "name": "MiniMax H3",
+   "provider": "MiniMax",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": "minimax_h3_local",
+   "variant": null,
+   "classes": [
+    "UNETLoader",
+    "CLIPLoader",
+    "VAELoader",
+    "MiniMaxH3ImageToVideo",
+    "BasicScheduler",
+    "BasicGuider",
+    "RandomNoise",
+    "KSamplerSelect",
+    "SamplerCustomAdvanced",
+    "VAEDecode",
+    "VAEDecodeAudio",
+    "ImageFromBatch",
+    "TrimAudioDuration",
+    "CreateVideo",
+    "LoraLoaderModelOnly"
+   ],
+   "weights": [
+    {
+     "role": "unet",
+     "folder": "diffusion_models",
+     "any": [
+      "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+      "minimax_h3_fl2va_bf16.safetensors"
+     ]
+    },
+    {
+     "role": "text_encoder",
+     "folder": "text_encoders",
+     "any": [
+      "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "qwen3vl_32b_minimax_h3_bf16.safetensors"
+     ]
+    },
+    {
+     "role": "vae",
+     "folder": "vae",
+     "any": [
+      "minimax_h3_video_vae_fp16.safetensors",
+      "minimax_h3_video_vae_int8_convrot.safetensors"
+     ]
+    },
+    {
+     "role": "audio_vae",
+     "folder": "vae",
+     "any": [
+      "minimax_h3_audio_vae_fp32.safetensors"
+     ]
+    }
+   ],
+   "optional_weights": [
+    {
+     "role": "turbo_lora",
+     "folder": "loras",
+     "any": [
+      "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+     ]
+    },
+    {
+     "role": "ref_unet",
+     "folder": "diffusion_models",
+     "any": [
+      "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+      "minimax_h3_ref2va_bf16.safetensors"
+     ],
+     "classes": [
+      "MiniMaxH3ReferenceToVideo"
+     ]
+    }
+   ],
+   "auto_download": false,
+   "params": {
+    "motion_ref": {
+     "options": [
+      "off",
+      "clay previz as <Video 1>"
+     ],
+     "default": "off"
+    }
+   },
+   "license": "MiniMax H3 Community License: EXCLUDES USA, EU, UK, South Korea; <$20M revenue elsewhere; must display 'MiniMax H3' in commercial UI. US users need the commercial license Comfy resells",
+   "notes": "Optional second engine (LTX-2.5 stays the default). Image → video from the look still with H3's own sound in the same pass; follows the clay blocking only loosely. motion_ref = clay previz as <Video 1> (ref2va model, 20 steps, slow). Text encoder on CPU (32B). ≤362 frames, 17k+5 grid, trimmed back to the shot length. 8-step fl2v turbo LoRA used when installed.",
+   "source_ids": [
+    "open.minimax_h3_local"
+   ]
+  },
+  {
    "id": "open.wan_animate_2",
    "name": "Wan Animate 2 distilled",
    "provider": "Alibaba Wan-AI",
@@ -4856,27 +4952,6 @@
     "open.ltx_2_3_edit_loras"
    ],
    "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/template_ltx2_3_lora_video_outpainting.json"
-  },
-  {
-   "id": "open.minimax_h3_local",
-   "name": "MiniMax H3 (fl2va / ref2va, int8)",
-   "provider": "MiniMax",
-   "kind": "local",
-   "stages": [
-    "generate_image",
-    "generate_video"
-   ],
-   "adapter": null,
-   "variant": null,
-   "classes": [],
-   "weights": [],
-   "params": {},
-   "license": "MiniMax H3 Community License: EXCLUDES USA, EU, UK, South Korea; <$20M revenue elsewhere; must display 'MiniMax H3' in commercial UI. US users need the commercial license Comfy resells",
-   "notes": "templates video_minimax_h3_t2v/_i2v/_r2v/_multiframe_reference/_i2v_continuation; turbo LoRAs (8-step fl2v, 4-step ref2v). Text encoder qwen3vl_32b nvfp4",
-   "source_ids": [
-    "open.minimax_h3_local"
-   ],
-   "source_url": "https://huggingface.co/MiniMaxAI/MiniMax-H3"
   },
   {
    "id": "open.minimax_h3_fun_control",

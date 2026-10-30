@@ -45,6 +45,7 @@ Regenerate this file and `soundstage/router/registry.json` with `python -m sound
 | Dropdown label | Kind | Licence | Notes |
 |---|---|---|---|
 | LTX-2.5 22B distilled · local [<$10M] | local | LTX-2.x Community License: free incl. commercial for entities <$10M annual revenue; paid above | Core engine (LTX bonus). auto = Layout-To-Render IC-LoRA when control_video (stage clay) is connected (needs the ComfyUI-LTXVideo pack + L2R LoRA), else the official two-stage i2v/t2v template with audio. first_frame = look still. |
+| MiniMax H3 · local [<$20M GEO] | local | MiniMax H3 Community License: EXCLUDES USA, EU, UK, South Korea; <$20M revenue elsewhere; must display 'MiniMax H3' in c | Optional second engine (LTX-2.5 stays the default). Image → video from the look still with H3's own sound in the same pass; follows the clay blocking only loosely. motion_ref = clay previz as <Video 1> (ref2va model, 20 steps, slow). Text encoder on CPU (32B). ≤362 frames, 17k+5 grid, trimmed back to the shot length. 8-step fl2v turbo LoRA used when installed. |
 | Wan Animate 2 distilled · local | local | Apache 2.0 | Motion transfer: ref_1 = character, control_video = driving pose/performance. 81-frame window. |
 | Kling 4.0 · Kling [API] | partner | Provider ToS via Comfy partner proxy (paid Comfy credits) | first/last frame → I2V; refs → Reference-to-Video; prompt only → T2V. |
 | Veo 3.1 · Google [API] | partner | Provider ToS via Comfy partner proxy (paid Comfy credits) |  |
@@ -85,7 +86,7 @@ Regenerate this file and `soundstage/router/registry.json` with `python -m sound
 
 From research/10 and research/12. These never appear in a dropdown until an adapter is written.
 
-### Generate image (text / refs → still) (53)
+### Generate image (text / refs → still) (52)
 
 - FLUX 1.1 [pro] Ultra — Flux 1.1 [pro] Ultra Image · BFL (partner) [API]
 - FLUX.2 [pro] / [max] — Flux.2 Image · BFL (partner) [API]
@@ -117,7 +118,6 @@ From research/10 and research/12. These never appear in a dropdown until an adap
 - Flux 2 on Comfy Cloud [BETA] · Comfy Cloud (cloud) [API]
 - Mage-Flow on Comfy Cloud [BETA] · Comfy Cloud (cloud) [API]
 - Mage-Flow Turbo on Comfy Cloud [BETA] · Comfy Cloud (cloud) [API]
-- MiniMax H3 (fl2va / ref2va, int8) · MiniMax (local) [<$20M GEO]
 - FastH3 OmniRef 8-step (FastVideo distill of H3) · FastVideo (local)
 - MiniMax H3 as text-to-image (single frame) · MiniMax (local)
 - Wan 2.2 5B TI2V · Alibaba Wan-AI (local)
@@ -208,7 +208,7 @@ From research/10 and research/12. These never appear in a dropdown until an adap
 - Depth Anything 3 (depth/geometry -> mesh/pointcloud) · ByteDance (local)
 - MoGe 2/3 geometry (depth, normals, FoV, panorama) · Microsoft (local)
 
-### Generate video (image / control → shot) (110)
+### Generate video (image / control → shot) (109)
 
 - FLUX 3 Video — Flux 3 Text to Video · BFL (partner) [API]
 - FLUX 3 Video — Flux 3 Image to Video · BFL (partner) [API]
@@ -296,7 +296,6 @@ From research/10 and research/12. These never appear in a dropdown until an adap
 - LTX-2.3 IC-LoRA Union Control (depth/pose/canny) · Lightricks (local)
 - LTX-2.3 IC-LoRA Ingredients (reference-to-video) · Lightricks (local)
 - LTX-2.3 edit LoRAs (remove object / watermark / subtitles, outpaint, restore archival) · Lightricks + community (local)
-- MiniMax H3 (fl2va / ref2va, int8) · MiniMax (local) [<$20M GEO]
 - MiniMax H3 Fun ControlNet Union (pose) · MiniMax / community (local)
 - FastH3 OmniRef 8-step (FastVideo distill of H3) · FastVideo (local)
 - Wan 2.2 14B T2V / I2V / FLF2V (+lightx2v 4-step) · Alibaba Wan-AI (local)
