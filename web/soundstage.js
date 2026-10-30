@@ -29,6 +29,10 @@ import { icon } from "./ui/icons.mjs";
 import * as THREE from "./vendor/three.module.min.mjs";
 import { PosePanel } from "./stage/posepanel.mjs";
 import { listenVcam, LiveVcam, listTakes, fetchTake, takeToCamera, anchorFromCamera } from "./vcam/live.mjs";
+import { ScriptPanel, SceneSwitcher } from "./script/panel.mjs";
+import { DEMO_SCRIPT } from "./script/demo_script.mjs";
+import { stageSetupForScene } from "./script/parse.mjs";
+import { NO_SCENE, scopeShots, stageSig, listShots, keyOfShot, packScript, unpackScript, sceneNumberOf, retireScenes } from "./script/scenes.mjs";
 
 const CSS = `
 .ss-stage { display:flex; flex-direction:column; gap:6px; padding:6px; background:#16191e; border-radius:6px;
@@ -62,6 +66,10 @@ const CSS = `
 .ss-stageview { position:relative; }
 .ss-stage [hidden] { display:none !important; }
 .ss-stage.ss-cutmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-cutview) { display:none !important; }
+.ss-stage.ss-scriptmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-scriptview):not(.ss-status) { display:none !important; }
+.ss-scriptview { min-width:0; }
+.ss-scenehead { display:flex; align-items:center; gap:8px; min-width:0; }
+.ss-cutview > .ss-scenehead { margin:0 0 6px; }
 .ss-stage.ss-pipemode > :not(.ss-tabs):not(.ss-pipe):not(.ss-pipeview) { display:none !important; }
 .ss-stage.ss-advmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-advisorview):not(.ss-striphost) { display:none !important; }
 .ss-stage.ss-canvasmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-canvasview):not(.ss-striphost):not(.ss-status) { display:none !important; }
@@ -243,6 +251,17 @@ function createStageWidget(node, inputName) {
     rewindLadder(s);
   });
   node.ssStage = stage; // handle for the scene agent, scripts and tests
+  // Script import (web/script): the Script in memory and one stage per script scene. Declared up here because the cut,
+  // the strip and the stage callbacks below read them before the Script tab is built. See "Script" further down.
+  let script = null;            // the full Script (parse.mjs), or null: then the App is exactly as without scripts
+  let sceneStages = {};         // snapshot key (scene id, NO_SCENE) -> stage JSON, for every scene but the live one
+  let sceneCuts = {};           // snapshot key -> that scene's saved cut (the live scene's cut is node.properties.ss_cut)
+  let liveKey = NO_SCENE;       // the scene the live stage belongs to
+  let filterScene = null;       // the scene switchers' choice (null = All scenes)
+  let freshSig = null;          // stageSig of a fresh scene stage nobody has touched yet (its Master is not a real shot)
+  let scriptRef = null;         // userdata file with the full text of a script too big for node.properties
+  let agentBusy = false;        // the scene agent is building: no scene switch until its result has landed
+  let scriptPanel = null;
 
   // Editing the stage sends the ladder back to step 1, so the next Run shows the new previz video
   // (seconds) instead of re-rendering every rung. Debounced: a drag is one edit.
@@ -290,7 +309,7 @@ function createStageWidget(node, inputName) {
   ladderBar.append(fid.wrap, blend);
   ladderView.append(rungs);
   const tabBtns = {};
-  for (const [k, label] of [["stage", "Stage"], ["canvas", "Canvas"], ["advisor", "Advisor"], ["look", "Look"], ["ladder", "Ladder"], ["cut", "Cut"]]) {
+  for (const [k, label] of [["script", "Script"], ["stage", "Stage"], ["canvas", "Canvas"], ["advisor", "Advisor"], ["look", "Look"], ["ladder", "Ladder"], ["cut", "Cut"]]) {
     const b = Object.assign(document.createElement("button"), { type: "button", textContent: label });
     b.setAttribute("aria-pressed", String(k === "stage"));
     b.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -304,6 +323,10 @@ function createStageWidget(node, inputName) {
   const lookView = Object.assign(document.createElement("div"), { className: "ss-lookview" });
   lookView.hidden = true;
   el.append(lookView);
+  // Script tab: import a screenplay, browse it scene by scene (outline, breakdown, pages, director's notes, shots).
+  const scriptView = Object.assign(document.createElement("div"), { className: "ss-scriptview" });
+  scriptView.hidden = true;
+  el.append(scriptView);
   const look = new LookPanel(lookView, () => ({ ...stage.toJSON(), lighting_prompt: stage.lightingPrompt() }),
     { fetchApi: (path, init) => api.fetchApi(path, init),
       getFocal: () => stage._cameraAt(stage.frame || 0).focal_mm,
@@ -397,8 +420,12 @@ function createStageWidget(node, inputName) {
     return {
       name: node.title && node.title !== "Soundstage · 3D Stage" ? node.title : "Soundstage cut",
       fps: sc.shot?.fps || 24, width: stage.fw, height: stage.fh,
-      shots: (sc.shots || [stage.activeShot()]).map((sh) => ({ id: sh.id, name: sh.name || sh.id, frames: sc.shot?.frames || 97,
-        scene_name: "SC1", setup: sh.setup || "master", renders: rendersFor(sh.id) })),
+      shots: (sc.shots || [stage.activeShot()]).map((sh) => {
+        // With a script, clips carry the script's scene number into the NLE ("Sc 12A · Master", scene SC12A).
+        const num = sceneNumOfShot(sh.id);
+        return { id: sh.id, name: num ? `Sc ${num} · ${sh.name || sh.id}` : sh.name || sh.id, frames: sc.shot?.frames || 97,
+          scene_name: num ? `SC${num}` : "SC1", setup: sh.setup || "master", renders: rendersFor(sh.id) };
+      }),
     };
   };
   // One saved cut shared by the docked shot strip and the full Cut editor: {cut, audio, audio_tracks, excluded_shots}.
@@ -432,6 +459,7 @@ function createStageWidget(node, inputName) {
     save: (v) => { saveCut(v); if (!cutView.hidden) cut.refresh(); },
     onOpenEditor: () => showView("cut"),
     onEditShot: (id, where) => editShot(id, where),
+    getSceneName: (id) => { const n = sceneNumOfShot(id); return n ? `SC${n}` : null; },
     renderPreviewFrame: (id, f) => {
       const prev = stage.state.active_shot;
       stage.state.active_shot = id;
@@ -631,6 +659,9 @@ function createStageWidget(node, inputName) {
     bar.hidden = !isStage; view.hidden = !isStage;
     ladderBar.hidden = !isLadder; ladderView.hidden = !isLadder;
     lookView.hidden = !isLook;
+    scriptView.hidden = k !== "script";
+    el.classList.toggle("ss-scriptmode", k === "script");
+    if (k === "script") { try { scriptPanel?.render(); } catch { /* not built yet */ } }
     cutView.hidden = k !== "cut";
     advisorView.hidden = k !== "advisor";
     if (k === "canvas" && canvasView.parentElement !== el) el.append(canvasView);   // back from the ② Frame editor
@@ -1369,7 +1400,12 @@ function createStageWidget(node, inputName) {
     delShot.disabled = shots.length < 2;
     badge.textContent = stage.freeView ? "Free view · shot camera shown" : `Shot cam · ${stage.activeShot().name}`;
   }
-  stage.onShots = () => { syncShots(); try { pipeline?.restoreLadder(); } catch { /* not built */ } };
+  stage.onShots = () => {
+    tagLiveShots();   // a script scene's new shots get its scene_id (and agent ids a scene-scoped id) before anyone keys on them
+    syncShots();
+    try { pipeline?.restoreLadder(); } catch { /* not built */ }
+    try { refreshScriptUI({ panel: false }); } catch { /* not built */ }
+  };
 
   // Sound stage: set / environment, weather & elements, water tank level.
   const envRow = document.createElement("div");
@@ -1548,8 +1584,9 @@ function createStageWidget(node, inputName) {
   }
   const runAgent = async (fn) => {
     describeBtn.disabled = true;
+    agentBusy = true;
     try { await fn(); } catch (e) { status.textContent = `Scene agent: ${e.message || e}`; }
-    finally { describeBtn.disabled = false; }
+    finally { describeBtn.disabled = false; agentBusy = false; }
   };
   describeBtn.addEventListener("click", () => describeInput.value.trim() && runAgent(() => agent.describe(describeInput.value.trim())));
   describeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") describeBtn.click(); });
@@ -1730,6 +1767,296 @@ function createStageWidget(node, inputName) {
   node.ssLadder = ladder;
   for (const ms of [500, 2500]) setTimeout(() => { try { pipeline.restoreLadder(); } catch { /* ladder not ready */ } }, ms);
 
+  // ---------------------------------------------------------------- Script
+  // An imported screenplay, scene by scene. Each script scene keeps its own stage: the live stage belongs to liveKey,
+  // every other scene waits in sceneStages (and its cut in sceneCuts). Switching scenes swaps them. Shots carry
+  // scene_id, and agent-made shot ids are scene-scoped, so renders / chosen frames / clips never cross scenes.
+  // Nothing here shows until a script is loaded: no script = the App as before (only the Script tab is new).
+  node.ssAgent = agent;
+  const renderClay = (id, f = 0) => {
+    const prev = stage.state.active_shot;
+    stage.state.active_shot = id;
+    try { return stage.renderFrameTo("clay", f); } finally { stage.state.active_shot = prev; }
+  };
+  const nudgeTracker = () => { try { app.extensionManager?.workflow?.activeWorkflow?.changeTracker?.checkState?.(); } catch { /* older frontend */ } };
+  const liveShots = () => stage.state?.shots || [];
+  const sceneById = (id) => (id && script?.scenes?.find((x) => x.id === id)) || null;
+  // The live stage is a fresh scene stage nobody touched: its Master camera is not a shot of the scene yet.
+  function untouchedFresh() {
+    if (freshSig == null) return false;
+    if (stageSig(stage.toJSON()) !== freshSig) return false;
+    return !liveShots().some((sh) => pipeline.chosen?.[sh.id] || Object.keys(rendersFor(sh.id)).length);
+  }
+  // Is a shot id already used anywhere (renders, chosen frames, another scene)? Then a rebuilt shot gets a new one.
+  function idTaken(id) {
+    if (shotRenders[id] || savedRenders()[id] || pipeline?.chosen?.[id]) return true;
+    return Object.values(sceneStages).some((st) => (st?.shots || []).some((sh) => sh.id === id));
+  }
+  function tagLiveShots() {
+    if (!script || !liveKey || liveKey === NO_SCENE || String(liveKey).includes(":")) return;
+    scopeShots(stage.state, liveKey, { taken: idTaken });
+  }
+  function sceneNumOfShot(id) {
+    if (!script) return null;
+    const k = keyOfShot(sceneStages, liveKey, liveShots(), id);
+    const st = k === liveKey ? stage.state : sceneStages[k];
+    const sh = (st?.shots || []).find((x) => x.id === id);
+    return sceneNumberOf(script, sh?.scene_id || k);
+  }
+  const picOf = (id) => pipeline.chosen?.[id]?.url || rendersFor(id).look || null;
+  // Every script shot for the Script panel and the switchers: snapshots + the live stage (thumb: chosen frame / look
+  // render, else the live stage's clay, drawn lazily once per tile).
+  function getShots() {
+    if (!script) return [];
+    return listShots(sceneStages, liveKey, untouchedFresh() ? [] : liveShots()).map((x) => ({
+      ...x, thumb: picOf(x.id) || (x.live ? () => renderClay(x.id, 0) : undefined) }));
+  }
+
+  // Persist: node.properties.ss_script = {script (compact; text left out when big), ref, live_scene, active_scene,
+  // scene_stages, scene_cuts}. The live scene's stage is the widget value itself.
+  let storedRef = null;
+  function persistScript() {
+    node.properties = node.properties || {};
+    if (!script) { delete node.properties.ss_script; nudgeTracker(); return; }
+    const packed = packScript(script);
+    if (packed.trimmed) {
+      // The full text goes to ComfyUI userdata (not into every render's workflow metadata), once per text version.
+      const textSig = hashString(JSON.stringify(script.scenes.map((x) => x.elements || [])));
+      scriptRef = `soundstage/scripts/${textSig}.json`;
+      if (storedRef !== scriptRef) {
+        storedRef = scriptRef;
+        api.storeUserData?.(scriptRef, packScript(script, Infinity).script, { overwrite: true, stringify: true, throwOnError: false })
+          ?.catch?.(() => { storedRef = null; });
+      }
+    }
+    node.properties.ss_script = { v: 1, script: packed.script, ref: packed.trimmed ? scriptRef : null, live_scene: liveKey,
+      active_scene: filterScene, fresh: untouchedFresh() || undefined, scene_stages: sceneStages, scene_cuts: sceneCuts };
+    nudgeTracker();
+  }
+  // ComfyUI applies node.properties after the widget is built (and the widget value after that): read them lazily.
+  setTimeout(async () => {
+    const saved = node.properties?.ss_script;
+    if (!saved?.script) return;
+    sceneStages = saved.scene_stages || {};
+    sceneCuts = saved.scene_cuts || {};
+    liveKey = saved.live_scene || NO_SCENE;
+    filterScene = saved.active_scene ?? null;
+    scriptRef = storedRef = saved.ref || null;
+    let full = null;
+    if (saved.script.trimmed && scriptRef) {
+      try { const r = await api.getUserData(scriptRef); if (r.ok) full = await r.json(); } catch { /* text unavailable */ }
+    }
+    script = unpackScript(saved.script, full);
+    if (saved.fresh) freshSig = stageSig(stage.toJSON());
+    refreshScriptUI();
+  }, 0);
+
+  function busyReason() {
+    if (agentBusy) return "the scene agent is still building this scene";
+    if (batchRendering || batch) return "shots are being queued for rendering";
+    if (pipeline.busy?.()) return "a render is still running for this scene";
+    return "";
+  }
+
+  // A scene nobody has staged yet: the default stage on the scene's set, weather and light, one Master camera.
+  function applySceneSetup(sc) {
+    const su = stageSetupForScene(sc);
+    const env = stage.toJSON().environment || {};
+    if (su.set && SETS[su.set] && (env.set !== su.set || (env.weather || "none") !== su.weather)) stage.setEnvironment({ set: su.set, weather: su.weather });
+    else if (su.weather && WEATHER[su.weather] && (env.weather || "none") !== su.weather) stage.setEnvironment({ weather: su.weather });
+    if (su.time_preset && TIME_PRESETS[su.time_preset] && stage.toJSON().lighting?.preset !== su.time_preset) stage.applyTimePreset(su.time_preset);
+    try { syncEnv(); syncLight(); } catch { /* rows not built */ }
+  }
+  function freshStage(key) {
+    const st = JSON.parse(JSON.stringify(DEFAULT_SCENE));
+    st.shot = { ...(st.shot || {}), aspect: stage.toJSON().shot?.aspect || st.shot?.aspect };
+    stage.load(st);
+    stage.activeShot();                       // the stage makes its default Master camera
+    const j = stage.toJSON();
+    scopeShots(j, key, { taken: idTaken, all: true });
+    loadScene(stage, j);
+    const sc = sceneById(key);
+    if (sc) applySceneSetup(sc);
+    freshSig = stageSig(stage.toJSON());
+  }
+
+  /** Put scene `id` on the stage (null: All scenes, the stage stays). keepFilter: the switchers stay where they are. */
+  function switchScene(id, { keepFilter = false } = {}) {
+    if (!script) return { ok: false };
+    id = id || null;
+    if (id === null) { filterScene = null; refreshScriptUI(); persistScript(); return { ok: true }; }
+    if (id === liveKey) {
+      if (!keepFilter) filterScene = sceneById(id) ? id : null;
+      refreshScriptUI(); persistScript();
+      return { ok: true };
+    }
+    const why = busyReason();
+    if (why) {
+      status.textContent = `The stage stays on this scene while ${why}; switch when it's done.`;
+      refreshScriptUI();
+      return { ok: false, why };
+    }
+    // Stash the live scene (stage + cut) unless it is a fresh stage nobody touched.
+    if (untouchedFresh()) { delete sceneStages[liveKey]; delete sceneCuts[liveKey]; }
+    else { sceneStages[liveKey] = stage.toJSON(); sceneCuts[liveKey] = loadCut(); }
+    const snap = sceneStages[id], cutSnap = sceneCuts[id];
+    delete sceneStages[id]; delete sceneCuts[id];
+    saveCut(cutSnap || {});
+    liveKey = id;
+    let fresh = false;
+    if (snap) { loadScene(stage, snap); freshSig = null; }
+    else { freshStage(id); fresh = true; }
+    stage.resetHistory();                     // Undo never reaches into another scene
+    agent.undoStack = []; agent.redoStack = [];
+    sceneJSON = stage.toJSON();
+    try { syncControls(); syncShots(); aspectSel.sel.value = stage.toJSON().shot?.aspect || "1.85"; } catch { /* not built */ }
+    // The strip edits this scene's cut now: its undo history belonged to the other scene.
+    try { strip.undoStack = []; strip.redoStack = []; strip._autoAdded = new Map(); strip._lastIds = null; strip.refresh(); } catch { /* strip */ }
+    if (!cutView.hidden) { try { cut.refresh(); } catch { /* cut */ } }
+    try { pipeline._applyShot(stage.activeShot().id); pipeline.restoreLadder(); if (pipeline.current === "frame") pipeline._refreshFrame(); if (pipeline.current === "motion") pipeline._refreshMotion(); } catch { /* pipeline */ }
+    if (!keepFilter) filterScene = sceneById(id) ? id : null;
+    const sc = sceneById(id);
+    status.textContent = sc ? `Scene ${sc.number} is on the stage${fresh ? ": a fresh set from its heading. Build it from the Script tab, or block it yourself." : "."}`
+      : "The stage you had before the script is back.";
+    refreshScriptUI();
+    persistScript();
+    return { ok: true, fresh };
+  }
+
+  /** The scene agent blocks this scene on its own stage; its shots get scene-scoped ids and the heading's set and light. */
+  async function buildScene(sc, prompt) {
+    if (agentBusy) throw new Error("the scene agent is already building a scene");
+    const r = switchScene(sc.id);
+    if (!r.ok) throw new Error(r.why ? `the stage is busy: ${r.why}` : "no script");
+    describeInput.value = prompt;             // what the agent was asked, editable on ① Set
+    describeBtn.disabled = true;
+    agentBusy = true;
+    try {
+      await agent.describe(prompt);
+    } finally { describeBtn.disabled = false; agentBusy = false; }
+    tagLiveShots();
+    applySceneSetup(sc);
+    freshSig = null;
+    try { syncShots(); strip.refresh(); pipeline.restoreLadder(); } catch { /* not built */ }
+    status.textContent = `Scene ${sc.number} is blocked on the stage: ${liveShots().length} camera setup${liveShots().length === 1 ? "" : "s"}. Open ① Set to adjust it.`;
+    persistScript();
+    refreshScriptUI();
+  }
+
+  /** A new camera setup in this scene (on its stage). */
+  function newShotIn(sc) {
+    const r = switchScene(sc.id);
+    if (!r.ok) throw new Error(r.why ? `the stage is busy: ${r.why}` : "no script");
+    if (r.fresh || untouchedFresh()) {        // the fresh stage's Master becomes the scene's first shot
+      freshSig = null;
+      status.textContent = `Scene ${sc.number} has its first shot (Master). Frame it on ① Set.`;
+    } else {
+      const name = stage.addShot("single");
+      status.textContent = `New setup “${name}” in scene ${sc.number}, starting from the current camera. Frame it on ① Set.`;
+    }
+    persistScript();
+    refreshScriptUI();
+  }
+
+  function openShot(id) {
+    const k = keyOfShot(sceneStages, liveKey, liveShots(), id);
+    if (k == null) return false;
+    if (k !== liveKey && !switchScene(k, { keepFilter: filterScene === null }).ok) return false;
+    pipeline.selectShot(id);                  // the stage's active shot, and the open step follows it
+    return true;
+  }
+
+  // Scene switchers: one in the header of every step (① Set's shot row, ② Frame, ③ Motion, ④ Review, ⑤ Deliver, Cut),
+  // all in sync. Hidden while there is no script. ① Set and the Cut work on the stage's own scene (its shots, its
+  // cut), so theirs always names the scene on the stage; the step screens can also show All scenes.
+  const switchers = [], sceneHeads = [], stageBound = new Set();
+  const mountSwitcher = (host, { prepend = false, bound = false } = {}) => {
+    const sw = new SceneSwitcher(host, { getScript: () => script, getShots, current: filterScene,
+      onSelect: (id) => { if (!switchScene(id).ok) refreshScriptUI(); } });
+    if (prepend) host.prepend(sw.el);
+    sw.el.addEventListener("pointerdown", (e) => e.stopPropagation());
+    switchers.push(sw);
+    if (bound) stageBound.add(sw);
+    return sw;
+  };
+  const headBefore = (row) => {
+    const head = Object.assign(document.createElement("div"), { className: "ss-scenehead", hidden: true });
+    row.before(head);
+    sceneHeads.push(head);
+    mountSwitcher(head);
+  };
+  mountSwitcher(shotRow, { prepend: true, bound: true });
+  for (const { row } of pipeline.shotRows) if (row.parentElement) headBefore(row);
+  {
+    const head = Object.assign(document.createElement("div"), { className: "ss-scenehead", hidden: true });
+    cutView.prepend(head);
+    sceneHeads.push(head);
+    mountSwitcher(head, { bound: true });
+  }
+
+  // "All scenes" in a step: every scene's shots, labelled; picking one from another scene switches the stage to it.
+  pipeline.ctx.rowShots = () => {
+    if (!script || filterScene !== null) return null;
+    const order = new Map(script.scenes.map((x, i) => [x.id, i]));
+    const all = listShots(sceneStages, liveKey, liveShots());
+    const live = new Map(pipeline.shots().map((s, i) => [s.id, i]));   // the live scene in its cut order
+    const rank = (x) => (x.scene_id && order.has(x.scene_id) ? order.get(x.scene_id) : 1e6);
+    return all.sort((a, b) => rank(a) - rank(b) || (live.get(a.id) ?? 0) - (live.get(b.id) ?? 0)).map((x) => ({
+      ...x, scene: sceneNumberOf(script, x.scene_id) ? `Sc ${sceneNumberOf(script, x.scene_id)}` : "No scene" }));
+  };
+  pipeline.ctx.openShot = (id) => openShot(id);
+
+  // panel: also bring the Script panel to the switchers' scene and redraw it (not while the director types a note).
+  let syncingPanel = false;
+  function refreshScriptUI({ panel = true } = {}) {
+    for (const hd of sceneHeads) hd.hidden = !script;
+    for (const sw of switchers) sw.setCurrent(stageBound.has(sw) ? (sceneById(liveKey) ? liveKey : null) : filterScene);
+    if (!panel || !scriptPanel || syncingPanel) return;
+    syncingPanel = true;
+    try {
+      if ((scriptPanel.current || null) !== filterScene) scriptPanel.selectScene(filterScene);
+      const typing = scriptView.contains(document.activeElement) && /^(TEXTAREA|INPUT)$/.test(document.activeElement.tagName);
+      if (!scriptView.hidden && !typing) scriptPanel.render();
+    } finally { syncingPanel = false; }
+    try { pipeline._drawShotRows(); } catch { /* not built */ }
+  }
+
+  scriptPanel = new ScriptPanel(scriptView, {
+    getScript: () => script,
+    setScript: (s, info = {}) => {
+      if (script && s && (info.reason === "replace" || info.reason === "sample")) {
+        // A different script: its sc_1 is not ours. Old scenes keep their stages, under a retired key.
+        const wasFresh = untouchedFresh();
+        liveKey = retireScenes({ snaps: sceneStages, cuts: sceneCuts, liveKey, liveState: stage.state, tag: `old${Date.now().toString(36)}` });
+        if (wasFresh) freshSig = stageSig(stage.toJSON());
+        filterScene = null;
+      }
+      script = s || null;
+      persistScript();
+      refreshScriptUI({ panel: false });
+    },
+    getShots,
+    // Browsing the script moves the stage along (nothing is created by looking: a scene's fresh stage only becomes
+    // its shots once touched). While the stage can't move, the panel still shows the scene.
+    onSelectScene: (id) => {
+      if (syncingPanel) return;
+      syncingPanel = true;
+      let r;
+      try { r = switchScene(id); } finally { syncingPanel = false; }
+      if (!r.ok && r.why) status.textContent = `Showing the script only: the stage stays where it is while ${r.why}.`;
+      else if (r.ok && id) { try { scriptPanel._renderDetail(); } catch { /* panel */ } }   // live clay thumbs now
+      try { pipeline._drawShotRows(); } catch { /* not built */ }
+    },
+    onBuildScene: (sc, prompt) => buildScene(sc, prompt),
+    onNewShot: (sc) => newShotIn(sc),
+    onOpenShot: (sh) => { if (openShot(sh.id)) showView("stage"); },
+    onStatus: (m) => (status.textContent = m),
+    sample: DEMO_SCRIPT,
+  });
+  node.ssScript = { get script() { return script; }, get liveKey() { return liveKey; }, get filter() { return filterScene; },
+    get stages() { return sceneStages; }, get cuts() { return sceneCuts; }, switchScene, buildScene, newShotIn, getShots,
+    openShot, panel: scriptPanel, switchers, persist: persistScript };
+
   const coach = new Coach(view, {
     stage, app, api,
     getCut: () => ({ ...buildCutProject(), ...loadCut() }),
@@ -1768,7 +2095,7 @@ function createStageWidget(node, inputName) {
 // Lucide icons for the stage's buttons, matched by label, so every panel gets the same icon language
 // as Comfy's hub apps without touching each button's definition.
 const BUTTON_ICONS = {
-  "Stage": "box", "Canvas": "wand-sparkles", "Advisor": "compass", "Look": "palette", "Ladder": "layers", "Cut": "scissors",
+  "Script": "file-text", "Stage": "box", "Canvas": "wand-sparkles", "Advisor": "compass", "Look": "palette", "Ladder": "layers", "Cut": "scissors",
   "⤢ Expand": "maximize-2", "↶": "undo-2", "↷": "redo-2",
   "Build scene": "sparkles", "Add": "plus", "Import 3D…": "upload", "Export GLB": "download", "Play": "play",
   "Delete": "trash-2", "Duplicate": "copy", "Delete setup": "trash-2", "Auto 3-point": "lightbulb",
