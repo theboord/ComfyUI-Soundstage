@@ -1873,6 +1873,7 @@ function createStageWidget(node, inputName) {
     lastPromptId: () => lastPid,
     setDescription: (text) => setDescription(text, true),
     openCanvas: (url) => {
+      if (canvasPanel.refEdit) canvasPanel.cancelRefEdit();
       showView("canvas");
       // Bring the chosen frame in as the top layer (once per frame), so the touch-up starts from it, not the clay.
       if (url && url !== canvasFrom) {
@@ -1883,13 +1884,14 @@ function createStageWidget(node, inputName) {
     },
     // ④ Frame's inline editor: the Canvas panel mounted inside the frame step, loaded with the chosen frame.
     mountCanvas: (host, url) => {
+      if (canvasPanel.refEdit) canvasPanel.cancelRefEdit();   // the frame's own document comes back
       host.append(canvasView);
       canvasView.hidden = false;
       canvasBack.hidden = true;
       try { canvasPanel.refreshStage(); } catch { /* stage not ready */ }
       if (url && url !== canvasFrom) { canvasFrom = url; canvasPanel.importImage(url, "Your chosen frame").catch?.(() => {}); }
     },
-    unmountCanvas: () => { canvasView.hidden = true; canvasBack.hidden = false; el.append(canvasView); },
+    unmountCanvas: () => { if (canvasPanel.refEdit) canvasPanel.cancelRefEdit(); canvasView.hidden = true; canvasBack.hidden = false; el.append(canvasView); },
     flattenCut: () => flattenCut(),
     renderMissing: () => renderMissing(),
     // Every step works on every shot: the scene's shots in cut order (shots not in the cut follow).
@@ -1916,6 +1918,15 @@ function createStageWidget(node, inputName) {
       try { app.extensionManager?.workflow?.activeWorkflow?.changeTracker?.checkState?.(); } catch { /* older frontend */ }
     },
     mountReview: (row) => ladderView.prepend(row),
+    // "Cast in this shot" (④ Frame, ⑤ Motion): the Cast & Locations list, the live scene, each shot's picks.
+    castItems: () => { try { return castPanel?.items() || []; } catch { return []; } },
+    sceneLabel: () => { try { const sc = sceneById(liveKey); return sc ? `Sc ${sc.number || sc.index + 1}` : null; } catch { return null; } },
+    loadShotCast: () => node.properties?.ss_shot_cast || {},
+    saveShotCast: (v) => { node.properties = node.properties || {}; node.properties.ss_shot_cast = v; nudgeTracker(); },
+    editRef: (it, opts) => editRefInPaint(it, opts),
+    setCastRef: (it, r) => setRefFor(it, r),
+    uploadRef: (file) => castPanel.o.upload(file),
+    openCast: () => pipeline?.go("cast"),
   });
   for (const v of Object.values(pipeline.views)) el.append(v);
   node.ssPipeline = pipeline;
@@ -2266,6 +2277,38 @@ function createStageWidget(node, inputName) {
     pipeline._saveRefs(refs);
     try { pipeline._drawCastRefs(); } catch { /* frame not built */ }
   }
+  /** A new picture for a cast item (or a stage-only ④ Frame reference): Cast & Locations, then the Frame refs. */
+  function setRefFor(it, r) {
+    if (!it?.key) return;
+    if (it.key.startsWith("actor:") || it.key.startsWith("ref:")) {
+      const refs = pipeline._refs();
+      refs[it.key.startsWith("ref:") ? it.key.slice(4) : it.key] = r.ref;
+      pipeline._saveRefs(refs);
+    } else castPanel._set(it.key, { ref: r.ref, url: r.url });
+    try { castPanel.render(); } catch { /* not built */ }
+  }
+  /** Open a reference picture in Paint Studio. host = ④ Frame's editor slot (else the Paint Studio view); "Save to
+   *  reference" stores the edit (onSaved, default: setRefFor) and onExit runs when it goes back to the frame. */
+  async function editRefInPaint(it, { host = null, onSaved = null, onExit = null } = {}) {
+    if (!it?.url) return;
+    if (canvasPanel.refEdit) canvasPanel.cancelRefEdit();
+    if (host) pipeline.ctx.mountCanvas(host, null);
+    else {
+      try { if (pipeline.f && !pipeline.f.closeEdit.hidden) pipeline._closeEditor(); } catch { /* frame not built */ }
+      showView("canvas");
+      canvasBack.hidden = true;
+    }
+    const back = () => { if (!host) { canvasBack.hidden = false; } onExit?.(); };
+    try {
+      await canvasPanel.editImage(it.url, { label: it.name, onSave: (info) => {
+        const r = { ref: info.name, url: info.url };
+        if (onSaved) onSaved(r); else setRefFor(it, r);
+      }, onExit: back });
+    } catch (e) {
+      status.textContent = `Couldn't open ${it.name} in Paint Studio: ${e?.message || "the picture didn't load"}`;
+      back();
+    }
+  }
   castPanel = new CastPanel(castView, {
     getScript: () => script,
     getStage: () => stage.toJSON(),
@@ -2292,7 +2335,8 @@ function createStageWidget(node, inputName) {
       if (!im) throw new Error("the model returned no picture");
       return { ref: `${im.subfolder ? im.subfolder + "/" : ""}${im.filename} [output]`, url: viewUrl(im.filename, im.subfolder, "output") };
     },
-    applyRefs: applyCastRefs,
+    applyRefs: (items) => { applyCastRefs(items); try { pipeline._drawShotCast?.(); } catch { /* frame not built */ } },
+    edit: (it, done) => editRefInPaint(it, { onSaved: done, onExit: () => { showView("cast"); try { castPanel.render(); } catch { /* */ } } }),
     onStatus: (m) => (status.textContent = m),
   });
 

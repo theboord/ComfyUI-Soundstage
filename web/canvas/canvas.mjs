@@ -13,6 +13,7 @@
 // Icons not in web/ui/icons.mjs are Lucide paths (ISC, see vendor/LUCIDE_LICENSE.txt).
 import { icon as uiIcon } from "../ui/icons.mjs";
 import { findTouchupNodes, setTouchupEnabled, setTouchupStill } from "../touchup/touchup.mjs";
+import { refViewParams } from "../cast/shotcast.mjs";
 
 const EXTRA_ICONS = {
   brush: '<path d="m11 10 3 3"/><path d="M6.5 21A3.5 3.5 0 1 0 3 17.5a2.62 2.62 0 0 1-.708 1.792A1 1 0 0 0 3 21z"/><path d="M9.969 17.031 21.378 5.624a1 1 0 0 0-3.002-3.002L6.967 14.031"/>',
@@ -581,6 +582,7 @@ export class CanvasPanel {
   _markDirty(layer) { if (layer.kind === "paint" || layer.kind === "gen" || layer.kind === "mask") this._dirty.add(layer.id); }
 
   _scheduleSave() {
+    if (this.refEdit) return;   // a reference being edited is saved with "Save to reference", not autosaved over the frame
     clearTimeout(this._saveTimer);
     this._saveTimer = setTimeout(() => this._save(), 1500);
   }
@@ -598,6 +600,7 @@ export class CanvasPanel {
   }
 
   async _save() {
+    if (this.refEdit) return;
     const ids = [...this._dirty];
     this._dirty.clear();
     for (const id of ids) {
@@ -656,8 +659,12 @@ export class CanvasPanel {
       onclick: () => this.useAsFirstFrame() }, icon("check", 15), el("span", {}, "Use as first frame"));
     const head = el("div", { class: "ss-cv-headbar" },
       el("div", { class: "ss-cv-title" }, icon("wand-sparkles", 18), "Paint Studio"),
-      el("div", { class: "ss-cv-sub" }, "Select or mask an area, describe it, Generative Fill. Drag the canvas edge out (C) to extend the frame."),
+      this.subEl = el("div", { class: "ss-cv-sub" }, "Select or mask an area, describe it, Generative Fill. Drag the canvas edge out (C) to extend the frame."),
+      this.refBackBtn = el("button", { class: "ss-cv-ib", type: "button", title: "Leave this reference unchanged and go back to the frame",
+        onclick: () => this.cancelRefEdit() }, icon("x", 15), el("span", {}, "Cancel")),
       this.useBtn);
+    this.refBackBtn.hidden = true;
+    this.refBackBtn.style.cssText = "width:auto;padding:0 10px;gap:6px;display:none";
     this.optsEl = el("div", { class: "ss-cv-opts" });
     this.rail = el("div", { class: "ss-cv-rail", role: "toolbar", "aria-label": "Paint tools", "aria-orientation": "vertical" });
     this.toolBtns = {};
@@ -1643,7 +1650,7 @@ export class CanvasPanel {
     const tiles = refs.map((r) => el("button", { type: "button", class: "ref", "aria-pressed": String(f.refs.has(r.key)),
       title: `${r.label}: ${f.refs.has(r.key) ? "used" : "click to use"} as a reference (Generative Fill puts this subject in the area)`,
       onclick: () => { if (f.refs.has(r.key)) f.refs.delete(r.key); else f.refs.add(r.key); this._renderRefs(); this._renderFillState(); } },
-      el("img", { src: this._viewURL(r.file, "input"), alt: r.label })));
+      el("img", { src: this._refURL(r.file), alt: r.label })));
     this.refsEl.replaceChildren(
       el("span", { class: "ttl" }, refs.length ? "Reference (put this subject in the area):" : "Reference: add a character sheet or photo to put that subject in the area"),
       ...tiles,
@@ -1986,8 +1993,103 @@ export class CanvasPanel {
     } catch (e) { this.onStatus(`Lift to 3D failed: ${e.message}`); }
   }
 
+  /** A reference file ("dir/x.png" in input/, or "dir/x.png [output]") as a /view URL. */
+  _refURL(ref) {
+    const p = refViewParams(ref);
+    const q = new URLSearchParams({ filename: p.filename, subfolder: p.subfolder, type: p.type });
+    return this.api?.apiURL ? this.api.apiURL(`/view?${q}`) : `/view?${q}`;
+  }
+
+  // ======================================================================= editing a reference picture
+  /** Edit a reference picture (a character sheet, a location or wardrobe photo) as its own document. The frame's
+   *  document is set aside in memory and comes back afterwards. "Save to reference" uploads the edit to
+   *  input/soundstage_refs/ and calls onSave({name, url}); onExit() runs when Paint Studio goes back to the frame. */
+  async editImage(src, { label = "Reference", onSave = null, onExit = null } = {}) {
+    if (this.refEdit) this._endRefEdit(false);
+    const img = await loadImg(src);
+    clearTimeout(this._saveTimer);
+    this.refEdit = { label, onSave, onExit, stash: { W: this.W, H: this.H, M: this.M, rect: { ...this.rect }, docId: this.docId,
+      layers: this.layers, activeId: this.activeId, selection: this.selection, undo: this.undoStack, redo: this.redoStack,
+      snapshots: this.snapshots, dirty: this._dirty, cropAspect: this.cropAspect } };
+    const s = Math.min(1, MAX_DOC / Math.max(img.width, img.height));
+    const w = Math.max(16, Math.round(img.width * s)), hh = Math.max(16, Math.round(img.height * s));
+    this._setDims(w, hh);
+    this.rect = { x: 0, y: 0, w, h: hh };
+    this.cropAspect = null;
+    this.docId = uid();
+    this.selection = null; this.undoStack = []; this.redoStack = []; this.snapshots = []; this._dirty = new Set();
+    this.magic.points = [];
+    const paint = this._makeLayer("paint", label);
+    const x = paint.canvas.getContext("2d");
+    x.imageSmoothingQuality = "high";
+    x.drawImage(img, this.M, this.M, w, hh);
+    this.layers = [paint, this._makeLayer("mask", "Fill mask")];
+    this.activeId = paint.id;
+    this._clearResults();
+    this._refMode(true);
+    this._renderLayers(); this._renderHistory();
+    this.fit();
+    this.onStatus(`Editing ${label} (${w}×${hh}): mask an area and Generative Fill, Remove, Extend. Then “Save to reference”.`);
+  }
+
+  _refMode(on) {
+    const lbl = this.useBtn.querySelector("span");
+    if (lbl) lbl.textContent = on ? "Save to reference" : "Use as first frame";
+    this.useBtn.title = on ? `Save this picture as ${this.refEdit?.label || "the"} reference: every shot that uses it gets the edit`
+      : "Make this picture the shot's first frame: Motion animates it";
+    this.refBackBtn.hidden = !on;
+    this.refBackBtn.style.display = on ? "inline-flex" : "none";
+    if (this.subEl) this.subEl.textContent = on ? `Editing the ${this.refEdit?.label || ""} reference. Your frame's layers come back when you save or cancel.`
+      : "Select or mask an area, describe it, Generative Fill. Drag the canvas edge out (C) to extend the frame.";
+  }
+
+  /** Put the frame's document back (after a reference edit). */
+  _endRefEdit(exit = true) {
+    const r = this.refEdit;
+    if (!r) return;
+    const st = r.stash;
+    this.refEdit = null;
+    this._setDims(st.W, st.H, st.M);
+    Object.assign(this, { rect: st.rect, docId: st.docId, layers: st.layers, activeId: st.activeId, selection: st.selection,
+      undoStack: st.undo, redoStack: st.redo, snapshots: st.snapshots, _dirty: st.dirty, cropAspect: st.cropAspect });
+    this.magic.points = [];
+    this._clearResults();
+    this._refMode(false);
+    this._renderLayers(); this._renderHistory();
+    this.fit();
+    if (this._dirty.size) this._scheduleSave();
+    if (exit) { try { r.onExit?.(); } catch (e) { console.warn("[Soundstage paint] ref exit", e); } }
+  }
+
+  cancelRefEdit() {
+    const label = this.refEdit?.label;
+    this._endRefEdit();
+    if (label) this.onStatus(`${label}: reference left unchanged.`);
+  }
+
+  async saveRefEdit() {
+    const r = this.refEdit;
+    if (!r) return;
+    const f = this.fill;
+    if (f.results[f.pick]?.canvas) this.applyResult();
+    const rect = { ...this.rect };
+    const c = this.composite(rect, rect.w, rect.h, { background: "#000" });
+    this.useBtn.disabled = true;
+    try {
+      const url = c.toDataURL("image/png");
+      const base = String(r.label || "ref").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40) || "ref";
+      const name = await this._upload(await toBlob(c), `${base}_edit_${hashBytes(url.slice(-4096) + url.length)}.png`, "soundstage_refs");
+      const info = { name, url: this._viewURL(name, "input", Date.now()), w: rect.w, h: rect.h };
+      await r.onSave?.(info);
+      this._endRefEdit();
+      this.onStatus(`${r.label}: edited reference saved. Every shot that uses it gets the new picture.`);
+    } catch (e) { this.onStatus(`Could not save the reference: ${e.message}`); }
+    finally { this.useBtn.disabled = false; }
+  }
+
   /** Save the document frame to input/soundstage/, make it the touched-up still and the shot's chosen first frame. */
   async useAsFirstFrame() {
+    if (this.refEdit) return this.saveRefEdit();
     const f = this.fill;
     if (f.results[f.pick]?.canvas) this.applyResult();   // what you see on the canvas is what becomes the frame
     const rect = { ...this.rect };
