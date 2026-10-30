@@ -887,8 +887,8 @@ export class Pipeline {
       m.h3Refs = h("div", { class: "row", style: "flex-wrap:wrap;gap:6px;margin-top:4px" }),
       h("label", { class: "row", style: "margin-top:4px" }, "Add images",
         m.h3RefIn = h("input", { type: "file", accept: "image/*", multiple: "", on: { change: (e) => this._addRefs(e.target.files) } })));
-    m.quality = "Final";   // Draft = quick look (8+3), Final = clean motion and detail (12+6), Final HQ = hero shots (18+12)
-    m.qSeg = h("span", { class: "seg row" }, ...["Draft", "Final", "Final HQ"].map((q) => h("button", { type: "button", "aria-pressed": String(q === "Final"),
+    m.quality = "Draft";   // Draft = quick look (8+3, the default while building), Final = clean motion and detail (12+6), Final HQ = hero shots (18+12)
+    m.qSeg = h("span", { class: "seg row" }, ...["Draft", "Final", "Final HQ"].map((q) => h("button", { type: "button", "aria-pressed": String(q === "Draft"),
       title: { Draft: "8 + 3 steps: a quick look, faces readable", Final: "12 + 6 steps: clean motion and detail (recommended)", "Final HQ": "18 + 12 steps: hero shots, about twice as long" }[q],
       title: q === "Draft" ? "8 + 3 distilled steps: fast previews" : "18 + 12 steps on the same curve: finer detail and steadier motion, about 2x slower",
       on: { click: (e) => { m.quality = q; for (const b of m.qSeg.children) b.setAttribute("aria-pressed", String(b === e.currentTarget)); this._applyVideo(); this._motionNote?.(); } } }, q)));
