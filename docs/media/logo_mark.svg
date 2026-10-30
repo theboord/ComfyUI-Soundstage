@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Soundstage">
+  <title>Soundstage</title>
+  <polygon points="4.98,17.88 51.03,1.13 53.76,8.64 7.72,25.40" fill="none" stroke="#f2ff59" stroke-width="2.00" stroke-linejoin="round"/>
+  <polygon points="8.00,28.00 57.00,28.00 57.00,35.00 8.00,35.00" fill="none" stroke="#f2ff59" stroke-width="2.00" stroke-linejoin="round"/>
+  <polygon points="11.48,24.03 13.44,14.81 18.61,12.93 16.65,22.15" fill="#f2ff59"/>
+  <polygon points="22.28,20.10 24.25,10.87 29.41,8.99 27.45,18.22" fill="#f2ff59"/>
+  <polygon points="33.09,16.17 35.05,6.94 40.22,5.06 38.26,14.29" fill="#f2ff59"/>
+  <polygon points="43.90,12.23 45.86,3.01 51.03,1.13 49.06,10.35" fill="#f2ff59"/>
+  <polygon points="12.00,35.00 8.00,28.00 12.50,28.00 17.50,35.00" fill="#f2ff59"/>
+  <polygon points="23.50,35.00 18.50,28.00 24.00,28.00 29.00,35.00" fill="#f2ff59"/>
+  <polygon points="35.00,35.00 30.00,28.00 35.50,28.00 40.50,35.00" fill="#f2ff59"/>
+  <polygon points="46.50,35.00 41.50,28.00 47.00,28.00 52.00,35.00" fill="#f2ff59"/>
+  <path d="M10.00,38.00H54.00A3.00,3.00 0 0 1 57.00,41.00V58.00A3.00,3.00 0 0 1 54.00,61.00H10.00A3.00,3.00 0 0 1 7.00,58.00V41.00A3.00,3.00 0 0 1 10.00,38.00ZM27.50,42.50 L27.50,56.50 L40.00,49.50Z" fill="#f2ff59" fill-rule="evenodd"/>
+  <circle cx="9.00" cy="26.00" r="2.60" fill="#f2ff59"/>
+</svg>

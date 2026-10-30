@@ -1,6 +1,9 @@
-<p align="center"><img src="docs/icon.svg" width="120" alt="Soundstage"></p>
-
-<h1 align="center">Soundstage</h1>
+<h1 align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/logo.svg">
+  <img src="docs/media/logo_dark.png" width="520" alt="Soundstage">
+</picture>
+</h1>
 
 <p align="center"><b>A film set inside ComfyUI. Script in, finished scene out, on 100% open weights.</b></p>
 
