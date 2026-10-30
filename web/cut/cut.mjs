@@ -1210,6 +1210,9 @@ export class CutPanel {
   _thumb(shot, f) {
     const s = this._source(shot);
     if (s.kind === "image" && s.m.ok) return s.m.el;
+    // A rendered shot (draft / final video) shows its chosen frame, so the timeline reads like an editor's filmstrip.
+    const look = shot.renders?.look && this.media.get(shot.renders.look);
+    if (look?.ok) return look.el;
     if (s.kind !== "clay" || !this._renderPreviewFrame) return null;
     const key = `${shot.id}:${f}`;
     if (this.thumbs.has(key)) return this.thumbs.get(key);
