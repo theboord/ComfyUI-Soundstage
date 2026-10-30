@@ -148,6 +148,24 @@ const h = (tag, attrs = {}, ...kids) => {
  * }
  */
 /** Sound effects for what is on stage: moving animals/vehicles/people plus the set's ambience. */
+/** Who says the line, for the LTX prompt: the woman if there is one on stage, else the first person. */
+export function speakerFor(scene) {
+  const people = (scene?.actors || []).filter((a) => ["woman", "man", "child"].includes(a.kind) && !a.mount_id);
+  const a = people.find((p) => p.kind === "woman") || people[0];
+  return a ? `The ${a.kind}` : "The actor";
+}
+
+/** LTX-2.5 makes voice and picture together: the line goes into the motion prompt as spoken dialogue (before the
+ *  closing layout-lock clause, which stays last). */
+export function ltxSpokenLine(prompt, who, line) {
+  const l = String(line || "").trim().replace(/^["\u201c]+|["\u201d]+$/g, "");
+  const p = String(prompt || "").trim();
+  if (!l) return p;
+  const say = `${who || "The actor"} says: "${l}" Lips move with every word, in sync with the voice.`;
+  const i = p.indexOf("The layout, object placement");
+  return i > 0 ? `${p.slice(0, i)}${say} ${p.slice(i)}` : `${p} ${say}`.trim();
+}
+
 export function suggestSfx(scene) {
   const fps = scene?.shot?.fps || 24;
   const speed = (a) => {
@@ -899,6 +917,13 @@ export class Pipeline {
     m.neg = h("textarea", { placeholder: "Negative prompt for the video (used when CFG is above 1)", style: "min-height:40px",
       on: { change: () => this.set(5509, "value", m.neg.value) } });
     m.audio = h("input", { type: "checkbox", on: { change: () => this.set(9092, "enabled", m.audio.checked) } });
+    // Who speaks the line: LTX itself (the line goes into the motion prompt and LTX-2.5 makes voice and lips together,
+    // the default) or a cloned/TTS voice that drives the video (Chatterbox WAV → audio-driven LTX).
+    m.voiceSeg = h("span", { class: "seg row" }, ...[["ltx", "LTX (in the shot)"], ["clone", "Cloned voice (audio-driven)"]].map(([k, t]) =>
+      h("button", { type: "button", "data-voice": k, "aria-pressed": String(k === "ltx"),
+        title: k === "ltx" ? "LTX-2.5 speaks the line itself: voice and lips are generated together, no separate TTS"
+          : "A Chatterbox / saved Character Voice reads the line and that audio drives the video",
+        on: { click: () => { this._setVoice(k); this._lipSync(); } } }, t)));
     m.sfx = h("textarea", { placeholder: "Sound effects: hooves galloping on packed dirt, wind…", style: "min-height:44px",
       on: { change: () => this.set(9087, "sfx_prompt", m.sfx.value) } });
     m.music = h("input", { type: "text", placeholder: "Music mood (optional): tense western strings", style: "background:#1a1420;color:inherit;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:7px 9px",
@@ -941,6 +966,7 @@ export class Pipeline {
           h("div", { class: "row" }, m.music, m.line),
           h("div", { class: "status" }, "Music ideas"), m.musicIdeas,
           h("div", { class: "status" }, "Line ideas"), m.lineIdeas,
+          h("div", { class: "row" }, h("span", { class: "status" }, "Voice"), m.voiceSeg),
           h("label", { class: "row status" }, m.audio, "Let the sound/dialogue drive the video"),
           h("div", { class: "row" }, m.draftBtn, m.finalBtn),
           h("div", { class: "row" }, m.allDraft, m.allFinal))),
@@ -989,6 +1015,7 @@ export class Pipeline {
     if (fr != null) m.freedom.value = String(fr);
     m.freeOut.textContent = this._freeLabel();
     m.audio.checked = !!this.w(9092, "enabled")?.value;
+    this._setVoice(this._voice());
     // Sound: suggest effects from what is on stage when the field is empty, so the final always has sound.
     const sfxW = this.w(9087, "sfx_prompt");
     if (sfxW && !String(sfxW.value || "").trim()) this.set(9087, "sfx_prompt", suggestSfx(this.ctx.stage.toJSON()));
@@ -1065,6 +1092,8 @@ export class Pipeline {
   /** H3 makes its own sound: hand it the sound fields and keep the Soundstage mix (and the LTX audio-driven
    *  final) out of this queue, so the H3 final with its own audio is the one that lands. Restored afterwards. */
   async _queueVideo(step) {
+    if (step === 4 && !isH3(this.m.engine.value) && this._voice() === "ltx" && this.w(9092, "enabled")?.value
+      && String(this.w(9087, "line")?.value || "").trim()) return this._queueLtxVoice(step);
     if (step !== 4 || !isH3(this.m.engine.value)) return this.queueAt(step);
     const keep = { sfx: this.w(9087, "sfx_prompt")?.value, music: this.w(9087, "music_mood")?.value,
       line: this.w(9087, "line")?.value, driven: this.w(9092, "enabled")?.value };
@@ -1081,14 +1110,80 @@ export class Pipeline {
     }
   }
 
-  /** A spoken line must drive the video (LTX audio-driven, audio latent mask 0.3), or the voice is pasted over a
-   *  mouth that never heard it. Typing a line turns it on; the checkbox can still turn it off on purpose. */
+  /** Voice choice, kept on the audio-driven node so it travels with the workflow. Default: LTX speaks the line. */
+  _voice() { return this.node(9091)?.properties?.ssVoice === "clone" ? "clone" : "ltx"; }
+  _setVoice(k) {
+    const n = this.node(9091);
+    if (n) { n.properties = n.properties || {}; n.properties.ssVoice = k === "clone" ? "clone" : "ltx"; }
+    for (const b of this.m?.voiceSeg?.children || []) b.setAttribute("aria-pressed", String(b.dataset.voice === k));
+  }
+
+  /** The shot's LTX motion prompt, compiled by the same code the Look node runs (POST /soundstage/look/compile). */
+  async _motionPrompt() {
+    let look = {};
+    try { look = JSON.parse(this.w(9079, "look")?.value || "{}"); } catch { look = {}; }
+    let scene = null;
+    try { scene = this.ctx.stage.toJSON(); } catch { scene = null; }
+    try {
+      const r = await this.ctx.api.fetchApi("/soundstage/look/compile", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ look, scene }) });
+      const d = await r.json();
+      return r.ok ? String(d.motion_prompt || "") : "";
+    } catch { return ""; }
+  }
+
+  /** The audio-driven final starts from the chosen frame (picker, Krea or touch-up), not from the Krea still. */
+  _wireChosenFrame() {
+    const n = this.node(9091), src = this.node(9086);
+    const slot = n?.inputs?.findIndex((i) => i.name === "first_frame") ?? -1;
+    if (!n || !src || slot < 0) return;
+    const l = n.inputs[slot].link != null && this.ctx.app.graph.links?.[n.inputs[slot].link];
+    const origin = l && (l.origin_id ?? l[1]);
+    if (origin !== 9086) src.connect(0, n, slot);
+  }
+
+  /** LTX speaks the line itself: the line goes into the motion prompt as dialogue, the audio-driven LTX final
+   *  generates its own audio (mask 1 = nothing of ours kept, soundtrack = LTX's), and no TTS is made or muxed.
+   *  The Look → prompt link is lifted only for this queue and put back. */
+  async _queueLtxVoice(step) {
+    const n91 = this.node(9091), look = this.node(9079);
+    const line = String(this.w(9087, "line")?.value || "").trim();
+    let scene = null;
+    try { scene = this.ctx.stage.toJSON(); } catch { scene = null; }
+    const who = String(this.w(9087, "character")?.value || "").trim() || speakerFor(scene);
+    const prompt = ltxSpokenLine(await this._motionPrompt(), who, line);
+    const keep = { line, sfx: this.w(9087, "sfx_prompt")?.value, mask: this.w(9091, "audio_mask")?.value,
+      track: this.w(9091, "soundtrack")?.value, prompt: this.w(9091, "prompt")?.value };
+    const slot = n91?.inputs?.findIndex((i) => i.name === "prompt") ?? -1;
+    const linked = slot >= 0 && n91.inputs[slot].link != null;
+    if (linked) n91.disconnectInput(slot);
+    this.set(9091, "prompt", prompt);
+    this.set(9091, "audio_mask", 1);
+    this.set(9091, "soundtrack", "ltx");
+    this.set(9087, "line", "");   // no TTS: the shot's sound node only lays the length (and effects) under LTX
+    if (!String(keep.sfx || "").trim() && !String(this.w(9087, "music_mood")?.value || "").trim())
+      this.set(9087, "sfx_prompt", suggestSfx(scene) || "quiet ambience");
+    this._wireChosenFrame();
+    try { return await this.queueAt(step); } finally {
+      this.set(9087, "line", keep.line);
+      this.set(9087, "sfx_prompt", keep.sfx ?? "");
+      if (keep.mask != null) this.set(9091, "audio_mask", keep.mask);
+      if (keep.track != null) this.set(9091, "soundtrack", keep.track);
+      this.set(9091, "prompt", keep.prompt ?? "");
+      if (linked && look) look.connect(2, n91, slot);
+    }
+  }
+
+  /** A spoken line needs the final that makes sound with the picture (the audio-driven LTX node), or the voice
+   *  is pasted over a mouth that never heard it. With Voice = LTX the line rides in the prompt and LTX speaks it;
+   *  with Voice = Cloned the TTS/clone WAV drives the video (audio latent mask 0.3). Typing a line turns it on. */
   _lipSync() {
     const line = (this.w(9087, "line")?.value || "").trim();
     if (line && !this.w(9092, "enabled")?.value) {
       this.set(9092, "enabled", true);
       if (this.m?.audio) this.m.audio.checked = true;
-      this._say?.("Lip sync on: the final is driven by the line, so the mouth follows the words.");
+      this._say?.(this._voice() === "ltx" ? "Lip sync on: LTX speaks the line in the shot, voice and lips together."
+        : "Lip sync on: the cloned voice drives the final, so the mouth follows the words.");
     }
   }
 
