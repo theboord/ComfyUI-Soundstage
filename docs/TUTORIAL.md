@@ -183,11 +183,12 @@ The header above the picture:
 |---|---|
 | **Shot cam** | Look through the camera that renders. What you frame here is the shot. |
 | **Free view** | Fly around the set without moving the shot camera; the shot camera is drawn as a frustum. Key **0** toggles it. |
-| **Top** | A top-down plan view where you drag camera keys, re-aim them, and add or delete keys on the path. |
+| **Top** | A top-down plan: the camera move and the cast's paths as lines with keys. Drag a camera key or a cast key, re-aim, add or delete keys. |
+| **Cams** | In Free view, show a small camera at every camera key (where it stands, where it looks). Click one to jump the playhead there. Turning it on switches to Free view. |
 | hint line | A reminder of the mouse and keyboard moves. Hover it to read it in full. |
 | **Wire** / **Clay** / **Color** / **Depth** | How the stage is drawn: wireframe, grey clay (default), flat colour (splats and backdrop plates show here), or the depth pass the image model reads. |
 
-Inside the picture: a badge in the top-left corner (**Shot cam · Master**, or **Free view · shot camera shown**), the **Coach** pill in the top right (it collects tips as **Coach · 2**; click to read them, each with a one-click fix and **Not now**), and the coloured axis gizmo: click an axis dot to look straight along it.
+Inside the picture: a badge in the top-left corner (**Shot cam · Master**, or **Free view · shot camera shown**), the **Coach** pill in the top right, just left of the axis gizmo (it collects tips as **Coach · 2**; click to read them, each with a one-click fix and **Not now**), and the coloured axis gizmo: click an axis dot to look straight along it.
 
 ### The inspector (right)
 
@@ -224,6 +225,8 @@ The grey **status line** at the very bottom tells you what just happened and wha
 ## 3. The seven steps, one by one
 
 Every step works on every shot in the scene. Each step screen has a row of shot thumbnails at the top: click one to work on that shot. Once a script is loaded, every step also has a **scene switcher** (a button showing **Scene 12** and its heading, or **All scenes**) so you can jump between scenes without going back to the script.
+
+**The scene strip.** With a script loaded, one slim row sits over ③ Set, ④ Frame and ⑤ Motion: a chip per scene with its number, place, a time-of-day dot and the initials of who is in it. The current scene's chip opens to show its shots as small thumbnails with a status dot. Click a scene to switch to it (and set it up, see below), click a shot to work on it, and use ◀ ▶ or ← → to step through the scenes. On a scene you have already worked on, a button named after the setup ("Set up scene 3 — EXT. PACIFIC BEACH — SUNSET (Mara)") adds its set, time of day, characters and vehicles: it adds what's missing and removes nothing you placed. **↶ Undo setup** takes it back. Without a script the strip shows the stage's own shots.
 
 <a id="step-1-script"></a>
 
@@ -264,7 +267,7 @@ Scenes are found by their headings, so every scene must start with `INT.` or `EX
 | **Breakdown** | Colour-coded chips picked out of the action lines: Cast, Extras, Stunts, Effects, Props, Vehicles, Animals, Wardrobe, Set dressing, Sound, Music. |
 | **The scene** | The scene's pages, read-only, in screenplay format. |
 
-**Each scene gets its own stage, its own shots and its own cut.** Picking a scene that has never been staged gives it a fresh set from its heading: the location, the weather, and a lighting preset from the time of day (DAY → Midday, NIGHT → Night (moonlight), DAWN → Dawn, DUSK → Magic hour). The status line says so. The script's characters arrive when you press **Build this scene on the stage**.
+**Each scene gets its own stage, its own shots and its own cut, and picking a scene sets it up for you.** The first time you open a scene (or whenever its stage is empty), Soundstage reads its heading and breakdown and puts it on the stage: the set and weather, the time of day (NIGHT → Night (moonlight), DAWN → Dawn, DUSK or MAGIC HOUR → Magic hour, MORNING → Golden hour AM…), the scene's characters as named actors in simple blocking (with their looks from ② Cast & Locations where known) and the vehicles or animals it calls for. The status line says what it did ("Set up scene 3: beach, magic hour, Mara, Ezra…"). A stage you have already worked on is never changed by itself. **Build this scene on the stage** goes further: the scene agent blocks the action and the cameras too.
 
 <a id="step-2-cast"></a>
 
@@ -300,7 +303,7 @@ Block the scene in 3D clay: who stands where, what moves, where the camera is an
 
 A typical pass through the step:
 
-1. **Get the scene on the stage.** Either press **Build with AI** and describe it ("two cops question a cowboy on a horse outside a diner at magic hour"), or use **Build this scene on the stage** in ① Script, or add things by hand with **Add object**. To start from real material, use **Video → Stage** or **Photo → 3D**.
+1. **Get the scene on the stage.** With a script, just pick the scene in the scene strip: its set, light, characters and vehicles appear. Or press **Build with AI** and describe it ("two cops question a cowboy on a horse outside a diner at magic hour"), or use **Build this scene on the stage** in ① Script, or add things by hand with **Add object**. To start from real material, use **Video → Stage** or **Photo → 3D**.
 2. **Pick the world.** **Set & weather** for the location and the elements; **Lighting** for the time of day, film lights or a classic setup.
 3. **Place and move the cast.** Click a person to select it, drag it to place it. Move the playhead and drag again: a key is set at the playhead and the person walks between keys. Use **Person**, **Interact** and **Capture motion** for poses, interactions and real performances.
 4. **Frame the shot.** Stay in **Shot cam**, pick a lens, and frame by dragging in the view, scrolling, or flying with W A S D. Move the playhead and reframe for a camera move; choose a **Rig** to give the move a real dolly, jib or handheld feel.
@@ -550,6 +553,10 @@ The header shows `Dailies · Scene N`, the counts of setups, takes and circled t
 
 Drag cards to arrange them (Option/Alt-drag places freely), arrow keys nudge, Enter or double-click opens the circled take, `C` or `*` circles.
 
+**Approvals.** Review every take the way a director signs off dailies. A small round badge sits on each frame, draft and final (in the bin, on ④ Frame's variations, on ⑤ Motion's latest result and in the shot rows). Click it for the **Review** pop-over: **✓ Approve**, **↺ Needs changes** or **✕ Reject**, plus **Clear** to go back to unreviewed. With **Needs changes**, write what should change ("warmer light, she looks left, slower push-in") and press **↺ Redo in ④ Frame** or **↺ Redo in ⑤ Motion**: Soundstage opens that step for the shot with your note on top, and in ④ Frame it adds the note to the frame prompt (**Undo prompt edit** takes it back out). The same status shows everywhere and is saved with the workflow. The bin has a status filter to show setups by review status, such as the takes that need changes.
+
+**Scene bins.** Like an Avid project, there is one bin per script scene, named like **SC 03 – what happens**, in script order, each showing how much of it is approved.
+
 **List view** is a sortable table: Setup, Name, Type, Takes, Circled, Kind, Duration, Coverage. Click a column header to sort, Enter opens, C circles.
 
 **Script view: the lined script.** The scene's page with a coloured vertical line per setup, ScriptSync-style. A straight line means on camera; a **zig-zag** means rolling but off screen. A thumbnail and slate sit on top of each line.
@@ -648,20 +655,23 @@ Set pieces (a rebuilt location, walls, sidewalks, photo-built sets) never move f
 | View | Use it for |
 |---|---|
 | **Shot cam** | Framing. You look through the camera that renders. **Every orbit, pan, dolly or W A S D move edits the camera key at the playhead** (it makes one if there is none). |
-| **Free view** (key **0**) | Looking around the set without touching the shot. The shot camera is drawn in the world: its path as a violet line, numbered diamonds at each camera key, blue start and end arrows, the lens frustum at the playhead, and a label with its height and focal length. A picture-in-picture monitor (bottom left) shows the shot camera, with **Play the shot**, a scrubber and a button to **Look through the shot camera**. |
-| **Top** | A top-down plan of the set, bottom right: grid, set footprints, the cast with their paths, and the camera move coloured by time, with a lens wedge and an aim line for every key. It is the easiest way to edit a camera move. |
+| **Free view** (key **0**) | Looking around the set without touching the shot. The shot camera is drawn in the world: its path as a violet line, **a small numbered camera at every camera key** (body, lens and a frustum in the shot's aspect, showing where it stands and where it looks; the one at the playhead is highlighted), blue start and end arrows, the lens frustum at the playhead, and a label with its height and focal length. A picture-in-picture monitor (bottom left) shows the shot camera, with **Play the shot**, a scrubber and a button to **Look through the shot camera**. |
+| **Top** | A top-down plan of the set, bottom right: grid, set footprints, the cast with their paths and their keys (small squares), and the camera move coloured by time (◆ keys), with a lens wedge and an aim line for every key. It is the second way to edit the camera and the cast keys, and usually the easiest. Ride-along shots follow their vehicle here too. |
 
 **Editing the camera move in Top view:**
 
 | Gesture | What it does |
 |---|---|
-| drag a numbered key | Move that camera position (height kept). Shift carries its aim along. |
+| drag a numbered ◆ key | Move that camera position (height kept). Shift carries its aim along. |
+| drag a ■ cast key, or a person | Move that cast key (or key the person at the playhead). |
 | Option/Alt-drag a key | Change its height. |
 | drag a target dot | Re-aim that key. |
 | click the path | Add a key at that frame. |
 | drag the path or the playhead | Scrub. |
-| right-click a key | Delete it (a shot keeps at least one). |
+| right-click a key | Delete it (camera or cast key; a shot keeps at least one camera key). |
 | drag empty space / scroll / double-click | Pan / zoom / fit. **Fit** in the header does the same; ✕ hides the view. |
+
+**Click a key camera** in Free view to jump the playhead to that key; **Cams** in the viewport header hides or shows them.
 
 The coloured axis gizmo in the corner of the viewport snaps the view: click X, Y or Z (or the hollow dot opposite) to look straight along that axis.
 
@@ -903,7 +913,7 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 
 | Gesture | What it does |
 |---|---|
-| drag a key | Move it (Shift carries its aim along) |
+| drag a camera ◆ or cast ■ key | Move it (Shift carries a camera key's aim along) |
 | Option/Alt-drag a key | Change its height |
 | drag a target dot | Re-aim |
 | click the path | New key at that frame |
