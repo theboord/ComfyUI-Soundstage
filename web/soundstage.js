@@ -623,7 +623,8 @@ function createStageWidget(node, inputName) {
     lookView.hidden = !isLook;
     cutView.hidden = k !== "cut";
     advisorView.hidden = k !== "advisor";
-    canvasView.hidden = k !== "canvas";
+    if (k === "canvas" && canvasView.parentElement !== el) el.append(canvasView);   // back from the ② Frame editor
+    if (canvasView.parentElement === el) canvasView.hidden = k !== "canvas";
     el.classList.toggle("ss-canvasmode", k === "canvas");
     if (k === "canvas") canvasPanel.refreshStage();
     el.classList.toggle("ss-advmode", k === "advisor");
@@ -1671,6 +1672,15 @@ function createStageWidget(node, inputName) {
         status.textContent = "Your chosen frame is the top layer. Paint, mask or regenerate, then “Use my edited frame”.";
       }
     },
+    // ② Frame's inline editor: the Canvas panel mounted inside the frame step, loaded with the chosen frame.
+    mountCanvas: (host, url) => {
+      host.append(canvasView);
+      canvasView.hidden = false;
+      canvasBack.hidden = true;
+      try { canvasPanel.refreshStage(); } catch { /* stage not ready */ }
+      if (url && url !== canvasFrom) { canvasFrom = url; canvasPanel.importImage(url, "Your chosen frame").catch?.(() => {}); }
+    },
+    unmountCanvas: () => { canvasView.hidden = true; canvasBack.hidden = false; el.append(canvasView); },
     flattenCut: () => flattenCut(),
     renderMissing: () => renderMissing(),
     // Every step works on every shot: the scene's shots in cut order (shots not in the cut follow).
