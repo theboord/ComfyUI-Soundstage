@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Script Panel Preview</title>
+<meta name="description" content="Standalone preview of the Soundstage Script panel and scene switcher with the sample script and fake shots.">
+<script>
+  // Collected for headless checks: window.__errs lists page errors, rejected promises and console.error calls.
+  window.__errs = [];
+  addEventListener("error", (e) => __errs.push(String(e.message || e)));
+  addEventListener("unhandledrejection", (e) => __errs.push("rejection: " + (e.reason?.message || e.reason)));
+  const ce = console.error; console.error = (...a) => { __errs.push(a.map(String).join(" ")); ce(...a); };
+</script>
+<style>
+  html, body { margin: 0; background: #18151b; color: #f0efed; color-scheme: dark; }
+  body { font: 14px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  .wrap { max-width: 1440px; margin: 0 auto; padding: 16px; }
+  .ss-stage { display: flex; flex-direction: column; gap: 12px; }
+  /* A stand-in for a pipeline step header, where the host mounts the SceneSwitcher. */
+  .stephead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .stephead .step { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; color: rgba(240,239,237,.56); }
+  .stephead .grow { flex: 1; }
+  #status { margin: 10px 2px 0; font-size: 12px; color: rgba(240,239,237,.56); min-height: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="ss-stage">
+    <div class="stephead"><span class="step">Script</span><span id="sw"></span><span class="grow"></span>
+      <button type="button" id="toggle" class="ss-btn">Show empty state</button></div>
+    <div id="panel"></div>
+  </div>
+  <p id="status" role="status" aria-live="polite"></p>
+</div>
+<script type="module">
+  import { applyTheme } from "../ui/theme.mjs";
+  import { ScriptPanel, SceneSwitcher } from "./panel.mjs";
+  import { DEMO_SCRIPT, demoScript } from "./demo_script.mjs";
+
+  applyTheme();
+  const q = new URLSearchParams(location.search);
+  const status = document.getElementById("status");
+  let script = q.has("empty") ? null : demoScript();
+
+  // Fake shots: halves of the demo's clay → final stills, cropped on a canvas.
+  const crop = (src, half) => new Promise((ok) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas"); c.width = 640; c.height = 346;
+      c.getContext("2d").drawImage(img, half * 640, 0, 640, 346, 0, 0, 640, 346);
+      ok(c.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => ok("");
+    img.src = src;
+  });
+  const [faceoffFinal, faceoffClay, rideFinal] = await Promise.all([
+    crop("../tryit/clay_to_final_1.jpg", 1), crop("../tryit/clay_to_final_1.jpg", 0), crop("../tryit/clay_to_final_2.jpg", 1)]);
+  const shots = [
+    { id: "shot_1", name: "Wide · the face-off", scene_id: "sc_1", thumb: faceoffFinal },
+    { id: "shot_2", name: "Clay · face-off blocking", scene_id: "sc_1", thumb: faceoffClay },
+    { id: "shot_3", name: "Tracking · Mara rides out", scene_id: "sc_1", thumb: rideFinal },
+    { id: "shot_4", name: "Chase cam (police hood)", scene_id: "sc_2" },
+    { id: "shot_5", name: "Master (untagged)" },
+  ];
+
+  const say = (m) => { status.textContent = m; };
+  let panel, sw;
+  const host = {
+    getScript: () => script,
+    setScript: (s) => { script = s; sw?.refresh(); },
+    getShots: () => shots,
+    onBuildScene: (scene, prompt) => { say(`Build scene ${scene.number}: ${prompt.slice(0, 160)}…`); window.__lastPrompt = prompt; },
+    onNewShot: (scene) => { shots.push({ id: `shot_${shots.length + 1}`, name: `New shot ${shots.length + 1}`, scene_id: scene.id }); sw?.refresh(); },
+    onSelectScene: (id) => sw?.setCurrent(id),
+    onOpenShot: (shot) => say(`Open ${shot.name}`),
+    onStatus: say,
+    sample: DEMO_SCRIPT,
+  };
+  sw = new SceneSwitcher(document.getElementById("sw"), { getScript: host.getScript, getShots: host.getShots,
+    onSelect: (id) => panel.selectScene(id), current: null });
+  panel = new ScriptPanel(document.getElementById("panel"), host);
+  if (q.get("scene")) panel.selectScene(q.get("scene"));
+  if (q.get("note") && script) {
+    script.scenes[0].notes = q.get("note");
+    panel.render();
+  }
+  document.getElementById("toggle").addEventListener("click", () => {
+    script = script ? null : demoScript();
+    panel.selectScene(null);
+    panel.render(); sw.refresh();
+    document.getElementById("toggle").textContent = script ? "Show empty state" : "Load sample script";
+  });
+  document.getElementById("toggle").textContent = script ? "Show empty state" : "Load sample script";
+  window.__preview = { panel, sw, shots, get script() { return script; } };
+</script>
+</body>
+</html>
