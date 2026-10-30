@@ -119,6 +119,7 @@ class _Router(IO.ComfyNode):
              "refs": [v[k] for k in ("ref_1", "ref_2", "ref_3") if v.get(k) is not None],
              "image": v.get("image"), "images": v.get("images"), "mask": v.get("mask"),
              "params": params, "weights": weights, "variant": m.get("variant"),
+             "steps": int(v.get("steps") or 0), "cfg": float(v.get("cfg") or 0.0),
              "lora": v.get("lora") if v.get("lora") not in (None, "", "None") else None,
              "lora_strength": float(v.get("lora_strength") if v.get("lora_strength") is not None else 1.0)}
         if cls.STAGE == "edit_image":
@@ -203,6 +204,10 @@ class SoundstageEditImage(_Router):
                                tooltip="A LoRA for the image model (FLUX 3 Klein, Krea 2): a character, a product, a "
                                        "house style. Files in models/loras."),
                 IO.Float.Input("lora_strength", default=1.0, min=-2.0, max=2.0, step=0.05, optional=True),
+                IO.Int.Input("steps", default=0, min=0, max=100, optional=True,
+                             tooltip="Sampling steps for local image models. 0 = the model's tuned default (Klein 16, Krea 8)."),
+                IO.Float.Input("cfg", default=0.0, min=0.0, max=20.0, step=0.1, optional=True,
+                               tooltip="Guidance (CFG). 0 = the model's default (1.0 for distilled models like Klein and Krea Turbo)."),
                 IO.String.Input("ref_files", multiline=True, default="", optional=True,
                                 tooltip="Character sheets / style references by file name in ComfyUI's input "
                                         "folder, one per line (added after ref_1-3). The App's Frame step fills this."),

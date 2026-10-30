@@ -265,6 +265,12 @@ export class Pipeline {
       on: { input: () => { this.set(9081, "lora_strength", +f.loraStrength.value); f.loraOut.textContent = (+f.loraStrength.value).toFixed(2); } } });
     f.loraOut = h("span", { class: "status" }, "1.00");
     f.refsCard = h("div", { class: "card" });
+    const num = (min, max, step, on) => h("input", { type: "number", min, max, step, style: "width:90px", on: { change: on } });
+    f.steps = num("0", "100", "1", () => this._applySampling());
+    f.cfg = num("0", "20", "0.1", () => this._applySampling());
+    f.sampNote = h("div", { class: "status" });
+    f.neg = h("textarea", { placeholder: "Negative prompt: what to keep out (extra people, text, blur…)", style: "min-height:44px",
+      on: { change: () => { this.set(9081, "negative", f.neg.value); } } });
     f.editHost = h("div", { class: "ss-edithost" });
     f.editBtn = h("button", { type: "button", class: "go", title: "Inpaint (paint a mask, describe the change) or outpaint (drag the box past the edge) right here",
       on: { click: () => this._openEditor() } }, "Edit this frame: inpaint / outpaint");
@@ -277,13 +283,17 @@ export class Pipeline {
         h("div", { class: "ss-studio-side" },
           h("div", { class: "card" },
             h("label", { class: "f" }, "Image model", f.model),
-            h("label", { class: "f" }, "Describe the frame (shared with the Look tab)", f.desc),
+            h("label", { class: "f" }, "Prompt: describe the frame (the Look tab adds camera, lens and style to it)", f.desc),
             h("label", { class: "f" }, h("span", { class: "row" }, "Follow the clay", f.followOut), f.follow),
             h("label", { class: "f" }, "LoRA (character, product, style)", f.lora),
             h("label", { class: "f" }, h("span", { class: "row" }, "LoRA strength", f.loraOut), f.loraStrength),
             h("div", { class: "row" }, h("span", { class: "status" }, "Variations"), f.countSeg),
             h("div", { class: "row" }, f.goBtn, f.allBtn)),
           f.refsCard,
+          h("details", { class: "card" }, h("summary", {}, "Advanced: steps & CFG"),
+            h("div", { class: "row" }, h("label", { class: "row status" }, "Steps", f.steps), h("label", { class: "row status" }, "CFG", f.cfg)),
+            h("label", { class: "f" }, "Negative prompt (used when CFG is above 1)", f.neg),
+            f.sampNote),
           h("details", { class: "card" }, h("summary", {}, "Style"),
             h("span", { class: "status" }, "One click sets film stock, lens, palette and grade (★ = suggested)."), f.styleHost = h("div")),
           h("details", { class: "card" }, h("summary", {}, "Camera"),
@@ -382,6 +392,37 @@ export class Pipeline {
       f.refsStatus);
   }
 
+  /** Steps / CFG for the frame model: Krea 2 lives on the App's KSampler (9056), the other models on the picker node. */
+  _samplingTarget() {
+    const krea = this.f.model.value === STILL_KREA;
+    return krea ? { id: 9056, steps: "steps", cfg: "cfg", defSteps: 8, label: "Krea 2 Turbo" } : { id: 9081, steps: "steps", cfg: "cfg", defSteps: 16, label: "FLUX 3 Klein" };
+  }
+
+  _applySampling() {
+    const f = this.f, t = this._samplingTarget();
+    const st = Math.round(+f.steps.value || 0), cf = +f.cfg.value || 0;
+    if (t.id === 9056) { if (st) this.set(9056, "steps", st); if (cf) this.set(9056, "cfg", cf); }
+    else { this.set(9081, "steps", st); this.set(9081, "cfg", cf); }
+    this._samplingNote();
+  }
+
+  _syncSampling() {
+    const f = this.f, t = this._samplingTarget();
+    const sw = this.w(t.id, t.steps), cw = this.w(t.id, t.cfg);
+    f.steps.disabled = !sw; f.cfg.disabled = !cw;
+    f.steps.value = sw ? String(sw.value || 0) : "";
+    f.cfg.value = cw ? String(cw.value || 0) : "";
+    this._samplingNote();
+  }
+
+  _samplingNote() {
+    const f = this.f, t = this._samplingTarget();
+    if (f.steps.disabled) { f.sampNote.textContent = "Needs the updated Soundstage nodes (restart ComfyUI once)."; return; }
+    const st = +f.steps.value || t.defSteps, cf = +f.cfg.value || 1;
+    f.sampNote.textContent = `${t.label}: ${st} steps, CFG ${cf}. 0 = the model's tuned default. These are distilled models: ` +
+      "CFG 1 is right; more steps add fine detail, slower." + (cf > 1.5 ? " CFG above ~1.5 tends to burn and roughly doubles the time." : "");
+  }
+
   /** The Canvas editor (inpaint, outpaint, masks, layers) mounted inside ② Frame, on the chosen frame. */
   _openEditor() {
     const f = this.f, sid = this.ctx.stage.activeShot().id;
@@ -439,6 +480,10 @@ export class Pipeline {
       for (const v of (Array.isArray(vals) ? vals : ["None"])) f.lora.append(new Option(v === "None" ? "None" : String(v).replace(/\.safetensors$/, ""), v));
     }
     f.lora.disabled = !loraW;
+    this._syncSampling();
+    const negW = this.w(9081, "negative");
+    f.neg.disabled = !negW;
+    if (negW) f.neg.value = negW.value || "";
     if (loraW) { f.lora.value = loraW.value || "None"; f.loraStrength.value = String(this.w(9081, "lora_strength")?.value ?? 1); f.loraOut.textContent = (+f.loraStrength.value).toFixed(2); }
     const dn = this.w(9056, "denoise")?.value;
     if (dn != null) f.follow.value = String(dn);
@@ -460,6 +505,7 @@ export class Pipeline {
 
   _applyStillModel() {
     const f = this.f;
+    queueMicrotask(() => { try { this._syncSampling(); } catch { /* view not built */ } });
     const krea = f.model.value === STILL_KREA;
     this.set(9082, "switch", !krea);
     if (!krea) this.set(9081, "model", f.model.value);
@@ -575,7 +621,14 @@ export class Pipeline {
     m.quality = "Draft";
     m.qSeg = h("span", { class: "seg row" }, ...["Draft", "Final HQ"].map((q) => h("button", { type: "button", "aria-pressed": String(q === "Draft"),
       title: q === "Draft" ? "8 + 3 distilled steps: fast previews" : "18 + 12 steps on the same curve: finer detail and steadier motion, about 2x slower",
-      on: { click: (e) => { m.quality = q; for (const b of m.qSeg.children) b.setAttribute("aria-pressed", String(b === e.currentTarget)); this._applyVideo(); } } }, q)));
+      on: { click: (e) => { m.quality = q; for (const b of m.qSeg.children) b.setAttribute("aria-pressed", String(b === e.currentTarget)); this._applyVideo(); this._motionNote?.(); } } }, q)));
+    m.cfg = h("input", { type: "number", min: "1", max: "10", step: "0.1", style: "width:90px",
+      on: { change: () => { const v = Math.max(1, +m.cfg.value || 1); this.set(5516, "cfg", v); this.set(9034, "cfg", v); this._motionNote(); } } });
+    m.sampler = h("select", { on: { change: () => { this.set(5516, "sampler_name", m.sampler.value); this.set(9034, "sampler_name", m.sampler.value); } } },
+      ...["euler_ancestral", "euler", "res_multistep", "dpmpp_2m", "lcm"].map((x) => new Option(x, x)));
+    m.sampNote = h("div", { class: "status" });
+    m.neg = h("textarea", { placeholder: "Negative prompt for the video (used when CFG is above 1)", style: "min-height:40px",
+      on: { change: () => this.set(5509, "value", m.neg.value) } });
     m.audio = h("input", { type: "checkbox", on: { change: () => this.set(9092, "enabled", m.audio.checked) } });
     m.sfx = h("textarea", { placeholder: "Sound effects: hooves galloping on packed dirt, wind…", style: "min-height:44px",
       on: { change: () => this.set(9087, "sfx_prompt", m.sfx.value) } });
@@ -611,6 +664,10 @@ export class Pipeline {
           m.h3Box,
           h("label", { class: "f" }, h("span", { class: "row" }, "Motion freedom", m.freeOut), m.freedom),
           h("div", { class: "row" }, h("span", { class: "status" }, "Quality"), m.qSeg),
+          h("details", {}, h("summary", { class: "status", style: "cursor:pointer" }, "Advanced: steps, CFG, sampler"),
+            h("div", { class: "row" }, h("label", { class: "row status" }, "CFG", m.cfg), h("label", { class: "row status" }, "Sampler", m.sampler)),
+            h("label", { class: "f" }, "Negative prompt", m.neg),
+            m.sampNote),
           h("label", { class: "f" }, "Sound (generated with the final)", m.sfx),
           h("div", { class: "row" }, m.music, m.line),
           h("div", { class: "status" }, "Music ideas"), m.musicIdeas,
@@ -623,6 +680,14 @@ export class Pipeline {
       h("div", { class: "row" }, h("span", { style: "flex:1" }), this._next("④ Review on the Ladder", "review")),
     );
     return v;
+  }
+
+  _motionNote() {
+    const m = this.m;
+    const steps = m.quality === "Draft" ? "8 + 3" : "18 + 12";
+    const cfg = +m.cfg.value || 1;
+    m.sampNote.textContent = `${m.quality}: ${steps} steps (render + upscale pass), CFG ${cfg}. LTX-2.5 here is the distilled model: ` +
+      "CFG 1 is its tuned setting" + (cfg > 1 ? "; above 1 doubles render time and can over-sharpen." : ". Quality sets the steps.");
   }
 
   _freeLabel() {
@@ -645,6 +710,10 @@ export class Pipeline {
     m.h3Ref.checked = this.w(9083, "model.motion_ref")?.value === H3_CLAY_REF;
     this._showEngine();
     this._drawRefs();
+    m.cfg.value = String(this.w(5516, "cfg")?.value ?? 1);
+    m.sampler.value = this.w(5516, "sampler_name")?.value || "euler_ancestral";
+    m.neg.value = this.w(5509, "value")?.value || "";
+    this._motionNote();
     const fr = this.w(9096, "motion_freedom")?.value;
     if (fr != null) m.freedom.value = String(fr);
     m.freeOut.textContent = this._freeLabel();

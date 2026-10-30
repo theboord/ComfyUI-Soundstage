@@ -423,7 +423,7 @@ def krea2(g, m, p):
                       channel_mode="grayscale", normalize="per_image_minmax", invert=False,
                       batch_mode="independent_images").out(0)
         model = g.node("Krea2ControlApply", model=model, control_latent=ctrl).out(0)
-    s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=8, cfg=1.0, sampler_name="euler_ancestral",
+    s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or 8, cfg=p.get("cfg") or 1.0, sampler_name="euler_ancestral",
                scheduler="beta", positive=pos, negative=neg, latent_image=latent, denoise=denoise).out(0)
     return {"image": g.node("VAEDecode", samples=s, vae=vae).out(0)}
 
@@ -448,19 +448,23 @@ def flux3_klein(g, m, p):
     images = ([need(p, "image", "FLUX 3 Klein edit", "an image")] if p["stage"] == "edit_image" else [])
     images += list(p.get("refs") or [])
     if images:
-        kw = {"positive": pos, "negative": g.node("ConditioningZeroOut", conditioning=pos).out(0), "vae": vae,
+        # A negative prompt only does anything with CFG above 1 (Klein is distilled for CFG 1).
+        neg = (g.node("CLIPTextEncode", text=p["negative"], clip=clip).out(0) if p.get("negative") and (p.get("cfg") or 1) > 1
+               else g.node("ConditioningZeroOut", conditioning=pos).out(0))
+        kw = {"positive": pos, "negative": neg, "vae": vae,
               "resolution": "resize", "resolution.megapixels": round(max(0.25, p["width"] * p["height"] / 1e6), 2)
               if p["width"] and p["height"] else 1.0}
         for i, link in enumerate(images):
             kw[f"images.image{i}"] = link
         r = g.node("ReferenceMultiLatent", **kw)
-        s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=16, cfg=1.0, sampler_name="euler",
-                   scheduler="simple", positive=r.out(0), negative=r.out(1), latent_image=r.out(2), denoise=1.0).out(0)
+        s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or 16, cfg=p.get("cfg") or 1.0,
+                   sampler_name="euler", scheduler="simple", positive=r.out(0), negative=r.out(1), latent_image=r.out(2),
+                   denoise=1.0).out(0)
     else:
         neg = g.node("CLIPTextEncode", text=p.get("negative") or "", clip=clip).out(0)
         latent = g.node("EmptyFlux2LatentImage", width=snap(p["width"], 16), height=snap(p["height"], 16),
                         batch_size=1).out(0)
-        s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=15, cfg=1.0, sampler_name="er_sde",
+        s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or 15, cfg=p.get("cfg") or 1.0, sampler_name="er_sde",
                    scheduler="simple", positive=pos, negative=neg, latent_image=latent, denoise=1.0).out(0)
     return {"image": g.node("VAEDecode", samples=s, vae=vae).out(0)}
 
