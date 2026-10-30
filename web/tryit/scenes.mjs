@@ -221,11 +221,104 @@ export function alienInvasion() {
   });
 }
 
+/** Mirror a scene front-to-back around z = c (actors and cameras), e.g. to face the trees instead of the clearing. */
+function mirrorZ(scene, c) {
+  const mv = (v) => [v[0], v[1], +(c - v[2]).toFixed(2)];
+  for (const a of scene.actors) for (const k of a.keys) k.position = mv(k.position);
+  for (const sh of scene.shots) for (const k of sh.camera_keys) { k.position = mv(k.position); k.target = mv(k.target); }
+  return scene;
+}
+
+/** (g) Horror: a hiker's flashlight sweeps a forest clearing; a tall figure steps out from the trees behind her. */
+export function hauntedWoods() {
+  return finish(mirrorZ({
+    version: 2,
+    shot: { frames: 121, fps: 24 },
+    environment: { set: "forest", weather: "none", density: 0.6, water_level: 2.5 },
+    lighting: { mode: "time", hour: 23.5, day_of_year: 300, latitude: 45, north_deg: 0, overcast: false, preset: "night", lights: [] },
+    sun: { azimuth_deg: 200, elevation_deg: -30 },
+    actors: [
+      { id: "hiker", name: "Hiker", kind: "woman", height_m: 1.68, keys: [at(0, [0, 0, -2]), at(70, [0.4, 0, 3]), at(120, [0.2, 0, 4.2])] },
+      { id: "torch", name: "Flashlight", kind: "flashlight", height_m: 0.08, keys: [at(0, [0, 0, -1.6])], carry_id: "hiker", carry_at: 0, beam: "flicker" },
+      { id: "figure", name: "Tall figure", kind: "man", height_m: 2.3, keys: [at(0, [-3.2, 0, -6]), at(60, [-3.2, 0, -6]), at(120, [-1.2, 0, -2.4])] },
+      { id: "log", name: "Fallen log", kind: "cylinder", height_m: 0.5, rotation_deg: 80, keys: [at(0, [2.4, 0, 1])] },
+    ],
+    props: [],
+    shots: [
+      { id: "close", name: "Close on the hiker", setup: "single_a",
+        camera_keys: [key(0, [0.6, 1.55, 3], [0, 1.5, -2], 40), key(120, [0.5, 1.55, 7.4], [0.2, 1.5, 4], 40)] },
+      { id: "behind", name: "Over her shoulder: the figure", setup: "ots_a",
+        camera_keys: [key(0, [0.9, 1.7, 6.5], [-2.5, 1.4, -5], 32)] },
+      { id: "wide", name: "High wide through the trees", setup: "wide",
+        camera_keys: [key(0, [6, 5, 8], [-0.8, 0.8, -1.5], 24), key(120, [5, 4.5, 9], [-0.6, 0.8, 1], 24)] },
+    ],
+    active_shot: "close",
+  }, 10));
+}
+
+/** (h) Romance: a couple walks the tide line at sunset while their dog runs ahead. */
+export function beachSunset() {
+  return finish({
+    version: 2,
+    shot: { frames: 145, fps: 24 },
+    environment: { set: "beach", weather: "none", density: 0.5, water_level: 2.5 },
+    lighting: { mode: "time", hour: 19.1, day_of_year: 180, latitude: 34.05, north_deg: 0, overcast: false, preset: "golden", lights: [] },
+    sun: { azimuth_deg: 0, elevation_deg: 4 },
+    actors: [
+      { id: "her", name: "Woman", kind: "woman", height_m: 1.68, keys: [at(0, [-8, 0, 5]), at(144, [2, 0, 5.4])] },
+      { id: "him", name: "Man", kind: "man", height_m: 1.82, keys: [at(0, [-8.6, 0, 4.2]), at(144, [1.4, 0, 4.6])] },
+      { id: "dog", name: "Dog", kind: "dog", height_m: 0.6, keys: [at(0, [-6, 0, 6.5]), at(50, [-1, 0, 7.5]), at(100, [3, 0, 6.2]), at(144, [6, 0, 7])] },
+    ],
+    props: [],
+    shots: [
+      { id: "silhouette", name: "Silhouette against the sun", setup: "wide",
+        camera_keys: [key(0, [-4, 1.2, -6], [-4, 1.2, 10], 35), key(144, [1, 1.2, -6], [1, 1.2, 10], 35)] },
+      { id: "two", name: "Walking two-shot", setup: "two_shot", camera_follow: "her",
+        camera_keys: [key(0, [3.2, 1.6, 0.5], [0, 1.4, 0], 50)] },
+      { id: "dog_low", name: "Low with the dog", setup: "insert",
+        camera_keys: [key(0, [-2, 0.4, 9.5], [-6, 0.4, 6], 28), key(144, [7, 0.4, 9.5], [4, 0.4, 6.5], 28)] },
+    ],
+    active_shot: "silhouette",
+  });
+}
+
+/** (i) Monster movie: a 30 m giant wades down the avenue between the towers while cars flee toward camera. */
+export function kaijuAttack() {
+  return finish({
+    version: 2,
+    shot: { frames: 121, fps: 24 },
+    environment: { set: "street_night", weather: "none", density: 0.6, water_level: 2.5 },
+    lighting: { mode: "time", hour: 21, day_of_year: 300, latitude: 35.7, north_deg: 0, overcast: false, preset: "night", lights: [] },
+    sun: { azimuth_deg: 250, elevation_deg: -18 },
+    actors: [
+      { id: "giant", name: "Giant monster", kind: "man", height_m: 30, keys: [at(0, [0, 0, -60]), at(120, [0, 0, -38])] },
+      { id: "car_a", name: "Fleeing car", kind: "hatchback", height_m: 1.5, appearance: { color: "#c9c9c4" },
+        keys: [at(0, [1.6, 0, -12]), at(120, [1.6, 0, 26])] },
+      { id: "car_b", name: "Fleeing sports car", kind: "sports_car", height_m: 1.2, appearance: { color: "#2a5cc2" },
+        keys: [at(0, [-1.6, 0, -20]), at(120, [-1.6, 0, 22])] },
+      { id: "onlooker", name: "Onlooker", kind: "man", height_m: 1.8, keys: [at(0, [4.6, 0, 8])] },
+    ],
+    props: [],
+    shots: [
+      { id: "ground", name: "Ground level, looking up", setup: "wide",
+        camera_keys: [key(0, [3, 0.6, 14], [0, 14, -50], 18), key(120, [3, 0.6, 12], [0, 16, -38], 18)] },
+      { id: "onlooker_ots", name: "Over the onlooker's shoulder", setup: "ots_a",
+        camera_keys: [key(0, [5.4, 1.75, 10], [0, 18, -45], 32)] },
+      { id: "car_pov", name: "Rear window, fleeing", setup: "pov", camera_follow: "car_a",
+        camera_keys: [key(0, [0, 1.3, -1.2], [0, 6, -30], 24)] },
+    ],
+    active_shot: "ground",
+  });
+}
+
 export const PRESETS = [
   { id: "riders", label: "Riders at sunset", make: ridersAtSunset, view: "color" },
   { id: "chase", label: "Police chase", make: policeChase, view: "color" },
   { id: "car", label: "In the car", make: inTheCar, view: "color" },
   { id: "three", label: "Three in a car", make: threeInACar, view: "color" },
   { id: "torch", label: "Flashlight search", make: flashlightSearch, view: "color" },
-  { id: "aliens", label: "Alien invasion", make: alienInvasion, view: "color" },
+  { id: "aliens", label: "Sci-fi: Alien invasion", make: alienInvasion, view: "color" },
+  { id: "horror", label: "Horror: Haunted woods", make: hauntedWoods, view: "color" },
+  { id: "romance", label: "Romance: Beach at sunset", make: beachSunset, view: "color" },
+  { id: "kaiju", label: "Monster: Kaiju attack", make: kaijuAttack, view: "color" },
 ];
