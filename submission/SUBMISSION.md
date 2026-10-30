@@ -13,7 +13,7 @@ Deadline: Friday 2026-10-30, 9:00 am PT.
 | 4 | Lawful, SFW, no unlicensed IP or likenesses | Previz figures are faceless; demo scenes are generic (riders, cars, a flashlight search). 3D models are CC0 (Quaternius). Style and lighting presets are written in our own words and use no stills or real likenesses (`THIRD_PARTY_NOTICES.md` → Data). All models are used under their published licenses. | Done; re-check the final video |
 | 5a | GitHub repo with app code, workflow files, license, local run instructions | This repo: code (`soundstage/`, `web/`), workflows (`example_workflows/`), `LICENSE`, `README.md`. | Push TODO |
 | 5b | Demo video, 2 minutes or less | Script: `submission/DEMO_VIDEO_SCRIPT.md` (1:55). | Record TODO |
-| 5c | Optional link to try it | App demo https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq and stage-only page https://claude.ai/artifact/U9dJ7h8s6tL1Tq8bAvWkpc (in README → Try it). | Share publicly TODO |
+| 5c | Optional link to try it | App demo https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq (in README → Try it): one link, the full App, every step. | Share publicly TODO |
 | 5d | Social post linking the demo video with #OpenSourceHiggsfield | Drafts: `submission/SOCIAL_POST.md`. | Post TODO |
 
 ## TODO before the deadline (human)
