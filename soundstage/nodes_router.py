@@ -60,6 +60,16 @@ def _media(io_type, name: str, tooltip: str):
     return io_type.Input(name, optional=True, lazy=True, raw_link=True, tooltip=tooltip)
 
 
+def _parse_ref_files(text, limit=4):
+    """'file | label' lines (label optional) -> [(file, label)], at most `limit` (more references slow the model)."""
+    out = []
+    for line in (text or "").splitlines():
+        f, _, label = line.partition("|")
+        if f.strip():
+            out.append((f.strip(), label.strip()))
+    return out[:limit]
+
+
 def _loras():
     try:
         return list(folder_paths.get_filename_list("loras"))
@@ -112,8 +122,13 @@ class _Router(IO.ComfyNode):
              "lora": v.get("lora") if v.get("lora") not in (None, "", "None") else None,
              "lora_strength": float(v.get("lora_strength") if v.get("lora_strength") is not None else 1.0)}
         if cls.STAGE == "edit_image":
-            files = [f.strip() for f in (v.get("ref_files") or "").splitlines() if f.strip()]
-            p["refs"] += [g.node("LoadImage", image=f).out(0) for f in files]
+            refs = _parse_ref_files(v.get("ref_files"))
+            first = len(p["refs"]) + (2 if p["image"] is not None else 1)   # image 1 is the clay frame being edited
+            p["refs"] += [g.node("LoadImage", image=f).out(0) for f, _ in refs]
+            named = [f"image {first + i} shows {label}" for i, (_, label) in enumerate(refs) if label]
+            if named:
+                p["prompt"] = (p["prompt"].rstrip() + " Keep each subject's appearance from its reference: "
+                               + "; ".join(named) + ".").strip()
         if cls.STAGE == "generate_video":
             files = [f.strip() for f in (v.get("ref_files") or "").splitlines() if f.strip()]
             p["refs"] += [g.node("LoadImage", image=f).out(0) for f in files]
