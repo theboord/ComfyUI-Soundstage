@@ -156,8 +156,19 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         style.append(c[genre_layer]["still"])
     people = S.group_phrase(f1["people"], f1["camera"])
     others = S.group_phrase(f1["others"], f1["camera"])   # animals/vehicles need facing too (a horse from behind is ambiguous)
-    away = [g for g in S.groups(f1["others"], f1["camera"]) if "facing away" in (g["facing"] or "")]
+    grps = S.groups(f1["others"], f1["camera"])
+    away = [g for g in grps if "facing away" in (g["facing"] or "")]
     facing_neg = ", ".join(f"{g['nouns']} facing the camera, heads toward the camera" for g in away)
+    # Vehicles: the opposite end toward the camera, and any reversing, are the classic failure.
+    for g in grps:
+        fw = g["facing"] or ""
+        if "tail lights toward the camera" in fw:
+            facing_neg += f", {g['nouns']} facing the camera, headlights toward the camera, driving in reverse"
+        elif "headlights and grille facing us" in fw:
+            facing_neg += f", rear of {g['nouns']} toward the camera, tail lights toward the camera, driving in reverse"
+        elif "nose pointing" in fw:
+            facing_neg += f", {g['nouns']} driving backwards, reversing"
+    facing_neg = facing_neg.lstrip(", ")
     who = people + others
     n = len(f1["people"])
     loc = f1["location"]
@@ -280,7 +291,7 @@ def _marks_sentence(mf: dict, introduced: set | None = None) -> str:
         again = bool(introduced) and {m["id"] for m in ms} == introduced
         who = ("they" if len(ms) > 1 else S.definite(ms[0]["noun"])) if again else S._join_and([m["noun"] for m in ms])
         if len(ms) > 1:
-            verb = {"walks": "walk", "walks briskly": "walk briskly", "runs": "run", "drives": "drive",
+            verb = {"walks": "walk", "walks briskly": "walk briskly", "runs": "run", "drives": "drive", "drives forward": "drive forward", "rolls forward": "roll forward",
                     "rolls": "roll", "trots": "trot"}.get(verb, verb)
             verb += " together" if verb.startswith("walk") else ""
         out.append(_cap(_join([f"{who} {verb} {way}", dest], " ")) + ".")
