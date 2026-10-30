@@ -1276,7 +1276,9 @@ function createStageWidget(node, inputName) {
   apRow.append(...personCtl, cMain.wrap, followSel.wrap, beamSel.wrap);
   // Pose Studio: every joint (fingers too), a gallery and keys, under the selected person's appearance controls.
   const poseHost = document.createElement("div");
-  const posePanel = new PosePanel(poseHost, { stage, onStatus: (m) => { status.textContent = m; } });
+  const posePanel = new PosePanel(poseHost, { stage, api, onStatus: (m) => { status.textContent = m; } });
+  stage.fetchApi = (u) => api.fetchApi(u);
+  stage.onMocap = () => { try { posePanel._drawTake(); } catch { /* panel gone */ } };
   const isPerson = (k) => k === "man" || k === "woman" || k === "child";
   function syncAppearance(info) {
     apRow.hidden = !info || info.kind === "glb" || info.kind === "custom" || info.kind === "card";
