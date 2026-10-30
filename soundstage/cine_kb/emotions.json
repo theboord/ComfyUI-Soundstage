@@ -1,0 +1,779 @@
+[
+  {
+    "id": "emotion.tension",
+    "type": "emotion_recipe",
+    "name": "Tension",
+    "aliases": ["tense", "standoff tension", "rising tension", "taut", "ticking clock"],
+    "keywords": ["tense", "tension", "standoff", "confrontation", "interrogation", "negotiation", "stares", "glare", "waiting", "countdown", "silence", "nervous", "on edge", "showdown"],
+    "parent": null,
+    "era": "timeless",
+    "summary": "Tension is arousal held without release: the viewer knows an event is coming and is made to wait for it. Alternate a wide 50/50 that shows the distance between the parties with matched singles that show intention and inserts that act as the ticking clock (hands, a phone, a weapon, a watch). Make each cycle of shots tighter and shorter, keep the camera still or creeping, and keep the sound sparse. Hold the release until it is almost unbearable, then show it in a shot wide enough to read cause and effect.",
+    "intent_tags": ["tension", "suspense", "menace"],
+    "signature": {
+      "shot_size": {"WS": 0.2, "MS": 0.15, "MCU": 0.25, "CU": 0.25, "INSERT": 0.15},
+      "framing": {"fifty_fifty": 0.2, "single": 0.55, "insert": 0.15, "reaction": 0.1},
+      "angle": {"eye": 0.7, "low": 0.2, "high": 0.1},
+      "camera_height": {"eye": 0.5, "seated": 0.3, "chest": 0.2},
+      "lens_mm_ff": [40, 100],
+      "lens_look": {"spherical": 0.7, "anamorphic": 0.3},
+      "movement": {"static": 0.65, "dolly_in": 0.3, "rack_focus": 0.05},
+      "rig": {"sticks": 0.6, "dolly": 0.4},
+      "lighting": {"hard_side_light": 0.6, "low_key": 0.5, "high_contrast": 0.5},
+      "color": ["restrained, slightly desaturated", "hard shadows", "one warm practical against cool fill"],
+      "composition": {"edges_with_dead_space": 0.35, "short_side": 0.25, "center": 0.2, "tight_headroom": 0.2},
+      "aspect_ratio": ["2.39:1", "1.85:1"],
+      "asl_seconds": [1, 8],
+      "editing": ["accelerating cut rhythm", "progressively tighter sizes", "inserts as the ticking clock", "hold the release one beat longer than comfortable"],
+      "sound": ["silence or room tone", "sustained low drone", "isolated small sounds: a clock, a fingernail, a lighter"]
+    },
+    "rules": [
+      {"when": "the confrontation begins", "then": "establish both parties and the space between them in a wide 50/50 before the first single", "why": "the audience can only fear a distance it has measured; the gap between them is the tension", "hard": false},
+      {"when": "the build", "then": "cycle singles and inserts, each cycle one size tighter and shorter than the last", "why": "shrinking size and shot length raise arousal while information stays constant, so the pressure reads as coming from the scene, not the plot", "hard": false},
+      {"when": "an equal standoff", "then": "keep the reverse singles matched in size, lens and height", "why": "matched coverage says neither side has the upper hand, which keeps the outcome uncertain", "hard": false},
+      {"when": "the release (the shot, the answer, the slap)", "then": "go back to a wider frame for the moment itself", "why": "a release in close-up hides cause and effect; the wide pays off the geography you built", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "Across-the-table standoff",
+        "beat": "a detective and a suspect sit across a metal table; neither will speak first",
+        "cast": 2,
+        "shots": [
+          {"purpose": "50/50 profile two-shot: the table as no-man's-land between them", "subject": "both", "size": "WS", "framing": "fifty_fifty", "angle": "eye", "horizontal": "profile", "height": "seated", "lens_mm_ff": 40, "dof": "deep", "movement": "static", "lighting": "hard top light over the table, walls falling off to dark", "composition": "each figure at a frame edge, empty table surface in the center", "duration_s": 7},
+          {"purpose": "single on A, the one applying pressure", "subject": "A", "size": "MCU", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 75, "dof": "shallow", "movement": "static", "lighting": "hard side key, deep shadow side", "duration_s": 4},
+          {"purpose": "matched single on B, holding out", "subject": "B", "size": "MCU", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 75, "dof": "shallow", "movement": "static", "lighting": "hard side key, deep shadow side", "duration_s": 4},
+          {"purpose": "insert: B's thumb worrying the edge of a paper cup, the ticking clock", "subject": "B_hands", "size": "INSERT", "framing": "insert", "angle": "high", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 100, "dof": "shallow", "movement": "static", "duration_s": 2},
+          {"purpose": "tighter on A, the push barely perceptible", "subject": "A", "size": "CU", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 85, "dof": "shallow", "movement": "dolly_in", "speed": "slow", "composition": "tight headroom, forehead trimmed", "duration_s": 3},
+          {"purpose": "matched CU on B: the first crack in the face", "subject": "B", "size": "CU", "framing": "reaction", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 85, "dof": "shallow", "movement": "static", "composition": "tight headroom, forehead trimmed", "duration_s": 2},
+          {"purpose": "release: back to the two-shot as B finally speaks or lunges", "subject": "both", "size": "WS", "framing": "fifty_fifty", "angle": "eye", "horizontal": "profile", "height": "seated", "lens_mm_ff": 40, "dof": "deep", "movement": "static", "duration_s": 4}
+        ],
+        "why": "The wide measures the gap, the matched singles keep the contest even, and the cup insert gives the audience something to watch tick. Each cycle is tighter and shorter, so pressure rises with no new information until the wide releases it."
+      },
+      {
+        "name": "Waiting for the call",
+        "beat": "a man sits alone by a phone that must ring before midnight",
+        "cast": 1,
+        "shots": [
+          {"purpose": "wide: the man and the phone in the same frame, the distance between them visible", "subject": "A", "size": "WS", "framing": "single", "angle": "eye", "horizontal": "profile", "height": "seated", "lens_mm_ff": 35, "dof": "deep", "movement": "static", "lighting": "single lamp beside the phone", "composition": "man on one third, phone on the other, dead space between", "duration_s": 8},
+          {"purpose": "insert: the silent phone", "subject": "prop", "size": "INSERT", "framing": "insert", "angle": "high", "horizontal": "front", "height": "seated", "lens_mm_ff": 100, "dof": "shallow", "movement": "static", "duration_s": 3},
+          {"purpose": "insert: the clock hand", "subject": "prop", "size": "INSERT", "framing": "insert", "angle": "eye", "horizontal": "front", "height": "eye", "lens_mm_ff": 100, "dof": "shallow", "movement": "static", "duration_s": 2},
+          {"purpose": "MCU: his eyes on the phone, the camera creeping", "subject": "A", "size": "MCU", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 75, "dof": "shallow", "movement": "dolly_in", "speed": "slow", "duration_s": 5},
+          {"purpose": "back to the wide; hold until the ring (or the silence) lands", "subject": "A", "size": "WS", "framing": "single", "angle": "eye", "horizontal": "profile", "height": "seated", "lens_mm_ff": 35, "dof": "deep", "movement": "static", "duration_s": 6}
+        ],
+        "why": "Two inserts turn time into an object the audience can watch. Returning to the same static wide after the creeping MCU makes the wait feel longer, because nothing in the frame has changed."
+      }
+    ],
+    "avoid": [
+      {"what": "handheld drift or restless camera moves during the build", "why": "motion reads as release; stillness is what keeps the pressure in"},
+      {"what": "score swelling from the first shot", "why": "the build needs headroom; start in near silence"},
+      {"what": "mismatched reverse sizes in an even contest", "why": "the audience reads it as one side winning and the outcome stops feeling open"}
+    ],
+    "prompt_fragments": {
+      "ltx": "Hard side lighting with deep shadow and high contrast, restrained desaturated palette, still frame and shallow focus on a 75mm lens.",
+      "still": "cinematic thriller still, hard side light, high contrast, deep shadows, restrained desaturated palette, shallow depth of field, 75mm lens, tight framing, 35mm film grain",
+      "h3": "Live-action, cinematic thriller look, hard side light, deep shadows and a still, held frame."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.15, "yaw_deg": 30, "pitch_deg": 0, "distance_m": 1.6, "roll_deg": 0, "focal_mm_ff": 75, "vfov_deg": 14.6},
+    "reference_works": [
+      {"title": "Inglourious Basterds", "year": 2009, "note": "farmhouse table scene: long matched singles, the milk glass and pipe as inserts"},
+      {"title": "Heat", "year": 1995, "note": "diner face-off held in equal reverses"},
+      {"title": "The Good, the Bad and the Ugly", "year": 1966, "note": "accelerating standoff cycle"},
+      {"title": "Sicario", "year": 2015, "note": "border-crossing traffic jam: stillness under threat"}
+    ],
+    "sources": [
+      {"url": "https://nofilmschool.com/2013/10/the-mathematical-editing-of-sergio-leonis-the-good-the-bad-and-the-ugly", "supports": "accelerating shot lengths in a standoff build"}
+    ],
+    "confidence": "craft_consensus",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  },
+  {
+    "id": "emotion.suspense",
+    "type": "emotion_recipe",
+    "name": "Suspense",
+    "aliases": ["Hitchcock suspense", "bomb under the table", "dramatic irony", "the audience knows"],
+    "keywords": ["bomb", "timer", "hidden", "unaware", "doesn't know", "does not know", "oblivious", "intruder", "lurking", "watching", "poison", "trap", "about to"],
+    "parent": null,
+    "era": "classical (Hitchcock) to present",
+    "summary": "Suspense comes from the audience knowing more than the character. Show the threat first and clearly (an insert of the bomb, the figure in the background, the poisoned glass), then cut to the oblivious characters in an ordinary, safely lit room and cross-cut between the two. The room should look normal; the danger lives in the cutting. High angles on the unaware victim make them look small and exposed, and slow pushes toward the hidden threat keep reminding the viewer it is still there.",
+    "intent_tags": ["suspense", "tension", "dread"],
+    "signature": {
+      "shot_size": {"WS": 0.15, "MS": 0.35, "MCU": 0.15, "INSERT": 0.3, "CU": 0.05},
+      "framing": {"two_shot": 0.3, "single": 0.25, "insert": 0.3, "establishing": 0.1, "pov": 0.05},
+      "angle": {"eye": 0.5, "high": 0.4, "low": 0.1},
+      "camera_height": {"eye": 0.4, "seated": 0.3, "high": 0.2, "knee": 0.1},
+      "lens_mm_ff": [32, 85],
+      "lens_look": {"spherical": 1.0},
+      "movement": {"static": 0.5, "dolly_in": 0.35, "pan_left": 0.05, "rack_focus": 0.1},
+      "rig": {"sticks": 0.5, "dolly": 0.5},
+      "lighting": {"normal_key": 0.7, "motivated_practicals": 0.5},
+      "color": ["ordinary, unthreatening palette", "the room looks safe"],
+      "composition": {"threat_in_frame_unnoticed": 0.4, "victim_small_in_high_angle": 0.3, "center": 0.3},
+      "aspect_ratio": ["1.85:1", "2.39:1"],
+      "asl_seconds": [1.5, 6],
+      "editing": ["show the threat first", "cross-cut threat and victim", "return to the threat insert more often as time runs out", "decide on payoff or defusal and commit"],
+      "sound": ["normal diegetic chatter", "a clock or timer motif", "music withheld until the end"]
+    },
+    "rules": [
+      {"when": "opening the sequence", "then": "show the threat in a clean, readable insert before the characters are introduced", "why": "suspense needs information; the audience cannot worry about something it has not been shown", "hard": false},
+      {"when": "covering the unaware characters", "then": "light and frame them normally, with a slightly high angle", "why": "the ordinary look sharpens the irony, and the high angle makes them vulnerable without tipping them off", "hard": false},
+      {"when": "time is running out", "then": "return to the threat insert more often and hold each shot of the victims a little longer", "why": "the contrast between the shortening threat cuts and the leisurely conversation is the engine of suspense", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "Bomb under the table",
+        "beat": "two friends chat over lunch, unaware of a bomb taped beneath their table",
+        "cast": 2,
+        "shots": [
+          {"purpose": "insert first: the device under the table, its timer running", "subject": "prop", "size": "INSERT", "framing": "insert", "angle": "low", "horizontal": "front", "height": "knee", "lens_mm_ff": 50, "dof": "shallow", "movement": "static", "lighting": "spill from the room above, otherwise ordinary", "duration_s": 3},
+          {"purpose": "slightly high two-shot of the friends, laughing, normal lunch light", "subject": "both", "size": "MS", "framing": "two_shot", "angle": "high", "horizontal": "three_quarter_front", "height": "eye", "lens_mm_ff": 40, "dof": "medium", "movement": "static", "lighting": "even daylight from a window, nothing ominous", "duration_s": 5},
+          {"purpose": "crane down from their faces to the table edge, letting the audience feel the bomb is just below", "subject": "both", "size": "MS", "framing": "two_shot", "angle": "high", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 40, "movement": "crane_down", "speed": "slow", "duration_s": 4},
+          {"purpose": "insert: the timer, closer and shorter", "subject": "prop", "size": "INSERT", "framing": "insert", "angle": "low", "horizontal": "front", "height": "knee", "lens_mm_ff": 85, "dof": "shallow", "movement": "dolly_in", "speed": "slow", "duration_s": 2},
+          {"purpose": "MCU on A starting a long story, oblivious", "subject": "A", "size": "MCU", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 60, "dof": "shallow", "movement": "static", "duration_s": 5},
+          {"purpose": "B's foot nudges the device; it shifts", "subject": "prop", "size": "INSERT", "framing": "insert", "angle": "low", "horizontal": "profile", "height": "ground", "lens_mm_ff": 50, "dof": "shallow", "movement": "static", "duration_s": 2},
+          {"purpose": "back to the two-shot, still chatting: hold", "subject": "both", "size": "MS", "framing": "two_shot", "angle": "high", "horizontal": "three_quarter_front", "height": "eye", "lens_mm_ff": 40, "dof": "medium", "movement": "static", "duration_s": 5}
+        ],
+        "why": "Once the audience has seen the bomb, an ordinary lunch becomes unbearable. The friends get long, relaxed shots while the timer gets short, tightening inserts; the gap between what we know and what they know is the suspense."
+      }
+    ],
+    "avoid": [
+      {"what": "hiding the threat until the payoff", "why": "that turns suspense into surprise: a few seconds of shock instead of minutes of anxiety"},
+      {"what": "lighting the victims' scene as ominous", "why": "the irony depends on the scene looking safe"},
+      {"what": "stretching the cross-cut past the point of belief, then dropping it with no payoff", "why": "the audience feels cheated; deliver the explosion or the rescue"}
+    ],
+    "prompt_fragments": {
+      "ltx": "Ordinary, evenly lit naturalistic look with soft daylight and a normal palette, slightly high camera, clean focus on a 40mm lens.",
+      "still": "cinematic suspense film still, ordinary naturalistic daylight, normal unthreatening palette, slightly high camera angle, 40mm lens, clean medium depth of field, 1950s-to-modern classical framing",
+      "h3": "Live-action, cinematic classical suspense look, ordinary even daylight, slightly high camera."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.1, "yaw_deg": 25, "pitch_deg": -15, "distance_m": 2.8, "roll_deg": 0, "focal_mm_ff": 40, "vfov_deg": 27.0},
+    "reference_works": [
+      {"title": "Sabotage", "year": 1936, "note": "the bus bomb; the case Hitchcock later regretted for paying off"},
+      {"title": "Rear Window", "year": 1954, "note": "we watch the intruder approach while the heroine is unaware"},
+      {"title": "Notorious", "year": 1946, "note": "the wine-cellar key and dwindling bottles at the party"},
+      {"title": "Touch of Evil", "year": 1958, "note": "opening oner follows a car with a bomb in the trunk"}
+    ],
+    "sources": [],
+    "confidence": "craft_consensus",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  },
+  {
+    "id": "emotion.intimacy",
+    "type": "emotion_recipe",
+    "name": "Intimacy",
+    "aliases": ["closeness", "tender moment", "confession", "heart to heart", "vulnerable"],
+    "keywords": ["intimate", "close", "confides", "confession", "whispers", "quiet", "tender", "heart to heart", "opens up", "late night", "holds hands", "softly", "vulnerable"],
+    "parent": null,
+    "era": "timeless",
+    "summary": "Intimacy is made by removing the world. Medium-long lenses (75-100mm) gently compress faces and throw the background out of focus; dirty over-the-shoulders keep the other person physically present in every frame; matched close-ups make the pair equals. Light soft and warm with a backlight halo, keep the camera still or creeping, let takes run long and lay dialogue across cuts. The audience should feel it has leaned in too.",
+    "intent_tags": ["intimacy", "romance", "melancholy"],
+    "signature": {
+      "shot_size": {"MS": 0.15, "MCU": 0.35, "CU": 0.35, "INSERT": 0.1, "ECU": 0.05},
+      "framing": {"ots": 0.35, "single": 0.35, "two_shot": 0.2, "insert": 0.1},
+      "angle": {"eye": 0.9, "high": 0.05, "low": 0.05},
+      "camera_height": {"seated": 0.5, "eye": 0.5},
+      "lens_mm_ff": [65, 100],
+      "lens_look": {"spherical": 0.8, "anamorphic": 0.2},
+      "movement": {"static": 0.6, "dolly_in": 0.35, "handheld": 0.05},
+      "rig": {"sticks": 0.5, "dolly": 0.4, "handheld": 0.1},
+      "lighting": {"soft_key": 0.8, "warm_practicals": 0.6, "backlight_halo": 0.5},
+      "color": ["warm skin", "amber practicals", "soft low contrast", "background melting to bokeh"],
+      "composition": {"dirty_foreground_shoulder": 0.4, "faces_close_in_frame": 0.3, "lead_room_toward_partner": 0.3},
+      "aspect_ratio": ["1.85:1", "2.39:1"],
+      "asl_seconds": [4, 12],
+      "editing": ["longer takes", "J-cuts and L-cuts so a line lands on the listener", "stay on reactions", "no cutaways to the room once intimate"],
+      "sound": ["quiet room tone", "low voices", "music very low or absent"]
+    },
+    "rules": [
+      {"when": "two people opening up", "then": "use dirty over-the-shoulders rather than clean singles so the listener's shoulder or hair stays in frame", "why": "the foreground body keeps them physically connected in every cut; a clean single would isolate", "hard": false},
+      {"when": "covering the pair", "then": "match size, lens and height on the reverses", "why": "equal framing codes equal vulnerability; mismatching would introduce power", "hard": false},
+      {"when": "the emotional peak", "then": "move one step tighter (MCU to CU) and slow the cutting, not quicken it", "why": "proximity rises while time stretches, which is how closeness feels", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "Confession across a diner table",
+        "beat": "late at night in a diner booth, one person finally tells the other the truth",
+        "cast": 2,
+        "shots": [
+          {"purpose": "tight two-shot across the table: the booth as their private room", "subject": "both", "size": "MS", "framing": "two_shot", "angle": "eye", "horizontal": "profile", "height": "seated", "lens_mm_ff": 65, "dof": "shallow", "movement": "static", "lighting": "warm pendant lamp over the table, window dark behind", "composition": "both faces inside the frame, background diner falling to bokeh", "duration_s": 6},
+          {"purpose": "dirty OTS on A from behind B's shoulder", "subject": "A", "size": "MCU", "framing": "ots", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 85, "dof": "shallow", "movement": "static", "lighting": "soft warm key from the table lamp, backlight on hair", "composition": "B's shoulder soft in the foreground, no more than a quarter of frame", "duration_s": 6},
+          {"purpose": "matched dirty OTS on B, listening", "subject": "B", "size": "MCU", "framing": "ots", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 85, "dof": "shallow", "movement": "static", "lighting": "soft warm key from the table lamp, backlight on hair", "composition": "A's shoulder soft in the foreground, no more than a quarter of frame", "duration_s": 6},
+          {"purpose": "insert: their hands on the table, an inch apart", "subject": "A_hands", "size": "INSERT", "framing": "insert", "angle": "high", "horizontal": "profile", "height": "seated", "lens_mm_ff": 100, "dof": "shallow", "movement": "static", "duration_s": 3},
+          {"purpose": "CU on A as the truth comes out, a slow creep in", "subject": "A", "size": "CU", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 100, "dof": "shallow", "movement": "dolly_in", "speed": "slow", "duration_s": 7},
+          {"purpose": "matched CU on B taking it in; the line from A carries over as a J-cut", "subject": "B", "size": "CU", "framing": "reaction", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 100, "dof": "shallow", "movement": "static", "duration_s": 6}
+        ],
+        "why": "Long lenses and a lamp-lit booth erase the diner around them; dirty OTS frames keep both bodies on screen, and the matched step from MCU to CU brings the audience physically closer exactly as the characters open up."
+      },
+      {
+        "name": "Side by side in the dark",
+        "beat": "two people lie on a bed or sit on a couch, talking quietly without looking at each other",
+        "cast": 2,
+        "shots": [
+          {"purpose": "profile two-shot, faces close, a single soft source", "subject": "both", "size": "MCU", "framing": "two_shot", "angle": "eye", "horizontal": "profile", "height": "seated", "lens_mm_ff": 75, "dof": "shallow", "movement": "static", "lighting": "soft window spill or bedside lamp, falloff to black", "duration_s": 10},
+          {"purpose": "CU on A, B soft in the frame edge", "subject": "A", "size": "CU", "framing": "dirty_single", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 85, "dof": "shallow", "movement": "static", "duration_s": 6},
+          {"purpose": "matched CU on B, A soft in the frame edge", "subject": "B", "size": "CU", "framing": "dirty_single", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 85, "dof": "shallow", "movement": "static", "duration_s": 6},
+          {"purpose": "back to the two-shot, creeping in as one finally turns to the other", "subject": "both", "size": "CU", "framing": "two_shot", "angle": "eye", "horizontal": "profile", "height": "seated", "lens_mm_ff": 85, "dof": "shallow", "movement": "dolly_in", "speed": "slow", "duration_s": 8}
+        ],
+        "why": "Not looking at each other lets the characters say hard things; the profile two-shot keeps them in one frame, and the final creep marks the moment they choose to face each other."
+      }
+    ],
+    "avoid": [
+      {"what": "wide lenses close to the faces", "why": "distortion and visible background make the moment feel observed rather than shared"},
+      {"what": "cutting away to the room or other patrons", "why": "it reintroduces the world the scene is trying to shut out"},
+      {"what": "hard top light", "why": "eye-socket shadow hides the eyes, which carry the scene"}
+    ],
+    "prompt_fragments": {
+      "ltx": "Soft warm key light with a gentle backlight halo, amber practicals, low contrast, shallow depth of field on an 85mm lens with the background melting into bokeh.",
+      "still": "intimate cinematic film still, soft warm key light, backlight halo on hair, amber practical lamps, low contrast, 85mm lens, f/1.8, shallow depth of field, creamy bokeh, Kodak Vision3 500T grain",
+      "h3": "Live-action, cinematic intimate look, soft warm lamp light, shallow focus, background melting to bokeh."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.15, "yaw_deg": 30, "pitch_deg": 0, "distance_m": 1.5, "roll_deg": 0, "focal_mm_ff": 85, "vfov_deg": 12.9},
+    "reference_works": [
+      {"title": "Before Sunrise", "year": 1995, "note": "long takes in which conversation becomes closeness"},
+      {"title": "Lost in Translation", "year": 2003, "note": "the hotel-bed conversation, side by side"},
+      {"title": "In the Mood for Love", "year": 2000, "note": "compression and foreground occlusion"},
+      {"title": "Moonlight", "year": 2016, "note": "the diner reunion: patient reverses and warm light"}
+    ],
+    "sources": [
+      {"url": "https://research.vu.nl/en/publications/shot-scale-matters-the-effect-of-close-up-frequency-on-mental-sta/", "supports": "close-up frequency raises viewers' attribution of mental states"}
+    ],
+    "confidence": "craft_consensus",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  },
+  {
+    "id": "emotion.isolation",
+    "type": "emotion_recipe",
+    "name": "Isolation",
+    "aliases": ["loneliness", "lonely", "solitude", "alienation"],
+    "keywords": ["alone", "lonely", "loneliness", "empty", "by himself", "by herself", "solitary", "isolated", "deserted", "nobody", "last one", "after hours", "at night", "abandoned"],
+    "parent": null,
+    "era": "timeless",
+    "summary": "Isolation is a frame that is too big for the person in it. Use wide shots with heavy negative space and put the figure small, off-center or short-sided; let the room (empty desks, an unlit kitchen, a window full of other people's lights) say what is missing. Keep the camera still or let it pull away. Cool, desaturated light, long holds, ambient sound and no score keep the audience from offering the character any company. In a crowd, flip it: a long lens isolates one sharp face in a blur of strangers.",
+    "intent_tags": ["isolation", "melancholy", "grief"],
+    "signature": {
+      "shot_size": {"EWS": 0.15, "WS": 0.35, "MS": 0.2, "MCU": 0.15, "INSERT": 0.15},
+      "framing": {"single": 0.55, "establishing": 0.2, "insert": 0.15, "pov": 0.1},
+      "angle": {"eye": 0.5, "high": 0.4, "overhead": 0.1},
+      "camera_height": {"eye": 0.4, "high": 0.3, "seated": 0.3},
+      "lens_mm_ff": [24, 200],
+      "lens_look": {"spherical": 0.8, "anamorphic": 0.2},
+      "movement": {"static": 0.7, "dolly_out": 0.25, "pan_left": 0.05},
+      "rig": {"sticks": 0.7, "dolly": 0.3},
+      "lighting": {"cool_ambient": 0.6, "single_practical": 0.5, "blue_hour": 0.3, "fluorescent": 0.3},
+      "color": ["cool, desaturated", "blue night spill against one warm practical", "fluorescent green cast"],
+      "composition": {"negative_space": 0.5, "off_center_small_figure": 0.3, "short_side": 0.1, "frame_within_frame": 0.1},
+      "aspect_ratio": ["2.39:1", "1.85:1"],
+      "asl_seconds": [5, 20],
+      "editing": ["long holds", "few cuts", "no reaction shots because no one is there to react", "end on the widest frame"],
+      "sound": ["room tone, HVAC hum, distant traffic", "no score", "a sound from outside that does not include them"]
+    },
+    "rules": [
+      {"when": "introducing the lonely character", "then": "start wide, with the figure small and off-center in a space built for many people", "why": "empty chairs and desks state the absence of others without a word", "hard": false},
+      {"when": "a medium or close shot", "then": "keep negative space on the open side and put nothing in it", "why": "the empty side of the frame is where a companion would be; the eye notices it is vacant", "hard": false},
+      {"when": "ending the beat", "then": "pull out slowly or cut to the widest, highest view and hold", "why": "the pull-out literally removes the audience from the character, leaving them more alone", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "Alone in the office at night",
+        "beat": "a woman works late, the last person in a dark open-plan office",
+        "cast": 1,
+        "shots": [
+          {"purpose": "establishing: rows of empty desks, one lit monitor at the far end", "subject": "env", "size": "EWS", "framing": "establishing", "angle": "high", "horizontal": "front", "height": "high", "lens_mm_ff": 24, "dof": "deep", "movement": "static", "lighting": "overhead lights off, blue city spill through windows, one monitor glow", "composition": "the lit desk small in the upper third, empty chairs filling the frame", "duration_s": 7},
+          {"purpose": "wide on her at the desk, the office stretching away behind", "subject": "A", "size": "WS", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 28, "dof": "deep", "movement": "static", "lighting": "monitor glow as key, cool ambient fill", "composition": "figure on the right third, dark empty desks filling the left two thirds", "duration_s": 8},
+          {"purpose": "insert: phone face up on the desk, no new messages, a cold coffee", "subject": "prop", "size": "INSERT", "framing": "insert", "angle": "high", "horizontal": "front", "height": "seated", "lens_mm_ff": 75, "dof": "shallow", "movement": "static", "duration_s": 3},
+          {"purpose": "MS profile, short-sided, empty space behind her head", "subject": "A", "size": "MS", "framing": "single", "angle": "eye", "horizontal": "profile", "height": "seated", "lens_mm_ff": 50, "dof": "medium", "movement": "static", "lighting": "monitor glow on the face, the rest underexposed", "composition": "short-sided: she faces the near edge, the wide empty side behind her", "duration_s": 6},
+          {"purpose": "from behind: she looks out at the lit windows of other buildings", "subject": "A", "size": "WS", "framing": "single", "angle": "eye", "horizontal": "back", "height": "eye", "lens_mm_ff": 35, "dof": "deep", "movement": "static", "lighting": "silhouette against the city", "composition": "small dark figure against a window wall of other people's lights", "duration_s": 8},
+          {"purpose": "slow pull-out from the desk until she is a speck in the dark floor", "subject": "A", "size": "WS", "framing": "single", "angle": "high", "horizontal": "three_quarter_front", "height": "high", "lens_mm_ff": 28, "dof": "deep", "movement": "dolly_out", "speed": "slow", "duration_s": 10}
+        ],
+        "why": "The office is built for dozens and holds one, so the empty desks do the talking. The phone insert confirms no one is reaching out, the window shot shows life happening elsewhere, and the final pull-out takes the audience away from her too."
+      },
+      {
+        "name": "Alone in a crowd",
+        "beat": "a man stands still on a busy platform while commuters stream past",
+        "cast": 1,
+        "shots": [
+          {"purpose": "long-lens single: his face sharp, crowd smeared across the foreground and background", "subject": "A", "size": "MS", "framing": "single", "angle": "eye", "horizontal": "front", "height": "eye", "lens_mm_ff": 200, "dof": "shallow", "movement": "static", "lighting": "flat overcast or fluorescent", "composition": "centered, strangers crossing frame in soft focus", "duration_s": 8},
+          {"purpose": "high wide: the crowd flows around one stationary figure", "subject": "A", "size": "WS", "framing": "single", "angle": "high", "horizontal": "three_quarter_front", "height": "high", "lens_mm_ff": 35, "dof": "deep", "movement": "static", "composition": "the still figure off-center in a moving river of people", "duration_s": 8},
+          {"purpose": "CU from behind: the back of his head, people passing", "subject": "A", "size": "MCU", "framing": "single", "angle": "eye", "horizontal": "three_quarter_back", "height": "eye", "lens_mm_ff": 85, "dof": "shallow", "movement": "static", "duration_s": 6}
+        ],
+        "why": "Compression stacks the crowd while shallow focus detaches him from it, so he is surrounded and untouched at once; stillness against constant motion is the image of loneliness."
+      }
+    ],
+    "avoid": [
+      {"what": "close two-shots or cutaways to other people reacting", "why": "any companion in the cut breaks the isolation"},
+      {"what": "warm, full, even lighting", "why": "comfort and fullness contradict the emotion"},
+      {"what": "a sentimental score over the holds", "why": "music keeps the character company; ambient sound leaves them alone"}
+    ],
+    "prompt_fragments": {
+      "ltx": "Cool desaturated night palette with blue window spill and a single warm practical, deep shadows, heavy negative space, still wide framing on a 28mm lens.",
+      "still": "lonely cinematic film still, cool desaturated palette, blue night spill through windows, single warm practical light, heavy negative space, small off-center figure, 28mm lens, deep focus, quiet stillness, fine film grain",
+      "h3": "Live-action, cinematic, cool desaturated night look with a single warm practical and heavy negative space."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.1, "yaw_deg": 35, "pitch_deg": -12, "distance_m": 6.0, "roll_deg": 0, "focal_mm_ff": 28, "vfov_deg": 37.8},
+    "reference_works": [
+      {"title": "The Apartment", "year": 1960, "note": "the vast insurance office floor, one desk among hundreds"},
+      {"title": "Lost in Translation", "year": 2003, "note": "hotel windows over a city that does not include them"},
+      {"title": "Taxi Driver", "year": 1976, "note": "night city, alone in the frame"},
+      {"title": "Her", "year": 2013, "note": "a solitary figure in warm but empty apartments and crowds"}
+    ],
+    "sources": [],
+    "confidence": "craft_consensus",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  },
+  {
+    "id": "emotion.dread",
+    "type": "emotion_recipe",
+    "name": "Dread",
+    "aliases": ["creeping fear", "ominous", "something is wrong", "slow burn"],
+    "keywords": ["dread", "ominous", "creepy", "something upstairs", "hears something", "noise", "dark house", "hallway", "stairs", "basement", "creaks", "shadow", "unsettling", "eerie"],
+    "parent": null,
+    "era": "timeless",
+    "summary": "Dread is anticipation of harm without knowing when or where. Give the viewer space to search (wide lenses, empty backgrounds, doorways), take away information (darkness, backs of heads, foreground occlusion), and slow time (long static holds, imperceptible push-ins, low drones). Delay the payoff; the scare is optional, the waiting is the point.",
+    "intent_tags": ["dread", "menace", "suspense"],
+    "signature": {
+      "shot_size": {"WS": 0.35, "MS": 0.35, "MCU": 0.2, "INSERT": 0.1},
+      "framing": {"single": 0.6, "dirty_single": 0.2, "pov": 0.2},
+      "angle": {"eye": 0.6, "low": 0.15, "overhead": 0.1, "high": 0.15},
+      "camera_height": {"eye": 0.6, "knee": 0.2, "high": 0.2},
+      "lens_mm_ff": [21, 40],
+      "lens_look": {"spherical": 1.0},
+      "movement": {"static": 0.55, "dolly_in": 0.35, "track_follow": 0.1},
+      "rig": {"sticks": 0.5, "dolly": 0.4, "steadicam": 0.1},
+      "lighting": {"low_key": 0.9, "single_practical": 0.6, "underexposed": 0.6},
+      "color": ["cold desaturated", "sickly sodium or fluorescent cast", "deep blacks"],
+      "composition": {"short_side": 0.35, "negative_space_background": 0.4, "foreground_occlusion": 0.25},
+      "aspect_ratio": ["2.39:1", "1.85:1", "1.33:1 (claustrophobic)"],
+      "asl_seconds": [5, 20],
+      "editing": ["long static holds", "delay the cut past comfort", "cut away just before the reveal", "rare stingers"],
+      "sound": ["low-frequency drone", "room tone", "distant unidentifiable sounds", "silence before the payoff"]
+    },
+    "rules": [
+      {"when": "a character enters an unknown space", "then": "frame them short-sided with a dark doorway or corridor in the open side of the frame", "why": "the open side is where the viewer expects the threat; the eye keeps checking it", "hard": false},
+      {"when": "push-in", "then": "keep it very slow (barely perceptible) and toward the back of the head or an empty space, not the threat", "why": "slowness implies inevitability; pushing into emptiness makes the audience imagine", "hard": false},
+      {"when": "about to reveal", "then": "cut or hold one beat later than comfortable", "why": "violating expected rhythm is itself unsettling", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "Empty-hallway dread",
+        "beat": "a woman alone at night hears something upstairs",
+        "cast": 1,
+        "shots": [
+          {"purpose": "she listens; the stairwell is dark behind her", "subject": "A", "size": "MS", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "eye", "lens_mm_ff": 28, "dof": "deep", "movement": "static", "lighting": "single warm practical lamp, rest black", "composition": "short-sided, dark stairwell fills the open side", "duration_s": 8},
+          {"purpose": "her POV: top of the stairs, nothing there", "subject": "env", "size": "WS", "framing": "pov", "angle": "low", "horizontal": "front", "height": "eye", "lens_mm_ff": 24, "dof": "deep", "movement": "dolly_in", "speed": "slow", "lighting": "moonlight spill only", "composition": "doorway centered, deep negative space", "duration_s": 10},
+          {"purpose": "high wide from the top of the stairs looking down at her: the house seems to watch", "subject": "A", "size": "WS", "framing": "single", "angle": "high", "horizontal": "three_quarter_front", "height": "high", "lens_mm_ff": 24, "dof": "deep", "movement": "static", "lighting": "her lamp a small pool in the black", "composition": "banister in the foreground occluding part of frame, figure small below", "duration_s": 6, "note": "implies a watcher without showing one"},
+          {"purpose": "back of her head as she climbs", "subject": "A", "size": "MCU", "framing": "single", "angle": "eye", "horizontal": "back", "height": "eye", "lens_mm_ff": 35, "dof": "medium", "movement": "track_follow", "speed": "slow", "lighting": "underexposed", "duration_s": 8, "note": "withhold her face; we share her not-knowing"}
+        ],
+        "why": "Wide-ish lenses and negative space invite scanning; short-siding plants the threat zone; slow push-ins on emptiness let imagination do the work; withholding the face transfers her fear to the viewer."
+      }
+    ],
+    "avoid": [
+      {"what": "bright even lighting", "why": "nothing left to hide"},
+      {"what": "fast cutting or score stingers early", "why": "spends the tension too soon"},
+      {"what": "telephoto shallow-focus backgrounds", "why": "a blurred background gives the eye nothing to search"}
+    ],
+    "prompt_fragments": {
+      "ltx": "Low-key horror lighting from a single small warm practical with everything beyond falling into black, cold desaturated shadows and deep blacks, deep focus on a 28mm lens.",
+      "still": "low-key cinematic horror still, single warm practical lamp as the only light, deep blacks, cold desaturated shadows, faint moonlight spill, 28mm lens, f/4, deep focus, heavy negative space, fine film grain",
+      "h3": "Live-action, cinematic low-key horror look, a single warm practical lamp and deep black shadows."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.5, "yaw_deg": 25, "pitch_deg": 0, "distance_m": 2.6, "roll_deg": 0, "focal_mm_ff": 28, "vfov_deg": 37.8},
+    "reference_works": [
+      {"title": "The Shining", "year": 1980, "note": "Steadicam corridors, one-point perspective"},
+      {"title": "The Babadook", "year": 2014},
+      {"title": "Hereditary", "year": 2018, "note": "slow push-ins, background figures"},
+      {"title": "It Follows", "year": 2014, "note": "wide lenses, distant walkers, 360 pans"}
+    ],
+    "sources": [
+      {"url": "https://ltx.io/blog/camera-movement-prompt-guide", "supports": "LTX destination-frame instruction and 'pushes in' term"}
+    ],
+    "confidence": "craft_consensus",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  },
+  {
+    "id": "emotion.power_imbalance",
+    "type": "emotion_recipe",
+    "name": "Power Imbalance",
+    "aliases": ["dominance", "intimidation", "status", "mismatched coverage"],
+    "keywords": ["boss", "interrogation", "intimidates", "threatens", "looms", "towers over", "behind the desk", "kneels", "begs", "commands", "orders", "fires him", "fires her", "powerful", "submissive"],
+    "parent": null,
+    "era": "timeless",
+    "summary": "Shot/reverse-shot normally codes equality by matching size, lens and height. Power imbalance is made by breaking that match on purpose: the dominant character gets a tighter, lower, closer frame (often a wider lens close in, so they loom), centered or in the foreground, backlit or top-lit; the weaker character gets a looser, higher frame from further back on a longer lens, small, off-center and boxed in by the set. Give the weaker one the reaction shots and the dominant one the last word. When the balance flips, flip the coverage.",
+    "intent_tags": ["power_imbalance", "menace", "tension"],
+    "signature": {
+      "shot_size": {"WS": 0.15, "MS": 0.3, "MCU": 0.3, "CU": 0.2, "INSERT": 0.05},
+      "framing": {"single": 0.45, "ots": 0.3, "reaction": 0.15, "two_shot": 0.1},
+      "angle": {"low": 0.4, "high": 0.4, "eye": 0.2},
+      "camera_height": {"chest": 0.3, "high": 0.3, "seated": 0.2, "eye": 0.2},
+      "lens_mm_ff": [28, 100],
+      "lens_look": {"spherical": 0.8, "anamorphic": 0.2},
+      "movement": {"static": 0.6, "dolly_in": 0.35, "crane_down": 0.05},
+      "rig": {"sticks": 0.6, "dolly": 0.4},
+      "lighting": {"top_light": 0.4, "backlit_silhouette": 0.4, "flat_on_weaker": 0.4},
+      "color": ["dark, rich tones around the dominant", "flatter, paler light on the weaker"],
+      "composition": {"dominant_centered_foreground": 0.4, "weaker_small_boxed_in": 0.4, "frame_within_frame": 0.2},
+      "aspect_ratio": ["1.85:1", "2.39:1"],
+      "asl_seconds": [2, 8],
+      "editing": ["weaker character gets reaction shots", "dominant character gets the last word and the last shot", "flip the coverage when power shifts"],
+      "sound": ["dominant voice close-miked and quiet", "silence after an order"]
+    },
+    "rules": [
+      {"when": "one character holds power", "then": "shoot the dominant one tighter and from below (chest height looking up) and the weaker one looser and from above", "why": "mismatched size and height breaks the equality code of matched reverses, so the audience feels the hierarchy before it is stated", "hard": false},
+      {"when": "lensing the pair", "then": "put a wider lens close on the dominant character and a longer lens far from the weaker one", "why": "the close wide lens makes the dominant one loom toward camera; the distant long lens shrinks and flattens the other against the wall", "hard": false},
+      {"when": "the balance flips", "then": "swap the treatments, ideally inside a single move (a push-in on the newly strong character, or the weak one standing into a low frame)", "why": "a visible change in coverage tells the audience the hierarchy changed at that exact moment", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "Called into the boss's office",
+        "beat": "an employee stands before a seated executive who decides their fate",
+        "cast": 2,
+        "shots": [
+          {"purpose": "wide from behind the executive: the employee small across a big desk", "subject": "B", "size": "WS", "framing": "ots", "angle": "high", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 32, "dof": "deep", "movement": "static", "lighting": "executive a dark silhouette against the window, employee flatly lit", "composition": "executive's shoulder and chair fill a third of frame, employee boxed by the door frame", "duration_s": 6},
+          {"purpose": "dominant single: executive in MCU from slightly below, wide lens close", "subject": "A", "size": "MCU", "framing": "single", "angle": "low", "horizontal": "three_quarter_front", "height": "chest", "lens_mm_ff": 35, "dof": "medium", "movement": "static", "lighting": "top light and hard backlight from the window", "composition": "centered, filling the frame", "duration_s": 5},
+          {"purpose": "weaker single: employee in MS from above, long lens from far back", "subject": "B", "size": "MS", "framing": "single", "angle": "high", "horizontal": "three_quarter_front", "height": "high", "lens_mm_ff": 85, "dof": "shallow", "movement": "static", "lighting": "flat, even", "composition": "off-center, headroom generous so they look small", "duration_s": 4},
+          {"purpose": "insert: the executive's hand sliding a folder across the desk", "subject": "A_hands", "size": "INSERT", "framing": "insert", "angle": "high", "horizontal": "front", "height": "seated", "lens_mm_ff": 50, "dof": "shallow", "movement": "static", "duration_s": 2},
+          {"purpose": "slow push on the executive for the verdict", "subject": "A", "size": "CU", "framing": "single", "angle": "low", "horizontal": "three_quarter_front", "height": "chest", "lens_mm_ff": 40, "dof": "medium", "movement": "dolly_in", "speed": "slow", "duration_s": 5},
+          {"purpose": "employee's reaction, held, still from above", "subject": "B", "size": "MS", "framing": "reaction", "angle": "high", "horizontal": "three_quarter_front", "height": "high", "lens_mm_ff": 85, "dof": "shallow", "movement": "static", "duration_s": 4}
+        ],
+        "why": "Every axis of the reverse pair is mismatched: size, height, lens distance, light and position in frame. The audience feels the hierarchy physically, and the push-in on the verdict lets the executive's power grow while the employee's frame never changes."
+      },
+      {
+        "name": "The interrogation flips",
+        "beat": "a suspect who has been cornered suddenly reveals they hold the leverage",
+        "cast": 2,
+        "shots": [
+          {"purpose": "interrogator standing over the seated suspect, two-shot from the interrogator's side", "subject": "both", "size": "MS", "framing": "two_shot", "angle": "high", "horizontal": "three_quarter_front", "height": "eye", "lens_mm_ff": 35, "dof": "medium", "movement": "static", "composition": "interrogator in the foreground standing, suspect low in frame", "duration_s": 5},
+          {"purpose": "suspect small and high-angle on a long lens", "subject": "B", "size": "MS", "framing": "single", "angle": "high", "horizontal": "three_quarter_front", "height": "eye", "lens_mm_ff": 85, "dof": "shallow", "movement": "static", "duration_s": 4},
+          {"purpose": "the flip: slow push into the suspect, camera lowering to their eye line as they deliver the leverage", "subject": "B", "size": "CU", "framing": "single", "angle": "eye", "horizontal": "front", "height": "seated", "lens_mm_ff": 50, "dof": "shallow", "movement": "dolly_in", "speed": "slow", "lighting": "key brightens on the face as they lean into the light", "duration_s": 6},
+          {"purpose": "interrogator now framed looser and from above as they sit down", "subject": "A", "size": "MS", "framing": "reaction", "angle": "high", "horizontal": "three_quarter_front", "height": "high", "lens_mm_ff": 75, "dof": "shallow", "movement": "static", "duration_s": 4}
+        ],
+        "why": "The coverage carries the plot twist: the suspect's frame tightens and descends to eye level while the interrogator inherits the high, loose framing, so the audience feels the power move before anyone states it."
+      }
+    ],
+    "avoid": [
+      {"what": "matched reverses throughout", "why": "symmetry tells the audience the two are equals and cancels the hierarchy"},
+      {"what": "cartoon angles (worm's-eye on the boss, overhead on the victim) from the first shot", "why": "too much too soon reads as parody; keep the mismatch modest and let it grow"},
+      {"what": "flipping the coverage without a story reason", "why": "the audience reads every coverage change as a power change"}
+    ],
+    "prompt_fragments": {
+      "ltx": "Hard top light and window backlight carving a dark silhouette against flatter fill, rich dark tones, controlled contrast, static camera.",
+      "still": "cinematic drama still, hard top light, dark backlit silhouette against a bright window, rich dark wood and shadow tones, controlled contrast, low camera angle, 35mm lens, medium depth of field, 35mm film grain",
+      "h3": "Live-action, cinematic, hard top light and window backlight, rich dark tones, a low static camera."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.2, "yaw_deg": 25, "pitch_deg": 10, "distance_m": 1.4, "roll_deg": 0, "focal_mm_ff": 35, "vfov_deg": 30.7},
+    "reference_works": [
+      {"title": "The Godfather", "year": 1972, "note": "top-lit Corleone office, petitioners shot from above"},
+      {"title": "Citizen Kane", "year": 1941, "note": "low angles with ceilings in frame on Kane"},
+      {"title": "There Will Be Blood", "year": 2007, "note": "church and bowling-alley scenes as power flips"},
+      {"title": "Whiplash", "year": 2014, "note": "conductor looming over the drummer"}
+    ],
+    "sources": [],
+    "confidence": "craft_consensus",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  },
+  {
+    "id": "emotion.romance",
+    "type": "emotion_recipe",
+    "name": "Romance",
+    "aliases": ["romantic", "falling in love", "first date", "the kiss", "meet-cute"],
+    "keywords": ["first date", "date", "romantic", "in love", "kiss", "kisses", "flirt", "flirting", "falls for", "candlelight", "sunset", "golden hour", "chemistry", "lovers"],
+    "parent": null,
+    "era": "timeless",
+    "summary": "Romance is a gap that closes. Open with a 50/50 two-shot that shows the space between the two people, cover them in matched singles on long lenses (85-135mm) that flatter faces and dissolve the background, then let the frames and the bodies converge: the two-shot tightens, the camera pushes, and at the peak it orbits so the world spins away behind them. Light warm and backlit (golden hour, candles, practicals with flare), hold shots longer, and give the look between them more time than the dialogue.",
+    "intent_tags": ["romance", "intimacy", "joy"],
+    "signature": {
+      "shot_size": {"MS": 0.3, "MCU": 0.35, "CU": 0.25, "INSERT": 0.1},
+      "framing": {"fifty_fifty": 0.2, "two_shot": 0.3, "single": 0.4, "insert": 0.1},
+      "angle": {"eye": 0.8, "low": 0.2},
+      "camera_height": {"seated": 0.4, "eye": 0.5, "chest": 0.1},
+      "lens_mm_ff": [75, 135],
+      "lens_look": {"spherical": 0.5, "anamorphic": 0.5},
+      "movement": {"static": 0.4, "dolly_in": 0.3, "arc_left": 0.15, "arc_right": 0.15},
+      "rig": {"sticks": 0.4, "dolly": 0.5, "steadicam": 0.1},
+      "lighting": {"golden_hour": 0.5, "warm_practicals": 0.5, "backlight_flare": 0.5},
+      "color": ["warm gold and amber", "soft highlights", "creamy skin", "lens flare and bokeh"],
+      "composition": {"negative_space_between_that_closes": 0.5, "faces_close_two_shot": 0.3, "center": 0.2},
+      "aspect_ratio": ["2.39:1", "1.85:1"],
+      "asl_seconds": [3, 10],
+      "editing": ["give looks more screen time than lines", "matched singles", "hold the tight two-shot", "slow-motion optional on the look"],
+      "sound": ["score swells at the convergence", "ambient city or room falling away"]
+    },
+    "rules": [
+      {"when": "the pair first sit or stand together", "then": "establish the gap between them in a 50/50 two-shot", "why": "romance is the closing of that gap; the audience has to see it to feel it close", "hard": false},
+      {"when": "covering the conversation", "then": "match the singles in size, lens and height, with at most a slight low angle on the person being fallen for", "why": "matched coverage codes mutual attraction; a hint of low angle idealizes without creating a power gap", "hard": false},
+      {"when": "the peak (the kiss, the confession)", "then": "move to a tight two-shot and push or orbit slowly", "why": "the orbit sends the background spinning away so the couple become the only fixed point", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "First date in a diner booth",
+        "beat": "two people on a first date across a booth table realize it is going well",
+        "cast": 2,
+        "shots": [
+          {"purpose": "50/50 two-shot across the table: the space between them", "subject": "both", "size": "MS", "framing": "fifty_fifty", "angle": "eye", "horizontal": "profile", "height": "seated", "lens_mm_ff": 50, "dof": "medium", "movement": "static", "lighting": "warm pendant over the table, neon glow through the window behind", "composition": "each at a frame edge, the table and two coffee cups between", "duration_s": 6},
+          {"purpose": "single on A: listening, smiling despite themselves", "subject": "A", "size": "MCU", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 100, "dof": "shallow", "movement": "static", "lighting": "warm key from the pendant, neon rim behind", "composition": "lead room toward B, background diner in soft bokeh", "duration_s": 5},
+          {"purpose": "matched single on B", "subject": "B", "size": "MCU", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 100, "dof": "shallow", "movement": "static", "lighting": "warm key from the pendant, neon rim behind", "composition": "lead room toward A, background diner in soft bokeh", "duration_s": 5},
+          {"purpose": "insert: both reach for the sugar; fingers touch", "subject": "A_hands", "size": "INSERT", "framing": "insert", "angle": "high", "horizontal": "profile", "height": "seated", "lens_mm_ff": 85, "dof": "shallow", "movement": "static", "duration_s": 2},
+          {"purpose": "the look: CU on B, held longer than the dialogue needs", "subject": "B", "size": "CU", "framing": "reaction", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 100, "dof": "shallow", "movement": "static", "duration_s": 5},
+          {"purpose": "tight two-shot pushing in as they lean across the table", "subject": "both", "size": "MCU", "framing": "two_shot", "angle": "eye", "horizontal": "profile", "height": "seated", "lens_mm_ff": 85, "dof": "shallow", "movement": "dolly_in", "speed": "slow", "lighting": "warm, neon flare blooming in the window", "duration_s": 7}
+        ],
+        "why": "The opening 50/50 measures the distance; matched long-lens singles flatter both and say the attraction is mutual; the touch insert and the held look slow time, and the closing push turns the table from a barrier into a bridge."
+      },
+      {
+        "name": "The golden-hour kiss",
+        "beat": "two people stop on a rooftop at sunset and finally kiss",
+        "cast": 2,
+        "shots": [
+          {"purpose": "wide two-shot silhouetted against the sunset, apart", "subject": "both", "size": "WS", "framing": "two_shot", "angle": "eye", "horizontal": "profile", "height": "eye", "lens_mm_ff": 50, "dof": "medium", "movement": "static", "lighting": "low sun directly behind, silhouette and flare", "composition": "sun in the gap between them", "duration_s": 5},
+          {"purpose": "CU on A, sun flaring behind", "subject": "A", "size": "CU", "framing": "single", "angle": "low", "horizontal": "three_quarter_front", "height": "chest", "lens_mm_ff": 135, "lens_look": "anamorphic", "dof": "shallow", "movement": "static", "lighting": "golden backlight, bounce fill on the face", "duration_s": 4},
+          {"purpose": "matched CU on B", "subject": "B", "size": "CU", "framing": "single", "angle": "low", "horizontal": "three_quarter_front", "height": "chest", "lens_mm_ff": 135, "lens_look": "anamorphic", "dof": "shallow", "movement": "static", "lighting": "golden backlight, bounce fill on the face", "duration_s": 4},
+          {"purpose": "the kiss: tight two-shot, the camera orbiting slowly around them", "subject": "both", "size": "MCU", "framing": "two_shot", "angle": "eye", "horizontal": "profile", "height": "eye", "lens_mm_ff": 85, "lens_look": "anamorphic", "dof": "shallow", "movement": "arc_left", "speed": "slow", "lighting": "sun rolling through frame behind them as the camera circles", "duration_s": 8}
+        ],
+        "why": "The sun sits in the gap between them until they close it; the orbit makes the city and sky wheel past while the couple stay fixed and sharp, the visual version of the world falling away."
+      }
+    ],
+    "avoid": [
+      {"what": "wide lenses close on faces", "why": "distortion is unflattering and reads as comedy or unease"},
+      {"what": "mismatched singles", "why": "unequal coverage suggests one-sided feeling or a power game"},
+      {"what": "fast cutting at the peak", "why": "romance needs time; quick cuts read as nerves or action"}
+    ],
+    "prompt_fragments": {
+      "ltx": "Warm golden-hour backlight with soft lens flare and amber practicals, creamy skin tones, shallow depth of field and oval anamorphic bokeh on a 100mm lens.",
+      "still": "romantic cinematic film still, warm golden-hour backlight, soft lens flare, amber and gold palette, creamy skin tones, 100mm lens, f/2, shallow depth of field, anamorphic oval bokeh, Kodak film grain",
+      "h3": "Live-action, cinematic romantic look, warm golden backlight, soft flare and shallow focus."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.15, "yaw_deg": 30, "pitch_deg": 0, "distance_m": 1.8, "roll_deg": 0, "focal_mm_ff": 100, "vfov_deg": 11.0},
+    "reference_works": [
+      {"title": "When Harry Met Sally...", "year": 1989, "note": "the delicatessen table: comedy and romance in matched coverage"},
+      {"title": "La La Land", "year": 2016, "note": "magic-hour hilltop and the orbiting dance"},
+      {"title": "Carol", "year": 2015, "note": "lunch-table looks, long lens through glass"},
+      {"title": "Before Sunset", "year": 2004, "note": "the closing distance between two people talking"}
+    ],
+    "sources": [],
+    "confidence": "craft_consensus",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  },
+  {
+    "id": "emotion.comedy",
+    "type": "emotion_recipe",
+    "name": "Comedic Timing",
+    "aliases": ["comedy", "comedic", "deadpan", "the gag", "physical comedy"],
+    "keywords": ["funny", "comedy", "joke", "gag", "slips", "falls", "trips", "awkward", "deadpan", "pratfall", "embarrassing", "spills", "mishap", "sitcom", "hilarious"],
+    "parent": null,
+    "era": "silent era to present",
+    "summary": "Comedy is causality the audience can read and a beat it can feel. Keep setup and payoff in the same frame (wide or full shots for physical gags, MS two-shots for verbal ones), lock the camera off and frame frontally or symmetrically for deadpan, and light high-key so nothing is hidden. Cut on the beat, never in the middle of a gag; hold one beat on the reaction because the reaction gives the audience permission to laugh. Snap zooms, whip pans and smash cuts are punctuation, used sparingly.",
+    "intent_tags": ["comedy", "joy", "energy"],
+    "signature": {
+      "shot_size": {"WS": 0.3, "FS": 0.2, "MS": 0.3, "MCU": 0.1, "INSERT": 0.1},
+      "framing": {"two_shot": 0.3, "single": 0.3, "reaction": 0.2, "insert": 0.1, "group": 0.1},
+      "angle": {"eye": 0.9, "high": 0.05, "low": 0.05},
+      "camera_height": {"eye": 0.7, "chest": 0.2, "seated": 0.1},
+      "lens_mm_ff": [24, 40],
+      "lens_look": {"spherical": 1.0},
+      "movement": {"static": 0.75, "snap_zoom": 0.1, "whip_pan": 0.1, "dolly_in": 0.05},
+      "rig": {"sticks": 0.9, "dolly": 0.1},
+      "lighting": {"high_key": 0.9, "even_soft": 0.7},
+      "color": ["bright, saturated", "clean whites", "pastels for deadpan"],
+      "composition": {"setup_and_payoff_in_frame": 0.4, "frontal_symmetry": 0.3, "center": 0.3},
+      "aspect_ratio": ["1.85:1", "1.78:1"],
+      "asl_seconds": [1.5, 8],
+      "editing": ["cut on the beat", "hold one beat on the reaction", "rule of three", "smash cut to the consequence", "never cut inside a physical gag"],
+      "sound": ["silence before the payoff", "clean comic sound effects", "music stops for the punchline"]
+    },
+    "rules": [
+      {"when": "a physical gag", "then": "frame wide or full enough that the setup and the payoff happen in one unbroken shot", "why": "the laugh comes from seeing cause and effect connect; a cut in the middle makes it look faked", "hard": false},
+      {"when": "after a punchline or mishap", "then": "cut to the reaction and hold it a beat before the next line", "why": "the reaction tells the audience how to read the moment and leaves room for the laugh", "hard": false},
+      {"when": "deadpan", "then": "lock off, frame frontally and symmetrically, and let performers do nothing", "why": "a still, formal frame makes absurd content funnier by refusing to acknowledge it", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "The pratfall with a deadpan witness",
+        "beat": "a man confidently carries a tray of drinks across a party and goes down in front of his date",
+        "cast": 2,
+        "shots": [
+          {"purpose": "setup: wide showing his path, the tray, and the hazard on the floor", "subject": "A", "size": "WS", "framing": "single", "angle": "eye", "horizontal": "profile", "height": "eye", "lens_mm_ff": 28, "dof": "deep", "movement": "static", "lighting": "bright high-key party light", "composition": "hazard and destination both visible in frame", "duration_s": 4},
+          {"purpose": "insert: the hazard (a spilled ice cube) right in his path", "subject": "prop", "size": "INSERT", "framing": "insert", "angle": "high", "horizontal": "front", "height": "knee", "lens_mm_ff": 40, "dof": "medium", "movement": "static", "duration_s": 1},
+          {"purpose": "the fall, in one wide unbroken full shot", "subject": "A", "size": "FS", "framing": "single", "angle": "eye", "horizontal": "profile", "height": "eye", "lens_mm_ff": 28, "dof": "deep", "movement": "static", "composition": "his whole body and the landing spot in frame", "duration_s": 3},
+          {"purpose": "reaction: B, frontal and still, holds a beat", "subject": "B", "size": "MS", "framing": "reaction", "angle": "eye", "horizontal": "front", "height": "eye", "lens_mm_ff": 35, "dof": "medium", "movement": "static", "composition": "centered, symmetrical", "duration_s": 3},
+          {"purpose": "punctuation: snap zoom onto A on the floor, still holding one unbroken glass", "subject": "A", "size": "MS", "framing": "single", "angle": "high", "horizontal": "front", "height": "eye", "lens_mm_ff": 35, "dof": "medium", "movement": "snap_zoom", "speed": "fast", "duration_s": 2}
+        ],
+        "why": "The insert plants the hazard so the audience anticipates; the fall plays in one wide so it is real; the still, frontal reaction gives permission to laugh, and the snap zoom lands the topper."
+      },
+      {
+        "name": "Deadpan two-shot",
+        "beat": "two people sit side by side on a couch, one delivers absurd news in a flat voice",
+        "cast": 2,
+        "shots": [
+          {"purpose": "frontal symmetrical two-shot, locked off", "subject": "both", "size": "MS", "framing": "two_shot", "angle": "eye", "horizontal": "front", "height": "seated", "lens_mm_ff": 32, "dof": "deep", "movement": "static", "lighting": "flat high-key", "composition": "perfectly centered, couch square to camera", "duration_s": 7},
+          {"purpose": "frontal single on B absorbing it, no expression change for a beat", "subject": "B", "size": "MCU", "framing": "reaction", "angle": "eye", "horizontal": "front", "height": "seated", "lens_mm_ff": 40, "dof": "medium", "movement": "static", "composition": "centered", "duration_s": 3},
+          {"purpose": "back to the identical two-shot for the topper", "subject": "both", "size": "MS", "framing": "two_shot", "angle": "eye", "horizontal": "front", "height": "seated", "lens_mm_ff": 32, "dof": "deep", "movement": "static", "duration_s": 5}
+        ],
+        "why": "The formal, unchanging frame refuses to react, so the audience does the reacting; returning to the exact same two-shot makes the repetition itself a joke."
+      }
+    ],
+    "avoid": [
+      {"what": "cutting in the middle of a physical gag", "why": "it breaks causality, and the audience suspects a trick instead of laughing"},
+      {"what": "long lenses and shallow focus on the gag", "why": "the setup in the background goes soft and the joke loses its context"},
+      {"what": "low-key lighting", "why": "shadow hides faces and props that the joke depends on"}
+    ],
+    "prompt_fragments": {
+      "ltx": "Bright high-key even lighting, clean saturated colors, deep focus and a locked-off frontal frame on a 32mm lens.",
+      "still": "comedy film still, bright high-key even lighting, clean saturated colors, frontal symmetrical composition, 32mm lens, deep focus, crisp detail",
+      "h3": "Live-action, cinematic comedy look, bright high-key light, saturated colors, a locked-off frontal frame."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.2, "yaw_deg": 0, "pitch_deg": 0, "distance_m": 4.0, "roll_deg": 0, "focal_mm_ff": 32, "vfov_deg": 33.4},
+    "reference_works": [
+      {"title": "The General", "year": 1926, "note": "Keaton: gags staged whole in wide frames"},
+      {"title": "The Grand Budapest Hotel", "year": 2014, "note": "frontal symmetry and whip pans as punctuation"},
+      {"title": "Hot Fuzz", "year": 2007, "note": "snap zooms and smash cuts"},
+      {"title": "Playtime", "year": 1967, "note": "Tati: several gags at once in deep wide frames"}
+    ],
+    "sources": [],
+    "confidence": "craft_consensus",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  },
+  {
+    "id": "emotion.awe",
+    "type": "emotion_recipe",
+    "name": "Awe",
+    "aliases": ["wonder", "sense of wonder", "the Spielberg face", "the sublime", "majestic"],
+    "keywords": ["awe", "wonder", "vast", "huge", "enormous", "massive", "towering", "first sight", "looks up", "stares up", "mountain", "cathedral", "spaceship", "majestic", "breathtaking"],
+    "parent": null,
+    "era": "timeless",
+    "summary": "Awe is scale contrast plus a witness. Put a tiny human against something vast (EWS, low horizon, massive negative space, often symmetrical) so size is measurable, and pair it with a face looking up in wonder so the audience knows how to feel. Move slowly upward: crane or pedestal up, tilt up, a slow push-in on the face. Backlight, haze and shafts of light give the space volume. Hold the shots long and let the music swell or drop into reverent silence.",
+    "intent_tags": ["awe", "spectacle", "joy"],
+    "signature": {
+      "shot_size": {"EWS": 0.35, "WS": 0.2, "MCU": 0.15, "CU": 0.25, "MS": 0.05},
+      "framing": {"establishing": 0.3, "single": 0.35, "pov": 0.25, "reaction": 0.1},
+      "angle": {"low": 0.55, "eye": 0.3, "worms_eye": 0.15},
+      "camera_height": {"ground": 0.2, "knee": 0.2, "eye": 0.3, "aerial": 0.3},
+      "lens_mm_ff": [18, 85],
+      "lens_look": {"anamorphic": 0.6, "spherical": 0.4},
+      "movement": {"crane_up": 0.35, "dolly_in": 0.3, "tilt_up": 0.2, "static": 0.15},
+      "rig": {"crane": 0.4, "dolly": 0.4, "drone": 0.2},
+      "lighting": {"backlight": 0.7, "haze_shafts": 0.6, "golden_or_white": 0.5},
+      "color": ["luminous whites and gold", "deep sky blue", "atmospheric haze"],
+      "composition": {"tiny_figure_vast_space": 0.4, "symmetry": 0.3, "low_horizon": 0.3},
+      "aspect_ratio": ["2.39:1", "1.43:1 (IMAX)"],
+      "asl_seconds": [5, 15],
+      "editing": ["face first, then the reveal, then back to the face", "long holds", "slow dissolves acceptable"],
+      "sound": ["music swell or reverent silence", "deep low rumble for scale", "ambience drops out"]
+    },
+    "rules": [
+      {"when": "revealing something vast", "then": "always include a human figure or known object for scale", "why": "without a scale reference the brain cannot measure size, and a vast thing reads as merely big", "hard": false},
+      {"when": "before the reveal", "then": "show the character's face reacting first, then what they see", "why": "the reaction primes the audience's emotion and makes the reveal a payoff they have been waiting for", "hard": false},
+      {"when": "moving the camera", "then": "move slowly and upward (crane up, tilt up), never fast", "why": "slow ascending motion reads as reverence; fast motion reads as action and shrinks the scale", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "The first sight",
+        "beat": "a traveler crests a ridge and sees a colossal ancient structure for the first time",
+        "cast": 1,
+        "shots": [
+          {"purpose": "the face: slow push-in as they look up, light changing on their skin", "subject": "A", "size": "CU", "framing": "reaction", "angle": "low", "horizontal": "three_quarter_front", "height": "chest", "lens_mm_ff": 85, "dof": "shallow", "movement": "dolly_in", "speed": "slow", "lighting": "bright backlight wrapping the face, eyes catching the light", "duration_s": 6},
+          {"purpose": "their POV: tilt up the structure, it keeps going", "subject": "env", "size": "EWS", "framing": "pov", "angle": "low", "horizontal": "front", "height": "eye", "lens_mm_ff": 24, "lens_look": "anamorphic", "dof": "deep", "movement": "tilt_up", "speed": "slow", "lighting": "haze and shafts of sun through openings", "duration_s": 8},
+          {"purpose": "scale: crane up and back from behind the tiny figure to the vast structure", "subject": "A", "size": "EWS", "framing": "establishing", "angle": "high", "horizontal": "back", "height": "aerial", "lens_mm_ff": 24, "lens_look": "anamorphic", "dof": "deep", "movement": "crane_up", "speed": "slow", "composition": "figure tiny at the bottom center, structure filling the symmetrical frame", "duration_s": 10},
+          {"purpose": "back to the face, held in stillness", "subject": "A", "size": "MCU", "framing": "reaction", "angle": "low", "horizontal": "three_quarter_front", "height": "chest", "lens_mm_ff": 75, "dof": "shallow", "movement": "static", "duration_s": 5}
+        ],
+        "why": "The face tells the audience how to feel before it sees anything; the tilt makes the structure's height a duration, and the crane from behind the tiny figure gives the scale a measurable reference, then returns us to the human witness."
+      }
+    ],
+    "avoid": [
+      {"what": "revealing the vast thing without a human for scale", "why": "nothing to measure it against, so it reads as a postcard"},
+      {"what": "quick cutting or handheld during the reveal", "why": "awe needs time and stillness to register"},
+      {"what": "flat, frontal midday light", "why": "no haze or backlight means no depth or volume in the space"}
+    ],
+    "prompt_fragments": {
+      "ltx": "Epic anamorphic widescreen look with strong backlight, atmospheric haze and god-ray shafts of light, luminous whites and gold, deep focus on a 24mm lens.",
+      "still": "epic cinematic film still, 2.39:1 anamorphic widescreen, strong backlight, atmospheric haze, god rays, luminous gold and white palette, vast scale, tiny human figure for scale, low horizon, 24mm lens, deep focus",
+      "h3": "Live-action, cinematic epic look, anamorphic widescreen, backlight through haze and shafts of light."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.6, "yaw_deg": 20, "pitch_deg": 12, "distance_m": 1.2, "roll_deg": 0, "focal_mm_ff": 85, "vfov_deg": 12.9},
+    "reference_works": [
+      {"title": "Close Encounters of the Third Kind", "year": 1977, "note": "faces lit by what they see"},
+      {"title": "Jurassic Park", "year": 1993, "note": "the first dinosaur: reaction before reveal"},
+      {"title": "Lawrence of Arabia", "year": 1962, "note": "tiny figures in vast desert"},
+      {"title": "Arrival", "year": 2016, "note": "the shell in the mist, figures dwarfed"}
+    ],
+    "sources": [
+      {"url": "https://www.slashfilm.com/votd-spielberg-face", "supports": "the Spielberg face: the reaction shot of wonder"}
+    ],
+    "confidence": "craft_consensus",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  },
+  {
+    "id": "emotion.grief",
+    "type": "emotion_recipe",
+    "name": "Grief",
+    "aliases": ["mourning", "loss", "bereavement", "sorrow"],
+    "keywords": ["grief", "grieving", "mourning", "funeral", "loss", "died", "death", "widow", "cries", "weeps", "empty chair", "bad news", "hospital", "grave", "sorrow"],
+    "parent": null,
+    "era": "timeless",
+    "summary": "Grief is filmed with restraint. Withhold the face first (from behind, in a doorway, at a distance) so the audience grants the character privacy and leans in; let emptiness stand for the person who is gone (an empty chair, a coat on a hook, half a bed). Use normal-to-long lenses, eye level, still frames or a slow pull-out, soft overcast light and a desaturated palette. Hold long, stay on room tone, and cut late. When news is delivered, stay on the person receiving it, not the person speaking.",
+    "intent_tags": ["grief", "melancholy", "isolation"],
+    "signature": {
+      "shot_size": {"WS": 0.3, "MS": 0.3, "CU": 0.2, "INSERT": 0.2},
+      "framing": {"single": 0.6, "insert": 0.2, "establishing": 0.1, "reaction": 0.1},
+      "angle": {"eye": 0.85, "high": 0.15},
+      "camera_height": {"eye": 0.5, "seated": 0.5},
+      "lens_mm_ff": [40, 135],
+      "lens_look": {"spherical": 1.0},
+      "movement": {"static": 0.75, "dolly_out": 0.2, "dolly_in": 0.05},
+      "rig": {"sticks": 0.75, "dolly": 0.25},
+      "lighting": {"soft_overcast": 0.7, "window_light": 0.6, "low_contrast": 0.5},
+      "color": ["desaturated", "gray-blue", "muted earth tones"],
+      "composition": {"back_to_camera": 0.3, "negative_space_empty_chair": 0.4, "off_center": 0.3},
+      "aspect_ratio": ["1.85:1", "2.39:1"],
+      "asl_seconds": [6, 25],
+      "editing": ["long holds", "delayed cuts", "stay on the listener when news is delivered", "no music or very sparse"],
+      "sound": ["room tone", "clock, fridge hum, distant traffic", "silence where speech would be"]
+    },
+    "rules": [
+      {"when": "first showing the grieving character", "then": "frame them from behind or at a distance before any close-up", "why": "withholding the face grants privacy, and the audience's restraint becomes respect and then empathy", "hard": false},
+      {"when": "news of a death is delivered", "then": "hold on the person receiving it and let the speaker's words play off-screen", "why": "the event is the reaction, not the information", "hard": false},
+      {"when": "showing absence", "then": "frame the empty space where the person used to be and hold it", "why": "emptiness in a familiar place is how loss is actually felt", "hard": false}
+    ],
+    "recipes": [
+      {
+        "name": "The empty chair",
+        "beat": "after the funeral, a widower sits alone at the kitchen table where his wife used to sit",
+        "cast": 1,
+        "shots": [
+          {"purpose": "from behind in the doorway: his back, the kitchen, her empty chair across from him", "subject": "A", "size": "WS", "framing": "single", "angle": "eye", "horizontal": "back", "height": "eye", "lens_mm_ff": 40, "dof": "deep", "movement": "static", "lighting": "soft overcast window light, desaturated", "composition": "door frame around the scene, empty chair clearly visible", "duration_s": 10},
+          {"purpose": "insert: her reading glasses still folded on the table", "subject": "prop", "size": "INSERT", "framing": "insert", "angle": "high", "horizontal": "front", "height": "seated", "lens_mm_ff": 85, "dof": "shallow", "movement": "static", "duration_s": 4},
+          {"purpose": "MS profile: he looks at the empty chair", "subject": "A", "size": "MS", "framing": "single", "angle": "eye", "horizontal": "profile", "height": "seated", "lens_mm_ff": 50, "dof": "medium", "movement": "static", "composition": "him on one third, the empty chair holding the rest of frame", "duration_s": 8},
+          {"purpose": "CU, finally, as he breaks; long lens, from a respectful distance", "subject": "A", "size": "CU", "framing": "single", "angle": "eye", "horizontal": "three_quarter_front", "height": "seated", "lens_mm_ff": 100, "dof": "shallow", "movement": "static", "duration_s": 8},
+          {"purpose": "slow pull-out back through the doorway, leaving him there", "subject": "A", "size": "WS", "framing": "single", "angle": "eye", "horizontal": "back", "height": "eye", "lens_mm_ff": 40, "dof": "deep", "movement": "dolly_out", "speed": "slow", "duration_s": 10}
+        ],
+        "why": "Starting from behind and through a doorway grants privacy; the glasses and empty chair make the absence concrete; the close-up arrives late and from a distance, so it feels earned rather than intrusive, and the pull-out leaves him alone with it."
+      },
+      {
+        "name": "The news in the corridor",
+        "beat": "a doctor tells a woman in a hospital corridor that her brother did not survive",
+        "cast": 2,
+        "shots": [
+          {"purpose": "wide two-shot down the corridor: the doctor approaching, she stands", "subject": "both", "size": "WS", "framing": "two_shot", "angle": "eye", "horizontal": "profile", "height": "eye", "lens_mm_ff": 50, "dof": "deep", "movement": "static", "lighting": "flat fluorescent, cool", "duration_s": 6},
+          {"purpose": "stay on her, MCU, as the doctor speaks off-screen", "subject": "B", "size": "MCU", "framing": "reaction", "angle": "eye", "horizontal": "three_quarter_front", "height": "eye", "lens_mm_ff": 85, "dof": "shallow", "movement": "static", "composition": "doctor's shoulder soft at the frame edge", "duration_s": 10},
+          {"purpose": "back to the wide; she sits down slowly, the doctor waits", "subject": "both", "size": "WS", "framing": "two_shot", "angle": "eye", "horizontal": "profile", "height": "eye", "lens_mm_ff": 50, "dof": "deep", "movement": "static", "duration_s": 8}
+        ],
+        "why": "Holding on the listener makes her face the event; returning to the wide gives her body room to fail and the audience distance to absorb it without melodrama."
+      }
+    ],
+    "avoid": [
+      {"what": "pushing into a crying face for the whole scene", "why": "it feels exploitative and quickly numbs the audience"},
+      {"what": "swelling score over the first beat", "why": "music tells the audience what to feel and replaces the empathy the silence would earn"},
+      {"what": "cutting to the speaker during bad news", "why": "the information matters less than how it lands"}
+    ],
+    "prompt_fragments": {
+      "ltx": "Soft overcast window light, desaturated gray-blue and muted earth palette, low contrast, still and restrained framing on a 50mm lens.",
+      "still": "quiet cinematic drama still, soft overcast window light, desaturated gray-blue and muted earth tones, low contrast, restrained composition, negative space, 50mm lens, natural film grain",
+      "h3": "Live-action, cinematic restrained drama look, soft overcast window light, desaturated muted palette, a still frame."
+    },
+    "camera3d_defaults": {"mode": "orbit", "target_height_m": 1.15, "yaw_deg": 160, "pitch_deg": -5, "distance_m": 4.0, "roll_deg": 0, "focal_mm_ff": 40, "vfov_deg": 27.0},
+    "reference_works": [
+      {"title": "Manchester by the Sea", "year": 2016, "note": "restraint, distance and delayed close-ups"},
+      {"title": "Three Colours: Blue", "year": 1993, "note": "absence and objects of the dead"},
+      {"title": "Ordinary People", "year": 1980, "note": "a family's grief in still domestic frames"},
+      {"title": "Shoplifters", "year": 2018, "note": "held reactions without score"}
+    ],
+    "sources": [],
+    "confidence": "interpretive",
+    "rights": {"text_license": "CC-BY-4.0", "contains_media": false}
+  }
+]

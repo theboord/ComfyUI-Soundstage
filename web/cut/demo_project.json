@@ -1,0 +1,145 @@
+{
+  "name": "Diner Night v1",
+  "fps": 24,
+  "width": 1920,
+  "height": 1080,
+  "shots": [
+    {
+      "id": "sc1_master",
+      "name": "SC1_MASTER",
+      "frames": 192,
+      "scene_name": "SC1 Diner - INT NIGHT",
+      "setup": "master",
+      "scene_offset": 0,
+      "renders": {}
+    },
+    {
+      "id": "sc1_ots_a",
+      "name": "SC1_OTS_A",
+      "frames": 192,
+      "scene_name": "SC1 Diner - INT NIGHT",
+      "setup": "OTS A",
+      "scene_offset": 0,
+      "renders": {
+        "look": "demo_media/look_sc1_ots_a.png"
+      },
+      "notes": "Look approved - push in slower",
+      "markers": [
+        {
+          "frame": 80,
+          "text": "Advisor: eyeline drifts left of lens",
+          "color": "Yellow",
+          "user": "ADVISOR"
+        }
+      ]
+    },
+    {
+      "id": "sc1_ots_b",
+      "name": "SC1_OTS_B",
+      "frames": 192,
+      "scene_name": "SC1 Diner - INT NIGHT",
+      "setup": "OTS B",
+      "scene_offset": 0,
+      "renders": {}
+    },
+    {
+      "id": "sc1_insert",
+      "name": "SC1_INS_CUP",
+      "frames": 48,
+      "scene_name": "SC1 Diner - INT NIGHT",
+      "setup": "insert",
+      "scene_offset": 140,
+      "renders": {},
+      "notes": "Coffee cup slides into frame"
+    },
+    {
+      "id": "sc2_master",
+      "name": "SC2_MASTER",
+      "frames": 96,
+      "scene_name": "SC2 Parking lot - EXT NIGHT",
+      "setup": "master",
+      "scene_offset": 0,
+      "renders": {
+        "draft": "demo_media/draft_sc2_master.mp4"
+      }
+    },
+    {
+      "id": "sc2_single_b",
+      "name": "SC2_SINGLE_B",
+      "frames": 96,
+      "scene_name": "SC2 Parking lot - EXT NIGHT",
+      "setup": "single B",
+      "scene_offset": 0,
+      "renders": {
+        "look": "demo_media/look_sc1_ots_a.png",
+        "draft": "demo_media/draft_sc2_master.mp4",
+        "final": "demo_media/final_sc2_single_b.mp4"
+      }
+    }
+  ],
+  "cut": [
+    {
+      "shot_id": "sc1_master",
+      "in": 0,
+      "out": 60
+    },
+    {
+      "shot_id": "sc1_ots_a",
+      "in": 60,
+      "out": 110
+    },
+    {
+      "shot_id": "sc1_ots_b",
+      "in": 110,
+      "out": 150
+    },
+    {
+      "shot_id": "sc1_insert",
+      "in": 10,
+      "out": 40
+    },
+    {
+      "shot_id": "sc1_master",
+      "in": 180,
+      "out": 192,
+      "notes": "Hold for the door chime (ADR)"
+    },
+    {
+      "shot_id": "sc2_master",
+      "in": 0,
+      "out": 48
+    },
+    {
+      "shot_id": "sc2_single_b",
+      "in": 48,
+      "out": 96
+    }
+  ],
+  "audio": [
+    {
+      "id": "rain",
+      "track": 1,
+      "url": "demo_media/rain.wav",
+      "start_frame": 0,
+      "in": 0,
+      "out": 96,
+      "gain_db": -6,
+      "fade_in": 12,
+      "fade_out": 24,
+      "label": "Rain on glass",
+      "meta": {
+        "prompt": "light rain on a diner window"
+      }
+    },
+    {
+      "id": "chime",
+      "track": 2,
+      "url": "demo_media/chime.wav",
+      "start_frame": 180,
+      "in": 0,
+      "out": 36,
+      "gain_db": 0,
+      "label": "Door chime"
+    }
+  ]
+}

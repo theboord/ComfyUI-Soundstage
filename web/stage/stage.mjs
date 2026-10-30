@@ -1,0 +1,2523 @@
+// Soundstage 3D stage: a small three.js set (actors, props, building, sun) seen through the
+// shot camera. The viewport IS the shot camera, so what you frame is what gets rendered.
+// Drag empty space = orbit, Shift+drag = pan, wheel = dolly, drag an actor = move it on the floor.
+import * as THREE from "../vendor/three.module.min.mjs";
+import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompound } from "./library.mjs";
+import { applyPose, MOUNTS } from "./humans.mjs";
+import { buildSet, buildWater, buildWeather } from "./environments.mjs";
+import { buildCard, loadBackdrop, coverFit } from "./cards.mjs";
+import { buildInterior, fixtureActors, interiorCamera, normalizeSpec, toStage } from "./interior.mjs";
+import { GLTFLoader } from "../vendor/addons/GLTFLoader.mjs";
+import { GLTFExporter } from "../vendor/addons/GLTFExporter.mjs";
+import { FBXLoader } from "../vendor/addons/FBXLoader.mjs";
+import { OBJLoader } from "../vendor/addons/OBJLoader.mjs";
+import { PLYLoader } from "../vendor/addons/PLYLoader.mjs";
+import { STLLoader } from "../vendor/addons/STLLoader.mjs";
+import * as SkeletonUtils from "../vendor/addons/SkeletonUtils.mjs";
+import { TransformControls } from "../vendor/addons/TransformControls.mjs";
+
+/** File extensions the stage can import. Gaussian splats render with Spark (loaded on first use). */
+export const MESH_FORMATS = ["glb", "gltf", "fbx", "obj", "ply", "stl"];
+export const SPLAT_FORMATS = ["spz", "splat", "ksplat", "sog"];
+export const IMPORT_ACCEPT = [...MESH_FORMATS, ...SPLAT_FORMATS].map((x) => "." + x).join(",");
+export const formatOf = (name) => (/\.([a-z0-9]+)(?:$|\?)/i.exec(name || "")?.[1] || "glb").toLowerCase();
+
+let sparkModule = null;
+const loadSpark = () => (sparkModule ??= import("../vendor/spark.module.min.mjs"));
+
+/** A PLY can hold a mesh/point cloud or a 3D Gaussian splat; splats carry f_dc_* / scale_* properties. */
+async function plyIsSplat(url) {
+  const head = new TextDecoder().decode(await (await fetch(url, { headers: { Range: "bytes=0-4095" } })).arrayBuffer());
+  return /property \w+ (f_dc_0|scale_0|opacity)\b/.test(head.split("end_header")[0]);
+}
+
+// Imported models are loaded once per URL and cloned per use. Resolves {scene, animations} or {splat: true}.
+const assetCache = new Map();
+function loadAsset(url, format) {
+  const key = `${format}|${url}`;
+  if (assetCache.has(key)) return assetCache.get(key);
+  const neutral = (geom) => {
+    const nrm = geom.attributes.normal;
+    if (!nrm || !nrm.array.some((v) => v !== 0)) geom.computeVertexNormals();
+    const vc = !!geom.attributes.color;
+    return new THREE.MeshStandardMaterial({ color: vc ? 0xffffff : 0xb9b4ac, vertexColors: vc, roughness: 0.8 });
+  };
+  const p = (async () => {
+    if (SPLAT_FORMATS.includes(format) || (format === "ply" && await plyIsSplat(url))) return { splat: true };
+    if (format === "glb" || format === "gltf") {
+      const g = await new GLTFLoader().loadAsync(url);
+      return { scene: g.scene, animations: g.animations || [] };
+    }
+    if (format === "fbx") { // Mixamo clips and characters included
+      const o = await new FBXLoader().loadAsync(url);
+      return { scene: o, animations: o.animations || [] };
+    }
+    if (format === "obj") return { scene: await new OBJLoader().loadAsync(url), animations: [] };
+    const geom = await (format === "stl" ? new STLLoader() : new PLYLoader()).loadAsync(url);
+    const obj = geom.index || format === "stl" ? new THREE.Mesh(geom, neutral(geom))
+      : new THREE.Points(geom, new THREE.PointsMaterial({ size: 0.02, vertexColors: !!geom.attributes.color }));
+    const scene = new THREE.Group();
+    scene.add(obj);
+    return { scene, animations: [] };
+  })();
+  assetCache.set(key, p);
+  p.catch(() => assetCache.delete(key));
+  return p;
+}
+import { LIGHT_TYPES, TIME_PRESETS, solarPosition, hourForElevation, kelvinToColor, skyFor, describeLighting } from "./lighting.mjs";
+
+/** Rigged CC0 horse (Quaternius, poly.pizza): Idle / Walk / Gallop skeletal cycles. */
+const HORSE_GLB = new URL("./models/horse.glb", import.meta.url).href;
+const HORSE_HEAD_RATIO = 1.42;   // ear-tip height / withers height for a horse standing head-up
+const HORSE_BODY_Z = 0.53;       // barrel centre as a fraction of tail->nose length (the head reaches further forward)
+
+/** Flashlight output 0..1 at a frame: steady, a nervous flicker, a slow blink, or off. */
+function beamLevel(mode, f) {
+  if (mode === "off") return 0;
+  if (mode === "blink") return Math.floor(f / 10) % 2 ? 0 : 1;
+  if (mode === "flicker") {
+    const n = Math.sin(f * 12.9898) * 43758.5453;
+    const r = n - Math.floor(n);
+    return r < 0.12 ? 0.05 : 0.7 + 0.3 * r;
+  }
+  return 1;
+}
+
+/** Frames a timed mount takes to hop from standing into the saddle. */
+const HOP_FRAMES = 10;
+
+export const FRAME_W = 960;
+export const FRAME_H = 512;
+/** Delivery frame sizes: every side a multiple of 64 (LTX Layout-To-Render requirement). */
+export const ASPECTS = {
+  "1.85": { label: "1.85:1 (flat)", size: [960, 512] },
+  "16:9": { label: "16:9", size: [1024, 576] },
+  "2.39": { label: "2.39:1 (scope)", size: [1216, 512] },
+  "9:16": { label: "9:16 (vertical)", size: [576, 1024] },
+  "1:1": { label: "1:1", size: [768, 768] },
+  "4:3": { label: "4:3", size: [768, 576] },
+  "3:4": { label: "3:4", size: [576, 768] },
+};
+const SENSOR_W_MM = 36; // full-frame width; vertical FOV derives from the frame aspect
+const DEPTH_NEAR = 1.0;
+const DEPTH_FAR = 40.0;
+
+/** Max turn rate (degrees per second) by kind: big animals and vehicles can't spin on the spot. */
+const PERSON_KINDS = new Set(["man", "woman", "child"]);
+/** In-car camera placements (car space, metres; +Z forward, +X = the car's left, driver on the left). */
+export const CAR_SHOTS = {
+  windshield: { label: "Through the windshield (two-shot)", position: [0, 1.22, 2.45], target: [0, 1.05, 0], focal_mm: 30 },
+  driver_pov: { label: "Driver's POV (road ahead)", position: [0.37, 1.2, 0.38], target: [0.37, 1.02, 8], focal_mm: 24 },
+  passenger_on_driver: { label: "From the passenger seat, on the driver", position: [-0.38, 1.16, 0.42], target: [0.37, 1.1, -0.05], focal_mm: 32 },
+  back_seat: { label: "From the back seat (both front seats + road)", position: [0, 1.2, -1.15], target: [0, 1.05, 2], focal_mm: 22 },
+  dash_two_shot: { label: "Dashboard, looking back at both front seats", position: [0, 1.12, 0.78], target: [0, 1.1, -0.3], focal_mm: 20 },
+  back_seat_single: { label: "Between the front seats, back at the back seat", position: [0, 1.18, 0.15], target: [0, 1.0, -1.0], focal_mm: 24 },
+  side_tracking: { label: "Tracking alongside (outside)", position: [3.2, 1.2, 0.2], target: [0, 1.0, 0.2], focal_mm: 35 },
+  top_down: { label: "Top down (overhead)", position: [0, 9, 0.01], target: [0, 0, 0], focal_mm: 24 },
+};
+const LIFT_FRAMES = 8;
+const RIDEABLE = new Set(["horse", "bicycle", "motorcycle"]);
+const SITTABLE = new Set(["chair", "bench", "sofa", "armchair", "couch", "stool"]);
+const NEVER_CARRIED = new Set(["horse", "cow", "car", "police_car", "sports_car", "hatchback", "truck", "bus", "bicycle", "motorcycle", "tree", "house", "building", "wall",
+  "fridge", "wardrobe", "kitchen_counter", "bath", "bookshelf", "bed", "single_bed", "sofa", "door", "lamp_post", "post"]);
+const TURN_RATE = { horse: 150, cow: 120, dog: 400, cat: 500, car: 90, police_car: 90, sports_car: 110, hatchback: 90, truck: 60, bus: 45, bicycle: 200, motorcycle: 160 };
+
+export const DEFAULT_SCENE = {
+  version: 2,
+  shot: { frames: 97, fps: 24 },
+  camera: { position: [-7.0, 1.7, -14.0], target: [0, 1.3, -4.0], focal_mm: 35 },
+  camera_end: { position: [-3.0, 1.7, -2.0], target: [0, 1.3, 11.5], focal_mm: 35 },
+  sun: { azimuth_deg: 235, elevation_deg: 18 },
+  environment: { set: "plaza", weather: "none", density: 0.5, water_level: 2.5 },
+  lighting: { mode: "manual", hour: 17.6, day_of_year: 300, latitude: 34.05, north_deg: 0, overcast: false, preset: null, lights: [] },
+  actors: [
+    { id: "actor_a", name: "Man", kind: "man", position: [-0.6, 0, -6], position_end: [-0.6, 0, 12.5], height_m: 1.78 },
+    { id: "actor_b", name: "Woman", kind: "woman", position: [0.6, 0, -6], position_end: [0.6, 0, 12.5], height_m: 1.68 },
+  ],
+  props: [
+    { id: "building", kind: "building", position: [0, 0, 15], size: [21, 8, 9], door: [3, 5] },
+    { id: "planter_l", kind: "box", position: [-3.5, 0, 6], size: [1.2, 1.0, 1.2] },
+    { id: "planter_r", kind: "box", position: [3.5, 0, 6], size: [1.2, 1.0, 1.2] },
+    { id: "lamp", kind: "post", position: [-8, 0, 2], size: [0.15, 4, 0.15] },
+  ],
+};
+
+const clone = (o) => JSON.parse(JSON.stringify(o));
+
+/** Yield one task without setTimeout, which hidden tabs throttle to 1 s or more. */
+const yieldToBrowser = () => new Promise((resolve) => {
+  const ch = new MessageChannel();
+  ch.port1.onmessage = () => resolve();
+  ch.port2.postMessage(0);
+});
+
+function vfovFromFocal(focalMm, aspect) {
+  const sensorH = SENSOR_W_MM / aspect;
+  return THREE.MathUtils.radToDeg(2 * Math.atan(sensorH / (2 * focalMm)));
+}
+
+const depthMaterial = new THREE.ShaderMaterial({
+  uniforms: { uNear: { value: DEPTH_NEAR }, uFar: { value: DEPTH_FAR } },
+  vertexShader: `varying float vViewZ;
+    void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vViewZ = -mv.z; gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: `uniform float uNear; uniform float uFar; varying float vViewZ;
+    void main(){ float d = clamp((vViewZ - uNear)/(uFar - uNear), 0.0, 1.0); gl_FragColor = vec4(vec3(1.0 - d), 1.0); }`,
+});
+
+let wheelRouterInstalled = false;
+/** One capture-phase listener for the whole page: wheel over a stage dollies that stage only. */
+function installWheelRouter() {
+  if (wheelRouterInstalled) return;
+  wheelRouterInstalled = true;
+  window.addEventListener(
+    "wheel",
+    (e) => {
+      const stage = e.target?.__soundstage;
+      if (!stage) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      stage._onWheel(e);
+    },
+    { capture: true, passive: false },
+  );
+}
+
+export class Stage {
+  /** Current delivery size from the shot's aspect ratio. */
+  get fw() {
+    return (ASPECTS[this.state?.shot?.aspect] || ASPECTS["1.85"]).size[0];
+  }
+
+  get fh() {
+    return (ASPECTS[this.state?.shot?.aspect] || ASPECTS["1.85"]).size[1];
+  }
+
+  setAspect(key) {
+    if (!ASPECTS[key]) return;
+    this.state.shot = { ...(this.state.shot || {}), aspect: key };
+    this.camera.aspect = this.fw / this.fh;
+    this.viewCam.aspect = this.fw / this.fh;
+    this.viewCam.updateProjectionMatrix();
+    this._snap = null;
+    this.resize();
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  constructor(container, onChange) {
+    const userChange = onChange || (() => {});
+    this.onChange = (st) => { if (!this._muteRecord) this._record(); userChange(st); };
+    this.state = clone(DEFAULT_SCENE);
+    this.view = "clay";
+    this.key = "start";
+    this.frame = 0;
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.setPixelRatio(1);
+    this.canvas = this.renderer.domElement;
+    this.canvas.style.cssText = "display:block;width:100%;height:auto;border-radius:4px;cursor:grab;touch-action:none";
+    container.appendChild(this.canvas);
+
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(40, this.fw / this.fh, 0.1, 200);
+    this.clayMat = new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.9 });
+    this.wireMat = new THREE.MeshBasicMaterial({ color: 0x9fd0ff, wireframe: true });
+
+    this.hemi = new THREE.HemisphereLight(0xdfe6ef, 0x3a3a3a, 0.9);
+    this.sun = new THREE.DirectionalLight(0xffffff, 2.2);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(2048, 2048);
+    Object.assign(this.sun.shadow.camera, { left: -25, right: 25, top: 25, bottom: -25, near: 1, far: 120 });
+    this.scene.add(this.hemi, this.sun, this.sun.target);
+
+    this.actorMeshes = new Map();
+    this.root = new THREE.Group();
+    this.scene.add(this.root);
+    this._buildSet();
+    this._applySun();
+    this.setFrame(0);
+    this._bindControls();
+    this.resize();
+    this._ro = new ResizeObserver(() => this.resize());
+    this._ro.observe(container);
+    this.render();
+    this._record();
+  }
+
+  // ---------- scene graph ----------
+  _mesh(geom, color) {
+    this._mats = this._mats || new Map();
+    const key = color || "#9a9a9a";
+    if (!this._mats.has(key)) this._mats.set(key, new THREE.MeshStandardMaterial({ color: new THREE.Color(key), roughness: 0.85 }));
+    const m = new THREE.Mesh(geom, this._mats.get(key));
+    m.castShadow = true;
+    m.receiveShadow = true;
+    return m;
+  }
+
+  _buildSet() {
+    this.root.clear();
+    this.actorMeshes.clear();
+    const ground = this._mesh(new THREE.PlaneGeometry(80, 80));
+    ground.rotation.x = -Math.PI / 2;
+    ground.castShadow = false;
+    ground.userData.ground = true;
+    this.ground = ground;
+    this.root.add(ground);
+
+    // A true-scale interior from a floor plan / dimension spec (walls, openings, floors, removable ceilings).
+    this.interiorGroup = null;
+    if (this.state.interior?.rooms?.length) {
+      this.interiorGroup = buildInterior(this.state.interior, (geom, color) => this._mesh(geom, color));
+      this.root.add(this.interiorGroup);
+    }
+
+    const env = this.state.environment || { set: "plaza", weather: "none", density: 0.5 };
+    const built = buildSet(env.set || "plaza", (geom) => this._mesh(geom), { water_level: env.water_level });
+    if (built.group) this.root.add(built.group);
+    this.water = built.water ? buildWater(built.water) : null;
+    if (this.water) this.root.add(this.water);
+    this.weather = buildWeather(env.weather || "none", env.density ?? 0.5);
+    if (this.weather) this.root.add(this.weather.object);
+    for (const p of (env.set || "plaza") === "plaza" ? this.state.props : []) {
+      const [x, y, z] = p.position;
+      if (p.kind === "building") {
+        const [w, h, d] = p.size;
+        const [dw, dh] = p.door;
+        const front = z - d / 2;
+        const side = (w - dw) / 2;
+        const g = new THREE.Group();
+        const wallL = this._mesh(new THREE.BoxGeometry(side, h, 0.6));
+        wallL.position.set(x - dw / 2 - side / 2, h / 2, front);
+        const wallR = wallL.clone();
+        wallR.position.x = x + dw / 2 + side / 2;
+        const lintel = this._mesh(new THREE.BoxGeometry(dw, h - dh, 0.6));
+        lintel.position.set(x, dh + (h - dh) / 2, front);
+        const back = this._mesh(new THREE.BoxGeometry(w, h, 0.6));
+        back.position.set(x, h / 2, z + d / 2);
+        const roof = this._mesh(new THREE.BoxGeometry(w, 0.6, d));
+        roof.position.set(x, h, z);
+        const sideL = this._mesh(new THREE.BoxGeometry(0.6, h, d));
+        sideL.position.set(x - w / 2, h / 2, z);
+        const sideR = sideL.clone();
+        sideR.position.x = x + w / 2;
+        g.add(wallL, wallR, lintel, back, roof, sideL, sideR);
+        this.root.add(g);
+      } else if (p.kind === "post") {
+        const m = this._mesh(new THREE.CylinderGeometry(p.size[0], p.size[0], p.size[1], 12));
+        m.position.set(x, p.size[1] / 2, z);
+        this.root.add(m);
+      } else {
+        const m = this._mesh(new THREE.BoxGeometry(...p.size));
+        m.position.set(x, p.size[1] / 2, z);
+        this.root.add(m);
+      }
+    }
+
+    for (const a of this.state.actors) {
+      const g = a.kind === "glb" ? this._glbPlaceholder(a)
+        : a.kind === "card" ? this._cardPlaceholder(a)
+        : a.kind === "custom" && a.recipe
+        ? buildFromRecipe(a.recipe, (geom, color) => this._mesh(geom, color || a.appearance?.color))
+        : buildObject(a.kind || "man", a.height_m, (geom, color) => this._mesh(geom, color), a.appearance);
+      g.position.set(...a.position);
+      g.userData.actorId = a.id;
+      g.scale.setScalar(a.scale || 1);
+      g.traverse((o) => (o.userData.actorId = a.id));
+      this.actorMeshes.set(a.id, g);
+      this.root.add(g);
+      if (a.kind === "horse" && !a.simple_model) this._upgradeHorse(a, g);
+      else if (LIBRARY[a.kind]?.model) this._upgradeVehicle(a, g, LIBRARY[a.kind]);
+    }
+    this._buildLights();
+    // Selection ring (viewport only; hidden in captures).
+    this.selRing = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.68, 40),
+      new THREE.MeshBasicMaterial({ color: 0xe39a40, side: THREE.DoubleSide }));
+    this.selRing.rotation.x = -Math.PI / 2;
+    this.selRing.visible = false;
+    this.root.add(this.selRing);
+  }
+
+  // ---------- time & keyframes ----------
+  _lastFrame() {
+    return Math.max(1, (this.state.shot?.frames || 97) - 1);
+  }
+
+  // ---------- coverage: several camera setups on one set ----------
+  /** Shots share actors, set, lighting and timing; each has its own camera keys. */
+  _shots() {
+    if (!this.state.shots?.length) {
+      this.state.shots = [{ id: "shot_1", name: "Master", setup: "master", camera_keys: this._legacyCamKeys() }];
+      this.state.active_shot = "shot_1";
+    }
+    return this.state.shots;
+  }
+
+  activeShot() {
+    const shots = this._shots();
+    return shots.find((x) => x.id === this.state.active_shot) || shots[0];
+  }
+
+  setActiveShot(id) {
+    if (!this._shots().some((x) => x.id === id)) return;
+    this.state.active_shot = id;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    this.onShots?.();
+  }
+
+  /** New camera setup starting from what the current camera sees at the playhead. */
+  addShot(setup = "single") {
+    const shots = this._shots();
+    const cam = this._cameraAt(this.frame);
+    const label = { master: "Master", wide: "Wide", ots_a: "Over-the-shoulder A", ots_b: "Over-the-shoulder B",
+      single_a: "Single A", single_b: "Single B", insert: "Insert", pov: "POV", two_shot: "Two-shot" }[setup] || "Setup";
+    const n = shots.filter((x) => x.setup === setup).length + 1;
+    const shot = { id: `shot_${Date.now().toString(36)}`, name: n > 1 ? `${label} ${n}` : label, setup,
+      camera_keys: [{ frame: 0, ...clone(cam) }] };
+    shots.push(shot);
+    this.state.active_shot = shot.id;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    this.onShots?.();
+    return shot.name;
+  }
+
+  removeShot() {
+    const shots = this._shots();
+    if (shots.length < 2) return;
+    this.state.shots = shots.filter((x) => x.id !== this.state.active_shot);
+    this.state.active_shot = this.state.shots[0].id;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    this.onShots?.();
+  }
+
+  /** Camera keys of the active shot. */
+  _camKeys() {
+    const shot = this.activeShot();
+    if (!shot.camera_keys?.length) shot.camera_keys = [{ frame: 0, ...clone(this._cameraAt0Legacy()) }];
+    this.state.camera_keys = shot.camera_keys; // keep the flat field for older readers
+    return shot.camera_keys;
+  }
+
+  _cameraAt0Legacy() {
+    return this.state.camera || DEFAULT_SCENE.camera;
+  }
+
+  /** Camera keys [{frame, position, target, focal_mm}], migrated from the old start/end pair. */
+  _legacyCamKeys() {
+    if (!this.state.camera_keys?.length) {
+      const a = this.state.camera, b = this.state.camera_end;
+      this.state.camera_keys = [{ frame: 0, ...clone(a) }];
+      if (b && JSON.stringify(b) !== JSON.stringify(a)) this.state.camera_keys.push({ frame: this._lastFrame(), ...clone(b) });
+    }
+    return this.state.camera_keys;
+  }
+
+  /** Object position keys [{frame, position}], migrated from position / position_end. */
+  _actorKeys(a) {
+    if (!a.keys?.length) {
+      a.keys = [{ frame: 0, position: [...a.position] }];
+      if (a.position_end && JSON.stringify(a.position_end) !== JSON.stringify(a.position)) {
+        a.keys.push({ frame: this._lastFrame(), position: [...a.position_end] });
+      }
+    }
+    return a.keys;
+  }
+
+  /** Find the segment around a frame and its 0..1 progress; also the 4 Catmull-Rom neighbours. */
+  static _segment(keys, frame) {
+    if (keys.length === 1 || frame <= keys[0].frame) return { i: 0, j: 0, u: 0 };
+    const n = keys.length - 1;
+    if (frame >= keys[n].frame) return { i: n, j: n, u: 0 };
+    let i = 0;
+    while (keys[i + 1].frame < frame) i++;
+    const u = (frame - keys[i].frame) / Math.max(1e-6, keys[i + 1].frame - keys[i].frame);
+    return { i, j: i + 1, u };
+  }
+
+  /** Centripetal-ish Catmull-Rom between p1 and p2 (p0/p3 neighbours), per component. */
+  static _cr(p0, p1, p2, p3, u) {
+    const u2 = u * u, u3 = u2 * u;
+    return p1.map((_, k) => 0.5 * ((2 * p1[k]) + (-p0[k] + p2[k]) * u +
+      (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * u2 + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * u3));
+  }
+
+  /** Interpolated value of `field` along keys at a frame (smooth path through every key). */
+  static _sample(keys, frame, field, ease = true) {
+    const { i, j, u } = Stage._segment(keys, frame);
+    if (i === j) return [...keys[i][field]];
+    // A hold (two keys at the same spot) stays still: the spline would otherwise bow backwards toward the next
+    // key, so a horse waiting to gallop off drifted back and swung its head round before leaving.
+    const a = keys[i][field], b = keys[j][field];
+    if (Array.isArray(a) && a.every((x, k) => Math.abs(x - b[k]) < 1e-4)) return [...a];
+    const n = keys.length - 1;
+    // Ease out of the first key and into the last; constant speed through the middle keys.
+    let w = u;
+    if (ease && n === 1) w = u * u * (3 - 2 * u);
+    else if (ease && i === 0) w = (u * u * (3 - 2 * u) + u) / 2;
+    else if (ease && j === n) w = (u * u * (3 - 2 * u) + u) / 2;
+    const P = (k) => keys[Math.max(0, Math.min(n, k))][field];
+    return Stage._cr(P(i - 1), P(i), P(j), P(j + 1), w);
+  }
+
+  /** Shot camera at any frame (interpolated through all camera keys). */
+  _cameraAt(frame) {
+    const keys = this._camKeys();
+    const { i, j, u } = Stage._segment(keys, frame);
+    const fa = keys[i].focal_mm, fb = keys[j].focal_mm;
+    const cam = {
+      position: Stage._sample(keys, frame, "position"),
+      target: Stage._sample(keys, frame, "target"),
+      focal_mm: fa + (fb - fa) * (i === j ? 0 : u * u * (3 - 2 * u)),
+    };
+    // Ride-along: the shot's keys are in a vehicle's (or rider's) own space, so the world moves past outside.
+    const host = this._followActor?.();
+    if (host) {
+      const toWorld = this._actorFrame(host, frame);
+      cam.position = toWorld(cam.position);
+      cam.target = toWorld(cam.target);
+    }
+    return cam;
+  }
+
+  _followActor() {
+    const id = this.activeShot?.()?.camera_follow;
+    return id ? this.state.actors.find((x) => x.id === id) || null : null;
+  }
+
+  /** Local → world transform for an actor at a frame (position + heading, no bounce). */
+  _actorFrame(a, frame) {
+    const p = this._actorPosAt(a, frame), yaw = this._headingAt(a, frame);
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    return (v) => [p[0] + v[0] * c + v[2] * s, v[1], p[2] - v[0] * s + v[2] * c];
+  }
+
+  _actorFrameInverse(a, frame) {
+    const p = this._actorPosAt(a, frame), yaw = this._headingAt(a, frame);
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    return (v) => { const dx = v[0] - p[0], dz = v[2] - p[2]; return [dx * c - dz * s, v[1], dx * s + dz * c]; };
+  }
+
+  /**
+   * Make the active shot's camera ride with an actor (null = back to the world). Keys are converted so the view
+   * doesn't jump. `preset` puts the camera somewhere useful inside a vehicle at the same time.
+   */
+  setCameraFollow(actorId, preset = null) {
+    const shot = this.activeShot();
+    const keys = this._camKeys();
+    const old = this._followActor();
+    const world = keys.map((k) => {
+      const tw = old ? this._actorFrame(old, k.frame) : null;
+      return { ...k, position: tw ? tw(k.position) : k.position, target: tw ? tw(k.target) : k.target };
+    });
+    const host = actorId ? this.state.actors.find((x) => x.id === actorId) : null;
+    if (!host) { delete shot.camera_follow; shot.camera_keys = world; }
+    else {
+      shot.camera_follow = host.id;
+      if (preset && CAR_SHOTS[preset]) {
+        const s = (host.height_m || LIBRARY[host.kind]?.height || 1.45) / (LIBRARY[host.kind]?.height || 1.45);
+        const q = CAR_SHOTS[preset];
+        shot.camera_keys = [{ frame: 0, position: q.position.map((v) => v * s), target: q.target.map((v) => v * s), focal_mm: q.focal_mm }];
+      } else {
+        shot.camera_keys = world.map((k) => { const inv = this._actorFrameInverse(host, k.frame); return { ...k, position: inv(k.position), target: inv(k.target) }; });
+      }
+    }
+    this.state.camera_keys = shot.camera_keys;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  /**
+   * One click for car-dialogue coverage: a shot per interior angle, each riding with the vehicle (the street goes by
+   * outside). The back-seat single only when someone sits in the back. Returns the new shot names.
+   */
+  addInteriorShots(vehicleId) {
+    const host = this.state.actors.find((x) => x.id === vehicleId);
+    if (!host || LIBRARY[host.kind]?.rig !== "vehicle") return [];
+    const s = (host.height_m || LIBRARY[host.kind]?.height || 1.45) / (LIBRARY[host.kind]?.height || 1.45);
+    const riders = this.state.actors.filter((a) => a.mount_id === host.id);
+    const backSeat = riders.some((a) => (a.seat ?? 0) >= 2);
+    const plan = [["dash_two_shot", "Dashboard two-shot", "two_shot"], ...(backSeat ? [["back_seat_single", "Back seat single", "single_b"]] : []),
+      ["passenger_on_driver", "Driver profile", "single_a"], ["back_seat", "Over the shoulders", "ots_a"], ["driver_pov", "Driver's POV", "pov"]];
+    const shots = this._shots();
+    const names = [];
+    for (const [preset, name, setup] of plan) {
+      const q = CAR_SHOTS[preset];
+      const id = `car_${preset}_${Date.now().toString(36)}`;
+      shots.push({ id, name, setup, camera_follow: host.id,
+        camera_keys: [{ frame: 0, position: q.position.map((v) => v * s), target: q.target.map((v) => v * s), focal_mm: q.focal_mm }] });
+      names.push(name);
+      if (names.length === 1) this.state.active_shot = id;
+    }
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    this.onShots?.();
+    return names;
+  }
+
+  _actorPosAt(a, frame) {
+    return Stage._sample(this._actorKeys(a), frame, "position", false);
+  }
+
+  /**
+   * Heading (radians) of an actor at a frame, rate-limited like a real body: a horse can't spin 180° in one frame.
+   * Desired heading = direction of travel while moving, else the last heading (or its Turn before it ever moves).
+   * A forward pass limits the turn rate; a backward pass makes it ANTICIPATE (turn in place before setting off).
+   */
+  _headingAt(a, frame) {
+    const keys = this._actorKeys(a);
+    const last = this._lastFrame();
+    const sig = JSON.stringify([keys, a.rotation_deg || 0, last, a.kind]);
+    this._headCache = this._headCache || new WeakMap();
+    let hd = this._headCache.get(a);
+    if (!hd || hd.sig !== sig) {
+      const fps = this.state.shot?.fps || 24;
+      const rateDeg = TURN_RATE[a.kind] ?? (["man", "woman", "child"].includes(a.kind) ? 540 : 360);
+      const step = THREE.MathUtils.degToRad(rateDeg) / fps;
+      const rest = THREE.MathUtils.degToRad(a.rotation_deg || 0);
+      const wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));
+      const toward = (from, to) => { const d = wrap(to - from); return from + Math.max(-step, Math.min(step, d)); };
+      const desired = [];
+      let lastMove = null;
+      for (let f = 0; f <= last; f++) {
+        const p0 = this._actorPosAt(a, f - 1), p1 = this._actorPosAt(a, f + 1);
+        const vx = p1[0] - p0[0], vz = p1[2] - p0[2];
+        // Real travel only (> ~0.25 m/s): the spline drifts a few mm between two keys at the same spot.
+        if (keys.length > 1 && Math.hypot(vx, vz) * fps / 2 > 0.25) lastMove = Math.atan2(vx, vz);
+        desired.push(lastMove ?? null);
+      }
+      // Before it ever moves, it faces its Turn.
+      for (let f = 0; f <= last; f++) if (desired[f] === null) desired[f] = rest;
+      // Backward pass (anticipation), then forward pass (inertia) from that.
+      const back = new Array(last + 1);
+      back[last] = desired[last];
+      for (let f = last - 1; f >= 0; f--) back[f] = toward(back[f + 1], desired[f]);
+      const out = new Array(last + 1);
+      out[0] = back[0];
+      for (let f = 1; f <= last; f++) out[f] = toward(out[f - 1], back[f]);
+      hd = { sig, out };
+      this._headCache.set(a, hd);
+    }
+    const out = hd.out;
+    return out[Math.max(0, Math.min(out.length - 1, Math.round(frame)))];
+  }
+
+  /** Static things a person can stand on / must clear: world boxes of parked, non-person actors. */
+  _obstacles() {
+    const sig = JSON.stringify(this.state.actors.map((o) => [o.id, o.kind, o.keys?.length > 1 ? "moving" : o.keys?.[0]?.position || o.position, o.rotation_deg, o.scale, o.height_m, o.carry_id, o.mount_id]));
+    if (this._obsCache?.sig === sig) return this._obsCache.list;
+    const list = [];
+    for (const o of this.state.actors) {
+      if (PERSON_KINDS.has(o.kind) || o.mount_id || o.carry_id || (o.keys?.length > 1 && o.keys.some((k) => Math.hypot(k.position[0] - o.keys[0].position[0], k.position[2] - o.keys[0].position[2]) > 0.05))) continue;
+      const g = this.actorMeshes.get(o.id);
+      if (!g) continue;
+      const box = new THREE.Box3().setFromObject(g);
+      if (!isFinite(box.max.y) || box.max.y < 0.15) continue;
+      list.push({ id: o.id, kind: o.kind, box, top: box.max.y });
+    }
+    this._obsCache = { sig, list };
+    return list;
+  }
+
+  /**
+   * A person's feet height at a frame: the key height (standing on something), lifted over anything in the way,
+   * as the upper envelope of gravity parabolas. Hops up, vaults and drops all come out as real ballistic arcs
+   * (g = 9.8 m/s²), starting before the obstacle and landing after it. Vehicles/animals stay on the ground.
+   */
+  _heightAt(a, frame) {
+    if (!PERSON_KINDS.has(a.kind)) return 0;
+    const keys = this._actorKeys(a);
+    const obs = this._obstacles();
+    const last = this._lastFrame();
+    const sig = JSON.stringify([keys, last, this._obsCache?.sig]);
+    this._yCache = this._yCache || new WeakMap();
+    let c = this._yCache.get(a);
+    if (!c || c.sig !== sig) {
+      const fps = this.state.shot?.fps || 24, kk = 0.5 * 9.8 / (fps * fps), R = 0.18;
+      const S = [];
+      for (let f = 0; f <= last; f++) {
+        const p = this._actorPosAt(a, f);
+        let s = Math.max(0, p[1] || 0);
+        for (const o of obs) {
+          if (o.top > 1.7) continue;                         // walls and cars aren't climbed by walking into them
+          if (p[0] > o.box.min.x - R && p[0] < o.box.max.x + R && p[2] > o.box.min.z - R && p[2] < o.box.max.z + R) s = Math.max(s, o.top);
+        }
+        S.push(s);
+      }
+      const Y = S.map((_, f) => {
+        let y = 0;
+        for (let q = 0; q <= last; q++) { const d = f - q; const v = S[q] - kk * d * d; if (v > y) y = v; }
+        return +y.toFixed(3);
+      });
+      c = { sig, Y, S };
+      this._yCache.set(a, c);
+    }
+    return c.Y[Math.max(0, Math.min(c.Y.length - 1, Math.round(frame)))] || 0;
+  }
+
+  /** Is a person in the air (mid-jump) at this frame? */
+  _airborne(a, frame) {
+    const c = this._yCache?.get(a);
+    if (!c) return false;
+    const f = Math.max(0, Math.min(c.Y.length - 1, Math.round(frame)));
+    return c.Y[f] - c.S[f] > 0.06;
+  }
+
+  /**
+   * After dragging a person onto something, make them use it: hop onto a horse or bike, get into a car (nearest
+   * seat), or climb onto a low prop (crate, box, rock, bench, table, AC unit...). At the playhead, so the earlier
+   * keys walk them there. Returns a sentence for the status line (also sent to onInteract).
+   */
+  /** The object whose on-screen box is within `pad` px of the pointer (smallest box wins), or null. */
+  _nearOnScreen(e, pad = 12, exclude = null) {
+    const r = this.canvas.getBoundingClientRect();
+    const cam = this._viewportCamera();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    let best = null;
+    const v = new THREE.Vector3();
+    for (const [id, g] of this.actorMeshes) {
+      if (id === exclude) continue;
+      const a = this.state.actors.find((q) => q.id === id);
+      if (!a || a.set_xform || (LIBRARY[a.kind]?.rig === "static" && (LIBRARY[a.kind]?.height || 0) > 3)) continue;  // not whole sets/buildings
+      const box = new THREE.Box3().setFromObject(g);
+      if (box.isEmpty()) continue;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, behind = false;
+      for (let i = 0; i < 8; i++) {
+        v.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(cam);
+        if (v.z > 1) { behind = true; break; }
+        const sx = (v.x + 1) / 2 * r.width, sy = (1 - v.y) / 2 * r.height;
+        x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
+      }
+      if (behind || x < x0 - pad || x > x1 + pad || y < y0 - pad || y > y1 + pad) continue;
+      const area = (x1 - x0) * (y1 - y0);
+      if (!best || area < best.area) best = { id, area };
+    }
+    return best?.id || null;
+  }
+
+  _dropInteract(id, underId = null) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a) return null;
+    if (!PERSON_KINDS.has(a.kind)) return this._dropProp(a, underId);
+    if (a.mount_id) return null;
+    let p = this._actorPosAt(a, this.frame);
+    let best = null;
+    // Dropped right onto something you can see: that's the target, wherever the feet ended up.
+    const under = underId && this.state.actors.find((x) => x.id === underId && !PERSON_KINDS.has(x.kind));
+    if (under) {
+      const g = this.actorMeshes.get(under.id);
+      if (g) {
+        best = { o: under, d: 0, box: new THREE.Box3().setFromObject(g), g };
+        // Seat choice and climb height use the drop point on the target, not the floor behind it.
+        const c = best.box.getCenter(new THREE.Vector3());
+        p = [c.x, p[1], c.z];
+      }
+    }
+    for (const o of this.state.actors) {
+      if (o === a || PERSON_KINDS.has(o.kind)) continue;
+      const g = this.actorMeshes.get(o.id);
+      if (!g) continue;
+      const box = new THREE.Box3().setFromObject(g);
+      const dx = Math.max(box.min.x - p[0], 0, p[0] - box.max.x), dz = Math.max(box.min.z - p[2], 0, p[2] - box.max.z);
+      const d = Math.hypot(dx, dz);
+      if (d <= 0.3 && (!best || d < best.d)) best = { o, d, box, g };   // (an under-cursor target already has d = 0)
+    }
+    if (!best) return null;
+    const { o, box, g } = best;
+    const name = (x) => x.name || LIBRARY[x.kind]?.label || x.kind;
+    const at = this.frame > 0 ? this.frame : 0;
+    let msg = null;
+    if (RIDEABLE.has(o.kind)) {
+      this.mount(a.id, o.id, null, at);
+      msg = `${name(a)} ${at ? "hops onto" : "is on"} ${name(o)}${at ? ` at ${(at / (this.state.shot?.fps || 24)).toFixed(1)} s` : ""}.`;
+    } else if (SEATS[o.kind]) {
+      // Nearest seat to where they were dropped.
+      const ref = LIBRARY[o.kind]?.height || 1, k = (o.scale || 1) * ((o.height_m || ref) / ref);
+      let si = 0, sd = Infinity;
+      SEATS[o.kind].forEach((s, i) => {
+        const w = new THREE.Vector3(s.pos[0] * k, 0, s.pos[2] * k).applyAxisAngle(new THREE.Vector3(0, 1, 0), g.rotation.y).add(g.position);
+        const d = Math.hypot(w.x - p[0], w.z - p[2]);
+        if (d < sd) { sd = d; si = i; }
+      });
+      this.mount(a.id, o.id, "sit", at, si);
+      msg = `${name(a)} gets into ${name(o)}: ${SEATS[o.kind][si].name} seat. Change it in the selection bar.`;
+    } else if (SITTABLE.has(o.kind)) {
+      this.mount(a.id, o.id, "sit", at);
+      msg = `${name(a)} sits on ${name(o)}.`;
+    } else if (box.max.y <= 1.7) {
+      const key = this._editActorKey(a);
+      key.position = [key.position[0], +box.max.y.toFixed(2), key.position[2]];
+      this._yCache?.delete(a);
+      this.setFrame(this.frame);
+      this.onChange(this.toJSON());
+      msg = `${name(a)} climbs onto ${name(o)} (${box.max.y.toFixed(2)} m up).`;
+    }
+    if (msg) this.onInteract?.(msg);
+    return msg;
+  }
+
+  /** A prop dropped onto a person is picked up and carried from the playhead; dragged away, it's put down. */
+  _dropProp(o, underId = null) {
+    const g = this.actorMeshes.get(o.id);
+    if (!g || NEVER_CARRIED.has(o.kind)) return null;
+    const box = new THREE.Box3().setFromObject(g), size = box.getSize(new THREE.Vector3());
+    const name = (x) => x.name || LIBRARY[x.kind]?.label || x.kind;
+    if (o.carry_id) {                                        // dragged out of someone's hands: put it down here
+      const c = this.state.actors.find((x) => x.id === o.carry_id);
+      delete o.carry_id; delete o.carry_at;
+      this.setFrame(this.frame);
+      this.onChange(this.toJSON());
+      const msg = `${name(o)} is put down${c ? ` by ${name(c)}` : ""}.`;
+      this.onInteract?.(msg);
+      return msg;
+    }
+    if (size.y > 1.0 || Math.max(size.x, size.z) > 1.6) return null;   // too big to carry
+    const p = [(box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2];
+    let best = null;
+    const under = underId && this.state.actors.find((x) => x.id === underId && PERSON_KINDS.has(x.kind) && !x.mount_id);
+    if (under) best = { c: under, d: 0 };                    // dropped right onto a person
+    for (const c of under ? [] : this.state.actors) {
+      if (!PERSON_KINDS.has(c.kind) || c.mount_id) continue;
+      const q = this._actorPosAt(c, this.frame), d = Math.hypot(q[0] - p[0], q[2] - p[1]);
+      if (d < 0.9 && (!best || d < best.d)) best = { c, d };
+    }
+    if (!best) return null;
+    o.carry_id = best.c.id;
+    o.carry_at = Math.max(LIFT_FRAMES, this.frame);
+    // Leave it where it was before the pick-up (its own key), so it sits there until lifted.
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    const msg = `${name(best.c)} picks up ${name(o)} at ${(o.carry_at / (this.state.shot?.fps || 24)).toFixed(1)} s and carries it. Drag it away to put it down.`;
+    this.onInteract?.(msg);
+    return msg;
+  }
+
+  /** Pose the whole set at a frame: camera, object positions, heading and walk cycle. */
+  setFrame(frame) {
+    this.frame = Math.max(0, Math.min(this._lastFrame(), Math.round(frame)));
+    // The set may have been rebuilt (new meshes): keep the gizmo on the selected object.
+    if (this.tc && this.tc.object !== (this.selected ? this.actorMeshes.get(this.selected) : undefined)) this._attachGizmo();
+    for (const a of this.state.actors) {
+      const g = this.actorMeshes.get(a.id);
+      if (!g) continue;
+      if (a.mount_id && !(a.mount_at > this.frame)) continue; // placed on its mount below (a timed mount walks free until mount_at)
+      const keys = this._actorKeys(a);
+      const p = this._actorPosAt(a, this.frame);
+      g.position.set(p[0], this._heightAt(a, this.frame), p[2]);
+      // Heading follows the path at a real turning rate (no instant flips); parked objects keep their own Turn.
+      const pa = this._actorPosAt(a, this.frame - 1), pb = this._actorPosAt(a, this.frame + 1);
+      const vx = pb[0] - pa[0], vz = pb[2] - pa[2];
+      const moving = keys.length > 1 && Math.hypot(vx, vz) > 0.004;
+      g.rotation.y = this._headingAt(a, this.frame);
+      // Walk cycle from distance travelled so far (stride scales with body size).
+      const rig = a.kind === "custom" ? a.recipe?.rig || "static" : LIBRARY[a.kind || "man"]?.rig || "biped";
+      const stride = rig === "quadruped" ? 1.6 * (a.height_m || 0.6) : 0.78 * (a.height_m || 1.8);
+      let dist = 0;
+      if (keys.length > 1) {
+        let prev = this._actorPosAt(a, 0);
+        for (let f = 1; f <= this.frame; f++) {
+          const q = this._actorPosAt(a, f);
+          dist += Math.hypot(q[0] - prev[0], q[2] - prev[2]);
+          prev = q;
+        }
+      }
+      const cycle = (dist / stride) * Math.PI * 2;
+      // Speed in m/s (pa and pb are two frames apart).
+      const speed = moving ? (Math.hypot(vx, vz) / 2) * (this.state.shot?.fps || 24) : 0;
+      g.userData.speed = speed;
+      g.rotation.order = "YXZ";
+      g.rotation.x = 0;
+      if (rig === "quadruped" && speed > 4) {
+        // Gallop: four-beat rotary gait (hind-hind-fore-fore), long stride, the body rocks and bounds.
+        const gs = 2.6 * (a.height_m || 1.6);
+        const gc = (dist / gs) * Math.PI * 2;
+        const beat = [2.2, 2.9, 0, 0.7]; // limb order: front-left, front-right, hind-left, hind-right
+        g.userData.limbs.forEach((l, i) => { l.pivot.rotation.x = 0.85 * Math.sin(gc + beat[i % 4]); });
+        g.rotation.x = 0.07 * Math.sin(gc + 1.2);
+        g.position.y = 0.06 * (a.height_m || 1.6) * Math.abs(Math.sin(gc));
+        g.userData.gaitCycle = gc;
+      } else {
+        for (const l of g.userData.limbs) l.pivot.rotation.x = moving ? l.amp * Math.sin(cycle + l.phase) : 0;
+        const air = this._airborne(a, this.frame);
+        if (air) for (const l of g.userData.limbs) {   // mid-jump: knees tucked, arms up for balance
+          if (l.part === "hip") l.pivot.rotation.x = -0.7;
+          if (l.part === "knee") l.pivot.rotation.x = 1.1;
+          if (l.part === "shoulder") l.pivot.rotation.x = -1.2;
+        }
+        g.position.y = this._heightAt(a, this.frame) +
+          (moving && !air && rig !== "vehicle" ? 0.014 * (a.height_m || 1.8) * Math.abs(Math.sin(cycle)) : 0);
+        g.userData.gaitCycle = cycle;
+      }
+      if (g.userData.mixer) g.userData.mixer.setTime(this.frame / (this.state.shot?.fps || 24));
+      if (g.userData.horseRig) this._driveHorse(g, a, speed, dist);
+      if (g.userData.wheelRig) for (const w of g.userData.wheelRig) w.rotation.x = dist / w.userData.radius;
+      if (g.userData.beam) g.userData.beam.intensity = g.userData.beamBase * beamLevel(a.beam, this.frame);
+    }
+    // Riders follow their mounts (man on a horse, driver in a car, someone on a bench).
+    for (const a of this.state.actors) {
+      if (!a.mount_id) continue;
+      const g = this.actorMeshes.get(a.id), host = this.state.actors.find((x) => x.id === a.mount_id);
+      const hg = host && this.actorMeshes.get(host.id);
+      if (!g || !hg) continue;
+      const m = MOUNTS[host.kind] || { pose: "sit", seat: [0, (host.height_m || 1) * 0.6, 0] };
+      let k = (host.scale || 1) * (m.scaleWithHeight ? (host.height_m || m.refHeight) / m.refHeight : 1);
+      let sp = m.seat;
+      const seats = SEATS[host.kind];
+      if (seats) {   // vehicles: the rider's chosen seat (driver by default)
+        sp = seats[Math.max(0, Math.min(seats.length - 1, a.seat ?? 0))].pos;
+        const ref = LIBRARY[host.kind]?.height || 1;
+        k = (host.scale || 1) * ((host.height_m || ref) / ref);
+      }
+      const seat = new THREE.Vector3(sp[0] * k, sp[1] * k, sp[2] * k).applyAxisAngle(new THREE.Vector3(0, 1, 0), hg.rotation.y);
+      const h = (a.height_m || 1.8) * (a.scale || 1);
+      const hopStart = (a.mount_at || 0) - HOP_FRAMES;
+      if (a.mount_at > 0 && this.frame < hopStart) { applyPose(g, "stand", h); continue; } // still on foot
+      const drop = applyPose(g, a.pose || m.pose, h);
+      const seatPos = new THREE.Vector3(hg.position.x + seat.x, hg.position.y + seat.y - drop, hg.position.z + seat.z);
+      if (a.mount_at > 0 && this.frame < a.mount_at) {
+        // Hop on: arc from where they stand up into the saddle, turning to face the mount's way.
+        const t = (this.frame - hopStart) / HOP_FRAMES;
+        const e = t * t * (3 - 2 * t);
+        if (t < 0.5) applyPose(g, "stand", h);
+        const from = g.position.clone(); // standing spot, set by the free-actor pass above
+        g.position.lerpVectors(from, seatPos, e);
+        g.position.y += Math.sin(Math.PI * t) * 0.35 * h / 1.8;
+        const dy = Math.atan2(Math.sin(hg.rotation.y - g.rotation.y), Math.cos(hg.rotation.y - g.rotation.y));
+        g.rotation.y += dy * e;
+        continue;
+      }
+      g.position.copy(seatPos);
+      g.rotation.order = "YXZ";
+      g.rotation.y = hg.rotation.y;
+      // Ride the motion: lean into speed, rise and fall with the stride (the host's bounce is in its y already).
+      const hs = hg.userData.speed || 0;
+      // Only riders lean and post; someone sitting in a vehicle seat stays upright however fast it goes.
+      const seated = !!SEATS[host.kind] || (a.pose || m.pose) === "sit";
+      const lean = seated ? 0 : Math.max(0, Math.min(1, (hs - 2) / 6));
+      // At a gallop: a two-point crouch over the neck, up off the seat, pumping with each stride (LTX copies it).
+      const ph = (hg.userData.gaitCycle || 0) + 0.6;
+      g.rotation.x = (0.42 + 0.06 * Math.sin(ph * 2)) * lean + (hg.rotation.x || 0);
+      g.position.y += h * lean * (0.035 + 0.05 * Math.abs(Math.sin(ph)));
+      g.position.z += 0.06 * h * lean * Math.cos(hg.rotation.y);
+      g.position.x += 0.06 * h * lean * Math.sin(hg.rotation.y);
+    }
+    // Carried things ride in the carrier's hands from carry_at (lifted over a few frames); the carrier's arms hold it.
+    for (const o of this.state.actors) {
+      if (!o.carry_id) continue;
+      const og = this.actorMeshes.get(o.id), c = this.state.actors.find((x) => x.id === o.carry_id);
+      const cg = c && this.actorMeshes.get(c.id);
+      if (!og || !cg) continue;
+      const at = o.carry_at || 0;
+      if (this.frame < at - LIFT_FRAMES) continue;           // still where it was put down
+      const t = Math.min(1, (this.frame - (at - LIFT_FRAMES)) / LIFT_FRAMES);
+      const e = t * t * (3 - 2 * t);
+      const ch = (c.height_m || 1.8) * (c.scale || 1);
+      og.updateMatrixWorld(true);
+      const size = new THREE.Box3().setFromObject(og).getSize(new THREE.Vector3());
+      const reach = 0.25 + Math.min(size.x, size.z) / 2;
+      const fwd = new THREE.Vector3(Math.sin(cg.rotation.y), 0, Math.cos(cg.rotation.y));
+      const hold = new THREE.Vector3(cg.position.x, cg.position.y + 0.62 * ch - size.y / 2, cg.position.z).addScaledVector(fwd, reach);
+      const rest = this._actorPosAt(o, this.frame);
+      og.position.set(rest[0] + (hold.x - rest[0]) * e, hold.y * e, rest[2] + (hold.z - rest[2]) * e);
+      og.rotation.y = cg.rotation.y * e + og.rotation.y * (1 - e);
+      if (t >= 0.5) for (const l of cg.userData.limbs || []) {   // arms forward, elbows bent around the load
+        if (l.part === "shoulder") l.pivot.rotation.x = -1.15;
+        if (l.part === "elbow") l.pivot.rotation.x = -0.6;
+      }
+    }
+    if (this.weather) {
+      const cam = this._cameraAt(this.frame);
+      this.weather.update(this.frame, { x: cam.target[0], z: cam.target[2] });
+    }
+    if (this.selRing) {
+      const sel = this.actorMeshes.get(this.selected);
+      this.selRing.visible = !!sel;
+      if (sel) {
+        const a = this.state.actors.find((x) => x.id === this.selected);
+        const r = Math.max(0.4, Math.min(3.5, (a?.height_m || 1) * (LIBRARY[a?.kind]?.rig === "vehicle" ? 1.6 : 0.4)));
+        this.selRing.scale.setScalar(r / 0.6);
+        this.selRing.position.set(sel.position.x, 0.02, sel.position.z);
+      }
+    }
+    this._applyCamera();
+    this.render();
+  }
+
+  /** Jump to the first ("start") or last ("end") camera key. Kept for the Start/End buttons. */
+  setKey(key) {
+    const keys = this._camKeys();
+    this.key = key;
+    this.setFrame(key === "end" ? keys[keys.length - 1].frame : keys[0].frame);
+  }
+
+  /** Camera key at the playhead, created on first edit (auto-key, like Blender). */
+  _editCamera() {
+    const keys = this._camKeys();
+    let k = keys.find((x) => x.frame === this.frame);
+    if (!k) {
+      k = { frame: this.frame, ...clone(this._cameraAt(this.frame)) };
+      const host = this._followActor();
+      if (host) { const inv = this._actorFrameInverse(host, this.frame); k.position = inv(k.position); k.target = inv(k.target); }
+      keys.push(k);
+      keys.sort((a, b) => a.frame - b.frame);
+    }
+    return k;
+  }
+
+  /** Object key at the playhead (auto-key). */
+  _editActorKey(a) {
+    const keys = this._actorKeys(a);
+    let k = keys.find((x) => x.frame === this.frame);
+    if (!k) {
+      k = { frame: this.frame, position: this._actorPosAt(a, this.frame) };
+      keys.push(k);
+      keys.sort((x, y) => x.frame - y.frame);
+    }
+    return k;
+  }
+
+  /** Key frames for the timeline: camera, and the selected object if any. */
+  keyInfo() {
+    const a = this.state.actors.find((x) => x.id === this.selected);
+    return { camera: this._camKeys().map((k) => k.frame), object: a ? this._actorKeys(a).map((k) => k.frame) : [],
+      objectName: a?.name || null, last: this._lastFrame() };
+  }
+
+  /** Set a camera key (and the selected object's key) at the playhead from what you see now. */
+  setKeyHere() {
+    this._editCamera();
+    const a = this.state.actors.find((x) => x.id === this.selected);
+    if (a) this._editActorKey(a);
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  /** Delete keys at the playhead (never the last remaining key). */
+  deleteKeyHere() {
+    const keys = this._camKeys();
+    if (keys.length > 1) this.activeShot().camera_keys = keys.filter((k) => k.frame !== this.frame);
+    const a = this.state.actors.find((x) => x.id === this.selected);
+    if (a) {
+      const ak = this._actorKeys(a);
+      if (ak.length > 1) a.keys = ak.filter((k) => k.frame !== this.frame);
+    }
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  /** Jump to the previous (-1) or next (+1) key of the camera or the selected object. */
+  gotoKey(dir) {
+    const info = this.keyInfo();
+    const frames = [...new Set([...info.camera, ...info.object])].sort((a, b) => a - b);
+    const f = dir > 0 ? frames.find((x) => x > this.frame) : [...frames].reverse().find((x) => x < this.frame);
+    if (f !== undefined) this.setFrame(f);
+  }
+
+  /** Per-frame shot camera (for exports: Layer Pack camera, Nuke .chan, etc.). */
+  cameraTrack() {
+    const out = [];
+    for (let f = 0; f <= this._lastFrame(); f++) out.push({ frame: f, ...this._cameraAt(f) });
+    return out;
+  }
+
+  _applyCamera() {
+    const c = this._preview || this._cameraAt(this.frame || 0);
+    this.camera.position.set(...c.position);
+    this.camera.fov = vfovFromFocal(c.focal_mm, this.fw / this.fh);
+    this.camera.updateProjectionMatrix();
+    this.camera.lookAt(new THREE.Vector3(...c.target));
+  }
+
+  _applySun() {
+    const L = this.state.lighting || (this.state.lighting = clone(DEFAULT_SCENE.lighting));
+    if (L.mode === "time") {
+      // Real sun position for that hour, date and latitude; North rotates the set under the sky.
+      const sp = solarPosition(L.hour, L.day_of_year, L.latitude);
+      this.state.sun = { azimuth_deg: Math.round(((sp.azimuth + (L.north_deg || 0)) % 360 + 360) % 360),
+        elevation_deg: Math.round(sp.elevation * 10) / 10 };
+    }
+    const { azimuth_deg, elevation_deg } = this.state.sun;
+    const sky = skyFor(elevation_deg, L.overcast);
+    // Below the horizon the key light becomes moonlight from the opposite side.
+    const el = THREE.MathUtils.degToRad(sky.moon ? 35 : Math.max(elevation_deg, 1));
+    const az = THREE.MathUtils.degToRad(sky.moon ? azimuth_deg + 180 : azimuth_deg);
+    const r = 60;
+    this.sun.position.set(r * Math.cos(el) * Math.sin(az), r * Math.sin(el), r * Math.cos(el) * Math.cos(az));
+    this.sun.target.position.set(0, 0, 0);
+    this.sun.color.copy(kelvinToColor(sky.sunK));
+    this.sun.intensity = sky.sun * (L.mode === "time" || L.overcast ? 1 : 1);
+    this.sun.shadow.radius = 1 + sky.shadowSoft * 10;
+    this.hemi.color.copy(kelvinToColor(sky.skyK));
+    this.hemi.groundColor.set(sky.ground);
+    this.hemi.intensity = sky.sky;
+    this.skyPhase = sky.phase;
+  }
+
+  /** Time of day: set the clock (sun follows the real solar path). */
+  setTimeOfDay(hour, extra = {}) {
+    this.state.lighting = { ...(this.state.lighting || {}), ...extra, mode: "time", hour, preset: extra.preset ?? null };
+    this._applySun();
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  /** Presets like Magic hour pick the hour when the sun is at the right height for this place and date. */
+  applyTimePreset(key) {
+    const p = TIME_PRESETS[key];
+    if (!p) return;
+    const L = this.state.lighting || {};
+    const hour = p.sunElevation === null ? 12.5 : hourForElevation(p.sunElevation, p.side, L.day_of_year ?? 300, L.latitude ?? 34.05);
+    this.setTimeOfDay(hour, { preset: key, overcast: !!p.overcast });
+  }
+
+  setNorth(deg) {
+    this.state.lighting = { ...(this.state.lighting || {}), north_deg: deg };
+    this._applySun();
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  /** Manual sun (the Sun/Height sliders) switches time-of-day off. */
+  setSun(azimuth, elevation) {
+    this.state.lighting = { ...(this.state.lighting || {}), mode: "manual", preset: null };
+    this.state.sun = { azimuth_deg: azimuth, elevation_deg: elevation };
+    this._applySun();
+    this.render();
+    this.onChange(this.toJSON());
+  }
+
+  // ---------- film lights ----------
+  _buildLights() {
+    for (const o of this.lightObjs || []) { this.scene.remove(o.light, o.light.target, o.handle); o.light.dispose?.(); }
+    this.lightObjs = [];
+    this.lightHandles = new Map();
+    for (const l of this.state.lighting?.lights || []) {
+      const spec = LIGHT_TYPES[l.type] || LIGHT_TYPES.key;
+      const color = kelvinToColor(l.kelvin ?? spec.kelvin);
+      const point = l.type === "practical" || l.type === "neon";
+      const light = point ? new THREE.PointLight(color, (l.intensity ?? spec.intensity) * 3, 14, 2)
+        : new THREE.SpotLight(color, (l.intensity ?? spec.intensity) * 5, 40, THREE.MathUtils.degToRad(l.angle ?? spec.angle),
+            l.softness ?? spec.softness, 1.6);
+      light.position.set(...l.position);
+      light.castShadow = !point;
+      if (!point) {
+        light.target.position.set(...(l.target || [0, 1.2, 0]));
+        light.shadow.mapSize.set(1024, 1024);
+      }
+      // A visible handle (viewport only) you can grab and drag, like an object.
+      const handle = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12), new THREE.MeshBasicMaterial({ color }));
+      handle.position.copy(light.position);
+      handle.userData.lightId = l.id;
+      this.scene.add(...[light, light.target, handle].filter(Boolean)); // point lights have no target
+      this.lightObjs.push({ id: l.id, light, handle });
+      this.lightHandles.set(l.id, handle);
+    }
+  }
+
+  _subjectPoint() {
+    const a = this.state.actors.find((x) => x.id === this.selected) || this.state.actors[0];
+    const p = a ? this._actorPosAt(a, this.frame) : this._cameraAt(this.frame).target;
+    return [p[0], (a?.height_m || 1.7) * 0.75, p[2]];
+  }
+
+  /** Add a film light near the subject, aimed at it. */
+  addLight(type) {
+    const spec = LIGHT_TYPES[type];
+    if (!spec) return null;
+    const L = this.state.lighting || (this.state.lighting = clone(DEFAULT_SCENE.lighting));
+    const subj = this._subjectPoint();
+    const cam = this._cameraAt(this.frame);
+    const view = new THREE.Vector3(subj[0] - cam.position[0], 0, subj[2] - cam.position[2]).normalize();
+    const right = new THREE.Vector3(view.z, 0, -view.x);
+    // Classic placements relative to the camera: key 45° camera-left, fill camera-right, rim behind.
+    const off = {
+      key: right.clone().multiplyScalar(-2.4).add(view.clone().multiplyScalar(-2.4)),
+      fill: right.clone().multiplyScalar(2.6).add(view.clone().multiplyScalar(-2.0)),
+      rim: right.clone().multiplyScalar(1.2).add(view.clone().multiplyScalar(3.0)),
+      practical: right.clone().multiplyScalar(-1.5).add(view.clone().multiplyScalar(0.8)),
+      spot: view.clone().multiplyScalar(-1.0),
+      neon: right.clone().multiplyScalar(2.0).add(view.clone().multiplyScalar(1.5)),
+    }[type];
+    const n = (L.lights || []).filter((x) => x.type === type).length + 1;
+    const light = { id: `light_${Date.now().toString(36)}${n}`, type, name: `${spec.label} ${n}`,
+      position: [+(subj[0] + off.x).toFixed(2), spec.height, +(subj[2] + off.z).toFixed(2)], target: subj,
+      kelvin: spec.kelvin, intensity: spec.intensity, softness: spec.softness, angle: spec.angle };
+    L.lights = [...(L.lights || []), light];
+    this._buildLights();
+    this.selectLight(light.id);
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    return light.name;
+  }
+
+  /**
+   * Light the subject with a named setup (Rembrandt, book light, low-key noir…). Each light is given relative to
+   * the subject and camera: azimuth 0 = from the camera, +90 = camera-left, -90 = camera-right, 180 = behind;
+   * elevation above the subject's eyes; distance in metres. Replaces the previous setup's lights (keeps others).
+   */
+  applyLightingSetup(setup) {
+    if (!setup?.lights?.length) return 0;
+    const L = this.state.lighting || (this.state.lighting = clone(DEFAULT_SCENE.lighting));
+    const subj = this._subjectPoint();
+    const cam = this._cameraAt(this.frame);
+    const view = new THREE.Vector3(subj[0] - cam.position[0], 0, subj[2] - cam.position[2]);
+    if (view.lengthSq() < 1e-6) view.set(0, 0, -1);
+    view.normalize();
+    const right = new THREE.Vector3(view.z, 0, -view.x);
+    const eye = Math.max(1.0, (subj[1] || 0) + 1.55);
+    L.lights = (L.lights || []).filter((l) => !l.from_setup);
+    setup.lights.forEach((l, i) => {
+      const type = LIGHT_TYPES[l.type] ? l.type : "key";
+      const spec = LIGHT_TYPES[type];
+      const a = THREE.MathUtils.degToRad(+l.azimuth_deg || 0), e = THREE.MathUtils.degToRad(+l.elevation_deg || 0);
+      const d = Math.max(0.6, +l.distance_m || 2.5);
+      const dir = view.clone().multiplyScalar(-Math.cos(a)).add(right.clone().multiplyScalar(-Math.sin(a)));
+      const pos = [subj[0] + dir.x * d * Math.cos(e), Math.max(0.2, eye + d * Math.sin(e)), subj[2] + dir.z * d * Math.cos(e)];
+      L.lights.push({ id: `light_${setup.id || "setup"}_${i}_${Date.now().toString(36)}`, type, from_setup: setup.id || true,
+        name: `${(l.role || type).replace(/^./, (c) => c.toUpperCase())} (${setup.label || "setup"})`,
+        position: pos.map((v) => +v.toFixed(2)), target: [subj[0], eye - 0.15, subj[2]],
+        kelvin: +l.kelvin || spec.kelvin, intensity: +l.intensity || spec.intensity,
+        softness: l.softness ?? spec.softness, angle: spec.angle });
+    });
+    L.setup = setup.id || null;
+    L.setup_prompt = setup.prompt_words || "";
+    this._buildLights();
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    return setup.lights.length;
+  }
+
+  /** Key + fill + rim around the selected (or first) subject, relative to the camera. */
+  autoThreePoint() {
+    const L = this.state.lighting || (this.state.lighting = clone(DEFAULT_SCENE.lighting));
+    L.lights = (L.lights || []).filter((l) => !["key", "fill", "rim"].includes(l.type));
+    for (const t of ["key", "fill", "rim"]) this.addLight(t);
+  }
+
+  selectLight(id) {
+    this.selectedLight = id && this.lightHandles?.has(id) ? id : null;
+    for (const [lid, h] of this.lightHandles || []) h.scale.setScalar(lid === this.selectedLight ? 1.6 : 1);
+    this.render();
+    this.onSelectLight?.(this.selectedLightInfo());
+  }
+
+  selectedLightInfo() {
+    return (this.state.lighting?.lights || []).find((l) => l.id === this.selectedLight) || null;
+  }
+
+  updateLight(patch) {
+    const l = this.selectedLightInfo();
+    if (!l) return;
+    Object.assign(l, patch);
+    if (patch.height !== undefined) l.position = [l.position[0], patch.height, l.position[2]];
+    this._buildLights();
+    this.selectLight(l.id);
+    this.onChange(this.toJSON());
+  }
+
+  removeLight() {
+    const L = this.state.lighting;
+    if (!L || !this.selectedLight) return;
+    L.lights = L.lights.filter((l) => l.id !== this.selectedLight);
+    this.selectedLight = null;
+    this._buildLights();
+    this.render();
+    this.onSelectLight?.(null);
+    this.onChange(this.toJSON());
+  }
+
+  /** DP-style lighting note for prompts. */
+  lightingPrompt() {
+    const base = describeLighting(this.state.lighting, this.state.sun, this._cameraAt(0));
+    const setup = this.state.lighting?.setup_prompt;
+    const name = (x) => (x.name || LIBRARY[x.kind]?.label || x.kind).toLowerCase();
+    const torches = this.state.actors.filter((x) => x.kind === "flashlight" && (x.beam || "steady") !== "off").map((t) => {
+      const who = this.state.actors.find((x) => x.id === t.carry_id);
+      const how = { flicker: "a flickering", blink: "a blinking, on-and-off" }[t.beam] || "a hard, narrow";
+      return who ? `the ${name(who)} sweeps ${how} flashlight beam ahead, a bright pool of cool white light moving across the surfaces`
+        : `${how} flashlight beam cuts across the scene, a bright pool of cool white light`;
+    });
+    return [...torches, setup, base].filter(Boolean).join("; ");
+  }
+
+  /** Flashlight beam: steady, flicker, blink or off. */
+  setBeam(id, mode) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a || a.kind !== "flashlight") return;
+    if (mode === "steady") delete a.beam; else a.beam = mode;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+
+  // ---------- interaction ----------
+  /** True when a camera sits inside the water volume (above the floor, below the surface, inside the tank). */
+  _isUnderwater(cam) {
+    if (!this.water) return false;
+    const w = this.water, p = cam.position;
+    const half = w.geometry.parameters;
+    return p.y < w.position.y && p.y > 0 &&
+      Math.abs(p.x - w.position.x) < half.width / 2 && Math.abs(p.z - w.position.z) < half.height / 2;
+  }
+
+  // ---------- navigation ----------
+  /** Orbit state being edited: the free viewport, or the shot camera's current key. */
+  _activeOrbit() {
+    return this.freeView ? this.free : this._editCamera();
+  }
+
+  /** Camera the viewport looks through (captures always use the shot camera). */
+  _viewportCamera() {
+    return this.freeView ? this.viewCam : this.camera;
+  }
+
+  _applyActive() {
+    if (this.freeView) {
+      this.viewCam.position.set(...this.free.position);
+      this.viewCam.lookAt(new THREE.Vector3(...this.free.target));
+      this.camHelper?.update();
+      this.render();
+    } else {
+      this.setFrame(this.frame);
+    }
+  }
+
+  /** Show a live camera (e.g. the virtual camera) without changing any keys; null clears it. */
+  previewCamera(cam) {
+    this._preview = cam || null;
+    this._applyCamera();
+    this.render();
+  }
+
+  /** Replace the active shot's camera keys (e.g. a stabilized virtual-camera take). */
+  setCameraKeys(keys) {
+    if (!keys?.length) return;
+    this.activeShot().camera_keys = keys.map((k) => ({ frame: k.frame, position: [...k.position], target: [...k.target],
+      focal_mm: k.focal_mm ?? this._cameraAt(this.frame).focal_mm }));
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  /** Free view = fly around the whole set without touching the shot (Blender's viewport vs camera). */
+  setFreeView(on) {
+    this.freeView = !!on;
+    if (this.freeView && !this.freeInit) {
+      // Start behind and above the shot camera so you can see it and what it frames.
+      const c = this._cameraAt(this.frame);
+      const pos = new THREE.Vector3(...c.position), tgt = new THREE.Vector3(...c.target);
+      const back = pos.clone().sub(tgt).setLength(8).add(new THREE.Vector3(0, 4, 0));
+      this.free = { position: pos.clone().add(back).toArray(), target: tgt.toArray() };
+      this.freeInit = true;
+    }
+    this._applyActive();
+    this.onView?.(this.freeView);
+  }
+
+  /** Snap the active view to look along an axis ("+x", "-y", ...), keeping its distance. */
+  snapView(axis) {
+    const o = this._activeOrbit();
+    const tgt = new THREE.Vector3(...o.target);
+    const dist = new THREE.Vector3(...o.position).distanceTo(tgt);
+    const dir = { "+x": [1, 0, 0], "-x": [-1, 0, 0], "+y": [0, 1, 0.0001], "-y": [0, -1, 0.0001],
+      "+z": [0, 0, 1], "-z": [0, 0, -1] }[axis];
+    o.position = tgt.clone().add(new THREE.Vector3(...dir).normalize().multiplyScalar(dist)).toArray().map((v) => +v.toFixed(3));
+    this._applyActive();
+    if (!this.freeView) this.onChange(this.toJSON());
+  }
+
+  _bindControls() {
+    const ray = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+    const floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    let drag = null;
+
+    this.freeView = false;
+    this.free = null;
+    this.viewCam = new THREE.PerspectiveCamera(50, this.fw / this.fh, 0.05, 600);
+    this.camHelper = new THREE.CameraHelper(this.camera);
+    this.camHelper.visible = false;
+    this.scene.add(this.camHelper);
+
+    // Move / rotate / scale gizmo on the selected object (NKD / Blender style): G move, R rotate, T scale.
+    // Constrained to the stage's model: move on the floor, turn about the vertical, scale uniformly.
+    this.tc = new TransformControls(this.camera, this.canvas);
+    this.tc.setSpace("world");
+    this.tc.setSize(1.15);
+    this.tcHelper = this.tc.getHelper();
+    this.tcHelper.visible = false;
+    // Its own scene, drawn on top after the main pass, so Clay / Depth / Wire material overrides can't hide it.
+    this.gizmoScene = new THREE.Scene();
+    this.gizmoScene.add(this.tcHelper);
+    this.setGizmoMode("translate");
+    this.tc.addEventListener("change", () => { if (!this._inRender) this.render(); });
+    this.tc.addEventListener("objectChange", () => this._gizmoToActor());
+    this.tc.addEventListener("dragging-changed", (e) => {
+      this._gizmoDragging = e.value;
+      if (e.value) this._gizmoScale0 = this.tc.object?.scale.x || 1;
+      else this.onChange(this.toJSON());
+    });
+
+    const pick = (e) => {
+      const r = this.canvas.getBoundingClientRect();
+      ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      ray.setFromCamera(ndc, this._viewportCamera());
+    };
+
+    this.canvas.tabIndex = 0; // so W/A/S/D/Q/E reach the stage
+    this.canvas.addEventListener("pointerenter", () => this.canvas.focus({ preventScroll: true }));
+
+    this.canvas.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      this.canvas.focus({ preventScroll: true });
+      if (this.tcHelper.visible && (this.tc.axis || this.tc.dragging)) return; // the gizmo has this drag
+      pick(e);
+      const lhit = ray.intersectObjects([...(this.lightHandles?.values() || [])], false)[0];
+      if (lhit && !e.altKey) {
+        drag = { mode: "light", id: lhit.object.userData.lightId };
+        this.selectLight(drag.id);
+        this.canvas.setPointerCapture(e.pointerId);
+        return;
+      }
+      let hitId = ray.intersectObjects([...this.actorMeshes.values()], true)[0]?.object?.userData?.actorId || null;
+      // Far-away people are a few pixels wide: a click within ~12 px of an object's on-screen outline still grabs it.
+      if (!hitId && !e.altKey) hitId = this._nearOnScreen(e, 12);
+      if (hitId && !e.altKey) {
+        drag = { mode: "actor", id: hitId };
+        this.select(hitId);
+      } else {
+        drag = { mode: e.shiftKey || e.button === 1 ? "pan" : "orbit", x: e.clientX, y: e.clientY };
+      }
+      this.canvas.setPointerCapture(e.pointerId);
+      this.canvas.style.cursor = "grabbing";
+      this._dragging = true;
+    });
+
+    this.canvas.addEventListener("pointermove", (e) => {
+      if (!drag) return;
+      e.stopPropagation();
+      if (drag.mode === "light") {
+        pick(e);
+        const l = (this.state.lighting?.lights || []).find((x) => x.id === drag.id);
+        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -l.position[1]);
+        const p = new THREE.Vector3();
+        if (l && ray.ray.intersectPlane(plane, p)) {
+          l.position = [+p.x.toFixed(2), l.position[1], +p.z.toFixed(2)];
+          const o = this.lightObjs.find((x) => x.id === l.id);
+          o.light.position.set(...l.position);
+          o.handle.position.set(...l.position);
+          this.render();
+        }
+        return;
+      }
+      if (drag.mode === "actor") {
+        pick(e);
+        const p = new THREE.Vector3();
+        if (ray.ray.intersectPlane(floor, p)) {
+          const a = this.state.actors.find((x) => x.id === drag.id);
+          this._editActorKey(a).position = [+p.x.toFixed(2), 0, +p.z.toFixed(2)];
+          this.setFrame(this.frame);
+        }
+        return;
+      }
+      const c = this._activeOrbit();
+      const cam = this._viewportCamera();
+      const dx = e.clientX - drag.x;
+      const dy = e.clientY - drag.y;
+      drag.x = e.clientX;
+      drag.y = e.clientY;
+      const pos = new THREE.Vector3(...c.position);
+      const tgt = new THREE.Vector3(...c.target);
+      if (drag.mode === "orbit") {
+        // Turntable orbit with no floor limit: go under, over, all the way round.
+        const off = pos.clone().sub(tgt);
+        const sph = new THREE.Spherical().setFromVector3(off);
+        sph.theta -= dx * 0.005;
+        sph.phi = THREE.MathUtils.clamp(sph.phi - dy * 0.005, 0.001, Math.PI - 0.001);
+        pos.copy(tgt).add(new THREE.Vector3().setFromSpherical(sph));
+      } else {
+        const right = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 0);
+        const up = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 1);
+        const k = pos.distanceTo(tgt) * 0.0015;
+        const move = right.multiplyScalar(-dx * k).add(up.multiplyScalar(dy * k));
+        pos.add(move);
+        tgt.add(move);
+      }
+      // Stay above the floor (a far camera swings metres for a small drag); the water tank lets you go under.
+      if (this.state.environment?.set !== "water_tank" && pos.y < 0.15) {
+        if (drag.mode !== "orbit") tgt.y += 0.15 - pos.y;
+        pos.y = 0.15;
+      }
+      c.position = pos.toArray().map((v) => +v.toFixed(3));
+      c.target = tgt.toArray().map((v) => +v.toFixed(3));
+      this._applyActive();
+    });
+
+    const end = (e) => {
+      this._dragging = false;
+      if (!drag) return;
+      if (drag.mode === "actor") {
+        // What's under the cursor on release is what you dropped onto (the floor point can land metres behind a car).
+        let under = null;
+        if (e?.clientX != null) {
+          pick(e);
+          const meshes = [];
+          for (const [id, g] of this.actorMeshes) if (id !== drag.id) g.traverse((o) => { if (o.isMesh && o.visible) meshes.push(o); });
+          under = ray.intersectObjects(meshes, false)[0]?.object?.userData?.actorId || this._nearOnScreen(e, 8, drag.id);
+        }
+        try { this._dropInteract(drag.id, under); } catch (err) { console.warn("Soundstage interact", err); }
+      }
+      drag = null;
+      this.canvas.style.cursor = "grab";
+      if (!this.freeView) this.onChange(this.toJSON());
+    };
+    this.canvas.addEventListener("pointerup", end);
+    this.canvas.addEventListener("pointercancel", end);
+
+    // Fly: W/S forward/back, A/D strafe, Q/E down/up (Shift = 4x). 0 toggles shot cam / free view.
+    this.canvas.addEventListener("keydown", (e) => {
+      const k = e.key.toLowerCase();
+      if ((e.metaKey || e.ctrlKey) && k === "z") {
+        e.preventDefault(); e.stopPropagation();
+        if (e.shiftKey) this.redo(); else this.undo();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && k === "d") { e.preventDefault(); e.stopPropagation(); this.duplicateSelected(); return; }
+      if (k === "0") {
+        e.preventDefault(); e.stopPropagation();
+        this.setFreeView(!this.freeView);
+        return;
+      }
+      if ((k === "g" || k === "r" || k === "t") && !e.metaKey && !e.ctrlKey && this.selected) {
+        e.preventDefault(); e.stopPropagation();
+        this.setGizmoMode({ g: "translate", r: "rotate", t: "scale" }[k]);
+        return;
+      }
+      if (!"wasdqe".includes(k) || e.metaKey || e.ctrlKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const c = this._activeOrbit();
+      const cam = this._viewportCamera();
+      const pos = new THREE.Vector3(...c.position), tgt = new THREE.Vector3(...c.target);
+      const fwd = tgt.clone().sub(pos).normalize();
+      const right = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 0);
+      const stepLen = (e.shiftKey ? 1.0 : 0.25) * Math.max(1, pos.distanceTo(tgt) * 0.1);
+      const move = { w: fwd, s: fwd.clone().negate(), d: right, a: right.clone().negate(),
+        e: new THREE.Vector3(0, 1, 0), q: new THREE.Vector3(0, -1, 0) }[k].clone().multiplyScalar(stepLen);
+      c.position = pos.add(move).toArray().map((v) => +v.toFixed(3));
+      c.target = tgt.add(move).toArray().map((v) => +v.toFixed(3));
+      this._applyActive();
+      if (!this.freeView) { clearTimeout(this._keyT); this._keyT = setTimeout(() => this.onChange(this.toJSON()), 250); }
+    });
+    for (const t of ["keyup", "keypress"]) this.canvas.addEventListener(t, (e) => e.stopPropagation());
+
+    // Scroll wheel = dolly. ComfyUI's canvas listens for the wheel before this element does
+    // (that's why scrolling zoomed the graph), so a window-level capture listener routes wheel
+    // events that happen over a stage straight to it. See installWheelRouter() below.
+    this.canvas.__soundstage = this;
+    this._onWheel = (e) => {
+      const c = this._activeOrbit();
+      const pos = new THREE.Vector3(...c.position);
+      const tgt = new THREE.Vector3(...c.target);
+      const dir = tgt.clone().sub(pos);
+      const dist = dir.length();
+      const step = THREE.MathUtils.clamp(e.deltaY * 0.01 * Math.max(1, dist / 10), -dist + 0.3, 40);
+      pos.addScaledVector(dir.normalize(), -step);
+      c.position = pos.toArray().map((v) => +v.toFixed(3));
+      this._applyActive();
+      if (!this.freeView) { clearTimeout(this._wheelT); this._wheelT = setTimeout(() => this.onChange(this.toJSON()), 200); }
+    };
+    installWheelRouter();
+  }
+
+  // ---------- public API ----------
+  /** Add an object by typed name ("dog", "a red car"). Returns its label, or null if unknown. */
+  addObject(text) {
+    const combo = resolveCompound(text);
+    if (combo) {
+      const hostName = this.addObject(combo.mount);
+      const host = this.state.actors[this.state.actors.length - 1];
+      const riderName = this.addObject(combo.rider);
+      const rider = this.state.actors[this.state.actors.length - 1];
+      this.mount(rider.id, host.id);
+      this.select(host.id);
+      return `${riderName} on ${hostName}`;
+    }
+    const kind = resolveKind(text);
+    if (!kind) return null;
+    const spec = LIBRARY[kind];
+    const n = this.state.actors.filter((a) => a.kind === kind).length + 1;
+    const id = `${kind}_${Date.now().toString(36)}`;
+    // Drop it on the floor a few metres in front of the current camera.
+    const cam = this._cameraAt(this.frame);
+    const pos = new THREE.Vector3(...cam.position);
+    const dir = new THREE.Vector3(...cam.target).sub(pos).setY(0).normalize();
+    // Fan new objects out left/right of the camera's line so they don't land on each other.
+    const k = this.state.actors.length;
+    const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(((k % 5) - 2) * (spec.rig === "static" ? 4 : 2.4));
+    // Where the centre of the frame meets the floor (a crane looking down the street sees that spot), else ahead.
+    const look = new THREE.Vector3(...cam.target).sub(new THREE.Vector3(...cam.position));
+    const tFloor = look.y < -0.05 ? -cam.position[1] / look.y : Infinity;
+    const ahead = tFloor * Math.hypot(look.x, look.z);
+    const spot = ahead > 2 && ahead < 40
+      ? new THREE.Vector3(...cam.position).addScaledVector(look, tFloor).setY(0).add(side.multiplyScalar(0.5))
+      : pos.add(dir.multiplyScalar(spec.rig === "static" ? 14 : 7 + (k % 3) * 1.5)).add(side);
+    const p = [+spot.x.toFixed(2), 0, +spot.z.toFixed(2)];
+    this.state.actors.push({ id, name: `${spec.label} ${n}`, kind, position: p, keys: [{ frame: 0, position: [...p] }],
+      height_m: spec.height, rotation_deg: 0 });
+    this._buildSet();
+    this.select(id);
+    this.onChange(this.toJSON());
+    return `${spec.label} ${n}`;
+  }
+
+  // ---------- the rigged horse (CC0, Quaternius) ----------
+  /** Swap the built horse's look for the rigged CC0 horse: the built one stays (hidden) for its pivots and
+   *  seat; the rigged one walks, trots and gallops with real skeletal cycles locked to distance travelled. */
+  _upgradeHorse(a, g) {
+    loadAsset(HORSE_GLB, "glb").then((asset) => {
+      if (this.actorMeshes.get(a.id) !== g || g.userData.horseRig) return;
+      const model = SkeletonUtils.clone(asset.scene);
+      const h = a.height_m || 1.6;
+      const tint = a.appearance?.color ? new THREE.Color(a.appearance.color) : null;
+      model.traverse((o) => {
+        o.userData.actorId = a.id;
+        if (!o.isMesh) return;
+        o.castShadow = true; o.receiveShadow = true;
+        o.frustumCulled = false;                                   // skinned bounds don't follow the gallop
+        if (tint && /^Main/.test(o.material?.name || "")) { o.material = o.material.clone(); o.material.color.lerp(tint, 0.85); }
+      });
+      for (const ch of g.children) ch.visible = false;
+      const holder = new THREE.Group();
+      holder.add(model);
+      g.add(holder);
+      const mixer = new THREE.AnimationMixer(model);
+      const clip = (n) => asset.animations.find((x) => x.name === n) || asset.animations.find((x) => x.name.endsWith("|" + n));
+      const actions = {};
+      for (const n of ["Idle", "Walk", "Gallop"]) {
+        const cl = clip(n);
+        if (cl) { actions[n] = mixer.clipAction(cl); actions[n].play(); actions[n].enabled = n === "Idle"; }
+      }
+      mixer.update(0);
+      // Measure the POSED skin (the raw geometry sits under a scaled armature), in the holder's space.
+      holder.updateMatrixWorld(true);
+      const bb = new THREE.Box3().setFromObject(model, true).applyMatrix4(holder.matrixWorld.clone().invert());
+      const k = (h * HORSE_HEAD_RATIO) / Math.max(1e-6, bb.max.y - bb.min.y);   // withers h -> ears at ~1.42 h
+      holder.scale.setScalar(k);
+      holder.position.set(-k * (bb.min.x + bb.max.x) / 2, -k * bb.min.y, -k * (bb.min.z + HORSE_BODY_Z * (bb.max.z - bb.min.z)));
+      g.userData.horseRig = { mixer, actions, holder };
+      this.setFrame(this.frame);
+    }).catch((err) => console.warn("Soundstage: rigged horse failed, keeping the built one", err));
+  }
+
+  /** Pick Idle / Walk / Gallop by speed; the clip time follows distance so hooves don't skate. */
+  _driveHorse(g, a, speed, dist) {
+    const R = g.userData.horseRig;
+    const h = a.height_m || 1.6;
+    const fps = this.state.shot?.fps || 24;
+    const name = speed < 0.3 ? "Idle" : speed < 3.2 ? "Walk" : "Gallop";
+    const stride = name === "Gallop" ? 3.2 * h : 1.1 * h;          // metres per full cycle
+    for (const [n, act] of Object.entries(R.actions)) {
+      act.enabled = n === name;
+      act.setEffectiveWeight(n === name ? 1 : 0);
+      if (n !== name) continue;
+      const d = act.getClip().duration || 1;
+      act.time = name === "Idle" ? (this.frame / fps) % d : ((dist / stride) % 1) * d;
+    }
+    R.mixer.update(0);
+    g.rotation.x = 0;                                              // the gallop clip rocks the body itself
+    g.position.y = this._heightAt(a, this.frame);
+  }
+
+  // ---------- real-car bodies (CC0, Quaternius) ----------
+  /** Put a car model over the built sedan (kept hidden for its seats and pivots), sized bumper to bumper; the
+   *  wheels are re-pivoted on their hubs so they roll with the distance driven. */
+  _upgradeVehicle(a, g, spec) {
+    loadAsset(new URL(`./models/${spec.model}`, import.meta.url).href, "glb").then((asset) => {
+      if (this.actorMeshes.get(a.id) !== g || g.userData.vehicleBody) return;
+      const model = asset.scene.clone(true);
+      model.updateMatrixWorld(true);
+      const bb = new THREE.Box3().setFromObject(model);
+      const k = (spec.length * ((a.height_m || spec.height) / spec.height)) / Math.max(1e-6, bb.max.z - bb.min.z);
+      const holder = new THREE.Group();
+      holder.scale.setScalar(k);
+      holder.position.set(-k * (bb.min.x + bb.max.x) / 2, -k * bb.min.y, -k * (bb.min.z + bb.max.z) / 2);
+      // Wheels: each wheel group sits at the model origin; give it a pivot at its own hub.
+      const wheels = [];
+      const groups = [];
+      model.traverse((o) => { if (/Wheel/i.test(o.name) && !o.isMesh && o.children.length) groups.push(o); });
+      for (const w of groups) {
+        const c = new THREE.Box3().setFromObject(w).getCenter(new THREE.Vector3());
+        const wb = new THREE.Box3().setFromObject(w);
+        const pivot = new THREE.Group();
+        pivot.position.copy(c);
+        pivot.userData.radius = Math.max(0.05, (wb.max.y - wb.min.y) / 2) * k;
+        w.parent.add(pivot);
+        pivot.add(w);
+        w.position.sub(c);
+        wheels.push(pivot);
+      }
+      const tint = a.appearance?.color ? new THREE.Color(a.appearance.color) : null;
+      model.traverse((o) => {
+        o.userData.actorId = a.id;
+        if (!o.isMesh) return;
+        o.castShadow = true; o.receiveShadow = true;
+        if (tint && /^(Blue|White|Red|Body|Main)/.test(o.material?.name || "")) { o.material = o.material.clone(); o.material.color.copy(tint); }
+      });
+      for (const ch of g.children) ch.visible = false;
+      holder.add(model);
+      g.add(holder);
+      g.userData.vehicleBody = holder;
+      g.userData.wheelRig = wheels;
+      this.setFrame(this.frame);
+    }).catch((err) => console.warn("Soundstage: car model failed, keeping the built one", err));
+  }
+
+  // ---------- imported models (GLB / glTF) ----------
+  _glbPlaceholder(a) {
+    const g = new THREE.Group();
+    g.userData.limbs = [];
+    const box = this._mesh(new THREE.BoxGeometry(0.6, a.height_m || 1.7, 0.6));
+    box.position.y = (a.height_m || 1.7) / 2;
+    g.add(box);
+    const format = a.format || formatOf(a.url);
+    const fit = (obj, size) => {
+      // Sit on the floor, centred; keep real size unless it's clearly in the wrong units (cm, mm).
+      let k = 1;
+      if (size.y > 60 || size.y < 0.05) k = (a.height_m || 1.7) / Math.max(1e-6, size.y);
+      return k;
+    };
+    loadAsset(a.url, format).then(async (asset) => {
+      if (this.actorMeshes.get(a.id) !== g) return; // set rebuilt meanwhile
+      if (asset.splat) return this._attachSplat(a, g, fit);
+      const model = SkeletonUtils.clone(asset.scene);
+      model.traverse((o) => {
+        if (o.isMesh) {
+          o.castShadow = true; o.receiveShadow = true;
+          if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals(); // generated meshes often lack normals
+        }
+        o.userData.actorId = a.id; // ID pass / picking; Clay view uses the clay override, Color keeps the real materials
+      });
+      if (a.set_xform) {
+        // A location rebuilt from a photo (DA3): stage = flip * v * scale + offset, no centring or fitting.
+        const { scale = 1, offset = [0, 0, 0] } = a.set_xform;
+        const flip = a.set_xform.flip_xyz || a.set_xform.flip || [1, 1, 1];
+        model.scale.set(flip[0] * scale, flip[1] * scale, flip[2] * scale);
+        model.position.set(...offset);
+        if (a.set_xform.quat) model.quaternion.set(...a.set_xform.quat); // Video → Stage: the first camera's tilt
+        model.traverse((o) => { if (o.isMesh) o.castShadow = false; });
+        g.clear();
+        g.add(model);
+        this.setFrame(this.frame);
+        return;
+      }
+      const bb = new THREE.Box3().setFromObject(model);
+      const size = bb.getSize(new THREE.Vector3());
+      const k = fit(model, size);
+      model.scale.multiplyScalar(k);
+      bb.setFromObject(model);
+      const c = bb.getCenter(new THREE.Vector3());
+      model.position.x -= c.x;
+      model.position.z -= c.z;
+      model.position.y -= bb.min.y;
+      if (!a.height_m_set) { a.height_m = +(size.y * k).toFixed(2); a.height_m_set = true; }
+      g.clear();
+      g.add(model);
+      if (asset.animations?.length) {
+        g.userData.mixer = new THREE.AnimationMixer(model);
+        const clip = asset.animations.find((x) => x.name === a.clip) || asset.animations[0];
+        g.userData.mixer.clipAction(clip).play();
+        g.userData.clips = asset.animations.map((x) => x.name);
+      }
+      this.setFrame(this.frame);
+    }).catch((err) => { console.warn("Soundstage: model load failed", a.url, err); this.onStatus?.(`Couldn't load ${a.name}: ${err.message}`); });
+    return g;
+  }
+
+  /** A Gaussian splat (Spark) shown in Color view, plus a clay stand-in that drives clay, depth and ID passes. */
+  async _attachSplat(a, g, fit) {
+    const { SparkRenderer, SplatMesh } = await loadSpark();
+    if (!this._spark) {
+      this._spark = new SparkRenderer({ renderer: this.renderer });
+      this.scene.add(this._spark);
+    }
+    const splat = new SplatMesh({ url: a.url });
+    await splat.initialized;
+    if (this.actorMeshes.get(a.id) !== g) { splat.dispose?.(); return; }
+    // Most splat files are Y-down (COLMAP/3DGS convention); flip upright unless told otherwise.
+    if (a.splat_up !== "y") splat.quaternion.setFromEuler(new THREE.Euler(Math.PI, 0, 0));
+    splat.updateMatrixWorld(true);
+    const local = splat.getBoundingBox?.() || new THREE.Box3(new THREE.Vector3(-0.5, 0, -0.5), new THREE.Vector3(0.5, 1, 0.5));
+    const bb = local.clone().applyMatrix4(splat.matrix);
+    const size = bb.getSize(new THREE.Vector3());
+    const k = fit(splat, size);
+    const holder = new THREE.Group();
+    holder.add(splat);
+    holder.scale.setScalar(k);
+    const c = bb.getCenter(new THREE.Vector3());
+    holder.position.set(-c.x * k, -bb.min.y * k, -c.z * k);
+    splat.userData.splatOnly = true;
+    // Clay stand-in: the splat's own mesh (SplatToMesh GLB, same frame) when there is one, else an ellipsoid.
+    let proxy;
+    if (a.proxy_url) {
+      try {
+        const gl = await loadAsset(a.proxy_url, "glb");
+        proxy = SkeletonUtils.clone(gl.scene);
+        proxy.quaternion.copy(splat.quaternion);
+        holder.add(proxy);
+        proxy.traverse((o) => {
+          o.userData.actorId = a.id;
+          if (!o.isMesh) return;
+          o.castShadow = true; o.receiveShadow = true;
+          if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals(); // SplatToMesh GLBs ship without normals
+        });
+      } catch (err) { console.warn("Soundstage: splat proxy failed", err); proxy = null; }
+    }
+    if (!proxy) {
+      proxy = this._mesh(new THREE.SphereGeometry(0.5, 24, 16));
+      proxy.scale.copy(size).multiplyScalar(k);
+      proxy.position.set(0, (size.y * k) / 2, 0);
+      proxy.userData.actorId = a.id;
+    }
+    proxy.userData.proxyOnly = true;
+    if (!a.height_m_set) { a.height_m = +(size.y * k).toFixed(2); a.height_m_set = true; }
+    g.clear();
+    g.add(holder);
+    if (!proxy.parent) g.add(proxy);
+    this._applySplatVisibility(this.view);
+    this.setFrame(this.frame);
+    this._kickSplats();
+  }
+
+  _hasSplats() {
+    let any = false;
+    this.root?.traverse((o) => { if (o.userData.splatOnly) any = true; });
+    return any;
+  }
+
+  /** Spark sorts splats in a worker; give it a few renders (with yields) to catch up with the camera. */
+  async _settleSplats(mode, n, waitMs = 0) {
+    for (let i = 0; i < n; i++) {
+      this._renderMode(mode, true);
+      await (waitMs ? new Promise((r) => setTimeout(r, waitMs)) : yieldToBrowser());
+    }
+  }
+
+  /** After a splat loads (or the view changes to Color), keep rendering briefly so it appears sorted. */
+  _kickSplats() {
+    if (this._kickT) return;
+    let n = 0;
+    const tick = () => {
+      this.render();
+      if (++n < 20) this._kickT = setTimeout(tick, 50);
+      else this._kickT = null;
+    };
+    tick();
+  }
+
+  /** Splats render only in Color view; their clay stand-ins render everywhere else (clay, depth, ID, wire). */
+  _applySplatVisibility(mode) {
+    const color = mode === "color";
+    // Spark draws from its last sorted state, so hiding a splat alone lags a frame: hide the renderer too.
+    if (this._spark) this._spark.visible = color;
+    this.root?.traverse((o) => {
+      if (o.userData.splatOnly) o.visible = color;
+      else if (o.userData.proxyOnly) o.visible = !color;
+    });
+  }
+
+  // ---------- interiors (floor plan / dimensions) and measurement ----------
+  /**
+   * Build a true-scale interior from a plan spec (see interior.mjs). Fixtures become ordinary,
+   * editable actors; the camera moves to eye height in the largest room unless camera:false.
+   */
+  setInterior(spec, { fixtures = true, camera = true } = {}) {
+    if (!spec?.rooms?.length) { delete this.state.interior; this._buildSet(); this.setFrame(this.frame); this.onChange(this.toJSON()); return; }
+    const s = normalizeSpec({ ...spec, north_up: true });
+    this.state.interior = { units: "m", ceiling_m: s.ceiling_m, wall_thickness_m: s.wall_thickness_m, rooms: s.rooms,
+      openings: s.openings, fixtures: s.fixtures, warnings: spec.warnings || [], north_up: true };
+    this.state.environment = { ...(this.state.environment || {}), set: "empty" };
+    if (fixtures) {
+      this.state.actors = this.state.actors.filter((a) => !a.from_interior);
+      for (const f of fixtureActors(this.state.interior)) {
+        const kind = resolveKind(f.kind) || f.kind;
+        if (!LIBRARY[kind]) continue;
+        const spec = LIBRARY[kind];
+        const id = `${kind}_${Math.random().toString(36).slice(2, 8)}`;
+        this.state.actors.push({ id, name: f.name || spec.label || kind, kind, height_m: spec.height || 1, from_interior: true,
+          position: f.position, keys: [{ frame: 0, position: [...f.position] }], rotation_deg: f.rotation_deg });
+      }
+    }
+    // A warm ceiling practical in every room, so interiors aren't lit only through the windows.
+    const L = this.state.lighting || (this.state.lighting = clone(DEFAULT_SCENE.lighting));
+    L.lights = (L.lights || []).filter((l) => !l.from_interior);
+    for (const r of this.state.interior.rooms) {
+      const [cx, cz] = toStage(s, r.x + r.w / 2, r.z + r.d / 2);
+      L.lights.push({ id: `light_room_${Math.random().toString(36).slice(2, 7)}`, type: "practical", name: `${r.name} ceiling light`,
+        position: [+cx.toFixed(2), +(s.ceiling_m - 0.15).toFixed(2), +cz.toFixed(2)], target: [+cx.toFixed(2), 0, +cz.toFixed(2)],
+        kelvin: 3300, intensity: 1.2 + Math.min(1.5, (r.w * r.d) / 20), softness: 1, angle: 170, from_interior: true });
+    }
+    this._buildLights?.();
+    if (camera) {
+      const cam = interiorCamera(this.state.interior);
+      if (cam) this.activeShot().camera_keys = [{ frame: 0, ...cam }];
+    }
+    this._buildSet();
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    return this.state.interior;
+  }
+
+  /** Measure overlay: W×D×H of the selection, a 1.75 m ghost for scale, and the floor grid (viewport only). */
+  setMeasure(on) { this.measure = !!on; this.render(); }
+  /** Snap the gizmo: 0.1 m moves, 15° turns, 0.05 scale steps. */
+  setSnap(on) {
+    this.snap = !!on;
+    this.tc.setTranslationSnap(on ? 0.1 : null);
+    this.tc.setRotationSnap(on ? THREE.MathUtils.degToRad(15) : null);
+    this.tc.setScaleSnap(on ? 0.05 : null);
+  }
+
+  _measureOverlay(cam, show) {
+    if (!this.gizmoScene || !this.canvas?.parentElement) return; // not built yet (first render happens in the constructor)
+    if (!this._measureEl) {
+      this._measureEl = Object.assign(document.createElement("div"), { className: "ss-measure" });
+      this._measureEl.style.cssText = "position:absolute;pointer-events:none;transform:translate(-50%,-100%);padding:3px 8px;border-radius:999px;" +
+        "background:rgba(33,25,39,.8);color:#f2ff59;font:600 11px/1.3 'Soundstage Grotesk',system-ui,sans-serif;white-space:nowrap;border:1px solid rgba(255,255,255,.12);display:none;z-index:3";
+      this.canvas.parentElement?.appendChild(this._measureEl);
+      this._ghost = new THREE.Group();
+      const ghostMat = new THREE.MeshBasicMaterial({ color: 0xf2ff59, transparent: true, opacity: 0.22, depthWrite: false });
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 1.75 - 0.4 - 0.24, 4, 12), ghostMat);
+      body.position.y = (1.75 - 0.24) / 2;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12), ghostMat);
+      head.position.y = 1.75 - 0.12;
+      this._ghost.add(body, head);
+      this.gizmoScene.add(this._ghost);
+      this._grid = new THREE.GridHelper(40, 40, 0x6f6280, 0x3b3345);
+      this._grid.material.transparent = true;
+      this._grid.material.opacity = 0.55;
+      this._grid.position.y = 0.003;
+      this.scene.add(this._grid);
+    }
+    this._grid.visible = show;
+    const g = show && this.selected ? this.actorMeshes.get(this.selected) : null;
+    if (!g) { this._measureEl.style.display = "none"; this._ghost.visible = false; return; }
+    const bb = new THREE.Box3().setFromObject(g);
+    const size = bb.getSize(new THREE.Vector3());
+    const top = new THREE.Vector3((bb.min.x + bb.max.x) / 2, bb.max.y, (bb.min.z + bb.max.z) / 2).project(cam);
+    const r = this.canvas.getBoundingClientRect(), pr = this.canvas.parentElement.getBoundingClientRect();
+    const f = (v) => (v >= 10 ? v.toFixed(1) : v.toFixed(2));
+    this._measureEl.textContent = `W ${f(size.x)} · D ${f(size.z)} · H ${f(size.y)} m`;
+    this._measureEl.style.left = `${r.left - pr.left + ((top.x + 1) / 2) * r.width}px`;
+    this._measureEl.style.top = `${r.top - pr.top + ((1 - top.y) / 2) * r.height - 6}px`;
+    this._measureEl.style.display = top.z < 1 ? "block" : "none";
+    this._ghost.visible = true;
+    this._ghost.position.set(bb.max.x + 0.45, 0, (bb.min.z + bb.max.z) / 2);
+  }
+
+  // ---------- 2.5D cards and the backdrop plate ----------
+  _cardPlaceholder(a) {
+    const g = new THREE.Group();
+    g.userData.limbs = [];
+    const h = a.height_m || 1.7;
+    const tmp = this._mesh(new THREE.BoxGeometry(h * 0.5, h, 0.02));
+    tmp.position.y = h / 2;
+    g.add(tmp);
+    buildCard(a.url, h).then(({ mesh }) => {
+      if (this.actorMeshes.get(a.id) !== g) return;
+      mesh.userData.actorId = a.id;
+      g.clear();
+      g.add(mesh);
+      this.setFrame(this.frame);
+    }).catch((err) => { console.warn("Soundstage: card load failed", a.url, err); this.onStatus?.(`Couldn't load ${a.name}: ${err.message}`); });
+    return g;
+  }
+
+  /** Stand an image up in the set as a card (cut-out PNG = silhouette card; opaque image = flat), facing the camera. */
+  addCard(name, url, heightM = 1.7) {
+    const id = `card_${Date.now().toString(36)}`;
+    const cam = this._cameraAt(this.frame);
+    const pos = new THREE.Vector3(...cam.position);
+    const dir = new THREE.Vector3(...cam.target).sub(pos).setY(0).normalize();
+    const spot = pos.clone().add(dir.multiplyScalar(6));
+    const p = [+spot.x.toFixed(2), 0, +spot.z.toFixed(2)];
+    const face = THREE.MathUtils.radToDeg(Math.atan2(cam.position[0] - p[0], cam.position[2] - p[2]));
+    this.state.actors.push({ id, name, kind: "card", url, position: p, keys: [{ frame: 0, position: [...p] }],
+      height_m: heightM, rotation_deg: Math.round(face) });
+    this._buildSet();
+    this.select(id);
+    this.onChange(this.toJSON());
+    return name;
+  }
+
+  /** A photo behind everything (Color view, and the viewport while blocking). Never in the clay/depth/ID passes. */
+  setBackdrop(url) {
+    if (url) this.state.backdrop = { url }; else delete this.state.backdrop;
+    this._backdropTex = null;
+    if (url) {
+      loadBackdrop(url).then((tex) => {
+        if (this.state.backdrop?.url !== url) return;
+        this._backdropTex = tex;
+        this.render();
+      }).catch((err) => this.onStatus?.(`Couldn't load the backdrop: ${err.message}`));
+    }
+    this.render();
+    this.onChange(this.toJSON());
+  }
+
+  /** Add an uploaded model or splat by URL (served by ComfyUI /view). format: glb, fbx, obj, ply, stl, spz, splat… */
+  addModel(name, url, format = formatOf(name), extra = {}) {
+    const id = `glb_${Date.now().toString(36)}`;
+    const cam = this._cameraAt(this.frame);
+    const pos = new THREE.Vector3(...cam.position);
+    const dir = new THREE.Vector3(...cam.target).sub(pos).setY(0).normalize();
+    const spot = pos.add(dir.multiplyScalar(7));
+    const p = [+spot.x.toFixed(2), 0, +spot.z.toFixed(2)];
+    if (extra.set_xform) p.splice(0, 3, 0, 0, 0); // a photo-built set sits where its camera says
+    this.state.actors.push({ id, name, kind: "glb", format, url, position: p, keys: [{ frame: 0, position: [...p] }], height_m: 1.7,
+      rotation_deg: 0, ...extra });
+    this._buildSet();
+    this.select(id);
+    this.onChange(this.toJSON());
+    return name;
+  }
+
+  /** The whole set (objects, set, lights) as a binary glTF Blob. */
+  async exportGLB() {
+    const keep = this.selRing?.visible;
+    if (this.selRing) this.selRing.visible = false;
+    const blob = await new Promise((resolve, reject) => new GLTFExporter().parse(this.root,
+      (glb) => resolve(new Blob([glb], { type: "model/gltf-binary" })), reject, { binary: true, onlyVisible: true }));
+    if (this.selRing) this.selRing.visible = keep;
+    return blob;
+  }
+
+  // ---------- undo / redo ----------
+  /** Record the current state (called after every edit; consecutive edits within 400 ms merge). */
+  _record() {
+    const snap = JSON.stringify(this.state);
+    this._hist = this._hist || [];
+    this._redo = [];
+    if (this._hist[this._hist.length - 1] === snap) return;
+    // Merge only a continuous gesture (a drag or slider move): same kind of edit, < 300 ms apart.
+    const now = performance.now();
+    const gesture = this._dragging || window.__ssSliding;
+    if (gesture && this._hist.length > 1 && now - (this._lastRec || 0) < 300) this._hist[this._hist.length - 1] = snap;
+    else this._hist.push(snap);
+    this._lastRec = now;
+    if (this._hist.length > 120) this._hist.shift();
+  }
+
+  _restore(snap) {
+    this._lastRec = 0;
+    this.state = JSON.parse(snap);
+    this.camera.aspect = this.fw / this.fh;
+    this._buildSet();
+    this._applySun();
+    this.setFrame(this.frame);
+    this._muteRecord = true;
+    this.onChange(this.toJSON());
+    this._muteRecord = false;
+    this.onShots?.();
+    this.onSelect?.(this.selectedInfo());
+  }
+
+  /** True when the active shot's camera rides in or on a vehicle (in-car, hood, bumper): long lenses make no sense there. */
+  cameraInsideVehicle(frame = this.frame) {
+    const host = this._followActor?.();
+    if (!host || LIBRARY[host.kind]?.rig !== "vehicle") return false;
+    const g = this.actorMeshes.get(host.id);
+    if (!g) return false;
+    const cam = this._cameraAt(frame);
+    // Inside, or mounted on it (hood / bumper cams sit just outside the body): both are tight, wide-lens spaces.
+    return new THREE.Box3().setFromObject(g).expandByScalar(0.6).containsPoint(new THREE.Vector3(...cam.position));
+  }
+
+  /** A style's suggested lens for the current shot; in or on a vehicle the shot keeps its own (cabin) lens. */
+  styleFocal(mm) {
+    return this.cameraInsideVehicle() ? this._cameraAt(this.frame).focal_mm : mm;
+  }
+
+  /** Start the undo history at the current scene (a freshly opened workflow or preset: Undo never goes past it). */
+  resetHistory() {
+    this._hist = [JSON.stringify(this.state)];
+    this._redo = [];
+    this._lastRec = 0;
+  }
+
+  undo() {
+    if (!this._hist || this._hist.length < 2) return false;
+    this._redo.push(this._hist.pop());
+    this._restore(this._hist[this._hist.length - 1]);
+    return true;
+  }
+
+  redo() {
+    if (!this._redo?.length) return false;
+    const snap = this._redo.pop();
+    this._hist.push(snap);
+    this._restore(snap);
+    return true;
+  }
+
+  duplicateSelected() {
+    const a = this.state.actors.find((x) => x.id === this.selected);
+    if (!a) return null;
+    const c = clone(a);
+    c.id = `${a.kind || "obj"}_${Date.now().toString(36)}`;
+    c.name = `${a.name} copy`;
+    const off = Math.max(1, (a.height_m || 1) * 0.8);
+    c.keys = this._actorKeys(c).map((k) => ({ ...k, position: [k.position[0] + off, k.position[1], k.position[2]] }));
+    c.position = c.keys[0].position;
+    this.state.actors.push(c);
+    this._buildSet();
+    this.select(c.id);
+    this.onChange(this.toJSON());
+    return c.name;
+  }
+
+  scaleSelected(factor) {
+    const a = this.state.actors.find((x) => x.id === this.selected);
+    if (!a) return;
+    a.scale = Math.max(0.05, Math.min(20, factor));
+    this.actorMeshes.get(a.id)?.scale.setScalar(a.scale);
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  /** Everything on the stage, for the outliner. */
+  outline() {
+    return [
+      ...this.state.actors.map((a) => ({ id: a.id, type: "object", name: a.name, kind: a.kind })),
+      ...(this.state.lighting?.lights || []).map((l) => ({ id: l.id, type: "light", name: l.name, kind: l.type })),
+    ];
+  }
+
+  /** Change set / weather / density / water level, e.g. setEnvironment({ set: "water_tank" }). */
+  setEnvironment(patch) {
+    this.state.environment = { ...(this.state.environment || {}), ...patch };
+    this._buildSet();
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  /** Add an LLM-designed stand-in (recipe from /soundstage/object). */
+  addCustom(name, recipe) {
+    const n = this.state.actors.filter((a) => a.name?.startsWith(name)).length + 1;
+    const id = `custom_${Date.now().toString(36)}`;
+    const cam = this._cameraAt(this.frame);
+    const pos = new THREE.Vector3(...cam.position);
+    const dir = new THREE.Vector3(...cam.target).sub(pos).setY(0).normalize();
+    const k = this.state.actors.length;
+    const footprint = Math.max(recipe.size_m?.[0] || 1, recipe.size_m?.[2] || 1);
+    const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(((k % 5) - 2) * Math.max(2.4, footprint));
+    const spot = pos.add(dir.multiplyScalar(Math.max(7, footprint * 2.5))).add(side);
+    const p = [+spot.x.toFixed(2), 0, +spot.z.toFixed(2)];
+    const label = n > 1 ? `${name} ${n}` : name;
+    this.state.actors.push({ id, name: label, kind: "custom", recipe, position: p, keys: [{ frame: 0, position: [...p] }],
+      height_m: recipe.size_m?.[1] || 1, rotation_deg: 0 });
+    this._buildSet();
+    this.select(id);
+    this.onChange(this.toJSON());
+    return label;
+  }
+
+  /** Put the selected character (or `riderId`) on another object: horse, bike, car, bench… */
+  mount(riderId, hostId, pose = null, atFrame = 0, seat = null) {
+    const r = this.state.actors.find((x) => x.id === riderId), h = this.state.actors.find((x) => x.id === hostId);
+    if (!r || !h || r.id === h.id) return false;
+    r.mount_id = h.id;
+    if (seat != null && SEATS[h.kind]) r.seat = seat; else delete r.seat;
+    r.pose = pose || MOUNTS[h.kind]?.pose || "sit";
+    if (atFrame > 0) r.mount_at = Math.round(atFrame); else delete r.mount_at; // timed: on foot until then, then hops on
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    return true;
+  }
+
+  unmount(riderId) {
+    const r = this.state.actors.find((x) => x.id === riderId);
+    if (!r?.mount_id) return;
+    const g = this.actorMeshes.get(r.id);
+    const p = [+g.position.x.toFixed(2), 0, +(g.position.z + 1.2).toFixed(2)];
+    delete r.mount_id; delete r.pose; delete r.mount_at;
+    r.keys = [{ frame: 0, position: p }];
+    applyPose(g, "stand");
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  /** Change how a character or object looks (wardrobe, hair, colours…). */
+  setAppearance(patch) {
+    const a = this.state.actors.find((x) => x.id === this.selected);
+    if (!a) return;
+    a.appearance = { ...(a.appearance || {}), ...patch };
+    this._buildSet();
+    this.select(a.id);
+    this.onChange(this.toJSON());
+  }
+
+  select(id) {
+    this.selected = id && this.actorMeshes.has(id) ? id : null;
+    this._attachGizmo();
+    this.setFrame(this.frame);
+    this.onSelect?.(this.selectedInfo());
+  }
+
+  /** "translate" | "rotate" | "scale" */
+  setGizmoMode(mode) {
+    this.gizmoMode = mode;
+    this.tc.setMode(mode);
+    this.tc.showX = mode !== "rotate";
+    this.tc.showY = mode !== "translate";
+    this.tc.showZ = mode !== "rotate";
+    this.render?.();
+    this.onGizmoMode?.(mode);
+  }
+
+  _attachGizmo() {
+    const a = this.state.actors.find((x) => x.id === this.selected);
+    const g = a && this.actorMeshes.get(a.id);
+    if (g && !a.mount_id && !a.set_xform) { this.tc.attach(g); this._gizmoOn = true; }
+    else { this.tc.detach(); this._gizmoOn = false; }
+  }
+
+  _gizmoToActor() {
+    const a = this.state.actors.find((x) => x.id === this.selected);
+    const g = this.tc.object;
+    if (!a || !g) return;
+    if (this.gizmoMode === "translate") {
+      this._editActorKey(a).position = [+g.position.x.toFixed(2), 0, +g.position.z.toFixed(2)];
+    } else if (this.gizmoMode === "rotate") {
+      a.rotation_deg = Math.round(THREE.MathUtils.radToDeg(g.rotation.y));
+    } else {
+      // Uniform: follow whichever handle moved most.
+      const s0 = this._gizmoScale0 || 1;
+      const s = [g.scale.x, g.scale.y, g.scale.z].reduce((m, v) => (Math.abs(v - s0) > Math.abs(m - s0) ? v : m), s0);
+      a.scale = +Math.max(0.05, Math.min(20, s)).toFixed(3);
+      g.scale.setScalar(a.scale);
+    }
+    this.setFrame(this.frame);
+    this.onSelect?.(this.selectedInfo());
+  }
+
+  selectedInfo() {
+    const a = this.state.actors.find((x) => x.id === this.selected);
+    return a ? { id: a.id, name: a.name, kind: a.kind, rotation_deg: a.rotation_deg || 0, height_m: a.height_m, scale: a.scale || 1,
+      appearance: a.appearance || null, mount_id: a.mount_id || null, pose: a.pose || null, seat: a.seat ?? null,
+      beam: a.beam || "steady" } : null;
+  }
+
+  /** Which seat a rider takes in a vehicle (index into SEATS[kind]). */
+  setSeat(id, seat) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a?.mount_id) return;
+    a.seat = seat;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  removeSelected() {
+    if (!this.selected) return;
+    this.state.actors = this.state.actors.filter((a) => a.id !== this.selected);
+    this.selected = null;
+    this._buildSet();
+    this.setFrame(this.frame);
+    this.onSelect?.(null);
+    this.onChange(this.toJSON());
+  }
+
+  rotateSelected(deg) {
+    const a = this.state.actors.find((x) => x.id === this.selected);
+    if (!a) return;
+    a.rotation_deg = deg;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  setFocal(mm) {
+    this._editCamera().focal_mm = mm;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+
+
+  setView(mode) {
+    this.view = mode;
+    if (mode === "color" && this._hasSplats()) this._kickSplats();
+    this.render();
+  }
+
+  load(scene) {
+    if (!scene || typeof scene !== "object" || !scene.camera) return;
+    this.state = clone(scene);
+    if (!this.state.shot) this.state.shot = { frames: 97, fps: 24 };
+    this.camera.aspect = this.fw / this.fh;
+    if (this.viewCam) { this.viewCam.aspect = this.fw / this.fh; this.viewCam.updateProjectionMatrix(); }
+    this._snap = null;
+    if (!this.state.lighting) this.state.lighting = clone(DEFAULT_SCENE.lighting);
+    if (!this.state.environment) this.state.environment = { set: "plaza", weather: "none", density: 0.5, water_level: 2.5 };
+    this._buildSet();
+    this._applySun();
+    this._backdropTex = null;
+    const bd = this.state.backdrop?.url;
+    if (bd) loadBackdrop(bd).then((tex) => { if (this.state.backdrop?.url === bd) { this._backdropTex = tex; this.render(); } }).catch(() => {});
+    this.setKey("start");
+  }
+
+  toJSON() {
+    return clone(this.state);
+  }
+
+  resize() {
+    // A capture owns the renderer size; a layout change mid-capture (progress text, App panel) must
+    // not shrink it, or every frame after the first yield comes out tiny. Re-fit once it's done.
+    if (this._capturing) { this._resizePending = true; return; }
+    const w = Math.max(240, this.canvas.parentElement?.clientWidth || this.fw);
+    this.renderer.setSize(w, Math.round((w * this.fh) / this.fw), false);
+    this.render();
+  }
+
+  /** Flat, distinct colour per object for the ID (matte) pass. */
+  idColors() {
+    const out = {};
+    this.state.actors.forEach((a, i) => {
+      const hue = (i * 0.6180339887) % 1; // golden-ratio hues stay far apart
+      const c = new THREE.Color().setHSL(hue, 1, 0.5);
+      out[a.id] = [Math.round(c.r * 255), Math.round(c.g * 255), Math.round(c.b * 255)];
+    });
+    return out;
+  }
+
+  /** Render the ID pass: each object its own flat colour, everything else black. */
+  _renderId(cam) {
+    const colors = this.idColors();
+    const black = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const saved = [];
+    this.scene.traverse((o) => {
+      if (o.userData.splatOnly) { saved.push([o, o.material, o.visible]); o.visible = false; return; }
+      if (o.isMesh || o.isPoints || o.isLineSegments) {
+        saved.push([o, o.material, o.visible]);
+        const id = o.userData.actorId;
+        if (id && colors[id]) {
+          o.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(...colors[id].map((v) => v / 255)) });
+        } else if (o.userData.lightId || o.isPoints || o.isLineSegments || o.userData.water) {
+          o.visible = false;
+        } else {
+          o.material = black;
+        }
+      }
+    });
+    const bg = this.scene.background, fog = this.scene.fog, ov = this.scene.overrideMaterial;
+    this.scene.background = new THREE.Color(0x000000);
+    this.scene.fog = null;
+    this.scene.overrideMaterial = null;
+    if (this.camHelper) this.camHelper.visible = false;
+    this.renderer.render(this.scene, cam);
+    for (const [o, m, v] of saved) { if (o.material !== m) o.material.dispose?.(); o.material = m; o.visible = v; }
+    this.scene.background = bg; this.scene.fog = fog; this.scene.overrideMaterial = ov;
+  }
+
+  _renderMode(mode, forCapture = false) {
+    this._applySplatVisibility(mode);
+    if (this.tcHelper) {
+      this.tcHelper.visible = !forCapture && !!this._gizmoOn && mode !== "id";
+      if (!forCapture) this.tc.camera = this._viewportCamera?.() || this.camera;
+    }
+    if (mode === "id") return this._renderId(this.camera);
+    if (this.selRing) this.selRing.visible = !forCapture && !!this.actorMeshes.get(this.selected);
+    for (const h of this.lightHandles?.values() || []) h.visible = !forCapture && mode !== "depth";
+    const env = this.state.environment || {};
+    const viewCam = forCapture ? this.camera : this._viewportCamera?.() || this.camera;
+    const underwater = this._isUnderwater(viewCam);
+    if (this.weather) this.weather.object.visible = mode !== "depth";
+    if (this.water) this.water.visible = true;
+    if (mode === "clay" && underwater) {
+      this.scene.fog = new THREE.FogExp2(0x2f4a5c, 0.06);
+    } else if (mode === "clay" && env.weather === "fog") {
+      this.scene.fog = new THREE.Fog(0x9aa3ad, 2, 12 + (1 - (env.density ?? 0.5)) * 60);
+    } else {
+      this.scene.fog = null;
+    }
+    if (mode === "depth") {
+      this.scene.background = new THREE.Color(0x000000);
+      this.scene.overrideMaterial = depthMaterial;
+    } else if (mode === "wire") {
+      this.scene.background = new THREE.Color(0x0d1117);
+      this.scene.overrideMaterial = this.wireMat;
+    } else if (mode === "color") {
+      const env = this.state.environment || {};
+      const vc = forCapture ? this.camera : this._viewportCamera?.() || this.camera;
+      const underwater = this._isUnderwater(vc);
+      const sky = { night: 0x0b1020, "blue hour": 0x26324d, "dawn/dusk": 0x4a3a44, "magic hour": 0xd9a46a,
+        "golden hour": 0xc9b89a, overcast: 0xb9bec4, daylight: 0x9cc3e6 }[this.skyPhase] ?? 0x9cc3e6;
+      this.scene.background = new THREE.Color(underwater ? 0x1f4256 : env.set === "studio" ? 0xd8d8d8 : sky);
+      if (this._backdropTex) { coverFit(this._backdropTex, this.renderer.domElement.width / this.renderer.domElement.height); this.scene.background = this._backdropTex; }
+      this.scene.overrideMaterial = null;
+    } else {
+      const env = this.state.environment || {};
+      const vc = forCapture ? this.camera : this._viewportCamera?.() || this.camera;
+      const underwater = this._isUnderwater(vc);
+      this.scene.background = new THREE.Color(underwater ? 0x2f4a5c : env.set === "studio" ? 0x8e9298 : 0x2b2f36);
+      // While blocking, show the plate behind the clay so actors can be placed in it; captures stay clean.
+      if (this._backdropTex && !forCapture) { coverFit(this._backdropTex, this.renderer.domElement.width / this.renderer.domElement.height); this.scene.background = this._backdropTex; }
+      this.scene.overrideMaterial = this.clayMat;
+    }
+    const cam = forCapture ? this.camera : this._viewportCamera?.() || this.camera;
+    if (this.camHelper) {
+      this.camHelper.visible = !forCapture && !!this.freeView;
+      if (this.camHelper.visible) this.camHelper.update();
+    }
+    // Interiors: in the viewport (never in captures) hide the ceilings when looking from above or in Free view,
+    // and cut away the exterior walls between the camera and the rooms, like a dollhouse.
+    const cutaway = [];
+    if (this.interiorGroup && !forCapture && this.cutaway !== false) {
+      const bb = new THREE.Box3().setFromObject(this.interiorGroup);
+      const p = cam.position;
+      for (const m of this.interiorGroup.children) {
+        let hide = false;
+        if (m.userData.ceiling) hide = this.freeView || p.y > (this.state.interior?.ceiling_m || 2.4);
+        else if (m.userData.wall) {
+          const w = m.userData.wall;
+          if (w.axis === "z") hide = (p.z < bb.min.z && w.at <= bb.min.z + 0.2) || (p.z > bb.max.z && w.at >= bb.max.z - 0.2);
+          else hide = (p.x < bb.min.x && w.at <= bb.min.x + 0.2) || (p.x > bb.max.x && w.at >= bb.max.x - 0.2);
+        }
+        if (hide && m.visible) { m.visible = false; cutaway.push(m); }
+      }
+    }
+    // Measurement aids are for the viewport only.
+    if (!forCapture) this._measureOverlay(cam, this.measure !== false);
+    else { if (this._grid) this._grid.visible = false; if (this._ghost) this._ghost.visible = false; }
+    // With a backdrop plate the photo is the ground: the floor becomes a shadow catcher in Color, and is
+    // hidden behind the clay while blocking in the viewport (the clay/depth captures keep the real floor).
+    let groundMat = null, groundVis = null;
+    if (this._backdropTex && this.ground) {
+      if (mode === "color") {
+        groundMat = this.ground.material;
+        this.ground.material = this._shadowCatcher ||= new THREE.ShadowMaterial({ opacity: 0.38 });
+      } else if (mode === "clay" && !forCapture) {
+        groundVis = this.ground.visible;
+        this.ground.visible = false;
+      }
+    }
+    this._inRender = true;
+    this.renderer.render(this.scene, cam);
+    if (!forCapture && this.tcHelper?.visible) {
+      const auto = this.renderer.autoClear;
+      this.renderer.autoClear = false;
+      this.renderer.clearDepth();
+      this.renderer.render(this.gizmoScene, cam);
+      this.renderer.autoClear = auto;
+    }
+    this._inRender = false;
+    if (groundMat) this.ground.material = groundMat;
+    if (groundVis !== null) this.ground.visible = groundVis;
+    for (const m of cutaway) m.visible = true;
+    if (!forCapture) this.onRendered?.(cam);
+  }
+
+  render() {
+    this._renderMode(this.view);
+  }
+
+  /** Render one pass at the delivery frame size and return it as a PNG Blob. */
+  async capture(mode) {
+    const prev = new THREE.Vector2();
+    this.renderer.getSize(prev);
+    this.renderer.setSize(this.fw, this.fh, false);
+    this._renderMode(mode, true);
+    const blob = await new OffscreenCanvas(this.fw, this.fh).getContext("2d").canvas.convertToBlob
+      ? await (async () => { const oc = new OffscreenCanvas(this.fw, this.fh); oc.getContext("2d").drawImage(this.canvas, 0, 0); return oc.convertToBlob({ type: "image/png" }); })()
+      : await new Promise((res) => this.canvas.toBlob(res, "image/png"));
+    this.renderer.setSize(prev.x, prev.y, false);
+    this.render();
+    return blob;
+  }
+
+  /**
+   * Render every frame of the shot for one pass and pack them into a single sprite sheet
+   * (row-major grid of this.fw x this.fh tiles), so a whole shot uploads as one image.
+   * Returns {blob, cols, rows, frames}.
+   */
+  async captureSequence(mode, onProgress) {
+    const frames = Math.max(1, this.state.shot?.frames || 97);
+    const cols = Math.min(frames, Math.floor(16000 / this.fw));
+    const rows = Math.ceil(frames / cols);
+    // OffscreenCanvas + convertToBlob keep working when the browser tab is in the background
+    // (a hidden tab defers HTMLCanvasElement.toBlob callbacks indefinitely).
+    const sheet = new OffscreenCanvas(cols * this.fw, rows * this.fh);
+    const ctx = sheet.getContext("2d");
+    const prev = new THREE.Vector2();
+    this.renderer.getSize(prev);
+    const keepFrame = this.frame;
+    this._capturing = true;
+    try {
+      this.renderer.setSize(this.fw, this.fh, false);
+      const splats = mode === "color" && this._hasSplats();
+      if (splats) await this._settleSplats(mode, 24, 25); // first load + sort for this view (worker time, not just yields)
+      for (let f = 0; f < frames; f++) {
+        this.setFrameSilent(f);
+        if (this.canvas.width !== this.fw || this.canvas.height !== this.fh) this.renderer.setSize(this.fw, this.fh, false);
+        if (splats) await this._settleSplats(mode, 3); // re-sort for this frame's camera
+        this._renderMode(mode, true);
+        ctx.drawImage(this.canvas, (f % cols) * this.fw, Math.floor(f / cols) * this.fh);
+        if (onProgress && f % 8 === 0) {
+          onProgress(f / frames);
+          await yieldToBrowser(); // let the UI breathe (not throttled in background tabs)
+        }
+      }
+    } finally {
+      this._capturing = false;
+      this.renderer.setSize(prev.x, prev.y, false);
+      this.setFrame(keepFrame);
+      if (this._resizePending) { this._resizePending = false; this.resize(); }
+    }
+    const lossless = mode === "depth" || mode === "id";
+    const type = lossless ? "image/png" : "image/jpeg";
+    const blob = await sheet.convertToBlob({ type, quality: 0.95 });
+    return { blob, cols, rows, frames, ext: lossless ? "png" : "jpg", tile: [this.fw, this.fh] };
+  }
+
+  /**
+   * Render one frame in one view mode into a reusable 2D canvas (for the ladder viewer)
+   * and put the viewport back the way it was.
+   */
+  renderFrameTo(mode, frame) {
+    if (!this._snap) {
+      this._snap = document.createElement("canvas");
+      this._snap.width = this.fw;
+      this._snap.height = this.fh;
+    }
+    const prev = new THREE.Vector2();
+    this.renderer.getSize(prev);
+    const keep = this.frame;
+    this.renderer.setSize(this.fw, this.fh, false);
+    this.setFrameSilent(frame);
+    this._renderMode(mode, true);
+    this._snap.getContext("2d").drawImage(this.canvas, 0, 0);
+    this.renderer.setSize(prev.x, prev.y, false);
+    this.setFrameSilent(keep);
+    this._renderMode(this.view);
+    return this._snap;
+  }
+
+  /** setFrame without the final viewport render (used while capturing). */
+  setFrameSilent(frame) {
+    const r = this.render;
+    this.render = () => {};
+    try {
+      this.setFrame(frame);
+    } finally {
+      this.render = r;
+    }
+  }
+
+  dispose() {
+    this._ro?.disconnect();
+    this.renderer.dispose();
+  }
+}

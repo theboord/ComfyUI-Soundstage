@@ -1,0 +1,6562 @@
+{
+ "version": 1,
+ "stages": {
+  "generate_image": "Generate image (text / refs → still)",
+  "edit_image": "Edit image (edit, keyframe from control)",
+  "generate_video": "Generate video (image / control → shot)",
+  "matte": "Matte (background removal / alpha)",
+  "clean_plate": "Clean plate (remove subjects)"
+ },
+ "models": [
+  {
+   "id": "open.krea_2_turbo",
+   "name": "Krea 2 Turbo",
+   "provider": "Krea",
+   "kind": "local",
+   "stages": [
+    "generate_image",
+    "edit_image"
+   ],
+   "adapter": "krea2",
+   "variant": null,
+   "classes": [
+    "UNETLoader",
+    "CLIPLoader",
+    "VAELoader",
+    "CLIPTextEncode",
+    "ConditioningZeroOut",
+    "EmptyLatentImage",
+    "KSampler",
+    "VAEDecode",
+    "VAEEncode"
+   ],
+   "weights": [
+    {
+     "role": "unet",
+     "folder": "diffusion_models",
+     "any": [
+      "Krea-2-Turbo.safetensors",
+      "krea2_turbo_fp8_scaled.safetensors",
+      "krea2_turbo_int8_convrot.safetensors"
+     ]
+    },
+    {
+     "role": "text_encoder",
+     "folder": "text_encoders",
+     "any": [
+      "qwen3vl_4b_fp8_scaled.safetensors"
+     ]
+    },
+    {
+     "role": "vae",
+     "folder": "vae",
+     "any": [
+      "qwen_image_vae.safetensors"
+     ]
+    }
+   ],
+   "optional_weights": [
+    {
+     "role": "depth_lora",
+     "folder": "loras",
+     "any": [
+      "depth-control-lora.safetensors"
+     ],
+     "classes": [
+      "Krea2ControlLoRALoader",
+      "Krea2ControlImageEncode",
+      "Krea2ControlApply"
+     ]
+    }
+   ],
+   "auto_download": false,
+   "params": {
+    "denoise": {
+     "min": 0.0,
+     "max": 1.0,
+     "default": 0.85,
+     "stages": [
+      "edit_image"
+     ]
+    }
+   },
+   "license": "Krea 2 Community License: commercial only if company revenue <$1M; moderation required",
+   "notes": "8 steps cfg 1. control_image = stage depth steers the layout (Krea2 depth-control LoRA). Edit stage = the proven Soundstage look-still: img2img from the clay frame @0.85 + depth. Depth control needs the comfyui-krea2-controlnet pack.",
+   "source_ids": [
+    "open.krea_2"
+   ]
+  },
+  {
+   "id": "open.z_image_turbo",
+   "name": "Z-Image Turbo",
+   "provider": "Alibaba Tongyi-MAI",
+   "kind": "local",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": "z_image",
+   "variant": null,
+   "classes": [
+    "UNETLoader",
+    "CLIPLoader",
+    "VAELoader",
+    "CLIPTextEncode",
+    "ConditioningZeroOut",
+    "EmptySD3LatentImage",
+    "ModelSamplingAuraFlow",
+    "KSampler",
+    "VAEDecode"
+   ],
+   "weights": [
+    {
+     "role": "unet",
+     "folder": "diffusion_models",
+     "any": [
+      "z_image_turbo_bf16.safetensors",
+      "z_image_turbo_int8_convrot.safetensors"
+     ]
+    },
+    {
+     "role": "text_encoder",
+     "folder": "text_encoders",
+     "any": [
+      "qwen_3_4b.safetensors"
+     ]
+    },
+    {
+     "role": "vae",
+     "folder": "vae",
+     "any": [
+      "ae.safetensors"
+     ]
+    }
+   ],
+   "optional_weights": [],
+   "auto_download": false,
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "Fastest commercial-safe previz model. 8 steps res_multistep.",
+   "source_ids": [
+    "open.z_image"
+   ]
+  },
+  {
+   "id": "open.flux3_klein",
+   "name": "FLUX 3 Klein",
+   "provider": "Black Forest Labs",
+   "kind": "local",
+   "stages": [
+    "generate_image",
+    "edit_image"
+   ],
+   "adapter": "flux3_klein",
+   "variant": null,
+   "classes": [
+    "UNETLoader",
+    "CLIPLoader",
+    "VAELoader",
+    "CLIPTextEncode",
+    "ConditioningZeroOut",
+    "EmptyFlux2LatentImage",
+    "KSampler",
+    "VAEDecode",
+    "ReferenceMultiLatent"
+   ],
+   "weights": [
+    {
+     "role": "unet",
+     "folder": "diffusion_models",
+     "any": [
+      "flux3-image-klein-int8-convrot.safetensors"
+     ]
+    },
+    {
+     "role": "text_encoder",
+     "folder": "text_encoders",
+     "any": [
+      "qwen3vl_4b_int8_convrot.safetensors",
+      "qwen3vl_4b_fp8_scaled.safetensors"
+     ]
+    },
+    {
+     "role": "vae",
+     "folder": "vae",
+     "any": [
+      "flux2-vae.safetensors"
+     ]
+    }
+   ],
+   "optional_weights": [],
+   "auto_download": false,
+   "params": {},
+   "license": "FLUX Kommunity License: free non-commercial; commercial use of outputs OK if you+affiliates <$5M annual revenue",
+   "notes": "Edit = ReferenceMultiLatent (image + refs, 1 MP). Distilled template settings.",
+   "source_ids": [
+    "open.flux3_klein"
+   ]
+  },
+  {
+   "id": "api.nano_banana_2_1",
+   "name": "Nano Banana 2.1",
+   "provider": "Google",
+   "kind": "partner",
+   "stages": [
+    "generate_image",
+    "edit_image"
+   ],
+   "adapter": "nano_banana",
+   "variant": "Gemini Nano Banana 2.1",
+   "classes": [
+    "GeminiNanoBanana2V2"
+   ],
+   "weights": [],
+   "params": {
+    "resolution": {
+     "options": [
+      "1K",
+      "2K",
+      "4K"
+     ],
+     "default": "2K"
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.GeminiNanoBanana2V2"
+   ]
+  },
+  {
+   "id": "api.nano_banana_2",
+   "name": "Nano Banana 2 (Gemini 3.1 Flash Image)",
+   "provider": "Google",
+   "kind": "partner",
+   "stages": [
+    "generate_image",
+    "edit_image"
+   ],
+   "adapter": "nano_banana",
+   "variant": "Nano Banana 2 (Gemini 3.1 Flash Image)",
+   "classes": [
+    "GeminiNanoBanana2V2"
+   ],
+   "weights": [],
+   "params": {
+    "resolution": {
+     "options": [
+      "1K",
+      "2K",
+      "4K"
+     ],
+     "default": "2K"
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.GeminiNanoBanana2V2"
+   ]
+  },
+  {
+   "id": "api.gpt_image_2_5",
+   "name": "GPT Image 2.5",
+   "provider": "OpenAI",
+   "kind": "partner",
+   "stages": [
+    "generate_image",
+    "edit_image"
+   ],
+   "adapter": "gpt_image",
+   "variant": "gpt-image-2.5-flare",
+   "classes": [
+    "OpenAIGPTImageNodeV2"
+   ],
+   "weights": [],
+   "params": {
+    "quality": {
+     "options": [
+      "low",
+      "medium",
+      "high"
+     ],
+     "default": "medium"
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.OpenAIGPTImageNodeV2"
+   ]
+  },
+  {
+   "id": "api.gpt_image_2",
+   "name": "GPT Image 2",
+   "provider": "OpenAI",
+   "kind": "partner",
+   "stages": [
+    "generate_image",
+    "edit_image"
+   ],
+   "adapter": "gpt_image",
+   "variant": "gpt-image-2",
+   "classes": [
+    "OpenAIGPTImageNodeV2"
+   ],
+   "weights": [],
+   "params": {
+    "quality": {
+     "options": [
+      "low",
+      "medium",
+      "high"
+     ],
+     "default": "medium"
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.OpenAIGPTImageNodeV2"
+   ]
+  },
+  {
+   "id": "api.flux3_image",
+   "name": "FLUX 3 Image",
+   "provider": "BFL",
+   "kind": "partner",
+   "stages": [
+    "generate_image",
+    "edit_image"
+   ],
+   "adapter": "flux3_api",
+   "variant": null,
+   "classes": [
+    "Flux3ImageNode"
+   ],
+   "weights": [],
+   "params": {
+    "resolution": {
+     "options": [
+      "1K",
+      "1.5K",
+      "2K",
+      "4K"
+     ],
+     "default": "2K"
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.Flux3ImageNode"
+   ]
+  },
+  {
+   "id": "api.seedream_5_pro",
+   "name": "Seedream 5.0 Pro",
+   "provider": "ByteDance",
+   "kind": "partner",
+   "stages": [
+    "generate_image",
+    "edit_image"
+   ],
+   "adapter": "seedream",
+   "variant": "seedream 5.0 pro",
+   "classes": [
+    "ByteDanceSeedreamNodeV3"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.ByteDanceSeedreamNodeV3"
+   ]
+  },
+  {
+   "id": "api.seedream_5_flash",
+   "name": "Seedream 5.0 Flash",
+   "provider": "ByteDance",
+   "kind": "partner",
+   "stages": [
+    "generate_image",
+    "edit_image"
+   ],
+   "adapter": "seedream",
+   "variant": "seedream 5.0 flash",
+   "classes": [
+    "ByteDanceSeedreamNodeV3"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.ByteDanceSeedreamNodeV3"
+   ]
+  },
+  {
+   "id": "api.krea_2_medium_turbo",
+   "name": "Krea 2 Medium Turbo (API)",
+   "provider": "Krea",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": "krea2_api",
+   "variant": "Krea 2 Medium Turbo",
+   "classes": [
+    "Krea2ImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.Krea2ImageNode"
+   ]
+  },
+  {
+   "id": "api.krea_2_large",
+   "name": "Krea 2 Large (API)",
+   "provider": "Krea",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": "krea2_api",
+   "variant": "Krea 2 Large",
+   "classes": [
+    "Krea2ImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.Krea2ImageNode"
+   ]
+  },
+  {
+   "id": "cloud.z_image_turbo",
+   "name": "Z-Image Turbo (Comfy Cloud)",
+   "provider": "Comfy Cloud",
+   "kind": "cloud",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": "z_image_cloud",
+   "variant": null,
+   "classes": [
+    "ComfyCloudZImageTurboNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Open-weights model run on Comfy Cloud GPUs, billed per GPU-second through the partner proxy",
+   "notes": "",
+   "source_ids": [
+    "cloud.ComfyCloudZImageTurboNode"
+   ]
+  },
+  {
+   "id": "open.ltx_2_5",
+   "name": "LTX-2.5 22B distilled",
+   "provider": "Lightricks",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": "ltx25",
+   "variant": null,
+   "classes": [
+    "UNETLoader",
+    "CLIPLoader",
+    "VAELoader",
+    "CLIPTextEncode",
+    "LTXVConditioning",
+    "EmptyLTXVLatentVideo",
+    "RandomNoise",
+    "KSamplerSelect",
+    "ManualSigmas",
+    "CFGGuider",
+    "SamplerCustomAdvanced",
+    "VAEDecodeTiled",
+    "CreateVideo",
+    "ResizeImageMaskNode",
+    "LTXVCropGuides",
+    "LTXVImgToVideoInplace",
+    "LTXVPreprocess",
+    "LTXVEmptyLatentAudio",
+    "LTXVConcatAVLatent",
+    "LTXVSeparateAVLatent",
+    "LTXVDualCFGGuider",
+    "LTXVLatentUpsampler",
+    "LatentUpscaleModelLoader",
+    "LTXVAudioVAEDecode"
+   ],
+   "weights": [
+    {
+     "role": "unet",
+     "folder": "diffusion_models",
+     "any": [
+      "ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+      "ltx-2.5-22b-distilled-transformer-bf16.safetensors"
+     ]
+    },
+    {
+     "role": "text_encoder",
+     "folder": "text_encoders",
+     "any": [
+      "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+      "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors"
+     ]
+    },
+    {
+     "role": "vae",
+     "folder": "vae",
+     "any": [
+      "ltx-2.5-video-vae-bf16.safetensors"
+     ]
+    },
+    {
+     "role": "audio_vae",
+     "folder": "vae",
+     "any": [
+      "ltx-2.5-audio-vae-bf16.safetensors"
+     ]
+    },
+    {
+     "role": "upscaler",
+     "folder": "latent_upscale_models",
+     "any": [
+      "ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors"
+     ]
+    }
+   ],
+   "optional_weights": [
+    {
+     "role": "l2r_lora",
+     "folder": "loras",
+     "any": [
+      "ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors"
+     ],
+     "classes": [
+      "LTXICLoRALoaderModelOnly",
+      "LTXAddVideoICLoRAGuide"
+     ]
+    }
+   ],
+   "auto_download": false,
+   "params": {
+    "mode": {
+     "options": [
+      "auto",
+      "image/text → video",
+      "layout → render"
+     ],
+     "default": "auto"
+    }
+   },
+   "license": "LTX-2.x Community License: free incl. commercial for entities <$10M annual revenue; paid above",
+   "notes": "Core engine (LTX bonus). auto = Layout-To-Render IC-LoRA when control_video (stage clay) is connected (needs the ComfyUI-LTXVideo pack + L2R LoRA), else the official two-stage i2v/t2v template with audio. first_frame = look still.",
+   "source_ids": [
+    "open.ltx_2_5"
+   ]
+  },
+  {
+   "id": "open.wan_animate_2",
+   "name": "Wan Animate 2 distilled",
+   "provider": "Alibaba Wan-AI",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": "wan_animate2",
+   "variant": null,
+   "classes": [
+    "UNETLoader",
+    "CLIPLoader",
+    "VAELoader",
+    "CLIPVisionLoader",
+    "CLIPVisionEncode",
+    "CLIPTextEncode",
+    "WanAnimate2ToVideo",
+    "WanAnimate2Cache",
+    "ModelSamplingSD3",
+    "BasicScheduler",
+    "KSamplerSelect",
+    "SamplerCustom",
+    "TrimVideoLatent",
+    "VAEDecode",
+    "ImageFromBatch",
+    "ResizeImageMaskNode",
+    "CreateVideo"
+   ],
+   "weights": [
+    {
+     "role": "unet",
+     "folder": "diffusion_models",
+     "any": [
+      "wan_animate_2_distill_int8_convrot.safetensors"
+     ]
+    },
+    {
+     "role": "text_encoder",
+     "folder": "text_encoders",
+     "any": [
+      "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "umt5_xxl_fp16.safetensors"
+     ]
+    },
+    {
+     "role": "clip_vision",
+     "folder": "clip_vision",
+     "any": [
+      "clip_vision_h.safetensors"
+     ]
+    },
+    {
+     "role": "vae",
+     "folder": "vae",
+     "any": [
+      "Wan2_1_VAE_bf16.safetensors",
+      "wan_2.1_vae.safetensors"
+     ]
+    }
+   ],
+   "optional_weights": [],
+   "auto_download": false,
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "Motion transfer: ref_1 = character, control_video = driving pose/performance. 81-frame window.",
+   "source_ids": [
+    "open.wan_animate_2"
+   ]
+  },
+  {
+   "id": "api.kling_4_0",
+   "name": "Kling 4.0",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": "kling4",
+   "variant": "kling-4.0",
+   "classes": [
+    "Kling4TextToVideoNode",
+    "Kling4ImageToVideoNode",
+    "Kling4ReferenceToVideoNode"
+   ],
+   "weights": [],
+   "params": {
+    "resolution": {
+     "options": [
+      "720p",
+      "1080p"
+     ],
+     "default": "1080p"
+    },
+    "duration": {
+     "min": 3,
+     "max": 30
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "first/last frame → I2V; refs → Reference-to-Video; prompt only → T2V.",
+   "source_ids": [
+    "api.Kling4TextToVideoNode",
+    "api.Kling4ImageToVideoNode",
+    "api.Kling4ReferenceToVideoNode"
+   ]
+  },
+  {
+   "id": "api.veo_3_1",
+   "name": "Veo 3.1",
+   "provider": "Google",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": "veo3",
+   "variant": "veo-3.1-generate",
+   "classes": [
+    "Veo3VideoGenerationNode",
+    "Veo3FirstLastFrameNode"
+   ],
+   "weights": [],
+   "params": {
+    "resolution": {
+     "options": [
+      "720p",
+      "1080p",
+      "4k"
+     ],
+     "default": "1080p"
+    },
+    "duration": {
+     "min": 4,
+     "max": 8
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.Veo3VideoGenerationNode",
+    "api.Veo3FirstLastFrameNode"
+   ]
+  },
+  {
+   "id": "api.veo_3_1_fast",
+   "name": "Veo 3.1 Fast",
+   "provider": "Google",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": "veo3",
+   "variant": "veo-3.1-fast-generate",
+   "classes": [
+    "Veo3VideoGenerationNode",
+    "Veo3FirstLastFrameNode"
+   ],
+   "weights": [],
+   "params": {
+    "resolution": {
+     "options": [
+      "720p",
+      "1080p",
+      "4k"
+     ],
+     "default": "1080p"
+    },
+    "duration": {
+     "min": 4,
+     "max": 8
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.Veo3VideoGenerationNode",
+    "api.Veo3FirstLastFrameNode"
+   ]
+  },
+  {
+   "id": "api.seedance_2_5",
+   "name": "Seedance 2.5",
+   "provider": "ByteDance",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": "seedance2",
+   "variant": "Seedance 2.5",
+   "classes": [
+    "ByteDance2TextToVideoNode",
+    "ByteDance2FirstLastFrameNode"
+   ],
+   "weights": [],
+   "params": {
+    "resolution": {
+     "options": [
+      "480p",
+      "720p",
+      "1080p"
+     ],
+     "default": "1080p"
+    },
+    "duration": {
+     "min": 4,
+     "max": 30
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.ByteDance2TextToVideoNode",
+    "api.ByteDance2FirstLastFrameNode"
+   ]
+  },
+  {
+   "id": "api.seedance_2_5_draft",
+   "name": "Seedance 2.5 Draft",
+   "provider": "ByteDance",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": "seedance2",
+   "variant": "Seedance 2.5 Draft",
+   "classes": [
+    "ByteDance2TextToVideoNode",
+    "ByteDance2FirstLastFrameNode"
+   ],
+   "weights": [],
+   "params": {
+    "resolution": {
+     "options": [
+      "480p"
+     ],
+     "default": "480p"
+    },
+    "duration": {
+     "min": 4,
+     "max": 30
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.ByteDance2TextToVideoNode",
+    "api.ByteDance2FirstLastFrameNode"
+   ]
+  },
+  {
+   "id": "api.seedance_2_0",
+   "name": "Seedance 2.0",
+   "provider": "ByteDance",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": "seedance2",
+   "variant": "Seedance 2.0",
+   "classes": [
+    "ByteDance2TextToVideoNode",
+    "ByteDance2FirstLastFrameNode"
+   ],
+   "weights": [],
+   "params": {
+    "resolution": {
+     "options": [
+      "480p",
+      "720p",
+      "1080p",
+      "4k"
+     ],
+     "default": "1080p"
+    },
+    "duration": {
+     "min": 4,
+     "max": 15
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.ByteDance2TextToVideoNode",
+    "api.ByteDance2FirstLastFrameNode"
+   ]
+  },
+  {
+   "id": "api.minimax_h3",
+   "name": "MiniMax H3",
+   "provider": "MiniMax",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": "minimax_h3",
+   "variant": "MiniMax H3",
+   "classes": [
+    "MinimaxHailuo03TextToVideoNode",
+    "MinimaxHailuo03FirstLastFrameNode"
+   ],
+   "weights": [],
+   "params": {
+    "resolution": {
+     "options": [
+      "768P",
+      "2K"
+     ],
+     "default": "768P"
+    },
+    "duration": {
+     "min": 4,
+     "max": 15
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.MinimaxHailuo03TextToVideoNode",
+    "api.MinimaxHailuo03FirstLastFrameNode"
+   ]
+  },
+  {
+   "id": "api.minimax_h3_max",
+   "name": "MiniMax H3 Max",
+   "provider": "MiniMax",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": "minimax_h3",
+   "variant": "MiniMax H3 Max",
+   "classes": [
+    "MinimaxHailuo03TextToVideoNode",
+    "MinimaxHailuo03FirstLastFrameNode"
+   ],
+   "weights": [],
+   "params": {
+    "resolution": {
+     "options": [
+      "480P",
+      "768P"
+     ],
+     "default": "768P"
+    },
+    "duration": {
+     "min": 5,
+     "max": 15
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.MinimaxHailuo03TextToVideoNode",
+    "api.MinimaxHailuo03FirstLastFrameNode"
+   ]
+  },
+  {
+   "id": "api.runway_gen4",
+   "name": "Runway Gen-4 Turbo",
+   "provider": "Runway",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": "runway_gen4",
+   "variant": null,
+   "classes": [
+    "RunwayImageToVideoNodeGen4"
+   ],
+   "weights": [],
+   "params": {
+    "duration": {
+     "options": [
+      5,
+      10
+     ]
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "Needs first_frame.",
+   "source_ids": [
+    "api.RunwayImageToVideoNodeGen4"
+   ]
+  },
+  {
+   "id": "api.luma_ray_3_2",
+   "name": "Luma Ray 3.2",
+   "provider": "Luma",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": "luma_ray32",
+   "variant": null,
+   "classes": [
+    "LumaRay32TextToVideoNode",
+    "LumaRay32ImageToVideoNode"
+   ],
+   "weights": [],
+   "params": {
+    "resolution": {
+     "options": [
+      "540p",
+      "720p",
+      "1080p"
+     ],
+     "default": "1080p"
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.LumaRay32TextToVideoNode",
+    "api.LumaRay32ImageToVideoNode"
+   ]
+  },
+  {
+   "id": "api.ltx_2_5_pro",
+   "name": "LTX-2.5 Pro (API)",
+   "provider": "Lightricks",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": "ltx25_api",
+   "variant": "LTX-2.5 (Pro)",
+   "classes": [
+    "LtxApi25TextToVideo",
+    "LtxApi25ImageToVideo"
+   ],
+   "weights": [],
+   "params": {
+    "duration": {
+     "options": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      8,
+      10
+     ]
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.LtxApi25TextToVideo",
+    "api.LtxApi25ImageToVideo"
+   ]
+  },
+  {
+   "id": "api.ltx_2_5_fast",
+   "name": "LTX-2.5 Fast (API)",
+   "provider": "Lightricks",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": "ltx25_api",
+   "variant": "LTX-2.5 (Fast)",
+   "classes": [
+    "LtxApi25TextToVideo",
+    "LtxApi25ImageToVideo"
+   ],
+   "weights": [],
+   "params": {
+    "duration": {
+     "options": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      8,
+      10,
+      12,
+      14,
+      16,
+      18,
+      20
+     ]
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.LtxApi25TextToVideo",
+    "api.LtxApi25ImageToVideo"
+   ]
+  },
+  {
+   "id": "open.sam3",
+   "name": "SAM 3.1 (text-prompted)",
+   "provider": "Meta",
+   "kind": "local",
+   "stages": [
+    "matte"
+   ],
+   "adapter": "sam3",
+   "variant": null,
+   "classes": [
+    "CheckpointLoaderSimple",
+    "CLIPTextEncode",
+    "SAM3_Detect",
+    "InvertMask",
+    "JoinImageWithAlpha"
+   ],
+   "weights": [
+    {
+     "role": "checkpoint",
+     "folder": "checkpoints",
+     "any": [
+      "sam3.1_multiplex_fp16.safetensors"
+     ]
+    }
+   ],
+   "optional_weights": [],
+   "auto_download": false,
+   "params": {
+    "threshold": {
+     "min": 0.0,
+     "max": 1.0,
+     "default": 0.5
+    }
+   },
+   "license": "SAM License (Meta)",
+   "notes": "prompt = what to keep (\"person\", \"the red car\"). Hard-edged; pair with a soft matte for hair.",
+   "source_ids": [
+    "open.sam3"
+   ]
+  },
+  {
+   "id": "open.remove_background",
+   "name": "BiRefNet (core RemoveBackground)",
+   "provider": "ZhengPeng7",
+   "kind": "local",
+   "stages": [
+    "matte"
+   ],
+   "adapter": "birefnet_core",
+   "variant": null,
+   "classes": [
+    "LoadBackgroundRemovalModel",
+    "RemoveBackground",
+    "InvertMask",
+    "JoinImageWithAlpha"
+   ],
+   "weights": [
+    {
+     "role": "bg_model",
+     "folder": "background_removal",
+     "any": [
+      "birefnet.safetensors"
+     ]
+    }
+   ],
+   "optional_weights": [],
+   "auto_download": false,
+   "params": {},
+   "license": "BiRefNet MIT",
+   "notes": "",
+   "source_ids": [
+    "open.remove_background"
+   ]
+  },
+  {
+   "id": "custom.rmbg_rmbg2",
+   "name": "RMBG-2.0 (ComfyUI-RMBG)",
+   "provider": "BRIA / 1038lab",
+   "kind": "custom_node",
+   "stages": [
+    "matte"
+   ],
+   "adapter": "rmbg_pack",
+   "variant": "RMBG-2.0",
+   "classes": [
+    "RMBG"
+   ],
+   "weights": [],
+   "optional_weights": [],
+   "auto_download": true,
+   "params": {},
+   "license": "CC BY-NC 4.0 (Bria) — NON-COMMERCIAL; commercial via Bria API",
+   "notes": "",
+   "source_ids": [
+    "custom.rmbg_rmbg2"
+   ]
+  },
+  {
+   "id": "custom.rmbg_ben2",
+   "name": "BEN2 (ComfyUI-RMBG)",
+   "provider": "PramaLLC / 1038lab",
+   "kind": "custom_node",
+   "stages": [
+    "matte"
+   ],
+   "adapter": "rmbg_pack",
+   "variant": "BEN2",
+   "classes": [
+    "RMBG"
+   ],
+   "weights": [],
+   "optional_weights": [],
+   "auto_download": true,
+   "params": {},
+   "license": "MIT (BEN2 weights)",
+   "notes": "",
+   "source_ids": [
+    "custom.rmbg_ben2"
+   ]
+  },
+  {
+   "id": "custom.rmbg_birefnet",
+   "name": "BiRefNet HR matting (ComfyUI-RMBG)",
+   "provider": "ZhengPeng7 / 1038lab",
+   "kind": "custom_node",
+   "stages": [
+    "matte"
+   ],
+   "adapter": "birefnet_pack",
+   "variant": "BiRefNet-matting",
+   "classes": [
+    "BiRefNetRMBG"
+   ],
+   "weights": [],
+   "optional_weights": [],
+   "auto_download": true,
+   "params": {},
+   "license": "MIT",
+   "notes": "",
+   "source_ids": [
+    "custom.rmbg_birefnet_family"
+   ]
+  },
+  {
+   "id": "open.ltx25_ic_alpha_gen",
+   "name": "LTX-2.5 Alpha-Gen (soft video matte)",
+   "provider": "Lightricks",
+   "kind": "local",
+   "stages": [
+    "matte"
+   ],
+   "adapter": "ltx_alpha_gen",
+   "variant": null,
+   "classes": [
+    "UNETLoader",
+    "CLIPLoader",
+    "VAELoader",
+    "CLIPTextEncode",
+    "LTXVConditioning",
+    "EmptyLTXVLatentVideo",
+    "RandomNoise",
+    "KSamplerSelect",
+    "ManualSigmas",
+    "CFGGuider",
+    "SamplerCustomAdvanced",
+    "VAEDecodeTiled",
+    "CreateVideo",
+    "ResizeImageMaskNode",
+    "LTXICLoRALoaderModelOnly",
+    "LTXAddVideoICLoRAGuide",
+    "LTXVCropGuides",
+    "GetImageSize",
+    "ImageToMask",
+    "InvertMask",
+    "JoinImageWithAlpha"
+   ],
+   "weights": [
+    {
+     "role": "unet",
+     "folder": "diffusion_models",
+     "any": [
+      "ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+      "ltx-2.5-22b-distilled-transformer-bf16.safetensors"
+     ]
+    },
+    {
+     "role": "text_encoder",
+     "folder": "text_encoders",
+     "any": [
+      "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+      "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors"
+     ]
+    },
+    {
+     "role": "vae",
+     "folder": "vae",
+     "any": [
+      "ltx-2.5-video-vae-bf16.safetensors"
+     ]
+    },
+    {
+     "role": "ic_lora",
+     "folder": "loras",
+     "any": [
+      "ltx-2.5-22b-ic-lora-alpha-gen-0.9.safetensors"
+     ]
+    }
+   ],
+   "optional_weights": [],
+   "auto_download": false,
+   "params": {},
+   "license": "LTX-2.x Community License: free incl. commercial for entities <$10M annual revenue; paid above",
+   "notes": "Soft alpha for hair/smoke/glass. Picks 'the foreground' itself (no prompt). ≤121 frames, 8n+1. Single-stage distilled IC-LoRA at 544p. Needs ComfyUI-LTXVideo.",
+   "source_ids": [
+    "open.ltx25_ic_alpha_gen"
+   ]
+  },
+  {
+   "id": "api.veed_remove_bg",
+   "name": "VEED Remove Video Background",
+   "provider": "VEED",
+   "kind": "partner",
+   "stages": [
+    "matte"
+   ],
+   "adapter": "veed_rmbg",
+   "variant": "standard",
+   "classes": [
+    "VeedRemoveVideoBackgroundNode",
+    "CreateVideo"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.VeedRemoveVideoBackgroundNode"
+   ]
+  },
+  {
+   "id": "api.bria_transparent_video",
+   "name": "Bria Transparent Video",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "matte"
+   ],
+   "adapter": "bria_transparent",
+   "variant": null,
+   "classes": [
+    "BriaTransparentVideoBackground",
+    "CreateVideo"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BriaTransparentVideoBackground"
+   ]
+  },
+  {
+   "id": "open.ltx25_ic_clean_plate",
+   "name": "LTX-2.5 Clean-Plate IC-LoRA",
+   "provider": "Lightricks",
+   "kind": "local",
+   "stages": [
+    "clean_plate"
+   ],
+   "adapter": "ltx_clean_plate",
+   "variant": null,
+   "classes": [
+    "UNETLoader",
+    "CLIPLoader",
+    "VAELoader",
+    "CLIPTextEncode",
+    "LTXVConditioning",
+    "EmptyLTXVLatentVideo",
+    "RandomNoise",
+    "KSamplerSelect",
+    "ManualSigmas",
+    "CFGGuider",
+    "SamplerCustomAdvanced",
+    "VAEDecodeTiled",
+    "CreateVideo",
+    "ResizeImageMaskNode",
+    "LTXICLoRALoaderModelOnly",
+    "LTXAddVideoICLoRAGuide",
+    "LTXVCropGuides",
+    "GetImageSize"
+   ],
+   "weights": [
+    {
+     "role": "unet",
+     "folder": "diffusion_models",
+     "any": [
+      "ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+      "ltx-2.5-22b-distilled-transformer-bf16.safetensors"
+     ]
+    },
+    {
+     "role": "text_encoder",
+     "folder": "text_encoders",
+     "any": [
+      "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+      "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors"
+     ]
+    },
+    {
+     "role": "vae",
+     "folder": "vae",
+     "any": [
+      "ltx-2.5-video-vae-bf16.safetensors"
+     ]
+    },
+    {
+     "role": "ic_lora",
+     "folder": "loras",
+     "any": [
+      "ltx-2.5-22b-ic-lora-clean-plate-1.0.safetensors"
+     ]
+    }
+   ],
+   "optional_weights": [],
+   "auto_download": false,
+   "params": {},
+   "license": "LTX-2.x Community License: free incl. commercial for entities <$10M annual revenue; paid above",
+   "notes": "Removes ALL people/moving subjects (no per-object choice). prompt = the empty scene. Fails when the subject fills most of the frame. Single-stage at 544p. Needs ComfyUI-LTXVideo. Not yet run on the pod.",
+   "source_ids": [
+    "open.ltx25_ic_clean_plate"
+   ]
+  },
+  {
+   "id": "api.bria_video_eraser",
+   "name": "Bria Video Eraser",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "clean_plate"
+   ],
+   "adapter": "bria_video_eraser",
+   "variant": null,
+   "classes": [
+    "BriaVideoEraser",
+    "CreateVideo",
+    "GetVideoComponents"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "Uses the mask input when connected.",
+   "source_ids": [
+    "api.BriaVideoEraser"
+   ]
+  },
+  {
+   "id": "api.kling_4_0_edit",
+   "name": "Kling 4.0 Edit (remove by prompt)",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "clean_plate"
+   ],
+   "adapter": "kling4_edit",
+   "variant": "kling-4.0",
+   "classes": [
+    "Kling4EditVideoNode",
+    "CreateVideo",
+    "GetVideoComponents"
+   ],
+   "weights": [],
+   "params": {
+    "resolution": {
+     "options": [
+      "720p",
+      "1080p"
+     ],
+     "default": "1080p"
+    }
+   },
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.Kling4EditVideoNode"
+   ]
+  },
+  {
+   "id": "api.runway_aleph2",
+   "name": "Runway Aleph 2 (remove by prompt)",
+   "provider": "Runway",
+   "kind": "partner",
+   "stages": [
+    "clean_plate"
+   ],
+   "adapter": "runway_aleph2",
+   "variant": null,
+   "classes": [
+    "RunwayAleph2VideoToVideoNode",
+    "CreateVideo",
+    "GetVideoComponents"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.RunwayAleph2VideoToVideoNode"
+   ]
+  },
+  {
+   "id": "api.FluxProUltraImageNode",
+   "name": "FLUX 1.1 [pro] Ultra — Flux 1.1 [pro] Ultra Image",
+   "provider": "BFL",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "FluxProUltraImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.FluxProUltraImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bfl.py"
+  },
+  {
+   "id": "api.FluxKontextProImageNode",
+   "name": "FLUX.1 Kontext [pro] — Flux.1 Kontext [pro] Image",
+   "provider": "BFL",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "FluxKontextProImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "single input_image",
+   "source_ids": [
+    "api.FluxKontextProImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bfl.py"
+  },
+  {
+   "id": "api.FluxKontextMaxImageNode",
+   "name": "FLUX.1 Kontext [max] — Flux.1 Kontext [max] Image",
+   "provider": "BFL",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "FluxKontextMaxImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "single input_image",
+   "source_ids": [
+    "api.FluxKontextMaxImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bfl.py"
+  },
+  {
+   "id": "api.FluxProExpandNode",
+   "name": "FLUX.1 Expand — Flux.1 Expand Image",
+   "provider": "BFL",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "FluxProExpandNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.FluxProExpandNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bfl.py"
+  },
+  {
+   "id": "api.FluxProFillNode",
+   "name": "FLUX.1 Fill — Flux.1 Fill Image",
+   "provider": "BFL",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "FluxProFillNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "image+mask",
+   "source_ids": [
+    "api.FluxProFillNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bfl.py"
+  },
+  {
+   "id": "api.FluxEraseNode",
+   "name": "FLUX Erase — Flux Erase Image",
+   "provider": "BFL",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "FluxEraseNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.FluxEraseNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bfl.py"
+  },
+  {
+   "id": "api.FluxVTONode",
+   "name": "FLUX Virtual Try-On — Flux Virtual Try-On",
+   "provider": "BFL",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "FluxVTONode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "person + garment",
+   "source_ids": [
+    "api.FluxVTONode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bfl.py"
+  },
+  {
+   "id": "api.Flux2ImageNode",
+   "name": "FLUX.2 [pro] / [max] — Flux.2 Image",
+   "provider": "BFL",
+   "kind": "partner",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Flux2ImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "DynamicCombo model: 'Flux.2 [pro]' | 'Flux.2 [max]'; refs <=8 (model.images)",
+   "source_ids": [
+    "api.Flux2ImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bfl.py"
+  },
+  {
+   "id": "api.Flux3TextToVideoNode",
+   "name": "FLUX 3 Video — Flux 3 Text to Video",
+   "provider": "BFL",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Flux3TextToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "duration auto|5-20",
+   "source_ids": [
+    "api.Flux3TextToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bfl.py"
+  },
+  {
+   "id": "api.Flux3ImageToVideoNode",
+   "name": "FLUX 3 Video — Flux 3 Image to Video",
+   "provider": "BFL",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Flux3ImageToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "1-10 keyframe images (Autogrow 'keyframes'), placement spread|at times",
+   "source_ids": [
+    "api.Flux3ImageToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bfl.py"
+  },
+  {
+   "id": "api.Flux3VideoContinuationNode",
+   "name": "FLUX 3 Video — Flux 3 Video Continuation",
+   "provider": "BFL",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Flux3VideoContinuationNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.Flux3VideoContinuationNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bfl.py"
+  },
+  {
+   "id": "api.Flux3MaxTextToVideoNode",
+   "name": "FLUX 3 Max Video — FLUX 3 Max Text to Video",
+   "provider": "BFL",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Flux3MaxTextToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "duration 5-20",
+   "source_ids": [
+    "api.Flux3MaxTextToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bfl.py"
+  },
+  {
+   "id": "api.Flux3MaxImageToVideoNode",
+   "name": "FLUX 3 Max Video — FLUX 3 Max Image to Video",
+   "provider": "BFL",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Flux3MaxImageToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "1-10 keyframes",
+   "source_ids": [
+    "api.Flux3MaxImageToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bfl.py"
+  },
+  {
+   "id": "api.FluxVideoEditNode",
+   "name": "FLUX Video Edit — Flux Video Edit",
+   "provider": "BFL",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "FluxVideoEditNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "instruction edit; can replace spoken dialogue; length/camera/audio from source",
+   "source_ids": [
+    "api.FluxVideoEditNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bfl.py"
+  },
+  {
+   "id": "api.BriaImageGenerate",
+   "name": "Bria FIBO 2.0 Image Generate",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaImageGenerate"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "returns structured_prompt JSON",
+   "source_ids": [
+    "api.BriaImageGenerate"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaImageEditNode",
+   "name": "Bria FIBO 2.0 Edit — Bria FIBO 2.0 Image Edit",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaImageEditNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "optional mask",
+   "source_ids": [
+    "api.BriaImageEditNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaGenFill",
+   "name": "Bria Generative Fill",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaGenFill"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BriaGenFill"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaEraser",
+   "name": "Bria Eraser",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaEraser"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BriaEraser"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaExpandImage",
+   "name": "Bria Expand Image",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaExpandImage"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BriaExpandImage"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaEraseByText",
+   "name": "Bria Erase by Text",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaEraseByText"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BriaEraseByText"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaAddObject",
+   "name": "Bria Add Object",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaAddObject"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BriaAddObject"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaReplaceObject",
+   "name": "Bria Replace Object",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaReplaceObject"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BriaReplaceObject"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaRelight",
+   "name": "Bria Relight",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaRelight"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BriaRelight"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaReseason",
+   "name": "Bria Reseason",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaReseason"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BriaReseason"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaEraseForeground",
+   "name": "Bria Erase Foreground",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "clean_plate"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaEraseForeground"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "clean plate generation",
+   "source_ids": [
+    "api.BriaEraseForeground"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaReplaceImageBackground",
+   "name": "Bria Replace Background — Bria Replace Image Background",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaReplaceImageBackground"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BriaReplaceImageBackground"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaGuidedRemoveBackground",
+   "name": "Bria Guided Remove BG — Bria Guided Remove Background",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaGuidedRemoveBackground"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BriaGuidedRemoveBackground"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaRemoveImageBackground",
+   "name": "Bria RMBG 2.0 — Bria Remove Image Background",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaRemoveImageBackground"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BriaRemoveImageBackground"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaProductHolding",
+   "name": "Bria Product Holding",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaProductHolding"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BriaProductHolding"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaVirtualTryOn",
+   "name": "Bria Virtual Try-On",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaVirtualTryOn"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BriaVirtualTryOn"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaRemoveVideoBackground",
+   "name": "Bria Remove Video BG — Bria Remove Video Background",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaRemoveVideoBackground"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "solid colour bg",
+   "source_ids": [
+    "api.BriaRemoveVideoBackground"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaVideoGreenScreen",
+   "name": "Bria Video Green Screen",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaVideoGreenScreen"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BriaVideoGreenScreen"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.BriaVideoReplaceBackground",
+   "name": "Bria Video Replace BG — Bria Video Replace Background",
+   "provider": "Bria",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BriaVideoReplaceBackground"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BriaVideoReplaceBackground"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bria.py"
+  },
+  {
+   "id": "api.ByteDanceSeedreamLayerSeparationNodeV2",
+   "name": "ByteDance Seedream 5.0 Layer Separation",
+   "provider": "ByteDance",
+   "kind": "partner",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ByteDanceSeedreamLayerSeparationNodeV2"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "bg plate + up to 16 RGBA layers with bbox/z-order",
+   "source_ids": [
+    "api.ByteDanceSeedreamLayerSeparationNodeV2"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bytedance.py"
+  },
+  {
+   "id": "api.ByteDanceTextToVideoNode",
+   "name": "Seedance 1.0/1.5 pro — ByteDance Text to Video",
+   "provider": "ByteDance",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ByteDanceTextToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "audio for 1.5 pro; camera_fixed",
+   "source_ids": [
+    "api.ByteDanceTextToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bytedance.py"
+  },
+  {
+   "id": "api.ByteDanceImageToVideoNode",
+   "name": "Seedance 1.0/1.5 pro — ByteDance Image to Video",
+   "provider": "ByteDance",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ByteDanceImageToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.ByteDanceImageToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bytedance.py"
+  },
+  {
+   "id": "api.ByteDanceFirstLastFrameNode",
+   "name": "Seedance 1.0/1.5 pro — ByteDance First-Last-Frame to Video",
+   "provider": "ByteDance",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ByteDanceFirstLastFrameNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.ByteDanceFirstLastFrameNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bytedance.py"
+  },
+  {
+   "id": "api.ByteDance2ReferenceNodeV2",
+   "name": "Seedance 2.5 / 2.0 Reference — ByteDance Seedance 2.5 Reference to Video",
+   "provider": "ByteDance",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ByteDance2ReferenceNodeV2"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "Autogrow refs: 30 images, 10 videos, 10 audios; task_type covers generate/edit/extend",
+   "source_ids": [
+    "api.ByteDance2ReferenceNodeV2"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_bytedance.py"
+  },
+  {
+   "id": "api.GeminiImageNode",
+   "name": "Nano Banana (gemini-2.5-flash-image) — Nano Banana (Google Gemini Image)",
+   "provider": "Google",
+   "kind": "partner",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "GeminiImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.GeminiImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_gemini.py"
+  },
+  {
+   "id": "api.GeminiImage2Node",
+   "name": "Nano Banana Pro (gemini-3-pro-image-preview) / Nano Banana 2 — Nano Banana Pro (Google Gemini Image)",
+   "provider": "Google",
+   "kind": "partner",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "GeminiImage2Node"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.GeminiImage2Node"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_gemini.py"
+  },
+  {
+   "id": "api.GeminiVideoOmniV2",
+   "name": "Gemini Omni Flash 1.1 / Omni Flash — Google Gemini Omni (Video)",
+   "provider": "Google",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "GeminiVideoOmniV2"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "length 3-10s stated in prompt; refs: 14 images, 3 videos",
+   "source_ids": [
+    "api.GeminiVideoOmniV2"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_gemini.py"
+  },
+  {
+   "id": "api.GrokImageNode",
+   "name": "Grok Imagine Image 2.0 / quality / pro — Grok Image",
+   "provider": "xAI",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "GrokImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "n<=10",
+   "source_ids": [
+    "api.GrokImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_grok.py"
+  },
+  {
+   "id": "api.GrokImageEditNodeV2",
+   "name": "Grok Imagine Image Edit — Grok Image Edit",
+   "provider": "xAI",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "GrokImageEditNodeV2"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "2.0: 3 refs",
+   "source_ids": [
+    "api.GrokImageEditNodeV2"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_grok.py"
+  },
+  {
+   "id": "api.GrokVideoNode",
+   "name": "Grok Imagine Video 1.5 / 1.5 lite — Grok Video",
+   "provider": "xAI",
+   "kind": "partner",
+   "stages": [
+    "generate_image",
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "GrokVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "duration 1-15",
+   "source_ids": [
+    "api.GrokVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_grok.py"
+  },
+  {
+   "id": "api.GrokVideoEditNode",
+   "name": "Grok Imagine Video Edit — Grok Video Edit",
+   "provider": "xAI",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "GrokVideoEditNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.GrokVideoEditNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_grok.py"
+  },
+  {
+   "id": "api.GrokVideoReferenceNode",
+   "name": "Grok Reference-to-Video",
+   "provider": "xAI",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "GrokVideoReferenceNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "7 refs + preset voices",
+   "source_ids": [
+    "api.GrokVideoReferenceNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_grok.py"
+  },
+  {
+   "id": "api.GrokVideoExtendNode",
+   "name": "Grok Video Extend",
+   "provider": "xAI",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "GrokVideoExtendNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "2-10s extension",
+   "source_ids": [
+    "api.GrokVideoExtendNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_grok.py"
+  },
+  {
+   "id": "api.HeyGenReferenceToVideoNode",
+   "name": "HeyGen Video 1.0 Reference to Video",
+   "provider": "HeyGen",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "HeyGenReferenceToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "up to 12 refs (9 img, 3 vid, 3 audio); @Image1 tags",
+   "source_ids": [
+    "api.HeyGenReferenceToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_heygen.py"
+  },
+  {
+   "id": "api.HeyGenImageToVideoNode",
+   "name": "HeyGen Video 1.0 Image to Video",
+   "provider": "HeyGen",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "HeyGenImageToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "duration 5-15",
+   "source_ids": [
+    "api.HeyGenImageToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_heygen.py"
+  },
+  {
+   "id": "api.HunyuanImageTextToImageApi",
+   "name": "HY Image 3.5 preview — Tencent HY Image: Text to Image",
+   "provider": "Tencent",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "HunyuanImageTextToImageApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.HunyuanImageTextToImageApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_hunyuan_image.py"
+  },
+  {
+   "id": "api.HunyuanImageEditApi",
+   "name": "HY Image 3.5 preview Edit — Tencent HY Image: Edit",
+   "provider": "Tencent",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "HunyuanImageEditApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "up to 5 refs",
+   "source_ids": [
+    "api.HunyuanImageEditApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_hunyuan_image.py"
+  },
+  {
+   "id": "api.IdeogramV3",
+   "name": "Ideogram 3.0 — Ideogram V3",
+   "provider": "Ideogram",
+   "kind": "partner",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "IdeogramV3"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "character_image ref",
+   "source_ids": [
+    "api.IdeogramV3"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_ideogram.py"
+  },
+  {
+   "id": "api.IdeogramV4",
+   "name": "Ideogram 4.0 (API) — Ideogram V4",
+   "provider": "Ideogram",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "IdeogramV4"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.IdeogramV4"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_ideogram.py"
+  },
+  {
+   "id": "api.IdeogramPImage",
+   "name": "Ideogram & Pruna P-Image",
+   "provider": "Ideogram/Pruna",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "IdeogramPImage"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "fast",
+   "source_ids": [
+    "api.IdeogramPImage"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_ideogram.py"
+  },
+  {
+   "id": "api.IdeogramTextToImageApi",
+   "name": "Ideogram 4.5 Text to Image",
+   "provider": "Ideogram",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "IdeogramTextToImageApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.IdeogramTextToImageApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_ideogram.py"
+  },
+  {
+   "id": "api.IdeogramEditApi",
+   "name": "Ideogram 4.5 Edit",
+   "provider": "Ideogram",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "IdeogramEditApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "up to 5 images",
+   "source_ids": [
+    "api.IdeogramEditApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_ideogram.py"
+  },
+  {
+   "id": "api.IdeogramPreciseEditApi",
+   "name": "Ideogram 4.5 Precise Edit",
+   "provider": "Ideogram",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "IdeogramPreciseEditApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "4 refs; untouched pixels identical",
+   "source_ids": [
+    "api.IdeogramPreciseEditApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_ideogram.py"
+  },
+  {
+   "id": "api.KlingTextToVideoNode",
+   "name": "Kling 2.x (legacy T2V) — Kling Text to Video",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "KlingTextToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "mode combo carries model/duration",
+   "source_ids": [
+    "api.KlingTextToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_kling.py"
+  },
+  {
+   "id": "api.KlingOmniProTextToVideoNode",
+   "name": "Kling 3.0 Omni / O1 — Kling 3.0 Omni Text to Video",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "KlingOmniProTextToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "storyboards 1-4",
+   "source_ids": [
+    "api.KlingOmniProTextToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_kling.py"
+  },
+  {
+   "id": "api.KlingOmniProFirstLastFrameNode",
+   "name": "Kling 3.0 Omni / O1 — Kling 3.0 Omni First-Last-Frame to Video",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "KlingOmniProFirstLastFrameNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.KlingOmniProFirstLastFrameNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_kling.py"
+  },
+  {
+   "id": "api.KlingOmniProImageToVideoNode",
+   "name": "Kling 3.0 Omni / O1 — Kling 3.0 Omni Image to Video",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "KlingOmniProImageToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "up to 7 reference images",
+   "source_ids": [
+    "api.KlingOmniProImageToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_kling.py"
+  },
+  {
+   "id": "api.KlingOmniProVideoToVideoNode",
+   "name": "Kling 3.0 Omni / O1 — Kling 3.0 Omni Video to Video",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "KlingOmniProVideoToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "reference_video + <=4 refs; keep_original_sound",
+   "source_ids": [
+    "api.KlingOmniProVideoToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_kling.py"
+  },
+  {
+   "id": "api.KlingOmniProEditVideoNode",
+   "name": "Kling 3.0 Omni / O1 Edit — Kling 3.0 Omni Edit Video",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "KlingOmniProEditVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.KlingOmniProEditVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_kling.py"
+  },
+  {
+   "id": "api.KlingOmniProImageNode",
+   "name": "Kling 3.0 Omni Image / Image O1 — Kling 3.0 Omni Image",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "KlingOmniProImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "series_amount 2-9 (consistent set)",
+   "source_ids": [
+    "api.KlingOmniProImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_kling.py"
+  },
+  {
+   "id": "api.KlingImage2VideoNode",
+   "name": "Kling 2.5 Turbo — Kling Image(First Frame) to Video",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "KlingImage2VideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.KlingImage2VideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_kling.py"
+  },
+  {
+   "id": "api.KlingStartEndFrameNode",
+   "name": "Kling (start/end) — Kling Start-End Frame to Video",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "KlingStartEndFrameNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.KlingStartEndFrameNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_kling.py"
+  },
+  {
+   "id": "api.KlingImageGenerationNode",
+   "name": "Kling 3.0 Image",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "KlingImageGenerationNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "n<=9",
+   "source_ids": [
+    "api.KlingImageGenerationNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_kling.py"
+  },
+  {
+   "id": "api.KlingTextToVideoWithAudio",
+   "name": "Kling 2.6 Text to Video with Audio",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "KlingTextToVideoWithAudio"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "5/10s",
+   "source_ids": [
+    "api.KlingTextToVideoWithAudio"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_kling.py"
+  },
+  {
+   "id": "api.KlingImageToVideoWithAudio",
+   "name": "Kling 2.6 Image(First Frame) to Video with Audio",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "KlingImageToVideoWithAudio"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "5/10s",
+   "source_ids": [
+    "api.KlingImageToVideoWithAudio"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_kling.py"
+  },
+  {
+   "id": "api.KlingMotionControl",
+   "name": "Kling Motion Control (v3 / v2.6) — Kling Motion Control",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "KlingMotionControl"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "reference_image + reference_video; orientation from video|image",
+   "source_ids": [
+    "api.KlingMotionControl"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_kling.py"
+  },
+  {
+   "id": "api.KlingVideoNode",
+   "name": "Kling 3.0 Video",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "KlingVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "multi_shot DynamicCombo",
+   "source_ids": [
+    "api.KlingVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_kling.py"
+  },
+  {
+   "id": "api.KlingFirstLastFrameNode",
+   "name": "Kling 3.0 First-Last-Frame to Video",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "KlingFirstLastFrameNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.KlingFirstLastFrameNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_kling.py"
+  },
+  {
+   "id": "api.KlingTryOnNode",
+   "name": "Kling Virtual Try-On",
+   "provider": "Kling",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "KlingTryOnNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.KlingTryOnNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_kling.py"
+  },
+  {
+   "id": "api.Krea3ImageNode",
+   "name": "Krea 3 Image",
+   "provider": "Krea",
+   "kind": "partner",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Krea3ImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "up to 8 images",
+   "source_ids": [
+    "api.Krea3ImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_krea.py"
+  },
+  {
+   "id": "api.LtxApi25AudioToVideo",
+   "name": "LTX-2.5 Audio-to-Video (API) — LTX 2.5 Audio To Video",
+   "provider": "Lightricks",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "LtxApi25AudioToVideo"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "audio-driven, optional first frame",
+   "source_ids": [
+    "api.LtxApi25AudioToVideo"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_ltxv.py"
+  },
+  {
+   "id": "api.LumaImageNode",
+   "name": "Luma Photon (legacy T2I) — Luma Text to Image",
+   "provider": "Luma",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "LumaImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.LumaImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_luma.py"
+  },
+  {
+   "id": "api.LumaImageModifyNode",
+   "name": "Luma Photon Modify — Luma Image to Image",
+   "provider": "Luma",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "LumaImageModifyNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.LumaImageModifyNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_luma.py"
+  },
+  {
+   "id": "api.LumaImageNode2",
+   "name": "Luma UNI-1 / UNI-1 max — Luma UNI-1 Image",
+   "provider": "Luma",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "LumaImageNode2"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.LumaImageNode2"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_luma.py"
+  },
+  {
+   "id": "api.LumaImageEditNode2",
+   "name": "Luma UNI-1 Edit — Luma UNI-1 Image Edit",
+   "provider": "Luma",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "LumaImageEditNode2"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "up to 8 refs",
+   "source_ids": [
+    "api.LumaImageEditNode2"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_luma.py"
+  },
+  {
+   "id": "api.LumaRay32KeyframesToVideoNode",
+   "name": "Luma Ray 3.2 Keyframes to Video",
+   "provider": "Luma",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "LumaRay32KeyframesToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": ">=2 LumaRay32KeyframeNode inputs",
+   "source_ids": [
+    "api.LumaRay32KeyframesToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_luma.py"
+  },
+  {
+   "id": "api.LumaRay32VideoEditNode",
+   "name": "Luma Ray 3.2 Video Edit",
+   "provider": "Luma",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "LumaRay32VideoEditNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "source <=18s; strength adhere/flex/reimagine",
+   "source_ids": [
+    "api.LumaRay32VideoEditNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_luma.py"
+  },
+  {
+   "id": "api.LumaRay32VideoReframeNode",
+   "name": "Ray 3.2 Reframe — Luma Ray 3.2 Video Reframe",
+   "provider": "Luma",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "LumaRay32VideoReframeNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "change aspect ratio, fill new canvas",
+   "source_ids": [
+    "api.LumaRay32VideoReframeNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_luma.py"
+  },
+  {
+   "id": "api.LumaRay32ExtendVideoNode",
+   "name": "Luma Ray 3.2 Extend Video",
+   "provider": "Luma",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "LumaRay32ExtendVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "forward/backward 5s from generation_id",
+   "source_ids": [
+    "api.LumaRay32ExtendVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_luma.py"
+  },
+  {
+   "id": "api.MagnificImageStyleTransferNode",
+   "name": "Magnific Style Transfer — Magnific Image Style Transfer",
+   "provider": "Magnific",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "MagnificImageStyleTransferNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.MagnificImageStyleTransferNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_magnific.py"
+  },
+  {
+   "id": "api.MagnificImageRelightNode",
+   "name": "Magnific Relight — Magnific Image Relight",
+   "provider": "Magnific",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "MagnificImageRelightNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.MagnificImageRelightNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_magnific.py"
+  },
+  {
+   "id": "api.MetaMuseImageTextToImageApi",
+   "name": "Muse Image 1.0 — Meta Muse Image Text to Image",
+   "provider": "Meta",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "MetaMuseImageTextToImageApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.MetaMuseImageTextToImageApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_meta.py"
+  },
+  {
+   "id": "api.MetaMuseImageEditApi",
+   "name": "Muse Image 1.0 Edit — Meta Muse Image Edit",
+   "provider": "Meta",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "MetaMuseImageEditApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "up to 10 refs",
+   "source_ids": [
+    "api.MetaMuseImageEditApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_meta.py"
+  },
+  {
+   "id": "api.MinimaxTextToVideoNode",
+   "name": "T2V-01 / T2V-01-Director — MiniMax Text to Video",
+   "provider": "MiniMax",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "MinimaxTextToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "Director = camera-move syntax",
+   "source_ids": [
+    "api.MinimaxTextToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_minimax.py"
+  },
+  {
+   "id": "api.MinimaxImageToVideoNode",
+   "name": "I2V-01 / Director / live — MiniMax Image to Video",
+   "provider": "MiniMax",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "MinimaxImageToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.MinimaxImageToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_minimax.py"
+  },
+  {
+   "id": "api.MinimaxHailuoVideoNode",
+   "name": "MiniMax Hailuo 02 Video",
+   "provider": "MiniMax",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "MinimaxHailuoVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "6/10s",
+   "source_ids": [
+    "api.MinimaxHailuoVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_minimax.py"
+  },
+  {
+   "id": "api.MinimaxHailuo03ReferenceNode",
+   "name": "MiniMax H3 / Max Reference (API) — MiniMax H3 Reference to Video",
+   "provider": "MiniMax",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "MinimaxHailuo03ReferenceNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "refs: 7 images, 3 videos, 3 audios ('Image 1', 'Video 1'...)",
+   "source_ids": [
+    "api.MinimaxHailuo03ReferenceNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_minimax.py"
+  },
+  {
+   "id": "api.OpenRouterImageNode",
+   "name": "MAI-Image-2.6 — OpenRouter Image",
+   "provider": "OpenRouter (Microsoft)",
+   "kind": "partner",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "OpenRouterImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "up to 5 refs",
+   "source_ids": [
+    "api.OpenRouterImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_openrouter.py"
+  },
+  {
+   "id": "api.PixverseTextToVideoNode",
+   "name": "PixVerse (legacy v4.x/v5) — PixVerse Text to Video",
+   "provider": "PixVerse",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "PixverseTextToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "template input",
+   "source_ids": [
+    "api.PixverseTextToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_pixverse.py"
+  },
+  {
+   "id": "api.PixverseImageToVideoNode",
+   "name": "PixVerse (legacy) — PixVerse Image to Video",
+   "provider": "PixVerse",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "PixverseImageToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.PixverseImageToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_pixverse.py"
+  },
+  {
+   "id": "api.PixverseTransitionVideoNode",
+   "name": "PixVerse Transition (legacy) — PixVerse Transition Video",
+   "provider": "PixVerse",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "PixverseTransitionVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.PixverseTransitionVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_pixverse.py"
+  },
+  {
+   "id": "api.PixverseV6TextToVideoNode",
+   "name": "PixVerse V6 / V6 Max — PixVerse V6 Text to Video",
+   "provider": "PixVerse",
+   "kind": "partner",
+   "stages": [
+    "generate_image",
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "PixverseV6TextToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "1-15s",
+   "source_ids": [
+    "api.PixverseV6TextToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_pixverse.py"
+  },
+  {
+   "id": "api.PixverseV6ImageToVideoNode",
+   "name": "PixVerse V6 / V6 Max — PixVerse V6 Image to Video",
+   "provider": "PixVerse",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "PixverseV6ImageToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.PixverseV6ImageToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_pixverse.py"
+  },
+  {
+   "id": "api.PixverseV6FirstLastFrameNode",
+   "name": "PixVerse V6 First-Last-Frame to Video",
+   "provider": "PixVerse",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "PixverseV6FirstLastFrameNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.PixverseV6FirstLastFrameNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_pixverse.py"
+  },
+  {
+   "id": "api.PixverseV6ExtendVideoNode",
+   "name": "PixVerse V6 Extend Video",
+   "provider": "PixVerse",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "PixverseV6ExtendVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.PixverseV6ExtendVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_pixverse.py"
+  },
+  {
+   "id": "api.PixverseV6FusionVideoNode",
+   "name": "PixVerse V6 Fusion (Reference to Video)",
+   "provider": "PixVerse",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "PixverseV6FusionVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "@Subject/@Background refs; ref video => Omni mode",
+   "source_ids": [
+    "api.PixverseV6FusionVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_pixverse.py"
+  },
+  {
+   "id": "api.PrunaTextToVideoNode",
+   "name": "Pruna P-Video-2 Text to Video",
+   "provider": "Pruna",
+   "kind": "partner",
+   "stages": [
+    "generate_image",
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "PrunaTextToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "auto|1-20s; draft mode",
+   "source_ids": [
+    "api.PrunaTextToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_pruna.py"
+  },
+  {
+   "id": "api.PrunaImageToVideoNode",
+   "name": "Pruna P-Video-2 Image to Video",
+   "provider": "Pruna",
+   "kind": "partner",
+   "stages": [
+    "generate_image",
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "PrunaImageToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.PrunaImageToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_pruna.py"
+  },
+  {
+   "id": "api.QwenImageTextToImageApi",
+   "name": "Qwen-Image 3.0 / 3.0 Pro (API) — Qwen Image 3 Text to Image",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "QwenImageTextToImageApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "n<=6",
+   "source_ids": [
+    "api.QwenImageTextToImageApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_qwen.py"
+  },
+  {
+   "id": "api.QwenImageEditApi",
+   "name": "Qwen-Image 3.0 Edit (API) — Qwen Image 3 Edit",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "QwenImageEditApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "up to 3 refs",
+   "source_ids": [
+    "api.QwenImageEditApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_qwen.py"
+  },
+  {
+   "id": "api.WanTextToImageApi",
+   "name": "Wan 2.5 T2I preview — Wan Text to Image",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "WanTextToImageApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.WanTextToImageApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_wan.py"
+  },
+  {
+   "id": "api.WanImageToImageApi",
+   "name": "Wan 2.5 I2I preview — Wan Image to Image",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "WanImageToImageApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "1-2 images",
+   "source_ids": [
+    "api.WanImageToImageApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_wan.py"
+  },
+  {
+   "id": "api.WanTextToVideoApi",
+   "name": "Wan 2.5 / 2.6 T2V — Wan Text to Video",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "WanTextToVideoApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "5-15s; shot_type single|multi",
+   "source_ids": [
+    "api.WanTextToVideoApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_wan.py"
+  },
+  {
+   "id": "api.WanImageToVideoApi",
+   "name": "Wan 2.5 / 2.6 I2V — Wan Image to Video",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "WanImageToVideoApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.WanImageToVideoApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_wan.py"
+  },
+  {
+   "id": "api.WanReferenceVideoApi",
+   "name": "Wan 2.6 R2V — Wan Reference to Video",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "WanReferenceVideoApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "character + voice from reference videos",
+   "source_ids": [
+    "api.WanReferenceVideoApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_wan.py"
+  },
+  {
+   "id": "api.Wan2TextToVideoApi",
+   "name": "Wan 2.7 T2V — Wan 2.7 Text to Video",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Wan2TextToVideoApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.Wan2TextToVideoApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_wan.py"
+  },
+  {
+   "id": "api.Wan2ImageToVideoApi",
+   "name": "Wan 2.7 I2V — Wan 2.7 Image to Video",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Wan2ImageToVideoApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.Wan2ImageToVideoApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_wan.py"
+  },
+  {
+   "id": "api.Wan2VideoContinuationApi",
+   "name": "Wan 2.7 Continuation — Wan 2.7 Video Continuation",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Wan2VideoContinuationApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.Wan2VideoContinuationApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_wan.py"
+  },
+  {
+   "id": "api.Wan2VideoEditApi",
+   "name": "Wan 2.7 Video Edit",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Wan2VideoEditApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "audio_setting auto|origin",
+   "source_ids": [
+    "api.Wan2VideoEditApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_wan.py"
+  },
+  {
+   "id": "api.Wan2ReferenceVideoApi",
+   "name": "Wan 2.7 R2V — Wan 2.7 Reference to Video",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Wan2ReferenceVideoApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "character1/character2 tags",
+   "source_ids": [
+    "api.Wan2ReferenceVideoApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_wan.py"
+  },
+  {
+   "id": "api.Wan3ReferenceToVideoApi",
+   "name": "Wan 3.0 (API) — Wan 3.0 Reference to Video",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Wan3ReferenceToVideoApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "auto|2-30s; refs 10 img, 5 video, 5 audio (@Image1)",
+   "source_ids": [
+    "api.Wan3ReferenceToVideoApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_wan.py"
+  },
+  {
+   "id": "api.Wan3ImageToVideoApi",
+   "name": "Wan 3.0 (API) — Wan 3.0 Image to Video",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Wan3ImageToVideoApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "auto|2-30s",
+   "source_ids": [
+    "api.Wan3ImageToVideoApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_wan.py"
+  },
+  {
+   "id": "api.HappyHorseTextToVideoApi",
+   "name": "HappyHorse 1.1 T2V — HappyHorse Text to Video",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "HappyHorseTextToVideoApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "3-15s",
+   "source_ids": [
+    "api.HappyHorseTextToVideoApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_wan.py"
+  },
+  {
+   "id": "api.HappyHorseImageToVideoApi",
+   "name": "HappyHorse 1.1 I2V — HappyHorse Image to Video",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "HappyHorseImageToVideoApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.HappyHorseImageToVideoApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_wan.py"
+  },
+  {
+   "id": "api.HappyHorseVideoEditApi",
+   "name": "HappyHorse 1.0 Video Edit — HappyHorse Video Edit",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "HappyHorseVideoEditApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "3-15s, matches input",
+   "source_ids": [
+    "api.HappyHorseVideoEditApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_wan.py"
+  },
+  {
+   "id": "api.HappyHorseReferenceVideoApi",
+   "name": "HappyHorse 1.1 R2V — HappyHorse Reference to Video",
+   "provider": "Alibaba",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "HappyHorseReferenceVideoApi"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.HappyHorseReferenceVideoApi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_wan.py"
+  },
+  {
+   "id": "api.RecraftTextToImageNode",
+   "name": "Recraft V3 Text to Image",
+   "provider": "Recraft",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "RecraftTextToImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.RecraftTextToImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_recraft.py"
+  },
+  {
+   "id": "api.RecraftImageToImageNode",
+   "name": "Recraft V3 I2I — Recraft V3 Image to Image",
+   "provider": "Recraft",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "RecraftImageToImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.RecraftImageToImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_recraft.py"
+  },
+  {
+   "id": "api.RecraftImageInpaintingNode",
+   "name": "Recraft Inpainting — Recraft Image Inpainting",
+   "provider": "Recraft",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "RecraftImageInpaintingNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.RecraftImageInpaintingNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_recraft.py"
+  },
+  {
+   "id": "api.RecraftReplaceBackgroundNode",
+   "name": "Recraft Replace Background",
+   "provider": "Recraft",
+   "kind": "partner",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "RecraftReplaceBackgroundNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.RecraftReplaceBackgroundNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_recraft.py"
+  },
+  {
+   "id": "api.RecraftRemoveBackgroundNode",
+   "name": "Recraft Remove Background",
+   "provider": "Recraft",
+   "kind": "partner",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "RecraftRemoveBackgroundNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "IMAGE + MASK out",
+   "source_ids": [
+    "api.RecraftRemoveBackgroundNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_recraft.py"
+  },
+  {
+   "id": "api.RecraftV4TextToImageNode",
+   "name": "Recraft V4 / V4.1 — Recraft V4 Text to Image",
+   "provider": "Recraft",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "RecraftV4TextToImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "style_id / style_references",
+   "source_ids": [
+    "api.RecraftV4TextToImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_recraft.py"
+  },
+  {
+   "id": "api.RunwayTextToImageNode",
+   "name": "Gen-4 Image — Runway Text to Image",
+   "provider": "Runway",
+   "kind": "partner",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "RunwayTextToImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "optional reference_image",
+   "source_ids": [
+    "api.RunwayTextToImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_runway.py"
+  },
+  {
+   "id": "api.ViduTextToVideoNode",
+   "name": "Vidu Q1 — Vidu Text To Video Generation",
+   "provider": "Vidu",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ViduTextToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "fixed 5s",
+   "source_ids": [
+    "api.ViduTextToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_vidu.py"
+  },
+  {
+   "id": "api.ViduImageToVideoNode",
+   "name": "Vidu Q1 — Vidu Image To Video Generation",
+   "provider": "Vidu",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ViduImageToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.ViduImageToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_vidu.py"
+  },
+  {
+   "id": "api.ViduReferenceVideoNode",
+   "name": "Vidu Q1 Reference — Vidu Reference To Video Generation",
+   "provider": "Vidu",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ViduReferenceVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.ViduReferenceVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_vidu.py"
+  },
+  {
+   "id": "api.ViduStartEndToVideoNode",
+   "name": "Vidu Q1 — Vidu Start End To Video Generation",
+   "provider": "Vidu",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ViduStartEndToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.ViduStartEndToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_vidu.py"
+  },
+  {
+   "id": "api.Vidu2TextToVideoNode",
+   "name": "Vidu Q2 — Vidu2 Text-to-Video Generation",
+   "provider": "Vidu",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Vidu2TextToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "1-10s; background_music flag",
+   "source_ids": [
+    "api.Vidu2TextToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_vidu.py"
+  },
+  {
+   "id": "api.Vidu2ImageToVideoNode",
+   "name": "Vidu Q2 pro-fast / pro / turbo — Vidu2 Image-to-Video Generation",
+   "provider": "Vidu",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Vidu2ImageToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.Vidu2ImageToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_vidu.py"
+  },
+  {
+   "id": "api.Vidu2ReferenceVideoNode",
+   "name": "Vidu Q2 Reference — Vidu2 Reference-to-Video Generation",
+   "provider": "Vidu",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Vidu2ReferenceVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "subjects Autogrow; audio flag",
+   "source_ids": [
+    "api.Vidu2ReferenceVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_vidu.py"
+  },
+  {
+   "id": "api.Vidu2StartEndToVideoNode",
+   "name": "Vidu Q2 — Vidu2 Start/End Frame-to-Video Generation",
+   "provider": "Vidu",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Vidu2StartEndToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "2-8s",
+   "source_ids": [
+    "api.Vidu2StartEndToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_vidu.py"
+  },
+  {
+   "id": "api.ViduExtendVideoNode",
+   "name": "Vidu Q2 pro Extend — Vidu Video Extension",
+   "provider": "Vidu",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ViduExtendVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "1-7s, optional end_frame",
+   "source_ids": [
+    "api.ViduExtendVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_vidu.py"
+  },
+  {
+   "id": "api.ViduMultiFrameVideoNode",
+   "name": "Vidu Q2 Multi-Frame — Vidu Multi-Frame Video Generation",
+   "provider": "Vidu",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ViduMultiFrameVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "2-8+ keyframe transitions (DynamicCombo 'frames')",
+   "source_ids": [
+    "api.ViduMultiFrameVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_vidu.py"
+  },
+  {
+   "id": "api.Vidu3TextToVideoNode",
+   "name": "Vidu Q3 pro — Vidu Q3 Text-to-Video Generation",
+   "provider": "Vidu",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Vidu3TextToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "1-16s; audio optional",
+   "source_ids": [
+    "api.Vidu3TextToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_vidu.py"
+  },
+  {
+   "id": "api.Vidu3ImageToVideoNode",
+   "name": "Vidu Q3 pro — Vidu Q3 Image-to-Video Generation",
+   "provider": "Vidu",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Vidu3ImageToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.Vidu3ImageToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_vidu.py"
+  },
+  {
+   "id": "api.Vidu3StartEndToVideoNode",
+   "name": "Vidu Q3 pro — Vidu Q3 Start/End Frame-to-Video Generation",
+   "provider": "Vidu",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Vidu3StartEndToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.Vidu3StartEndToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_vidu.py"
+  },
+  {
+   "id": "api.Vidu4ImageToVideoNode",
+   "name": "Vidu Q4 Preview — Vidu Q4 Image-to-Video Generation",
+   "provider": "Vidu",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Vidu4ImageToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "3-16s",
+   "source_ids": [
+    "api.Vidu4ImageToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_vidu.py"
+  },
+  {
+   "id": "api.Vidu4ReferenceVideoNode",
+   "name": "Vidu Q4 Preview Reference — Vidu Q4 Reference-to-Video Generation",
+   "provider": "Vidu",
+   "kind": "partner",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "Vidu4ReferenceVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "up to 15 ref images + ref audio",
+   "source_ids": [
+    "api.Vidu4ReferenceVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_vidu.py"
+  },
+  {
+   "id": "api.BeebleSwitchXVideoEdit",
+   "name": "Beeble SwitchX Video Edit",
+   "provider": "Beeble",
+   "kind": "partner",
+   "stages": [
+    "generate_video",
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BeebleSwitchXVideoEdit"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "keeps subject pixels+motion; outputs alpha",
+   "source_ids": [
+    "api.BeebleSwitchXVideoEdit"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_beeble.py"
+  },
+  {
+   "id": "api.BeebleSwitchXImageEdit",
+   "name": "Beeble SwitchX Image Edit",
+   "provider": "Beeble",
+   "kind": "partner",
+   "stages": [
+    "edit_image",
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "BeebleSwitchXImageEdit"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS via Comfy partner proxy (paid Comfy credits)",
+   "notes": "",
+   "source_ids": [
+    "api.BeebleSwitchXImageEdit"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_beeble.py"
+  },
+  {
+   "id": "cloud.ComfyCloudMiniMaxH3TextToVideoNode",
+   "name": "MiniMax H3 on Comfy Cloud [BETA]",
+   "provider": "Comfy Cloud",
+   "kind": "cloud",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ComfyCloudMiniMaxH3TextToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Open-weights model, but billed per GPU-second ($0.001295) through the partner proxy; counts as an API node",
+   "notes": "Registered in nodes_comfy_cloud.py get_node_list; ComfyCloudMiniMaxH3ReferenceToVideoNode exists but is commented out (server-side issue)",
+   "source_ids": [
+    "cloud.ComfyCloudMiniMaxH3TextToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_comfy_cloud.py"
+  },
+  {
+   "id": "cloud.ComfyCloudMiniMaxH3FirstLastFrameToVideoNode",
+   "name": "MiniMax H3 FLF on Comfy Cloud [BETA]",
+   "provider": "Comfy Cloud",
+   "kind": "cloud",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ComfyCloudMiniMaxH3FirstLastFrameToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Open-weights model, but billed per GPU-second ($0.001295) through the partner proxy; counts as an API node",
+   "notes": "Registered in nodes_comfy_cloud.py get_node_list; ComfyCloudMiniMaxH3ReferenceToVideoNode exists but is commented out (server-side issue)",
+   "source_ids": [
+    "cloud.ComfyCloudMiniMaxH3FirstLastFrameToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_comfy_cloud.py"
+  },
+  {
+   "id": "cloud.ComfyCloudMiniMaxH3ImageToVideoNode",
+   "name": "MiniMax H3 I2V on Comfy Cloud [BETA]",
+   "provider": "Comfy Cloud",
+   "kind": "cloud",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ComfyCloudMiniMaxH3ImageToVideoNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Open-weights model, but billed per GPU-second ($0.001295) through the partner proxy; counts as an API node",
+   "notes": "Registered in nodes_comfy_cloud.py get_node_list; ComfyCloudMiniMaxH3ReferenceToVideoNode exists but is commented out (server-side issue)",
+   "source_ids": [
+    "cloud.ComfyCloudMiniMaxH3ImageToVideoNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_comfy_cloud.py"
+  },
+  {
+   "id": "cloud.ComfyCloudFlux2TextToImageNode",
+   "name": "Flux 2 on Comfy Cloud [BETA]",
+   "provider": "Comfy Cloud",
+   "kind": "cloud",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ComfyCloudFlux2TextToImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Open-weights model, but billed per GPU-second ($0.001295) through the partner proxy; counts as an API node",
+   "notes": "Registered in nodes_comfy_cloud.py get_node_list; ComfyCloudMiniMaxH3ReferenceToVideoNode exists but is commented out (server-side issue)",
+   "source_ids": [
+    "cloud.ComfyCloudFlux2TextToImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_comfy_cloud.py"
+  },
+  {
+   "id": "cloud.ComfyCloudMageFlowTextToImageNode",
+   "name": "Mage-Flow on Comfy Cloud [BETA]",
+   "provider": "Comfy Cloud",
+   "kind": "cloud",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ComfyCloudMageFlowTextToImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Open-weights model, but billed per GPU-second ($0.001295) through the partner proxy; counts as an API node",
+   "notes": "Registered in nodes_comfy_cloud.py get_node_list; ComfyCloudMiniMaxH3ReferenceToVideoNode exists but is commented out (server-side issue)",
+   "source_ids": [
+    "cloud.ComfyCloudMageFlowTextToImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_comfy_cloud.py"
+  },
+  {
+   "id": "cloud.ComfyCloudMageFlowTurboTextToImageNode",
+   "name": "Mage-Flow Turbo on Comfy Cloud [BETA]",
+   "provider": "Comfy Cloud",
+   "kind": "cloud",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [
+    "ComfyCloudMageFlowTurboTextToImageNode"
+   ],
+   "weights": [],
+   "params": {},
+   "license": "Open-weights model, but billed per GPU-second ($0.001295) through the partner proxy; counts as an API node",
+   "notes": "Registered in nodes_comfy_cloud.py get_node_list; ComfyCloudMiniMaxH3ReferenceToVideoNode exists but is commented out (server-side issue)",
+   "source_ids": [
+    "cloud.ComfyCloudMageFlowTurboTextToImageNode"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_api_nodes/nodes_comfy_cloud.py"
+  },
+  {
+   "id": "open.ltx_2_3",
+   "name": "LTX-2.3 22B dev / distilled",
+   "provider": "Lightricks",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "LTX-2 Community License (<$10M revenue free)",
+   "notes": "templates video_ltx2_3_t2v/_i2v/_flf2v",
+   "source_ids": [
+    "open.ltx_2_3"
+   ],
+   "source_url": "https://huggingface.co/Lightricks/LTX-2.3"
+  },
+  {
+   "id": "open.ltx_2_3_ic_lora_union",
+   "name": "LTX-2.3 IC-LoRA Union Control (depth/pose/canny)",
+   "provider": "Lightricks",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "LTX-2 Community License",
+   "notes": "template video_ltx2_3_ic_lora (MoGe depth -> guide). Render a 3D-staged previz pass, then IC-LoRA it to final = the LTX VFX bonus path",
+   "source_ids": [
+    "open.ltx_2_3_ic_lora_union"
+   ],
+   "source_url": "https://huggingface.co/Lightricks/LTX-2.3-22b-IC-LoRA-Union-Control"
+  },
+  {
+   "id": "open.ltx_2_3_ic_lora_ingredients",
+   "name": "LTX-2.3 IC-LoRA Ingredients (reference-to-video)",
+   "provider": "Lightricks",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "LTX-2 Community License",
+   "notes": "Character & Fashion category template (2026-07-13)",
+   "source_ids": [
+    "open.ltx_2_3_ic_lora_ingredients"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/template_ltx2_3_ic_lora_ingredients.json"
+  },
+  {
+   "id": "open.ltx_2_3_edit_loras",
+   "name": "LTX-2.3 edit LoRAs (remove object / watermark / subtitles, outpaint, restore archival)",
+   "provider": "Lightricks + community",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "LTX-2 Community License (+ each LoRA's own license)",
+   "notes": "template names from index.json; LoRA licenses not individually checked",
+   "source_ids": [
+    "open.ltx_2_3_edit_loras"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/template_ltx2_3_lora_video_outpainting.json"
+  },
+  {
+   "id": "open.minimax_h3_local",
+   "name": "MiniMax H3 (fl2va / ref2va, int8)",
+   "provider": "MiniMax",
+   "kind": "local",
+   "stages": [
+    "generate_image",
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "MiniMax H3 Community License: EXCLUDES USA, EU, UK, South Korea; <$20M revenue elsewhere; must display 'MiniMax H3' in commercial UI. US users need the commercial license Comfy resells",
+   "notes": "templates video_minimax_h3_t2v/_i2v/_r2v/_multiframe_reference/_i2v_continuation; turbo LoRAs (8-step fl2v, 4-step ref2v). Text encoder qwen3vl_32b nvfp4",
+   "source_ids": [
+    "open.minimax_h3_local"
+   ],
+   "source_url": "https://huggingface.co/MiniMaxAI/MiniMax-H3"
+  },
+  {
+   "id": "open.minimax_h3_fun_control",
+   "name": "MiniMax H3 Fun ControlNet Union (pose)",
+   "provider": "MiniMax / community",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "MiniMax H3 Community License (same territory exclusions)",
+   "notes": "",
+   "source_ids": [
+    "open.minimax_h3_fun_control"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_minimax_h3_fun_controlnet_union.json"
+  },
+  {
+   "id": "open.fasth3_omniref",
+   "name": "FastH3 OmniRef 8-step (FastVideo distill of H3)",
+   "provider": "FastVideo",
+   "kind": "local",
+   "stages": [
+    "generate_image",
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Derivative of MiniMax H3 -> H3 Community License terms apply (inferred)",
+   "notes": "FastVideo/FastH3-OmniRef-Comfy HF repo is gated/private to anonymous API",
+   "source_ids": [
+    "open.fasth3_omniref"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_fasth3_ominiref_r2v.json"
+  },
+  {
+   "id": "open.minimax_h3_t2i",
+   "name": "MiniMax H3 as text-to-image (single frame)",
+   "provider": "MiniMax",
+   "kind": "local",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "MiniMax H3 Community License",
+   "notes": "template dated 2026-10-27 (today)",
+   "source_ids": [
+    "open.minimax_h3_t2i"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/image_minimax_h3_t2i.json"
+  },
+  {
+   "id": "open.wan_2_2_14b",
+   "name": "Wan 2.2 14B T2V / I2V / FLF2V (+lightx2v 4-step)",
+   "provider": "Alibaba Wan-AI",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "templates video_wan2_2_14B_t2v/_i2v/_flf2v",
+   "source_ids": [
+    "open.wan_2_2_14b"
+   ],
+   "source_url": "https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B"
+  },
+  {
+   "id": "open.wan_2_2_5b",
+   "name": "Wan 2.2 5B TI2V",
+   "provider": "Alibaba Wan-AI",
+   "kind": "local",
+   "stages": [
+    "generate_image",
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "fits small GPUs; good previz",
+   "source_ids": [
+    "open.wan_2_2_5b"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_wan2_2_5B_ti2v.json"
+  },
+  {
+   "id": "open.wan_2_2_fun_camera",
+   "name": "Wan 2.2 Fun Camera / Wan 2.1 Fun Camera",
+   "provider": "Alibaba PAI",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "explicit camera trajectories (pan/zoom/orbit presets) — natural target for 3D-stage camera export",
+   "source_ids": [
+    "open.wan_2_2_fun_camera"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_wan2_2_14B_fun_camera.json"
+  },
+  {
+   "id": "open.wan_2_2_fun_control",
+   "name": "Wan 2.2 Fun Control / Inpaint",
+   "provider": "Alibaba PAI",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "",
+   "source_ids": [
+    "open.wan_2_2_fun_control"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_wan2_2_14B_fun_control.json"
+  },
+  {
+   "id": "open.wan_2_1_vace",
+   "name": "Wan 2.1 VACE 14B / 1.3B",
+   "provider": "Alibaba Wan-AI",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "",
+   "source_ids": [
+    "open.wan_2_1_vace"
+   ],
+   "source_url": "https://huggingface.co/Wan-AI/Wan2.1-VACE-14B"
+  },
+  {
+   "id": "open.wan_2_2_animate",
+   "name": "Wan 2.2 Animate 14B",
+   "provider": "Alibaba Wan-AI",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "requires custom nodes per index (requiresCustomNodes)",
+   "source_ids": [
+    "open.wan_2_2_animate"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_wan2_2_14B_animate.json"
+  },
+  {
+   "id": "open.scail_2",
+   "name": "SCAIL-2 (Wan 2.1 14B) character replacement",
+   "provider": "SCAIL authors / Comfy-Org repack",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "MIT",
+   "notes": "",
+   "source_ids": [
+    "open.scail_2"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_wan21_scail2_character_replacement.json"
+  },
+  {
+   "id": "open.wan_move_ati",
+   "name": "WanMove / Wan ATI trajectory control",
+   "provider": "Alibaba / community",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0 (base)",
+   "notes": "",
+   "source_ids": [
+    "open.wan_move_ati"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_wanmove_480p.json"
+  },
+  {
+   "id": "open.wan_humo",
+   "name": "HuMo (Wan-based human video)",
+   "provider": "ByteDance / community",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0 (inferred)",
+   "notes": "",
+   "source_ids": [
+    "open.wan_humo"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_humo.json"
+  },
+  {
+   "id": "open.wan_dancer",
+   "name": "WanDancer (music-driven dance)",
+   "provider": "community",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0 (Comfy-Org/Wan-Dancer)",
+   "notes": "",
+   "source_ids": [
+    "open.wan_dancer"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_wan_dancer.json"
+  },
+  {
+   "id": "open.bernini_r",
+   "name": "Bernini-R (Wan 2.2 based, t2v/v2v/r2v/ads2v + image edit)",
+   "provider": "Bernini authors",
+   "kind": "local",
+   "stages": [
+    "edit_image",
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "",
+   "source_ids": [
+    "open.bernini_r"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_bernini_r_video_editing.json"
+  },
+  {
+   "id": "open.hunyuan_video_1_5",
+   "name": "HunyuanVideo 1.5 720p T2V/I2V + 1080p SR",
+   "provider": "Tencent",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Tencent Hunyuan Community License (excludes EU/UK/South Korea; >100M MAU needs license)",
+   "notes": "",
+   "source_ids": [
+    "open.hunyuan_video_1_5"
+   ],
+   "source_url": "https://huggingface.co/tencent/HunyuanVideo-1.5"
+  },
+  {
+   "id": "open.capybara",
+   "name": "Capybara v0.1 (HunyuanVideo 1.5 based) video edit / I2V",
+   "provider": "community",
+   "kind": "local",
+   "stages": [
+    "edit_image",
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "unverified",
+   "notes": "license not checked",
+   "source_ids": [
+    "open.capybara"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_capybara_v0_1_video_edit.json"
+  },
+  {
+   "id": "open.kandinsky_5",
+   "name": "Kandinsky 5.0 Lite T2V/I2V (+T2I)",
+   "provider": "Kandinsky Lab",
+   "kind": "local",
+   "stages": [
+    "generate_image",
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "MIT",
+   "notes": "5s and 10s variants",
+   "source_ids": [
+    "open.kandinsky_5"
+   ],
+   "source_url": "https://huggingface.co/kandinskylab/Kandinsky-5.0-I2V-Lite-5s"
+  },
+  {
+   "id": "open.cosmos_predict2",
+   "name": "NVIDIA Cosmos Predict2 / 2.5",
+   "provider": "NVIDIA",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "NVIDIA Open Model License",
+   "notes": "supported_models: CosmosT2IPredict2 / CosmosI2VPredict2",
+   "source_ids": [
+    "open.cosmos_predict2"
+   ],
+   "source_url": "https://huggingface.co/nvidia/Cosmos-Predict2.5-2B"
+  },
+  {
+   "id": "open.mochi",
+   "name": "Genmo Mochi 1",
+   "provider": "Genmo",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "legacy",
+   "source_ids": [
+    "open.mochi"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_extras/nodes_mochi.py"
+  },
+  {
+   "id": "open.causal_forcing_ar",
+   "name": "Causal-Forcing autoregressive I2V (Wan 2.1)",
+   "provider": "community",
+   "kind": "local",
+   "stages": [
+    "generate_image",
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0 (base, inferred)",
+   "notes": "",
+   "source_ids": [
+    "open.causal_forcing_ar"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_causal_forcing_i2v.json"
+  },
+  {
+   "id": "open.void_inpaint",
+   "name": "VOID video object removal",
+   "provider": "Netflix/INSAIT VOID authors",
+   "kind": "local",
+   "stages": [
+    "clean_plate",
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0 (Comfy-Org/void-model)",
+   "notes": "",
+   "source_ids": [
+    "open.void_inpaint"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/utility_void_video_inpainting.json"
+  },
+  {
+   "id": "open.flux2_klein_4b",
+   "name": "FLUX.2 Klein 4B (base/distilled)",
+   "provider": "Black Forest Labs",
+   "kind": "local",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0 (4B); 9B variants = FLUX non-commercial",
+   "notes": "",
+   "source_ids": [
+    "open.flux2_klein_4b"
+   ],
+   "source_url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B"
+  },
+  {
+   "id": "open.flux2_dev",
+   "name": "FLUX.2 [dev] 32B",
+   "provider": "Black Forest Labs",
+   "kind": "local",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "FLUX non-commercial license",
+   "notes": "",
+   "source_ids": [
+    "open.flux2_dev"
+   ],
+   "source_url": "https://huggingface.co/black-forest-labs/FLUX.2-dev"
+  },
+  {
+   "id": "open.flux1_family",
+   "name": "FLUX.1 dev / Kontext dev / Krea dev / Fill / schnell",
+   "provider": "Black Forest Labs",
+   "kind": "local",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "FLUX.1 [dev] non-commercial (schnell Apache 2.0)",
+   "notes": "",
+   "source_ids": [
+    "open.flux1_family"
+   ],
+   "source_url": "https://huggingface.co/black-forest-labs/FLUX.1-dev"
+  },
+  {
+   "id": "open.qwen_image_2_1",
+   "name": "Qwen-Image 2.1 (int8, T2I + Edit + Turbo + BG removal)",
+   "provider": "Alibaba Qwen",
+   "kind": "local",
+   "stages": [
+    "edit_image",
+    "generate_image",
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Qwen RESEARCH License — NON-COMMERCIAL only",
+   "notes": "templates image_qwen_image_2_1_* (2026-09/10)",
+   "source_ids": [
+    "open.qwen_image_2_1"
+   ],
+   "source_url": "https://huggingface.co/Qwen/Qwen-Image-2.1"
+  },
+  {
+   "id": "open.qwen_image_2512",
+   "name": "Qwen-Image 2512 T2I (+ControlNet, 2-step LoRA, 360 LoRA)",
+   "provider": "Alibaba Qwen",
+   "kind": "local",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "",
+   "source_ids": [
+    "open.qwen_image_2512"
+   ],
+   "source_url": "https://huggingface.co/Qwen/Qwen-Image-2512"
+  },
+  {
+   "id": "open.qwen_image_edit_2511",
+   "name": "Qwen-Image-Edit 2511 (+Lightning 4-step)",
+   "provider": "Alibaba Qwen",
+   "kind": "local",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "",
+   "source_ids": [
+    "open.qwen_image_edit_2511"
+   ],
+   "source_url": "https://huggingface.co/Qwen/Qwen-Image-Edit-2511"
+  },
+  {
+   "id": "open.qwen_multiangle",
+   "name": "Qwen-Image-Edit 2511 + Multiple-Angles LoRA + CameraAngle widget (Reshoot still)",
+   "provider": "Alibaba Qwen + fal LoRA",
+   "kind": "local",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0 (model + LoRA)",
+   "notes": "official App template (isApp) 2026-10-13: the canonical open-weights 'Reshoot from any angle' for stills",
+   "source_ids": [
+    "open.qwen_multiangle"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/template_qwen_multiangle.app.json"
+  },
+  {
+   "id": "open.qwen_image_layered",
+   "name": "Qwen-Image-Layered (layer decomposition)",
+   "provider": "Alibaba Qwen",
+   "kind": "local",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "feed into LayersFromBoundingBoxes / ImageCompositor",
+   "source_ids": [
+    "open.qwen_image_layered"
+   ],
+   "source_url": "https://huggingface.co/Qwen/Qwen-Image-Layered"
+  },
+  {
+   "id": "open.ideogram_4",
+   "name": "Ideogram 4 (fp8/int8)",
+   "provider": "Ideogram",
+   "kind": "local",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Ideogram 4 NON-COMMERCIAL",
+   "notes": "",
+   "source_ids": [
+    "open.ideogram_4"
+   ],
+   "source_url": "https://huggingface.co/ideogram-ai/ideogram-4-fp8"
+  },
+  {
+   "id": "open.hidream_o1",
+   "name": "HiDream-O1 Image (+dev)",
+   "provider": "HiDream.ai",
+   "kind": "local",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "MIT",
+   "notes": "",
+   "source_ids": [
+    "open.hidream_o1"
+   ],
+   "source_url": "https://huggingface.co/Comfy-Org/HiDream-O1-Image"
+  },
+  {
+   "id": "open.hidream_i1_e1",
+   "name": "HiDream I1 / E1.1",
+   "provider": "HiDream.ai",
+   "kind": "local",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "MIT",
+   "notes": "",
+   "source_ids": [
+    "open.hidream_i1_e1"
+   ],
+   "source_url": "https://huggingface.co/HiDream-ai/HiDream-I1-Full"
+  },
+  {
+   "id": "open.mage_flow",
+   "name": "Mage-Flow (+Turbo, Edit)",
+   "provider": "Mage",
+   "kind": "local",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "MIT",
+   "notes": "",
+   "source_ids": [
+    "open.mage_flow"
+   ],
+   "source_url": "https://huggingface.co/Comfy-Org/Mage-Flow"
+  },
+  {
+   "id": "open.moss_image",
+   "name": "MOSS-Image (T2I, layout bboxes, edit, color/depth control)",
+   "provider": "OpenMOSS",
+   "kind": "local",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "depth control = render 3D stage depth -> image",
+   "source_ids": [
+    "open.moss_image"
+   ],
+   "source_url": "https://huggingface.co/Comfy-Org/MOSS-Image"
+  },
+  {
+   "id": "open.ming_image",
+   "name": "Ming-Image 0.1 Design (T2I + edit)",
+   "provider": "inclusionAI (Ant)",
+   "kind": "local",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "MIT",
+   "notes": "uses a 27B text encoder (heavy)",
+   "source_ids": [
+    "open.ming_image"
+   ],
+   "source_url": "https://huggingface.co/Comfy-Org/Ming-Image"
+  },
+  {
+   "id": "open.lens",
+   "name": "Microsoft Lens 3.8B (+Turbo)",
+   "provider": "Microsoft",
+   "kind": "local",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "'other' on HF (check terms)",
+   "notes": "",
+   "source_ids": [
+    "open.lens"
+   ],
+   "source_url": "https://huggingface.co/Comfy-Org/Lens"
+  },
+  {
+   "id": "open.boogu",
+   "name": "Boogu-Image 0.1 (edit + turbo t2i)",
+   "provider": "Boogu",
+   "kind": "local",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "",
+   "source_ids": [
+    "open.boogu"
+   ],
+   "source_url": "https://huggingface.co/Comfy-Org/Boogu-Image"
+  },
+  {
+   "id": "open.joyai_edit",
+   "name": "JoyAI Image Edit",
+   "provider": "JD",
+   "kind": "local",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "",
+   "source_ids": [
+    "open.joyai_edit"
+   ],
+   "source_url": "https://huggingface.co/Comfy-Org/JoyAI-Image-Edit"
+  },
+  {
+   "id": "open.ernie_image",
+   "name": "ERNIE-Image (+Turbo)",
+   "provider": "Baidu",
+   "kind": "local",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "",
+   "source_ids": [
+    "open.ernie_image"
+   ],
+   "source_url": "https://huggingface.co/Comfy-Org/ERNIE-Image"
+  },
+  {
+   "id": "open.fibo2",
+   "name": "Bria FIBO 2.0 (dev/turbo edit)",
+   "provider": "Bria",
+   "kind": "local",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "CC-BY-NC 4.0 (non-commercial)",
+   "notes": "templates dated 2026-10-26",
+   "source_ids": [
+    "open.fibo2"
+   ],
+   "source_url": "https://huggingface.co/Comfy-Org/Fibo-2.0"
+  },
+  {
+   "id": "open.firered_edit",
+   "name": "FireRed Image Edit 1.1",
+   "provider": "FireRed (Xiaohongshu)",
+   "kind": "local",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "",
+   "source_ids": [
+    "open.firered_edit"
+   ],
+   "source_url": "https://huggingface.co/FireRedTeam/FireRed-Image-Edit-1.1-ComfyUI"
+  },
+  {
+   "id": "open.longcat_image",
+   "name": "LongCat-Image / Image-Edit",
+   "provider": "Meituan",
+   "kind": "local",
+   "stages": [
+    "edit_image",
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "unverified",
+   "notes": "",
+   "source_ids": [
+    "open.longcat_image"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/image_longcat_image_edit.json"
+  },
+  {
+   "id": "open.omnigen2",
+   "name": "OmniGen2",
+   "provider": "VectorSpaceLab",
+   "kind": "local",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "",
+   "source_ids": [
+    "open.omnigen2"
+   ],
+   "source_url": "https://huggingface.co/OmniGen2/OmniGen2"
+  },
+  {
+   "id": "open.chroma",
+   "name": "Chroma / Chroma1-Radiance",
+   "provider": "lodestones",
+   "kind": "local",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0",
+   "notes": "",
+   "source_ids": [
+    "open.chroma"
+   ],
+   "source_url": "https://huggingface.co/lodestones/Chroma1-HD"
+  },
+  {
+   "id": "open.sd3_5",
+   "name": "Stable Diffusion 3.5 Large/Medium (+ControlNets)",
+   "provider": "Stability AI",
+   "kind": "local",
+   "stages": [
+    "generate_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Stability AI Community License (free <$1M revenue)",
+   "notes": "",
+   "source_ids": [
+    "open.sd3_5"
+   ],
+   "source_url": "https://huggingface.co/stabilityai/stable-diffusion-3.5-large"
+  },
+  {
+   "id": "open.chrono_edit",
+   "name": "NVIDIA ChronoEdit 14B (Wan 2.1 based, physics-aware edit)",
+   "provider": "NVIDIA",
+   "kind": "local",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "unverified (NVIDIA)",
+   "notes": "",
+   "source_ids": [
+    "open.chrono_edit"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/image_chrono_edit_14B.json"
+  },
+  {
+   "id": "open.depth_anything_3",
+   "name": "Depth Anything 3 (depth/geometry -> mesh/pointcloud)",
+   "provider": "ByteDance",
+   "kind": "local",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "check per checkpoint (DA3 large variants may be NC)",
+   "notes": "3D staging: photo -> mesh -> camera move -> depth guide",
+   "source_ids": [
+    "open.depth_anything_3"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/utility_depth_anything3_image_depth_estimation.json"
+  },
+  {
+   "id": "open.moge",
+   "name": "MoGe 2/3 geometry (depth, normals, FoV, panorama)",
+   "provider": "Microsoft",
+   "kind": "local",
+   "stages": [
+    "edit_image"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "MIT",
+   "notes": "used inside the LTX IC-LoRA template",
+   "source_ids": [
+    "open.moge"
+   ],
+   "source_url": "https://huggingface.co/Comfy-Org/MoGe"
+  },
+  {
+   "id": "open.sam3d_body",
+   "name": "SAM 3D Body (3D pose from video -> animation file)",
+   "provider": "Meta",
+   "kind": "local",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "check",
+   "notes": "markerless mocap for 3D staging",
+   "source_ids": [
+    "open.sam3d_body"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_extras/nodes_sam3d_body.py"
+  },
+  {
+   "id": "open.comfy_compositor",
+   "name": "Create Layered Image / Add Layer / Layers From Bounding Boxes (core)",
+   "provider": "Comfy",
+   "kind": "local",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "GPL-3.0 (ComfyUI core)",
+   "notes": "LAYERS type + Compositor widget = layered export plumbing",
+   "source_ids": [
+    "open.comfy_compositor"
+   ],
+   "source_url": "https://github.com/comfyanonymous/ComfyUI/blob/426f5eea52a7ece1dd599fff4cb6cd1f352ddd24/comfy_extras/nodes_compositor.py"
+  },
+  {
+   "id": "open.cn_wanvideowrapper",
+   "name": "ComfyUI-WanVideoWrapper (Kijai) — Wan family superset",
+   "provider": "Kijai (custom node)",
+   "kind": "custom_node",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0 (pack); model licenses vary",
+   "notes": "custom node; not needed for core Wan paths",
+   "source_ids": [
+    "open.cn_wanvideowrapper"
+   ],
+   "source_url": "https://github.com/kijai/ComfyUI-WanVideoWrapper"
+  },
+  {
+   "id": "open.cn_ltxvideo",
+   "name": "ComfyUI-LTXVideo (Lightricks official pack)",
+   "provider": "Lightricks (custom node)",
+   "kind": "custom_node",
+   "stages": [
+    "generate_video"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache 2.0 (pack)",
+   "notes": "core already has LTX 2.5 natively; pack adds extras",
+   "source_ids": [
+    "open.cn_ltxvideo"
+   ],
+   "source_url": "https://github.com/Lightricks/ComfyUI-LTXVideo"
+  },
+  {
+   "id": "open.ltx23_ic_clean_plate",
+   "name": "LTX-2.3 IC-LoRA Clean-Plate",
+   "provider": "Lightricks",
+   "kind": "local",
+   "stages": [
+    "clean_plate"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "LTX-2.x Community License: free incl. commercial for entities <$10M annual revenue; paid above; HF repo gated (click Agree)",
+   "notes": "Older sibling (repo created 2026-07-19). Only if the pod runs LTX-2.3 instead of 2.5.",
+   "source_ids": [
+    "open.ltx23_ic_clean_plate"
+   ],
+   "source_url": "https://huggingface.co/Lightricks/LTX-2.3-22b-IC-LoRA-Clean-Plate"
+  },
+  {
+   "id": "open.ltx_ic_inpaint",
+   "name": "LTX In/Outpaint IC-LoRA (mask-driven video inpaint)",
+   "provider": "Lightricks",
+   "kind": "local",
+   "stages": [
+    "clean_plate"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "LTX-2.x Community License: free incl. commercial for entities <$10M annual revenue; paid above; HF repo gated (click Agree)",
+   "notes": "Per-object removal with a dilated SAM3 mask. Green edge cue in output = dilate more. LoRA repo: LTX-2.3-22b-IC-LoRA-In-Outpainting; 2.5 workflow in ComfyUI-LTXVideo.",
+   "source_ids": [
+    "open.ltx_ic_inpaint"
+   ],
+   "source_url": "https://huggingface.co/Lightricks/LTX-2.3-22b-IC-LoRA-In-Outpainting"
+  },
+  {
+   "id": "open.remove_background_lucida",
+   "name": "lucida (BiRefNet_HR fine-tune: glass, glow, camouflage)",
+   "provider": "egeorcun (repack Comfy-Org/BiRefNet)",
+   "kind": "local",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "MIT",
+   "notes": "Native since 2026-04/05. Per-frame only -> flickers on video unless temporally smoothed. Self-reported #1 on its own 203-image benchmark for glass/VFX glows.",
+   "source_ids": [
+    "open.remove_background_lucida"
+   ],
+   "source_url": "https://huggingface.co/Comfy-Org/BiRefNet"
+  },
+  {
+   "id": "open.qwen_image_2_1_rgba",
+   "name": "Qwen-Image 2.1 RGBA (transparent gen + subject extraction)",
+   "provider": "Alibaba Qwen",
+   "kind": "local",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Qwen RESEARCH License — NON-COMMERCIAL",
+   "notes": "Template prompt: 'Remove the background, and output a PNG image' (25 steps, 1024). Same weights as open.qwen_image_2_1 in R10; listed here as the Layers-mode entry. Generative: may re-render edges/details.",
+   "source_ids": [
+    "open.qwen_image_2_1_rgba"
+   ],
+   "source_url": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/image_qwen_image_2_1_background_removal.json"
+  },
+  {
+   "id": "open.wan21_alpha",
+   "name": "Wan 2.1 Alpha T2V 14B (generates RGBA video FX elements)",
+   "provider": "WeChatCV (htdong)",
+   "kind": "local",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache-2.0 weights (htdong/Wan-Alpha*); code MIT",
+   "notes": "Text-to-RGBA only (no I2V/V2V yet). Use for smoke/sparks/dust FX layers, not for matting existing footage. v2.0 LoRA+VAE (CVPR'26) and Wan-Alpha++ (2026-10-19) exist upstream; native template ships v1 files.",
+   "source_ids": [
+    "open.wan21_alpha"
+   ],
+   "source_url": "https://docs.comfy.org/tutorials/video/wan/wan-alpha"
+  },
+  {
+   "id": "custom.rmbg_inspyrenet",
+   "name": "InSPyReNet (transparent-background) via ComfyUI-RMBG",
+   "provider": "plemeri",
+   "kind": "custom_node",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "MIT [I]",
+   "notes": "Portrait-oriented, fast. Legacy but still a solid human cutout.",
+   "source_ids": [
+    "custom.rmbg_inspyrenet"
+   ],
+   "source_url": "https://github.com/1038lab/ComfyUI-RMBG"
+  },
+  {
+   "id": "custom.rmbg_vrmbg3",
+   "name": "Bria VRMBG-3.0 (temporal video matting, local) via ComfyUI-RMBG",
+   "provider": "BRIA AI",
+   "kind": "custom_node",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "BRIA VRMBG-3.0 License — NON-COMMERCIAL (commercial = Bria agreement or Bria API)",
+   "notes": "~220M, BiRefNet-based, autoregressive on previous frame's RGB*alpha -> less flicker. 1024x1024 inference. Gated (manual). Same model powers Bria's hosted video BG API (per fal guide) [3P].",
+   "source_ids": [
+    "custom.rmbg_vrmbg3"
+   ],
+   "source_url": "https://huggingface.co/briaai/VRMBG-3.0"
+  },
+  {
+   "id": "custom.rmbg_feynobg",
+   "name": "FeyNoBg ultra-fine matting (Swin-L 263M) via ComfyUI-RMBG",
+   "provider": "1038lab",
+   "kind": "custom_node",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "UNKNOWN (no license tag on HF 1038lab/FeyNobg) — treat as unclear",
+   "notes": "New 2026-10-09; claims wispy hair/glass/motion blur without trimap. Unbenchmarked.",
+   "source_ids": [
+    "custom.rmbg_feynobg"
+   ],
+   "source_url": "https://huggingface.co/1038lab/FeyNobg"
+  },
+  {
+   "id": "custom.rmbg_finegrain_box",
+   "name": "Finegrain Box Segmenter (bbox-prompted matting) via ComfyUI-RMBG",
+   "provider": "Finegrain",
+   "kind": "custom_node",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "MIT",
+   "notes": "Takes BBOX input -> feed Soundstage's staged per-actor bboxes for per-character soft mattes on keyframes.",
+   "source_ids": [
+    "custom.rmbg_finegrain_box"
+   ],
+   "source_url": "https://huggingface.co/finegrain/finegrain-box-segmenter"
+  },
+  {
+   "id": "custom.rmbg_sdmatte",
+   "name": "SDMatte (interactive point/box matting, SD prior) via ComfyUI-RMBG",
+   "provider": "LongfeiHuang",
+   "kind": "custom_node",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "MIT",
+   "notes": "Diffusion-prior matting for a selected object; good for hero-frame PSD.",
+   "source_ids": [
+    "custom.rmbg_sdmatte"
+   ],
+   "source_url": "https://huggingface.co/LongfeiHuang/SDMatte"
+  },
+  {
+   "id": "custom.matanyone2",
+   "name": "MatAnyone 2 (first-frame-mask video matting)",
+   "provider": "NTU S-Lab (pq-yang); node dreamrec",
+   "kind": "custom_node",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "NTU S-Lab License 1.0 — NON-COMMERCIAL (node pack GPL-3.0)",
+   "notes": "CVPR'26; authors report SOTA vs MatAnyone1 and GVM (CRGNN MAD 5.76->4.24). Feed SAM3 first-frame per-object mask -> one run per character. 8 GB min, 12 GB+ rec.",
+   "source_ids": [
+    "custom.matanyone2"
+   ],
+   "source_url": "https://github.com/dreamrec/MatAnyone2_ComfyUI"
+  },
+  {
+   "id": "custom.videomama",
+   "name": "VideoMaMa (mask track -> alpha via SVD prior)",
+   "provider": "Adobe/KAIST (cvlab-kaist); node okdalto",
+   "kind": "custom_node",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Code CC BY-NC 4.0; UNet under Stability AI Community License — NON-COMMERCIAL",
+   "notes": "CVPR'26. Takes a full per-frame mask track (SAM3 output fits directly) -> works on non-human objects. Native ~80 GB VRAM, community-optimized <24 GB [CorridorKey README]. max_resolution 256-2048 (default 1024). Node last push 2026-02-09.",
+   "source_ids": [
+    "custom.videomama"
+   ],
+   "source_url": "https://github.com/okdalto/ComfyUI-VideoMaMa"
+  },
+  {
+   "id": "custom.rvm",
+   "name": "Robust Video Matting (RVM)",
+   "provider": "PeterL1n; node Fannovel16",
+   "kind": "custom_node",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "GPL-3.0",
+   "notes": "2021 recurrent human matting; tiny and real-time but dated; humans only.",
+   "source_ids": [
+    "custom.rvm"
+   ],
+   "source_url": "https://github.com/Fannovel16/ComfyUI-Video-Matting"
+  },
+  {
+   "id": "custom.corridorkey",
+   "name": "CorridorKey (neural green/blue-screen keyer)",
+   "provider": "Corridor Digital",
+   "kind": "custom_node",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Corridor Key Licence = CC BY-NC-SA 4.0 + terms; processing images for commercial projects allowed, no repackaging/resale",
+   "notes": "ONLY for real green/blue-screen plates (needs a coarse alpha hint). Predicts straight FG colour + linear alpha, 2048 backbone, 4K plates, 6-8 GB VRAM. Not for generated shots.",
+   "source_ids": [
+    "custom.corridorkey"
+   ],
+   "source_url": "https://github.com/nikopueringer/CorridorKey"
+  },
+  {
+   "id": "custom.minimax_remover",
+   "name": "MiniMax-Remover (Wan2.1-1.3B, 6-step)",
+   "provider": "zibojia; node kijai",
+   "kind": "custom_node",
+   "stages": [
+    "clean_plate"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "CC BY-NC 4.0 — NON-COMMERCIAL",
+   "notes": "Fast mask-driven remover (no CFG, few steps). WanVideoWrapper is on Comfy Cloud.",
+   "source_ids": [
+    "custom.minimax_remover"
+   ],
+   "source_url": "https://github.com/kijai/ComfyUI-WanVideoWrapper"
+  },
+  {
+   "id": "custom.diffueraser",
+   "name": "DiffuEraser (SD1.5 + ProPainter prior)",
+   "provider": "lixiaowen-xw; node smthemex",
+   "kind": "custom_node",
+   "stages": [
+    "clean_plate"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache-2.0 (code); ProPainter prior is S-Lab NC — check",
+   "notes": "Older; fine for small objects/watermarks.",
+   "source_ids": [
+    "custom.diffueraser"
+   ],
+   "source_url": "https://github.com/smthemex/ComfyUI_DiffuEraser"
+  },
+  {
+   "id": "custom.propainter",
+   "name": "ProPainter (flow propagation, non-generative)",
+   "provider": "sczhou; node daniabib",
+   "kind": "custom_node",
+   "stages": [
+    "clean_plate"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "NTU S-Lab License 1.0 — NON-COMMERCIAL",
+   "notes": "Fast; best for static/locked-off backgrounds; smears on large holes + fast motion.",
+   "source_ids": [
+    "custom.propainter"
+   ],
+   "source_url": "https://github.com/daniabib/ComfyUI_ProPainter_Nodes"
+  },
+  {
+   "id": "custom.omnimattezero",
+   "name": "OmnimatteZero (training-free omnimatte on LTX-Video 0.9)",
+   "provider": "dvirsamuel; node tpc2233",
+   "kind": "custom_node",
+   "stages": [
+    "clean_plate",
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Code MIT; LTX-Video 0.9 weights under LTXV license",
+   "notes": "Extracts object layer WITH shadows/reflections. 32 GB+ VRAM. Targets LTX-Video 0.9.x, stale (~9 months).",
+   "source_ids": [
+    "custom.omnimattezero"
+   ],
+   "source_url": "https://github.com/tpc2233/ComfyUI-TP-OmnimatteZero"
+  },
+  {
+   "id": "custom.layerdiffuse",
+   "name": "LayerDiffuse (SDXL/SD1.5 transparent image gen)",
+   "provider": "lllyasviel; node huchenlei",
+   "kind": "custom_node",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache-2.0 [I]",
+   "notes": "Legacy; superseded by Qwen-Image 2.1 RGBA / Ming Image Design RGBA for new work.",
+   "source_ids": [
+    "custom.layerdiffuse"
+   ],
+   "source_url": "https://github.com/huchenlei/ComfyUI-layerdiffuse"
+  },
+  {
+   "id": "python.rose",
+   "name": "ROSE (remove objects WITH side effects: shadow/reflection/light) — wrap",
+   "provider": "Kunbyte-AI (NeurIPS'25)",
+   "kind": "python_only",
+   "stages": [
+    "clean_plate"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache-2.0 (code + HF weights); base Wan2.1-Fun-1.3B-InP Apache-2.0",
+   "notes": "Only commercial-safe effect-aware remover besides VOID, and much lighter (1.3B vs CogVideoX-5B). Frames 16n+1. Mask from SAM3 (repo uses Cutie). Wrapper ~2 h. RECOMMENDED WRAP.",
+   "source_ids": [
+    "python.rose"
+   ],
+   "source_url": "https://github.com/Kunbyte-AI/ROSE"
+  },
+  {
+   "id": "python.effecterase",
+   "name": "EffectErase (effect-aware removal + insertion) — wrap",
+   "provider": "FudanCVL (CVPR'26 Highlight)",
+   "kind": "python_only",
+   "stages": [
+    "clean_plate"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "CC BY-NC 4.0 — NON-COMMERCIAL",
+   "notes": "Authors report it beats ROSE and MiniMax-Remover on side effects. Shares base with ROSE -> +30-45 min once ROSE wrapper exists.",
+   "source_ids": [
+    "python.effecterase"
+   ],
+   "source_url": "https://huggingface.co/FudanCVL/EffectErase"
+  },
+  {
+   "id": "python.gvm",
+   "name": "GVM Generative Video Matting (SVD prior, automatic) — wrap",
+   "provider": "aim-uofa (SIGGRAPH'25)",
+   "kind": "python_only",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "BSD-2 for academic use; commercial by inquiry — treat as NON-COMMERCIAL",
+   "notes": "Fully automatic, great on people, weak on objects; ~80 GB VRAM. Not worth wrapping for the contest.",
+   "source_ids": [
+    "python.gvm"
+   ],
+   "source_url": "https://github.com/aim-uofa/GVM"
+  },
+  {
+   "id": "python.videomama_pp",
+   "name": "VideoMaMa++ (Wan2.1-1.3B LoRA, 1-step, seam-free long video matting)",
+   "provider": "Adobe/KAIST (NeurIPS'26)",
+   "kind": "python_only",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "UNRELEASED",
+   "notes": "Fixes VideoMaMa's chunk-seam flicker with preserve/refine tokens. Watch list only; cannot ship.",
+   "source_ids": [
+    "python.videomama_pp"
+   ],
+   "source_url": "https://github.com/cvlab-kaist/VideoMaMa-PlusPlus"
+  },
+  {
+   "id": "python.gen_omnimatte",
+   "name": "Generative Omnimatte (Casper effect-removal; public reimpl.) — wrap",
+   "provider": "gen-omnimatte (Google DeepMind paper)",
+   "kind": "python_only",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Apache-2.0 code; CogVideoX/Wan weights licenses apply",
+   "notes": "CogVideoX-Fun-5B 85-frame window (multidiffusion to 197) at 384x672; weaker than the Lumiere original. >2 h to wrap; skip.",
+   "source_ids": [
+    "python.gen_omnimatte"
+   ],
+   "source_url": "https://github.com/gen-omnimatte/gen-omnimatte-public"
+  },
+  {
+   "id": "python.transpixeler",
+   "name": "TransPixeler / TransPixar (RGBA T2V on CogVideoX; Wan branch)",
+   "provider": "wileewang (CVPR'25)",
+   "kind": "python_only",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "check repo (CogVideoX license applies) [I]",
+   "notes": "Superseded by Wan-Alpha (native). Skip.",
+   "source_ids": [
+    "python.transpixeler"
+   ],
+   "source_url": "https://github.com/wileewang/TransPixar"
+  },
+  {
+   "id": "python.e2fgvi",
+   "name": "E2FGVI (flow-guided video inpainting)",
+   "provider": "MCG-NKU",
+   "kind": "python_only",
+   "stages": [
+    "clean_plate"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "CC BY-NC 4.0 — NON-COMMERCIAL",
+   "notes": "2022, superseded by ProPainter/VOID. Skip.",
+   "source_ids": [
+    "python.e2fgvi"
+   ],
+   "source_url": "https://github.com/MCG-NKU/E2FGVI"
+  },
+  {
+   "id": "ext.fal_bria_video_bg",
+   "name": "Bria Video Background Removal (fal)",
+   "provider": "Bria via fal",
+   "kind": "external_api",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS (commercial, licensed-data model)",
+   "notes": "$0.14/s; <30 s, <4000x4000 on fal. Same capability is already a Comfy partner node (api.BriaTransparentVideoBackground, Router: <=60 s, ProRes out) -> prefer that.",
+   "source_ids": [
+    "ext.fal_bria_video_bg"
+   ],
+   "source_url": "https://fal.ai/models/bria/video/background-removal/llms.txt"
+  },
+  {
+   "id": "ext.fal_ben2_video",
+   "name": "BEN2 video background removal (fal)",
+   "provider": "fal",
+   "kind": "external_api",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS; BEN2 weights MIT",
+   "notes": "$0.001 per megapixel. Cheapest hosted video cutout; per-frame model.",
+   "source_ids": [
+    "ext.fal_ben2_video"
+   ],
+   "source_url": "https://fal.ai/models/fal-ai/ben/v2/video/llms.txt"
+  },
+  {
+   "id": "ext.fal_pixelcut_video_bg",
+   "name": "Pixelcut Video Background Removal (fal)",
+   "provider": "Pixelcut via fal",
+   "kind": "external_api",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS",
+   "notes": "$0.022 per 30 frames; claims temporal consistency.",
+   "source_ids": [
+    "ext.fal_pixelcut_video_bg"
+   ],
+   "source_url": "https://fal.ai/models/pixelcut/video-background-removal/llms.txt"
+  },
+  {
+   "id": "ext.fal_birefnet_video",
+   "name": "BiRefNet v2 video (fal)",
+   "provider": "fal",
+   "kind": "external_api",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS; BiRefNet MIT",
+   "notes": "Hosted per-frame BiRefNet; only useful when no local GPU.",
+   "source_ids": [
+    "ext.fal_birefnet_video"
+   ],
+   "source_url": "https://fal.ai/models/fal-ai/birefnet/v2/video/llms.txt"
+  },
+  {
+   "id": "ext.magnific_video_remove_bg",
+   "name": "Magnific/Freepik video & image background removal (API)",
+   "provider": "Freepik/Magnific",
+   "kind": "external_api",
+   "stages": [
+    "matte"
+   ],
+   "adapter": null,
+   "variant": null,
+   "classes": [],
+   "weights": [],
+   "params": {},
+   "license": "Provider ToS",
+   "notes": "Not a ComfyUI partner node; would need a small HTTP node + separate key. Low priority.",
+   "source_ids": [
+    "ext.magnific_video_remove_bg"
+   ],
+   "source_url": "https://www.freepik.com/api"
+  }
+ ]
+}

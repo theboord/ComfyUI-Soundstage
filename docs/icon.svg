@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>Soundstage</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b2230"/>
+      <stop offset="1" stop-color="#0b0e14"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6c477" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#e39a40" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="pool" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#e39a40" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#e39a40" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="256" height="256" rx="52" fill="url(#bg)"/>
+  <!-- spotlight from the grid -->
+  <rect x="104" y="22" width="48" height="22" rx="6" fill="#3a4354"/>
+  <path d="M110 44 H146 L206 206 H50 Z" fill="url(#beam)"/>
+  <ellipse cx="128" cy="206" rx="86" ry="18" fill="url(#pool)"/>
+  <!-- clapperboard on the stage floor -->
+  <g transform="translate(70 118)">
+    <g transform="rotate(-14 4 26)">
+      <rect x="0" y="12" width="116" height="20" rx="3" fill="#e6e9ee"/>
+      <path d="M14 12 L30 12 L20 32 L4 32 Z M46 12 L62 12 L52 32 L36 32 Z M78 12 L94 12 L84 32 L68 32 Z M110 12 L116 12 L116 20 L106 32 L100 32 Z" fill="#11151b"/>
+    </g>
+    <rect x="0" y="34" width="116" height="62" rx="5" fill="#e6e9ee"/>
+    <rect x="0" y="34" width="116" height="16" fill="#11151b"/>
+    <path d="M14 34 L30 34 L22 50 L6 50 Z M46 34 L62 34 L54 50 L38 50 Z M78 34 L94 34 L86 50 L70 50 Z M110 34 L116 34 L116 42 L112 50 L102 50 Z" fill="#e6e9ee"/>
+    <rect x="12" y="60" width="54" height="7" rx="3" fill="#e39a40"/>
+    <rect x="12" y="74" width="88" height="6" rx="3" fill="#9aa3b2"/>
+    <rect x="12" y="85" width="64" height="6" rx="3" fill="#9aa3b2"/>
+  </g>
+</svg>

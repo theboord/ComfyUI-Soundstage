@@ -1,0 +1,2991 @@
+[
+  {
+    "id": "genre.romantic_comedy",
+    "type": "subgenre",
+    "name": "Romantic Comedy",
+    "aliases": [
+      "rom-com",
+      "romcom",
+      "romantic comedy"
+    ],
+    "keywords": [
+      "meet-cute",
+      "meet cute",
+      "first date",
+      "blind date",
+      "falls for",
+      "bump into",
+      "bumps into",
+      "spills coffee",
+      "love interest",
+      "ex-boyfriend",
+      "ex-girlfriend",
+      "wedding planner",
+      "proposal",
+      "realizes she loves",
+      "realizes he loves",
+      "airport dash",
+      "flirt",
+      "flirts",
+      "bickering couple"
+    ],
+    "parent": null,
+    "era": "1930s screwball roots; the modern form 1989-2005, revived on streaming",
+    "summary": "Comedy whose real subject is the distance between two people. The look is warm and high-key (golden-hour exteriors, bright apartments, city landmarks) so nothing threatens, while the framing does the storytelling: early scenes stage the leads in wide 50/50 two-shots with clear negative space between them, singles are matched in size so neither wins the argument, and as feelings grow the gap closes, the lenses lengthen and the background softens. The realization gets a slow push-in; the reunion gets an orbit. Comic beats still play in a stable medium two-shot so the banter's rhythm is cut on the line, not on the camera.",
+    "intent_tags": [
+      "romance",
+      "comedy",
+      "joy",
+      "intimacy"
+    ],
+    "signature": {
+      "shot_size": {
+        "WS": 0.15,
+        "MS": 0.35,
+        "MCU": 0.3,
+        "CU": 0.15,
+        "INSERT": 0.05
+      },
+      "framing": {
+        "fifty_fifty": 0.2,
+        "two_shot": 0.3,
+        "single": 0.35,
+        "ots": 0.15
+      },
+      "angle": {
+        "eye": 0.9,
+        "low": 0.05,
+        "high": 0.05
+      },
+      "camera_height": {
+        "eye": 0.7,
+        "chest": 0.3
+      },
+      "lens_mm_ff": [
+        32,
+        135
+      ],
+      "lens_look": {
+        "spherical": 0.85,
+        "anamorphic": 0.15
+      },
+      "movement": {
+        "static": 0.45,
+        "dolly_in": 0.2,
+        "track_follow": 0.15,
+        "arc_right": 0.1,
+        "steadicam_follow": 0.1
+      },
+      "rig": {
+        "sticks": 0.5,
+        "dolly": 0.3,
+        "steadicam": 0.2
+      },
+      "lighting": {
+        "high_key": 0.7,
+        "golden_hour": 0.4,
+        "soft_backlight": 0.4
+      },
+      "color": [
+        "warm skin and amber practicals",
+        "pastel or saturated wardrobe",
+        "clean blacks, no heavy grade",
+        "city lights bokeh at night"
+      ],
+      "composition": {
+        "negative_space_between_leads": 0.4,
+        "balanced": 0.4,
+        "center": 0.2
+      },
+      "aspect_ratio": [
+        "1.85:1",
+        "2.39:1"
+      ],
+      "asl_seconds": [
+        3,
+        7
+      ],
+      "editing": [
+        "cut on the line for banter",
+        "hold on the reaction that betrays the crush",
+        "montage for the falling-in-love middle",
+        "slow dissolve or music bridge into the reunion"
+      ],
+      "sound": [
+        "pop needle-drops",
+        "light score under the realization",
+        "city ambience"
+      ]
+    },
+    "rules": [
+      {
+        "when": "the leads are still apart (argument, rivalry, first meeting)",
+        "then": "stage them in a wider 50/50 two-shot with visible space between them and cover with matched-size singles",
+        "why": "the empty space is the obstacle made visible, and matched singles keep the contest equal so the audience roots for the pair, not for one side",
+        "hard": false
+      },
+      {
+        "when": "a character realizes they are in love",
+        "then": "give it a slow dolly-in on a single, ideally while the other person is busy or looking away",
+        "why": "the push isolates a private change the other character has not seen yet; the audience now knows more than the couple, which is what makes the third act ache",
+        "hard": false
+      },
+      {
+        "when": "the reunion or first kiss",
+        "then": "close the gap inside one frame (tight two-shot, longer lens, slow arc) rather than cutting between singles",
+        "why": "putting both faces in the same shallow-focus frame is the visual payoff of every earlier gap",
+        "hard": false
+      }
+    ],
+    "recipes": [
+      {
+        "name": "Meet-cute collision",
+        "beat": "two strangers collide on a busy sidewalk and coffee goes everywhere",
+        "cast": 2,
+        "shots": [
+          {
+            "purpose": "the city: a bright street at morning rush, both leads moving toward each other unaware",
+            "subject": "env",
+            "size": "WS",
+            "framing": "establishing",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "eye",
+            "lens_mm_ff": 35,
+            "dof": "deep",
+            "movement": "static",
+            "lighting": "warm low morning sun, high-key",
+            "composition": "two converging lines of foot traffic",
+            "duration_s": 3
+          },
+          {
+            "purpose": "the collision in one frame so cause and effect read together",
+            "subject": "both",
+            "size": "FS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "chest",
+            "lens_mm_ff": 35,
+            "dof": "medium",
+            "movement": "static",
+            "lighting": "warm high-key daylight",
+            "composition": "both bodies whole in frame, coffee arc mid-air",
+            "duration_s": 2.5
+          },
+          {
+            "purpose": "insert: the coffee stain spreading on the shirt (the comic payoff)",
+            "subject": "prop",
+            "size": "INSERT",
+            "framing": "insert",
+            "angle": "high",
+            "horizontal": "front",
+            "height": "chest",
+            "lens_mm_ff": 85,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 1.2
+          },
+          {
+            "purpose": "A's mortified reaction",
+            "subject": "A",
+            "size": "MCU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 65,
+            "dof": "shallow",
+            "movement": "static",
+            "lighting": "soft frontal key, warm rim",
+            "duration_s": 2
+          },
+          {
+            "purpose": "B's matched reaction: irritation that turns into a half-smile",
+            "subject": "B",
+            "size": "MCU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 65,
+            "dof": "shallow",
+            "movement": "static",
+            "lighting": "soft frontal key, warm rim",
+            "duration_s": 2.5
+          },
+          {
+            "purpose": "50/50 two-shot as they bicker, space between them still wide",
+            "subject": "both",
+            "size": "MS",
+            "framing": "fifty_fifty",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "chest",
+            "lens_mm_ff": 50,
+            "dof": "medium",
+            "movement": "static",
+            "composition": "leads at the frame edges, the gap centered",
+            "duration_s": 5
+          },
+          {
+            "purpose": "B walks away; slow push on A, who watches longer than she should",
+            "subject": "A",
+            "size": "MCU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 75,
+            "dof": "shallow",
+            "movement": "dolly_in",
+            "speed": "slow",
+            "lighting": "backlit hair glow",
+            "duration_s": 4
+          }
+        ],
+        "why": "The full-figure collision makes the slapstick legible, matched MCUs make the two equals, and the 50/50 puts their incompatibility on screen as literal space. The final slow push on the one left behind is the genre's promise: the audience sees the spark before the characters admit it."
+      },
+      {
+        "name": "Closing the gap",
+        "beat": "after the fight, one lead finds the other on a rooftop at dusk to apologise",
+        "cast": 2,
+        "shots": [
+          {
+            "purpose": "wide: the rooftop, skyline, both figures far apart",
+            "subject": "both",
+            "size": "WS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "chest",
+            "lens_mm_ff": 32,
+            "dof": "deep",
+            "movement": "static",
+            "lighting": "magic hour, sun behind the skyline",
+            "composition": "figures at opposite thirds, skyline between them",
+            "duration_s": 5
+          },
+          {
+            "purpose": "OTS onto B as the apology starts",
+            "subject": "B",
+            "size": "MCU",
+            "framing": "ots",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 85,
+            "dof": "shallow",
+            "movement": "static",
+            "lighting": "warm backlight, soft fill",
+            "duration_s": 4
+          },
+          {
+            "purpose": "matched OTS onto A listening",
+            "subject": "A",
+            "size": "MCU",
+            "framing": "ots",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 85,
+            "dof": "shallow",
+            "movement": "static",
+            "lighting": "warm backlight, soft fill",
+            "duration_s": 4
+          },
+          {
+            "purpose": "tight two-shot as they step in; slow arc while the city goes soft",
+            "subject": "both",
+            "size": "MCU",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "eye",
+            "lens_mm_ff": 100,
+            "dof": "shallow",
+            "movement": "arc_right",
+            "speed": "slow",
+            "lighting": "flare-kissed magic-hour backlight",
+            "composition": "faces nearly touching, skyline melted to bokeh",
+            "duration_s": 7
+          }
+        ],
+        "why": "The scene walks the lens from 32mm to 100mm: the world shrinks as the couple's space shrinks, so the audience feels the intimacy optically before the kiss. The arc keeps the frame alive without cutting, which would reintroduce the separation the scene is resolving."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "low-key, high-contrast lighting in the comic scenes",
+        "why": "it signals threat or drama and fights the genre's safety; save darker light for the third-act breakup if at all"
+      },
+      {
+        "what": "unmatched singles (one lead tighter or lower than the other) during banter",
+        "why": "it quietly tells the audience who is right, which flattens the sparring that makes the pair fun"
+      },
+      {
+        "what": "cutting in close too early",
+        "why": "if the first scene is already in tight shallow two-shots there is no distance left to close"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "Warm high-key romantic comedy look, soft golden-hour backlight, gentle lens flare, pastel and saturated colors, clean modern digital image with creamy shallow-focus bokeh.",
+      "still": "romantic comedy film still, warm high-key lighting, golden hour backlight, soft lens flare, pastel and saturated wardrobe colors, creamy bokeh, 85mm shallow depth of field, clean digital cinema image",
+      "h3": "Live-action, warm high-key romantic-comedy look with golden backlight and soft bokeh."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.55,
+      "yaw_deg": 90,
+      "pitch_deg": 0,
+      "distance_m": 3.2,
+      "roll_deg": 0,
+      "focal_mm_ff": 50,
+      "vfov_deg": 21.7
+    },
+    "reference_works": [
+      {
+        "title": "It Happened One Night",
+        "year": 1934,
+        "note": "the bickering-strangers template"
+      },
+      {
+        "title": "When Harry Met Sally...",
+        "year": 1989,
+        "note": "two-shots that hold the space between friends"
+      },
+      {
+        "title": "Notting Hill",
+        "year": 1999,
+        "note": "fish-out-of-water meet-cute"
+      },
+      {
+        "title": "Crazy, Stupid, Love.",
+        "year": 2011
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://en.wikipedia.org/wiki/Romantic_comedy",
+        "supports": "genre definition and history"
+      }
+    ],
+    "confidence": "craft_consensus",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  },
+  {
+    "id": "genre.sitcom_multicam",
+    "type": "subgenre",
+    "name": "Multi-camera Sitcom",
+    "aliases": [
+      "multi-cam",
+      "multicam sitcom",
+      "studio sitcom",
+      "three-camera comedy",
+      "live studio audience"
+    ],
+    "keywords": [
+      "sitcom",
+      "studio audience",
+      "live audience",
+      "laugh track",
+      "living room set",
+      "apartment set",
+      "couch",
+      "sofa",
+      "coffee shop set",
+      "front door",
+      "neighbor bursts in",
+      "roommates",
+      "catchphrase",
+      "kitchen set"
+    ],
+    "parent": null,
+    "era": "1951-present (proscenium studio comedy)",
+    "summary": "Comedy staged like theatre on a three-wall set and covered simultaneously by three or four pedestal cameras, so a whole scene plays in real time in front of a live audience. Everything serves line delivery and reaction: flat, even, low-contrast light so any angle cuts to any other; eye-level angles from the audience side only; medium singles and two-shots; cuts that land on the punchline and then hold for the laugh. The camera never comments; timing is the star, and the editor builds it from the simultaneous angles after the fact.",
+    "intent_tags": [
+      "comedy",
+      "joy"
+    ],
+    "signature": {
+      "shot_size": {
+        "WS": 0.15,
+        "MS": 0.4,
+        "MCU": 0.35,
+        "CU": 0.1
+      },
+      "framing": {
+        "two_shot": 0.35,
+        "single": 0.45,
+        "group": 0.2
+      },
+      "angle": {
+        "eye": 0.95,
+        "high": 0.05
+      },
+      "camera_height": {
+        "eye": 0.6,
+        "chest": 0.4
+      },
+      "lens_mm_ff": [
+        35,
+        85
+      ],
+      "lens_look": {
+        "spherical": 1.0
+      },
+      "movement": {
+        "static": 0.7,
+        "dolly_in": 0.1,
+        "pan_left": 0.1,
+        "pan_right": 0.1
+      },
+      "rig": {
+        "pedestal": 1.0
+      },
+      "lighting": {
+        "high_key": 0.9,
+        "soft": 0.9
+      },
+      "color": [
+        "bright saturated set dressing",
+        "neutral skin",
+        "no heavy grade"
+      ],
+      "composition": {
+        "center": 0.4,
+        "balanced": 0.6
+      },
+      "aspect_ratio": [
+        "1.78:1",
+        "1.33:1 (pre-2005)"
+      ],
+      "asl_seconds": [
+        2.5,
+        5
+      ],
+      "editing": [
+        "cut on the line",
+        "hold on the reaction for the laugh",
+        "never cross the fourth wall",
+        "act-out on a button line"
+      ],
+      "sound": [
+        "live audience laughter",
+        "music sting between scenes",
+        "entrance applause"
+      ]
+    },
+    "rules": [
+      {
+        "when": "always",
+        "then": "never place a camera on the fourth-wall side of the set; every angle comes from the audience side",
+        "why": "the set has no fourth wall and the audience sits there; this also makes the 180-degree line automatic, which is why the cameras can cut freely",
+        "hard": true
+      },
+      {
+        "when": "a punchline",
+        "then": "cut to the best reaction single or hold the two-shot; never cut in the middle of the line",
+        "why": "the laugh comes when a reaction confirms the joke; a mid-line cut steps on the actor's timing",
+        "hard": false
+      },
+      {
+        "when": "a physical gag or an entrance",
+        "then": "go to the wide master so setup and payoff are in one frame",
+        "why": "the joke is causal; the viewer must see the door open and the face it hits",
+        "hard": false
+      }
+    ],
+    "recipes": [
+      {
+        "name": "A/B/C/X coverage with an entrance",
+        "beat": "two roommates argue on the couch until a neighbor bursts through the front door",
+        "cast": 3,
+        "shots": [
+          {
+            "purpose": "master: whole set, the door visible for the entrance",
+            "subject": "all",
+            "size": "WS",
+            "framing": "master",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "chest",
+            "lens_mm_ff": 35,
+            "dof": "deep",
+            "movement": "static",
+            "lighting": "flat high-key soft",
+            "composition": "balanced proscenium, door at frame right",
+            "duration_s": 4
+          },
+          {
+            "purpose": "cross-shot single on A",
+            "subject": "A",
+            "size": "MCU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 75,
+            "dof": "medium",
+            "movement": "static",
+            "lighting": "flat high-key soft",
+            "duration_s": 3
+          },
+          {
+            "purpose": "cross-shot single on B",
+            "subject": "B",
+            "size": "MCU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 75,
+            "dof": "medium",
+            "movement": "static",
+            "lighting": "flat high-key soft",
+            "duration_s": 3
+          },
+          {
+            "purpose": "two-shot for overlapping lines and shared reactions",
+            "subject": "both",
+            "size": "MS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "chest",
+            "lens_mm_ff": 50,
+            "dof": "medium",
+            "movement": "static",
+            "lighting": "flat high-key soft",
+            "duration_s": 4
+          },
+          {
+            "purpose": "X camera: C enters, pan with the cross to the couch",
+            "subject": "C",
+            "size": "MS",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "chest",
+            "lens_mm_ff": 50,
+            "movement": "pan_left",
+            "speed": "regular",
+            "lighting": "flat high-key soft",
+            "duration_s": 3
+          },
+          {
+            "purpose": "hold on the roommates' frozen reaction for the laugh",
+            "subject": "both",
+            "size": "MS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "chest",
+            "lens_mm_ff": 50,
+            "movement": "static",
+            "duration_s": 3
+          }
+        ],
+        "why": "Four simultaneous angles let the editor cut purely for timing, and matched eye-level singles keep the characters equal so the joke, not the camera, decides who wins each beat. The held reaction two-shot gives the audience permission and time to laugh."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "low-key or contrasty lighting",
+        "why": "it reads as drama and breaks the multi-angle match that lets any camera cut to any other"
+      },
+      {
+        "what": "handheld or Dutch angles",
+        "why": "that is single-camera or mockumentary grammar and signals the wrong genre"
+      },
+      {
+        "what": "extreme close-ups",
+        "why": "too intense for studio comedy; reserve them for a deliberate parody beat"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "Bright multi-camera television studio look, flat even high-key lighting with a low contrast ratio, cheerful saturated set colors, clean video-like sharpness, 16:9.",
+      "still": "multi-camera sitcom frame, three-wall studio set, flat even high-key lighting, low contrast, saturated set dressing, eye-level 50mm, deep focus, clean broadcast video image, 16:9",
+      "h3": "Live-action, multi-camera studio sitcom look with flat even high-key light."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.2,
+      "yaw_deg": 0,
+      "pitch_deg": 2,
+      "distance_m": 3.0,
+      "roll_deg": 0,
+      "focal_mm_ff": 50,
+      "vfov_deg": 21.7
+    },
+    "reference_works": [
+      {
+        "title": "I Love Lucy",
+        "year": 1951,
+        "note": "popularized the filmed multi-camera live-audience format"
+      },
+      {
+        "title": "Cheers",
+        "year": 1982
+      },
+      {
+        "title": "Frasier",
+        "year": 1993
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://ltx.io/blog/ltx-2-3-prompt-guide",
+        "supports": "LTX camera vocabulary used in fragments (static frame)"
+      },
+      {
+        "url": "https://en.wikipedia.org/wiki/Multiple-camera_setup",
+        "supports": "simultaneous multi-camera studio production"
+      }
+    ],
+    "confidence": "craft_consensus",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  },
+  {
+    "id": "genre.western_spaghetti",
+    "type": "subgenre",
+    "name": "Spaghetti Western",
+    "aliases": [
+      "Italian western",
+      "Euro-western",
+      "spaghetti western",
+      "macaroni western"
+    ],
+    "keywords": [
+      "gunslinger",
+      "gunfighter",
+      "bounty hunter",
+      "bandito",
+      "dusty town",
+      "desert town",
+      "poncho",
+      "cemetery",
+      "duel",
+      "showdown",
+      "outlaw",
+      "saloon",
+      "mexican border",
+      "revolver",
+      "stagecoach",
+      "hanging"
+    ],
+    "parent": null,
+    "era": "1964-1973 Italy/Spain",
+    "summary": "A western rebuilt as ritual and opera. Wide Techniscope frames swing from extreme wide landscapes to extreme close-ups of eyes and hands with nothing in between, faces in the foreground share deep focus with figures far behind them, and time stretches until a glance becomes an event. Light is hard, white and overhead; skin is sweat and grime. The score is a character and often cues the cuts. Morality is mercenary, so the camera admires style and nerve rather than virtue, and violence arrives as a sudden release after long waiting.",
+    "intent_tags": [
+      "tension",
+      "menace",
+      "spectacle",
+      "suspense"
+    ],
+    "signature": {
+      "shot_size": {
+        "EWS": 0.2,
+        "WS": 0.15,
+        "COWBOY": 0.15,
+        "CU": 0.2,
+        "ECU": 0.2,
+        "INSERT": 0.1
+      },
+      "framing": {
+        "single": 0.5,
+        "dirty_single": 0.15,
+        "fifty_fifty": 0.1,
+        "establishing": 0.15,
+        "insert": 0.1
+      },
+      "angle": {
+        "eye": 0.5,
+        "low": 0.35,
+        "high": 0.15
+      },
+      "camera_height": {
+        "eye": 0.4,
+        "hip": 0.35,
+        "ground": 0.1,
+        "high": 0.15
+      },
+      "lens_mm_ff": [
+        24,
+        150
+      ],
+      "lens_look": {
+        "spherical": 0.6,
+        "anamorphic": 0.4
+      },
+      "movement": {
+        "static": 0.6,
+        "zoom_in": 0.1,
+        "snap_zoom": 0.1,
+        "dolly_in": 0.1,
+        "crane_up": 0.05,
+        "pan_left": 0.05
+      },
+      "rig": {
+        "sticks": 0.8,
+        "dolly": 0.1,
+        "crane": 0.1
+      },
+      "lighting": {
+        "hard_noon_sun": 0.7,
+        "backlight": 0.2,
+        "dusty_interior_shafts": 0.1
+      },
+      "color": [
+        "sun-bleached ochre and dust",
+        "faded denim and leather browns",
+        "sweat sheen",
+        "deep shadow under hat brims"
+      ],
+      "composition": {
+        "face_foreground_figure_background": 0.3,
+        "edges_with_dead_space": 0.3,
+        "symmetrical": 0.2,
+        "center": 0.2
+      },
+      "aspect_ratio": [
+        "2.35:1 Techniscope"
+      ],
+      "asl_seconds": [
+        0.6,
+        12
+      ],
+      "editing": [
+        "EWS straight to ECU with no medium bridge",
+        "accelerating cutting into a duel",
+        "extreme duration before the action",
+        "music-led cut points"
+      ],
+      "sound": [
+        "operatic score with whistles, choirs, electric guitar",
+        "exaggerated foley: spurs, wind, creaking signs",
+        "silence before the shot"
+      ]
+    },
+    "rules": [
+      {
+        "when": "a confrontation begins",
+        "then": "show the whole arena in an extreme wide first, then jump directly to close-ups",
+        "why": "skipping the medium scales makes each cut a jolt and turns the duelists' faces into landscapes",
+        "hard": false
+      },
+      {
+        "when": "a character enters or is revealed",
+        "then": "use a face in the foreground with the new figure small and sharp in the background, both in focus",
+        "why": "deep-focus depth staging lets one frame hold threat and reaction at once, so the audience reads the power relation without a cut",
+        "hard": false
+      },
+      {
+        "when": "violence finally happens",
+        "then": "make it fast and clear, after a wait far longer than feels comfortable",
+        "why": "the genre's tension comes from elongated anticipation; a short release makes the wait feel earned",
+        "hard": false
+      }
+    ],
+    "recipes": [
+      {
+        "name": "The stranger rides in",
+        "beat": "a lone rider arrives in a hostile border town as the locals watch",
+        "cast": 2,
+        "shots": [
+          {
+            "purpose": "EWS: desert, town tiny on the horizon, rider a speck",
+            "subject": "env",
+            "size": "EWS",
+            "framing": "establishing",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "ground",
+            "lens_mm_ff": 28,
+            "dof": "deep",
+            "movement": "static",
+            "lighting": "hard high sun, heat shimmer",
+            "composition": "low horizon, huge sky",
+            "duration_s": 6
+          },
+          {
+            "purpose": "ECU: a local's narrowed eyes in the foreground, rider approaching small and sharp behind",
+            "subject": "B",
+            "size": "ECU",
+            "framing": "dirty_single",
+            "angle": "eye",
+            "horizontal": "three_quarter_back",
+            "height": "eye",
+            "lens_mm_ff": 28,
+            "dof": "deep",
+            "movement": "static",
+            "composition": "face filling one side, rider centered in the gap",
+            "duration_s": 4
+          },
+          {
+            "purpose": "insert: hooves stepping into frame through the dust",
+            "subject": "prop",
+            "size": "INSERT",
+            "framing": "insert",
+            "angle": "low",
+            "horizontal": "profile",
+            "height": "ground",
+            "lens_mm_ff": 50,
+            "dof": "shallow",
+            "movement": "static",
+            "duration_s": 2
+          },
+          {
+            "purpose": "low cowboy shot of the rider from hip height, brim shadow over the eyes",
+            "subject": "A",
+            "size": "COWBOY",
+            "framing": "single",
+            "angle": "low",
+            "horizontal": "three_quarter_front",
+            "height": "hip",
+            "lens_mm_ff": 40,
+            "movement": "static",
+            "lighting": "hard top light, eyes in shadow",
+            "duration_s": 4
+          },
+          {
+            "purpose": "snap zoom onto the watcher in a doorway",
+            "subject": "B",
+            "size": "CU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 100,
+            "movement": "snap_zoom",
+            "speed": "fast",
+            "duration_s": 1.5
+          },
+          {
+            "purpose": "ECU: the rider's eyes lift into the light",
+            "subject": "A",
+            "size": "ECU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 100,
+            "lens_look": "anamorphic",
+            "movement": "static",
+            "duration_s": 3
+          }
+        ],
+        "why": "Jumping from the vast landscape to an eye denies the audience the comfortable middle distance, so the stranger feels both mythic and invasive. Foreground faces watching a small sharp figure make the whole town a jury, and the long holds teach the audience to wait for violence the way the townspeople do."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "soft, flattering or diffuse light",
+        "why": "the look depends on hard sun, deep brim shadows and sweat; softness turns it into a TV western"
+      },
+      {
+        "what": "conventional medium-shot coverage",
+        "why": "MS/MCU shot-reverse-shot drains the scale contrast that defines the style"
+      },
+      {
+        "what": "constant camera movement",
+        "why": "stillness is the ritual; movement is rationed to zooms and the occasional crane reveal"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "1960s Italian western look in 2.35:1 Techniscope widescreen, harsh overhead desert sun, sun-bleached ochre palette, drifting dust, coarse film grain and deep shadow under hat brims.",
+      "still": "1960s spaghetti western film still, 2.35:1 Techniscope, harsh overhead desert sun, sun-bleached ochre and brown palette, drifting dust, sweat and grime, coarse film grain, deep focus, deep shadow under hat brims",
+      "h3": "Live-action, 1960s Italian-western look in 2.35:1 with harsh desert sun and dust."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.0,
+      "yaw_deg": 20,
+      "pitch_deg": -6,
+      "distance_m": 3.4,
+      "roll_deg": 0,
+      "focal_mm_ff": 40,
+      "vfov_deg": 27.0
+    },
+    "reference_works": [
+      {
+        "title": "A Fistful of Dollars",
+        "year": 1964
+      },
+      {
+        "title": "Django",
+        "year": 1966,
+        "note": "the bleaker, muddier branch of the cycle"
+      },
+      {
+        "title": "The Good, the Bad and the Ugly",
+        "year": 1966
+      },
+      {
+        "title": "Once Upon a Time in the West",
+        "year": 1968,
+        "note": "extreme duration and foreground faces"
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://en.wikipedia.org/wiki/Spaghetti_Western",
+        "supports": "genre history and production context"
+      },
+      {
+        "url": "https://nofilmschool.com/2013/10/the-mathematical-editing-of-sergio-leonis-the-good-the-bad-and-the-ugly",
+        "supports": "accelerating shot-length pattern in the climactic duel"
+      },
+      {
+        "url": "https://en.wikipedia.org/wiki/American_shot",
+        "supports": "cowboy shot framing"
+      }
+    ],
+    "confidence": "craft_consensus",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  },
+  {
+    "id": "genre.film_noir",
+    "type": "genre",
+    "name": "Film Noir",
+    "aliases": [
+      "noir",
+      "classic noir",
+      "1940s noir"
+    ],
+    "keywords": [
+      "detective",
+      "private eye",
+      "private investigator",
+      "gumshoe",
+      "venetian blinds",
+      "rain-soaked",
+      "femme fatale",
+      "office at night",
+      "trench coat",
+      "fedora",
+      "double-cross",
+      "smoke-filled",
+      "alibi",
+      "hard-boiled",
+      "voiceover confession",
+      "wet street"
+    ],
+    "parent": null,
+    "era": "1940-1958, Hollywood",
+    "summary": "Crime pictures shot as moral claustrophobia. Low-key chiaroscuro leaves most of the frame black; hard single sources throw venetian-blind bars and stair-rail shadows across faces like cages; streets are wet so they reflect what little light there is. Low angles show ceilings pressing down, and an occasional canted frame marks a world off its axis. The femme fatale gets a soft glamour key with a hard edge light, the hero gets hard side light that splits his face. A fatalistic first-person voiceover tells the audience the ending is already decided, so the style is about how, not whether, the trap closes.",
+    "intent_tags": [
+      "menace",
+      "paranoia",
+      "suspense",
+      "melancholy"
+    ],
+    "signature": {
+      "shot_size": {
+        "WS": 0.2,
+        "MS": 0.3,
+        "MCU": 0.25,
+        "CU": 0.2,
+        "INSERT": 0.05
+      },
+      "framing": {
+        "single": 0.45,
+        "two_shot": 0.3,
+        "ots": 0.15,
+        "insert": 0.1
+      },
+      "angle": {
+        "low": 0.35,
+        "eye": 0.45,
+        "high": 0.1,
+        "dutch": 0.1
+      },
+      "camera_height": {
+        "knee": 0.2,
+        "chest": 0.3,
+        "eye": 0.4,
+        "high": 0.1
+      },
+      "lens_mm_ff": [
+        21,
+        75
+      ],
+      "lens_look": {
+        "spherical": 1.0
+      },
+      "movement": {
+        "static": 0.6,
+        "dolly_in": 0.15,
+        "track_follow": 0.1,
+        "crane_down": 0.05,
+        "pan_left": 0.05,
+        "pan_right": 0.05
+      },
+      "rig": {
+        "sticks": 0.6,
+        "dolly": 0.3,
+        "crane": 0.1
+      },
+      "lighting": {
+        "low_key_chiaroscuro": 0.9,
+        "hard_single_source": 0.7,
+        "venetian_blind_gobo": 0.4,
+        "glamour_key_with_edge": 0.3
+      },
+      "color": [
+        "black-and-white, deep crushed blacks",
+        "glistening wet highlights",
+        "cigarette smoke catching the beam"
+      ],
+      "composition": {
+        "frames_within_frames": 0.3,
+        "diagonal_shadows": 0.3,
+        "deep_staging": 0.2,
+        "center": 0.2
+      },
+      "aspect_ratio": [
+        "1.37:1"
+      ],
+      "asl_seconds": [
+        4,
+        10
+      ],
+      "editing": [
+        "flashback structure",
+        "dissolves into memory",
+        "first-person voiceover over montage",
+        "slow reveal of the face from shadow"
+      ],
+      "sound": [
+        "fatalistic voiceover",
+        "brooding orchestral score or lonely jazz",
+        "rain and distant traffic"
+      ]
+    },
+    "rules": [
+      {
+        "when": "lighting any interior",
+        "then": "use one hard motivated source (a desk lamp, a window, a streetlight through blinds) and let most of the frame fall to black",
+        "why": "darkness is the noir world's moral state; a single source leaves characters half-hidden, which reads as half-honest",
+        "hard": false
+      },
+      {
+        "when": "the femme fatale is introduced",
+        "then": "reveal her in a slower, softer, more glamorous key than anyone else, often from the legs or silhouette up",
+        "why": "the lighting seduces the audience along with the hero, so the later betrayal implicates the viewer too",
+        "hard": false
+      },
+      {
+        "when": "the hero is trapped or realizes the double-cross",
+        "then": "go low-angle with the ceiling in frame, or add bars of shadow across him",
+        "why": "architecture and shadow become the cage the plot is building",
+        "hard": false
+      }
+    ],
+    "recipes": [
+      {
+        "name": "The client walks into the office at night",
+        "beat": "a private eye works late; a mysterious woman walks in with a job",
+        "cast": 2,
+        "shots": [
+          {
+            "purpose": "the office: blinds throwing bars across the desk, detective small behind it",
+            "subject": "env",
+            "size": "WS",
+            "framing": "establishing",
+            "angle": "high",
+            "horizontal": "front",
+            "height": "high",
+            "lens_mm_ff": 28,
+            "dof": "deep",
+            "movement": "static",
+            "lighting": "single streetlight through venetian blinds, smoke in the beam",
+            "composition": "diagonal shadow bars, desk lamp pool",
+            "duration_s": 5
+          },
+          {
+            "purpose": "the door glass: her silhouette appears behind the lettered pane",
+            "subject": "B",
+            "size": "MS",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 40,
+            "dof": "medium",
+            "movement": "static",
+            "lighting": "hard backlight from the hall",
+            "composition": "frame-within-frame, silhouette on frosted glass",
+            "duration_s": 3
+          },
+          {
+            "purpose": "low angle on the detective, ceiling in frame, he looks up",
+            "subject": "A",
+            "size": "MCU",
+            "framing": "single",
+            "angle": "low",
+            "horizontal": "three_quarter_front",
+            "height": "chest",
+            "lens_mm_ff": 35,
+            "movement": "static",
+            "lighting": "hard side key, half the face in black",
+            "duration_s": 3
+          },
+          {
+            "purpose": "she steps into the light: slow push as her face emerges",
+            "subject": "B",
+            "size": "CU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 75,
+            "dof": "shallow",
+            "movement": "dolly_in",
+            "speed": "slow",
+            "lighting": "soft glamour key with hard edge light, blind shadows across the wall behind",
+            "duration_s": 5
+          },
+          {
+            "purpose": "OTS from behind her onto him as she makes the offer",
+            "subject": "A",
+            "size": "MCU",
+            "framing": "ots",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 50,
+            "movement": "static",
+            "lighting": "blind bars across his face",
+            "duration_s": 4
+          },
+          {
+            "purpose": "insert: the envelope of cash on the desk in the lamp pool",
+            "subject": "prop",
+            "size": "INSERT",
+            "framing": "insert",
+            "angle": "high",
+            "horizontal": "front",
+            "height": "high",
+            "lens_mm_ff": 50,
+            "dof": "shallow",
+            "movement": "static",
+            "lighting": "hard desk-lamp pool",
+            "duration_s": 2
+          }
+        ],
+        "why": "Starting in darkness with a single hard source tells the audience this is a world of concealment; the slow push that pulls her face out of shadow makes her arrival a seduction the viewer participates in. Blind shadows on him, glamour light on her, and the money in a pool of light lay out the trap before the voiceover admits it."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "even, high-key fill light",
+        "why": "flat light destroys the chiaroscuro that carries the genre's moral meaning"
+      },
+      {
+        "what": "handheld documentary camera",
+        "why": "classic noir is composed and studio-controlled; the fatalism comes from deliberate, designed frames"
+      },
+      {
+        "what": "constant Dutch angles",
+        "why": "the tilt works as a rare signal of a world coming apart; overused it becomes parody"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "1940s black-and-white film noir look, low-key chiaroscuro lighting from a single hard source, venetian-blind shadow bars, glistening wet surfaces, curling cigarette smoke and deep crushed blacks in a 1.37:1 frame.",
+      "still": "1940s film noir still, black and white, low-key chiaroscuro, hard single light source, venetian blind shadow pattern, deep crushed blacks, wet glistening street reflections, cigarette smoke in the beam, 1.37:1 Academy ratio, silver gelatin grain",
+      "h3": "Live-action, 1940s black-and-white film-noir look with hard low-key light and blind shadows."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.4,
+      "yaw_deg": 30,
+      "pitch_deg": 10,
+      "distance_m": 2.6,
+      "roll_deg": 0,
+      "focal_mm_ff": 35,
+      "vfov_deg": 30.7
+    },
+    "reference_works": [
+      {
+        "title": "The Maltese Falcon",
+        "year": 1941
+      },
+      {
+        "title": "Double Indemnity",
+        "year": 1944,
+        "note": "blind shadows and confessional voiceover"
+      },
+      {
+        "title": "Out of the Past",
+        "year": 1947
+      },
+      {
+        "title": "Touch of Evil",
+        "year": 1958,
+        "note": "late, baroque noir; low angles and wide lenses"
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://en.wikipedia.org/wiki/Film_noir",
+        "supports": "definition, period, visual style"
+      },
+      {
+        "url": "https://en.wikipedia.org/wiki/Low-key_lighting",
+        "supports": "low-key lighting technique"
+      }
+    ],
+    "confidence": "craft_consensus",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  },
+  {
+    "id": "genre.neo_noir",
+    "type": "subgenre",
+    "name": "Neo-noir",
+    "aliases": [
+      "neo noir",
+      "color noir",
+      "modern noir",
+      "neon noir"
+    ],
+    "keywords": [
+      "neon",
+      "neon sign",
+      "sodium streetlight",
+      "rain-slicked",
+      "getaway driver",
+      "hitman",
+      "night drive",
+      "motel",
+      "dirty cop",
+      "corrupt",
+      "parking garage",
+      "nightclub",
+      "los angeles at night",
+      "underworld",
+      "hired killer"
+    ],
+    "parent": "genre.film_noir",
+    "era": "1970s-present",
+    "summary": "The moral logic of film noir, shot in color and in the present. The single hard source becomes neon, sodium-vapor and dashboard light; black-and-white contrast becomes a split between saturated hues (magenta and cyan, orange and teal) in deep shadow; rain stays, now reflecting color. Widescreen anamorphic glass adds horizontal flares and oval bokeh. Pacing is often slower and cooler than classic noir: long silent holds, a car interior as confessional, violence that arrives abruptly and is shown more frankly. Some branches move the darkness into harsh daylight, where corruption hides in plain sight.",
+    "intent_tags": [
+      "menace",
+      "melancholy",
+      "isolation",
+      "tension"
+    ],
+    "signature": {
+      "shot_size": {
+        "WS": 0.2,
+        "MS": 0.25,
+        "MCU": 0.25,
+        "CU": 0.2,
+        "INSERT": 0.1
+      },
+      "framing": {
+        "single": 0.5,
+        "two_shot": 0.2,
+        "ots": 0.1,
+        "pov": 0.1,
+        "insert": 0.1
+      },
+      "angle": {
+        "eye": 0.6,
+        "low": 0.25,
+        "high": 0.15
+      },
+      "camera_height": {
+        "eye": 0.5,
+        "seated": 0.25,
+        "chest": 0.15,
+        "high": 0.1
+      },
+      "lens_mm_ff": [
+        24,
+        135
+      ],
+      "lens_look": {
+        "anamorphic": 0.6,
+        "spherical": 0.4
+      },
+      "movement": {
+        "static": 0.45,
+        "dolly_in": 0.2,
+        "track_follow": 0.15,
+        "track_lead": 0.1,
+        "crane_down": 0.1
+      },
+      "rig": {
+        "sticks": 0.4,
+        "dolly": 0.3,
+        "car_mount": 0.2,
+        "crane": 0.1
+      },
+      "lighting": {
+        "neon_practicals": 0.6,
+        "sodium_vapor": 0.4,
+        "low_key": 0.8,
+        "hard_backlight_in_haze": 0.3
+      },
+      "color": [
+        "magenta and cyan neon against black",
+        "sodium orange vs cold teal",
+        "wet asphalt reflecting color",
+        "deep saturated shadow"
+      ],
+      "composition": {
+        "silhouette_against_light": 0.3,
+        "negative_space": 0.3,
+        "center": 0.2,
+        "reflections": 0.2
+      },
+      "aspect_ratio": [
+        "2.39:1"
+      ],
+      "asl_seconds": [
+        3,
+        12
+      ],
+      "editing": [
+        "long silent holds",
+        "slow-motion on violence or longing",
+        "synth score over night drives",
+        "abrupt violent cuts after stillness"
+      ],
+      "sound": [
+        "analog synth or pulsing electronic score",
+        "rain on glass",
+        "engine and city hum"
+      ]
+    },
+    "rules": [
+      {
+        "when": "lighting a night scene",
+        "then": "motivate every source from a practical in the world (neon, streetlight, dashboard, TV) and let the color of that source define the shot",
+        "why": "neo-noir replaces black-and-white contrast with color contrast; colored motivated light keeps the darkness while making the city itself the mood",
+        "hard": false
+      },
+      {
+        "when": "a quiet moment before violence",
+        "then": "hold longer than the dialogue needs, with minimal movement",
+        "why": "the stillness makes the later burst feel inevitable and shocking at the same time",
+        "hard": false
+      }
+    ],
+    "recipes": [
+      {
+        "name": "Night drive confessional",
+        "beat": "a getaway driver and a passenger sit in a parked car under neon, saying little",
+        "cast": 2,
+        "shots": [
+          {
+            "purpose": "wide: the car alone on a rain-slick street, neon signs reflected on the hood",
+            "subject": "env",
+            "size": "WS",
+            "framing": "establishing",
+            "angle": "high",
+            "horizontal": "three_quarter_front",
+            "height": "high",
+            "lens_mm_ff": 32,
+            "lens_look": "anamorphic",
+            "dof": "deep",
+            "movement": "crane_down",
+            "speed": "slow",
+            "lighting": "neon and sodium streetlight, wet reflections",
+            "duration_s": 6
+          },
+          {
+            "purpose": "through the windshield: two-shot, faces lit by passing color",
+            "subject": "both",
+            "size": "MS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "seated",
+            "lens_mm_ff": 40,
+            "lens_look": "anamorphic",
+            "dof": "medium",
+            "movement": "static",
+            "lighting": "magenta neon from one side, cold teal from the other, rain streaks on glass",
+            "duration_s": 6
+          },
+          {
+            "purpose": "profile single on A, eyes on the mirror",
+            "subject": "A",
+            "size": "CU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "seated",
+            "lens_mm_ff": 75,
+            "lens_look": "anamorphic",
+            "dof": "shallow",
+            "movement": "static",
+            "lighting": "sodium-orange edge, face mostly in shadow",
+            "duration_s": 4
+          },
+          {
+            "purpose": "single on B, watching A rather than the street",
+            "subject": "B",
+            "size": "CU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 75,
+            "lens_look": "anamorphic",
+            "dof": "shallow",
+            "movement": "static",
+            "lighting": "cyan neon key, oval bokeh behind",
+            "duration_s": 4
+          },
+          {
+            "purpose": "insert: headlights appear in the side mirror",
+            "subject": "prop",
+            "size": "INSERT",
+            "framing": "insert",
+            "angle": "eye",
+            "horizontal": "three_quarter_back",
+            "height": "seated",
+            "lens_mm_ff": 100,
+            "dof": "shallow",
+            "movement": "rack_focus",
+            "speed": "slow",
+            "duration_s": 2.5
+          },
+          {
+            "purpose": "slow push on A as the decision lands",
+            "subject": "A",
+            "size": "ECU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "seated",
+            "lens_mm_ff": 100,
+            "lens_look": "anamorphic",
+            "dof": "shallow",
+            "movement": "dolly_in",
+            "speed": "slow",
+            "lighting": "red light sweeping across the eyes",
+            "duration_s": 3
+          }
+        ],
+        "why": "The car is a dark box lit only by the city, so color does the emotional work that words do not. Silence and long holds build pressure, and the mirror insert with a rack focus moves the threat into the frame before anyone speaks, so the final push reads as a choice already made."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "bright, even daylight fill in night scenes",
+        "why": "flattening the darkness removes the moral murk the genre is built on"
+      },
+      {
+        "what": "wall-to-wall fast cutting",
+        "why": "neo-noir's dread lives in long, cool holds; rapid cutting turns it into a generic action film"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "Neo-noir night look in 2.39:1 anamorphic widescreen, saturated magenta and cyan neon against deep black shadow, sodium-orange streetlight, rain-slicked reflective surfaces, horizontal lens flares and oval bokeh.",
+      "still": "neo-noir film still, 2.39:1 anamorphic, night, saturated magenta and cyan neon, sodium vapor orange streetlight, deep black shadows, rain-slicked reflective asphalt, horizontal anamorphic lens flare, oval bokeh, fine film grain",
+      "h3": "Live-action, neo-noir night look with neon color, rain reflections and anamorphic flares."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.1,
+      "yaw_deg": 0,
+      "pitch_deg": 0,
+      "distance_m": 2.0,
+      "roll_deg": 0,
+      "focal_mm_ff": 40,
+      "vfov_deg": 27.0
+    },
+    "reference_works": [
+      {
+        "title": "Chinatown",
+        "year": 1974,
+        "note": "daylight noir"
+      },
+      {
+        "title": "Taxi Driver",
+        "year": 1976
+      },
+      {
+        "title": "Blade Runner",
+        "year": 1982,
+        "note": "neon, haze and rain"
+      },
+      {
+        "title": "Collateral",
+        "year": 2004,
+        "note": "digital night city"
+      },
+      {
+        "title": "Drive",
+        "year": 2011,
+        "note": "neon, silence and synth score"
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://en.wikipedia.org/wiki/Neo-noir",
+        "supports": "definition and history"
+      }
+    ],
+    "confidence": "craft_consensus",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  },
+  {
+    "id": "genre.horror_supernatural",
+    "type": "subgenre",
+    "name": "Supernatural Horror (Haunting)",
+    "aliases": [
+      "haunted house",
+      "ghost story",
+      "haunting",
+      "elevated horror",
+      "slow-burn horror"
+    ],
+    "keywords": [
+      "haunted",
+      "ghost",
+      "haunting",
+      "possessed",
+      "possession",
+      "demon",
+      "spirit",
+      "empty hallway",
+      "creaking door",
+      "something in the dark",
+      "presence",
+      "seance",
+      "old house",
+      "attic",
+      "nursery",
+      "whispers",
+      "apparition"
+    ],
+    "parent": null,
+    "era": "1960s gothic roots; the slow-burn 'elevated' wave 2014-present",
+    "summary": "Fear built from what the frame withholds. Wide-angle lenses on long hallways and doorways leave large dark negative space that the audience searches for a figure that may or may not be there. The camera stays locked off or creeps forward in slow push-ins that feel like being drawn toward something; cuts are delayed far past comfort. Light comes from cold practicals and a single motivated source, leaving pools of black. The scare, when it comes, is often small and in the background plane, and sound design (room tone, low drones, a creak) does as much work as the image.",
+    "intent_tags": [
+      "dread",
+      "suspense",
+      "menace",
+      "isolation"
+    ],
+    "signature": {
+      "shot_size": {
+        "WS": 0.35,
+        "FS": 0.15,
+        "MS": 0.2,
+        "CU": 0.2,
+        "INSERT": 0.1
+      },
+      "framing": {
+        "single": 0.45,
+        "establishing": 0.2,
+        "pov": 0.15,
+        "reaction": 0.1,
+        "insert": 0.1
+      },
+      "angle": {
+        "eye": 0.6,
+        "low": 0.15,
+        "overhead": 0.15,
+        "high": 0.1
+      },
+      "camera_height": {
+        "eye": 0.5,
+        "chest": 0.25,
+        "high": 0.15,
+        "knee": 0.1
+      },
+      "lens_mm_ff": [
+        18,
+        50
+      ],
+      "lens_look": {
+        "spherical": 1.0
+      },
+      "movement": {
+        "static": 0.55,
+        "dolly_in": 0.3,
+        "pan_right": 0.05,
+        "steadicam_follow": 0.1
+      },
+      "rig": {
+        "sticks": 0.5,
+        "dolly": 0.35,
+        "steadicam": 0.15
+      },
+      "lighting": {
+        "low_key": 0.9,
+        "cold_practicals": 0.6,
+        "single_motivated_source": 0.6,
+        "candle_or_moonlight": 0.3
+      },
+      "color": [
+        "desaturated cold blue-gray",
+        "sickly tungsten practicals in pools",
+        "crushed blacks with detail barely holding"
+      ],
+      "composition": {
+        "deep_negative_space": 0.4,
+        "symmetrical_doorways": 0.25,
+        "short_sided": 0.2,
+        "foreground_occlusion": 0.15
+      },
+      "aspect_ratio": [
+        "1.85:1",
+        "2.39:1",
+        "1.33:1"
+      ],
+      "asl_seconds": [
+        5,
+        20
+      ],
+      "editing": [
+        "delay the cut past comfort",
+        "background-plane reveals without a cut",
+        "false calm before the scare",
+        "smash cut to silence"
+      ],
+      "sound": [
+        "low-frequency drone",
+        "amplified room tone and creaks",
+        "silence before the reveal"
+      ]
+    },
+    "rules": [
+      {
+        "when": "the character is alone in the space",
+        "then": "frame wide with large empty dark areas (doorways, corridor ends, the space behind them) and hold",
+        "why": "the audience scans the negative space for a threat on its own, so the fear is self-generated and much stronger than anything shown",
+        "hard": false
+      },
+      {
+        "when": "approaching a doorway or a dark room",
+        "then": "use a very slow, steady push-in rather than a cut",
+        "why": "a slow inexorable move feels like being pulled toward something; the slowness implies inevitability",
+        "hard": false
+      },
+      {
+        "when": "revealing the presence",
+        "then": "place it small and out of focus in the background plane while the character stays unaware in the foreground, and do not punctuate with a cut or a music sting",
+        "why": "an unannounced background reveal makes the viewer doubt what they saw and keeps checking every later frame",
+        "hard": false
+      }
+    ],
+    "recipes": [
+      {
+        "name": "Night corridor walk",
+        "beat": "a woman hears a sound and walks down a dark upstairs hallway toward a half-open nursery door",
+        "cast": 1,
+        "shots": [
+          {
+            "purpose": "wide symmetrical corridor, her bedroom door at one end, the nursery at the far end",
+            "subject": "env",
+            "size": "WS",
+            "framing": "establishing",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 21,
+            "dof": "deep",
+            "movement": "static",
+            "lighting": "moonlight through one window, a single cold practical",
+            "composition": "one-point perspective, dark doorways on both walls",
+            "duration_s": 6
+          },
+          {
+            "purpose": "she steps out; follow from behind at a distance",
+            "subject": "A",
+            "size": "FS",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "back",
+            "height": "chest",
+            "lens_mm_ff": 24,
+            "dof": "deep",
+            "movement": "steadicam_follow",
+            "speed": "slow",
+            "lighting": "pools of light and black between them",
+            "duration_s": 7
+          },
+          {
+            "purpose": "CU: she stops and listens, the dark corridor behind her in frame",
+            "subject": "A",
+            "size": "CU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 35,
+            "dof": "medium",
+            "movement": "static",
+            "lighting": "cold side light, half the face in shadow",
+            "composition": "short-sided, large empty dark space behind her",
+            "duration_s": 5
+          },
+          {
+            "purpose": "her POV: very slow push toward the half-open nursery door",
+            "subject": "env",
+            "size": "MS",
+            "framing": "pov",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 28,
+            "dof": "deep",
+            "movement": "dolly_in",
+            "speed": "slow",
+            "lighting": "black gap in the doorway",
+            "duration_s": 8
+          },
+          {
+            "purpose": "reverse wide: she stands at the door; far behind her, a figure stands in the bedroom doorway, unremarked",
+            "subject": "A",
+            "size": "WS",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 24,
+            "dof": "deep",
+            "movement": "static",
+            "lighting": "same cold pools",
+            "composition": "her in the foreground third, the background figure tiny and soft",
+            "duration_s": 6
+          }
+        ],
+        "why": "The wide symmetrical corridor teaches the audience the space and its dark exits; the short-sided close-up then makes the empty space behind her the real subject. The slow POV push draws the viewer toward the expected threat, which lets the background figure in the reverse arrive where nobody was looking, turning the whole house into a place that must be searched."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "music stings and jump scares on every beat",
+        "why": "cheap shocks release tension; slow-burn dread depends on withholding the release"
+      },
+      {
+        "what": "tight framing that hides the room",
+        "why": "without empty negative space there is nowhere for the audience to imagine the threat"
+      },
+      {
+        "what": "showing the entity clearly and early",
+        "why": "a seen ghost has limits; an unseen one is as frightening as the viewer can imagine"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "Slow-burn supernatural horror look, low-key lighting from cold practicals and moonlight, deep black negative space, desaturated cold blue-gray palette, wide-angle lens with deep focus, fine film grain.",
+      "still": "supernatural horror film still, low-key lighting, cold moonlight and single tungsten practical, deep black negative space in doorways, desaturated cold blue-gray palette, wide-angle 24mm deep focus, symmetrical hallway, fine film grain",
+      "h3": "Live-action, slow-burn haunted-house look with cold low-key light and deep dark negative space."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.5,
+      "yaw_deg": 180,
+      "pitch_deg": 0,
+      "distance_m": 4.0,
+      "roll_deg": 0,
+      "focal_mm_ff": 24,
+      "vfov_deg": 43.6
+    },
+    "reference_works": [
+      {
+        "title": "The Innocents",
+        "year": 1961,
+        "note": "ghosts in the background plane"
+      },
+      {
+        "title": "The Haunting",
+        "year": 1963
+      },
+      {
+        "title": "The Conjuring",
+        "year": 2013,
+        "note": "long Steadicam house tours"
+      },
+      {
+        "title": "Hereditary",
+        "year": 2018,
+        "note": "slow pushes, figures in dark corners"
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://en.wikipedia.org/wiki/Supernatural_horror_film",
+        "supports": "subgenre definition"
+      }
+    ],
+    "confidence": "craft_consensus",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  },
+  {
+    "id": "genre.mockumentary",
+    "type": "subgenre",
+    "name": "Mockumentary",
+    "aliases": [
+      "mock documentary",
+      "mockumentary comedy",
+      "workplace mockumentary",
+      "faux documentary"
+    ],
+    "keywords": [
+      "mockumentary",
+      "talking head",
+      "confessional",
+      "interview to camera",
+      "looks at the camera",
+      "documentary crew",
+      "office manager",
+      "awkward silence",
+      "camera crew follows",
+      "boss",
+      "coworkers",
+      "breakroom",
+      "conference room",
+      "deadpan"
+    ],
+    "parent": null,
+    "era": "1984 onward on film; dominant TV comedy form 2001-2015",
+    "summary": "Fiction shot with the grammar of observational documentary, so the camera is a character with limited knowledge. One operator handheld, available or practical light, zooms that hunt for the reaction after it has already started, eavesdropping through doorways and blinds, and off-center talking-head interviews in which subjects reveal what they hide from each other. The comedy comes from the gap between what people say in the confessional and what the camera catches them doing, and from glances to the lens that make the audience complicit. No score inside scenes; the silences are the joke.",
+    "intent_tags": [
+      "comedy",
+      "realism"
+    ],
+    "signature": {
+      "shot_size": {
+        "WS": 0.15,
+        "MS": 0.35,
+        "MCU": 0.3,
+        "CU": 0.15,
+        "INSERT": 0.05
+      },
+      "framing": {
+        "single": 0.45,
+        "two_shot": 0.15,
+        "group": 0.15,
+        "reaction": 0.15,
+        "dirty_single": 0.1
+      },
+      "angle": {
+        "eye": 0.9,
+        "high": 0.05,
+        "low": 0.05
+      },
+      "camera_height": {
+        "eye": 0.7,
+        "chest": 0.3
+      },
+      "lens_mm_ff": [
+        24,
+        150
+      ],
+      "lens_look": {
+        "spherical": 1.0
+      },
+      "movement": {
+        "handheld": 0.6,
+        "snap_zoom": 0.15,
+        "zoom_in": 0.1,
+        "whip_pan": 0.1,
+        "static": 0.05
+      },
+      "rig": {
+        "handheld_shoulder": 0.9,
+        "sticks_for_interviews": 0.1
+      },
+      "lighting": {
+        "available_light": 0.8,
+        "fluorescent_office": 0.5,
+        "soft_window": 0.3
+      },
+      "color": [
+        "neutral, slightly flat video look",
+        "fluorescent green-white offices",
+        "no stylized grade"
+      ],
+      "composition": {
+        "off_center_interview": 0.3,
+        "foreground_obstruction": 0.3,
+        "loose_reframing": 0.4
+      },
+      "aspect_ratio": [
+        "1.78:1"
+      ],
+      "asl_seconds": [
+        2,
+        6
+      ],
+      "editing": [
+        "cut from a claim in the interview to footage that contradicts it",
+        "hold on awkward silence",
+        "reaction glance to camera as the punchline",
+        "jump cuts inside interviews"
+      ],
+      "sound": [
+        "no score inside scenes",
+        "radio-mic dialogue overheard from a distance",
+        "room tone and office hum"
+      ]
+    },
+    "rules": [
+      {
+        "when": "always",
+        "then": "the camera may only know what a documentary crew could know: no impossible angles, no coverage that anticipates action, no shots from inside private moments the crew could not reach",
+        "why": "the comedy depends on believing in the crew; one impossible angle breaks the fiction and the joke with it",
+        "hard": true
+      },
+      {
+        "when": "a character says something revealing or absurd",
+        "then": "find the reaction late with a snap zoom or a whip pan to the listener",
+        "why": "a reaction the camera arrives at slightly late feels caught rather than staged, which is what makes it funny",
+        "hard": false
+      },
+      {
+        "when": "talking-head interviews",
+        "then": "frame the subject off-center on a third, looking just off lens at an unseen interviewer, on sticks",
+        "why": "the steady formal interview contrasts with the wobbly observed scenes, so the gap between self-image and behavior becomes visible",
+        "hard": false
+      }
+    ],
+    "recipes": [
+      {
+        "name": "Claim, then contradiction",
+        "beat": "an office manager tells the interviewer his staff love his meetings; cut to the meeting",
+        "cast": 3,
+        "shots": [
+          {
+            "purpose": "talking head: A on a third, looking just off lens, explaining how popular he is",
+            "subject": "A",
+            "size": "MCU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 50,
+            "dof": "medium",
+            "movement": "static",
+            "lighting": "flat office fluorescents plus window",
+            "composition": "subject on the left third, office blinds behind",
+            "duration_s": 5
+          },
+          {
+            "purpose": "the meeting: loose handheld group shot through the glass wall",
+            "subject": "all",
+            "size": "WS",
+            "framing": "group",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "eye",
+            "lens_mm_ff": 35,
+            "dof": "deep",
+            "movement": "handheld",
+            "speed": "slow",
+            "lighting": "available fluorescent",
+            "composition": "partly obstructed by the blind slats and door frame",
+            "duration_s": 4
+          },
+          {
+            "purpose": "A at the whiteboard, mid-pitch",
+            "subject": "A",
+            "size": "MS",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 50,
+            "movement": "handheld",
+            "speed": "slow",
+            "duration_s": 3
+          },
+          {
+            "purpose": "snap zoom onto B's exhausted reaction",
+            "subject": "B",
+            "size": "CU",
+            "framing": "reaction",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 120,
+            "movement": "snap_zoom",
+            "speed": "fast",
+            "duration_s": 2
+          },
+          {
+            "purpose": "C glances directly into the lens",
+            "subject": "C",
+            "size": "MCU",
+            "framing": "reaction",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 75,
+            "movement": "handheld",
+            "speed": "slow",
+            "duration_s": 2
+          },
+          {
+            "purpose": "back to A, holding through the silence after his joke dies",
+            "subject": "A",
+            "size": "MS",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "eye",
+            "lens_mm_ff": 50,
+            "movement": "handheld",
+            "speed": "slow",
+            "duration_s": 4
+          }
+        ],
+        "why": "The steady interview sets up the character's self-image, and the shaky observed footage undercuts it, so the audience gets the joke by comparing two shots. The late snap zoom and the glance to the lens make viewers co-conspirators with the crew, and the held silence turns discomfort itself into the punchline."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "polished dolly moves, cranes or perfectly matched coverage",
+        "why": "it reveals the fiction; a real crew has one camera and arrives late"
+      },
+      {
+        "what": "score under scenes",
+        "why": "music tells the audience how to feel; the genre's comedy lives in uncomfortable real silence"
+      },
+      {
+        "what": "stylized lighting or grading",
+        "why": "the look must pass as unlit documentary footage of an ordinary place"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "Observational documentary look, handheld shoulder-mounted camera with small reframing drifts, flat available fluorescent and window light, neutral ungraded video color, 16:9.",
+      "still": "mockumentary television frame, documentary-style handheld camera, flat available fluorescent office light, neutral ungraded digital video color, slightly off-center composition, partly obstructed by blinds, 16:9",
+      "h3": "Live-action, observational handheld documentary look in flat available office light."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.5,
+      "yaw_deg": 35,
+      "pitch_deg": 0,
+      "distance_m": 2.6,
+      "roll_deg": 1,
+      "focal_mm_ff": 50,
+      "vfov_deg": 21.7
+    },
+    "reference_works": [
+      {
+        "title": "This Is Spinal Tap",
+        "year": 1984
+      },
+      {
+        "title": "The Office (UK)",
+        "year": 2001,
+        "note": "cringe silences and glances to camera"
+      },
+      {
+        "title": "Best in Show",
+        "year": 2000
+      },
+      {
+        "title": "What We Do in the Shadows",
+        "year": 2014
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://en.wikipedia.org/wiki/Mockumentary",
+        "supports": "definition and history"
+      }
+    ],
+    "confidence": "craft_consensus",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  },
+  {
+    "id": "genre.action_practical",
+    "type": "subgenre",
+    "name": "Modern Practical Action",
+    "aliases": [
+      "practical action",
+      "gun-fu",
+      "center-framed action",
+      "long-take action",
+      "stunt-driven action"
+    ],
+    "keywords": [
+      "fight scene",
+      "hand-to-hand",
+      "gunfight",
+      "shootout",
+      "assassin",
+      "hitman",
+      "stunt",
+      "brawl",
+      "chase",
+      "car chase",
+      "takes down",
+      "disarms",
+      "henchmen",
+      "nightclub fight",
+      "hallway fight",
+      "martial arts",
+      "action",
+      "escape",
+      "getaway",
+      "explosion"
+    ],
+    "parent": null,
+    "era": "2008-present",
+    "summary": "Action shot so the audience can read every blow. Performers do the stunts, so the camera can stay wide enough to show full bodies and real contact, and shots last long enough to prove it. Rapid cuts are survivable because the point of interest is kept near frame center from shot to shot, so the eye never hunts after a cut. Wide-to-normal lenses, minimal shake, stabilized tracking moves that stay with the fighter, and rhythm built from choreography rather than from the edit. Color is usually stylized and bold (neon, teal, sodium) but the geography is always clear.",
+    "intent_tags": [
+      "energy",
+      "spectacle",
+      "triumph",
+      "tension"
+    ],
+    "signature": {
+      "shot_size": {
+        "WS": 0.3,
+        "FS": 0.25,
+        "MS": 0.25,
+        "MCU": 0.1,
+        "INSERT": 0.1
+      },
+      "framing": {
+        "single": 0.4,
+        "two_shot": 0.2,
+        "group": 0.25,
+        "insert": 0.15
+      },
+      "angle": {
+        "eye": 0.65,
+        "low": 0.25,
+        "high": 0.1
+      },
+      "camera_height": {
+        "chest": 0.4,
+        "eye": 0.35,
+        "hip": 0.15,
+        "high": 0.1
+      },
+      "lens_mm_ff": [
+        18,
+        50
+      ],
+      "lens_look": {
+        "spherical": 0.6,
+        "anamorphic": 0.4
+      },
+      "movement": {
+        "steadicam_follow": 0.25,
+        "track_follow": 0.2,
+        "truck_left": 0.1,
+        "truck_right": 0.1,
+        "static": 0.25,
+        "arc_left": 0.1
+      },
+      "rig": {
+        "gimbal_or_steadicam": 0.5,
+        "dolly": 0.2,
+        "sticks": 0.2,
+        "vehicle_rig": 0.1
+      },
+      "lighting": {
+        "stylized_motivated_color": 0.6,
+        "hard_backlight_in_haze": 0.4,
+        "practical_neon": 0.3
+      },
+      "color": [
+        "bold motivated color (neon blue, magenta, sodium)",
+        "clean deep blacks",
+        "teal-orange in daylight"
+      ],
+      "composition": {
+        "center_framed_subject": 0.6,
+        "full_body_in_frame": 0.3,
+        "symmetrical": 0.1
+      },
+      "aspect_ratio": [
+        "2.39:1"
+      ],
+      "asl_seconds": [
+        1.5,
+        6
+      ],
+      "editing": [
+        "cut on impact, not before it",
+        "keep the point of interest at center across cuts",
+        "longer takes to show the stunt is real",
+        "beat of stillness before each new attacker"
+      ],
+      "sound": [
+        "heavy impact foley",
+        "driving electronic or percussive score",
+        "gunshots mixed loud and dry"
+      ]
+    },
+    "rules": [
+      {
+        "when": "fast cutting",
+        "then": "keep the action's point of interest at or near frame center in every shot",
+        "why": "the viewer's eye is already where the next shot's action is, so even half-second shots read instantly instead of forcing a search",
+        "hard": false
+      },
+      {
+        "when": "a performer does the stunt",
+        "then": "frame wide enough to include the full body and the contact, and hold through the move",
+        "why": "showing the whole move in one shot proves it is real, and that physical credibility is the genre's pleasure",
+        "hard": false
+      },
+      {
+        "when": "a fight changes direction or enters a new space",
+        "then": "re-establish geography with a wide before returning to closer shots",
+        "why": "the audience must know where the attackers and exits are to understand the tactics",
+        "hard": true
+      }
+    ],
+    "recipes": [
+      {
+        "name": "Hallway takedown",
+        "beat": "an assassin fights through two attackers in a narrow hotel corridor",
+        "cast": 3,
+        "shots": [
+          {
+            "purpose": "geography: the corridor, A at one end, two attackers approaching",
+            "subject": "all",
+            "size": "WS",
+            "framing": "group",
+            "angle": "eye",
+            "horizontal": "back",
+            "height": "chest",
+            "lens_mm_ff": 24,
+            "dof": "deep",
+            "movement": "static",
+            "lighting": "practical sconces, hard backlight from the far window",
+            "composition": "one-point perspective, A centered",
+            "duration_s": 3
+          },
+          {
+            "purpose": "follow A into the first attacker; full-body exchange",
+            "subject": "A",
+            "size": "FS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "three_quarter_back",
+            "height": "chest",
+            "lens_mm_ff": 24,
+            "dof": "deep",
+            "movement": "steadicam_follow",
+            "speed": "regular",
+            "composition": "the clash kept in the frame center",
+            "duration_s": 5
+          },
+          {
+            "purpose": "insert: wrist lock and disarm",
+            "subject": "A_hands",
+            "size": "INSERT",
+            "framing": "insert",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "chest",
+            "lens_mm_ff": 50,
+            "dof": "medium",
+            "movement": "static",
+            "composition": "hands centered",
+            "duration_s": 1
+          },
+          {
+            "purpose": "wide side angle: the throw into the wall reads in one frame",
+            "subject": "both",
+            "size": "WS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "hip",
+            "lens_mm_ff": 28,
+            "dof": "deep",
+            "movement": "truck_right",
+            "speed": "fast",
+            "composition": "impact at frame center",
+            "duration_s": 2
+          },
+          {
+            "purpose": "C charges in; low angle as A turns to meet him",
+            "subject": "C",
+            "size": "MS",
+            "framing": "single",
+            "angle": "low",
+            "horizontal": "front",
+            "height": "hip",
+            "lens_mm_ff": 28,
+            "movement": "static",
+            "composition": "attacker centered",
+            "duration_s": 1.5
+          },
+          {
+            "purpose": "continuous follow through the second fight to the finishing move",
+            "subject": "A",
+            "size": "FS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "chest",
+            "lens_mm_ff": 24,
+            "dof": "deep",
+            "movement": "arc_left",
+            "speed": "regular",
+            "composition": "fighters centered as the camera circles",
+            "duration_s": 6
+          },
+          {
+            "purpose": "beat of stillness: A breathing in the empty corridor",
+            "subject": "A",
+            "size": "MS",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 35,
+            "movement": "static",
+            "lighting": "backlit haze",
+            "duration_s": 3
+          }
+        ],
+        "why": "Opening on the whole corridor gives the audience the tactical map, and keeping each clash in frame center lets the cuts carry speed without confusion. Wide full-body framing and long follows prove the performer is doing the work, which is what makes the violence feel weighty; the final still beat lets the adrenaline land."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "long-lens shaky-cam fragments",
+        "why": "they hide the choreography and make the audience hunt for the action after every cut"
+      },
+      {
+        "what": "cutting before the impact lands",
+        "why": "a cut on anticipation instead of contact steals the payoff and suggests the stunt was faked"
+      },
+      {
+        "what": "point of interest jumping across the frame between shots",
+        "why": "the eye loses half a second re-finding the action in every cut, which reads as chaos"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "Modern stylized action look in 2.39:1 widescreen, hard backlight through haze, bold motivated neon and sodium color, clean deep blacks, crisp wide-angle image with smooth stabilized camera and subjects held at frame center.",
+      "still": "modern action film still, 2.39:1 widescreen, hard backlight through haze, bold neon blue and magenta practical light, clean deep blacks, wide-angle 24mm, full-body framing, center-framed subject, crisp digital cinema image",
+      "h3": "Live-action, modern stylized action look in 2.39:1 with hard backlight, haze and bold neon color."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.2,
+      "yaw_deg": 150,
+      "pitch_deg": 0,
+      "distance_m": 4.0,
+      "roll_deg": 0,
+      "focal_mm_ff": 24,
+      "vfov_deg": 43.6
+    },
+    "reference_works": [
+      {
+        "title": "The Raid",
+        "year": 2011
+      },
+      {
+        "title": "John Wick",
+        "year": 2014,
+        "note": "wide full-body gun-fu"
+      },
+      {
+        "title": "Mad Max: Fury Road",
+        "year": 2015,
+        "note": "center framing for fast cutting"
+      },
+      {
+        "title": "Atomic Blonde",
+        "year": 2017,
+        "note": "stairwell long-take fight"
+      }
+    ],
+    "sources": [],
+    "confidence": "craft_consensus",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  },
+  {
+    "id": "genre.sci_fi_monumental",
+    "type": "subgenre",
+    "name": "Monumental Sci-fi",
+    "aliases": [
+      "monumental science fiction",
+      "brutalist sci-fi",
+      "minimalist sci-fi",
+      "scale sci-fi"
+    ],
+    "keywords": [
+      "spaceship",
+      "alien ship",
+      "monolith",
+      "megastructure",
+      "alien planet",
+      "desert planet",
+      "landing",
+      "first contact",
+      "colossal",
+      "vast hangar",
+      "fog",
+      "silhouette",
+      "spacesuit",
+      "dunes",
+      "towering"
+    ],
+    "parent": null,
+    "era": "1968 roots; the dominant blockbuster sci-fi look 2016-present",
+    "summary": "Science fiction told through scale and silence. Tiny human figures stand in vast negative space against megastructures, dunes or fog; shapes read as silhouettes against haze rather than as detailed effects. The camera moves rarely and slowly (glacial push-ins, measured cranes), and cuts are few, so each image has time to register as an event. Palettes are restrained and nearly monochrome, light comes from one large diffuse or hard source, and sub-bass sound design replaces melody. Awe here is mixed with unease: the environment is indifferent to the people in it.",
+    "intent_tags": [
+      "awe",
+      "isolation",
+      "dread",
+      "spectacle"
+    ],
+    "signature": {
+      "shot_size": {
+        "EWS": 0.35,
+        "WS": 0.25,
+        "MS": 0.15,
+        "CU": 0.2,
+        "INSERT": 0.05
+      },
+      "framing": {
+        "establishing": 0.3,
+        "single": 0.4,
+        "group": 0.2,
+        "pov": 0.1
+      },
+      "angle": {
+        "low": 0.35,
+        "eye": 0.4,
+        "high": 0.15,
+        "overhead": 0.1
+      },
+      "camera_height": {
+        "ground": 0.2,
+        "knee": 0.15,
+        "eye": 0.4,
+        "aerial": 0.25
+      },
+      "lens_mm_ff": [
+        18,
+        100
+      ],
+      "lens_look": {
+        "spherical": 0.6,
+        "anamorphic": 0.4
+      },
+      "movement": {
+        "static": 0.5,
+        "dolly_in": 0.3,
+        "crane_up": 0.1,
+        "tilt_up": 0.1
+      },
+      "rig": {
+        "sticks": 0.4,
+        "dolly": 0.3,
+        "crane_or_drone": 0.3
+      },
+      "lighting": {
+        "single_large_source": 0.6,
+        "silhouette_backlight": 0.5,
+        "haze_and_fog": 0.7
+      },
+      "color": [
+        "near-monochrome palettes (amber, gray, bone white)",
+        "atmospheric haze lifting the blacks",
+        "one accent color at most"
+      ],
+      "composition": {
+        "tiny_figure_vast_negative_space": 0.5,
+        "symmetrical": 0.25,
+        "low_horizon": 0.25
+      },
+      "aspect_ratio": [
+        "2.39:1",
+        "1.90:1 IMAX"
+      ],
+      "asl_seconds": [
+        5,
+        15
+      ],
+      "editing": [
+        "few cuts, long holds",
+        "cut from extreme scale to a human face",
+        "silence before the reveal"
+      ],
+      "sound": [
+        "sub-bass drones and tonal hums",
+        "minimal or no melody",
+        "breath inside the helmet"
+      ]
+    },
+    "rules": [
+      {
+        "when": "introducing a structure, ship or landscape",
+        "then": "include a tiny human figure for scale and leave most of the frame empty",
+        "why": "scale only reads by comparison; the small figure lets the audience feel the size in their body instead of reading it as a number",
+        "hard": false
+      },
+      {
+        "when": "the reveal of the alien object or space",
+        "then": "hold the shot long and move the camera barely or not at all",
+        "why": "stillness and duration make the image feel real and heavy; fast moves turn it into a theme-park ride",
+        "hard": false
+      },
+      {
+        "when": "after a scale reveal",
+        "then": "cut to a close-up of a face reacting in silence",
+        "why": "the face tells the audience how to feel about the scale: wonder mixed with fear",
+        "hard": false
+      }
+    ],
+    "recipes": [
+      {
+        "name": "First sight of the structure",
+        "beat": "a small survey team crests a ridge in fog and sees an immense alien shape hanging above the valley",
+        "cast": 2,
+        "shots": [
+          {
+            "purpose": "the team climbs in fog, small at the bottom of a pale frame",
+            "subject": "all",
+            "size": "EWS",
+            "framing": "group",
+            "angle": "high",
+            "horizontal": "three_quarter_back",
+            "height": "aerial",
+            "lens_mm_ff": 35,
+            "dof": "deep",
+            "movement": "static",
+            "lighting": "flat diffuse overcast, thick fog",
+            "composition": "figures in the bottom fifth, white emptiness above",
+            "duration_s": 6
+          },
+          {
+            "purpose": "A stops at the crest, back to camera",
+            "subject": "A",
+            "size": "MS",
+            "framing": "single",
+            "angle": "low",
+            "horizontal": "back",
+            "height": "knee",
+            "lens_mm_ff": 35,
+            "dof": "deep",
+            "movement": "static",
+            "lighting": "soft backlight through fog",
+            "duration_s": 4
+          },
+          {
+            "purpose": "the reveal: silhouette of the structure through haze, figures tiny at the ridge",
+            "subject": "env",
+            "size": "EWS",
+            "framing": "establishing",
+            "angle": "low",
+            "horizontal": "back",
+            "height": "ground",
+            "lens_mm_ff": 24,
+            "lens_look": "anamorphic",
+            "dof": "deep",
+            "movement": "dolly_in",
+            "speed": "slow",
+            "lighting": "hard light behind the structure blooming through fog",
+            "composition": "symmetrical, low horizon, figures at the bottom center",
+            "duration_s": 10
+          },
+          {
+            "purpose": "CU on B's face inside the visor, very slow push",
+            "subject": "B",
+            "size": "CU",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 85,
+            "dof": "shallow",
+            "movement": "dolly_in",
+            "speed": "slow",
+            "lighting": "cool reflection of the structure on the visor",
+            "duration_s": 6
+          },
+          {
+            "purpose": "B's POV upward: the underside of the structure",
+            "subject": "env",
+            "size": "WS",
+            "framing": "pov",
+            "angle": "worms_eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 24,
+            "dof": "deep",
+            "movement": "tilt_up",
+            "speed": "slow",
+            "lighting": "haze, underexposed mass against bright sky",
+            "duration_s": 6
+          }
+        ],
+        "why": "The fog withholds, the back-to-camera beat makes the audience wait with the character, and the long reveal with a tiny figure turns size into a physical sensation. Cutting to a silent face then names the emotion, and the slow upward tilt extends the sense of an object too big for a single frame."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "fast cutting and handheld energy",
+        "why": "speed shrinks scale; the genre needs time for images to be absorbed"
+      },
+      {
+        "what": "busy, colorful, detail-crowded frames",
+        "why": "monumentality comes from emptiness and restraint, not from more stuff"
+      },
+      {
+        "what": "heroic score swells over the reveal",
+        "why": "melodic cues tell the audience to feel triumph; sub-bass and silence keep the awe uneasy"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "Monumental science-fiction look in 2.39:1 widescreen, thick atmospheric haze and fog, a single large soft light source, near-monochrome muted palette, deep silhouettes, vast empty negative space, fine large-format grain.",
+      "still": "monumental sci-fi film still, 2.39:1, vast empty negative space, tiny human figure for scale, thick atmospheric fog and haze, silhouette against diffuse light, near-monochrome muted amber and gray palette, symmetrical composition, low horizon, large-format clarity",
+      "h3": "Live-action, monumental sci-fi look in 2.39:1 with fog, silhouettes and vast empty space."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.6,
+      "yaw_deg": 180,
+      "pitch_deg": 8,
+      "distance_m": 12.0,
+      "roll_deg": 0,
+      "focal_mm_ff": 24,
+      "vfov_deg": 43.6
+    },
+    "reference_works": [
+      {
+        "title": "2001: A Space Odyssey",
+        "year": 1968,
+        "note": "the monolith as pure scale"
+      },
+      {
+        "title": "Arrival",
+        "year": 2016,
+        "note": "shell in the fog"
+      },
+      {
+        "title": "Blade Runner 2049",
+        "year": 2017,
+        "note": "monochrome haze, tiny figures"
+      },
+      {
+        "title": "Dune",
+        "year": 2021,
+        "note": "brutalist scale and sub-bass sound"
+      }
+    ],
+    "sources": [],
+    "confidence": "interpretive",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  },
+  {
+    "id": "genre.western_classical",
+    "type": "subgenre",
+    "name": "Classical Western",
+    "aliases": [
+      "classic western",
+      "Hollywood western",
+      "frontier western"
+    ],
+    "keywords": [
+      "frontier",
+      "homestead",
+      "cavalry",
+      "wagon train",
+      "cattle drive",
+      "ranch",
+      "settlers",
+      "monument valley",
+      "prairie",
+      "homesteader",
+      "fort",
+      "marshal",
+      "cowboy",
+      "horseback",
+      "horses",
+      "saddle",
+      "saddles",
+      "gallop",
+      "gallops",
+      "ride off",
+      "rides off",
+      "desert",
+      "rider",
+      "riders"
+    ],
+    "parent": null,
+    "era": "1939-1962, Hollywood",
+    "summary": "The western as American myth, filmed with dignity and order. Extreme wide landscapes with low horizons and towering skies make the frontier the hero, people ride as small figures across it, and doorways and porch frames separate home from wilderness. Characters are framed at eye level, often in cowboy shots that keep face and gun belt together, in harmonious balanced compositions with deep focus outdoors. The camera rarely moves; when it does, it pans with riders or dollies gently. Cutting is classical continuity and the meaning is communal: who is inside the frame (and the door) and who is left outside.",
+    "intent_tags": [
+      "awe",
+      "nostalgia",
+      "isolation",
+      "triumph"
+    ],
+    "signature": {
+      "shot_size": {
+        "EWS": 0.25,
+        "WS": 0.25,
+        "COWBOY": 0.25,
+        "MS": 0.15,
+        "CU": 0.1
+      },
+      "framing": {
+        "establishing": 0.25,
+        "group": 0.25,
+        "single": 0.35,
+        "two_shot": 0.15
+      },
+      "angle": {
+        "eye": 0.75,
+        "low": 0.2,
+        "high": 0.05
+      },
+      "camera_height": {
+        "eye": 0.5,
+        "chest": 0.3,
+        "ground": 0.1,
+        "high": 0.1
+      },
+      "lens_mm_ff": [
+        24,
+        75
+      ],
+      "lens_look": {
+        "spherical": 1.0
+      },
+      "movement": {
+        "static": 0.7,
+        "pan_left": 0.1,
+        "pan_right": 0.1,
+        "track_follow": 0.1
+      },
+      "rig": {
+        "sticks": 0.8,
+        "dolly": 0.1,
+        "camera_car": 0.1
+      },
+      "lighting": {
+        "natural_daylight": 0.8,
+        "dark_interior_with_bright_doorway": 0.3,
+        "sunset_backlight": 0.2
+      },
+      "color": [
+        "saturated Technicolor skies and red rock",
+        "or crisp silver black-and-white",
+        "warm earth tones"
+      ],
+      "composition": {
+        "low_horizon_big_sky": 0.4,
+        "frame_within_frame_doorway": 0.2,
+        "balanced_group": 0.4
+      },
+      "aspect_ratio": [
+        "1.37:1",
+        "1.66:1",
+        "2.55:1 CinemaScope (1950s)"
+      ],
+      "asl_seconds": [
+        5,
+        12
+      ],
+      "editing": [
+        "invisible continuity",
+        "linger on landscape between scenes",
+        "reaction shots of the community"
+      ],
+      "sound": [
+        "folk songs and hymns",
+        "sweeping orchestral score",
+        "wind and hooves"
+      ]
+    },
+    "rules": [
+      {
+        "when": "establishing any journey or location",
+        "then": "open on an extreme wide with a low horizon and the figures small against land and sky",
+        "why": "the landscape is the moral and physical test; letting it dominate tells the audience the frontier is bigger than any individual",
+        "hard": false
+      },
+      {
+        "when": "a character belongs to the community or is shut out from it",
+        "then": "frame them through a doorway, porch or window from the dark interior",
+        "why": "the doorway is the boundary between civilization and wilderness, so a frame within a frame states where each character stands",
+        "hard": false
+      }
+    ],
+    "recipes": [
+      {
+        "name": "The doorway homecoming",
+        "beat": "a family watches from a homestead as a rider returns across the plain",
+        "cast": 2,
+        "shots": [
+          {
+            "purpose": "from inside the dark cabin: the doorway frames the bright plain and a distant rider",
+            "subject": "env",
+            "size": "WS",
+            "framing": "establishing",
+            "angle": "eye",
+            "horizontal": "back",
+            "height": "eye",
+            "lens_mm_ff": 28,
+            "dof": "deep",
+            "movement": "static",
+            "lighting": "black interior, sunlit exterior through the door",
+            "composition": "frame within a frame, rider tiny and centered",
+            "duration_s": 6
+          },
+          {
+            "purpose": "EWS: the rider crossing beneath enormous buttes",
+            "subject": "A",
+            "size": "EWS",
+            "framing": "establishing",
+            "angle": "eye",
+            "horizontal": "profile",
+            "height": "ground",
+            "lens_mm_ff": 35,
+            "dof": "deep",
+            "movement": "pan_right",
+            "speed": "slow",
+            "lighting": "late afternoon sun",
+            "composition": "low horizon, sky two-thirds of the frame",
+            "duration_s": 6
+          },
+          {
+            "purpose": "B steps onto the porch: cowboy shot, hand shading her eyes",
+            "subject": "B",
+            "size": "COWBOY",
+            "framing": "single",
+            "angle": "eye",
+            "horizontal": "three_quarter_front",
+            "height": "chest",
+            "lens_mm_ff": 40,
+            "dof": "medium",
+            "movement": "static",
+            "lighting": "warm daylight, porch shade on the face",
+            "duration_s": 4
+          },
+          {
+            "purpose": "A dismounts, cowboy shot, dust on his coat",
+            "subject": "A",
+            "size": "COWBOY",
+            "framing": "single",
+            "angle": "low",
+            "horizontal": "three_quarter_front",
+            "height": "hip",
+            "lens_mm_ff": 40,
+            "dof": "medium",
+            "movement": "static",
+            "lighting": "hard sun, brim shadow",
+            "duration_s": 4
+          },
+          {
+            "purpose": "two-shot at the threshold: B inside the doorway, A outside it",
+            "subject": "both",
+            "size": "WS",
+            "framing": "two_shot",
+            "angle": "eye",
+            "horizontal": "front",
+            "height": "eye",
+            "lens_mm_ff": 32,
+            "dof": "deep",
+            "movement": "static",
+            "composition": "door frame splits the frame between them",
+            "duration_s": 6
+          }
+        ],
+        "why": "The interior-to-plain doorway frame immediately divides home from wilderness, and the extreme wide makes the rider's journey feel earned by the land. Matched eye-level cowboy shots give both characters dignity, and the final threshold two-shot lets the audience see whether he will step inside without a word being said."
+      }
+    ],
+    "avoid": [
+      {
+        "what": "extreme close-ups and stylized duels",
+        "why": "that is the Italian western's operatic grammar; the classical form stays at human distance"
+      },
+      {
+        "what": "handheld or restless movement",
+        "why": "the genre's calm, balanced frames express a stable moral order"
+      }
+    ],
+    "prompt_fragments": {
+      "ltx": "Classical Hollywood western look, saturated Technicolor palette of red rock and deep blue sky, crisp natural daylight, deep-focus landscapes with low horizons and towering clouds, fine 35mm film grain.",
+      "still": "classic 1950s Hollywood western film still, Technicolor, red rock buttes and deep blue sky with towering clouds, crisp natural daylight, deep focus, low horizon, balanced composition, fine 35mm film grain",
+      "h3": "Live-action, classical 1950s Technicolor western look with deep-focus landscapes and big skies."
+    },
+    "camera3d_defaults": {
+      "mode": "orbit",
+      "target_height_m": 1.3,
+      "yaw_deg": 25,
+      "pitch_deg": 0,
+      "distance_m": 4.5,
+      "roll_deg": 0,
+      "focal_mm_ff": 40,
+      "vfov_deg": 27.0
+    },
+    "reference_works": [
+      {
+        "title": "Stagecoach",
+        "year": 1939
+      },
+      {
+        "title": "Red River",
+        "year": 1948
+      },
+      {
+        "title": "Shane",
+        "year": 1953
+      },
+      {
+        "title": "The Searchers",
+        "year": 1956,
+        "note": "doorway framing at both ends"
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://en.wikipedia.org/wiki/Western_(genre)",
+        "supports": "genre history and conventions"
+      },
+      {
+        "url": "https://en.wikipedia.org/wiki/American_shot",
+        "supports": "cowboy shot framing"
+      }
+    ],
+    "confidence": "craft_consensus",
+    "rights": {
+      "text_license": "CC-BY-4.0",
+      "contains_media": false
+    }
+  }
+]

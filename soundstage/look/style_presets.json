@@ -1,0 +1,2025 @@
+[
+  {
+    "id": "action_blockbuster",
+    "label": "Action - Modern Blockbuster",
+    "group": "Genre",
+    "summary": "Kinetic, contrasty, teal-and-orange spectacle: the camera is inside the fight, close and moving.",
+    "look": {
+      "camera_body": "red_v_raptor",
+      "lens": "anamorphic",
+      "aperture": "f2_8",
+      "film_stock": "arri_log_look",
+      "palette": "teal_orange",
+      "genre": "action",
+      "subgenre": "action.practical",
+      "movement": "",
+      "era": "2010s",
+      "technique": "raw_chaos",
+      "mood": "tension",
+      "energy": "chaotic",
+      "grade": {
+        "contrast": 0.55,
+        "saturation": 0.25,
+        "warmth": 0.15,
+        "grain": 0.1,
+        "halation": 0.15,
+        "vignette": 0.2
+      }
+    },
+    "focal_mm": 24,
+    "suggest": {
+      "film_stocks": [
+        "arri_log_look",
+        "kodak_250d",
+        "hdr"
+      ],
+      "lenses": [
+        "anamorphic",
+        "clean_sharp",
+        "panavision_c"
+      ],
+      "focal_range_mm": [
+        16,
+        50
+      ],
+      "apertures": [
+        "f2_8",
+        "f4"
+      ]
+    },
+    "craft": {
+      "lighting": "Hard backlight cutting through haze, motivated colour (sodium, neon, fire) against teal ambience; deep clean blacks.",
+      "camera_movement": "Shoulder-mounted handheld or gimbal riding with the actors; whip pans between beats; vehicle and crane rigs for chases.",
+      "framing": "Short lenses close in on bodies for impact; low angles on the hero; foreground debris and obstructions add depth.",
+      "shot_tips": [
+        "Cover each fight beat in a wide master plus two tight angles, then cut on impact, never mid-swing",
+        "Use a fast shutter (45 to 90 degrees) for crisp, staccato debris and sparks",
+        "Keep screen direction locked so geography survives fast cutting",
+        "Punch in with a 24 mm close to the face for hits; go wide for the payoff"
+      ]
+    },
+    "references": [
+      "Mad Max: Fury Road",
+      "Mission: Impossible - Fallout",
+      "John Wick: Chapter 4"
+    ],
+    "notes": "Shutter angle has no vocab id; carried in craft tips. 'raw_chaos' is the closest technique to energetic combat handheld.",
+    "kb": "genre.action_practical"
+  },
+  {
+    "id": "action_gritty",
+    "label": "Action - Gritty Desaturated",
+    "group": "Genre",
+    "summary": "Bleached, sweaty, documentary-style combat: shaky, close and claustrophobic, colour drained to steel.",
+    "look": {
+      "camera_body": "arri_alexa_mini_lf",
+      "lens": "clean_sharp",
+      "aperture": "f4",
+      "film_stock": "bleach_bypass",
+      "palette": "cold_steel",
+      "genre": "action",
+      "subgenre": "action.spy",
+      "movement": "",
+      "era": "2000s",
+      "technique": "raw_chaos",
+      "mood": "tension",
+      "energy": "chaotic",
+      "grade": {
+        "contrast": 0.6,
+        "saturation": -0.5,
+        "warmth": -0.2,
+        "grain": 0.35,
+        "halation": 0.0,
+        "vignette": 0.25
+      }
+    },
+    "focal_mm": 35,
+    "suggest": {
+      "film_stocks": [
+        "bleach_bypass",
+        "push_2",
+        "kodak_500t"
+      ],
+      "lenses": [
+        "clean_sharp",
+        "vintage_zoom",
+        "long_tele"
+      ],
+      "focal_range_mm": [
+        24,
+        85
+      ],
+      "apertures": [
+        "f4",
+        "f5_6"
+      ]
+    },
+    "craft": {
+      "lighting": "Available and practical light, hard overhead fluorescents, little fill; let highlights clip.",
+      "camera_movement": "Shoulder handheld with snap zooms and searching reframes, as if a camera operator is chasing the action.",
+      "framing": "Tight, partially obstructed frames; the edge of a shoulder or door frame in foreground; long lens from across streets.",
+      "shot_tips": [
+        "Shoot the fight with two handheld cameras at once and cut on the hit",
+        "Let the operator find the action late, a beat behind, for realism",
+        "Use doorways and crowds to hide cuts and stunt doubles"
+      ]
+    },
+    "references": [
+      "The Bourne Supremacy",
+      "Saving Private Ryan",
+      "Sicario"
+    ],
+    "notes": "Subgenre 'action.spy' chosen for the Bourne lineage; swap to action.practical for non-espionage stories."
+  },
+  {
+    "id": "action_hong_kong",
+    "label": "Action - Hong Kong / Martial Arts",
+    "group": "Movement",
+    "summary": "Balletic, full-body choreography in smoke and neon, wide enough to see every move, fast enough to feel each blow.",
+    "look": {
+      "camera_body": "film_35mm",
+      "lens": "vintage_zoom",
+      "aperture": "f4",
+      "film_stock": "kodak_500t",
+      "palette": "hyper_neon",
+      "genre": "action",
+      "subgenre": "action.martial_arts",
+      "movement": "hong_kong_action",
+      "era": "1990s",
+      "technique": "",
+      "mood": "tension",
+      "energy": "chaotic",
+      "grade": {
+        "contrast": 0.4,
+        "saturation": 0.3,
+        "warmth": 0.1,
+        "grain": 0.35,
+        "halation": 0.2,
+        "vignette": 0.15
+      }
+    },
+    "focal_mm": 35,
+    "suggest": {
+      "film_stocks": [
+        "kodak_500t",
+        "eastmancolor_faded",
+        "kodak_200t"
+      ],
+      "lenses": [
+        "vintage_zoom",
+        "clean_sharp",
+        "long_tele"
+      ],
+      "focal_range_mm": [
+        21,
+        135
+      ],
+      "apertures": [
+        "f4",
+        "f2_8"
+      ]
+    },
+    "craft": {
+      "lighting": "Hard backlight blasting through smoke, neon blue and red at night, warm tungsten interiors, muzzle flash as key.",
+      "camera_movement": "Mostly locked or dolly-mounted for the choreography; crash zooms, undercranking for speed, slow motion for the hero beat.",
+      "framing": "Full-body wides so the choreography reads; long-lens singles for the stare-down; doves and debris in foreground.",
+      "shot_tips": [
+        "Frame the whole body and the whole move; the fight is the performance",
+        "Undercrank slightly (20-22 fps) to sharpen strikes, and repeat a big impact from two or three angles",
+        "Hold for a beat of stillness between exchanges, then explode",
+        "Use slow motion for one emotional moment per sequence, not every hit"
+      ]
+    },
+    "references": [
+      "Hard Boiled",
+      "Police Story",
+      "Iron Monkey"
+    ],
+    "notes": "Kodak 500T postdates the era (period stocks were Eastmancolor/Fuji); it stands in for fast tungsten night stock.",
+    "kb": "movement.hong_kong_action"
+  },
+  {
+    "id": "western_classic",
+    "label": "Western - Classic",
+    "group": "Genre",
+    "summary": "Monument-Valley grandeur: deep-focus vistas, saturated skies, small figures in a mythic landscape.",
+    "look": {
+      "camera_body": "film_35mm",
+      "lens": "cooke_s4",
+      "aperture": "f8",
+      "film_stock": "technicolor_ib",
+      "palette": "desert_ochre",
+      "genre": "western",
+      "subgenre": "western.classical",
+      "movement": "classical_hollywood",
+      "era": "1950s",
+      "technique": "epic_scale_wides",
+      "mood": "awe",
+      "energy": "calm",
+      "grade": {
+        "contrast": 0.25,
+        "saturation": 0.3,
+        "warmth": 0.3,
+        "grain": 0.25,
+        "halation": 0.05,
+        "vignette": 0.1
+      }
+    },
+    "focal_mm": 40,
+    "suggest": {
+      "film_stocks": [
+        "technicolor_ib",
+        "kodak_50d",
+        "double_x"
+      ],
+      "lenses": [
+        "cooke_s4",
+        "clean_sharp"
+      ],
+      "focal_range_mm": [
+        24,
+        75
+      ],
+      "apertures": [
+        "f8",
+        "f11"
+      ]
+    },
+    "craft": {
+      "lighting": "Natural daylight, hard sun with bounce fill; dark interiors framed against a bright doorway.",
+      "camera_movement": "Mostly static on sticks; slow pans following riders; camera car for chases.",
+      "framing": "Low horizon, big sky; figures placed small against the land; doorway frames-within-frames.",
+      "shot_tips": [
+        "Put the horizon low and let the sky take two-thirds of the frame",
+        "Stage riders crossing the frame laterally against a landmark",
+        "Frame the hero through a dark doorway looking out to the light"
+      ]
+    },
+    "references": [
+      "The Searchers",
+      "Stagecoach",
+      "Shane"
+    ],
+    "notes": "Cooke S4 stands in for period Cooke Speed Panchro / Baltar primes.",
+    "kb": "genre.western_classical"
+  },
+  {
+    "id": "western_spaghetti",
+    "label": "Western - Spaghetti",
+    "group": "Genre",
+    "summary": "Sun-bleached ritual violence: extreme wides cut against extreme close-ups of sweating eyes.",
+    "look": {
+      "camera_body": "film_35mm",
+      "lens": "anamorphic",
+      "aperture": "f8",
+      "film_stock": "eastmancolor_faded",
+      "palette": "desert_ochre",
+      "genre": "western",
+      "subgenre": "western.spaghetti",
+      "movement": "",
+      "era": "1960s",
+      "technique": "spaghetti_standoff",
+      "mood": "tension",
+      "energy": "still",
+      "grade": {
+        "contrast": 0.45,
+        "saturation": -0.1,
+        "warmth": 0.5,
+        "grain": 0.4,
+        "halation": 0.05,
+        "vignette": 0.25
+      }
+    },
+    "focal_mm": 50,
+    "suggest": {
+      "film_stocks": [
+        "eastmancolor_faded",
+        "technicolor_ib",
+        "kodak_250d"
+      ],
+      "lenses": [
+        "anamorphic",
+        "vintage_zoom",
+        "long_tele"
+      ],
+      "focal_range_mm": [
+        24,
+        150
+      ],
+      "apertures": [
+        "f8",
+        "f11"
+      ]
+    },
+    "craft": {
+      "lighting": "Hard noon sun, deep shadow under hat brims, dusty interior shafts.",
+      "camera_movement": "Locked-off tableaux; slow push or crash zoom into eyes; occasional crane reveal.",
+      "framing": "Extreme wide landscapes with a face in the foreground corner, then extreme close-ups of eyes, hands and holsters.",
+      "shot_tips": [
+        "Alternate an extreme wide with an extreme close-up, no medium shots, as the duel tightens",
+        "Lengthen each cut as the standoff builds, cut to the music, not the action",
+        "Put a face huge in the foreground with the antagonist small in the background",
+        "Hold silence before the draw; the gunshot is a single fast cut"
+      ]
+    },
+    "references": [
+      "The Good, the Bad and the Ugly",
+      "Once Upon a Time in the West",
+      "A Fistful of Dollars"
+    ],
+    "notes": "Leone shot Techniscope (2-perf spherical widescreen), not true anamorphic; 'anamorphic' approximates the 2.35 frame.",
+    "kb": "genre.western_spaghetti"
+  },
+  {
+    "id": "film_noir",
+    "label": "Film Noir",
+    "group": "Genre",
+    "summary": "Black-and-white fatalism: hard single-source light, venetian-blind shadows, wet streets and cigarette smoke.",
+    "look": {
+      "camera_body": "film_35mm",
+      "lens": "cooke_s4",
+      "aperture": "f8",
+      "film_stock": "double_x",
+      "palette": "classic_bw",
+      "genre": "noir",
+      "subgenre": "noir.classic",
+      "movement": "classical_hollywood",
+      "era": "1940s",
+      "technique": "chiaroscuro_single_source",
+      "mood": "menace",
+      "energy": "calm",
+      "grade": {
+        "contrast": 0.7,
+        "saturation": -1.0,
+        "warmth": 0.0,
+        "grain": 0.35,
+        "halation": 0.15,
+        "vignette": 0.35
+      }
+    },
+    "focal_mm": 32,
+    "suggest": {
+      "film_stocks": [
+        "double_x",
+        "ilford_hp5",
+        "tri_x"
+      ],
+      "lenses": [
+        "cooke_s4",
+        "clean_sharp"
+      ],
+      "focal_range_mm": [
+        21,
+        75
+      ],
+      "apertures": [
+        "f8",
+        "f5_6"
+      ]
+    },
+    "craft": {
+      "lighting": "Low-key chiaroscuro, one hard source, gobos and venetian blinds, glamour key with edge light on the femme fatale.",
+      "camera_movement": "Mostly static with slow dolly moves; occasional crane down into the street.",
+      "framing": "Low angles with ceilings in frame, deep-focus wide lenses, dutch tilts when the world goes wrong.",
+      "shot_tips": [
+        "Light the set, not the actor: let faces fall into shadow",
+        "Wet the streets and add haze so the single source has something to cut through",
+        "Shoot from low with a wide lens so ceilings press down on the characters"
+      ]
+    },
+    "references": [
+      "Double Indemnity",
+      "The Third Man",
+      "Touch of Evil"
+    ],
+    "notes": "Cooke S4 stands in for period Baltar / Speed Panchro primes.",
+    "kb": "genre.film_noir"
+  },
+  {
+    "id": "neo_noir",
+    "label": "Neo-Noir",
+    "group": "Genre",
+    "summary": "Noir in colour: sodium streetlight, neon reflections on wet asphalt, a lonely figure in deep saturated shadow.",
+    "look": {
+      "camera_body": "arri_alexa_mini_lf",
+      "lens": "anamorphic",
+      "aperture": "f2",
+      "film_stock": "kodak_500t",
+      "palette": "sodium_decay",
+      "genre": "noir",
+      "subgenre": "noir.neo",
+      "movement": "",
+      "era": "auto",
+      "technique": "long_lens_voyeur",
+      "mood": "menace",
+      "energy": "calm",
+      "grade": {
+        "contrast": 0.55,
+        "saturation": 0.15,
+        "warmth": 0.05,
+        "grain": 0.25,
+        "halation": 0.35,
+        "vignette": 0.3
+      }
+    },
+    "focal_mm": 40,
+    "suggest": {
+      "film_stocks": [
+        "kodak_500t",
+        "cinestill_800t",
+        "arri_log_look"
+      ],
+      "lenses": [
+        "anamorphic",
+        "vintage_anamorphic",
+        "long_tele"
+      ],
+      "focal_range_mm": [
+        24,
+        135
+      ],
+      "apertures": [
+        "f2",
+        "f2_8"
+      ]
+    },
+    "craft": {
+      "lighting": "Low key with neon and sodium practicals, hard backlight in haze, wet ground reflecting colour.",
+      "camera_movement": "Slow glides and car-mount travelling shots; patient static frames; rare handheld bursts for violence.",
+      "framing": "Isolated figures in wide frames, long-lens observation through glass and windshields.",
+      "shot_tips": [
+        "Wet down every street and let practicals do the lighting",
+        "Shoot through windshields and windows to keep the audience watching from outside",
+        "Hold the frame after the character leaves it"
+      ]
+    },
+    "references": [
+      "Taxi Driver",
+      "Drive",
+      "Collateral"
+    ],
+    "notes": "",
+    "kb": "genre.neo_noir"
+  },
+  {
+    "id": "horror_supernatural",
+    "label": "Horror - Supernatural",
+    "group": "Genre",
+    "summary": "Cold, still, patient dread: wide frames with too much empty space and darkness that might be hiding something.",
+    "look": {
+      "camera_body": "arri_alexa_mini_lf",
+      "lens": "cooke_s4",
+      "aperture": "f2_8",
+      "film_stock": "kodak_500t",
+      "palette": "moonlit_blue",
+      "genre": "horror",
+      "subgenre": "horror.supernatural",
+      "movement": "",
+      "era": "auto",
+      "technique": "motivated_locked_camera",
+      "mood": "dread",
+      "energy": "still",
+      "grade": {
+        "contrast": 0.35,
+        "saturation": -0.4,
+        "warmth": -0.3,
+        "grain": 0.3,
+        "halation": 0.05,
+        "vignette": 0.45
+      }
+    },
+    "focal_mm": 24,
+    "suggest": {
+      "film_stocks": [
+        "kodak_500t",
+        "fuji_eterna_500",
+        "arri_log_look"
+      ],
+      "lenses": [
+        "cooke_s4",
+        "clean_sharp",
+        "zeiss_super_speed"
+      ],
+      "focal_range_mm": [
+        18,
+        50
+      ],
+      "apertures": [
+        "f2_8",
+        "f4"
+      ]
+    },
+    "craft": {
+      "lighting": "Low key, cold moonlight against sickly tungsten pools, single motivated sources; let blacks crush.",
+      "camera_movement": "Locked-off or glacial dolly; slow pans that reveal; steadicam drifts down corridors.",
+      "framing": "Wide lenses with negative space beside the character; dark doorways deep in frame.",
+      "shot_tips": [
+        "Leave empty space in the frame and make the audience search it",
+        "Hold the shot longer than is comfortable before anything happens",
+        "Pan away and back to reveal a change, instead of cutting"
+      ]
+    },
+    "references": [
+      "The Conjuring",
+      "Hereditary",
+      "The Others"
+    ],
+    "notes": "",
+    "kb": "genre.horror_supernatural"
+  },
+  {
+    "id": "horror_slasher",
+    "label": "Horror - Slasher (70s-80s)",
+    "group": "Genre",
+    "summary": "Grainy suburban nightmare: blue moonlight, a gliding POV that stalks, and a killer framed deep in the background.",
+    "look": {
+      "camera_body": "film_35mm",
+      "lens": "vintage_anamorphic",
+      "aperture": "f2",
+      "film_stock": "kodak_500t",
+      "palette": "moonlit_blue",
+      "genre": "horror",
+      "subgenre": "horror.slasher",
+      "movement": "",
+      "era": "1980s",
+      "technique": "long_lens_voyeur",
+      "mood": "fear",
+      "energy": "dynamic",
+      "grade": {
+        "contrast": 0.45,
+        "saturation": 0.0,
+        "warmth": -0.2,
+        "grain": 0.5,
+        "halation": 0.2,
+        "vignette": 0.35
+      }
+    },
+    "focal_mm": 28,
+    "suggest": {
+      "film_stocks": [
+        "kodak_500t",
+        "push_2",
+        "eastmancolor_faded"
+      ],
+      "lenses": [
+        "vintage_anamorphic",
+        "panavision_c",
+        "zeiss_super_speed"
+      ],
+      "focal_range_mm": [
+        21,
+        75
+      ],
+      "apertures": [
+        "f2",
+        "f2_8"
+      ]
+    },
+    "craft": {
+      "lighting": "Hard blue 'moonlight' backlight, warm interior windows, red accent for blood; deep crushed shadows.",
+      "camera_movement": "Prowling Steadicam POV from the killer, slow push-ins on victims, static frames that let the killer appear deep in focus.",
+      "framing": "Wide widescreen frames with the victim in the foreground and the threat small and soft behind them.",
+      "shot_tips": [
+        "Stage the killer deep in the background while the victim stays unaware in the foreground",
+        "Use a first-person prowling shot to put the audience in the killer's shoes",
+        "Save the red: keep the palette blue until the first kill"
+      ]
+    },
+    "references": [
+      "Halloween",
+      "A Nightmare on Elm Street",
+      "Friday the 13th"
+    ],
+    "notes": "Kodak 500T postdates the era; it stands in for 1970s-80s fast tungsten stock. 'fear' used as mood (no 'terror' id)."
+  },
+  {
+    "id": "romcom",
+    "label": "Romantic Comedy",
+    "group": "Genre",
+    "summary": "Warm, bright and safe: golden light, city glow and two-shots whose gap closes as the leads fall in love.",
+    "look": {
+      "camera_body": "arri_alexa_35",
+      "lens": "cooke_s4",
+      "aperture": "f2_8",
+      "film_stock": "kodak_250d",
+      "palette": "golden_amber",
+      "genre": "comedy",
+      "subgenre": "comedy.romantic",
+      "movement": "",
+      "era": "auto",
+      "technique": "",
+      "mood": "romance",
+      "energy": "calm",
+      "grade": {
+        "contrast": 0.0,
+        "saturation": 0.2,
+        "warmth": 0.4,
+        "grain": 0.1,
+        "halation": 0.1,
+        "vignette": 0.05
+      }
+    },
+    "focal_mm": 50,
+    "suggest": {
+      "film_stocks": [
+        "kodak_250d",
+        "kodak_200t",
+        "arri_log_look"
+      ],
+      "lenses": [
+        "cooke_s4",
+        "clean_sharp",
+        "anamorphic"
+      ],
+      "focal_range_mm": [
+        32,
+        135
+      ],
+      "apertures": [
+        "f2_8",
+        "f2"
+      ]
+    },
+    "craft": {
+      "lighting": "High key, golden-hour exteriors, soft backlight on hair, warm practicals in apartments.",
+      "camera_movement": "Mostly static for banter; slow push-in on the realisation; an orbit for the reunion.",
+      "framing": "Balanced 50/50 two-shots with space between the leads; matched singles; lenses lengthen as feelings grow.",
+      "shot_tips": [
+        "Keep the banter in a stable medium two-shot and cut on the line",
+        "Start with wide lenses and a gap between the leads, then move to longer lenses as they get closer",
+        "Give the realisation a slow dolly-in on the face"
+      ]
+    },
+    "references": [
+      "When Harry Met Sally...",
+      "Notting Hill",
+      "Crazy Rich Asians"
+    ],
+    "notes": "",
+    "kb": "genre.romantic_comedy"
+  },
+  {
+    "id": "romance_melodrama",
+    "label": "Romance / Melodrama",
+    "group": "Genre",
+    "summary": "Lush, aching, saturated longing: soft glowing light, rich colour and faces that fill the frame.",
+    "look": {
+      "camera_body": "film_35mm",
+      "lens": "soft_diffusion",
+      "aperture": "f2",
+      "film_stock": "kodak_200t",
+      "palette": "kodak_film_colours",
+      "genre": "romance",
+      "subgenre": "romance.tragic",
+      "movement": "",
+      "era": "auto",
+      "technique": "",
+      "mood": "intimacy",
+      "energy": "calm",
+      "grade": {
+        "contrast": 0.1,
+        "saturation": 0.35,
+        "warmth": 0.35,
+        "grain": 0.3,
+        "halation": 0.35,
+        "vignette": 0.2
+      }
+    },
+    "focal_mm": 75,
+    "suggest": {
+      "film_stocks": [
+        "kodak_200t",
+        "technicolor_ib",
+        "kodak_250d"
+      ],
+      "lenses": [
+        "soft_diffusion",
+        "cooke_s4",
+        "anamorphic"
+      ],
+      "focal_range_mm": [
+        40,
+        135
+      ],
+      "apertures": [
+        "f2",
+        "f1_4"
+      ]
+    },
+    "craft": {
+      "lighting": "Soft wrap key, warm practicals, rain-streaked windows and backlit hair; diffusion blooms the highlights.",
+      "camera_movement": "Slow dolly and crane moves that swell with the score; holds on faces.",
+      "framing": "Close-ups on longer lenses, shallow focus isolating the lovers; frames within frames (windows, mirrors) for separation.",
+      "shot_tips": [
+        "Shoot the key emotional beats in close-up on an 85 mm or longer",
+        "Use window and mirror frames to show what keeps the lovers apart",
+        "Let colour carry emotion: a saturated accent (red coat, green dress) per character"
+      ]
+    },
+    "references": [
+      "In the Mood for Love",
+      "Far from Heaven",
+      "Carol"
+    ],
+    "notes": "Soft_diffusion (Pro-Mist) chosen as lens to get the glow; pair with cooke_s4 if diffusion is too strong."
+  },
+  {
+    "id": "drama_indie",
+    "label": "Drama - Naturalistic Indie",
+    "group": "Genre",
+    "summary": "Unvarnished intimacy: available light, handheld close to faces, muted real-world colour.",
+    "look": {
+      "camera_body": "arri_alexa_mini_lf",
+      "lens": "zeiss_super_speed",
+      "aperture": "f2",
+      "film_stock": "kodak_250d",
+      "palette": "naturalistic",
+      "genre": "drama",
+      "subgenre": "drama.social_realism",
+      "movement": "american_indie_90s",
+      "era": "auto",
+      "technique": "documentary_snap",
+      "mood": "intimacy",
+      "energy": "calm",
+      "grade": {
+        "contrast": -0.1,
+        "saturation": -0.15,
+        "warmth": 0.05,
+        "grain": 0.35,
+        "halation": 0.05,
+        "vignette": 0.1
+      }
+    },
+    "focal_mm": 35,
+    "suggest": {
+      "film_stocks": [
+        "kodak_250d",
+        "kodak_500t",
+        "arri_log_look"
+      ],
+      "lenses": [
+        "zeiss_super_speed",
+        "cooke_s4",
+        "canon_k35"
+      ],
+      "focal_range_mm": [
+        28,
+        50
+      ],
+      "apertures": [
+        "f2",
+        "f2_8"
+      ]
+    },
+    "craft": {
+      "lighting": "Motivated by windows and practicals, minimal fill, let the light be imperfect.",
+      "camera_movement": "Handheld that breathes with the actors; long takes; reframes rather than cuts.",
+      "framing": "Medium close-ups at eye level; tight over-shoulders; leave room for awkward silence.",
+      "shot_tips": [
+        "Light the location, not the shot, so actors can move freely",
+        "Let the take run and find moments between the lines",
+        "Keep the camera at eye level and close; no showy angles"
+      ]
+    },
+    "references": [
+      "Moonlight",
+      "Manchester by the Sea",
+      "The Florida Project"
+    ],
+    "notes": "Movement 'american_indie_90s' is the nearest lineage; set movement to 'auto' for a present-day feel."
+  },
+  {
+    "id": "thriller_suspense",
+    "label": "Thriller / Suspense",
+    "group": "Genre",
+    "summary": "Controlled, precise, cold tension: every frame composed, every move deliberate, information withheld.",
+    "look": {
+      "camera_body": "red_v_raptor",
+      "lens": "clean_sharp",
+      "aperture": "f2_8",
+      "film_stock": "arri_log_look",
+      "palette": "sodium_decay",
+      "genre": "thriller",
+      "subgenre": "thriller.precise",
+      "movement": "",
+      "era": "auto",
+      "technique": "bomb_under_the_table",
+      "mood": "suspense",
+      "energy": "calm",
+      "grade": {
+        "contrast": 0.4,
+        "saturation": -0.25,
+        "warmth": -0.05,
+        "grain": 0.1,
+        "halation": 0.0,
+        "vignette": 0.3
+      }
+    },
+    "focal_mm": 35,
+    "suggest": {
+      "film_stocks": [
+        "arri_log_look",
+        "digital_clean",
+        "kodak_500t"
+      ],
+      "lenses": [
+        "clean_sharp",
+        "anamorphic",
+        "long_tele"
+      ],
+      "focal_range_mm": [
+        21,
+        100
+      ],
+      "apertures": [
+        "f2_8",
+        "f4"
+      ]
+    },
+    "craft": {
+      "lighting": "Low key, desaturated with sickly yellow-green practicals, hard top light, shadows that hide eyes.",
+      "camera_movement": "Locked or perfectly smooth dolly and slider moves; no wobble; slow creeping push-ins.",
+      "framing": "Centred, symmetrical frames; inserts on the threatening object; long lens surveillance shots.",
+      "shot_tips": [
+        "Show the audience the threat the character cannot see, then hold",
+        "Move the camera only when the story turns, and move it slowly",
+        "Cut to an insert of the key object to plant it before it matters"
+      ]
+    },
+    "references": [
+      "Zodiac",
+      "Rear Window",
+      "Gone Girl"
+    ],
+    "notes": "Sodium_decay approximates Fincher's yellow-green; cold_steel is the cooler alternative."
+  },
+  {
+    "id": "scifi_sleek",
+    "label": "Sci-fi - Sleek Future",
+    "group": "Genre",
+    "summary": "Clean, monumental, near-monochrome future: vast architecture, haze and one bold accent colour.",
+    "look": {
+      "camera_body": "arri_alexa_65",
+      "lens": "clean_sharp",
+      "aperture": "f4",
+      "film_stock": "hdr",
+      "palette": "ice_white",
+      "genre": "scifi",
+      "subgenre": "scifi.monumental",
+      "movement": "",
+      "era": "near_future",
+      "technique": "one_point_symmetry",
+      "mood": "awe",
+      "energy": "calm",
+      "grade": {
+        "contrast": 0.2,
+        "saturation": -0.2,
+        "warmth": -0.15,
+        "grain": 0.05,
+        "halation": 0.05,
+        "vignette": 0.1
+      }
+    },
+    "focal_mm": 32,
+    "suggest": {
+      "film_stocks": [
+        "hdr",
+        "digital_clean",
+        "arri_log_look"
+      ],
+      "lenses": [
+        "clean_sharp",
+        "anamorphic"
+      ],
+      "focal_range_mm": [
+        18,
+        100
+      ],
+      "apertures": [
+        "f4",
+        "f5_6"
+      ]
+    },
+    "craft": {
+      "lighting": "Large soft single sources, silhouette backlight, haze to lift the blacks; one accent colour at most.",
+      "camera_movement": "Slow, stately dollies and crane moves; drones for scale; no handheld.",
+      "framing": "Symmetrical one-point frames, tiny figures against massive structures, clean negative space.",
+      "shot_tips": [
+        "Make the architecture the subject: figures small, structures huge",
+        "Choose one accent colour for the whole film and protect it",
+        "Move the camera slowly, as if it weighs tonnes"
+      ]
+    },
+    "references": [
+      "Blade Runner 2049",
+      "Ex Machina",
+      "Arrival"
+    ],
+    "notes": "Ice_white chosen for clean future; swap to golden_amber for 2049-style orange haze.",
+    "kb": "genre.sci_fi_monumental"
+  },
+  {
+    "id": "scifi_cyberpunk",
+    "label": "Sci-fi - Gritty / Cyberpunk",
+    "group": "Genre",
+    "summary": "Rain-soaked neon megacity: magenta and cyan light, smoke, crowds and grime in deep black.",
+    "look": {
+      "camera_body": "film_35mm",
+      "lens": "anamorphic",
+      "aperture": "f2",
+      "film_stock": "cinestill_800t",
+      "palette": "hyper_neon",
+      "genre": "scifi",
+      "subgenre": "scifi.cyberpunk",
+      "movement": "",
+      "era": "near_future",
+      "technique": "",
+      "mood": "isolation",
+      "energy": "dynamic",
+      "grade": {
+        "contrast": 0.5,
+        "saturation": 0.4,
+        "warmth": -0.1,
+        "grain": 0.35,
+        "halation": 0.5,
+        "vignette": 0.3
+      }
+    },
+    "focal_mm": 40,
+    "suggest": {
+      "film_stocks": [
+        "cinestill_800t",
+        "kodak_500t",
+        "bleach_bypass"
+      ],
+      "lenses": [
+        "anamorphic",
+        "vintage_anamorphic",
+        "halation_vintage"
+      ],
+      "focal_range_mm": [
+        24,
+        85
+      ],
+      "apertures": [
+        "f2",
+        "f2_8"
+      ]
+    },
+    "craft": {
+      "lighting": "Hard backlight through smoke and rain, neon and screen practicals as key, shafts from searchlights.",
+      "camera_movement": "Slow tracking through crowded streets; handheld for violence; overhead vehicle passes.",
+      "framing": "Layered foregrounds of signage and rain; faces lit by screens; low angles up at towers.",
+      "shot_tips": [
+        "Fill the air with rain and smoke so every light becomes a beam",
+        "Light faces with screens and signs, not film lamps",
+        "Stack depth: foreground signage, mid-ground character, background towers"
+      ]
+    },
+    "references": [
+      "Blade Runner",
+      "Ghost in the Shell",
+      "The Matrix"
+    ],
+    "notes": "The Matrix leans on matrix_green; swap the palette for that variant."
+  },
+  {
+    "id": "fantasy_epic",
+    "label": "Fantasy / Epic",
+    "group": "Genre",
+    "summary": "Mythic, painterly grandeur: sweeping landscapes, golden light and heroic low angles.",
+    "look": {
+      "camera_body": "arri_alexa_65",
+      "lens": "cooke_s4",
+      "aperture": "f4",
+      "film_stock": "kodak_250d",
+      "palette": "golden_amber",
+      "genre": "fantasy",
+      "subgenre": "fantasy.high",
+      "movement": "",
+      "era": "auto",
+      "technique": "epic_scale_wides",
+      "mood": "awe",
+      "energy": "dynamic",
+      "grade": {
+        "contrast": 0.2,
+        "saturation": 0.2,
+        "warmth": 0.3,
+        "grain": 0.2,
+        "halation": 0.15,
+        "vignette": 0.2
+      }
+    },
+    "focal_mm": 32,
+    "suggest": {
+      "film_stocks": [
+        "kodak_250d",
+        "kodak_50d",
+        "technicolor_ib"
+      ],
+      "lenses": [
+        "cooke_s4",
+        "anamorphic",
+        "warm_vintage"
+      ],
+      "focal_range_mm": [
+        18,
+        100
+      ],
+      "apertures": [
+        "f4",
+        "f5_6"
+      ]
+    },
+    "craft": {
+      "lighting": "Golden-hour and magic-hour sun, firelight interiors, god rays through haze and forest canopy.",
+      "camera_movement": "Helicopter and crane sweeps over landscapes; slow push-ins on heroes; steadicam through crowds.",
+      "framing": "Tiny figures in immense landscapes, then heroic low-angle mediums; forced-perspective scale play.",
+      "shot_tips": [
+        "Open each new world with an aerial or crane establishing shot",
+        "Shoot heroes from slightly low, villains from slightly high",
+        "Use haze and backlight to separate layers of the landscape"
+      ]
+    },
+    "references": [
+      "The Lord of the Rings: The Fellowship of the Ring",
+      "Game of Thrones",
+      "The Green Knight"
+    ],
+    "notes": "Game of Thrones is a series; included as the reference for TV-scale fantasy."
+  },
+  {
+    "id": "war",
+    "label": "War",
+    "group": "Genre",
+    "summary": "Desaturated, grainy chaos at soldier height: the camera is under fire too.",
+    "look": {
+      "camera_body": "film_35mm",
+      "lens": "clean_sharp",
+      "aperture": "f5_6",
+      "film_stock": "bleach_bypass",
+      "palette": "bleach_bypass_pal",
+      "genre": "war",
+      "subgenre": "war.ww2",
+      "movement": "",
+      "era": "auto",
+      "technique": "raw_chaos",
+      "mood": "fear",
+      "energy": "chaotic",
+      "grade": {
+        "contrast": 0.55,
+        "saturation": -0.6,
+        "warmth": -0.05,
+        "grain": 0.45,
+        "halation": 0.0,
+        "vignette": 0.2
+      }
+    },
+    "focal_mm": 28,
+    "suggest": {
+      "film_stocks": [
+        "bleach_bypass",
+        "push_2",
+        "kodak_250d"
+      ],
+      "lenses": [
+        "clean_sharp",
+        "long_tele",
+        "vintage_zoom"
+      ],
+      "focal_range_mm": [
+        18,
+        85
+      ],
+      "apertures": [
+        "f5_6",
+        "f8"
+      ]
+    },
+    "craft": {
+      "lighting": "Flat overcast daylight or harsh sun, smoke and dust, fire and flares at night.",
+      "camera_movement": "Shoulder handheld at soldier height; shaker or narrow shutter during combat; long tracking oners through trenches.",
+      "framing": "Eye-level among the troops, debris crossing lens; long lens for distant enemy; huge wides of the aftermath.",
+      "shot_tips": [
+        "Keep the camera at soldier height and never above the parapet until it is safe",
+        "Use a narrow shutter (45 degrees) for staccato explosions and dirt",
+        "Let the audience lose geography briefly in combat, then restore it with a wide"
+      ]
+    },
+    "references": [
+      "Saving Private Ryan",
+      "1917",
+      "Come and See"
+    ],
+    "notes": "Set subgenre to war.vietnam / war.trench / war.modern per setting."
+  },
+  {
+    "id": "documentary_verite",
+    "label": "Documentary / Verite",
+    "group": "Genre",
+    "summary": "Caught, not staged: available light, handheld zooms and the slight imperfection of real life.",
+    "look": {
+      "camera_body": "film_super16",
+      "lens": "vintage_zoom",
+      "aperture": "f4",
+      "film_stock": "kodak_500t",
+      "palette": "documentary_earth",
+      "genre": "documentary",
+      "subgenre": "documentary.observational",
+      "movement": "",
+      "era": "auto",
+      "technique": "documentary_snap",
+      "mood": "trust",
+      "energy": "calm",
+      "grade": {
+        "contrast": -0.05,
+        "saturation": -0.2,
+        "warmth": 0.0,
+        "grain": 0.5,
+        "halation": 0.0,
+        "vignette": 0.05
+      }
+    },
+    "focal_mm": 50,
+    "suggest": {
+      "film_stocks": [
+        "kodak_500t",
+        "tri_x",
+        "arri_log_look"
+      ],
+      "lenses": [
+        "vintage_zoom",
+        "clean_sharp",
+        "long_tele"
+      ],
+      "focal_range_mm": [
+        24,
+        120
+      ],
+      "apertures": [
+        "f4",
+        "f5_6"
+      ]
+    },
+    "craft": {
+      "lighting": "Whatever is there: window light, overheads, street light; no added fixtures.",
+      "camera_movement": "Shoulder-mounted with zoom reframes; follow subjects; slow to react, never ahead of the action.",
+      "framing": "Off-centre caught moments, partial obstruction, long lens from across the room.",
+      "shot_tips": [
+        "Zoom rather than cut to find the detail mid-take",
+        "Stay a beat late: framing that follows the action feels real",
+        "Never light the subject; move them to the window instead"
+      ]
+    },
+    "references": [
+      "Grey Gardens",
+      "Salesman",
+      "Hoop Dreams"
+    ],
+    "notes": "For modern digital doc swap camera to modern_digital and stock to arri_log_look."
+  },
+  {
+    "id": "comedy_broad",
+    "label": "Comedy - Bright & Broad",
+    "group": "Genre",
+    "summary": "Bright, flat and readable: even high-key light, saturated sets and frames wide enough for the gag.",
+    "look": {
+      "camera_body": "modern_digital",
+      "lens": "clean_sharp",
+      "aperture": "f4",
+      "film_stock": "digital_clean",
+      "palette": "technicolor_primary",
+      "genre": "comedy",
+      "subgenre": "comedy.slapstick",
+      "movement": "",
+      "era": "auto",
+      "technique": "",
+      "mood": "playful",
+      "energy": "dynamic",
+      "grade": {
+        "contrast": 0.05,
+        "saturation": 0.4,
+        "warmth": 0.15,
+        "grain": 0.0,
+        "halation": 0.0,
+        "vignette": 0.0
+      }
+    },
+    "focal_mm": 32,
+    "suggest": {
+      "film_stocks": [
+        "digital_clean",
+        "kodak_250d",
+        "arri_log_look"
+      ],
+      "lenses": [
+        "clean_sharp",
+        "cooke_s4"
+      ],
+      "focal_range_mm": [
+        24,
+        50
+      ],
+      "apertures": [
+        "f4",
+        "f5_6"
+      ]
+    },
+    "craft": {
+      "lighting": "High key, soft and even, low contrast so every face reads.",
+      "camera_movement": "Mostly static; whip pans and quick push-ins for punchlines.",
+      "framing": "Medium-wide two- and three-shots so physical comedy plays in one frame; centred reaction close-ups.",
+      "shot_tips": [
+        "Play the gag in a wide that holds both the setup and the payoff",
+        "Hold on the reaction; the laugh is often in the face that watches",
+        "Avoid shallow focus: the joke can be anywhere in the frame"
+      ]
+    },
+    "references": [
+      "Airplane!",
+      "Superbad",
+      "Bridesmaids"
+    ],
+    "notes": "Subgenre 'comedy.slapstick' best matches broad; use comedy.sitcom for multicam staging."
+  },
+  {
+    "id": "musical",
+    "label": "Musical",
+    "group": "Genre",
+    "summary": "Saturated, choreographed joy: the camera dances, light shifts with the song, colour is primary and bold.",
+    "look": {
+      "camera_body": "arri_alexa_65",
+      "lens": "anamorphic",
+      "aperture": "f4",
+      "film_stock": "technicolor_ib",
+      "palette": "technicolor_primary",
+      "genre": "musical",
+      "subgenre": "musical.modern",
+      "movement": "",
+      "era": "auto",
+      "technique": "blocking_driven_oner",
+      "mood": "joy",
+      "energy": "dynamic",
+      "grade": {
+        "contrast": 0.25,
+        "saturation": 0.55,
+        "warmth": 0.15,
+        "grain": 0.15,
+        "halation": 0.2,
+        "vignette": 0.1
+      }
+    },
+    "focal_mm": 32,
+    "suggest": {
+      "film_stocks": [
+        "technicolor_ib",
+        "kodak_250d",
+        "ektachrome"
+      ],
+      "lenses": [
+        "anamorphic",
+        "cooke_s4",
+        "clean_sharp"
+      ],
+      "focal_range_mm": [
+        21,
+        75
+      ],
+      "apertures": [
+        "f4",
+        "f2_8"
+      ]
+    },
+    "craft": {
+      "lighting": "Theatrical light cues: a spotlight isolating the singer, colour washes that change with the music, magic-hour exteriors.",
+      "camera_movement": "Long crane and steadicam oners that move with the choreography; rising cranes for the finale.",
+      "framing": "Full-figure wides to show the dance; push in to the singer for the emotional verse.",
+      "shot_tips": [
+        "Shoot dance numbers in long takes framed head-to-toe",
+        "Let the lighting change on the musical cue, as on a stage",
+        "Plan camera moves to the song's bars, like choreography"
+      ]
+    },
+    "references": [
+      "Singin' in the Rain",
+      "La La Land",
+      "West Side Story (2021)"
+    ],
+    "notes": ""
+  },
+  {
+    "id": "coming_of_age",
+    "label": "Coming-of-Age / Teen",
+    "group": "Genre",
+    "summary": "Golden, nostalgic and a little hazy: summer light, lens flares and the warmth of memory.",
+    "look": {
+      "camera_body": "film_35mm",
+      "lens": "canon_k35",
+      "aperture": "f2",
+      "film_stock": "kodak_250d",
+      "palette": "magic_lilac",
+      "genre": "drama",
+      "subgenre": "drama.coming_of_age",
+      "movement": "",
+      "era": "auto",
+      "technique": "dreamy_flow",
+      "mood": "nostalgia",
+      "energy": "dynamic",
+      "grade": {
+        "contrast": -0.05,
+        "saturation": 0.15,
+        "warmth": 0.35,
+        "grain": 0.35,
+        "halation": 0.3,
+        "vignette": 0.15
+      }
+    },
+    "focal_mm": 35,
+    "suggest": {
+      "film_stocks": [
+        "kodak_250d",
+        "kodak_500t",
+        "ektachrome"
+      ],
+      "lenses": [
+        "canon_k35",
+        "warm_vintage",
+        "zeiss_super_speed"
+      ],
+      "focal_range_mm": [
+        24,
+        85
+      ],
+      "apertures": [
+        "f2",
+        "f2_8"
+      ]
+    },
+    "craft": {
+      "lighting": "Magic-hour backlight with flare, sunlit bedrooms, neon and car headlights at night.",
+      "camera_movement": "Handheld and steadicam following the kids; bike and car tracking shots; slow motion for key memories.",
+      "framing": "Eye level with the teens; group wides; tight close-ups when someone is alone in a crowd.",
+      "shot_tips": [
+        "Schedule big scenes for golden hour and shoot into the sun",
+        "Keep the camera at the characters' height, never adult eye-level looking down",
+        "Use slow motion sparingly for the moment they will remember forever"
+      ]
+    },
+    "references": [
+      "Stand by Me",
+      "Lady Bird",
+      "Dazed and Confused"
+    ],
+    "notes": ""
+  },
+  {
+    "id": "french_new_wave",
+    "label": "French New Wave",
+    "group": "Movement",
+    "summary": "Spontaneous, grainy street cinema: handheld on real streets, jump cuts, playful freedom.",
+    "look": {
+      "camera_body": "film_35mm",
+      "lens": "clean_sharp",
+      "aperture": "f4",
+      "film_stock": "ilford_hp5",
+      "palette": "classic_bw",
+      "genre": "drama",
+      "subgenre": "",
+      "movement": "french_new_wave",
+      "era": "1960s",
+      "technique": "documentary_snap",
+      "mood": "playful",
+      "energy": "dynamic",
+      "grade": {
+        "contrast": 0.3,
+        "saturation": -1.0,
+        "warmth": 0.0,
+        "grain": 0.55,
+        "halation": 0.05,
+        "vignette": 0.1
+      }
+    },
+    "focal_mm": 35,
+    "suggest": {
+      "film_stocks": [
+        "ilford_hp5",
+        "tri_x",
+        "technicolor_ib"
+      ],
+      "lenses": [
+        "clean_sharp",
+        "warm_vintage"
+      ],
+      "focal_range_mm": [
+        25,
+        50
+      ],
+      "apertures": [
+        "f4",
+        "f2_8"
+      ]
+    },
+    "craft": {
+      "lighting": "Available daylight and practicals; fast stock pushed for night streets.",
+      "camera_movement": "Handheld on the street, wheelchair and car dollies, long walking-and-talking takes.",
+      "framing": "Loose, off-centre, characters glancing at camera; real passers-by in frame.",
+      "shot_tips": [
+        "Shoot on real streets with real passers-by",
+        "Use jump cuts inside a scene to compress time and add energy",
+        "Let actors break the fourth wall with a look to camera"
+      ]
+    },
+    "references": [
+      "Breathless",
+      "The 400 Blows",
+      "Jules and Jim"
+    ],
+    "notes": "Ilford HP5 stands in for Ilford HPS / Kodak 4-X pushed stock. For the later colour films use technicolor_ib + technicolor_primary.",
+    "kb": "movement.french_new_wave"
+  },
+  {
+    "id": "italian_neorealism",
+    "label": "Italian Neorealism",
+    "group": "Movement",
+    "summary": "Grey, dusty, unglamorous truth: non-actors on ruined real streets in flat daylight.",
+    "look": {
+      "camera_body": "film_35mm",
+      "lens": "clean_sharp",
+      "aperture": "f5_6",
+      "film_stock": "double_x",
+      "palette": "classic_bw",
+      "genre": "drama",
+      "subgenre": "drama.social_realism",
+      "movement": "italian_neorealism",
+      "era": "1940s",
+      "technique": "documentary_snap",
+      "mood": "sadness",
+      "energy": "calm",
+      "grade": {
+        "contrast": -0.1,
+        "saturation": -1.0,
+        "warmth": 0.0,
+        "grain": 0.45,
+        "halation": 0.0,
+        "vignette": 0.15
+      }
+    },
+    "focal_mm": 40,
+    "suggest": {
+      "film_stocks": [
+        "double_x",
+        "ilford_hp5"
+      ],
+      "lenses": [
+        "clean_sharp",
+        "warm_vintage"
+      ],
+      "focal_range_mm": [
+        28,
+        50
+      ],
+      "apertures": [
+        "f5_6",
+        "f8"
+      ]
+    },
+    "craft": {
+      "lighting": "Available daylight, flat overcast; little or no fill; grey mid-tones.",
+      "camera_movement": "Mostly static or simple truck moves following characters through the city.",
+      "framing": "Eye-level medium shots that keep the environment and crowd around the characters.",
+      "shot_tips": [
+        "Cast non-actors and shoot in real locations, never sets",
+        "Frame wide enough to show the social world around the person",
+        "Avoid glamour lighting; let faces be ordinary"
+      ]
+    },
+    "references": [
+      "Bicycle Thieves",
+      "Rome, Open City",
+      "Umberto D."
+    ],
+    "notes": "",
+    "kb": "movement.italian_neorealism"
+  },
+  {
+    "id": "german_expressionism",
+    "label": "German Expressionism",
+    "group": "Movement",
+    "summary": "Distorted nightmare stage: painted shadows, slanted sets and extreme chiaroscuro.",
+    "look": {
+      "camera_body": "silent_handcrank",
+      "lens": "clean_sharp",
+      "aperture": "f8",
+      "film_stock": "double_x",
+      "palette": "sepia_noir",
+      "genre": "horror",
+      "subgenre": "",
+      "movement": "german_expressionism",
+      "era": "1920s",
+      "technique": "chiaroscuro_single_source",
+      "mood": "dread",
+      "energy": "still",
+      "grade": {
+        "contrast": 0.85,
+        "saturation": -0.9,
+        "warmth": 0.2,
+        "grain": 0.5,
+        "halation": 0.2,
+        "vignette": 0.55
+      }
+    },
+    "focal_mm": 35,
+    "suggest": {
+      "film_stocks": [
+        "double_x",
+        "ilford_hp5"
+      ],
+      "lenses": [
+        "clean_sharp",
+        "petzval"
+      ],
+      "focal_range_mm": [
+        24,
+        50
+      ],
+      "apertures": [
+        "f8",
+        "f11"
+      ]
+    },
+    "craft": {
+      "lighting": "Extreme hard low side light, shadows thrown huge on walls, painted highlights on sets.",
+      "camera_movement": "Locked-off tableaux; the actors and shadows move, not the camera.",
+      "framing": "Frontal theatrical framing, tilted architecture, the cast shadow as a character.",
+      "shot_tips": [
+        "Let a shadow on the wall enter before the character does",
+        "Build the set at angles: no true verticals",
+        "Under-light faces from below for menace"
+      ]
+    },
+    "references": [
+      "The Cabinet of Dr. Caligari",
+      "Nosferatu",
+      "Metropolis"
+    ],
+    "notes": "Silent-era tints (amber/blue) approximated with sepia_noir palette; swap to classic_bw for pure monochrome.",
+    "kb": "movement.german_expressionism"
+  },
+  {
+    "id": "dogme_95",
+    "label": "Dogme 95 / Handheld Realism",
+    "group": "Movement",
+    "summary": "Raw, ugly-on-purpose video truth: handheld only, available light only, nothing prettified.",
+    "look": {
+      "camera_body": "dv_camcorder",
+      "lens": "clean_sharp",
+      "aperture": "f4",
+      "film_stock": "digital_clean",
+      "palette": "documentary_earth",
+      "genre": "drama",
+      "subgenre": "drama.family",
+      "movement": "dogme_95",
+      "era": "1990s",
+      "technique": "raw_chaos",
+      "mood": "tension",
+      "energy": "chaotic",
+      "grade": {
+        "contrast": 0.1,
+        "saturation": -0.2,
+        "warmth": 0.0,
+        "grain": 0.3,
+        "halation": 0.0,
+        "vignette": 0.0
+      }
+    },
+    "focal_mm": 35,
+    "suggest": {
+      "film_stocks": [
+        "digital_clean",
+        "vhs_tape",
+        "push_2"
+      ],
+      "lenses": [
+        "clean_sharp",
+        "vintage_zoom"
+      ],
+      "focal_range_mm": [
+        24,
+        50
+      ],
+      "apertures": [
+        "f4",
+        "f2_8"
+      ]
+    },
+    "craft": {
+      "lighting": "Available light only; mixed colour temperatures left uncorrected; blown windows and muddy shadows.",
+      "camera_movement": "Handheld always, nervous and searching; jump cuts across the line.",
+      "framing": "Imperfect, chopped framing; crossing the axis freely; no tripod compositions.",
+      "shot_tips": [
+        "Handheld for every shot, including dialogue",
+        "Never add lights or correct mixed colour",
+        "Ignore the 180-degree rule if it gets you closer to the truth"
+      ]
+    },
+    "references": [
+      "Festen (The Celebration)",
+      "The Idiots",
+      "Julien Donkey-Boy"
+    ],
+    "notes": "Grain here reads as video noise (no SD-video stock id; digital_clean + dv_camcorder is closest).",
+    "kb": "movement.dogme_95"
+  },
+  {
+    "id": "storybook_symmetry",
+    "label": "Storybook Symmetry",
+    "group": "Movement",
+    "summary": "Whimsical dollhouse tableau: dead-centre symmetry, pastel production design and crisp flat staging.",
+    "look": {
+      "camera_body": "film_35mm",
+      "lens": "cooke_s4",
+      "aperture": "f5_6",
+      "film_stock": "kodak_50d",
+      "palette": "soft_pastel",
+      "genre": "comedy",
+      "subgenre": "comedy.deadpan",
+      "movement": "",
+      "era": "auto",
+      "technique": "planimetric_deadpan",
+      "mood": "playful",
+      "energy": "still",
+      "grade": {
+        "contrast": 0.1,
+        "saturation": 0.35,
+        "warmth": 0.25,
+        "grain": 0.15,
+        "halation": 0.0,
+        "vignette": 0.0
+      }
+    },
+    "focal_mm": 40,
+    "suggest": {
+      "film_stocks": [
+        "kodak_50d",
+        "kodak_250d",
+        "technicolor_ib"
+      ],
+      "lenses": [
+        "cooke_s4",
+        "clean_sharp",
+        "anamorphic"
+      ],
+      "focal_range_mm": [
+        27,
+        50
+      ],
+      "apertures": [
+        "f5_6",
+        "f8"
+      ]
+    },
+    "craft": {
+      "lighting": "Soft even top light, no harsh shadows; colour-coordinated sets and costumes do the work.",
+      "camera_movement": "Precise lateral dollies, whip pans between set-ups, 90-degree pans; snap zooms for punctuation.",
+      "framing": "Centred one-point compositions, planimetric frontal staging, characters facing camera.",
+      "shot_tips": [
+        "Centre the subject and build the set symmetrically around them",
+        "Move the camera only in straight lines and right-angle pans",
+        "Pick one colour family per location and dress everything to it"
+      ]
+    },
+    "references": [
+      "The Grand Budapest Hotel",
+      "Moonrise Kingdom",
+      "The Royal Tenenbaums"
+    ],
+    "notes": "No dedicated movement id; built from 'planimetric_deadpan' technique + comedy.deadpan. 'one_point_symmetry' is the alternate technique."
+  },
+  {
+    "id": "new_hollywood_70s",
+    "label": "70s New Hollywood",
+    "group": "Era",
+    "summary": "Gritty, warm, grainy realism: zoom lenses, underexposed interiors and brown-and-amber city streets.",
+    "look": {
+      "camera_body": "film_35mm",
+      "lens": "vintage_zoom",
+      "aperture": "f2_8",
+      "film_stock": "eastmancolor_faded",
+      "palette": "seventies_brown",
+      "genre": "crime",
+      "subgenre": "",
+      "movement": "new_hollywood",
+      "era": "1970s",
+      "technique": "long_lens_voyeur",
+      "mood": "melancholy",
+      "energy": "calm",
+      "grade": {
+        "contrast": 0.15,
+        "saturation": -0.2,
+        "warmth": 0.35,
+        "grain": 0.55,
+        "halation": 0.15,
+        "vignette": 0.25
+      }
+    },
+    "focal_mm": 50,
+    "suggest": {
+      "film_stocks": [
+        "eastmancolor_faded",
+        "push_2",
+        "kodak_500t"
+      ],
+      "lenses": [
+        "vintage_zoom",
+        "panavision_c",
+        "canon_k35"
+      ],
+      "focal_range_mm": [
+        25,
+        300
+      ],
+      "apertures": [
+        "f2_8",
+        "f2"
+      ]
+    },
+    "craft": {
+      "lighting": "Naturalistic underexposure, top light that leaves eyes in shadow, sodium streets at night.",
+      "camera_movement": "Sticks with slow zooms; handheld on location; car-mount driving shots.",
+      "framing": "Long-lens compression on city streets; unglamorous mediums; characters lost in the frame.",
+      "shot_tips": [
+        "Use slow zooms instead of dolly moves to find the subject",
+        "Underexpose interiors and let eyes fall into shadow",
+        "Shoot on real streets with a long lens from across the road"
+      ]
+    },
+    "references": [
+      "The Godfather",
+      "The French Connection",
+      "Taxi Driver"
+    ],
+    "notes": "Genre set to crime as the movement's core; clear it for non-crime stories.",
+    "kb": "movement.new_hollywood"
+  },
+  {
+    "id": "music_video_gloss",
+    "label": "Music Video / Commercial Gloss",
+    "group": "Genre",
+    "summary": "Glossy, punchy, high-production polish: saturated colour, specular highlights and bold movement.",
+    "look": {
+      "camera_body": "red_v_raptor",
+      "lens": "anamorphic",
+      "aperture": "f2",
+      "film_stock": "hdr",
+      "palette": "sunset_magenta",
+      "genre": "musical",
+      "subgenre": "musical.music_video",
+      "movement": "",
+      "era": "auto",
+      "technique": "dreamy_flow",
+      "mood": "euphoria",
+      "energy": "dynamic",
+      "grade": {
+        "contrast": 0.45,
+        "saturation": 0.5,
+        "warmth": 0.1,
+        "grain": 0.05,
+        "halation": 0.3,
+        "vignette": 0.2
+      }
+    },
+    "focal_mm": 35,
+    "suggest": {
+      "film_stocks": [
+        "hdr",
+        "digital_clean",
+        "kodak_250d"
+      ],
+      "lenses": [
+        "anamorphic",
+        "clean_sharp",
+        "soft_diffusion"
+      ],
+      "focal_range_mm": [
+        14,
+        85
+      ],
+      "apertures": [
+        "f2",
+        "f1_4"
+      ]
+    },
+    "craft": {
+      "lighting": "Bold coloured backlight, specular edges, hard reflective surfaces, LED and haze; skin beauty-lit.",
+      "camera_movement": "Gimbal and crane moves, speed ramps, robotic arm for product beats; everything moves.",
+      "framing": "Hero centred, wide lenses close for performance energy, macro inserts on product or detail.",
+      "shot_tips": [
+        "Cut on the beat and let every move land on a downbeat",
+        "Light with colour from behind and keep a beauty key on the face",
+        "Shoot at high frame rate so you can ramp speed in the edit"
+      ]
+    },
+    "references": [
+      "Beyonce - Formation",
+      "Childish Gambino - This Is America",
+      "Apple - Shot on iPhone campaign"
+    ],
+    "notes": "References are music videos / an ad campaign rather than feature films. For a pure ad use genre 'commercial' with commercial.product."
+  },
+  {
+    "id": "korean_thriller",
+    "label": "Korean Thriller",
+    "group": "Movement",
+    "summary": "Rain-soaked, cold and bloody: precise compositions that swing between deadpan and frenzy.",
+    "look": {
+      "camera_body": "arri_alexa_mini_lf",
+      "lens": "anamorphic",
+      "aperture": "f2_8",
+      "film_stock": "kodak_500t",
+      "palette": "cold_steel",
+      "genre": "thriller",
+      "subgenre": "thriller.revenge",
+      "movement": "korean_thriller",
+      "era": "auto",
+      "technique": "",
+      "mood": "dread",
+      "energy": "dynamic",
+      "grade": {
+        "contrast": 0.45,
+        "saturation": -0.25,
+        "warmth": -0.25,
+        "grain": 0.3,
+        "halation": 0.1,
+        "vignette": 0.3
+      }
+    },
+    "focal_mm": 35,
+    "suggest": {
+      "film_stocks": [
+        "kodak_500t",
+        "arri_log_look",
+        "bleach_bypass"
+      ],
+      "lenses": [
+        "anamorphic",
+        "clean_sharp"
+      ],
+      "focal_range_mm": [
+        21,
+        85
+      ],
+      "apertures": [
+        "f2_8",
+        "f4"
+      ]
+    },
+    "craft": {
+      "lighting": "Night rain backlight, sodium streetlight vs cold fluorescent; overcast muddy daylight.",
+      "camera_movement": "Mix of locked-off deadpan frames and frantic handheld; long lateral tracking for fights.",
+      "framing": "Formal compositions broken by violence; high angles on victims.",
+      "shot_tips": [
+        "Shoot it in the rain at night with hard backlight",
+        "Play a single long lateral take for a corridor fight",
+        "Cut abruptly from deadpan humour to brutality"
+      ]
+    },
+    "references": [
+      "Memories of Murder",
+      "Oldboy",
+      "The Chaser"
+    ],
+    "notes": "",
+    "kb": "movement.korean_thriller"
+  },
+  {
+    "id": "nordic_noir",
+    "label": "Nordic Noir",
+    "group": "Movement",
+    "summary": "Grey, quiet, wintry dread: slate skies, flat light and one warm lamp in a cold room.",
+    "look": {
+      "camera_body": "arri_alexa_35",
+      "lens": "clean_sharp",
+      "aperture": "f2_8",
+      "film_stock": "fuji_eterna_500",
+      "palette": "nordic_slate",
+      "genre": "crime",
+      "subgenre": "crime.procedural",
+      "movement": "nordic_noir",
+      "era": "auto",
+      "technique": "motivated_locked_camera",
+      "mood": "isolation",
+      "energy": "still",
+      "grade": {
+        "contrast": 0.1,
+        "saturation": -0.45,
+        "warmth": -0.3,
+        "grain": 0.2,
+        "halation": 0.0,
+        "vignette": 0.25
+      }
+    },
+    "focal_mm": 50,
+    "suggest": {
+      "film_stocks": [
+        "fuji_eterna_500",
+        "arri_log_look",
+        "kodak_500t"
+      ],
+      "lenses": [
+        "clean_sharp",
+        "cooke_s4",
+        "long_tele"
+      ],
+      "focal_range_mm": [
+        24,
+        150
+      ],
+      "apertures": [
+        "f2_8",
+        "f4"
+      ]
+    },
+    "craft": {
+      "lighting": "Overcast flat daylight, cool low-key interiors, a single warm practical lamp.",
+      "camera_movement": "Patient static frames, slow dollies, drone shots over bleak landscapes.",
+      "framing": "Characters small in empty landscapes; tight faces in muted interiors.",
+      "shot_tips": [
+        "Shoot exteriors in overcast; avoid sun",
+        "Keep one warm practical in every cool interior",
+        "Use drone wides to isolate a car on an empty road"
+      ]
+    },
+    "references": [
+      "The Killing (Forbrydelsen)",
+      "The Bridge (Bron/Broen)",
+      "The Girl with the Dragon Tattoo (2009)"
+    ],
+    "notes": "References are mostly TV series, the form's main home.",
+    "kb": "movement.nordic_noir"
+  },
+  {
+    "id": "hk_mood_cinema",
+    "label": "Hong Kong Mood Cinema",
+    "group": "Movement",
+    "summary": "Smeared neon longing: step-printed motion, saturated colour and lonely figures in crowded cities.",
+    "look": {
+      "camera_body": "film_35mm",
+      "lens": "halation_vintage",
+      "aperture": "f1_4",
+      "film_stock": "kodak_500t",
+      "palette": "hyper_neon",
+      "genre": "romance",
+      "subgenre": "romance.contemporary",
+      "movement": "hong_kong_second_wave",
+      "era": "1990s",
+      "technique": "step_print_smear",
+      "mood": "melancholy",
+      "energy": "dynamic",
+      "grade": {
+        "contrast": 0.3,
+        "saturation": 0.5,
+        "warmth": 0.1,
+        "grain": 0.55,
+        "halation": 0.45,
+        "vignette": 0.25
+      }
+    },
+    "focal_mm": 24,
+    "suggest": {
+      "film_stocks": [
+        "kodak_500t",
+        "push_2",
+        "cinestill_800t"
+      ],
+      "lenses": [
+        "halation_vintage",
+        "zeiss_super_speed",
+        "fisheye"
+      ],
+      "focal_range_mm": [
+        14,
+        50
+      ],
+      "apertures": [
+        "f1_4",
+        "f2"
+      ]
+    },
+    "craft": {
+      "lighting": "Neon and fluorescent practicals, coloured gels, deep night with blown signage.",
+      "camera_movement": "Handheld step-printed smears, wide-angle close to the actor, sudden freeze moments.",
+      "framing": "Wide lenses tight on faces, off-kilter, crowds streaming past a still figure.",
+      "shot_tips": [
+        "Shoot at a low frame rate with a slow shutter and step-print to smear the crowd",
+        "Keep the main figure still while the world blurs around them",
+        "Use extreme wide-angle lenses close to faces"
+      ]
+    },
+    "references": [
+      "Chungking Express",
+      "Fallen Angels",
+      "Happy Together"
+    ],
+    "notes": "Movement id hong_kong_second_wave (kb points at technique.step_print_smear)."
+  }
+]

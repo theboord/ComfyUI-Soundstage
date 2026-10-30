@@ -1,0 +1,49 @@
+<title>Soundstage App Demo</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="The real Soundstage App for ComfyUI, running in the browser and replaying real GPU renders.">
+<style>
+  /* Layout: ComfyUI App mode chrome (scene tabs, the App widget, a Run bar) around the real Soundstage widget. */
+  @font-face { font-family: "Space Grotesk"; font-weight: 400; font-display: swap; src: url("./extensions/soundstage/vendor/fonts/space-grotesk-400.woff2") format("woff2"); }
+  @font-face { font-family: "Space Grotesk"; font-weight: 600; font-display: swap; src: url("./extensions/soundstage/vendor/fonts/space-grotesk-600.woff2") format("woff2"); }
+  :root {
+    --bg: #18151b; --panel: #211927; --line: rgba(255,255,255,.09); --text: #f0efed; --muted: #a9a3ad; --accent: #F2FF59;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font: 14px/1.45 "Space Grotesk", ui-sans-serif, system-ui, sans-serif; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding-block: 14px 110px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  header { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header h1 span { color: var(--accent); }
+  .pill { font-size: 12px; color: #1a1420; background: var(--accent); border-radius: 999px; padding: 3px 10px; font-weight: 600; }
+  .intro { color: var(--muted); margin: 8px 0 10px; max-width: 80ch; }
+  #tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 12px; }
+  #tabs a { color: var(--text); text-decoration: none; border: 1px solid var(--line); background: var(--panel); border-radius: 10px 10px 0 0; padding: 7px 14px; font-size: 13px; }
+  #tabs a[aria-current="page"] { border-color: var(--accent); color: var(--accent); }
+  #tabs a:focus-visible, #run:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #sceneNote { color: var(--muted); font-size: 12px; margin: -4px 0 10px; }
+  #host { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px; min-width: 0; }
+  .runbar { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(24,21,27,.94); border-top: 1px solid var(--line); backdrop-filter: blur(6px);
+    padding-block: 10px calc(10px + env(safe-area-inset-bottom, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .runbar .in { max-width: 1280px; margin: 0 auto; display: flex; gap: 12px; align-items: center; }
+  #run { flex: 1; min-height: 44px; border-radius: 12px; border: 0; background: #f0efed; color: #18151b; font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; }
+  #runStep { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  #toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(80px + env(safe-area-inset-bottom, 0px)); max-width: min(92vw, 640px);
+    background: #2a2330; border: 1px solid var(--accent); color: var(--text); border-radius: 12px; padding: 10px 14px; font-size: 13px; z-index: 50; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 14px; }
+</style>
+<div class="wrap">
+  <header>
+    <h1><span>Soundstage</span> &middot; ComfyUI App</h1>
+    <span class="pill">Demo: replays real GPU renders</span>
+  </header>
+  <p class="intro">This is the real Soundstage App, the same code that runs inside ComfyUI, running in your browser. Block the scene in 3D, then go through &#9312; Set &rarr; &#9313; Frame &rarr; &#9314; Motion &rarr; &#9315; Review &rarr; &#9316; Deliver. Image and video generation needs a GPU, so Run and the render buttons replay the renders ComfyUI made for these scenes (Krea 2 frames, LTX-2.5 motion with sound).</p>
+  <nav id="tabs" aria-label="Scenes"></nav>
+  <p id="sceneNote"></p>
+  <div id="host"></div>
+  <footer>Horse and car models: CC0 (Quaternius). three.js r170. Open source; runs inside ComfyUI with Krea 2 and LTX-2.5.</footer>
+</div>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+<div class="runbar"><div class="in"><button id="run" type="button">&#9654;&#xFE0E; Run</button><span id="runStep"></span></div></div>
+<script type="module" src="./demo.mjs"></script>

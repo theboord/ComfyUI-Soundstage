@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soundstage Cut Demo</title>
+<style>
+  html, body { margin: 0; background: #0f1115; color: #cfd5de; font: 12px system-ui, -apple-system, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: #e9edf2; }
+  h1 span { color: #e39a40; }
+  p { color: #7d8794; margin: 0 0 10px; }
+  pre { background: #16191e; border-radius: 6px; padding: 8px; max-height: 160px; overflow: auto; font-size: 11px; color: #8b94a1; }
+</style>
+</head>
+<body>
+<main>
+  <h1><span>Soundstage</span> · Cut tab harness</h1>
+  <p>Standalone harness: the clay frames come from a 2D stand-in for the stage (renderPreviewFrame), the Look/Draft/Final rungs from demo_media/. Serve the repo over HTTP (ES modules do not load from file://).</p>
+  <div id="cut"></div>
+  <pre id="out">onChange output appears here.</pre>
+</main>
+<script type="module">
+import { CutPanel } from "./cut.mjs";
+
+const project = await (await fetch("./demo_project.json")).json();
+const shots = new Map(project.shots.map((s) => [s.id, s]));
+
+// --- a 2D stand-in for stage.renderFrameTo("clay", frame): two actors and a table on one scene clock,
+// framed differently per setup, so cutting between setups on action reads as continuous.
+const W = 960, H = 512;
+const cv = document.createElement("canvas");
+cv.width = W; cv.height = H;
+const g = cv.getContext("2d");
+const ease = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
+
+function world(sf) {
+  return {
+    a: 2.2 + 1.6 * ease(sf / 120),                // actor A walks to the table
+    aArm: sf > 120 ? Math.sin(sf / 6) * 0.4 : 0,
+    b: 6.2,
+    bArm: Math.sin(sf / 9) * 0.5,
+    cup: 4.4 + 1.2 * ease((sf - 140) / 48),       // cup slides across the table
+  };
+}
+
+const CAMS = {
+  master: { cx: 4.6, zoom: 1, flip: false, cy: 1.2 },
+  "OTS A": { cx: 5.5, zoom: 2.1, flip: false, cy: 1.55 },
+  "OTS B": { cx: 4.2, zoom: 2.1, flip: true, cy: 1.55 },
+  insert: { cx: 5.0, zoom: 5.5, flip: false, cy: 1.0 },
+  "single B": { cx: 6.2, zoom: 2.6, flip: false, cy: 1.6 },
+};
+
+function actor(x, arm, shade, ppm, X, Y) {
+  g.fillStyle = shade;
+  const w = 0.5 * ppm, h = 1.25 * ppm;
+  g.beginPath(); g.roundRect(X(x) - w / 2, Y(1.45), w, h, w / 2.2); g.fill();
+  g.beginPath(); g.arc(X(x), Y(1.72), 0.2 * ppm, 0, Math.PI * 2); g.fill();
+  g.save(); g.translate(X(x), Y(1.3)); g.rotate(arm); g.fillRect(-0.06 * ppm, 0, 0.12 * ppm, 0.6 * ppm); g.restore();
+}
+
+function renderClay(shotId, f) {
+  const shot = shots.get(shotId);
+  const sf = (shot?.scene_offset || 0) + f;
+  const cam = CAMS[shot?.setup] || CAMS.master;
+  const night = (shot?.scene_name || "").includes("EXT");
+  const wd = world(sf);
+  const ppm = 95 * cam.zoom;
+  const X = (x) => W / 2 + (cam.flip ? -1 : 1) * (x - cam.cx) * ppm;
+  const Y = (y) => H * 0.62 - (y - cam.cy) * ppm;
+  g.fillStyle = night ? "#2b3038" : "#8d9097"; g.fillRect(0, 0, W, H);                   // wall / sky
+  g.fillStyle = night ? "#3a3f47" : "#a3a6ac"; g.fillRect(0, Y(0), W, H - Y(0));         // floor
+  if (!night) {                                                                         // table
+    g.fillStyle = "#b6b9be"; g.fillRect(X(4.0), Y(0.78), X(5.9) - X(4.0), 0.08 * ppm);
+    g.fillStyle = "#c6c8cc"; g.fillRect(Math.min(X(4.95), X(5.05)), Y(0.78), Math.abs(X(5.05) - X(4.95)), 0.78 * ppm);
+    g.fillStyle = "#e1e2e4";                                                             // cup
+    g.fillRect(X(wd.cup) - 0.06 * ppm, Y(0.92), 0.12 * ppm, 0.14 * ppm);
+  }
+  actor(wd.b, wd.bArm, "#c9cbcf", ppm, X, Y);
+  actor(wd.a, wd.aArm, "#dcdde0", ppm, X, Y);
+  g.fillStyle = "rgba(233,237,242,.8)"; g.font = "13px system-ui"; g.textAlign = "center";
+  g.fillText(`clay stand-in · scene frame ${sf}`, W / 2, H - 30);
+  return cv;
+}
+
+let current = project;
+const out = document.getElementById("out");
+const panel = new CutPanel(document.getElementById("cut"), {
+  getProject: () => current,
+  renderPreviewFrame: renderClay,
+  onChange: (p) => {
+    current = p;
+    out.textContent = JSON.stringify(p.cut);
+  },
+});
+window.cutPanel = panel; // for poking around in the console
+</script>
+</body>
+</html>
