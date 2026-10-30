@@ -166,7 +166,7 @@ export function v2sPlan(frames = 200) {
 export function capturePlan(frames = 200) {
   return [
     { key: "upload", match: /upload/i, label: "Uploading the clip", secs: 4 },
-    { key: "mocap", match: /./, label: "Tracking the performer (SAM 3D Body: body, hands, fingers)", secs: 8 + 0.2 * frames },
+    { key: "mocap", match: /./, label: "Tracking the performer (SAM 3D Body: body, hands, fingers)", secs: 14 + 0.22 * frames },
   ];
 }
 
@@ -246,7 +246,10 @@ export class JobCard {
     const el = (performance.now() - this.t0) / 1000;
     this.sEl.textContent = line;
     this.barI.style.width = `${Math.round(p.frac * 100)}%`;
-    this.mEl.textContent = `${fmtSecs(el)} elapsed · about ${fmtSecs(Math.max(5, p.left))} left · you can keep working`;
+    const over = (performance.now() - this.stepT) / 1000 > this.plan[p.i].secs && p.i === this.plan.length - 1;
+    this.mEl.textContent = over
+      ? `${fmtSecs(el)} elapsed · finishing up: a bit slower than usual (the first run loads the model) · you can keep working`
+      : `${fmtSecs(el)} elapsed · about ${fmtSecs(Math.max(5, p.left))} left · you can keep working`;
     this.onTick?.(line);
   }
 
