@@ -15,7 +15,7 @@ import { bodyIcon, lensIcon, fovIcon, irisIcon, injectGearCss } from "../ui/cine
 
 const CSS = `
 .ss-look { display:flex; flex-direction:column; gap:8px; padding:6px; background:#16191e; border-radius:6px;
-  font:12px/1.3 -apple-system, "Segoe UI", sans-serif; color:#cfd5de; box-sizing:border-box; width:100%; }
+  font:13px/1.4 "Soundstage Grotesk", ui-sans-serif, system-ui, sans-serif; color:#cfd5de; box-sizing:border-box; width:100%; }
 .ss-look * { box-sizing:border-box; }
 .ss-look h4 { margin:2px 0 0; font-family:inherit; font-size:11px; font-weight:600; line-height:1.2; letter-spacing:.06em; text-transform:uppercase; color:#7d8694; }
 .ss-look-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }

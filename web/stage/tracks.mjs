@@ -169,7 +169,7 @@ export class TrackSheet {
     g.clearRect(0, 0, w, h);
     const last = this._last(), fps = st.state.shot?.fps || 24;
     // Ruler: a tick per second.
-    g.font = "500 9px ui-sans-serif, system-ui, sans-serif"; g.textBaseline = "middle"; g.textAlign = "center";
+    g.font = "500 9px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif"; g.textBaseline = "middle"; g.textAlign = "center";
     for (let s = 0; s * fps <= last; s++) {
       const x = this._x(s * fps);
       g.fillStyle = "rgba(240,239,237,.35)"; g.fillRect(x, HEAD - 5, 1, 5);
@@ -182,7 +182,7 @@ export class TrackSheet {
       g.fillStyle = "rgba(255,255,255,.05)"; g.fillRect(0, y + ROW - 1, w, 1);
       g.fillStyle = r.color; g.beginPath(); g.arc(10, cy, 3.5, 0, Math.PI * 2); g.fill();
       g.fillStyle = sel ? TOKENS.text : TOKENS.muted; g.textAlign = "left";
-      g.font = `${sel ? 600 : 500} 11px ui-sans-serif, system-ui, sans-serif`;
+      g.font = `${sel ? 600 : 500} 11px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif`;
       let name = r.name;
       while (name.length > 3 && g.measureText(name).width > NAME_W - 26) name = name.slice(0, -2);
       g.fillText(name === r.name ? name : `${name}…`, 20, cy);
@@ -205,7 +205,7 @@ export class TrackSheet {
     const px = this._x(st.frame || 0);
     g.fillStyle = TOKENS.accent; g.fillRect(px - 0.75, 0, 1.5, h);
     if (this.drag?.kind === "key") {
-      g.fillStyle = TOKENS.accent; g.textAlign = "center"; g.font = "600 10px ui-sans-serif, system-ui, sans-serif";
+      g.fillStyle = TOKENS.accent; g.textAlign = "center"; g.font = "600 10px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
       g.fillText(`f${this.drag.key.frame}`, Math.min(w - 16, px + 16), 6);
     }
   }

@@ -142,7 +142,7 @@ export function sunDome(onChange) {
     g.strokeStyle = "rgba(255,255,255,.12)";
     g.beginPath(); g.ellipse(C, C + 6, R, R * 0.85, 0, Math.PI, 0); g.stroke();
     const [nx, ny] = proj(north, 0);
-    g.fillStyle = "#b9b3be"; g.font = "600 9px ui-sans-serif, system-ui"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillStyle = "#b9b3be"; g.font = "600 9px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
     const [lx, ly] = [C + (nx - C) * 1.18, C + 6 + (ny - C - 6) * 1.3];
     g.fillText("N", lx, ly);
     // sun path for this azimuth (horizon → zenith), sun position, ray to the centre and its shadow direction
@@ -158,7 +158,7 @@ export function sunDome(onChange) {
     const glow = g.createRadialGradient(sx, sy, 0, sx, sy, 11);
     glow.addColorStop(0, "rgba(255,240,170,1)"); glow.addColorStop(0.45, "rgba(242,255,89,.9)"); glow.addColorStop(1, "rgba(242,255,89,0)");
     g.fillStyle = glow; g.beginPath(); g.arc(sx, sy, 11, 0, Math.PI * 2); g.fill();
-    g.fillStyle = "#b9b3be"; g.font = "500 9px ui-sans-serif, system-ui"; g.textAlign = "left"; g.textBaseline = "alphabetic";
+    g.fillStyle = "#b9b3be"; g.font = "500 9px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif"; g.textAlign = "left"; g.textBaseline = "alphabetic";
     g.fillText(`${Math.round(el)}°`, 4, 88);
   };
   const fromPointer = (e) => {

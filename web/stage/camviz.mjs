@@ -10,6 +10,7 @@
 
 import * as THREE from "../vendor/three.module.min.mjs";
 import { TOKENS } from "../ui/theme.mjs";
+import { icon } from "../ui/icons.mjs";
 
 const MAX_SEGMENTS = 200;
 const COLORS = {
@@ -343,7 +344,7 @@ const PIP_CSS = `
   background:linear-gradient(transparent, rgba(20,15,24,.85)); pointer-events:auto; }
 .ss-pip .ss-pip-bar button { all:unset; cursor:pointer; width:22px !important; height:22px !important; padding:0 !important;
   display:grid !important; place-items:center; border-radius:999px !important; border:0 !important; color:${TOKENS.text} !important;
-  background:rgba(255,255,255,.12) !important; font:12px/1 ui-sans-serif, system-ui, sans-serif !important; flex:none; }
+  background:rgba(255,255,255,.12) !important; font:12px/1 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif !important; flex:none; }
 .ss-pip .ss-pip-bar button:hover { background:rgba(255,255,255,.24) !important; }
 .ss-pip .ss-pip-bar button:focus-visible { outline:2px solid ${TOKENS.accent}; outline-offset:1px; }
 .ss-pip .ss-pip-bar input { flex:1; min-width:30px; accent-color:${TOKENS.accent}; height:14px; margin:0; }
@@ -374,18 +375,19 @@ export class PipViewer {
     this.tag = Object.assign(document.createElement("div"), { className: "ss-pip-tag", textContent: "Shot cam" });
     const bar = document.createElement("div");
     bar.className = "ss-pip-bar";
-    const btn = (text, title, fn) => {
-      const b = Object.assign(document.createElement("button"), { type: "button", textContent: text, title });
+    const btn = (ic, title, fn) => {
+      const b = Object.assign(document.createElement("button"), { type: "button", title });
+      b.append(icon(ic, 13));
       b.setAttribute("aria-label", title);
       b.addEventListener("click", fn);
       return b;
     };
-    this.playBtn = btn("▶", "Play the shot", () => this.togglePlay());
+    this.playBtn = btn("play", "Play the shot", () => this.togglePlay());
     this.scrub = Object.assign(document.createElement("input"), { type: "range", min: 0, max: 96, step: 1, value: 0 });
     this.scrub.setAttribute("aria-label", "Scrub the shot");
     this.scrub.addEventListener("input", () => { this.pause(); this._go(+this.scrub.value); });
     this.tc = document.createElement("output");
-    const expand = btn("⤢", "Look through the shot camera", () => { this.pause(); stage.setFreeView(false); });
+    const expand = btn("maximize-2", "Look through the shot camera", () => { this.pause(); stage.setFreeView(false); });
     bar.append(this.playBtn, this.scrub, this.tc, expand);
     el.append(this.tag, bar);
     // Keep pointer / wheel / keys on the PiP away from the stage navigation underneath.
@@ -407,7 +409,7 @@ export class PipViewer {
     const st = this.stage, fps = st.state.shot?.fps || 24, last = st._lastFrame();
     let start = st.frame >= last ? 0 : st.frame;
     let t0 = performance.now();
-    this.playBtn.textContent = "❚❚";
+    this.playBtn.replaceChildren(icon("pause", 13));
     this.playBtn.title = "Pause";
     const tick = (now) => {
       let f = start + Math.floor(((now - t0) / 1000) * fps);
@@ -421,7 +423,7 @@ export class PipViewer {
   pause() {
     if (this.playing) cancelAnimationFrame(this.playing);
     this.playing = null;
-    this.playBtn.textContent = "▶";
+    this.playBtn.replaceChildren(icon("play", 13));
     this.playBtn.title = "Play the shot";
   }
 
@@ -508,12 +510,12 @@ const TOP_CSS = `
   font:600 10px/1 "Soundstage Grotesk", ui-sans-serif, system-ui, sans-serif; letter-spacing:.08em; text-transform:uppercase; color:${TOKENS.muted}; }
 .ss-top-head span { flex:1; }
 .ss-top-head button { all:unset; cursor:pointer; padding:3px 8px !important; border-radius:999px !important; border:0 !important;
-  background:rgba(255,255,255,.08) !important; color:${TOKENS.text} !important; font:500 11px/1.2 ui-sans-serif, system-ui, sans-serif !important; }
+  background:rgba(255,255,255,.08) !important; color:${TOKENS.text} !important; font:500 11px/1.2 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif !important; }
 .ss-top-head button:hover { background:rgba(255,255,255,.18) !important; }
 .ss-top-head button:focus-visible { outline:2px solid ${TOKENS.accent}; outline-offset:1px; }
 .ss-top canvas { flex:1; width:100%; min-height:0; display:block; touch-action:none; }
 .ss-top-hint { position:absolute; left:8px; bottom:6px; right:8px; pointer-events:none;
-  font:500 10px/1.3 ui-sans-serif, system-ui, sans-serif; color:${TOKENS.faint}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  font:500 10px/1.3 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif; color:${TOKENS.faint}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 `;
 
 const HINT_IDLE = "Drag keys · Alt-drag = height · drag ● to aim · click path = new key · right-click = delete";
@@ -541,7 +543,8 @@ export class TopView {
     const title = Object.assign(document.createElement("span"), { textContent: "Top view · N ↑" });
     const fit = Object.assign(document.createElement("button"), { type: "button", textContent: "Fit", title: "Fit the camera move and the cast" });
     fit.addEventListener("click", () => { this._fit(); this.draw(); });
-    const close = Object.assign(document.createElement("button"), { type: "button", textContent: "✕", title: "Hide the top view" });
+    const close = Object.assign(document.createElement("button"), { type: "button", title: "Hide the top view" });
+    close.append(icon("x", 13));
     close.setAttribute("aria-label", "Hide the top view");
     close.addEventListener("click", () => this.setVisible(false));
     head.append(title, fit, close);
@@ -867,7 +870,7 @@ export class TopView {
     for (const b of this.walls) rect(b, "rgba(240,239,237,.22)", "rgba(240,239,237,.4)");
 
     // Cast: paths, then dots with names.
-    g.font = "500 10px ui-sans-serif, system-ui, sans-serif";
+    g.font = "500 10px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
     // Close actors (two horses side by side) would overprint: try right, left, above, below, then stack.
     const placed = [];
     const label = (text, x, y) => {
@@ -906,7 +909,7 @@ export class TopView {
     if (hov?.kind === "path" && !this.drag) {
       const [x, y] = S(this.track[hov.frame]);
       g.strokeStyle = TOKENS.accent; g.lineWidth = 1.5; g.beginPath(); g.arc(x, y, 6, 0, Math.PI * 2); g.stroke();
-      g.fillStyle = TOKENS.accent; g.font = "600 10px ui-sans-serif, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "bottom";
+      g.fillStyle = TOKENS.accent; g.font = "600 10px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "bottom";
       g.fillText(`+ f${hov.frame}`, x, y - 8);
     }
 
@@ -935,10 +938,10 @@ export class TopView {
       g.beginPath(); g.moveTo(x, y - r); g.lineTo(x + r, y); g.lineTo(x, y + r); g.lineTo(x - r, y); g.closePath();
       g.fillStyle = kHot ? TOKENS.accent : "#efe9ff"; g.fill();
       g.strokeStyle = TOKENS.bg; g.lineWidth = 1.5; g.stroke();
-      g.fillStyle = TOKENS.accentInk; g.font = "700 9px ui-sans-serif, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillStyle = TOKENS.accentInk; g.font = "700 9px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
       g.fillText(String(i + 1), x, y + 0.5);
       if (kHot && this.drag?.alt) {
-        g.fillStyle = TOKENS.accent; g.font = "600 10px ui-sans-serif, system-ui, sans-serif"; g.textBaseline = "bottom";
+        g.fillStyle = TOKENS.accent; g.font = "600 10px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif"; g.textBaseline = "bottom";
         g.fillText(`${k.position[1].toFixed(2)} m`, x, y - r - 3);
       }
     });
@@ -955,7 +958,7 @@ export class TopView {
     g.strokeStyle = TOKENS.bg; g.lineWidth = 1.5; g.stroke();
 
     // North arrow and a scale bar.
-    g.fillStyle = TOKENS.muted; g.font = "700 10px ui-sans-serif, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillStyle = TOKENS.muted; g.font = "700 10px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
     g.beginPath(); g.moveTo(w - 16, 10); g.lineTo(w - 11, 22); g.lineTo(w - 21, 22); g.closePath(); g.fill();
     g.fillText("N", w - 16, 30);
     const nice = [0.5, 1, 2, 5, 10, 20, 50].find((m) => m * v.scale >= 50) || 50;
