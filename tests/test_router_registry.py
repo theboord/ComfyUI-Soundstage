@@ -10,6 +10,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from soundstage.router import registry as R  # noqa: E402
+from soundstage.audio import engines as E  # noqa: E402
 from soundstage.router.adapters import ADAPTERS  # noqa: E402
 
 REG = R.load_registry()
@@ -186,3 +187,23 @@ def test_no_higgsfield_anywhere():
     for m in REG["models"]:
         assert "higgsfield" not in json.dumps(m).lower(), m["id"]
     assert not [k for k in ADAPTERS if "higgsfield" in k.lower()]
+
+
+def test_open_weights_only_is_the_default(monkeypatch):
+    monkeypatch.delenv(R.OPEN_ONLY_ENV, raising=False)
+    monkeypatch.delenv(R.PARTNER_ENV, raising=False)
+    assert R.open_weights_only() and E.open_weights_only()
+    for stage in REG["stages"]:
+        got = R.available_models(stage, ALL_CLASSES, files(POD_FILES))
+        assert all(m["kind"] not in R.PAID_KINDS for m in got), stage
+        opts = R.stage_options(stage, ALL_CLASSES, files(POD_FILES))
+        assert opts[0][2] is None or opts[0][2]["kind"] not in R.PAID_KINDS, stage  # default stays open
+    for dept in E.ENGINES:
+        assert all(e["kind"] != "api" for e in E.available(dept, ALL_CLASSES, files(POD_FILES))), dept
+    monkeypatch.setenv(R.PARTNER_ENV, "1")
+    assert not R.open_weights_only() and not E.open_weights_only()
+    assert any(m["kind"] in R.PAID_KINDS for m in R.available_models("generate_video", ALL_CLASSES, files(POD_FILES)))
+    monkeypatch.delenv(R.PARTNER_ENV)
+    monkeypatch.setenv(R.OPEN_ONLY_ENV, "0")  # legacy opt-in still works
+    assert not R.open_weights_only() and not E.open_weights_only()
+    assert "SOUNDSTAGE_PARTNER_MODELS=1" in R.PARTNER_OFF_MSG and "SOUNDSTAGE_PARTNER_MODELS=1" in E.PARTNER_OFF_MSG

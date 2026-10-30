@@ -6,7 +6,7 @@ frames, meta}. Clips are written to output/soundstage_audio/<shot_id>/ as 48 kHz
 Tracks: DX1-2 = A1-A2 (dialogue), FX1-2 = A3-A4 (effects), MX1-2 = A5-A6 (music).
 
 Engines are stage-aware like the model router: open weights first and default, partner nodes marked
-[API] (hidden with SOUNDSTAGE_OPEN_WEIGHTS_ONLY=1). Local LTX and partner engines are expanded into
+[API] (hidden by default; opt in with SOUNDSTAGE_PARTNER_MODELS=1). Local LTX and partner engines are expanded into
 their real nodes at run time (GraphBuilder); Chatterbox runs in-process from local weights.
 """
 import json
@@ -81,7 +81,7 @@ def _pick_engine(dept, value):
     if e is None:
         raise ValueError(f"Soundstage {dept}: unknown engine {key!r}.")
     if e["kind"] == "api" and E.open_weights_only():
-        raise ValueError(f"{e['label']} is a paid partner engine and {E.OPEN_ONLY_ENV}=1 is set.")
+        raise ValueError(f"{e['label']}: {E.PARTNER_OFF_MSG}.")
     miss = E.missing(e, set(nodes.NODE_CLASS_MAPPINGS), _list_files, _has_package)
     if miss:
         raise ValueError(f"{e['label']} is missing: {', '.join(miss)}")

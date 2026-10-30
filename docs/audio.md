@@ -54,7 +54,7 @@ Cut's own `write_mixdown` and finds them at their frames in the shot mixdown.
 | Soundstage · Latent Noise Mask `SoundstageLatentNoiseMask` | LATENT, value | LATENT with a uniform noise mask |
 
 Engines are a stage-aware dropdown like the model router: open weights first and default, partner
-nodes labelled **[API]** (your Comfy credits; hidden with `SOUNDSTAGE_OPEN_WEIGHTS_ONLY=1`), and only
+nodes labelled **[API]** (your Comfy credits; hidden by default; opt in with `SOUNDSTAGE_PARTNER_MODELS=1`), and only
 engines whose nodes/weights/packages are present are listed. Local LTX and partner engines expand into
 their real nodes at run time; Chatterbox runs in-process.
 

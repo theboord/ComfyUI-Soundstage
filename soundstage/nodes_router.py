@@ -1,8 +1,9 @@
 """Soundstage model routers: one picker node per stage, every model.
 
 Each node shows a `model` dropdown with only the models valid for its stage that can run here:
-partner nodes that ComfyUI actually loaded (absent with --disable-partner-nodes / --offline, or when
-SOUNDSTAGE_OPEN_WEIGHTS_ONLY=1) and local models whose weight files are installed. Labels carry
+local open-weights models whose weight files are installed and, only when SOUNDSTAGE_PARTNER_MODELS=1
+opts in (open weights only is the default), partner nodes that ComfyUI actually loaded (absent with
+--disable-partner-nodes / --offline). Labels carry
 short badges: [API] paid partner node, [NC] non-commercial, [<$1M] etc. revenue-capped licences.
 
 At run time the chosen model is expanded into its real backend nodes (GraphBuilder + enable_expand),
@@ -51,7 +52,8 @@ def _model_input(stage: str):
         "model",
         options=[IO.DynamicCombo.Option(label, [_widget(w) for w in widgets])
                  for label, widgets, _ in _stage_options(stage)],
-        tooltip="Only models for this stage that can run here. [API] = paid partner node (your Comfy credits), "
+        tooltip="Only open-weights models for this stage that can run here (partner APIs are opt-in with "
+                "SOUNDSTAGE_PARTNER_MODELS=1). [API] = paid partner node (your Comfy credits), "
                 "[NC] = non-commercial licence, [<$1M]/[<$5M]/[<$10M] = free below that annual revenue, "
                 "[DL] = downloads weights on first run.")
 
@@ -105,7 +107,7 @@ class _Router(IO.ComfyNode):
             raise RouterError(f"No runnable model selected ({key!r}). Install one for this stage or pick another.")
         if m["kind"] in R.PAID_KINDS:
             if R.open_weights_only():
-                raise RouterError(f"{m['name']} is a paid partner model and {R.OPEN_ONLY_ENV}=1 is set.")
+                raise RouterError(f"{m['name']}: {R.PARTNER_OFF_MSG}.")
             if not (cls.hidden.auth_token_comfy_org or cls.hidden.api_key_comfy_org):
                 raise RouterError(f"{m['name']} is a paid partner model: sign in to Comfy (Settings > User) "
                                   "or pick a local model.")
@@ -155,7 +157,7 @@ class SoundstageGenerateImage(_Router):
             category="Soundstage/Models",
             search_aliases=["text to image", "t2i", "keyframe", "previz", "model picker"],
             description="Text (plus optional references or a depth control) to a still, with any installed "
-                        "image model: local open weights or partner APIs.",
+                        "image model: local open weights (partner APIs only with SOUNDSTAGE_PARTNER_MODELS=1).",
             inputs=[
                 IO.String.Input("prompt", multiline=True, default=""),
                 IO.String.Input("negative", multiline=True, default="", optional=True, advanced=True),

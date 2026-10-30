@@ -1,5 +1,7 @@
 # Models
 
+**100% open weights: every model runs locally.** Everything below is a weight file on your own GPU; no paid API is used by default.
+
 The Soundstage App (`example_workflows/Soundstage_App.json`) needs the models below. Folder paths are relative to `ComfyUI/models/`. `tools/install_runpod.sh` downloads them. Some repos are gated: accept the license on Hugging Face first, then `huggingface-cli login`.
 
 Rung 1 (Stage) needs no models at all. Rung 2 (Look still) needs the Krea 2 group. Rungs 3–4 (Draft, Final) need the LTX-2.5 group. Rung 5 (Layers) needs SAM 3.1 and BiRefNet (below) to cut mattes from the final frames; without them it falls back to the stage's own mattes.
@@ -33,7 +35,7 @@ The App's default image model: the ④ Frame first frame (with up to 4 cast refe
 | `ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors` | `latent_upscale_models/` | Lightricks/LTX-2.5 | LTX-2 Community License |
 | `ltx2.5/ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors` | `loras/` | [Lightricks/LTX-2.5-22b-IC-LoRA-Layout-To-Render](https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-Layout-To-Render) | LTX-2 Community License |
 
-If the LTX API key field is left blank, the prompt is encoded locally with Gemma. That is the default, and it is free.
+Leave the LTX API key field blank (the default): the prompt is then encoded locally with Gemma, free and fully open.
 
 ## Motion, optional second engine: MiniMax H3
 
@@ -66,8 +68,10 @@ The 32B text encoder is loaded on the CPU so it fits next to the video model on 
 |---|---|---|
 | Object designer: type any object | `text_encoders/qwen3.5_4b_bf16.safetensors` | [Comfy-Org/Qwen3.5](https://huggingface.co/Comfy-Org/Qwen3.5/resolve/main/text_encoders/qwen3.5_4b_bf16.safetensors) (Apache-2.0) |
 | Scene agent | Uses the same Qwen3.5 file. Without it, the agent builds from its rules instead. | |
-| Audio: TTS, clone, voice change | Chatterbox (MIT), installed by its own node pack. ElevenLabs runs through ComfyUI partner nodes and needs a Comfy API key. | see `docs/audio.md` |
+| Audio: TTS, clone, voice change | Chatterbox (MIT), installed by its own node pack. | see `docs/audio.md` |
 | Recast (video-to-video swap) | see `docs/recast.md` | |
-| Model router | 293 image/video/audio models, open and API. Each entry carries its own license badge. | see `docs/router.md` |
+| Model router | Every open-weights image/video/audio model whose files are installed. Each entry carries its own license badge. | see `docs/router.md` |
+
+Opt-in footnote: Partner API models (ElevenLabs, Kling, Veo, Nano Banana and the like, through ComfyUI partner nodes and your Comfy credits) are hidden by default. To list them anyway, start ComfyUI with `SOUNDSTAGE_PARTNER_MODELS=1`. A saved workflow that still names one loads fine and says so when it runs.
 
 **Hardware.** Tested on an NVIDIA RTX 6000 Ada (48 GB). We recommend 48 GB. 24 GB cards need offloading and are untested. The stage, Look tab, Cut tab and exports run in the browser on any machine.
