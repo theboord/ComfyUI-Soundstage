@@ -660,65 +660,138 @@ def h3_size(width, height):
     return snap(h * r, 32), snap(h, 32)
 
 
-def h3_prompt(p, clay_ref):
-    """Wrap the shot prompt in H3's structured form (I2VA, T2VA, or full-reference when the clay rides along
-    as <Video 1>). A prompt that is already structured passes through untouched."""
-    text = (p["prompt"] or "").strip()
-    if text.startswith("For the target video") or "integrated_multimodal_description:" in text \
-            or "subject_definitions:" in text:
-        return text
+H3_MAX_PICTURES = 9
+
+
+def _h3_sound(p):
     sound = (p.get("sound") or "").strip() or "Natural diegetic sound of the action and the place, in sync with the picture."
     music = (p.get("music") or "").strip() or "N/A"
+    return sound, music
+
+
+def _h3_action(p):
+    text = (p["prompt"] or "").strip()
     line = (p.get("line") or "").strip()
     if line:
         text += f" (S1) speaks in a natural voice, lips in sync: <d>[English] {line}</d>"
-    if clay_ref:
-        return (
-            "subject_definitions:\n"
-            "<Subject 1> is the world of <Picture 1>: its characters, wardrobe, props, set, lighting and colour "
-            "grade.\n"
-            "<Subject 2> is the blocking in <Video 1>, an untextured grey clay previz: where each figure stands and "
-            "moves, the timing of every move and the camera's framing and motion. Only positions, paths, timing and "
-            "camera come from it; its grey clay surfaces, flat lighting and simple shapes never appear.\n\n"
-            "summary:\n[reference generation] A live-action shot in the world of <Subject 1>, opening on "
-            "<Picture 1>, staged and framed exactly as <Subject 2>.\n\n"
-            "retention_analysis:\n<Subject 1>: partially_preserved\n<Subject 2>: attribute_transfer\n\n"
-            f"detailed_description:\nCinematic live-action in the look of <Picture 1>. [Shot 1] {text}\n\n"
-            f"overall_soundscape:\n{sound}\n\nnon_diegetic_music:\n{music}")
-    head = ("For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully "
-            "referenced.\n\n" if p.get("first") is not None else "")
+    return text
+
+
+def _structured(text):
+    return text.startswith(("For the target video", "How the reference pictures")) \
+        or "integrated_multimodal_description:" in text or "subject_definitions:" in text
+
+
+def h3_prompt(p, clay_ref=False):
+    """Wrap the shot prompt in H3's structured form, picked from the media: I2VA (first frame), FL2VA (first +
+    last), L2VA (last only), T2VA (none), or full-reference when there are reference images or the clay rides
+    along as <Video 1>. An already structured prompt passes through untouched."""
+    if _structured((p["prompt"] or "").strip()):
+        return p["prompt"].strip()
+    text, (sound, music) = _h3_action(p), _h3_sound(p)
+    first, last, refs = p.get("first") is not None, p.get("last") is not None, list(p.get("refs") or [])
+    dur = f"{seconds(p):.2f}"
+    if refs or clay_ref:
+        return _h3_reference_prompt(text, sound, music, first, last, len(refs), clay_ref, dur)
+    if first and last:
+        head = ("How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the "
+                f"0.00-second mark of the target video; Picture 2 (from Shot 1) aligns with the {dur}-second mark "
+                "of the target video.\n\n")
+    elif first:
+        head = ("For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully "
+                "referenced.\n\n")
+    elif last:
+        head = ("How the reference pictures align with the target video — <Picture 1> (from [Shot 1]) aligns with "
+                f"the {dur}-second mark of the target video.\n\n")
+    else:
+        head = ""
     return (f"{head}integrated_multimodal_description: [Shot 1] {text}\n\n"
             f"overall_soundscape: {sound}\n\nnon_diegetic_music: {music}")
 
 
+def _h3_reference_prompt(text, sound, music, first, last, n_refs, clay_ref, dur):
+    pic, subj = 0, 0
+    defs, keep, tasks, anchors = [], [], ["reference generation"], []
+    if first or last:
+        tasks.insert(0, "keyframe completion")
+    world = None
+    if first:
+        pic += 1
+        subj += 1
+        world = f"<Picture {pic}>"
+        defs.append(f"<Subject {subj}> is the world of <Picture {pic}>: its characters, wardrobe, props, set, "
+                    "lighting and colour grade.")
+        keep.append(f"<Subject {subj}>: partially_preserved")
+        anchors.append(f"The shot opens exactly on <Picture {pic}> at 0.00 seconds.")
+    if last:
+        pic += 1
+        world = world or f"<Picture {pic}>"
+        anchors.append(f"It ends exactly on <Picture {pic}> at {dur} seconds.")
+    for _ in range(n_refs):
+        pic += 1
+        subj += 1
+        defs.append(f"<Subject {subj}> is the character, prop or element shown in <Picture {pic}>; its look, "
+                    "shape and colours are kept exactly as they are. Only that subject comes from the picture, not "
+                    "its background, framing or lighting.")
+        keep.append(f"<Subject {subj}>: attribute_transfer")
+    if clay_ref:
+        subj += 1
+        defs.append(f"<Subject {subj}> is the blocking in <Video 1>, an untextured grey clay previz: where each figure "
+                    "stands and moves, the timing of every move and the camera's framing and motion. Only positions, "
+                    "paths, timing and camera come from it; its grey clay surfaces, flat lighting and simple shapes "
+                    "never appear.")
+        keep.append(f"<Subject {subj}>: attribute_transfer")
+    look = f"in the look of {world}" if world else "in a cinematic live-action look"
+    summary = (f"[{' + '.join(tasks)}] A live-action shot {look}" +
+               (", staged and framed as the clay blocking of <Video 1>" if clay_ref else "") +
+               (", featuring the referenced subjects" if n_refs else "") + ".")
+    body = " ".join([*anchors, text])
+    return ("subject_definitions:\n" + "\n".join(defs) + "\n\n"
+            f"summary:\n{summary}\n\n"
+            "retention_analysis:\n" + "\n".join(keep) + "\n\n"
+            f"detailed_description:\nCinematic live-action, {look[3:] if world else 'cinematic live-action look'}. "
+            f"[Shot 1] {body}\n\n"
+            f"overall_soundscape:\n{sound}\n\nnon_diegetic_music:\n{music}")
+
+
 def minimax_h3_local(g, m, p):
-    """MiniMax H3 local, after Comfy's video_minimax_h3_i2v / _r2v templates. Image → video from the look still
-    (fl2va), or with motion_ref on, the ref2va model with the look still as <Picture 1> and the stage clay as
-    <Video 1>. Video and audio come out of one pass. The 8-step fl2v turbo LoRA is used when installed."""
+    """MiniMax H3 local, after Comfy's video_minimax_h3_i2v / _r2v templates. Video and audio come out of one pass.
+    - first / last frame (either or both): the fl2va model, MiniMaxH3ImageToVideo; the 8-step fl2v turbo LoRA when
+      installed.
+    - reference images (refs, up to 9 pictures in all) and/or motion_ref on (stage clay as <Video 1>): the ref2va
+      model, MiniMaxH3ReferenceToVideo, with the first / last frames as the leading pictures."""
     w = p["weights"]
     if p["frames"] > H3_MAX_FRAMES:
         raise RouterError(f"MiniMax H3 renders at most {H3_MAX_FRAMES} frames (~15 s); this shot has "
                           f"{p['frames']}. Shorten it or use LTX-2.5.")
     clay_ref = p["params"].get("motion_ref") == H3_CLAY_REF
+    refs = list(p.get("refs") or [])
     W, H = h3_size(p["width"], p["height"])
     length = h3_length(p["frames"])
     clip = g.node("CLIPLoader", clip_name=w["text_encoder"], type="minimax", device="cpu").out(0)  # 32B: keep off the GPU
     vae = g.node("VAELoader", vae_name=w["vae"]).out(0)
     audio_vae = g.node("VAELoader", vae_name=w["audio_vae"]).out(0)
     prompt = h3_prompt(p, clay_ref)
-    if clay_ref:
-        control = need(p, "control", "MiniMax H3 with the clay reference", "a control_video (the stage clay pass)")
-        if p["frames"] / max(p["fps"], 1e-6) < 2.0:
-            raise RouterError("MiniMax H3 takes a reference video of 2 s or more; this shot is shorter. "
-                              "Turn the clay reference off.")
+    if refs or clay_ref:
+        pictures = [x for x in (p.get("first"), p.get("last")) if x is not None] + refs
+        if len(pictures) > H3_MAX_PICTURES:
+            raise RouterError(f"MiniMax H3 takes at most {H3_MAX_PICTURES} pictures (first + last frame + references); "
+                              f"this shot has {len(pictures)}.")
         if not w.get("ref_unet"):
-            raise RouterError("The clay reference needs minimax_h3_ref2va_pruned_int8_convrot.safetensors "
+            raise RouterError("MiniMax H3 references need minimax_h3_ref2va_pruned_int8_convrot.safetensors "
                               "in diffusion_models.")
         model = g.node("UNETLoader", unet_name=w["ref_unet"], weight_dtype="default").out(0)
         kw = {"clip": clip, "prompt": prompt, "width": W, "height": H, "length": length, "ref_image_size": "match",
-              "vae": vae, "audio_vae": audio_vae, "ref_videos.ref_video_0": resize(g, control, W, H)}
-        if p.get("first") is not None:
-            kw["ref_images.ref_image_0"] = resize(g, p["first"], W, H)
+              "vae": vae, "audio_vae": audio_vae}
+        for i, pic in enumerate(pictures):
+            # first / last are frames of this shot: match its size; references keep their own framing
+            kw[f"ref_images.ref_image_{i}"] = resize(g, pic, W, H) if i < len(pictures) - len(refs) else pic
+        if clay_ref:
+            control = need(p, "control", "MiniMax H3 with the clay reference", "a control_video (the stage clay pass)")
+            if seconds(p) < 2.0:
+                raise RouterError("MiniMax H3 takes a reference video of 2 s or more; this shot is shorter. "
+                                  "Turn the clay reference off.")
+            kw["ref_videos.ref_video_0"] = resize(g, control, W, H)
         cond = g.node("MiniMaxH3ReferenceToVideo", **kw)
         sampler, scheduler, steps = "res_multistep", "simple", 20
     else:
@@ -726,6 +799,8 @@ def minimax_h3_local(g, m, p):
         kw = {"clip": clip, "vae": vae, "prompt": prompt, "width": W, "height": H, "length": length}
         if p.get("first") is not None:
             kw["first_frame"] = resize(g, p["first"], W, H)
+        if p.get("last") is not None:
+            kw["last_frame"] = resize(g, p["last"], W, H)
         cond = g.node("MiniMaxH3ImageToVideo", **kw)
         if w.get("turbo_lora"):
             model = g.node("LoraLoaderModelOnly", model=model, lora_name=w["turbo_lora"], strength_model=1.0).out(0)
@@ -744,7 +819,6 @@ def minimax_h3_local(g, m, p):
     images = resize(g, images, p["width"] or W, p["height"] or H)
     audio = g.node("TrimAudioDuration", audio=audio, start_index=0.0, duration=float(seconds(p))).out(0)
     return {"video": g.node("CreateVideo", images=images, fps=float(p["fps"]), audio=audio).out(0)}
-
 
 # ---------------------------------------------------------------- local: mattes
 

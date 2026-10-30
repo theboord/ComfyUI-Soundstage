@@ -92,6 +92,7 @@ class _Router(IO.ComfyNode):
         if missing:
             raise RouterError(f"{m['name']} is missing: {', '.join(missing)}")
         params = {k: val for k, val in model.items() if k != "model"} if isinstance(model, dict) else {}
+        g = GraphBuilder()
         p = {"stage": cls.STAGE, "prompt": v.get("prompt") or "", "negative": v.get("negative") or "",
              "sound": v.get("sound") or "", "music": v.get("music") or "", "line": v.get("line") or "",
              "seed": int(v.get("seed") or 0), "width": int(v.get("width") or 0), "height": int(v.get("height") or 0),
@@ -101,7 +102,11 @@ class _Router(IO.ComfyNode):
              "refs": [v[k] for k in ("ref_1", "ref_2", "ref_3") if v.get(k) is not None],
              "image": v.get("image"), "images": v.get("images"), "mask": v.get("mask"),
              "params": params, "weights": weights, "variant": m.get("variant")}
-        g = GraphBuilder()
+        if cls.STAGE == "generate_video":
+            files = [f.strip() for f in (v.get("ref_files") or "").splitlines() if f.strip()]
+            p["refs"] += [g.node("LoadImage", image=f).out(0) for f in files]
+            if p["last"] is None and (v.get("last_file") or "").strip():
+                p["last"] = g.node("LoadImage", image=v["last_file"].strip()).out(0)
         return ADAPTERS[m["adapter"]](g, m, p), g
 
 
@@ -215,6 +220,12 @@ class SoundstageGenerateVideo(_Router):
                                 tooltip="Score mood for models that make their own audio. Blank = no music."),
                 IO.String.Input("line", default="", optional=True, advanced=True,
                                 tooltip="A spoken line for models that make their own audio. Blank = no dialogue."),
+                IO.String.Input("last_file", default="", optional=True, advanced=True,
+                                tooltip="End frame by file name (as LoadImage takes it, e.g. 'soundstage/x.png [output]'). "
+                                        "Used when last_frame is not connected. The App fills this from the shot."),
+                IO.String.Input("ref_files", multiline=True, default="", optional=True, advanced=True,
+                                tooltip="Extra reference images by file name, one per line (character or prop sheets). "
+                                        "Added after ref_1..ref_3 for models that take references."),
             ],
             outputs=[IO.Video.Output(display_name="video"), IO.Image.Output(display_name="frames")],
             hidden=HIDDEN,
