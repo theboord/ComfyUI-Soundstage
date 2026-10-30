@@ -82,6 +82,9 @@ Every character, location, wardrobe piece and prop from the breakdown gets a ref
 <td><img src="docs/media/camera_rigs.gif" alt="The same push-in on four rigs: free, dolly, jib, handheld"></td>
 <td><img src="docs/media/camera_keys.jpg" alt="A numbered camera at every camera key in the 3D stage"></td>
 </tr>
+<tr>
+<td colspan="2" align="center"><img src="docs/media/in_the_car.gif" width="720" alt="Riding inside a car: the clay two-shot through the windshield and the back-seat angle (left) next to the LTX-2.5 draft (right), the same two people in the front seats"></td>
+</tr>
 </table>
 
 ### &#9314; Set: block it in 3D clay
