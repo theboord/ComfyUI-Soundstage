@@ -311,6 +311,114 @@ export function kaijuAttack() {
   });
 }
 
+/** (j) Noir: a detective waits under a streetlamp in the rain; a black sedan pulls up beside him. */
+export function noirRain() {
+  const lamp = (x, z, i) => ({ id: `sodium_${i}`, type: "practical", name: `Street lamp ${i + 1}`, position: [x, 4.3, z],
+    target: [x, 0, z], kelvin: 2300, intensity: 2.6, softness: 1, angle: 180 });
+  return finish({
+    version: 2,
+    shot: { frames: 121, fps: 24 },
+    environment: { set: "street_night", weather: "rain", density: 0.6, water_level: 2.5 },
+    lighting: { mode: "time", hour: 22.5, day_of_year: 330, latitude: 41.9, north_deg: 0, overcast: false, preset: "night",
+      lights: [lamp(5.4, 0, 0), lamp(-5.4, -11, 1)] },
+    sun: { azimuth_deg: 250, elevation_deg: -20 },
+    actors: [
+      { id: "detective", name: "Detective in a trench coat", kind: "man", height_m: 1.85, rotation_deg: -90, keys: [at(0, [4.6, 0, 0.6])] },
+      { id: "sedan", name: "Black sedan", kind: "car", height_m: 1.45, appearance: { color: "#121214" },
+        keys: [at(0, [2.0, 0, -32]), at(70, [2.0, 0, -4]), at(96, [2.0, 0, 0]), at(120, [2.0, 0, 0])] },
+      { id: "driver", name: "Driver", kind: "man", height_m: 1.8, keys: [at(0, [2.0, 0, -32])], mount_id: "sedan", seat: 0, pose: "sit" },
+    ],
+    props: [],
+    shots: [
+      { id: "wide", name: "Low wide, rain", setup: "wide",
+        camera_keys: [key(0, [-1.5, 0.7, 8], [3.2, 1.4, -2], 24), key(120, [-1.2, 0.7, 7], [3.2, 1.3, -1], 24)] },
+      { id: "close", name: "Detective, over the shoulder", setup: "ots_a",
+        camera_keys: [key(0, [5.6, 1.75, 2.2], [2.5, 1.2, -8], 40), key(120, [5.5, 1.75, 2.0], [2.2, 1.1, 0], 40)] },
+    ],
+    active_shot: "wide",
+  });
+}
+
+/** (k) Heist getaway: two robbers sprint out with bags, jump in the van and it peels away. */
+export function heistGetaway() {
+  return finish({
+    version: 2,
+    shot: { frames: 121, fps: 24 },
+    environment: { set: "street_night", weather: "none", density: 0.5, water_level: 2.5 },
+    lighting: { mode: "time", hour: 21.5, day_of_year: 300, latitude: 34.05, north_deg: 0, overcast: false, preset: "night", lights: [] },
+    sun: { azimuth_deg: 250, elevation_deg: -18 },
+    actors: [
+      { id: "van", name: "Getaway van", kind: "truck", height_m: 2.6, appearance: { color: "#2b2f36" },
+        keys: [at(0, [2.2, 0, 0]), at(64, [2.2, 0, 0]), at(120, [2.2, 0, 30])] },
+      { id: "wheelman", name: "Driver", kind: "man", height_m: 1.8, keys: [at(0, [2.2, 0, 0])], mount_id: "van", seat: 0, pose: "sit" },
+      { id: "robber_a", name: "Robber with a duffel bag", kind: "man", height_m: 1.82,
+        keys: [at(0, [7.5, 0, 4]), at(52, [3.4, 0, 1.6])], mount_id: "van", seat: 1, pose: "sit", mount_at: 58 },
+      { id: "robber_b", name: "Robber in a black hoodie", kind: "man", height_m: 1.78, keys: [at(0, [8.6, 0, 6]), at(60, [4.6, 0, 3.2]), at(120, [5.5, 0, 4])] },
+    ],
+    props: [],
+    shots: [
+      { id: "wide", name: "Wide across the street", setup: "wide",
+        camera_keys: [key(0, [-6, 1.6, -6], [4, 1.1, 2], 28), key(120, [-6, 1.6, 2], [3, 1.1, 18], 28)] },
+      { id: "van_close", name: "Low on the van door", setup: "single_a",
+        camera_keys: [key(0, [5.5, 0.8, -3.5], [3.4, 1.1, 2], 24), key(120, [5.5, 0.8, -1.5], [2.2, 1.2, 16], 24)] },
+    ],
+    active_shot: "wide",
+  });
+}
+
+/** (l) Western standoff: two gunslingers face each other down a dusty main street at high noon. */
+export function westernStandoff() {
+  const house = (id, x, z, rot) => ({ id, name: "Clapboard storefront", kind: "house", height_m: 6, rotation_deg: rot, keys: [at(0, [x, 0, z])] });
+  return finish({
+    version: 2,
+    shot: { frames: 121, fps: 24 },
+    environment: { set: "desert", weather: "dust", density: 0.35, water_level: 2.5 },
+    lighting: { mode: "time", hour: 12.2, day_of_year: 200, latitude: 34.05, north_deg: 0, overcast: false, preset: "noon", lights: [] },
+    sun: { azimuth_deg: 180, elevation_deg: 70 },
+    actors: [
+      { id: "gunslinger_a", name: "Gunslinger in a black hat", kind: "man", height_m: 1.85, rotation_deg: 0,
+        keys: [at(0, [0, 0, -9]), at(60, [0, 0, -7.5])] },
+      { id: "gunslinger_b", name: "Gunslinger in a duster coat", kind: "man", height_m: 1.82, rotation_deg: 180,
+        keys: [at(0, [0, 0, 9]), at(60, [0, 0, 7.5])] },
+      house("house_l1", -9, -8, 90), house("house_l2", -9, 2, 90), house("house_l3", -9, 12, 90),
+      house("house_r1", 9, -6, -90), house("house_r2", 9, 5, -90),
+    ],
+    props: [],
+    shots: [
+      { id: "wide", name: "Wide down main street", setup: "wide",
+        camera_keys: [key(0, [-4.5, 1.2, 0], [0, 1.3, 0], 18), key(120, [-3.8, 1.0, 0], [0, 1.3, 0], 18)] },
+      { id: "over_a", name: "Over the black hat's shoulder", setup: "ots_a",
+        camera_keys: [key(0, [0.7, 1.75, -11], [0, 1.5, 9], 85), key(120, [0.6, 1.75, -9.4], [0, 1.5, 7.5], 85)] },
+    ],
+    active_shot: "wide",
+  });
+}
+
+/** (m) Road trip: two friends cruise an empty desert highway in a convertible at sunset. */
+export function desertRoadTrip() {
+  return finish({
+    version: 2,
+    shot: { frames: 121, fps: 24 },
+    environment: { set: "desert", weather: "none", density: 0.4, water_level: 2.5 },
+    lighting: { mode: "time", hour: 19.0, day_of_year: 180, latitude: 34.05, north_deg: 0, overcast: false, preset: "golden", lights: [] },
+    sun: { azimuth_deg: 20, elevation_deg: 4 },
+    actors: [
+      { id: "convertible", name: "Red convertible", kind: "car", height_m: 1.4, appearance: { color: "#b3261e" },
+        keys: [at(0, [0, 0, -60]), at(120, [0, 0, 0])] },
+      { id: "driver", name: "Driver in sunglasses", kind: "woman", height_m: 1.7, keys: [at(0, [0, 0, -60])], mount_id: "convertible", seat: 0, pose: "sit" },
+      { id: "friend", name: "Friend", kind: "man", height_m: 1.8, keys: [at(0, [0, 0, -60])], mount_id: "convertible", seat: 1, pose: "sit" },
+    ],
+    props: [],
+    shots: [
+      { id: "tracking", name: "Side tracking", setup: "single_a", camera_follow: "convertible",
+        camera_keys: [key(0, [4.5, 1.2, 1.5], [0, 1.0, 0], 32)] },
+      { id: "chase", name: "Chase car, behind", setup: "wide", camera_follow: "convertible",
+        camera_keys: [key(0, [0.6, 1.6, -9], [0, 1.0, 4], 35)] },
+    ],
+    active_shot: "tracking",
+  });
+}
+
 export const PRESETS = [
   { id: "riders", label: "Riders at sunset", make: ridersAtSunset, view: "color" },
   { id: "chase", label: "Police chase", make: policeChase, view: "color" },
@@ -321,4 +429,8 @@ export const PRESETS = [
   { id: "horror", label: "Horror: Haunted woods", make: hauntedWoods, view: "color" },
   { id: "romance", label: "Romance: Beach at sunset", make: beachSunset, view: "color" },
   { id: "kaiju", label: "Monster: Kaiju attack", make: kaijuAttack, view: "color" },
+  { id: "noir", label: "Noir: Rain and a sedan", make: noirRain, view: "color" },
+  { id: "heist", label: "Heist: Getaway van", make: heistGetaway, view: "color" },
+  { id: "standoff", label: "Western: High noon standoff", make: westernStandoff, view: "color" },
+  { id: "roadtrip", label: "Road trip: Desert convertible", make: desertRoadTrip, view: "color" },
 ];

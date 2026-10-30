@@ -27,6 +27,7 @@ import * as maker from "./assets3d/maker.mjs";
 import { applyTheme } from "./ui/theme.mjs";
 import { icon } from "./ui/icons.mjs";
 import * as THREE from "./vendor/three.module.min.mjs";
+import { PosePanel } from "./stage/posepanel.mjs";
 import { listenVcam, LiveVcam, listTakes, fetchTake, takeToCamera, anchorFromCamera } from "./vcam/live.mjs";
 
 const CSS = `
@@ -1264,6 +1265,9 @@ function createStageWidget(node, inputName) {
   });
   const personCtl = [apBuild.wrap, apHair.wrap, cHair.wrap, apTop.wrap, cTop.wrap, apBottom.wrap, cBottom.wrap, apSkin.wrap, rideSel.wrap, seatSel.wrap, hopBtn];
   apRow.append(...personCtl, cMain.wrap, followSel.wrap, beamSel.wrap);
+  // Pose Studio: every joint (fingers too), a gallery and keys, under the selected person's appearance controls.
+  const poseHost = document.createElement("div");
+  const posePanel = new PosePanel(poseHost, { stage, onStatus: (m) => { status.textContent = m; } });
   const isPerson = (k) => k === "man" || k === "woman" || k === "child";
   function syncAppearance(info) {
     apRow.hidden = !info || info.kind === "glb" || info.kind === "custom" || info.kind === "card";
@@ -1303,6 +1307,7 @@ function createStageWidget(node, inputName) {
     tracks?.draw();
     sel.hidden = !info;
     syncAppearance(info);
+    try { posePanel.show(info); } catch { /* panel not built */ }
     if (!info) return;
     selName.textContent = info.name;
     turn.input.value = info.rotation_deg; turn.out.textContent = `${info.rotation_deg}°`;
@@ -1550,7 +1555,7 @@ function createStageWidget(node, inputName) {
   const hint = document.createElement("div");
   hint.className = "ss-hint";
   hint.textContent = "Move the playhead, then frame the shot or drag objects: a ◆ key is set there automatically · Drag to orbit (all the way round) · Shift/middle-drag to pan · scroll to dolly · W A S D fly, Q/E down/up (Shift = fast) · 0 toggles Free view · drag an object to place it";
-  el.append(agentRow, time, tracksHost, shotRow, envRow, lightRow, lightSel, lightNote, addRow, apRow, vcamRow, hint, status);
+  el.append(agentRow, time, tracksHost, shotRow, envRow, lightRow, lightSel, lightNote, addRow, apRow, poseHost, vcamRow, hint, status);
 
   function selectKey(k) {
     stage.setKey(k);
@@ -1636,7 +1641,7 @@ function createStageWidget(node, inputName) {
   const onRemoved = node.onRemoved;
   node.onRemoved = function () {
     try { canvasPanel.dispose(); } catch { /* already gone */ }
-    for (const x of [camViz, pip, topView, coach, tracks]) { try { x?.dispose?.(); } catch { /* already gone */ } }
+    for (const x of [camViz, pip, topView, coach, tracks, posePanel]) { try { x?.dispose?.(); } catch { /* already gone */ } }
     stage.dispose();
     return onRemoved?.apply(this, arguments);
   };
