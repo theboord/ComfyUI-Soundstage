@@ -10,7 +10,7 @@ import time
 
 import numpy as np
 
-from . import convert, frames, graphs, queue, track, vlm
+from . import convert, frames, graphs, performer, queue, track, vlm
 
 
 def _input_dir() -> str:
@@ -30,6 +30,14 @@ def _geometry_models() -> list[str]:
     try:
         import folder_paths
         return list(folder_paths.get_filename_list("geometry_estimation") or [])
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _detection_models() -> list[str]:
+    try:
+        import folder_paths
+        return list(folder_paths.get_filename_list("detection") or [])
     except Exception:  # noqa: BLE001
         return []
 
@@ -83,7 +91,7 @@ def solve(npz: dict, frame_files: list[str], seed: int = 0):
 
 
 async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = True, backdrop: bool = True,
-              progress=None) -> dict:
+              progress=None, mocap: bool = True) -> dict:
     say = progress or (lambda step, frac: None)
     t0 = time.perf_counter()
     timings: dict = {}
@@ -153,6 +161,36 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
                              repin=any(n.startswith("depth: straightened") for n in notes),
                              backdrop={"url": "/view?filename={}&subfolder={}&type={}".format(
                                  glb["filename"], glb.get("subfolder", ""), glb.get("type", "output"))} if glb else None)
+    # The performer: SAM 3D Body copies the person's whole performance onto a clay actor standing in the rebuilt set.
+    PEOPLE = ("person", "man", "woman", "boy", "girl", "child", "kid", "people", "dancer", "runner", "athlete", "rider",
+              "driver", "player", "boxer", "fighter", "skater", "hiker", "actor", "guy", "lady")
+    has_person = not vmodel or any(any(w in (o.get("label") or "").lower().split() for w in PEOPLE)
+                                   for o in breakdown.get("objects") or [])
+    if mocap and has_person and performer.available(_detection_models()):
+        say("Capturing the performance (SAM 3D Body)", 0.9)
+        try:
+            mo, mt = await queue.run_graph(base_url, performer.mocap_graph(video, f"v2s_{tag}"), "motion capture")
+            timings["mocap_ms"] = mt.get("exec_ms", mt["total_ms"])
+            import json as _json
+            import folder_paths
+            info = _json.loads(queue.text_of(mo, "p6"))
+            with open(os.path.join(folder_paths.get_output_directory(), info["file"])) as f:
+                take = _json.load(f)
+            xf = scene["video2stage"]["xform"]
+            placed = performer.place(take, poses, times, np.array(xf["A"]), np.array(xf["b"]), K, (w, h), clip["fps"])
+            if placed:
+                aid = performer.attach(scene, info["file"], take, placed)
+                cut = performer.cutout(take, scene["video2stage"]["metres_per_unit"])
+                bd = next((a for a in scene["actors"] if a.get("id") == "v2s_backdrop"), None)
+                if cut and bd and min(times) < 0.25:   # the set mesh is the first frame's
+                    cut["K"] = [round(float(K[0, 0] / w), 5), round(float(K[1, 1] / h), 5),
+                                round(float(K[0, 2] / w), 5), round(float(K[1, 2] / h), 5)]
+                    bd["set_xform"]["cut"] = cut
+                notes.append(f"performer: {info['frames']} frames of motion capture on '{aid}', standing on the rebuilt floor")
+            else:
+                notes.append("performer: captured, but the feet could not be placed in the set (no picture positions)")
+        except Exception as exc:  # noqa: BLE001 - the set and camera still stand without the performer
+            notes.append(f"performer: motion capture failed ({exc})")
     timings["total_ms"] = round((time.perf_counter() - t0) * 1000)
     say("Done", 1.0)
     movers = [a for a in scene["actors"] if len(a.get("keys", [])) > 1]
