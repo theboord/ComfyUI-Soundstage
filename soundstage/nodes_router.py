@@ -60,6 +60,13 @@ def _media(io_type, name: str, tooltip: str):
     return io_type.Input(name, optional=True, lazy=True, raw_link=True, tooltip=tooltip)
 
 
+def _loras():
+    try:
+        return list(folder_paths.get_filename_list("loras"))
+    except Exception:  # noqa: BLE001 - never break the node list over a missing folder
+        return []
+
+
 def _common_tail():
     return [IO.Int.Input("seed", default=0, min=0, max=0xFFFFFFFFFFFFFFFF, control_after_generate=True)]
 
@@ -101,7 +108,12 @@ class _Router(IO.ComfyNode):
              "control": v.get("control_video") if cls.STAGE == "generate_video" else v.get("control_image"),
              "refs": [v[k] for k in ("ref_1", "ref_2", "ref_3") if v.get(k) is not None],
              "image": v.get("image"), "images": v.get("images"), "mask": v.get("mask"),
-             "params": params, "weights": weights, "variant": m.get("variant")}
+             "params": params, "weights": weights, "variant": m.get("variant"),
+             "lora": v.get("lora") if v.get("lora") not in (None, "", "None") else None,
+             "lora_strength": float(v.get("lora_strength") if v.get("lora_strength") is not None else 1.0)}
+        if cls.STAGE == "edit_image":
+            files = [f.strip() for f in (v.get("ref_files") or "").splitlines() if f.strip()]
+            p["refs"] += [g.node("LoadImage", image=f).out(0) for f in files]
         if cls.STAGE == "generate_video":
             files = [f.strip() for f in (v.get("ref_files") or "").splitlines() if f.strip()]
             p["refs"] += [g.node("LoadImage", image=f).out(0) for f in files]
@@ -171,6 +183,14 @@ class SoundstageEditImage(_Router):
                 IO.Int.Input("height", default=0, min=0, max=4096, step=16),
                 _model_input(cls.STAGE),
                 *_common_tail(),
+                # Appended last so saved App workflows keep their widget order.
+                IO.Combo.Input("lora", options=["None"] + _loras(), default="None", optional=True,
+                               tooltip="A LoRA for the image model (FLUX 3 Klein, Krea 2): a character, a product, a "
+                                       "house style. Files in models/loras."),
+                IO.Float.Input("lora_strength", default=1.0, min=-2.0, max=2.0, step=0.05, optional=True),
+                IO.String.Input("ref_files", multiline=True, default="", optional=True,
+                                tooltip="Character sheets / style references by file name in ComfyUI's input "
+                                        "folder, one per line (added after ref_1-3). The App's Frame step fills this."),
             ],
             outputs=[IO.Image.Output(display_name="image")],
             hidden=HIDDEN,
