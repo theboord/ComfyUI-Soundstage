@@ -1,6 +1,7 @@
 // Soundstage 3D stage: a small three.js set (actors, props, building, sun) seen through the
 // shot camera. The viewport IS the shot camera, so what you frame is what gets rendered.
-// Drag empty space = orbit, Shift+drag = pan, wheel = dolly, drag an actor = move it on the floor.
+// Drag empty space = orbit (look around in place when close in or inside a car; Alt+drag anywhere), Shift+drag = pan,
+// wheel = dolly (proportional, flies through the target), drag an actor = move it on the floor.
 import * as THREE from "../vendor/three.module.min.mjs";
 import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompound } from "./library.mjs";
 import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./humans.mjs";
@@ -1467,7 +1468,7 @@ export class Stage {
         drag = { mode: "actor", id: hitId };
         this.select(hitId);
       } else {
-        drag = { mode: e.shiftKey || e.button === 1 ? "pan" : "orbit", x: e.clientX, y: e.clientY };
+        drag = { mode: e.shiftKey || e.button === 1 ? "pan" : "orbit", look: e.altKey, x: e.clientX, y: e.clientY };
       }
       this.canvas.setPointerCapture(e.pointerId);
       this.canvas.style.cursor = "grabbing";
@@ -1509,7 +1510,15 @@ export class Stage {
       drag.y = e.clientY;
       const pos = new THREE.Vector3(...c.position);
       const tgt = new THREE.Vector3(...c.target);
-      if (drag.mode === "orbit") {
+      if (drag.mode === "orbit" && (drag.look || this._tightCamera(pos, tgt))) {
+        // Look around in place (a tripod head): inside a car or close in, orbiting would swing the camera out through
+        // the doors. Alt+drag does this anywhere.
+        const off = tgt.clone().sub(pos);
+        const sph = new THREE.Spherical().setFromVector3(off);
+        sph.theta -= dx * 0.003;
+        sph.phi = THREE.MathUtils.clamp(sph.phi + dy * 0.003, 0.05, Math.PI - 0.05);
+        tgt.copy(pos).add(new THREE.Vector3().setFromSpherical(sph));
+      } else if (drag.mode === "orbit") {
         // Turntable orbit with no floor limit: go under, over, all the way round.
         const off = pos.clone().sub(tgt);
         const sph = new THREE.Spherical().setFromVector3(off);
@@ -1582,7 +1591,7 @@ export class Stage {
       const pos = new THREE.Vector3(...c.position), tgt = new THREE.Vector3(...c.target);
       const fwd = tgt.clone().sub(pos).normalize();
       const right = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 0);
-      const stepLen = (e.shiftKey ? 1.0 : 0.25) * Math.max(1, pos.distanceTo(tgt) * 0.1);
+      const stepLen = (e.shiftKey ? 4 : 1) * THREE.MathUtils.clamp(pos.distanceTo(tgt) * 0.06, this._tightCamera(pos, tgt) ? 0.03 : 0.1, 1.5);
       const move = { w: fwd, s: fwd.clone().negate(), d: right, a: right.clone().negate(),
         e: new THREE.Vector3(0, 1, 0), q: new THREE.Vector3(0, -1, 0) }[k].clone().multiplyScalar(stepLen);
       c.position = pos.add(move).toArray().map((v) => +v.toFixed(3));
@@ -1602,13 +1611,32 @@ export class Stage {
       const tgt = new THREE.Vector3(...c.target);
       const dir = tgt.clone().sub(pos);
       const dist = dir.length();
-      const step = THREE.MathUtils.clamp(e.deltaY * 0.01 * Math.max(1, dist / 10), -dist + 0.3, 40);
-      pos.addScaledVector(dir.normalize(), -step);
+      // Proportional dolly: each notch / trackpad flick covers a fraction of the distance, so it is fine inside a car
+      // and still quick across a stadium. Near the target, fly on through it (the target moves ahead too).
+      const dy = THREE.MathUtils.clamp(e.deltaY * (e.deltaMode === 1 ? 33 : 1), -300, 300);
+      const step = Math.max(dist, 0.6) * (Math.exp(dy * 0.0018) - 1);   // + = back off (same sign as before)
+      const move = dir.normalize().multiplyScalar(-step);
+      pos.add(move);
+      if (step < 0 && (pos.distanceTo(tgt) < 0.25 || move.dot(tgt.clone().sub(pos)) < 0)) tgt.add(move);
       c.position = pos.toArray().map((v) => +v.toFixed(3));
+      c.target = tgt.toArray().map((v) => +v.toFixed(3));
       this._applyActive();
       if (!this.freeView) { clearTimeout(this._wheelT); this._wheelT = setTimeout(() => this.onChange(this.toJSON()), 200); }
     };
     installWheelRouter();
+  }
+
+  /** Close in (target within ~2.5 m) or inside a vehicle / building: drag looks around instead of orbiting. */
+  _tightCamera(pos, tgt) {
+    if (pos.distanceTo(tgt) < 2.5) return true;
+    for (const [id, g] of this.actorMeshes) {
+      const a = this.state.actors.find((x) => x.id === id);
+      const rig = a && LIBRARY[a.kind]?.rig;
+      if (rig !== "vehicle" && !a?.set_xform && a?.kind !== "interior") continue;
+      const box = new THREE.Box3().setFromObject(g);
+      if (box.containsPoint(pos)) return true;
+    }
+    return false;
   }
 
   // ---------- public API ----------
