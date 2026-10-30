@@ -7217,6 +7217,42 @@
 "LATENT"
 ]
 },
+"SetLatentNoiseMask": {
+"category": "model/latent",
+"description": "",
+"display_name": "Set Latent Noise Mask",
+"has_intermediate_output": false,
+"input": {
+"required": {
+"mask": [
+"MASK"
+],
+"samples": [
+"LATENT"
+]
+}
+},
+"input_order": {
+"required": [
+"samples",
+"mask"
+]
+},
+"is_input_list": false,
+"name": "SetLatentNoiseMask",
+"output": [
+"LATENT"
+],
+"output_is_list": [
+false
+],
+"output_name": [
+"LATENT"
+],
+"output_node": false,
+"python_module": "nodes",
+"search_aliases": []
+},
 "TrimAudioDuration": {
 "input": {
 "required": {

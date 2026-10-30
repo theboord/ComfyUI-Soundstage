@@ -93,6 +93,12 @@ class _Router(IO.ComfyNode):
 
     @classmethod
     def _expand(cls, model, **v):
+        m, p, g = cls._prepare(model, **v)
+        return ADAPTERS[m["adapter"]](g, m, p), g
+
+    @classmethod
+    def _prepare(cls, model, **v):
+        """Check the chosen model can run here and build the adapters' parameter dict: (entry, p, GraphBuilder)."""
         key = model.get("model") if isinstance(model, dict) else model
         m = R.find_model(key)
         if m is None or not m.get("adapter") or cls.STAGE not in m["stages"]:
@@ -135,7 +141,7 @@ class _Router(IO.ComfyNode):
             p["refs"] += [g.node("LoadImage", image=f).out(0) for f in files]
             if p["last"] is None and (v.get("last_file") or "").strip():
                 p["last"] = g.node("LoadImage", image=v["last_file"].strip()).out(0)
-        return ADAPTERS[m["adapter"]](g, m, p), g
+        return m, p, g
 
 
 class SoundstageGenerateImage(_Router):
