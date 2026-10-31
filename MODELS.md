@@ -4,6 +4,8 @@
 
 The Soundstage App (`example_workflows/Soundstage_App.json`) needs the models below. Folder paths are relative to `ComfyUI/models/`. `tools/install_runpod.sh` downloads them. Some repos are gated: accept the license on Hugging Face first, then `huggingface-cli login`.
 
+**Other builds are fine.** If you already have a model as a different build (bf16, fp8, int8-convrot) or in a subfolder (`loras/ltx2.5/…`), keep it: when a Soundstage workflow loads, each model loader that names a file you don't have is pointed at your build of the same model, and a small notice says so ("Using ltx-2.5-…int8-convrot (you don't have the bf16 file)"). If you have no build of it at all, the notice names the missing file and links here.
+
 Rung 1 (Stage) needs no models at all. Rung 2 (Look still) needs the Krea 2 group. Rungs 3–4 (Draft, Final) need the LTX-2.5 group. Rung 5 (Layers) needs SAM 3.1 and BiRefNet (below) to cut mattes from the final frames; without them it falls back to the stage's own mattes.
 
 ## First frame, cast sheets and Paint Studio: FLUX 3 Klein (default)

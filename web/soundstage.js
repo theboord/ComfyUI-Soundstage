@@ -42,6 +42,7 @@ import { stageSetupForScene } from "./script/parse.mjs";
 import { NO_SCENE, scopeShots, stageSig, listShots, keyOfShot, packScript, unpackScript, sceneNumberOf, retireScenes } from "./script/scenes.mjs";
 import { VIDEO_ACCEPT, cameraRaw, fetchSourceSpec, rawExplainer, sourceLine } from "./ui/sourcespec.mjs";
 import { JobCard, chooseVideoUse, clipSeconds, v2sPlan, wireVideoDrop, isVideoFile } from "./ui/videoimport.mjs";
+import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
 
 const CSS = `
 .ss-stage { display:flex; flex-direction:column; gap:6px; padding:6px; background:#16191e; border-radius:6px;
@@ -3372,6 +3373,21 @@ function decorate(root) {
 
 app.registerExtension({
   name: "soundstage.stage",
+  // A shipped workflow names the model builds its author had (bf16, a LoRA at the folder root). Point each loader at
+  // the closest build this install has (int8-convrot, ltx2.5/…) so drafts and finals don't drop out at queue time,
+  // and say plainly when a file is missing. Soundstage workflows only.
+  afterConfigureGraph() {
+    try {
+      if (!allNodes(app.graph).some(({ n }) => /^Soundstage/.test(n.type || ""))) return;
+      const plan = guardModels(app.graph);
+      app.__ssModelPlan = plan;
+      if (plan.swaps.length || plan.missing.length) {
+        console.info("[Soundstage] model files:", plan.swaps.map((x) => `${x.from} -> ${x.to}`), plan.missing.map((x) => x.value));
+        showModelNotice(plan);
+        app.graph.setDirtyCanvas?.(true, true);
+      }
+    } catch (e) { console.warn("[Soundstage] model check skipped:", e); }
+  },
   getCustomWidgets() {
     return {
       SOUNDSTAGE_STAGE(node, inputName) {
