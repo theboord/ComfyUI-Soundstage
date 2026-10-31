@@ -160,3 +160,19 @@ test("EXT. TRAIN STATION: the train drives in along the track, forward (+Z), nev
   const u = planSceneSetup(scene("EXT", "UNDERWATER"), { fresh: true });
   assert.ok(u.stage.lift > 1, "underwater, people swim");
 });
+
+test("the clouds past the cabin and the land past the carriage scroll on the set the stage shows (a clone), aft", () => {
+  for (const id of ["airplane_cabin", "train_car"]) {
+    const b = buildSet(id, mesh, {});
+    const tiles = b.group.children.filter((o) => o.userData.scroll);
+    assert.equal(tiles.length, 2, id);
+    const stage = { _setGroup: b.group, state: { actors: [], shot: { fps: 24 } } };
+    b.fx.update(0, stage);
+    const z0 = tiles[0].position.z;
+    b.fx.update(6, stage);
+    const z6 = tiles[0].position.z;
+    assert.ok(z6 < z0 && z0 - z6 < 10, `${id}: ${z0} -> ${z6}`);   // moves toward the back (-Z), a few metres in 6 frames
+    b.fx.update(0, stage);
+    assert.equal(tiles[0].position.z, z0);
+  }
+});

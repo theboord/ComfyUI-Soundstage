@@ -19,6 +19,7 @@ from pathlib import Path
 
 from ..cine import geometry as G
 from ..cine.prompts import SIZE_LTX, SIZE_STILL
+from . import stunts as ST
 
 LIBRARY_PATH = Path(__file__).resolve().parents[2] / "web" / "stage" / "library.mjs"
 
@@ -350,12 +351,22 @@ def shot_size(z: float, height: float, focal_mm: float) -> str:
     return "ECU"
 
 
-def _facing_words(direction, cam, plural: bool = False, animal: bool = False, vehicle: bool = False) -> str:
+def _facing_words(direction, cam, plural: bool = False, animal: bool = False, vehicle: bool = False,
+                  reversing: bool = False) -> str:
     fwd, right, _ = G.basis(cam["position"], cam["target"])
     d = G.flat(direction)
     if G.length(d) < 1e-6:
         return ""
     a = G.dot(d, G.flat(fwd))
+    if vehicle and reversing:
+        # A stunt car backing up at speed (direction = where its nose points): the tail leads (Milestone 13).
+        if a > 0.55:
+            return "rear end first toward the camera, red tail lights and white reverse lights glowing, nose pointing away, reversing toward us at speed"
+        if a < -0.55:
+            return "front toward the camera, headlights and grille facing us, reversing away from us rear end first"
+        side = "screen-right" if G.dot(d, right) > 0 else "screen-left"
+        other = "screen-left" if side == "screen-right" else "screen-right"
+        return f"in profile, its nose pointing {side}, reversing rear end first toward {other}"
     if vehicle:
         # A grey clay sedan reads the same nose or tail first: name the lights and the direction of travel, or the
         # video model drives it in reverse.
@@ -538,7 +549,11 @@ def _by_id(scene: dict, aid) -> dict | None:
 
 def _yaw_at(a: dict, frame: int, last: int) -> float:
     """Heading (radians, forward = (sin, 0, cos)) like stage._headingAt: the way it travels, else the way it last
-    travelled, else its Turn, else the way it will set off."""
+    travelled, else its Turn, else the way it will set off. A stunt car's nose goes where its keys put it."""
+    y = ST.stunt_yaw(a, frame, last, _pos_at)
+    if y is not None:
+        return y
+
     def step(f):
         p0, p1 = _pos_at(a, max(0, f - 1), last), _pos_at(a, min(last, f + 1), last)
         dx, dz = p1[0] - p0[0], p1[2] - p0[2]
@@ -635,8 +650,13 @@ def riders_of(scene: dict, host_id, frame: int = 0) -> list[dict]:
     return sorted(out, key=lambda a: int(a.get("seat") or 0))
 
 
+SEAT_ROWS = ("plane_seats", "train_seats")   # the cabin / carriage sets' seat rows (web/stage/sets): people sit in them
+
+
 def _ride_noun(noun: str, host: dict) -> str:
     kind = host.get("kind", "")
+    if kind in SEAT_ROWS:
+        return f"{noun} seated by the window"
     hnoun = library().get(kind, (kind.replace("_", " "),))[0].lower()
     if kind == "horse":
         return f"{noun} on horseback"
@@ -660,9 +680,15 @@ def cast(scene: dict) -> list[dict]:
         if h0 is not None:
             y = _yaw_at(h0, 0, last)
             heading = (math.sin(y), 0.0, math.cos(y))
+        reversing = False
+        if rig == "vehicle" and ST.is_stunt(a):    # the nose, not the travel: a stunt car may lead with its tail
+            y = ST.stunt_yaw(a, 0, last, _pos_at)
+            if y is not None:
+                heading = (math.sin(y), 0.0, math.cos(y))
+            reversing = ST.reversing_at(a, 0, last, _pos_at)
         out.append({"id": a.get("id"), "noun": noun, "rig": rig, "height": h, "actor": a, "host": host,
                     "enclosed": bool(host and host.get("kind") in ENCLOSED),
-                    "start": start, "end": end, "heading": heading})
+                    "start": start, "end": end, "heading": heading, "reversing": reversing})
     return out
 
 
@@ -715,7 +741,7 @@ def frame_facts(scene: dict, cam: dict, frame: int) -> dict:
             size = "MS"                                # sitting: the legs are out of the picture however wide the frame
         entry = {**c, "noun": noun, "heading": heading, "pos": pos, **pr, "where": screen_words(pr["sx"]),
                  "size": size, "seated": seated,
-                 "riding": seated and not c["enclosed"], "host_id": host.get("id") if seated else None,
+                 "riding": seated and not c["enclosed"] and host.get("kind") not in SEAT_ROWS, "host_id": host.get("id") if seated else None,
                  # Riding along: they sit still in the frame however fast the car goes.
                  "moves": not (ride is not None and seated and host.get("id") == ride.get("id"))}
         (people if c["rig"] == "biped" else others).append(entry)
@@ -765,7 +791,7 @@ def groups(entries: list[dict], cam: dict) -> list[dict]:
         sx = sum(e["sx"] for e in g) / len(g)
         h = min(e["screen_h"] for e in g)
         facing = _facing_words(g[0]["heading"], cam, len(g) > 1, animal=g[0].get("rig") not in (None, "biped", "vehicle"),
-                               vehicle=g[0].get("rig") == "vehicle")
+                               vehicle=g[0].get("rig") == "vehicle", reversing=bool(g[0].get("reversing")))
         if all(e.get("riding") for e in g) and "back" in facing and any("horseback" in e["noun"] for e in g):
             facing += ", the horse's tail toward us" if len(g) == 1 else ", the horses' tails toward us"
         out.append({"nouns": _group_nouns([e["noun"] for e in g]), "plural": len(g) > 1, "where": screen_words(sx),
@@ -1107,6 +1133,8 @@ def actor_marks(scene: dict) -> list[dict]:
             verb = "drives forward" if v > 2 else "rolls forward"   # "forward": a clay car reads either way round
         elif c["rig"] == "quadruped":
             verb = "trots" if v < 3 else "runs"
+        elif (scene.get("environment") or {}).get("set") == "underwater" and min(c["start"][1], c["end"][1]) > 0.8:
+            verb = "swims" if v < 1.6 else "swims fast"   # off the seabed on the reef set: the stage swims them
         else:
             verb = "walks" if v < 2.6 else "walks briskly" if v < 5.5 else "runs"
         a, r = G.dot(G.flat(d), G.flat(fwd)), G.dot(G.flat(d), G.flat(right))
@@ -1116,6 +1144,12 @@ def actor_marks(scene: dict) -> list[dict]:
             way = "toward the camera"
         else:
             way = f"across frame toward screen-{'right' if r > 0 else 'left'}"
+        if c["rig"] == "vehicle" and host is None:
+            # A movie stunt (Milestone 13): beat by beat, which end leads (reverse, the spin, then nose first).
+            loc = location(scene)
+            stunt = ST.stunt_mark(c["actor"], frames, fps, _pos_at, fwd, right, spray=bool(re.search(r"rain|wet|storm", loc["weather"] or "")))
+            if stunt:
+                verb, way = stunt
         dest = ""
         for pr in props:
             if _inside(c["end"], pr):
