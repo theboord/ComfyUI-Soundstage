@@ -7,8 +7,9 @@ import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompo
 import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./humans.mjs";
 import * as Mocap from "./mocap.mjs";
 import { applyRig, RIGS } from "./camrig.mjs";
+import { STUNTS, hasHeadingKeys, headingTrack, channelAt, driveAt, isStunt, unwrapDeg, vehicleDynamics, smokeParticles, stuntKeys } from "./stunts.mjs";
 import { PoseGizmo } from "./posegizmo.mjs";
-import { buildSet, buildWater, buildWeather } from "./environments.mjs";
+import { buildSet, buildWater, buildWeather, buildTireSmoke } from "./environments.mjs";
 import { buildCard, loadBackdrop, coverFit } from "./cards.mjs";
 import { buildInterior, fixtureActors, interiorCamera, normalizeSpec, toStage } from "./interior.mjs";
 import { GLTFLoader } from "../vendor/addons/GLTFLoader.mjs";
@@ -157,6 +158,7 @@ const NEVER_CARRIED = new Set(["horse", "cow", "car", "police_car", "sports_car"
 // Physics: kinds that never collide (foliage, rugs, fire, lights) and cars that collide as a body plus a cabin.
 const NO_COLLIDE = new Set(["tree", "bush", "rug", "fire", "flashlight", "bird", "ufo", "houseplant", "lamp"]);
 const CAR_BODIES = new Set(["car", "police_car", "sports_car", "hatchback"]);
+const DEG = Math.PI / 180;
 const TURN_RATE = { horse: 150, cow: 120, dog: 400, cat: 500, car: 90, police_car: 90, sports_car: 110, hatchback: 90, truck: 60, bus: 45, bicycle: 200, motorcycle: 160 };
 
 export const DEFAULT_SCENE = {
@@ -704,7 +706,7 @@ export class Stage {
   }
 
   /** Interpolated value of `field` along keys at a frame (smooth path through every key). */
-  static _sample(keys, frame, field, ease = true) {
+  static _sample(keys, frame, field, ease = true, extrapolate = false) {
     const { i, j, u } = Stage._segment(keys, frame);
     if (i === j) return [...keys[i][field]];
     // A hold (two keys at the same spot) stays still: the spline would otherwise bow backwards toward the next
@@ -717,7 +719,11 @@ export class Stage {
     if (ease && n === 1) w = u * u * (3 - 2 * u);
     else if (ease && i === 0) w = (u * u * (3 - 2 * u) + u) / 2;
     else if (ease && j === n) w = (u * u * (3 - 2 * u) + u) / 2;
-    const P = (k) => keys[Math.max(0, Math.min(n, k))][field];
+    // extrapolate: the path carries on through its end keys at speed (a stunt car is already moving when the shot
+    // starts and still moving when it ends), instead of easing in and out of them.
+    const P = (k) => extrapolate && k < 0 ? keys[0][field].map((v, c) => 2 * v - keys[1][field][c])
+      : extrapolate && k > n ? keys[n][field].map((v, c) => 2 * v - keys[n - 1][field][c])
+      : keys[Math.max(0, Math.min(n, k))][field];
     return Stage._cr(P(i - 1), P(i), P(j), P(j + 1), w);
   }
 
@@ -851,7 +857,8 @@ export class Stage {
   }
 
   _actorPosAt(a, frame) {
-    return Stage._sample(this._actorKeys(a), frame, "position", false);
+    const keys = this._actorKeys(a);
+    return Stage._sample(keys, frame, "position", false, hasHeadingKeys(keys));
   }
 
   /**
@@ -861,8 +868,10 @@ export class Stage {
    */
   _headingAt(a, frame) {
     const keys = this._actorKeys(a);
+    // Stunt keys (Milestone 13): the keys say where the nose points (heading_deg, unwrapped), at any rate.
+    if (hasHeadingKeys(keys)) return THREE.MathUtils.degToRad(Stage._sample(headingTrack(keys), Math.max(0, Math.min(this._lastFrame(), frame)), "h", false)[0]);
     const last = this._lastFrame();
-    const sig = JSON.stringify([keys, a.rotation_deg || 0, last, a.kind]);
+    const sig = JSON.stringify([keys, a.rotation_deg || 0, last, a.kind, a.drive || ""]);
     this._headCache = this._headCache || new WeakMap();
     let hd = this._headCache.get(a);
     if (!hd || hd.sig !== sig) {
@@ -878,7 +887,8 @@ export class Stage {
         const p0 = this._actorPosAt(a, f - 1), p1 = this._actorPosAt(a, f + 1);
         const vx = p1[0] - p0[0], vz = p1[2] - p0[2];
         // Real travel only (> ~0.25 m/s): the spline drifts a few mm between two keys at the same spot.
-        if (keys.length > 1 && Math.hypot(vx, vz) * fps / 2 > 0.25) lastMove = Math.atan2(vx, vz);
+        // drive: "reverse" (on the car or a key): the tail leads, the nose points back up the path.
+        if (keys.length > 1 && Math.hypot(vx, vz) * fps / 2 > 0.25) lastMove = Math.atan2(vx, vz) + (driveAt(a, keys, f) === "reverse" ? Math.PI : 0);
         desired.push(lastMove ?? null);
       }
       // Before it ever moves, it faces its Turn.
@@ -895,6 +905,100 @@ export class Stage {
     }
     const out = hd.out;
     return out[Math.max(0, Math.min(out.length - 1, Math.round(frame)))];
+  }
+
+  /**
+   * Weight transfer, slip and tyre smoke for a vehicle over the whole shot (Milestone 13, see stunts.mjs), cached
+   * until its keys change: roll / pitch per frame (deg, on the body's springs), the smoke (keyed fx.tire_smoke, else
+   * automatic on a slide or a hard launch) and, for stunt cars, the signed distance the wheels have rolled.
+   */
+  _vehicleDynamics(a) {
+    const keys = this._actorKeys(a);
+    const last = this._lastFrame(), fps = this.state.shot?.fps || 24;
+    const sig = JSON.stringify([keys, a.rotation_deg || 0, last, fps, a.kind, a.drive || ""]);
+    this._dynCache = this._dynCache || new WeakMap();
+    const hit = this._dynCache.get(a);
+    if (hit?.sig === sig) return hit;
+    const pos = [], yaw = [];
+    for (let f = 0; f <= last; f++) { pos.push(this._actorPosAt(a, f)); yaw.push(this._headingAt(a, f)); }
+    const keyed = (f) => ({ roll: channelAt(keys, f, (k) => k.roll_deg) || 0, pitch: channelAt(keys, f, (k) => k.pitch_deg) || 0 });
+    const d = vehicleDynamics(pos, yaw, fps, keyed);
+    const stunt = isStunt(a, keys);
+    const keyedSmoke = keys.some((k) => Number.isFinite(k.fx?.tire_smoke));
+    const vel = pos.map((_, f) => { const p0 = pos[Math.max(0, f - 1)], p1 = pos[Math.min(last, f + 1)], n = Math.min(last, f + 1) - Math.max(0, f - 1) || 1;
+      return [(p1[0] - p0[0]) * fps / n, (p1[2] - p0[2]) * fps / n]; });
+    const smoke = d.smoke.map((auto, f) => {
+      if (!stunt) return { amount: 0, wheels: auto.wheels };   // smoke is for stunts: a chase car on its path stays clean
+      if (!keyedSmoke) return auto;
+      const amount = Math.max(0, channelAt(keys, f, (k) => k.fx?.tire_smoke) || 0);
+      const wk = [...keys].sort((p, q) => p.frame - q.frame).filter((k) => k.frame <= f && k.fx?.wheels).pop();
+      return { amount, wheels: wk?.fx.wheels || auto.wheels };
+    });
+    const wheelDist = [0];
+    for (let f = 1; f <= last; f++) {
+      const dx = pos[f][0] - pos[f - 1][0], dz = pos[f][2] - pos[f - 1][2];
+      wheelDist.push(wheelDist[f - 1] + dx * Math.sin(yaw[f]) + dz * Math.cos(yaw[f]));   // backwards in reverse
+    }
+    const out = { sig, ...d, smoke, pos, yaw, vel, wheelDist, stunt };
+    this._dynCache.set(a, out);
+    return out;
+  }
+
+  /** Tyre smoke off the wheels (a soft particle cloud, the same at every capture of a frame), or none. */
+  _tireSmoke(a, g, dyn) {
+    const ts = g.userData.tireSmoke;
+    if (!dyn || !dyn.smoke.some((s) => s.amount > 0.01)) { if (ts) ts.object.visible = false; return; }
+    if (!ts) {
+      g.userData.tireSmoke = buildTireSmoke(1200);
+      g.add(g.userData.tireSmoke.object);
+    }
+    const sm = g.userData.tireSmoke;
+    sm.object.visible = true;
+    const h = (a.height_m || LIBRARY[a.kind]?.height || 1.45) / (LIBRARY[a.kind]?.height || 1.45);
+    // The models' wheel pivots: one per wheel, or one per axle on the centre line (then a tyre at each end of it).
+    const rig = g.userData.wheelRig || [];
+    const track = Math.max(0.78 * h, ...rig.map((w) => Math.abs(w.position.x)));
+    const wheels = rig.length
+      ? rig.flatMap((w) => (Math.abs(w.position.x) < 0.25 * track ? [track, -track] : [w.position.x]).map((x) => ({ x, z: w.position.z, front: w.position.z > 0 })))
+      : [[0.78, 1.3], [-0.78, 1.3], [0.78, -1.3], [-0.78, -1.3]].map(([x, z]) => ({ x: x * h, z: z * h, front: z > 0 }));
+    const seed = [...String(a.id)].reduce((n, ch) => n + ch.charCodeAt(0), 0);
+    const parts = smokeParticles(dyn, wheels, this.frame, this.state.shot?.fps || 24, seed);
+    g.updateMatrix();
+    sm.set(parts, g.matrix);
+  }
+
+  /** Stunt presets for the selected vehicle: {id: label}. */
+  stuntOptions() { return Object.fromEntries(Object.entries(STUNTS).map(([k, v]) => [k, v.label])); }
+
+  /**
+   * Put a movie stunt on a vehicle (Milestone 13): writes its keys (path, heading, body roll / pitch, tyre smoke) from
+   * where it starts, along the way it was going, to fill the shot. "none" takes the stunt keys off again (the path
+   * stays). The keys stay editable: move them, or turn the car at a key with Turn. Returns the stunt's label or null.
+   */
+  applyStunt(id, kind) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a || LIBRARY[a.kind]?.rig !== "vehicle") return null;
+    const keys = this._actorKeys(a);
+    if (kind === "none") {
+      a.keys = keys.map(({ heading_deg, roll_deg, pitch_deg, fx, drive, ...k }) => k);
+      delete a.drive; delete a.stunt;
+    } else {
+      if (!STUNTS[kind]) return null;
+      const last = this._lastFrame(), fps = this.state.shot?.fps || 24;
+      const p0 = this._actorPosAt(a, 0), p1 = this._actorPosAt(a, last);
+      const moving = Math.hypot(p1[0] - p0[0], p1[2] - p0[2]) > 0.5;
+      const nose = this._headingAt(a, 0) / DEG;
+      // The way it goes: its own path if it has one; parked, it drives off nose first (a reverse J-turn backs up).
+      const dirDeg = moving ? Math.atan2(p1[0] - p0[0], p1[2] - p0[2]) / DEG : nose + (kind === "reverse_jturn" ? 180 : 0);
+      a.keys = stuntKeys(kind, { start: [...keys[0].position], dirDeg: Math.round(dirDeg * 10) / 10, last, fps });
+      delete a.drive;
+      a.stunt = kind;
+    }
+    delete a.position_end;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    this.onSelect?.(this.selectedInfo());
+    return kind === "none" ? "none" : STUNTS[kind].label;
   }
 
   /** Static things a person can stand on / must clear: world boxes of parked, non-person actors. */
@@ -1156,7 +1260,15 @@ export class Stage {
       if (g.userData.flames) this._animateFire(g, a);
       if (g.userData.mixer) g.userData.mixer.setTime(this.frame / (this.state.shot?.fps || 24));
       if (g.userData.horseRig) this._driveHorse(g, a, speed, dist);
-      if (g.userData.wheelRig) for (const w of g.userData.wheelRig) w.rotation.x = dist / w.userData.radius;
+      // Stunt cars roll their wheels backwards in reverse; every car's body rolls and pitches on its springs.
+      const dyn = rig === "vehicle" && keys.length > 1 && !a.physics?.baked ? this._vehicleDynamics(a) : null;
+      const rolled = dyn?.stunt ? dyn.wheelDist[this.frame] : dist;
+      if (g.userData.wheelRig) for (const w of g.userData.wheelRig) w.rotation.x = rolled / w.userData.radius;
+      if (g.userData.vehicleBody?.userData.bodyPivot) {
+        const body = g.userData.vehicleBody;
+        body.rotation.set(dyn ? -dyn.pitch[this.frame] * DEG : 0, 0, dyn ? dyn.roll[this.frame] * DEG : 0);
+      }
+      this._tireSmoke(a, g, dyn);
       if (g.userData.beam) g.userData.beam.intensity = g.userData.beamBase * beamLevel(a.beam, this.frame);
       // Physics: a simulated object plays its baked keys (position with height, full rotation); before a bake, a
       // dynamic or static object stands at its start height.
@@ -2306,8 +2418,17 @@ export class Stage {
         g.add(lamp, lamp.target);
       }
       holder.add(model);
-      g.add(holder);
-      g.userData.vehicleBody = holder;
+      // The body sits on its springs: a pivot at about axle height rolls and pitches it (weight transfer, Milestone
+      // 13); the wheels come out of the body onto the car itself, so they stay planted on the road.
+      const body = new THREE.Group();
+      body.userData.bodyPivot = true;
+      body.position.y = 0.3 * (a.height_m || spec.height);
+      holder.position.y -= body.position.y;
+      body.add(holder);
+      g.add(body);
+      g.updateMatrixWorld(true);
+      for (const w of wheels) g.attach(w);
+      g.userData.vehicleBody = body;
       g.userData.wheelRig = wheels;
       this.setFrame(this.frame);
     }).catch((err) => console.warn("Soundstage: car model failed, keeping the built one", err));
@@ -2848,7 +2969,7 @@ export class Stage {
       const k = this._editActorKey(a);
       k.position = [+g.position.x.toFixed(2), a.physics?.baked || a.key_y ? (k.position?.[1] ?? 0) : 0, +g.position.z.toFixed(2)];
     } else if (this.gizmoMode === "rotate") {
-      a.rotation_deg = Math.round(THREE.MathUtils.radToDeg(g.rotation.y));
+      if (!this._turnHeadingKey(a, THREE.MathUtils.radToDeg(g.rotation.y))) a.rotation_deg = Math.round(THREE.MathUtils.radToDeg(g.rotation.y));
     } else {
       // Uniform: follow whichever handle moved most.
       const s0 = this._gizmoScale0 || 1;
@@ -2860,11 +2981,20 @@ export class Stage {
     this.onSelect?.(this.selectedInfo());
   }
 
+  /** A stunt car steers by its keys: Turn sets the heading at the playhead's key (auto-key, kept continuous). */
+  _turnHeadingKey(a, deg) {
+    const keys = this._actorKeys(a);
+    if (!hasHeadingKeys(keys)) return false;
+    const now = this._headingAt(a, this.frame) / DEG;
+    this._editActorKey(a).heading_deg = Math.round(unwrapDeg(now, deg) * 10) / 10;
+    return true;
+  }
+
   selectedInfo() {
     const a = this.state.actors.find((x) => x.id === this.selected);
     return a ? { id: a.id, name: a.name, kind: a.kind, rotation_deg: a.rotation_deg || 0, height_m: a.height_m, scale: a.scale || 1,
       appearance: a.appearance || null, mount_id: a.mount_id || null, pose: a.pose || null, seat: a.seat ?? null,
-      beam: a.beam || "steady" } : null;
+      beam: a.beam || "steady", stunt: a.stunt || null } : null;
   }
 
   /**
@@ -3294,6 +3424,7 @@ export class Stage {
   rotateSelected(deg) {
     const a = this.state.actors.find((x) => x.id === this.selected);
     if (!a) return;
+    if (this._turnHeadingKey(a, deg)) { this.setFrame(this.frame); this.onChange(this.toJSON()); return; }
     a.rotation_deg = deg;
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
