@@ -308,9 +308,9 @@ export function mountPipelineApprovals(pipeline) {
       const kind = url === r.draft ? "draft" : "final";
       const st = takeStatus(id, url);
       row.hidden = false;
-      row.replaceChildren(approvalBadge(null, { url, kind, video: true }, { shotId: id, size: 24, label: kind === "draft" ? "This draft" : "This final" }),
+      row.replaceChildren(...[approvalBadge(null, { url, kind, video: true }, { shotId: id, size: 24, label: kind === "draft" ? "This draft" : "This final" }),
         h("b", {}, kind === "draft" ? "Draft" : "Final"), h("span", {}, STATUS_META[st.status].label),
-        st.note ? h("span", { class: "nt", title: st.note }, `· ${st.note}`) : null);
+        st.note ? h("span", { class: "nt", title: st.note }, `· ${st.note}`) : null].filter(Boolean));   // replaceChildren(null) writes "null"
     };
     watch(m.video, draw, { attributes: true, attributeFilter: ["src"] });
     onApprovalsChange(() => { if (row.isConnected) draw(); });
