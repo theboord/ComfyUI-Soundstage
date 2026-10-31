@@ -1407,7 +1407,8 @@ function createStageWidget(node, inputName) {
   importTab.addEventListener("click", () => { if (view.hidden) showView("stage"); pickVideo("ask"); });
   tabs.querySelector(".ss-brand") ? tabs.querySelector(".ss-brand").after(importTab) : tabs.prepend(importTab);
   const syncVideoCta = () => {
-    const actors = (stage.toJSON().actors || []).length;
+    const st = stage.toJSON();
+    const actors = (st.actors || []).length + (st.world?.url ? 1 : 0);   // an imported world is not an empty stage
     videoCta.dataset.big = String(actors === 0);
     videoCta.lastChild.previousSibling.textContent = actors === 0 ? "Start from a video: drop it here or click" : "Drop a video here → 3D";
     videoCta.hidden = !job.el.hidden;
