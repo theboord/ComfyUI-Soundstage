@@ -79,6 +79,12 @@ const CSS = `
 .ss-stageview { position:relative; }
 .ss-stage .ss-vi-tabbtn { flex:1 0 100%; justify-content:center; order:-1; margin:2px 0 4px; padding:8px 12px !important; font-size:13px; }
 .ss-stage[data-ws=wide] .ss-vi-tabbtn, .ss-stage.ss-full .ss-vi-tabbtn { display:none !important; }
+/* The physics badge (stage/physics_avbd.mjs) sat on the status line, bottom left, over its text. The default CPU solver
+   needs no badge; the experimental GPU one says so in the bottom-right corner, clear of the status text. */
+.ss-stage > .ss-phys-badge[data-backend=xpbd] { display:none !important; }
+.ss-stage > .ss-phys-badge { left:auto !important; right:10px !important; }
+/* Where the header's Import video shows (the narrow App panel), the viewport header's copy would be a second, identical button. */
+.ss-stage:not([data-ws=wide]):not(.ss-full) .ss-vi-head:not(.ss-vi-tabbtn) { display:none !important; }
 .ss-stage [hidden] { display:none !important; }
 .ss-stage.ss-cutmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-cutview) { display:none !important; }
 .ss-stage.ss-scriptmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-scriptview):not(.ss-status) { display:none !important; }
@@ -107,6 +113,9 @@ const CSS = `
 .ss-gizmo { position:absolute; top:8px; right:8px; width:84px; height:84px; cursor:pointer; }
 .ss-stageview > .ss-coach { top:10px; right:100px; max-width:min(340px, calc(100% - 110px)); }
 .ss-stageview[data-narrow=true] > .ss-coach { top:100px; right:8px; max-width:calc(100% - 16px); }
+/* A narrow view (the App panel) has no room for the small "Drop a video here" pill beside the Coach pill (they overlapped);
+   the big Import video button is right above it there. The big centred call to action on an empty stage stays. */
+.ss-stageview[data-narrow=true] > .ss-vi-cta:not([data-big=true]) { display:none !important; }
 .ss-viewbadge { position:absolute; top:8px; left:8px; font:600 11px/1 "Soundstage Grotesk", ui-sans-serif, system-ui, sans-serif; letter-spacing:.06em;
   text-transform:uppercase; padding:5px 8px; border-radius:4px; background:rgba(0,0,0,.55); color:#e6e9ee; pointer-events:none; }
 .ss-viewbadge[data-free=true] { background:#e39a40; color:#16191e; }
@@ -3359,7 +3368,7 @@ function createStageWidget(node, inputName) {
     const steps = TOUR_STEPS.map((t) => ({ ...t }));
     const S = Object.fromEntries(steps.map((t) => [t.id, t]));
     S.start.before = () => { if (curView !== "stage") pipeline.go("set"); };
-    S.start.target = () => (!empty.hidden && vis(empty)) || [vis(importHead), stepBtn("script")].filter(Boolean);
+    S.start.target = () => (!empty.hidden && vis(empty)) || [vis(importHead) || vis(importTab), stepBtn("script")].filter(Boolean);
     S.scene.before = () => { if (curView !== "stage") pipeline.go("set"); closePops(); };
     S.scene.target = () => (cvOn ? vis(sceneGrp) : vis(sceneStrip?.el)) || stepBtn("set");
     S.block.before = () => { if (curView !== "stage") pipeline.go("set"); };
