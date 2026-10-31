@@ -8,6 +8,7 @@ Voices: the built-in Chatterbox voice (conds.pt), or a reference recording passe
 use a reference of someone who agreed to it (your own voice, a consenting actor, or a voice that
 was itself designed/generated). Every output keeps Resemble's Perth watermark.
 """
+import contextlib
 import importlib.util
 import logging
 import os
@@ -161,9 +162,41 @@ def speak(text, device, ref_path=None, exaggeration=0.5, cfg_weight=0.5, tempera
     return wav[0].detach().float().cpu().numpy(), int(m.sr)
 
 
-def convert(x, sr, device, ref_path=None):
+@contextlib.contextmanager
+def seeded(seed):
+    """Seed Python, NumPy and torch (CPU and every CUDA device) for one call, then put their RNG states
+    back, so a seed picks the take without nudging anything else that runs in ComfyUI. seed=None: no-op."""
+    if seed is None:
+        yield
+        return
+    import random
+    import numpy as np
+    try:
+        import torch
+    except ImportError:  # tests / a box without torch: Python and NumPy only
+        torch = None
+    py, npst = random.getstate(), np.random.get_state()
+    tst = torch.get_rng_state() if torch is not None else None
+    cuda = torch.cuda.get_rng_state_all() if torch is not None and torch.cuda.is_available() else None
+    try:
+        random.seed(int(seed))
+        np.random.seed(int(seed) % (2 ** 32))
+        if torch is not None:
+            torch.manual_seed(int(seed) % (2 ** 63))   # also seeds every CUDA device
+        yield
+    finally:
+        random.setstate(py)
+        np.random.set_state(npst)
+        if torch is not None:
+            torch.set_rng_state(tst)
+            if cuda is not None:
+                torch.cuda.set_rng_state_all(cuda)
+
+
+def convert(x, sr, device, ref_path=None, seed=None):
     """Speech-to-speech (Chatterbox VC): re-voice a performance, keeping its timing. Reuses the TTS
-    model's S3Gen, so no extra weights. Target = a saved voice's reference WAV, else the built-in voice."""
+    model's S3Gen, so no extra weights. Target = a saved voice's reference WAV, else the built-in voice.
+    seed: the take (S3Gen's flow matching samples noise); None leaves the RNG alone."""
     import numpy as np
     import soundfile as sf
     import torch
@@ -176,7 +209,7 @@ def convert(x, sr, device, ref_path=None):
         src = f.name
     try:
         sf.write(src, np.asarray(x, np.float32), int(sr))
-        with torch.inference_mode():
+        with torch.inference_mode(), seeded(seed):
             wav = vc.generate(src, target_voice_path=ref_path)
     finally:
         os.unlink(src)
