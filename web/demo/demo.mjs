@@ -1,5 +1,5 @@
 // Soundstage App, static demo: the real App widget (extensions/soundstage/soundstage.js) on a stand-in ComfyUI.
-import "./scripts/glbshim.js";
+import "./scripts/glbshim.mjs";   // .mjs: ComfyUI loads every .js under web/ as an extension, and this shim must never patch fetch there
 import { app } from "./scripts/app.js";
 import { api, demo } from "./scripts/api.js";
 import "./extensions/soundstage/soundstage.js";

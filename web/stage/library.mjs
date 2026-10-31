@@ -251,34 +251,49 @@ export function buildObject(kind, height, mesh, appearance = null) {
           Math.atan2(b[1] - a[1], b[0] - a[0]), 0, 0, col);
         return m;
       };
-      add(new THREE.CapsuleGeometry(0.3 * s, 0.85 * s, 8, 20), 0, bodyY, 0.02 * s, Math.PI / 2).scale.set(0.95, 1, 1.08);  // barrel
-      add(new THREE.SphereGeometry(0.34 * s, 20, 16), 0, bodyY + 0.03 * s, 0.55 * s).scale.set(0.9, 1.05, 1);              // chest
-      add(new THREE.SphereGeometry(0.37 * s, 20, 16), 0, bodyY + 0.06 * s, -0.55 * s).scale.set(1.08, 1, 1);               // rump (wide)
-      add(new THREE.SphereGeometry(0.2 * s, 14, 10), 0, bodyY + 0.28 * s, 0.42 * s).scale.set(0.7, 0.8, 1.2);              // withers
+      // Body: one long barrel with the chest and hindquarters blended into it (not three balls), a raised withers.
+      add(new THREE.CapsuleGeometry(0.29 * s, 0.9 * s, 8, 20), 0, bodyY, 0.0, Math.PI / 2).scale.set(0.88, 1, 1.0);    // barrel
+      add(new THREE.SphereGeometry(0.3 * s, 20, 16), 0, bodyY + 0.02 * s, 0.5 * s).scale.set(0.86, 1.05, 1.25);          // chest
+      add(new THREE.SphereGeometry(0.32 * s, 20, 16), 0, bodyY + 0.05 * s, -0.5 * s).scale.set(0.98, 1, 1.3);            // hindquarters
+      add(new THREE.SphereGeometry(0.2 * s, 14, 10), 0, bodyY + 0.24 * s, 0.4 * s).scale.set(0.6, 0.8, 1.3);             // withers
       // Neck rising forward, then the head angled down to the muzzle.
       const neckBase = [bodyY + 0.2 * s, 0.62 * s], poll = [bodyY + 0.78 * s, 1.05 * s];
-      tube(0.22 * s, 0.12 * s, neckBase, poll);
-      add(new THREE.BoxGeometry(0.05 * s, 0.6 * s, 0.1 * s), 0, (neckBase[0] + poll[0]) / 2 + 0.08 * s, (neckBase[1] + poll[1]) / 2 - 0.1 * s,
-        Math.atan2(poll[1] - neckBase[1], poll[0] - neckBase[0]), 0, 0, accent);                                           // mane
+      tube(0.21 * s, 0.11 * s, neckBase, poll);
+      // Mane: a crest along the top of the neck, poll to withers, so the neck reads as a horse's from any side.
+      const neckAng = Math.atan2(poll[1] - neckBase[1], poll[0] - neckBase[0]);
+      const neckLen = Math.hypot(poll[1] - neckBase[1], poll[0] - neckBase[0]);
+      add(new THREE.BoxGeometry(0.06 * s, neckLen * 1.02, 0.15 * s), 0, (neckBase[0] + poll[0]) / 2 + 0.06 * s, (neckBase[1] + poll[1]) / 2 - 0.11 * s,
+        neckAng, 0, 0, accent);
+      add(new THREE.BoxGeometry(0.05 * s, 0.1 * s, 0.16 * s), 0, poll[0] + 0.02 * s, poll[1] + 0.08 * s, -0.5, 0, 0, accent); // forelock
       const muzzle = [poll[0] - 0.42 * s, poll[1] + 0.3 * s];
       tube(0.12 * s, 0.075 * s, poll, muzzle);
       add(new THREE.SphereGeometry(0.085 * s, 12, 10), 0, muzzle[0], muzzle[1]).scale.set(0.9, 0.85, 1.1);                // nose
       for (const x of [-0.06, 0.06]) add(new THREE.ConeGeometry(0.035 * s, 0.14 * s, 8), x * s, poll[0] + 0.1 * s, poll[1] - 0.02 * s, -0.15, 0, 0, accent); // ears
-      // Tail: thick dock, then a long plume hanging down and back (unmistakable from behind).
-      tube(0.07 * s, 0.05 * s, [bodyY + 0.2 * s, -0.86 * s], [bodyY - 0.05 * s, -0.98 * s], accent);
-      tube(0.055 * s, 0.13 * s, [bodyY - 0.05 * s, -0.98 * s], [bodyY - 0.72 * s, -1.05 * s], accent, 12);
-      // Legs: [x, z, front?] — forelegs under the chest, hind legs under the rump with a hock.
-      for (const [i, [x, z, front]] of [[-0.17, 0.5, 1], [0.17, 0.5, 1], [-0.17, -0.55, 0], [0.17, -0.55, 0]].entries()) {
+      // Tail: set high on the rump, arching out, then falling to the hocks and well behind the hind legs, flat
+      // and tapered (a straight post to the ground reads as a fifth leg).
+      const dock = [bodyY + 0.22 * s, -0.86 * s], arc = [bodyY + 0.02 * s, -1.08 * s], tip = [bodyY - 0.62 * s, -1.2 * s];
+      tube(0.06 * s, 0.05 * s, dock, arc, accent);
+      tube(0.05 * s, 0.1 * s, arc, tip, accent, 12).scale.set(0.55, 1, 1);
+      // Legs: [x, z, front?]. Each leg is slim and tapers from the body down: forearm (or gaskin), knee (hock),
+      // cannon, fetlock, hoof; one rigid pivot each, animated by the gait. The tops sit inside the body so the
+      // legs grow out of it instead of hanging like trouser legs.
+      for (const [i, [x, z, front]] of [[-0.15, 0.5, 1], [0.15, 0.5, 1], [-0.15, -0.55, 0], [0.15, -0.55, 0]].entries()) {
         const pivot = new THREE.Group();
         pivot.position.set(x * s, legL + 0.08 * s, z * s);
-        const upper = mesh(new THREE.CylinderGeometry(front ? 0.075 * s : 0.1 * s, front ? 0.1 * s : 0.13 * s, 0.48 * s, 12), mainCol);
-        upper.position.set(0, -0.24 * s, front ? 0 : -0.04 * s);
-        upper.rotation.x = front ? 0 : 0.12;
-        const lower = mesh(new THREE.CylinderGeometry(0.045 * s, 0.05 * s, 0.46 * s, 10), mainCol);
-        lower.position.set(0, -0.7 * s, front ? 0 : -0.02 * s);
-        const hoof = mesh(new THREE.CylinderGeometry(0.065 * s, 0.075 * s, 0.09 * s, 12), accent);
-        hoof.position.set(0, -0.98 * s, 0.01 * s);
-        pivot.add(upper, lower, hoof);
+        const parts = [];
+        const part = (geom, y, zz, rx = 0, col = mainCol) => { const m = mesh(geom, col); m.position.set(0, y * s, zz * s); m.rotation.x = rx; parts.push(m); return m; };
+        if (front) {
+          part(new THREE.CylinderGeometry(0.1 * s, 0.055 * s, 0.56 * s, 12), -0.2, 0);             // forearm, top buried in the chest
+          part(new THREE.SphereGeometry(0.058 * s, 10, 8), -0.49, 0);                             // knee
+        } else {
+          part(new THREE.CylinderGeometry(0.12 * s, 0.055 * s, 0.6 * s, 12), -0.2, -0.04, 0.22);   // gaskin, sloping back to the hock
+          part(new THREE.SphereGeometry(0.06 * s, 10, 8), -0.5, -0.1);                            // hock
+        }
+        part(new THREE.CylinderGeometry(0.04 * s, 0.045 * s, 0.44 * s, 10), -0.72, front ? 0 : -0.06);        // cannon
+        part(new THREE.SphereGeometry(0.05 * s, 10, 8), -0.92, front ? 0.01 : -0.04);                         // fetlock
+        const hoof = part(new THREE.CylinderGeometry(0.055 * s, 0.07 * s, 0.09 * s, 12), -0.98, front ? 0.02 : -0.02, 0, accent);
+        hoof.userData.hoof = true;
+        pivot.add(...parts);
         g.add(pivot);
         g.userData.limbs.push({ pivot, phase: i === 0 || i === 3 ? 0 : Math.PI, amp: 0.42 });
       }
