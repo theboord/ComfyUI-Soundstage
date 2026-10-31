@@ -2,6 +2,10 @@
 
 Run headless (fresh factory scene, nothing of yours is opened or saved):
   Blender --background --factory-startup --python tools/interop/blender_make_test_world.py -- <out_dir>
+          [--static-lens] [--render 1,24,48] [--hide floor]
+--static-lens keeps the lens at 35 mm (Blender 4.3's glTF export doesn't write lens animation, so a framing check
+needs a fixed lens); --render writes ShotCam frames (bl_world_<f>.png with a transparent background, and
+bl_world_look_<f>.png shaded) to compare with Soundstage's view through the imported camera.
 
 World (Blender: metres, Z up): a 10 m x 8 m floor, four 3 m walls (the front wall has a 1.0 x 2.1 m door centred at
 x = 1.5), a 0.75 m table at (2, -1), a 0.6 m crate at (-3, 2) that slides 2 m along +X over frames 1-48, and a camera
@@ -16,7 +20,11 @@ import sys
 
 import bpy
 
-out = sys.argv[sys.argv.index("--") + 1] if "--" in sys.argv else os.getcwd()
+argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+out = argv[0] if argv and not argv[0].startswith("--") else os.getcwd()
+static_lens = "--static-lens" in argv
+render_frames = [int(x) for x in argv[argv.index("--render") + 1].split(",")] if "--render" in argv else []
+hide = argv[argv.index("--hide") + 1].split(",") if "--hide" in argv else []
 os.makedirs(out, exist_ok=True)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -74,7 +82,7 @@ cam = bpy.data.objects.new("ShotCam", cam_data)
 scene.collection.objects.link(cam)
 scene.camera = cam
 cam.rotation_euler = (math.radians(90), 0, 0)   # Blender camera looks down -Z; X 90 deg -> looks +Y
-for f, y, lens in [(1, -12.0, 35.0), (48, -6.0, 50.0)]:
+for f, y, lens in [(1, -12.0, 35.0), (48, -6.0, 35.0 if static_lens else 50.0)]:
     cam.location = (0, y, 1.6)
     cam.keyframe_insert("location", frame=f)
     cam.keyframe_insert("rotation_euler", frame=f)
@@ -83,7 +91,7 @@ for f, y, lens in [(1, -12.0, 35.0), (48, -6.0, 50.0)]:
 for fc in list(cam.animation_data.action.fcurves) + list(crate.animation_data.action.fcurves):
     for k in fc.keyframe_points:
         k.interpolation = "LINEAR"
-scene.render.resolution_x, scene.render.resolution_y = 1920, 1038
+scene.render.resolution_x, scene.render.resolution_y = 1920, 1024   # the stage frame (960 x 512) doubled
 
 bpy.ops.export_scene.gltf(filepath=os.path.join(out, "world.glb"), export_format="GLB", export_cameras=True, export_pointer_animation=True,
                           export_animations=True, export_yup=True)
@@ -105,3 +113,17 @@ truth = {
 with open(os.path.join(out, "truth.json"), "w") as f:
     json.dump(truth, f, indent=1)
 print("Soundstage test world written to", out)
+
+for f in render_frames:
+    scene.frame_set(f)
+    scene.render.engine = "BLENDER_WORKBENCH"
+    scene.display.shading.light = "STUDIO"
+    scene.display.shading.color_type = "MATERIAL"
+    for o in bpy.data.objects:
+        o.hide_render = o.name in hide
+    for transparent, name in ((True, "bl_world_%d.png" % f), (False, "bl_world_look_%d.png" % f)):
+        scene.render.film_transparent = transparent
+        scene.render.image_settings.color_mode = "RGBA" if transparent else "RGB"
+        scene.render.filepath = os.path.join(out, name)
+        bpy.ops.render.render(write_still=True)
+    print("rendered frame", f)
