@@ -381,23 +381,18 @@ export class Stage {
 
   // ---------- clean street for ride-along shots ----------
   /**
-   * Riding in a car on an empty road (the active shot follows a vehicle, nobody on foot) on the city street, the set
-   * becomes one smooth facade a side with an even roofline and no lamp posts, long enough for the whole drive:
-   * Milestone 5 found LTX turns building blocks and gaps sliding past the frame edge into traffic. environment.
-   * clean_street: true / false forces it on or off; unset = automatic. Returns the build options as a string
-   * signature (null = the ordinary set), so a shot switch rebuilds the set only when it has to.
+   * Clean street (experimental, off unless environment.clean_street is true): the city street as one smooth facade a
+   * side with an even roofline and no lamp posts, long enough for the whole drive. Built to stop LTX reading the
+   * blocks and gaps sliding past a ride-along shot as traffic (Milestone 5), but on the In-the-Car windshield draft
+   * (seeds 42 and 7, Milestone 7) it traded the early passing car for parked cars along both kerbs from frame ~72, so
+   * it is not automatic. Returns the build options as a string signature (null = the ordinary set), so the set is
+   * rebuilt only when it changes.
    */
   _cleanStreetSig() {
     const env = this.state.environment || {};
-    if ((env.set || "plaza") !== "street_night" || env.clean_street === false) return null;
-    const actors = this.state.actors || [];
-    if (env.clean_street !== true) {
-      const host = this._followActor?.();
-      if (!host || LIBRARY[host.kind]?.rig !== "vehicle") return null;
-      if (actors.some((a) => PERSON_KINDS.has(a.kind) && !a.mount_id)) return null;
-    }
+    if ((env.set || "plaza") !== "street_night" || env.clean_street !== true) return null;
     let z0 = 0, z1 = 0;
-    for (const a of actors) for (const k of a.keys || [{ position: a.position || [0, 0, 0] }]) {
+    for (const a of this.state.actors || []) for (const k of a.keys || [{ position: a.position || [0, 0, 0] }]) {
       z0 = Math.min(z0, k.position[2]); z1 = Math.max(z1, k.position[2]);
     }
     // Round out to 50 m so scrubbing a key doesn't rebuild the set; the camera sees 150 m past either end.
