@@ -1975,7 +1975,10 @@ function createStageWidget(node, inputName) {
     const sceneStr = JSON.stringify(stage.toJSON());
     const stamp = hashString(sceneStr);
     // Reuse the last capture only while the server still has it (a ComfyUI restart empties temp/).
-    if (lastCapture?.stamp === stamp && await passOnServer(`stage_clay_${stamp}.jpg`)) return lastCapture.value;
+    // look_start: frame 1 reaches the image model with the clay heads softened (soundstage/look/look_start.py);
+    // off only while re-rendering a frame that was picked before that existed.
+    const withFlag = (v) => (node.ssLookStart === false ? JSON.stringify({ ...JSON.parse(v), look_start: false }) : v);
+    if (lastCapture?.stamp === stamp && await passOnServer(`stage_clay_${stamp}.jpg`)) return withFlag(lastCapture.value);
     const passes = {};
     const uploads = [];
     // Same layout captureSequence uses, so a pass already on the server can be reused without re-rendering.
@@ -2001,7 +2004,7 @@ function createStageWidget(node, inputName) {
       lighting_prompt: stage.lightingPrompt(), id_colors: stage.idColors(),
       shot_id: stage.activeShot().id, shot_name: stage.activeShot().name }, passes });
     lastCapture = { stamp, value };
-    return value;
+    return withFlag(value);
   };
 
   const onRemoved = node.onRemoved;
@@ -2083,6 +2086,7 @@ function createStageWidget(node, inputName) {
       return [...all].sort((a, b) => at(a.id) - at(b.id) || all.indexOf(a) - all.indexOf(b));
     },
     // Nested holds (a batch over shots, each queue inside it) count up and down; the ladder is free at zero.
+    setLookStart: (on) => { node.ssLookStart = !!on; },
     setBatch: (on) => { batchDepth = Math.max(0, batchDepth + (on ? 1 : -1)); batchRendering = batchDepth > 0; },
     renderPreviewFrame: (id, f) => {
       const prev = stage.state.active_shot;

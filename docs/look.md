@@ -198,6 +198,25 @@ Sudden silence; melancholy strings or ironic upbeat music.
 KB refs: movement.korean_thriller   notes: -
 ```
 
+## Real people, not plastic figures (Milestone 5)
+
+FLUX 3 Klein edits the stage's frame 1, so it copies what it is handed. The clay figures have blank faces (no eyes, no mouth) and helmet hair, and in a wide shot a head is only 25-35 px of a 960 x 512 frame. Klein kept those figures and only re-textured them: doll-like riders. Two changes fix it without touching the blocking:
+
+- **The start image** (`soundstage/look/look_start.py`, applied to the stage node's `first_color`):
+  - **Clay heads softened.** Each person's head is found in the ID pass (top of the silhouette down to the shoulders) and blurred, feathered at the edge. Pose, placement, build, wardrobe and hair colour stay, and the model casts a real face there.
+  - **Upscaled when faces are small.** If the largest head in frame is under 64 px, frame 1 is upscaled (at most 1.75x, so 960 x 512 becomes 1680 x 896, about 1.5 MP) and the still is made at that size. Close shots stay at stage size. Making the windshield shot at 1 MP pulled the camera back and shrank the people, so close shots are not upscaled.
+  - Only library people (man, woman, child) are touched. Horses, cars, props and custom objects pass through unchanged. With no ID pass, or no people in frame, nothing changes.
+  - Frames picked before this change still reproduce exactly. The App records `ls` with each new frame. For an older pick it sends `look_start: false` in the stage value, and the node then passes the plain colour pass.
+- **The still prompt** (`compile.py`): when people are in frame it adds `REAL_PEOPLE` ("real actors, natural skin texture, real hair and fabric with creases, candid unposed body language, natural expressions") after the head count. It also adds `REAL_PEOPLE_NEG` (plastic skin, mannequin, doll-like faces, CGI character, 3D render) to the negative. A look whose description or brief asks for animation, claymation, anime, painting and the like gets neither. Kodak 200T now says "natural skin tones" (it used to say "smooth skin").
+- **Tried and dropped:**
+  - Blurring the whole person kept fewer wardrobe details and was no better than softening the head alone.
+  - Softening the whole frame made the still look less real.
+  - An edit-instruction lead-in ("Turn this rough 3D previz render into a real photograph...", or a neutral "Make this a real photograph...") looked the same as the plain realism words over 3 seeds.
+  - A larger output with a stage-size reference made the faces best of all, but the riders moved and turned on some seeds.
+  - The Follow-the-clay slider only drives Krea 2's img2img denoise (node 9056). Klein starts from noise (ReferenceMultiLatent, denoise 1), so the slider does nothing for Klein.
+
+Evidence and side-by-sides: share/Milestone5_Realism.
+
 ## Known limits
 
 - The typed-look parser is phrase matching. Generic words were removed from the aliases ("red" doesn't pick the RED camera), but a description that says "detective" with no genre set will pick the detective subgenre.

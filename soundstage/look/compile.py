@@ -147,6 +147,22 @@ def _still_count(n: int) -> str:
             3: "exactly three people in frame"}.get(n, f"exactly {n} people in frame")
 
 
+# People in the still: words that pull the image model toward real actors photographed on set, and away from the
+# smooth mannequin it is handed (the stage's clay figures). Measured on FLUX 3 Klein, docs/decisions.md 2026-10-30.
+REAL_PEOPLE = ("real actors, natural skin texture, real hair and fabric with creases, candid unposed body language, "
+               "natural expressions")
+REAL_PEOPLE_NEG = "plastic skin, mannequin, doll-like faces, wax figure, CGI character, 3D render, video game character"
+
+# A look that asks for a drawn or rendered world keeps its people stylised too.
+_STYLISED = re.compile(r"\b(animat\w*|cartoon\w*|anime|manga|pixar|claymation|stop[- ]motion|cgi|3d render\w*|cel[- ]shad\w*|"
+                       r"illustrat\w*|painting|painted|comic\w*|video game|toon|puppet\w*|lego|low[- ]poly)\b", re.I)
+
+
+def real_people_wanted(look: dict) -> bool:
+    text = " ".join([look.get("description") or "", *((look.get("brief") or {}).values())])
+    return not _STYLISED.search(text)
+
+
 NUM = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
 # Image and video models like to fill a street with bystanders and parked cars the blocking never had.
 NOTHING_EXTRA_NEG = "background pedestrians, bystanders, passers-by, extra people in the background, extra vehicles, additional cars"
@@ -201,6 +217,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     # A head count only when people show: seen from outside, a car's driver is part of the car and a count of
     # zero (or one) makes Krea paint pedestrians; seen from inside, the riders ARE the people in frame.
     count = not lock or n > 0
+    real = real_people_wanted(look)
     if vcam and vcam.get("where") in ("interior", "hood") and place and place != "underwater":
         place_words = f"driving through {place}" if (S.camera_move(scene).get("rides") or {}).get("moving") else f"parked in {place}"
     else:
@@ -215,6 +232,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         "; ".join(who),
         lock["still"] if lock else "",
         _still_count(n) if count else "",
+        REAL_PEOPLE if n and real else "",
         _only_blocking(n, sum(1 for e in f1["others"] if e.get("rig") == "vehicle")) if count and not lock else
         ("nobody else in the car, nobody else in the background" if count and vcam else ""),
         S.ANGLE_STILL[f1["angle"]] if f1["angle"] != "eye" else "eye-level camera",
@@ -235,7 +253,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     # Never tell the model "no people" when the shot has people in it: riders in the car, someone walking in later.
     no_people = n == 0 and not S.people_in_shot(scene)
     negative = _join([FRAME1_NEGATIVE + (", people, person, figure" if no_people else "") if n <= 3 else "extra people",
-                      BASE_NEGATIVE, facing_neg, NOTHING_EXTRA_NEG, vcam["negative"] if vcam else "", lock["negative"] if lock else "",
+                      BASE_NEGATIVE, REAL_PEOPLE_NEG if n and real else "", facing_neg, NOTHING_EXTRA_NEG, vcam["negative"] if vcam else "", lock["negative"] if lock else "",
                       *parts["negatives"], look.get("negative", "")])
     return _dedupe(prompt), _dedupe(negative)
 
