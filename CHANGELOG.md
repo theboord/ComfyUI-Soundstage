@@ -5,6 +5,10 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**16:22 PDT · A selected person can be grabbed by the body again (they mount the horse)** *(QA round 03)*
+- Fixed: after a climb onto a crate and Undo / Redo / Undo (or any time a person was already selected), dragging them onto a horse slid them about 1 m along one line and nothing happened. Undo left them selected, so the move arrows showed at their feet, and from a raised view the arrow pointing away from you is drawn right up across their body; a press there went to that arrow. Now a press on a selected person's body always grabs the person (the live drag: walk, climb, mount); the arrows still work where they stick out past them. On other objects only an arrowhead keeps the press, and Shift+drag still locks a drag to one axis.
+- Code: [web/stage/stage.mjs](web/stage/stage.mjs) (`_gizmoTakesPress`). Tests: [tests/js/qa_round03.test.mjs](tests/js/qa_round03.test.mjs).
+
 **15:49 PDT · The pro look: calmer colour, one main button a step, a shortcut sheet** *(Milestone 14)*
 - **One design system.** `web/ui/theme.mjs` now holds the tokens: one type scale (11 · 12 · 13 · 15 · 18 px, nothing smaller), a 4 px spacing grid, radii, and hover, pressed, focus and disabled states shared by every button and field. Secondary and hint text are brighter: every text colour passes WCAG AA (4.5:1) on the background, the cards and the glass panels.
 - **Yellow means "do this".** A picked option (variations, quality, Follow, Review's compare chips, Cast sizes) is now a raised grey segment, not another yellow button. Each step keeps one yellow action: Build this scene, Generate all missing, Generate frames, Render final + sound, Cut → one video. "Animate this frame →" and "Review →" are quiet outlined buttons. The status line is grey, not yellow.

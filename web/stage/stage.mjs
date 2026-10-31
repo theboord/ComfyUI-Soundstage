@@ -1864,6 +1864,21 @@ export class Stage {
     this.canvas.addEventListener("pointerenter", () => this.canvas.focus({ preventScroll: true }));
     this.canvas.addEventListener("pointerleave", () => { if (this._hoverId) { this._hoverId = null; this.render(); } });
     this._pickRay = (e) => { pick(e); return ray; };
+    this._pickNdc = ndc;
+
+    // The move arrows sit at the object's feet, and from a raised view the one pointing away from you is drawn up across a
+    // standing person: a press on their body went to that arrow (they slid ~1 m along it instead of being grabbed, so
+    // dragging them onto a horse never mounted). Before the gizmo sees the press (a capture listener runs first), a press
+    // on the selected object's own body is handed to the body; only the arrowheads (and presses off the body) stay the gizmo's.
+    this.canvas.addEventListener("pointerdown", (e) => {
+      if (this._tcPaused) { this.tc.enabled = true; this._tcPaused = false; }
+      if (e.button !== 0 || e.altKey || !this.tcHelper.visible || !this.tc.object) return;
+      pick(e);
+      if (this._gizmoTakesPress(ndc, ray)) return;
+      this.tc.axis = null;
+      this.tc.enabled = false;   // its own pointerdown (next) ignores this press; back on at pointerup
+      this._tcPaused = true;
+    }, { capture: true });
 
     this.canvas.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
@@ -1871,7 +1886,7 @@ export class Stage {
       if (this.live?.busy) this.live.finish();   // things still settling from the last drop: write them down first
       if (this._glideRaf) { cancelAnimationFrame(this._glideRaf); this._glideRaf = 0; if (!this.freeView) this.onChange(this.toJSON()); }
       if (this._flyRaf) { cancelAnimationFrame(this._flyRaf); this._flyRaf = 0; }
-      if (this.tcHelper.visible && (this.tc.axis || this.tc.dragging)) return; // the gizmo has this drag
+      if (!this._tcPaused && this.tcHelper.visible && (this.tc.axis || this.tc.dragging)) return; // the gizmo has this drag
       pick(e);
       if (this.poser?.active && !e.altKey && this.poser.pointerDown(e, ray)) {
         drag = { mode: "pose" };
@@ -1961,6 +1976,7 @@ export class Stage {
 
     const end = (e) => {
       this._dragging = false;
+      if (this._tcPaused) { this.tc.enabled = true; this._tcPaused = false; }
       if (!drag) return;
       if (drag.mode === "pose") { this.poser.pointerUp(); drag = null; return; }
       if (drag.mode === "pending") {   // a click on an object: it is selected (on press)
@@ -2224,6 +2240,50 @@ export class Stage {
   }
 
   /** Hover: what a press would grab gets a thin outline (picked once a frame). */
+  /**
+   * Does the gizmo take a press at ndc (the cursor in -1..1; ray = a raycaster aimed there)? Yes on its rings and
+   * squares, and on an arrow off the object. On the selected object's own body the arrows give way: their shafts run
+   * across the body from some views, and a press there means "grab it" (a live drag), not "slide on one axis". On
+   * anything but a person an arrowhead keeps the press. (Shift+drag still locks a live drag to one axis.)
+   */
+  _gizmoTakesPress(ndc, ray) {
+    const tc = this.tc;
+    if (!tc?.object || !this.tcHelper?.visible || !tc.enabled) return false;
+    if (tc.dragging) return true;
+    this.tcHelper.updateMatrixWorld(true);
+    tc.pointerHover({ x: ndc.x, y: ndc.y, button: 0 });
+    const axis = tc.axis;
+    if (!axis) return false;
+    if (tc.mode !== "translate" || !/^[XYZ]$/.test(axis)) return true;
+    const g = this.selected && this.actorMeshes.get(this.selected);
+    if (!g || tc.object !== g) return true;
+    const r = this.canvas?.getBoundingClientRect?.() || { width: 1000, height: 1000 / (this.fw / this.fh || 1.78) };
+    const cam = tc.camera || this._viewportCamera?.() || this.camera;
+    const c = new THREE.Vector3();
+    // A person is pressed anywhere within their on-screen outline (as a click picks them: between the legs counts too),
+    // and then even an arrowhead gives way (from a raised view the far arrow's head is drawn on their chest).
+    if (PERSON_KINDS.has(this.state.actors.find((x) => x.id === this.selected)?.kind)) {
+      const box = new THREE.Box3().setFromObject(g);
+      if (box.isEmpty()) return true;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (let i = 0; i < 8; i++) {
+        c.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(cam);
+        if (c.z > 1) return true;
+        x0 = Math.min(x0, c.x); x1 = Math.max(x1, c.x); y0 = Math.min(y0, c.y); y1 = Math.max(y1, c.y);
+      }
+      return !(ndc.x >= x0 && ndc.x <= x1 && ndc.y >= y0 && ndc.y <= y1);
+    }
+    if (!ray.intersectObject(g, true).length) return true;
+    // On the body: only within ~14 px of one of this axis's arrowheads (the cones at the ends) is it the arrow's.
+    for (const h of tc._gizmo?.gizmo?.translate?.children || []) {
+      if (h.name !== axis || !h.visible || !h.isMesh || h.geometry?.parameters?.radiusTop !== 0) continue;
+      h.geometry.boundingBox || h.geometry.computeBoundingBox();
+      h.geometry.boundingBox.getCenter(c).applyMatrix4(h.matrixWorld).project(cam);
+      if (Math.hypot((c.x - ndc.x) * r.width / 2, (c.y - ndc.y) * r.height / 2) <= 14) return true;
+    }
+    return false;
+  }
+
   _hoverMove(e) {
     this._hoverEv = { clientX: e.clientX, clientY: e.clientY };
     if (this._hoverRaf) return;
@@ -2231,6 +2291,8 @@ export class Stage {
       this._hoverRaf = 0;
       if (this._dragging || this.live?.drag || !this._hoverEv) return;
       const ray = this._pickRay(this._hoverEv);
+      // Over the selected body, a shaft drawn across it isn't lit up as if a press there would take the arrow.
+      if (this.tc?.axis && !this.tc.dragging && !this._gizmoTakesPress(this._pickNdc, ray)) this.tc.axis = null;
       const id = this._pickActor(ray);
       const a = id && this.state.actors.find((x) => x.id === id);
       const next = a && (this._grabbable(a) || id === this.selected) && !this._isSetPiece(id) ? id : null;
