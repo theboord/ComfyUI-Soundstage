@@ -777,8 +777,9 @@ export class Pipeline {
     const values = pick?.options?.values || [];
     const keys = (Array.isArray(values) ? values : []).map((v) => (typeof v === "string" ? v : v?.key)).filter(Boolean);
     const klein = keys.find((k) => /^FLUX 3 Klein/.test(k)) || KLEIN;
-    opts.push({ value: klein, label: "FLUX 3 Klein (local, recommended)" });
-    opts.push({ value: STILL_KREA, label: "Krea 2 Turbo + stage depth (local, strict depth lock)" });
+    // Short labels: the canvas layout's bottom bar has room for about 34 characters (the select sizes to its label).
+    opts.push({ value: klein, label: "FLUX 3 Klein · local · recommended" });
+    opts.push({ value: STILL_KREA, label: "Krea 2 + depth · local · strict" });
     for (const key of keys) {
       if (key !== klein && !/^Krea 2 Turbo/.test(key)) opts.push({ value: key, label: key.replace(" · local", " (local)").replace(/ \[[^\]]*\]$/, "") });
     }
