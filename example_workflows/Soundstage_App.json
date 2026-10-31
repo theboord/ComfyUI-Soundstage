@@ -1,8 +1,8 @@
 {
  "id": "5e601aac-13d8-424d-96e2-163765da256d",
  "revision": 0,
- "last_node_id": 9079,
- "last_link_id": 13996,
+ "last_node_id": 9082,
+ "last_link_id": 14008,
  "nodes": [
   {
    "id": 5509,
@@ -1204,7 +1204,8 @@
      "name": "first_depth",
      "type": "IMAGE",
      "links": [
-      13929
+      13929,
+      13999
      ]
     },
     {
@@ -1256,7 +1257,9 @@
      "type": "IMAGE",
      "links": [
       13990,
-      13991
+      13991,
+      13997,
+      13998
      ]
     }
    ],
@@ -2085,9 +2088,7 @@
      "name": "IMAGE",
      "type": "IMAGE",
      "links": [
-      13944,
-      13945,
-      13948
+      14007
      ]
     }
    ],
@@ -3770,7 +3771,8 @@
      "name": "still_prompt",
      "type": "STRING",
      "links": [
-      13993
+      13993,
+      14000
      ]
     },
     {
@@ -3778,7 +3780,8 @@
      "name": "still_negative",
      "type": "STRING",
      "links": [
-      13994
+      13994,
+      14001
      ]
     },
     {
@@ -3802,6 +3805,244 @@
    "widgets_values": [
     ""
    ]
+  },
+  {
+   "id": 9080,
+   "type": "GetImageSize",
+   "pos": [
+    -4890.645410713746,
+    4275.475852272727
+   ],
+   "size": [
+    200,
+    70
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "IMAGE",
+     "link": 13997
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "width",
+     "name": "width",
+     "type": "INT",
+     "links": [
+      14002
+     ]
+    },
+    {
+     "localized_name": "height",
+     "name": "height",
+     "type": "INT",
+     "links": [
+      14003
+     ]
+    },
+    {
+     "localized_name": "batch_size",
+     "name": "batch_size",
+     "type": "INT",
+     "links": null
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "GetImageSize"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 9081,
+   "type": "SoundstageEditImage",
+   "pos": [
+    -4890.645410713746,
+    4375.475852272727
+   ],
+   "size": [
+    420,
+    380
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "IMAGE",
+     "link": 13998
+    },
+    {
+     "localized_name": "control_image",
+     "name": "control_image",
+     "type": "IMAGE",
+     "link": 13999
+    },
+    {
+     "localized_name": "mask",
+     "name": "mask",
+     "type": "MASK",
+     "link": null
+    },
+    {
+     "localized_name": "ref_1",
+     "name": "ref_1",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "localized_name": "ref_2",
+     "name": "ref_2",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "localized_name": "ref_3",
+     "name": "ref_3",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "localized_name": "prompt",
+     "name": "prompt",
+     "type": "STRING",
+     "link": 14000,
+     "widget": {
+      "name": "prompt"
+     }
+    },
+    {
+     "localized_name": "width",
+     "name": "width",
+     "type": "INT",
+     "link": 14002,
+     "widget": {
+      "name": "width"
+     }
+    },
+    {
+     "localized_name": "height",
+     "name": "height",
+     "type": "INT",
+     "link": 14003,
+     "widget": {
+      "name": "height"
+     }
+    },
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "COMFY_DYNAMICCOMBO_V3",
+     "link": null,
+     "widget": {
+      "name": "model"
+     }
+    },
+    {
+     "localized_name": "seed",
+     "name": "seed",
+     "type": "INT",
+     "link": null,
+     "widget": {
+      "name": "seed"
+     }
+    },
+    {
+     "localized_name": "negative",
+     "name": "negative",
+     "type": "STRING",
+     "link": 14001,
+     "widget": {
+      "name": "negative"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "IMAGE",
+     "links": [
+      14008
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "SoundstageEditImage"
+   },
+   "widgets_values": [
+    "",
+    0,
+    0,
+    "FLUX 3 Klein \u00b7 local [<$5M]",
+    0,
+    "fixed",
+    ""
+   ],
+   "title": "Still model (any)"
+  },
+  {
+   "id": 9082,
+   "type": "ComfySwitchNode",
+   "pos": [
+    -4370.645410713746,
+    3995.475852272727
+   ],
+   "size": [
+    300,
+    80
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "on_false",
+     "name": "on_false",
+     "type": "IMAGE",
+     "link": 14007
+    },
+    {
+     "localized_name": "on_true",
+     "name": "on_true",
+     "type": "IMAGE",
+     "link": 14008
+    },
+    {
+     "localized_name": "switch",
+     "name": "switch",
+     "type": "BOOLEAN",
+     "link": null,
+     "widget": {
+      "name": "switch"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "output",
+     "name": "output",
+     "type": "IMAGE",
+     "links": [
+      13944,
+      13945,
+      13948
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ComfySwitchNode"
+   },
+   "widgets_values": [
+    true
+   ],
+   "title": "Still model \u00b7 use picker (off = Soundstage Krea 2 + depth)"
   }
  ],
  "links": [
@@ -4167,7 +4408,7 @@
   ],
   [
    13944,
-   9057,
+   9082,
    0,
    9002,
    9,
@@ -4175,7 +4416,7 @@
   ],
   [
    13945,
-   9057,
+   9082,
    0,
    9034,
    9,
@@ -4191,7 +4432,7 @@
   ],
   [
    13948,
-   9057,
+   9082,
    0,
    9061,
    1,
@@ -4578,6 +4819,78 @@
    9066,
    0,
    9074,
+   1,
+   "IMAGE"
+  ],
+  [
+   13997,
+   9045,
+   9,
+   9080,
+   0,
+   "IMAGE"
+  ],
+  [
+   13998,
+   9045,
+   9,
+   9081,
+   0,
+   "IMAGE"
+  ],
+  [
+   13999,
+   9045,
+   3,
+   9081,
+   1,
+   "IMAGE"
+  ],
+  [
+   14000,
+   9079,
+   0,
+   9081,
+   6,
+   "STRING"
+  ],
+  [
+   14001,
+   9079,
+   1,
+   9081,
+   11,
+   "STRING"
+  ],
+  [
+   14002,
+   9080,
+   0,
+   9081,
+   7,
+   "INT"
+  ],
+  [
+   14003,
+   9080,
+   1,
+   9081,
+   8,
+   "INT"
+  ],
+  [
+   14007,
+   9057,
+   0,
+   9082,
+   0,
+   "IMAGE"
+  ],
+  [
+   14008,
+   9081,
+   0,
+   9082,
    1,
    "IMAGE"
   ]

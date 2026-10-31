@@ -21,15 +21,18 @@ def by_title(g, prefix):
     return next(n["id"] for n in g.nodes.values() if (n.get("title") or "").startswith(prefix))
 
 
-def test_default_path_goes_through_switches_set_off():
+def test_default_path_goes_through_switches():
     base, g = Graph.load(BASE), built()
     sw_still, sw_video = by_title(g, "Still model · use picker"), by_title(g, "Video model · use picker")
-    assert g.nodes[sw_still]["widgets_values"] == [False] and g.nodes[sw_video]["widgets_values"] == [False]
+    # FLUX 3 Klein is the App's image model (the still picker is on); LTX-2.5 L2R stays the default final.
+    assert g.nodes[sw_still]["widgets_values"] == [True] and g.nodes[sw_video]["widgets_values"] == [False]
     assert g.source_of(sw_still, "on_false") == (9057, 0)
     assert g.source_of(sw_video, "on_false") == (5518, 0)
-    # every old consumer of the look still / final video now reads the switch instead
-    for dst, slot in base.consumers(9057, 0):
-        assert g.source_of(dst, slot) == (sw_still, 0)
+    # The lean App already has the still picker (so its Frame step can run Klein): models.py reuses it.
+    assert sw_still == 9082 and base.source_of(9082, "on_false") == (9057, 0) and base.nodes[9082]["widgets_values"] == [True]
+    assert sum((n.get("title") or "").startswith("Still model") for n in g.nodes.values()) == 2   # picker + router, once
+    assert {d for d, _ in base.consumers(9082, 0)} == {9061, 9002, 9034}
+    # every old consumer of the final video now reads the switch instead
     for dst, slot in base.consumers(5518, 0):
         assert g.source_of(dst, slot) == (sw_video, 0)
     assert g.consumers(9057, 0) == [(sw_still, 0)] and g.consumers(5518, 0) == [(sw_video, 0)]
