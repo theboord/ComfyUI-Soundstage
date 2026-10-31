@@ -179,3 +179,32 @@ def test_no_people_or_no_id_pass_is_a_no_op():
     assert torch.equal(out, col)
     out, info = LS.look_start(col, idp, {"actors": []})
     assert torch.equal(out, col)
+
+
+# ---- the layout guide in ride-along car shots (torch) -----------------------------------------------
+
+def _ride_scene():
+    return {"actors": [{"id": "car", "kind": "car", "keys": [{"frame": 0, "position": [0, 0, 0]}, {"frame": 96, "position": [0, 0, 40]}]},
+                       {"id": "driver", "kind": "man", "mount_id": "car", "seat": 0}],
+            "id_colors": {"car": [255, 0, 0], "driver": [0, 74, 255]}}
+
+
+def test_quiet_background_only_for_ride_along_car_shots(monkeypatch):
+    torch = pytest.importorskip("torch")
+    clay = torch.rand(3, 64, 96, 3)
+    idp = torch.zeros(3, 64, 96, 3)
+    idp[:, 20:50, 30:70] = torch.tensor([1.0, 0, 0])            # the car (and anyone in it) stays sharp
+    monkeypatch.setattr(LS, "quiet_background_wanted", lambda scene: True)
+    out = LS.quiet_background(clay, idp, _ride_scene())
+    assert out.shape == clay.shape
+    assert torch.allclose(out[:, 26:44, 36:64], clay[:, 26:44, 36:64], atol=1e-5)   # inside the actor, past the feather
+    assert float((out[:, :8, :8] - clay[:, :8, :8]).abs().mean()) > 0.05   # the static set is blurred
+    assert float(out[:, :8, :8].std()) < float(clay[:, :8, :8].std())
+    monkeypatch.setattr(LS, "quiet_background_wanted", lambda scene: False)
+    assert torch.equal(LS.quiet_background(clay, idp, _ride_scene()), clay)
+    assert torch.equal(LS.quiet_background(clay, None, _ride_scene()), clay)
+
+
+def test_quiet_background_wanted_reads_the_scene():
+    assert not LS.quiet_background_wanted({"actors": [{"id": "a", "kind": "man"}]})
+    assert not LS.quiet_background_wanted({})

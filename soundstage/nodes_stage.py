@@ -15,7 +15,7 @@ from typing_extensions import override
 import folder_paths
 from comfy_api.latest import ComfyExtension, IO
 
-from .look.look_start import look_start
+from .look.look_start import look_start, quiet_background
 
 STAGE_WIDGET = "SOUNDSTAGE_STAGE"
 
@@ -54,7 +54,9 @@ class SoundstageStage(IO.ComfyNode):
                                 extra_dict={"widgetType": STAGE_WIDGET}),
             ],
             outputs=[
-                IO.Image.Output(display_name="clay", tooltip="Clay render of every frame (the layout video)."),
+                IO.Image.Output(display_name="clay", tooltip="Clay render of every frame (the layout video). When the camera rides a "
+                                                                      "car on an empty road, the static set is blurred (actors and vehicles "
+                                                                      "stay sharp) so LTX doesn't read passing blocks as traffic."),
                 IO.Image.Output(display_name="depth", tooltip="Depth of every frame, near = white."),
                 IO.Image.Output(display_name="first_clay", tooltip="Frame 1 clay, for the look still."),
                 IO.Image.Output(display_name="first_depth", tooltip="Frame 1 depth, to steer the look still."),
@@ -83,10 +85,16 @@ class SoundstageStage(IO.ComfyNode):
         fps = float(scene.get("shot", {}).get("fps", 24))
         id_pass = _load_sequence(passes["id"], grid) if passes.get("id") else torch.zeros_like(clay)
         color = _load_sequence(passes["color"], grid) if passes.get("color") else clay
-        first_color = color[:1]
-        if data.get("look_start", True) is not False:   # off only to reproduce a frame picked before it existed
-            first_color, _ = look_start(first_color, id_pass[:1] if passes.get("id") else None, scene)
-        return IO.NodeOutput(clay, depth, clay[:1], depth[:1], fps, int(clay.shape[0]), json.dumps(scene), id_pass,
+        first_color, guide = color[:1], clay
+        # Off only to reproduce a frame (and its draft) picked before Milestone 5: softened clay heads in frame 1,
+        # and a quiet background in a ride-along car shot's layout guide.
+        if data.get("look_start", True) is not False:
+            ids = id_pass if passes.get("id") else None
+            first_color, _ = look_start(first_color, ids[:1] if ids is not None else None, scene)
+            guide = quiet_background(clay, ids, scene)
+        else:
+            scene = {**scene, "look_start": False}   # the Look node compiles that frame's prompts as they were
+        return IO.NodeOutput(guide, depth, clay[:1], depth[:1], fps, int(clay.shape[0]), json.dumps(scene), id_pass,
                              color, first_color)
 
     @classmethod
