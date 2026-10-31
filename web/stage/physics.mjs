@@ -523,7 +523,7 @@ export function createXpbdWorld(opts = {}) {
   const baseSub = Math.max(2, Math.min(32, opts.substeps || 8));
   const iters = Math.max(1, Math.min(8, opts.iterations || 2));
   const MAX_STEP = opts.maxStep || 0.03;   // m a grabbed body may move per substep (no tunnelling through a thin wall)
-  const LIN_SLEEP = 0.06, ANG_SLEEP = 0.15, SLEEP_TIME = 0.35, WAKE_SPEED = 0.2;
+  const LIN_SLEEP = 0.06, ANG_SLEEP = 0.15, SLEEP_TIME = 0.35, WAKE_SPEED = 0.2, MAX_SPEED = opts.maxSpeed || 8;
   const bodies = new Map();
   let seq = 0;
 
@@ -712,6 +712,8 @@ export function createXpbdWorld(opts = {}) {
       b.v = scl(sub(b.x, b.xp), 1 / h);
       const dq = qmul(b.q, qconj(b.qp));
       b.w = scl([dq[0], dq[1], dq[2]], (dq[3] >= 0 ? 2 : -2) / h);
+      // Two props placed overlapping spring apart at a walk, not like an explosion.
+      if (!b.target) { const sp = len(b.v); if (sp > MAX_SPEED) b.v = scl(b.v, MAX_SPEED / sp); const ws = len(b.w); if (ws > 12) b.w = scl(b.w, 12 / ws); }
     }
     const act = C.filter((c) => c.lam > 0);
     for (const c of act) {
