@@ -165,7 +165,9 @@ export class LiveEdit {
     const start = g.position.clone();
     const base = wasMount ? start.y : person ? (this.s._actorKeys(a).find((k) => k.frame === this.s.frame)?.position?.[1] ?? this.s._actorPosAt(a, this.s.frame)[1] ?? 0) : start.y;
     // The pressed point on the object: it stays under the cursor for the whole drag (at its own height).
-    const h0 = ray.ray && typeof ray.intersectObject === "function" ? ray.intersectObject(g, true)[0]?.point : null;
+    // (the stage hands over a bare {ray} from the press; aim a raycaster of our own at the object)
+    const rc = typeof ray.intersectObject === "function" ? ray : ray.ray ? new THREE.Raycaster(ray.ray.origin.clone(), ray.ray.direction.clone()) : null;
+    const h0 = rc ? rc.intersectObject(g, true)[0]?.point : null;
     const q0 = h0 || this._planeHit(ray, Math.max(0, base) + 0.5) || this._planeHit(ray, Math.max(0, base)) || start.clone();
     const yt = yawTilt(g.quaternion.toArray());
     const yaw0 = mode === "prop" ? yt.yawDeg * Math.PI / 180 : g.rotation.y;
@@ -180,6 +182,8 @@ export class LiveEdit {
     };
     if (wasMount) for (const bid of this.bodies.get(id) || []) this.world.setBodyProps(bid, { type: "static", pos: [0, -50, 0] });   // seated: out of the way
     this.s.highlight?.setGhost(id);
+    // The move arrows would only get in the way of the object itself: hidden while it's held.
+    if (this.s._gizmoOn) { this.s._gizmoOn = false; this.drag.gizmoHidden = true; }
     this._loop();
     return true;
   }
@@ -273,6 +277,7 @@ export class LiveEdit {
 
   /** Let go: the held thing falls and settles (a prop) or stays put (a person, a vehicle); then it is written down. */
   _release(d) {
+    if (d.gizmoHidden && this.s.selected === d.id) this.s._gizmoOn = true;
     if (d.mode === "prop" && d.settles) this.world.setKinematicTarget(d.id, null);   // let go: it falls and settles
     else if (this.bodies.has(d.id)) for (const bid of this.bodies.get(d.id)) {
       if (d.person || d.mode === "prop") this.world.setBodyProps(bid, { type: "static" });
@@ -400,9 +405,10 @@ export class LiveEdit {
       // A person doesn't stand on light things they could shove or pick up (a cardboard box): they walk into them.
       if (d.person && hit && hit.id !== "__ground" && this.meta.get(this._actorOfBody(hit.id))?.dynamic) hit = null;
       // A prop only goes up onto a pushable crate it is already above (lifted with the wheel); lower down it pushes it.
+      // Lifted with the wheel, it is carried at that height under the cursor and dropped onto whatever is below.
       if (!d.person && hit && hit.id !== "__ground" && this.meta.get(this._actorOfBody(hit.id))?.dynamic) {
         const now = w.getPose(this.bodies.get(d.id)?.[0]);
-        if (!now || now.pos[1] < hit.point[1] - 0.08) hit = null;
+        if (d.lift > 0.02 || !now || now.pos[1] < hit.point[1] - 0.08) hit = null;
       }
       // A prop over a person: they take it (on release); it isn't set on their head.
       const over = !d.person && hit ? this._actor(this._actorOfBody(hit.id)) : null;
@@ -417,7 +423,15 @@ export class LiveEdit {
         const u = w.raycast([x, 40, z], [0, -1, 0], 80, { exclude: fixedEx });
         return u && u.id !== "__ground" && u.normal[1] > 0.7 && u.point[1] <= 1.8 ? { y: u.point[1], id: u.id } : 0;
       };
-      target = dragTarget(d.overPerson ? null : hit, d.grab, planeHit, d.person ? 1.75 : 1.8, support);
+      // Lifted: the pressed point is up there now, and that is what stays under the cursor. While it rises the grab is
+      // re-solved so that it goes straight up where it is (not along the cursor ray toward the camera).
+      if (Math.abs((d.liftCur || 0) - (d._liftSeen || 0)) > 1e-4) {
+        const P0 = planeHit(d.surfY + d.grab[1] + (d._liftSeen || 0)), P = planeHit(d.surfY + d.grab[1] + d.liftCur);
+        if (P && P0) { d.grab[0] += P[0] - P0[0]; d.grab[2] += P[2] - P0[2]; }
+        d._liftSeen = d.liftCur;
+      }
+      const grab = d.liftCur ? [d.grab[0], d.grab[1] + d.liftCur, d.grab[2]] : d.grab;
+      target = dragTarget(d.overPerson ? null : hit, grab, planeHit, d.person ? 1.75 : 1.8, support);
       if (!target) return;
       if (d.mods.shift) { const r = axisLock(d.start, target.pos, d.axis); d.axis = r.axis; target.pos = r.pos; }
       if (this.s.snap) { target.pos[0] = snapGrid(target.pos[0], 0.1); target.pos[2] = snapGrid(target.pos[2], 0.1); }

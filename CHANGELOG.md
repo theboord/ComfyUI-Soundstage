@@ -5,6 +5,11 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**12:52 PDT · Live 3D: what you grab stays under the cursor, and lifting is straight up** *(Milestone 9)*
+- The point you press on an object stays under the cursor for the whole drag, at any camera angle.
+- The scroll wheel lifts a held prop straight up; carry it over a crate and let go to stack it.
+- The move arrows hide while you drag, so you see the object itself.
+
 **12:45 PDT · New sets: underwater, fire, airplane, train** *(Milestone 11)*
 - ③ Set has seven new sets: **Underwater reef** (coral, kelp, light rays, bubbles; people swim), **Burning building** (night, flames, embers, smoke, flickering firelight), **Airplane cabin** (seat rows, bins, oval windows with clouds going by), **Airport runway**, **Above the clouds**, **Train carriage** (facing seats and tables, countryside streaming past) and **Train station platform**.
 - New vehicles: an **airliner** and a **train** (locomotive and three carriages) that drive along on keys, nose first.
