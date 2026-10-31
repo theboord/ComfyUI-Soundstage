@@ -48,8 +48,8 @@ export const SCREENS = [
   { name: "step_6_review", what: "⑥ Review", step: "review" },
   { name: "step_7_deliver", what: "⑦ Deliver", step: "deliver" },
   { name: "toprow_render_queued", what: "③ Set while a render is queued: Stop in the step row, step names whole",
-    run: async ({ js }) => { await js("__qa.p.go('set'); __qa.p.stopBtn.hidden = false; __qa.p.stopBtn.textContent = '■ Stop (2)'; return 1"); await sleep(1200); },
-    after: async ({ js }) => { await js("__qa.p.stopBtn.hidden = true; return 1"); } },
+    run: async ({ js }) => { await js("document.getElementById('qa-nostop')?.setAttribute('media', 'not all'); __qa.p.go('set'); __qa.p.stopBtn.hidden = false; __qa.p.stopBtn.textContent = '■ Stop (2)'; return 1"); await sleep(1200); },
+    after: async ({ js }) => { await js("__qa.p.stopBtn.hidden = true; document.getElementById('qa-nostop')?.removeAttribute('media'); return 1"); } },
   { name: "canvas_hidden", what: "③ Set with every floating panel hidden (H)",
     run: async ({ b, js }) => { await js("__qa.p.go('set'); return 1"); await sleep(1500); await hoverCanvas(b); await b.key("h"); await sleep(800); },
     after: async ({ b }) => { await hoverCanvas(b); await b.key("h"); await sleep(600); } },
@@ -99,14 +99,17 @@ async function captureSize([w, h], port) {
     await openApp(b);
     res.setup.push(["workflow", await loadWorkflow(b)]);
     await sleep(2500);
-    res.setup.push(["appMode", await toAppMode(b)]);
+    let app = await toAppMode(b);
+    if (!app) { await sleep(3000); app = await toAppMode(b); }   // ComfyUI's mode toggle can miss under load: once more
+    res.setup.push(["appMode", app]);
+    if (!app) throw new Error("ComfyUI did not switch to App mode: no screen captured at this size (run it again)");
     await sleep(1500);
     await b.key("Escape");
     res.setup.push(["install", await b.ev(INSTALL)]);
     await b.ev(`const s=document.createElement('style'); s.id='qa-still'; s.textContent=${JSON.stringify(STILL_CSS)}; document.head.append(s); return 1`);
     const js = (code) => b.ev(`const __qa=window.__qa; ${code}`);
     // Stop shows while the pod's queue has work (anyone's): keep it out of every screen but the one that asks for it.
-    const quietStop = "if (__qa.p) { __qa.p._refreshStop = async () => {}; __qa.p.stopBtn.hidden = true; } return 1";
+    const quietStop = "if (__qa.p) { __qa.p._refreshStop = async () => {}; __qa.p.stopBtn.hidden = true; } if (!document.getElementById('qa-nostop')) document.head.append(Object.assign(document.createElement('style'), { id: 'qa-nostop', textContent: '.ss-stage .ss-stop { display:none !important; }' })); return 1";
     await js(quietStop);
     let demoDone = false;
     for (const sc of SCREENS) {
@@ -152,6 +155,9 @@ async function captureSize([w, h], port) {
       s.diffBox = out.box;
       if (out.img) { const f = join(dir, `${name}.diff.jpg`); writeFileSync(f, Buffer.from(out.img.split(",")[1], "base64")); s.diffImg = f; }
     }
+  } catch (e) {
+    res.screens.setup = { error: String(e.message || e).slice(0, 300), what: "Open ComfyUI, load the workflow, App mode" };
+    console.log(`  ${tag} SETUP FAILED: ${String(e.message || e).slice(0, 160)}`);
   } finally {
     res.console = b.logs.filter((l) => /^(EXC|ERR)/.test(l) && !noise(l));
     b.close();
