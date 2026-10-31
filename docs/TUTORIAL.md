@@ -15,7 +15,7 @@ This guide is for anyone who has just cloned the repo. It covers where every pan
 2. [A tour of the workspace](#2-a-tour-of-the-workspace)
 3. [The seven steps, one by one](#3-the-seven-steps-one-by-one)
    - [① Script](#step-1-script) · [② Cast & Locations](#step-2-cast) · [③ Set](#step-3-set) · [④ Frame](#step-4-frame) · [⑤ Motion](#step-5-motion) · [⑥ Review](#step-6-review) · [⑦ Deliver](#step-7-deliver)
-   - [Dailies and the lined script](#dailies-and-the-lined-script) · [The Look tab: re-render in any film look](#the-look-tab-re-render-in-any-film-look) · [The Stop button](#the-stop-button)
+   - [Dailies and the lined script](#dailies-and-the-lined-script) ([ScriptSync](#scriptsync-lined-script)) · [The Look tab: re-render in any film look](#the-look-tab-re-render-in-any-film-look) · [The Stop button](#the-stop-button)
 4. [The 3D stage in depth](#4-the-3d-stage-in-depth)
 5. [Keyboard and mouse cheat sheet](#5-keyboard-and-mouse-cheat-sheet)
 6. [Tips and tricks](#6-tips-and-tricks)
@@ -540,7 +540,7 @@ The **Dailies** tab shows a scene's setups and takes the way an editor's bin doe
 
 **Every render is a take.** The clay preview, each frame variation, each Draft and each Final of a setup become takes 1, 2, 3… Setups are slated like a real shoot: the first setup of scene 12 is **12**, then **12A**, **12B** (I and O are skipped). A clip is named **12B-3**: scene 12, setup B, take 3.
 
-The header shows `Dailies · Scene N`, the counts of setups, takes and circled takes, and three views: **Frame**, **List** and **Script**.
+The header shows `Dailies · Scene N`, the counts of setups, takes and circled takes, and three views: **Frame**, **List** and **ScriptSync**.
 
 **Frame view**
 
@@ -561,17 +561,44 @@ Drag cards to arrange them (Option/Alt-drag places freely), arrow keys nudge, En
 
 **List view** is a sortable table: Setup, Name, Type, Takes, Circled, Kind, Duration, Coverage. Click a column header to sort, Enter opens, C circles.
 
-**Script view: the lined script.** The scene's page with a coloured vertical line per setup, ScriptSync-style. A straight line means on camera; a **zig-zag** means rolling but off screen. A thumbnail and slate sit on top of each line.
+#### ScriptSync (lined script)
 
-<p align="center"><img src="media/lined_script.jpg" width="860" alt="Lined script with coverage lines and setup thumbnails"></p>
+ScriptSync works like Avid ScriptSync. It shows the scene's page with a coloured vertical **coverage line** for each setup, running through the lines and action that setup covers. Each setup's **thumbnail** and slate (4, 4A, 4B…) sit at the top of its line. Where lines start close together, the thumbnails stack upward. A straight stretch is on camera. A **zig-zag** means the camera is rolling but the character is off screen.
 
-- **Click a line** to play that take from that point in the scene.
-- **Click the page text** to open the tightest setup covering that line.
-- **Drag a line's ends** to re-line it. Keyboard: ↑/↓ moves the end, Shift+↑/↓ the start.
-- **Option/Alt+click** marks a line on or off camera.
-- A dashed chip in the legend is a setup that isn't lined yet: click it to line it at the top of the scene, then drag its ends.
+<p align="center"><img src="media/lined_script.jpg" width="860" alt="ScriptSync: coverage lines with thumbnails on the script page, the player beside it"></p>
 
-Soundstage lines setups for you to start with: masters, wides and two-shots cover the whole scene; singles and close-ups run from the character's first cue to their last speech (zig-zag where others talk); inserts cover the action line that mentions their subject.
+**Open it** from any of these:
+
+- **Tools → ScriptSync (lined script)** in the top row. In the classic layout, it is the button after **Takes**.
+- The **ScriptSync** toggle in the Takes view, next to Frame and List.
+- **Open ScriptSync for this scene** on a scene in ① Script that has takes.
+
+The first time it opens, a hint explains the three basics.
+
+**Play from a line.**
+
+- **Click a coverage line** at any script line. That setup's take loads in the **player** beside the page, cued to that moment (for example "Line 7 of the scene · 0:00.1 into the take"). The line is highlighted, and a play mark sits where you clicked.
+- **Click the page text** to load the setup covering that line. The setup already in the player keeps playing if it covers the line. Otherwise ScriptSync picks the tightest one, a single over the master.
+- **Click a thumbnail or a setup chip** to load that setup from the top of its line.
+- The player shows the slate (4C-3), the script line it is cued to, and a take bar with one segment per covered line. Click the bar to move the cue. A video take plays from the cue, and the cue moves down the page as it plays. A still take shows its frame. **Full size** opens the take large.
+- **Takes** under the player lists every take of the setup (Tk 1, Tk 2…). Click one to swap it into the player at the same cue.
+
+**Edit lining.** When Soundstage's starting lining is wrong, press **✎ Edit lining** (beside the player). A banner over the page repeats the moves:
+
+- **Drag a line's top or bottom dot** to change the lines it covers. It snaps to whole script lines. Keyboard: ↑/↓ moves the end, Shift+↑/↓ moves the start.
+- **Click a stretch of a line** to flip that script line on or off camera (zig-zag). Option/Alt+click does the same outside Edit lining.
+- **+ Add line** draws the loaded setup's line: click the script line where it starts. You can also drag a take from the takes list onto the page. A dashed setup chip is a setup that isn't lined yet.
+- **Delete line** removes a wrong line (Delete or Backspace on a focused line also works).
+- **↶ Undo** or ⌘Z / Ctrl+Z takes back the last lining change.
+- **Done** leaves Edit lining.
+
+Lining edits save with the workflow (on the stage node), per scene.
+
+Soundstage lines setups for you to start with:
+
+- Masters, wides and two-shots cover the whole scene.
+- Singles and close-ups run from the character's first cue to their last speech, with zig-zags where others talk.
+- Inserts cover the action line that mentions their subject.
 
 
 ### The Look tab: re-render in any film look
@@ -987,7 +1014,8 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 | Space | Show the takes |
 | C or * | Circle the take |
 | Option/Alt-drag | Place a card freely |
-| Lined script: Enter or Space / ↑ ↓ / Shift+↑ ↓ | Open / move a line's end / move its start |
+| ScriptSync: Enter or Space / ↑ ↓ / Shift+↑ ↓ | Load the line's take in the player / move a line's end / move its start |
+| ScriptSync: ⌘Z / Ctrl+Z, Delete (in Edit lining) | Undo a lining change / delete the focused line |
 
 **Elsewhere**
 

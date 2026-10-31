@@ -119,11 +119,15 @@ The Ladder compares the same frame across stages with a **3-way slider**: Clay (
 <table>
 <tr>
 <td width="50%"><img src="docs/media/dailies.jpg" alt="Dailies: an Avid-style bin of setups and takes"></td>
-<td width="50%"><img src="docs/media/lined_script.jpg" alt="Lined script with coverage lines and setup thumbnails"></td>
+<td width="50%"><img src="docs/media/lined_script.jpg" alt="ScriptSync: coverage lines with setup thumbnails on the script page, the player beside it"></td>
 </tr>
 </table>
 
 **Dailies and the lined script.** Every render is a take: setups slated like a real shoot (12, 12A, 12B), circled takes, frame and list views. Approve each frame, draft and final, or mark it **Needs changes** with a note and send it straight back to Frame or Motion. The lined script draws each setup's coverage over the page, ScriptSync-style (zig-zag = off camera); click a line to play that take from that point. → [Tutorial: Dailies](docs/TUTORIAL.md#dailies-and-the-lined-script)
+
+<p align="center"><img src="docs/media/scriptsync.gif" width="720" alt="ScriptSync: click a coverage line and that take loads in the player at that moment; then a line is re-lined by dragging its end"></p>
+
+**ScriptSync (lined script).** Like Avid ScriptSync: each setup's thumbnail sits at the top of its coverage line on the script page. Click any line and that take loads in the player beside the page, cued to that moment; the setup's takes are listed under it to swap. **Edit lining** fixes a wrong line: drag its ends, flip a stretch on or off camera, add or delete a line, undo. The lining saves with the workflow. Open it from **Tools → ScriptSync**, the Takes view, or a scene in ① Script. → [Tutorial: ScriptSync](docs/TUTORIAL.md#scriptsync-lined-script)
 
 <p align="center"><img src="docs/media/cut_editor.gif" width="960" alt="The Cut editor: a clip is split at the playhead, then dragged to the end of the timeline"></p>
 
@@ -160,7 +164,7 @@ ComfyUI's cache means each Run only does the new work.
 - **Video → Stage.** A clip becomes a 3D scene: location mesh, tracked camera, set pieces and the performer on the rebuilt floor, dressed from the vision model's description.
 - **Paint Studio.** Inpaint and outpaint the first frame with Soundstage's own Generative Fill nodes (`SoundstageFill`, crop and stitch): fill, remove, replace with a reference, extend to any aspect.
 - **Camera rigs.** Real camera supports with their physics, deterministic per frame, so the clay, the frame and the video all see the same move.
-- **Dailies and lined script.** Setups and takes as an Avid-style bin with circled takes; a ScriptSync-style lined script with coverage lines and thumbnails.
+- **Dailies and ScriptSync.** Setups and takes as an Avid-style bin with circled takes; ScriptSync (lined script): thumbnails on the coverage lines, click a line to play that take from there, editable lining.
 - **Tool dock.** Every Set feature has a labelled icon (Build with AI, Add object, Person, Interact, Capture motion, Video → Stage, Photo → 3D, Camera, Set & weather, Lighting, Phone camera).
 - **Multi-shot through every step.** One scene, several camera setups. Frame, Motion, Review and Deliver all run per shot.
 - **3D stage.** Add objects by name ("cowboy on a horse", "police car"). Riders sit astride horses, bikes and motorcycles. Sets include a plaza, a night street, interiors, a studio, forest, desert, beach and a water tank, with rain, snow, fog, smoke, dust and sparks. GLB import and export.
