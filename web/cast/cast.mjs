@@ -66,6 +66,8 @@ const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").re
 const title = (s) => String(s || "").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 const PEOPLE = new Set(["man", "woman", "child"]);
 const PROP_CATS = ["props", "vehicles", "animals", "wardrobe"];
+/** Hints that mark a vehicle: the script breakdown's "vehicle" or a stage kind (car, sports_car, police_car…). */
+const VEHICLE = /^(vehicle|car|sports_car|police_car|hatchback|truck|van|bus|taxi|jeep|pickup|motorcycle|bicycle)$/;
 const SIZES = [["S", 150], ["M", 210], ["L", 300], ["XL", 420]];
 
 /**
@@ -113,6 +115,12 @@ export function refPrompt(it, desc) {
   if (it.kind === "wardrobe")
     return `Wardrobe reference photo of ${it.name}${d ? `, ${d}` : ""}: the garment on a plain mannequin, front view, whole piece in frame, ` +
       "plain light grey studio background, soft even light, photographic, true fabric colour and texture, no face, no text";
+  // A car, truck or bike gets a turnaround of the one vehicle, so a car seen tail-first in frame 1 keeps the same
+  // front, flanks and lamps when it turns round in the shot (an image model otherwise invents an end it never saw).
+  if (it.kind === "prop" && VEHICLE.test(it.hint || ""))
+    return `Vehicle reference sheet of ${it.name}${d ? `, ${d}` : ""}: the same vehicle four times in a two-by-two grid, front view, ` +
+      "rear view, side profile and front three-quarter view, identical design, paint, lights and wheels in every view, " +
+      "plain light grey studio floor and background, soft even light, photographic, no people, no text";
   if (it.kind === "prop")
     return `Product reference photo of ${it.name}${d ? `, ${d}` : ""}${it.hint ? ` (${it.hint})` : ""}, three-quarter view, whole object in frame, ` +
       "plain light grey studio background, soft even light, photographic, no text";
@@ -199,6 +207,13 @@ export class CastPanel {
   }
 
   async _generate(it) {
+    // The description as it reads now: the card's `it` is from its last render, and typing is saved only after a
+    // 400 ms pause, so "type a description, click Generate" used to generate from the old (often empty) one.
+    const ta = [...this.el.querySelectorAll("textarea")].find((x) => x.getAttribute("aria-label") === `${it.name} description`);
+    const saved = this.data().items[it.key]?.description;
+    const description = ta ? ta.value : saved ?? it.description;
+    if (ta && description !== (saved || "")) this._set(it.key, { description });
+    it = { ...it, description };
     this.busy.add(it.key); this.render();
     try {
       this.o.onStatus?.(`Generating ${it.name} with FLUX 3 Klein…`);

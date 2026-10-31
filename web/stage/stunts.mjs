@@ -175,14 +175,18 @@ export function smokeParticles(track, wheels, F, fps = 24, seed = 1) {
 
 // ---------- stunt presets: keyed paths, in the stunt's own frame ----------
 // Rows: [frame, lateral x (m, + = stage +X when it travels +Z), along z (m, + = the way it travels), heading (deg
-// relative to that way; 180 = reversing), smoke amount, smoke wheels]. Roll and pitch are not keyed: the body's
-// springs make them from the motion (add roll_deg / pitch_deg keys on top to exaggerate).
+// relative to that way; 180 = reversing), smoke amount, smoke wheels, (roll, pitch)]. The body's springs make the
+// roll and pitch from the motion; the optional last two columns are a movie-stunt exaggeration on top (written as
+// roll_deg / pitch_deg keys), so the lean still reads after the video model softens it.
 const TABLES = {
-  // The stunt plan's reverse J-turn (121 frames at 24 fps): 11 m/s backwards, the flick, 180° in ~0.9 s, launch.
+  // A movie reverse J-turn (121 frames at 24 fps): ~13 m/s backwards, the flick, 180° in ~0.7 s (167° → 12° in 14
+  // frames) with the body hard over (~10° roll), the nose dips as it scrubs off speed, then the rear squats on the launch.
   reverse_jturn: [
-    [0, 0, 0, 180, 0, ""], [30, -0.1, 12, 180, 0, ""], [36, -0.2, 14.8, 172, 0.2, "front"], [42, -0.5, 17.4, 140, 0.6, "front"],
-    [48, -1.0, 19.6, 90, 1.0, "front"], [54, -1.4, 21.4, 35, 0.8, "all"], [58, -1.6, 22.6, 0, 0.5, "all"], [66, -1.7, 24, -4, 0.8, "rear"],
-    [78, -1.5, 28, 3, 0.5, "rear"], [96, -1.3, 36, 0, 0.2, "rear"], [120, -1.2, 50, 0, 0, ""],
+    [0, 0, 0, 180, 0, "", 0, 0], [30, -0.1, 13, 180, 0, "", 0, 0], [34, -0.2, 15.2, 176, 0.3, "front", 0, 0],
+    [38, -0.6, 17.3, 152, 0.8, "front", 2, 0], [42, -1.1, 19.1, 104, 1.0, "front", 3, 0], [46, -1.5, 20.5, 48, 1.0, "all", 3, 0],
+    [50, -1.7, 21.5, 10, 0.9, "all", 2, 0], [54, -1.8, 22.2, -2, 0.7, "all", 0, 0], [60, -1.8, 23, 0, 0.8, "rear", 0, 0],
+    [66, -1.7, 24.4, 0, 0.9, "rear", 0, 1], [78, -1.5, 28.4, 2, 0.5, "rear", 0, 1], [96, -1.3, 36, 0, 0.2, "rear", 0, 0],
+    [120, -1.2, 50, 0, 0, "", 0, 0],
   ],
   // Bootlegger: 12 m/s forward, the handbrake swings the tail out, it slides round 180° to a stop and launches back.
   handbrake_180: [
@@ -228,7 +232,8 @@ function donutAt(f) {
   return [x, z, tangent + inward, smoke, smoke > 0 ? "rear" : ""];
 }
 
-/** One stunt at a stunt-time frame (0..120): [x, z, heading, smoke, wheels]. */
+/** One stunt at a stunt-time frame (0..120): [x, z, heading, smoke, wheels, roll, pitch] (roll / pitch: the keyed
+ *  exaggeration, linear between rows like the stage plays it; null when the stunt keys none). */
 function stuntAt(kind, f) {
   if (kind === "donut") return donutAt(f);
   const T = TABLES[kind], ts = T.map((r) => r[0]);
@@ -238,7 +243,12 @@ function stuntAt(kind, f) {
   // Smoke between keys is linear (puffs build and die off; a cubic would bulge past the key values).
   let smoke = T[T.length - 1][4];
   for (let i = 0; i < T.length - 1; i++) if (f <= T[i + 1][0]) { const u = (f - T[i][0]) / (T[i + 1][0] - T[i][0]); smoke = T[i][4] + (T[i + 1][4] - T[i][4]) * u; break; }
-  return [col(1), col(2), col(3), smoke, smoke > 0 ? wheels || "all" : ""];
+  const lin = (c) => {
+    if (T[0].length <= c) return null;
+    for (let i = 0; i < T.length - 1; i++) if (f <= T[i + 1][0]) return T[i][c] + (T[i + 1][c] - T[i][c]) * (f - T[i][0]) / (T[i + 1][0] - T[i][0]);
+    return T[T.length - 1][c];
+  };
+  return [col(1), col(2), col(3), smoke, smoke > 0 ? wheels || "all" : "", lin(6), lin(7)];
 }
 
 /**
@@ -257,13 +267,19 @@ export function stuntKeys(kind, { start = [0, 0, 0], dirDeg = 0, last = 120, fps
   frames.push(last);
   const keys = frames.map((f) => {
     const tf = Math.min(120, f / k);
-    let [lx, lz, h, smoke, wheels] = stuntAt(kind, tf);
+    let [lx, lz, h, smoke, wheels, roll, pitch] = stuntAt(kind, tf);
     if (f / k > 120) {   // carry on at the drive-off speed past the stunt's own end
       const [ax, az] = stuntAt(kind, 114), [bx, bz] = stuntAt(kind, 120), per = (f / k - 120) / 6;
       lx = bx + (bx - ax) * per; lz = bz + (bz - az) * per; smoke = 0;
     }
     return { frame: f, position: toStage(lx, lz), heading_deg: +(dirDeg + h).toFixed(1),
+      ...(roll != null ? { roll_deg: +roll.toFixed(1), pitch_deg: +pitch.toFixed(1) } : {}),
       fx: { tire_smoke: +smoke.toFixed(2), ...(wheels ? { wheels } : {}) } };
   });
+  // Keep the roll / pitch exaggeration only where it acts (and the zero keys either side, so it ramps in and out).
+  for (const ch of ["roll_deg", "pitch_deg"]) {
+    const live = keys.map((x, i) => [i - 1, i, i + 1].some((j) => keys[j]?.[ch]));
+    keys.forEach((x, i) => { if (!live[i]) delete x[ch]; });
+  }
   return keys;
 }

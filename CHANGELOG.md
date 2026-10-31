@@ -5,6 +5,18 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**15:41 PDT · Stunts, round 2: a meaner reverse J-turn that stays the same car** *(Milestone 13)*
+- **Reverse J-turn preset, retimed.** It now reverses at ~13 m/s and whips the 180° round in about 0.7 s (it was ~0.9 s). The body goes hard over (~10° of roll, keyed on top of the springs as `roll_deg`), the nose dips as it scrubs off speed, and the rear squats on the launch (`pitch_deg`). Re-apply the stunt to get the new keys.
+- **A driver leans with the car.** Someone in a car seat now rolls and pitches with the body, so their legs no longer poke out under the floor in the clay.
+- **② Cast: a car gets a turnaround.** Generate on a car, truck or bike now makes one vehicle sheet: front, rear, side and three-quarter views of the same car. ④ Frame paints the car from it, so a car seen tail-first in frame 1 has a front that belongs to it when it spins round.
+- **② Cast: Generate uses what you just typed.** Typing a description and clicking Generate straight away used the old (often empty) description.
+- **Cleaner prompts.**
+  - A street of five lamps is one lighting phrase, not "warm tungsten practical" five times over.
+  - A camera car braking and accelerating with a stunt car is no longer called "handheld".
+  - A shot that ends on a car says so, instead of "the frame settles on the empty set" (which read as the car leaving).
+- Evidence: share/Milestone13_Stunts/v2 (camera B, a bumper camera in the next lane: clay, reference sheet, Klein frame, drafts, final with sound, side by side).
+- Code: [web/stage/stunts.mjs](web/stage/stunts.mjs), [web/stage/stage.mjs](web/stage/stage.mjs), [web/cast/cast.mjs](web/cast/cast.mjs), [web/stage/lighting.mjs](web/stage/lighting.mjs), [soundstage/look/scene.py](soundstage/look/scene.py), [soundstage/look/compile.py](soundstage/look/compile.py). Tests: [tests/js/stunts.test.mjs](tests/js/stunts.test.mjs), [tests/js/shotcast.test.mjs](tests/js/shotcast.test.mjs), [tests/test_stunts.py](tests/test_stunts.py).
+
 **14:49 PDT · New sets: scene setup frames them, and the showcase renders** *(Milestone 11)*
 - Setting up a scene onto a new set (INT. AIRPLANE CABIN, INT. TRAIN, EXT. TRAIN STATION, UNDERWATER, BURNING BUILDING) now also places that set's camera and blocking, not only on an empty stage.
 - Showcase, made through the App (④ FLUX 3 Klein frame, ⑤ LTX draft): a diver over the reef, a firefighter past a burning building, a passenger at an airliner window, a passenger on a train with the countryside streaming by. Finals for the reef and the train.

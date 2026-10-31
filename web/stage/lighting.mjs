@@ -111,5 +111,6 @@ export function describeLighting(lighting, sun, cam) {
     const tone = l.kelvin < 3300 ? "warm tungsten" : l.kelvin > 9000 ? "cool blue" : l.kelvin > 6000 ? "cool" : "neutral";
     parts.push(`${tone} ${t}${l.softness > 0.7 ? ", soft" : l.softness < 0.3 ? ", hard" : ""}`);
   }
-  return parts.join(", ");
+  // Five street lamps of one kind are one phrase, not "warm tungsten practical" five times over in the prompt.
+  return [...new Set(parts)].join(", ");
 }

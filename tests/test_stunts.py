@@ -119,3 +119,26 @@ def test_ordinary_cars_unchanged():
         assert not ST.is_stunt(a)
     r = compile_look(lk, st)
     assert "races backwards" not in r["motion_prompt"] and "reverse lights" not in r["still_prompt"]
+
+
+def test_camera_car_pacing_the_stunt_reads_steady_and_ends_on_the_car():
+    """Camera B: a bumper camera on a camera car in the next lane, keyed every 6 frames on the stunt car's path. Its
+    braking and launching bunch the keys along the line: that is not handheld shake. With no people in frame, the
+    move ends on the car, not on "the empty set" (which reads as the car leaving)."""
+    st, lk, car = _stunt_scene("reverse_jturn")
+    st["actors"] = [a for a in st["actors"] if a["id"] == "sports_car"]
+    ks = sorted(car["keys"], key=lambda k: k["frame"])
+    cam = [{"frame": k["frame"], "position": [-2.5, 0.5, k["position"][2] + 5], "target": [k["position"][0], 0.7, k["position"][2]],
+            "focal_mm": 26} for k in ks]
+    st["shots"][0].update(rig={"type": "free", "amount": 1}, camera_keys=cam)
+    st["camera_keys"], st["camera"] = cam, cam[0]
+    m = compile_look(lk, st)["motion_prompt"]
+    cam_sentence = m[m.index("The camera"):].split(".")[0]
+    assert "handheld" not in cam_sentence, cam_sentence
+    assert "the empty set" not in m and "the sports car is" in cam_sentence, cam_sentence
+    assert m.count("warm tungsten practical") <= 1, "the street's lamps are one phrase"
+    # A real handheld wobble (sideways) still reads as handheld.
+    shaky = [dict(c, position=[c["position"][0] + (0.08 if i % 2 else -0.08), c["position"][1], c["position"][2]]) for i, c in enumerate(cam)]
+    st["shots"][0]["camera_keys"] = shaky
+    st["camera_keys"], st["camera"] = shaky, shaky[0]
+    assert "handheld" in compile_look(lk, st)["motion_prompt"]
