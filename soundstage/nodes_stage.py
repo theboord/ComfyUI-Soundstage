@@ -15,6 +15,8 @@ from typing_extensions import override
 import folder_paths
 from comfy_api.latest import ComfyExtension, IO
 
+from .look.look_start import look_start
+
 STAGE_WIDGET = "SOUNDSTAGE_STAGE"
 
 
@@ -61,7 +63,10 @@ class SoundstageStage(IO.ComfyNode):
                 IO.String.Output(display_name="scene_json"),
                 IO.Image.Output(display_name="id_pass", tooltip="Each object in its own flat colour (for Actor Matte)."),
                 IO.Image.Output(display_name="color", tooltip="Real object colours (wardrobe, props) for every frame."),
-                IO.Image.Output(display_name="first_color", tooltip="Frame 1 in colour: the best start for the look still."),
+                IO.Image.Output(display_name="first_color",
+                                tooltip="Frame 1 in colour, the start for the look still: people's clay heads softened so "
+                                        "the image model casts real faces in their place (pose, build and hair colour "
+                                        "stay), and upscaled up to 1.75x when faces are small (wide shots)."),
             ],
         )
 
@@ -78,8 +83,11 @@ class SoundstageStage(IO.ComfyNode):
         fps = float(scene.get("shot", {}).get("fps", 24))
         id_pass = _load_sequence(passes["id"], grid) if passes.get("id") else torch.zeros_like(clay)
         color = _load_sequence(passes["color"], grid) if passes.get("color") else clay
+        first_color = color[:1]
+        if data.get("look_start", True) is not False:   # off only to reproduce a frame picked before it existed
+            first_color, _ = look_start(first_color, id_pass[:1] if passes.get("id") else None, scene)
         return IO.NodeOutput(clay, depth, clay[:1], depth[:1], fps, int(clay.shape[0]), json.dumps(scene), id_pass,
-                             color, color[:1])
+                             color, first_color)
 
     @classmethod
     def fingerprint_inputs(cls, stage=""):
