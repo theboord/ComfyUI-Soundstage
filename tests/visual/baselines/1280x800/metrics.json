@@ -1,0 +1,387 @@
+{
+ "app_panel": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [
+   "Try the demo sceneA night car chase, already blo"
+  ],
+  "errors": []
+ },
+ "firstrun_card": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "Move the playhead, then frame the shot or drag o",
+    "ellipsis": true,
+    "w": 235,
+    "need": 1355
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "step_1_script": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [
+   "ss-scriptview 1011/692"
+  ],
+  "offscreen": [],
+  "errors": []
+ },
+ "step_2_cast": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [
+   "ss-castview 2239/692"
+  ],
+  "offscreen": [],
+  "errors": []
+ },
+ "step_3_set": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "Move the playhead, then frame the shot or drag o",
+    "ellipsis": true,
+    "w": 235,
+    "need": 1355
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "step_4_frame": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "EXT. DESERT OUTSIDE DRY CREEK",
+    "ellipsis": true,
+    "w": 85,
+    "need": 172
+   },
+   {
+    "text": "EXT. DRY CREEK - MAIN STREET",
+    "ellipsis": true,
+    "w": 85,
+    "need": 161
+   },
+   {
+    "text": "INT. SPORTS CAR (MOVING)",
+    "ellipsis": true,
+    "w": 85,
+    "need": 140
+   },
+   {
+    "text": "Auto",
+    "ellipsis": true,
+    "w": 1,
+    "need": 26
+   },
+   {
+    "text": "f/1.4 wide open",
+    "ellipsis": true,
+    "w": 1,
+    "need": 85
+   },
+   {
+    "text": "f/2",
+    "ellipsis": true,
+    "w": 1,
+    "need": 16
+   },
+   {
+    "text": "f/2.8",
+    "ellipsis": true,
+    "w": 1,
+    "need": 26
+   },
+   {
+    "text": "f/4 moderate",
+    "ellipsis": true,
+    "w": 1,
+    "need": 73
+   },
+   {
+    "text": "f/5.6",
+    "ellipsis": true,
+    "w": 1,
+    "need": 26
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [
+   "ss-styles 1244/230",
+   "col 1153/258",
+   "col 895/258",
+   "col 482/258",
+   "col 422/258"
+  ],
+  "offscreen": [
+   "Horror - Slasher (70s-80s)Genre",
+   "Romantic ComedyGenre",
+   "Sony Venice 2",
+   "Halation vintage",
+   "50mm",
+   "f/8"
+  ],
+  "errors": []
+ },
+ "step_5_motion": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "EXT. DESERT OUTSIDE DRY CREEK",
+    "ellipsis": true,
+    "w": 86,
+    "need": 172
+   },
+   {
+    "text": "EXT. DRY CREEK - MAIN STREET",
+    "ellipsis": true,
+    "w": 86,
+    "need": 161
+   },
+   {
+    "text": "INT. SPORTS CAR (MOVING)",
+    "ellipsis": true,
+    "w": 86,
+    "need": 140
+   },
+   {
+    "text": "EXT. PACIFIC BEACH",
+    "ellipsis": true,
+    "w": 86,
+    "need": 101
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "step_6_review": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "step_7_deliver": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [
+   "ss-hudp-body 588/528"
+  ],
+  "offscreen": [],
+  "errors": []
+ },
+ "canvas_hidden": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "Move the playhead, then frame the shot or drag o",
+    "ellipsis": true,
+    "w": 235,
+    "need": 1355
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "scriptsync": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "Chase cam (police hood)",
+    "ellipsis": true,
+    "w": 124,
+    "need": 143
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "import_video_chooser": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "Move the playhead, then frame the shot or drag o",
+    "ellipsis": true,
+    "w": 235,
+    "need": 1355
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "motion_follow_ripple": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [
+   "ss-hudp-body 589/473"
+  ],
+  "offscreen": [],
+  "errors": []
+ },
+ "motion_sound_pop": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "EXT. DESERT OUTSIDE DRY CREEK",
+    "ellipsis": true,
+    "w": 86,
+    "need": 172
+   },
+   {
+    "text": "EXT. DRY CREEK - MAIN STREET",
+    "ellipsis": true,
+    "w": 86,
+    "need": 161
+   },
+   {
+    "text": "INT. SPORTS CAR (MOVING)",
+    "ellipsis": true,
+    "w": 86,
+    "need": 140
+   },
+   {
+    "text": "EXT. PACIFIC BEACH",
+    "ellipsis": true,
+    "w": 86,
+    "need": 101
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "physics_panel": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "Move the playhead, then frame the shot or drag o",
+    "ellipsis": true,
+    "w": 235,
+    "need": 1355
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [
+   "ss-insp-body 715/541"
+  ],
+  "offscreen": [],
+  "errors": []
+ },
+ "deliver_dcc_kit": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [
+   "ss-hudp-body 588/528"
+  ],
+  "offscreen": [],
+  "errors": []
+ },
+ "toprow_render_queued": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "Move the playhead, then frame the shot or drag o",
+    "ellipsis": true,
+    "w": 235,
+    "need": 1355
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ }
+}

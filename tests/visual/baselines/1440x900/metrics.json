@@ -1,0 +1,445 @@
+{
+ "app_panel": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [
+   "Try the demo sceneA night car chase, already blo"
+  ],
+  "errors": []
+ },
+ "firstrun_card": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "Move the playhead, then frame the shot or drag o",
+    "ellipsis": true,
+    "w": 395,
+    "need": 1355
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "step_1_script": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [
+   "ss-scriptview 1011/792"
+  ],
+  "offscreen": [],
+  "errors": []
+ },
+ "step_2_cast": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "EXT. DESERT OUTSIDE DRY CREEK",
+    "ellipsis": true,
+    "w": 200,
+    "need": 218
+   },
+   {
+    "text": "EXT. DRY CREEK - MAIN STREET",
+    "ellipsis": true,
+    "w": 200,
+    "need": 204
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [
+   "ss-castview 2164/792"
+  ],
+  "offscreen": [],
+  "errors": []
+ },
+ "step_3_set": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "Move the playhead, then frame the shot or drag o",
+    "ellipsis": true,
+    "w": 395,
+    "need": 1355
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "step_4_frame": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "EXT. DESERT OUTSIDE DRY CREEK",
+    "ellipsis": true,
+    "w": 85,
+    "need": 172
+   },
+   {
+    "text": "EXT. DRY CREEK - MAIN STREET",
+    "ellipsis": true,
+    "w": 85,
+    "need": 161
+   },
+   {
+    "text": "INT. SPORTS CAR (MOVING)",
+    "ellipsis": true,
+    "w": 85,
+    "need": 140
+   },
+   {
+    "text": "EXT. PACIFIC BEACH",
+    "ellipsis": true,
+    "w": 85,
+    "need": 101
+   },
+   {
+    "text": "Auto",
+    "ellipsis": true,
+    "w": 1,
+    "need": 26
+   },
+   {
+    "text": "f/1.4 wide open",
+    "ellipsis": true,
+    "w": 1,
+    "need": 85
+   },
+   {
+    "text": "f/2",
+    "ellipsis": true,
+    "w": 1,
+    "need": 16
+   },
+   {
+    "text": "f/2.8",
+    "ellipsis": true,
+    "w": 1,
+    "need": 26
+   },
+   {
+    "text": "f/4 moderate",
+    "ellipsis": true,
+    "w": 1,
+    "need": 73
+   },
+   {
+    "text": "f/5.6",
+    "ellipsis": true,
+    "w": 1,
+    "need": 26
+   },
+   {
+    "text": "f/8",
+    "ellipsis": true,
+    "w": 1,
+    "need": 16
+   },
+   {
+    "text": "f/11 deep focus",
+    "ellipsis": true,
+    "w": 1,
+    "need": 85
+   },
+   {
+    "text": "f/16 everything sharp",
+    "ellipsis": true,
+    "w": 1,
+    "need": 119
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [
+   "ss-styles 1244/230",
+   "col 1153/258",
+   "col 895/258",
+   "col 482/258",
+   "col 422/258"
+  ],
+  "offscreen": [
+   "Romance / MelodramaGenre",
+   "Drama - Naturalistic IndieGenre",
+   "Blackmagic URSA Cine",
+   "Zeiss Super Speed",
+   "100mm",
+   "f/16 everything sharp"
+  ],
+  "errors": []
+ },
+ "step_5_motion": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "EXT. DESERT OUTSIDE DRY CREEK",
+    "ellipsis": true,
+    "w": 86,
+    "need": 172
+   },
+   {
+    "text": "EXT. DRY CREEK - MAIN STREET",
+    "ellipsis": true,
+    "w": 86,
+    "need": 161
+   },
+   {
+    "text": "INT. SPORTS CAR (MOVING)",
+    "ellipsis": true,
+    "w": 86,
+    "need": 140
+   },
+   {
+    "text": "EXT. PACIFIC BEACH",
+    "ellipsis": true,
+    "w": 86,
+    "need": 101
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "step_6_review": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "step_7_deliver": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "canvas_hidden": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "Move the playhead, then frame the shot or drag o",
+    "ellipsis": true,
+    "w": 395,
+    "need": 1355
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "scriptsync": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "Chase cam (police hood)",
+    "ellipsis": true,
+    "w": 124,
+    "need": 143
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "import_video_chooser": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "Move the playhead, then frame the shot or drag o",
+    "ellipsis": true,
+    "w": 395,
+    "need": 1355
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "motion_follow_ripple": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "EXT. DESERT OUTSIDE DRY CREEK",
+    "ellipsis": true,
+    "w": 86,
+    "need": 172
+   },
+   {
+    "text": "EXT. DRY CREEK - MAIN STREET",
+    "ellipsis": true,
+    "w": 86,
+    "need": 161
+   },
+   {
+    "text": "INT. SPORTS CAR (MOVING)",
+    "ellipsis": true,
+    "w": 86,
+    "need": 140
+   },
+   {
+    "text": "EXT. PACIFIC BEACH",
+    "ellipsis": true,
+    "w": 86,
+    "need": 101
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [
+   "ss-hudp-body 589/573"
+  ],
+  "offscreen": [],
+  "errors": []
+ },
+ "motion_sound_pop": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "EXT. DESERT OUTSIDE DRY CREEK",
+    "ellipsis": true,
+    "w": 86,
+    "need": 172
+   },
+   {
+    "text": "EXT. DRY CREEK - MAIN STREET",
+    "ellipsis": true,
+    "w": 86,
+    "need": 161
+   },
+   {
+    "text": "INT. SPORTS CAR (MOVING)",
+    "ellipsis": true,
+    "w": 86,
+    "need": 140
+   },
+   {
+    "text": "EXT. PACIFIC BEACH",
+    "ellipsis": true,
+    "w": 86,
+    "need": 101
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "physics_panel": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "Move the playhead, then frame the shot or drag o",
+    "ellipsis": true,
+    "w": 395,
+    "need": 1355
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [
+   "ss-insp-body 715/641"
+  ],
+  "offscreen": [],
+  "errors": []
+ },
+ "deliver_dcc_kit": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ },
+ "toprow_render_queued": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "Move the playhead, then frame the shot or drag o",
+    "ellipsis": true,
+    "w": 395,
+    "need": 1355
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
+ }
+}
