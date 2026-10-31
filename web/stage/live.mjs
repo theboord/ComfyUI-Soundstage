@@ -181,7 +181,9 @@ export class LiveEdit {
       putDown, overPerson: null, surfY: person ? Math.max(0, base) : start.y, liftCur: 0, step: null,
     };
     if (wasMount) for (const bid of this.bodies.get(id) || []) this.world.setBodyProps(bid, { type: "static", pos: [0, -50, 0] });   // seated: out of the way
+    // The ghost of where it started: made now, shown once it has moved off it (not a flash on top of it at the press).
     this.s.highlight?.setGhost(id);
+    if (this.s.highlight?.ghost?.group) this.s.highlight.ghost.group.visible = false;
     // The move arrows would only get in the way of the object itself: hidden while it's held.
     if (this.s._gizmoOn) { this.s._gizmoOn = false; this.drag.gizmoHidden = true; }
     this._loop();
@@ -378,6 +380,8 @@ export class LiveEdit {
       g.position.set(...p.pos);
       g.quaternion.set(...p.quat);
     }
+    const gh = d && this.s.highlight?.ghost?.group;
+    if (gh && !gh.visible && Math.hypot(d.g.position.x - d.start[0], d.g.position.z - d.start[2], d.g.position.y - d.start[1]) > 0.25) gh.visible = true;
     if (this.tail && !this.tail.step && !this.tail.approaching) { const t = this.tail; this.tail = null; this._release(t); }
     if (!quiet) this.s.render();
   }
@@ -466,13 +470,20 @@ export class LiveEdit {
       for (const bid of this.bodies.get(d.id) || []) { this.world.setBodyProps(bid, { type: "dynamic", pos: d.cur }); this.world.setKinematicTarget(bid, d.cur, qyaw(d.yaw)); }
     }
     const own = this.bodies.get(d.id) || [];
-    const yq = qyaw(d.yaw), q = d.tilt ? qnorm(qmul(yq, d.tilt)) : yq;
+    // (a person's body is a square column that never turns with them: turning to face the way they walk must not
+    // shove what they're standing next to)
+    const yq = d.person ? [0, 0, 0, 1] : qyaw(d.yaw), q = d.tilt ? qnorm(qmul(yq, d.tilt)) : yq;
     // A change of level (onto a crate, a table, a ledge; down off it; off a horse): an eased step, up first and then
     // across (down: across, then a drop), never a pop. What it climbs onto or steps off doesn't snag it on the way.
     // Going up onto something still a stride away: walk (or slide) up to its edge first, then climb.
     if (target.pos[1] > d.surfY + 0.05 && target.support && d.cur[1] < target.pos[1] - 0.05 && !d.step) {
       const gap = this._gapTo(d, target.support, want);
-      d.approaching = gap > 0.12;
+      // Held up against its corner (the body can't get any closer): that's close enough, climb.
+      const at0 = own[0] && w.getPose(own[0]);
+      const moved = at0 && d._apprAt ? Math.hypot(at0.pos[0] - d._apprAt[0], at0.pos[2] - d._apprAt[2]) : 1;
+      d._apprAt = at0 ? at0.pos : null;
+      d._stall = moved < 0.003 ? (d._stall || 0) + 1 : 0;
+      d.approaching = gap > 0.12 && d._stall < 5;
       if (d.approaching) {
         const k = Math.min(1, 1.6 * dt / Math.max(0.05, gap));   // ~1.6 m/s toward the edge, no faster
         d.cur = [d.cur[0] + (want[0] - d.cur[0]) * Math.min(k, 1 - Math.exp(-32 * dt)), d.cur[1], d.cur[2] + (want[2] - d.cur[2]) * Math.min(k, 1 - Math.exp(-32 * dt))];
@@ -600,12 +611,18 @@ export class LiveEdit {
    * so a nudge doesn't spin them) and the legs and arms swing in step with the distance covered (no skating).
    */
   _walkFacing(d, pose, dt) {
+    // From where they're being taken (smoothed), not the body's own contact jostling: no flip-flopping on a corner.
     const pv = d._pv;
-    d._pv = [pose.pos[0], pose.pos[2]];
+    d._pv = [d.cur[0], d.cur[2]];
     if (!pv || dt <= 0) return;
-    const vx = (pose.pos[0] - pv[0]) / dt, vz = (pose.pos[2] - pv[1]) / dt, sp = Math.hypot(vx, vz);
-    d._speed = damp(d._speed || 0, d.step ? 0 : Math.min(sp, 4), 10, dt);
-    d._dist = (d._dist || 0) + sp * dt;
+    const ix = (d.cur[0] - pv[0]) / dt, iz = (d.cur[2] - pv[1]) / dt;
+    d._vel = damp(d._vel || [0, 0], [ix, iz], 8, dt);
+    const [vx, vz] = d._vel, sp = Math.hypot(vx, vz);
+    // The legs swing with how far the body itself really goes (held up against a crate, they don't walk on the spot).
+    const bp = d._bp; d._bp = [pose.pos[0], pose.pos[2]];
+    const real = bp ? Math.min(Math.hypot(pose.pos[0] - bp[0], pose.pos[2] - bp[1]) / dt, sp + 0.2) : 0;
+    d._speed = damp(d._speed || 0, d.step ? 0 : Math.min(real, 4), 10, dt);
+    d._dist = (d._dist || 0) + Math.min(real, 4) * dt;
     d._walked = (d._walked || 0) + sp * dt;
     if (d.step || d.rotX != null || sp < 0.35 || d._walked < 0.35) return;
     const want = Math.atan2(vx, vz);

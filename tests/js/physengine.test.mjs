@@ -120,3 +120,23 @@ test("a person-like pusher (pushFlat) slides a tall-ish crate instead of tipping
   assert.ok(w.getPose(c).pos[0] > 0.3, "it moved");
   assert.ok(Math.abs(q[0]) < 0.02 && Math.abs(q[2]) < 0.02, `upright (${q})`);
 });
+
+test("a 20-carton tower left alone stands still: under 2 mm of movement in 3 s (no sag, twist or walking apart)", () => {
+  const w = createWorld();
+  const ids = [];
+  for (let i = 0; i < 20; i++) ids.push(w.addBody({ shape: "box", half: [0.25, 0.25, 0.25], center: [0, 0.25, 0], type: "dynamic", mass: 2, friction: 0.7, restitution: 0.03, pos: [0, i * 0.5, 0] }));
+  const p0 = ids.map((id) => w.getPose(id).pos);
+  run(w, 3);
+  const worst = Math.max(...ids.map((id, i) => Math.hypot(...w.getPose(id).pos.map((v, k) => v - p0[i][k]))));
+  assert.ok(worst < 0.002, `moved ${(worst * 1000).toFixed(1)} mm`);
+  for (const id of ids) { const q = w.getPose(id).quat; assert.ok(Math.abs(q[0]) + Math.abs(q[1]) + Math.abs(q[2]) < 0.01, `no twist (${q})`); }
+});
+
+test("a car driving into a crate throws it (faster than the drag-safety cap), and a dragged crate stays capped", () => {
+  const w = createWorld();
+  const car = w.addBody({ shape: "box", half: [0.9, 0.6, 2.2], center: [0, 0.6, 0], type: "kinematic", pos: [0, 0, -4] });
+  const c = w.addBody(box({ pos: [0, 0, 0] }));
+  let top = 0;
+  run(w, 0.8, (i) => { w.setKinematicTarget(car, [0, 0, -4 + (i + 1) * 12 / 60]); const v = w.getVelocity(c).v; top = Math.max(top, Math.hypot(...v)); });
+  assert.ok(top > 6, `thrown at ${top.toFixed(1)} m/s`);
+});

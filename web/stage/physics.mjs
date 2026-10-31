@@ -217,7 +217,10 @@ function probeContacts(A, B, out) {
   for (const lp of A.probes) {
     const p = add(A.x, qrot(A.q, lp));
     const l = toLocal(B, p);
-    if (Math.abs(l[0]) >= B.half[0] || Math.abs(l[1]) >= B.half[1] || Math.abs(l[2]) >= B.half[2]) continue;
+    // Speculative: probes up to SPEC outside count too (solved only once they are really in). A box resting on one
+    // that gets pushed up this substep is caught in the same substep, so a tall stack doesn't sag a level at a time.
+    if (Math.abs(l[0]) >= B.half[0] + SPEC || Math.abs(l[1]) >= B.half[1] + SPEC || Math.abs(l[2]) >= B.half[2] + SPEC) continue;
+    if (Math.abs(l[0]) >= B.half[0] && Math.abs(l[1]) >= B.half[1] - 1e-9 && Math.abs(l[2]) >= B.half[2]) continue;   // off a corner: never in
     if (pk < 0) {
       T = toLocal(B, A.x);
       const aX = E.map((e) => qrot(qconj(B.q), qrot(A.q, e)));   // A's axes in B's frame
@@ -268,6 +271,9 @@ function edgeContact(A, B, out) {
     const l = len(L);
     if (l < 1e-3) continue;
     L = scl(L, 1 / l);
+    // Two boxes lined up (a stack, a row): this "edge" axis is really a face axis, which the probes already handle.
+    // Taking it as an edge crossing would put a lone contact on one corner and slowly twist the stack.
+    if (aX.some((F) => Math.abs(dot(F, L)) > 0.999) && bX.some((F) => Math.abs(dot(F, L)) > 0.999)) continue;
     const o = over(L);
     if (o <= 0) return;
     if (!best || o < best.o) best = { o, i, j, L };
@@ -285,7 +291,7 @@ function edgeContact(A, B, out) {
 
 function pairContacts(A, B, out) {
   if (A.shape === "box" && B.shape === "box") {
-    if (facesSeparate(A, B)) return;   // cheap rejection: a gap along a face axis means no contact at all
+    if (facesSeparate(A, B, SPEC)) return;   // cheap rejection: a gap along a face axis means no contact at all
     probeContacts(A, B, out); probeContacts(B, A, out); edgeContact(A, B, out); return;
   }
   if (A.shape === "sphere" && B.shape === "sphere") { const c = measure({ type: "ss", a: A, b: B }); if (c.d > 0) out.push(c); return; }
@@ -294,15 +300,17 @@ function pairContacts(A, B, out) {
   if (c.d > 0) out.push(c);
 }
 
+const SPEC = 0.01;   // m: contact margin (see probeContacts)
+
 /** Two boxes with a gap along one of their 6 face axes (the cheap half of a separating-axis test). */
-function facesSeparate(A, B) {
+function facesSeparate(A, B, margin = 0) {
   const aX = [qrot(A.q, E[0]), qrot(A.q, E[1]), qrot(A.q, E[2])], bX = [qrot(B.q, E[0]), qrot(B.q, E[1]), qrot(B.q, E[2])];
   const T = [B.x[0] - A.x[0], B.x[1] - A.x[1], B.x[2] - A.x[2]];
   for (let s = 0; s < 6; s++) {
     const L = s < 3 ? aX[s] : bX[s - 3];
     const ra = A.half[0] * Math.abs(dot(aX[0], L)) + A.half[1] * Math.abs(dot(aX[1], L)) + A.half[2] * Math.abs(dot(aX[2], L));
     const rb = B.half[0] * Math.abs(dot(bX[0], L)) + B.half[1] * Math.abs(dot(bX[1], L)) + B.half[2] * Math.abs(dot(bX[2], L));
-    if (Math.abs(dot(T, L)) > ra + rb) return true;
+    if (Math.abs(dot(T, L)) > ra + rb + margin) return true;
   }
   return false;
 }
@@ -557,9 +565,11 @@ export function checkTracks(specs, result, fps = 24) {
 export function createXpbdWorld(opts = {}) {
   const g = opts.gravity ?? GRAVITY, floor = opts.floor !== false;
   const baseSub = Math.max(2, Math.min(32, opts.substeps || 8));
-  const iters = Math.max(1, Math.min(8, opts.iterations || 2));
+  // 4 contact passes a substep: with 2, a 20-box tower sags and walks apart under its own weight.
+  const iters = Math.max(1, Math.min(8, opts.iterations || 4));
   const MAX_STEP = opts.maxStep || 0.03;   // m a grabbed body may move per substep (no tunnelling through a thin wall)
   const LIN_SLEEP = 0.06, ANG_SLEEP = 0.15, SLEEP_TIME = 0.35, WAKE_SPEED = 0.2, MAX_SPEED = opts.maxSpeed || 3.5;
+  const FLING_SPEED = opts.flingSpeed || 16;   // m/s: a crate a car drives into is thrown, not nudged
   const bodies = new Map();
   const ignored = new Set();
   let seq = 0;
@@ -656,6 +666,7 @@ export function createXpbdWorld(opts = {}) {
       for (const b of list) if (b.type === "kinematic" && b.target) kinStart.set(b, { x: [...b.x], q: [...b.q] });
       for (let s = 0; s < nSub; s++) substep(list, h, s, nSub, kinStart);
       for (const b of list) {
+        if (b.fling > 0) b.fling -= dt;
         if (b.type === "kinematic" && b.target) { b.target = null; b.v = [0, 0, 0]; b.w = [0, 0, 0]; }
         if (!b.dynamic || b.asleep || b.target) continue;
         if (len(b.v) < LIN_SLEEP && len(b.w) < ANG_SLEEP) b.still += dt; else b.still = 0;
@@ -723,10 +734,15 @@ export function createXpbdWorld(opts = {}) {
           if (S.dynamic && S.asleep && (O.target || len(O.v) > WAKE_SPEED)) { S.asleep = false; S.still = 0; }
         }
         if ((!A.free || A.asleep) && (!B.free || B.asleep)) continue;
+        const n0 = C.length;
         pairContacts(A, B, C);
+        // Hit by something driven (a car, a horse): it may fly off faster than the drag-safety speed cap, for a moment.
+        if (C.length > n0) for (const [S, O] of [[A, B], [B, A]]) if (S.dynamic && O.type === "kinematic" && len(O.v) > 1) S.fling = 0.6;
       }
     }
     for (const c of C) { measure(c); c.vnPrev = dot(c.n, relVel(c, true)); c.lam = 0; }
+    // Bottom-up: in a stack, each correction from below is already there when the box above is solved.
+    C.sort((a, b) => a.pA[1] - b.pA[1]);
     for (let it = 0; it < iters; it++) for (const c of C) {
       measure(c);
       if (c.d <= 0) continue;
@@ -760,7 +776,11 @@ export function createXpbdWorld(opts = {}) {
       const dq = qmul(b.q, qconj(b.qp));
       b.w = scl([dq[0], dq[1], dq[2]], (dq[3] >= 0 ? 2 : -2) / h);
       // Two props placed overlapping spring apart at a walk, not like an explosion.
-      if (!b.target) { const sp = len(b.v); if (sp > MAX_SPEED) b.v = scl(b.v, MAX_SPEED / sp); const ws = len(b.w); if (ws > 12) b.w = scl(b.w, 12 / ws); }
+      if (!b.target) {
+        const cap = b.fling > 0 ? FLING_SPEED : MAX_SPEED, sp = len(b.v);
+        if (sp > cap) b.v = scl(b.v, cap / sp);
+        const ws = len(b.w), wcap = b.fling > 0 ? 25 : 12; if (ws > wcap) b.w = scl(b.w, wcap / ws);
+      }
     }
     const act = C.filter((c) => c.lam > 0);
     for (const c of act) {
