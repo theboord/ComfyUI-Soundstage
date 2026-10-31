@@ -5,6 +5,7 @@
 //
 //   import { ScriptPanel, SceneSwitcher } from "./script/panel.mjs";
 //   const panel = new ScriptPanel(el, { getScript, setScript, getShots, onBuildScene, onNewShot, onSelectScene, onStatus });
+//   Optional: onOpenScriptSync(scene) + hasTakes(scene) add "Open ScriptSync for this scene" to a scene that has takes.
 //   const sw = new SceneSwitcher(stepHeader, { getScript, getShots, onSelect: (id) => panel.selectScene(id), current: null });
 //
 // The host owns the data: getScript() / setScript(script, {reason}) persist the Script, getShots() lists [{id, name,
@@ -447,7 +448,7 @@ export class ScriptPanel {
   constructor(container, opts = {}) {
     const noop = () => {};
     this.o = { getScript: () => null, setScript: noop, getShots: () => [], onBuildScene: noop, onNewShot: noop, onSelectScene: noop,
-      onStatus: noop, onOpenShot: null, sample: null, ...opts };
+      onStatus: noop, onOpenShot: null, onOpenScriptSync: null, hasTakes: null, sample: null, ...opts };
     this.current = null;      // scene id; null = the whole-script overview
     this.query = "";
     this._pending = null;     // notes waiting for the debounce: {id, value}
@@ -849,6 +850,9 @@ export class ScriptPanel {
           (sc.characters || []).length ? h("span", { class: "tag", title: sc.characters.map(niceText).join(", ") }, svg("user", 14),
             h("span", { class: "t" }, sc.characters.slice(0, 4).map(niceText).join(", ") + (sc.characters.length > 4 ? ` +${sc.characters.length - 4}` : ""))) : null),
         h("div", { class: "go" }, build,
+          this.o.onOpenScriptSync && this.o.hasTakes?.(sc) ? h("button", { type: "button", class: "btn", "data-act": "scriptsync",
+            title: "ScriptSync (lined script): this scene's pages with a coverage line per setup. Click a line and that take plays from that moment",
+            on: { click: () => this.o.onOpenScriptSync(sc) } }, svg("file-video-camera", 15), "Open ScriptSync for this scene") : null,
           stageBits.length ? h("span", { class: "hint", title: "What the scene agent will start from" }, svg("stage", 14), `Starts from: ${stageBits.join(" · ")}`) : null)),
       this._shotsCard(sc, shots),
       h("div", { class: "cols" },

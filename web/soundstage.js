@@ -36,6 +36,7 @@ import { DEMO_SCRIPT } from "./script/demo_script.mjs";
 import { planSceneSetup, blockingSpots } from "./script/scenesetup.mjs";
 import { SceneStrip } from "./script/scenestrip.mjs";
 import { DailiesBin } from "./dailies/bin.mjs";
+import { takesFor } from "./dailies/model.mjs";
 import { initApprovals, mountPipelineApprovals, showRedoNote } from "./dailies/approval.mjs";
 import { CastPanel } from "./cast/cast.mjs";
 import { stageSetupForScene } from "./script/parse.mjs";
@@ -83,6 +84,10 @@ const CSS = `
 .ss-stage.ss-castmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-castview):not(.ss-status) { display:none !important; }
 .ss-castview { min-width:0; }
 .ss-dailiesview { min-width:0; display:flex; flex-direction:column; gap:8px; }
+/* The bin fills the Takes view, so ScriptSync's page scrolls inside its own panel and the player stays in view. */
+.ss-dailiesview > .ss-dailieshost { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
+.ss-dailieshost > .ss-dailies { flex:1 1 auto; min-height:0; }
+.ss-stage:not(.ss-cl) .ss-dailieshost .dl-scriptwrap { height:clamp(480px, 78vh, 1000px); flex:none; }
 .ss-take-view { position:fixed; inset:0; z-index:10000; background:rgba(8,8,10,.86); display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; }
 .ss-take-view video, .ss-take-view img { max-width:90vw; max-height:78vh; border-radius:10px; background:#000; }
 .ss-take-view .cap { color:#f4f4f5; font-weight:600; }
@@ -379,6 +384,17 @@ function createStageWidget(node, inputName) {
     tabBtns[k] = b;
     tabs.append(b);
   }
+  // ScriptSync: the Takes tab's lined script, one click away (after Takes; in the Tools menu in the canvas layout).
+  const syncBtn = Object.assign(document.createElement("button"), { type: "button",
+    title: "ScriptSync (lined script), like Avid ScriptSync: the scene's pages with each setup's coverage line and thumbnail. Click a line and that take plays from that moment; Edit lining fixes the lines" });
+  syncBtn.dataset.ssIcon = "file-video-camera";
+  syncBtn.dataset.desc = "Click a line on the script, play that take";
+  syncBtn.dataset.tool = "scriptsync";
+  syncBtn.append(icon("file-video-camera", 14), Object.assign(document.createElement("span"), { className: "lbl", textContent: "ScriptSync (lined script)" }));
+  syncBtn.setAttribute("aria-pressed", "false");
+  syncBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  syncBtn.addEventListener("click", () => openScriptSync());
+  tabBtns.dailies.after(syncBtn);
   // Look tab: camera body, lens character, palette, genre / movement / technique → compiled prompts.
   // The look lives on the SoundstageLook node's widget (not in the stage value) so look tweaks
   // re-run from rung 2, never re-render the stage.
@@ -739,6 +755,7 @@ function createStageWidget(node, inputName) {
     try { pipeline?.onView(k); } catch { /* pipeline not built yet */ }
     try { if (sceneStrip) { sceneStrip.el.hidden = !["stage", "frame", "motion"].includes(k); sceneStrip.render(); } } catch { /* strip not built */ }
     Object.entries(tabBtns).forEach(([kk, b]) => b.setAttribute("aria-pressed", String(kk === k)));
+    syncBtn.setAttribute("aria-pressed", String(k === "dailies" && dailies?.layout?.view === "script"));
     const isLadder = k === "ladder", isLook = k === "look", isStage = k === "stage";
     bar.hidden = !isStage; view.hidden = !isStage;
     if (dock) dock.hidden = !isStage;
@@ -2415,6 +2432,8 @@ function createStageWidget(node, inputName) {
     onNewShot: (sc) => newShotIn(sc),
     onOpenShot: (sh) => { if (openShot(sh.id)) showView("stage"); },
     onStatus: (m) => (status.textContent = m),
+    onOpenScriptSync: (sc) => openScriptSync(sc.id),
+    hasTakes: (sc) => { try { return getShots().some((x) => x.scene_id === sc.id && takesFor(x, takeRenders(x.id)).length > 0); } catch { return false; } },
     sample: DEMO_SCRIPT,
   });
   // Dailies: the scene on view (the switchers' scene, else the stage's own; without a script, the stage as one scene).
@@ -2438,10 +2457,18 @@ function createStageWidget(node, inputName) {
     document.body.append(wrap);
   }
   const dailiesHead = document.createElement("div");
+  /** ScriptSync: the Takes tab's lined script for a scene (default: the scene on view). */
+  function openScriptSync(sceneId = null) {
+    if (sceneId && sceneId !== filterScene && !switchScene(sceneId).ok) refreshScriptUI();
+    showView("dailies");
+    try { dailies.setView("script"); } catch { /* bin not built */ }
+    syncBtn.setAttribute("aria-pressed", "true");
+  }
   dailiesHead.className = "ss-bar";
   dailiesView.append(dailiesHead);
   const dailiesHost = document.createElement("div");
   dailiesView.append(dailiesHost);
+  dailiesHost.className = "ss-dailieshost";
   try { mountSwitcher(dailiesHead); } catch { /* switchers unavailable */ }
   // Approvals: every frame / draft / final can be Approved, Needs changes (with a note) or Rejected; kept in
   // node.properties.ss_approvals. "Redo" on a take that needs changes opens its shot on ④ Frame or ⑤ Motion with the note.
@@ -2464,9 +2491,12 @@ function createStageWidget(node, inputName) {
     setLayout: (v) => { dailiesLayouts()[dailiesScene().id] = v; nudgeTracker(); },
     onOpenTake: (shot, take, at) => showTake(shot, take, at),
     onCircle: (shot, take) => { status.textContent = take ? `Circled ${shot.name} Tk ${take.n}.` : `${shot.name}: circle cleared.`; },
+    // Stills have no length of their own: ScriptSync times them by the shot's length on the stage.
+    getSeconds: () => { const sh = stage.toJSON().shot || {}; return (sh.frames || 97) / (sh.fps || 24); },
     onStatus: (m) => (status.textContent = m),
   });
 
+  node.ssDailies = { get bin() { return dailies; }, get lined() { return dailies?.lined || null; }, openScriptSync: (id) => openScriptSync(id) };   // scripts and tests
   // Cast & Locations: pictures go into ④ Frame's references by name (people and objects on the stage, the location).
   const castSlug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const viewUrl = (filename, subfolder, type) => api.apiURL(`/view?${new URLSearchParams({ filename, subfolder: subfolder || "", type })}`);
@@ -3163,6 +3193,7 @@ function createStageWidget(node, inputName) {
         pipeline.bar.after(sceneGrp);
         for (const k of TOOL_TABS) mv.move(tabBtns[k], toolsMenu);
         toolsMenu.append(menuSep);
+        mv.move(syncBtn, toolsMenu, tabBtns.dailies.nextSibling);
         mv.move(layoutBtn, toolsMenu);
         for (const k of STEP_TABS) mv.addClass(tabBtns[k], "ss-clgone");
         tabs.insertBefore(toolsBtn, guideBtn);
