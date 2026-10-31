@@ -418,6 +418,12 @@ const CSS = `
 .ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow > .ss-guidebtn .lbl { display:none; }
 .ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow > .ss-expand { font-size:0 !important; gap:0 !important; padding:6px 8px !important; }
 .ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow .ss-pipe button { padding-right:8px !important; gap:5px !important; }
+/* A queued render adds Stop to the step row: it takes its room from the wordmark and the Guide / Done words (tooltips keep
+   them), never from the step names (QA round 02: "Scri…", "C…", "S…" at 1440 px while a render ran). */
+.ss-stage.ss-cl .ss-tabs.ss-toprow:has(.ss-stop:not([hidden])) > .ss-brand .ss-wordmark { display:none; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow:has(.ss-stop:not([hidden])) > .ss-guidebtn .lbl { display:none; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow:has(.ss-stop:not([hidden])) > .ss-expand { font-size:0 !important; gap:0 !important; padding:6px 8px !important; }
+.ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow .ss-pipe button.ss-stop { padding:4px 9px !important; }
 /* Its drop-downs: the scene strip (full) and the tools menu. */
 .ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-toppop { position:absolute; top:calc(100% + 6px); z-index:60; background:var(--cv-glass-strong); border:1px solid var(--cv-edge);
   border-radius:14px; box-shadow:0 14px 40px rgba(0,0,0,.5); backdrop-filter:blur(14px) saturate(1.2); -webkit-backdrop-filter:blur(14px) saturate(1.2); padding:6px; }
