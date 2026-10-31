@@ -31,6 +31,7 @@ import { Tour, TOUR_STEPS, tourSeen, markTourSeen, emptyCard, isBrandNewStage, a
 import * as THREE from "./vendor/three.module.min.mjs";
 import { PosePanel } from "./stage/posepanel.mjs";
 import { PhysicsPanel } from "./stage/physpanel.mjs";
+import { worldControls } from "./stage/interop/worldui.mjs";
 import { listenVcam, LiveVcam, listTakes, fetchTake, takeToCamera, anchorFromCamera } from "./vcam/live.mjs";
 import { ScriptPanel, SceneSwitcher } from "./script/panel.mjs";
 import { DEMO_SCRIPT } from "./script/demo_script.mjs";
@@ -1199,6 +1200,8 @@ function createStageWidget(node, inputName) {
       fileIn.value = "";
     }
   });
+  // A whole location from Blender / Unreal / Maya / Sketchfab, or a splat, as the Set (stage/interop/worldui.mjs).
+  const worldUi = worldControls(stage, { api, status: () => status });   // status is made further down
   const exportBtn = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn", textContent: "Export GLB",
     title: "Download the whole set as a .glb (Blender, Unreal, Unity, C4D…)" });
   exportBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -1471,7 +1474,7 @@ function createStageWidget(node, inputName) {
       photoSel.sel.disabled = false;
     }
   });
-  addRow.append(addInput, addBtn, importBtn, fileIn, photoSel.wrap, photoIn, videoIn, exportBtn, outlineWrap, sel);
+  addRow.append(addInput, addBtn, importBtn, fileIn, worldUi.button, worldUi.input, photoSel.wrap, photoIn, videoIn, exportBtn, outlineWrap, sel);
   // Appearance (people: build, hair, wardrobe, colours; objects: colour) + ride/sit on another object.
   const apRow = document.createElement("div");
   apRow.className = "ss-bar";
