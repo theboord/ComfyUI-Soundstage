@@ -38,10 +38,19 @@ SET_PLACES = {
     "studio": ("INT", "a studio cyclorama"), "forest": ("EXT", "a forest"), "desert": ("EXT", "a desert"),
     "beach": ("EXT", "a beach by the ocean"), "water_tank": ("EXT", "a water tank"),
     "open_water": ("EXT", "open water out at sea"), "stadium": ("EXT", "a baseball stadium with a manicured ballfield and packed stands"), "empty": ("EXT", ""),
+    # Milestone 11 sets (web/stage/sets)
+    "underwater": ("EXT", "a coral reef deep underwater, sunlight rays slanting down through blue-green water"),
+    "burning_building": ("EXT", "a night street in front of a burning brick building, flames in its windows, burning debris"),
+    "airplane_cabin": ("INT", "the cabin of a passenger airliner in flight, rows of seats, overhead bins, oval windows with clouds outside"),
+    "runway": ("EXT", "an airport runway"),
+    "above_clouds": ("EXT", "the open sky high above a sea of white clouds"),
+    "train_car": ("INT", "a passenger train carriage, seats facing across tables, big windows with countryside streaming past"),
+    "train_station": ("EXT", "a railway station platform under a steel canopy beside the tracks"),
 }
 WEATHER_WORDS = {
     "rain": "rain falling", "snow": "snow falling", "fog": "fog and haze in the air", "smoke": "drifting smoke",
     "dust": "dust hanging in the air", "sparks": "fire sparks drifting through the air",
+    "fire": "open flames burning, glowing embers and smoke rising",
 }
 PROP_WORDS = {"building": "a building facade", "box": "a box", "post": "a lamp post"}
 
@@ -515,6 +524,8 @@ def lighting_words(scene: dict, cam: dict) -> str:
 
 def _underwater(scene: dict, cam: dict) -> bool:
     env = scene.get("environment") or {}
+    if env.get("set") == "underwater":   # the reef set: the surface is 10 m above the seabed (web/stage/sets/underwater.mjs)
+        return cam["position"][1] < 10.0
     return env.get("set") == "water_tank" and cam["position"][1] < float(env.get("water_level", 2.5))
 
 
