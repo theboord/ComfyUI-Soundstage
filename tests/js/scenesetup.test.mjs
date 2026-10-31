@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { planSceneSetup, sceneCast, timePresetFor, guessPersonKind, appearanceFromText, blockingSpots, setupLabel, sceneChip, stepScene }
-  from "../../web/script/scenesetup.mjs";
+import { planSceneSetup, sceneCast, timePresetFor, guessPersonKind, appearanceFromText, blockingSpots, setupLabel, sceneChip, stepScene,
+  vehicleOfScene, ridersOfScene, seatAssignments } from "../../web/script/scenesetup.mjs";
 import { DEMO_SCRIPT } from "../../web/script/demo_script.mjs";
 
 const [sc1, sc2, sc2a, sc3] = DEMO_SCRIPT.scenes;
@@ -73,4 +73,45 @@ test("chips, labels and stepping", () => {
   assert.equal(stepScene(ids, "sc_1", 1), "sc_2");
   assert.equal(stepScene(ids, "sc_1", -1), null);
   assert.equal(stepScene(ids, null, 1), "sc_1");
+});
+
+test("INT. SPORTS CAR (MOVING): Mara sits at the wheel of a moving sports car, not beside it", () => {
+  assert.deepEqual(vehicleOfScene(sc2a), { kind: "sports_car", moving: true });
+  const p = planSceneSetup(sc2a, { actors: DEFAULTS, fresh: true, env: { set: "street_night" } });
+  assert.deepEqual(p.hosts, [{ kind: "sports_car", reuseId: null, moving: true }]);
+  assert.deepEqual(p.people.map((x) => [x.name, x.mount]), [["Mara", { host: 0, seat: 0 }]]);
+  assert.deepEqual(p.vehicle, { kind: "sports_car", moving: true, host: 0 });
+  assert.ok(!p.objects.includes("sports_car"), "the car she sits in is the host, not a parked extra");
+  assert.ok(p.objects.includes("police_car"));
+  // A stage that already has the car and Mara in its driver's seat needs no seating change.
+  const done = planSceneSetup(sc2a, { actors: [{ id: "m", kind: "woman", name: "Mara", mount_id: "c", seat: 0 },
+    { id: "c", kind: "sports_car", name: "Sports car" }, { id: "p", kind: "police_car" }], env: { set: "street_night", weather: "rain" } });
+  assert.equal(done.hosts[0].reuseId, "c");
+  assert.equal(done.changes, 0);
+});
+
+test("seats: the one at the wheel drives, then the front passenger seat, then the back", () => {
+  const sc = { int_ext: "INT", location: "TAXI", heading: "INT. TAXI - NIGHT",
+    elements: [{ type: "action", text: "JO sits in the back. VANCE drives, eyes on the mirror. ADA rides shotgun." }] };
+  assert.deepEqual(vehicleOfScene(sc), { kind: "car", moving: true });
+  assert.deepEqual(seatAssignments(sc, ["Jo", "Vance", "Ada"], "car"), { Vance: 0, Jo: 1, Ada: 3 });
+  assert.equal(vehicleOfScene({ int_ext: "INT", location: "DINER" }), null);
+  assert.equal(vehicleOfScene({ int_ext: "EXT", location: "MAIN STREET" }), null);
+  assert.deepEqual(vehicleOfScene({ int_ext: "EXT", location: "HIGHWAY - MARA'S CAR (MOVING)", heading: "EXT. HIGHWAY - MARA'S CAR (MOVING) - DAY" }),
+    { kind: "car", moving: true });
+});
+
+test("riders: each gets a horse of their own and is up on it", () => {
+  assert.deepEqual(ridersOfScene(sc1), { kind: "horse", riders: ["Ezra", "Mara"] });
+  const p = planSceneSetup(sc1, { actors: DEFAULTS, fresh: true, env: { set: "plaza" } });
+  assert.deepEqual(p.hosts.map((h) => h.kind), ["horse", "horse"]);
+  assert.deepEqual(p.people.map((x) => x.mount), [{ host: 0, seat: null }, { host: 1, seat: null }]);
+  assert.ok(!p.objects.includes("horse"), "no riderless horse parked behind them");
+  assert.equal(p.vehicle, null);
+  // A horse already on the stage is used before a new one is added; one already ridden by someone else is not.
+  const q = planSceneSetup(sc1, { actors: [{ id: "h1", kind: "horse" }, { id: "h2", kind: "horse" }, { id: "x", kind: "man", name: "Stunt", mount_id: "h2" }] });
+  assert.deepEqual(q.hosts.map((h) => h.reuseId), ["h1", null]);
+  // Nobody rides in the beach scene or the street chase.
+  assert.deepEqual(ridersOfScene(sc3).riders, []);
+  assert.ok(planSceneSetup(sc2, { actors: DEFAULTS, fresh: true }).people.every((x) => !x.mount));
 });
