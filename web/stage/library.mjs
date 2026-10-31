@@ -19,7 +19,8 @@ export const LIBRARY = {
   // Real-car looks (CC0, Quaternius): closed bodies over the built sedan's seats. `length` is bumper to bumper.
   police_car: { label: "Police car", height: 1.6, rig: "vehicle", model: "police_car.glb", length: 4.8 },
   sports_car: { label: "Sports car", height: 1.2, rig: "vehicle", model: "sports_car.glb", length: 4.5 },
-  hatchback: { label: "Hatchback", height: 1.5, rig: "vehicle", model: "car.glb", length: 4.2 },
+  // cabin: false: the built seats and dash poke through this low model's roof and hood, so they stay hidden under it.
+  hatchback: { label: "Hatchback", height: 1.5, rig: "vehicle", model: "car.glb", length: 4.2, cabin: false },
   boat: { label: "Motorboat", height: 1.7, rig: "vehicle", length: 6.5, boat: true },
   sailboat: { label: "Sailboat", height: 11, rig: "vehicle", length: 9, boat: true },
   catamaran: { label: "Catamaran", height: 13, rig: "vehicle", length: 12, boat: true },
@@ -162,6 +163,28 @@ export const OBJECT_COLORS = {
   door: ["#b48a5c", "#c0c0c0"], houseplant: ["#c9b9a2", "#4a7a3e"],
 };
 const GLASS = "#5d7180";
+
+// Vehicle glass reads as glass in every view: a light tint at low opacity, so the people seated behind it show
+// (Clay and Color). allowOverride = false keeps the tint under Clay's override material; the stage hides glass in
+// the Depth and ID passes (like an open window), so depth and mattes see the riders, and glass casts no shadow,
+// so light reaches the cabin.
+let glassMat = null;
+export function glassMaterial() {
+  if (!glassMat) {
+    glassMat = new THREE.MeshStandardMaterial({ color: 0xd4e4ee, roughness: 0.08, metalness: 0, transparent: true, opacity: 0.22,
+      depthWrite: false, side: THREE.DoubleSide });
+    glassMat.allowOverride = false;
+  }
+  return glassMat;
+}
+/** Make a mesh vehicle glass (see glassMaterial). */
+export function makeGlass(m) {
+  m.material = glassMaterial();
+  m.userData.glass = true;
+  m.castShadow = false;
+  m.receiveShadow = false;
+  return m;
+}
 
 /** Seats in vehicles (local metres, +Z forward, +X = the vehicle's left). A rider is placed at pos, facing forward. */
 export const SEATS = {
@@ -383,12 +406,14 @@ export function buildObject(kind, height, mesh, appearance = null) {
       add(roof, 0, roofY, -0.38 * s);
       add(new THREE.BoxGeometry(W - 0.2 * s, 0.035 * s, 0.05 * s), 0, roofY - 0.02 * s, 0.2 * s, 0, 0, 0, accent); // header
       // Interior: seats (cushion + back), dashboard, steering wheel on the driver's side (+X = car's left).
+      // Tagged cabin: they stay visible under a real-car body (stage _upgradeVehicle), seen through its glass.
+      const cabin = (m) => { m.userData.cabin = true; return m; };
       for (const z of [0.05 * s, -0.85 * s]) for (const x of [0.37 * s, -0.37 * s]) {
-        add(new THREE.BoxGeometry(0.5 * s, 0.12 * s, 0.5 * s), x, 0.46 * s, z, 0, 0, 0, accent);
-        add(new THREE.BoxGeometry(0.5 * s, 0.62 * s, 0.1 * s), x, 0.8 * s, z - 0.28 * s, -0.18, 0, 0, accent);
+        cabin(add(new THREE.BoxGeometry(0.5 * s, 0.12 * s, 0.5 * s), x, 0.46 * s, z, 0, 0, 0, accent));
+        cabin(add(new THREE.BoxGeometry(0.5 * s, 0.62 * s, 0.1 * s), x, 0.8 * s, z - 0.28 * s, -0.18, 0, 0, accent));
       }
-      add(new THREE.BoxGeometry(W - 0.2 * s, 0.16 * s, 0.35 * s), 0, 0.8 * s, 0.75 * s, 0, 0, 0, accent);  // dash (top ~0.88 m: chests show through the windshield)
-      add(new THREE.TorusGeometry(0.19 * s, 0.022 * s, 8, 24), 0.37 * s, 0.93 * s, 0.5 * s, -0.45, 0, 0, accent);
+      cabin(add(new THREE.BoxGeometry(W - 0.2 * s, 0.16 * s, 0.35 * s), 0, 0.8 * s, 0.75 * s, 0, 0, 0, accent));  // dash (top ~0.88 m: chests show through the windshield)
+      cabin(add(new THREE.TorusGeometry(0.19 * s, 0.022 * s, 8, 24), 0.37 * s, 0.93 * s, 0.5 * s, -0.45, 0, 0, accent));
       // Wheels: tyre + rim + hub, inside the arches.
       for (const x of [-(W / 2 - 0.12 * s), W / 2 - 0.12 * s]) for (const z of [wf, wr]) {
         add(new THREE.CylinderGeometry(r, r, 0.24 * s, 28), x, r, z, 0, 0, Math.PI / 2, "#1b1b1d");
@@ -407,8 +432,12 @@ export function buildObject(kind, height, mesh, appearance = null) {
       const body = h * 0.45;
       add(new THREE.BoxGeometry(W, body, L), 0, 0.3 + body / 2, 0);
       const cabL = kind === "truck" ? 1.8 : 2.4;
-      add(new THREE.BoxGeometry(W * 0.92, h - body - 0.3, cabL), 0, 0.3 + body + (h - body - 0.3) / 2,
-        kind === "truck" ? L / 2 - cabL / 2 : -0.2, 0, 0, 0, GLASS);
+      // The cab: glass on four pillars under a roof, so whoever sits in the cab shows (it was one solid block).
+      const cabH = h - body - 0.3, cabY = 0.3 + body + cabH / 2, cabZ = kind === "truck" ? L / 2 - cabL / 2 : -0.2;
+      makeGlass(add(new THREE.BoxGeometry(W * 0.92, cabH, cabL), 0, cabY, cabZ, 0, 0, 0, GLASS));
+      add(new THREE.BoxGeometry(W * 0.94, 0.08, cabL + 0.02), 0, 0.3 + body + cabH - 0.04, cabZ);                  // roof
+      for (const x of [-1, 1]) for (const z of [-1, 1])
+        add(new THREE.BoxGeometry(0.08, cabH, 0.08), x * (W * 0.46 - 0.04), cabY, cabZ + z * (cabL / 2 - 0.04));   // pillars
       for (const x of [-W / 2, W / 2]) for (const z of [-L * 0.33, L * 0.33]) {
         add(new THREE.CylinderGeometry(0.34, 0.34, 0.25, 18), x, 0.34, z, 0, 0, Math.PI / 2, accent);
       }
@@ -482,7 +511,7 @@ export function buildObject(kind, height, mesh, appearance = null) {
       bow.scale.set(1, 1, D / (B * 0.82));
       if (kind === "boat") {
         add(new THREE.BoxGeometry(B * 0.9, 0.05, L * 0.6), 0, D, -L * 0.15, 0, 0, 0, accent);
-        add(new THREE.BoxGeometry(B * 0.7, 0.5, 0.06), 0, D + 0.25, L * 0.05, -0.5, 0, 0, accent);   // windscreen
+        makeGlass(add(new THREE.BoxGeometry(B * 0.7, 0.5, 0.06), 0, D + 0.25, L * 0.05, -0.5, 0, 0, accent));   // windscreen
         add(new THREE.BoxGeometry(0.6, 0.8, 0.5), 0.45, D + 0.4, -0.1 * L, 0, 0, 0, accent);          // console
       } else {
         add(new THREE.BoxGeometry(0.5, 0.25, 1.2), 0, D + 0.1, -0.2, 0, 0, 0, accent);                // seat
