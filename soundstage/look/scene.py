@@ -816,16 +816,27 @@ def traffic_lock(scene: dict) -> dict | None:
     if ride is not None:
         rest = [a for a in cars if a is not ride]
         tail = f", the only other vehicle{'s are' if len(rest) > 1 else ' is'} {words(rest)}" if rest else ", no other cars on the road"
+        # LTX drifts toward ordinary traffic as the shot goes on (a car overtaking at the frame edge in the last
+        # second), and its Draft/Final sample at CFG 1, where a negative prompt does nothing. So the motion prompt
+        # says it positively and for the whole duration, early in the prompt, and names the edges and the curbs.
+        whole = ("the road stays empty for the whole shot, from the first frame to the last: the lanes beside and "
+                 "behind the car stay clear, nothing pulls alongside or overtakes, the curbs are bare and the sidewalks empty")
+        if rest:
+            whole = (f"the only other vehicle{'s are' if len(rest) > 1 else ' is'} {words(rest)}; "
+                     "apart from that the road stays empty for the whole shot, from the first frame to the last: nothing else pulls "
+                     "alongside or overtakes, the curbs are bare and the sidewalks empty")
         if (vehicle_camera(scene) or {}).get("where") == "interior":
             return {"still": f"outside the windows a deserted street with empty sidewalks{tail}",
-                    "motion": f"Outside the windows the street is deserted, the sidewalks empty{tail}.",
+                    "motion": f"Outside the windows {whole}.",
                     "negative": neg}
         return {"still": f"a deserted street with empty sidewalks{tail}",
-                "motion": f"The street is deserted, the sidewalks empty{tail}.", "negative": neg}
+                "motion": (f"On the road, {whole}." if rest else f"The car has the street to itself. {whole[0].upper() + whole[1:]}."),
+                "negative": neg}
     w = words(cars)
     # Krea 2 Turbo has no negative prompt, and naming what's absent invites it: describe the empty street instead.
     return {"still": f"a deserted street with empty sidewalks, the only vehicles are {w}",
-            "motion": f"The street is deserted apart from {w}, the sidewalks empty; each car stays whole and keeps its own lane.",
+            "motion": f"The street is deserted apart from {w}, the sidewalks empty for the whole shot; each car stays whole and keeps its own lane, "
+                      "and no other vehicle drives into frame, from the first frame to the last.",
             "negative": neg}
 
 

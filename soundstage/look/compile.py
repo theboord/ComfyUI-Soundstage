@@ -398,8 +398,8 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
     lock = S.traffic_lock(scene)
     sentences = [
         _cap(head) + ".",
+        lock["motion"] if lock else "",          # early: the empty road is the instruction LTX forgets late in a shot
         vcam["motion"] if vcam else "",
-        lock["motion"] if lock else "",
         _cap(light) + "." if light else "",
         blocking_s,
         set_s,
@@ -415,7 +415,8 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
         _cap(mood_s) + "." if mood_s else "",
         c.get("energy", {}).get("motion", ""),
         _sound(parts, loc),
-        "Nobody and nothing else enters the frame: no bystanders, no extra cars." if (f1["people"] or f1["others"]) else "",
+        ("Nobody and nothing else enters the frame at any point, not even at its edges near the end: no bystanders, no other vehicles."
+         if lock else "Nobody and nothing else enters the frame: no bystanders, no extra cars.") if (f1["people"] or f1["others"]) else "",
         LOCK_CLAUSE,
     ]
     text = " ".join(s for s in sentences if s and s != ".")
