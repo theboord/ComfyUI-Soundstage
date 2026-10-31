@@ -326,6 +326,8 @@ export class Stage {
     if (built.group) this.root.add(built.group);
     this._setGroup = built.group;
     this._setCleanSig = clean;
+    this.setFx = built.fx || null;   // Milestone 11 sets (web/stage/sets): animation per frame + per-pass look
+    ground.visible = !this.setFx?.hideGround;
     ground.scale.set(clean ? 6 : 1, clean ? 6 : 1, 1);   // the clean street runs a long way: so does the road
     this.water = built.water ? buildWater(built.water) : null;
     if (this.water) this.root.add(this.water);
@@ -420,6 +422,7 @@ export class Stage {
     if (built.group) this.root.add(built.group);
     this._setGroup = built.group;
     this._setCleanSig = clean;
+    this.setFx = built.fx || null;
     this.ground?.scale.set(clean ? 6 : 1, clean ? 6 : 1, 1);
   }
 
@@ -923,7 +926,8 @@ export class Stage {
     const keys = this._actorKeys(a);
     const obs = this._obstacles();
     const last = this._lastFrame();
-    const sig = JSON.stringify([keys, last, this._obsCache?.sig]);
+    const floor = this.setFx?.floorAt || null;   // a set's walkable surface: station platforms, the seabed
+    const sig = JSON.stringify([keys, last, this._obsCache?.sig, this.setFx?.id || null]);
     this._yCache = this._yCache || new WeakMap();
     let c = this._yCache.get(a);
     if (!c || c.sig !== sig) {
@@ -931,7 +935,7 @@ export class Stage {
       const S = [];
       for (let f = 0; f <= last; f++) {
         const p = this._actorPosAt(a, f);
-        let s = Math.max(0, p[1] || 0);
+        let s = Math.max(0, p[1] || 0, floor ? floor(p[0], p[2]) : 0);
         for (const o of obs) {
           if (o.top > 1.7) continue;                         // walls and cars aren't climbed by walking into them
           if (p[0] > o.box.min.x - R && p[0] < o.box.max.x + R && p[2] > o.box.min.z - R && p[2] < o.box.max.z + R) s = Math.max(s, o.top);
@@ -1294,8 +1298,9 @@ export class Stage {
     }
     if (this.weather) {
       const cam = this._cameraAt(this.frame);
-      this.weather.update(this.frame, { x: cam.target[0], z: cam.target[2] });
+      this.weather.update(this.frame, { x: cam.target[0], z: cam.target[2] }, this);
     }
+    try { this.setFx?.update?.(this.frame, this); } catch (err) { console.warn("Soundstage set", err); }
     if (this.selRing) {
       const sel = this.actorMeshes.get(this.selected);
       this.selRing.visible = !!sel;
@@ -3463,6 +3468,7 @@ export class Stage {
         this.ground.visible = false;
       }
     }
+    try { this.setFx?.pass?.(mode, { stage: this, cam, forCapture }); } catch (err) { console.warn("Soundstage set pass", err); }
     this._inRender = true;
     this.renderer.render(this.scene, cam);
     if (!forCapture && this.highlight) {

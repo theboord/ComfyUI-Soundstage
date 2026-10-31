@@ -7,6 +7,8 @@
 import { stageSetupForScene } from "./parse.mjs";
 import { libraryObjects } from "./breakdown.mjs";
 import { SEATS } from "../stage/library.mjs";
+import { CABIN, PLANE_ROW } from "../stage/sets/airplane.mjs";
+import { CAR } from "../stage/sets/train.mjs";
 
 const PEOPLE = new Set(["man", "woman", "child"]);
 export const castSlug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -208,6 +210,80 @@ export function setupLabel(sc, names = sceneCast(sc)) {
   return `Set up scene ${sc?.number ?? ""} — ${where}${sc?.time ? ` — ${sc.time}` : ""}${names.length ? ` (${names.join(", ")})` : ""}`;
 }
 
+// ---------------------------------------------------------------- Milestone 11 sets
+// Locations the general set words can't place (they say "water tank" for UNDERWATER, "interior" for INT. TRAIN):
+// matched on the location first. Each comes with where the cast goes, the camera for a fresh stage and the vehicle
+// the set plays with (the train on its track, the airliner on the runway).
+const M11_SETS = [
+  ["underwater", (l) => /\b(underwater|under ?water|under the (sea|surface|waves|ocean)|beneath the (surface|waves|sea)|ocean floor|sea ?floor|sea ?bed|coral reef|reef|scuba|dive site|shipwreck)\b/.test(l) && !/\b(tank|pool|bathtub|aquarium)\b/.test(l)],
+  ["burning_building", (l) => /\b(burning|on fire|ablaze|in flames|inferno|blaze|blazing|house fire|building fire|fire scene)\b/.test(l)],
+  ["train_station", (l) => /\b(train station|railway station|railroad station|rail station|station platform|train platform|railway platform|platform \d+|depot|subway station|metro station)\b/.test(l)
+    || (/\bplatform\b/.test(l) && /\b(train|rail|railway|station)\b/.test(l))],
+  ["runway", (l) => /\b(runway|tarmac|airfield|airstrip|airport)\b/.test(l)],
+  ["airplane_cabin", (l, ie) => /\b(airplane|aeroplane|plane|airliner|jetliner|jet|aircraft|flight|cabin of (a|the) (plane|jet))\b/.test(l) && (ie.includes("INT") || /\bcabin\b/.test(l))],
+  ["above_clouds", (l) => /\b(airplane|aeroplane|plane|airliner|jetliner|jet|aircraft)\b/.test(l) || /\b(above the clouds|in the sky|sky|in flight|airborne)\b/.test(l)],
+  ["train_car", (l, ie) => /\b(train|railcar|rail car|railway carriage|carriage|compartment|dining car|sleeper car|subway car|passenger car|metro|subway)\b/.test(l) && ie.includes("INT")],
+  ["train_station", (l) => /\b(train|railway|railroad|tracks)\b/.test(l)],
+];
+
+/** The Milestone 11 set a scene's location calls for ("INT. AIRPLANE CABIN" -> airplane_cabin), or null. */
+export function newSetForScene(sc) {
+  const ie = String(sc?.int_ext || "").toUpperCase();
+  const l = String(sc?.location || (ie ? "" : sc?.heading) || "").toLowerCase();
+  if (!l) return null;
+  for (const [id, test] of M11_SETS) if (test(l, ie)) return id;
+  return null;
+}
+
+/**
+ * The hero seat rows the cast sits in on the cabin / carriage sets: [{kind, position, rotation_deg, seats: [index order]}]
+ * (same slots as the set's seat bank, so the dressing row there is swapped for the seat-row object). People fill the
+ * window seats first: a passenger at the window.
+ */
+export function seatRowsForSet(set, n) {
+  if (set === "airplane_cabin") {
+    const rows = [];
+    for (let i = 0; i * 3 < Math.max(1, n); i++) {
+      const z = +(CABIN.firstRow + (12 - i) * PLANE_ROW.pitch).toFixed(3);
+      rows.push({ kind: "plane_seats", position: [CABIN.bank, 0, z], rotation_deg: 0, seats: [0, 1, 2] });
+    }
+    return rows;
+  }
+  if (set === "train_car") {
+    const zb = CAR.firstBay + 4 * CAR.bay;
+    const fwd = { kind: "train_seats", position: [CAR.bank, 0, +(zb - 0.66).toFixed(3)], rotation_deg: 0, seats: [0, 1] };
+    const back = { kind: "train_seats", position: [CAR.bank, 0, +(zb + 0.66).toFixed(3)], rotation_deg: 180, seats: [1, 0] };
+    return n > 1 ? [fwd, back] : [fwd];
+  }
+  return [];
+}
+
+/** Where things go on a Milestone 11 set: a fresh stage's camera, the blocking centre, people's height (swimming), and
+ *  the set's vehicle on its mark ({kind: {position, rotation_deg, keys?}}). */
+export function stageHintsForSet(set, { last = 96 } = {}) {
+  switch (set) {
+    case "underwater": return { center: [0, 0], camera: { position: [0, 2.0, -8.5], target: [0, 2.3, 0], focal_mm: 24 }, lift: 2.4 };
+    case "burning_building": return { center: [0, 3], camera: { position: [0, 1.6, -6], target: [0, 2.4, 6], focal_mm: 28 } };
+    case "airplane_cabin": {
+      const z = CABIN.firstRow + 12 * PLANE_ROW.pitch;
+      return { camera: { position: [-0.15, 1.22, +(z + 0.32).toFixed(2)], target: [1.55, 1.08, +(z - 0.12).toFixed(2)], focal_mm: 28 } };
+    }
+    case "train_car": {
+      const zb = CAR.firstBay + 4 * CAR.bay;
+      return { camera: { position: [0.05, 1.32, +(zb + 0.25).toFixed(2)], target: [1.25, 1.12, +(zb - 0.75).toFixed(2)], focal_mm: 28 } };
+    }
+    case "train_station": return { center: [5, 6], camera: { position: [6.5, 2.5, -12], target: [3, 1.9, 8], focal_mm: 28 },
+      place: { train: { position: [0, 0, -95], rotation_deg: 0, keys: [{ frame: 0, position: [0, 0, -95] }, { frame: last, position: [0, 0, 14] }] } } };
+    case "runway": return { center: [26, -6], camera: { position: [40, 3, -45], target: [0, 4, 8], focal_mm: 28 },
+      place: { airliner: { position: [0, 0, -30], rotation_deg: 0, keys: [{ frame: 0, position: [0, 0, -30] }, { frame: last, position: [0, 0, 30] }] } } };
+    case "above_clouds": return { camera: { position: [30, 4, -40], target: [0, 2, 4], focal_mm: 32 },
+      place: { airliner: { position: [0, 0, 0], rotation_deg: 0, keys: [{ frame: 0, position: [0, 0, -12] }, { frame: last, position: [0, 0, 28] }] } } };
+    default: return null;
+  }
+}
+const SET_VEHICLE = { train_station: "train", runway: "airliner", above_clouds: "airliner" };
+const NOT_IN = { airplane_cabin: ["airliner", "plane_seats"], train_car: ["train", "train_seats"], underwater: ["boat", "sailboat", "jetski"] };
+
 /**
  * What setting up this scene would do on a stage holding `actors`. fresh = the stage is a scene's untouched default
  * (its stand-in Man / Woman may go). castItems = Cast & Locations items (descriptions give looks).
@@ -215,7 +291,7 @@ export function setupLabel(sc, names = sceneCast(sc)) {
  * objects: [kind], removeIds: [id], changes: n, hosts: [{kind, reuseId, moving}], vehicle: {kind, moving, host} | null}.
  * people[i].mount = {host: index into hosts, seat: SEATS index | null}: that person sits in / rides that host.
  */
-export function planSceneSetup(sc, { actors = [], castItems = [], fresh = false, env = {}, lightingPreset = null } = {}) {
+export function planSceneSetup(sc, { actors = [], castItems = [], fresh = false, env = {}, lightingPreset = null, last = 96 } = {}) {
   const names = sceneCast(sc);
   const su = stageSetupForScene(sc);
   const time_preset = timePresetFor(sc);
@@ -237,8 +313,11 @@ export function planSceneSetup(sc, { actors = [], castItems = [], fresh = false,
   const removeIds = fresh ? actors.filter((a) => !used.has(a.id) && PEOPLE.has(a.kind)).map((a) => a.id) : [];
   const kept = actors.filter((a) => !removeIds.includes(a.id));
   // Who sits in the car / rides a horse, and which host each one gets (a stage object to reuse, else a new one).
-  const vehicle = vehicleOfScene(sc);
-  const ride = vehicle ? { kind: null, riders: [] } : ridersOfScene(sc, names);
+  // A cabin / carriage set seats the cast in its own rows instead.
+  const m11 = newSetForScene(sc);
+  const rows = seatRowsForSet(m11, people.length);
+  const vehicle = rows.length ? null : vehicleOfScene(sc);
+  const ride = vehicle || rows.length ? { kind: null, riders: [] } : ridersOfScene(sc, names);
   const hosts = [];
   const free = (kind) => kept.filter((h) => h.kind === kind && !hosts.some((x) => x.reuseId === h.id)
     && !kept.some((r) => r.mount_id === h.id && !people.some((p) => p.reuseId === r.id)));
@@ -247,6 +326,19 @@ export function planSceneSetup(sc, { actors = [], castItems = [], fresh = false,
     const h = kept.find((a) => a.kind === vehicle.kind) || null;
     hosts.push({ kind: vehicle.kind, reuseId: h?.id || null, moving: vehicle.moving });
     for (const p of people) if (seats[p.name] != null) p.mount = { host: 0, seat: seats[p.name] };
+  } else if (rows.length) {
+    let k = 0;
+    rows.forEach((r, i) => {
+      const h = kept.find((a) => a.kind === r.kind && Math.hypot((a.keys?.[0]?.position || a.position || [0, 0, 0])[0] - r.position[0],
+        (a.keys?.[0]?.position || a.position || [0, 0, 0])[2] - r.position[2]) < 0.35) || null;
+      hosts.push({ kind: r.kind, reuseId: h?.id || null, moving: false, at: { position: r.position, rotation_deg: r.rotation_deg } });
+      for (const seat of r.seats) if (k < people.length) people[k++].mount = { host: i, seat };
+    });
+    // two facing train seats: the window seats first, then the aisle ones (person 1 and 2 face each other)
+    if (m11 === "train_car" && rows.length === 2) {
+      const order = [[0, 0], [1, 1], [0, 1], [1, 0]];
+      people.forEach((p, j) => { if (j < 4) p.mount = { host: order[j][0], seat: order[j][1] }; else delete p.mount; });
+    }
   } else if (ride.kind) {
     for (const p of people) {
       if (!ride.riders.includes(p.name)) continue;
@@ -259,8 +351,10 @@ export function planSceneSetup(sc, { actors = [], castItems = [], fresh = false,
   }
   const hostKinds = new Set(hosts.map((h) => h.kind));
   const kinds = new Set(kept.map((a) => a.kind));
-  const objects = [...new Set((sc?.stage_hint?.objects || []).filter((k) => k && !kinds.has(k) && !hostKinds.has(k)))].slice(0, 4);
-  const set = su.set || null, weather = su.weather || "none";
+  const banned = new Set(NOT_IN[m11] || []);
+  let objects = [...new Set((sc?.stage_hint?.objects || []).filter((k) => k && !kinds.has(k) && !hostKinds.has(k) && !banned.has(k)))].slice(0, 4);
+  if (SET_VEHICLE[m11] && !kinds.has(SET_VEHICLE[m11]) && !objects.includes(SET_VEHICLE[m11])) objects = [SET_VEHICLE[m11], ...objects].slice(0, 4);
+  const set = m11 || su.set || null, weather = su.weather || "none";
   let changes = people.filter((p) => !p.reuseId).length + objects.length + removeIds.length + hosts.filter((h) => !h.reuseId).length;
   for (const p of people) {
     if (!p.mount) continue;
@@ -271,7 +365,7 @@ export function planSceneSetup(sc, { actors = [], castItems = [], fresh = false,
   if (set && (env.weather || "none") !== weather) changes++;
   if (time_preset && lightingPreset !== time_preset) changes++;
   return { label: setupLabel(sc, names), names, env: { set, weather }, time_preset, people, objects, removeIds, changes,
-    hosts, vehicle: vehicle ? { ...vehicle, host: 0 } : null };
+    hosts, vehicle: vehicle ? { ...vehicle, host: 0 } : null, stage: stageHintsForSet(m11, { last }) };
 }
 
 /** One chip of the scene strip: number, "EXT. Beach", time kind, the characters' initials. */
