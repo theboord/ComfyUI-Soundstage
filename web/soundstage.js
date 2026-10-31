@@ -27,6 +27,7 @@ import * as maker from "./assets3d/maker.mjs";
 import { applyTheme, spotlight } from "./ui/theme.mjs";
 import { icon } from "./ui/icons.mjs";
 import { applyCanvasCss, layoutPref, setLayoutPref, rememberFlag, Mover } from "./ui/canvasui.mjs";
+import { Tour, TOUR_STEPS, tourSeen, markTourSeen, emptyCard, isBrandNewStage, applyFirstRunCss } from "./ui/firstrun.mjs";
 import * as THREE from "./vendor/three.module.min.mjs";
 import { PosePanel } from "./stage/posepanel.mjs";
 import { listenVcam, LiveVcam, listTakes, fetchTake, takeToCamera, anchorFromCamera } from "./vcam/live.mjs";
@@ -264,13 +265,24 @@ function createStageWidget(node, inputName) {
   layoutBtn.dataset.ssIcon = "grid-3x3";
   layoutBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
   let applyLayout = () => {};
+  let syncEmpty = () => {};   // the brand-new-stage card (built with the workspace)
   layoutBtn.addEventListener("click", () => {
     const next = el.classList.contains("ss-cl") ? "classic" : "canvas";
     setLayoutPref(next);
     applyLayout(next);
   });
   layoutBtn.style.marginLeft = "6px";
-  tabs.append(undoBtn, redoBtn, expand, layoutBtn);
+  // Guide: the first-run tour, any time (web/ui/firstrun.mjs).
+  const guideBtn = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn ss-guidebtn",
+    title: "Guide: a one-minute tour of how a shot gets made here (6 steps; Esc to leave it)" });
+  guideBtn.dataset.ssIcon = "circle-help";
+  guideBtn.setAttribute("aria-label", "Guide: a one-minute tour");
+  guideBtn.append(icon("circle-help", 14), Object.assign(document.createElement("span"), { className: "lbl", textContent: "Guide" }));
+  guideBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  let startTour = () => {};
+  guideBtn.addEventListener("click", () => startTour());
+  guideBtn.style.marginLeft = "6px";
+  tabs.append(undoBtn, redoBtn, guideBtn, expand, layoutBtn);
 
   let sceneJSON = JSON.parse(JSON.stringify(DEFAULT_SCENE));
   const stage = new Stage(view, (s) => {
@@ -279,6 +291,7 @@ function createStageWidget(node, inputName) {
     try { drawKeys(); } catch { /* timeline not built yet */ }
     try { syncOutline(); } catch { /* not built yet */ }
     try { if (!lookView.hidden) look.refresh(); } catch { /* not built yet */ }
+    try { syncEmpty(); } catch { /* not built yet */ }
     rewindLadder(s);
   });
   node.ssStage = stage; // handle for the scene agent, scripts and tests
@@ -341,8 +354,24 @@ function createStageWidget(node, inputName) {
   ladderView.append(rungs);
   const tabBtns = {};
   let dock = null;   // the Set step's tool dock (built with the rows it leads to, further down)
-  for (const [k, label] of [["script", "Script"], ["cast", "Cast"], ["stage", "Stage"], ["canvas", "Canvas"], ["advisor", "Advisor"], ["look", "Look"], ["ladder", "Ladder"], ["dailies", "Dailies"], ["cut", "Cut"]]) {
-    const b = Object.assign(document.createElement("button"), { type: "button", textContent: label });
+  // Plain names for newcomers; the pro name (Canvas, Advisor, Ladder, Dailies, Cut) stays in each tooltip.
+  const TABS = [
+    ["script", "Script", "file-text", "Import a screenplay; browse its scenes, breakdown and notes", "① Script: import a screenplay, browse its scenes, breakdown and director's notes"],
+    ["cast", "Cast", "users", "Reference pictures for characters and places", "② Cast & Locations: characters, props and places with reference pictures, so every shot matches"],
+    ["stage", "Stage", "box", "The 3D stage", "③ Set: block the scene in 3D"],
+    ["canvas", "Paint Studio", "wand-sparkles", "Paint, fill, remove and extend any picture", "Paint Studio (the Canvas): Generative Fill, remove, extend, layers and masks on any picture"],
+    ["advisor", "Shot ideas", "compass", "Which angles this scene needs", "Shot ideas (the Advisor): the coverage a scene needs (angles and setups), added to the cut in one click"],
+    ["look", "Look", "palette", "Film stock, lens, palette and grade", "Look: camera body, lens, film stock, palette and grade, compiled into the prompts"],
+    ["ladder", "Compare", "layers", "Clay, frame, draft and final side by side", "Compare (the Ladder): clay → frame → draft → final for a shot, with a wipe"],
+    ["dailies", "Takes", "film", "Every take, as a bin and a lined script", "Takes (Dailies): every setup's takes as an Avid-style bin and a lined script, with approvals"],
+    ["cut", "Edit", "scissors", "The edit, its sound, export to Avid / Premiere / Resolve", "Edit (the Cut): the scene on a timeline with sound; export to Avid, Premiere, Resolve, FCP or OTIO"],
+  ];
+  for (const [k, label, ic, desc, tip] of TABS) {
+    const b = Object.assign(document.createElement("button"), { type: "button", title: tip });
+    b.dataset.ssIcon = ic;
+    b.dataset.desc = desc;
+    b.dataset.tab = k;
+    b.append(icon(ic, 14), Object.assign(document.createElement("span"), { className: "lbl", textContent: label }));
     b.setAttribute("aria-pressed", String(k === "stage"));
     b.addEventListener("pointerdown", (e) => e.stopPropagation());
     b.addEventListener("click", () => showView(k));
@@ -818,7 +847,7 @@ function createStageWidget(node, inputName) {
   camMode.className = "ss-views";
   camMode.style.marginLeft = "0";
   const camBtns = {};
-  for (const [k, label, tip] of [["shot", "Shot cam", "Frame the shot (this camera renders)"],
+  for (const [k, label, tip] of [["shot", "Camera view", "Shot cam: look through the camera that renders the shot, and frame it"],
                                  ["free", "Free view", "Fly around the set without moving the shot camera (key: 0)"]]) {
     const b = Object.assign(document.createElement("button"), { type: "button", textContent: label, title: tip });
     b.setAttribute("aria-pressed", String(k === "shot"));
@@ -827,14 +856,14 @@ function createStageWidget(node, inputName) {
     camBtns[k] = b;
     camMode.append(b);
   }
-  const badge = Object.assign(document.createElement("div"), { className: "ss-viewbadge", textContent: "Shot cam" });
+  const badge = Object.assign(document.createElement("div"), { className: "ss-viewbadge", textContent: "Camera view" });
   const gizmo = Object.assign(document.createElement("canvas"), { className: "ss-gizmo", width: 168, height: 168,
     title: "Click an axis to look along it" });
   view.append(badge, gizmo);
   stage.onView = (free) => {
     camBtns.shot.setAttribute("aria-pressed", String(!free));
     camBtns.free.setAttribute("aria-pressed", String(free));
-    badge.textContent = free ? "Free view · shot camera shown" : `Shot cam · ${stage.activeShot().name}`;
+    badge.textContent = free ? "Free view · shot camera shown" : `Camera view · ${stage.activeShot().name}`;
     badge.dataset.free = String(free);
   };
   // Navigation compass (like Blender's axis gizmo): follows the viewport camera every render.
@@ -1336,9 +1365,9 @@ function createStageWidget(node, inputName) {
   // The obvious way in: a bright "Import video" button in the viewport header, a call to action on the 3D view
   // (big on an empty stage), and dropping a clip anywhere on the stage widget. All three ask what the clip is for.
   const importHead = Object.assign(document.createElement("button"), { type: "button", className: "ss-vi-head",
-    title: "Bring a video into 3D: rebuild it as a set with its camera and performer, or put its motion on a person (SAM 3D Body)" });
+    title: "Import video (SAM 3D): bring a clip into 3D, rebuilt as a set with its camera and performer, or put its motion on a person (SAM 3D Body)" });
   importHead.dataset.ssIcon = "file-video-camera";
-  importHead.append(icon("file-video-camera", 14), "Import video (SAM 3D)");
+  importHead.append(icon("file-video-camera", 14), "Import video");
   importHead.addEventListener("pointerdown", (e) => e.stopPropagation());
   importHead.addEventListener("click", () => pickVideo("ask"));
   const videoCta = Object.assign(document.createElement("button"), { type: "button", className: "ss-vi-cta",
@@ -1589,7 +1618,7 @@ function createStageWidget(node, inputName) {
     const shots = st.shots || [];
     shotSel.replaceChildren(...shots.map((x) => new Option(x.name, x.id, false, x.id === st.active_shot)));
     delShot.disabled = shots.length < 2;
-    badge.textContent = stage.freeView ? "Free view · shot camera shown" : `Shot cam · ${stage.activeShot().name}`;
+    badge.textContent = stage.freeView ? "Free view · shot camera shown" : `Camera view · ${stage.activeShot().name}`;
     try { syncRig(); } catch { /* bar not built yet */ }
   }
   stage.onShots = () => {
@@ -1990,13 +2019,13 @@ function createStageWidget(node, inputName) {
   const camViz = new CameraViz(stage, { keyCams: keyCamsOn, onKeyClick: (f) => { stage.setFrame(f); afterTimeChange(); } });
   const pip = new PipViewer(view, stage, { onFrame: syncFrame });
   const topView = new TopView(view, stage, { onFrame: syncFrame, onKeysChanged: () => drawKeys() });
-  const topBtn = Object.assign(document.createElement("button"), { type: "button", textContent: "Top",
+  const topBtn = Object.assign(document.createElement("button"), { type: "button", textContent: "Top view",
     title: "Top view: the camera move and the cast's paths as lines with keys. Drag a camera key or a cast key, re-aim, add or delete keys" });
   topBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
   topBtn.addEventListener("click", () => { topView.toggle(); topBtn.setAttribute("aria-pressed", String(!topView.el.hidden)); });
   topView.setVisible = ((orig) => function (on) { orig.call(this, on); topBtn.setAttribute("aria-pressed", String(!!on)); })(topView.setVisible);
-  const camsBtn = Object.assign(document.createElement("button"), { type: "button", textContent: "Cams",
-    title: "Free view: show a small camera at every camera key (where it stands, where it looks). Click one to jump there" });
+  const camsBtn = Object.assign(document.createElement("button"), { type: "button", textContent: "Show cameras",
+    title: "Camera keys (Free view): a small camera at every camera key, where it stands and where it looks. Click one to jump there" });
   camsBtn.setAttribute("aria-pressed", String(keyCamsOn));
   camsBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
   camsBtn.addEventListener("click", () => {
@@ -2337,6 +2366,7 @@ function createStageWidget(node, inputName) {
   let syncingPanel = false;
   function refreshScriptUI({ panel = true } = {}) {
     try { sceneStrip?.render(); } catch { /* strip not built */ }
+    try { syncEmpty(); } catch { /* not built yet */ }
     for (const hd of sceneHeads) hd.hidden = !script;
     for (const sw of switchers) sw.setCurrent(stageBound.has(sw) ? (sceneById(liveKey) ? liveKey : null) : filterScene);
     if (!panel || !scriptPanel || syncingPanel) return;
@@ -2531,7 +2561,7 @@ function createStageWidget(node, inputName) {
     lastSetup = { key: liveKey, before, label: plan.label };
     const who = plan.names.length ? plan.names.join(", ") : "nobody speaking";
     status.textContent = `${auto ? "Set up" : "Done:"} scene ${sc.number}: ${plan.env.set ? plan.env.set.replace(/_/g, " ") : "the set"}${plan.time_preset ? `, ${TIME_PRESETS[plan.time_preset]?.label?.toLowerCase() || plan.time_preset}` : ""}, ${who}` +
-      `${plan.objects.length ? `, ${plan.objects.map((x) => x.replace(/_/g, " ")).join(", ")}` : ""}. Undo it from the scene strip.`;
+      `${plan.objects.length ? `, ${plan.objects.map((x) => x.replace(/_/g, " ")).join(", ")}` : ""}. Undo it from the scene picker.`;
     persistScript();
     try { sceneStrip?.render(); } catch { /* strip */ }
     return plan;
@@ -2848,6 +2878,8 @@ function createStageWidget(node, inputName) {
       const mode = w >= 900 ? "wide" : "narrow";
       if (el.dataset.ws !== mode) el.dataset.ws = mode;
       el.style.setProperty("--ss-insp-w", `${w >= 1700 ? 380 : w >= 1300 ? 340 : 300}px`);
+      const tw = w < 1400 ? "s" : w < 1720 ? "m" : "l";   // the top row drops words it can spare (tooltips keep them)
+      if (el.dataset.tw !== tw) el.dataset.tw = tw;
       fitView();
     };
     new ResizeObserver(() => fitWs()).observe(el);
@@ -2863,6 +2895,7 @@ function createStageWidget(node, inputName) {
       if (k === "advisor" || k === "canvas") { if (stripHost.parentElement !== el) el.insertBefore(stripHost, status); }
       else if (stripHost.parentElement !== bottomScroll) tracksHost.after(stripHost);
       try { cvSync(k); } catch { /* canvas layout not built yet */ }
+      try { syncTop(k); } catch { /* canvas layout not built yet */ }
       requestAnimationFrame(fitView);
     };
 
@@ -2947,11 +2980,79 @@ function createStageWidget(node, inputName) {
       if (k !== "stage") { lookPop.hidden = true; lookBtn.setAttribute("aria-pressed", "false"); }
     }
 
+    // ---- One top row: the steps, the scene picker (the scene strip folds into a drop-down), the tools in a menu.
+    const TOOL_TABS = ["canvas", "advisor", "look", "dailies", "cut"];
+    const STEP_TABS = ["script", "cast", "stage", "ladder"];   // the step bar opens these already
+    const sceneGrp = mk("div", "ss-topscene");
+    const scenePop = stopEv(mk("div", "ss-toppop ss-scenepop"));
+    scenePop.hidden = true;
+    const toolsLbl = mk("span", "lbl");
+    const toolsBtn = btn("ss-toolsbtn", "More tools: Paint Studio, shot ideas, look, takes and the edit",
+      icon("shapes", 14), toolsLbl, Object.assign(mk("span", "car"), { textContent: "▾" }));
+    toolsBtn.dataset.ssIcon = "shapes";
+    toolsBtn.setAttribute("aria-haspopup", "true");
+    toolsBtn.setAttribute("aria-expanded", "false");
+    const toolsMenu = stopEv(mk("div", "ss-toppop ss-toolsmenu"));
+    toolsMenu.hidden = true;
+    const menuSep = mk("div", "sep");
+    const setPop = (pop, open, owner) => { pop.hidden = !open; owner?.setAttribute("aria-expanded", String(open)); };
+    const closePops = () => { setPop(scenePop, false, sceneStrip?.pick); setPop(toolsMenu, false, toolsBtn); };
+    toolsBtn.addEventListener("click", () => { const o = toolsMenu.hidden; closePops(); setPop(toolsMenu, o, toolsBtn); });
+    toolsMenu.addEventListener("click", (e) => { if (e.target.closest?.("button")) setPop(toolsMenu, false, toolsBtn); });
+    const onDocDown = (e) => {
+      if (!cvOn) return;
+      if (!scenePop.hidden && !scenePop.contains(e.target) && !sceneGrp.contains(e.target)) setPop(scenePop, false, sceneStrip?.pick);
+      if (!toolsMenu.hidden && !toolsMenu.contains(e.target) && !toolsBtn.contains(e.target)) setPop(toolsMenu, false, toolsBtn);
+    };
+    document.addEventListener("pointerdown", onDocDown, true);
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && (!scenePop.hidden || !toolsMenu.hidden)) { e.stopPropagation(); closePops(); }
+    }, true);
+    if (sceneStrip) {
+      sceneStrip.onPick = () => {
+        if (!cvOn) return;
+        const o = scenePop.hidden;
+        closePops();
+        setPop(scenePop, o, sceneStrip.pick);
+        if (o) sceneStrip.render();
+      };
+      const onShot0 = sceneStrip.o.onShot;
+      sceneStrip.o.onShot = (id) => { onShot0?.(id); if (cvOn) setPop(scenePop, false, sceneStrip.pick); };
+    }
+    function syncTop(k = curView) {
+      if (!cvOn) return;
+      sceneGrp.hidden = !sceneStrip || !!sceneStrip.el.hidden;
+      if (sceneGrp.hidden) setPop(scenePop, false, sceneStrip?.pick);
+      const tool = TOOL_TABS.includes(k) ? k : null;
+      toolsBtn.setAttribute("aria-pressed", String(!!tool));
+      toolsLbl.textContent = tool ? tabBtns[tool]?.querySelector(".lbl")?.textContent || "Tools" : "Tools";
+    }
+
+    // ---- The timeline folds into a bar over the bottom of the canvas: playhead and transport; the tracks and the
+    // shot strip open on a click (remembered per browser).
+    const tlFlag = rememberFlag("ss_cv_tl_open", false);
+    const tlTog = btn("ss-tltog", "");
+    const setTl = (open, user = false) => {
+      if (user) tlFlag.set(open);
+      if (!cvOn) return;
+      cvArea.dataset.tl = open ? "open" : "closed";
+      tlTog.replaceChildren(icon("layers", 14), open ? "Hide tracks" : "Tracks", Object.assign(mk("span", "car"), { textContent: open ? "▾" : "▴" }));
+      tlTog.title = open ? "Fold the timeline: just the playhead and the transport"
+        : "Open the timeline: a row per object (drag keys to retime, double-click to add) and the shot strip";
+      tlTog.setAttribute("aria-expanded", String(open));
+      if (open && tracks) tracks.hidden = false;
+      requestAnimationFrame(fitView);
+    };
+    tlTog.addEventListener("click", () => setTl(cvArea.dataset.tl !== "open", true));
+
     applyLayout = (mode) => {
       cvOn = mode !== "classic";
+      closePops();
       mv.restore();
       for (const x of built) x.remove();
       built = [];
+      delete cvArea.dataset.tl;
+      if (tracks) tracks.hidden = !tracksOpen;
       el.classList.toggle("ss-cl", cvOn);
       el.classList.remove("ss-cl-hide");
       delete insp.dataset.collapsed;
@@ -2964,18 +3065,42 @@ function createStageWidget(node, inputName) {
         mv.addClass(insp, "ss-hudp");
         insp.prepend(inspHead);
         vphead.insertBefore(lookBtn, views);
+        // Top row.
+        mv.addClass(tabs, "ss-toprow");
+        mv.move(pipeline.bar, tabs, brand.nextSibling);
+        if (sceneStrip) {
+          mv.move(sceneStrip.prev, sceneGrp);
+          mv.move(sceneStrip.pick, sceneGrp);
+          mv.move(sceneStrip.next, sceneGrp);
+          mv.move(sceneStrip.el, scenePop);
+        }
+        pipeline.bar.after(sceneGrp);
+        for (const k of TOOL_TABS) mv.move(tabBtns[k], toolsMenu);
+        toolsMenu.append(menuSep);
+        mv.move(layoutBtn, toolsMenu);
+        for (const k of STEP_TABS) mv.addClass(tabBtns[k], "ss-clgone");
+        tabs.insertBefore(toolsBtn, guideBtn);
+        tabs.append(toolsMenu, scenePop);
+        built.push(sceneGrp, scenePop, toolsBtn, toolsMenu, menuSep);
+        // Timeline bar over the canvas.
+        mv.move(bottom, cvArea);
+        mv.addClass(tracksBtn, "ss-clgone");
+        tracksBtn.after(tlTog);
+        built.push(tlTog);
+        setTl(tlFlag.get());
       }
       try { pipeline.canvasLayout(cvOn); } catch (e) { console.warn("[Soundstage] canvas layout", e); }
       layoutBtn.replaceChildren(icon(cvOn ? "grid-3x3" : "maximize-2", 13), cvOn ? "Classic layout" : "Canvas layout");
       layoutBtn.title = cvOn ? "Back to the classic layout: settings in long panels beside and under the stage"
         : "Canvas layout: the canvas fills the App, every step's settings float over it (Tab or H hides them)";
       cvSync(curView);
+      syncTop(curView);
       fitWs();
       requestAnimationFrame(() => { fitView(); try { stage.resize(); } catch { /* disposed */ } if (!ladderView.hidden) ladder.draw(); });
     };
     // Tab or H hides every panel (not while typing, not in Paint Studio, which has its own keys).
     const onKey = (e) => {
-      if (!cvOn || !el.isConnected || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (!cvOn || !el.isConnected || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || el.dataset.tour) return;
       const isH = e.key === "h" || e.key === "H", isTab = e.key === "Tab" && !e.shiftKey;
       if (!isH && !isTab) return;
       const t = e.target, a = document.activeElement;
@@ -2991,13 +3116,142 @@ function createStageWidget(node, inputName) {
     };
     window.addEventListener("keydown", onKey, true);
     const removed0 = node.onRemoved;
-    node.onRemoved = function (...a) { window.removeEventListener("keydown", onKey, true); return removed0?.apply(this, a); };
+    node.onRemoved = function (...a) {
+      window.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("pointerdown", onDocDown, true);
+      try { tour?.close(false); } catch { /* no tour */ }
+      return removed0?.apply(this, a);
+    };
     syncWorkspace(curView);
     applyLayout(layoutPref());
+
+    // ---------------------------------------------------------------- First run (web/ui/firstrun.mjs)
+    // A brand-new stage gets a card with three ways in; the guided tour runs once per browser ("?" Guide reopens it).
+    applyFirstRunCss();
+    let emptyGone = false;
+    const renderCount = () => {
+      const p = node.properties || {};
+      return Object.keys(p.ss_renders || {}).length + Object.keys(p.ss_chosen || {}).length + Object.keys(pipeline.chosen || {}).length;
+    };
+    const empty = emptyCard({
+      onDemo: () => { loadDemo().catch((e) => { status.textContent = `Couldn't load the demo scene: ${e?.message || e}`; }); },
+      onScript: () => {
+        emptyGone = true;
+        syncEmpty();
+        pipeline.go("script");
+        try { scriptPanel._pick("replace"); } catch { /* the Script step has its own Choose file button */ }
+      },
+      onVideo: () => pickVideo("ask"),
+      onClose: () => { emptyGone = true; syncEmpty(); },
+    });
+    empty.hidden = true;
+    vpCell.append(empty);
+    syncEmpty = () => {
+      const fresh = !emptyGone && isBrandNewStage(stage.toJSON(), { hasScript: !!script, renders: renderCount() });
+      if (empty.hidden === !fresh) return;
+      empty.hidden = !fresh;
+      el.classList.toggle("ss-brandnew", fresh);
+    };
+    setTimeout(() => syncEmpty(), 1200);   // node.properties (renders, the script) land after the widget is built
+
+    /** "Try the demo scene": the sample script, and its scene 2 staged as the night car chase (tryit/scenes.mjs). */
+    async function loadDemo() {
+      const why = busyReason();
+      if (why) { status.textContent = `The demo scene waits while ${why}.`; return; }
+      const { policeChase } = await import("./tryit/scenes.mjs");
+      emptyGone = true;
+      // The blank stage isn't kept as a scene of its own.
+      if (isBrandNewStage(stage.toJSON(), { hasScript: false, renders: renderCount() })) freshSig = stageSig(stage.toJSON());
+      if (!script) scriptPanel._write(structuredClone(DEMO_SCRIPT), "sample");
+      const sc = script?.scenes?.find((x) => /MAIN STREET/i.test(x.heading || "")) || script?.scenes?.[1] || script?.scenes?.[0];
+      if (!sc) throw new Error("the sample script didn't load");
+      const r = switchScene(sc.id, { setup: false });
+      if (!r.ok) throw new Error(r.why ? `the stage is busy: ${r.why}` : "the stage is busy");
+      const j = policeChase();
+      j.shot = { ...(j.shot || {}), aspect: stage.toJSON().shot?.aspect || j.shot?.aspect };
+      // Like the scene heading: rain on the night street.
+      j.environment = { ...(j.environment || {}), weather: sc.stage_hint?.weather || j.environment?.weather || "none" };
+      // Cast it like the script: Mara at the wheel of the sports car, Deputy Cole in pursuit.
+      for (const a of j.actors) {
+        if (a.id === "getaway") Object.assign(a, { name: "Mara", kind: "woman", height_m: 1.7 });
+        if (a.id === "cop") a.name = "Deputy Cole";
+      }
+      scopeShots(j, sc.id, { taken: idTaken, all: true });
+      loadScene(stage, j);
+      freshSig = null;
+      lastSetup = null;
+      stage.resetHistory();
+      sceneJSON = stage.toJSON();
+      try { syncControls(); syncEnv(); syncLight(); syncShots(); } catch { /* rows not built */ }
+      try { strip.refresh(); } catch { /* strip */ }
+      try { pipeline._applyShot(stage.activeShot().id); pipeline.restoreLadder(); } catch { /* pipeline */ }
+      persistScript();
+      refreshScriptUI();
+      syncEmpty();
+      pipeline.go("set");
+      // Open on the shot that reads best in clay: the tracking angle on the red sports car, mid-chase, in Color.
+      try {
+        const trk = liveShots().find((x) => /__tracking$/.test(x.id));
+        if (trk) openShot(trk.id);
+        [...views.querySelectorAll("button")].find((b) => b.textContent.trim() === "Color")?.click();
+        stage.setFrame(40);
+        afterTimeChange();
+      } catch { /* the default shot is fine too */ }
+      status.textContent = `Demo loaded: scene ${sc.number}, a night car chase with ${liveShots().length} camera angles. Press Play, or pick another angle from the scene menu at the top.`;
+    }
+    node.ssDemo = { load: loadDemo, sync: () => syncEmpty(), get visible() { return !empty.hidden; } };
+
+    // The tour: each step points at the real control, opening the step it lives on first.
+    const vis = (x) => (x && x.isConnected && x.getClientRects().length ? x : null);
+    const stepBtn = (k) => vis(pipeline.btns?.[k]);
+    let tourFrom = null;
+    const steps = TOUR_STEPS.map((t) => ({ ...t }));
+    const S = Object.fromEntries(steps.map((t) => [t.id, t]));
+    S.start.before = () => { if (curView !== "stage") pipeline.go("set"); };
+    S.start.target = () => (!empty.hidden && vis(empty)) || [vis(importHead), stepBtn("script")].filter(Boolean);
+    S.scene.before = () => { if (curView !== "stage") pipeline.go("set"); closePops(); };
+    S.scene.target = () => (cvOn ? vis(sceneGrp) : vis(sceneStrip?.el)) || stepBtn("set");
+    S.block.before = () => { if (curView !== "stage") pipeline.go("set"); };
+    S.block.target = () => vis(rail) || vis(view);
+    S.frame.before = () => pipeline.go("frame");
+    S.frame.target = () => vis(pipeline.f?.goBtn) || stepBtn("frame");
+    S.motion.before = () => pipeline.go("motion");
+    S.motion.target = () => [vis(pipeline.m?.qSeg), vis(pipeline.m?.draftBtn), vis(pipeline.m?.finalBtn)].filter(Boolean);
+    S.finish.before = () => {};
+    S.finish.target = () => [stepBtn("review"), stepBtn("deliver")].filter(Boolean);
+    // While the tour is up, the stage knows the step (the empty-state card steps aside after step 1).
+    for (const t of steps) { const b0 = t.before; t.before = async () => { el.dataset.tour = t.id; await b0?.(); }; }
+    const tour = new Tour(steps, {
+      font: getComputedStyle(el).fontFamily,
+      onEnd: () => {
+        markTourSeen();
+        delete el.dataset.tour;
+        // Back where the tour started.
+        if (tourFrom && tourFrom !== curView) { try { const st = { stage: "set", ladder: "review" }[tourFrom] || tourFrom; if (pipeline.btns?.[st]) pipeline.go(st); else showView(tourFrom); } catch { /* view gone */ } }
+        tourFrom = null;
+        guideBtn.focus?.({ preventScroll: true });
+      },
+    });
+    startTour = () => {
+      closePops();
+      if (tour.open) return;
+      tourFrom = curView;
+      tour.start(0);
+    };
+    node.ssTour = { start: () => startTour(), close: () => tour.close(false), get open() { return tour.open; } };
+    // First launch: once the App is on screen and laid out, and not while Paint Studio or a dialog is up.
+    const autoTour = () => {
+      if (tourSeen() || tour.open || !el.isConnected || !el.getClientRects().length || el.clientWidth < 300) return false;
+      startTour();
+      return true;
+    };
+    setTimeout(() => {
+      if (autoTour()) return;
+      let n = 0;
+      const t = setInterval(() => { if (autoTour() || ++n > 40 || tourSeen()) clearInterval(t); }, 1500);
+    }, 2500);
   }
 
-  buildWorkspace();
-  decorate(el);
   // App title at the left of the tab bar, like the hub apps' panel headers.
   const brand = Object.assign(document.createElement("span"), { className: "ss-brand" });
   // Brand mark (docs/media/logo.svg): a clapperboard whose sticks double as light beams, with a play cut-out.
@@ -3005,6 +3259,8 @@ function createStageWidget(node, inputName) {
   mark.innerHTML = '<svg viewBox="0 0 64 64" width="20" height="20" aria-hidden="true"><g fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><polygon points="4.9,17.8 51,1.1 53.7,8.6 7.7,25.4" fill="none"/><polygon points="8,28 57,28 57,35 8,35" fill="none"/></g><g fill="currentColor"><polygon points="11.4,24 13.4,14.8 18.6,12.9 16.6,22.1"/><polygon points="22.2,20.1 24.2,10.8 29.4,8.9 27.4,18.2"/><polygon points="33,16.1 35,6.9 40.2,5 38.2,14.2"/><polygon points="43.9,12.2 45.8,3 51,1.1 49,10.3"/><polygon points="12,35 8,28 12.5,28 17.5,35"/><polygon points="23.5,35 18.5,28 24,28 29,35"/><polygon points="35,35 30,28 35.5,28 40.5,35"/><polygon points="46.5,35 41.5,28 47,28 52,35"/><path fill-rule="evenodd" d="M10,38H54A3,3 0 0 1 57,41V58A3,3 0 0 1 54,61H10A3,3 0 0 1 7,58V41A3,3 0 0 1 10,38ZM27.5,42.5L27.5,56.5L40,49.5Z"/><circle cx="9" cy="26" r="2.6"/></g></svg>';
   brand.append(mark, Object.assign(document.createElement("span"), { className: "ss-wordmark", textContent: "Soundstage" }));
   tabs.prepend(brand);
+  buildWorkspace();
+  decorate(el);
   return { widget };
 }
 
@@ -3016,7 +3272,7 @@ const BUTTON_ICONS = {
   "Build scene": "sparkles", "Add": "plus", "Import 3D…": "upload", "Export GLB": "download", "Play": "play",
   "Delete": "trash-2", "Duplicate": "copy", "Delete setup": "trash-2", "Auto 3-point": "lightbulb",
   "Wire": "grid-3x3", "Clay": "box", "Color": "palette", "Depth": "layers",
-  "Shot cam": "camera", "Free view": "move-3d", "Wipe": "sliders-horizontal", "Fade": "eye",
+  "Shot cam": "camera", "Camera view": "camera", "Free view": "move-3d", "Wipe": "sliders-horizontal", "Fade": "eye",
 };
 const PRIMARY = new Set(["Build scene"]);
 function decorate(root) {

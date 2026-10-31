@@ -4,17 +4,17 @@
 // Every view ends with one "Next →" button. Renders come back per shot and land on the Ladder (⑥ Review).
 import { icon } from "../ui/icons.mjs";
 import { setTouchupStill } from "../touchup/touchup.mjs";
-import { Mover, hudPanel, cvEl } from "../ui/canvasui.mjs";
+import { Mover, hudPanel, hudPop, cvEl, clipText } from "../ui/canvasui.mjs";
 import { castPool, shotSelection, pickRefs, refLines, refLabel, shotKind, refViewParams, REF_LIMIT } from "../cast/shotcast.mjs";
 
 const STEPS = [
-  { k: "script", n: 1, label: "Script", view: "script", hint: "Bring in your screenplay: scenes, breakdown, director's notes. Optional." },
-  { k: "cast", n: 2, label: "Cast & Locations", view: "cast", hint: "Characters, props and locations with reference pictures, so every shot matches." },
-  { k: "set", n: 3, label: "Set", view: "stage", hint: "Block the scene in 3D clay: cast, camera, timing." },
-  { k: "frame", n: 4, label: "Frame", view: "frame", hint: "Paint the first frame from your clay with an image model." },
-  { k: "motion", n: 5, label: "Motion", view: "motion", hint: "Animate it with LTX, following your blocking." },
-  { k: "review", n: 6, label: "Review", view: "ladder", hint: "Scrub clay → frame → draft → final on the Ladder." },
-  { k: "deliver", n: 7, label: "Deliver", view: "deliver", hint: "Layers for VFX, the cut as one video, NLE export." },
+  { k: "script", n: 1, label: "Script", short: "Script", view: "script", hint: "Bring in your screenplay: scenes, breakdown, director's notes. Optional." },
+  { k: "cast", n: 2, label: "Cast & Locations", short: "Cast", view: "cast", hint: "Characters, props and locations with reference pictures, so every shot matches." },
+  { k: "set", n: 3, label: "Set", short: "Set", view: "stage", hint: "Block the scene in 3D clay: cast, camera, timing." },
+  { k: "frame", n: 4, label: "Frame", short: "Frame", view: "frame", hint: "Paint the first frame from your clay with an image model." },
+  { k: "motion", n: 5, label: "Motion", short: "Motion", view: "motion", hint: "Animate it with LTX, following your blocking." },
+  { k: "review", n: 6, label: "Review", short: "Review", view: "ladder", hint: "Compare clay → frame → draft → final, side by side (the Ladder)." },
+  { k: "deliver", n: 7, label: "Deliver", short: "Deliver", view: "deliver", hint: "Layers for VFX, the cut as one video, NLE export." },
 ];
 const STILL_KREA = "__krea_depth__";
 const VIDEO_L2R = "__ltx_l2r__";
@@ -59,6 +59,7 @@ const CSS = `
 .ss-pipe button[aria-current="step"] { border-color:var(--ss-accent,#F2FF59); background:rgba(242,255,89,.08); }
 .ss-pipe button[aria-current="step"] .n { color:var(--ss-accent,#F2FF59); }
 .ss-pipe button .done { color:#7ee2a8; }
+.ss-pipe button .t .sh { display:none; }
 .ss-pipeview { display:flex; flex-direction:column; gap:12px; padding:4px 2px 8px; }
 .ss-pipeview h3 { margin:0; font-size:18px; color:var(--ss-text,#f0efed); }
 .ss-pipeview .lede { margin:0; color:var(--ss-muted,#a9a3ad); font-size:13px; }
@@ -217,9 +218,10 @@ export class Pipeline {
     this.bar = h("nav", { class: "ss-pipe", "aria-label": "Soundstage steps" });
     this.btns = {};
     for (const s of STEPS) {
-      const b = h("button", { type: "button", title: s.hint, on: { click: () => this.go(s.k) } },
-        h("span", { class: "n" }, `Step ${s.n}`, h("span", { class: "done", hidden: "" }, "✓")),
-        h("span", { class: "t" }, s.label));
+      // Compact (the canvas layout's top row) shows the number and the short name; the long name is in the tooltip.
+      const b = h("button", { type: "button", title: `Step ${s.n} · ${s.label}: ${s.hint}`, "data-step": s.k, on: { click: () => this.go(s.k) } },
+        h("span", { class: "n" }, h("span", { class: "w" }, "Step "), `${s.n}`, h("span", { class: "done", hidden: "" }, "✓")),
+        h("span", { class: "t" }, h("span", { class: "lg" }, s.label), h("span", { class: "sh" }, s.short)));
       this.btns[s.k] = b;
       this.bar.append(b);
     }
@@ -335,6 +337,7 @@ export class Pipeline {
 
   /** Called by showView for any tab: keeps the step bar in sync and shows/hides the pipeline views. */
   onView(view) {
+    for (const p of this._pops || []) p.close();
     for (const [k, v] of Object.entries(this.views)) v.hidden = k !== view;
     const s = STEPS.find((x) => x.view === view);
     if (s) this.mark(s.k);
@@ -438,8 +441,8 @@ export class Pipeline {
             h("label", { class: "f" }, "Image model", f.model),
             h("label", { class: "f" }, "Prompt: describe the frame (the Look tab adds camera, lens and style to it)", f.desc),
             h("label", { class: "f" }, h("span", { class: "row" }, "Follow the clay", f.followOut), f.follow),
-            h("label", { class: "f" }, "LoRA (character, product, style)", f.lora),
-            h("label", { class: "f" }, h("span", { class: "row" }, "LoRA strength", f.loraOut), f.loraStrength),
+            h("label", { class: "f", title: "LoRA: a small add-on model trained on your own pictures (a character, a product or a house style)" }, "Style or character add-on", f.lora),
+            h("label", { class: "f", title: "How strongly the LoRA add-on is applied" }, h("span", { class: "row" }, "Add-on strength", f.loraOut), f.loraStrength),
             h("div", { class: "row" }, h("span", { class: "status" }, "Variations"), f.countSeg),
             h("div", { class: "row" }, h("span", { class: "status" }, "Quality"), f.qualSeg),
             h("div", { class: "row" }, f.goBtn, f.allBtn)),
@@ -878,8 +881,8 @@ export class Pipeline {
     if (ev.rung === 2 && this.f?.status && !this.pending.size) clearInterval(this.f.status._ssTick);
     if (ev.rung >= 3 && this.m?.status?._ssTick && ev.shotId === this.ctx.stage.activeShot().id) {
       clearInterval(this.m.status._ssTick);
-      this.m.status.textContent = ev.rung === 3 ? "Draft ready: it plays below and sits on the Ladder (⑥ Review). Happy with the motion? Render the final." :
-        "Final ready: it plays below and sits on the Ladder (⑥ Review).";
+      this.m.status.textContent = ev.rung === 3 ? "Draft ready: it plays below and waits in ⑥ Review. Happy with the motion? Render the final." :
+        "Final ready: it plays below and waits in ⑥ Review.";
     }
     if (ev.rung === 2) {
       const meta = this.pending.get(ev.promptId);
@@ -974,7 +977,7 @@ export class Pipeline {
     m.audio = h("input", { type: "checkbox", on: { change: () => this.set(9092, "enabled", m.audio.checked) } });
     // Who speaks the line: LTX itself (the line goes into the motion prompt and LTX-2.5 makes voice and lips together,
     // the default) or a cloned/TTS voice that drives the video (Chatterbox WAV → audio-driven LTX).
-    m.voiceSeg = h("span", { class: "seg row" }, ...[["ltx", "LTX (in the shot)"], ["clone", "Cloned voice (audio-driven)"]].map(([k, t]) =>
+    m.voiceSeg = h("span", { class: "seg row" }, ...[["ltx", "Made with the video"], ["clone", "A saved voice"]].map(([k, t]) =>
       h("button", { type: "button", "data-voice": k, "aria-pressed": String(k === "ltx"),
         title: k === "ltx" ? "LTX-2.5 speaks the line itself: voice and lips are generated together, no separate TTS"
           : "A Chatterbox / saved Character Voice reads the line and that audio drives the video",
@@ -1000,6 +1003,7 @@ export class Pipeline {
       on: { click: () => this._render(4, true) } }, "Final for every shot");
     m.status = h("div", { class: "status" });
     m.frame = h("img", { class: "clay", alt: "chosen frame" });
+    m.frame.addEventListener("error", () => { m.frame.hidden = true; });   // a missing file: no broken-image icon
     m.video = h("video", { controls: "", loop: "", muted: "", playsinline: "" });
     m.video.muted = true;   // the attribute alone doesn't mute a video created in script; unmute with its controls
     v.append(
@@ -1021,14 +1025,14 @@ export class Pipeline {
           h("div", { class: "row" }, m.music, m.line),
           h("div", { class: "status" }, "Music ideas"), m.musicIdeas,
           h("div", { class: "status" }, "Line ideas"), m.lineIdeas,
-          h("div", { class: "row" }, h("span", { class: "status" }, "Voice"), m.voiceSeg),
+          h("div", { class: "row" }, h("span", { class: "status" }, "Who speaks the line"), m.voiceSeg),
           h("label", { class: "row status" }, m.audio, "Let the sound/dialogue drive the video"),
           h("div", { class: "row" }, m.draftBtn, m.finalBtn),
           h("div", { class: "row" }, m.allDraft, m.allFinal))),
       m.castCard = h("div", { class: "card" }),
       m.status,
       h("div", { class: "card" }, m.vidCap = h("div", { class: "status" }, "Latest result for this shot"), m.video),
-      m.nextRow = h("div", { class: "row" }, h("span", { style: "flex:1" }), this._next("⑥ Review on the Ladder", "review")),
+      m.nextRow = h("div", { class: "row" }, h("span", { style: "flex:1" }), this._next("⑥ Review", "review")),
     );
     return v;
   }
@@ -1086,6 +1090,7 @@ export class Pipeline {
     if (vid && m.video.getAttribute("src") !== vid) { m.video.src = vid; m.video.play?.().catch(() => {}); }
     if (!vid) { m.video.removeAttribute("src"); m.video.load?.(); }
     m.vidCap.textContent = `Latest result for ${this.ctx.stage.activeShot().name}`;
+    this._popSum?.();
     this._drawShotRows();
   }
 
@@ -1256,9 +1261,9 @@ export class Pipeline {
         this._applyShot(this.ctx.stage.activeShot().id);
         await this._queueVideo(step);
         const t = step === 3
-          ? "Draft rendering: about 2–4 min warm (longer on a cold GPU or a long shot). It appears below and on the Ladder."
-          : h3 ? "MiniMax H3 final queued: about 20–30 min (picture + its own sound). It appears below and on the Ladder."
-          : "Final rendering: about 4–6 min warm (upscale + sound). It appears below and on the Ladder.";
+          ? "Draft rendering: about 2–4 min warm (longer on a cold GPU or a long shot). It appears below and in ⑥ Review."
+          : h3 ? "MiniMax H3 final queued: about 20–30 min (picture + its own sound). It appears below and in ⑥ Review."
+          : "Final rendering: about 4–6 min warm (upscale + sound). It appears below and in ⑥ Review.";
         this._tick(m.status, t);
       } else {
         const has = (sid) => { const r = this.ctx.getRenders(sid) || {}; return step === 3 ? !!r.draft : !!(r.final_sound || r.final_audio || r.final); };
@@ -1471,7 +1476,20 @@ export class Pipeline {
     this._cvBuilt = [];
     this._cvClay = null;
     this._cvDPill = null;
+    for (const p of this._pops || []) p.close();
+    this._pops = [];
+    this._popSum = null;
     this.cv = !!on;
+    // A pop-over closes when you click anywhere else (its own button toggles it).
+    if (!this._popDoc) {
+      this._popDoc = (e) => {
+        for (const p of this._pops || []) {
+          if (!p.isOpen() || p.el.contains(e.target) || p.btn?.contains(e.target)) continue;
+          p.close();
+        }
+      };
+      document.addEventListener("pointerdown", this._popDoc, true);
+    }
     if (!on) return;
     try { this._cvFrame(); } catch (e) { console.warn("[Soundstage] canvas layout: Frame", e); }
     try { this._cvMotion(); } catch (e) { console.warn("[Soundstage] canvas layout: Motion", e); }
@@ -1517,7 +1535,7 @@ export class Pipeline {
     const sec = (title, nodes, open, skey) => { const s = left.section(title, nodes, { open, skey }); for (const n of nodes) mv.move(n, s.box); };
     sec("Prompt", [f.desc.parentElement, f.follow.parentElement], true, "prompt");
     sec("Cast in this shot", [f.refsCard], false, "cast");
-    sec("LoRA", [f.lora.parentElement, f.loraStrength.parentElement], false, "lora");
+    sec("Style or character add-on", [f.lora.parentElement, f.loraStrength.parentElement], false, "lora");
     for (const d of f.studio.querySelectorAll(":scope > .ss-studio-side > details")) mv.move(d, left.body);
     const right = panel("frame_r", "Paint Studio · clay", "right");
     mv.move(f.paintCard, right.body);
@@ -1560,8 +1578,42 @@ export class Pipeline {
     const left = panel("motion_l", "⑤ Motion settings", "left");
     const sec = (title, nodes, open, skey) => { const s = left.section(title, nodes, { open, skey }); for (const n of nodes) if (n) mv.move(n, s.box); };
     sec("Video model", [m.engine.parentElement, m.h3Box, m.freedom.parentElement, m.cfg.closest("details")], true, "model");
-    sec("Sound & music", [m.sfx.parentElement, m.music, m.musicIdeas.previousElementSibling, m.musicIdeas], true, "sound");
-    sec("Dialogue & voice", [m.line, m.lineIdeas.previousElementSibling, m.lineIdeas, m.voiceSeg.parentElement, m.audio.parentElement], false, "voice");
+    // Sound and dialogue open as pop-overs beside the panel, so the panel itself never has to scroll.
+    const pop = (key, ic, title, tip, nodes) => {
+      const p = hudPop({ title, icon: icon(ic, 13), onClose: () => this._popSum?.() });
+      for (const n of nodes) if (n) { if (n.isConnected) mv.move(n, p.body); else p.body.append(n); }
+      const sum = cvEl("span", "sm");
+      const b = cvEl("button", "ss-clpopbtn", icon(ic, 16), cvEl("span", "tx", cvEl("b", "", title), sum), cvEl("span", "car", "›"));
+      b.type = "button";
+      b.title = tip;
+      b.setAttribute("aria-expanded", "false");
+      b.addEventListener("pointerdown", (e) => e.stopPropagation());
+      b.addEventListener("click", () => {
+        const opening = !p.isOpen();
+        for (const q of this._pops) q.close();
+        if (opening) p.open();
+      });
+      p.btn = b;
+      p.sum = sum;
+      p.onState = (open) => { b.setAttribute("aria-expanded", String(open)); wrap.dataset.pop = open ? key : ""; };
+      wrap.append(p.el);
+      this._cvBuilt.push(p.el);
+      this._pops.push(p);
+      return p;
+    };
+    const lab = (t) => cvEl("div", "status", t);
+    const soundPop = pop("sound", "music", "Sound & music", "Sound effects and a music mood, generated with the final",
+      [m.sfx.parentElement, lab("Music mood (optional)"), m.music, m.musicIdeas.previousElementSibling, m.musicIdeas]);
+    const voicePop = pop("voice", "message-square", "Dialogue & voice", "A spoken line for this shot, and who says it",
+      [lab("Line (optional)"), m.line, m.lineIdeas.previousElementSibling, m.lineIdeas, m.voiceSeg.parentElement, m.audio.parentElement]);
+    const btns = cvEl("div", "ss-clpopbtns", soundPop.btn, voicePop.btn);
+    left.body.append(btns);
+    this._popSum = () => {
+      soundPop.sum.textContent = clipText([m.sfx.value, m.music.value].filter((x) => String(x || "").trim()).join(" · "), 46) || "None yet: add effects or a music mood";
+      voicePop.sum.textContent = m.line.value.trim() ? `“${clipText(m.line.value, 40)}”` : "No line: the shot has no dialogue";
+    };
+    if (!m._popL) { m._popL = true; for (const x of [m.sfx, m.music, m.line]) x.addEventListener("input", () => this._popSum?.()); }
+    this._popSum();
     sec("Cast in this shot", [m.castCard], false, "cast");
     const right = panel("motion_r", "Starts from this frame", "right");
     const frameCard = m.frame.parentElement;
