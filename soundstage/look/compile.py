@@ -198,6 +198,13 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     vcam = S.vehicle_camera(scene)
     lock = S.traffic_lock(scene)
     shot = vcam["still"] if vcam else SIZE_STILL[f1["size"]] + ("" if who else " of the location")
+    # A head count only when people show: seen from outside, a car's driver is part of the car and a count of
+    # zero (or one) makes Krea paint pedestrians; seen from inside, the riders ARE the people in frame.
+    count = not lock or n > 0
+    if vcam and vcam.get("where") in ("interior", "hood") and place and place != "underwater":
+        place_words = f"driving through {place}" if (S.camera_move(scene).get("rides") or {}).get("moving") else f"parked in {place}"
+    else:
+        place_words = (place and f"in {place}") if place != "underwater" else "underwater"
     prompt = _join([
         (vcam or {}).get("lead", ""),          # where the camera is goes first: depth alone reads a dashboard as a hood
         *style,
@@ -207,13 +214,14 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         shot,
         "; ".join(who),
         lock["still"] if lock else "",
-        "" if lock else _still_count(n),     # drivers sit inside the cars: a head count makes Krea paint pedestrians
-        "" if lock else _only_blocking(n, sum(1 for e in f1["others"] if e.get("rig") == "vehicle")),
+        _still_count(n) if count else "",
+        _only_blocking(n, sum(1 for e in f1["others"] if e.get("rig") == "vehicle")) if count and not lock else
+        ("nobody else in the car, nobody else in the background" if count and vcam else ""),
         S.ANGLE_STILL[f1["angle"]] if f1["angle"] != "eye" else "eye-level camera",
         f"{round(f1['focal_mm'])}mm lens",
         c.get("lens", {}).get("still", ""),
         c.get("aperture", {}).get("still", ""),
-        place and f"in {place}" if place != "underwater" else "underwater",
+        place_words,
         "; ".join(props),
         loc["weather"],
         f1["lighting"],
@@ -224,7 +232,9 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         c.get("camera_body", {}).get("still", ""),
         _join(_grade_words(look)),
     ])
-    negative = _join([FRAME1_NEGATIVE + ("" if n > 0 else ", people, person, figure") if n <= 3 else "extra people",
+    # Never tell the model "no people" when the shot has people in it: riders in the car, someone walking in later.
+    no_people = n == 0 and not S.people_in_shot(scene)
+    negative = _join([FRAME1_NEGATIVE + (", people, person, figure" if no_people else "") if n <= 3 else "extra people",
                       BASE_NEGATIVE, facing_neg, NOTHING_EXTRA_NEG, vcam["negative"] if vcam else "", lock["negative"] if lock else "",
                       *parts["negatives"], look.get("negative", "")])
     return _dedupe(prompt), _dedupe(negative)
@@ -264,6 +274,11 @@ _MOVE_GERUNDS = {
 def _camera_sentence(mf: dict, f1: dict, look: dict) -> str:
     mv = mf["move"]
     end = mf["end"]
+    rides = mv.get("rides")
+    if rides and mv["static"]:
+        if rides["inside"]:
+            return f"The camera stays locked to the {rides['noun']}" + (" as it drives; only the world outside moves." if rides["moving"] else ".")
+        return f"The camera travels with the {rides['noun']}, keeping pace with it." if rides["moving"] else "Static frame, the camera locked off."
     if mv["static"]:
         s = "Static frame, the camera locked off."
     else:
@@ -282,7 +297,7 @@ def _camera_sentence(mf: dict, f1: dict, look: dict) -> str:
             s += ", handheld and breathing"
         movers_end = [m for m in mf["marks"] if m["inside_at_end"] and not any(e["id"] == m["id"] for e in end["people"])]
         size_end = S.SIZE_STILL[end["size"]] if end["nearest"] else "the location"
-        the = lambda n: n.replace("a ", "the ", 1).replace("an ", "the ", 1)  # noqa: E731
+        the = S.definite
         door = next((p for p in end["props"] if p["kind"] == "building"), None)
         if movers_end and not end["people"]:
             who = S._join_and([the(m["noun"]) for m in movers_end])
@@ -291,7 +306,7 @@ def _camera_sentence(mf: dict, f1: dict, look: dict) -> str:
         elif end["people"]:
             who = S._join_and([the(e["noun"]) for e in end["people"]])
             sx = sum(e["sx"] for e in end["people"]) / len(end["people"])
-            dest = f"as the move completes, {who} {'are' if len(end['people']) > 1 else 'is'} {S.screen_words(sx)} in a {size_end}"
+            dest = f"as the move completes, {who} {'are' if len(end['people']) > 1 else 'is'} {S.screen_words(sx)} in {S._article(size_end)}"
         else:
             dest = "as the move completes, the frame settles on the empty set"
         s += f"; {dest}."
@@ -310,8 +325,10 @@ def _marks_sentence(mf: dict, introduced: set | None = None) -> str:
     out = []
     for (verb, way, dest), ms in groups.items():
         again = bool(introduced) and {m["id"] for m in ms} == introduced
-        who = ("they" if len(ms) > 1 else S.definite(ms[0]["noun"])) if again else S._join_and([m["noun"] for m in ms])
-        if len(ms) > 1:
+        who = ("they" if len(ms) > 1 else S.definite(ms[0]["noun"])) if again else S._group_nouns([m["noun"] for m in ms])
+        if len(ms) > 1 and ms[0].get("verb_pl"):
+            verb = ms[0]["verb_pl"]
+        elif len(ms) > 1:
             verb = {"walks": "walk", "walks briskly": "walk briskly", "runs": "run", "drives": "drive", "drives forward": "drive forward", "rolls forward": "roll forward",
                     "rolls": "roll", "trots": "trot"}.get(verb, verb)
             verb += " together" if verb.startswith("walk") else ""
@@ -347,11 +364,20 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
     mf = S.motion_facts(scene)
     c = parts["chosen"]
     loc = f1["location"]
-    head = _join([
-        _join([f"{'Interior' if loc['int_ext'] == 'INT' else 'Exterior'} {f1['size_ltx'].lower()}",
-               S.ANGLE_LTX[f1["angle"]] and f"from a {S.ANGLE_LTX[f1['angle']]} angle"], " "),
-        ("underwater" if f1["underwater"] else loc["place"] and f"in {loc['place']}"),
-    ], " ")
+    vcam = S.vehicle_camera(scene)
+    rides = mf["move"].get("rides") or {}
+    if vcam:   # in or on a car: the shot is the car's interior (or its windshield), whatever the set outside is
+        going = "driving" if rides.get("moving") else "parked"
+        through = loc["place"] and (f" through {loc['place']}" if rides.get("moving") else f" in {loc['place']}")
+        where = {"interior": f"Interior {f1['size_ltx'].lower()} inside a {going} {rides.get('noun', 'car')}{through}",
+                 "hood": f"Exterior {f1['size_ltx'].lower()} from the hood of a {going} {rides.get('noun', 'car')}{through}"}
+        head = where.get(vcam.get("where"), where["interior"])
+    else:
+        head = _join([
+            _join([f"{'Interior' if loc['int_ext'] == 'INT' else 'Exterior'} {f1['size_ltx'].lower()}",
+                   S.ANGLE_LTX[f1["angle"]] and f"from a {S.ANGLE_LTX[f1['angle']]} angle"], " "),
+            ("underwater" if f1["underwater"] else loc["place"] and f"in {loc['place']}"),
+        ], " ")
     light = _join([_no_numbers(f1["lighting"]), loc["weather"]])
     blocking_s = S.blocking_sentence(f1["people"] + f1["others"], f1["camera"])
     props = [p for p in f1["props"] if p["kind"] == "building"]
@@ -369,7 +395,6 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
     era_s = _frag("era", look, "motion")
     tech_s = c.get("technique", {}).get("motion", "")
     mood_s = _intensity(c.get("mood", {}).get("motion", ""), look) if c.get("mood") else ""
-    vcam = S.vehicle_camera(scene)
     lock = S.traffic_lock(scene)
     sentences = [
         _cap(head) + ".",
