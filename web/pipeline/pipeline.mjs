@@ -1469,7 +1469,7 @@ export class Pipeline {
           status.textContent = "Building the DCC kit…";
           try {
             const kit = await downloadDCCKit(this.ctx.stage, { onProgress: (t) => { status.textContent = t; } });
-            status.textContent = `Downloaded ${kit.name}: ${kit.report.frames} frames, ${kit.report.moving} moving parts, ${(kit.report.glbBytes / 1e6).toFixed(1)} MB GLB. Open README.txt inside.`;
+            status.textContent = `Downloaded ${kit.name}: ${kit.report.frames} frames, ${kit.report.moving} moving parts, ${kit.report.glbBytes < 1e6 ? Math.max(1, Math.round(kit.report.glbBytes / 1e3)) + " KB" : (kit.report.glbBytes / 1e6).toFixed(1) + " MB"} GLB. Open README.txt inside.`;
           } catch (err) { console.warn("[Soundstage] DCC kit", err); status.textContent = `The DCC kit failed: ${err.message}`; }
         }),
       mk("The cut as one video", "Every shot in the strip, trimmed and in order, with sound. Shots without a Final are rendered first if you choose so.",
