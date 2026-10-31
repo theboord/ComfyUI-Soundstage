@@ -2,6 +2,9 @@
 // "Simulate & bake" (the whole scene's dynamic objects, baked into keys) and "Clear simulation". It floats over the
 // canvas beside the inspector (canvas layout) and never makes the page scroll.
 import { icon } from "../ui/icons.mjs";
+// The live solver switch (Milestone 10): CPU (XPBD, physics.mjs) or GPU (AVBD on WebGPU, physics_avbd.mjs). Importing
+// it also registers the GPU backend with physengine.mjs and puts the "Physics: CPU / GPU" badge on the stage.
+import * as avbd from "./physics_avbd.mjs";
 
 const CSS = `
 .ss-stage .ss-phys { display:flex; flex-direction:column; gap:8px; font-size:12px; }
@@ -23,6 +26,8 @@ const CSS = `
 .ss-stage .ss-phys .ph-acts button { flex:1 1 auto; justify-content:center; }
 .ss-stage .ss-phys .ph-note { color:var(--ss-muted); line-height:1.35; }
 .ss-stage .ss-phys .ph-msg { color:var(--ss-text); line-height:1.35; min-height:1.35em; }
+.ss-stage .ss-phys .ph-eng { display:grid; grid-template-columns:64px minmax(0,1fr); gap:6px; align-items:center; color:var(--ss-muted); }
+.ss-stage .ss-phys .ph-eng .ss-views button { white-space:nowrap; }
 .ss-stage .ss-phys .ph-all { align-self:flex-start; font-size:11px !important; padding:2px 10px !important; }`;
 
 const MODES = [["dynamic", "Dynamic", "Falls, tumbles and gets knocked over"], ["static", "Static", "Stays put; things hit it and land on it"],
@@ -117,10 +122,41 @@ export class PhysicsPanel {
       this.onBaked();
       this.sync();
     });
+    // Live solver: what drags, pushes and drops run on (the stage's "Physics: CPU / GPU (AVBD)" badge says which).
+    this.engSeg = el("div", "ss-views");
+    this.engBtns = {
+      xpbd: btn("CPU", "", "XPBD on the CPU: the default, runs in every browser"),
+      avbd: btn("GPU · beta", "", "AVBD on the graphics card (WebGPU, three-avbd): live drags, car hits and drops solved on the GPU. Falls back to the CPU where WebGPU isn't available"),
+    };
+    this.engBtns.xpbd.addEventListener("click", () => { avbd.setPref("xpbd"); this._msg("Live physics on the CPU (XPBD)."); this.syncEngine(); });
+    this.engBtns.avbd.addEventListener("click", () => this.useGpu());
+    this.engSeg.append(this.engBtns.xpbd, this.engBtns.avbd);
+    this.eng = el("div", "ph-eng", el("span", "", "Live solver"), this.engSeg);
+    this.eng.title = "Which solver runs live physics while you drag, push and drop things (Simulate & bake always runs on the CPU)";
     this.note = el("div", "ph-note");
     this.msg = el("div", "ph-msg");
     this.msg.setAttribute("aria-live", "polite");
-    this.el.append(head, this.seg, this.mass.r, this.bounce.r, this.friction.r, this.lift.r, this.all, el("div", "ph-acts", this.simBtn, this.clearBtn), this.note, this.msg);
+    this.el.append(head, this.seg, this.mass.r, this.bounce.r, this.friction.r, this.lift.r, this.all, el("div", "ph-acts", this.simBtn, this.clearBtn), this.eng, this.note, this.msg);
+  }
+
+  /** Switch live physics to the GPU: bring WebGPU up, fall back to the CPU (and say why) if it can't run here. */
+  async useGpu() {
+    avbd.setPref("avbd");
+    this._msg("Starting WebGPU…");
+    this.syncEngine();
+    const ok = await avbd.init();
+    if (!ok || !avbd.supported()) {
+      avbd.setPref("xpbd");
+      this._msg(`WebGPU isn't available here${avbd.status().error ? ` (${avbd.status().error})` : ""}: live physics stays on the CPU.`);
+    } else this._msg("Live physics on the GPU (AVBD): from the next drag.");
+    this.syncEngine();
+  }
+
+  syncEngine() {
+    const st = avbd.status(), on = st.pref !== "xpbd";
+    this.engBtns.xpbd.setAttribute("aria-pressed", String(!on));
+    this.engBtns.avbd.setAttribute("aria-pressed", String(on));
+    this.engBtns.avbd.disabled = !globalThis.navigator?.gpu;   // no WebGPU in this browser at all
   }
 
   _msg(t) { this.msg.textContent = t; if (t) this.onStatus(t); }
@@ -156,6 +192,7 @@ export class PhysicsPanel {
   }
 
   sync() {
+    this.syncEngine();
     const info = this.id ? this.stage.physicsInfo(this.id) : null;
     if (!info) return;
     this.name.textContent = `Physics · ${info.name}`;

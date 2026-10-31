@@ -5,6 +5,13 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**13:05 PDT · GPU physics (AVBD): solid car hits, standing stacks, a switch in the Physics panel** *(Milestone 10)*
+- The GPU solver ([three-avbd](https://github.com/sbobyn/three-avbd)) now meets what it hits: contacts are made as far ahead as a body moves in a frame, so the Car Chase sports car at 12 m/s no longer drives 11 cm into a crate, crates no longer ride inside the bumper or get fired off at 35 m/s, and falling boxes land without sinking (worst overlap during a hit 114 mm → 6–31 mm; at rest under 0.5 mm).
+- The "pile-up" (only 4–5 of 10 crates visible after the car hit) was not lost or merged crates: all 10 were there, 6 had been carried out of the camera by a test car that stopped dead at 43 km/h. The test now brakes like a car and frames the whole run-out.
+- **Physics panel → Live solver: CPU / GPU · beta.** GPU runs live drags and pushes on the graphics card (WebGPU) and falls back to the CPU where WebGPU can't start; the badge on the stage says which is running. CPU stays the default for now.
+- People can step through a crate's edge on the GPU too (ignorePair).
+- Evidence: side-by-side videos and metrics in `share/Milestone10_AVBD/`.
+
 **13:00 PDT · Live 3D: people walk where you drag them; faster live physics** *(Milestone 9)*
 - A dragged person turns to face where they're going and their legs and arms swing in step (no more skating). A small nudge doesn't turn them.
 - Riders' keys follow their horse; a person never shoots across the set when the cursor slips off a horse's back.
