@@ -694,6 +694,7 @@ export class WorldMount {
     }
     w.cam_sig = sig;
     this.s._rigCache = null;
+    if (this.info) { this.info.shots = (this.s.state.shots || []).filter((x) => x.from_world === this.url).map((x) => x.name); this.onInfo?.(this.info); }
     this.s.onShots?.();
   }
 

@@ -141,6 +141,39 @@ A real timeline over your coverage with J/K/L, splits, ripple, match action and 
 
 <p align="center"><img src="docs/media/app_mode.jpg" width="760" alt="Soundstage in ComfyUI App mode"><br><em>All of it runs inside ComfyUI's App mode, on open models on your own GPU.</em></p>
 
+## Bring your world in, send it back out (Blender · Unreal · Maya · Nuke)
+
+**In.** In ③ Set, **Import world…** makes a whole location the Set. It takes GLB, glTF, FBX or OBJ from Blender,
+Unreal, Maya or Sketchfab, or a Gaussian splat. Units and up axis come from the file (glTF, FBX GlobalSettings) or
+from the geometry. Blender is m and Z up; Unreal FBX is cm and Z up; Maya is cm and Y up. The main floor goes on the
+stage floor, and the panel reads *This world is 120 m × 80 m, 15 m tall*, with a one-click **Fix scale** when the
+size looks wrong.
+
+- **Physics.** The meshes become box colliders, so people stand on the floors, crates land on tables and stop at
+  walls, and doorways stay open.
+- **Cameras and animation.** Cameras in the file become shots, animated ones included. Animated objects play on the
+  timeline.
+- **Heavy worlds.** Static meshes are merged by material, with far LODs. A 4,201-object, 1.85 M-triangle town
+  renders in 2.8 ms a frame instead of 21–29 ms.
+- **Camera files.** A Nuke or Maya `.chan`, or a camera.json, comes in as a shot.
+
+**Out.** In ⑦ Deliver, **Export for Blender · Unreal · Maya · Nuke** downloads one zip. It holds the staged shot as
+an animated GLB (every move baked to keys, plus the camera with its lens), camera.json and `.chan`, a frame-one OBJ,
+and a builder script for each app:
+
+- **Blender:** camera, sensor, frame range, fps, resolution, and the Layer Pack plates as the camera background.
+- **Unreal:** a CineCameraActor and a Level Sequence.
+- **Maya:** an animated camera with rotate order zxy.
+- **Nuke:** a Camera, ReadGeo and ScanlineRender.
+
+**What was verified.** Both directions were run headless in **Blender 4.3**:
+
+- Blender → Soundstage: silhouette IoU 0.994–1.000 against Blender's own camera.
+- Soundstage → Blender: IoU 0.995–0.999, with outlines within 0.5 px of the Soundstage clay frame.
+
+The Unreal, Maya and Nuke scripts are **untested in those apps**. Their maths (axes, centimetres, rotators, ZXY
+rotations, film backs, frame rates) is unit-tested. → [Interop](docs/interop.md)
+
 ## The seven steps
 
 The App has one step bar, in production order. Every step works on every shot in the scene; with a script, every step has a scene switcher.
@@ -288,7 +321,7 @@ Vendored components and their licenses are listed in [THIRD_PARTY_NOTICES.md](TH
 ## Docs
 
 - [decisions.md](docs/decisions.md): the development log, with every design decision and its reason.
-- Components: [look](docs/look.md), [agent](docs/agent.md), [advisor](docs/advisor.md), [coach](docs/coach.md), [layerpack](docs/layerpack.md), [cut](docs/cut.md), [audio](docs/audio.md), [recast](docs/recast.md), [vcam](docs/vcam.md), [router](docs/router.md), [assets3d](docs/assets3d.md).
+- Components: [look](docs/look.md), [agent](docs/agent.md), [advisor](docs/advisor.md), [coach](docs/coach.md), [layerpack](docs/layerpack.md), [cut](docs/cut.md), [audio](docs/audio.md), [recast](docs/recast.md), [vcam](docs/vcam.md), [router](docs/router.md), [assets3d](docs/assets3d.md), [interop](docs/interop.md).
 
 ## License
 
