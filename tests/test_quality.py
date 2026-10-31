@@ -83,7 +83,7 @@ def test_app_part_wires_every_knob():
     assert outs["out_motion_prompt"] == [[5014, g._slot(5014, "value_2", "inputs")]]
     assert outs["lora_strength"] == [[5004, g._slot(5004, "lora strength", "inputs")]]
     # The look still on stage 2 is untouched; the clay guide source now only feeds the Quality node.
-    assert g.source_of(9034, "image") == (9057, 0)
+    assert g.source_of(9034, "image") == Graph.load(APP).source_of(9034, "image") == (9082, 0)   # the base App's still picker
     # Promoted inputs reach the inner nodes.
     sub = next(s for s in g.w["definitions"]["subgraphs"] if s["id"].startswith("d92e6f38"))
     inner = next(n for n in sub["nodes"] if n["id"] == 5012)
