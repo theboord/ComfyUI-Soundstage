@@ -7,6 +7,7 @@ import { setTouchupStill } from "../touchup/touchup.mjs";
 import { Mover, hudPanel, hudPop, cvEl, clipText } from "../ui/canvasui.mjs";
 import { RippleControls } from "../motion/ripple.mjs";
 import { castPool, shotSelection, pickRefs, refLines, refLabel, shotKind, refViewParams, REF_LIMIT } from "../cast/shotcast.mjs";
+import { downloadDCCKit } from "../stage/interop/exportdcc.mjs";
 
 /** Version of the still's start image (soundstage/look/look_start.py). Frames record it; older frames reproduce
  * from the plain colour pass. */
@@ -1463,6 +1464,14 @@ export class Pipeline {
         status.textContent = `${list.length} Layer Pack${list.length > 1 ? "s" : ""} queued (${list.map((s) => s.name).join(", ")}).`;
       } } }, "Layer Packs for every shot with a final")),
       this.dLinks,
+      mk("Export for Blender · Unreal · Maya · Nuke", "The staged shot as one animated GLB (set or imported world, props, actors with their moves, the camera with its lens), the camera as camera.json and .chan, and a builder script for each app, zipped with a README.",
+        "Download the DCC kit", async () => {
+          status.textContent = "Building the DCC kit…";
+          try {
+            const kit = await downloadDCCKit(this.ctx.stage, { onProgress: (t) => { status.textContent = t; } });
+            status.textContent = `Downloaded ${kit.name}: ${kit.report.frames} frames, ${kit.report.moving} moving parts, ${(kit.report.glbBytes / 1e6).toFixed(1)} MB GLB. Open README.txt inside.`;
+          } catch (err) { console.warn("[Soundstage] DCC kit", err); status.textContent = `The DCC kit failed: ${err.message}`; }
+        }),
       mk("The cut as one video", "Every shot in the strip, trimmed and in order, with sound. Shots without a Final are rendered first if you choose so.",
         "Cut → one video", () => this.ctx.flattenCut()),
       h("div", { class: "row" }, h("button", { type: "button", class: "ghost", on: { click: () => this.ctx.renderMissing() } }, "Render missing shots first"),
