@@ -125,6 +125,9 @@ function invIw(b, v) {
 }
 const movable = (b) => b.free && !b.asleep;
 /** Generalised inverse mass of a body at arm r along direction n. */
+/** The lever arm of a contact on b, or none when the other body pushes flat (b is shoved through its centre). */
+const ZERO3 = [0, 0, 0];
+const flatR = (b, other, r) => (other.pushFlat && !b.pushFlat ? ZERO3 : r);
 function wOf(b, r, n) {
   if (!movable(b)) return 0;
   const rn = cross(r, n);
@@ -204,15 +207,32 @@ function measure(c) {
   return c;
 }
 
-/** Probes of A inside B's box → "pb" contacts (the shallowest face is the way out). */
+/**
+ * Probes of A inside B's box → "pb" contacts. They all leave through the one face of B that separates the two boxes
+ * the least (a separating-axis test over B's face axes), not each through its own nearest face: a box pushed into
+ * another's side pushes it straight ahead instead of squirting it out sideways from a corner probe.
+ */
 function probeContacts(A, B, out) {
+  let pk = -1, po = Infinity, ps = 1, T = null;
   for (const lp of A.probes) {
     const p = add(A.x, qrot(A.q, lp));
     const l = toLocal(B, p);
     if (Math.abs(l[0]) >= B.half[0] || Math.abs(l[1]) >= B.half[1] || Math.abs(l[2]) >= B.half[2]) continue;
-    let k = 0, best = Infinity;
-    for (let i = 0; i < 3; i++) { const g = B.half[i] - Math.abs(l[i]); if (g < best) { best = g; k = i; } }
-    out.push({ type: "pb", a: A, b: B, lp, k, s: l[k] >= 0 ? 1 : -1 });
+    if (pk < 0) {
+      T = toLocal(B, A.x);
+      const aX = E.map((e) => qrot(qconj(B.q), qrot(A.q, e)));   // A's axes in B's frame
+      for (let i = 0; i < 3; i++) {
+        const pa = A.half[0] * Math.abs(aX[0][i]) + A.half[1] * Math.abs(aX[1][i]) + A.half[2] * Math.abs(aX[2][i]);
+        const o = B.half[i] + pa - Math.abs(T[i]);
+        if (o < po) { po = o; pk = i; ps = T[i] >= 0 ? 1 : -1; }
+      }
+    }
+    // A probe on the far side of that face's plane (deeper than half the box) uses its own nearest face instead.
+    if (ps * l[pk] < -B.half[pk] * 0.5) {
+      let k = 0, best = Infinity;
+      for (let i = 0; i < 3; i++) { const g = B.half[i] - Math.abs(l[i]); if (g < best) { best = g; k = i; } }
+      out.push({ type: "pb", a: A, b: B, lp, k, s: l[k] >= 0 ? 1 : -1 });
+    } else out.push({ type: "pb", a: A, b: B, lp, k: pk, s: ps });
   }
 }
 
@@ -523,9 +543,11 @@ export function createXpbdWorld(opts = {}) {
   const baseSub = Math.max(2, Math.min(32, opts.substeps || 8));
   const iters = Math.max(1, Math.min(8, opts.iterations || 2));
   const MAX_STEP = opts.maxStep || 0.03;   // m a grabbed body may move per substep (no tunnelling through a thin wall)
-  const LIN_SLEEP = 0.06, ANG_SLEEP = 0.15, SLEEP_TIME = 0.35, WAKE_SPEED = 0.2, MAX_SPEED = opts.maxSpeed || 8;
+  const LIN_SLEEP = 0.06, ANG_SLEEP = 0.15, SLEEP_TIME = 0.35, WAKE_SPEED = 0.2, MAX_SPEED = opts.maxSpeed || 3.5;
   const bodies = new Map();
+  const ignored = new Set();
   let seq = 0;
+  const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
   const setPose = (b, pos, quat) => {
     b.q = qnorm(quat || [0, 0, 0, 1]); b.x = add(pos || [0, 0, 0], qrot(b.q, b.center)); b.xp = [...b.x]; b.qp = [...b.q];
@@ -553,10 +575,13 @@ export function createXpbdWorld(opts = {}) {
       applyType(b, desc.type);
       b.target = null; b.still = 0; b.asleep = !!desc.asleep && b.dynamic;
       b.lin = desc.linearDamping ?? 0.05; b.ang = desc.angularDamping ?? 1.2;
+      b.pushFlat = !!desc.pushFlat;   // what it shoves is pushed through its middle (a person leaning on a crate: it slides, it doesn't tip)
       bodies.set(id, b);
       return id;
     },
     removeBody(id) { bodies.delete(id); },
+    /** Optional extension: let two bodies pass through each other (a person stepping up onto a crate's edge). */
+    ignorePair(a, b, on = true) { if (on) ignored.add(pairKey(a, b)); else ignored.delete(pairKey(a, b)); },
     has(id) { return bodies.has(id); },
     /** Kinematic: move there over the next step. Dynamic: grab (chase it, blocked by static things); null = let go. */
     setKinematicTarget(id, pos, quat = null) {
@@ -669,6 +694,7 @@ export function createXpbdWorld(opts = {}) {
         const key = A.index < B.index ? `${A.id}|${B.id}` : `${B.id}|${A.id}`;
         if (seen.has(key)) continue;
         if (!A.dynamic && !B.dynamic) continue;   // kinematic vs static/kinematic: nothing to solve
+        if (ignored.size && ignored.has(pairKey(A.id, B.id))) continue;
         const dx = A.x[0] - B.x[0], dy = A.x[1] - B.x[1], dz = A.x[2] - B.x[2], R = A.bound + B.bound + 0.05;
         if (dx * dx + dy * dy + dz * dz > R * R) continue;
         seen.add(key);
@@ -684,7 +710,7 @@ export function createXpbdWorld(opts = {}) {
       measure(c);
       if (c.d <= 0) continue;
       const A = c.a, B = c.b;
-      let rA = sub(c.pA, A.x), rB = sub(c.pB, B.x);
+      let rA = flatR(A, B, sub(c.pA, A.x)), rB = flatR(B, A, sub(c.pB, B.x));
       const wA = wOf(A, rA, c.n), wB = wOf(B, rB, c.n);
       if (wA + wB <= 0) continue;
       const dl = c.d / (wA + wB);
@@ -701,7 +727,7 @@ export function createXpbdWorld(opts = {}) {
       const dpt = sub(dp, scl(c.n, dot(dp, c.n))), m = len(dpt);
       if (m < 1e-9) continue;
       const t = scl(dpt, 1 / m);
-      rA = sub(pAn, A.x); rB = sub(pBn, B.x);
+      rA = flatR(A, B, sub(pAn, A.x)); rB = flatR(B, A, sub(pBn, B.x));
       const wtA = wOf(A, rA, t), wtB = wOf(B, rB, t);
       if (wtA + wtB <= 0) continue;
       const lt = m / (wtA + wtB);
@@ -718,7 +744,7 @@ export function createXpbdWorld(opts = {}) {
     const act = C.filter((c) => c.lam > 0);
     for (const c of act) {
       const A = c.a, B = c.b;
-      c.rA = sub(c.pA, A.x); c.rB = sub(c.pB, B.x);
+      c.rA = flatR(A, B, sub(c.pA, A.x)); c.rB = flatR(B, A, sub(c.pB, B.x));
       const mu = 0.85 * Math.sqrt(Math.max(0, A.friction) * Math.max(0, B.friction));
       const vr = relVel(c, false), vn = dot(c.n, vr), vt = sub(vr, scl(c.n, vn)), vtl = len(vt);
       if (vtl > 1e-6 && mu > 0) {

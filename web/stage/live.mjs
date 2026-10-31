@@ -12,7 +12,7 @@
 import * as THREE from "../vendor/three.module.min.mjs";
 import { createWorld } from "./physengine.mjs";
 import { physicsOf } from "./physics.mjs";
-import { dragTarget, damp, axisLock, edgeSnap, snapGrid, stepKind, yawTilt, liftBy, qyaw, qmul, qnorm } from "./manip.mjs";
+import { dragTarget, damp, axisLock, edgeSnap, snapGrid, yawTilt, liftBy, qyaw, qmul, qnorm, stepArc, stepDuration, massForSize, legIK } from "./manip.mjs";
 
 /** Furniture with a top to set things on: a dragged prop rides up onto it instead of shoving it across the floor. */
 const SURFACES = new Set(["table", "desk", "dining_table", "coffee_table", "bench", "kitchen_counter", "bed", "single_bed", "bookshelf", "wardrobe", "fridge", "washbasin"]);
@@ -40,7 +40,7 @@ export class LiveEdit {
     this.stats = { frames: 0, ms: 0, worst: 0 };
   }
 
-  get busy() { return !!(this.drag || this.settling); }
+  get busy() { return !!(this.drag || this.tail || this.settling); }
 
   // ---------- who is what ----------
   _actor(id) { return this.s.state.actors.find((x) => x.id === id); }
@@ -62,6 +62,11 @@ export class LiveEdit {
     if (!this._stationary(a) || this._hasRiders(a)) return false;
     return this._height(a) <= 1.6 && physicsOf(a).mass <= 120;
   }
+  /** Too heavy to shove by walking into it, low enough to climb: a full crate, a rock (a person goes up onto it). */
+  _climbable(a) {
+    const h = this._height(a);
+    return h >= 0.45 && h <= 1.7 && this._mass(a) >= 15;
+  }
   /** Does it collide at all? (trees, rugs, lamps, flying things, cards, riders and carried things don't.) */
   _collides(a) {
     const L = this.K.LIBRARY[a.kind];
@@ -74,8 +79,13 @@ export class LiveEdit {
     let box = g.userData._lbox?.sig === sig ? g.userData._lbox.box : null;
     if (!box) { box = this.s._localBox(g); g.userData._lbox = { sig, box }; }
     if (!box) return [];
-    const [hx, hy, hz] = box.half, [cx, cy, cz] = box.center;
-    if (this._isPerson(a)) return [{ id: a.id, half: [Math.max(0.12, hx * 0.6), hy, Math.max(0.1, hz * 0.75)], center: box.center }];
+    // Shoes, tyres and wheels that dip a few mm under the origin would lift the body off the floor: trim them.
+    let [hx, hy, hz] = box.half, [cx, cy, cz] = box.center;
+    if (cy - hy < 0 && cy + hy > 0.05) { const top = cy + hy; cy = top / 2; hy = top / 2; }
+    box = { half: [hx, hy, hz], center: [cx, cy, cz] };
+    // People: the torso, at least 0.4 m across (feet and arms reach that far; and standing that close beside a crate
+    // must not read as standing on it).
+    if (this._isPerson(a)) return [{ id: a.id, half: [Math.max(0.2, hx * 0.6), hy, Math.max(0.2, hz * 0.75)], center: box.center }];
     if (this.K.CAR_BODIES.has(a.kind)) {
       const y0 = cy - hy, H = 2 * hy;
       return [{ id: `${a.id}#body`, half: [hx, H * 0.24, hz], center: [cx, y0 + H * 0.32, cz] },
@@ -83,6 +93,13 @@ export class LiveEdit {
     }
     if (a.kind === "sphere") return [{ id: a.id, half: box.half, center: box.center, sphere: Math.min(hx, hy, hz) }];
     return [{ id: a.id, half: box.half, center: box.center }];
+  }
+
+  /** Real-world weight: the kind's mass at its library size, scaled with volume (a half-size crate is a light box). */
+  _mass(a) {
+    if (Number.isFinite(+a.physics?.mass) && a.physics?.mass !== "" && a.physics?.mass != null) return physicsOf(a).mass;
+    const L = this.K.LIBRARY[a.kind], ref = L?.height || 1;
+    return massForSize(physicsOf(a).mass, (a.scale || 1) * ((a.height_m || ref) / ref));
   }
 
   // ---------- the world ----------
@@ -102,14 +119,17 @@ export class LiveEdit {
       g.getWorldPosition(pos); g.getWorldQuaternion(quat);
       const shapes = this._shapes(a, g);
       if (!shapes.length) continue;
-      const dynamic = held ? heldMode === "prop" : this.pushable(a) && !(heldMode === "prop" && SURFACES.has(a.kind));
+      // Tables and counters hold still under a prop being set on them or a person climbing up (they aren't shoved).
+      const dynamic = held ? heldMode === "prop" : this.pushable(a) && !((heldMode === "prop" || heldMode === "person") && SURFACES.has(a.kind)) &&
+        !(heldMode === "person" && this._climbable(a));
       const type = held ? (heldMode === "kinematic" ? "kinematic" : "dynamic") : dynamic ? "dynamic" : "static";
       const p = physicsOf(a), feel = FEEL[a.kind] || {};
       const ids = [];
       for (const sh of shapes) {
         ids.push(w.addBody({ id: sh.id, shape: sh.sphere ? "sphere" : "box", half: sh.half, center: sh.center, radius: sh.sphere || 0, type,
-          mass: this._isPerson(a) ? 75 : p.mass, friction: a.physics?.friction ?? feel.friction ?? 0.7,
+          mass: this._isPerson(a) ? 75 : this._mass(a), friction: a.physics?.friction ?? feel.friction ?? 0.7,
           restitution: a.physics?.bounce ?? feel.restitution ?? 0.05, angularDamping: feel.angularDamping ?? 1.4, linearDamping: 0.08,
+          pushFlat: this._isPerson(a),
           pos: pos.toArray(), quat: [quat.x, quat.y, quat.z, quat.w], asleep: !held && dynamic }));
       }
       bodies.set(a.id, ids);
@@ -130,17 +150,8 @@ export class LiveEdit {
     this.finish();
     const a = this._actor(id), g = this.s.actorMeshes.get(id);
     if (!a || !g) return false;
-    // A rider: dragging them off the horse or out of the car dismounts them (on release, if they aren't put back).
-    const wasMount = a.mount_id ? { mount_id: a.mount_id, pose: a.pose, seat: a.seat, mount_at: a.mount_at } : null;
-    if (wasMount) {
-      g.updateMatrixWorld(true);
-      const p = g.getWorldPosition(new THREE.Vector3());
-      delete a.mount_id; delete a.pose; delete a.seat; delete a.mount_at;
-      const k = this.s._editActorKey(a);
-      k.position = [+p.x.toFixed(3), 0, +p.z.toFixed(3)];
-      this.s._yCache?.delete(a);
-      this._silentFrame();
-    }
+    // A rider: they stay in the saddle (or seat) while the cursor is still over it; dragged off, they hop down.
+    const wasMount = a.mount_id && !(a.mount_at > this.s.frame) ? { mount_id: a.mount_id, pose: a.pose, seat: a.seat, mount_at: a.mount_at } : null;
     // Dragged out of someone's hands: it is put down (and falls where you let go).
     let putDown = null;
     if (a.carry_id) { putDown = this._actor(a.carry_id); delete a.carry_id; delete a.carry_at; this._silentFrame(); }
@@ -152,19 +163,22 @@ export class LiveEdit {
     if (!this.bodies.has(id)) return false;
     g.updateMatrixWorld(true);
     const start = g.position.clone();
-    const base = person ? (this.s._actorKeys(a).find((k) => k.frame === this.s.frame)?.position?.[1] ?? this.s._actorPosAt(a, this.s.frame)[1] ?? 0) : start.y;
-    const q0 = this._planeHit(ray, Math.max(0, base)) || start.clone();
+    const base = wasMount ? start.y : person ? (this.s._actorKeys(a).find((k) => k.frame === this.s.frame)?.position?.[1] ?? this.s._actorPosAt(a, this.s.frame)[1] ?? 0) : start.y;
+    // The pressed point on the object: it stays under the cursor for the whole drag (at its own height).
+    const h0 = ray.ray && typeof ray.intersectObject === "function" ? ray.intersectObject(g, true)[0]?.point : null;
+    const q0 = h0 || this._planeHit(ray, Math.max(0, base) + 0.5) || this._planeHit(ray, Math.max(0, base)) || start.clone();
     const yt = yawTilt(g.quaternion.toArray());
     const yaw0 = mode === "prop" ? yt.yawDeg * Math.PI / 180 : g.rotation.y;
     const tilt = mode === "prop" ? yt.tilt : null;
     this.drag = {
       id, a, g, mode, settles, person, wasMount, start: start.toArray(), base: Math.max(0, base), lift: 0,
-      grab: [start.x - q0.x, 0, start.z - q0.z], cur: start.toArray(), yaw: yaw0, yaw0, tilt,
+      grab: [q0.x - start.x, THREE.MathUtils.clamp(q0.y - start.y, 0.02, person ? 1.7 : 50), q0.z - start.z], cur: start.toArray(), yaw: yaw0, yaw0, tilt,
       quat: g.quaternion.toArray(), ray: { o: ray.ray.origin.toArray(), d: ray.ray.direction.toArray() },
-      mods: {}, x: e.clientX, y: e.clientY, rotX: null, axis: null, support: null, mountHost: null, guides: [],
+      mods: {}, x: e.clientX, y: e.clientY, rotX: null, axis: null, support: null, mountHost: wasMount ? a.mount_id : null, guides: [],
       carried: this.s.state.actors.filter((x) => x.carry_id === id).map((x) => x.id), moved: false, t0: performance.now(),
-      putDown, overPerson: null,
+      putDown, overPerson: null, surfY: person ? Math.max(0, base) : start.y, liftCur: 0, step: null,
     };
+    if (wasMount) for (const bid of this.bodies.get(id) || []) this.world.setBodyProps(bid, { type: "static", pos: [0, -50, 0] });   // seated: out of the way
     this.s.highlight?.setGhost(id);
     this._loop();
     return true;
@@ -221,10 +235,18 @@ export class LiveEdit {
     const d = this.drag;
     if (!d) return;
     this.drag = null;
+    // Let go halfway up onto a crate (or still walking to its edge): the climb finishes first, then they're let go.
+    if (d.step || d.approaching) { this.tail = d; this._loop(); return; }
+    this._release(d);
+  }
+
+  /** Let go: the held thing falls and settles (a prop) or stays put (a person, a vehicle); then it is written down. */
+  _release(d) {
     if (d.mode === "prop" && d.settles) this.world.setKinematicTarget(d.id, null);   // let go: it falls and settles
     else if (this.bodies.has(d.id)) for (const bid of this.bodies.get(d.id)) {
       if (d.person || d.mode === "prop") this.world.setBodyProps(bid, { type: "static" });
     }
+    this._unignore(d);
     if (d.supportWasDynamic) this.world.setBodyProps(d.support, { type: "dynamic" });
     this.s.highlight?.setGhost(null);
     this.s.highlight?.setGuides([]);
@@ -237,6 +259,9 @@ export class LiveEdit {
   /** Stop now and write what is on the set into keys (one undo step). Safe to call any time. */
   finish() {
     if (this.drag) this.end();
+    // A climb still finishing after the release: run it out now (no drawing in between).
+    for (let i = 0; i < 240 && this.tail; i++) this._tick(1 / 60, true);
+    if (this.tail) { const t = this.tail; this.tail = null; this._release(t); }
     if (!this.settling) return;
     if (this._raf) cancelAnimationFrame(this._raf);
     this._raf = 0;
@@ -255,20 +280,20 @@ export class LiveEdit {
       const now = performance.now(), dt = Math.min(1 / 20, (now - this._t) / 1000);
       this._t = now;
       const t0 = performance.now();
-      try { this._tick(dt || 1 / 60); } catch (err) { console.warn("Soundstage live", err); this.drag = null; this.settling = false; this.world = null; return; }
+      try { this._tick(dt || 1 / 60); } catch (err) { console.warn("Soundstage live", err); this.drag = null; this.tail = null; this.settling = false; this.world = null; return; }
       const ms = performance.now() - t0;
       this.stats.frames++; this.stats.ms += ms; this.stats.worst = Math.max(this.stats.worst, ms);
-      if (this.settling && !this.drag) {
+      if (this.settling && !this.drag && !this.tail) {
         const quiet = !this.world || (this.world.awakeCount?.() ?? 0) === 0;
         if (quiet || now - this._settleT0 > SETTLE_MAX_S * 1000) { this.finish(); return; }
       }
-      if (this.drag || this.settling) this._raf = requestAnimationFrame(tick);
+      if (this.drag || this.tail || this.settling) this._raf = requestAnimationFrame(tick);
     };
     this._raf = requestAnimationFrame(tick);
   }
 
-  _tick(dt) {
-    const d = this.drag, w = this.world;
+  _tick(dt, quiet = false) {
+    const d = this.drag || this.tail, w = this.world;
     if (!w) return;
     if (d) this._steer(d, dt);
     w.step(dt);
@@ -285,7 +310,15 @@ export class LiveEdit {
         this.s._yCache?.delete(d.a);
       }
       this._silentFrame();
+      // The figure is where its body is (the stage's own hop-over-obstacles height is for walked paths, not a drag).
+      if (d.person && !d.mountHost && pose) d.g.position.y = Math.max(0, pose.pos[1]);
       if (d.person && !d.mountHost) this._stepPose(d, pose);
+      if (d.mountHost && d.mountBlend) {   // easing into the seat
+        d.mountBlend.t += dt;
+        const u = d.mountBlend.t / d.mountBlend.dur;
+        if (u >= 1) d.mountBlend = null;
+        else d.g.position.set(...stepArc(d.mountBlend.from, d.g.position.toArray(), u));
+      }
     }
     for (const [aid, ids] of this.bodies) {
       const m = this.meta.get(aid);
@@ -297,7 +330,8 @@ export class LiveEdit {
       g.position.set(...p.pos);
       g.quaternion.set(...p.quat);
     }
-    this.s.render();
+    if (this.tail && !this.tail.step && !this.tail.approaching) { const t = this.tail; this.tail = null; this._release(t); }
+    if (!quiet) this.s.render();
   }
 
   /** Where the held thing goes this frame. */
@@ -307,35 +341,40 @@ export class LiveEdit {
     const o = d.ray.o, dir = d.ray.d;
     const planeHit = (y) => { const p = this._planeHitRay(o, dir, y); return p && p.toArray(); };
     let target;
-    if (d.rotX != null) target = { pos: [...d.cur], support: d.support, surface: true };
+    if (d.rotX != null) target = { pos: [d.cur[0], d.surfY, d.cur[2]], support: d.support, surface: true };
     else {
-      const hit = w.raycast(o, dir, 800, { exclude });
+      let hit = w.raycast(o, dir, 800, { exclude });
       // A person over a horse, bike, car seat or bench: they mount it (shown live; kept if you let go there).
       const hostId = d.person && hit ? this._actorOfBody(hit.id) : null;
       const host = hostId && this._actor(hostId);
       if (d.person && host && this._mountable(host)) { this._previewMount(d, host, hit.point); return; }
       if (d.mountHost) this._clearMount(d);
+      // A person pressed against the side of a box, a table or a ledge (the cursor is on its face): they climb up onto
+      // its top, if it is low enough, rather than shoving it.
+      if (d.person && hit && hit.id !== "__ground" && hit.normal[1] <= 0.7) {
+        const top = w.raycast([hit.point[0] + dir[0] * 0.2, 40, hit.point[2] + dir[2] * 0.2], [0, -1, 0], 80, { exclude });
+        if (top && top.id === hit.id && top.normal[1] > 0.7 && top.point[1] <= 1.75) hit = top;
+      }
+      // A prop only goes up onto a pushable crate it is already above (lifted with the wheel); lower down it pushes it.
+      if (!d.person && hit && hit.id !== "__ground" && this.meta.get(this._actorOfBody(hit.id))?.dynamic) {
+        const now = w.getPose(this.bodies.get(d.id)?.[0]);
+        if (!now || now.pos[1] < hit.point[1] - 0.08) hit = null;
+      }
       // A prop over a person: they take it (on release); it isn't set on their head.
       const over = !d.person && hit ? this._actor(this._actorOfBody(hit.id)) : null;
       d.overPerson = over && this._isPerson(over) && !over.mount_id && this._carriable(d.a) ? over.id : null;
-      target = dragTarget(d.overPerson ? null : hit, d.grab, d.base, planeHit, d.person ? 1.75 : 1.8);
+      // Fixed surfaces under its middle: a table, a static prop or a ledge it slides onto (not a car, a person, an animal).
+      const fixedEx = new Set(exclude);
+      for (const [aid, ids] of this.bodies) {
+        const oa = this._actor(aid), L = oa && this.K.LIBRARY[oa.kind];
+        if (this.meta.get(aid)?.dynamic || this._isPerson(oa) || L?.rig === "vehicle" || L?.rig === "quadruped") for (const b of ids) fixedEx.add(b);
+      }
+      const support = d.person ? () => 0 : (x, z) => {
+        const u = w.raycast([x, 40, z], [0, -1, 0], 80, { exclude: fixedEx });
+        return u && u.id !== "__ground" && u.normal[1] > 0.7 && u.point[1] <= 1.8 ? { y: u.point[1], id: u.id } : 0;
+      };
+      target = dragTarget(d.overPerson ? null : hit, d.grab, planeHit, d.person ? 1.75 : 1.8, support);
       if (!target) return;
-      if (d.person && target.surface) {
-        const kind = stepKind(target.pos[1] - (target.support ? 0 : 0));
-        if (kind === "blocked") { const p = planeHit(d.base); if (p) target = { pos: [p[0] + d.grab[0], d.base, p[2] + d.grab[2]], support: null, surface: false }; }
-      }
-      if (!d.person) {
-        // Under its middle: a table, a static prop or a ledge it is being slid onto (not a car, a person or an animal).
-        const ex = new Set(exclude);
-        for (const [aid, ids] of this.bodies) {
-          const o = this._actor(aid), L = o && this.K.LIBRARY[o.kind];
-          if (this.meta.get(aid)?.dynamic || this._isPerson(o) || L?.rig === "vehicle" || L?.rig === "quadruped") for (const b of ids) ex.add(b);
-        }
-        const under = w.raycast([target.pos[0], 40, target.pos[2]], [0, -1, 0], 80, { exclude: ex });
-        if (under && under.id !== "__ground" && under.normal[1] > 0.7 && under.point[1] <= 1.8 && under.point[1] > target.pos[1] + 0.01) {
-          target = { pos: [target.pos[0], under.point[1], target.pos[2]], support: under.id, surface: true };
-        }
-      }
       if (d.mods.shift) { const r = axisLock(d.start, target.pos, d.axis); d.axis = r.axis; target.pos = r.pos; }
       if (this.s.snap) { target.pos[0] = snapGrid(target.pos[0], 0.1); target.pos[2] = snapGrid(target.pos[2], 0.1); }
       d.guides = [];
@@ -351,6 +390,7 @@ export class LiveEdit {
       this.s.highlight?.setGuides(d.guides);
     }
     // What it stands on holds still while you climb onto it or set something on it.
+    const prevSupport = d.support;
     if (target.support !== d.support) {
       if (d.supportWasDynamic) w.setBodyProps(d.support, { type: "dynamic" });
       d.supportWasDynamic = false;
@@ -359,37 +399,87 @@ export class LiveEdit {
       d.support = target.support;
     }
     d.base = target.pos[1];
-    const want = [target.pos[0], target.pos[1] + (d.mode === "prop" ? d.lift : 0), target.pos[2]];
+    d.liftCur = d.mode === "prop" ? damp(d.liftCur || 0, d.lift, 12, dt) : 0;   // the wheel raises it smoothly
+    const want = [target.pos[0], target.pos[1] + d.liftCur, target.pos[2]];
     if (d.respawn) {
       d.respawn = false;
-      d.cur = [...want];
-      d.climbing = false;
-      for (const bid of this.bodies.get(d.id) || []) { this.world.setBodyProps(bid, { type: "dynamic", pos: want }); this.world.setKinematicTarget(bid, want, qyaw(d.yaw)); }
+      d.step = null;
+      for (const bid of this.bodies.get(d.id) || []) { this.world.setBodyProps(bid, { type: "dynamic", pos: d.cur }); this.world.setKinematicTarget(bid, d.cur, qyaw(d.yaw)); }
     }
-    if (d.person || d.mode === "prop") {
-      // Stepping up onto (or down off) something: rise first, then over, without snagging on its edge.
-      const pose = w.getPose(this.bodies.get(d.id)?.[0]);
-      const changing = pose && Math.abs(pose.pos[1] - want[1]) > 0.03;
-      if (changing !== !!d.climbing) for (const bid of this.bodies.get(d.id) || []) w.setBodyProps(bid, { type: changing ? "kinematic" : "dynamic" });
-      d.climbing = changing;
-      if (changing && pose) {
-        const up = want[1] > pose.pos[1];
-        d.cur = [damp(d.cur[0], want[0], up ? 9 : 14, dt), damp(d.cur[1], want[1], up ? 22 : 16, dt), damp(d.cur[2], want[2], up ? 9 : 14, dt)];
-        const yq = qyaw(d.yaw);
-        for (const bid of this.bodies.get(d.id) || []) w.setKinematicTarget(bid, d.cur, d.tilt ? qnorm(qmul(yq, d.tilt)) : yq);
+    const own = this.bodies.get(d.id) || [];
+    const yq = qyaw(d.yaw), q = d.tilt ? qnorm(qmul(yq, d.tilt)) : yq;
+    // A change of level (onto a crate, a table, a ledge; down off it; off a horse): an eased step, up first and then
+    // across (down: across, then a drop), never a pop. What it climbs onto or steps off doesn't snag it on the way.
+    // Going up onto something still a stride away: walk (or slide) up to its edge first, then climb.
+    if (target.pos[1] > d.surfY + 0.05 && target.support && d.cur[1] < target.pos[1] - 0.05 && !d.step) {
+      const gap = this._gapTo(d, target.support, want);
+      d.approaching = gap > 0.12;
+      if (d.approaching) {
+        const k = Math.min(1, 1.6 * dt / Math.max(0.05, gap));   // ~1.6 m/s toward the edge, no faster
+        d.cur = [d.cur[0] + (want[0] - d.cur[0]) * Math.min(k, 1 - Math.exp(-32 * dt)), d.cur[1], d.cur[2] + (want[2] - d.cur[2]) * Math.min(k, 1 - Math.exp(-32 * dt))];
+        for (const bid of own) w.setKinematicTarget(bid, d.cur, q);
         return;
       }
     }
+    d.approaching = false;
+    if (Math.abs(target.pos[1] - d.surfY) > 0.05) {
+      const up = target.pos[1] > d.surfY;
+      const pass = [...(up ? [target.support] : [prevSupport, d.support]), ...(d.hostIgnore || [])].filter(Boolean);
+      // From where the body really is (it may have been held back by what it's now climbing), not where it was told.
+      const at = own[0] && w.getPose(own[0]);
+      if (at && at.pos[1] > -10) d.cur = [...at.pos];
+      d.step = { p0: [...d.cur], t: 0, dur: stepDuration(target.pos[1] - d.cur[1], d.person), up };
+      this._ignore(d, pass);
+      d.surfY = target.pos[1];
+    } else if (!d.step) d.surfY = target.pos[1];
+    if (d.step) {
+      d.step.t += dt;
+      const u = d.step.t / d.step.dur;
+      d.cur = stepArc(d.step.p0, want, u);
+      d.step.u = Math.min(1, u);
+      if (u >= 1) { d.step = null; this._unignore(d); d.hostIgnore = null; }
+      for (const bid of own) w.setKinematicTarget(bid, d.cur, q);
+      return;
+    }
     // A little smoothing: the object keeps up with the cursor (~30 ms) but never jumps.
     d.cur = damp(d.cur, want, 32, dt);
-    const yawQ = qyaw(d.yaw);
-    const q = d.tilt ? qnorm(qmul(yawQ, d.tilt)) : yawQ;
-    for (const bid of this.bodies.get(d.id) || []) w.setKinematicTarget(bid, d.cur, q);
+    for (const bid of own) w.setKinematicTarget(bid, d.cur, q);
+  }
+
+  /** Horizontal gap (m) between the held body and `sid` along the way to `want` (Infinity if it isn't in the way). */
+  _gapTo(d, sid, want) {
+    const w = this.world, own = this.bodies.get(d.id) || [];
+    const p = w.getPose(own[0]);
+    if (!p) return 0;
+    const dx = want[0] - p.pos[0], dz = want[2] - p.pos[2], L = Math.hypot(dx, dz);
+    if (L < 1e-3) return 0;
+    const sh = this._shapes(d.a, d.g)[0];
+    const r = sh ? Math.min(sh.half[0], sh.half[2]) : 0.2;
+    const ex = new Set([...own, ...(d.carried || []).flatMap((c) => this.bodies.get(c) || [])]);
+    let best = Infinity;
+    for (const hy of [0.12, 0.35]) {
+      const h = w.raycast([p.pos[0], p.pos[1] + hy, p.pos[2]], [dx / L, 0, dz / L], L + 1, { exclude: ex });
+      if (h && h.id === sid) best = Math.min(best, h.distance - r);
+    }
+    return best === Infinity ? 0 : best;
+  }
+
+  /** Let the held thing pass through these bodies (what it is climbing onto or stepping off) until the step is done. */
+  _ignore(d, ids) {
+    this._unignore(d);
+    const own = this.bodies.get(d.id) || [];
+    for (const bid of own) for (const o of ids) this.world?.ignorePair?.(bid, o, true);
+    d.ignoring = ids;
+  }
+  _unignore(d) {
+    if (!d.ignoring?.length) { d.ignoring = null; return; }
+    for (const bid of this.bodies.get(d.id) || []) for (const o of d.ignoring) this.world?.ignorePair?.(bid, o, false);
+    d.ignoring = null;
   }
 
   _regrab(d) {
-    const p = this._planeHitRay(d.ray.o, d.ray.d, d.base);
-    return p ? [d.cur[0] - p.x, 0, d.cur[2] - p.z] : d.grab;
+    const p = this._planeHitRay(d.ray.o, d.ray.d, d.cur[1] + d.grab[1]);
+    return p ? [p.x - d.cur[0], d.grab[1], p.z - d.cur[2]] : d.grab;
   }
 
   // ---------- people ----------
@@ -413,6 +503,8 @@ export class LiveEdit {
       });
       if (d.mountHost === host.id && a.seat === seat) return;
     }
+    // Swing up into the saddle / seat from where they are (not a pop): blended over the next ~0.45 s.
+    if (d.mountHost !== host.id) { d.g.updateMatrixWorld(true); d.mountBlend = { from: d.g.position.toArray(), t: 0, dur: 0.45 }; }
     a.mount_id = host.id;
     a.pose = this.K.RIDEABLE.has(host.kind) ? (this.K.MOUNTS[host.kind]?.pose || "sit") : "sit";
     if (seat != null) a.seat = seat; else delete a.seat;
@@ -424,27 +516,59 @@ export class LiveEdit {
 
   _clearMount(d) {
     const a = d.a;
+    // Hop back down from where they sit (an eased step to where the cursor is, not a jump to the ground).
+    d.g.updateMatrixWorld(true);
+    const from = d.g.position.toArray();
+    d.hostIgnore = [...(this.bodies.get(d.mountHost) || [])];
     delete a.mount_id; delete a.pose; delete a.seat; delete a.mount_at;
-    d.mountHost = null;
-    d.respawn = true;   // back on foot where the cursor is (not inside the horse), once this frame's target is known
+    d.mountHost = null; d.mountBlend = null;
+    d.cur = from; d.surfY = from[1];
+    for (const bid of this.bodies.get(d.id) || []) for (const h of d.hostIgnore) this.world.ignorePair?.(bid, h, true);
+    d.respawn = true;
     this._silentFrame();
   }
 
-  /** A step or climb pose while the person is rising onto something (knee up, arms forward), blended by the rise. */
+  /**
+   * The step / climb pose (IK) while a person changes level: going up, the lead foot is planted on the top (two-bone
+   * IK, so the knee comes up high for a crate and the leg straightens as they rise), the trailing leg pushes off and
+   * the arms reach forward for a big climb; going down, the lead leg reaches down and both knees give on landing.
+   */
   _stepPose(d, pose) {
     if (!pose) return;
-    const prev = d._py ?? pose.pos[1];
-    const rising = Math.max(0, d.base - pose.pos[1]) + Math.max(0, pose.pos[1] - prev) * 8;
-    d._py = pose.pos[1];
-    d._climb = damp(d._climb || 0, Math.min(1, rising * 3), 12, 1 / 60);
-    const w = d._climb;
-    if (w < 0.02) return;
-    for (const l of d.g.userData.limbs || []) {
+    const st = d.step;
+    const u = st ? Math.min(1, st.t / st.dur) : 1;
+    d._climbW = damp(d._climbW || 0, st ? 1 : 0, st ? 30 : 9, 1 / 60);
+    const w = d._climbW;
+    if (w < 0.01) return;
+    const up = st ? st.up : d._lastUp;
+    if (st) d._lastUp = st.up;
+    const limbs = d.g.userData.limbs || [];
+    const hipL = limbs.find((l) => l.part === "hip" && l.side > 0);
+    const kneeL = hipL && hipL.pivot.children.find((c) => c.userData?.jkind === "knee");
+    const sc = d.g.scale?.y || 1;
+    const L1 = kneeL ? Math.abs(kneeL.position.y) * sc : 0.45, L2 = L1 * 1.05, hipH = hipL ? hipL.pivot.position.y * sc : 0.9;
+    const rise = Math.max(0.05, (st ? d.surfY : pose.pos[1]) - (st?.p0?.[1] ?? pose.pos[1]));
+    const s = (t) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
+    for (const l of limbs) {
       const lead = l.side > 0;
-      if (l.part === "hip") l.pivot.rotation.x += (lead ? -1.2 : -0.25) * w;
-      if (l.part === "knee") l.pivot.rotation.x += (lead ? 1.5 : 0.35) * w;
-      if (l.part === "shoulder") l.pivot.rotation.x += -0.9 * w;
-      if (l.part === "elbow") l.pivot.rotation.x += -0.5 * w;
+      if (up) {
+        // Lead foot: up onto the top edge, then stays planted there while the body comes up over it.
+        const topY = d.surfY + 0.03, footZ = 0.24;
+        const ik = legIK(topY - (pose.pos[1] + hipH), footZ, L1, L2);
+        const plant = s(u / 0.3) * (1 - s((u - 0.82) / 0.18));
+        const push = Math.sin(Math.PI * u);
+        if (l.part === "hip") l.pivot.rotation.x += (lead ? -ik.hip * plant : 0.25 * push) * w;
+        if (l.part === "knee") l.pivot.rotation.x += (lead ? ik.knee * plant : 0.7 * push) * w;
+        const reach = Math.min(1, rise / 0.6) * push;
+        if (l.part === "shoulder") l.pivot.rotation.x += -1.1 * reach * w;
+        if (l.part === "elbow") l.pivot.rotation.x += -0.35 * reach * w;
+      } else {
+        const reachDown = Math.sin(Math.PI * Math.min(1, u / 0.8));
+        const land = Math.sin(Math.PI * s((u - 0.7) / 0.3));
+        if (l.part === "hip") l.pivot.rotation.x += (-(lead ? 0.55 : 0.1) * reachDown - 0.45 * land) * w;
+        if (l.part === "knee") l.pivot.rotation.x += ((lead ? 0.15 : 0.5) * reachDown + 0.8 * land) * w;
+        if (l.part === "shoulder") l.pivot.rotation.x += -0.4 * reachDown * w;
+      }
     }
   }
 

@@ -109,13 +109,13 @@ test("a person dragged over a crate climbs on top; the crate holds still", () =>
   assert.match(st.lastMsg, /climbs onto/);
 });
 
-test("a person dragged into crates beside them pushes them", () => {
-  const { st } = headless([person("p", -3, 0), crate("c", -1.1, 0.45)]);
+test("a person dragged into a light box beside them pushes it (a full crate is climbed, not shoved)", () => {
+  const { st } = headless([person("p", -3, 0), crate("c", -1.1, 0.45, { scale: 0.6 })]);
   // Walk past along z = 0: the body runs into the crate's side, the cursor stays on the floor beside it.
   drag(st, "p", [[1, 0]], { frames: 50 });
   const c = keyPos(st, "c");
   assert.ok(Math.hypot(c[0] + 1.1, c[2] - 0.45) > 0.15, `pushed (${c})`);
-  assert.ok(Math.abs(keyPos(st, "p")[1]) < 0.01, "still on the floor");
+  assert.ok(Math.abs(keyPos(st, "p")[1]) < 0.01, `still on the floor (${keyPos(st, "p")})`);
 });
 
 test("a person dragged onto a horse mounts it; dragged off, they dismount", () => {

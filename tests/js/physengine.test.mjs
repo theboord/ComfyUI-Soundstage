@@ -99,3 +99,24 @@ test("raycast finds the top face of a box, then the floor beside it", () => {
   assert.equal(f.id, "__ground");
   assert.equal(w.raycast([0, 5, 0], [0, -1, 0], 100, { exclude: new Set([id]) }).id, "__ground");
 });
+
+test("a box shoved into another's side pushes it straight ahead (no squirting out sideways off a corner)", () => {
+  const w = createWorld();
+  const a = w.addBody(box({ pos: [-1, 0, 0] })), b = w.addBody(box({ pos: [0, 0, 0.25] }));   // offset: corner contact
+  run(w, 1.2, (i) => w.setKinematicTarget(a, [-1 + Math.min(1.6, i * 0.025), 0, 0]));
+  const pb = w.getPose(b).pos;
+  assert.ok(pb[0] > 0.4, `pushed ahead (${pb})`);
+  assert.ok(Math.abs(pb[2] - 0.25) < 0.2, `not shot out sideways (${pb})`);
+});
+
+test("a person-like pusher (pushFlat) slides a tall-ish crate instead of tipping it", () => {
+  const w = createWorld();
+  const p = w.addBody({ shape: "box", half: [0.2, 0.9, 0.2], center: [0, 0.9, 0], type: "dynamic", mass: 75, friction: 0.8, pushFlat: true, pos: [-1, 0, 0] });
+  const c = w.addBody(box({ half: [0.3, 0.4, 0.3], center: [0, 0.4, 0], friction: 0.9, pos: [0, 0, 0] }));
+  run(w, 1.5, (i) => w.setKinematicTarget(p, [-1 + Math.min(1.2, i * 0.02), 0, 0]));
+  w.setKinematicTarget(p, null);
+  run(w, 1);
+  const q = w.getPose(c).quat;
+  assert.ok(w.getPose(c).pos[0] > 0.3, "it moved");
+  assert.ok(Math.abs(q[0]) < 0.02 && Math.abs(q[2]) < 0.02, `upright (${q})`);
+});

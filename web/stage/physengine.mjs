@@ -19,7 +19,7 @@
 //   world.raycast(origin, dir, maxDist, {exclude}) -> {id ("__ground" = floor), point, normal, distance} | null
 //   world.dispose()
 // Optional helpers the stage uses when present: world.awakeCount() (dynamic bodies still moving), world.isAsleep(id),
-// world.getVelocity(id) -> {v, w}.
+// world.getVelocity(id) -> {v, w}, world.ignorePair(idA, idB, on) (no contacts between the two while on).
 // A backend module exports { name, supported() -> bool, createWorld(opts) }.
 
 import { createXpbdWorld } from "./physics.mjs";
