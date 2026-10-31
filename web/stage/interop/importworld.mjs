@@ -753,6 +753,24 @@ export class WorldMount {
     return true;
   }
 
+  /** A camera from Nuke / Maya (.chan) or a Soundstage / Layer Pack camera.json -> a new shot. Returns its name. */
+  importCameraFile(name, text) {
+    const s = this.s;
+    const { keys, first, roll } = U.keysFromCameraFile(text, { aspect: s.fw / s.fh });
+    const shots = s._shots();
+    const shot = { id: `shot_cam_${Date.now().toString(36)}`, name: `${name.replace(/\.[a-z0-9]+$/i, "")} (camera file)`, setup: "imported",
+      camera_keys: keys, camera_file: { name, first_frame: first, roll_deg_dropped: +roll.toFixed(2) } };
+    shots.push(shot);
+    s.state.active_shot = shot.id;
+    const len = keys[keys.length - 1].frame + 1;
+    if (len > (s.state.shot?.frames || 97)) s.state.shot = { ...(s.state.shot || {}), frames: Math.min(1440, len) };
+    s._rigCache = null;
+    s.setFrame(s.frame);
+    s.onShots?.();
+    s.onChange(s.toJSON());
+    return shot.name;
+  }
+
   removeWorld() {
     const s = this.s;
     delete s.state.world;

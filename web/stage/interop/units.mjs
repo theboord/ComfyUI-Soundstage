@@ -263,3 +263,43 @@ export function keyFromMatrix(e, dist = 10, { forwardX = false } = {}) {
   }
   return { position: pos, target: pos.map((v, i) => v + fwd[i] * dist), roll_deg: roll };
 }
+
+/**
+ * Camera keys from a Nuke / Maya .chan (frame tx ty tz rx ry rz [vfov], rotate order ZXY, Y up) or a Soundstage /
+ * Layer Pack camera.json. Frames start at 0 from the file's first frame. `aspect` (the stage frame) turns a vertical
+ * FOV into a lens on the 36 mm sensor. Returns {keys, first, roll} (roll is the largest camera roll, which the stage
+ * camera doesn't carry).
+ */
+export function keysFromCameraFile(text, { aspect = 1.85, dist = 10 } = {}) {
+  let rows = [];
+  const t = String(text).trim();
+  if (t.startsWith("{") || t.startsWith("[")) {
+    const j = JSON.parse(t);
+    const fr = Array.isArray(j) ? j : j.frames || [];
+    rows = fr.map((c, i) => {
+      if (c.cam_to_world) {
+        const m = c.cam_to_world;
+        return { frame: c.frame ?? i, pos: [m[0][3], m[1][3], m[2][3]], R: m.map((r) => r.slice(0, 3)).slice(0, 3), focal: c.focal_mm };
+      }
+      return { frame: c.frame ?? i, pos: c.position, R: lookAt(c.position, c.target, c.roll_deg || 0).map((r) => r.slice(0, 3)).slice(0, 3), focal: c.focal_mm };
+    });
+  } else {
+    for (const line of t.split(/\r?\n/)) {
+      const v = line.trim().split(/\s+/).map(Number);
+      if (v.length < 7 || v.some((x) => !Number.isFinite(x))) continue;
+      const R = rotZXY(v[4], v[5], v[6]);
+      rows.push({ frame: v[0], pos: [v[1], v[2], v[3]], R, focal: v.length > 7 && v[7] > 0 ? focalFromVfov(v[7], aspect) : 35 });
+    }
+  }
+  if (!rows.length) throw new Error("no camera frames found");
+  const first = Math.min(...rows.map((r) => r.frame));
+  let roll = 0;
+  const keys = rows.map((r) => {
+    const e = [r.R[0][0], r.R[1][0], r.R[2][0], 0, r.R[0][1], r.R[1][1], r.R[2][1], 0, r.R[0][2], r.R[1][2], r.R[2][2], 0, r.pos[0], r.pos[1], r.pos[2], 1];
+    const k = keyFromMatrix(e, dist);
+    roll = Math.max(roll, Math.abs(k.roll_deg));
+    const q = (x) => +x.toFixed(4);
+    return { frame: Math.round(r.frame - first), position: k.position.map(q), target: k.target.map(q), focal_mm: +(r.focal || 35).toFixed(2) };
+  });
+  return { keys, first, roll };
+}
