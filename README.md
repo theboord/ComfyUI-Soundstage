@@ -291,7 +291,7 @@ bash ComfyUI/custom_nodes/ComfyUI-Soundstage/tools/install_runpod.sh /path/to/Co
 5. Press **Run** (labelled **Next**) to climb the ladder: Frame, then Motion, for every shot.
 6. **Review** the shots on the Ladder, then **Deliver**: Layer Packs are written to `ComfyUI/output/soundstage_layerpacks/`, and the Cut tab renders one video or exports to your NLE.
 
-**Without GPU models** you can still use the stage (Set), the Look tab and the Cut tab, including the NLE exports. Frame needs the Krea 2 group, Motion needs the LTX-2.5 group, and the Layer Pack uses SAM 3.1 and BiRefNet for mattes from the final frames (it falls back to the stage's own mattes without them).
+**Without GPU models** you can still use the stage (Set), the Look tab and the Cut tab, including the NLE exports. Frame needs FLUX 3 Klein (or the optional Krea 2 group), Motion needs the LTX-2.5 group, and the Layer Pack uses SAM 3.1 and BiRefNet for mattes from the final frames (it falls back to the stage's own mattes without them).
 
 ### Headless (Comfy SDK)
 
@@ -318,7 +318,8 @@ The full list, with folders, sources and licenses, is in [MODELS.md](MODELS.md).
 | Step | Models | License |
 |---|---|---|
 | Set | none | |
-| Frame | Krea 2 Turbo, Qwen3-VL 4B text encoder, Qwen Image VAE, Krea 2 depth-control LoRA | Krea 2 Community License; Apache-2.0 |
+| Frame (default) | FLUX 3 Klein, Qwen3-VL 4B text encoder, FLUX.2 VAE | FLUX Kommunity License; Apache-2.0 |
+| Frame, optional | Krea 2 Turbo + Krea 2 depth-control LoRA, Qwen Image VAE (locked to the stage's depth) | Krea 2 Community License; Apache-2.0 |
 | Motion | LTX-2.5 22B distilled, Gemma text encoder, LTX-2.5 video and audio VAEs, x2 latent upscaler, Layout-to-Render IC-LoRA | LTX-2 Community License; Gemma terms |
 | Motion, optional | MiniMax H3 (int8 fl2va / ref2va, Qwen3-VL 32B text encoder, H3 video and audio VAEs). Off by default: pick it in ③ Motion's Video model list. Rich motion with its own sound, looser blocking, ~20+ min per final | MiniMax H3 Community License (region-limited, <$20M) |
 | Set, optional (motion capture) | SAM 3D Body (Comfy-Org repackage `sam_3d_body_dinov3_bf16.safetensors`, in `models/detection`) | SAM License |
@@ -332,7 +333,8 @@ Model weights are not included in this repo. Check each license before commercia
 ## Credits
 
 - [ComfyUI](https://github.com/comfyanonymous/ComfyUI): the host app and App mode.
-- [Krea 2](https://huggingface.co/krea/Krea-2-Turbo) (Comfy-Org repackage) and the [Krea 2 depth ControlNet](https://github.com/facok/comfyui-krea2-controlnet): the first frame.
+- [FLUX 3 Klein](https://huggingface.co/black-forest-labs) (Black Forest Labs): the first frame, cast sheets and Paint Studio fills (default).
+- [Krea 2](https://huggingface.co/krea/Krea-2-Turbo) (Comfy-Org repackage) and the [Krea 2 depth ControlNet](https://github.com/facok/comfyui-krea2-controlnet): the optional depth-locked first frame.
 - [LTX-2.5](https://huggingface.co/Lightricks/LTX-2.5) and the [Layout-to-Render IC-LoRA](https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-Layout-To-Render) by Lightricks, via [ComfyUI-LTXVideo](https://github.com/Lightricks/ComfyUI-LTXVideo): video with sound.
 - [MiniMax H3](https://huggingface.co/MiniMaxAI/MiniMax-H3) by MiniMax: the optional second video engine, with its own sound.
 - Gemma (LTX text encoder) and Qwen3-VL / Qwen3.5 (Krea text encoder, object designer, scene agent).
