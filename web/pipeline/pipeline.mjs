@@ -792,6 +792,7 @@ export class Pipeline {
     if (!f.gearHost.firstChild && this.ctx.look?.makeGear) f.gearHost.append(this.ctx.look.makeGear());
     if (!f.styleHost.firstChild && this.ctx.look?.makeStyles) f.styleHost.append(this.ctx.look.makeStyles());
     try { this.ctx.look?._syncGear?.(); } catch { /* look not ready */ }
+    this._frameSum?.();
     if (!f.model.options.length) {
       for (const o of this._stillOptions()) f.model.append(new Option(o.label, o.value));
     }
@@ -1104,6 +1105,8 @@ export class Pipeline {
     if (vid && m.video.getAttribute("src") !== vid) { m.video.src = vid; m.video.play?.().catch(() => {}); }
     if (!vid) { m.video.removeAttribute("src"); m.video.load?.(); }
     m.vidCap.textContent = `Latest result for ${this.ctx.stage.activeShot().name}`;
+    // (Not m.frame.src: an img's src reads back as the page's own URL when it is empty.)
+    if (!this.ripple?.editing && this.ripple?.mode !== "ripple") this._syncStill(this._mStill, m.video, !!vid, chosen?.url || r.look || "");
     if (this.ripple?.mode === "ripple") this.ripple.refresh();
     this._popSum?.();
     this._drawShotRows();
@@ -1447,24 +1450,31 @@ export class Pipeline {
     this.dVideo = h("video", { controls: "", loop: "", muted: "", playsinline: "" });
     this.dVideo.muted = true;
     this.dCanvas = h("div", { class: "card ss-dcanvas" }, this.dCap = h("div", { class: "status" }, "This shot's final"), this.dVideo);
-    const mk = (label, lede, btn, fn) => h("div", { class: "card" }, h("strong", {}, label), h("p", { class: "lede" }, lede),
-      h("div", { class: "row" }, h("button", { type: "button", class: "go", on: { click: fn } }, btn)));
+    // Milestone 14: each way out is one card (icon, name, one plain sentence, its buttons); the cut is the step's main action.
+    const mk = (ic, label, lede, btn, fn, { main = false, extra = [] } = {}) => h("div", { class: "card ss-deliver-card" },
+      h("strong", {}, icon(ic, 15), label), h("p", { class: "lede" }, lede),
+      h("div", { class: "row" }, h("button", { type: "button", class: main ? "go ss-main" : "go", on: { click: fn } }, btn), ...extra));
+    const ghost = (label, fn, title = "") => h("button", { type: "button", class: "ghost", title, on: { click: fn } }, label);
     v.append(
       h("h3", {}, "⑦ Deliver"),
       h("p", { class: "lede" }, "Hand the shot to post, or the whole cut to an editor. The Layer Pack is for the shot picked below."),
       this._shotRow("deliver"),
       this.dCanvas,
-      mk("Layer Pack for VFX", "One layer per actor with mattes cut from the final frames (SAM 3.1 + BiRefNet edges), depth, the camera, and builders for After Effects, Nuke, Resolve, Blender and Photoshop.",
-        "Make the Layer Pack", async () => { this._applyShot(this.ctx.stage.activeShot().id); await this.queueAt(5); status.textContent = `Layer Pack queued for ${this.ctx.stage.activeShot().name}: the final is reused from cache, then about 1 min for the mattes.`; }),
-      h("div", { class: "row" }, h("button", { type: "button", class: "ghost", on: { click: async () => {
-        const fin = (sid) => { const r = this.ctx.getRenders(sid) || {}; return !!(r.final_sound || r.final_audio || r.final); };
-        const list = this.shots().filter((s) => fin(s.id));
-        if (!list.length) { status.textContent = "No shot has a final yet: render them in ⑤ Motion first."; return; }
-        await this.forEachShot(async (s) => { this._applyShot(s.id); await this.queueAt(5); }, list);
-        status.textContent = `${list.length} Layer Pack${list.length > 1 ? "s" : ""} queued (${list.map((s) => s.name).join(", ")}).`;
-      } } }, "Layer Packs for every shot with a final")),
+      mk("film", "The cut as one video", "Every shot in order, trimmed, with its sound.",
+        "Cut → one video", () => this.ctx.flattenCut(), { main: true, extra: [
+          ghost("Render missing shots first", () => this.ctx.renderMissing(), "Shots without a Final are rendered before the cut is made"),
+          ghost("Open the editor", () => this.ctx.showView("cut"), "Trim and reorder in the editor, then export for Avid, Premiere, Resolve, Final Cut or OTIO")] }),
+      mk("layers", "Layer Pack for VFX", "Each actor on its own layer with a clean matte, plus depth and the camera, ready for After Effects, Nuke, Resolve, Blender or Photoshop.",
+        "Make the Layer Pack", async () => { this._applyShot(this.ctx.stage.activeShot().id); await this.queueAt(5); status.textContent = `Layer Pack queued for ${this.ctx.stage.activeShot().name}: the final is reused from cache, then about 1 min for the mattes.`; },
+        { extra: [ghost("Every shot with a final", async () => {
+          const fin = (sid) => { const r = this.ctx.getRenders(sid) || {}; return !!(r.final_sound || r.final_audio || r.final); };
+          const list = this.shots().filter((s) => fin(s.id));
+          if (!list.length) { status.textContent = "No shot has a final yet: render them in ⑤ Motion first."; return; }
+          await this.forEachShot(async (s) => { this._applyShot(s.id); await this.queueAt(5); }, list);
+          status.textContent = `${list.length} Layer Pack${list.length > 1 ? "s" : ""} queued (${list.map((s) => s.name).join(", ")}).`;
+        }, "Layer Packs for every shot that has a final (mattes from SAM 3.1 with BiRefNet edges)")] }),
       this.dLinks,
-      mk("Export for Blender · Unreal · Maya · Nuke", "The staged shot as one animated GLB (set or imported world, props, actors with their moves, the camera with its lens), the camera as camera.json and .chan, and a builder script for each app, zipped with a README.",
+      mk("box", "Export for Blender · Unreal · Maya · Nuke", "The staged shot as one animated 3D file with its camera, and a set-up script for each app. Open README.txt inside.",
         "Download the DCC kit", async () => {
           status.textContent = "Building the DCC kit…";
           try {
@@ -1472,10 +1482,6 @@ export class Pipeline {
             status.textContent = `Downloaded ${kit.name}: ${kit.report.frames} frames, ${kit.report.moving} moving parts, ${kit.report.glbBytes < 1e6 ? Math.max(1, Math.round(kit.report.glbBytes / 1e3)) + " KB" : (kit.report.glbBytes / 1e6).toFixed(1) + " MB"} GLB. Open README.txt inside.`;
           } catch (err) { console.warn("[Soundstage] DCC kit", err); status.textContent = `The DCC kit failed: ${err.message}`; }
         }),
-      mk("The cut as one video", "Every shot in the strip, trimmed and in order, with sound. Shots without a Final are rendered first if you choose so.",
-        "Cut → one video", () => this.ctx.flattenCut()),
-      h("div", { class: "row" }, h("button", { type: "button", class: "ghost", on: { click: () => this.ctx.renderMissing() } }, "Render missing shots first"),
-        h("button", { type: "button", class: "ghost", on: { click: () => this.ctx.showView("cut") } }, "Open the editor (Avid / Premiere / Resolve / FCP / OTIO)")),
       status,
     );
     return v;
@@ -1492,6 +1498,7 @@ export class Pipeline {
     v.poster = this.chosen[sid]?.url || r.look || "";
     if (src && v.getAttribute("src") !== src) { v.src = src; v.play?.().catch(() => {}); }
     if (!src && v.hasAttribute("src")) { v.removeAttribute("src"); v.load?.(); }
+    this._syncStill(this._dStill, v, !!src, this.chosen[sid]?.url || r.look || "");
     this.dCap.textContent = `${this.ctx.stage.activeShot().name}: ${fin ? "final" : src ? "draft only (render the final in ⑤ Motion)" : "no video yet"}`;
     if (this._cvDPill) this._cvDPill.textContent = fin ? "" : src ? `${this.ctx.stage.activeShot().name}: draft only, render the final in ⑤ Motion` : `${this.ctx.stage.activeShot().name}: no video yet, render it in ⑤ Motion`;
   }
@@ -1509,9 +1516,12 @@ export class Pipeline {
     this._cvBuilt = [];
     this._cvClay = null;
     this._cvDPill = null;
+    this._mStill = this._dStill = null;
+    for (const v of [this.m?.video, this.dVideo]) if (v && !this.ripple?.editing) v.hidden = false;   // the classic layout always shows its players
     for (const p of this._pops || []) p.close();
     this._pops = [];
     this._popSum = null;
+    this._frameSum = null;
     this.cv = !!on;
     // A pop-over closes when you click anywhere else (its own button toggles it).
     if (!this._popDoc) {
@@ -1561,6 +1571,88 @@ export class Pipeline {
     return grp;
   }
 
+  /**
+   * Before a shot has a video, the canvas of ⑤ Motion and ⑦ Deliver shows what the video will start from (the chosen
+   * frame, else the clay at frame 1) instead of an empty black player at 0:00 (QA round 02).
+   */
+  _cvStillPair(media) {
+    const img = cvEl("img", "ss-clstill");
+    img.alt = "The frame this shot starts from";
+    img.hidden = true;
+    img.addEventListener("error", () => { img.hidden = true; });
+    const clay = cvEl("canvas", "ss-clclay");
+    clay.hidden = true;
+    media.append(img, clay);
+    return { img, clay };
+  }
+
+  _syncStill(pair, video, hasVid, url) {
+    if (!pair || !video) return;
+    video.hidden = !hasVid;
+    pair.img.hidden = hasVid || !url;
+    if (!hasVid && url && pair.img.getAttribute("src") !== url) pair.img.src = url;
+    pair.clay.hidden = hasVid || !!url;
+    if (!hasVid && !url) {
+      try {
+        const c = this.ctx.stage.renderFrameTo("clay", 0);
+        pair.clay.width = c.width; pair.clay.height = c.height;
+        pair.clay.getContext("2d").drawImage(c, 0, 0);
+      } catch { pair.clay.hidden = true; /* stage not ready */ }
+    }
+  }
+
+  /** A panel button that opens a full-height pop-over (title, search box, the picker) beside the panel. */
+  _cvPicker(wrap, key, ic, title, tip, nodes, placeholder) {
+    const mv = this._mv;
+    const p = hudPop({ title, icon: icon(ic, 13), onClose: () => this._frameSum?.() });
+    p.el.classList.add("ss-tallpop");
+    const q = cvEl("input", "ss-popsearch");
+    q.type = "text";
+    q.placeholder = placeholder;
+    q.setAttribute("aria-label", `Search ${title}`);
+    q.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") { if (q.value) { q.value = ""; filter(); } else p.close(); } });
+    const none = cvEl("div", "ss-clempty ss-popnone", "Nothing matches. Try another word.");
+    none.hidden = true;
+    const filter = () => {
+      const words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
+      let shown = 0;
+      for (const b of p.body.querySelectorAll("button.ss-style, button.gear")) {
+        const hay = `${b.textContent} ${b.title} ${b.dataset.id || ""}`.toLowerCase();
+        const ok = words.every((w) => hay.includes(w));
+        b.hidden = !ok;
+        if (ok) shown++;
+      }
+      for (const col of p.body.querySelectorAll(".ss-gear .col")) col.hidden = !col.querySelector("button.gear:not([hidden])");
+      none.hidden = shown > 0;
+    };
+    q.addEventListener("input", filter);
+    p.body.append(q);
+    for (const n of nodes) if (n) mv.move(n, p.body);
+    p.body.append(none);
+    const sum = cvEl("span", "sm");
+    const b = cvEl("button", "ss-clpopbtn", icon(ic, 16), cvEl("span", "tx", cvEl("b", "", title), sum), cvEl("span", "car", "›"));
+    b.type = "button";
+    b.title = tip;
+    b.setAttribute("aria-expanded", "false");
+    b.addEventListener("pointerdown", (e) => e.stopPropagation());
+    b.addEventListener("click", () => {
+      const opening = !p.isOpen();
+      for (const o of this._pops) o.close();
+      if (opening) { p.open(); setTimeout(() => { try { q.focus({ preventScroll: true }); } catch { /* gone */ } }, 0); }
+    });
+    p.btn = b;
+    p.sum = sum;
+    p.key = key;
+    p.frame = true;   // ⑤ Motion's Follow modes leave these alone
+    p.onState = (open) => { b.setAttribute("aria-expanded", String(open)); wrap.dataset.pop = open ? key : ""; if (!open) this._frameSum?.(); };
+    // A pick updates the button's summary at once.
+    p.body.addEventListener("click", (e) => { if (e.target.closest?.("button.ss-style, button.gear")) setTimeout(() => this._frameSum?.(), 0); });
+    wrap.append(p.el);
+    this._cvBuilt.push(p.el);
+    this._pops.push(p);
+    return p;
+  }
+
   _cvFrame() {
     const f = this.f, v = this.views.frame, mv = this._mv;
     const { wrap, media, bottom, panel } = this._cvShell(v);
@@ -1569,7 +1661,33 @@ export class Pipeline {
     sec("Prompt", [f.desc.parentElement, f.follow.parentElement], true, "prompt");
     sec("Cast in this shot", [f.refsCard], false, "cast");
     sec("Style or character add-on", [f.lora.parentElement, f.loraStrength.parentElement], false, "lora");
-    for (const d of f.studio.querySelectorAll(":scope > .ss-studio-side > details")) mv.move(d, left.body);
+    // Style and Camera were long pickers squeezed into small scrolling boxes (QA round 02): each is now a button that
+    // opens a full-height pop-over with a search box. Advanced (steps & CFG) stays a fold in the panel.
+    const pickers = [];
+    for (const d of f.studio.querySelectorAll(":scope > .ss-studio-side > details")) {
+      if (d.contains(f.styleHost)) pickers.push(["style", "palette", "Style", "Film looks: one click sets the film stock, lens, palette and grade",
+        [...d.children].filter((c) => c.tagName !== "SUMMARY"), "Search looks: noir, western, 70s…"]);
+      else if (d.contains(f.gearHost)) pickers.push(["camera", "camera", "Camera", "Camera body, lens, focal length and aperture (the same as the Look tab)",
+        [...d.children].filter((c) => c.tagName !== "SUMMARY"), "Search: Alexa, anamorphic, 35mm, f/2…"]);
+      else mv.move(d, left.body);
+    }
+    if (pickers.length) {
+      const pops = pickers.map(([key, ic, title, tip, nodes, ph]) => this._cvPicker(wrap, key, ic, title, tip, nodes, ph));
+      left.body.append(cvEl("div", "ss-clpopbtns", ...pops.map((p) => p.btn)));
+      this._frameSum = () => {
+        const look = this.ctx.look, st = look?.state || {};
+        const sty = (look?.styles || []).find((x) => x.id === st.style);
+        for (const p of pops) {
+          if (p.key === "style") p.sum.textContent = sty ? sty.label : "None yet: pick a film look";
+          else {
+            const bits = [st.camera_body, st.lens].filter((x) => x && x !== "auto").map((x) => String(x).replace(/_/g, " "));
+            const mm = this.ctx.look?.getFocal?.();
+            p.sum.textContent = [...bits, mm ? `${Math.round(mm)}mm` : ""].filter(Boolean).join(" · ") || "Auto: the style picks the gear";
+          }
+        }
+      };
+      this._frameSum();
+    }
     const right = panel("frame_r", "Paint Studio · clay", "right");
     mv.move(f.paintCard, right.body);
     const clayCard = f.clay.parentElement;
@@ -1612,6 +1730,8 @@ export class Pipeline {
     const sec = (title, nodes, open, skey) => { const s = left.section(title, nodes, { open, skey }); for (const n of nodes) if (n) mv.move(n, s.box); };
     sec("Follow", [this.ripple.el], true, "follow");
     sec("Video model", [m.engine.parentElement, m.h3Box, m.freedom.parentElement, m.cfg.closest("details")], true, "model");
+    mv.addClass(m.engine.parentElement, "ss-cl-bare");   // the VIDEO MODEL heading names it; no second "Video model" line (QA round 02)
+    m.engine.setAttribute("aria-label", "Video model");
     this._cvModelSec = m.engine.parentElement.parentElement?.closest?.("details, section, .ss-hudsec") || null;
     // Sound and dialogue open as pop-overs beside the panel, so the panel itself never has to scroll.
     const pop = (key, ic, title, tip, nodes) => {
@@ -1656,6 +1776,7 @@ export class Pipeline {
     mv.addClass(frameCard, "ss-clpip");
     mv.move(m.video.parentElement, media);
     mv.move(this.ripple.compare, media);
+    this._mStill = this._cvStillPair(media);
     mv.move(this.ripple.editHost, wrap);   // Paint Studio opens over the whole canvas, as in ④ Frame
     mv.move(m.status, wrap);
     mv.addClass(m.status, "ss-clpill");
@@ -1686,7 +1807,7 @@ export class Pipeline {
     if (this._cvRipple) this._cvRipple.hidden = !rip;
     for (const x of [m.engine.parentElement, m.freedom.parentElement]) if (x) x.hidden = rip;
     // Ripple keeps the clip's own sound: the sound / dialogue pop-overs are for LTX renders.
-    for (const pp of this._pops || []) if (pp.btn) { pp.btn.hidden = rip; if (rip) pp.close?.(); }   // CSS: .ss-clpopbtn[hidden]
+    for (const pp of this._pops || []) if (pp.btn && !pp.frame) { pp.btn.hidden = rip; if (rip) pp.close?.(); }   // CSS: .ss-clpopbtn[hidden]
     if (rip) m.h3Box.hidden = true;
     if (!rip) this._showEngine?.();
   }
@@ -1696,6 +1817,8 @@ export class Pipeline {
     const v = this.m.video;
     if (hasTake || !url || this.ripple?.editing) return;
     if (v.getAttribute("src") !== url) { v.src = url; v.load?.(); }
+    v.hidden = false;
+    if (this._mStill) this._mStill.img.hidden = this._mStill.clay.hidden = true;
     this.m.vidCap.textContent = "The clip you are editing";
   }
 
@@ -1711,6 +1834,7 @@ export class Pipeline {
     if (sid === this.ctx.stage.activeShot().id) {
       const v = this.m.video;
       v.hidden = false;
+      if (this._mStill) this._mStill.img.hidden = this._mStill.clay.hidden = true;
       v.src = take.url;
       v.play?.().catch(() => {});
       try { this.ctx.ladder.setSource(take.kind === "final" ? 4 : 3, "video", take.url); } catch { /* ladder not ready */ }
@@ -1728,6 +1852,7 @@ export class Pipeline {
     right.el.classList.add("ss-tall");
     for (const c of rest) mv.move(c, right.body);
     mv.move(this.dCanvas, media);
+    this._dStill = this._cvStillPair(media);
     this._cvDPill = cvEl("div", "status ss-clpill");
     wrap.append(this._cvDPill);
     const film = cvEl("div", "ss-clfilm");
