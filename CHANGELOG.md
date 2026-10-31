@@ -22,6 +22,7 @@ Each entry links to the code; every milestone ships with tests.
 **13:36 PDT · QA round 02: a regression guard, and four layout fixes**
 - With a render queued, the step names stay whole. Stop used to squeeze them to "Scri…", "C…", "S…" at 1440 px; the wordmark and the Guide / Done words now make the room.
 - The App's narrow side panel shows one Import video button, not two. The small "Drop a video here" pill there no longer runs under the Coach pill.
+- ⑤ Motion's settings panel fits at 1280×800: the duplicate "Follow" line under the FOLLOW heading is gone, so "Cast in this shot" is no longer cut off.
 - The "Physics: CPU" badge no longer covers the status line ("Man 3 climbs onto Crate 1"). It only appears for the GPU solver, bottom right.
 - New: `tools/qa/visual_baseline.mjs` captures 17 fixed screens at 1280×800, 1440×900 and 1920×1080 and compares them with committed baselines. It also checks pixels, console errors, page scroll, clipped text and overlapping panels. Every QA round runs it first. See [tools/qa/README.md](tools/qa/README.md).
 

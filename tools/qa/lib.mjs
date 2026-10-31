@@ -210,5 +210,5 @@ export const METRICS = `const el=document.querySelector('.ss-stage')||document.b
 
 /** Console lines that are ComfyUI / browser noise, not Soundstage. */
 export function noise(l) {
-  return /api\.comfy\.org|Three\.js|THREE\.|legacy queue|internal module|user\.css|templates\.json|subgraphs|MaskEditor|layout total|getCanvas: canvas is null|input\.link is deprecated|checkState\(\) is deprecated|swiftshader|WebGL|GPU stall|favicon|manager|ComfyUI-Manager|registry|\[DOM\] Input elements|Unrecognized feature|deprecated/i.test(l);
+  return /api\.comfy\.org|Three\.js|THREE\.|legacy queue|internal module|user\.css|templates\.json|subgraphs|MaskEditor|layout total|getCanvas: canvas is null|input\.link is deprecated|checkState\(\) is deprecated|swiftshader|WebGL|GPU stall|favicon|manager|ComfyUI-Manager|registry|\[Jobs API\]|Failed to fetch queue|\[DOM\] Input elements|Unrecognized feature|deprecated/i.test(l);
 }
