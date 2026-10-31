@@ -212,3 +212,13 @@ def test_a_car_keeping_pace_behind_a_ride_along_camera_has_no_move():
                                                                     {"frame": 120, "position": [-2.2, 0, 16]}]})
     r = compile_look({}, s)
     assert "police car drives" not in r["motion_prompt"] and "the only other vehicle is a police car" in r["motion_prompt"]
+
+
+def test_an_empty_road_is_said_early_and_for_the_whole_shot():
+    """LTX added an overtaking car in the last second of the windshield draft (Milestone 3): the empty road comes
+    right after the opening line, holds "from the first frame to the last", and the close covers the frame edges."""
+    m = compile_look({}, _shot("Soundstage_In_The_Car", "windshield"))["motion_prompt"]
+    lock = m.index("The car has the street to itself. The road stays empty for the whole shot, from the first frame to the last")
+    assert lock < m.index("The camera is mounted on the hood")
+    assert "nothing pulls alongside or overtakes" in m
+    assert "not even at its edges near the end: no bystanders, no other vehicles." in m
