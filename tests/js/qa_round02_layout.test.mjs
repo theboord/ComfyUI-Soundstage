@@ -35,3 +35,11 @@ test("top row: while Stop shows, the wordmark and the Guide / Done words make ro
 test("narrow view: the small drop-a-video pill gives way (the big Import video is just above); the empty-stage one stays", () => {
   assert.match(main, /\.ss-stageview\[data-narrow=true\] > \.ss-vi-cta:not\(\[data-big=true\]\) \{ display:none !important; \}/);
 });
+
+// 5. ⑤ Motion's settings panel scrolled by 19 px at 1280×800: the FOLLOW heading and a "Follow" line said the same thing.
+test("⑤ Motion: in the canvas layout the Follow switch's own label gives way to the panel heading", () => {
+  assert.ok(canvas.includes(".ss-stage.ss-cl .ss-hudp-secbody > .ss-follow > .status:first-child { display:none; }"));
+  // The rule relies on ripple.mjs putting the "Follow" line first in .ss-follow.
+  const rip = readFileSync(new URL("../../web/motion/ripple.mjs", import.meta.url), "utf8");
+  assert.match(rip, /h\("div", \{ class: "ss-follow" \}, h\("div", \{ class: "status" \}, "Follow"\)/);
+});

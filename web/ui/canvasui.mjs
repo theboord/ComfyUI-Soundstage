@@ -424,6 +424,9 @@ const CSS = `
 .ss-stage.ss-cl .ss-tabs.ss-toprow:has(.ss-stop:not([hidden])) > .ss-guidebtn .lbl { display:none; }
 .ss-stage.ss-cl .ss-tabs.ss-toprow:has(.ss-stop:not([hidden])) > .ss-expand { font-size:0 !important; gap:0 !important; padding:6px 8px !important; }
 .ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow .ss-pipe button.ss-stop { padding:4px 9px !important; }
+/* ⑤ Motion: the panel's FOLLOW heading already names the Follow switch; its own "Follow" line made the panel scroll by
+   19 px at 1280×800, cutting off "Cast in this shot" (QA round 02). */
+.ss-stage.ss-cl .ss-hudp-secbody > .ss-follow > .status:first-child { display:none; }
 /* Its drop-downs: the scene strip (full) and the tools menu. */
 .ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-toppop { position:absolute; top:calc(100% + 6px); z-index:60; background:var(--cv-glass-strong); border:1px solid var(--cv-edge);
   border-radius:14px; box-shadow:0 14px 40px rgba(0,0,0,.5); backdrop-filter:blur(14px) saturate(1.2); -webkit-backdrop-filter:blur(14px) saturate(1.2); padding:6px; }
