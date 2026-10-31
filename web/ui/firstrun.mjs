@@ -82,6 +82,27 @@ export function placeCard(target, card, view, { gap = 14, m = 12 } = {}) {
   return { left: Math.round(clamp(left, m, view.w - card.w - m)), top: Math.round(clamp(top, m, view.h - card.h - m)), side };
 }
 
+/**
+ * Is a target's box hidden (in part) by the box it is seen through (the viewport, or a scrolling panel such as
+ * ComfyUI's App side panel)? A target taller than the box counts as shown once its top is in view. tol = px slack.
+ */
+export function outOfView(r, box, tol = 2) {
+  if (!r || !box) return false;
+  const tooTall = r.bottom - r.top > box.bottom - box.top;
+  const topIn = r.top >= box.top - tol && r.top <= box.bottom - 24;
+  if (tooTall) return !topIn;
+  return r.top < box.top - tol || r.bottom > box.bottom + tol;
+}
+
+/** The nearest ancestor that scrolls vertically (its content taller than it), or null. */
+function scrollParent(e) {
+  for (let p = e?.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY;
+    if ((oy === "auto" || oy === "scroll") && p.scrollHeight > p.clientHeight + 2) return p;
+  }
+  return null;
+}
+
 /** The bounding box of several elements (the visible ones), or null. */
 export function unionRect(rects) {
   const rs = rects.filter((r) => r && r.width > 0 && r.height > 0);
@@ -254,9 +275,25 @@ export class Tour {
     this.text.textContent = s.text;
     this.backBtn.disabled = i === 0;
     this.nextBtn.textContent = i === this.steps.length - 1 ? "Done" : "Next";
+    this._reveal();
     this.place();
     requestAnimationFrame(() => this.place());
     try { this.nextBtn.focus({ preventScroll: true }); } catch { /* not focusable yet */ }
+  }
+
+  /** Bring the step's control into view when a scrolling panel (the App's narrow side panel) has it out of sight. */
+  _reveal() {
+    let t = null;
+    try { t = this.steps[this.i]?.target?.(); } catch { t = null; }
+    const first = (Array.isArray(t) ? t : [t]).find((x) => x && x.isConnected && x.getClientRects().length);
+    if (!first) return;
+    const sp = scrollParent(first);
+    const vb = { top: 0, bottom: window.innerHeight };
+    const pb = sp ? sp.getBoundingClientRect() : null;
+    const box = pb ? { top: Math.max(vb.top, pb.top), bottom: Math.min(vb.bottom, pb.bottom) } : vb;
+    if (outOfView(first.getBoundingClientRect(), box)) {
+      try { first.scrollIntoView({ block: "nearest", inline: "nearest" }); } catch { /* old browser */ }
+    }
   }
 
   _rect() {
