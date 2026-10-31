@@ -3,6 +3,9 @@
 // with a status dot. Click a scene to set it up on the stage, a shot to work on it; ◀ ▶ or ←/→ step through scenes.
 // Without a script it shows the stage's shots only.
 //
+// In the canvas layout the strip folds into the App's top row: strip.pick is a compact "scene ▾" button (scene
+// number, place, time of day, the shot) that opens the full strip as a drop-down; ◀ ▶ sit beside it.
+//
 //   const strip = new SceneStrip(host, { getScript, current, getShots, activeShot, onScene, onShot, shotStatus,
 //     setupInfo, onSetup, onUndo });
 //   strip.render();
@@ -46,6 +49,16 @@ const CSS = `
 .ss-scstrip .dot.busy { background:var(--ss-accent,#F2FF59); animation:ss-scdot 1s ease-in-out infinite alternate; }
 .ss-scstrip .dot.rejected { background:#ff5a4f; }
 .ss-scstrip .dot.changes { background:#ff9a3d; }
+.ss-stage button.ss-scpick { display:inline-flex !important; align-items:center; gap:8px !important; min-width:0; max-width:100%; height:34px;
+  padding:2px 10px 2px 8px !important; border-radius:10px !important; text-align:left; }
+.ss-scpick .num { font-size:15px; font-weight:800; color:var(--ss-accent,#F2FF59); flex:none; }
+.ss-scpick .meta { display:flex; flex-direction:column; min-width:0; line-height:1.15; }
+.ss-scpick .where { font-size:12px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--ss-text,#f0efed); }
+.ss-scpick .sub { display:flex; align-items:center; gap:4px; font-size:10.5px; color:var(--ss-muted,#a9a3ad); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ss-scpick .sub i { width:7px; height:7px; border-radius:50%; display:inline-block; flex:none; }
+.ss-scpick .car { flex:none; font-size:11px; color:var(--ss-muted,#a9a3ad); margin-left:auto; }
+.ss-scpick[data-setup=true] .car { color:var(--ss-accent,#F2FF59); }
+.ss-scpick[data-setup=true] .car::before { content:"●"; font-size:8px; margin-right:3px; vertical-align:2px; }
 @keyframes ss-scdot { from { opacity:.35; } to { opacity:1; } }
 .ss-scstrip .noshot { font-size:11px; color:var(--ss-muted,#a9a3ad); }
 .ss-scstrip .act { flex:0 0 auto; display:flex; flex-direction:column; justify-content:center; gap:4px; max-width:300px; }
@@ -70,6 +83,24 @@ const h = (tag, attrs = {}, ...kids) => {
 
 const EDITABLE = /^(INPUT|TEXTAREA|SELECT)$/;
 
+/**
+ * What the compact scene button shows: the scene on the stage (number, place, time of day) and the shot being worked
+ * on. Without a script: "The stage" and its shot count.
+ */
+export function pickInfo(scenes, cur, shots, active) {
+  const list = scenes || [];
+  const sh = (shots || []).find((s) => s.id === active) || null;
+  const shot = sh ? String(sh.name || sh.id) : "";
+  if (!list.length) {
+    const n = (shots || []).length;
+    return { num: "", where: "The stage", time: null, shot, sub: `${n} shot${n === 1 ? "" : "s"}`, scenes: 0 };
+  }
+  const sc = list.find((x) => x.id === cur) || null;
+  if (!sc) return { num: "", where: "Pick a scene", time: null, shot, sub: `${list.length} scene${list.length === 1 ? "" : "s"}`, scenes: list.length };
+  const c = sceneChip(sc);
+  return { num: c.number, where: c.where || sc.heading || "", time: c.time, shot, sub: shot, scenes: list.length };
+}
+
 export class SceneStrip {
   constructor(host, o) {
     this.o = o;
@@ -83,6 +114,11 @@ export class SceneStrip {
     this.rail.addEventListener("wheel", (e) => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { this.rail.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
     this.act = h("div", { class: "act" });
     this.el.append(this.prev, this.rail, this.next, this.act);
+    // The compact form (canvas layout): one button naming the scene on the stage; the host decides what it opens.
+    this.pick = h("button", { type: "button", class: "ss-scpick", "aria-haspopup": "true", "aria-expanded": "false",
+      on: { click: () => this.onPick?.() } });
+    this.onPick = null;
+    this.pick.addEventListener("pointerdown", (e) => e.stopPropagation());
     this._thumbs = new Map();   // shot id -> {canvas, t}
     this._key = (e) => this._onKey(e);
     window.addEventListener("keydown", this._key, true);   // before ComfyUI's own key bindings
@@ -96,7 +132,7 @@ export class SceneStrip {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
     const t = e.target;
     if (t && (EDITABLE.test(t.tagName || "") || t.isContentEditable || t.closest?.(".ss-cv, .ss-cut, .ss-strip, [role=slider], dialog"))) return;
-    if (!this.el.offsetParent) return;   // not on screen
+    if (!this.el.offsetParent && !this.pick.offsetParent) return;   // not on screen (folded: the scene button is)
     if (!this.o.getScript?.()?.scenes?.length) return;
     e.preventDefault();
     e.stopPropagation();
@@ -146,6 +182,17 @@ export class SceneStrip {
     }));
   }
 
+  _drawPick(scenes, cur, shots, active) {
+    const p = pickInfo(scenes, cur, shots, active);
+    const [col, todLabel] = TOD[p.time] || [null, ""];
+    this.pick.replaceChildren(...[
+      p.num ? h("span", { class: "num" }, p.num) : null,
+      h("span", { class: "meta" }, h("span", { class: "where" }, p.where),
+        h("span", { class: "sub" }, col ? h("i", { style: `background:${col}`, title: todLabel }) : null, p.sub || "")),
+      h("span", { class: "car", "aria-hidden": "true" }, "▾")].filter(Boolean));
+    this.pick.title = `${p.num ? `Scene ${p.num}: ` : ""}${p.where}${p.shot ? ` · shot: ${p.shot}` : ""}\nClick to pick a scene or a shot${scenes.length ? " (← → step through scenes)" : ""}`;
+  }
+
   _draw() {
     const scenes = this.o.getScript?.()?.scenes || [];
     let shots = [];
@@ -180,6 +227,7 @@ export class SceneStrip {
     this.prev.disabled = !scenes.length || i === 0;
     this.next.disabled = !scenes.length || i === scenes.length - 1;
     this.prev.hidden = this.next.hidden = !scenes.length;
+    this._drawPick(scenes, cur, shots, active);
     // The setup action for the scene on the stage (and Undo right after one).
     const info = this.o.setupInfo?.() || null;
     const acts = [];
@@ -188,6 +236,8 @@ export class SceneStrip {
       on: { click: () => this.o.onSetup?.() } }, info.label));
     this.act.replaceChildren(...acts);
     this.act.hidden = !acts.length;
+    // Folded, a dot on the scene button says "this scene can be set up" (the button itself is in the drop-down).
+    this.pick.dataset.setup = String(acts.some((b) => b.classList.contains("go")));
     // Keep the active scene in view.
     const a = this.rail.querySelector('.chip[aria-current="true"]');
     if (a && this._lastCur !== cur) {

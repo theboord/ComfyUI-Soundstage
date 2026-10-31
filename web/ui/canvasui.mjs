@@ -108,6 +108,42 @@ export function hudPanel({ key, title, tip = "", side = "left", collapsed = fals
   return api;
 }
 
+/**
+ * A pop-over panel (same glass as the panels) that opens beside the panel holding its button: for settings that
+ * would otherwise make a panel scroll. api.onState(open) can be set by the host (button state, layout hooks).
+ */
+export function hudPop({ title, icon = null, onClose = null }) {
+  const root = el("section", "ss-hudp ss-clpop2");
+  root.hidden = true;
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-label", title);
+  const head = el("header", "ss-hudp-head");
+  const ttl = el("span", "ss-hudp-title", icon ? icon : null, el("span", "", title));
+  const x = el("button", "ss-hudp-tog", "×");
+  x.type = "button";
+  x.title = "Close";
+  head.append(ttl, x);
+  const body = el("div", "ss-hudp-body");
+  root.append(head, body);
+  for (const t of ["pointerdown", "wheel"]) root.addEventListener(t, (e) => e.stopPropagation(), { passive: true });
+  const api = {
+    el: root, body, btn: null, onState: null,
+    isOpen: () => !root.hidden,
+    open() { if (!root.hidden) return; root.hidden = false; api.onState?.(true); },
+    close() { if (root.hidden) return; root.hidden = true; api.onState?.(false); onClose?.(); },
+    toggle() { if (root.hidden) api.open(); else api.close(); },
+  };
+  x.addEventListener("click", () => api.close());
+  root.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); api.close(); api.btn?.focus?.(); } });
+  return api;
+}
+
+/** Text cut to n characters with an ellipsis (whitespace collapsed). */
+export function clipText(t, n) {
+  const s = String(t ?? "").replace(/\s+/g, " ").trim();
+  return s.length > n ? `${s.slice(0, Math.max(1, n - 1)).trimEnd()}…` : s;
+}
+
 const CSS = `
 /* ===== Canvas layout (.ss-cl): the canvas is the workspace; settings float over it. ===== */
 .ss-stage.ss-cl { --cv-glass: rgba(26,20,31,.80); --cv-glass-strong: rgba(26,20,31,.92); --cv-edge: rgba(255,255,255,.10); }
@@ -129,7 +165,6 @@ const CSS = `
 .ss-stage.ss-cl[data-ws=wide] .ss-scstrip { height:44px; margin:0 !important; }
 .ss-stage.ss-cl[data-ws=wide] .ss-scstrip .chip { height:40px !important; padding:2px 10px 2px 8px !important; }
 .ss-stage.ss-cl[data-ws=wide] .ss-scstrip .chip .num, .ss-stage.ss-cl[data-ws=wide] .ss-scstrip .chip b { font-size:16px; }
-@media (max-width: 1360px) { .ss-stage.ss-cl[data-ws=wide] .ss-tabs .ss-brand .ss-wordmark { display:none; } }
 .ss-stage .ss-layoutbtn { font-size:12px !important; padding:4px 10px !important; }
 
 /* Panels: frosted glass over the canvas, a header that collapses them to a pill. */
@@ -343,6 +378,106 @@ const CSS = `
 .ss-stage.ss-cl[data-ws=wide] .ss-canvasview > .ss-cv:not(.ss-cv-narrow) .ss-cv-view { height:auto; min-height:200px; }
 .ss-stage.ss-cl[data-ws=wide] .ss-canvasview > .ss-cv:not(.ss-cv-narrow) .ss-cv-side { min-height:0; overflow-y:auto; scrollbar-width:thin; }
 .ss-stage.ss-cl[data-ws=wide] .ss-clwrap > .ss-clclose { position:absolute; z-index:8; top:8px; right:8px; }
+
+/* ===== Milestone 2: one top row, the timeline as a bar over the canvas, pop-overs instead of scrolling. ===== */
+/* Top row: brand · steps · scene picker · undo / redo · Tools ▾ · Guide · Expand. */
+.ss-stage.ss-cl > .ss-tabs.ss-toprow { position:relative; z-index:40; display:flex; flex-wrap:nowrap; align-items:center; gap:6px !important;
+  padding:3px 4px !important; overflow:visible !important; min-width:0; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-brand { margin:0 2px 0 6px; flex:none; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-pipe { flex:0 1 auto; min-width:0; display:flex; gap:2px !important; margin:0 !important; flex-wrap:nowrap; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button { flex:0 1 auto !important; min-width:0 !important; flex-direction:row !important; align-items:center !important;
+  gap:6px !important; padding:3px 11px 3px 4px !important; border-radius:999px !important; border:1px solid transparent !important; background:transparent !important;
+  white-space:nowrap; overflow:hidden; min-height:0; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button:hover { background:rgba(255,255,255,.05) !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button .n { width:21px; height:21px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center;
+  font-size:11px !important; font-weight:700; letter-spacing:0 !important; text-transform:none; background:rgba(255,255,255,.08); color:var(--ss-muted); flex:none; gap:0 !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button .n .w, .ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button .n .done { display:none !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button .n:has(> .done:not([hidden])) { background:rgba(126,226,168,.16); color:#7ee2a8; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button .t { font-size:13px !important; font-weight:600; color:var(--ss-muted); overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button .t .lg { display:none; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button .t .sh { display:inline; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button[aria-current=step] { background:rgba(242,255,89,.09) !important; border-color:rgba(242,255,89,.42) !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button[aria-current=step] .n { background:var(--ss-accent); color:var(--ss-accent-ink); }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button[aria-current=step] .t, .ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button:hover .t { color:var(--ss-text); }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button.ss-stop { padding:4px 12px !important; background:#ff453a !important; color:#fff !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-topscene { display:flex; align-items:center; gap:2px; flex:0 1 280px; min-width:130px; padding-left:6px;
+  border-left:1px solid var(--ss-line); }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-topscene button.nav { width:22px; height:30px; padding:0 !important; justify-content:center; font-size:10px; flex:none;
+  border-radius:8px !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-topscene button.ss-scpick { flex:1 1 auto; min-width:0; background:rgba(255,255,255,.045) !important;
+  border:1px solid var(--ss-line) !important; color:var(--ss-text) !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-topscene button.ss-scpick[aria-expanded=true] { border-color:var(--ss-accent) !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow > button, .ss-stage.ss-cl .ss-tabs.ss-toprow > a { flex:none; white-space:nowrap; padding:5px 10px !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-toolsbtn[aria-pressed=true] { background:var(--ss-raised) !important; color:var(--ss-text) !important; border-color:var(--ss-line) !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-guidebtn { color:var(--ss-text) !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-guidebtn .ss-icon { color:var(--ss-accent); }
+.ss-stage.ss-cl :is(.ss-toolsbtn, .ss-tltog) .car { font-size:10px; opacity:.7; }
+.ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow > .ss-brand .ss-wordmark { display:none; }
+.ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow > .ss-guidebtn .lbl { display:none; }
+.ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow > .ss-expand { font-size:0 !important; gap:0 !important; padding:6px 8px !important; }
+.ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow .ss-pipe button { padding-right:8px !important; gap:5px !important; }
+/* Its drop-downs: the scene strip (full) and the tools menu. */
+.ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-toppop { position:absolute; top:calc(100% + 6px); z-index:60; background:var(--cv-glass-strong); border:1px solid var(--cv-edge);
+  border-radius:14px; box-shadow:0 14px 40px rgba(0,0,0,.5); backdrop-filter:blur(14px) saturate(1.2); -webkit-backdrop-filter:blur(14px) saturate(1.2); padding:6px; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-scenepop { left:0; right:0; }
+.ss-stage.ss-cl .ss-scenepop > .ss-scstrip { height:64px !important; margin:0 !important; }
+.ss-stage.ss-cl .ss-scenepop > .ss-scstrip .chip { height:60px !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-toolsmenu { right:0; width:310px; display:flex; flex-direction:column; gap:2px; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-toolsmenu > button { display:grid !important; grid-template-columns:18px minmax(0,1fr); column-gap:10px !important; row-gap:1px;
+  align-items:center; justify-items:start; text-align:left; width:100%; padding:7px 10px !important; margin:0 !important; border-radius:10px !important; color:var(--ss-text) !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-toolsmenu > button:hover { background:rgba(255,255,255,.06) !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-toolsmenu > button .lbl { font-weight:600; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-toolsmenu > button[data-desc]::after { content:attr(data-desc); grid-column:2; font-size:11px; color:var(--ss-muted); font-weight:400;
+  white-space:normal; line-height:1.3; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-toolsmenu > button[aria-pressed=true] { background:rgba(242,255,89,.08) !important; border-color:rgba(242,255,89,.35) !important; }
+.ss-stage.ss-cl .ss-toolsmenu > .sep { height:1px; background:var(--cv-edge); margin:4px 6px; }
+/* Narrow (the App's side panel): the same row wraps; the steps and the scene picker get a line each. */
+.ss-stage.ss-cl[data-ws=narrow] > .ss-tabs.ss-toprow { flex-wrap:wrap; row-gap:4px !important; border-radius:14px !important; }
+.ss-stage[data-ws=narrow] .ss-vphead .ss-views { flex:0 1 auto; max-width:100%; border-radius:14px !important; }
+.ss-stage.ss-cl[data-ws=narrow] .ss-tabs.ss-toprow > .ss-pipe { order:5; flex:1 1 100%; flex-wrap:wrap; }
+.ss-stage.ss-cl[data-ws=narrow] .ss-tabs.ss-toprow > .ss-topscene { order:6; flex:1 1 100%; border-left:0; padding-left:0; }
+.ss-stage.ss-cl[data-ws=narrow] .ss-tabs.ss-toprow > .ss-brand { margin-right:auto; }
+.ss-stage.ss-cl[data-ws=narrow] .ss-tabs.ss-toprow > .ss-toolsmenu { width:min(310px, 100%); }
+
+/* The timeline: a bar over the bottom of the canvas. Folded: playhead and transport; "Tracks" opens the rows. */
+.ss-stage.ss-cl[data-ws=wide] .ss-ws { grid-template-areas:"center" !important; grid-template-rows:minmax(0,1fr) !important; }
+.ss-stage.ss-cl[data-ws=wide] .ss-clarea { --cv-b:54px; }
+.ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-vpcell { padding-bottom:var(--cv-b); }
+.ss-stage.ss-cl[data-ws=wide] .ss-clarea > :is(.ss-ladder, .ss-lookview):not([hidden]) { padding-bottom:var(--cv-b); }
+.ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-bottom { position:absolute; z-index:18; left:calc(var(--cv-l,0px) + 6px); right:calc(var(--cv-r,0px) + 6px); bottom:6px;
+  max-height:calc(100% - 12px); display:flex; flex-direction:column; gap:2px; padding:2px 3px; border-radius:14px; background:var(--cv-glass-strong);
+  border:1px solid var(--cv-edge); box-shadow:0 10px 30px rgba(0,0,0,.35); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); }
+.ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-bottom > .ss-time { background:transparent !important; border:0 !important; padding:2px 6px !important; }
+.ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-bottom > .ss-time { flex-wrap:nowrap !important; gap:6px 8px !important; min-width:0; }
+.ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-bottom > .ss-time > * { flex:none; min-width:0; }
+.ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-bottom > .ss-time > :nth-child(3) { flex:1 1 auto; min-width:80px; }
+.ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-bottom > .ss-time .ss-views button { padding:4px 7px !important; }
+.ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-bottom > .ss-time > label input[type=range] { width:80px; }
+.ss-stage.ss-cl[data-ws=wide][data-tw=s] .ss-clarea > .ss-bottom > .ss-time .ss-views button:is([aria-label]) { padding:4px 5px !important; }
+.ss-stage.ss-cl .ss-clarea[data-tl=closed] > .ss-bottom > .ss-bottomscroll { display:none !important; }
+.ss-stage.ss-cl[data-ws=wide] .ss-clarea[data-tl=open] > .ss-bottom > .ss-bottomscroll { max-height:min(300px, 44vh); background:transparent; padding:0 4px 4px; }
+.ss-stage.ss-cl .ss-tltog[aria-expanded=true] { color:var(--ss-text) !important; background:var(--ss-raised) !important; }
+.ss-stage.ss-cl.ss-cl-hide .ss-clarea > .ss-bottom { display:none !important; }
+.ss-stage.ss-cl.ss-cl-hide .ss-clarea { --cv-b:0px; }
+
+/* ⑤ Motion: Sound & music and Dialogue & voice are buttons in the panel that open pop-overs beside it. */
+.ss-stage .ss-clpopbtns { display:flex; flex-direction:column; gap:6px; padding:6px 0 2px; border-top:1px solid var(--cv-edge); }
+.ss-stage button.ss-clpopbtn { display:flex !important; align-items:center; gap:10px !important; width:100%; text-align:left; padding:8px 10px !important;
+  border-radius:12px !important; }
+.ss-stage button.ss-clpopbtn > .ss-icon { color:var(--ss-accent); }
+.ss-stage .ss-clpopbtn .tx { display:flex; flex-direction:column; min-width:0; flex:1 1 auto; gap:1px; }
+.ss-stage .ss-clpopbtn .tx b { font-size:13px; font-weight:600; }
+.ss-stage .ss-clpopbtn .tx .sm { font-size:11px; color:var(--ss-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:400; }
+.ss-stage .ss-clpopbtn .car { flex:none; opacity:.6; }
+.ss-stage button.ss-clpopbtn[aria-expanded=true] { border-color:var(--ss-accent) !important; }
+.ss-stage.ss-cl[data-ws=wide] .ss-clwrap > .ss-clpop2 { position:absolute; z-index:6; top:8px; left:calc(var(--cv-l,0px) + 8px);
+  width:min(380px, calc(100% - var(--cv-l,0px) - 24px)); max-height:calc(100% - 16px); background:var(--cv-glass-strong); }
+.ss-stage .ss-clpop2 .ss-hudp-body { padding-top:2px; gap:8px; }
+.ss-stage .ss-clpop2 .row { flex-wrap:wrap; }
+.ss-stage .ss-clpop2 .row > button.ghost { font-size:11px !important; padding:2px 8px !important; }
+.ss-stage .ss-clpop2 .row { gap:4px !important; }
+.ss-stage .ss-clpop2 textarea { min-height:56px; }
+.ss-stage .ss-clpop2 input[type=text] { width:100%; box-sizing:border-box; }
 `;
 
 export function applyCanvasCss() {
