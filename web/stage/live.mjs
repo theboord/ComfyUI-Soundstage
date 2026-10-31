@@ -279,6 +279,8 @@ export class LiveEdit {
 
   /** Let go: the held thing falls and settles (a prop) or stays put (a person, a vehicle); then it is written down. */
   _release(d) {
+    // Let go of a person mid-stride: they stand (the walk / climb swing stops with the drag, not frozen mid-step).
+    if (d.person) { d._speed = 0; d._climbW = 0; this._silentFrame(); }
     if (d.gizmoHidden && this.s.selected === d.id) this.s._gizmoOn = true;
     if (d.mode === "prop" && d.settles) this.world.setKinematicTarget(d.id, null);   // let go: it falls and settles
     else if (this.bodies.has(d.id)) for (const bid of this.bodies.get(d.id)) {
