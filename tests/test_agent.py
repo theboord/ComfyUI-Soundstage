@@ -568,3 +568,26 @@ if __name__ == "__main__" and "--write-fixture" in sys.argv:
     FIXTURE.parent.mkdir(exist_ok=True)
     FIXTURE.write_text(json.dumps(out))
     print(f"wrote {FIXTURE} ({len(out)} cases)")
+
+
+def test_validate_keeps_physics_baked_keys_and_stacks():
+    """Stage physics: baked keys keep their height and rotation; stacked (lifted) crates are not 'repaired' apart."""
+    q = [0.0, 0.38268, 0.0, 0.92388]
+    scene = {"version": 2, "shot": {"frames": 49, "fps": 24}, "environment": {"set": "empty"},
+             "camera": {"position": [0, 1.6, -6], "target": [0, 1, 0], "focal_mm": 35},
+             "actors": [
+                 {"id": "c0", "kind": "crate", "height_m": 0.8, "keys": [{"frame": 0, "position": [0, 0, 0]}],
+                  "physics": {"mode": "dynamic"}},
+                 {"id": "c1", "kind": "crate", "height_m": 0.8, "keys": [{"frame": 0, "position": [0, 0, 0]}],
+                  "physics": {"mode": "dynamic", "lift": 0.8}},
+                 {"id": "c2", "kind": "crate", "height_m": 0.8, "physics": {"mode": "dynamic", "baked": True},
+                  "keys": [{"frame": 0, "position": [1.5, 1.6, 0], "quat": [0, 0, 0, 1]},
+                           {"frame": 6, "position": [1.6, 0.9, 0.1], "quat": q}]},
+             ]}
+    s, _ = validate_scene(scene)
+    by = {a["id"]: a for a in s["actors"]}
+    assert by["c1"]["keys"][0]["position"] == [0, 0, 0]          # still stacked on c0, not moved to a free spot
+    assert by["c2"]["keys"][1]["position"] == [1.6, 0.9, 0.1]    # height kept
+    assert by["c2"]["keys"][1]["quat"] == q                      # rotation kept
+    plain = validate_scene({**scene, "actors": [{**scene["actors"][2], "physics": {}}]})[0]["actors"][0]
+    assert plain["keys"][1]["position"][1] == 0.0 and "quat" not in plain["keys"][1]

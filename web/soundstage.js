@@ -30,6 +30,7 @@ import { applyCanvasCss, layoutPref, setLayoutPref, rememberFlag, Mover } from "
 import { Tour, TOUR_STEPS, tourSeen, markTourSeen, emptyCard, isBrandNewStage, applyFirstRunCss } from "./ui/firstrun.mjs";
 import * as THREE from "./vendor/three.module.min.mjs";
 import { PosePanel } from "./stage/posepanel.mjs";
+import { PhysicsPanel } from "./stage/physpanel.mjs";
 import { listenVcam, LiveVcam, listTakes, fetchTake, takeToCamera, anchorFromCamera } from "./vcam/live.mjs";
 import { ScriptPanel, SceneSwitcher } from "./script/panel.mjs";
 import { DEMO_SCRIPT } from "./script/demo_script.mjs";
@@ -1549,6 +1550,10 @@ function createStageWidget(node, inputName) {
       { key: "frame", label: "Shoot it → Frame", icon: "image", run: () => pipeline?.go("frame") }] });
   stage.fetchApi = (u) => api.fetchApi(u);
   stage.onMocap = () => { try { posePanel._drawTake(); } catch { /* panel gone */ } };
+  // Physics: the selected object's Dynamic / Static / Off and the scene's Simulate & bake, beside the inspector.
+  const physPanel = new PhysicsPanel({ stage, onStatus: (m) => { status.textContent = m; },
+    onBaked: () => { try { tracks?.draw(); afterTimeChange(); } catch { /* timeline not built */ } } });
+  sel.insertBefore(physPanel.btn, dup);
   const isPerson = (k) => k === "man" || k === "woman" || k === "child";
   function syncAppearance(info) {
     apRow.hidden = !info || info.kind === "glb" || info.kind === "custom" || info.kind === "card";
@@ -1589,6 +1594,7 @@ function createStageWidget(node, inputName) {
     sel.hidden = !info;
     syncAppearance(info);
     try { posePanel.show(info); } catch { /* panel not built */ }
+    try { physPanel.show(info); } catch { /* panel not built */ }
     if (!info) return;
     selName.textContent = info.name;
     turn.input.value = info.rotation_deg; turn.out.textContent = `${info.rotation_deg}°`;
@@ -2919,7 +2925,7 @@ function createStageWidget(node, inputName) {
     hint.title = hint.textContent;
     vphead.append(importHead, camMode, hint, views);
     vpCell.append(view);
-    cvArea.append(vpCell, ladderView, lookView);
+    cvArea.append(vpCell, ladderView, lookView, physPanel.el);
     center.append(vphead, cvArea);
     bottomScroll.append(tracksHost, stripHost, cutBar);
     bottom.append(time, bottomScroll);

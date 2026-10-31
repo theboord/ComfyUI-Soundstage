@@ -138,19 +138,25 @@ def validate_scene(scene, place: bool = True) -> tuple[dict, list[str]]:
             keys = [{"frame": 0, "position": a.get("position")}]
             if a.get("position_end") is not None:
                 keys.append({"frame": last, "position": a.get("position_end")})
-        clean = {}
+        clean, quats = {}, {}
+        # Physics-baked keys (stage "Simulate & bake") carry real height and a rotation per key: keep both.
+        baked = isinstance(a.get("physics"), dict) and bool(a["physics"].get("baked"))
         for k in keys:
             if not isinstance(k, dict):
                 continue
             f = int(min(max(_num(k.get("frame")), 0), last))
             p = _metres(_vec(k.get("position")), notes, aid, 100 if place else 1e5)
-            if abs(p[1]) > 1e-6:
+            if abs(p[1]) > 1e-6 and not baked:
                 p[1] = 0.0  # the stage stands everything on the floor
             clean[f] = p
+            q = k.get("quat")
+            if baked and isinstance(q, list) and len(q) == 4 and all(isinstance(v, (int, float)) for v in q):
+                quats[f] = [float(v) for v in q]
         if not clean:
             clean[0] = _metres(_vec(a.get("position")), notes, aid, 100 if place else 1e5)
             clean[0][1] = 0.0
-        out["keys"] = [{"frame": f, "position": [round(v, 3) for v in clean[f]]} for f in sorted(clean)]
+        out["keys"] = [{"frame": f, "position": [round(v, 3) for v in clean[f]], **({"quat": quats[f]} if f in quats else {})}
+                       for f in sorted(clean)]
         out["position"] = list(out["keys"][0]["position"])
         out.pop("position_end", None)
         actors.append(out)
@@ -178,6 +184,10 @@ def validate_scene(scene, place: bool = True) -> tuple[dict, list[str]]:
     for i in order if place else []:
         a = actors[i]
         if a["id"] in riders:
+            continue
+        phys = a.get("physics") if isinstance(a.get("physics"), dict) else {}
+        if phys.get("baked") or _num(phys.get("lift")) > 0:
+            placed.append(a)  # simulated or stacked on purpose (stage physics): leave where it is
             continue
         for k in a["keys"][1:]:
             fp = S.footprint(a, k["position"])
