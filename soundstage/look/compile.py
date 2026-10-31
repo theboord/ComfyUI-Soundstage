@@ -326,10 +326,13 @@ def _camera_sentence(mf: dict, f1: dict, look: dict) -> str:
             who = S._join_and([the(m["noun"]) for m in movers_end])
             where = f" {door['where']}" if door and door["where"] != "filling the background" else " ahead"
             dest = f"as the move completes, {who} {'have' if len(movers_end) > 1 else 'has'} disappeared through the doorway{where}"
-        elif end["people"]:
-            who = S._join_and([the(e["noun"]) for e in end["people"]])
-            sx = sum(e["sx"] for e in end["people"]) / len(end["people"])
-            dest = f"as the move completes, {who} {'are' if len(end['people']) > 1 else 'is'} {S.screen_words(sx)} in {S._article(size_end)}"
+        elif end["people"] or end.get("others"):
+            # People first; with nobody in frame, the car (or horse) the shot ends on: a stunt car still in shot at
+            # the end must not read as "the empty set" (LTX then drives it out of frame).
+            ends = end["people"] or end["others"]
+            who = S._join_and([the(e["noun"]) for e in ends])
+            sx = sum(e["sx"] for e in ends) / len(ends)
+            dest = f"as the move completes, {who} {'are' if len(ends) > 1 else 'is'} {S.screen_words(sx)} in {S._article(size_end)}"
         else:
             dest = "as the move completes, the frame settles on the empty set"
         s += f"; {dest}."

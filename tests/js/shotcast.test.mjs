@@ -78,4 +78,9 @@ test("castList files wardrobe as its own kind", () => {
   assert.ok(list.find((x) => x.key === "wardrobe:cowboy_hat"));
   assert.ok(list.find((x) => x.key === "prop:shotgun" && x.kind === "prop"));
   assert.match(refPrompt({ kind: "wardrobe", name: "Leather Jacket" }, "brown"), /Wardrobe reference photo of Leather Jacket, brown/);
+  // A vehicle (stage kind or the breakdown's "vehicle") gets a turnaround: front, rear, profile and three-quarter.
+  const car = refPrompt({ kind: "prop", name: "Sports Car", hint: "sports_car" }, "a modern red coupé");
+  assert.match(car, /^Vehicle reference sheet of Sports Car, a modern red coupé: .*front view, rear view, side profile and front three-quarter view/);
+  assert.match(refPrompt({ kind: "prop", name: "Van", hint: "vehicle" }), /^Vehicle reference sheet of Van:/);
+  assert.match(refPrompt({ kind: "prop", name: "Lamp", hint: "lamp" }), /^Product reference photo of Lamp/);
 });

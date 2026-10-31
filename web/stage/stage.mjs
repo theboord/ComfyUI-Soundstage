@@ -1297,7 +1297,12 @@ export class Stage {
         const ref = LIBRARY[host.kind]?.height || 1;
         k = (host.scale || 1) * ((host.height_m || ref) / ref);
       }
-      const seat = new THREE.Vector3(sp[0] * k, sp[1] * k, sp[2] * k).applyAxisAngle(new THREE.Vector3(0, 1, 0), hg.rotation.y);
+      // A car's body rolls and pitches on its springs (Milestone 13): the seat (and whoever sits in it) goes with it,
+      // so the driver leans with the cabin instead of their legs poking out under the floor.
+      const bodyG = hg.userData.vehicleBody?.userData.bodyPivot ? hg.userData.vehicleBody : null;
+      const seatLocal = new THREE.Vector3(sp[0] * k, sp[1] * k, sp[2] * k);
+      if (bodyG) seatLocal.sub(bodyG.position).applyEuler(bodyG.rotation).add(bodyG.position);
+      const seat = seatLocal.applyAxisAngle(new THREE.Vector3(0, 1, 0), hg.rotation.y);
       const h = (a.height_m || 1.8) * (a.scale || 1);
       const hopStart = (a.mount_at || 0) - HOP_FRAMES;
       if (a.mount_at > 0 && this.frame < hopStart) { applyPose(g, "stand", h); continue; } // still on foot
@@ -1332,7 +1337,8 @@ export class Stage {
       const lean = seated ? 0 : Math.max(0, Math.min(1, (hs - 2) / 6));
       // At a gallop: a two-point crouch over the neck, up off the seat, pumping with each stride (LTX copies it).
       const ph = (hg.userData.gaitCycle || 0) + 0.6;
-      g.rotation.x = (0.42 + 0.06 * Math.sin(ph * 2)) * lean + (hg.rotation.x || 0);
+      g.rotation.x = (0.42 + 0.06 * Math.sin(ph * 2)) * lean + (hg.rotation.x || 0) + (bodyG ? bodyG.rotation.x : 0);
+      if (bodyG) g.rotation.z = bodyG.rotation.z;
       g.position.y += h * lean * (0.035 + 0.05 * Math.abs(Math.sin(ph)));
       g.position.z += 0.06 * h * lean * Math.cos(hg.rotation.y);
       g.position.x += 0.06 * h * lean * Math.sin(hg.rotation.y);
