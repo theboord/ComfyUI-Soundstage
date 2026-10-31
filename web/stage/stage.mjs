@@ -3,7 +3,7 @@
 // Drag empty space = orbit (look around in place when close in or inside a car; Alt+drag anywhere), Shift+drag = pan,
 // wheel = dolly (proportional, flies through the target), drag an actor = move it on the floor.
 import * as THREE from "../vendor/three.module.min.mjs";
-import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompound } from "./library.mjs";
+import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompound, makeGlass } from "./library.mjs";
 import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./humans.mjs";
 import * as Mocap from "./mocap.mjs";
 import { applyRig, RIGS } from "./camrig.mjs";
@@ -2074,9 +2074,21 @@ export class Stage {
         o.userData.actorId = a.id;
         if (!o.isMesh) return;
         o.castShadow = true; o.receiveShadow = true;
+        if (/^(Windows?|Glass)$/i.test(o.material?.name || "")) { makeGlass(o); return; }   // the models' opaque black glass: see-through
         if (tint && /^(Blue|White|Red|Body|Main)/.test(o.material?.name || "")) { o.material = o.material.clone(); o.material.color.copy(tint); }
       });
-      for (const ch of g.children) ch.visible = false;
+      for (const ch of g.children) ch.visible = spec.cabin !== false && !!ch.userData.cabin;   // seats, dash, wheel show through the glass
+      // A soft cabin light from the dash onto the front seats (the roof shades the cabin), so the people seated
+      // behind the glass read in Clay and Color, even at night. Short range, no shadow: it stays inside the car.
+      const seat = g.userData.seats?.[0]?.pos;
+      if (seat) {
+        const lamp = new THREE.SpotLight(0xfff1dc, 0.9, 2.0, THREE.MathUtils.degToRad(60), 0.7, 2);
+        lamp.position.set(0, seat[1] + 0.45, seat[2] + 0.55);
+        lamp.target.position.set(0, seat[1] + 0.3, seat[2] - 0.4);
+        lamp.castShadow = false;
+        lamp.userData.cabinLight = true;
+        g.add(lamp, lamp.target);
+      }
       holder.add(model);
       g.add(holder);
       g.userData.vehicleBody = holder;
@@ -3131,7 +3143,7 @@ export class Stage {
     const black = new THREE.MeshBasicMaterial({ color: 0x000000 });
     const saved = [];
     this.scene.traverse((o) => {
-      if (o.userData.splatOnly) { saved.push([o, o.material, o.visible]); o.visible = false; return; }
+      if (o.userData.splatOnly || o.userData.glass) { saved.push([o, o.material, o.visible]); o.visible = false; return; }   // riders show through glass
       if (o.isMesh || o.isPoints || o.isLineSegments) {
         saved.push([o, o.material, o.visible]);
         const id = o.userData.actorId;
@@ -3224,6 +3236,8 @@ export class Stage {
         if (hide && m.visible) { m.visible = false; cutaway.push(m); }
       }
     }
+    // Depth sees through vehicle glass (like an open window), so the riders behind it keep their depth.
+    if (mode === "depth") this.root.traverse((o) => { if (o.userData.glass && o.visible) { o.visible = false; cutaway.push(o); } });
     // Measurement aids are for the viewport only.
     if (!forCapture) this._measureOverlay(cam, this.measure !== false);
     if (this.poser?.active && this._ghost) this._ghost.visible = false;   // posing: the scale figure would sit beside them
