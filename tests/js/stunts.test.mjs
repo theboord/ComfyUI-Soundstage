@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as THREE from "../../web/vendor/three.module.min.mjs";
 import { Stage, DEFAULT_SCENE } from "../../web/stage/stage.mjs";
+import { describeLighting } from "../../web/stage/lighting.mjs";
 import { STUNTS, BODY, unwrapDeg, headingTrack, vehicleDynamics, smokeParticles, stuntKeys, monotone } from "../../web/stage/stunts.mjs";
 
 const realFetch = globalThis.fetch;
@@ -137,8 +138,15 @@ test("stunt presets: the reverse J-turn follows the plan's keyed path, a key eve
   const at = (f) => k.find((x) => x.frame === f);
   assert.deepEqual(at(0).position, [1.6, 0, -14]);
   assert.equal(at(0).heading_deg, 180);
-  assert.deepEqual(at(30).position, [1.5, 0, -2]);
-  assert.deepEqual([at(48).position[0], at(48).position[2], at(48).heading_deg, at(48).fx.tire_smoke], [0.6, 5.6, 90, 1]);
+  assert.deepEqual(at(30).position, [1.5, 0, -1]);
+  assert.deepEqual([at(42).position[0], at(42).position[2], at(42).heading_deg, at(42).fx.tire_smoke], [0.5, 5.1, 104, 1]);
+  // A movie flick: from 167° to the last ~26° in 12 frames (0.5 s), the whole 180° in about 0.7 s.
+  assert.equal(at(36).heading_deg, 167);
+  assert.equal(at(48).heading_deg, 26.3);
+  assert.equal(at(54).heading_deg, -2);
+  // The keyed exaggeration: the body hard over through the spin, the rear squatting on the launch; ramps in and out.
+  assert.ok(at(42).roll_deg >= 3 && at(48).roll_deg > 2 && at(30).roll_deg === 0 && !("roll_deg" in at(0)));
+  assert.ok(at(72).pitch_deg >= 1 && at(96).pitch_deg === 0 && !("pitch_deg" in at(120)));
   assert.equal(at(120).heading_deg, 0);
   assert.deepEqual(at(120).position, [0.4, 0, 36]);
   // A shorter shot squeezes it; another direction rotates it.
@@ -195,4 +203,28 @@ test("an ordinary car on the Car Chase keeps its heading and makes no smoke", as
   const dyn = st._vehicleDynamics(a);
   assert.ok(!dyn.stunt && dyn.smoke.every((s) => s.amount === 0));
   for (let f = 0; f <= 120; f += 10) { st.setFrame(f); assert.ok(!g.userData.tireSmoke?.object.visible); }
+});
+
+test("the driver rides the rolling body: seat and lean follow the cabin, no legs out under the floor", async () => {
+  const st = headless([car([{ frame: 0, position: [1.6, 0, -14] }, { frame: 120, position: [1.6, 0, 36] }]),
+    { id: "drv", name: "Driver", kind: "man", height_m: 1.8, mount_id: "car", keys: [{ frame: 0, position: [1.6, 0, -14] }], position: [1.6, 0, -14] }]);
+  const g = await body(st, "car");
+  st.applyStunt("car", "reverse_jturn");
+  st.setFrame(45);
+  const bodyG = g.userData.vehicleBody, d = st.actorMeshes.get("drv");
+  assert.ok(Math.abs(bodyG.rotation.z) > 4 / DEG, `the body is hard over: ${bodyG.rotation.z * DEG}°`);
+  assert.ok(Math.abs(d.rotation.z - bodyG.rotation.z) < 1e-9, "the driver leans with the cabin");
+  // The seat is where the rolled body carries it (not where the unrolled car would have it).
+  st.setFrame(0);
+  const flat = d.position.clone();
+  assert.ok(Math.abs(d.rotation.z) < 0.02 / DEG + Math.abs(bodyG.rotation.z) + 1e-9);
+  st.setFrame(45);
+  assert.ok(d.position.distanceTo(flat) > 1, "it moves with the car");
+});
+
+test("a night street's five lamps are one lighting phrase in the prompt, not five", () => {
+  const lamp = { type: "practical", kelvin: 2700, softness: 0.5 };
+  const t = describeLighting({ lights: [lamp, lamp, lamp, lamp, lamp, { ...lamp, kelvin: 7000 }] }, { elevation_deg: -20, azimuth_deg: 0 }, null);
+  assert.equal((t.match(/warm tungsten practical/g) || []).length, 1, t);
+  assert.match(t, /^night, cool moonlight, warm tungsten practical.*, cool practical/);
 });

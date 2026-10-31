@@ -530,7 +530,8 @@ def lighting_words(scene: dict, cam: dict) -> str:
         k = float(l.get("kelvin", 5600))
         tone = "warm tungsten" if k < 3300 else "cool blue" if k > 9000 else "cool" if k > 6000 else "neutral"
         parts.append(f"{tone} {str(l.get('type', 'light')).replace('_', ' ')}")
-    return ", ".join(parts)
+    # A street of five lamps is one phrase, not "warm tungsten practical" five times over (as lighting.mjs).
+    return ", ".join(dict.fromkeys(parts))
 
 
 def _underwater(scene: dict, cam: dict) -> bool:
@@ -1049,8 +1050,17 @@ def camera_move(scene: dict) -> dict:
     travel = sum(G.length(G.sub(b["position"], a["position"])) for a, b in zip(path, path[1:])) or G.length(disp)
     shake = 0.0
     if len(path) > 8:  # handheld: the path wobbles around its own smooth line
-        jitter = [G.length(G.sub(G.mul(G.add(path[i - 1]["position"], path[i + 1]["position"]), 0.5),
-                                 path[i]["position"])) for i in range(1, len(path) - 1)]
+        # Only the wobble across the path counts: a camera car braking and speeding up with a stunt car bunches its
+        # samples along the line (a large second difference) without any shake.
+        def _wobble(a, b, c):
+            d = G.sub(G.mul(G.add(a, c), 0.5), b)
+            t = G.sub(c, a)
+            n = G.length(t)
+            if n < 1e-6:
+                return G.length(d)
+            u = G.mul(t, 1.0 / n)
+            return G.length(G.sub(d, G.mul(u, G.dot(d, u))))
+        jitter = [_wobble(path[i - 1]["position"], path[i]["position"], path[i + 1]["position"]) for i in range(1, len(path) - 1)]
         shake = sum(jitter) / len(jitter)
     parts = []
     tgt_moved = G.length(G.sub(t1, t0))
