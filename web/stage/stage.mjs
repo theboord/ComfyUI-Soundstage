@@ -20,6 +20,9 @@ import { STLLoader } from "../vendor/addons/STLLoader.mjs";
 import * as SkeletonUtils from "../vendor/addons/SkeletonUtils.mjs";
 import { TransformControls } from "../vendor/addons/TransformControls.mjs";
 import { simulate, bakeTrack, physicsOf, samplePos, sampleQuat, checkTracks } from "./physics.mjs";
+import { LiveEdit } from "./live.mjs";
+import { Highlighter } from "./outline.mjs";
+import { zoomAt, frameSphere, easeInOut, decay } from "./manip.mjs";
 
 /**
  * Video → Stage: the set mesh is the first frame's depth, so the person in the shot is frozen into it. The clay actor
@@ -215,6 +218,11 @@ function installWheelRouter() {
   );
 }
 
+const _tiltQ = new THREE.Quaternion();
+
+/** The kind tables live editing needs (exported for the tests). */
+export const liveKinds = () => ({ PERSON_KINDS, RIDEABLE, SITTABLE, SEATS, NO_COLLIDE, CAR_BODIES, NEVER_CARRIED, LIBRARY, MOUNTS });
+
 export class Stage {
   /** Current delivery size from the shot's aspect ratio. */
   get fw() {
@@ -245,7 +253,7 @@ export class Stage {
     this.key = "start";
     this.frame = 0;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, stencil: true });
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.setPixelRatio(1);
@@ -270,6 +278,8 @@ export class Stage {
     this.scene.add(this.root);
     this._buildSet();
     this._applySun();
+    this.highlight = new Highlighter(this);
+    this.live = new LiveEdit(this, liveKinds());
     this.setFrame(0);
     this._bindControls();
     this.resize();
@@ -486,6 +496,13 @@ export class Stage {
       });
     }
     return out;
+  }
+
+  /** _setColliders(), cached until the set is rebuilt (the live world asks for it on every drag). */
+  _setCollidersCached() {
+    const key = [this._setGroup?.uuid, this.interiorGroup?.uuid, this.root.children.filter((o) => o.userData.setPiece).map((o) => o.uuid).join()].join("|");
+    if (this._setColCache?.key !== key) this._setColCache = { key, list: this._setColliders().map((c) => ({ id: c.id, half: c.half, pos: c.poses[0].pos, quat: c.poses[0].quat })) };
+    return this._setColCache.list;
   }
 
   /**
@@ -897,7 +914,8 @@ export class Stage {
    */
   _heightAt(a, frame) {
     if (LIBRARY[a.kind]?.flies) return this._actorPosAt(a, frame)[1] || 0;   // aircraft hover at their keyed height
-    if (!PERSON_KINDS.has(a.kind)) return 0;
+    // A prop set on something (a crate on a table, Milestone 9) keeps its keyed height; older scenes have none.
+    if (!PERSON_KINDS.has(a.kind)) return a.key_y ? Math.max(0, this._actorPosAt(a, frame)[1] || 0) : 0;
     const keys = this._actorKeys(a);
     const obs = this._obstacles();
     const last = this._lastFrame();
@@ -1066,6 +1084,8 @@ export class Stage {
 
   /** Pose the whole set at a frame: camera, object positions, heading and walk cycle. */
   setFrame(frame) {
+    // Scrubbing or any edit while dropped things are still settling: write them down first.
+    if (this.live?.settling && !this.live.drag && !this.live.internal) this.live.finish();
     this.frame = Math.max(0, Math.min(this._lastFrame(), Math.round(frame)));
     if (this._setGroup !== undefined && this._cleanStreetSig() !== this._setCleanSig) this._swapSetGroup();
     // The set may have been rebuilt (new meshes): keep the gizmo on the selected object.
@@ -1100,6 +1120,7 @@ export class Stage {
       g.userData.speed = speed;
       g.rotation.order = "YXZ";
       g.rotation.x = 0;
+      if (g.userData.tilted) { g.rotation.z = 0; g.userData.tilted = false; }
       if (rig === "quadruped" && speed > 4) {
         // Gallop: four-beat rotary gait (hind-hind-fore-fore), long stride, the body rocks and bounds.
         const gs = 2.6 * (a.height_m || 1.6);
@@ -1134,7 +1155,11 @@ export class Stage {
         g.position.set(...samplePos(keys, this.frame));
         const q = sampleQuat(keys, this.frame);
         if (q) g.quaternion.set(q[0], q[1], q[2], q[3]);
-      } else if (a.physics?.lift > 0 && (a.physics.mode === "dynamic" || a.physics.mode === "static")) g.position.y += a.physics.lift;
+      } else {
+        if (a.physics?.lift > 0 && (a.physics.mode === "dynamic" || a.physics.mode === "static")) g.position.y += a.physics.lift;
+        // Knocked over while editing (Milestone 9): the lean it came to rest with, on top of its heading.
+        if (Array.isArray(a.tilt) && a.tilt.length === 4) { g.quaternion.multiply(_tiltQ.set(a.tilt[0], a.tilt[1], a.tilt[2], a.tilt[3])); g.userData.tilted = true; }
+      }
     }
     // Riders follow their mounts (man on a horse, driver in a car, someone on a bench).
     for (const a of this.state.actors) {
@@ -1696,8 +1721,9 @@ export class Stage {
     this.poser = new PoseGizmo(this);   // pose in 3D: click a body part, turn it; drag a hand / foot dot (IK)
     this.tc.addEventListener("dragging-changed", (e) => {
       this._gizmoDragging = e.value;
-      if (e.value) this._gizmoScale0 = this.tc.object?.scale.x || 1;
-      else this.onChange(this.toJSON());
+      if (e.value) { this.live?.finish(); this._gizmoScale0 = this.tc.object?.scale.x || 1; }
+      // A prop moved with the arrows falls onto whatever is under it and settles (one undo step with the move).
+      else if (!(this.gizmoMode === "translate" && !this.poser?.target() && this.selected && this.live?.settle(this.selected))) this.onChange(this.toJSON());
     });
 
     const pick = (e) => {
@@ -1708,10 +1734,15 @@ export class Stage {
 
     this.canvas.tabIndex = 0; // so W/A/S/D/Q/E reach the stage
     this.canvas.addEventListener("pointerenter", () => this.canvas.focus({ preventScroll: true }));
+    this.canvas.addEventListener("pointerleave", () => { if (this._hoverId) { this._hoverId = null; this.render(); } });
+    this._pickRay = (e) => { pick(e); return ray; };
 
     this.canvas.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
       this.canvas.focus({ preventScroll: true });
+      if (this.live?.busy) this.live.finish();   // things still settling from the last drop: write them down first
+      if (this._glideRaf) { cancelAnimationFrame(this._glideRaf); this._glideRaf = 0; if (!this.freeView) this.onChange(this.toJSON()); }
+      if (this._flyRaf) { cancelAnimationFrame(this._flyRaf); this._flyRaf = 0; }
       if (this.tcHelper.visible && (this.tc.axis || this.tc.dragging)) return; // the gizmo has this drag
       pick(e);
       if (this.poser?.active && !e.altKey && this.poser.pointerDown(e, ray)) {
@@ -1738,9 +1769,11 @@ export class Stage {
       if (hitId && !e.altKey && (inside(hitId) || (hitActor?.mount_id && inside(hitActor.mount_id)))) {
         if (hitActor?.mount_id) this.select(hitId);
         drag = { mode: e.shiftKey || e.button === 1 ? "pan" : "orbit", look: true, x: e.clientX, y: e.clientY };
-      } else if (hitId && !e.altKey && hitId === this.selected && !this._isSetPiece(hitId)) {
-        // Already selected: now a drag moves it (click once to pick it, then drag it).
-        drag = { mode: "actor", id: hitId };
+      } else if (hitId && !e.altKey && e.button === 0 && !this._isSetPiece(hitId) && (hitId === this.selected || this._grabbable(hitActor))) {
+        // Grab it (Milestone 9): press on an object and drag = it follows the cursor, live, colliding with the set.
+        // Small things go straight away; whole buildings and big set dressing need a click to select first.
+        if (hitId !== this.selected) this.select(hitId);
+        drag = { mode: "pending", id: hitId, x0: e.clientX, y0: e.clientY, e, ray: { ray: ray.ray.clone() } };
       } else {
         // Anything else is the camera's: a drag orbits (or pans), and a click without a drag selects what was under it.
         // So nothing moves by accident while you look around.
@@ -1753,8 +1786,16 @@ export class Stage {
     });
 
     this.canvas.addEventListener("pointermove", (e) => {
-      if (!drag) return;
+      if (!drag) { this._hoverMove(e); return; }
       e.stopPropagation();
+      if (drag.mode === "pending") {
+        if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 4) return;
+        this._hoverId = null;
+        const ok = !this.freeze3d && this.live.begin(drag.id, drag.e, drag.ray);
+        drag = ok ? { mode: "live", id: drag.id } : { mode: "actor", id: drag.id };
+        this.canvas.style.cursor = "grabbing";
+      }
+      if (drag.mode === "live") { pick(e); this.live.move(e, ray); return; }
       if (drag.mode === "pose") { pick(e); this.poser.pointerMove(ray); return; }
       if (drag.mode === "light") {
         pick(e);
@@ -1780,51 +1821,33 @@ export class Stage {
         }
         return;
       }
-      const c = this._activeOrbit();
-      const cam = this._viewportCamera();
       const dx = e.clientX - drag.x;
       const dy = e.clientY - drag.y;
       drag.x = e.clientX;
       drag.y = e.clientY;
-      const pos = new THREE.Vector3(...c.position);
-      const tgt = new THREE.Vector3(...c.target);
-      if (drag.mode === "orbit" && (drag.look || this._tightCamera(pos, tgt))) {
-        // Look around in place (a tripod head): inside a car or close in, orbiting would swing the camera out through
-        // the doors. Alt+drag does this anywhere.
-        const off = tgt.clone().sub(pos);
-        const sph = new THREE.Spherical().setFromVector3(off);
-        sph.theta -= dx * 0.003;
-        sph.phi = THREE.MathUtils.clamp(sph.phi + dy * 0.003, 0.05, Math.PI - 0.05);
-        tgt.copy(pos).add(new THREE.Vector3().setFromSpherical(sph));
-      } else if (drag.mode === "orbit") {
-        // Turntable orbit with no floor limit: go under, over, all the way round.
-        const off = pos.clone().sub(tgt);
-        const sph = new THREE.Spherical().setFromVector3(off);
-        sph.theta -= dx * 0.005;
-        sph.phi = THREE.MathUtils.clamp(sph.phi - dy * 0.005, 0.001, Math.PI - 0.001);
-        pos.copy(tgt).add(new THREE.Vector3().setFromSpherical(sph));
-      } else {
-        const right = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 0);
-        const up = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 1);
-        const k = pos.distanceTo(tgt) * 0.0015;
-        const move = right.multiplyScalar(-dx * k).add(up.multiplyScalar(dy * k));
-        pos.add(move);
-        tgt.add(move);
-      }
-      // Stay above the floor (a far camera swings metres for a small drag); the water tank lets you go under.
-      if (this.state.environment?.set !== "water_tank" && pos.y < 0.15) {
-        if (drag.mode !== "orbit") tgt.y += 0.15 - pos.y;
-        pos.y = 0.15;
-      }
-      c.position = pos.toArray().map((v) => +v.toFixed(3));
-      c.target = tgt.toArray().map((v) => +v.toFixed(3));
-      this._applyActive();
+      // Remember how fast it was going, for the glide after you let go (inertia).
+      const now = performance.now(), dtm = Math.max(1, now - (drag.t || now - 16));
+      drag.vx = (drag.vx || 0) * 0.5 + (dx / dtm) * 0.5; drag.vy = (drag.vy || 0) * 0.5 + (dy / dtm) * 0.5; drag.t = now;
+      this._navDrag(drag.mode, drag.look, dx, dy);
     });
 
     const end = (e) => {
       this._dragging = false;
       if (!drag) return;
       if (drag.mode === "pose") { this.poser.pointerUp(); drag = null; return; }
+      if (drag.mode === "pending") {   // a click on an object: it is selected (on press)
+        const id = drag.id;
+        drag = null;
+        this.canvas.style.cursor = "grab";
+        if (id && !this._isSetPiece(id)) this.onInteract?.("Selected. Drag it to move it (it bumps into things); Alt+drag turns it, the wheel lifts a prop, F frames it.");
+        return;
+      }
+      if (drag.mode === "live") {
+        drag = null;
+        this.canvas.style.cursor = "grab";
+        this.live.end();
+        return;
+      }
       if ((drag.mode === "orbit" || drag.mode === "pan") && e?.clientX != null && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 5) {
         // A click, not a drag: select what was under the pointer (or clear the selection on empty space).
         const id = drag.pickId;
@@ -1833,6 +1856,13 @@ export class Stage {
         this.canvas.style.cursor = "grab";
         this.select(id || null);
         if (id && !this._isSetPiece(id)) this.onInteract?.("Selected. Drag it (or its arrows) to move it; drag anywhere else to look around.");
+        return;
+      }
+      if ((drag.mode === "orbit" || drag.mode === "pan") && performance.now() - (drag.t || 0) < 70 && Math.hypot(drag.vx || 0, drag.vy || 0) > 0.15) {
+        const { mode, look, vx, vy } = drag;
+        drag = null;
+        this.canvas.style.cursor = "grab";
+        this._glide(mode, look, vx, vy);
         return;
       }
       if (drag.mode === "actor") {
@@ -1856,12 +1886,18 @@ export class Stage {
     // Fly: W/S forward/back, A/D strafe, Q/E down/up (Shift = 4x). 0 toggles shot cam / free view.
     this.canvas.addEventListener("keydown", (e) => {
       const k = e.key.toLowerCase();
+      if (this.live?.drag && this.live.key(e)) { e.preventDefault(); e.stopPropagation(); return; }
       if ((e.metaKey || e.ctrlKey) && k === "z") {
         e.preventDefault(); e.stopPropagation();
         if (e.shiftKey) this.redo(); else this.undo();
         return;
       }
       if ((e.metaKey || e.ctrlKey) && k === "d") { e.preventDefault(); e.stopPropagation(); this.duplicateSelected(); return; }
+      if (k === "f" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault(); e.stopPropagation();
+        this.frameSelected();
+        return;
+      }
       if (k === "0") {
         e.preventDefault(); e.stopPropagation();
         this.setFreeView(!this.freeView);
@@ -1903,30 +1939,196 @@ export class Stage {
     // events that happen over a stage straight to it. See installWheelRouter() below.
     this.canvas.__soundstage = this;
     this._onWheel = (e) => {
+      if (this.live?.drag && this.live.wheel(e)) return;   // holding a prop: the wheel lifts / lowers it
+      // Smooth zoom (Milestone 9): notches add up and are eased in over a few frames, toward what's under the cursor.
+      this._zoomAcc = (this._zoomAcc || 0) + THREE.MathUtils.clamp(e.deltaY * (e.deltaMode === 1 ? 33 : 1), -300, 300);
+      this._zoomEv = { clientX: e.clientX, clientY: e.clientY };
+      if (!this._zoomRaf) this._zoomRaf = requestAnimationFrame(() => this._zoomStep());
+    };
+    this._zoomStep = () => {
+      this._zoomRaf = 0;
+      const take = Math.abs(this._zoomAcc) < 3 ? this._zoomAcc : this._zoomAcc * 0.4;
+      this._zoomAcc -= take;
       const c = this._activeOrbit();
       const pos = new THREE.Vector3(...c.position);
       const tgt = new THREE.Vector3(...c.target);
       const dir = tgt.clone().sub(pos);
       const dist = dir.length();
-      // Proportional dolly: each notch / trackpad flick covers a fraction of the distance, so it is fine inside a car
-      // and still quick across a stadium. Near the target, fly on through it (the target moves ahead too).
-      const dy = THREE.MathUtils.clamp(e.deltaY * (e.deltaMode === 1 ? 33 : 1), -300, 300);
-      const step = Math.max(dist, 0.6) * (Math.exp(dy * 0.0018) - 1);   // + = back off (same sign as before)
-      const move = dir.normalize().multiplyScalar(-step);
-      pos.add(move);
-      if (step < 0 && (pos.distanceTo(tgt) < 0.25 || move.dot(tgt.clone().sub(pos)) < 0)) tgt.add(move);
-      c.position = pos.toArray().map((v) => +v.toFixed(3));
-      c.target = tgt.toArray().map((v) => +v.toFixed(3));
+      const P = this._tightCamera(pos, tgt) ? null : this._zoomPoint(this._zoomEv, pos, tgt);
+      if (P && !(take < 0 && P.distanceTo(pos) < 0.5)) {
+        // Scale about the point under the cursor: it stays put on screen and the view direction is kept.
+        const z = zoomAt(pos.toArray(), tgt.toArray(), P.toArray(), Math.exp(take * 0.0018));
+        c.position = z.pos.map((v) => +v.toFixed(3));
+        c.target = z.tgt.map((v) => +v.toFixed(3));
+      } else {
+        // Proportional dolly (inside a car, close in): near the target, fly on through it (the target moves ahead too).
+        const step = Math.max(dist, 0.6) * (Math.exp(take * 0.0018) - 1);   // + = back off
+        const move = dir.normalize().multiplyScalar(-step);
+        pos.add(move);
+        if (step < 0 && (pos.distanceTo(tgt) < 0.25 || move.dot(tgt.clone().sub(pos)) < 0)) tgt.add(move);
+        c.position = pos.toArray().map((v) => +v.toFixed(3));
+        c.target = tgt.toArray().map((v) => +v.toFixed(3));
+      }
       this._applyActive();
-      if (!this.freeView) { clearTimeout(this._wheelT); this._wheelT = setTimeout(() => this.onChange(this.toJSON()), 200); }
+      if (!this.freeView) { clearTimeout(this._wheelT); this._wheelT = setTimeout(() => this.onChange(this.toJSON()), 250); }
+      if (Math.abs(this._zoomAcc) > 0.5) this._zoomRaf = requestAnimationFrame(() => this._zoomStep());
+      else this._zoomAcc = 0;
     };
     installWheelRouter();
+  }
+
+  /** Orbit / pan / look-around by a pointer delta (px). Shared by the drag and its glide afterwards. */
+  _navDrag(mode, look, dx, dy) {
+    const c = this._activeOrbit();
+    const cam = this._viewportCamera();
+    const pos = new THREE.Vector3(...c.position);
+    const tgt = new THREE.Vector3(...c.target);
+    if (mode === "orbit" && (look || this._tightCamera(pos, tgt))) {
+      // Look around in place (a tripod head): inside a car or close in, orbiting would swing the camera out through
+      // the doors. Alt+drag does this anywhere.
+      const off = tgt.clone().sub(pos);
+      const sph = new THREE.Spherical().setFromVector3(off);
+      sph.theta -= dx * 0.003;
+      sph.phi = THREE.MathUtils.clamp(sph.phi + dy * 0.003, 0.05, Math.PI - 0.05);
+      tgt.copy(pos).add(new THREE.Vector3().setFromSpherical(sph));
+    } else if (mode === "orbit") {
+      // Turntable orbit with no floor limit: go under, over, all the way round.
+      const off = pos.clone().sub(tgt);
+      const sph = new THREE.Spherical().setFromVector3(off);
+      sph.theta -= dx * 0.005;
+      sph.phi = THREE.MathUtils.clamp(sph.phi - dy * 0.005, 0.001, Math.PI - 0.001);
+      pos.copy(tgt).add(new THREE.Vector3().setFromSpherical(sph));
+    } else {
+      const right = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 0);
+      const up = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 1);
+      const k = pos.distanceTo(tgt) * 0.0015;
+      const move = right.multiplyScalar(-dx * k).add(up.multiplyScalar(dy * k));
+      pos.add(move);
+      tgt.add(move);
+    }
+    // Stay above the floor (a far camera swings metres for a small drag); the water tank lets you go under.
+    if (this.state.environment?.set !== "water_tank" && pos.y < 0.15) {
+      if (mode !== "orbit") tgt.y += 0.15 - pos.y;
+      pos.y = 0.15;
+    }
+    c.position = pos.toArray().map((v) => +v.toFixed(3));
+    c.target = tgt.toArray().map((v) => +v.toFixed(3));
+    this._applyActive();
+  }
+
+  /** Glide on after a flick (orbit / pan inertia), decaying to a stop; the shot key is saved once it stops. */
+  _glide(mode, look, vx, vy) {
+    cancelAnimationFrame(this._glideRaf);
+    let t = performance.now();
+    const step = () => {
+      const now = performance.now(), dt = Math.min(50, now - t);
+      t = now;
+      [vx, vy] = decay([vx, vy], dt / 1000, 0.16);
+      if (Math.hypot(vx, vy) < 0.02 || this._dragging) { this._glideRaf = 0; if (!this.freeView) this.onChange(this.toJSON()); return; }
+      this._navDrag(mode, look, vx * dt, vy * dt);
+      this._glideRaf = requestAnimationFrame(step);
+    };
+    this._glideRaf = requestAnimationFrame(step);
+  }
+
+  /** Fly the active view to a new position / target, eased (~0.45 s). */
+  _flyTo(pos, tgt, ms = 450) {
+    cancelAnimationFrame(this._flyRaf);
+    const c = this._activeOrbit();
+    const p0 = [...c.position], t0 = [...c.target], start = performance.now();
+    const step = () => {
+      const u = Math.min(1, (performance.now() - start) / ms), e = easeInOut(u);
+      const o = this._activeOrbit();
+      o.position = p0.map((v, i) => +(v + (pos[i] - v) * e).toFixed(3));
+      o.target = t0.map((v, i) => +(v + (tgt[i] - v) * e).toFixed(3));
+      this._applyActive();
+      if (u < 1) this._flyRaf = requestAnimationFrame(step);
+      else { this._flyRaf = 0; if (!this.freeView) this.onChange(this.toJSON()); }
+    };
+    this._flyRaf = requestAnimationFrame(step);
+  }
+
+  /** The point a zoom closes in on: the nearest object box or the floor under the cursor, else the target's depth. */
+  _zoomPoint(ev, pos, tgt) {
+    if (!ev || !this._pickRay) return null;
+    const ray = this._pickRay(ev).ray;
+    let best = null;
+    const box = new THREE.Box3(), hit = new THREE.Vector3();
+    for (const g of this.actorMeshes.values()) {
+      if (!g.visible) continue;
+      box.setFromObject(g);
+      if (box.isEmpty() || box.containsPoint(ray.origin)) continue;
+      const p = ray.intersectBox(box, hit);
+      if (p && (!best || p.distanceTo(ray.origin) < best.distanceTo(ray.origin))) best = p.clone();
+    }
+    const floor = ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+    if (floor && floor.distanceTo(ray.origin) < 400 && (!best || floor.distanceTo(ray.origin) < best.distanceTo(ray.origin))) best = floor;
+    if (best) return best;
+    const n = tgt.clone().sub(pos).normalize();
+    return ray.intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(n, tgt), new THREE.Vector3());
+  }
+
+  /** F: frame the selection (or the whole set when nothing is selected) without changing the view direction. */
+  frameSelected() {
+    const box = new THREE.Box3();
+    const sel = this.selected && this.actorMeshes.get(this.selected);
+    if (sel) box.setFromObject(sel);
+    else for (const g of this.actorMeshes.values()) if (g.visible) box.expandByObject(g);
+    if (box.isEmpty()) return false;
+    const sph = box.getBoundingSphere(new THREE.Sphere());
+    const c = this._activeOrbit(), cam = this._viewportCamera();
+    const f = frameSphere(c.position, c.target, sph.center.toArray(), sph.radius, THREE.MathUtils.degToRad(cam.fov), cam.aspect || this.fw / this.fh);
+    this._flyTo(f.pos, f.tgt);
+    return true;
   }
 
   /** Set dressing that shouldn't move from a drag: the rebuilt location, walls, sidewalks, big set pieces. */
   _isSetPiece(id) {
     const a = this.state.actors.find((x) => x.id === id);
     return !!a && (a.set_piece || a.set_xform || a.locked);
+  }
+
+  /** Can a press-and-drag grab it straight away (without selecting first)? Everything but buildings and big set dressing. */
+  _grabbable(a) {
+    if (!a || a.set_piece || a.set_xform || a.locked || a.kind === "interior") return false;
+    const L = LIBRARY[a.kind];
+    return !(L?.rig === "static" && (L?.height || 0) > 4);
+  }
+
+  /** Hover: what a press would grab gets a thin outline (picked once a frame). */
+  _hoverMove(e) {
+    this._hoverEv = { clientX: e.clientX, clientY: e.clientY };
+    if (this._hoverRaf) return;
+    this._hoverRaf = requestAnimationFrame(() => {
+      this._hoverRaf = 0;
+      if (this._dragging || this.live?.drag || !this._hoverEv) return;
+      const ray = this._pickRay(this._hoverEv);
+      const id = this._pickActor(ray);
+      const a = id && this.state.actors.find((x) => x.id === id);
+      const next = a && (this._grabbable(a) || id === this.selected) && !this._isSetPiece(id) ? id : null;
+      this.canvas.style.cursor = next ? "move" : "grab";
+      if (next !== this._hoverId) { this._hoverId = next; this.render(); }
+    });
+  }
+
+  /** The actor under a ray: boxes first (cheap), then the real meshes of the nearest few. */
+  _pickActor(ray) {
+    const cand = [];
+    const box = new THREE.Box3(), hit = new THREE.Vector3();
+    for (const [id, g] of this.actorMeshes) {
+      if (!g.visible) continue;
+      box.setFromObject(g);
+      if (box.isEmpty()) continue;
+      const p = ray.ray.intersectBox(box, hit);
+      if (p) cand.push({ id, g, d: p.distanceTo(ray.ray.origin) });
+    }
+    cand.sort((x, y) => x.d - y.d);
+    let best = null;
+    for (const c of cand.slice(0, 6)) {
+      const h = ray.intersectObject(c.g, true)[0];
+      if (h && (!best || h.distance < best.distance)) best = { id: c.id, distance: h.distance };
+    }
+    return best?.id || null;
   }
 
   /** Close in (target within ~2.5 m) or inside a vehicle / building: drag looks around instead of orbiting. */
@@ -2471,6 +2673,7 @@ export class Stage {
   }
 
   undo() {
+    this.live?.finish();
     if (!this._hist || this._hist.length < 2) return false;
     this._redo.push(this._hist.pop());
     this._restore(this._hist[this._hist.length - 1]);
@@ -2478,6 +2681,7 @@ export class Stage {
   }
 
   redo() {
+    this.live?.finish();
     if (!this._redo?.length) return false;
     const snap = this._redo.pop();
     this._hist.push(snap);
@@ -2628,7 +2832,7 @@ export class Stage {
     if (!a || !g) return;
     if (this.gizmoMode === "translate") {
       const k = this._editActorKey(a);
-      k.position = [+g.position.x.toFixed(2), a.physics?.baked ? (k.position?.[1] ?? 0) : 0, +g.position.z.toFixed(2)];
+      k.position = [+g.position.x.toFixed(2), a.physics?.baked || a.key_y ? (k.position?.[1] ?? 0) : 0, +g.position.z.toFixed(2)];
     } else if (this.gizmoMode === "rotate") {
       a.rotation_deg = Math.round(THREE.MathUtils.radToDeg(g.rotation.y));
     } else {
@@ -3256,6 +3460,10 @@ export class Stage {
     }
     this._inRender = true;
     this.renderer.render(this.scene, cam);
+    if (!forCapture && this.highlight) {
+      try { this.highlight.render(this.renderer, cam, { hoverId: this._dragging ? null : this._hoverId, selectedId: this.selected }); }
+      catch (err) { this.highlight.enabled = false; console.warn("Soundstage outline", err); }
+    }
     if (!forCapture && (this.tcHelper?.visible || this.poser?.active)) {
       const auto = this.renderer.autoClear;
       this.renderer.autoClear = false;
