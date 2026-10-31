@@ -1677,7 +1677,7 @@ export class Pipeline {
     if (this._cvRipple) this._cvRipple.hidden = !rip;
     for (const x of [m.engine.parentElement, m.freedom.parentElement]) if (x) x.hidden = rip;
     // Ripple keeps the clip's own sound: the sound / dialogue pop-overs are for LTX renders.
-    for (const pp of this._pops || []) if (pp.btn) { pp.btn.hidden = rip; pp.btn.style.display = rip ? "none" : ""; if (rip) pp.close?.(); }
+    for (const pp of this._pops || []) if (pp.btn) { pp.btn.hidden = rip; if (rip) pp.close?.(); }   // CSS: .ss-clpopbtn[hidden]
     if (rip) m.h3Box.hidden = true;
     if (!rip) this._showEngine?.();
   }

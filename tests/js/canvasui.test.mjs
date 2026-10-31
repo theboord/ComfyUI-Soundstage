@@ -35,3 +35,11 @@ test("panel flags: default until set, then remembered; blocked storage keeps the
   assert.equal(b.get(), false);
   assert.doesNotThrow(() => b.set(true));
 });
+
+test("hidden pop-over buttons stay hidden (Ripple hides Sound & music / Dialogue & voice)", async () => {
+  // .ss-clpopbtn is display:flex !important, which beats the [hidden] attribute unless a rule says otherwise.
+  const { readFile } = await import("node:fs/promises");
+  const css = await readFile(new URL("../../web/ui/canvasui.mjs", import.meta.url), "utf8");
+  assert.match(css, /button\.ss-clpopbtn \{ display:flex !important/);
+  assert.match(css, /button\.ss-clpopbtn\[hidden\] \{ display:none !important; \}/);
+});
