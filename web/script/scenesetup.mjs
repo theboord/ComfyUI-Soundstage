@@ -5,6 +5,8 @@
 //   const plan = planSceneSetup(scene, { actors, castItems, fresh, frame: { center: [x, z], cam: [x, z] } });
 //   plan.label  -> "Set up scene 3 — EXT. PACIFIC BEACH — SUNSET (Mara)"
 import { stageSetupForScene } from "./parse.mjs";
+import { libraryObjects } from "./breakdown.mjs";
+import { SEATS } from "../stage/library.mjs";
 
 const PEOPLE = new Set(["man", "woman", "child"]);
 export const castSlug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -41,12 +43,12 @@ const SHE = /\b(she|her|hers|herself|woman|girl|lady|mother|mom|wife|sister|daug
 const HE = /\b(he|him|his|himself|man|guy|boy|father|dad|husband|brother|son|uncle|king|sheriff|mister|mr)\b/gi;
 
 /** Sentences of the scene's action that mention a name, plus the one after each (pronouns follow the name). */
-function mentions(sc, name) {
+function mentions(sc, name, { next = true } = {}) {
   const text = (sc?.elements || []).filter((e) => e.type === "action").map((e) => e.text).join(" ");
   const sents = text.split(/(?<=[.!?])\s+/);
   const first = castSlug(name).split(" ")[0];
   const out = [];
-  sents.forEach((s, i) => { if (first && castSlug(s).split(" ").includes(first)) out.push(s, sents[i + 1] || ""); });
+  sents.forEach((s, i) => { if (first && castSlug(s).split(" ").includes(first)) out.push(s, next ? sents[i + 1] || "" : ""); });
   return out.join(" ");
 }
 
@@ -116,6 +118,54 @@ export function introOf(sc, name) {
   return re.exec(text)?.[1] || "";
 }
 
+// ---------------------------------------------------------------- Seated and mounted cast
+// INT. SPORTS CAR (MOVING): the cast sits in the car's seats. "Two RIDERS walk their horses in": each rider is up on a
+// horse. The host applies these with the stage's own mount mechanics (stage.mount, as the Interact tool does), so the
+// compiler, the clay and the passes all see people where they sit, never standing beside the car or the horse.
+const RIDE_RE = /\b(rides?|riding|rode|riders?|on horseback|horseback|mounted|in the saddle|saddled|spurs?|gallops?|galloping|canters?|cantering|trots?|trotting|reins|walks? (?:her|his|their) (?:horses?|mounts?))\b/i;
+const ALL_RIDE_RE = /\b(riders|they ride|both ride|ride side by side|ride in together|horsemen)\b/i;
+const DRIVE_RE = /\b(drives?|driving|drove|at the wheel|behind the wheel|grips the wheel|the wheel|steers?|steering|shifts gear|floors it|brakes?)\b/i;
+const MOVING_RE = /\b(MOVING|DRIVING|TRAVELL?ING|IN TRANSIT)\b/i;
+const MOUNT_KINDS = ["horse", "bicycle", "motorcycle"];
+const actionOf = (sc) => (sc?.elements || []).filter((e) => e.type === "action").map((e) => e.text).join(" ");
+
+/** The vehicle a scene plays inside (INT. SPORTS CAR (MOVING), EXT. HIGHWAY - MARA'S CAR (MOVING)) as a library kind
+ *  with seats, and whether it is moving; null for a scene that isn't in a vehicle. */
+export function vehicleOfScene(sc) {
+  const ie = String(sc?.int_ext || "").toUpperCase();
+  const heading = String(sc?.heading || "");
+  const loc = String(sc?.location || (ie ? "" : heading)).toLowerCase();
+  if (!loc || !(ie.includes("INT") || MOVING_RE.test(heading) || MOVING_RE.test(loc))) return null;
+  const kind = libraryObjects(loc).find((k) => SEATS[k]) || null;
+  return kind ? { kind, moving: MOVING_RE.test(heading) || MOVING_RE.test(loc) || /\b(drives?|driving|speeds?|races?|swerves?|cuts hard)\b/i.test(actionOf(sc)) } : null;
+}
+
+/** Who rides what: "Two RIDERS walk their horses in" = everyone in the scene; else the characters whose action rides.
+ *  Returns {kind: "horse" | "bicycle" | "motorcycle" | null, riders: [names]}. */
+export function ridersOfScene(sc, names = sceneCast(sc)) {
+  const objs = sc?.stage_hint?.objects || [];
+  const animals = [...(sc?.breakdown?.animals || []), ...(sc?.breakdown?.vehicles || [])].join(" ");
+  const text = actionOf(sc);
+  const kind = MOUNT_KINDS.find((k) => objs.includes(k) || new RegExp(`\\b${k}s?\\b`, "i").test(animals)) || null;
+  if (!kind || !RIDE_RE.test(text)) return { kind: null, riders: [] };
+  const all = ALL_RIDE_RE.test(text);
+  const riders = names.filter((n) => all || RIDE_RE.test(mentions(sc, n)));
+  return { kind: riders.length ? kind : null, riders };
+}
+
+/** Seats for the people in a vehicle: the one at the wheel drives, the rest fill the front passenger seat, then the back. */
+export function seatAssignments(sc, names, kind) {
+  const seats = SEATS[kind] || [];
+  if (!seats.length) return {};
+  const driver = names.find((n) => DRIVE_RE.test(mentions(sc, n, { next: false })))
+    || names.find((n) => DRIVE_RE.test(mentions(sc, n))) || names[0];
+  const order = [driver, ...names.filter((n) => n !== driver)];
+  const free = [0, 1, 3, 2, ...seats.map((_, i) => i).slice(4)].filter((i) => i < seats.length);
+  const out = {};
+  order.forEach((n, i) => { if (i < free.length) out[n] = free[i]; });
+  return out;
+}
+
 /**
  * Simple blocking for n people around `center` [x, z] seen from `cam` [x, z]: one in the middle; two face each other
  * across the line of action; three or more in a shallow arc facing the group's middle. `avoid` = positions to keep
@@ -161,8 +211,9 @@ export function setupLabel(sc, names = sceneCast(sc)) {
 /**
  * What setting up this scene would do on a stage holding `actors`. fresh = the stage is a scene's untouched default
  * (its stand-in Man / Woman may go). castItems = Cast & Locations items (descriptions give looks).
- * Returns {label, names, env: {set, weather}, time_preset, people: [{name, kind, appearance, reuseId}],
- * objects: [kind], removeIds: [id], changes: n}.
+ * Returns {label, names, env: {set, weather}, time_preset, people: [{name, kind, appearance, reuseId, mount?}],
+ * objects: [kind], removeIds: [id], changes: n, hosts: [{kind, reuseId, moving}], vehicle: {kind, moving, host} | null}.
+ * people[i].mount = {host: index into hosts, seat: SEATS index | null}: that person sits in / rides that host.
  */
 export function planSceneSetup(sc, { actors = [], castItems = [], fresh = false, env = {}, lightingPreset = null } = {}) {
   const names = sceneCast(sc);
@@ -184,14 +235,43 @@ export function planSceneSetup(sc, { actors = [], castItems = [], fresh = false,
   }
   // A fresh stage's stand-ins (the default Man and Woman) leave; nothing the user placed is ever removed.
   const removeIds = fresh ? actors.filter((a) => !used.has(a.id) && PEOPLE.has(a.kind)).map((a) => a.id) : [];
-  const kinds = new Set(actors.filter((a) => !removeIds.includes(a.id)).map((a) => a.kind));
-  const objects = [...new Set((sc?.stage_hint?.objects || []).filter((k) => k && !kinds.has(k)))].slice(0, 4);
+  const kept = actors.filter((a) => !removeIds.includes(a.id));
+  // Who sits in the car / rides a horse, and which host each one gets (a stage object to reuse, else a new one).
+  const vehicle = vehicleOfScene(sc);
+  const ride = vehicle ? { kind: null, riders: [] } : ridersOfScene(sc, names);
+  const hosts = [];
+  const free = (kind) => kept.filter((h) => h.kind === kind && !hosts.some((x) => x.reuseId === h.id)
+    && !kept.some((r) => r.mount_id === h.id && !people.some((p) => p.reuseId === r.id)));
+  if (vehicle) {
+    const seats = seatAssignments(sc, names, vehicle.kind);
+    const h = kept.find((a) => a.kind === vehicle.kind) || null;
+    hosts.push({ kind: vehicle.kind, reuseId: h?.id || null, moving: vehicle.moving });
+    for (const p of people) if (seats[p.name] != null) p.mount = { host: 0, seat: seats[p.name] };
+  } else if (ride.kind) {
+    for (const p of people) {
+      if (!ride.riders.includes(p.name)) continue;
+      const mine = kept.find((a) => a.id === p.reuseId);
+      const already = mine?.mount_id && kept.find((h) => h.id === mine.mount_id && h.kind === ride.kind);
+      const h = already || free(ride.kind)[0] || null;
+      hosts.push({ kind: ride.kind, reuseId: h?.id || null, moving: false });
+      p.mount = { host: hosts.length - 1, seat: null };
+    }
+  }
+  const hostKinds = new Set(hosts.map((h) => h.kind));
+  const kinds = new Set(kept.map((a) => a.kind));
+  const objects = [...new Set((sc?.stage_hint?.objects || []).filter((k) => k && !kinds.has(k) && !hostKinds.has(k)))].slice(0, 4);
   const set = su.set || null, weather = su.weather || "none";
-  let changes = people.filter((p) => !p.reuseId).length + objects.length + removeIds.length;
+  let changes = people.filter((p) => !p.reuseId).length + objects.length + removeIds.length + hosts.filter((h) => !h.reuseId).length;
+  for (const p of people) {
+    if (!p.mount) continue;
+    const a = kept.find((x) => x.id === p.reuseId), h = hosts[p.mount.host];
+    if (!a || !h.reuseId || a.mount_id !== h.reuseId || (p.mount.seat != null && (a.seat ?? 0) !== p.mount.seat)) changes++;
+  }
   if (set && env.set !== set) changes++;
   if (set && (env.weather || "none") !== weather) changes++;
   if (time_preset && lightingPreset !== time_preset) changes++;
-  return { label: setupLabel(sc, names), names, env: { set, weather }, time_preset, people, objects, removeIds, changes };
+  return { label: setupLabel(sc, names), names, env: { set, weather }, time_preset, people, objects, removeIds, changes,
+    hosts, vehicle: vehicle ? { ...vehicle, host: 0 } : null };
 }
 
 /** One chip of the scene strip: number, "EXT. Beach", time kind, the characters' initials. */
