@@ -338,6 +338,7 @@ export class LiveEdit {
     if (d && (d.person || d.mode === "kinematic")) {
       const bid = this.bodies.get(d.id)?.[0];
       const pose = d.mountHost ? null : bid && w.getPose(bid);
+      if (pose && d.person) this._walkFacing(d, pose, dt);
       if (pose) {
         const k = this.s._editActorKey(d.a);
         k.position = [+pose.pos[0].toFixed(3), d.person ? +Math.max(0, pose.pos[1]).toFixed(3) : 0, +pose.pos[2].toFixed(3)];
@@ -348,7 +349,7 @@ export class LiveEdit {
       this._silentFrame();
       // The figure is where its body is (the stage's own hop-over-obstacles height is for walked paths, not a drag).
       if (d.person && !d.mountHost && pose) d.g.position.y = Math.max(0, pose.pos[1]);
-      if (d.person && !d.mountHost) this._stepPose(d, pose);
+      if (d.person && !d.mountHost) { this._walkPose(d, dt); this._stepPose(d, pose); }
       if (d.carryBlend) {   // lifted from where it stood up into the hands, not snapped there
         const cb = d.carryBlend, cg = this.s.actorMeshes.get(cb.id);
         cb.t += dt;
@@ -499,8 +500,14 @@ export class LiveEdit {
       for (const bid of own) w.setKinematicTarget(bid, d.cur, q);
       return;
     }
-    // A little smoothing: the object keeps up with the cursor (~30 ms) but never jumps.
-    d.cur = damp(d.cur, want, 32, dt);
+    // A little smoothing: the object keeps up with the cursor (~30 ms) but never jumps. A person moves no faster than
+    // a run, so when the cursor slips off the top of a horse onto the far ground they don't shoot across the set.
+    const next = damp(d.cur, want, 32, dt);
+    if (d.person) {
+      const dx = next[0] - d.cur[0], dz = next[2] - d.cur[2], L = Math.hypot(dx, dz), cap = 6 * dt;
+      if (L > cap) { next[0] = d.cur[0] + dx * cap / L; next[2] = d.cur[2] + dz * cap / L; }
+    }
+    d.cur = next;
     for (const bid of own) w.setKinematicTarget(bid, d.cur, q);
   }
 
@@ -564,6 +571,8 @@ export class LiveEdit {
     // Swing up into the saddle / seat from where they are (not a pop): blended over the next ~0.45 s.
     if (d.mountHost !== host.id) { d.g.updateMatrixWorld(true); d.mountBlend = { from: d.g.position.toArray(), t: 0, dur: 0.45 }; }
     a.mount_id = host.id;
+    const hk = this.s._actorPosAt(host, this.s.frame);   // the rider's own key goes with the mount (not wherever the cursor was)
+    if (hk) this.s._editActorKey(a).position = [+hk[0].toFixed(3), 0, +hk[2].toFixed(3)];
     a.pose = this.K.RIDEABLE.has(host.kind) ? (this.K.MOUNTS[host.kind]?.pose || "sit") : "sit";
     if (seat != null) a.seat = seat; else delete a.seat;
     if (this.s.frame > 0) a.mount_at = this.s.frame; else delete a.mount_at;
@@ -584,6 +593,37 @@ export class LiveEdit {
     for (const bid of this.bodies.get(d.id) || []) for (const h of d.hostIgnore) this.world.ignorePair?.(bid, h, true);
     d.respawn = true;
     this._silentFrame();
+  }
+
+  /**
+   * A person dragged across the set walks there: they turn to face where they're going (once they've really set off,
+   * so a nudge doesn't spin them) and the legs and arms swing in step with the distance covered (no skating).
+   */
+  _walkFacing(d, pose, dt) {
+    const pv = d._pv;
+    d._pv = [pose.pos[0], pose.pos[2]];
+    if (!pv || dt <= 0) return;
+    const vx = (pose.pos[0] - pv[0]) / dt, vz = (pose.pos[2] - pv[1]) / dt, sp = Math.hypot(vx, vz);
+    d._speed = damp(d._speed || 0, d.step ? 0 : Math.min(sp, 4), 10, dt);
+    d._dist = (d._dist || 0) + sp * dt;
+    d._walked = (d._walked || 0) + sp * dt;
+    if (d.step || d.rotX != null || sp < 0.35 || d._walked < 0.35) return;
+    const want = Math.atan2(vx, vz);
+    const dy = ((want - d.yaw) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
+    d.yaw += Math.max(-8 * dt, Math.min(8 * dt, dy));   // up to ~460°/s: a quick but visible turn
+    d.a.rotation_deg = Math.round(THREE.MathUtils.radToDeg(d.yaw));
+  }
+  _walkPose(d, dt) {
+    const sp = d._speed || 0, w = Math.min(1, sp / 1.1);
+    if (w < 0.03) return;
+    const ph = (d._dist || 0) / 1.4 * 2 * Math.PI;   // one gait cycle (two steps) per 1.4 m
+    for (const l of d.g.userData.limbs || []) {
+      const o = l.side > 0 ? 0 : Math.PI;
+      if (l.part === "hip") l.pivot.rotation.x += -Math.sin(ph + o) * 0.42 * w;
+      if (l.part === "knee") l.pivot.rotation.x += (0.12 + 0.6 * Math.max(0, Math.cos(ph + o))) * w;
+      if (l.part === "shoulder") l.pivot.rotation.x += Math.sin(ph + o) * 0.32 * w;
+      if (l.part === "elbow") l.pivot.rotation.x += -0.25 * w;
+    }
   }
 
   /**
@@ -632,7 +672,7 @@ export class LiveEdit {
 
   /** The small prop a dragged person is touching (or nearly), that they could carry. */
   _touchingProp(d) {
-    const g = d.g, pb = new THREE.Box3().setFromObject(g).expandByScalar(0.25);
+    const g = d.g, pb = new THREE.Box3().setFromObject(g).expandByScalar(0.45);
     let best = null;
     for (const o of this.s.state.actors) {
       if (o.id === d.id || this._isPerson(o) || o.carry_id || o.mount_id || this.K.NEVER_CARRIED.has(o.kind)) continue;
