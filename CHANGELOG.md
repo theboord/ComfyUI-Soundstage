@@ -5,6 +5,13 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**12:45 PDT · New sets: underwater, fire, airplane, train** *(Milestone 11)*
+- ③ Set has seven new sets: **Underwater reef** (coral, kelp, light rays, bubbles; people swim), **Burning building** (night, flames, embers, smoke, flickering firelight), **Airplane cabin** (seat rows, bins, oval windows with clouds going by), **Airport runway**, **Above the clouds**, **Train carriage** (facing seats and tables, countryside streaming past) and **Train station platform**.
+- New vehicles: an **airliner** and a **train** (locomotive and three carriages) that drive along on keys, nose first.
+- **Fire** in Elements puts flames, embers and smoke on any set: a campfire in the forest, a burning car on the street.
+- Script scene setup picks them from the slugline (INT. AIRPLANE CABIN, UNDERWATER, INT. TRAIN, EXT. TRAIN STATION, BURNING BUILDING) and seats the cast by the window.
+- No text anywhere on the new sets, so nothing garbles in renders.
+
 **12:37 PDT · Live 3D: drag it, and the set reacts** *(Milestone 9, in progress)*
 - Physics stays live while you edit. Dragged objects bump, push, stack and settle, with no Simulate button needed.
 - Drag a person onto a crate and they climb up. Over a horse, they mount it; drag them off and they dismount. Into a small prop, they pick it up, and putting it down drops it in front of them.

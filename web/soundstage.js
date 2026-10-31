@@ -2543,7 +2543,8 @@ function createStageWidget(node, inputName) {
     const j = stage.toJSON();
     let castItems = [];
     try { castItems = castPanel?.items() || []; } catch { /* cast not built */ }
-    return planSceneSetup(sc, { actors: j.actors || [], castItems, fresh, env: j.environment || {}, lightingPreset: j.lighting?.preset || null });
+    return planSceneSetup(sc, { actors: j.actors || [], castItems, fresh, env: j.environment || {}, lightingPreset: j.lighting?.preset || null,
+      last: Math.max(1, (j.shot?.frames || 97) - 1) });
   }
   function setUpScene(sc, { fresh = false, auto = false } = {}) {
     if (!sc) return null;
@@ -2562,7 +2563,11 @@ function createStageWidget(node, inputName) {
     if (fresh) {
       const shot = stage.activeShot();
       const n = plan.people.length;
-      const cam = { position: [0, 1.6, n >= 4 ? -12.5 : -11.5], target: [0, 1.35, -4], focal_mm: n >= 4 ? 28 : 35 };
+      // a Milestone 11 set (cabin, carriage, platform, reef...) knows where its camera and its cast go
+      if (plan.stage?.center) center = plan.stage.center;
+      if (plan.stage?.camera) camXZ = [plan.stage.camera.position[0], plan.stage.camera.position[2]];
+      const cam = plan.stage?.camera ? { ...plan.stage.camera }
+        : { position: [0, 1.6, n >= 4 ? -12.5 : -11.5], target: [0, 1.35, -4], focal_mm: n >= 4 ? 28 : 35 };
       shot.camera_keys = [{ frame: 0, ...cam }];
       st.camera_keys = shot.camera_keys;
       st.camera = { ...cam }; st.camera_end = { ...cam };
@@ -2589,6 +2594,7 @@ function createStageWidget(node, inputName) {
         continue;
       }
       const sp = spots[k++] || { position: [center[0], 0, center[1]], rotation_deg: 0 };
+      if (plan.stage?.lift) sp.position[1] = plan.stage.lift;   // underwater: the cast swims, off the seabed
       const id = `${p.kind}_${castSlug(p.name).replace(/ /g, "_") || "cast"}_${Date.now().toString(36)}${k}`;
       st.actors.push({ id, name: p.name, kind: p.kind, position: [...sp.position], keys: [{ frame: 0, position: [...sp.position] }],
         height_m: H[p.kind] || 1.75, rotation_deg: sp.rotation_deg, appearance: Object.keys(p.appearance).length ? p.appearance : undefined });
@@ -2602,6 +2608,12 @@ function createStageWidget(node, inputName) {
       try { stage.addObject(kind.replace(/_/g, " ")); } catch { /* unknown kind */ }
       const o = st.actors.length > before ? st.actors[st.actors.length - 1] : null;
       if (!o) continue;
+      const mark = plan.stage?.place?.[kind];
+      if (mark) {   // the set's own vehicle on its mark: the train on its track, the airliner on the runway centreline
+        o.position = [...mark.position]; o.rotation_deg = mark.rotation_deg || 0;
+        o.keys = (mark.keys || [{ frame: 0, position: mark.position }]).map((q) => ({ frame: q.frame, position: [...q.position] }));
+        continue;
+      }
       if (seated.car) {   // INT. car: other vehicles wait well back in the next lane, out of the car's path
         const c0 = seated.car.keys?.[0]?.position || seated.car.position || [center[0], 0, center[1]];
         const pos = [+(c0[0] - 3.4 * (vi % 2 ? -1 : 1)).toFixed(2), 0, +(c0[2] - 14 - 8 * Math.floor(vi / 2)).toFixed(2)];
@@ -2679,6 +2691,10 @@ function createStageWidget(node, inputName) {
       if (!o) return;
       const placeIt = o.__new || fresh;
       delete o.__new;
+      if (h.at && placeIt) {   // a seat row on its slot in the cabin / carriage (the set's dressing row makes way)
+        o.position = [...h.at.position]; o.keys = [{ frame: 0, position: [...h.at.position] }]; o.rotation_deg = h.at.rotation_deg || 0;
+        return;
+      }
       if (plan.vehicle && plan.vehicle.host === i) {
         out.car = o;
         if (placeIt) {

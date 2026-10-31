@@ -3,6 +3,8 @@
 // primitives, so there are no asset downloads and no licensing questions.
 import * as THREE from "../vendor/three.module.min.mjs";
 import { buildHuman } from "./humans.mjs";
+import { buildAirliner, buildPlaneSeats } from "./sets/airplane.mjs";
+import { buildTrain, buildTrainSeats } from "./sets/train.mjs";
 
 /** kind -> default real-world size and how it moves. */
 export const LIBRARY = {
@@ -64,6 +66,11 @@ export const LIBRARY = {
   rug: { label: "Rug", height: 0.01, rig: "static" },
   door: { label: "Door", height: 2.05, rig: "static" },
   houseplant: { label: "House plant", height: 1.2, rig: "static" },
+  // Milestone 11 sets (web/stage/sets): the vehicles and the seat rows the cabin / carriage sets are dressed with.
+  airliner: { label: "Airliner", height: 11.8, rig: "vehicle", length: 37.6 },
+  train: { label: "Train", height: 4.0, rig: "vehicle", length: 92 },
+  plane_seats: { label: "Airliner seat row", height: 1.3, rig: "static" },
+  train_seats: { label: "Train seat pair", height: 1.45, rig: "static" },
 };
 
 /** Furniture as true-size boxes: [width x, height y, depth z, centre x, centre y, centre z, accent?]. */
@@ -112,6 +119,10 @@ const SYNONYMS = {
   "kitchen counter": "kitchen_counter", hob: "kitchen_counter", stove: "kitchen_counter", refrigerator: "fridge",
   bathtub: "bath", tub: "bath", wc: "toilet", sink: "washbasin", basin: "washbasin", closet: "wardrobe", cupboard: "wardrobe",
   shelf: "bookshelf", bookcase: "bookshelf", "dining table": "dining_table", carpet: "rug", "house plant": "houseplant",
+  plane: "airliner", airplane: "airliner", aeroplane: "airliner", aircraft: "airliner", jetliner: "airliner",
+  "jet plane": "airliner", "passenger jet": "airliner", "commercial jet": "airliner",
+  locomotive: "train", "passenger train": "train", "freight train": "train",
+  "seat row": "plane_seats", "airplane seats": "plane_seats", "plane seats": "plane_seats", "train seats": "train_seats",
 };
 
 /**
@@ -161,6 +172,7 @@ export const OBJECT_COLORS = {
   bath: ["#f1f1ee", "#dfe7ea"], toilet: ["#f3f3f0", "#f3f3f0"], washbasin: ["#e8e4dc", "#f3f3f0"], wardrobe: ["#a8865f", "#5a4630"],
   bookshelf: ["#7a5a3e", "#b9a27f"], desk: ["#8a6a4c", "#8a6a4c"], dining_table: ["#7a5232", "#7a5232"], rug: ["#9a6b4f", "#9a6b4f"],
   door: ["#b48a5c", "#c0c0c0"], houseplant: ["#c9b9a2", "#4a7a3e"],
+  airliner: ["#eef0f2", "#25406c"], train: ["#d9dcde", "#1f4e79"], plane_seats: ["#27344d", "#d9d6ce"], train_seats: ["#3d4b5f", "#52617a"],
 };
 const GLASS = "#5d7180";
 
@@ -221,6 +233,16 @@ export const SEATS = {
     { name: "Rider", pos: [0, 0.7, -0.15] },
     { name: "Pillion", pos: [0, 0.72, -0.75] },
   ],
+  // = PLANE_SEATS in sets/airplane.mjs and TRAIN_SEATS in sets/train.mjs, written out: soundstage/look/scene.py reads this block
+  plane_seats: [
+    { name: "Left seat", pos: [0.49, 0.5, -0.02] },
+    { name: "Middle seat", pos: [0, 0.5, -0.02] },
+    { name: "Right seat", pos: [-0.49, 0.5, -0.02] },
+  ],
+  train_seats: [
+    { name: "Left seat", pos: [0.25, 0.49, -0.04] },
+    { name: "Right seat", pos: [-0.25, 0.49, -0.04] },
+  ],
 };SEATS.police_car = SEATS.sports_car = SEATS.hatchback = SEATS.car;
 
 
@@ -230,6 +252,10 @@ export function buildObject(kind, height, mesh, appearance = null) {
   if (kind === "man" || kind === "woman" || kind === "child") return buildHuman(kind, h, appearance, mesh);
   const [main, accent] = OBJECT_COLORS[kind] || ["#9a9a9a", "#6a6a6a"];
   const mainCol = appearance?.color || main;
+  if (kind === "airliner") return buildAirliner(mesh, { main: mainCol, accent, height: h });
+  if (kind === "train") return buildTrain(mesh, { main: mainCol, accent, height: h });
+  if (kind === "plane_seats") return buildPlaneSeats(mesh);
+  if (kind === "train_seats") return buildTrainSeats(mesh);
   const g = new THREE.Group();
   g.userData.limbs = [];
   const add = (geom, x, y, z, rx = 0, ry = 0, rz = 0, color = mainCol) => {

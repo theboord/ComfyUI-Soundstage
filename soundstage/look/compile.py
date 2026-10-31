@@ -210,7 +210,8 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     who = people + others
     n = len(f1["people"])
     loc = f1["location"]
-    place = "underwater" if f1["underwater"] else loc["place"]
+    # a set whose place already says underwater (the reef) keeps its words; a camera under the tank's surface says it
+    place = loc["place"] if f1["underwater"] and "underwater" in (loc["place"] or "") else "underwater" if f1["underwater"] else loc["place"]
     props = [f"{p['word']} {p['where']}" for p in f1["props"][:3]]
     desc = frame1_safe(look.get("description", ""))
     vcam = S.vehicle_camera(scene)
@@ -414,7 +415,7 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
         head = _join([
             _join([f"{'Interior' if loc['int_ext'] == 'INT' else 'Exterior'} {f1['size_ltx'].lower()}",
                    S.ANGLE_LTX[f1["angle"]] and f"from a {S.ANGLE_LTX[f1['angle']]} angle"], " "),
-            ("underwater" if f1["underwater"] else loc["place"] and f"in {loc['place']}"),
+            ("underwater" if f1["underwater"] and "underwater" not in (loc["place"] or "") else loc["place"] and f"in {loc['place']}"),
         ], " ")
     light = _join([_no_numbers(f1["lighting"]), loc["weather"]])
     blocking_s = S.blocking_sentence(f1["people"] + f1["others"], f1["camera"])

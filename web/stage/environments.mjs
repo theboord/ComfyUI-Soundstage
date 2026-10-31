@@ -2,6 +2,10 @@
 // frame (particles are a pure function of the frame number), so captures are repeatable and
 // the preview ladder can cache them.
 import * as THREE from "../vendor/three.module.min.mjs";
+import { buildUnderwater } from "./sets/underwater.mjs";
+import { buildBurningBuilding, buildFireWeather } from "./sets/fire.mjs";
+import { buildAirplaneCabin, buildRunway, buildAboveClouds } from "./sets/airplane.mjs";
+import { buildTrainCar, buildTrainStation } from "./sets/train.mjs";
 
 export const SETS = {
   plaza: { label: "Plaza exterior" },
@@ -14,7 +18,20 @@ export const SETS = {
   water_tank: { label: "Water tank" },
   open_water: { label: "Open water (sea / lake)" },
   stadium: { label: "Stadium / ballfield" },
+  underwater: { label: "Underwater reef" },
+  burning_building: { label: "Burning building (night)" },
+  airplane_cabin: { label: "Airplane cabin" },
+  runway: { label: "Airport runway" },
+  above_clouds: { label: "Above the clouds" },
+  train_car: { label: "Train carriage" },
+  train_station: { label: "Train station platform" },
   empty: { label: "Empty stage" },
+};
+
+/** Milestone 11 sets: built in web/stage/sets/*.mjs; each returns {group, water, fx} (fx: per-frame + per-pass hooks). */
+const SET_BUILDERS = {
+  underwater: buildUnderwater, burning_building: buildBurningBuilding, airplane_cabin: buildAirplaneCabin,
+  runway: buildRunway, above_clouds: buildAboveClouds, train_car: buildTrainCar, train_station: buildTrainStation,
 };
 
 export const WEATHER = {
@@ -25,6 +42,7 @@ export const WEATHER = {
   smoke: { label: "Smoke" },
   dust: { label: "Dust" },
   sparks: { label: "Fire sparks" },
+  fire: { label: "Fire (flames, embers, smoke)" },
 };
 
 /** Tiny deterministic PRNG so "random" set dressing and particles are identical every render. */
@@ -39,6 +57,7 @@ function rng(seed) {
  * Returns {group, water: {level, size} | null}.
  */
 export function buildSet(preset, mesh, opts = {}) {
+  if (SET_BUILDERS[preset]) return SET_BUILDERS[preset](opts);
   const g = new THREE.Group();
   const box = (w, h, d, x, y, z) => {
     const m = mesh(new THREE.BoxGeometry(w, h, d));
@@ -189,6 +208,7 @@ export function buildWater(water) {
  */
 export function buildWeather(kind, density = 0.5) {
   if (kind === "none" || kind === "fog") return null;
+  if (kind === "fire") return buildFireWeather(density);   // flames on any set: environment.fire_at or where the shot looks
   const N = Math.round(400 + density * 5600);
   const rand = rng(1234);
   const seeds = new Float32Array(N * 3);
