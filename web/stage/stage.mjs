@@ -23,6 +23,7 @@ import { simulate, bakeTrack, physicsOf, samplePos, sampleQuat, checkTracks } fr
 import { LiveEdit } from "./live.mjs";
 import { Highlighter } from "./outline.mjs";
 import { zoomAt, frameSphere, easeInOut, decay } from "./manip.mjs";
+import { WorldMount } from "./interop/importworld.mjs";
 
 /**
  * Video → Stage: the set mesh is the first frame's depth, so the person in the shot is frozen into it. The clay actor
@@ -316,6 +317,8 @@ export class Stage {
       this.interiorGroup = buildInterior(this.state.interior, (geom, color) => this._mesh(geom, color));
       this.root.add(this.interiorGroup);
     }
+    // An imported world (Blender / Unreal / Maya / Sketchfab file or a splat) as the location: interop/importworld.mjs.
+    (this.worldMount ||= new WorldMount(this)).attach();
 
     const env = this.state.environment || { set: "plaza", weather: "none", density: 0.5 };
     const clean = this._cleanStreetSig();
@@ -495,12 +498,13 @@ export class Stage {
           poses: [{ pos: [pos.x, pos.y, pos.z], quat: [quat.x, quat.y, quat.z, quat.w] }] });
       });
     }
+    for (const c of this.worldMount?.colliders() || []) out.push(c);   // an imported world's box proxies
     return out;
   }
 
   /** _setColliders(), cached until the set is rebuilt (the live world asks for it on every drag). */
   _setCollidersCached() {
-    const key = [this._setGroup?.uuid, this.interiorGroup?.uuid, this.root.children.filter((o) => o.userData.setPiece).map((o) => o.uuid).join()].join("|");
+    const key = [this._setGroup?.uuid, this.interiorGroup?.uuid, this.root.children.filter((o) => o.userData.setPiece).map((o) => o.uuid).join(), this.worldMount?.sig || ""].join("|");
     if (this._setColCache?.key !== key) this._setColCache = { key, list: this._setColliders().map((c) => ({ id: c.id, half: c.half, pos: c.poses[0].pos, quat: c.poses[0].quat })) };
     return this._setColCache.list;
   }
@@ -1087,6 +1091,7 @@ export class Stage {
     // Scrubbing or any edit while dropped things are still settling: write them down first.
     if (this.live?.settling && !this.live.drag && !this.live.internal) this.live.finish();
     this.frame = Math.max(0, Math.min(this._lastFrame(), Math.round(frame)));
+    this.worldMount?.setTime(this.frame / (this.state.shot?.fps || 24));
     if (this._setGroup !== undefined && this._cleanStreetSig() !== this._setCleanSig) this._swapSetGroup();
     // The set may have been rebuilt (new meshes): keep the gizmo on the selected object.
     if (this.tc && this.tc.object !== (this.poser?.target() ?? (this.selected ? this.actorMeshes.get(this.selected) : undefined))) this._attachGizmo();
