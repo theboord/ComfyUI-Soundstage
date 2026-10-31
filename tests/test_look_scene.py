@@ -155,3 +155,29 @@ def test_identical_nouns_are_counted():
     assert _group_nouns(["a man", "a man"]) == "two men"
     assert _group_nouns(["a woman", "a woman", "a woman"]) == "three women"
     assert _group_nouns(["a man", "a woman"]) == "a man and a woman"
+
+
+# red_car_backwards: the 10-29 chase take's look still showed the sports car's FRONT on the chase cam, and LTX moved
+# that front-facing car away along the clay path (it read as reversing). Depth looks the same either way round, so the
+# still and motion prompts must say which end of the car faces the camera on every Car Chase shot.
+_FACING = {
+    "chase": "seen from behind, rear bumper and red tail lights toward the camera",
+    "tracking": "front toward the camera, headlights and grille facing us",
+    "crane": "front toward the camera, headlights and grille facing us",
+}
+
+
+def test_car_chase_vehicle_facing():
+    wf = json.loads((ROOT / "example_workflows/Soundstage_Car_Chase.json").read_text())
+    st = next(json.loads(n["widgets_values"][0]) for n in wf["nodes"] if n["type"] == "SoundstageStage")
+    lk = next(json.loads(n["widgets_values"][0]) for n in wf["nodes"] if n["type"] == "SoundstageLook")
+    assert {s["id"] for s in st["shots"]} == set(_FACING)
+    for shot in st["shots"]:
+        s = copy.deepcopy(st)
+        s["active_shot"] = shot["id"]
+        s.update({k: v for k, v in shot.items() if k not in ("id", "name")})
+        r = compile_look(lk, s)
+        for which in ("still_prompt", "motion_prompt"):
+            assert _FACING[shot["id"]] in r[which], (shot["id"], which)
+        # the seated getaway driver is never staged as a pedestrian beside the car (take 28 grew a walking man)
+        assert "a man and a sports car" not in r["motion_prompt"].lower(), shot["id"]
