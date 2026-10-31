@@ -508,3 +508,262 @@ export function checkTracks(specs, result, fps = 24) {
   }
   return { maxSink, maxSpeed, allSettled: specs.filter((s) => s.dynamic).every((s) => result.settled[s.id] != null) };
 }
+
+// ---------- the live world (editing) ----------
+/**
+ * A stepping world for live interaction while editing (Milestone 9): the same XPBD contacts as simulate(), advanced in
+ * real time. Bodies are dynamic (fall, tumble, get pushed), static (never move) or kinematic (follow a target pose and
+ * push dynamic bodies, nothing pushes them back). setKinematicTarget() on a DYNAMIC body is a grab: it chases the
+ * target with gravity off and its spin locked, static bodies and the floor still block it, and it shoves dynamic
+ * bodies out of the way; null lets go. Poses are origin poses {pos, quat}; a box's `center` is relative to the origin.
+ * This is an editing aid only: shots are still made by simulate() + bakeTrack() (deterministic keys).
+ */
+export function createXpbdWorld(opts = {}) {
+  const g = opts.gravity ?? GRAVITY, floor = opts.floor !== false;
+  const baseSub = Math.max(2, Math.min(32, opts.substeps || 8));
+  const iters = Math.max(1, Math.min(8, opts.iterations || 2));
+  const MAX_STEP = opts.maxStep || 0.03;   // m a grabbed body may move per substep (no tunnelling through a thin wall)
+  const LIN_SLEEP = 0.06, ANG_SLEEP = 0.15, SLEEP_TIME = 0.35, WAKE_SPEED = 0.2;
+  const bodies = new Map();
+  let seq = 0;
+
+  const setPose = (b, pos, quat) => {
+    b.q = qnorm(quat || [0, 0, 0, 1]); b.x = add(pos || [0, 0, 0], qrot(b.q, b.center)); b.xp = [...b.x]; b.qp = [...b.q];
+  };
+  function applyType(b, type) {
+    b.type = ["dynamic", "static", "kinematic"].includes(type) ? type : "dynamic";
+    b.dynamic = b.type === "dynamic";
+    b.free = b.dynamic;
+    if (!b.dynamic) { b.v = [0, 0, 0]; b.w = [0, 0, 0]; }
+  }
+  function grabMass(b, on) {
+    if (on && !b.grabbed) { b.grabbed = { invM: b.invM, invI: b.invI }; b.invM = 1 / Math.max(2000, b.m * 40); b.invI = [0, 0, 0]; }
+    if (!on && b.grabbed) { b.invM = b.grabbed.invM; b.invI = b.grabbed.invI; b.grabbed = null; }
+  }
+
+  const api = {
+    engine: "xpbd",
+    /** desc: {id?, shape: "box"|"sphere", half, center, radius, type: "dynamic"|"static"|"kinematic", mass, friction,
+     *  restitution (or bounce), pos, quat, asleep}. Returns the id. */
+    addBody(desc = {}) {
+      const id = desc.id ?? `b${++seq}`;
+      const b = makeBody({ id, shape: desc.shape, half: desc.half, center: desc.center, radius: desc.radius, dynamic: true,
+        mass: desc.mass ?? 20, bounce: desc.restitution ?? desc.bounce ?? 0.05, friction: desc.friction ?? 0.8 }, bodies.size);
+      setPose(b, desc.pos, desc.quat);
+      applyType(b, desc.type);
+      b.target = null; b.still = 0; b.asleep = !!desc.asleep && b.dynamic;
+      b.lin = desc.linearDamping ?? 0.05; b.ang = desc.angularDamping ?? 1.2;
+      bodies.set(id, b);
+      return id;
+    },
+    removeBody(id) { bodies.delete(id); },
+    has(id) { return bodies.has(id); },
+    /** Kinematic: move there over the next step. Dynamic: grab (chase it, blocked by static things); null = let go. */
+    setKinematicTarget(id, pos, quat = null) {
+      const b = bodies.get(id);
+      if (!b) return;
+      if (pos == null) {
+        if (b.dynamic && b.target) { grabMass(b, false); b.v = scl(b.v, 0.25); b.w = [0, 0, 0]; b.still = 0; b.asleep = false; }
+        b.target = null;
+        return;
+      }
+      b.target = { pos: [...pos], quat: qnorm(quat || b.target?.quat || b.q) };
+      if (b.dynamic) { grabMass(b, true); b.asleep = false; b.still = 0; }
+    },
+    setBodyProps(id, p = {}) {
+      const b = bodies.get(id);
+      if (!b) return;
+      if (p.mass != null) { const m = Math.max(0.05, +p.mass); const k = m / b.m; b.m = m; b.invM = 1 / m; b.invI = b.invI.map((v) => v / k); }
+      if (p.friction != null) b.friction = +p.friction;
+      if (p.restitution != null || p.bounce != null) b.bounce = +(p.restitution ?? p.bounce);
+      if (p.type) applyType(b, p.type);
+      if (p.pos) { setPose(b, p.pos, p.quat || b.q); b.asleep = false; b.still = 0; }
+    },
+    getPose(id) {
+      const b = bodies.get(id);
+      return b ? { pos: originOf(b), quat: [...b.q] } : null;
+    },
+    getVelocity(id) { const b = bodies.get(id); return b ? { v: [...b.v], w: [...b.w] } : null; },
+    isAsleep(id) { const b = bodies.get(id); return !b || !b.dynamic || b.asleep; },
+    /** Dynamic bodies still moving (a grabbed body counts while it is held). */
+    awakeCount() { let n = 0; for (const b of bodies.values()) if (b.dynamic && (!b.asleep || b.target)) n++; return n; },
+    ids() { return [...bodies.keys()]; },
+    /** Nearest hit of a ray on a body or the floor: {id ("__ground" for the floor), point, normal, distance} or null. */
+    raycast(origin, dir, maxDist = 1e4, { exclude = null } = {}) {
+      const d = scl(dir, 1 / (len(dir) || 1));
+      let best = null;
+      if (floor && d[1] < -1e-6) {
+        const t = -origin[1] / d[1];
+        if (t > 0 && t < maxDist) best = { id: "__ground", point: add(origin, scl(d, t)), normal: [0, 1, 0], distance: t };
+      }
+      for (const b of bodies.values()) {
+        if (exclude && (exclude === b.id || exclude.has?.(b.id) || (Array.isArray(exclude) && exclude.includes(b.id)))) continue;
+        const hit = rayBody(b, origin, d);
+        if (hit && hit.distance < maxDist && (!best || hit.distance < best.distance)) best = { id: b.id, ...hit };
+      }
+      return best;
+    },
+    step(dt) {
+      dt = Math.max(0, Math.min(1 / 20, +dt || 0));
+      if (dt <= 0) return;
+      const list = [...bodies.values()];
+      // Enough substeps that a grabbed or kinematic body never moves more than MAX_STEP per substep.
+      let need = baseSub;
+      for (const b of list) if (b.target) need = Math.max(need, Math.ceil(len(sub(add(b.target.pos, qrot(b.target.quat, b.center)), b.x)) / MAX_STEP));
+      const nSub = Math.min(64, need), h = dt / nSub;
+      const kinStart = new Map();
+      for (const b of list) if (b.type === "kinematic" && b.target) kinStart.set(b, { x: [...b.x], q: [...b.q] });
+      for (let s = 0; s < nSub; s++) substep(list, h, s, nSub, kinStart);
+      for (const b of list) {
+        if (b.type === "kinematic" && b.target) { b.target = null; b.v = [0, 0, 0]; b.w = [0, 0, 0]; }
+        if (!b.dynamic || b.asleep || b.target) continue;
+        if (len(b.v) < LIN_SLEEP && len(b.w) < ANG_SLEEP) b.still += dt; else b.still = 0;
+        if (b.still >= SLEEP_TIME) { b.asleep = true; b.v = [0, 0, 0]; b.w = [0, 0, 0]; }
+      }
+    },
+    dispose() { bodies.clear(); },
+  };
+
+  function substep(list, h, s, nSub, kinStart) {
+    // Predict.
+    for (const b of list) {
+      b.vp = [...b.v]; b.wp = [...b.w];
+      if (b.type === "static") continue;
+      b.xp = [...b.x]; b.qp = [...b.q];
+      if (b.type === "kinematic") {
+        if (!b.target) { b.v = [0, 0, 0]; b.w = [0, 0, 0]; continue; }
+        const st = kinStart.get(b), u = (s + 1) / nSub, tx = add(b.target.pos, qrot(b.target.quat, b.center));
+        b.x = st.x.map((v, k) => v + (tx[k] - v) * u); b.q = qslerp(st.q, b.target.quat, u);
+        b.v = scl(sub(b.x, b.xp), 1 / h);
+        const dq = qmul(b.q, qconj(b.qp));
+        b.w = scl([dq[0], dq[1], dq[2]], (dq[3] >= 0 ? 2 : -2) / h);
+        b.vp = [...b.v]; b.wp = [...b.w];
+        continue;
+      }
+      if (b.asleep) { b.v = [0, 0, 0]; b.w = [0, 0, 0]; continue; }
+      if (b.target) {   // grabbed: chase the target, spread over the substeps left
+        const tx = add(b.target.pos, qrot(b.target.quat, b.center));
+        let dx = scl(sub(tx, b.x), 1 / (nSub - s));
+        const m = len(dx);
+        if (m > MAX_STEP) dx = scl(dx, MAX_STEP / m);
+        b.x = add(b.x, dx);
+        b.q = qslerp(b.q, b.target.quat, 1 / (nSub - s));
+        continue;
+      }
+      b.v[1] -= g * h;
+      b.x = add(b.x, scl(b.v, h));
+      const dq = qmul([b.w[0], b.w[1], b.w[2], 0], b.q);
+      b.q = qnorm([b.q[0] + 0.5 * h * dq[0], b.q[1] + 0.5 * h * dq[1], b.q[2] + 0.5 * h * dq[2], b.q[3] + 0.5 * h * dq[3]]);
+    }
+    // Contacts: every awake dynamic (and every moving kinematic) body against everything near it.
+    const C = [];
+    const active = list.filter((b) => (b.dynamic && !b.asleep) || (b.type === "kinematic" && len(b.v) > 1e-6));
+    const seen = new Set();
+    for (const A of active) {
+      if (floor && A.dynamic && A.x[1] - A.bound <= 0) {
+        if (A.shape === "sphere") { const c = measure({ type: "sg", a: A, b: GROUND }); if (c.d > 0) C.push(c); }
+        else for (const lp of A.probes) if (A.x[1] + qrot(A.q, lp)[1] < 0) C.push({ type: "pg", a: A, b: GROUND, lp });
+      }
+      for (const B of list) {
+        if (B === A) continue;
+        const key = A.index < B.index ? `${A.id}|${B.id}` : `${B.id}|${A.id}`;
+        if (seen.has(key)) continue;
+        if (!A.dynamic && !B.dynamic) continue;   // kinematic vs static/kinematic: nothing to solve
+        const dx = A.x[0] - B.x[0], dy = A.x[1] - B.x[1], dz = A.x[2] - B.x[2], R = A.bound + B.bound + 0.05;
+        if (dx * dx + dy * dy + dz * dz > R * R) continue;
+        seen.add(key);
+        for (const [S, O] of [[A, B], [B, A]]) {
+          if (S.dynamic && S.asleep && (O.target || len(O.v) > WAKE_SPEED)) { S.asleep = false; S.still = 0; }
+        }
+        if ((!A.free || A.asleep) && (!B.free || B.asleep)) continue;
+        pairContacts(A, B, C);
+      }
+    }
+    for (const c of C) { measure(c); c.vnPrev = dot(c.n, relVel(c, true)); c.lam = 0; }
+    for (let it = 0; it < iters; it++) for (const c of C) {
+      measure(c);
+      if (c.d <= 0) continue;
+      const A = c.a, B = c.b;
+      let rA = sub(c.pA, A.x), rB = sub(c.pB, B.x);
+      const wA = wOf(A, rA, c.n), wB = wOf(B, rB, c.n);
+      if (wA + wB <= 0) continue;
+      const dl = c.d / (wA + wB);
+      c.lam += dl;
+      applyPos(A, scl(c.n, dl), rA);
+      applyPos(B, scl(c.n, -dl), rB);
+      if (it > 0) continue;
+      const mu = Math.sqrt(Math.max(0, A.friction) * Math.max(0, B.friction));
+      if (mu <= 0) continue;
+      const lA = qrot(qconj(A.q), sub(c.pA, A.x)), lB = qrot(qconj(B.q), sub(c.pB, B.x));
+      const pAn = add(A.x, qrot(A.q, lA)), pAp = add(A.xp, qrot(A.qp, lA));
+      const pBn = add(B.x, qrot(B.q, lB)), pBp = add(B.xp, qrot(B.qp, lB));
+      const dp = sub(sub(pAn, pAp), sub(pBn, pBp));
+      const dpt = sub(dp, scl(c.n, dot(dp, c.n))), m = len(dpt);
+      if (m < 1e-9) continue;
+      const t = scl(dpt, 1 / m);
+      rA = sub(pAn, A.x); rB = sub(pBn, B.x);
+      const wtA = wOf(A, rA, t), wtB = wOf(B, rB, t);
+      if (wtA + wtB <= 0) continue;
+      const lt = m / (wtA + wtB);
+      if (lt < mu * c.lam) { applyPos(A, scl(t, -lt), rA); applyPos(B, scl(t, lt), rB); }
+    }
+    for (const b of list) {
+      if (!b.dynamic || b.asleep) continue;
+      b.v = scl(sub(b.x, b.xp), 1 / h);
+      const dq = qmul(b.q, qconj(b.qp));
+      b.w = scl([dq[0], dq[1], dq[2]], (dq[3] >= 0 ? 2 : -2) / h);
+    }
+    const act = C.filter((c) => c.lam > 0);
+    for (const c of act) {
+      const A = c.a, B = c.b;
+      c.rA = sub(c.pA, A.x); c.rB = sub(c.pB, B.x);
+      const mu = 0.85 * Math.sqrt(Math.max(0, A.friction) * Math.max(0, B.friction));
+      const vr = relVel(c, false), vn = dot(c.n, vr), vt = sub(vr, scl(c.n, vn)), vtl = len(vt);
+      if (vtl > 1e-6 && mu > 0) {
+        const t = scl(vt, 1 / vtl);
+        const wtA = wOf(A, c.rA, t), wtB = wOf(B, c.rB, t);
+        if (wtA + wtB > 0) {
+          const P = scl(t, -Math.min(h * mu * (c.lam / (h * h)), vtl) / (wtA + wtB));
+          applyVel(A, P, c.rA); applyVel(B, scl(P, -1), c.rB);
+        }
+      }
+      const e = Math.abs(c.vnPrev) > 2 * g * h * 4 ? Math.max(A.bounce, B.bounce) : 0;
+      c.target = Math.max(-e * c.vnPrev, 0);
+      c.wn = wOf(A, c.rA, c.n) + wOf(B, c.rB, c.n);
+    }
+    for (let it = 0; it < (act.length > 1 ? 6 : 1); it++) for (const c of act) {
+      if (!(c.wn > 0)) continue;
+      const dvn = c.target - dot(c.n, relVel(c, false));
+      if (Math.abs(dvn) < 1e-7) continue;
+      const P = scl(c.n, dvn / c.wn);
+      applyVel(c.a, P, c.rA); applyVel(c.b, scl(P, -1), c.rB);
+    }
+    for (const b of list) if (b.dynamic && movable(b) && !b.target) { b.v = scl(b.v, 1 - b.lin * h); b.w = scl(b.w, 1 - b.ang * h); }
+  }
+  return api;
+}
+
+/** Ray against one body (slab test on the oriented box, or the sphere): {point, normal, distance} or null. */
+function rayBody(b, o, d) {
+  if (b.shape === "sphere") {
+    const oc = sub(o, b.x), bb = dot(oc, d), c = dot(oc, oc) - b.r * b.r, disc = bb * bb - c;
+    if (disc < 0) return null;
+    const t = -bb - Math.sqrt(disc);
+    if (t < 0) return null;
+    const p = add(o, scl(d, t));
+    return { point: p, normal: scl(sub(p, b.x), 1 / b.r), distance: t };
+  }
+  const lo = qrot(qconj(b.q), sub(o, b.x)), ld = qrot(qconj(b.q), d);
+  let t0 = -Infinity, t1 = Infinity, axis = -1, sign = 1;
+  for (let k = 0; k < 3; k++) {
+    if (Math.abs(ld[k]) < 1e-12) { if (Math.abs(lo[k]) > b.half[k]) return null; continue; }
+    let a = (-b.half[k] - lo[k]) / ld[k], c = (b.half[k] - lo[k]) / ld[k], s = -1;
+    if (a > c) { [a, c] = [c, a]; s = 1; }
+    if (a > t0) { t0 = a; axis = k; sign = s; }
+    t1 = Math.min(t1, c);
+    if (t0 > t1) return null;
+  }
+  if (t0 < 0 || axis < 0) return null;   // starts inside: not a surface to land on
+  const nl = [0, 0, 0]; nl[axis] = sign;
+  return { point: add(o, scl(d, t0)), normal: qrot(b.q, nl), distance: t0 };
+}
