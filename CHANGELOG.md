@@ -5,6 +5,10 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**14:49 PDT · New sets: scene setup frames them, and the showcase renders** *(Milestone 11)*
+- Setting up a scene onto a new set (INT. AIRPLANE CABIN, INT. TRAIN, EXT. TRAIN STATION, UNDERWATER, BURNING BUILDING) now also places that set's camera and blocking, not only on an empty stage.
+- Showcase, made through the App (④ FLUX 3 Klein frame, ⑤ LTX draft): a diver over the reef, a firefighter past a burning building, a passenger at an airliner window, a passenger on a train with the countryside streaming by. Finals for the reef and the train.
+
 **14:06 PDT · Movie car stunts: a reverse J-turn, a donut, a handbrake 180** *(Milestone 13)*
 - Pick a car, then **Stunt ▸ Reverse J-turn / Donut / Handbrake 180** in its properties. The car's keys are written on the set you're on, from where it starts and the way it goes, and stay editable: drag the keys, or turn the car at a key with Turn.
 - Keys can steer the nose now: `heading_deg` per key (unwrapped, so 0 → 720 is two spins) and `drive: "reverse"`. A stunt car turns as fast as its keys say; every other car keeps its real turning rate, exactly as before.

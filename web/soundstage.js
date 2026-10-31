@@ -2575,6 +2575,9 @@ function createStageWidget(node, inputName) {
     const plan = scenePlan(sc, { fresh });
     const before = JSON.stringify(stage.state);
     const env = stage.toJSON().environment || {};
+    // Moving onto a Milestone 11 set (cabin, carriage, platform, reef...): its own camera and blocking centre, since a
+    // camera framed for the old set means nothing there.
+    const newSet = !!(plan.stage && plan.env.set && env.set !== plan.env.set);
     if (plan.env.set && SETS[plan.env.set] && (env.set !== plan.env.set || (env.weather || "none") !== plan.env.weather))
       stage.setEnvironment({ set: plan.env.set, weather: plan.env.weather });
     if (plan.time_preset && TIME_PRESETS[plan.time_preset] && stage.toJSON().lighting?.preset !== plan.time_preset) stage.applyTimePreset(plan.time_preset);
@@ -2584,7 +2587,7 @@ function createStageWidget(node, inputName) {
     // join where the shot's camera looks, clear of who is already there.
     let center = [0, -4], camXZ = [0, -11.5];
     const newPeople = plan.people.filter((p) => !p.reuseId);
-    if (fresh) {
+    if (fresh || newSet) {
       const shot = stage.activeShot();
       const n = plan.people.length;
       // a Milestone 11 set (cabin, carriage, platform, reef...) knows where its camera and its cast go
