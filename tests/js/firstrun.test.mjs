@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { tourSeen, markTourSeen, TOUR_STEPS, isBrandNewStage, placeCard, unionRect } from "../../web/ui/firstrun.mjs";
+import { tourSeen, markTourSeen, TOUR_STEPS, isBrandNewStage, placeCard, unionRect, outOfView } from "../../web/ui/firstrun.mjs";
 import { clipText } from "../../web/ui/canvasui.mjs";
 import { pickInfo } from "../../web/script/scenestrip.mjs";
 
@@ -116,4 +116,19 @@ test("the compact scene button: the scene on the stage and its shot; without a s
   const stage = pickInfo([], null, [shots[0]], "a");
   assert.deepEqual([stage.num, stage.where, stage.sub, stage.shot], ["", "The stage", "1 shot", "Wide crane"]);
   assert.equal(pickInfo(null, null, null, null).sub, "0 shots");
+});
+
+test("tour: a control hidden by a scrolling panel is scrolled into view first (QA round 01)", () => {
+  const box = { top: 85, bottom: 740 };   // the App's side panel, above ComfyUI's Run section
+  // The empty-state card below the fold of the narrow App panel (seen at y 768..1321 in a 900 px window).
+  assert.equal(outOfView({ top: 768, bottom: 1321 }, box), true);
+  // Fully inside: leave the page alone.
+  assert.equal(outOfView({ top: 200, bottom: 400 }, box), false);
+  // Cut at the top or the bottom.
+  assert.equal(outOfView({ top: 60, bottom: 120 }, box), true);
+  assert.equal(outOfView({ top: 700, bottom: 760 }, box), true);
+  // Taller than the panel: shown once its top is in view.
+  assert.equal(outOfView({ top: 120, bottom: 1200 }, box), false);
+  assert.equal(outOfView({ top: 730, bottom: 1600 }, box), true);
+  assert.equal(outOfView(null, box), false);
 });

@@ -5,6 +5,9 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**12:55 PDT · QA: the Guide finds its control in the App's narrow side panel**
+- In ComfyUI's App mode the side panel scrolls. The Guide's first step now scrolls the "Let's make a shot" card into view instead of pointing below the fold.
+
 **12:52 PDT · Live 3D: what you grab stays under the cursor, and lifting is straight up** *(Milestone 9)*
 - The point you press on an object stays under the cursor for the whole drag, at any camera angle.
 - The scroll wheel lifts a held prop straight up; carry it over a crate and let go to stack it.
