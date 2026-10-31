@@ -623,7 +623,9 @@ class SoundstageVoiceChange(IO.ComfyNode):
                      prefix=f"{C.slug(character, 'dx')}_vc", meta=meta)
         g = GraphBuilder()
         if e["key"] == "chatterbox_vc":
-            link = g.node("SoundstageChatterboxVC", audio=performance, voice_name=voice["name"] if voice else "").out(0)
+            # The seed is an input of the step, so a new seed re-runs it instead of reusing ComfyUI's cached take.
+            link = g.node("SoundstageChatterboxVC", audio=performance, voice_name=voice["name"] if voice else "",
+                          seed=int(seed)).out(0)
         else:
             link = G.elevenlabs_sts(g, performance, seed, params, clone_audio=_voice_ref_link(g, voice))
         return _expand_out(g, _clip_node(g, link, **place))
@@ -640,12 +642,14 @@ class SoundstageChatterboxVC(IO.ComfyNode):
             category="Soundstage/Audio/steps",
             description="Chatterbox speech-to-speech to a saved Character Voice (or the built-in voice). Output is "
                         "padded/trimmed to the input length so the timing is unchanged.",
-            inputs=[IO.Audio.Input("audio"), IO.String.Input("voice_name", default="", optional=True)],
+            inputs=[IO.Audio.Input("audio"), IO.String.Input("voice_name", default="", optional=True),
+                    IO.Int.Input("seed", default=0, min=0, max=0xFFFFFFFFFFFFFFFF, optional=True,
+                                 tooltip="The take: a different seed gives a different read of the same timing.")],
             outputs=[IO.Audio.Output("out_audio", display_name="audio")],
         )
 
     @classmethod
-    def execute(cls, audio, voice_name=""):
+    def execute(cls, audio, voice_name="", seed=0):
         import comfy.model_management as mm
         from .audio import tts
         ref = V.load_voice(_user_dir(), voice_name)["path"] if voice_name else None
@@ -653,7 +657,7 @@ class SoundstageChatterboxVC(IO.ComfyNode):
         dev = mm.get_torch_device()
         mm.free_memory(4 * 1024 ** 3, dev)
         try:
-            y, ysr = tts.convert(x.mean(axis=1), sr, dev, ref_path=ref)
+            y, ysr = tts.convert(x.mean(axis=1), sr, dev, ref_path=ref, seed=int(seed or 0))
         finally:
             tts.offload()
             mm.soft_empty_cache()

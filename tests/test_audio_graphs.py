@@ -25,7 +25,7 @@ OWN = {"SoundstageLatentNoiseMask": ({"latent", "value"}, ["LATENT"]),
        "SoundstageAudioFit": ({"audio", "path", "shot_id", "frames", "fps", "offset_s"}, ["AUDIO"]),
        "SoundstageVoice": ({"name", "consent", "voice_owner", "reference", "character", "notes"},
                            ["SOUNDSTAGE_VOICE", "AUDIO", "STRING"]),
-       "SoundstageChatterboxVC": ({"audio", "voice_name"}, ["AUDIO"]),
+       "SoundstageChatterboxVC": ({"audio", "voice_name", "seed"}, ["AUDIO"]),
        "SoundstageAudioClip": ({"audio", "label", "shot_id", "track", "start_frame", "fps", "gain_db", "trim_silence",
                                 "normalize_db", "max_seconds", "prefix", "meta_json"},
                                ["AUDIO", "STRING", "FLOAT", "INT"])}
