@@ -217,6 +217,28 @@ FLUX 3 Klein edits the stage's frame 1, so it copies what it is handed. The clay
 
 Evidence and side-by-sides: share/Milestone5_Realism.
 
+## Phantom traffic in ride-along car shots (Milestone 5)
+
+LTX Draft added passing cars late in the windshield shot. Two changes, tested together on two seeds against the Milestone 4 draft with the same seeds:
+
+- **Positive wording only** (`scene.traffic_lock`, `compile._frame_holds`):
+  - At CFG 1 the negative prompt does nothing. The positive prompt's "nothing pulls alongside or overtakes" and "no other vehicles" named the very things they ruled out.
+  - Riding along, the motion prompt now says "The car has the street to itself: an empty road, bare curbs and empty sidewalks from the first frame to the last; only buildings, trees and lamp posts slide past."
+  - It closes with "The frame holds only the car and the two people inside it, start to end."
+- **A quiet guide background** (`look_start.quiet_background`, applied to the stage node's `clay` output):
+  - When the camera rides a car on an otherwise empty road, the static set in the clay layout video is blurred (sigma 16 px at 960 wide).
+  - Every actor and vehicle in the ID pass stays sharp.
+  - The camera move and the light and shade of the street still slide past, but there are no hard-edged dark blocks for LTX to turn into a truck or a passing car.
+  - `first_clay` and every other shot are unchanged.
+- **Result:**
+  - Before, cars or a truck-like block filled the right edge from about frame 40 to the end on both seeds.
+  - After, the last 2.5 seconds (frames 56-120) were clean on both seeds.
+  - One car still passes on the right around frames 32-48 on both seeds. Better, but not solved.
+- **Tried and not enough on its own:**
+  - Positive wording alone left the truck-like block and the late cars.
+  - Blurring or flattening the guide background alone removed the block, but cars still came in at frames 40-60 and 110-120.
+  - Lowering the IC-LoRA guide strength was not tried: below 1.0 LTX renders the clay itself (docs/quality.md).
+
 ## Known limits
 
 - The typed-look parser is phrase matching. Generic words were removed from the aliases ("red" doesn't pick the RED camera), but a description that says "detective" with no genre set will pick the detective subgenre.

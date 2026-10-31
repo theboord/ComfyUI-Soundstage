@@ -151,6 +151,8 @@ def _still_count(n: int) -> str:
 # smooth mannequin it is handed (the stage's clay figures). Measured on FLUX 3 Klein, docs/decisions.md 2026-10-30.
 REAL_PEOPLE = ("real actors, natural skin texture, real hair and fabric with creases, candid unposed body language, "
                "natural expressions")
+# Vocabulary still fragments as they were before Milestone 5, for re-rendering a frame picked then.
+LEGACY_STILL = {"kodak_200t": "Kodak Vision3 200T film stock, tungsten balance, fine grain, smooth skin"}
 REAL_PEOPLE_NEG = "plastic skin, mannequin, doll-like faces, wax figure, CGI character, 3D render, video game character"
 
 # A look that asks for a drawn or rendered world keeps its people stylised too.
@@ -217,7 +219,9 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     # A head count only when people show: seen from outside, a car's driver is part of the car and a count of
     # zero (or one) makes Krea paint pedestrians; seen from inside, the riders ARE the people in frame.
     count = not lock or n > 0
-    real = real_people_wanted(look)
+    # A frame picked before Milestone 5 re-renders with the words it was painted with (stage sends look_start false).
+    legacy = scene.get("look_start") is False
+    real = real_people_wanted(look) and not legacy
     if vcam and vcam.get("where") in ("interior", "hood") and place and place != "underwater":
         place_words = f"driving through {place}" if (S.camera_move(scene).get("rides") or {}).get("moving") else f"parked in {place}"
     else:
@@ -246,7 +250,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         c.get("technique", {}).get("still", ""),
         _intensity(c.get("mood", {}).get("still", ""), look) if c.get("mood") else "",
         "black and white" if parts["bw"] else parts["palette_still"],
-        c.get("film_stock", {}).get("still", ""),
+        (LEGACY_STILL.get(c.get("film_stock", {}).get("id")) if legacy else None) or c.get("film_stock", {}).get("still", ""),
         c.get("camera_body", {}).get("still", ""),
         _join(_grade_words(look)),
     ])
@@ -377,6 +381,22 @@ def _sound(parts: dict, loc: dict) -> str:
     return ""
 
 
+def _frame_holds(scene: dict, f1: dict, lock: dict | None, rides: dict) -> str:
+    """The closing 'nothing else' sentence. Riding along in a car it names what the frame holds, positively: at CFG 1
+    LTX reads "no other vehicles" as vehicles (Milestone 5)."""
+    host = S.ride_host(scene)
+    if lock and host is not None and scene.get("look_start") is not False:
+        noun = rides.get("noun") or "car"
+        n = len(S.riders_of(scene, host.get("id"), 0))
+        inside = {0: "", 1: " and the person inside it"}.get(n, f" and the {NUM.get(n, n)} people inside it")
+        others = [a for a in scene.get("actors") or [] if a is not host and S.classify(a)[1] == "vehicle"]
+        more = f", the {_join([S.classify(a)[0].split(' ', 1)[-1] for a in others], ' and the ')}" if others else ""
+        return f"The frame holds only the {noun}{inside}{more}, start to end."
+    if lock:
+        return "Nobody and nothing else enters the frame at any point, not even at its edges near the end: no bystanders, no other vehicles."
+    return "Nobody and nothing else enters the frame: no bystanders, no extra cars."
+
+
 def compile_motion(look: dict, scene: dict, parts: dict) -> str:
     f1 = S.frame1_facts(scene)
     mf = S.motion_facts(scene)
@@ -433,8 +453,7 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
         _cap(mood_s) + "." if mood_s else "",
         c.get("energy", {}).get("motion", ""),
         _sound(parts, loc),
-        ("Nobody and nothing else enters the frame at any point, not even at its edges near the end: no bystanders, no other vehicles."
-         if lock else "Nobody and nothing else enters the frame: no bystanders, no extra cars.") if (f1["people"] or f1["others"]) else "",
+        _frame_holds(scene, f1, lock, rides) if (f1["people"] or f1["others"]) else "",
         LOCK_CLAUSE,
     ]
     text = " ".join(s for s in sentences if s and s != ".")

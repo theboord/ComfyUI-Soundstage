@@ -169,3 +169,37 @@ def look_start(color: torch.Tensor, id_pass: torch.Tensor | None, scene: dict) -
         info["scale"] = round(nw / W, 3)
     out = img.clamp(0, 1).permute(1, 2, 0)[None].to(color.dtype)
     return out, info
+
+
+# ---- the layout guide in ride-along car shots ---------------------------------------------------------
+
+BG_BLUR = 16 / 960       # blur sigma for the static set, as a fraction of the frame width (16 px at 960)
+
+
+def quiet_background_wanted(scene: dict) -> bool:
+    """The camera rides a car on an otherwise empty road (Milestone 5: LTX turned the clay's dark building blocks
+    sliding past the frame edge into passing cars)."""
+    try:
+        return S.ride_host(scene) is not None and S.traffic_lock(scene) is not None
+    except Exception:  # noqa: BLE001 - a malformed scene keeps the guide as captured
+        return False
+
+
+def quiet_background(clay: torch.Tensor, id_pass: torch.Tensor | None, scene: dict) -> torch.Tensor:
+    """clay, id_pass: NxHxWx3. In a ride-along car shot, blur the static set (everything the ID pass leaves black)
+    and keep every actor and vehicle sharp. The guide keeps the camera move and the street's light and shade
+    sliding past, but no hard-edged blocks for LTX to read as cars. Elsewhere the clay passes through."""
+    if id_pass is None or id_pass.shape != clay.shape or not quiet_background_wanted(scene):
+        return clay
+    n, H, W, _ = clay.shape
+    sigma = BG_BLUR * W
+    f = 4                                                    # blur at quarter size: same look, ~16x cheaper
+    out = []
+    for i in range(n):
+        img = clay[i].permute(2, 0, 1).float()
+        small = F.interpolate(img[None], size=(max(1, H // f), max(1, W // f)), mode="area")[0]
+        blurred = F.interpolate(_blur(small, sigma / f)[None], size=(H, W), mode="bilinear", align_corners=False)[0]
+        actors = id_pass[i, ..., :3].float().sum(-1) > 0.1
+        keep = _feather(actors, 2, 2.0)[None]
+        out.append((img * keep + blurred * (1 - keep)).permute(1, 2, 0))
+    return torch.stack(out).clamp(0, 1).to(clay.dtype)

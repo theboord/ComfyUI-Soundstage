@@ -816,21 +816,28 @@ def traffic_lock(scene: dict) -> dict | None:
     if ride is not None:
         rest = [a for a in cars if a is not ride]
         tail = f", the only other vehicle{'s are' if len(rest) > 1 else ' is'} {words(rest)}" if rest else ", no other cars on the road"
-        # LTX drifts toward ordinary traffic as the shot goes on (a car overtaking at the frame edge in the last
-        # second), and its Draft/Final sample at CFG 1, where a negative prompt does nothing. So the motion prompt
-        # says it positively and for the whole duration, early in the prompt, and names the edges and the curbs.
-        whole = ("the road stays empty for the whole shot, from the first frame to the last: the lanes beside and "
-                 "behind the car stay clear, nothing pulls alongside or overtakes, the curbs are bare and the sidewalks empty")
+        # LTX drifts toward ordinary traffic as the shot goes on (a car overtaking at the frame edge), and its
+        # Draft/Final sample at CFG 1, where a negative prompt does nothing. Naming what is absent ("nothing pulls
+        # alongside or overtakes", "no other vehicles") primed the very cars it ruled out (Milestone 5, two seeds):
+        # the motion prompt describes only what IS there, for the whole duration, early in the prompt.
+        legacy = scene.get("look_start") is False   # re-rendering a frame picked before Milestone 5: its words
+        whole = ("an empty road, bare curbs and empty sidewalks from the first frame to the last; only buildings, "
+                 "trees and lamp posts slide past")
+        if legacy:
+            whole = ("the road stays empty for the whole shot, from the first frame to the last: the lanes beside and "
+                     "behind the car stay clear, nothing pulls alongside or overtakes, the curbs are bare and the sidewalks empty")
         if rest:
             whole = (f"the only other vehicle{'s are' if len(rest) > 1 else ' is'} {words(rest)}; "
-                     "apart from that the road stays empty for the whole shot, from the first frame to the last: nothing else pulls "
-                     "alongside or overtakes, the curbs are bare and the sidewalks empty")
+                     + ("apart from that the road stays empty for the whole shot, from the first frame to the last: nothing else pulls "
+                        "alongside or overtakes, the curbs are bare and the sidewalks empty" if legacy else
+                        "apart from that an empty road, bare curbs and empty sidewalks from the first frame to the last"))
         if (vehicle_camera(scene) or {}).get("where") == "interior":
             return {"still": f"outside the windows a deserted street with empty sidewalks{tail}",
                     "motion": f"Outside the windows {whole}.",
                     "negative": neg}
         return {"still": f"a deserted street with empty sidewalks{tail}",
-                "motion": (f"On the road, {whole}." if rest else f"The car has the street to itself. {whole[0].upper() + whole[1:]}."),
+                "motion": (f"On the road, {whole}." if rest else f"The car has the street to itself. {whole[0].upper() + whole[1:]}."
+                           if legacy else f"The car has the street to itself: {whole}."),
                 "negative": neg}
     w = words(cars)
     # Krea 2 Turbo has no negative prompt, and naming what's absent invites it: describe the empty street instead.
