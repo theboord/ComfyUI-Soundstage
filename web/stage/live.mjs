@@ -601,6 +601,8 @@ export class LiveEdit {
     const from = d.g.position.toArray();
     d.hostIgnore = [...(this.bodies.get(d.mountHost) || [])];
     delete a.mount_id; delete a.pose; delete a.seat; delete a.mount_at;
+    // Out of the riding pose entirely: the walk cycle only resets the swing, not the legs spread round the horse.
+    for (const l of d.g.userData.limbs || []) l.pivot.rotation.set(0, 0, 0);
     d.mountHost = null; d.mountBlend = null;
     d.cur = from; d.surfY = from[1];
     for (const bid of this.bodies.get(d.id) || []) for (const h of d.hostIgnore) this.world.ignorePair?.(bid, h, true);

@@ -5,6 +5,14 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**13:38 PDT · Live 3D: off the horse, legs together** *(Milestone 9)*
+- A rider dragged off a horse stands normally; before, their legs stayed spread as if still in the saddle.
+
+**13:40 PDT · Cars face the way they drive: lit headlights and tail lights**
+- In the Car Chase demo's chase-cam take the red sports car seemed to drive backwards. The clay was right. The look still (rendered on 10-29, before the prompt fix in 4c1b2e4) painted the car's front toward the camera, and the video then moved that front-facing car away down the street.
+- The real-car bodies now light their lamps in the Color pass, which the video guide and the look still read: warm-white headlights, red tail lights. Clay and Depth are unchanged. See `Stage._upgradeVehicle` in [web/stage/stage.mjs](web/stage/stage.mjs).
+- Two tests guard it. [tests/js/vehiclelamps.test.mjs](tests/js/vehiclelamps.test.mjs) checks the lamps glow and that on Car Chase frames each car's headlights lead its motion. `test_car_chase_vehicle_facing` in [tests/test_look_scene.py](tests/test_look_scene.py) checks every Car Chase shot's prompts say which end of the car faces the camera.
+
 **13:36 PDT · QA round 02: a regression guard, and four layout fixes**
 - With a render queued, the step names stay whole. Stop used to squeeze them to "Scri…", "C…", "S…" at 1440 px; the wordmark and the Guide / Done words now make the room.
 - The App's narrow side panel shows one Import video button, not two. The small "Drop a video here" pill there no longer runs under the Coach pill.

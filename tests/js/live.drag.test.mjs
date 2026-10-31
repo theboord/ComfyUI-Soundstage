@@ -125,6 +125,7 @@ test("a person dragged onto a horse mounts it; dragged off, they dismount", () =
   assert.match(st.lastMsg, /on horse/);
   drag(st, "p", [[-2, -2]], { frames: 40 });
   assert.equal(a.mount_id, undefined, "dismounted");
+  for (const l of st.actorMeshes.get("p").userData.limbs) assert.ok(Math.abs(l.pivot.rotation.z) < 1e-6, "legs no longer spread round the horse");
   const p = keyPos(st, "p");
   assert.ok(Math.hypot(p[0] + 2, p[2] + 2) < 0.3, `on the ground where dropped (${p})`);
 });
