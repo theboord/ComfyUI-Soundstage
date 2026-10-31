@@ -203,3 +203,35 @@ def quiet_background(clay: torch.Tensor, id_pass: torch.Tensor | None, scene: di
         keep = _feather(actors, 2, 2.0)[None]
         out.append((img * keep + blurred * (1 - keep)).permute(1, 2, 0))
     return torch.stack(out).clamp(0, 1).to(clay.dtype)
+
+
+# The view out of a carriage window (Milestone 11 train set): the countryside streaming past is clay-simple (blob trees,
+# low-poly hills), and LTX at full guide strength paints it as topiary. Blur what lies beyond WINDOW_VIEW_M in the
+# layout guide (the depth pass says how far each pixel is), so the motion and the light and shade of the land still
+# slide past but LTX invents real fields and trees. The carriage itself, its seats and its passengers stay sharp.
+WINDOW_VIEW_SETS = ("train_car",)
+WINDOW_VIEW_M = 6.0
+DEPTH_NEAR_M, DEPTH_FAR_M = 1.0, 40.0     # web/stage/stage.mjs DEPTH_NEAR / DEPTH_FAR: depth = 1 - (z - near) / (far - near)
+
+
+def window_view_wanted(scene: dict) -> bool:
+    return (scene.get("environment") or {}).get("set") in WINDOW_VIEW_SETS
+
+
+def blur_window_view(guide: torch.Tensor, depth: torch.Tensor | None, scene: dict) -> torch.Tensor:
+    """guide, depth: NxHxWx3. On the carriage set, blur every pixel further than WINDOW_VIEW_M; elsewhere unchanged."""
+    if depth is None or depth.shape != guide.shape or not window_view_wanted(scene):
+        return guide
+    n, H, W, _ = guide.shape
+    sigma = BG_BLUR * W
+    f = 4
+    cut = 1.0 - (WINDOW_VIEW_M - DEPTH_NEAR_M) / (DEPTH_FAR_M - DEPTH_NEAR_M)
+    out = []
+    for i in range(n):
+        img = guide[i].permute(2, 0, 1).float()
+        small = F.interpolate(img[None], size=(max(1, H // f), max(1, W // f)), mode="area")[0]
+        blurred = F.interpolate(_blur(small, sigma / f)[None], size=(H, W), mode="bilinear", align_corners=False)[0]
+        near = depth[i, ..., 0].float() >= cut
+        keep = _feather(near, 1, 1.5)[None]
+        out.append((img * keep + blurred * (1 - keep)).permute(1, 2, 0))
+    return torch.stack(out).clamp(0, 1).to(guide.dtype)

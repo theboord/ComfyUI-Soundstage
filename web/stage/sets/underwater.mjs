@@ -75,7 +75,7 @@ function makeUnderwater(opts) {
   };
   // rocks: a welded icosphere pushed out by noise, smooth-shaded (weathered, not faceted), flattened underneath
   const rockGeo = (r, seed, rough = 1) => {
-    const ico = new THREE.IcosahedronGeometry(1, 3);
+    const ico = new THREE.IcosahedronGeometry(1, r > 1.1 ? 3 : 2);
     ico.deleteAttribute("normal"); ico.deleteAttribute("uv");
     const geo = mergeVertices(ico), q = geo.attributes.position;
     ico.dispose();
@@ -95,9 +95,9 @@ function makeUnderwater(opts) {
       const dir = new THREE.Vector3(Math.sin(pitch) * Math.sin(yaw), Math.cos(pitch), Math.sin(pitch) * Math.cos(yaw));
       const mid = new THREE.Vector3(bx, by, bz).addScaledVector(dir, len / 2);
       const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-      B.addMatrix(new THREE.CylinderGeometry(rad * 0.7, rad, len, 6), color, new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)));
+      B.addMatrix(new THREE.CylinderGeometry(rad * 0.7, rad, len, 6, 1, true), color, new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)));
       const tip = new THREE.Vector3(bx, by, bz).addScaledVector(dir, len);
-      if (depth <= 0) { B.add(new THREE.SphereGeometry(rad * 0.85, 6, 5), color, tip.x, tip.y, tip.z); return; }
+      if (depth <= 0) { B.add(new THREE.SphereGeometry(rad * 0.85, 5, 3), color, tip.x, tip.y, tip.z); return; }
       const k = 2 + Math.floor(r() * 2);
       for (let i = 0; i < k; i++) twig(tip.x, tip.y, tip.z, len * (0.55 + r() * 0.25), rad * 0.7, yaw + (i - (k - 1) / 2) * 1.3 + r() * 0.6, 0.35 + r() * 0.5, depth - 1);
     };
@@ -116,7 +116,7 @@ function makeUnderwater(opts) {
       const dx = Math.sin(ang), dy = Math.cos(ang);
       const mid = new THREE.Vector3(x + ux * (ax + dx * len / 2), y + ay + dy * len / 2, z + uz * (ax + dx * len / 2));
       const dir = new THREE.Vector3(ux * dx, dy, uz * dx).normalize();
-      B.addMatrix(new THREE.CylinderGeometry(rad * 0.75, rad, len, 4), color, new THREE.Matrix4().compose(mid,
+      B.addMatrix(new THREE.CylinderGeometry(rad * 0.75, rad, len, 4, 1, true), color, new THREE.Matrix4().compose(mid,
         new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir), new THREE.Vector3(1, 1, 1)));
       if (depth <= 0) return;
       const tx = ax + dx * len, ty = ay + dy * len;
@@ -136,6 +136,15 @@ function makeUnderwater(opts) {
   // little anemone tufts and sea grass on the open sand
   place(40, (x, y, z, r) => { for (let i = 0; i < 4; i++) B.add(new THREE.ConeGeometry(0.03, 0.25 + r() * 0.25, 4), "#7c9a52", x + (r() - 0.5) * 0.3, y + 0.15, z + (r() - 0.5) * 0.3, (r() - 0.5) * 0.4, 0, (r() - 0.5) * 0.4); },
     { minAx: 0, maxAx: 14, z0: -12, z1: 30, lane: false });
+  // the reef proper: dense coral along both sides of the swim lane, where the camera looks (a diver swims past it)
+  const reef = { minAx: 3.0, maxAx: 11, z0: -10, z1: 26 };
+  place(70, (x, y, z, r) => branchy(x, y, z, r, corals[Math.floor(r() * corals.length)]), reef);
+  place(55, (x, y, z, r) => { const s = 0.3 + r() * 0.6; B.add(rockGeo(s, Math.floor(r() * 1e6)), ["#b9a36a", "#9aa060", "#c48a5a", "#8f7fa8"][Math.floor(r() * 4)], x, y + s * 0.2, z, 0, r() * 6, 0, 1, 0.75, 1); }, reef);
+  place(30, (x, y, z, r) => fan(x, y, z, r, ["#9b3b5a", "#c25f3c", "#b8475e"][Math.floor(r() * 3)]), { ...reef, minAx: 3.6 });
+  place(26, (x, y, z, r) => { const color = ["#8a4fa0", "#d0843a", "#c9b23a"][Math.floor(r() * 3)];
+    for (let i = 0; i < 3 + Math.floor(r() * 4); i++) { const h = 0.3 + r() * 0.7; B.add(new THREE.CylinderGeometry(0.08, 0.06, h, 8, 1, true), color, x + (r() - 0.5) * 0.45, y + h / 2, z + (r() - 0.5) * 0.45, (r() - 0.5) * 0.3, 0, (r() - 0.5) * 0.3); } }, reef);
+  place(16, (x, y, z, r) => { const s = 0.5 + r() * 0.8; B.add(new THREE.CylinderGeometry(0.07, 0.12, 0.4, 6), "#a88f6a", x, y + 0.2, z);
+    B.add(new THREE.CylinderGeometry(s, s * 0.85, 0.07, 16), "#b59a70", x, y + 0.43, z, r() * 0.15, 0, r() * 0.15); }, { ...reef, minAx: 4 });
   B.build(g);
 
   // ---- kelp: tall ribbons in stands on the reef walls; one mesh, swayed on the CPU each frame

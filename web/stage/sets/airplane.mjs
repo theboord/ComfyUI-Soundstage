@@ -5,7 +5,7 @@
 //
 // Axes: the aircraft's nose points +Z (the stage's forward), +X is its left, the cabin floor is y = 0.
 import * as THREE from "../../vendor/three.module.min.mjs";
-import { rng, Batch, glow, lightish, memoSet, wrap, skyDome, cloudPuff, batchToMeshes, roundedBox, sweepProfile, flipFaces } from "./common.mjs";
+import { rng, Batch, glow, lightish, memoSet, skyDome, cloudPuff, batchToMeshes, roundedBox, sweepProfile, flipFaces, scrollTiles } from "./common.mjs";
 import { SeatBank } from "./seatbank.mjs";
 
 // ------------------------------------------------------------------ the airliner seat row (set dressing + library)
@@ -179,6 +179,8 @@ function makeCabin() {
   const deck = new THREE.Group();
   for (const m of CL.build(deck, { shadows: false })) { m.receiveShadow = false; m.userData.clouds = true; }
   const deck2 = deck.clone(true);
+  deck.userData.scroll = { speed: 22, tile: TILE, k: 0 };   // 22 m/s apparent drift of a deck ~25 m below: cruise, seen from a seat
+  deck2.userData.scroll = { speed: 22, tile: TILE, k: 1 };
   g.add(deck, deck2);
 
   const fx = {
@@ -186,9 +188,7 @@ function makeCabin() {
     hideGround: true,
     seatBank: bank,
     update(f, stage) {
-      const t = f / (stage?.state?.shot?.fps || 24);
-      const z = wrap(-t * 22, TILE);               // 22 m/s apparent drift of a deck ~50 m below: cruise, seen from a seat
-      deck.position.z = z; deck2.position.z = z + (z < 0 ? TILE : -TILE);
+      scrollTiles(stage?._setGroup || g, f / (stage?.state?.shot?.fps || 24));
       if (stage?.state?.actors) bank.sync(stage.state.actors, f);
     },
     pass(mode, { stage }) {

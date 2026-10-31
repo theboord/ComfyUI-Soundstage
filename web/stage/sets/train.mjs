@@ -6,7 +6,7 @@
 // Axes: the train runs +Z (forward), +X is its left; rail top is y = 0 on the station set; the car floor is y = 0
 // on the interior set.
 import * as THREE from "../../vendor/three.module.min.mjs";
-import { rng, Batch, glow, lightish, memoSet, wrap, skyDome, batchToMeshes, roundedBox, sweepProfile, flipFaces } from "./common.mjs";
+import { rng, Batch, glow, lightish, memoSet, skyDome, batchToMeshes, roundedBox, sweepProfile, flipFaces, scrollTiles } from "./common.mjs";
 import { SeatBank } from "./seatbank.mjs";
 
 // ------------------------------------------------------------------ the double seat (set dressing + library)
@@ -143,15 +143,15 @@ function makeTrainCar() {
   // the landscape outside, two tiles streaming aft
   const land = landscapeTile();
   const land2 = land.clone(true);
+  land.userData.scroll = { speed: LAND.speed, tile: LAND.tile, k: 0 };   // the train runs +Z: the land goes past toward the back
+  land2.userData.scroll = { speed: LAND.speed, tile: LAND.tile, k: 1 };
   g.add(land, land2, skyDome(180, "#6d9bd0", "#dfe8ee", "#9aa77f"));
   const fx = {
     id: "train_car",
     hideGround: true,
     seatBank: bank,
     update(f, stage) {
-      const t = f / (stage?.state?.shot?.fps || 24);
-      const z = wrap(-t * LAND.speed, LAND.tile);   // the train runs +Z: the land goes past toward the back
-      land.position.z = z; land2.position.z = z + (z < 0 ? LAND.tile : -LAND.tile);
+      scrollTiles(stage?._setGroup || g, f / (stage?.state?.shot?.fps || 24));
       if (stage?.state?.actors) bank.sync(stage.state.actors, f);
     },
     pass(mode, { stage }) { if (mode === "color") stage.scene.fog = LAND_HAZE; },
@@ -159,7 +159,7 @@ function makeTrainCar() {
   fx.update(0, null);
   return { group: g, water: null, fx };
 }
-const LAND = { tile: 240, speed: 24 };   // 24 m/s ~ 86 km/h
+const LAND = { tile: 240, speed: 20 };   // 20 m/s ~ 72 km/h
 const LAND_HAZE = new THREE.Fog(0xd9e2e8, 60, 192);
 
 /** One 240 m tile of countryside around a track bed 1.25 m below the car floor (both sides). */
@@ -191,7 +191,7 @@ function landscapeTile() {
     }
     // hedgerows and trees along field edges; copses further out
     for (let i = 0; i < 46; i++) {
-      const x = s * (9 + r() * 70), z = (r() - 0.5) * T, h = 5 + r() * 7;
+      const x = s * (15 + r() * 64), z = (r() - 0.5) * T, h = 5 + r() * 7;
       B.add(new THREE.CylinderGeometry(0.15, 0.25, h * 0.45, 6), "#4b3a2a", x, Y + h * 0.22, z);
       B.add(new THREE.IcosahedronGeometry(1, 1), r() < 0.5 ? "#3f5a30" : "#4b6634", x, Y + h * 0.62, z, 0, r() * 6, 0, h * 0.32, h * 0.36, h * 0.32);
     }

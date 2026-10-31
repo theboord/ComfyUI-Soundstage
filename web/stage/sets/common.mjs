@@ -319,3 +319,17 @@ export function sweepProfile(points, z0, z1, inside = [0, 1.2], { smooth = true 
 
 /** Drop the built-set cache (tests: build twice from scratch and compare). */
 export function clearSetCache() { BUILT.clear(); }
+
+/**
+ * Scrolling scenery (clouds past the cabin, countryside past the carriage): two copies of a tile tagged
+ * userData.scroll = {speed, tile, k: 0 | 1}, moved along -Z (the vehicle runs +Z). The stage shows a clone of the set
+ * (memoSet), so this walks the group actually on stage, not the one the set was built as.
+ */
+export function scrollTiles(root, t) {
+  for (const o of root?.children || []) {
+    const sc = o.userData.scroll;
+    if (!sc) continue;
+    const z = wrap(-t * sc.speed, sc.tile);
+    o.position.z = sc.k === 0 ? z : z + (z < 0 ? sc.tile : -sc.tile);
+  }
+}

@@ -15,7 +15,7 @@ from typing_extensions import override
 import folder_paths
 from comfy_api.latest import ComfyExtension, IO
 
-from .look.look_start import look_start, quiet_background
+from .look.look_start import look_start, quiet_background, blur_window_view
 
 STAGE_WIDGET = "SOUNDSTAGE_STAGE"
 
@@ -91,7 +91,7 @@ class SoundstageStage(IO.ComfyNode):
         if data.get("look_start", True) is not False:
             ids = id_pass if passes.get("id") else None
             first_color, _ = look_start(first_color, ids[:1] if ids is not None else None, scene)
-            guide = quiet_background(clay, ids, scene)
+            guide = blur_window_view(quiet_background(clay, ids, scene), depth, scene)
         else:
             scene = {**scene, "look_start": False}   # the Look node compiles that frame's prompts as they were
         return IO.NodeOutput(guide, depth, clay[:1], depth[:1], fps, int(clay.shape[0]), json.dumps(scene), id_pass,

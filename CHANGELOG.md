@@ -5,6 +5,12 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**13:41 PDT · New sets, round 2: a real reef, scenery that moves, a softer view out of the train** *(Milestone 11)*
+- The reef is dense along the swim lane: staghorn, brain, fan, table and tube corals where a diver swims past. People off the seabed swim in the prompt too ("swims", not "walks").
+- Clouds past the airliner windows and countryside past the train windows now really stream by in the stage and the guides.
+- On the train set, the view out of the window is softened in the LTX guide, so the video paints real fields and trees instead of clay shapes.
+- A passenger in a cabin or carriage seat "sits by the window" in the prompts.
+
 **13:38 PDT · Live 3D: off the horse, legs together** *(Milestone 9)*
 - A rider dragged off a horse stands normally; before, their legs stayed spread as if still in the saddle.
 
