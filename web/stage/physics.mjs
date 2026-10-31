@@ -284,11 +284,27 @@ function edgeContact(A, B, out) {
 }
 
 function pairContacts(A, B, out) {
-  if (A.shape === "box" && B.shape === "box") { probeContacts(A, B, out); probeContacts(B, A, out); edgeContact(A, B, out); return; }
+  if (A.shape === "box" && B.shape === "box") {
+    if (facesSeparate(A, B)) return;   // cheap rejection: a gap along a face axis means no contact at all
+    probeContacts(A, B, out); probeContacts(B, A, out); edgeContact(A, B, out); return;
+  }
   if (A.shape === "sphere" && B.shape === "sphere") { const c = measure({ type: "ss", a: A, b: B }); if (c.d > 0) out.push(c); return; }
   const [S, X] = A.shape === "sphere" ? [A, B] : [B, A];
   const c = measure({ type: "sb", a: S, b: X });
   if (c.d > 0) out.push(c);
+}
+
+/** Two boxes with a gap along one of their 6 face axes (the cheap half of a separating-axis test). */
+function facesSeparate(A, B) {
+  const aX = [qrot(A.q, E[0]), qrot(A.q, E[1]), qrot(A.q, E[2])], bX = [qrot(B.q, E[0]), qrot(B.q, E[1]), qrot(B.q, E[2])];
+  const T = [B.x[0] - A.x[0], B.x[1] - A.x[1], B.x[2] - A.x[2]];
+  for (let s = 0; s < 6; s++) {
+    const L = s < 3 ? aX[s] : bX[s - 3];
+    const ra = A.half[0] * Math.abs(dot(aX[0], L)) + A.half[1] * Math.abs(dot(aX[1], L)) + A.half[2] * Math.abs(dot(aX[2], L));
+    const rb = B.half[0] * Math.abs(dot(bX[0], L)) + B.half[1] * Math.abs(dot(bX[1], L)) + B.half[2] * Math.abs(dot(bX[2], L));
+    if (Math.abs(dot(T, L)) > ra + rb) return true;
+  }
+  return false;
 }
 
 /** Relative velocity of A's contact point against B's along n (+ = separating). */
@@ -683,21 +699,26 @@ export function createXpbdWorld(opts = {}) {
     // Contacts: every awake dynamic (and every moving kinematic) body against everything near it.
     const C = [];
     const active = list.filter((b) => (b.dynamic && !b.asleep) || (b.type === "kinematic" && len(b.v) > 1e-6));
-    const seen = new Set();
-    for (const A of active) {
+    for (const b of list) b.act = false;
+    active.forEach((b, i) => { b.act = true; b.ai = i; });
+    for (let ai = 0; ai < active.length; ai++) {
+      const A = active[ai];
       if (floor && A.dynamic && A.x[1] - A.bound <= 0) {
         if (A.shape === "sphere") { const c = measure({ type: "sg", a: A, b: GROUND }); if (c.d > 0) C.push(c); }
-        else for (const lp of A.probes) if (A.x[1] + qrot(A.q, lp)[1] < 0) C.push({ type: "pg", a: A, b: GROUND, lp });
+        else {
+          // Height of each probe: just the y row of A's rotation (no full rotations, no garbage).
+          const [qx, qy, qz, qw] = A.q, r0 = 2 * (qx * qy + qw * qz), r1 = 1 - 2 * (qx * qx + qz * qz), r2 = 2 * (qy * qz - qw * qx);
+          // Against a flat floor the deepest points are always corners: the 8 corners are enough (fewer contacts).
+          for (const lp of A.corners || (A.corners = A.probes.filter((v) => v.every((c, i) => Math.abs(c) >= A.half[i] - 1e-9)))) if (A.x[1] + r0 * lp[0] + r1 * lp[1] + r2 * lp[2] < 0) C.push({ type: "pg", a: A, b: GROUND, lp });
+        }
       }
       for (const B of list) {
         if (B === A) continue;
-        const key = A.index < B.index ? `${A.id}|${B.id}` : `${B.id}|${A.id}`;
-        if (seen.has(key)) continue;
+        if (B.act && B.ai < ai) continue;   // that pair was taken from B's side already
         if (!A.dynamic && !B.dynamic) continue;   // kinematic vs static/kinematic: nothing to solve
-        if (ignored.size && ignored.has(pairKey(A.id, B.id))) continue;
         const dx = A.x[0] - B.x[0], dy = A.x[1] - B.x[1], dz = A.x[2] - B.x[2], R = A.bound + B.bound + 0.05;
         if (dx * dx + dy * dy + dz * dz > R * R) continue;
-        seen.add(key);
+        if (ignored.size && ignored.has(pairKey(A.id, B.id))) continue;
         for (const [S, O] of [[A, B], [B, A]]) {
           if (S.dynamic && S.asleep && (O.target || len(O.v) > WAKE_SPEED)) { S.asleep = false; S.still = 0; }
         }
