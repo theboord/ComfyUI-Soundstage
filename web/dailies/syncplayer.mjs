@@ -60,7 +60,9 @@ const STYLE = `
 .ss-lined .lp-side button.sp-b[aria-pressed=true] { background:rgba(242,255,89,.14) !important; border-color:rgba(242,255,89,.55) !important; color:#f6ffad !important; }
 .ss-lined .lp-side button.sp-b.warn:hover:not(:disabled) { border-color:rgba(248,113,113,.6) !important; color:#fca5a5 !important; }
 .ss-lined .sp-line { font:13px/1.35 "Courier Prime", "Courier New", Courier, monospace; color:var(--lp-text); padding:7px 9px; border-radius:8px;
-  background:rgba(255,255,255,.04); border-left:3px solid var(--c, var(--lp-line2)); flex:none; max-height:4.2em; overflow:hidden; }
+  background:rgba(255,255,255,.04); border-left:3px solid var(--c, var(--lp-line2)); flex:none; overflow:hidden;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4; line-clamp:4; }
+.ss-lined .sp-line[hidden] { display:none; }
 .ss-lined .sp-line .who { display:block; font-size:11px; letter-spacing:.06em; color:var(--lp-muted); }
 .ss-lined .sp-sec { display:flex; align-items:center; gap:8px; text-transform:uppercase; letter-spacing:.08em; font-size:10.5px; font-weight:600;
   color:var(--lp-muted); margin-top:2px; flex:none; }

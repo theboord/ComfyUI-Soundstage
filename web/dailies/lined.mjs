@@ -406,7 +406,7 @@ export class LinedScript {
     const colW = Math.max(COL_MIN, Math.min(COL_MAX, Math.floor((avail - TW) / Math.max(1, n))));
     // Room either side for the first and last thumbnails.
     this.padL = Math.max(6, Math.ceil(TW / 2 - colW / 2) + 2);
-    const inner = 2 * this.padL + n * colW;
+    const inner = 2 * this.padL + n * colW + 6;   // (+ room for the last thumbnail's circled-take badge)
     const gw = Math.min(inner, Math.max(avail, COL_MIN * 4));
     this.colW = colW;
     this.gutter.style.width = `${gw}px`;
