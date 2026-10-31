@@ -295,7 +295,9 @@ function injectCss() {
   document.head.append(h("style", { id: "ss-dailies-css" }, STYLE));
 }
 
-const VIEWS = [["frame", "Frame", "frame"], ["list", "List", "list"], ["script", "Script", "lined"]];
+const VIEWS = [["frame", "Frame", "frame"], ["list", "List", "list"], ["script", "ScriptSync", "lined"]];
+const VIEW_TIPS = { frame: "Frame view: the setups as thumbnails you can arrange", list: "List view: one row per setup, sortable",
+  script: "ScriptSync (lined script): the scene's pages with a coverage line per setup. Click a line and that take plays from that moment; Edit lining fixes the lines." };
 const cssEsc = (v) => (globalThis.CSS?.escape ? globalThis.CSS.escape(v) : String(v).replace(/["\\]/g, "\\$&"));
 const cssUrl = (u) => String(u).replace(/["\\\n]/g, (c) => (c === "\n" ? "" : `\\${c}`));
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
@@ -366,10 +368,11 @@ export class DailiesBin {
       const st = statusOf(r.id, r.takes);
       return { ...r, coverage: this._coverage(r.shot), color: setupColor(r.idx), status: st.status, note: st.note, judged: st.take };
     });
-    this.lined?.destroy();
-    this.lined = null;
+    // ScriptSync keeps its player, selection and undo across refreshes (an edit saves the layout, which refreshes).
+    if (L.view !== "script" || !sc) { this.lined?.destroy(); this.lined = null; this._linedWrap = null; }
     this._ro?.disconnect();
-    const rail = this._rail();
+    // ScriptSync needs the width for the page and its player: the bins rail folds away (the scene picker stays).
+    const rail = L.view === "script" ? null : this._rail();
     this.el.classList.toggle("dl-hasrail", !!rail);
     const put = (...kids) => this.el.replaceChildren(...(rail ? [rail, h("div", { class: "dl-main" }, ...kids)] : kids));
     if (!sc) {
@@ -378,7 +381,7 @@ export class DailiesBin {
     }
     const nTakes = this.rows.reduce((a, r) => a + r.take_count, 0), nCirc = this.rows.filter((r) => r.circled).length;
     const seg = h("div", { class: "dl-seg", role: "group", "aria-label": "Bin view" },
-      ...VIEWS.map(([k, label, ic]) => h("button", { type: "button", "aria-pressed": String(L.view === k), title: `${label} view`,
+      ...VIEWS.map(([k, label, ic]) => h("button", { type: "button", "aria-pressed": String(L.view === k), title: VIEW_TIPS[k], "data-view": k,
         on: { click: () => this.setView(k) } }, svg(ic, 15), label)));
     const counts = statusCounts(this.rows);
     const width = sceneNumberWidth(this.o.getScenes?.() || [sc]);
@@ -841,8 +844,11 @@ export class DailiesBin {
   // ---------------------------------------------------------------- script view
 
   _scriptView() {
-    const wrap = h("div", { class: "dl-scriptwrap" });
+    if (this.lined && this._linedWrap) { this.lined.refresh(); return [this._linedWrap]; }
+    const wrap = this._linedWrap = h("div", { class: "dl-scriptwrap" });
     this.lined = new LinedScript(wrap, {
+      getSeconds: this.o.getSeconds || null,
+      onSync: this.o.onSync || null,
       getScene: () => this.scene,
       getShots: () => this.o.getShots(),
       getRenders: (id, shot) => this.o.getRenders(id, shot),

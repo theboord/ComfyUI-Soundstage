@@ -392,6 +392,66 @@ export function syncPoint(scene, cov, i, take = null) {
 
 // ------------------------------------------------------------------------------------------------------ layout
 
+/**
+ * The covered elements as shares of the take: [{i, a, b}] with a..b in 0..1 (same text-length weights as syncPoint).
+ * The ScriptSync player draws them as the take bar under the picture.
+ */
+export function syncSegments(scene, cov) {
+  if (!cov) return [];
+  const els = scene?.elements || [];
+  const w = (k) => Math.max(8, String(els[k]?.text || "").length);
+  let total = 0;
+  for (let k = cov.from; k <= cov.to; k++) total += w(k);
+  const out = [];
+  let acc = 0;
+  for (let k = cov.from; k <= cov.to; k++) {
+    const a = total ? acc / total : 0;
+    acc += w(k);
+    out.push({ i: k, a, b: total ? acc / total : 1, off: isOffscreen(cov, k) });
+  }
+  return out;
+}
+
+/** The inverse of syncPoint: which covered element a share of the take (0..1) falls on. */
+export function elementAtFraction(scene, cov, fraction) {
+  const segs = syncSegments(scene, cov);
+  if (!segs.length) return null;
+  const f = Math.max(0, Math.min(1, Number(fraction) || 0));
+  for (const s of segs) if (f < s.b) return s.i;
+  return segs[segs.length - 1].i;
+}
+
+/**
+ * Thumbnails on a lined script sit at the top of their lines; when lines are closer together than a thumbnail is
+ * wide, the thumbnails stack upward in tiers so none covers another. items: [{x, y}] (centre x, the line's top y)
+ * in drawing order; returns the tier (0 = right above its line) for each item.
+ */
+export function stackThumbs(items, tw, tierH) {
+  const placed = [];
+  return (items || []).map((it) => {
+    for (let t = 0; t < 64; t++) {
+      const r = { l: it.x - tw / 2, r: it.x + tw / 2, top: it.y - (t + 1) * tierH, bot: it.y - t * tierH };
+      if (!placed.some((p) => p.l < r.r - 0.5 && r.l < p.r - 0.5 && p.top < r.bot - 0.5 && r.top < p.bot - 0.5)) { placed.push(r); return t; }
+    }
+    return 0;
+  });
+}
+
+/**
+ * Undo for lining edits: remember each setup's coverage before an edit. push(id, before) before every change;
+ * undo() -> {id, cov} to put back (cov may be null = "not lined"), or null when there is nothing to undo.
+ */
+export class LiningHistory {
+  constructor(limit = 50) { this.limit = limit; this.stack = []; }
+  push(id, before) {
+    this.stack.push({ id, cov: before ? structuredClone(before) : null });
+    if (this.stack.length > this.limit) this.stack.shift();
+  }
+  undo() { return this.stack.pop() || null; }
+  get size() { return this.stack.length; }
+  clear() { this.stack = []; }
+}
+
 // Frame view geometry at size 1 (the bin scales positions with its thumbnail size).
 export const CARD_W = 208;
 export const CARD_H = Math.round(CARD_W * 9 / 16) + 50; // 16:9 thumb + two caption lines
