@@ -67,9 +67,9 @@ async function uploadAll(api, list) {
 export function worldControls(stage, { api, status = null } = {}) {
   if (!document.getElementById("ss-worldpanel-css")) document.head.append(el("style", { id: "ss-worldpanel-css" }, CSS));
   const say = (t) => { const s = typeof status === "function" ? status() : status; if (s) s.textContent = t; };
-  const input = el("input", { type: "file", accept: WORLD_ACCEPT, multiple: true, hidden: true });
+  const input = el("input", { type: "file", accept: WORLD_ACCEPT + ",.chan,.json", multiple: true, hidden: true });
   const button = el("button", { type: "button", class: "ss-btn ss-worldbtn",
-    title: "Bring a whole location in as the Set: GLB / glTF / FBX / OBJ from Blender, Unreal, Maya or Sketchfab, or a Gaussian splat (.spz .splat .ply). Units, up axis and the floor are worked out; the meshes become colliders; cameras in the file become shots. Pick a .gltf together with its .bin and textures." },
+    title: "Bring a whole location in as the Set: GLB / glTF / FBX / OBJ from Blender, Unreal, Maya or Sketchfab, or a Gaussian splat (.spz .splat .ply). Units, up axis and the floor are worked out; the meshes become colliders; cameras in the file become shots. Pick a .gltf together with its .bin and textures. A Nuke / Maya .chan or a camera.json becomes a new shot." },
     "Import world…");
   const panel = el("div", { class: "ss-worldpanel", hidden: true });
   panel.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -139,8 +139,16 @@ export function worldControls(stage, { api, status = null } = {}) {
   const hook = () => { if (mount()) mount().onInfo = (info) => { render(info); if (info && !info.error) say(`${info.readout}.`); }; };
   hook();
   input.addEventListener("change", async () => {
-    const list = [...(input.files || [])];
+    let list = [...(input.files || [])];
     input.value = "";
+    if (!list.length) return;
+    // Cameras (.chan from Nuke / Maya, camera.json from a Layer Pack or DCC kit) become shots; nothing to upload.
+    const cams = list.filter((f) => /\.chan$/i.test(f.name) || (/\.json$/i.test(f.name) && !list.some((g) => /\.gltf$/i.test(g.name))));
+    for (const f of cams) {
+      try { say(`Added the shot "${mount().importCameraFile(f.name, await f.text())}" from ${f.name}.`); }
+      catch (err) { say(`Couldn't read the camera in ${f.name}: ${err.message}`); }
+    }
+    list = list.filter((f) => !cams.includes(f));
     if (!list.length) return;
     say(`Uploading ${list.map((f) => f.name).join(", ")}…`);
     const up = await uploadAll(api, list);

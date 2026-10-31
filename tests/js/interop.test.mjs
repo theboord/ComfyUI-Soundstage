@@ -423,3 +423,23 @@ test("kit README names every app and is honest about what was tested where", () 
   assert.match(r, /NOT tested in Maya/);
   assert.match(r, /NOT tested in Nuke/);
 });
+
+test("a Nuke / Maya .chan and a camera.json come back in as the same camera keys", () => {
+  const track = [0, 1, 2, 3, 4].map((f) => ({ position: [f * 0.5, 1.7, 10 - f], target: [0, 1.2, 0], focal_mm: 35 + f * 5 }));
+  const frames = U.cameraFrames(track, 960, 512, 1001);
+  for (const text of [U.chanText(frames), JSON.stringify(U.cameraJSON(frames, { width: 960, height: 512, fps: 24, frameStart: 1001 }))]) {
+    const { keys, first, roll } = U.keysFromCameraFile(text, { aspect: 960 / 512 });
+    assert.equal(first, 1001);
+    assert.equal(keys.length, 5);
+    near(roll, 0, 1e-3);
+    keys.forEach((k, i) => {
+      assert.equal(k.frame, i);
+      nearV(k.position, track[i].position, 1e-3, "position");
+      near(k.focal_mm, track[i].focal_mm, 0.01, "lens (from the .chan vfov / the json focal)");
+      const dir = k.target.map((v, j) => v - k.position[j]), want = track[i].target.map((v, j) => v - track[i].position[j]);
+      const cos = (dir[0] * want[0] + dir[1] * want[1] + dir[2] * want[2]) / Math.hypot(...dir) / Math.hypot(...want);
+      near(cos, 1, 1e-6, "same view direction");
+    });
+  }
+  assert.throws(() => U.keysFromCameraFile("hello"), /no camera frames/);
+});
