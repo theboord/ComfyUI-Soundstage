@@ -119,6 +119,8 @@ export function takesFor(shot, renders, opts = {}) {
     const fin = r.final_sound || r.final_audio || r.final;
     if (fin) list.push({ id: "final", kind: "final", url: urlOf(fin), sound: !!(r.final_sound || r.final_audio) });
     if (chosenUrl && circledId == null) circledId = { url: chosenUrl };
+    // Ripple / Pose takes rendered from ⑤ Motion's Follow modes, kept on the shot's chosen record (dated).
+    for (const t of Array.isArray(r.chosen?.takes) ? r.chosen.takes : []) if (t?.url) list.push({ ...t, kind: t.kind || "draft" });
   }
   // Oldest first when the records are dated; stable otherwise.
   if (list.some((t) => t.created != null)) list = list.map((t, i) => [t, i]).sort((a, b) => (a[0].created ?? 0) - (b[0].created ?? 0) || a[1] - b[1]).map((x) => x[0]);

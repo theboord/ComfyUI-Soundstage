@@ -31,6 +31,13 @@ def fill_prompt(mode: str, prompt: str, n_refs: int = 0, edit: bool = True) -> s
     plain image models (Krea 2) and Extend (no crop reference: it would copy the empty border) get a description."""
     text = (prompt or "").strip().rstrip(".")
     starts_with_verb = text.split(" ", 1)[0].lower() in VERBS if text else False
+    if mode == "edit":
+        # The whole frame changes (a new person, wardrobe, time of day) but it must stay the same shot: Ripple and
+        # Motion animate it with the clip's own motion, so pose, framing and head size have to match the original.
+        what = _cap(text) if text else "Improve the picture"
+        return (f"{what}. Keep the exact same framing, camera angle, lens and composition as the original picture: "
+                "the same pose, the same head position and size in frame, the same body position and gesture. "
+                "Photoreal, no text, no logos, no writing anywhere.")
     if mode == "extend":
         return (f"{_cap(text or 'the same place')}. One continuous photograph that carries on seamlessly past the original "
                 "frame edges, with the same light, lens, colour and film grain.")

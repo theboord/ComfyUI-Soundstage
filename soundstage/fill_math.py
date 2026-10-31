@@ -12,7 +12,7 @@ import math
 
 import numpy as np
 
-MODES = ("fill", "remove", "replace", "extend")
+MODES = ("fill", "remove", "replace", "extend", "edit")   # edit = the whole picture (Change the whole frame)
 
 
 # ---------------------------------------------------------------- morphology / blur
@@ -188,6 +188,8 @@ def regen_mask(mask: np.ndarray, mode: str, grow_px: int = 8, overlap: int = 48)
         return np.clip(grow(m, max(grow_px, overlap)), 0, 1)
     if mode == "remove":
         return np.clip(grow(m, grow_px + 8), 0, 1)
+    if mode == "edit":   # the whole picture is repainted, whatever the mask says
+        return np.ones_like(m)
     return np.clip(grow(m, grow_px), 0, 1)
 
 

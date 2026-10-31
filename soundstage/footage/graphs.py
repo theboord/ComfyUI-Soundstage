@@ -131,6 +131,9 @@ def pose_guide(g, images, subject_mask, width, height, gate_grow=12):
     pose = g.node("DWPreprocessor", image=small, detect_hand="enable", detect_body="enable", detect_face="enable",
                   resolution=512, bbox_detector="yolox_l.onnx",
                   pose_estimator="dw-ll_ucoco_384_bs5.torchscript.pt", scale_stick_for_xinsr_cn="disable").out(0)
+    if subject_mask is None:   # Pose follow on real footage: every person drives the pose
+        guide = resize(g, pose, "scale dimensions", width=int(width), height=int(height), crop="disabled")
+        return guide, g.node("GetImageSize", image=guide)
     gate = subject_mask
     if gate_grow:
         gate = g.node("GrowMask", mask=resize(g, gate, "match size", match=small, crop="disabled",
@@ -194,7 +197,11 @@ def ltx_union_recast(g, w, p):
 
     # Reference Video
     gw, gh = guide_size(p["width"], p["height"])
-    guide, size = pose_guide(g, p["images"], p["mask"], gw, gh)
+    if p.get("guide") is not None:   # a pose video supplied directly (Motion's Pose follow: the stage's skeletons)
+        guide = resize(g, p["guide"], "scale dimensions", width=gw, height=gh, crop="disabled")
+        size = g.node("GetImageSize", image=guide)
+    else:
+        guide, size = pose_guide(g, p["images"], p.get("mask"), gw, gh)
 
     # Preprocess
     lat = g.node("EmptyLTXVLatentVideo", width=size.out(0), height=size.out(1), length=size.out(2),

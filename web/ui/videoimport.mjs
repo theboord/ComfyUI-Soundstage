@@ -90,7 +90,7 @@ export function clipSeconds(file) {
 
 /**
  * Ask what the clip is for. person = the selected (or first) person's name, or null.
- * Resolves "stage" | "capture" | null (cancelled). Default: Video → Stage, unless someone is selected.
+ * Resolves "stage" | "capture" | "ripple" | null (cancelled). Default: Video → Stage, unless someone is selected.
  */
 export function chooseVideoUse(file, { person = null, selected = false } = {}) {
   ensureCss();
@@ -98,9 +98,9 @@ export function chooseVideoUse(file, { person = null, selected = false } = {}) {
     const wrap = Object.assign(document.createElement("div"), { className: "ss-vi-modal" });
     const card = Object.assign(document.createElement("div"), { className: "card" });
     card.setAttribute("role", "dialog");
-    card.setAttribute("aria-label", "Bring this video into 3D");
+    card.setAttribute("aria-label", "What is this video for?");
     const h3 = document.createElement("h3");
-    h3.append(icon("file-video-camera", 20), "Bring this video into 3D");
+    h3.append(icon("file-video-camera", 20), "What is this video for?");
     const name = Object.assign(document.createElement("div"), { className: "file", textContent: file?.name || "" });
     const opt = (k, ic, title, desc) => {
       const b = Object.assign(document.createElement("button"), { type: "button", className: "opt" });
@@ -118,6 +118,8 @@ export function chooseVideoUse(file, { person = null, selected = false } = {}) {
     const who = person ? `on ${person}` : "on a person";
     const capOpt = opt("capture", "person-standing", `Put this motion ${who} (Capture motion)`,
       `SAM 3D Body copies the performance (body, hands, path) onto ${person || "a clay person"}, right where they stand in your set. About 1 min.`);
+    const ripOpt = opt("ripple", "wand-sparkles", "Edit this clip with Ripple (keep the footage)",
+      "Change frame 1 in Paint Studio (a different person, wardrobe, night) and LTX Ripple carries it through the whole clip with its motion and sound. Opens ⑤ Motion.");
     const def = selected ? capOpt : stageOpt;
     def.classList.add("def");
     const tip = Object.assign(document.createElement("div"), { className: "tip",
@@ -126,7 +128,7 @@ export function chooseVideoUse(file, { person = null, selected = false } = {}) {
     cancel.addEventListener("click", () => done(null));
     const row = Object.assign(document.createElement("div"), { className: "row" });
     row.append(tip, cancel);
-    card.append(h3, name, stageOpt, capOpt, row);
+    card.append(h3, name, stageOpt, capOpt, ripOpt, row);
     wrap.append(card);
     for (const ev of ["pointerdown", "keydown", "wheel"]) wrap.addEventListener(ev, (e) => e.stopPropagation());
     wrap.addEventListener("keydown", (e) => { if (e.key === "Escape") done(null); });

@@ -721,6 +721,11 @@ export class CanvasPanel {
       onclick: () => this.generativeFill("remove") }, icon("eraser", 16), "Remove");
     this.extendBtn = el("button", { class: "ss-cv-act", type: "button", title: "Paint the empty canvas around the picture (drag the edges out with Crop / Extend, C)",
       onclick: () => this.generativeFill("extend") }, icon("expand", 16), "Extend");
+    // The whole picture: a new person, other wardrobe, night instead of day. No mask; the frame keeps its pose and
+    // framing (what Ripple and Motion need: they animate it with the clip's own motion).
+    this.wholeBtn = el("button", { class: "ss-cv-act", type: "button", "data-act": "whole",
+      title: "Change the whole frame from your description (a different person, wardrobe, time of day) and keep the same pose and framing. No mask needed",
+      onclick: () => this.generativeFill("edit") }, icon("wand-sparkles", 16), "Whole frame");
     this.refsEl = el("div", { class: "ss-cv-refs" });
     const num = (key, label, min, max, step, tip) => {
       const i = el("input", { type: "number", min, max, step, value: f.tune[key], title: tip, "aria-label": label,
@@ -743,7 +748,7 @@ export class CanvasPanel {
         el("span", { class: "lbl" }, icon("sparkles", 15), "Generative Fill"), this.areaNote,
         el("label", { class: "ss-cv-note", style: "display:flex;gap:6px;align-items:center" }, "Variations", this.countSeg),
         this.modelSel),
-      el("div", { class: "ss-cv-fillrow" }, this.promptIn, this.fillBtn, this.removeBtn, this.extendBtn),
+      el("div", { class: "ss-cv-fillrow" }, this.promptIn, this.fillBtn, this.removeBtn, this.extendBtn, this.wholeBtn),
       this.refsEl, tune, this.fillWarn);
     // Results filmstrip
     this.strip = el("div", { class: "ss-cv-strip", role: "listbox", "aria-label": "Fill variations" });
@@ -1695,6 +1700,7 @@ export class CanvasPanel {
     this.fillBtn.disabled = busy || !ok;
     this.removeBtn.disabled = busy || !ok;
     this.extendBtn.disabled = busy || !ok;
+    if (this.wholeBtn) this.wholeBtn.disabled = busy || !ok;
     this.extendBtn.classList.toggle("ready", hole && !busy);
     this.areaNote.textContent = busy ? "Painting your variations…"
       : area ? `${this.selection ? "Selection" : "Mask"} ready: describe it and Fill, or Remove what is there.${hole ? " Empty canvas too: Extend paints it." : ""}`
@@ -1712,7 +1718,10 @@ export class CanvasPanel {
     // The area, white on black, in frame pixels.
     const area = this._areaCrop(R);
     const hasArea = this._hasArea();
-    if (mode === "extend") {
+    const whole = mode === "edit";
+    if (whole) {
+      if (!f.prompt.trim()) { this.onStatus("Describe the new frame (who, what they wear, the light), then Whole frame"); this.promptIn.focus(); return; }
+    } else if (mode === "extend") {
       if (!this._hasHole()) {
         this.onStatus("Nothing to extend: drag the canvas edges out with Crop / Extend (C), or pick 2.39 / 16:9 / 9:16 in its top bar");
         this.setTool("crop");
@@ -1727,7 +1736,8 @@ export class CanvasPanel {
     const W = R.w, H = R.h;
     const maskC = newCanvas(W, H), mc = maskC.getContext("2d");
     mc.fillStyle = "#000"; mc.fillRect(0, 0, W, H);
-    if (mode !== "extend" || hasArea) mc.drawImage(area, 0, 0);
+    if (whole) { mc.fillStyle = "#fff"; mc.fillRect(0, 0, W, H); }
+    else if (mode !== "extend" || hasArea) mc.drawImage(area, 0, 0);
     // Adding something (Fill / a reference): the model only paints inside the area, so a quick stroke would clip the
     // object (a car with no roof). Fill the stroke's whole box instead, wider and with headroom above: objects stand
     // on what you painted. Remove keeps the exact area.
@@ -1764,7 +1774,7 @@ export class CanvasPanel {
     f.results = Array.from({ length: n }, (_, i) => ({ seed: seed0 + i * 7919, rect: R, canvas: null, pending: true }));
     this._renderFilm();
     this._renderFillState();
-    const verb = { fill: "Filling", remove: "Removing", extend: "Extending", replace: "Placing the reference" }[nodeMode];
+    const verb = { fill: "Filling", remove: "Removing", extend: "Extending", replace: "Placing the reference", edit: "Changing the frame" }[nodeMode];
     this._progress(true, 0.02, `${verb} · uploading…`);
     try {
       const tag = `${this.docId}_${uid()}`;
@@ -1782,8 +1792,8 @@ export class CanvasPanel {
         const fill = { image: ["1", 0], mask: ["3", 0], prompt: promptText, mode: nodeMode, negative: "",
           model: model.key, ...model.nested, seed: r.seed, lora: "None", lora_strength: 1.0, steps: Math.max(0, t.steps | 0), cfg: 0,
           ref_files: refs.map((x) => `${x.file} | ${x.label}`).join("\n"),
-          grow: Math.max(0, t.grow | 0), feather: Math.max(0, t.feather | 0), context: 0.6, megapixels: clamp(+t.megapixels || 1, 0.25, 4),
-          overlap: 48, denoise: 1.0, color_match: true };
+          grow: whole ? 0 : Math.max(0, t.grow | 0), feather: whole ? 0 : Math.max(0, t.feather | 0), context: 0.6,
+          megapixels: clamp(+t.megapixels || 1, 0.25, 4), overlap: 48, denoise: 1.0, color_match: !whole };
         const prompt = {
           1: { class_type: "LoadImage", inputs: { image: imgName } },
           2: { class_type: "LoadImage", inputs: { image: maskName } },
@@ -1853,7 +1863,7 @@ export class CanvasPanel {
     if (!r?.canvas) return;
     const layerCanvas = newCanvas(this.EW, this.EH);
     layerCanvas.getContext("2d").drawImage(r.canvas, r.rect.x + this.M, r.rect.y + this.M);
-    const word = { fill: "Fill", remove: "Remove", extend: "Extend", replace: "Reference" }[f.lastMode] || "Fill";
+    const word = { fill: "Fill", remove: "Remove", extend: "Extend", replace: "Reference", edit: "Whole frame" }[f.lastMode] || "Fill";
     const l = this._makeLayer("gen", `${word} · ${(f.lastMode === "remove" ? "" : f.prompt).slice(0, 22) || `seed ${r.seed}`}`);
     l.canvas = layerCanvas;
     const m = this.maskLayer;
@@ -2004,11 +2014,11 @@ export class CanvasPanel {
   /** Edit a reference picture (a character sheet, a location or wardrobe photo) as its own document. The frame's
    *  document is set aside in memory and comes back afterwards. "Save to reference" uploads the edit to
    *  input/soundstage_refs/ and calls onSave({name, url}); onExit() runs when Paint Studio goes back to the frame. */
-  async editImage(src, { label = "Reference", onSave = null, onExit = null } = {}) {
+  async editImage(src, { label = "Reference", onSave = null, onExit = null, subfolder = "soundstage_refs" } = {}) {
     if (this.refEdit) this._endRefEdit(false);
     const img = await loadImg(src);
     clearTimeout(this._saveTimer);
-    this.refEdit = { label, onSave, onExit, stash: { W: this.W, H: this.H, M: this.M, rect: { ...this.rect }, docId: this.docId,
+    this.refEdit = { label, onSave, onExit, subfolder, stash: { W: this.W, H: this.H, M: this.M, rect: { ...this.rect }, docId: this.docId,
       layers: this.layers, activeId: this.activeId, selection: this.selection, undo: this.undoStack, redo: this.redoStack,
       snapshots: this.snapshots, dirty: this._dirty, cropAspect: this.cropAspect } };
     const s = Math.min(1, MAX_DOC / Math.max(img.width, img.height));
@@ -2078,7 +2088,7 @@ export class CanvasPanel {
     try {
       const url = c.toDataURL("image/png");
       const base = String(r.label || "ref").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40) || "ref";
-      const name = await this._upload(await toBlob(c), `${base}_edit_${hashBytes(url.slice(-4096) + url.length)}.png`, "soundstage_refs");
+      const name = await this._upload(await toBlob(c), `${base}_edit_${hashBytes(url.slice(-4096) + url.length)}.png`, r.subfolder || "soundstage_refs");
       const info = { name, url: this._viewURL(name, "input", Date.now()), w: rect.w, h: rect.h };
       await r.onSave?.(info);
       this._endRefEdit();

@@ -1,0 +1,2206 @@
+{
+"BasicScheduler": {
+"input": {
+"required": {
+"model": [
+"MODEL",
+{}
+],
+"scheduler": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"simple",
+"sgm_uniform",
+"karras",
+"exponential",
+"ddim_uniform",
+"beta",
+"normal",
+"linear_quadratic",
+"kl_optimal"
+]
+}
+],
+"steps": [
+"INT",
+{
+"default": 20,
+"min": 1,
+"max": 10000
+}
+],
+"denoise": [
+"FLOAT",
+{
+"default": 1.0,
+"min": 0.0,
+"max": 1.0,
+"step": 0.01
+}
+]
+}
+},
+"output": [
+"SIGMAS"
+],
+"output_name": [
+"SIGMAS"
+]
+},
+"BatchImagesNode": {
+"input": {
+"required": {
+"images": [
+"COMFY_AUTOGROW_V3",
+{
+"template": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"prefix": "image",
+"min": 1,
+"max": 50
+}
+}
+]
+}
+},
+"output": [
+"IMAGE"
+],
+"output_name": [
+"IMAGE"
+]
+},
+"CFGGuider": {
+"input": {
+"required": {
+"model": [
+"MODEL",
+{}
+],
+"positive": [
+"CONDITIONING",
+{}
+],
+"negative": [
+"CONDITIONING",
+{}
+],
+"cfg": [
+"FLOAT",
+{
+"default": 8.0,
+"min": 0.0,
+"max": 100.0,
+"step": 0.1,
+"round": 0.01
+}
+]
+}
+},
+"output": [
+"GUIDER"
+],
+"output_name": [
+"GUIDER"
+]
+},
+"CLIPLoader": {
+"input": {
+"required": {
+"clip_name": [
+[]
+],
+"type": [
+[
+"stable_diffusion",
+"stable_cascade",
+"sd3",
+"stable_audio",
+"mochi",
+"ltxv",
+"pixart",
+"cosmos",
+"lumina2",
+"wan",
+"hidream",
+"chroma",
+"ace",
+"omnigen2",
+"qwen_image",
+"hunyuan_image",
+"flux2",
+"ovis",
+"longcat_image",
+"cogvideox",
+"lens",
+"pixeldit",
+"ideogram4",
+"boogu",
+"krea2",
+"joyimage",
+"mage",
+"minimax",
+"yue2",
+"flux3",
+"moss_image",
+"fibo2"
+]
+]
+},
+"optional": {
+"device": [
+[
+"default",
+"cpu"
+],
+{
+"advanced": true
+}
+]
+}
+},
+"output": [
+"CLIP"
+],
+"output_name": [
+"CLIP"
+]
+},
+"CLIPTextEncode": {
+"input": {
+"required": {
+"text": [
+"STRING",
+{
+"multiline": true,
+"dynamicPrompts": true,
+"tooltip": "The text to be encoded."
+}
+],
+"clip": [
+"CLIP",
+{
+"tooltip": "The CLIP model used for encoding the text."
+}
+]
+}
+},
+"output": [
+"CONDITIONING"
+],
+"output_name": [
+"CONDITIONING"
+]
+},
+"ColorTransfer": {
+"input": {
+"required": {
+"image_target": [
+"IMAGE",
+{
+"tooltip": "Image(s) to apply the color transform to."
+}
+],
+"image_ref": [
+"IMAGE",
+{
+"tooltip": "Reference image(s) to match colors to."
+}
+],
+"method": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"reinhard_lab",
+"mkl_lab",
+"histogram"
+]
+}
+],
+"source_stats": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"tooltip": "per_frame: each frame matched to image_ref individually. uniform: pool stats across all source frames as baseline, match to image_ref. target_frame: use one chosen frame as the baseline for the transform to image_ref, applied uniformly to all frames (preserves relative differences)",
+"options": [
+{
+"key": "per_frame",
+"inputs": {
+"required": {}
+}
+},
+{
+"key": "uniform",
+"inputs": {
+"required": {}
+}
+},
+{
+"key": "target_frame",
+"inputs": {
+"required": {
+"target_index": [
+"INT",
+{
+"tooltip": "Frame index used as the source baseline for computing the transform to image_ref",
+"default": 0,
+"min": 0,
+"max": 10000
+}
+]
+}
+}
+}
+]
+}
+],
+"strength": [
+"FLOAT",
+{
+"default": 1.0,
+"min": 0.0,
+"max": 10.0,
+"step": 0.01
+}
+]
+}
+},
+"output": [
+"IMAGE"
+],
+"output_name": [
+"image"
+]
+},
+"CreateVideo": {
+"input": {
+"required": {
+"images": [
+"IMAGE",
+{
+"tooltip": "The images to create a video from."
+}
+],
+"fps": [
+"FLOAT",
+{
+"default": 30.0,
+"min": 1.0,
+"max": 120.0,
+"step": 1.0
+}
+]
+},
+"optional": {
+"audio": [
+"AUDIO",
+{
+"tooltip": "The audio to add to the video."
+}
+],
+"bit_depth": [
+"COMBO",
+{
+"tooltip": "Auto uses 8-bit for sRGB and 10-bit for HDR. Explicit 8-bit and 10-bit choices are independent of colorspace.",
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+8,
+10
+]
+}
+],
+"color_space": [
+"COMBO",
+{
+"tooltip": "Colorspace of the input images. HDR selects BT.2020/HLG and HDR PQ selects BT.2020/PQ.",
+"default": "sRGB",
+"multiselect": false,
+"options": [
+"sRGB",
+"HDR",
+"HDR PQ"
+]
+}
+],
+"codec": [
+"COMBO",
+{
+"tooltip": "Optionally encode the video immediately. None keeps the images in tensor form; Auto uses H.264.",
+"advanced": true,
+"default": "none",
+"multiselect": false,
+"options": [
+"none",
+"auto",
+"h264",
+"av1"
+]
+}
+]
+}
+},
+"output": [
+"VIDEO"
+],
+"output_name": [
+"VIDEO"
+]
+},
+"DWPreprocessor": {
+"input": {
+"required": {
+"image": [
+"IMAGE"
+]
+},
+"optional": {
+"detect_hand": [
+[
+"enable",
+"disable"
+],
+{
+"default": "enable"
+}
+],
+"detect_body": [
+[
+"enable",
+"disable"
+],
+{
+"default": "enable"
+}
+],
+"detect_face": [
+[
+"enable",
+"disable"
+],
+{
+"default": "enable"
+}
+],
+"resolution": [
+"INT",
+{
+"default": 512,
+"min": 64,
+"max": 16384,
+"step": 64
+}
+],
+"bbox_detector": [
+[
+"None",
+"yolox_l.torchscript.pt",
+"yolox_l.onnx",
+"yolo_nas_l_fp16.onnx",
+"yolo_nas_m_fp16.onnx",
+"yolo_nas_s_fp16.onnx"
+],
+{
+"default": "yolox_l.onnx"
+}
+],
+"pose_estimator": [
+[
+"dw-ll_ucoco_384_bs5.torchscript.pt",
+"dw-ll_ucoco_384.onnx",
+"dw-ll_ucoco.onnx"
+],
+{
+"default": "dw-ll_ucoco_384_bs5.torchscript.pt"
+}
+],
+"scale_stick_for_xinsr_cn": [
+[
+"disable",
+"enable"
+],
+{
+"default": "disable"
+}
+]
+}
+},
+"output": [
+"IMAGE",
+"POSE_KEYPOINT"
+],
+"output_name": [
+"IMAGE",
+"POSE_KEYPOINT"
+]
+},
+"EmptyLTXVLatentVideo": {
+"input": {
+"required": {
+"width": [
+"INT",
+{
+"default": 768,
+"min": 64,
+"max": 16384,
+"step": 32
+}
+],
+"height": [
+"INT",
+{
+"default": 512,
+"min": 64,
+"max": 16384,
+"step": 32
+}
+],
+"length": [
+"INT",
+{
+"default": 97,
+"min": 1,
+"max": 16384,
+"step": 8
+}
+],
+"batch_size": [
+"INT",
+{
+"default": 1,
+"min": 1,
+"max": 4096
+}
+]
+}
+},
+"output": [
+"LATENT"
+],
+"output_name": [
+"LATENT"
+]
+},
+"GetImageSize": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+},
+"hidden": {
+"unique_id": [
+"UNIQUE_ID"
+]
+}
+},
+"output": [
+"INT",
+"INT",
+"INT"
+],
+"output_name": [
+"width",
+"height",
+"batch_size"
+]
+},
+"ImageFromBatch": {
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+],
+"batch_index": [
+"INT",
+{
+"default": 0,
+"min": -16384,
+"max": 16384
+}
+],
+"length": [
+"INT",
+{
+"default": 1,
+"min": 1,
+"max": 4096
+}
+]
+}
+},
+"output": [
+"IMAGE"
+],
+"output_name": [
+"IMAGE"
+]
+},
+"KSamplerSelect": {
+"input": {
+"required": {
+"sampler_name": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"euler",
+"euler_cfg_pp",
+"euler_ancestral",
+"euler_ancestral_cfg_pp",
+"heun",
+"heunpp2",
+"exp_heun_2_x0",
+"exp_heun_2_x0_sde",
+"dpm_2",
+"dpm_2_ancestral",
+"lms",
+"dpm_fast",
+"dpm_adaptive",
+"dpmpp_2s_ancestral",
+"dpmpp_2s_ancestral_cfg_pp",
+"dpmpp_sde",
+"dpmpp_sde_gpu",
+"dpmpp_2m",
+"dpmpp_2m_cfg_pp",
+"dpmpp_2m_sde",
+"dpmpp_2m_sde_gpu",
+"dpmpp_2m_sde_heun",
+"dpmpp_2m_sde_heun_gpu",
+"dpmpp_3m_sde",
+"dpmpp_3m_sde_gpu",
+"ddpm",
+"lcm",
+"ipndm",
+"ipndm_v",
+"deis",
+"cfgpp_ud10_ab",
+"res_multistep",
+"res_multistep_cfg_pp",
+"res_multistep_ancestral",
+"res_multistep_ancestral_cfg_pp",
+"gradient_estimation",
+"gradient_estimation_cfg_pp",
+"er_sde",
+"seeds_2",
+"seeds_3",
+"sa_solver",
+"sa_solver_pece",
+"ddim",
+"uni_pc",
+"uni_pc_bh2"
+]
+}
+]
+}
+},
+"output": [
+"SAMPLER"
+],
+"output_name": [
+"SAMPLER"
+]
+},
+"LTXAddVideoICLoRAGuide": {
+"input": {
+"required": {
+"positive": [
+"CONDITIONING",
+{}
+],
+"negative": [
+"CONDITIONING",
+{}
+],
+"vae": [
+"VAE",
+{}
+],
+"latent": [
+"LATENT",
+{
+"tooltip": "Video-only latent to condition. Must be a 5D video latent (batch, channels, frames, height, width)."
+}
+],
+"image": [
+"IMAGE",
+{}
+],
+"frame_idx": [
+"INT",
+{
+"tooltip": "RoPE position of the reference, in pixel frames.\n0 aligns the reference with the generated clip. Use for video references.\n>0 places the reference at a specific pixel-frame position in the clip.\n-1 places the reference outside the generated frame range, while still using it for attention conditioning. Use for single-image references.\nFor multi-frame references, >0 values are rounded down to 1 mod 8.",
+"default": 0,
+"min": -9999,
+"max": 9999
+}
+],
+"strength": [
+"FLOAT",
+{
+"default": 1.0,
+"min": 0.0,
+"max": 1.0,
+"step": 0.01
+}
+],
+"latent_downscale_factor": [
+"FLOAT",
+{
+"tooltip": "For IC-LoRA on small grid. 1 means original size, 2 means half size, 3 means third, etc.",
+"default": 1.0,
+"min": 1.0,
+"max": 10.0,
+"step": 1.0
+}
+],
+"crop": [
+"COMBO",
+{
+"tooltip": "Crop mode when resizing. 'center' crops to fit, 'disabled' stretches to fit.",
+"default": "disabled",
+"multiselect": false,
+"options": [
+"disabled",
+"center"
+]
+}
+],
+"use_tiled_encode": [
+"BOOLEAN",
+{
+"tooltip": "Enable tiled VAE encoding for large resolutions/long videos to reduce memory usage.",
+"default": false
+}
+],
+"tile_size": [
+"INT",
+{
+"tooltip": "Spatial tile size for tiled encoding. Only used when use_tiled_encode is enabled.",
+"default": 256,
+"min": 64,
+"max": 512,
+"step": 32
+}
+],
+"tile_overlap": [
+"INT",
+{
+"tooltip": "Overlap between tiles for tiled encoding. Only used when use_tiled_encode is enabled.",
+"default": 64,
+"min": 16,
+"max": 256,
+"step": 16
+}
+]
+},
+"optional": {
+"use_streaming": [
+"BOOLEAN",
+{
+"tooltip": "Off (default): encode the whole clip as one IC-LoRA guide. On: re-encode one fresh guide per LTXVTiledFusionSampler temporal window and write the plan the sampler reads. Set tile_frames on this node and the sampler to the same value (97 for LTX).",
+"default": false
+}
+],
+"tile_frames": [
+"INT",
+{
+"tooltip": "Window length in pixel frames, used only when use_streaming is on. Snapped to 8n+1. Must match LTXVTiledFusionSampler. Ignored when use_streaming is off.",
+"default": 97,
+"min": 0,
+"max": 1000,
+"step": 1
+}
+]
+}
+},
+"output": [
+"CONDITIONING",
+"CONDITIONING",
+"LATENT"
+],
+"output_name": [
+"positive",
+"negative",
+"latent"
+]
+},
+"LTXFloatToInt": {
+"input": {
+"required": {
+"a": [
+"FLOAT",
+{
+"default": 0.0
+}
+]
+}
+},
+"output": [
+"INT"
+],
+"output_name": [
+"INT"
+]
+},
+"LTXICLoRALoaderModelOnly": {
+"input": {
+"required": {
+"model": [
+"MODEL",
+{}
+],
+"lora_name": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"LTX25_Ripple_v11.safetensors",
+"ltxv/ltx2/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors"
+]
+}
+],
+"strength_model": [
+"FLOAT",
+{
+"default": 1.0,
+"min": -100.0,
+"max": 100.0,
+"step": 0.01
+}
+]
+}
+},
+"output": [
+"MODEL",
+"FLOAT"
+],
+"output_name": [
+"model",
+"latent_downscale_factor"
+]
+},
+"LTXVConcatAVLatent": {
+"input": {
+"required": {
+"video_latent": [
+"LATENT",
+{}
+],
+"audio_latent": [
+"LATENT",
+{}
+]
+}
+},
+"output": [
+"LATENT"
+],
+"output_name": [
+"latent"
+]
+},
+"LTXVConditioning": {
+"input": {
+"required": {
+"positive": [
+"CONDITIONING",
+{}
+],
+"negative": [
+"CONDITIONING",
+{}
+],
+"frame_rate": [
+"FLOAT",
+{
+"default": 25.0,
+"min": 0.0,
+"max": 1000.0,
+"step": 0.01
+}
+]
+}
+},
+"output": [
+"CONDITIONING",
+"CONDITIONING"
+],
+"output_name": [
+"positive",
+"negative"
+]
+},
+"LTXVCropGuides": {
+"input": {
+"required": {
+"positive": [
+"CONDITIONING",
+{}
+],
+"negative": [
+"CONDITIONING",
+{}
+],
+"latent": [
+"LATENT",
+{}
+]
+}
+},
+"output": [
+"CONDITIONING",
+"CONDITIONING",
+"LATENT"
+],
+"output_name": [
+"positive",
+"negative",
+"latent"
+]
+},
+"LTXVEmptyLatentAudio": {
+"input": {
+"required": {
+"frames_number": [
+"INT",
+{
+"tooltip": "Number of frames.",
+"default": 97,
+"min": 1,
+"max": 1000,
+"step": 1,
+"display": "number"
+}
+],
+"frame_rate": [
+"FLOAT,INT",
+{
+"tooltip": "Number of frames per second.",
+"default": 25.0,
+"widgetType": "FLOAT",
+"min": 1.0,
+"max": 1000.0,
+"step": 0.01,
+"display": "number"
+}
+],
+"batch_size": [
+"INT",
+{
+"tooltip": "The number of latent audio samples in the batch.",
+"default": 1,
+"min": 1,
+"max": 4096,
+"display": "number"
+}
+],
+"audio_vae": [
+"VAE",
+{
+"display_name": "Audio VAE",
+"tooltip": "The Audio VAE model to get configuration from."
+}
+]
+}
+},
+"output": [
+"LATENT"
+],
+"output_name": [
+"Latent"
+]
+},
+"LTXVImgToVideoInplace": {
+"input": {
+"required": {
+"vae": [
+"VAE",
+{}
+],
+"image": [
+"IMAGE",
+{}
+],
+"latent": [
+"LATENT",
+{}
+],
+"strength": [
+"FLOAT",
+{
+"default": 1.0,
+"min": 0.0,
+"max": 1.0
+}
+],
+"bypass": [
+"BOOLEAN",
+{
+"tooltip": "Bypass the conditioning.",
+"default": false
+}
+]
+}
+},
+"output": [
+"LATENT"
+],
+"output_name": [
+"latent"
+]
+},
+"LTXVLatentUpsampler": {
+"input": {
+"required": {
+"samples": [
+"LATENT",
+{}
+],
+"upscale_model": [
+"LATENT_UPSCALE_MODEL",
+{}
+],
+"vae": [
+"VAE",
+{}
+]
+}
+},
+"output": [
+"LATENT"
+],
+"output_name": [
+"LATENT"
+]
+},
+"LTXVSeparateAVLatent": {
+"input": {
+"required": {
+"av_latent": [
+"LATENT",
+{}
+]
+}
+},
+"output": [
+"LATENT",
+"LATENT"
+],
+"output_name": [
+"video_latent",
+"audio_latent"
+]
+},
+"LatentUpscaleModelLoader": {
+"input": {
+"required": {
+"model_name": [
+"COMBO",
+{
+"multiselect": false,
+"options": []
+}
+]
+}
+},
+"output": [
+"LATENT_UPSCALE_MODEL"
+],
+"output_name": [
+"LATENT_UPSCALE_MODEL"
+]
+},
+"LoraLoaderModelOnly": {
+"input": {
+"required": {
+"model": [
+"MODEL"
+],
+"lora_name": [
+[
+"LTX25_Ripple_v11.safetensors",
+"ltxv/ltx2/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors"
+]
+],
+"strength_model": [
+"FLOAT",
+{
+"default": 1.0,
+"min": -100.0,
+"max": 100.0,
+"step": 0.01
+}
+]
+}
+},
+"output": [
+"MODEL"
+],
+"output_name": [
+"MODEL"
+]
+},
+"ManualSigmas": {
+"input": {
+"required": {
+"sigmas": [
+"STRING",
+{
+"default": "1, 0.5",
+"multiline": false
+}
+]
+}
+},
+"output": [
+"SIGMAS"
+],
+"output_name": [
+"SIGMAS"
+]
+},
+"RandomNoise": {
+"input": {
+"required": {
+"noise_seed": [
+"INT",
+{
+"default": 0,
+"min": 0,
+"max": 18446744073709551615,
+"control_after_generate": true
+}
+]
+}
+},
+"output": [
+"NOISE"
+],
+"output_name": [
+"NOISE"
+]
+},
+"ResizeImageMaskNode": {
+"input": {
+"required": {
+"input": [
+"COMFY_MATCHTYPE_V3",
+{
+"template": {
+"template_id": "input_type",
+"allowed_types": "IMAGE,MASK"
+}
+}
+],
+"resize_type": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"tooltip": "Select how to resize: by exact dimensions, scale factor, matching another image, etc.",
+"options": [
+{
+"key": "scale dimensions",
+"inputs": {
+"required": {
+"width": [
+"INT",
+{
+"tooltip": "Target width in pixels. Set to 0 to auto-calculate from height while preserving aspect ratio.",
+"default": 512,
+"min": 0,
+"max": 16384,
+"step": 1
+}
+],
+"height": [
+"INT",
+{
+"tooltip": "Target height in pixels. Set to 0 to auto-calculate from width while preserving aspect ratio.",
+"default": 512,
+"min": 0,
+"max": 16384,
+"step": 1
+}
+],
+"crop": [
+"COMBO",
+{
+"tooltip": "How to handle aspect ratio mismatch: 'disabled' stretches to fit, 'center' crops to maintain aspect ratio.",
+"default": "center",
+"multiselect": false,
+"options": [
+"disabled",
+"center"
+]
+}
+]
+}
+}
+},
+{
+"key": "scale by multiplier",
+"inputs": {
+"required": {
+"multiplier": [
+"FLOAT",
+{
+"tooltip": "Scale factor (e.g., 2.0 doubles size, 0.5 halves size).",
+"default": 1.0,
+"min": 0.01,
+"max": 8.0,
+"step": 0.01
+}
+]
+}
+}
+},
+{
+"key": "scale longer dimension",
+"inputs": {
+"required": {
+"longer_size": [
+"INT",
+{
+"tooltip": "The longer edge will be resized to this value. Aspect ratio is preserved.",
+"default": 512,
+"min": 0,
+"max": 16384,
+"step": 1
+}
+]
+}
+}
+},
+{
+"key": "scale shorter dimension",
+"inputs": {
+"required": {
+"shorter_size": [
+"INT",
+{
+"tooltip": "The shorter edge will be resized to this value. Aspect ratio is preserved.",
+"default": 512,
+"min": 0,
+"max": 16384,
+"step": 1
+}
+]
+}
+}
+},
+{
+"key": "scale width",
+"inputs": {
+"required": {
+"width": [
+"INT",
+{
+"tooltip": "Target width in pixels. Height auto-adjusts to preserve aspect ratio.",
+"default": 512,
+"min": 0,
+"max": 16384,
+"step": 1
+}
+]
+}
+}
+},
+{
+"key": "scale height",
+"inputs": {
+"required": {
+"height": [
+"INT",
+{
+"tooltip": "Target height in pixels. Width auto-adjusts to preserve aspect ratio.",
+"default": 512,
+"min": 0,
+"max": 16384,
+"step": 1
+}
+]
+}
+}
+},
+{
+"key": "scale total pixels",
+"inputs": {
+"required": {
+"megapixels": [
+"FLOAT",
+{
+"tooltip": "Target total megapixels (e.g., 1.0 \u2248 1024\u00d71024). Aspect ratio is preserved.",
+"default": 1.0,
+"min": 0.01,
+"max": 16.0,
+"step": 0.01
+}
+]
+}
+}
+},
+{
+"key": "match size",
+"inputs": {
+"required": {
+"match": [
+"IMAGE,MASK",
+{
+"tooltip": "Resize input to match the dimensions of this reference image or mask."
+}
+],
+"crop": [
+"COMBO",
+{
+"tooltip": "How to handle aspect ratio mismatch: 'disabled' stretches to fit, 'center' crops to maintain aspect ratio.",
+"default": "center",
+"multiselect": false,
+"options": [
+"disabled",
+"center"
+]
+}
+]
+}
+}
+},
+{
+"key": "scale to multiple",
+"inputs": {
+"required": {
+"multiple": [
+"INT",
+{
+"tooltip": "Resize so width and height are divisible by this number. Useful for latent alignment (e.g., 8 or 64).",
+"default": 8,
+"min": 1,
+"max": 16384,
+"step": 1
+}
+]
+}
+}
+}
+]
+}
+],
+"scale_method": [
+"COMBO",
+{
+"tooltip": "Interpolation algorithm. 'area' is best for downscaling, 'lanczos' for upscaling, 'nearest-exact' for pixel art.",
+"default": "area",
+"multiselect": false,
+"options": [
+"nearest-exact",
+"bilinear",
+"area",
+"bicubic",
+"lanczos"
+]
+}
+]
+}
+},
+"output": [
+"COMFY_MATCHTYPE_V3"
+],
+"output_name": [
+"resized"
+]
+},
+"SamplerCustomAdvanced": {
+"input": {
+"required": {
+"noise": [
+"NOISE",
+{}
+],
+"guider": [
+"GUIDER",
+{}
+],
+"sampler": [
+"SAMPLER",
+{}
+],
+"sigmas": [
+"SIGMAS",
+{}
+],
+"latent_image": [
+"LATENT",
+{}
+]
+}
+},
+"output": [
+"LATENT",
+"LATENT"
+],
+"output_name": [
+"output",
+"denoised_output"
+]
+},
+"SaveVideo": {
+"input": {
+"required": {
+"video": [
+"VIDEO",
+{
+"tooltip": "The video to save."
+}
+],
+"filename_prefix": [
+"STRING",
+{
+"tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes.",
+"default": "video/ComfyUI",
+"multiline": false
+}
+],
+"format": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"tooltip": "The output container. Auto uses MP4 for Auto/H.264 and WebM for AV1. MP4, MKV, and WebM select a specific container.",
+"options": [
+{
+"key": "auto",
+"inputs": {
+"required": {
+"codec": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"tooltip": "The output video codec. Auto preserves a compatible source stream. H.264 and AV1 re-encoding support SDR, HDR (HLG), and HDR PQ.",
+"options": [
+{
+"key": "auto",
+"inputs": {
+"required": {}
+}
+},
+{
+"key": "h264",
+"inputs": {
+"required": {},
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"tooltip": "Automatic preserves compatible H.264 streams. Re-encode applies custom encoding options.",
+"options": [
+{
+"key": "auto",
+"inputs": {
+"required": {}
+}
+},
+{
+"key": "re-encode",
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"tooltip": "Lower values produce higher quality and larger files.",
+"default": 18.0,
+"min": 0.0,
+"max": 51.0,
+"step": 1.0
+}
+]
+}
+}
+}
+]
+}
+]
+}
+}
+},
+{
+"key": "av1",
+"inputs": {
+"required": {},
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"tooltip": "Automatic preserves compatible AV1 streams. Re-encode applies custom encoding options.",
+"options": [
+{
+"key": "auto",
+"inputs": {
+"required": {}
+}
+},
+{
+"key": "re-encode",
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"tooltip": "Lower values produce higher quality and larger files.",
+"default": 24.0,
+"min": 0.0,
+"max": 63.0,
+"step": 1.0
+}
+]
+}
+}
+}
+]
+}
+]
+}
+}
+}
+]
+}
+]
+}
+}
+},
+{
+"key": "mp4",
+"inputs": {
+"required": {
+"codec": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"tooltip": "The output video codec. Auto preserves a compatible source stream. H.264 and AV1 re-encoding support SDR, HDR (HLG), and HDR PQ.",
+"options": [
+{
+"key": "auto",
+"inputs": {
+"required": {}
+}
+},
+{
+"key": "h264",
+"inputs": {
+"required": {},
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"tooltip": "Automatic preserves compatible H.264 streams. Re-encode applies custom encoding options.",
+"options": [
+{
+"key": "auto",
+"inputs": {
+"required": {}
+}
+},
+{
+"key": "re-encode",
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"tooltip": "Lower values produce higher quality and larger files.",
+"default": 18.0,
+"min": 0.0,
+"max": 51.0,
+"step": 1.0
+}
+]
+}
+}
+}
+]
+}
+]
+}
+}
+},
+{
+"key": "av1",
+"inputs": {
+"required": {},
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"tooltip": "Automatic preserves compatible AV1 streams. Re-encode applies custom encoding options.",
+"options": [
+{
+"key": "auto",
+"inputs": {
+"required": {}
+}
+},
+{
+"key": "re-encode",
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"tooltip": "Lower values produce higher quality and larger files.",
+"default": 24.0,
+"min": 0.0,
+"max": 63.0,
+"step": 1.0
+}
+]
+}
+}
+}
+]
+}
+]
+}
+}
+}
+]
+}
+]
+}
+}
+},
+{
+"key": "mkv",
+"inputs": {
+"required": {
+"codec": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"tooltip": "The output video codec. Auto preserves a compatible source stream. H.264 and AV1 re-encoding support SDR, HDR (HLG), and HDR PQ.",
+"options": [
+{
+"key": "auto",
+"inputs": {
+"required": {}
+}
+},
+{
+"key": "h264",
+"inputs": {
+"required": {},
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"tooltip": "Automatic preserves compatible H.264 streams. Re-encode applies custom encoding options.",
+"options": [
+{
+"key": "auto",
+"inputs": {
+"required": {}
+}
+},
+{
+"key": "re-encode",
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"tooltip": "Lower values produce higher quality and larger files.",
+"default": 18.0,
+"min": 0.0,
+"max": 51.0,
+"step": 1.0
+}
+]
+}
+}
+}
+]
+}
+]
+}
+}
+},
+{
+"key": "av1",
+"inputs": {
+"required": {},
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"tooltip": "Automatic preserves compatible AV1 streams. Re-encode applies custom encoding options.",
+"options": [
+{
+"key": "auto",
+"inputs": {
+"required": {}
+}
+},
+{
+"key": "re-encode",
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"tooltip": "Lower values produce higher quality and larger files.",
+"default": 24.0,
+"min": 0.0,
+"max": 63.0,
+"step": 1.0
+}
+]
+}
+}
+}
+]
+}
+]
+}
+}
+}
+]
+}
+]
+}
+}
+},
+{
+"key": "webm",
+"inputs": {
+"required": {
+"codec": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"tooltip": "The output video codec. Auto preserves a compatible source stream. H.264 and AV1 re-encoding support SDR, HDR (HLG), and HDR PQ.",
+"options": [
+{
+"key": "auto",
+"inputs": {
+"required": {}
+}
+},
+{
+"key": "av1",
+"inputs": {
+"required": {},
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"tooltip": "Automatic preserves compatible AV1 streams. Re-encode applies custom encoding options.",
+"options": [
+{
+"key": "auto",
+"inputs": {
+"required": {}
+}
+},
+{
+"key": "re-encode",
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"tooltip": "Lower values produce higher quality and larger files.",
+"default": 24.0,
+"min": 0.0,
+"max": 63.0,
+"step": 1.0
+}
+]
+}
+}
+}
+]
+}
+]
+}
+}
+}
+]
+}
+]
+}
+}
+}
+]
+}
+]
+},
+"optional": {
+"codec": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"tooltip": "The output video codec. Auto preserves a compatible source stream. H.264 and AV1 re-encoding support SDR, HDR (HLG), and HDR PQ.",
+"hidden": true,
+"options": [
+{
+"key": "auto",
+"inputs": {
+"required": {}
+}
+},
+{
+"key": "h264",
+"inputs": {
+"required": {},
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"tooltip": "Automatic preserves compatible H.264 streams. Re-encode applies custom encoding options.",
+"options": [
+{
+"key": "auto",
+"inputs": {
+"required": {}
+}
+},
+{
+"key": "re-encode",
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"tooltip": "Lower values produce higher quality and larger files.",
+"default": 18.0,
+"min": 0.0,
+"max": 51.0,
+"step": 1.0
+}
+]
+}
+}
+}
+]
+}
+]
+}
+}
+},
+{
+"key": "av1",
+"inputs": {
+"required": {},
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"tooltip": "Automatic preserves compatible AV1 streams. Re-encode applies custom encoding options.",
+"options": [
+{
+"key": "auto",
+"inputs": {
+"required": {}
+}
+},
+{
+"key": "re-encode",
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"tooltip": "Lower values produce higher quality and larger files.",
+"default": 24.0,
+"min": 0.0,
+"max": 63.0,
+"step": 1.0
+}
+]
+}
+}
+}
+]
+}
+]
+}
+}
+}
+]
+}
+]
+},
+"hidden": {
+"prompt": [
+"PROMPT"
+],
+"extra_pnginfo": [
+"EXTRA_PNGINFO"
+]
+}
+},
+"output": [
+"VIDEO"
+],
+"output_name": [
+"video"
+]
+},
+"SoundstageFill": {
+"input": {
+"required": {
+"prompt": [
+"STRING",
+{
+"tooltip": "What to put there (Fill), what the area shows (Remove: optional), who (Replace) or what lies beyond the frame (Extend).",
+"default": "",
+"multiline": true
+}
+],
+"mode": [
+"COMBO",
+{
+"default": "fill",
+"multiselect": false,
+"options": [
+"fill",
+"remove",
+"replace",
+"extend",
+"edit"
+]
+}
+],
+"model": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"tooltip": "Only open-weights models for this stage that can run here (partner APIs are opt-in with SOUNDSTAGE_PARTNER_MODELS=1). [API] = paid partner node (your Comfy credits), [NC] = non-commercial licence, [<$1M]/[<$5M]/[<$10M] = free below that annual revenue, [DL] = downloads weights on first run.",
+"options": [
+{
+"key": "Krea 2 Turbo \u00b7 local [<$1M]",
+"inputs": {
+"required": {
+"denoise": [
+"FLOAT",
+{
+"default": 0.85,
+"min": 0.0,
+"max": 1.0,
+"step": 0.01
+}
+]
+}
+}
+},
+{
+"key": "FLUX 3 Klein \u00b7 local [<$5M]",
+"inputs": {
+"required": {}
+}
+}
+]
+}
+],
+"seed": [
+"INT",
+{
+"default": 0,
+"min": 0,
+"max": 18446744073709551615,
+"control_after_generate": true
+}
+]
+},
+"optional": {
+"image": [
+"IMAGE",
+{
+"tooltip": "The picture to edit.",
+"lazy": true,
+"rawLink": true
+}
+],
+"mask": [
+"MASK",
+{
+"tooltip": "White = the area to repaint (Extend: the new, empty area).",
+"lazy": true,
+"rawLink": true
+}
+],
+"negative": [
+"STRING",
+{
+"advanced": true,
+"default": "",
+"multiline": true
+}
+],
+"ref_1": [
+"IMAGE",
+{
+"tooltip": "Reference image (character sheet, product, style).",
+"lazy": true,
+"rawLink": true
+}
+],
+"ref_2": [
+"IMAGE",
+{
+"tooltip": "Reference image.",
+"lazy": true,
+"rawLink": true
+}
+],
+"ref_3": [
+"IMAGE",
+{
+"tooltip": "Reference image.",
+"lazy": true,
+"rawLink": true
+}
+],
+"lora": [
+"COMBO",
+{
+"default": "None",
+"multiselect": false,
+"options": [
+"None",
+"LTX25_Ripple_v11.safetensors",
+"ltxv/ltx2/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors"
+]
+}
+],
+"lora_strength": [
+"FLOAT",
+{
+"default": 1.0,
+"min": -2.0,
+"max": 2.0,
+"step": 0.05
+}
+],
+"steps": [
+"INT",
+{
+"tooltip": "0 = the model's default.",
+"default": 0,
+"min": 0,
+"max": 100
+}
+],
+"cfg": [
+"FLOAT",
+{
+"tooltip": "0 = the model's default (1.0 for Klein / Krea Turbo).",
+"default": 0.0,
+"min": 0.0,
+"max": 20.0,
+"step": 0.1
+}
+],
+"ref_files": [
+"STRING",
+{
+"tooltip": "References by file name in the input folder, 'file | label' per line.",
+"default": "",
+"multiline": true
+}
+],
+"grow": [
+"INT",
+{
+"default": 8,
+"min": 0,
+"max": 256
+}
+],
+"feather": [
+"INT",
+{
+"default": 24,
+"min": 0,
+"max": 256
+}
+],
+"context": [
+"FLOAT",
+{
+"default": 0.6,
+"min": 0.0,
+"max": 4.0,
+"step": 0.05
+}
+],
+"megapixels": [
+"FLOAT",
+{
+"default": 1.0,
+"min": 0.25,
+"max": 4.0,
+"step": 0.05
+}
+],
+"overlap": [
+"INT",
+{
+"default": 48,
+"min": 0,
+"max": 256
+}
+],
+"denoise": [
+"FLOAT",
+{
+"default": 1.0,
+"min": 0.05,
+"max": 1.0,
+"step": 0.01
+}
+],
+"color_match": [
+"BOOLEAN",
+{
+"default": true
+}
+]
+},
+"hidden": {
+"unique_id": [
+"UNIQUE_ID"
+],
+"auth_token_comfy_org": [
+"AUTH_TOKEN_COMFY_ORG"
+],
+"api_key_comfy_org": [
+"API_KEY_COMFY_ORG"
+]
+}
+},
+"output": [
+"IMAGE",
+"IMAGE",
+"MASK"
+],
+"output_name": [
+"image",
+"layer (RGBA)",
+"alpha"
+]
+},
+"UNETLoader": {
+"input": {
+"required": {
+"unet_name": [
+[]
+],
+"weight_dtype": [
+[
+"default",
+"fp8_e4m3fn",
+"fp8_e4m3fn_fast",
+"fp8_e5m2"
+],
+{
+"advanced": true
+}
+]
+}
+},
+"output": [
+"MODEL"
+],
+"output_name": [
+"MODEL"
+]
+},
+"VAEDecodeTiled": {
+"input": {
+"required": {
+"samples": [
+"LATENT"
+],
+"vae": [
+"VAE"
+],
+"tile_size": [
+"INT",
+{
+"default": 512,
+"min": 64,
+"max": 4096,
+"step": 32,
+"advanced": true
+}
+],
+"overlap": [
+"INT",
+{
+"default": 64,
+"min": 0,
+"max": 4096,
+"step": 32,
+"advanced": true
+}
+],
+"temporal_size": [
+"INT",
+{
+"default": 64,
+"min": 8,
+"max": 4096,
+"step": 4,
+"tooltip": "Only used for video VAEs: Amount of frames to decode at a time.",
+"advanced": true
+}
+],
+"temporal_overlap": [
+"INT",
+{
+"default": 8,
+"min": 4,
+"max": 4096,
+"step": 4,
+"tooltip": "Only used for video VAEs: Amount of frames to overlap.",
+"advanced": true
+}
+]
+}
+},
+"output": [
+"IMAGE"
+],
+"output_name": [
+"IMAGE"
+]
+},
+"VAELoader": {
+"input": {
+"required": {
+"vae_name": [
+[
+"pixel_space"
+]
+]
+}
+},
+"output": [
+"VAE"
+],
+"output_name": [
+"VAE"
+]
+}
+}
