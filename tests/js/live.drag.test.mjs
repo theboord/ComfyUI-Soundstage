@@ -139,6 +139,8 @@ test("C picks up the prop a person walks into; it comes along; C puts it down", 
   assert.ok(g.position.x > 1.5, `carried along (x ${g.position.x})`);
   drag(st, "p", [[2.5, 1]], { frames: 10, keys: [{ at: 5, key: "c" }] });
   assert.equal(c.carry_id, undefined, "put down");
+  const k = keyPos(st, "c");
+  assert.ok(k[0] > 1.5 && Math.abs(k[1]) < 0.02, `dropped where they stood, on the floor, not back where it was picked up (${k})`);
 });
 
 test("a prop let go above the floor falls and settles; one that hangs over an edge tips off", () => {
