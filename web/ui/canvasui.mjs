@@ -472,6 +472,8 @@ const CSS = `
 .ss-stage .ss-clpopbtn .tx .sm { font-size:11px; color:var(--ss-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:400; }
 .ss-stage .ss-clpopbtn .car { flex:none; opacity:.6; }
 .ss-stage button.ss-clpopbtn[aria-expanded=true] { border-color:var(--ss-accent) !important; }
+/* Ripple hides the sound / dialogue buttons (pipeline onFollow): [hidden] has to beat the display:flex !important above. */
+.ss-stage button.ss-clpopbtn[hidden] { display:none !important; }
 .ss-stage.ss-cl[data-ws=wide] .ss-clwrap > .ss-clpop2 { position:absolute; z-index:6; top:8px; left:calc(var(--cv-l,0px) + 8px);
   width:min(380px, calc(100% - var(--cv-l,0px) - 24px)); max-height:calc(100% - 16px); background:var(--cv-glass-strong); }
 .ss-stage .ss-clpop2 .ss-hudp-body { padding-top:2px; gap:8px; }
