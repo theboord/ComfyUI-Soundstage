@@ -216,9 +216,32 @@ def test_a_car_keeping_pace_behind_a_ride_along_camera_has_no_move():
 
 def test_an_empty_road_is_said_early_and_for_the_whole_shot():
     """LTX added an overtaking car in the last second of the windshield draft (Milestone 3): the empty road comes
-    right after the opening line, holds "from the first frame to the last", and the close covers the frame edges."""
+    right after the opening line and holds "from the first frame to the last". Milestone 5: it is said positively;
+    naming what is absent ("nothing overtakes", "no other vehicles") primed passing cars at CFG 1."""
     m = compile_look({}, _shot("Soundstage_In_The_Car", "windshield"))["motion_prompt"]
-    lock = m.index("The car has the street to itself. The road stays empty for the whole shot, from the first frame to the last")
+    lock = m.index("The car has the street to itself: an empty road, bare curbs and empty sidewalks from the first frame to the last")
     assert lock < m.index("The camera is mounted on the hood")
+    assert "The frame holds only the car and the two people inside it, start to end." in m
+    for absent in ("overtake", "pulls alongside", "no other vehicles", "no bystanders", "nothing else"):
+        assert absent not in m, absent
+
+
+def test_a_frame_picked_before_milestone_5_keeps_its_words():
+    """The stage sends look_start false to re-render a frame picked earlier: its prompts compile as they were."""
+    s = _shot("Soundstage_In_The_Car", "windshield")
+    s["look_start"] = False
+    r = compile_look({"film_stock": "kodak_200t"}, s)
+    m = r["motion_prompt"]
+    assert "The road stays empty for the whole shot, from the first frame to the last" in m
     assert "nothing pulls alongside or overtakes" in m
     assert "not even at its edges near the end: no bystanders, no other vehicles." in m
+    assert "real actors" not in r["still_prompt"] and "smooth skin" in r["still_prompt"]
+    assert "plastic skin" not in r["still_negative"]
+    new = compile_look({"film_stock": "kodak_200t"}, _shot("Soundstage_In_The_Car", "windshield"))
+    assert "real actors" in new["still_prompt"] and "natural skin tones" in new["still_prompt"]
+
+def test_the_windshield_shot_gets_a_quiet_guide_background_and_the_riders_do_not():
+    from soundstage.look.look_start import quiet_background_wanted
+    assert quiet_background_wanted(_shot("Soundstage_In_The_Car", "windshield"))
+    r = _riders()
+    assert not quiet_background_wanted(r)
