@@ -35,7 +35,7 @@ export class LadderViewer {
       st.textContent = `.ss-lcmp{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:0 0 8px;font-size:12px}
 .ss-lcmp .grp{display:inline-flex;gap:4px;align-items:center}.ss-lcmp .lab{opacity:.7;font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:11px}
 .ss-lcmp button{font:inherit;font-size:12px;border-radius:999px;padding:3px 10px;cursor:pointer;background:rgba(255,255,255,.06);color:inherit;border:1px solid rgba(255,255,255,.14)}
-.ss-lcmp button:disabled{opacity:.35;cursor:default}.ss-lcmp .sep{width:1px;height:18px;background:rgba(255,255,255,.14)}
+.ss-lcmp button:disabled{opacity:.35;cursor:default}.ss-lcmp button[aria-pressed=true]{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.28);font-weight:600}.ss-lcmp .sep{width:1px;height:18px;background:rgba(255,255,255,.14)}
 .ss-ladder:not([hidden]){display:flex;flex-direction:column;align-self:stretch;width:100%;height:100%;min-height:0;min-width:0}
 .ss-ladder > *{flex:none}.ss-ladder > canvas.ss-lcv{flex:1 1 auto;min-height:0;width:100%;height:100%;object-fit:contain}`;
       document.head.append(st);
@@ -110,8 +110,7 @@ export class LadderViewer {
       const btn = Object.assign(document.createElement("button"), { type: "button", textContent: label, title });
       btn.disabled = !enabled;
       btn.setAttribute("aria-pressed", String(!!on));
-      // Inline: the App theme styles every button.
-      if (on) btn.style.cssText = `background:${YELLOW} !important;color:#111 !important;border-color:${YELLOW} !important;font-weight:650`;
+      // The picked option is styled by aria-pressed (web/ui/theme.mjs: a raised neutral segment, Milestone 14).
       btn.addEventListener("click", click);
       return btn;
     };

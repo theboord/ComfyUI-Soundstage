@@ -26,6 +26,7 @@ import { AdvisorPanel } from "./advisor/advisor.mjs";
 import * as maker from "./assets3d/maker.mjs";
 import { applyTheme, spotlight } from "./ui/theme.mjs";
 import { icon } from "./ui/icons.mjs";
+import { CheatSheet, isCheatSheetKey, withKeys } from "./ui/shortcuts.mjs";
 import { applyCanvasCss, layoutPref, setLayoutPref, rememberFlag, Mover } from "./ui/canvasui.mjs";
 import { Tour, TOUR_STEPS, tourSeen, markTourSeen, emptyCard, isBrandNewStage, applyFirstRunCss } from "./ui/firstrun.mjs";
 import * as THREE from "./vendor/three.module.min.mjs";
@@ -273,8 +274,8 @@ function createStageWidget(node, inputName) {
     b.addEventListener("click", fn);
     return b;
   };
-  const undoBtn = mkTiny("↶", "Undo (Cmd/Ctrl+Z)", () => stage.undo());
-  const redoBtn = mkTiny("↷", "Redo (Shift+Cmd/Ctrl+Z)", () => stage.redo());
+  const undoBtn = mkTiny("↶", withKeys("Undo", ["Mod", "Z"]), () => stage.undo());
+  const redoBtn = mkTiny("↷", withKeys("Redo", ["Shift", "Mod", "Z"]), () => stage.redo());
   undoBtn.style.marginLeft = "auto";
   expand.style.marginLeft = "6px";
   // Canvas layout (default) or the classic long panels: a safety net, remembered per browser.
@@ -299,7 +300,18 @@ function createStageWidget(node, inputName) {
   let startTour = () => {};
   guideBtn.addEventListener("click", () => startTour());
   guideBtn.style.marginLeft = "6px";
-  tabs.append(undoBtn, redoBtn, guideBtn, expand, layoutBtn);
+  // Keyboard shortcuts: the "?" cheat sheet (web/ui/shortcuts.mjs), also on the "?" key anywhere in the App.
+  const keySheet = new CheatSheet({ onState: (open) => keysBtn.setAttribute("aria-pressed", String(open)) });
+  const keysBtn = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn ss-keysbtn",
+    title: withKeys("Keyboard shortcuts: every key and mouse move in one list", ["?"]) });
+  keysBtn.dataset.ssIcon = "keyboard";
+  keysBtn.setAttribute("aria-label", "Keyboard shortcuts");
+  keysBtn.setAttribute("aria-haspopup", "dialog");
+  keysBtn.append(icon("keyboard", 15));
+  keysBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  keysBtn.addEventListener("click", () => keySheet.toggle());
+  keysBtn.style.marginLeft = "6px";
+  tabs.append(undoBtn, redoBtn, keysBtn, guideBtn, expand, layoutBtn);
 
   let sceneJSON = JSON.parse(JSON.stringify(DEFAULT_SCENE));
   const stage = new Stage(view, (s) => {
@@ -1124,7 +1136,8 @@ function createStageWidget(node, inputName) {
   sel.hidden = true;
   const selName = Object.assign(document.createElement("span"), { className: "ss-chip" });
   const turn = slider("Turn", -180, 180, 5, 0, (v) => `${v}°`, (v) => stage.rotateSelected(v));
-  const del = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn", textContent: "Delete" });
+  const del = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn", textContent: "Delete",
+    title: "Delete the selected object (Cmd/Ctrl+Z brings it back)" });
   del.addEventListener("pointerdown", (e) => e.stopPropagation());
   del.addEventListener("click", () => stage.removeSelected());
   const scl = slider("Scale", 0.1, 5, 0.05, 1, (v) => `${(+v).toFixed(2)}×`, (v) => stage.scaleSelected(v));
@@ -1484,7 +1497,18 @@ function createStageWidget(node, inputName) {
       photoSel.sel.disabled = false;
     }
   });
-  addRow.append(addInput, addBtn, importBtn, fileIn, worldUi.button, worldUi.input, photoSel.wrap, photoIn, videoIn, exportBtn, outlineWrap, sel);
+  // Milestone 14: the everyday controls (describe it, Add, the outliner) up front; import / export one click away.
+  const objMore = Object.assign(document.createElement("details"), { className: "ss-more" });
+  const objMoreFlag = rememberFlag("ss_more_obj", false);
+  objMore.open = objMoreFlag.get();
+  objMore.addEventListener("toggle", () => objMoreFlag.set(objMore.open));
+  const objMoreSum = Object.assign(document.createElement("summary"), { textContent: "More: import & export",
+    title: "Import a 3D model, a world or an image; export the set as GLB" });
+  objMoreSum.addEventListener("pointerdown", (e) => e.stopPropagation());
+  const objMoreBody = Object.assign(document.createElement("div"), { className: "ss-more-body" });
+  objMoreBody.append(importBtn, fileIn, worldUi.button, worldUi.input, photoSel.wrap, photoIn, videoIn, exportBtn);
+  objMore.append(objMoreSum, objMoreBody);
+  addRow.append(addInput, addBtn, outlineWrap, objMore, sel);
   // Appearance (people: build, hair, wardrobe, colours; objects: colour) + ride/sit on another object.
   const apRow = document.createElement("div");
   apRow.className = "ss-bar";
@@ -1949,6 +1973,7 @@ function createStageWidget(node, inputName) {
       tip: "Turn a photo into the whole 3D set, a solid object, a splat, a cut-out card, a backdrop or a floor plan.",
       run: () => {
         inspect("obj");
+        objMore.open = true;
         spotlight(photoSel.wrap, photoSel.sel, { instant: true });
         try { photoSel.sel.showPicker(); } catch { /* older browser: the menu is focused instead */ }
         status.textContent = "Choose what the photo should become, then pick the photo.";
@@ -3100,8 +3125,9 @@ function createStageWidget(node, inputName) {
     inspHead.append(inspTitle, inspTog);
     const setInsp = (c, user = false) => {
       insp.dataset.collapsed = String(c);
-      inspTog.textContent = c ? "+" : "–";
-      inspTog.title = c ? "Show the properties" : "Collapse the properties (Tab or H hides every panel)";
+      inspTog.replaceChildren(icon(c ? "chevron-left" : "chevron-right", 15));
+      inspTog.title = c ? "Show the properties" : "Fold the properties (H or Tab hides every panel)";
+      inspTog.setAttribute("aria-label", c ? "Show the properties" : "Fold the properties");
       inspTog.setAttribute("aria-expanded", String(!c));
       if (user) inspFlag(curView).set(c);
       if (cvOn) cvArea.dataset.r = c ? "closed" : "open";
@@ -3123,7 +3149,8 @@ function createStageWidget(node, inputName) {
     lookTitle.append(icon("palette", 13), Object.assign(document.createElement("span"), { textContent: "Look · one click sets stock, lens, palette, grade" }));
     const lookFull = btn("", "Open the full Look tab: camera body, lens, palette, genre and the compiled prompt", "All Look settings →");
     lookFull.addEventListener("click", () => { lookPop.hidden = true; showView("look"); });
-    const lookClose = btn("ss-hudp-tog", "Close", "×");
+    const lookClose = btn("ss-hudp-tog", "Close (Esc)", icon("x", 15));
+    lookClose.setAttribute("aria-label", "Close");
     lookClose.addEventListener("click", () => { lookPop.hidden = true; lookBtn.setAttribute("aria-pressed", "false"); });
     lookHead.append(lookTitle, lookFull, lookClose);
     const lookBody = mk("div", "ss-hudp-body");
@@ -3257,7 +3284,7 @@ function createStageWidget(node, inputName) {
         mv.move(syncBtn, toolsMenu, tabBtns.dailies.nextSibling);
         mv.move(layoutBtn, toolsMenu);
         for (const k of STEP_TABS) mv.addClass(tabBtns[k], "ss-clgone");
-        tabs.insertBefore(toolsBtn, guideBtn);
+        tabs.insertBefore(toolsBtn, keysBtn);
         tabs.append(toolsMenu, scenePop);
         built.push(sceneGrp, scenePop, toolsBtn, toolsMenu, menuSep);
         // Timeline bar over the canvas.
@@ -3293,9 +3320,20 @@ function createStageWidget(node, inputName) {
       requestAnimationFrame(fitView);
     };
     window.addEventListener("keydown", onKey, true);
+    // "?" opens the shortcut sheet (not while typing; only for the App you are in).
+    const onHelpKey = (e) => {
+      if (!isCheatSheetKey(e) || !el.isConnected || el.dataset.tour || keySheet.isOpen || !el.getClientRects().length) return;
+      if (!(el.contains(document.activeElement) || el.matches(":hover") || el.classList.contains("ss-full"))) return;
+      e.preventDefault();
+      e.stopPropagation();
+      keySheet.open();
+    };
+    window.addEventListener("keydown", onHelpKey, true);
     const removed0 = node.onRemoved;
     node.onRemoved = function (...a) {
       window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keydown", onHelpKey, true);
+      try { keySheet.destroy(); } catch { /* never opened */ }
       document.removeEventListener("pointerdown", onDocDown, true);
       try { tour?.close(false); } catch { /* no tour */ }
       return removed0?.apply(this, a);

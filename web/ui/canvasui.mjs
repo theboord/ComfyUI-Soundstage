@@ -5,6 +5,8 @@
 // It never rebuilds a control: the same elements move into the panels (a placeholder remembers where each came from),
 // so every listener keeps working and "Classic layout" puts every element back exactly where it was.
 
+import { icon as lucide } from "./icons.mjs";   // hudPanel / hudPop take an `icon` element argument
+
 const LS_LAYOUT = "ss_layout";
 
 /** "canvas" (default) or "classic", remembered per browser. */
@@ -80,8 +82,9 @@ export function hudPanel({ key, title, tip = "", side = "left", collapsed = fals
   for (const t of ["pointerdown", "wheel"]) root.addEventListener(t, (e) => e.stopPropagation(), { passive: true });
   const set = (c, user = false) => {
     root.dataset.collapsed = String(c);
-    btn.textContent = c ? "+" : "–";
-    btn.title = c ? `Show ${title}` : `Collapse ${title} (Tab or H hides every panel)`;
+    btn.replaceChildren(lucide(c ? "chevron-down" : "chevron-up", 15));
+    btn.title = c ? `Show ${title}` : `Fold ${title} (H or Tab hides every panel)`;
+    btn.setAttribute("aria-label", c ? `Show ${title}` : `Fold ${title}`);
     btn.setAttribute("aria-expanded", String(!c));
     if (user) flag.set(c);
     onToggle?.(c);
@@ -119,9 +122,10 @@ export function hudPop({ title, icon = null, onClose = null }) {
   root.setAttribute("aria-label", title);
   const head = el("header", "ss-hudp-head");
   const ttl = el("span", "ss-hudp-title", icon ? icon : null, el("span", "", title));
-  const x = el("button", "ss-hudp-tog", "×");
+  const x = el("button", "ss-hudp-tog", lucide("x", 15));
   x.type = "button";
-  x.title = "Close";
+  x.title = "Close (Esc)";
+  x.setAttribute("aria-label", "Close");
   head.append(ttl, x);
   const body = el("div", "ss-hudp-body");
   root.append(head, body);
@@ -424,6 +428,16 @@ const CSS = `
 .ss-stage.ss-cl .ss-tabs.ss-toprow:has(.ss-stop:not([hidden])) > .ss-guidebtn .lbl { display:none; }
 .ss-stage.ss-cl .ss-tabs.ss-toprow:has(.ss-stop:not([hidden])) > .ss-expand { font-size:0 !important; gap:0 !important; padding:6px 8px !important; }
 .ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow .ss-pipe button.ss-stop { padding:4px 9px !important; }
+/* A control whose panel heading already names it (⑤ Motion's VIDEO MODEL): its own label line gives way. */
+.ss-stage .ss-hudp label.f.ss-cl-bare { font-size:0 !important; gap:0 !important; }
+.ss-stage .ss-hudp label.f.ss-cl-bare > select { font-size:13px; width:100%; }
+/* Milestone 14: the step names never give way (they are how you move through the App); the scene picker and the words
+   of the right-hand buttons do. */
+.ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-pipe { flex-shrink:0 !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button:not(.ss-stop) { flex:none !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-topscene { flex:0 1 280px; min-width:96px; }
+.ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow > .ss-toolsbtn:not([aria-pressed=true]) .lbl { display:none; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-keysbtn { padding:5px 8px !important; }
 /* ⑤ Motion: the panel's FOLLOW heading already names the Follow switch; its own "Follow" line made the panel scroll by
    19 px at 1280×800, cutting off "Cast in this shot" (QA round 02). */
 .ss-stage.ss-cl .ss-hudp-secbody > .ss-follow > .status:first-child { display:none; }
@@ -486,6 +500,16 @@ const CSS = `
 .ss-stage.ss-cl[data-ws=wide] .ss-clwrap > .ss-clpop2 { position:absolute; z-index:6; top:8px; left:calc(var(--cv-l,0px) + 8px);
   width:min(380px, calc(100% - var(--cv-l,0px) - 24px)); max-height:calc(100% - 16px); background:var(--cv-glass-strong); }
 .ss-stage .ss-clpop2 .ss-hudp-body { padding-top:2px; gap:8px; }
+/* ④ Frame's Style and Camera pickers: a full-height pop-over with a search box; the picker itself never scrolls in a box. */
+.ss-stage.ss-cl[data-ws=wide] .ss-clwrap > .ss-clpop2.ss-tallpop { bottom:8px; width:min(480px, calc(100% - var(--cv-l,0px) - 24px)); }
+.ss-stage .ss-tallpop .ss-hudp-body { gap:10px; }
+.ss-stage .ss-tallpop .ss-popsearch { position:sticky; top:0; z-index:2; width:100%; box-sizing:border-box; flex:none;
+  background:var(--cv-glass-strong) !important; }
+.ss-stage .ss-tallpop .ss-styles { max-height:none !important; overflow:visible !important; grid-template-columns:repeat(auto-fill, minmax(132px, 1fr)); }
+.ss-stage .ss-tallpop .ss-gear { grid-template-columns:repeat(2, minmax(0,1fr)); }
+.ss-stage .ss-tallpop .ss-gear .col { max-height:none; overflow:visible; }
+.ss-stage .ss-tallpop :is(.ss-styles, .ss-gear) [hidden] { display:none !important; }
+.ss-stage .ss-tallpop .ss-popnone { align-self:center; padding:18px 0; }
 .ss-stage .ss-clpop2 .row { flex-wrap:wrap; }
 .ss-stage .ss-clpop2 .row > button.ghost { font-size:11px !important; padding:2px 8px !important; }
 .ss-stage .ss-clpop2 .row { gap:4px !important; }
