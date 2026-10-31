@@ -44,8 +44,9 @@ def check(parts, expected_src):
     return g
 
 
-def test_touchup_alone_chains_after_look_still():
-    check(["touchup"], (9057, 0))
+def test_touchup_alone_chains_after_the_base_still_picker():
+    # Soundstage_App.json carries the still-model picker itself (9082: Krea 2 9057 off, FLUX 3 Klein 9081 on).
+    check(["touchup"], (9082, 0))
 
 
 def test_touchup_chains_after_the_model_picker():
