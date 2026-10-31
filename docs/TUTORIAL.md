@@ -859,6 +859,26 @@ Everything you turn is a pose key at the playhead, the same keys the sliders wri
 
 Actions: **Look at**, **Talk to (face each other)**, **Shake hands**, **Hug**, **Hold hands**, **Point at**, **Pet (dog, cat, horse)**, **Lead by the reins (horse)**, **Stop looking**.
 
+### Physics: drop it, knock it over, bake it
+
+Select a prop and press **Physics** in its card. A small panel opens beside the inspector:
+
+| Control | What it does |
+|---|---|
+| **Dynamic / Static / Off** | Dynamic falls, tumbles and gets knocked over. Static (the default) stays put but things hit it and land on it. Off is ignored. People, animals and vehicles can't be Dynamic: they push props with their keyed motion. |
+| **Mass** | 0.2 kg to 2 t. A heavy crate shrugs off a light one. |
+| **Bounce** | 0 is a thud, 100 % a superball. |
+| **Friction** | 0.2 ice, 0.6 wood, 1.0 rubber. |
+| **Height** | Start this far off the floor: drop it from there, or stack it on another crate (0.8 m per crate). |
+| **Same for all N crates** | The same physics for every object of that kind. |
+| **Simulate & bake** | Runs the whole shot once and bakes every Dynamic object into ordinary keys: one per frame while it moves, two at each rest. |
+| **Clear simulation** | Puts every simulated object back on the keys it had before. |
+
+- What it hits: the floor, the set's walls, kerbs and buildings, Static props, and people and vehicles on their keyed paths (a car is a low body plus a cabin, so a crate rides up over the bonnet).
+- **Throw something:** key it moving (two keys or more). It follows its keys, then physics takes over at the last key at that speed.
+- The clay, the previz video and the LTX layout guide only ever play keys, so every render of a baked shot is the same. Simulate again (or Cmd/Ctrl+Z) to redo it.
+- The solver is a small built-in one (substepped XPBD rigid bodies, the position-based sibling of three-avbd's vertex block descent). Boxes and spheres only: a chair or a table falls as its bounding box.
+
 ### Motion capture: from a video or the webcam
 
 Any clip of one person, or you acting it out on the webcam, drives a clay actor: body, hands, fingers, the path they travel and the jumps. It needs the SAM 3D Body model (see [Install](#download-the-models)) and runs on the GPU.
