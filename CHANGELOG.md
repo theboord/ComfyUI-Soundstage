@@ -5,6 +5,10 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**13:31 PDT · Live 3D: let go of a walking person and they stand** *(Milestone 9)*
+- Releasing a person mid-stride no longer leaves them frozen with their legs apart until everything settles.
+- The faint "where it started" ghost appears once the object has moved away, not as a flash on top of it at the press.
+
 **13:20 PDT · Live 3D: stacks stand still; cars throw crates** *(Milestone 9)*
 - A tall stack of boxes now stands perfectly still until something hits it (a 20-carton tower moves about 1 mm in 3 s; before, it sagged, twisted and fell).
 - A crate a car drives into is thrown clear instead of being nudged along at walking pace. Dragged things keep their safety speed limit.
