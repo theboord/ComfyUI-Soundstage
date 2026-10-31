@@ -308,9 +308,12 @@ export class Stage {
     }
 
     const env = this.state.environment || { set: "plaza", weather: "none", density: 0.5 };
-    const built = buildSet(env.set || "plaza", (geom) => this._mesh(geom), { water_level: env.water_level });
+    const clean = this._cleanStreetSig();
+    const built = buildSet(env.set || "plaza", (geom) => this._mesh(geom), { water_level: env.water_level, ...(clean ? JSON.parse(clean) : {}) });
     if (built.group) this.root.add(built.group);
     this._setGroup = built.group;
+    this._setCleanSig = clean;
+    ground.scale.set(clean ? 6 : 1, clean ? 6 : 1, 1);   // the clean street runs a long way: so does the road
     this.water = built.water ? buildWater(built.water) : null;
     if (this.water) this.root.add(this.water);
     this.weather = buildWeather(env.weather || "none", env.density ?? 0.5);
@@ -374,6 +377,42 @@ export class Stage {
     this.selRing.rotation.x = -Math.PI / 2;
     this.selRing.visible = false;
     this.root.add(this.selRing);
+  }
+
+  // ---------- clean street for ride-along shots ----------
+  /**
+   * Riding in a car on an empty road (the active shot follows a vehicle, nobody on foot) on the city street, the set
+   * becomes one smooth facade a side with an even roofline and no lamp posts, long enough for the whole drive:
+   * Milestone 5 found LTX turns building blocks and gaps sliding past the frame edge into traffic. environment.
+   * clean_street: true / false forces it on or off; unset = automatic. Returns the build options as a string
+   * signature (null = the ordinary set), so a shot switch rebuilds the set only when it has to.
+   */
+  _cleanStreetSig() {
+    const env = this.state.environment || {};
+    if ((env.set || "plaza") !== "street_night" || env.clean_street === false) return null;
+    const actors = this.state.actors || [];
+    if (env.clean_street !== true) {
+      const host = this._followActor?.();
+      if (!host || LIBRARY[host.kind]?.rig !== "vehicle") return null;
+      if (actors.some((a) => PERSON_KINDS.has(a.kind) && !a.mount_id)) return null;
+    }
+    let z0 = 0, z1 = 0;
+    for (const a of actors) for (const k of a.keys || [{ position: a.position || [0, 0, 0] }]) {
+      z0 = Math.min(z0, k.position[2]); z1 = Math.max(z1, k.position[2]);
+    }
+    // Round out to 50 m so scrubbing a key doesn't rebuild the set; the camera sees 150 m past either end.
+    return JSON.stringify({ clean: true, span: [Math.floor(z0 / 50) * 50 - 150, Math.ceil(z1 / 50) * 50 + 150] });
+  }
+
+  _swapSetGroup() {
+    const env = this.state.environment || {};
+    if (this._setGroup) this.root.remove(this._setGroup);
+    const clean = this._cleanStreetSig();
+    const built = buildSet(env.set || "plaza", (geom) => this._mesh(geom), { water_level: env.water_level, ...(clean ? JSON.parse(clean) : {}) });
+    if (built.group) this.root.add(built.group);
+    this._setGroup = built.group;
+    this._setCleanSig = clean;
+    this.ground?.scale.set(clean ? 6 : 1, clean ? 6 : 1, 1);
   }
 
   // ---------- physics: simulate, then bake into ordinary keys ----------
@@ -1033,6 +1072,7 @@ export class Stage {
   /** Pose the whole set at a frame: camera, object positions, heading and walk cycle. */
   setFrame(frame) {
     this.frame = Math.max(0, Math.min(this._lastFrame(), Math.round(frame)));
+    if (this._setGroup !== undefined && this._cleanStreetSig() !== this._setCleanSig) this._swapSetGroup();
     // The set may have been rebuilt (new meshes): keep the gizmo on the selected object.
     if (this.tc && this.tc.object !== (this.poser?.target() ?? (this.selected ? this.actorMeshes.get(this.selected) : undefined))) this._attachGizmo();
     for (const a of this.state.actors) {

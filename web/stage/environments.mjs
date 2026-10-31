@@ -35,6 +35,7 @@ function rng(seed) {
 
 /**
  * Build the static set for a preset. `mesh(geom)` returns a shadowed clay mesh.
+ * opts: { seed, water_level, clean: a smooth empty streetscape (street sets), span: [z0, z1] it must cover }.
  * Returns {group, water: {level, size} | null}.
  */
 export function buildSet(preset, mesh, opts = {}) {
@@ -49,6 +50,18 @@ export function buildSet(preset, mesh, opts = {}) {
   let water = null;
   switch (preset) {
     case "street_night":
+      if (opts.clean) {
+        // Clean street (ride-along shots on an empty road): one smooth, unbroken facade a side, an even roofline,
+        // kerbs and nothing else, as far as the drive goes and beyond. Building blocks with gaps sliding past the
+        // frame edge read to LTX as passing cars and trucks (Milestone 5); a featureless wall can't.
+        const [z0, z1] = opts.span || [-200, 200];
+        const L = z1 - z0, zc = (z0 + z1) / 2;
+        for (const side of [-1, 1]) {
+          box(9, 12, L, side * 11.5, 6, zc);           // facade front at 7 m from the centre line
+          box(1.6, 0.18, L, side * 6.2, 0.09, zc);     // kerb + sidewalk edge
+        }
+        break;
+      }
       for (const side of [-1, 1]) {
         for (let i = 0; i < 6; i++) {
           const h = 8 + rand() * 14;
