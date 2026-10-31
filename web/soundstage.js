@@ -1665,12 +1665,19 @@ function createStageWidget(node, inputName) {
   const waterLv = slider("Water", 0, 4, 0.1, env0.water_level ?? 2.5, (v) => `${v.toFixed(1)} m`, (v) => {
     clearTimeout(waterLv._t); waterLv._t = setTimeout(() => stage.setEnvironment({ water_level: v }), 120);
   });
-  envRow.append(setSel.wrap, wxSel.wrap, dens.wrap, waterLv.wrap);
+  // City street: automatic clean facades when the camera rides a car on an empty road (no phantom traffic in LTX).
+  const streetOf = (e) => (e.clean_street === true ? "on" : e.clean_street === false ? "off" : "auto");
+  const streetSel = mkSelect("Street", { auto: { label: "Auto: clean when riding along" }, on: { label: "Clean facades, no gaps" },
+    off: { label: "Blocks and lamp posts" } }, streetOf(env0), (v) => stage.setEnvironment({ clean_street: v === "auto" ? undefined : v === "on" }));
+  streetSel.wrap.title = "Riding in a car, gaps between building blocks sliding past the frame edge turn into passing cars in the AI video. Clean facades are one smooth wall a side.";
+  envRow.append(setSel.wrap, wxSel.wrap, dens.wrap, waterLv.wrap, streetSel.wrap);
   function syncEnv() {
     const e = stage.toJSON().environment || {};
     setSel.sel.value = e.set || "plaza";
     wxSel.sel.value = e.weather || "none";
     waterLv.wrap.hidden = e.set !== "water_tank";
+    streetSel.sel.value = streetOf(e);
+    streetSel.wrap.hidden = e.set !== "street_night";
   }
   syncEnv();
 
