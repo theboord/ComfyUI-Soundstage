@@ -37,6 +37,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 
 | When | Update |
 |---|---|
+| Oct 31, 13:20 PDT | **Live 3D:** box stacks stand rock-still until hit; cars throw crates clear. |
 | Oct 31, 13:05 PDT | **GPU physics (beta):** car hits, stacks and drops solved on the graphics card without crates sinking into each other; switch it on in the Physics panel. |
 | Oct 31, 13:00 PDT | **Live 3D:** dragged people walk (face the way they go, legs swing); live physics ~3x faster on busy sets. |
 | Oct 31, 12:52 PDT | **Live 3D:** the point you grab stays under the cursor; the wheel lifts a prop straight up to stack it. |
