@@ -5,6 +5,12 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**13:36 PDT · QA round 02: a regression guard, and four layout fixes**
+- With a render queued, the step names stay whole. Stop used to squeeze them to "Scri…", "C…", "S…" at 1440 px; the wordmark and the Guide / Done words now make the room.
+- The App's narrow side panel shows one Import video button, not two. The small "Drop a video here" pill there no longer runs under the Coach pill.
+- The "Physics: CPU" badge no longer covers the status line ("Man 3 climbs onto Crate 1"). It only appears for the GPU solver, bottom right.
+- New: `tools/qa/visual_baseline.mjs` captures 17 fixed screens at 1280×800, 1440×900 and 1920×1080 and compares them with committed baselines. It also checks pixels, console errors, page scroll, clipped text and overlapping panels. Every QA round runs it first. See [tools/qa/README.md](tools/qa/README.md).
+
 **13:31 PDT · Live 3D: let go of a walking person and they stand** *(Milestone 9)*
 - Releasing a person mid-stride no longer leaves them frozen with their legs apart until everything settles.
 - The faint "where it started" ghost appears once the object has moved away, not as a flash on top of it at the press.
