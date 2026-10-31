@@ -5,6 +5,7 @@
 import { icon } from "../ui/icons.mjs";
 import { setTouchupStill } from "../touchup/touchup.mjs";
 import { Mover, hudPanel, hudPop, cvEl, clipText } from "../ui/canvasui.mjs";
+import { RippleControls } from "../motion/ripple.mjs";
 import { castPool, shotSelection, pickRefs, refLines, refLabel, shotKind, refViewParams, REF_LIMIT } from "../cast/shotcast.mjs";
 
 /** Version of the still's start image (soundstage/look/look_start.py). Frames record it; older frames reproduce
@@ -1015,6 +1016,7 @@ export class Pipeline {
     m.frame.addEventListener("error", () => { m.frame.hidden = true; });   // a missing file: no broken-image icon
     m.video = h("video", { controls: "", loop: "", muted: "", playsinline: "" });
     m.video.muted = true;   // the attribute alone doesn't mute a video created in script; unmute with its controls
+    this.ripple = new RippleControls(this);   // Follow: Layout · Pose · Ripple edit (web/motion/ripple.mjs)
     v.append(
       h("h3", {}, "⑤ Motion: animate it with LTX-2.5"),
       h("p", { class: "lede" }, "LTX follows your clay animation (positions, camera, timing) and paints it in the style of your chosen frame. Pick a shot below, or render them all."),
@@ -1022,6 +1024,7 @@ export class Pipeline {
       h("div", { class: "two" },
         h("div", { class: "card" }, h("div", { class: "status" }, "Starts from your frame"), m.frame),
         h("div", { class: "card" },
+          this.ripple.el,
           h("label", { class: "f" }, "Video model", m.engine),
           m.h3Box,
           h("label", { class: "f" }, h("span", { class: "row" }, "Motion freedom", m.freeOut), m.freedom),
@@ -1040,7 +1043,7 @@ export class Pipeline {
           h("div", { class: "row" }, m.allDraft, m.allFinal))),
       m.castCard = h("div", { class: "card" }),
       m.status,
-      h("div", { class: "card" }, m.vidCap = h("div", { class: "status" }, "Latest result for this shot"), m.video),
+      h("div", { class: "card" }, m.vidCap = h("div", { class: "status" }, "Latest result for this shot"), m.video, this.ripple.compare, this.ripple.editHost),
       m.nextRow = h("div", { class: "row" }, h("span", { style: "flex:1" }), this._next("⑥ Review", "review")),
     );
     return v;
@@ -1099,6 +1102,7 @@ export class Pipeline {
     if (vid && m.video.getAttribute("src") !== vid) { m.video.src = vid; m.video.play?.().catch(() => {}); }
     if (!vid) { m.video.removeAttribute("src"); m.video.load?.(); }
     m.vidCap.textContent = `Latest result for ${this.ctx.stage.activeShot().name}`;
+    if (this.ripple?.mode === "ripple") this.ripple.refresh();
     this._popSum?.();
     this._drawShotRows();
   }
@@ -1589,7 +1593,9 @@ export class Pipeline {
     const two = m.engine.closest(".two");
     const left = panel("motion_l", "⑤ Motion settings", "left");
     const sec = (title, nodes, open, skey) => { const s = left.section(title, nodes, { open, skey }); for (const n of nodes) if (n) mv.move(n, s.box); };
+    sec("Follow", [this.ripple.el], true, "follow");
     sec("Video model", [m.engine.parentElement, m.h3Box, m.freedom.parentElement, m.cfg.closest("details")], true, "model");
+    this._cvModelSec = m.engine.parentElement.parentElement?.closest?.("details, section, .ss-hudsec") || null;
     // Sound and dialogue open as pop-overs beside the panel, so the panel itself never has to scroll.
     const pop = (key, ic, title, tip, nodes) => {
       const p = hudPop({ title, icon: icon(ic, 13), onClose: () => this._popSum?.() });
@@ -1632,6 +1638,8 @@ export class Pipeline {
     mv.move(frameCard, right.body);
     mv.addClass(frameCard, "ss-clpip");
     mv.move(m.video.parentElement, media);
+    mv.move(this.ripple.compare, media);
+    mv.move(this.ripple.editHost, wrap);   // Paint Studio opens over the whole canvas, as in ④ Frame
     mv.move(m.status, wrap);
     mv.addClass(m.status, "ss-clpill");
     const film = cvEl("div", "ss-clfilm");
@@ -1643,10 +1651,54 @@ export class Pipeline {
     bar.append(cvEl("span", "ss-cldiv"));
     mv.move(m.draftBtn.parentElement, bar);
     mv.move(m.allDraft.parentElement, bar);
+    this._cvRipple = cvEl("div", "row ss-clripple");
+    this._cvRipple.append(this.ripple.rippleBtn);
+    bar.append(this._cvRipple);
     bar.append(cvEl("span", "ss-clsp"));
     mv.move(m.nextRow.lastElementChild, bar);
     mv.addClass(two, "ss-clgone");
     mv.addClass(m.nextRow, "ss-clgone");
+    this._cvBuilt.push(this._cvRipple);
+    this.onFollow(this.ripple.mode);
+  }
+
+  /** Follow mode changed (web/motion/ripple.mjs): Ripple swaps the render buttons for “Ripple it”. */
+  onFollow(mode) {
+    const m = this.m, rip = mode === "ripple";
+    for (const b of [m.draftBtn.parentElement, m.allDraft.parentElement]) if (b) b.hidden = rip;
+    if (this._cvRipple) this._cvRipple.hidden = !rip;
+    for (const x of [m.engine.parentElement, m.freedom.parentElement]) if (x) x.hidden = rip;
+    // Ripple keeps the clip's own sound: the sound / dialogue pop-overs are for LTX renders.
+    for (const pp of this._pops || []) if (pp.btn) { pp.btn.hidden = rip; pp.btn.style.display = rip ? "none" : ""; if (rip) pp.close?.(); }
+    if (rip) m.h3Box.hidden = true;
+    if (!rip) this._showEngine?.();
+  }
+
+  /** Ripple: the canvas plays the clip being edited until a Ripple take of it exists (the compare wipe shows both). */
+  onRippleSource(url, hasTake) {
+    const v = this.m.video;
+    if (hasTake || !url || this.ripple?.editing) return;
+    if (v.getAttribute("src") !== url) { v.src = url; v.load?.(); }
+    this.m.vidCap.textContent = "The clip you are editing";
+  }
+
+  /** Paint Studio over ⑤ Motion while frame 1 of a clip is edited for Ripple. */
+  onRippleEditor(on) {
+    this.m.video.hidden = !!on;
+    if (on) this.ripple.compare.hidden = true;
+    this.m.status.textContent = on ? "Paint Studio: change frame 1, then “Save to reference”. Ripple carries it through the clip." : "";
+  }
+
+  /** A Ripple (or Pose) take landed: show it here and on the Ladder; the Takes bin reads it from chosen[sid].takes. */
+  onRippleTake(sid, take) {
+    if (sid === this.ctx.stage.activeShot().id) {
+      const v = this.m.video;
+      v.hidden = false;
+      v.src = take.url;
+      v.play?.().catch(() => {});
+      try { this.ctx.ladder.setSource(take.kind === "final" ? 4 : 3, "video", take.url); } catch { /* ladder not ready */ }
+    }
+    this._drawShotRows();
   }
 
   _cvDeliver() {

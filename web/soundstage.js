@@ -1373,6 +1373,7 @@ function createStageWidget(node, inputName) {
     const anyone = sel || people()[0];
     const choice = await chooseVideoUse(f, { person: anyone?.name || null, selected: !!sel });
     if (choice === "stage") rebuildFromVideo(f);
+    else if (choice === "ripple") { try { pipeline.go("motion"); await pipeline.ripple.importClip(f); } catch (e) { status.textContent = `Couldn't bring in ${f.name}: ${e.message}`; } }
     else if (choice === "capture") {
       if (!pickPerson()) return;
       inspect("obj");
@@ -2720,7 +2721,7 @@ function createStageWidget(node, inputName) {
     }
     const back = () => { if (!host) { canvasBack.hidden = false; } onExit?.(); };
     try {
-      await canvasPanel.editImage(it.url, { label: it.name, onSave: (info) => {
+      await canvasPanel.editImage(it.url, { label: it.name, subfolder: it.subfolder, onSave: (info) => {
         const r = { ref: info.name, url: info.url };
         if (onSaved) onSaved(r); else setRefFor(it, r);
       }, onExit: back });
