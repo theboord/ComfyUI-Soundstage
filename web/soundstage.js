@@ -26,6 +26,7 @@ import { AdvisorPanel } from "./advisor/advisor.mjs";
 import * as maker from "./assets3d/maker.mjs";
 import { applyTheme, spotlight } from "./ui/theme.mjs";
 import { icon } from "./ui/icons.mjs";
+import { applyCanvasCss, layoutPref, setLayoutPref, rememberFlag, Mover } from "./ui/canvasui.mjs";
 import * as THREE from "./vendor/three.module.min.mjs";
 import { PosePanel } from "./stage/posepanel.mjs";
 import { listenVcam, LiveVcam, listTakes, fetchTake, takeToCamera, anchorFromCamera } from "./vcam/live.mjs";
@@ -213,6 +214,7 @@ async function passOnServer(name) {
 function createStageWidget(node, inputName) {
   injectCss();
   applyTheme();
+  applyCanvasCss();
   const el = document.createElement("div");
   el.className = "ss-stage";
   // Right-click inside Soundstage never opens ComfyUI's canvas menu (hard to dismiss over the App); our own
@@ -257,7 +259,18 @@ function createStageWidget(node, inputName) {
   const redoBtn = mkTiny("↷", "Redo (Shift+Cmd/Ctrl+Z)", () => stage.redo());
   undoBtn.style.marginLeft = "auto";
   expand.style.marginLeft = "6px";
-  tabs.append(undoBtn, redoBtn, expand);
+  // Canvas layout (default) or the classic long panels: a safety net, remembered per browser.
+  const layoutBtn = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn ss-layoutbtn" });
+  layoutBtn.dataset.ssIcon = "grid-3x3";
+  layoutBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  let applyLayout = () => {};
+  layoutBtn.addEventListener("click", () => {
+    const next = el.classList.contains("ss-cl") ? "classic" : "canvas";
+    setLayoutPref(next);
+    applyLayout(next);
+  });
+  layoutBtn.style.marginLeft = "6px";
+  tabs.append(undoBtn, redoBtn, expand, layoutBtn);
 
   let sceneJSON = JSON.parse(JSON.stringify(DEFAULT_SCENE));
   const stage = new Stage(view, (s) => {
@@ -2697,6 +2710,7 @@ function createStageWidget(node, inputName) {
     const center = mk("div", "ss-center");
     const vphead = mk("div", "ss-vphead");
     const vpCell = mk("div", "ss-vpcell");
+    const cvArea = mk("div", "ss-clarea");   // the canvas: in the canvas layout the rail and inspector float over it
     const bottom = mk("div", "ss-bottom");
     const bottomScroll = mk("div", "ss-bottomscroll");
     const insp = mk("aside", "ss-insp");
@@ -2758,7 +2772,8 @@ function createStageWidget(node, inputName) {
     hint.title = hint.textContent;
     vphead.append(importHead, camMode, hint, views);
     vpCell.append(view);
-    center.append(vphead, vpCell, ladderView, lookView);
+    cvArea.append(vpCell, ladderView, lookView);
+    center.append(vphead, cvArea);
     bottomScroll.append(tracksHost, stripHost, cutBar);
     bottom.append(time, bottomScroll);
     rail.append(dock);
@@ -2811,8 +2826,13 @@ function createStageWidget(node, inputName) {
     // element is exactly the picture and clicks land where they look. stage.resize() follows via its own observer.
     const fitView = () => {
       if (view.hidden || !vpCell.isConnected) return;
-      const cw = vpCell.clientWidth, ch = vpCell.clientHeight;
-      if (!cw) return;
+      // The canvas layout pads the cell where its panels float, so the picture sits in the free space between them.
+      const cs = getComputedStyle(vpCell);
+      const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+      let cw = vpCell.clientWidth - padX;
+      const ch = vpCell.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+      if (cw < 320) cw = vpCell.clientWidth;   // too tight beside the panels: let them float over the picture
+      if (!vpCell.clientWidth) return;
       const ar = (stage.fw || 16) / (stage.fh || 9);
       let w = cw;
       if (el.dataset.ws === "wide" && ch > 60) w = Math.min(cw, Math.floor(ch * ar));
@@ -2842,9 +2862,138 @@ function createStageWidget(node, inputName) {
       // The shot strip also docks under the Advisor and the Canvas (their screens hide the workspace).
       if (k === "advisor" || k === "canvas") { if (stripHost.parentElement !== el) el.insertBefore(stripHost, status); }
       else if (stripHost.parentElement !== bottomScroll) tracksHost.after(stripHost);
+      try { cvSync(k); } catch { /* canvas layout not built yet */ }
       requestAnimationFrame(fitView);
     };
+
+    // ---------------------------------------------------------------- Canvas layout (default)
+    // The canvas is the whole workspace: the tool rail and the inspector float over it as translucent, collapsible
+    // panels (the picture fits the free space between them), the step screens put their result on the canvas and
+    // their settings in docked panels (pipeline.canvasLayout). Tab or H hides every panel. "Classic layout" puts
+    // every element back where it was.
+    const mv = new Mover();
+    let cvOn = false, built = [];
+    const railMini = rememberFlag("ss_cv_railmini", false);
+    const inspFlag = (k) => rememberFlag(`ss_cv_insp_${k}`, k !== "stage");
+    const stopEv = (x) => { for (const t of ["pointerdown", "wheel"]) x.addEventListener(t, (e) => e.stopPropagation(), { passive: true }); return x; };
+    const btn = (cls, title, ...kids) => {
+      const b = Object.assign(document.createElement("button"), { type: "button", className: cls, title });
+      b.append(...kids);
+      b.addEventListener("pointerdown", (e) => e.stopPropagation());
+      return b;
+    };
+    // Inspector header: its name and a collapse chevron (collapsed, the section tabs stay as an icon strip).
+    const inspHead = stopEv(mk("header", "ss-hudp-head"));
+    const inspTitle = mk("span", "ss-hudp-title");
+    inspTitle.append(icon("sliders-horizontal", 13), Object.assign(document.createElement("span"), { textContent: "Properties" }));
+    const inspTog = btn("ss-hudp-tog", "");
+    inspHead.append(inspTitle, inspTog);
+    const setInsp = (c, user = false) => {
+      insp.dataset.collapsed = String(c);
+      inspTog.textContent = c ? "+" : "–";
+      inspTog.title = c ? "Show the properties" : "Collapse the properties (Tab or H hides every panel)";
+      inspTog.setAttribute("aria-expanded", String(!c));
+      if (user) inspFlag(curView).set(c);
+      if (cvOn) cvArea.dataset.r = c ? "closed" : "open";
+    };
+    inspTog.addEventListener("click", () => setInsp(insp.dataset.collapsed !== "true", true));
+    inspTitle.addEventListener("click", () => { if (insp.dataset.collapsed === "true") setInsp(false, true); });
+    inspTabs.addEventListener("click", () => { if (cvOn && insp.dataset.collapsed === "true") setInsp(false, true); });
+    // Tool rail: icons + labels, or icons only.
+    const railBox = mk("div", "ss-cl-railbox");
+    const railTog = btn("ss-cl-railtog", "Icons only / icons and labels");
+    railTog.addEventListener("click", () => { railMini.set(!railMini.get()); cvSync(curView); });
+    // Look: the style presets as a palette that pops over the canvas (the full Look tab is one click further).
+    const lookBtn = btn("ss-cl-lookbtn", "Look: style presets (film stock, lens, palette, grade)", icon("palette", 14), "Look");
+    lookBtn.dataset.ssIcon = "palette";
+    const lookPop = stopEv(mk("section", "ss-hudp ss-clpop"));
+    lookPop.hidden = true;
+    const lookHead = mk("header", "ss-hudp-head");
+    const lookTitle = mk("span", "ss-hudp-title");
+    lookTitle.append(icon("palette", 13), Object.assign(document.createElement("span"), { textContent: "Look · one click sets stock, lens, palette, grade" }));
+    const lookFull = btn("", "Open the full Look tab: camera body, lens, palette, genre and the compiled prompt", "All Look settings →");
+    lookFull.addEventListener("click", () => { lookPop.hidden = true; showView("look"); });
+    const lookClose = btn("ss-hudp-tog", "Close", "×");
+    lookClose.addEventListener("click", () => { lookPop.hidden = true; lookBtn.setAttribute("aria-pressed", "false"); });
+    lookHead.append(lookTitle, lookFull, lookClose);
+    const lookBody = mk("div", "ss-hudp-body");
+    lookPop.append(lookHead, lookBody);
+    lookBtn.addEventListener("click", () => {
+      if (!lookBody.firstChild && look.makeStyles) lookBody.append(look.makeStyles());
+      lookPop.hidden = !lookPop.hidden;
+      lookBtn.setAttribute("aria-pressed", String(!lookPop.hidden));
+    });
+
+    // Icons + labels when the whole rail fits the canvas height, else icons only (labels stay in the tooltips).
+    function railFit() {
+      if (!cvOn || railBox.hidden || el.dataset.ws !== "wide") return;
+      // Labels, else one column of icons, else two columns of icons: whatever fits without scrolling.
+      const pref = railMini.get() ? "mini" : "full";
+      const fits = () => rail.scrollHeight <= rail.clientHeight + 2;
+      let mode = pref;
+      for (const m of pref === "full" ? ["full", "mini", "two"] : ["mini", "two"]) { mode = m; el.dataset.railmini = { full: "false", mini: "true", two: "two" }[m]; if (fits()) break; }
+      railTog.hidden = mode !== pref && pref === "full";
+      railTog.textContent = pref === "mini" ? "▸ labels" : "◂ icons";
+      cvArea.dataset.l = mode;
+    }
+    new ResizeObserver(() => railFit()).observe(cvArea);
+    function cvSync(k = curView) {
+      if (!cvOn) { delete cvArea.dataset.l; delete cvArea.dataset.r; return; }
+      const isStage = k === "stage";
+      railBox.hidden = !isStage;
+      cvArea.dataset.l = "none";
+      if (isStage) railFit();
+      setInsp(inspFlag(k).get());
+      if (k !== "stage") { lookPop.hidden = true; lookBtn.setAttribute("aria-pressed", "false"); }
+    }
+
+    applyLayout = (mode) => {
+      cvOn = mode !== "classic";
+      mv.restore();
+      for (const x of built) x.remove();
+      built = [];
+      el.classList.toggle("ss-cl", cvOn);
+      el.classList.remove("ss-cl-hide");
+      delete insp.dataset.collapsed;
+      if (cvOn) {
+        cvArea.append(railBox, lookPop);
+        built.push(railBox, lookPop, inspHead, lookBtn);
+        mv.move(rail, railBox);
+        railBox.append(railTog);
+        mv.move(insp, cvArea);
+        mv.addClass(insp, "ss-hudp");
+        insp.prepend(inspHead);
+        vphead.insertBefore(lookBtn, views);
+      }
+      try { pipeline.canvasLayout(cvOn); } catch (e) { console.warn("[Soundstage] canvas layout", e); }
+      layoutBtn.replaceChildren(icon(cvOn ? "grid-3x3" : "maximize-2", 13), cvOn ? "Classic layout" : "Canvas layout");
+      layoutBtn.title = cvOn ? "Back to the classic layout: settings in long panels beside and under the stage"
+        : "Canvas layout: the canvas fills the App, every step's settings float over it (Tab or H hides them)";
+      cvSync(curView);
+      fitWs();
+      requestAnimationFrame(() => { fitView(); try { stage.resize(); } catch { /* disposed */ } if (!ladderView.hidden) ladder.draw(); });
+    };
+    // Tab or H hides every panel (not while typing, not in Paint Studio, which has its own keys).
+    const onKey = (e) => {
+      if (!cvOn || !el.isConnected || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      const isH = e.key === "h" || e.key === "H", isTab = e.key === "Tab" && !e.shiftKey;
+      if (!isH && !isTab) return;
+      const t = e.target, a = document.activeElement;
+      if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || "") || t.isContentEditable)) return;
+      if (!el.getClientRects().length || curView === "canvas" || curView === "cut" || el.querySelector(".ss-frameview.ss-painting:not([hidden])")) return;
+      if (!(el.contains(a) || el.matches(":hover") || el.classList.contains("ss-full"))) return;
+      // Tab still walks between controls once you are in them (keyboard users); from the canvas it hides the panels.
+      if (isTab && a && a !== document.body && el.contains(a) && a.matches("button, a[href], [tabindex]:not(canvas)")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      el.classList.toggle("ss-cl-hide");
+      requestAnimationFrame(fitView);
+    };
+    window.addEventListener("keydown", onKey, true);
+    const removed0 = node.onRemoved;
+    node.onRemoved = function (...a) { window.removeEventListener("keydown", onKey, true); return removed0?.apply(this, a); };
     syncWorkspace(curView);
+    applyLayout(layoutPref());
   }
 
   buildWorkspace();

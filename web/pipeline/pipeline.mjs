@@ -4,6 +4,7 @@
 // Every view ends with one "Next →" button. Renders come back per shot and land on the Ladder (⑥ Review).
 import { icon } from "../ui/icons.mjs";
 import { setTouchupStill } from "../touchup/touchup.mjs";
+import { Mover, hudPanel, cvEl } from "../ui/canvasui.mjs";
 import { castPool, shotSelection, pickRefs, refLines, refLabel, shotKind, refViewParams, REF_LIMIT } from "../cast/shotcast.mjs";
 
 const STEPS = [
@@ -329,7 +330,7 @@ export class Pipeline {
     if (k === "frame") this._refreshFrame();
     if (k === "motion") this._refreshMotion();
     if (k === "review") this.restoreLadder();
-    if (k === "deliver") this._drawShotRows();
+    if (k === "deliver") this._refreshDeliver();
   }
 
   /** Called by showView for any tab: keeps the step bar in sync and shows/hides the pipeline views. */
@@ -382,7 +383,7 @@ export class Pipeline {
     f.desc = h("textarea", { placeholder: "What's in the frame and how it should feel: golden hour, dust, worn leather saddles…",
       on: { change: () => this._setDescription(f.desc.value) } });
     f.count = 4;
-    f.countSeg = h("span", { class: "seg row" }, ...[1, 2, 4].map((n) => h("button", { type: "button", "aria-pressed": String(n === 4),
+    f.countSeg = h("span", { class: "seg row", title: "Variations: how many frames one Generate makes" }, ...[1, 2, 4].map((n) => h("button", { type: "button", "aria-pressed": String(n === 4),
       on: { click: (e) => { f.count = n; for (const b of f.countSeg.children) b.setAttribute("aria-pressed", String(b === e.currentTarget)); } } }, `${n}`)));
     // Quality = step count, up front (the same Steps field as in Advanced). More steps add fine detail, slower.
     const QUALITY = { klein: [["Fast", 8], ["Standard", 20], ["High", 28], ["Max", 40]], krea: [["Fast", 6], ["Standard", 8], ["High", 14], ["Max", 20]] };
@@ -466,7 +467,7 @@ export class Pipeline {
             f.paintFeats,
             h("label", { class: "row status" }, f.useTouch, "Animate my edited frame (Paint Studio's “Use as first frame” turns this on)"),
             f.editHost))),
-      h("div", { class: "row" }, h("span", { style: "flex:1" }), this._next("⑤ Animate this frame", "motion")),
+      f.nextRow = h("div", { class: "row" }, h("span", { style: "flex:1" }), this._next("⑤ Animate this frame", "motion")),
     );
     return v;
   }
@@ -735,7 +736,8 @@ export class Pipeline {
     f.paintFeats.hidden = true;
     f.grid.hidden = true;
     f.studio.classList.add("ss-painting");
-    f.paintCard.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    this.views?.frame?.classList.add("ss-painting");
+    if (!this.cv) f.paintCard.scrollIntoView?.({ block: "start", behavior: "smooth" });
     f.status.textContent = msg;
   }
 
@@ -747,6 +749,7 @@ export class Pipeline {
     f.paintFeats.hidden = false;
     f.grid.hidden = false;
     f.studio.classList.remove("ss-painting");
+    this.views?.frame?.classList.remove("ss-painting");
     this._drawCandidates();
   }
 
@@ -820,6 +823,7 @@ export class Pipeline {
       const c = this.ctx.stage.renderFrameTo("clay", 0);
       f.clay.width = c.width; f.clay.height = c.height;
       f.clay.getContext("2d").drawImage(c, 0, 0);
+      if (this._cvClay) { this._cvClay.width = c.width; this._cvClay.height = c.height; this._cvClay.getContext("2d").drawImage(c, 0, 0); }
     } catch { /* stage not ready */ }
     this._drawCandidates();
   }
@@ -891,6 +895,7 @@ export class Pipeline {
       }
     }
     if (ev.rung >= 3 && this.m && !this.views.motion.hidden) this._refreshMotion();
+    if (ev.rung >= 4 && this.views.deliver && !this.views.deliver.hidden) this._refreshDeliver();
     if (this.current === "review" && ev.shotId === this.ctx.stage.activeShot().id) this.restoreLadder();
     this.mark(this.current);
     this._drawShotRows();
@@ -1023,7 +1028,7 @@ export class Pipeline {
       m.castCard = h("div", { class: "card" }),
       m.status,
       h("div", { class: "card" }, m.vidCap = h("div", { class: "status" }, "Latest result for this shot"), m.video),
-      h("div", { class: "row" }, h("span", { style: "flex:1" }), this._next("⑥ Review on the Ladder", "review")),
+      m.nextRow = h("div", { class: "row" }, h("span", { style: "flex:1" }), this._next("⑥ Review on the Ladder", "review")),
     );
     return v;
   }
@@ -1076,6 +1081,7 @@ export class Pipeline {
     const chosen = this.chosen?.[this.ctx.stage.activeShot().id];
     m.frame.src = chosen?.url || r.look || "";
     m.frame.hidden = !m.frame.src;
+    m.video.poster = m.frame.src || "";   // before there is a video, the canvas shows the frame it will start from
     const vid = r.final_sound || r.final || r.final_audio || r.draft || r.previz || "";
     if (vid && m.video.getAttribute("src") !== vid) { m.video.src = vid; m.video.play?.().catch(() => {}); }
     if (!vid) { m.video.removeAttribute("src"); m.video.load?.(); }
@@ -1342,6 +1348,7 @@ export class Pipeline {
     if (this.current === "frame") this._refreshFrame();
     else if (this.current === "motion") this._refreshMotion();
     else if (this.current === "review") this.restoreLadder();
+    else if (this.current === "deliver") this._refreshDeliver();
     this.mark(this.current);
     this._drawShotRows();
   }
@@ -1406,12 +1413,17 @@ export class Pipeline {
     const status = h("div", { class: "status" });
     this.dStatus = status;
     this.dLinks = h("div", { class: "row" });
+    // The shot's final, shown on the canvas in the canvas layout (the classic layout keeps its cards only).
+    this.dVideo = h("video", { controls: "", loop: "", muted: "", playsinline: "" });
+    this.dVideo.muted = true;
+    this.dCanvas = h("div", { class: "card ss-dcanvas" }, this.dCap = h("div", { class: "status" }, "This shot's final"), this.dVideo);
     const mk = (label, lede, btn, fn) => h("div", { class: "card" }, h("strong", {}, label), h("p", { class: "lede" }, lede),
       h("div", { class: "row" }, h("button", { type: "button", class: "go", on: { click: fn } }, btn)));
     v.append(
       h("h3", {}, "⑦ Deliver"),
       h("p", { class: "lede" }, "Hand the shot to post, or the whole cut to an editor. The Layer Pack is for the shot picked below."),
       this._shotRow("deliver"),
+      this.dCanvas,
       mk("Layer Pack for VFX", "One layer per actor with mattes cut from the final frames (SAM 3.1 + BiRefNet edges), depth, the camera, and builders for After Effects, Nuke, Resolve, Blender and Photoshop.",
         "Make the Layer Pack", async () => { this._applyShot(this.ctx.stage.activeShot().id); await this.queueAt(5); status.textContent = `Layer Pack queued for ${this.ctx.stage.activeShot().name}: the final is reused from cache, then about 1 min for the mattes.`; }),
       h("div", { class: "row" }, h("button", { type: "button", class: "ghost", on: { click: async () => {
@@ -1429,6 +1441,165 @@ export class Pipeline {
       status,
     );
     return v;
+  }
+
+  /** ⑦ Deliver's canvas: the active shot's best video (final, else draft), its chosen frame as the poster. */
+  _refreshDeliver() {
+    this._drawShotRows();
+    const v = this.dVideo;
+    if (!v) return;
+    const sid = this.ctx.stage.activeShot().id, r = this.ctx.getRenders(sid) || {};
+    const fin = r.final_sound || r.final_audio || r.final || "";
+    const src = fin || r.draft || "";
+    v.poster = this.chosen[sid]?.url || r.look || "";
+    if (src && v.getAttribute("src") !== src) { v.src = src; v.play?.().catch(() => {}); }
+    if (!src && v.hasAttribute("src")) { v.removeAttribute("src"); v.load?.(); }
+    this.dCap.textContent = `${this.ctx.stage.activeShot().name}: ${fin ? "final" : src ? "draft only (render the final in ⑤ Motion)" : "no video yet"}`;
+    if (this._cvDPill) this._cvDPill.textContent = fin ? "" : src ? `${this.ctx.stage.activeShot().name}: draft only, render the final in ⑤ Motion` : `${this.ctx.stage.activeShot().name}: no video yet, render it in ⑤ Motion`;
+  }
+
+  // ------------------------------------------------------------------ Canvas layout
+  /**
+   * Canvas layout (ui/canvasui.mjs): each step's result fills the canvas and its settings float on top of it in
+   * collapsible panels, with the main actions in a HUD bar under it. Off = the classic long panels. The same
+   * elements are moved (never rebuilt), and moved back on the way out.
+   */
+  canvasLayout(on) {
+    this._mv ||= new Mover();
+    this._mv.restore();
+    for (const x of this._cvBuilt || []) x.remove();
+    this._cvBuilt = [];
+    this._cvClay = null;
+    this._cvDPill = null;
+    this.cv = !!on;
+    if (!on) return;
+    try { this._cvFrame(); } catch (e) { console.warn("[Soundstage] canvas layout: Frame", e); }
+    try { this._cvMotion(); } catch (e) { console.warn("[Soundstage] canvas layout: Motion", e); }
+    try { this._cvDeliver(); } catch (e) { console.warn("[Soundstage] canvas layout: Deliver", e); }
+    if (this.current === "frame") this._refreshFrame();
+    if (this.current === "motion") this._refreshMotion();
+    if (this.current === "deliver") this._refreshDeliver();
+  }
+
+  /** The canvas wrapper of a step view: media in the middle, panels docked on its edges, the result's status on top. */
+  _cvShell(v, { lw = 320, rw = 250 } = {}) {
+    const wrap = cvEl("div", "ss-clwrap"), media = cvEl("div", "ss-clmedia"), bottom = cvEl("div", "ss-clbottom");
+    wrap.style.setProperty("--cv-lw", `${lw}px`);
+    wrap.style.setProperty("--cv-rw", `${rw}px`);
+    wrap.append(media);
+    const lede = v.querySelector(":scope > .lede")?.textContent || "";
+    v.append(wrap, bottom);
+    this._cvBuilt.push(wrap, bottom);
+    const panel = (key, title, side, opts = {}) => {
+      const p = hudPanel({ key, title, side, tip: lede, ...opts,
+        onToggle: (c) => { wrap.dataset[side === "left" ? "lopen" : "ropen"] = String(!c); } });
+      wrap.append(p.el);
+      wrap.dataset[side === "left" ? "lopen" : "ropen"] = String(!p.collapsed());
+      return p;
+    };
+    return { wrap, media, bottom, panel };
+  }
+
+  /** The shot picker as a filmstrip, with its scene switcher. */
+  _cvShots(row, label = "Shots") {
+    const mv = this._mv, grp = cvEl("div", "ss-clgrp ss-clshots"), lab = cvEl("div", "ss-cllab", label);
+    grp.append(lab);
+    const head = row?.previousElementSibling;
+    if (head?.classList.contains("ss-scenehead")) mv.move(head, lab);
+    mv.move(row, grp);
+    return grp;
+  }
+
+  _cvFrame() {
+    const f = this.f, v = this.views.frame, mv = this._mv;
+    const { wrap, media, bottom, panel } = this._cvShell(v);
+    const left = panel("frame_l", "④ Frame settings", "left");
+    const sec = (title, nodes, open, skey) => { const s = left.section(title, nodes, { open, skey }); for (const n of nodes) mv.move(n, s.box); };
+    sec("Prompt", [f.desc.parentElement, f.follow.parentElement], true, "prompt");
+    sec("Cast in this shot", [f.refsCard], false, "cast");
+    sec("LoRA", [f.lora.parentElement, f.loraStrength.parentElement], false, "lora");
+    for (const d of f.studio.querySelectorAll(":scope > .ss-studio-side > details")) mv.move(d, left.body);
+    const right = panel("frame_r", "Paint Studio · clay", "right");
+    mv.move(f.paintCard, right.body);
+    const clayCard = f.clay.parentElement;
+    mv.move(clayCard, right.body);
+    mv.addClass(clayCard, "ss-clpip");
+    mv.move(f.editHost, wrap);   // Paint Studio opens over the whole canvas
+    // The canvas: the chosen frame, or the clay before there is one.
+    mv.move(f.hero, media);
+    this._cvClay = cvEl("canvas", "ss-clclay");
+    media.append(this._cvClay);
+    mv.move(f.status, wrap);
+    mv.addClass(f.status, "ss-clpill");
+    // Bottom dock: shots and candidates as filmstrips, then model · variations · quality · Generate · Next.
+    const film = cvEl("div", "ss-clfilm");
+    const cands = cvEl("div", "ss-clgrp ss-clcands", cvEl("div", "ss-cllab", "Frames for this shot · click one to use it"));
+    film.append(this._cvShots(this.shotRows.find((x) => x.where === "frame")?.row), cands);
+    mv.move(f.grid, cands);
+    const bar = cvEl("div", "ss-clbar");
+    bottom.append(film, bar);
+    mv.move(f.model.parentElement, bar);
+    mv.addClass(f.model.parentElement, "ss-cltight");
+    bar.append(cvEl("span", "ss-cldiv"));
+    mv.move(f.countSeg.parentElement, bar);
+    mv.move(f.qualSeg.parentElement, bar);
+    mv.addClass(f.qualSeg.parentElement, "ss-cltight");
+    bar.append(cvEl("span", "ss-cldiv"));
+    mv.move(f.goBtn.parentElement, bar);
+    mv.move(f.closeEdit, bar);
+    bar.append(cvEl("span", "ss-clsp"));
+    mv.move(f.nextRow.lastElementChild, bar);
+    mv.addClass(f.studio, "ss-clgone");
+    mv.addClass(f.nextRow, "ss-clgone");
+  }
+
+  _cvMotion() {
+    const m = this.m, v = this.views.motion, mv = this._mv;
+    const { wrap, media, bottom, panel } = this._cvShell(v, { lw: 330, rw: 220 });
+    const two = m.engine.closest(".two");
+    const left = panel("motion_l", "⑤ Motion settings", "left");
+    const sec = (title, nodes, open, skey) => { const s = left.section(title, nodes, { open, skey }); for (const n of nodes) if (n) mv.move(n, s.box); };
+    sec("Video model", [m.engine.parentElement, m.h3Box, m.freedom.parentElement, m.cfg.closest("details")], true, "model");
+    sec("Sound & music", [m.sfx.parentElement, m.music, m.musicIdeas.previousElementSibling, m.musicIdeas], true, "sound");
+    sec("Dialogue & voice", [m.line, m.lineIdeas.previousElementSibling, m.lineIdeas, m.voiceSeg.parentElement, m.audio.parentElement], false, "voice");
+    sec("Cast in this shot", [m.castCard], false, "cast");
+    const right = panel("motion_r", "Starts from this frame", "right");
+    const frameCard = m.frame.parentElement;
+    mv.move(frameCard, right.body);
+    mv.addClass(frameCard, "ss-clpip");
+    mv.move(m.video.parentElement, media);
+    mv.move(m.status, wrap);
+    mv.addClass(m.status, "ss-clpill");
+    const film = cvEl("div", "ss-clfilm");
+    film.append(this._cvShots(this.shotRows.find((x) => x.where === "motion")?.row));
+    const bar = cvEl("div", "ss-clbar");
+    bottom.append(film, bar);
+    mv.move(m.qSeg.parentElement, bar);
+    mv.addClass(m.qSeg.parentElement, "ss-cltight");
+    bar.append(cvEl("span", "ss-cldiv"));
+    mv.move(m.draftBtn.parentElement, bar);
+    mv.move(m.allDraft.parentElement, bar);
+    bar.append(cvEl("span", "ss-clsp"));
+    mv.move(m.nextRow.lastElementChild, bar);
+    mv.addClass(two, "ss-clgone");
+    mv.addClass(m.nextRow, "ss-clgone");
+  }
+
+  _cvDeliver() {
+    const v = this.views.deliver, mv = this._mv;
+    const shotRow = this.shotRows.find((x) => x.where === "deliver")?.row;
+    const keep = new Set([shotRow, shotRow?.previousElementSibling, this.dCanvas]);
+    const rest = [...v.children].filter((c) => !keep.has(c) && !c.matches("h3, .lede"));
+    const { wrap, media, bottom, panel } = this._cvShell(v, { rw: 360 });
+    const right = panel("deliver_r", "⑦ Deliver", "right");
+    right.el.classList.add("ss-tall");
+    for (const c of rest) mv.move(c, right.body);
+    mv.move(this.dCanvas, media);
+    this._cvDPill = cvEl("div", "status ss-clpill");
+    wrap.append(this._cvDPill);
+    const film = cvEl("div", "ss-clfilm");
+    film.append(this._cvShots(shotRow));
+    bottom.append(film);
   }
 
   /** The Layer Pack download links, mirrored into Deliver. */
