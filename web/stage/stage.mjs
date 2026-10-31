@@ -19,6 +19,7 @@ import { PLYLoader } from "../vendor/addons/PLYLoader.mjs";
 import { STLLoader } from "../vendor/addons/STLLoader.mjs";
 import * as SkeletonUtils from "../vendor/addons/SkeletonUtils.mjs";
 import { TransformControls } from "../vendor/addons/TransformControls.mjs";
+import { simulate, bakeTrack, physicsOf, samplePos, sampleQuat, checkTracks } from "./physics.mjs";
 
 /**
  * Video → Stage: the set mesh is the first frame's depth, so the person in the shot is frozen into it. The clay actor
@@ -149,6 +150,9 @@ const RIDEABLE = new Set(["horse", "bicycle", "motorcycle"]);
 const SITTABLE = new Set(["chair", "bench", "sofa", "armchair", "couch", "stool"]);
 const NEVER_CARRIED = new Set(["horse", "cow", "car", "police_car", "sports_car", "hatchback", "truck", "bus", "bicycle", "motorcycle", "tree", "house", "building", "wall",
   "fridge", "wardrobe", "kitchen_counter", "bath", "bookshelf", "bed", "single_bed", "sofa", "door", "lamp_post", "post"]);
+// Physics: kinds that never collide (foliage, rugs, fire, lights) and cars that collide as a body plus a cabin.
+const NO_COLLIDE = new Set(["tree", "bush", "rug", "fire", "flashlight", "bird", "ufo", "houseplant", "lamp"]);
+const CAR_BODIES = new Set(["car", "police_car", "sports_car", "hatchback"]);
 const TURN_RATE = { horse: 150, cow: 120, dog: 400, cat: 500, car: 90, police_car: 90, sports_car: 110, hatchback: 90, truck: 60, bus: 45, bicycle: 200, motorcycle: 160 };
 
 export const DEFAULT_SCENE = {
@@ -306,6 +310,7 @@ export class Stage {
     const env = this.state.environment || { set: "plaza", weather: "none", density: 0.5 };
     const built = buildSet(env.set || "plaza", (geom) => this._mesh(geom), { water_level: env.water_level });
     if (built.group) this.root.add(built.group);
+    this._setGroup = built.group;
     this.water = built.water ? buildWater(built.water) : null;
     if (this.water) this.root.add(this.water);
     this.weather = buildWeather(env.weather || "none", env.density ?? 0.5);
@@ -333,6 +338,7 @@ export class Stage {
         const sideR = sideL.clone();
         sideR.position.x = x + w / 2;
         g.add(wallL, wallR, lintel, back, roof, sideL, sideR);
+        g.userData.setPiece = true;
         this.root.add(g);
       } else if (p.kind === "post") {
         const m = this._mesh(new THREE.CylinderGeometry(p.size[0], p.size[0], p.size[1], 12));
@@ -341,6 +347,7 @@ export class Stage {
       } else {
         const m = this._mesh(new THREE.BoxGeometry(...p.size));
         m.position.set(x, p.size[1] / 2, z);
+        m.userData.setPiece = true;
         this.root.add(m);
       }
     }
@@ -367,6 +374,169 @@ export class Stage {
     this.selRing.rotation.x = -Math.PI / 2;
     this.selRing.visible = false;
     this.root.add(this.selRing);
+  }
+
+  // ---------- physics: simulate, then bake into ordinary keys ----------
+  /** Can this object fall and tumble? Props and set dressing yes; people, animals, vehicles, riders and sets no. */
+  _physCanMove(a) {
+    if (!a || a.mount_id || a.carry_id || a.set_xform || a.kind === "card" || PERSON_KINDS.has(a.kind)) return false;
+    const rig = a.kind === "custom" ? a.recipe?.rig || "static" : LIBRARY[a.kind]?.rig || "static";
+    return rig === "static" && !LIBRARY[a.kind]?.flies && !NO_COLLIDE.has(a.kind) && (LIBRARY[a.kind]?.height || 0) <= 4;
+  }
+
+  /** Physics settings of an object (defaults filled in), plus whether it is baked. */
+  physicsInfo(id = this.selected) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a) return null;
+    const p = physicsOf(a);
+    if (!a.physics?.mode && (NO_COLLIDE.has(a.kind) || a.kind === "card" || a.mount_id || a.carry_id)) p.mode = "off";   // never collides
+    return { id: a.id, name: a.name, kind: a.kind, ...p, baked: !!a.physics?.baked, canMove: this._physCanMove(a),
+      kindCount: this.state.actors.filter((x) => x.kind === a.kind && this._physCanMove(x)).length,
+      dynamicCount: this.state.actors.filter((x) => x.physics?.mode === "dynamic" && this._physCanMove(x)).length };
+  }
+
+  /** Change physics settings on objects (one id, or every object of `kind`). Returns how many changed. */
+  setPhysics(ids, patch) {
+    const list = this.state.actors.filter((a) => (Array.isArray(ids) ? ids.includes(a.id) : a.id === ids));
+    let n = 0;
+    for (const a of list) {
+      const next = { ...(a.physics || {}), ...patch };
+      if (!next.mode) next.mode = this.physicsInfo(a.id).mode;
+      if (next.mode === "dynamic" && !this._physCanMove(a)) next.mode = "static";
+      a.physics = next;
+      n++;
+    }
+    if (n) { this.setFrame(this.frame); this.onChange(this.toJSON()); }
+    return n;
+  }
+
+  /** Every movable object of a kind (Physics panel: "all 6 crates"). */
+  physicsKindIds(kind) {
+    return this.state.actors.filter((a) => a.kind === kind && this._physCanMove(a)).map((a) => a.id);
+  }
+
+  /** An object's own local box: [half extents, centre relative to its origin], in its own (scaled) frame. */
+  _localBox(g) {
+    const p = g.position.clone(), q = g.quaternion.clone();
+    g.position.set(0, 0, 0);
+    g.quaternion.identity();
+    g.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    g.traverseVisible((o) => {   // only what you see (a car's built stand-in hides under its real model)
+      if (!o.isMesh || !o.geometry?.attributes?.position || o.userData.noCollide || o.material?.transparent) return;
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      box.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld));
+    });
+    g.position.copy(p); g.quaternion.copy(q);
+    g.updateMatrixWorld(true);
+    if (box.isEmpty()) return null;
+    const size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+    return { half: [size.x / 2, size.y / 2, size.z / 2], center: [c.x, c.y, c.z] };
+  }
+
+  /** The set's boxes (street blocks, kerbs, plaza building and planters, interior walls) as fixed colliders. */
+  _setColliders() {
+    const out = [];
+    const groups = [this._setGroup, this.interiorGroup, ...this.root.children.filter((o) => o.userData.setPiece)].filter(Boolean);
+    const pos = new THREE.Vector3(), quat = new THREE.Quaternion(), sc = new THREE.Vector3();
+    for (const grp of groups) {
+      grp.updateMatrixWorld(true);
+      grp.traverse((o) => {
+        if (!o.isMesh || o.geometry?.type !== "BoxGeometry" || o.userData.ground) return;
+        const prm = o.geometry.parameters;
+        o.matrixWorld.decompose(pos, quat, sc);
+        const half = [prm.width * Math.abs(sc.x) / 2, prm.height * Math.abs(sc.y) / 2, prm.depth * Math.abs(sc.z) / 2];
+        if (Math.min(...half) <= 0) return;
+        out.push({ id: `set_${out.length}`, shape: "box", half, center: [0, 0, 0], dynamic: false,
+          poses: [{ pos: [pos.x, pos.y, pos.z], quat: [quat.x, quat.y, quat.z, quat.w] }] });
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Simulate every Dynamic object over the whole shot and bake the result into its keys (a key per frame while it
+   * moves, holds where it rests). Static objects, the set, the floor, and people and vehicles (on their keyed
+   * motion) are what it hits. A dynamic object with several keys moves on them and is let go at its last key with
+   * the speed it had (a throw). Re-simulating starts again from the keys it had before the first bake.
+   */
+  simulatePhysics(opts = {}) {
+    const t0 = performance.now();
+    const last = this._lastFrame(), fps = this.state.shot?.fps || 24;
+    const dynamic = this.state.actors.filter((a) => a.physics?.mode === "dynamic" && this._physCanMove(a));
+    if (!dynamic.length) return { ok: false, message: "Nothing is Dynamic yet: select a prop and set Physics to Dynamic." };
+    // Back to the authored keys (and the start height) before sampling.
+    for (const a of dynamic) if (a.physics.baked) { a.keys = clone(a.physics.source?.keys || this._actorKeys(a)); a.physics.baked = false; }
+    const keep = this.frame;
+    const colliders = this.state.actors.filter((a) => a.physics?.mode !== "dynamic" && a.physics?.mode !== "off" && !a.mount_id && !a.carry_id
+      && a.kind !== "card" && !NO_COLLIDE.has(a.kind) && !a.set_xform && this.actorMeshes.has(a.id));
+    const sampled = [...dynamic, ...colliders];
+    const poses = new Map(sampled.map((a) => [a.id, []]));
+    for (let f = 0; f <= last; f++) {
+      this.setFrameSilent(f);
+      for (const a of sampled) {
+        const g = this.actorMeshes.get(a.id);
+        poses.get(a.id).push({ pos: [g.position.x, g.position.y, g.position.z], quat: [g.quaternion.x, g.quaternion.y, g.quaternion.z, g.quaternion.w] });
+      }
+    }
+    this.setFrameSilent(0);
+    const specs = [];
+    for (const a of dynamic) {
+      const g = this.actorMeshes.get(a.id), box = g && this._localBox(g);
+      if (!box) continue;
+      const p = physicsOf(a), keys = this._actorKeys(a);
+      const moves = keys.length > 1 && keys.some((k) => Math.hypot(k.position[0] - keys[0].position[0], k.position[2] - keys[0].position[2]) > 0.01);
+      const sphere = a.kind === "sphere";
+      specs.push({ id: a.id, shape: sphere ? "sphere" : "box", half: box.half, center: box.center, radius: sphere ? Math.min(...box.half) : 0,
+        dynamic: true, mass: p.mass, bounce: p.bounce, friction: p.friction, poses: poses.get(a.id), release: moves ? keys[keys.length - 1].frame : 0 });
+    }
+    for (const a of colliders) {
+      const g = this.actorMeshes.get(a.id), box = g && this._localBox(g);
+      if (!box) continue;
+      const p = physicsOf(a);
+      const base = { dynamic: false, bounce: p.bounce, friction: p.friction, poses: poses.get(a.id) };
+      if (PERSON_KINDS.has(a.kind)) {   // a body, not its outstretched arms
+        specs.push({ ...base, id: a.id, shape: "box", half: [box.half[0] * 0.6, box.half[1], box.half[2] * 0.75], center: box.center });
+      } else if (CAR_BODIES.has(a.kind)) {   // a car is a low body and a cabin, so a crate goes over the bonnet, not up a wall
+        const [hx, hy, hz] = box.half, [cx, cy, cz] = box.center, y0 = cy - hy, H = 2 * hy;
+        specs.push({ ...base, id: `${a.id}#body`, shape: "box", half: [hx, H * 0.24, hz], center: [cx, y0 + H * 0.32, cz] });
+        specs.push({ ...base, id: `${a.id}#cabin`, shape: "box", half: [hx * 0.9, H * 0.22, hz * 0.5], center: [cx, y0 + H * 0.78, cz - hz * 0.08] });
+      } else specs.push({ ...base, id: a.id, shape: "box", half: box.half, center: box.center });
+    }
+    specs.push(...this._setColliders());
+    const res = simulate(specs, last + 1, { fps, substeps: opts.substeps || 20 });
+    const qa = checkTracks(specs, res, fps);
+    for (const a of dynamic) {
+      const tr = res.tracks[a.id];
+      if (!tr) continue;
+      if (!a.physics.source) a.physics.source = { keys: clone(this._actorKeys(a)) };
+      a.keys = bakeTrack(tr);
+      a.position = [...a.keys[0].position];
+      a.physics.baked = true;
+    }
+    this.setFrame(keep);
+    this.onChange(this.toJSON());
+    const moving = dynamic.filter((a) => a.keys.length > 2).length;
+    const restless = dynamic.filter((a) => res.settled[a.id] == null).map((a) => a.name);
+    const ms = Math.round(performance.now() - t0);
+    return { ok: true, bodies: dynamic.length, colliders: specs.length - dynamic.length, moving, restless, ms, ...qa,
+      message: `Simulated ${dynamic.length} object${dynamic.length === 1 ? "" : "s"} over ${last + 1} frames in ${(ms / 1000).toFixed(1)} s` +
+        ` and baked ${moving} into keys${restless.length ? `; still moving at the end: ${restless.slice(0, 3).join(", ")}` : "; everything comes to rest"}.` };
+  }
+
+  /** Put objects back on the keys they had before the bake (every baked object, or the given ids). */
+  clearPhysics(ids = null) {
+    let n = 0;
+    for (const a of this.state.actors) {
+      if (!a.physics?.baked || (ids && !ids.includes(a.id))) continue;
+      a.keys = clone(a.physics.source?.keys || [{ frame: 0, position: [...this._actorKeys(a)[0].position] }]);
+      a.position = [...a.keys[0].position];
+      a.physics.baked = false;
+      delete a.physics.source;
+      n++;
+    }
+    if (n) { this.setFrame(this.frame); this.onChange(this.toJSON()); }
+    return n;
   }
 
   // ---------- time & keyframes ----------
@@ -923,6 +1093,13 @@ export class Stage {
       if (g.userData.horseRig) this._driveHorse(g, a, speed, dist);
       if (g.userData.wheelRig) for (const w of g.userData.wheelRig) w.rotation.x = dist / w.userData.radius;
       if (g.userData.beam) g.userData.beam.intensity = g.userData.beamBase * beamLevel(a.beam, this.frame);
+      // Physics: a simulated object plays its baked keys (position with height, full rotation); before a bake, a
+      // dynamic or static object stands at its start height.
+      if (a.physics?.baked) {
+        g.position.set(...samplePos(keys, this.frame));
+        const q = sampleQuat(keys, this.frame);
+        if (q) g.quaternion.set(q[0], q[1], q[2], q[3]);
+      } else if (a.physics?.lift > 0 && (a.physics.mode === "dynamic" || a.physics.mode === "static")) g.position.y += a.physics.lift;
     }
     // Riders follow their mounts (man on a horse, driver in a car, someone on a bench).
     for (const a of this.state.actors) {
@@ -2403,7 +2580,8 @@ export class Stage {
     const g = this.tc.object;
     if (!a || !g) return;
     if (this.gizmoMode === "translate") {
-      this._editActorKey(a).position = [+g.position.x.toFixed(2), 0, +g.position.z.toFixed(2)];
+      const k = this._editActorKey(a);
+      k.position = [+g.position.x.toFixed(2), a.physics?.baked ? (k.position?.[1] ?? 0) : 0, +g.position.z.toFixed(2)];
     } else if (this.gizmoMode === "rotate") {
       a.rotation_deg = Math.round(THREE.MathUtils.radToDeg(g.rotation.y));
     } else {
