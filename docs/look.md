@@ -239,6 +239,19 @@ LTX Draft added passing cars late in the windshield shot. Two changes, tested to
   - Blurring or flattening the guide background alone removed the block, but cars still came in at frames 40-60 and 110-120.
   - Lowering the IC-LoRA guide strength was not tried: below 1.0 LTX renders the clay itself (docs/quality.md).
 
+## Clean street for ride-along shots (Milestone 7, tested, not adopted)
+
+The idea: the phantom traffic comes from the city street's separate building blocks and the gaps between them sliding past the frame edge, so build the street as one smooth facade a side (even roofline, kerbs, no lamp posts) as far as the drive goes.
+
+- **Test:** the In-the-Car windshield draft, same prompt and seeds as the Milestone 5 AFTER drafts (42 and 7), all four stage passes captured fresh with the clean street, the guide blur still on. A control on seed 42 with fresh passes of the ordinary street.
+- **Result:**
+  - Control (ordinary street): one car passes on the right around frames 32-48, then the road stays empty, the same as Milestone 5.
+  - Clean street, both seeds: frames 0-64 are empty (the frame 32-48 car is gone), but from about frame 72 to the end cars sit along both kerbs at the frame edges, as if parked or in the next lane.
+  - So it moves the problem rather than fixing it, and more frames are affected.
+- **Kept as an option only:** Set → Street → "Clean facades (experimental)" (`environment.clean_street: true`). It is off by default and never automatic.
+
+Evidence: share/Milestone7_Physics/2_clean_street.
+
 ## Known limits
 
 - The typed-look parser is phrase matching. Generic words were removed from the aliases ("red" doesn't pick the RED camera), but a description that says "detective" with no genre set will pick the detective subgenre.

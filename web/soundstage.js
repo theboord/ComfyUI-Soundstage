@@ -1665,11 +1665,11 @@ function createStageWidget(node, inputName) {
   const waterLv = slider("Water", 0, 4, 0.1, env0.water_level ?? 2.5, (v) => `${v.toFixed(1)} m`, (v) => {
     clearTimeout(waterLv._t); waterLv._t = setTimeout(() => stage.setEnvironment({ water_level: v }), 120);
   });
-  // City street: automatic clean facades when the camera rides a car on an empty road (no phantom traffic in LTX).
-  const streetOf = (e) => (e.clean_street === true ? "on" : e.clean_street === false ? "off" : "auto");
-  const streetSel = mkSelect("Street", { auto: { label: "Auto: clean when riding along" }, on: { label: "Clean facades, no gaps" },
-    off: { label: "Blocks and lamp posts" } }, streetOf(env0), (v) => stage.setEnvironment({ clean_street: v === "auto" ? undefined : v === "on" }));
-  streetSel.wrap.title = "Riding in a car, gaps between building blocks sliding past the frame edge turn into passing cars in the AI video. Clean facades are one smooth wall a side.";
+  // City street: blocks and lamp posts, or (experimental) one smooth facade a side.
+  const streetOf = (e) => (e.clean_street === true ? "on" : "off");
+  const streetSel = mkSelect("Street", { off: { label: "Blocks and lamp posts" }, on: { label: "Clean facades (experimental)" } },
+    streetOf(env0), (v) => stage.setEnvironment({ clean_street: v === "on" ? true : undefined }));
+  streetSel.wrap.title = "Clean facades: one smooth wall a side, no gaps or lamp posts. Experimental: in a ride-along LTX test it removed an early passing car but added parked cars later in the shot.";
   envRow.append(setSel.wrap, wxSel.wrap, dens.wrap, waterLv.wrap, streetSel.wrap);
   function syncEnv() {
     const e = stage.toJSON().environment || {};
