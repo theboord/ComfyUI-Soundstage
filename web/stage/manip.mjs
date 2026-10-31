@@ -54,20 +54,60 @@ export function edgeSnap(fp, others, tol = 0.08, reach = 3) {
 }
 
 /**
- * Where a dragged object should stand, from what the cursor ray hit. hit = {point, normal, id} from the world raycast
- * (or null); grab = the horizontal offset from the grabbed point to the object's origin; base = the support height
- * it stood on last frame; planeHit(y) = the cursor ray meeting the horizontal plane at height y ([x, y, z] or null).
- * Up-facing surfaces (a table top, a crate, the floor) are stood on, up to `maxClimb` m above the floor; a wall or a
- * car's side is not a surface: the object stays at its height and the physics stops it there.
- * Returns {pos: origin [x, y, z], support: id | null, surface: bool} or null (nothing under the cursor).
+ * Where a dragged object should stand. grab = the pressed point relative to the object's origin [gx, gy, gz] (world
+ * axes), so that point stays exactly under the cursor. hit = what the cursor ray meets besides the dragged object
+ * ({point, normal, id}, "__ground" = the floor) or null; planeHit(y) = the cursor ray meeting the plane at height y
+ * ([x, y, z] or null); support(x, z) = the height of a fixed surface under that spot (a table top, a ledge) or 0, or
+ * {y, id} to name it (then returned as the support).
+ * An up-facing top of something under the cursor (a crate, a table, up to `maxClimb` m) is stood on; anywhere else it
+ * slides on the floor (or on the fixed surface it is over), and walls and cars are left to the physics to stop it.
+ * Returns {pos: origin [x, y, z], support: id | null, surface: bool} or null (the cursor is above the horizon).
  */
-export function dragTarget(hit, grab, base, planeHit, maxClimb = 3) {
-  if (hit && hit.normal[1] > 0.7 && hit.point[1] <= maxClimb) {
-    return { pos: [hit.point[0] + grab[0], hit.point[1], hit.point[2] + grab[2]], support: hit.id === "__ground" ? null : hit.id, surface: true };
+export function dragTarget(hit, grab, planeHit, maxClimb = 1.8, support = () => 0) {
+  const [gx, gy, gz] = grab;
+  if (hit && hit.id !== "__ground" && hit.normal[1] > 0.7 && hit.point[1] <= maxClimb) {
+    return { pos: [hit.point[0] - gx, hit.point[1], hit.point[2] - gz], support: hit.id, surface: true };
   }
-  const p = planeHit(base);
+  let base = 0;
+  let p = planeHit(base + gy);
   if (!p) return null;
-  return { pos: [p[0] + grab[0], base, p[2] + grab[2]], support: null, surface: false };
+  const s0 = support(p[0] - gx, p[2] - gz);
+  const s = typeof s0 === "number" ? { y: s0, id: null } : s0 || { y: 0, id: null };
+  if (s.y > 0.01) { base = s.y; p = planeHit(base + gy) || p; }
+  return { pos: [p[0] - gx, base, p[2] - gz], support: base > 0 ? s.id ?? null : null, surface: base > 0 };
+}
+
+/**
+ * A step up onto (or down off) something, as an eased arc from p0 to p1 at progress u (0..1): going up it rises first
+ * and then moves across (a climb, a box set up onto a table: no sliding up the edge); going down it moves across first
+ * and then drops, gathering speed like a hop down. Returns [x, y, z]; u = 1 is exactly p1.
+ */
+export function stepArc(p0, p1, u) {
+  u = clamp(u, 0, 1);
+  const s = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+  const up = p1[1] >= p0[1];
+  const fy = up ? s(u / 0.55) : clamp((u - 0.3) / 0.7, 0, 1) ** 2;
+  const fh = up ? s((u - 0.4) / 0.6) : s(u / 0.6);
+  return [p0[0] + (p1[0] - p0[0]) * fh, p0[1] + (p1[1] - p0[1]) * fy, p0[2] + (p1[2] - p0[2]) * fh];
+}
+
+/** How long a step / climb takes (s) for a height change dh (m): a person climbs a crate in ~0.7 s; a prop is quicker. */
+export const stepDuration = (dh, person = false) => (person ? clamp(0.3 + 0.5 * Math.abs(dh), 0.3, 1.0) : clamp(0.16 + 0.3 * Math.abs(dh), 0.16, 0.5));
+
+/** Mass of a prop scaled with its size: `mass` is for the library size; a half-size crate weighs an eighth. */
+export const massForSize = (mass, k) => clamp(mass * Math.pow(clamp(k, 0.05, 20), 3), 0.3, 50000);
+
+/**
+ * Two-bone leg IK in the leg's own plane: the foot target relative to the hip (dy up, dz forward, metres) and the thigh
+ * and shin lengths. Returns {hip, knee} in radians: hip = forward flexion of the thigh from hanging straight down,
+ * knee = flexion (the shin folds back). Out of reach, the leg points straight at the target.
+ */
+export function legIK(dy, dz, L1, L2) {
+  const d = clamp(Math.hypot(dy, dz), Math.abs(L1 - L2) + 1e-3, L1 + L2 - 1e-4);
+  const knee = Math.PI - Math.acos(clamp((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2), -1, 1));
+  const phi = Math.atan2(dz, -dy);
+  const alpha = Math.acos(clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1));
+  return { hip: phi + alpha, knee };
 }
 
 /** A person meeting something under their feet: walk on (a kerb, a step), climb (a crate, a table), or not at all. */
