@@ -76,6 +76,18 @@ fn radius(i: u32) -> f32 {
   return bodies[i].moment.w;
 }
 
+/**
+ * [Soundstage patch] Speculative reach of body i (m): how far it sweeps over this step (a car, a
+ * person, a hand: a moving fixed body; or a falling, flying crate). Contacts with it are made this
+ * far ahead, so it can't step into what it hits between two collision passes (12 m/s is 20 cm a
+ * step at 60 Hz: the crate used to be found 20 cm deep, and the alpha blend kept 90% of that in
+ * for many steps). A body at rest reaches ~0: resting stacks are unchanged.
+ */
+const SPEC_MAX = 0.3;
+fn specReach(i: u32) -> f32 {
+  return min(SPEC_MAX, (length(bodies[i].vel.xyz) + length(bodies[i].angVel.xyz) * radius(i)) * params.dt);
+}
+
 fn isLarge(i: u32) -> bool {
   return radius(i) > params.maxSmallRadius;
 }
@@ -167,10 +179,10 @@ fn aabbHalf(s: Shape) -> vec3f {
  * The narrowphase rejects any pair a separating axis finds (it tests these axes and the edge
  * axes), so this only drops pairs it would drop; the millimetre keeps round-off out of it.
  */
-fn faceSeparated(A: Shape, B: Shape, d: vec3f) -> bool {
+fn faceSeparated(A: Shape, B: Shape, d: vec3f, spec: f32) -> bool {
   for (var k = 0u; k < 3u; k++) {
-    if (abs(dot(d, A.ax[k])) - extent(A, A.ax[k]) - extent(B, A.ax[k]) > 1e-3) { return true; }
-    if (abs(dot(d, B.ax[k])) - extent(A, B.ax[k]) - extent(B, B.ax[k]) > 1e-3) { return true; }
+    if (abs(dot(d, A.ax[k])) - extent(A, A.ax[k]) - extent(B, A.ax[k]) > 1e-3 + spec) { return true; }
+    if (abs(dot(d, B.ax[k])) - extent(A, B.ax[k]) - extent(B, B.ax[k]) > 1e-3 + spec) { return true; }
   }
   return false;
 }
@@ -197,15 +209,16 @@ fn testPair(P: Probe, j: u32) {
   let fj = filters[j];
   if ((fi.x & fj.y) == 0u || (fj.x & fi.y) == 0u) { return; }
   let d = P.pos - bodies[j].pos.xyz;
-  let r = P.radius + radius(j);
+  let spec = specReach(P.index) + specReach(j);
+  let r = P.radius + radius(j) + spec;
   if (dot(d, d) > r * r) { return; }
   // Bounding spheres of boxes overlap far more often than the boxes do (neighbouring
   // columns, rows of bricks); world AABBs are a cheap, conservative second test (with a
   // small pad for f32 round-off), and face axes a third: rings of bricks and piles sent
   // 48-72% of their pairs to the narrowphase only to be found apart.
   let B = shapeOf(j);
-  if (any(abs(d) > P.aabb + aabbHalf(B) + vec3f(1e-4))) { return; }
-  if (faceSeparated(P.shape, B, d)) { return; }
+  if (any(abs(d) > P.aabb + aabbHalf(B) + vec3f(1e-4 + spec))) { return; }
+  if (faceSeparated(P.shape, B, d, spec)) { return; }
   let a = max(P.index, j);
   let b = min(P.index, j);
   if (ignored(a, b)) { return; }
@@ -363,7 +376,7 @@ fn testAxis(A: Box, B: Box, delta: vec3f, axis: vec3f, kind: u32, ia: u32, ib: u
   var n = axis * inverseSqrt(lenSq);
   if (dot(n, delta) < 0.0) { n = -n; }
   let sep = abs(dot(delta, n)) - (projRadius(A, n) + projRadius(B, n));
-  if (sep > 0.0) { return false; }
+  if (sep > specPad) { return false; }
   if (!(*best).valid || sep > (*best).sep) { *best = Sat(kind, ia, ib, sep, n, true); }
   return true;
 }
@@ -465,7 +478,7 @@ fn faceManifold(A: Box, B: Box, refIsA: bool, refAxis: u32, nAB: vec3f) -> Found
   for (var i = 0u; i < n && found.count < MAX_CONTACTS; i++) {
     let p = poly[i];
     let dist = dot(p - rc, rn);
-    if (dist > PLANE_EPSILON) { continue; }
+    if (dist > PLANE_EPSILON + specPad) { continue; }
     let onRef = p - rn * dist;
     addFound(&found, select(p, onRef, refIsA), select(onRef, p, refIsA), prefix | i);
   }
@@ -581,6 +594,15 @@ fn sphereBox(S: Box, X: Box, qX: vec4f) -> SphereBoxHit {
 }
 
 /** Collide boxes a and b; the contact normal (B to A) is -sat.n. */
+/** [Soundstage patch] The pair's speculative reach (narrowphase sets it): separated by less, they still get contacts. */
+var<private> specPad: f32 = 0.0;
+
+/** [Soundstage patch] As the broadphase's specReach: how far a body sweeps this step. */
+const SPEC_MAX = 0.3;
+fn specReach(i: u32) -> f32 {
+  return min(SPEC_MAX, (length(bodies[i].vel.xyz) + length(bodies[i].angVel.xyz) * bodies[i].moment.w) * params.dt);
+}
+
 fn collide(A: Box, B: Box, sat: ptr<function, Sat>) -> Found {
   var none: Found;
   let delta = B.c - A.c;
@@ -684,6 +706,7 @@ fn narrowphase(@builtin(global_invocation_id) gid: vec3u) {
   if ((params.flags & FLAG_REUSE_CONTACTS) != 0u && reuseContacts(a, b)) { return; }
   let A = makeBox(a);
   let B = makeBox(b);
+  specPad = specReach(a) + specReach(b);
   var sat: Sat;
   var found: Found;
   let sphereA = bodies[a].angVel.w == SHAPE_SPHERE;

@@ -15,7 +15,12 @@
 //    on the description for the CPU solver and ignored here;
 //  - light air and rolling damping, applied as impulses from the last readback (the solver has none of its own);
 //  - sleeping: a body still for half a second is pinned (made fixed) where it lies, so a stack at rest has no jitter
-//    and no creep; anything coming near it (a moving body's or a kinematic target's box) wakes it first.
+//    and no creep; anything coming near it (a moving body's or a kinematic target's box) wakes it first;
+//  - speculative contacts (a local change to the vendored WGSL, marked "[Soundstage patch]"): contacts are made as far
+//    ahead as a body sweeps in a step, so a car at 12 m/s or a falling crate meets what it hits instead of being found
+//    up to 20 cm inside it (the alpha blend then kept 90% of that overlap in for many steps: crates rode inside the
+//    bumper, piles looked merged, and the late push-out fired crates off at up to 35 m/s);
+//  - ignorePair (a person stepping up onto a crate, a carried prop): a zero-stiffness spring, so the pair never touches.
 //
 // Pure helpers (mapping a description to solver options, poses, the backend choice, a CPU raycast over the poses) are
 // exported for tests; everything that needs WebGPU is inside createWorld and is verified in the browser.
@@ -329,6 +334,8 @@ if (typeof window !== "undefined" && globalThis.document) {
 }
 
 let nextId = 1;
+/** The key of an unordered body pair. */
+export const pairKey = (a, b) => (String(a) < String(b) ? `${a}|${b}` : `${b}|${a}`);
 const HAND_GROUP = 0x40000000;   // grab handles: collide with nothing
 /** Steps between letting go of a grab and the body getting its own mass back (see letGo). */
 export const RELEASE_STEPS = 4;
@@ -346,6 +353,7 @@ export class AvbdWorld {
     this.sleepOn = opts.sleep !== false;
     this.damping = { ...DAMPING, ...(opts.damping || {}) };
     this.entries = new Map();          // id -> entry
+    this.ignored = new Map();          // "a|b" -> the zero-stiffness springs that keep the pair out of contact
     this.lost = false;
     this.errors = [];
     this.frames = 0;
@@ -407,6 +415,7 @@ export class AvbdWorld {
     const e = this.entries.get(id);
     if (!e) return false;
     if (e.held) this.letGo(e, false);
+    for (const k of [...this.ignored.keys()]) if (k.split("|").includes(String(id))) this.ignorePair(...k.split("|"), false);
     this.wakeNear(e);
     for (const p of e.parts) p.body.remove();
     this.entries.delete(id);
@@ -719,6 +728,27 @@ export class AvbdWorld {
     for (const id of this.entries.keys()) out.set(id, this.getPose(id, opts));
     return out;
   }
+
+  /**
+   * Let two bodies pass through each other while `on` (a person stepping up onto a crate's edge, a carried prop).
+   * The solver skips contacts between jointed bodies, so the pair gets a spring of zero stiffness: no force, no contact.
+   */
+  ignorePair(a, b, on = true) {
+    const ea = this.entries.get(a), eb = this.entries.get(b);
+    const key = pairKey(a, b);
+    if (!on) {
+      for (const sp of this.ignored.get(key) || []) { try { sp.remove(); } catch {} }
+      return this.ignored.delete(key);
+    }
+    if (!ea || !eb || a === b || this.ignored.has(key)) return false;
+    const springs = [];
+    for (const pa of ea.parts) for (const pb of eb.parts) {
+      try { springs.push(this.world.addSpring(pa.body, pb.body, { stiffness: 0, rest: 0 })); } catch (err) { this.errors.push(`ignorePair: ${String(err?.message || err).slice(0, 120)}`); }
+    }
+    this.ignored.set(key, springs);
+    return springs.length > 0;
+  }
+  isIgnored(a, b) { return this.ignored.has(pairKey(a, b)); }
 
   getVelocity(id) { const e = this.entries.get(id); return e ? { v: [...e.v], w: [...e.w] } : null; }
   isAsleep(id) { const e = this.entries.get(id); return !e || e.mode !== "dynamic" || (e.asleep && !e.held); }

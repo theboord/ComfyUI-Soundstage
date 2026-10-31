@@ -175,6 +175,12 @@ struct ContactEval {
   bounds: f32,
 }
 
+/** [Soundstage patch] A body sweeping in (a moving fixed body, or one faster than 0.3 m/s): its contacts can be speculative. */
+fn sweeping(i: u32) -> bool {
+  if (bodies[i].size.w <= 0.0) { return any(bodies[i].vel.xyz != vec3f(0.0)) || any(bodies[i].angVel.xyz != vec3f(0.0)); }
+  return length(bodies[i].vel.xyz) > 0.3;
+}
+
 fn evalContact(k: Contact, basis: mat3x3f, friction: f32, A: PairBody, B: PairBody, alpha: f32) -> ContactEval {
   // Lever arms at the current rotation, as the reference does for boxes. Sphere contacts use
   // the step-start rotation instead (the Taylor point x-): a rolling sphere turns ~0.1 rad per
@@ -196,8 +202,11 @@ fn evalContact(k: Contact, basis: mat3x3f, friction: f32, A: PairBody, B: PairBo
   let t1 = basis[1];
   let t2 = basis[2];
   let keep = 1.0 - alpha;
+  // [Soundstage patch] A speculative contact's gap (c0x > 0, a body sweeping in) is kept whole:
+  // blended like a penetration, a car would push a crate from 90% of the gap away.
+  let c0n = select(k.c0x * keep, k.c0x, k.c0x > 0.0 && (sweeping(A.index) || sweeping(B.index)));
   e.C = vec3f(
-    k.c0x * keep + dot(n, A.dLin) - dot(n, B.dLin) + dot(cross(e.rAW, n), A.dAng) + dot(cross(e.rBW, -n), B.dAng),
+    c0n + dot(n, A.dLin) - dot(n, B.dLin) + dot(cross(e.rAW, n), A.dAng) + dot(cross(e.rBW, -n), B.dAng),
     k.c0y * keep + dot(t1, A.dLin) - dot(t1, B.dLin) + dot(cross(e.rAW, t1), A.dAng) + dot(cross(e.rBW, -t1), B.dAng),
     k.c0z * keep + dot(t2, A.dLin) - dot(t2, B.dLin) + dot(cross(e.rAW, t2), A.dAng) + dot(cross(e.rBW, -t2), B.dAng));
   var F = k.pen * e.C + k.lam;
