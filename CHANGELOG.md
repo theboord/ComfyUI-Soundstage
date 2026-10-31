@@ -5,6 +5,12 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**13:00 PDT · Live 3D: people walk where you drag them; faster live physics** *(Milestone 9)*
+- A dragged person turns to face where they're going and their legs and arms swing in step (no more skating). A small nudge doesn't turn them.
+- Riders' keys follow their horse; a person never shoots across the set when the cursor slips off a horse's back.
+- Picking up (C) reaches a prop a little further away.
+- The live physics is about 3x faster on crowded sets (a quick gap test before box contacts; fewer floor contacts).
+
 **12:55 PDT · QA: the Guide finds its control in the App's narrow side panel**
 - In ComfyUI's App mode the side panel scrolls. The Guide's first step now scrolls the "Let's make a shot" card into view instead of pointing below the fold.
 

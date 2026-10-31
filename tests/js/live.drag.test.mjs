@@ -110,11 +110,11 @@ test("a person dragged over a crate climbs on top; the crate holds still", () =>
 });
 
 test("a person dragged into a light box beside them pushes it (a full crate is climbed, not shoved)", () => {
-  const { st } = headless([person("p", -3, 0), crate("c", -1.1, 0.45, { scale: 0.6 })]);
+  const { st } = headless([person("p", -3, 0), crate("c", -1.1, 0.35, { scale: 0.6 })]);
   // Walk past along z = 0: the body runs into the crate's side, the cursor stays on the floor beside it.
   drag(st, "p", [[1, 0]], { frames: 50 });
   const c = keyPos(st, "c");
-  assert.ok(Math.hypot(c[0] + 1.1, c[2] - 0.45) > 0.15, `pushed (${c})`);
+  assert.ok(Math.hypot(c[0] + 1.1, c[2] - 0.35) > 0.15, `pushed (${c})`);
   assert.ok(Math.abs(keyPos(st, "p")[1]) < 0.01, `still on the floor (${keyPos(st, "p")})`);
 });
 
@@ -161,4 +161,31 @@ test("old scenes are unchanged: a prop without key_y ignores a stray key height"
   const { st } = headless([crate("a", 0, 0, { keys: [{ frame: 0, position: [0, 3, 0] }] })]);
   st.setFrame(0);
   assert.equal(st.actorMeshes.get("a").position.y, 0);
+});
+
+test("a person dragged across the set turns to face where they walk, and their legs swing (no skating)", () => {
+  const { st } = headless([person("p", -3, 0)]);
+  const a = st.state.actors.find((x) => x.id === "p");
+  a.rotation_deg = 0;   // facing +z
+  const g = st.actorMeshes.get("p");
+  st.live.begin("p", ev(), rayAt(g.position.x, g.position.z));
+  let swing = 0;
+  for (let i = 1; i <= 60; i++) {
+    st.live.move(ev({ clientX: i * 5 }), rayAt(-3 + 3 * i / 60, 0)); st.live._tick(1 / 60);
+    const hip = g.userData.limbs.find((l) => l.part === "hip");
+    swing = Math.max(swing, Math.abs(hip.pivot.rotation.x));
+  }
+  st.live.end(); st.live.finish();
+  assert.ok(Math.abs(a.rotation_deg - 90) < 15, `faces +x, the way they walked (${a.rotation_deg})`);
+  assert.ok(swing > 0.15, `legs swing (${swing})`);
+});
+
+test("a small nudge doesn't turn a person around", () => {
+  const { st } = headless([person("p", 0, 0)]);
+  const a = st.state.actors.find((x) => x.id === "p");
+  a.rotation_deg = 0;
+  st.live.begin("p", ev(), rayAt(0, 0));
+  for (let i = 1; i <= 20; i++) { st.live.move(ev({ clientX: i * 5 }), rayAt(0.2 * i / 20, 0)); st.live._tick(1 / 60); }
+  st.live.end(); st.live.finish();
+  assert.equal(a.rotation_deg, 0);
 });
