@@ -63,8 +63,10 @@ def test_blender_axes_and_fps():
     assert b.fps_settings(24) == (24, 1.0)
     w, base = b.fps_settings(23.976)
     assert w == 24 and abs(w / base - 23.976) < 1e-9
-    o = b.parse_args(["blender", "--", "--render", "x.png", "--frame", "1010", "--hide", "ground,ss_probe", "--transparent"])
-    assert o["render"] == "x.png" and o["frame"] == 1010 and o["hide"] == ["ground", "ss_probe"] and o["transparent"]
+    o = b.parse_args(["blender", "--", "--render", "x.png", "--frame", "1010", "--hide", "ground,ss_probe", "--transparent", "--empty"])
+    assert o["render"] == "x.png" and o["frame"] == 1010 and o["hide"] == ["ground", "ss_probe"] and o["transparent"] and o["empty"]
+    assert b.is_default_scene(["Light", "Cube", "Camera"], "") and not b.is_default_scene(["Light", "Cube", "Camera"], "/x.blend")
+    assert not b.is_default_scene(["Cube", "Camera", "Light", "Suzanne"], "")
 
 
 def test_unreal_rotators_round_trip():
