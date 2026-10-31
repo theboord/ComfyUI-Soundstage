@@ -136,27 +136,49 @@ const CSS = `
 .ss-tour-btns .next { background:${T.accent}; color:${T.accentInk}; border-color:${T.accent}; }
 .ss-tour-btns button:focus-visible { outline:2px solid ${T.accent}; outline-offset:2px; }
 
-/* The empty-state card on a brand-new stage. */
-.ss-stage .ss-empty { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:12; width:min(560px, calc(100% - 24px));
+/* The empty-state card on a brand-new stage (Milestone 14: the first five seconds). One yellow way in, two quiet ones,
+   type on the App's scale, a soft entrance, and the stage dimmed around it so the eye lands on the card. */
+.ss-stage .ss-empty { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:12; width:min(600px, calc(100% - 24px));
   max-height:calc(100% - 16px); overflow:auto; scrollbar-width:none;
-  background:rgba(33,25,39,.93); border:1px solid ${T.lineStrong}; border-radius:18px; padding:18px 18px 12px; box-shadow:0 20px 60px rgba(0,0,0,.5);
-  backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); display:flex; flex-direction:column; gap:12px; }
+  background:rgba(30,23,36,.94); border:1px solid ${T.lineStrong}; border-radius:18px; padding:22px 22px 14px;
+  box-shadow:0 24px 70px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.05);
+  backdrop-filter:blur(16px) saturate(1.2); -webkit-backdrop-filter:blur(16px) saturate(1.2); display:flex; flex-direction:column; gap:14px;
+  animation:ss-empty-in .32s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes ss-empty-in { from { opacity:0; transform:translate(-50%,calc(-50% + 10px)) scale(.985); } to { opacity:1; transform:translate(-50%,-50%); } }
+@media (prefers-reduced-motion: reduce) { .ss-stage .ss-empty { animation:none; } }
 .ss-stage .ss-empty[hidden], .ss-stage[data-tour]:not([data-tour=start]) .ss-empty { display:none !important; }
-.ss-stage .ss-empty h4 { margin:0; font-size:19px; font-weight:700; color:${T.text}; }
-.ss-stage .ss-empty .sub { margin:-6px 0 0; color:${T.muted}; font-size:13px; }
+.ss-stage .ss-empty .eyebrow { margin:0; font-size:11px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:${T.muted}; }
+.ss-stage .ss-empty h4 { margin:-8px 0 0; font-size:22px; line-height:1.2; font-weight:600; letter-spacing:-.005em; color:${T.text}; }
+.ss-stage .ss-empty .sub { margin:-8px 0 2px; color:${T.muted}; font-size:13px; }
 .ss-stage .ss-empty .ways { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; }
-.ss-stage .ss-empty button.way { display:flex !important; flex-direction:column !important; align-items:flex-start !important; gap:6px !important;
-  padding:14px 12px !important; border-radius:14px !important; text-align:left; min-height:118px; white-space:normal; }
-.ss-stage .ss-empty button.way .ss-icon { width:24px; height:24px; }
-.ss-stage .ss-empty button.way b { font-size:15px; line-height:1.2; }
-.ss-stage .ss-empty button.way span { font-size:12px; color:${T.muted}; font-weight:400; line-height:1.35; }
-.ss-stage .ss-empty button.way.main { background:${T.accent} !important; color:${T.accentInk} !important; border-color:${T.accent} !important; }
-.ss-stage .ss-empty button.way.main span { color:rgba(33,25,39,.75); }
-.ss-stage .ss-empty .foot { display:flex; align-items:center; gap:8px; }
+.ss-stage .ss-empty button.way { display:flex !important; flex-direction:column !important; align-items:flex-start !important; gap:8px !important;
+  padding:14px 14px 16px !important; border-radius:14px !important; text-align:left; min-height:132px; white-space:normal;
+  background:rgba(255,255,255,.035) !important; border:1px solid ${T.line} !important; }
+.ss-stage .ss-empty button.way:hover:not(:disabled) { background:rgba(255,255,255,.07) !important; border-color:${T.lineStrong} !important; }
+.ss-stage .ss-empty button.way .ss-icon { width:20px; height:20px; padding:7px; box-sizing:content-box; border-radius:10px; background:rgba(255,255,255,.06);
+  color:${T.text}; }
+.ss-stage .ss-empty button.way b { font-size:14px; line-height:1.25; font-weight:600; }
+.ss-stage .ss-empty button.way span { font-size:12px; color:${T.muted}; font-weight:400; line-height:1.4; }
+.ss-stage .ss-empty button.way.main { background:${T.accent} !important; color:${T.accentInk} !important; border-color:${T.accent} !important;
+  box-shadow:0 8px 26px rgba(242,255,89,.16); }
+.ss-stage .ss-empty button.way.main:hover:not(:disabled) { background:${T.accentHover} !important; border-color:${T.accentHover} !important; }
+.ss-stage .ss-empty button.way.main .ss-icon { background:rgba(33,25,39,.10); color:${T.accentInk}; }
+.ss-stage .ss-empty button.way.main span { color:rgba(33,25,39,.78); }
+.ss-stage .ss-empty .foot { display:flex; align-items:center; gap:8px; padding-top:10px; border-top:1px solid ${T.line}; }
 .ss-stage .ss-empty .foot button { font-size:12px !important; padding:4px 10px !important; background:transparent !important; border-color:transparent !important;
-  color:${T.muted} !important; }
-.ss-stage .ss-empty .foot button:hover { color:${T.text} !important; }
-.ss-stage[data-ws=narrow] .ss-empty { position:relative; left:auto; top:auto; transform:none; width:auto; margin:8px 0; }
+  color:${T.muted} !important; margin-left:-10px; }
+.ss-stage .ss-empty .foot button:hover:not(:disabled) { color:${T.text} !important; background:rgba(255,255,255,.06) !important; }
+.ss-stage .ss-empty .foot .keys { margin-left:auto; display:inline-flex; align-items:center; gap:6px; color:${T.faint}; font-size:12px; }
+.ss-stage .ss-empty .foot kbd { font:600 11px/1 ${FONT}; padding:3px 6px; border-radius:5px; border:1px solid ${T.lineStrong}; border-bottom-width:2px;
+  color:${T.muted}; background:rgba(255,255,255,.04); }
+/* While the card is up, the stage behind it steps back, and the header's Import video is a quiet copy of the card's third way. */
+.ss-stage .ss-vpcell:has(> .ss-empty:not([hidden])) { position:relative; }
+.ss-stage .ss-vpcell:has(> .ss-empty:not([hidden])) > .ss-stageview::after { content:""; position:absolute; inset:0; pointer-events:none; z-index:5;
+  border-radius:inherit; background:radial-gradient(120% 95% at 50% 50%, rgba(18,13,22,.30) 0%, rgba(18,13,22,.72) 100%); }
+.ss-stage:has(.ss-vpcell > .ss-empty:not([hidden])) .ss-stageview > .ss-vi-cta:not([data-big=true]) { display:none !important; }
+.ss-stage:has(.ss-vpcell > .ss-empty:not([hidden])) button.ss-vi-head { background:${T.raised} !important; color:${T.text} !important;
+  border-color:${T.lineStrong} !important; }
+.ss-stage[data-ws=narrow] .ss-empty { position:relative; left:auto; top:auto; transform:none; width:auto; margin:8px 0; animation:none; }
 @container (max-width: 520px) { .ss-stage .ss-empty .ways { grid-template-columns:1fr; } .ss-stage .ss-empty button.way { min-height:0; } }
 .ss-stage[data-ws=narrow] .ss-empty .ways { grid-template-columns:1fr; }
 .ss-stage[data-ws=narrow] .ss-empty button.way { min-height:0; }
@@ -195,6 +217,7 @@ export function emptyCard({ onDemo, onScript, onVideo, onClose }) {
   card.setAttribute("aria-label", "Start a new scene");
   for (const t of ["pointerdown", "wheel"]) card.addEventListener(t, (e) => e.stopPropagation(), { passive: true });
   card.append(
+    mk("p", "eyebrow", "New stage"),
     mk("h4", "", "Let's make a shot"),
     mk("p", "sub", "Pick a way in. Everything stays editable."),
     mk("div", "ways",
@@ -205,7 +228,7 @@ export function emptyCard({ onDemo, onScript, onVideo, onClose }) {
       way("", "file-video-camera", "Import a video", "A clip becomes a 3D set with its camera and performer.", onVideo,
         "Turns a video into 3D: its camera, the performer's motion (SAM 3D Body) and the set pieces")),
     mk("div", "foot", btn("", "Start from a blank stage", onClose, "Hide this card and block the scene yourself"),
-      mk("span", "", "")),
+      mk("span", "keys", "Shortcuts", mk("kbd", "", "?"))),
   );
   return card;
 }

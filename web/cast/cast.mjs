@@ -49,7 +49,37 @@ const CSS = `
 .ss-cast .add { display:flex; gap:6px; }
 .ss-cast .add input { font:inherit; font-size:12px; color:inherit; background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.12);
   border-radius:999px; padding:4px 10px; min-width:0; }
-.ss-cast .empty { opacity:.6; font-size:12px; padding:6px 2px; }`;
+.ss-cast .empty { opacity:.6; font-size:12px; padding:6px 2px; }
+/* Fit: tiles exactly the computed size (no stretching) and compact cards: the picture, its name, and its buttons over the
+   bottom of the picture as icon buttons (names in the tooltips). The description opens over the picture (pencil button). */
+.ss-cast[data-fit=true] { flex-direction:row; flex-wrap:wrap; align-items:flex-start; align-content:flex-start; gap:10px 24px; padding-bottom:4px; }
+.ss-cast[data-fit=true] > .head { flex:1 1 100%; }
+.ss-cast[data-fit=true] > section { flex:none; min-width:0; max-width:100%; }
+.ss-cast[data-fit=true] section > .sh .add input { width:150px; }
+.ss-cast[data-fit=true] .head .sub { max-width:110ch; }
+.ss-cast[data-fit=true] .grid { grid-template-columns:repeat(auto-fill, var(--ss-cast-tile, 150px)); gap:10px; justify-content:start; }
+.ss-cast[data-fit=true] section { gap:6px; }
+.ss-cast[data-fit=true] .card { position:relative; padding:5px; gap:4px; border-radius:12px; }
+.ss-cast[data-fit=true] .name { font-size:12px; font-weight:600; padding:0 2px; }
+.ss-cast[data-fit=true] .meta { display:none; }
+.ss-cast[data-fit=true] .pic .ph { font-size:0; gap:4px; }
+.ss-cast[data-fit=true] .pic .ph .ini { font-size:calc(var(--ss-cast-tile, 150px) * .3); }
+.ss-cast[data-fit=true] .pic .ph .ss-icon { width:18px; height:18px; opacity:.85; }
+.ss-cast[data-fit=true] .card:not(.desc) textarea { display:none; }
+.ss-cast[data-fit=true] .card.desc textarea { position:absolute; z-index:3; left:5px; top:5px; width:var(--ss-cast-tile, 150px); height:var(--ss-cast-tile, 150px);
+  min-height:0; resize:none; font-size:12px; background:rgba(20,15,25,.96); }
+.ss-cast[data-fit=true] .acts { position:absolute; z-index:4; left:5px; width:var(--ss-cast-tile, 150px); top:calc(5px + var(--ss-cast-tile, 150px) - 30px);
+  gap:3px; justify-content:center; flex-wrap:nowrap; }
+.ss-cast[data-fit=true] .acts .btn { font-size:0 !important; gap:0 !important; padding:4px 6px !important; background:rgba(20,15,25,.84) !important;
+  border-color:rgba(255,255,255,.18) !important; }
+.ss-cast[data-fit=true] .acts .btn.primary { color:#f0efed !important; font-weight:400 !important; }
+.ss-cast[data-fit=true] .acts .btn:hover:not(:disabled) { background:rgba(52,44,59,.95) !important; }
+.ss-cast[data-fit=true] .acts .btn .ss-icon { width:14px; height:14px; }
+.ss-cast[data-fit=true] .card.desc .acts .btn:not(.descbtn) { display:none; }
+.ss-cast .acts .descbtn { display:none; }
+.ss-cast[data-fit=true] .acts .descbtn { display:inline-flex; }
+.ss-cast[data-fit=true] .card.has-desc .descbtn .ss-icon { color:#f2ff59; }
+`;
 
 const h = (tag, attrs = {}, ...kids) => {
   const el = document.createElement(tag);
@@ -68,7 +98,40 @@ const PEOPLE = new Set(["man", "woman", "child"]);
 const PROP_CATS = ["props", "vehicles", "animals", "wardrobe"];
 /** Hints that mark a vehicle: the script breakdown's "vehicle" or a stage kind (car, sports_car, police_car…). */
 const VEHICLE = /^(vehicle|car|sports_car|police_car|hatchback|truck|van|bus|taxi|jeep|pickup|motorcycle|bicycle)$/;
-const SIZES = [["S", 150], ["M", 210], ["L", 300], ["XL", 420]];
+const SIZES = [["Fit", 0], ["S", 150], ["M", 210], ["L", 300], ["XL", 420]];
+
+/**
+ * "Fit" (the default, Milestone 14): the largest square thumbnail at which every card of every section fits the view
+ * without scrolling (QA round 02: ② Cast was 2,164 px of cards in a 792 px view). Sections sit side by side when they
+ * are short (three characters next to four locations), each at least secMin wide for its heading and Add box.
+ * counts: cards per section; width / height: the room; extra: a card's height minus its picture; head: the title
+ * row; sec: a section's heading row (an empty section shows one line instead of cards).
+ * Returns { tile, widths (px per section), lines (section indexes per line) }; tile is min when nothing fits.
+ */
+export function fitLayout(counts, { width, height, extra = 120, gap = 10, head = 64, sec = 34, empty = 22, secMin = 360, secGap = 24,
+  lineGap = 10, min = 56, max = 210, step = 2 } = {}) {
+  if (!(width > 0) || !(height > 0)) return { tile: 150, widths: counts.map(() => null), lines: [counts.map((_, i) => i)] };
+  let last = null;
+  for (let t = max; t >= min; t -= step) {
+    const cols = Math.max(1, Math.floor((width + gap) / (t + gap)));
+    const widths = counts.map((n) => Math.min(width, Math.max(secMin, Math.min(n, cols) * (t + gap) - gap)));
+    const hOf = (i) => { const n = counts[i], c = Math.max(1, Math.floor((widths[i] + gap) / (t + gap))), rows = Math.ceil(n / c);
+      return sec + gap + (n ? rows * (t + extra) + (rows - 1) * gap : empty); };
+    const lines = [];
+    for (let i = 0; i < counts.length; i++) {
+      const ln = lines[lines.length - 1];
+      const used = ln ? ln.reduce((a, j) => a + widths[j] + secGap, 0) : Infinity;
+      if (ln && used + widths[i] <= width) ln.push(i); else lines.push([i]);
+    }
+    const h = head + lines.reduce((a, ln) => a + Math.max(...ln.map(hOf)), 0) + (lines.length - 1) * lineGap;
+    last = { tile: t, widths, lines };
+    if (h <= height) return last;
+  }
+  return last;
+}
+
+/** The tile size alone (see fitLayout). */
+export function fitTile(counts, opts) { return fitLayout(counts, opts).tile; }
 
 /**
  * The list of things to cast, from the script (preferred) or the stage. Pure (testable):
@@ -154,7 +217,22 @@ export class CastPanel {
     this.busy = new Set();
     if (!document.getElementById("ss-cast-css")) document.head.append(h("style", { id: "ss-cast-css" }, CSS));
     this.el = h("div", { class: "ss-cast" });
-    try { this.size = localStorage.getItem("ss-cast-size") || "M"; } catch { this.size = "M"; }
+    try { this.size = localStorage.getItem("ss-cast-size") || "Fit"; } catch { this.size = "Fit"; }
+    if (!SIZES.some(([k]) => k === this.size)) this.size = "Fit";
+    // Fit follows the window: a new size re-fits (once the layout settles).
+    try {
+      let last = "";
+      this._ro = new ResizeObserver(() => {
+        if (this.size !== "Fit") return;
+        const r = container.getBoundingClientRect(), key = `${Math.round(r.width)}x${Math.round(r.height)}`;
+        if (key === last || !r.width) return;
+        last = key;
+        clearTimeout(this._roT);
+        this._roT = setTimeout(() => this._fit(), 60);
+      });
+      this._ro.observe(container);
+    } catch { /* no ResizeObserver: Fit is computed at each render */ }
+    this.container = container;
     for (const t of ["pointerdown", "wheel", "keydown"]) this.el.addEventListener(t, (e) => e.stopPropagation(), { passive: t === "wheel" });
     container.append(this.el);
   }
@@ -245,16 +323,22 @@ export class CastPanel {
     let t;
     desc.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => this._set(it.key, { description: desc.value }), 400); });
     const btn = (label, ic, fn, cls = "btn", dis = false) => {
-      const b = h("button", { type: "button", class: cls, disabled: dis || busy }, h("span"), label);
+      const b = h("button", { type: "button", class: cls, disabled: dis || busy, title: label, "aria-label": `${label}: ${it.name}` }, h("span"), label);
       b.firstChild.replaceWith(icon(ic, 13));
       b.addEventListener("click", fn);
       return b;
     };
-    return h("div", { class: `card${it.url ? " has" : ""}` }, pic,
-      h("div", { class: "name", title: it.name }, it.name),
+    desc.addEventListener("keydown", (e) => { if (e.key === "Escape") desc.closest(".card")?.classList.remove("desc"); });
+    return h("div", { class: `card${it.url ? " has" : ""}${(it.description || "").trim() ? " has-desc" : ""}` }, pic,
+      h("div", { class: "name", title: [it.name, it.scenes?.length ? it.scenes.join(" · ") : "", it.hint].filter(Boolean).join(" · ") }, it.name),
       h("div", { class: "meta" }, [it.scenes?.length ? it.scenes.join(" · ") : "", it.hint].filter(Boolean).join(" · ") || " "),
       desc,
       h("div", { class: "acts" },
+        btn("Describe", "file-text", (e) => {
+          const card = e.currentTarget.closest(".card");
+          const open = card.classList.toggle("desc");
+          if (open) setTimeout(() => desc.focus({ preventScroll: true }), 0);
+        }, "btn descbtn"),
         btn(it.url ? "Regenerate" : "Generate", "sparkles", () => this._generate(it), it.url ? "btn" : "btn primary", !this.o.generate),
         btn(it.url ? "Replace" : "Upload", "upload", () => pick.click()),
         it.url && this.o.edit ? btn("Edit", "wand-sparkles", () => this.editItem(it)) : null,
@@ -274,7 +358,8 @@ export class CastPanel {
   _sizes() {
     const box = h("div", { class: "sizes", role: "group", "aria-label": "Thumbnail size" }, h("span", { class: "lbl" }, "Size"));
     for (const [k] of SIZES) {
-      const b = h("button", { type: "button", class: "btn", "aria-pressed": String(this.size === k), title: `${k} thumbnails` }, k);
+      const b = h("button", { type: "button", class: "btn", "aria-pressed": String(this.size === k),
+        title: k === "Fit" ? "Fit every card on one screen" : `${k} thumbnails` }, k);
       b.addEventListener("click", () => { this.size = k; try { localStorage.setItem("ss-cast-size", k); } catch { /* private mode */ } this.render(); });
       box.append(b);
     }
@@ -306,11 +391,12 @@ export class CastPanel {
     const by = (k) => all.filter((x) => x.kind === k);
     const done = all.filter((x) => x.url).length;
     const src = this.o.getScript?.()?.scenes?.length ? "from your script's breakdown" : "from the stage (import a script for the full breakdown)";
-    this.el.style.setProperty("--ss-cast-tile", `${(SIZES.find(([k]) => k === this.size) || SIZES[1])[1]}px`);
+    this.el.dataset.fit = String(this.size === "Fit");
+    if (this.size !== "Fit") this.el.style.setProperty("--ss-cast-tile", `${(SIZES.find(([k]) => k === this.size) || SIZES[2])[1]}px`);
     this.el.replaceChildren(
       h("div", { class: "head" },
         h("div", {}, h("h2", {}, "Cast & Locations"),
-          h("div", { class: "sub" }, `Everyone and everything that must look the same in every shot, ${src}. Add a character sheet, a photo, or generate one; ④ Frame shows each picture to the image model, so faces, costumes, cars and places stay consistent.`)),
+          h("div", { class: "sub" }, `Everyone and everything that must look the same in every shot, ${src}. Give each one a picture: ④ Frame shows it to the image model, so faces, costumes, cars and places stay the same.`)),
         h("div", { class: "grow" }),
         this._sizes(),
         h("div", { class: "meta" }, `${done} of ${all.length} have a reference`),
@@ -327,5 +413,22 @@ export class CastPanel {
       this._section("location", "Locations", "compass", by("location")),
       this._section("wardrobe", "Wardrobe", "shirt", by("wardrobe")),
       this._section("prop", "Props, vehicles & animals", "box", by("prop")));
+    if (this.size === "Fit") this._fit();
+  }
+
+  /** Fit: measure the room and one card, then size the thumbnails so the whole page fits without scrolling. */
+  _fit() {
+    if (this.size !== "Fit") return;
+    const box = this.container || this.el.parentElement;
+    const W = this.el.clientWidth, H = (box?.clientHeight || 0) - 14;
+    const secs = [...this.el.querySelectorAll(":scope > section")];
+    if (!W || H < 200) { this.el.style.setProperty("--ss-cast-tile", "150px"); for (const sc of secs) sc.style.width = ""; return; }
+    const card = this.el.querySelector(".card"), pic = card?.querySelector(".pic");
+    const extra = card && pic ? Math.ceil(card.offsetHeight - pic.offsetHeight) : 120;
+    const head = this.el.querySelector(".head")?.offsetHeight || 64;
+    const counts = secs.map((sc) => sc.querySelectorAll(".card").length);
+    const fit = fitLayout(counts, { width: W, height: H, extra, head: head + 10 });
+    this.el.style.setProperty("--ss-cast-tile", `${fit.tile}px`);
+    secs.forEach((sc, i) => { sc.style.width = fit.widths[i] ? `${fit.widths[i]}px` : ""; });
   }
 }

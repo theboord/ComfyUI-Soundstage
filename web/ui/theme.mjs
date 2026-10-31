@@ -11,15 +11,51 @@ export const TOKENS = {
   card: "rgba(255,255,255,0.04)",
   cardHover: "rgba(255,255,255,0.07)",
   raised: "#2a2330",
+  hover: "#342c3b",
+  pressed: "#3d3445",
+  selected: "rgba(255,255,255,0.15)",
   line: "rgba(255,255,255,0.08)",
   lineStrong: "rgba(255,255,255,0.16)",
   text: "#f0efed",
-  muted: "rgba(240,239,237,0.56)",
-  faint: "rgba(240,239,237,0.36)",
+  // Milestone 14: secondary and hint text were 56 % and 36 % white (the hints failed WCAG at 3:1). Now 4.5:1 or better.
+  muted: "rgba(240,239,237,0.68)",
+  faint: "rgba(240,239,237,0.54)",
   accent: "#f2ff59",
+  accentHover: "#f6ff8a",
   accentInk: "#211927",
+  accentSoft: "rgba(242,255,89,0.10)",
+  accentLine: "rgba(242,255,89,0.42)",
+  glass: "rgba(26,20,31,0.86)",
+  glassStrong: "rgba(26,20,31,0.94)",
   danger: "#ff7a7a",
+  success: "#7ee2a8",
 };
+
+/** One type scale (px): caption · secondary · body and controls · section title · step title. Nothing smaller than xs. */
+export const TYPE = { xs: 11, sm: 12, md: 13, lg: 15, xl: 18 };
+/** One spacing scale (px), a 4-px grid. */
+export const SPACE = { 1: 4, 2: 8, 3: 12, 4: 16, 5: 24 };
+/** Radii: chips · fields · cards and panels · overlays; buttons and segmented controls stay pills (the hub-app look). */
+export const RADIUS = { sm: 6, md: 10, lg: 14, xl: 18, pill: 999 };
+
+const hex = (c) => { const m = /^#?([0-9a-f]{6})$/i.exec(c); return m ? [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16)) : null; };
+/** An rgb triple for "#rrggbb" or "rgba(r,g,b,a)" laid over a solid background (bg, "#rrggbb"). */
+export function flatten(c, bg = TOKENS.bg) {
+  const h = hex(c);
+  if (h) return h;
+  const m = /rgba?\(([^)]+)\)/.exec(c);
+  if (!m) throw new Error(`not a colour: ${c}`);
+  const [r, g, b, a = 1] = m[1].split(",").map(Number);
+  const base = flatten(bg);
+  return [r, g, b].map((v, i) => Math.round(v * a + base[i] * (1 - a)));
+}
+/** WCAG contrast ratio of a text colour on a background (both flattened onto `under`). */
+export function contrast(fg, bg = TOKENS.bg, under = TOKENS.bg) {
+  const lum = (rgb) => { const [r, g, b] = rgb.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const B = flatten(bg, under), F = flatten(fg, `#${B.map((v) => v.toString(16).padStart(2, "0")).join("")}`);
+  const [a, b] = [lum(F), lum(B)].sort((x, y) => y - x);
+  return (a + 0.05) / (b + 0.05);
+}
 
 /** The one UI typeface (canvas text too): Space Grotesk, then the platform UI font while it loads. */
 export const FONT = `"Soundstage Grotesk", "PP Formula", ui-sans-serif, system-ui, sans-serif`;
@@ -247,12 +283,148 @@ const CSS = `
 .ss-stage .ss-insp .ss-objhint { padding:2px 4px; }
 `;
 
+/**
+ * Milestone 14, the pro layer: design tokens as CSS variables, one set of hover / focus / pressed states, and accent
+ * restraint (the yellow marks the one main action of a step and where you are; a picked option is a neutral raised
+ * segment). Its <style> is kept after every other Soundstage stylesheet (the panels add theirs as they open), so the
+ * tokens win ties without raising specificity. Classic layout and the App's narrow panel get it too.
+ */
+const VARS = `--ss-fs-xs:${TYPE.xs}px; --ss-fs-sm:${TYPE.sm}px; --ss-fs-md:${TYPE.md}px; --ss-fs-lg:${TYPE.lg}px; --ss-fs-xl:${TYPE.xl}px;
+  --ss-sp-1:${SPACE[1]}px; --ss-sp-2:${SPACE[2]}px; --ss-sp-3:${SPACE[3]}px; --ss-sp-4:${SPACE[4]}px; --ss-sp-5:${SPACE[5]}px;
+  --ss-r-sm:${RADIUS.sm}px; --ss-r-md:${RADIUS.md}px; --ss-r-lg:${RADIUS.lg}px; --ss-r-xl:${RADIUS.xl}px;
+  --ss-hover:${T.hover}; --ss-pressed:${T.pressed}; --ss-selected:${T.selected}; --ss-accent-soft:${T.accentSoft}; --ss-accent-line:${T.accentLine};
+  --ss-muted:${T.muted}; --ss-faint:${T.faint}; --ss-danger:${T.danger}; --ss-success:${T.success};
+  --ss-shadow-pop:0 18px 48px rgba(0,0,0,.5); --ss-shadow-panel:0 10px 30px rgba(0,0,0,.38);`;
+
+export const PRO_CSS = `
+.ss-stage, .ss-tour, .ss-keys { ${VARS} }
+.ss-stage.ss-cl { --cv-glass:${T.glass}; --cv-glass-strong:${T.glassStrong}; --cv-edge:rgba(255,255,255,.10); }
+.ss-stage * { scrollbar-color:rgba(255,255,255,.18) transparent; }
+
+/* ---- Type: nothing under 11 px; one weight for labels (600), one for body (400/500). ---- */
+.ss-stage .ss-pipe button .n, .ss-stage .ss-clfilm .ss-clgrp > .ss-cllab, .ss-stage .ss-shotrow .shot .st,
+.ss-stage.ss-cl .ss-clfilm .cand .cap, .ss-stage.ss-cl .ss-clfilm .cand .pill, .ss-stage .ss-hudp .ss-sc-tile label,
+.ss-stage .ss-hudp .ss-sc-acts button, .ss-stage.ss-cl[data-ws=wide] .ss-shotrow .shot .st { font-size:var(--ss-fs-xs) !important; }
+.ss-stage[data-ws=wide] .ss-rail button.ss-tool { font-size:var(--ss-fs-xs) !important; line-height:1.15 !important; }
+.ss-stage :is(.ss-label, .ss-rowhead, .ss-hudp-title, .ss-hudp-sec > summary, .ss-cllab, .ss-prevhead, .ss-adv-head) { letter-spacing:.07em !important; }
+.ss-stage .ss-primary, .ss-stage button.ss-primary, .ss-stage .ss-cta { text-transform:none !important; letter-spacing:.005em !important; font-weight:600 !important; }
+.ss-stage .ss-pipeview button.go, .ss-stage button.ss-vi-head { font-weight:600 !important; letter-spacing:.005em; }
+
+/* ---- One set of states: hover, pressed, focus, disabled. ---- */
+.ss-stage button, .ss-stage .ss-btn { transition:background-color .12s, border-color .12s, color .12s, box-shadow .12s, filter .12s; }
+.ss-stage button:active:not(:disabled), .ss-stage .ss-btn:active { background:var(--ss-pressed) !important; }
+.ss-stage :is(.ss-primary, .ss-cta, .ss-pipeview button.go, button.ss-vi-head):active:not(:disabled) { background:var(--ss-accent) !important; filter:brightness(.92); }
+.ss-stage :is(.ss-primary, .ss-cta, .ss-pipeview button.go, button.ss-vi-head):hover:not(:disabled) { filter:brightness(1.06); }
+.ss-stage :is(button, .ss-btn, a, summary, input, select, textarea, [tabindex]:not(canvas)):focus-visible {
+  outline:2px solid var(--ss-accent) !important; outline-offset:2px !important; }
+.ss-stage :is(input[type=text], input[type=number], select, textarea):focus { border-color:var(--ss-accent-line) !important; }
+.ss-stage button:disabled, .ss-stage .ss-btn[aria-disabled=true] { opacity:.42 !important; cursor:default !important; filter:none !important; }
+.ss-stage input[type=checkbox] { accent-color:var(--ss-accent); }
+
+/* ---- Accent restraint: a picked option is a raised neutral segment, not a second yellow button. ---- */
+.ss-stage :is(.ss-pipeview .seg, .ss-pipeview .ss-sc-sizes, .ss-cast .sizes, .ss-lcmp) button[aria-pressed=true]:not(:disabled) {
+  background:var(--ss-selected) !important; color:var(--ss-text) !important; border-color:var(--ss-line-strong) !important; font-weight:600 !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06); }
+.ss-stage :is(.ss-pipeview .seg, .ss-lcmp) button:not([aria-pressed=true]):hover:not(:disabled) { background:rgba(255,255,255,.07) !important; }
+/* The step's way on ("Animate this frame →", "Review →") is a quiet outlined button: the step's own action is the yellow one. */
+.ss-stage .ss-pipeview button.go.next { background:transparent !important; color:var(--ss-text) !important; border:1px solid var(--ss-line-strong) !important; }
+.ss-stage .ss-pipeview button.go.next:hover:not(:disabled) { background:rgba(255,255,255,.06) !important; border-color:var(--ss-accent-line) !important; filter:none; }
+.ss-stage .ss-pipeview button.go.next:active:not(:disabled) { background:var(--ss-pressed) !important; filter:none; }
+/* Paint Studio, inside ④ Frame's panel: a strong secondary next to Generate frames. */
+.ss-stage .ss-hudp button.go.ss-paint-open { background:var(--ss-raised) !important; color:var(--ss-text) !important; border:1px solid var(--ss-line-strong) !important; }
+.ss-stage .ss-hudp button.go.ss-paint-open .ss-icon { color:var(--ss-accent); }
+.ss-stage .ss-hudp button.go.ss-paint-open:hover:not(:disabled) { background:var(--ss-hover) !important; filter:none; }
+/* ② Cast: "Generate all missing" is the step's yellow button; a card's own Generate is a neutral button with a yellow icon. */
+.ss-stage .ss-cast .btn.primary { background:rgba(255,255,255,.06) !important; color:var(--ss-text) !important; border-color:var(--ss-line-strong) !important; font-weight:500 !important; }
+.ss-stage .ss-cast .btn.primary .ss-icon { color:var(--ss-accent); }
+.ss-stage .ss-cast .btn:hover:not(:disabled) { border-color:var(--ss-accent-line) !important; }
+/* The scene badge in a scene switcher: accent text on a soft tint, not a yellow block. */
+.ss-stage .ss-scsw .k:not(.all) { background:var(--ss-accent-soft) !important; color:var(--ss-accent) !important; box-shadow:inset 0 0 0 1px var(--ss-accent-line); }
+/* The status line reads as status, not as a warning in yellow. */
+.ss-stage > .ss-status, .ss-stage .ss-status { color:var(--ss-muted) !important; }
+/* The small "drop a video" pill: glass with a hairline, the icon carries the accent. The big empty-stage one keeps its dash. */
+.ss-stage button.ss-vi-cta:not([data-big=true]) { border:1px solid var(--cv-edge, var(--ss-line)) !important; color:var(--ss-text) !important;
+  background:var(--cv-glass-strong, rgba(26,20,31,.94)) !important; font-weight:500 !important; }
+.ss-stage button.ss-vi-cta:not([data-big=true]) .ss-icon { color:var(--ss-accent); }
+.ss-stage button.ss-vi-cta:not([data-big=true]):hover:not(:disabled) { border-color:var(--ss-accent-line) !important; }
+
+/* ---- Panels: aligned property rows, clear section heads, nothing cramped. ---- */
+.ss-stage .ss-insp :is(.ss-bar, .ss-sel) > label { grid-template-columns:84px minmax(0,1fr) auto !important; color:var(--ss-muted); }
+.ss-stage .ss-insp :is(.ss-bar, .ss-sel) > label > :is(select, input, output) { color:var(--ss-text); }
+.ss-stage .ss-hudp-body > details:not(.ss-hudp-sec) { background:transparent !important; border:0 !important; border-top:1px solid var(--cv-edge) !important;
+  border-radius:0 !important; padding:4px 0 0 !important; }
+.ss-stage .ss-hudp-body > details:not(.ss-hudp-sec) > summary, .ss-stage .ss-more > summary { cursor:pointer; list-style:none; font-size:var(--ss-fs-xs) !important;
+  font-weight:600 !important; letter-spacing:.07em; text-transform:uppercase; color:var(--ss-muted); padding:5px 2px; display:flex; align-items:center; gap:6px; }
+.ss-stage :is(.ss-hudp-body > details, .ss-more) > summary::-webkit-details-marker { display:none; }
+.ss-stage :is(.ss-hudp-sec, .ss-hudp-body > details, .ss-more) > summary::before { content:""; width:5px; height:5px; flex:none; margin:0 2px 0 1px;
+  border:solid currentColor; border-width:0 1.5px 1.5px 0; transform:rotate(-45deg); transition:transform .12s; opacity:.8; }
+.ss-stage :is(.ss-hudp-sec, .ss-hudp-body > details, .ss-more)[open] > summary::before { transform:rotate(45deg) translate(-1px,-1px); }
+.ss-stage :is(.ss-hudp-sec, .ss-hudp-body > details, .ss-more) > summary:hover { color:var(--ss-text); }
+.ss-stage .ss-hudp-body > details:not(.ss-hudp-sec)[open] { display:flex; flex-direction:column; gap:8px; padding-bottom:6px !important; }
+.ss-stage .ss-hudp-head { min-height:34px; }
+.ss-stage button.ss-hudp-tog { color:var(--ss-muted) !important; background:transparent !important; border-color:transparent !important; }
+.ss-stage button.ss-hudp-tog:hover:not(:disabled) { color:var(--ss-text) !important; background:rgba(255,255,255,.08) !important; }
+.ss-stage .ss-hudp { box-shadow:var(--ss-shadow-panel); }
+.ss-stage .ss-hudp-sec { padding-top:6px; }
+.ss-stage .ss-pipeview label.f { color:var(--ss-muted); }
+
+/* ③ Set › a selected object: one compact tool row (Move · Rotate · Scale | Measure · Snap | Physics · Duplicate · Delete) as icon
+   buttons with tooltips, like any 3D app's transform bar; the inspector no longer scrolls for it (QA round 02). */
+.ss-stage .ss-insp .ss-sel { gap:6px 6px !important; }
+.ss-stage .ss-insp .ss-sel > .ss-views { flex:none; margin:0 !important; }
+.ss-stage .ss-insp .ss-sel > label { order:5; }
+.ss-stage .ss-insp .ss-sel > .ss-views button, .ss-stage .ss-insp .ss-sel > button.ss-btn { font-size:0 !important; gap:0 !important; padding:6px 6px !important; }
+.ss-stage .ss-insp .ss-sel > button.ss-btn { background:transparent !important; border-color:var(--ss-line) !important; }
+.ss-stage .ss-insp .ss-sel > button.ss-btn:hover:not(:disabled) { background:rgba(255,255,255,.07) !important; border-color:var(--ss-line-strong) !important; }
+.ss-stage .ss-insp .ss-sel > button.ss-btn:last-of-type:hover:not(:disabled) { color:var(--ss-danger) !important; }
+.ss-stage .ss-insp .ss-sel > .ss-views button .ss-icon, .ss-stage .ss-insp .ss-sel > button.ss-btn .ss-icon { width:15px; height:15px; }
+
+/* "More": the rarely used options of a panel, one click away. */
+.ss-stage .ss-more { flex:1 1 100%; min-width:0; border-top:1px solid var(--ss-line); padding-top:4px; }
+.ss-stage .ss-more > .ss-more-body { display:flex; flex-wrap:wrap; gap:8px 10px; align-items:center; padding:6px 0 2px; }
+.ss-stage .ss-insp .ss-more > .ss-more-body > label { flex:1 1 100%; min-width:0; display:grid; grid-template-columns:84px minmax(0,1fr); align-items:center; gap:8px;
+  font-size:var(--ss-fs-sm); color:var(--ss-muted); }
+
+/* ⑦ Deliver: each way out is its own card with room to breathe; one yellow button on the panel. */
+.ss-stage.ss-cl .ss-hudp .ss-deliver-card { display:flex !important; flex-direction:column; gap:6px; padding:10px 0 12px !important; border-top:1px solid var(--cv-edge) !important; }
+.ss-stage.ss-cl .ss-hudp .ss-deliver-card:first-child { border-top:0 !important; padding-top:2px !important; }
+.ss-stage .ss-deliver-card > strong { display:flex; align-items:center; gap:8px; font-size:var(--ss-fs-md); font-weight:600; }
+.ss-stage .ss-deliver-card > strong .ss-icon { color:var(--ss-muted); }
+.ss-stage .ss-deliver-card > .lede { color:var(--ss-muted) !important; font-size:var(--ss-fs-sm) !important; line-height:1.45; margin:0; }
+.ss-stage .ss-deliver-card .row { gap:6px !important; }
+.ss-stage .ss-pipeview .ss-deliver-card button.go:not(.ss-main) { background:var(--ss-raised) !important; color:var(--ss-text) !important; border:1px solid var(--ss-line-strong) !important; }
+.ss-stage .ss-pipeview .ss-deliver-card button.go:not(.ss-main):hover:not(:disabled) { background:var(--ss-hover) !important; filter:none; }
+.ss-stage .ss-pipeview .ss-deliver-card button.go:not(.ss-main):active:not(:disabled) { background:var(--ss-pressed) !important; filter:none; }
+.ss-stage .ss-pipeview .ss-deliver-card .ghost { padding:5px 12px !important; font-size:var(--ss-fs-sm) !important; }
+
+/* The viewport header's long help line gave way to the "?" shortcut sheet (it was always cut off). */
+.ss-stage.ss-cl[data-ws=wide] .ss-vphead > .ss-hint { display:none !important; }
+.ss-stage .ss-keysbtn { flex:none; }
+.ss-stage .ss-keysbtn kbd { font:600 11px/1 var(--ss-font); border:1px solid var(--ss-line-strong); border-bottom-width:2px; border-radius:5px; padding:2px 5px;
+  color:var(--ss-muted); background:rgba(255,255,255,.04); }
+`;
+
+const OUR_STYLE = /^(soundstage|ss-)/;
+/** Keep the pro layer the last Soundstage stylesheet: panels add theirs when they first open. */
+function keepProLast() {
+  const pro = document.getElementById("soundstage-pro");
+  if (!pro) return;
+  const ours = [...document.head.querySelectorAll("style[id]")].filter((x) => OUR_STYLE.test(x.id));
+  if (ours[ours.length - 1] !== pro) document.head.appendChild(pro);
+}
+
 export function applyTheme() {
   if (document.getElementById("soundstage-theme")) return;
   const s = document.createElement("style");
   s.id = "soundstage-theme";
   s.textContent = CSS;
   document.head.appendChild(s); // after the panels' own <style> tags, so it wins ties
+  const p = document.createElement("style");
+  p.id = "soundstage-pro";
+  p.textContent = PRO_CSS;
+  document.head.appendChild(p);
+  try { new MutationObserver(keepProLast).observe(document.head, { childList: true }); } catch { /* no observer: order as added */ }
+  queueMicrotask?.(keepProLast);
 }
 
 /**
