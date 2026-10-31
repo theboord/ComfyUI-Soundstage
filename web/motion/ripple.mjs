@@ -88,6 +88,36 @@ export function addTake(chosen, take) {
   return c;
 }
 
+/** The API prompt for one Pose follow render: SoundstagePoseFollow -> SaveVideo. pose = {sheet, grid} or {source}. */
+export function buildPosePrompt({ firstFrame, sheet = "", grid = null, source = "", prompt = "", width, height, fps = 24, frames = 97,
+  quality = "Draft", seed = 7, prefix = "soundstage/pose" }) {
+  if (!firstFrame) throw new Error("pick or paint this shot's frame in ④ Frame first");
+  if (!sheet && !source) throw new Error("nothing to read the pose from");
+  return {
+    1: { class_type: "SoundstagePoseFollow", inputs: { first_frame: firstFrame, pose_sheet: sheet || "", grid: grid ? JSON.stringify(grid) : "",
+      source: sheet ? "" : source, prompt: String(prompt || ""), fps: +fps || 24, width: Math.round(width), height: Math.round(height),
+      quality: quality === "Final" ? "Final" : "Draft", seed: Math.max(0, Math.floor(+seed || 0)), max_frames: Math.max(9, Math.min(481, Math.floor(+frames || 97))) } },
+    2: { class_type: "SaveVideo", inputs: { video: ["1", 0], filename_prefix: prefix, format: "mp4", "format.codec": "h264" } },
+  };
+}
+
+/** The shot's start frame as a file reference: the chosen frame, a Paint Studio frame, else the latest look render. */
+export function firstFrameRef(chosen, renders = {}) {
+  if (chosen?.file) return refOf(chosen.file);
+  if (chosen?.edited) return refOf(String(chosen.edited));
+  return refFromViewUrl(chosen?.url || renders.look || "");
+}
+
+/** What moves on a shot but has no skeleton (horses, cars, animals): Pose follow can't steer it. Names, deduped. */
+export function nonPeople(scene) {
+  const out = new Set();
+  for (const a of scene?.actors || []) {
+    if (a.set_piece || /^(man|woman|child|person|glb|card|light)$/.test(a.kind || "")) continue;
+    if (/horse|dog|cat|cow|camel|deer|wolf|bear|bird|car|truck|van|bus|bike|bicycle|motorcycle|boat|train|plane|helicopter/.test(a.kind || "")) out.add(String(a.kind).replace(/_/g, " ") + "s");
+  }
+  return [...out];
+}
+
 export function strengthLabel(v) {
   const s = +v;
   return `${s.toFixed(2)}${Math.abs(s - RIPPLE_STRENGTH) < 0.001 ? " (recommended)" : s > RIPPLE_STRENGTH ? " · carries harder" : " · gentler"}`;
@@ -200,7 +230,12 @@ export class RippleControls {
       h("div", { class: "row" }, this.rippleBtnPanel = h("button", { type: "button", class: "go", "data-act": "ripple-run-panel",
         on: { click: () => this.run() } }, "Ripple it")),
       this.status);
-    this.el = h("div", { class: "ss-follow" }, h("div", { class: "status" }, "Follow"), this.seg, this.note, this.rippleBox);
+    this.poseCanvas = h("canvas", { width: "320", height: "180", style: "width:100%;border-radius:8px;background:#000" });
+    this.poseFromClip = h("input", { type: "checkbox" });
+    this.poseClipRow = h("label", { class: "row status", hidden: true }, this.poseFromClip, "Read the pose from the source clip (DWPose) instead of the clay");
+    this.poseBox = h("div", { class: "ss-ripple", hidden: true }, this.poseCanvas, this.poseClipRow,
+      h("div", { class: "status" }, "Body, hands and face of every clay person, from the shot camera. Preview / Render below use it."));
+    this.el = h("div", { class: "ss-follow" }, h("div", { class: "status" }, "Follow"), this.seg, this.note, this.rippleBox, this.poseBox);
     this.editHost = h("div", { class: "ss-edithost ss-ripple-edithost" });
     this.compare = h("div", { class: "ss-ripple-cmp", hidden: true });
     this._setNote();
@@ -216,6 +251,8 @@ export class RippleControls {
     this.mode = FOLLOW_MODES.some((x) => x[0] === k) ? k : "layout";
     for (const b of this.seg.children) b.setAttribute("aria-pressed", String(b.dataset.follow === this.mode));
     this.rippleBox.hidden = this.mode !== "ripple";
+    this.poseBox.hidden = this.mode !== "pose";
+    if (this.mode === "pose") this.drawPosePreview();
     this.compare.hidden = this.mode !== "ripple" || !this.compare.firstChild;
     try { this.p.onFollow?.(this.mode); } catch { /* pipeline hook */ }
     this._setNote();
@@ -364,6 +401,79 @@ export class RippleControls {
       this.busy = false;
       this.refresh();
     }
+  }
+
+  /** The skeleton of the current frame, in the Follow card. */
+  async drawPosePreview() {
+    try {
+      const P = await import("../stage/posepass.mjs");
+      const stage = this.p.ctx.stage;
+      const [w, hh] = P.poseTile(stage.fw, stage.fh, 320);
+      this.poseCanvas.width = w; this.poseCanvas.height = hh;
+      const people = P.stagePeople(stage, w, hh);
+      P.drawOpenPose(this.poseCanvas.getContext("2d"), people, w, hh);
+      let scene = null;
+      try { scene = stage.toJSON(); } catch { scene = null; }
+      this.poseClipRow.hidden = !scene?.reference?.video;
+      const others = nonPeople(scene);
+      this.note.textContent = (people.length ? `Experimental: ${people.length} ${people.length > 1 ? "people" : "person"} as OpenPose skeletons (body, hands, face) drive LTX through the union-control IC-LoRA (made for LTX 2.3).`
+        : "No clay people on this shot: Pose follow needs people (or a source clip to read with DWPose).") +
+        (others.length ? ` Heads up: ${others.join(", ")} ${others.length > 1 ? "aren't" : "isn't"} in a pose map, so LTX may drop or duplicate ${others.length > 1 ? "them" : "it"}. Layout follows ${others.length > 1 ? "them" : "it"}.` : "");
+    } catch (e) { this.note.textContent = `Pose preview failed: ${e.message}`; }
+  }
+
+  /** Pose follow render for the active shot (⑤ Motion's Preview / Render with Follow = Pose). */
+  async runPose(step, status) {
+    const p = this.p, ctx = p.ctx, stage = ctx.stage, sid = this.sid, api = this._api();
+    const say = (t) => { if (status) status.textContent = t; };
+    const quality = step === 4 ? "Final" : "Draft";
+    let scene = null;
+    try { scene = stage.toJSON(); } catch { scene = null; }
+    const first = firstFrameRef(p.chosen[sid], ctx.getRenders(sid) || {});
+    if (!first) { say("Pose follow starts from this shot's frame: pick or paint one in ④ Frame first."); return; }
+    const fromClip = this.poseFromClip.checked && scene?.reference?.video;
+    let sheet = "", grid = null, source = "";
+    try {
+      if (fromClip) source = refOf(String(scene.reference.video));
+      else {
+        const P = await import("../stage/posepass.mjs");
+        say("Drawing the pose skeletons for every frame…");
+        const r = await P.capturePoseSheet(stage, { onProgress: (f) => say(`Drawing the pose skeletons… ${Math.round(f * 100)}%`) });
+        if (!r.people) { say("No clay people on this shot to pose: add people, or read the pose from a source clip."); return; }
+        const body = new FormData();
+        const name = `pose_${sid}_${Date.now().toString(36)}.png`;
+        body.append("image", new File([r.blob], name, { type: "image/png" }));
+        body.append("type", "temp"); body.append("subfolder", "soundstage"); body.append("overwrite", "true");
+        const up = await api.fetchApi("/upload/image", { method: "POST", body });
+        if (up.status !== 200) throw new Error(`uploading the pose sheet failed (${up.status})`);
+        const j = await up.json();
+        sheet = `${j.subfolder ? j.subfolder + "/" : ""}${j.name} [temp]`;
+        grid = r.grid;
+      }
+      const prompt = (await p._motionPrompt?.()) || "";
+      const sh = scene?.shot || {};
+      const req = buildPosePrompt({ firstFrame: first, sheet, grid, source, prompt, width: stage.fw, height: stage.fh, fps: sh.fps || 24,
+        frames: sh.frames || 97, quality, seed: Math.floor(Math.random() * 2 ** 31) });
+      const res = await api.fetchApi("/prompt", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: req, client_id: api.clientId }) });
+      const q = await res.json();
+      if (!res.ok || q.error) {
+        const ne = Object.values(q.node_errors || {})[0];
+        throw new Error(ne ? `${ne.class_type}: ${ne.errors?.[0]?.message || ""} ${ne.errors?.[0]?.details || ""}` : q.error?.message || `HTTP ${res.status}`);
+      }
+      p.inflight?.set(q.prompt_id, { sid, step: "pose" });
+      p._drawShotRows?.();
+      const stop = p._tick?.(status, `Pose follow ${quality.toLowerCase()} rendering (experimental): about ${quality === "Final" ? "6–10" : "3–5"} min`);
+      const file = await waitForOutput(api, q.prompt_id, "2");
+      stop?.();
+      const url = this._url(refOf(file)) + `&t=${Date.now()}`;
+      const take = makeTake({ file, url, quality, follow: "pose", prompt });
+      addTake(p.chosen[sid] = p.chosen[sid] || {}, take);
+      p._saveChosen();
+      p.onRippleTake?.(sid, take);
+      say(`Pose follow ${quality.toLowerCase()} landed as a take (experimental). Compare it with the Layout render in ⑥ Review or Takes.`);
+      return take;
+    } catch (e) { say(`Pose follow failed: ${e.message}`); }
   }
 
   /** Before / after wipe: the source clip under the Ripple result, synced. */

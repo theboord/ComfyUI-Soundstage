@@ -1263,6 +1263,13 @@ export class Pipeline {
 
   async _render(step, allShots = false) {
     const m = this.m;
+    // Follow = Pose (experimental): the stage's skeletons drive LTX through the union-control IC-LoRA, one shot at a time.
+    if (this.ripple?.mode === "pose") {
+      if (allShots) { m.status.textContent = "Pose follow renders one shot at a time (experimental): pick a shot and use Preview / Render."; return; }
+      const btns = [m.draftBtn, m.finalBtn, m.allDraft, m.allFinal];
+      for (const b of btns) b.disabled = true;
+      try { return await this.ripple.runPose(step, m.status); } finally { for (const b of btns) b.disabled = false; }
+    }
     this._applyVideo();
     if (step === 4 && !isH3(m.engine?.value)) this._lipSync();
     const h3 = step === 4 && isH3(m.engine.value);
