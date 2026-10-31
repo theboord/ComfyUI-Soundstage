@@ -111,7 +111,7 @@ class SoundstageExtension(ComfyExtension):
         # module (missing optional dependency, work in progress) never hides the others.
         import importlib
         import logging
-        for mod in ("nodes_ladder", "nodes_cine", "nodes_layers", "nodes_router", "nodes_matte", "nodes_look", "nodes_footage", "nodes_cut", "nodes_agent", "nodes_audio", "nodes_quality", "nodes_canvas", "nodes_fill", "nodes_video2stage", "nodes_mocap"):
+        for mod in ("nodes_ladder", "nodes_cine", "nodes_layers", "nodes_router", "nodes_matte", "nodes_look", "nodes_footage", "nodes_cut", "nodes_agent", "nodes_audio", "nodes_quality", "nodes_canvas", "nodes_fill", "nodes_video2stage", "nodes_mocap", "nodes_motion"):
             try:
                 nodes.extend(importlib.import_module(f"{__package__}.{mod}").NODES)
             except ModuleNotFoundError as e:
