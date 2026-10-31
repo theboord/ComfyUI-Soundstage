@@ -164,3 +164,57 @@ test("the vendored module imports in Node (no GPU touched at import)", async () 
   assert.equal(typeof m.World.create, "function");
   assert.equal(typeof m.convexHull, "function");
 });
+
+test("vendored WGSL carries the Soundstage speculative-contact patch (a car at 12 m/s finds a crate before it is in it)", async () => {
+  const col = await import("../../web/vendor/three-avbd/avbd3d/gpu/wgsl-collision.mjs");
+  const sol = await import("../../web/vendor/three-avbd/avbd3d/gpu/wgsl-solve.mjs");
+  // Broadphase and narrowphase both reach ahead by the sweep (|v| dt), capped.
+  for (const src of [col.broadphaseWGSL, col.contactsWGSL, col.contactsHullWGSL]) {
+    assert.match(src, /fn specReach\(i: u32\) -> f32/);
+    assert.match(src, /const SPEC_MAX = 0\.3;/);
+  }
+  assert.match(col.broadphaseWGSL, /faceSeparated\(P\.shape, B, d, spec\)/);
+  assert.match(col.contactsWGSL, /if \(sep > specPad\) \{ return false; \}/);
+  assert.match(col.contactsWGSL, /dist > PLANE_EPSILON \+ specPad/);
+  // A speculative gap is kept whole (not blended by alpha like a penetration) while a body sweeps in.
+  assert.match(sol.solveWGSL, /select\(k\.c0x \* keep, k\.c0x, k\.c0x > 0\.0 && \(sweeping\(A\.index\) \|\| sweeping\(B\.index\)\)\)/);
+  const notes = readFileSync(new URL("../../THIRD_PARTY_NOTICES.md", import.meta.url), "utf8");
+  assert.match(notes, /speculative/i, "the local change is recorded with the vendored copy");
+});
+
+/** A stand-in for three-avbd's World (no GPU): bodies and springs that record what was done to them. */
+function fakeWorld() {
+  const log = [];
+  const body = (o) => ({ ...o, alive: true, remove() { this.alive = false; log.push(["rm", o.id]); }, set() {}, setFixed(f) { this.fixed = f; }, moveTo() {}, position: o.position, rotation: o.rotation || [0, 0, 0, 1], velocity: [0, 0, 0], angularVelocity: [0, 0, 0] });
+  let n = 0;
+  return { log, stepCount: 0, iterations: 6, dt: 1 / 60, owed: 0, maxSubsteps: 3, solver: { params: {} },
+    addBox(o) { return body({ ...o, id: `b${n++}` }); }, addSphere(o) { return body({ ...o, id: `s${n++}` }); },
+    addSpring(a, b, o) { const s = { a, b, o, remove() { log.push(["unspring", a.id, b.id]); } }; log.push(["spring", a.id, b.id, o.stiffness]); return s; } };
+}
+
+test("ignorePair: a zero-stiffness spring per part pair keeps two bodies out of contact; off (or a removed body) undoes it", () => {
+  const fw = fakeWorld();
+  const w = new AV.AvbdWorld(null, fw, { floor: false, maxBodies: 16 });
+  w.addBody({ id: "crate", half: [0.4, 0.4, 0.4], type: "dynamic", mass: 25, pos: [0, 0, 0] });
+  w.addBody({ id: "person", type: "kinematic", parts: [{ half: [0.2, 0.5, 0.2], center: [0, 0.5, 0] }, { half: [0.1, 0.1, 0.1], center: [0, 1.6, 0] }], pos: [1, 0, 0] });
+  assert.equal(w.ignorePair("crate", "person", true), true);
+  assert.equal(fw.log.filter((e) => e[0] === "spring").length, 2, "one per part pair");
+  assert.ok(fw.log.filter((e) => e[0] === "spring").every((e) => e[3] === 0), "no force");
+  assert.equal(w.isIgnored("person", "crate"), true, "either order");
+  assert.equal(w.ignorePair("crate", "person", true), false, "already on");
+  assert.equal(w.ignorePair("crate", "person", false), true);
+  assert.equal(fw.log.filter((e) => e[0] === "unspring").length, 2);
+  assert.equal(w.isIgnored("crate", "person"), false);
+  w.ignorePair("crate", "person", true);
+  w.removeBody("person");
+  assert.equal(w.isIgnored("crate", "person"), false, "a removed body's pairs go with it");
+  assert.equal(w.ignorePair("crate", "nobody", true), false);
+  assert.equal(AV.pairKey("b", "a"), AV.pairKey("a", "b"));
+});
+
+test("the Physics panel carries the live solver switch (CPU / GPU beta) and loads the GPU backend", () => {
+  const src = readFileSync(new URL("../../web/stage/physpanel.mjs", import.meta.url), "utf8");
+  assert.match(src, /import \* as avbd from "\.\/physics_avbd\.mjs";/);
+  assert.match(src, /Live solver/);
+  assert.match(src, /avbd\.setPref\("xpbd"\)/, "falls back to the CPU when WebGPU can't start");
+});
