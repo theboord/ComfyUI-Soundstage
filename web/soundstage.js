@@ -2525,31 +2525,50 @@ function createStageWidget(node, inputName) {
     const spots = blockingFor(fresh ? plan.people.length : newPeople.length, center, camXZ, fresh ? [] : st.actors.map((a) => a.keys?.[0]?.position || a.position || [0, 0, 0]));
     let k = 0;
     const H = { man: 1.78, woman: 1.68, child: 1.2 };
+    const personIds = {};
     for (const p of plan.people) {
       const a = p.reuseId && st.actors.find((x) => x.id === p.reuseId);
       if (a) {
         a.name = p.name;
         a.appearance = { ...p.appearance, ...(a.appearance || {}) };   // what the user set on this actor wins
         if (fresh) { const sp = spots[k++]; a.position = sp.position; a.keys = [{ frame: 0, position: [...sp.position] }]; delete a.position_end; a.rotation_deg = sp.rotation_deg; }
+        personIds[p.name] = a.id;
         continue;
       }
       const sp = spots[k++] || { position: [center[0], 0, center[1]], rotation_deg: 0 };
       const id = `${p.kind}_${castSlug(p.name).replace(/ /g, "_") || "cast"}_${Date.now().toString(36)}${k}`;
       st.actors.push({ id, name: p.name, kind: p.kind, position: [...sp.position], keys: [{ frame: 0, position: [...sp.position] }],
         height_m: H[p.kind] || 1.75, rotation_deg: sp.rotation_deg, appearance: Object.keys(p.appearance).length ? p.appearance : undefined });
+      personIds[p.name] = id;
     }
-    // Vehicles and animals the heading calls for, parked behind the group, spread out.
+    const seated = seatCast(plan, personIds, { fresh, center, camXZ });
+    // Vehicles and animals the heading calls for, parked behind the group, spread out (behind the car it plays in).
     let vi = 0;
     for (const kind of plan.objects) {
       const before = st.actors.length;
       try { stage.addObject(kind.replace(/_/g, " ")); } catch { /* unknown kind */ }
       const o = st.actors.length > before ? st.actors[st.actors.length - 1] : null;
       if (!o) continue;
+      if (seated.car) {   // INT. car: other vehicles wait well back in the next lane, out of the car's path
+        const c0 = seated.car.keys?.[0]?.position || seated.car.position || [center[0], 0, center[1]];
+        const pos = [+(c0[0] - 3.4 * (vi % 2 ? -1 : 1)).toFixed(2), 0, +(c0[2] - 14 - 8 * Math.floor(vi / 2)).toFixed(2)];
+        vi++;
+        o.position = pos; o.keys = [{ frame: 0, position: [...pos] }]; o.rotation_deg = seated.car.rotation_deg || 0;
+        const ck = seated.car.keys || [];
+        if (ck.length > 1) {   // the car is MOVING: the others drive the same road behind it (the chase), not parked
+          const e = ck[ck.length - 1];
+          o.keys.push({ frame: e.frame, position: [pos[0] + e.position[0] - c0[0], 0, +(pos[2] + e.position[2] - c0[2]).toFixed(2)] });
+        }
+        continue;
+      }
       const dx = center[0] - camXZ[0], dz = center[1] - camXZ[1], L = Math.hypot(dx, dz) || 1;
       const side = ((vi++ % 2) ? -1 : 1) * (3.2 + 1.6 * Math.floor(vi / 2));
       const pos = [+(center[0] + (dx / L) * 4.5 + (-dz / L) * side).toFixed(2), 0, +(center[1] + (dz / L) * 4.5 + (dx / L) * side).toFixed(2)];
       o.position = pos; o.keys = [{ frame: 0, position: [...pos] }];
       o.rotation_deg = Math.round(Math.atan2(-dz, dx) * 180 / Math.PI);   // side-on to the camera
+    }
+    if (seated.car && fresh) {   // a fresh INT. car scene: the shot camera rides inside (stage's in-car presets)
+      try { stage.setCameraFollow(seated.car.id, seated.backSeat ? "dash_two_shot" : "windshield"); } catch { /* no camera yet */ }
     }
     stage._buildSet();
     try { stage.select(null); } catch { /* nothing selected */ }
@@ -2559,7 +2578,8 @@ function createStageWidget(node, inputName) {
     try { applyCastRefs(castPanel?.items() || []); } catch { /* cast not built */ }
     try { pipeline._drawShotCast?.(); } catch { /* frame not built */ }
     lastSetup = { key: liveKey, before, label: plan.label };
-    const who = plan.names.length ? plan.names.join(", ") : "nobody speaking";
+    const who = (plan.names.length ? plan.names.join(", ") : "nobody speaking") +
+      (seated.n ? (seated.car ? `, seated in the ${(LIBRARY[seated.car.kind]?.label || seated.car.kind).toLowerCase()}` : ", up on their mounts") : "");
     status.textContent = `${auto ? "Set up" : "Done:"} scene ${sc.number}: ${plan.env.set ? plan.env.set.replace(/_/g, " ") : "the set"}${plan.time_preset ? `, ${TIME_PRESETS[plan.time_preset]?.label?.toLowerCase() || plan.time_preset}` : ""}, ${who}` +
       `${plan.objects.length ? `, ${plan.objects.map((x) => x.replace(/_/g, " ")).join(", ")}` : ""}. Undo it from the scene picker.`;
     persistScript();
@@ -2580,6 +2600,67 @@ function createStageWidget(node, inputName) {
     return true;
   }
   const blockingFor = (n, center, cam, avoid) => (n > 0 ? blockingSpots(n, { center, cam, avoid }) : []);
+  /**
+   * Put the plan's riders on their horses and its passengers in their seats with stage.mount (the Interact tool's own
+   * mechanics). Hosts are reused or added; a horse takes its rider's blocking spot and turn; the car a scene plays in
+   * goes where the group would stand, and drives down the street when the heading says MOVING (fresh stage only).
+   * Returns {car, backSeat, n} (car = the vehicle actor the scene plays in, or null).
+   */
+  function seatCast(plan, personIds, { fresh = false, center = [0, -4], camXZ = [0, -11.5] } = {}) {
+    const st = stage.state;
+    const out = { car: null, backSeat: false, n: 0 };
+    if (!plan.hosts?.length) return out;
+    const hostIds = plan.hosts.map((h) => {
+      if (h.reuseId && st.actors.some((a) => a.id === h.reuseId)) return h.reuseId;
+      const before = st.actors.length;
+      try { stage.addObject(h.kind.replace(/_/g, " ")); } catch { /* unknown kind */ }
+      if (st.actors.length <= before) return null;
+      const o = st.actors[st.actors.length - 1];
+      o.__new = true;
+      return o.id;
+    });
+    const byId = (id) => st.actors.find((a) => a.id === id);
+    const fps = st.shot?.fps || 24, last = Math.max(1, (st.shot?.frames || 97) - 1);
+    plan.hosts.forEach((h, i) => {
+      const o = byId(hostIds[i]);
+      if (!o) return;
+      const placeIt = o.__new || fresh;
+      delete o.__new;
+      if (plan.vehicle && plan.vehicle.host === i) {
+        out.car = o;
+        if (placeIt) {
+          const start = [+center[0].toFixed(2), 0, +center[1].toFixed(2)];
+          o.rotation_deg = 0;   // down the street (+Z)
+          o.position = start;
+          o.keys = [{ frame: 0, position: [...start] }];
+          if (h.moving && fresh) o.keys.push({ frame: last, position: [start[0], 0, +(start[2] + 11 * last / fps).toFixed(2)] });   // ~40 km/h
+        }
+        return;
+      }
+      // A horse (bike) under its rider: where the rider was blocked, turned the same way.
+      const p = plan.people.find((x) => x.mount?.host === i);
+      const r = p && byId(personIds[p.name]);
+      if (placeIt && r) {
+        let at = r.keys?.[0]?.position || r.position || [center[0], 0, center[1]];
+        // Horses need room: a rider's blocking spot is a person's width from the next; spread the mounts apart.
+        const nRiders = plan.people.filter((x) => x.mount).length;
+        if (nRiders > 1) at = [center[0] + (at[0] - center[0]) * 2.6, 0, center[1] + (at[2] - center[1]) * 2.6];
+        o.position = [at[0], 0, at[2]]; o.keys = [{ frame: 0, position: [at[0], 0, at[2]] }];
+        o.rotation_deg = r.rotation_deg ?? Math.round(Math.atan2(camXZ[0] - at[0], camXZ[1] - at[2]) * 180 / Math.PI);
+      }
+    });
+    stage._buildSet();
+    for (const p of plan.people) {
+      if (!p.mount) continue;
+      const id = personIds[p.name], hid = hostIds[p.mount.host];
+      const host = byId(hid);
+      if (!id || !host) continue;
+      stage.mount(id, hid, SEATS[host.kind] ? "sit" : null, 0, SEATS[host.kind] ? p.mount.seat : null);
+      out.n++;
+      if ((p.mount.seat ?? 0) >= 2) out.backSeat = true;
+    }
+    return out;
+  }
 
   /** A new picture for a cast item (or a stage-only ④ Frame reference): Cast & Locations, then the Frame refs. */
   function setRefFor(it, r) {
