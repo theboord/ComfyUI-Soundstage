@@ -5,6 +5,14 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**14:06 PDT · Movie car stunts: a reverse J-turn, a donut, a handbrake 180** *(Milestone 13)*
+- Pick a car, then **Stunt ▸ Reverse J-turn / Donut / Handbrake 180** in its properties. The car's keys are written on the set you're on, from where it starts and the way it goes, and stay editable: drag the keys, or turn the car at a key with Turn.
+- Keys can steer the nose now: `heading_deg` per key (unwrapped, so 0 → 720 is two spins) and `drive: "reverse"`. A stunt car turns as fast as its keys say; every other car keeps its real turning rate, exactly as before.
+- The body sits on springs: it rolls out of turns, squats when the car launches and dives under braking, while the wheels stay planted. Wheels turn backwards in reverse.
+- Tyre smoke pours off the wheels where the keys ask for it (`fx.tire_smoke`), or by itself when a stunt car slides or launches hard. It's the same puffs at every capture of a frame, so the clay, the guide and the video agree.
+- The prompts tell the image and video models which end leads in each beat: rear end first, the spin, then nose first.
+- Code: [web/stage/stunts.mjs](web/stage/stunts.mjs), [soundstage/look/stunts.py](soundstage/look/stunts.py). Tests: [tests/js/stunts.test.mjs](tests/js/stunts.test.mjs), [tests/test_stunts.py](tests/test_stunts.py).
+
 **13:41 PDT · New sets, round 2: a real reef, scenery that moves, a softer view out of the train** *(Milestone 11)*
 - The reef is dense along the swim lane: staghorn, brain, fan, table and tube corals where a diver swims past. People off the seabed swim in the prompt too ("swims", not "walks").
 - Clouds past the airliner windows and countryside past the train windows now really stream by in the stage and the guides.

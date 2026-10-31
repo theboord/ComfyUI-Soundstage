@@ -1533,6 +1533,19 @@ function createStageWidget(node, inputName) {
     }
     followSel.sel.value = "";
   });
+  // Movie car stunts (Milestone 13): one pick writes the selected car's keys (path, heading, tyre smoke) on this set.
+  const stuntSel = mkSelect("Stunt", { "": { label: "—" }, ...Object.fromEntries(Object.entries(stage.stuntOptions()).map(([k, v]) => [k, { label: v }])),
+    none: { label: "No stunt (clear the stunt keys)" } }, "", (v) => {
+    const sel = stage.selectedInfo();
+    if (!sel || !v) return;
+    const label = stage.applyStunt(sel.id, v);
+    status.textContent = !label ? "Pick a car first." : label === "none"
+      ? `${sel.name} drives its path again, nose first.`
+      : `${sel.name}: ${label}. Scrub or play it; drag its keys or turn it at a key (Turn) to adjust.`;
+    try { tracks?.draw(); afterTimeChange(); } catch { /* timeline not built */ }
+    stuntSel.sel.value = stage.selectedInfo()?.stunt || "";
+  });
+  stuntSel.sel.title = "Movie car stunts: the car's keys are written for this set, from where it starts and the way it goes";
   const seatSel = mkSelect("Seat", { "0": { label: "Driver" } }, "0", (v) => {
     const sel = stage.selectedInfo();
     if (sel) stage.setSeat(sel.id, +v);
@@ -1554,7 +1567,7 @@ function createStageWidget(node, inputName) {
     status.textContent = stage.frame > 0 ? `${info.name} hops on at frame ${stage.frame}. Give them a walk to the mount before that.` : `${info.name} rides from the start.`;
   });
   const personCtl = [apBuild.wrap, apHair.wrap, cHair.wrap, apTop.wrap, cTop.wrap, apBottom.wrap, cBottom.wrap, apSkin.wrap, rideSel.wrap, seatSel.wrap, hopBtn];
-  apRow.append(...personCtl, cMain.wrap, followSel.wrap, beamSel.wrap);
+  apRow.append(...personCtl, cMain.wrap, followSel.wrap, stuntSel.wrap, beamSel.wrap);
   // Pose Studio: every joint (fingers too), a gallery and keys, under the selected person's appearance controls.
   const poseHost = document.createElement("div");
   const posePanel = new PosePanel(poseHost, { stage, api, onStatus: (m) => { status.textContent = m; },
@@ -1599,6 +1612,8 @@ function createStageWidget(node, inputName) {
     beamSel.wrap.hidden = info.kind !== "flashlight";
     if (info.kind === "flashlight") beamSel.sel.value = info.beam || "steady";
     followSel.wrap.hidden = !["car", "police_car", "sports_car", "hatchback", "truck", "bus", "horse", "motorcycle", "bicycle", "boat"].includes(info.kind);
+    stuntSel.wrap.hidden = !["car", "police_car", "sports_car", "hatchback", "truck"].includes(info.kind);
+    stuntSel.sel.value = info.stunt || "";
   }
 
   stage.onInteract = (msg) => { status.textContent = msg; try { syncAppearance(stage.selectedInfo()); } catch { /* not built */ } };

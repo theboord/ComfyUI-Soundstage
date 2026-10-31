@@ -355,7 +355,7 @@ def _marks_sentence(mf: dict, introduced: set | None = None) -> str:
             verb = {"walks": "walk", "walks briskly": "walk briskly", "runs": "run", "drives": "drive", "drives forward": "drive forward", "rolls forward": "roll forward",
                     "rolls": "roll", "trots": "trot"}.get(verb, verb)
             verb += " together" if verb.startswith("walk") else ""
-        out.append(_cap(_join([f"{who} {verb} {way}", dest], " ")) + ".")
+        out.append(_cap(_join([f"{who} {verb} {way}".strip(), dest], " ")) + ".")
     return " ".join(out)
 
 
