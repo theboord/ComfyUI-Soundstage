@@ -7,6 +7,13 @@ import { setTouchupStill } from "../touchup/touchup.mjs";
 import { Mover, hudPanel, hudPop, cvEl, clipText } from "../ui/canvasui.mjs";
 import { castPool, shotSelection, pickRefs, refLines, refLabel, shotKind, refViewParams, REF_LIMIT } from "../cast/shotcast.mjs";
 
+/** Version of the still's start image (soundstage/look/look_start.py). Frames record it; older frames reproduce
+ * from the plain colour pass. */
+export const LOOK_START = 1;
+export function lookStartFor(c) {
+  return !c || !!c.edited || c.seed == null || (c.ls || 0) >= LOOK_START;
+}
+
 const STEPS = [
   { k: "script", n: 1, label: "Script", short: "Script", view: "script", hint: "Bring in your screenplay: scenes, breakdown, director's notes. Optional." },
   { k: "cast", n: 2, label: "Cast & Locations", short: "Cast", view: "cast", hint: "Characters, props and locations with reference pictures, so every shot matches." },
@@ -861,7 +868,8 @@ export class Pipeline {
         const seed = base + i * 7919;
         this.set(seedNode, "seed", seed);
         this._tick(f.status, `Queueing ${n > 1 ? `${shot.name} (${si + 1}/${n}), ` : ""}frame ${i + 1}/${f.count}${i === 0 ? ": capturing your clay passes for the whole shot first" : ""}…`);
-        await this.queueAt(2, { seed, model: f.model.value, seedNode, refFiles });
+        this.ctx.setLookStart?.(true);
+        await this.queueAt(2, { seed, model: f.model.value, seedNode, refFiles, ls: LOOK_START });
       }
     };
     try {
@@ -887,7 +895,7 @@ export class Pipeline {
     if (ev.rung === 2) {
       const meta = this.pending.get(ev.promptId);
       const list = (this.candidates[ev.shotId] = this.candidates[ev.shotId] || []);
-      const cand = { url: ev.url, file: ev.file, seed: meta?.seed, model: meta?.model, seedNode: meta?.seedNode, refFiles: meta?.refFiles };
+      const cand = { url: ev.url, file: ev.file, seed: meta?.seed, model: meta?.model, seedNode: meta?.seedNode, refFiles: meta?.refFiles, ls: meta?.ls };
       list.unshift(cand);
       if (meta) this.pending.delete(ev.promptId);
       // A shot's first frame is its pick until you choose another, so "every shot" flows straight into Motion.
@@ -925,6 +933,7 @@ export class Pipeline {
   choose(c) {
     const sid = this.ctx.stage.activeShot().id;
     this._setChosen(sid, c);
+    this.ctx.setLookStart?.(lookStartFor(c));
     // A Paint Studio frame animates through the touch-up still; a generated one through its model + seed.
     this.touched[sid] = !!c.edited;
     this.set(9086, "switch", !!c.edited);
@@ -1312,6 +1321,9 @@ export class Pipeline {
   /** Point the still model, seed and touch-up switch at this shot's chosen frame, so its video starts from it. */
   _applyShot(sid) {
     const c = this.chosen[sid];
+    // A frame painted before the prepared start image (softened clay heads) re-renders from the plain colour pass,
+    // so the video starts from exactly the frame that was picked.
+    this.ctx.setLookStart?.(lookStartFor(c));
     if (c?.model) {
       const krea = c.model === STILL_KREA;
       this.set(9082, "switch", !krea);
@@ -1335,7 +1347,7 @@ export class Pipeline {
 
   _setChosen(sid, c) {
     this.chosen[sid] = { ...this.chosen[sid], url: c.url, file: c.file, seed: c.seed, model: c.model, seedNode: c.seedNode, edited: c.edited || undefined,
-      refFiles: c.refFiles };
+      refFiles: c.refFiles, ls: c.ls };
     if (c.file) this.ctx.rememberRender?.(sid, "look", c.file);
     this.ctx.saveChosen?.({ chosen: this.chosen, touched: this.touched });
   }
