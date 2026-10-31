@@ -2287,6 +2287,10 @@ export class Stage {
         if (!o.isMesh) return;
         o.castShadow = true; o.receiveShadow = true;
         if (/^(Windows?|Glass)$/i.test(o.material?.name || "")) { makeGlass(o); return; }   // the models' opaque black glass: see-through
+        // Lit lamps (Color pass): warm-white headlights lead, red tail lights trail, so the guide and the look still
+        // read which end of the car is the front (an unlit car looks the same both ways round in depth and colour).
+        const lamp = { Headlights: [0xfff2dc, 1.8], TailLights: [0xff1a0e, 1.4] }[o.material?.name];
+        if (lamp) { o.material = o.material.clone(); o.material.emissive = new THREE.Color(lamp[0]); o.material.emissiveIntensity = lamp[1]; o.userData.lamp = o.material.name; return; }
         if (tint && /^(Blue|White|Red|Body|Main)/.test(o.material?.name || "")) { o.material = o.material.clone(); o.material.color.copy(tint); }
       });
       for (const ch of g.children) ch.visible = spec.cabin !== false && !!ch.userData.cabin;   // seats, dash, wheel show through the glass
