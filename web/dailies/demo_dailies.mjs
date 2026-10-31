@@ -84,7 +84,11 @@ export function demoDailies({ thumbs = true, real = null } = {}) {   // real: {s
     renders[id] = kinds.map((kind, k) => {
       const n = k + 1;
       const thumb = real?.[sceneId]?.[idx] || (thumbs ? drawThumb({ look, setup, name, kind, take: n, subject: extra.subject || extra.character || name }) : null);
-      return { id: `t${n}`, kind, n, url: kind === "look" ? thumb : `demo/${sceneId}/${idx}-${n}.mp4`, thumb, video: kind !== "look",
+      // Real frames are stills: every take of the setup opens on its rendered frame (no stand-in video files).
+      // (One rendered frame per setup: each take's url gets its take number so the takes stay apart.)
+      const realUrl = real?.[sceneId]?.[idx] ? `${thumb}${thumb.includes("?") ? "&" : "?"}tk=${n}` : null;
+      const url = realUrl || (kind === "look" ? thumb : `demo/${sceneId}/${idx}-${n}.mp4`);
+      return { id: `t${n}`, kind, n, url, thumb, video: !realUrl && kind !== "look",
         seconds: KIND_SECONDS[kind] || null, circled: circ === n, created: 1000 + n };
     });
   });
