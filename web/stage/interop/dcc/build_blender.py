@@ -6,8 +6,9 @@ shows the Layer Pack plates as the camera background when a plates/ folder sits 
 
 Run:   blender --python <kit>/blender/build_blender.py
        or open it in the Scripting tab and press Run Script.
-Options (after "--"):  --kit DIR  --plates DIR  --no-glb  --render OUT.png --frame N --engine WORKBENCH|EEVEE
+Options (after "--"):  --kit DIR  --plates DIR  --no-glb  --empty  --render OUT.png --frame N --engine WORKBENCH|EEVEE
                        --transparent  --hide name1,name2  --save OUT.blend
+Run in an untouched new file, Blender's default cube, camera and light are cleared first; --empty clears any scene.
 Soundstage is metres, Y up, right-handed; Blender is metres, Z up: (x, y, z) -> (x, -z, y), as Blender's glTF
 importer does, so the camera and the imported geometry agree.
 """
@@ -48,7 +49,7 @@ def fps_settings(fps):
 
 def parse_args(argv):
     args = argv[argv.index("--") + 1:] if "--" in argv else []
-    out = {"kit": None, "plates": None, "glb": True, "render": None, "frame": None, "engine": "WORKBENCH",
+    out = {"kit": None, "plates": None, "glb": True, "empty": False, "render": None, "frame": None, "engine": "WORKBENCH",
            "transparent": False, "hide": [], "save": None, "samples": 8}
     i = 0
     while i < len(args):
@@ -60,6 +61,8 @@ def parse_args(argv):
             out["plates"], i = nxt, i + 1
         elif a == "--no-glb":
             out["glb"] = False
+        elif a == "--empty":
+            out["empty"] = True
         elif a == "--render":
             out["render"], i = nxt, i + 1
         elif a == "--frame":
@@ -119,10 +122,18 @@ def shift_actions(actions, offset):
             fc.update()
 
 
+def is_default_scene(names, filepath):
+    """An unsaved file holding only Blender's startup Cube, Camera and Light."""
+    return not filepath and sorted(names) == ["Camera", "Cube", "Light"]
+
+
 def main(opts):
     here = globals().get("__file__")
     kit = find_kit(opts["kit"], here)
     shot, camj = load_kit(kit)
+    if opts["empty"] or is_default_scene([o.name for o in bpy.data.objects], bpy.data.filepath):
+        for o in list(bpy.data.objects):
+            bpy.data.objects.remove(o, do_unlink=True)
     scene = bpy.context.scene
     W, H = shot["resolution"]
     first, last = shot["frame_start"], shot["frame_end"]
