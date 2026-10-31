@@ -171,8 +171,9 @@ test("colliders: a room becomes slabs; the floor is the floor; the doorway stays
   assert.ok(solid([2, 0.72, 1]), "the table top");
   assert.ok(!solid([2, 0.9, 1]), "free air above the table");
   // the wall slabs are exactly as thick as the walls (both faces paired)
-  const back = boxes.filter((b) => b.kind === "wall" && inside(b, [0, 1.5, -3.9]));
-  assert.ok(back.some((b) => Math.abs(2 * b.half[1] - 0.2) < 1e-4), "0.2 m back wall slab");
+  const back = boxes.filter((b) => inside(b, [0, 1.5, -3.9]));
+  assert.ok(back.some((b) => b.half.some((h) => Math.abs(2 * h - 0.2) < 1e-4)), "the back wall's box is the wall: 0.2 m thick");
+  assert.ok(!solid([0, 1.5, -3.75]) && !solid([0, 1.5, 3.75]), "nothing in front of the walls");
 });
 
 test("colliders: physics stands a crate on the table and stops one at the wall", () => {
@@ -205,6 +206,17 @@ test("colliders: a turned prop gets a turned box; greedy rectangles cover a grid
   assert.equal(rects.length, 2);
   const q = quatFromAxes([0, 0, -1], [0, 1, 0], [1, 0, 0]);
   nearV(U.qrot(q, [1, 0, 0]), [0, 0, -1], 1e-9, "x axis");
+});
+
+test("colliders: a column or a lamp post is one box; a wall with a door is not", () => {
+  const g = new THREE.CylinderGeometry(0.3, 0.3, 4, 16).toNonIndexed();
+  g.translate(2, 2, 3);
+  const { boxes } = worldColliders([{ tris: Float32Array.from(g.attributes.position.array) }]);
+  assert.equal(boxes.length, 1);
+  assert.equal(boxes[0].kind, "solid");
+  nearV(boxes[0].pos, [2, 2, 3], 1e-3);
+  const front = room().find((m) => m.name === "front");
+  assert.ok(worldColliders([front]).boxes.length > 1, "the doorway keeps it in slabs");
 });
 
 test("colliders: a terrain with no flat parts still gets ground columns; caps keep the biggest", () => {
