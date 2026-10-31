@@ -175,9 +175,14 @@ test("a person dragged across the set turns to face where they walk, and their l
     const hip = g.userData.limbs.find((l) => l.part === "hip");
     swing = Math.max(swing, Math.abs(hip.pivot.rotation.x));
   }
-  st.live.end(); st.live.finish();
+  st.live.end();
+  const hipNow = g.userData.limbs.find((l) => l.part === "hip").pivot.rotation.x;   // let go: still settling the rest
+  st.live.finish();
+  assert.ok(Math.abs(hipNow) < 0.05, `let go mid-stride, they stand straight away (${hipNow})`);
   assert.ok(Math.abs(a.rotation_deg - 90) < 15, `faces +x, the way they walked (${a.rotation_deg})`);
   assert.ok(swing > 0.15, `legs swing (${swing})`);
+  const hip = g.userData.limbs.find((l) => l.part === "hip");
+  assert.ok(Math.abs(hip.pivot.rotation.x) < 0.05, `let go, they stand (not frozen mid-stride: ${hip.pivot.rotation.x})`);
 });
 
 test("a small nudge doesn't turn a person around", () => {
