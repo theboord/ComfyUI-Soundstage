@@ -138,10 +138,8 @@ export function planarBoxes(tris, { cell = 0.25, thickness = 0.3, wall = 0.15, m
   }
   // Terrain and other curved surfaces split into many little "planes": hand their up-facing bits to the height
   // columns below instead of making a slab per triangle.
-  const areas = planes.map((p) => p.area).sort((a, b) => a - b);
-  if (planes.length > 40 && areas[Math.floor(areas.length / 2)] < 1.5) {
-    for (const P of planes) if (P.n[1] > 0.5 && P.area < 4) { leftovers.push(...P.tris); P.done = true; }
-  }
+  const bits = planes.filter((p) => p.n[1] > 0.5 && p.area < 4);
+  if (bits.length > 40) for (const P of bits) { leftovers.push(...P.tris); P.done = true; }
   // A solid's two faces (a wall's sides, a floor's top and bottom): one slab exactly as thick as the solid, made once.
   // Without this a thin floor's underside grows its slab up through the floor.
   planes.sort((a, b) => b.n[1] - a.n[1]);   // up-facing surfaces claim the pair, so a floor reads as a floor
@@ -207,20 +205,40 @@ export function planarBoxes(tris, { cell = 0.25, thickness = 0.3, wall = 0.15, m
     const q = quatFromAxes(u, n, w);
     for (const [i0, j0, i1, j1] of greedyRects(grid, W, H)) {
       const sa = s0 + i0 * c, sb = Math.min(s1, s0 + (i1 + 1) * c), ta = t0 + j0 * c, tb = Math.min(t1, t0 + (j1 + 1) * c);
-      if ((sb - sa) * (tb - ta) < 0.02) continue;
+      if ((sb - sa) * (tb - ta) < Math.max(0.02, 2 * c * c)) continue;   // slivers from the raster's staircase edges
       const sc = (sa + sb) / 2, tc = (ta + tb) / 2, dc = P.d - th / 2;   // the slab sits behind the surface
       boxes.push({ half: [(sb - sa) / 2, th / 2, (tb - ta) / 2],
         pos: [u[0] * sc + n[0] * dc + w[0] * tc, u[1] * sc + n[1] * dc + w[1] * tc, u[2] * sc + n[2] * dc + w[2] * tc], quat: q,
         area: (sb - sa) * (tb - ta), kind: floorLike ? (n[1] > 0 ? "floor" : "ceiling") : "wall" });
     }
   }
-  boxes.push(...leftoverBoxes(tris, leftovers));
+  // Leftovers that sit against a slab already made (bevels, trims, window frames) add nothing.
+  const covered = (p) => boxes.some((b) => {
+    const q = [-b.quat[0], -b.quat[1], -b.quat[2], b.quat[3]];
+    const d = qrotC(q, [p[0] - b.pos[0], p[1] - b.pos[1], p[2] - b.pos[2]]);
+    return Math.abs(d[0]) <= b.half[0] + 0.35 && Math.abs(d[1]) <= b.half[1] + 0.35 && Math.abs(d[2]) <= b.half[2] + 0.35;
+  });
+  boxes.push(...leftoverBoxes(tris, leftovers).filter((b) => b.kind === "terrain" || !covered(b.pos)));
   return boxes;
 }
 
+function qrotC(q, v) {
+  const [x, y, z, w] = q, [vx, vy, vz] = v;
+  const tx = 2 * (y * vz - z * vy), ty = 2 * (z * vx - x * vz), tz = 2 * (x * vy - y * vx);
+  return [vx + w * tx + (y * tz - z * ty), vy + w * ty + (z * tx - x * tz), vz + w * tz + (x * ty - y * tx)];
+}
+
 /** Curved or broken-up leftovers: height columns where they face up (terrain, mounds), voxel boxes elsewhere. */
-function leftoverBoxes(tris, offsets, { cell = 1 } = {}) {
+function leftoverBoxes(tris, offsets, { cell = null, target = 400 } = {}) {
   if (!offsets.length) return [];
+  if (!cell) {   // about `target` columns over the leftovers' footprint, never finer than 1 m
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const o of offsets) for (let k = 0; k < 9; k += 3) {
+      const x = tris[o + k], z = tris[o + k + 2];
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z;
+    }
+    cell = Math.max(1, Math.sqrt(((x1 - x0) * (z1 - z0)) / target));
+  }
   const cols = new Map(), vox = new Map();
   for (const o of offsets) {
     const a = [tris[o], tris[o + 1], tris[o + 2]], b = [tris[o + 3], tris[o + 4], tris[o + 5]], c = [tris[o + 6], tris[o + 7], tris[o + 8]];
@@ -270,12 +288,37 @@ function leftoverBoxes(tris, offsets, { cell = 1 } = {}) {
   return out;
 }
 
+/** Share of a mesh's area facing its six most common directions: ~1 for boxy things, low for round ones. */
+export function planarShare(t) {
+  const bins = new Map();
+  let total = 0;
+  for (let o = 0; o + 8 < t.length; o += 9) {
+    const cr = cross([t[o + 3] - t[o], t[o + 4] - t[o + 1], t[o + 5] - t[o + 2]], [t[o + 6] - t[o], t[o + 7] - t[o + 1], t[o + 8] - t[o + 2]]);
+    const a = Math.hypot(...cr);
+    if (!(a > 0)) continue;
+    const key = cr.map((v) => Math.round((v / a) * 8)).join();
+    bins.set(key, (bins.get(key) || 0) + a);
+    total += a;
+  }
+  return total ? [...bins.values()].sort((x, y) => y - x).slice(0, 6).reduce((x, y) => x + y, 0) / total : 1;
+}
+
+/** Volume enclosed by a triangle soup (positive when closed with outward faces). */
+export function signedVolume(t) {
+  let v = 0;
+  for (let o = 0; o + 8 < t.length; o += 9) {
+    v += t[o] * (t[o + 4] * t[o + 8] - t[o + 5] * t[o + 7]) - t[o + 1] * (t[o + 3] * t[o + 8] - t[o + 5] * t[o + 6]) + t[o + 2] * (t[o + 3] * t[o + 7] - t[o + 4] * t[o + 6]);
+  }
+  return v / 6;
+}
+
 /**
  * Collision boxes for a world: meshes = [{tris: Float32Array (world space, 9 floats a triangle), name?, solid?}].
- * Props (largest side <= propMax) get one box each; big meshes get slabs. Keeps the `maxBoxes` biggest.
+ * Props (largest side <= propMax) and box-like solids get one box each; big meshes get slabs. Keeps the `maxBoxes`
+ * biggest.
  * Returns {boxes, dropped}.
  */
-export function worldColliders(meshes, { propMax = 2.6, maxBoxes = 450, ...opts } = {}) {
+export function worldColliders(meshes, { propMax = 2.6, maxBoxes = 1500, perMesh = 400, ...opts } = {}) {
   let boxes = [];
   for (const m of meshes) {
     if (!m.tris?.length) continue;
@@ -284,7 +327,21 @@ export function worldColliders(meshes, { propMax = 2.6, maxBoxes = 450, ...opts 
     if (ext <= propMax) {
       const b = propBox(m.tris);
       if (b) boxes.push({ ...b, area: 4 * b.half[0] * b.half[2], kind: "prop", name: m.name });
-    } else boxes.push(...planarBoxes(m.tris, opts).map((b) => ({ ...b, name: m.name })));
+      continue;
+    }
+    // A closed, outward, box-like solid (a building block, a wall without openings) is one box; a room shell
+    // (faces inward), an open floor or anything with doors and notches gets slabs.
+    // A closed, outward, round solid (a column, a lamp post, a boulder) is one box too.
+    const b = propBox(m.tris);
+    const obbVol = 8 * b.half[0] * b.half[1] * b.half[2];
+    const fill = obbVol > 0 ? signedVolume(m.tris) / obbVol : 0;
+    if (fill > 0.97 || (fill > 0.6 && planarShare(m.tris) < 0.6)) {
+      boxes.push({ ...b, area: 4 * b.half[0] * b.half[2] + 4 * b.half[1] * Math.max(b.half[0], b.half[2]), kind: "solid", name: m.name });
+      continue;
+    }
+    let mine = planarBoxes(m.tris, opts);
+    if (mine.length > perMesh) mine = mine.sort((x, y) => y.area - x.area).slice(0, perMesh);   // one mesh can't take every slot
+    boxes.push(...mine.map((x) => ({ ...x, name: m.name })));
   }
   let dropped = 0;
   if (boxes.length > maxBoxes) {

@@ -31,6 +31,8 @@ export const WORLD_ACCEPT = [...WORLD_MESH_FORMATS, ...WORLD_SPLAT_FORMATS, "bin
   .map((x) => "." + x).join(",");
 export const extOf = (name) => (/\.([a-z0-9]+)(?:$|\?)/i.exec(name || "")?.[1] || "").toLowerCase();
 
+const NEAR_ALL = 300;      // worlds with up to this many collider boxes hand them all to physics
+const NEAR_REACH = 25;    // else only boxes within this many metres of an object's keyed path
 const NO_COLLIDE_NAME = /(sky|dome|cloud|leaf|leaves|foliage|grass|decal|water|glass|window_glass|fog|light_?beam|volumetric)/i;
 
 // ---------------------------------------------------------------- FBX header (units and up axis)
@@ -524,7 +526,17 @@ export class WorldMount {
     this.onInfo = null;      // UI callback(info)
   }
 
-  get sig() { return this.group?.parent ? `${this.url}|${this.xf?.sig || ""}|${this.s.state.world?.colliders !== false}` : ""; }
+  get sig() { return this.group?.parent ? `${this.url}|${this.xf?.sig || ""}|${this.s.state.world?.colliders !== false}|${this._nearKey()}` : ""; }
+
+  /** Where the action is: the 10 m cells every object's keys touch (a big world only hands physics what's near). */
+  _nearKey() {
+    if ((this._col?.list?.length || 0) <= NEAR_ALL) return "";
+    const cells = new Set();
+    for (const a of this.s.state.actors || []) for (const k of a.keys?.length ? a.keys : [{ position: a.position }]) {
+      if (k?.position) cells.add(`${Math.floor(k.position[0] / 10)},${Math.floor(k.position[2] / 10)}`);
+    }
+    return [...cells].sort().join(";");
+  }
 
   /** stage._buildSet hook: (re)attach the world after the set rebuilds. */
   attach() {
@@ -693,8 +705,27 @@ export class WorldMount {
     this.mixer.setTime(t);
   }
 
-  /** _setColliders hook. */
-  colliders() { return this.group?.parent ? this._col.list : []; }
+  /**
+   * _setColliders hook. A big world's thousands of boxes would slow every physics step, so past NEAR_ALL boxes only
+   * those within NEAR_REACH metres of an object's keyed path go to the engine (re-picked when objects move cells).
+   */
+  colliders() {
+    if (!this.group?.parent) return [];
+    const all = this._col.list;
+    const key = this._nearKey();
+    if (!key) return all;
+    if (this._near?.key === key && this._near.sig === this._col.sig) return this._near.list;
+    const cells = key.split(";").map((c) => c.split(",").map(Number));
+    const list = all.filter((c) => {
+      const p = c.poses[0].pos, r = Math.hypot(c.half[0], c.half[2]);
+      return cells.some(([i, k]) => {
+        const dx = Math.max(0, Math.abs(p[0] - (i + 0.5) * 10) - 5), dz = Math.max(0, Math.abs(p[2] - (k + 0.5) * 10) - 5);
+        return Math.hypot(dx, dz) - r < NEAR_REACH;
+      });
+    });
+    this._near = { key, sig: this._col.sig, list };
+    return list;
+  }
 
   // ---------------------------------------------------------------- public API (the import panel and the agent)
 
@@ -704,7 +735,7 @@ export class WorldMount {
     const name = opts.name || decodeURIComponent(String(url).split(/[?#]/)[0].split("/").pop() || "world");
     s.state.world = { url, name: name.replace(/\.[a-z0-9]+$/i, ""), format: opts.format || extOf(name) || "glb", files: opts.files || {},
       source: opts.source || "auto", up: opts.up || "auto", units: opts.units || "auto", scale_mul: 1, lift: 0, hide_ground: true, colliders: true,
-      ...(opts.temporary ? { temporary: true } : {}) };
+      ...(opts.temporary ? { temporary: true } : {}), ...(opts.merge === false ? { merge: false } : {}) };
     s.state.environment = { ...(s.state.environment || {}), set: "empty" };
     s._buildSet();
     s.setFrame(s.frame);
