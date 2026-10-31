@@ -78,10 +78,6 @@ const STYLE = `
 .ss-lined .sp-tk .star { position:absolute; top:-5px; right:-5px; width:15px; height:15px; border-radius:50%; background:var(--c); color:#fff;
   font:700 10px/15px system-ui, sans-serif; text-align:center; box-shadow:0 0 0 1.5px #1d1722; }
 .ss-lined .sp-edit { display:flex; flex-wrap:wrap; gap:6px; flex:none; }
-.ss-lined .sp-help { margin:0; padding:7px 9px 7px 24px; border-radius:8px; background:rgba(242,255,89,.06); border:1px solid rgba(242,255,89,.22);
-  color:var(--lp-text); font-size:12px; line-height:1.45; flex:none; }
-.ss-lined .sp-help kbd { font:600 10.5px/1 ui-monospace, Menlo, monospace; padding:1px 4px; border-radius:4px; border:1px solid var(--lp-line2); color:var(--lp-muted); }
-.ss-lined .sp-help[hidden] { display:none; }
 `;
 
 function injectCss() {
@@ -117,13 +113,8 @@ export class SyncPlayer {
     this.addBtn = h("button", { type: "button", class: "sp-b", title: "Draw this setup's line on the script: click the line where it starts", on: { click: () => this.o.onAdd() } }, "+ Add line");
     this.delBtn = h("button", { type: "button", class: "sp-b warn", title: "Remove this setup's line from the script (Undo brings it back)", on: { click: () => this.o.onDelete() } }, "Delete line");
     this.undoBtn = h("button", { type: "button", class: "sp-b", title: "Undo the last lining change (⌘Z / Ctrl+Z)", on: { click: () => this.o.onUndo() } }, "↶ Undo");
-    this.help = h("ul", { class: "sp-help", hidden: "" },
-      h("li", {}, "Drag a line's top or bottom dot to change the lines it covers"),
-      h("li", {}, "Click a stretch of a line to flip it on / off camera (zig-zag)"),
-      h("li", {}, "+ Add line, then click where the setup starts; or drag a take onto the script"),
-      h("li", {}, "Delete line removes it; ", h("kbd", {}, "⌘Z"), " undoes"));
     this.el.append(this.headEl, this.view, this.bar, this.ctl, this.lineEl, this.takesHead, this.takesEl,
-      h("div", { class: "sp-sec" }, "Lining", this.editBtn), h("div", { class: "sp-edit" }, this.addBtn, this.delBtn, this.undoBtn), this.help);
+      h("div", { class: "sp-sec" }, "Lining", this.editBtn), h("div", { class: "sp-edit" }, this.addBtn, this.delBtn, this.undoBtn));
     parent.append(this.el);
     this.setLining({});
   }
@@ -188,7 +179,6 @@ export class SyncPlayer {
 
   setLining({ edit = false, canUndo = false, lined = false, placing = false, has = false }) {
     this.editBtn.setAttribute("aria-pressed", String(!!edit));
-    this.help.hidden = !edit;
     this.addBtn.disabled = !has || lined;
     this.addBtn.setAttribute("aria-pressed", String(!!placing));
     this.addBtn.textContent = placing ? "Click a script line…" : "+ Add line";

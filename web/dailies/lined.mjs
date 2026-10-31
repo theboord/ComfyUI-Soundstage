@@ -528,7 +528,8 @@ export class LinedScript {
         e.style.setProperty("--hlb2", hexA(st.color, 0.24));
         e.style.setProperty("--hlc", st.color);
       } else { e.removeAttribute("data-hl"); }
-      if (this._cursor == null || i !== this._cursor || !st) e.removeAttribute("data-cursor"); else e.setAttribute("data-cursor", "");
+      // The cue outline belongs to the loaded setup: hovering another line shows that line's span without it.
+      if (this._cursor == null || i !== this._cursor || !st || (this._hot && this._hot !== selId)) e.removeAttribute("data-cursor"); else e.setAttribute("data-cursor", "");
     });
     this._drawCue();
   }
@@ -705,6 +706,11 @@ export class LinedScript {
   _commit(st, cov, msg) {
     this.history.push(st.shot.id, st.cov);
     st.cov = cov;
+    // The line you edit becomes the loaded one (so Delete line and the player follow it).
+    if (this.player && this._sel?.id !== st.shot.id) {
+      this._sel = { id: st.shot.id, takeId: st.hero?.id || null, i: cov ? cov.from : 0 };
+      this._cursor = cov ? cov.from : null;
+    } else if (this._sel && cov) this._sel.i = this._cursor = Math.max(cov.from, Math.min(cov.to, this._sel.i));
     this.o.setCoverage(st.shot.id, cov);
     if (msg) this.o.onStatus(msg);
     this.refresh();
