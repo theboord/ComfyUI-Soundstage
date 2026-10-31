@@ -341,6 +341,8 @@ const CSS = `
 .ss-stage .ss-clbar .row { gap:6px !important; flex-wrap:nowrap !important; }
 .ss-stage .ss-clbar label.f { flex-direction:row !important; align-items:center; gap:6px !important; }
 .ss-stage .ss-clbar select { max-width:230px; padding:5px 8px !important; }
+/* The ④ image model: as wide as its label, so "FLUX 3 Klein · local · recommended" is never cut. */
+.ss-stage .ss-clbar > label.f.ss-cltight > select { field-sizing:content; max-width:290px; }
 .ss-stage .ss-clbar .seg button { padding:4px 10px !important; }
 .ss-stage .ss-clbar .status { font-size:11px; color:var(--ss-muted); }
 .ss-stage .ss-clbar button.go { padding:7px 14px !important; }
@@ -350,7 +352,7 @@ const CSS = `
 .ss-stage .ss-clbottom { container-type:inline-size; }
 @container (max-width: 1420px) {
   .ss-stage .ss-clbar > label.f.ss-cltight { font-size:0 !important; gap:0 !important; }
-  .ss-stage .ss-clbar > label.f.ss-cltight > select { font-size:13px; max-width:200px; }
+  .ss-stage .ss-clbar > label.f.ss-cltight > select { font-size:13px; max-width:290px; }
   .ss-stage .ss-clbar > .row.ss-cltight > .status { display:none; }
 }
 /* Narrow (the App's side panel): everything stacks under the canvas, nothing floats. */
