@@ -13,6 +13,8 @@
 <a href="MODELS.md"><img src="https://img.shields.io/badge/100%25-open%20weights-brightgreen" alt="100% open weights"></a>
 <a href="https://x.com/hashtag/OpenSourceHiggsfield"><img src="https://img.shields.io/badge/%23-OpenSourceHiggsfield-purple" alt="#OpenSourceHiggsfield"></a>
 <img src="https://img.shields.io/badge/built%20in-3%20days-orange" alt="Built in 3 days">
+<a href="CHANGELOG.md"><img src="https://img.shields.io/github/last-commit/theboord/ComfyUI-Soundstage/main?label=last%20update" alt="Last update"></a>
+<a href="https://github.com/theboord/ComfyUI-Soundstage/commits/main"><img src="https://img.shields.io/github/commit-activity/w/theboord/ComfyUI-Soundstage?label=commits" alt="Commits per week"></a>
 </p>
 
 <p align="center"><b>Built in 3 days. This is only the beginning:</b> more features are coming. &#11088; Star the repo and build with us.</p>
@@ -30,6 +32,21 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 </p>
 
 <p align="center"><sub>The browser demo is the real App UI replaying real GPU renders, no install needed. Also: <a href="docs/media/soundstage_demo.mp4">the longer walkthrough</a>. Built for Comfy Org's <i>Open Source Higgsfield</i> challenge.</sub></p>
+
+### What's new (updated continuously, times US Pacific)
+
+| When | Update |
+|---|---|
+| Oct 31, 12:37 PDT | **Live 3D:** physics stays live while you drag. People climb onto crates, mount horses and pick up props. *(in progress)* |
+| Oct 31, 11:55 PDT | **Blender · Unreal · Maya · Nuke:** import a whole world as the set, and export the shot back with builder scripts. Round trip verified in Blender. |
+| Oct 31, 10:09 PDT | **Physics engine:** one interface, CPU XPBD by default, [three-avbd](https://github.com/sbobyn/three-avbd) GPU as experimental. |
+| Oct 31, 03:07 PDT | **Polish:** see-through car glass (seated actors show), cleaner labels, Voice Change seeds. |
+| Oct 31, 02:13 PDT | **Stage physics:** drop, tumble and crash props, then bake them to keys. |
+| Oct 31, 01:09 PDT | **Ripple edit and Pose follow:** change one frame and the whole shot follows. |
+| Oct 31, 00:47 PDT | **ScriptSync:** take thumbnails on the lined script; click a line to play. |
+| Oct 30, 19:23–23:07 PDT | **One giant canvas**, a guided first run, cast seated in cars and on horses, real-people realism. |
+
+Full history with every milestone: **[CHANGELOG.md](CHANGELOG.md)**.
 
 ### What you get
 
