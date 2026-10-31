@@ -212,14 +212,34 @@ export class LiveEdit {
     const d = this.drag;
     if (!d || !d.person || e.key.toLowerCase() !== "c") return false;
     if (d.carried.length) {
-      for (const pid of d.carried) { const o = this._actor(pid); delete o.carry_id; delete o.carry_at; }
-      this._note(`${this._name(d.a)} puts down ${d.carried.map((x) => this._name(this._actor(x))).join(", ")}.`);
+      // Put down: it leaves the hand where it is and drops (falls, tips, settles) in the live world, then it's written
+      // down with everything else; it never jumps back to where it was picked up.
+      const names = d.carried.map((x) => this._name(this._actor(x))).join(", ");
+      for (const pid of d.carried) {
+        const o = this._actor(pid), og = this.s.actorMeshes.get(pid);
+        if (!o || !og) continue;
+        og.updateMatrixWorld(true);
+        const p = og.getWorldPosition(new THREE.Vector3()), q = og.getWorldQuaternion(new THREE.Quaternion());
+        const keyPos = this.s._actorPosAt(o, this.s.frame);
+        delete o.carry_id; delete o.carry_at;
+        // Set down in front of them, clear of their body (the hands are closer in than the box is deep).
+        const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(d.g.quaternion).setY(0).normalize();
+        const me = this._shapes(d.a, d.g)[0], it = this._shapes(o, og)[0];
+        const need = (me ? Math.max(me.half[0], me.half[2]) : 0.2) + (it ? Math.hypot(it.half[0], it.half[2]) : 0.25) + 0.03;
+        const along = p.clone().sub(d.g.position).dot(fwd);
+        if (along < need) p.addScaledVector(fwd, need - along);
+        this._addDropped(o, og, p.toArray(), [q.x, q.y, q.z, q.w], keyPos);
+      }
+      d.carryBlend = null;
+      this._note(`${this._name(d.a)} puts down ${names}.`);
       d.carried = [];
       this._silentFrame();
       return true;
     }
     const near = this._touchingProp(d);
     if (!near) { this._note("Nothing small enough to pick up here: walk them into a prop, then press C."); return true; }
+    const ng = this.s.actorMeshes.get(near.id);
+    if (ng) { ng.updateMatrixWorld(true); d.carryBlend = { id: near.id, from: ng.position.toArray(), q0: ng.quaternion.clone(), t: 0, dur: 0.35 }; }
     near.carry_id = d.id;
     near.carry_at = this.s.frame;
     d.carried = [near.id];
@@ -228,6 +248,17 @@ export class LiveEdit {
     this._silentFrame();
     this._note(`${this._name(d.a)} picks up ${this._name(near)}. Keep dragging: it comes along. C puts it down.`);
     return true;
+  }
+
+  /** A prop let go from someone's hands: a dynamic body at that pose in the live world (it falls and settles). */
+  _addDropped(o, og, pos, quat, keyPos) {
+    const shapes = this._shapes(o, og), p = physicsOf(o), feel = FEEL[o.kind] || {};
+    const ids = shapes.map((sh) => this.world.addBody({ id: sh.id, shape: sh.sphere ? "sphere" : "box", half: sh.half, center: sh.center,
+      radius: sh.sphere || 0, type: "dynamic", mass: this._mass(o), friction: o.physics?.friction ?? feel.friction ?? 0.7,
+      restitution: o.physics?.bounce ?? feel.restitution ?? 0.05, angularDamping: feel.angularDamping ?? 1.4, linearDamping: 0.08, pos, quat }));
+    this.bodies.set(o.id, ids);
+    this.meta.set(o.id, { pos: [...keyPos], quat: [0, 0, 0, 1], dynamic: true, held: false, dropped: true });
+    og.position.set(...pos); og.quaternion.set(...quat);
   }
 
   /** Mouse released. */
@@ -313,6 +344,17 @@ export class LiveEdit {
       // The figure is where its body is (the stage's own hop-over-obstacles height is for walked paths, not a drag).
       if (d.person && !d.mountHost && pose) d.g.position.y = Math.max(0, pose.pos[1]);
       if (d.person && !d.mountHost) this._stepPose(d, pose);
+      if (d.carryBlend) {   // lifted from where it stood up into the hands, not snapped there
+        const cb = d.carryBlend, cg = this.s.actorMeshes.get(cb.id);
+        cb.t += dt;
+        const u = cb.t / cb.dur;
+        if (u >= 1 || !cg) d.carryBlend = null;
+        else {
+          const e = u * u * (3 - 2 * u);
+          cg.position.set(...cb.from.map((v, i) => v + (cg.position.getComponent(i) - v) * e));
+          cg.quaternion.copy(cb.q0.clone().slerp(cg.quaternion, e));
+        }
+      }
       if (d.mountHost && d.mountBlend) {   // easing into the seat
         d.mountBlend.t += dt;
         const u = d.mountBlend.t / d.mountBlend.dur;
@@ -355,6 +397,8 @@ export class LiveEdit {
         const top = w.raycast([hit.point[0] + dir[0] * 0.2, 40, hit.point[2] + dir[2] * 0.2], [0, -1, 0], 80, { exclude });
         if (top && top.id === hit.id && top.normal[1] > 0.7 && top.point[1] <= 1.75) hit = top;
       }
+      // A person doesn't stand on light things they could shove or pick up (a cardboard box): they walk into them.
+      if (d.person && hit && hit.id !== "__ground" && this.meta.get(this._actorOfBody(hit.id))?.dynamic) hit = null;
       // A prop only goes up onto a pushable crate it is already above (lifted with the wheel); lower down it pushes it.
       if (!d.person && hit && hit.id !== "__ground" && this.meta.get(this._actorOfBody(hit.id))?.dynamic) {
         const now = w.getPose(this.bodies.get(d.id)?.[0]);
