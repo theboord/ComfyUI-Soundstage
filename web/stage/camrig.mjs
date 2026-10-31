@@ -39,7 +39,7 @@ function noise(seed, t) {
  * Follow a keyed signal x[f] like a mass on a spring (critically under-damped): it lags at the start (inertia),
  * overshoots slightly and settles at the stop. omega = stiffness (rad/s), zeta = damping (1 = no overshoot).
  */
-function springFollow(xs, fps, omega, zeta) {
+export function springFollow(xs, fps, omega, zeta) {
   const dt = 1 / fps, out = new Array(xs.length);
   let x = xs[0].slice(), v = [0, 0, 0];
   const sub_steps = 4, h = dt / sub_steps;

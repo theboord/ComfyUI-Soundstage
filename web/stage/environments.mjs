@@ -6,6 +6,8 @@ import { buildUnderwater } from "./sets/underwater.mjs";
 import { buildBurningBuilding, buildFireWeather } from "./sets/fire.mjs";
 import { buildAirplaneCabin, buildRunway, buildAboveClouds } from "./sets/airplane.mjs";
 import { buildTrainCar, buildTrainStation } from "./sets/train.mjs";
+import { softSprite } from "./sets/common.mjs";
+import { SMOKE } from "./stunts.mjs";
 
 export const SETS = {
   plaza: { label: "Plaza exterior" },
@@ -257,4 +259,48 @@ export function buildWeather(kind, density = 0.5) {
     geo.attributes.position.needsUpdate = true;
   };
   return { object, update };
+}
+
+/**
+ * Tyre smoke for one car (Milestone 13): soft puffs, each with its own size (metres, at any lens) and opacity, in the
+ * car's group. set(parts, carMatrix) takes stunts.smokeParticles() output in stage space and the car's matrix. The
+ * puffs show in Clay and Color (the previz and the guides), never in Depth or the ID matte (userData.glass).
+ */
+export function buildTireSmoke(max = 1200) {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(max * 3), col = new Float32Array(max * 4), size = new Float32Array(max);
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute("color", new THREE.BufferAttribute(col, 4));
+  geo.setAttribute("pSize", new THREE.BufferAttribute(size, 1));
+  geo.setDrawRange(0, 0);
+  const m = new THREE.PointsMaterial({ color: SMOKE.color, size: 1, map: softSprite(), vertexColors: true, transparent: true,
+    depthWrite: false, sizeAttenuation: true });
+  m.allowOverride = false;   // Clay would draw them as black squares
+  // Per-puff size, true to metres through any lens (PointsMaterial's attenuation ignores the field of view).
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace("uniform float size;", "uniform float size;\nattribute float pSize;")
+      .replace("gl_PointSize = size;", "gl_PointSize = size * pSize * projectionMatrix[1][1];");
+  };
+  m.customProgramCacheKey = () => "ss_tire_smoke";
+  const object = new THREE.Points(geo, m);
+  object.frustumCulled = false;
+  object.renderOrder = 2;
+  object.castShadow = false; object.receiveShadow = false;
+  object.userData.glass = true;
+  object.userData.tireSmoke = true;
+  const inv = new THREE.Matrix4(), v = new THREE.Vector3();
+  const set = (parts, carMatrix) => {
+    inv.copy(carMatrix).invert();
+    const n = Math.min(max, parts.length);
+    for (let i = 0; i < n; i++) {
+      const q = parts[i];
+      v.set(q.p[0], q.p[1], q.p[2]).applyMatrix4(inv);
+      pos[i * 3] = v.x; pos[i * 3 + 1] = v.y; pos[i * 3 + 2] = v.z;
+      col[i * 4] = col[i * 4 + 1] = col[i * 4 + 2] = 1; col[i * 4 + 3] = q.alpha;
+      size[i] = q.size;
+    }
+    geo.setDrawRange(0, n);
+    for (const k of ["position", "color", "pSize"]) geo.attributes[k].needsUpdate = true;
+  };
+  return { object, set };
 }
