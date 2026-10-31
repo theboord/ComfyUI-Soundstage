@@ -37,6 +37,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 
 | When | Update |
 |---|---|
+| Oct 31, 14:49 PDT | **New sets showcase:** reef diver, firefighter, airliner window and train window, rendered through the App. Scene setup frames each new set. |
 | Oct 31, 14:06 PDT | **Movie car stunts:** reverse J-turn, donut and handbrake 180 in one pick; the body rolls on its springs, tyre smoke pours off the wheels, the prompts say which end leads. |
 | Oct 31, 13:41 PDT | **New sets, round 2:** dense coral reef, scenery that streams past plane and train windows, real countryside out of the train window. |
 | Oct 31, 13:40 PDT | **Cars face the way they drive:** lit headlights and tail lights in the guide; a test guards it. |
