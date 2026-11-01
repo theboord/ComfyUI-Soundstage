@@ -5,6 +5,13 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**19:24 PDT · Try-it demo updated with everything since the contest version**
+- The [live demo](https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq) now runs the current App: the canvas layout and first-run card, seated cast behind see-through car glass, lit lamps, horses and riders, live drags (climb, mount, pick up, push) with a CPU fallback for the GPU solver, the stunt picker, the seven new sets, ScriptSync with real dailies, Ripple and Pose follow, and the DCC kit card.
+- 20 scenes in a scene picker. New ones: Dry Creek (the sample script with its desert, main street and beach scenes and their real renders), the reverse J-turn, a live-physics playground, and underwater, fire, airplane cabin, train carriage, platform, runway and above the clouds, each set up by the App from a slugline. A What's new tour opens each feature on its scene and plays the real renders and recordings.
+- The Car Chase demo's backwards chase-cam take is replaced by the fixed one.
+- Server-only features (Director chat, Video to 3D, Ripple and Pose renders, Layer Pack) say they're available in the full install, never an error.
+- Rebuilding after a milestone is one command plus one Artifact publish: `python3 tools/tryit/build_tryit.py`. See [tools/tryit/README.md](tools/tryit/README.md). The click-through test is `tools/tryit/test_tryit.mjs`.
+
 **16:22 PDT · A selected person can be grabbed by the body again (they mount the horse)** *(QA round 03)*
 - Fixed: after a climb onto a crate and Undo / Redo / Undo (or any time a person was already selected), dragging them onto a horse slid them about 1 m along one line and nothing happened. Undo left them selected, so the move arrows showed at their feet, and from a raised view the arrow pointing away from you is drawn right up across their body; a press there went to that arrow. Now a press on a selected person's body always grabs the person (the live drag: walk, climb, mount); the arrows still work where they stick out past them. On other objects only an arrowhead keeps the press, and Shift+drag still locks a drag to one axis.
 - Code: [web/stage/stage.mjs](web/stage/stage.mjs) (`_gizmoTakesPress`). Tests: [tests/js/qa_round03.test.mjs](tests/js/qa_round03.test.mjs).
