@@ -178,7 +178,10 @@ export class Director {
     const scenes = (sc?.scenes || []).map((s) => ({ id: s.id, number: s.number, heading: s.heading }));
     const renders = {};
     for (const s of shots) { try { renders[s.id] = Object.keys(this.host.renders?.(s.id) || {}); } catch { /* none */ } }
-    return { shots, active_shot: st.active_shot, scenes, live_scene: this.host.script?.liveKey || null, renders };
+    // The Director's Book (Milestone 23): the scene's intent, style, rules and notes, read before every command.
+    let book = null;
+    try { book = this.host.book?.context?.() || null; } catch { book = null; }
+    return { shots, active_shot: st.active_shot, scenes, live_scene: this.host.script?.liveKey || null, renders, book };
   }
 
   async _post(path, body) {
@@ -305,6 +308,8 @@ export class Director {
       this.redoStack = [];
     }
     try { this.host.onLoad?.(this.stage.toJSON()); } catch { /* */ }
+    // The Director's Book remembers what was decided here (a note on the scene the next commands read).
+    if (changed && !isUndo) { try { this.host.book?.recordDecision?.({ command: plan.command, calls: plan.calls, results }); } catch { /* no book */ } }
     const out = { ok: results.every((r) => r.ok || r.skipped), results, said: results.map((r) => r.said), queued,
       explain: explainFor(plan.calls || [], results), next: this.nextSteps(plan), source,
       apply_ms: Math.round(performance.now() - t0), undoable: changed && !isUndo };

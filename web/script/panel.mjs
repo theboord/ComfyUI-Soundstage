@@ -314,6 +314,11 @@ const STYLE = `
   border-radius:10px !important; padding:9px 11px !important; }
 .ss-script textarea.notes:focus { border-color:var(--sx-line2) !important; }
 .ss-script textarea.notes::placeholder { color:var(--sx-faint); }
+.ss-script .booknotes { display:flex; flex-direction:column; gap:5px; margin-top:10px; }
+.ss-script .booknotes .bn { border-left:3px solid var(--c); padding:3px 8px; background:rgba(255,255,255,.03); border-radius:0 6px 6px 0; font-size:12px; line-height:1.4; }
+.ss-script .booknotes .bn b { display:block; font-size:11px; font-weight:600; color:var(--c); }
+.ss-script .page .el.booked { box-shadow:-1.2ch 0 0 -0.95ch var(--c); position:relative; background:linear-gradient(90deg, rgba(242,255,89,0), rgba(242,255,89,.06)); }
+.ss-script .page .el.booked::after { content:attr(data-notes); position:absolute; right:-2.6ch; top:0; font:600 10px/16px var(--ss-font, sans-serif); min-width:16px; height:16px; border-radius:8px; text-align:center; background:var(--c); color:#211927; }
 .ss-script .saved { display:inline-flex; align-items:center; gap:4px; transition:opacity .3s; }
 .ss-script .saved[data-on=false] { opacity:0; }
 
@@ -441,6 +446,9 @@ function injectCss() {
   if (typeof document === "undefined" || document.getElementById("ss-script-css")) return;
   document.head.append(h("style", { id: "ss-script-css" }, STYLE));
 }
+
+// The Director's Book note colours (web/book/model.mjs CATEGORIES), for notes shown here.
+const BOOK_CAT = { subtext: "#c9a2ff", performance: "#ff9db0", blocking: "#7ec8ff", camera: "#f2ff59", lighting: "#ffc46b", sound: "#7ee2a8", continuity: "#b9b4ad" };
 
 // ------------------------------------------------------------------ ScriptPanel
 
@@ -679,6 +687,8 @@ export class ScriptPanel {
       h("div", { class: "ttl" }, h("div", { class: "badge" }, svg("page", 20)),
         h("div", { class: "tx" }, h("h2", { title: s.title || "" }, s.title || s.source_name || "Untitled script"), h("span", { class: "by", title: by }, by))),
       h("div", { class: "acts" },
+        this.o.onOpenBook ? h("button", { type: "button", class: "btn", "data-act": "book", title: "The Director's Book: a page per scene (intent, lighting, camera plan, floor plan, storyboard, your notes), as a PDF binder",
+          on: { click: () => this.o.onOpenBook(this.current ? s.scenes.find((x) => x.id === this.current) || null : null) } }, svg("page", 15), "Director's Book") : null,
         h("button", { type: "button", class: "btn", title: "Bring in a new version of this script: scenes are matched by number, your notes and shot links carry over",
           on: { click: () => this._pick("revise") } }, svg("refresh", 15), "Re-import revised draft…"),
         h("button", { type: "button", class: "btn", title: "Bring in a different script", on: { click: () => this._replace() } }, svg("upload", 15), "Replace script…")));
@@ -850,6 +860,8 @@ export class ScriptPanel {
           (sc.characters || []).length ? h("span", { class: "tag", title: sc.characters.map(niceText).join(", ") }, svg("user", 14),
             h("span", { class: "t" }, sc.characters.slice(0, 4).map(niceText).join(", ") + (sc.characters.length > 4 ? ` +${sc.characters.length - 4}` : ""))) : null),
         h("div", { class: "go" }, build,
+          this.o.onOpenBook ? h("button", { type: "button", class: "btn", "data-act": "book", title: "This scene's page in the Director's Book",
+            on: { click: () => this.o.onOpenBook(sc) } }, svg("page", 15), "Book page") : null,
           this.o.onOpenScriptSync && this.o.hasTakes?.(sc) ? h("button", { type: "button", class: "btn", "data-act": "scriptsync",
             title: "ScriptSync (lined script): this scene's pages with a coverage line per setup. Click a line and that take plays from that moment",
             on: { click: () => this.o.onOpenScriptSync(sc) } }, svg("file-video-camera", 15), "Open ScriptSync for this scene") : null,
@@ -922,19 +934,37 @@ export class ScriptPanel {
       this._noteT = setTimeout(() => this._flushNotes(), 600);
     });
     ta.addEventListener("blur", () => this._flushNotes());
-    return h("section", { class: "card" }, h("header", {}, h("h4", { class: "lbl" }, svg("pencil", 13), "Director's notes"), this._savedEl), ta);
+    const filed = this._bookNotes(sc);
+    return h("section", { class: "card" }, h("header", {}, h("h4", { class: "lbl" }, svg("pencil", 13), "Director's notes"), this._savedEl), ta,
+      filed.length ? h("div", { class: "booknotes", "aria-label": "Notes filed from your Director's Book" },
+        h("div", { class: "aside" }, `From your Director's Book (${filed.length})`),
+        ...filed.map((n) => h("div", { class: "bn", style: `--c:${BOOK_CAT[n.category] || "#999"}`, title: n.why ? `Why here: ${n.why}` : "" },
+          h("b", {}, `${n.category[0].toUpperCase()}${n.category.slice(1)}${n.character ? ` · ${niceText(n.character)}` : ""}${Number.isInteger(n.line) ? " · on a line" : ""}`), n.text))) : null);
+  }
+
+  /** Notes the Director's Book filed on this scene (Milestone 23; the host's bookNotes, else none). */
+  _bookNotes(sc) {
+    try { return (this.o.bookNotes?.(sc) || []).filter((n) => n && n.text); } catch { return []; }
   }
 
   _pageCard(sc) {
     const inner = h("div", { class: "in" },
       h("div", { class: "el slug" }, h("span", { class: "n" }, sc.number), h("span", { class: "t" }, sc.heading), h("span", { class: "n" }, sc.number)));
     let prev = null;
-    for (const e of sc.elements || []) {
+    const booked = this._bookNotes(sc).filter((n) => Number.isInteger(n.line));
+    (sc.elements || []).forEach((e, i) => {
       const type = e.type === "shot" ? "shot-el" : e.type;
       const lyricStart = e.type === "lyric" && prev !== "lyric";
-      inner.append(h("div", { class: `el ${type}${lyricStart ? " lyric-start" : ""}` }, e.text || ""));
+      const on = booked.filter((n) => n.line === i);
+      const el = h("div", { class: `el ${type}${lyricStart ? " lyric-start" : ""}${on.length ? " booked" : ""}` }, e.text || "");
+      if (on.length) {
+        el.title = on.map((n) => `${n.category}: ${n.text}`).join("\n");
+        el.style.setProperty("--c", BOOK_CAT[on[0].category] || "#f2ff59");
+        el.dataset.notes = String(on.length);
+      }
+      inner.append(el);
       prev = e.type;
-    }
+    });
     return h("section", { class: "card", "aria-label": `Scene ${sc.number} pages` },
       h("header", {}, h("h4", { class: "lbl" }, svg("page", 13), "The scene"), h("span", { class: "aside" }, "As written · read-only")),
       h("div", { class: "page", tabindex: "0", "aria-label": `Scene ${sc.number} text in screenplay format` }, inner));

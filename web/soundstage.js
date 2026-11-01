@@ -50,6 +50,7 @@ import { VIDEO_ACCEPT, cameraRaw, fetchSourceSpec, rawExplainer, sourceLine } fr
 import { JobCard, chooseVideoUse, clipSeconds, v2sPlan, wireVideoDrop, isVideoFile } from "./ui/videoimport.mjs";
 import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
 import { mountDirector } from "./agent/directorpanel.mjs";
+import { mountBook } from "./book/book.mjs";
 import { mountPresets } from "./ui/presets.mjs";
 import { attachTakeChecks } from "./takecheck/takecheck.mjs";
 
@@ -2547,6 +2548,9 @@ function createStageWidget(node, inputName) {
     onOpenScriptSync: (sc) => openScriptSync(sc.id),
     hasTakes: (sc) => { try { return getShots().some((x) => x.scene_id === sc.id && takesFor(x, takeRenders(x.id)).length > 0); } catch { return false; } },
     sample: DEMO_SCRIPT,
+    // The Director's Book (Milestone 23): the notes filed on each scene and line, and the way into the book.
+    bookNotes: (sc) => node.ssBook?.notesFor(sc.id) || [],
+    onOpenBook: (sc) => node.ssBook?.open(sc?.id || null),
   });
   // Dailies: the scene on view (the switchers' scene, else the stage's own; without a script, the stage as one scene).
   const dailiesScene = () => sceneById(filterScene) || sceneById(liveKey) ||
@@ -2897,6 +2901,20 @@ function createStageWidget(node, inputName) {
     openShot, panel: scriptPanel, switchers, persist: persistScript, setUpScene: (sc) => { const f = untouchedFresh(); const r = setUpScene(sc || sceneById(liveKey), { fresh: f }); if (f) freshSig = stageSig(stage.toJSON()); return r; },
     undoSetup: () => undoSetup(), get strip() { return sceneStrip; } };
 
+  // Director's Book (Milestone 23, web/book): one page per scene (cover sheet, lighting, camera plan, floor plan, storyboard,
+  // margin notes), drafted by the local model, edited by the director, a PDF binder. The Director reads it every command.
+  node.ssBook = mountBook({ topBar: tabs, before: guideBtn, api, stage,
+    host: {
+      getScript: () => script, liveScene: () => (sceneById(liveKey) ? liveKey : null),
+      sceneStage: (id) => (id === liveKey ? stage.toJSON() : sceneStages[id] || null),
+      look: () => look.toJSON(), setLook: (patch) => look._set(patch),
+      renders: (sid) => rendersFor(sid), chosenPic: (sid) => picOf(sid),
+      cutIds: (id) => new Set(((id === liveKey ? loadCut() : sceneCuts[id])?.cut || []).filter((e) => e?.shot_id).map((e) => e.shot_id)),
+      order: () => pipeline.shots().map((x) => x.id),
+      props: () => (node.properties ||= {}), save: () => nudgeTracker(), status: (m) => (status.textContent = m),
+      onNotes: () => { try { if (!scriptView.hidden) scriptPanel?.render(); } catch { /* panel */ } },
+    } });
+
   // Director's assistant (Milestone 15, web/agent/directorpanel.mjs): talk to the set ("/" or the top bar); it shows a
   // plan, Apply runs it through these same panels, and every turn can be undone. MCP clients drive it too.
   node.ssDirector = mountDirector({ root: el, topBar: tabs, before: guideBtn, api, stage,
@@ -2905,7 +2923,7 @@ function createStageWidget(node, inputName) {
     host: {
       onLoad: () => { try { syncControls(); syncEnv(); syncLight(); syncShots(); strip.refresh(); } catch { /* rows not built */ } },
       look: { get: () => look.toJSON(), set: (patch) => look._set(patch) },
-      pipeline, script: node.ssScript, sceneAgent: agent, shotsInOrder: () => pipeline.shots(),
+      pipeline, script: node.ssScript, sceneAgent: agent, shotsInOrder: () => pipeline.shots(), book: node.ssBook,
       renders: (sid) => rendersFor(sid), chosen: (sid) => pipeline.chosen?.[sid],
       cut: { entries: () => cutEntries(), add: (ids) => strip.appendShots(ids), flatten: () => flattenCut() },
       snapshot: () => JSON.parse(JSON.stringify({ look: look.toJSON(), approvals: node.properties?.ss_approvals || {}, cut: loadCut() })),

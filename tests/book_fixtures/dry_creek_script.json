@@ -1,0 +1,416 @@
+{
+ "version": 1,
+ "title": "Last Light on Route 9",
+ "author": "Jane Doe",
+ "format": "fountain",
+ "source_name": "last_light_on_route_9.fountain",
+ "scenes": [
+  {
+   "id": "sc_1",
+   "number": "1",
+   "heading": "EXT. DESERT OUTSIDE DRY CREEK - DUSK",
+   "int_ext": "EXT",
+   "location": "DESERT OUTSIDE DRY CREEK",
+   "time": "DUSK",
+   "index": 0,
+   "eighths": 10,
+   "elements": [
+    {
+     "type": "action",
+     "text": "Heat shimmer over the scrub. The sun sits low and orange on the ridge line."
+    },
+    {
+     "type": "action",
+     "text": "Two RIDERS walk their horses in from opposite directions and stop forty paces apart."
+    },
+    {
+     "type": "action",
+     "text": "EZRA HALE (60s, sheriff's star long since pawned) rests a hand near his holster. Across from him, MARA VOSS (30s, dust-caked duster) does not blink."
+    },
+    {
+     "type": "character",
+     "text": "EZRA",
+     "character": "EZRA"
+    },
+    {
+     "type": "dialogue",
+     "text": "You rode a long way to stand in the dirt.",
+     "character": "EZRA"
+    },
+    {
+     "type": "character",
+     "text": "MARA",
+     "character": "MARA"
+    },
+    {
+     "type": "parenthetical",
+     "text": "(evenly)",
+     "character": "MARA"
+    },
+    {
+     "type": "dialogue",
+     "text": "I rode a long way for the key, Ezra. That car was my father's.",
+     "character": "MARA"
+    },
+    {
+     "type": "action",
+     "text": "Wind HOWLS across the flats. A HAWK cries somewhere overhead."
+    },
+    {
+     "type": "character",
+     "text": "EZRA",
+     "character": "EZRA"
+    },
+    {
+     "type": "dialogue",
+     "text": "Then come and take it.",
+     "character": "EZRA"
+    },
+    {
+     "type": "action",
+     "text": "He tosses a brass KEY into the dirt between them. Neither draws. Mara spurs her horse forward, leans down at a gallop and snatches it up."
+    },
+    {
+     "type": "transition",
+     "text": "CUT TO:"
+    }
+   ],
+   "characters": [
+    "EZRA",
+    "MARA"
+   ],
+   "synopsis": "Mara faces down the old sheriff for her father's car key.",
+   "outline": "Heat shimmer over the scrub. The sun sits low and orange on the ridge line. Two riders walk their horses in from opposite directions and stop forty paces apart.",
+   "breakdown": {
+    "cast": [
+     "EZRA",
+     "MARA"
+    ],
+    "extras": [],
+    "props": [
+     "holster",
+     "sheriff's star",
+     "brass key"
+    ],
+    "vehicles": [],
+    "animals": [
+     "horses",
+     "hawk"
+    ],
+    "wardrobe": [
+     "duster"
+    ],
+    "sfx": [
+     "heat shimmer"
+    ],
+    "sound": [
+     "wind howls",
+     "hawk cries"
+    ],
+    "music": [],
+    "set_dressing": [
+     "scrub"
+    ],
+    "stunts": [
+     "gallop pick-up"
+    ]
+   },
+   "stage_hint": {
+    "set": "desert",
+    "time_of_day": "dusk",
+    "weather": null,
+    "objects": [
+     "horse"
+    ]
+   },
+   "notes": "",
+   "numbered": true,
+   "section": ""
+  },
+  {
+   "id": "sc_2",
+   "number": "2",
+   "heading": "EXT. DRY CREEK - MAIN STREET - NIGHT",
+   "int_ext": "EXT",
+   "location": "DRY CREEK - MAIN STREET",
+   "time": "NIGHT",
+   "index": 1,
+   "eighths": 5,
+   "elements": [
+    {
+     "type": "action",
+     "text": "Rain slicks the empty street. A vintage SPORTS CAR tears past the shuttered storefronts, headlights blazing."
+    },
+    {
+     "type": "action",
+     "text": "A POLICE CAR swings out of a side road behind it, SIREN WAILING, lights strobing red and blue across the wet asphalt."
+    },
+    {
+     "type": "action",
+     "text": "A few late PATRONS spill out of the bar to watch."
+    },
+    {
+     "type": "character",
+     "text": "DEPUTY COLE (V.O.)",
+     "character": "DEPUTY COLE"
+    },
+    {
+     "type": "parenthetical",
+     "text": "(over the radio)",
+     "character": "DEPUTY COLE"
+    },
+    {
+     "type": "dialogue",
+     "text": "Unit four in pursuit, eastbound on Main. She's running without plates.",
+     "character": "DEPUTY COLE"
+    }
+   ],
+   "characters": [
+    "DEPUTY COLE"
+   ],
+   "synopsis": "",
+   "outline": "Rain slicks the empty street. A vintage sports car tears past the shuttered storefronts, headlights blazing.",
+   "breakdown": {
+    "cast": [
+     "DEPUTY COLE"
+    ],
+    "extras": [
+     "patrons"
+    ],
+    "props": [
+     "police radio"
+    ],
+    "vehicles": [
+     "sports car",
+     "police car"
+    ],
+    "animals": [],
+    "wardrobe": [],
+    "sfx": [
+     "rain"
+    ],
+    "sound": [
+     "siren wailing"
+    ],
+    "music": [],
+    "set_dressing": [
+     "shuttered storefronts",
+     "bar"
+    ],
+    "stunts": [
+     "car chase"
+    ]
+   },
+   "stage_hint": {
+    "set": "street_night",
+    "time_of_day": "night",
+    "weather": "rain",
+    "objects": [
+     "sports_car",
+     "police_car"
+    ]
+   },
+   "notes": "",
+   "numbered": true,
+   "section": ""
+  },
+  {
+   "id": "sc_2A",
+   "number": "2A",
+   "heading": "INT. SPORTS CAR (MOVING) - CONTINUOUS",
+   "int_ext": "INT",
+   "location": "SPORTS CAR (MOVING)",
+   "time": "CONTINUOUS",
+   "index": 2,
+   "eighths": 4,
+   "elements": [
+    {
+     "type": "action",
+     "text": "Mara grips the wheel, knuckles white. The brass key swings from the ignition."
+    },
+    {
+     "type": "action",
+     "text": "The radio plays \"Blue Desert Rain\", an old country song, far too loud."
+    },
+    {
+     "type": "character",
+     "text": "MARA",
+     "character": "MARA"
+    },
+    {
+     "type": "dialogue",
+     "text": "Come on, old girl.",
+     "character": "MARA"
+    },
+    {
+     "type": "action",
+     "text": "She kills the headlights and cuts hard into an alley. Behind her, the police car ROARS straight past the turn."
+    },
+    {
+     "type": "action",
+     "text": "Mara lets out a breath. Turns the music down."
+    }
+   ],
+   "characters": [
+    "MARA"
+   ],
+   "synopsis": "",
+   "outline": "Mara grips the wheel, knuckles white. The brass key swings from the ignition.",
+   "breakdown": {
+    "cast": [
+     "MARA"
+    ],
+    "extras": [],
+    "props": [
+     "brass key",
+     "car radio"
+    ],
+    "vehicles": [
+     "sports car",
+     "police car"
+    ],
+    "animals": [],
+    "wardrobe": [],
+    "sfx": [],
+    "sound": [
+     "engine roars"
+    ],
+    "music": [
+     "\"Blue Desert Rain\""
+    ],
+    "set_dressing": [],
+    "stunts": [
+     "hard turn into alley"
+    ]
+   },
+   "stage_hint": {
+    "set": "street_night",
+    "time_of_day": "night",
+    "weather": "rain",
+    "objects": [
+     "sports_car",
+     "police_car"
+    ]
+   },
+   "notes": "",
+   "numbered": true,
+   "section": ""
+  },
+  {
+   "id": "sc_3",
+   "number": "3",
+   "heading": "EXT. PACIFIC BEACH - SUNSET",
+   "int_ext": "EXT",
+   "location": "PACIFIC BEACH",
+   "time": "SUNSET",
+   "index": 3,
+   "eighths": 6,
+   "elements": [
+    {
+     "type": "action",
+     "text": "Waves fold onto wet sand. The sports car sits at the edge of the dunes, still caked in desert dust."
+    },
+    {
+     "type": "action",
+     "text": "Mara walks barefoot along the waterline, boots in one hand, the brass key in the other. A FEW SURFERS paddle out beyond the break. Gulls wheel overhead."
+    },
+    {
+     "type": "action",
+     "text": "She stops. Looks at the key for a long moment."
+    },
+    {
+     "type": "character",
+     "text": "MARA (V.O.)",
+     "character": "MARA"
+    },
+    {
+     "type": "dialogue",
+     "text": "Some things you carry. Some things you set down.",
+     "character": "MARA"
+    },
+    {
+     "type": "action",
+     "text": "She throws the key into the surf and keeps walking."
+    },
+    {
+     "type": "transition",
+     "text": "FADE OUT."
+    }
+   ],
+   "characters": [
+    "MARA"
+   ],
+   "synopsis": "Mara lets the key go.",
+   "outline": "Waves fold onto wet sand. The sports car sits at the edge of the dunes, still caked in desert dust.",
+   "breakdown": {
+    "cast": [
+     "MARA"
+    ],
+    "extras": [
+     "surfers"
+    ],
+    "props": [
+     "brass key",
+     "boots"
+    ],
+    "vehicles": [
+     "sports car"
+    ],
+    "animals": [
+     "gulls"
+    ],
+    "wardrobe": [
+     "barefoot"
+    ],
+    "sfx": [],
+    "sound": [
+     "waves"
+    ],
+    "music": [],
+    "set_dressing": [
+     "dunes"
+    ],
+    "stunts": []
+   },
+   "stage_hint": {
+    "set": "beach",
+    "time_of_day": "dusk",
+    "weather": null,
+    "objects": [
+     "sports_car",
+     "bird"
+    ]
+   },
+   "notes": "",
+   "numbered": true,
+   "section": ""
+  }
+ ],
+ "characters": [
+  {
+   "name": "MARA",
+   "scenes": [
+    "sc_1",
+    "sc_2A",
+    "sc_3"
+   ],
+   "lines": 3
+  },
+  {
+   "name": "EZRA",
+   "scenes": [
+    "sc_1"
+   ],
+   "lines": 2
+  },
+  {
+   "name": "DEPUTY COLE",
+   "scenes": [
+    "sc_2"
+   ],
+   "lines": 1
+  }
+ ],
+ "page_count_est": 3,
+ "warnings": []
+}

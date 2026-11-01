@@ -712,6 +712,10 @@ def context_text(scene: dict, ctx: dict) -> str:
     scenes = (ctx or {}).get("scenes") or []
     if scenes:
         lines.append("Script scenes: " + ", ".join(f"{s.get('number')}={str(s.get('heading', ''))[:40]}" for s in scenes[:8]))
+    # The Director's Book (Milestone 23, web/book getBookContext): the scene's intent, style and the director's rules.
+    book = (ctx or {}).get("book")
+    if isinstance(book, dict) and str(book.get("text") or "").strip():
+        lines.append("Director's book (follow it):\n" + str(book["text"])[:900])
     return "\n".join(lines)
 
 
