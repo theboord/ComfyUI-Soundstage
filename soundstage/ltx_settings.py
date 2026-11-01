@@ -11,7 +11,12 @@ A settings dict (every key optional; missing keys come from the preset):
   s2_start         stage-2 start sigma (0.909375 = more re-drawing, 0.85 = Lightricks' LTX-2.5 two-stage default)
   sigmas_1/_2      manual schedules ("1.0, 0.99, ..., 0.0"); override the steps when set
   sampler, cfg, seed
-  ic_lora          layout-to-render IC-LoRA strength (None = from Motion freedom)
+  adherence        "Loose" | "Balanced" | "Exact" (default Exact): how tightly the render follows the clay blocking.
+                   Sets the four raw knobs below unless they are given explicitly (see adherence_knobs).
+  ic_lora          layout-to-render IC-LoRA model strength (None = from Adherence)
+  guide_blur       px of Gaussian blur on the clay guide at 960 wide (None = from Adherence; 0 = sharp)
+  reference        strength of your chosen frame as the look reference (the frame_idx -1 IC-LoRA guide, both stages;
+                   None = from Adherence). 1 lets the frame's composition win over the clay at the start of the shot.
   fps              render frame rate (None = the shot's); the clay is retimed to it
   temporal_x2      LTX-2.5 temporal upscaler on the final latent: twice the frames (48 fps from 24)
   decode           {"tile_size", "overlap", "temporal_size", "temporal_overlap"} for the tiled VAE decode
@@ -38,6 +43,57 @@ DISTILLED_TAIL = [0.909375, 0.725, 0.421875, 0.0]
 def load_presets(path: Path = PRESETS_FILE) -> dict:
     data = json.loads(Path(path).read_text())
     return data["presets"]
+
+
+def load_adherence(path: Path = PRESETS_FILE) -> dict:
+    """{"default": "Exact", "levels": {"Loose": {...}, "Balanced": {...}, "Exact": {...}}}"""
+    return json.loads(Path(path).read_text())["adherence"]
+
+
+ADHERENCE_NAMES = ("Loose", "Balanced", "Exact")
+
+
+def adherence_knobs(s: dict, table: dict | None = None) -> dict:
+    """The raw knobs of a resolved settings dict: its Adherence level's values, each overridden by an explicit
+    ic_lora / guide_blur / reference. {"adherence", "motion_freedom", "ic_lora", "guide_blur", "reference"}."""
+    table = table or load_adherence()
+    name = s.get("adherence") if s.get("adherence") in table["levels"] else table["default"]
+    lv = table["levels"][name]
+    out = {"adherence": name, "motion_freedom": float(lv["motion_freedom"]), "ic_lora": float(lv["ic_lora"]),
+           "guide_blur": int(lv["guide_blur"]), "reference": float(lv["reference"])}
+    if s.get("ic_lora") is not None:
+        out["ic_lora"] = float(min(2.0, max(0.0, float(s["ic_lora"]))))
+    if s.get("guide_blur") is not None:
+        out["guide_blur"] = int(min(32, max(0, round(float(s["guide_blur"])))))
+    if s.get("reference") is not None:
+        out["reference"] = float(min(1.0, max(0.0, float(s["reference"]))))
+    return out
+
+
+def reference_guides(prompt: dict) -> list[str]:
+    """The App's look-reference guides in an API prompt: LTXAddVideoICLoRAGuide nodes at frame_idx -1 (your chosen
+    frame, outside the clip's time range) as opposed to the clay guide at frame_idx 0."""
+    return [k for k, n in (prompt or {}).items() if isinstance(n, dict) and n.get("class_type") == "LTXAddVideoICLoRAGuide"
+            and (n.get("inputs") or {}).get("frame_idx") == -1]
+
+
+def apply_reference(prompt: dict) -> dict:
+    """On-prompt: set the look-reference strength of a Soundstage Layout-to-Render prompt from the Quality node's
+    settings (Adherence, or an explicit reference). Linked strengths and non-Soundstage prompts are left alone.
+    Edits the prompt in place and returns it."""
+    q = next((n.get("inputs") or {} for n in (prompt or {}).values()
+              if isinstance(n, dict) and n.get("class_type") == "SoundstageQuality"), None)
+    if q is None:
+        return prompt
+    quality, adv = q.get("quality"), q.get("advanced", "")
+    if isinstance(quality, list) or isinstance(adv, list):
+        return prompt                       # driven by links: nothing literal to read
+    ref = adherence_knobs(from_quality(quality or "Final", adv))["reference"]
+    for k in reference_guides(prompt):
+        inp = prompt[k]["inputs"]
+        if not isinstance(inp.get("strength"), list):
+            inp["strength"] = ref
+    return prompt
 
 
 def _fmt(xs) -> str:
@@ -116,6 +172,12 @@ def resolve(settings: dict | str | None, presets: dict | None = None) -> dict:
     out["temporal_x2"] = bool(out.get("temporal_x2", False))
     if out.get("ic_lora") is not None:
         out["ic_lora"] = float(min(2.0, max(0.0, float(out["ic_lora"]))))
+    if out.get("adherence") not in ADHERENCE_NAMES:
+        out["adherence"] = load_adherence()["default"]
+    if out.get("guide_blur") is not None:
+        out["guide_blur"] = int(min(32, max(0, round(float(out["guide_blur"])))))
+    if out.get("reference") is not None:
+        out["reference"] = float(min(1.0, max(0.0, float(out["reference"]))))
     if out.get("fps") is not None:
         out["fps"] = float(min(60.0, max(8.0, float(out["fps"]))))
     return out

@@ -25,6 +25,26 @@ export const PRESETS = {
   },
 };
 export const PRESET_NAMES = ["Draft", "Final", "Hollywood"];
+// ⑤ Motion › Adherence: how tightly the render follows the clay (ltx_presets.json "adherence"; a test keeps them equal).
+// Measured in share/Blocking_Adherence/REPORT.txt. Each level sets the raw knobs Advanced (LTX) can still override.
+export const ADHERENCE = {
+  default: "Exact",
+  levels: {
+    Loose: {
+      label: "Loose", tip: "More invention: a softened clay guide and a lighter Layout IC-LoRA. Natural motion, but positions and framing can drift (the old default).",
+      motion_freedom: 0.5, guide_blur: 10, ic_lora: 0.825, reference: 1.0,
+    },
+    Balanced: {
+      label: "Balanced", tip: "Close to the clay with a little freedom for gait and limbs.",
+      motion_freedom: 0.25, guide_blur: 6, ic_lora: 0.92, reference: 0.75,
+    },
+    Exact: {
+      label: "Exact", tip: "As close to the clay as LTX goes: a sharp clay guide, the full Layout IC-LoRA, and your frame as a lighter look reference so it can't pull the shot off its marks.",
+      motion_freedom: 0.0, guide_blur: 0, ic_lora: 1.0, reference: 0.5,
+    },
+  },
+};
+export const ADHERENCE_NAMES = ["Loose", "Balanced", "Exact"];
 export const DEFAULT_PRESET = "Final";
 export const SAMPLERS = ["euler_ancestral", "euler", "res_multistep", "dpmpp_2m", "lcm"];
 export const CODECS = [["h264", "H.264 MP4 (plays everywhere)"], ["prores_hq", "ProRes 422 HQ master (.mov) + H.264 preview"]];
@@ -35,7 +55,7 @@ export const DECODES = [
   ["1024/256/128/48", "Large tiles (fastest, most memory)", { tile_size: 1024, overlap: 256, temporal_size: 128, temporal_overlap: 48 }],
 ];
 const KEYS = ["resolution", "two_stage", "steps_1", "steps_2", "s2_start", "sigmas_1", "sigmas_2", "sampler", "cfg", "seed",
-  "ic_lora", "fps", "temporal_x2", "decode", "codec", "crf", "extra_lora"];
+  "ic_lora", "fps", "temporal_x2", "decode", "codec", "crf", "extra_lora", "adherence", "guide_blur", "reference"];
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const num = (v, d) => (v === null || v === undefined || v === "" || !Number.isFinite(+v) ? d : +v);
@@ -56,7 +76,22 @@ export function resolveSettings(saved) {
   out.codec = CODECS.some(([k]) => k === out.codec) ? out.codec : "h264";
   out.crf = Math.round(clamp(num(out.crf, 14), 0, 51));
   out.temporal_x2 = !!out.temporal_x2;
+  if (!ADHERENCE_NAMES.includes(out.adherence)) out.adherence = ADHERENCE.default;
   return out;
+}
+
+/** The raw knobs of resolved settings: the Adherence level's, each overridden by an explicit value
+ *  (mirrors soundstage/ltx_settings.adherence_knobs). */
+export function adherenceKnobs(s) {
+  const name = ADHERENCE_NAMES.includes(s?.adherence) ? s.adherence : ADHERENCE.default;
+  const lv = ADHERENCE.levels[name];
+  const set = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(+v);
+  return {
+    adherence: name, motion_freedom: lv.motion_freedom,
+    ic_lora: set(s?.ic_lora) ? clamp(+s.ic_lora, 0, 2) : lv.ic_lora,
+    guide_blur: set(s?.guide_blur) ? Math.round(clamp(+s.guide_blur, 0, 32)) : lv.guide_blur,
+    reference: set(s?.reference) ? clamp(+s.reference, 0, 1) : lv.reference,
+  };
 }
 
 /** Only what differs from the preset (what is saved per shot and sent to the Quality node). */
@@ -113,7 +148,10 @@ export class LtxStore {
   put(sid, s) { this.byShot[sid] = compactSettings(s); try { this.save?.(this.byShot); } catch { /* no store */ } return this.byShot[sid]; }
   patch(sid, over) { return this.put(sid, { ...this.saved(sid), ...over }); }
   /** A preset click starts clean from that preset; the seed is kept (it is the take, not the quality). */
-  setPreset(sid, q) { const keep = this.saved(sid).seed; return this.put(sid, { preset: q, ...(keep != null ? { seed: keep } : {}) }); }
+  setPreset(sid, q) {
+    const { seed, adherence } = this.saved(sid);   // the seed is the take and Adherence its own control: both survive a preset click
+    return this.put(sid, { preset: q, ...(seed != null ? { seed } : {}), ...(adherence ? { adherence } : {}) });
+  }
   /** Write a shot's settings into the App graph: the Quality node (preset + advanced JSON) and both samplers. */
   writeGraph(set, sid) {
     const s = this.settings(sid);
@@ -220,6 +258,8 @@ export class LtxAdvanced {
     f.frames = h("span", { class: "note" });
     f.temporal = h("input", { type: "checkbox", on: { change: () => this.patch({ temporal_x2: f.temporal.checked }) } });
     f.ic = h("input", { type: "number", min: 0, max: 2, step: 0.05, placeholder: "auto", on: { change: () => this.patch({ ic_lora: f.ic.value === "" ? null : +f.ic.value }) } });
+    f.blur = h("input", { type: "number", min: 0, max: 32, step: 1, placeholder: "auto", on: { change: () => this.patch({ guide_blur: f.blur.value === "" ? null : +f.blur.value }) } });
+    f.ref = h("input", { type: "number", min: 0, max: 1, step: 0.05, placeholder: "auto", on: { change: () => this.patch({ reference: f.ref.value === "" ? null : +f.ref.value }) } });
     f.lora = h("select", { on: { change: () => this.patch({ extra_lora: f.lora.value === "None" ? null : { name: f.lora.value, strength: +f.loraS.value || 0.8 } }) } });
     f.loraS = n(-2, 2, 0.05, () => { const s = this.saved(); if (s.extra_lora) this.patch({ extra_lora: { ...s.extra_lora, strength: +f.loraS.value } }); });
     f.decode = sel(DECODES.map(([k, t]) => [k, t]), () => this.patch({ decode: DECODES.find(([k]) => k === f.decode.value)?.[2] }));
@@ -241,8 +281,12 @@ export class LtxAdvanced {
         ...row("Sampler", f.sampler), ...row("CFG", f.cfg, "LTX-2.5 here is the distilled model: CFG 1 is its tuned setting. Above 1 doubles the time and uses the negative prompt."),
         ...row("Seed", h("span", { class: "row" }, f.seed, f.seedNew), "The same seed is used in both stages (refinement, not a new take).")),
       h("div", { class: "note" }, "STG and CFG rescale need the non-distilled LTX-2.5 dev model, which is not installed here (see MODELS.md); the distilled model has guidance baked in."),
+      h("h4", {}, "Blocking (Adherence)"),
+      h("div", { class: "g" }, ...row("Layout IC-LoRA", f.ic, "How literally LTX follows the clay animation. Empty = from Adherence (Exact 1.0, Balanced 0.92, Loose 0.825). Above 1.1 tested no tighter."),
+        ...row("Clay guide blur (px)", f.blur, "Softens the clay guide so LTX redraws limbs and gait. 0 = sharp. Empty = from Adherence (Exact 0, Balanced 6, Loose 10)."),
+        ...row("Frame reference", f.ref, "How strongly your chosen frame steers the look. 1 also pulls the composition toward the frame (the opening can start off its marks); lower lets the clay win. Below 0.4 the render turns clay-grey. Empty = from Adherence (Exact 0.5).")),
       h("h4", {}, "LoRAs"),
-      h("div", { class: "g" }, ...row("Layout IC-LoRA", f.ic, "How literally LTX follows the clay. Empty = from Motion freedom (1.0 at 0, 0.83 at 0.5)."),
+      h("div", { class: "g" },
         ...row("Extra LoRA", f.lora), ...row("Its strength", f.loraS)),
       h("h4", {}, "Decode and output"),
       h("div", { class: "g" }, ...row("VAE decode tiles", f.decode), ...row("Codec", f.codec), ...row("H.264 CRF", f.crf, "Lower = better and bigger. 14 is visually lossless for these renders; 18 was the old default.")),
@@ -273,6 +317,10 @@ export class LtxAdvanced {
     f.frames.textContent = `${s.temporal_x2 ? fr * 2 - 1 : fr} (${((d.frames - 1) / d.fps).toFixed(1)} s from the shot's timeline)`;
     f.temporal.checked = s.temporal_x2;
     f.ic.value = s.ic_lora == null ? "" : String(s.ic_lora);
+    f.blur.value = s.guide_blur == null ? "" : String(s.guide_blur);
+    f.ref.value = s.reference == null ? "" : String(s.reference);
+    const ak = adherenceKnobs(s);
+    f.ic.placeholder = `auto (${ak.ic_lora})`; f.blur.placeholder = `auto (${ak.guide_blur})`; f.ref.placeholder = `auto (${ak.reference})`;
     this._loraOptions();
     f.lora.value = s.extra_lora?.name || "None"; f.loraS.value = String(s.extra_lora?.strength ?? 0.8); f.loraS.disabled = !s.extra_lora;
     const dk = DECODES.find(([, , v]) => JSON.stringify(v) === JSON.stringify(s.decode))?.[0];
