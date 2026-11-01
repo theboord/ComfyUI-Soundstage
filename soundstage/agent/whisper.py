@@ -96,7 +96,8 @@ def _load(path: str, device: str):
     return _CACHE[key]
 
 
-def transcribe(data: bytes, language: str | None = "en", device: str | None = None) -> dict:
+def transcribe(data: bytes, language: str | None = "en", device: str | None = None, prompt: str | None = None) -> dict:
+    """prompt: words to expect (Pitch Mode passes film terms and the pitch so far), Whisper's prompt conditioning."""
     t0 = time.time()
     path = find_model()
     if not path:
@@ -119,9 +120,17 @@ def transcribe(data: bytes, language: str | None = "en", device: str | None = No
             try:
                 proc, model = _load(path, dev)
                 feats = proc(x, sampling_rate=16000, return_tensors="pt").input_features.to(dev)
+                gk = dict(kw)
+                if prompt and prompt.strip():
+                    try:
+                        gk["prompt_ids"] = proc.get_prompt_ids(prompt.strip()[-400:], return_tensors="pt").to(dev)
+                    except Exception:  # noqa: BLE001 - an older transformers without prompts: plain decoding
+                        pass
                 with torch.no_grad():
-                    ids = model.generate(feats, **kw)
+                    ids = model.generate(feats, **gk)
                 text = proc.batch_decode(ids, skip_special_tokens=True)[0].strip()
+                if prompt and text.startswith(prompt.strip()[-400:]):
+                    text = text[len(prompt.strip()[-400:]):].strip()
                 return {"text": text, "seconds": round(secs, 2), "ms": round((time.time() - t0) * 1000),
                         "model": os.path.basename(path), "device": dev}
             except RuntimeError as e:   # out of GPU memory under a render: the CPU still answers
