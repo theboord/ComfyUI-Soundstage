@@ -478,6 +478,20 @@ export const EXEC = {
     return { ok: true, said: `Camera rigged ${VIEW_WORDS[a.view] || "on the vehicle"} of the ${a.target.toLowerCase()}: it rides with the car.` };
   },
 
+  // Parts (Milestone 26, web/stage/objparts.mjs): one stage.setParts call = one undo step; "at" keys it at that time.
+  async part(a) {
+    const st = this.stage, fps = st.state.shot?.fps || 24;
+    const id = a.light_id ? `light:${a.light_id}` : a.target_id;
+    const chans = st.partChannels(id).map((c) => c.ch);
+    const parts = a.part === "doors" ? chans.filter((c) => /^door_|^hood$|^trunk$/.test(c)) : [a.part];
+    if (!parts.length || !parts.every((p) => chans.includes(p))) return { ok: false, said: `The ${(a.target || a.light || "object").toLowerCase()} has no ${a.part.replace(/_/g, " ")}.` };
+    const frame = a.at != null ? Math.round(a.at * fps) : undefined;
+    const done = st.setParts(id, Object.fromEntries(parts.map((p) => [p, a.part === "doors" && /^(hood|trunk)$/.test(p) ? 0 : a.value])), frame != null ? { frame } : {});
+    if (!Object.keys(done).length) return { ok: false, said: `Couldn't set that on the ${(a.target || a.light || "object").toLowerCase()}.` };
+    const words = st.partsPrompt?.(frame ?? st.frame) || "";
+    return { ok: true, said: `${(a.target || a.light || "It")}: ${a.part.replace(/_/g, " ")} → ${a.value}${frame != null ? ` from ${a.at} s (frame ${frame})` : ""}.${words ? ` Now: ${words}.` : ""}` };
+  },
+
   async stunt(a) {
     const label = this.stage.applyStunt(a.target_id, a.stunt);
     if (!label) return { ok: false, said: `The ${a.target} can't do that stunt.` };
@@ -641,6 +655,7 @@ const WHY = {
   camera_on: "A hood mount is the classic car-scene angle: we sit with the driver through the windscreen.",
   direct: "A one-word note is how directors talk to actors: here it steers the painted frame and the motion prompt.",
   stunt: "Stunts are planned like this in previz: the keys show the timing before anyone touches a real car.",
+  part: "Doors, lamps and light bars are blocking too: the guide shows them lit or open, and the prompt says when they change.",
   drive: "The crash happens in the physics: nothing is faked, so the boxes fly the way the speed says.",
   bake: "Baking freezes the simulation into keys, so every render of the shot gets the same crash.",
   grade: "The grade is the film's colour; warmer reads nostalgic, intimate or hot, cooler reads lonely or tense.",

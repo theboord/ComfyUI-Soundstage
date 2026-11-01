@@ -27,6 +27,7 @@ import re
 from . import catalog as C
 from . import ops as O
 from . import plan as P
+from . import parts as PT
 
 # ------------------------------------------------------------------------------------------- the tools
 
@@ -97,6 +98,7 @@ TOOLS: dict[str, dict] = {
     "undo": {"kind": "app", "doc": "Undo the last change", "args": {}},
     "build": {"kind": "app", "doc": "Build a whole new scene from a description", "args": {"text": ("text", True, None)}},
 }
+TOOLS.update(PT.TOOL)   # Milestone 26: doors, lamps, light bar, wipers, steering, horse head / gait, faces, light flicker
 ALIASES = {"move_camera": "camera_move", "camera": "camera_move", "dolly": "camera_move", "set_lens": "lens", "focal": "lens",
            "focal_length": "lens", "time_of_day": "time", "tod": "time", "atmosphere": "weather", "location": "set",
            "shot": "select_shot", "goto_shot": "select_shot", "new_shot": "add_shot", "coverage": "add_shot",
@@ -107,6 +109,8 @@ ALIASES = {"move_camera": "camera_move", "camera": "camera_move", "dolly": "came
            "select_scene": "scene", "paint": "frames", "paint_frames": "frames", "generate_frames": "frames",
            "render_draft": "render", "render_final": "render", "review": "approve", "assemble": "cut", "edit": "cut",
            "playback": "play", "camera_mount": "camera_on", "mount_camera": "camera_on", "nudge_camera": "reframe"}
+
+ALIASES.update({k: v for k, v in PT.ALIASES.items() if k not in ALIASES})
 
 
 def tool_specs() -> list[dict]:
@@ -486,6 +490,10 @@ def validate_call(raw, work: dict, ctx: dict) -> dict:
             raise Invalid(f"{name}: there's no vehicle on set")
         if v is not None:
             out["target"], out["target_id"] = v["name"], v["id"]
+    if name == "part":
+        why = PT.finish(out, work, _default_vehicle)
+        if why:
+            raise Invalid(why)
     if name == "camera_on":
         out.setdefault("view", "hood")
     if name == "direct" and "who_id" not in out:
@@ -650,6 +658,7 @@ def plan_line(call, work, ctx):
         "play": lambda: "play the shot",
         "undo": lambda: "undo the last change",
         "build": lambda: f"build a new scene: {a['text']}",
+        "part": lambda: PT.plan_words(a),
     }
     try:
         return "I'll " + lines[t]()
@@ -1013,6 +1022,11 @@ def rules_calls(command: str, scene: dict, ctx: dict | None = None) -> list[dict
         m = re.search(r"\b(?:on\s+(?:a\s+)?|use\s+(?:a\s+)?|go\s+)(dolly|steadicam|drone|tripod|jib|crane arm|slider|chapman)\b|\b(handheld|hand-held)\b", cl)
         if m:
             here.append((m.start(), {"tool": "rig", "type": (m.group(1) or m.group(2)).replace("crane arm", "jib").replace("hand-held", "handheld")}))
+            used = True
+        # Parts (Milestone 26): "open the driver's door at 2 s", "turn on the police lights", "the horse throws its head up".
+        part_calls = PT.rules(cl, work, last_person)
+        if part_calls:
+            here += [(40 + i, c) for i, c in enumerate(part_calls)]
             used = True
         # Time and weather anywhere in the clause ("at night", "rain").
         tod = P.pick(C.TIME_WORDS, cl, None)
