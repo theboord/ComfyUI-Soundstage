@@ -68,7 +68,8 @@ export function horseGait(v, height = 1.6, sweep = null) {
   // cadence is set so the clip's legs cover exactly the ground the body does: no skating, clip shapes kept.
   if (sweep) for (const g of HORSE_ORDER) {
     const sw = (g === "walk" || g === "trot" ? sweep.walk : sweep.gallop) || 0;
-    if (sw > 0.05 && u > B.idle) F[g] = clamp(v * HORSE_FOOTFALL[g].duty / sw, 0.55 * F[g], 1.5 * F[g]) * k;
+    // (within a believable cadence: past it the legs reach further than the clip, and the pinning does the rest)
+    if (sw > 0.05 && u > B.idle) F[g] = clamp(v * HORSE_FOOTFALL[g].duty / sw, 0.8 * F[g], 1.25 * F[g]) * k;
   }
   for (const g of HORSE_ORDER) {
     freq += w[g] * F[g];
@@ -377,6 +378,10 @@ export function rigHorse(g, model, R) {
   const local = (o) => g.worldToLocal(o.getWorldPosition(new THREE.Vector3()));
   if (R.actions.Idle) only("Idle", 0);
   const rest = legs.map((l) => local(l.end));
+  for (const l of legs) {   // reach of each leg (straight), body units
+    const pts = [...l.chain, l.end].map(local);
+    l.len = pts.slice(1).reduce((n, p, i) => n + p.distanceTo(pts[i]), 0);
+  }
   const torsoRest = torso ? local(torso) : null;
   const torsoFwd = torso ? torsoAxis(g, torso) : null;
   // Each clip's footfalls, leg by leg: when the hoof lands and lifts (cycle phase) and how far it sweeps back under
@@ -470,6 +475,18 @@ export function applyHorse(g, R, plan, f, ctx) {
   const nod = 0.05 * w.trot * (1 - idle) * Math.sin(2 * TAU * ph);
   for (const b of info.neck) b.rotateX(nod / Math.max(1, info.neck.length));
   g.updateMatrixWorld(true);
+  // A hoof planted further out than the leg reaches pulls the body down onto it (at a fast gallop the stride's
+  // ends): lower the barrel just enough, never more than a tenth of the height.
+  let drop = 0;
+  info.legs.forEach((leg, i) => {
+    const ft = footAt(plan, i, fi);
+    if (!ft.stance) return;
+    const P = leg.chain[0].getWorldPosition(new THREE.Vector3());
+    const ty = (ctx.support ? ctx.support(ft.c.p[0], ft.c.p[1]) : 0) + Math.max(0, info.rest[i].y * sc.y);
+    const reach = leg.len * sc.y * 0.97, hz = Math.hypot(P.x - ft.c.p[0], P.z - ft.c.p[1]);
+    if (hz < reach) drop = Math.max(drop, P.y - ty - Math.sqrt(reach * reach - hz * hz));
+  });
+  if (drop > 0) { g.position.y -= Math.min(drop, 0.1 * plan.height); g.updateMatrixWorld(true); }
   // Pin planted hooves (and ease them on and off their spots at the ends of the swing).
   const axis = new THREE.Vector3(1, 0, 0).applyQuaternion(g.getWorldQuaternion(new THREE.Quaternion())).normalize();
   const out = [];
@@ -495,9 +512,9 @@ export function applyHorse(g, R, plan, f, ctx) {
     const p = g.worldToLocal(info.torso.getWorldPosition(new THREE.Vector3()));
     const fwd = torsoAxis(g, info.torso);
     const pitch = Math.atan2(-fwd.y, Math.hypot(fwd.x, fwd.z)) - Math.atan2(-info.torsoFwd.y, Math.hypot(info.torsoFwd.x, info.torsoFwd.z));
-    back = { dx: (p.x - info.torsoRest.x) * sc.x, dy: (p.y - info.torsoRest.y) * sc.y + heave, dz: (p.z - info.torsoRest.z) * sc.z, pitch };
+    back = { dx: (p.x - info.torsoRest.x) * sc.x, dy: (p.y - info.torsoRest.y) * sc.y + heave - Math.min(drop, 0.1 * plan.height), dz: (p.z - info.torsoRest.z) * sc.z, pitch };
   }
-  const state = { name: G.name, weights: w, idle, phase: ph, speed: v, heave, back, hooves: out };
+  const state = { name: G.name, weights: w, idle, phase: ph, speed: v, heave, drop, back, hooves: out };
   g.userData.horseGait = state;
   g.userData.gaitCycle = ph * TAU;
   return state;
@@ -506,28 +523,47 @@ export function applyHorse(g, R, plan, f, ctx) {
 /** Bend a leg chain about one world axis (the horse's side) so its end reaches T; small hinge steps, deterministic. */
 function ccdLeg(leg, T, axis) {
   const E = new THREE.Vector3(), P = new THREE.Vector3(), e = new THREE.Vector3(), t = new THREE.Vector3(), q = new THREE.Quaternion();
-  const wq = new THREE.Quaternion(), pq = new THREE.Quaternion();
-  const turned = leg.chain.map(() => 0);
-  for (let it = 0; it < 12; it++) {
+  const wq = new THREE.Quaternion(), pq = new THREE.Quaternion(), ax = new THREE.Vector3();
+  const turned = leg.chain.map(() => 0), free = leg.chain.map(() => 0);
+  const rotate = (b, ax, ang) => {
+    q.setFromAxisAngle(ax, ang);
+    b.getWorldQuaternion(wq);
+    b.parent.getWorldQuaternion(pq);
+    b.quaternion.copy(pq.invert().multiply(q.multiply(wq)));
+    b.updateMatrixWorld(true);
+  };
+  // In the leg's own plane first (about the horse's side axis: knees and hocks keep bending the way they bend)...
+  for (let it = 0; it < 20; it++) {
     for (let j = leg.chain.length - 1; j >= 0; j--) {
       const b = leg.chain[j];
       b.getWorldPosition(P); leg.end.getWorldPosition(E);
       e.subVectors(E, P); t.subVectors(T, P);
       e.addScaledVector(axis, -e.dot(axis)); t.addScaledVector(axis, -t.dot(axis));
       if (e.lengthSq() < 1e-8 || t.lengthSq() < 1e-8) continue;
-      let ang = Math.atan2(axis.dot(_v1.crossVectors(e, t)), e.dot(t));
-      ang = clamp(ang, -0.35, 0.35);
-      const lim = 0.45;                                          // a correction, never a re-pose
-      ang = clamp(turned[j] + ang, -lim, lim) - turned[j];
+      let ang = clamp(Math.atan2(axis.dot(_v1.crossVectors(e, t)), e.dot(t)), -0.35, 0.35);
+      ang = clamp(turned[j] + ang, -1, 1) - turned[j];           // a correction, never a full re-pose
       turned[j] += ang;
-      q.setFromAxisAngle(axis, ang);
-      b.getWorldQuaternion(wq);
-      b.parent.getWorldQuaternion(pq);
-      b.quaternion.copy(pq.invert().multiply(q.multiply(wq)));
-      b.updateMatrixWorld(true);
+      rotate(b, axis, ang);
     }
     leg.end.getWorldPosition(E);
-    if (E.distanceToSquared(T) < 1e-6) break;
+    if (E.distanceToSquared(T) < 1e-6) return;
+  }
+  // ...then a small free swing for what's left (the clip's leg sits a little in or out of where the hoof plants).
+  for (let it = 0; it < 6; it++) {
+    for (let j = 0; j < leg.chain.length; j++) {
+      const b = leg.chain[j];
+      b.getWorldPosition(P); leg.end.getWorldPosition(E);
+      e.subVectors(E, P); t.subVectors(T, P);
+      ax.crossVectors(e, t);
+      if (ax.lengthSq() < 1e-10) continue;
+      ax.normalize();
+      let ang = Math.min(e.angleTo(t), 0.2 - free[j]);
+      if (ang <= 0) continue;
+      free[j] += ang;
+      rotate(b, ax, ang);
+    }
+    leg.end.getWorldPosition(E);
+    if (E.distanceToSquared(T) < 1e-6) return;
   }
 }
 
