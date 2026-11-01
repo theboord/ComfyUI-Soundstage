@@ -241,11 +241,17 @@ const RIG_SHAKE = { free: 1, tripod: 0.35, dolly: 0.55, chapman: 0.5, slider: 0.
  * opts: { preset = "heavy", amount = 1, rig = "free", fps = 24, seed = 3 }.
  */
 export function impactShake(path, events, opts = {}) {
+  if (!path?.length) return path;
+  return path.map((c, f) => impactShakeAt(c, f, events, opts));
+}
+
+/** impactShake() for one frame: the camera {position, target, roll?} at frame f with the jolts of the hits added. */
+export function impactShakeAt(c, f, events, opts = {}) {
   const P = SHAKE_PRESETS[opts.preset || "heavy"] || SHAKE_PRESETS.heavy;
-  if (!P.deg || !events?.length || !path?.length) return path;
+  if (!P.deg || !events?.length || !c) return c;
   const fps = opts.fps || 24, seed = opts.seed ?? 3, k = (opts.amount ?? 1) * (RIG_SHAKE[opts.rig] ?? 1);
   const D2R = Math.PI / 180, MAX = 2.5 * D2R * Math.max(1, opts.amount ?? 1);
-  return path.map((c, f) => {
+  {
     let pitch = 0, yaw = 0, roll = 0;
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
@@ -269,7 +275,7 @@ export function impactShake(path, events, opts = {}) {
     const t =[c.target[0] + (rx * yaw) * dist, c.target[1] + pitch * dist, c.target[2] + (rz * yaw) * dist];
     const pos = [c.position[0], c.position[1] + pitch * 0.02, c.position[2]];
     return { ...c, position: pos, target: t, roll: (c.roll || 0) + roll };
-  });
+  }
 }
 
 // ---------- imperfection ----------

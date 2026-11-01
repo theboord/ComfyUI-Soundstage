@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { simulate } from "../../web/stage/physics.mjs";
-import { mergeEvents, eventsFromTracks, materialOf, strengthOf, impactParticles, impactFlash } from "../../web/stage/impacts.mjs";
+import { mergeEvents, eventsFromTracks, materialOf, strengthOf, impactParticles, impactFlash, impactShake, SHAKE_PRESETS } from "../../web/stage/impacts.mjs";
 import { impactEvents } from "../../web/stage/physengine.mjs";
 
 const crate = (id, pos, extra = {}) => ({ id, shape: "box", half: [0.4, 0.4, 0.4], center: [0, 0.4, 0], dynamic: true, mass: 25,
@@ -116,4 +116,37 @@ test("the light flash is brief, only on hard metal hits, and scales with the hit
   assert.equal(impactFlash([ev()], 24).intensity, 0, "wood on the ground: no flash");
   assert.equal(impactFlash([ev({ impulse: 400, speed: 10, mat_b: "metal" })], 24).intensity, 0, "wood into a car: no flash");
   assert.ok(at(24, { ...m, impulse: 100 }) < at(24));
+});
+
+const still = (n = 72) => Array.from({ length: n }, () => ({ position: [0, 1.5, 8], target: [0, 1, 0], focal_mm: 35 }));
+const off = (c, c0) => Math.hypot(c.target[0] - c0.target[0], c.target[1] - c0.target[1], c.target[2] - c0.target[2]) + Math.abs(c.roll || 0) * 8;
+
+test("impact shake: nothing before the hit and its delay, a jolt after, decaying back to still; seeded and pure", () => {
+  const P = still(), E = [ev({ frame: 24, t: 1, impulse: 300, speed: 10 })];
+  const s = impactShake(P, E, { preset: "heavy" });
+  const d = SHAKE_PRESETS.heavy.delay;
+  for (let f = 0; f < 24 + d; f++) assert.equal(off(s[f], P[f]), 0, `frame ${f} moved`);
+  const peak = Math.max(...s.slice(24 + d, 24 + d + 6).map((c, i) => off(c, P[24 + d + i])));
+  assert.ok(peak > 0.01, `peak ${peak}`);
+  assert.ok(off(s[70], P[70]) < peak * 0.05, "settled");
+  assert.deepEqual(impactShake(P, E, { preset: "heavy" }), s);
+  assert.notDeepEqual(impactShake(P, E, { preset: "heavy", seed: 9 }), s);
+  // The angle stays small (no more than 2.5 degrees of aim), and the camera position barely moves.
+  for (let f = 0; f < s.length; f++) {
+    const ang = Math.atan2(Math.hypot(s[f].target[0], s[f].target[1] - 1), 8);
+    assert.ok(ang < 2.6 * Math.PI / 180, `frame ${f}: ${ang}`);
+    assert.ok(Math.abs(s[f].position[1] - 1.5) < 0.002);
+  }
+});
+
+test("impact shake scales with the hit, falls off with distance, and a tripod feels less than handheld", () => {
+  const P = still();
+  const peak = (E, o = {}) => Math.max(...impactShake(P, E, { preset: "heavy", ...o }).map((c, f) => off(c, P[f])));
+  const hit = (over) => [ev({ impulse: 300, speed: 10, ...over })];
+  assert.ok(peak(hit({ impulse: 600 })) > peak(hit({ impulse: 100 })) * 1.5);
+  assert.ok(peak(hit({ pos: [0, 0, 0] })) > peak(hit({ pos: [0, 0, -40] })) * 4, "far hits barely shake");
+  assert.ok(peak(hit(), { rig: "tripod" }) < peak(hit(), { rig: "handheld" }) * 0.5);
+  assert.ok(peak(hit(), { preset: "earthquake" }) > peak(hit(), { preset: "light" }));
+  assert.equal(peak(hit(), { preset: "off" }), 0);
+  assert.deepEqual(impactShake(P, [], { preset: "heavy" }), P);
 });
