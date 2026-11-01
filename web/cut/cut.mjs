@@ -26,11 +26,13 @@ const V2_Y = 26; // V2: title cards
 const V2_H = 20;
 const TRACK_Y = V2_Y + V2_H + 4; // V1
 const TRACK_H = 60;
-const SUB_Y = TRACK_Y + TRACK_H + 3; // subtitles lane
-const SUB_H = 14;
-const A_Y = SUB_Y + SUB_H + 5; // first audio track
-const A_H = 40;
+const SUB_H = 14; // subtitles lane, under V1
+const A_H = 40; // audio track at its natural height
 const A_GAP = 4;
+// Squeezed to fit the window: V1 and audio tracks shrink toward these; folded audio lanes are A_FOLD tall.
+const TRACK_MIN = 34;
+const A_MIN = 22;
+const A_FOLD = 12;
 const AUDIO_COLOR = "#2c6a61";
 const EDGE_PX = 6;
 const SNAP_PX = 8;
@@ -65,6 +67,13 @@ const CSS = `
 .ss-cut-chip i{width:8px;height:8px;border-radius:2px;display:inline-block}
 .ss-cut-chip small{color:#8b94a1}
 .ss-cut-help{color:#6f7985;font-size:11px}
+/* .fit: the editor fills its view (the CUT tab) with no page scroll. The viewer takes what the bars and the tracks leave;
+   tracks scale to their share and scroll inside .ss-cut-tl when even compact tracks overflow. */
+.ss-cut.fit>*{flex:none}
+.ss-cut.fit>.ss-cut-viewer{flex:1 1 0;min-height:0}
+.ss-cut.fit>.ss-cut-viewer canvas{width:100%;height:100%;max-height:none;object-fit:contain}
+.ss-cut.fit>.ss-cut-tl{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;overscroll-behavior:contain}
+.ss-cut.fit>.ss-cut-help{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ss-cut-src{flex-basis:100%;color:#8fb8ad;font-size:11px;line-height:1.35}
 .ss-cut-fx{display:inline-flex;gap:4px;align-items:center;background:#20252c;border:1px dashed #5a6370;border-radius:4px;padding:2px 7px;cursor:grab;user-select:none;touch-action:none;color:#e9edf2}
 .ss-cut-fx:hover{border-color:#e39a40}
@@ -848,6 +857,7 @@ export class CutPanel {
     this.b.zoomOut = btn("−", "Zoom out (-)", () => this.zoom(1 / 1.5));
     this.b.fit = btn("Fit", "Fit the cut to the timeline (\\)", () => this.fit());
     this.b.zoomIn = btn("+", "Zoom in (=)", () => this.zoom(1.5));
+    this.b.fold = btn("A ▾", "Fold the audio tracks to thin lanes, so V1 gets the room", () => this.foldAudio(), true);
 
     const bar2 = document.createElement("div");
     bar2.className = "ss-cut-bar";
@@ -951,6 +961,8 @@ export class CutPanel {
     // timeline
     const tlw = document.createElement("div");
     tlw.className = "ss-cut-tl";
+    this._vw = vw;
+    this._tlw = tlw;
     this.tl = document.createElement("canvas");
     this.tl.__soundstageCut = this;
     this.tctx = this.tl.getContext("2d");
@@ -1029,10 +1041,18 @@ export class CutPanel {
       "audio: drag to slide (up/down changes track), edges trim, top corners fade, [ / ] gain, M/S in the header mute/solo · " +
       "S split · ⌘-drag a clip (or , and .) to slip · T dissolve at the nearest cut · drag a transition onto a cut · R keys (rubber bands)";
 
+    help.title = help.textContent;
+
     root.append(vw, bar, bar2, ...this._bars, tlw, insp, this.insp2, this.bin, help);
     container.appendChild(root);
 
-    this._ro = new ResizeObserver(() => { if (this._fitPending) this.fit(); this.requestDraw(); });
+    this._ro = new ResizeObserver(() => {
+      const host = root.closest(".ss-cutview");
+      if (host && host !== this._host) { this._host = host; this._ro.observe(host); }
+      this._fitLayout();
+      if (this._fitPending) this.fit();
+      this.requestDraw();
+    });
     this._ro.observe(root);
   }
 
@@ -1730,11 +1750,76 @@ export class CutPanel {
   }
 
   get _tlH() {
-    return A_Y + TL.audioTrackCount(this.project) * (A_H + A_GAP) + 6;
+    return this._L.ay + TL.audioTrackCount(this.project) * (this._L.ah + this._L.ag) + 6;
   }
 
   _trackTop(t) {
-    return A_Y + (t - 1) * (A_H + A_GAP);
+    return this._L.ay + (t - 1) * (this._L.ah + this._L.ag);
+  }
+
+  /** Track geometry (V1 height th, audio height ah and gap ag, subtitle-lane y sy, first audio y ay, total height). */
+  get _L() {
+    if (!this.__L || this.__L.n !== TL.audioTrackCount(this.project)) this.__L = this._trackLayout(this._tlBudget ?? Infinity);
+    return this.__L;
+  }
+
+  /** Track geometry for a timeline `budget` px tall: natural tracks (V1 60, audio 40) when they fit, else squeezed toward
+   *  compact (V1 34, audio 22). Folded audio lanes are 12 px. Pure: exported via CutPanel.trackLayout for the tests. */
+  _trackLayout(budget) {
+    return CutPanel.trackLayout(budget, TL.audioTrackCount(this.project), !!this.audioFolded);
+  }
+
+  static trackLayout(budget, n, folded = false) {
+    const fixed = TRACK_Y + 3 + SUB_H + 5 + 6;
+    let th = TRACK_H, ah = folded ? A_FOLD : A_H, ag = folded ? 2 : A_GAP;
+    if (fixed + th + n * (ah + ag) > budget) {
+      if (folded) th = Math.round(TL.clamp(budget - fixed - n * (ah + ag), TRACK_MIN, TRACK_H));
+      else {
+        ag = 3;
+        const s = (budget - fixed - n * ag) / (TRACK_H + n * A_H);
+        th = Math.round(TL.clamp(TRACK_H * s, TRACK_MIN, TRACK_H));
+        ah = Math.floor(TL.clamp(A_H * s, A_MIN, A_H));
+      }
+    }
+    const sy = TRACK_Y + th + 3, ay = sy + SUB_H + 5;
+    return { n, th, ah, ag, sy, ay, total: ay + n * (ah + ag) + 6 };
+  }
+
+  /** In the CUT tab, size the editor to its view so nothing scrolls the page: the bars keep their height, the tracks get
+   *  their natural height or a squeezed one, and the viewer takes the rest (at least 30 %). Elsewhere: natural layout. */
+  _fitLayout() {
+    const root = this.root, host = root?.closest?.(".ss-cutview");
+    let budget = Infinity;
+    if (host && host.clientHeight > 0) {
+      const cs = getComputedStyle(host), hr = host.getBoundingClientRect(), rr = root.getBoundingClientRect();
+      const rootH = Math.max(360, Math.floor(hr.top + host.clientTop + host.clientHeight - (parseFloat(cs.paddingBottom) || 0) - (rr.top + host.scrollTop)));
+      if (root.style.height !== rootH + "px") root.style.height = rootH + "px";
+      root.classList.add("fit");
+      const rs = getComputedStyle(root);
+      let others = (parseFloat(rs.paddingTop) || 0) + (parseFloat(rs.paddingBottom) || 0), shown = 0;
+      for (const ch of root.children) {
+        if (!ch.getClientRects().length) continue;
+        shown++;
+        if (ch !== this._vw && ch !== this._tlw) others += ch.offsetHeight;
+      }
+      others += (parseFloat(rs.rowGap) || 0) * Math.max(0, shown - 1);
+      budget = Math.max(110, Math.floor(rootH - others - Math.max(140, rootH * 0.3)));
+    } else if (root) {
+      root.classList.remove("fit");
+      root.style.height = "";
+    }
+    this._tlBudget = budget;
+    this.__L = this._trackLayout(budget);
+    const h = Number.isFinite(budget) ? Math.min(this.__L.total, budget) + "px" : "";
+    if (this._tlw && this._tlw.style.height !== h) this._tlw.style.height = h;
+  }
+
+  /** Fold (or unfold) the audio tracks to thin lanes. */
+  foldAudio(on = !this.audioFolded) {
+    this.audioFolded = on;
+    this.b.fold?.setAttribute("aria-pressed", String(on));
+    this._fitLayout();
+    this.requestDraw();
   }
 
   _clampScroll() {
@@ -1817,7 +1902,7 @@ export class CutPanel {
     // V2 (titles) and the subtitles lane
     ctx.fillStyle = "#1a1e24";
     ctx.fillRect(0, V2_Y, w, V2_H);
-    ctx.fillRect(0, SUB_Y, w, SUB_H);
+    ctx.fillRect(0, this._L.sy, w, SUB_H);
     ctx.font = "600 10px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
     ctx.textBaseline = "middle"; ctx.textAlign = "left";
     for (const t of p.titles || []) {
@@ -1834,20 +1919,20 @@ export class CutPanel {
       const x0 = this._x(c.start_frame), x1 = this._x(c.end_frame);
       if (x1 < HEADER_W || x0 > w) continue;
       ctx.fillStyle = c.id === this.subSel ? ACCENT : p.burn_subtitles ? "#8a8f5a" : "#4b525c";
-      ctx.fillRect(x0 + 0.5, SUB_Y + 2, Math.max(2, x1 - x0 - 1), SUB_H - 4);
-      ctx.save(); ctx.beginPath(); ctx.rect(x0, SUB_Y, x1 - x0, SUB_H); ctx.clip();
+      ctx.fillRect(x0 + 0.5, this._L.sy + 2, Math.max(2, x1 - x0 - 1), SUB_H - 4);
+      ctx.save(); ctx.beginPath(); ctx.rect(x0, this._L.sy, x1 - x0, SUB_H); ctx.clip();
       ctx.fillStyle = "#0d1117"; ctx.font = "9px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
-      ctx.fillText(c.text, x0 + 3, SUB_Y + SUB_H / 2);
+      ctx.fillText(c.text, x0 + 3, this._L.sy + SUB_H / 2);
       ctx.restore();
     }
 
     // track
     ctx.fillStyle = "#1f242b";
-    ctx.fillRect(0, TRACK_Y, w, TRACK_H);
+    ctx.fillRect(0, TRACK_Y, w, this._L.th);
     if (total) {
       ctx.fillStyle = "#15181d";
       const xe = this._x(total);
-      if (xe < w) ctx.fillRect(xe, TRACK_Y, w - xe, TRACK_H);
+      if (xe < w) ctx.fillRect(xe, TRACK_Y, w - xe, this._L.th);
     }
 
     // audio tracks
@@ -1855,7 +1940,7 @@ export class CutPanel {
     for (let t = 1; t <= nTracks; t++) {
       const y = this._trackTop(t);
       ctx.fillStyle = d && d.mode === "aslide" && d.track === t ? "#232a30" : "#1c2025";
-      ctx.fillRect(0, y, w, A_H);
+      ctx.fillRect(0, y, w, this._L.ah);
     }
     for (const a of p.audio) {
       if (a.track > nTracks) continue;
@@ -1890,13 +1975,13 @@ export class CutPanel {
       if (a.shot.id === b.shot.id && a.out === b.in) {
         ctx.strokeStyle = "rgba(255,255,255,.45)";
         ctx.setLineDash([2, 3]);
-        ctx.beginPath(); ctx.moveTo(x + 0.5, TRACK_Y + 2); ctx.lineTo(x + 0.5, TRACK_Y + TRACK_H - 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x + 0.5, TRACK_Y + 2); ctx.lineTo(x + 0.5, TRACK_Y + this._L.th - 2); ctx.stroke();
         ctx.setLineDash([]);
       } else if (a.shot.scene_name && a.shot.scene_name === b.shot.scene_name && a.shot.id !== b.shot.id) {
         const on = TL.actionMatchIn(a.shot, a.out, b.shot) === b.in;
         ctx.fillStyle = on ? "#4fc27f" : ACCENT;
         ctx.beginPath();
-        const y = TRACK_Y + TRACK_H - 1;
+        const y = TRACK_Y + this._L.th - 1;
         ctx.moveTo(x, y - 9); ctx.lineTo(x + 5, y - 4); ctx.lineTo(x, y + 1); ctx.lineTo(x - 5, y - 4);
         ctx.closePath(); ctx.fill();
       }
@@ -1935,7 +2020,7 @@ export class CutPanel {
       if (r) {
         const x = Math.round(this._x(d.mode === "trimOut" ? r.recOut : r.recIn));
         ctx.fillStyle = d.mode === "roll" ? "#ffd27a" : ACCENT;
-        ctx.fillRect(x - (d.mode === "trimOut" ? 3 : d.mode === "roll" ? 1.5 : 0), TRACK_Y - 2, 3, TRACK_H + 4);
+        ctx.fillRect(x - (d.mode === "trimOut" ? 3 : d.mode === "roll" ? 1.5 : 0), TRACK_Y - 2, 3, this._L.th + 4);
       }
     }
 
@@ -1944,7 +2029,7 @@ export class CutPanel {
       const pts = TL.editPoints(p);
       const x = Math.round(this._x(pts[d.target]));
       ctx.fillStyle = "#fff";
-      ctx.fillRect(x - 1, TRACK_Y - 4, 2, TRACK_H + 8);
+      ctx.fillRect(x - 1, TRACK_Y - 4, 2, this._L.th + 8);
       ctx.beginPath(); ctx.moveTo(x - 5, TRACK_Y - 4); ctx.lineTo(x + 5, TRACK_Y - 4); ctx.lineTo(x, TRACK_Y + 1); ctx.fill();
       if (d.mode === "move") {
         const r = rows[d.idx];
@@ -1984,29 +2069,33 @@ export class CutPanel {
     ctx.textBaseline = "middle";
     ctx.textAlign = "left";
     ctx.fillStyle = "#cfd5de";
-    ctx.fillText("V1", 8, TRACK_Y + TRACK_H / 2);
+    ctx.fillText("V1", 8, TRACK_Y + this._L.th / 2);
     ctx.fillStyle = "#b9a6dc";
     ctx.fillText("V2  Titles", 8, V2_Y + V2_H / 2);
     ctx.fillStyle = "#8b94a1";
     ctx.font = "600 9px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
-    ctx.fillText(p.burn_subtitles ? "SUBS · burn" : "SUBS", 8, SUB_Y + SUB_H / 2);
+    ctx.fillText(p.burn_subtitles ? "SUBS · burn" : "SUBS", 8, this._L.sy + SUB_H / 2);
     for (let t = 1; t <= nTracks; t++) {
       const y = this._trackTop(t), st = TL.trackState(p, t), heard = TL.audible(p, t);
       ctx.fillStyle = heard ? "#cfd5de" : "#6b737e";
       ctx.font = "600 11px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
       ctx.textAlign = "left";
-      ctx.fillText("A" + t, 8, y + A_H / 2 - 6);
-      ctx.font = "10px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
-      ctx.fillStyle = "#8b94a1";
-      ctx.fillText(TL.trackName(p, t).slice(0, 9), 8, y + A_H / 2 + 8);
+      const ah = this._L.ah, two = ah >= 30, bh = Math.min(14, ah);   // compact tracks: "A1 Dialo" on one line
+      if (ah < 16) ctx.font = "600 9px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
+      ctx.fillText("A" + t, 8, y + ah / 2 + (two ? -6 : 0.5));
+      if (ah >= 16) {
+        ctx.font = "10px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
+        ctx.fillStyle = "#8b94a1";
+        ctx.fillText(TL.trackName(p, t).slice(0, two ? 9 : 5), two ? 8 : 25, y + ah / 2 + (two ? 8 : 0.5));
+      }
       for (const [label, on, x, col] of [["M", st.mute, HEADER_W - 36, "#d9534f"], ["S", st.solo, HEADER_W - 19, "#e6c34a"]]) {
-        roundRect(ctx, x, y + (A_H - 14) / 2, 15, 14, 3);
+        roundRect(ctx, x, y + (ah - bh) / 2, 15, bh, 3);
         ctx.fillStyle = on ? col : "#262b33";
         ctx.fill();
         ctx.fillStyle = on ? "#16191e" : "#8b94a1";
         ctx.font = "700 9px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(label, x + 7.5, y + A_H / 2 + 0.5);
+        ctx.fillText(label, x + 7.5, y + ah / 2 + 0.5);
       }
     }
   }
@@ -2014,7 +2103,7 @@ export class CutPanel {
   _drawAudioClip(ctx, a, x0, x1, top) {
     const heard = TL.audible(this.project, a.track);
     const sel = a.id === this.aSel;
-    const y = top + 2, h = A_H - 4, cw = Math.max(2, x1 - x0 - 1);
+    const y = top + 2, h = this._L.ah - 4, cw = Math.max(2, x1 - x0 - 1);
     const len = TL.audioLen(a);
     const entry = this.abufs.get(this._audioUrl(a));
     ctx.save();
@@ -2025,7 +2114,7 @@ export class CutPanel {
     ctx.clip();
     // waveform (gain and fades applied, so what you see is what you hear)
     if (entry && entry.peaks && len) {
-      const g = Math.pow(10, a.gain_db / 20), mid = y + h / 2 + 4, amp = (h - 12) / 2;
+      const g = Math.pow(10, a.gain_db / 20), mid = y + h / 2 + (h >= 20 ? 4 : 0), amp = h >= 20 ? (h - 12) / 2 : h / 2 - 1;
       const spp = entry.buffer.sampleRate / this.rate; // samples per frame
       ctx.fillStyle = "rgba(205,240,228,.75)";
       const xa = Math.max(Math.floor(x0), HEADER_W), xb = Math.min(Math.ceil(x0 + cw), this.tl.clientWidth);
@@ -2052,7 +2141,7 @@ export class CutPanel {
     ctx.font = "600 10px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
     ctx.textBaseline = "top";
     ctx.textAlign = "left";
-    if (cw > 30) ctx.fillText(a.label, x0 + Math.max(6, a.fade_in * this.ppf + 2), y + 2);
+    if (cw > 30 && h >= 14) ctx.fillText(a.label, x0 + Math.max(6, a.fade_in * this.ppf + 2), y + 2);
     if (a.gain_db && cw > 90) {
       ctx.textAlign = "right";
       ctx.fillStyle = "rgba(255,255,255,.8)";
@@ -2091,7 +2180,7 @@ export class CutPanel {
 
   _drawClip(ctx, r, x0, x1, alpha, ghost = false) {
     const rung = TL.bestRung(r.shot);
-    const y = TRACK_Y + 3, h = TRACK_H - 6;
+    const y = TRACK_Y + 3, h = this._L.th - 6;
     const cw = Math.max(2, x1 - x0 - 1);
     ctx.save();
     ctx.globalAlpha *= alpha;
@@ -2122,7 +2211,7 @@ export class CutPanel {
       const nameW = ctx.measureText(r.shot.name).width;
       ctx.font = "10px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
       ctx.fillStyle = "rgba(255,255,255,.75)";
-      if (r.shot.setup) ctx.fillText(r.shot.setup, tx, y + 19);
+      if (r.shot.setup && h >= 44) ctx.fillText(r.shot.setup, tx, y + 19);
       ctx.fillText(`${this._dur(r.len)}  [${r.in}-${r.out - 1}]`, tx, y + h - 14);
       // rung badge
       ctx.font = "700 9px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
@@ -2173,8 +2262,8 @@ export class CutPanel {
 
   /** Audio track number under y (1..n), 0 if none; n+1 just below the last track. */
   _trackAt(y) {
-    if (y < A_Y) return 0;
-    return Math.min(TL.audioTrackCount(this.project) + 1, Math.floor((y - A_Y) / (A_H + A_GAP)) + 1);
+    if (y < this._L.ay) return 0;
+    return Math.min(TL.audioTrackCount(this.project) + 1, Math.floor((y - this._L.ay) / (this._L.ah + this._L.ag)) + 1);
   }
 
   /**
@@ -2216,7 +2305,7 @@ export class CutPanel {
       const t = this._trackAt(y);
       if (t >= 1 && t <= TL.audioTrackCount(this.project)) {
         const top = this._trackTop(t);
-        const inBtn = y >= top + (A_H - 14) / 2 - 2 && y <= top + (A_H + 14) / 2 + 2;
+        const inBtn = y >= top + (this._L.ah - 14) / 2 - 2 && y <= top + (this._L.ah + 14) / 2 + 2;
         if (inBtn && x >= HEADER_W - 37 && x < HEADER_W - 20) return { type: "header", track: t, button: "mute" };
         if (inBtn && x >= HEADER_W - 20) return { type: "header", track: t, button: "solo" };
       }
@@ -2227,22 +2316,22 @@ export class CutPanel {
       const t = [...(this.project.titles || [])].reverse().find((q) => f >= q.start_frame && f < q.start_frame + q.frames);
       return t ? { type: "title", title: t } : { type: "empty" };
     }
-    if (y >= SUB_Y && y < SUB_Y + SUB_H) {
+    if (y >= this._L.sy && y < this._L.sy + SUB_H) {
       const f = this._frameAt(x);
       const c = (this.project.subtitles || []).find((q) => f >= q.start_frame && f < q.end_frame);
       return c ? { type: "sub", cue: c } : { type: "empty" };
     }
-    if (this.keysMode && y >= A_Y) {
+    if (this.keysMode && y >= this._L.ay) {
       const t = this._trackAt(y), top = this._trackTop(t);
       const a = this.project.audio.find((q) => q.track === t && q.out != null && x >= this._x(q.start_frame) && x <= this._x(q.start_frame + TL.audioLen(q)));
       if (a) {
-        const yy = top + 2, hh = A_H - 4;
+        const yy = top + 2, hh = this._L.ah - 4;
         const yOf = (db) => yy + hh - ((TL.clamp(db, -30, 6) + 30) / 36) * (hh - 4) - 2;
         const ki = (a.keys || []).findIndex(([f]) => Math.abs(this._x(a.start_frame + f) - x) <= 5);
         return { type: "akey", audio: a, key: ki, yOf, top: yy, h: hh };
       }
     }
-    if (this.keysMode && y >= TRACK_Y && y <= TRACK_Y + TRACK_H) {
+    if (this.keysMode && y >= TRACK_Y && y <= TRACK_Y + this._L.th) {
       const f = this._frameAt(x);
       const row = TL.layout(this.project).find((r) => f >= r.recIn && f < r.recOut);
       if (row) {
@@ -2250,7 +2339,7 @@ export class CutPanel {
         return { type: "okey", row, key: ki };
       }
     }
-    if (y >= A_Y) {
+    if (y >= this._L.ay) {
       const t = this._trackAt(y);
       if (t > TL.audioTrackCount(this.project)) return { type: "empty", track: t };
       const top = this._trackTop(t);
@@ -2269,7 +2358,7 @@ export class CutPanel {
       }
       return { type: "empty", track: t };
     }
-    if (y < TRACK_Y || y > TRACK_Y + TRACK_H) return { type: "empty" };
+    if (y < TRACK_Y || y > TRACK_Y + this._L.th) return { type: "empty" };
     if (y <= TRACK_Y + 19) {
       const spans = FX.transSpans(this.project);
       const list = spans.map((sp, k) => [sp, k]).filter(([sp]) => sp);
@@ -2329,7 +2418,7 @@ export class CutPanel {
       const startF = isA ? hit.audio.start_frame : hit.row.recIn;
       const len = isA ? TL.audioLen(hit.audio) : hit.row.len;
       const valAt = (yy) => (isA ? TL.clamp(-30 + (1 - (yy - hit.top - 2) / (hit.h - 4)) * 36, -60, 24) - hit.audio.gain_db
-        : TL.clamp(1 - (yy - (TRACK_Y + 7)) / (TRACK_H - 14), 0, 1));
+        : TL.clamp(1 - (yy - (TRACK_Y + 7)) / (this._L.th - 14), 0, 1));
       let ki = hit.key;
       if (ki >= 0 && e.altKey) keys.splice(ki, 1), ki = -1;
       else if (ki < 0) {
@@ -2586,14 +2675,20 @@ export class CutPanel {
     return delta;
   }
 
+  /** NLE wheel: Ctrl/⌘+wheel (and a trackpad pinch, which arrives as ctrl+wheel) zooms time at the pointer; the wheel
+   *  scrolls the tracks up/down when they overflow, otherwise (and Shift+wheel, or a sideways swipe) scrolls time. */
   _onWheel(e) {
     const { x } = this._local(e);
-    if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-      this.scrollX += e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX;
+    const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+    const dx = e.deltaX * k, dy = e.deltaY * k, box = this._tlw;
+    if (e.ctrlKey || e.metaKey) {
+      this.zoom(Math.exp(-dy * 0.0025), x);
+    } else if (!e.shiftKey && Math.abs(dy) >= Math.abs(dx) && box && box.scrollHeight > box.clientHeight + 1) {
+      box.scrollTop += dy;
+    } else {
+      this.scrollX += e.shiftKey && !dx ? dy : dx || dy;
       this._clampScroll();
       this.requestDraw();
-    } else {
-      this.zoom(Math.exp(-e.deltaY * 0.0025), x);
     }
   }
 
