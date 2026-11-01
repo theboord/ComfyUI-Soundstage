@@ -28,6 +28,7 @@ unless you said "go" ("render a draft of shot 2, go"). "Go to scene 2" is not a 
 | <kbd>Esc</kbd> | cancel the plan, then close the panel |
 | hold <kbd>`</kbd> | talk, anywhere in the App (let go to send) |
 | hold <kbd>Space</kbd> | talk, in the empty box or while the panel is open (outside text fields) |
+| <kbd>Shift</kbd>+<kbd>P</kbd> | Pitch Mode on / off (the mic stays on; see below) |
 
 ## What it can do (the tool layer)
 
@@ -74,6 +75,42 @@ numbers is kept, because a 4B model often gets "shots 1 to 3" wrong.
 
 Either way, "yes" / "apply" / "go" applies a waiting plan and "no" / "cancel" drops it, so a whole session can run with
 no mouse.
+
+## Pitch Mode: talk, and the set builds itself
+
+Press **● Pitch** in the Director panel (or <kbd>Shift</kbd>+<kbd>P</kbd>) and pitch the scene out loud: "Night. A rainy
+alley in Chinatown. A detective in a trench coat walks toward camera… a car's headlights sweep across him… he turns
+and runs… camera follows low and handheld." The mic stays on; you don't press anything per sentence.
+
+- **Beats.** The live transcript is cut into beats at each sentence, ellipsis or "then" (`chunkTranscript` in
+  `web/agent/pitch.mjs`). Browser speech recognition gives words as you speak; Whisper (offline) listens in windows
+  that end at a pause (0.45 s after 0.3 s of speech) or at 5 s.
+- **The set builds itself.** Each beat goes to `/soundstage/director/pitch` (`soundstage/agent/pitch.py`): the pitch's
+  words (set and place, time, weather, a character and wardrobe, what they do relative to the camera, a passing car,
+  props, camera height / rig / follow / lens) become concrete scene ops, applied live. "He" and "she" mean the last
+  person of that kind. This is instant (about 0.1–0.2 s a beat), so the GPU stays free for the sketches. Opt-in
+  under ⚙ ("Pitch: the local model also reads each beat"): the local Qwen3.5 4B reads every beat too; the rules keep
+  what they read and the model only fills what they missed (then the beat is re-staged and re-sketched). On a shared
+  queue that costs 2–6 s a beat.
+- **Whisper hears film words.** Each Whisper window is sent with a short list of film words and the last two beats as
+  Whisper's prompt (`X-Soundstage-Prompt`), so "a rainy alley" isn't heard as a name. Windows that come back as one
+  syllable repeated (Whisper on a cut word) are dropped.
+- **A sketch per beat.** After each beat the camera view is captured (Color pass, 704 px) and a FLUX 3 Klein edit
+  paints it in 4 steps at about 0.3 MP. The sketches land in the filmstrip under the transcript, so the pitch becomes a
+  storyboard. A small HUD shows the last beat's latency: heard (transcription), plan, model, sketch, and sentence → image.
+- **The queue is shared.** Pitch only ever deletes prompt ids it queued itself, and only while they are still waiting:
+  the same beat's older sketch (re-staged or undone) and a backlog when you talk faster than the GPU paints (the newest
+  two always render). A sketch already running is left to finish. It never presses Stop / interrupt. Sketches go to
+  the front of the queue (they take seconds), but they still wait for a render that is already running: the HUD then
+  says the GPU is busy and the set keeps building. Click a skipped beat to sketch it again.
+- **Undo.** The whole pitch is one Director undo step; **Undo beat** takes back the last beat only.
+- **Preview motion** queues a very fast, low-grade LTX-2.5 draft of the selected beat from its sketch (512×288, 49
+  frames, one pass, no upscale or audio), at the back of the queue.
+- **Lock it** turns the pitch into shots: one per beat (that beat's camera and rig), the transcript line as the shot's
+  notes, and the sketch as its chosen first frame (through ④ Frame's "use as first frame"), ready for ④ Frame /
+  ⑤ Motion. One undo step. The actors keep the last beat's blocking; each shot's first frame and notes carry its beat.
+- **Style.** If the Director's Book is loaded, `host.getBookContext()` or `globalThis.SoundstageBook.getBookContext()`
+  → `{style, intent}` is added to every sketch prompt.
 
 ## MCP
 

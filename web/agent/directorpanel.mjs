@@ -10,6 +10,7 @@
 // Voice: the browser's speech recognition where it has one, or Whisper on the ComfyUI server (offline, open weights).
 // MCP: Claude Desktop / Code proposals arrive as "soundstage.director" events and run here, in view, undoable.
 import { Director, BACKENDS, YES_RE, NO_RE, encodeWav, downsample, wantsGo, pickOllama } from "./director.mjs";
+import { PitchSession } from "./pitch.mjs";
 import { icon } from "../ui/icons.mjs";
 import { statusOf, setTakeStatus, refreshBadges } from "../dailies/approval.mjs";
 
@@ -58,6 +59,28 @@ const CSS = `
 .ss-dir .set[hidden] { display:none; }
 .ss-dir .set select, .ss-dir .set input[type=text], .ss-dir .set input[type=password] { background:rgba(0,0,0,.3); color:var(--ss-text, #fff); border:1px solid var(--ss-line-strong, #444); border-radius:8px; padding:4px 6px; font:inherit; min-width:0; }
 .ss-dir .set label.cb { grid-column:1 / -1; display:flex; gap:6px; align-items:center; }
+/* Pitch Mode (Milestone 22): live transcript, latency HUD, the storyboard filmstrip of beats. */
+.ss-dir header .pitchb { color:var(--ss-text, #eee); border:1px solid var(--ss-line-strong, rgba(255,255,255,.16)); border-radius:999px; padding:3px 10px; font:inherit; font-size:12px; font-weight:700; gap:5px; align-items:center; }
+.ss-dir header .pitchb .dot { width:9px; height:9px; border-radius:50%; background:#ff453a; display:inline-block; }
+.ss-dir header .pitchb[aria-pressed=true] { background:#ff453a; color:#fff; border-color:#ff453a; }
+.ss-dir header .pitchb[aria-pressed=true] .dot { background:#fff; animation:ssdirpulse 1.1s ease-in-out infinite; }
+.ss-dir .pitch { border-top:1px solid var(--ss-line, rgba(255,255,255,.08)); padding:8px 10px 6px; display:flex; flex-direction:column; gap:6px; }
+.ss-dir .pitch[hidden] { display:none; }
+.ss-dir .pitch .tx { font-size:12px; min-height:18px; max-height:54px; overflow:hidden; color:var(--ss-text, #eee); display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; }
+.ss-dir .pitch .tx i { color:var(--ss-faint, #999); }
+.ss-dir .pitch .hud { font:11px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; color:var(--ss-muted, #bbb); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ss-dir .pitch .hud b { color:var(--ss-accent, #f2ff59); font-weight:600; }
+.ss-dir .pitch .strip { display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; scroll-snap-type:x proximity; }
+.ss-dir .pitch .beat { flex:0 0 132px; scroll-snap-align:end; border:1px solid var(--ss-line, rgba(255,255,255,.1)); border-radius:10px; overflow:hidden; background:rgba(0,0,0,.25); cursor:pointer; position:relative; }
+.ss-dir .pitch .beat[data-sel=true] { border-color:var(--ss-accent-line, #f2ff59); }
+.ss-dir .pitch .beat .im { width:100%; aspect-ratio:16/9; display:flex; align-items:center; justify-content:center; background:#0d0b10; color:var(--ss-faint, #888); font-size:11px; }
+.ss-dir .pitch .beat img, .ss-dir .pitch .beat video { width:100%; aspect-ratio:16/9; object-fit:cover; display:block; }
+.ss-dir .pitch .beat .im[data-st=rendering] { background:linear-gradient(90deg,#141018,#221a28,#141018); background-size:200% 100%; animation:sspitchsh 1.2s linear infinite; }
+@keyframes sspitchsh { to { background-position:-200% 0; } }
+.ss-dir .pitch .beat .cap { padding:4px 6px 5px; font-size:10.5px; line-height:1.25; color:var(--ss-muted, #ccc); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.ss-dir .pitch .beat .n { position:absolute; left:5px; top:4px; font-size:10px; font-weight:700; background:rgba(0,0,0,.6); color:#fff; padding:0 5px; border-radius:6px; }
+.ss-dir .pitch .beat .ms { position:absolute; right:5px; top:4px; font-size:10px; background:rgba(0,0,0,.6); color:#fff; padding:0 5px; border-radius:6px; }
+.ss-dir .pitch .row { margin-top:0; }
 .ss-dirbtn[aria-pressed=true] { background:var(--ss-accent, #f2ff59) !important; color:var(--ss-accent-ink, #211927) !important; }
 `;
 
@@ -154,6 +177,16 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   const beLbl = h("span", { class: "be" }, "");
   const setBtn = h("button", { type: "button", title: "Model, voice and how it applies", "aria-label": "Director settings" }, icon("sliders-horizontal", 15));
   const closeBtn = h("button", { type: "button", title: "Close (Esc)", "aria-label": "Close the Director panel" }, icon("x", 15));
+  const pitchBtn = h("button", { type: "button", class: "pitchb", title: "Pitch Mode: talk through your idea and watch the set build itself, a sketch per beat (P)",
+    "aria-label": "Pitch Mode", "aria-pressed": "false" }, h("span", { class: "dot" }), "Pitch");
+  const pTx = h("div", { class: "tx", "aria-live": "polite" });
+  const pHud = h("div", { class: "hud", title: "Latency of the last beat: heard (transcription), plan, model, stage, sketch on the GPU, and sentence → image" });
+  const pStrip = h("div", { class: "strip", role: "list", "aria-label": "Pitch beats" });
+  const pMic = h("button", { type: "button" }, icon("mic", 13), "Listening");
+  const pUndo = h("button", { type: "button", title: "Undo the last beat" }, icon("rotate-ccw", 13), "Undo beat");
+  const pMotion = h("button", { type: "button", title: "A very fast, low-res LTX draft of the selected beat (uses the GPU)" }, icon("video", 13), "Preview motion");
+  const pLock = h("button", { type: "button", class: "go", title: "Turn the pitch into shots: one per beat, each sketch as its first frame" }, icon("check", 13), "Lock it");
+  const pitchBox = h("div", { class: "pitch", hidden: true }, pTx, pHud, pStrip, h("div", { class: "row" }, pMic, pUndo, pMotion, pLock));
   const chips = h("div", { class: "chips" });
   const hint = h("div", { class: "hint" }, "Enter sends · Enter again (or say “yes”) applies · Esc cancels · hold ` or Space to talk");
   const beSel = h("select", { "aria-label": "Language model" });
@@ -164,15 +197,17 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   const apiKey = h("input", { type: "password", placeholder: "API key (kept in this tab only)", "aria-label": "API key" });
   const exCb = h("input", { type: "checkbox" }); exCb.checked = explain;
   const autoCb = h("input", { type: "checkbox" }); autoCb.checked = autoApply;
+  const pitchModelCb = h("input", { type: "checkbox" }); pitchModelCb.checked = localStorage.getItem("ss_director_pitch_model") === "1";
   const apiRows = [h("span", {}, "API URL"), apiUrl, h("span", {}, "API model"), apiModel, h("span", {}, "API key"), apiKey];
   const olRows = [h("span", {}, "Ollama"), olSel];
   const settings = h("div", { class: "set", hidden: true },
     h("span", {}, "Model"), beSel, ...olRows, ...apiRows, h("span", {}, "Voice"), vSel,
     h("label", { class: "cb" }, exCb, "Explain each step in film terms and suggest the next one"),
-    h("label", { class: "cb" }, autoCb, "Apply without asking (renders still ask unless you say “go”)"));
+    h("label", { class: "cb" }, autoCb, "Apply without asking (renders still ask unless you say “go”)"),
+    h("label", { class: "cb" }, pitchModelCb, "Pitch: the local model also reads each beat (slower, 2–6 s a beat)"));
   const panel = h("section", { class: "ss-dir", hidden: true, role: "dialog", "aria-label": "Director's assistant" },
-    h("header", {}, h("span", { class: "t" }, icon("clapperboard", 16), "Director"), beLbl, setBtn, closeBtn),
-    settings, log, chips, h("div", { class: "comp" }, mic, input, sendB), hint);
+    h("header", {}, h("span", { class: "t" }, icon("clapperboard", 16), "Director"), pitchBtn, beLbl, setBtn, closeBtn),
+    settings, log, chips, pitchBox, h("div", { class: "comp" }, mic, input, sendB), hint);
   for (const ev of ["pointerdown", "wheel", "keydown", "keyup", "contextmenu"]) panel.addEventListener(ev, stop);
   root.append(panel);
 
@@ -296,6 +331,7 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   /** Send a command (typed, spoken, or a chip). Resolves with {plan, result?}. */
   async function send(text, { source = "panel", apply = null } = {}) {
     text = String(text || "").trim();
+    if (pitch.active && source === "panel") { if (text) pitch.hear(text, { final: true }); return null; }
     if (!text) { if (pending) return { result: await applyPending(pending) }; return null; }
     if (pending && YES_RE.test(text)) { say("u", text); return { result: await applyPending(pending) }; }
     if (pending && NO_RE.test(text)) { say("u", text); discard(pending); return null; }
@@ -328,7 +364,7 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
 
   // ---------------------------------------------------------------- voice
   async function startTalk(key = "mouse") {
-    if (listening) return;
+    if (listening || (pitch.active && pitchListen)) return;    // the pitch is already listening continuously
     open();
     mic.dataset.on = "true";
     const shown = input.placeholder;
@@ -378,8 +414,10 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     } };
   }
   function stopTalk() { const l = listening; if (l) l.stop(); }
-  async function transcribe(wav) {
-    const r = await api.fetchApi("/soundstage/director/transcribe", { method: "POST", headers: { "Content-Type": "audio/wav" }, body: wav });
+  async function transcribe(wav, prompt = "") {
+    const headers = { "Content-Type": "audio/wav" };
+    if (prompt) headers["X-Soundstage-Prompt"] = encodeURIComponent(prompt.slice(-400));
+    const r = await api.fetchApi("/soundstage/director/transcribe", { method: "POST", headers, body: wav });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || `server answered ${r.status}`);
     return j.text || "";
@@ -392,6 +430,7 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     if (e.metaKey || e.ctrlKey || e.altKey || !root.isConnected || !isActive()) return;
     const typing = editable(e.target) && e.target !== input;
     if (e.key === "/" && !typing && (e.target !== input || !input.value)) { e.preventDefault(); e.stopPropagation(); open(); input.focus(); return; }
+    if ((e.key === "p" || e.key === "P") && e.shiftKey && !typing && e.target !== input && !e.repeat) { e.preventDefault(); e.stopPropagation(); togglePitch(); return; }
     if ((e.key === "`" || e.code === "Backquote") && !typing && !e.repeat) { e.preventDefault(); e.stopPropagation(); startTalk("bq"); return; }
     if (e.key === " " && !panel.hidden && !typing && e.target !== input && !e.repeat) { e.preventDefault(); e.stopPropagation(); startTalk("space"); }
   };
@@ -402,6 +441,162 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   };
   window.addEventListener("keydown", onKey, true);
   window.addEventListener("keyup", onKeyUp, true);
+
+  // ---------------------------------------------------------------- Pitch Mode
+  // ● Pitch (or Shift+P): the mic stays on, every sentence or clause is a beat: the set builds itself (undoable, one
+  // Director step for the whole pitch, Undo beat for the last one) and a fast FLUX 3 Klein sketch of the camera view
+  // lands in the filmstrip. Lock it turns the beats into shots with the sketches as first frames.
+  let pitchListen = null;      // {stop()} while the pitch mic is on
+  let selBeat = null;
+  const pitch = new PitchSession({ api, stage, director, host, onUpdate: (_, why, x) => drawPitch(why, x),
+    opts: { model: pitchModelCb.checked ? "auto" : "rules" } });
+  pitchModelCb.addEventListener("change", () => { pitch.opts.model = pitchModelCb.checked ? "auto" : "rules"; localStorage.setItem("ss_director_pitch_model", pitchModelCb.checked ? "1" : "0"); });
+  const fmt = (ms) => (ms == null ? "–" : `${(ms / 1000).toFixed(1)}s`);
+  function drawPitch(why, x) {
+    pitchBtn.setAttribute("aria-pressed", String(pitch.active));
+    pitchBox.hidden = !pitch.active && !pitch.beats.length;
+    pMic.replaceChildren(icon(pitchListen ? "pause" : "mic", 13), pitchListen ? "Pause mic" : "Listen");
+    pUndo.disabled = !pitch.beats.length;
+    pLock.disabled = !pitch.beats.length;
+    const sel = selBeat && pitch.beats.includes(selBeat) ? selBeat : pitch.beats[pitch.beats.length - 1];
+    pMotion.disabled = !sel?.sketch?.file || sel?.motion?.status === "rendering";
+    const said = pitch.beats.slice(-3).map((b) => b.text).join(" ");
+    pTx.replaceChildren(said ? `${said} ` : "", pitch.rest || pitch.interim ? h("i", {}, `${pitch.rest} ${pitch.interim}`.trim()) : "",
+      !said && !pitch.rest && !pitch.interim ? h("i", {}, pitch.active ? "Listening… pitch the scene: where, when, who, what happens, where the camera is." : "Pitch paused.") : "");
+    const t = pitch.hud || {};
+    pHud.replaceChildren(t.n ? h("span", {}, `beat ${t.n} · heard ${fmt(t.heard_ms)} · plan ${fmt(t.plan_ms)}${t.llm_ms != null ? ` · model ${fmt(t.llm_ms)}` : ""} · sketch ${fmt(t.sketch_ms)} · `, h("b", {}, `sentence → image ${fmt(t.total_ms)}`))
+      : h("span", {}, pitch.beats.length ? `beat ${pitch.beats.length} staged · sketch on the GPU…` : "Each sentence: transcribe → plan → stage → sketch"));
+    const lastB = pitch.beats[pitch.beats.length - 1];
+    if (lastB?.sketch?.status === "rendering" && lastB.sketch.blocked) pHud.replaceChildren(h("span", {}, "The GPU is busy with another job: sketches wait behind it (the set keeps building)."));
+    if (why === "interim" || why === "heard") return;
+    pStrip.replaceChildren(...pitch.beats.map((b) => {
+      const st = b.sketch?.status || "none";
+      const media = b.motion?.status === "done" && b.motion.url ? h("video", { src: api.apiURL ? api.apiURL(b.motion.url) : b.motion.url, muted: true, autoplay: true, loop: true, playsinline: true })
+        : st === "done" ? h("img", { src: b.sketch.url, alt: `Beat ${b.n} sketch` })
+          : h("div", { class: "im", "data-st": st }, { rendering: "sketching…", skipped: "skipped · click to sketch", error: "sketch failed · click to retry", none: "staged", stale: "…" }[st] || st);
+      const card = h("div", { class: "beat", role: "listitem", "data-sel": String(b === sel), title: `${b.text}\n${b.caption || ""}${b.sketch?.error ? `\n(${b.sketch.error})` : ""}` },
+        media, h("span", { class: "n" }, String(b.n)), b.timing?.total_ms ? h("span", { class: "ms" }, fmt(b.timing.total_ms)) : null,
+        b.motion?.status === "rendering" ? h("span", { class: "ms" }, "motion…") : null,
+        h("div", { class: "cap" }, b.caption || b.text));
+      card.addEventListener("click", () => { selBeat = b; if (["skipped", "error"].includes(b.sketch?.status)) pitch.resketch(b); drawPitch(); });
+      return card;
+    }));
+    if (why === "beat" || why === "sketch") pStrip.scrollLeft = pStrip.scrollWidth;
+    if (why === "beat" && x) { try { host.say?.(`Pitch beat ${x.n}: ${x.caption}`); } catch { /* */ } }
+    if (why === "locked") say("a", `Locked: ${x.shots.length} shot${x.shots.length === 1 ? "" : "s"}, one per beat${x.frames ? `, ${x.frames} with the sketch as first frame` : ""}. They're in the strip, ready for ④ Frame and ⑤ Motion. Undo takes it back.`);
+  }
+
+  function startPitchListen() {
+    if (pitchListen) return;
+    if (voice === "browser" && SR) {
+      const rec = new SR();
+      rec.lang = navigator.language || "en-US";
+      rec.interimResults = true;
+      rec.continuous = true;
+      let alive = true;
+      rec.onresult = (ev) => {
+        let interim = "";
+        for (let i = ev.resultIndex; i < ev.results.length; i++) {
+          if (ev.results[i].isFinal) pitch.hear(ev.results[i][0].transcript, { final: true });
+          else interim += ev.results[i][0].transcript;
+        }
+        if (interim) pitch.hear(interim, { interim: true });
+      };
+      rec.onerror = (ev) => { if (ev.error !== "no-speech") say("a", `Speech recognition stopped (${ev.error}). Switch Voice to Whisper in ⚙ for the offline one.`); };
+      rec.onend = () => { if (alive && pitch.active) { try { rec.start(); } catch { /* */ } } };   // Chrome stops after ~60 s of talk
+      try { rec.start(); } catch (e) { say("a", `Mic: ${e.message}`); return; }
+      pitchListen = { stop: () => { alive = false; try { rec.stop(); } catch { /* */ } } };
+    } else {
+      // Whisper hears the pitch better when it knows the words to expect: film terms and the last beats.
+      let warned = false;
+      pitchListen = whisperStream((wav, t0) => transcribe(wav, pitch.whisperHint())
+        .then((t) => t && !looksLikeNoise(t) && pitch.hear(t, { final: true, heardMs: performance.now() - t0 }))
+        .catch((e) => { if (!warned) { warned = true; say("a", `Whisper didn't answer (${e.message || e}): is ComfyUI restarting? Still listening.`); } }));
+    }
+    drawPitch();
+  }
+  function stopPitchListen() { const l = pitchListen; pitchListen = null; l?.stop(); drawPitch(); }
+
+  /** Whisper's known failure on noise or a cut word: one syllable repeated ("we-we-we-we..."). Dropped, not staged. */
+  function looksLikeNoise(t) { const w = t.toLowerCase().split(/[\s-]+/).filter(Boolean); return w.length >= 8 && new Set(w).size / w.length < 0.25; }
+
+  /** Whisper, live: cut the mic into windows at a pause (≥ 0.45 s quiet after ≥ 0.3 s of speech) or at 5 s. */
+  function whisperStream(onWindow) {
+    let stopped = false, stream = null, ac = null, proc = null, src = null;
+    const buf = [];
+    let speech = 0, quiet = 0, rate = 16000;
+    const flush = () => {
+      const n = buf.reduce((a, c) => a + c.length, 0);
+      if (n < rate * 0.5 || speech < rate * 0.25) { buf.length = 0; speech = 0; quiet = 0; return; }
+      const all = new Float32Array(n);
+      let o = 0; for (const c of buf) { all.set(c, o); o += c.length; }
+      buf.length = 0; speech = 0; quiet = 0;
+      onWindow(encodeWav(downsample(all, rate, 16000), 16000), performance.now());
+    };
+    (async () => {
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } }); }
+      catch (e) { say("a", `No microphone (${e.message}).`); pitchListen = null; drawPitch(); return; }
+      if (stopped) { for (const t of stream.getTracks()) t.stop(); return; }
+      ac = new (globalThis.AudioContext || globalThis.webkitAudioContext)();
+      rate = ac.sampleRate;
+      src = ac.createMediaStreamSource(stream);
+      // An AudioWorklet copies the mic off the main thread, so a beat staging on the main thread can't drop audio
+      // (a ScriptProcessor loses whole buffers while the stage rebuilds); the ScriptProcessor is the fallback.
+      const onChunk = (x) => {
+        let e = 0; for (let i = 0; i < x.length; i++) e += x[i] * x[i];
+        const loud = Math.sqrt(e / x.length) > 0.012;
+        buf.push(x);
+        if (loud) { speech += x.length; quiet = 0; } else quiet += x.length;
+        const len = buf.reduce((a, c) => a + c.length, 0);
+        if ((speech > rate * 0.3 && quiet > rate * 0.45) || len > rate * 5) flush();
+        else if (!speech && len > rate * 1.5) buf.splice(0, buf.length - 2);   // keep a little lead-in only
+      };
+      try {
+        const code = "registerProcessor('ss-pitch-tap', class extends AudioWorkletProcessor { constructor() { super(); this.b = new Float32Array(4096); this.n = 0; } " +
+          "process(i) { const c = i[0] && i[0][0]; if (c) { for (let k = 0; k < c.length; k++) { this.b[this.n++] = c[k]; if (this.n === 4096) { this.port.postMessage(this.b); this.b = new Float32Array(4096); this.n = 0; } } } return true; } });";
+        const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+        await ac.audioWorklet.addModule(url);
+        URL.revokeObjectURL(url);
+        proc = new AudioWorkletNode(ac, "ss-pitch-tap");
+        proc.port.onmessage = (ev) => onChunk(ev.data);
+        src.connect(proc); proc.connect(ac.destination);   // silent output: keeps the node pulled
+      } catch {
+        proc = ac.createScriptProcessor(4096, 1, 1);
+        proc.onaudioprocess = (ev) => onChunk(new Float32Array(ev.inputBuffer.getChannelData(0)));
+        src.connect(proc); proc.connect(ac.destination);
+      }
+    })();
+    return { stop: () => { stopped = true; try { proc?.disconnect(); src?.disconnect(); } catch { /* */ } flush(); for (const t of stream?.getTracks?.() || []) t.stop(); ac?.close?.(); } };
+  }
+
+  function startPitch({ listen = true } = {}) {
+    open();
+    if (pending) discard(pending);
+    pitch.start();
+    if (listen) startPitchListen();
+    input.placeholder = "Pitching: talk, or type a sentence (Enter)…";
+    drawPitch("start");
+  }
+  function stopPitch() {
+    stopPitchListen();
+    pitch.stop();
+    input.placeholder = "Tell the set what you want… (Enter)";
+    drawPitch("stop");
+  }
+  function togglePitch() { if (pitch.active) stopPitch(); else startPitch(); }
+  pitchBtn.addEventListener("click", togglePitch);
+  pMic.addEventListener("click", () => { if (pitchListen) stopPitchListen(); else { if (!pitch.active) pitch.start(); startPitchListen(); } });
+  pUndo.addEventListener("click", () => { const b = pitch.undoBeat(); if (b) say("a", `Undid beat ${b.n}: ${b.text}`); drawPitch(); });
+  pMotion.addEventListener("click", async () => {
+    const b = selBeat && pitch.beats.includes(selBeat) ? selBeat : pitch.beats[pitch.beats.length - 1];
+    try { await pitch.previewMotion(b); } catch (e) { say("a", `Preview motion: ${e.message || e}`); }
+  });
+  pLock.addEventListener("click", async () => {
+    stopPitchListen();
+    pLock.disabled = true;
+    try { await pitch.lock(); } catch (e) { say("a", `Couldn't lock the pitch: ${e.message || e}`); }
+    drawPitch();
+  });
 
   // ---------------------------------------------------------------- docking
   // Like the Presets window (web/ui/presets.mjs), the chat never covers another panel or the stage's controls. It sits
@@ -444,6 +639,7 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   }
   function close() {
     panel.hidden = true; button.setAttribute("aria-pressed", "false"); if (listening) stopTalk();
+    if (pitch.active) stopPitch();
     clearInterval(dockState.timer); dockState.timer = 0; undock();
   }
   function toggle() { if (panel.hidden) { open(); input.focus(); } else close(); }
@@ -491,8 +687,11 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     window.removeEventListener("keydown", onKey, true);
     window.removeEventListener("keyup", onKeyUp, true);
     api.removeEventListener?.("soundstage.director", onRemote);
+    stopPitchListen(); pitch.destroy();
     panel.remove(); button.remove();
   };
   return { director, panel, button, open, close, toggle, send, apply: () => applyPending(pending), discard: () => discard(pending),
-    get pending() { return pending?.plan || null; }, startTalk, dock, isOpen: () => !panel.hidden, stopTalk, destroy, transcribe };
+    get pending() { return pending?.plan || null; }, startTalk, dock, isOpen: () => !panel.hidden, stopTalk, destroy, transcribe,
+    pitch, startPitch, stopPitch,
+    setVoice: (v) => { if (v === "browser" && !SR) return voice; voice = v; localStorage.setItem("ss_director_voice", v); if ([...vSel.options].some((o) => o.value === v)) vSel.value = v; return voice; } };
 }

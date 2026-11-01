@@ -6,6 +6,12 @@ POST /soundstage/director/prompt     {command, scene, ctx}   -> {system, prompt,
 POST /soundstage/director/plan       {command, scene, ctx, llm_text?} -> plan (see director.plan) + ms
 POST /soundstage/director/calls      {calls, scene, ctx}     -> the same for typed calls (no language step)
 POST /soundstage/director/transcribe  audio/wav body          -> {text, seconds, ms, model}
+                                      (header X-Soundstage-Prompt: words to expect, URL-encoded; Pitch Mode sends it)
+
+Pitch Mode (soundstage/agent/pitch.py; the browser queues the GPU jobs itself, under its own client id):
+POST /soundstage/director/pitch        {text, scene, memory, ids, llm_text?, style?} -> one beat: delta, ops, memory, prompt
+POST /soundstage/director/pitch_prompt {text, memory}        -> {system, prompt, max_length, model} for the local model
+POST /soundstage/director/pitch_graph  {kind: sketch|motion, image, prompt, seed, ...} -> {graph} (weights resolved here)
 
 MCP bridge (tools/soundstage_mcp.py; propose = dry run, nothing changes until apply):
 POST /soundstage/director/state      {scene, ctx}            the open App posts its scene after each change
@@ -119,13 +125,60 @@ def register(routes=None, send=None) -> bool:
         if len(data) > 12 * 1024 * 1024:
             return web.json_response({"error": "recording too long (push-to-talk clips are a few seconds)"}, status=413)
         lang = request.query.get("lang", "en") or None
+        from urllib.parse import unquote
+        hint = unquote(request.headers.get("X-Soundstage-Prompt") or "")[:400] or None
         try:
-            res = await asyncio.get_running_loop().run_in_executor(None, lambda: W.transcribe(data, lang))
+            res = await asyncio.get_running_loop().run_in_executor(None, (lambda: W.transcribe(data, lang, prompt=hint)) if hint else (lambda: W.transcribe(data, lang)))
         except FileNotFoundError as e:
             return web.json_response({"error": str(e)}, status=404)
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": f"transcription failed: {e}"}, status=500)
         return web.json_response(res)
+
+    # ---------------------------------------------------------------- Pitch Mode
+    from . import pitch as PT
+
+    @routes.post("/soundstage/director/pitch")
+    async def pitch_beat(request):
+        b = await _body(request)
+        if not isinstance(b.get("scene"), dict):
+            return web.json_response({"error": "pitch needs the current scene"}, status=400)
+        t0 = time.time()
+        res = PT.beat(str(b.get("text", "")), b["scene"], b.get("memory"), b.get("ids"), b.get("llm_text"), str(b.get("style") or ""))
+        res.pop("scene", None)
+        res["ms"] = round((time.time() - t0) * 1000)
+        return web.json_response(res)
+
+    @routes.post("/soundstage/director/pitch_prompt")
+    async def pitch_prompt(request):
+        b = await _body(request)
+        p = PT.llm_prompt(str(b.get("text", "")), b.get("memory"))
+        p["model"] = PR.MODEL
+        return web.json_response(p)
+
+    @routes.post("/soundstage/director/pitch_graph")
+    async def pitch_graph(request):
+        b = await _body(request)
+        image = str(b.get("image") or "")
+        if not image:
+            return web.json_response({"error": "pitch_graph needs the uploaded image name"}, status=400)
+        try:
+            import folder_paths
+            lf = folder_paths.get_filename_list
+        except Exception:  # noqa: BLE001 - outside ComfyUI: the default file names
+            lf = None
+        kind = b.get("kind", "sketch")
+        mid = "open.ltx_2_5" if kind == "motion" else "open.flux3_klein"
+        w = PT._weights(mid, lf) if lf else None
+        if lf and w is None:
+            return web.json_response({"error": f"{'LTX-2.5' if kind == 'motion' else 'FLUX 3 Klein'} isn't installed on this ComfyUI"}, status=404)
+        seed = int(b.get("seed") or 0)
+        if kind == "motion":
+            g = PT.motion_graph(image, str(b.get("prompt") or ""), seed, int(b.get("width") or 512), int(b.get("height") or 288),
+                                int(b.get("frames") or 49), int(b.get("fps") or 24), w)
+        else:
+            g = PT.sketch_graph(image, str(b.get("prompt") or ""), seed, int(b.get("steps") or 4), float(b.get("megapixels") or 0.3), w)
+        return web.json_response({"graph": g, "model": mid})
 
     # ---------------------------------------------------------------- MCP bridge
     @routes.post("/soundstage/director/state")
