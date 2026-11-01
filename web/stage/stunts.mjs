@@ -13,10 +13,13 @@
 // roll_deg > 0 = the body leans onto its right-hand tyres (left side lifts); pitch_deg > 0 = nose up (rear squats).
 
 import { springFollow } from "./camrig.mjs";
+import { simulate, driverScript, metrics, carParams, SURFACES, DEFAULTS } from "./vehsim.mjs";
+
+export { SURFACES, DEFAULTS };
 
 export const STUNTS = {
-  reverse_jturn: { label: "Reverse J-turn", hint: "Races backwards, flicks the wheel, whips round 180° and drives off nose first" },
-  donut: { label: "Donut", hint: "Drives in, spins two tight donuts in a cloud of tyre smoke, drives out" },
+  reverse_jturn: { label: "Reverse J-turn", hint: "Reverses fast, flicks the wheel, slides round 180° and drives off nose first" },
+  donut: { label: "Donut", hint: "Drives in, turns in and floors it: the tail swings round in tyre smoke" },
   handbrake_180: { label: "Handbrake 180", hint: "Charges in, yanks the handbrake, slides round 180° and roars back the way it came" },
 };
 
@@ -173,29 +176,10 @@ export function smokeParticles(track, wheels, F, fps = 24, seed = 1) {
   return out;
 }
 
-// ---------- stunt presets: keyed paths, in the stunt's own frame ----------
-// Rows: [frame, lateral x (m, + = stage +X when it travels +Z), along z (m, + = the way it travels), heading (deg
-// relative to that way; 180 = reversing), smoke amount, smoke wheels, (roll, pitch)]. The body's springs make the
-// roll and pitch from the motion; the optional last two columns are a movie-stunt exaggeration on top (written as
-// roll_deg / pitch_deg keys), so the lean still reads after the video model softens it.
-const TABLES = {
-  // A movie reverse J-turn (121 frames at 24 fps): ~13 m/s backwards, the flick, 180° in ~0.7 s (167° → 12° in 14
-  // frames) with the body hard over (~10° roll), the nose dips as it scrubs off speed, then the rear squats on the launch.
-  reverse_jturn: [
-    [0, 0, 0, 180, 0, "", 0, 0], [30, -0.1, 13, 180, 0, "", 0, 0], [34, -0.2, 15.2, 176, 0.3, "front", 0, 0],
-    [38, -0.6, 17.3, 152, 0.8, "front", 2, 0], [42, -1.1, 19.1, 104, 1.0, "front", 3, 0], [46, -1.5, 20.5, 48, 1.0, "all", 3, 0],
-    [50, -1.7, 21.5, 10, 0.9, "all", 2, 0], [54, -1.8, 22.2, -2, 0.7, "all", 0, 0], [60, -1.8, 23, 0, 0.8, "rear", 0, 0],
-    [66, -1.7, 24.4, 0, 0.9, "rear", 0, 1], [78, -1.5, 28.4, 2, 0.5, "rear", 0, 1], [96, -1.3, 36, 0, 0.2, "rear", 0, 0],
-    [120, -1.2, 50, 0, 0, "", 0, 0],
-  ],
-  // Bootlegger: 12 m/s forward, the handbrake swings the tail out, it slides round 180° to a stop and launches back.
-  handbrake_180: [
-    [0, 0, 0, 0, 0, ""], [24, 0, 11, 0, 0, ""], [40, 0, 19, 0, 0, ""], [46, 0.2, 22.5, 15, 0.6, "rear"], [52, 0.7, 25.6, 70, 1.0, "all"],
-    [58, 1.2, 27.8, 125, 1.0, "all"], [64, 1.5, 29.0, 168, 0.8, "all"], [70, 1.6, 29.3, 180, 0.6, "rear"], [76, 1.6, 28.9, 180, 0.9, "rear"],
-    [88, 1.6, 25.5, 181, 0.6, "rear"], [100, 1.5, 19, 180, 0.3, "rear"], [120, 1.4, 5, 180, 0, ""],
-  ],
-};
-
+// ---------- stunt presets: driven by a vehicle-dynamics simulation (vehsim.mjs) ----------
+// A preset is a driver script (reverse at X km/h, lift, flick the wheel, catch it, select drive, throttle) run through
+// a four-wheel car with Pacejka tyres, weight transfer and a sprung body. The path, heading, body roll / pitch and
+// tyre slip come out of the simulation and are baked into keys; the smoke comes from the real slip.
 /** Monotone cubic (Fritsch-Carlson) through (t[i], y[i]) at t: smooth, and never overshoots a key. */
 export function monotone(ts, ys, t) {
   const n = ts.length;
@@ -216,70 +200,46 @@ export function monotone(ts, ys, t) {
   return (2 * u3 - 3 * u2 + 1) * ys[i] + (u3 - 2 * u2 + u) * h * m[i] + (-2 * u3 + 3 * u2) * ys[i + 1] + (u3 - u2) * h * m[i + 1];
 }
 
-const ss = (x) => { const u = clamp(x, 0, 1); return u * u * (3 - 2 * u); };
-
-/** The donut, analytically: in at 7.85 m/s, two turns round a 2 m circle (1.6 s each, nose 70° inside), out. */
-function donutAt(f) {
-  const v = 7.85, r = 2.0, T = 1.6 * 24, start = 20, end = Math.round(start + 2 * T), C = [r, (v * start) / 24];
-  const inward = f < end ? 70 * ss((f - 14) / 14) : 70 * (1 - ss((f - end) / 12));
-  let x, z, tangent;
-  if (f <= start) { x = 0; z = (v * f) / 24; tangent = 0; }
-  else if (f <= end) {
-    const phi = Math.PI - (2 * Math.PI * (f - start)) / T;
-    x = C[0] + r * Math.cos(phi); z = C[1] + r * Math.sin(phi); tangent = (360 * (f - start)) / T;
-  } else { const t = (f - end) / 24; x = 0; z = C[1] + v * t + 2 * t * t; tangent = 720; }
-  const smoke = f < end ? ss((f - 14) / 8) : 0.85 * (1 - ss((f - end) / 18));
-  return [x, z, tangent + inward, smoke, smoke > 0 ? "rear" : ""];
+/** The stunt's knobs, filled in: entry speed (km/h), surface (wet | dry), mass (kg), side (+1 left, −1 right). */
+export function stuntParams(kind, p = {}) {
+  const d = DEFAULTS[kind] || {};
+  return { entry_kmh: clamp(+(p.entry_kmh ?? d.entry_kmh ?? 40), 5, 90), surface: SURFACES[p.surface] ? p.surface : d.surface || "wet",
+    mass_kg: p.mass_kg ? clamp(+p.mass_kg, 600, 4000) : null, side: p.side === -1 ? -1 : 1, ...(Number.isFinite(p.flick_s) ? { flick_s: p.flick_s } : {}) };
 }
 
-/** One stunt at a stunt-time frame (0..120): [x, z, heading, smoke, wheels, roll, pitch] (roll / pitch: the keyed
- *  exaggeration, linear between rows like the stage plays it; null when the stunt keys none). */
-function stuntAt(kind, f) {
-  if (kind === "donut") return donutAt(f);
-  const T = TABLES[kind], ts = T.map((r) => r[0]);
-  const col = (c) => monotone(ts, T.map((r) => r[c]), f);
-  let wheels = "";
-  for (const r of T) if (r[0] <= f + 1e-6) wheels = r[5] || wheels; else break;
-  // Smoke between keys is linear (puffs build and die off; a cubic would bulge past the key values).
-  let smoke = T[T.length - 1][4];
-  for (let i = 0; i < T.length - 1; i++) if (f <= T[i + 1][0]) { const u = (f - T[i][0]) / (T[i + 1][0] - T[i][0]); smoke = T[i][4] + (T[i + 1][4] - T[i][4]) * u; break; }
-  const lin = (c) => {
-    if (T[0].length <= c) return null;
-    for (let i = 0; i < T.length - 1; i++) if (f <= T[i + 1][0]) return T[i][c] + (T[i + 1][c] - T[i][c]) * (f - T[i][0]) / (T[i + 1][0] - T[i][0]);
-    return T[T.length - 1][c];
-  };
-  return [col(1), col(2), col(3), smoke, smoke > 0 ? wheels || "all" : "", lin(6), lin(7)];
+/**
+ * Run a stunt through the simulation: {run (per frame), metrics, params}. last = the shot's last frame; the flick
+ * comes at about a fifth of the shot (never later than 1 s), so the drive-off fits in a shorter shot.
+ */
+export function stuntRun(kind, { last = 120, fps = 24, carKind = "sports_car", params = {} } = {}) {
+  const P = stuntParams(kind, params);
+  const flick = P.flick_s ?? clamp(0.2 * last / fps, 0.4, kind === "donut" ? 0.7 : 1.0);
+  const script = driverScript(kind, { ...P, flick_s: flick });
+  if (!script) return null;
+  const car = carParams(carKind, P.mass_kg);
+  const run = simulate(script, { car, surface: P.surface, frames: last + 1, fps, side: P.side });
+  return { run, params: P, mass_kg: car.mass, metrics: metrics(run, { turn: kind === "donut" ? 720 : 180 }) };
 }
 
 /**
  * Keys for a stunt, placed where the car is: frame 0 at `start` [x, y, z], travelling along `dirDeg` (stage heading of
- * the way it goes). A key every 6 frames (even spacing keeps the stage's spline smooth and the speeds real), squeezed
- * to fit a shorter shot; on a longer shot the drive-off carries on to the end.
- * Returns [{frame, position, heading_deg, fx: {tire_smoke, wheels?}}].
+ * the way it goes). The simulation is baked into a key every 2 frames (path, heading, body roll / pitch, tyre smoke),
+ * so the stage's spline plays the simulated motion back. Returns [{frame, position, heading_deg, roll_deg, pitch_deg,
+ * fx: {tire_smoke, wheels?}}].
  */
-export function stuntKeys(kind, { start = [0, 0, 0], dirDeg = 0, last = 120, fps = 24 } = {}) {
-  if (kind !== "donut" && !TABLES[kind]) return null;
+export function stuntKeys(kind, { start = [0, 0, 0], dirDeg = 0, last = 120, fps = 24, carKind = "sports_car", params = {}, res = null } = {}) {
+  if (!STUNTS[kind]) return null;
+  res = res || stuntRun(kind, { last, fps, carKind, params });
+  if (!res) return null;
   const th = dirDeg * D, c = Math.cos(th), s = Math.sin(th);
-  const k = last < 120 ? last / 120 : 1;
-  const toStage = (lx, lz) => [+(start[0] + lx * c + lz * s).toFixed(2), start[1] || 0, +(start[2] - lx * s + lz * c).toFixed(2)];
+  const toStage = (lx, lz) => [+(start[0] + lx * c + lz * s).toFixed(3), start[1] || 0, +(start[2] - lx * s + lz * c).toFixed(3)];
   const frames = [];
-  for (let f = 0; f < last; f += 6) frames.push(f);
+  for (let f = 0; f < last; f += 2) frames.push(f);
   frames.push(last);
-  const keys = frames.map((f) => {
-    const tf = Math.min(120, f / k);
-    let [lx, lz, h, smoke, wheels, roll, pitch] = stuntAt(kind, tf);
-    if (f / k > 120) {   // carry on at the drive-off speed past the stunt's own end
-      const [ax, az] = stuntAt(kind, 114), [bx, bz] = stuntAt(kind, 120), per = (f / k - 120) / 6;
-      lx = bx + (bx - ax) * per; lz = bz + (bz - az) * per; smoke = 0;
-    }
-    return { frame: f, position: toStage(lx, lz), heading_deg: +(dirDeg + h).toFixed(1),
-      ...(roll != null ? { roll_deg: +roll.toFixed(1), pitch_deg: +pitch.toFixed(1) } : {}),
-      fx: { tire_smoke: +smoke.toFixed(2), ...(wheels ? { wheels } : {}) } };
+  return frames.map((f) => {
+    const o = res.run[Math.min(f, res.run.length - 1)];
+    return { frame: f, position: toStage(o.x, o.z), heading_deg: +(dirDeg + o.h).toFixed(2),
+      roll_deg: +o.roll.toFixed(2), pitch_deg: +o.pitch.toFixed(2),
+      fx: { tire_smoke: +o.smoke.amount.toFixed(2), ...(o.smoke.wheels ? { wheels: o.smoke.wheels } : {}) } };
   });
-  // Keep the roll / pitch exaggeration only where it acts (and the zero keys either side, so it ramps in and out).
-  for (const ch of ["roll_deg", "pitch_deg"]) {
-    const live = keys.map((x, i) => [i - 1, i, i + 1].some((j) => keys[j]?.[ch]));
-    keys.forEach((x, i) => { if (!live[i]) delete x[ch]; });
-  }
-  return keys;
 }

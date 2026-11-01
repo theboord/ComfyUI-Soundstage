@@ -1599,12 +1599,46 @@ function createStageWidget(node, inputName) {
     if (!sel || !v) return;
     const label = stage.applyStunt(sel.id, v);
     status.textContent = !label ? "Pick a car first." : label === "none"
-      ? `${sel.name} drives its path again, nose first.`
-      : `${sel.name}: ${label}. Scrub or play it; drag its keys or turn it at a key (Turn) to adjust.`;
+      ? `${sel.name} drives its path again, nose first.` : stuntStatus(sel.name, label);
     try { tracks?.draw(); afterTimeChange(); } catch { /* timeline not built */ }
     stuntSel.sel.value = stage.selectedInfo()?.stunt || "";
+    syncStuntKnobs();
   });
-  stuntSel.sel.title = "Movie car stunts: the car's keys are written for this set, from where it starts and the way it goes";
+  stuntSel.sel.title = "Movie car stunts, driven through a vehicle-dynamics simulation (tyres, weight transfer, suspension) from where the car starts and the way it goes";
+  // The stunt's knobs: entry speed, wet / dry road, the car's mass. Changing one re-runs the simulation.
+  const stuntStatus = (name, label) => {
+    const m = stage.selectedInfo()?.stunt_sim?.metrics;
+    return `${name}: ${label}${m?.rotation_s ? ` — turns 180° in ${m.rotation_s} s, slides ${m.slide_m} m, leans ${m.peak_roll}°` : ""}. Scrub or play it; change the speed, road or mass to re-run it.`;
+  };
+  const rerunStunt = (patch) => {
+    const sel = stage.selectedInfo();
+    if (!sel?.stunt) return;
+    const label = stage.applyStunt(sel.id, sel.stunt, patch);
+    if (label) status.textContent = stuntStatus(sel.name, label);
+    try { tracks?.draw(); afterTimeChange(); } catch { /* timeline not built */ }
+  };
+  const stuntKmh = document.createElement("label");
+  const stuntKmhIn = Object.assign(document.createElement("input"), { type: "number", min: 10, max: 90, step: 5, title: "Speed when the driver starts the stunt (km/h)" });
+  stuntKmhIn.style.width = "4.2em";
+  stuntKmhIn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  stuntKmhIn.addEventListener("change", () => rerunStunt({ entry_kmh: +stuntKmhIn.value }));
+  stuntKmh.append("km/h", stuntKmhIn);
+  const stuntRoad = mkSelect("Road", { wet: { label: "Wet" }, dry: { label: "Dry" } }, "wet", (v) => rerunStunt({ surface: v }));
+  const stuntMass = document.createElement("label");
+  const stuntMassIn = Object.assign(document.createElement("input"), { type: "number", min: 800, max: 3500, step: 50, title: "The car's mass (kg): heavier slides further and rolls more slowly" });
+  stuntMassIn.style.width = "5em";
+  stuntMassIn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  stuntMassIn.addEventListener("change", () => rerunStunt({ mass_kg: +stuntMassIn.value }));
+  stuntMass.append("kg", stuntMassIn);
+  const syncStuntKnobs = () => {
+    const info = stage.selectedInfo(), sim = info?.stunt_sim;
+    for (const w of [stuntKmh, stuntRoad.wrap, stuntMass]) w.hidden = !sim;
+    if (!sim) return;
+    stuntKmhIn.value = Math.round(sim.entry_kmh);
+    stuntRoad.sel.value = sim.surface;
+    stuntMassIn.value = Math.round(sim.mass_kg || 1450);
+  };
+  for (const w of [stuntKmh, stuntRoad.wrap, stuntMass]) w.hidden = true;
   const seatSel = mkSelect("Seat", { "0": { label: "Driver" } }, "0", (v) => {
     const sel = stage.selectedInfo();
     if (sel) stage.setSeat(sel.id, +v);
@@ -1626,7 +1660,7 @@ function createStageWidget(node, inputName) {
     status.textContent = stage.frame > 0 ? `${info.name} hops on at frame ${stage.frame}. Give them a walk to the mount before that.` : `${info.name} rides from the start.`;
   });
   const personCtl = [apBuild.wrap, apHair.wrap, cHair.wrap, apTop.wrap, cTop.wrap, apBottom.wrap, cBottom.wrap, apSkin.wrap, rideSel.wrap, seatSel.wrap, hopBtn];
-  apRow.append(...personCtl, cMain.wrap, followSel.wrap, stuntSel.wrap, beamSel.wrap);
+  apRow.append(...personCtl, cMain.wrap, followSel.wrap, stuntSel.wrap, stuntKmh, stuntRoad.wrap, stuntMass, beamSel.wrap);
   // Pose Studio: every joint (fingers too), a gallery and keys, under the selected person's appearance controls.
   const poseHost = document.createElement("div");
   const posePanel = new PosePanel(poseHost, { stage, api, onStatus: (m) => { status.textContent = m; },
@@ -1675,6 +1709,7 @@ function createStageWidget(node, inputName) {
     followSel.wrap.hidden = !["car", "police_car", "sports_car", "hatchback", "truck", "bus", "horse", "motorcycle", "bicycle", "boat"].includes(info.kind);
     stuntSel.wrap.hidden = !["car", "police_car", "sports_car", "hatchback", "truck"].includes(info.kind);
     stuntSel.sel.value = info.stunt || "";
+    syncStuntKnobs();
   }
 
   stage.onInteract = (msg) => { status.textContent = msg; try { syncAppearance(stage.selectedInfo()); } catch { /* not built */ } };
