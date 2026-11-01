@@ -219,3 +219,17 @@ def test_render_social_and_prores(media, tmp_path):
     r = render_cut(p, {"output": str(media)}, out2, {"format": "prores", "loudness": "atsc"})
     assert probe(out2)["codec"] == "prores"
     assert abs(r["loudness"]["lufs"] - -24) < 0.5
+
+
+@needs_ffmpeg
+def test_render_with_film_finish(media, tmp_path):
+    """Milestone 21: the Film Finish runs inside the cut render (same size, same length)."""
+    pytest.importorskip("PIL")
+    from soundstage.cut.render import probe, render_cut
+    p = _project(media)
+    out = str(tmp_path / "fin.mp4")
+    r = render_cut(p, {"output": str(media)}, out, {"loudness": "social", "finish": "35mm"})
+    plain = render_cut(p, {"output": str(media)}, str(tmp_path / "plain.mp4"), {"loudness": "social"})
+    info = probe(out)
+    assert (info["width"], info["height"]) == (probe(str(tmp_path / "plain.mp4"))["width"], probe(str(tmp_path / "plain.mp4"))["height"])
+    assert r["frames"] == plain["frames"]

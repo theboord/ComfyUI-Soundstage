@@ -222,7 +222,9 @@ test("exports carry transitions, fades, keys, titles and subtitles", () => {
 
 test("render request and track roles", () => {
   const r = FX.renderRequest(withFx(), { aspect: "9:16", loudness: "atsc", burn_subtitles: 1, reframe_x: 5 });
-  assert.deepEqual(r.spec, { format: "mp4", aspect: "9:16", loudness: "atsc", burn_subtitles: true, reframe_x: 1, frames: 288, picture_frames: 288 });
+  assert.deepEqual(r.spec, { format: "mp4", aspect: "9:16", loudness: "atsc", burn_subtitles: true, reframe_x: 1, frames: 288, picture_frames: 288, finish: "off", motion_blur: false });
+  assert.equal(FX.renderRequest(withFx(), { finish: "35mm" }).spec.finish, "35mm");
+  assert.equal(FX.renderRequest(withFx(), { finish: "vhs" }).spec.finish, "off");
   assert.equal(FX.renderRequest(demo(), { loudness: "nope", format: "prores" }).spec.loudness, null);
   const p = demo();
   assert.deepEqual([1, 2, 3, 4].map((t) => TL.trackName(p, t)), ["Dialogue", "SFX", "Music", "Ambience"]);
