@@ -234,7 +234,7 @@ function rotMat(q) {
  * the least (a separating-axis test over B's face axes), not each through its own nearest face: a box pushed into
  * another's side pushes it straight ahead instead of squirting it out sideways from a corner probe.
  */
-function probeContacts(A, B, out) {
+function probeContacts(A, B, out, spec = SPEC) {
   let pk = -1, po = Infinity, ps = 1, T = null;
   // A's probes into B's frame with two 3x3 matrices (the same as qrot / toLocal, a lot cheaper in a pile-up).
   const ra = rotMat(A.q), rb = rotMat(B.q), dx = A.x[0] - B.x[0], dy = A.x[1] - B.x[1], dz = A.x[2] - B.x[2];
@@ -244,7 +244,7 @@ function probeContacts(A, B, out) {
     const l0 = rb[0] * wx + rb[3] * wy + rb[6] * wz, l1 = rb[1] * wx + rb[4] * wy + rb[7] * wz, l2 = rb[2] * wx + rb[5] * wy + rb[8] * wz;
     // Speculative: probes up to SPEC outside count too (solved only once they are really in). A box resting on one
     // that gets pushed up this substep is caught in the same substep, so a tall stack doesn't sag a level at a time.
-    if (Math.abs(l0) >= B.half[0] + SPEC || Math.abs(l1) >= B.half[1] + SPEC || Math.abs(l2) >= B.half[2] + SPEC) continue;
+    if (Math.abs(l0) >= B.half[0] + spec || Math.abs(l1) >= B.half[1] + spec || Math.abs(l2) >= B.half[2] + spec) continue;
     const l = [l0, l1, l2];
     if (Math.abs(l[0]) >= B.half[0] && Math.abs(l[1]) >= B.half[1] - 1e-9 && Math.abs(l[2]) >= B.half[2]) continue;   // off a corner: never in
     if (pk < 0) {
@@ -257,11 +257,17 @@ function probeContacts(A, B, out) {
       }
     }
     // A probe on the far side of that face's plane (deeper than half the box) uses its own nearest face instead.
+    let k = pk, sg = ps;
     if (ps * l[pk] < -B.half[pk] * 0.5) {
-      let k = 0, best = Infinity;
+      let best = Infinity;
       for (let i = 0; i < 3; i++) { const g = B.half[i] - Math.abs(l[i]); if (g < best) { best = g; k = i; } }
-      out.push({ type: "pb", a: A, b: B, lp, k, s: l[k] >= 0 ? 1 : -1 });
-    } else out.push({ type: "pb", a: A, b: B, lp, k: pk, s: ps });
+      sg = l[k] >= 0 ? 1 : -1;
+    }
+    // Wide speculative margin (a fast keyed mover, see simulate()): a probe beside the box, out past a face other than
+    // the one it would be pushed through, is not about to hit that face; measured through it, it would read as deep
+    // and fling the prop (a car's corner clipping a crate threw it at 30 m/s).
+    if (spec > SPEC && [0, 1, 2].some((i) => i !== k && Math.abs(l[i]) > B.half[i])) continue;
+    out.push({ type: "pb", a: A, b: B, lp, k, s: sg });
   }
 }
 
@@ -315,10 +321,10 @@ function edgeContact(A, B, out) {
   if (c.d > 0) out.push(c);
 }
 
-function pairContacts(A, B, out) {
+function pairContacts(A, B, out, spec = SPEC) {
   if (A.shape === "box" && B.shape === "box") {
-    if (facesSeparate(A, B, SPEC)) return;   // cheap rejection: a gap along a face axis means no contact at all
-    probeContacts(A, B, out); probeContacts(B, A, out); edgeContact(A, B, out); return;
+    if (facesSeparate(A, B, spec)) return;   // cheap rejection: a gap along a face axis means no contact at all
+    probeContacts(A, B, out, spec); probeContacts(B, A, out, spec); edgeContact(A, B, out); return;
   }
   if (A.shape === "sphere" && B.shape === "sphere") { const c = measure({ type: "ss", a: A, b: B }); if (c.d > 0) out.push(c); return; }
   const [S, X] = A.shape === "sphere" ? [A, B] : [B, A];
@@ -405,6 +411,14 @@ export function simulate(specs, frames, opts = {}) {
     return best;
   };
   let contactsSolved = 0;
+  // Speculative contacts for keyed movers: SPEC plus how far the keyed body moves this substep (capped), so a crate
+  // that a neighbour shoves into a moving car mid-solve already has its contact with the car.
+  const SPEC_K = opts.kinSpeculative ?? 1, SPEC_CAP = 0.06;
+  const kinSpec = (A, B) => {
+    if (!SPEC_K) return SPEC;
+    const K = !A.free ? A : !B.free ? B : null;
+    return K ? Math.min(SPEC_CAP, SPEC + SPEC_K * len(K.v) * h) : SPEC;
+  };
   const logHits = opts.events !== false, minHit = opts.minImpactSpeed ?? MIN_IMPACT_SPEED, groundMat = opts.groundMaterial || "ground", rawHits = [];
   // Frame 0: every body where its keys put it.
   for (const b of bodies) {
@@ -488,7 +502,7 @@ export function simulate(specs, frames, opts = {}) {
           if (A.asleep && !B.asleep && len(B.v) > WAKE_SPEED) { A.asleep = false; A.still = 0; }
           if (B.asleep && !A.asleep && len(A.v) > WAKE_SPEED) { B.asleep = false; B.still = 0; }
           if ((!A.free || A.asleep) && (!B.free || B.asleep)) continue;   // nothing here moves under physics
-          pairContacts(A, B, C);
+          pairContacts(A, B, C, kinSpec(A, B));
         }
       }
       // Restitution needs the approach speed from before this substep.
@@ -788,8 +802,10 @@ export function checkTracks(specs, result, fps = 24) {
 export function createXpbdWorld(opts = {}) {
   const g = opts.gravity ?? GRAVITY, floor = opts.floor !== false;
   const baseSub = Math.max(2, Math.min(32, opts.substeps || 8));
-  // 4 contact passes a substep: with 2, a 20-box tower sags and walks apart under its own weight.
-  const iters = Math.max(1, Math.min(8, opts.iterations || 4));
+  // 6 contact passes a substep: with 2, a 20-box tower sags and walks apart under its own weight; with 4 and Coulomb
+  // friction (physbench round 2) a jittered tower still creeps 2.2 mm sideways before it sleeps; 6 holds it under 1 mm
+  // for ~8% more step time (contact generation, not the passes, is most of a step).
+  const iters = Math.max(1, Math.min(8, opts.iterations || 6));
   const MAX_STEP = opts.maxStep || 0.03;   // m a grabbed body may move per substep (no tunnelling through a thin wall)
   const LIN_SLEEP = 0.06, ANG_SLEEP = 0.15, SLEEP_TIME = 0.35, WAKE_SPEED = 0.2, MAX_SPEED = opts.maxSpeed || 3.5;
   const FLING_SPEED = opts.flingSpeed || 16;   // m/s: a crate a car drives into is thrown, not nudged
@@ -958,7 +974,9 @@ export function createXpbdWorld(opts = {}) {
         }
         if ((!A.free || A.asleep) && (!B.free || B.asleep)) continue;
         const n0 = C.length;
-        pairContacts(A, B, C);
+        // Speculative contacts against a moving kinematic body, as in simulate(): made ahead by its step, capped.
+        const K = A.type === "kinematic" ? A : B.type === "kinematic" ? B : null;
+        pairContacts(A, B, C, K ? Math.min(0.06, SPEC + len(K.v) * h) : SPEC);
         // Hit by something driven (a car, a horse): it may fly off faster than the drag-safety speed cap, for a moment.
         if (C.length > n0) for (const [S, O] of [[A, B], [B, A]]) if (S.dynamic && O.type === "kinematic" && len(O.v) > 1) S.fling = 0.6;
       }
@@ -1009,13 +1027,14 @@ export function createXpbdWorld(opts = {}) {
     for (const c of act) {
       const A = c.a, B = c.b;
       c.rA = flatR(A, B, sub(c.pA, A.x)); c.rB = flatR(B, A, sub(c.pB, B.x));
-      const mu = 0.85 * Math.sqrt(Math.max(0, A.friction) * Math.max(0, B.friction));
+      // Coulomb, as in simulate(): the sliding impulse is at most mu x the normal impulse (lam / h), one mu.
+      const mu = Math.sqrt(Math.max(0, A.friction) * Math.max(0, B.friction));
       const vr = relVel(c, false), vn = dot(c.n, vr), vt = sub(vr, scl(c.n, vn)), vtl = len(vt);
       if (vtl > 1e-6 && mu > 0) {
         const t = scl(vt, 1 / vtl);
         const wtA = wOf(A, c.rA, t), wtB = wOf(B, c.rB, t);
         if (wtA + wtB > 0) {
-          const P = scl(t, -Math.min(h * mu * (c.lam / (h * h)), vtl) / (wtA + wtB));
+          const P = scl(t, -Math.min(mu * c.lam / h, vtl / (wtA + wtB)));
           applyVel(A, P, c.rA); applyVel(B, scl(P, -1), c.rB);
         }
       }

@@ -5,6 +5,12 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-01
 
+**13:20 PST · Physics round 2: the live world's friction fixed, car hits no longer sink into crates**
+- **Live drag world, same friction fix as the bake.** Its sliding friction also divided by the inverse mass twice (a 2 kg box on a 30° ramp slid at 2.52 m/s² instead of 0.657). It is now Coulomb with one mu, within 10% for 2 and 25 kg.
+- **The jittered 20-carton tower stands.** With the fix it crept 2.2 mm sideways (limit 2 mm) before it fell asleep. The live world now runs 6 contact passes, not 4: 0.9 mm, for about 8% more step time. The limit is unchanged.
+- **Speculative contacts for keyed movers (cars, horses).** In the bake and the live world, contacts with a moving keyed body are made ahead by the distance it moves in a substep (capped at 6 cm). A probe beside the box that is outside another face is skipped, so a car's corner no longer flings a crate at 30 m/s. Car through the pyramid: overlap p95 is 0.6 mm (was 5.8; Bullet 1.7) and the max is 6.0 mm (was 11; Bullet 7.2). No crates are left riding on the stopped car's roof (final energy 981 J, Bullet 981 J). The tower is unchanged.
+- Report: share/Physics_vs_Blender/REPORT.txt ("after round 2" column). Code: [web/stage/physics.mjs](web/stage/physics.mjs). Tests: [tests/js/physbench.test.mjs](tests/js/physbench.test.mjs).
+
 **12:58 PST · Physics benchmarked against Blender's Bullet: friction fixed, towers stand still**
 - **Friction no longer depends on weight.** The bake's sliding friction divided by the inverse mass twice, so a 2 kg box on a 30° ramp (mu 0.5) slid at 2.53 m/s² instead of 0.657, and a heavy crate gripped the floor so hard it stopped dead against a tower. It is now plain Coulomb friction with one mu (the 0.85 kinetic factor is gone, as in Bullet and Houdini): the ramp is within 1% of g(sin θ − μ cos θ) (Bullet: −10%).
 - **Stacks stand still before the hit.** The bake now uses 4 contact passes (like the live world), not 2: an untouched 20-box tower bowed 16 cm in 3 s; now 9 mm (Bullet: 45 mm), at about the same bake time.
