@@ -737,6 +737,15 @@ export class Stage {
       target: Stage._sample(keys, frame, "target"),
       focal_mm: fa + (fb - fa) * (i === j ? 0 : u * u * (3 - 2 * u)),
     };
+    // Lens channels a phone viewfinder take records, as the shot's own lens_keys (web/vcam/vfcore.mjs lensAt mirrors this):
+    // focus eases in diopters like a focus ring, the T-stop in stops, roll linearly. Shots without them add nothing.
+    const lk = this.activeShot?.()?.lens_keys;
+    if (lk?.length) {
+      const s = Stage._segment(lk, frame), ka = lk[s.i], kb = lk[s.j], e = s.i === s.j ? 0 : s.u * s.u * (3 - 2 * s.u);
+      if (ka.focus_m > 0 && kb.focus_m > 0) cam.focus_m = 1 / (1 / ka.focus_m + (1 / kb.focus_m - 1 / ka.focus_m) * e);
+      if (ka.t_stop > 0 && kb.t_stop > 0) cam.t_stop = ka.t_stop * Math.pow(kb.t_stop / ka.t_stop, e);
+      if (Number.isFinite(ka.roll) || Number.isFinite(kb.roll)) cam.roll = (ka.roll || 0) + ((kb.roll || 0) - (ka.roll || 0)) * e;
+    }
     // Ride-along: the shot's keys are in a vehicle's (or rider's) own space, so the world moves past outside.
     const host = this._followActor?.();
     if (host) {
@@ -1789,6 +1798,15 @@ export class Stage {
     if (!keys?.length) return;
     this.activeShot().camera_keys = keys.map((k) => ({ frame: k.frame, position: [...k.position], target: [...k.target],
       focal_mm: k.focal_mm ?? this._cameraAt(this.frame).focal_mm }));
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  /** The active shot's lens keys [{frame, focus_m, t_stop, roll?}] (a phone viewfinder take), or null to clear them. */
+  setLensKeys(keys) {
+    const shot = this.activeShot();
+    if (keys?.length) shot.lens_keys = keys.map((k) => ({ ...k }));
+    else delete shot.lens_keys;
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
   }

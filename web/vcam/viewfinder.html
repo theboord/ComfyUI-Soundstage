@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Soundstage Viewfinder</title>
+<style>
+  :root {
+    --bg: #000; --glass: rgba(14, 12, 18, .62); --glass2: rgba(28, 25, 34, .78); --line: rgba(255, 255, 255, .16);
+    --text: #f3f1f4; --dim: #b4adb8; --accent: #f2ff59; --rec: #ff3b30; --ok: #3fd07a; --warn: #ffb340;
+    --safe-l: env(safe-area-inset-left, 0px); --safe-r: env(safe-area-inset-right, 0px);
+    --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+    font: 500 14px/1.25 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; overscroll-behavior: none; touch-action: none; }
+  button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; touch-action: manipulation; }
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { position: fixed; inset: 0; width: 100% !important; height: 100% !important; pointer-events: none; }
+  #hud { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #touch { position: fixed; inset: 0; touch-action: none; }
+  .glass { background: var(--glass); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border: 1px solid var(--line); }
+
+  /* top bar */
+  #top { position: fixed; left: calc(64px + var(--safe-l)); right: calc(96px + var(--safe-r)); top: calc(6px + var(--safe-t)); height: 34px;
+    display: flex; align-items: center; gap: 8px; pointer-events: none; }
+  #top > * { pointer-events: auto; flex: none; }
+  .pill { height: 30px; border-radius: 15px; padding: 0 11px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 13px; }
+  #conn .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+  #conn.ok .dot { background: var(--ok); } #conn.bad .dot { background: var(--rec); }
+  #shotname { flex: 0 1 auto !important; min-width: 0; max-width: 150px; overflow: hidden; text-overflow: ellipsis; color: var(--dim); display: inline-block; line-height: 30px; }
+  @media (max-width: 760px) { #shotname { display: none; } }
+  .seg { display: inline-flex; height: 30px; border-radius: 15px; overflow: hidden; }
+  .seg button { padding: 0 11px; font-size: 12px; letter-spacing: .06em; color: var(--dim); }
+  .seg button[aria-pressed="true"] { background: rgba(255,255,255,.16); color: var(--text); }
+  #tc { font: 600 17px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .02em; padding: 0 12px; height: 30px; }
+  #tc i { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); display: inline-block; }
+  #tc.rec { color: #fff; background: rgba(200, 20, 15, .78); border-color: transparent; }
+  #tc.rec i { background: #fff; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .2; } }
+  #guidesBtn, #maskBtn { font-size: 12px; }
+  #guidesBtn[aria-pressed="true"], #maskBtn[aria-pressed="true"] { color: var(--accent); }
+
+  /* left rail */
+  #left { position: fixed; left: calc(8px + var(--safe-l)); top: calc(46px + var(--safe-t)); display: flex; flex-direction: column; gap: 5px; }
+  .rail { width: 48px; height: 40px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    font-size: 9.5px; letter-spacing: .02em; color: var(--dim); }
+  .rail svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .rail[aria-pressed="true"] { color: var(--accent); border-color: rgba(242,255,89,.45); }
+  .rail:active, .prime:active, .chip:active, .zoom:active { transform: scale(.94); }
+
+  /* right rail: zoom rocker + REC */
+  #right { position: fixed; right: calc(8px + var(--safe-r)); top: calc(6px + var(--safe-t)); bottom: calc(6px + var(--safe-b)); width: 80px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+  .zoom { width: 64px; height: 56px; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 10px; color: var(--dim); }
+  .zoom b { font-size: 22px; line-height: 1; color: var(--text); }
+  .zoom.held { background: rgba(242,255,89,.22); }
+  #rec { width: 78px; height: 78px; border-radius: 50%; border: 4px solid #fff; display: grid; place-items: center; background: rgba(0,0,0,.25); }
+  #rec i { display: block; width: 58px; height: 58px; border-radius: 50%; background: var(--rec); transition: all .18s; }
+  #rec.on i { width: 30px; height: 30px; border-radius: 7px; }
+  #rec small { position: absolute; margin-top: 98px; font-size: 10px; color: var(--dim); letter-spacing: .1em; }
+  #takeCount { font-size: 11px; color: var(--dim); text-align: center; min-height: 14px; margin-top: -4px; }
+
+  /* bottom: lenses + T-stop + focus */
+  #bottom { position: fixed; left: calc(160px + var(--safe-l)); right: calc(96px + var(--safe-r)); bottom: calc(8px + var(--safe-b));
+    display: flex; justify-content: center; align-items: flex-end; gap: 8px; pointer-events: none; }
+  #bottom > * { pointer-events: auto; }
+  #primes { display: flex; gap: 3px; padding: 3px; border-radius: 22px; }
+  .prime { min-width: 38px; height: 38px; border-radius: 19px; font: 600 13px/1 -apple-system, sans-serif; color: var(--dim); padding: 0 4px; }
+  .prime small { font-size: 8px; display: block; opacity: .7; margin-top: 1px; }
+  .prime[aria-pressed="true"] { background: rgba(0,0,0,.55); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .chip { height: 44px; min-width: 70px; border-radius: 22px; padding: 0 12px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+  .chip small { font-size: 9px; letter-spacing: .1em; color: var(--dim); }
+  .chip b { font-size: 15px; font-variant-numeric: tabular-nums; }
+  .chip[aria-expanded="true"] { box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .chip[aria-expanded="true"] b { color: var(--accent); }
+
+  /* dial (T-stop or focus ring) */
+  #dial { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(62px + var(--safe-b)); width: min(480px, calc(100vw - 340px)); min-width: 330px;
+    border-radius: 16px; padding: 6px 8px 8px; display: none; flex-direction: column; gap: 6px; }
+  #dial.open { display: flex; }
+  #dialHead { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dim); }
+  #dialHead b { color: var(--accent); font-size: 16px; font-variant-numeric: tabular-nums; }
+  #dialHead .sp { flex: 1; }
+  #ruler { width: 100%; height: 46px; display: block; touch-action: none; border-radius: 10px; background: rgba(0,0,0,.35); }
+  #focusTools { display: none; gap: 6px; }
+  #dial.focus #focusTools { display: flex; }
+  .ft { height: 34px; border-radius: 10px; padding: 0 10px; font-size: 12px; background: rgba(255,255,255,.08); display: inline-flex; align-items: center; gap: 4px; }
+  .ft[aria-pressed="true"] { color: #111; background: var(--accent); }
+  .ft.go { margin-left: auto; background: rgba(242,255,89,.18); color: var(--accent); font-weight: 700; }
+
+  /* move stick + rise */
+  #move { position: fixed; left: calc(10px + var(--safe-l)); bottom: calc(10px + var(--safe-b)); display: flex; gap: 6px; align-items: flex-end; }
+  #stick { width: 96px; height: 96px; border-radius: 50%; position: relative; touch-action: none; }
+  #stick b { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px; border-radius: 50%; background: rgba(255,255,255,.28); border: 1px solid rgba(255,255,255,.4); }
+  #stick span, #rise span { position: absolute; bottom: 4px; left: 0; right: 0; text-align: center; font-size: 8.5px; color: var(--dim); letter-spacing: .08em; }
+  #rise { width: 30px; height: 96px; border-radius: 15px; position: relative; touch-action: none; }
+  #rise b { position: absolute; left: 4px; right: 4px; top: 50%; height: 20px; margin-top: -10px; border-radius: 10px; background: rgba(255,255,255,.28); }
+
+  /* review card after a take */
+  #review { position: fixed; left: 50%; bottom: calc(10px + var(--safe-b)); transform: translateX(-50%); border-radius: 18px; padding: 10px 12px;
+    display: none; align-items: center; gap: 10px; background: rgba(20, 17, 24, .94); z-index: 3; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+  body.review #bottom, body.review #dial { display: none !important; }
+  #review.open { display: flex; }
+  #review .t { display: flex; flex-direction: column; gap: 2px; min-width: 210px; max-width: 280px; }
+  #review .t small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #review .t b { font-size: 15px; }
+  #review .t small { color: var(--dim); font-size: 11.5px; }
+  #review .t small.ok { color: var(--ok); }
+  .rb { height: 42px; border-radius: 13px; padding: 0 14px; font-weight: 700; font-size: 13.5px; background: rgba(255,255,255,.1); white-space: nowrap; }
+  .rb.keep { background: var(--accent); color: #141118; }
+  .rb.again { color: #fff; background: rgba(255, 59, 48, .85); }
+
+  #toast { position: fixed; left: 50%; top: calc(48px + var(--safe-t)); transform: translateX(-50%); padding: 7px 14px; border-radius: 14px; font-size: 12.5px;
+    opacity: 0; transition: opacity .25s; pointer-events: none; max-width: 70vw; text-align: center; }
+  #toast.on { opacity: 1; }
+  #count { position: fixed; inset: 0; display: none; place-items: center; font: 800 120px/1 -apple-system, sans-serif; color: #fff; text-shadow: 0 4px 30px rgba(0,0,0,.6); pointer-events: none; }
+  #count.on { display: grid; }
+
+  /* splash + rotate */
+  #splash, #rotate { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    background: radial-gradient(ellipse at 50% 35%, #2a2433 0%, #0b0a0d 70%); text-align: center; padding: 20px; }
+  #splash h1 { margin: 0; font-size: 22px; letter-spacing: .02em; }
+  #splash h1 span { color: var(--accent); }
+  #splash p { margin: 0; color: var(--dim); max-width: 520px; font-size: 13.5px; }
+  #splash p.warn { color: var(--warn); }
+  #go { height: 54px; padding: 0 30px; border-radius: 27px; background: var(--accent); color: #141118; font-weight: 800; font-size: 17px; }
+  #go:disabled { opacity: .45; }
+  #rotate { display: none; z-index: 9; }
+  body.portrait #rotate.show { display: flex; }
+  #rotate svg { width: 64px; height: 64px; stroke: var(--accent); fill: none; stroke-width: 1.6; }
+  #rotate button { margin-top: 6px; color: var(--dim); text-decoration: underline; }
+  body.started #splash { display: none; }
+  body:not(.started) #ui { visibility: hidden; }
+  body.rec #left, body.rec #move span { opacity: .55; }
+  body.xr #stage canvas { visibility: visible; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<canvas id="hud"></canvas>
+<div id="touch" aria-label="Viewfinder: tap to focus, pinch to zoom, drag to look"></div>
+
+<div id="ui">
+  <div id="top">
+    <span class="pill glass" id="conn"><span class="dot"></span><span id="connText">connecting</span></span>
+    <span class="pill glass" id="shotname">Shot</span>
+    <span class="seg glass" role="group" aria-label="View"><button id="vClay" aria-pressed="true">CLAY</button><button id="vColor" aria-pressed="false">COLOR</button></span>
+    <span class="pill glass" id="tc" style="margin:0 auto"><i></i><span id="tcText">00:00:00:00</span></span>
+    <button class="pill glass" id="guidesBtn" aria-pressed="true" title="Rule-of-thirds grid">▦ Grid</button>
+    <button class="pill glass" id="maskBtn" aria-pressed="false" title="Frame lines for another aspect">Frame</button>
+    <button class="pill glass" id="arBtn" aria-pressed="false" title="Walk the room: 6-DoF tracking (WebXR AR)" hidden>Walk AR</button>
+  </div>
+
+  <div id="left">
+    <button class="rail glass" id="recenter" title="Re-centre: back to the shot camera"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>Re-centre</button>
+    <button class="rail glass" id="gyroBtn" aria-pressed="false" title="Phone motion moves the camera"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M3 9c-1 2-1 4 0 6M21 9c1 2 1 4 0 6"/></svg>Motion</button>
+    <button class="rail glass" id="levelBtn" aria-pressed="true" title="Level: keep the horizon flat"><svg viewBox="0 0 24 24"><path d="M3 12h18"/><circle cx="12" cy="12" r="3.2"/></svg>Level</button>
+    <button class="rail glass" id="stabBtn" aria-pressed="false" title="Stabilize the take like a gimbal"><svg viewBox="0 0 24 24"><path d="M4 15c3-6 5 4 8-2s5 4 8-2"/><path d="M4 20h16" opacity=".5"/></svg>Stabilize</button>
+    <button class="rail glass" id="dofBtn" aria-pressed="true" title="Depth-of-field preview"><svg viewBox="0 0 24 24"><circle cx="8" cy="12" r="3"/><circle cx="16.5" cy="12" r="4.5" stroke-dasharray="2 2"/></svg>DoF</button>
+  </div>
+
+  <div id="right">
+    <button class="zoom glass" id="zoomT" title="Zoom in (hold)"><b>+</b>TELE</button>
+    <div style="position:relative;display:grid;place-items:center">
+      <button id="rec" title="Record"><i></i></button>
+    </div>
+    <div id="takeCount"></div>
+    <button class="zoom glass" id="zoomW" title="Zoom out (hold)"><b>−</b>WIDE</button>
+  </div>
+
+  <div id="bottom">
+    <div id="primes" class="glass" role="group" aria-label="Lenses"></div>
+    <button class="chip glass" id="stopChip" aria-expanded="false"><small>IRIS</small><b id="stopVal">T2.8</b></button>
+    <button class="chip glass" id="focusChip" aria-expanded="false"><small>FOCUS</small><b id="focusVal">3.0 m</b></button>
+  </div>
+
+  <div id="dial" class="glass">
+    <div id="dialHead"><span id="dialName">Focus</span><b id="dialVal">3.0 m</b><span class="sp"></span><span id="dialInfo"></span></div>
+    <canvas id="ruler"></canvas>
+    <div id="focusTools">
+      <button class="ft" id="markA">A <span id="markAv">set</span></button>
+      <button class="ft" id="markB">B <span id="markBv">set</span></button>
+      <button class="ft" id="pullTime">1.0 s</button>
+      <button class="ft go" id="pull">Pull ⇄</button>
+    </div>
+  </div>
+
+  <div id="move">
+    <div id="stick" class="glass"><b></b><span>MOVE</span></div>
+    <div id="rise" class="glass"><b></b><span>UP</span></div>
+  </div>
+
+  <div id="review">
+    <div class="t"><b id="rvName">Take 1</b><small id="rvInfo">00:00:04:00 · 9 keys</small><small id="rvDesk">sending to the desktop…</small></div>
+    <button class="rb" id="rvDiscard">Discard</button>
+    <button class="rb again" id="rvAgain">● Again</button>
+    <button class="rb keep" id="rvKeep">Keep</button>
+  </div>
+
+  <div id="toast" class="glass"></div>
+  <div id="count"></div>
+</div>
+
+<div id="splash">
+  <h1>Soundstage <span>Viewfinder</span></h1>
+  <p id="splashMsg">Loading the stage…</p>
+  <button id="go" disabled>Start</button>
+  <p id="splashHint">Hold the phone sideways. Move it to look around, pinch to zoom, tap to focus, ● to record.</p>
+</div>
+<div id="rotate"><svg viewBox="0 0 64 64"><rect x="22" y="8" width="20" height="36" rx="4"/><path d="M14 50c6 6 30 6 36 0M46 46l4 4-5 2"/></svg>
+  <b>Turn your phone sideways</b><span style="color:var(--dim)">The viewfinder is a landscape frame, like a camera.</span><button id="rotateOk">Use it upright</button></div>
+<script>window.SS_BASE = "{{BASE}}";</script>
+<script type="module" src="{{BASE}}/vcam/viewfinder.mjs"></script>
+</body>
+</html>

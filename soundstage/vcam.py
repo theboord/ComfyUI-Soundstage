@@ -11,6 +11,12 @@ GET  /soundstage/vcam/takes           -> [{id, name, created, duration, samples,
 GET  /soundstage/vcam/take?id=...     -> one take (full JSON)
 GET  /soundstage/vcam/status          -> {devices: [{device, mode, age_s, recording}]}
 
+Phone viewfinder (web/vcam/viewfinder.*, docs/vcam.md "Phone viewfinder"): the phone renders the stage itself.
+GET  /soundstage/vcam/viewfinder      -> the viewfinder page (its modules load from /extensions/<pack>/)
+POST /soundstage/vcam/scene           -> the desktop publishes {scene, sync?}; pushed to every connected device
+POST /soundstage/vcam/sync            -> the desktop's playhead / view / take status, pushed to the devices
+GET|POST /soundstage/vcam/pair        -> the phone-facing URL a LAN bridge (tools/vcam_bridge.py) registered, for the QR
+
 Every pose / state / saved take is re-broadcast to all ComfyUI browser tabs with
 PromptServer.instance.send_sync("soundstage.vcam", payload) for live preview; see docs/vcam.md.
 Takes are JSON files in <ComfyUI user dir>/soundstage/takes/.
@@ -30,10 +36,18 @@ MODULES = {  # served module name -> file (whitelist; nothing else under web/ is
 }
 MAX_SAMPLES = 200_000          # ~55 min at 60 Hz
 BROADCAST_INTERVAL = 1 / 40    # per device; devices send ~30 Hz
-SETTING_KEYS = {"strength": (0.0, 1.0), "keepHandheld": (0.0, 1.0), "scale": (0.01, 100.0), "focal_mm": (4.0, 600.0)}
+SETTING_KEYS = {"strength": (0.0, 1.0), "keepHandheld": (0.0, 1.0), "scale": (0.01, 100.0), "focal_mm": (4.0, 600.0),
+                "startFrame": (0.0, 1e6), "lastFrame": (0.0, 1e6), "fps": (1.0, 240.0)}
+LENS_KEYS = {"focal_mm": (4.0, 600.0), "focus_m": (0.05, 1000.0), "t_stop": (0.5, 64.0), "roll": (-math.pi, math.pi)}
+MAX_SCENE_BYTES = 24 << 20
+PAIR_URL = re.compile(r"^https?://[^\s\"'<>\\]{1,400}$")
+PAIR_TTL = 180                 # seconds a bridge's registration stays valid (it re-registers every 30 s)
 TAKE_ID = re.compile(r"^[0-9]{8}-[0-9]{6}(-[0-9]+)?_[a-z0-9_]{1,60}$")
 
 _devices = {}   # device id -> {"mode", "last", "recording", "last_sent"}
+_sockets = {}   # device id -> its WebSocket (server -> device pushes: scene, sync)
+_scene = {}     # the last scene a desktop published: {"rev", "scene", "sync", "at"}
+_pair = {}      # {"url", "at"} from the LAN bridge
 
 
 # ---------------------------------------------------------------- pure helpers (no ComfyUI imports; unit-tested)
@@ -71,8 +85,11 @@ def clean_settings(s):
             continue
         if math.isfinite(v):
             out[k] = min(hi, max(lo, v))
-    if "horizonLock" in s:
-        out["horizonLock"] = bool(s["horizonLock"])
+    for k in ("horizonLock", "stabilize"):
+        if k in s:
+            out[k] = bool(s[k])
+    if s.get("space") in ("hand", "set"):
+        out["space"] = s["space"]
     return out
 
 
@@ -88,9 +105,54 @@ def clean_sample(s):
     if not math.isfinite(t) or p is None or q is None:
         return None
     out = {"t": round(t, 5), "position": [round(x, 5) for x in p], "quaternion": [round(x, 6) for x in q]}
-    f = s.get("focal_mm")
-    if isinstance(f, (int, float)) and math.isfinite(f) and 4 <= f <= 600:
-        out["focal_mm"] = float(f)
+    for k in ("focal_mm", "focus_m", "t_stop"):
+        v = _num(s.get(k), *LENS_KEYS[k])
+        if v is not None:
+            out[k] = round(v, 4)
+    return out
+
+
+def _num(v, lo, hi):
+    """A finite number inside [lo, hi], else None (no clamping: out of range = not sent)."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or not lo <= v <= hi:
+        return None
+    return float(v)
+
+
+def clean_flat(d, depth=1):
+    """A small JSON object of scalars (and, with depth, one level of nested objects), for event data / sync fields."""
+    out = {}
+    if not isinstance(d, dict):
+        return out
+    for k, v in list(d.items())[:24]:
+        k = re.sub(r"[^A-Za-z0-9_]", "", str(k))[:24]
+        if not k:
+            continue
+        if isinstance(v, bool) or v is None:
+            out[k] = v
+        elif isinstance(v, (int, float)):
+            if math.isfinite(v) and abs(v) <= 1e9:
+                out[k] = v
+        elif isinstance(v, str):
+            out[k] = v[:200]
+        elif isinstance(v, dict) and depth > 0:
+            out[k] = clean_flat(v, depth - 1)
+    return out
+
+
+def clean_cam(c):
+    """The viewfinder's set-space camera: {position, target, focal_mm, focus_m?, t_stop?, roll?}, or None."""
+    if not isinstance(c, dict):
+        return None
+    p, t = _vec(c.get("position"), 3), _vec(c.get("target"), 3)
+    f = _num(c.get("focal_mm"), *LENS_KEYS["focal_mm"])
+    if p is None or t is None or f is None:
+        return None
+    out = {"position": p, "target": t, "focal_mm": f}
+    for k in ("focus_m", "t_stop", "roll"):
+        v = _num(c.get(k), *LENS_KEYS[k])
+        if v is not None:
+            out[k] = v
     return out
 
 
@@ -116,7 +178,36 @@ def pose_payload(msg, device):
     if kind == "state":
         base["event"] = str(msg.get("event", ""))[:24]  # e.g. "record", "stop", "connected", "recenter"
         return base
+    if kind == "vf":       # the phone viewfinder's live camera (already on the set) + where it is in the shot
+        cam = clean_cam(msg.get("cam"))
+        if cam is None:
+            return None
+        base.update(cam=cam, mode="viewfinder", frame=_num(msg.get("frame"), 0, 1e6) or 0.0,
+                    t=_num(msg.get("t"), -1e9, 1e9) or 0.0, view=str(msg.get("view", ""))[:12])
+        return base
+    if kind == "vfstate":  # hello, record, stop, keep, discard, bye
+        base.update(mode="viewfinder", event=str(msg.get("event", ""))[:24], data=clean_flat(msg.get("data")))
+        return base
     return None
+
+
+def clean_sync(d):
+    """The desktop's playhead and status for the phones: {frame, playing, view, fps, frames, take: {...}, ...}."""
+    return clean_flat(d, 1)
+
+
+def pair_info(now=None):
+    now = time.time() if now is None else now
+    if _pair.get("url") and now - _pair.get("at", 0) <= PAIR_TTL:
+        return {"url": _pair["url"], "age_s": round(now - _pair["at"], 1)}
+    return {}
+
+
+def set_pair(url, now=None):
+    if not isinstance(url, str) or not PAIR_URL.match(url):
+        return False
+    _pair.update(url=url, at=time.time() if now is None else now)
+    return True
 
 
 def slug(text):
@@ -239,7 +330,68 @@ def register():
     def handle(msg, device):
         payload = pose_payload(msg, device)
         if payload is not None:
-            broadcast(payload, force=payload["type"] != "pose")
+            broadcast(payload, force=payload["type"] not in ("pose", "vf"))
+
+    async def push(payload):
+        """Server -> every connected device (the viewfinders follow the desktop's scene and playhead)."""
+        for dev, ws in list(_sockets.items()):
+            if ws.closed:
+                _sockets.pop(dev, None)
+                continue
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                _sockets.pop(dev, None)
+
+    pack = os.path.basename(os.path.dirname(WEB_DIR))
+
+    @routes.get("/soundstage/vcam/viewfinder")
+    async def vcam_viewfinder(request):
+        with open(os.path.join(WEB_DIR, "vcam", "viewfinder.html"), encoding="utf-8") as f:
+            html = f.read().replace("{{BASE}}", f"/extensions/{pack}")
+        return web.Response(text=html, content_type="text/html", headers={"Cache-Control": "no-cache"})
+
+    @routes.post("/soundstage/vcam/scene")
+    async def vcam_scene(request):
+        raw = await request.read()
+        if len(raw) > MAX_SCENE_BYTES:
+            return web.json_response({"error": "scene too large"}, status=413)
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            return web.json_response({"error": "bad json"}, status=400)
+        scene = body.get("scene") if isinstance(body, dict) else None
+        if not isinstance(scene, dict):
+            return web.json_response({"error": "no scene"}, status=422)
+        _scene.update(rev=_scene.get("rev", 0) + 1, scene=scene, sync=clean_sync(body.get("sync")), at=time.time())
+        await push({"type": "scene", "rev": _scene["rev"], "scene": scene, "sync": _scene["sync"]})
+        return web.json_response({"ok": True, "rev": _scene["rev"], "devices": len(_sockets)})
+
+    @routes.post("/soundstage/vcam/sync")
+    async def vcam_sync(request):
+        try:
+            body = await request.json()
+        except ValueError:
+            return web.json_response({"error": "bad json"}, status=400)
+        sync = clean_sync(body)
+        if _scene:
+            _scene["sync"] = {**(_scene.get("sync") or {}), **{k: v for k, v in sync.items() if k != "take"}}
+        await push({"type": "sync", **sync})
+        return web.json_response({"ok": True, "devices": len(_sockets)})
+
+    @routes.get("/soundstage/vcam/pair")
+    async def vcam_pair_get(request):
+        return web.json_response(pair_info())
+
+    @routes.post("/soundstage/vcam/pair")
+    async def vcam_pair_post(request):
+        try:
+            body = await request.json()
+        except ValueError:
+            return web.json_response({"error": "bad json"}, status=400)
+        if not set_pair(body.get("url") if isinstance(body, dict) else None):
+            return web.json_response({"error": "bad url"}, status=422)
+        return web.json_response({"ok": True})
 
     @routes.get("/soundstage/vcam")
     async def vcam_page(request):
@@ -253,6 +405,12 @@ def register():
         await ws.prepare(request)
         device = clean_device(request.query.get("device") or uuid.uuid4().hex[:8])
         await ws.send_json({"type": "hello", "device": device})
+        old = _sockets.get(device)
+        _sockets[device] = ws
+        if old is not None and old is not ws and not old.closed:
+            await old.close()          # the same phone reconnected (a reload): the new socket wins
+        if _scene.get("scene") is not None:
+            await ws.send_json({"type": "scene", "rev": _scene["rev"], "scene": _scene["scene"], "sync": _scene.get("sync") or {}})
         handle({"type": "state", "event": "connected"}, device)
         try:
             async for msg in ws:
@@ -267,8 +425,10 @@ def register():
                     continue
                 handle(data, device)
         finally:
-            handle({"type": "state", "event": "disconnected"}, device)
-            _devices.pop(device, None)
+            if _sockets.get(device) is ws:
+                _sockets.pop(device, None)
+                handle({"type": "state", "event": "disconnected"}, device)
+                _devices.pop(device, None)
         return ws
 
     @routes.post("/soundstage/vcam/pose")
