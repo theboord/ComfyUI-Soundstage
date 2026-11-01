@@ -161,7 +161,7 @@ const CSS = `
 /* Slim top: the step bar, the scene strip and the tab bar are one short line each. */
 .ss-stage.ss-cl[data-ws=wide] .ss-pipe { margin:0 !important; gap:4px; flex-wrap:nowrap; }
 .ss-stage.ss-cl[data-ws=wide] .ss-pipe button { flex-direction:row !important; align-items:center !important; gap:8px !important;
-  padding:4px 12px !important; min-height:0; min-width:0 !important; white-space:nowrap; overflow:hidden; }
+  padding:4px 12px !important; min-height:0; min-width:0 !important; white-space:nowrap; }   /* .t clips itself; the Ready dot sits on the corner */
 .ss-stage.ss-cl[data-ws=wide] .ss-pipe button .t { font-size:13px; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .ss-stage.ss-cl[data-ws=wide] .ss-pipe button .n { flex:none; font-size:10px; }
 .ss-stage.ss-cl[data-ws=wide] .ss-tabs { padding:2px; flex-wrap:nowrap; overflow:hidden; }
