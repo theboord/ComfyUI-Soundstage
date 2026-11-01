@@ -18,14 +18,7 @@
   "pageScroll": false,
   "pageScrollH": 900,
   "pageOverflowX": false,
-  "clipped": [
-   {
-    "text": "Move the playhead, then frame the shot or drag o",
-    "ellipsis": true,
-    "w": 395,
-    "need": 1355
-   }
-  ],
+  "clipped": [],
   "clippedHard": 0,
   "overlaps": [],
   "scrollers": [],
@@ -55,21 +48,25 @@
    {
     "text": "EXT. DESERT OUTSIDE DRY CREEK",
     "ellipsis": true,
-    "w": 200,
-    "need": 218
+    "w": 134,
+    "need": 191
    },
    {
     "text": "EXT. DRY CREEK - MAIN STREET",
     "ellipsis": true,
-    "w": 200,
-    "need": 204
+    "w": 134,
+    "need": 179
+   },
+   {
+    "text": "INT. SPORTS CAR (MOVING)",
+    "ellipsis": true,
+    "w": 134,
+    "need": 156
    }
   ],
   "clippedHard": 0,
   "overlaps": [],
-  "scrollers": [
-   "ss-castview 2164/792"
-  ],
+  "scrollers": [],
   "offscreen": [],
   "errors": []
  },
@@ -80,10 +77,16 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "Move the playhead, then frame the shot or drag o",
+    "text": "EXT. Dry Creek - Main Street",
     "ellipsis": true,
-    "w": 395,
-    "need": 1355
+    "w": 60,
+    "need": 161
+   },
+   {
+    "text": "Tracking, front 3/4",
+    "ellipsis": true,
+    "w": 60,
+    "need": 105
    }
   ],
   "clippedHard": 0,
@@ -98,6 +101,18 @@
   "pageScrollH": 900,
   "pageOverflowX": false,
   "clipped": [
+   {
+    "text": "EXT. Dry Creek - Main Street",
+    "ellipsis": true,
+    "w": 60,
+    "need": 161
+   },
+   {
+    "text": "Tracking, front 3/4",
+    "ellipsis": true,
+    "w": 60,
+    "need": 105
+   },
    {
     "text": "EXT. DESERT OUTSIDE DRY CREEK",
     "ellipsis": true,
@@ -121,79 +136,12 @@
     "ellipsis": true,
     "w": 85,
     "need": 101
-   },
-   {
-    "text": "Auto",
-    "ellipsis": true,
-    "w": 1,
-    "need": 26
-   },
-   {
-    "text": "f/1.4 wide open",
-    "ellipsis": true,
-    "w": 1,
-    "need": 85
-   },
-   {
-    "text": "f/2",
-    "ellipsis": true,
-    "w": 1,
-    "need": 16
-   },
-   {
-    "text": "f/2.8",
-    "ellipsis": true,
-    "w": 1,
-    "need": 26
-   },
-   {
-    "text": "f/4 moderate",
-    "ellipsis": true,
-    "w": 1,
-    "need": 73
-   },
-   {
-    "text": "f/5.6",
-    "ellipsis": true,
-    "w": 1,
-    "need": 26
-   },
-   {
-    "text": "f/8",
-    "ellipsis": true,
-    "w": 1,
-    "need": 16
-   },
-   {
-    "text": "f/11 deep focus",
-    "ellipsis": true,
-    "w": 1,
-    "need": 85
-   },
-   {
-    "text": "f/16 everything sharp",
-    "ellipsis": true,
-    "w": 1,
-    "need": 119
    }
   ],
   "clippedHard": 0,
   "overlaps": [],
-  "scrollers": [
-   "ss-styles 1244/230",
-   "col 1153/258",
-   "col 895/258",
-   "col 482/258",
-   "col 422/258"
-  ],
-  "offscreen": [
-   "Romance / MelodramaGenre",
-   "Drama - Naturalistic IndieGenre",
-   "Blackmagic URSA Cine",
-   "Zeiss Super Speed",
-   "100mm",
-   "f/16 everything sharp"
-  ],
+  "scrollers": [],
+  "offscreen": [],
   "errors": []
  },
  "step_5_motion": {
@@ -202,6 +150,18 @@
   "pageScrollH": 900,
   "pageOverflowX": false,
   "clipped": [
+   {
+    "text": "EXT. Dry Creek - Main Street",
+    "ellipsis": true,
+    "w": 60,
+    "need": 161
+   },
+   {
+    "text": "Tracking, front 3/4",
+    "ellipsis": true,
+    "w": 60,
+    "need": 105
+   },
    {
     "text": "EXT. DESERT OUTSIDE DRY CREEK",
     "ellipsis": true,
@@ -264,10 +224,16 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "Move the playhead, then frame the shot or drag o",
+    "text": "EXT. Dry Creek - Main Street",
     "ellipsis": true,
-    "w": 395,
-    "need": 1355
+    "w": 60,
+    "need": 161
+   },
+   {
+    "text": "Tracking, front 3/4",
+    "ellipsis": true,
+    "w": 60,
+    "need": 105
    }
   ],
   "clippedHard": 0,
@@ -302,10 +268,16 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "Move the playhead, then frame the shot or drag o",
+    "text": "EXT. Dry Creek - Main Street",
     "ellipsis": true,
-    "w": 395,
-    "need": 1355
+    "w": 60,
+    "need": 161
+   },
+   {
+    "text": "Tracking, front 3/4",
+    "ellipsis": true,
+    "w": 60,
+    "need": 105
    }
   ],
   "clippedHard": 0,
@@ -320,6 +292,18 @@
   "pageScrollH": 900,
   "pageOverflowX": false,
   "clipped": [
+   {
+    "text": "EXT. Dry Creek - Main Street",
+    "ellipsis": true,
+    "w": 60,
+    "need": 161
+   },
+   {
+    "text": "Tracking, front 3/4",
+    "ellipsis": true,
+    "w": 60,
+    "need": 105
+   },
    {
     "text": "EXT. DESERT OUTSIDE DRY CREEK",
     "ellipsis": true,
@@ -348,7 +332,7 @@
   "clippedHard": 0,
   "overlaps": [],
   "scrollers": [
-   "ss-hudp-body 589/573"
+   "ss-hudp-body 593/570"
   ],
   "offscreen": [],
   "errors": []
@@ -359,6 +343,18 @@
   "pageScrollH": 900,
   "pageOverflowX": false,
   "clipped": [
+   {
+    "text": "EXT. Dry Creek - Main Street",
+    "ellipsis": true,
+    "w": 60,
+    "need": 161
+   },
+   {
+    "text": "Tracking, front 3/4",
+    "ellipsis": true,
+    "w": 60,
+    "need": 105
+   },
    {
     "text": "EXT. DESERT OUTSIDE DRY CREEK",
     "ellipsis": true,
@@ -397,17 +393,21 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "Move the playhead, then frame the shot or drag o",
+    "text": "EXT. Dry Creek - Main Street",
     "ellipsis": true,
-    "w": 395,
-    "need": 1355
+    "w": 60,
+    "need": 161
+   },
+   {
+    "text": "Tracking, front 3/4",
+    "ellipsis": true,
+    "w": 60,
+    "need": 105
    }
   ],
   "clippedHard": 0,
   "overlaps": [],
-  "scrollers": [
-   "ss-insp-body 715/641"
-  ],
+  "scrollers": [],
   "offscreen": [],
   "errors": []
  },
@@ -430,10 +430,10 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "Move the playhead, then frame the shot or drag o",
+    "text": "EXT. Dry Creek - Main Street",
     "ellipsis": true,
-    "w": 395,
-    "need": 1355
+    "w": 158,
+    "need": 161
    }
   ],
   "clippedHard": 0,

@@ -438,6 +438,8 @@ const CSS = `
 .ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-topscene { flex:0 1 280px; min-width:96px; }
 .ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow > .ss-toolsbtn:not([aria-pressed=true]) .lbl { display:none; }
 .ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-keysbtn { padding:5px 8px !important; }
+/* The App's narrow side panel: the shortcut sheet is for the full workspace ("?" still opens it), so its button gives way. */
+.ss-stage.ss-cl[data-ws=narrow]:not(.ss-full) .ss-tabs.ss-toprow > .ss-keysbtn { display:none !important; }
 /* ⑤ Motion: the panel's FOLLOW heading already names the Follow switch; its own "Follow" line made the panel scroll by
    19 px at 1280×800, cutting off "Cast in this shot" (QA round 02). */
 .ss-stage.ss-cl .ss-hudp-secbody > .ss-follow > .status:first-child { display:none; }

@@ -181,3 +181,8 @@ test("canvasui: the Lucide helper is imported under its own name (hudPanel's `ic
   assert.match(cv, /import \{ icon as lucide \} from "\.\/icons\.mjs"/);
   assert.doesNotMatch(cv, /[^.\w]icon\("/);
 });
+
+test("narrow App panel: the shortcut button gives way (\"?\" still opens the sheet); the full workspace keeps it", () => {
+  const cv = read("web/ui/canvasui.mjs");
+  assert.ok(cv.includes(".ss-stage.ss-cl[data-ws=narrow]:not(.ss-full) .ss-tabs.ss-toprow > .ss-keysbtn { display:none !important; }"));
+});
