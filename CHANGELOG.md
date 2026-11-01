@@ -5,6 +5,11 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**20:39 PDT · Presets window: one-click camera moves and lighting** *(Milestone 17)*
+- **Presets** (top bar, or press `V`): a floating, searchable window. **Camera moves** (push in, pull out, orbit, crane up/down, dolly zoom, whip pan, handheld follow, drone reveal, tracking side, car mount) write editable camera keys and a rig onto the current shot; hovering a move plays it on the shot. **Lighting** (golden hour, blue hour, night street, noir hard key, neon, overcast, candle/firelight, studio three-point) sets the time of day, a lighting setup, the prompt words and the grade; on imported footage it readies Paint Studio's Whole frame.
+- Every apply is **one undo step** (⌘Z or the toast's Undo) and reverts the look with the stage. The Director gets a `preset` tool ("make it a crane up at golden hour").
+- Code: [web/ui/presets.mjs](web/ui/presets.mjs), [web/presets/](web/presets/), [soundstage/presets_agent.py](soundstage/presets_agent.py). Tests: [tests/js/presets.test.mjs](tests/js/presets.test.mjs), [tests/test_presets.py](tests/test_presets.py).
+
 **20:34 PDT · The phone is the viewfinder** *(Milestone 20)*
 - **Phone viewfinder** (Camera panel, *Phone camera* row): a QR code opens the stage on your phone, full screen and sideways, through the shot camera in the App's own Clay / Color look. The phone renders the scene itself (no video stream), so aiming has no lag. The desktop follows the phone's camera.
 - Move the phone to aim (gyro, level lock, re-centre), MOVE / UP sticks, pinch or hold ± to zoom, **14–135 mm** primes, tap to focus, a focus ring with A/B marks and **Pull ⇄**, an **IRIS** dial (T1.4–T22) with a live depth-of-field preview, frame lines, grid and level.
