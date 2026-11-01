@@ -37,6 +37,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 
 | When | Update |
 |---|---|
+| Oct 31, 19:55 PDT | **The Director:** talk to the set (type, or hold `` ` `` to speak) and it plans, applies and explains every change, undoable; local Qwen3.5 4B, offline Whisper. **MCP:** Claude Desktop / Code drives the App with 36 tools, propose then apply. |
 | Oct 31, 19:50 PDT | **Takes that check themselves:** after every draft or final, CPU checks flag black frames, freezes, jumps, smear, face drift and cars facing the wrong way, as chips on the Ladder and in Dailies, with a Re-roll that asks first. Plus a **Follows your blocking %** score, **Ready / Needs X** on every step, **$0 · about N min on your GPU** on Run, and the recipe inside every MP4 (drop it back to restore the shot). |
 | Oct 31, 15:49 PDT | **The pro look:** one design system (type scale, spacing, legible text), yellow only for each step's main action, a **?** keyboard-shortcut sheet, a calmer first screen; Cast fits on one screen, Frame's Style and Camera open as searchable pop-overs, no more empty black players. |
 | Oct 31, 14:49 PDT | **New sets showcase:** reef diver, firefighter, airliner window and train window, rendered through the App. Scene setup frames each new set. |
@@ -70,6 +71,7 @@ Full history with every milestone: **[CHANGELOG.md](CHANGELOG.md)**.
 | &#127912; **Paint the first frame** in Paint Studio: fill, remove, extend to any aspect | &#128266; **Animate with sound** on LTX-2.5; type a line and LTX speaks it, lip-synced |
 | &#127902;&#65039; **Swap the film look** with one swatch: same animation, any look | &#9878;&#65039; **Compare Clay &#124; Draft &#124; Final** on a 3-way Ladder, approve or Redo every take |
 | &#128450;&#65039; **Review as dailies**: Avid-style scene bins and a lined script | &#128228; **Deliver to Premiere, Avid or Resolve** at the source spec (4K, 8K, RED via proxy relink), plus a VFX Layer Pack |
+| &#127897;&#65039; **Talk to the set**: the [Director](docs/director.md) chat plans what you say or type (local Qwen3.5 4B, offline Whisper voice) and applies it, undoable | &#129302; **Drive it from Claude** over [MCP](docs/mcp.md): 36 tools, every change proposed first, applied in the open App |
 
 <table>
 <tr>

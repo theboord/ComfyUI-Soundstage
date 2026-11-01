@@ -70,6 +70,8 @@ The 32B text encoder is loaded on the CPU so it fits next to the video model on 
 |---|---|---|
 | Object designer: type any object | `text_encoders/qwen3.5_4b_bf16.safetensors` | [Comfy-Org/Qwen3.5](https://huggingface.co/Comfy-Org/Qwen3.5/resolve/main/text_encoders/qwen3.5_4b_bf16.safetensors) (Apache-2.0) |
 | Scene agent | Uses the same Qwen3.5 file. Without it, the agent builds from its rules instead. | |
+| Director: talk to the set (docs/director.md) | Uses the same Qwen3.5 file (or an Ollama model on your computer). Without one it plans from its rules. | |
+| Director voice, offline | `whisper/whisper-base/` (the Hugging Face folder: config.json, model.safetensors, tokenizer and preprocessor files, about 290 MB) | [openai/whisper-base](https://huggingface.co/openai/whisper-base) (MIT). Without it, the browser's own speech recognition still works. |
 | Audio: TTS, clone, voice change | Chatterbox (MIT), installed by its own node pack. | see `docs/audio.md` |
 | Recast (video-to-video swap) | see `docs/recast.md` | |
 | Model router | Every open-weights image/video/audio model whose files are installed. Each entry carries its own license badge. | see `docs/router.md` |
