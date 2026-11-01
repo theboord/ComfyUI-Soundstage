@@ -23,6 +23,7 @@ import * as SkeletonUtils from "../vendor/addons/SkeletonUtils.mjs";
 import { TransformControls } from "../vendor/addons/TransformControls.mjs";
 import { simulate, bakeTrack, physicsOf, samplePos, sampleQuat, checkTracks } from "./physics.mjs";
 import { LiveEdit } from "./live.mjs";
+import { raycastShapes } from "./physics_avbd.mjs";
 import { Highlighter } from "./outline.mjs";
 import { zoomAt, frameSphere, easeInOut, decay } from "./manip.mjs";
 import { WorldMount } from "./interop/importworld.mjs";
@@ -1124,6 +1125,46 @@ export class Stage {
     return c.Y[Math.max(0, Math.min(c.Y.length - 1, Math.round(frame)))] || 0;
   }
 
+  /**
+   * The walkable surface under (x, z) for a performer's foot (motion capture: "Stick feet to ground"). The same
+   * surfaces a person stands on when dragged live: the stage floor or the set's own floor (platforms, the seabed), and
+   * the up-facing tops of the set's boxes and of parked props (a kerb, a step, a stage riser), found by a ray cast
+   * straight down from `reach` metres above the actor's own footing (fromY) - so a low step counts, a table they pass
+   * beside does not, and nothing overhead does.
+   */
+  _supportAt(x, z, fromY = 0, reach = 0.6) {
+    const floor = this.setFx?.floorAt;
+    let y = Math.max(0, floor ? floor(x, z) || 0 : 0);
+    const shapes = this._supportShapes();
+    const top = fromY + reach, o = [x, top, z];
+    for (const sh of shapes) {
+      if (x < sh.min[0] || x > sh.max[0] || z < sh.min[2] || z > sh.max[2] || sh.max[1] <= y) continue;
+      const hit = raycastShapes([sh], o, [0, -1, 0], top + 50);
+      if (hit && hit.distance > 1e-4 && hit.normal[1] > 0.7 && hit.point[1] > y) y = hit.point[1];
+    }
+    return y;
+  }
+
+  /** Set boxes and parked props as ray-castable shapes (cached with the set and the obstacles). */
+  _supportShapes() {
+    const set = this._setCollidersCached(), obs = this._obstacles();
+    if (this._supCache?.set === set && this._supCache.obs === obs) return this._supCache.list;
+    const list = [];
+    const qr = (q, v) => new THREE.Vector3(...v).applyQuaternion(new THREE.Quaternion(...q));
+    for (const c of set) {
+      const ext = [0, 1, 2].map((k) => Math.abs(qr(c.quat, [c.half[0], 0, 0]).getComponent(k)) + Math.abs(qr(c.quat, [0, c.half[1], 0]).getComponent(k)) + Math.abs(qr(c.quat, [0, 0, c.half[2]]).getComponent(k)));
+      list.push({ id: c.id, shape: "box", pos: c.pos, rot: c.quat, size: c.half.map((h) => h * 2),
+        min: c.pos.map((p, k) => p - ext[k]), max: c.pos.map((p, k) => p + ext[k]) });
+    }
+    for (const o of obs) {
+      if (o.top > 1.75) continue;                              // walls and cars aren't stood on
+      const b = o.box, c = b.getCenter(new THREE.Vector3()), sz = b.getSize(new THREE.Vector3());
+      list.push({ id: o.id, shape: "box", pos: c.toArray(), rot: [0, 0, 0, 1], size: sz.toArray(), min: b.min.toArray(), max: b.max.toArray() });
+    }
+    this._supCache = { set, obs, list };
+    return list;
+  }
+
   /** Is a person in the air (mid-jump) at this frame? */
   _airborne(a, frame) {
     const c = this._yCache?.get(a);
@@ -1449,9 +1490,13 @@ export class Stage {
       if (!take) { this._loadMocap(a); continue; }
       const g = this.actorMeshes.get(a.id);
       if (!g) continue;
-      const p = this._actorPosAt(a, this.frame);
-      Mocap.apply(g, take, a.mocap, this.frame, { x: p[0], y: this._heightAt(a, this.frame), z: p[2], yaw: this._headingAt(a, this.frame) },
-        (a.height_m || 1.8) * (a.scale || 1), this.state.shot?.fps || 24);
+      // The base at any frame (a planted foot is pinned where it stood at the middle of its contact), and the walkable
+      // surface under each foot.
+      const baseAt = (f) => {
+        const p = this._actorPosAt(a, f), y = this._heightAt(a, f);
+        return { x: p[0], y, z: p[2], yaw: this._headingAt(a, f), support: (x, z) => this._supportAt(x, z, y), at: baseAt };
+      };
+      Mocap.apply(g, take, a.mocap, this.frame, baseAt(this.frame), (a.height_m || 1.8) * (a.scale || 1), this.state.shot?.fps || 24);
       mocapIds.add(a.id);
     }
     // Look at: the head and neck turn toward a target every frame (from look_at_frame on), within a natural range.
@@ -3518,6 +3563,7 @@ export class Stage {
     if (key === "start") a.mocap.start = Math.max(0, Math.round(value));
     else if (key === "travel") a.mocap.travel = !!value;
     else if (key === "loop") a.mocap.loop = !!value;
+    else if (key === "stick") { if (value) delete a.mocap.stick; else a.mocap.stick = false; }
     else if (key === "speed") a.mocap.speed = Math.max(0.25, Math.min(4, +value || 1));
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
@@ -3528,6 +3574,7 @@ export class Stage {
     if (!a?.mocap) return;
     delete a.mocap;
     for (const j of Object.values(this.actorMeshes.get(id)?.userData?.joints || {})) j.rotation.set(...(j.userData.rest || [0, 0, 0]));
+    if (this.actorMeshes.get(id)?.userData?.joints) Mocap.resetFeet(this.actorMeshes.get(id));   // shoes back on the shins
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
   }
@@ -3536,7 +3583,7 @@ export class Stage {
     const a = this.state.actors.find((x) => x.id === id);
     if (!a?.mocap) return null;
     const t = Mocap.takeFor(a.mocap), fps = this.state.shot?.fps || 24;
-    return { name: a.mocap.name || "take", file: a.mocap.file, start: a.mocap.start || 0, travel: a.mocap.travel !== false,
+    return { name: a.mocap.name || "take", file: a.mocap.file, start: a.mocap.start || 0, travel: a.mocap.travel !== false, stick: a.mocap.stick !== false,
       speed: a.mocap.speed || 1, loop: !!a.mocap.loop, loaded: !!t, frames: t?.n || 0, seconds: t ? t.n / t.fps : 0,
       end: t ? Math.round((a.mocap.start || 0) + (t.n - 1) * fps / t.fps / (a.mocap.speed || 1)) : null };
   }
