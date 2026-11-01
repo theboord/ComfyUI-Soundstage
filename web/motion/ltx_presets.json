@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "about": "⑤ Motion render presets for LTX-2.5 Layout-to-Render. Read by soundstage/ltx_settings.py and web/motion/ltxadvanced.mjs. Measured in share/Milestone18_Hollywood/REPORT.txt.",
+  "presets": {
+    "Draft": {
+      "label": "Draft",
+      "tip": "A quick look: 8 + 3 steps, 1080p class. Faces readable, motion approximate.",
+      "resolution": 1088, "two_stage": true, "steps_1": 8, "steps_2": 3, "s2_start": 0.909375,
+      "sampler": "euler_ancestral", "cfg": 1.0, "temporal_x2": false,
+      "decode": { "tile_size": 512, "overlap": 64, "temporal_size": 128, "temporal_overlap": 32 },
+      "codec": "h264", "crf": 18
+    },
+    "Final": {
+      "label": "Final",
+      "tip": "Clean motion and detail: 12 + 6 steps, 1080p class, high-bitrate H.264. The default.",
+      "resolution": 1088, "two_stage": true, "steps_1": 12, "steps_2": 6, "s2_start": 0.909375,
+      "sampler": "euler_ancestral", "cfg": 1.0, "temporal_x2": false,
+      "decode": { "tile_size": 512, "overlap": 64, "temporal_size": 128, "temporal_overlap": 32 },
+      "codec": "h264", "crf": 14
+    },
+    "Hollywood": {
+      "label": "Hollywood (max)",
+      "tip": "The best this GPU does: 1408p (stage 1 at 704p, x2), 12 + 6 steps, near-lossless master. About 15 min a shot.",
+      "resolution": 1408, "two_stage": true, "steps_1": 12, "steps_2": 6, "s2_start": 0.909375,
+      "sampler": "euler_ancestral", "cfg": 1.0, "temporal_x2": false,
+      "decode": { "tile_size": 512, "overlap": 64, "temporal_size": 128, "temporal_overlap": 32 },
+      "codec": "h264", "crf": 12
+    }
+  }
+}

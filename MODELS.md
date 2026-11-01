@@ -39,6 +39,18 @@ The App's default image model: the ④ Frame first frame (with up to 4 cast refe
 
 Leave the LTX API key field blank (the default): the prompt is then encoded locally with Gemma, free and fully open.
 
+The temporal upscaler (`ltx-2.5-latent-temporal-upscaler-x2-bf16-1.0.safetensors`, `latent_upscale_models/`, same repo) is used only when **Temporal x2** is on in ⑤ Motion › Advanced (LTX).
+
+### Not installed yet: what would lift the Hollywood preset further (download only with approval)
+
+Measured in share/Milestone18_Hollywood/REPORT.txt. None of these are downloaded by Soundstage; each needs the owner's OK.
+
+| File | Repo · folder | Size | License | Expected gain |
+|---|---|---|---|---|
+| `ltx-2.5-22b-ic-lora-refine-details-1.0.safetensors` | [Lightricks/LTX-2.5-22b-IC-LoRA-Refine-Details](https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-Refine-Details) · `loras/ltx2.5/` | 1.31 GB | LTX-2.x Community License (gated) | Lightricks' own detail refiner for 2.5 (their Tiled Fusion upscale workflow uses it): a detail pass on the final, and the way to a 4K Tiled Fusion master. The biggest expected gain for texture and skin. |
+| `ltx-2.5-22b-distilled-transformer-bf16.safetensors` | [Lightricks/LTX-2.5](https://huggingface.co/Lightricks/LTX-2.5) · `diffusion_models/` | 42.0 GB | LTX-2.x Community License | The same distilled model without int8 quantization: finer detail and fewer banding/mush artifacts. On 48 GB it runs with partial offload (slower). |
+| `ltx-2.5-22b-dev-transformer-comfy-int8-convrot.safetensors` | Lightricks/LTX-2.5 · `diffusion_models/` | 21.5 GB | LTX-2.x Community License | The non-distilled model: real CFG 2.5–3 with working negative prompts, STG and rescale, used with the `distilled-lora-450` already on the pod as a stabilizer. Better prompt adherence, slower (CFG doubles each step). |
+
 ## Motion, optional second engine: MiniMax H3
 
 LTX-2.5 Layout-to-Render stays the default. With these files installed, **MiniMax H3 (local, looser blocking, rich motion)** also appears in ③ Motion's **Video model** list. H3 animates the shot and makes its own sound in the same pass. It follows your clay blocking only loosely, and a final takes about 20+ minutes on a 48 GB card (the first run also spends several minutes encoding the prompt on the CPU). Drafts still preview with LTX. Shots are capped at 362 frames (~15 s).

@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).parent))
 from graph import Graph  # noqa: E402
 
-PARTS = ["models", "touchup", "audio", "layers", "quality", "outputs", "guided"]  # order matters: model pickers, touch-up after the still picker, audio on the final, per-actor layers, quality knobs on the L2R engine, output tidy-up
+PARTS = ["models", "touchup", "audio", "layers", "quality", "outputs", "guided", "ltx_advanced"]  # order matters: model pickers, touch-up after the still picker, audio on the final, per-actor layers, quality knobs on the L2R engine, output tidy-up
 
 
 def main(src=ROOT / "example_workflows/Soundstage_App.json", dst=ROOT / "example_workflows/Soundstage_App_Full.json"):

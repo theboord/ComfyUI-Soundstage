@@ -5,6 +5,14 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**20:35 PDT · Hollywood-grade finals: quality presets saved per shot, and the full LTX controls** *(Milestone 18)*
+- **The leak:** ⑤ Motion's Quality started on Draft and wasn't restored when a shot was reopened, so nearly every "final" rendered at Draft sampling (8 + 3). Shots now default to **Final** and keep their preset per shot.
+- **Draft · Final · Hollywood.** Hollywood renders stage 1 at 704p, upscales x2 in latent space and refines at 2624×1408 (12 + 6 steps, same seed, H.264 CRF 12): sharper skin, rain and panel lines, and the J-turn car stays one coherent car. About 11–17 min a shot on the RTX 6000 Ada; each button shows its time.
+- **Advanced (LTX)** beside Quality (a pop-over in the canvas layout): resolution, two-stage on/off, frame rate and frames, temporal x2, steps, stage-2 start sigma, manual sigmas, sampler, CFG, seed, layout IC-LoRA strength, an extra LoRA, decode tiles, and H.264 CRF or a **ProRes 422 HQ** master.
+- Measured and rejected: bigger decode tiles (no visible gain, slower), the 1x skin ESRGAN (adds grain-pattern artifacts), temporal x2 without a refine (softer frames). CRF 18 vs 14 is a small loss (PSNR 49.8 vs 51.8 dB).
+- Evidence: share/Milestone18_Hollywood/ (crops, clips, REPORT.txt). Not installed, for approval: Lightricks' LTX-2.5 Refine-Details IC-LoRA, the bf16 distilled and the dev transformers (MODELS.md).
+- Code: [soundstage/ltx_settings.py](soundstage/ltx_settings.py), [soundstage/nodes_quality.py](soundstage/nodes_quality.py), [web/motion/ltxadvanced.mjs](web/motion/ltxadvanced.mjs), [web/motion/ltx_presets.json](web/motion/ltx_presets.json), [tools/app_build/ltx_advanced.py](tools/app_build/ltx_advanced.py). Tests: [tests/test_ltx_settings.py](tests/test_ltx_settings.py), [tests/js/ltxadvanced.test.mjs](tests/js/ltxadvanced.test.mjs).
+
 **19:55 PDT · The Director: talk to the set, and drive it from Claude over MCP** *(Milestone 15)*
 - **Director panel** (top bar, or press `/`): say or type what you want ("put Mara in the sports car at night, rain, camera on the hood, she's nervous"). It shows a short plan; **Apply** (Enter, or say "yes") runs each step through the App's own controls and every turn has **Undo this**. Talk-through mode explains the choice in film terms and offers the next step.
 - **Tool layer:** 33 typed tools (cast and props, crate stacks, mounts, time and weather, lights, coverage, lens, animated camera moves, rigs, hood mounts, car stunts, drive-through crashes, physics and bake, performance notes, the grade, script scenes, frames, drafts and finals, approvals, the cut). Every call is validated against the live scene; renders always ask first unless you say "go".
