@@ -5,6 +5,13 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**20:34 PDT · The phone is the viewfinder** *(Milestone 20)*
+- **Phone viewfinder** (Camera panel, *Phone camera* row): a QR code opens the stage on your phone, full screen and sideways, through the shot camera in the App's own Clay / Color look. The phone renders the scene itself (no video stream), so aiming has no lag. The desktop follows the phone's camera.
+- Move the phone to aim (gyro, level lock, re-centre), MOVE / UP sticks, pinch or hold ± to zoom, **14–135 mm** primes, tap to focus, a focus ring with A/B marks and **Pull ⇄**, an **IRIS** dial (T1.4–T22) with a live depth-of-field preview, frame lines, grid and level.
+- **● REC** counts in, records from the top of the shot in step with the action, and the take lands on the shot as camera keys (stabilized; Stabilize = gimbal) plus **lens keys** (focus, T-stop, roll). It plays back on both screens. Keep, Discard or Again from the phone.
+- **LAN-only bridge** `tools/vcam_bridge.py`: https on the Mac's Wi-Fi with a pairing token and an allow-list (no /prompt, /queue, user files). Never public; the pod stays SSH-only. See [docs/vcam.md](docs/vcam.md).
+- Code: [web/vcam/](web/vcam/), [soundstage/vcam.py](soundstage/vcam.py). Tests: [tests/js/viewfinder.test.mjs](tests/js/viewfinder.test.mjs), [tests/test_vcam_viewfinder.py](tests/test_vcam_viewfinder.py).
+
 **20:32 PDT · A real editing timeline: transitions, fades, sound after generation, titles, subtitles, one-click render** *(Milestone 19)*
 - **Edit like an NLE.** V2 (titles) over V1, a subtitles lane, and A1 Dialogue · A2 SFX · A3 Music · A4 Ambience. S splits, ⌘-drag (or `,` `.`) slips, trims ripple, ⌥-drag rolls, drags reorder with snapping, J/K/L, I/O, zoom, undo. Thumbnails on clips, waveforms on audio.
 - **Transitions and fades.** Drag Dissolve, Dip black, Dip white or Wipe from the palette onto a cut (onto the head for a fade up, the tail for a fade out), or press T. They use the clips' handles, centred on the cut; when the handles are short the bar turns orange and says how much fitted. Click one to change its length or type. **Keys (R)**: rubber-band opacity on picture and volume on sound.

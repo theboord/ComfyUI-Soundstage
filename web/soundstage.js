@@ -35,6 +35,7 @@ import { PosePanel } from "./stage/posepanel.mjs";
 import { PhysicsPanel } from "./stage/physpanel.mjs";
 import { worldControls } from "./stage/interop/worldui.mjs";
 import { listenVcam, LiveVcam, listTakes, fetchTake, takeToCamera, anchorFromCamera } from "./vcam/live.mjs";
+import { attachViewfinder } from "./vcam/desk.mjs";
 import { ScriptPanel, SceneSwitcher } from "./script/panel.mjs";
 import { DEMO_SCRIPT } from "./script/demo_script.mjs";
 import { planSceneSetup, blockingSpots } from "./script/scenesetup.mjs";
@@ -1849,6 +1850,11 @@ function createStageWidget(node, inputName) {
   const snapBtn = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn", hidden: true });
   for (const b of [vcamBtn, applyTake, snapBtn]) b.addEventListener("pointerdown", (e) => e.stopPropagation());
   vcamRow.append(vcamBtn, vcamInfo, takeSel.wrap, strength.wrap, applyTake, snapBtn);
+  // Phone viewfinder (web/vcam/desk.mjs): a QR code opens this stage on a phone, which then is the shot camera and records takes.
+  node.ssViewfinder = attachViewfinder({ api, stage, host: vcamRow,
+    seek: (f) => { scrub.value = f; tc.textContent = fmtTc(f); stage.setFrame(f); try { drawKeys(); } catch { /* */ } },
+    play: () => { if (play.textContent === "Play") play.click(); },
+    say: (m) => { status.textContent = m; } });
   let vcamOff = null, lastRig = null;
   const live = new LiveVcam();
   const refreshTakes = async (selectId) => {

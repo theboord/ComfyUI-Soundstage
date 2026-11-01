@@ -14,6 +14,7 @@
 //   });
 
 import { stabilize, suggestRig, qmul, qrotate, forwardOf, eulerOf } from "../movefit/stabilize.mjs";
+import { takeToKeys } from "./vfcore.mjs";
 
 export const VCAM_EVENT = "soundstage.vcam";
 
@@ -54,6 +55,8 @@ export function anchorFromCamera(cam) {
  * rig = an optional suggestion ("dolly-in", "pan left"...) with a snapped alternative. Never applied here.
  */
 export function takeToCamera(take, { anchor = null, startFrame = 0, fps = 24, focusDistance = 5, overrides = {}, suggest = true } = {}) {
+  // A phone-viewfinder take is already on the set (it was shot through the shot camera), with lens channels: keep it there.
+  if (take?.settings?.space === "set") return { ...takeToKeys(take, overrides), rig: null };
   const opts = { ...(take.settings || {}), ...overrides, anchor, startFrame, fps, focusDistance };
   const result = stabilize(take.samples || [], opts);
   const rig = suggest ? suggestRig(result.frames, opts) : null;
