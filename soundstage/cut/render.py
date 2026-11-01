@@ -3,7 +3,8 @@ title cards on V2, burned-in subtitles if asked for, and the mixed sound (every 
 volume keys and auto-duck, plus each clip's own sync sound) at a loudness target. MP4 (H.264 + AAC) or ProRes 422 HQ
 (+ 24-bit PCM, .mov) at the project's size and rate, or a 9:16 social version cropped from it.
 
-POST /soundstage/cut/render  {project, spec: {format, aspect, loudness, burn_subtitles, reframe_x, sync_audio}, name}
+POST /soundstage/cut/render  {project, spec: {format, aspect, loudness, burn_subtitles, reframe_x, sync_audio, finish,
+    motion_blur}, name}   finish: off | subtle | 35mm | anamorphic (soundstage/finish.py)
 -> {filename, subfolder, type, seconds, frames, width, height, loudness: {...}, missing: [shot ids], ...}
 
 The rules (where a transition sits, how much handle it uses, what a dip does) are web/cut/fx.mjs's, through the
@@ -24,6 +25,7 @@ import time
 import numpy as np
 
 from .export import is_overlap, key_at, layout, normalize_project, sequence_frames, total_frames, trans_spans, wrap_cue, fps_info
+from ..finish import PRESETS as FINISH, finish_graph
 from .mix import SR, _f2s, decode, render_mix, resolve_audio_path, write_wav24
 
 VIDEO_EXT = (".mp4", ".mov", ".webm", ".mkv", ".m4v")
@@ -388,6 +390,11 @@ def render_cut(project, roots, out_path, spec=None) -> dict:
             last += f",crop={cw}:{H}:{x}:0,scale={OW}:{OH}:flags=lanczos,setsar=1"
         filters.append(last + "[base]")
         cur = "[base]"
+        # ---- Film Finish (Milestone 21): lens, fringe, halation, vignette, grain on the picture, under the titles
+        if FINISH.get(spec.get("finish") or "off") or spec.get("motion_blur"):
+            filters += finish_graph(cur, "[fin]", spec.get("finish") if FINISH.get(spec.get("finish")) else "subtle", OW, OH,
+                                    seed=int(spec.get("finish_seed") or 1), motion_blur=bool(spec.get("motion_blur")) or None)
+            cur = "[fin]"
 
         # ---- titles (V2) and burned-in subtitles: Pillow PNGs overlaid in time
         overlays = []

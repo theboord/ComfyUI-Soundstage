@@ -237,6 +237,7 @@ export class CutPanel {
     this.keysMode = false; // rubber bands: drag / add / ⌥-click delete level and opacity keys
     this.beats = []; // record frames of the music's beats (Beats button)
     this.loudTarget = "social";
+    this.finish = "off";   // Film Finish preset for renders (FX.FINISH_PRESETS)
 
     this._build(container);
     this._onSfx = (e) => {
@@ -720,7 +721,7 @@ export class CutPanel {
 
   /** Render the cut to one file on the server: {format: mp4|prores, aspect: source|9:16}. */
   async render({ format = "mp4", aspect = "source" } = {}) {
-    const body = { ...FX.renderRequest(this.project, { format, aspect, loudness: this.loudTarget, burn_subtitles: !!this.project.burn_subtitles }), name: this.project.name };
+    const body = { ...FX.renderRequest(this.project, { format, aspect, loudness: this.loudTarget, burn_subtitles: !!this.project.burn_subtitles, finish: this.finish }), name: this.project.name };
     this.say(`Rendering ${aspect === "9:16" ? "the 9:16 social cut" : format === "prores" ? "ProRes 422 HQ" : "MP4"}…`);
     try {
       const j = await this._renderCut(body);
@@ -953,6 +954,15 @@ export class CutPanel {
     btn3(bar5, "MP4", "Render the cut to one MP4 (H.264 + AAC) at the source size and rate: transitions, titles, the mix at the loudness target", () => this.render({ format: "mp4" }));
     btn3(bar5, "ProRes", "ProRes 422 HQ + 24-bit PCM (.mov) at the source spec", () => this.render({ format: "prores" }));
     btn3(bar5, "9:16 social", "A 1080×1920 vertical cut, centre-cropped, titles and subtitles re-laid for the phone", () => this.render({ format: "mp4", aspect: "9:16" }));
+    // Film Finish (Milestone 21): lens distortion, colour fringe, halation, vignette and grain over the picture.
+    const fin = document.createElement("select");
+    fin.title = "Film Finish: 'film' the render so it stops reading as CG (lens distortion, colour fringe at the edges, red halation round highlights, vignette, grain last). Titles stay clean.";
+    for (const [k, v] of Object.entries(FX.FINISH_PRESETS)) fin.append(new Option(`Finish: ${v}`, k));
+    fin.value = this.finish;
+    fin.addEventListener("change", () => { this.finish = fin.value; });
+    fin.addEventListener("keydown", (e) => e.stopPropagation());
+    bar5.append(fin);
+    this.finishSel = fin;
     this.msgEl = document.createElement("span");
     this.msgEl.className = "ss-cut-msg";
     bar5.append(this.msgEl);
