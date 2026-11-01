@@ -33,14 +33,25 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 
 <p align="center"><sub>The browser demo is the real App UI replaying real GPU renders, no install needed. Also: <a href="docs/media/soundstage_demo.mp4">the longer walkthrough</a>. Built for Comfy Org's <i>Open Source Higgsfield</i> challenge.</sub></p>
 
+### Highlights: what only Soundstage does
+
+- **Script to ScriptSync dailies.** Import a screenplay; get a breakdown, slated setups, circled takes and an Avid-style lined script where a click on a coverage line plays that take.
+- **Actors you direct, not prompt.** Pose them to the fingertips with IK, or mocap them from any clip or your webcam into the set you already built. Horses and riders, cars with seated cast.
+- **Live physics and movie stunts.** Drag people onto crates and horses, knock stacks over, crash cars through crates; reverse J-turns, donuts and handbrake 180s that roll on their springs.
+- **Real camera rigs and true coverage.** Dolly, jib, Steadicam, handheld, drone, hood mounts, real lenses and solar-accurate light; several setups from one blocking, consistent by construction. Your **phone is the viewfinder**.
+- **Hollywood-grade finals that check themselves.** Draft · Final · Hollywood (2624×1408) on LTX-2.5; every take is checked for freezes, jumps, face drift and cars driving backwards, and scored on how well it **follows your blocking**.
+- **A real NLE timeline, delivered at source spec.** Dissolves, dips, wipes, sound generated in place, loudness to broadcast targets; export to Avid, Premiere, Resolve and FCP (EDL, XML, FCPXML, OTIO, AAF) with the camera original's timecode, plus VFX Layer Packs.
+- **Round trip with Blender, Unreal, Maya and Nuke.** Import a whole world as the set; send the shot back with builder scripts (measured IoU 0.99+ in Blender).
+- **An AI Director plus MCP.** Talk or type to the set; Claude Desktop or Code can drive the open App over MCP. Every change is proposed first and undoable.
+
 ### What's new (updated continuously, times US Pacific)
 
 | When | Update |
 |---|---|
 | Oct 31, 20:39 PDT | **Presets window** (`V`): one-click camera moves and lighting looks onto the current shot, each one undo step; the Director can call them too. |
 | Oct 31, 20:34 PDT | **The phone is the viewfinder:** scan a QR, and your phone shows the live stage and *is* the camera: aim by moving it, pinch / primes to zoom, tap to focus, rack pulls, an iris with live depth of field, ● REC writes the move and lens onto the shot. LAN-only bridge with a pairing code. |
-| Oct 31, 20:32 PDT | **A real editing timeline:** drag dissolves, dips and wipes onto cuts, fades, rubber-band keys; generate SFX, music and lines in place on A1-A4, auto-duck, beat snapping, loudness to −14/−23/−24 LUFS; assemble the scene from ScriptSync; subtitles and titles; render MP4, ProRes or 9:16. |
 | Oct 31, 20:35 PDT | **Hollywood-grade finals:** Quality presets Draft · Final · **Hollywood** (2624×1408, sharper, more coherent motion) saved per shot, Final by default (finals had been rendering at Draft), and an **Advanced (LTX)** pop-over with the normal LTX controls plus a ProRes 422 HQ master. |
+| Oct 31, 20:32 PDT | **A real editing timeline:** drag dissolves, dips and wipes onto cuts, fades, rubber-band keys; generate SFX, music and lines in place on A1-A4, auto-duck, beat snapping, loudness to −14/−23/−24 LUFS; assemble the scene from ScriptSync; subtitles and titles; render MP4, ProRes or 9:16. |
 | Oct 31, 19:55 PDT | **The Director:** talk to the set (type, or hold `` ` `` to speak) and it plans, applies and explains every change, undoable; local Qwen3.5 4B, offline Whisper. **MCP:** Claude Desktop / Code drives the App with 36 tools, propose then apply. |
 | Oct 31, 19:50 PDT | **Takes that check themselves:** after every draft or final, CPU checks flag black frames, freezes, jumps, smear, face drift and cars facing the wrong way, as chips on the Ladder and in Dailies, with a Re-roll that asks first. Plus a **Follows your blocking %** score, **Ready / Needs X** on every step, **$0 · about N min on your GPU** on Run, and the recipe inside every MP4 (drop it back to restore the shot). |
 | Oct 31, 15:49 PDT | **The pro look:** one design system (type scale, spacing, legible text), yellow only for each step's main action, a **?** keyboard-shortcut sheet, a calmer first screen; Cast fits on one screen, Frame's Style and Camera open as searchable pop-overs, no more empty black players. |
@@ -64,6 +75,80 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 | Oct 30, 19:23–23:07 PDT | **One giant canvas**, a guided first run, cast seated in cars and on horses, real-people realism. |
 
 Full history with every milestone: **[CHANGELOG.md](CHANGELOG.md)**.
+
+## New since the contest
+
+Every section links to its tutorial chapter. All pictures are real App screens and real renders from the milestone evidence.
+
+### The Director: chat, voice and MCP
+
+Press `/` (or **Director** in the top bar) and say what you want: *"put Mara in the sports car at night, rain, camera on the hood, she's nervous"*. It shows a short plan, **Apply** runs it through the App's own controls, and every turn has **Undo this**. Hold `` ` `` to talk (offline Whisper); the model is a local Qwen3.5 4B. The same tools are an **MCP server**, so Claude Desktop or Claude Code can block, rig and render in the open App: propose first, apply on your OK, GPU work only with `confirm_gpu`. → [Tutorial](docs/TUTORIAL.md#the-director-chat-voice-and-mcp) · [director.md](docs/director.md) · [mcp.md](docs/mcp.md)
+
+<p align="center"><img src="docs/media/director.jpg" width="860" alt="The Director panel beside the stage: 'Use the J-turn stunt' becomes a one-step plan, applied, with Undo this and next-step buttons"></p>
+
+### Presets: one click, one undo
+
+Press `V` for a searchable window of **Camera moves** (push in, crane up, dolly zoom, drone reveal, car mount…), **Lighting**, **Looks**, **Action**, **Edit styles**, **Recipes** and **Mine** (save your own camera, light or look). Hover a camera move to preview it on the shot; every apply is one ⌘Z. The Director can call them too ("make it a crane up at golden hour"). → [Tutorial](docs/TUTORIAL.md#presets-one-click-camera-moves-and-lighting)
+
+<p align="center"><img src="docs/media/presets.jpg" width="760" alt="The Presets window: camera move cards (Push in, Pull out, Orbit, Crane up, Dolly zoom, Whip pan, Handheld follow, Drone reveal, Tracking side, Car mount), with 'Applied Crane up to shot 1' and Undo"></p>
+
+### The Timeline: transitions and sound
+
+The Cut tab is now a real editing timeline: V2 titles, a subtitles lane and A1 Dialogue · A2 SFX · A3 Music · A4 Ambience. Drag **Dissolve, Dip black, Dip white or Wipe** onto a cut, rubber-band keys, slip and roll. Type a sound and **Generate** it in place (open-weights LTX-2.5 audio and Chatterbox), **Auto-duck** the score under dialogue, snap cuts to the beat, **Assemble scene** from the ScriptSync lining, then render MP4, ProRes 422 HQ or a 9:16 cut at −14 / −23 / −24 LUFS. → [Tutorial](docs/TUTORIAL.md#transitions-sound-titles-and-render) · [cut.md](docs/cut.md)
+
+<p align="center"><img src="docs/media/timeline.jpg" width="900" alt="The Cut timeline: transitions palette, Keys, Assemble scene, Title, Subtitles, Generate sound, Auto-duck, Beats, loudness target, Render MP4 / ProRes / 9:16, with dips and dissolves drawn on V1 and a title on V2"></p>
+
+### Hollywood quality presets
+
+⑤ Motion's Quality is **Draft · Final · Hollywood**, saved per shot, Final by default. Hollywood renders stage 1 at 704p, upscales in latent space and refines at **2624×1408**: real detail in skin, rain and panel lines, and a spinning car that stays one coherent car. **Advanced (LTX)** opens the full LTX controls (resolution, steps, sigmas, sampler, CFG, seed, IC-LoRA strength, an extra LoRA) and a **ProRes 422 HQ** master. → [Tutorial](docs/TUTORIAL.md#quality-draft-final-hollywood) · [quality.md](docs/quality.md)
+
+<p align="center"><img src="docs/media/hollywood_final.jpg" width="860" alt="A Hollywood-preset final from the reverse J-turn shot: the red sports car mid-spin on a wet night street, tyre smoke, sharp reflections"></p>
+
+### Takes that check themselves
+
+Every draft and final is checked on the CPU in seconds: black frames, freezes, jumps, smear, face drift, and **cars facing the wrong way** (the stage knows every car's path). Chips sit on the Ladder and in Dailies; **Re-roll** asks first. A **Follows your blocking %** score compares the take's camera and each actor's matte with the clay, the ground truth only Soundstage has. → [Tutorial](docs/TUTORIAL.md#takes-that-check-themselves)
+
+<p align="center"><img src="docs/media/takecheck.jpg" width="860" alt="The Ladder with take-check chips: 'Sports car faces the wrong way' in red, 'Follows blocking 94%' in green, Measure and Re-roll"></p>
+
+### Live 3D physics and characters
+
+The stage is alive while you drag: people walk where you pull them, climb onto crates and tables, mount and dismount horses, pick up and carry props (`C`); stacks stand still until something hits them, and cars throw crates clear. Live physics runs on the CPU (XPBD) or, in beta, on the GPU ([three-avbd](https://github.com/sbobyn/three-avbd)); **Simulate & bake** turns it into keys every render follows. → [Tutorial](docs/TUTORIAL.md#live-3d-drag-climb-mount-carry)
+
+<table>
+<tr>
+<td width="50%"><img src="docs/media/live3d_mount.gif" alt="A person is dragged to a horse and swings up into the saddle, then is dragged off and hops down"></td>
+<td width="50%"><img src="docs/media/physics_crate_crash.gif" alt="A car crashes through a crate stack: the clay previz guide beside the LTX draft"></td>
+</tr>
+</table>
+
+### Stunts
+
+Pick a car, then **Stunt ▸ Reverse J-turn / Donut / Handbrake 180**. The keys are written on your set from where the car starts, the body rolls, squats and dives on its springs, tyre smoke pours off the wheels, and the prompts say which end leads, so the video gets the spin right. → [Tutorial](docs/TUTORIAL.md#stunts-j-turn-donut-handbrake-180)
+
+<p align="center"><img src="docs/media/stunt_jturn.gif" width="760" alt="Reverse J-turn: the clay stage on the left, the final on the right, the red car spinning with tyre smoke on a wet night street"></p>
+
+### New sets
+
+Underwater coral reef, burning building (plus **Fire** on any set), airplane cabin, runway, above the clouds, train carriage and station platform. Clouds and countryside stream past the windows, and a slugline like *INT. TRAIN* places the set, the camera and the blocking by itself. → [Tutorial](docs/TUTORIAL.md#the-new-sets)
+
+<table>
+<tr>
+<td width="50%"><img src="docs/media/new_sets_reef.gif" alt="A diver over a coral reef: the clay stage beside the final"></td>
+<td width="50%"><img src="docs/media/new_sets.jpg" alt="The new sets in clay: underwater reef, burning building, airplane cabin, train carriage, station platform, an airliner above the clouds"></td>
+</tr>
+</table>
+
+### Interop: Blender · Unreal · Maya · Nuke
+
+**Import world…** makes a GLB, FBX, OBJ or splat from any DCC the set, with real scale, colliders and its cameras as shots. **Export for Blender · Unreal · Maya · Nuke** sends the shot back as an animated GLB, camera files and a builder script for each app. Round trip measured in Blender at IoU 0.99+. [Details below](#bring-your-world-in-send-it-back-out-blender--unreal--maya--nuke). → [Tutorial](docs/TUTORIAL.md#interop-blender-unreal-maya-nuke)
+
+<p align="center"><img src="docs/media/interop_blender.jpg" width="760" alt="Soundstage to Blender: the exported shot rebuilt in Blender, silhouettes matching the Soundstage clay frame"></p>
+
+### The phone is the viewfinder
+
+Scan a QR code and your phone shows the live stage through the shot camera, and *is* the camera: move it to aim, pinch or pick a **14–135 mm** prime, tap to focus, set A/B marks and **Pull ⇄**, an **IRIS** with live depth of field. **● REC** lands the move and the lens keys on the shot. The phone renders the stage itself, so there is no lag; the bridge is LAN-only with a pairing code. → [Tutorial](docs/TUTORIAL.md#phone-camera) · [vcam.md](docs/vcam.md)
+
+<p align="center"><img src="docs/media/phone_viewfinder.jpg" width="760" alt="The phone viewfinder: live clay stage, prime lens row 14 to 135 mm, IRIS T1.4 with the depth-of-field readout, focus 14 m, MOVE and UP sticks, record button"></p>
 
 ### What you get
 
@@ -143,7 +228,7 @@ FLUX 3 Klein (or Krea 2 locked to the stage's depth) paints the first frame of e
 
 ### &#9316; Motion: animate it with sound
 
-LTX-2.5 Layout-to-Render animates each shot from its frame, following your clay: positions, camera, timing. **Draft** (quick look), **Final** (the default) or **Final HQ** (hero shots); one shot or every shot. Sound effects and music are generated with the final, and typing a **dialogue line** turns on audio-driven lip sync, so the mouth follows the words. MiniMax H3 is an optional second engine. *Why it matters:* the motion is directed, not hoped for. → [Tutorial: ⑤ Motion](docs/TUTORIAL.md#step-5-motion)
+LTX-2.5 Layout-to-Render animates each shot from its frame, following your clay: positions, camera, timing. **Draft** (quick look), **Final** (the default) or **Hollywood** (2624×1408, hero shots), saved per shot, with an **Advanced (LTX)** pop-over; one shot or every shot. Sound effects and music are generated with the final, and typing a **dialogue line** turns on audio-driven lip sync, so the mouth follows the words. MiniMax H3 is an optional second engine. Every take then checks itself (freezes, jumps, face drift, cars driving backwards) and gets a **Follows your blocking %** score. *Why it matters:* the motion is directed, not hoped for. → [Tutorial: ⑤ Motion](docs/TUTORIAL.md#step-5-motion)
 
 <p align="center"><img src="docs/media/step4_ladder.jpg" width="960" alt="Review on the Ladder"></p>
 
@@ -168,7 +253,7 @@ The Ladder compares the same frame across stages with a **3-way slider**: Clay (
 
 ### &#9318; Deliver: the cut, your NLE, and layers for VFX
 
-A real timeline over your coverage with J/K/L, splits, ripple, match action and audio tracks; right-click any clip to **edit its original** in the step that made it. **Cut → one video** joins the whole scene with sound. Export to Avid (EDL, markers), Premiere XML, FCPXML and OTIO, or write a **Layer Pack**: per-actor ProRes 4444 layers with mattes, depth EXRs, the exact camera, and builders for After Effects, Nuke, Blender, Resolve and Photoshop. *Why it matters:* it ends in the tools post-production already uses. → [Tutorial: ⑦ Deliver](docs/TUTORIAL.md#step-7-deliver)
+A real timeline over your coverage with J/K/L, splits, ripple, match action, dissolves, dips and wipes, titles, subtitles and A1–A4 sound generated in place; right-click any clip to **edit its original** in the step that made it. **Cut → one video** (or **Render** MP4, ProRes 422 HQ, 9:16) joins the whole scene with sound at a loudness target. Export to Avid (EDL, markers), Premiere XML, FCPXML and OTIO, or write a **Layer Pack**: per-actor ProRes 4444 layers with mattes, depth EXRs, the exact camera, and builders for After Effects, Nuke, Blender, Resolve and Photoshop. *Why it matters:* it ends in the tools post-production already uses. → [Tutorial: ⑦ Deliver](docs/TUTORIAL.md#step-7-deliver)
 
 **What goes in goes out the same:** imported footage keeps its own spec. NLE exports link the camera original with its own timecode, frame rate and reel, and Layer Packs render at the source size, frame rate and timecode. RED, BRAW and ARRIRAW work through a proxy that relinks to the original, and anything that can't match is written into the export. → [Source fidelity](docs/source_fidelity.md)
 
@@ -201,7 +286,7 @@ and a builder script for each app:
 - **Maya:** an animated camera with rotate order zxy.
 - **Nuke:** a Camera, ReadGeo and ScanlineRender.
 
-**What was verified.** Both directions were run headless in **Blender 4.3**:
+**What was verified.** Both directions were run headless in **Blender 4.3** (the test-world script also runs on Blender 5.2.3):
 
 - Blender → Soundstage: silhouette IoU 0.994–1.000 against Blender's own camera.
 - Soundstage → Blender: IoU 0.995–0.999, with outlines within 0.5 px of the Soundstage clay frame.
@@ -239,17 +324,20 @@ ComfyUI's cache means each Run only does the new work.
 - **Rigged CC0 models.** A rigged horse (idle, walk, gallop) and three cars (hatchback, police car, sports car) by Quaternius, CC0.
 - **Flashlight prop.** A handheld flashlight with a real beam. Drag it onto a person to hand it to them.
 - **In-car camera presets.** The shot camera can ride along inside a vehicle, with interior framings. **＋ All interior shots** adds one shot per interior angle in a single click.
-- **Camera.** Real lenses and aspect ratios (1.85, 2.39, 16:9, 9:16 and more), Catmull-Rom keyframes, free-fly view. A virtual camera turns a phone, iPad, Quest or Vision Pro into the shot camera; its stabilizer smooths your move rather than replacing it.
+- **Camera.** Real lenses and aspect ratios (1.85, 2.39, 16:9, 9:16 and more), Catmull-Rom keyframes, free-fly view. A virtual camera turns a phone, iPad, Quest or Vision Pro into the shot camera; its stabilizer smooths your move rather than replacing it. The **phone viewfinder** shows the live stage on the phone, with primes, focus pulls and an iris.
 - **Light.** Solar-accurate time of day for any place and date. Film lights (key, fill, rim, practical, spot, neon) with Kelvin, power and softness.
 - **Look tab.** 31 genre style presets and 18 ASC-style lighting setups (three-point, Rembrandt, low-key noir, book light and more), plus camera body, lens, film stock, era and grade. It compiles the still prompt and the LTX motion prompt from the stage itself.
 - **Coach.** Watches the stage, the cut and the App and shows at most two small cards: what looks wrong, why, and a one-click fix. It never blocks a Run. See [docs/coach.md](docs/coach.md).
 - **Director's Advisor.** Turns a scene description into a shot list with the reasoning, citing a film-language knowledge base. See [docs/advisor.md](docs/advisor.md).
 - **Scene agent.** "Describe your scene" builds the stage; then edit it by chat. See [docs/agent.md](docs/agent.md).
-- **Cut editor.** A timeline over your coverage with J/K/L and temp sound. Right-click a clip and choose **edit original** to jump back to the step that made it (stage, frame, touch-up or motion), then return to the cut. Exports one video, Avid EDL and markers, Premiere XML, FCPXML, OTIO and AAF. See [docs/cut.md](docs/cut.md).
+- **Cut editor.** A timeline over your coverage with J/K/L, transitions and fades, rubber-band keys, titles, subtitles, sound generated in place on A1–A4, auto-duck, beat snapping and loudness targets; it renders MP4, ProRes 422 HQ or 9:16. Right-click a clip and choose **edit original** to jump back to the step that made it (stage, frame, touch-up or motion), then return to the cut. Exports one video, Avid EDL and markers, Premiere XML, FCPXML, OTIO and AAF. See [docs/cut.md](docs/cut.md).
 - **Layer Pack.** Per-object mattes, PNG/EXR/ProRes 4444 layers, depth AOVs and the exact staged camera as `.chan`/JSON, with builders for After Effects, Nuke, Blender, Resolve and Photoshop. See [docs/layerpack.md](docs/layerpack.md).
 - **Audio department.** DX/FX/MX tracks; TTS, voice clone and voice change (Chatterbox, open weights). Audio can drive the video. See [docs/audio.md](docs/audio.md).
 - **Footage and Recast.** Bring in real footage and recast one person; the plate and its audio stay real. See [docs/recast.md](docs/recast.md).
 - **Model router.** Stage-aware model pickers with license badges. See [docs/router.md](docs/router.md).
+- **Director and MCP.** Chat or voice to the set (local Qwen3.5 4B, offline Whisper); an MCP server lets Claude drive the open App. See [docs/director.md](docs/director.md) and [docs/mcp.md](docs/mcp.md).
+- **Presets.** Camera moves, lighting, looks, action, edit styles and recipes, one click and one undo each (`V`).
+- **Take checks.** Automatic QC chips, Re-roll and a Follows-your-blocking score on every draft and final.
 - **Headless runner.** `tools/soundstage_sdk.py` renders a saved shot through the Comfy SDK.
 
 ## Try it
@@ -291,7 +379,7 @@ bash ComfyUI/custom_nodes/ComfyUI-Soundstage/tools/install_runpod.sh /path/to/Co
 
 1. Start ComfyUI as usual (`python main.py`) and open it in the browser.
 2. Load a workflow from `example_workflows/` (drag the JSON onto the canvas, or copy it into `ComfyUI/user/default/workflows/` and open it from **Workflows**):
-   - `Soundstage_App_Full.json`: the full App with the five steps. Start here.
+   - `Soundstage_App_Full.json`: the full App with all seven steps. Start here.
    - `Soundstage_Western.json`, `Soundstage_Car_Chase.json`, `Soundstage_In_The_Car.json`, `Soundstage_Three_In_A_Car.json`: the same App with a demo scene already blocked (riders on horses at sunset; a three-shot car chase; four in-car angles). They carry the scene and the cut, not the renders.
    - `Soundstage_App.json`: a leaner App with the ladder only.
 3. Open the workflow in the graph view once, then switch to **App** mode.
@@ -358,7 +446,7 @@ Vendored components and their licenses are listed in [THIRD_PARTY_NOTICES.md](TH
 ## Docs
 
 - [decisions.md](docs/decisions.md): the development log, with every design decision and its reason.
-- Components: [look](docs/look.md), [agent](docs/agent.md), [advisor](docs/advisor.md), [coach](docs/coach.md), [layerpack](docs/layerpack.md), [cut](docs/cut.md), [audio](docs/audio.md), [recast](docs/recast.md), [vcam](docs/vcam.md), [router](docs/router.md), [assets3d](docs/assets3d.md), [interop](docs/interop.md).
+- Components: [director](docs/director.md), [mcp](docs/mcp.md), [quality](docs/quality.md), [look](docs/look.md), [agent](docs/agent.md), [advisor](docs/advisor.md), [coach](docs/coach.md), [layerpack](docs/layerpack.md), [cut](docs/cut.md), [audio](docs/audio.md), [recast](docs/recast.md), [vcam](docs/vcam.md), [router](docs/router.md), [assets3d](docs/assets3d.md), [interop](docs/interop.md).
 
 ## License
 

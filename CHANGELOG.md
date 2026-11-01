@@ -5,6 +5,10 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**23:55 PDT · README and tutorial updated for the resubmission**
+- README: a Highlights section (what only Soundstage does) and a "New since the contest" section with a picture for each: the Director and MCP, Presets, the Timeline, Hollywood quality, self-checking takes, live 3D physics and characters, stunts, the new sets, interop, the phone viewfinder. Stale claims fixed (Final HQ is now Hollywood, the Cut has transitions, seven steps, Blender 5.2.3).
+- [docs/TUTORIAL.md](docs/TUTORIAL.md): step-by-step chapters for each new feature, new keys in the cheat sheet, current render times. New stills and GIFs in docs/media/ (about 9 MB, from the milestone evidence).
+
 **22:51 PDT · QA round 04: Presets get every tab, ⌘Z works from the window, the top bar fits again**
 - Presets now shows all tabs: Camera moves, Lighting, Looks, Action, Edit styles, Recipes and Mine (each tested in the App: apply, then ⌘Z reverts it, no console errors).
 - ⌘Z / ⇧⌘Z right after clicking a card now undoes / redoes the preset (focus was on the card, so the stage never saw the key). No more 404 in the console when you have no saved presets yet.
