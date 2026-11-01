@@ -29,7 +29,7 @@ Then publish with the Artifact tool:
    When one publish would go over 255 files or 64 MB, the build splits the list into `publish_files_1.json`, `publish_files_2.json` and so on. Publish them in order.
 3. Run `python3 tools/tryit/build_tryit.py --mark-published` and commit `tools/tryit/published.json`. The next build then sends only the next changes.
 
-Test it before you publish:
+Test it before you publish (Metal GPU headless: point `CHROME` at a wrapper that adds `--use-angle=metal`, and use a CDP port in 9670-9699):
 
 ```sh
 cd $TMPDIR/soundstage_tryit && python3 -m http.server 8771 --bind 127.0.0.1 &
@@ -45,6 +45,7 @@ node tools/tryit/test_tryit.mjs http://127.0.0.1:8771/local.html /tmp/tryit_shot
 - applies a stunt;
 - switches the physics solver to GPU, which must fall back cleanly without WebGPU;
 - opens Ripple, Pose follow and the DCC kit;
+- opens the Director, Presets, the Timeline, Hollywood quality, the take-check chips and the phone viewfinder, and checks the full-install notes;
 - runs every tour stop;
 - checks the phone width.
 
@@ -68,8 +69,10 @@ It saves a screenshot of each.
 
 - **`scripts/api.js`** replays the renders that each scene's workflow recorded. ④ Frame cycles through the real FLUX 3 Klein variations. ⑤ Motion plays the draft and the final.
 - **`api.js`** also answers the Look compile and the Advisor from saved results.
+- **`api.js`** answers take checks with the server's real results for the replayed takes (`r/canned/takecheck.json` in the media cache, from `share/Milestone16_TakeChecks/detector_results_212_takes.json`). A checked take's URL keeps `?filename=` so the Ladder and Dailies find its chips. There are no Ready chips, because the demo has no models.
+- **`api.js`** stubs `fetch` to a local Ollama (port 11434): the Director's language model gets the same full-install note. The Director's background scene report (`director/state`) gets a quiet answer.
 - **`api.js`** keeps uploads in the tab.
-- **`api.js`** answers every other server route with a toast: "… is available in the full install (ComfyUI with a GPU)". This covers the Director chat, Video to 3D, Ripple and Pose renders, the Layer Pack, world uploads and the vcam. It never throws an error.
+- **`api.js`** answers every other server route with a toast: "… is available in the full install (ComfyUI with a GPU)". This covers the Director's language model, Timeline renders, the phone viewfinder (vcam bridge), Video to 3D, Ripple and Pose renders, the Layer Pack and world uploads. It never throws an error.
 - **`scripts/app.js`** stands in for ComfyUI's graph. It holds the nodes the App reads, using the same ids as `example_workflows/Soundstage_App.json`.
 - **`scripts/glbshim.js`** maps `.glb` to `.glb.b64.txt` and the DCC builder scripts `.py` to `.py.txt`. The host serves web media types only.
 

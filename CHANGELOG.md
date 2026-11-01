@@ -3,6 +3,10 @@
 Soundstage is updated continuously on `main`. Newest first. Times are US Pacific.
 Each entry links to the code; every milestone ships with tests.
 
+## 2026-11-01
+
+**01:02 PDT · Try-it demo refreshed** ([live demo](https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq)): the Director, Presets, the Timeline, Hollywood quality, take checks (the server's real chips) and the phone viewfinder, as six new What's new stops, five with their recordings; the Director's language model, Timeline renders and the vcam bridge say "available in the full install". Code: [tools/tryit/](tools/tryit/).
+
 ## 2026-10-31
 
 **23:55 PDT · README and tutorial updated for the resubmission**
