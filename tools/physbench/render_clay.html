@@ -1,0 +1,63 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>physbench clay</title>
+<style>body{margin:0;background:#111;color:#ccc;font:12px system-ui}#log{padding:8px}</style></head>
+<body><div id="log">rendering...</div>
+<script type="module">
+// Renders benchmark tracks in the Soundstage clay look (stage.mjs: clay override MeshStandardMaterial 0x9a9a9a rough 0.9,
+// hemisphere 0xdfe6ef / ground 0x3d3a34, a shadow-casting sun at the default azimuth 235 / elevation 18, background
+// 0x2b2f36, 40 deg vertical fov) from each scene's camera, and posts the PNGs to render_clay_server.py.
+// URL: render_clay.html?runs=out/ss_after.json,out/bl_default.json
+import * as THREE from "../../web/vendor/three.module.min.mjs";
+const log = (t) => (document.getElementById("log").textContent = t);
+const q = new URLSearchParams(location.search);
+const runs = (q.get("runs") || "out/ss_after.json,out/bl_default.json").split(",");
+const scenes = (await (await fetch("scenes.json")).json()).scenes;
+const sheet = await (await fetch("sheet_frames.json")).json();
+const W = 640, H = 360;
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1); renderer.setSize(W, H);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+const clay = new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.9 });
+let done = 0;
+for (const runPath of runs) {
+  const run = await (await fetch(runPath)).json();
+  for (const sc of scenes) {
+    const R = run.scenes[sc.name];
+    if (!R) continue;
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x2b2f36);
+    scene.overrideMaterial = clay;
+    scene.add(new THREE.HemisphereLight(0xdfe6ef, 0x3d3a34, 0.85));
+    const sun = new THREE.DirectionalLight(0xffe2c4, 2.2);
+    const el = 18 * Math.PI / 180, az = 235 * Math.PI / 180, r = 60;
+    const tgt = new THREE.Vector3(...sc.camera.target);
+    sun.position.set(tgt.x + r * Math.cos(el) * Math.sin(az), r * Math.sin(el), tgt.z + r * Math.cos(el) * Math.cos(az));
+    sun.target.position.copy(tgt);
+    sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+    Object.assign(sun.shadow.camera, { left: -25, right: 25, top: 25, bottom: -25, near: 1, far: 120 });
+    scene.add(sun, sun.target);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), clay);
+    floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+    const meshes = {};
+    for (const b of sc.bodies) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(...b.size), clay);
+      m.castShadow = m.receiveShadow = true; scene.add(m); meshes[b.id] = m;
+    }
+    const cam = new THREE.PerspectiveCamera(sc.camera.fov, W / H, 0.1, 400);
+    cam.position.set(...sc.camera.pos); cam.lookAt(tgt);
+    for (const f of sheet[sc.name]) {
+      for (const [id, m] of Object.entries(meshes)) {
+        const tr = R.tracks[id], p = tr[Math.min(f, tr.length - 1)];
+        m.position.set(p[0], p[1], p[2]); m.quaternion.set(p[3], p[4], p[5], p[6]);
+      }
+      renderer.render(scene, cam);
+      const blob = await new Promise((res) => renderer.domElement.toBlob(res, "image/png"));
+      const name = `${run.label}/${sc.name}_${String(f).padStart(4, "0")}.png`;
+      await fetch(`/save?name=${encodeURIComponent(name)}`, { method: "POST", body: blob });
+      log(`saved ${++done}: ${name}`);
+    }
+  }
+}
+log(`DONE ${done}`);
+</script></body></html>
