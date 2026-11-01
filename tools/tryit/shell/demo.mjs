@@ -181,6 +181,23 @@ const ACTIONS = {
     flash(btn(/DCC kit/i));
   },
   async firstrun() { /* the card is the stage */ },
+  // Director: the panel opens; its planner and language model answer "available in the full install".
+  async director() { P().go("set"); await sleep(300); stageNode.ssDirector?.open(); flash(stageNode.ssDirector?.panel); },
+  async presets() { P().go("set"); await sleep(300); stageNode.ssPresets?.open("camera"); },
+  async timeline() { root().querySelector('[data-tab="cut"]')?.click(); },
+  async hollywood() {
+    P().go("motion"); await sleep(700);
+    const seg = P().m?.qSeg;
+    seg?.querySelector('[data-q="Hollywood"]')?.click();
+    flash(seg);
+  },
+  // Take checks: ⑥ Review on the shot with flagged takes (the chips are the server's real results).
+  async takechecks() {
+    const flagged = (S().toJSON().shots || []).find((s) => s.id === "crane");
+    if (flagged) S().setActiveShot?.(flagged.id);
+    P().go("review");
+  },
+  async viewfinder() { P().go("set"); await sleep(300); stageNode.ssViewfinder?.open(); },
 };
 async function runStop(id) {
   const stop = tour.steps.find((s) => s.id === id);
