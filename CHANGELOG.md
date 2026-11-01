@@ -5,6 +5,11 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-01
 
+**15:09 PST · People run and horses gallop on planted feet (foot-locked gaits) and kick up dust**
+- **Keyed people walk, jog and run on their feet** (`web/stage/gait.mjs`): the path's speed picks the gait and sets cadence and stride; every step is planted on one spot (heel strike, flat, toe-off) and the legs reach it by two-bone IK (mocap.mjs `legIK`, feet on `_supportAt` ground), so a stance foot never slides. Arm swing against the legs, hip and chest counter-rotation, pelvis rise and fall, a head nod, leaning into turns and into acceleration. Starting and stopping are real steps: the stride only stops once both feet are down under the body. Applies to keyed movement in every render, not only live drags; a vault or jump keeps its tuck.
+- **Horses: walk, trot, canter, gallop by speed.** Each leg of the rigged horse is posed from its own moment in the Walk / Gallop clips, so the clips' leg shapes play out true footfalls (four-beat walk, diagonal trot, three-beat canter, transverse gallop); the cadence is set from the clips' own hoof sweep so planted hooves cover exactly the ground the body does, and a small hinge correction pins them. **Riders** sit on the moving back: sit the walk, post the trot, swing with the canter, two-point over the neck at the gallop (leaning from the seat, soaking up the bound).
+- **Dust at every foot and hoof strike:** seeded (same frame, same particles), scaled by speed and by the set's ground (desert dustiest, asphalt barely, interiors none), fading near the camera; Clay and Color only, never Depth or the ID matte.
+- Tests: `tests/js/gait.test.mjs` (gait by speed, planted foot slide < 1 cm/frame for walk, jog, run and a turn, start/stop steps, horse footfalls, deterministic dust).
 **14:40 PST · Car stunts are driven, not hand-keyed: a vehicle-dynamics simulation under the J-turn, handbrake 180 and donut** *(Milestone 13, round 3)*
 - **Why:** the old J-turn scrubbed 13 m/s to nothing in about a second on a wet road. That is about 1.3 g, twice what wet tyres give, and it spun 180° in 0.7 s. It read as a video game.
 - **The car:**

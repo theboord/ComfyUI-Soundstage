@@ -48,6 +48,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 
 | When | Update |
 |---|---|
+| Nov 1, 15:09 PST | **People and horses that really move:** keyed people walk, jog and run with planted feet (no more sliding), arms and hips swinging, leaning into turns; horses walk, trot, canter and gallop with hooves that plant, riders post and ride two-point; feet and hooves kick up dust on sand. |
 | Nov 1, 13:41 PST | **Pitch Mode:** press ● Pitch and talk the scene through; the set builds itself beat by beat (set, time, weather, cast, blocking, camera), a FLUX 3 Klein sketch per beat fills a storyboard filmstrip, Preview motion makes a fast LTX draft, and Lock it turns the beats into shots with the sketches as first frames. |
 | Nov 1, 12:50 PST | **Renders that stay on your blocking:** ⑤ Motion › **Adherence Loose · Balanced · Exact** (default Exact) replaces Motion freedom: a sharp clay guide, the full Layout IC-LoRA and a lighter frame reference keep cars, riders and actors on their clay marks (the walk-and-hug shot 0.91 → 0.99 Follows your blocking); raw values in Advanced (LTX). Color-as-guide tested and not adopted. |
 | Nov 1, 12:35 PST | **Real performances:** record or import an actor with their voice; their body, face (68 landmarks) and voice drive your character through union control plus the lip-sync audio mask. Timing, expressions and lip sync carry over (mouth correlation 0.92, 0-frame lag); or keep the real footage with Ripple. |

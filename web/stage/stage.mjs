@@ -6,6 +6,7 @@ import * as THREE from "../vendor/three.module.min.mjs";
 import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompound, makeGlass } from "./library.mjs";
 import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./humans.mjs";
 import * as Mocap from "./mocap.mjs";
+import * as Gait from "./gait.mjs";
 import { applyRig, RIGS } from "./camrig.mjs";
 import { materialOf, impactParticles, impactFlash, impactShakeAt, SHAKE_PRESETS, jitterPhysics, feelGravity, overcrankKeys } from "./impacts.mjs";
 import { STUNTS, hasHeadingKeys, headingTrack, channelAt, driveAt, isStunt, unwrapDeg, vehicleDynamics, smokeParticles, stuntKeys, stuntParams, stuntRun } from "./stunts.mjs";
@@ -1548,17 +1549,26 @@ export class Stage {
         g.position.y = 0.06 * (a.height_m || 1.6) * Math.abs(Math.sin(gc));
         g.userData.gaitCycle = gc;
       } else {
-        for (const l of g.userData.limbs) l.pivot.rotation.x = moving ? l.amp * Math.sin(cycle + l.phase) : 0;
         const air = this._airborne(a, this.frame);
-        if (air) for (const l of g.userData.limbs) {   // mid-jump: knees tucked, arms up for balance
-          if (l.part === "hip") l.pivot.rotation.x = -0.7;
-          if (l.part === "knee") l.pivot.rotation.x = 1.1;
-          if (l.part === "shoulder") l.pivot.rotation.x = -1.2;
+        // Keyed people walk / jog / run with planted feet (gait.mjs); a jump or vault keeps the tuck below.
+        const gp = rig === "biped" && !air && !a.mocap && g.userData.joints ? this._gaitPlan(a, g) : null;
+        if (gp) {
+          const baseY = this._heightAt(a, this.frame);
+          Gait.applyHuman(g, gp, this.frame, { yaw: g.rotation.y, baseY, support: (x, z) => this._supportAt(x, z, baseY) });
+          if (!gp.speed[Math.min(gp.n - 1, this.frame)] || gp.speed[Math.min(gp.n - 1, this.frame)] < 0.15) this._bodyMotion(g, a, false, 0, 0);
+        } else {
+          Gait.release(g);
+          for (const l of g.userData.limbs) l.pivot.rotation.x = moving ? l.amp * Math.sin(cycle + l.phase) : 0;
+          if (air) for (const l of g.userData.limbs) {   // mid-jump: knees tucked, arms up for balance
+            if (l.part === "hip") l.pivot.rotation.x = -0.7;
+            if (l.part === "knee") l.pivot.rotation.x = 1.1;
+            if (l.part === "shoulder") l.pivot.rotation.x = -1.2;
+          }
+          g.position.y = this._heightAt(a, this.frame) +
+            (moving && !air && rig !== "vehicle" ? 0.014 * (a.height_m || 1.8) * Math.abs(Math.sin(cycle)) : 0);
+          g.userData.gaitCycle = cycle;
+          if (rig === "biped" && g.userData.joints && !air) this._bodyMotion(g, a, moving, speed, cycle);
         }
-        g.position.y = this._heightAt(a, this.frame) +
-          (moving && !air && rig !== "vehicle" ? 0.014 * (a.height_m || 1.8) * Math.abs(Math.sin(cycle)) : 0);
-        g.userData.gaitCycle = cycle;
-        if (rig === "biped" && g.userData.joints && !air) this._bodyMotion(g, a, moving, speed, cycle);
       }
       if (this.water) this._waterPhysics(a, g);
       if (g.userData.flames) this._animateFire(g, a);
@@ -1612,6 +1622,7 @@ export class Stage {
       const h = (a.height_m || 1.8) * (a.scale || 1);
       const hopStart = (a.mount_at || 0) - HOP_FRAMES;
       if (a.mount_at > 0 && this.frame < hopStart) { applyPose(g, "stand", h); continue; } // still on foot
+      Gait.release(g);
       const drop = applyPose(g, a.pose || m.pose, h);
       for (const jn of ["spine", "neck", "head"]) g.userData.joints?.[jn]?.rotation.set(0, 0, 0);   // seated: no walk / idle sway left over
       // The driver of a car holds the wheel (both hands forward and up), so the clay reads as driving.
@@ -1636,6 +1647,30 @@ export class Stage {
       g.position.copy(seatPos);
       g.rotation.order = "YXZ";
       g.rotation.y = hg.rotation.y;
+      // On the rigged horse: sit on its moving back and ride its gait (post the trot, two-point at the gallop).
+      const hgs = host.kind === "horse" && (a.pose || m.pose) === "ride" ? hg.userData.horseGait : null;
+      if (hgs) {
+        const rm = Gait.riderMotion(hgs, h), bk = hgs.back, yw = hg.rotation.y;
+        const fx = Math.sin(yw), fz = Math.cos(yw), lx = Math.cos(yw), lz = -Math.sin(yw);
+        const fwd = bk.dz + 0.05 * h * rm.lean;
+        g.position.x += lx * bk.dx + fx * fwd;
+        g.position.z += lz * bk.dx + fz * fwd;
+        g.position.y += bk.dy * (1 - rm.absorb) + rm.lift;
+        g.rotation.x = rm.lean + rm.pitch + bk.pitch * (1 - 0.5 * rm.absorb);
+        g.rotation.z = hg.rotation.z;
+        // Lean from the seat, not from the feet (the figure's origin hangs below the saddle).
+        const th = g.rotation.x;
+        g.position.y += drop * (1 - Math.cos(th));
+        g.position.x -= fx * drop * Math.sin(th);
+        g.position.z -= fz * drop * Math.sin(th);
+        for (const l of g.userData.limbs || []) {
+          if (l.part === "hip") l.pivot.rotation.x += rm.hip;
+          if (l.part === "knee") l.pivot.rotation.x += rm.knee;
+          if (l.part === "shoulder") l.pivot.rotation.x -= 0.45 * rm.reach;
+          if (l.part === "elbow") l.pivot.rotation.x -= 0.25 * rm.reach;
+        }
+        continue;
+      }
       // Ride the motion: lean into speed, rise and fall with the stride (the host's bounce is in its y already).
       const hs = hg.userData.speed || 0;
       // Only riders lean and post; someone sitting in a vehicle seat stays upright however fast it goes.
@@ -1730,6 +1765,7 @@ export class Stage {
     }
     try { this.setFx?.update?.(this.frame, this); } catch (err) { console.warn("Soundstage set", err); }
     this._impactFxAt(this.frame);
+    this._gaitDustAt(this.frame);
     if (this.selRing) {
       const sel = this.actorMeshes.get(this.selected);
       this.selRing.visible = !!sel;
@@ -2730,13 +2766,64 @@ export class Stage {
       holder.scale.setScalar(k);
       holder.position.set(-k * (bb.min.x + bb.max.x) / 2, -k * bb.min.y, -k * (bb.min.z + HORSE_BODY_Z * (bb.max.z - bb.min.z)));
       g.userData.horseRig = { mixer, actions, holder };
+      g.updateMatrixWorld(true);
+      Gait.rigHorse(g, model, g.userData.horseRig);
       this.setFrame(this.frame);
     }).catch((err) => console.warn("Soundstage: rigged horse failed, keeping the built one", err));
+  }
+
+  /**
+   * The footstep plan of a keyed person or rigged horse (gait.mjs), cached until its keys change. null when it has
+   * no path (parked) or its legs can't be read.
+   */
+  _gaitPlan(a, g, kind = "human") {
+    const keys = this._actorKeys(a);
+    if (keys.length < 2) return null;
+    const last = this._lastFrame(), fps = this.state.shot?.fps || 24, sc = a.scale || 1;
+    const height = (a.height_m || (kind === "horse" ? 1.6 : 1.8)) * (kind === "horse" ? 1 : sc);
+    const sig = JSON.stringify([keys, last, fps, height, sc, a.rotation_deg || 0, kind, a.kind]);
+    this._gaitCache = this._gaitCache || new WeakMap();
+    const c = this._gaitCache.get(a);
+    if (c && c.sig === sig && c.g === g) return c.plan;
+    const rest = kind === "horse" ? Gait.horseFootRest(g.userData.horseRig, g.scale.x) : Gait.humanFootRest(g);
+    if (!rest) return null;
+    if (kind !== "horse") for (const r of rest) { r.x *= g.scale.x; r.z *= g.scale.z; }
+    const pos = [], yaw = [];
+    for (let f = 0; f <= last; f++) { pos.push(this._actorPosAt(a, f)); yaw.push(this._headingAt(a, f)); }
+    const plan = Gait.planGait({ pos, yaw, fps, kind, height, legs: rest, sweep: kind === "horse" ? g.userData.horseRig.gait.sweep : null });
+    plan.id = a.id;
+    this._gaitCache.set(a, { sig, g, plan });
+    return plan;
+  }
+
+  /** Dust kicked up by feet and hooves (gait.mjs), seeded; Clay and Color only (hidden in Depth and the ID matte). */
+  _gaitDustAt(frame) {
+    const env = this.state.environment || {};
+    const gd = Gait.groundDust(env.set, env.weather);
+    const events = [];
+    if (gd.amount > 0 && this._gaitCache) for (const a of this.state.actors) {
+      const c = this._gaitCache.get(a);
+      if (!c || this.actorMeshes.get(a.id) !== c.g) continue;
+      c.plan.strikes ||= Gait.strikeEvents(c.plan, { id: a.id, support: (x, z) => this._supportAt(x, z, 0) });
+      events.push(...c.plan.strikes);
+    }
+    if (!events.length) { if (this.gaitDust) this.gaitDust.object.visible = false; return; }
+    if (!this.gaitDust) this.gaitDust = Gait.buildDustFx(1500);
+    if (this.gaitDust.object.parent !== this.root) this.root.add(this.gaitDust.object);
+    this.gaitDust.object.visible = true;
+    const fps = this.state.shot?.fps || 24;
+    this.gaitDust.set(Gait.dustParticles(events, frame, { fps, seed: this.state.physics?.seed ?? 1, amount: gd.amount, color: gd.color }));
   }
 
   /** Pick Idle / Walk / Gallop by speed; the clip time follows distance so hooves don't skate. */
   _driveHorse(g, a, speed, dist) {
     const R = g.userData.horseRig;
+    const plan = R.gait ? this._gaitPlan(a, g, "horse") : null;
+    if (plan) {   // walk / trot / canter / gallop with planted hooves (gait.mjs)
+      Gait.applyHorse(g, R, plan, this.frame, { yaw: g.rotation.y, baseY: this._heightAt(a, this.frame), support: (x, z) => this._supportAt(x, z, 0) });
+      return;
+    }
+    g.userData.horseGait = null;
     const h = a.height_m || 1.6;
     const fps = this.state.shot?.fps || 24;
     const name = speed < 0.3 ? "Idle" : speed < 3.2 ? "Walk" : "Gallop";
