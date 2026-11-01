@@ -29,7 +29,7 @@ def test_catalog_is_valid_and_complete():
     tabs = [t["id"] for t in cat["tabs"]]
     assert tabs == P.TAB_IDS
     by = {t: [p["id"] for p in cat["presets"] if p["tab"] == t] for t in tabs}
-    assert len(by["camera"]) >= 10 and len(by["light"]) == 8 and len(by["action"]) == 7
+    assert len(by["camera"]) >= 10 and len(by["light"]) == 8 and len(by["action"]) == 8
     assert len(by["edit"]) == 4 and len(by["recipe"]) == 4
     styles = json.loads((ROOT / "web" / "look" / "style_presets.json").read_text())
     assert len(by["look"]) == len(styles)

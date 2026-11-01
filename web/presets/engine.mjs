@@ -15,6 +15,8 @@ export const TIME_KEYS = ["dawn", "golden_am", "midday", "overcast", "magic_hour
 export const GRADE_KEYS = ["warmth", "contrast", "saturation", "grain", "halation", "vignette"];
 export const STUNT_KINDS = ["reverse_jturn", "donut", "handbrake_180"];
 export const PHYSICS_KINDS = ["crate_crash", "drop", "throw"];
+/** Camera shake on impact (Milestone 21): the shot camera jolts with each baked hit. */
+export const SHAKE_KINDS = ["light", "heavy", "earthquake", "off"];
 export const RECIPE_STEPS = ["video_to_3d", "new_angle", "ripple_mode", "whole_frame", "quality_draft", "quality_hollywood",
   "render_all_draft", "render_final"];
 export const TRANSITION_TYPES = ["dissolve", "dip_black", "dip_white", "wipe"];
@@ -94,7 +96,7 @@ export function validateCatalog(cat) {
     } else if (p.tab === "look") {
       if (!a.look) errs.push(`${at}: look`);
     } else if (p.tab === "action") {
-      if (!(STUNT_KINDS.includes(a.stunt) || PHYSICS_KINDS.includes(a.physics) || a.mount)) errs.push(`${at}: no action`);
+      if (!(STUNT_KINDS.includes(a.stunt) || PHYSICS_KINDS.includes(a.physics) || SHAKE_KINDS.includes(a.shake) || a.mount)) errs.push(`${at}: no action`);
     } else if (p.tab === "edit") {
       const e = a.edit;
       if (!e) errs.push(`${at}: edit`);

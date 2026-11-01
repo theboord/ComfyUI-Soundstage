@@ -203,6 +203,7 @@ export class PresetRunner {
     if (a.light) return this._light(p);
     if (a.look) return this._look(p);
     if (a.stunt) return this._stunt(p);
+    if (a.shake) return this._shake(p);
     if (a.physics) return this._physics(p);
     if (a.mount) return this._mount(p);
     if (a.edit) return this._edit(p, opts);
@@ -279,6 +280,17 @@ export class PresetRunner {
     const got = this.stage.applyStunt(v.id, p.apply.stunt);
     if (!got) return { ok: false, said: `The ${nameOf(v).toLowerCase()} can't do a ${p.label}.` };
     return { ok: true, said: `Applied '${p.label}' to the ${nameOf(v).toLowerCase()}: its keys now drive the stunt (drag them to change it).`, whereObj: `the ${nameOf(v).toLowerCase()}` };
+  }
+
+  /** Camera shake on impact for this shot: jolts keyed off the baked hits (simulate first if nothing is baked). */
+  _shake(p) {
+    const st = this.stage, kind = p.apply.shake;
+    if (!st.setImpactShake) return { ok: false, said: "This stage can't shake the camera." };
+    const r = st.setImpactShake(kind);
+    if (!r) return { ok: false, said: `Unknown shake '${kind}'.` };
+    const hits = r.hits;
+    return { ok: true, said: kind === "off" ? "Impact shake off for this shot."
+      : `Impact shake (${kind}) on this shot: the camera jolts a beat after ${hits ? `each of the ${hits} baked hits` : "each hit, once something is simulated"} and settles.` };
   }
 
   _physics(p) {

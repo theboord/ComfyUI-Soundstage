@@ -31,7 +31,7 @@ export function liveKind(p) {
   if (p.tab === "camera" && a.camera) return "camera";
   if (p.tab === "light" && a.light) return "light";
   if (p.tab === "look" && a.look) return "look";
-  if (p.tab === "action" && (a.stunt || a.physics || a.mount)) return "action";
+  if (p.tab === "action" && (a.stunt || a.physics || a.shake || a.mount)) return "action";
   return null;
 }
 export const isLoop = (kind) => kind === "camera" || kind === "action";

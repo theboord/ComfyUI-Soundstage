@@ -7,7 +7,7 @@ import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompo
 import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./humans.mjs";
 import * as Mocap from "./mocap.mjs";
 import { applyRig, RIGS } from "./camrig.mjs";
-import { materialOf, impactParticles, impactFlash, impactShake, jitterPhysics, jitterTilt } from "./impacts.mjs";
+import { materialOf, impactParticles, impactFlash, impactShakeAt, SHAKE_PRESETS, jitterPhysics, jitterTilt } from "./impacts.mjs";
 import { STUNTS, hasHeadingKeys, headingTrack, channelAt, driveAt, isStunt, unwrapDeg, vehicleDynamics, smokeParticles, stuntKeys } from "./stunts.mjs";
 import { PoseGizmo } from "./posegizmo.mjs";
 import { buildSet, buildWater, buildWeather, buildTireSmoke, buildImpactFx } from "./environments.mjs";
@@ -799,6 +799,16 @@ export class Stage {
    * jib arc, handheld shake...). Keys / editing use _cameraAt; display, capture and exports use this.
    */
   _shotCameraAt(frame) {
+    const cam = this._rigCameraAt(frame);
+    // Camera shake on impact (Milestone 21): the shot camera jolts a beat after each baked hit and settles.
+    const shake = this.activeShot?.()?.impact_shake, ev = this.state.physics?.events;
+    if (!shake || shake === "off" || !ev?.length) return cam;
+    const rig = this.cameraInsideVehicle?.(Math.round(frame)) ? "vehicle" : this.activeShot?.()?.rig?.type || "free";
+    return impactShakeAt(cam, Math.round(frame), ev, { preset: shake, rig, fps: this.state.shot?.fps || 24, seed: this.state.physics?.seed ?? 3 });
+  }
+
+  /** The keys through the shot's rig, without impact shake. */
+  _rigCameraAt(frame) {
     const shot = this.activeShot?.();
     const rig = shot?.rig;
     if (!rig?.type || rig.type === "free") return this._cameraAt(frame);
@@ -821,6 +831,16 @@ export class Stage {
     this._rigCache = null;
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
+  }
+
+  /** Camera shake on impact for the active shot: "off" | "light" | "heavy" | "earthquake". Returns the hits it keys off. */
+  setImpactShake(preset) {
+    const shot = this.activeShot?.();
+    if (!shot || !SHAKE_PRESETS[preset]) return null;
+    if (preset === "off") delete shot.impact_shake; else shot.impact_shake = preset;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    return { preset, hits: this.impactEvents().length };
   }
 
   rigInfo() {

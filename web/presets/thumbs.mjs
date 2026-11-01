@@ -277,6 +277,16 @@ function actionThumb(c, p, t, w, h) {
     }
     c.fillStyle = "#c4473f"; c.fillRect(carX - S * 1.4, gy - S * 0.9, S * 2.8, S * 0.6); c.fillRect(carX - S * 0.7, gy - S * 1.35, S * 1.3, S * 0.5);
     c.fillStyle = "#111"; c.beginPath(); c.arc(carX - S * 0.8, gy - S * 0.25, S * 0.25, 0, 7); c.arc(carX + S * 0.8, gy - S * 0.25, S * 0.25, 0, 7); c.fill();
+  } else if (a.shake) {
+    // A crate lands; the frame (a camera's view) jolts after it and settles.
+    const tt = u * 2.2, land = 0.55, age = tt - land - 0.1;
+    const jolt = age > 0 ? Math.exp(-age / 0.22) * Math.sin(age * 2 * Math.PI * 9) * S * 0.18 : 0;
+    c.save(); c.translate(jolt * 0.6, jolt);
+    const y = tt < land ? gy - 2.2 * S * (1 - (tt / land) ** 2) : gy;
+    crate(w / 2, y, S * 0.9);
+    if (age > 0 && age < 1.2) { c.fillStyle = `rgba(200,190,170,${0.35 * (1 - age / 1.2)})`; c.beginPath(); c.ellipse(w / 2, gy - S * 0.15, S * (0.8 + age * 1.6), S * (0.25 + age * 0.4), 0, 0, 7); c.fill(); }
+    c.restore();
+    c.strokeStyle = "rgba(242,255,89,.55)"; c.lineWidth = 1.5; c.strokeRect(6 + jolt * 0.6, 6 + jolt, w - 12, h - 12);
   } else if (a.mount) {
     const hx = w * 0.62;
     c.fillStyle = "#8a6a4e"; c.fillRect(hx - S * 1.1, gy - S * 1.45, S * 2.2, S * 0.75);   // a horse body
