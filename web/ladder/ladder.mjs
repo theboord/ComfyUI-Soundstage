@@ -271,6 +271,10 @@ export class LadderViewer {
   }
 
   draw() {
+    // Hidden (the ladder view is not open): every live layer here is two full stage re-renders, so a scene switch
+    // drew the hidden ladder four times over. Showing the view draws it (setFrame / draw on show).
+    if (this.canvas.isConnected && !this.canvas.getClientRects().length) { this.stale = true; return; }
+    this.stale = false;
     const [cw, ch] = this._size();
     if (this.canvas.width !== cw || this.canvas.height !== ch) { this.canvas.width = cw; this.canvas.height = ch; }
     const { width: W, height: H } = this.canvas;
