@@ -36,7 +36,7 @@ button.ss-tc-chip{cursor:pointer}button.ss-tc-chip:hover{background:var(--ss-hov
 .ss-tc-row{display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle}
 .ss-tc-row .ss-tc-chip{padding:1px 6px}
 .ss-pipe button[data-step]{position:relative}
-.ss-tc-ready{position:absolute;top:4px;right:5px;width:8px;height:8px;border-radius:50%;padding:0;font-size:0;line-height:0;overflow:hidden;
+.ss-tc-ready{position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;padding:0;font-size:0;line-height:0;overflow:hidden;
   background:currentColor;box-shadow:0 0 0 2px var(--ss-bg,#211927);color:var(--ss-muted,rgba(240,239,237,.68));cursor:help}
 .ss-tc-ready[data-tone=ok]{color:var(--ss-success,#7ee2a8)}
 .ss-tc-ready[data-tone=bad]{color:var(--ss-danger,#ff7a7a);cursor:pointer;width:auto;height:auto;font-size:10px;line-height:1;padding:2px 5px;border-radius:999px;background:rgba(255,122,122,.18);top:2px}
