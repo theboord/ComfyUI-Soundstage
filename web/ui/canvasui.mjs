@@ -393,7 +393,7 @@ const CSS = `
 .ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-pipe { flex:0 1 auto; min-width:0; display:flex; gap:2px !important; margin:0 !important; flex-wrap:nowrap; }
 .ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button { flex:0 1 auto !important; min-width:0 !important; flex-direction:row !important; align-items:center !important;
   gap:6px !important; padding:3px 11px 3px 4px !important; border-radius:999px !important; border:1px solid transparent !important; background:transparent !important;
-  white-space:nowrap; overflow:hidden; min-height:0; }
+  white-space:nowrap; min-height:0; }   /* no overflow:hidden: the name (.t) clips itself, and the Ready dot sits on the corner */
 .ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button:hover { background:rgba(255,255,255,.05) !important; }
 .ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button .n { width:21px; height:21px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center;
   font-size:11px !important; font-weight:700; letter-spacing:0 !important; text-transform:none; background:rgba(255,255,255,.08); color:var(--ss-muted); flex:none; gap:0 !important; }

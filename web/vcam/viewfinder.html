@@ -133,7 +133,15 @@
   #rotate { display: none; z-index: 9; }
   body.portrait #rotate.show { display: flex; }
   #rotate svg { width: 64px; height: 64px; stroke: var(--accent); fill: none; stroke-width: 1.6; }
-  #rotate button { margin-top: 6px; color: var(--dim); text-decoration: underline; }
+  #rotate button { margin-top: 6px; color: var(--dim); text-decoration: underline; min-height: 44px; padding: 0 16px; }
+  /* "Use it upright": the landscape rows don't fit a narrow screen. The top bar wraps under itself (the left rail moves
+     down to clear it) and the lenses / iris / focus row wraps above the move stick, so every control stays on screen. */
+  body.portrait #top { right: calc(8px + var(--safe-r)); height: auto; flex-wrap: wrap; row-gap: 6px; }
+  body.portrait #tc { margin: 0 !important; }
+  body.portrait #left { top: calc(84px + var(--safe-t)); }
+  body.portrait #right { top: calc(84px + var(--safe-t)); bottom: calc(176px + var(--safe-b)); }
+  body.portrait #bottom { left: calc(8px + var(--safe-l)); right: calc(8px + var(--safe-r)); bottom: calc(118px + var(--safe-b)); flex-wrap: wrap; row-gap: 6px; }
+  body.portrait #dial { bottom: calc(220px + var(--safe-b)); width: calc(100vw - 16px); min-width: 0; }
   body.started #splash { display: none; }
   body:not(.started) #ui { visibility: hidden; }
   body.rec #left, body.rec #move span { opacity: .55; }
