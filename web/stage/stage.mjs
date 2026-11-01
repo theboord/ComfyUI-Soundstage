@@ -21,7 +21,7 @@ import { PLYLoader } from "../vendor/addons/PLYLoader.mjs";
 import { STLLoader } from "../vendor/addons/STLLoader.mjs";
 import * as SkeletonUtils from "../vendor/addons/SkeletonUtils.mjs";
 import { TransformControls } from "../vendor/addons/TransformControls.mjs";
-import { simulate, bakeTrack, physicsOf, samplePos, sampleQuat, checkTracks } from "./physics.mjs";
+import { simulate, bakeTrack, physicsOf, samplePos, sampleQuat, checkTracks, qmul as qmulArr } from "./physics.mjs";
 import { LiveEdit } from "./live.mjs";
 import { raycastShapes } from "./physics_avbd.mjs";
 import { Highlighter } from "./outline.mjs";
@@ -546,7 +546,14 @@ export class Stage {
     for (const a of dynamic) {
       const g = this.actorMeshes.get(a.id), box = g && this._localBox(g);
       if (!box) continue;
-      const p = physicsOf(a), keys = this._actorKeys(a);
+      // Imperfection (Milestone 21, on unless scene.physics.imperfect === false): each body a seeded ±15% mass,
+      // ±12% grip, ±20% bounce, and a dropped one leaves the hand a degree or two off level, so no two hits match.
+      const imperfect = this.state.physics?.imperfect !== false;
+      const p = imperfect ? jitterPhysics(physicsOf(a), a.id) : physicsOf(a), keys = this._actorKeys(a);
+      if (imperfect && physicsOf(a).lift > 0.05) {
+        const tq = jitterTilt(a.id);
+        poses.set(a.id, poses.get(a.id).map((ps) => ({ pos: ps.pos, quat: qmulArr(tq, ps.quat) })));
+      }
       const moves = keys.length > 1 && keys.some((k) => Math.hypot(k.position[0] - keys[0].position[0], k.position[2] - keys[0].position[2]) > 0.01);
       const sphere = a.kind === "sphere";
       specs.push({ id: a.id, shape: sphere ? "sphere" : "box", half: box.half, center: box.center, radius: sphere ? Math.min(...box.half) : 0,
@@ -623,6 +630,23 @@ export class Stage {
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
     return this.impactFxInfo();
+  }
+
+  /** Scene-wide physics feel (Milestone 21): {imperfect (on unless false), overcrank (1 | 1.5 | 2 | 3), weight ("real" | "bigger")}. */
+  physicsFeel() {
+    const p = this.state.physics || {};
+    return { imperfect: p.imperfect !== false, overcrank: [1.5, 2, 3].includes(+p.overcrank) ? +p.overcrank : 1, weight: p.weight === "bigger" ? "bigger" : "real" };
+  }
+
+  /** Change the physics feel (applies at the next Simulate & bake). */
+  setPhysicsFeel(patch = {}) {
+    const cur = this.physicsFeel(), next = { ...(this.state.physics || {}) };
+    if ("imperfect" in patch) next.imperfect = !!patch.imperfect;
+    if ("overcrank" in patch) next.overcrank = [1.5, 2, 3].includes(+patch.overcrank) ? +patch.overcrank : 1;
+    if ("weight" in patch) next.weight = patch.weight === "bigger" ? "bigger" : "real";
+    this.state.physics = next;
+    this.onChange(this.toJSON());
+    return { ...cur, ...this.physicsFeel() };
   }
 
   /** Dust, debris and sparks off the baked hits at a frame, and the flash of a hard metal hit (Milestone 21). */
