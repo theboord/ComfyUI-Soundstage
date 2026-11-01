@@ -6,6 +6,7 @@ import { icon } from "../ui/icons.mjs";
 import { setTouchupStill } from "../touchup/touchup.mjs";
 import { Mover, hudPanel, hudPop, cvEl, clipText } from "../ui/canvasui.mjs";
 import { RippleControls } from "../motion/ripple.mjs";
+import { LtxAdvanced } from "../motion/ltxadvanced.mjs";
 import { castPool, shotSelection, pickRefs, refLines, refLabel, shotKind, refViewParams, REF_LIMIT } from "../cast/shotcast.mjs";
 import { downloadDCCKit } from "../stage/interop/exportdcc.mjs";
 
@@ -976,13 +977,12 @@ export class Pipeline {
       m.h3Refs = h("div", { class: "row", style: "flex-wrap:wrap;gap:6px;margin-top:4px" }),
       h("label", { class: "row", style: "margin-top:4px" }, "Add images",
         m.h3RefIn = h("input", { type: "file", accept: "image/*", multiple: "", on: { change: (e) => this._addRefs(e.target.files) } })));
-    m.quality = "Draft";   // Draft = quick look (8+3, the default while building), Final = clean motion and detail (12+6), Final HQ = hero shots (18+12)
-    m.qSeg = h("span", { class: "seg row" }, ...["Draft", "Final", "Final HQ"].map((q) => h("button", { type: "button", "aria-pressed": String(q === "Draft"),
-      title: { Draft: "8 + 3 steps: a quick look, faces readable", Final: "12 + 6 steps: clean motion and detail (recommended)", "Final HQ": "18 + 12 steps: hero shots, about twice as long" }[q],
-      on: { click: (e) => { m.quality = q; for (const b of m.qSeg.children) b.setAttribute("aria-pressed", String(b === e.currentTarget)); this._applyVideo(); this._motionNote?.(); } } }, q)));
+    // Quality: Draft · Final · Hollywood presets, saved per shot, plus the Advanced (LTX) pop-over (web/motion/ltxadvanced.mjs).
+    this.ltx = new LtxAdvanced(this);
+    m.qSeg = this.ltx.seg;
     m.cfg = h("input", { type: "number", min: "1", max: "10", step: "0.1", style: "width:90px",
-      on: { change: () => { const v = Math.max(1, +m.cfg.value || 1); this.set(5516, "cfg", v); this.set(9034, "cfg", v); this._motionNote(); } } });
-    m.sampler = h("select", { on: { change: () => { this.set(5516, "sampler_name", m.sampler.value); this.set(9034, "sampler_name", m.sampler.value); } } },
+      on: { change: () => { this.ltx.patch({ cfg: Math.max(1, +m.cfg.value || 1) }); this._motionNote(); } } });
+    m.sampler = h("select", { on: { change: () => this.ltx.patch({ sampler: m.sampler.value }) } },
       ...["euler_ancestral", "euler", "res_multistep", "dpmpp_2m", "lcm"].map((x) => new Option(x, x)));
     m.sampNote = h("div", { class: "status" });
     m.neg = h("textarea", { placeholder: "Negative prompt for the video (used when CFG is above 1)", style: "min-height:40px",
@@ -1031,7 +1031,8 @@ export class Pipeline {
           h("label", { class: "f" }, "Video model", m.engine),
           m.h3Box,
           h("label", { class: "f" }, h("span", { class: "row" }, "Motion freedom", m.freeOut), m.freedom),
-          h("div", { class: "row" }, h("span", { class: "status" }, "Quality"), m.qSeg),
+          h("div", { class: "row" }, h("span", { class: "status" }, "Quality"), m.qSeg, this.ltx.btn),
+          this.ltx.panel,
           h("details", {}, h("summary", { class: "status", style: "cursor:pointer" }, "Advanced: steps, CFG, sampler"),
             h("div", { class: "row" }, h("label", { class: "row status" }, "CFG", m.cfg), h("label", { class: "row status" }, "Sampler", m.sampler)),
             h("label", { class: "f" }, "Negative prompt", m.neg),
@@ -1054,9 +1055,9 @@ export class Pipeline {
 
   _motionNote() {
     const m = this.m;
-    const steps = m.quality === "Draft" ? "8 + 3" : "18 + 12";
-    const cfg = +m.cfg.value || 1;
-    m.sampNote.textContent = `${m.quality}: ${steps} steps (render + upscale pass), CFG ${cfg}. LTX-2.5 here is the distilled model: ` +
+    const s = this.ltx.settings(), cfg = s.cfg;
+    const steps = s.two_stage ? `${s.steps_1} + ${s.steps_2}` : `${s.steps_1}`;
+    m.sampNote.textContent = `${s.preset}: ${steps} steps (${s.two_stage ? "render + upscale pass" : "one pass"}), CFG ${cfg}. LTX-2.5 here is the distilled model: ` +
       "CFG 1 is its tuned setting" + (cfg > 1 ? "; above 1 doubles render time and can over-sharpen." : ". Quality sets the steps.");
   }
 
@@ -1081,8 +1082,9 @@ export class Pipeline {
     this._showEngine();
     this._drawRefs();
     this._drawShotCast();
-    m.cfg.value = String(this.w(5516, "cfg")?.value ?? 1);
-    m.sampler.value = this.w(5516, "sampler_name")?.value || "euler_ancestral";
+    this.ltx.refresh();
+    m.cfg.value = String(this.ltx.settings().cfg);
+    m.sampler.value = this.ltx.settings().sampler;
     m.neg.value = this.w(5509, "value")?.value || "";
     this._motionNote();
     const fr = this.w(9096, "motion_freedom")?.value;
@@ -1121,7 +1123,7 @@ export class Pipeline {
     this._showEngine();
     this._drawShotCast();
     this.set(9096, "motion_freedom", +m.freedom.value);
-    this.set(9096, "quality", m.quality);
+    this.ltx.apply();
   }
 
   /** This shot's H3 reference images: thumbnails with a remove button. */
@@ -1336,6 +1338,7 @@ export class Pipeline {
 
   /** Point the still model, seed and touch-up switch at this shot's chosen frame, so its video starts from it. */
   _applyShot(sid) {
+    this.ltx?.apply(sid);   // this shot's quality preset and Advanced (LTX) settings
     const c = this.chosen[sid];
     // A frame painted before the prepared start image (softened clay heads) re-renders from the plain colour pass,
     // so the video starts from exactly the frame that was picked.
@@ -1786,6 +1789,13 @@ export class Pipeline {
     bottom.append(film, bar);
     mv.move(m.qSeg.parentElement, bar);
     mv.addClass(m.qSeg.parentElement, "ss-cltight");
+    {   // Advanced (LTX) opens as a pop-over beside the panel, like Sound & music.
+      const ap = hudPop({ title: "Advanced (LTX)", icon: icon("sliders-horizontal", 13) });
+      this.ltx.usePop(ap, mv);
+      wrap.append(ap.el);
+      this._cvBuilt.push(ap.el);
+      this._pops.push(ap);
+    }
     bar.append(cvEl("span", "ss-cldiv"));
     mv.move(m.draftBtn.parentElement, bar);
     mv.move(m.allDraft.parentElement, bar);

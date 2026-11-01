@@ -2194,6 +2194,9 @@ function createStageWidget(node, inputName) {
     castItems: () => { try { return castPanel?.items() || []; } catch { return []; } },
     sceneLabel: () => { try { const sc = sceneById(liveKey); return sc ? `Sc ${sc.number || sc.index + 1}` : null; } catch { return null; } },
     loadShotCast: () => node.properties?.ss_shot_cast || {},
+    // ⑤ Motion's per-shot quality preset + Advanced (LTX) settings (web/motion/ltxadvanced.mjs).
+    loadLtx: () => node.properties?.ss_ltx || {},
+    saveLtx: (v) => { node.properties = node.properties || {}; node.properties.ss_ltx = v; nudgeTracker(); },
     saveShotCast: (v) => { node.properties = node.properties || {}; node.properties.ss_shot_cast = v; nudgeTracker(); },
     editRef: (it, opts) => editRefInPaint(it, opts),
     setCastRef: (it, r) => setRefFor(it, r),

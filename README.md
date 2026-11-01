@@ -37,6 +37,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 
 | When | Update |
 |---|---|
+| Oct 31, 20:35 PDT | **Hollywood-grade finals:** Quality presets Draft · Final · **Hollywood** (2624×1408, sharper, more coherent motion) saved per shot, Final by default (finals had been rendering at Draft), and an **Advanced (LTX)** pop-over with the normal LTX controls plus a ProRes 422 HQ master. |
 | Oct 31, 19:55 PDT | **The Director:** talk to the set (type, or hold `` ` `` to speak) and it plans, applies and explains every change, undoable; local Qwen3.5 4B, offline Whisper. **MCP:** Claude Desktop / Code drives the App with 36 tools, propose then apply. |
 | Oct 31, 19:50 PDT | **Takes that check themselves:** after every draft or final, CPU checks flag black frames, freezes, jumps, smear, face drift and cars facing the wrong way, as chips on the Ladder and in Dailies, with a Re-roll that asks first. Plus a **Follows your blocking %** score, **Ready / Needs X** on every step, **$0 · about N min on your GPU** on Run, and the recipe inside every MP4 (drop it back to restore the shot). |
 | Oct 31, 15:49 PDT | **The pro look:** one design system (type scale, spacing, legible text), yellow only for each step's main action, a **?** keyboard-shortcut sheet, a calmer first screen; Cast fits on one screen, Frame's Style and Camera open as searchable pop-overs, no more empty black players. |
