@@ -6,9 +6,13 @@
 // stay put and a fast car can't tunnel through a crate. Contacts come from probe points (corners, edge midpoints and
 // face centres of each box) tested against the floor and against every other body's box.
 //
-// Pure functions, no three.js and no randomness: the same scene always bakes the same keys. The stage feeds it
+// Pure functions, no three.js and no randomness: the same scene always bakes the same keys. The bake also logs the hits
+// (Milestone 21: {frame, t, pos, normal, impulse, speed, a, b, mat_a, mat_b}, see impacts.mjs), which drive the impact
+// dust, the camera shake, the prompt beats and the A2 impact sounds. The stage feeds it
 // poses (from its keyed motion) and writes the result back as keys, so the clay render, the previz video and the LTX
 // layout guide never run a simulation themselves.
+
+import { mergeEvents, MIN_IMPACT_SPEED } from "./impacts.mjs";
 
 /** What a new object starts with. mode: "dynamic" (falls, tumbles, gets knocked), "static" (collides on its keyed
  *  motion: set dressing, and people and vehicles pushing props; the default), "off" (ignored). mass kg; bounce 0..1 (restitution); friction 0..1.5; lift m (drop height at the start). */
@@ -98,7 +102,7 @@ function makeBody(spec, index) {
     poses: spec.poses || [], release: Math.max(0, Math.round(spec.release || 0)), probes,
     bound: shape === "sphere" ? r : len(half),
     x: [0, 0, 0], q: [0, 0, 0, 1], v: [0, 0, 0], w: [0, 0, 0], xp: [0, 0, 0], qp: [0, 0, 0, 1], vp: [0, 0, 0], wp: [0, 0, 0],
-    free: false, asleep: false, still: 0,
+    free: false, asleep: false, still: 0, material: spec.material || null,
   };
   return b;
 }
@@ -327,8 +331,9 @@ function relVel(c, useSaved) {
 // ---------- the simulation ----------
 /**
  * Run the simulation over frames 0..frames-1 and return { tracks: {id: [{pos, quat}] per frame}, settled: {id: frame
- * or null}, stats }. bodies: specs (see makeBody); all poses arrays must have `frames` entries.
- * opts: { fps = 24, substeps = 20, gravity = 9.81, floor = true }
+ * or null}, events: [impact events, see impacts.mjs mergeEvents], stats }. bodies: specs (see makeBody, plus an
+ * optional material); all poses arrays must have `frames` entries.
+ * opts: { fps = 24, substeps = 20, gravity = 9.81, floor = true, events = true, minImpactSpeed, groundMaterial }
  */
 export function simulate(specs, frames, opts = {}) {
   const fps = opts.fps || 24, nSub = Math.max(4, Math.min(64, opts.substeps || 20));
@@ -337,6 +342,7 @@ export function simulate(specs, frames, opts = {}) {
   const dyn = bodies.filter((b) => b.dynamic);
   const tracks = {}, settled = {};
   let contactsSolved = 0;
+  const logHits = opts.events !== false, minHit = opts.minImpactSpeed ?? MIN_IMPACT_SPEED, groundMat = opts.groundMaterial || "ground", rawHits = [];
   // Frame 0: every body where its keys put it.
   for (const b of bodies) {
     const p = poseAt(b, 0);
@@ -404,6 +410,17 @@ export function simulate(specs, frames, opts = {}) {
       }
       // Restitution needs the approach speed from before this substep.
       for (const c of C) { measure(c); c.vnPrev = dot(c.n, relVel(c, true)); c.lam = 0; }
+      // Impact events (Milestone 21): a touching contact closing faster than MIN_IMPACT_SPEED is a hit. Its impulse is
+      // the reduced mass times the speed change the bounce makes; mergeEvents() folds a hit's many probes into one.
+      if (logHits) for (const c of C) {
+        const sp = -c.vnPrev;
+        if (sp < minHit || c.d < -0.02) continue;
+        const iA = movable(c.a) ? c.a.invM : 0, iB = movable(c.b) ? c.b.invM : 0;
+        if (iA + iB <= 0) continue;
+        const e = Math.max(c.a.bounce || 0, c.b.bounce || 0);
+        rawHits.push({ frame: Math.round(f + (s + 1) / nSub), t: (f + (s + 1) / nSub) / fps, pos: [...c.pA], normal: [...c.n],
+          impulse: (sp * (1 + e)) / (iA + iB), speed: sp, a: c.a.id, b: c.b.id, mat_a: c.a.material || "wood", mat_b: c.b.material || (c.b === GROUND ? groundMat : "concrete") });
+      }
       // Position solve: a couple of passes per substep, so a car shoving one crate into the next can't squeeze them
       // through each other (the substeps do the rest of the converging).
       for (let it = 0; it < iters; it++) for (const c of C) {
@@ -488,7 +505,8 @@ export function simulate(specs, frames, opts = {}) {
     }
   }
   for (const b of dyn) if (b.asleep && settled[b.id] == null) settled[b.id] = frames - 1;
-  return { tracks, settled, stats: { bodies: bodies.length, dynamic: dyn.length, substeps: nSub, contacts: contactsSolved } };
+  const events = logHits ? mergeEvents(rawHits) : [];
+  return { tracks, settled, events, stats: { bodies: bodies.length, dynamic: dyn.length, substeps: nSub, contacts: contactsSolved, impacts: events.length } };
 }
 
 const GROUND = { id: "__ground", shape: "plane", half: [1e6, 0, 1e6], x: [0, 0, 0], q: [0, 0, 0, 1], v: [0, 0, 0], w: [0, 0, 0],

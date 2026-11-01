@@ -23,6 +23,9 @@
 // A backend module exports { name, supported() -> bool, createWorld(opts) }.
 
 import { createXpbdWorld } from "./physics.mjs";
+// Impact events for any backend (Milestone 21): the bake logs them itself; a live world (or the AVBD backend) can derive
+// them from its tracks: impactEvents(tracks, {id: {mass, material}}, {fps}).
+export { eventsFromTracks as impactEvents, materialOf } from "./impacts.mjs";
 
 export const xpbd = { name: "xpbd", supported: () => true, createWorld: (opts = {}) => createXpbdWorld(opts) };
 
