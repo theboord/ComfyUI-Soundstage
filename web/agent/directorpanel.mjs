@@ -85,6 +85,52 @@ const h = (tag, attrs = {}, ...kids) => {
 const stop = (e) => e.stopPropagation();
 const editable = (t) => t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || "") || t.isContentEditable);
 
+// ---------------------------------------------------------------- docking geometry (pure: tested in tests/js/director_dock.test.mjs)
+/** The floating things the chat must never cover: the canvas panels, pop-overs, the top view and the bottom playback row. */
+export const DIR_OTHERS = ".ss-hud, .ss-hudp, .ss-clpanel, .ss-cv-panel, .ss-phys, .ss-hudpop, .ss-cl-railbox, .ss-pre, .ss-top, .ss-bottom, .ss-vi-cta, [role=dialog]";
+export const DIR_W = 400, DIR_MIN = 300, DIR_GAP = 8, DIR_TOP = 58, DIR_MIN_H = 220;
+const hOver = (a, b) => a.left < b.right - 1 && a.right > b.left + 1;
+/**
+ * Where the chat goes, in page pixels: {left, top, right, bottom, take: [elements to hide]}, or null (no room: CSS default).
+ * rr is the root's rect; obstacles are [{el, r}] of everything it must not cover. Bars (short things: the playback row,
+ * a top HUD) only limit it above and below; the rest (side panels) split the width into bands. It takes the rightmost
+ * band at least DIR_MIN wide; failing that, the band Properties (.ss-insp) leaves when hidden.
+ */
+export function dockSlot(rr, obstacles, { isProps = (el) => !!el?.matches?.(".ss-insp") } = {}) {
+  const tall = (o) => o.r.height >= rr.height * 0.3;
+  const sides = obstacles.filter(tall), bars = obstacles.filter((o) => !tall(o));
+  const top0 = rr.top + DIR_TOP;
+  const tryWith = (list) => {
+    // Free x-intervals across the side panels.
+    const spans = list.map((o) => [o.r.left, o.r.right]).sort((a, b) => a[0] - b[0]);
+    const free = [];
+    let x = rr.left;
+    for (const [a, b] of spans) { if (a > x) free.push([x, a]); x = Math.max(x, b); }
+    if (rr.right > x) free.push([x, rr.right]);
+    for (let i = free.length - 1; i >= 0; i--) {
+      const [L, R] = free[i];
+      const room = R - L - 2 * DIR_GAP;
+      if (room < DIR_MIN) continue;
+      const w = Math.min(DIR_W, room);
+      const col = { left: R - DIR_GAP - w, right: R - DIR_GAP };
+      let top = top0, bottom = rr.bottom - DIR_GAP;
+      for (const o of bars) {
+        if (!hOver(col, o.r)) continue;
+        const cy = (o.r.top + o.r.bottom) / 2;
+        if (cy < rr.top + rr.height / 2) top = Math.max(top, o.r.bottom + DIR_GAP); else bottom = Math.min(bottom, o.r.top - DIR_GAP);
+      }
+      if (bottom - top >= DIR_MIN_H) return { ...col, top, bottom };
+    }
+    return null;
+  };
+  const got = tryWith(sides);
+  if (got) return { ...got, take: [] };
+  const props = sides.filter((o) => isProps(o.el));
+  if (!props.length) return null;
+  const got2 = tryWith(sides.filter((o) => !props.includes(o)));
+  return got2 ? { ...got2, take: props.map((o) => o.el) } : null;
+}
+
 export function mountDirector({ root, topBar = null, before = null, api, stage, host = {}, isActive = () => true }) {
   if (!document.getElementById("ss-dir-css")) document.head.append(h("style", { id: "ss-dir-css" }, CSS));
   if (getComputedStyle(root).position === "static") root.style.position = "relative";
@@ -357,14 +403,49 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   window.addEventListener("keydown", onKey, true);
   window.addEventListener("keyup", onKeyUp, true);
 
+  // ---------------------------------------------------------------- docking
+  // Like the Presets window (web/ui/presets.mjs), the chat never covers another panel or the stage's controls. It sits
+  // at the right of the free band between the side panels (the tool rail, Look, Properties...), above whatever bar runs
+  // under it (the playback row: Play, Fit, Hide top view). When no band is wide enough it takes the Properties slot
+  // while it's open (Properties hides, and is back when the chat closes).
+  const dockState = { took: [], timer: 0 };
+  function undock() { for (const el of dockState.took) el.style.visibility = el.dataset.ssPreVis || ""; dockState.took = []; }
+  function dock() {
+    if (panel.hidden) return null;
+    const rr = root.getBoundingClientRect();
+    if (!rr.width || !rr.height) return null;
+    undock();   // weigh Properties again (same task: no frame shows it), so it comes back once there's room beside it
+    const obstacles = [...root.querySelectorAll(DIR_OTHERS)].filter((el) => {
+      if (el === panel || panel.contains(el) || el.contains(panel) || !el.getClientRects().length) return false;
+      const cs = getComputedStyle(el);
+      if ((cs.position !== "absolute" && cs.position !== "fixed") || cs.visibility === "hidden" || cs.display === "none") return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 8 && r.height > 8 && r.width < rr.width * 0.9;
+    }).map((el) => ({ el, r: el.getBoundingClientRect() }));
+    const r = dockSlot(rr, obstacles);
+    if (!r) { Object.assign(panel.style, { left: "", right: "", top: "", bottom: "", width: "", maxHeight: "" }); return null; }
+    for (const el of r.take) { el.dataset.ssPreVis = el.style.visibility || ""; el.style.visibility = "hidden"; dockState.took.push(el); }
+    Object.assign(panel.style, { left: "auto", top: "auto", right: Math.round(rr.right - r.right) + "px", bottom: Math.round(rr.bottom - r.bottom) + "px",
+      width: Math.round(r.right - r.left) + "px", maxHeight: Math.round(r.bottom - r.top) + "px" });
+    return { left: Math.round(r.left - rr.left), top: Math.round(r.top - rr.top), right: Math.round(r.right - rr.left), bottom: Math.round(r.bottom - rr.top), took: dockState.took.length };
+  }
+  const onResize = () => { if (!panel.hidden) { undock(); dock(); } };
+  window.addEventListener("resize", onResize);
+
   // ---------------------------------------------------------------- open / close
   function open() {
     if (!panel.hidden) return;
     panel.hidden = false;
     button.setAttribute("aria-pressed", "true");
     if (!log.childElementCount) { greet(); fillBackends(); }
+    dock();
+    clearInterval(dockState.timer);
+    dockState.timer = setInterval(() => { if (!root.isConnected) return; dock(); }, 500);   // a panel opened, collapsed or resized under it
   }
-  function close() { panel.hidden = true; button.setAttribute("aria-pressed", "false"); if (listening) stopTalk(); }
+  function close() {
+    panel.hidden = true; button.setAttribute("aria-pressed", "false"); if (listening) stopTalk();
+    clearInterval(dockState.timer); dockState.timer = 0; undock();
+  }
   function toggle() { if (panel.hidden) { open(); input.focus(); } else close(); }
 
   // ---------------------------------------------------------------- MCP bridge
@@ -405,12 +486,13 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   api.addEventListener?.("soundstage.director", onRemote);
 
   const destroy = () => {
-    clearInterval(timer);
+    clearInterval(timer); clearInterval(dockState.timer); undock();
+    window.removeEventListener("resize", onResize);
     window.removeEventListener("keydown", onKey, true);
     window.removeEventListener("keyup", onKeyUp, true);
     api.removeEventListener?.("soundstage.director", onRemote);
     panel.remove(); button.remove();
   };
   return { director, panel, button, open, close, toggle, send, apply: () => applyPending(pending), discard: () => discard(pending),
-    get pending() { return pending?.plan || null; }, startTalk, stopTalk, destroy, transcribe };
+    get pending() { return pending?.plan || null; }, startTalk, dock, isOpen: () => !panel.hidden, stopTalk, destroy, transcribe };
 }
