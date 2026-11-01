@@ -1203,7 +1203,7 @@ export class Stage {
     const ts = g.userData.tireSmoke;
     if (!dyn || !dyn.smoke.some((s) => s.amount > 0.01)) { if (ts) ts.object.visible = false; return; }
     if (!ts) {
-      g.userData.tireSmoke = buildTireSmoke(1200);
+      g.userData.tireSmoke = buildTireSmoke(2400);
       g.add(g.userData.tireSmoke.object);
     }
     const sm = g.userData.tireSmoke;
@@ -1216,7 +1216,7 @@ export class Stage {
       ? rig.flatMap((w) => (Math.abs(w.position.x) < 0.25 * track ? [track, -track] : [w.position.x]).map((x) => ({ x, z: w.position.z, front: w.position.z > 0 })))
       : [[0.78, 1.3], [-0.78, 1.3], [0.78, -1.3], [-0.78, -1.3]].map(([x, z]) => ({ x: x * h, z: z * h, front: z > 0 }));
     const seed = [...String(a.id)].reduce((n, ch) => n + ch.charCodeAt(0), 0);
-    const parts = smokeParticles(dyn, wheels, this.frame, this.state.shot?.fps || 24, seed);
+    const parts = smokeParticles(dyn, wheels, this.frame, this.state.shot?.fps || 24, seed, a.stunt_sim?.surface || "dry");
     g.updateMatrix();
     sm.set(parts, g.matrix);
   }

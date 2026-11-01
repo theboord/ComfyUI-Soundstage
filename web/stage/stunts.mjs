@@ -30,8 +30,11 @@ const wrapRad = (x) => Math.atan2(Math.sin(x), Math.cos(x));
 /** Roll / pitch tuning (from the stunt plan): degrees per m/s² and the limits. */
 export const BODY = { rollPerG: 0.6, rollMax: 7, pitchPerG: 0.35, pitchMax: 4, omega: 2 * Math.PI * 1.4, zeta: 0.35 };
 /** Tyre smoke: auto triggers and the look of a puff. */
-export const SMOKE = { slipDeg: 12, accel: 4, minSpeed: 1.5, rate: 2.4, lifeMin: 1.5, lifeMax: 2.5, size0: 0.8, size1: 3,
-  rise: 0.4, drift: 0.3, color: 0xd8d8d8, opacity: 0.26 };
+export const SMOKE = { slipDeg: 12, accel: 4, minSpeed: 1.5, rate: 3.2, lifeMin: 1.6, lifeMax: 2.8, size0: 0.7, size1: 3.2,
+  rise: 0.45, drift: 0.3, color: 0xd8d8d8, opacity: 0.3 };
+/** Wet-road spray: more, shorter-lived, lower and flatter puffs thrown back off the tread, brighter (lit water). */
+export const SPRAY = { rate: 4.5, lifeMin: 0.5, lifeMax: 1.1, size0: 0.35, size1: 1.8, rise: 0.12, drift: 0.55, throw: 3.5,
+  opacity: 0.34, tint: [0.93, 0.97, 1.0] };
 
 /** Does this key list steer its own heading? */
 export const hasHeadingKeys = (keys) => Array.isArray(keys) && keys.some((k) => Number.isFinite(k?.heading_deg));
@@ -140,9 +143,9 @@ function hash(a, b = 0, c = 0) {
  * and fades out over 1.5-2.5 s. track: {pos[f], yaw[f], vel[f] ([vx, vz] m/s), smoke[f] ({amount, wheels})};
  * wheels: [{x, z, front}] in the car's own frame. Returns [{p: [x, y, z], size, alpha}] in stage space.
  */
-export function smokeParticles(track, wheels, F, fps = 24, seed = 1) {
-  const out = [];
-  const maxAge = Math.ceil(SMOKE.lifeMax * fps);
+export function smokeParticles(track, wheels, F, fps = 24, seed = 1, surface = "dry") {
+  const out = [], wet = surface === "wet", L = wet ? { ...SMOKE, ...SPRAY } : SMOKE;
+  const maxAge = Math.ceil(L.lifeMax * fps);
   const n = track.pos.length;
   for (let b = Math.max(0, F - maxAge); b <= Math.min(F, n - 1); b++) {
     const s = track.smoke[b];
@@ -151,24 +154,27 @@ export function smokeParticles(track, wheels, F, fps = 24, seed = 1) {
     wheels.forEach((w, wi) => {
       if (s.wheels === "front" && !w.front) return;
       if (s.wheels === "rear" && w.front) return;
-      const count = Math.floor(SMOKE.rate * s.amount + hash(seed, b, wi));   // stochastic rounding, seeded
+      const count = Math.floor(L.rate * s.amount + hash(seed, b, wi));   // stochastic rounding, seeded
       for (let i = 0; i < count; i++) {
         const r1 = hash(seed + i, b, wi + 10), r2 = hash(seed + i, b + 0.5, wi + 20), r3 = hash(seed + i, b + 0.25, wi + 30);
-        const life = SMOKE.lifeMin + (SMOKE.lifeMax - SMOKE.lifeMin) * r1;
+        const life = L.lifeMin + (L.lifeMax - L.lifeMin) * r1;
         const age = (F - b) / fps;
         if (age > life) continue;
         const u = age / life;
         // Wheel ground point at birth (car frame → stage), a little spread around the tyre.
         const lx = w.x + (r2 - 0.5) * 0.3, lz = w.z + (r3 - 0.5) * 0.5;
         const wx = p[0] + lx * c + lz * si, wz = p[2] - lx * si + lz * c;
-        const spread = 0.25 + 1.1 * Math.sqrt(u);
+        const spread = (wet ? 0.15 + 0.6 * Math.sqrt(u) : 0.25 + 1.1 * Math.sqrt(u));
         const ang = r1 * 6.2832 + r2 * 3.1;
+        // Spray is thrown back off the tread against the car's travel and falls; smoke drifts with it and rises.
+        const sp = Math.hypot(v[0], v[1]) || 1, th = wet ? -L.throw * age * Math.exp(-2 * age) : 0;
         out.push({
-          p: [wx + v[0] * SMOKE.drift * age * (1 - 0.35 * u) + Math.cos(ang) * spread,
-            0.25 + SMOKE.rise * age + 0.35 * u,
-            wz + v[1] * SMOKE.drift * age * (1 - 0.35 * u) + Math.sin(ang) * spread],
-          size: SMOKE.size0 + (SMOKE.size1 - SMOKE.size0) * (1 - (1 - u) * (1 - u)),
-          alpha: SMOKE.opacity * Math.min(1, s.amount * 1.3) * Math.min(1, u * 8) * Math.pow(1 - u, 1.4),
+          p: [wx + v[0] * L.drift * age * (1 - 0.35 * u) + (v[0] / sp) * th + Math.cos(ang) * spread,
+            (wet ? 0.12 : 0.25) + L.rise * age + (wet ? 0.1 : 0.35) * u,
+            wz + v[1] * L.drift * age * (1 - 0.35 * u) + (v[1] / sp) * th + Math.sin(ang) * spread],
+          size: L.size0 + (L.size1 - L.size0) * (1 - (1 - u) * (1 - u)),
+          alpha: L.opacity * Math.min(1, s.amount * 1.3) * Math.min(1, u * 8) * Math.pow(1 - u, 1.4),
+          ...(wet ? { tint: L.tint } : {}),
         });
       }
     });
@@ -204,7 +210,7 @@ export function monotone(ts, ys, t) {
 export function stuntParams(kind, p = {}) {
   const d = DEFAULTS[kind] || {};
   return { entry_kmh: clamp(+(p.entry_kmh ?? d.entry_kmh ?? 40), 5, 90), surface: SURFACES[p.surface] ? p.surface : d.surface || "wet",
-    mass_kg: p.mass_kg ? clamp(+p.mass_kg, 600, 4000) : null, side: p.side === -1 ? -1 : 1, ...(Number.isFinite(p.flick_s) ? { flick_s: p.flick_s } : {}) };
+    mass_kg: p.mass_kg ? clamp(+p.mass_kg, 600, 4000) : null, side: p.side === -1 ? -1 : 1, suspension: p.suspension === "stock" ? "stock" : "stunt", ...(Number.isFinite(p.flick_s) ? { flick_s: p.flick_s } : {}) };
 }
 
 /**
@@ -213,10 +219,10 @@ export function stuntParams(kind, p = {}) {
  */
 export function stuntRun(kind, { last = 120, fps = 24, carKind = "sports_car", params = {} } = {}) {
   const P = stuntParams(kind, params);
-  const flick = P.flick_s ?? clamp(0.2 * last / fps, 0.4, kind === "donut" ? 0.7 : 1.0);
+  const flick = P.flick_s ?? clamp(0.2 * last / fps, 0.4, kind === "reverse_jturn" ? 1.0 : 0.7);
   const script = driverScript(kind, { ...P, flick_s: flick });
   if (!script) return null;
-  const car = carParams(carKind, P.mass_kg);
+  const car = carParams(carKind, P.mass_kg, P.suspension);
   const run = simulate(script, { car, surface: P.surface, frames: last + 1, fps, side: P.side });
   return { run, params: P, mass_kg: car.mass, metrics: metrics(run, { turn: kind === "donut" ? 720 : 180 }) };
 }
