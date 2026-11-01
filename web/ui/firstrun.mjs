@@ -26,7 +26,7 @@ export const TOUR_STEPS = [
   { id: "scene", title: "Pick a scene",
     text: "Pick a scene here and the stage builds itself: the set, the light, the people and the cars." },
   { id: "block", title: "③ Set: block it",
-    text: "Click a person or a car to select it, drag empty space to look around, and use Person and Camera on the left to add a performer or frame the shot." },
+    text: "Click a person or a car to select it: its bar has Move, Rotate and Scale, the yellow ring at its feet turns it, and dragging empty space looks around." },
   { id: "frame", title: "④ Frame",
     text: "Press Generate frames to paint real-looking first frames from your 3D clay, then click the one you like." },
   { id: "motion", title: "⑤ Motion",

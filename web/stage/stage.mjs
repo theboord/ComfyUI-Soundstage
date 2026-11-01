@@ -11,6 +11,7 @@ import { applyRig, RIGS } from "./camrig.mjs";
 import { materialOf, impactParticles, impactFlash, impactShakeAt, SHAKE_PRESETS, jitterPhysics, feelGravity, overcrankKeys } from "./impacts.mjs";
 import { STUNTS, hasHeadingKeys, headingTrack, channelAt, driveAt, isStunt, unwrapDeg, vehicleDynamics, smokeParticles, stuntKeys, stuntParams, stuntRun } from "./stunts.mjs";
 import { PoseGizmo } from "./posegizmo.mjs";
+import { RotateTools, gizmoTurnToActor } from "./rotate.mjs";
 import { buildSet, buildWater, buildWeather, buildTireSmoke, buildImpactFx } from "./environments.mjs";
 import { buildCard, loadBackdrop, coverFit } from "./cards.mjs";
 import { buildInterior, fixtureActors, interiorCamera, normalizeSpec, toStage } from "./interior.mjs";
@@ -293,6 +294,7 @@ export class Stage {
     this.live = new LiveEdit(this, liveKinds());
     this.setFrame(0);
     this._bindControls();
+    this.rotTools = new RotateTools(this);   // the floating Move · Rotate · Scale bar, the yaw ring, Alt + drag to turn
     this.resize();
     this._ro = new ResizeObserver(() => this.resize());
     this._ro.observe(container);
@@ -3418,9 +3420,11 @@ export class Stage {
   setGizmoMode(mode) {
     this.gizmoMode = mode;
     this.tc.setMode(mode);
-    this.tc.showX = mode !== "rotate";
+    // Move on the floor (X / Z), scale uniformly; rotate on all three axes in the object's own frame (turn, tilt, roll).
+    this.tc.setSpace(mode === "rotate" ? "local" : "world");
+    this.tc.showX = true;
     this.tc.showY = mode !== "translate";
-    this.tc.showZ = mode !== "rotate";
+    this.tc.showZ = true;
     this.render?.();
     this.onGizmoMode?.(mode);
   }
@@ -3433,7 +3437,7 @@ export class Stage {
       this.tcHelper.visible = true;
       return;
     }
-    if (this.tc.space === "local") { this.tc.setSpace("world"); this.setGizmoMode(this.gizmoMode || "translate"); }
+    if (this.tc.space !== (this.gizmoMode === "rotate" ? "local" : "world") || this.tc.mode !== (this.gizmoMode || "translate")) this.setGizmoMode(this.gizmoMode || "translate");
     const a = this.state.actors.find((x) => x.id === this.selected);
     const g = a && this.actorMeshes.get(a.id);
     if (g && !a.mount_id && !a.set_xform) { this.tc.attach(g); this._gizmoOn = true; }
@@ -3449,7 +3453,7 @@ export class Stage {
       const k = this._editActorKey(a);
       k.position = [+g.position.x.toFixed(2), a.physics?.baked || a.key_y ? (k.position?.[1] ?? 0) : 0, +g.position.z.toFixed(2)];
     } else if (this.gizmoMode === "rotate") {
-      if (!this._turnHeadingKey(a, THREE.MathUtils.radToDeg(g.rotation.y))) a.rotation_deg = Math.round(THREE.MathUtils.radToDeg(g.rotation.y));
+      gizmoTurnToActor(this, a, g);   // heading + tilt / roll
     } else {
       // Uniform: follow whichever handle moved most.
       const s0 = this._gizmoScale0 || 1;
@@ -3903,6 +3907,17 @@ export class Stage {
     this.onChange(this.toJSON());
   }
 
+  /** Reset rotation: upright and facing 0° (one undo step). */
+  resetRotation() {
+    const a = this.state.actors.find((x) => x.id === this.selected);
+    if (!a) return;
+    delete a.tilt;
+    if (!this._turnHeadingKey(a, 0)) a.rotation_deg = 0;
+    this.setFrame(this.frame);
+    this.onSelect?.(this.selectedInfo());
+    this.onChange(this.toJSON());
+  }
+
   rotateSelected(deg) {
     const a = this.state.actors.find((x) => x.id === this.selected);
     if (!a) return;
@@ -4071,6 +4086,7 @@ export class Stage {
     if (mode === "depth") this.root.traverse((o) => { if (o.userData.glass && o.visible) { o.visible = false; cutaway.push(o); } });
     // Measurement aids are for the viewport only.
     if (!forCapture) this._measureOverlay(cam, this.measure !== false);
+    if (!forCapture) this.rotTools?.sync(cam);
     if (this.poser?.active && this._ghost) this._ghost.visible = false;   // posing: the scale figure would sit beside them
     else { if (this._grid) this._grid.visible = false; if (this._ghost) this._ghost.visible = false; }
     // With a backdrop plate the photo is the ground: the floor becomes a shadow catcher in Color, and is
