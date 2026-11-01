@@ -270,7 +270,7 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
   }
 
   function card(p) {
-    const canvas = h("canvas", { width: "240", height: "135", "aria-hidden": "true" });
+    const canvas = h("canvas", { width: String(THUMB_W), height: String(THUMB_H), "aria-hidden": "true" });
     const gpu = p.apply?.gpu ? h("span", { class: "gpu", title: "Asks before it renders on the GPU" }, "GPU") : null;
     const del = p.tab === "user" ? h("button", { type: "button", class: "del", title: `Delete ${p.label}`, "aria-label": `Delete ${p.label}`,
       onclick: (e) => { e.stopPropagation(); removeUser(p.id); } }, icon("trash-2", 12)) : null;
@@ -357,6 +357,7 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     if (document.hidden) { raf = requestAnimationFrame(loop); return; }
     if (!reduced() || hover) drawAll(now);
     checkLiveScene(now);
+    if (now - dockAt > 500) { dockAt = now; dock(); }   // a panel opened, collapsed or resized under the window
     if (hover?.overlay) drawOverlay(now);
     if (hover?.cam && now - (hover.drawn || 0) > 48) {
       hover.drawn = now;
@@ -411,6 +412,11 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
       live.onReady = (id) => { const e = cards.get(id); if (e && !panel.hidden) drawOne(e, (performance.now() - t0) / 1000); };
     } catch (e) { console.warn("[Soundstage] preset previews off", e); live = null; }
     return live;
+  }
+  // Pre-warm the previews once the App has settled (idle, a few seconds after load), not when the window opens: the
+  // scratch stage, the scene and its shaders are ready before the first open. Cards show their drawn previews meanwhile.
+  if (typeof requestIdleCallback === "function" && typeof window !== "undefined") {
+    setTimeout(() => requestIdleCallback(() => { try { ensureLive()?.warm(); } catch { /* previews stay drawn */ } }, { timeout: 15000 }), 6000);
   }
   /** Queue this view's cards for live previews: the ones on screen first, then the rest of the list. */
   function queueLive() {
@@ -578,6 +584,50 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     inp.click();
   }
 
+  // ---- docking: like canvasui.mjs's floating panels, the window never covers another one. It sits, centred, in the free
+  // band between the panels on the left (the tool rail) and on the right (Properties). When that band is narrower than
+  // DOCK_MIN it takes the Properties panel's slot while it's open (Properties hides, and is back when it closes).
+  const DOCK_MIN = 560, DOCK_MAX = 860, DOCK_GAP = 8;
+  const OTHERS = ".ss-hud, .ss-hudp, .ss-clpanel, .ss-cv-panel, .ss-phys, .ss-hudpop, .ss-cl-railbox, [role=dialog]";
+  let took = [], dockAt = 0;
+  function undock() { for (const el of took) el.style.visibility = el.dataset.ssPreVis || ""; took = []; }
+  function dock() {
+    if (panel.hidden) return null;
+    const rr = root.getBoundingClientRect();
+    if (!rr.width) return null;
+    const pr = panel.getBoundingClientRect();
+    const top = pr.top || rr.top + 58, bottom = Math.max(top + 200, pr.bottom || rr.bottom - 74);
+    const mid = rr.left + rr.width / 2;
+    const obstacles = [...root.querySelectorAll(OTHERS)].filter((el) => {
+      if (el === panel || panel.contains(el) || el.contains(panel) || took.includes(el) || !el.getClientRects().length) return false;
+      const cs = getComputedStyle(el);
+      if ((cs.position !== "absolute" && cs.position !== "fixed") || cs.visibility === "hidden" || cs.display === "none") return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 8 && r.width < rr.width * 0.6 && r.bottom > top && r.top < bottom;
+    }).map((el) => ({ el, r: el.getBoundingClientRect() }));
+    const band = (list) => {
+      let L = rr.left, R = rr.right;
+      for (const { r } of list) { if (r.left + r.width / 2 < mid) L = Math.max(L, r.right); else R = Math.min(R, r.left); }
+      return [L, R];
+    };
+    let [L, R] = band(obstacles);
+    if (R - L - 2 * DOCK_GAP < DOCK_MIN) {
+      // Too narrow: take the Properties slot (only Properties; the rail and anything else stay put).
+      const props = obstacles.filter((o) => o.el.matches(".ss-insp") && o.r.left + o.r.width / 2 >= mid);
+      if (props.length) {
+        for (const { el } of props) { el.dataset.ssPreVis = el.style.visibility || ""; el.style.visibility = "hidden"; took.push(el); }
+        [L, R] = band(obstacles.filter((o) => !props.includes(o)));
+      }
+    }
+    const room = R - L - 2 * DOCK_GAP;
+    if (room < 320) { Object.assign(panel.style, { left: "", width: "", transform: "" }); return null; }   // a narrow side panel: the CSS default
+    const w = Math.round(Math.min(DOCK_MAX, room));
+    const left = Math.round(L - rr.left + DOCK_GAP + (room - w) / 2);
+    Object.assign(panel.style, { left: left + "px", width: w + "px", transform: "none" });
+    return { left, width: w, took: took.length };
+  }
+  window.addEventListener("resize", () => { if (!panel.hidden) { undock(); dock(); } });
+
   // ---- open / close / keys
   function open(which = null) {
     if (which) { tab = which; group = null; query = ""; q.value = ""; }
@@ -586,6 +636,7 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     t0 = performance.now();
     if (built && built === `${tab}|${query}` && !group) { built = ""; syncTarget(); footHint(); queueLive(); }
     else render();
+    dock(); dockAt = performance.now();
     if (!raf) raf = requestAnimationFrame(loop);
     try { q.focus({ preventScroll: true }); } catch { /* */ }
   }
@@ -597,7 +648,8 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     if (hover?.cam) try { stage.previewCamera(null); } catch { /* */ }
     endOverlay();
     hover = null;
-    if (live) live.queue = [];
+    if (live) live.halt();   // previews stop between two steps; what's done stays cached
+    undock();
     cancelAnimationFrame(raf); raf = 0;
   }
   function toggle(which = null) { if (panel.hidden) open(which); else close(); }
@@ -673,7 +725,7 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
 
   return {
     el: panel, button, toast, runner, ready, get live() { return live; },
-    open, close, toggle, apply, isOpen: () => !panel.hidden,
+    open, close, toggle, apply, isOpen: () => !panel.hidden, dock,
     undo: () => { const l = runner.undo(); afterChange(); return l; },
     redo: () => { const l = runner.redo(); afterChange(); return l; },
     saveCurrent, exportText, importText, removeUser,

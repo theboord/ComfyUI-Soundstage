@@ -5,6 +5,11 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-01
 
+**07:45 PST · Presets: previews no longer stall the stage, and the window docks beside the panels**
+- **No stutter.** Previews render at 192×108 (512 px shadow), one step per frame inside an 8 ms budget; the scratch stage's clay shaders compile asynchronously (`compileAsync`). It's built and warmed during idle time after the App loads, not when the window opens. Closing the window stops the work. Cards show their drawn previews until each one is ready. Longest main-thread task while previews fill (1280×800, demo scene, heavily loaded Mac): about 4.1–4.3 s before, 0.9–2.0 s after.
+- **Docking:** at 1280 and 1440 wide the window covered Properties. It now sits centred between the tool rail and Properties, and takes Properties' slot only when that space is too narrow. The `presets_panel` visual baselines were updated on purpose: no panel overlap at any size.
+- Code: [web/presets/livethumbs.mjs](web/presets/livethumbs.mjs), [web/ui/presets.mjs](web/ui/presets.mjs), [tools/qa/visual_baseline.mjs](tools/qa/visual_baseline.mjs). Tests: [tests/js/presets_live.test.mjs](tests/js/presets_live.test.mjs).
+
 **06:05 PST · Presets: every card previews your own stage, hover to try it on the shot, keyboard and search across tabs** *(Milestone 17 polish)*
 - **Real previews.** Each card now shows the current stage in clay with that preset applied: camera moves and stunts loop, lighting and looks are stills. A hidden scratch copy of the scene renders them (the shot, its history and undo are never touched), visible cards first, a slice at a time; they're cached per scene, so reopening or undoing back shows them at once. The drawn preview stands in until each is ready. The window opens in about 50–215 ms.
 - **Hover = preview on the shot.** Camera moves fly the real camera; lights, looks and stunts show over the shot ("Preview · Night street"); move off the card and the shot is back.
