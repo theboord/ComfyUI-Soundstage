@@ -1059,15 +1059,13 @@
   "pageOverflowX": false,
   "clipped": [],
   "clippedHard": 0,
-  "overlaps": [
-   {
-    "a": "ss-insp ss-hudp Properties Object Ca",
-    "b": "ss-pre PresetsApplies to sh",
-    "px": "117x569"
-   }
+  "overlaps": [],
+  "scrollers": [
+   "ss-rail 688/606"
   ],
-  "scrollers": [],
-  "offscreen": [],
+  "offscreen": [
+   "Phone camera"
+  ],
   "errors": []
  }
 }

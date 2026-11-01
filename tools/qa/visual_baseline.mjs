@@ -83,6 +83,8 @@ export const SCREENS = [
       // Reduced motion: each card holds one frame of its loop, so the capture is the same every run.
       await b.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
       await js("__qa.p.go('set'); return 1"); await sleep(1500);
+      // The window docks beside the floating panels: capture it with them shown (an earlier screen may leave them hidden).
+      if (await js("return __qa.el.classList.contains('ss-cl-hide')")) { await hoverCanvas(b); await b.key("h"); await sleep(800); }
       await js("__qa.node.ssPresets.open('camera'); return 1");
       for (let i = 0; i < 80; i++) { await sleep(500); if (await js("const L=__qa.node.ssPresets.live; return !!L && !L.queue.length && !L.running")) break; }
       await sleep(800);

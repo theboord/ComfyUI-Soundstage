@@ -2,7 +2,11 @@
 // canvas, never the user's) loads a copy of the current scene, applies a preset to it with its own PresetRunner and
 // renders clay frames: a camera move or a stunt becomes a short loop, a lighting setup or a look a still. The user's
 // stage, its history and its undo are never touched. Results are cached per scene signature, so reopening the panel,
-// or undoing back to a scene seen before, shows them at once; work runs in small slices between frames.
+// or undoing back to a scene seen before, shows them at once.
+// Never blocking the user's stage: work runs one step per animation frame, right after the frame is drawn, inside a
+// budget (budgetMs, 8 ms): building the scratch stage, loading the scene, compiling its shaders (in parallel, off the
+// main thread where the GPU driver allows), applying a preset and each small frame are separate steps. halt() (the
+// panel closing) stops it between two steps.
 //
 //   const lt = new LiveThumbs({ stage, makeRunner: (s) => new PresetRunner({ stage: s, ... }), setups });
 //   lt.want(["push_in", "golden_hour"]); lt.start();   // fills in progressively; lt.onReady(id) per finished card
@@ -10,7 +14,8 @@
 //   await lt.hoverStart(preset, { w, h }); lt.hoverFrame(ctx, t, w, h)   (the preview on the shot, non-camera cards)
 import { lightingPlan } from "./engine.mjs";
 
-export const THUMB_W = 240, THUMB_H = 135;
+/** Preview size: small render targets (about the size a card shows them at), so a frame costs a few milliseconds. */
+export const THUMB_W = 192, THUMB_H = 108;
 export const LOOP_FRAMES = 10;
 export const LOOP_FPS = 8;
 const CACHE_MAX = 260;
@@ -84,16 +89,31 @@ export function gradeOf(p, setups = []) {
   return a.grade || {};
 }
 
-const idle = () => new Promise((r) => (typeof requestIdleCallback === "function" ? requestIdleCallback(() => r(), { timeout: 60 }) : setTimeout(r, 0)));
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+/** The next work slot: just after the browser has drawn the next frame (rAF, then a macrotask), so a step never delays
+ *  a frame the user's stage is drawing. Without rAF (tests, a hidden tab's fallback): the next macrotask. */
+/** An idle period with at least `need` ms free (requestIdleCallback's deadline), for the one-off warm-up steps.
+ *  Gives up waiting after `maxWait` ms of a busy page. Without requestIdleCallback: the next macrotask. */
+export const idleSlot = (need = 40, maxWait = 4000) => new Promise((r) => {
+  if (typeof requestIdleCallback !== "function") return setTimeout(r, 0);
+  const t0 = now();
+  const ask = () => requestIdleCallback((d) => (d.timeRemaining() >= need || d.didTimeout || now() - t0 > maxWait ? r() : ask()), { timeout: maxWait });
+  ask();
+});
+export const nextSlot = () => new Promise((r) => {
+  if (typeof requestAnimationFrame === "function" && typeof document !== "undefined" && !document.hidden) requestAnimationFrame(() => setTimeout(r, 0));
+  else setTimeout(r, 0);
+});
 
 export class LiveThumbs {
   /**
    * stage: the user's Stage (only read: toJSON, frame, view, canvas size). makeRunner(scratchStage) -> PresetRunner.
    * makeStage(container) -> a scratch Stage (default: new stage.constructor(container)). doc: the document.
    */
-  constructor({ stage, makeRunner, makeStage = null, setups = [], doc = typeof document !== "undefined" ? document : null, budgetMs = 9 } = {}) {
-    Object.assign(this, { stage, makeRunner, setups, doc, budgetMs });
+  constructor({ stage, makeRunner, makeStage = null, setups = [], doc = typeof document !== "undefined" ? document : null, budgetMs = 8, slot = nextSlot } = {}) {
+    Object.assign(this, { stage, makeRunner, setups, doc, budgetMs, slot });
+    this.gen = 0;                // halt() bumps it: a preset mid-render stops at its next step
+    this.frameMs = 4;            // running estimate of one preview frame, to fit frames into a slot's budget
     this.makeStage = makeStage || ((el) => new stage.constructor(el, () => {}));
     this.cache = new Map();      // `${sig}|${id}` -> entry {id, kind, frames, sprite, w, h, ok}
     this.latest = new Map();     // id -> the newest finished entry for any scene (shown while the current one renders)
@@ -117,10 +137,15 @@ export class LiveThumbs {
     box.style.cssText = "position:fixed;left:-10000px;top:0;width:256px;height:144px;overflow:hidden;pointer-events:none;visibility:hidden;contain:strict";
     d.body.append(box);
     this.box = box;
-    this.scratch = this.makeStage(box);
+    // The Stage constructor draws its empty set once, compiling every shader synchronously (hundreds of ms on the main
+    // thread). The scratch copy skips that draw; _compile() builds the programs for the loaded scene in parallel instead.
+    const P = this.stage?.constructor?.prototype, own = P && Object.prototype.hasOwnProperty.call(P, "render") ? P.render : null;
+    if (own) P.render = function () {};
+    try { this.scratch = this.makeStage(box); } finally { if (own) P.render = own; }
+    try { if (this.scratch.renderer?.debug) this.scratch.renderer.debug.checkShaderErrors = false; } catch { /* */ }
     try { this.scratch._ro?.disconnect(); } catch { /* */ }   // its size is ours to set
-    // Thumbnails don't need the viewport's 2048 px sun shadow: a smaller map renders each frame about 40 % faster.
-    try { const sh = this.scratch.sun?.shadow; if (sh) { sh.mapSize.set(768, 768); sh.map?.dispose?.(); sh.map = null; } } catch { /* */ }
+    // Thumbnails don't need the viewport's 2048 px sun shadow: a 512 px map is plenty at preview size, and fast.
+    try { const sh = this.scratch.sun?.shadow; if (sh) { sh.mapSize.set(512, 512); sh.map?.dispose?.(); sh.map = null; } } catch { /* */ }
     this.runner = this.makeRunner(this.scratch);
     return this.scratch;
   }
@@ -149,6 +174,26 @@ export class LiveThumbs {
     this.dirty = false;
     this.stats.loads++;
     this.stats.ms += now() - t;
+  }
+
+  /** Compile the loaded scene's shaders without blocking (KHR_parallel_shader_compile), so the first frame doesn't. */
+  _compile() {
+    const run = this._mx.then(() => this._compileNow());
+    this._mx = run.catch(() => {});
+    return run;
+  }
+  async _compileNow() {
+    const S = this.scratch;
+    if (!S?.renderer?.compileAsync || this._compiledFor === this.baseStr) return;
+    this._compiledFor = this.baseStr;
+    const t = now();
+    // Previews draw in clay (one override material): compile() ignores scene.overrideMaterial, so put the clay material
+    // on every mesh for the compile, which builds exactly the clay programs (skinned, instanced, ...) the frames use.
+    const swapped = [];
+    if (S.clayMat) S.scene.traverse((o) => { if (o.isMesh && o.material && o.material !== S.clayMat) { swapped.push([o, o.material]); o.material = S.clayMat; } });
+    try { await S.renderer.compileAsync(S.scene, S.camera); } catch { /* the first frame compiles what's left */ }
+    finally { for (const [o, m] of swapped) o.material = m; }
+    this.stats.compileMs = Math.round(now() - t);
   }
 
   /** The scratch stage holding the base scene with preset p applied (p null: the base scene). */
@@ -229,15 +274,50 @@ export class LiveThumbs {
     this._loop().catch((e) => { console.warn("[Soundstage] preset previews", e); }).finally(() => { this.running = false; });
   }
 
+  /** True once the scratch stage is built, holds the current scene and its clay shaders are compiled. */
+  get ready() { return !!this.scratch && this.dirty !== "load" && !!this.baseStr && this._compiledFor === this.baseStr; }
+
+  /**
+   * Pre-warm while the App sits idle (before the panel is ever opened): build the scratch stage, load the scene,
+   * compile its clay shaders, each step in its own idle period (requestIdleCallback, waiting for a deadline with room).
+   * The shader compile is asynchronous (compileAsync / KHR_parallel_shader_compile). Safe to call more than once.
+   */
+  async warm({ idle = idleSlot } = {}) {
+    if (this._warming || this.stopped) return this._warming;
+    this._warming = (async () => {
+      const t = now();
+      if (!this.scratch) { await idle(); if (this.stopped) return false; this._ensureScratch(); }
+      await idle(); if (this.stopped) return false;
+      if (!this.base) this.sync();
+      if (this.dirty === "load" || !this.baseStr) await this._mx.then(() => this._loadBase());
+      await idle(); if (this.stopped) return false;
+      await this._compile();
+      this.stats.warmMs = Math.round(now() - t);
+      return this.ready;
+    })().finally(() => { this._warming = null; });
+    return this._warming;
+  }
+
+  /** Stop between two steps (the panel closed): the queue empties and a preset mid-render is dropped. */
+  halt() { this.queue = []; this.gen++; }
+
   async _loop() {
-    await idle();
+    await this.slot();
+    if (this._warming) await this._warming;   // a pre-warm in progress finishes its steps first
+    // The one-off setup, one step per slot: the scratch stage, then the scene, then its shaders (async).
+    if (!this.scratch && this.queue.length) { this._ensureScratch(); await this.slot(); }
+    if (this.dirty === "load" && this.queue.length && !this.stopped) { this._loadBase(); await this.slot(); }
+    if (this.queue.length && !this.stopped) await this._compile();
     while (this.queue.length && !this.stopped) {
       if (this.paused || this._hover?.busy) { await new Promise((r) => setTimeout(r, 60)); continue; }
+      if (this.dirty === "load") { this._loadBase(); await this.slot(); await this._compile(); continue; }
       const p = this.queue.shift();
       if (this.get(p.id)) continue;
       const sig = this.sig;
+      const gen = this.gen;
       const e = await this._renderPreset(p);
       if (this.stopped) return;
+      if (gen !== this.gen) continue;   // halted mid-render: dropped, not stored
       if (sig !== this.sig || !e) continue;   // the scene changed meanwhile: render it again for the new one
       this._store(sig, e);
       try { this.onReady?.(p.id, e); } catch { /* listener */ }
@@ -255,7 +335,7 @@ export class LiveThumbs {
   /** One preset's frames, yielding between frames so the page stays responsive. Null when the scene changed. */
   async _renderPreset(p) {
     const kind = liveKind(p);
-    const sig = this.sig;
+    const sig = this.sig, gen = this.gen;
     const t0 = now();
     const n = isLoop(kind) ? LOOP_FRAMES : 1;
     const sprite = this._newCanvas(THUMB_W * n, THUMB_H);
@@ -277,17 +357,21 @@ export class LiveThumbs {
     const r = await this._prepare(p);
     this._borrowed = false;
     if (!r.ok) { this.stats.failed++; entry.said = r.said || ""; return entry; }   // e.g. no car on set: the drawn preview stays
+    await this.slot();   // applying the preset was this slot's work: the frames start in the next one
     const frames = isLoop(kind) ? sampleFrames(this.scratch._lastFrame?.() ?? 96, n)
       : [Math.min(this.stage.frame || 0, this.scratch._lastFrame?.() ?? 0)];
     let slice = now();
     for (let i = 0; i < frames.length; i++) {
-      if (sig !== this.sig || this.stopped) return null;
+      if (sig !== this.sig || this.stopped || gen !== this.gen) return null;
+      // Fit frames into this slot's budget (the first one always runs); the rest wait for the next frame.
+      if (i > 0 && now() - slice + this.frameMs > this.budgetMs) { await this.slot(); slice = now(); if (sig !== this.sig || this.stopped || gen !== this.gen) return null; }
       // A hover preview on the shot borrows the scratch stage while it renders: wait, then put this preset back on it.
       while (this._hover?.busy && !this.stopped && sig === this.sig) await new Promise((res) => setTimeout(res, 50));
       if (sig !== this.sig || this.stopped) return null;
       if (this._borrowed) { this._borrowed = false; const again = await this._prepare(p); if (!again.ok) return entry; }
+      const tf = now();
       this._renderInto(ctx, frames[i], i * THUMB_W, 0, THUMB_W, THUMB_H);
-      if (now() - slice > this.budgetMs) { await idle(); slice = now(); }
+      this.frameMs = this.frameMs * 0.7 + (now() - tf) * 0.3;
     }
     if (kind === "light") gradeOverlay(ctx, gradeOf(p, this.setups), THUMB_W, THUMB_H);
     entry.ok = true;
@@ -354,7 +438,7 @@ export class LiveThumbs {
           if (hv.grade) { try { ctx.filter = "none"; } catch { /* */ } gradeOverlay(ctx, hv.grade, w, h); }
         } finally { S.freeView = false; }
         hv.frames.push(c);
-        if (hv.frames.length < frames.length) await idle();
+        if (hv.frames.length < frames.length) await this.slot();
       }
     } finally { hv.busy = false; }
     return this._hover === hv && hv.ok;

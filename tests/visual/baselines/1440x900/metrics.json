@@ -1176,13 +1176,7 @@
    }
   ],
   "clippedHard": 0,
-  "overlaps": [
-   {
-    "a": "ss-insp ss-hudp Properties Object Ca",
-    "b": "ss-pre PresetsApplies to sh",
-    "px": "77x569"
-   }
-  ],
+  "overlaps": [],
   "scrollers": [],
   "offscreen": [],
   "errors": []
