@@ -37,6 +37,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 
 | When | Update |
 |---|---|
+| Oct 31, 20:39 PDT | **Presets window** (`V`): one-click camera moves and lighting looks onto the current shot, each one undo step; the Director can call them too. |
 | Oct 31, 20:34 PDT | **The phone is the viewfinder:** scan a QR, and your phone shows the live stage and *is* the camera: aim by moving it, pinch / primes to zoom, tap to focus, rack pulls, an iris with live depth of field, ● REC writes the move and lens onto the shot. LAN-only bridge with a pairing code. |
 | Oct 31, 20:32 PDT | **A real editing timeline:** drag dissolves, dips and wipes onto cuts, fades, rubber-band keys; generate SFX, music and lines in place on A1-A4, auto-duck, beat snapping, loudness to −14/−23/−24 LUFS; assemble the scene from ScriptSync; subtitles and titles; render MP4, ProRes or 9:16. |
 | Oct 31, 20:35 PDT | **Hollywood-grade finals:** Quality presets Draft · Final · **Hollywood** (2624×1408, sharper, more coherent motion) saved per shot, Final by default (finals had been rendering at Draft), and an **Advanced (LTX)** pop-over with the normal LTX controls plus a ProRes 422 HQ master. |

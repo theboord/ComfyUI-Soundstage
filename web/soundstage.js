@@ -50,6 +50,7 @@ import { VIDEO_ACCEPT, cameraRaw, fetchSourceSpec, rawExplainer, sourceLine } fr
 import { JobCard, chooseVideoUse, clipSeconds, v2sPlan, wireVideoDrop, isVideoFile } from "./ui/videoimport.mjs";
 import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
 import { mountDirector } from "./agent/directorpanel.mjs";
+import { mountPresets } from "./ui/presets.mjs";
 import { attachTakeChecks } from "./takecheck/takecheck.mjs";
 
 const CSS = `
@@ -2904,6 +2905,28 @@ function createStageWidget(node, inputName) {
         saveCut(x.cut); strip.refresh();
       },
       play: () => { if (play.textContent === "Play") play.click(); },
+      say: (m) => (status.textContent = m),
+    } });
+
+  // Presets (Milestone 17, web/ui/presets.mjs): one window of one-click camera moves, lighting, looks, stunts, edit
+  // styles and recipes ("V" or the top bar). Each apply is one undo step; the Director gets them as its preset tool.
+  node.ssPresets = mountPresets({ root: el, topBar: tabs, before: keysBtn, api, stage,
+    isActive: () => el.isConnected && !!el.getClientRects().length && !el.dataset.tour
+      && (el.contains(document.activeElement) || el.matches(":hover") || el.classList.contains("ss-full")),
+    host: {
+      onLoad: () => { try { syncControls(); syncEnv(); syncLight(); syncShots(); strip.refresh(); } catch { /* rows not built */ } },
+      look: { get: () => look.toJSON(), set: (patch) => look._set(patch), load: (x) => { look.load(x); look.onChange?.(look.toJSON()); },
+        applyStyle: (id) => look.applyStyle(id), hasStyle: (id) => !!look.styles?.some((x) => x.id === id) },
+      cut: { load: () => loadCut(), save: (v) => { saveCut(v); strip.refresh(); if (!cutView.hidden) cut.refresh(); },
+        add: (ids) => strip.appendShots(ids), panel: () => cut },
+      pipeline, shotsInOrder: () => pipeline.shots(),
+      wholeFrame: (prompt) => {
+        showView("canvas");
+        canvasPanel.fill.prompt = prompt;
+        if (canvasPanel.promptIn) { canvasPanel.promptIn.value = prompt; canvasPanel.promptIn.focus(); }
+        canvasPanel.wholeBtn?.classList.add("ss-spot");
+      },
+      importVideo: () => pickVideo("stage"),
       say: (m) => (status.textContent = m),
     } });
 

@@ -50,6 +50,7 @@ export const SHORTCUTS = [
     { keys: ["Mod", "Z"], what: "Undo" },
     { keys: ["Shift", "Mod", "Z"], what: "Redo" },
     { keys: ["Esc"], what: "Close a menu, a pop-over, the tour or the full window" },
+    { keys: ["V"], what: "Presets: one-click camera moves, light, looks, stunts, edit styles" },
   ] },
   { group: "Move things on the set", items: [
     { keys: ["Drag"], what: "Move a person, car or prop; it pushes what it hits" },
