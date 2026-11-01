@@ -5,6 +5,11 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-01
 
+**10:17 PST · Director chat docks beside the panels: no more covering Properties, Look or Play**
+- The Director (/) opened over the bottom of Properties and the Look pop-over and hid the stage's Play, Fit and Hide-top-view controls. It now docks like the Presets window: at the right of the free band between the tool rail and Properties, above the playback row; when that band is too narrow (Look open) it takes Properties' slot while it's open, and Properties is back when it closes. It re-docks as panels open, close or resize.
+- Checked headless (Metal) at 1280×800, 1440×900 and 1920×1080 with Properties and the Look pop-over open: nothing under the chat.
+- Code: [web/agent/directorpanel.mjs](web/agent/directorpanel.mjs). Tests: [tests/js/director_dock.test.mjs](tests/js/director_dock.test.mjs).
+
 **10:05 PST · QA round 06: switching scenes no longer re-renders hidden previews**
 - **Faster scene switch.** ◀ ▶ (or a scene chip) redrew the hidden preview ladder four times and every shot's clay thumbnail once per step row (Frame, Motion, Review, Deliver): 29 off-screen stage renders per switch. Now 4: a hidden ladder waits until its view opens, and each shot's thumbnail is rendered once per redraw. Measured on the demo scene at 1280×800: about 1.9 s before, 1.4–1.6 s after (on the heavily loaded Mac earlier it was 6–8 s).
 - Checked in a browser: a full click-through of ③ Set … ⑦ Deliver at 1280×800 and 1920×1080 (about 650 clicks), 0 console errors (share/QA/round_06/).
