@@ -48,6 +48,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 
 | When | Update |
 |---|---|
+| Nov 1, 12:31 PST | **Breakable props:** crates now splinter into planks and cardboard boxes tear open where they're hit (glued parts that snap above a material strength, debris carrying the crash's motion), and cardboard keeps its dents; the clay guide shows the pieces, so LTX paints real practical destruction. |
 | Nov 1, 12:10 PST | **The Director's Book:** a binder page per scene (Coppola cover sheet, lighting, camera plan, floor plan, numbered shot strip, sound lane, margin notes), drafted by the local model from the script and checked against it; write notes in your own shorthand and they're filed on the right scene, line and department; the Director reads it every command; PDF binder and Markdown. |
 | Nov 1, 10:55 PST | **Physics that reads as filmed:** every hit throws dust, debris or sparks into the guide, jolts the camera, gets a timed material beat in the prompt ("the crates splinter") and its own sound on A2; a Film Finish (lens, fringe, halation, grain) on the cut; imperfect crates, overcrank and "feels bigger" weight. |
 | Nov 1, 06:05 PST | **Presets show your own shot:** every card previews the current stage in clay with that move, light, look or stunt (loops for moves and stunts); hover a card to try it on the shot, arrows + Enter to pick, search across every tab, "Applied to shot N · Undo". |
