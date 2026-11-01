@@ -93,8 +93,100 @@ def normalize_audio(lst) -> list:
         }
         if isinstance(a.get("meta"), dict):
             clip["meta"] = a["meta"]
+        keys = normalize_keys(a.get("keys"), None if out_f is None else n, -60, 24)
+        if keys:
+            clip["keys"] = keys
+        duck = normalize_keys(a.get("duck"), None if out_f is None else n, -60, 0)
+        if duck:
+            clip["duck"] = duck
         out.append(clip)
     return out
+
+
+# ---------------------------------------------------------------- transitions, keys, titles, subtitles (Milestone 19)
+
+TRANSITIONS = ("dissolve", "dip_black", "dip_white", "wipe")
+
+
+def _finite(v):
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
+
+
+def normalize_trans(t):
+    if not isinstance(t, dict):
+        return None
+    frames = _round(_finite(t.get("frames")) or 0)
+    if frames < 1:
+        return None
+    return {"type": t.get("type") if t.get("type") in TRANSITIONS else "dissolve", "frames": min(frames, 10000)}
+
+
+def normalize_keys(keys, n, lo, hi, rnd=10):
+    if not isinstance(keys, list) or not keys:
+        return None
+    by_f = {}
+    for k in keys:
+        if isinstance(k, (list, tuple)):
+            f, v = (k[0] if len(k) > 0 else None), (k[1] if len(k) > 1 else None)
+        elif isinstance(k, dict):
+            f, v = k.get("f"), k.get("v")
+        else:
+            continue
+        f, v = _finite(f), _finite(v)
+        if f is None or v is None:
+            continue
+        by_f[_clamp(_round(f), 0, max(0, 1e9 if n is None else n))] = _num(_round(_clamp(v, lo, hi) * rnd) / rnd)
+    out = [[_num(f), v] for f, v in sorted(by_f.items())]
+    return out or None
+
+
+def key_at(keys, f, dflt=0):
+    if not keys:
+        return dflt
+    if f <= keys[0][0]:
+        return keys[0][1]
+    for i in range(1, len(keys)):
+        f1, v1 = keys[i]
+        if f <= f1:
+            f0, v0 = keys[i - 1]
+            return v1 if f1 == f0 else v0 + (v1 - v0) * (f - f0) / (f1 - f0)
+    return keys[-1][1]
+
+
+def normalize_titles(lst) -> list:
+    seen, out = set(), []
+    for i, t in enumerate([x for x in (lst if isinstance(lst, list) else []) if x and str(x.get("text") or "").strip()]):
+        tid = _js_str(t["id"]) if t.get("id") is not None else f"t{i + 1}"
+        while tid in seen:
+            tid += "_"
+        seen.add(tid)
+        frames = max(1, _round(t.get("frames") or 48))
+        fi = _clamp(_round(t["fade_in"] if t.get("fade_in") is not None else 6), 0, frames)
+        out.append({"id": tid, "text": str(t["text"])[:400], "start_frame": max(0, _round(t.get("start_frame") or 0)),
+                    "frames": frames, "style": t.get("style") if t.get("style") in ("card", "lower", "center") else "card",
+                    "fade_in": fi, "fade_out": _clamp(_round(t["fade_out"] if t.get("fade_out") is not None else 6), 0, frames - fi)})
+    return out
+
+
+def normalize_subtitles(lst) -> list:
+    seen, out = set(), []
+    for i, c in enumerate([x for x in (lst if isinstance(lst, list) else []) if x and str(x.get("text") or "").strip()]):
+        cid = _js_str(c["id"]) if c.get("id") is not None else f"s{i + 1}"
+        while cid in seen:
+            cid += "_"
+        seen.add(cid)
+        a = max(0, _round(c.get("start_frame") or 0))
+        end = c.get("end_frame")
+        cue = {"id": cid, "start_frame": a, "end_frame": max(a + 1, _round(end if end is not None else a + 48)),
+               "text": re.sub(r"\s+", " ", str(c["text"])).strip()}
+        if c.get("speaker"):
+            cue["speaker"] = str(c["speaker"])
+        out.append(cue)
+    return sorted(out, key=lambda x: x["start_frame"])
 
 
 _TC_RE = re.compile(r"\d\d:\d\d:\d\d[:;.]\d\d")
@@ -184,13 +276,138 @@ def normalize_project(p) -> dict:
         notes = e.get("notes")
         if notes and (not isinstance(notes, list) or len(notes)):
             ev["notes"] = [str(x) for x in notes] if isinstance(notes, list) else str(notes)
+        tr = normalize_trans(e.get("trans"))
+        if tr:
+            ev["trans"] = tr
+        op = normalize_keys(e.get("opacity"), out_f - in_f, 0, 1, 1000)
+        if op:
+            ev["opacity"] = op
         cut.append(ev)
     project["cut"] = cut
     project["audio"] = normalize_audio(project.get("audio"))
     project["audio_tracks"] = [{"track": max(1, _round(t.get("track") or 1)), "name": str(t["name"]) if t.get("name") else "",
                                 "mute": bool(t.get("mute")), "solo": bool(t.get("solo"))}
                                for t in (project.get("audio_tracks") or [])]
+    fo = normalize_trans(project.get("fade_out"))
+    if fo:
+        project["fade_out"] = {"type": "dip_white" if fo["type"] == "dip_white" else "dip_black", "frames": fo["frames"]}
+    else:
+        project.pop("fade_out", None)
+    if project.get("titles") is not None:
+        project["titles"] = normalize_titles(project["titles"])
+    if project.get("subtitles") is not None:
+        project["subtitles"] = normalize_subtitles(project["subtitles"])
     return project
+
+
+def is_overlap(t) -> bool:
+    return t in ("dissolve", "wipe")
+
+
+def trans_spans(project):
+    """web/cut/fx.mjs transSpans: (spans per edit, tail). See there for the rules."""
+    rows = layout(project)
+    spans = [None] * len(rows)
+    half = lambda r: r["len"] // 2  # noqa: E731
+    for k, b in enumerate(rows):
+        tr = b["event"].get("trans")
+        if not tr:
+            continue
+        if k == 0:
+            post = min(tr["frames"], max(1, half(b)))
+            spans[0] = {"type": "dip_white" if tr["type"] == "dip_white" else "dip_black", "req": tr["frames"], "frames": post,
+                        "pre": 0, "post": post, "at": 0, "limited": post < tr["frames"], "head": True}
+            continue
+        a = rows[k - 1]
+        n = tr["frames"]
+        if is_overlap(tr["type"]):
+            h_a, h_b = a["shot"]["frames"] - a["out"], b["in"]
+            max_post, max_pre = min(h_a, half(b)), min(h_b, half(a))
+            pre = min(n // 2, max_pre)
+            post = min(n - pre, max_post)
+            pre = min(n - post, max_pre)
+        else:
+            pre = min(n // 2, half(a))
+            post = min(n - n // 2, half(b))
+        if pre + post <= 0:
+            continue
+        spans[k] = {"type": tr["type"], "req": n, "frames": pre + post, "pre": pre, "post": post, "at": b["recIn"],
+                    "limited": pre + post < n}
+    tail = None
+    fo = project.get("fade_out")
+    if fo and rows:
+        last = rows[-1]
+        pre = min(fo["frames"], max(1, half(last)))
+        tail = {"type": fo["type"], "req": fo["frames"], "frames": pre, "pre": pre, "post": 0, "at": last["recOut"],
+                "limited": pre < fo["frames"], "tail": True}
+    return spans, tail
+
+
+def keys_db(a, f):
+    return key_at(a.get("keys"), f, 0) + key_at(a.get("duck"), f, 0)
+
+
+def merged_level_keys(a):
+    if not a.get("keys") and not a.get("duck"):
+        return None
+    pts = sorted({k[0] for k in (a.get("keys") or []) + (a.get("duck") or [])})
+    return [[f, _num(_round(keys_db(a, f) * 10) / 10)] for f in pts]
+
+
+def wrap_cue(text, width=42):
+    words = [w for w in re.split(r"\s+", str(text)) if w]
+    lines, cur = [], ""
+    for w in words:
+        if cur and len(cur + " " + w) > width:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = cur + " " + w if cur else w
+    if cur:
+        lines.append(cur)
+    if len(lines) <= 2:
+        return lines
+    full = " ".join(words)
+    best, bd = 1, float("inf")
+    for k in range(1, len(words)):
+        d = abs(len(" ".join(words[:k])) - len(full) / 2)
+        if d < bd:
+            bd, best = d, k
+    return [" ".join(words[:best]), " ".join(words[best:])]
+
+
+def _real_rate(fps):
+    f = float(fps or 24)
+    for nom, base in ((23.976, 24), (29.97, 30), (59.94, 60)):
+        if abs(f - nom) < 0.01:
+            return base * 1000 / 1001
+    return f
+
+
+def _clock(ms, sep):
+    h, m, s_, r = ms // 3600000, ms // 60000 % 60, ms // 1000 % 60, ms % 1000
+    return f"{h:02d}:{m:02d}:{s_:02d}{sep}{r:03d}"
+
+
+def to_srt(project) -> str:
+    project = normalize_project(project)
+    r = _real_rate(project["fps"])
+    ms = lambda f: _round(f * 1000 / r)  # noqa: E731
+    return "\n".join(f"{i + 1}\n{_clock(ms(c['start_frame']), ',')} --> {_clock(ms(c['end_frame']), ',')}\n"
+                     f"{chr(10).join(wrap_cue(c['text']))}\n" for i, c in enumerate(project.get("subtitles") or []))
+
+
+def to_vtt(project) -> str:
+    project = normalize_project(project)
+    r = _real_rate(project["fps"])
+    ms = lambda f: _round(f * 1000 / r)  # noqa: E731
+    esc = lambda x: str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")  # noqa: E731
+    body = []
+    for c in project.get("subtitles") or []:
+        text = "\n".join(esc(x) for x in wrap_cue(c["text"]))
+        body.append(f"{_clock(ms(c['start_frame']), '.')} --> {_clock(ms(c['end_frame']), '.')}\n"
+                    f"{'<v ' + esc(c['speaker']) + '>' if c.get('speaker') else ''}{text}\n")
+    return "WEBVTT\n\n" + "\n".join(body)
 
 
 def best_rung(shot) -> str:
@@ -456,24 +673,75 @@ def to_edl(project, reel_width=8, source_start=0, media_root="") -> str:
     title = re.sub(r"[^\x20-\x7e]", "", _one_line(project["name"]))[:70] or "SOUNDSTAGE CUT"
     lines = [f"TITLE: {title}", "FCM: NON-DROP FRAME", ""]
 
-    def event(num, reel, ch, si, so, ri, ro, stc=None):
+    def event(num, reel, ch, si, so, ri, ro, stc=None, kind="C", dur=None):
         stc = stc or (lambda f: tc(source_start + f))
-        return (f"{num:03d}  {reel.ljust(reel_width)} {ch:<5} {'C':<4} {'':<3} "
+        return (f"{num:03d}  {reel.ljust(reel_width)} {ch:<5} {kind:<4} {'   ' if dur is None else f'{dur:03d}'} "
                 f"{stc(si)} {stc(so)} {tc(start + ri)} {tc(start + ro)}")
 
+    bl = "BL".ljust(reel_width)
+    spans, tail_span = trans_spans(project)
+    rows = layout(project)
+
+    def reel_of(row):
+        return source_reel(row["shot"]["source"], reel_width) if media_for(row["shot"], media_root)["rung"] == "source" \
+            else reels[row["shot"]["id"]]
+
+    def stc_of(row):
+        if media_for(row["shot"], media_root)["rung"] != "source":
+            return (lambda f: f), None
+        st = source_timing(row["shot"]["source"], project)
+        return (lambda f: st["start"] + st["map"](f)), (lambda f, b=st["sfi"]["base"]: frames_to_tc(f, b))
+
+    def cut_line(n, row, rec_at):
+        mp, stc = stc_of(row)
+        f = mp(row["in"] + (rec_at - row["recIn"]))
+        return event(n, reel_of(row), "V", f, f, rec_at, rec_at, stc)
+
+    def white(sp):
+        return ["* SOUNDSTAGE: DIP TO WHITE (BL in the EDL: set the colour to white in the NLE)"] if sp["type"] == "dip_white" else []
+
     num = 0
-    for row in layout(project):
-        num += 1
+    for k, row in enumerate(rows):
         m = media_for(row["shot"], media_root)
         src = row["shot"].get("source")
-        if m["rung"] == "source":
-            st = source_timing(src, project)
-            lines.append(event(num, source_reel(src, reel_width), "V", st["start"] + st["map"](row["in"]),
-                               st["start"] + st["map"](row["out"]), row["recIn"], row["recOut"],
-                               lambda f, b=st["sfi"]["base"]: frames_to_tc(f, b)))
+        into = spans[k]
+        nxt = spans[k + 1] if k + 1 < len(spans) else None
+        tail = tail_span if k == len(rows) - 1 else None
+        cut_at = row["recOut"] - (nxt["pre"] if nxt and not nxt.get("head") else 0) - (tail["pre"] if tail else 0)
+        rec_in, src_in = row["recIn"], row["in"]
+        mp, stc = stc_of(row)
+        so = mp(row["in"] + (cut_at - row["recIn"]))
+        name = _one_line(row["shot"]["name"])
+        head = []
+        if into and into.get("head"):
+            num += 1
+            head += [event(num, bl, "V", 0, 0, 0, 0, tc), event(num, reel_of(row), "V", mp(src_in), so, 0, cut_at, stc, "D", into["post"]),
+                     "* FROM CLIP NAME: BLACK", f"* TO CLIP NAME: {name}", *white(into)]
+        elif into and is_overlap(into["type"]):
+            a = rows[k - 1]
+            rec_in, src_in = into["at"] - into["pre"], row["in"] - into["pre"]
+            num += 1
+            head += [cut_line(num, a, rec_in), event(num, reel_of(row), "V", mp(src_in), so, rec_in, cut_at, stc,
+                                                     "W001" if into["type"] == "wipe" else "D", into["frames"]),
+                     f"* FROM CLIP NAME: {_one_line(a['shot']['name'])}", f"* TO CLIP NAME: {name}"]
+        elif into:
+            a = rows[k - 1]
+            if into["pre"]:
+                num += 1
+                lines += [cut_line(num, a, into["at"] - into["pre"]),
+                          event(num, bl, "V", 0, into["pre"], into["at"] - into["pre"], into["at"], tc, "D", into["pre"]),
+                          f"* FROM CLIP NAME: {_one_line(a['shot']['name'])}", "* TO CLIP NAME: BLACK", *white(into), ""]
+            if into["post"]:
+                num += 1
+                head += [event(num, bl, "V", 0, 0, into["at"], into["at"], tc),
+                         event(num, reel_of(row), "V", mp(src_in), so, into["at"], cut_at, stc, "D", into["post"]),
+                         "* FROM CLIP NAME: BLACK", f"* TO CLIP NAME: {name}", *white(into)]
+        if head:
+            lines += head
         else:
-            lines.append(event(num, reels[row["shot"]["id"]], "V", row["in"], row["out"], row["recIn"], row["recOut"]))
-        lines.append(f"* FROM CLIP NAME: {_one_line(row['shot']['name'])}")
+            num += 1
+            lines.append(event(num, reel_of(row), "V", mp(src_in), so, rec_in, cut_at, stc))
+            lines.append(f"* FROM CLIP NAME: {name}")
         if not m["offline"]:
             lines.append(f"* SOURCE FILE: {m['path']}")
         if m["rung"] == "source":
@@ -486,6 +754,10 @@ def to_edl(project, reel_width=8, source_start=0, media_root="") -> str:
                          f"TC {frames_to_tc(st['start'] + st['map'](row['in']), st['sfi']['base'])} {_src_spec_text(src)}")
         if relink_note(m):
             lines.append(f"* SOUNDSTAGE: {relink_note(m)}")
+        if into and into["limited"]:
+            lines.append(f"* SOUNDSTAGE: {into['type'].upper()} {into['req']} FRAMES SHORTENED TO {into['frames']} (HANDLES)")
+        if row["event"].get("opacity"):
+            lines.append("* SOUNDSTAGE OPACITY: " + ", ".join(f"{f} {v:.2f}" for f, v in row["event"]["opacity"]))
         locs = []  # one LOC per frame: Avid keeps a single locator per frame
         for it in note_items(row):
             same = next((l for l in locs if l["src"] == it["src"]), None)
@@ -497,6 +769,10 @@ def to_edl(project, reel_width=8, source_start=0, media_root="") -> str:
             lines.append(f"* LOC: {tc(start + row['recIn'] + it['src'] - row['in'])} "
                          f"{avid_color(it.get('color')).upper():<7} {it['text']}")
         lines.append("")
+        if tail:
+            num += 1
+            lines += [cut_line(num, row, cut_at), event(num, bl, "V", 0, tail["pre"], cut_at, row["recOut"], tc, "D", tail["pre"]),
+                      f"* FROM CLIP NAME: {name}", "* TO CLIP NAME: BLACK", *white(tail), ""]
     for k, lane in enumerate(audio_lanes(project)):
         ch = "A" if k == 0 else f"A{k + 1}"
         for a in lane["clips"]:
@@ -518,7 +794,15 @@ def to_edl(project, reel_width=8, source_start=0, media_root="") -> str:
                 fx.append("MUTED")
             if fx:
                 lines.append(f"* SOUNDSTAGE AUDIO: {', '.join(fx)}")
+            lk = merged_level_keys(a)
+            if lk:
+                lines.append("* SOUNDSTAGE LEVEL: " + ", ".join(f"{f} {_gain_text(db)}" for f, db in lk))
             lines.append("")
+    for t in project.get("titles") or []:
+        lines.append(f"* SOUNDSTAGE TITLE: {tc(start + t['start_frame'])} {tc(start + t['start_frame'] + t['frames'])} "
+                     f"{t['style'].upper()} {_one_line(t['text'])}")
+    if project.get("titles"):
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -639,6 +923,25 @@ def to_otio(project, media_root="") -> dict:
             "active_media_reference_key": "DEFAULT_MEDIA",
         })
 
+    spans, tail = trans_spans(project)
+    for k, row in enumerate(layout(project)):
+        if row["event"].get("opacity"):
+            clips[k]["metadata"]["soundstage"]["opacity"] = row["event"]["opacity"]
+    names = {"dissolve": "Cross Dissolve", "dip_black": "Dip to Black", "dip_white": "Dip to White", "wipe": "Wipe"}
+
+    def otio_trans(sp):
+        return {"OTIO_SCHEMA": "Transition.1", "metadata": {"soundstage": {"type": sp["type"], "frames": sp["frames"], "requested": sp["req"]}},
+                "name": names[sp["type"]], "transition_type": "SMPTE_Wipe" if sp["type"] == "wipe" else "SMPTE_Dissolve",
+                "in_offset": _rt(sp["pre"], rate), "out_offset": _rt(sp["post"], rate)}
+
+    v1 = []
+    for k, c in enumerate(clips):
+        if spans[k]:
+            v1.append(otio_trans(spans[k]))
+        v1.append(c)
+    if tail:
+        v1.append(otio_trans(tail))
+
     def track(name, kind, children):
         return {"OTIO_SCHEMA": "Track.1", "metadata": {}, "name": name, "source_range": None, "effects": [],
                 "markers": [], "enabled": True, "color": None, "children": children, "kind": kind}
@@ -656,7 +959,8 @@ def to_otio(project, media_root="") -> dict:
             children.append({
                 "OTIO_SCHEMA": "Clip.2",
                 "metadata": {"soundstage": {"audio_id": a["id"], "track": a["track"], "gain_db": _num(a["gain_db"]),
-                                            "fade_in": a["fade_in"], "fade_out": a["fade_out"]}},
+                                            "fade_in": a["fade_in"], "fade_out": a["fade_out"],
+                                            **({"level_keys": merged_level_keys(a)} if a.get("keys") or a.get("duck") else {})}},
                 "name": a["label"],
                 "source_range": _tr(a["in"], audio_len(a), rate),
                 "effects": [],
@@ -671,6 +975,25 @@ def to_otio(project, media_root="") -> dict:
             })
             pos = a["start_frame"] + audio_len(a)
         audio_tracks.append(track(lane["name"], "Audio", children))
+    title_tracks = []
+    if project.get("titles"):
+        children, pos = [], 0
+        for t in sorted(project["titles"], key=lambda x: x["start_frame"]):
+            if t["start_frame"] < pos:
+                continue
+            if t["start_frame"] > pos:
+                children.append(gap(t["start_frame"] - pos))
+            children.append({"OTIO_SCHEMA": "Clip.2", "metadata": {"soundstage": {"title_id": t["id"], "style": t["style"],
+                                                                                  "fade_in": t["fade_in"], "fade_out": t["fade_out"]}},
+                             "name": t["text"][:60], "source_range": _tr(0, t["frames"], rate), "effects": [], "markers": [],
+                             "enabled": True, "color": None,
+                             "media_references": {"DEFAULT_MEDIA": {"OTIO_SCHEMA": "GeneratorReference.1", "metadata": {}, "name": "Title",
+                                                                    "available_range": _tr(0, t["frames"], rate), "available_image_bounds": None,
+                                                                    "generator_kind": "SoundstageTitle",
+                                                                    "parameters": {"text": t["text"], "style": t["style"]}}},
+                             "active_media_reference_key": "DEFAULT_MEDIA"})
+            pos = t["start_frame"] + t["frames"]
+        title_tracks.append(track("V2", "Video", children))
     return {
         "OTIO_SCHEMA": "Timeline.1",
         "metadata": {"soundstage": {"fps": _num(project["fps"]), "width": project["width"], "height": project["height"],
@@ -680,7 +1003,7 @@ def to_otio(project, media_root="") -> dict:
         "tracks": {
             "OTIO_SCHEMA": "Stack.1", "metadata": {}, "name": "tracks", "source_range": None, "effects": [],
             "markers": [], "enabled": True, "color": None,
-            "children": [track("V1", "Video", clips)] + audio_tracks,
+            "children": [track("V1", "Video", v1)] + title_tracks + audio_tracks,
         },
     }
 
@@ -745,6 +1068,10 @@ def to_fcpxml(project, media_root="") -> str:
                 audio_assets[url]["frames"] = max(audio_assets[url]["frames"], _audio_src_frames(a))
             else:
                 audio_assets[url] = {"id": new_id(), "name": a["label"], "frames": _audio_src_frames(a), "url": url}
+    spans, tail = trans_spans(project)
+    dissolve_id = new_id() if any(spans) or tail else None
+    titles = project.get("titles") or []
+    title_id = new_id() if titles else None
     w, h = project["width"], project["height"]
     dl = project.get("delivery")
     seq_src = next((x["source"] for x in project["shots"] if x.get("source") and dl and x["name"] == dl["from"]), None)
@@ -770,6 +1097,11 @@ def to_fcpxml(project, media_root="") -> str:
                    f'hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000">')
         out.append(f'      <media-rep kind="original-media" src="{_esc(a["url"])}"/>')
         out.append("    </asset>")
+    if dissolve_id:
+        out.append(f'    <effect id="{dissolve_id}" name="Cross Dissolve" uid="FxPlug:4731E73A-8DAC-4113-9A30-AE85B1761265"/>')
+    if title_id:
+        out.append(f'    <effect id="{title_id}" name="Basic Title" '
+                   'uid=".../Titles.localized/Bumper:Opener.localized/Basic Title.localized/Basic Title.moti"/>')
     name = _esc(project["name"])
     out += ["  </resources>", "  <library>", f'    <event name="{name}">', f'      <project name="{name}">']
     start = record_start(fi["base"])
@@ -793,20 +1125,47 @@ def to_fcpxml(project, media_root="") -> str:
             i = next((j for j, it in enumerate(items) if it["recIn"] <= a["start_frame"] < it["recOut"]), len(items) - 1)
             anchored[i].append((a, k + 1))
 
+    title_anchors = [[] for _ in items]
+    for tt in titles:
+        i = next((j for j, it in enumerate(items) if it["recIn"] <= tt["start_frame"] < it["recOut"]), len(items) - 1)
+        title_anchors[i].append(tt)
+    ts_n = [0]
+
+    def title_xml(tt, it):
+        ts_n[0] += 1
+        tid, size = f"ts{ts_n[0]}", 48 if tt["style"] == "lower" else 72
+        return [f'              <title ref="{title_id}" lane="1" offset="{it["local"](tt["start_frame"] - it["recIn"])}" '
+                f'name="{_esc(tt["text"][:60])}" start="0s" duration="{t(tt["frames"])}">',
+                f'                <text><text-style ref="{tid}">{_esc(tt["text"])}</text-style></text>',
+                f'                <text-style-def id="{tid}"><text-style font="Helvetica" fontSize="{size}" fontColor="1 1 1 1" '
+                'alignment="center"/></text-style-def>',
+                "              </title>"]
+
+    tnames = {"dissolve": "Cross Dissolve", "dip_black": "Dip to Black", "dip_white": "Dip to White", "wipe": "Wipe"}
+
+    def trans_xml(sp):
+        return [f'            <transition name="{tnames[sp["type"]]}" offset="{t(start + sp["at"] - sp["pre"])}" duration="{t(sp["frames"])}">',
+                f'              <filter-video ref="{dissolve_id}" name="Cross Dissolve"/>', "            </transition>"]
+
     def audio_xml(a, lane_no, it):
         asset = audio_assets[audio_media(a, media_root)["url"]]
         attrs = (f'ref="{asset["id"]}" lane="-{lane_no}" offset="{it["local"](a["start_frame"] - it["recIn"])}" '
                  f'name="{_esc(a["label"])}" start="{t(a["in"])}" duration="{t(audio_len(a))}" audioRole="effects"'
                  + ("" if audible(project, a["track"]) else ' enabled="0"'))
-        if not a["gain_db"] and not a["fade_in"] and not a["fade_out"]:
+        lk = merged_level_keys(a)
+        if not a["gain_db"] and not a["fade_in"] and not a["fade_out"] and not lk:
             return [f"              <asset-clip {attrs}/>"]
         x = [f"              <asset-clip {attrs}>"]
-        if a["fade_in"] or a["fade_out"]:
+        if a["fade_in"] or a["fade_out"] or lk:
             x += [f'                <adjust-volume amount="{a["gain_db"]:.1f}dB">', '                  <param name="amount">']
             if a["fade_in"]:
                 x.append(f'                    <fadeIn type="easeIn" duration="{t(a["fade_in"])}"/>')
             if a["fade_out"]:
                 x.append(f'                    <fadeOut type="easeIn" duration="{t(a["fade_out"])}"/>')
+            if lk:
+                x.append("                    <keyframeAnimation>")
+                x += [f'                      <keyframe time="{t(a["in"] + f)}" value="{a["gain_db"] + db:.1f}dB"/>' for f, db in lk]
+                x.append("                    </keyframeAnimation>")
             x += ["                  </param>", "                </adjust-volume>"]
         else:
             x.append(f'                <adjust-volume amount="{a["gain_db"]:.1f}dB"/>')
@@ -816,8 +1175,12 @@ def to_fcpxml(project, media_root="") -> str:
     for i, it in enumerate(items):
         inner = []
         if it.get("gap"):
+            if tail and i == len(items) - 1:
+                out += trans_xml(tail)
             for a, k in anchored[i]:
                 inner += audio_xml(a, k, it)
+            for tt in title_anchors[i]:
+                inner += title_xml(tt, it)
             opening = f'<gap name="Gap" offset="{t(start + it["recIn"])}" duration="{t(it["recOut"] - it["recIn"])}"'
             if not inner:
                 out.append(f"            {opening}/>")
@@ -832,19 +1195,29 @@ def to_fcpxml(project, media_root="") -> str:
         note = relink_note(a["media"])
         if note:
             inner.append(f"              <note>{_esc(note)}</note>")
+        if row["event"].get("opacity"):
+            inner += ['              <adjust-blend amount="1">', '                <param name="amount">', "                  <keyframeAnimation>",
+                      *[f'                    <keyframe time="{it["local"](f)}" value="{v:.2f}"/>' for f, v in row["event"]["opacity"]],
+                      "                  </keyframeAnimation>", "                </param>", "              </adjust-blend>"]
         # A still sits in a <clip> holding a <video>: the form every FCPXML reader accepts.
         if still:
             inner.append(f'              <video ref="{a["id"]}" offset="{t(row["in"])}" duration="{t(row["len"])}"/>')
         for au, k in anchored[i]:
             inner += audio_xml(au, k, it)
+        for tt in title_anchors[i]:
+            inner += title_xml(tt, it)
+        if spans[row["index"]]:
+            out += trans_xml(spans[row["index"]])
         for n in note_items(row):
             inner.append(f'              <marker start="{it["local"](n["src"] - row["in"])}" duration="{t(1)}" value="{_esc(n["text"])}"/>')
         opening = (f'<clip {timing} format="r1" tcFormat="NDF"' if still
                    else f'<asset-clip ref="{a["id"]}" {timing} tcFormat="NDF"')
         if not inner:
             out.append(f"            {opening}/>")
-            continue
-        out += [f"            {opening}>", *inner, f"            </{'clip' if still else 'asset-clip'}>"]
+        else:
+            out += [f"            {opening}>", *inner, f"            </{'clip' if still else 'asset-clip'}>"]
+        if tail and row["index"] == len(rows) - 1 and i + 1 >= len(items):
+            out += trans_xml(tail)
     out += ["          </spine>", "        </sequence>", "      </project>", "    </event>", "  </library>", "</fcpxml>", ""]
     return "\n".join(out)
 
@@ -907,7 +1280,28 @@ def to_xmeml(project, media_root="") -> str:
            "            <pixelaspectratio>square</pixelaspectratio>", "          </samplecharacteristics>", "        </format>",
            "        <track>"]
     I = "            "  # noqa: E741
+    spans, tail = trans_spans(project)
+    xm_fx = {"dissolve": ("Cross Dissolve", "Dissolve"), "dip_black": ("Dip to Color Dissolve", "Dissolve"),
+             "dip_white": ("Dip to Color Dissolve", "Dissolve"), "wipe": ("Edge Wipe", "Wipe")}
+
+    def v_trans(sp):
+        name, cat = xm_fx[sp["type"]]
+        align = ("start-black" if sp.get("head") else "end-black" if sp.get("tail") else "center" if sp["pre"] == sp["post"]
+                 else "start" if sp["pre"] == 0 else "end" if sp["post"] == 0 else "center")
+        x = ["          <transitionitem>", f"{I}<start>{sp['at'] - sp['pre']}</start>", f"{I}<end>{sp['at'] + sp['post']}</end>",
+             f"{I}<alignment>{align}</alignment>", *rate(I), f"{I}<effect>", f"{I}  <name>{name}</name>", f"{I}  <effectid>{name}</effectid>",
+             f"{I}  <effectcategory>{cat}</effectcategory>", f"{I}  <effecttype>transition</effecttype>", f"{I}  <mediatype>video</mediatype>"]
+        if sp["type"] in ("dip_white", "dip_black"):
+            c = 255 if sp["type"] == "dip_white" else 0
+            x += [f"{I}  <parameter>", f"{I}    <parameterid>color</parameterid>", f"{I}    <name>Color</name>", f"{I}    <value>",
+                  f"{I}      <alpha>255</alpha>", f"{I}      <red>{c}</red>", f"{I}      <green>{c}</green>", f"{I}      <blue>{c}</blue>",
+                  f"{I}    </value>", f"{I}  </parameter>"]
+        x += [f"{I}</effect>", "          </transitionitem>"]
+        return x
+
     for row in layout(project):
+        if spans[row["index"]]:
+            out += v_trans(spans[row["index"]])
         m = media_for(row["shot"], media_root)
         sp = row["shot"].get("source")
         if m["rung"] == "source":
@@ -930,8 +1324,37 @@ def to_xmeml(project, media_root="") -> str:
         for n in note_items(row):
             out += [f"{I}<marker>", f"{I}  <comment>{_esc(n['text'])}</comment>", f"{I}  <name>{_esc(n['text'][:60])}</name>",
                     f"{I}  <in>{n['src']}</in>", f"{I}  <out>-1</out>", f"{I}</marker>"]
+        if row["event"].get("opacity"):
+            kf = []
+            for f, v in row["event"]["opacity"]:
+                kf += [f"{I}      <keyframe>", f"{I}        <when>{row['in'] + f}</when>", f"{I}        <value>{v * 100:.1f}</value>",
+                       f"{I}      </keyframe>"]
+            out += [f"{I}<filter>", f"{I}  <effect>", f"{I}    <name>Opacity</name>", f"{I}    <effectid>opacity</effectid>",
+                    f"{I}    <effectcategory>motion</effectcategory>", f"{I}    <effecttype>motion</effecttype>",
+                    f"{I}    <mediatype>video</mediatype>", f"{I}    <parameter>", f"{I}      <parameterid>opacity</parameterid>",
+                    f"{I}      <name>Opacity</name>", f"{I}      <valuemin>0</valuemin>", f"{I}      <valuemax>100</valuemax>",
+                    f"{I}      <value>100</value>", *kf, f"{I}    </parameter>", f"{I}  </effect>", f"{I}</filter>"]
         out.append("          </clipitem>")
-    out += ["        </track>", "      </video>", "      <audio>", "        <format>", "          <samplecharacteristics>",
+    if tail:
+        out += v_trans(tail)
+    out.append("        </track>")
+    if project.get("titles"):
+        out.append("        <track>")
+        pos, g_n = 0, 0
+        for tt in sorted(project["titles"], key=lambda x: x["start_frame"]):
+            if tt["start_frame"] < pos:
+                continue
+            g_n += 1
+            out += [f'          <generatoritem id="title-{g_n}">', f"{I}<name>{_esc(tt['text'][:60])}</name>", f"{I}<enabled>TRUE</enabled>",
+                    f"{I}<duration>{tt['frames']}</duration>", *rate(I), f"{I}<start>{tt['start_frame']}</start>",
+                    f"{I}<end>{tt['start_frame'] + tt['frames']}</end>", f"{I}<in>0</in>", f"{I}<out>{tt['frames']}</out>", f"{I}<effect>",
+                    f"{I}  <name>Text</name>", f"{I}  <effectid>Text</effectid>", f"{I}  <effectcategory>Text</effectcategory>",
+                    f"{I}  <effecttype>generator</effecttype>", f"{I}  <mediatype>video</mediatype>", f"{I}  <parameter>",
+                    f"{I}    <parameterid>str</parameterid>", f"{I}    <name>Text</name>", f"{I}    <value>{_esc(tt['text'])}</value>",
+                    f"{I}  </parameter>", f"{I}</effect>", "          </generatoritem>"]
+            pos = tt["start_frame"] + tt["frames"]
+        out.append("        </track>")
+    out += ["      </video>", "      <audio>", "        <format>", "          <samplecharacteristics>",
             "            <depth>24</depth>", "            <samplerate>48000</samplerate>", "          </samplecharacteristics>",
             "        </format>"]
     for lane in audio_lanes(project):
@@ -944,12 +1367,17 @@ def to_xmeml(project, media_root="") -> str:
                     f"{I}<duration>{_audio_src_frames(a)}</duration>", *rate(I), f"{I}<start>{s}</start>", f"{I}<end>{e}</end>",
                     f"{I}<in>{a['in']}</in>", f"{I}<out>{a['out']}</out>", *file_xml(I, p, _audio_src_frames(a), "audio"),
                     f"{I}<sourcetrack>", f"{I}  <mediatype>audio</mediatype>", f"{I}  <trackindex>1</trackindex>", f"{I}</sourcetrack>"]
-            if a["gain_db"]:
+            lk = merged_level_keys(a)
+            if a["gain_db"] or lk:
+                kf = []
+                for f, db in lk or []:
+                    kf += [f"{I}      <keyframe>", f"{I}        <when>{a['in'] + f}</when>",
+                           f"{I}        <value>{10 ** ((a['gain_db'] + db) / 20):.6f}</value>", f"{I}      </keyframe>"]
                 out += [f"{I}<filter>", f"{I}  <effect>", f"{I}    <name>Audio Levels</name>", f"{I}    <effectid>audiolevels</effectid>",
                         f"{I}    <effectcategory>audiolevels</effectcategory>", f"{I}    <effecttype>audiolevels</effecttype>",
                         f"{I}    <mediatype>audio</mediatype>", f"{I}    <parameter>", f"{I}      <parameterid>level</parameterid>",
                         f"{I}      <name>Level</name>", f"{I}      <valuemin>0</valuemin>", f"{I}      <valuemax>3.98109</valuemax>",
-                        f"{I}      <value>{10 ** (a['gain_db'] / 20):.6f}</value>", f"{I}    </parameter>", f"{I}  </effect>",
+                        f"{I}      <value>{10 ** (a['gain_db'] / 20):.6f}</value>", *kf, f"{I}    </parameter>", f"{I}  </effect>",
                         f"{I}</filter>"]
             out.append("          </clipitem>")
             for n, at, align in ((a["fade_in"], s, "start"), (a["fade_out"], e - a["fade_out"], "end")):
@@ -1001,4 +1429,12 @@ def export_all(project, reel_width=8, source_start=0, media_root="", **_) -> dic
         f"{base}.fcpxml": to_fcpxml(project, media_root),
         f"{base}.otio": json.dumps(to_otio(project, media_root), indent=2, ensure_ascii=False) + "\n",
         "RELINK.txt": to_relink_list(project, media_root),
+        **_subtitle_files(project, base),
     }
+
+
+def _subtitle_files(project, base) -> dict:
+    p = normalize_project(project)
+    if not p.get("subtitles"):
+        return {}
+    return {f"{base}.srt": to_srt(p), f"{base}.vtt": to_vtt(p)}
