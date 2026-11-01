@@ -7,6 +7,7 @@ import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompo
 import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./humans.mjs";
 import * as Mocap from "./mocap.mjs";
 import { applyRig, RIGS } from "./camrig.mjs";
+import { materialOf, impactParticles, impactFlash, impactShake, jitterPhysics, jitterTilt } from "./impacts.mjs";
 import { STUNTS, hasHeadingKeys, headingTrack, channelAt, driveAt, isStunt, unwrapDeg, vehicleDynamics, smokeParticles, stuntKeys } from "./stunts.mjs";
 import { PoseGizmo } from "./posegizmo.mjs";
 import { buildSet, buildWater, buildWeather, buildTireSmoke } from "./environments.mjs";
@@ -548,13 +549,14 @@ export class Stage {
       const moves = keys.length > 1 && keys.some((k) => Math.hypot(k.position[0] - keys[0].position[0], k.position[2] - keys[0].position[2]) > 0.01);
       const sphere = a.kind === "sphere";
       specs.push({ id: a.id, shape: sphere ? "sphere" : "box", half: box.half, center: box.center, radius: sphere ? Math.min(...box.half) : 0,
-        dynamic: true, mass: p.mass, bounce: p.bounce, friction: p.friction, poses: poses.get(a.id), release: moves ? keys[keys.length - 1].frame : 0 });
+        dynamic: true, mass: p.mass, bounce: p.bounce, friction: p.friction, poses: poses.get(a.id), release: moves ? keys[keys.length - 1].frame : 0,
+        material: materialOf(a) });
     }
     for (const a of colliders) {
       const g = this.actorMeshes.get(a.id), box = g && this._localBox(g);
       if (!box) continue;
       const p = physicsOf(a);
-      const base = { dynamic: false, bounce: p.bounce, friction: p.friction, poses: poses.get(a.id) };
+      const base = { dynamic: false, bounce: p.bounce, friction: p.friction, poses: poses.get(a.id), material: materialOf(a) };
       if (PERSON_KINDS.has(a.kind)) {   // a body, not its outstretched arms
         specs.push({ ...base, id: a.id, shape: "box", half: [box.half[0] * 0.6, box.half[1], box.half[2] * 0.75], center: box.center });
       } else if (CAR_BODIES.has(a.kind)) {   // a car is a low body and a cabin, so a crate goes over the bonnet, not up a wall
@@ -566,6 +568,10 @@ export class Stage {
     specs.push(...this._setColliders());
     const res = simulate(specs, last + 1, { fps, substeps: opts.substeps || 20 });
     const qa = checkTracks(specs, res, fps);
+    // The hits, stored with the bake (Milestone 21): impact dust, camera shake, prompt beats and A2 sounds key off them.
+    // A car's body / cabin boxes report as the car.
+    const events = (res.events || []).map((e) => ({ ...e, a: String(e.a).split("#")[0], b: String(e.b).split("#")[0] }));
+    this.state.physics = { ...(this.state.physics || {}), events, fps, frames: last + 1 };
     for (const a of dynamic) {
       const tr = res.tracks[a.id];
       if (!tr) continue;
@@ -579,7 +585,7 @@ export class Stage {
     const moving = dynamic.filter((a) => a.keys.length > 2).length;
     const restless = dynamic.filter((a) => res.settled[a.id] == null).map((a) => a.name);
     const ms = Math.round(performance.now() - t0);
-    return { ok: true, bodies: dynamic.length, colliders: specs.length - dynamic.length, moving, restless, ms, ...qa,
+    return { ok: true, bodies: dynamic.length, colliders: specs.length - dynamic.length, moving, restless, ms, impacts: events.length, ...qa,
       message: `Simulated ${dynamic.length} object${dynamic.length === 1 ? "" : "s"} over ${last + 1} frames in ${(ms / 1000).toFixed(1)} s` +
         ` and baked ${moving} into keys${restless.length ? `; still moving at the end: ${restless.slice(0, 3).join(", ")}` : "; everything comes to rest"}.` };
   }
@@ -595,9 +601,14 @@ export class Stage {
       delete a.physics.source;
       n++;
     }
+    // No baked object left: its hits go too (no dust, shake or impact sounds from a crash that no longer happens).
+    if (n && this.state.physics && !this.state.actors.some((a) => a.physics?.baked)) delete this.state.physics.events;
     if (n) { this.setFrame(this.frame); this.onChange(this.toJSON()); }
     return n;
   }
+
+  /** The baked hits (scene.physics.events), [] when nothing is baked. */
+  impactEvents() { return this.state.physics?.events || []; }
 
   // ---------- time & keyframes ----------
   _lastFrame() {
