@@ -37,6 +37,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 
 | When | Update |
 |---|---|
+| Oct 31, 19:50 PDT | **Takes that check themselves:** after every draft or final, CPU checks flag black frames, freezes, jumps, smear, face drift and cars facing the wrong way, as chips on the Ladder and in Dailies, with a Re-roll that asks first. Plus a **Follows your blocking %** score, **Ready / Needs X** on every step, **$0 · about N min on your GPU** on Run, and the recipe inside every MP4 (drop it back to restore the shot). |
 | Oct 31, 15:49 PDT | **The pro look:** one design system (type scale, spacing, legible text), yellow only for each step's main action, a **?** keyboard-shortcut sheet, a calmer first screen; Cast fits on one screen, Frame's Style and Camera open as searchable pop-overs, no more empty black players. |
 | Oct 31, 14:49 PDT | **New sets showcase:** reef diver, firefighter, airliner window and train window, rendered through the App. Scene setup frames each new set. |
 | Oct 31, 14:06 PDT | **Movie car stunts:** reverse J-turn, donut and handbrake 180 in one pick; the body rolls on its springs, tyre smoke pours off the wheels, the prompts say which end leads. |
