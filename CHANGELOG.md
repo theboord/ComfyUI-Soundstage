@@ -5,6 +5,22 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-01
 
+**14:40 PST · Car stunts are driven, not hand-keyed: a vehicle-dynamics simulation under the J-turn, handbrake 180 and donut** *(Milestone 13, round 3)*
+- **Why:** the old J-turn scrubbed 13 m/s to nothing in about a second on a wet road. That is about 1.3 g, twice what wet tyres give, and it spun 180° in 0.7 s. It read as a video game.
+- **The car:**
+  - **Model:** a planar four-wheel car (mass, yaw inertia, wheelbase, CG height, track). Every wheel spins on its own, so a wheel locks under the handbrake and spins up on a launch.
+  - **Tyres:** Pacejka Magic Formula on combined slip, with a friction ellipse. Wet μ 0.62 and dry μ 0.9, using the published B, C, E sets.
+  - **Body:** longitudinal and lateral weight transfer. The sprung body's roll (6 °/g, 1.3 Hz, ζ 0.25) and pitch are damped oscillators that feed the transfer, so the car leans, wobbles and settles.
+- **The presets are now driver scripts:** throttle, brake, handbrake, steer and gear, at set times or when the car has turned far enough. The path, heading, roll, pitch and tyre slip are baked into a key every 2 frames. Smoke comes from the real slip.
+- **Selected car › Stunt** has **km/h**, **Road (Wet / Dry)** and **kg**. Changing one re-runs the stunt from the same start.
+- **J-turn at 40 km/h on a wet road:**
+  - The 180° takes 1.7 s (it was 0.7 s), and the car slides 18.7 m (it was about 9 m).
+  - Yaw peaks at 100 °/s, the body slips to 90° (side-on), and it leans 3.6° (6.6° on a dry road).
+  - Prompts now say "slides around 180 degrees in one long, scrubbing arc … rocking on its springs".
+- **Donut:** the simulated driver doesn't hold a steady donut yet. It does about one turn (≈290°), not two.
+- Evidence: share/Stunt_Dynamics/ (RESEARCH.md with sources, before|after clay, sheets, the Draft).
+- Code: [web/stage/vehsim.mjs](web/stage/vehsim.mjs), [web/stage/stunts.mjs](web/stage/stunts.mjs), [soundstage/look/stunts.py](soundstage/look/stunts.py). Tests: [tests/js/vehsim.test.mjs](tests/js/vehsim.test.mjs), [tests/js/stunts.test.mjs](tests/js/stunts.test.mjs), [tests/test_stunts.py](tests/test_stunts.py).
+
 **13:41 PST · Pitch Mode: talk through the idea, the set builds itself, a sketch per beat** *(Milestone 22)*
 - **● Pitch** in the Director panel (or Shift+P): the mic stays on and every sentence, ellipsis or "then" is a beat. Each beat stages the set live (place and set, time, weather, a character and wardrobe, blocking relative to the camera: walks toward / runs away / crosses, a car's headlights sweeping across, props, camera height, rig, follow and lens). "He" / "she" mean the last person of that kind. One Director undo step for the whole pitch, **Undo beat** for the last one.
 - **A FLUX 3 Klein sketch per beat** (Color pass capture, 4 steps, 0.3 MP, ~1.6–1.9 s on the GPU) lands in a filmstrip next to the live transcript, with a latency HUD. **Preview motion** queues a one-pass LTX-2.5 draft (512×288, 49 frames) of a beat. **Lock it** makes one shot per beat (its camera and rig, the line as notes, the sketch as the chosen first frame).

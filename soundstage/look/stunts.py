@@ -112,7 +112,7 @@ def beats(a: dict, frames: int, fps: float, pos_at: PosAt) -> list[dict]:
         y0, y1 = stunt_yaw(a, max(0, f - 2), last, pos_at), stunt_yaw(a, min(last, f + 2), last, pos_at)
         rate = abs(y1 - y0) / max(1, min(last, f + 2) - max(0, f - 2)) * fps
         c = (math.sin(y) * vx + math.cos(y) * vz) / sp if sp > 1e-6 else 0.0
-        if mps > 1.0 and (math.degrees(rate) > 90 or abs(c) < 0.7):
+        if mps > 1.0 and (math.degrees(rate) > 45 or abs(c) < 0.85):
             tags.append("spin")
         elif mps < 0.5:
             tags.append("stop")
@@ -124,6 +124,20 @@ def beats(a: dict, frames: int, fps: float, pos_at: PosAt) -> list[dict]:
             runs[-1][2] = f
         else:
             runs.append([t, f, f])
+    # A slow backwards roll straight after a spin is the slide running out (a handbrake 180 still carries a little
+    # of its old way), not a reverse: it rocks to a stop.
+    for i in range(1, len(runs)):
+        if runs[i][0] == "reverse" and runs[i - 1][0] == "spin":
+            p0, p1 = pos_at(a, runs[i][1], last), pos_at(a, runs[i][2], last)
+            if math.hypot(p1[0] - p0[0], p1[2] - p0[2]) / max(1, runs[i][2] - runs[i][1]) * fps < 3.0:
+                runs[i][0] = "stop"
+    merged_runs: list[list] = []
+    for r in runs:
+        if merged_runs and merged_runs[-1][0] == r[0]:
+            merged_runs[-1][2] = r[2]
+        else:
+            merged_runs.append(r)
+    runs = merged_runs
     changed = True
     while changed and len(runs) > 1:          # fold blips (a 2-frame "forward" between two spin frames) into a neighbour
         changed = False
@@ -181,8 +195,9 @@ def stunt_mark(a: dict, frames: int, fps: float, pos_at: PosAt, fwd: tuple, righ
     """(verb phrase, way) for the motion prompt's mark sentence, beat by beat, or None for an ordinary car.
 
     The reverse J-turn: "races backwards toward the camera, rear end first, its red tail lights and white reverse lights
-    glowing; at full speed the driver flicks the wheel: the front swings wide and the whole car whips around 180
-    degrees in one sliding arc, ...; it snaps straight, now facing the way it is moving, ... and drives forward"."""
+    glowing; the driver lifts and flicks the wheel: the front swings wide and the whole car slides around 180 degrees
+    in one long, scrubbing arc, ...; it wobbles straight on its springs, now facing the way it is moving, ... and drives
+    forward"."""
     if not is_stunt(a):
         return None
     bs = [b for b in beats(a, frames, fps, pos_at) if b["beat"] != "stop" or b["end"] - b["start"] > 8]
@@ -200,17 +215,20 @@ def stunt_mark(a: dict, frames: int, fps: float, pos_at: PosAt, fwd: tuple, righ
                          "the driver twisted round looking back over the seat")
         elif b["beat"] == "spin":
             turn = b["turn_deg"]
+            if a.get("stunt") in ("reverse_jturn", "handbrake_180") and 120 < turn < 240:
+                turn = 180.0   # the slide's last few degrees run out after the spin beat: it is still a 180
             smoke = smoke_amt != 0
             nxt = bs[i + 1]["beat"] if i + 1 < len(bs) else ""
-            which = "rear" if prev == "forward" or turn > 300 else "front"
+            donut = turn > 300 or (a.get("stunt") == "donut" and turn > 200)
+            which = "rear" if prev == "forward" or donut else "front"
             tail = f", a thick burst of {puff} pouring off the {which} tyres" if smoke else ""
-            if turn > 300:
+            if donut:
                 parts.append(f"spins {_degrees_words(turn)} on the spot, the nose locked inside a tight circle and the tail sliding "
                              f"round, the body leaning out hard on its springs, the tyres screaming{tail}")
             elif prev == "reverse":
-                parts.append(f"at full speed the driver flicks the wheel: the front swings wide and the whole car whips around "
-                             f"{_degrees_words(turn)} in one sliding arc, the body rolling hard onto its outside tyres, the tyres "
-                             f"screaming{tail}")
+                parts.append(f"the driver lifts and flicks the wheel: the front swings wide and the whole car slides around "
+                             f"{_degrees_words(turn)} in one long, scrubbing arc, the heavy body rolling onto its outside tyres "
+                             f"and rocking on its springs, the tyres screaming{tail}")
             else:
                 parts.append(f"the driver yanks the handbrake: the tail steps out and the car slides round {_degrees_words(turn)} "
                              f"in one long arc, the body rolling onto its outside tyres, the tyres screaming{tail}")
@@ -218,12 +236,13 @@ def stunt_mark(a: dict, frames: int, fps: float, pos_at: PosAt, fwd: tuple, righ
                 parts[-1] += ", rocking to a stop on its springs"
         elif b["beat"] == "forward":
             if prev in ("spin", "stop"):
-                parts.append(f"it snaps straight, now facing the way it is moving, the rear squats as the driver floors it and it "
+                parts.append(f"it wobbles straight on its springs, now facing the way it is moving, the rear squats as the driver feeds in the throttle and it "
                              f"drives forward, nose first, {way}" + (", trailing smoke" if smoke_amt != 0 else ""))
             else:
                 parts.append(f"{'then ' if parts else ''}{'charges' if b['speed'] > 8 else 'drives'} forward {way}, nose first")
         elif b["beat"] == "stop":
-            parts.append("rocks to a stop on its springs")
+            if prev != "spin":   # a spin that ends in a stop already says so
+                parts.append("rocks to a stop on its springs")
         prev = b["beat"]
     if not any(b["beat"] in ("reverse", "spin") for b in bs):
         return None

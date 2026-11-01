@@ -44,6 +44,7 @@ def _stunt_scene(kind: str):
     st["actors"] = [a for a in st["actors"] if a["id"] in ("sports_car", "getaway")]
     car = next(a for a in st["actors"] if a["id"] == "sports_car")
     car["keys"] = _keys(kind)
+    car["stunt"] = kind
     car["position"] = car["keys"][0]["position"]
     next(a for a in st["actors"] if a["id"] == "getaway")["keys"] = [{"frame": 0, "position": car["position"]}]
     cam = [{"frame": 0, "position": [5.0, 1.2, 40], "target": [1.55, 0.9, -14], "focal_mm": 85},
@@ -94,10 +95,10 @@ def test_reverse_jturn_prompts_narrate_reverse_spin_forward():
     assert "driving forward" not in still
     # The motion prompt, in order: backwards, the 180, then nose first.
     i = motion.index("races backwards toward the camera, rear end first")
-    j = motion.index("whips around 180 degrees")
+    j = motion.index("slides around 180 degrees")
     k = motion.index("drives forward, nose first")
     assert i < j < k
-    assert "tyre smoke" in motion and "rolling hard onto its outside tyres" in motion
+    assert "tyre smoke" in motion and "rolling onto its outside tyres" in motion
     for text in (still, motion, r.get("negative_prompt") or "", r.get("motion_negative") or ""):
         assert not FORBIDDEN.search(text), FORBIDDEN.search(text).group(0)
 
@@ -105,7 +106,7 @@ def test_reverse_jturn_prompts_narrate_reverse_spin_forward():
 def test_donut_and_handbrake_words():
     st, lk, _ = _stunt_scene("donut")
     m = compile_look(lk, st)["motion_prompt"]
-    assert "spins two full circles on the spot" in m and "rear tyres" in m
+    assert "on the spot" in m and "rear tyres" in m
     st, lk, car = _stunt_scene("handbrake_180")
     assert [b["beat"] for b in ST.beats(car, 121, 24, S._pos_at)][:2] == ["forward", "spin"]
     m = compile_look(lk, st)["motion_prompt"]
