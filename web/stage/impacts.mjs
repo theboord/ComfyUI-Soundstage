@@ -150,7 +150,8 @@ export function impactParticles(events, F, opts = {}) {
     const [u, v] = planeBasis(n.map((x) => (n[1] < 0 ? -x : x)));
     const es = seed * 31 + ei * 7.31 + e.frame * 0.173;
     if (want.dust && age <= DUST.lifeMax) {
-      const count = Math.min(40, Math.floor(7 * k * dustAmt + hash(es, 1)));
+      // A prop breaking open (Milestone 24 break events) throws more: dust from the new raw edges.
+      const count = Math.min(e.break ? 56 : 40, Math.floor(7 * k * dustAmt * (e.break ? 1.4 : 1) + hash(es, 1)));
       for (let i = 0; i < count; i++) {
         const r1 = hash(es + i, 2), r2 = hash(es + i, 3), r3 = hash(es + i, 4);
         const life = DUST.lifeMin + (DUST.lifeMax - DUST.lifeMin) * r1;
@@ -167,7 +168,7 @@ export function impactParticles(events, F, opts = {}) {
     }
     const chipAmt = Math.max(fa.chipAmt, fb.chipAmt);
     if (want.debris && chipAmt > 0 && e.speed > 2) {
-      const count = Math.min(24, Math.floor(6 * k * chipAmt + hash(es, 5)));
+      const count = Math.min(e.break ? 40 : 24, Math.floor(6 * k * chipAmt * (e.break ? 1.8 : 1) + hash(es, 5)));
       const chipCol = fa.chipAmt >= fb.chipAmt ? fa.chip : fb.chip;
       for (let i = 0; i < count; i++) {
         const r1 = hash(es + i, 6), r2 = hash(es + i, 7), r3 = hash(es + i, 8);

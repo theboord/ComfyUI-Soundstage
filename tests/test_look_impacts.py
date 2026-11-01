@@ -75,3 +75,13 @@ def test_shake_and_overcrank_add_their_words():
     assert "the camera jolts" in text
     assert "Slow motion" in text and "high-speed camera" in text
     assert "jolts" not in I.impact_beats(_scene(CRASH, shake="off"))
+
+
+def test_a_real_break_in_the_bake_names_the_pieces():
+    """Milestone 24: break events (the prop split into planks / panels in the bake) get break wording."""
+    brk = dict(ev(1.2, "c0", "car", 360), **{"break": True, "pieces": 6})
+    text = I.impact_beats(_scene([brk, *CRASH[1:]]))
+    assert "burst apart into loose planks" in text
+    assert "burst apart" not in I.impact_beats(_scene(CRASH))
+    card = dict(ev(1.2, "c0", "car", 360, "cardboard"), **{"break": True})
+    assert "panels and lid flaps tearing loose" in I.impact_beats(_scene([card], material="cardboard"))
