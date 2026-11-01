@@ -88,7 +88,20 @@ for f, y, lens in [(1, -12.0, 35.0), (48, -6.0, 35.0 if static_lens else 50.0)]:
     cam.keyframe_insert("rotation_euler", frame=f)
     cam_data.lens = lens
     cam_data.keyframe_insert("lens", frame=f)
-for fc in list(cam.animation_data.action.fcurves) + list(crate.animation_data.action.fcurves):
+def iter_fcurves(action):
+    """F-curves of an action: action.fcurves on Blender 4.3, the layered actions' channel bags on 4.4+ / 5.x."""
+    try:
+        yield from action.fcurves
+        return
+    except AttributeError:
+        pass
+    for layer in getattr(action, "layers", []):
+        for strip in layer.strips:
+            for bag in getattr(strip, "channelbags", []):
+                yield from bag.fcurves
+
+
+for fc in list(iter_fcurves(cam.animation_data.action)) + list(iter_fcurves(crate.animation_data.action)):
     for k in fc.keyframe_points:
         k.interpolation = "LINEAR"
 scene.render.resolution_x, scene.render.resolution_y = 1920, 1024   # the stage frame (960 x 512) doubled
