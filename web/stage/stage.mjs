@@ -29,6 +29,10 @@ import { raycastShapes } from "./physics_avbd.mjs";
 import { Highlighter } from "./outline.mjs";
 import { zoomAt, frameSphere, easeInOut, decay } from "./manip.mjs";
 import { WorldMount } from "./interop/importworld.mjs";
+import { installParts } from "./objparts.mjs";
+import * as VehicleParts from "./vehicleparts.mjs";
+import * as LightRig from "./lightrig.mjs";
+import { horse as HorseParts, prop as PropParts } from "./rigparts.mjs";
 
 /**
  * Video → Stage: the set mesh is the first frame's depth, so the person in the shot is frozen into it. The clay actor
@@ -1597,6 +1601,7 @@ export class Stage {
         // Knocked over while editing (Milestone 9): the lean it came to rest with, on top of its heading.
         if (Array.isArray(a.tilt) && a.tilt.length === 4) { g.quaternion.multiply(_tiltQ.set(a.tilt[0], a.tilt[1], a.tilt[2], a.tilt[3])); g.userData.tilted = true; }
       }
+      this._partsApply(a, g);   // Parts (objparts.mjs): steering, suspension, doors, lamps, horse head and tail, pivots
     }
     // Riders follow their mounts (man on a horse, driver in a car, someone on a bench).
     for (const a of this.state.actors) {
@@ -4200,3 +4205,6 @@ export class Stage {
     this.renderer.dispose();
   }
 }
+
+// Parts (Milestone 26): every object's keyframeable channels, its render / camera / gizmo hooks.
+installParts(Stage, { vehicle: VehicleParts, light: LightRig, horse: HorseParts, prop: PropParts, LIGHT_TYPES, LIBRARY });

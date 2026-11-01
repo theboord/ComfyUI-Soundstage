@@ -18,6 +18,7 @@ from ..cine.prompts import SIZE_STILL, _cap, _join
 from . import scene as S
 from .colors import palette_phrase, palette_words
 from .impacts import impact_beats
+from .objstate import motion_beats, still_words
 from .vocab import load_vocab, normalize_look, option
 
 FRAME1_NEGATIVE = "extra people, crowd, duplicate figures, the same person twice"
@@ -247,6 +248,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         c.get("aperture", {}).get("still", ""),
         place_words,
         "; ".join(props),
+        still_words(scene, {e["id"] for e in f1["people"] + f1["others"]}).rstrip("."),   # Milestone 26: lamps, doors, paint
         loc["weather"],
         f1["lighting"],
         c.get("technique", {}).get("still", ""),
@@ -452,6 +454,8 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
                         if len(S.groups(f1["people"] + f1["others"], f1["camera"])) == 1 else None),
         _camera_sentence(mf, f1, look),
         impact_beats(scene),                     # Milestone 21: timed material beats off the baked hits
+        still_words(scene, {e["id"] for e in f1["people"] + f1["others"]}),   # Milestone 26: what each object's parts show
+        motion_beats(scene, {e["id"] for e in f1["people"] + f1["others"]}),  # and when they change ("At 2.0 s the door opens")
         f"Shot on {lens_s}." if lens_s else "",
         _cap(_join([look_s, era_s and f"with {era_s}"])) + "." if (look_s or era_s) else "",
         _cap(style_s) + "." if style_s else "",

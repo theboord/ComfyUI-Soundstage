@@ -45,7 +45,9 @@ export class TrackSheet {
     for (const a of st.state.actors || []) {
       rows.push({ kind: "actor", id: a.id, a, name: a.name || a.kind || a.id, keys: st._actorKeys(a),
         color: a.mount_id ? "#b9a7ff" : "#539bf5" });
+      if (a.id === st.selected) rows.push(...(st.partRows?.(a.id) || []));   // its animated Parts channels (objparts.mjs)
     }
+    if (st.selectedLight) rows.push(...(st.partRows?.(`light:${st.selectedLight}`) || []));
     return rows;
   }
 
@@ -86,7 +88,8 @@ export class TrackSheet {
     const h = this._hit(x, y);
     this.canvas.setPointerCapture(e.pointerId);
     if (h.zone === "name") {
-      this.stage.select(h.row.kind === "actor" ? h.row.id : null);
+      if (h.row.kind === "part") { if (!String(h.row.ownerId).startsWith("light:")) this.stage.select(h.row.ownerId); }
+      else this.stage.select(h.row.kind === "actor" ? h.row.id : null);
       this.draw();
       return;
     }
@@ -133,6 +136,7 @@ export class TrackSheet {
     const f = this._frameAt(x);
     this.stage.setFrame(f);
     if (h.row.kind === "camera") this.stage._editCamera();
+    else if (h.row.kind === "part") h.row.addKey(f);
     else { this.stage.select(h.row.id); this.stage._editActorKey(h.row.a); }
     this.onFrame(f);
     this._commit();
@@ -143,8 +147,9 @@ export class TrackSheet {
     const h = this._hit(x, y);
     if (h.zone !== "key") return;
     e.preventDefault();
-    if (h.row.keys.length < 2) return;
     const drop = h.row.keys[h.k];
+    if (h.row.kind === "part") { h.row.drop(drop); this._commit(); return; }   // a channel's last key may go: back to its default
+    if (h.row.keys.length < 2) return;
     if (h.row.kind === "camera") this.stage.activeShot().camera_keys = h.row.keys.filter((k) => k !== drop);
     else h.row.a.keys = h.row.keys.filter((k) => k !== drop);
     this._commit();
@@ -177,7 +182,7 @@ export class TrackSheet {
     }
     rows.forEach((r, i) => {
       const y = HEAD + i * ROW, cy = y + ROW / 2;
-      const sel = (r.kind === "actor" && r.id === st.selected) || (r.kind === "camera" && !st.selected);
+      const sel = (r.kind === "actor" && r.id === st.selected) || (r.kind === "camera" && !st.selected) || r.kind === "part";
       if (sel) { g.fillStyle = "rgba(242,255,89,.06)"; g.fillRect(0, y, w, ROW); }
       g.fillStyle = "rgba(255,255,255,.05)"; g.fillRect(0, y + ROW - 1, w, 1);
       g.fillStyle = r.color; g.beginPath(); g.arc(10, cy, 3.5, 0, Math.PI * 2); g.fill();
