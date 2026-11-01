@@ -131,35 +131,32 @@ test("tyre smoke is a pure function of the track and the frame, from the chosen 
   assert.ok(fresh.length && fresh.every((q) => q.p[2] < 9 - 0.3), "only the rear wheels smoke");
 });
 
-test("stunt presets: the reverse J-turn follows the plan's keyed path, a key every 6 frames", () => {
+test("stunt presets: driven through the simulation and baked into a key every 2 frames", () => {
   assert.deepEqual(Object.keys(STUNTS), ["reverse_jturn", "donut", "handbrake_180"]);
   const k = stuntKeys("reverse_jturn", { start: [1.6, 0, -14], dirDeg: 0, last: 120 });
-  assert.equal(k.length, 21);
+  assert.equal(k.length, 61);
   const at = (f) => k.find((x) => x.frame === f);
   assert.deepEqual(at(0).position, [1.6, 0, -14]);
   assert.equal(at(0).heading_deg, 180);
-  assert.deepEqual(at(30).position, [1.5, 0, -1]);
-  assert.deepEqual([at(42).position[0], at(42).position[2], at(42).heading_deg, at(42).fx.tire_smoke], [0.5, 5.1, 104, 1]);
-  // A movie flick: from 167° to the last ~26° in 12 frames (0.5 s), the whole 180° in about 0.7 s.
-  assert.equal(at(36).heading_deg, 167);
-  assert.equal(at(48).heading_deg, 26.3);
-  assert.equal(at(54).heading_deg, -2);
-  // The keyed exaggeration: the body hard over through the spin, the rear squatting on the launch; ramps in and out.
-  assert.ok(at(42).roll_deg >= 3 && at(48).roll_deg > 2 && at(30).roll_deg === 0 && !("roll_deg" in at(0)));
-  assert.ok(at(72).pitch_deg >= 1 && at(96).pitch_deg === 0 && !("pitch_deg" in at(120)));
-  assert.equal(at(120).heading_deg, 0);
-  assert.deepEqual(at(120).position, [0.4, 0, 36]);
-  // A shorter shot squeezes it; another direction rotates it.
+  // Reversing at 40 km/h (11.1 m/s): 0.46 m a frame along +Z, tail first, until the flick at 1 s.
+  assert.ok(Math.abs(at(24).position[2] - (-14 + 24 * 11.11 / 24)) < 0.2 && at(24).heading_deg === 180);
+  // The 180 takes well over a second (not the old 0.7 s), and the car is still sliding through it.
+  assert.ok(at(48).heading_deg > 90 && at(48).heading_deg < 150, `f48: ${at(48).heading_deg}`);
+  assert.ok(Math.abs(at(120).heading_deg) < 15, `nose first at the end: ${at(120).heading_deg}`);
+  assert.ok(at(120).position[2] > 20, "drives off the way it was going");
+  // Body roll / pitch and smoke are the simulation's, keyed on every key.
+  assert.ok(k.every((x) => Number.isFinite(x.roll_deg) && Number.isFinite(x.pitch_deg) && Number.isFinite(x.fx.tire_smoke)));
+  assert.ok(Math.max(...k.map((x) => Math.abs(x.roll_deg))) > 2.5);
+  // A shorter shot runs the same physics for less time; another direction rotates it.
   const short = stuntKeys("reverse_jturn", { start: [0, 0, 0], dirDeg: 90, last: 96 });
   assert.equal(short[short.length - 1].frame, 96);
   assert.equal(short[0].heading_deg, 270);
-  assert.ok(short[short.length - 1].position[0] > 40 && Math.abs(short[short.length - 1].position[2]) < 3, "travels +X");
-  // Donut: two full turns (heading +720 by the exit); handbrake 180: ends facing back the way it came.
+  assert.ok(short[short.length - 1].position[0] > 15 && Math.abs(short[short.length - 1].position[2]) < 6, "travels +X");
+  // Donut: the tail swings round more than once; handbrake 180: ends facing back the way it came.
   const d = stuntKeys("donut", { last: 120 }), h = stuntKeys("handbrake_180", { last: 120 });
-  assert.equal(d[d.length - 1].heading_deg, 720);
-  assert.equal(h[h.length - 1].heading_deg, 180);
-  assert.ok(h[h.length - 1].position[2] < h[12].position[2], "drives back the way it came");
-  // The interpolation never overshoots a key (monotone).
+  assert.ok(Math.abs(d[d.length - 1].heading_deg) > 250);
+  assert.ok(Math.abs(Math.abs(h[h.length - 1].heading_deg) - 180) < 20);
+  // The interpolation helper never overshoots a key (monotone).
   for (let t = 0; t <= 10; t += 0.5) assert.ok(monotone([0, 5, 10], [0, 10, 10], t) <= 10 + 1e-9);
 });
 
@@ -171,7 +168,15 @@ test("Stage.applyStunt writes the keys from where the car is, plays them, and 'n
   assert.equal(a.stunt, "reverse_jturn");
   assert.equal(st.selectedInfo?.call({ ...st, selected: "car" }).stunt, "reverse_jturn");
   assert.equal(Math.round(st._headingAt(a, 0) * DEG), 180);
-  assert.equal(Math.round(st._headingAt(a, 120) * DEG), 0);
+  assert.ok(Math.abs(st._headingAt(a, 120) * DEG) < 15);
+  assert.equal(a.stunt_sim.surface, "wet");
+  // The knobs re-run it from the same start: a dry road turns quicker and slides less.
+  const wet = a.stunt_sim.metrics;
+  st.applyStunt("car", "reverse_jturn", { surface: "dry" });
+  assert.equal(a.stunt_sim.surface, "dry");
+  assert.deepEqual(a.keys[0].position, [1.6, 0, -14]);
+  assert.ok(a.stunt_sim.metrics.slide_m < wet.slide_m && a.stunt_sim.metrics.rotation_s < wet.rotation_s);
+  st.applyStunt("car", "reverse_jturn", { surface: "wet" });
   // The wheels roll backwards while it reverses, the body (not the wheels) rolls through the spin, smoke shows.
   const dyn = st._vehicleDynamics(a);
   assert.ok(dyn.wheelDist[30] < -8, "reversing: the wheels turn backwards");
@@ -212,7 +217,7 @@ test("the driver rides the rolling body: seat and lean follow the cabin, no legs
   st.applyStunt("car", "reverse_jturn");
   st.setFrame(45);
   const bodyG = g.userData.vehicleBody, d = st.actorMeshes.get("drv");
-  assert.ok(Math.abs(bodyG.rotation.z) > 4 / DEG, `the body is hard over: ${bodyG.rotation.z * DEG}°`);
+  assert.ok(Math.abs(bodyG.rotation.z) > 1.5 / DEG, `the body leans through the slide: ${bodyG.rotation.z * DEG}°`);
   assert.ok(Math.abs(d.rotation.z - bodyG.rotation.z) < 1e-9, "the driver leans with the cabin");
   // The seat is where the rolled body carries it (not where the unrolled car would have it).
   st.setFrame(0);

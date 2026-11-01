@@ -8,7 +8,7 @@ import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./huma
 import * as Mocap from "./mocap.mjs";
 import { applyRig, RIGS } from "./camrig.mjs";
 import { materialOf, impactParticles, impactFlash, impactShakeAt, SHAKE_PRESETS, jitterPhysics, feelGravity, overcrankKeys } from "./impacts.mjs";
-import { STUNTS, hasHeadingKeys, headingTrack, channelAt, driveAt, isStunt, unwrapDeg, vehicleDynamics, smokeParticles, stuntKeys } from "./stunts.mjs";
+import { STUNTS, hasHeadingKeys, headingTrack, channelAt, driveAt, isStunt, unwrapDeg, vehicleDynamics, smokeParticles, stuntKeys, stuntParams, stuntRun } from "./stunts.mjs";
 import { PoseGizmo } from "./posegizmo.mjs";
 import { buildSet, buildWater, buildWeather, buildTireSmoke, buildImpactFx } from "./environments.mjs";
 import { buildCard, loadBackdrop, coverFit } from "./cards.mjs";
@@ -1163,7 +1163,7 @@ export class Stage {
   _vehicleDynamics(a) {
     const keys = this._actorKeys(a);
     const last = this._lastFrame(), fps = this.state.shot?.fps || 24;
-    const sig = JSON.stringify([keys, a.rotation_deg || 0, last, fps, a.kind, a.drive || ""]);
+    const sig = JSON.stringify([keys, a.rotation_deg || 0, last, fps, a.kind, a.drive || "", !!a.stunt_sim]);
     this._dynCache = this._dynCache || new WeakMap();
     const hit = this._dynCache.get(a);
     if (hit?.sig === sig) return hit;
@@ -1171,6 +1171,11 @@ export class Stage {
     for (let f = 0; f <= last; f++) { pos.push(this._actorPosAt(a, f)); yaw.push(this._headingAt(a, f)); }
     const keyed = (f) => ({ roll: channelAt(keys, f, (k) => k.roll_deg) || 0, pitch: channelAt(keys, f, (k) => k.pitch_deg) || 0 });
     const d = vehicleDynamics(pos, yaw, fps, keyed);
+    // A simulated stunt (a.stunt_sim): the keys already carry the sprung body's roll / pitch from the simulation, so
+    // they play as they are, not through the springs a second time.
+    if (a.stunt_sim && keys.some((k) => Number.isFinite(k.roll_deg))) {
+      for (let f = 0; f <= last; f++) { d.roll[f] = channelAt(keys, f, (k) => k.roll_deg) || 0; d.pitch[f] = channelAt(keys, f, (k) => k.pitch_deg) || 0; }
+    }
     const stunt = isStunt(a, keys);
     const keyedSmoke = keys.some((k) => Number.isFinite(k.fx?.tire_smoke));
     const vel = pos.map((_, f) => { const p0 = pos[Math.max(0, f - 1)], p1 = pos[Math.min(last, f + 1)], n = Math.min(last, f + 1) - Math.max(0, f - 1) || 1;
@@ -1219,28 +1224,39 @@ export class Stage {
   stuntOptions() { return Object.fromEntries(Object.entries(STUNTS).map(([k, v]) => [k, v.label])); }
 
   /**
-   * Put a movie stunt on a vehicle (Milestone 13): writes its keys (path, heading, body roll / pitch, tyre smoke) from
-   * where it starts, along the way it was going, to fill the shot. "none" takes the stunt keys off again (the path
-   * stays). The keys stay editable: move them, or turn the car at a key with Turn. Returns the stunt's label or null.
+   * Put a movie stunt on a vehicle (Milestone 13): the stunt's driver script runs through the vehicle-dynamics
+   * simulation (vehsim.mjs) from where the car starts, along the way it was going, for the length of the shot. The
+   * result is baked into keys: path, heading, body roll / pitch and tyre smoke. params: {entry_kmh, surface: "wet" |
+   * "dry", mass_kg, side}. Applying the same stunt again with new params re-runs it from the same start. "none" takes
+   * the stunt keys off again (the path stays). The keys stay editable. Returns the stunt's label, or null.
    */
-  applyStunt(id, kind) {
+  applyStunt(id, kind, params = {}) {
     const a = this.state.actors.find((x) => x.id === id);
     if (!a || LIBRARY[a.kind]?.rig !== "vehicle") return null;
     const keys = this._actorKeys(a);
     if (kind === "none") {
       a.keys = keys.map(({ heading_deg, roll_deg, pitch_deg, fx, drive, ...k }) => k);
-      delete a.drive; delete a.stunt;
+      delete a.drive; delete a.stunt; delete a.stunt_sim;
     } else {
       if (!STUNTS[kind]) return null;
       const last = this._lastFrame(), fps = this.state.shot?.fps || 24;
-      const p0 = this._actorPosAt(a, 0), p1 = this._actorPosAt(a, last);
-      const moving = Math.hypot(p1[0] - p0[0], p1[2] - p0[2]) > 0.5;
-      const nose = this._headingAt(a, 0) / DEG;
-      // The way it goes: its own path if it has one; parked, it drives off nose first (a reverse J-turn backs up).
-      const dirDeg = moving ? Math.atan2(p1[0] - p0[0], p1[2] - p0[2]) / DEG : nose + (kind === "reverse_jturn" ? 180 : 0);
-      a.keys = stuntKeys(kind, { start: [...keys[0].position], dirDeg: Math.round(dirDeg * 10) / 10, last, fps });
+      let start, dirDeg;
+      if (a.stunt === kind && a.stunt_sim?.start) ({ start, dir_deg: dirDeg } = a.stunt_sim);
+      else {
+        const p0 = this._actorPosAt(a, 0), p1 = this._actorPosAt(a, last);
+        const moving = Math.hypot(p1[0] - p0[0], p1[2] - p0[2]) > 0.5;
+        const nose = this._headingAt(a, 0) / DEG;
+        // The way it goes: its own path if it has one; parked, it drives off nose first (a reverse J-turn backs up).
+        dirDeg = Math.round((moving ? Math.atan2(p1[0] - p0[0], p1[2] - p0[2]) / DEG : nose + (kind === "reverse_jturn" ? 180 : 0)) * 10) / 10;
+        start = [...keys[0].position];
+      }
+      const prev = a.stunt === kind ? a.stunt_sim || {} : {};
+      const P = stuntParams(kind, { ...prev, ...params });
+      const res = stuntRun(kind, { last, fps, carKind: a.kind, params: P });
+      a.keys = stuntKeys(kind, { start, dirDeg, last, fps, carKind: a.kind, params: P, res });
       delete a.drive;
       a.stunt = kind;
+      a.stunt_sim = { ...P, mass_kg: P.mass_kg ?? res.mass_kg, start, dir_deg: dirDeg, metrics: res.metrics };
     }
     delete a.position_end;
     this.setFrame(this.frame);
@@ -3366,7 +3382,7 @@ export class Stage {
     const a = this.state.actors.find((x) => x.id === this.selected);
     return a ? { id: a.id, name: a.name, kind: a.kind, rotation_deg: a.rotation_deg || 0, height_m: a.height_m, scale: a.scale || 1,
       appearance: a.appearance || null, mount_id: a.mount_id || null, pose: a.pose || null, seat: a.seat ?? null,
-      beam: a.beam || "steady", stunt: a.stunt || null } : null;
+      beam: a.beam || "steady", stunt: a.stunt || null, stunt_sim: a.stunt_sim || null } : null;
   }
 
   /**
