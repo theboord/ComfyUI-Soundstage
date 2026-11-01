@@ -5,6 +5,14 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-01
 
+**13:41 PST · Pitch Mode: talk through the idea, the set builds itself, a sketch per beat** *(Milestone 22)*
+- **● Pitch** in the Director panel (or Shift+P): the mic stays on and every sentence, ellipsis or "then" is a beat. Each beat stages the set live (place and set, time, weather, a character and wardrobe, blocking relative to the camera: walks toward / runs away / crosses, a car's headlights sweeping across, props, camera height, rig, follow and lens). "He" / "she" mean the last person of that kind. One Director undo step for the whole pitch, **Undo beat** for the last one.
+- **A FLUX 3 Klein sketch per beat** (Color pass capture, 4 steps, 0.3 MP, ~1.6–1.9 s on the GPU) lands in a filmstrip next to the live transcript, with a latency HUD. **Preview motion** queues a one-pass LTX-2.5 draft (512×288, 49 frames) of a beat. **Lock it** makes one shot per beat (its camera and rig, the line as notes, the sketch as the chosen first frame).
+- **Shared-queue safe:** Pitch only deletes prompt ids it queued itself, only while still waiting (a re-staged beat's old sketch, or a backlog when you talk faster than the GPU); it never interrupts. Klein is warmed at Pitch start. Whisper windows end at a pause and carry a film-words prompt (`X-Soundstage-Prompt`) so "a rainy alley" isn't heard as a name; the local Qwen per beat is opt-in under ⚙ (2–6 s a beat on a shared queue).
+- Measured live (macOS `say` pitch into the Whisper stream, headless Metal): transcribe 0.26–0.78 s, plan 0.12–0.31 s, capture + upload ~0.3–0.5 s, Klein 1.6–1.9 s; end of sentence → image 12–22 s in the recorded take because other jobs on the shared GPU and a cold Klein load ran mid-pitch (the HUD says so).
+- Evidence: share/Milestone22_Pitch/ (pitch_mode_live.mp4 with the spoken pitch, sketches, latency.md/csv, motion draft, locked shots).
+- Code: [web/agent/pitch.mjs](web/agent/pitch.mjs), [soundstage/agent/pitch.py](soundstage/agent/pitch.py), [web/agent/directorpanel.mjs](web/agent/directorpanel.mjs), [soundstage/agent/director_routes.py](soundstage/agent/director_routes.py), [soundstage/agent/whisper.py](soundstage/agent/whisper.py), [docs/director.md](docs/director.md). Tests: [tests/js/pitch.test.mjs](tests/js/pitch.test.mjs), [tests/test_pitch.py](tests/test_pitch.py).
+
 **13:20 PST · Physics round 2: the live world's friction fixed, car hits no longer sink into crates**
 - **Live drag world, same friction fix as the bake.** Its sliding friction also divided by the inverse mass twice (a 2 kg box on a 30° ramp slid at 2.52 m/s² instead of 0.657). It is now Coulomb with one mu, within 10% for 2 and 25 kg.
 - **The jittered 20-carton tower stands.** With the fix it crept 2.2 mm sideways (limit 2 mm) before it fell asleep. The live world now runs 6 contact passes, not 4: 0.9 mm, for about 8% more step time. The limit is unchanged.
