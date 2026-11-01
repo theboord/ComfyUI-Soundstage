@@ -481,6 +481,11 @@ def compile_look(look_in: dict | None, scene: dict | None) -> dict:
     parts = look_parts(look)
     still, negative = compile_still(look, scene, parts)
     motion = compile_motion(look, scene, parts)
+    # The Director's Book (Milestone 23): Imagery & Tone as style words, Pitfalls said positively (CFG 1: no negatives).
+    from ..book.prompting import prompt_words
+    bw = prompt_words((look_in or {}).get("book") if isinstance(look_in, dict) else None)
+    if bw:
+        still, motion = f"{still.rstrip(' .')}. {bw}", f"{motion.rstrip(' .')}. {bw}"
     f1 = S.frame1_facts(scene)
     return {
         "look": look,
