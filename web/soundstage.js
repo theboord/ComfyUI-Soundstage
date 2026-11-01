@@ -52,6 +52,7 @@ import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
 import { mountDirector } from "./agent/directorpanel.mjs";
 import { mountBook } from "./book/book.mjs";
 import { mountPresets } from "./ui/presets.mjs";
+import { mountPerformance } from "./performance/performance.mjs";
 import { attachTakeChecks } from "./takecheck/takecheck.mjs";
 
 const CSS = `
@@ -1634,6 +1635,8 @@ function createStageWidget(node, inputName) {
       { key: "frame", label: "Shoot it → Frame", icon: "image", run: () => pipeline?.go("frame") }] });
   stage.fetchApi = (u) => api.fetchApi(u);
   stage.onMocap = () => { try { posePanel._drawTake(); } catch { /* panel gone */ } };
+  // Use a real performance (web/performance): an actor's body, face and voice drive this character.
+  mountPerformance(posePanel, { stage, api, pipeline: () => pipeline, onStatus: (m) => { status.textContent = m; } });
   // Physics: the selected object's Dynamic / Static / Off and the scene's Simulate & bake, beside the inspector.
   const physPanel = new PhysicsPanel({ stage, onStatus: (m) => { status.textContent = m; },
     onBaked: () => { try { tracks?.draw(); afterTimeChange(); } catch { /* timeline not built */ } } });
