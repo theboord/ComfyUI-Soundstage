@@ -22,7 +22,7 @@ const USER_FILE = "soundstage/presets.json";
 const LS_USER = "ss_user_presets";
 const LS_TAB = "ss_presets_tab";
 /** Tabs shown in this release (the others are built and tested, and switch on here). */
-export const SHOWN_TABS = ["camera", "light"];
+export const SHOWN_TABS = ["camera", "light", "look", "action", "edit", "recipe", "user"];
 
 const CSS = `
 .ss-pre { position:absolute; left:50%; top:58px; transform:translateX(-50%); width:min(860px, calc(100% - 32px));
@@ -129,6 +129,11 @@ export function isPresetsKey(e) {
 
 export async function loadUserPresets(api) {
   try {
+    // List the folder first: a GET for a file that isn't there yet (no presets saved) is a 404 in the console every time.
+    if (api?.fetchApi) {
+      const ls = await api.fetchApi("/userdata?dir=" + encodeURIComponent(USER_FILE.split("/")[0])).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+      if (Array.isArray(ls) && !ls.some((f) => (typeof f === "string" ? f : f?.path) === USER_FILE.split("/").pop())) throw new Error("no user presets yet");
+    }
     const r = await api?.getUserData?.(USER_FILE);
     if (r && r.status === 200) return parseUserPresets(await r.json());
   } catch { /* no user data API */ }
@@ -469,6 +474,16 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
   panel.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && e.target !== q) { e.preventDefault(); if (!ask.hidden) askNo.click(); else close(); }
   });
+  // ⌘Z / ⇧⌘Z right after clicking a card: focus is on the card (or the toast), not the stage canvas, so the stage's own
+  // key handler never sees it and ComfyUI would undo its graph instead. Route it to the stage history here.
+  const undoKey = (e) => {
+    if (!(e.metaKey || e.ctrlKey) || e.altKey || (e.key || "").toLowerCase() !== "z" || e.target === q) return;
+    e.preventDefault(); e.stopPropagation();
+    const ok = e.shiftKey ? stage.redo?.() : stage.undo?.();
+    if (ok !== false) { toastUndo.hidden = true; afterChange(); }
+  };
+  panel.addEventListener("keydown", undoKey);
+  toast.addEventListener("keydown", undoKey);
   const onKey = (e) => {
     if (!root.isConnected || e.defaultPrevented) return;
     if (e.key === "Escape" && !panel.hidden && !panel.contains(e.target)) { close(); return; }
