@@ -48,6 +48,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 
 | When | Update |
 |---|---|
+| Nov 1, 10:55 PST | **Physics that reads as filmed:** every hit throws dust, debris or sparks into the guide, jolts the camera, gets a timed material beat in the prompt ("the crates splinter") and its own sound on A2; a Film Finish (lens, fringe, halation, grain) on the cut; imperfect crates, overcrank and "feels bigger" weight. |
 | Nov 1, 06:05 PST | **Presets show your own shot:** every card previews the current stage in clay with that move, light, look or stunt (loops for moves and stunts); hover a card to try it on the shot, arrows + Enter to pick, search across every tab, "Applied to shot N · Undo". |
 | Oct 31, 20:39 PDT | **Presets window** (`V`): one-click camera moves and lighting looks onto the current shot, each one undo step; the Director can call them too. |
 | Oct 31, 20:34 PDT | **The phone is the viewfinder:** scan a QR, and your phone shows the live stage and *is* the camera: aim by moving it, pinch / primes to zoom, tap to focus, rack pulls, an iris with live depth of field, ● REC writes the move and lens onto the shot. LAN-only bridge with a pairing code. |
