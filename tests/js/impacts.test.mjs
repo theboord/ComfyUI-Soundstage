@@ -213,3 +213,19 @@ test("an imperfect crate pyramid: varied sizes, each crate on the tallest one un
   assert.ok(worst < 0.12, `moved ${(worst * 100).toFixed(1)} cm`);
   assert.ok(r.tracks.k9.at(-1).pos[1] > 2, "the top crate is still on top");
 });
+
+test("overcrank: keys stretch k times and gravity drops by k², so a drop plays k times slower; 'feels bigger' is 60% g", async () => {
+  const { feelGravity, overcrankKeys } = await import("../../web/stage/impacts.mjs");
+  assert.equal(feelGravity({}), 9.81);
+  assert.ok(Math.abs(feelGravity({ weight: "bigger" }) - 9.81 * 0.6) < 1e-9);
+  assert.ok(Math.abs(feelGravity({ overcrank: 2 }) - 9.81 / 4) < 1e-9);
+  assert.equal(feelGravity({ overcrank: 7 }), 9.81, "only 1.5, 2, 3");
+  const keys = [{ frame: 0, position: [0, 0, 0] }, { frame: 40, position: [0, 0, 20], heading_deg: 3 }];
+  assert.deepEqual(overcrankKeys(keys, 1.5).map((k) => k.frame), [0, 60]);
+  assert.equal(overcrankKeys(keys, 2)[1].heading_deg, 3);
+  assert.equal(keys[1].frame, 40, "the 1x keys are untouched");
+  // A crate dropped 2.4 m lands 2x later at 2x overcrank (same physics, shot at 48 fps, played at 24).
+  const land = (g) => simulate([crate("c", [0, 2.4, 0])], 160, { gravity: g }).events[0].frame;
+  const r = land(feelGravity({ overcrank: 2 })) / land(9.81);
+  assert.ok(Math.abs(r - 2) < 0.15, `ratio ${r}`);
+});

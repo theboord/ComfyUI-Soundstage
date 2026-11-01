@@ -328,3 +328,16 @@ export function imperfectStack(points, size = 0.8, seed = 1) {
   }
   return out;
 }
+
+// ---------- weight & overcrank ----------
+/** Gravity for a bake: "feels bigger" is 60% (DNEG's trick on big debris); overcrank k plays the action k x slower,
+ *  so gravity in shot time is g / k². */
+export function feelGravity({ overcrank = 1, weight = "real" } = {}, g = 9.81) {
+  const k = [1.5, 2, 3].includes(+overcrank) ? +overcrank : 1;
+  return g * (weight === "bigger" ? 0.6 : 1) / (k * k);
+}
+
+/** A keyed move stretched k times (shot at k x 24 fps, played at 24): every key's frame x k. */
+export function overcrankKeys(keys, k) {
+  return (keys || []).map((key) => ({ ...JSON.parse(JSON.stringify(key)), frame: Math.round(key.frame * k) }));
+}

@@ -157,15 +157,25 @@ export class PhysicsPanel {
     }
     this.fxRow = el("div", "ph-fx", el("span", "", "Impact FX"), this.fxSeg);
     // Imperfect (Milestone 21): seeded variation so no two crates weigh, grip or bounce alike (on by default).
-    this.impBtn = btn("Imperfect", "", "Every body a little different: ±15% mass, ±12% grip, ±20% bounce, a dropped one a degree or two off level (seeded: the same bake every time). Next Simulate & bake.");
+    this.impBtn = btn("Imperfect", "", "Every body a little different: ±15% mass, ±12% grip, ±20% bounce (seeded: the same bake every time); new crate stacks come out uneven. Next Simulate & bake.");
     this.impBtn.addEventListener("click", () => { const on = this.impBtn.getAttribute("aria-pressed") !== "true"; this.stage.setPhysicsFeel?.({ imperfect: on }); this._msg(on ? "Imperfect: on (applies at the next Simulate & bake)." : "Imperfect: off, every body exactly as set."); this.sync(); });
-    this.feelSeg = el("div", "ss-views", this.impBtn);
+    // Weight (Milestone 21): lower gravity so falling things read bigger and heavier (DNEG's trick on big debris).
+    this.bigBtn = btn("Feels bigger", "", "Art-directed weight: gravity at 60%, so things hang and fall like something bigger. Re-simulates a baked scene.");
+    this.bigBtn.addEventListener("click", () => { const on = this.bigBtn.getAttribute("aria-pressed") !== "true"; const r = this.stage.setPhysicsFeel?.({ weight: on ? "bigger" : "real" }); this._msg(r?.message || (on ? "Feels bigger: gravity at 60%." : "Real weight.")); this.onBaked(); this.sync(); });
+    this.feelSeg = el("div", "ss-views", this.impBtn, this.bigBtn);
     this.feelRow = el("div", "ph-fx", el("span", "", "Feel"), this.feelSeg);
+    // Overcrank: shoot the action at k x 24 fps, play it at 24 (slow motion that reads as weight).
+    this.ocSel = document.createElement("select");
+    for (const [v, t] of [["1", "1× (real time)"], ["1.5", "1.5× · 36 fps look"], ["2", "2× · 48 fps look"], ["3", "3× · 72 fps look"]]) this.ocSel.append(new Option(t, v));
+    this.ocSel.addEventListener("pointerdown", (e) => e.stopPropagation());
+    this.ocSel.addEventListener("change", () => { const r = this.stage.setPhysicsFeel?.({ overcrank: +this.ocSel.value }); this._msg(r?.message || `Overcrank ${this.ocSel.value}×: every keyed move plays ${this.ocSel.value}× slower.`); this.onBaked(); this.sync(); });
+    this.ocRow = el("label", "ph-mat", el("span", "", "Overcrank"), this.ocSel);
+    this.ocRow.title = "Slow motion like a high-speed camera: every keyed move (cars, people, throws) is stretched and the bake runs gravity to match, and the video prompt says 'slow motion'. Miniature rule: 24 × √(scale), 1/4 scale → 48 fps.";
     this.fxRow.title = "Secondary elements off the baked hits, in the clay and the guide the video follows (never in Depth or the matte)";
     this.note = el("div", "ph-note");
     this.msg = el("div", "ph-msg");
     this.msg.setAttribute("aria-live", "polite");
-    this.el.append(head, this.seg, this.mass.r, this.bounce.r, this.friction.r, this.lift.r, this.matRow, this.all, el("div", "ph-acts", this.simBtn, this.clearBtn), this.fxRow, this.feelRow, this.eng, this.note, this.msg);
+    this.el.append(head, this.seg, this.mass.r, this.bounce.r, this.friction.r, this.lift.r, this.matRow, this.all, el("div", "ph-acts", this.simBtn, this.clearBtn), this.fxRow, this.feelRow, this.ocRow, this.eng, this.note, this.msg);
   }
 
   /** Switch live physics to the GPU: bring WebGPU up, fall back to the CPU (and say why) if it can't run here. */
@@ -237,7 +247,11 @@ export class PhysicsPanel {
     const fx = this.stage.impactFxInfo?.();
     if (fx) for (const [k, b] of Object.entries(this.fxBtns)) b.setAttribute("aria-pressed", String(!!fx[k]));
     const feel = this.stage.physicsFeel?.();
-    if (feel) this.impBtn.setAttribute("aria-pressed", String(feel.imperfect));
+    if (feel) {
+      this.impBtn.setAttribute("aria-pressed", String(feel.imperfect));
+      this.bigBtn.setAttribute("aria-pressed", String(feel.weight === "bigger"));
+      this.ocSel.value = String(feel.overcrank);
+    }
     const on = info.mode !== "off";
     for (const rr of [this.bounce, this.friction]) rr.r.setAttribute("aria-disabled", String(!on));
     this.mass.r.setAttribute("aria-disabled", String(info.mode !== "dynamic"));

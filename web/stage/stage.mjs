@@ -7,7 +7,7 @@ import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompo
 import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./humans.mjs";
 import * as Mocap from "./mocap.mjs";
 import { applyRig, RIGS } from "./camrig.mjs";
-import { materialOf, impactParticles, impactFlash, impactShakeAt, SHAKE_PRESETS, jitterPhysics, jitterTilt } from "./impacts.mjs";
+import { materialOf, impactParticles, impactFlash, impactShakeAt, SHAKE_PRESETS, jitterPhysics, feelGravity, overcrankKeys } from "./impacts.mjs";
 import { STUNTS, hasHeadingKeys, headingTrack, channelAt, driveAt, isStunt, unwrapDeg, vehicleDynamics, smokeParticles, stuntKeys } from "./stunts.mjs";
 import { PoseGizmo } from "./posegizmo.mjs";
 import { buildSet, buildWater, buildWeather, buildTireSmoke, buildImpactFx } from "./environments.mjs";
@@ -21,7 +21,7 @@ import { PLYLoader } from "../vendor/addons/PLYLoader.mjs";
 import { STLLoader } from "../vendor/addons/STLLoader.mjs";
 import * as SkeletonUtils from "../vendor/addons/SkeletonUtils.mjs";
 import { TransformControls } from "../vendor/addons/TransformControls.mjs";
-import { simulate, bakeTrack, physicsOf, samplePos, sampleQuat, checkTracks, qmul as qmulArr } from "./physics.mjs";
+import { simulate, bakeTrack, physicsOf, samplePos, sampleQuat, checkTracks } from "./physics.mjs";
 import { LiveEdit } from "./live.mjs";
 import { raycastShapes } from "./physics_avbd.mjs";
 import { Highlighter } from "./outline.mjs";
@@ -547,13 +547,10 @@ export class Stage {
       const g = this.actorMeshes.get(a.id), box = g && this._localBox(g);
       if (!box) continue;
       // Imperfection (Milestone 21, on unless scene.physics.imperfect === false): each body a seeded ±15% mass,
-      // ±12% grip, ±20% bounce, and a dropped one leaves the hand a degree or two off level, so no two hits match.
+      // ±12% grip and ±20% bounce, so no two hits match. (No start tilt here: a body with Height is often stacked on
+      // another, and a tilted stack falls before anything hits it. Stacks get their lean at creation: imperfectStack.)
       const imperfect = this.state.physics?.imperfect !== false;
       const p = imperfect ? jitterPhysics(physicsOf(a), a.id) : physicsOf(a), keys = this._actorKeys(a);
-      if (imperfect && physicsOf(a).lift > 0.05) {
-        const tq = jitterTilt(a.id);
-        poses.set(a.id, poses.get(a.id).map((ps) => ({ pos: ps.pos, quat: qmulArr(tq, ps.quat) })));
-      }
       const moves = keys.length > 1 && keys.some((k) => Math.hypot(k.position[0] - keys[0].position[0], k.position[2] - keys[0].position[2]) > 0.01);
       const sphere = a.kind === "sphere";
       specs.push({ id: a.id, shape: sphere ? "sphere" : "box", half: box.half, center: box.center, radius: sphere ? Math.min(...box.half) : 0,
@@ -574,7 +571,10 @@ export class Stage {
       } else specs.push({ ...base, id: a.id, shape: "box", half: box.half, center: box.center });
     }
     specs.push(...this._setColliders());
-    const res = simulate(specs, last + 1, { fps, substeps: opts.substeps || 20 });
+    // Weight & overcrank (Milestone 21): "feels bigger" lowers gravity (DNEG's trick for majestic debris); an overcranked
+    // shot plays the whole action k times slower (the keys are already stretched), so gravity is g / k².
+    const gravity = feelGravity(this.physicsFeel());
+    const res = simulate(specs, last + 1, { fps, substeps: opts.substeps || 20, gravity });
     const qa = checkTracks(specs, res, fps);
     // The hits, stored with the bake (Milestone 21): impact dust, camera shake, prompt beats and A2 sounds key off them.
     // A car's body / cabin boxes report as the car.
@@ -638,15 +638,43 @@ export class Stage {
     return { imperfect: p.imperfect !== false, overcrank: [1.5, 2, 3].includes(+p.overcrank) ? +p.overcrank : 1, weight: p.weight === "bigger" ? "bigger" : "real" };
   }
 
-  /** Change the physics feel (applies at the next Simulate & bake). */
+  /**
+   * Change the physics feel. Overcrank k shoots the action at k x 24 fps and plays it at 24: every keyed move (cars,
+   * people, a throw) is stretched k times from its 1x keys (kept in overcrank_src, so going back to 1x restores them
+   * exactly), and the bake runs gravity at g / k². A baked scene is re-simulated at once; otherwise it applies at the
+   * next Simulate & bake.
+   */
   setPhysicsFeel(patch = {}) {
     const cur = this.physicsFeel(), next = { ...(this.state.physics || {}) };
     if ("imperfect" in patch) next.imperfect = !!patch.imperfect;
     if ("overcrank" in patch) next.overcrank = [1.5, 2, 3].includes(+patch.overcrank) ? +patch.overcrank : 1;
     if ("weight" in patch) next.weight = patch.weight === "bigger" ? "bigger" : "real";
     this.state.physics = next;
-    this.onChange(this.toJSON());
-    return { ...cur, ...this.physicsFeel() };
+    const now = this.physicsFeel();
+    if (now.overcrank !== cur.overcrank) this._retimeForOvercrank(now.overcrank);
+    let res = null;
+    if ((now.overcrank !== cur.overcrank || now.weight !== cur.weight || now.imperfect !== cur.imperfect) && this.state.actors.some((a) => a.physics?.baked)) {
+      res = this.simulatePhysics();
+    } else {
+      this.setFrame(this.frame);
+      this.onChange(this.toJSON());
+    }
+    return { ...now, resimulated: !!res, message: res?.message || "" };
+  }
+
+  /** Stretch every keyed move k times from its 1x keys (k = 1 puts the 1x keys back). */
+  _retimeForOvercrank(k) {
+    for (const a of this.state.actors) {
+      if (a.mount_id || a.carry_id) continue;
+      const baked = !!a.physics?.baked;
+      const live = baked ? a.physics.source?.keys : this._actorKeys(a);
+      if (!live || live.length < 2) { if (k === 1) delete a.overcrank_src; continue; }
+      const src = a.overcrank_src || clone(live);
+      const keys = k === 1 ? clone(src) : overcrankKeys(src, k);
+      if (k === 1) delete a.overcrank_src; else a.overcrank_src = src;
+      if (baked) a.physics.source.keys = keys;
+      else { a.keys = keys; delete a.position_end; }
+    }
   }
 
   /** Dust, debris and sparks off the baked hits at a frame, and the flash of a hard metal hit (Milestone 21). */

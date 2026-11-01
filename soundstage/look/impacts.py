@@ -96,13 +96,14 @@ def impact_beats(scene: dict | None) -> str:
         return ""
     phys = scene.get("physics") or {}
     events = [e for e in phys.get("events") or [] if isinstance(e, dict)]
+    slow = SLOW_MO if overcrank(scene) >= 1.5 else ""
     if not events:
-        return ""
+        return slow
     actors = {a.get("id"): a for a in scene.get("actors") or [] if isinstance(a, dict)}
     ground = _ground(scene)
     beats = _beats(events)
     if not beats:
-        return ""
+        return slow
     jolt = shake_on(scene)
     told_props: set[str] = set()
     out = []
