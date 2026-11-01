@@ -360,12 +360,13 @@ function relVel(c, useSaved) {
  * (the material's dent settings): hits below the break strength leave permanent dents. Results:
  *   fractures: {id: {frame, pieces: [{off, half, kind, center, track: [{pos (part centre), quat}] per frame}]}} (props
  *     that broke), dents: {id: [{frame, p, n, depth, radius}]} (object frame: relative to the origin, n points inward).
- * opts: { fps = 24, substeps = 20, gravity = 9.81, floor = true, events = true, minImpactSpeed, groundMaterial,
+ * opts: { fps = 24, substeps = 20, iterations = 4 (contact passes a substep; with 2 a 20-box tower bows 16 cm before
+ *   anything touches it), gravity = 9.81, floor = true, events = true, minImpactSpeed, groundMaterial,
  *   maxPieces (most loose bodies a bake may add, MAX_SCENE_PIECES) }
  */
 export function simulate(specs, frames, opts = {}) {
   const fps = opts.fps || 24, nSub = Math.max(4, Math.min(64, opts.substeps || 20));
-  const h = 1 / (fps * nSub), g = opts.gravity ?? GRAVITY, floor = opts.floor !== false, iters = Math.max(1, Math.min(8, opts.iterations || 2));
+  const h = 1 / (fps * nSub), g = opts.gravity ?? GRAVITY, floor = opts.floor !== false, iters = Math.max(1, Math.min(8, opts.iterations || 4));
   let bodies = specs.map((s, i) => makeBody(s, i));
   let dyn = bodies.filter((b) => b.dynamic);
   const origDyn = [...dyn];
@@ -567,13 +568,15 @@ export function simulate(specs, frames, opts = {}) {
       for (const c of act) {
         const A = c.a, B = c.b;
         c.rA = sub(c.pA, A.x); c.rB = sub(c.pB, B.x);
-        const mu = 0.85 * Math.sqrt(Math.max(0, A.friction) * Math.max(0, B.friction));
+        const mu = Math.sqrt(Math.max(0, A.friction) * Math.max(0, B.friction));
+        // Coulomb: the sliding impulse is at most mu x the normal impulse (lam / h), whatever the masses; one mu for
+        // sticking and sliding, as Bullet and Houdini use (physbench: a box on a 30 deg ramp now matches g(sin - mu cos)).
         const vr = relVel(c, false), vn = dot(c.n, vr), vt = sub(vr, scl(c.n, vn)), vtl = len(vt);
         if (vtl > 1e-6 && mu > 0) {
           const t = scl(vt, 1 / vtl);
           const wtA = wOf(A, c.rA, t), wtB = wOf(B, c.rB, t);
           if (wtA + wtB > 0) {
-            const P = scl(t, -Math.min(h * mu * (c.lam / (h * h)), vtl) / (wtA + wtB));
+            const P = scl(t, -Math.min(mu * c.lam / h, vtl / (wtA + wtB)));
             applyVel(A, P, c.rA); applyVel(B, scl(P, -1), c.rB);
           }
         }

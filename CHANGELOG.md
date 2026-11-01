@@ -5,6 +5,12 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-01
 
+**12:58 PST · Physics benchmarked against Blender's Bullet: friction fixed, towers stand still**
+- **Friction no longer depends on weight.** The bake's sliding friction divided by the inverse mass twice, so a 2 kg box on a 30° ramp (mu 0.5) slid at 2.53 m/s² instead of 0.657, and a heavy crate gripped the floor so hard it stopped dead against a tower. It is now plain Coulomb friction with one mu (the 0.85 kinetic factor is gone, as in Bullet and Houdini): the ramp is within 1% of g(sin θ − μ cos θ) (Bullet: −10%).
+- **Stacks stand still before the hit.** The bake now uses 4 contact passes (like the live world), not 2: an untouched 20-box tower bowed 16 cm in 3 s; now 9 mm (Bullet: 45 mm), at about the same bake time.
+- **Benchmark you can re-run** (Blender now, Houdini later): `tools/physbench/` (four scenes, runners for Soundstage and headless Blender, metrics, charts, Workbench and clay contact sheets). Report: share/Physics_vs_Blender/REPORT.txt. Still behind Bullet on speed (15-60x slower) and on overlap in fast car hits (11 mm vs 7 mm).
+- Code: [web/stage/physics.mjs](web/stage/physics.mjs), [tools/physbench/](tools/physbench/). Tests: [tests/js/physbench.test.mjs](tests/js/physbench.test.mjs).
+
 **12:50 PST · Renders that stay on your blocking: Adherence Loose · Balanced · Exact, default Exact**
 - **Why finals drifted off the clay:** the old "Motion freedom" default (0.5) blurred the clay guide 10 px and dropped the Layout IC-LoRA to 0.825, and your chosen frame steered at full strength, so where the frame's composition differs from the clay (it often does: the look still is made from frame 1 at 0.85 denoise) the opening follows the frame for a second before snapping to the clay.
 - **⑤ Motion › Adherence** replaces the Motion freedom slider, saved per shot. **Exact** (the new default for Draft, Final and Hollywood): sharp clay guide, IC-LoRA 1.0, frame reference 0.5. **Balanced**: 6 px, 0.92, 0.75. **Loose** = the old default. Measured on the car chase, the riders and a two-person walk: the dialogue walk went from 0.85 to 0.99 "Follows your blocking", the riders' people from 61-69 % to 90-94 % on their marks, the car fills its clay silhouette from 1 s on; still photoreal.
