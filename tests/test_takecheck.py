@@ -220,6 +220,20 @@ def test_actor_on_its_mark_and_off_it():
     assert res["b"]["on_mark"] == 0.5 and res["b"]["drift_at"] == [0, 1, 2]
 
 
+def test_a_track_sam_lost_and_found_again_still_counts():
+    """SAM re-detects a car as a new track after losing it (Blocking_Adherence REPORT): the second fragment stands in
+    where the matched track has no box, so a take that sits on its marks isn't scored as drifting."""
+    stage = {"car": [(10, 10, 90, 60)] * 6}
+    tracks = [[(12, 12, 88, 58)] * 3 + [None] * 3,          # first fragment
+              [None] * 3 + [(11, 10, 91, 61)] * 3,          # the same car, picked up again
+              [(300, 10, 340, 40)] * 6]                     # another car somewhere else, never the actor's
+    res = B.actor_scores(stage, tracks, {"car": "car"}, {"car": "car"}, ["car", "car", "car"], times=list(range(6)))
+    assert res[0]["on_mark"] == 1.0 and res[0]["iou"] > 0.85
+    # A fragment of a different kind is never borrowed.
+    res = B.actor_scores(stage, tracks, {"car": "car"}, {"car": "car"}, ["car", "person", "car"], times=list(range(6)))
+    assert res[0]["on_mark"] == 0.5
+
+
 def test_tracks_match_by_kind():
     stage = {"rider": [(10, 10, 50, 90)] * 4}
     tracks = [[(10, 10, 50, 90)] * 4, [(11, 11, 49, 89)] * 4]

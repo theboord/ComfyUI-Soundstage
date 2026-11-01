@@ -160,3 +160,64 @@ def test_builder_reproduces_the_committed_app():
     built = {n["id"]: (n["type"], n.get("title"), json.dumps(n.get("widgets_values"))) for n in g.w["nodes"]}
     assert built == {i: (n["type"], n.get("title"), json.dumps(n.get("widgets_values"))) for i, n in nodes.items()}
     assert sorted(tuple(l[1:5]) for l in g.w["links"]) == sorted(tuple(l[1:5]) for l in links.values())
+
+
+# ---------------------------------------------------------------- Adherence (share/Blocking_Adherence/REPORT.txt)
+
+def test_adherence_levels_and_default():
+    t = L.load_adherence()
+    assert list(t["levels"]) == list(L.ADHERENCE_NAMES) == ["Loose", "Balanced", "Exact"]
+    assert t["default"] == "Exact"
+    # Every preset (and an empty or old shot) renders at Exact unless the shot says otherwise.
+    for name in L.PRESET_NAMES:
+        assert L.resolve({"preset": name})["adherence"] == "Exact"
+    assert L.resolve({"adherence": "nonsense"})["adherence"] == "Exact"
+    assert L.from_quality("Final", "")["adherence"] == "Exact"
+
+
+def test_adherence_maps_to_the_tested_knobs():
+    k = {n: L.adherence_knobs(L.resolve({"adherence": n})) for n in L.ADHERENCE_NAMES}
+    assert k["Exact"] == {"adherence": "Exact", "motion_freedom": 0.0, "ic_lora": 1.0, "guide_blur": 0, "reference": 0.5}
+    assert k["Loose"]["guide_blur"] == 10 and k["Loose"]["ic_lora"] == 0.825 and k["Loose"]["reference"] == 1.0
+    # Tighter = sharper guide, stronger IC-LoRA, lighter look reference.
+    order = [k[n] for n in ("Loose", "Balanced", "Exact")]
+    assert [x["guide_blur"] for x in order] == sorted([x["guide_blur"] for x in order], reverse=True)
+    assert [x["ic_lora"] for x in order] == sorted(x["ic_lora"] for x in order)
+    assert [x["reference"] for x in order] == sorted([x["reference"] for x in order], reverse=True)
+    # The clay look appears below ~0.4 reference (REPORT): no level goes there.
+    assert min(x["reference"] for x in order) >= 0.4
+
+
+def test_raw_values_override_adherence_and_clamp():
+    k = L.adherence_knobs(L.resolve({"adherence": "Loose", "ic_lora": 1.3, "guide_blur": 99, "reference": -1}))
+    assert k["adherence"] == "Loose" and k["ic_lora"] == 1.3 and k["guide_blur"] == 32 and k["reference"] == 0.0
+    assert L.adherence_knobs(L.resolve({"adherence": "Exact", "reference": 0.8}))["reference"] == 0.8
+
+
+def _l2r_prompt(advanced="", quality="Final", strength=1.0):
+    return {"9096": {"class_type": "SoundstageQuality", "inputs": {"quality": quality, "advanced": advanced, "motion_freedom": 0.5}},
+            "9002:5012": {"class_type": "LTXAddVideoICLoRAGuide", "inputs": {"frame_idx": 0, "strength": ["9096", 1]}},
+            "9002:9042": {"class_type": "LTXAddVideoICLoRAGuide", "inputs": {"frame_idx": -1, "strength": strength}},
+            "9034:9043": {"class_type": "LTXAddVideoICLoRAGuide", "inputs": {"frame_idx": -1, "strength": strength}}}
+
+
+def test_reference_strength_is_set_on_the_prompt():
+    p = L.apply_reference(_l2r_prompt())                                  # an old shot: no adherence -> Exact
+    assert p["9002:9042"]["inputs"]["strength"] == 0.5 and p["9034:9043"]["inputs"]["strength"] == 0.5
+    assert p["9002:5012"]["inputs"]["strength"] == ["9096", 1]           # the clay guide is not touched
+    p = L.apply_reference(_l2r_prompt(json.dumps({"preset": "Final", "adherence": "Loose"})))
+    assert p["9002:9042"]["inputs"]["strength"] == 1.0
+    p = L.apply_reference(_l2r_prompt(json.dumps({"preset": "Hollywood", "reference": 0.7})))
+    assert p["9034:9043"]["inputs"]["strength"] == 0.7
+    p = L.apply_reference(_l2r_prompt(strength=["1", 0]))                # a linked strength is left alone
+    assert p["9002:9042"]["inputs"]["strength"] == ["1", 0]
+    other = {"1": {"class_type": "LTXAddVideoICLoRAGuide", "inputs": {"frame_idx": -1, "strength": 1.0}}}
+    assert L.apply_reference(other)["1"]["inputs"]["strength"] == 1.0   # not a Soundstage prompt
+
+
+def test_on_prompt_handler_never_raises():
+    from soundstage.takecheck import routes as RT
+    body = {"prompt": _l2r_prompt()}
+    assert RT.on_prompt_reference(body)["prompt"]["9002:9042"]["inputs"]["strength"] == 0.5
+    assert RT.on_prompt_reference({"prompt": None}) == {"prompt": None}
+    assert RT.on_prompt_reference({}) == {}

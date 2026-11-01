@@ -83,3 +83,37 @@ test("the App workflow exposes the Hollywood preset and the new nodes", () => {
   assert.ok(wf.nodes.some((n) => n.id === 9101 && n.type === "SoundstageLTXLoRA"));
   assert.ok(wf.nodes.filter((n) => (n.title || "").startsWith("Rung 4")).every((n) => n.type === "SoundstageSaveVideo"));
 });
+
+// ---------------------------------------------------------------- Adherence (share/Blocking_Adherence/REPORT.txt)
+import { ADHERENCE, ADHERENCE_NAMES, adherenceKnobs } from "../../web/motion/ltxadvanced.mjs";
+
+test("Adherence levels are the JSON ones Python reads, default Exact", () => {
+  const J = JSON.parse(readFileSync(new URL("../../web/motion/ltx_presets.json", import.meta.url), "utf8")).adherence;
+  assert.deepEqual(ADHERENCE.levels, J.levels);
+  assert.equal(ADHERENCE.default, J.default);
+  assert.equal(ADHERENCE.default, "Exact");
+  assert.deepEqual(ADHERENCE_NAMES, Object.keys(J.levels));
+  for (const p of PRESET_NAMES) assert.equal(resolveSettings({ preset: p }).adherence, "Exact");
+  assert.equal(resolveSettings({ adherence: "Whatever" }).adherence, "Exact");
+});
+
+test("Adherence maps to the tested raw knobs; explicit values win and are clamped", () => {
+  assert.deepEqual(adherenceKnobs(resolveSettings({})), { adherence: "Exact", motion_freedom: 0, ic_lora: 1, guide_blur: 0, reference: 0.5 });
+  const loose = adherenceKnobs(resolveSettings({ adherence: "Loose" }));
+  assert.deepEqual([loose.guide_blur, loose.ic_lora, loose.reference], [10, 0.825, 1]);
+  const o = adherenceKnobs(resolveSettings({ adherence: "Balanced", ic_lora: 5, guide_blur: -2, reference: 0.7 }));
+  assert.deepEqual([o.adherence, o.ic_lora, o.guide_blur, o.reference], ["Balanced", 2, 0, 0.7]);
+  assert.equal(adherenceKnobs(resolveSettings({ adherence: "Exact", reference: "" })).reference, 0.5);   // empty field = auto
+});
+
+test("Adherence is saved per shot (only when not the default) and survives a preset click", () => {
+  assert.deepEqual(compactSettings({ preset: "Final", adherence: "Exact" }), { preset: "Final" });
+  assert.deepEqual(compactSettings({ preset: "Final", adherence: "Loose", reference: 0.8 }), { preset: "Final", adherence: "Loose", reference: 0.8 });
+  const st = new LtxStore();
+  st.patch("a", { adherence: "Balanced", seed: 7 });
+  st.setPreset("a", "Hollywood");
+  assert.deepEqual(st.saved("a"), { preset: "Hollywood", seed: 7, adherence: "Balanced" });
+  const calls = [];
+  st.writeGraph((id, k, v) => calls.push([id, k, v]), "a");
+  assert.deepEqual(JSON.parse(calls.find(([id, k]) => id === 9096 && k === "advanced")[2]).adherence, "Balanced");
+});
