@@ -5,6 +5,11 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-01
 
+**05:05 PST · QA round 05: the timeline editor fits the window, and the wheel scrolls like an NLE**
+- **No scrolling:** at 1280×800 the audio tracks ended at y=1028. The editor now fills the CUT view exactly (checked at 1280×800, 1440×900, 1920×1080): the tracks keep their natural height when there's room and squeeze toward compact (V1 34 px, audio 22 px) when there isn't; the viewer takes the rest. **A ▾** folds A1–A4 to thin lanes so V1 gets its height back. The shortcuts line is one line (full text on hover).
+- **Wheel:** scrolls the tracks up/down when they overflow (otherwise scrolls time); Ctrl/⌘+wheel or a trackpad pinch zooms time; Shift+wheel scrolls time. Before, the plain wheel zoomed and A1–A4 were out of reach.
+- Evidence: share/QA/round_05/timeline_fit/ (before/after at three sizes, folded, short-window scroll). Code: [web/cut/cut.mjs](web/cut/cut.mjs). Tests: [tests/js/cut_fit.test.mjs](tests/js/cut_fit.test.mjs).
+
 **02:06 PST · QA round 05: the phone viewfinder works upright, and the Ready dots are whole again**
 - **Phone viewfinder, "Use it upright":** on a phone held upright the timecode, Grid, Frame and the Focus chip ran off the right edge and the lens row sat under the MOVE stick. The top bar and the lens / iris / focus row now wrap, the side rails start below the top bar, and "Use it upright" is a full-size tap target (checked at 390×844 and 375×667; landscape unchanged). Code: [web/vcam/viewfinder.html](web/vcam/viewfinder.html).
 - **Ready dots:** the green dot on each step's corner was clipped by the rounded step button to a sliver that read as a stray backtick ("Cast`"). The button no longer clips; the step name still truncates with an ellipsis. Code: [web/ui/canvasui.mjs](web/ui/canvasui.mjs), [web/ui/theme.mjs](web/ui/theme.mjs). Tests: [tests/js/qa_round05.test.mjs](tests/js/qa_round05.test.mjs), [tests/js/viewfinder.test.mjs](tests/js/viewfinder.test.mjs).
