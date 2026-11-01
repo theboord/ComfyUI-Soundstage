@@ -16,6 +16,8 @@ test("full-workspace step pills don't clip the Ready dot on their corner", () =>
   const pill = rules(theme, ".ss-stage.ss-wsmode[data-ws=wide] .ss-pipe button");
   assert.ok(pill.length >= 1, "the wide step-pill rules are still there");
   for (const body of pill) assert.doesNotMatch(body, /overflow\s*:\s*hidden/, "a clipping pill cuts the corner dot to a sliver");
+  for (const body of rules(canvasui, ".ss-stage.ss-cl[data-ws=wide] .ss-pipe button")) assert.doesNotMatch(body, /overflow\s*:\s*hidden/, "the wide canvas layout's pills must not clip it");
+  assert.ok(rules(canvasui, ".ss-stage.ss-cl[data-ws=wide] .ss-pipe button").length >= 1);
   const top = rules(canvasui, ".ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button");
   assert.ok(top.length >= 1, "the canvas-layout top-row step rules are still there");
   for (const body of top) assert.doesNotMatch(body, /overflow\s*:\s*hidden/, "the top-row pill must not clip the corner dot either");
