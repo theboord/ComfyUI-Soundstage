@@ -10,7 +10,7 @@ import { applyRig, RIGS } from "./camrig.mjs";
 import { materialOf, impactParticles, impactFlash, impactShake, jitterPhysics, jitterTilt } from "./impacts.mjs";
 import { STUNTS, hasHeadingKeys, headingTrack, channelAt, driveAt, isStunt, unwrapDeg, vehicleDynamics, smokeParticles, stuntKeys } from "./stunts.mjs";
 import { PoseGizmo } from "./posegizmo.mjs";
-import { buildSet, buildWater, buildWeather, buildTireSmoke } from "./environments.mjs";
+import { buildSet, buildWater, buildWeather, buildTireSmoke, buildImpactFx } from "./environments.mjs";
 import { buildCard, loadBackdrop, coverFit } from "./cards.mjs";
 import { buildInterior, fixtureActors, interiorCamera, normalizeSpec, toStage } from "./interior.mjs";
 import { GLTFLoader } from "../vendor/addons/GLTFLoader.mjs";
@@ -443,7 +443,7 @@ export class Stage {
     if (!a) return null;
     const p = physicsOf(a);
     if (!a.physics?.mode && (NO_COLLIDE.has(a.kind) || a.kind === "card" || a.mount_id || a.carry_id)) p.mode = "off";   // never collides
-    return { id: a.id, name: a.name, kind: a.kind, ...p, baked: !!a.physics?.baked, canMove: this._physCanMove(a),
+    return { id: a.id, name: a.name, kind: a.kind, ...p, material: materialOf(a), baked: !!a.physics?.baked, canMove: this._physCanMove(a),
       kindCount: this.state.actors.filter((x) => x.kind === a.kind && this._physCanMove(x)).length,
       dynamicCount: this.state.actors.filter((x) => x.physics?.mode === "dynamic" && this._physCanMove(x)).length };
   }
@@ -587,7 +587,8 @@ export class Stage {
     const ms = Math.round(performance.now() - t0);
     return { ok: true, bodies: dynamic.length, colliders: specs.length - dynamic.length, moving, restless, ms, impacts: events.length, ...qa,
       message: `Simulated ${dynamic.length} object${dynamic.length === 1 ? "" : "s"} over ${last + 1} frames in ${(ms / 1000).toFixed(1)} s` +
-        ` and baked ${moving} into keys${restless.length ? `; still moving at the end: ${restless.slice(0, 3).join(", ")}` : "; everything comes to rest"}.` };
+        ` and baked ${moving} into keys${restless.length ? `; still moving at the end: ${restless.slice(0, 3).join(", ")}` : "; everything comes to rest"}` +
+        `${events.length ? `. ${events.length} hit${events.length === 1 ? "" : "s"} logged (dust, shake and sound key off them)` : ""}.` };
   }
 
   /** Put objects back on the keys they had before the bake (every baked object, or the given ids). */
@@ -609,6 +610,32 @@ export class Stage {
 
   /** The baked hits (scene.physics.events), [] when nothing is baked. */
   impactEvents() { return this.state.physics?.events || []; }
+
+  /** Impact FX settings: {dust, debris, sparks} (each on unless set false). */
+  impactFxInfo() { const fx = this.state.physics?.fx || {}; return { dust: fx.dust !== false, debris: fx.debris !== false, sparks: fx.sparks !== false, events: this.impactEvents().length }; }
+
+  /** Switch impact dust / debris / sparks on or off for the whole scene (patch: {dust?, debris?, sparks?}). */
+  setImpactFx(patch = {}) {
+    const fx = { ...(this.state.physics?.fx || {}) };
+    for (const k of ["dust", "debris", "sparks"]) if (k in patch) fx[k] = !!patch[k];
+    this.state.physics = { ...(this.state.physics || {}), fx };
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    return this.impactFxInfo();
+  }
+
+  /** Dust, debris and sparks off the baked hits at a frame, and the flash of a hard metal hit (Milestone 21). */
+  _impactFxAt(frame) {
+    const ev = this.state.physics?.events, fx = this.state.physics?.fx || {};
+    if (!ev?.length) { if (this.impactFx) { this.impactFx.object.visible = false; this.impactFx.light.intensity = 0; } return; }
+    if (!this.impactFx) this.impactFx = buildImpactFx(1500);
+    if (this.impactFx.object.parent !== this.root) this.root.add(this.impactFx.object);   // the set was rebuilt
+    this.impactFx.object.visible = true;
+    const fps = this.state.shot?.fps || 24;
+    const parts = impactParticles(ev, frame, { fps, seed: this.state.physics.seed ?? 1, dust: fx.dust !== false, debris: fx.debris !== false, sparks: fx.sparks !== false });
+    const flash = fx.sparks !== false ? impactFlash(ev, frame, { fps }) : null;
+    this.impactFx.set(parts, flash && { ...flash, intensity: flash.intensity * 5 });
+  }
 
   // ---------- time & keyframes ----------
   _lastFrame() {
@@ -1439,6 +1466,7 @@ export class Stage {
       this.weather.update(this.frame, { x: cam.target[0], z: cam.target[2] }, this);
     }
     try { this.setFx?.update?.(this.frame, this); } catch (err) { console.warn("Soundstage set", err); }
+    this._impactFxAt(this.frame);
     if (this.selRing) {
       const sel = this.actorMeshes.get(this.selected);
       this.selRing.visible = !!sel;

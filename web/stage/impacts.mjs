@@ -113,6 +113,9 @@ export const MAT_FX = {
   ground: { dust: [0.66, 0.62, 0.56], dustAmt: 0.9, chip: [0.4, 0.38, 0.35], chipAmt: 0.2, sparks: 0 },
 };
 const fxOf = (m) => MAT_FX[m] || MAT_FX.wood;
+const HARD = new Set(["metal", "stone", "concrete", "ground", "glass"]);
+/** Sparks (0..1) off a hit: metal striking something hard. A car into a wooden crate throws splinters, not sparks. */
+const sparksOf = (ma, mb) => (HARD.has(ma) && HARD.has(mb) ? Math.max(fxOf(ma).sparks, fxOf(mb).sparks) : 0);
 const DUST = { lifeMin: 1.4, lifeMax: 2.8, tau: 0.32, size0: 0.22, size1: 1.5, opacity: 0.6 };
 const G = 9.81;
 
@@ -184,7 +187,7 @@ export function impactParticles(events, F, opts = {}) {
           alpha: Math.min(1, age * 30) * (age > 6 ? 0 : 1) });
       }
     }
-    const sparks = Math.max(fa.sparks, fb.sparks);
+    const sparks = sparksOf(e.mat_a, e.mat_b);
     if (want.spark && sparks > 0 && e.speed > 3 && age < 0.6) {
       const count = Math.min(30, Math.floor(16 * k * sparks + hash(es, 9)));
       for (let i = 0; i < count; i++) {
@@ -204,13 +207,13 @@ export function impactParticles(events, F, opts = {}) {
 }
 
 /**
- * The interaction-light flash at frame F: the strongest hard (metal / stone) hit's {pos, intensity} (0 = none). A
+ * The interaction-light flash at frame F: the strongest metal-on-hard hit's {pos, intensity} (0 = none). A
  * few frames, exponential falloff, scaled by the hit's strength.
  */
 export function impactFlash(events, F, { fps = 24 } = {}) {
   let best = { pos: [0, 0, 0], intensity: 0 };
   for (const e of events || []) {
-    const sp = Math.max(fxOf(e.mat_a).sparks, fxOf(e.mat_b).sparks);
+    const sp = sparksOf(e.mat_a, e.mat_b);
     if (sp < 0.5 || e.speed < 3) continue;
     const age = F / fps - e.t;
     if (age < 0 || age > 0.3) continue;

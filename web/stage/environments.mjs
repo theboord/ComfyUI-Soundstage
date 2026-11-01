@@ -304,3 +304,58 @@ export function buildTireSmoke(max = 1200) {
   };
   return { object, set };
 }
+
+/**
+ * Impact FX (Milestone 21): dust puffs, debris chips and sparks off the baked hits, plus a brief point-light flash on
+ * hard metal hits. set(parts, flash) takes impacts.impactParticles() output (stage space) and impactFlash(). Like the
+ * tyre smoke the particles show in Clay and Color (the previz and the LTX guide), never in Depth or the ID matte
+ * (userData.glass); the flash is switched off for those passes by the stage.
+ */
+export function buildImpactFx(max = 1500) {
+  const group = new THREE.Group();
+  group.userData.impactFx = true;
+  const layer = (blending, key) => {
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(max * 3), col = new Float32Array(max * 4), size = new Float32Array(max);
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(col, 4));
+    geo.setAttribute("pSize", new THREE.BufferAttribute(size, 1));
+    geo.setDrawRange(0, 0);
+    const m = new THREE.PointsMaterial({ color: 0xffffff, size: 1, map: softSprite(), vertexColors: true, transparent: true,
+      depthWrite: false, sizeAttenuation: true, blending });
+    m.allowOverride = false;   // Clay would draw them as black squares
+    m.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace("uniform float size;", "uniform float size;\nattribute float pSize;")
+        .replace("gl_PointSize = size;", "gl_PointSize = size * pSize * projectionMatrix[1][1];");
+    };
+    m.customProgramCacheKey = () => key;
+    const object = new THREE.Points(geo, m);
+    object.frustumCulled = false;
+    object.renderOrder = 2;
+    object.userData.glass = true;
+    group.add(object);
+    return { geo, pos, col, size };
+  };
+  const soft = layer(THREE.NormalBlending, "ss_impact_soft"), glow = layer(THREE.AdditiveBlending, "ss_impact_glow");
+  const light = new THREE.PointLight(0xffd9a0, 0, 9, 2);
+  light.userData.impactFlash = true;
+  group.add(light);
+  const set = (parts, flash = null) => {
+    const fill = (L, list) => {
+      const n = Math.min(max, list.length);
+      for (let i = 0; i < n; i++) {
+        const q = list[i];
+        L.pos[i * 3] = q.p[0]; L.pos[i * 3 + 1] = q.p[1]; L.pos[i * 3 + 2] = q.p[2];
+        L.col[i * 4] = q.color[0]; L.col[i * 4 + 1] = q.color[1]; L.col[i * 4 + 2] = q.color[2]; L.col[i * 4 + 3] = q.alpha;
+        L.size[i] = q.size;
+      }
+      L.geo.setDrawRange(0, n);
+      for (const k of ["position", "color", "pSize"]) L.geo.attributes[k].needsUpdate = true;
+    };
+    fill(soft, parts.filter((q) => q.kind !== "spark"));
+    fill(glow, parts.filter((q) => q.kind === "spark"));
+    light.intensity = flash?.intensity || 0;
+    if (flash?.intensity) light.position.set(flash.pos[0], Math.max(0.3, flash.pos[1] + 0.3), flash.pos[2]);
+  };
+  return { object: group, set, light };
+}
