@@ -13,7 +13,8 @@ import { TIME_PRESETS, LIGHT_TYPES, clock } from "./stage/lighting.mjs";
 import { LadderViewer, RUNG_NAMES } from "./ladder/ladder.mjs";
 import { LookPanel } from "./look/look.mjs";
 import { SceneAgent, loadScene } from "./agent/agent.mjs";
-import { CutPanel } from "./cut/cut.mjs";
+import { CutPanel, savedFields } from "./cut/cut.mjs";
+import { makeAudioGenerator, makeAudioUploader } from "./cut/gen.mjs";
 import { ShotStrip, readSaved } from "./cut/strip.mjs";
 import { CanvasPanel } from "./canvas/canvas.mjs";
 import { CameraViz, PipViewer, TopView } from "./stage/camviz.mjs";
@@ -556,10 +557,26 @@ function createStageWidget(node, inputName) {
       try { return stage.renderFrameTo("clay", frame); } finally { stage.state.active_shot = prev; }
     },
     onChange: (project) => {
-      saveCut({ ...loadCut(), cut: project.cut, audio: project.audio, audio_tracks: project.audio_tracks });
+      saveCut({ ...loadCut(), ...savedFields(project) });   // cut, sound, titles, subtitles, tail fade (Milestone 19)
       strip?.refresh();
     },
     onEditShot: (id, where) => editShot(id, where),
+    // Milestone 19: Assemble scene from the ScriptSync lining; generate / import sound in place; the server render.
+    getLining: () => {
+      try {
+        const sc = dailiesScene();
+        const cov = dailiesLayouts()[sc.id]?.coverage || {};
+        return { scene: sc, shots: dailiesShots().map((x) => (x.id in cov ? { ...x, coverage: cov[x.id] } : x)) };
+      } catch { return null; }
+    },
+    generateAudio: makeAudioGenerator(api, { shotId: () => stage.activeShot?.()?.id || "cut" }),
+    uploadAudio: makeAudioUploader(api),
+    renderCut: async (body) => {
+      const r = await api.fetchApi("/soundstage/cut/render", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const j = await r.json().catch(() => ({ error: `server answered ${r.status}` }));
+      if (j && j.filename) j.url = api.apiURL(`/view?${new URLSearchParams({ filename: j.filename, subfolder: j.subfolder, type: j.type })}`);
+      return j;
+    },
   });
 
   // The docked shot strip: always under the stage. Click a clip to edit that setup; + Shot adds one;

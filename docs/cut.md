@@ -16,6 +16,9 @@ stand-in with a relink note.
 | `web/cut/strip.mjs` | `export class ShotStrip`: the docked shot strip, plus pure `syncCut` / `appendSetups` / `presetCamera` |
 | `web/cut/cut.mjs` | `export class CutPanel`: the UI (viewer, transport, V1 + audio tracks, inspector, shot bin) and the WebAudio engine |
 | `web/cut/timeline.mjs` | Edit model, pure functions: picture edits, cut on action, audio clips, lanes, sync-lock ripple |
+| `web/cut/fx.mjs` | Transitions, keys, auto-duck, loudness, beats, assembly from the lining, subtitles (Milestone 19) |
+| `web/cut/gen.mjs` | Generate / import sound in place from the Cut editor |
+| `soundstage/cut/render.py` | Render the cut to MP4 / ProRes / 9:16 with transitions, titles and the mix at a loudness target |
 | `web/cut/exporters.mjs` | Browser-side exports: EDL, Avid locators, Premiere XML, FCPXML, OTIO, RELINK.txt |
 | `soundstage/cut/export.py` | Python twin of the two files above, byte for byte (the test diffs them) |
 | `soundstage/cut/aaf.py` | AAF for Avid (needs `pyaaf2`) |
@@ -189,6 +192,88 @@ the scene frame and trims snap to it. Edits get a green diamond (on action) or a
 - Waveforms are drawn with gain and fades applied. Clips on muted tracks are dimmed.
 - While sound is playing, WebAudio's clock drives the picture. If that clock stalls (no output device,
   a background tab), the picture falls back to wall time.
+
+## Transitions, fades, keys, sound and titles (Milestone 19)
+
+Code: `web/cut/fx.mjs` (pure rules), `web/cut/cut.mjs` (UI), `web/cut/gen.mjs` (generate / import sound),
+`soundstage/cut/render.py` (the render). Tests: `tests/js/cut_m19.test.mjs`, `tests/test_cut_m19.py`.
+
+**Tracks.** V2 (title cards) above V1; a SUBS lane under V1; A1 Dialogue, A2 SFX, A3 Music, A4 Ambience (named by
+role; a project's own names, such as docs/audio.md's DX1/FX1/MX1, win).
+
+| Key / gesture | Action |
+| --- | --- |
+| S (or B) | Split at the playhead |
+| ⌘-drag a clip, `,` / `.` (⇧ = 5) | Slip: same length and place, other frames |
+| Drag a Transitions chip onto a cut | Dissolve, dip to black / white, wipe. On the head it is a fade up, on the tail a fade out |
+| Click a chip, or T | The transition (T: a dissolve) on the cut nearest the playhead |
+| Click a transition bar | Inspector: type, length, Remove (⌫ removes it too) |
+| R, or Keys | Rubber bands: click a clip's level (audio) or opacity (V1) line to add a key, drag it, ⌥-click deletes |
+| + Title, drag on V2 | A title card (Card on black, Lower third, Centre), text, length and fades in the inspector |
+
+**Where a transition sits.** A dissolve or wipe is centred on the cut and overlaps the clips, so it uses their
+handles: the outgoing clip runs past its out point, the incoming one starts before its in point. When one side is
+short it shifts; when both are short it is shortened, and the bar turns orange and the status line says how much
+fitted. With no handles at all (a clip using its whole take next to one starting at frame 0) a dissolve can't go
+there; use a dip, which fades each clip's own frames and needs no handles. No side takes more than half its clip.
+
+**Sound after generation.**
+- *Generate* (SFX → A2, Music → A3, Dialogue → A1): one small prompt of the App's own node (Soundstage · Sound
+  Effect / Music Cue / Dialogue Line, open-weights engines: LTX-2.5 audio, Chatterbox), with the node's prompt guard.
+  The clip lands at the playhead. Dialogue as `MARA: the line` sets the speaker. *Import…* puts a file on the track
+  its name suggests.
+- *Auto-duck*: music on A3 dips −12 dB under each dialogue line on A1 (6 frames attack before it, 12 release after
+  it; lines closer than that stay ducked between). It writes the music clip's `duck` keys (drawn in amber), kept apart
+  from your own `keys`, so a re-duck replaces only its own.
+- *Beats*: the selected music clip's (or the first on A3) tempo and beats, by onset detection; ticks on the ruler,
+  trims snap to them. *Cuts → beat* rolls each cut onto the nearest beat within 6 frames (length unchanged).
+- *Loudness*: the render's target, Social −14 LUFS (−1 dBTP), EBU R128 −23 LUFS (−1 dBTP) or ATSC A/85 −24 LKFS
+  (−2 dBTP). *Measure* reads the tracks' integrated loudness (BS.1770) in the browser.
+
+**Assemble scene** builds a first cut from the ScriptSync lining: the wide (or master) for action, an insert when
+one is lined on that action line, the speaker's single (then their OTS, the two-shot) for their lines, cutting on
+line ends. Each line lasts as long as it does in the take that covers the whole scene. Subtitle cues come with it.
+**Subtitles** rebuilds the cues from the dialogue clips' typed lines (`meta.line`); no speech recognition.
+**Burn in** draws them into the render.
+
+**Render** (`POST /soundstage/cut/render`, `soundstage/cut/render.py`) writes `output/soundstage_cuts/<name>_<time>.mp4`
+(H.264 + AAC), `.mov` (ProRes 422 HQ + 24-bit PCM) or `<name>_9x16_<time>.mp4` (1080×1920, centre crop; the titles
+and subtitles are laid out for the phone):
+- picture: each clip's best render (Final › Draft › Look › clay capture; a titled slate where none exists), trimmed
+  with the handles its dissolves need; dissolves and wipes with ffmpeg's `xfade`, dips and fades with `fade`, opacity
+  keys over black; titles and subtitles as Pillow-drawn overlays (no `drawtext` needed);
+- sound: every audible track with gain, fades, keys and duck (the same mixdown as the LTX per-shot WAVs), plus each
+  Final's own sound, crossfaded with the picture; then one linear gain to the target (measured with ffmpeg's BS.1770)
+  and a 4×-oversampled true-peak limiter, with 0.7 dB of headroom for AAC.
+
+**Project contract additions** (all optional; a project without them exports byte for byte as before):
+
+```jsonc
+"cut": [{ "shot_id": "a", "in": 0, "out": 60, "trans": { "type": "dissolve", "frames": 12 },   // into this clip
+          "opacity": [[0, 1], [12, 0.4]] }],                                                     // clip frame, 0..1
+"fade_out": { "type": "dip_black", "frames": 24 },
+"audio": [{ "...": "...", "keys": [[0, 0], [48, -6]], "duck": [[90, 0], [96, -12]] }],          // clip frame, dB
+"titles": [{ "id": "t1", "text": "DINER NIGHT", "start_frame": 0, "frames": 72, "style": "card", "fade_in": 6, "fade_out": 6 }],
+"subtitles": [{ "id": "s1", "start_frame": 100, "end_frame": 160, "text": "Then why bring this one?", "speaker": "MARA" }],
+"burn_subtitles": false
+```
+
+**Exports.**
+
+| Format | Transitions and fades | Keys | Titles / subtitles |
+| --- | --- | --- | --- |
+| EDL | `D` dissolves, `W001` wipes, dips and fades through `BL`; dip to white noted | Level keys as `* SOUNDSTAGE LEVEL`, opacity as a comment | Title comments; `<name>.srt` / `.vtt` |
+| Premiere XML | Cross Dissolve, Dip to Color Dissolve (black / white), Edge Wipe; head `start-black`, tail `end-black` | Audio Levels and Opacity keyframes | Titles as Text generators on V2 |
+| FCPXML | Every kind as FCP's Cross Dissolve at its real place and length | `adjust-volume` and `adjust-blend` keyframes | Basic Title on lane 1 |
+| OTIO | `Transition.1` (SMPTE_Dissolve / SMPTE_Wipe) with in/out offsets | In `metadata.soundstage` | Generator clips on a V2 track |
+| AAF | Not carried (use the EDL in Avid) | No | No |
+
+Not verified yet: import of the transitions, keys and titles into the real NLEs (the files parse, the EDL record
+times stay contiguous, the Python and browser writers agree byte for byte).
+
+**For the director.** `CUT_ACTIONS` / `runCutAction(panel, name, args)` in `web/cut/cut.mjs` list and run every edit
+(split, ripple delete, trim, roll, slip, move, transition, keys, generate audio, auto-duck, beats, assemble,
+subtitles, titles, loudness, render). The panel is `node.ssCut`.
 
 ## Exports: one folder for every NLE
 
