@@ -5,6 +5,11 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-01
 
+**10:05 PST · QA round 06: switching scenes no longer re-renders hidden previews**
+- **Faster scene switch.** ◀ ▶ (or a scene chip) redrew the hidden preview ladder four times and every shot's clay thumbnail once per step row (Frame, Motion, Review, Deliver): 29 off-screen stage renders per switch. Now 4: a hidden ladder waits until its view opens, and each shot's thumbnail is rendered once per redraw. Measured on the demo scene at 1280×800: about 1.9 s before, 1.4–1.6 s after (on the heavily loaded Mac earlier it was 6–8 s).
+- Checked in a browser: a full click-through of ③ Set … ⑦ Deliver at 1280×800 and 1920×1080 (about 650 clicks), 0 console errors (share/QA/round_06/).
+- Code: [web/ladder/ladder.mjs](web/ladder/ladder.mjs), [web/pipeline/pipeline.mjs](web/pipeline/pipeline.mjs). Tests: [tests/js/qa_round06.test.mjs](tests/js/qa_round06.test.mjs).
+
 **07:45 PST · Presets: previews no longer stall the stage, and the window docks beside the panels**
 - **No stutter.** Previews render at 192×108 (512 px shadow), one step per frame inside an 8 ms budget; the scratch stage's clay shaders compile asynchronously (`compileAsync`). It's built and warmed during idle time after the App loads, not when the window opens. Closing the window stops the work. Cards show their drawn previews until each one is ready. Longest main-thread task while previews fill (1280×800, demo scene, heavily loaded Mac): about 4.1–4.3 s before, 0.9–2.0 s after.
 - **Docking:** at 1280 and 1440 wide the window covered Properties. It now sits centred between the tool rail and Properties, and takes Properties' slot only when that space is too narrow. The `presets_panel` visual baselines were updated on purpose: no panel overlap at any size.

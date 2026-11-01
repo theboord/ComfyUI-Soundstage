@@ -1419,6 +1419,9 @@ export class Pipeline {
     // label). A shot that is not on the stage (live === false) opens its scene through ctx.openShot when picked.
     const shots = this.ctx.rowShots?.() || this.shots();
     this._thumbs = this._thumbs || {};
+    // One clay render per shot per redraw: every step's row (Frame, Motion, Review, Deliver) shows the same picture,
+    // and each render is a full stage pass at delivery size (a scene switch rendered every shot four times over).
+    const clay = new Map();
     for (const { row, where } of this.shotRows) {
       const cards = shots.map((s, i) => {
         const r = this.ctx.getRenders(s.id) || {};
@@ -1429,8 +1432,12 @@ export class Pipeline {
         else {
           thumb = h("canvas", { width: "185", height: "100" });
           try {
-            const c = away ? null : this.ctx.renderPreviewFrame?.(s.id, 0);
-            if (c) thumb.getContext("2d").drawImage(c, 0, 0, 185, 100);
+            if (clay.has(s.id)) { const c = clay.get(s.id); if (c) thumb.getContext("2d").drawImage(c, 0, 0); }
+            else {
+              const c = away ? null : this.ctx.renderPreviewFrame?.(s.id, 0);
+              if (c) thumb.getContext("2d").drawImage(c, 0, 0, 185, 100);
+              clay.set(s.id, c ? thumb : null);
+            }
           } catch { /* stage not ready */ }
         }
         const [cls, txt] = this._shotState(where, s.id);
