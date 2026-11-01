@@ -36,13 +36,151 @@ export function normalizeProject(p) {
       const outF = clamp(Math.round(e.out ?? shot.frames), inF + 1, shot.frames);
       const ev = { shot_id: shot.id, in: inF, out: outF };
       if (e.notes && (!Array.isArray(e.notes) || e.notes.length)) ev.notes = Array.isArray(e.notes) ? e.notes.map(String) : String(e.notes);
+      const tr = normalizeTrans(e.trans);
+      if (tr) ev.trans = tr;
+      const op = normalizeKeys(e.opacity, outF - inF, 0, 1, 1000);
+      if (op) ev.opacity = op;
       return ev;
     });
   project.audio = normalizeAudio(project.audio, project.fps);
   project.audio_tracks = (project.audio_tracks || [])
     .map((t) => ({ track: Math.max(1, Math.round(t.track || 1)), name: t.name ? String(t.name) : "", mute: !!t.mute, solo: !!t.solo }));
+  // Milestone 19 (all optional; absent = the cut as before): a fade to black/white at the tail, title cards on V2,
+  // subtitles (from the typed dialogue) with an optional burn-in.
+  const fo = normalizeTrans(project.fade_out);
+  if (fo) project.fade_out = { type: fo.type === "dip_white" ? "dip_white" : "dip_black", frames: fo.frames };
+  else delete project.fade_out;
+  if (project.titles != null) project.titles = normalizeTitles(project.titles);
+  if (project.subtitles != null) project.subtitles = normalizeSubtitles(project.subtitles);
   return project;
 }
+
+// ---------------------------------------------------------------- transitions, keys, titles, subtitles (Milestone 19)
+
+/** Transition types. On the first clip any of them is a fade up from black (or white for dip_white). */
+export const TRANSITIONS = ["dissolve", "dip_black", "dip_white", "wipe"];
+export const TRANSITION_LABEL = { dissolve: "Cross dissolve", dip_black: "Dip to black", dip_white: "Dip to white", wipe: "Wipe" };
+
+/** {type, frames} or null. frames >= 1 (an unknown type is a dissolve). */
+export function normalizeTrans(t) {
+  if (!t || typeof t !== "object") return null;
+  const frames = Math.round(Number(t.frames) || 0);
+  if (frames < 1) return null;
+  return { type: TRANSITIONS.includes(t.type) ? t.type : "dissolve", frames: Math.min(frames, 10000) };
+}
+
+/**
+ * Keyframes [[f, v], ...] sorted by f (clip-local frames, 0..len), v clamped to [lo, hi], one key per frame
+ * (the last wins). null when there are none.
+ */
+export function normalizeKeys(keys, len, lo, hi, round = 10) {
+  if (!Array.isArray(keys) || !keys.length) return null;
+  const byF = new Map();
+  for (const k of keys) {
+    const f = Array.isArray(k) ? k[0] : k?.f, v = Array.isArray(k) ? k[1] : k?.v;
+    if (!Number.isFinite(Number(f)) || !Number.isFinite(Number(v))) continue;
+    byF.set(clamp(Math.round(Number(f)), 0, Math.max(0, len ?? 1e9)), Math.round(clamp(Number(v), lo, hi) * round) / round);
+  }
+  const out = [...byF.entries()].sort((a, b) => a[0] - b[0]);
+  return out.length ? out : null;
+}
+
+/** Value of piecewise-linear keys at frame f (held before the first and after the last key); dflt with no keys. */
+export function keyAt(keys, f, dflt = 0) {
+  if (!keys || !keys.length) return dflt;
+  if (f <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) {
+    const [f1, v1] = keys[i];
+    if (f <= f1) {
+      const [f0, v0] = keys[i - 1];
+      return f1 === f0 ? v1 : v0 + ((v1 - v0) * (f - f0)) / (f1 - f0);
+    }
+  }
+  return keys[keys.length - 1][1];
+}
+
+/** Titles on V2: {id, text, start_frame, frames, style: "card" (full frame on black) | "lower" | "center", fade_in, fade_out}. */
+export function normalizeTitles(list) {
+  const seen = new Set();
+  return (Array.isArray(list) ? list : []).filter((t) => t && String(t.text || "").trim()).map((t, i) => {
+    let id = t.id != null ? String(t.id) : `t${i + 1}`;
+    while (seen.has(id)) id += "_";
+    seen.add(id);
+    const frames = Math.max(1, Math.round(t.frames || 48));
+    const fi = clamp(Math.round(t.fade_in ?? 6), 0, frames);
+    return {
+      id, text: String(t.text).slice(0, 400), start_frame: Math.max(0, Math.round(t.start_frame || 0)), frames,
+      style: ["card", "lower", "center"].includes(t.style) ? t.style : "card",
+      fade_in: fi, fade_out: clamp(Math.round(t.fade_out ?? 6), 0, frames - fi),
+    };
+  });
+}
+
+/** Subtitles: {id, start_frame, end_frame (exclusive), text, speaker?}, in time order. */
+export function normalizeSubtitles(list) {
+  const seen = new Set();
+  return (Array.isArray(list) ? list : []).filter((c) => c && String(c.text || "").trim()).map((c, i) => {
+    let id = c.id != null ? String(c.id) : `s${i + 1}`;
+    while (seen.has(id)) id += "_";
+    seen.add(id);
+    const a = Math.max(0, Math.round(c.start_frame || 0));
+    const cue = { id, start_frame: a, end_frame: Math.max(a + 1, Math.round(c.end_frame ?? a + 48)), text: String(c.text).replace(/\s+/g, " ").trim() };
+    if (c.speaker) cue.speaker = String(c.speaker);
+    return cue;
+  }).sort((x, y) => x.start_frame - y.start_frame);
+}
+
+/** Sync lock for the V2 titles and the subtitles: like rippleAudio, for any list with start_frame (and end_frame). */
+export function rippleItems(list, at, delta) {
+  return (list || []).map((x) => {
+    const y = { ...x };
+    const was = y.start_frame;
+    if (delta > 0 && was >= at) y.start_frame += delta;
+    if (delta < 0) {
+      if (was >= at) y.start_frame += delta;
+      else if (was > at + delta) y.start_frame = at + delta;
+    }
+    y.start_frame = Math.max(0, y.start_frame);
+    if (y.end_frame != null) y.end_frame = Math.max(y.start_frame + 1, y.end_frame + (y.start_frame - was));
+    return y;
+  });
+}
+
+/** Slip event i by delta source frames: in and out move together, the length and the record position stay. */
+export function slip(project, i, delta) {
+  const cut = copy(project.cut);
+  const ev = cut[i];
+  if (!ev) return cut;
+  const shot = shotMap(project).get(ev.shot_id);
+  const d = clamp(Math.round(delta), -ev.in, shot.frames - ev.out);
+  ev.in += d;
+  ev.out += d;
+  return cut;
+}
+
+/** Put a transition on the edit into event i (frames 0 or type null removes it). */
+export function setTransition(project, i, type, frames) {
+  const cut = copy(project.cut);
+  const ev = cut[i];
+  if (!ev) return cut;
+  const tr = type ? normalizeTrans({ type, frames }) : null;
+  if (tr) ev.trans = tr; else delete ev.trans;
+  return cut;
+}
+
+/** Split keyframes at clip-local frame `at`: [head keys, tail keys shifted to 0], each with the value at the split. */
+export function splitKeys(keys, at, len) {
+  if (!keys || !keys.length) return [null, null];
+  const v = keyAt(keys, at);
+  const head = [...keys.filter((k) => k[0] < at), [at, v]];
+  const tail = [[0, v], ...keys.filter((k) => k[0] > at).map(([f, x]) => [f - at, x])].filter((k) => k[0] <= len - at);
+  return [head, tail];
+}
+
+/** Default audio track roles (A1..A4); docs/audio.md's DX/FX/MX names still win when a project sets them. */
+export const TRACK_ROLES = { 1: "Dialogue", 2: "SFX", 3: "Music", 4: "Ambience" };
+/** The track a generated clip lands on by its meta.kind. */
+export const ROLE_TRACK = { dialogue: 1, voice: 1, sfx: 2, foley: 2, music: 3, ambience: 4, ambient: 4, room_tone: 4 };
 
 /**
  * A shot's source footage (docs/source_fidelity.md): the camera original it came from, with its own reel,
@@ -135,6 +273,12 @@ export function normalizeAudio(list, _fps) {
       frames,
     };
     if (a.meta && typeof a.meta === "object") clip.meta = a.meta;
+    // Volume keyframes (rubber band, dB offsets at clip-local frames) and the auto-duck's own keys, kept apart so a
+    // re-duck replaces only its own. Both are optional.
+    const keys = normalizeKeys(a.keys, outF == null ? null : len, -60, 24);
+    if (keys) clip.keys = keys;
+    const duck = normalizeKeys(a.duck, outF == null ? null : len, -60, 0);
+    if (duck) clip.duck = duck;
     return clip;
   });
 }
@@ -169,6 +313,11 @@ export function trackState(project, track) {
   return (project.audio_tracks || []).find((t) => t.track === track) || { track, name: "", mute: false, solo: false };
 }
 
+/** A track's display name: its own name, else its role (A1 Dialogue, A2 SFX, A3 Music, A4 Ambience). */
+export function trackName(project, track) {
+  return trackState(project, track).name || TRACK_ROLES[track] || "";
+}
+
 /** Is track n heard? Solo wins over mute, like every desk. */
 export function audible(project, track) {
   const solos = (project.audio_tracks || []).filter((t) => t.solo);
@@ -176,9 +325,9 @@ export function audible(project, track) {
   return !trackState(project, track).mute;
 }
 
-/** Number of audio tracks to show: every used track, at least 2. */
+/** Number of audio tracks to show: every used track, at least 4 (dialogue, SFX, music, ambience). */
 export const audioTrackCount = (project) =>
-  Math.max(2, ...(project.audio || []).map((a) => a.track), ...(project.audio_tracks || []).map((t) => t.track));
+  Math.max(4, ...(project.audio || []).map((a) => a.track), ...(project.audio_tracks || []).map((t) => t.track));
 
 /**
  * Lanes for export: each track's clips in time order, overlaps pushed to an extra lane (A1, A1b, ...)
@@ -273,8 +422,14 @@ export function splitAudio(project, id, f) {
     const ids = new Set(project.audio.map((x) => x.id));
     let id2 = a.id + "_b";
     while (ids.has(id2)) id2 += "_";
-    out.push({ ...a, out: a.in + off, fade_out: 0, fade_in: Math.min(a.fade_in, off) },
-             { ...a, id: id2, in: a.in + off, start_frame: f, fade_in: 0, fade_out: Math.min(a.fade_out, audioLen(a) - off) });
+    const head = { ...a, out: a.in + off, fade_out: 0, fade_in: Math.min(a.fade_in, off) };
+    const tail = { ...a, id: id2, in: a.in + off, start_frame: f, fade_in: 0, fade_out: Math.min(a.fade_out, audioLen(a) - off) };
+    for (const k of ["keys", "duck"]) {
+      if (!a[k]) continue;
+      const [hk, tk] = splitKeys(a[k], off, audioLen(a));
+      head[k] = hk; tail[k] = tk;
+    }
+    out.push(head, tail);
   }
   return out;
 }
@@ -433,6 +588,11 @@ export function splitAt(project, f) {
   const head = { ...cut[row.index], out: at };
   const tail = { ...cut[row.index], in: at };
   delete tail.notes;
+  delete tail.trans; // a split is a straight cut; the transition stays on the head's edit
+  if (head.opacity) {
+    const [hk, tk] = splitKeys(head.opacity, f - row.recIn, row.len);
+    head.opacity = hk; tail.opacity = tk;
+  }
   cut.splice(row.index, 1, head, tail);
   return cut;
 }
@@ -452,7 +612,7 @@ export function extractRange(project, a, b) {
     const e = row.event;
     if (row.recOut <= a || row.recIn >= b) { out.push({ ...e }); continue; }
     if (row.recIn < a) out.push({ ...e, out: e.in + (a - row.recIn) });
-    if (row.recOut > b) { const t = { ...e, in: e.in + (b - row.recIn) }; if (row.recIn < a) delete t.notes; out.push(t); }
+    if (row.recOut > b) { const t = { ...e, in: e.in + (b - row.recIn) }; if (row.recIn < a) delete t.notes; delete t.trans; delete t.opacity; out.push(t); }
   }
   return out;
 }

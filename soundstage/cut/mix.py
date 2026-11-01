@@ -138,6 +138,16 @@ def clip_signal(a, data, rate) -> np.ndarray:
         env[:fi] *= np.linspace(0, 1, fi, endpoint=False, dtype=np.float32)
     if fo:
         env[n - fo:] *= np.linspace(1, 0, fo, dtype=np.float32)
+    # Volume keyframes and the auto-duck (Milestone 19): dB offsets at clip-local frames, linear in dB between keys,
+    # held before the first and after the last (web/cut/fx.mjs clipGainAt).
+    db = np.zeros(n, np.float64)
+    pos = np.arange(n) * (rate / SR)
+    for k in ("keys", "duck"):
+        keys = a.get(k)
+        if keys:
+            db += np.interp(pos, [x[0] for x in keys], [x[1] for x in keys])
+    if a.get("keys") or a.get("duck"):
+        env *= (10 ** (db / 20)).astype(np.float32)
     return seg * env[:, None]
 
 

@@ -5,6 +5,7 @@
 // byte for byte; tests/test_cut.py checks the two agree.
 
 import { audible, audioLanes, audioLen, bestRung, layout, noteItems, normalizeProject, sequenceFrames, totalFrames } from "./timeline.mjs";
+import { isOverlap, mergedLevelKeys, toSRT, toVTT, transSpans } from "./fx.mjs";
 
 // ---------------------------------------------------------------- time
 
@@ -159,20 +160,57 @@ export function toEDL(input, { reelWidth = 8, sourceStart = 0, mediaRoot = "" } 
   const start = recordStart(fi.base);
   const title = oneLine(project.name).replace(/[^\x20-\x7e]/g, "").slice(0, 70) || "SOUNDSTAGE CUT";
   const lines = [`TITLE: ${title}`, "FCM: NON-DROP FRAME", ""];
-  const event = (num, reel, ch, si, so, ri, ro, stc = (f) => tc(sourceStart + f)) =>
-    `${String(num).padStart(3, "0")}  ${reel.padEnd(reelWidth)} ${ch.padEnd(5)} ${"C".padEnd(4)} ${"".padEnd(3)} ` +
+  const event = (num, reel, ch, si, so, ri, ro, stc = (f) => tc(sourceStart + f), kind = "C", dur = null) =>
+    `${String(num).padStart(3, "0")}  ${reel.padEnd(reelWidth)} ${ch.padEnd(5)} ${kind.padEnd(4)} ${dur == null ? "   " : String(dur).padStart(3, "0")} ` +
     `${stc(si)} ${stc(so)} ${tc(start + ri)} ${tc(start + ro)}`;
+  const BL = "BL".padEnd(reelWidth);
+  const blTC = (f) => tc(f);
+  // Transitions (Milestone 19): a dissolve / wipe is a zero-length cut on the outgoing clip at the transition's
+  // start, then a D (or W001) event into the incoming clip; a dip is a dissolve to black (BL) and one back up from it;
+  // the head's fade is BL -> the first clip, the tail's the last clip -> BL. Dips to white go out as BL with a note.
+  const spans = transSpans(project);
+  const rows = layout(project);
+  const reelOf = (row) => (mediaFor(row.shot, mediaRoot).rung === "source" ? sourceReel(row.shot.source, reelWidth) : reels.get(row.shot.id));
+  const stcOf = (row) => {
+    if (mediaFor(row.shot, mediaRoot).rung !== "source") return [(f) => f, undefined];
+    const st = sourceTiming(row.shot.source, project);
+    return [(f) => st.start + st.map(f), (f) => framesToTC(f, st.sfi.base)];
+  };
+  const cutLine = (n, row, recAt) => { const [m, stc] = stcOf(row); const f = m(row.in + (recAt - row.recIn)); return event(n, reelOf(row), "V", f, f, recAt, recAt, stc); };
+  const white = (sp) => (sp.type === "dip_white" ? ["* SOUNDSTAGE: DIP TO WHITE (BL in the EDL: set the colour to white in the NLE)"] : []);
   let num = 0;
-  for (const row of layout(project)) {
+  rows.forEach((row, k) => {
     const m = mediaFor(row.shot, mediaRoot);
     const src = row.shot.source;
-    if (m.rung === "source") {
-      // The camera original at its own reel and timecode, so the conform pulls the full-quality frames.
-      const st = sourceTiming(src, project);
-      lines.push(event(++num, sourceReel(src, reelWidth), "V", st.start + st.map(row.in), st.start + st.map(row.out), row.recIn, row.recOut,
-        (f) => framesToTC(f, st.sfi.base)));
-    } else lines.push(event(++num, reels.get(row.shot.id), "V", row.in, row.out, row.recIn, row.recOut));
-    lines.push(`* FROM CLIP NAME: ${oneLine(row.shot.name)}`);
+    const into = spans[k], next = spans[k + 1], tail = k === rows.length - 1 ? spans.tail : null;
+    const cutAt = row.recOut - (next && !next.head ? next.pre : 0) - (tail ? tail.pre : 0);
+    let recIn = row.recIn, srcIn = row.in;
+    const [map, stc] = stcOf(row);
+    const head = [];
+    if (into && into.head) {
+      head.push(event(++num, BL, "V", 0, 0, 0, 0, blTC), event(num, reelOf(row), "V", map(srcIn), map(row.in + (cutAt - row.recIn)), 0, cutAt, stc, "D", into.post),
+                 "* FROM CLIP NAME: BLACK", `* TO CLIP NAME: ${oneLine(row.shot.name)}`, ...white(into));
+    } else if (into && isOverlap(into.type)) {
+      const a = rows[k - 1];
+      recIn = into.at - into.pre; srcIn = row.in - into.pre;
+      head.push(cutLine(++num, a, recIn), event(num, reelOf(row), "V", map(srcIn), map(row.in + (cutAt - row.recIn)), recIn, cutAt, stc,
+                into.type === "wipe" ? "W001" : "D", into.frames), `* FROM CLIP NAME: ${oneLine(a.shot.name)}`, `* TO CLIP NAME: ${oneLine(row.shot.name)}`);
+    } else if (into) {
+      const a = rows[k - 1];
+      if (into.pre) {
+        lines.push(cutLine(++num, a, into.at - into.pre), event(num, BL, "V", 0, into.pre, into.at - into.pre, into.at, blTC, "D", into.pre),
+                   `* FROM CLIP NAME: ${oneLine(a.shot.name)}`, "* TO CLIP NAME: BLACK", ...white(into), "");
+      }
+      if (into.post) {
+        head.push(event(++num, BL, "V", 0, 0, into.at, into.at, blTC), event(num, reelOf(row), "V", map(srcIn), map(row.in + (cutAt - row.recIn)), into.at, cutAt, stc, "D", into.post),
+                  "* FROM CLIP NAME: BLACK", `* TO CLIP NAME: ${oneLine(row.shot.name)}`, ...white(into));
+      }
+    }
+    if (head.length) lines.push(...head);
+    else {
+      lines.push(event(++num, reelOf(row), "V", map(srcIn), map(row.in + (cutAt - row.recIn)), recIn, cutAt, stc));
+      lines.push(`* FROM CLIP NAME: ${oneLine(row.shot.name)}`);
+    }
     if (!m.offline) lines.push(`* SOURCE FILE: ${m.path}`);
     if (m.rung === "source") {
       lines.push(`* SOUNDSTAGE: CAMERA ORIGINAL ${srcSpecText(src)}`);
@@ -182,6 +220,8 @@ export function toEDL(input, { reelWidth = 8, sourceStart = 0, mediaRoot = "" } 
       lines.push(`* SOUNDSTAGE PLATE: ${src.path} REEL ${sourceReel(src, 32)} TC ${framesToTC(st.start + st.map(row.in), st.sfi.base)} ${srcSpecText(src)}`);
     }
     if (relinkNote(m)) lines.push(`* SOUNDSTAGE: ${relinkNote(m)}`);
+    if (into && into.limited) lines.push(`* SOUNDSTAGE: ${into.type.toUpperCase()} ${into.req} FRAMES SHORTENED TO ${into.frames} (HANDLES)`);
+    if (row.event.opacity) lines.push(`* SOUNDSTAGE OPACITY: ${row.event.opacity.map(([f, v]) => `${f} ${v.toFixed(2)}`).join(", ")}`);
     // one LOC per frame: Avid keeps a single locator per frame
     const locs = [];
     for (const it of noteItems(row)) {
@@ -191,7 +231,11 @@ export function toEDL(input, { reelWidth = 8, sourceStart = 0, mediaRoot = "" } 
     }
     for (const it of locs) lines.push(`* LOC: ${tc(start + row.recIn + it.src - row.in)} ${avidColor(it.color).toUpperCase().padEnd(7)} ${it.text}`);
     lines.push("");
-  }
+    if (tail) {
+      lines.push(cutLine(++num, row, cutAt), event(num, BL, "V", 0, tail.pre, cutAt, row.recOut, blTC, "D", tail.pre),
+                 `* FROM CLIP NAME: ${oneLine(row.shot.name)}`, "* TO CLIP NAME: BLACK", ...white(tail), "");
+    }
+  });
   audioLanes(project).forEach((lane, k) => {
     const ch = k === 0 ? "A" : `A${k + 1}`;
     for (const a of lane.clips) {
@@ -205,9 +249,15 @@ export function toEDL(input, { reelWidth = 8, sourceStart = 0, mediaRoot = "" } 
       if (a.fade_out) fx.push(`FADE OUT ${a.fade_out}`);
       if (!audible(project, a.track)) fx.push("MUTED");
       if (fx.length) lines.push(`* SOUNDSTAGE AUDIO: ${fx.join(", ")}`);
+      const lk = mergedLevelKeys(a);
+      if (lk) lines.push(`* SOUNDSTAGE LEVEL: ${lk.map(([f, db]) => `${f} ${gainText(db)}`).join(", ")}`);
       lines.push("");
     }
   });
+  for (const t of project.titles || []) {
+    lines.push(`* SOUNDSTAGE TITLE: ${tc(start + t.start_frame)} ${tc(start + t.start_frame + t.frames)} ${t.style.toUpperCase()} ${oneLine(t.text)}`);
+  }
+  if ((project.titles || []).length) lines.push("");
   return lines.join("\n");
 }
 
@@ -312,6 +362,16 @@ export function toOTIO(input, { mediaRoot = "" } = {}) {
       active_media_reference_key: "DEFAULT_MEDIA",
     };
   });
+  // Milestone 19: clip opacity keys ride in metadata; transitions are Transition.1 items between the clips (the head
+  // fade before the first, the tail fade after the last), their place given by in_offset / out_offset.
+  const spans = transSpans(project);
+  layout(project).forEach((row, k) => { if (row.event.opacity) clips[k].metadata.soundstage.opacity = row.event.opacity; });
+  const otioTrans = (sp) => ({ OTIO_SCHEMA: "Transition.1", metadata: { soundstage: { type: sp.type, frames: sp.frames, requested: sp.req } },
+    name: { dissolve: "Cross Dissolve", dip_black: "Dip to Black", dip_white: "Dip to White", wipe: "Wipe" }[sp.type],
+    transition_type: sp.type === "wipe" ? "SMPTE_Wipe" : "SMPTE_Dissolve", in_offset: rt(sp.pre, rate), out_offset: rt(sp.post, rate) });
+  const v1 = [];
+  clips.forEach((c, k) => { if (spans[k]) v1.push(otioTrans(spans[k])); v1.push(c); });
+  if (spans.tail) v1.push(otioTrans(spans.tail));
   const track = (name, kind, children) => ({ OTIO_SCHEMA: "Track.1", metadata: {}, name, source_range: null, effects: [], markers: [],
                                              enabled: true, color: null, children, kind });
   const gap = (len) => ({ OTIO_SCHEMA: "Gap.1", metadata: {}, name: "", source_range: tr(0, len, rate), effects: [], markers: [], enabled: true, color: null });
@@ -322,7 +382,8 @@ export function toOTIO(input, { mediaRoot = "" } = {}) {
       if (a.start_frame > pos) children.push(gap(a.start_frame - pos));
       children.push({
         OTIO_SCHEMA: "Clip.2",
-        metadata: { soundstage: { audio_id: a.id, track: a.track, gain_db: a.gain_db, fade_in: a.fade_in, fade_out: a.fade_out } },
+        metadata: { soundstage: { audio_id: a.id, track: a.track, gain_db: a.gain_db, fade_in: a.fade_in, fade_out: a.fade_out,
+                                  ...(a.keys || a.duck ? { level_keys: mergedLevelKeys(a) } : {}) } },
         name: a.label,
         source_range: tr(a.in, audioLen(a), rate),
         effects: [],
@@ -337,6 +398,23 @@ export function toOTIO(input, { mediaRoot = "" } = {}) {
     }
     return track(lane.name, "Audio", children);
   });
+  // Titles: a V2 track of generator clips (the NLE makes them its own text; the text and style are in parameters).
+  function titleTrack() {
+    if (!(project.titles || []).length) return [];
+    const children = [];
+    let pos = 0;
+    for (const t of [...project.titles].sort((x, y) => x.start_frame - y.start_frame)) {
+      if (t.start_frame < pos) continue;
+      if (t.start_frame > pos) children.push(gap(t.start_frame - pos));
+      children.push({ OTIO_SCHEMA: "Clip.2", metadata: { soundstage: { title_id: t.id, style: t.style, fade_in: t.fade_in, fade_out: t.fade_out } },
+        name: t.text.slice(0, 60), source_range: tr(0, t.frames, rate), effects: [], markers: [], enabled: true, color: null,
+        media_references: { DEFAULT_MEDIA: { OTIO_SCHEMA: "GeneratorReference.1", metadata: {}, name: "Title", available_range: tr(0, t.frames, rate),
+          available_image_bounds: null, generator_kind: "SoundstageTitle", parameters: { text: t.text, style: t.style } } },
+        active_media_reference_key: "DEFAULT_MEDIA" });
+      pos = t.start_frame + t.frames;
+    }
+    return [track("V2", "Video", children)];
+  }
   return {
     OTIO_SCHEMA: "Timeline.1",
     metadata: { soundstage: { fps: project.fps, width: project.width, height: project.height, ...(project.delivery ? { delivery: project.delivery } : {}) } },
@@ -344,7 +422,7 @@ export function toOTIO(input, { mediaRoot = "" } = {}) {
     global_start_time: rt(recordStart(fi.base), rate),
     tracks: {
       OTIO_SCHEMA: "Stack.1", metadata: {}, name: "tracks", source_range: null, effects: [], markers: [], enabled: true, color: null,
-      children: [track("V1", "Video", clips), ...audioTracks],
+      children: [track("V1", "Video", v1), ...titleTrack(), ...audioTracks],
     },
   };
 }
@@ -402,6 +480,13 @@ export function toFCPXML(input, { mediaRoot = "" } = {}) {
     else audioAssets.set(url, { id: `r${nextId++}`, name: a.label, frames: audioSrcFrames(a), url });
   }
 
+  // Milestone 19: transitions (every kind goes out as FCP's Cross Dissolve, at its real place and length) and titles
+  // (Basic Title on lane 1).
+  const spans = transSpans(project);
+  const hasTrans = spans.some(Boolean) || !!spans.tail;
+  const dissolveId = hasTrans ? `r${nextId++}` : null;
+  const titles = project.titles || [];
+  const titleId = titles.length ? `r${nextId++}` : null;
   const out = ['<?xml version="1.0" encoding="UTF-8"?>', "<!DOCTYPE fcpxml>", '<fcpxml version="1.10">', "  <resources>"];
   const seqSrc = project.shots.find((x) => x.source && project.delivery && x.name === project.delivery.from)?.source;
   out.push(`    <format id="r1" frameDuration="${t(1)}" width="${project.width}" height="${project.height}" colorSpace="${seqSrc ? fcpColour(seqSrc) : "1-1-1 (Rec. 709)"}"/>`);
@@ -426,6 +511,8 @@ export function toFCPXML(input, { mediaRoot = "" } = {}) {
     out.push(`      <media-rep kind="original-media" src="${esc(a.url)}"/>`);
     out.push("    </asset>");
   }
+  if (dissolveId) out.push(`    <effect id="${dissolveId}" name="Cross Dissolve" uid="FxPlug:4731E73A-8DAC-4113-9A30-AE85B1761265"/>`);
+  if (titleId) out.push(`    <effect id="${titleId}" name="Basic Title" uid=".../Titles.localized/Bumper:Opener.localized/Basic Title.localized/Basic Title.moti"/>`);
   out.push("  </resources>", "  <library>", `    <event name="${esc(project.name)}">`, `      <project name="${esc(project.name)}">`);
   const start = recordStart(fi.base);
   out.push(`        <sequence format="r1" duration="${t(seqLen)}" tcStart="${t(start)}" tcFormat="NDF" audioLayout="stereo" audioRate="48k">`);
@@ -448,16 +535,38 @@ export function toFCPXML(input, { mediaRoot = "" } = {}) {
       anchored[i].push({ a, lane: k + 1 });
     }
   });
+  const titleAnchors = items.map(() => []);
+  for (const tt of titles) {
+    let i = items.findIndex((it) => tt.start_frame >= it.recIn && tt.start_frame < it.recOut);
+    if (i < 0) i = items.length - 1;
+    titleAnchors[i].push(tt);
+  }
+  let tsN = 0;
+  const titleXml = (tt, it) => {
+    const id = `ts${++tsN}`, size = tt.style === "lower" ? 48 : 72;
+    return [`              <title ref="${titleId}" lane="1" offset="${it.local(tt.start_frame - it.recIn)}" name="${esc(tt.text.slice(0, 60))}" start="0s" duration="${t(tt.frames)}">`,
+            `                <text><text-style ref="${id}">${esc(tt.text)}</text-style></text>`,
+            `                <text-style-def id="${id}"><text-style font="Helvetica" fontSize="${size}" fontColor="1 1 1 1" alignment="center"/></text-style-def>`,
+            "              </title>"];
+  };
+  const transXml = (sp) => [`            <transition name="${{ dissolve: "Cross Dissolve", dip_black: "Dip to Black", dip_white: "Dip to White", wipe: "Wipe" }[sp.type]}" ` +
+    `offset="${t(start + sp.at - sp.pre)}" duration="${t(sp.frames)}">`, `              <filter-video ref="${dissolveId}" name="Cross Dissolve"/>`, "            </transition>"];
   const audioXml = ({ a, lane }, it) => {
     const asset = audioAssets.get(audioMedia(a, mediaRoot).url);
     const attrs = `ref="${asset.id}" lane="-${lane}" offset="${it.local(a.start_frame - it.recIn)}" name="${esc(a.label)}" ` +
                   `start="${t(a.in)}" duration="${t(audioLen(a))}" audioRole="effects"` + (audible(project, a.track) ? "" : ' enabled="0"');
-    if (!a.gain_db && !a.fade_in && !a.fade_out) return [`              <asset-clip ${attrs}/>`];
+    const lk = mergedLevelKeys(a);
+    if (!a.gain_db && !a.fade_in && !a.fade_out && !lk) return [`              <asset-clip ${attrs}/>`];
     const x = [`              <asset-clip ${attrs}>`];
-    if (a.fade_in || a.fade_out) {
+    if (a.fade_in || a.fade_out || lk) {
       x.push(`                <adjust-volume amount="${a.gain_db.toFixed(1)}dB">`, '                  <param name="amount">');
       if (a.fade_in) x.push(`                    <fadeIn type="easeIn" duration="${t(a.fade_in)}"/>`);
       if (a.fade_out) x.push(`                    <fadeOut type="easeIn" duration="${t(a.fade_out)}"/>`);
+      if (lk) {
+        x.push("                    <keyframeAnimation>");
+        for (const [f, db] of lk) x.push(`                      <keyframe time="${t(a.in + f)}" value="${(a.gain_db + db).toFixed(1)}dB"/>`);
+        x.push("                    </keyframeAnimation>");
+      }
       x.push("                  </param>", "                </adjust-volume>");
     } else x.push(`                <adjust-volume amount="${a.gain_db.toFixed(1)}dB"/>`);
     x.push("              </asset-clip>");
@@ -467,7 +576,9 @@ export function toFCPXML(input, { mediaRoot = "" } = {}) {
   items.forEach((it, i) => {
     const inner = [];
     if (it.gap) {
+      if (spans.tail && i === items.length - 1) out.push(...transXml(spans.tail));
       for (const c of anchored[i]) inner.push(...audioXml(c, it));
+      for (const tt of titleAnchors[i]) inner.push(...titleXml(tt, it));
       const open = `<gap name="Gap" offset="${t(start + it.recIn)}" duration="${t(it.recOut - it.recIn)}"`;
       if (!inner.length) out.push(`            ${open}/>`);
       else out.push(`            ${open}>`, ...inner, "            </gap>");
@@ -479,13 +590,21 @@ export function toFCPXML(input, { mediaRoot = "" } = {}) {
     const timing = `offset="${t(start + row.recIn)}" name="${esc(row.shot.name)}" start="${it.local(0)}" duration="${t(row.len)}"`;
     const note = relinkNote(a.media);
     if (note) inner.push(`              <note>${esc(note)}</note>`);
+    if (row.event.opacity) {
+      inner.push('              <adjust-blend amount="1">', '                <param name="amount">', "                  <keyframeAnimation>",
+        ...row.event.opacity.map(([f, v]) => `                    <keyframe time="${it.local(f)}" value="${v.toFixed(2)}"/>`),
+        "                  </keyframeAnimation>", "                </param>", "              </adjust-blend>");
+    }
     // A still sits in a <clip> holding a <video>: the form every FCPXML reader accepts.
     if (still) inner.push(`              <video ref="${a.id}" offset="${t(row.in)}" duration="${t(row.len)}"/>`);
     for (const c of anchored[i]) inner.push(...audioXml(c, it));
+    for (const tt of titleAnchors[i]) inner.push(...titleXml(tt, it));
+    if (spans[row.index]) out.push(...transXml(spans[row.index]));
     for (const n of noteItems(row)) inner.push(`              <marker start="${it.local(n.src - row.in)}" duration="${t(1)}" value="${esc(n.text)}"/>`);
     const open = still ? `<clip ${timing} format="r1" tcFormat="NDF"` : `<asset-clip ref="${a.id}" ${timing} tcFormat="NDF"`;
-    if (!inner.length) { out.push(`            ${open}/>`); return; }
-    out.push(`            ${open}>`, ...inner, `            </${still ? "clip" : "asset-clip"}>`);
+    if (!inner.length) out.push(`            ${open}/>`);
+    else out.push(`            ${open}>`, ...inner, `            </${still ? "clip" : "asset-clip"}>`);
+    if (spans.tail && row.index === rows.length - 1 && !items[i + 1]) out.push(...transXml(spans.tail));
   });
   out.push("          </spine>", "        </sequence>", "      </project>", "    </event>", "  </library>", "</fcpxml>", "");
   return out.join("\n");
@@ -530,7 +649,27 @@ export function toXMEML(input, { mediaRoot = "" } = {}) {
                `            <width>${project.width}</width>`, `            <height>${project.height}</height>`,
                "            <pixelaspectratio>square</pixelaspectratio>", "          </samplecharacteristics>", "        </format>", "        <track>"];
   const I = "            ";
+  // Milestone 19: video transitions as transitionitems across the cut (Cross Dissolve, Dip to Color Dissolve, Edge
+  // Wipe; the head fade "start-black", the tail "end-black"), opacity keys as the Opacity filter, titles on V2.
+  const spans = transSpans(project);
+  const XM_FX = { dissolve: ["Cross Dissolve", "Dissolve"], dip_black: ["Dip to Color Dissolve", "Dissolve"], dip_white: ["Dip to Color Dissolve", "Dissolve"],
+                  wipe: ["Edge Wipe", "Wipe"] };
+  const vTrans = (sp) => {
+    const [name, cat] = XM_FX[sp.type];
+    const align = sp.head ? "start-black" : sp.tail ? "end-black" : sp.pre === sp.post ? "center" : sp.pre === 0 ? "start" : sp.post === 0 ? "end" : "center";
+    const x = ["          <transitionitem>", `${I}<start>${sp.at - sp.pre}</start>`, `${I}<end>${sp.at + sp.post}</end>`, `${I}<alignment>${align}</alignment>`,
+               ...rate(I), `${I}<effect>`, `${I}  <name>${name}</name>`, `${I}  <effectid>${name}</effectid>`, `${I}  <effectcategory>${cat}</effectcategory>`,
+               `${I}  <effecttype>transition</effecttype>`, `${I}  <mediatype>video</mediatype>`];
+    if (sp.type === "dip_white" || sp.type === "dip_black") {
+      const c = sp.type === "dip_white" ? 255 : 0;
+      x.push(`${I}  <parameter>`, `${I}    <parameterid>color</parameterid>`, `${I}    <name>Color</name>`, `${I}    <value>`,
+             `${I}      <alpha>255</alpha>`, `${I}      <red>${c}</red>`, `${I}      <green>${c}</green>`, `${I}      <blue>${c}</blue>`, `${I}    </value>`, `${I}  </parameter>`);
+    }
+    x.push(`${I}</effect>`, "          </transitionitem>");
+    return x;
+  };
   for (const row of layout(project)) {
+    if (spans[row.index]) out.push(...vTrans(spans[row.index]));
     const m = mediaFor(row.shot, mediaRoot);
     const s = row.shot.source;
     if (m.rung === "source") {
@@ -551,9 +690,33 @@ export function toXMEML(input, { mediaRoot = "" } = {}) {
       out.push(`${I}<marker>`, `${I}  <comment>${esc(n.text)}</comment>`, `${I}  <name>${esc(n.text.slice(0, 60))}</name>`,
                `${I}  <in>${n.src}</in>`, `${I}  <out>-1</out>`, `${I}</marker>`);
     }
+    if (row.event.opacity) {
+      out.push(`${I}<filter>`, `${I}  <effect>`, `${I}    <name>Opacity</name>`, `${I}    <effectid>opacity</effectid>`, `${I}    <effectcategory>motion</effectcategory>`,
+               `${I}    <effecttype>motion</effecttype>`, `${I}    <mediatype>video</mediatype>`, `${I}    <parameter>`, `${I}      <parameterid>opacity</parameterid>`,
+               `${I}      <name>Opacity</name>`, `${I}      <valuemin>0</valuemin>`, `${I}      <valuemax>100</valuemax>`, `${I}      <value>100</value>`,
+               ...row.event.opacity.flatMap(([f, v]) => [`${I}      <keyframe>`, `${I}        <when>${row.in + f}</when>`, `${I}        <value>${(v * 100).toFixed(1)}</value>`, `${I}      </keyframe>`]),
+               `${I}    </parameter>`, `${I}  </effect>`, `${I}</filter>`);
+    }
     out.push("          </clipitem>");
   }
-  out.push("        </track>", "      </video>", "      <audio>", "        <format>", "          <samplecharacteristics>",
+  if (spans.tail) out.push(...vTrans(spans.tail));
+  out.push("        </track>");
+  if ((project.titles || []).length) {
+    out.push("        <track>");
+    let pos = 0, gN = 0;
+    for (const tt of [...project.titles].sort((x, y) => x.start_frame - y.start_frame)) {
+      if (tt.start_frame < pos) continue;
+      out.push(`          <generatoritem id="title-${++gN}">`, `${I}<name>${esc(tt.text.slice(0, 60))}</name>`, `${I}<enabled>TRUE</enabled>`,
+               `${I}<duration>${tt.frames}</duration>`, ...rate(I), `${I}<start>${tt.start_frame}</start>`, `${I}<end>${tt.start_frame + tt.frames}</end>`,
+               `${I}<in>0</in>`, `${I}<out>${tt.frames}</out>`, `${I}<effect>`, `${I}  <name>Text</name>`, `${I}  <effectid>Text</effectid>`,
+               `${I}  <effectcategory>Text</effectcategory>`, `${I}  <effecttype>generator</effecttype>`, `${I}  <mediatype>video</mediatype>`,
+               `${I}  <parameter>`, `${I}    <parameterid>str</parameterid>`, `${I}    <name>Text</name>`, `${I}    <value>${esc(tt.text)}</value>`, `${I}  </parameter>`,
+               `${I}</effect>`, "          </generatoritem>");
+      pos = tt.start_frame + tt.frames;
+    }
+    out.push("        </track>");
+  }
+  out.push("      </video>", "      <audio>", "        <format>", "          <samplecharacteristics>",
            "            <depth>24</depth>", "            <samplerate>48000</samplerate>", "          </samplecharacteristics>", "        </format>");
   for (const lane of audioLanes(project)) {
     out.push("        <track>");
@@ -565,12 +728,16 @@ export function toXMEML(input, { mediaRoot = "" } = {}) {
                `${I}<start>${s}</start>`, `${I}<end>${e}</end>`, `${I}<in>${a.in}</in>`, `${I}<out>${a.out}</out>`,
                ...fileXml(I, p, audioSrcFrames(a), "audio"),
                `${I}<sourcetrack>`, `${I}  <mediatype>audio</mediatype>`, `${I}  <trackindex>1</trackindex>`, `${I}</sourcetrack>`);
-      if (a.gain_db) {
+      const lk = mergedLevelKeys(a);
+      if (a.gain_db || lk) {
         out.push(`${I}<filter>`, `${I}  <effect>`, `${I}    <name>Audio Levels</name>`, `${I}    <effectid>audiolevels</effectid>`,
                  `${I}    <effectcategory>audiolevels</effectcategory>`, `${I}    <effecttype>audiolevels</effecttype>`,
                  `${I}    <mediatype>audio</mediatype>`, `${I}    <parameter>`, `${I}      <parameterid>level</parameterid>`,
                  `${I}      <name>Level</name>`, `${I}      <valuemin>0</valuemin>`, `${I}      <valuemax>3.98109</valuemax>`,
-                 `${I}      <value>${Math.pow(10, a.gain_db / 20).toFixed(6)}</value>`, `${I}    </parameter>`, `${I}  </effect>`, `${I}</filter>`);
+                 `${I}      <value>${Math.pow(10, a.gain_db / 20).toFixed(6)}</value>`,
+                 ...(lk || []).flatMap(([f, db]) => [`${I}      <keyframe>`, `${I}        <when>${a.in + f}</when>`,
+                   `${I}        <value>${Math.pow(10, (a.gain_db + db) / 20).toFixed(6)}</value>`, `${I}      </keyframe>`]),
+                 `${I}    </parameter>`, `${I}  </effect>`, `${I}</filter>`);
       }
       out.push("          </clipitem>");
       for (const [len, at, align] of [[a.fade_in, s, "start"], [a.fade_out, e - a.fade_out, "end"]]) {
@@ -624,5 +791,13 @@ export function exportAll(project, opts = {}) {
     [`${base}.fcpxml`]: toFCPXML(project, opts),
     [`${base}.otio`]: JSON.stringify(toOTIO(project, opts), null, 2) + "\n",
     "RELINK.txt": toRelinkList(project, opts),
+    ...subtitleFiles(project, base),
   };
+}
+
+/** <name>.srt and <name>.vtt when the cut has subtitles (Milestone 19). */
+function subtitleFiles(project, base) {
+  const p = normalizeProject(project);
+  if (!(p.subtitles || []).length) return {};
+  return { [`${base}.srt`]: toSRT(p), [`${base}.vtt`]: toVTT(p) };
 }

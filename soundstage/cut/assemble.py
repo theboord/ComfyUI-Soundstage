@@ -203,5 +203,8 @@ def register(routes=None) -> bool:
         except Exception as exc:  # noqa: BLE001 - the panel shows the message
             return web.json_response({"error": str(exc)}, status=400)
 
+    # Milestone 19: the full render (transitions, titles, subtitles, the mix at a loudness target, 9:16) lives next door.
+    from . import render as _render
+    _render.register(routes)
     _REGISTERED = True
     return True
