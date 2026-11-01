@@ -5,6 +5,13 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-01
 
+**10:25 PST · Motion capture: feet stick to the ground (no more floating or sinking performer)**
+- **The bug:** the Video → Stage dancer (the trailer's Video → 3D beat, LTX draft from the clay) read as floating: the clay's height came from the capture's raw feet over its lowest tenth, so monocular depth drift moved her up and down, and with no ankle a bent knee tipped the shoe toe-down into the floor with the heel in the air. Measured on the re-imported clip: lowest sole −9.2 … +3.7 cm (median −3.8), planted feet sliding ~2.5 cm a frame.
+- **The fix, as pro mocap cleanup does it** (on by default; **Stick feet to ground** in the Pose panel's take row turns it off): foot contacts from low ankle speed + height over a rolling local ground (single-leg support during kicks, jumps keep their arc); each planted foot laid flat on the walkable surface under it (the floor, a set's own floor, or a step/riser/parked prop top, ray cast down like live drags); the pelvis solved so the lowest planted sole touches; two-bone leg IK pins a planted ankle where it stood mid-contact (no sliding); 3-frame eases at contact ends.
+- After: lowest sole 0.0 cm on 191 of 192 frames (max +3.3 cm on one small hop), planted ankles slide 0.0 cm median. The other captures (front flip, heavy-bag kicks, open door, run to camera, throw, wall jump, aerial) all improve; the flip keeps its full arc.
+- Evidence: share/Fix_FootContact/ (clay before/after, per-frame cm CSV, all-takes regression).
+- Code: [web/stage/mocap.mjs](web/stage/mocap.mjs), [web/stage/stage.mjs](web/stage/stage.mjs) (`_supportAt`), [web/stage/posepanel.mjs](web/stage/posepanel.mjs). Tests: [tests/js/footcontact.test.mjs](tests/js/footcontact.test.mjs).
+
 **10:17 PST · Director chat docks beside the panels: no more covering Properties, Look or Play**
 - The Director (/) opened over the bottom of Properties and the Look pop-over and hid the stage's Play, Fit and Hide-top-view controls. It now docks like the Presets window: at the right of the free band between the tool rail and Properties, above the playback row; when that band is too narrow (Look open) it takes Properties' slot while it's open, and Properties is back when it closes. It re-docks as panels open, close or resize.
 - Checked headless (Metal) at 1280×800, 1440×900 and 1920×1080 with Properties and the Look pop-over open: nothing under the chat.

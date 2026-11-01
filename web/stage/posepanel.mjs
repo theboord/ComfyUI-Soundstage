@@ -160,9 +160,14 @@ export class PosePanel {
     const tc = Object.assign(document.createElement("input"), { type: "checkbox", checked: info.travel });
     tc.addEventListener("change", () => { this.stage.setMocapOption(this.id, "travel", tc.checked); this._drawTake(); });
     travel.append(tc, document.createTextNode(" Travel"));
+    const stick = Object.assign(document.createElement("label"), { className: "chip",
+      title: "Plant each foot on the floor (or the step, kerb or platform under it) while it is down, solve the hips so the planted foot touches, and pin it so it doesn't slide. Off: the capture's raw feet height." });
+    const sc = Object.assign(document.createElement("input"), { type: "checkbox", checked: info.stick !== false });
+    sc.addEventListener("change", () => { this.stage.setMocapOption(this.id, "stick", sc.checked); this._drawTake(); });
+    stick.append(sc, document.createTextNode(" Stick feet to ground"));
     this.mcTake.replaceChildren(label,
       this._btn("Start at playhead", "The take begins at the current frame", () => { this.stage.setMocapOption(this.id, "start", this.stage.frame); this._drawTake(); this.onStatus(`Take starts at frame ${this.stage.frame}.`); }),
-      travel,
+      travel, stick,
       this._btn("Remove take", "Back to the walk / pose keys", () => { this.stage.clearMocap(this.id); this._drawTake(); this.onStatus("Motion take removed."); }));
   }
 
