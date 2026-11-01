@@ -296,7 +296,8 @@ export function buildTireSmoke(max = 1200) {
       const q = parts[i];
       v.set(q.p[0], q.p[1], q.p[2]).applyMatrix4(inv);
       pos[i * 3] = v.x; pos[i * 3 + 1] = v.y; pos[i * 3 + 2] = v.z;
-      col[i * 4] = col[i * 4 + 1] = col[i * 4 + 2] = 1; col[i * 4 + 3] = q.alpha;
+      const tn = q.tint;   // spray is a cooler, brighter white than smoke
+      col[i * 4] = tn ? tn[0] : 1; col[i * 4 + 1] = tn ? tn[1] : 1; col[i * 4 + 2] = tn ? tn[2] : 1; col[i * 4 + 3] = q.alpha;
       size[i] = q.size;
     }
     geo.setDrawRange(0, n);

@@ -29,7 +29,7 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 /** Tyre-road surfaces: peak μ plus the Magic Formula shape (B stiffness, C shape, E curvature). */
 export const SURFACES = {
-  wet: { label: "Wet asphalt", mu: 0.62, B: 12, C: 2.3, E: 1.0, smoke: 0.55, spray: true },
+  wet: { label: "Wet asphalt", mu: 0.62, B: 12, C: 2.3, E: 1.0, smoke: 1.3, spray: true },   // less energy, but water sheets off
   dry: { label: "Dry asphalt", mu: 0.9, B: 10, C: 1.9, E: 0.97, smoke: 1.0, spray: false },
 };
 
@@ -49,6 +49,7 @@ export const CAR = {
   pitch: { grad: 2.4, hz: 1.5, zeta: 0.3 },
   rollFront: 0.56,    // share of the lateral load transfer taken by the front axle
   cda: 0.7, crr: 0.013,
+  diffLock: 30,       // N m per rad/s of spin difference across the rear axle: a nearly open diff
 };
 
 const KIND_SCALE = {
@@ -58,10 +59,25 @@ const KIND_SCALE = {
   truck: { mass: 2300, a: 1.6, b: 1.9, track: 1.7, h: 0.8, k: 1.55, roll: { grad: 7.5, hz: 1.05, zeta: 0.25 }, torque: 5200 },
 };
 
-/** The car for a kind, with an optional mass override (inertia scales with it). */
-export function carParams(kind = "sports_car", mass = null) {
+/**
+ * Stunt-prepped suspension (the default for the stunt presets). Stunt cars are softened so the body reads on camera:
+ * softer springs and the anti-roll bars off (roll gradient × ~1.6, past the 5–7 °/g of a stock car), ride frequency
+ * near 1 Hz (the soft end of the 0.5–1.5 Hz passenger range) and light damping, so the body leans 6–9° in the flick and
+ * rocks one to two cycles as it settles. Pitch the same way: a visible dive on the brakes and squat on a launch.
+ */
+export const STUNT_SUSPENSION = { roll: { gradK: 1.6, hz: 1.0, zeta: 0.16 }, pitch: { gradK: 1.9, hz: 1.15, zeta: 0.2 }, steerMax: 52 };
+
+/** The car for a kind, with an optional mass override (inertia scales with it) and suspension ("stock" | "stunt"). */
+export function carParams(kind = "sports_car", mass = null, suspension = "stock") {
   const s = KIND_SCALE[kind] || {};
   const c = { ...CAR, ...s, roll: { ...CAR.roll, ...(s.roll || {}) }, pitch: { ...CAR.pitch, ...(s.pitch || {}) } };
+  if (suspension === "stunt") for (const ax of ["roll", "pitch"]) {
+    const t = STUNT_SUSPENSION[ax];
+    c[ax] = { grad: +(c[ax].grad * t.gradK).toFixed(2), hz: Math.min(c[ax].hz, t.hz), zeta: t.zeta };
+  }
+  // An angle kit (drift / stunt cars run 50–65° of lock), so the front wheels can follow the tail round a donut.
+  // (A welded diff, diffLock ~1500, was tried: it changed nothing in the donut and slowed the J-turn, so it is off.)
+  if (suspension === "stunt") c.steerMax = STUNT_SUSPENSION.steerMax;
   if (Number.isFinite(mass) && mass > 300) {
     c.torque *= Math.sqrt(mass / c.mass);   // a heavier car of the same family has a bigger engine, not a proportional one
     c.mass = mass;
@@ -79,7 +95,7 @@ const VREG = 1.5;
 /** The driver's hands when aiming the nose: degrees of steer per degree of heading error, per °/s of yaw, and the
  *  fastest a stunt driver winds the wheel (road-wheel degrees per second). */
 /** The donut driver's gains: slide angle (deg) held by the throttle, yaw rate by the wheel. */
-export const DONUT = { beta: 55, thr0: 0.6, kb: 0.02, ki: 0.01, off0: 6, kr: 0.08 };
+export const DONUT = { beta: 55, s0: 3, ky: 0.2, kyi: 0.15, iMax: 200, thr0: 0.2, ks: 0.4, off0: 10, kb: -0.2, kr: 0.05 };
 export const AIM = { kp: 0.9, kd: 0.12, rate: 160 };   // m/s: the slip reference never drops below this (a car at rest is held, not divided by zero)
 
 /**
@@ -127,21 +143,29 @@ export function driverScript(kind, p = {}) {
       { after: 0.35, set: { brake: 0, ramp: 0.15 } },
       // Past the sideways point the driver unwinds the wheel and catches the rotation.
       { when: { turned_deg: 95 }, set: { steer: 0, ramp: 0.3 } },
-      // Drive selected as the nose comes round; feed the throttle in, steering on the new line.
-      { when: { turned_deg: 140 }, set: { gear: "D", steer: "aim", aim_turn: 180, throttle: 0.45, ramp: 0.3 } },
-      { after: 0.5, set: { throttle: 1, ramp: 0.4 } },
+      // Drive in first as the nose comes round, and floor it: the rears light up (the driver lets them spin, about
+      // 6 m/s of slip), the tail steps out and he catches the fishtail on the new line. Short-shift once it hooks up.
+      { when: { turned_deg: 140 }, set: { gear: "D1", steer: "aim", aim_turn: 180, aim_kp: p.aim_kp ?? 1.4, aim_kd: p.aim_kd ?? 0.1, aim_lag_s: p.aim_lag_s ?? 0.14, throttle: 1, spin_ms: p.launch_spin_ms ?? 6, ramp: 0.12 } },
+      { when: { speed_above: 13.5 }, set: { gear: "D", spin_ms: 3 } },
     ] };
   }
   if (kind === "handbrake_180") {
     const pull = p.flick_s ?? 1.5;
     return { start: { reverse: false, kmh: entry }, steps: [
       { at: 0, set: { gear: "D", hold_kmh: entry, steer: 0 } },
-      { at: pull, set: { throttle: 0, hold_kmh: null, gear: "N", steer: 0.7 * lock, ramp: 0.18 } },
-      { after: 0.1, set: { handbrake: 1, ramp: 0.08 } },
-      { when: { turned_deg: 100 }, set: { steer: 0, ramp: 0.3 } },
-      { when: { turned_deg: 150 }, set: { handbrake: 0, steer: "aim", aim_turn: 180, ramp: 0.15 } },
-      { when: { turned_deg: 165 }, set: { gear: "D", throttle: 0.7, ramp: 0.35 } },
-      { after: 0.5, set: { throttle: 1, ramp: 0.4 } },
+      // The entry: a feint away (the Scandinavian flick: the body rolls out and swings back like a pendulum) with a
+      // stab of the brakes to load the nose, then a sharp turn-in and the handbrake yanked together. The rears lock
+      // and the tail comes round fast.
+      { at: pull - (p.hb_feint_s ?? 0.25), set: { throttle: 0, hold_kmh: null, gear: "N", steer: -(p.hb_feint ?? 0.25) * lock, brake: p.hb_brake ?? 0, ramp: 0.12 } },
+      { at: pull, set: { steer: (p.hb_lock ?? 1) * lock, ramp: p.hb_ramp ?? 0.1 } },
+      { after: p.hb_delay ?? 0.04, set: { handbrake: 1, brake: 0, ramp: 0.05 } },
+      { when: { turned_deg: p.hb_unwind ?? 90, or: { speed_below: (p.hb_release_ms ?? 3.5) + 1 } }, set: { steer: 0, ramp: 0.25 } },
+      // Off the handbrake, first gear and full throttle while the car is still rotating: the spinning rears kill the
+      // last of the slide and pull it away the other way; he catches the nose on the new line.
+      // (or sooner, if the slide has nearly died: the rest of the turn comes round under power).
+      { when: { turned_deg: p.hb_release ?? 130, or: { speed_below: p.hb_release_ms ?? 3.5 } }, set: { handbrake: 0, gear: "D1", steer: "aim", aim_turn: 180, aim_kp: 1.4, aim_kd: 0.1, aim_lag_s: 0.12,
+        throttle: 1, spin_ms: 6, ramp: 0.12 } },
+      { when: { speed_above: 13.5 }, set: { gear: "D", spin_ms: 3 } },
     ] };
   }
   if (kind === "donut") {
@@ -149,9 +173,10 @@ export function driverScript(kind, p = {}) {
       { at: 0, set: { gear: "D", hold_kmh: entry, steer: 0 } },
       // Turn in and floor it: the rear tyres break loose and the car pivots round its nose.
       { at: p.flick_s ?? 0.7, set: { hold_kmh: null, gear: p.gear ?? "D2", steer: lock, throttle: 1, ramp: 0.3 } },
+      // From here the closed loop holds the donut for as long as the shot lasts (see DONUT), then drives out.
       // Opposite lock to hold the slide; the throttle keeps the rears spinning, modulated on the yaw rate.
-      { when: { turned_deg: 80 }, set: { steer: "track", offset_deg: p.donut_steer ?? 8, yaw_hold: p.yaw_rate ?? 150, ramp: 0.35 } },
-      { when: { turned_deg: 650 }, set: { yaw_hold: null, throttle: 0.25, steer: "aim", aim_turn: 720, ramp: 0.3 } },
+      { when: { turned_deg: 80 }, set: { steer: "track", offset_deg: p.donut_steer ?? 8, yaw_hold: p.yaw_rate ?? 110, ramp: 0.35 } },
+      { when: { turned_deg: p.donut_turns_deg ?? 750 }, set: { yaw_hold: null, throttle: 0.25, steer: "aim", aim_turn: (p.donut_turns_deg ?? 750) + 90, ramp: 0.3 } },
       { after: 0.45, set: { throttle: 0.9, ramp: 0.4 } },
     ] };
   }
@@ -162,7 +187,7 @@ export function driverScript(kind, p = {}) {
 export const DEFAULTS = {
   reverse_jturn: { entry_kmh: 40, surface: "wet" },
   handbrake_180: { entry_kmh: 40, surface: "wet" },
-  donut: { entry_kmh: 18, surface: "wet" },
+  donut: { entry_kmh: 10, surface: "wet" },
 };
 
 // ---------- the simulation ----------
@@ -183,8 +208,10 @@ export function simulate(script, { car = CAR, surface = "wet", frames = 121, fps
   let roll = 0, rollV = 0, pitch = 0, pitchV = 0, axF = 0, ayF = 0;
   const ctl = { throttle: 0, brake: 0, handbrake: 0, steer: 0, gear: script.start.reverse ? "R" : "D" };
   const tgt = { ...ctl }, rate = { throttle: 1e9, brake: 1e9, handbrake: 1e9, steer: 1e9 };
-  let feather = 1, track = null, hold = null, aim = null, yawHold = null, yawI = 0, fired = -1, firedAt = 0;
+  let feather = 1, spinOk = 3, aimK = AIM, track = null, hold = null, aim = null, yawHold = null, yawI = 0, fired = -1, firedAt = 0;
   const H0 = H;
+  const hist = new Array(Math.ceil(0.4 * fps * substeps) + 1);   // the driver's view of heading and yaw rate, for his reaction lag
+  let histI = 0;
   const dt = 1 / (fps * substeps);
   const out = [];
   const Fz0 = W.map(([x]) => m * G * (x > 0 ? car.b : car.a) / L / 2);
@@ -192,6 +219,7 @@ export function simulate(script, { car = CAR, surface = "wet", frames = 121, fps
   const rollW = 2 * Math.PI * car.roll.hz, pitchW = 2 * Math.PI * car.pitch.hz;
   for (let step = 0; step < frames * substeps; step++) {
     const t = step * dt, speed = Math.hypot(vx, vy), turned = Math.abs(H - H0) / D2R;
+    histI = (histI + 1) % hist.length; hist[histI] = [H, r];
     if (step % substeps === 0) {
       const f = step / substeps;
       out.push({ t, x: X, z: Z, h: H / D2R, roll, pitch, speed, yawRate: r / D2R,
@@ -200,41 +228,50 @@ export function simulate(script, { car = CAR, surface = "wet", frames = 121, fps
         controls: { ...ctl, steer: +ctl.steer.toFixed(2) }, frame: f });
     }
     // The driver: fire the next step when its trigger is met, then move the controls toward their targets.
+    // A trigger: every condition in `when` holds (turned_deg, speed_below, speed_above), or every one in `when.or`.
+    const whenOk = (w) => (w.turned_deg === undefined || turned >= w.turned_deg)
+      && (w.speed_below === undefined || speed < w.speed_below) && (w.speed_above === undefined || speed > w.speed_above);
     while (fired + 1 < script.steps.length) {
       const s = script.steps[fired + 1];
       const ok = s.at !== undefined ? t >= s.at - 1e-9
         : s.after !== undefined ? t >= firedAt + s.after - 1e-9
-        : s.when ? ((s.when.turned_deg === undefined || turned >= s.when.turned_deg)
-          && (s.when.speed_below === undefined || speed < s.when.speed_below)
-          && (s.when.speed_above === undefined || speed > s.when.speed_above)) : true;
+        : s.when ? whenOk(s.when) || (s.when.or ? whenOk(s.when.or) : false) : true;
       if (!ok) break;
       fired++; firedAt = t;
       const set = s.set || {}, ramp = Math.max(1e-3, set.ramp ?? 0.001);
       for (const k of ["throttle", "brake", "handbrake"]) if (Number.isFinite(set[k])) { tgt[k] = set[k]; rate[k] = Math.abs(set[k] - ctl[k]) / ramp + 1e-6; }
       if ("hold_kmh" in set) hold = set.hold_kmh;
+      if (Number.isFinite(set.spin_ms)) spinOk = set.spin_ms;
       if ("yaw_hold" in set) { yawHold = set.yaw_hold; yawI = 0; }
       if (set.gear) ctl.gear = set.gear;
       // "aim": hold the nose at aim_turn degrees round from the start, the way the car has been rotating.
       if (set.steer === "track") { aim = null; track = side * (set.offset_deg ?? 0); rate.steer = AIM.rate; }
       else track = null;
-      if (set.steer === "aim") { aim = H0 + (Math.sign(H - H0) || 1) * (set.aim_turn ?? 180) * D2R; }
+      if (set.steer === "aim") { aim = H0 + (Math.sign(H - H0) || 1) * (set.aim_turn ?? 180) * D2R; aimK = { kp: set.aim_kp ?? AIM.kp, kd: set.aim_kd ?? AIM.kd, lag: set.aim_lag_s ?? 0 }; }
       else if (Number.isFinite(set.steer)) { aim = null; tgt.steer = side * set.steer; rate.steer = Math.abs(tgt.steer - ctl.steer) / ramp + 1e-6; }
     }
     if (hold !== null) tgt.throttle = clamp(0.25 * (hold / 3.6 - speed) + 0.35 * (hold / 3.6 > speed ? 1 : 0), 0, 1), rate.throttle = 4;
     if (yawHold !== null) {
-      // Holding a donut: the throttle holds the slide angle (more throttle, the tail swings wider), the wheel holds
-      // the rotation rate (into the turn when it slows, out when it spins up).
+      // Holding a donut (closed loop, after Hindiyeh & Gerdes: the rear tyres' spin sets how much side grip they
+      // keep, the front wheels set the yaw moment):
+      // - outer loop: the yaw-rate error (PI) sets how fast the rear treads should spin past the road; a slow
+      //   rotation asks for more spin, so the rears let go and the tail swings wider;
+      // - inner loop: the throttle chases that rear spin (fast, like a driver on the rev limiter);
+      // - the wheel tracks the front axle's slide (opposite lock), plus an offset that holds the slide angle β.
       const bAbs = speed > 0.5 ? Math.abs(Math.atan2(vy, Math.abs(vx))) / D2R : 0;
-      const eb = DONUT.spin ? DONUT.spin - Math.max(last.vs[2], last.vs[3]) : DONUT.beta - bAbs, er = yawHold - Math.abs(r) / D2R;
-      yawI = clamp(yawI + eb * dt, -20, 20);
-      tgt.throttle = clamp(DONUT.thr0 + DONUT.kb * eb + DONUT.ki * yawI, 0.05, 1); rate.throttle = 4;
-      if (track !== null) track = side * clamp(DONUT.off0 + DONUT.kr * er, -10, 25);
+      const er = yawHold - Math.abs(r) / D2R, vsR = Math.max(last.vs[2], last.vs[3]);
+      yawI = clamp(yawI + er * dt, -DONUT.iMax, DONUT.iMax);
+      const spinT = clamp(DONUT.s0 + DONUT.ky * er + DONUT.kyi * yawI, 2, 30);
+      tgt.throttle = clamp(DONUT.thr0 + DONUT.ks * (spinT - vsR), 0.05, 1); rate.throttle = 6;
+      if (track !== null) track = side * clamp(DONUT.off0 + DONUT.kb * (DONUT.beta - bAbs) + DONUT.kr * er, -12, 25);
     }
     if (aim !== null) {
       // Aim the nose (the target heading mirrored with the side, measured from the start), counter-steering the yaw.
       // Steer the nose onto the target and damp the yaw (counter-steer). Steering works the other way in reverse.
-      const e = (aim - H) / D2R, dir = vx >= 0 ? 1 : -1;
-      tgt.steer = clamp(dir * (AIM.kp * e - AIM.kd * r / D2R), -car.steerMax, car.steerMax);
+      // A driver reacts a beat late (aim_lag_s): he steers on where the nose was, which is what makes a fishtail.
+      const back = Math.min(hist.length - 1, Math.round((aimK.lag || 0) / dt)), seen = hist[(histI - back + hist.length) % hist.length] || [H, r];
+      const e = (aim - seen[0]) / D2R, dir = vx >= 0 ? 1 : -1;
+      tgt.steer = clamp(dir * (aimK.kp * e - aimK.kd * seen[1] / D2R), -car.steerMax, car.steerMax);
       rate.steer = AIM.rate;
     }
     if (track !== null) {
@@ -275,9 +312,10 @@ export function simulate(script, { car = CAR, surface = "wet", frames = 121, fps
         gearT = car.torque * car.gears[0] / limit;
       }
       const avail = Math.min(gearT, car.power * car.R / Math.max(1, Math.abs(vWheel)));
-      // The driver feathers the throttle when the rears spin up past a few m/s (unless holding a donut on the yaw).
+      // The driver feathers the throttle when the rears spin up past the slip he allows (spinOk m/s: a few on the
+      // road, more on a stunt launch; not at all while holding a donut on the yaw).
       const vsR = Math.max(last.vs[2], last.vs[3]);
-      feather += ((yawHold === null ? clamp(1 - (vsR - 3) / 3, 0.15, 1) : 1) - feather) * dt / 0.12;
+      feather += ((yawHold === null ? clamp(1 - (vsR - spinOk) / 3, 0.15, 1) : 1) - feather) * dt / 0.12;
       Tdrive = dir * ctl.throttle * feather * avail * clamp((limit - dir * vWheel) / 1.0, 0, 1);
       if (ctl.throttle < 0.05) Tdrive -= Math.sign(wRear) * 220 * Math.min(1, Math.abs(vWheel) / 2);   // engine braking
     }
@@ -290,7 +328,7 @@ export function simulate(script, { car = CAR, surface = "wet", frames = 121, fps
       const d = front ? delta : 0, c = Math.cos(d), s = Math.sin(d);
       const wvx = cvx * c + cvy * s, wvy = -cvx * s + cvy * c;
       // Wheel spin, implicit in the tyre's stiffness (stable at any step), then the brakes as Coulomb friction.
-      let T = front ? 0 : Tdrive / 2 + (i === 2 ? 1 : -1) * 30 * (w[3] - w[2]);
+      let T = front ? 0 : Tdrive / 2 + (i === 2 ? 1 : -1) * (car.diffLock ?? 30) * (w[3] - w[2]);
       const tf0 = tyreForce(wvx, wvy, w[i] * car.R, Fz[i], surf);
       const k = tyreStiff(wvx, w[i] * car.R, Fz[i], surf) * car.R * car.R;
       const Ieff = car.Iw + dt * k;
@@ -320,16 +358,21 @@ export function simulate(script, { car = CAR, surface = "wet", frames = 121, fps
     const fa = dt / (0.02 + dt);
     axF += (ax - axF) * fa; ayF += (ay - ayF) * fa;
     const rollT = car.roll.grad * ayF / G, pitchT = car.pitch.grad * axF / G;
-    rollV += (rollW * rollW * (rollT - roll) - 2 * car.roll.zeta * rollW * rollV) * dt; roll += rollV * dt;
-    pitchV += (pitchW * pitchW * (pitchT - pitch) - 2 * car.pitch.zeta * pitchW * pitchV) * dt; pitch += pitchV * dt;
+    // Bump stops: past 8.5° of roll (5° of pitch) the body meets a stiff rubber stop instead of leaning on and on.
+    const bumpR = Math.abs(roll) > 8.5 ? -6 * rollW * rollW * (roll - Math.sign(roll) * 8.5) : 0;
+    const bumpP = Math.abs(pitch) > 5 ? -6 * pitchW * pitchW * (pitch - Math.sign(pitch) * 5) : 0;
+    rollV += (rollW * rollW * (rollT - roll) - 2 * car.roll.zeta * rollW * rollV + bumpR) * dt; roll += rollV * dt;
+    pitchV += (pitchW * pitchW * (pitchT - pitch) - 2 * car.pitch.zeta * pitchW * pitchV + bumpP) * dt; pitch += pitchV * dt;
     last = { slip, vs: vsA, Fz };
   }
-  // Smoke from the real slip: a sliding or spinning tyre (slip speed past ~2 m/s) under load. On a wet road, less
-  // smoke (it is mostly spray).
+  // Smoke (dry) or spray (wet) from the slip energy: the power each tyre burns sliding, μ·Fz × slip speed. A tyre
+  // scrubbing past ~4 kW starts to smoke; ~25 kW (a locked or spinning wheel at 8 m/s on a dry road) is a full cloud.
+  // On a wet road the same energy throws up a sheet of spray instead (the kind is in `smoke.kind`).
   for (const o of out) {
-    const amt = o.slipSpeed.map((vs, i) => clamp((vs - 2) / 7, 0, 1) * clamp(o.load[i] / (Fz0[i] || 1), 0.2, 1.3) * surf.smoke);
+    const amt = o.slipSpeed.map((vs, i) => clamp((surf.mu * o.load[i] * vs - 4000) / 21000, 0, 1) * surf.smoke);
     const fr = Math.max(amt[0], amt[1]), re = Math.max(amt[2], amt[3]), a = Math.min(1, Math.max(fr, re));
-    o.smoke = { amount: +a.toFixed(3), wheels: a <= 0.01 ? "" : fr > 0.45 * a && re > 0.45 * a ? "all" : fr > re ? "front" : "rear" };
+    o.smoke = { amount: +a.toFixed(3), wheels: a <= 0.01 ? "" : fr > 0.45 * a && re > 0.45 * a ? "all" : fr > re ? "front" : "rear",
+      kind: surf.spray ? "spray" : "smoke" };
   }
   return out;
 }

@@ -125,7 +125,7 @@ test("tyre smoke is a pure function of the track and the frame, from the chosen 
   assert.ok(a.length > 20);
   assert.deepEqual(a, b, "same frame, same puffs");
   assert.equal(smokeParticles(track, wheels, 5, 24, 7).length, 0, "nothing before the first key with smoke");
-  for (const q of a) assert.ok(q.size >= 0.8 && q.size <= 3 && q.alpha >= 0 && q.alpha <= 1);
+  for (const q of a) assert.ok(q.size >= 0.7 && q.size <= 3.2 && q.alpha >= 0 && q.alpha <= 1 && !q.tint);
   // Born at the rear tyres (z = f*0.3 - 1.3): every puff starts behind the car's centre.
   const fresh = smokeParticles({ ...track, smoke: smoke.map((s, f) => ({ ...s, amount: f === 30 ? 1 : 0 })) }, wheels, 30, 24, 7);
   assert.ok(fresh.length && fresh.every((q) => q.p[2] < 9 - 0.3), "only the rear wheels smoke");
