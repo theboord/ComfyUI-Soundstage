@@ -14,6 +14,105 @@ device page (/soundstage/vcam) --WebSocket ~30 Hz--> soundstage/vcam.py --send_s
           \--- POST /soundstage/vcam/take (whole take) --> user/soundstage/takes/<id>.json --> stabilize() --> stage.state.camera_keys
 ```
 
+## Phone viewfinder (the phone is the camera you look through)
+
+**Phone viewfinder** in the stage's *Phone camera* row shows a QR code. Scan it, hold the phone sideways, tap **Start**:
+the phone shows the live stage through the shot camera, full screen, in the App's Clay or Color look with the same lights.
+It is not a video stream. The phone builds the same `Stage` (web/stage/stage.mjs) from the scene the desktop publishes
+and renders it locally, so aiming has no network lag. The desktop keeps showing everything, and the shot camera there
+follows the phone.
+
+```
+desktop App --POST /soundstage/vcam/scene (on every change), /sync (playhead, view)--> soundstage/vcam.py --WebSocket--> phone
+phone --WebSocket {type:"vf"} live camera ~30 Hz, {type:"vfstate"} events--> vcam.py --send_sync("soundstage.vcam")--> desktop
+phone --POST /soundstage/vcam/take (the recorded take, set space)--> desktop: camera keys + lens keys on the current shot
+```
+
+| on the phone | does |
+|---|---|
+| move the phone | aims the camera (gyro). Heading is relative to the shot camera; tilt and roll are absolute, so a level phone is a level camera. |
+| **MOVE** stick, **UP** strip | walk (truck / dolly along the heading) and crane, eased |
+| **Walk AR** (Android Chrome, https) | WebXR 6-DoF: walk the room to move the camera |
+| drag the picture | pan / tilt trim (the only way to aim without motion sensors, e.g. on plain http) |
+| **Re-centre** | back to the shot camera's framing at the current frame |
+| pinch, **+ TELE / − WIDE** (hold) | smooth zoom, 10–300 mm (the rocker speeds up the longer you hold it) |
+| **14 18 24 35 50 85 135** | the App's prime set (web/ui/cinegear.mjs) |
+| tap the picture | focus on what is under your finger (a raycast, distance along the lens axis) |
+| **FOCUS** chip | the focus ring (0.3 m … ∞), marks **A** / **B**, **Pull ⇄** racks between them over 0.5 / 1 / 2 / 3 s |
+| **IRIS** chip | T1.4 … T22 in thirds, with a live depth-of-field preview (thin-lens circle of confusion, one gather pass: web/vcam/dof.mjs) and the DoF near/far readout |
+| **●** | a 3-beat count-in, then records from the top of the shot in step with the action (the desktop plays along). Stops by itself at the shot's end, or tap ■. |
+| after a take | it plays back on the phone and on the desktop. **Keep**, **Discard** (the shot gets its previous camera back) or **● Again** |
+| **CLAY / COLOR**, **▦ Grid**, **Frame** | the view, rule-of-thirds and extra frame lines (2.39 / 1.85 / 16:9). The area outside the shot's own frame is dimmed surround. The level bar turns green within 1°. |
+| **Level**, **Stabilize**, **DoF**, **Motion** | horizon lock (on by default), gimbal-strength smoothing of the take, the DoF preview, gyro on/off |
+
+**What a take writes.** The take is recorded at the screen rate in set space and saved like any VCam take
+(`/soundstage/vcam/take`, with `settings.space = "set"`). `web/vcam/vfcore.mjs takeToKeys` turns it into keys:
+
+* Position, aim and focal length go through the stabilizer (`web/movefit/stabilize.mjs`): light filtering by default
+  (strength 0.25, no lag) or a gimbal with **Stabilize** (0.75). Its reducer makes the shot's `camera_keys`.
+* Focus distance, T-stop and roll get a light zero-phase smooth and become the shot's own **`lens_keys`**
+  (`[{frame, focus_m, t_stop, roll?}]`). Keys are added where a pull or an iris change happens.
+  `Stage._cameraAt` plays them: focus eases in diopters like a ring, the T-stop eases in stops. The lens therefore
+  rides in `camera_track` with the move into the render nodes.
+* The shot's rig is set to Free, because the take is the move. Discard restores the keys, the lens keys and the rig.
+
+Both sides run the same function on the same take, so the phone's review and the desktop's keys match.
+
+### Connecting the phone (the App runs on the pod, the Mac reaches it at 127.0.0.1:8189)
+
+A phone can't open the Mac's `127.0.0.1`. Its motion sensors also only work on an **https** page. Run the bridge on the
+Mac while the tunnel is up:
+
+```bash
+cd ~/OpenHiggsfieldContest/ComfyUI-Soundstage
+python3 tools/vcam_bridge.py            # https://<mac>.local:8443 -> 127.0.0.1:8189 ; Ctrl-C to stop
+```
+
+* The bridge listens on the Mac's **Wi-Fi only**. Nothing reaches the internet, nothing changes on the pod, and the
+  pod's ports stay SSH-only.
+* Every phone needs the **pairing token** that the QR code carries (`?vk=…`, then kept as an HttpOnly cookie). Without
+  it the answer is 401. `--new-token` un-pairs every phone.
+* There is an **allow-list**. Even with the token, a phone can only reach the viewfinder page, its WebSocket, the
+  take upload and the read-only files the stage loads (`/extensions/ComfyUI-Soundstage/…`, `/view`). `/prompt`,
+  `/queue`, `/api/userdata`, `/upload`, the agent and every other route answer 403. The bridge forwards one request per
+  connection, so this check runs on every request.
+* The bridge registers its phone URL with the App (`POST /soundstage/vcam/pair`, re-sent every 30 s, expires after
+  3 min). The desktop's QR code then points at the bridge. Without the bridge, the QR shows the page's own address and
+  warns when that is a loopback address.
+* **Certificate.** On the first run the bridge creates a small local CA in `~/.soundstage-vcam/` with `openssl`. If
+  mkcert files `<mac>.local.pem` and `-key.pem` are already there (Option A below), it uses those instead. Install it on
+  the phone once: open `http://<mac>.local:8444/` (that port serves only the certificate), install the profile, then on
+  iPhone turn on Settings → General → About → Certificate Trust Settings → *Soundstage VCam local CA*. Android: Settings
+  → Security → Install a certificate → CA certificate.
+* For a quick try without a certificate, run `python3 tools/vcam_bridge.py --http`. Everything works except the motion
+  sensors: drag the picture to aim.
+* macOS asks once whether Python may accept incoming connections. Allow it, and stop the bridge (Ctrl-C) when done.
+
+**Never** put the App on a public URL for this, and never open the pod's HTTP ports (the NDA rule). The bridge is the
+LAN path. Option B below (a password-protected tunnel) is for off-LAN use with non-NDA work only.
+
+### Viewfinder protocol
+
+| message | from → to | |
+|---|---|---|
+| `{type:"vf", t, frame, recording, view, cam:{position, target, focal_mm, focus_m, t_stop, roll}}` | phone → desktops | the live camera, set space, ~30 Hz (1 Hz when still) |
+| `{type:"vfstate", event, data}` | phone → desktops | `hello`, `arm`, `record`, `stop`, `keep`, `discard`, `bye` |
+| `{type:"scene", rev, scene, sync}` | server → phones | on connect (the last one published) and on every desktop change |
+| `{type:"sync", frame, playing, view, fps, frames, shot, take?}` | server → phones | the playhead; `take: {id, status: "applied", keys, lensKeys, shot}` after a take lands |
+
+`GET /soundstage/vcam/viewfinder` serves `web/vcam/viewfinder.html`, whose modules load from `/extensions/<pack>/vcam/`.
+The phone only rebuilds its set when the scene minus its cameras changes (`sceneSig`). A camera edit is patched in place.
+
+| file | what |
+|---|---|
+| `web/vcam/viewfinder.html`, `viewfinder.mjs` | the phone page: renders the Stage, gestures, sensors, record / review |
+| `web/vcam/vfcore.mjs` | pure: lens / focus / iris maths, framing, gyro, `VfRig`, `TakeRecorder`, `takeToKeys`, `reduceLensKeys`, protocol |
+| `web/vcam/dof.mjs` | the depth-of-field pass |
+| `web/vcam/desk.mjs` | the desktop half (QR popover, publishing, live preview, applying takes) |
+| `web/vcam/qr.mjs` | a QR encoder (versions 1–10, checked against OpenCV's decoder) |
+| `tools/vcam_bridge.py` | the LAN bridge |
+| `tests/js/viewfinder.test.mjs`, `tests/test_vcam_viewfinder.py` | tests |
+
 ## Files
 
 | file | what |
@@ -254,5 +353,6 @@ with `t` starting at 0. Validation: numbers must be finite, quaternions are norm
 * iOS Safari is 3-DoF: there is no positional tracking without WebXR. Use the sticks, or an Android phone, Quest or Vision Pro to walk the move.
 * Phone AR tracking drifts slowly over long takes. Recenter between takes.
 * Vision Pro immersive-vr shows no page UI. Record with a pinch and adjust sliders before entering.
-* The device page has no 3D view of the set. The viewfinder is an artificial horizon with 2.39 frame lines;
-  the live picture is the stage in ComfyUI, previewed through `LiveVcam`.
+* The original device page (`/soundstage/vcam`) has no 3D view of the set. It is still the page for Quest / Vision Pro
+  headsets. Phones should use the **Phone viewfinder** above, which renders the set itself.
+* The viewfinder's depth of field is a preview (one gather pass). The render's own depth of field comes from the model.
