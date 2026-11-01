@@ -1,0 +1,1774 @@
+{
+"CreateVideo": {
+"api_node": false,
+"category": "video",
+"deprecated": false,
+"description": "Create a video from images.",
+"dev_only": false,
+"display_name": "Create Video",
+"essentials_category": "Video Tools",
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"optional": {
+"audio": [
+"AUDIO",
+{
+"tooltip": "The audio to add to the video."
+}
+],
+"bit_depth": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+8,
+10
+],
+"tooltip": "Auto uses 8-bit for sRGB and 10-bit for HDR. Explicit 8-bit and 10-bit choices are independent of colorspace."
+}
+],
+"codec": [
+"COMBO",
+{
+"advanced": true,
+"default": "none",
+"multiselect": false,
+"options": [
+"none",
+"auto",
+"h264",
+"av1"
+],
+"tooltip": "Optionally encode the video immediately. None keeps the images in tensor form; Auto uses H.264."
+}
+],
+"color_space": [
+"COMBO",
+{
+"default": "sRGB",
+"multiselect": false,
+"options": [
+"sRGB",
+"HDR",
+"HDR PQ"
+],
+"tooltip": "Colorspace of the input images. HDR selects BT.2020/HLG and HDR PQ selects BT.2020/PQ."
+}
+]
+},
+"required": {
+"fps": [
+"FLOAT",
+{
+"default": 30.0,
+"max": 120.0,
+"min": 1.0,
+"step": 1.0
+}
+],
+"images": [
+"IMAGE",
+{
+"tooltip": "The images to create a video from."
+}
+]
+}
+},
+"input_order": {
+"optional": [
+"audio",
+"bit_depth",
+"color_space",
+"codec"
+],
+"required": [
+"images",
+"fps"
+]
+},
+"is_input_list": false,
+"name": "CreateVideo",
+"output": [
+"VIDEO"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"VIDEO"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_video",
+"search_aliases": [
+"images to video"
+]
+},
+"DWPreprocessor": {
+"category": "ControlNet Preprocessors/Faces and Poses Estimators",
+"description": "",
+"display_name": "DWPose Estimator",
+"has_intermediate_output": false,
+"input": {
+"optional": {
+"bbox_detector": [
+[
+"None",
+"yolox_l.torchscript.pt",
+"yolox_l.onnx",
+"yolo_nas_l_fp16.onnx",
+"yolo_nas_m_fp16.onnx",
+"yolo_nas_s_fp16.onnx"
+],
+{
+"default": "yolox_l.onnx"
+}
+],
+"detect_body": [
+[
+"enable",
+"disable"
+],
+{
+"default": "enable"
+}
+],
+"detect_face": [
+[
+"enable",
+"disable"
+],
+{
+"default": "enable"
+}
+],
+"detect_hand": [
+[
+"enable",
+"disable"
+],
+{
+"default": "enable"
+}
+],
+"pose_estimator": [
+[
+"dw-ll_ucoco_384_bs5.torchscript.pt",
+"dw-ll_ucoco_384.onnx",
+"dw-ll_ucoco.onnx"
+],
+{
+"default": "dw-ll_ucoco_384_bs5.torchscript.pt"
+}
+],
+"resolution": [
+"INT",
+{
+"default": 512,
+"max": 16384,
+"min": 64,
+"step": 64
+}
+],
+"scale_stick_for_xinsr_cn": [
+[
+"disable",
+"enable"
+],
+{
+"default": "disable"
+}
+]
+},
+"required": {
+"image": [
+"IMAGE"
+]
+}
+},
+"input_order": {
+"optional": [
+"detect_hand",
+"detect_body",
+"detect_face",
+"resolution",
+"bbox_detector",
+"pose_estimator",
+"scale_stick_for_xinsr_cn"
+],
+"required": [
+"image"
+]
+},
+"is_input_list": false,
+"name": "DWPreprocessor",
+"output": [
+"IMAGE",
+"POSE_KEYPOINT"
+],
+"output_is_list": [
+false,
+false
+],
+"output_name": [
+"IMAGE",
+"POSE_KEYPOINT"
+],
+"output_node": false,
+"python_module": "custom_nodes.comfyui_controlnet_aux",
+"search_aliases": []
+},
+"GetImageSize": {
+"api_node": false,
+"category": "image",
+"deprecated": false,
+"description": "Returns the width, height, and batch size of the image.",
+"dev_only": false,
+"display_name": "Get Image Size",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"hidden": {
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"input_order": {
+"hidden": [
+"unique_id"
+],
+"required": [
+"image"
+]
+},
+"is_input_list": false,
+"name": "GetImageSize",
+"output": [
+"INT",
+"INT",
+"INT"
+],
+"output_is_list": [
+false,
+false,
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"width",
+"height",
+"batch_size"
+],
+"output_node": false,
+"output_tooltips": [
+null,
+null,
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_images",
+"search_aliases": [
+"dimensions",
+"resolution",
+"image info"
+]
+},
+"ImageBlend": {
+"api_node": false,
+"category": "image/filters",
+"deprecated": false,
+"description": "",
+"dev_only": false,
+"display_name": "Blend Images",
+"essentials_category": "Image Tools",
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"blend_factor": [
+"FLOAT",
+{
+"default": 0.5,
+"max": 1.0,
+"min": 0.0,
+"step": 0.01
+}
+],
+"blend_mode": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"normal",
+"multiply",
+"screen",
+"overlay",
+"soft_light",
+"difference"
+]
+}
+],
+"image1": [
+"IMAGE",
+{}
+],
+"image2": [
+"IMAGE",
+{}
+]
+}
+},
+"input_order": {
+"required": [
+"image1",
+"image2",
+"blend_factor",
+"blend_mode"
+]
+},
+"is_input_list": false,
+"name": "ImageBlend",
+"output": [
+"IMAGE"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"IMAGE"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_post_processing",
+"search_aliases": [
+"mix images"
+]
+},
+"ImageFromBatch": {
+"api_node": false,
+"category": "image/batch",
+"deprecated": false,
+"description": "",
+"dev_only": false,
+"display_name": "Get Image from Batch",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"batch_index": [
+"INT",
+{
+"default": 0,
+"max": 16384,
+"min": -16384
+}
+],
+"image": [
+"IMAGE",
+{}
+],
+"length": [
+"INT",
+{
+"default": 1,
+"max": 4096,
+"min": 1
+}
+]
+}
+},
+"input_order": {
+"required": [
+"image",
+"batch_index",
+"length"
+]
+},
+"is_input_list": false,
+"name": "ImageFromBatch",
+"output": [
+"IMAGE"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"IMAGE"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_images",
+"search_aliases": [
+"select image",
+"pick from batch",
+"extract image"
+]
+},
+"LTXFloatToInt": {
+"category": "math/conversion",
+"description": "",
+"display_name": "\ud83c\udd5b\ud83c\udd63\ud83c\udd67 Float To Int",
+"has_intermediate_output": false,
+"input": {
+"required": {
+"a": [
+"FLOAT",
+{
+"default": 0.0
+}
+]
+}
+},
+"input_order": {
+"required": [
+"a"
+]
+},
+"is_input_list": false,
+"name": "LTXFloatToInt",
+"output": [
+"INT"
+],
+"output_is_list": [
+false
+],
+"output_name": [
+"INT"
+],
+"output_node": false,
+"python_module": "custom_nodes.ComfyUI-LTXVideo",
+"search_aliases": []
+},
+"LTXVEmptyLatentAudio": {
+"api_node": false,
+"category": "model/latent/ltxv",
+"deprecated": false,
+"description": "",
+"dev_only": false,
+"display_name": "Empty LTXV Latent Audio",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"audio_vae": [
+"VAE",
+{
+"display_name": "Audio VAE",
+"tooltip": "The Audio VAE model to get configuration from."
+}
+],
+"batch_size": [
+"INT",
+{
+"default": 1,
+"display": "number",
+"max": 4096,
+"min": 1,
+"tooltip": "The number of latent audio samples in the batch."
+}
+],
+"frame_rate": [
+"FLOAT,INT",
+{
+"default": 25.0,
+"display": "number",
+"max": 1000.0,
+"min": 1.0,
+"step": 0.01,
+"tooltip": "Number of frames per second.",
+"widgetType": "FLOAT"
+}
+],
+"frames_number": [
+"INT",
+{
+"default": 97,
+"display": "number",
+"max": 1000,
+"min": 1,
+"step": 1,
+"tooltip": "Number of frames."
+}
+]
+}
+},
+"input_order": {
+"required": [
+"frames_number",
+"frame_rate",
+"batch_size",
+"audio_vae"
+]
+},
+"is_input_list": false,
+"name": "LTXVEmptyLatentAudio",
+"output": [
+"LATENT"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"Latent"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_lt_audio",
+"search_aliases": null
+},
+"LTXVSetAudioRefTokens": {
+"api_node": false,
+"category": "Lightricks/IC-LoRA",
+"deprecated": false,
+"description": "Provides speaker identity context for audio generation by attaching reference audio tokens to the conditioning. The tokens are prepended with negative temporal positions so the model treats them as context rather than generation targets.",
+"dev_only": false,
+"display_name": "\ud83c\udd5b\ud83c\udd63\ud83c\udd67 Set Audio Ref Tokens",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"audio_latent": [
+"LATENT",
+{
+"tooltip": "Encoded audio latent from LTXV Audio VAE Encode."
+}
+],
+"negative": [
+"CONDITIONING",
+{
+"tooltip": "Negative conditioning to attach the reference audio tokens to."
+}
+],
+"positive": [
+"CONDITIONING",
+{
+"tooltip": "Positive conditioning to attach the reference audio tokens to."
+}
+]
+}
+},
+"input_order": {
+"required": [
+"positive",
+"negative",
+"audio_latent"
+]
+},
+"is_input_list": false,
+"name": "LTXVSetAudioRefTokens",
+"output": [
+"CONDITIONING",
+"CONDITIONING",
+"LATENT"
+],
+"output_is_list": [
+false,
+false,
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"positive",
+"negative",
+"frozen_audio"
+],
+"output_node": false,
+"output_tooltips": [
+"Positive conditioning with reference audio tokens attached.",
+"Negative conditioning with reference audio tokens attached.",
+"Audio latent with noise_mask=0, fully frozen during denoising."
+],
+"price_badge": null,
+"python_module": "custom_nodes.ComfyUI-LTXVideo",
+"search_aliases": null
+},
+"ResizeImageMaskNode": {
+"api_node": false,
+"category": "image/transform",
+"deprecated": false,
+"description": "Resize an image or mask using various scaling methods.",
+"dev_only": false,
+"display_name": "Resize Image/Mask",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"input": [
+"COMFY_MATCHTYPE_V3",
+{
+"template": {
+"allowed_types": "IMAGE,MASK",
+"template_id": "input_type"
+}
+}
+],
+"resize_type": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {
+"crop": [
+"COMBO",
+{
+"default": "center",
+"multiselect": false,
+"options": [
+"disabled",
+"center"
+],
+"tooltip": "How to handle aspect ratio mismatch: 'disabled' stretches to fit, 'center' crops to maintain aspect ratio."
+}
+],
+"height": [
+"INT",
+{
+"default": 512,
+"max": 16384,
+"min": 0,
+"step": 1,
+"tooltip": "Target height in pixels. Set to 0 to auto-calculate from width while preserving aspect ratio."
+}
+],
+"width": [
+"INT",
+{
+"default": 512,
+"max": 16384,
+"min": 0,
+"step": 1,
+"tooltip": "Target width in pixels. Set to 0 to auto-calculate from height while preserving aspect ratio."
+}
+]
+}
+},
+"key": "scale dimensions"
+},
+{
+"inputs": {
+"required": {
+"multiplier": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 8.0,
+"min": 0.01,
+"step": 0.01,
+"tooltip": "Scale factor (e.g., 2.0 doubles size, 0.5 halves size)."
+}
+]
+}
+},
+"key": "scale by multiplier"
+},
+{
+"inputs": {
+"required": {
+"longer_size": [
+"INT",
+{
+"default": 512,
+"max": 16384,
+"min": 0,
+"step": 1,
+"tooltip": "The longer edge will be resized to this value. Aspect ratio is preserved."
+}
+]
+}
+},
+"key": "scale longer dimension"
+},
+{
+"inputs": {
+"required": {
+"shorter_size": [
+"INT",
+{
+"default": 512,
+"max": 16384,
+"min": 0,
+"step": 1,
+"tooltip": "The shorter edge will be resized to this value. Aspect ratio is preserved."
+}
+]
+}
+},
+"key": "scale shorter dimension"
+},
+{
+"inputs": {
+"required": {
+"width": [
+"INT",
+{
+"default": 512,
+"max": 16384,
+"min": 0,
+"step": 1,
+"tooltip": "Target width in pixels. Height auto-adjusts to preserve aspect ratio."
+}
+]
+}
+},
+"key": "scale width"
+},
+{
+"inputs": {
+"required": {
+"height": [
+"INT",
+{
+"default": 512,
+"max": 16384,
+"min": 0,
+"step": 1,
+"tooltip": "Target height in pixels. Width auto-adjusts to preserve aspect ratio."
+}
+]
+}
+},
+"key": "scale height"
+},
+{
+"inputs": {
+"required": {
+"megapixels": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 16.0,
+"min": 0.01,
+"step": 0.01,
+"tooltip": "Target total megapixels (e.g., 1.0 \u2248 1024\u00d71024). Aspect ratio is preserved."
+}
+]
+}
+},
+"key": "scale total pixels"
+},
+{
+"inputs": {
+"required": {
+"crop": [
+"COMBO",
+{
+"default": "center",
+"multiselect": false,
+"options": [
+"disabled",
+"center"
+],
+"tooltip": "How to handle aspect ratio mismatch: 'disabled' stretches to fit, 'center' crops to maintain aspect ratio."
+}
+],
+"match": [
+"IMAGE,MASK",
+{
+"tooltip": "Resize input to match the dimensions of this reference image or mask."
+}
+]
+}
+},
+"key": "match size"
+},
+{
+"inputs": {
+"required": {
+"multiple": [
+"INT",
+{
+"default": 8,
+"max": 16384,
+"min": 1,
+"step": 1,
+"tooltip": "Resize so width and height are divisible by this number. Useful for latent alignment (e.g., 8 or 64)."
+}
+]
+}
+},
+"key": "scale to multiple"
+}
+],
+"tooltip": "Select how to resize: by exact dimensions, scale factor, matching another image, etc."
+}
+],
+"scale_method": [
+"COMBO",
+{
+"default": "area",
+"multiselect": false,
+"options": [
+"nearest-exact",
+"bilinear",
+"area",
+"bicubic",
+"lanczos"
+],
+"tooltip": "Interpolation algorithm. 'area' is best for downscaling, 'lanczos' for upscaling, 'nearest-exact' for pixel art."
+}
+]
+}
+},
+"input_order": {
+"required": [
+"input",
+"resize_type",
+"scale_method"
+]
+},
+"is_input_list": false,
+"name": "ResizeImageMaskNode",
+"output": [
+"COMFY_MATCHTYPE_V3"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": [
+"input_type"
+],
+"output_name": [
+"resized"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_post_processing",
+"search_aliases": [
+"resize",
+"resize image",
+"resize mask",
+"scale",
+"scale image",
+"scale mask",
+"image resize",
+"change size",
+"dimensions",
+"shrink",
+"enlarge"
+]
+},
+"SaveVideo": {
+"api_node": false,
+"category": "video",
+"deprecated": false,
+"description": "Saves the input videos to your ComfyUI output directory.",
+"dev_only": false,
+"display_name": "Save Video",
+"essentials_category": "Basics",
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"hidden": {
+"extra_pnginfo": [
+"EXTRA_PNGINFO"
+],
+"prompt": [
+"PROMPT"
+]
+},
+"optional": {
+"codec": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"hidden": true,
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 18.0,
+"max": 51.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible H.264 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "h264"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 24.0,
+"max": 63.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible AV1 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "av1"
+}
+],
+"tooltip": "The output video codec. Auto preserves a compatible source stream. H.264 and AV1 re-encoding support SDR, HDR (HLG), and HDR PQ."
+}
+]
+},
+"required": {
+"filename_prefix": [
+"STRING",
+{
+"default": "video/ComfyUI",
+"multiline": false,
+"tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes."
+}
+],
+"format": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {
+"codec": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 18.0,
+"max": 51.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible H.264 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "h264"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 24.0,
+"max": 63.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible AV1 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "av1"
+}
+],
+"tooltip": "The output video codec. Auto preserves a compatible source stream. H.264 and AV1 re-encoding support SDR, HDR (HLG), and HDR PQ."
+}
+]
+}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"codec": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 18.0,
+"max": 51.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible H.264 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "h264"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 24.0,
+"max": 63.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible AV1 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "av1"
+}
+],
+"tooltip": "The output video codec. Auto preserves a compatible source stream. H.264 and AV1 re-encoding support SDR, HDR (HLG), and HDR PQ."
+}
+]
+}
+},
+"key": "mp4"
+},
+{
+"inputs": {
+"required": {
+"codec": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 18.0,
+"max": 51.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible H.264 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "h264"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 24.0,
+"max": 63.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible AV1 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "av1"
+}
+],
+"tooltip": "The output video codec. Auto preserves a compatible source stream. H.264 and AV1 re-encoding support SDR, HDR (HLG), and HDR PQ."
+}
+]
+}
+},
+"key": "mkv"
+},
+{
+"inputs": {
+"required": {
+"codec": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 24.0,
+"max": 63.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible AV1 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "av1"
+}
+],
+"tooltip": "The output video codec. Auto preserves a compatible source stream. H.264 and AV1 re-encoding support SDR, HDR (HLG), and HDR PQ."
+}
+]
+}
+},
+"key": "webm"
+}
+],
+"tooltip": "The output container. Auto uses MP4 for Auto/H.264 and WebM for AV1. MP4, MKV, and WebM select a specific container."
+}
+],
+"video": [
+"VIDEO",
+{
+"tooltip": "The video to save."
+}
+]
+}
+},
+"input_order": {
+"hidden": [
+"prompt",
+"extra_pnginfo"
+],
+"optional": [
+"codec"
+],
+"required": [
+"video",
+"filename_prefix",
+"format"
+]
+},
+"is_input_list": false,
+"name": "SaveVideo",
+"output": [
+"VIDEO"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"video"
+],
+"output_node": true,
+"output_tooltips": [
+"The input video, unchanged."
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_video",
+"search_aliases": [
+"export video"
+]
+},
+"SoundstageAudioFit": {
+"api_node": false,
+"category": "Soundstage/Audio",
+"deprecated": false,
+"description": "The shot's soundtrack: AUDIO, a WAV path, or a Cut export audio/index.json + shot id, trimmed/padded so sample 0 is frame 0 and it runs exactly frames / fps. 48 kHz stereo.",
+"dev_only": false,
+"display_name": "Soundstage \u00b7 Fit Audio to Shot",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"optional": {
+"audio": [
+"AUDIO",
+{}
+],
+"offset_s": [
+"FLOAT",
+{
+"default": 0.0,
+"max": 3600.0,
+"min": -3600.0,
+"step": 0.001,
+"tooltip": "Positive = start later in the file (slip)."
+}
+],
+"path": [
+"STRING",
+{
+"default": "",
+"multiline": false,
+"tooltip": "WAV path, or the Cut export's audio/index.json (picks shot_id)."
+}
+],
+"shot_id": [
+"STRING",
+{
+"default": "",
+"multiline": false
+}
+]
+},
+"required": {
+"fps": [
+"FLOAT",
+{
+"default": 24.0,
+"max": 120.0,
+"min": 1.0,
+"step": 0.001
+}
+],
+"frames": [
+"INT",
+{
+"default": 97,
+"max": 100000,
+"min": 1
+}
+]
+}
+},
+"input_order": {
+"optional": [
+"audio",
+"path",
+"shot_id",
+"offset_s"
+],
+"required": [
+"frames",
+"fps"
+]
+},
+"is_input_list": false,
+"name": "SoundstageAudioFit",
+"output": [
+"AUDIO"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"audio"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "custom_nodes.ComfyUI-Soundstage",
+"search_aliases": [
+"shot audio",
+"mixdown",
+"pad audio",
+"trim audio",
+"load wav"
+]
+},
+"SoundstageClipLoad": {
+"api_node": false,
+"category": "Soundstage/Motion/advanced",
+"deprecated": false,
+"description": "Load a clip from input/, output/ or temp/ by its file reference, retimed to an LTX frame rate and trimmed to 8k+1 frames, with its audio cut to match.",
+"dev_only": false,
+"display_name": "Soundstage \u00b7 Load Clip",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"fps": [
+"FLOAT",
+{
+"default": 24.0,
+"max": 60.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Retime to this rate (nearest frame). 0 = keep the clip's own rate."
+}
+],
+"max_frames": [
+"INT",
+{
+"default": 161,
+"max": 10000,
+"min": 0,
+"tooltip": "0 = to the end (at the new rate)."
+}
+],
+"source": [
+"STRING",
+{
+"default": "",
+"multiline": false,
+"tooltip": "File reference, e.g. \"soundstage/draft_00012_.mp4 [output]\"."
+}
+],
+"start_frame": [
+"INT",
+{
+"default": 0,
+"max": 1000000,
+"min": 0
+}
+]
+}
+},
+"input_order": {
+"required": [
+"source",
+"fps",
+"start_frame",
+"max_frames"
+]
+},
+"is_input_list": false,
+"name": "SoundstageClipLoad",
+"output": [
+"IMAGE",
+"AUDIO",
+"FLOAT",
+"INT",
+"STRING"
+],
+"output_is_list": [
+false,
+false,
+false,
+false,
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"images",
+"audio",
+"fps",
+"frames",
+"clip_json"
+],
+"output_node": false,
+"output_tooltips": [
+null,
+null,
+null,
+null,
+null
+],
+"price_badge": null,
+"python_module": "custom_nodes.ComfyUI-Soundstage",
+"search_aliases": null
+},
+"SoundstageImageLoad": {
+"api_node": false,
+"category": "Soundstage/Motion/advanced",
+"deprecated": false,
+"description": "Load a picture from input/, output/ or temp/ by its file reference (a video gives its first frame).",
+"dev_only": false,
+"display_name": "Soundstage \u00b7 Load Picture",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"source": [
+"STRING",
+{
+"default": "",
+"multiline": false,
+"tooltip": "e.g. \"soundstage_refs/frame1_edit.png [input]\"."
+}
+]
+}
+},
+"input_order": {
+"required": [
+"source"
+]
+},
+"is_input_list": false,
+"name": "SoundstageImageLoad",
+"output": [
+"IMAGE"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"image"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "custom_nodes.ComfyUI-Soundstage",
+"search_aliases": null
+},
+"SoundstageLatentNoiseMask": {
+"api_node": false,
+"category": "Soundstage/Audio",
+"deprecated": false,
+"description": "Set a uniform noise mask on a latent: 0 = keep it frozen, 1 = regenerate it. On an LTX audio latent, 0.2-0.5 keeps the audio pathway open so mouths move (frozen-mouth fix).",
+"dev_only": false,
+"display_name": "Soundstage \u00b7 Latent Noise Mask (value)",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"latent": [
+"LATENT",
+{}
+],
+"value": [
+"FLOAT",
+{
+"default": 0.3,
+"max": 1.0,
+"min": 0.0,
+"step": 0.01
+}
+]
+}
+},
+"input_order": {
+"required": [
+"latent",
+"value"
+]
+},
+"is_input_list": false,
+"name": "SoundstageLatentNoiseMask",
+"output": [
+"LATENT"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"latent"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "custom_nodes.ComfyUI-Soundstage",
+"search_aliases": [
+"audio latent mask",
+"frozen audio",
+"lip sync mask",
+"noise mask"
+]
+},
+"VAEEncodeAudio": {
+"api_node": false,
+"category": "model/latent",
+"deprecated": false,
+"description": "",
+"dev_only": false,
+"display_name": "VAE Encode Audio",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"audio": [
+"AUDIO",
+{}
+],
+"vae": [
+"VAE",
+{}
+]
+}
+},
+"input_order": {
+"required": [
+"audio",
+"vae"
+]
+},
+"is_input_list": false,
+"name": "VAEEncodeAudio",
+"output": [
+"LATENT"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"LATENT"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_audio",
+"search_aliases": [
+"audio to latent"
+]
+}
+}
