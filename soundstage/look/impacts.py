@@ -24,6 +24,12 @@ MATERIAL_VERBS = {
     "plastic": ("bend and crack", "plastic fragments"),
     "rubber": ("squash and bounce", ""),
 }
+# A prop that really broke in the bake (Milestone 24 break events, e["break"]): the clay guide shows the pieces, and
+# the beat names what they are, so the words and the guide agree.
+BREAK_VERBS = {
+    "wood": "burst apart into loose planks and splintered boards",
+    "cardboard": "split open, panels and lid flaps tearing loose",
+}
 NOUNS = {"cardboard": "cardboard boxes", "wood": "wooden crates", "metal": "metal drums", "stone": "rocks",
          "glass": "glass", "plastic": "plastic crates", "concrete": "concrete blocks", "rubber": "rubber balls"}
 KIND_MATERIAL = {"crate": "wood", "chair": "wood", "table": "wood", "bench": "wood", "desk": "wood", "rock": "stone",
@@ -115,6 +121,8 @@ def impact_beats(scene: dict | None) -> str:
         mats = [material_of(p) for p in props] or ["wood"]
         mat = max(set(mats), key=lambda m: (mats.count(m), m))
         verbs, burst = MATERIAL_VERBS.get(mat, MATERIAL_VERBS["wood"])
+        if any(e.get("break") for e in cl) and mat in BREAK_VERBS:
+            verbs = BREAK_VERBS[mat]
         noun = NOUNS.get(mat, "crates")
         if len(props) == 1:
             noun = _the(props[0])[4:]

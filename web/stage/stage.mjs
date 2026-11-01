@@ -22,6 +22,7 @@ import { STLLoader } from "../vendor/addons/STLLoader.mjs";
 import * as SkeletonUtils from "../vendor/addons/SkeletonUtils.mjs";
 import { TransformControls } from "../vendor/addons/TransformControls.mjs";
 import { simulate, bakeTrack, physicsOf, samplePos, sampleQuat, checkTracks } from "./physics.mjs";
+import { breakableOf, fracturePieces, seedOf, dentOffset } from "./fracture.mjs";
 import { LiveEdit } from "./live.mjs";
 import { raycastShapes } from "./physics_avbd.mjs";
 import { Highlighter } from "./outline.mjs";
@@ -471,7 +472,8 @@ export class Stage {
 
   /** An object's own local box: [half extents, centre relative to its origin], in its own (scaled) frame. */
   _localBox(g) {
-    const p = g.position.clone(), q = g.quaternion.clone();
+    const p = g.position.clone(), q = g.quaternion.clone(), vis = g.visible;
+    g.visible = true;   // a broken prop hides its whole mesh while its pieces show (Milestone 24); measure the whole
     g.position.set(0, 0, 0);
     g.quaternion.identity();
     g.updateMatrixWorld(true);
@@ -481,7 +483,7 @@ export class Stage {
       if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
       box.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld));
     });
-    g.position.copy(p); g.quaternion.copy(q);
+    g.position.copy(p); g.quaternion.copy(q); g.visible = vis;
     g.updateMatrixWorld(true);
     if (box.isEmpty()) return null;
     const size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
@@ -527,8 +529,11 @@ export class Stage {
     const last = this._lastFrame(), fps = this.state.shot?.fps || 24;
     const dynamic = this.state.actors.filter((a) => a.physics?.mode === "dynamic" && this._physCanMove(a));
     if (!dynamic.length) return { ok: false, message: "Nothing is Dynamic yet: select a prop and set Physics to Dynamic." };
-    // Back to the authored keys (and the start height) before sampling.
-    for (const a of dynamic) if (a.physics.baked) { a.keys = clone(a.physics.source?.keys || this._actorKeys(a)); a.physics.baked = false; }
+    // Back to the authored keys (and the start height) before sampling; last bake's pieces and dents go.
+    for (const a of dynamic) {
+      if (a.physics.baked) { a.keys = clone(a.physics.source?.keys || this._actorKeys(a)); a.physics.baked = false; }
+      delete a.physics.fracture; delete a.physics.dents;
+    }
     const keep = this.frame;
     const colliders = this.state.actors.filter((a) => a.physics?.mode !== "dynamic" && a.physics?.mode !== "off" && !a.mount_id && !a.carry_id
       && a.kind !== "card" && !NO_COLLIDE.has(a.kind) && !a.set_xform && this.actorMeshes.has(a.id));
@@ -553,9 +558,18 @@ export class Stage {
       const p = imperfect ? jitterPhysics(physicsOf(a), a.id) : physicsOf(a), keys = this._actorKeys(a);
       const moves = keys.length > 1 && keys.some((k) => Math.hypot(k.position[0] - keys[0].position[0], k.position[2] - keys[0].position[2]) > 0.01);
       const sphere = a.kind === "sphere";
-      specs.push({ id: a.id, shape: sphere ? "sphere" : "box", half: box.half, center: box.center, radius: sphere ? Math.min(...box.half) : 0,
+      const spec = { id: a.id, shape: sphere ? "sphere" : "box", half: box.half, center: box.center, radius: sphere ? Math.min(...box.half) : 0,
         dynamic: true, mass: p.mass, bounce: p.bounce, friction: p.friction, poses: poses.get(a.id), release: moves ? keys[keys.length - 1].frame : 0,
-        material: materialOf(a) });
+        material: materialOf(a) };
+      // Breakables (Milestone 24): crates and cardboard boxes are pre-split into planks / panels, glued until a hit
+      // snaps the glue; cardboard dents below that. Scene switch: physics.breakables (on unless false).
+      const brk = !sphere && this.state.physics?.breakables !== false ? breakableOf(a, spec.material) : null;
+      if (brk) {
+        const seed = seedOf(a.id) + 7 * (this.state.physics?.seed ?? 1);
+        spec.breakable = { ...fracturePieces(box.half, { material: brk.material, seed }), strength: brk.strength, burst: brk.burst, seed };
+        spec.dent = brk.dent;
+      }
+      specs.push(spec);
     }
     for (const a of colliders) {
       const g = this.actorMeshes.get(a.id), box = g && this._localBox(g);
@@ -580,6 +594,7 @@ export class Stage {
     // A car's body / cabin boxes report as the car.
     const events = (res.events || []).map((e) => ({ ...e, a: String(e.a).split("#")[0], b: String(e.b).split("#")[0] }));
     this.state.physics = { ...(this.state.physics || {}), events, fps, frames: last + 1 };
+    let broken = 0, dented = 0, pieces = 0;
     for (const a of dynamic) {
       const tr = res.tracks[a.id];
       if (!tr) continue;
@@ -587,6 +602,17 @@ export class Stage {
       a.keys = bakeTrack(tr);
       a.position = [...a.keys[0].position];
       a.physics.baked = true;
+      // The pieces of a prop that broke, as ordinary keys from the frame before the break (the whole prop shows until
+      // then); the dents of one that was crushed (object frame, permanent from their frame on).
+      const fr = res.fractures?.[a.id];
+      if (fr) {
+        const from = Math.max(0, fr.frame - 1);
+        a.physics.fracture = { frame: fr.frame, material: materialOf(a), pieces: fr.pieces.map((pc) => ({ kind: pc.kind,
+          half: pc.half.map((v) => +v.toFixed(4)), center: pc.center.map((v) => +v.toFixed(4)),
+          keys: bakeTrack(pc.track.slice(from)).map((k) => ({ ...k, frame: k.frame + from })) })) };
+        broken++; pieces += fr.pieces.length;
+      }
+      if (res.dents?.[a.id]?.length) { a.physics.dents = res.dents[a.id]; dented++; }
     }
     this.setFrame(keep);
     this.onChange(this.toJSON());
@@ -596,7 +622,8 @@ export class Stage {
     return { ok: true, bodies: dynamic.length, colliders: specs.length - dynamic.length, moving, restless, ms, impacts: events.length, ...qa,
       message: `Simulated ${dynamic.length} object${dynamic.length === 1 ? "" : "s"} over ${last + 1} frames in ${(ms / 1000).toFixed(1)} s` +
         ` and baked ${moving} into keys${restless.length ? `; still moving at the end: ${restless.slice(0, 3).join(", ")}` : "; everything comes to rest"}` +
-        `${events.length ? `. ${events.length} hit${events.length === 1 ? "" : "s"} logged (dust, shake and sound key off them)` : ""}.` };
+        `${events.length ? `. ${events.length} hit${events.length === 1 ? "" : "s"} logged (dust, shake and sound key off them)` : ""}` +
+        `${broken ? `; ${broken} broke into ${pieces} pieces` : ""}${dented ? `; ${dented} dented` : ""}.`, broken, dented, pieces };
   }
 
   /** Put objects back on the keys they had before the bake (every baked object, or the given ids). */
@@ -607,7 +634,7 @@ export class Stage {
       a.keys = clone(a.physics.source?.keys || [{ frame: 0, position: [...this._actorKeys(a)[0].position] }]);
       a.position = [...a.keys[0].position];
       a.physics.baked = false;
-      delete a.physics.source;
+      delete a.physics.source; delete a.physics.fracture; delete a.physics.dents;
       n++;
     }
     // No baked object left: its hits go too (no dust, shake or impact sounds from a crash that no longer happens).
@@ -632,10 +659,12 @@ export class Stage {
     return this.impactFxInfo();
   }
 
-  /** Scene-wide physics feel (Milestone 21): {imperfect (on unless false), overcrank (1 | 1.5 | 2 | 3), weight ("real" | "bigger")}. */
+  /** Scene-wide physics feel (Milestone 21): {imperfect (on unless false), overcrank (1 | 1.5 | 2 | 3), weight ("real" | "bigger"),
+   *  breakables (Milestone 24: crates and boxes break and dent; on unless false)}. */
   physicsFeel() {
     const p = this.state.physics || {};
-    return { imperfect: p.imperfect !== false, overcrank: [1.5, 2, 3].includes(+p.overcrank) ? +p.overcrank : 1, weight: p.weight === "bigger" ? "bigger" : "real" };
+    return { imperfect: p.imperfect !== false, overcrank: [1.5, 2, 3].includes(+p.overcrank) ? +p.overcrank : 1, weight: p.weight === "bigger" ? "bigger" : "real",
+      breakables: p.breakables !== false };
   }
 
   /**
@@ -649,11 +678,13 @@ export class Stage {
     if ("imperfect" in patch) next.imperfect = !!patch.imperfect;
     if ("overcrank" in patch) next.overcrank = [1.5, 2, 3].includes(+patch.overcrank) ? +patch.overcrank : 1;
     if ("weight" in patch) next.weight = patch.weight === "bigger" ? "bigger" : "real";
+    if ("breakables" in patch) next.breakables = !!patch.breakables;
     this.state.physics = next;
     const now = this.physicsFeel();
     if (now.overcrank !== cur.overcrank) this._retimeForOvercrank(now.overcrank);
     let res = null;
-    if ((now.overcrank !== cur.overcrank || now.weight !== cur.weight || now.imperfect !== cur.imperfect) && this.state.actors.some((a) => a.physics?.baked)) {
+    if ((now.overcrank !== cur.overcrank || now.weight !== cur.weight || now.imperfect !== cur.imperfect || now.breakables !== cur.breakables)
+      && this.state.actors.some((a) => a.physics?.baked)) {
       res = this.simulatePhysics();
     } else {
       this.setFrame(this.frame);
@@ -675,6 +706,103 @@ export class Stage {
       if (baked) a.physics.source.keys = keys;
       else { a.keys = keys; delete a.position_end; }
     }
+  }
+
+  /**
+   * Breakables at the current frame (Milestone 24): a prop that broke hides its whole mesh from the break frame on and
+   * shows its pieces on their baked keys (planks or panels, in the prop's own colour, a little varied); a dented prop's
+   * mesh is pushed in by every dent up to this frame (subdivided once, so the dent has vertices to move).
+   */
+  _breakableAt(a, g) {
+    const fr = a.physics?.baked ? a.physics.fracture : null;
+    let grp = this._shards?.get(a.id);
+    if (!fr?.pieces?.length) {
+      if (grp) grp.visible = false;
+      if (g.userData.shattered) { g.visible = true; g.userData.shattered = false; }
+    } else {
+      if (!grp || grp.userData.src !== fr) {
+        if (grp) this._disposeShards(grp);
+        grp = this._buildShards(a, g, fr);
+        (this._shards ??= new Map()).set(a.id, grp);
+      }
+      if (grp.parent !== this.root) this.root.add(grp);   // the set was rebuilt
+      const on = this.frame >= fr.frame;
+      grp.visible = on; g.visible = !on; g.userData.shattered = on;
+      if (on) fr.pieces.forEach((pc, i) => {
+        const m = grp.children[i];
+        if (!m || !pc.keys?.length) return;
+        m.position.set(...samplePos(pc.keys, this.frame));
+        const q = sampleQuat(pc.keys, this.frame);
+        if (q) m.quaternion.set(q[0], q[1], q[2], q[3]);
+      });
+    }
+    this._dentsAt(a, g);
+  }
+
+  _buildShards(a, g, fr) {
+    const grp = new THREE.Group();
+    grp.userData.src = fr; grp.userData.actorId = a.id; grp.userData.shards = true;
+    let base = null;
+    g.traverse((o) => { if (!base && o.isMesh && o.material?.color && !o.material.transparent) base = o.material.color; });
+    const col = base ? base.clone() : new THREE.Color(fr.material === "cardboard" ? 0xb08a5c : 0xa7814f);
+    const hsl = col.getHSL({});
+    fr.pieces.forEach((pc, i) => {
+      const h = pc.half || [0.05, 0.05, 0.05];
+      const r = Math.abs(Math.sin((i + 1) * 12.9898 + seedOf(a.id)) * 43758.5453) % 1;
+      const mat = new THREE.MeshStandardMaterial({ roughness: 0.85,
+        color: new THREE.Color().setHSL(hsl.h, Math.min(1, hsl.s * (0.85 + 0.3 * r)), Math.min(0.9, hsl.l * (0.88 + 0.3 * r))) });
+      const m = new THREE.Mesh(new THREE.BoxGeometry(2 * h[0], 2 * h[1], 2 * h[2]), mat);
+      m.castShadow = true; m.receiveShadow = true;
+      m.userData.actorId = a.id;
+      grp.add(m);
+    });
+    return grp;
+  }
+
+  _disposeShards(grp) {
+    grp.removeFromParent();
+    grp.traverse((o) => { if (o.isMesh) { o.geometry?.dispose?.(); o.material?.dispose?.(); } });
+  }
+
+  /** Push a dented prop's mesh in by its dents up to this frame (object frame; recomputed only when that set changes). */
+  _dentsAt(a, g) {
+    const dents = a.physics?.baked ? a.physics.dents : null;
+    const active = dents?.length ? dents.filter((d) => d.frame <= this.frame) : [];
+    const key = active.length ? `${active.length}|${dents.length}|${dents[0].frame}|${dents[0].depth}` : "";
+    if ((g.userData.dentKey || "") === key) return;
+    g.userData.dentKey = key;
+    g.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(g.matrixWorld).invert();
+    const S = new THREE.Matrix4().makeScale(g.scale.x, g.scale.y, g.scale.z);
+    const v = new THREE.Vector3();
+    g.traverse((o) => {
+      if (!o.isMesh || !o.geometry?.attributes?.position || o.userData.noCollide) return;
+      if (!o.userData.dentBase) {
+        if (!active.length) return;
+        // A plain box has only its 8 corners: give it a grid on every face, once, so a dent can bend it.
+        if (o.geometry.type === "BoxGeometry") {
+          const pr = o.geometry.parameters, old = o.geometry;
+          o.geometry = new THREE.BoxGeometry(pr.width, pr.height, pr.depth, 14, 14, 14);
+          old.dispose();
+        }
+        o.userData.dentBase = o.geometry.attributes.position.array.slice();
+      }
+      // This mesh's vertices into the object frame the bake used (origin at the object's origin, scale applied).
+      const rel = new THREE.Matrix4().multiplyMatrices(S, inv).multiply(o.matrixWorld), relInv = rel.clone().invert();
+      const pos = o.geometry.attributes.position, base = o.userData.dentBase;
+      for (let i = 0; i < pos.count; i++) {
+        v.set(base[3 * i], base[3 * i + 1], base[3 * i + 2]);
+        if (active.length) {
+          v.applyMatrix4(rel);
+          const d = dentOffset(active, this.frame, [v.x, v.y, v.z]);
+          v.set(v.x + d[0], v.y + d[1], v.z + d[2]).applyMatrix4(relInv);
+        }
+        pos.setXYZ(i, v.x, v.y, v.z);
+      }
+      pos.needsUpdate = true;
+      o.geometry.computeVertexNormals();
+      o.geometry.computeBoundingBox(); o.geometry.computeBoundingSphere();
+    });
   }
 
   /** Dust, debris and sparks off the baked hits at a frame, and the flash of a hard metal hit (Milestone 21). */
@@ -1436,7 +1564,9 @@ export class Stage {
         g.position.set(...samplePos(keys, this.frame));
         const q = sampleQuat(keys, this.frame);
         if (q) g.quaternion.set(q[0], q[1], q[2], q[3]);
-      } else {
+      }
+      this._breakableAt(a, g);
+      if (!a.physics?.baked) {
         if (a.physics?.lift > 0 && (a.physics.mode === "dynamic" || a.physics.mode === "static")) g.position.y += a.physics.lift;
         // Knocked over while editing (Milestone 9): the lean it came to rest with, on top of its heading.
         if (Array.isArray(a.tilt) && a.tilt.length === 4) { g.quaternion.multiply(_tiltQ.set(a.tilt[0], a.tilt[1], a.tilt[2], a.tilt[3])); g.userData.tilted = true; }

@@ -162,7 +162,9 @@ export class PhysicsPanel {
     // Weight (Milestone 21): lower gravity so falling things read bigger and heavier (DNEG's trick on big debris).
     this.bigBtn = btn("Feels bigger", "", "Art-directed weight: gravity at 60%, so things hang and fall like something bigger. Re-simulates a baked scene.");
     this.bigBtn.addEventListener("click", () => { const on = this.bigBtn.getAttribute("aria-pressed") !== "true"; const r = this.stage.setPhysicsFeel?.({ weight: on ? "bigger" : "real" }); this._msg(r?.message || (on ? "Feels bigger: gravity at 60%." : "Real weight.")); this.onBaked(); this.sync(); });
-    this.feelSeg = el("div", "ss-views", this.impBtn, this.bigBtn);
+    this.brkBtn = btn("Breakable", "", "Crates and cardboard boxes come apart: planks or panels glued until a hard hit snaps them, and cardboard dents where it is struck (seeded: the same break every bake). Re-simulates a baked scene.");
+    this.brkBtn.addEventListener("click", () => { const on = this.brkBtn.getAttribute("aria-pressed") !== "true"; const r = this.stage.setPhysicsFeel?.({ breakables: on }); this._msg(r?.message || (on ? "Breakable: crates and boxes break and dent." : "Breakable: off, every prop stays whole.")); this.onBaked(); this.sync(); });
+    this.feelSeg = el("div", "ss-views", this.impBtn, this.bigBtn, this.brkBtn);
     this.feelRow = el("div", "ph-fx", el("span", "", "Feel"), this.feelSeg);
     // Overcrank: shoot the action at k x 24 fps, play it at 24 (slow motion that reads as weight).
     this.ocSel = document.createElement("select");
@@ -250,6 +252,7 @@ export class PhysicsPanel {
     if (feel) {
       this.impBtn.setAttribute("aria-pressed", String(feel.imperfect));
       this.bigBtn.setAttribute("aria-pressed", String(feel.weight === "bigger"));
+      this.brkBtn.setAttribute("aria-pressed", String(feel.breakables !== false));
       this.ocSel.value = String(feel.overcrank);
     }
     const on = info.mode !== "off";
