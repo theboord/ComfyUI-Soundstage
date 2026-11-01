@@ -437,6 +437,10 @@ const CSS = `
 .ss-stage.ss-cl .ss-tabs.ss-toprow .ss-pipe button:not(.ss-stop) { flex:none !important; }
 .ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-topscene { flex:0 1 280px; min-width:96px; }
 .ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow > .ss-toolsbtn:not([aria-pressed=true]) .lbl { display:none; }
+/* Milestone 17 added Presets beside Director: below 1720 px both go icon-only (tooltips keep the words), so the scene picker
+   keeps its room and Done stays on screen (QA round 04: "Don" cut at 1440). */
+.ss-stage.ss-cl:is([data-tw=s], [data-tw=m]) .ss-tabs.ss-toprow :is(.ss-presetsbtn, .ss-dirbtn) .lbl { display:none; }
+.ss-stage.ss-cl:is([data-tw=s], [data-tw=m]) .ss-tabs.ss-toprow :is(.ss-presetsbtn, .ss-dirbtn) { padding:5px 8px !important; }
 .ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-keysbtn { padding:5px 8px !important; }
 /* The App's narrow side panel: the shortcut sheet is for the full workspace ("?" still opens it), so its button gives way. */
 .ss-stage.ss-cl[data-ws=narrow]:not(.ss-full) .ss-tabs.ss-toprow > .ss-keysbtn { display:none !important; }

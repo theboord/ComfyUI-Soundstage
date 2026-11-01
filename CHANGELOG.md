@@ -5,6 +5,11 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**22:51 PDT · QA round 04: Presets get every tab, ⌘Z works from the window, the top bar fits again**
+- Presets now shows all tabs: Camera moves, Lighting, Looks, Action, Edit styles, Recipes and Mine (each tested in the App: apply, then ⌘Z reverts it, no console errors).
+- ⌘Z / ⇧⌘Z right after clicking a card now undoes / redoes the preset (focus was on the card, so the stage never saw the key). No more 404 in the console when you have no saved presets yet.
+- Below 1720 px, Presets and Director are icon-only, so the scene picker keeps its room and Done is no longer cut off at 1440. Visual baselines regenerated. Code: [web/ui/presets.mjs](web/ui/presets.mjs), [web/ui/canvasui.mjs](web/ui/canvasui.mjs).
+
 **20:39 PDT · Presets window: one-click camera moves and lighting** *(Milestone 17)*
 - **Presets** (top bar, or press `V`): a floating, searchable window. **Camera moves** (push in, pull out, orbit, crane up/down, dolly zoom, whip pan, handheld follow, drone reveal, tracking side, car mount) write editable camera keys and a rig onto the current shot; hovering a move plays it on the shot. **Lighting** (golden hour, blue hour, night street, noir hard key, neon, overcast, candle/firelight, studio three-point) sets the time of day, a lighting setup, the prompt words and the grade; on imported footage it readies Paint Studio's Whole frame.
 - Every apply is **one undo step** (⌘Z or the toast's Undo) and reverts the look with the stage. The Director gets a `preset` tool ("make it a crane up at golden hour").

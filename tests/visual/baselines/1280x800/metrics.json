@@ -4,8 +4,51 @@
   "pageScroll": false,
   "pageScrollH": 800,
   "pageOverflowX": false,
-  "clipped": [],
-  "clippedHard": 0,
+  "clipped": [
+   {
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
+   }
+  ],
+  "clippedHard": 7,
   "overlaps": [],
   "scrollers": [],
   "offscreen": [],
@@ -16,8 +59,51 @@
   "pageScroll": false,
   "pageScrollH": 800,
   "pageOverflowX": false,
-  "clipped": [],
-  "clippedHard": 0,
+  "clipped": [
+   {
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
+   }
+  ],
+  "clippedHard": 7,
   "overlaps": [],
   "scrollers": [],
   "offscreen": [],
@@ -28,11 +114,54 @@
   "pageScroll": false,
   "pageScrollH": 800,
   "pageOverflowX": false,
-  "clipped": [],
-  "clippedHard": 0,
+  "clipped": [
+   {
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
+   }
+  ],
+  "clippedHard": 7,
   "overlaps": [],
   "scrollers": [
-   "ss-scriptview 1011/692"
+   "ss-scriptview 1011/694"
   ],
   "offscreen": [],
   "errors": []
@@ -43,6 +172,48 @@
   "pageScrollH": 800,
   "pageOverflowX": false,
   "clipped": [
+   {
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
+   },
    {
     "text": "EXT. DESERT OUTSIDE DRY CREEK",
     "ellipsis": true,
@@ -68,7 +239,7 @@
     "need": 115
    }
   ],
-  "clippedHard": 0,
+  "clippedHard": 7,
   "overlaps": [],
   "scrollers": [],
   "offscreen": [],
@@ -81,13 +252,49 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "EXT. Dry Creek - Main Street",
-    "ellipsis": true,
-    "w": 159,
-    "need": 161
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
    }
   ],
-  "clippedHard": 0,
+  "clippedHard": 7,
   "overlaps": [],
   "scrollers": [],
   "offscreen": [],
@@ -100,10 +307,46 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "EXT. Dry Creek - Main Street",
-    "ellipsis": true,
-    "w": 159,
-    "need": 161
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
    },
    {
     "text": "EXT. DESERT OUTSIDE DRY CREEK",
@@ -124,7 +367,7 @@
     "need": 140
    }
   ],
-  "clippedHard": 0,
+  "clippedHard": 7,
   "overlaps": [],
   "scrollers": [
    "ss-hudp-body 428/410"
@@ -139,10 +382,46 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "EXT. Dry Creek - Main Street",
-    "ellipsis": true,
-    "w": 159,
-    "need": 161
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
    },
    {
     "text": "EXT. DESERT OUTSIDE DRY CREEK",
@@ -169,9 +448,11 @@
     "need": 101
    }
   ],
-  "clippedHard": 0,
+  "clippedHard": 7,
   "overlaps": [],
-  "scrollers": [],
+  "scrollers": [
+   "ss-hudp-body 451/410"
+  ],
   "offscreen": [],
   "errors": []
  },
@@ -180,8 +461,51 @@
   "pageScroll": false,
   "pageScrollH": 800,
   "pageOverflowX": false,
-  "clipped": [],
-  "clippedHard": 0,
+  "clipped": [
+   {
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
+   }
+  ],
+  "clippedHard": 7,
   "overlaps": [],
   "scrollers": [],
   "offscreen": [],
@@ -192,8 +516,51 @@
   "pageScroll": false,
   "pageScrollH": 800,
   "pageOverflowX": false,
-  "clipped": [],
-  "clippedHard": 0,
+  "clipped": [
+   {
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
+   }
+  ],
+  "clippedHard": 7,
   "overlaps": [],
   "scrollers": [],
   "offscreen": [],
@@ -206,13 +573,49 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "EXT. Dry Creek - Main Street",
-    "ellipsis": true,
-    "w": 159,
-    "need": 161
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
    }
   ],
-  "clippedHard": 0,
+  "clippedHard": 7,
   "overlaps": [],
   "scrollers": [],
   "offscreen": [],
@@ -225,13 +628,55 @@
   "pageOverflowX": false,
   "clipped": [
    {
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
+   },
+   {
     "text": "Chase cam (police hood)",
     "ellipsis": true,
     "w": 124,
     "need": 143
    }
   ],
-  "clippedHard": 0,
+  "clippedHard": 7,
   "overlaps": [],
   "scrollers": [],
   "offscreen": [],
@@ -244,13 +689,49 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "EXT. Dry Creek - Main Street",
-    "ellipsis": true,
-    "w": 159,
-    "need": 161
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
    }
   ],
-  "clippedHard": 0,
+  "clippedHard": 7,
   "overlaps": [],
   "scrollers": [],
   "offscreen": [],
@@ -263,13 +744,49 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "EXT. Dry Creek - Main Street",
-    "ellipsis": true,
-    "w": 159,
-    "need": 161
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
    }
   ],
-  "clippedHard": 0,
+  "clippedHard": 7,
   "overlaps": [],
   "scrollers": [
    "ss-hudp-body 593/470"
@@ -284,10 +801,46 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "EXT. Dry Creek - Main Street",
-    "ellipsis": true,
-    "w": 159,
-    "need": 161
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
    },
    {
     "text": "EXT. DESERT OUTSIDE DRY CREEK",
@@ -314,9 +867,11 @@
     "need": 101
    }
   ],
-  "clippedHard": 0,
+  "clippedHard": 7,
   "overlaps": [],
-  "scrollers": [],
+  "scrollers": [
+   "ss-hudp-body 451/410"
+  ],
   "offscreen": [],
   "errors": []
  },
@@ -327,13 +882,49 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "EXT. Dry Creek - Main Street",
-    "ellipsis": true,
-    "w": 159,
-    "need": 161
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
    }
   ],
-  "clippedHard": 0,
+  "clippedHard": 7,
   "overlaps": [],
   "scrollers": [],
   "offscreen": [],
@@ -344,8 +935,51 @@
   "pageScroll": false,
   "pageScrollH": 800,
   "pageOverflowX": false,
-  "clipped": [],
-  "clippedHard": 0,
+  "clipped": [
+   {
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
+   }
+  ],
+  "clippedHard": 7,
   "overlaps": [],
   "scrollers": [],
   "offscreen": [],
@@ -358,19 +992,61 @@
   "pageOverflowX": false,
   "clipped": [
    {
+    "text": "Step 1✓ScriptScriptReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 2✓Cast & LocationsCastReady",
+    "ellipsis": false,
+    "w": 66,
+    "need": 68
+   },
+   {
+    "text": "Step 3✓SetSetReady",
+    "ellipsis": false,
+    "w": 59,
+    "need": 61
+   },
+   {
+    "text": "Step 4✓FrameFrameReady",
+    "ellipsis": false,
+    "w": 76,
+    "need": 78
+   },
+   {
+    "text": "Step 5✓MotionMotionReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 6✓ReviewReviewReady",
+    "ellipsis": false,
+    "w": 82,
+    "need": 84
+   },
+   {
+    "text": "Step 7✓DeliverDeliverReady",
+    "ellipsis": false,
+    "w": 81,
+    "need": 83
+   },
+   {
     "text": "EXT. Dry Creek - Main Street",
     "ellipsis": true,
-    "w": 70,
+    "w": 86,
     "need": 161
    },
    {
     "text": "Tracking, front 3/4",
     "ellipsis": true,
-    "w": 70,
+    "w": 86,
     "need": 105
    }
   ],
-  "clippedHard": 0,
+  "clippedHard": 7,
   "overlaps": [],
   "scrollers": [],
   "offscreen": [],
