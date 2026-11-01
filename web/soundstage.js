@@ -573,6 +573,17 @@ function createStageWidget(node, inputName) {
     },
     generateAudio: makeAudioGenerator(api, { shotId: () => stage.activeShot?.()?.id || "cut" }),
     uploadAudio: makeAudioUploader(api),
+    // Milestone 21: impact sounds on A2 for the stage's baked hits (soundstage/cut/impact_sfx.py).
+    impactCues: async () => {
+      const events = stage.impactEvents?.() || [];
+      if (!events.length) return { cues: [], library: {} };
+      const r = await api.fetchApi("/soundstage/cut/impact_sfx", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ events }) });
+      const j = await r.json();
+      if (j.error) throw new Error(j.error);
+      const library = Object.fromEntries(Object.entries(j.library || {}).map(([m, fs]) => [m, fs.map((f) => ({ ...f,
+        url: api.apiURL(`/view?${new URLSearchParams({ filename: f.filename, subfolder: f.subfolder, type: f.type })}`) }))]));
+      return { cues: j.cues || [], library };
+    },
     renderCut: async (body) => {
       const r = await api.fetchApi("/soundstage/cut/render", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const j = await r.json().catch(() => ({ error: `server answered ${r.status}` }));

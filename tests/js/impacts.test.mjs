@@ -150,3 +150,21 @@ test("impact shake scales with the hit, falls off with distance, and a tripod fe
   assert.equal(peak(hit(), { preset: "off" }), 0);
   assert.deepEqual(impactShake(P, [], { preset: "heavy" }), P);
 });
+
+test("impact sounds land on A2 at the hit's record frame, in every clip that shows it; re-running replaces them", async () => {
+  const { impactClips, withImpactClips } = await import("../../web/cut/impactsfx.mjs");
+  const TL = await import("../../web/cut/timeline.mjs");
+  const project = TL.normalizeProject({ fps: 24, shots: [{ id: "wide", frames: 121 }, { id: "close", frames: 121 }],
+    cut: [{ shot_id: "wide", in: 0, out: 60 }, { shot_id: "close", in: 50, out: 100 }], audio: [{ id: "m", track: 3, url: "x.wav", frames: 100 }] });
+  const lib = { wood: [{ url: "w1.wav", seconds: 0.9 }, { url: "w2.wav", seconds: 0.9 }], metal: [{ url: "m1.wav", seconds: 1.6 }] };
+  const cues = [{ frame: 55, material: "wood", gain_db: -3, variant: 1 }, { frame: 80, material: "metal", gain_db: 0, variant: 0 }, { frame: 110, material: "wood", gain_db: 0, variant: 0 }];
+  const clips = impactClips(project, cues, lib, 24);
+  // Frame 55 is in both clips (wide 0-60 at record 55; close 50-100 at record 60+5); 80 only in close; 110 in neither.
+  assert.deepEqual(clips.map((c) => [c.start_frame, c.label, c.track]), [[55, "wood hit", 2], [65, "wood hit", 2], [90, "metal hit", 2]]);
+  assert.equal(clips[0].url, "w2.wav");
+  assert.equal(clips[0].gain_db, -3);
+  assert.equal(clips[2].frames, Math.round(1.6 * 24));
+  const once = withImpactClips(project, clips), twice = withImpactClips({ ...project, audio: once }, clips);
+  assert.equal(twice.filter((a) => a.meta?.impact).length, 3);
+  assert.ok(twice.some((a) => a.id === "m"), "other audio stays");
+});
