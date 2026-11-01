@@ -8,6 +8,7 @@ POST /soundstage/agent/prompt   {mode, text|command, genre?, scene?} -> {system,
 POST /soundstage/agent/build    {text, genre?, llm_text?}            -> {scene, plan, notes, backend, designs, ms}
 POST /soundstage/agent/edit     {scene, command, llm_text?}          -> {ops, inverse, scene, summary, notes, backend, ms}
 POST /soundstage/agent/validate {scene}                              -> {scene, notes}
+/soundstage/director/*  the Director panel and MCP bridge (director_routes.py)
 """
 from __future__ import annotations
 
@@ -82,6 +83,10 @@ def register(routes=None) -> bool:
         b = await _body(request)
         scene, notes = validate_scene(b.get("scene") or {})
         return web.json_response({"scene": scene, "notes": notes})
+
+    # The Director panel and its MCP bridge (director_routes.py) ride on the same registration.
+    from . import director_routes
+    director_routes.register(routes)
 
     _REGISTERED = True
     return True

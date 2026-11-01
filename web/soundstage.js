@@ -47,6 +47,7 @@ import { NO_SCENE, scopeShots, stageSig, listShots, keyOfShot, packScript, unpac
 import { VIDEO_ACCEPT, cameraRaw, fetchSourceSpec, rawExplainer, sourceLine } from "./ui/sourcespec.mjs";
 import { JobCard, chooseVideoUse, clipSeconds, v2sPlan, wireVideoDrop, isVideoFile } from "./ui/videoimport.mjs";
 import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
+import { mountDirector } from "./agent/directorpanel.mjs";
 import { attachTakeChecks } from "./takecheck/takecheck.mjs";
 
 const CSS = `
@@ -2857,6 +2858,28 @@ function createStageWidget(node, inputName) {
     get stages() { return sceneStages; }, get cuts() { return sceneCuts; }, switchScene, buildScene, newShotIn, getShots,
     openShot, panel: scriptPanel, switchers, persist: persistScript, setUpScene: (sc) => { const f = untouchedFresh(); const r = setUpScene(sc || sceneById(liveKey), { fresh: f }); if (f) freshSig = stageSig(stage.toJSON()); return r; },
     undoSetup: () => undoSetup(), get strip() { return sceneStrip; } };
+
+  // Director's assistant (Milestone 15, web/agent/directorpanel.mjs): talk to the set ("/" or the top bar); it shows a
+  // plan, Apply runs it through these same panels, and every turn can be undone. MCP clients drive it too.
+  node.ssDirector = mountDirector({ root: el, topBar: tabs, before: guideBtn, api, stage,
+    isActive: () => el.isConnected && !!el.getClientRects().length && !el.dataset.tour
+      && (el.contains(document.activeElement) || el.matches(":hover") || el.classList.contains("ss-full")),
+    host: {
+      onLoad: () => { try { syncControls(); syncEnv(); syncLight(); syncShots(); strip.refresh(); } catch { /* rows not built */ } },
+      look: { get: () => look.toJSON(), set: (patch) => look._set(patch) },
+      pipeline, script: node.ssScript, sceneAgent: agent, shotsInOrder: () => pipeline.shots(),
+      renders: (sid) => rendersFor(sid), chosen: (sid) => pipeline.chosen?.[sid],
+      cut: { entries: () => cutEntries(), add: (ids) => strip.appendShots(ids), flatten: () => flattenCut() },
+      snapshot: () => JSON.parse(JSON.stringify({ look: look.toJSON(), approvals: node.properties?.ss_approvals || {}, cut: loadCut() })),
+      restore: (x) => {
+        if (!x) return;
+        look.load(x.look); look.onChange?.(look.toJSON());
+        node.properties = node.properties || {}; node.properties.ss_approvals = x.approvals;
+        saveCut(x.cut); strip.refresh();
+      },
+      play: () => { if (play.textContent === "Play") play.click(); },
+      say: (m) => (status.textContent = m),
+    } });
 
   // ---------------------------------------------------------------- Scene strip
   // One row over ③ Set, ④ Frame and ⑤ Motion: a chip per scene (click = set it up on the stage), the scene's shots.

@@ -1,0 +1,913 @@
+{
+"scene": {
+"version": 2,
+"shot": {
+"frames": 121,
+"fps": 24
+},
+"environment": {
+"set": "street_night",
+"weather": "none",
+"density": 0.5,
+"water_level": 2.5
+},
+"lighting": {
+"mode": "time",
+"hour": 18.2,
+"day_of_year": 300,
+"latitude": 34.05,
+"north_deg": 0,
+"overcast": false,
+"preset": "magic_hour",
+"lights": [
+{
+"id": "sodium_0",
+"type": "practical",
+"name": "Street lamp 1",
+"position": [
+-5.4,
+4.3,
+-22
+],
+"target": [
+-5.4,
+0,
+-22
+],
+"kelvin": 2100,
+"intensity": 2.2,
+"softness": 1,
+"angle": 180
+},
+{
+"id": "sodium_1",
+"type": "practical",
+"name": "Street lamp 2",
+"position": [
+5.4,
+4.3,
+-11
+],
+"target": [
+5.4,
+0,
+-11
+],
+"kelvin": 2100,
+"intensity": 2.2,
+"softness": 1,
+"angle": 180
+},
+{
+"id": "sodium_2",
+"type": "practical",
+"name": "Street lamp 3",
+"position": [
+-5.4,
+4.3,
+0
+],
+"target": [
+-5.4,
+0,
+0
+],
+"kelvin": 2100,
+"intensity": 2.2,
+"softness": 1,
+"angle": 180
+},
+{
+"id": "sodium_3",
+"type": "practical",
+"name": "Street lamp 4",
+"position": [
+5.4,
+4.3,
+11
+],
+"target": [
+5.4,
+0,
+11
+],
+"kelvin": 2100,
+"intensity": 2.2,
+"softness": 1,
+"angle": 180
+},
+{
+"id": "sodium_4",
+"type": "practical",
+"name": "Street lamp 5",
+"position": [
+-5.4,
+4.3,
+22
+],
+"target": [
+-5.4,
+0,
+22
+],
+"kelvin": 2100,
+"intensity": 2.2,
+"softness": 1,
+"angle": 180
+}
+]
+},
+"sun": {
+"azimuth_deg": 250,
+"elevation_deg": -18
+},
+"actors": [
+{
+"id": "getaway",
+"name": "Mara",
+"kind": "woman",
+"height_m": 1.7,
+"keys": [
+{
+"frame": 0,
+"position": [
+1.6,
+0,
+-24
+]
+}
+],
+"mount_id": "sports_car",
+"seat": 0,
+"pose": "sit",
+"position": [
+1.6,
+0,
+-24
+]
+},
+{
+"id": "cop",
+"name": "Deputy Cole",
+"kind": "woman",
+"height_m": 1.72,
+"keys": [
+{
+"frame": 0,
+"position": [
+1.6,
+0,
+-36
+]
+}
+],
+"mount_id": "police_car",
+"seat": 0,
+"pose": "sit",
+"position": [
+1.6,
+0,
+-36
+]
+},
+{
+"id": "sports_car",
+"name": "Sports car",
+"kind": "sports_car",
+"height_m": 1.2,
+"appearance": {
+"color": "#c23b2a"
+},
+"keys": [
+{
+"frame": 0,
+"position": [
+1.6,
+0,
+-24
+]
+},
+{
+"frame": 40,
+"position": [
+-1.4,
+0,
+-5
+]
+},
+{
+"frame": 80,
+"position": [
+1.6,
+0,
+15
+]
+},
+{
+"frame": 120,
+"position": [
+0,
+0,
+35
+]
+}
+],
+"position": [
+1.6,
+0,
+-24
+]
+},
+{
+"id": "police_car",
+"name": "Police car",
+"kind": "police_car",
+"height_m": 1.6,
+"keys": [
+{
+"frame": 0,
+"position": [
+1.6,
+0,
+-36
+]
+},
+{
+"frame": 40,
+"position": [
+1,
+0,
+-16
+]
+},
+{
+"frame": 80,
+"position": [
+-1,
+0,
+4
+]
+},
+{
+"frame": 120,
+"position": [
+0.8,
+0,
+24
+]
+}
+],
+"position": [
+1.6,
+0,
+-36
+]
+}
+],
+"props": [],
+"shots": [
+{
+"id": "crane",
+"name": "Wide crane",
+"setup": "wide",
+"camera_keys": [
+{
+"frame": 0,
+"position": [
+-5,
+6,
+-40
+],
+"target": [
+1.2,
+0.8,
+-28
+],
+"focal_mm": 28
+},
+{
+"frame": 60,
+"position": [
+-5,
+5.5,
+-18
+],
+"target": [
+0,
+0.8,
+-6
+],
+"focal_mm": 28
+},
+{
+"frame": 120,
+"position": [
+-5,
+5,
+4
+],
+"target": [
+0.4,
+0.8,
+22
+],
+"focal_mm": 28
+}
+]
+},
+{
+"id": "tracking",
+"name": "Tracking, front 3/4",
+"setup": "single_a",
+"camera_follow": "sports_car",
+"camera_keys": [
+{
+"frame": 0,
+"position": [
+2.8,
+1.05,
+4.6
+],
+"target": [
+0,
+0.7,
+0
+],
+"focal_mm": 30
+}
+]
+},
+{
+"id": "chase",
+"name": "Chase cam (police hood)",
+"setup": "pov",
+"camera_follow": "police_car",
+"camera_keys": [
+{
+"frame": 0,
+"position": [
+0.2,
+1.45,
+2.2
+],
+"target": [
+0,
+1,
+16
+],
+"focal_mm": 35
+}
+]
+}
+],
+"active_shot": "crane",
+"camera": {
+"position": [
+-5,
+6,
+-40
+],
+"target": [
+1.2,
+0.8,
+-28
+],
+"focal_mm": 28
+}
+},
+"ctx": {
+"shots": [
+{
+"id": "crane",
+"name": "Wide crane"
+},
+{
+"id": "tracking",
+"name": "Tracking, front 3/4"
+},
+{
+"id": "chase",
+"name": "Chase cam (police hood)"
+}
+],
+"scenes": [
+{
+"id": "sc_1",
+"number": "1",
+"heading": "EXT. DESERT OUTSIDE DRY CREEK - DUSK"
+},
+{
+"id": "sc_2",
+"number": "2",
+"heading": "EXT. DRY CREEK - MAIN STREET - NIGHT"
+}
+]
+},
+"plans": {
+"Put Mara in the sports car at night, rain, camera on the hood, she's nervous": {
+"calls": [
+{
+"tool": "mount",
+"args": {
+"target": "Mara",
+"target_id": "getaway",
+"on": "Sports car",
+"on_id": "sports_car"
+},
+"kind": "app",
+"gpu": false,
+"plan": "I'll put Mara in the sports car"
+},
+{
+"tool": "time",
+"args": {
+"preset": "night"
+},
+"kind": "edit",
+"gpu": false,
+"ops": [
+{
+"op": "set_lighting",
+"set": {
+"mode": "time",
+"hour": 18.84,
+"preset": "night",
+"overcast": false
+},
+"sun": {
+"azimuth_deg": 265,
+"elevation_deg": -17.9
+},
+"undo": {
+"op": "set_lighting",
+"set": {
+"mode": "time",
+"hour": 18.2,
+"preset": "magic_hour",
+"overcast": false
+},
+"sun": {
+"azimuth_deg": 250,
+"elevation_deg": -18
+}
+}
+}
+],
+"plan": "I'll move the clock to night (moonlight)"
+},
+{
+"tool": "weather",
+"args": {
+"weather": "rain"
+},
+"kind": "edit",
+"gpu": false,
+"ops": [
+{
+"op": "set_environment",
+"set": {
+"weather": "rain"
+},
+"undo": {
+"op": "set_environment",
+"set": {
+"weather": "none"
+}
+}
+}
+],
+"plan": "I'll bring in rain"
+},
+{
+"tool": "camera_on",
+"args": {
+"target": "Sports car",
+"target_id": "sports_car",
+"view": "hood"
+},
+"kind": "app",
+"gpu": false,
+"plan": "I'll rig the camera on the sports car: hood view"
+},
+{
+"tool": "direct",
+"args": {
+"who": "Mara",
+"who_id": "getaway",
+"note": "nervous"
+},
+"kind": "app",
+"gpu": false,
+"plan": "I'll note for Mara: nervous (it goes into the frame prompt)"
+}
+],
+"plan": [
+"I'll put Mara in the sports car",
+"I'll move the clock to night (moonlight)",
+"I'll bring in rain",
+"I'll rig the camera on the sports car: hood view",
+"I'll note for Mara: nervous (it goes into the frame prompt)"
+],
+"confirm": false,
+"gpu": 0,
+"notes": [],
+"rejected": [],
+"backend": "rules",
+"summary": "put Mara in the sports car; move the clock to night (moonlight); bring in rain; rig the camera on the sports car: hood view; note for Mara: nervous (it goes into the frame prompt)",
+"command": "Put Mara in the sports car at night, rain, camera on the hood, she's nervous"
+},
+"Make shot 2 a slow push-in at 50 mm": {
+"calls": [
+{
+"tool": "select_shot",
+"args": {
+"shot": "tracking"
+},
+"kind": "app",
+"gpu": false,
+"plan": "I'll go to shot 2 (Tracking, front 3/4)"
+},
+{
+"tool": "camera_move",
+"args": {
+"move": "push_in",
+"speed": "slow"
+},
+"kind": "app",
+"gpu": false,
+"plan": "I'll make it a slow push in"
+},
+{
+"tool": "lens",
+"args": {
+"mm": 50.0
+},
+"kind": "app",
+"gpu": false,
+"plan": "I'll put on a 50 mm: a normal lens, close to how the eye sees"
+}
+],
+"plan": [
+"I'll go to shot 2 (Tracking, front 3/4)",
+"I'll make it a slow push in",
+"I'll put on a 50 mm: a normal lens, close to how the eye sees"
+],
+"confirm": false,
+"gpu": 0,
+"notes": [],
+"rejected": [],
+"backend": "rules",
+"summary": "go to shot 2 (Tracking, front 3/4); make it a slow push in; put on a 50 mm: a normal lens, close to how the eye sees",
+"command": "Make shot 2 a slow push-in at 50 mm"
+},
+"Drop a crate stack by the wall and have the car crash through it": {
+"calls": [
+{
+"tool": "stack",
+"args": {
+"what": "crate",
+"near": "storefront",
+"count": 5
+},
+"kind": "edit",
+"gpu": false,
+"ops": [
+{
+"op": "add_object",
+"object": {
+"id": "crate_1",
+"name": "Crate 1",
+"kind": "crate",
+"position": [
+5.38,
+0,
+0.7
+],
+"keys": [
+{
+"frame": 0,
+"position": [
+5.38,
+0,
+0.7
+]
+}
+],
+"height_m": 0.8,
+"rotation_deg": -7,
+"stack": "stack_crate"
+},
+"index": 4,
+"undo": {
+"op": "remove_object",
+"id": "crate_1"
+}
+},
+{
+"op": "add_object",
+"object": {
+"id": "crate_2",
+"name": "Crate 2",
+"kind": "crate",
+"position": [
+6.22,
+0,
+0.7
+],
+"keys": [
+{
+"frame": 0,
+"position": [
+6.22,
+0,
+0.7
+]
+}
+],
+"height_m": 0.8,
+"rotation_deg": 0,
+"stack": "stack_crate"
+},
+"index": 5,
+"undo": {
+"op": "remove_object",
+"id": "crate_2"
+}
+},
+{
+"op": "add_object",
+"object": {
+"id": "crate_3",
+"name": "Crate 3",
+"kind": "crate",
+"position": [
+5.8,
+0,
+1.55
+],
+"keys": [
+{
+"frame": 0,
+"position": [
+5.8,
+0,
+1.55
+]
+}
+],
+"height_m": 0.8,
+"rotation_deg": 7,
+"stack": "stack_crate"
+},
+"index": 6,
+"undo": {
+"op": "remove_object",
+"id": "crate_3"
+}
+},
+{
+"op": "add_object",
+"object": {
+"id": "crate_4",
+"name": "Crate 4",
+"kind": "crate",
+"position": [
+5.8,
+0.8,
+0.7
+],
+"keys": [
+{
+"frame": 0,
+"position": [
+5.8,
+0.8,
+0.7
+]
+}
+],
+"height_m": 0.8,
+"rotation_deg": -1,
+"stack": "stack_crate"
+},
+"index": 7,
+"undo": {
+"op": "remove_object",
+"id": "crate_4"
+}
+},
+{
+"op": "add_object",
+"object": {
+"id": "crate_5",
+"name": "Crate 5",
+"kind": "crate",
+"position": [
+4.95,
+0,
+1.55
+],
+"keys": [
+{
+"frame": 0,
+"position": [
+4.95,
+0,
+1.55
+]
+}
+],
+"height_m": 0.8,
+"rotation_deg": 6,
+"stack": "stack_crate"
+},
+"index": 8,
+"undo": {
+"op": "remove_object",
+"id": "crate_5"
+}
+}
+],
+"plan": "I'll stack 5 crates by the storefront"
+},
+{
+"tool": "physics",
+"args": {
+"target": "5 crates",
+"target_ids": [
+"crate_1",
+"crate_2",
+"crate_3",
+"crate_4",
+"crate_5"
+],
+"mode": "dynamic"
+},
+"kind": "app",
+"gpu": false,
+"plan": "I'll make the 5 crates dynamic"
+},
+{
+"tool": "drive",
+"args": {
+"target": "Sports car",
+"target_id": "sports_car",
+"through": "5 crates",
+"through_ids": [
+"crate_1",
+"crate_2",
+"crate_3",
+"crate_4",
+"crate_5"
+],
+"speed": "fast"
+},
+"kind": "app",
+"gpu": false,
+"plan": "I'll drive the sports car straight through the 5 crates"
+},
+{
+"tool": "bake",
+"args": {},
+"kind": "app",
+"gpu": false,
+"plan": "I'll simulate the physics and bake it into the shot"
+}
+],
+"plan": [
+"I'll stack 5 crates by the storefront",
+"I'll make the 5 crates dynamic",
+"I'll drive the sports car straight through the 5 crates",
+"I'll simulate the physics and bake it into the shot"
+],
+"confirm": false,
+"gpu": 0,
+"notes": [],
+"rejected": [],
+"backend": "rules",
+"summary": "stack 5 crates by the storefront; make the 5 crates dynamic; drive the sports car straight through the 5 crates; simulate the physics and bake it into the shot",
+"command": "Drop a crate stack by the wall and have the car crash through it"
+},
+"Use the J-turn stunt": {
+"calls": [
+{
+"tool": "stunt",
+"args": {
+"stunt": "reverse_jturn",
+"target": "Sports car",
+"target_id": "sports_car"
+},
+"kind": "app",
+"gpu": false,
+"plan": "I'll give the sports car the Reverse J-turn stunt"
+}
+],
+"plan": [
+"I'll give the sports car the Reverse J-turn stunt"
+],
+"confirm": false,
+"gpu": 0,
+"notes": [],
+"rejected": [],
+"backend": "rules",
+"summary": "give the sports car the Reverse J-turn stunt",
+"command": "Use the J-turn stunt"
+},
+"Make the first frame warmer": {
+"calls": [
+{
+"tool": "grade",
+"args": {
+"warmth": 0.25
+},
+"kind": "app",
+"gpu": false,
+"plan": "I'll grade the frames warmer (+0.25)"
+}
+],
+"plan": [
+"I'll grade the frames warmer (+0.25)"
+],
+"confirm": false,
+"gpu": 0,
+"notes": [],
+"rejected": [],
+"backend": "rules",
+"summary": "grade the frames warmer (+0.25)",
+"command": "Make the first frame warmer"
+},
+"Render a draft of shots 1 to 3": {
+"calls": [
+{
+"tool": "render",
+"args": {
+"kind": "draft",
+"shots": [
+"crane",
+"tracking",
+"chase"
+]
+},
+"kind": "app",
+"gpu": true,
+"plan": "I'll render a draft of shot 1 (Wide crane), shot 2 (Tracking, front 3/4), shot 3 (Chase cam (police hood)) (GPU, about 2-4 min each)"
+}
+],
+"plan": [
+"I'll render a draft of shot 1 (Wide crane), shot 2 (Tracking, front 3/4), shot 3 (Chase cam (police hood)) (GPU, about 2-4 min each)"
+],
+"confirm": true,
+"gpu": 1,
+"notes": [],
+"rejected": [],
+"backend": "rules",
+"summary": "render a draft of shot 1 (Wide crane), shot 2 (Tracking, front 3/4), shot 3 (Chase cam (police hood)) (GPU, about 2-4 min each)",
+"command": "Render a draft of shots 1 to 3"
+},
+"Cut it together with the best takes": {
+"calls": [
+{
+"tool": "cut",
+"args": {},
+"kind": "app",
+"gpu": false,
+"plan": "I'll cut the scene together with each shot's best take"
+}
+],
+"plan": [
+"I'll cut the scene together with each shot's best take"
+],
+"confirm": false,
+"gpu": 0,
+"notes": [],
+"rejected": [],
+"backend": "rules",
+"summary": "cut the scene together with each shot's best take",
+"command": "Cut it together with the best takes"
+},
+"approve shot 1": {
+"calls": [
+{
+"tool": "approve",
+"args": {
+"shot": "crane",
+"status": "approved"
+},
+"kind": "app",
+"gpu": false,
+"plan": "I'll mark shot 1 (Wide crane)'s current take approved"
+}
+],
+"plan": [
+"I'll mark shot 1 (Wide crane)'s current take approved"
+],
+"confirm": false,
+"gpu": 0,
+"notes": [],
+"rejected": [],
+"backend": "rules",
+"summary": "mark shot 1 (Wide crane)'s current take approved",
+"command": "approve shot 1"
+}
+}
+}

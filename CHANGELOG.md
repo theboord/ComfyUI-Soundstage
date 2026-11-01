@@ -5,6 +5,13 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-10-31
 
+**19:55 PDT · The Director: talk to the set, and drive it from Claude over MCP** *(Milestone 15)*
+- **Director panel** (top bar, or press `/`): say or type what you want ("put Mara in the sports car at night, rain, camera on the hood, she's nervous"). It shows a short plan; **Apply** (Enter, or say "yes") runs each step through the App's own controls and every turn has **Undo this**. Talk-through mode explains the choice in film terms and offers the next step.
+- **Tool layer:** 33 typed tools (cast and props, crate stacks, mounts, time and weather, lights, coverage, lens, animated camera moves, rigs, hood mounts, car stunts, drive-through crashes, physics and bake, performance notes, the grade, script scenes, frames, drafts and finals, approvals, the cut). Every call is validated against the live scene; renders always ask first unless you say "go".
+- **Local and offline by default:** Qwen3.5 4B through ComfyUI's queue (about 2.5 s warm), an Ollama model on your computer, or the rules; while a render holds the GPU it plans from the rules instead of waiting. An API model is opt-in only (`SOUNDSTAGE_PARTNER_MODELS=1`).
+- **Voice:** hold `` ` `` (or Space in the panel) to talk: the browser's speech recognition, or Whisper on the server (offline, open weights).
+- **MCP server** (`tools/soundstage_mcp.py`, 36 tools): Claude Desktop / Code reads the set, proposes (dry run) and applies in the open App, undoable; GPU work needs `confirm_gpu`. See [docs/mcp.md](docs/mcp.md) and [docs/director.md](docs/director.md).
+
 **19:50 PDT · Takes that check themselves, plus trust signals** *(Milestone 16)*
 - **Self-checking takes.** Every draft and final is checked on the CPU right after it lands (about 7 s, no models): black frames, frozen or stuttering stretches, jumps and pops between frames, heavy smear, face drift (YuNet if a node pack already ships it, else OpenCV's Haar), and **cars that face the wrong way**: the stage knows every car's keyed path, so the lit lamp pair the take shows (red tail lights or white/amber headlights) is compared with the end that should face the camera. Chips sit under the Ladder's bar and on Dailies cards and take rows ("✓ clean", "⚠ freeze 2.1–2.6 s", "⚠ Sports car faces the wrong way"); a click jumps the Ladder there. **Re-roll** (new seed) asks first and says what it costs in GPU time.
 - On the pod's 212 existing drafts and finals: the old backwards red-car take `final_00028_` (and its draft and sound version) is flagged; the new `final_sound_00047_` is clean. Cars too small, half hidden, seen through a windscreen or in profile get no verdict rather than a guess.
