@@ -1155,5 +1155,36 @@
   "scrollers": [],
   "offscreen": [],
   "errors": []
+ },
+ "presets_panel": {
+  "view": "1440x900",
+  "pageScroll": false,
+  "pageScrollH": 900,
+  "pageOverflowX": false,
+  "clipped": [
+   {
+    "text": "EXT. Dry Creek - Main Street",
+    "ellipsis": true,
+    "w": 76,
+    "need": 161
+   },
+   {
+    "text": "Tracking, front 3/4",
+    "ellipsis": true,
+    "w": 76,
+    "need": 105
+   }
+  ],
+  "clippedHard": 0,
+  "overlaps": [
+   {
+    "a": "ss-insp ss-hudp Properties Object Ca",
+    "b": "ss-pre PresetsApplies to sh",
+    "px": "77x569"
+   }
+  ],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
  }
 }

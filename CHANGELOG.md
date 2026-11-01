@@ -5,6 +5,14 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-01
 
+**06:05 PST · Presets: every card previews your own stage, hover to try it on the shot, keyboard and search across tabs** *(Milestone 17 polish)*
+- **Real previews.** Each card now shows the current stage in clay with that preset applied: camera moves and stunts loop, lighting and looks are stills. A hidden scratch copy of the scene renders them (the shot, its history and undo are never touched), visible cards first, a slice at a time; they're cached per scene, so reopening or undoing back shows them at once. The drawn preview stands in until each is ready. The window opens in about 50–215 ms.
+- **Hover = preview on the shot.** Camera moves fly the real camera; lights, looks and stunts show over the shot ("Preview · Night street"); move off the card and the shot is back.
+- **Keys and search.** ← → ↑ ↓ move between cards (focusing one previews it), Enter applies, Down from the search box enters the grid; search covers every tab, each hit tagged with its tab and the tabs show match counts. Fixed: ← → in the window also stepped the scene strip to another scene.
+- **Toast:** "*Crane up* · Applied to shot 2 · Undo".
+- Checked in a browser: every tab, apply + ⌘Z for camera, light, look, stunt and edit cards, the toast's Undo, saving / loading / applying / deleting your own presets, hover previews restoring the shot, 0 console errors (share/Milestone17_Presets/, with a recording). Visual guard: new `presets_panel` screen (baselines added); every other screen PASS.
+- Code: [web/presets/livethumbs.mjs](web/presets/livethumbs.mjs), [web/ui/presets.mjs](web/ui/presets.mjs), [web/script/scenestrip.mjs](web/script/scenestrip.mjs), [tools/qa/visual_baseline.mjs](tools/qa/visual_baseline.mjs). Tests: [tests/js/presets_live.test.mjs](tests/js/presets_live.test.mjs).
+
 **05:05 PST · QA round 05: the timeline editor fits the window, and the wheel scrolls like an NLE**
 - **No scrolling:** at 1280×800 the audio tracks ended at y=1028. The editor now fills the CUT view exactly (checked at 1280×800, 1440×900, 1920×1080): the tracks keep their natural height when there's room and squeeze toward compact (V1 34 px, audio 22 px) when there isn't; the viewer takes the rest. **A ▾** folds A1–A4 to thin lanes so V1 gets its height back. The shortcuts line is one line (full text on hover).
 - **Wheel:** scrolls the tracks up/down when they overflow (otherwise scrolls time); Ctrl/⌘+wheel or a trackpad pinch zooms time; Shift+wheel scrolls time. Before, the plain wheel zoomed and A1–A4 were out of reach.

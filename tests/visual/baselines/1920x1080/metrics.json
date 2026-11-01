@@ -1043,5 +1043,17 @@
   "scrollers": [],
   "offscreen": [],
   "errors": []
+ },
+ "presets_panel": {
+  "view": "1920x1080",
+  "pageScroll": false,
+  "pageScrollH": 1080,
+  "pageOverflowX": false,
+  "clipped": [],
+  "clippedHard": 0,
+  "overlaps": [],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
  }
 }

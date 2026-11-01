@@ -34,7 +34,7 @@ test("visual guard: a new overlap between floating panels and a button cut by th
 
 test("visual guard: the fixed screen list covers the seven steps and the key panels", () => {
   const names = SCREENS.map((s) => s.name);
-  for (const n of ["firstrun_card", "canvas_hidden", "scriptsync", "import_video_chooser", "motion_follow_ripple", "physics_panel", "deliver_dcc_kit"]) assert.ok(names.includes(n), n);
+  for (const n of ["firstrun_card", "canvas_hidden", "scriptsync", "import_video_chooser", "motion_follow_ripple", "physics_panel", "presets_panel", "deliver_dcc_kit"]) assert.ok(names.includes(n), n);
   assert.equal(names.filter((n) => /^step_\d_/.test(n)).length, 7);
   assert.equal(new Set(names).size, names.length);
 });
