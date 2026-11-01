@@ -648,6 +648,7 @@ export class DailiesBin {
     // The review badge judges the shot's current take (latest final, else draft, else the circled frame).
     if (r.judged) approvalBadge(card.querySelector(".dl-th"), r.judged, { shotId: r.id, place: true,
       label: `${clipName(this.scene, r.idx, r.judged.n, r.shot)} · ${KIND_LABEL[r.judged.kind]}` });
+    if (hero) this.o.decorateTake?.(card.querySelector(".dl-th"), hero, r.shot, "card");   // take checks (Milestone 16)
     this._wireCard(card, r);
     return card;
   }
@@ -658,7 +659,7 @@ export class DailiesBin {
     // Newest first, like a bin sorted by take.
     for (const t of [...r.takes].reverse()) {
       const name = clipName(this.scene, r.idx, t.n, r.shot);
-      pop.append(h("div", { class: "row" },
+      const row = pop.appendChild(h("div", { class: "row" },
         h("button", { type: "button", class: "op", title: `Open ${name}`, "aria-label": `Open take ${t.n}, ${KIND_LABEL[t.kind]}`,
           on: { click: (e) => { e.stopPropagation(); this.o.onOpenTake(r.shot, t); } } },
           h("span", { class: "mini", style: t.thumb ? `background-image:url("${cssUrl(t.thumb)}")` : "" }),
@@ -667,6 +668,7 @@ export class DailiesBin {
         h("button", { type: "button", class: "cir", "aria-pressed": String(t.circled), title: t.circled ? "Uncircle" : `Circle take ${t.n}`,
           "aria-label": t.circled ? `Uncircle take ${t.n}` : `Circle take ${t.n}`,
           on: { click: (e) => { e.stopPropagation(); this.circle(r.shot, t.circled ? null : t); } } }, String(t.n))));
+      this.o.decorateTake?.(row.querySelector(".lb"), t, r.shot, "row");
     }
     return pop;
   }

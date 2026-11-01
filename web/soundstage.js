@@ -47,6 +47,7 @@ import { NO_SCENE, scopeShots, stageSig, listShots, keyOfShot, packScript, unpac
 import { VIDEO_ACCEPT, cameraRaw, fetchSourceSpec, rawExplainer, sourceLine } from "./ui/sourcespec.mjs";
 import { JobCard, chooseVideoUse, clipSeconds, v2sPlan, wireVideoDrop, isVideoFile } from "./ui/videoimport.mjs";
 import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
+import { attachTakeChecks } from "./takecheck/takecheck.mjs";
 
 const CSS = `
 .ss-stage { display:flex; flex-direction:column; gap:6px; padding:6px; background:#16191e; border-radius:6px;
@@ -1394,6 +1395,7 @@ function createStageWidget(node, inputName) {
   async function importVideo(f) {
     if (!isVideoFile(f)) { status.textContent = `${f.name} isn't a video clip.`; return; }
     if (videoBusy) { status.textContent = "Still bringing in the last video…"; return; }
+    if (await takeChecks?.maybeRestore(f)) { if (view.hidden) showView("stage"); return; }   // a Soundstage take: its recipe is inside
     const cur = stage.selectedInfo?.();
     const sel = cur && isPerson(cur.kind) ? cur : null;
     const anyone = sel || people()[0];
@@ -2198,6 +2200,10 @@ function createStageWidget(node, inputName) {
     openCast: () => pipeline?.go("cast"),
   });
   for (const v of Object.values(pipeline.views)) el.append(v);
+  // Milestone 16: takes that check themselves (Ladder + Dailies chips, Re-roll), Ready chips, Run estimates, the recipe in the MP4.
+  var takeChecks = attachTakeChecks({ app, api, stage, ladder, pipeline, look, say: (m) => (status.textContent = m),
+    restoreScene: (sc) => { (widget.options?.setValue || ((v) => widget.setValue(v, {})))(JSON.stringify(sc)); nudgeTracker?.(); } });
+  node.ssTakeChecks = takeChecks;   // scripts and tests
   node.ssPipeline = pipeline;
   node.ssCut = cut;
   node.ssLadder = ladder;
@@ -2561,6 +2567,7 @@ function createStageWidget(node, inputName) {
     // Stills have no length of their own: ScriptSync times them by the shot's length on the stage.
     getSeconds: () => { const sh = stage.toJSON().shot || {}; return (sh.frames || 97) / (sh.fps || 24); },
     onStatus: (m) => (status.textContent = m),
+    decorateTake: (host, take, shot, where) => takeChecks?.decorate(host, take, shot, where),
   });
 
   node.ssDailies = { get bin() { return dailies; }, get lined() { return dailies?.lined || null; }, openScriptSync: (id) => openScriptSync(id) };   // scripts and tests
