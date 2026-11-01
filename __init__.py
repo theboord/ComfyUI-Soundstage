@@ -10,7 +10,7 @@ except ImportError:
     pass
 
 # Optional feature routes (each module exposes an idempotent register()).
-for _mod in ("vcam", "agent.routes", "cine.routes", "assets3d.routes", "layerpack.download", "floorplan.routes", "video2stage.routes", "cut.assemble", "takecheck.routes"):
+for _mod in ("vcam", "agent.routes", "cine.routes", "assets3d.routes", "layerpack.download", "floorplan.routes", "video2stage.routes", "cut.assemble", "takecheck.routes", "presets_agent"):
     try:
         import importlib as _il
         _il.import_module(f"{__name__}.soundstage.{_mod}").register()
