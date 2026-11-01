@@ -262,3 +262,71 @@ test("arrow keys inside the Presets window move between cards: the scene strip l
   SceneStrip.prototype._onKey.call(strip, ev(false));
   assert.equal(stepped, 1, "elsewhere → still steps scenes");
 });
+
+// ---- non-blocking previews: one step per slot inside the budget, halt() between steps, no constructor draw
+test("previews work one step per slot: setup, the preset's apply and frames over budget each wait for the next slot", async () => {
+  const { lt, get, scratches } = await setup();
+  let slots = 0;
+  lt.slot = () => { slots++; return new Promise((r) => setTimeout(r, 0)); };
+  lt.budgetMs = 0; lt.frameMs = 1;   // any frame "fills" a slot: one frame per slot
+  lt.sync(); lt.want([get("push_in")]); await drain(lt);
+  assert.ok(lt.isCurrent("push_in"));
+  assert.equal(scratches[0].renders.length, LOOP_FRAMES);
+  // 1 start + scratch + scene load + the apply + (LOOP_FRAMES - 1) frame waits
+  assert.ok(slots >= 3 + LOOP_FRAMES, `slots ${slots}`);
+  assert.equal(THUMB_W * 9, THUMB_H * 16, "16:9 preview targets");
+  assert.ok(THUMB_W < 240, "smaller render targets than the card canvas used to be");
+});
+
+test("several frames share a slot while they fit the budget", async () => {
+  const { lt, get } = await setup();
+  let slots = 0;
+  lt.slot = () => { slots++; return new Promise((r) => setTimeout(r, 0)); };
+  lt.budgetMs = 1e6;
+  lt.sync(); lt.want([get("push_in")]); await drain(lt);
+  assert.ok(lt.isCurrent("push_in"));
+  assert.ok(slots <= 5, `all ten frames in one slot (${slots} slots)`);
+});
+
+test("halt() (the panel closing) stops a preset mid-render: nothing stored, queue empty, the loop ends", async () => {
+  const { lt, get, scratches } = await setup();
+  lt.budgetMs = 0; lt.frameMs = 1;
+  let n = 0;
+  lt.slot = () => { if (++n === 6) lt.halt(); return new Promise((r) => setTimeout(r, 0)); };
+  lt.sync(); lt.want([get("push_in"), get("crane_up")]); await drain(lt);
+  assert.equal(lt.queue.length, 0);
+  assert.equal(lt.running, false);
+  assert.equal(lt.isCurrent("push_in"), false);
+  assert.ok(scratches[0].renders.length < LOOP_FRAMES);
+  // Reopening queues it again and finishes.
+  lt.slot = () => new Promise((r) => setTimeout(r, 0));
+  lt.want([get("push_in")]); await drain(lt);
+  assert.ok(lt.isCurrent("push_in"));
+});
+
+test("the scratch stage skips the Stage constructor's synchronous first draw; the user's stage keeps render()", async () => {
+  class DrawStage extends FakeStage { constructor(s) { super(s); this.render(); } render() { DrawStage.draws++; } }
+  DrawStage.draws = 0;
+  const catalog = await loadCatalog();
+  const user = new DrawStage(SCENE);
+  assert.equal(DrawStage.draws, 1);
+  const lt = new LiveThumbs({ stage: user, setups: SETUPS, doc: fakeDoc(), budgetMs: 1000,
+    makeRunner: (s) => new PresetRunner({ stage: s, host: { confirm: async () => false }, catalog, setups: SETUPS }) });
+  lt._ensureScratch();
+  assert.equal(DrawStage.draws, 1, "no draw while constructing the scratch copy");
+  user.render();
+  assert.equal(DrawStage.draws, 2, "render() restored");
+});
+
+test("warm() pre-builds the scratch stage, loads the scene and is ready before any card is queued; each step waits for idle", async () => {
+  const { lt, scratches } = await setup();
+  let idles = 0;
+  assert.equal(lt.ready, false);
+  const ok = await lt.warm({ idle: async () => { idles++; } });
+  assert.equal(scratches.length, 1);
+  assert.equal(scratches[0].loads, 1);
+  assert.ok(idles >= 3, `three idle steps (${idles})`);
+  assert.equal(lt._compiledFor === lt.baseStr || !scratches[0].renderer.compileAsync, true);
+  assert.equal(ok, lt.ready);
+  assert.equal(scratches[0].renders.length, 0, "warming draws nothing");
+});
