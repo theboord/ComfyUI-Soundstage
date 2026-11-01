@@ -5,6 +5,7 @@ import { icon } from "../ui/icons.mjs";
 // The live solver switch (Milestone 10): CPU (XPBD, physics.mjs) or GPU (AVBD on WebGPU, physics_avbd.mjs). Importing
 // it also registers the GPU backend with physengine.mjs and puts the "Physics: CPU / GPU" badge on the stage.
 import * as avbd from "./physics_avbd.mjs";
+import { MATERIALS } from "./impacts.mjs";
 
 const CSS = `
 .ss-stage .ss-phys { display:flex; flex-direction:column; gap:8px; font-size:12px; }
@@ -28,7 +29,11 @@ const CSS = `
 .ss-stage .ss-phys .ph-msg { color:var(--ss-text); line-height:1.35; min-height:1.35em; }
 .ss-stage .ss-phys .ph-eng { display:grid; grid-template-columns:64px minmax(0,1fr); gap:6px; align-items:center; color:var(--ss-muted); }
 .ss-stage .ss-phys .ph-eng .ss-views button { white-space:nowrap; }
-.ss-stage .ss-phys .ph-all { align-self:flex-start; font-size:11px !important; padding:2px 10px !important; }`;
+.ss-stage .ss-phys .ph-all { align-self:flex-start; font-size:11px !important; padding:2px 10px !important; }
+.ss-stage .ss-phys .ph-mat { display:grid; grid-template-columns:64px minmax(0,1fr); gap:6px; align-items:center; color:var(--ss-muted); }
+.ss-stage .ss-phys .ph-mat select { width:100%; min-width:0; }
+.ss-stage .ss-phys .ph-fx { display:grid; grid-template-columns:64px minmax(0,1fr); gap:6px; align-items:center; color:var(--ss-muted); }
+.ss-stage .ss-phys .ph-fx .ss-views button { white-space:nowrap; padding-left:4px !important; padding-right:4px !important; }`;
 
 const MODES = [["dynamic", "Dynamic", "Falls, tumbles and gets knocked over"], ["static", "Static", "Stays put; things hit it and land on it"],
   ["off", "Off", "Ignored by the simulation"]];
@@ -108,7 +113,7 @@ export class PhysicsPanel {
       const info = this.stage.physicsInfo(this.id);
       if (!info) return;
       const ids = this.stage.physicsKindIds(info.kind);
-      const p = { mode: info.mode, mass: info.mass, bounce: info.bounce, friction: info.friction };
+      const p = { mode: info.mode, mass: info.mass, bounce: info.bounce, friction: info.friction, material: info.material };
       this.stage.setPhysics(ids, p);
       this._msg(`${ids.length} × ${info.kind.replace(/_/g, " ")}: ${info.mode}, ${fmtMass(info.mass)}.`);
       this.sync();
@@ -133,10 +138,29 @@ export class PhysicsPanel {
     this.engSeg.append(this.engBtns.xpbd, this.engBtns.avbd);
     this.eng = el("div", "ph-eng", el("span", "", "Live solver"), this.engSeg);
     this.eng.title = "Which solver runs live physics while you drag, push and drop things (Simulate & bake always runs on the CPU)";
+    // What it is made of (Milestone 21): the dust colour, sparks, the hit's sound and the prompt's verbs.
+    this.matSel = document.createElement("select");
+    for (const m of MATERIALS.filter((x) => x !== "ground" && x !== "flesh")) this.matSel.append(new Option(m[0].toUpperCase() + m.slice(1), m));
+    this.matSel.addEventListener("pointerdown", (e) => e.stopPropagation());
+    this.matSel.addEventListener("change", () => this._set({ material: this.matSel.value }));
+    this.matRow = el("label", "ph-mat", el("span", "", "Material"), this.matSel);
+    this.matRow.title = "What it's made of: sets the dust, debris and sparks off its hits, their sound on A2 and the words the video prompt uses (cardboard crumples, wood splinters, metal dents)";
+    // Impact FX off the baked hits, for the whole scene: dust puffs, debris chips, sparks + a light flash on metal.
+    this.fxSeg = el("div", "ss-views");
+    this.fxBtns = {};
+    for (const [k, label, tip] of [["dust", "Dust", "Dust puffs billow off every hit, sized by how hard it was"],
+      ["debris", "Debris", "Chips and splinters thrown off the harder hits"], ["sparks", "Sparks", "Sparks and a brief light flash on metal hits"]]) {
+      const b = btn(label, "", tip);
+      b.addEventListener("click", () => { const on = b.getAttribute("aria-pressed") !== "true"; this.stage.setImpactFx?.({ [k]: on }); this.sync(); });
+      this.fxBtns[k] = b;
+      this.fxSeg.append(b);
+    }
+    this.fxRow = el("div", "ph-fx", el("span", "", "Impact FX"), this.fxSeg);
+    this.fxRow.title = "Secondary elements off the baked hits, in the clay and the guide the video follows (never in Depth or the matte)";
     this.note = el("div", "ph-note");
     this.msg = el("div", "ph-msg");
     this.msg.setAttribute("aria-live", "polite");
-    this.el.append(head, this.seg, this.mass.r, this.bounce.r, this.friction.r, this.lift.r, this.all, el("div", "ph-acts", this.simBtn, this.clearBtn), this.eng, this.note, this.msg);
+    this.el.append(head, this.seg, this.mass.r, this.bounce.r, this.friction.r, this.lift.r, this.matRow, this.all, el("div", "ph-acts", this.simBtn, this.clearBtn), this.fxRow, this.eng, this.note, this.msg);
   }
 
   /** Switch live physics to the GPU: bring WebGPU up, fall back to the CPU (and say why) if it can't run here. */
@@ -203,6 +227,10 @@ export class PhysicsPanel {
     set(this.bounce, info.bounce);
     set(this.friction, info.friction);
     set(this.lift, info.lift);
+    if (info.material) this.matSel.value = info.material;
+    this.matRow.setAttribute("aria-disabled", String(info.mode === "off"));
+    const fx = this.stage.impactFxInfo?.();
+    if (fx) for (const [k, b] of Object.entries(this.fxBtns)) b.setAttribute("aria-pressed", String(!!fx[k]));
     const on = info.mode !== "off";
     for (const rr of [this.bounce, this.friction]) rr.r.setAttribute("aria-disabled", String(!on));
     this.mass.r.setAttribute("aria-disabled", String(info.mode !== "dynamic"));

@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { simulate } from "../../web/stage/physics.mjs";
-import { mergeEvents, eventsFromTracks, materialOf, strengthOf } from "../../web/stage/impacts.mjs";
+import { mergeEvents, eventsFromTracks, materialOf, strengthOf, impactParticles, impactFlash } from "../../web/stage/impacts.mjs";
 import { impactEvents } from "../../web/stage/physengine.mjs";
 
 const crate = (id, pos, extra = {}) => ({ id, shape: "box", half: [0.4, 0.4, 0.4], center: [0, 0.4, 0], dynamic: true, mass: 25,
@@ -73,4 +73,47 @@ test("materials come from the kind, an override wins, and strength grows with im
   assert.equal(materialOf({ kind: "crate", physics: { material: "nonsense" } }), "wood");
   assert.ok(strengthOf({ impulse: 400 }) > strengthOf({ impulse: 100 }));
   assert.ok(Math.abs(strengthOf({ impulse: 130 }) - 1) < 1e-9);
+});
+
+const ev = (over = {}) => ({ frame: 24, t: 1, pos: [0, 0, 0], normal: [0, 1, 0], impulse: 130, speed: 4.4, a: "c", b: "__ground", mat_a: "wood", mat_b: "ground", ...over });
+
+test("impact particles are a pure function of the events and the frame (deterministic, seeded)", () => {
+  const E = [ev(), ev({ frame: 40, t: 40 / 24, pos: [2, 0.4, 1], normal: [1, 0, 0], impulse: 300, speed: 9, b: "car", mat_b: "metal" })];
+  for (const F of [24, 26, 30, 41, 60]) assert.deepEqual(impactParticles(E, F), impactParticles(E, F));
+  assert.notDeepEqual(impactParticles(E, 30, { seed: 1 }), impactParticles(E, 30, { seed: 2 }));
+  assert.equal(impactParticles(E, 23).length, 0, "nothing before the first hit");
+  assert.ok(impactParticles(E, 30).some((q) => q.kind === "dust"));
+  assert.ok(impactParticles(E, 300).length < impactParticles(E, 30).length, "dust fades away");
+});
+
+test("bigger hits throw more dust and debris; sparks only off metal; switches turn layers off", () => {
+  const soft = impactParticles([ev({ impulse: 60, speed: 2.5 })], 30), hard = impactParticles([ev({ impulse: 500, speed: 9 })], 30);
+  const n = (L, k) => L.filter((q) => q.kind === k).length;
+  assert.ok(n(hard, "dust") > n(soft, "dust"), `${n(soft, "dust")} -> ${n(hard, "dust")}`);
+  assert.ok(n(hard, "debris") > n(soft, "debris"));
+  assert.equal(n(hard, "spark"), 0, "wood on the ground: no sparks");
+  const metal = impactParticles([ev({ impulse: 400, speed: 10, mat_a: "metal", mat_b: "concrete" })], 26);
+  assert.ok(n(metal, "spark") > 5);
+  assert.equal(n(impactParticles([ev({ impulse: 400, speed: 10, mat_b: "metal" })], 26), "spark"), 0, "a car into a wooden crate: splinters, no sparks");
+  const off = impactParticles([ev({ impulse: 400, speed: 10, mat_b: "metal" })], 26, { dust: false, debris: false, sparks: false });
+  assert.equal(off.length, 0);
+  // Every particle is above the floor, with a sane size and opacity.
+  for (const q of [...hard, ...metal]) {
+    assert.ok(q.p[1] >= 0.01 && q.size > 0 && q.size < 5 && q.alpha >= 0 && q.alpha <= 1, JSON.stringify(q));
+  }
+  // Cardboard dust is tan, concrete grey.
+  const tan = impactParticles([ev({ mat_a: "cardboard", mat_b: "cardboard" })], 30).find((q) => q.kind === "dust").color;
+  assert.ok(tan[0] > tan[2] + 0.15, `tan ${tan}`);
+});
+
+test("the light flash is brief, only on hard metal hits, and scales with the hit", () => {
+  const m = ev({ impulse: 400, speed: 10, mat_a: "metal", mat_b: "metal" });
+  const at = (F, e = m) => impactFlash([e], F).intensity;
+  assert.equal(at(23), 0);
+  assert.ok(at(24) > 1);
+  assert.ok(at(26) < at(24) * 0.5, "falls off in a couple of frames");
+  assert.equal(at(40), 0);
+  assert.equal(impactFlash([ev()], 24).intensity, 0, "wood on the ground: no flash");
+  assert.equal(impactFlash([ev({ impulse: 400, speed: 10, mat_b: "metal" })], 24).intensity, 0, "wood into a car: no flash");
+  assert.ok(at(24, { ...m, impulse: 100 }) < at(24));
 });
