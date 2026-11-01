@@ -10,6 +10,7 @@
 // confirm(message) -> Promise<bool> · say(msg).
 import { cameraKeys, lightingPlan, gradePatch, crateStack, driveKeys, throwKeys, editStyleCut, userCameraKeys,
   VEHICLE_KINDS, PERSON_KINDS, RIDE_KINDS, LOW_PROPS } from "./engine.mjs";
+import { imperfectStack, idSeed } from "../stage/impacts.mjs";
 
 const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
 const DEG = Math.PI / 180;
@@ -310,11 +311,17 @@ export class PresetRunner {
       delete car.position_end;
       const at = [start[0] + dir[0] * 12, 0, start[2] + dir[2] * 12];
       const ids = [];
-      crateStack(at, deg, p.apply.count || 6).forEach((pos, i) => {
+      // Imperfect by default (Milestone 21): crates of slightly different sizes, a little off their marks and turned
+      // a few degrees, each sitting on the tallest crate under it, so the pile isn't a perfect video-game grid.
+      const pts = crateStack(at, deg, p.apply.count || 6);
+      const rough = p.apply.imperfect === false ? null : imperfectStack(pts, 0.8, idSeed(stamp) % 997 + 1);
+      pts.forEach((pos0, i) => {
         const id = `crate_${stamp}_${i}`;
+        const j = rough?.[i];
+        const pos = j ? j.position : pos0;
         ids.push(id);
-        s2.actors.push({ id, name: `Crate ${i + 1}`, kind: "crate", position: pos, keys: [{ frame: 0, position: pos }], height_m: 0.8,
-          rotation_deg: Math.round(deg), physics: { mode: "dynamic" } });
+        s2.actors.push({ id, name: `Crate ${i + 1}`, kind: "crate", position: pos, keys: [{ frame: 0, position: pos }], height_m: j ? j.height_m : 0.8,
+          rotation_deg: Math.round((deg + (j ? j.rotation_deg : 0)) * 10) / 10, physics: { mode: "dynamic" } });
       });
       this._loadState(s2);
       st.setPhysics?.(ids, { mode: "dynamic" });

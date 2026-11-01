@@ -301,7 +301,8 @@ export function jitterTilt(id, amount = 1) {
 
 /**
  * Make a crate pyramid imperfect, at creation (so you see the stack you get): each crate a slightly different size
- * (0.88-1.0 of `size`), ±2 cm off its mark, turned ±4°; a crate sits on the tallest crate under it (so a few lean).
+ * (0.86-0.97 of `size`, so turned neighbours never touch), ±2 cm off its mark, turned ±2.5°; a crate sits on the tallest
+ * crate under it (so a few lean).
  * points: crateStack() positions (row by row, y = row * size). Returns [{position, height_m, rotation_deg}] (the
  * rotation is relative to the stack's heading).
  */
@@ -313,7 +314,7 @@ export function imperfectStack(points, size = 0.8, seed = 1) {
   for (const r of [...rows.keys()].sort((a, b) => a - b)) {
     for (const i of rows.get(r)) {
       const p = points[i];
-      const h = +(size * (0.88 + 0.12 * hash(seed, i, 1))).toFixed(3);
+      const h = +(size * (0.86 + 0.11 * hash(seed, i, 1))).toFixed(3);
       const dx = (hash(seed, i, 2) * 2 - 1) * 0.02, dz = (hash(seed, i, 3) * 2 - 1) * 0.02;
       const x = p[0] + dx, z = p[2] + dz;
       let y = 0;
@@ -322,7 +323,7 @@ export function imperfectStack(points, size = 0.8, seed = 1) {
         if (Math.hypot(q.x - x, q.z - z) < size * 0.95) y = Math.max(y, q.y + q.h);
       }
       placed.push({ row: r, x, z, y, h });
-      out[i] = { position: [r3(x), r3(y), r3(z)], height_m: h, rotation_deg: +((hash(seed, i, 4) * 2 - 1) * 4).toFixed(1) };
+      out[i] = { position: [r3(x), r3(y), r3(z)], height_m: h, rotation_deg: +((hash(seed, i, 4) * 2 - 1) * 2.5).toFixed(1) };
     }
   }
   return out;

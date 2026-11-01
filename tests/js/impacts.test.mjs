@@ -168,3 +168,48 @@ test("impact sounds land on A2 at the hit's record frame, in every clip that sho
   assert.equal(twice.filter((a) => a.meta?.impact).length, 3);
   assert.ok(twice.some((a) => a.id === "m"), "other audio stays");
 });
+
+test("imperfection: seeded per id, within its spread, and a 20-carton tower with it still stands", async () => {
+  const { jitterPhysics, jitterTilt } = await import("../../web/stage/impacts.mjs");
+  const base = { mass: 2, friction: 0.7, bounce: 0.03 };
+  assert.deepEqual(jitterPhysics(base, "c1"), jitterPhysics(base, "c1"));
+  const all = Array.from({ length: 50 }, (_, i) => jitterPhysics(base, `c${i}`));
+  assert.ok(new Set(Array.from({ length: 50 }, (_, i) => jitterPhysics({ ...base, mass: 25 }, `c${i}`).mass)).size > 40, "every crate a little different");
+  for (const p of all) {
+    assert.ok(p.mass >= 2 * 0.85 - 1e-9 && p.mass <= 2 * 1.15 + 1e-9);
+    assert.ok(p.friction >= 0.7 * 0.88 - 1e-3 && p.friction <= 0.7 * 1.12 + 1e-3);
+    assert.ok(p.bounce >= 0 && p.bounce <= 0.03 * 1.2 + 1e-3);
+  }
+  const q = jitterTilt("c1"), ang = 2 * Math.acos(Math.min(1, Math.abs(q[3]))) * 180 / Math.PI;
+  assert.ok(ang > 0 && ang < 3.6, `tilt ${ang}`);
+  // The 20-carton tower (CHANGELOG Milestone 9: the live world's guarantee), every carton jittered: still under 2 mm in 3 s.
+  const { createWorld } = await import("../../web/stage/physengine.mjs");
+  const w = createWorld();
+  const ids = Array.from({ length: 20 }, (_, i) => { const j = jitterPhysics(base, `t${i}`);
+    return w.addBody({ shape: "box", half: [0.25, 0.25, 0.25], center: [0, 0.25, 0], type: "dynamic", mass: j.mass, friction: j.friction, restitution: j.bounce, pos: [0, i * 0.5, 0] }); });
+  const p0 = ids.map((id) => w.getPose(id).pos);
+  for (let i = 0; i < 180; i++) w.step(1 / 60);
+  const worst = Math.max(...ids.map((id, i) => Math.hypot(...w.getPose(id).pos.map((v, k) => v - p0[i][k]))));
+  assert.ok(worst < 0.002, `moved ${(worst * 1000).toFixed(1)} mm`);
+});
+
+test("an imperfect crate pyramid: varied sizes, each crate on the tallest one under it, nobody overlapping; it stands", async () => {
+  const { imperfectStack } = await import("../../web/stage/impacts.mjs");
+  const { crateStack } = await import("../../web/presets/engine.mjs");
+  const pts = crateStack([0, 0, 5], 0, 10);
+  const st = imperfectStack(pts, 0.8, 7);
+  assert.deepEqual(st, imperfectStack(pts, 0.8, 7));
+  assert.notDeepEqual(st, imperfectStack(pts, 0.8, 8));
+  assert.ok(new Set(st.map((c) => c.height_m)).size >= 8);
+  for (const c of st) assert.ok(c.height_m >= 0.8 * 0.86 - 1e-9 && c.height_m <= 0.8 * 0.97 + 1e-9 && Math.abs(c.rotation_deg) <= 2.5);
+  // Crates on the floor sit at y 0; upper ones exactly on the top of a lower crate.
+  for (const c of st) if (c.position[1] > 0) assert.ok(st.some((d) => Math.abs(d.position[1] + d.height_m - c.position[1]) < 1e-3), "sits on a crate");
+  // Simulate it: it stays a pile (the top crate may lean and settle a few cm; nothing slides off).
+  const D = Math.PI / 180;
+  const specs = st.map((c, i) => ({ id: `k${i}`, shape: "box", half: [c.height_m / 2, c.height_m / 2, c.height_m / 2], center: [0, c.height_m / 2, 0],
+    dynamic: true, mass: 25, bounce: 0.2, friction: 0.6, poses: [{ pos: c.position, quat: [0, Math.sin(c.rotation_deg * D / 2), 0, Math.cos(c.rotation_deg * D / 2)] }] }));
+  const r = simulate(specs, 72);
+  const worst = Math.max(...specs.map((s) => Math.hypot(...r.tracks[s.id].at(-1).pos.map((v, k) => v - s.poses[0].pos[k]))));
+  assert.ok(worst < 0.12, `moved ${(worst * 100).toFixed(1)} cm`);
+  assert.ok(r.tracks.k9.at(-1).pos[1] > 2, "the top crate is still on top");
+});

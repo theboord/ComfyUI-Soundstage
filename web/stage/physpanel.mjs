@@ -156,11 +156,16 @@ export class PhysicsPanel {
       this.fxSeg.append(b);
     }
     this.fxRow = el("div", "ph-fx", el("span", "", "Impact FX"), this.fxSeg);
+    // Imperfect (Milestone 21): seeded variation so no two crates weigh, grip or bounce alike (on by default).
+    this.impBtn = btn("Imperfect", "", "Every body a little different: ±15% mass, ±12% grip, ±20% bounce, a dropped one a degree or two off level (seeded: the same bake every time). Next Simulate & bake.");
+    this.impBtn.addEventListener("click", () => { const on = this.impBtn.getAttribute("aria-pressed") !== "true"; this.stage.setPhysicsFeel?.({ imperfect: on }); this._msg(on ? "Imperfect: on (applies at the next Simulate & bake)." : "Imperfect: off, every body exactly as set."); this.sync(); });
+    this.feelSeg = el("div", "ss-views", this.impBtn);
+    this.feelRow = el("div", "ph-fx", el("span", "", "Feel"), this.feelSeg);
     this.fxRow.title = "Secondary elements off the baked hits, in the clay and the guide the video follows (never in Depth or the matte)";
     this.note = el("div", "ph-note");
     this.msg = el("div", "ph-msg");
     this.msg.setAttribute("aria-live", "polite");
-    this.el.append(head, this.seg, this.mass.r, this.bounce.r, this.friction.r, this.lift.r, this.matRow, this.all, el("div", "ph-acts", this.simBtn, this.clearBtn), this.fxRow, this.eng, this.note, this.msg);
+    this.el.append(head, this.seg, this.mass.r, this.bounce.r, this.friction.r, this.lift.r, this.matRow, this.all, el("div", "ph-acts", this.simBtn, this.clearBtn), this.fxRow, this.feelRow, this.eng, this.note, this.msg);
   }
 
   /** Switch live physics to the GPU: bring WebGPU up, fall back to the CPU (and say why) if it can't run here. */
@@ -231,6 +236,8 @@ export class PhysicsPanel {
     this.matRow.setAttribute("aria-disabled", String(info.mode === "off"));
     const fx = this.stage.impactFxInfo?.();
     if (fx) for (const [k, b] of Object.entries(this.fxBtns)) b.setAttribute("aria-pressed", String(!!fx[k]));
+    const feel = this.stage.physicsFeel?.();
+    if (feel) this.impBtn.setAttribute("aria-pressed", String(feel.imperfect));
     const on = info.mode !== "off";
     for (const rr of [this.bounce, this.friction]) rr.r.setAttribute("aria-disabled", String(!on));
     this.mass.r.setAttribute("aria-disabled", String(info.mode !== "dynamic"));
