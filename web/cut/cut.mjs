@@ -9,6 +9,7 @@ import * as FX from "./fx.mjs";
 import { exportAll, fpsInfo, framesToTC, recordStart } from "./exporters.mjs";
 import { icon } from "../ui/icons.mjs";
 import { sourceLine } from "../ui/sourcespec.mjs";
+import { impactClips, withImpactClips } from "./impactsfx.mjs";
 
 /** A transport button's face: a Lucide icon (plus an optional speed like "2×"); the title names it for screen readers. */
 const face = (b, name, extra = "") => {
@@ -192,13 +193,14 @@ export class CutPanel {
    * @param {{getProject?: () => object, renderPreviewFrame?: (shotId: string, frame: number) => CanvasImageSource,
    *          onChange?: (project: object) => void}} host
    */
-  constructor(container, { getProject, renderPreviewFrame, onChange, onEditShot, getLining, generateAudio, uploadAudio, renderCut } = {}) {
+  constructor(container, { getProject, renderPreviewFrame, onChange, onEditShot, getLining, generateAudio, uploadAudio, renderCut, impactCues } = {}) {
     this._onEditShot = onEditShot || null;   // "edit original": jump to the step that made a clip, then back
     // Milestone 19 host hooks (all optional): the ScriptSync lining for "Assemble scene", in-place audio generation,
     // importing a sound file, and the server render (POST /soundstage/cut/render).
     this._getLining = getLining || null;
     this._generateAudio = generateAudio || null;
     this._uploadAudio = uploadAudio || null;
+    this._impactCues = impactCues || null;   // Milestone 21: () => {cues, library} for the baked hits
     this._renderCut = renderCut || ((body) => fetch("/soundstage/cut/render", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body) }).then((r) => r.json()));
     injectCSS();
@@ -682,6 +684,27 @@ export class CutPanel {
     }
   }
 
+  /**
+   * Impact sounds (Milestone 21): one cue on A2 per baked hit, where it lands in the cut, picked by material, gain by
+   * impulse. Re-running replaces the earlier impact cues; one undo step.
+   */
+  async addImpactSounds() {
+    if (!this._impactCues) { this.say("Impact sounds run in the App (they need the server).", { error: true }); return 0; }
+    try {
+      const { cues, library } = await this._impactCues();
+      if (!cues?.length) { this.say("No hits to sound: simulate the physics on the stage first (③ Set › Physics › Simulate & bake)."); return 0; }
+      const clips = impactClips(this.project, cues, library, this.project.fps);
+      if (!clips.length) { this.say("The hits fall outside the clips in this cut."); return 0; }
+      this._commit(this.project.cut, this.sel, { audio: withImpactClips(this.project, clips) });
+      this._syncAudio();
+      this.say(`${clips.length} impact sound${clips.length === 1 ? "" : "s"} on A2, on the frame of each hit (louder for harder hits).`);
+      return clips.length;
+    } catch (err) {
+      this.say(`Couldn't add impact sounds: ${err.message || err}`, { error: true });
+      return 0;
+    }
+  }
+
   /** Import a sound file onto a track at the playhead (uploads it in the App; an object URL standalone). */
   async importAudio(file, track = null) {
     try {
@@ -934,6 +957,7 @@ export class CutPanel {
     btn3(bar4, "Import…", "Import a sound file (music, effect, ambience) at the playhead", () => file.click());
     const sep4 = () => { const x = document.createElement("span"); x.className = "ss-cut-sep"; bar4.append(x); };
     sep4();
+    btn3(bar4, "Impact sounds", "One hit sound on A2 for every baked physics hit, on its frame: wood splinters, cardboard crumples, metal rings; louder for harder hits", () => this.addImpactSounds());
     btn3(bar4, "Auto-duck", "Dip the music (A3) 12 dB under every dialogue line (A1), with 6 frames attack, 12 release; the keys stay editable", () => this.autoDuck());
     btn3(bar4, "Beats", "Find the beat of the music clip (selected, else the first on A3) and mark it on the ruler; trims snap to it", () => this.analyzeBeats());
     btn3(bar4, "Cuts → beat", "Roll every cut onto the nearest beat (within 6 frames)", () => this.snapCutsToBeats());

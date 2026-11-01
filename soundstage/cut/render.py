@@ -506,5 +506,7 @@ def register(routes=None) -> bool:
         except Exception as exc:  # noqa: BLE001 - the panel shows the message
             return web.json_response({"error": str(exc)}, status=400)
 
+    from .impact_sfx import add_routes as _impact_routes   # Milestone 21: impact sounds for A2
+    _impact_routes(routes)
     _REGISTERED = True
     return True
