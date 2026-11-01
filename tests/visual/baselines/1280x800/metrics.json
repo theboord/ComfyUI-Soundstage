@@ -1051,5 +1051,23 @@
   "scrollers": [],
   "offscreen": [],
   "errors": []
+ },
+ "presets_panel": {
+  "view": "1280x800",
+  "pageScroll": false,
+  "pageScrollH": 800,
+  "pageOverflowX": false,
+  "clipped": [],
+  "clippedHard": 0,
+  "overlaps": [
+   {
+    "a": "ss-insp ss-hudp Properties Object Ca",
+    "b": "ss-pre PresetsApplies to sh",
+    "px": "117x569"
+   }
+  ],
+  "scrollers": [],
+  "offscreen": [],
+  "errors": []
  }
 }
