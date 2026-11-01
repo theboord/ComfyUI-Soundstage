@@ -214,7 +214,9 @@ const CSS = `
 .ss-stage.ss-wsmode[data-ws=wide] .ss-pipe { margin:0 !important; gap:4px; }
 .ss-stage.ss-wsmode[data-ws=wide] .ss-pipe button { flex-direction:row !important; align-items:center !important; gap:8px !important;
   padding:5px 12px !important; min-height:0; }
-.ss-stage.ss-wsmode[data-ws=wide] .ss-pipe button { min-width:0 !important; white-space:nowrap; overflow:hidden; }
+/* No overflow:hidden on the button: the name (.t) clips itself with an ellipsis, and the Ready dot sits on the pill's
+   corner, where a clipped button cut it to a sliver that read as a stray backtick after each step name (QA round 05). */
+.ss-stage.ss-wsmode[data-ws=wide] .ss-pipe button { min-width:0 !important; white-space:nowrap; }
 .ss-stage.ss-wsmode[data-ws=wide] .ss-pipe button .t { font-size:13px; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .ss-stage.ss-wsmode[data-ws=wide] .ss-pipe button .n { flex:none; }
 .ss-stage.ss-wsmode[data-ws=wide] .ss-pipe button .n { font-size:10px; }
