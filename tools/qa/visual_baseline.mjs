@@ -78,6 +78,16 @@ export const SCREENS = [
       await sleep(1200);
     },
     after: async ({ js }) => { await js("const x=__qa.el.querySelector('.ss-phys:not([hidden]) .ph-head button'); x?.click(); __qa.stage.select(null); return 1"); await sleep(500); } },
+  { name: "presets_panel", what: "③ Set › Presets (V): camera moves, each card a clay preview rendered from the stage",
+    run: async ({ b, js }) => {
+      // Reduced motion: each card holds one frame of its loop, so the capture is the same every run.
+      await b.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+      await js("__qa.p.go('set'); return 1"); await sleep(1500);
+      await js("__qa.node.ssPresets.open('camera'); return 1");
+      for (let i = 0; i < 80; i++) { await sleep(500); if (await js("const L=__qa.node.ssPresets.live; return !!L && !L.queue.length && !L.running")) break; }
+      await sleep(800);
+    },
+    after: async ({ b, js }) => { await js("__qa.node.ssPresets.close(); return 1"); await b.send("Emulation.setEmulatedMedia", { features: [] }); await sleep(400); } },
   { name: "deliver_dcc_kit", what: "⑦ Deliver › the Blender · Unreal · Maya · Nuke (DCC kit) card",
     run: async ({ js }) => { await js("__qa.p.go('deliver'); return 1"); await sleep(2000);
       await js("const c=[...__qa.el.querySelectorAll('.card')].find(x=>/DCC kit/.test(x.textContent)&&x.getClientRects().length); c?.scrollIntoView({block:'center'}); return !!c"); await sleep(800); } },

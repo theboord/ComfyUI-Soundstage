@@ -1,7 +1,10 @@
 // The Presets window (Milestone 17): one floating, searchable panel over the canvas with one-click camera moves,
 // lighting, film looks, stunts and physics, edit styles and multi-step recipes, plus your own saved presets.
-// Each card loops a little clay preview of what it does; hovering a camera move also plays it on the real shot;
-// a click applies it to the current shot (or the selected object) as one undo step, with a toast and its Undo.
+// Each card previews what it does, rendered from the current stage in clay (web/presets/livethumbs.mjs: a camera move
+// or a stunt loops, a light or a look is a still; a drawn preview stands in until it's ready). Hovering a card
+// previews it on the shot itself and leaving restores the shot; a click applies it to the current shot (or the
+// selected object) as one undo step, with an "Applied to shot N · Undo" toast. Search covers every tab; the arrow
+// keys move between cards and Enter applies one.
 //
 //   import { mountPresets } from "./ui/presets.mjs";
 //   const p = mountPresets({ root: el, topBar: tabs, before: keysBtn, api, stage, host, isActive });
@@ -16,6 +19,7 @@ import { withKeys } from "./shortcuts.mjs";
 import { loadCatalog, searchPresets, userPresetFrom, parseUserPresets, userPresetsFile, cameraKeys } from "../presets/engine.mjs";
 import { PresetRunner, RUNNERS, installDirectorTool } from "../presets/runner.mjs";
 import { drawThumb } from "../presets/thumbs.mjs";
+import { LiveThumbs, liveKind, THUMB_W, THUMB_H } from "../presets/livethumbs.mjs";
 
 export const PRESETS_KEY = "V";
 const USER_FILE = "soundstage/presets.json";
@@ -103,6 +107,13 @@ const CSS = `
 .ss-toast[data-bad=true] .ss-icon { color:${T.danger}; }
 .ss-toast .tx { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .ss-toast button.un { color:${T.accent}; border-color:${T.accentLine}; font-weight:600; }
+.ss-toast .sep { color:${T.faint}; margin:0 -4px; }
+.ss-toast .sep[hidden] { display:none; }
+.ss-toast .tx b { font-weight:600; }
+.ss-pre-card .tg { position:absolute; top:10px; left:10px; font-size:10px; font-weight:600; padding:1px 6px; border-radius:6px;
+  background:rgba(0,0,0,.55); color:${T.text}; border:1px solid ${T.line}; pointer-events:none; }
+.ss-pre-hov { position:absolute; pointer-events:none; z-index:2; border-radius:4px; display:block; }
+.ss-pre-hov[hidden] { display:none !important; }
 @media (prefers-reduced-motion: reduce) { .ss-pre-card canvas { animation:none; } }
 `;
 
@@ -177,8 +188,9 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
   for (const ev of ["pointerdown", "wheel", "keydown", "keyup", "contextmenu"]) panel.addEventListener(ev, stop, { passive: ev === "wheel" });
   const toastTx = h("span", { class: "tx" });
   const toastUndo = h("button", { type: "button", class: "un" }, "Undo");
+  const toastSep = h("span", { class: "sep", "aria-hidden": "true" }, "·");
   const toastX = h("button", { type: "button", title: "Dismiss", "aria-label": "Dismiss" }, icon("x", 13));
-  const toast = h("div", { class: "ss-toast", hidden: true, role: "status", "aria-live": "polite" }, icon("check", 15), toastTx, toastUndo, toastX);
+  const toast = h("div", { class: "ss-toast", hidden: true, role: "status", "aria-live": "polite" }, icon("check", 15), toastTx, toastSep, toastUndo, toastX);
   toast.addEventListener("pointerdown", stop);
   root.append(panel, toast);
 
@@ -213,6 +225,8 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     runner.user = await loadUserPresets(api);
     registerDirectorTool();
     if (!panel.hidden) render();
+    // Build the default tab's cards while the page is idle, so the first open only has to show them.
+    else (typeof requestIdleCallback === "function" ? requestIdleCallback : (f) => setTimeout(f, 200))(() => { if (panel.hidden) { render(); built = `${tab}|`; } });
   })();
 
   // ---- render
@@ -223,9 +237,10 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     return group ? list.filter((p) => (p.group || "") === group) : list;
   };
 
+  let matches = new Map();   // tab -> how many cards match the search
   function renderTabs() {
     tabsEl.replaceChildren(...(catalog.tabs.length ? catalog.tabs : [{ id: "camera", label: "Camera moves", icon: "video" }]).filter((t) => SHOWN_TABS.includes(t.id)).map((t) => {
-      const n = t.id === "user" ? runner.user.length : catalog.presets.filter((p) => p.tab === t.id).length;
+      const n = query ? (matches.get(t.id) || 0) : t.id === "user" ? runner.user.length : catalog.presets.filter((p) => p.tab === t.id).length;
       const b = h("button", { type: "button", role: "tab", "aria-pressed": String(!query && t.id === tab), "data-tab": t.id,
         onclick: () => { tab = t.id; group = null; query = ""; q.value = ""; try { localStorage.setItem(LS_TAB, tab); } catch { /* */ } render(); } },
         icon(t.icon || "shapes", 14), t.label, h("span", { class: "n" }, String(n)));
@@ -259,8 +274,9 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     const gpu = p.apply?.gpu ? h("span", { class: "gpu", title: "Asks before it renders on the GPU" }, "GPU") : null;
     const del = p.tab === "user" ? h("button", { type: "button", class: "del", title: `Delete ${p.label}`, "aria-label": `Delete ${p.label}`,
       onclick: (e) => { e.stopPropagation(); removeUser(p.id); } }, icon("trash-2", 12)) : null;
-    const el = h("button", { type: "button", class: "ss-pre-card", role: "listitem", "data-id": p.id, title: p.summary || p.label },
-      canvas, h("span", { class: "nm" }, p.label), h("span", { class: "sm" }, p.summary || (p.group ? p.group : "")), gpu, del);
+    const tg = query ? h("span", { class: "tg" }, tabLabel(p.tab)) : null;
+    const el = h("button", { type: "button", class: "ss-pre-card", role: "listitem", "data-id": p.id, "data-tab": p.tab, title: p.summary || p.label },
+      canvas, h("span", { class: "nm" }, p.label), h("span", { class: "sm" }, p.summary || (p.group ? p.group : "")), tg, gpu, del);
     el.addEventListener("click", () => apply(p.id));
     el.addEventListener("mouseenter", () => startHover(p));
     el.addEventListener("focus", () => startHover(p));
@@ -271,16 +287,22 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     return el;
   }
 
+  const tabLabel = (id) => (catalog.tabs.find((t) => t.id === id)?.label || id).replace(/ moves$/, "");
+  let built = "";   // tab|query the hidden cards were built for (the first open reuses them)
   function render() {
+    built = "";
+    const list = listFor();
+    matches = new Map();
+    if (query) for (const p of list) matches.set(p.tab, (matches.get(p.tab) || 0) + 1);
     renderTabs();
     renderSub();
     io?.disconnect(); seen.clear(); cards.clear();
-    const list = listFor();
     grid.replaceChildren(...(list.length ? list.map(card) : [h("div", { class: "ss-pre-empty" },
       tab === "user" && !query ? "No presets of your own yet. Set up a camera, light or look you like, then Save current as Camera, Light or Look." : `Nothing matches “${query}”.`)]));
     syncTarget();
     footHint();
     drawAll(performance.now(), true);
+    queueLive();
   }
 
   function syncTarget() {
@@ -293,7 +315,8 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
 
   function footHint(p = null) {
     if (p) { footTx.textContent = `${p.label}: ${p.summary || p.group || ""}`; return; }
-    footTx.replaceChildren("Hover a card to preview it · click applies it, one undo step (", h("kbd", {}, "⌘Z"), " or the toast) · ", h("kbd", {}, PRESETS_KEY), " opens and closes this");
+    footTx.replaceChildren("Hover a card to preview it on the shot · ", h("kbd", {}, "←"), h("kbd", {}, "→"), " and ", h("kbd", {}, "↵"),
+      " to pick · click applies, one undo step (", h("kbd", {}, "⌘Z"), " or the toast) · ", h("kbd", {}, PRESETS_KEY), " closes");
   }
 
   // ---- previews: every card loops; a hovered camera move also plays on the real shot
@@ -306,7 +329,16 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
   const PER_FRAME = 3;
   function drawOne(entry, t) {
     const c = entry.canvas.getContext("2d");
-    if (c) drawThumb(c, entry.p, t, entry.canvas.width, entry.canvas.height, { palettes, setups });
+    if (!c) return;
+    const fr = live?.frameAt(entry.p.id, t, { still: reduced() });
+    if (fr) {
+      if (entry.drawn === fr.i && entry.img === fr.img) return;   // same frame as last time: nothing to draw
+      entry.drawn = fr.i; entry.img = fr.img;
+      c.drawImage(fr.img, fr.sx, fr.sy, fr.sw, fr.sh, 0, 0, entry.canvas.width, entry.canvas.height);
+      if (entry.el.dataset.live !== "true") entry.el.dataset.live = "true";
+      return;
+    }
+    drawThumb(c, entry.p, t, entry.canvas.width, entry.canvas.height, { palettes, setups });
   }
   function drawAll(now, force = false) {
     const t = (now - t0) / 1000;
@@ -324,6 +356,8 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     if (panel.hidden) { raf = 0; return; }
     if (document.hidden) { raf = requestAnimationFrame(loop); return; }
     if (!reduced() || hover) drawAll(now);
+    checkLiveScene(now);
+    if (hover?.overlay) drawOverlay(now);
     if (hover?.cam && now - (hover.drawn || 0) > 48) {
       hover.drawn = now;
       const f = ((now - hover.t) / 1000 * 24) % (hover.last + 18);
@@ -332,8 +366,10 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     raf = requestAnimationFrame(loop);
   }
   function startHover(p) {
+    if (hover && hover.id !== p.id) endHover(hover);
     hover = { id: p.id, t: performance.now() };
     footHint(p);
+    hoverOverlay(p);
     const isCam = p.apply?.camera && !["follow", "car_mount"].includes(p.apply.camera.move);
     if (isCam) {
       // The move's keys on this shot, sampled through the stage's own camera (rig shake, ride-alongs) without keeping them.
@@ -356,14 +392,109 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
   function endHover(p) {
     if (hover?.id !== p.id) return;
     if (hover.cam) try { stage.previewCamera(null); } catch { /* */ }
+    endOverlay();
     hover = null;
     footHint();
   }
 
+  // ---- live previews from the stage (web/presets/livethumbs.mjs): a scratch copy of the scene renders each card in
+  // clay, visible cards first, a slice at a time after the panel has painted; cached per scene, so they come back at once.
+  let live = null, liveSigAt = 0;
+  function ensureLive() {
+    if (live || typeof document === "undefined" || !stage?.constructor || typeof stage.toJSON !== "function" || !stage.renderer) return live;
+    try {
+      live = new LiveThumbs({ stage, setups, makeRunner: (s) => {
+        const r = new PresetRunner({ stage: s, host: { confirm: async () => false }, catalog, setups });
+        r.user = runner.user;
+        return r;
+      } });
+      live.onReady = (id) => { const e = cards.get(id); if (e && !panel.hidden) drawOne(e, (performance.now() - t0) / 1000); };
+    } catch (e) { console.warn("[Soundstage] preset previews off", e); live = null; }
+    return live;
+  }
+  /** Queue this view's cards for live previews: the ones on screen first, then the rest of the list. */
+  function queueLive() {
+    if (panel.hidden || !ensureLive()) return;
+    if (live.runner) { live.runner.catalog = catalog; live.runner.user = runner.user; live.runner.setups = setups; }
+    live.setups = setups;
+    const list = [...cards.values()].map((e) => e.p);
+    const box = grid.getBoundingClientRect();
+    const onScreen = (e) => { const r = e.el.getBoundingClientRect(); return r.bottom > box.top && r.top < box.bottom; };
+    const vis = [...cards.values()].filter(onScreen).map((e) => e.p);
+    // Deferred past this frame, so the window paints first (scene signatures cost a JSON pass).
+    setTimeout(() => {
+      if (panel.hidden || !live) return;
+      live.sync(); liveSigAt = performance.now();
+      live.want([...vis, ...list]);
+      live.start();
+    }, 0);
+  }
+  /** While open: a scene edited under the window (or an apply) re-renders the previews for the new scene. */
+  function checkLiveScene(now) {
+    if (!live || now - liveSigAt < 1500 || hover) return;
+    liveSigAt = now;
+    if (live.sync()) { for (const e of cards.values()) e.drawn = -1; queueLive(); }
+  }
+
+  // The hover preview on the shot for lights, looks and stunts: an overlay over the stage's canvas, drawn from the
+  // scratch copy, so the real shot never changes and leaving the card restores it at once. Camera moves use the
+  // stage's own previewCamera (above).
+  const hov = h("canvas", { class: "ss-pre-hov", hidden: true, "aria-hidden": "true" });
+  let hovTimer = 0, hovDrawn = 0;
+  function placeOverlay() {
+    const cv = stage.canvas;
+    if (!cv?.parentElement) return false;
+    if (hov.parentElement !== cv.parentElement || hov.previousSibling !== cv) cv.after(hov);
+    const w = cv.clientWidth, hh = cv.clientHeight;
+    if (!w || !hh) return false;
+    Object.assign(hov.style, { left: cv.offsetLeft + "px", top: cv.offsetTop + "px", width: w + "px", height: hh + "px" });
+    const pw = Math.min(1280, cv.width || w), ph = Math.round(pw * hh / w);
+    if (hov.width !== pw || hov.height !== ph) { hov.width = pw; hov.height = ph; }
+    return true;
+  }
+  function hoverOverlay(p) {
+    clearTimeout(hovTimer);
+    if (!liveKind(p) || liveKind(p) === "camera" || !ensureLive()) return;
+    // A short wait, so sweeping the pointer across the grid doesn't rebuild the scratch scene for every card.
+    hovTimer = setTimeout(async () => {
+      if (hover?.id !== p.id) return;
+      if (!placeOverlay()) return;
+      live.sync();
+      // Frames draw as they arrive (a stunt's first frame shows while the rest render).
+      hover.overlay = true; hovDrawn = 0;
+      const ok = await live.hoverStart(p, { w: hov.width, h: hov.height });
+      if (!ok || hover?.id !== p.id || panel.hidden) { if (live.hovering?.id === p.id && hover?.id !== p.id) live.hoverEnd(); return; }
+      drawOverlay(performance.now(), true);
+    }, 140);
+  }
+  function drawOverlay(now, force = false) {
+    const hv = live?.hovering;
+    if (!hv?.frames?.length) return;
+    // A still draws once; a stunt plays (~12 fps).
+    if (!force && hovDrawn && (hv.total <= 1 && !hv.busy || now - hovDrawn < 80)) return;
+    hovDrawn = now;
+    const c = hov.getContext("2d");
+    if (!c) return;
+    try { live.hoverFrame(c, (now - hover.t) / 1000, hov.width, hov.height); } catch (e) { console.warn("[Soundstage] preset preview", e); endOverlay(); return; }
+    hov.hidden = false;
+    // Say what it is, so a preview is never mistaken for the shot.
+    const label = `Preview · ${hv.p.label}`;
+    c.font = `600 ${Math.max(12, Math.round(hov.width / 70))}px ${FONT}`;
+    const tw = c.measureText(label).width, pad = 8, bh = Math.max(22, Math.round(hov.width / 48));
+    c.fillStyle = "rgba(10,7,13,.72)"; c.fillRect(12, 12, tw + pad * 2, bh);
+    c.fillStyle = "#fff"; c.textBaseline = "middle"; c.fillText(label, 12 + pad, 12 + bh / 2);
+  }
+  function endOverlay() {
+    clearTimeout(hovTimer);
+    hov.hidden = true;
+    live?.hoverEnd();
+  }
+
   // ---- apply, toast, undo
   let toastTimer = 0;
-  function showToast(text, { undo = false, bad = false } = {}) {
-    toastTx.textContent = text;
+  function showToast(text, { undo = false, bad = false, label = null } = {}) {
+    toastTx.replaceChildren(...(label ? [h("b", {}, label), " · "] : []), text);
+    toastSep.hidden = !undo;
     toast.dataset.bad = String(bad);
     toast.querySelector(".ss-icon")?.replaceWith(icon(bad ? "info" : "check", 15));
     toastUndo.hidden = !undo;
@@ -371,7 +502,7 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { toast.hidden = true; }, bad ? 7000 : 6500);
   }
-  toastUndo.addEventListener("click", () => { const l = runner.undo(); if (l) { showToast(`Undone: '${l}'`); toastUndo.hidden = true; afterChange(); } });
+  toastUndo.addEventListener("click", () => { const l = runner.undo(); if (l) { showToast(`Undone: '${l}'`); toastUndo.hidden = true; toastSep.hidden = true; afterChange(); } });
   toastX.addEventListener("click", () => { toast.hidden = true; });
 
   function afterChange() {
@@ -381,15 +512,17 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
 
   async function apply(id, opts = {}) {
     await ready;
-    if (hover) { try { stage.previewCamera(null); } catch { /* */ } }
+    if (hover) { try { stage.previewCamera(null); } catch { /* */ } endOverlay(); if (hover) hover.overlay = false; }
     const r = await runner.apply(id, opts);
     if (r.ok) {
-      const what = r.tab === "recipe" ? r.said : `Applied '${r.label}' to ${r.target}`;
-      showToast(what, { undo: !!r.undoable });
+      if (r.tab === "recipe") showToast(r.said, { undo: !!r.undoable });
+      else showToast(`Applied to ${r.target}`, { undo: !!r.undoable, label: r.label });
       say(r.said);
     } else if (!r.cancelled) { showToast(r.said, { bad: true }); say(r.said); }
     afterChange();
-    if (hover?.id === id) startHover(runner.get(id) || { id });
+    // Still hovering the card just applied: a camera move keeps previewing; a light or look would only show itself again.
+    const q2 = runner.get(id);
+    if (hover?.id === id && liveKind(q2) === "camera") { hover = null; startHover(q2); }
     return r;
   }
 
@@ -451,7 +584,8 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     panel.hidden = false;
     button.setAttribute("aria-pressed", "true");
     t0 = performance.now();
-    render();
+    if (built && built === `${tab}|${query}` && !group) { built = ""; syncTarget(); footHint(); queueLive(); }
+    else render();
     if (!raf) raf = requestAnimationFrame(loop);
     try { q.focus({ preventScroll: true }); } catch { /* */ }
   }
@@ -461,7 +595,9 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     ask.hidden = true;
     button.setAttribute("aria-pressed", "false");
     if (hover?.cam) try { stage.previewCamera(null); } catch { /* */ }
+    endOverlay();
     hover = null;
+    if (live) live.queue = [];
     cancelAnimationFrame(raf); raf = 0;
   }
   function toggle(which = null) { if (panel.hidden) open(which); else close(); }
@@ -480,9 +616,44 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     if (!(e.metaKey || e.ctrlKey) || e.altKey || (e.key || "").toLowerCase() !== "z" || e.target === q) return;
     e.preventDefault(); e.stopPropagation();
     const ok = e.shiftKey ? stage.redo?.() : stage.undo?.();
-    if (ok !== false) { toastUndo.hidden = true; afterChange(); }
+    if (ok !== false) { toastUndo.hidden = true; toastSep.hidden = true; afterChange(); }
   };
   panel.addEventListener("keydown", undoKey);
+  // Arrow keys move between cards (focusing one previews it, like hovering); Enter applies it. Down from the search
+  // box goes to the first card, Up from the top row comes back to the search box.
+  panel.addEventListener("keydown", (e) => {
+    // Enter on a card applies it (handled here, so it is one apply whatever the browser does with a button's Enter).
+    if (e.key === "Enter" && !e.metaKey && !e.ctrlKey && !e.altKey && ask.hidden) {
+      const c = e.target.closest?.(".ss-pre-card");
+      if (c && c === e.target && grid.contains(c)) { e.preventDefault(); apply(c.dataset.id); }
+      return;
+    }
+    if (!/^Arrow(Up|Down|Left|Right)$/.test(e.key) && e.key !== "Home" && e.key !== "End") return;
+    if (e.metaKey || e.ctrlKey || e.altKey || !ask.hidden) return;
+    const els = [...grid.querySelectorAll(".ss-pre-card")];
+    if (!els.length) return;
+    const i = els.indexOf(e.target.closest?.(".ss-pre-card"));
+    if (e.target === q) {
+      if (e.key !== "ArrowDown") return;
+      e.preventDefault(); focusCard(els[0]); return;
+    }
+    if (i < 0) return;
+    const top0 = els[0].offsetTop;
+    const cols = Math.max(1, els.findIndex((x) => x.offsetTop !== top0) === -1 ? els.length : els.findIndex((x) => x.offsetTop !== top0));
+    let j = i;
+    if (e.key === "ArrowRight") j = Math.min(els.length - 1, i + 1);
+    else if (e.key === "ArrowLeft") j = Math.max(0, i - 1);
+    else if (e.key === "ArrowDown") j = Math.min(els.length - 1, i + cols);
+    else if (e.key === "ArrowUp") { if (i < cols) { e.preventDefault(); try { q.focus({ preventScroll: true }); } catch { /* */ } return; } j = i - cols; }
+    else if (e.key === "Home") j = 0;
+    else if (e.key === "End") j = els.length - 1;
+    e.preventDefault();
+    if (j !== i) focusCard(els[j]);
+  });
+  function focusCard(el) {
+    try { el.focus({ preventScroll: true }); } catch { /* */ }
+    el.scrollIntoView?.({ block: "nearest" });
+  }
   toast.addEventListener("keydown", undoKey);
   const onKey = (e) => {
     if (!root.isConnected || e.defaultPrevented) return;
@@ -501,7 +672,7 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
   runner.onApplied = (res) => { if (res?.source === "director") afterChange(); };
 
   return {
-    el: panel, button, toast, runner, ready,
+    el: panel, button, toast, runner, ready, get live() { return live; },
     open, close, toggle, apply, isOpen: () => !panel.hidden,
     undo: () => { const l = runner.undo(); afterChange(); return l; },
     redo: () => { const l = runner.redo(); afterChange(); return l; },

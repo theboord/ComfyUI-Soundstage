@@ -131,7 +131,7 @@ export class SceneStrip {
     if (this.el.hidden || !this.el.isConnected || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
     const t = e.target;
-    if (t && (EDITABLE.test(t.tagName || "") || t.isContentEditable || t.closest?.(".ss-cv, .ss-cut, .ss-strip, [role=slider], dialog"))) return;
+    if (t && (EDITABLE.test(t.tagName || "") || t.isContentEditable || t.closest?.(".ss-cv, .ss-cut, .ss-strip, [role=slider], dialog, [role=dialog]"))) return;   // a dialog's arrows are its own (Presets cards)
     if (!this.el.offsetParent && !this.pick.offsetParent) return;   // not on screen (folded: the scene button is)
     if (!this.o.getScript?.()?.scenes?.length) return;
     e.preventDefault();
