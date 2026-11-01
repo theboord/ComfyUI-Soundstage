@@ -16,7 +16,9 @@ This guide is for anyone who has just cloned the repo. It covers where every pan
 3. [The seven steps, one by one](#3-the-seven-steps-one-by-one)
    - [① Script](#step-1-script) · [② Cast & Locations](#step-2-cast) · [③ Set](#step-3-set) · [④ Frame](#step-4-frame) · [⑤ Motion](#step-5-motion) · [⑥ Review](#step-6-review) · [⑦ Deliver](#step-7-deliver)
    - [Dailies and the lined script](#dailies-and-the-lined-script) ([ScriptSync](#scriptsync-lined-script)) · [The Look tab: re-render in any film look](#the-look-tab-re-render-in-any-film-look) · [The Stop button](#the-stop-button)
+   - **New since the contest:** [The Director: chat, voice and MCP](#the-director-chat-voice-and-mcp) · [Presets](#presets-one-click-camera-moves-and-lighting) · [Quality: Draft, Final, Hollywood](#quality-draft-final-hollywood) · [Takes that check themselves](#takes-that-check-themselves) · [Timeline: transitions, sound, titles and render](#transitions-sound-titles-and-render)
 4. [The 3D stage in depth](#4-the-3d-stage-in-depth)
+   - **New since the contest:** [Live 3D: drag, climb, mount, carry](#live-3d-drag-climb-mount-carry) · [Stunts](#stunts-j-turn-donut-handbrake-180) · [The new sets](#the-new-sets) · [Interop: Blender, Unreal, Maya, Nuke](#interop-blender-unreal-maya-nuke) · [Phone camera and the phone viewfinder](#phone-camera)
 5. [Keyboard and mouse cheat sheet](#5-keyboard-and-mouse-cheat-sheet)
 6. [Tips and tricks](#6-tips-and-tricks)
 7. [Troubleshooting and FAQ](#7-troubleshooting-and-faq)
@@ -417,24 +419,34 @@ Keyboard: Cmd/Ctrl+Z / Shift+Cmd/Ctrl+Z undo and redo, Cmd/Ctrl+A select all, Cm
 | **Starts from your frame** | The frame this shot will animate. |
 | **Video model** | **LTX-2.5 Layout-to-Render (local, follows your clay; recommended)**. Other installed image-to-video models are listed after it, and **MiniMax H3** if you installed it (see below). |
 | **Motion freedom** | How freely the video moves away from the clay: **exact** (copies the clay motion), **natural (recommended)** (real weight, same blocking), **loose** (more invention, framing may drift). Default 0.5. |
-| **Quality** | **Draft** (the default while you build), **Final** or **Final HQ**. It sets the quality of what you render next, so switch to **Final** before your keeper render. See the table below. |
-| **Advanced: steps, CFG, sampler** | CFG, sampler and a negative prompt. LTX-2.5 here is distilled: CFG 1 is its tuned setting. |
+| **Quality** | **Draft**, **Final** (the default) or **Hollywood**. Saved per shot, so a shot reopens on its own preset. See [Quality](#quality-draft-final-hollywood) below. |
+| **Advanced (LTX)** | Beside Quality: the full LTX controls on top of the preset (see below). |
 | **Sound (generated with the final)** | The sound effects ("hooves galloping on packed dirt, wind…"). Left empty, it is filled in from what's on the stage. |
 | **Music mood (optional)** | With **Music ideas** chips: tense western strings, pulsing synth chase, eerie horror drones, and more. |
 | **Dialogue line (optional)** | A spoken line, with **Line ideas** chips. Typing one turns on lip sync (below). |
 | **Let the sound/dialogue drive the video** | The audio drives the picture, so the mouth follows the words. |
-| **Preview motion (draft)** | Queue a draft of this shot: about 2 to 4 minutes once warm. |
-| **Render final + sound** | Queue the final with sound: about 4 to 6 minutes once warm. |
+| **Preview motion (draft)** | Queue a draft of this shot. The time under the button comes from your own measured renders. |
+| **Render final + sound** | Queue the final with sound, at the shot's Quality preset. |
 | **Draft every shot** | A draft for every shot that doesn't have one, each from its own chosen frame. |
 | **Final for every shot** | A final with sound for every shot that doesn't have one yet. |
 
-**Quality tiers** (steps for the render + the upscale pass):
+<a id="quality-draft-final-hollywood"></a>
 
-| Tier | Steps | Use it for |
-|---|---|---|
-| **Draft** | 8 + 3 | The default. A quick look at the motion: is the blocking right, does the car go the right way? Faces are readable. |
-| **Final** | 12 + 6 | Clean fast motion, faces and hands. Your keeper renders. |
-| **Final HQ** | 18 + 12 | Hero shots. About twice as long as Final. |
+**Quality: Draft, Final, Hollywood.** Every preset renders in two stages (a base pass, a x2 latent upscale, a refine pass) with the same seed.
+
+| Preset | Output | Steps | Time, 121 frames, 48 GB card | Use it for |
+|---|---|---|---|---|
+| **Draft** | 1984×1088 | 8 + 3 | about 6–7 min | A quick check: is the blocking right, does the car go the right way? |
+| **Final** (default) | 1984×1088 | 12 + 6 | about 8–9 min | Your keeper renders. |
+| **Hollywood** | 2624×1408 | 12 + 6 | about 15–17 min | Hero shots: real detail in skin, rain and panel lines, and fast motion stays coherent (a spinning car stays one car). |
+
+Each button shows its time. Renders write H.264 (CRF 18 / 14 / 12).
+
+1. Pick the shot in the strip, then click **Draft**, **Final** or **Hollywood** under **Quality**. The choice is kept with the shot.
+2. Optional: click **Advanced (LTX)** for resolution, two-stage on or off, frame rate and frame count, temporal x2, steps for each stage, the stage-2 start sigma, manual sigmas, sampler, CFG, seed, the layout IC-LoRA strength, one extra LoRA, decode tiles, and the codec: H.264 at a CRF, or a **ProRes 422 HQ** master beside an H.264 preview. **Reset to preset** clears your overrides.
+3. Press **Render final + sound**.
+
+Older saved App workflows keep their old graph: open the Soundstage App template again to get the Hollywood wiring. Details: [quality.md](quality.md).
 
 **Lip sync: type the line.** A line pasted over a mouth that never heard it doesn't sync. So when you type or pick a **Dialogue line**, Soundstage turns on **Let the sound/dialogue drive the video** for you, and the final is rendered *from* the line (LTX audio-driven): the status line says "Lip sync on: the final is driven by the line, so the mouth follows the words." You can still untick it on purpose.
 
@@ -462,6 +474,22 @@ The bar above the picture picks what you compare and how:
 | **Fade** | Drag to mix from A to B. |
 
 Drag anywhere on the picture and the nearest handle follows; a click jumps it there. Greyed-out buttons are stages not rendered yet.
+
+<a id="takes-that-check-themselves"></a>
+
+#### Takes that check themselves
+
+Every draft and final is checked on the CPU about 7 seconds after it lands. No models, no GPU.
+
+<p align="center"><img src="media/takecheck.jpg" width="860" alt="The Ladder with take-check chips: a red 'Sports car faces the wrong way', a green 'Follows blocking 94%', Measure and Re-roll"></p>
+
+1. Render a draft or a final as usual.
+2. Look under the Ladder's bar (and on the Dailies cards and take rows): a chip says **✓ clean**, or what it found, such as **⚠ freeze 2.1–2.6 s** or **⚠ Sports car faces the wrong way**. It checks for black frames, frozen or stuttering stretches, jumps between frames, heavy smear, face drift, and cars whose lit lamps don't match the end that should face the camera.
+3. Click a chip and the Ladder jumps to that moment.
+4. Read **Follows blocking N%**: the take's camera move compared with the stage camera. Hover it for the breakdown. Press **Measure** to also score each actor against their stage position (SAM 3.1, through the queue). A camera-only score is never shown green, and "can't tell" never counts as a pass.
+5. Not happy? **Re-roll** renders it again with a new seed. It asks first and says how much GPU time it costs.
+
+Also new on every step button: a **Ready / Needs X** dot (the models it needs are installed, or which are missing, with a link to MODELS.md), and **$0 · about N min on your GPU** under the render buttons, from your own measured render times. Every App render carries its recipe in the MP4: drop a Soundstage MP4 on the stage and it offers to restore its set and shot.
 
 <a id="step-7-deliver"></a>
 
@@ -530,7 +558,39 @@ On the timeline: drag a clip to reorder, drag its edge to trim, Option/Alt-drag 
 | **FCPXML** | `.fcpxml` (1.10) | DaVinci Resolve and Final Cut Pro |
 | **OTIO** | `.otio` | DaVinci Resolve and other OpenTimelineIO tools |
 
-Avid AAF comes from the graph node **Soundstage · Cut: Export to Avid / Premiere / Resolve / FCP**, which writes every format plus an `.aaf` and per-shot audio mixes into `output/soundstage_cuts/<name>/`. Add it in the graph view and install `pyaaf2` to use it. There are no picture dissolves: cuts are cuts, and fades are on the audio clips.
+Avid AAF comes from the graph node **Soundstage · Cut: Export to Avid / Premiere / Resolve / FCP**, which writes every format plus an `.aaf` and per-shot audio mixes into `output/soundstage_cuts/<name>/`. Add it in the graph view and install `pyaaf2` to use it. Transitions, fades, opacity and volume keys, and titles travel into the EDL, Premiere XML, FCPXML and OTIO exports, with .srt and .vtt for subtitles.
+
+<a id="transitions-sound-titles-and-render"></a>
+
+#### Transitions, sound, titles and render
+
+The timeline has **V2** (titles) over **V1**, a **SUBS** lane, and **A1 Dialogue · A2 SFX · A3 Music · A4 Ambience**.
+
+<p align="center"><img src="media/timeline.jpg" width="860" alt="The Cut timeline: Transitions palette, Keys, Assemble scene, Title, Subtitles, Burn in, the Sound row with Generate, Auto-duck, Beats and the loudness target, Render MP4 / ProRes / 9:16"></p>
+
+**Add a transition or a fade**
+
+1. Drag **Dissolve**, **Dip black**, **Dip white** or **Wipe** from the **Transitions** row onto a cut. Drop it on the head of the first clip for a fade up, on the tail of the last for a fade out. Or press **T** for a dissolve on the cut nearest the playhead.
+2. Click the transition bar to change its type or length, or **Remove** it (⌫).
+3. If the bar turns orange, the clips' handles were too short: the status line says how much fitted. A dip needs no handles.
+
+**Edit like an NLE.** **S** splits, ⌘-drag (or `,` / `.`) slips a clip, Option/Alt-drag rolls an edit, and drags reorder with snapping. **Keys** (or **R**): click a clip's line to add a rubber-band key (opacity on V1, volume on audio), drag it, Option/Alt-click deletes it.
+
+**Generate sound in place**
+
+1. Put the playhead where the sound should start.
+2. In the **Sound** row pick **SFX → A2**, **Music → A3** or **Dialogue → A1**, type it (a line as `MARA: Drove all night to find you`) and a length, then **Generate**. It's made by the App's own open-weights nodes (LTX-2.5 audio, Chatterbox) and lands on its track. **Import…** puts your own file there.
+3. **Auto-duck** dips the music −12 dB under every dialogue line (amber keys you can drag).
+4. **Beats** finds the music's tempo; trims snap to it, and **Cuts → beat** rolls each cut onto the nearest beat.
+5. Pick the loudness target: **Social −14 LUFS**, **EBU R128 −23** or **ATSC −24**. **Measure** reads the mix.
+
+**Titles, subtitles and a first cut**
+
+- **+ Title** puts a card on V2 (card on black, lower third or centre) with text, length and fades in the inspector.
+- **Assemble scene** builds a first cut from the ScriptSync lining: the wide for action, an insert where one is lined, the speaker's single for their lines, cutting on line ends.
+- **Subtitles** builds cues from the typed dialogue lines; **Burn in** draws them into the render.
+
+**Render.** **MP4** (H.264 + AAC), **ProRes** (422 HQ + 24-bit PCM) or **9:16 social** (1080×1920, titles laid out for the phone), written to `output/soundstage_cuts/`. Transitions, fades, keys, titles, the mix and each Final's own sound are rendered, taken to the loudness target with a true-peak limiter. Details: [cut.md](cut.md).
 
 ### Dailies and the lined script
 
@@ -648,6 +708,50 @@ The red **■ Stop** at the end of the step bar is there whenever ComfyUI is ren
 Press it to **cancel every queued render and interrupt the one running now**. The status line confirms: "Stopped: 3 queued renders cancelled, the running one interrupted." Shots marked painting… or rendering… go back to normal, and anything already rendered stays.
 
 It clears the **whole ComfyUI queue**, including jobs you queued from other workflows or tabs on the same server.
+
+<a id="the-director-chat-voice-and-mcp"></a>
+
+### The Director: chat, voice and MCP
+
+Say what you want and the Director does it with the App's own controls.
+
+<p align="center"><img src="media/director.jpg" width="860" alt="The Director panel beside the stage: 'Use the J-turn stunt' becomes a plan, applied, with Undo this and next-step buttons"></p>
+
+1. Press **/** (or **Director** in the top bar). The panel opens with the cursor in the box.
+2. Type what you want, for example *"put Mara in the sports car at night, rain, camera on the hood, she's nervous"*, and press Enter. Or **hold `** anywhere in the App (or Space in the empty box) and talk; let go to send.
+3. Read the plan: a short numbered list of steps.
+4. Press **Apply**, Enter on the empty box, or say "yes". Each step runs in front of you on the stage.
+5. Changed your mind? **Undo this** on that turn puts back the scene, the look, the approvals and the cut. "no" or Esc drops a waiting plan.
+6. Use the suggested next steps (buttons such as **Play the stunt**) or keep talking.
+
+**What it can do:** cast and props, crate stacks, mounting people in cars and on horses, time, weather and lights, coverage setups, lenses, animated camera moves, rigs and hood mounts, car stunts and drive-through crashes, physics and bake, notes for an actor, the grade, script scenes, presets, frames, drafts and finals, approvals and the cut. Anything that uses the GPU always asks first, unless you said "go" ("render a draft of shot 2, go").
+
+**The model.** By default a local **Qwen3.5 4B** through ComfyUI's queue (offline). It can also use an Ollama model on your computer, which answers while the GPU is busy, or plain rules with no model. Voice uses the browser's speech recognition or **Whisper** on the server (offline, on the CPU). Pick these in the panel's settings. Details: [director.md](director.md).
+
+**Drive it from Claude (MCP).** The same tools are an MCP server, `tools/soundstage_mcp.py` (Python standard library only).
+
+1. Open the Soundstage App in a browser, with ComfyUI running.
+2. Add the server. For Claude Code:
+   ```bash
+   claude mcp add soundstage -e SOUNDSTAGE_URL=http://127.0.0.1:8188 -- python3 /path/to/ComfyUI/custom_nodes/ComfyUI-Soundstage/tools/soundstage_mcp.py
+   ```
+   For Claude Desktop, add the same command to `claude_desktop_config.json` (see [mcp.md](mcp.md)).
+3. Ask Claude, for example *"Look at my Soundstage set and make shot 2 a slow push-in at 50 mm"*. It reads the set and proposes a plan; nothing changes yet.
+4. Approve it, and the plan runs in the open App as a "Claude · MCP" turn in the Director panel, with **Undo this**. Renders also need `confirm_gpu`, so a well-behaved client asks you first.
+
+<a id="presets-one-click-camera-moves-and-lighting"></a>
+
+### Presets: one-click camera moves and lighting
+
+<p align="center"><img src="media/presets.jpg" width="760" alt="The Presets window: camera move cards, with 'Applied Crane up to shot 1' and an Undo button"></p>
+
+1. Pick the shot in the strip, then press **V** (or **Presets** in the top bar).
+2. Choose a tab: **Camera moves** (push in, pull out, orbit, crane up / down, dolly zoom, whip pan, handheld follow, drone reveal, tracking side, car mount), **Lighting** (golden hour, blue hour, night street, noir hard key, neon, overcast, candle / firelight, studio three-point), **Looks**, **Action**, **Edit styles**, **Recipes** or **Mine**. Or type in **Search presets** ("crane", "golden hour", "J-turn", "trailer").
+3. Hover a camera move to preview it on the shot; click it to apply. Camera moves write editable camera keys and a rig; lighting sets the time of day, a lighting setup, the prompt words and the grade.
+4. Every apply is **one undo step**: ⌘Z (even right after clicking a card) or **Undo** on the toast.
+5. To keep your own: set up a camera, light or look you like, open **Mine** and **Save current as Camera**, **Light** or **Look**. **Export** saves them as JSON.
+
+The Director can use presets too: *"make it a crane up at golden hour"*.
 
 ---
 
@@ -802,12 +906,26 @@ Select a car (or truck, horse, motorcycle, bicycle or boat) and pick an **In-car
 
 A style's suggested lens never overrides an in-car camera: the status line tells you when the lens was kept wide.
 
+<a id="stunts-j-turn-donut-handbrake-180"></a>
+
+### Stunts: J-turn, donut, handbrake 180
+
+<p align="center"><img src="media/stunt_jturn.gif" width="760" alt="Reverse J-turn: the clay stage on the left, the final on the right, the red car spinning with tyre smoke"></p>
+
+1. Put a car on the set where the stunt should start, facing the way it should go.
+2. Select it and pick **Stunt** in its properties: **Reverse J-turn** (races backwards, whips round 180° and drives off nose first), **Donut** (two tight spins in a cloud of tyre smoke) or **Handbrake 180** (slides round and roars back the way it came).
+3. Press **Play**. The keys are written on the set you're on, from where the car starts. The body rolls out of the turn, squats on the launch and dives under braking on its springs; the wheels stay planted and turn backwards in reverse; tyre smoke pours off the wheels. A driver in the seat leans with the car.
+4. Adjust: drag the keys, or turn the car at a key with **Turn**. Keys can steer the nose and drive in reverse, so you can build your own stunt the same way.
+5. Frame and render as usual. The prompts tell the image and video models which end of the car leads in each beat, and the take check flags a car that ends up facing the wrong way.
+
+Tip: in ② Cast, **Generate** on a car makes a vehicle turnaround (front, rear, side, three-quarter), so a car seen tail-first in frame 1 has a front that belongs to it when it spins round. Or just tell the Director: *"use the J-turn stunt"*.
+
 ### Sets, weather and light
 
 **Set & weather** (the **Set** tab):
 
-- **Set**: Plaza exterior, City street, Interior room, Studio cyc / green screen, Forest, Desert, Beach & ocean, Water tank, Open water (sea / lake), Stadium / ballfield, Empty stage.
-- **Elements**: Clear, Rain, Snow, Fog / haze, Smoke, Dust, Fire sparks, with an **Amount**.
+- **Set**: Plaza exterior, City street, Interior room, Studio cyc / green screen, Forest, Desert, Beach & ocean, Water tank, Open water (sea / lake), Stadium / ballfield, Underwater reef, Burning building (night), Airplane cabin, Airport runway, Above the clouds, Train carriage, Train station platform, Empty stage.
+- **Elements**: Clear, Rain, Snow, Fog / haze, Smoke, Dust, Fire sparks, Fire (flames, embers, smoke) on any set, with an **Amount**.
 - **Water**: the water level in the Water tank (0 to 4 m).
 
 **Lighting** (the **Light** tab):
@@ -824,6 +942,20 @@ A style's suggested lens never overrides an in-car camera: the status line tells
 | selected light | **K** (colour temperature, 1800 to 12000 K), **Power**, **Height**, **Soft**, **Delete light**. |
 
 The line **Lighting note for the prompt:** shows exactly how your lighting will be described to the image and video models.
+
+<a id="the-new-sets"></a>
+
+#### The new sets
+
+<p align="center"><img src="media/new_sets.jpg" width="700" alt="The new sets in clay: underwater reef, burning building, airplane cabin, train carriage, station platform, an airliner above the clouds"></p>
+
+1. Pick one under **Set** (or start from a script scene whose slugline names it: *UNDERWATER*, *EXT. BURNING BUILDING*, *INT. AIRPLANE CABIN*, *INT. TRAIN*, *EXT. TRAIN STATION*). Scene setup then places the set, a camera and the blocking for you.
+2. **Underwater reef:** a dense coral swim lane. People off the seabed swim (the prompts say "swims", not "walks").
+3. **Burning building:** flames in the windows and debris at night. Add **Fire** under Elements to put flames on any other set.
+4. **Airplane cabin** and **Train carriage:** seat people by the window (drag them onto a seat); clouds and countryside stream past the windows in the stage and the guides, and the view out of the train is softened so the video paints real fields and trees.
+5. **Airport runway**, **Above the clouds** (with an airliner) and **Train station platform** (with a train) for the exteriors.
+
+<p align="center"><img src="media/new_sets_reef.gif" width="700" alt="A diver over the coral reef: the clay stage beside the final"></p>
 
 ### Posing people
 
@@ -878,6 +1010,32 @@ Select a prop and press **Physics** in its card. A small panel opens beside the 
 - **Throw something:** key it moving (two keys or more). It follows its keys, then physics takes over at the last key at that speed.
 - The clay, the previz video and the LTX layout guide only ever play keys, so every render of a baked shot is the same. Simulate again (or Cmd/Ctrl+Z) to redo it.
 - The solver is a small built-in one (substepped XPBD rigid bodies, the position-based sibling of three-avbd's vertex block descent). Boxes and spheres only: a chair or a table falls as its bounding box.
+- **Live solver: CPU / GPU · beta.** At the bottom of the panel. **CPU** (XPBD) runs in every browser; **GPU · beta** solves live drags, car hits and drops on the graphics card with [three-avbd](https://github.com/sbobyn/three-avbd) (WebGPU), and falls back to the CPU, saying why, where WebGPU isn't available. Simulate & bake always runs on the CPU.
+
+<a id="live-3d-drag-climb-mount-carry"></a>
+
+### Live 3D: drag, climb, mount, carry
+
+Physics stays live while you drag, so you can block by hand the way you'd move things on a real set.
+
+<table>
+<tr>
+<td width="50%"><img src="media/live3d_mount.gif" alt="A person is dragged to a horse and swings up into the saddle, then is dragged off and hops down"></td>
+<td width="50%"><img src="media/live3d_climb.gif" alt="A person is dragged to a crate, climbs onto it, then walks to a table and climbs onto it"></td>
+</tr>
+</table>
+
+1. **Push things.** Drag a crate into others and they're shoved along live; the point you grabbed stays under the cursor. Stacks and towers stand rock-still until something hits them.
+2. **Stack things.** While dragging, scroll the wheel to lift the prop straight up, carry it over another crate and let go: it drops and stacks.
+3. **Walk people.** Drag a person: they turn to face where they're going and their legs swing.
+4. **Climb.** Drag a person against a crate or a table and they step up onto it. Drag them off the far side and they hop down.
+5. **Mount a horse.** Drag a person onto a horse and they swing up into the saddle; drag them off and they stand beside it, legs together.
+6. **Carry a prop.** Walk a person into a light box and press **C**: they pick it up. Carry it somewhere and press **C** again to put it down.
+7. **Crash.** Key a car through a crate stack (or tell the Director *"have the car crash through the crates"*): the car throws them clear. **Simulate & bake** when you like it, so every render plays the same crash.
+
+Each drag is one undo step (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z redoes). Press on a selected person's body to grab the person; the move arrows still work where they stick out past them.
+
+<p align="center"><img src="media/physics_crate_crash.gif" width="700" alt="A car crashes through a crate stack: the clay guide beside the LTX draft"></p>
 
 ### Motion capture: from a video or the webcam
 
@@ -914,9 +1072,48 @@ What you get:
 
 Notes: it **replaces the current stage**, so start a new setup or scene first if you want to keep what you have. It needs a Depth Anything 3 checkpoint; without Qwen3.5 you get the camera move only (no subjects or set pieces); without SAM 3D Body, no performer. Camera roll isn't tracked, and very fast whip pans can break the track. The clip is also saved in `input/` so the graph's Footage and Recast nodes can use it.
 
+<a id="interop-blender-unreal-maya-nuke"></a>
+
+### Interop: Blender, Unreal, Maya, Nuke
+
+<p align="center"><img src="media/interop_blender.jpg" width="760" alt="Soundstage to Blender: the Soundstage clay frame, the same shot rebuilt in Blender, and their matching silhouettes (IoU 0.998)"></p>
+
+**Bring a world in**
+
+1. In ③ Set › Object, open **More: import & export** and press **Import world…**.
+2. Pick a GLB, glTF, FBX or OBJ (from Blender, Unreal, Maya or Sketchfab) or a Gaussian splat. It replaces the set: the main floor goes on the stage floor, with units and up axis read from the file.
+3. Check the size line (*This world is 120 m × 80 m, 15 m tall*). If it looks wrong, press **Fix scale**.
+4. Block as usual. The meshes are colliders, so people stand on its floors and crates land on its tables; cameras in the file become shots and animated objects play on the timeline. Heavy worlds are merged by material with far LODs, so a 4,000-object town still runs at well over 60 fps.
+5. A Nuke or Maya `.chan` or a camera.json comes in as a shot the same way.
+
+**Send the shot out**
+
+1. In ⑦ Deliver, press **Export for Blender · Unreal · Maya · Nuke** (**Download the DCC kit**). You get one zip: the staged shot as an animated GLB (every move baked, plus the camera and its lens), camera.json and `.chan`, a frame-one OBJ and a builder script for each app.
+2. **Blender:** `blender --python blender/build_blender.py` (or run it from the Scripting tab). It sets fps, frame range (from 1001), resolution and the camera, with the Layer Pack plates as the camera background. Verified headless in Blender 4.3 at silhouette IoU 0.995–0.999.
+3. **Unreal:** run the script in the editor's Python console for a CineCameraActor and a Level Sequence. **Maya:** an animated camera (rotate order zxy). **Nuke:** a Camera, ReadGeo and ScanlineRender. These three are unit-tested but not yet run in those apps.
+
+Details and how to rerun the checks: [interop.md](interop.md).
+
+<a id="phone-camera"></a>
+
 ### Phone camera
 
-Hand-hold the shot camera with a phone, iPad, Quest or Vision Pro. In the **Camera** tab press **Connect a phone**, then open `/soundstage/vcam` on the device (on the same ComfyUI address). The device page offers AR and VR 6-DoF tracking or a 3-DoF gyro, a **Recenter** button, and recording. Motion sensors need https or localhost on the device.
+**The phone viewfinder: the phone is the camera you look through.**
+
+<p align="center"><img src="media/phone_viewfinder.jpg" width="760" alt="The phone viewfinder: live clay stage, primes 14 to 135 mm, IRIS T1.4 with the depth-of-field readout, FOCUS 14 m, MOVE and UP sticks, record button"></p>
+
+1. If ComfyUI runs on another machine (a pod over an SSH tunnel), start the LAN bridge on your computer first: `python3 tools/vcam_bridge.py`. It serves https on your Wi-Fi only, with a pairing code; the phone can only reach the viewfinder, never the queue or your files.
+2. In ③ Set, press **Phone camera** in the tool rail and **Phone viewfinder** in its row. A QR code appears.
+3. Scan it with the phone, hold the phone sideways and tap **Start**. The phone shows the live stage through the shot camera in Clay or Color; the desktop's camera follows the phone.
+4. **Aim** by moving the phone (**Level** keeps the horizon flat, **Re-centre** goes back to the shot's framing). Walk and crane with the **MOVE** stick and **UP** strip, or **Walk AR** on Android Chrome.
+5. **Zoom** with a pinch, **+ TELE / − WIDE**, or the **14 18 24 35 50 85 135** primes.
+6. **Focus:** tap the picture to focus there. Open **FOCUS** to set marks **A** and **B**, then **Pull ⇄** racks between them. **IRIS** sets T1.4 to T22 with a live depth-of-field preview.
+7. Press **●**: a count-in, then it records from the top of the shot in step with the action, and stops at the shot's end.
+8. Watch it back on both screens, then **Keep**, **Discard** or **● Again**. A kept take becomes the shot's camera keys (stabilized; **Stabilize** = gimbal) plus lens keys for focus, T-stop and roll.
+
+Details: [vcam.md](vcam.md).
+
+**The VCam page (phone, iPad, Quest, Vision Pro).** Hand-hold the shot camera with a phone, iPad, Quest or Vision Pro. In the **Camera** tab press **Connect a phone**, then open `/soundstage/vcam` on the device (on the same ComfyUI address). The device page offers AR and VR 6-DoF tracking or a 3-DoF gyro, a **Recenter** button, and recording. Motion sensors need https or localhost on the device.
 
 Recorded takes land in the **Take** list. **Steady** sets how much the stabilizer smooths (it removes shake but keeps your move); **Use take** turns the take into camera keys. If the move looks like a known rig, a **Snap to …?** button offers to make it that rig's clean move.
 
@@ -1009,6 +1206,10 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 | Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z (or Cmd/Ctrl+Y) | Undo / redo |
 | Esc | Deselect |
 | Option/Alt-drag an edit | Roll it |
+| S | Split at the playhead |
+| Cmd/Ctrl-drag a clip, `,` / `.` (Shift: 5 frames) | Slip |
+| T | Dissolve on the cut nearest the playhead |
+| R | Keys (rubber bands) on / off |
 
 **Paint Studio**
 
@@ -1045,6 +1246,11 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 | Script search | Esc | Clear the search |
 | Add, Build scene, Change it, Look boxes | Enter | Add / build / apply |
 | Advisor | Cmd/Ctrl+Enter | Suggest shots |
+| Anywhere in the App | / | Open the Director, cursor in the box |
+| Anywhere in the App | hold ` | Talk to the Director (let go to send) |
+| Director | Enter / Esc | Send, or apply the plan on an empty box / cancel the plan, then close |
+| Anywhere in the App | V | Open Presets |
+| Anywhere in the App | ? | Keyboard shortcut sheet |
 | Act it out | Esc | Cancel the recording |
 | Full window | Esc | Back to the App panel |
 
@@ -1079,7 +1285,7 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 
 **Motion and sound**
 
-20. **Draft to check the motion, then Final.** A **Draft** (8 + 3 steps) tells you whether the blocking, the direction of travel and the camera are right. Quality starts on Draft; once it looks right, click **Final** and render again, and keep **Final HQ** for hero shots.
+20. **Draft to check the motion, then Final.** A **Draft** (8 + 3 steps) tells you whether the blocking, the direction of travel and the camera are right. Quality starts on **Final**; switch a shot to Draft while you work it out, back to Final for the keeper, and keep **Hollywood** for hero shots.
 21. **Type the dialogue line to get lip sync.** A line typed into **Dialogue line** turns on **Let the sound/dialogue drive the video**, so the mouth is animated *from* the words. A voice added afterwards never syncs.
 22. **Lower Motion freedom for precise action.** Car chases and stunts follow the clay more exactly near **exact**; dialogue and walking look more natural around the default **natural**.
 23. **Describe the sound you want.** **Sound (generated with the final)** is filled from the stage if you leave it empty, but "hooves on packed dirt, distant thunder" beats a guess.
@@ -1105,7 +1311,7 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 
 **"References need the updated Soundstage nodes (restart ComfyUI once)."** You updated the repo while ComfyUI was running. Restart ComfyUI.
 
-**The queue looks stalled.** It usually isn't. Progress moves one sampling step at a time, and on **Final HQ** a single step can take about 60 seconds, so the bar can sit still for a minute. The first render of a session also loads the models. Rough warm times: a frame 6 to 10 s, a Draft 2 to 4 minutes, a Final 4 to 6 minutes, Final HQ about twice a Final, MiniMax H3 20 to 30 minutes (its first run also encodes the prompt on the CPU for several minutes). While **■ Stop (N)** is showing, the jobs are still there.
+**The queue looks stalled.** It usually isn't. Progress moves one sampling step at a time, and on **Hollywood** a single step can take about 60 seconds, so the bar can sit still for a minute. The first render of a session also loads the models. Rough warm times: a frame 6 to 10 s, a Draft about 6 to 7 minutes, a Final 8 to 9, Hollywood 15 to 17 (121 frames on a 48 GB card), MiniMax H3 20 to 30 minutes (its first run also encodes the prompt on the CPU for several minutes). While **■ Stop (N)** is showing, the jobs are still there.
 
 **I pressed Stop and other work disappeared too.** Stop clears the whole ComfyUI queue, not only Soundstage's jobs. Queue them again.
 
