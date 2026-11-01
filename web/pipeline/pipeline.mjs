@@ -6,7 +6,7 @@ import { icon } from "../ui/icons.mjs";
 import { setTouchupStill } from "../touchup/touchup.mjs";
 import { Mover, hudPanel, hudPop, cvEl, clipText } from "../ui/canvasui.mjs";
 import { RippleControls } from "../motion/ripple.mjs";
-import { LtxAdvanced } from "../motion/ltxadvanced.mjs";
+import { LtxAdvanced, ADHERENCE, ADHERENCE_NAMES, adherenceKnobs } from "../motion/ltxadvanced.mjs";
 import { castPool, shotSelection, pickRefs, refLines, refLabel, shotKind, refViewParams, REF_LIMIT } from "../cast/shotcast.mjs";
 import { downloadDCCKit } from "../stage/interop/exportdcc.mjs";
 
@@ -965,8 +965,11 @@ export class Pipeline {
     this.m = {};
     const m = this.m;
     m.engine = h("select", { on: { change: () => this._applyVideo() } });
-    m.freedom = h("input", { type: "range", min: "0", max: "0.8", step: "0.05", value: "0.5",
-      on: { input: () => { m.freeOut.textContent = this._freeLabel(); this._applyVideo(); } } });
+    // Adherence: Loose · Balanced · Exact (default Exact), saved per shot with the LTX settings. It sets the clay guide
+    // blur, the Layout IC-LoRA strength and how hard your frame steers (web/motion/ltxadvanced.mjs ADHERENCE).
+    m.freedom = h("span", { class: "seg row ss-adherence", role: "group", "aria-label": "Adherence to the clay blocking" },
+      ...ADHERENCE_NAMES.map((k) => h("button", { type: "button", "data-adh": k, "aria-pressed": String(k === ADHERENCE.default),
+        title: ADHERENCE.levels[k].tip, on: { click: () => this._setAdherence(k) } }, ADHERENCE.levels[k].label)));
     m.freeOut = h("span", { class: "status" });
     m.h3Ref = h("input", { type: "checkbox", on: { change: () => this._applyVideo() } });
     m.h3Box = h("div", { class: "status", hidden: "" },
@@ -1030,7 +1033,7 @@ export class Pipeline {
           this.ripple.el,
           h("label", { class: "f" }, "Video model", m.engine),
           m.h3Box,
-          h("label", { class: "f" }, h("span", { class: "row" }, "Motion freedom", m.freeOut), m.freedom),
+          h("div", { class: "f" }, h("span", { class: "row" }, "Adherence to your blocking", m.freeOut), m.freedom),
           h("div", { class: "row" }, h("span", { class: "status" }, "Quality"), m.qSeg, this.ltx.btn),
           this.ltx.panel,
           h("details", {}, h("summary", { class: "status", style: "cursor:pointer" }, "Advanced: steps, CFG, sampler"),
@@ -1062,8 +1065,20 @@ export class Pipeline {
   }
 
   _freeLabel() {
-    const f = +this.m.freedom.value;
-    return f < 0.15 ? "exact: copies the clay motion" : f <= 0.55 ? "natural (recommended): real weight, same blocking" : "loose: more invention, framing may drift";
+    const a = adherenceKnobs(this.ltx.settings()).adherence;
+    return a === "Exact" ? "exact: on the clay's marks" : a === "Balanced" ? "balanced: close, a little freedom" : "loose: more invention, framing may drift";
+  }
+
+  _setAdherence(k) {
+    this.ltx.patch({ adherence: k });
+    this._syncAdherence();
+    this._applyVideo();
+  }
+
+  _syncAdherence() {
+    const a = adherenceKnobs(this.ltx.settings()).adherence;
+    for (const b of this.m.freedom.children) b.setAttribute("aria-pressed", String(b.dataset.adh === a));
+    this.m.freeOut.textContent = this._freeLabel();
   }
 
   _refreshMotion() {
@@ -1087,9 +1102,7 @@ export class Pipeline {
     m.sampler.value = this.ltx.settings().sampler;
     m.neg.value = this.w(5509, "value")?.value || "";
     this._motionNote();
-    const fr = this.w(9096, "motion_freedom")?.value;
-    if (fr != null) m.freedom.value = String(fr);
-    m.freeOut.textContent = this._freeLabel();
+    this._syncAdherence();
     m.audio.checked = !!this.w(9092, "enabled")?.value;
     this._setVoice(this._voice());
     // Sound: suggest effects from what is on stage when the field is empty, so the final always has sound.
@@ -1122,7 +1135,7 @@ export class Pipeline {
     if (isH3(m.engine.value)) this.set(9083, "model.motion_ref", m.h3Ref.checked ? H3_CLAY_REF : "off");
     this._showEngine();
     this._drawShotCast();
-    this.set(9096, "motion_freedom", +m.freedom.value);
+    this.set(9096, "motion_freedom", adherenceKnobs(this.ltx.settings()).motion_freedom);   // recorded in the take's recipe
     this.ltx.apply();
   }
 

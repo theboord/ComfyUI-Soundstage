@@ -165,13 +165,23 @@ def actor_scores(stage: dict, tracks: list[list], names: dict | None = None, kin
                  track_kinds: list | None = None, times: list[float] | None = None) -> list[dict]:
     """Per actor: mean box IoU and the share of on-screen frames on its mark; the frames where it drifts."""
     match = match_tracks(stage, tracks, kinds, track_kinds)
+    claimed = set(match.values())
     out = []
     for aid, sb in stage.items():
         frames = [i for i, b in enumerate(sb) if b is not None]
         if len(frames) < MIN_ACTOR_FRAMES:
             continue
         tb = tracks[match[aid]] if aid in match else [None] * len(sb)
-        ious = [box_iou(sb[i], tb[i] if i < len(tb) else None) for i in frames]
+        # SAM can lose an object and pick it up again as a new track (a car far away, then close). Where the
+        # matched track has no box, the best unclaimed track of the same kind stands in for that frame.
+        spare = [t for k, t in enumerate(tracks) if k not in claimed
+                 and not (kinds and track_kinds and kinds.get(aid) and track_kinds[k] and kinds[aid] != track_kinds[k])]
+        def box_at(i):
+            b = tb[i] if i < len(tb) else None
+            if b is not None or not spare:
+                return b
+            return max((t[i] for t in spare if i < len(t) and t[i] is not None), key=lambda x: box_iou(sb[i], x), default=None)
+        ious = [box_iou(sb[i], box_at(i)) for i in frames]
         on = [x >= ON_MARK for x in ious]
         drift = [frames[j] for j, ok in enumerate(on) if not ok]
         out.append({"id": aid, "name": (names or {}).get(aid, aid), "frames": len(frames), "iou": round(float(np.mean(ious)), 3),

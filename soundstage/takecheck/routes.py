@@ -5,7 +5,8 @@ GET  /soundstage/takecheck/recipe     ?filename=&subfolder=&type= -> the stage +
 GET  /soundstage/takecheck/timing     -> measured render times per rung (from ComfyUI's history)
 GET  /soundstage/takecheck/readiness  ?still=&video=&l2r=1&krea=0 -> what each App step still needs
 
-Also installs the on-prompt handler that writes the recipe into every Soundstage render (recipe.on_prompt).
+Also installs the on-prompt handlers that write the recipe into every Soundstage render (recipe.on_prompt) and set
+the look-reference strength from the shot's Adherence (on_prompt_reference -> ltx_settings.apply_reference).
 """
 from __future__ import annotations
 
@@ -51,6 +52,17 @@ def run(path: str, force: bool = False) -> dict:
     return res
 
 
+def on_prompt_reference(body: dict) -> dict:
+    """On-prompt: Adherence's look-reference strength on the App's frame_idx -1 guides. Never raises."""
+    try:
+        from .. import ltx_settings as L
+        if isinstance(body.get("prompt"), dict):
+            L.apply_reference(body["prompt"])
+    except Exception:  # noqa: BLE001 - a knob must never stop a render
+        pass
+    return body
+
+
 def register(routes=None) -> bool:
     global _REGISTERED, _SEM
     if _REGISTERED and routes is None:
@@ -62,6 +74,7 @@ def register(routes=None) -> bool:
         routes = PromptServer.instance.routes
         try:
             PromptServer.instance.add_on_prompt_handler(R.on_prompt)
+            PromptServer.instance.add_on_prompt_handler(on_prompt_reference)
         except Exception:  # noqa: BLE001 - an older ComfyUI: renders just don't carry the recipe
             pass
     _SEM = asyncio.Semaphore(2)   # two takes at a time: the checks are CPU work beside a GPU render

@@ -79,9 +79,8 @@ class SoundstageQuality(IO.ComfyNode):
                         "exact previous behaviour.",
             inputs=[
                 IO.Float.Input("motion_freedom", default=0.0, min=0.0, max=1.0, step=0.05,
-                               tooltip="0 = follow the blocking exactly. Higher = a looser, softer clay guide so LTX "
-                                       "redraws stiff previz motion (gait, limbs, weight) while keeping composition "
-                                       "and camera. 0.3-0.5 is a good range for animals and action."),
+                               tooltip="Kept for saved workflows. The App's Adherence (Loose · Balanced · Exact, in "
+                                       "the advanced JSON; default Exact) now sets the guide blur and IC-LoRA strength."),
                 IO.Combo.Input("quality", options=QUALITIES, default="Final",
                                tooltip="Draft = 8 + 3 distilled steps (quick look, faces readable). Final = 12 + 6 "
                                        "(clean motion and detail, the default). Final HQ = 18 + 12 for hero shots. "
@@ -129,8 +128,13 @@ class SoundstageQuality(IO.ComfyNode):
         out_fps = float(st.get("fps") or src_fps)
         g = _retime(guide, src_fps, out_fps)
         sz = L.stage_sizes(int(g.shape[2]), int(g.shape[1]), st)
-        g = _resize(_gaussian_blur(g, k["guide_blur"]), *sz["stage1"])
-        lora = st["ic_lora"] if st.get("ic_lora") is not None else k["lora_strength"]
+        # Adherence (Loose · Balanced · Exact, default Exact) sets the guide blur, the IC-LoRA strength and the look
+        # reference strength (that one is applied on the prompt: ltx_settings.apply_reference). motion_freedom is
+        # the older control; it no longer moves these knobs.
+        adh = L.adherence_knobs(st)
+        g = _resize(_gaussian_blur(g, adh["guide_blur"]), *sz["stage1"])
+        lora = adh["ic_lora"]
+        st.update({"adherence": adh["adherence"], "guide_blur": adh["guide_blur"], "reference": adh["reference"]})
         dec = {**{"tile_size": 512, "overlap": 64, "temporal_size": 128, "temporal_overlap": 32}, **(st.get("decode") or {})}
         seed = int(st["seed"]) if st.get("seed") is not None else 42
         prompt = motion_prompt
