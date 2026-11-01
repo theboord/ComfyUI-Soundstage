@@ -412,7 +412,7 @@ export function simulate(specs, frames, opts = {}) {
       for (const c of C) { measure(c); c.vnPrev = dot(c.n, relVel(c, true)); c.lam = 0; }
       // Impact events (Milestone 21): a touching contact closing faster than MIN_IMPACT_SPEED is a hit. Its impulse is
       // the reduced mass times the speed change the bounce makes; mergeEvents() folds a hit's many probes into one.
-      if (logHits) for (const c of C) {
+      if (logHits && f >= 2) for (const c of C) {   // (frames 0-1: the authored start settling, not a hit)
         const sp = -c.vnPrev;
         if (sp < minHit || c.d < -0.02) continue;
         const iA = movable(c.a) ? c.a.invM : 0, iB = movable(c.b) ? c.b.invM : 0;
