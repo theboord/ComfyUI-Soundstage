@@ -250,3 +250,16 @@ test("QR: Reed-Solomon, structure (finders, timing, format), versions grow with 
   assert.ok(qrMatrix("x".repeat(200)).version > qrMatrix("x".repeat(20)).version);
   assert.throws(() => qrMatrix("x".repeat(400)));
 });
+
+test("QA round 05: 'Use it upright' keeps every control on a phone screen (top bar and lens row wrap, clear of the stick)", async () => {
+  const html = (await import("node:fs")).readFileSync(new URL("../../web/vcam/viewfinder.html", import.meta.url), "utf8");
+  const rule = (sel) => (html.match(new RegExp(`body\\.portrait ${sel.replace("#", "\\#")} \\{([^}]*)\\}`)) || [])[1] || "";
+  const px = (css, prop) => +((css.match(new RegExp(`(?:^|;|\\s)${prop}:\\s*calc\\((\\d+)px`)) || [])[1] ?? NaN);
+  assert.match(rule("#top"), /flex-wrap:\s*wrap/, "the top bar wraps instead of running off the right edge");
+  assert.match(rule("#bottom"), /flex-wrap:\s*wrap/, "lenses / iris / focus wrap instead of running off the right edge");
+  const stick = 10 + 96;   // #move: bottom 10px, stick 96px tall
+  assert.ok(px(rule("#bottom"), "bottom") >= stick + 8, "the lens row sits above the move stick, not under it");
+  assert.ok(px(rule("#left"), "top") >= 80 && px(rule("#right"), "top") >= 80, "the side rails start below a two-row top bar");
+  assert.ok(px(rule("#right"), "bottom") >= px(rule("#bottom"), "bottom") + 44, "the zoom / REC column ends above the lens row");
+  assert.match(html, /#rotate button \{[^}]*min-height:\s*44px/, "'Use it upright' is a full-size tap target");
+});

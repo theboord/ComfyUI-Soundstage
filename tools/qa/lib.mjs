@@ -30,12 +30,13 @@ export const GUARD = String.raw`(() => { if (window.__fetchGuard) return; window
 // Freezes CSS animation / transitions / carets so two captures of the same screen match.
 export const STILL_CSS = "*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition:none!important;caret-color:transparent!important}";
 
-/** Start a hidden Chrome at w x h. opts: port, firstRun (keep the Guide tour unseen), localFiles (serve these web/ files from the repo). */
-export async function launch({ port = 9770, w = 1440, h = 900, firstRun = false, localFiles = [] } = {}) {
+/** Start a hidden Chrome at w x h. opts: port, firstRun (keep the Guide tour unseen), localFiles (serve these web/ files from the repo),
+ *  angle: "swiftshader" (default, what the baselines use) or "metal" (real GPU: use it for demo-scene flows; SS_ANGLE=metal sets it). */
+export async function launch({ port = 9770, w = 1440, h = 900, firstRun = false, localFiles = [], angle = process.env.SS_ANGLE || "swiftshader" } = {}) {
   let W = w, H = h;
   const prof = mkdtempSync(join(tmpdir(), "ssqa-"));
   const flags = ["--headless=new", `--remote-debugging-port=${port}`, `--window-size=${W},${H}`, "--hide-scrollbars",
-    "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--no-first-run", "--no-default-browser-check", "--mute-audio",
+    ...(angle === "swiftshader" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : [`--use-angle=${angle}`, "--enable-gpu", "--ignore-gpu-blocklist"]), "--no-first-run", "--no-default-browser-check", "--mute-audio",
     "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows",
     "--force-color-profile=srgb", "--font-render-hinting=none", `--user-data-dir=${prof}`, "about:blank"];
   const chrome = spawn(CHROME, flags, { stdio: "ignore" });
