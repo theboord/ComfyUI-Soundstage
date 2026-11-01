@@ -1,6 +1,6 @@
 {
   "about": "Media the demo ships beyond the original r/ renders. Each encode entry is re-encoded into the media cache when its source is newer: videos 960 px, H.264 crf 28, AAC 96k (the r/ recipe); stills 1280 px JPEG. kind: video | still | frame0 (the clip's first frame as a still); vf: an ffmpeg crop applied first. Never list anything from soundstage_private/, Milestone6_Ripple_Pose/private_mike_test/ or the 24-hour challenge (the build refuses them).",
-  "always": ["r/canned/advisor_vocab.json", "refs/horse.jpg", "refs/man.jpg", "refs/woman.jpg"],
+  "always": ["r/canned/advisor_vocab.json", "refs/horse.jpg", "refs/man.jpg", "refs/woman.jpg", "r/canned/takecheck.json"],
   "encode": [
     {"src": "~/OpenHiggsfieldContest/share/Milestone11_NewSets/showcase/underwater/draft_ltx.mp4", "out": "m_underwater_draft.mp4"},
     {"src": "~/OpenHiggsfieldContest/share/Milestone11_NewSets/showcase/underwater/draft_ltx.mp4", "out": "m_underwater_look.jpg", "kind": "frame0"},
@@ -42,6 +42,15 @@
     {"src": "~/OpenHiggsfieldContest/share/Milestone6_Ripple_Pose/ripple_romcom/side_by_side_source_vs_red_jacket.mp4", "out": "m_ripple_red_jacket.mp4"},
     {"src": "~/OpenHiggsfieldContest/share/Milestone6_Ripple_Pose/pose_riders/clay_vs_layout_vs_pose.mp4", "out": "m_pose_riders.mp4"},
     {"src": "~/OpenHiggsfieldContest/share/Milestone12_Interop/Milestone12_import_world_and_export.mp4", "out": "m_interop_dcc.mp4"},
-    {"src": "~/OpenHiggsfieldContest/share/ScriptSync_Demo.mp4", "out": "m_scriptsync_rec.mp4"}
+    {"src": "~/OpenHiggsfieldContest/share/ScriptSync_Demo.mp4", "out": "m_scriptsync_rec.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/Milestone15_Director/director_typing_5_commands.mp4", "out": "m_director_typing.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/Milestone19_Timeline/carchase_20261101_033124.mp4", "out": "m_timeline_carchase.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/Milestone20_PhoneVCam/M20_phone_viewfinder_side_by_side.mp4", "out": "m_phone_viewfinder.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/Hollywood_Rerenders/underwater/underwater_hollywood_1920_h264_trailer.mp4", "out": "m_hollywood_underwater.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/Milestone18_Hollywood/crops/windshield_ladder_frame2.jpg", "out": "m_hollywood_windshield_ladder.jpg", "kind": "still"},
+    {"src": "~/OpenHiggsfieldContest/share/Milestone16_TakeChecks/01_ladder_red_car_flagged.png", "out": "m_takecheck_flagged.jpg", "kind": "still"},
+    {"src": "~/OpenHiggsfieldContest/share/Milestone16_TakeChecks/02_ladder_new_take_clean.png", "out": "m_takecheck_clean.jpg", "kind": "still"},
+    {"src": "~/OpenHiggsfieldContest/share/Milestone16_TakeChecks/04_motion_run_estimates_ready.png", "out": "m_takecheck_ready.jpg", "kind": "still"},
+    {"src": "~/OpenHiggsfieldContest/share/Milestone16_TakeChecks/06_dailies_chips.png", "out": "m_takecheck_dailies.jpg", "kind": "still"}
   ]
 }

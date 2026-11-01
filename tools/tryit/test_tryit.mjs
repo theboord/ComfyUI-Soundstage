@@ -90,10 +90,10 @@ try {
   // ---------------------------------------------------------------- live physics: climb, mount, pick up, push, solver switch
   await open("physics");
   await js("P.go('set'); return 1"); await sleep(1000);
-  const hd = async (from, to, dur = 1600) => { const a = await at(from, 1.0), c = await at(to, 0.9); if (!a || !c) return false; await b.drag(a.x, a.y, c.x, c.y, dur); await sleep(1800); return true; };
+  const hd = async (from, to, dur = 1600, ty = 0.9) => { const a = await at(from, 1.0), c = await at(to, ty); if (!a || !c) return false; await b.drag(a.x, a.y, c.x, c.y, dur); await sleep(1800); return true; };
   await js("stage.select('sam'); return 1"); await sleep(400);
   const y0 = await js("return stage.actorMeshes.get('sam').position.y");
-  await hd("sam", "crate_a");
+  await hd("sam", "crate_a", 1600, 0.5);   // aim at the crate's top face (0.9 m lands behind it)
   const y1 = await js("return stage.actorMeshes.get('sam').position.y");
   await shot("physics_climb", `Sam y ${(+y0).toFixed(2)} -> ${(+y1).toFixed(2)}`);
   check(y1 > y0 + 0.3, "dragging Sam onto a crate climbs it");
@@ -136,6 +136,39 @@ try {
   await js("[...document.querySelectorAll('.ss-stage button')].find(b=>/^Import video$/.test(b.textContent.trim())&&b.getClientRects().length)?.click(); return 1"); await sleep(1500);
   await shot("import_video_chooser");
   await js("document.querySelector('.ss-vi-modal .cancel')?.click(); return 1"); await sleep(500);
+
+  // ---------------------------------------------------------------- since the contest: Director, Presets, Timeline, Hollywood, take checks, viewfinder
+  const toast = () => js("const t = document.getElementById('toast'); return t.hidden ? '' : t.textContent");
+  await open("chase");
+  await js("node.ssDirector.open(); return 1"); await sleep(2500);
+  const dirToast = await toast();
+  const olStatus = await js("return (await fetch('http://127.0.0.1:11434/api/tags')).status");
+  await shot("director_panel", dirToast);
+  check(/Director.*full install/.test(dirToast) && olStatus === 503, `Director: the LLM says "available in the full install" (Ollama probe ${olStatus})`);
+  await js("node.ssDirector.close(); node.ssPresets.open('camera'); return 1"); await sleep(1500);
+  const cards = await js("return node.ssPresets.list().length");
+  await shot("presets_window", `${cards} presets`);
+  check(cards > 10 && await js("return node.ssPresets.isOpen()"), `Presets window opens (${cards} presets)`);
+  await js("node.ssPresets.close(); document.querySelector('[data-tab=\"cut\"]').click(); return 1"); await sleep(2000);
+  const tl = await js("const v = document.querySelector('.ss-cutview'); return v && !v.hidden ? v.innerText.length : 0");
+  await shot("timeline", `${tl} chars of Timeline UI`);
+  check(tl > 0, "the Timeline (Edit tab) opens");
+  const tlr = await js("const r = await D.api.fetchApi('/soundstage/cut/render', {method:'POST', body:'{}'}); await sleep(300); return r.status + ' ' + document.getElementById('toast').textContent");
+  check(/^503 .*Timeline.*full install/.test(tlr), `Timeline render: ${tlr.slice(0, 90)}`);
+  await js("document.querySelector('[data-tab=\"stage\"]')?.click(); stage.setActiveShot('crane'); P.go('review'); return 1"); await sleep(5000);
+  const chips = await js("return [...document.querySelectorAll('.ss-tc-strip .ss-tc-take')].map((e) => e.innerText.replace(/\\s+/g, ' ')).join(' | ')");
+  await shot("takechecks_ladder", chips.slice(0, 140));
+  check(/black|smear|clean|wrong way/i.test(chips), `take checks show the server's chips (${chips.slice(0, 80)})`);
+  await js("P.go('motion'); return 1"); await sleep(1200);
+  await js("P.m.qSeg.querySelector('[data-q=\"Hollywood\"]').click(); return 1"); await sleep(800);
+  const q = await js("return P.m.qSeg.querySelector('[aria-pressed=\"true\"]')?.dataset.q || ''");
+  await shot("motion_hollywood", q);
+  check(q === "Hollywood", "⑤ Motion's Quality switches to Hollywood");
+  await js("P.go('set'); node.ssViewfinder.open(); return 1"); await sleep(1500);
+  const vfToast = await toast();
+  await shot("phone_viewfinder", vfToast);
+  check(/viewfinder.*full install/i.test(vfToast), "phone viewfinder: the vcam bridge says \"available in the full install\"");
+  await js("node.ssViewfinder.close(); return 1");
 
   // ---------------------------------------------------------------- What's new tour: every stop, and a clip
   await open("drycreek");

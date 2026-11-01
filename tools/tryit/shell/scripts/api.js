@@ -20,11 +20,12 @@ const asset = (name) => new URL(`r/${String(name).replace(/\.png$/i, ".jpg")}`, 
 
 // What each server-only feature is, for the "available in the full install" note.
 const FULL = [
-  [/^\/soundstage\/director/, "The Director chat"],
+  [/^\/soundstage\/director/, "The Director's language model (local Qwen or Ollama)"],
+  [/^\/soundstage\/cut\/render$/, "Rendering the Timeline (MP4, ProRes, 9:16)"],
   [/^\/soundstage\/(video2stage|mocap)/, "Video to 3D (pose and camera from a clip)"],
   [/^\/soundstage\/(object_designer|object\b|assets3d)/, "Making a 3D object from a prompt or a photo"],
   [/^\/soundstage\/(import_world|world|interop)/, "Uploading a world to the server"],
-  [/^\/soundstage\/vcam/, "Virtual camera takes from your phone"],
+  [/^\/soundstage\/vcam/, "The phone viewfinder (the vcam bridge to your phone)"],
   [/^\/soundstage\/source_spec/, "Reading a camera file's specs"],
   [/^\/soundstage\/(plan|agent)/, "The scene agent"],
   [/^\/soundstage\/layerpack/, "The Layer Pack (EXR, PSD, ProRes)"],
@@ -32,6 +33,22 @@ const FULL = [
   [/^\/prompt/, "Rendering on the GPU"],
 ];
 const told = new Set();
+// Take checks: the real results the server computed for the takes these scenes replay (soundstage/takecheck/check.py).
+let checked = null, checkedNow = {};
+const takeChecks = () => (checked ||= fetch(new URL("r/canned/takecheck.json", BASE)).then((r) => r.json()).then((j) => (checkedNow = j.results || {})).catch(() => ({})));
+takeChecks();
+
+// The Director can also ask an Ollama model on this computer directly. In the demo that answers with the same note
+// (no request leaves the page).
+const OLLAMA = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]):11434\//i;
+const realFetch = globalThis.fetch.bind(globalThis);
+globalThis.fetch = (u, init) => {
+  if (OLLAMA.test(String(u?.url || u))) {
+    const msg = fullInstall("/soundstage/director");
+    return Promise.resolve(json({ error: msg }, 503));
+  }
+  return realFetch(u, init);
+};
 function fullInstall(p) {
   const what = (FULL.find(([re]) => re.test(p)) || [null, "This"])[1];
   const msg = `${what} is available in the full install (ComfyUI with a GPU). This demo replays renders made earlier.`;
@@ -52,6 +69,8 @@ export const api = {
     const m = /^\/view\?filename=([^&]+)/.exec(path);
     if (!m) return path;
     const name = decodeURIComponent(m[1]);
+    // A checked take keeps its name in the query (the static host ignores it), so the Ladder and Dailies find its checks.
+    if (checkedNow[name]) return `${asset(name)}?filename=${encodeURIComponent(name)}&subfolder=&type=output`;
     return uploads.get(name) || asset(name);
   },
   fileURL(path) { return path; },
@@ -69,6 +88,17 @@ export const api = {
       return json(s.advisor);
     }
     if (p === "/soundstage/agent/info") return json({ available: false });
+    // The open App reports its scene for MCP clients in the background: nothing to say in the demo.
+    if (p === "/soundstage/director/state" || p === "/soundstage/director/result") return json({ ok: false });
+    if (p === "/soundstage/takecheck" && method === "POST") {
+      let file = null;
+      try { file = JSON.parse(init.body || "{}").file; } catch { /* no body */ }
+      const res = (await takeChecks())[file?.filename];
+      return json(res || { error: "This take wasn't checked on the server. Take checks run on the CPU in the full install." });
+    }
+    if (p === "/soundstage/takecheck/timing") return json({});      // the App's built-in estimates
+    if (p === "/soundstage/takecheck/readiness") return new Response("", { status: 503 });   // no Ready chips: the demo has no models
+    if (p === "/soundstage/takecheck/recipe") return json({ error: "no recipe in the demo" }, 404);
     if (p === "/soundstage/cut/render_video") {
       if (!s.cut) return json({ error: "This scene's cut wasn't rendered on the GPU yet." }, 422);
       demo.toast("Demo: the cut as joined on the server.");
