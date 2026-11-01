@@ -64,6 +64,13 @@ export const SHORTCUTS = [
     { keys: ["P"], what: "Pose the selected person (P or Esc ends)" },
     { keys: ["Mod", "D"], what: "Duplicate the selected object" },
   ] },
+  { group: "Parts of the selected object", items: [
+    { keys: ["L"], what: "Headlights: dipped, full beam, off" },
+    { keys: ["Shift", "L"], what: "Police light bar on / off (red and blue flashing)" },
+    { keys: ["I"], what: "Indicators: left, right, hazards, off" },
+    { keys: ["O"], alts: [["Shift", "O"]], what: "Open / close the driver's door (Shift: every door, hood and trunk)" },
+    { keys: ["K"], what: "Key every part at the playhead (Properties › Parts: ◆ per channel)" },
+  ] },
   { group: "Look around the set", items: [
     { keys: ["Drag"], what: "On empty space: orbit the view" },
     { keys: ["Shift", "Drag"], what: "On empty space: pan" },

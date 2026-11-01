@@ -32,6 +32,7 @@ import { applyCanvasCss, layoutPref, setLayoutPref, rememberFlag, Mover } from "
 import { Tour, TOUR_STEPS, tourSeen, markTourSeen, emptyCard, isBrandNewStage, applyFirstRunCss } from "./ui/firstrun.mjs";
 import * as THREE from "./vendor/three.module.min.mjs";
 import { PosePanel } from "./stage/posepanel.mjs";
+import { mountParts } from "./stage/partspanel.mjs";
 import { PhysicsPanel } from "./stage/physpanel.mjs";
 import { worldControls } from "./stage/interop/worldui.mjs";
 import { listenVcam, LiveVcam, listTakes, fetchTake, takeToCamera, anchorFromCamera } from "./vcam/live.mjs";
@@ -1873,6 +1874,8 @@ function createStageWidget(node, inputName) {
     set(kel, l.kelvin, (v) => `${v}K`); set(inten, l.intensity, (v) => (+v).toFixed(1));
     set(lheight, l.position[1], (v) => `${(+v).toFixed(1)} m`); set(soft, l.softness, (v) => `${Math.round(v * 100)}%`);
   };
+  // Parts (Milestone 26): every object's, light's and the camera's keyframeable channels (web/stage/partspanel.mjs).
+  mountParts({ stage, poseHost, posePanel, lightSel, lensRow, onStatus: (m) => { status.textContent = m; }, onKeys: () => tracks?.draw() });
   const lightNote = Object.assign(document.createElement("div"), { className: "ss-lightnote" });
   function syncLight() {
     const L = stage.toJSON().lighting || {};
