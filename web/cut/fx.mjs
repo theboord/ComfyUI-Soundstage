@@ -566,15 +566,20 @@ export function titleAt(project, f) {
 /**
  * The body for POST /soundstage/cut/render (soundstage/cut/render.py): the normalised project plus the output
  * spec. format: "mp4" (H.264 + AAC) | "prores" (ProRes 422 HQ + PCM in a .mov); aspect: "source" | "9:16";
- * loudness: a LOUDNESS_TARGETS key or null; burn_subtitles; reframe_x (-1..1, the 9:16 crop's centre).
+ * loudness: a LOUDNESS_TARGETS key or null; burn_subtitles; reframe_x (-1..1, the 9:16 crop's centre); finish: a
+ * FINISH_PRESETS key (Film Finish, Milestone 21); motion_blur: a 2-frame shutter mix.
  */
-export function renderRequest(project, { format = "mp4", aspect = "source", loudness: lt = "social", burn_subtitles = false, reframe_x = 0 } = {}) {
+/** Film Finish presets for the render (soundstage/finish.py): lens, fringe, halation, vignette, grain. */
+export const FINISH_PRESETS = { off: "Off", subtle: "Subtle", "35mm": "35mm", anamorphic: "Anamorphic" };
+
+export function renderRequest(project, { format = "mp4", aspect = "source", loudness: lt = "social", burn_subtitles = false, reframe_x = 0, finish = "off", motion_blur = false } = {}) {
   const p = normalizeProject(project);
   return {
     project: p,
     spec: { format: format === "prores" ? "prores" : "mp4", aspect: aspect === "9:16" ? "9:16" : "source",
             loudness: LOUDNESS_TARGETS[lt] ? lt : null, burn_subtitles: !!burn_subtitles, reframe_x: clamp(Number(reframe_x) || 0, -1, 1),
-            frames: sequenceFrames(p), picture_frames: totalFrames(p) },
+            frames: sequenceFrames(p), picture_frames: totalFrames(p),
+            finish: FINISH_PRESETS[finish] ? finish : "off", motion_blur: !!motion_blur },
   };
 }
 
