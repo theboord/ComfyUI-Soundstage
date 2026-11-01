@@ -82,3 +82,6 @@ The guard needs Google Chrome and ComfyUI at `http://127.0.0.1:8189` (set `SS_UR
 Update the baselines in the same commit as an intended visual change, and say so in the commit message.
 
 Never update them to make a failure go away without looking at the diff.
+
+## Headless GPU note (2026-11-01)
+Run demo-scene flows with real GPU rendering (`--use-angle=metal`). Under SwiftShader, "Try the demo scene" keeps the page busy for minutes drawing shot-row previews, which looks like a freeze. Also, never call CDP `DOM.getDocument({depth:-1, pierce:true})` on the App: with 10k+ nodes it never returns. Find inputs with `Runtime.evaluate` and use `DOM.setFileInputFiles` by objectId.
