@@ -462,7 +462,10 @@ def krea2(g, m, p):
                 raise RouterError("Krea 2 depth control needs krea2/cn/depth-control-lora.safetensors and the "
                                   "comfyui-krea2-controlnet nodes. Disconnect control_image or install them.")
             model = depth_control(g, model, vae, p["control"], latent, w["depth_lora"])
-    s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or KREA_STEPS, cfg=p.get("cfg") or 1.0, sampler_name="euler_ancestral",
+    # depth-locked: Krea 2 Turbo's own distilled schedule (the App's step count is Klein's when Strict swaps models)
+    steps = KREA_STEPS if lock else (p.get("steps") or KREA_STEPS)
+    cfg = 1.0 if lock else (p.get("cfg") or 1.0)
+    s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=steps, cfg=cfg, sampler_name="euler_ancestral",
                scheduler="beta", positive=pos, negative=neg, latent_image=latent, denoise=denoise).out(0)
     return {"image": g.node("VAEDecode", samples=s, vae=vae).out(0)}
 
