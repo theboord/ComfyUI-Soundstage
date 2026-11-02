@@ -6,6 +6,9 @@ identical scenes:
   s2_tower    20-box tower, hit at 3 s
   s3_pyramid  10-crate pyramid hit by a braking kinematic car
   s4_ramp     30 deg ramp with an analytic answer
+  s5_fracture s3 with breakable wood crates (Milestone 27: Voronoi cells, glue / bend / crack network) and the car's
+              raked collision hull. Soundstage only: run_blender.py has no glue network, so Bullet treats the crates as
+              rigid there. The Soundstage run also writes each broken prop's pieces (fractures) and the CPU time.
 
 1. Soundstage (XPBD bake). Node, from the repo root:
      node tools/physbench/run_soundstage.mjs --label ss_after

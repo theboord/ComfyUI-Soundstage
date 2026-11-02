@@ -17,6 +17,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (v.startsWith("--") ? [...a, [v.slice(2), all[i + 1]]] : a), []));
 const physPath = resolve(args.physics || resolve(here, "../../web/stage/physics.mjs"));
 const { simulate } = await import(pathToFileURL(physPath).href);
+// Milestone 27 (s5_fracture): breakable crates and the raked car hull.
+const { vehicleBodyPoints } = await import(pathToFileURL(resolve(dirname(physPath), "convex.mjs")).href).catch(() => ({}));
 const scenes = JSON.parse(readFileSync(resolve(here, args.scenes || "scenes.json"), "utf8"));
 const opts = { substeps: +(args.substeps || 20), iterations: args.iterations ? +args.iterations : undefined };   // undefined: the engine default
 const label = args.label || `ss_sub${opts.substeps}_it${opts.iterations ?? "default"}`;
@@ -31,8 +33,11 @@ for (const sc of scenes.scenes) {
     let poses;
     if (b.keys) poses = Array.from({ length: F }, (_, f) => ({ pos: b.keys[Math.min(f, b.keys.length - 1)], quat: b.quat }));
     else poses = [{ pos: b.pos, quat: b.quat }];
-    return { id: b.id, shape: "box", half, center: [0, 0, 0], dynamic: b.type === "dynamic", mass: b.mass, bounce: b.restitution,
+    const spec = { id: b.id, shape: "box", half, center: [0, 0, 0], dynamic: b.type === "dynamic", mass: b.mass, bounce: b.restitution,
       friction: b.friction, poses, release: b.type === "dynamic" ? (b.release || 0) : 0, material: "wood" };
+    if (b.breakable) spec.breakable = { lazy: true, seed: 1 + sc.bodies.indexOf(b), ...b.breakable };
+    if (b.vehicle && vehicleBodyPoints) Object.assign(spec, { shape: "hull", hulls: [vehicleBodyPoints(half, [0, 0, 0])] });
+    return spec;
   });
   const t0 = performance.now();
   const r = simulate(specs, F, { fps: scenes.fps, gravity: sc.gravity, substeps: opts.substeps, iterations: opts.iterations, events: true });
@@ -43,8 +48,16 @@ for (const sc of scenes.scenes) {
     else if (b.keys) tracks[b.id] = Array.from({ length: F }, (_, f) => [...b.keys[Math.min(f, b.keys.length - 1)], ...b.quat]);
     else tracks[b.id] = Array.from({ length: F }, () => [...b.pos, ...b.quat]);
   }
-  out.scenes[sc.name] = { frames: F, ms: +ms.toFixed(1), tracks, settled: r.settled, impacts: r.events.length, stats: r.stats };
-  console.log(`${label} ${sc.name}: ${F} frames, ${ms.toFixed(0)} ms, ${r.events.length} impacts`);
+  // Broken props: every piece's track (centre + quaternion), and when the prop bent / cracked / split.
+  const fractures = {};
+  for (const [id, f] of Object.entries(r.fractures || {})) {
+    fractures[id] = { frame: f.frame, split: f.split ?? null, cracks: f.cracks || 0, breaks: f.breaks || 0,
+      pieces: f.pieces.map((p) => ({ kind: p.kind, track: p.track.map((q) => [...q.pos, ...q.quat]) })) };
+  }
+  out.scenes[sc.name] = { frames: F, ms: +ms.toFixed(1), tracks, settled: r.settled, impacts: r.events.length, stats: r.stats,
+    ...(Object.keys(fractures).length ? { fractures } : {}) };
+  console.log(`${label} ${sc.name}: ${F} frames, ${ms.toFixed(0)} ms, ${r.events.length} impacts` +
+    (Object.keys(fractures).length ? `, ${Object.keys(fractures).length} props cracked (${Object.values(fractures).filter((f) => f.split != null).length} broke), ${r.stats.pieces} loose bodies` : ""));
 }
 const file = resolve(here, args.out || `out/${label}.json`);
 mkdirSync(dirname(file), { recursive: true });

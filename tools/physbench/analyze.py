@@ -110,15 +110,21 @@ def analyse(sc, run):
     # Interpenetration per frame: every pair with a dynamic body in it, and floor sink.
     pen = np.zeros(F); floor = np.zeros(F)
     pairs = [(a, b) for a in range(len(bodies)) for b in range(a + 1, len(bodies)) if a in dyn or b in dyn]
+    # A prop that broke (s5_fracture) is no longer its box from its first crack on: leave it out of the box overlap and
+    # floor checks from then (its pieces are reported separately).
+    fr = R.get("fractures") or {}
+    gone = {ids.index(i): v["frame"] for i, v in fr.items() if i in ids}
     for f in range(F):
         Rm = [rotmat(Q[k, f]) for k in range(len(bodies))]
         worst = 0.0
         for a, b in pairs:
+            if f >= gone.get(a, F) or f >= gone.get(b, F): continue
             if np.linalg.norm(P[a, f] - P[b, f]) > np.linalg.norm(half[a]) + np.linalg.norm(half[b]): continue
             worst = max(worst, obb_overlap(P[a, f], Rm[a], half[a], P[b, f], Rm[b], half[b]))
         pen[f] = worst
         sink = 0.0
         for k in dyn:
+            if f >= gone.get(k, F): continue
             y = P[k, f, 1] + (CORNERS * half[k]) @ Rm[k].T[:, 1]
             sink = max(sink, -y.min())
         floor[f] = sink
@@ -174,6 +180,17 @@ def analyse(sc, run):
                   "bottom_push_m": round(float(np.linalg.norm(P[tw[0], hit + 12, [0, 2]] - P[tw[0], hit, [0, 2]])), 3),
                   "hitter_travel_m": round(float(P[ids.index("hitter"), -1, 0] - P[ids.index("hitter"), hit, 0]), 3),
                   "hitter_speed_at_release": round(float(np.linalg.norm(P[ids.index("hitter"), hit] - P[ids.index("hitter"), hit - 1]) * FPS), 3)})
+    if fr:
+        pcs = [p for v in fr.values() for p in v["pieces"]]
+        sp = 0.0
+        for p in pcs:
+            tr = np.array(p["track"], float)[:, :3]
+            sp = max(sp, float(np.linalg.norm(np.diff(tr, axis=0), axis=1).max() / dt))
+        lag = [v["split"] - v["frame"] for v in fr.values() if v["split"] is not None]
+        m.update({"props_cracked": len(fr), "props_broken": sum(1 for v in fr.values() if v["split"] is not None),
+                  "cells": len(pcs), "loose_bodies": R["stats"].get("pieces"), "cracks": sum(v["cracks"] for v in fr.values()),
+                  "bent_or_cracked_before_split": sum(1 for x in lag if x > 0), "max_piece_speed": round(sp, 2),
+                  "lowest_piece_centre_m": round(float(min(np.array(p["track"], float)[:, 1].min() for p in pcs)), 4)})
     if name == "s3_pyramid":
         m["crates_moved_gt_1m"] = int((disp > 1.0).sum())
         m["max_crate_speed"] = round(float(max(np.linalg.norm(V[k], axis=1).max() for k in dyn)), 2)
