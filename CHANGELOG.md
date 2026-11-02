@@ -5,6 +5,37 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-01
 
+**23:10 PST · Swimming and water: real strokes, the regulator in the mouth, bubbles in bursts, caustics and surge**
+- **Why:** the reef's Hollywood take had the regulator hanging below the mouth, a diver gliding with hardly a kick and stiff water. The guide had no dive kit at all, the "swim" was a fixed pose that bobbed, and nothing in either prompt said where the regulator goes.
+- **Strokes from physics** ([web/stage/swim.mjs](web/stage/swim.mjs)):
+  - **Flutter kick.** The cadence comes from the Strouhal number (St = f·A/v ≈ 0.6 for a finned diver): a 0.5 m/s cruise is a 0.7 Hz kick with a 0.43 m fin sweep, always within 0.5-1 Hz.
+  - **Other underwater styles.** Frog kick, hover, and the legacy `stroke`.
+  - **At the surface.** Freestyle (37° body roll, high-elbow catch, high recovery, a six-beat kick, breathing to the side), breaststroke and treading water.
+  - **Surge.** Each style's thrust pulses against v² drag with the entrained water's mass. A frog kick surges 0.29-0.52 m/s and coasts, and breaststroke 0.52-1.08 m/s; a flutter kick is steady.
+  - **Trim and buoyancy.** Level trim, pitched along a climb and banked into turns. Each breath (3-5 s, per diver) lifts the diver a few cm, about 0.9 s late.
+- **The regulator is in the mouth.** New scuba kit: mask, a regulator whose mouthpiece passes through the lips (tested), the hose over the right shoulder to the first stage (rebuilt every frame), tank, jacket, octopus, weight belt and fins.
+- **Secondary motion.** The fin blades bend against their own velocity through the water and snap through at each reversal. Strap tails and long hair stream back and drift.
+- **The prompts say it** ([soundstage/look/swim.py](soundstage/look/swim.py)): "the regulator's mouthpiece held in his mouth with its black hose looping over his right shoulder…", the kick, and "a burst of silver bubbles every few seconds". The still's negative now includes "regulator hanging below the chin".
+- **Bubbles.** Each exhale is a burst from the exhaust tee: big cap bubbles first, then a trickle. They rise at their size's speed (Davies-Taylor for caps), grow by Boyle's law (×1.26 over 10 m), wobble and drift with the current, and are drawn at their true size as rim-lit rings.
+- **Water** ([web/stage/water.mjs](web/stage/water.mjs)):
+  - **One wave field** moves the reef's surface (displaced, with Snell's 48.6° window from below). It also focuses the caustics in Color (1/|det J| of the refraction map, the same maths on the CPU and in GLSL) on the sand, coral, kelp and diver, and flickers the light shafts.
+  - **The light shafts** now fall along the refracted sun.
+  - **Surge.** A long swell's surge (0.17 m/s at 8 m) sways the kelp, with the wave climbing the blade. The sea fans and sea grass are now a swaying mesh, so they move in Clay too.
+  - **Particles.** The marine snow, bubbles and stirred sand drift with the current.
+  - **Hard coral stays rigid**; staghorn colonies now grow toward the light, with irregular forks, knobs and pale tips.
+- **Stirred sand.** Fins kicking down within 1.2 m of the bottom feed the shared particle system (`seabed_silt`: it hangs 5-9 s and never sinks through the seabed).
+- **Wakes.** Surface swimmers leave foam: bow wave, kick, hand entries and the Kelvin wedge.
+- **New Action preset: Diver swim.**
+- **Judged frame by frame** (App passes on the pod, Metal, every 4th frame; share/Swim_Water/): the diver now lies level and kicks visibly every frame, the tank, jacket and hose read in Clay, caustics move on the sand in Color, and bubbles leave the head and trail behind the diver. Open-water freestyle shows the roll and the arm recovery over the water.
+- **One Draft through the App** (the Hollywood reef scene, Draft quality, queued by the App's own queuePrompt; share/Swim_Water/draft/). The regulator sits in the mouth, the mask and hose read, and the diver flutter-kicks on every frame with broad yellow fins instead of gliding. But it looks like a **CG animation, not photographed water**: the Draft copies the Color guide's flat clay shading. The pod still ran the old prompt compile (no restart), so the swim words went in through the Look description by hand.
+- **Still wrong:**
+  - The fin blades are seen edge-on from the side and read as thin lines; the foot pockets look boxy.
+  - The mask hardly reads at this size.
+  - Stirred sand is the colour of the sand, so it barely shows (26 puffs at frame 48, hard to see).
+  - Small bubbles are 1-2 px at 960 px wide.
+  - The open-water surface is still the old flat grey plane, so the foam looks pasted on.
+- Docs: [docs/swim.md](docs/swim.md). Tests: [tests/js/swim.test.mjs](tests/js/swim.test.mjs) (21), [tests/test_swim_words.py](tests/test_swim_words.py) (4).
+
 **22:55 PST · Real performance: a phone take sits on a rider at the right size; an unticked frame check stays off**
 - **A chest-up phone take on a rider** (Monday's recording: Mike framed a hand above the head to the belt) was fitted whole box to whole box: the take's head-to-frame-bottom onto the rider's hat-to-stirrup, so the actor's head came out about twice the rider's. A chest-up take (its box runs out of the bottom of the frame) or a seated character (on a horse, in a car) is now fitted **face to face**: the median face box of the capture onto the character's face in the shot camera. The upper body comes from the take; hips, legs and the horse come from the shot's frame. Standing head-to-toe takes fit as before. The server node is unchanged: the dialog hands it the equivalent box ([web/performance/performance.mjs](web/performance/performance.mjs) `fitTarget`, `faceBoxOfFrames`).
 - **The fit read the wrong camera** when the dialog was opened outside Camera view (from ④ Frame the viewport camera sat at (0, 1.6, -11.5) and Ezra's 1H close single came out as a 5%-wide figure at the right edge). It now uses the shot's own camera at frame 0 (`shotCamera`).
