@@ -120,7 +120,8 @@ def track_b(name: str, args: dict) -> tuple[str, bool]:
             ref = _ref(_wait_prompt(q["prompt_id"]))
             lines, best = [], http("POST", "/soundstage/loop/seam", {"ref": ref}, timeout=300)
             for how in ("seal", "trim") + (("bridge",) if args.get("fix", True) else ()):
-                if best.get("verdict") == "seamless":
+                # a Seamless render still drops its repeated last frame (the meter measured the wrap without it)
+                if best.get("verdict") == "seamless" and not (how == "seal" and best.get("dup_last")):
                     break
                 if how == "bridge":
                     b = http("POST", "/soundstage/loop/fix", {"ref": ref, "how": "bridge", "prompt": body["prompt"]}, timeout=300)
@@ -133,7 +134,10 @@ def track_b(name: str, args: dict) -> tuple[str, bool]:
                     lines.append(f"{how}: {r['error']}")
                     continue
                 a = r["after"]
-                kept = a.get("verdict") == "seamless" and best.get("verdict") != "seamless" or float(a.get("seam", 99)) < float(best.get("seam", 99))
+                if how == "seal":   # kept whenever a frame was dropped (a new file), as web/oneclick/loop.mjs does
+                    kept = bool(r.get("ref")) and r["ref"] != ref
+                else:
+                    kept = a.get("verdict") == "seamless" and best.get("verdict") != "seamless" or float(a.get("seam", 99)) < float(best.get("seam", 99))
                 lines.append(f"{how}: {r['before']['badge']} -> {a['badge']}{' (kept)' if kept else ' (no better)'}")
                 if kept:
                     ref, best = r["ref"], a
