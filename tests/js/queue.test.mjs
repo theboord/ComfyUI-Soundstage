@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { queueSummary, idsIn, storeStage, resolveStageValue, stageRefOf, INLINE_MAX, _resetStored } from "../../web/ui/queue.mjs";
+import { queueSummary, idsIn, storeStage, resolveStageValue, stageRefOf, stageInputsByRef, INLINE_MAX, _resetStored } from "../../web/ui/queue.mjs";
 import { recipeFromTags, loadRecipeScene } from "../../web/takecheck/model.mjs";
 
 const HASH = "a".repeat(64);
@@ -125,9 +125,36 @@ test("no App, tool or QA code fetches the full /queue or /history", () => {
   assert.deepEqual(bad, []);
 });
 
-test("the stage widget queues by reference and restores a reference", () => {
+test("the stage widget queues by reference and restores a reference; Export (API) keeps the stage inline", () => {
   const src = readFileSync(new URL("../../web/soundstage.js", import.meta.url), "utf8");
-  assert.match(src, /return byRef\(withFlag\(value\)\)/);
-  assert.match(src, /return byRef\(withFlag\(lastCapture\.value\)\)/);
-  assert.match(src, /if \(stageRefOf\(v\)\) \{\s*resolveStageValue\(api, v\)\.then\(restoreStage\)/);
+  // The swap happens in the api.queuePrompt wrapper, before the prompt is posted.
+  assert.match(src, /api\.queuePrompt = async \(\.\.\.args\) => \{[\s\S]{0,400}?await stageInputsByRef\(api, args\[1\]\?\.output\)[\s\S]{0,200}?const r = await orig\(\.\.\.args\)/);
+  // serializeValue (what graphToPrompt and Export (API) read) never swaps the stage for a reference.
+  const ser = src.slice(src.indexOf("widget.serializeValue = async"), src.indexOf("const onRemoved = node.onRemoved"));
+  assert.ok(ser.length > 200);
+  assert.doesNotMatch(ser.replace(/\/\/.*$/gm, ""), /storeStage|stageInputsByRef|byRef/);
+  assert.match(ser, /return withFlag\(value\);/);
+  assert.match(src, /if \(stageRefOf\(v\)\) \{\s*resolveStageValue\(api, v\)\.then\(restoreStage\)\.catch/);
+});
+
+test("queue time: big 3D Stage inputs in an API prompt become references, the rest is untouched", async () => {
+  _resetStored();
+  const api = serverApi();
+  const big = bigStage();
+  const output = {
+    9045: { class_type: "SoundstageStage", inputs: { stage: big } },
+    9046: { class_type: "SoundstageStage", inputs: { stage: '{"scene":{"camera":{}}}' } },   // small: inline
+    9047: { class_type: "SaveImage", inputs: { images: ["9045", 0], filename_prefix: big } },  // not a stage node
+  };
+  assert.equal(await stageInputsByRef(api, output), 1);
+  assert.ok(stageRefOf(output[9045].inputs.stage));
+  assert.equal(output[9046].inputs.stage, '{"scene":{"camera":{}}}');
+  assert.equal(output[9047].inputs.filename_prefix, big);
+  assert.equal(await resolveStageValue(api, output[9045].inputs.stage), big);
+  // Nothing to do, or the server can't store it: the prompt goes as it was (the server's on-prompt handler slims it).
+  assert.equal(await stageInputsByRef(api, undefined), 0);
+  _resetStored();
+  const off = { 1: { class_type: "SoundstageStage", inputs: { stage: big } } };
+  assert.equal(await stageInputsByRef({ fetchApi: async () => res(404, {}) }, off), 0);
+  assert.equal(off[1].inputs.stage, big);
 });

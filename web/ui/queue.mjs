@@ -8,6 +8,11 @@
 //   idsIn(summary, state?)                      -> Set of prompt ids ("running", "pending" or both)
 //   storeStage(api, text)                       -> the reference string for a big stage value, or null (keep inline)
 //   resolveStageValue(api, value)               -> the stage value with a reference loaded back, or the value as is
+//   stageInputsByRef(api, output)               -> at queue time only: big 3D Stage inputs in an API prompt -> references
+//
+// Exports stay self-contained: the widget's serializeValue returns the stage inline (so ComfyUI's Export (API) and
+// graphToPrompt carry the whole scene) and only the queue path (api.queuePrompt, wrapped in web/soundstage.js) swaps
+// it for a reference. The server's on-prompt handler (stagestore.slim_prompt) does the same for any other client.
 
 export const SUMMARY_PATH = "/soundstage/queue_summary";
 export const STORE_PATH = "/soundstage/stage_store";
@@ -58,6 +63,19 @@ export async function storeStage(api, text) {
     if (stored.size > 4) stored.delete(stored.keys().next().value);
     return j.value;
   } catch { return null; }
+}
+
+/** At queue time only: every big SoundstageStage `stage` input in an API-format prompt (`output`) becomes a reference
+ *  to the server's stage store, in place. Returns how many were swapped. A failed upload keeps that input inline. */
+export async function stageInputsByRef(api, output) {
+  if (!output || typeof output !== "object") return 0;
+  let n = 0;
+  await Promise.all(Object.values(output).map(async (node) => {
+    if (!node || node.class_type !== "SoundstageStage" || typeof node.inputs?.stage !== "string") return;
+    const ref = await storeStage(api, node.inputs.stage);
+    if (ref) { node.inputs.stage = ref; n += 1; }
+  }));
+  return n;
 }
 
 /** A stage value as the widget can load it: a reference is fetched back from the server's store. Throws when the

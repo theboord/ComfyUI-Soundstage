@@ -87,7 +87,7 @@ Use these instead:
 - `GET /history/{prompt_id}` gives one finished prompt (yours), never the whole history.
 - ComfyUI's websocket events (`execution_start`, `executing`, `progress`, `executed`, `execution_error`) report progress.
 
-Big stages travel by reference: the 3D Stage node's input reads `{"stage_ref": "<sha256>", "bytes": N, "frames": F}`, and the JSON itself sits in ComfyUI's `input/soundstage_stages/`. `GET /soundstage/stage_store/<sha256>` returns it ([soundstage/stagestore.py](../../soundstage/stagestore.py)).
+Big stages travel by reference: the 3D Stage node's input reads `{"stage_ref": "<sha256>", "bytes": N, "frames": F}`, and the JSON itself sits in ComfyUI's `input/soundstage_stages/`. `GET /soundstage/stage_store/<sha256>` returns it ([soundstage/stagestore.py](../../soundstage/stagestore.py)). Only queueing swaps the stage for a reference: ComfyUI's Export (API) and a saved workflow keep the stage inline, so they open on any server. A render's PNG or MP4 metadata carries the reference, so its set restores only on the server that rendered it, while `input/soundstage_stages/` is kept.
 
 ## When a baseline should change
 
