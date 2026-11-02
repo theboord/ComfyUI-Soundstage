@@ -7,8 +7,8 @@ import { icon } from "./icons.mjs";
 const CSS = `
 .ss-vi-modal { position:fixed; inset:0; z-index:100000; display:flex; align-items:center; justify-content:center; padding:16px;
   background:rgba(8,6,12,.72); backdrop-filter:blur(4px); font:13px/1.45 "Soundstage Grotesk", -apple-system, system-ui, sans-serif; color:#f0efed; }
-.ss-vi-modal .card { width:min(560px, 100%); background:#1d1722; border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:18px;
-  display:flex; flex-direction:column; gap:12px; box-shadow:0 30px 80px rgba(0,0,0,.55); }
+.ss-vi-modal .card { width:min(620px, 100%); max-height:calc(100vh - 32px); box-sizing:border-box; background:#1d1722; border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:16px;
+  display:flex; flex-direction:column; gap:9px; box-shadow:0 30px 80px rgba(0,0,0,.55); }
 .ss-vi-modal h3 { margin:0; font-size:17px; display:flex; gap:8px; align-items:center; }
 .ss-vi-modal .file { color:#a9a3ad; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ss-vi-modal .opt { display:flex; gap:12px; align-items:flex-start; text-align:left; width:100%; cursor:pointer; font:inherit; color:inherit;
@@ -21,6 +21,47 @@ const CSS = `
 .ss-vi-modal .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
 .ss-vi-modal .tip { color:#a9a3ad; font-size:12px; }
 .ss-vi-modal button.cancel { background:transparent; color:#f0efed; border:1px solid rgba(255,255,255,.18); border-radius:999px; padding:7px 14px; cursor:pointer; font:inherit; }
+.ss-vi-modal .opts3 { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
+.ss-vi-modal .opts3 .opt { padding:9px; gap:8px; }
+.ss-vi-modal .opts3 .opt b { font-size:13px; }
+.ss-vi-modal .opts3 .opt span.d { font-size:11.5px; line-height:1.3; display:block; }
+.ss-vi-modal .rb { display:flex; flex-direction:column; gap:7px; border:1px solid rgba(255,255,255,.1); border-radius:12px; padding:10px; background:rgba(255,255,255,.025); }
+.ss-vi-modal .rrow { display:flex; align-items:center; gap:8px; min-width:0; }
+.ss-vi-modal .rrow .lab { width:56px; flex:0 0 auto; color:#a9a3ad; font-size:12px; }
+.ss-vi-modal .seg { display:flex; flex-wrap:wrap; gap:4px; min-width:0; }
+.ss-vi-modal .seg button { font:600 11.5px/1 "Soundstage Grotesk", system-ui, sans-serif; color:#f0efed; background:transparent; cursor:pointer;
+  border:1px solid rgba(255,255,255,.18); border-radius:999px; padding:6px 10px; white-space:nowrap; }
+.ss-vi-modal .seg button[aria-checked=true] { background:#F2FF59; color:#1a1420; border-color:#F2FF59; }
+.ss-vi-modal .strip { position:relative; height:54px; }
+.ss-vi-modal .film { position:absolute; inset:0 0 14px 0; display:flex; overflow:hidden; border-radius:6px; background:#120e16; color:#a9a3ad; font-size:11px; align-items:center; justify-content:center;
+  --a:0%; --b:100%; }
+.ss-vi-modal .film img { flex:1 1 0; min-width:0; height:100%; object-fit:cover; }
+.ss-vi-modal .film::before, .ss-vi-modal .film::after { content:""; position:absolute; top:0; bottom:0; background:rgba(8,6,12,.72); pointer-events:none; }
+.ss-vi-modal .film::before { left:0; width:var(--a); } .ss-vi-modal .film::after { right:0; width:calc(100% - var(--b)); }
+.ss-vi-modal .pick { position:absolute; inset:0 0 14px 0; display:flex; justify-content:center; cursor:crosshair; }
+.ss-vi-modal .pick[hidden] { display:none; }
+.ss-vi-modal .pick img { height:100%; border-radius:6px; }
+.ss-vi-modal .pick .dot { position:absolute; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%; border:2px solid #F2FF59; background:rgba(242,255,89,.35); pointer-events:none; }
+.ss-vi-modal .strip input[type=range] { position:absolute; left:0; right:0; bottom:0; width:100%; margin:0; height:14px; background:transparent; pointer-events:none; -webkit-appearance:none; appearance:none; accent-color:#F2FF59; }
+.ss-vi-modal .strip input[type=range]::-webkit-slider-thumb { pointer-events:auto; }
+.ss-vi-modal .strip input[type=range]::-moz-range-thumb { pointer-events:auto; }
+.ss-vi-modal .tl { color:#a9a3ad; font-size:11.5px; font-variant-numeric:tabular-nums; margin-top:-3px; }
+.ss-vi-modal details.adv summary { cursor:pointer; color:#a9a3ad; font-size:12px; }
+.ss-vi-modal .adv .grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:6px 10px; margin-top:6px; }
+.ss-vi-modal .adv label { display:flex; flex-direction:column; gap:3px; font-size:11px; color:#a9a3ad; min-width:0; }
+.ss-vi-modal .adv label.wide { grid-column:1 / -1; }
+.ss-vi-modal .adv label.chk { flex-direction:row; align-items:center; gap:6px; grid-column:span 3; }
+.ss-vi-modal .adv input[type=number], .ss-vi-modal .adv input[type=text] { font:inherit; font-size:12px; color:#f0efed; background:#120e16; border:1px solid rgba(255,255,255,.16); border-radius:7px; padding:5px 7px; min-width:0; }
+.ss-vi-modal .btns { display:flex; gap:8px; flex:0 0 auto; }
+.ss-vi-modal button.go { background:#F2FF59; color:#1a1420; border:1px solid #F2FF59; border-radius:999px; padding:7px 16px; cursor:pointer; font:700 13px/1 "Soundstage Grotesk", system-ui, sans-serif; }
+.ss-vi-job .q { color:#ffcf6b; font-size:12px; }
+.ss-vi-job .flaws { display:flex; flex-direction:column; gap:5px; }
+.ss-vi-job .flaw { display:flex; gap:7px; align-items:flex-start; font-size:12px; color:#ffd2cc; }
+.ss-vi-job .flaw[data-level=amber] { color:#ffe2a6; }
+.ss-vi-job .flaw .tx { flex:1; min-width:0; }
+.ss-vi-job .flaw button { flex:0 0 auto; font:600 11px/1 "Soundstage Grotesk", system-ui, sans-serif; border-radius:999px; padding:5px 9px; cursor:pointer;
+  border:1px solid rgba(255,138,126,.6); background:transparent; color:#ffd2cc; }
+.ss-vi-job .flaw[data-level=amber] button { border-color:rgba(255,207,107,.6); color:#ffe2a6; }
 .ss-vi-drop { position:absolute; inset:6px; z-index:20; display:none; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:16px;
   border:3px dashed #F2FF59; border-radius:12px; background:rgba(20,14,26,.78); color:#F2FF59; font:600 18px/1.35 "Soundstage Grotesk", system-ui, sans-serif; pointer-events:none; }
 .ss-vi-drop small { display:block; font-weight:400; font-size:13px; color:#f0efed; margin-top:6px; }
@@ -88,11 +129,75 @@ export function clipSeconds(file) {
   });
 }
 
+/** Video → 3D quality presets: depth samples over the clip (the server's own auto picks 24-64 by parallax). */
+export const QUALITY = [
+  { key: "fast", samples: 16, label: "Fast" },
+  { key: "standard", samples: 32, label: "Standard" },
+  { key: "max", samples: 64, label: "Max" },
+];
+
 /**
- * Ask what the clip is for. person = the selected (or first) person's name, or null.
- * Resolves "stage" | "capture" | "ripple" | null (cancelled). Default: Video → Stage, unless someone is selected.
+ * Honest time for a Video → 3D run, in seconds. history = the server's recent runs [{secs (clip length), samples,
+ * total_s}] (GET /soundstage/video2stage/runs, when the server keeps one); without it, the measured baseline
+ * (2026-11-02: 11-26 min for 5 s clips at 16 samples on the shared RTX 6000) scaled by length and samples.
+ * Returns {secs, from: "history" | "estimate"}.
  */
-export function chooseVideoUse(file, { person = null, selected = false } = {}) {
+export function estimateSecs(clipSecs, samples = 16, history = []) {
+  const runs = (history || []).filter((r) => r && r.total_s > 0 && r.secs > 0);
+  if (runs.length) {
+    // per-run rate: total = a + b * clipSecs * (samples / 16)^0.5, fitted as a median ratio
+    const k = runs.map((r) => r.total_s / (60 + r.secs * 120 * Math.sqrt((r.samples || 16) / 16)));
+    k.sort((x, y) => x - y);
+    const m = k[Math.floor(k.length / 2)];
+    return { secs: m * (60 + clipSecs * 120 * Math.sqrt(samples / 16)), from: "history" };
+  }
+  return { secs: 60 + Math.max(1, clipSecs) * 120 * Math.sqrt(samples / 16), from: "estimate" };
+}
+
+/** Wording shared by every Video → 3D entry point (the header button, the ⊕ menu, the drop target, the tool row). */
+export const V2S_LABEL = "Video → 3D set";
+export const V2S_TIP = "Rebuild a clip as a 3D set: the camera move, every person's full-body motion and the things in " +
+  "frame at real size, with a photographic set scan behind them. Best on 3-10 s shots with some camera or subject " +
+  "movement; a 5 s clip takes about 10-25 min on the shared GPU.";
+export const V2S_LIMITS = "Works best on 3-10 s, one setup, no cuts. Mirrors, glass, water and heavy motion blur rebuild poorly; " +
+  "faces are never copied.";
+
+/** Grab n small frames across a clip (for the trim filmstrip and the people pick). Resolves [{t, url}] or []. */
+export function filmstrip(file, n = 8, w = 96) {
+  return new Promise((ok) => {
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; ok(v); } };
+    try {
+      const v = document.createElement("video");
+      const url = URL.createObjectURL(file);
+      v.muted = true; v.preload = "auto"; v.src = url;
+      const out = [];
+      const cv = document.createElement("canvas");
+      setTimeout(() => { URL.revokeObjectURL(url); finish(out); }, 8000);
+      v.onloadedmetadata = async () => {
+        const d = v.duration || 0;
+        cv.width = w; cv.height = Math.max(1, Math.round((w * (v.videoHeight || 9)) / (v.videoWidth || 16)));
+        for (let i = 0; i < n && d > 0; i++) {
+          const t = Math.min(d - 0.01, (i * d) / Math.max(1, n - 1));
+          await new Promise((r) => { v.onseeked = r; v.currentTime = t; setTimeout(r, 1500); });
+          try { cv.getContext("2d").drawImage(v, 0, 0, cv.width, cv.height); out.push({ t, url: cv.toDataURL("image/jpeg", 0.7) }); } catch { break; }
+        }
+        URL.revokeObjectURL(url);
+        finish(out);
+      };
+      v.onerror = () => { URL.revokeObjectURL(url); finish([]); };
+    } catch { finish([]); }
+  });
+}
+
+/**
+ * Ask what the clip is for, on one screen (no scrolling). person = the selected (or first) person's name, or null;
+ * cast = how many things are on the stage now; secs = the clip length; history = server run history (estimateSecs).
+ * Resolves {use: "stage", options} | {use: "capture"} | {use: "ripple"} | null (cancelled). options is the
+ * Video → 3D request: {quality, samples, trim:[in,out], people:"all"|{point:[u,v,0]}, mode:"replace"|"add",
+ * vlm, backdrop, lens:{focal_mm?, sensor_mm?, camera_height_m?}, objects?}.
+ */
+export function chooseVideoUse(file, { person = null, selected = false, cast = 0, secs = 0, history = [] } = {}) {
   ensureCss();
   return new Promise((resolve) => {
     const wrap = Object.assign(document.createElement("div"), { className: "ss-vi-modal" });
@@ -101,40 +206,153 @@ export function chooseVideoUse(file, { person = null, selected = false } = {}) {
     card.setAttribute("aria-label", "What is this video for?");
     const h3 = document.createElement("h3");
     h3.append(icon("file-video-camera", 20), "What is this video for?");
-    const name = Object.assign(document.createElement("div"), { className: "file", textContent: file?.name || "" });
+    const name = Object.assign(document.createElement("div"), { className: "file", textContent: `${file?.name || ""}${secs ? ` · ${secs.toFixed(1)} s` : ""}` });
     const opt = (k, ic, title, desc) => {
       const b = Object.assign(document.createElement("button"), { type: "button", className: "opt" });
       b.dataset.choice = k;
       const t = document.createElement("div");
       t.append(Object.assign(document.createElement("b"), { textContent: title }), Object.assign(document.createElement("span"), { className: "d", textContent: desc }));
       const i = Object.assign(document.createElement("span"), { className: "ic" });
-      i.append(icon(ic, 22));
+      i.append(icon(ic, 20));
       b.append(i, t);
-      b.addEventListener("click", () => done(k));
       return b;
     };
-    const stageOpt = opt("stage", "clapperboard", "Rebuild this clip as a 3D set (Video → Stage)",
-      "The location, the camera move and the performer (SAM 3D Body motion capture) land on the stage. About 2–3 min.");
     const who = person ? `on ${person}` : "on a person";
-    const capOpt = opt("capture", "person-standing", `Put this motion ${who} (Capture motion)`,
-      `SAM 3D Body copies the performance (body, hands, path) onto ${person || "a clay person"}, right where they stand in your set. About 1 min.`);
-    const ripOpt = opt("ripple", "wand-sparkles", "Edit this clip with Ripple (keep the footage)",
-      "Change frame 1 in Paint Studio (a different person, wardrobe, night) and LTX Ripple carries it through the whole clip with its motion and sound. Opens ⑤ Motion.");
-    const def = selected ? capOpt : stageOpt;
-    def.classList.add("def");
-    const tip = Object.assign(document.createElement("div"), { className: "tip",
-      textContent: "Best: one person, head to toe in frame, 3–10 s." });
+    const stageOpt = opt("stage", "clapperboard", "Rebuild as a 3D set", "Camera, people, things, set scan");
+    const capOpt = opt("capture", "person-standing", "Capture motion", `Copy the performance ${who}`);
+    const ripOpt = opt("ripple", "wand-sparkles", "Edit with Ripple", "Keep the footage, change frame 1");
+    capOpt.addEventListener("click", () => done({ use: "capture" }));
+    ripOpt.addEventListener("click", () => done({ use: "ripple" }));
+    const opts3 = Object.assign(document.createElement("div"), { className: "opts3" });
+    opts3.append(stageOpt, capOpt, ripOpt);
+    // ---- Rebuild options (one screen)
+    const st = { quality: "standard", trim: [0, secs || 0], people: "all", point: null, mode: cast ? "add" : "replace",
+      vlm: true, backdrop: true, focal_mm: "", sensor_mm: "", camera_height_m: "", objects: "" };
+    const panel = Object.assign(document.createElement("div"), { className: "rb" });
+    const seg = (label, items, key, onPick) => {
+      const row = Object.assign(document.createElement("div"), { className: "rrow" });
+      const l = Object.assign(document.createElement("span"), { className: "lab", textContent: label });
+      const g = Object.assign(document.createElement("div"), { className: "seg" });
+      g.setAttribute("role", "radiogroup");
+      g.setAttribute("aria-label", label);
+      const btns = items.map(([k, text, tip]) => {
+        const b = Object.assign(document.createElement("button"), { type: "button", textContent: text, title: tip || "" });
+        b.dataset.k = k;
+        b.setAttribute("role", "radio");
+        b.addEventListener("click", () => { st[key] = k; sync(); onPick?.(k); });
+        return b;
+      });
+      g.append(...btns);
+      row.append(l, g);
+      row.sync = () => btns.forEach((b) => b.setAttribute("aria-checked", String(b.dataset.k === st[key])));
+      return row;
+    };
+    const qRow = seg("Quality", QUALITY.map((q) => {
+      const e = estimateSecs(Math.max(0.5, (st.trim[1] || secs || 5) - (st.trim[0] || 0)), q.samples, history);
+      return [q.key, `${q.label} ${q.samples} · ${e.from === "history" ? "" : "≈"}${e.secs >= 120 ? `${Math.round(e.secs / 60)} min` : fmtSecs(e.secs)}`,
+        `${q.samples} depth samples. ${e.from === "history" ? "From this server's recent runs." : "Estimate from the measured baseline (no history on this server yet)."}`];
+    }), "quality");
+    // trim filmstrip
+    const strip = Object.assign(document.createElement("div"), { className: "strip" });
+    const film = Object.assign(document.createElement("div"), { className: "film" });
+    const pick = Object.assign(document.createElement("div"), { className: "pick", hidden: true, title: "Click the person to rebuild" });
+    const pickImg = document.createElement("img");
+    const dot = Object.assign(document.createElement("i"), { className: "dot", hidden: true });
+    pick.append(pickImg, dot);
+    const tIn = Object.assign(document.createElement("input"), { type: "range", min: 0, max: 1000, value: 0, className: "tin" });
+    const tOut = Object.assign(document.createElement("input"), { type: "range", min: 0, max: 1000, value: 1000, className: "tout" });
+    tIn.setAttribute("aria-label", "Trim in");
+    tOut.setAttribute("aria-label", "Trim out");
+    const tLab = Object.assign(document.createElement("span"), { className: "tl" });
+    const onTrim = () => {
+      let a = +tIn.value, b = +tOut.value;
+      if (b - a < 20) { if (document.activeElement === tIn) a = tIn.value = b - 20; else b = tOut.value = a + 20; }
+      st.trim = [+(a / 1000 * secs).toFixed(2), +(b / 1000 * secs).toFixed(2)];
+      tLab.textContent = secs ? `Trim ${st.trim[0].toFixed(1)}–${st.trim[1].toFixed(1)} s (${(st.trim[1] - st.trim[0]).toFixed(1)} s)` : "Trim: whole clip";
+      film.style.setProperty("--a", `${a / 10}%`); film.style.setProperty("--b", `${b / 10}%`);
+    };
+    tIn.addEventListener("input", onTrim);
+    tOut.addEventListener("input", onTrim);
+    strip.append(film, pick, tIn, tOut);
+    const pRow = seg("People", [["all", "Everyone", "Every person in the clip gets their own full-body take"],
+      ["point", "Pick one on frame 1", "Click the person on the first frame"]], "people", (k) => { pick.hidden = k !== "point"; film.hidden = k === "point"; });
+    pick.addEventListener("click", (e) => {
+      const r = pickImg.getBoundingClientRect();
+      const u = (e.clientX - r.left) / Math.max(1, r.width), v = (e.clientY - r.top) / Math.max(1, r.height);
+      if (u < 0 || u > 1 || v < 0 || v > 1) return;
+      st.point = [+u.toFixed(4), +v.toFixed(4), 0];
+      dot.hidden = false; dot.style.left = `${u * 100}%`; dot.style.top = `${v * 100}%`;
+    });
+    const mRow = seg("Stage", [["replace", cast ? `Replace the set (${cast} things; Undo brings them back)` : "Replace the set", "Clear the stage and load the rebuild"],
+      ["add", "Add to it", "Keep what is on the stage and add the rebuild"]], "mode");
+    const adv = document.createElement("details");
+    adv.className = "adv";
+    const sum = Object.assign(document.createElement("summary"), { textContent: "Advanced: lens, camera height, what to look for, set scan" });
+    const grid = Object.assign(document.createElement("div"), { className: "grid" });
+    const num = (key, label, ph, step = "0.1") => {
+      const l = document.createElement("label");
+      const i = Object.assign(document.createElement("input"), { type: "number", step, min: 0, placeholder: ph });
+      i.addEventListener("input", () => { st[key] = i.value; });
+      l.append(label, i);
+      return l;
+    };
+    const objs = document.createElement("label");
+    const oi = Object.assign(document.createElement("input"), { type: "text", placeholder: "e.g. red sofa, bicycle, street sign" });
+    oi.addEventListener("input", () => { st.objects = oi.value; });
+    objs.className = "wide";
+    objs.append("Objects to find (besides everything the model sees)", oi);
+    const bdl = document.createElement("label");
+    bdl.className = "chk";
+    const bd = Object.assign(document.createElement("input"), { type: "checkbox", checked: true });
+    bd.addEventListener("change", () => { st.backdrop = bd.checked; });
+    bdl.append(bd, "Set scan (splat + mesh of the real location)");
+    const vl = document.createElement("label");
+    vl.className = "chk";
+    const vb = Object.assign(document.createElement("input"), { type: "checkbox", checked: true });
+    vb.addEventListener("change", () => { st.vlm = vb.checked; });
+    vl.append(vb, "Name things with the vision model");
+    grid.append(num("focal_mm", "Focal mm", "auto", "1"), num("sensor_mm", "Sensor width mm", "36", "0.1"),
+      num("camera_height_m", "Camera height m", "auto"), objs, bdl, vl);
+    adv.append(sum, grid);
+    panel.append(qRow, strip, tLab, pRow, mRow, adv);
+    const sync = () => { for (const r of [qRow, pRow, mRow]) r.sync(); };
+    sync();
+    onTrim();
+    filmstrip(file, 8).then((fr) => {
+      film.replaceChildren(...fr.map((x) => Object.assign(document.createElement("img"), { src: x.url, alt: "" })));
+      if (fr[0]) pickImg.src = fr[0].url;
+      if (!fr.length) film.textContent = "No preview (the browser can't decode this clip); the server still can.";
+    });
+    const tip = Object.assign(document.createElement("div"), { className: "tip", textContent: V2S_LIMITS });
     const cancel = Object.assign(document.createElement("button"), { type: "button", className: "cancel", textContent: "Cancel" });
     cancel.addEventListener("click", () => done(null));
+    const go = Object.assign(document.createElement("button"), { type: "button", className: "go", textContent: "Rebuild" });
+    go.dataset.choice = "rebuild";
+    const doRebuild = () => {
+      if (st.people === "point" && !st.point) { pick.hidden = false; film.hidden = true; tip.textContent = "Click the person on the first frame first (or choose Everyone)."; return; }
+      const q = QUALITY.find((x) => x.key === st.quality) || QUALITY[1];
+      const lens = {};
+      for (const k of ["focal_mm", "sensor_mm", "camera_height_m"]) if (st[k] !== "" && Number(st[k]) > 0) lens[k] = Number(st[k]);
+      const options = { quality: q.key, samples: q.samples, people: st.people === "point" ? { point: st.point } : "all", mode: st.mode,
+        vlm: st.vlm, backdrop: st.backdrop, lens };
+      if (secs && (st.trim[0] > 0.01 || st.trim[1] < secs - 0.01)) options.trim = st.trim;
+      if (st.objects.trim()) options.objects = st.objects.trim();
+      done({ use: "stage", options });
+    };
+    go.addEventListener("click", doRebuild);
+    stageOpt.addEventListener("click", doRebuild);
     const row = Object.assign(document.createElement("div"), { className: "row" });
-    row.append(tip, cancel);
-    card.append(h3, name, stageOpt, capOpt, ripOpt, row);
+    const btns = Object.assign(document.createElement("div"), { className: "btns" });
+    btns.append(cancel, go);
+    row.append(tip, btns);
+    card.append(h3, name, opts3, panel, row);
     wrap.append(card);
     for (const ev of ["pointerdown", "keydown", "wheel"]) wrap.addEventListener(ev, (e) => e.stopPropagation());
     wrap.addEventListener("keydown", (e) => { if (e.key === "Escape") done(null); });
     wrap.addEventListener("click", (e) => { if (e.target === wrap) done(null); });
     document.body.append(wrap);
-    def.focus();
+    (selected ? capOpt : go).focus();
+    if (selected) capOpt.classList.add("def"); else stageOpt.classList.add("def");
     function done(v) { wrap.remove(); resolve(v); }
   });
 }
@@ -148,19 +366,23 @@ export function fmtSecs(s) {
 }
 
 /**
- * Video → Stage's steps, in order, with a typical time each (RTX-class GPU, warm-ish). frames = the clip's frame count;
- * motion capture scales with it. Used for the bar and the estimate: the server only names the step it is on.
+ * Video → 3D's steps, in order, with a typical time each (shared RTX 6000, measured 2026-11-02: a 5 s clip took
+ * 11-26 min end to end). Only a fallback: the server reports its own steps, queue position and ETA (/job), and the card
+ * shows those whenever they come. frames = the clip's frame count; samples = depth samples.
  */
-export function v2sPlan(frames = 200) {
+export function v2sPlan(frames = 120, samples = 16) {
+  const k = Math.sqrt(samples / 16);
   return [
     { key: "upload", match: /^upload/i, label: "Uploading the clip", secs: 4 },
-    { key: "queued", match: /^queued/i, label: "Waiting for the GPU", secs: 1 },
-    { key: "frames", match: /sampling/i, label: "Sampling frames", secs: 6 },
-    { key: "depth", match: /depth/i, label: "Measuring depth (Depth Anything 3)", secs: 16 },
-    { key: "track", match: /tracking the camera/i, label: "Tracking the camera", secs: 3 },
-    { key: "vlm", match: /reading the shot|vision/i, label: "Reading the shot (vision model)", secs: 40 },
-    { key: "set", match: /building the set/i, label: "Building the set", secs: 1 },
-    { key: "mocap", match: /capturing|performance|sam 3d/i, label: "Tracking the performer (SAM 3D Body)", secs: 10 + 0.38 * frames },
+    { key: "queued", match: /^queued|waiting/i, label: "Waiting for the GPU", secs: 5 },
+    { key: "frames", match: /sampling|decod|frames/i, label: "Reading every frame", secs: 8 },
+    { key: "depth", match: /depth/i, label: "Measuring depth (Depth Anything 3)", secs: 40 * k },
+    { key: "people", match: /people|person|segment|sam 3\.1|masks/i, label: "Finding every person and thing (SAM 3.1)", secs: 150 },
+    { key: "track", match: /tracking the camera|solv|camera/i, label: "Solving the camera", secs: 60 * k },
+    { key: "vlm", match: /reading the shot|vision|inventory/i, label: "Naming what's in frame (vision model)", secs: 90 },
+    { key: "mocap", match: /capturing|performance|sam 3d|pose|body/i, label: "Full-body motion for every person (SAM 3D Body)", secs: 30 + 0.4 * frames },
+    { key: "set", match: /building the set|layout|measur|assembl/i, label: "Building the set at real size", secs: 60 },
+    { key: "backdrop", match: /backdrop|scan|splat/i, label: "Fusing the set scan", secs: 25 },
   ];
 }
 
@@ -187,6 +409,32 @@ export function progressAt(plan, stepIndex, inStep) {
   return { i, frac: Math.min(0.99, (before + within) / total), left };
 }
 
+/** Red first, then amber; notes without a level are not flaws. */
+export function sortFlaws(flaws) {
+  const rank = { red: 0, amber: 1 };
+  return (flaws || []).filter((f) => f && f.text && f.level in rank).sort((a, b) => rank[a.level] - rank[b.level]);
+}
+
+/**
+ * The server's notes -> flaws for the result card. Accepts strings or {text, level, fix:{action, label}}; a plain string
+ * is a flaw when it reads like one (failed, could not, no ..., low confidence). Fix actions are looked up in fixes.
+ */
+export function flawsFromNotes(notes, fixes = {}) {
+  const out = [];
+  for (const n of notes || []) {
+    if (n && typeof n === "object") {
+      if (n.level === "red" || n.level === "amber" || n.level === "warn" || n.level === "error") {
+        const level = n.level === "error" ? "red" : n.level === "warn" ? "amber" : n.level;
+        const fx = n.fix && fixes[n.fix.action] ? { action: n.fix.action, label: n.fix.label || n.fix.action, run: fixes[n.fix.action] } : null;
+        out.push({ text: n.text, level, fix: fx });
+      }
+    } else if (typeof n === "string" && /\b(failed|could not|couldn't|unusable|no (?:local |usable )?\w+ (?:found|model)|low confidence|drift|left out|disagree)/i.test(n)) {
+      out.push({ text: n, level: /failed|could not|couldn't|unusable/i.test(n) ? "red" : "amber", fix: null });
+    }
+  }
+  return out;
+}
+
 /** Index of the plan step a server step name belongs to (-1 when unknown). */
 export function stepIndex(plan, name) {
   return plan.findIndex((s) => s.match.test(String(name || "")));
@@ -208,8 +456,9 @@ export class JobCard {
     this.timer = null;
   }
 
-  /** Start tracking a job: plan from v2sPlan / capturePlan. */
-  start(title, plan) {
+  /** Start tracking a job: plan from v2sPlan / capturePlan. onCancel: shows a Cancel button that calls it. */
+  start(title, plan, { onCancel = null } = {}) {
+    this.server = null;
     this.plan = plan; this.title = title; this.t0 = performance.now(); this.si = 0; this.stepT = this.t0; this.stepName = plan[0].label;
     this.el.dataset.state = "run";
     this.el.hidden = false;
@@ -222,7 +471,17 @@ export class JobCard {
     this.barI = document.createElement("i");
     bar.append(this.barI);
     this.mEl = Object.assign(document.createElement("div"), { className: "m" });
-    this.el.append(t, this.sEl, bar, this.mEl);
+    this.qEl = Object.assign(document.createElement("div"), { className: "q", hidden: true });
+    this.el.append(t, this.sEl, bar, this.qEl, this.mEl);
+    if (onCancel) {
+      const acts = Object.assign(document.createElement("div"), { className: "acts" });
+      const c = Object.assign(document.createElement("button"), { type: "button", textContent: "Cancel" });
+      c.dataset.act = "cancel";
+      c.title = "Stop this rebuild: only its own GPU jobs are removed from the queue";
+      c.addEventListener("click", () => { c.disabled = true; c.textContent = "Cancelling…"; onCancel(); });
+      acts.append(c);
+      this.el.append(acts);
+    }
     clearInterval(this.timer);
     this.timer = setInterval(() => this._draw(), 500);
     this._draw();
@@ -236,34 +495,69 @@ export class JobCard {
     this._draw();
   }
 
-  /** The text the bar shows ("Tracking the performer (SAM 3D Body)… 62 %"). */
+  /**
+   * The server's own progress (/soundstage/video2stage/job): {step, step_index, steps[], queue_position, elapsed_s,
+   * eta_s}. Once it reports, the card shows its numbers instead of the plan's guesses.
+   */
+  serverStatus(s) {
+    if (!s || this.el.dataset.state !== "run") return;
+    if (Array.isArray(s.steps) && s.steps.length && Number.isFinite(s.step_index)) {
+      this.server = { ...s, at: performance.now() };
+    } else if (s.step) this.step(s.step);
+    if (Number.isFinite(s.queue_position) && s.queue_position > 0) {
+      this.qEl.hidden = false;
+      this.qEl.textContent = `${s.queue_position} job${s.queue_position > 1 ? "s" : ""} ahead in the GPU queue, not ours: ours starts after them`;
+    } else this.qEl.hidden = true;
+    this._draw();
+  }
+
+  /** The text the bar shows ("Step 3 of 9: Solving the camera… 62 %"). */
   text() {
+    const sv = this.server;
+    if (sv) {
+      const since = (performance.now() - sv.at) / 1000;
+      const el = (sv.elapsed_s || 0) + since;
+      const eta = Number.isFinite(sv.eta_s) ? Math.max(0, sv.eta_s - since) : null;
+      const frac = eta != null ? Math.min(0.99, el / Math.max(1, el + eta)) : Math.min(0.99, (sv.step_index + 0.5) / sv.steps.length);
+      return { line: `Step ${sv.step_index + 1} of ${sv.steps.length}: ${sv.step || sv.steps[sv.step_index]}… ${Math.round(frac * 100)}%`,
+        p: { i: sv.step_index, frac, left: eta }, server: true, el };
+    }
     const p = progressAt(this.plan, this.si, (performance.now() - this.stepT) / 1000);
     return { line: `Step ${p.i + 1} of ${this.plan.length}: ${this.stepName}… ${Math.round(p.frac * 100)}%`, p };
   }
 
   _draw() {
     if (!this.plan || this.el.dataset.state !== "run") return;
-    const { line, p } = this.text();
+    const tx = this.text(), { line, p } = tx;
     const el = (performance.now() - this.t0) / 1000;
     this.sEl.textContent = line;
     this.barI.style.width = `${Math.round(p.frac * 100)}%`;
+    if (tx.server) {
+      this.mEl.textContent = p.left != null
+        ? `${fmtSecs(el)} elapsed · about ${fmtSecs(Math.max(5, p.left))} left (from this server's recent runs) · you can keep working`
+        : `${fmtSecs(el)} elapsed · no time estimate yet (first runs on this server) · you can keep working`;
+      this.onTick?.(line);
+      return;
+    }
     const over = (performance.now() - this.stepT) / 1000 > this.plan[p.i].secs && p.i === this.plan.length - 1;
     this.mEl.textContent = over
-      ? `${fmtSecs(el)} elapsed · finishing up: a bit slower than usual (the first run loads the model) · you can keep working`
-      : `${fmtSecs(el)} elapsed · about ${fmtSecs(Math.max(5, p.left))} left · you can keep working`;
+      ? `${fmtSecs(el)} elapsed · slower than the estimate (the GPU is shared, or the first run loads the models) · you can keep working`
+      : `${fmtSecs(el)} elapsed · roughly ${fmtSecs(Math.max(5, p.left))} left (estimate) · you can keep working`;
     this.onTick?.(line);
   }
 
   elapsed() { return (performance.now() - (this.t0 || performance.now())) / 1000; }
 
-  /** Finished: a short summary, buttons [{label, icon, go, run}], optional technical notes (folded away). */
-  done(title, summary, actions = [], notes = []) {
+  /**
+   * Finished: a short summary, buttons [{label, icon, go, run}], optional technical notes (folded away).
+   * flaws: [{text, level: "red"|"amber", fix?: {label, run}}] lead the card, worst first, each with its fix button.
+   */
+  done(title, summary, actions = [], notes = [], flaws = []) {
     clearInterval(this.timer);
     this.onShow?.();
     this.el.dataset.state = "done";
     this.el.hidden = false;
-    this._result(title, "check", summary, actions, notes);
+    this._result(title, flaws.some((f) => f.level === "red") ? "info" : "check", summary, actions, notes, flaws);
   }
 
   fail(title, message, actions = []) {
@@ -274,7 +568,7 @@ export class JobCard {
     this._result(title, "info", message, actions, []);
   }
 
-  _result(title, ic, summary, actions, notes) {
+  _result(title, ic, summary, actions, notes, flaws = []) {
     const t = Object.assign(document.createElement("div"), { className: "t" });
     t.append(icon(ic, 16), title);
     const x = Object.assign(document.createElement("button"), { type: "button", className: "x", textContent: "×", title: "Close" });
@@ -289,7 +583,22 @@ export class JobCard {
       b.addEventListener("click", () => { if (a.close !== false) this.hide(); a.run(); });
       acts.append(b);
     }
-    this.el.replaceChildren(x, t, s, ...(actions.length ? [acts] : []));
+    const fl = sortFlaws(flaws);
+    const box = Object.assign(document.createElement("div"), { className: "flaws" });
+    for (const f of fl.slice(0, 3)) {
+      const row = Object.assign(document.createElement("div"), { className: "flaw" });
+      row.dataset.level = f.level;
+      row.append(icon("info", 13), Object.assign(document.createElement("span"), { className: "tx", textContent: f.text }));
+      if (f.fix?.run) {
+        const b = Object.assign(document.createElement("button"), { type: "button", textContent: f.fix.label });
+        b.dataset.fix = f.fix.action || "";
+        b.addEventListener("click", () => { b.disabled = true; f.fix.run(); });
+        row.append(b);
+      }
+      box.append(row);
+    }
+    if (fl.length > 3) box.append(Object.assign(document.createElement("div"), { className: "m", textContent: `+${fl.length - 3} more in the technical notes` }));
+    this.el.replaceChildren(x, t, ...(fl.length ? [box] : []), s, ...(actions.length ? [acts] : []));
     if (notes.length) {
       const d = document.createElement("details");
       d.append(Object.assign(document.createElement("summary"), { textContent: "Technical notes" }),
@@ -308,7 +617,7 @@ export class JobCard {
 export function wireVideoDrop(target, overlayHost, onVideo) {
   ensureCss();
   const ov = Object.assign(document.createElement("div"), { className: "ss-vi-drop" });
-  ov.innerHTML = "Drop the video to bring it into 3D<small>Rebuild it as a set, or put the motion on a person (SAM 3D Body)</small>";
+  ov.innerHTML = `Drop the video to bring it into 3D<small>${V2S_LABEL}: camera, people, things and a set scan. Or put the motion on a person.</small>`;
   overlayHost.append(ov);
   const hasVideo = (e) => {
     const items = [...(e.dataTransfer?.items || [])];
