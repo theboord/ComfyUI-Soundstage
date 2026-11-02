@@ -91,6 +91,15 @@ const PAGE = String.raw`(() => {
     at(sel, nth = 0, text = '') {
       let all = [...document.querySelectorAll(sel)].filter(vis);
       if (text) { const re = new RegExp(text, 'i'); all = all.filter((e) => re.test((e.textContent || '').trim() + ' ' + (e.title || '') + ' ' + (e.getAttribute('aria-label') || ''))); }
+      if (!all.length) {
+        const any = [...document.querySelectorAll(sel)];
+        // folded into the top row's "⋯" menu (ui/toprow.mjs) at this width: the run opens it from there
+        const f = any.find((e) => e.classList.contains('ss-ovf'));
+        if (f) return JSON.stringify({ folded: [...f.classList].find((c) => /^ss-.+btn$/.test(c) && c !== 'ss-btn') || '' });
+        // in the Properties column while Physics is docked over it: under that panel, like a covered trigger
+        const d = any.find((e) => e.closest('.ss-clarea[data-phys=dock] > .ss-insp') && e.getClientRects().length);
+        if (d) { const r = d.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2; return JSON.stringify({ x, y, covered: true, by: desc(document.elementFromPoint(x, y)), label: label(d) }); }
+      }
       const e = all[nth]; if (!e) return 'null';
       e.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       const r = e.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
@@ -120,6 +129,9 @@ export const CASES = [
   { name: "phone_pop", what: "Properties › Camera: Phone viewfinder (QR)", step: "set",
     prep: "const t=[...document.querySelectorAll('.ss-insp-tab')].find(b=>/Camera/.test(b.textContent)); t?.click(); return !!t",
     trigger: ".ss-insp button", text: "^Phone viewfinder", pop: ".ss-vf-pop", close: "x", slow: true },
+  // the buttons the row has no room for (ui/toprow.mjs); nothing to open when everything fits
+  { name: "more_menu", what: "Top row: ⋯ (the buttons the row has no room for)", step: "set", trigger: ".ss-morebtn", pop: ".ss-moremenu",
+    skipIf: "return ![...document.querySelectorAll('.ss-stage.ss-full .ss-morebtn')].some(e=>e.getClientRects().length)" },
   { name: "keys_sheet", what: "Top row: keyboard shortcuts", step: "set", trigger: ".ss-keysbtn", pop: ".ss-keys .card, .ss-keys > div, .ss-keys", panel: true },
   { name: "guide_tour", what: "Top row: Guide (the tour card)", step: "set", trigger: ".ss-guidebtn", pop: ".ss-tour .card, .ss-tour [role=dialog], .ss-tour", panel: true },
   { name: "import_video", what: "Import video: 'What is this video for?'", step: "set",
@@ -228,7 +240,13 @@ async function sweepSize([w, h], port) {
             await b.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: g.x, y: g.y, button: "right", buttons: 0, clickCount: 1 });
           } else {
             const nth = c.nth === -1 ? `[...document.querySelectorAll(${JSON.stringify(c.trigger)})].filter(e=>window.__pq.vis(e)).length-1` : (c.each ? k : (c.nth || 0));
-            const at = JSON.parse(await js(`return window.__pq.at(${JSON.stringify(c.trigger)}, ${nth}, ${JSON.stringify(c.text || "")})`));
+            let at = JSON.parse(await js(`return window.__pq.at(${JSON.stringify(c.trigger)}, ${nth}, ${JSON.stringify(c.text || "")})`));
+            if (at?.folded != null) {
+              // the row has no room for it at this width: it is in the "⋯" menu, so open that and click it there
+              const m = JSON.parse(await js("return window.__pq.at('.ss-stage.ss-full .ss-morebtn')"));
+              if (m && !m.covered) { await b.click(m.x, m.y, { after: 450 }); at = JSON.parse(await js(`return window.__pq.at(${JSON.stringify(`.ss-moremenu [data-ovf-for="${at.folded}"]`)})`)); one.via = "⋯ menu"; }
+              else at = null;
+            }
             if (!at) { one.error = "trigger not on screen"; out.pops.push(one); continue; }
             one.trigger = at.label;
             if (at.covered) {
