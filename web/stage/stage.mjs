@@ -30,9 +30,11 @@ import { PLYLoader } from "../vendor/addons/PLYLoader.mjs";
 import { STLLoader } from "../vendor/addons/STLLoader.mjs";
 import * as SkeletonUtils from "../vendor/addons/SkeletonUtils.mjs";
 import { TransformControls } from "../vendor/addons/TransformControls.mjs";
-import { simulate, bakeTrack, physicsOf, samplePos, sampleQuat, checkTracks } from "./physics.mjs";
+import { simulate, bakeTrack, physicsOf, samplePos, sampleQuat, checkTracks, qrot as qrotV } from "./physics.mjs";
 import { breakableOf, seedOf, dentOffset, MAX_NETWORK_CELLS } from "./fracture.mjs";
 import { decompose, vehicleBodyPoints } from "./convex.mjs";
+import { worldRole, worldSpecs, wallPieces, interpenetrations, consequences, takeoverWords, inputSig, rebaker, mergeEdits,
+  restingSpec, restingSupports, bakeActor, unbakeActor, rerouteKeys, clearOffset } from "./world.mjs";
 import { shardGeometry } from "./shards.mjs";
 import { LiveEdit } from "./live.mjs";
 import { raycastShapes } from "./physics_avbd.mjs";
@@ -290,7 +292,7 @@ export class Stage {
 
   constructor(container, onChange) {
     const userChange = onChange || (() => {});
-    this.onChange = (st) => { if (!this._muteRecord) this._record(); userChange(st); };
+    this.onChange = (st) => { if (!this._muteRecord) { this._record(); this._worldPoke(); } userChange(st); };
     this.state = clone(DEFAULT_SCENE);
     this.view = "clay";
     this.key = "start";
@@ -410,6 +412,7 @@ export class Stage {
       } else if (p.kind === "post") {
         const m = this._mesh(new THREE.CylinderGeometry(p.size[0], p.size[0], p.size[1], 12), dressColor("plaza", "post"));
         m.position.set(x, p.size[1] / 2, z);
+        m.userData.knock = "lamp";   // world collisions: a car knocks it down
         this.root.add(m);
       } else {
         const m = this._mesh(new THREE.BoxGeometry(...p.size), dressColor("plaza", "box"));
@@ -491,6 +494,7 @@ export class Stage {
     const p = physicsOf(a);
     if (!a.physics?.mode && (NO_COLLIDE.has(a.kind) || a.kind === "card" || a.mount_id || a.carry_id)) p.mode = "off";   // never collides
     return { id: a.id, name: a.name, kind: a.kind, ...p, material: materialOf(a), baked: !!a.physics?.baked, canMove: this._physCanMove(a),
+      world: worldRole(a), worldOn: this.state.physics?.world !== false, takeover: a.physics?.takeover || null, keepKeyed: !!a.physics?.keepKeyed,
       kindCount: this.state.actors.filter((x) => x.kind === a.kind && this._physCanMove(x)).length,
       dynamicCount: this.state.actors.filter((x) => x.physics?.mode === "dynamic" && this._physCanMove(x)).length };
   }
@@ -606,16 +610,39 @@ export class Stage {
     const t0 = performance.now();
     const last = this._lastFrame(), fps = this.state.shot?.fps || 24;
     const dynamic = this.state.actors.filter((a) => a.physics?.mode === "dynamic" && this._physCanMove(a));
-    if (!dynamic.length) return { ok: false, message: "Nothing is Dynamic yet: select a prop and set Physics to Dynamic." };
-    // Back to the authored keys (and the start height) before sampling; last bake's pieces and dents go.
-    for (const a of dynamic) {
-      if (a.physics.baked) { a.keys = clone(a.physics.source?.keys || this._actorKeys(a)); a.physics.baked = false; }
-      delete a.physics.fracture; delete a.physics.dents;
+    // World collisions (world.mjs): cars, people, street lamps, benches and walls are bodies too. A keyed one keeps its
+    // keys until its first real contact, then the physics takes over; a loose prop nobody set rests until touched.
+    // Scene switch: physics.world (on unless false); per actor: physics.keepKeyed.
+    const world = this.state.physics?.world !== false;
+    const worldActors = world ? this.state.actors.filter((a) => worldRole(a) && !a.mount_id && !a.carry_id && a.physics?.mode !== "off"
+      && a.physics?.mode !== "dynamic" && !a.set_xform && this.actorMeshes.has(a.id)) : [];
+    const worldIds = new Set(worldActors.map((a) => a.id));
+    const resting = world ? this.state.actors.filter((a) => !a.physics?.mode && !worldIds.has(a.id) && this._physCanMove(a) && this.actorMeshes.has(a.id)) : [];
+    const authored = (a) => (a.physics?.world ? a.physics.source?.keys : this._actorKeys(a)) || [];
+    if (!world && this.state.actors.some((a) => a.physics?.world)) {   // switched off: what the world bake did goes back
+      for (const a of this.state.actors) unbakeActor(a, { merge: true });
+      if (this.state.physics) { delete this.state.physics.setTracks; delete this.state.physics.takeovers; }
+      if (!dynamic.length) { this.setFrame(this.frame); this.onChange(this.toJSON()); return { ok: true, message: "Everything collides: off. Cars and people play their own keys again." }; }
     }
+    const movers = worldActors.filter((a) => authored(a).length > 1 && authored(a).some((k) => Math.hypot(k.position[0] - authored(a)[0].position[0], k.position[2] - authored(a)[0].position[2]) > 0.01));
+    if (!dynamic.length && !movers.length) return { ok: false, message: "Nothing is Dynamic yet: select a prop and set Physics to Dynamic (or key a car or a person to move)." };
+    // Back to the authored keys (and the start height) before sampling; last bake's pieces and dents go. A key edited on
+    // a baked object since is kept in its authored keys (world.mjs mergeEdits), so dragging re-bakes from the edit.
+    for (const a of [...worldActors, ...resting]) unbakeActor(a, { merge: true });
+    for (const a of dynamic) {
+      if (a.physics.baked) {
+        const merged = mergeEdits(a.physics.source?.keys, a.physics.bakedKeys, a.keys);
+        if (merged && a.physics.source) a.physics.source.keys = merged;
+        a.keys = clone(a.physics.source?.keys || this._actorKeys(a)); a.physics.baked = false;
+      }
+      delete a.physics.fracture; delete a.physics.dents; delete a.physics.bakedKeys;
+    }
+    const setPosts = world ? this._setKnockables() : [];
     const keep = this.frame;
     const colliders = this.state.actors.filter((a) => a.physics?.mode !== "dynamic" && a.physics?.mode !== "off" && !a.mount_id && !a.carry_id
-      && a.kind !== "card" && !NO_COLLIDE.has(a.kind) && !a.set_xform && this.actorMeshes.has(a.id));
-    const sampled = [...dynamic, ...colliders];
+      && a.kind !== "card" && !NO_COLLIDE.has(a.kind) && !a.set_xform && this.actorMeshes.has(a.id) && !worldIds.has(a.id) && !resting.includes(a));
+    const bodiesOf = [...dynamic, ...resting];
+    const sampled = [...bodiesOf, ...colliders, ...worldActors];
     const poses = new Map(sampled.map((a) => [a.id, []]));
     for (let f = 0; f <= last; f++) {
       this.setFrameSilent(f);
@@ -626,7 +653,7 @@ export class Stage {
     }
     this.setFrameSilent(0);
     const specs = [];
-    for (const a of dynamic) {
+    for (const a of bodiesOf) {
       const g = this.actorMeshes.get(a.id), box = g && this._localBox(g);
       if (!box) continue;
       // Imperfection (Milestone 21, on unless scene.physics.imperfect === false): each body a seeded ±15% mass,
@@ -654,6 +681,18 @@ export class Stage {
       }
       specs.push(spec);
     }
+    // Resting props hold until touched; what stands on one comes down with it (a stack).
+    if (resting.length) {
+      const rs = new Set(resting.map((a) => a.id));
+      const boxes = specs.filter((sp) => rs.has(sp.id)).map((sp) => {
+        const p0 = sp.poses[0], c = qrotV(p0.quat, sp.center), h = sp.half, ax = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map((e) => qrotV(p0.quat, e));
+        const ext = [0, 1, 2].map((k) => h[0] * Math.abs(ax[0][k]) + h[1] * Math.abs(ax[1][k]) + h[2] * Math.abs(ax[2][k]));
+        const m = [0, 1, 2].map((k) => p0.pos[k] + c[k]);
+        return { id: sp.id, box: { min: m.map((v, k) => v - ext[k]), max: m.map((v, k) => v + ext[k]) } };
+      });
+      const sup = restingSupports(boxes);
+      for (let i = 0; i < specs.length; i++) if (rs.has(specs[i].id)) specs[i] = restingSpec(specs[i], sup[specs[i].id] || []);
+    }
     for (const a of colliders) {
       const g = this.actorMeshes.get(a.id), box = g && this._localBox(g);
       if (!box) continue;
@@ -672,7 +711,20 @@ export class Stage {
         specs.push(hulls ? { ...base, id: a.id, shape: "hull", hulls, half: box.half, center: box.center } : { ...base, id: a.id, shape: "box", half: box.half, center: box.center });
       }
     }
-    specs.push(...this._setColliders());
+    // World bodies: a car is chassis, cabin and wheels on real tyres, a person falls, a lamp snaps at its base, a weak wall
+    // is blocks (world.mjs worldSpecs).
+    const wallSpecs = new Map();
+    for (const a of worldActors) {
+      const g = this.actorMeshes.get(a.id), box = g && this._localBox(g);
+      if (!box) continue;
+      const list = worldSpecs({ id: a.id, kind: a.kind, name: a.name, half: box.half, center: box.center, poses: poses.get(a.id), physics: a.physics,
+        material: materialOf(a) }, { afterContact: this.state.physics?.afterContact });
+      if (list.some((sp) => sp.wallOf)) wallSpecs.set(a.id, list);
+      specs.push(...list);
+    }
+    for (const p of setPosts) specs.push(...worldSpecs(p));
+    // The set: a kerb (anything under 30 cm) is climbed by a keyed car's wheels, not crashed into.
+    for (const c of this._setColliders()) { if (c.poses[0].pos[1] + c.half[1] < 0.3) c.kerb = true; specs.push(c); }
     // Weight & overcrank (Milestone 21): "feels bigger" lowers gravity (DNEG's trick for majestic debris); an overcranked
     // shot plays the whole action k times slower (the keys are already stretched), so gravity is g / k².
     const gravity = feelGravity(this.physicsFeel());
@@ -680,9 +732,33 @@ export class Stage {
     const qa = checkTracks(specs, res, fps);
     // The hits, stored with the bake (Milestone 21): impact dust, camera shake, prompt beats and A2 sounds key off them.
     // A car's body / cabin boxes report as the car.
-    const events = (res.events || []).map((e) => ({ ...e, a: String(e.a).split("#")[0], b: String(e.b).split("#")[0] }));
-    this.state.physics = { ...(this.state.physics || {}), events, fps, frames: last + 1 };
+    const events = (res.events || []).map((e) => ({ ...e, a: String(e.a).split("#")[0].split("~")[0], b: String(e.b).split("#")[0].split("~")[0] }));
+    this.state.physics = { ...(this.state.physics || {}), events, fps, frames: last + 1, baked: true };
+    // World bodies the physics took over: their keys up to the hit are the authored ones, the physics after it.
+    const tk = res.takeovers || {}, took = {};
+    for (const a of worldActors) {
+      const ws = wallSpecs.get(a.id);
+      if (ws) {
+        const fr = wallPieces(ws, res.tracks, tk, bakeTrack);
+        if (fr) { bakeActor(a, null, { fracture: fr, takeover: { frame: fr.frame, by: ws.map((sp) => tk[sp.id]?.by).find(Boolean), reason: "broke" } }); took[a.id] = a.physics.takeover; }
+        continue;
+      }
+      if (!tk[a.id] || !res.tracks[a.id]) continue;
+      bakeActor(a, bakeTrack(res.tracks[a.id]), { takeover: tk[a.id], dents: res.crush?.[a.id] });
+      took[a.id] = tk[a.id];
+    }
+    const setTracks = {};
+    for (const p of setPosts) if (tk[p.id] && res.tracks[p.id]) { setTracks[p.id] = bakeTrack(res.tracks[p.id]); took[p.id] = tk[p.id]; }
+    if (Object.keys(setTracks).length) this.state.physics.setTracks = setTracks; else delete this.state.physics.setTracks;
+    if (Object.keys(took).length) this.state.physics.takeovers = took; else delete this.state.physics.takeovers;
     let broken = 0, dented = 0, pieces = 0;
+    for (const a of resting) {   // touched: baked like a Dynamic prop (undo-exact); untouched: left as it was
+      if (!tk[a.id] || !res.tracks[a.id]) continue;
+      const fr = res.fractures?.[a.id];
+      bakeActor(a, bakeTrack(res.tracks[a.id]), { dents: res.dents?.[a.id], takeover: tk[a.id] });
+      if (fr) a.physics.fracture = this._fractureRecord(a, fr);
+      took[a.id] = tk[a.id];
+    }
     for (const a of dynamic) {
       const tr = res.tracks[a.id];
       if (!tr) continue;
@@ -690,32 +766,178 @@ export class Stage {
       a.keys = bakeTrack(tr);
       a.position = [...a.keys[0].position];
       a.physics.baked = true;
+      a.physics.bakedKeys = clone(a.keys);
       // The pieces of a prop that broke, as ordinary keys from the frame before the break (the whole prop shows until
       // then); the dents of one that was crushed (object frame, permanent from their frame on).
       const fr = res.fractures?.[a.id];
       if (fr) {
-        const from = Math.max(0, fr.frame - 1);
-        const r4 = (v) => +(+v).toFixed(4);
-        a.physics.fracture = { frame: fr.frame, split: fr.split ?? null, cracks: fr.cracks || 0, material: materialOf(a), pieces: fr.pieces.map((pc) => ({ kind: pc.kind,
-          half: pc.half.map(r4), center: pc.center.map(r4),
-          // The cell itself (Milestone 27), relative to its centre: the clay builds its splintered render mesh from it.
-          ...(pc.v ? { v: pc.v.map((p) => p.map((x, k) => r4(x - pc.off[k]))), faces: pc.faces.map((f) => [f.tag === "cut" ? 1 : 0, ...f.idx]),
-            grain: pc.grain, member: pc.member, ...(pc.boards ? { boards: pc.boards.map(r4) } : {}) } : {}),
-          keys: bakeTrack(pc.track.slice(from)).map((k) => ({ ...k, frame: k.frame + from })) })) };
+        a.physics.fracture = this._fractureRecord(a, fr);
         broken++; pieces += fr.pieces.length;
       }
       if (res.dents?.[a.id]?.length) { a.physics.dents = res.dents[a.id]; dented++; }
     }
     this.setFrame(keep);
+    if (opts.auto) this._mergeRec = true;   // an automatic re-bake joins the edit that caused it (one Undo)
+    this._bakeSig = inputSig(this.state.actors);
     this.onChange(this.toJSON());
     const moving = dynamic.filter((a) => a.keys.length > 2).length;
     const restless = dynamic.filter((a) => res.settled[a.id] == null).map((a) => a.name);
     const ms = Math.round(performance.now() - t0);
+    const who = Object.fromEntries(this.state.actors.map((a) => [a.id, { name: a.name, kind: a.kind }]));
+    who.__fps = fps;
+    for (const p of setPosts) who[p.id] = { name: "street lamp", kind: "lamp" };
+    const marks = takeoverWords(took, who);
+    const nBodies = dynamic.length + worldActors.length + resting.length + setPosts.length;
     return { ok: true, bodies: dynamic.length, colliders: specs.length - dynamic.length, moving, restless, ms, impacts: events.length, ...qa,
-      message: `Simulated ${dynamic.length} object${dynamic.length === 1 ? "" : "s"} over ${last + 1} frames in ${(ms / 1000).toFixed(1)} s` +
-        ` and baked ${moving} into keys${restless.length ? `; still moving at the end: ${restless.slice(0, 3).join(", ")}` : "; everything comes to rest"}` +
+      takeovers: took, marks,
+      message: `Simulated ${nBodies} object${nBodies === 1 ? "" : "s"} over ${last + 1} frames in ${(ms / 1000).toFixed(1)} s` +
+        ` and baked ${moving + Object.keys(took).length} into keys${restless.length ? `; still moving at the end: ${restless.slice(0, 3).join(", ")}` : "; everything comes to rest"}` +
         `${events.length ? `. ${events.length} hit${events.length === 1 ? "" : "s"} logged (dust, shake and sound key off them)` : ""}` +
-        `${broken ? `; ${broken} broke into ${pieces} pieces` : ""}${dented ? `; ${dented} dented` : ""}.`, broken, dented, pieces };
+        `${broken ? `; ${broken} broke into ${pieces} pieces` : ""}${dented ? `; ${dented} dented` : ""}.` +
+        `${marks.length ? ` ${marks.slice(0, 4).map((m) => m[0].toUpperCase() + m.slice(1)).join("; ")}.` : ""}`, broken, dented, pieces };
+  }
+
+  /** A broken prop's bake as the stage's fracture record (pieces with their own keys from the frame before the break). */
+  _fractureRecord(a, fr) {
+    const from = Math.max(0, fr.frame - 1);
+    const r4 = (v) => +(+v).toFixed(4);
+    return { frame: fr.frame, split: fr.split ?? null, cracks: fr.cracks || 0, material: materialOf(a), pieces: fr.pieces.map((pc) => ({ kind: pc.kind,
+      half: pc.half.map(r4), center: pc.center.map(r4),
+      // The cell itself (Milestone 27), relative to its centre: the clay builds its splintered render mesh from it.
+      ...(pc.v ? { v: pc.v.map((p) => p.map((x, k) => r4(x - pc.off[k]))), faces: pc.faces.map((f) => [f.tag === "cut" ? 1 : 0, ...f.idx]),
+        grain: pc.grain, member: pc.member, ...(pc.boards ? { boards: pc.boards.map(r4) } : {}) } : {}),
+      keys: bakeTrack(pc.track.slice(from)).map((k) => ({ ...k, frame: k.frame + from })) })) };
+  }
+
+  // ---------- world collisions (world.mjs) ----------
+  /** After an edit: when what the bake depends on changed, re-bake once the edits stop (debounced), so the world stays live. */
+  _worldPoke() {
+    if (this._baking || !this.state?.actors || this.state.physics?.autoBake === false) return;
+    if (!this._hasBake()) return;
+    const sig = inputSig(this.state.actors);
+    if (this._bakeSig == null) { this._bakeSig = sig; return; }
+    if (sig === this._bakeSig) return;
+    this._rebake ||= rebaker(() => {
+      if (this._dragging) { this._rebake.poke(); return; }   // still dragging: wait for the drop
+      if (inputSig(this.state.actors) === this._bakeSig) return;   // a bake since has caught up
+      this._baking = true;
+      try { const r = this.simulatePhysics({ auto: true }); this.onWorldBake?.(r); } finally { this._baking = false; }
+    }, { delay: 450 });
+    this._rebake.poke();
+  }
+
+  /** Keep an actor on its keys through contacts (true), or let the physics take over at its first hit (false). Re-bakes a baked scene. */
+  setKeepKeyed(id, on = true) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a || !worldRole(a)) return false;
+    const base = a.physics?.world ? a.physics.source : null;
+    if (base) { base.physics = { ...(base.physics || {}), keepKeyed: !!on }; if (!on) delete base.physics.keepKeyed; }
+    a.physics = { ...(a.physics || {}), keepKeyed: !!on };
+    if (!on) delete a.physics.keepKeyed;
+    if (this._hasBake()) return this.simulatePhysics();
+    this.setFrame(this.frame); this.onChange(this.toJSON());
+    return true;
+  }
+
+  /** Everything collides (on) or only Dynamic props do (off, as before world collisions). Re-bakes a baked scene. */
+  setWorldCollisions(on = true) {
+    this.state.physics = { ...(this.state.physics || {}), world: !!on };
+    if (this._hasBake()) return this.simulatePhysics();
+    this.setFrame(this.frame); this.onChange(this.toJSON());
+    return { ok: true, message: on ? "Everything collides at the next Simulate & bake." : "Only Dynamic props collide." };
+  }
+
+  /** The scene has been through Simulate & bake (even when nothing in it ended up moved by the physics). */
+  _hasBake() { return !!this.state.physics?.baked || this.state.actors.some((a) => a.physics?.baked); }
+
+  /** The set's knock-down pieces (a street's lamp posts, the plaza post): [{id, kind, half, center, poses, mesh}], in a stable order. */
+  _setKnockables() {
+    const out = [];
+    this.root.updateMatrixWorld(true);
+    const M = new THREE.Matrix4(), pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+    this.root.traverse((o) => {
+      if (!o.isMesh || !o.userData.knock || !o.parent) return;
+      const b = (o.userData.knockBase ||= { pos: o.position.clone(), quat: o.quaternion.clone(), scale: o.scale.clone() });
+      M.compose(b.pos, b.quat, b.scale).premultiply(o.parent.matrixWorld).decompose(pos, q, sc);
+      const prm = o.geometry?.parameters || {};
+      const r = Math.max(prm.radiusTop || 0, prm.radiusBottom || 0, 0.05) * Math.abs(sc.x), hh = (prm.height || 1) * Math.abs(sc.y) / 2;
+      out.push({ id: `setpost_${out.length}`, kind: o.userData.knock, half: [r, hh, r], center: [0, 0, 0], mesh: o,
+        poses: [{ pos: [pos.x, pos.y, pos.z], quat: [q.x, q.y, q.z, q.w] }] });
+    });
+    return out;
+  }
+
+  /** Knocked-down set pieces play their baked keys; the rest stand where the set put them. */
+  _setTracksAt() {
+    const tr = this.state.physics?.setTracks;
+    if (!tr && !this._knockMoved) return;
+    this._knockMoved = false;
+    const W = new THREE.Matrix4(), inv = new THREE.Matrix4(), pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+    for (const k of this._setKnockables()) {
+      const o = k.mesh, b = o.userData.knockBase, keys = tr?.[k.id];
+      if (!keys) { o.position.copy(b.pos); o.quaternion.copy(b.quat); continue; }
+      const p = samplePos(keys, this.frame), qq = sampleQuat(keys, this.frame) || k.poses[0].quat;
+      W.compose(new THREE.Vector3(...p), new THREE.Quaternion(...qq), b.scale);
+      inv.copy(o.parent.matrixWorld).invert();
+      W.premultiply(inv).decompose(pos, q, sc);
+      o.position.copy(pos); o.quaternion.copy(q);
+      this._knockMoved = true;
+    }
+  }
+
+  /**
+   * The consequence check (world.mjs): anything solid passing through anything else over the shot, on the keys as they
+   * are now (authored or baked). Returns [{a, b, frame, t, text, fixes: [{id, label, command}]}] in plain words.
+   */
+  consequenceCheck() {
+    const last = this._lastFrame(), fps = this.state.shot?.fps || 24, keep = this.frame;
+    const list = this.state.actors.filter((a) => !a.mount_id && !a.carry_id && a.kind !== "card" && a.physics?.mode !== "off" && !a.set_xform
+      && this.actorMeshes.has(a.id) && (worldRole(a) || !NO_COLLIDE.has(a.kind)));
+    const poses = new Map(list.map((a) => [a.id, []]));
+    for (let f = 0; f <= last; f++) {
+      this.setFrameSilent(f);
+      for (const a of list) {
+        const g = this.actorMeshes.get(a.id);
+        poses.get(a.id).push({ pos: [g.position.x, g.position.y, g.position.z], quat: [g.quaternion.x, g.quaternion.y, g.quaternion.z, g.quaternion.w] });
+      }
+    }
+    this.setFrameSilent(keep);
+    const items = [];
+    for (const a of list) {
+      const g = this.actorMeshes.get(a.id), box = g && this._localBox(g);
+      if (!box) continue;
+      let half = box.half;
+      if (PERSON_KINDS.has(a.kind)) half = [Math.max(0.17, half[0] * 0.6), half[1], Math.max(0.11, half[2] * 0.75)];
+      if (a.kind === "lamp" || a.kind === "tree") half = [0.12, a.kind === "tree" ? Math.min(half[1], 1.5) : half[1], 0.12];
+      const center = a.kind === "lamp" || a.kind === "tree" ? [0, box.center[1] - box.half[1] + half[1], 0] : box.center;
+      const fr = a.physics?.baked ? a.physics.fracture : null;
+      items.push({ id: a.id, name: a.name, kind: a.kind, half, center, poses: poses.get(a.id), until: fr ? fr.frame : null });
+    }
+    for (const c of this._setColliders()) if (c.poses[0].pos[1] + c.half[1] >= 0.3) items.push({ id: c.id, name: "set wall", kind: "wall", half: c.half, center: c.center, poses: c.poses });
+    for (const p of this._setKnockables()) items.push({ id: p.id, name: "street lamp", kind: "lamp", half: p.half, center: p.center, poses: p.poses });
+    const ov = interpenetrations(items, last + 1, { fps });
+    const who = Object.fromEntries(items.map((it) => [it.id, { name: it.name, kind: it.kind, moving: it.poses.length > 1 }]));
+    return consequences(ov, who, { fps });
+  }
+
+  /** Reroute fix: the mover swerves round the thing it would pass through, at the frame they would meet. */
+  rerouteAround(id, otherId) {
+    const a = this.state.actors.find((x) => x.id === id), b = this.state.actors.find((x) => x.id === otherId);
+    if (!a || !b) return null;
+    const issue = this.consequenceCheck().find((i) => (i.a === id && i.b === otherId) || (i.a === otherId && i.b === id));
+    const keys = (a.physics?.world ? a.physics.source?.keys : this._actorKeys(a)) || [];
+    if (keys.length < 2) return null;
+    const f = issue?.frame ?? Math.round(this._lastFrame() / 2);
+    const p0 = samplePos(keys, Math.max(0, f - 1)), p1 = samplePos(keys, f + 1), d = [p1[0] - p0[0], 0, p1[2] - p0[2]], dl = Math.hypot(d[0], d[2]) || 1;
+    const ga = this.actorMeshes.get(a.id), gb = this.actorMeshes.get(b.id), ba = ga && this._localBox(ga), bb = gb && this._localBox(gb);
+    const off = clearOffset(samplePos(keys, f), [d[0] / dl, 0, d[2] / dl], ba?.half || [1, 1, 2], this._actorPosAt(b, f), bb?.half || [1, 1, 1]);
+    if (a.physics?.world) unbakeActor(a);
+    a.keys = rerouteKeys(keys, f, off, { fps: this.state.shot?.fps || 24 });
+    a.position = [...a.keys[0].position];
+    delete a.position_end;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    return { frame: f, offset: off.map((v) => +v.toFixed(2)) };
   }
 
   /** Put objects back on the keys they had before the bake (every baked object, or the given ids). */
@@ -723,6 +945,7 @@ export class Stage {
     let n = 0;
     for (const a of this.state.actors) {
       if (!a.physics?.baked || (ids && !ids.includes(a.id))) continue;
+      if (a.physics.world) { unbakeActor(a); n++; continue; }   // world bodies and touched resting props: exactly as before
       a.keys = clone(a.physics.source?.keys || [{ frame: 0, position: [...this._actorKeys(a)[0].position] }]);
       a.position = [...a.keys[0].position];
       a.physics.baked = false;
@@ -730,7 +953,7 @@ export class Stage {
       n++;
     }
     // No baked object left: its hits go too (no dust, shake or impact sounds from a crash that no longer happens).
-    if (n && this.state.physics && !this.state.actors.some((a) => a.physics?.baked)) delete this.state.physics.events;
+    if (n && this.state.physics && !this.state.actors.some((a) => a.physics?.baked)) { delete this.state.physics.events; delete this.state.physics.baked; delete this.state.physics.setTracks; delete this.state.physics.takeovers; }
     if (n) { this.setFrame(this.frame); this.onChange(this.toJSON()); }
     return n;
   }
@@ -1665,6 +1888,7 @@ export class Stage {
     this.worldMount?.setTime(this.frame / (this.state.shot?.fps || 24));
     this.drive?.pre();   // Drive mode: recorded mount spans (in and out of cars and saddles) for this frame
     if (this._setGroup !== undefined && this._cleanStreetSig() !== this._setCleanSig) this._swapSetGroup();
+    this._setTracksAt();   // knocked-down street lamps (world collisions)
     // The set may have been rebuilt (new meshes): keep the gizmo on the selected object.
     if (this.tc && this.tc.object !== (this.poser?.target() ?? (this.selected ? this.actorMeshes.get(this.selected) : undefined))) this._attachGizmo();
     const swimNow = (this._swimNow = []);
@@ -3599,6 +3823,9 @@ export class Stage {
     const snap = JSON.stringify(this.state);
     this._hist = this._hist || [];
     this._redo = [];
+    // An automatic re-bake (world collisions) is part of the edit that caused it: one Undo takes both back.
+    if (this._mergeRec && this._hist.length > 1) { this._mergeRec = false; this._hist[this._hist.length - 1] = snap; return; }
+    this._mergeRec = false;
     if (this._hist[this._hist.length - 1] === snap) return;
     // Merge only a continuous gesture (a drag or slider move): same kind of edit, < 300 ms apart.
     const now = performance.now();
@@ -3612,6 +3839,8 @@ export class Stage {
   _restore(snap) {
     this._lastRec = 0;
     this.state = JSON.parse(snap);
+    this._rebake?.cancel();
+    this._bakeSig = inputSig(this.state.actors);   // the restored scene carries its own bake
     this.camera.aspect = this.fw / this.fh;
     this._buildSet();
     this._applySun();
@@ -4314,6 +4543,8 @@ export class Stage {
   load(scene) {
     if (!scene || typeof scene !== "object" || !scene.camera) return;
     this.state = clone(scene);
+    this._rebake?.cancel();
+    this._bakeSig = inputSig(this.state.actors || []);   // a loaded scene carries its own bake (see the Director's _patch)
     if (!this.state.shot) this.state.shot = { frames: 97, fps: 24 };
     for (const a of this.state.actors || []) if (!a.kind) a.kind = "man";   // older scenes: drawn as a man, so a person
     this.camera.aspect = this.fw / this.fh;
