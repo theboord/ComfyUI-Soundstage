@@ -478,6 +478,9 @@ test("camera: removing a focus key at the playhead really removes it (T-stop key
   assert.ok(Math.abs(st._cameraAt(48).focus_m - 2) < 1e-6, "focus holds its one remaining key");
   assert.deepEqual(st._camKeyFrames("t_stop"), [0, 48]);
   assert.ok(Math.abs(st._cameraAt(30).t_stop - 2.8) < 1e-6);
+  // Keying focus again elsewhere must not refill the removed one (the first-use fill ran on every set).
+  st.setPart("__camera__", "focus_m", 5, { frame: 90 });
+  assert.deepEqual(st._camKeyFrames("focus_m"), [0, 90]);
 });
 
 test("camera: the Sensor crop reaches camera_track and the DCC camera, not only the viewport", () => {
