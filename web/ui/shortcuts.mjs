@@ -74,6 +74,18 @@ export const SHORTCUTS = [
     { keys: ["O"], alts: [["Shift", "O"]], what: "Open / close the driver's door (Shift: every door, hood and trunk)" },
     { keys: ["K"], what: "Key every part at the playhead (Properties › Parts: ◆ per channel)" },
   ] },
+  { group: "Drive mode (D, or 🎮 Drive on the object's bar)", items: [
+    { keys: ["D"], what: "Drive the selected person, car, horse or prop (keys, mouse or a game controller)" },
+    { keys: ["W"], alts: [["A"], ["S"], ["D"]], what: "Driving: move (relative to the camera) · throttle, brake / reverse, steer" },
+    { keys: ["Shift"], what: "Driving: run, gallop, boost" },
+    { keys: ["Space"], what: "Driving: jump or climb (on foot) · handbrake (cars) · rise (props)" },
+    { keys: ["E"], what: "Driving: get in or out of a car, mount or dismount, sit or stand up" },
+    { keys: ["C"], alts: [["F"], ["X"]], what: "Driving: pick up / set down · throw (hold the right button to aim) · drop" },
+    { keys: ["Drag"], what: "Driving: look around (the right stick on a controller)" },
+    { keys: ["R"], what: "Driving: ● REC a take (3-2-1, the timeline plays); R again stops" },
+    { keys: ["Enter"], alts: [["Backspace"]], what: "Driving: keep or discard the take (one undo step); R records it again" },
+    { keys: ["Esc"], what: "Leave Drive mode (only kept takes change the shot); V switches follow / shot / orbit camera" },
+  ] },
   { group: "Look around the set", items: [
     { keys: ["Drag"], what: "On empty space: orbit the view" },
     { keys: ["Shift", "Drag"], what: "On empty space: pan" },

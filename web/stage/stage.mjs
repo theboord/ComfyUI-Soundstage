@@ -13,6 +13,7 @@ import { materialOf, impactParticles, impactFlash, impactShakeAt, SHAKE_PRESETS,
 import { STUNTS, hasHeadingKeys, headingTrack, channelAt, driveAt, isStunt, unwrapDeg, vehicleDynamics, smokeParticles, stuntKeys, stuntParams, stuntRun } from "./stunts.mjs";
 import { PoseGizmo } from "./posegizmo.mjs";
 import { RotateTools, gizmoTurnToActor } from "./rotate.mjs";
+import { DriveMode, installDriveButton } from "./drive.mjs";
 import { buildSet, buildWater, buildWeather, buildTireSmoke, buildImpactFx } from "./environments.mjs";
 import { installSecondary } from "./secondary.mjs";
 import { buildCard, loadBackdrop, coverFit } from "./cards.mjs";
@@ -321,6 +322,8 @@ export class Stage {
     this.setFrame(0);
     this._bindControls();
     this.rotTools = new RotateTools(this);   // the floating Move · Rotate · Scale bar, the yaw ring, Alt + drag to turn
+    this.drive = new DriveMode(this, liveKinds());   // Drive mode (Milestone 29): D drives the selected object, ● REC records it
+    installDriveButton(this);
     this.resize();
     this._ro = new ResizeObserver(() => this.resize());
     this._ro.observe(container);
@@ -1597,12 +1600,14 @@ export class Stage {
     if (this.live?.settling && !this.live.drag && !this.live.internal) this.live.finish();
     this.frame = Math.max(0, Math.min(this._lastFrame(), Math.round(frame)));
     this.worldMount?.setTime(this.frame / (this.state.shot?.fps || 24));
+    this.drive?.pre();   // Drive mode: recorded mount spans (in and out of cars and saddles) for this frame
     if (this._setGroup !== undefined && this._cleanStreetSig() !== this._setCleanSig) this._swapSetGroup();
     // The set may have been rebuilt (new meshes): keep the gizmo on the selected object.
     if (this.tc && this.tc.object !== (this.poser?.target() ?? (this.selected ? this.actorMeshes.get(this.selected) : undefined))) this._attachGizmo();
     for (const a of this.state.actors) {
       const g = this.actorMeshes.get(a.id);
       if (!g) continue;
+      if (this.drive?.on && this.drive.pose(a, g)) continue;   // driven live (drive.mjs)
       if (a.mount_id && !(a.mount_at > this.frame)) continue; // placed on its mount below (a timed mount walks free until mount_at)
       const keys = this._actorKeys(a);
       const p = this._actorPosAt(a, this.frame);
@@ -1834,6 +1839,7 @@ export class Stage {
     // Head and gaze blocking (web/stage/gaze.mjs): each person's head follows their gaze keys (the Interact menu's
     // "Look at" too), eased and within natural limits; with none it holds steady facing their travel.
     applyGaze(this, mocapIds);
+    this.drive?.post();   // Drive mode: getting out of a seat or down from a saddle
     if (this.weather) {
       const cam = this._cameraAt(this.frame);
       this.weather.update(this.frame, { x: cam.target[0], z: cam.target[2] }, this);
@@ -2490,6 +2496,12 @@ export class Stage {
       if ((k === "g" || k === "r" || k === "t") && !e.metaKey && !e.ctrlKey && this.selected) {
         e.preventDefault(); e.stopPropagation();
         this.setGizmoMode({ g: "translate", r: "rotate", t: "scale" }[k]);
+        return;
+      }
+      // D with something drivable selected: Drive mode (drive.mjs). With nothing selected D still flies right.
+      if (k === "d" && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && this.selected && this.drive?.canDrive(this.selected)) {
+        e.preventDefault(); e.stopPropagation();
+        this.drive.start(this.selected);
         return;
       }
       if (!"wasdqe".includes(k) || e.metaKey || e.ctrlKey) return;

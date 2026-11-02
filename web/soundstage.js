@@ -1063,6 +1063,7 @@ function createStageWidget(node, inputName) {
     tc.textContent = fmtTc(+scrub.value);
     drawKeys();
   });
+  stage.onDriveFrame = (f) => { scrub.value = f; tc.textContent = fmtTc(f); };   // Drive mode's takes move the playhead (drive.mjs)
   const play = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn", textContent: "Play" });
   play.addEventListener("pointerdown", (e) => e.stopPropagation());
   let playing = null;

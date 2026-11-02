@@ -18,7 +18,7 @@ This guide is for anyone who has just cloned the repo. It covers where every pan
    - [Dailies and the lined script](#dailies-and-the-lined-script) ([ScriptSync](#scriptsync-lined-script)) · [The Look tab: re-render in any film look](#the-look-tab-re-render-in-any-film-look) · [The Stop button](#the-stop-button)
    - **New since the contest:** [The Director: chat, voice and MCP](#the-director-chat-voice-and-mcp) · [Presets](#presets-one-click-camera-moves-and-lighting) · [Quality: Draft, Final, Hollywood](#quality-draft-final-hollywood) · [Takes that check themselves](#takes-that-check-themselves) · [Timeline: transitions, sound, titles and render](#transitions-sound-titles-and-render)
 4. [The 3D stage in depth](#4-the-3d-stage-in-depth)
-   - **New since the contest:** [Live 3D: drag, climb, mount, carry](#live-3d-drag-climb-mount-carry) · [Stunts](#stunts-j-turn-donut-handbrake-180) · [The new sets](#the-new-sets) · [Interop: Blender, Unreal, Maya, Nuke](#interop-blender-unreal-maya-nuke) · [Phone camera and the phone viewfinder](#phone-camera)
+   - **New since the contest:** [Live 3D: drag, climb, mount, carry](#live-3d-drag-climb-mount-carry) · [Drive mode](#drive-mode-control-anything-like-a-video-game-and-record-it) · [Stunts](#stunts-j-turn-donut-handbrake-180) · [The new sets](#the-new-sets) · [Interop: Blender, Unreal, Maya, Nuke](#interop-blender-unreal-maya-nuke) · [Phone camera and the phone viewfinder](#phone-camera)
 5. [Keyboard and mouse cheat sheet](#5-keyboard-and-mouse-cheat-sheet)
 6. [Tips and tricks](#6-tips-and-tricks)
 7. [Troubleshooting and FAQ](#7-troubleshooting-and-faq)
@@ -1037,6 +1037,34 @@ Each drag is one undo step (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z redoes). Press on a sel
 
 <p align="center"><img src="media/physics_crate_crash.gif" width="700" alt="A car crashes through a crate stack: the clay guide beside the LTX draft"></p>
 
+### Drive mode: control anything like a video game, and record it
+
+Select a person, a car, a horse or a prop and press **D** (or **🎮 Drive** on its bar, or in Properties › Parts). You now control it with the keyboard and mouse or any game controller (Xbox, PlayStation, Switch Pro, through the browser's Gamepad API). The HUD shows the hints for what you are driving, the speed, the gear or the gait, and the take's timecode.
+
+| | Keyboard and mouse | Controller |
+|---|---|---|
+| Move (people, relative to the camera; horses: pace and turn) | W A S D or the arrows | left stick (how far you push = walk, jog) |
+| Run · gallop · boost | Shift | L3 or LB |
+| Jump · climb a crate (on foot) | Space | A / Cross |
+| Throttle · brake and reverse · steer (cars, bikes, boats) | W · S · A D | RT · LT · left stick |
+| Handbrake (J-turns, drifts) | Space | A or RB |
+| Get in / out of a car, mount / dismount, sit | E | Y / Triangle |
+| Pick up · set down | C | X / Square |
+| Throw (hold to aim) · drop | F or a click (hold the right button) · X | RT (hold LT) · B |
+| Look around | drag | right stick |
+| Headlights · indicators · driver's door · light bar | L · I · O · B | D-pad |
+| Camera: follow, shot camera, orbit | V | View |
+| ● REC / stop · keep · discard | R · Enter · Backspace | Menu |
+| Leave | Esc | |
+
+**On foot** the speed comes from the stick and picks the gait (walk, jog, run) with planted feet. Walk up to a car and press **E**: they walk to the nearest front door, it opens, they climb in, it shuts, and you are driving the car with them in the driver's seat (the camera swings over to the car). **E** again brakes, opens the door and lets them out on foot. The same with a horse (the one-second swing up into the saddle) and with bikes and boats. **C** picks up a crate or a box in front of them; **F** throws it (it flies, tumbles, bounces and comes to rest on a face), **X** drops it, **C** sets it down. Walk into a wall and you stop; walk at a low crate and press Space to climb onto it.
+
+**Cars** run on the same vehicle dynamics as the stunt presets (Pacejka tyres, weight transfer, a body that rolls and pitches): hold the brake at a stop and it reverses, flick the wheel at 40 km/h in reverse and the nose comes round (a J-turn by hand), pull the handbrake through a corner and the tail slides.
+
+**Recording.** Press **R** (● REC): a 3-2-1 countdown, then the timeline plays from frame 0 (or from the playhead) while you drive. Everything already animated plays back, so you can drive actor A, keep the take, rewind and drive actor B around A, like Sequencer's Take Recorder. When you stop (or the shot ends) the take plays back once: **Keep** (one undo step), **Discard**, or **Again**. Pick the smoothing (raw, light, smooth, heavy) before you keep it. A take writes ordinary keys on the current shot: position and heading for everything you moved; a car's body roll, pitch and steering; the door opening as they get in; when they were in the car or the saddle; where the head looked (look at someone with the camera and they look at them); the lights you switched; and a thrown crate's whole flight. Nothing you do in Drive mode changes the shot unless you keep a take.
+
+**Bindings.** The HUD's Bindings button remaps any action to another key or controller button (remembered in this browser). The Inputs button draws the controller and the keys on screen, for screen recordings.
+
 ### Motion capture: from a video or the webcam
 
 Any clip of one person, or you acting it out on the webcam, drives a clay actor: body, hands, fingers, the path they travel and the jumps. It needs the SAM 3D Body model (see [Install](#download-the-models)) and runs on the GPU.
@@ -1134,7 +1162,7 @@ Keys only reach the 3D stage while the pointer is over it (or you clicked it), a
 | Option/Alt-drag | Look around in place (tripod head) |
 | scroll | Dolly in / out |
 | W / S | Fly forward / back |
-| A / D | Fly left / right |
+| A / D | Fly left / right (D with something drivable selected: Drive mode) |
 | Q / E | Fly down / up |
 | Shift + W A S D Q E | Fly four times faster |
 | 0 | Toggle Shot cam / Free view |
