@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 
 import {
   buildCaptureGraph, buildPerformancePrompt, boxOfPerson, makePerformanceTake, rippleHandOff, captureSummary, mouthPath,
-  consentLine, QUALITIES, PRIVATE_INPUT,
+  consentLine, QUALITIES, PRIVATE_INPUT, fitTarget, faceBoxOfFrames, faceBoxOfPerson,
 } from "../../web/performance/performance.mjs";
 import { rippleSources } from "../../web/motion/ripple.mjs";
 import { takesFor } from "../../web/dailies/model.mjs";
@@ -124,4 +124,37 @@ test("the cast entry for a stage actor carries the voice", () => {
 test("capture summary says when the voice was converted", () => {
   assert.match(captureSummary({ seconds: 4, face_seen: 0.95, has_audio: true, onsets: [1, 2], voice: "MARA_VOSS" }), /voice converted to MARA_VOSS · 2 mouth openings/);
   assert.match(captureSummary({ seconds: 4, face_seen: 0.95, has_audio: true, onsets: [] }), /voice kept/);
+});
+
+test("chest-up take on a rider: fitted face to face, not stretched hat to stirrup", () => {
+  // a phone take: a hand above the head to the belt (runs out of the frame), face 0.45-0.55 x 0.2-0.4
+  const actorBox = [0.3, 0.05, 0.7, 1.0], actorFace = [0.45, 0.2, 0.55, 0.4];
+  // the rider in a close single: face 0.48-0.52 x 0.3-0.38, the whole rider clamped hat to frame bottom
+  const charBox = [0.35, 0.25, 0.75, 1.0], charFace = [0.48, 0.3, 0.52, 0.38];
+  const t = fitTarget({ actorBox, actorFace, charBox, charFace, seated: true });
+  assert.equal(t.fit, "face");
+  // the server fits actorBox onto t.box (same height, centre x, top): the actor's face must land on the rider's face
+  const s = (t.box[3] - t.box[1]) / (actorBox[3] - actorBox[1]);
+  const dx = (t.box[0] + t.box[2]) / 2 - (actorBox[0] + actorBox[2]) / 2 * s, dy = t.box[1] - actorBox[1] * s;
+  const f = [actorFace[0] * s + dx, actorFace[1] * s + dy, actorFace[2] * s + dx, actorFace[3] * s + dy];
+  f.forEach((v, i) => assert.ok(Math.abs(v - charFace[i]) < 2e-3, `face ${i}: ${v} vs ${charFace[i]}`));
+  assert.ok(Math.abs(s - 0.4) < 1e-3);
+  // the old whole-box fit scaled this take by 0.79: the actor's face would be ~2x the rider's
+  assert.ok((charBox[3] - charBox[1]) / (actorBox[3] - actorBox[1]) / s > 1.9);
+  // head to toe, standing: whole body to whole body, as before
+  assert.deepEqual(fitTarget({ actorBox: [0.4, 0.05, 0.6, 0.9], actorFace, charBox: [0.1, 0.2, 0.2, 0.9], charFace, seated: false }),
+    { box: [0.1, 0.2, 0.2, 0.9], fit: "body" });
+  // no face on the character (turned away): whole box
+  assert.equal(fitTarget({ actorBox, actorFace, charBox, charFace: null, seated: true }).fit, "body");
+  assert.deepEqual(fitTarget({}), { box: null, fit: "" });
+});
+
+test("face boxes: median over the capture, unclamped from the stage", () => {
+  const face = (x0, y0) => Array.from({ length: 70 }, (_, i) => [x0 + (i % 10) * 0.01, y0 + Math.floor(i / 10) * 0.02, i < 68 ? 0.9 : 0.1]);
+  const frames = [{ face: face(0.4, 0.2) }, { face: null }, { face: face(0.42, 0.22) }, { face: face(0.44, 0.24) }];
+  assert.deepEqual(faceBoxOfFrames(frames), [0.42, 0.22, 0.51, 0.34]);
+  assert.equal(faceBoxOfFrames([{ face: null }]), null);
+  const px = { face: Array.from({ length: 68 }, (_, i) => [600 + (i % 10) * 10, 300 + Math.floor(i / 10) * 10]) };
+  assert.deepEqual(faceBoxOfPerson(px, 640, 400), [0.9375, 0.75, 1.0781, 0.9]);   // past the right edge: kept
+  assert.equal(faceBoxOfPerson({ face: null }, 640, 400), null);
 });
