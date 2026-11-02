@@ -12,9 +12,17 @@ def ltx_length(n):
     return (n - 1) // 8 * 8 + 1
 
 
-def retime_indices(total, src_fps, fps, start_frame=0, max_frames=0):
+def ltx_length_up(n):
+    """Smallest 8k+1 >= n (min 9)."""
+    n = max(1, int(n))
+    return 9 if n <= 9 else (n - 1 + 7) // 8 * 8 + 1
+
+
+def retime_indices(total, src_fps, fps, start_frame=0, max_frames=0, tail="trim"):
     """Source frame indices for a clip retimed to `fps` (nearest frame, no blending: LTX wants real frames), starting
-    at `start_frame`, at most `max_frames` long, trimmed to 8k+1. fps <= 0 keeps the source rate. -> (indices, fps)."""
+    at `start_frame`, at most `max_frames` long, fitted to 8k+1. fps <= 0 keeps the source rate. -> (indices, fps).
+    tail="trim" drops up to 7 frames off the end (the old way); tail="hold" pads up to the next 8k+1 by holding the
+    last frame instead (a performance clip keeps its last word), never past max_frames' own 8k+1."""
     total = int(total)
     src_fps = float(src_fps) if src_fps and src_fps > 0 else 24.0
     out_fps = float(fps) if fps and fps > 0 else src_fps
@@ -23,7 +31,12 @@ def retime_indices(total, src_fps, fps, start_frame=0, max_frames=0):
     count = int(math.floor(span_s * out_fps + 1e-6))
     if max_frames and max_frames > 0:
         count = min(count, int(max_frames))
-    count = ltx_length(max(1, count))
+    if tail == "hold":
+        up = ltx_length_up(count)
+        cap = ltx_length(int(max_frames)) if max_frames and max_frames > 0 else up
+        count = up if up <= max(cap, 9) else ltx_length(max(1, count))
+    else:
+        count = ltx_length(max(1, count))
     idx = [min(total - 1, start + int(round(i * src_fps / out_fps))) for i in range(count)]
     return idx, out_fps
 

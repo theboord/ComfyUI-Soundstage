@@ -5,6 +5,7 @@
 // "Keep the real footage" hands the clip to ⑤ Motion's Ripple edit instead.
 import { refOf, viewQuery, firstFrameRef, addTake, waitForOutput } from "../motion/ripple.mjs";
 import { matchesActor } from "../cast/shotcast.mjs";
+import { queueSummary } from "../ui/queue.mjs";
 
 export const PRIVATE_INPUT = "soundstage_private/performances";
 export const QUALITIES = ["Draft", "Final", "Hollywood"];
@@ -18,11 +19,13 @@ export const VOICE_NODE = "10";
 /** The capture job: Load Clip -> DWPose (body + hands + face) -> Save Performance (node "3" returns the asset JSON).
  *  voice = a saved Character Voice name: the clip's sound goes through Chatterbox VC (node VOICE_NODE) first, so the
  *  asset keeps the performer's timing, breaths and pauses in the character's voice. "" keeps the performer's voice. */
-export function buildCaptureGraph({ source, name = "take", performer = "", consent = false, maxFrames = 241, character = "", voice = "", voiceSeed = 0 }) {
+export function buildCaptureGraph({ source, name = "take", performer = "", consent = false, maxFrames = 241, character = "", voice = "", voiceSeed = 0, tail = "" }) {
   if (!source) throw new Error("bring in a clip first");
   if (!consent) throw new Error("tick the consent box first");
   if (!String(performer).trim()) throw new Error("say who the performer is");
   const g = buildCaptureNodes({ source, name, performer, maxFrames, character });
+  // "hold": the server pads the clip up to 8k+1 frames (last frame held, silence) instead of dropping its tail.
+  if (tail === "hold") g[1].inputs.tail = "hold";
   const v = String(voice || "").trim();
   if (v) {
     g[VOICE_NODE] = { class_type: "SoundstageChatterboxVC", inputs: { audio: g[3].inputs.audio, voice_name: v, seed: Math.max(0, Math.floor(+voiceSeed || 0)) } };
@@ -49,22 +52,79 @@ export function castEntryFor(items, actor) {
   return (items || []).find((it) => (it.kind || "character") === "character" && matchesActor({ ...it, kind: "character" }, actor)) || null;
 }
 
+/** The full names a script gives a character cue: "EZRA" + the action line "EZRA HALE (60s, ...)" -> ["EZRA HALE"].
+ *  A Fountain character cue is usually the first name only, while the voice was saved under the full name. */
+export function fullNamesIn(script, who) {
+  const first = String(who || "").trim().split(/\s+/)[0]?.toUpperCase().replace(/[^A-Z'-]/g, "");
+  if (!first || !script?.scenes) return [];
+  const out = new Set(), re = new RegExp(`\\b${first}\\s+([A-Z][A-Z'-]{1,})\\b`, "g");
+  for (const sc of script.scenes) for (const e of sc.elements || []) {
+    if (e?.type !== "action" || typeof e.text !== "string") continue;
+    for (const m of e.text.matchAll(re)) if (m[1] !== first) out.add(`${first} ${m[1]}`);
+  }
+  return [...out];
+}
+
+/** Saved-voice names to try for a character, best first: its aliases / full names, then its own name. */
+export function voiceCandidates(who, aliases = []) {
+  const out = [];
+  for (const n of [...(aliases || []), who]) { const v = voiceNameFor(n); if (v && !out.includes(v)) out.push(v); }
+  return out;
+}
+
+/** The saved voice that belongs to a character, or "": an exact name or alias ("EZRA HALE" -> EZRA_HALE), a voice
+ *  saved for that character, or the one voice whose name / character starts with the character's first name
+ *  ("Ezra" -> EZRA_HALE). Ambiguous first names ("EZRA_HALE" and "EZRA_YOUNG") match nothing. */
+export function matchVoice(who, saved = [], aliases = []) {
+  const list = Array.isArray(saved) ? saved.filter((v) => v?.name) : [];
+  const cands = voiceCandidates(who, aliases);
+  for (const c of cands) {
+    const v = list.find((x) => x.name.toUpperCase() === c) || list.find((x) => voiceNameFor(x.character) === c);
+    if (v) return v.name;
+  }
+  const first = voiceNameFor(String(who || "").trim().split(/\s+/)[0]);
+  if (!first) return "";
+  const hits = list.filter((x) => [x.name.toUpperCase(), voiceNameFor(x.character)].some((n) => n === first || n.startsWith(first + "_")));
+  return hits.length === 1 ? hits[0].name : "";
+}
+
 /**
- * The Voice choice: keep the performer's voice, or convert it to the character's voice (the cast entry's `voice`, else a
- * saved voice named after the character), then any other saved voice. -> {options: [{value, label}], value}.
- * saved = GET /soundstage/voices, or null when the server can't list them (then the character's own name is offered).
- * value is the cast entry's voice when it has one (the character's voice is the default once chosen), else "" (keep mine).
+ * The Voice choice: keep the performer's voice, or convert it to the character's voice (the cast entry's `voice`, else
+ * the saved voice that matches the character by name or alias), then any other saved voice.
+ * -> {options: [{value, label}], value}.
+ * saved = GET /soundstage/voices, or null when the server can't list them yet (a route added since the last restart):
+ * then the best candidate name is offered, full name first ("Ezra" in a script that says "EZRA HALE" -> EZRA_HALE),
+ * which the server also resolves by name (soundstage/audio/voices.resolve_name).
+ * A cast voice the server doesn't have ("EZRA") is replaced by the voice that matches, when one does.
+ * value is the character's voice once chosen on the cast entry, else "" (keep mine).
  */
-export function voiceChoices({ who = "", castVoice = "", saved = [] } = {}) {
-  const list = Array.isArray(saved) ? saved : [];
+export function voiceChoices({ who = "", castVoice = "", saved = [], aliases = [] } = {}) {
+  const known = Array.isArray(saved);
+  const list = known ? saved : [];
   const names = list.map((v) => v.name);
-  const guess = !Array.isArray(saved) ? (who ? voiceNameFor(who) : "")
-    : names.find((n) => n.toUpperCase() === voiceNameFor(who)) || list.find((v) => voiceNameFor(v.character) === voiceNameFor(who))?.name || "";
-  const mine = castVoice || guess;
+  const match = known ? matchVoice(who, list, aliases) : (voiceCandidates(who, aliases)[0] || "");
+  const stale = known && castVoice && !names.includes(castVoice) && match;
+  const mine = (stale ? match : castVoice) || match;
   const options = [{ value: "", label: "Keep my voice" }];
-  if (mine) options.push({ value: mine, label: `Convert to ${who || mine} (${mine})${Array.isArray(saved) && !names.includes(mine) ? " · not saved yet" : ""}` });
+  if (mine) options.push({ value: mine, label: `Convert to ${who || mine} (${mine})${known && !names.includes(mine) ? " · not saved yet" : ""}` });
   for (const v of list) if (v.name !== mine) options.push({ value: v.name, label: `Convert to ${v.character && voiceNameFor(v.character) !== v.name ? `${v.character} (${v.name})` : v.name}` });
-  return { options, value: castVoice || "" };
+  return { options, value: castVoice ? mine : "" };
+}
+
+let tailSupport = null;
+/** Does this server's Load Clip take tail = "hold" (added 2026-11-02; needs the server restarted)? Asked once. */
+export async function clipTailSupported(api) {
+  if (tailSupport) return tailSupport;
+  tailSupport = (async () => {
+    try {
+      const r = await api.fetchApi("/object_info/SoundstageClipLoad");
+      if (!r.ok) return false;
+      const j = await r.json();
+      const i = j?.SoundstageClipLoad?.input || {};
+      return !!(i.optional?.tail || i.required?.tail);
+    } catch { return false; }
+  })();
+  return tailSupport;
 }
 
 /** GET /soundstage/voices -> [{name, character, duration_s, owner}], or null when the server has no such route. */
@@ -232,6 +292,63 @@ export function consentLine(asset) {
   return c?.performer ? `Performer: ${c.performer} · consent ${c.date || "recorded"}` : "No consent record";
 }
 
+/** How long the clip runs vs how much of it the read kept: LTX needs 8k+1 frames, so an older server drops up to
+ *  7 frames (0.29 s) off the end, and a server with ClipLoad's tail = "hold" holds the last frame instead.
+ *  -> {dropped_s, held_s, text} (text "" when nothing worth saying). */
+export function tailNote(clipSeconds, a) {
+  const clip = +clipSeconds || 0, read = +(a?.seconds) || 0, held = +(a?.tail_held_s) || 0;
+  if (!clip || !read) return { dropped_s: 0, held_s: held, text: "" };
+  const dropped = Math.max(0, +(clip - read).toFixed(2));
+  if (held > 0.04) return { dropped_s: 0, held_s: held, text: `The last frame is held ${held.toFixed(2)} s so the clip fills LTX's length: no word is lost.` };
+  if (dropped >= 0.05) return { dropped_s: dropped, held_s: 0, text: `The read keeps ${read.toFixed(2)} s of this ${clip.toFixed(2)} s clip: the last ${dropped.toFixed(2)} s are dropped (LTX needs 8k+1 frames). If a word ends there, re-cut the clip with ½ s after the last word.` };
+  return { dropped_s: dropped, held_s: 0, text: "" };
+}
+
+/** The 8k+1 frame count LTX keeps for a clip of n frames: "trim" (largest <= n) or "hold" (smallest >= n). */
+export const ltxFrames = (n, tail = "trim") => {
+  n = Math.max(1, Math.floor(+n || 0));
+  if (n < 9) return tail === "hold" ? 9 : n;
+  return tail === "hold" ? Math.ceil((n - 1) / 8) * 8 + 1 : Math.floor((n - 1) / 8) * 8 + 1;
+};
+
+/**
+ * Follow one prompt on a shared GPU without polling the full /queue: the websocket says when it starts
+ * (execution_start / executing carry its prompt_id) and the light queue summary (when the server has it) says how
+ * many jobs are ahead. Start it BEFORE queueing (an early execution_start is kept), then .track(pid).
+ * -> {track(pid), state() -> "queued" | "running", ahead() -> number | null, text(doing, s), stop()}
+ */
+export function followPrompt(api, { summary = queueSummary, every = 10000 } = {}) {
+  const started = new Set();
+  let pid = null, ahead = null, timer = null;
+  const on = (e) => {
+    const d = e?.detail;
+    const id = d?.prompt_id ?? (typeof d === "object" && d ? d.prompt_id : null);
+    if (id) started.add(id);
+  };
+  const evs = ["execution_start", "executing", "progress", "executed", "execution_cached"];
+  for (const ev of evs) try { api.addEventListener?.(ev, on); } catch { /* no events (tests) */ }
+  const poll = async () => {
+    if (!pid || started.has(pid)) return;
+    const q = await summary(api, { ids: [pid] });
+    const it = q?.items?.find((x) => x.prompt_id === pid);
+    if (it?.state === "running") started.add(pid);
+    else if (it && Number.isFinite(it.position)) ahead = it.position;
+    else if (q && !it) ahead = null;
+  };
+  return {
+    track(id) { pid = id; clearInterval(timer); poll(); timer = setInterval(poll, Math.min(every, 2 ** 31 - 1)); return this; },
+    state: () => (pid && started.has(pid) ? "running" : "queued"),
+    ahead: () => ahead,
+    started: (id) => started.has(id),
+    text(doing, s) {
+      if (pid && started.has(pid)) return `${doing} ${s} s`;
+      const n = ahead;
+      return `Waiting in the queue${n != null ? ` (${n} job${n === 1 ? "" : "s"} ahead)` : ""}: the GPU is shared, your job starts when the card is free. ${s} s`;
+    },
+    stop() { clearInterval(timer); for (const ev of evs) try { api.removeEventListener?.(ev, on); } catch { /* */ } },
+  };
+}
+
 // ------------------------------------------------------------------ the dialog (browser only)
 
 const CSS = `
@@ -321,6 +438,9 @@ export function openPerformance({ api, stage, actorId, pipeline = () => null, ca
   if (!document.getElementById("ss-perf-css")) document.head.append(Object.assign(document.createElement("style"), { id: "ss-perf-css", textContent: CSS }));
   const actor = stage.state.actors.find((a) => a.id === actorId);
   const who = actor?.name || "this character";
+  // The dialog belongs to the shot it was opened on: Apply and Render go to that shot even if the strip changes.
+  const pinned = stage.activeShot?.() || null;
+  const pinnedId = pinned?.id || null;
   let clipRef = "", clipUrl = "", clipName = "", asset = actor?.performance?.data || null, stream = null;
   const url = (ref) => { const q = viewQuery(ref); return api.apiURL ? api.apiURL(`/view?${q}`) : `/view?${q}`; };
 
@@ -338,11 +458,15 @@ export function openPerformance({ api, stage, actorId, pipeline = () => null, ca
   const castItem = () => { const c = castPanel(); try { return c ? castEntryFor(c.items(), actor) : null; } catch { return null; } };
   const voiceSel = el("select", { "aria-label": "Voice", title: "Your timing, breaths and pauses are kept; only the voice changes (Chatterbox VC on the GPU)" });
   const fillVoices = (saved) => {
-    const cur = voiceSel.value, { options, value } = voiceChoices({ who, castVoice: castItem()?.voice || "", saved });
+    const it = castItem(), c = castPanel();
+    let script = null;
+    try { script = c?.o?.getScript?.() || null; } catch { script = null; }
+    const aliases = [...(it?.aliases || []), it?.full_name, actor?.full_name, ...fullNamesIn(script, who)].filter(Boolean);
+    const cur = voiceSel.value, { options, value } = voiceChoices({ who, castVoice: it?.voice || "", saved, aliases });
     voiceSel.replaceChildren(...options.map((o) => el("option", { value: o.value }, o.label)));
     voiceSel.value = [cur, value].find((v) => v && options.some((o) => o.value === v)) || "";
   };
-  fillVoices([]);
+  fillVoices(null);   // unknown until the server answers: never flag a voice "not saved yet" on a guess
   savedVoices(api).then(fillVoices);
   voiceSel.onchange = () => {
     const it = castItem(), c = castPanel();
@@ -360,7 +484,7 @@ export function openPerformance({ api, stage, actorId, pipeline = () => null, ca
     ...QUALITIES.map((q) => el("button", { type: "button", "data-q": q, on: { click: () => render(q) } }, q)));
   const closeBtn = el("button", { type: "button" }, "Close");
   const card = el("div", { class: "card", role: "dialog", "aria-label": "Use a real performance" },
-    el("h3", {}, `Use a real performance → ${who}`),
+    el("h3", {}, `Use a real performance → ${who}${pinned?.name ? ` · shot ${pinned.name}` : ""}`),
     el("div", { class: "sub" }, `Record or import a real actor with their voice. Their body, face and voice drive ${who}: the timing, expressions and lip sync are kept.`),
     el("div", { class: "row" }, recBtn, impBtn, file, el("span", { class: "tip" }, "On a phone: film chest-up for dialogue (head to toe for action), then Import.")),
     view,
@@ -395,13 +519,16 @@ export function openPerformance({ api, stage, actorId, pipeline = () => null, ca
   };
   if (asset) showAsset(asset);
 
+  let clipSeconds = 0;
   const bring = async (blob, name) => {
     say("Uploading the clip…");
+    clipSeconds = 0;
     try {
       clipName = safeName(name || blob.name || "take");
       clipRef = await upload(api, blob, `perf_${clipName}_${Date.now().toString(36)}${(blob.name?.match(/\.[A-Za-z0-9]+$/)?.[0] || ".webm").toLowerCase()}`);
       clipUrl = url(clipRef);
       view.hidden = false; video.srcObject = null; video.classList.remove("mirror"); video.src = clipUrl; video.muted = false;
+      video.addEventListener("loadedmetadata", () => { if (Number.isFinite(video.duration)) clipSeconds = video.duration; }, { once: true });
       say("Clip ready. Tick consent, name the performer, then Read the performance.");
       ready();
       if (clay.checked) {
@@ -446,22 +573,39 @@ export function openPerformance({ api, stage, actorId, pipeline = () => null, ca
     capBtn.disabled = true;
     try {
       const voice = voiceSel.value;
-      const pid = await queue(api, buildCaptureGraph({ source: clipRef, name: clipName || who, performer: performer.value, consent: consent.checked, character: who,
-        voice, voiceSeed: 0 }));
+      const tail = (await clipTailSupported(api)) ? "hold" : "";
       const doing = `Reading body, hands and face on the GPU (DWPose)${voice ? ` and converting the voice to ${voice}` : ""}…`;
-      say(doing);
-      const a = await waitText(api, pid, "3", (s) => say(`${doing} ${s} s`));
+      const follow = followPrompt(api);
+      let a;
+      try {
+        const pid = await queue(api, buildCaptureGraph({ source: clipRef, name: clipName || who, performer: performer.value, consent: consent.checked, character: who,
+          voice, voiceSeed: 0, tail }));
+        follow.track(pid);
+        say(follow.text(doing, 0));
+        a = await waitText(api, pid, "3", (s) => say(follow.text(doing, s)));
+      } finally { follow.stop(); }
       if (voice) a.voice = voice;
+      if (tail === "hold" && clipSeconds && +a.seconds > clipSeconds) a.tail_held_s = +(+a.seconds - clipSeconds).toFixed(2);
       showAsset(a);
-      say("Here is what was read: the skeleton and face landmarks over the actor, with their voice. Apply to shot when it looks right.");
+      const t = tailNote(clipSeconds, a).text;
+      say(`Here is what was read: the skeleton and face landmarks over the actor, with their voice. Apply to shot when it looks right.${t ? ` ${t}` : ""}`);
     } catch (e) { say(`Performance capture failed: ${e.message}`); } finally { ready(); }
   };
 
-  const shot = () => stage.activeShot?.() || null;
+  // The pinned shot; if the strip moved on, go back to it first (the fit and the motion prompt read the active shot).
+  const shot = () => {
+    if (!pinnedId) return stage.activeShot?.() || null;
+    if (stage.activeShot?.()?.id !== pinnedId && stage.setActiveShot) {
+      stage.setActiveShot(pinnedId);
+      onStatus(`Back on shot ${pinned?.name || pinnedId}: this Real performance dialog was opened on it.`);
+    }
+    return (stage.state?.shots || []).find((x) => x.id === pinnedId) || stage.activeShot?.() || null;
+  };
   applyBtn.onclick = async () => {
     if (!asset) return;
     const a = stage.state.actors.find((x) => x.id === actorId);
     if (a) a.performance = { asset: asset.file, name: asset.name, data: asset };
+    const sid = shot()?.id;   // back on the pinned shot before the fit reads its camera
     let box = null, fit = "";
     try {
       const t = await characterTarget(stage, actorId);
@@ -472,7 +616,7 @@ export function openPerformance({ api, stage, actorId, pipeline = () => null, ca
       }
       ({ box, fit } = fitTarget({ actorBox: asset.box, actorFace, charBox: t?.box, charFace: t?.face, seated: t?.seated }));
     } catch { box = null; }
-    const p = pipeline(), sid = shot()?.id;
+    const p = pipeline();
     if (p && sid) {
       const c = p.chosen[sid] = p.chosen[sid] || {};
       c.performance = { asset: asset.file, actor: actorId, name: asset.name, box, fit };
@@ -509,13 +653,18 @@ export function openPerformance({ api, stage, actorId, pipeline = () => null, ca
     } catch (e) { say(e.message); return; }
     for (const b of renderRow.querySelectorAll("button")) b.disabled = true;
     try {
-      const pid = await queue(api, req);
-      p.inflight?.set(pid, { sid, step: "performance" });
-      say(`Rendering the performance (${quality})…`);
-      const t0 = Date.now();
-      const tick = setInterval(() => say(`Rendering the performance (${quality})… ${Math.round((Date.now() - t0) / 1000)} s`), 1000);
-      let f;
-      try { f = await waitForOutput(api, pid, "2"); } finally { clearInterval(tick); }
+      const follow = followPrompt(api);
+      const doing = `Rendering shot ${pinned?.name || sid} with the performance (${quality})…`;
+      let f, tick;
+      try {
+        const pid = await queue(api, req);
+        follow.track(pid);
+        p.inflight?.set(pid, { sid, step: "performance" });
+        say(follow.text(doing, 0));
+        const t0 = Date.now();
+        tick = setInterval(() => say(follow.text(doing, Math.round((Date.now() - t0) / 1000))), 1000);
+        f = await waitForOutput(api, pid, "2");
+      } finally { clearInterval(tick); follow.stop(); }
       const take = makePerformanceTake({ file: f, url: url(refOf(f)) + `&t=${Date.now()}`, quality, asset: asset.file, name: asset.name, prompt });
       addTake(p.chosen[sid] = p.chosen[sid] || {}, take);
       p._saveChosen?.();

@@ -134,6 +134,21 @@ def test_retime_caps_and_keeps_rate():
     assert T.ltx_length(100) == 97 and T.ltx_length(5) == 5 and T.ltx_length(9) == 9
 
 
+def test_retime_tail_hold_keeps_the_last_word():
+    """A 96-frame phone clip: trim drops it to 89 (0.29 s of its tail gone); hold pads to 97 with the last frame."""
+    idx, _ = T.retime_indices(96, 24.0, 24.0, max_frames=241)
+    assert len(idx) == 89
+    idx, _ = T.retime_indices(96, 24.0, 24.0, max_frames=241, tail="hold")
+    assert len(idx) == 97 and idx[:96] == list(range(96)) and idx[96:] == [95]
+    idx, _ = T.retime_indices(97, 24.0, 24.0, max_frames=241, tail="hold")
+    assert idx == list(range(97)), "already 8k+1: unchanged"
+    idx, _ = T.retime_indices(300, 24.0, 24.0, max_frames=241, tail="hold")
+    assert len(idx) == 241, "never past max_frames"
+    idx, _ = T.retime_indices(5, 24.0, 24.0, tail="hold")
+    assert len(idx) == 9 and idx[-1] == 4
+    assert T.ltx_length_up(90) == 97 and T.ltx_length_up(97) == 97 and T.ltx_length_up(3) == 9
+
+
 def test_sheet_frames():
     assert T.sheet_frames('{"cols": 4, "frames": 97, "tile": [64, 36]}') == 97
     assert T.sheet_frames("") == 0 and T.sheet_frames("nope") == 0

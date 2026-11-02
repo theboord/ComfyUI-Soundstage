@@ -267,3 +267,23 @@ def test_voice_without_consent_record_refused(tmp_path):
     json.dump({"name": "X", "reference": "X.wav"}, open(os.path.join(d, "X.json"), "w"))
     with pytest.raises(VV.VoiceError, match="consent"):
         VV.load_voice(str(tmp_path), "X")
+
+
+def test_voice_resolves_cast_names_and_aliases(tmp_path):
+    """The script's cue name (EZRA) or the character's full name finds the voice saved as EZRA_HALE (2026-11-02)."""
+    from soundstage.audio import voices as VV
+    ref = np.concatenate([np.zeros((SR // 2, 1), np.float32), tone(5.0, 140), np.zeros((SR // 2, 1), np.float32)])
+    d = str(tmp_path)
+    VV.save_voice(d, "EZRA_HALE", ref, SR, consent=True, owner="designed", character="EZRA HALE")
+    VV.save_voice(d, "MARA_VOSS", ref, SR, consent=True, owner="designed", character="MARA VOSS")
+    VV.save_voice(d, "Jordan", ref, SR, consent=True, owner="me", character="Jordan Lee")
+    assert VV.resolve_name(d, "EZRA_HALE") == "EZRA_HALE"
+    assert VV.resolve_name(d, "Ezra") == "EZRA_HALE" and VV.resolve_name(d, "EZRA") == "EZRA_HALE"
+    assert VV.resolve_name(d, "ezra hale") == "EZRA_HALE" and VV.resolve_name(d, "Mara") == "MARA_VOSS"
+    assert VV.resolve_name(d, "jordan lee") == "Jordan"   # by the character it was saved for
+    assert VV.resolve_name(d, "Nobody") is None
+    assert VV.load_voice(d, "EZRA")["name"] == "EZRA_HALE"
+    VV.save_voice(d, "EZRA_YOUNG", ref, SR, consent=True, owner="designed", character="EZRA YOUNG")
+    assert VV.resolve_name(d, "Ezra") is None, "two Ezras: no guess"
+    with pytest.raises(VV.VoiceError, match="No saved voice"):
+        VV.load_voice(d, "Ezra")

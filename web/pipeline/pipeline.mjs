@@ -16,7 +16,9 @@ import { FrameCheck, badgeOf, flagged, rank, REROLLS, FRAMECHECK_CSS } from "./f
  * from the plain colour pass. 2 = the frame follows the stage exactly (soundstage/look/frame_lock.py): Klein starts
  * from the Color pass (stage_denoise) and the prompt states frame 1 as measured on the ID pass. */
 export const LOOK_START = 2;
-export const FRAME_DENOISE = 0.9;   // soundstage/look/frame_lock.py DEFAULT_DENOISE: Klein's default "Follow the clay"
+export const FRAME_DENOISE = 0.9;
+/** input/ subfolder where chosen ④ frames are kept (temp/ is emptied by a server restart). */
+export const KEPT_FRAMES = "soundstage_frames";   // soundstage/look/frame_lock.py DEFAULT_DENOISE: Klein's default "Follow the clay"
 export function lookStartFor(c) {
   return !c || !!c.edited || c.seed == null || (c.ls || 0) >= 1;
 }
@@ -1449,6 +1451,44 @@ export class Pipeline {
       refFiles: c.refFiles, ls: c.ls, lock: c.lock, check: c.check && !c.check.pending ? c.check : undefined };
     if (c.file) this.ctx.rememberRender?.(sid, "look", c.file);
     this.ctx.saveChosen?.({ chosen: this.chosen, touched: this.touched });
+    this._keepFrame(sid);
+  }
+
+  /** A chosen frame lives in ComfyUI's temp/ folder, which a server restart empties (and every render from that
+   *  shot then fails). Copy it once into input/soundstage_frames/ and point the chosen record (and its candidate
+   *  tile) at the copy. The model + seed stay, so Motion still reproduces it from cache. */
+  async _keepFrame(sid) {
+    const c = this.chosen[sid];
+    const api = this.ctx.api;
+    this._keeping = this._keeping || new Set();
+    if (!c?.file || c.file.type !== "temp" || !api?.fetchApi || this._keeping.has(c.url)) return;
+    const key = c.url;
+    this._keeping.add(key);
+    try {
+      const old = c.url, f = c.file;
+      const q = new URLSearchParams({ filename: f.filename, subfolder: f.subfolder || "", type: "temp" });
+      const r = await api.fetchApi(`/view?${q}`);
+      if (!r.ok) return;
+      const blob = await r.blob();
+      const name = `${String(sid).replace(/[^A-Za-z0-9_-]+/g, "_")}_${c.seed ?? "x"}_${f.filename.replace(/[^A-Za-z0-9_.-]+/g, "_")}`;
+      const body = new FormData();
+      body.append("image", blob, name);
+      body.append("type", "input");
+      body.append("subfolder", KEPT_FRAMES);
+      body.append("overwrite", "true");
+      const u = await api.fetchApi("/upload/image", { method: "POST", body });
+      if (!u.ok) return;
+      const j = await u.json();
+      const cur = this.chosen[sid];
+      if (!cur || cur.url !== old) return;   // chosen again meanwhile: keep that one instead
+      const file = { filename: j.name, subfolder: j.subfolder || KEPT_FRAMES, type: "input", metadata: f.metadata };
+      const url = this._refURL(`${file.subfolder}/${file.filename}`);
+      for (const k of this.candidates?.[sid] || []) if (k.url === old) { k.url = url; k.file = file; }
+      cur.url = url; cur.file = file; cur.kept_from = f.filename;
+      this.ctx.rememberRender?.(sid, "look", file);
+      this.ctx.saveChosen?.({ chosen: this.chosen, touched: this.touched });
+      try { this._drawShotRows(); if (this.f && !this.views?.frame?.hidden) this._drawCandidates(); } catch { /* view not built */ }
+    } catch { /* the temp copy stays: kept next time it is chosen */ } finally { this._keeping.delete(key); }
   }
 
   _loadChosen() {
