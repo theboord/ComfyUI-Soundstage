@@ -267,6 +267,7 @@ test("action: stunts, crate crash, drop, throw, climb / mount", async () => {
     const crates = stage.state.actors.filter((a) => a.kind === "crate");
     assert.equal(crates.length, 6);
     assert.ok(crates.every((c) => c.physics.mode === "dynamic" && c.physics.baked));
+    assert.ok(crates.every((c) => c.key_y === true), "the stack keeps its rows (a prop without key_y sits on the floor)");
     const car = stage.state.actors.find((a) => a.id === "sports_car");
     assert.ok(car.keys.at(-1).position[2] > 20, "drives straight through");
     const h = stage._hist.length;
@@ -282,6 +283,7 @@ test("action: stunts, crate crash, drop, throw, climb / mount", async () => {
     const it = stage.state.actors.find((a) => a.kind === "crate");
     assert.ok(it, "a horse isn't dropped: a crate is");
     assert.equal(it.physics.mode, "dynamic");
+    assert.equal(it.key_y, true, "keeps its 2.5 m lift");
   }
   {
     const { stage, runner } = await setup();
