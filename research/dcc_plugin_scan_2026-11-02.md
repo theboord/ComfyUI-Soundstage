@@ -181,7 +181,7 @@ For each reused piece, add a row to `THIRD_PARTY_NOTICES.md` (component, where i
 - recast-navigation-js: MIT, © 2025 Isaac Mason (plus Recast/Detour: zlib, © Mikko Mononen)
 - Yuka: MIT, © 2023 Yuka authors
 - Cryptomatte: BSD-3, © 2014–2016 Psyop Media Company, LLC
-- Ten Minute Physics: MIT, © 2021–2022 Matthias Müller
+- Ten Minute Physics: MIT, © 2021–2024 Matthias Müller
 - FFT-Ocean: MIT, © 2020 Ivan Pensionerov · jbouny/ocean: MIT, © 2013 Jérémy Bouny
 - CARLA: MIT, © 2024 CVC / UAB
 - KawaiiPhysics: MIT, © 2019–2026 pafuhana1213
