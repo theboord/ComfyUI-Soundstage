@@ -38,6 +38,7 @@ node tools/tryit/test_tryit.mjs http://127.0.0.1:8771/local.html /tmp/tryit_shot
 
 `local.html` is the page with the document skeleton that the Artifact host adds. The test does the following:
 
+- opens the first screen on a plain visit (the wipe draws, no sideways scroll) and lands on the J-turn stage;
 - loads every scene;
 - goes through the seven steps;
 - replays ④ Frame and ⑤ Motion;
@@ -46,10 +47,19 @@ node tools/tryit/test_tryit.mjs http://127.0.0.1:8771/local.html /tmp/tryit_shot
 - switches the physics solver to GPU, which must fall back cleanly without WebGPU;
 - opens Ripple, Pose follow and the DCC kit;
 - opens the Director, Presets, the Timeline, Hollywood quality, the take-check chips and the phone viewfinder, and checks the full-install notes;
+- replays the recorded Video → 3D run through the App's chooser and checks the rebuilt set and the Identical? bar;
 - runs every tour stop;
 - checks the phone width.
 
 It saves a screenshot of each.
+
+## The first screen
+
+A plain visit (no `#scene` in the link) opens on the J-turn stage behind a first screen: one line of pitch and the
+stage's Color pass against the Hollywood take it guided, as a drag wipe. Both halves are one side-by-side video
+(`m_hero_jturn.mp4`, made from share/README_Media_v3 into share/TryIt_Demo and shipped as it is with `kind: "copy"`),
+drawn into a canvas half by half, so they can never drift. **Intro** in the bar opens it again. Tour links and scene
+picks skip it.
 
 ## What's here
 
@@ -60,10 +70,12 @@ It saves a screenshot of each.
 | `shell/scripts/api.js`, `app.js`, `glbshim.js` | The stand-in ComfyUI. See "The shims" below. |
 | `shell/tour.json` | The What's new stops. Each has a scene, an action (`do`), text and optional clips (`r/<file>`). |
 | `scenes/*.json` | The demo scenes: the stage, node properties (`ss_renders`, `ss_script`, `ss_cut`), widgets, the precomputed Look and Advisor, and `candidates` (the ④ Frame variations the replay cycles through). |
+| `pack_v2s.py` | Packs one real Video → 3D run (a `tools/v2s_bench/devrun.py` result folder and its set GLB) into the media cache as `r/canned/v2s_run.json`. Rebuild in the demo replays it: the progress card walks the run's measured steps in 9 s, then the App loads the real result scene through its own code and opens the Identical? bar. Only the demo clip replays; a visitor's own clip gets the full-install note. |
 | `make_scenes.mjs` | Remakes the generated scenes with the real App in a hidden Chrome: `drycreek`, `stunt`, `physics` and the seven new sets. The new sets are set up from sluglines. Run it against a local build, then build again. `ONLY=stunt,fire` limits it. |
 | `media.json` | Clips and stills encoded into the media cache from `share/`. |
 | `published.json` | The sha256 of every live file, written by `--mark-published`. |
 | `test_tryit.mjs` | The click-through test. |
+| `verify_tour.mjs` | Every tour stop through its own button and every Watch clip at one size (`SIZE=390x844`): clips play, nothing clipped, no sideways scroll. |
 
 ### The shims
 

@@ -58,9 +58,13 @@ def ascii_html(h):
 
 
 def encode(src, dst, kind, vf=None):
-    """The r/ recipe: videos 960 px wide, H.264 crf 28, AAC 96k, faststart; stills 1280 px JPEG (frame0: a clip's first frame)."""
+    """The r/ recipe: videos 960 px wide, H.264 crf 28, AAC 96k, faststart; stills 1280 px JPEG (frame0: a clip's first frame);
+    copy: a file already encoded for the web, shipped as it is."""
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     pre = f"{vf}," if vf else ""
+    if kind == "copy":    # already encoded for the web (the hero clip): shipped as it is
+        shutil.copy(src, dst)
+        return
     if kind in ("still", "frame0"):
         cmd = ["ffmpeg", "-v", "error", "-y", "-i", src, "-frames:v", "1", "-vf", f"{pre}scale='min(1280,iw)':-2", "-q:v", "4", dst]
     else:
@@ -188,6 +192,21 @@ def build(web, rev, out, media):
             scene = json.load(open(os.path.join(sdir, f)))
             need |= {f"r/{x}" for x in media_refs(scene)}
             shutil.copy(os.path.join(sdir, f), os.path.join(out, "r", "scenes", f))
+    # The recorded Video -> 3D run (pack_v2s.py) and the set GLB its scene loads.
+    v2s = os.path.join(media, "r", "canned", "v2s_run.json")
+    if os.path.exists(v2s):
+        need.add("r/canned/v2s_run.json")
+        rec = json.load(open(v2s))["result"]["scene"]
+        s0 = ((rec.get("reference") or {}).get("samples") or [{}])[0].get("filename")
+        if s0:   # the plate behind an unscanned set (api.js serves PNG names as the shipped JPEG)
+            need.add("r/" + re.sub(r"\.png$", ".jpg", s0, flags=re.I))
+        for act in rec.get("actors", []):
+            take = (act.get("mocap") or {}).get("file")
+            if take:   # its motion-capture take
+                need.add("r/" + os.path.basename(take))
+            m = re.search(r"filename=([^&]+)", act.get("url") or "")
+            if act.get("kind") == "glb" and m:
+                need.add(f"r/{m[1]}.b64.txt")
     tour = os.path.join(HERE, "shell", "tour.json")
     if os.path.exists(tour):
         for s in json.load(open(tour)).get("steps", []):
