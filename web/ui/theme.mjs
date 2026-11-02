@@ -112,11 +112,11 @@ const CSS = `
 .ss-stage .ss-tabs, .ss-stage .ss-views {
   background:var(--ss-card); border:1px solid var(--ss-line); border-radius:999px; padding:3px; gap:2px !important;
 }
-.ss-stage .ss-tabs button, .ss-stage .ss-views button {
+.ss-stage .ss-tabs button, .ss-stage .ss-views button, .ss-stage :is(:where(.ss-pophost) > .ss-toppop) button {
   background:transparent !important; border:1px solid transparent !important; border-radius:999px !important;
   color:var(--ss-muted) !important; padding:5px 12px !important;
 }
-.ss-stage .ss-tabs button[aria-pressed=true], .ss-stage .ss-views button[aria-pressed=true] {
+.ss-stage .ss-tabs button[aria-pressed=true], .ss-stage .ss-views button[aria-pressed=true], .ss-stage :is(:where(.ss-pophost) > .ss-toppop) button[aria-pressed=true] {
   background:var(--ss-raised) !important; color:var(--ss-text) !important; border-color:var(--ss-line) !important;
 }
 .ss-stage .ss-tabs { flex-wrap:wrap; }
@@ -221,7 +221,7 @@ const CSS = `
 .ss-stage.ss-wsmode[data-ws=wide] .ss-pipe button .n { flex:none; }
 .ss-stage.ss-wsmode[data-ws=wide] .ss-pipe button .n { font-size:10px; }
 .ss-stage.ss-wsmode[data-ws=wide] .ss-tabs { padding:2px; }
-.ss-stage.ss-wsmode[data-ws=wide] .ss-tabs button { padding:4px 11px !important; }
+.ss-stage.ss-wsmode[data-ws=wide] :is(.ss-tabs, :where(.ss-pophost) > .ss-toppop) button { padding:4px 11px !important; }
 
 /* Tool rail: the dock, stood up as a column of icon + label buttons. */
 .ss-stage[data-ws=wide] .ss-rail .ss-dock { flex-direction:column; flex-wrap:nowrap; width:80px; box-sizing:border-box; padding:4px;

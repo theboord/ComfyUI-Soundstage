@@ -8,6 +8,7 @@ import * as TL from "./timeline.mjs";
 import * as FX from "./fx.mjs";
 import { exportAll, fpsInfo, framesToTC, recordStart } from "./exporters.mjs";
 import { icon } from "../ui/icons.mjs";
+import { openPopover } from "../ui/popover.mjs";
 import { sourceLine } from "../ui/sourcespec.mjs";
 import { impactClips, withImpactClips } from "./impactsfx.mjs";
 
@@ -2305,10 +2306,11 @@ export class CutPanel {
    * Audio modes: aslide (body), atrimIn / atrimOut (edges), afadeIn / afadeOut (the top-corner handles).
    */
   _clipMenu(shotId, name, e) {
-    this._menu?.remove();
+    this._menuPop?.close("replaced");
     const m = (this._menu = document.createElement("div"));
     m.className = "ss-cut-ctx";
-    m.style.cssText = "position:fixed;z-index:10000;min-width:240px;padding:6px;border-radius:12px;background:#221b28;" +
+    m.setAttribute("role", "menu");
+    m.style.cssText = "min-width:240px;padding:6px;border-radius:12px;background:#221b28;" +
       "border:1px solid rgba(255,255,255,.14);box-shadow:0 12px 32px rgba(0,0,0,.5);display:flex;flex-direction:column;gap:2px;font:13px/1.3 inherit";
     const head = document.createElement("div");
     head.textContent = `Edit original: ${name}`;
@@ -2318,19 +2320,20 @@ export class CutPanel {
       ["canvas", "Touch up its frame in Paint Studio"], ["motion", "Re-render its motion (⑤ Motion)"], ["review", "Compare in ⑥ Review"]]) {
       const b = document.createElement("button");
       b.type = "button";
+      b.setAttribute("role", "menuitem");
       b.textContent = label;
       b.style.cssText = "text-align:left;background:transparent;border:0;color:#f0efed;padding:7px 8px;border-radius:8px;cursor:pointer;font:inherit";
       b.addEventListener("pointerenter", () => (b.style.background = "rgba(242,255,89,.1)"));
       b.addEventListener("pointerleave", () => (b.style.background = "transparent"));
+      b.addEventListener("focus", () => (b.style.background = "rgba(242,255,89,.1)"));
+      b.addEventListener("blur", () => (b.style.background = "transparent"));
       b.addEventListener("pointerdown", (ev) => ev.stopPropagation());
-      b.addEventListener("click", () => { m.remove(); this._onEditShot(shotId, where); });
+      b.addEventListener("click", () => { this._menuPop?.close("item"); this._onEditShot(shotId, where); });
       m.append(b);
     }
-    document.body.append(m);
-    m.style.left = Math.min(e.clientX, innerWidth - m.offsetWidth - 8) + "px";
-    m.style.top = Math.min(e.clientY, innerHeight - m.offsetHeight - 8) + "px";
-    const close = (ev) => { if (!m.contains(ev.target)) { m.remove(); removeEventListener("pointerdown", close, true); } };
-    setTimeout(() => addEventListener("pointerdown", close, true), 0);
+    // the App's pop-over layer (ui/popover.mjs): flipped and clamped to the window; Esc, outside click and arrows
+    this._menuPop = openPopover(m, { anchor: e, theme: this.tl || null, themeClasses: false, name: "cut-ctx", focus: "first",
+      onClose: () => { this._menuPop = null; this._menu = null; } });
   }
 
   _hit(x, y) {

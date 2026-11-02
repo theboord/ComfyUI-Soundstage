@@ -21,6 +21,7 @@ import { importScriptFile, sceneSummaryLine, formatEighths, buildPromptForScene 
 import * as parse from "./parse.mjs";
 import { TOKENS as T } from "../ui/theme.mjs";
 import { icon as lucide } from "../ui/icons.mjs";
+import { openPopover } from "../ui/popover.mjs";
 
 const ACCEPT = ".fountain,.spmd,.fdx,.pdf,.txt,.text,.md";
 
@@ -1007,7 +1008,6 @@ export class SceneSwitcher {
     this.btn.addEventListener("click", () => (this.menu.hidden ? this.open() : this.close()));
     this.btn.addEventListener("keydown", (e) => { if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); e.stopPropagation(); this.open(); } });
     this.menu.addEventListener("keydown", (e) => this._keys(e));
-    this._outside = (e) => { if (!this.el.contains(e.target)) this.close(); };
     this.el.append(this.btn, this.menu);
     container.append(this.el);
     this.refresh();
@@ -1038,25 +1038,17 @@ export class SceneSwitcher {
   open() {
     if (this.el.hidden) return;
     this._fill();
-    this.menu.hidden = false;
-    this.btn.setAttribute("aria-expanded", "true");
-    // Open toward the room there is: right-align when the menu would run off the window.
-    const r = this.btn.getBoundingClientRect();
-    this.menu.classList.toggle("right", r.left + Math.max(300, this.menu.offsetWidth) > (window.innerWidth || 1e9) - 8);
-    // Still past an edge on a narrow window: give up width, not visibility.
-    this.menu.style.maxWidth = "";
-    const m = this.menu.getBoundingClientRect(), vw = window.innerWidth || 1e9;
-    const over = Math.max(0, 8 - m.left) + Math.max(0, m.right - (vw - 8));
-    if (over > 0) this.menu.style.maxWidth = `${Math.max(200, Math.floor(m.width - over))}px`;
-    document.addEventListener("pointerdown", this._outside, true);
+    // In the App's pop-over layer (ui/popover.mjs): flipped and clamped to the window, never cut off by a panel.
+    this._pop = openPopover(this.menu, {
+      anchor: this.btn, owner: this.btn, align: "start", gap: 6, name: "scene-switcher", focus: false,
+      onClose: (why) => { this._pop = null; if (why === "escape") this.btn.focus(); },
+    });
     (this.menu.querySelector('[aria-selected="true"]') || this.menu.querySelector("button.opt"))?.focus();
   }
 
   close({ focus = false } = {}) {
-    if (this.menu.hidden) return;
-    this.menu.hidden = true;
-    this.btn.setAttribute("aria-expanded", "false");
-    document.removeEventListener("pointerdown", this._outside, true);
+    if (!this._pop) { this.menu.hidden = true; this.btn.setAttribute("aria-expanded", "false"); return; }
+    this._pop.close("api");
     if (focus) this.btn.focus();
   }
 
