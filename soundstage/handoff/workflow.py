@@ -46,7 +46,11 @@ def resolve(ref: str, dirs: dict | None = None) -> str | None:
     if not base:
         return None
     path = os.path.realpath(os.path.join(base, sub, name))
-    if os.path.commonpath([base, path]) != base or not os.path.isfile(path):
+    try:
+        inside = os.path.commonpath([base, path]) == base
+    except ValueError:      # Windows: "D:/x.mp4" joins onto another drive, which is never inside
+        return None
+    if not inside or not os.path.isfile(path):
         return None
     return path
 

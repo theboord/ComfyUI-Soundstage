@@ -42,6 +42,9 @@ def test_resolve_stays_inside_the_folders(tmp_path):
     assert W.resolve("soundstage/a.mp4 [output]", dirs) == os.path.realpath(out / "soundstage" / "a.mp4")
     assert W.resolve("soundstage/missing.mp4 [output]", dirs) is None
     assert W.resolve("../secret.mp4 [output]", dirs) is None
+    # a drive letter (another drive on Windows) is refused, not a crash (the route answered 500)
+    other = "Q:" if not str(tmp_path).upper().startswith("Q:") else "R:"
+    assert W.resolve(f"{other}/secret.mp4 [output]", dirs) is None
     os.symlink(tmp_path / "secret.mp4", out / "link.mp4")
     assert W.resolve("link.mp4 [output]", dirs) is None
 
