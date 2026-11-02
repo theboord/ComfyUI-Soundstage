@@ -16,51 +16,8 @@
   "pageScroll": false,
   "pageScrollH": 800,
   "pageOverflowX": false,
-  "clipped": [
-   {
-    "text": "Step 1✓ScriptScriptReady",
-    "ellipsis": false,
-    "w": 76,
-    "need": 78
-   },
-   {
-    "text": "Step 2✓Cast & LocationsCastReady",
-    "ellipsis": false,
-    "w": 66,
-    "need": 68
-   },
-   {
-    "text": "Step 3✓SetSetReady",
-    "ellipsis": false,
-    "w": 59,
-    "need": 61
-   },
-   {
-    "text": "Step 4✓FrameFrameReady",
-    "ellipsis": false,
-    "w": 76,
-    "need": 78
-   },
-   {
-    "text": "Step 5✓MotionMotionReady",
-    "ellipsis": false,
-    "w": 82,
-    "need": 84
-   },
-   {
-    "text": "Step 6✓ReviewReviewReady",
-    "ellipsis": false,
-    "w": 82,
-    "need": 84
-   },
-   {
-    "text": "Step 7✓DeliverDeliverReady",
-    "ellipsis": false,
-    "w": 81,
-    "need": 83
-   }
-  ],
-  "clippedHard": 7,
+  "clipped": [],
+  "clippedHard": 0,
   "overlaps": [],
   "scrollers": [],
   "offscreen": [],
@@ -75,7 +32,7 @@
   "clippedHard": 0,
   "overlaps": [],
   "scrollers": [
-   "ss-scriptview 1011/692"
+   "ss-scriptview 1011/694"
   ],
   "offscreen": [],
   "errors": []
@@ -124,49 +81,13 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "Step 1✓ScriptScriptReady",
-    "ellipsis": false,
-    "w": 76,
-    "need": 78
-   },
-   {
-    "text": "Step 2✓Cast & LocationsCastReady",
-    "ellipsis": false,
-    "w": 66,
-    "need": 68
-   },
-   {
-    "text": "Step 3✓SetSetReady",
-    "ellipsis": false,
-    "w": 59,
-    "need": 61
-   },
-   {
-    "text": "Step 4✓FrameFrameReady",
-    "ellipsis": false,
-    "w": 76,
-    "need": 78
-   },
-   {
-    "text": "Step 5✓MotionMotionReady",
-    "ellipsis": false,
-    "w": 82,
-    "need": 84
-   },
-   {
-    "text": "Step 6✓ReviewReviewReady",
-    "ellipsis": false,
-    "w": 82,
-    "need": 84
-   },
-   {
-    "text": "Step 7✓DeliverDeliverReady",
-    "ellipsis": false,
-    "w": 81,
-    "need": 83
+    "text": "EXT. Dry Creek - Main Street",
+    "ellipsis": true,
+    "w": 135,
+    "need": 161
    }
   ],
-  "clippedHard": 7,
+  "clippedHard": 0,
   "overlaps": [],
   "scrollers": [],
   "offscreen": [],
@@ -254,46 +175,10 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "Step 1✓ScriptScriptReady",
-    "ellipsis": false,
-    "w": 76,
-    "need": 78
-   },
-   {
-    "text": "Step 2✓Cast & LocationsCastReady",
-    "ellipsis": false,
-    "w": 66,
-    "need": 68
-   },
-   {
-    "text": "Step 3✓SetSetReady",
-    "ellipsis": false,
-    "w": 59,
-    "need": 61
-   },
-   {
-    "text": "Step 4✓FrameFrameReady",
-    "ellipsis": false,
-    "w": 76,
-    "need": 78
-   },
-   {
-    "text": "Step 5✓MotionMotionReady",
-    "ellipsis": false,
-    "w": 82,
-    "need": 84
-   },
-   {
-    "text": "Step 6✓ReviewReviewReady",
-    "ellipsis": false,
-    "w": 82,
-    "need": 84
-   },
-   {
-    "text": "Step 7✓DeliverDeliverReady",
-    "ellipsis": false,
-    "w": 81,
-    "need": 83
+    "text": "EXT. Dry Creek - Main Street",
+    "ellipsis": true,
+    "w": 135,
+    "need": 161
    },
    {
     "text": "EXT. DESERT OUTSIDE DRY CREEK",
@@ -320,10 +205,10 @@
     "need": 101
    }
   ],
-  "clippedHard": 7,
+  "clippedHard": 0,
   "overlaps": [],
   "scrollers": [
-   "ss-hudp-body 451/410"
+   "ss-hudp-body 458/410"
   ],
   "offscreen": [],
   "errors": []
@@ -673,46 +558,10 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "Step 1✓ScriptScriptReady",
-    "ellipsis": false,
-    "w": 76,
-    "need": 78
-   },
-   {
-    "text": "Step 2✓Cast & LocationsCastReady",
-    "ellipsis": false,
-    "w": 66,
-    "need": 68
-   },
-   {
-    "text": "Step 3✓SetSetReady",
-    "ellipsis": false,
-    "w": 59,
-    "need": 61
-   },
-   {
-    "text": "Step 4✓FrameFrameReady",
-    "ellipsis": false,
-    "w": 76,
-    "need": 78
-   },
-   {
-    "text": "Step 5✓MotionMotionReady",
-    "ellipsis": false,
-    "w": 82,
-    "need": 84
-   },
-   {
-    "text": "Step 6✓ReviewReviewReady",
-    "ellipsis": false,
-    "w": 82,
-    "need": 84
-   },
-   {
-    "text": "Step 7✓DeliverDeliverReady",
-    "ellipsis": false,
-    "w": 81,
-    "need": 83
+    "text": "EXT. Dry Creek - Main Street",
+    "ellipsis": true,
+    "w": 135,
+    "need": 161
    },
    {
     "text": "EXT. DESERT OUTSIDE DRY CREEK",
@@ -739,10 +588,10 @@
     "need": 101
    }
   ],
-  "clippedHard": 7,
+  "clippedHard": 0,
   "overlaps": [],
   "scrollers": [
-   "ss-hudp-body 451/410"
+   "ss-hudp-body 458/410"
   ],
   "offscreen": [],
   "errors": []
@@ -756,20 +605,14 @@
    {
     "text": "EXT. Dry Creek - Main Street",
     "ellipsis": true,
-    "w": 94,
+    "w": 135,
     "need": 161
-   },
-   {
-    "text": "Tracking, front 3/4",
-    "ellipsis": true,
-    "w": 94,
-    "need": 105
    }
   ],
   "clippedHard": 0,
   "overlaps": [],
   "scrollers": [
-   "ss-phys 639/630",
+   "ss-phys 639/542",
    "ss-insp-body 1100/537"
   ],
   "offscreen": [
@@ -839,61 +682,19 @@
   "pageOverflowX": false,
   "clipped": [
    {
-    "text": "Step 1✓ScriptScriptReady",
-    "ellipsis": false,
-    "w": 76,
-    "need": 78
-   },
-   {
-    "text": "Step 2✓Cast & LocationsCastReady",
-    "ellipsis": false,
-    "w": 66,
-    "need": 68
-   },
-   {
-    "text": "Step 3✓SetSetReady",
-    "ellipsis": false,
-    "w": 59,
-    "need": 61
-   },
-   {
-    "text": "Step 4✓FrameFrameReady",
-    "ellipsis": false,
-    "w": 76,
-    "need": 78
-   },
-   {
-    "text": "Step 5✓MotionMotionReady",
-    "ellipsis": false,
-    "w": 82,
-    "need": 84
-   },
-   {
-    "text": "Step 6✓ReviewReviewReady",
-    "ellipsis": false,
-    "w": 82,
-    "need": 84
-   },
-   {
-    "text": "Step 7✓DeliverDeliverReady",
-    "ellipsis": false,
-    "w": 81,
-    "need": 83
-   },
-   {
     "text": "EXT. Dry Creek - Main Street",
     "ellipsis": true,
-    "w": 86,
+    "w": 47,
     "need": 161
    },
    {
     "text": "Tracking, front 3/4",
     "ellipsis": true,
-    "w": 86,
+    "w": 47,
     "need": 105
    }
   ],
-  "clippedHard": 7,
+  "clippedHard": 0,
   "overlaps": [],
   "scrollers": [],
   "offscreen": [],
