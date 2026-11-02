@@ -166,7 +166,7 @@ Reuse key: **R** = code or data reusable with attribution, **I** = idea only.
 | FFT-Ocean / ocean | (above) | FFT ocean | **MIT** | R | #6 |
 | ez-tree | github.com/dgreenheck/ez-tree | Procedural trees for three.js | **MIT** | R | Varied trees for forest and park sets, drop-in |
 | simplex-noise.js | github.com/jwagner/simplex-noise.js | 2D/3D/4D simplex noise | **MIT** | R | Terrain height, wind gust fields, cloud drift |
-| MapGenerator | github.com/ProbableTrain/MapGenerator | Procedural city road networks (tensor fields) | **GPL-3** (`COPYING`) | I | Tensor-field streets for a "generate a neighbourhood" City set; re-implement from the paper (Chen et al. 2008) |
+| MapGenerator | github.com/ProbableTrain/MapGenerator | Procedural city road networks (tensor fields) | **LGPL-3.0** (`COPYING` + `COPYING.LESSER`) | I | Tensor-field streets for a "generate a neighbourhood" City set; re-implement from the paper (Chen et al. 2008) |
 | OpenTimelineIO | github.com/AcademySoftwareFoundation/OpenTimelineIO | Editorial interchange | **Apache-2.0** (`LICENSE.txt`) | R | Soundstage already exports OTIO; listed only for completeness |
 
 ---
