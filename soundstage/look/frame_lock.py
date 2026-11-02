@@ -14,6 +14,14 @@ Two things made FLUX 3 Klein frames drift off the clay (docs/decisions.md 2026-1
    (frame1_layout in the scene JSON) and the still prompt states it: "in the left half of frame, close to the
    camera, half the frame wide".
 
+Reading the ID pass (id_masks) must not invent objects. The stage canvas is antialiased, so every edge between two
+ID colours is a 1-px seam of blends, and with 14+ golden-ratio hues some blend lands on a third object's colour: in
+the crate crash the yellow and green crates' seams are the sports car's colour. Plain nearest-colour labelling gave the
+far, half-hidden sports car a box from the crate pyramid to the end of the street, the prompt said "a sports car close
+to the camera, half the frame wide", and Klein painted a ghost red car in the foreground (M27) or over the pyramid
+(M28) - share/GhostCar_DetailLoss. Now an object is only where its colour is solid (a pixel whose 8 neighbours are the
+same flat colour) and what is joined to that; seams go to the object they border.
+
 Pure numpy; the 3D Stage node calls frame1_layout() and the router reads stage_denoise().
 """
 from __future__ import annotations
@@ -28,6 +36,9 @@ INIT_DOWN = 16            # the latent starts from the Color pass shrunk 16x and
                           # A sharp start (tested at 0.75) made Klein keep the clay mannequins; from noise it recomposed.
 MIN_DENOISE = 0.3
 MIN_AREA = 0.0006         # an actor smaller than this fraction of the frame is not stated (a far police light bar)
+FLAT = 0.08               # an ID pixel this close (RGB distance, 0..1) to a palette colour is that flat colour
+MIN_FILL = 0.03           # a box its own pixels fill less than this is strewn pixels, not an object (the ghost: 0.014)
+_N8 = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1))
 
 
 def stage_denoise(v) -> float:
@@ -43,24 +54,75 @@ def _srgb(c: np.ndarray) -> np.ndarray:
     return np.where(c <= 0.0031308, c * 12.92, 1.055 * np.clip(c, 0, None) ** (1 / 2.4) - 0.055)
 
 
+def _nearest(img: np.ndarray, pal: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """(index of the nearest palette entry, its squared distance) per pixel, in chunks of rows (a 960x512 frame x 20
+    colours stays small)."""
+    label = np.empty(img.shape[:2], np.int64)
+    dist = np.empty(img.shape[:2], np.float32)
+    for y in range(0, img.shape[0], 128):
+        d = ((img[y:y + 128, :, None, :3] - pal[None, None]) ** 2).sum(-1)
+        label[y:y + 128] = d.argmin(-1)
+        dist[y:y + 128] = d.min(-1)
+    return label, dist
+
+
 def id_masks(id_rgb: np.ndarray, id_colors: dict) -> dict[str, np.ndarray]:
-    """id -> HxW bool mask. id_rgb: HxWx3 in 0..1 (or 0..255). Nearest colour against the stage palette in both
-    encodings (linear and sRGB), with black as the background, so antialiased edges classify one way."""
+    """id -> HxW bool mask. id_rgb: HxWx3 in 0..1 (or 0..255); black is the background.
+
+    1. One encoding. The stage sets its ID colours in linear space and the canvas writes them as sRGB (a pass saved
+       another way stays linear): whichever palette the pass's flat pixels hit is the one in use. Both at once
+       doubled the palette and put one object's linear colour on the blend of two others.
+    2. Solid patches. An object is seeded only where its colour is flat and solid: the pixel and its 8 neighbours.
+       Antialiased seams are 1-2 px wide, so a blend that happens to equal a third object's colour never seeds it.
+    3. Grown through pixels of its own flat colour (8-connected), so thin parts joined to a patch stay (a far
+       person's legs). Never through blends: a seam under a crate would run the crate's box down the pyramid.
+    4. The leftover edge pixels (seams, fringes) go to the bordering object nearest in colour, one pixel deep."""
     ids = [i for i, c in (id_colors or {}).items() if c is not None]
     if not ids:
         return {}
-    img = np.asarray(id_rgb, dtype=np.float32)
+    img = np.asarray(id_rgb, dtype=np.float32)[..., :3]
     if img.max() > 1.5:
         img = img / 255.0
+    H, W = img.shape[:2]
     raw = np.asarray([id_colors[i] for i in ids], dtype=np.float32) / 255.0
-    pal = np.concatenate([np.zeros((1, 3), np.float32), raw, _srgb(raw)], 0)
-    owner = np.asarray([-1] + list(range(len(ids))) * 2)
-    # nearest palette entry per pixel, in chunks of rows (a 960x512 frame x 20 colours stays small)
-    label = np.empty(img.shape[:2], np.int64)
-    for y in range(0, img.shape[0], 128):
-        blk = img[y:y + 128, :, :3]
-        label[y:y + 128] = ((blk[..., None, :] - pal[None, None]) ** 2).sum(-1).argmin(-1)
-    who = owner[label]
+    black = np.zeros((1, 3), np.float32)
+    hits = []
+    for enc in (_srgb(raw), raw):                      # ties (pure primaries look the same both ways) read as sRGB
+        lab, d = _nearest(img[::2, ::2], np.concatenate([black, enc], 0))
+        hits.append(int(((lab > 0) & (d <= FLAT ** 2)).sum()))
+    obj = (_srgb(raw) if hits[0] >= hits[1] else raw).astype(np.float32)
+    label, dist = _nearest(img, np.concatenate([black, obj], 0))
+    label -= 1                                         # -1 = background
+    flat = np.where((label >= 0) & (dist <= FLAT ** 2), label, -2)
+    p = np.pad(flat, 1, mode="edge")                   # an object cut by the frame edge is still solid at the edge
+    solid = flat >= 0
+    for dy, dx in _N8:
+        solid &= p[1 + dy:1 + dy + H, 1 + dx:1 + dx + W] == flat
+    # grow the solid patches through pixels of the same flat colour, a ring at a time (only thin parts move)
+    Wp = W + 2
+    keep = np.full((H + 2, Wp), -1, np.int64)
+    keep[1:-1, 1:-1] = np.where(solid, label, -1)
+    fl = np.full((H + 2, Wp), -1, np.int64)
+    fl[1:-1, 1:-1] = np.maximum(flat, -1)
+    kf, ff = keep.ravel(), fl.ravel()
+    offs = np.asarray([dy * Wp + dx for dy, dx in _N8])
+    cand = np.flatnonzero((kf == -1) & (ff >= 0))
+    while cand.size:
+        hit = (kf[cand[:, None] + offs] == ff[cand][:, None]).any(1)
+        if not hit.any():
+            break
+        kf[cand[hit]] = ff[cand[hit]]
+        cand = cand[~hit]
+    cand = np.flatnonzero((kf == -1) & (np.pad(label, 1, constant_values=-1).ravel() >= 0))
+    if cand.size:                                      # seams and fringes: the bordering object nearest in colour
+        nb = kf[cand[:, None] + offs]
+        rgb = np.pad(img, ((1, 1), (1, 1), (0, 0))).reshape(-1, 3)[cand]
+        d = ((rgb[:, None, :] - obj[np.clip(nb, 0, None)]) ** 2).sum(-1)
+        d[nb < 0] = np.inf
+        best = d.argmin(1)
+        ok = np.isfinite(d[np.arange(cand.size), best])
+        kf[cand[ok]] = nb[np.flatnonzero(ok), best[ok]]
+    who = keep[1:-1, 1:-1]
     return {i: who == k for k, i in enumerate(ids) if (who == k).any()}
 
 
@@ -91,6 +153,8 @@ def frame1_layout(id_rgb: np.ndarray, scene: dict) -> dict:
             continue
         ys = np.flatnonzero(m.any(1))
         xs = np.flatnonzero(m.any(0))
+        if n < MIN_FILL * (xs[-1] + 1 - xs[0]) * (ys[-1] + 1 - ys[0]):
+            continue          # pixels strewn across the frame, not one object: the prompt falls back to the 3D guess
         out[aid] = {"box": [round(float(xs[0]) / W, 4), round(float(ys[0]) / H, 4), round(float(xs[-1] + 1) / W, 4),
                             round(float(ys[-1] + 1) / H, 4)], "area": round(n / (H * W), 5)}
     return out

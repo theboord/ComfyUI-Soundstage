@@ -18,21 +18,9 @@ from comfy_api.latest import IO
 
 from .takecheck import blocking as B
 from .takecheck import store
+from .takecheck.framecheck import SAM_PROMPT, prompt_for, stage_silhouettes  # noqa: F401  (pure, tested without torch)
 from .takecheck.recipe import from_tags
 from .takecheck.video import probe, read_frames
-
-SAM_PROMPT = {"man": "person", "woman": "person", "child": "person", "person": "person", "boy": "person", "girl": "person",
-              "horse": "horse", "dog": "dog", "cat": "cat", "bird": "bird", "cow": "cow"}
-
-
-def prompt_for(kind: str) -> str | None:
-    k = (kind or "").lower()
-    if k in SAM_PROMPT:
-        return SAM_PROMPT[k]
-    from .takecheck.detect import is_road_vehicle
-    if is_road_vehicle(k):
-        return "truck" if k == "truck" else "car"
-    return None
 
 
 def _ckpt() -> str:
@@ -135,29 +123,6 @@ def _first_tile(ref: str, grid: dict | None) -> np.ndarray:
         tw, th = grid["tile"]
         img = img[:th, :tw]
     return img
-
-
-def stage_silhouettes(id_rgb: np.ndarray, scene: dict) -> tuple[dict, dict]:
-    """{actor_id: {mask, kind}} for the people, animals and vehicles of frame 1 (a car's occupants inside its
-    silhouette), and {actor_id: name}."""
-    from .look import frame_lock as FLK
-    masks = FLK.id_masks(id_rgb, scene.get("id_colors") or {})
-    actors = B.tracked_actors(scene)
-    keep = {a.get("id") for a in actors}
-    out = {}
-    for a in actors:
-        k = prompt_for(a.get("kind"))
-        if k and a.get("id") in masks:
-            out[a["id"]] = {"mask": masks[a["id"]].copy(), "kind": k}
-    for a in scene.get("actors") or []:     # seated in a car: part of the car from outside
-        host = a.get("mount_id")
-        if a.get("id") not in keep and host in out and a.get("id") in masks and not float(a.get("mount_at") or 0) > 0:
-            out[host]["mask"] |= masks[a["id"]]
-    for a in scene.get("actors") or []:     # set pieces and props still occupy their pixels (no extras there)
-        if a.get("id") not in out and a.get("id") in masks:
-            out.setdefault("_set", {"mask": np.zeros_like(masks[a["id"]]), "kind": "_set"})["mask"] |= masks[a["id"]]
-    names = {a.get("id"): a.get("name") or a.get("kind") for a in scene.get("actors") or []}
-    return out, names
 
 
 MAX_PER_KIND = 8
