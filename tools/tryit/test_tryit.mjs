@@ -40,6 +40,22 @@ const at = (id, y = 0.5) => js(`const g = stage.actorMeshes.get(${JSON.stringify
   const r = stage.canvas.getBoundingClientRect(); return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height };`);
 
 try {
+  // ---------------------------------------------------------------- the first screen: clay | take wipe on a plain visit
+  await b.send("Page.navigate", { url: `${URL0}?t=${Date.now()}` });
+  for (let i = 0; i < 40; i++) { await sleep(500); try { if (await b.ev("return !!document.getElementById('hero') && !document.getElementById('hero').hidden")) break; } catch { /* loading */ } }
+  await sleep(3500);
+  const hero = JSON.parse(await b.ev(`const c = document.getElementById('heroCv'), x = c.getContext('2d');
+    const px = (u) => { const d = x.getImageData(Math.round(u * c.width), c.height / 2, 1, 1).data; return d[0] + d[1] + d[2]; };
+    const r = document.querySelector('#hero .ba').getBoundingClientRect();
+    return JSON.stringify({ open: !document.getElementById('hero').hidden, lit: px(0.2) + px(0.8), w: r.width, h: r.height,
+      sideways: document.documentElement.scrollWidth > innerWidth + 1 })`));
+  await shot("hero_first_screen", JSON.stringify(hero));
+  check(hero.open && hero.lit > 30 && hero.w > 300 && !hero.sideways, "plain visit opens the first screen with the clay | take wipe drawing");
+  await b.ev("document.getElementById('heroGo').click(); return 1"); await sleep(2500);
+  const after = await b.ev("return JSON.stringify({ hero: document.getElementById('hero').hidden, stage: !!window.__demo?.node?.ssStage, key: window.__demo?.key })");
+  await shot("hero_closed_stage", after);
+  check(/"hero":true,"stage":true,"key":"stunt"/.test(after), `Open the live stage lands on the J-turn stage (${after})`);
+
   // ---------------------------------------------------------------- every scene loads clean
   const keys = await (async () => { await open("drycreek"); return js("return [...document.querySelectorAll('#scene option')].map((o) => o.value)"); })();
   check(keys.length >= 20, `scene picker lists ${keys.length} scenes`);
@@ -170,6 +186,24 @@ try {
   check(/viewfinder.*full install/i.test(vfToast), "phone viewfinder: the vcam bridge says \"available in the full install\"");
   await js("node.ssViewfinder.close(); return 1");
 
+  // ---------------------------------------------------------------- Video → 3D: the recorded run replays through the App
+  await open("stunt--v2s");
+  await sleep(4000);
+  const chooser = await js("return !!document.querySelector('.ss-vi-modal')");
+  await shot("v2s_chooser", `chooser ${chooser}`);
+  check(chooser, "Video → 3D: the J-turn clip opens the App's chooser");
+  await js("[...document.querySelectorAll('.ss-vi-modal button')].find(x=>/^Rebuild$/.test(x.textContent.trim()))?.click(); return 1");
+  await sleep(5000);
+  await shot("v2s_progress", (await js("const t=document.querySelector('.ss-stage'); return (t.innerText.match(/Step \\d+ of \\d+[^\\n]*/)||[''])[0]")));
+  await sleep(9000);
+  const v2s = JSON.parse(await js(`return JSON.stringify({ actors: stage.toJSON().actors.map(a=>a.name), bar: !!document.querySelector('.ss-v2c'),
+    keys: stage.activeShot()?.camera_keys?.length || 0 })`));
+  await shot("v2s_result", JSON.stringify(v2s).slice(0, 160));
+  check(v2s.bar && v2s.actors.some((n) => /car/i.test(n)), "Video → 3D replay loads the rebuilt set and the Identical? bar");
+  await js("const b=[...document.querySelectorAll('.ss-v2c button')].find(x=>/^Wipe$/.test(x.textContent.trim())); b?.click(); stage.setFrame(60); return 1");
+  await sleep(2500);
+  await shot("v2s_wipe_f60");
+
   // ---------------------------------------------------------------- What's new tour: every stop, and a clip
   await open("drycreek");
   const stops = JSON.parse(await js("return JSON.stringify((await (await fetch(new URL('./tour.json', document.baseURI))).json()).steps.map(s=>[s.id,s.scene]))"));
@@ -189,6 +223,11 @@ try {
   const wide = await js("return document.documentElement.scrollWidth > innerWidth + 1");
   await shot("phone_chase", `page scrolls sideways: ${wide}`);
   check(!wide, "no sideways page scroll at phone width");
+  await js("sessionStorage.removeItem('ss_demo_hero'); return 1");   // closed earlier in this tab
+  await b.send("Page.navigate", { url: `${URL0}?t=${Date.now()}` }); await sleep(6000);
+  const heroPhone = await js("const h = document.getElementById('hero'); return JSON.stringify({ open: !h.hidden, wide: h.scrollWidth > innerWidth + 1 || document.documentElement.scrollWidth > innerWidth + 1 })");
+  await shot("phone_first_screen", heroPhone);
+  check(/"open":true,"wide":false/.test(heroPhone), `first screen fits a phone (${heroPhone})`);
 } finally {
   writeFileSync(join(DIR, "report.json"), JSON.stringify({ fails, report }, null, 1));
   b.close();
