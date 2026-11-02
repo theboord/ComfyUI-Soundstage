@@ -12,9 +12,6 @@ import { castPool, shotSelection, pickRefs, refLines, refLabel, shotKind, refVie
 import { downloadDCCKit } from "../stage/interop/exportdcc.mjs";
 import { FrameCheck, badgeOf, flagged, rank, REROLLS, FRAMECHECK_CSS } from "./framecheck.mjs";
 
-/** Version of the still's start image (soundstage/look/look_start.py). Frames record it; older frames reproduce
- * from the plain colour pass. 2 = the frame follows the stage exactly (soundstage/look/frame_lock.py): Klein starts
- * from the Color pass (stage_denoise) and the prompt states frame 1 as measured on the ID pass. */
 /** ④'s look box placeholder: optional, and no example that fights the scene (QA 2026-11-02: a western example on a rainy night chase). */
 export const FRAME_DESC_PLACEHOLDER = "Optional: the look you want on top of the stage, e.g. light, weather, mood, film stock…";
 
@@ -35,6 +32,9 @@ export function stillLoras(vals, current = null) {
   return out;
 }
 
+/** Version of the still's start image (soundstage/look/look_start.py). Frames record it; older frames reproduce
+ * from the plain colour pass. 2 = the frame follows the stage exactly (soundstage/look/frame_lock.py): Klein starts
+ * from the Color pass (stage_denoise) and the prompt states frame 1 as measured on the ID pass. */
 export const LOOK_START = 2;
 export const FRAME_DENOISE = 0.9;   // soundstage/look/frame_lock.py DEFAULT_DENOISE: Klein's default "Follow the clay"
 /** input/ subfolder where chosen ④ frames are kept (temp/ is emptied by a server restart). */
