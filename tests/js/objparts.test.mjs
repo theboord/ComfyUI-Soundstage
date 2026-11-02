@@ -464,3 +464,18 @@ test("Director: the part call is one setParts (one undo step), keyed at its time
   const r3 = await EXEC.part.call(host, { part: "lightbar", value: "flash", target: "Police car", target_id: "cop" });
   assert.match(r3.said, /red and blue roof lights flashing/);
 });
+
+test("camera: removing a focus key at the playhead really removes it (T-stop keys stay)", () => {
+  // Every lens key carries every lens channel, so the old filter (keep a key that has any other field) never dropped
+  // anything: keyPartHere said "removed" while the focus pull kept playing.
+  const st = headless([]);
+  st.setPart("__camera__", "focus_m", 2, { frame: 0 });
+  st.setPart("__camera__", "focus_m", 8, { frame: 48 });
+  st.setPart("__camera__", "t_stop", 2.8, { frame: 0 });
+  st.setFrame(48);
+  assert.equal(st.keyPartHere("__camera__", "focus_m"), false);
+  assert.deepEqual(st._camKeyFrames("focus_m"), [0]);
+  assert.ok(Math.abs(st._cameraAt(48).focus_m - 2) < 1e-6, "focus holds its one remaining key");
+  assert.deepEqual(st._camKeyFrames("t_stop"), [0, 48]);
+  assert.ok(Math.abs(st._cameraAt(30).t_stop - 2.8) < 1e-6);
+});
