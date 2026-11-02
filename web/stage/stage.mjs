@@ -14,6 +14,7 @@ import { STUNTS, hasHeadingKeys, headingTrack, channelAt, driveAt, isStunt, unwr
 import { PoseGizmo } from "./posegizmo.mjs";
 import { RotateTools, gizmoTurnToActor } from "./rotate.mjs";
 import { buildSet, buildWater, buildWeather, buildTireSmoke, buildImpactFx } from "./environments.mjs";
+import { installSecondary } from "./secondary.mjs";
 import { buildCard, loadBackdrop, coverFit } from "./cards.mjs";
 import { buildInterior, fixtureActors, interiorCamera, normalizeSpec, toStage } from "./interior.mjs";
 import { GLTFLoader } from "../vendor/addons/GLTFLoader.mjs";
@@ -1778,6 +1779,7 @@ export class Stage {
     try { this.setFx?.update?.(this.frame, this); } catch (err) { console.warn("Soundstage set", err); }
     this._impactFxAt(this.frame);
     this._gaitDustAt(this.frame);
+    this._secondaryAt?.(this.frame);   // Milestone 28: one particle system for all dust / debris / smoke, and the soft bodies
     if (this.selRing) {
       const sel = this.actorMeshes.get(this.selected);
       this.selRing.visible = !!sel;
@@ -4036,6 +4038,7 @@ export class Stage {
       if (!forCapture) this.tc.camera = this._viewportCamera?.() || this.camera;
     }
     if (mode === "id") return this._renderId(this.camera);
+    if (mode === "dust") return this._renderDustMatte(this.camera);   // Milestone 28: the dust matte (Layer Pack)
     if (this.selRing) this.selRing.visible = !forCapture && !!this.actorMeshes.get(this.selected);
     for (const h of this.lightHandles?.values() || []) h.visible = !forCapture && mode !== "depth";
     const env = this.state.environment || {};
@@ -4195,7 +4198,7 @@ export class Stage {
       this.setFrame(keepFrame);
       if (this._resizePending) { this._resizePending = false; this.resize(); }
     }
-    const lossless = mode === "depth" || mode === "id";
+    const lossless = mode === "depth" || mode === "id" || mode === "dust";
     const type = lossless ? "image/png" : "image/jpeg";
     const blob = await sheet.convertToBlob({ type, quality: 0.95 });
     return { blob, cols, rows, frames, ext: lossless ? "png" : "jpg", tile: [this.fw, this.fh] };
@@ -4241,3 +4244,5 @@ export class Stage {
 
 // Parts (Milestone 26): every object's keyframeable channels, its render / camera / gizmo hooks.
 installParts(Stage, { vehicle: VehicleParts, light: LightRig, horse: HorseParts, prop: PropParts, LIGHT_TYPES, LIBRARY });
+// Secondary simulations and soft bodies (Milestone 28): see secondary.mjs.
+installSecondary(Stage, { LIBRARY, NO_COLLIDE, PERSON_KINDS, CAR_BODIES });

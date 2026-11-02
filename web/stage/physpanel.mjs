@@ -273,3 +273,7 @@ export class PhysicsPanel {
   close() { this.el.hidden = true; this.btn.setAttribute("aria-expanded", "false"); this.btn.setAttribute("aria-pressed", "false"); }
   toggle() { if (this.isOpen()) this.close(); else this.open(); }
 }
+
+// Soft-body types and the scene's ground type (Milestone 28): softpanel.mjs extends _build and sync.
+import { installSoftPanel } from "./softpanel.mjs";
+installSoftPanel(PhysicsPanel);
