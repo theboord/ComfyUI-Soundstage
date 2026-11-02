@@ -4,7 +4,7 @@ Soundstage turns ComfyUI into a small film set. You bring in a script, cast it, 
 
 **100% open weights: every model runs locally.** (Paid partner API models are hidden; they are opt-in only, with `SOUNDSTAGE_PARTNER_MODELS=1` when you start ComfyUI.)
 
-**New here? Start with the [Quickstart](QUICKSTART.md):** your first shot in about ten minutes, then a one-page scene from script to delivery.
+**New here? Start with the [Quickstart](QUICKSTART.md):** the [four rules](QUICKSTART.md#four-rules-before-you-click-anything), [your first shot](QUICKSTART.md#quickstart-your-first-shot) in about ten minutes on the demo, then [*High Water*](QUICKSTART.md#first-scene-high-water), a three-shot scene from script to delivery (drive, stunt, physics crash, gaze, cut, Avid EDL), and a one-screen [cheat sheet](QUICKSTART.md#cheat-sheet).
 
 This guide is for anyone who has just cloned the repo. It covers where every panel and button is, what each one does, and the habits that get good shots quickly. Every control named here is in the code, with the same label you see on screen.
 
