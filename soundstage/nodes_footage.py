@@ -8,7 +8,10 @@ SoundstageRecast   swap the subject for a character with the chosen engine, then
                    original audio, expanded at run time (docs/recast.md).
 
 Helper nodes the two expand into (usable on their own too): SoundstageFootageDecode, SoundstageTrackSelect,
-SoundstageRecastComposite.
+SoundstageFollowCrop, SoundstageRecastComposite.
+
+SoundstagePlateLock  put any generated result back onto its source plate through a difference matte, so pixels
+                     outside the edit stay the plate's; reports the fidelity (✦ One-click uses it; docs/fidelity.md).
 """
 import json
 import os
@@ -22,7 +25,9 @@ from comfy_execution.graph_utils import GraphBuilder
 
 from .footage import clip as C
 from .footage import graphs as GR
+from .footage import followcam as FC
 from .footage import matte as M
+from .footage import platelock as PL
 
 SAM3TrackData = IO.Custom("SAM3_TRACK_DATA")
 
@@ -248,20 +253,140 @@ class SoundstageRecastComposite(IO.ComfyNode):
                                tooltip="stretch: the swap shows the whole plate. cover: the swap is a centred "
                                        "crop of the plate (graphs that snap with ResizeImageMask 'scale to "
                                        "multiple', e.g. the original union-control graph)."),
+                IO.String.Input("crop_json", default="", optional=True, force_input=True,
+                                tooltip="Follow-cam rects (Soundstage · Follow Crop): the swap is in crop space and "
+                                        "is pasted back into each frame's rect."),
+                IO.Boolean.Input("tone_fit", default=False, optional=True,
+                                 tooltip="Plate lock: undo the engine's global colour drift (robust per-frame fit "
+                                         "on the background)."),
+                IO.Int.Input("reach", default=0, min=0, max=512, optional=True,
+                             tooltip="Plate lock: also take what the engine changed within this many px of the "
+                                     "subject (difference matte): a wider costume, a hat, a prop. 0 = off."),
+                IO.Float.Input("regrain", default=0.0, min=0.0, max=3.0, step=0.05, optional=True,
+                               tooltip="Plate lock: add the grain the swap lacks against the plate (1 = match)."),
             ],
             outputs=[
                 IO.Image.Output(display_name="composite"),
                 IO.Image.Output(display_name="layer", tooltip="Swapped subject RGBA (for the Layer Pack)."),
                 IO.Mask.Output(display_name="layer_mask"),
+                IO.String.Output(display_name="fidelity", tooltip="Fidelity report JSON: % bit-identical to the "
+                                                                 "plate, PSNR outside the subject."),
             ],
+            is_output_node=True,
         )
 
     @classmethod
     def execute(cls, plate, swap, subject_mask, grow, feather, temporal, match_color, framing="stretch",
-                swap_subject_mask=None, others_mask=None) -> IO.NodeOutput:
-        comp, layer, alpha = M.composite(plate, swap, subject_mask, swap_subject_mask, others_mask, grow, feather,
-                                         temporal, match_color, framing)
-        return IO.NodeOutput(comp, layer, alpha)
+                swap_subject_mask=None, others_mask=None, crop_json="", tone_fit=False, reach=0,
+                regrain=0.0) -> IO.NodeOutput:
+        r = M.composite_ex(plate, swap, subject_mask, swap_subject_mask, others_mask, grow, feather, temporal,
+                           match_color, framing, crop_rects=FC.loads(crop_json), tone_fit=bool(tone_fit),
+                           reach_px=int(reach or 0), grain=float(regrain or 0.0))
+        rep = PL.fidelity_report(plate, r["comp"], r["alpha"], raw=r["raw"], mode="recast")
+        js = json.dumps(rep)
+        return IO.NodeOutput(r["comp"], r["layer"], r["alpha"], js, ui={"text": [PL.format_report(rep), js]})
+
+
+# ====================================================================== Follow Crop
+
+class SoundstageFollowCrop(IO.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> IO.Schema:
+        return IO.Schema(
+            node_id="SoundstageFollowCrop",
+            display_name="Soundstage · Follow Crop",
+            category="Soundstage/Footage/advanced",
+            search_aliases=["follow cam", "follow crop", "virtual camera crop", "small performer"],
+            description="A virtual camera that follows the subject: each frame's crop around them, at the plate's "
+                        "aspect, scaled up to the plate's size, so a small performer gets the model's full "
+                        "resolution. Recast Composite pastes the result back with crop_json.",
+            inputs=[
+                IO.Image.Input("images", tooltip="Footage frames."),
+                IO.Mask.Input("subject_mask", tooltip="Who to follow."),
+                IO.Mask.Input("others_mask", optional=True),
+                IO.Combo.Input("mode", options=list(FC.MODES), default="auto",
+                               tooltip="auto: follow only when the subject is small (median height under "
+                                       "follow_below of the frame). on: always. off: never (frames pass through)."),
+                IO.Float.Input("follow_below", default=0.4, min=0.05, max=1.0, step=0.05),
+                IO.Float.Input("margin", default=1.45, min=1.0, max=4.0, step=0.05,
+                               tooltip="Crop height = subject height x margin."),
+                IO.Int.Input("smooth", default=12, min=0, max=48, tooltip="Camera smoothing radius (frames)."),
+                IO.Float.Input("max_zoom", default=4.0, min=1.0, max=8.0, step=0.25,
+                               tooltip="Never zoom further than this: past it the plate has no more detail."),
+            ],
+            outputs=[
+                IO.Image.Output(display_name="images"),
+                IO.Mask.Output(display_name="subject_mask"),
+                IO.Mask.Output(display_name="others_mask"),
+                IO.String.Output(display_name="crop_json"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, images, subject_mask, mode, follow_below, margin, smooth, max_zoom,
+                others_mask=None) -> IO.NodeOutput:
+        n, h, w = images.shape[0], images.shape[1], images.shape[2]
+        sub = M.fit_frames(M.resize_mask(subject_mask, h, w), n)
+        rects, info = FC.decide(sub, mode, follow_below, margin, smooth, max_zoom)
+        oth = M.fit_frames(M.resize_mask(others_mask, h, w), n) if others_mask is not None else torch.zeros_like(sub)
+        return IO.NodeOutput(FC.crop_frames(images, rects), FC.crop_masks(sub, rects), FC.crop_masks(oth, rects),
+                             FC.dumps(rects, info))
+
+
+# ====================================================================== Plate Lock
+
+class SoundstagePlateLock(IO.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> IO.Schema:
+        return IO.Schema(
+            node_id="SoundstagePlateLock",
+            display_name="Soundstage · Plate Lock",
+            category="Soundstage/Footage",
+            search_aliases=["plate lock", "difference matte", "keep the plate", "fidelity", "bit identical"],
+            description="Put a generated result back onto its source plate through a difference matte (robust tone "
+                        "fit, hysteresis in space and time, temporal stabilise, re-grain), so every pixel outside "
+                        "the edit stays the plate's. Reports % bit-identical and PSNR outside the edit.",
+            inputs=[
+                IO.Image.Input("plate", tooltip="The source frames (a still or a clip)."),
+                IO.Image.Input("generated", tooltip="The model's result (any size and length)."),
+                IO.Combo.Input("mode", options=list(PL.MODES), default="local",
+                               tooltip="local: a thing in the picture changed (empty the scene, a recast); the plate "
+                                       "stays bit-for-bit outside the edit. look: the light changed (relight, "
+                                       "weather); the light is carried onto the plate's own pixels, the model's "
+                                       "pixels only where it changed more than the light. alpha: a matte "
+                                       "(cutout); RGB is the plate, alpha the model's matte, steadied."),
+                IO.Float.Input("sensitivity", default=0.5, min=0.0, max=1.0, step=0.05,
+                               tooltip="Higher takes weaker changes from the model."),
+                IO.Float.Input("regrain", default=1.0, min=0.0, max=3.0, step=0.05,
+                               tooltip="Add the grain the generated pixels lack against the plate (1 = match)."),
+                IO.Int.Input("grow", default=4, min=0, max=64, tooltip="Grow the matte (px at the model's size)."),
+                IO.Float.Input("feather", default=4.0, min=0.0, max=64.0, step=0.5),
+                IO.Mask.Input("alpha", optional=True, tooltip="alpha mode: the model's matte (1 = subject)."),
+                IO.Mask.Input("region_hint", optional=True, tooltip="Only take changes near this area."),
+                IO.Mask.Input("protect", optional=True, tooltip="Never take changes here."),
+                IO.Int.Input("seed", default=0, min=0, max=2**31 - 1, optional=True, tooltip="Grain seed."),
+            ],
+            outputs=[
+                IO.Image.Output(display_name="composite"),
+                IO.Mask.Output(display_name="matte", tooltip="Where the model's pixels were taken (0 = plate)."),
+                IO.String.Output(display_name="fidelity", tooltip="Fidelity report JSON."),
+            ],
+            is_output_node=True,
+        )
+
+    @classmethod
+    def execute(cls, plate, generated, mode, sensitivity, regrain, grow, feather, alpha=None, region_hint=None,
+                protect=None, seed=0) -> IO.NodeOutput:
+        try:
+            import comfy.model_management as mm
+            dev = mm.get_torch_device()
+        except Exception:  # noqa: BLE001 - outside ComfyUI
+            dev = torch.device("cpu")
+        on = (lambda x: None if x is None else x.to(dev))
+        comp, matte, rep = PL.lock(on(plate), on(generated), mode, sensitivity, regrain, int(seed or 0), on(alpha),
+                                   on(region_hint), on(protect), grow_px=int(grow), feather_px=float(feather))
+        js = json.dumps(rep)
+        return IO.NodeOutput(comp.float().cpu(), matte.float().cpu(), js, ui={"text": [PL.format_report(rep), js]})
 
 
 # ====================================================================== Recast
@@ -346,6 +471,16 @@ class SoundstageRecast(IO.ComfyNode):
                 IO.Boolean.Input("new_silhouette", default=True, advanced=True,
                                  tooltip="Also track the new character's outline in the swap (bigger costume, "
                                          "hair) so nothing of the old actor peeks out. One extra SAM 3 pass."),
+                IO.Combo.Input("follow_cam", options=list(FC.MODES), default="auto", optional=True, advanced=True,
+                               tooltip="Follow-cam crop + paste-back: the engine renders a virtual camera that "
+                                       "follows the subject (at the plate's size), then the result goes back into "
+                                       "the untouched plate. auto: only when the subject is under 40% of the frame "
+                                       "height. on: always. off: the whole frame."),
+                IO.Boolean.Input("plate_lock", default=True, optional=True, advanced=True,
+                                 tooltip="Undo the engine's colour drift (tone fit on the background), also take "
+                                         "what it changed right around the subject (difference matte), re-grain the "
+                                         "swap to the plate. Outside the matte the plate stays bit-for-bit either "
+                                         "way."),
                 IO.Int.Input("seed", default=0, min=0, max=0xFFFFFFFFFFFFFFFF, control_after_generate=True),
             ],
             outputs=[
@@ -356,6 +491,8 @@ class SoundstageRecast(IO.ComfyNode):
                 IO.Image.Output(display_name="layer", tooltip="Swapped subject RGBA at plate size (Layer Pack)."),
                 IO.Mask.Output(display_name="layer_mask"),
                 IO.Image.Output(display_name="plate", tooltip="The original frames, untouched."),
+                IO.String.Output(display_name="fidelity", tooltip="Fidelity report JSON: % bit-identical to the "
+                                                                 "plate, PSNR outside the subject."),
             ],
             hidden=[IO.Hidden.unique_id, IO.Hidden.auth_token_comfy_org, IO.Hidden.api_key_comfy_org],
             enable_expand=True,
@@ -368,7 +505,7 @@ class SoundstageRecast(IO.ComfyNode):
     @classmethod
     def execute(cls, footage_json, prompt, engine, grow, feather, new_silhouette, seed, images=None,
                 subject_mask=None, others_mask=None, audio=None, character=None, first_frame=None,
-                negative="") -> IO.NodeOutput:
+                negative="", follow_cam="auto", plate_lock=True) -> IO.NodeOutput:
         if images is None or subject_mask is None:
             raise RecastError("Recast needs footage images and a subject_mask (connect Soundstage · Footage).")
         info = json.loads(footage_json or "{}")
@@ -382,6 +519,17 @@ class SoundstageRecast(IO.ComfyNode):
              "negative": negative or "", "seed": int(seed), "frames": int(info.get("frames") or 97),
              "width": int(info.get("width") or 1280), "height": int(info.get("height") or 720),
              "subject_prompt": info.get("subject_prompt") or "person"}
+
+        # follow-cam: the engine sees a virtual camera on the subject (same size as the plate); the composite
+        # pastes it back. In auto mode the crop node decides at run time and passes big subjects through untouched.
+        crop = None
+        if follow_cam in ("auto", "on"):
+            fc_in = {"images": images, "subject_mask": subject_mask, "mode": follow_cam, "follow_below": 0.4,
+                     "margin": 1.45, "smooth": 12, "max_zoom": 4.0}
+            if others_mask is not None:
+                fc_in["others_mask"] = others_mask
+            fc = g.node("SoundstageFollowCrop", **fc_in)
+            p["images"], p["mask"], crop = fc.out(0), fc.out(1), fc.out(3)
 
         framing = "stretch"
         if key == ENGINE_LTX:
@@ -397,10 +545,14 @@ class SoundstageRecast(IO.ComfyNode):
             raise RecastError(f"Unknown engine {key!r}.")
 
         # generic prompt: the swap shows the NEW character, so the plate's subject prompt would miss it
-        new_sil = GR.subject_silhouette(g, swap, sam, "person", subject_mask) \
+        new_sil = GR.subject_silhouette(g, swap, sam, "person", p["mask"]) \
             if (new_silhouette and sam) else None
         comp_in = {"plate": images, "swap": swap, "subject_mask": subject_mask, "grow": grow, "feather": feather,
                    "temporal": 1, "match_color": False, "framing": framing}
+        if crop is not None:
+            comp_in["crop_json"] = crop
+        if plate_lock:
+            comp_in.update(tone_fit=True, reach=max(16, int(round(0.04 * p["height"]))), regrain=1.0)
         if new_sil is not None:
             comp_in["swap_subject_mask"] = new_sil
         if others_mask is not None:
@@ -409,7 +561,7 @@ class SoundstageRecast(IO.ComfyNode):
         vid_kw = {"audio": audio} if audio is not None else {}
         comp_video = g.node("CreateVideo", images=comp.out(0), fps=fps, **vid_kw).out(0)
         swap_video = g.node("CreateVideo", images=swap, fps=fps, **vid_kw).out(0)
-        return IO.NodeOutput(comp_video, comp.out(0), swap_video, comp.out(1), comp.out(2), images,
+        return IO.NodeOutput(comp_video, comp.out(0), swap_video, comp.out(1), comp.out(2), images, comp.out(3),
                              expand=g.finalize())
 
     # ---------------------------------------------------------------- engines
@@ -513,4 +665,4 @@ class SoundstageRecast(IO.ComfyNode):
 
 
 NODES = [SoundstageFootage, SoundstageRecast, SoundstageFootageDecode, SoundstageTrackSelect,
-         SoundstageRecastComposite]
+         SoundstageRecastComposite, SoundstageFollowCrop, SoundstagePlateLock]

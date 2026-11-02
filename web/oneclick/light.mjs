@@ -3,8 +3,8 @@
 // shadows, contrast ratio). On a ④ Frame candidate of the open shot, an experimental box adds a Krea 2 repaint locked
 // to the stage's exact depth pass (Krea2 depth-control LoRA), so nothing moves while the light changes. A clip: the
 // relit frame 1, then LTX Ripple carries it through the clip with colour matching off (the relight stays).
-import { registerOneClick, runStillEdit, runEditThenRipple, stagePass, stageReason, pickModel, editSize, withSize, stillEditPrompt,
-  editInputs, out, KLEIN, KREA, ONECLICK_ENV } from "./oneclick.mjs";
+import { registerOneClick, runStillEditLocked, runEditThenRipple, stagePass, stageReason, pickModel, editSize, withSize, stillEditPrompt,
+  editInputs, out, KLEIN, KREA, ONECLICK_ENV, plateLockField, plateLockNode, plateLockOn, fidelityFromHistory } from "./oneclick.mjs";
 import { KEEP } from "./effects.mjs";
 
 async function loadSetups() {
@@ -69,9 +69,10 @@ export function relightPreview(s) {
   return { filter, overlay };
 }
 
-/** Klein relight, then a Krea 2 img2img locked to the stage depth (one job): the light changes, the geometry holds. */
-export function depthLockedRelightPrompt({ source, prompt, klein, krea, depth, seed, prefix, width = 0, height = 0, denoise = 0.45 }) {
-  return {
+/** Klein relight, then a Krea 2 img2img locked to the stage depth (one job): the light changes, the geometry holds.
+ * plateLock: node 5 puts the result back on the original (look mode) and 9 saves that; 7 keeps the unlocked Krea pass. */
+export function depthLockedRelightPrompt({ source, prompt, klein, krea, depth, seed, prefix, width = 0, height = 0, denoise = 0.45, plateLock = false }) {
+  const p = {
     1: { class_type: "SoundstageImageLoad", inputs: { source } },
     2: { class_type: "SoundstageEditImage", inputs: editInputs({ image: out(1), prompt, model: klein, seed, width, height }) },
     3: { class_type: "SoundstageImageLoad", inputs: { source: depth } },
@@ -80,6 +81,12 @@ export function depthLockedRelightPrompt({ source, prompt, klein, krea, depth, s
     // the Klein relight before the lock, kept beside it for comparison
     8: { class_type: "SaveImage", inputs: { images: out(2), filename_prefix: `${prefix}_klein` } },
   };
+  if (plateLock) {
+    p[5] = plateLockNode(out(1), out(4), "look", { seed });
+    p[9].inputs.images = out(5, 0);
+    p[7] = { class_type: "SaveImage", inputs: { images: out(4), filename_prefix: `${prefix}_raw` } };
+  }
+  return p;
 }
 
 SETUPS.forEach((s, i) => {
@@ -90,12 +97,13 @@ SETUPS.forEach((s, i) => {
     jobsFor: (t) => (t?.kind === "clip" ? 2 : 1), minutesFor: (t) => (t?.kind === "clip" ? 4 : 1),
     // off by default: tested 2026-11-02 (Neon on the night chase), the Krea 2 pass at 0.45 painted a different street with
     // three invented people, while the Klein relight alone kept every object (docs/oneclick.md)
+    plateLock: "look",
     fields: [{ id: "lock", type: "check", value: false, label: "Experimental: add a Krea 2 pass locked to the stage depth (it can invent things)",
-      when: (t) => t.kind === "still" && stageReason(t, ONECLICK_ENV.stage) === true }],
+      when: (t) => t.kind === "still" && stageReason(t, ONECLICK_ENV.stage) === true }, plateLockField("look")],
     async run(target, ctx) {
       const prompt = relightPrompt(s);
       if (target.kind === "clip") {
-        const r = await runEditThenRipple(target, ctx, { prompt, ripplePrompt: `The same scene relit with ${s.label.toLowerCase()} lighting.`, colorMatch: "off" });
+        const r = await runEditThenRipple(target, ctx, { prompt, ripplePrompt: `The same scene relit with ${s.label.toLowerCase()} lighting.`, colorMatch: "off", lock: "look" });
         return { ...r, note: `${s.label}: frame 1 relit, Ripple carried it` };
       }
       if (ctx.opts.lock && stageReason(target, ctx.stage) === true) {
@@ -103,15 +111,21 @@ SETUPS.forEach((s, i) => {
         if (klein && krea) {
           ctx.progress("Reading the stage depth…");
           const depth = await stagePass(ctx.stage, ctx, "depth");
-          const p = depthLockedRelightPrompt({ source: target.ref, prompt, klein, krea, depth, seed: ctx.seed(), prefix: ctx.prefix("lock"), ...editSize(await withSize(target)) });
+          const plateLock = plateLockOn(ctx);
+          const p = depthLockedRelightPrompt({ source: target.ref, prompt, klein, krea, depth, seed: ctx.seed(), prefix: ctx.prefix("lock"), ...editSize(await withSize(target)), plateLock });
           const pid = await ctx.queue(p);
           const file = await ctx.wait(pid, "9");
-          let kleinFile = null;
-          try { kleinFile = (await (await ctx.api.fetchApi(`/history/${pid}`)).json())[pid]?.outputs?.["8"]?.images?.[0] || null; } catch { /* the locked one is the take */ }
-          return { file, kind: "still", engine: "FLUX 3 Klein relight → Krea 2 on the stage depth", extra: { setup: s.id, depth_locked: true, klein: kleinFile } };
+          let kleinFile = null, raw = null, fidelity = null;
+          try {
+            const e = (await (await ctx.api.fetchApi(`/history/${pid}`)).json())[pid];
+            kleinFile = e?.outputs?.["8"]?.images?.[0] || null;
+            if (plateLock) { raw = e?.outputs?.["7"]?.images?.[0] || null; fidelity = fidelityFromHistory(e, "5"); }
+          } catch { /* the locked one is the take */ }
+          return { file, kind: "still", engine: "FLUX 3 Klein relight → Krea 2 on the stage depth", extra: { setup: s.id, depth_locked: true, klein: kleinFile, ...(plateLock ? { raw, fidelity } : {}) } };
         }
       }
-      return { file: await runStillEdit(target, ctx, { prompt }), kind: "still", engine: "FLUX 3 Klein relight", extra: { setup: s.id } };
+      const { file, raw, fidelity } = await runStillEditLocked(target, ctx, "look", { prompt });
+      return { file, kind: "still", engine: "FLUX 3 Klein relight", extra: { setup: s.id, ...(raw ? { raw, fidelity } : {}) } };
     },
   });
 });

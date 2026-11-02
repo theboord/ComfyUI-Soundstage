@@ -196,14 +196,77 @@ export function editInputs({ image, prompt, model, seed = 7, width = 0, height =
   return inp;
 }
 
-/** One still edit: load the picture (a clip's frame 1), edit it, save a PNG. Output node "9". */
-export function stillEditPrompt({ source, prompt, model, seed, prefix, width = 0, height = 0, control = null, refs = [], denoise = null }) {
+/**
+ * One still edit: load the picture (a clip's frame 1), edit it, save a PNG. Output node "9".
+ * lock = a plate-lock mode: node "3" puts the edit back on the original (9 saves it), "8" keeps the raw edit.
+ */
+export function stillEditPrompt({ source, prompt, model, seed, prefix, width = 0, height = 0, control = null, refs = [], denoise = null, lock = null }) {
   if (!source) throw new Error("no picture to edit");
-  return {
+  const p = {
     1: loadNode(source),
     2: { class_type: "SoundstageEditImage", inputs: editInputs({ image: out(1), prompt, model, seed, width, height, control, refs, denoise }) },
     9: { class_type: "SaveImage", inputs: { images: out(2), filename_prefix: prefix } },
   };
+  if (lock) {
+    p[3] = plateLockNode(out(1), out(2), lock, { seed });
+    p[9].inputs.images = out(3, 0);
+    p[8] = { class_type: "SaveImage", inputs: { images: out(2), filename_prefix: `${prefix}_raw` } };
+  }
+  return p;
+}
+
+// ------------------------------------------------------------------------------------------------ plate lock + Fidelity
+// A one-click re-renders the whole frame. SoundstagePlateLock (soundstage/footage/platelock.py) puts the result back on
+// the source plate through a difference matte so the pixels outside the edit stay the plate's, and reports how much
+// survived. local: the plate bit-for-bit outside the edit (Empty the scene). look: the light carried onto the plate's
+// own pixels, the model's only where it changed more than the light (relight, weather). alpha: RGB is the plate, the
+// model gives only the matte (Cutout). docs/fidelity.md
+
+export const PLATE_LOCK_MODES = ["local", "look", "alpha"];
+
+/** The card field that turns plate lock off (on by default; an MCP run without opts keeps it on). */
+export function plateLockField(mode) {
+  const label = mode === "look" ? "Plate lock: re-light the original's own pixels; take the model's only where it changed more than the light"
+    : mode === "alpha" ? "Plate lock: picture from the original, matte from the model (steadied over time)"
+      : "Plate lock: keep every pixel outside the edit from the original";
+  return { id: "plate_lock", type: "check", value: true, label };
+}
+export const plateLockOn = (ctx) => ctx?.opts?.plate_lock !== false;
+
+/** The SoundstagePlateLock node: plate + generated (+ the model's matte in alpha mode). Outputs composite, matte, fidelity. */
+export function plateLockNode(plate, generated, mode = "local", { alpha = null, seed = 0 } = {}) {
+  if (!PLATE_LOCK_MODES.includes(mode)) throw new Error(`plate lock mode ${mode}?`);
+  const inputs = { plate, generated, mode, sensitivity: 0.5, regrain: mode === "alpha" ? 0 : 1.0, grow: 4, feather: 4.0, seed: Math.max(0, Math.floor(+seed || 0)) % 2147483647 };
+  if (alpha) inputs.alpha = alpha;
+  return { class_type: "SoundstagePlateLock", inputs };
+}
+
+/** The fidelity report a plate-lock node left in /history (its ui text: [readable, json]). */
+export function fidelityFromHistory(entry, nodeId) {
+  const t = entry?.outputs?.[String(nodeId)]?.text;
+  const js = Array.isArray(t) ? t.find((x) => typeof x === "string" && x.trim().startsWith("{")) : null;
+  try { return js ? JSON.parse(js) : null; } catch { return null; }
+}
+
+export async function readFidelity(ctx, pid, nodeId) {
+  try { return fidelityFromHistory((await (await ctx.api.fetchApi(`/history/${pid}`)).json())[pid], nodeId); } catch { return null; }
+}
+
+const dbText = (v) => (v === "inf" || v === Infinity ? "lossless" : v == null ? "n/a" : `${(+v).toFixed(1)} dB`);
+
+/** The Fidelity take chip: {text, title, cls} for a report (null without one). */
+export function fidelityChip(rep) {
+  if (!rep || typeof rep !== "object") return null;
+  const bit = +rep.bit_identical_pct || 0, edit = +rep.edit_area_pct || 0;
+  const lines = [`Fidelity: ${bit.toFixed(1)}% of pixels bit-identical to the original`, `Edit area: ${edit.toFixed(1)}% of the frame`,
+    `Outside the edit: ${dbText(rep.psnr_outside_db)} PSNR${rep.raw_psnr_outside_db != null ? ` (the raw model there: ${dbText(rep.raw_psnr_outside_db)})` : ""}`];
+  if (rep.mode === "look") lines.push("Look edit: the light is carried onto the original's own pixels, so they are re-lit, not identical");
+  if (rep.mode === "alpha") lines.push("Cutout: the picture is the original's, the model gives only the matte");
+  if (rep.frames > 1) lines.push("Measured on the frames before the MP4 encode (h264 re-encodes every pixel)");
+  const text = rep.mode === "alpha" ? "◎ picture 100% original" : rep.mode === "look" ? `◎ ${(100 - edit).toFixed(0)}% original detail, re-lit`
+    : `◎ ${bit.toFixed(1)}% identical · ${dbText(rep.psnr_outside_db)}`;
+  const cls = rep.mode === "look" ? "ch fid" : bit >= 50 || rep.mode === "alpha" ? "ch fid ok" : "ch fid bad";
+  return { text, title: lines.join("\n"), cls };
 }
 
 /** h264 MP4 of IMAGE frames (+ audio link): CreateVideo -> SaveVideo. */
@@ -490,8 +553,10 @@ export class OneClickPanel {
           : rv?.verdict === "pass" ? h("span", { class: "ch ok", title: "Realism judge" }, `✓ real ${rv.score}/10`)
             : rv?.verdict === "fail" ? h("span", { class: "ch bad", title: (rv.defects || []).map((d) => d.label).join("\n") }, `✗ looks generated ${rv.score}/10`)
               : rv ? h("span", { class: "ch", title: rv.error || rv.why || "" }, "not judged") : null;
+        const fc = fidelityChip(r.extra?.fidelity);
+        const fchip = fc ? h("span", { class: fc.cls, title: fc.title, "data-chip": "fidelity" }, fc.text) : null;
         return h("div", { class: "it" }, media, h("span", { class: "nm" }, `✦ ${r.spec.label}`),
-          r.spec.badge ? h("span", { class: `bd ${r.spec.badge}` }, r.spec.badge) : null, chip,
+          r.spec.badge ? h("span", { class: `bd ${r.spec.badge}` }, r.spec.badge) : null, chip, fchip,
           h("div", { class: "acts" },
             h("button", { type: "button", title: "Open this take", on: { click: () => this.host.openTake?.(r.target.shot, t) } }, "Open"),
             !t?.video && this.host.useAsFrame ? h("button", { type: "button", title: "Use it as this shot's ④ Frame", on: { click: () => this.host.useAsFrame(r.target.shot, t) } }, "Use as ④ Frame") : null,
@@ -703,21 +768,65 @@ export async function runStillEdit(target, ctx, { prompt, model = null, control 
   return ctx.wait(pid, "9");
 }
 
+/** A still edit with plate lock (when ctx.opts.plate_lock isn't false): -> {file, raw, fidelity} (raw/fidelity null unlocked). */
+export async function runStillEditLocked(target, ctx, mode, opts = {}) {
+  if (!plateLockOn(ctx)) return { file: await runStillEdit(target, ctx, opts), raw: null, fidelity: null };
+  const m = opts.model || pickModel(ctx.models?.edit, KLEIN) || pickModel(ctx.models?.edit, KREA);
+  if (!m) throw new Error("no image edit model here (FLUX 3 Klein or Krea 2)");
+  const sz = opts.size || editSize(await withSize(target));
+  const p = stillEditPrompt({ source: target.ref, prompt: opts.prompt, model: m, seed: ctx.seed(), prefix: ctx.prefix(opts.suffix || ""), ...sz,
+    control: opts.control || null, refs: opts.refs || [], denoise: opts.denoise ?? null, lock: mode });
+  const pid = await ctx.queue(p);
+  const file = await ctx.wait(pid, "9");
+  let raw = null, fidelity = null;
+  try {
+    const e = (await (await ctx.api.fetchApi(`/history/${pid}`)).json())[pid];
+    raw = e?.outputs?.["8"]?.images?.[0] || null;
+    fidelity = fidelityFromHistory(e, "3");
+  } catch { /* the locked picture is the take */ }
+  return { file, raw, fidelity };
+}
+
+/** Plate-lock nodes on a Ripple prompt: the source clip (as Ripple loads it) + Ripple's frames -> node "5", saved by "7". */
+export function lockRipplePrompt(rp, { source, mode = "look", prefix, seed = 0, maxFrames = 161 }) {
+  return {
+    ...rp,
+    3: { class_type: "SoundstageClipLoad", inputs: { source, fps: 24, start_frame: 0, max_frames: maxFrames } },
+    4: { class_type: "GetVideoComponents", inputs: { video: out(1) } },
+    5: plateLockNode(out(3, 0), out(4, 0), mode, { seed }),
+    ...saveVideoNodes(out(5, 0), out(4, 2), prefix, out(4, 1), ["6", "7"]),
+  };
+}
+
 /**
  * A clip edit: frame 1 edited as a still (Klein), then LTX Ripple carries it through the whole clip with its motion,
  * camera and sound (web/motion/ripple.mjs). Two GPU jobs. -> {file, kind: "clip", extra: {frame1}}
+ * lock = a plate-lock mode: Ripple's clip goes back onto the source clip in the same job (the take; the raw Ripple
+ * clip is kept as extra.raw, the report as extra.fidelity). Off when ctx.opts.plate_lock is false.
  */
-export async function runEditThenRipple(target, ctx, { prompt, ripplePrompt = "", model = null, strength = null, colorMatch = "off" }) {
+export async function runEditThenRipple(target, ctx, { prompt, ripplePrompt = "", model = null, strength = null, colorMatch = "off", lock = null }) {
   const { buildRipplePrompt, RIPPLE_STRENGTH } = await import("../motion/ripple.mjs");
   ctx.progress("Frame 1: editing (job 1 of 2)…");
   const f1 = await runStillEdit(target, ctx, { prompt, model, suffix: "f1", size: { width: 0, height: 0 } });
   const edited = refOf(f1);
-  const rp = buildRipplePrompt({ source: target.ref, edited, prompt: ripplePrompt, strength: strength ?? RIPPLE_STRENGTH, quality: ctx.quality(),
-    seed: ctx.seed(), colorMatch, keepAudio: true, prefix: ctx.prefix() });
+  const seed = ctx.seed();
+  let rp = buildRipplePrompt({ source: target.ref, edited, prompt: ripplePrompt, strength: strength ?? RIPPLE_STRENGTH, quality: ctx.quality(),
+    seed, colorMatch, keepAudio: true, prefix: ctx.prefix(lock && plateLockOn(ctx) ? "raw" : "") });
+  const locked = !!lock && plateLockOn(ctx);
+  if (locked) rp = lockRipplePrompt(rp, { source: target.ref, mode: lock, prefix: ctx.prefix(), seed });
   ctx.progress("Ripple: carrying it through the clip (job 2 of 2)…");
   const pid = await ctx.queue(rp, "Ripple");
-  const file = await ctx.wait(pid, "2");
-  return { file, kind: "clip", extra: { frame1: f1 }, engine: "FLUX 3 Klein frame 1 → LTX Ripple" };
+  const file = await ctx.wait(pid, locked ? "7" : "2");
+  const extra = { frame1: f1 };
+  if (locked) {
+    try {
+      const e = (await (await ctx.api.fetchApi(`/history/${pid}`)).json())[pid];
+      const o = e?.outputs?.["2"];
+      extra.raw = o?.images?.[0] || o?.videos?.[0] || o?.gifs?.[0] || null;
+      extra.fidelity = fidelityFromHistory(e, "5");
+    } catch { /* the locked clip is the take */ }
+  }
+  return { file, kind: "clip", extra, engine: `FLUX 3 Klein frame 1 → LTX Ripple${locked ? " → plate lock" : ""}` };
 }
 
 /** LTX-2.5 image-to-video from a still (Living photo, the practical effects): -> {file, kind: "clip"}. */

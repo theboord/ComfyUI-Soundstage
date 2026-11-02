@@ -30,8 +30,15 @@ OWN = {
                               ["MASK", "MASK", "STRING"]),
     "SoundstageRecastComposite": ({"plate": "IMAGE", "swap": "IMAGE", "subject_mask": "MASK",
                                    "swap_subject_mask": "MASK", "others_mask": "MASK", "grow": "INT", "feather": "INT",
-                                   "temporal": "INT", "match_color": "BOOLEAN", "framing": "COMBO"},
-                                  ["IMAGE", "IMAGE", "MASK"]),
+                                   "temporal": "INT", "match_color": "BOOLEAN", "framing": "COMBO",
+                                   "crop_json": "STRING", "tone_fit": "BOOLEAN", "reach": "INT", "regrain": "FLOAT"},
+                                  ["IMAGE", "IMAGE", "MASK", "STRING"]),
+    "SoundstageFollowCrop": ({"images": "IMAGE", "subject_mask": "MASK", "others_mask": "MASK", "mode": "COMBO",
+                              "follow_below": "FLOAT", "margin": "FLOAT", "smooth": "INT", "max_zoom": "FLOAT"},
+                             ["IMAGE", "MASK", "MASK", "STRING"]),
+    "SoundstagePlateLock": ({"plate": "IMAGE", "generated": "IMAGE", "mode": "COMBO", "sensitivity": "FLOAT",
+                             "regrain": "FLOAT", "grow": "INT", "feather": "FLOAT", "alpha": "MASK",
+                             "region_hint": "MASK", "protect": "MASK", "seed": "INT"}, ["IMAGE", "MASK", "STRING"]),
 }
 # Akatz Labs' H3CharacterSwap* nodes (GPL pack, not installed on the pod): interface from the pinned upstream
 # source (worker_nodes/h3_character_swap, 0670e4f) and Openjutsu's swap.api.json. "*" = not type-checked.
@@ -228,6 +235,35 @@ def test_composite_and_silhouette_graph_is_valid():
                   swap_subject_mask=sil, grow=12, feather=10, temporal=1, match_color=True)
     g.node("CreateVideo", images=comp.out(0), fps=24.0, audio=up("audio"))
     assert check(g) == []
+
+
+@needs_snap
+def test_follow_cam_recast_graph_is_valid():
+    """Recast with follow_cam: the engine and the new-silhouette pass see the crop; the composite gets the plate,
+    the plate-space subject and the crop rects (the wiring SoundstageRecast.execute emits)."""
+    g = Graph()
+    fc = g.node("SoundstageFollowCrop", images=up("plate"), subject_mask=up("mask"), mode="auto", follow_below=0.4,
+                margin=1.45, smooth=12, max_zoom=4.0)
+    p = {"images": fc.out(0), "mask": fc.out(1), "audio": up("audio"), "first": up("first"), "fps": 24.0,
+         "width": 1280, "height": 704, "prompt": "a man walks", "negative": "", "seed": 1, "draft": True}
+    frames = GR.ltx_union_recast(g, W_LTX, p)
+    sil = GR.subject_silhouette(g, frames, "sam3.1_multiplex_fp16.safetensors", "person", fc.out(1))
+    comp = g.node("SoundstageRecastComposite", plate=up("plate"), swap=frames, subject_mask=up("mask"),
+                  swap_subject_mask=sil, grow=12, feather=10, temporal=1, match_color=False, framing="stretch",
+                  crop_json=fc.out(3), tone_fit=True, reach=28, regrain=1.0)
+    g.node("CreateVideo", images=comp.out(0), fps=24.0, audio=up("audio"))
+    assert check(g) == []
+    assert g.of("SoundstageTrackSelect")[0].inputs["match_mask"] == fc.out(1)
+
+
+def test_recast_node_wires_follow_cam_and_plate_lock():
+    """The node source (needs ComfyUI to import) emits the crop and the plate-lock inputs checked above."""
+    src = open(os.path.join(ROOT, "soundstage", "nodes_footage.py")).read()
+    assert 'g.node("SoundstageFollowCrop", **fc_in)' in src
+    assert 'comp_in["crop_json"] = crop' in src and "tone_fit=True" in src
+    assert 'GR.subject_silhouette(g, swap, sam, "person", p["mask"])' in src
+    for k in ("crop_json", "tone_fit", "reach", "regrain"):
+        assert f'"{k}"' in src
 
 
 def test_guide_keeps_plate_framing():

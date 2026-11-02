@@ -87,3 +87,5 @@ button.ss-oc-btn.sm { padding:1px 6px !important; min-width:0; }
 .ss-pipeview .cand > button.ss-oc-btn { position:absolute; top:7px; right:38px; z-index:3; }
 .dl-cap .mt > button.ss-oc-btn, .dl-takes .row > button.ss-oc-btn { position:static; flex:none; }
 @media (max-width: 640px) { .ss-oc { top:8px; width:calc(100% - 16px); max-height:calc(100% - 16px); } .ss-oc-tn { display:none; } }
+/* the Fidelity chip (plate lock): how much of the original survived */
+.ss-oc-res .ch.fid { border:1px solid rgba(240,239,237,0.22); border-radius:9px; padding:0 6px; }

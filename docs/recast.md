@@ -61,6 +61,8 @@ Panel labels are widget/input `label`s set in the saved workflow. The file conta
 | **Soundstage · Footage** | Upload a clip (or connect a VIDEO). Trims to `max_frames` and to 8k+1 frames, which is what LTX needs. Cuts the matching audio. SAM 3.1 then tracks every person, seeded by a text prompt (`subject_prompt`) or by click points on frame 1 (`points`, `[{"x":640,"y":360}]` in source pixels; the clicked person becomes the subject). Pick the subject with `subject` (`-1` = the clicked person, else the one with the most screen area). Outputs the subject's MASK batch, a union mask of everyone else, and a footage JSON with fps, length, size, has_audio and per-track stats (coverage, first frame, bbox). Expands into `SoundstageFootageDecode` → `SAM3_Detect` (points only) → `SAM3_VideoTrack` → `SoundstageTrackSelect`. |
 | **Soundstage · Recast** | `engine` dropdown (below). Runs the swap, then `SoundstageRecastComposite`. Expands at run time, like the model routers: media inputs are lazy raw links and the backend graph pulls them. |
 | Soundstage · Recast Composite | Usable on its own (it is also the Stage-2 composite in the original graph). |
+| Soundstage · Follow Crop | A virtual camera that follows a small performer: per-frame rects at the plate's aspect, scaled to the plate's size. Recast uses it when `follow_cam` is `auto` (subject under 40% of the frame height) or `on`; the composite pastes the swap back with `crop_json`. |
+| Soundstage · Plate Lock | Put any generated result back on its plate through a difference matte, with a fidelity report ([fidelity.md](fidelity.md)). |
 | Footage Decode / Pick Subject from SAM3 Tracks | Internal building blocks, category `Soundstage/Footage/advanced`. |
 
 ### Stage-2 composite (the part the original graph never had)
@@ -83,6 +85,17 @@ Panel labels are widget/input `label`s set in the saved workflow. The file conta
    `framing` tells it how the swap maps onto the plate:
    - `stretch`: the swap shows the whole plate. This is what the Recast node's own guide produces.
    - `cover`: the swap is a centred crop of the plate. Use this for the original graph.
+
+6. **Plate lock** (`plate_lock` on Recast, default on; `tone_fit`, `reach`, `regrain` on the composite, off by
+   default there). It inverts the engine's colour drift, fitted on the background. It also takes what the engine
+   changed within `reach` px of the subject: a difference matte with 3D hysteresis and temporal stabilise, so a hat
+   or a prop the new character holds is kept, and a person the engine invented far away is not. The swap is
+   re-grained to the plate. A matte below 1/512 is snapped to 0, so the plate stays bit-for-bit there. The 4th
+   output, `fidelity`, is the report (% bit-identical, PSNR outside the subject). Recast passes it out as its last
+   output.
+7. **Follow-cam** (`follow_cam` on Recast: `auto`, `on` or `off`; `crop_json` on the composite). The engine renders
+   the subject's follow-cam crop. The composite scales each frame back into its rect on the untouched plate, with a
+   2% ramp on the rect's inner edges. Nothing outside the rects can change. See [fidelity.md](fidelity.md).
 
 **Alignment bug found and fixed.** the original Reference Video snaps the DWPose map with
 ResizeImageMask "scale to multiple", which is a *cover* resize (scale, then centre crop). DWPose
@@ -219,6 +232,8 @@ cd tests && python -m pytest test_footage_matte.py test_footage_graphs.py -q
   existence, required and nested inputs, combo values, ranges and link types. It also asserts the
   graph matches the original (sigmas, samplers, DWPose flags, two in-place first frames, original audio →
   ref tokens → sampler).
+- `test_platelock.py`, `test_platelock_nodes.py` (torch): plate lock, follow-cam, and the Recast composite with
+  both, on synthetic plates ([fidelity.md](fidelity.md#tests)).
 - `test_footage_matte.py` (torch): background bit-exact outside the matte, other people kept, subject
   replaced, new silhouette accepted only near the subject, frame/size fitting, dilate/blur/temporal,
   colour match, trimming, audio cut and padding, click-point parsing, subject selection, JSON.
@@ -273,3 +288,6 @@ Wiring is already in place: `nodes_stage.get_node_list` loads `nodes_footage`.
   (`libcublasLt.so.12` missing in the shared cu128 venv). It works, just slower. The torchscript bbox
   detector or fixing the CUDA libs would speed it up. That install is shared, so it was left alone.
 - Wan and both Openjutsu engines are wired but not run end to end (see the table).
+- Plate lock and follow-cam (2026-11-02) are tested on CPU with synthetic plates only. No engine has rendered a
+  follow-cam crop yet, and `auto` changes what the engines see for any subject under 40% of the frame height. Set
+  `follow_cam = off` to get the old whole-frame behaviour.

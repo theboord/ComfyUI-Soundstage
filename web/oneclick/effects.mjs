@@ -4,9 +4,12 @@
 //   Clips: the edited frame 1, then LTX Ripple carries it through the clip with its motion, camera and sound.
 //   Empty the scene on a clip: the LTX-2.5 clean-plate IC-LoRA. Cutout on a clip: the LTX-2.5 alpha-gen IC-LoRA,
 //   saved as ProRes 4444 with alpha plus an MP4 preview on black.
+// Plate lock (on by default, a box on each card): the result goes back onto the original through a difference matte
+// (SoundstagePlateLock), so what the edit didn't touch stays the original's; the Fidelity chip says how much (docs/fidelity.md).
 // Every prompt asks for the same camera, lens, framing, people and objects: an effect is a change of the world, not a
 // new picture. Prompts are ours (docs/oneclick.md); nothing here comes from another app.
-import { registerOneClick, runStillEdit, runEditThenRipple, runI2V, pickModel, loadNode, out, saveVideoNodes, KLEIN } from "./oneclick.mjs";
+import { registerOneClick, runStillEditLocked, runEditThenRipple, runI2V, pickModel, loadNode, out, saveVideoNodes, KLEIN,
+  plateLockField, plateLockOn, plateLockNode, readFidelity, fidelityFromHistory } from "./oneclick.mjs";
 
 export const KEEP = "Keep every person, their face, hair, clothes and pose, every object, the set, the camera position, the lens and the framing exactly the same. Add nothing: no new people, animals, vehicles or objects anywhere in the picture. A real photograph from a film set, not a render.";
 
@@ -46,11 +49,12 @@ export const WORLD = [
 
 for (const [id, label, hint, prompt, ripple, preview, overlay, keywords] of WORLD) {
   registerOneClick({
-    id, group: "Effects", label, hint, applies: ["still", "clip"], gpu: true, minutes: 1, preview, overlay, keywords,
+    id, group: "Effects", label, hint, applies: ["still", "clip"], gpu: true, minutes: 1, preview, overlay, keywords, plateLock: "look",
     jobsFor: (t) => (t?.kind === "clip" ? 2 : 1), minutesFor: (t) => (t?.kind === "clip" ? 4 : 1),
+    fields: [plateLockField("look")],
     run: (target, ctx) => (target.kind === "clip"
-      ? runEditThenRipple(target, ctx, { prompt: `${prompt} ${KEEP}`, ripplePrompt: ripple }).then((r) => ({ ...r, note: "frame 1 edited, Ripple carried it" }))
-      : runStillEdit(target, ctx, { prompt: `${prompt} ${KEEP}` }).then((file) => ({ file, kind: "still", engine: "FLUX 3 Klein edit" }))),
+      ? runEditThenRipple(target, ctx, { prompt: `${prompt} ${KEEP}`, ripplePrompt: ripple, lock: "look" }).then((r) => ({ ...r, note: "frame 1 edited, Ripple carried it" }))
+      : runStillEditLocked(target, ctx, "look", { prompt: `${prompt} ${KEEP}` }).then(({ file, raw, fidelity }) => ({ file, kind: "still", engine: "FLUX 3 Klein edit", extra: raw ? { raw, fidelity } : {} }))),
   });
 }
 
@@ -62,67 +66,108 @@ registerOneClick({
   id: "empty", group: "Effects", label: "Empty the scene", hint: "Take the people and cars out, keep the place",
   applies: ["still", "clip"], gpu: true, minutes: 1, minutesFor: (t) => (t?.kind === "clip" ? 3 : 1), keywords: ["remove", "clean plate", "erase", "people", "plate"],
   preview: "saturate(.6) brightness(1.05)", overlay: "background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.08))",
-  fields: [{ id: "what", label: "What to take out (blank = people and vehicles)", placeholder: "the man in the red jacket", when: (t) => t.kind === "still" }],
+  plateLock: "local",
+  fields: [{ id: "what", label: "What to take out (blank = people and vehicles)", placeholder: "the man in the red jacket", when: (t) => t.kind === "still" }, plateLockField("local")],
   async run(target, ctx) {
     if (target.kind === "still") {
       const what = String(ctx.opts.what || "").trim();
       const prompt = what ? EMPTY_STILL.replace("every person and every vehicle", what).replace(/of them/g, "of it") : EMPTY_STILL;
-      return { file: await runStillEdit(target, ctx, { prompt }), kind: "still", engine: "FLUX 3 Klein edit" };
+      const { file, raw, fidelity } = await runStillEditLocked(target, ctx, "local", { prompt });
+      return { file, kind: "still", engine: "FLUX 3 Klein edit", extra: raw ? { raw, fidelity } : {} };
     }
     const m = pickModel(ctx.models?.clean, /Clean-Plate/);
     if (!m) throw new Error("the LTX-2.5 clean-plate IC-LoRA isn't installed here");
-    const p = {
-      1: { class_type: "SoundstageClipLoad", inputs: { source: target.ref, fps: 24, start_frame: 0, max_frames: 161 } },
-      2: { class_type: "SoundstageCleanPlate", inputs: { images: out(1, 0), prompt: "", negative: "", fps: out(1, 2), ...m, seed: ctx.seed() } },
-      ...saveVideoNodes(out(2), out(1, 2), ctx.prefix()),
-    };
-    const pid = await ctx.queue(p);
-    return { file: await ctx.wait(pid, "51"), kind: "clip", engine: "LTX-2.5 clean-plate IC-LoRA", note: "the plate has no sound (the people are gone)" };
+    return runEmptyClip(target, ctx, m);
   },
 });
 
+/** Empty the scene on a clip: the clean-plate IC-LoRA, then (plate lock) only what it removed goes onto the source clip. */
+export function emptyClipPrompt({ source, model, seed, prefix, lock = true }) {
+  const p = {
+    1: { class_type: "SoundstageClipLoad", inputs: { source, fps: 24, start_frame: 0, max_frames: 161 } },
+    2: { class_type: "SoundstageCleanPlate", inputs: { images: out(1, 0), prompt: "", negative: "", fps: out(1, 2), ...model, seed } },
+  };
+  if (!lock) return { ...p, ...saveVideoNodes(out(2), out(1, 2), prefix) };
+  return { ...p, 3: plateLockNode(out(1, 0), out(2), "local", { seed }), ...saveVideoNodes(out(3, 0), out(1, 2), prefix),
+    ...saveVideoNodes(out(2), out(1, 2), `${prefix}_raw`, null, ["52", "53"]) };
+}
+
+async function runEmptyClip(target, ctx, m) {
+  const lock = plateLockOn(ctx);
+  const pid = await ctx.queue(emptyClipPrompt({ source: target.ref, model: m, seed: ctx.seed(), prefix: ctx.prefix(), lock }));
+  const file = await ctx.wait(pid, "51");
+  const extra = lock ? { fidelity: await readFidelity(ctx, pid, "3") } : {};
+  return { file, kind: "clip", engine: `LTX-2.5 clean-plate IC-LoRA${lock ? " → plate lock" : ""}`, extra, note: "the plate has no sound (the people are gone)" };
+}
+
 // ------------------------------------------------------------------------------------------------ Cutout
+
+/**
+ * Cutout graphs. Plate lock (alpha mode): the picture is the original's, bit-for-bit; the model gives only the matte,
+ * which is steadied over time on a clip. Still: node 9 saves the RGBA PNG. Clip: 60 is the ProRes 4444 with alpha,
+ * 51 the preview on black.
+ */
+export function cutoutPrompt({ kind, source, model, subject = "", seed, prefix, alphaPrefix = `${prefix}_alpha`, lock = true }) {
+  if (kind === "still") {
+    const p = { 1: loadNode(source), 2: { class_type: "SoundstageMatte", inputs: { images: out(1), prompt: subject || "person", fps: 24, ...model, seed: 0 } } };
+    if (!lock) return { ...p, 9: { class_type: "SaveImage", inputs: { images: out(2, 0), filename_prefix: prefix } } };
+    return { ...p, 5: plateLockNode(out(1), out(2, 0), "alpha", { alpha: out(2, 1) }),
+      6: { class_type: "InvertMask", inputs: { mask: out(5, 1) } },
+      7: { class_type: "JoinImageWithAlpha", inputs: { image: out(5, 0), alpha: out(6) } },
+      9: { class_type: "SaveImage", inputs: { images: out(7), filename_prefix: prefix } } };
+  }
+  const p = {
+    1: { class_type: "SoundstageClipLoad", inputs: { source, fps: 24, start_frame: 0, max_frames: 161 } },
+    2: { class_type: "SoundstageMatte", inputs: { images: out(1, 0), prompt: "person", fps: out(1, 2), ...model, seed } },
+  };
+  let rgba = out(2, 0), pic = out(1, 0), matte = out(2, 1);
+  if (lock) {
+    Object.assign(p, { 5: plateLockNode(out(1, 0), out(2, 0), "alpha", { alpha: out(2, 1) }),
+      6: { class_type: "InvertMask", inputs: { mask: out(5, 1) } },
+      7: { class_type: "JoinImageWithAlpha", inputs: { image: out(5, 0), alpha: out(6) } } });
+    rgba = out(7); pic = out(5, 0); matte = out(5, 1);
+  }
+  return {
+    ...p,
+    // the delivery: ProRes 4444 with the alpha channel (VHS keeps RGBA as yuva444p10le)
+    60: { class_type: "VHS_VideoCombine", inputs: { images: rgba, frame_rate: out(1, 2), loop_count: 0, filename_prefix: alphaPrefix,
+      format: "video/ProRes", profile: "4444", pingpong: false, save_output: true, audio: out(1, 1) } },
+    // the take: the subject on black, so it plays in the browser
+    3: { class_type: "MaskToImage", inputs: { mask: matte } },
+    4: { class_type: "ImageBlend", inputs: { image1: pic, image2: out(3), blend_factor: 1.0, blend_mode: "multiply" } },
+    ...saveVideoNodes(out(4), out(1, 2), prefix, out(1, 1)),
+  };
+}
 
 registerOneClick({
   id: "cutout", group: "Effects", label: "Cutout", hint: "The subject on transparent: PNG, or ProRes 4444 with alpha for a clip",
   applies: ["still", "clip"], gpu: true, minutes: 1, minutesFor: (t) => (t?.kind === "clip" ? 3 : 1), keywords: ["matte", "alpha", "remove background", "key", "roto", "transparent"],
   overlay: "background:repeating-conic-gradient(rgba(255,255,255,.28) 0 25%, rgba(0,0,0,.15) 0 50%) 0 0/12px 12px",
-  fields: [{ id: "subject", label: "What to keep (blank = the main subject)", placeholder: "the dog", when: (t) => t.kind === "still" }],
+  plateLock: "alpha",
+  fields: [{ id: "subject", label: "What to keep (blank = the main subject)", placeholder: "the dog", when: (t) => t.kind === "still" }, plateLockField("alpha")],
   async run(target, ctx) {
+    const lock = plateLockOn(ctx);
     if (target.kind === "still") {
       const subject = String(ctx.opts.subject || "").trim();
       const m = subject ? pickModel(ctx.models?.matte, /^SAM 3/) : (pickModel(ctx.models?.matte, /^BiRefNet \(core/) || pickModel(ctx.models?.matte, /BiRefNet|RMBG|BEN2/));
       if (!m) throw new Error(subject ? "SAM 3.1 isn't installed here" : "no background-removal model here (BiRefNet)");
-      const p = {
-        1: loadNode(target.ref),
-        2: { class_type: "SoundstageMatte", inputs: { images: out(1), prompt: subject || "person", fps: 24, ...m, seed: 0 } },
-        9: { class_type: "SaveImage", inputs: { images: out(2, 0), filename_prefix: ctx.prefix() } },
-      };
-      const pid = await ctx.queue(p);
-      return { file: await ctx.wait(pid, "9"), kind: "still", engine: subject ? `SAM 3.1 (“${subject}”)` : "BiRefNet", note: "RGBA PNG" };
+      const pid = await ctx.queue(cutoutPrompt({ kind: "still", source: target.ref, model: m, subject, prefix: ctx.prefix(), lock }));
+      const file = await ctx.wait(pid, "9");
+      const extra = lock ? { fidelity: await readFidelity(ctx, pid, "5") } : {};
+      return { file, kind: "still", engine: subject ? `SAM 3.1 (“${subject}”)` : "BiRefNet", extra, note: "RGBA PNG" };
     }
     const m = pickModel(ctx.models?.matte, /Alpha-Gen/);
     if (!m) throw new Error("the LTX-2.5 alpha-gen IC-LoRA isn't installed here");
     if (!ctx.models?.vhs) throw new Error("ProRes 4444 needs VideoHelperSuite (VHS_VideoCombine)");
-    const p = {
-      1: { class_type: "SoundstageClipLoad", inputs: { source: target.ref, fps: 24, start_frame: 0, max_frames: 161 } },
-      2: { class_type: "SoundstageMatte", inputs: { images: out(1, 0), prompt: "person", fps: out(1, 2), ...m, seed: ctx.seed() } },
-      // the delivery: ProRes 4444 with the alpha channel (VHS keeps RGBA as yuva444p10le)
-      60: { class_type: "VHS_VideoCombine", inputs: { images: out(2, 0), frame_rate: out(1, 2), loop_count: 0, filename_prefix: ctx.prefix("alpha"),
-        format: "video/ProRes", profile: "4444", pingpong: false, save_output: true, audio: out(1, 1) } },
-      // the take: the subject on black, so it plays in the browser
-      3: { class_type: "MaskToImage", inputs: { mask: out(2, 1) } },
-      4: { class_type: "ImageBlend", inputs: { image1: out(1, 0), image2: out(3), blend_factor: 1.0, blend_mode: "multiply" } },
-      ...saveVideoNodes(out(4), out(1, 2), ctx.prefix(), out(1, 1)),
-    };
-    const pid = await ctx.queue(p);
+    const pid = await ctx.queue(cutoutPrompt({ kind: "clip", source: target.ref, model: m, seed: ctx.seed(), prefix: ctx.prefix(), alphaPrefix: ctx.prefix("alpha"), lock }));
     const file = await ctx.wait(pid, "51");
-    let prores = null;
+    let prores = null, fidelity = null;
     try {
       const e = (await (await ctx.api.fetchApi(`/history/${pid}`)).json())[pid];
       prores = e?.outputs?.["60"]?.gifs?.[0] || null;
+      if (lock) fidelity = fidelityFromHistory(e, "5");
     } catch { /* the preview is still the take */ }
-    return { file, kind: "clip", engine: "LTX-2.5 alpha-gen IC-LoRA", extra: { prores }, note: prores ? `ProRes 4444 with alpha: ${prores.filename}` : "preview on black" };
+    return { file, kind: "clip", engine: "LTX-2.5 alpha-gen IC-LoRA", extra: { prores, ...(fidelity ? { fidelity } : {}) }, note: prores ? `ProRes 4444 with alpha: ${prores.filename}` : "preview on black" };
   },
 });
 

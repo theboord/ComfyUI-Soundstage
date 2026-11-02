@@ -14,6 +14,8 @@ Clicking a card asks once: how many jobs it puts on your GPU and about how long.
 
 The result lands as a **new take** on the shot: Takes, approvals, compare, **Use as ④ Frame** for stills, and **✦ again** to chain another one-click. The take checks and the realism judge (the VFX-supervisor pass) then run on it, and their chips show on the result.
 
+**Plate lock** (on by default, a box on the relight, weather, Empty the scene and Cutout cards) puts the result back onto the original through a difference matte, so what the edit didn't touch stays the original's. A **◎ Fidelity** chip on the result says how much: "91.4% identical · lossless" for a local edit, "80% original detail, re-lit" for a light change, "picture 100% original" for a cutout. See [fidelity.md](fidelity.md), including what it doesn't do yet.
+
 ## The cards
 
 | Group | Card | Still | Clip |
@@ -43,6 +45,7 @@ The cards build ordinary ComfyUI API prompts from nodes this pack already has:
 - `SoundstageCleanPlate`;
 - `SoundstageGenerateVideo`;
 - `SoundstageRipple`;
+- `SoundstagePlateLock` (plate lock: `local` for Empty the scene, `look` for relights and weather, `alpha` for Cutout);
 - `CreateVideo` and `SaveVideo`;
 - VHS for ProRes.
 
@@ -96,4 +99,5 @@ The server only relays the call (`soundstage/oneclick/routes.py`, `POST /soundst
 - **The judge is lenient on stills.** It passed the thin-film Flood still at 10/10, with one minor face note.
 - **The judge can time out on a busy GPU.** The realism judge runs as a queued GPU job. When other jobs fill the queue, the browser's request can time out, and the result shows "not judged". Judge it again from the take's chips once the queue is free.
 - **Practical-FX cards are experimental.** They use prompts only, with no effect LoRAs, and cartoon physics conflicts with the Hollywood-real bar. Judge them hard.
+- **Plate lock is CPU-tested only.** It has not run on a real one-click on the pod yet; the thresholds are PlateLock's defaults. Clip takes are h264, so the bit-identical figure is for the frames before the encode. No geometric alignment yet: a model that shifts the picture lights up every edge. Details in [fidelity.md](fidelity.md).
 - **Clip Expand is off** until the LTX-2.3 in/out-painting IC-LoRA is tested on LTX-2.5.

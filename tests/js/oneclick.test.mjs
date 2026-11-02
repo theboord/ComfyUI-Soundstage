@@ -134,8 +134,12 @@ test("empty the scene and cutout on clips use the LTX IC-LoRAs; cutout keeps alp
   await O.getOneClick("cutout").run(clip, ctx);
   p = ctx.queued[0];
   assert.match(p[2].inputs.model, /Alpha-Gen/);
-  assert.equal(p[60].inputs.format, "video/ProRes"); assert.equal(p[60].inputs.profile, "4444"); assert.deepEqual(p[60].inputs.images, ["2", 0]);
-  assert.equal(p[4].inputs.blend_mode, "multiply");
+  assert.equal(p[60].inputs.format, "video/ProRes"); assert.equal(p[60].inputs.profile, "4444");
+  assert.deepEqual(p[60].inputs.images, ["7", 0]);   // plate lock: the original's picture with the model's (steadied) matte
+  assert.equal(p[4].inputs.blend_mode, "multiply"); assert.deepEqual(p[4].inputs.image1, ["5", 0]);
+  ctx = fakeCtx(clip, { plate_lock: false });
+  await O.getOneClick("cutout").run(clip, ctx);
+  assert.deepEqual(ctx.queued[0][60].inputs.images, ["2", 0]); assert.equal(ctx.queued[0][5], undefined);
   ctx = fakeCtx(still, { subject: "the dog" });
   await O.getOneClick("cutout").run(still, ctx);
   assert.match(ctx.queued[0][2].inputs.model, /^SAM 3/); assert.equal(ctx.queued[0][2].inputs.prompt, "the dog"); assert.equal(ctx.queued[0][2].inputs["model.threshold"], 0.5);
@@ -215,7 +219,62 @@ test("the MCP catalog is plain data", () => {
   const rows = O.catalogFor(still);
   assert.ok(rows.length >= 50);
   const cut = rows.find((r) => r.id === "cutout");
-  assert.deepEqual(cut.fields.map((f) => f.id), ["subject"]);
+  assert.deepEqual(cut.fields.map((f) => f.id), ["subject", "plate_lock"]);
   assert.equal(JSON.parse(JSON.stringify(rows)).length, rows.length);
   assert.ok(E.EFFECT_IDS.includes("nightfall") && X.EXPAND_IDS.includes("expand_clip") && A.ANGLE_IDS.length === 12 && L.LIGHT_IDS.length === 18);
+});
+
+test("plate lock: still edits, Ripple clips, Empty and Cutout put the result back on the original", async () => {
+  // a still weather edit: Klein edits, node 3 locks it (look mode), 9 saves the locked picture, 8 keeps the raw edit
+  let ctx = fakeCtx(still);
+  ctx.api = { fetchApi: async () => ({ json: async () => ({ pid1: { outputs: { 3: { text: ["Fidelity…", JSON.stringify({ mode: "look", bit_identical_pct: 0, edit_area_pct: 12.5, psnr_outside_db: 31.2 })] },
+    8: { images: [{ filename: "raw.png" }] } } } }) }) };
+  let r = await O.getOneClick("snow").run(still, ctx);
+  let p = ctx.queued[0];
+  assert.equal(p[3].class_type, "SoundstagePlateLock"); assert.equal(p[3].inputs.mode, "look");
+  assert.deepEqual(p[3].inputs.plate, ["1", 0]); assert.deepEqual(p[3].inputs.generated, ["2", 0]);
+  assert.deepEqual(p[9].inputs.images, ["3", 0]); assert.deepEqual(p[8].inputs.images, ["2", 0]);
+  assert.equal(r.extra.raw.filename, "raw.png"); assert.equal(r.extra.fidelity.edit_area_pct, 12.5);
+  // unticked: the plain edit, as before
+  ctx = fakeCtx(still, { plate_lock: false });
+  r = await O.getOneClick("snow").run(still, ctx);
+  assert.equal(ctx.queued[0][3], undefined); assert.deepEqual(ctx.queued[0][9].inputs.images, ["2", 0]);
+  // a relight on a clip: the Ripple job also loads the source as Ripple does and locks Ripple's frames onto it
+  ctx = fakeCtx(clip);
+  r = await O.getOneClick("relight_rembrandt").run(clip, ctx);
+  p = ctx.queued[1];
+  assert.equal(p[5].class_type, "SoundstagePlateLock"); assert.equal(p[5].inputs.mode, "look");
+  assert.equal(p[3].inputs.source, clip.ref); assert.equal(p[3].inputs.max_frames, p[1].inputs.max_frames); assert.equal(p[3].inputs.fps, 24);
+  assert.deepEqual(p[5].inputs.generated, ["4", 0]); assert.deepEqual(p[6].inputs.audio, ["4", 1]); assert.equal(p[7].class_type, "SaveVideo");
+  assert.match(p[2].inputs.filename_prefix, /_raw$/);
+  // Empty the scene on a clip: local mode, the locked clip is the take, the raw clean plate is kept
+  ctx = fakeCtx(clip);
+  await O.getOneClick("empty").run(clip, ctx);
+  p = ctx.queued[0];
+  assert.equal(p[3].inputs.mode, "local"); assert.deepEqual(p[50].inputs.images, ["3", 0]); assert.deepEqual(p[52].inputs.images, ["2", 0]);
+  // Cutout on a still: alpha mode, the picture is the original's
+  ctx = fakeCtx(still);
+  await O.getOneClick("cutout").run(still, ctx);
+  p = ctx.queued[0];
+  assert.equal(p[5].inputs.mode, "alpha"); assert.deepEqual(p[5].inputs.alpha, ["2", 1]); assert.deepEqual(p[7].inputs.image, ["5", 0]); assert.deepEqual(p[9].inputs.images, ["7", 0]);
+  // cards that change the camera or the frame are not locked (there is no plate to keep)
+  for (const id of ["angle_orbit_left", "expand_2_39_1", "living_photo", "fx_pop"]) assert.equal(O.getOneClick(id).plateLock, undefined, id);
+  for (const id of ["nightfall", "rain", "fog", "golden_hour", "flood", "snow", "relight_rembrandt"]) assert.equal(O.getOneClick(id).plateLock, "look", id);
+  assert.equal(O.getOneClick("empty").plateLock, "local"); assert.equal(O.getOneClick("cutout").plateLock, "alpha");
+});
+
+test("the Fidelity chip reads the plate-lock report and says what it measured", () => {
+  const e = { outputs: { 3: { text: ["Fidelity (local)…", "{\"mode\":\"local\",\"frames\":97,\"bit_identical_pct\":91.37,\"edit_area_pct\":8.63,\"psnr_outside_db\":\"inf\",\"raw_psnr_outside_db\":33.41}"] } } };
+  const rep = O.fidelityFromHistory(e, "3");
+  assert.equal(rep.bit_identical_pct, 91.37);
+  assert.equal(O.fidelityFromHistory(e, "9"), null); assert.equal(O.fidelityFromHistory({ outputs: { 3: { text: ["{bad"] } } }, "3"), null);
+  let c = O.fidelityChip(rep);
+  assert.equal(c.text, "◎ 91.4% identical · lossless"); assert.match(c.cls, /ok/);
+  assert.match(c.title, /raw model there: 33\.4 dB/); assert.match(c.title, /before the MP4 encode/);
+  c = O.fidelityChip({ mode: "look", frames: 1, bit_identical_pct: 0, edit_area_pct: 20, psnr_outside_db: 28 });
+  assert.equal(c.text, "◎ 80% original detail, re-lit"); assert.match(c.title, /re-lit, not identical/); assert.doesNotMatch(c.title, /MP4/);
+  assert.equal(O.fidelityChip({ mode: "alpha", frames: 1, bit_identical_pct: 100, edit_area_pct: 30, psnr_outside_db: "inf" }).text, "◎ picture 100% original");
+  assert.match(O.fidelityChip({ mode: "local", frames: 1, bit_identical_pct: 12, edit_area_pct: 88 }).cls, /bad/);
+  assert.equal(O.fidelityChip(null), null);
+  assert.throws(() => O.plateLockNode(["1", 0], ["2", 0], "nope"), /mode/);
 });

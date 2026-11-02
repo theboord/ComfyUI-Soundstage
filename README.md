@@ -49,6 +49,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 
 | When | Update |
 |---|---|
+| Nov 2, 12:59 PST | **Plate lock + Fidelity chip (CPU-tested only, not yet run on the pod):** relight, weather, Empty the scene and Cutout now put the result back onto the original through a difference matte, so the pixels outside the edit stay the original's (bit-for-bit on stills; clips are measured before the h264 encode). A ◎ Fidelity chip on each result says how much survived. Recast gets the same lock plus a follow-cam crop for small performers ([docs/fidelity.md](docs/fidelity.md)). |
 | Nov 2, 08:15 PST | **Motion graphics in the Cut:** + Graphic puts a title, kinetic type, lower third, callout zoom, PiP, dual PiP, device frame, split or end card on a V3 lane, editable in the inspector and by dragging in the viewer, each with its own designed sounds placed on A2. The render draws them at full resolution with motion blur ([docs/cut.md](docs/cut.md)). |
 | Nov 2, 05:30 PST | **✦ One-click:** a ✦ on every take and ④ Frame candidate opens 52 one-click cards: Nightfall, Flood, Rain, Snow, Fog, Golden hour, Empty the scene, Cutout (ProRes 4444 alpha on clips), Living photo, the 18 lighting setups, approximate new angles and experimental exact ones from the 3D stage, and Expand to six aspects. Clips carry the edit with Ripple; every result lands as a take and meets the realism judge ([docs/oneclick.md](docs/oneclick.md)). |
 | Nov 2, 01:20 PST | **Boats, verified:** every boat now steers the way you turn it (the kayak and rowboat were reversed), motor trim lifts the bow as it should, paddlers pull with a person's strength, a speedboat carves a real ~35 m turn banked into it, the Laser sails flat, and the top hand stays below the eyes on every stroke; presets fit a 4–5 s shot. |
@@ -467,7 +468,7 @@ Vendored components and their licenses are listed in [THIRD_PARTY_NOTICES.md](TH
 ## Docs
 
 - [decisions.md](docs/decisions.md): the development log, with every design decision and its reason.
-- Components: [director](docs/director.md), [mcp](docs/mcp.md), [quality](docs/quality.md), [look](docs/look.md), [agent](docs/agent.md), [advisor](docs/advisor.md), [coach](docs/coach.md), [layerpack](docs/layerpack.md), [cut](docs/cut.md), [audio](docs/audio.md), [recast](docs/recast.md), [vcam](docs/vcam.md), [router](docs/router.md), [assets3d](docs/assets3d.md), [interop](docs/interop.md).
+- Components: [director](docs/director.md), [mcp](docs/mcp.md), [quality](docs/quality.md), [look](docs/look.md), [agent](docs/agent.md), [advisor](docs/advisor.md), [coach](docs/coach.md), [layerpack](docs/layerpack.md), [cut](docs/cut.md), [audio](docs/audio.md), [recast](docs/recast.md), [fidelity](docs/fidelity.md), [vcam](docs/vcam.md), [router](docs/router.md), [assets3d](docs/assets3d.md), [interop](docs/interop.md).
 
 ## License
 

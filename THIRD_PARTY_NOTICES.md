@@ -12,6 +12,29 @@
 | Car, Police Car, Sports Car by Quaternius | `web/stage/models/*.glb` | CC0 1.0 (public domain), via [poly.pizza](https://poly.pizza/u/Quaternius) |
 | [three-avbd](https://github.com/sbobyn/three-avbd) 0.3.0 (GPU rigid bodies, Augmented Vertex Block Descent) by Steven Bobyn, which ports Chris Giles's avbd-demo3d | `web/vendor/three-avbd/` (built ES modules, renamed `.mjs`; the WebGPURenderer drawing path left out; modified: speculative contacts for fast and kinematic bodies in `avbd3d/gpu/wgsl-collision.mjs` and `wgsl-solve.mjs`, marked `[Soundstage patch]`) | MIT, see `web/vendor/three-avbd/LICENSE` and its `THIRD_PARTY_NOTICES.md` (avbd-demo3d: MIT, © 2025 Chris Giles) |
 
+## Adapted code
+
+| Component | Where | License |
+|---|---|---|
+| [PlateLock](https://github.com/TusharTechs/platelock) (`comfyui-platelock/platelock/core.py`, commit ae65b52): tone fit, difference matte, 3D hysteresis, temporal stabilise, composite, grain estimate, fidelity report | `soundstage/footage/platelock.py` (modified: look and alpha modes, the light map, re-grain of only the missing grain, the bounded feather, the edit-area figure; listed in the file header) | MIT, © 2026 PlateLock contributors, see `third_party/platelock/LICENSE` |
+| Body Double by lucataco ([open-source-higgsfield](https://github.com/lucataco/open-source-higgsfield), `bodydouble/media.py`, commit 864c8de): the follow-cam crop plan (`plan_crops`), the crop-edge ramp of its composite, and the cast-matte idea (take the recast's changes connected to the performer) | `soundstage/footage/followcam.py`, and the `reach` step in `soundstage/footage/matte.py` (modified by Soundstage on 2026-11-02: ported from PIL to torch, plate-aspect crops scaled to the plate size, a zoom cap, an auto rule, integer rects; listed in the file header) | Apache License 2.0, © 2026 lucataco, see `third_party/bodydouble/LICENSE`; its NOTICE is reproduced below and in `third_party/bodydouble/NOTICE` |
+
+Body Double's NOTICE:
+
+> Body Double
+> Copyright 2026 lucataco
+>
+> Licensed under the Apache License, Version 2.0 (see LICENSE). The license covers this repository's code and
+> workflow files only.
+>
+> Model weights are not redistributed. setup.sh downloads each file from its official upstream, and each model keeps
+> its own license (see MODELS.md). Outputs are AI-generated and should be labelled as such.
+>
+> Body Double drives an unmodified ComfyUI (GPL-3.0) over HTTP through comfy-sdk and comfy-api-proxy (MIT). It ships
+> no ComfyUI code and no custom nodes.
+
+Soundstage takes no model, workflow or media from either project.
+
 ## Used at runtime, installed separately (not vendored)
 
 | Component | Why | License |

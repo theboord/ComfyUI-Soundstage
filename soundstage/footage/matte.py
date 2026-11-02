@@ -139,10 +139,33 @@ def build_matte(subject, h, w, n, swap_subject=None, others=None, grow_px=12, fe
 
 
 def composite(plate, swap, subject, swap_subject=None, others=None, grow_px=12, feather_px=10, temporal=1,
-              match_color=False, framing="stretch"):
+              match_color=False, framing="stretch", **lock):
     """Returns (composite RGB, swap layer RGBA, alpha), all at the plate's size and frame count.
     framing: 'stretch' = the swap covers the whole plate (its aspect may differ slightly);
-             'cover' = the swap is a centred crop of the plate (e.g. after ResizeImageMask 'scale to multiple')."""
+             'cover' = the swap is a centred crop of the plate (e.g. after ResizeImageMask 'scale to multiple').
+    lock: plate-lock options, see composite_ex (crop_rects, tone_fit, reach_px, grain, sensitivity, seed)."""
+    r = composite_ex(plate, swap, subject, swap_subject, others, grow_px, feather_px, temporal, match_color, framing,
+                     **lock)
+    return r["comp"], r["layer"], r["alpha"]
+
+
+def composite_ex(plate, swap, subject, swap_subject=None, others=None, grow_px=12, feather_px=10, temporal=1,
+                 match_color=False, framing="stretch", crop_rects=None, tone_fit=False, reach_px=0, grain=0.0,
+                 sensitivity=0.5, seed=0):
+    """The Recast composite with plate lock. Returns {comp, layer, alpha, raw} at the plate's size and length.
+
+    crop_rects  follow-cam rects (footage/followcam.py): the swap and swap_subject are in crop space (each frame its
+                rect scaled to the plate size) and are pasted back into their rects, with a soft ramp at crop edges
+    tone_fit    undo the engine's global colour drift: robust per-frame affine fit of swap vs plate on the
+                background (outside the subject), inverted on the swap (platelock.fit_tone)
+    reach_px    also take what the engine changed (difference matte, 3D hysteresis, temporal stabilise) within this
+                many plate px of the subject: a wider costume, a hat, a prop the new character holds. 0 = off
+    grain       re-grain the swap with the grain it lacks against the plate (1 = match)
+    Wherever alpha is 0 the composite is the plate bit-for-bit (alpha below 1/512 is snapped to 0).
+    """
+    from . import followcam as FC
+    from . import platelock as PL
+
     plate = plate[..., :3]
     n, h, w = plate.shape[0], plate.shape[1], plate.shape[2]
     swap = swap[..., :3].to(plate.device)
@@ -153,15 +176,64 @@ def composite(plate, swap, subject, swap_subject=None, others=None, grow_px=12, 
             swap_subject = swap_subject[..., 0]
     else:
         sw, box = resize_images(swap, h, w), None
+        if swap_subject is not None:
+            swap_subject = resize_mask(swap_subject.to(plate.device), h, w)
     sw = fit_frames(sw, n)
+    if crop_rects:
+        rects = list(crop_rects)[:n] + [list(crop_rects)[-1]] * max(0, n - len(crop_rects))
+        cbox_in = (box if box is not None else torch.ones(h, w, device=plate.device)).expand(n, h, w)
+        sw, cbox = FC.uncrop(sw, rects, plate)
+        box = FC.uncrop_mask(cbox_in.contiguous(), rects, h, w) * cbox
+        if swap_subject is not None:
+            swap_subject = FC.uncrop_mask(fit_frames(swap_subject, n), rects, h, w)
+    raw = sw
+    sub_hard = (fit_frames(resize_mask(subject.to(plate.device), h, w), n) > 0.5).float()
+
+    if tone_fit:
+        # fit on a small proxy, on the background only (the subject is meant to change), inside the swap's box
+        ph = min(h, 360)
+        pw = max(8, int(round(w * ph / h)))
+        bg = 1 - dilate(sub_hard, max(4, grow_px * 2))
+        if box is not None:
+            bg = bg * (box if box.dim() == 3 else box.expand(n, h, w))
+        gain, bias = PL.fit_tone(PL.resize_frames(plate, ph, pw, "area"), PL.resize_frames(sw, ph, pw, "area"),
+                                 weight=resize_mask(bg, ph, pw))
+        sw = PL.apply_inverse_tone(sw, gain, bias)
+
     alpha = build_matte(subject.to(plate.device), h, w, n,
                         None if swap_subject is None else swap_subject.to(plate.device),
-                        None if others is None else others.to(plate.device), grow_px, feather_px, temporal)
+                        None, grow_px, feather_px, temporal)
+
+    if reach_px and reach_px > 0:
+        # what the engine changed near the subject: the cast-matte idea of Body Double (lucataco, Apache-2.0, see
+        # THIRD_PARTY_NOTICES.md), done with plate lock's difference matte
+        ph = min(h, 540)
+        pw = max(8, int(round(w * ph / h)))
+        near = resize_mask(dilate(sub_hard, int(reach_px)), ph, pw)
+        dm = PL.difference_matte(PL.resize_frames(plate, ph, pw, "area"), PL.resize_frames(sw, ph, pw, "area"),
+                                 "local", sensitivity, region_hint=None)
+        d = dm["matte"] * near
+        if d.shape[0] >= 3:
+            d = PL.temporal_stabilize(d)
+        d = PL.refine_matte(d, grow_px=2, feather_px=max(2.0, feather_px / 2))
+        alpha = torch.maximum(alpha, resize_mask(d, h, w))
+
+    if others is not None:
+        oth = (fit_frames(resize_mask(others.to(plate.device), h, w), n) > 0.5).float()
+        protect = blur(dilate(oth, 2), max(2, feather_px // 2)) * (1 - sub_hard)
+        alpha = alpha * (1 - protect)
     if box is not None:
         alpha = alpha * box
+    alpha = torch.where(alpha < PL.ZERO_SNAP, torch.zeros_like(alpha), alpha).clamp(0, 1)
+
     if match_color:
         sw = color_match(sw, plate, (alpha > 0.5).float(), max(8, feather_px * 2))
+    if grain and grain > 0:
+        sigma = PL.regrain_sigma(plate, sw[:: max(1, n // 4)][:4]) * float(grain)
+        if float(sigma.max()) > 1e-5:
+            g = torch.Generator(device="cpu").manual_seed(int(seed))
+            sw = (sw + torch.randn(sw.shape, generator=g).to(sw) * sigma.view(1, 1, 1, 3).to(sw)).clamp(0, 1)
     a = alpha.unsqueeze(-1)
-    comp = plate * (1 - a) + sw * a
+    comp = torch.where(a == 0, plate, plate * (1 - a) + sw * a)
     layer = torch.cat([sw, a], dim=-1)
-    return comp, layer, alpha
+    return {"comp": comp, "layer": layer, "alpha": alpha, "raw": raw}

@@ -5,6 +5,30 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-02
 
+**12:59 PST · Plate lock: one-click edits and Recast go back onto the original through a difference matte, with a ◎ Fidelity chip; Recast gets a follow-cam crop for small performers**
+- **Still wrong (read first):** tested on CPU with synthetic plates only. Nothing has run on the pod: no real relight, Empty the scene, Cutout or Recast has been watched through plate lock, and no engine has rendered a follow-cam crop. The thresholds are PlateLock's defaults (sensitivity 0.5, a ~10 model-px safety halo), not tuned on our footage. **Clip takes are still h264**, so "bit-identical" holds for the frames before the encode, not for the MP4; still takes are PNG and do hold bit-for-bit. No geometric alignment yet: if Klein shifts the picture a few pixels, every edge lights up in the matte and the model's pixels are taken there (the edit-area figure shows it). Look mode (relight, weather) is not bit-identical by design: it re-lights the original's own pixels. The chip shows only in the ✦ One-click results panel (saved on the take, not drawn in Dailies or the Ladder), and Recast reports through a JSON output, not a chip. Recast's `follow_cam` defaults to `auto`, so a subject under 40% of the frame height now goes through a crop: set it `off` for the old behaviour.
+- **Plate lock** ([soundstage/footage/platelock.py](soundstage/footage/platelock.py), adapted from PlateLock, MIT) runs in this order:
+  - a robust per-frame tone fit, which undoes the model's colour drift;
+  - an opponent-space difference matte against a robust noise floor;
+  - hysteresis in x, y and t, which kills isolated VAE sparkle;
+  - temporal median + zero-phase EMA;
+  - a bounded feather;
+  - the composite at the plate's size: below 1/512 the matte is 0 and the plate is copied bit-for-bit, and inside, only the grain the model lacks is added back.
+- **Three modes:**
+  - `local` (Empty the scene, Recast);
+  - `look` (the 18 relights, Nightfall, Rain, Snow, Fog, Golden hour, Flood): the change of light goes onto the plate's own pixels as a smooth light map, and the model's pixels are taken only where it changed more than the light;
+  - `alpha` (Cutout): the original's picture with the model's matte, steadied over time.
+- **New node** `SoundstagePlateLock` ([soundstage/nodes_footage.py](soundstage/nodes_footage.py)): composite, matte, and a fidelity report (% bit-identical, edit area, PSNR outside the edit, and the raw model's PSNR there).
+- **✦ One-click** ([web/oneclick/oneclick.mjs](web/oneclick/oneclick.mjs), [effects.mjs](web/oneclick/effects.mjs), [light.mjs](web/oneclick/light.mjs)): a **Plate lock** box, on by default, on those cards. It locks in the same job: the Klein still edit, the Ripple clip (loaded from the source the way Ripple loads it), the clean plate, the alpha-gen matte and the depth-locked relight. The raw result is kept as `extra.raw`. The **◎ Fidelity** chip reads, for example, "91.4% identical · lossless", "80% original detail, re-lit" or "picture 100% original"; hover for the full report. Angles, Expand, Living photo and the practical FX are not locked (they change the camera, the frame or the time).
+- **Recast:**
+  - `plate_lock` (default on): a tone fit on the background, the engine's changes within 4% of the frame height of the subject (a hat or a prop, not an invented neighbour), and re-grain. The composite has new `tone_fit`, `reach`, `regrain` and `crop_json` inputs and a `fidelity` output.
+  - `follow_cam` (`auto` / `on` / `off`, new node `SoundstageFollowCrop`, [soundstage/footage/followcam.py](soundstage/footage/followcam.py), adapted from Body Double, Apache-2.0): the engine renders a smooth, plate-aspect crop around a small performer (×1.45, ±12 frames, at most 4× zoom) at the plate's size. The composite scales it back into each rect on the untouched plate, with a ramp on inner edges.
+- **Credits:** [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) has a new "Adapted code" section with both projects, their commits and Body Double's NOTICE. The licence texts are in `third_party/`. Docs: [docs/fidelity.md](docs/fidelity.md), plus [docs/oneclick.md](docs/oneclick.md) and [docs/recast.md](docs/recast.md).
+- **Tests:**
+  - tests/test_platelock.py (18), tests/test_platelock_nodes.py (3), tests/test_footage_graphs.py (+2: the follow-cam Recast graph is valid against the pod snapshot), tests/js/oneclick.test.mjs (+2, and 2 updated for the locked graphs).
+  - Python 1149 passed, 5 failed: all five also fail without this change, from aiohttp/ffmpeg missing in the cloud container.
+  - JS 881 passed, 0 failed.
+
 **11:10 PST · Try-it demo checked at desktop and phone width: three fixes to the phone and the Video → 3D bar**
 - **Still wrong (read first):** checked headless only (Chrome with Metal on the Mac mini), not watched in a real browser or on a real phone. On a phone, the What's new card covers the stage until it is closed, and ✦ One-click shows a hint instead of the card window (the window needs the full workspace). The Video → 3D rebuild is still the basic version (see 10:45). The Identical? bar still covers the end of the "Camera view · Source camera" label. The chooser quotes 61–117 min for the 5 s clip, which is the real estimate but reads as slow.
 - **Phone width:** in Video → 3D's "What is this video for?", the "Replace the set (2 things; Undo brings them back)" chip ran off the dialog; long chips now wrap ([web/ui/videoimport.mjs](web/ui/videoimport.mjs)), and the option cards hyphenate ("perfor-mance") instead of overflowing. On ④ Frame, "Generate frames" and "…for every shot" pushed the page 11 px sideways; the row now wraps below 480 px ([web/ui/canvasui.mjs](web/ui/canvasui.mjs)).
