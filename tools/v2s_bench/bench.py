@@ -3,6 +3,8 @@
   python3 tools/v2s_bench/bench.py                      # everything that is missing, then the report
   python3 tools/v2s_bench/bench.py all --rerun          # run today's pipeline again on every clip (new baseline)
   python3 tools/v2s_bench/bench.py score report --clips syn_street,st_walk
+  python3 tools/v2s_bench/bench.py probe score report --recon ~/OpenHiggsfieldContest/share/Video3D_Boost/devrun/v2s-solve
+                                                          # score a devrun.py result (recon DIR/<clip>/recon_result.json)
 
 Steps (each skips what is already done unless --rerun):
   prepare  stage clips: copy the render + its stage scene; synthetic clips: render them in Blender (on the runner)
@@ -33,7 +35,8 @@ sys.path.insert(0, HERE)
 DEFAULT_OUT = os.path.expanduser("~/OpenHiggsfieldContest/share/Video3D_Boost/bench")
 DEFAULT_RUNNER = "maxpost@MacMini17.local"
 R_CODE = "sstest/v2s_bench"                 # on the runner, relative to its home
-R_DATA = "sstest/v2s_bench_out/data"
+R_DATA_BASE = "sstest/v2s_bench_out/data"   # the baseline's runner data (truth ID passes live here)
+R_DATA = R_DATA_BASE                         # main() points this at a per-output folder for --recon / --out runs
 R_BLENDER = "/Applications/Blender.app/Contents/MacOS/Blender"
 R_PY = "/Applications/Blender.app/Contents/Resources/5.2/python/bin/python3.13"   # Blender's Python has numpy
 R_PATH = "export PATH=$HOME/sstest/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -171,6 +174,35 @@ def sync_code(runner):
     runner.push(HERE + "/", f"{R_CODE}/tools/v2s_bench/", excludes=("__pycache__",))
 
 
+def runner_data_for(out: str) -> str:
+    """A runner data folder of its own for every output folder, so parallel benches never overwrite each other."""
+    import hashlib
+    return f"sstest/v2s_bench_out/r_{hashlib.sha1(os.path.abspath(out).encode()).hexdigest()[:10]}"
+
+
+def seed_recon(clips, out, runner):
+    """--recon DIR: DIR/<clip>/recon_result.json (devrun layout) -> DIR/clips/<clip>/ next to links to the baseline's
+    truth (source.mp4, truth.json, truth_scene.json, sam/), and the baseline's truth ID passes copied on the runner."""
+    rd_new = runner_data_for(out)
+    for c in clips:
+        src = os.path.join(out, c["id"])
+        d = os.path.join(out, "clips", c["id"])
+        base = os.path.join(DEFAULT_OUT, "clips", c["id"])
+        os.makedirs(d, exist_ok=True)
+        for f in ("recon_result.json", "run.log"):
+            if os.path.exists(os.path.join(src, f)):
+                sh(["cp", os.path.join(src, f), os.path.join(d, f)])
+        if os.path.isdir(os.path.join(src, "takes")):
+            sh(["rsync", "-a", os.path.join(src, "takes") + "/", os.path.join(d, "takes") + "/"])
+        for f in ("source.mp4", "truth.json", "truth_scene.json", "sam"):
+            p, q = os.path.join(base, f), os.path.join(d, f)
+            if os.path.exists(p) and not os.path.exists(q):
+                os.symlink(p, q)
+        runner.run(f"mkdir -p {rd_new}/clips/{c['id']} && for x in truth_id truth.json; do "
+                   f"[ -e {R_DATA_BASE}/clips/{c['id']}/$x ] && [ ! -e {rd_new}/clips/{c['id']}/$x ] && "
+                   f"cp -R {R_DATA_BASE}/clips/{c['id']}/$x {rd_new}/clips/{c['id']}/; done; true")
+
+
 def step_probe(clips, out, runner, every, rerun):
     sync_code(runner)
     jobs = []
@@ -187,7 +219,10 @@ def step_probe(clips, out, runner, every, rerun):
         if os.path.isdir(os.path.join(d, "takes")):
             runner.push(os.path.join(d, "takes") + "/", f"{rd}/takes/")
         spec = []
-        if c["kind"] == "stage":
+        # --recon / --out runs reuse the baseline's truth ID pass (copied on the runner by seed_recon)
+        have_truth = R_DATA != R_DATA_BASE and os.path.exists(os.path.join(d, "truth.json")) and \
+            "Y" in (runner.run(f"test -d {rd}/truth_id && echo Y || echo N", capture=True).stdout or "")
+        if c["kind"] == "stage" and not have_truth:
             spec.append(("truth", {"scene": f"clips/{c['id']}/truth_scene.json", "out": f"clips/{c['id']}/truth", "modes": ["id"],
                                    "every": every, "clip": c["id"], "kind": "stage", "exact": bool(c.get("exact", True))}))
         spec.append(("recon", {"scene": f"clips/{c['id']}/recon_result.json", "out": f"clips/{c['id']}/recon", "modes": ["id", "color"],
@@ -313,6 +348,8 @@ def main(argv=None) -> int:
     ap.add_argument("--server", default=os.environ.get("SS_URL", "http://127.0.0.1:8189"), help="the ComfyUI with Soundstage")
     ap.add_argument("--every", type=int, default=2, help="score every Nth frame (default 2)")
     ap.add_argument("--rerun", action="store_true", help="redo steps that already have results (a new baseline)")
+    ap.add_argument("--recon", default="", help="score reconstructions from DIR/<clip>/recon_result.json (tools/v2s_bench/devrun.py) "
+                    "against the baseline's truth; results go to DIR/clips/<clip>/ and DIR/summary.md")
     a = ap.parse_args(argv)
     steps = ["prepare", "run", "masks", "probe", "score", "report"] if "all" in a.steps else a.steps
     clips = load_manifest()
@@ -320,6 +357,13 @@ def main(argv=None) -> int:
         want = set(a.clips.split(","))
         clips = [c for c in clips if c["id"] in want]
     runner = Runner(a.runner)
+    global R_DATA
+    if a.recon:
+        a.out = os.path.abspath(os.path.expanduser(a.recon))
+        seed_recon(clips, a.out, runner)
+        steps = [s for s in steps if s not in ("prepare", "run", "masks")]
+    if os.path.abspath(a.out) != os.path.abspath(DEFAULT_OUT):
+        R_DATA = runner_data_for(a.out)
     os.makedirs(a.out, exist_ok=True)
     if "prepare" in steps:
         step_prepare(clips, a.out, runner, a.rerun)

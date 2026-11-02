@@ -90,6 +90,14 @@ def solve(npz: dict, frame_files: list[str], seed: int = 0):
     return poses, scales, K, ground, notes, depth
 
 
+def run_kwargs(body: dict) -> dict:
+    """Route body -> run() keyword arguments (the route and tools/v2s_bench/devrun.py share this)."""
+    body = dict(body or {})
+    kw = {"samples": min(max(int(body.get("samples") or 16), 8), 24), "use_vlm": bool(body.get("vlm", True)),
+          "backdrop": bool(body.get("backdrop", True)), "original": str(body.get("original") or "")}
+    return kw
+
+
 async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = True, backdrop: bool = True,
               progress=None, mocap: bool = True, original: str = "") -> dict:
     say = progress or (lambda step, frac: None)
