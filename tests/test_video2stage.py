@@ -36,6 +36,17 @@ def test_parse_reply_fenced_and_typed():
     assert r["set"][0]["lanes"] == 4 and r["set"][1]["distance"] == "far"
 
 
+def test_parse_reply_keeps_furniture_and_props_listed_as_objects():
+    """SET_TYPES grew sofa/box/plant/... for the LAYOUT inventory; parse_reply used it to drop 'other' objects that
+    name a set piece, so a sofa or a crate the shot breakdown placed before vanished from the rebuild."""
+    text = ('{"objects":[{"label":"sofa","kind":"other","bbox":[10,10,200,120]},'
+            '{"label":"crate","kind":"other","bbox":[300,10,400,90]},'
+            '{"label":"potted plant","kind":"other","bbox":[500,10,560,90]},'
+            '{"label":"bench","kind":"other","bbox":[600,10,700,90]}]}')
+    labels = [o["label"] for o in vlm.parse_reply(text)["objects"]]
+    assert labels == ["sofa", "crate", "potted plant"]          # the bench is still scenery (folded into the set)
+
+
 def test_parse_reply_truncated_and_bare_list():
     cut = '{"objects":[{"label":"woman in yellow coat","kind":"person","bbox":[400,100,520,900],"moving":true},' \
           '{"label":"man on bench","kind":"person","bbox":[700,300,780,'

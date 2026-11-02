@@ -35,6 +35,10 @@ KINDS = {"person", "car", "pickup", "suv", "van", "truck", "bus", "motorcycle", 
 SET_TYPES = {"road", "ocean", "lake", "river", "beach", "cliff", "hill", "mountain", "shrubs", "trees", "rocks",
              "building", "wall", "guardrail", "grass", "sidewalk", "plaza", "bench", "lamp", "table", "chair", "sofa",
              "shelf", "rug", "bin", "sign", "plant", "box", "bed", "cabinet", "desk", "hydrant", "pole", "fence"}
+# The scenery the per-frame breakdown (parse_reply) has always folded into the set rather than placing as an object.
+# SET_TYPES grew furniture and props for the inventory; a sofa or a box the old read lists as an object still stands.
+SCENERY_TYPES = frozenset({"road", "ocean", "lake", "river", "beach", "cliff", "hill", "mountain", "shrubs", "trees",
+                           "rocks", "building", "wall", "guardrail", "grass", "sidewalk", "plaza", "bench", "lamp"})
 SET_SYNONYMS = {"sea": "ocean", "water": "ocean", "highway": "road", "street": "road", "freeway": "road",
                 "asphalt": "road", "bushes": "shrubs", "bush": "shrubs", "shrub": "shrubs", "tree": "trees",
                 "forest": "trees", "rock": "rocks", "boulders": "rocks", "mountains": "mountain",
@@ -215,7 +219,7 @@ def parse_reply(text: str) -> dict:
         kind = resolve_kind(o.get("kind"), label)
         if kind == "other":
             st = SET_SYNONYMS.get(label.lower(), label.lower())
-            if st in SET_TYPES:   # a set piece listed as an object
+            if st in SCENERY_TYPES:   # a set piece listed as an object
                 continue
         mv = o.get("moving")
         objects.append({"label": label, "kind": kind, "color": _color(o.get("color")), "bbox": bb,
