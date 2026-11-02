@@ -198,6 +198,25 @@ const ACTIONS = {
     P().go("review");
   },
   async viewfinder() { P().go("set"); await sleep(300); stageNode.ssViewfinder?.open(); },
+  // Pitch Mode: the Director panel's Pitch button (listening, transcription and the sketches run on the GPU in the full install).
+  async pitch() { P().go("set"); await sleep(300); stageNode.ssDirector?.open(); await sleep(400); flash(root().querySelector(".ss-dir .pitchb") || document.querySelector(".ss-dir .pitchb")); },
+  // The Director's Book: a binder page per scene (Book in the top bar).
+  async book() { P().go("script"); await sleep(400); stageNode.ssBook?.open(); },
+  // Real performance: the selected person's "Real performance…" button (capture and render run on the GPU in the full install).
+  async performance() {
+    await ACTIONS.color(); await sleep(300);
+    selectActor(/getaway|cop|woman|man|person/i); await sleep(700);
+    flash(btn(/Real performance/));
+  },
+  // Parts (Milestone 26): the selected car's doors, lamps, steering and suspension, every channel keyable.
+  async parts() {
+    await ACTIONS.color(); await sleep(300);
+    selectActor(/sports|getaway|red|car/i); await sleep(700);
+    const pp = root().querySelector(".ss-parts");
+    for (const d of pp?.querySelectorAll("details") || []) if (/door|light|lamp/i.test(d.querySelector("summary")?.textContent || "")) d.open = true;
+    flash(pp);
+  },
+  async gaits() { await ACTIONS.rider(); },
 };
 async function runStop(id) {
   const stop = tour.steps.find((s) => s.id === id);
