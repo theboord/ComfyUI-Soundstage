@@ -19,6 +19,7 @@ from pathlib import Path
 
 from ..cine import geometry as G
 from ..cine.prompts import SIZE_LTX, SIZE_STILL
+from . import boats as BT
 from . import stunts as ST
 from .frame_lock import union
 
@@ -39,7 +40,9 @@ SET_PLACES = {
     "plaza": ("EXT", "a city plaza"), "street_night": ("EXT", "a city street"), "interior": ("INT", "an interior room"),
     "studio": ("INT", "a studio cyclorama"), "forest": ("EXT", "a forest"), "desert": ("EXT", "a desert"),
     "beach": ("EXT", "a beach by the ocean"), "water_tank": ("EXT", "a water tank"),
-    "open_water": ("EXT", "open water out at sea"), "stadium": ("EXT", "a baseball stadium with a manicured ballfield and packed stands"), "empty": ("EXT", ""),
+    "open_water": ("EXT", "open water out at sea"),
+    "lake": ("EXT", "a calm mountain lake ringed by pine woods, a wooden dock on the near shore"),
+    "river_rapids": ("EXT", "a rocky river gorge, whitewater rapids rushing between boulders"), "stadium": ("EXT", "a baseball stadium with a manicured ballfield and packed stands"), "empty": ("EXT", ""),
     # Milestone 11 sets (web/stage/sets)
     "underwater": ("EXT", "a coral reef deep underwater, sunlight rays slanting down through blue-green water"),
     "burning_building": ("EXT", "a night street in front of a burning brick building, flames in its windows, burning debris"),
@@ -664,6 +667,8 @@ def _ride_noun(noun: str, host: dict) -> str:
         return f"{noun} on horseback"
     if kind in ("bicycle", "motorcycle", "jetski"):
         return f"{noun} riding {_article(hnoun)}"
+    if BT.is_boat(kind):
+        return BT.ride_noun(noun, kind, hnoun)
     return f"{noun} sitting on {_article(hnoun)}" if kind in mounts() else f"{noun} on {_article(hnoun)}"
 
 
@@ -858,6 +863,8 @@ def traffic_lock(scene: dict) -> dict | None:
     cars = [a for a in actors if lib.get(a.get("kind"), ("", 0, ""))[2] == "vehicle"]
     if not cars:
         return None
+    boats = [a for a in cars if BT.is_boat(a.get("kind", ""))]
+    cars = [a for a in cars if not BT.is_boat(a.get("kind", ""))]
     on_foot = [a for a in actors if a.get("kind") in ("man", "woman", "child") and not a.get("mount_id")]
     if on_foot:
         return None
@@ -866,6 +873,8 @@ def traffic_lock(scene: dict) -> dict | None:
         names = [lib.get(a["kind"], (a["kind"].replace("_", " "),))[0].lower() for a in group]
         count = {n: names.count(n) for n in names}
         return " and ".join(_article(n) if c == 1 else f"{c} {n}s" for n, c in count.items())
+    if not cars:
+        return BT.water_lock(scene, boats, words)   # boats only: the water, not a street
     neg = ("pedestrians, people walking in the road, people crossing the street, extra cars, duplicate cars, a second police car, "
            "cars passing through each other, merging cars")
     if ride is not None:
@@ -1165,6 +1174,8 @@ def actor_marks(scene: dict) -> list[dict]:
                 saddle = "the saddle" if hk == "horse" else "the seat"
                 verb = f"walks to the {hn}, swings up into {saddle} and {verb}"
                 verb_pl = f"walk to their {hn}s, swing up into {saddle}s and {verb_pl}"
+        elif c["rig"] == "vehicle" and BT.is_boat(c["actor"].get("kind", "")):
+            verb = BT.boat_verb(c["actor"].get("kind", ""), v)
         elif c["rig"] == "vehicle":
             verb = "drives forward" if v > 2 else "rolls forward"   # "forward": a clay car reads either way round
         elif c["rig"] == "quadruped":

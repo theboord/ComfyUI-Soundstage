@@ -20,6 +20,8 @@ export const SETS = {
   beach: { label: "Beach & ocean" },
   water_tank: { label: "Water tank" },
   open_water: { label: "Open water (sea / lake)" },
+  lake: { label: "Lake (calm, wooded shore, a dock)" },
+  river_rapids: { label: "River rapids (whitewater)" },
   stadium: { label: "Stadium / ballfield" },
   underwater: { label: "Underwater reef" },
   burning_building: { label: "Burning building (night)" },
@@ -184,6 +186,52 @@ export function buildSet(preset, mesh, opts = {}) {
         g.add(d);
       }
       water = { level: opts.water_level ?? 1.5, size: [900, 900], center: [0, 0] };
+      break;
+    }
+    case "lake": {
+      // A mountain lake: the water 1.2 m deep near the dock, a wooded shore curving round behind, hills beyond.
+      // The near shore is behind the camera's default spot (-z); the dock runs out from it.
+      const L = opts.water_level ?? 1.2;
+      for (let i = 0; i < 9; i++) {                                   // hills on the far shore
+        const d = mesh(new THREE.SphereGeometry(1, 20, 10));
+        d.scale.set(70 + rand() * 90, 18 + rand() * 30, 40 + rand() * 30);
+        d.position.set(-420 + i * 105 + rand() * 30, -4, 260 + rand() * 60);
+        g.add(d);
+      }
+      // A shore bank all round (a ring of low mounds at the waterline), trees on it.
+      for (let i = 0; i < 70; i++) {
+        const a = (i / 70) * Math.PI * 2, R = 150 + 25 * Math.sin(a * 3) + rand() * 12;
+        const x = Math.sin(a) * R, z = Math.cos(a) * R * 0.85 + 60;
+        const b = mesh(new THREE.SphereGeometry(1, 12, 8)); b.scale.set(22, L + 2.2 + rand() * 2, 14); b.position.set(x, 0, z); b.rotation.y = a; g.add(b);
+        for (let k = 0; k < 3; k++) {
+          const tx = x + (rand() - 0.5) * 18, tz = z + (rand() - 0.5) * 10, th = 9 + rand() * 9;
+          const tr = mesh(new THREE.ConeGeometry(2.2 + rand() * 1.5, th, 8)); tr.position.set(tx, L + 2 + th / 2, tz); g.add(tr);
+        }
+      }
+      // The dock: a wooden jetty on piles out from the near shore.
+      const deckY = L + 0.55;
+      box(2.4, 0.12, 14, -6, deckY, -16);
+      for (let z = -22; z <= -9; z += 2.6) for (const x of [-7.1, -4.9]) { const p = mesh(new THREE.CylinderGeometry(0.12, 0.12, deckY + 0.4, 8)); p.position.set(x, (deckY + 0.4) / 2, z); g.add(p); }
+      water = { level: L, size: [420, 420], center: [0, 60] };
+      break;
+    }
+    case "river_rapids": {
+      // A whitewater run: a 24 m channel between rocky, wooded banks, flowing toward +z; boulders in the stream break
+      // the surface and throw up standing waves and holes behind them (the wave field's standing waves).
+      const L = opts.water_level ?? 1.4, W = 24;
+      for (const sd of [-1, 1]) {
+        for (let z = -60; z < 260; z += 7) {
+          const r = mesh(new THREE.DodecahedronGeometry(1, 0)); const s0 = 3 + rand() * 4;
+          r.scale.set(s0, L + 1 + rand() * 3, s0 * 1.3); r.position.set(sd * (W / 2 + 2 + rand() * 3), 0, z + rand() * 4); r.rotation.y = rand() * 3; g.add(r);
+          if (rand() < 0.7) { const th = 8 + rand() * 10; const tr = mesh(new THREE.ConeGeometry(2 + rand(), th, 8)); tr.position.set(sd * (W / 2 + 8 + rand() * 10), L + 2 + th / 2, z); g.add(tr); }
+        }
+        const bank = mesh(new THREE.BoxGeometry(30, L + 2.5, 340)); bank.position.set(sd * (W / 2 + 18), (L + 2.5) / 2, 100); g.add(bank);
+      }
+      for (let i = 0; i < 26; i++) {                                    // boulders in the stream
+        const r = mesh(new THREE.DodecahedronGeometry(1, 0)), s0 = 0.6 + rand() * 1.3;
+        r.scale.set(s0 * 1.2, L * (0.75 + rand() * 0.6), s0); r.position.set((rand() - 0.5) * (W - 6), 0, -30 + i * 10 + rand() * 6); r.rotation.y = rand() * 3; g.add(r);
+      }
+      water = { level: L, size: [W, 340], center: [0, 100] };
       break;
     }
     case "empty":

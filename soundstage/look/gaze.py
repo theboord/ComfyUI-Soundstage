@@ -76,7 +76,9 @@ def person_sentence(scene: dict, a: dict, noun: str, moving: bool, driving: bool
     who = S.definite(noun)
     if not keys:
         if driving:
-            return f"{who} keeps {his} eyes on the road, {his} head steady from start to finish."
+            host = next((x for x in scene.get("actors") or [] if x.get("id") == a.get("mount_id")), None)
+            ahead = "the water ahead" if host and host.get("kind") in S.BT.BOAT_KINDS else "the road"
+            return f"{who} keeps {his} eyes on {ahead}, {his} head steady from start to finish."
         if moving:
             return f"{who} keeps {his} head steady, looking where {he} {'is' if he != 'they' else 'are'} going."
         return f"{who} holds {his} head still, facing the same way throughout."

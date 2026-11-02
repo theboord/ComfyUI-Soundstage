@@ -19,6 +19,7 @@ import { DriveMode, installDriveButton } from "./drive.mjs";
 import { buildSet, buildWater, buildWeather, buildTireSmoke, buildImpactFx } from "./environments.mjs";
 import { groundColor, groundReach, dressColor } from "./setlook.mjs";
 import { installSecondary } from "./secondary.mjs";
+import { installWatercraft } from "./watercraft.mjs";
 import { buildCard, loadBackdrop, coverFit } from "./cards.mjs";
 import { buildInterior, fixtureActors, interiorCamera, normalizeSpec, toStage } from "./interior.mjs";
 import { GLTFLoader } from "../vendor/addons/GLTFLoader.mjs";
@@ -1770,6 +1771,7 @@ export class Stage {
       const g = this.actorMeshes.get(a.id), host = this.state.actors.find((x) => x.id === a.mount_id);
       const hg = host && this.actorMeshes.get(host.id);
       if (!g || !hg) continue;
+      if (this._boatRider?.(a, g, host, hg)) continue;   // aboard a boat: its motion, the seat's pose, the stroke
       const m = MOUNTS[host.kind] || { pose: "sit", seat: [0, (host.height_m || 1) * 0.6, 0] };
       let k = (host.scale || 1) * (m.scaleWithHeight ? (host.height_m || m.refHeight) / m.refHeight : 1);
       let sp = m.seat;
@@ -3821,6 +3823,7 @@ export class Stage {
     const box = new THREE.Box3().setFromObject(g), h = Math.max(0.05, box.max.y - box.min.y);
     const kind = a.kind;
     if (LIBRARY[kind]?.boat) {
+      if (this._boatFloat?.(a, g, level)) return;   // the hull's own physics on the wave field (watercraft.mjs)
       // A boat sits at its waterline and rides the swell: heave, pitch and roll, the bow lifting with speed.
       const t = this.frame / fps, seed2 = [...String(a.id)].reduce((n, ch) => n + ch.charCodeAt(0), 0);
       const draft = kind === "jetski" ? 0.3 : kind === "boat" ? 0.45 : 0.6;
@@ -4509,3 +4512,4 @@ export class Stage {
 installParts(Stage, { vehicle: VehicleParts, light: LightRig, horse: HorseParts, prop: PropParts, LIGHT_TYPES, LIBRARY });
 // Secondary simulations and soft bodies (Milestone 28): see secondary.mjs.
 installSecondary(Stage, { LIBRARY, NO_COLLIDE, PERSON_KINDS, CAR_BODIES });
+installWatercraft(Stage, { LIBRARY, PERSON_KINDS });   // boats float on the wave field, wakes, spray, paddlers (watercraft.mjs)

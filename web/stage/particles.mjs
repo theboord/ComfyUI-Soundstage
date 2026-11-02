@@ -39,6 +39,9 @@ export const GROUND_PRESETS = Object.freeze({
   // with the current and settles back slowly (a few cm/s), instead of blowing away like dust in air.
   seabed_silt: { label: "Seabed silt", internal: true, dust: { color: [0.74, 0.69, 0.55], density: 0.6, buoy: -0.035, drag: 1.3, turb: 0.1, life: [5, 9], size: [0.16, 1.1] },
     debris: null },
+  // White water: the churn behind a propeller and a hull's wake foam. It hugs the water surface (secondary.mjs floorAt) and spreads.
+  foam: { label: "Foam", internal: true, dust: { color: [0.95, 0.97, 0.98], density: 0.75, buoy: -0.3, drag: 3.2, turb: 0.3, life: [1.8, 3.6], size: [0.35, 1.8] },
+    debris: null },
   tyre_smoke: { label: "Tyre smoke", internal: true, dust: { color: [0.86, 0.86, 0.86], density: 0.34, buoy: 0.5, drag: 1.1, turb: 0.8, life: [1.6, 2.8], size: [0.7, 3.2] },
     debris: null },
 });

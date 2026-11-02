@@ -13,6 +13,7 @@ import { cameraKeys, lightingPlan, gradePatch, crateStack, driveKeys, throwKeys,
 import { seabedHeight } from "../stage/sets/underwater.mjs";
 import { imperfectStack, idSeed } from "../stage/impacts.mjs";
 import { SOFT_PRESET_KINDS, softPreset } from "./softpresets.mjs";
+import { boatPreset, isBoat } from "./boatpresets.mjs";
 
 const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
 const DEG = Math.PI / 180;
@@ -59,7 +60,7 @@ export class PresetRunner {
     const sel = this.selected();
     if (isVehicle(sel)) return sel;
     if (sel?.mount_id) { const h = this._actors().find((a) => a.id === sel.mount_id); if (isVehicle(h)) return h; }
-    return this._actors().find((a) => isVehicle(a) && !/boat|ski|sail|catamaran/.test(a.kind)) || this._actors().find(isVehicle) || null;
+    return this._actors().find((a) => isVehicle(a) && !isBoat(a)) || this._actors().find(isVehicle) || null;
   }
   _person({ free = false } = {}) {
     const sel = this.selected();
@@ -206,6 +207,7 @@ export class PresetRunner {
     if (a.light) return this._light(p);
     if (a.look) return this._look(p);
     if (a.stunt) return this._stunt(p);
+    if (a.boat) return boatPreset(this, p);
     if (a.shake) return this._shake(p);
     if (a.physics) return this._physics(p);
     if (a.mount) return this._mount(p);
@@ -377,7 +379,7 @@ export class PresetRunner {
     if (!rider) return { ok: false, said: "Climb / mount needs a person on set." };
     const others = this._actors().filter((x) => x.id !== rider.id && x.id !== rider.mount_id);
     const host = others.find((x) => x.kind === "horse") || others.find((x) => RIDE_KINDS.has(x.kind))
-      || others.find((x) => isVehicle(x) && !/boat|sail|catamaran|ski/.test(x.kind)) || others.find((x) => LOW_PROPS.has(x.kind));
+      || others.find((x) => isVehicle(x) && !isBoat(x)) || others.find((x) => LOW_PROPS.has(x.kind));
     if (!host) return { ok: false, said: "Climb / mount needs a horse, a car or a crate on set to get onto." };
     if (LOW_PROPS.has(host.kind)) {
       const s2 = this.scene();

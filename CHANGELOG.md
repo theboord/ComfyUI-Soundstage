@@ -35,6 +35,13 @@ Each entry links to the code; every milestone ships with tests.
   - The western's man still wears no hat in the clay (default short hair): his hat comes only from the Look words.
   - No GPU render was made with these changes: the README media are re-rendered separately.
 
+**00:15 PST · Boats: speedboats, a fishing boat, sailing dinghy and yacht, canoe, kayak, rowboat, whitewater and log rafts, on real waves**
+- **Nine watercraft** with hulls lofted from the same stations their physics floats on ([web/stage/boatmesh.mjs](web/stage/boatmesh.mjs)), and Parts for every control: throttle, motor trim, rudder, sheet, boom, paddling effort, nav / anchor / deck lights.
+- **Boat physics** ([web/stage/boatsim.mjs](web/stage/boatsim.mjs)): buoyancy over ~100 hull columns on the wave field (heave, pitch, roll), Savitsky planing lift with transom ventilation and the hull's own wave (the bow climbs over the hump, then levels as it planes: 5–7° at the hump, ~1.5–3° planing), sails from the apparent wind with stall, luffing, cos² heel loss, a keel foil and the crew hiking, and paddle / oar strokes whose blade slip surges the hull each catch, with the people's arms on the paddle (two-bone IK) in sync.
+- **The water** ([web/stage/waves.mjs](web/stage/waves.mjs), [web/stage/watercraft.mjs](web/stage/watercraft.mjs)): a seeded JONSWAP wave field scaled to the sea state (glassy to rough; whitewater standing waves), drawn in the clay and Color guides to the horizon; Kelvin wake ribbons, bow spray, prop wash and paddle drips through the shared particles. New sets: **Lake** and **River rapids**. Drive mode drives boats on the same physics and records the strokes and throttle.
+- **Presets:** Speedboat run, Sailing tack, Canoe on a calm lake, Whitewater raft. Prompts say what boats do (planing, sailing heeled, paddling in time) and lock the water, not a "deserted street".
+- **Verified** (share/Boats): LTX Drafts of the speedboat run and the canoe. Flaws: the speedboat holds one raised trim (Klein's frame 1 is already running, so the hole shot is lost) and its crew grows from 2 to 3–4; the canoe gets a third paddler by the dock and swings the paddles overhead; the dinghy rolls ±25–30° through a tack; no capsize or rock collisions; the surface field is separate from the reef's optics waves (water.mjs). Tests: [tests/js/boats.test.mjs](tests/js/boats.test.mjs) (buoyancy equilibrium, righting, planing curve, heel against wind, the tack, stroke sync, determinism, Hs, hulls, wakes, presets), [tests/test_boat_words.py](tests/test_boat_words.py).
+
 ## 2026-11-01
 
 **23:20 PST · Swim verification: an exhale now carries a real breath of gas, so the bubble bursts read**

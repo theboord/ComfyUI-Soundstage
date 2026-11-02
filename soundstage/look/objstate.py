@@ -8,6 +8,7 @@ the driver's door swings open."). Pure Python.
 from __future__ import annotations
 
 ENUM_DEF = {"headlights": "auto", "brake": "auto", "indicator": "off", "lightbar": "off", "navlights": "off", "wipers": "off",
+            "anchor_light": "off", "deck_lights": "off",
             "finish": "factory", "damage_side": "front", "gait": "auto", "expression": "neutral"}
 CARS = {"car", "police_car", "sports_car", "hatchback"}
 PEOPLE = {"man", "woman", "child"}
@@ -30,6 +31,18 @@ def channels_for(kind: str) -> list[str]:
         return ["steer", "finish", "dirt"]
     if kind in ("boat", "jetski", "sailboat", "catamaran"):
         return ["headlights", "navlights", "finish", "dirt", "damage", "damage_side"]
+    if kind == "speedboat":
+        return ["throttle", "motor_trim", "rudder", "navlights", "anchor_light", "finish", "dirt", "damage", "damage_side"]
+    if kind == "fishing_boat":
+        return ["throttle", "rudder", "navlights", "deck_lights", "anchor_light", "finish", "dirt", "damage", "damage_side"]
+    if kind == "dinghy":
+        return ["sheet", "boom", "rudder", "finish", "dirt"]
+    if kind == "yacht":
+        return ["sheet", "boom", "rudder", "throttle", "navlights", "anchor_light", "finish", "dirt"]
+    if kind in ("canoe", "kayak", "rowboat", "raft"):
+        return ["effort", "rudder", "finish", "dirt"]
+    if kind == "log_raft":
+        return ["effort", "anchor_light", "dirt"]
     if kind == "airliner":
         return ["headlights", "navlights", "finish", "dirt"]
     if kind == "train":
@@ -91,6 +104,10 @@ def state_words(a: dict, frame: float = 0) -> list[str]:
             out.append(f"{i} turn signal blinking")
     if "brake" in has and v("brake") == "on":
         out.append("brake lights glowing red")
+    if "anchor_light" in has and v("anchor_light") == "on":
+        out.append("a white anchor light glowing at the masthead")
+    if "deck_lights" in has and v("deck_lights") == "on":
+        out.append("deck floodlights blazing over the work deck")
     if "navlights" in has and v("navlights") != "off":
         out.append("navigation lights and white strobes flashing" if v("navlights") == "strobe" else "red and green navigation lights on")
     for ch, w in DOORS.items():
