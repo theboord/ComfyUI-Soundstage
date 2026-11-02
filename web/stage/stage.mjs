@@ -2023,8 +2023,15 @@ export class Stage {
   /** Per-frame shot camera (for exports: Layer Pack camera, Nuke .chan, etc.). */
   cameraTrack() {
     const out = [];
-    for (let f = 0; f <= this._lastFrame(); f++) out.push({ frame: f, ...this._shotCameraAt(f) });
+    for (let f = 0; f <= this._lastFrame(); f++) out.push({ frame: f, ...this._filmCameraAt(f) });
     return out;
+  }
+
+  /** _shotCameraAt with the shot's Sensor (Parts) folded in: focal_mm as the full-frame focal with the same view, which
+   * is what the viewport and every capture show (objparts' _applyCamera crop). Exports and camera_track use this. */
+  _filmCameraAt(f) {
+    const c = this._shotCameraAt(f), crop = this._sensorCrop?.() || 1;
+    return crop === 1 ? c : { ...c, focal_mm: c.focal_mm * crop };
   }
 
   _applyCamera() {
