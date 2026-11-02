@@ -22,7 +22,7 @@ import numpy as np
 from .mix import SR, write_wav24
 
 SUB = "soundstage_sfx/gfx"
-VERSION = 1
+VERSION = 2   # 2: block-swept filters in C (the pack builds in well under a second)
 PANS = {"l": -0.4, "c": 0.0, "r": 0.4}
 
 
@@ -30,31 +30,54 @@ def _t(n):
     return np.arange(n, dtype=np.float64) / SR
 
 
-def _bandpass(x, f0, q):
-    """A resonant 2-pole band-pass (RBJ biquad, constant peak gain) at a fixed or per-sample f0."""
-    f0 = np.broadcast_to(np.asarray(f0, dtype=np.float64), x.shape)
-    y = np.zeros_like(x)
-    x1 = x2 = y1 = y2 = 0.0
-    for i in range(len(x)):
-        w = 2 * math.pi * min(f0[i], SR * 0.45) / SR
-        alpha = math.sin(w) / (2 * q)
-        a0 = 1 + alpha
-        b0, b2 = alpha / a0, -alpha / a0
-        a1, a2 = -2 * math.cos(w) / a0, (1 - alpha) / a0
-        yi = b0 * x[i] + b2 * x2 - a1 * y1 - a2 * y2
-        x2, x1, y2, y1 = x1, x[i], y1, yi
+try:   # scipy runs the filters in C; without it the same difference equations run in Python (slower, same sound)
+    from scipy.signal import lfilter as _lfilter
+except ImportError:  # pragma: no cover - the App's environment has scipy
+    _lfilter = None
+
+BLOCK = 32   # a swept filter holds its coefficients for 32 samples (0.67 ms)
+
+
+def _iir(b, a, x, zi=None):
+    """y = lfilter(b, a, x) with a carried state (direct form II transposed), scipy or not. Returns (y, zf)."""
+    n = max(len(a), len(b)) - 1
+    zi = np.zeros(n) if zi is None else zi
+    if _lfilter is not None:
+        return _lfilter(b, a, x, zi=zi)
+    b = np.pad(np.asarray(b, float) / a[0], (0, n + 1 - len(b)))
+    a = np.pad(np.asarray(a, float) / a[0], (0, n + 1 - len(a)))
+    z = list(zi)
+    y = np.empty(len(x))
+    for i, xi in enumerate(x):
+        yi = b[0] * xi + z[0]
+        for k in range(n - 1):
+            z[k] = b[k + 1] * xi + z[k + 1] - a[k + 1] * yi
+        z[n - 1] = b[n] * xi - a[n] * yi
         y[i] = yi
+    return y, np.array(z)
+
+
+def _biquad_bp(f0, q):
+    w = 2 * math.pi * min(float(f0), SR * 0.45) / SR
+    alpha = math.sin(w) / (2 * q)
+    return [alpha, 0.0, -alpha], [1 + alpha, -2 * math.cos(w), 1 - alpha]
+
+
+def _bandpass(x, f0, q):
+    """A resonant 2-pole band-pass (RBJ biquad, constant peak gain) at a fixed f0, or swept per BLOCK samples."""
+    f0 = np.broadcast_to(np.asarray(f0, dtype=np.float64), x.shape)
+    if np.all(f0 == f0[0]):
+        return _iir(*_biquad_bp(f0[0], q), x)[0]
+    y, z = np.empty_like(x), None
+    for i in range(0, len(x), BLOCK):
+        b, a = _biquad_bp(f0[i], q)
+        y[i:i + BLOCK], z = _iir(b, a, x[i:i + BLOCK], z)
     return y
 
 
 def _lowpass1(x, fc):
     a = math.exp(-2 * math.pi * fc / SR)
-    y = np.zeros_like(x)
-    acc = 0.0
-    for i in range(len(x)):
-        acc = (1 - a) * x[i] + a * acc
-        y[i] = acc
-    return y
+    return _iir([1 - a], [1.0, -a], x)[0]
 
 
 def _highpass1(x, fc):
@@ -62,15 +85,11 @@ def _highpass1(x, fc):
 
 
 def _pink(rng, n):
-    """Pink-ish noise (Paul Kellet's economy filter)."""
+    """Pink-ish noise (Paul Kellet's economy filter: three one-poles plus the white)."""
     w = rng.standard_normal(n)
-    b0 = b1 = b2 = 0.0
-    out = np.empty(n)
-    for i in range(n):
-        b0 = 0.99765 * b0 + w[i] * 0.0990460
-        b1 = 0.96300 * b1 + w[i] * 0.2965164
-        b2 = 0.57000 * b2 + w[i] * 1.0526913
-        out[i] = b0 + b1 + b2 + w[i] * 0.1848
+    out = w * 0.1848
+    for pole, g in ((0.99765, 0.0990460), (0.96300, 0.2965164), (0.57000, 1.0526913)):
+        out = out + _iir([g], [1.0, -pole], w)[0]
     return out / (np.std(out) + 1e-9)
 
 
@@ -87,7 +106,11 @@ def _room(x, pre_ms=12, level_db=-18, decay=0.18, seed=7):
     ir = rng.standard_normal(n) * np.exp(-_t(n) / decay)
     ir = _lowpass1(ir, 5000)
     ir /= np.sqrt(np.sum(ir ** 2)) + 1e-9
-    wet = np.convolve(x, ir)[: len(x) + n]
+    try:
+        from scipy.signal import fftconvolve
+        wet = fftconvolve(x, ir)[: len(x) + n]
+    except ImportError:  # pragma: no cover
+        wet = np.convolve(x, ir)[: len(x) + n]
     pre = int(pre_ms / 1000 * SR)
     out = np.zeros(len(x) + n + pre)
     out[: len(x)] += x
