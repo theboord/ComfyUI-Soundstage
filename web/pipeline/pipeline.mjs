@@ -956,6 +956,10 @@ export class Pipeline {
     if (usable) {
       this.set(9081, "depth_lock", mode === "off" ? 0 : DEPTH_LOCK);
       this.set(9081, "model", mode === "strict" ? turbo : f.model.value);
+    } else if (has && !krea) {
+      // another image model on the frame node: no Klein lock left behind (Krea 2 Turbo picked directly would
+      // otherwise paint Strict without asking, and the frame would be recorded as depth-locked)
+      this.set(9081, "depth_lock", 0);
     }
     f.depthNote.textContent = krea ? "always on with Krea 2 + depth" : !has ? "needs ComfyUI restarted (new frame node)" :
       !klein ? "FLUX 3 Klein only" : DEPTH_NOTES[mode];

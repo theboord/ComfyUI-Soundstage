@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LOOK_START, DEPTH_LOCK, depthLockFor, depthModeOf, isKreaTurbo, frameLockFor, frameDenoiseFor } from "../../web/pipeline/pipeline.mjs";
+import { Pipeline, LOOK_START, DEPTH_LOCK, depthLockFor, depthModeOf, isKreaTurbo, frameLockFor, frameDenoiseFor } from "../../web/pipeline/pipeline.mjs";
 import { depthTip } from "../../web/pipeline/framecheck.mjs";
 
 // ④ Frame "Lock to the stage depth" (soundstage/look/frame_lock.py VERSION 3): a frame records the depth pass it was
@@ -42,4 +42,33 @@ test("a Klein frame off its marks without the lock suggests Strict; ghosts and l
   assert.equal(depthTip(off, 0.5), "");
   assert.equal(depthTip({ verdict: "ok" }, 0), "");
   assert.equal(depthTip(null, 0), "");
+});
+
+// A fake frame node (9081) with the widgets _syncDepthLock touches.
+function fakePipeline(pickerModel, depthLock, mode) {
+  const klein = "FLUX 3 Klein · local [<$5M]", turbo = "Krea 2 Turbo · local [<$1M]";
+  const widgets = [{ name: "depth_lock", value: depthLock }, { name: "model", value: pickerModel, options: { values: [klein, turbo, "Z-Image Turbo · local"] } }];
+  const btn = (k) => ({ dataset: { k }, disabled: false, setAttribute() {} });
+  const p = Object.create(Pipeline.prototype);
+  p.ctx = { app: { graph: { _nodes: [{ id: 9081, widgets, properties: {} }] } } };
+  p.f = { model: { value: pickerModel }, depthSeg: { children: [btn("off"), btn("light"), btn("strict")] }, depthNote: {} };
+  p._dmode = mode;
+  return { p, widgets, klein, turbo };
+}
+
+test("switching from a locked Klein frame to another image model clears the lock on the frame node", () => {
+  const { p, widgets, klein, turbo } = fakePipeline("FLUX 3 Klein · local [<$5M]", 0, "light");
+  p._syncDepthLock();
+  assert.equal(widgets[0].value, DEPTH_LOCK);
+  assert.equal(p._depthLockNow(), DEPTH_LOCK);
+  for (const other of [turbo, "Z-Image Turbo · local"]) {
+    p.f.model.value = other;
+    widgets[1].value = other;
+    p._syncDepthLock();
+    assert.equal(widgets[0].value, 0, other);            // Krea 2 Turbo picked directly must not paint Strict unasked
+    assert.equal(p._depthLockNow(), 0, other);           // and its frames are not recorded as depth-locked
+  }
+  p.f.model.value = klein;
+  p._syncDepthLock();
+  assert.equal(widgets[0].value, DEPTH_LOCK);            // back on Klein, the chosen mode comes back
 });
