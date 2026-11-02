@@ -77,7 +77,7 @@ Just outside the top 10: **fSpy-style "match a still"** (GPL-3, idea only; the v
 - **Link:** https://github.com/carla-simulator/carla
 - **What it does:** an open driving simulator on Unreal. Its Traffic Manager drives hundreds of cars with lane following, junction priority, safe gaps, lane changes, and per-vehicle "aggression" and speed offsets.
 - **Licence:** `LICENSE`: "MIT License, Copyright (c) 2024 Computer Vision Center (CVC) at the Universitat Autonoma de Barcelona (UAB)". The README says its digital assets (urban layouts, buildings, vehicles) "can be used freely", and its Licenses section says "CARLA specific assets are distributed under the CC-BY License" (attribution required). Read the asset licence in the asset catalogue before copying any mesh; I did not verify it here.
-- **For us:** a "Traffic" layer for city and highway sets, modelled on the Traffic Manager's rules: lanes from the set's road splines, cars that yield, brake for the hero car and swerve from a stunt. Use our own Quaternius CC0 cars, already in the repo. A J-turn or chase through live traffic is a strong film moment. Also worth a look: Microsoft AirSim (`LICENSE`: "The MIT License (MIT)"; the repo is archived) for drone flight dynamics behind the drone and FPV camera rigs.
+- **For us:** a "Traffic" layer for city and highway sets, modelled on the Traffic Manager's rules: lanes from the set's road splines, cars that yield, brake for the hero car and swerve from a stunt. Use our own Quaternius CC0 cars, already in the repo. A J-turn or chase through live traffic is a strong film moment. Also worth a look: Microsoft AirSim (`LICENSE`: "The MIT License (MIT)") for drone flight dynamics behind the drone and FPV camera rigs.
 
 ### 8. KawaiiPhysics: spring-bone secondary motion (MIT)
 - **Link:** https://github.com/pafuhana1213/KawaiiPhysics (Unreal AnimNode plugin)
@@ -132,7 +132,7 @@ Reuse key: **R** = code or data reusable with attribution, **I** = idea only.
 |---|---|---|---|---|---|
 | KawaiiPhysics | github.com/pafuhana1213/KawaiiPhysics | Spring bones | **MIT** | R | #8 |
 | CARLA | github.com/carla-simulator/carla | Driving sim and Traffic Manager | **MIT** (code) | R | #7 |
-| AirSim | github.com/microsoft/AirSim | Drone and car sim (archived) | **MIT** | R | Quadrotor dynamics for a more physical drone/FPV rig |
+| AirSim | github.com/microsoft/AirSim | Drone and car sim | **MIT** | R | Quadrotor dynamics for a more physical drone/FPV rig |
 | Cesium for Unreal | github.com/CesiumGS/cesium-unreal | 3D Tiles: real-world terrain and cities | **Apache-2.0** | R | A "real place" set (CesiumJS for the browser is also Apache-2.0). Caution: Google Photorealistic 3D Tiles have their own terms of service; OSM buildings are ODbL |
 | ALS-Community | github.com/dyanikoglu/ALS-Community | C++ port of Advanced Locomotion System v4 | MIT, but the header says it is a port of the Marketplace blueprints ("LongmireLocomotion as developer of the blueprints used as reference") | I (treat as idea; its origin is a Marketplace product) | Overlay layering (upper-body pose over locomotion), lean into turns, foot-locking. Good reference for rider and carry poses |
 | Prefabricator | github.com/coderespawn/prefabricator-ue4 | Prefabs and randomised prefab collections | **MIT** | R | "Randomise this prop group" for set dressing; Soundstage Presets are close already |
