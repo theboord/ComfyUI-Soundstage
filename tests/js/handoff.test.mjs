@@ -100,3 +100,12 @@ test("an API graph is framed after it opens", async () => {
   assert.deepEqual(fitted, [100, 100, 1000, 580]);
   assert.equal(C.nodeBounds([]), null);
 });
+
+test("a phone clip the desktop can't fetch says so in the status line instead of throwing", async () => {
+  const said = [];
+  const api = { fetchApi: async () => ({ ok: false, status: 404 }) };
+  const f = await H.landPhoneClip({ type: "clip", ref: "r", name: "gone.mp4", dest: "motion" },
+    { api, say: (m) => said.push(m), capture: () => assert.fail("nothing to capture") });
+  assert.equal(f, null);
+  assert.match(said.at(-1), /Couldn't bring in the phone's clip: couldn't fetch the clip \(404\)/);
+});

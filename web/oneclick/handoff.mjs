@@ -53,9 +53,11 @@ export const destWords = (d) => (DESTS.find((x) => x[0] === d) || DESTS[0])[1];
 export async function landPhoneClip(info, host) {
   const say = host.say || (() => {});
   say(`A clip arrived from ${info.device || "the phone"} (${destWords(info.dest)}): bringing it in…`);
-  const f = await clipFile(host.api, info);
   const go = { motion: host.capture, performance: host.performance, footage: host.footage }[info.dest] || host.ask;
-  try { await (go || host.ask)(f, info); }
+  let f = null;
+  // the fetch too: this runs from an event listener, so a failed /view must end in the status line, not an
+  // unhandled rejection
+  try { f = await clipFile(host.api, info); await (go || host.ask)(f, info); }
   catch (e) { say(`Couldn't bring in the phone's clip: ${e.message}`); }
   return f;
 }
