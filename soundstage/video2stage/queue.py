@@ -6,6 +6,20 @@ import time
 import uuid
 
 
+async def drop_prompt(session, base_url: str, pid: str) -> None:
+    """Take one of our own prompts off the queue: delete it if pending, interrupt it only if it is the one running."""
+    try:
+        async with session.post(f"{base_url}/queue", json={"delete": [pid]}):
+            pass
+        async with session.get(f"{base_url}/soundstage/queue_summary", params={"ids": pid}) as r:
+            q = await r.json()
+        if any(it.get("prompt_id") == pid and it.get("state") == "running" for it in q.get("items") or []):
+            async with session.post(f"{base_url}/interrupt", json={"prompt_id": pid}):
+                pass
+    except Exception:  # noqa: BLE001 - best effort; the job is cancelled either way
+        pass
+
+
 async def run_graph(base_url: str, graph: dict, what: str, timeout_s: float = 900.0, on_wait=None) -> tuple[dict, dict]:
     """Queue a prompt and wait for it. Returns (outputs by node id, timings) or raises with the queue's error."""
     import aiohttp
@@ -20,16 +34,20 @@ async def run_graph(base_url: str, graph: dict, what: str, timeout_s: float = 90
             err = body.get("error") or body
             nerr = body.get("node_errors")
             raise RuntimeError(f"the queue refused the {what} job: {err}{f' {nerr}' if nerr else ''}")
-        while True:
-            await asyncio.sleep(1.0)
-            async with s.get(f"{base_url}/history/{pid}") as r:
-                h = await r.json()
-            if pid in h:
-                break
-            if on_wait:
-                on_wait(time.perf_counter() - t0)
-            if time.perf_counter() - t0 > timeout_s:
-                raise TimeoutError(f"{what} still queued after {timeout_s:.0f} s (job {pid} left in the queue)")
+        try:
+            while True:
+                await asyncio.sleep(1.0)
+                async with s.get(f"{base_url}/history/{pid}") as r:
+                    h = await r.json()
+                if pid in h:
+                    break
+                if on_wait:
+                    on_wait(time.perf_counter() - t0)
+                if time.perf_counter() - t0 > timeout_s:
+                    raise TimeoutError(f"{what} still queued after {timeout_s:.0f} s (job {pid} left in the queue)")
+        except asyncio.CancelledError:   # the rebuild was cancelled: its GPU job goes too, nobody else's
+            await asyncio.shield(drop_prompt(s, base_url, pid))
+            raise
     entry = h[pid]
     status = entry.get("status", {})
     if status.get("status_str") != "success":

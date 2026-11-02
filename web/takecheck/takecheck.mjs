@@ -14,7 +14,7 @@
 //               vision model inspects cars, faces and hands; "✗ AI slop: rear lights incoherent, f24–64" is a red chip
 //               and a failed Hollywood take gets ONE automatic re-roll offer per shot. Any take: the Judge button.
 // The pure parts (chips, scores, estimates, readiness, the MP4 tag reader) are in model.mjs.
-import { takeChips, blockingChip, realismChip, rerollOffer, fileOfUrl, annotated, estimateLabel, estimateSeconds, finalRung, readiness, readinessChip,
+import { takeChips, blockingChip, realismChip, rerollOffer, fileOfUrl, annotated, estimateLabel, estimateSeconds, finalRung, renderPreset, readiness, readinessChip,
   readFileTags, recipeFromTags, loadRecipeScene, recipeLine, MODELS_DOC_URL } from "./model.mjs";
 import { loaderWidgets, allNodes } from "../ui/modelguard.mjs";
 import { planModelFixes } from "../ui/modelmatch.mjs";
@@ -193,6 +193,7 @@ export function attachTakeChecks(ctx) {
     const k = keyOf(file);
     if (judging.has(k)) return null;
     judging.add(k); notify(k); renderStrip();
+    const sk0 = shotKey();   // the judge takes ~a minute: the re-roll offer is for the shot this take came from
     let r;
     try {
       r = await (await api.fetchApi("/soundstage/takecheck/realism", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file }) })).json();
@@ -202,13 +203,14 @@ export function attachTakeChecks(ctx) {
     if (have) have.realism = r;
     notify(k); renderStrip();
     if (r?.verdict === "fail") say(`Realism judge: ${realismChip(r).text.replace(/^✗ /, "")} (score ${r.score}/10).`);
-    const sk = shotKey();
-    if (auto && rung === 4 && rerollOffer(have || { hollywood: true, realism: r }, sk, offered)) {
+    const sk = sk0;
+    if (auto && rung === 4 && shotKey() === sk && rerollOffer(have || { hollywood: true, realism: r }, sk, offered)) {
       offered.add(sk);
       const d = (r.defects || []).map((x) => `• ${x.label}`).join("\n");
-      const est = estimateLabel(estimateSeconds(timing, finalRung(pipeline?.m?.quality), frames()));
+      const est = estimateLabel(estimateSeconds(timing, finalRung(renderPreset(pipeline)), frames()));
       const pick = await choose("This Hollywood take looks generated", `The realism judge failed it (${r.score}/10):\n${d}\n\nRe-roll it once with a new seed? (${est})`, ["Re-roll once", "Keep it"]);
-      if (pick === 0) reroll(4, { asked: true });
+      if (pick === 0 && shotKey() === sk) reroll(4, { asked: true });   // re-rolls the active shot: still this one?
+      else if (pick === 0) say("Re-roll skipped: you switched shots while it asked. Go back to that shot to re-roll it.");
     }
     return r;
   }
@@ -224,7 +226,7 @@ export function attachTakeChecks(ctx) {
   const frames = () => ctx.stage?.state?.shot?.frames || ctx.stage?.toJSON?.().shot?.frames || 121;
   async function reroll(rung, { asked = false } = {}) {
     const kind = rung === 4 ? "final" : "draft";
-    const r = rung === 4 ? finalRung(pipeline?.m?.quality) : "draft";
+    const r = rung === 4 ? finalRung(renderPreset(pipeline)) : "draft";
     const est = estimateLabel(estimateSeconds(timing, r, frames()));
     const shot = ctx.stage?.activeShot?.()?.name || "this shot";
     if (!asked) {
@@ -309,7 +311,7 @@ export function attachTakeChecks(ctx) {
     let shots = 1;
     try { shots = Math.max(1, pipeline.shots().length); } catch { /* */ }
     const h3 = /MiniMax H3/.test(m?.engine?.value || "");
-    const fin = h3 ? 1500 : estimateSeconds(timing, finalRung(m?.quality), n);
+    const fin = h3 ? 1500 : estimateSeconds(timing, finalRung(renderPreset(pipeline)), n);
     setEst(f?.goBtn, estimateSeconds(timing, "frame", 1, f?.count || 4), "Generate frames");
     setEst(f?.allBtn, estimateSeconds(timing, "frame", 1, (f?.count || 4) * shots), "Frames for every shot");
     setEst(m?.draftBtn, estimateSeconds(timing, "draft", n), "Draft");

@@ -112,3 +112,12 @@ try:
 except Exception:  # noqa: BLE001 - never let one feature stop the pack loading
     import logging as _lg
     _lg.getLogger(__name__).exception("Soundstage: could not register the one-click routes")
+
+
+# Track B one-clicks: Open in ComfyUI per take, Seamless loop, Reshoot (soundstage/handoff/routes.py)
+try:
+    from .handoff import routes as _handoff_routes
+    _handoff_routes.register()
+except Exception as _exc:  # noqa: BLE001 - never stop the pack loading
+    import logging as _logging
+    _logging.exception("Soundstage: could not register the hand-off routes: %s", _exc)

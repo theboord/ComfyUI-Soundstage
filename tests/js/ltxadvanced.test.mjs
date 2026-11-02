@@ -23,7 +23,7 @@ test("a shot without settings renders Final, not Draft", () => {
 
 test("overrides are clamped and only the differences are saved", () => {
   const s = resolveSettings({ preset: "Draft", resolution: 1e6, steps_1: 1, cfg: 0, crf: -3, codec: "gif", sampler: "nope", seed: 9 });
-  assert.deepEqual([s.resolution, s.steps_1, s.cfg, s.crf, s.codec, s.sampler, s.seed], [2176, 4, 1, 0, "h264", "euler_ancestral", 9]);
+  assert.deepEqual([s.resolution, s.steps_1, s.cfg, s.crf, s.codec, s.sampler, s.seed], [2176, 8, 1, 0, "h264", "euler_ancestral", 9]);
   assert.deepEqual(compactSettings({ preset: "Final" }), { preset: "Final" });
   assert.deepEqual(compactSettings({ preset: "Final", steps_1: 14, crf: PRESETS.Final.crf }), { preset: "Final", steps_1: 14 });
   assert.deepEqual(compactSettings({ preset: "Hollywood", codec: "prores_hq", decode: PRESETS.Final.decode }).codec, "prores_hq");

@@ -217,6 +217,16 @@ def _cloud(peak: float, puff: str) -> str:
     return f"a burst of {puff}"
 
 
+# On a wet road a sliding tyre throws spray and mist, not dense white smoke (the stunt sim draws it as low, short-lived
+# spray: web/stage/vehsim.mjs). Dense smoke on a wet J-turn reads as a drift video, never as Ford v Ferrari or F1.
+def _mist(peak: float) -> str:
+    if peak >= 0.75:
+        return "a fine sheet of spray and mist, with a thin wisp of steam at the contact patch,"
+    if peak >= 0.4:
+        return "a fine sheet of spray and mist"
+    return "a light mist of spray"
+
+
 def _tyres(which: str, fallback: str) -> str:
     return {"all": "all four tyres", "front": "the front tyres", "rear": "the rear tyres"}.get(which, f"the {fallback} tyres")
 
@@ -241,13 +251,51 @@ def _degrees_words(turn: float) -> str:
     return f"{int(round(turn / 45.0) * 45) or 90} degrees"
 
 
-def stunt_mark(a: dict, frames: int, fps: float, pos_at: PosAt, fwd: tuple, right: tuple, spray: bool = False) -> tuple[str, str] | None:
+# A camera riding the stunt car (bumper, over the tyre, the hood, inside): the car never moves in frame, so the stunt is
+# what the world does around it. Without these words LTX gets "the camera stays locked to the car" and a street that
+# whips round for no reason. What the tyres throw is said where the camera can see it: beside the lens on the tyre
+# mount, past the windows from inside or the hood, not at all from the bumper (the tyres are behind the lens).
+RIDE_WORDS = {
+    "reverse_jturn": "the {noun} races backwards, then the driver flicks the wheel and it slides round 180 degrees in one long, "
+                     "scrubbing arc and drives off nose first, so the street whips round the frame",
+    "handbrake_180": "the driver yanks the handbrake and the {noun} slides round 180 degrees in one long arc, so the street "
+                     "whips round the frame",
+    "donut": "the {noun} spins tight circles on the spot, so the street wheels round and round the frame",
+}
+
+
+def ride_words(a: dict, noun: str, wet: bool = False, where: str = "wheel", framing: str = "") -> str:
+    """One sentence for a camera riding on a stunt car: what the car does, and what its tyres throw where the camera can
+    see it. where: the vehicle_camera placement ("wheel", "bumper", "hood", "interior")."""
+    if not is_stunt(a):
+        return ""
+    base = RIDE_WORDS.get(a.get("stunt") or "", "the {noun} slides through its stunt, so the street whips round the frame")
+    wet = wet or (a.get("stunt_sim") or {}).get("surface") == "wet"
+    smoke = ""
+    if _smoke(a) != 0 and where != "bumper":
+        if where == "wheel":
+            smoke = (", a fine sheet of spray and mist peeling off the tyre right beside the lens" if wet
+                     else ", white tyre smoke pouring off the tyre right beside the lens")
+        elif framing in ("windshield", "hood_forward") or where == "hood":
+            smoke = ", spray and mist streaming past the hood" if wet else ", white tyre smoke billowing past the hood"
+        else:
+            smoke = ", spray and mist streaking past the windows" if wet else ", white tyre smoke billowing past the windows"
+    text = base.format(noun=noun) + smoke
+    return text[:1].upper() + text[1:] + "."
+
+
+def stunt_mark(a: dict, frames: int, fps: float, pos_at: PosAt, fwd: tuple, right: tuple, spray: bool = False,
+               ground: str | None = None) -> tuple[str, str] | None:
     """(verb phrase, way) for the motion prompt's mark sentence, beat by beat, or None for an ordinary car.
 
     The reverse J-turn: "races backwards toward the camera, rear end first, its red tail lights and white reverse lights
     glowing; the driver lifts and flicks the wheel: the front swings wide and the whole car slides around 180 degrees
     in one long, scrubbing arc, ...; it wobbles straight on its springs, now facing the way it is moving, ... and drives
-    forward"."""
+    forward".
+
+    What the tyres throw follows the ground: on a wet road (spray, or the stunt's Road: Wet) or snow a fine sheet of
+    spray and mist, never dense smoke; on loose ground (ground "dirt": the desert, beach, forest) dust and grit; on a dry road
+    white tyre smoke as thick as the clay draws it."""
     if not is_stunt(a):
         return None
     bs = [b for b in beats(a, frames, fps, pos_at) if b["beat"] != "stop" or b["end"] - b["start"] > 8]
@@ -255,8 +303,9 @@ def stunt_mark(a: dict, frames: int, fps: float, pos_at: PosAt, fwd: tuple, righ
         return None
     smoke_amt = _smoke(a)
     baked = bool(_smoke_keys(a))       # the stunt sim's per-frame smoke: say it as thick as the clay draws it
-    spray = spray or (a.get("stunt_sim") or {}).get("surface") == "wet"
-    puff = "white tyre smoke and spray" if spray else "white tyre smoke"
+    dust = ground == "dirt"
+    spray = (spray or ground == "snow" or (a.get("stunt_sim") or {}).get("surface") == "wet") and not dust
+    puff = "dust and grit" if dust else "white tyre smoke"
     parts: list[str] = []
     prev = None
     for i, b in enumerate(bs):
@@ -266,7 +315,9 @@ def stunt_mark(a: dict, frames: int, fps: float, pos_at: PosAt, fwd: tuple, righ
             verb = "races backwards" if b["speed"] > 6 else "reverses"
             parts.append(f"{'then ' if parts else ''}{verb} {way}, rear end first, its red tail lights and white reverse lights glowing, "
                          "the driver twisted round looking back over the seat"
-                         + (f", smoke starting to curl off {_tyres(wheels, 'front')}" if baked and peak >= 0.3 else ""))
+                         + ((f", a fine mist starting to lift off {_tyres(wheels, 'front')}" if spray else
+                             f", dust starting to kick up off {_tyres(wheels, 'front')}" if dust else
+                             f", smoke starting to curl off {_tyres(wheels, 'front')}") if baked and peak >= 0.3 else ""))
         elif b["beat"] == "spin":
             turn = b["turn_deg"]
             if a.get("stunt") in ("reverse_jturn", "handbrake_180") and 120 < turn < 240:
@@ -275,10 +326,16 @@ def stunt_mark(a: dict, frames: int, fps: float, pos_at: PosAt, fwd: tuple, righ
             nxt = bs[i + 1]["beat"] if i + 1 < len(bs) else ""
             donut = turn > 300 or (a.get("stunt") == "donut" and turn > 200)
             which = "rear" if prev == "forward" or donut else "front"
-            if baked and peak > 0.05:
+            if baked and peak > 0.05 and spray:
                 t0 = next((f for f in range(b["start"], b["end"] + 1) if smoke_at(a, f) >= 0.3), b["start"]) / fps
-                tail = (f"; from {t0:.1f} s {_cloud(peak, puff)} pour off {_tyres(wheels, which)}, rolling out across the road "
+                tail = (f"; from {t0:.1f} s {_mist(peak)} peels off {_tyres(wheels, which)} and hangs low over the road "
+                        f"around {'the car' if wheels == 'all' else 'the ' + (wheels or which) + ' of the car'}")
+            elif baked and peak > 0.05:
+                t0 = next((f for f in range(b["start"], b["end"] + 1) if smoke_at(a, f) >= 0.3), b["start"]) / fps
+                tail = (f"; from {t0:.1f} s {_cloud(peak, puff)} {'kick up' if dust else 'pour'} off {_tyres(wheels, which)}, rolling out across the {'ground' if dust else 'road'} "
                         f"and wrapping round {'the car' if wheels == 'all' else 'the ' + (wheels or which) + ' of the car'}")
+            elif smoke and spray:
+                tail = f", a fine sheet of spray and mist peeling off the {which} tyres"
             else:
                 tail = f", a thick burst of {puff} pouring off the {which} tyres" if smoke else ""
             if donut:
@@ -295,13 +352,16 @@ def stunt_mark(a: dict, frames: int, fps: float, pos_at: PosAt, fwd: tuple, righ
                 parts[-1] += ", rocking to a stop on its springs"
         elif b["beat"] == "forward":
             if prev in ("spin", "stop"):
-                if baked and peak >= 0.4:
-                    trail = (f", bursting out of its own cloud with {_tyres(wheels, 'rear')} still pouring thick {puff}, "
-                             "leaving a wall of white smoke hanging over the road behind it")
+                if baked and peak >= 0.4 and spray:
+                    trail = (f", pulling away through its own mist with {_tyres(wheels, 'rear')} still throwing a fine spray, "
+                             "a thin haze of mist hanging low over the road behind it")
+                elif baked and peak >= 0.4:
+                    trail = (f", bursting out of its own cloud with {_tyres(wheels, 'rear')} still {'throwing' if dust else 'pouring'} thick {puff}, "
+                             f"leaving a wall of {'dust hanging in the air' if dust else 'white smoke hanging over the road'} behind it")
                 elif baked and peak > 0.05:
-                    trail = ", trailing white tyre smoke"
+                    trail = ", trailing a fine spray" if spray else f", trailing {puff}"
                 else:
-                    trail = ", trailing smoke" if smoke_amt != 0 else ""
+                    trail = (", trailing spray" if spray else ", trailing dust" if dust else ", trailing smoke") if smoke_amt != 0 else ""
                 parts.append(f"it wobbles straight on its springs, now facing the way it is moving, the rear squats as the driver feeds in the throttle and it "
                              f"drives forward, nose first, {way}" + trail)
             else:
@@ -312,9 +372,14 @@ def stunt_mark(a: dict, frames: int, fps: float, pos_at: PosAt, fwd: tuple, righ
         prev = b["beat"]
     if not any(b["beat"] in ("reverse", "spin") for b in bs):
         return None
-    if baked and smoke_amt >= 0.4:
+    if baked and smoke_amt >= 0.4 and spray:
         end = smoke_at(a, frames - 1)
-        parts.append("the smoke is dense and white, as thick as the tyres make it, and it "
+        parts.append("the mist stays thin and low over the wet road, never a cloud of smoke, and it "
+                     + ("is still hanging there at the end of the shot" if end >= 0.25 or smoke_amt >= 0.75
+                        else "settles quickly once the tyres stop sliding"))
+    elif baked and smoke_amt >= 0.4:
+        end = smoke_at(a, frames - 1)
+        parts.append(("the dust is thick and pale" if dust else "the smoke is dense and white") + ", as thick as the tyres make it, and it "
                      + ("is still hanging in the air, rolling slowly, at the end of the shot" if end >= 0.25 or smoke_amt >= 0.75
-                        else "thins out slowly once the tyres stop smoking"))
+                        else f"thins out slowly once the tyres stop {'sliding' if dust else 'smoking'}"))
     return "; ".join(parts), ""

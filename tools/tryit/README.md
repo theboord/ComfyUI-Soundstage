@@ -49,6 +49,7 @@ node tools/tryit/test_tryit.mjs http://127.0.0.1:8771/local.html /tmp/tryit_shot
 - opens the Director, Presets, the Timeline, Hollywood quality, the take-check chips and the phone viewfinder, and checks the full-install notes;
 - replays the recorded Video → 3D run through the App's chooser and checks the rebuilt set and the Identical? bar;
 - runs every tour stop;
+- checks the Live / Replayed badge: Live on the stage, Replayed on ④ Frame, ⑦ Deliver, ScriptSync and the Timeline, during the Video → 3D replay, on every Watch clip and the first screen;
 - checks the phone width.
 
 It saves a screenshot of each.
@@ -69,12 +70,14 @@ picks skip it.
 | `shell/index.html`, `shell/demo.mjs` | The page: the scene picker, the What's new tour and the clip player, around the real App widget. |
 | `shell/scripts/api.js`, `app.js`, `glbshim.js` | The stand-in ComfyUI. See "The shims" below. |
 | `shell/tour.json` | The What's new stops. Each has a scene, an action (`do`), text and optional clips (`r/<file>`). |
+| `shell/provenance.mjs` | The Live / Replayed badge rules: a step that shows a shot's recorded renders (④ to ⑦, plus the joined cut on ⑦), the tabs that show saved results (Shot ideas, Look, Takes, the Timeline), the Video → 3D replay, every tour clip and the first screen are Replayed; the stage is Live. The shell reads which tab is on screen from the stage root's classes, so the badge follows the screen, not the last step. Worked out from `ss_renders`, `candidates`, the saved `advisor`, `compile` and `cut`, `tour.json` and the packed run, so new scenes and clips are labelled on their own. A new tour action must be added to `REPLAY_ACTIONS` or `LIVE_ACTIONS` (tests/js/tryit_provenance.test.mjs checks). |
 | `scenes/*.json` | The demo scenes: the stage, node properties (`ss_renders`, `ss_script`, `ss_cut`), widgets, the precomputed Look and Advisor, and `candidates` (the ④ Frame variations the replay cycles through). |
 | `pack_v2s.py` | Packs one real Video → 3D run (a `tools/v2s_bench/devrun.py` result folder and its set GLB) into the media cache as `r/canned/v2s_run.json`. Rebuild in the demo replays it: the progress card walks the run's measured steps in 9 s, then the App loads the real result scene through its own code and opens the Identical? bar. Only the demo clip replays; a visitor's own clip gets the full-install note. |
 | `make_scenes.mjs` | Remakes the generated scenes with the real App in a hidden Chrome: `drycreek`, `stunt`, `physics` and the seven new sets. The new sets are set up from sluglines. Run it against a local build, then build again. `ONLY=stunt,fire` limits it. |
 | `media.json` | Clips and stills encoded into the media cache from `share/`. |
 | `published.json` | The sha256 of every live file, written by `--mark-published`. |
 | `test_tryit.mjs` | The click-through test. |
+| `verify_tour.mjs` | Every tour stop through its own button and every Watch clip at one size (`SIZE=390x844`): clips play, nothing clipped, no sideways scroll. |
 
 ### The shims
 

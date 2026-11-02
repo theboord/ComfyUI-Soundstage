@@ -22,7 +22,16 @@ to the camera, half the frame wide", and Klein painted a ghost red car in the fo
 (M28) - share/GhostCar_DetailLoss. Now an object is only where its colour is solid (a pixel whose 8 neighbours are the
 same flat colour) and what is joined to that; seams go to the object they border.
 
-Pure numpy; the 3D Stage node calls frame1_layout() and the router reads stage_denoise().
+3. "Lock to the stage depth" (VERSION 3, docs/decisions.md 2026-11-02, share/OneClick/C): Klein still has no depth
+   control, so a ghost or a resized car can survive the blurred start. With depth_lock on, the frame gets a pass on
+   Krea 2 Turbo + the Krea2 depth-control LoRA steered by the stage's exact depth pass (control_image):
+   - FLUX 3 Klein: Klein paints the frame as before, then Krea 2 repaints it at denoise `depth_lock` (about 0.5) held
+     to the depth pass, so the silhouettes snap back to the stage while Klein's look and cast likeness mostly stay.
+   - Krea 2 Turbo: the frame itself is painted on Krea 2 from the same blurred Color-pass start at stage_denoise,
+     held to the depth pass. Cast pictures are not used: the Krea 2 identity-edit patch overrides the depth hold.
+   0 (or missing) = off, the VERSION 2 way, so every frame picked before reproduces.
+
+Pure numpy; the 3D Stage node calls frame1_layout() and the router reads stage_denoise() and depth_lock().
 """
 from __future__ import annotations
 
@@ -30,11 +39,16 @@ import math
 
 import numpy as np
 
-VERSION = 2               # web/pipeline/pipeline.mjs LOOK_START: frames made from 2 on carry the lock and the layout
+VERSION = 3               # web/pipeline/pipeline.mjs LOOK_START: frames made from 2 on carry the lock and the layout;
+                          # from 3 on they also record depth_lock (0 = off, how every older frame was painted)
 DEFAULT_DENOISE = 0.90    # the frame node's stage_denoise default (measured: share/FirstFrame_Gaze/REPORT.txt)
 INIT_DOWN = 16            # the latent starts from the Color pass shrunk 16x and blown back up: layout and colour only.
                           # A sharp start (tested at 0.75) made Klein keep the clay mannequins; from noise it recomposed.
 MIN_DENOISE = 0.3
+DEPTH_LOCK = 0.5          # the Klein frame's Krea 2 depth pass denoise when "Lock to the stage depth" is on
+DEPTH_LOCK_MIN = 0.2      # below this the depth pass changes nothing a check can see
+DEPTH_LOCK_MAX = 0.9      # above this it is a new Krea frame, not Klein's frame held to the depth
+KREA_STEPS = 8            # Krea 2 Turbo's distilled schedule (8 steps, cfg 1, euler_ancestral / beta)
 MIN_AREA = 0.0006         # an actor smaller than this fraction of the frame is not stated (a far police light bar)
 FLAT = 0.08               # an ID pixel this close (RGB distance, 0..1) to a palette colour is that flat colour
 MIN_FILL = 0.03           # a box its own pixels fill less than this is strewn pixels, not an object (the ghost: 0.014)
@@ -48,6 +62,17 @@ def stage_denoise(v) -> float:
     except (TypeError, ValueError):
         return 1.0
     return round(max(MIN_DENOISE, min(1.0, x)), 3)
+
+
+def depth_lock(v) -> float:
+    """The depth pass's denoise; 0.0 = off (anything missing, zero or unreadable: frames from before VERSION 3)."""
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return 0.0
+    if not x > 0:
+        return 0.0
+    return round(max(DEPTH_LOCK_MIN, min(DEPTH_LOCK_MAX, x)), 3)
 
 
 def _srgb(c: np.ndarray) -> np.ndarray:

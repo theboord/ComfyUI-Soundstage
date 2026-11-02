@@ -2021,5 +2021,72 @@
       "Happy Together"
     ],
     "notes": "Movement id hong_kong_second_wave (kb points at technique.step_print_smear)."
+  },
+  {
+    "id": "racing_cinema",
+    "label": "Racing Cinema",
+    "group": "Genre",
+    "summary": "Ford v Ferrari and F1: a wet-down road with a fine sheet of spray off the tyres (dense smoke only on a dry road), real shutter blur on the wheels, the car crisp, a grounded film grade. Car words only on shots with a moving car in frame. Grounded and filmic, never a game.",
+    "look": {
+      "camera_body": "arri_alexa_mini_lf",
+      "lens": "large_format_anamorphic",
+      "aperture": "f2_8",
+      "film_stock": "film_emulation_lut",
+      "palette": "racing_grounded",
+      "genre": "action",
+      "subgenre": "action.motorsport",
+      "movement": "",
+      "era": "",
+      "technique": "",
+      "mood": "tension",
+      "energy": "dynamic",
+      "grade": {
+        "contrast": 0.35,
+        "saturation": -0.2,
+        "warmth": 0.0,
+        "grain": 0.15,
+        "halation": 0.05,
+        "vignette": 0.2
+      }
+    },
+    "suggest": {
+      "film_stocks": [
+        "film_emulation_lut",
+        "kodak_250d",
+        "arri_log_look"
+      ],
+      "lenses": [
+        "large_format_anamorphic",
+        "anamorphic",
+        "clean_sharp",
+        "long_tele"
+      ],
+      "focal_range_mm": [
+        14,
+        135
+      ],
+      "apertures": [
+        "f2_8",
+        "f4"
+      ]
+    },
+    "craft": {
+      "lighting": "Overcast or the blue minutes after sunset with no direct sun on a wet road (F1's Monza recipe), or hard sun on dry asphalt (Ford v Ferrari's daytime). Negative fill so dark paint and carbon fibre keep their shape.",
+      "camera_movement": "Hard mounts that keep the road's vibration in the frame (bumper, over the front tyre), an arm car pacing alongside, and a long lens panning from trackside. Never a floaty, weightless glide.",
+      "framing": "Low, with asphalt in frame to sell speed; wide lenses close to the car; a long lens to stack cars and frame a whole spin.",
+      "shot_tips": [
+        "Pair a long-lens pan (the whole 180 and its spray in one frame) with the over-the-tyre mount (the tyre and the spray at the contact patch): the strongest pair for a J-turn",
+        "Keep the wet believable: only slight reflections on the road, standing water only in the low spots; a flooded, mirror-like road reads fake",
+        "A 180-degree shutter is standard practice, not a published fact for either film: the wheels blur, the background streaks only when the camera pans with the car",
+        "Don't speed shots up: both films did it only slightly, or people look like bobbleheads and the spray looks wrong",
+        "The stunt's Road setting picks the surface: Wet for spray and mist, Dry for rubber marks, heat shimmer and white tyre smoke; the desert, beach and snow sets get dust or slush instead"
+      ]
+    },
+    "references": [
+      "Ford v Ferrari",
+      "F1 (2025)",
+      "Grand Prix (1966)"
+    ],
+    "notes": "No focal_mm: a style's focal length is keyed at the playhead and would zoom a shot that already has keys. Shutter angle has no vocab id; it is in the motion-blur words of the motorsport subgenre. The 2.39:1 frame is a stage setting (the look can't change the aspect). Craft notes are reported practice from trade press (American Cinematographer and Film and Digital Times on Ford v Ferrari; trade coverage of F1), not verified against the productions."
   }
 ]

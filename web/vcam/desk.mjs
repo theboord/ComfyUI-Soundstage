@@ -9,10 +9,13 @@
 //  - A finished take arrives as a "take" event: its camera keys (position, aim, focal length, focus, T-stop, roll) go onto
 //    the current shot, the rig is set to Free (the take is the move), it plays back, and the phone is told. Keep leaves it;
 //    Discard (on the phone) puts the previous keys back.
+//  - The QR also carries a clip code: the phone's "Film a move" sends a real clip back (web/oneclick/handoff.mjs lands it).
 
 import { qrSvg } from "./qr.mjs";
 import { openPopover } from "../ui/popover.mjs";
 import { takeToKeys, viewfinderUrl, isLoopback, VF_EVENT, fmtStop, fmtFocus } from "./vfcore.mjs";
+import { withClipCode } from "./film.mjs";
+import { clipCode } from "../oneclick/handoff.mjs";
 
 const CSS = `
 .ss-vf-pop { position:fixed; z-index:100000; width:300px; background:#17141b; color:#ece8ee; border:1px solid rgba(255,255,255,.14);
@@ -143,7 +146,8 @@ export function attachViewfinder({ api, stage, host, seek = null, play = null, s
   async function pairUrl() {
     let pair = null;
     try { pair = await (await api.fetchApi("/soundstage/vcam/pair")).json(); } catch { /* */ }
-    return viewfinderUrl(location.origin + (api.api_base || ""), pair);
+    // the clip code lets the phone's "Film a move" send a real clip back here (web/vcam/film.mjs)
+    return withClipCode(viewfinderUrl(location.origin + (api.api_base || ""), pair), await clipCode(api));
   }
   async function open() {
     if (pop) { close(); return; }
@@ -159,7 +163,7 @@ export function attachViewfinder({ api, stage, host, seek = null, play = null, s
       ${loop ? `<div class="warn">This address is this computer only. For a phone on the same Wi-Fi, run <b>python3 tools/vcam_bridge.py</b> on this Mac (docs/vcam.md): the QR then points at it.</div>` : ""}
       <div class="st"><i></i><span class="stt">No phone yet</span></div>
       <label><input type="checkbox" ${follow ? "checked" : ""}> Show the phone's camera on this stage</label>
-      <ol><li>Same Wi-Fi as this computer, phone sideways.</li><li>Tap <b>Start</b>, allow motion.</li><li>● records from the top of the shot; Keep or Discard on the phone.</li></ol>`;
+      <ol><li>Same Wi-Fi as this computer, phone sideways.</li><li>Tap <b>Start</b>, allow motion.</li><li>● records from the top of the shot; Keep or Discard on the phone.</li><li><b>Film</b> records a real clip with the phone's camera: it lands here as Capture motion, Real performance or Footage.</li></ol>`;
     pop.querySelector("h4 button").addEventListener("click", close);
     pop.querySelector("input").addEventListener("change", (e) => { follow = e.target.checked; if (!follow) stage.previewCamera(null); });
     // the App's pop-over layer (ui/popover.mjs): flipped, clamped and scrolling inside a short window; Esc and an

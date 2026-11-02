@@ -217,7 +217,7 @@ export async function stageAnimatedGLB(stage, { probes = true } = {}) {
   if (s.interiorGroup) rename(s.interiorGroup, uniq("interior"));
   if (s.worldMount?.group) rename(s.worldMount.group, uniq("world"));
   // The shot camera and the axis probes.
-  const c0 = s._shotCameraAt(0);
+  const c0 = s._filmCameraAt ? s._filmCameraAt(0) : s._shotCameraAt(0);   // the Sensor crop, as the viewport
   const cam = new THREE.PerspectiveCamera(U.vfovFromFocal(c0.focal_mm, aspect), aspect, 0.1, 2000);
   cam.name = "shot_cam";
   root.add(cam);
@@ -233,7 +233,7 @@ export async function stageAnimatedGLB(stage, { probes = true } = {}) {
   const focal = [];
   const pose = (f) => {
     s.setFrameSilent(f);
-    const c = s._shotCameraAt(f);
+    const c = s._filmCameraAt ? s._filmCameraAt(f) : s._shotCameraAt(f);
     cam.position.set(...c.position);
     cam.up.set(0, 1, 0);
     cam.lookAt(new THREE.Vector3(...c.target));
