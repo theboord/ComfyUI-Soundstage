@@ -167,6 +167,7 @@ export async function characterBox(stage, id) {
   const g = stage.actorMeshes?.get?.(id);
   if (!g?.userData?.joints?.l_shoulder) return null;
   const W = 640, H = Math.round(640 * stage.fh / stage.fw);
+  stage._syncShotCamera?.();   // the active shot's camera, never the last setup a thumbnail rendered
   const cam = stage.camera.clone();
   cam.aspect = stage.fw / stage.fh; cam.updateProjectionMatrix(); cam.updateMatrixWorld(true);
   const kp = P.personKeypoints(g, cam.position);

@@ -2017,6 +2017,7 @@ export class Stage {
 
   _applyCamera() {
     const c = this._preview || this._shotCameraAt(this.frame || 0);
+    this._camShot = this.state.active_shot;   // which shot this.camera was posed for (_syncShotCamera)
     this.camera.position.set(...c.position);
     this.camera.fov = vfovFromFocal(c.focal_mm, this.fw / this.fh);
     this.camera.updateProjectionMatrix();
@@ -2264,7 +2265,19 @@ export class Stage {
 
   /** Camera the viewport looks through (captures always use the shot camera). */
   _viewportCamera() {
+    this._syncShotCamera();
     return this.freeView ? this.viewCam : this.camera;
+  }
+
+  /**
+   * Keep the shot camera on the active shot. Anything that flips state.active_shot without setActiveShot (an older
+   * caller rendering another setup's clay frame) left this.camera on that other setup: Camera view then showed the
+   * last thumbnail's shot under the chosen shot's name, and a click picked whoever stood in that other shot.
+   */
+  _syncShotCamera() {
+    if (this._preview || this._capturing || this._camShot === this.state.active_shot) return false;
+    this._applyCamera();
+    return true;
   }
 
   _applyActive() {
@@ -4296,6 +4309,7 @@ export class Stage {
   }
 
   _renderMode(mode, forCapture = false) {
+    if (!forCapture) this._syncShotCamera();
     this._applySplatVisibility(mode);
     if (this.tcHelper) {
       this.tcHelper.visible = !forCapture && !!this._gizmoOn && mode !== "id";
@@ -4471,23 +4485,33 @@ export class Stage {
   }
 
   /**
-   * Render one frame in one view mode into a reusable 2D canvas (for the ladder viewer)
-   * and put the viewport back the way it was.
+   * Render one frame in one view mode into a reusable 2D canvas (for the ladder viewer, thumbnails, previews)
+   * and put the viewport back the way it was. {shot} renders another setup's camera without switching to it: the
+   * active shot is put back BEFORE the viewport is restored, so the shot camera never stays on that other setup.
    */
-  renderFrameTo(mode, frame) {
+  renderFrameTo(mode, frame, { shot } = {}) {
     if (!this._snap) this._snap = document.createElement("canvas");
     // Follow the shot's aspect: a snapshot canvas kept at the first aspect crops every later render.
     if (this._snap.width !== this.fw || this._snap.height !== this.fh) { this._snap.width = this.fw; this._snap.height = this.fh; }
     const prev = new THREE.Vector2();
     this.renderer.getSize(prev);
-    const keep = this.frame;
-    this.renderer.setSize(this.fw, this.fh, false);
-    this.setFrameSilent(frame);
-    this._renderMode(mode, true);
-    this._snap.getContext("2d").drawImage(this.canvas, 0, 0);
-    this.renderer.setSize(prev.x, prev.y, false);
-    this.setFrameSilent(keep);
-    this._renderMode(this.view);
+    const keep = this.frame, keepShot = this.state.active_shot;
+    const swap = shot != null && shot !== keepShot && this._shots().some((x) => x.id === shot);
+    try {
+      if (swap) this.state.active_shot = shot;
+      this.renderer.setSize(this.fw, this.fh, false);
+      this.setFrameSilent(frame);
+      this._renderMode(mode, true);
+      this._snap.getContext("2d").drawImage(this.canvas, 0, 0);
+    } finally {
+      if (swap) this.state.active_shot = keepShot;
+      this.renderer.setSize(prev.x, prev.y, false);
+      this.setFrameSilent(keep);
+      this._renderMode(this.view);
+    }
+    // A caller that flipped active_shot itself puts it back only after this returns: redraw the viewport once it has
+    // (a no-op when the shot camera is already on the active shot).
+    if (!swap) queueMicrotask(() => { if (this._syncShotCamera()) this.render(); });
     return this._snap;
   }
 

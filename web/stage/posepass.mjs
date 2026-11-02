@@ -163,6 +163,7 @@ export function toPixels(kp, cam, W, H) {
 
 /** The people on the stage right now (clay humans with a rig), as pixel keypoints from the shot camera. */
 export function stagePeople(stage, W, H) {
+  stage._syncShotCamera?.();   // the active shot's camera, never the last setup a thumbnail rendered
   const cam = stage.camera.clone();
   cam.aspect = stage.fw / stage.fh;
   cam.updateProjectionMatrix();

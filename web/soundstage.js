@@ -568,9 +568,7 @@ function createStageWidget(node, inputName) {
     getProject: () => ({ ...buildCutProject(), ...loadCut() }),
     renderPreviewFrame: (shotId, frame) => {
       // Render that setup's camera without switching the stage UI to it.
-      const prev = stage.state.active_shot;
-      stage.state.active_shot = shotId;
-      try { return stage.renderFrameTo("clay", frame); } finally { stage.state.active_shot = prev; }
+      return stage.renderFrameTo("clay", frame, { shot: shotId });
     },
     onChange: (project) => {
       saveCut({ ...loadCut(), ...savedFields(project) });   // cut, sound, titles, subtitles, tail fade (Milestone 19)
@@ -619,11 +617,7 @@ function createStageWidget(node, inputName) {
     onOpenEditor: () => showView("cut"),
     onEditShot: (id, where) => editShot(id, where),
     getSceneName: (id) => { const n = sceneNumOfShot(id); return n ? `SC${n}` : null; },
-    renderPreviewFrame: (id, f) => {
-      const prev = stage.state.active_shot;
-      stage.state.active_shot = id;
-      try { return stage.renderFrameTo("clay", f); } finally { stage.state.active_shot = prev; }
-    },
+    renderPreviewFrame: (id, f) => stage.renderFrameTo("clay", f, { shot: id }),
   });
 
   // "Edit original" from a clip (Dynamic Link style): open the step that made it, for that shot. Renders are kept
@@ -2287,11 +2281,7 @@ function createStageWidget(node, inputName) {
     setLookStart: (on) => { node.ssLookStart = !!on; },
     setFrameLock: (on) => { node.ssFrameLock = !!on; },
     setBatch: (on) => { batchDepth = Math.max(0, batchDepth + (on ? 1 : -1)); batchRendering = batchDepth > 0; },
-    renderPreviewFrame: (id, f) => {
-      const prev = stage.state.active_shot;
-      stage.state.active_shot = id;
-      try { return stage.renderFrameTo("clay", f); } finally { stage.state.active_shot = prev; }
-    },
+    renderPreviewFrame: (id, f) => stage.renderFrameTo("clay", f, { shot: id }),
     loadChosen: () => {
       try { return node.properties?.ss_chosen || JSON.parse(localStorage.getItem(`${lsKey()}:chosen`) || "{}"); } catch { return {}; }
     },
@@ -2336,11 +2326,7 @@ function createStageWidget(node, inputName) {
   // scene_id, and agent-made shot ids are scene-scoped, so renders / chosen frames / clips never cross scenes.
   // Nothing here shows until a script is loaded: no script = the App as before (only the Script tab is new).
   node.ssAgent = agent;
-  const renderClay = (id, f = 0) => {
-    const prev = stage.state.active_shot;
-    stage.state.active_shot = id;
-    try { return stage.renderFrameTo("clay", f); } finally { stage.state.active_shot = prev; }
-  };
+  const renderClay = (id, f = 0) => stage.renderFrameTo("clay", f, { shot: id });
   const nudgeTracker = () => { try { app.extensionManager?.workflow?.activeWorkflow?.changeTracker?.checkState?.(); } catch { /* older frontend */ } };
   const liveShots = () => stage.state?.shots || [];
   const sceneById = (id) => (id && script?.scenes?.find((x) => x.id === id)) || null;
