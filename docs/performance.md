@@ -21,14 +21,21 @@ Files:
    [Character voices](audio.md#character-voices-and-consent). The asset stores who performed, the consent statement
    and the date, and a render refuses an asset that has no consent record. Only use your own performance or one you
    have the rights to. Never use a third party's likeness or voice without their agreement.
-3. **Read the performance.** DWPose reads the body (18 points), both hands (21 points each) and the face (68 landmarks
-   plus the pupils) on every frame. The voice is kept. The dialog then shows:
-   - the skeleton and face drawn over the actor, with sound;
+3. **Voice: keep mine, or convert to the character.** One actor can play every part. Pick **Convert to Mara Voss
+   (MARA_VOSS)** and the clip's sound goes through Chatterbox VC (local, free) into that character's saved
+   [Character Voice](audio.md#character-voices-and-consent) before it is stored. Your timing, breaths and pauses are
+   kept to the sample, so the lips and the cut still line up. The list shows the character's voice first (the
+   `voice` on its ② Cast entry, else a saved voice named after the character), then every other saved voice. The
+   voice you pick is stored on the Cast entry, so the next take of that character starts on it. **Keep my voice**
+   leaves the sound untouched. See [Voice: keep mine / convert](#voice-keep-mine--convert-to-the-character) below.
+4. **Read the performance.** DWPose reads the body (18 points), both hands (21 points each) and the face (68 landmarks
+   plus the pupils) on every frame. The dialog then shows:
+   - the skeleton and face drawn over the actor, with sound (the converted voice if you chose one);
    - a mouth-open curve;
-   - a summary, for example "4.0 s · face read on 98% of frames · voice kept · 14 mouth openings".
-4. **Apply to shot.** The performance is stored on the character, and on the shot along with where the character
+   - a summary, for example "4.0 s · face read on 98% of frames · voice converted to MARA_VOSS · 14 mouth openings".
+5. **Apply to shot.** The performance is stored on the character, and on the shot along with where the character
    stands in the shot camera. Then use **Draft**, **Final** or **Hollywood**, and the render lands in Takes.
-5. **Keep the real footage (Ripple)** is the other path. It hands the clip to ⑤ Motion → Ripple edit as the shot's
+6. **Keep the real footage (Ripple)** is the other path. It hands the clip to ⑤ Motion → Ripple edit as the shot's
    imported clip: edit frame 1 (new wardrobe, a relight, a set) and Ripple keeps everything else from the real take.
    Choose it when the actor *is* the character.
 
@@ -40,6 +47,38 @@ The assets are saved to `output/soundstage_private/performances/<id>/`:
 - `face.json`, the face landmarks and mouth value per frame.
 
 Recorded clips go to `input/soundstage_private/performances/`.
+
+## Voice: keep mine / convert to the character
+
+The capture job stays small (about 1 KB, no stage JSON, no audio inline) and the dialog waits on its own
+`/history/<id>`. With a voice chosen it gains one node between the clip's sound and Save Performance:
+
+```
+1 SoundstageClipLoad ──images──▶ 2 DWPreprocessor ──▶ 3 SoundstagePerformanceSave
+                     └─audio──▶ 10 SoundstageChatterboxVC(voice_name, seed) ──audio──▶ 3
+```
+
+- **The converter**: Chatterbox VC (S3 speech tokens at 25 Hz, re-drawn by S3Gen on the target voice's first 10 s,
+  HiFT vocoder), the weights Chatterbox TTS already uses. One token is 40 ms, and the output is padded or trimmed
+  to the input's length, so nothing moves. A take longer than 20 s is converted in pieces cut in the middle of its
+  longest pauses and put back at the same samples (`soundstage/audio/vcchunk.py`). A clip without sound passes through.
+- **The character's voice**: a saved Character Voice (`user/soundstage/voices/<NAME>.json + .wav`), named on the
+  ② Cast entry as `voice`. `GET /soundstage/voices` lists names, characters and owners (no paths) for the dialog.
+  Targets are designed or consenting voices only. Never a real third party.
+- **Measured on 2026-11-01** (synthetic stand-in reads, both parts read by one male voice; full report and WAVs in
+  `share/Recording_Session_Mon/voice/`): word onsets moved by a median 0 ms (90th percentile 20 ms, worst 60-120 ms,
+  one Whisper token step), Whisper still heard the script, both breaths kept on most settings, and the voice moved to
+  the target (Chatterbox voice-encoder cosine 0.89 for Ezra, 0.95 for Mara, against 0.55-0.68 for the source).
+  A +3 to +6 semitone pre-shift for a man playing a woman did **not** help: S3Gen re-draws the pitch from the
+  target, and a formant shift hurt the words (word error 2.5% → 20-24%). So the App converts with no pre-shift.
+- **Pause guard**: a piece that starts on seconds of room tone can come back with a mumble in it (2.7 s at -35 dBFS in
+  a 10 s pause, measured). In the take's pauses the converted voice is never louder than the performance + 6 dB
+  (or -60 dBFS). Breaths are not pauses and stay.
+- **Known risk, Ezra**: on a second synthetic source (macOS speech, not Chatterbox), Whisper-base heard 39-51% of
+  Ezra's words wrong (16% on the source; Mara 9%), whatever the reverb, seed or reference. Listen to every converted
+  Ezra line; "Keep my voice" is the fallback.
+- **Not covered yet**: a real human performer on a phone (the bench used synthetic reads), emotional extremes
+  (shouting, crying, whispering), and two people talking over each other.
 
 ## The render: `SoundstagePerformance`
 
@@ -54,7 +93,7 @@ the same one Recast rebuilds). Here the guide is the actor's performance, and th
 | Voice in the sampler | `VAEEncodeAudio` → `LTXVSetAudioRefTokens` (raw latent), plus the same latent with a **0.3 noise mask** (`SoundstageLatentNoiseMask`) as the audio half of the AV latent, in **both** stages |
 | Sampling | stage 1: 8-step distilled (euler_ancestral); stage 2: ×2 latent upsampler + 3 steps (euler), CFG 1 |
 | Quality | Draft 544p in one pass · Final 544p + ×2 · Hollywood 704p + ×2 |
-| Output voice | the actor's own recording, untouched |
+| Output voice | the asset's voice: the actor's own recording untouched, or the converted character voice when the capture used Voice: convert |
 
 Why the mask matters: Mike's OG-audio graph feeds the audio latent frozen (noise mask 0). Measured on 2026-10-28,
 frozen audio made mouths flap with no relation to the speech (r = −0.05), while a 0.3 mask gave r = 0.37–0.48 and the

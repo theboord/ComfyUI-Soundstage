@@ -78,3 +78,50 @@ test("summary, consent line and mouth curve", () => {
   assert.equal(d.split("M").length - 1, 2);          // a gap where the face wasn't read
   assert.equal(mouthPath([null, null]), "");
 });
+
+// ------------------------------------------------------------------ Voice: keep mine / convert to the character
+
+import { VOICE_NODE, voiceChoices, voiceNameFor, castEntryFor } from "../../web/performance/performance.mjs";
+
+test("capture graph with a voice: clip sound -> Chatterbox VC -> Save; node ids 1-3 and the clip's audio link unchanged", () => {
+  const base = { source: "p/a.mov [input]", performer: "Mike Boord", consent: true };
+  const keep = buildCaptureGraph(base);
+  assert.equal(keep[VOICE_NODE], undefined, "keep my voice: no conversion node");
+  assert.deepEqual(keep[3].inputs.audio, ["1", 1]);
+  const g = buildCaptureGraph({ ...base, voice: " MARA_VOSS ", voiceSeed: 3.9 });
+  assert.deepEqual(Object.keys(g).sort(), ["1", "10", "2", "3"]);
+  assert.equal(g[VOICE_NODE].class_type, "SoundstageChatterboxVC");
+  assert.deepEqual(g[VOICE_NODE].inputs, { audio: ["1", 1], voice_name: "MARA_VOSS", seed: 3 });
+  assert.deepEqual(g[3].inputs.audio, [VOICE_NODE, 0]);
+  assert.deepEqual(g[3].inputs.frames, ["1", 0], "the picture never goes through the voice step");
+  assert.ok(JSON.stringify(g).length < 2000, "a small prompt: no stage JSON, no audio inline");
+});
+
+test("voice choices: keep mine first; the cast entry's voice is the default; a saved voice named after the character is offered", () => {
+  const saved = [{ name: "EZRA_HALE", character: "Ezra Hale" }, { name: "MARA_VOSS", character: "Mara Voss" }, { name: "PIP", character: "PIP" }];
+  let c = voiceChoices({ who: "Mara Voss", castVoice: "", saved });
+  assert.equal(c.value, "", "no voice on the cast entry yet: keep mine");
+  assert.deepEqual(c.options.map((o) => o.value), ["", "MARA_VOSS", "EZRA_HALE", "PIP"]);
+  assert.match(c.options[1].label, /^Convert to Mara Voss \(MARA_VOSS\)$/);
+  c = voiceChoices({ who: "Mara Voss", castVoice: "MARA_VOSS", saved });
+  assert.equal(c.value, "MARA_VOSS");
+  c = voiceChoices({ who: "Mara Voss", castVoice: "MARA_V2", saved });
+  assert.match(c.options[1].label, /not saved yet/);
+  c = voiceChoices({ who: "Ezra Hale", saved: null });
+  assert.deepEqual(c.options.map((o) => o.value), ["", "EZRA_HALE"], "no voice list from the server: the character's own name");
+  assert.deepEqual(voiceChoices({ who: "Nobody", saved: [] }).options.map((o) => o.value), [""]);
+  assert.equal(voiceNameFor("Mara  Voss!"), "MARA_VOSS");
+});
+
+test("the cast entry for a stage actor carries the voice", () => {
+  const items = [{ key: "character:ezra hale", kind: "character", name: "Ezra Hale", voice: "EZRA_HALE" },
+    { key: "character:mara voss", kind: "character", name: "Mara Voss" }, { key: "prop:key", kind: "prop", name: "Key" }];
+  assert.equal(castEntryFor(items, { name: "Ezra Hale", kind: "man" })?.voice, "EZRA_HALE");
+  assert.equal(castEntryFor(items, { name: "Mara Voss", kind: "woman" })?.key, "character:mara voss");
+  assert.equal(castEntryFor(items, { name: "Key", kind: "box" }), null);
+});
+
+test("capture summary says when the voice was converted", () => {
+  assert.match(captureSummary({ seconds: 4, face_seen: 0.95, has_audio: true, onsets: [1, 2], voice: "MARA_VOSS" }), /voice converted to MARA_VOSS · 2 mouth openings/);
+  assert.match(captureSummary({ seconds: 4, face_seen: 0.95, has_audio: true, onsets: [] }), /voice kept/);
+});

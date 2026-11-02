@@ -1676,7 +1676,7 @@ function createStageWidget(node, inputName) {
   stage.fetchApi = (u) => api.fetchApi(u);
   stage.onMocap = () => { try { posePanel._drawTake(); } catch { /* panel gone */ } };
   // Use a real performance (web/performance): an actor's body, face and voice drive this character.
-  mountPerformance(posePanel, { stage, api, pipeline: () => pipeline, onStatus: (m) => { status.textContent = m; } });
+  mountPerformance(posePanel, { stage, api, pipeline: () => pipeline, cast: () => castPanel, onStatus: (m) => { status.textContent = m; } });
   // Physics: the selected object's Dynamic / Static / Off and the scene's Simulate & bake, beside the inspector.
   const physPanel = new PhysicsPanel({ stage, onStatus: (m) => { status.textContent = m; },
     onBaked: () => { try { tracks?.draw(); afterTimeChange(); } catch { /* timeline not built */ } } });

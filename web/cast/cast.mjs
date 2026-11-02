@@ -251,6 +251,9 @@ export class CastPanel {
     return list.map((it) => ({ ...it, ...saved(it) }));
   }
 
+  /** The character's voice: a saved Character Voice name (Real performance converts the performer's voice to it). */
+  setVoice(key, voice) { this._set(key, { voice: String(voice || "") || null }); }
+
   _set(key, patch) {
     const d = this.data();
     d.items[key] = { ...(d.items[key] || {}), ...patch };
@@ -331,7 +334,7 @@ export class CastPanel {
     desc.addEventListener("keydown", (e) => { if (e.key === "Escape") desc.closest(".card")?.classList.remove("desc"); });
     return h("div", { class: `card${it.url ? " has" : ""}${(it.description || "").trim() ? " has-desc" : ""}` }, pic,
       h("div", { class: "name", title: [it.name, it.scenes?.length ? it.scenes.join(" · ") : "", it.hint].filter(Boolean).join(" · ") }, it.name),
-      h("div", { class: "meta" }, [it.scenes?.length ? it.scenes.join(" · ") : "", it.hint].filter(Boolean).join(" · ") || " "),
+      h("div", { class: "meta" }, [it.scenes?.length ? it.scenes.join(" · ") : "", it.hint, it.voice ? `voice ${it.voice}` : ""].filter(Boolean).join(" · ") || " "),
       desc,
       h("div", { class: "acts" },
         btn("Describe", "file-text", (e) => {

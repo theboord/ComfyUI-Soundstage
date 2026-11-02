@@ -92,6 +92,13 @@ the character. The output is padded/trimmed to the input length, so the timing (
 Shot from Sound) holds. Engines: **Chatterbox VC** (local; the installed chatterbox package's S3Gen, no
 extra weights; target = Character Voice or built-in) and **ElevenLabs Speech-to-Speech** [API]
 (eleven_multilingual_sts_v2 / eleven_english_sts_v2, stability, similarity, optional noise removal).
+A take longer than 20 s (`chunk_s` on the Chatterbox VC step) is converted in pieces cut in the middle of its
+longest pauses and put back at the same samples (`audio/vcchunk.py`): on a 55 s pass, whole-take conversion drifted
+back towards the performer (voice-encoder cosine 0.86 vs 0.89 in pieces) and left stray voice in the pauses of a
+man-to-woman conversion. A clip without sound passes through. The Real performance dialog uses this step for
+**Voice: convert to <character>** ([performance.md](performance.md#voice-keep-mine--convert-to-the-character));
+`GET /soundstage/voices` lists the saved voices (names, characters, owners; no paths).
+Checked again on 2026-11-01: no RVC or Seed-VC weights on the pod (no rvc/hubert/rmvpe/seed-vc files under models/).
 Not installed and not used, per Mike: F5-TTS, IndexTTS-2, Kokoro, Dia, Seed-VC, RVC, OpenVoice (the pod has
 only `vibevoice` 0.0.1 as a package, no weights; empty models/TTS/{CosyVoice,dramabox,higgs_audio_v3}).
 

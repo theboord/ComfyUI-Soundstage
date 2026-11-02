@@ -3,6 +3,7 @@
 GET  /soundstage/object?name=grand%20piano  -> cached clay stand-in recipe, or 404
 POST /soundstage/object {name, text}        -> parse + sanitise the LLM's output, cache it, return it
 GET  /soundstage/object_designer            -> the system prompt and model the frontend should use
+GET  /soundstage/voices                     -> the saved Character Voices [{name, character, duration_s, owner}]
 """
 from aiohttp import web
 
@@ -83,3 +84,22 @@ async def source_spec(request):
     except Exception as exc:  # noqa: BLE001 - reported to the browser
         return web.json_response({"error": str(exc)}, status=422)
     return web.json_response(sourcespec.link_original(spec, q.get("original", "")))
+
+
+@routes.get("/soundstage/voices")
+async def saved_voices(request):
+    """The saved Character Voices (user/soundstage/voices), for the Real performance dialog's Voice choice.
+    Names, characters and owners only: no paths, no audio."""
+    import folder_paths
+
+    from .audio import voices as V
+    ud = folder_paths.get_user_directory()
+    out = []
+    for n in V.list_voices(ud):
+        try:
+            v = V.load_voice(ud, n)
+        except (V.VoiceError, OSError, ValueError):
+            continue
+        out.append({"name": v["name"], "character": v.get("character") or v["name"],
+                    "duration_s": v.get("duration_s"), "owner": (v.get("consent") or {}).get("owner", "")})
+    return web.json_response({"voices": out})
