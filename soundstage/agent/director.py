@@ -123,8 +123,6 @@ GAZE_WORDS = [("camera", ["camera", "the camera", "lens", "the lens", "us", "aud
 
 ALIASES.update({k: v for k, v in PT.ALIASES.items() if k not in ALIASES})
 
-ALIASES.update({k: v for k, v in PT.ALIASES.items() if k not in ALIASES})
-
 
 def tool_specs() -> list[dict]:
     """TOOLS as plain JSON (for the MCP server, docs and the browser)."""
