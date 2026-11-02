@@ -5,6 +5,12 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-01
 
+**23:20 PST · Swim verification: an exhale now carries a real breath of gas, so the bubble bursts read**
+- **Why:** checked frame by frame against real dive footage, each exhale let out about 0.03 L of gas, some 50 times less than a real breath. The bursts were a few specks of 1-2 px.
+- **Fix** ([web/stage/swim.mjs](web/stage/swim.mjs)): each exhale carries 1-2.5 L. Most of it leaves in the first gush as about twenty big wobbling caps (3-6.5 cm), with a fizz of millimetre bubbles around and after them. The reef draws up to 3200 bubbles ([web/stage/sets/underwater.mjs](web/stage/sets/underwater.mjs)).
+- **Tests:** new test in tests/js/swim.test.mjs. It checks the volume per breath (Boyle-corrected back to the regulator's depth) and at least ten big caps, over four seeds; it fails on the old code with 0.03 L.
+- **Still open:** caustic lines are spaced 1.3-1.9 m apart on the sand (real reef caustics are finer); a low diver path goes straight through coral; the Hollywood scene's keys ask for a 1.5 m/s sprint.
+
 **23:10 PST · Swimming and water: real strokes, the regulator in the mouth, bubbles in bursts, caustics and surge**
 - **Why:** the reef's Hollywood take had the regulator hanging below the mouth, a diver gliding with hardly a kick and stiff water. The guide had no dive kit at all, the "swim" was a fixed pose that bobbed, and nothing in either prompt said where the regulator goes.
 - **Strokes from physics** ([web/stage/swim.mjs](web/stage/swim.mjs)):

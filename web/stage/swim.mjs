@@ -186,12 +186,12 @@ export function bubbleGrow(d0, z0, z) {
 }
 
 /**
- * Every exhaled bubble alive at time t for one diver: bursts at each exhale (a gush of big cap bubbles in the first
- * moments, a trickle of smaller ones after), rising at their size's speed, growing as the pressure drops, wobbling, and
+ * Every exhaled bubble alive at time t for one diver: bursts at each exhale carrying the breath's 1-2 L (a gush of big
+ * cap bubbles in the first moments, a fizz of smaller ones after), rising at their size's speed, growing as the pressure drops, wobbling, and
  * drifting with the current, gone at the surface. emitAt(te) -> [x, y, z] the regulator's exhaust then.
  * Returns {pos: number[] (x, y, z ...), size: number[] (m)}.
  */
-export function exhaleBubbles(seed, t, emitAt, { surface = 10, perBreath = 34, maxAge = 40, current = null } = {}) {
+export function exhaleBubbles(seed, t, emitAt, { surface = 10, perBreath = 64, maxAge = 40, current = null } = {}) {
   const pos = [], size = [];
   const br = breathAt(t, seed), P = br.period;
   for (let n = 0; n < Math.ceil(maxAge / P) + 1; n++) {
@@ -202,8 +202,10 @@ export function exhaleBubbles(seed, t, emitAt, { surface = 10, perBreath = 34, m
       const r1 = hash01(seed + idx * 13.1, i, 1), r2 = hash01(seed + idx * 13.1, i, 2), r3 = hash01(seed + idx * 13.1, i, 3);
       const te = start + dur * r1 * r1 * 0.9;                  // front-loaded: most of the breath goes out first
       if (te > t) continue;
-      const big = r2 < 0.22 && r1 < 0.35;
-      const d0 = big ? 0.012 + 0.03 * r3 : 0.0015 + 0.006 * r3;
+      // a breath is ~1-2 L of gas: most of it leaves in the first gush as a column of big wobbling caps (3-6.5 cm),
+      // with a fizz of millimetre bubbles shed around them and trailing after
+      const big = r2 < 0.6 && r1 < 0.55;
+      const d0 = big ? 0.03 + 0.035 * r3 : 0.0015 + 0.006 * r3;
       const p0 = emitAt(te);
       const z0 = surface - p0[1];
       const age = t - te;
