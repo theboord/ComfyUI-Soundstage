@@ -201,7 +201,8 @@ export function alienInvasion() {
       { id: "runner_a", name: "Woman running", kind: "woman", height_m: 1.68,
         keys: [at(0, [-1.2, 0, -6]), at(120, [-2.4, 0, 12])] },
       { id: "runner_b", name: "Man running", kind: "man", height_m: 1.8,
-        keys: [at(0, [1.4, 0, -8]), at(120, [0.8, 0, 11])] },
+        // 2 m ahead of the squad car: it skids broadside at 2.5 s, and running level with it he was in its swing.
+        keys: [at(0, [1.4, 0, -6]), at(120, [0.8, 0, 13])] },
       { id: "kid", name: "Kid", kind: "child", height_m: 1.2, keys: [at(0, [-0.6, 0, -5]), at(120, [-1.6, 0, 10])] },
       { id: "officer", name: "Officer", kind: "man", height_m: 1.82, keys: [at(0, [3.2, 0, 2.5])], mount_id: "squad", seat: 0, pose: "sit" },
       { id: "squad", name: "Police car", kind: "police_car", height_m: 1.6, rotation_deg: 60,
