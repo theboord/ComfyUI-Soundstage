@@ -57,6 +57,7 @@ import { mountBook } from "./book/book.mjs";
 import { mountPresets } from "./ui/presets.mjs";
 import { mountPerformance } from "./performance/performance.mjs";
 import { attachTakeChecks } from "./takecheck/takecheck.mjs";
+import { attachOneClick } from "./oneclick/oneclick.mjs";
 import { queueSummary, stageInputsByRef, resolveStageValue, stageRefOf } from "./ui/queue.mjs";
 
 const CSS = `
@@ -2319,6 +2320,11 @@ function createStageWidget(node, inputName) {
   var takeChecks = attachTakeChecks({ app, api, stage, ladder, pipeline, look, say: (m) => (status.textContent = m),
     restoreScene: (sc) => { (widget.options?.setValue || ((v) => widget.setValue(v, {})))(JSON.stringify(sc)); nudgeTracker?.(); } });
   node.ssTakeChecks = takeChecks;   // scripts and tests
+  // ✦ One-click (web/oneclick, docs/oneclick.md): effects, relight, new angle, expand… on every take and ④ Frame candidate.
+  var oneClick = attachOneClick({ api, root: el, stage, pipeline, ladder, takeChecks, say: (m) => (status.textContent = m),
+    showTake: (sid, take) => showTake({ id: sid, name: (stage.toJSON().shots || []).find((x) => x.id === sid)?.name || sid }, take),
+    takesOf: (sh) => takesFor(sh, takeRenders(sh.id)), refresh: () => { try { dailies?.refresh(); } catch { /* bin not built */ } } });
+  node.ssOneClick = oneClick;
   node.ssPipeline = pipeline;
   node.ssCut = cut;
   node.ssLadder = ladder;
@@ -2686,6 +2692,7 @@ function createStageWidget(node, inputName) {
     getSeconds: () => { const sh = stage.toJSON().shot || {}; return (sh.frames || 97) / (sh.fps || 24); },
     onStatus: (m) => (status.textContent = m),
     decorateTake: (host, take, shot, where) => takeChecks?.decorate(host, take, shot, where),
+    oneClickTake: (host, take, shot, where) => oneClick?.decorate(host, take, shot, where),
   });
 
   node.ssDailies = { get bin() { return dailies; }, get lined() { return dailies?.lined || null; }, openScriptSync: (id) => openScriptSync(id) };   // scripts and tests

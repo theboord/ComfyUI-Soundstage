@@ -33,6 +33,13 @@ CORE = [
      "inputSchema": {"type": "object", "properties": {"filename": {"type": "string", "description": "the take's file name, e.g. final_00028_.mp4"},
                                                        "subfolder": {"type": "string", "default": "soundstage"}, "type": {"type": "string", "default": "output"},
                                                        "force": {"type": "boolean", "default": False}}, "required": ["filename"]}},
+    {"name": "soundstage_one_click", "description": "✦ One-click effects on a take or a frame, in the open App: weather and time (nightfall, flood, rain, snow, fog, golden_hour), empty (take people out), cutout (alpha), living_photo, the 18 film lighting setups (relight_<setup>), new angles (angle_* approximate, exact_* from the 3D stage), expand_<aspect>. Without id it lists what applies to that take. With id and no confirm_gpu it proposes (what runs, how long); with confirm_gpu=true (ask the user first) the App runs it and the result lands as a new take, checked by the realism judge.",
+     "inputSchema": {"type": "object", "properties": {
+         "id": {"type": "string", "description": "the one-click, e.g. nightfall, relight_rembrandt, exact_orbit_left, expand_2_39_1; omit to list"},
+         "shot": {"type": ["integer", "string"], "description": "shot number (1 = first in the strip) or name; default the open shot"},
+         "take": {"type": ["integer", "string"], "description": "take number (Tk n); default the circled, else the latest final > draft > frame"},
+         "opts": {"type": "object", "description": "card options, e.g. {\"subject\": \"the dog\"} for cutout, {\"lock\": true} for a depth-locked relight"},
+         "confirm_gpu": {"type": "boolean", "default": False, "description": "the user agreed to spend GPU time (needed to run)"}}}},
 ]
 
 
@@ -128,6 +135,33 @@ def judge_text(r: dict) -> str:
     return "\n".join(lines)
 
 
+def one_click(args: dict) -> tuple[str, bool]:
+    """List / propose / run a ✦ One-click in the open App (soundstage/oneclick/routes.py relays it)."""
+    oc = str(args.get("id") or "").strip()
+    base = {"shot": args.get("shot"), "take": args.get("take"), "opts": args.get("opts") or {}}
+    if not oc:
+        r = http("POST", "/soundstage/oneclick/ask", {"kind": "list", **base}, timeout=60)
+        if r.get("error"):
+            return f"Error: {r['error']}", True
+        rows = [f"- {o['id']} ({o['group']}): {o['label']}{' [' + o['badge'] + ']' if o.get('badge') else ''}"
+                + (f" — {o['why']}" if not o.get("ok") else "") for o in r.get("oneclicks", [])]
+        return f"One-clicks for {r.get('target', {}).get('label', 'the take')}:\n" + "\n".join(rows), False
+    if not args.get("confirm_gpu"):
+        r = http("POST", "/soundstage/oneclick/ask", {"kind": "propose", "oneclick": oc, **base}, timeout=60)
+        if r.get("error"):
+            return f"Error: {r['error']}", True
+        return (f"Proposed (nothing ran yet): {r.get('plan')} ({r.get('cost')}).\n"
+                + ("It renders on the GPU: ask the user, then call again with confirm_gpu=true." if r.get("gpu") else "Call again with confirm_gpu=true to run it.")), False
+    r = http("POST", "/soundstage/oneclick/ask", {"kind": "run", "oneclick": oc, "confirm_gpu": True, **base}, timeout=2500)
+    if r.get("error"):
+        return f"Error: {r['error']}", True
+    rv = r.get("realism") or {}
+    judged = (f"realism judge: {'PASS' if rv.get('verdict') == 'pass' else 'FAIL'} {rv.get('score')}/10"
+              + (f" ({'; '.join(rv.get('defects') or [])})" if rv.get("defects") else "")) if rv.get("verdict") in ("pass", "fail") else "not judged"
+    f = r.get("file") or {}
+    return f"Done: {r.get('label')} landed as a new {r.get('kind')} take ({f.get('subfolder', '')}/{f.get('filename', '')}); {judged}." + (f" {r['note']}" if r.get("note") else ""), False
+
+
 def call_tool(name: str, args: dict) -> tuple[str, bool]:
     args = dict(args or {})
     if name == "soundstage_state":
@@ -150,6 +184,8 @@ def call_tool(name: str, args: dict) -> tuple[str, bool]:
         f = {"filename": args.get("filename", ""), "subfolder": args.get("subfolder", "soundstage"), "type": args.get("type", "output")}
         r = http("POST", "/soundstage/takecheck/realism", {"file": f, "force": bool(args.get("force"))}, timeout=900)
         return judge_text(r), r.get("verdict") not in ("pass", "fail")
+    if name == "soundstage_one_click":
+        return one_click(args)
     if name.startswith("ss_"):
         dry = args.pop("dry_run", True)
         confirm = bool(args.pop("confirm_gpu", False))
