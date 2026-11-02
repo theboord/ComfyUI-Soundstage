@@ -37,9 +37,9 @@ def _smoky(car: dict, wet: bool = True) -> dict:
     return car
 
 
-def _jturn():
+def _jturn(wet: bool = True):
     st, lk, car = T._stunt_scene("reverse_jturn")
-    _smoky(car)
+    _smoky(car, wet)
     car["appearance"] = {"color": "#c23b2a"}
     return st, lk, car
 
@@ -69,12 +69,13 @@ def test_the_jturn_prompts_carry_the_body_style_and_the_blank_plate():
 
 
 def test_slip_smoke_is_said_as_strong_as_the_clay_shows_it_in_every_beat():
-    st, lk, car = _jturn()
+    # Road: Dry. On a wet road the tyres throw spray and mist, not dense smoke (Racing cinema review, 2026-11-02): below.
+    st, lk, car = _jturn(wet=False)
     m = compile_look(lk, st)["motion_prompt"]
     i, j, k = m.index("races backwards"), m.index("slides around 180 degrees"), m.index("drives forward, nose first")
     assert i < j < k
     spin = m[j:k]
-    assert "thick, billowing clouds of white tyre smoke and spray" in spin, spin
+    assert "thick, billowing clouds of white tyre smoke" in spin, spin
     assert "all four tyres" in spin and "wrapping round the car" in spin
     assert re.search(r"from \d\.\d s", spin), "when the smoke starts"
     tail = m[k:]
@@ -98,6 +99,12 @@ def test_slip_smoke_is_said_as_strong_as_the_clay_shows_it_in_every_beat():
     st4["actors"] = [car4 if a["id"] == car["id"] else a for a in st4["actors"]]
     m4 = compile_look(lk, st4)["motion_prompt"]
     assert "billowing" not in m4 and "wall of white smoke" not in m4
+    # Road: Wet: the same clay slip is spray and mist with a thin wisp of steam, never a wall of white smoke.
+    stw, lkw, _ = _jturn(wet=True)
+    mw = compile_look(lkw, stw)["motion_prompt"]
+    assert "a fine sheet of spray and mist, with a thin wisp of steam at the contact patch, peels off all four tyres" in mw
+    assert "pulling away through its own mist" in mw and "the mist stays thin and low" in mw
+    assert not re.search(r"billowing|dense and white|wall of white smoke|white tyre smoke", mw)
 
 
 def test_smoke_at_interpolates_the_baked_keys():
