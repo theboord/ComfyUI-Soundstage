@@ -127,11 +127,15 @@ def decide(method, target, headers, token):
 def rewrite_head(method, target, version, headers):
     """The request head to forward: one request per connection (Connection: close) unless it is a WebSocket upgrade,
     and the pairing cookie stays here (ComfyUI never sees it)."""
-    upgrade = (header(headers, "upgrade") or "").lower() == "websocket"
+    # Only the vcam WebSocket may keep its connection open: an "Upgrade: websocket" on any other path would leave the
+    # raw pipe open, and a second request pipelined after it (POST /prompt ...) would reach ComfyUI unchecked.
+    path = urllib.parse.urlsplit(target).path
+    upgrade = (method == "GET" and path == "/soundstage/vcam/ws"
+               and (header(headers, "upgrade") or "").lower() == "websocket")
     out = [f"{method} {target} {version}"]
     for k, v in headers:
         kl = k.lower()
-        if kl in ("connection", "keep-alive", "proxy-connection") and not upgrade:
+        if kl in ("connection", "keep-alive", "proxy-connection", "upgrade") and not upgrade:
             continue
         if kl == "cookie":
             v = "; ".join(p.strip() for p in v.split(";") if p.strip() and not p.strip().startswith(COOKIE + "="))
