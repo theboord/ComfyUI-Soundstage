@@ -712,9 +712,7 @@ export class ShotStrip {
   _clay(id, frame) {
     const st = this.stage;
     if (!st.renderFrameTo) return null;
-    const prev = st.state.active_shot;
-    st.state.active_shot = id;
-    try { return st.renderFrameTo("clay", frame); } finally { st.state.active_shot = prev; }
+    return st.renderFrameTo("clay", frame, { shot: id });
   }
 
   // ------------------------------------------------------------------ polling (stage -> strip)
