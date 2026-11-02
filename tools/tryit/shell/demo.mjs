@@ -151,6 +151,12 @@ function selectActor(re) {
   if (a) S().select(a.id);
   return a;
 }
+// By kind only: the chase's driver is id "getaway", which /getaway|car/ picked before the car itself.
+function selectKind(...res) {
+  const all = S().toJSON().actors || [];
+  for (const re of res) { const a = all.find((x) => re.test(x.kind || "")); if (a) { S().select(a.id); return a; } }
+  return null;
+}
 const ACTIONS = {
   async set() { P().go("set"); },
   async color() { P().go("set"); await sleep(300); view("Color"); },
@@ -172,7 +178,7 @@ const ACTIONS = {
   },
   async stunt() {
     await ACTIONS.color(); await sleep(300);
-    selectActor(/sports|getaway|red/i); await sleep(600);
+    selectKind(/^sports_car$/, /car/); await sleep(600);
     const s = [...root().querySelectorAll("select")].find((x) => x.getClientRects().length && [...x.options].some((o) => /J-turn/.test(o.text)));
     flash(s?.closest("label, .row, div") || s);
   },
@@ -205,13 +211,13 @@ const ACTIONS = {
   // Real performance: the selected person's "Real performance…" button (capture and render run on the GPU in the full install).
   async performance() {
     await ACTIONS.color(); await sleep(300);
-    selectActor(/getaway|cop|woman|man|person/i); await sleep(700);
+    selectKind(/^(woman|man|child)$/); await sleep(700);
     flash(btn(/Real performance/));
   },
   // Parts (Milestone 26): the selected car's doors, lamps, steering and suspension, every channel keyable.
   async parts() {
     await ACTIONS.color(); await sleep(300);
-    selectActor(/sports|getaway|red|car/i); await sleep(700);
+    selectKind(/^sports_car$/, /car/); await sleep(700);
     const pp = root().querySelector(".ss-parts");
     for (const d of pp?.querySelectorAll("details") || []) if (/door|light|lamp/i.test(d.querySelector("summary")?.textContent || "")) d.open = true;
     flash(pp);
