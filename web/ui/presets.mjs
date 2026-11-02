@@ -619,6 +619,16 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
         [L, R] = band(obstacles.filter((o) => !props.includes(o)));
       }
     }
+    // Nor does it cover the timeline bar and the shot strip (QA 2026-11-02: with the tracks open it hid the clips and
+    // their menus, so another shot could not be picked while the window was open). It ends above the bar; the cards scroll.
+    // In a short window with the tracks open (1024x640) that leaves no room for the cards: it then ends above the shot
+    // strip itself and covers the keyframe tracks only.
+    const bar = [...root.querySelectorAll(".ss-clarea > .ss-bottom")].find((e) => e.getClientRects().length);
+    const strip = bar && [...bar.querySelectorAll(".ss-strip-bar")].find((e) => e.getClientRects().length);
+    let barTop = bar ? bar.getBoundingClientRect().top : 0;
+    if (bar && strip && barTop - pr.top - DOCK_GAP < 260) barTop = strip.getBoundingClientRect().top;
+    const mh = bar && pr.top && barTop - pr.top - DOCK_GAP < rr.bottom - 74 - pr.top ? `${Math.round(Math.max(220, barTop - pr.top - DOCK_GAP))}px` : "";
+    if (panel.style.maxHeight !== mh) panel.style.maxHeight = mh;
     const room = R - L - 2 * DOCK_GAP;
     if (room < 320) { Object.assign(panel.style, { left: "", width: "", transform: "" }); return null; }   // a narrow side panel: the CSS default
     const w = Math.round(Math.min(DOCK_MAX, room));
