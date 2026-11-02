@@ -1353,6 +1353,9 @@ export class CutPanel {
     this.future = [];
     this.project = { ...this.project, cut, ...(audio ? { audio } : {}), ...(audio_tracks ? { audio_tracks } : {}) };
     for (const k of ["titles", "subtitles", "fade_out", "burn_subtitles", "graphics"]) if (k in extra) this.project[k] = extra[k];
+    // Graphics moved (a sync-locked ripple moves each one by its start; its A2 cues rippled one by one with the audio,
+    // so a graphic straddling the edit lost some of its sounds): rebuild their cues from where the graphics now are.
+    if ("graphics" in extra && this._gfxLib) this.project.audio = this._gfxAudio(this.project);
     this.project = TL.normalizeProject(this.project);
     this.sel = sel;
     this._afterEdit();

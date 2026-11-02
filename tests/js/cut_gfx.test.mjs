@@ -104,3 +104,19 @@ test("the viewer's click mapping is paint()'s letterbox inverted (a 9:16 project
   const [, y169] = G.viewToDesign(0, 270, 960, 540);
   assert.equal(y169, 540, "16:9 is the plain scale it always was");
 });
+
+test("a sync-locked ripple keeps a graphic's A2 sounds on the graphic", async () => {
+  // _rippleV2 moves each graphic by its start_frame while _ripple moved its cue clips one by one by their own frame: a
+  // graphic straddling the edit kept its picture where it was and lost some of its sounds to later frames.
+  const TL = await import("../../web/cut/timeline.mjs");
+  const { CutPanel } = await import("../../web/cut/cut.mjs");
+  const lib = new Proxy({}, { get: (_, k) => ({ url: `/${String(k)}.wav`, seconds: 0.5 }), has: () => true });
+  const project = TL.normalizeProject({ fps: 24, cut: [], graphics: G.normalizeGraphics([{ id: "k", template: "kinetic", start_frame: 0, text: "Recast. Rebuild. Rewrite." }]) });
+  project.audio = G.withGfxClips(project, G.gfxClips(project, lib, 24));
+  const p = Object.assign(Object.create(CutPanel.prototype), { project, history: [], future: [], sel: 0, syncLock: true, _gfxLib: lib,
+    _snapshot: () => ({}), _afterEdit() {} });
+  p._commit(project.cut, 0, { audio: p._ripple(15, 24), ...p._rippleV2(15, 24) });
+  const want = G.gfxClips(p.project, lib, 24).map((a) => [a.meta.cue, a.start_frame]);
+  const got = p.project.audio.filter((a) => a.meta?.gfx).map((a) => [a.meta.cue, a.start_frame]);
+  assert.deepEqual(got, want);
+});
