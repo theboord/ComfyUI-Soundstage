@@ -41,8 +41,12 @@ def rung_of(prompt: dict) -> tuple[str | None, int | None]:
             quality = inp["quality"]
         elif ct == "SoundstageStage":
             try:
-                d = json.loads(inp.get("stage") or "{}")
-                frames = int(((d.get("scene") or d).get("shot") or {}).get("frames") or 0) or None
+                v = inp.get("stage") or "{}"
+                d = v if isinstance(v, dict) else json.loads(v)
+                if "stage_ref" in d and "scene" not in d:   # by reference: the reference carries the frame count
+                    frames = int(d.get("frames") or 0) or None
+                else:
+                    frames = int(((d.get("scene") or d).get("shot") or {}).get("frames") or 0) or None
             except (ValueError, TypeError, AttributeError):
                 pass
     if step is None:

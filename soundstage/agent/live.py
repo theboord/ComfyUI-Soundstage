@@ -58,8 +58,9 @@ def run_llm(system: str, prompt: str, max_length: int, url: str = URL, timeout: 
             text = out.get("text", [""])
             return (text[0] if isinstance(text, list) and text else str(text)), time.time() - t0
         if time.time() - last_seen > 5:
-            q = _get(f"{url}/queue")
-            queued = any(item[1] == pid for item in q.get("queue_running", []) + q.get("queue_pending", []))
+            # Our prompt only: GET /queue would encode every queued prompt in full (soundstage/queuewatch.py).
+            q = _get(f"{url}/soundstage/queue_summary?ids={pid}")
+            queued = any(it.get("prompt_id") == pid for it in q.get("items", []))
             if not queued and pid not in _get(f"{url}/history/{pid}"):
                 raise RuntimeError("the job left the queue without an answer (server restarted or job cancelled)")
             last_seen = time.time()

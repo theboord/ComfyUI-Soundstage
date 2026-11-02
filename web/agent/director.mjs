@@ -16,6 +16,7 @@
 // · chosen(sid) · approvals {statusOf, setTakeStatus} · snapshot() / restore(snap) for non-scene state · play()
 // · shotsInOrder() [{id, name}] · say(msg) the App status line.
 import { applyOps, loadScene, runLocalModel } from "./agent.mjs";
+import { queueSummary } from "../ui/queue.mjs";
 
 const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -194,8 +195,8 @@ export class Director {
   /** Is something already running on the ComfyUI queue (a render)? */
   async _gpuBusy() {
     try {
-      const q = await (await this.api.fetchApi("/queue")).json();
-      return (q.queue_running || []).length > 0;
+      const q = await queueSummary(this.api);   // counts only (GET /queue encodes every queued prompt)
+      return (q?.running || 0) > 0;
     } catch { return false; }
   }
 

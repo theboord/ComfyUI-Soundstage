@@ -108,8 +108,8 @@ def _stage_of_png(path: str) -> dict | None:
         return None
     for n in prompt.values():
         if isinstance(n, dict) and n.get("class_type") == "SoundstageStage":
-            v = (n.get("inputs") or {}).get("stage")
-            data = json.loads(v) if isinstance(v, str) and v.strip() else v
+            from .stagestore import try_resolve
+            data = try_resolve((n.get("inputs") or {}).get("stage"))   # inline, or by reference to the stage store
             if isinstance(data, dict) and isinstance(data.get("scene"), dict):
                 return data
     return None

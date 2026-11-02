@@ -13,6 +13,8 @@
 // Stage API used (public only): stage.toJSON(), stage.load(scene), stage.frame, stage.setFrame(f),
 // stage.selected, stage.select(id), stage.onChange(scene), stage.onShots?.(), stage.onSelect?.(info).
 
+import { queueSummary } from "../ui/queue.mjs";
+
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
 // ---------------------------------------------------------------------------------------------- ops
@@ -216,8 +218,8 @@ export class SceneAgent {
     const p = await postJSON(this.api, "/soundstage/agent/prompt", { mode, ...payload });
     try {
       try {
-        const q = await (await this.api.fetchApi("/queue")).json();
-        if ((q.queue_running || []).length) this.onStatus("The GPU is finishing a render; your scene is next in line…");
+        const q = await queueSummary(this.api);   // counts only (GET /queue encodes every queued prompt)
+        if (q?.running) this.onStatus("The GPU is finishing a render; your scene is next in line…");
       } catch { /* queue unknown */ }
       return await runLocalModel(this.api, p, { timeoutMs: Math.max(this.modelTimeoutMs || 0, 900000) });
     } catch (err) {

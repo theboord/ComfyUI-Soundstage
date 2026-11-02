@@ -127,9 +127,22 @@ export async function launch({ port = 9770, w = 1440, h = 900, firstRun = false,
   return { send, ev, rect, byText, click, clickEl, clickText, drag, key, move, shot, resize, close, logs, handlers, get W() { return W; }, get H() { return H; } };
 }
 
+/** The pod's queue without its payloads: {running, pending, items: [{prompt_id, state, position, client_id, label}]},
+ *  or null when the server doesn't answer. The only way QA drivers and agents should watch the queue. */
+export async function queueSummary({ ids = null, clientId = null } = {}) {
+  const q = new URLSearchParams();
+  if (ids?.length) q.set("ids", ids.join(","));
+  if (clientId) q.set("client_id", clientId);
+  try {
+    const r = await fetch(`${BASE}/soundstage/queue_summary${q.toString() ? `?${q}` : ""}`);
+    return r.status === 200 ? await r.json() : null;
+  } catch { return null; }
+}
+
 /** Wait for the server, then load ComfyUI and wait for its app. */
 export async function openApp(b, url = `${BASE}/?qa=${Date.now()}`) {
-  for (let i = 0; i < 60; i++) { try { if ((await fetch(`${BASE}/queue`)).status === 200) break; } catch {} await sleep(2000); }
+  // Light: the queue summary (counts and ids). Never poll GET /queue or GET /history: they encode every prompt in full.
+  for (let i = 0; i < 60; i++) { try { if ((await queueSummary()) || (await fetch(`${BASE}/system_stats`)).status === 200) break; } catch {} await sleep(2000); }
   await b.send("Page.navigate", { url });
   // An evaluate sent while the page is still loading can wait a long time: each check gets 3 s.
   for (let i = 0; i < 120; i++) {

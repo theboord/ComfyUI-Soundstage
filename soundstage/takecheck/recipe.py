@@ -35,6 +35,46 @@ def _loads(v):
         return None
 
 
+def _stage_ref(value):
+    try:
+        from ..stagestore import parse_ref
+    except ImportError:   # imported bare (tests): no store
+        return None
+    return parse_ref(value)
+
+
+def _resolve_stage(value):
+    try:
+        from ..stagestore import try_resolve
+    except ImportError:
+        return None
+    return try_resolve(value)
+
+
+def _scene_ref(scene: dict) -> str:
+    from ..stagestore import put
+    return put(json.dumps(scene, separators=(",", ":")))
+
+
+def scene_of_ref(ref) -> dict | None:
+    """A recipe's scene stored by reference (stagestore), or None when this server doesn't have it."""
+    try:
+        from ..stagestore import get
+    except ImportError:
+        return None
+    s = _loads(get(ref)) if isinstance(ref, str) else None
+    return s if isinstance(s, dict) else None
+
+
+def _with_scene(rec):
+    """A recipe whose scene went by reference gets its scene back from the store (when this server has it)."""
+    if isinstance(rec, dict) and not isinstance(rec.get("scene"), dict) and rec.get("scene_ref"):
+        s = scene_of_ref(rec["scene_ref"])
+        if s is not None:
+            rec["scene"] = s
+    return rec
+
+
 def _by_class(prompt: dict, cls: str) -> list[tuple[str, dict]]:
     return [(k, n.get("inputs") or {}) for k, n in (prompt or {}).items()
             if isinstance(n, dict) and n.get("class_type") == cls]
@@ -50,7 +90,9 @@ def build(prompt: dict) -> dict | None:
     stages = _by_class(prompt, "SoundstageStage")
     if not stages:
         return None
-    raw = _loads(stages[0][1].get("stage"))
+    value = stages[0][1].get("stage")
+    ref = _stage_ref(value)
+    raw = _resolve_stage(value) if ref else _loads(value)
     scene = (raw or {}).get("scene") if isinstance(raw, dict) and "scene" in raw else raw
     if not isinstance(scene, dict):
         return None
@@ -58,6 +100,9 @@ def build(prompt: dict) -> dict | None:
     shot = next((s for s in scene.get("shots") or [] if s.get("id") == shot_id), None)
     rec = {"v": VERSION, "app": "Soundstage", "made": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
            "scene": scene, "shot": {"id": shot_id, "name": (shot or {}).get("name")}}
+    if ref:   # the stage travels by reference: so does the recipe's scene (the queue stays light; from_tags loads it)
+        rec["scene_ref"] = _scene_ref(scene)
+        del rec["scene"]
     step = next((_literal(i.get("step")) for _, i in _by_class(prompt, "SoundstageStep")), None)
     if isinstance(step, (int, float)):
         rec["step"] = int(step)
@@ -121,14 +166,14 @@ def from_tags(tags: dict) -> dict | None:
     """The recipe in an MP4's format tags: the soundstage tag, else rebuilt from ComfyUI's prompt tag, else the
     3D Stage widget in the workflow tag. None for a video that isn't a Soundstage take."""
     tags = tags or {}
-    rec = _loads(tags.get(TAG))
+    rec = _with_scene(_loads(tags.get(TAG)))
     if isinstance(rec, dict) and isinstance(rec.get("scene"), dict):
         rec.setdefault("source", "soundstage tag")
         return rec
     prompt = _loads(tags.get("prompt"))
     if isinstance(prompt, dict):
-        rec = build(prompt)
-        if rec:
+        rec = _with_scene(build(prompt))
+        if rec and isinstance(rec.get("scene"), dict):
             rec["source"] = "rebuilt from the prompt tag"
             rec.pop("made", None)
             return rec
@@ -136,7 +181,8 @@ def from_tags(tags: dict) -> dict | None:
     if isinstance(wf, dict):
         for n in wf.get("nodes") or []:
             if n.get("type") == "SoundstageStage":
-                scene = _loads((n.get("widgets_values") or [None])[0])
+                v = (n.get("widgets_values") or [None])[0]
+                scene = _resolve_stage(v) if _stage_ref(v) else _loads(v)
                 scene = scene.get("scene") if isinstance(scene, dict) and "scene" in scene else scene
                 if isinstance(scene, dict) and scene.get("camera"):
                     return {"v": VERSION, "app": "Soundstage", "scene": scene, "source": "rebuilt from the workflow tag",

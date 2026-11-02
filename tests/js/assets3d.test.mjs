@@ -36,7 +36,7 @@ function fakeComfy({ birefnet = true, rmbg = true, fail = null } = {}) {
           camera: { position: [0, 1.6, 0], target: [0, 1.6, 6], focal_mm: 31.2 }, intrinsics: null,
           to_stage: { flip_xyz: [-1, 1, -1], scale: 5, offset: [0, 1.6, 0] } });
       }
-      if (path === "/queue") return json({ queue_running: [], queue_pending: [] });
+      if (path.startsWith("/soundstage/queue_summary")) return json({ running: 0, pending: 0, items: [] });
       throw new Error(`unexpected ${path}`);
     },
   };
