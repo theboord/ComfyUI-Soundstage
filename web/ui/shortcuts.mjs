@@ -51,6 +51,7 @@ export const SHORTCUTS = [
     { keys: ["Shift", "Mod", "Z"], what: "Redo" },
     { keys: ["Esc"], what: "Close a menu, a pop-over, the tour or the full window" },
     { keys: ["V"], what: "Presets: one-click camera moves, light, looks, stunts, edit styles" },
+    { keys: ["Space"], what: "On ③ Set: play or stop the shot (the Play button)" },
   ] },
   { group: "Move things on the set", items: [
     { keys: ["Drag"], what: "Move a person, car or prop; it pushes what it hits" },
