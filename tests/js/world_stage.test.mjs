@@ -194,3 +194,33 @@ test("stage: switching Everything collides off puts the cars back on their keys;
   st.simulatePhysics();
   assert.equal(JSON.stringify(st.state.actors), crashed, "the same crash (deterministic)");
 });
+
+test("stage: a Dynamic prop baked before world collisions (no physics.bakedKeys) re-bakes from its authored keys instead of crashing", () => {
+  // A pre-world-collisions bake: physics {mode: dynamic, baked, source: {keys}} and the baked keys, but no bakedKeys.
+  const prop = (id, keys) => ({ id, name: id, kind: "crate", position: keys[0].position, keys, height_m: 0.6, rotation_deg: 0, key_y: true, physics: { mode: "dynamic" } });
+  const drop = [{ frame: 0, position: [0, 1.5, 0] }];                                          // one key: it falls
+  const toss = [{ frame: 0, position: [3, 1, 0] }, { frame: 12, position: [4, 1.6, 0] }];     // two keys: thrown at f 12
+  const { st } = headless([prop("drop", drop), prop("toss", toss)]);
+  const r0 = st.simulatePhysics();
+  assert.ok(r0.ok, r0.message);
+  const first = JSON.stringify(st.state.actors.map((a) => a.keys));
+  for (const a of st.state.actors) { assert.ok(a.physics.baked && a.physics.bakedKeys, a.id); delete a.physics.bakedKeys; }
+  const r1 = st.simulatePhysics();
+  assert.ok(r1.ok, r1.message);
+  const byId = Object.fromEntries(st.state.actors.map((a) => [a.id, a]));
+  assert.deepEqual(byId.drop.physics.source.keys, drop, "the falling prop's authored key is untouched");
+  assert.deepEqual(byId.toss.physics.source.keys, toss, "the thrown prop's authored keys are untouched (its baked keys are not taken for edits)");
+  assert.equal(JSON.stringify(st.state.actors.map((a) => a.keys)), first, "the same bake as from the authored keys");
+});
+
+test("stage: a car keyed through a person is a knock-down after the bake, and the consequence check (the same body as the bake's) is clear", () => {
+  // The check used to measure a person by its mesh (a running stride is ~1 m deep) while the bake hits a body of at
+  // most 0.4 m: the frames before the bake's contact still read as "drives through" and the render gate refused.
+  const man = { id: "man", name: "Man running", kind: "man", height_m: 1.8, rotation_deg: 0,
+    keys: [{ frame: 0, position: [0, 0, -8] }, { frame: 96, position: [0, 0, 12] }], position: [0, 0, -8] };
+  const { st } = headless([car("police", "Police car", "police_car", [{ frame: 0, position: [0, 0, -30] }, { frame: 96, position: [0, 0, 20] }]), man]);
+  assert.match(st.consequenceCheck()[0]?.text || "", /^The police car drives through Man running at \d\.\d s: knock Man running down, or reroute\?$/);
+  const r = st.simulatePhysics();
+  assert.ok(r.ok && r.takeovers.man, r.message);
+  assert.deepEqual(st.consequenceCheck().map((i) => i.text), [], "what the bake resolved, the check does not report");
+});
