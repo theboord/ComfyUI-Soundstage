@@ -438,6 +438,24 @@ export function applyPose(g, pose, heightM = 1.8) {
       // pointing, and LTX copies the clay rider's pose literally.
       if (l.part === "shoulder") { l.pivot.rotation.x = -0.25; l.pivot.rotation.z = -l.side * 0.08; }
       if (l.part === "elbow") l.pivot.rotation.x = -0.75;
+    } else if (pose === "paddle") {
+      // A canoe / raft / dinghy seat sits low: thighs forward and up a little, shins angled down to feet on the floor.
+      if (l.part === "hip") l.pivot.rotation.x = -1.75;
+      if (l.part === "knee") l.pivot.rotation.x = 1.2;
+      if (l.part === "shoulder") l.pivot.rotation.x = -0.6;
+      if (l.part === "elbow") l.pivot.rotation.x = -0.7;
+    } else if (pose === "kayak") {
+      // Sitting on the hull floor, legs out straight forward under the deck, knees a little up against the braces.
+      if (l.part === "hip") { l.pivot.rotation.x = -1.48; l.pivot.rotation.z = l.side * 0.12; }
+      if (l.part === "knee") l.pivot.rotation.x = 0.35;
+      if (l.part === "shoulder") l.pivot.rotation.x = -0.8;
+      if (l.part === "elbow") l.pivot.rotation.x = -0.6;
+    } else if (pose === "row") {
+      // On the thwart facing aft, feet braced on the stretcher, knees bent.
+      if (l.part === "hip") l.pivot.rotation.x = -1.65;
+      if (l.part === "knee") l.pivot.rotation.x = 1.45;
+      if (l.part === "shoulder") l.pivot.rotation.x = -1.0;
+      if (l.part === "elbow") l.pivot.rotation.x = -0.3;
     } else if (pose === "cycle") {
       if (l.part === "hip") l.pivot.rotation.x = -1.2;
       if (l.part === "knee") l.pivot.rotation.x = 1.5;
@@ -449,6 +467,9 @@ export function applyPose(g, pose, heightM = 1.8) {
   // The figure's pelvis sits ~0.95 m above its feet origin; seated, that's the drop to the seat.
   return pose === "stand" ? 0 : 0.95 * s;
 }
+
+/** Poses a seated figure can hold (the Seat menu, boats and vehicles). */
+export const SEAT_POSES = ["sit", "paddle", "kayak", "row", "ride", "cycle", "stand"];
 
 /** Where a rider sits on each kind of mount (local to the mount: x, seat height, z) and how. */
 export const MOUNTS = {

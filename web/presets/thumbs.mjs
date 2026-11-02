@@ -3,6 +3,7 @@
 // grade card shows the grade, an edit card the clip pacing. Cheap enough to loop a dozen at once; no WebGL.
 //
 //   drawThumb(ctx, preset, t, w, h, extra)   t = seconds since the panel opened; extra = { palettes, setups }
+import { drawBoatThumb } from "./boatpresets.mjs";
 import { cameraKeys, userCameraKeys, yaw } from "./engine.mjs";
 import { stuntKeys } from "../stage/stunts.mjs";
 import { SOFT_PRESET_KINDS, drawSoftThumb } from "./softpresets.mjs";
@@ -231,6 +232,7 @@ function actionThumb(c, p, t, w, h) {
   for (let y = 0; y < h; y += 10) { c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke(); }
   const u = (t % (LOOP * 1.25)) / (LOOP * 1.25);
   const a = p.apply || {};
+  if (a.boat) { drawBoatThumb(c, a.boat, u, w, h); return; }
   if (a.stunt) {
     const keys = stuntKeys(a.stunt, { start: [0, 0, -9], dirDeg: 0, last: 96, fps: 24 }) || [];
     const xs = keys.map((k) => k.position[0]), zs = keys.map((k) => k.position[2]);

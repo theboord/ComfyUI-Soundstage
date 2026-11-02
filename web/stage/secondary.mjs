@@ -410,6 +410,9 @@ export function installSecondary(Stage, deps) {
     const opts = { frames, fps, seed, boxes };
     // Under water the "wind" is the current and the floor is the seabed (the reef set)
     if (this.setFx?.underwater) { opts.wind = this.setFx.drift || [0.05, 0.02]; opts.floorAt = this.setFx.floorAt; opts.floorKey = this.setFx.id; }
+    // Boats on the water: spray and foam land on its surface (watercraft.mjs), not on the lake bed.
+    const wl = this._boatFloor?.();
+    if (Number.isFinite(wl) && !opts.floorAt) { opts.floorAt = () => wl; opts.floorKey = `water ${wl}`; }
     const sig = PT.emitterSig(em, opts);
     if (this._secSim?.sig !== sig) {
       const t0 = performance.now();
