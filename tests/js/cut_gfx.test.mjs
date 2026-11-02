@@ -91,3 +91,16 @@ test("project model: normalised, saved, rippled with sync lock; the V3 lane only
   assert.equal(G.hitGraphic({ graphics: p.graphics }, 60, 300, 940)?.id, "g1");      // the lower third's line
   assert.equal(G.hitGraphic({ graphics: p.graphics }, 60, 1800, 100), null);
 });
+
+test("the viewer's click mapping is paint()'s letterbox inverted (a 9:16 project too)", async () => {
+  // _viewDown mapped clicks with py = v * 1080 while paint() letterboxes (s = W / 1920, oy = (H - 1080 s) / 2), so in a
+  // 9:16 project a click in the middle of a PiP window missed it and the dashed selection box was drawn off the graphic.
+  const G = await import("../../web/cut/gfx.mjs");
+  for (const [W, H] of [[960, 540], [540, 960], [1080, 1080]]) {
+    const { s, oy } = G.designBox(W, H);
+    const [x, y] = G.viewToDesign(1400 * s, 826 * s + oy, W, H);
+    assert.ok(Math.abs(x - 1400) < 1e-9 && Math.abs(y - 826) < 1e-9, `${W}x${H}`);
+  }
+  const [, y169] = G.viewToDesign(0, 270, 960, 540);
+  assert.equal(y169, 540, "16:9 is the plain scale it always was");
+});
