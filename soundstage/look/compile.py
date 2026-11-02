@@ -18,6 +18,7 @@ from ..cine.prompts import SIZE_STILL, _cap, _join
 from . import scene as S
 from .colors import palette_phrase, palette_words
 from .gaze import frame1_looks, head_beats
+from .identity import motion_identity, plain_word, still_identity
 from .impacts import impact_beats
 from .objstate import motion_beats, still_words
 from .vocab import load_vocab, normalize_look, option
@@ -215,7 +216,9 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     loc = f1["location"]
     # a set whose place already says underwater (the reef) keeps its words; a camera under the tank's surface says it
     place = loc["place"] if f1["underwater"] and "underwater" in (loc["place"] or "") else "underwater" if f1["underwater"] else loc["place"]
-    props = [f"{p['word']} {p['where']}" for p in f1["props"][:3]]
+    legacy = scene.get("look_start") is False
+    # crates and boxes in plain words: Klein letters "shipping crates" with gibberish stencils (look/identity.py)
+    props = [f"{p['word'] if legacy else plain_word(p['word'], p.get('kind'))} {p['where']}" for p in f1["props"][:3]]
     desc = frame1_safe(look.get("description", ""))
     vcam = S.vehicle_camera(scene)
     lock = S.traffic_lock(scene)
@@ -224,7 +227,6 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     # zero (or one) makes Krea paint pedestrians; seen from inside, the riders ARE the people in frame.
     count = not lock or n > 0
     # A frame picked before Milestone 5 re-renders with the words it was painted with (stage sends look_start false).
-    legacy = scene.get("look_start") is False
     real = real_people_wanted(look) and not legacy
     if vcam and vcam.get("where") in ("interior", "hood") and place and place != "underwater":
         place_words = f"driving through {place}" if (S.camera_move(scene).get("rides") or {}).get("moving") else f"parked in {place}"
@@ -239,6 +241,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         shot,
         "; ".join(who),
         "; ".join(frame1_looks(scene)),
+        "" if legacy else still_identity(scene, {e["id"] for e in f1["people"] + f1["others"]}),   # which car is which
         lock["still"] if lock else "",
         _still_count(n) if count else "",
         REAL_PEOPLE if n and real else "",
@@ -454,6 +457,8 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
         _cap("; ".join(brief_parts(look))) + "." if brief_parts(look) else "",
         _marks_sentence(mf, {e["id"] for e in f1["people"] + f1["others"]}
                         if len(S.groups(f1["people"] + f1["others"], f1["camera"])) == 1 else None),
+        # each vehicle's paint and livery for the whole shot: the clay guide carries none (look/identity.py)
+        "" if scene.get("look_start") is False else motion_identity(scene, {e["id"] for e in f1["people"] + f1["others"]}),
         head_beats(scene),                       # head and gaze blocking: every person's head, beat by beat
         _camera_sentence(mf, f1, look),
         impact_beats(scene),                     # Milestone 21: timed material beats off the baked hits
