@@ -77,6 +77,13 @@ export function horseGait(v, height = 1.6, sweep = null) {
     // offsets blend on the circle, from the walk's
     HORSE_FOOTFALL[g].off.forEach((o, i) => { off[i] += w[g] * (HORSE_FOOTFALL.walk.off[i] + wrapPi((o - HORSE_FOOTFALL.walk.off[i]) * TAU) / TAU); });
   }
+  // Through a gait change the cadence follows the speed with the blended stance share and the blended clip sweep, so
+  // mid-change (canter -> gallop) a planted hoof still covers exactly the ground the body does: no slide while the
+  // per-gait cadences cross-fade (each was only right at its own gait's weight of 1).
+  if (sweep && u > B.idle) {
+    const sw = (w.walk + w.trot) * (sweep.walk || 0) + (w.canter + w.gallop) * (sweep.gallop || 0);
+    if (sw > 0.05) freq = clamp(v * duty / sw * k, 0.8 * freq, 1.4 * freq);
+  }
   duty += 0.16 * clamp(1 - u / 1.5, 0, 1);                       // a slow walk keeps three feet down
   return { name, weights: w, freq: freq / k, duty, lift: height * lerp(0.07, 0.2, sstep(1.5, 9, u)), offsets: off };
 }
@@ -588,6 +595,43 @@ export function riderMotion(state, h = 1.8) {
 
 // ------------------------------------------------------------------ dust
 /** How dusty the ground of a set is (0 none .. 1 desert) and the colour of its dust. */
+/**
+ * Getting on a horse (about 1 s): reach up to the saddle with the near (left) foot in the stirrup, spring up and stand in
+ * it, swing the off (right) leg over the croup, settle into the seat. t: 0..1 through the mount. Returns the body's
+ * share of the way up (rise: 0 standing on the ground, 1 standing in the stirrup), across (over: 0 at the horse's side,
+ * 1 over the seat), the settle into the seat (sit), the turn to the horse's heading (turn), the lean over the saddle,
+ * and each limb's rotations: legs/arms[side] = {hip: [x, z], knee, shoulder, elbow} for side +1 (left) and -1 (right).
+ */
+const MOUNT_KEYS = [0, 0.2, 0.5, 0.75, 1];
+const MOUNT_LIMBS = {
+  //            t:   0     0.2   0.5   0.75   1
+  nearHipX:      [0,   -1.45, -0.3,  -0.6,  -1.1],
+  nearHipZ:      [0,    0.05,  0,     0.3,   0.45],
+  nearKnee:      [0,    1.75,  0.35,  0.8,   1.3],
+  offHipX:       [0,    0,     0.85, -0.35, -1.1],
+  offHipZ:       [0,    0,     0.55,  1.35,  0.45],   // abduction (times side): the leg swings out and over the croup
+  offKnee:       [0,    0.25,  0.95,  0.45,  1.3],
+  shoulder:      [0,   -2.3,  -1.5,  -0.85, -0.25],
+  elbow:         [0,   -0.5,  -0.95, -0.8,  -0.75],
+  lean:          [0,    0.12,  0.5,   0.3,   0],
+};
+const keyAt = (vals, t) => {
+  t = clamp(t, 0, 1);
+  let i = 0;
+  while (i < MOUNT_KEYS.length - 2 && t > MOUNT_KEYS[i + 1]) i++;
+  const u = (t - MOUNT_KEYS[i]) / (MOUNT_KEYS[i + 1] - MOUNT_KEYS[i]);
+  return lerp(vals[i], vals[i + 1], u * u * (3 - 2 * u));
+};
+export const MOUNT_FRAMES = 24;
+export function mountMotion(t) {
+  const L = (k) => keyAt(MOUNT_LIMBS[k], t);
+  const side = (s) => s > 0
+    ? { hip: [L("nearHipX"), L("nearHipZ")], knee: L("nearKnee"), shoulder: L("shoulder"), elbow: L("elbow") }
+    : { hip: [L("offHipX"), -L("offHipZ")], knee: L("offKnee"), shoulder: L("shoulder"), elbow: L("elbow") };
+  return { rise: sstep(0.2, 0.5, t), over: sstep(0.4, 0.82, t), sit: sstep(0.78, 1, t), turn: sstep(0.25, 0.8, t),
+    lean: L("lean"), limbs: { 1: side(1), [-1]: side(-1) } };
+}
+
 export function groundDust(set, weather) {
   const amt = { desert: 1, beach: 0.55, stadium: 0.5, forest: 0.3, plaza: 0.14, runway: 0.12, street_night: 0.08, empty: 0.12, studio: 0.04, burning_building: 0.25 }[set] ?? 0;
   const color = { desert: [0.66, 0.53, 0.39], beach: [0.74, 0.68, 0.57], stadium: [0.62, 0.48, 0.36], forest: [0.44, 0.39, 0.31] }[set] || [0.6, 0.58, 0.55];
