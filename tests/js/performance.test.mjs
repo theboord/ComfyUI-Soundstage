@@ -214,7 +214,8 @@ test("queue state: 'Waiting in the queue' until the websocket says our prompt st
   assert.match(f.text("Reading…", 40), /^Waiting in the queue \(3 jobs ahead\)/);
   api.emit("executing", { node: "2", prompt_id: "mine" });
   assert.equal(f.state(), "running");
-  assert.equal(f.text("Reading…", 41), "Reading… 41 s");
+  assert.equal(f.text("Reading…", 41), "Reading… 0 s", "the clock restarts when the job starts");
+  assert.equal(f.text("Reading…", 53), "Reading… 12 s");
   f.stop();
   assert.equal(api.count(), 0, "listeners removed");
   const g = followPrompt(api, { summary: async () => null, every: 1e6 });
