@@ -109,8 +109,24 @@ def scene_ramp():
                          "ramp_len": 3.5 - start - 0.25}}
 
 
+def scene_fracture():
+    """Milestone 27: s3's pyramid and car, with breakable wood crates (Voronoi network, glue / bend / crack) and the
+    car's raked-nose collision hull. Soundstage-only for now: Bullet in Blender has no glue network here, so
+    run_blender.py treats the crates as rigid (compare motion, not breakage)."""
+    sc = scene_pyramid()
+    sc = json.loads(json.dumps(sc))
+    sc["name"] = "s5_fracture"
+    sc["title"] = "10 breakable wood crates (Voronoi + constraint network) hit by a braking car at 12 m/s"
+    for b in sc["bodies"]:
+        if b["type"] == "dynamic":
+            b["breakable"] = {"material": "wood", "strength": 5.5, "burst": 0.35}
+        else:
+            b["vehicle"] = True   # raked nose / tail hull (convex.mjs vehicleBodyPoints)
+    return sc
+
+
 def build():
-    return {"fps": FPS, "version": 1, "scenes": [scene_drop(), scene_tower(), scene_pyramid(), scene_ramp()]}
+    return {"fps": FPS, "version": 1, "scenes": [scene_drop(), scene_tower(), scene_pyramid(), scene_ramp(), scene_fracture()]}
 
 
 if __name__ == "__main__":

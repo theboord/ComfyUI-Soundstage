@@ -26,7 +26,9 @@ import { STLLoader } from "../vendor/addons/STLLoader.mjs";
 import * as SkeletonUtils from "../vendor/addons/SkeletonUtils.mjs";
 import { TransformControls } from "../vendor/addons/TransformControls.mjs";
 import { simulate, bakeTrack, physicsOf, samplePos, sampleQuat, checkTracks } from "./physics.mjs";
-import { breakableOf, fracturePieces, seedOf, dentOffset } from "./fracture.mjs";
+import { breakableOf, seedOf, dentOffset, MAX_NETWORK_CELLS } from "./fracture.mjs";
+import { decompose, vehicleBodyPoints } from "./convex.mjs";
+import { shardGeometry } from "./shards.mjs";
 import { LiveEdit } from "./live.mjs";
 import { raycastShapes } from "./physics_avbd.mjs";
 import { Highlighter } from "./outline.mjs";
@@ -521,6 +523,39 @@ export class Stage {
     return { half: [size.x / 2, size.y / 2, size.z / 2], center: [c.x, c.y, c.z] };
   }
 
+  /**
+   * The object's real collision shape (Milestone 27): a convex hull per visible mesh part, in its own (scaled) frame,
+   * merged to at most 4 (convex.mjs decompose), or null when its box is as good (a crate, a cube: the box fast path).
+   * Cached per object until its parts or scale change.
+   */
+  _localHulls(g, box) {
+    if (!box) return null;
+    const parts = [], key = [];
+    const p = g.position.clone(), q = g.quaternion.clone(), vis = g.visible;
+    g.visible = true; g.position.set(0, 0, 0); g.quaternion.identity(); g.updateMatrixWorld(true);
+    const S = new THREE.Matrix4().makeScale(g.scale.x, g.scale.y, g.scale.z), inv = new THREE.Matrix4().copy(g.matrixWorld).invert();
+    const v = new THREE.Vector3();
+    g.traverseVisible((o) => {
+      if (!o.isMesh || !o.geometry?.attributes?.position || o.userData.noCollide || o.material?.transparent) return;
+      const pos = o.geometry.attributes.position, step = Math.max(1, Math.floor(pos.count / 1500));
+      const M = new THREE.Matrix4().multiplyMatrices(S, inv).multiply(o.matrixWorld);
+      const pts = [];
+      for (let i = 0; i < pos.count; i += step) { v.fromBufferAttribute(pos, i).applyMatrix4(M); pts.push([v.x, v.y, v.z]); }
+      parts.push(pts); key.push(`${o.geometry.uuid}:${pos.count}`);
+    });
+    g.position.copy(p); g.quaternion.copy(q); g.visible = vis; g.updateMatrixWorld(true);
+    const k = `${key.join("|")}@${g.scale.x.toFixed(3)},${g.scale.y.toFixed(3)},${g.scale.z.toFixed(3)}`;
+    if (g.userData.hullKey === k) return g.userData.hulls;
+    let hulls = null;
+    try { hulls = decompose(parts, { maxHulls: 4 }); } catch { hulls = null; }
+    const boxVol = 8 * box.half[0] * box.half[1] * box.half[2];
+    const vol = (hulls || []).reduce((s2, h) => s2 + h.volume, 0);
+    // A box-like prop keeps the box (the fast, well-tested path); anything that fills its box much less gets hulls.
+    const out = hulls?.length && vol > 0 && (hulls.length > 1 || vol < 0.82 * boxVol) ? hulls.map((h) => h.v) : null;
+    g.userData.hullKey = k; g.userData.hulls = out;
+    return out;
+  }
+
   /** The set's boxes (street blocks, kerbs, plaza building and planters, interior walls) as fixed colliders. */
   _setColliders() {
     const out = [];
@@ -592,13 +627,18 @@ export class Stage {
       const spec = { id: a.id, shape: sphere ? "sphere" : "box", half: box.half, center: box.center, radius: sphere ? Math.min(...box.half) : 0,
         dynamic: true, mass: p.mass, bounce: p.bounce, friction: p.friction, poses: poses.get(a.id), release: moves ? keys[keys.length - 1].frame : 0,
         material: materialOf(a) };
-      // Breakables (Milestone 24): crates and cardboard boxes are pre-split into planks / panels, glued until a hit
-      // snaps the glue; cardboard dents below that. Scene switch: physics.breakables (on unless false).
+      // Breakables (Milestone 24, Milestone 27's constraint network): a crate or cardboard box is one rigid box until
+      // its first real hit; then it is fractured round that hit (Voronoi cells of its boards / panels, glued by
+      // nails, fibre and creases that bend and crack before they break). Scene switch: physics.breakables.
       const brk = !sphere && this.state.physics?.breakables !== false ? breakableOf(a, spec.material) : null;
       if (brk) {
         const seed = seedOf(a.id) + 7 * (this.state.physics?.seed ?? 1);
-        spec.breakable = { ...fracturePieces(box.half, { material: brk.material, seed }), strength: brk.strength, burst: brk.burst, seed };
+        spec.breakable = { lazy: true, material: brk.material, strength: brk.strength, burst: brk.burst, seed, maxPieces: MAX_NETWORK_CELLS };
         spec.dent = brk.dent;
+      } else if (!sphere) {
+        // Real collision shapes (Milestone 27): a chair, a table, an armchair collides as its parts, not its box.
+        const hulls = this._localHulls(g, box);
+        if (hulls) Object.assign(spec, { shape: "hull", hulls });
       }
       specs.push(spec);
     }
@@ -611,9 +651,14 @@ export class Stage {
         specs.push({ ...base, id: a.id, shape: "box", half: [box.half[0] * 0.6, box.half[1], box.half[2] * 0.75], center: box.center });
       } else if (CAR_BODIES.has(a.kind)) {   // a car is a low body and a cabin, so a crate goes over the bonnet, not up a wall
         const [hx, hy, hz] = box.half, [cx, cy, cz] = box.center, y0 = cy - hy, H = 2 * hy;
-        specs.push({ ...base, id: `${a.id}#body`, shape: "box", half: [hx, H * 0.24, hz], center: [cx, y0 + H * 0.32, cz] });
+        // Milestone 27: the body is a hull with a raked nose and tail (bumper, bonnet), so debris rides up and over.
+        const bh = [hx, H * 0.24, hz], bc = [cx, y0 + H * 0.32, cz];
+        specs.push({ ...base, id: `${a.id}#body`, shape: "hull", hulls: [vehicleBodyPoints(bh, bc)], half: bh, center: bc });
         specs.push({ ...base, id: `${a.id}#cabin`, shape: "box", half: [hx * 0.9, H * 0.22, hz * 0.5], center: [cx, y0 + H * 0.78, cz - hz * 0.08] });
-      } else specs.push({ ...base, id: a.id, shape: "box", half: box.half, center: box.center });
+      } else {
+        const hulls = !NO_COLLIDE.has(a.kind) ? this._localHulls(g, box) : null;
+        specs.push(hulls ? { ...base, id: a.id, shape: "hull", hulls, half: box.half, center: box.center } : { ...base, id: a.id, shape: "box", half: box.half, center: box.center });
+      }
     }
     specs.push(...this._setColliders());
     // Weight & overcrank (Milestone 21): "feels bigger" lowers gravity (DNEG's trick for majestic debris); an overcranked
@@ -638,8 +683,12 @@ export class Stage {
       const fr = res.fractures?.[a.id];
       if (fr) {
         const from = Math.max(0, fr.frame - 1);
-        a.physics.fracture = { frame: fr.frame, material: materialOf(a), pieces: fr.pieces.map((pc) => ({ kind: pc.kind,
-          half: pc.half.map((v) => +v.toFixed(4)), center: pc.center.map((v) => +v.toFixed(4)),
+        const r4 = (v) => +(+v).toFixed(4);
+        a.physics.fracture = { frame: fr.frame, split: fr.split ?? null, cracks: fr.cracks || 0, material: materialOf(a), pieces: fr.pieces.map((pc) => ({ kind: pc.kind,
+          half: pc.half.map(r4), center: pc.center.map(r4),
+          // The cell itself (Milestone 27), relative to its centre: the clay builds its splintered render mesh from it.
+          ...(pc.v ? { v: pc.v.map((p) => p.map((x, k) => r4(x - pc.off[k]))), faces: pc.faces.map((f) => [f.tag === "cut" ? 1 : 0, ...f.idx]),
+            grain: pc.grain, member: pc.member, ...(pc.boards ? { boards: pc.boards.map(r4) } : {}) } : {}),
           keys: bakeTrack(pc.track.slice(from)).map((k) => ({ ...k, frame: k.frame + from })) })) };
         broken++; pieces += fr.pieces.length;
       }
@@ -780,9 +829,22 @@ export class Stage {
     fr.pieces.forEach((pc, i) => {
       const h = pc.half || [0.05, 0.05, 0.05];
       const r = Math.abs(Math.sin((i + 1) * 12.9898 + seedOf(a.id)) * 43758.5453) % 1;
-      const mat = new THREE.MeshStandardMaterial({ roughness: 0.85,
+      const mat = new THREE.MeshStandardMaterial({ roughness: 0.85, flatShading: !!pc.v, side: pc.v ? THREE.DoubleSide : THREE.FrontSide,
         color: new THREE.Color().setHSL(hsl.h, Math.min(1, hsl.s * (0.85 + 0.3 * r)), Math.min(0.9, hsl.l * (0.88 + 0.3 * r))) });
-      const m = new THREE.Mesh(new THREE.BoxGeometry(2 * h[0], 2 * h[1], 2 * h[2]), mat);
+      // Milestone 27: the splintered render mesh of the cell (shards.mjs); an older bake's pieces are plain boxes.
+      let geo = null;
+      if (pc.v?.length >= 4 && pc.faces?.length) {
+        try {
+          const sg = shardGeometry({ v: pc.v, off: [0, 0, 0], grain: pc.grain, boards: pc.boards, faces: pc.faces.map((f) => ({ tag: f[0] ? "cut" : "out", idx: f.slice(1) })) },
+            { material: fr.material === "cardboard" ? "cardboard" : "wood", seed: seedOf(a.id) + i * 7 });
+          geo = new THREE.BufferGeometry();
+          geo.setAttribute("position", new THREE.Float32BufferAttribute(sg.positions, 3));
+          geo.setIndex(sg.indices);
+          geo = geo.toNonIndexed();
+          geo.computeVertexNormals();
+        } catch { geo = null; }
+      }
+      const m = new THREE.Mesh(geo || new THREE.BoxGeometry(2 * h[0], 2 * h[1], 2 * h[2]), mat);
       m.castShadow = true; m.receiveShadow = true;
       m.userData.actorId = a.id;
       grp.add(m);
