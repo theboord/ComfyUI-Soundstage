@@ -19,7 +19,7 @@ const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : d; };
 const SIZES = opt("sizes", "1024x640,1280x800,1600x1000,1920x1080").split(",").map((s) => s.split("x").map(Number));
 const ONLY = opt("only", "") ? new Set(opt("only").split(",")) : null;
-const STATES = opt("states", "none,tracks,presets,physics,parts,director").split(",");
+const STATES = opt("states", "none,tracks,presets,presets_tracks,physics,physics_tracks,parts,director").split(",");
 const PORT = +opt("port", "9980");
 const JOBS = Math.max(1, +opt("jobs", "2"));
 const LOCAL = opt("local", "") ? opt("local").split(",") : [];
@@ -170,6 +170,10 @@ const STATE_JS = {
     off: "__qa.stage.select(null); return 1" },
   director: { on: "__qa.node.ssDirector.open(); return 1", off: "__qa.node.ssDirector.close?.(); return 1" },
 };
+// the same panels opened with the tracks already open (QA 2026-11-02: Presets then covered the shot strip; opening the
+// tracks after the panel closed it first, so the plain states never saw that)
+STATE_JS.presets_tracks = { ...STATE_JS.presets, tracks: true };
+STATE_JS.physics_tracks = { ...STATE_JS.physics, tracks: true };
 
 async function sweepSize([w, h], port) {
   const tag = `${w}x${h}`;
@@ -298,20 +302,20 @@ async function sweepSize([w, h], port) {
       res.results.push(out);
       const bad = out.pops.flatMap((p) => p.error ? [p.error] : (p.issues || []));
       log(tag, state.padEnd(8), (out.coveredByPanel ? "UNDER " : out.skipped ? "SKIP " : out.ok ? "PASS " : "FAIL ") + c.name, out.error || out.skipped || "", bad.slice(0, 3).join(" | "));
-      if (c.needs === "tracks" && state !== "tracks") await tracks(false);
+      if (c.needs === "tracks" && state !== "tracks" && !STATE_JS[state]?.tracks) await tracks(false);
     }
 
     const setCases = CASES.filter((c) => !c.once && (!ONLY || ONLY.has(c.name)));
     for (const state of STATES) {
       if (!STATE_JS[state]) continue;
       await goStep("set");
-      await tracks(state === "tracks");
+      await tracks(state === "tracks" || !!STATE_JS[state].tracks);
       const on = await js(STATE_JS[state].on);
       res.setup.push([state, on]);
       await sleep(1500);
       for (const c of setCases) { if (c.step !== "set") continue; await goStep("set"); await runCase(c, state); }
       await js(STATE_JS[state].off); await sleep(600);
-      if (state === "tracks") await tracks(false);
+      if (state === "tracks" || STATE_JS[state].tracks) await tracks(false);
     }
     for (const c of CASES.filter((x) => x.once && (!ONLY || ONLY.has(x.name)))) { await goStep(c.step); await b.ev(PAGE); await runCase(c, "none"); }
     res.consoleErrors = b.logs.slice(mark0).filter((l) => /^(EXC|ERR)/.test(l) && !noise(l)).map((l) => l.slice(0, 200));

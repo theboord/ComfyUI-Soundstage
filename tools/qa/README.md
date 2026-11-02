@@ -99,7 +99,7 @@ Never update them to make a failure go away without looking at the diff.
 
 Every menu, drop-down, context menu and pop-over opens in one top-level layer (`web/ui/popover.mjs`, on `document.body`, `position:fixed`): it flips to the side of its anchor that has room, is clamped to the window, scrolls inside when taller than the window, closes on Esc and on a click outside, and moves between items with the arrow keys, Home and End. Build new menus with `openPopover(el, { anchor })` (or `placePopover` for the maths), never as a `position:absolute` child of a panel: a scrolling box cuts those off.
 
-`tools/qa/popover_sweep.mjs` checks them in a hidden Chrome with the demo scene, at **1024×640, 1280×800, 1600×1000 and 1920×1080**, with Tracks, Presets, Physics, Parts and Director open in turn. Each menu is opened with a real click and must lie fully inside the window, nothing may cover it, every item must be clickable (scrolled inside the menu only), Esc must close it and the layer must be empty afterwards.
+`tools/qa/popover_sweep.mjs` checks them in a hidden Chrome with the demo scene, at **1024×640, 1280×800, 1600×1000 and 1920×1080**, with Tracks, Presets, Physics, Parts and Director open in turn, then Presets and Physics again over tracks that are already open (`presets_tracks`, `physics_tracks`). Each menu is opened with a real click and must lie fully inside the window, nothing may cover it, every item must be clickable (scrolled inside the menu only), Esc must close it and the layer must be empty afterwards.
 
 ```sh
 SS_ANGLE=metal node tools/qa/popover_sweep.mjs                       # all sizes and panels; exits 1 on a failure

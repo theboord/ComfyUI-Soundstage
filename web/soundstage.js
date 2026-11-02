@@ -125,6 +125,10 @@ const CSS = `
 .ss-gizmo { position:absolute; top:8px; right:8px; width:84px; height:84px; cursor:pointer; }
 .ss-stageview > .ss-coach { top:10px; right:100px; max-width:min(340px, calc(100% - 110px)); }
 .ss-stageview[data-narrow=true] > .ss-coach { top:100px; right:8px; max-width:calc(100% - 16px); }
+/* the floating Physics panel covers the picture's top-right corner (placePhys sets --ph-cover): keep clear of it */
+.ss-stageview[data-ph-cover="1"] > .ss-gizmo { right:var(--ph-cover); }
+.ss-stageview[data-ph-cover="1"] > .ss-coach { right:calc(var(--ph-cover) + 92px); max-width:max(160px, min(340px, calc(100% - var(--ph-cover) - 102px))); }
+.ss-stageview[data-narrow=true][data-ph-cover="1"] > .ss-coach { right:var(--ph-cover); max-width:max(160px, calc(100% - var(--ph-cover) - 8px)); }
 /* A narrow view (the App panel) has no room for the small "Drop a video here" pill beside the Coach pill (they overlapped);
    the big Import video button is right above it there. The big centred call to action on an empty stage stays. */
 .ss-stageview[data-narrow=true] > .ss-vi-cta:not([data-big=true]) { display:none !important; }
@@ -3530,6 +3534,7 @@ function createStageWidget(node, inputName) {
       const p = physPanel.el;
       if (!cvOn || el.dataset.ws !== "wide" || p.hidden || !cvArea.getClientRects().length) {
         delete cvArea.dataset.phys;
+        delete view.dataset.phCover; view.style.removeProperty("--ph-cover");
         p.style.removeProperty("--ph-bottom");
         return;
       }
@@ -3540,6 +3545,13 @@ function createStageWidget(node, inputName) {
       const dock = room < 340;
       if (cvArea.dataset.phys !== (dock ? "dock" : "float")) cvArea.dataset.phys = dock ? "dock" : "float";
       p.style.setProperty("--ph-bottom", `${bar && !dock ? Math.ceil(a.bottom - bar.top + 6) : 6}px`);
+      // Floating, it sits over the picture's top-right corner: the Coach pill and the axis gizmo move left of it
+      // (QA 2026-11-02: at 1600x1000 it hid the Coach pill).
+      const vr = view.getBoundingClientRect(), pr = p.getBoundingClientRect();
+      const cover = !dock && pr.left < vr.right && pr.right > vr.left && pr.top < vr.top + 140 && pr.bottom > vr.top
+        ? Math.ceil(vr.right - pr.left + 6) : 0;
+      if (cover) view.style.setProperty("--ph-cover", `${cover}px`); else view.style.removeProperty("--ph-cover");
+      if (!!cover !== (view.dataset.phCover === "1")) { if (cover) view.dataset.phCover = "1"; else delete view.dataset.phCover; }
     };
     // The folded timeline bar can wrap to two lines in a narrow window: the picture keeps clear of its real height.
     const fitBarRoom = () => {
