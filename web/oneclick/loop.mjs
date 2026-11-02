@@ -61,7 +61,8 @@ export async function fixSeam(ref, ctx, { steps = ["seal", "trim", "bridge"], qu
   let best = { ref, report: report || await postJSON(api, "/soundstage/loop/seam", { ref }) };
   const tried = [];
   for (const how of steps) {
-    if (best.report?.verdict === "seamless") break;
+    // a loop that reads seamless still drops its duplicate last frame: the meter measured the wrap without it
+    if (best.report?.verdict === "seamless" && !(how === "seal" && best.report?.dup_last)) break;
     ctx.progress?.(`Loop: ${how === "seal" ? "dropping the duplicate last frame" : how === "trim" ? "trimming to the best frame pair" : "rendering a bridge back to frame 1"}…`);
     let res;
     if (how === "bridge") {
@@ -72,7 +73,9 @@ export async function fixSeam(ref, ctx, { steps = ["seal", "trim", "bridge"], qu
     } else {
       res = await postJSON(api, "/soundstage/loop/fix", { ref: best.ref, how });
     }
-    const kept = better(best.report, res.after);
+    // seal: the meter already left the duplicate out, so the sealed file is the loop the badge describes; keep it
+    // whenever a frame was dropped (the route returns a new file), not only when re-encoding nudged the number down
+    const kept = how === "seal" ? !!res.ref && res.ref !== best.ref : better(best.report, res.after);
     tried.push({ how, before: res.before?.badge, after: res.after?.badge, kept });
     if (kept) best = { ref: res.ref, report: res.after };
   }
