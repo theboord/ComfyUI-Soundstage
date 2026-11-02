@@ -573,7 +573,7 @@ export const EXEC = {
     await this._waitMeshes((s0.actors || []).map((x) => x.id));
     const r = this.stage.simulatePhysics();
     const nm = (x) => x.name.toLowerCase();
-    const took = r?.takeovers?.[victim.id];
+    const took = r?.takeovers?.[victim.id] || r?.takeovers?.[car.id];   // a solid wall never moves: the car is the one taken over
     const outcome = took ? ` Physics took over at f ${took.frame} (${(took.frame / fps).toFixed(1)} s).` : " They never touched: check the path.";
     return { ok: !!r?.ok, said: `The ${nm(car)} ${plan.words.replace(/^hits/, `hits the ${nm(victim)}`).replace("shoves it", `shoves the ${nm(victim)}`)}${into.length ? ` towards the ${a.into.toLowerCase()}` : ""}.${outcome}` +
       (r?.marks?.length > 2 ? ` Also: ${r.marks.slice(2, 4).join("; ")}.` : "") };
@@ -666,9 +666,11 @@ export const EXEC = {
       st.simulatePhysics?.();
       issues = st.consequenceCheck?.() || [];
     }
-    if (issues.length && !a.anyway) {
+    // "Everything collides" switched off means pass-throughs are wanted; "render ... anyway" renders as it is.
+    if (issues.length && !a.anyway && st.state?.physics?.world !== false) {
       this._fixes = issues.flatMap((i) => i.fixes);
-      return { ok: false, why: "consequences", said: `Not rendered yet: ${issues.slice(0, 2).map((i) => i.text).join(" ")}` };
+      return { ok: false, why: "consequences", said: `Not rendered yet: ${issues.slice(0, 2).map((i) => i.text).join(" ")}` +
+        ` (or say "render the ${a.kind === "final" ? "final" : "draft"} anyway").` };
     }
     const step = a.kind === "final" ? 4 : 3;
     const prev = this.stage.toJSON().active_shot;

@@ -146,6 +146,43 @@ test("Director: 'ram' plans the speed by momentum and the bake does the crash; '
   assert.deepEqual(chk.next.slice(0, 2).map((x) => x.label), ["Crash them", "Reroute"]);
 });
 
+test("Director: the render's consequence check stops a pass-through, but not with Everything collides off or 'anyway'", async () => {
+  const { Director, EXEC } = await import("../../web/agent/director.mjs");
+  globalThis.localStorage ||= { getItem: () => null, setItem() {} };
+  const run = async (setup, args) => {
+    const { st } = headless(chase());
+    setup(st);
+    let rendered = 0;
+    const d = new Director({ api: { fetchApi: async () => ({ ok: false }) }, stage: st, host: { pipeline: { _render: async () => { rendered++; } } } });
+    const r = await EXEC.render.call(d, { kind: "draft", shots: ["s1"], ...args });
+    return { r, rendered };
+  };
+  const keep = (st) => { st.setKeepKeyed("police", true); st.setKeepKeyed("red", true); };
+  const held = await run(keep, {});
+  assert.equal(held.r.why, "consequences");
+  assert.match(held.r.said, /passes through the red car .*render the draft anyway/);
+  assert.equal(held.rendered, 0);
+  const anyway = await run(keep, { anyway: "yes" });
+  assert.ok(anyway.r.ok && anyway.rendered === 1, JSON.stringify(anyway.r));
+  const off = await run((st) => st.setWorldCollisions(false), {});
+  assert.ok(off.r.ok && off.rendered === 1, JSON.stringify(off.r));
+});
+
+test("Director: 'ram' into a solid wall reports the hit (the wall never moves; the car is the one taken over)", async () => {
+  const { Director } = await import("../../web/agent/director.mjs");
+  globalThis.localStorage ||= { getItem: () => null, setItem() {} };
+  const { st } = headless([car("police", "Police car", "police_car", [{ frame: 0, position: [0, 0, -30] }]),
+    { id: "w1", name: "Wall", kind: "wall", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }], rotation_deg: 0 }]);
+  st.load = function (scene) { this.state = structuredClone(scene); this._buildSet(); this._setGroup = undefined; };
+  st.select = () => {};
+  const d = new Director({ api: { fetchApi: async () => ({ ok: false }) }, stage: st, host: {} });
+  const out = await d.apply({ command: "the police car crashes into the wall", calls: [{ tool: "ram", plan: "", args:
+    { target: "Police car", target_id: "police", victim: "Wall", victim_id: "w1" } }] });
+  assert.equal(st.state.physics.takeovers.police.by, "w1");
+  assert.match(out.said[0], /Physics took over at f \d+/);
+  assert.doesNotMatch(out.said[0], /never touched/);
+});
+
 test("stage: switching Everything collides off puts the cars back on their keys; on again, the crash is back", () => {
   const { st } = headless(chase());
   st.simulatePhysics();
