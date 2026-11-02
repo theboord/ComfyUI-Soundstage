@@ -41,8 +41,9 @@ def prompt_text(prompt, has_audio=True):
 def capture(g, p):
     """p: source (file ref), fps, max_frames, resolution. -> (clip node, pose node). DWPose body + hands + face on every
     frame at `resolution` (768 keeps the face landmarks on a medium shot)."""
+    # tail="hold": a performance keeps its last word (the last frame is held up to 8k+1 instead of dropped).
     clip = g.node("SoundstageClipLoad", source=p["source"], fps=float(p.get("fps", 24.0)), start_frame=0,
-                  max_frames=int(p.get("max_frames", 161)))
+                  max_frames=int(p.get("max_frames", 161)), tail=p.get("tail", "hold"))
     pose = g.node("DWPreprocessor", image=clip.out(0), detect_hand="enable", detect_body="enable", detect_face="enable",
                   resolution=int(p.get("resolution", 768)), bbox_detector="yolox_l.onnx",
                   pose_estimator="dw-ll_ucoco_384_bs5.torchscript.pt", scale_stick_for_xinsr_cn="disable")

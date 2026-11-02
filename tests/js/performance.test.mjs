@@ -106,7 +106,9 @@ test("voice choices: keep mine first; the cast entry's voice is the default; a s
   c = voiceChoices({ who: "Mara Voss", castVoice: "MARA_VOSS", saved });
   assert.equal(c.value, "MARA_VOSS");
   c = voiceChoices({ who: "Mara Voss", castVoice: "MARA_V2", saved });
-  assert.match(c.options[1].label, /not saved yet/);
+  assert.equal(c.value, "MARA_VOSS", "a cast voice the server doesn't have is replaced by the one that matches");
+  c = voiceChoices({ who: "Pip Lark", castVoice: "PIP_V2", saved: [{ name: "EZRA_HALE", character: "Ezra Hale" }] });
+  assert.match(c.options[1].label, /not saved yet/, "no match to fall back on: the cast voice stays, flagged");
   c = voiceChoices({ who: "Ezra Hale", saved: null });
   assert.deepEqual(c.options.map((o) => o.value), ["", "EZRA_HALE"], "no voice list from the server: the character's own name");
   assert.deepEqual(voiceChoices({ who: "Nobody", saved: [] }).options.map((o) => o.value), [""]);
@@ -157,4 +159,80 @@ test("face boxes: median over the capture, unclamped from the stage", () => {
   const px = { face: Array.from({ length: 68 }, (_, i) => [600 + (i % 10) * 10, 300 + Math.floor(i / 10) * 10]) };
   assert.deepEqual(faceBoxOfPerson(px, 640, 400), [0.9375, 0.75, 1.0781, 0.9]);   // past the right edge: kept
   assert.equal(faceBoxOfPerson({ face: null }, 640, 400), null);
+});
+
+// ------------------------------------------------------------------ 2026-11-02: the cast's voices, queue state, pinned shot, tail
+
+import { matchVoice, fullNamesIn, voiceCandidates, followPrompt, tailNote, ltxFrames } from "../../web/performance/performance.mjs";
+
+const SAVED = [{ name: "EZRA_HALE", character: "EZRA HALE" }, { name: "MARA_VOSS", character: "MARA VOSS" }, { name: "PIP", character: "PIP" }];
+const SCRIPT = { scenes: [{ elements: [
+  { type: "action", text: "EZRA HALE (60s, sheriff's star long since pawned) rests a hand near his holster. Across from him, MARA VOSS (30s) does not blink." },
+  { type: "character", text: "EZRA" }, { type: "dialogue", text: "You rode a long way to stand in the dirt." }] }] };
+
+test("the script's cue names (Ezra, Mara) match the voices saved under the full names (EZRA_HALE, MARA_VOSS)", () => {
+  assert.equal(matchVoice("Ezra", SAVED), "EZRA_HALE", "first name -> the one voice that starts with it");
+  assert.equal(matchVoice("Mara", SAVED), "MARA_VOSS");
+  assert.equal(matchVoice("Mara Voss", SAVED), "MARA_VOSS");
+  assert.equal(matchVoice("Ezra", [...SAVED, { name: "EZRA_YOUNG", character: "EZRA YOUNG" }]), "", "ambiguous first name: no guess");
+  assert.equal(matchVoice("Ezra", [...SAVED, { name: "EZRA_YOUNG" }], ["EZRA HALE"]), "EZRA_HALE", "an alias settles it");
+  assert.equal(matchVoice("Nobody", SAVED), "");
+  assert.deepEqual(fullNamesIn(SCRIPT, "Ezra"), ["EZRA HALE"]);
+  assert.deepEqual(fullNamesIn(SCRIPT, "Mara"), ["MARA VOSS"]);
+  assert.deepEqual(voiceCandidates("Ezra", ["EZRA HALE"]), ["EZRA_HALE", "EZRA"]);
+});
+
+test("before the server can list voices (404), the dialog offers the full name from the script, never the bare cue name", () => {
+  let c = voiceChoices({ who: "Ezra", saved: null, aliases: fullNamesIn(SCRIPT, "Ezra") });
+  assert.deepEqual(c.options.map((o) => o.value), ["", "EZRA_HALE"]);
+  assert.equal(c.options[1].label, "Convert to Ezra (EZRA_HALE)");
+  c = voiceChoices({ who: "Mara", castVoice: "MARA_VOSS", saved: null });
+  assert.equal(c.value, "MARA_VOSS", "the project's cast voice is the default, list or no list");
+  c = voiceChoices({ who: "Ezra", saved: SAVED });
+  assert.equal(c.options[1].value, "EZRA_HALE", "with the list: matched by name");
+  assert.equal(voiceChoices({ who: "Ezra", castVoice: "EZRA", saved: SAVED }).value, "EZRA_HALE", "a stale EZRA cast voice heals");
+});
+
+function fakeApi() {
+  const ls = {};
+  return { addEventListener: (t, f) => (ls[t] ||= []).push(f), removeEventListener: (t, f) => { ls[t] = (ls[t] || []).filter((x) => x !== f); },
+    emit: (t, detail) => (ls[t] || []).forEach((f) => f({ detail })), count: () => Object.values(ls).flat().length };
+}
+
+test("queue state: 'Waiting in the queue' until the websocket says our prompt started, with jobs ahead when the server can say", async () => {
+  const api = fakeApi();
+  let answer = null;
+  const f = followPrompt(api, { summary: async () => answer, every: 1e6 });
+  api.emit("execution_start", { prompt_id: "other" });
+  f.track("mine");
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(f.state(), "queued");
+  assert.match(f.text("Reading…", 12), /^Waiting in the queue: the GPU is shared.* 12 s$/);
+  answer = { running: 1, pending: 3, items: [{ prompt_id: "mine", state: "pending", position: 3 }] };
+  f.track("mine");
+  await new Promise((r) => setTimeout(r, 0));
+  assert.match(f.text("Reading…", 40), /^Waiting in the queue \(3 jobs ahead\)/);
+  api.emit("executing", { node: "2", prompt_id: "mine" });
+  assert.equal(f.state(), "running");
+  assert.equal(f.text("Reading…", 41), "Reading… 41 s");
+  f.stop();
+  assert.equal(api.count(), 0, "listeners removed");
+  const g = followPrompt(api, { summary: async () => null, every: 1e6 });
+  api.emit("execution_start", { prompt_id: "early" });   // started before POST /prompt returned
+  g.track("early");
+  assert.equal(g.state(), "running");
+  g.stop();
+});
+
+test("the clip's tail: LTX frame counts, and the dialog says what was dropped or held", () => {
+  assert.equal(ltxFrames(97), 97); assert.equal(ltxFrames(96), 89); assert.equal(ltxFrames(96, "hold"), 97); assert.equal(ltxFrames(90, "hold"), 97);
+  let t = tailNote(4.04, { seconds: 3.708 });
+  assert.ok(Math.abs(t.dropped_s - 0.33) < 0.011);
+  assert.match(t.text, /last 0\.3\d s are dropped/);
+  t = tailNote(3.75, { seconds: 4.042, tail_held_s: 0.29 });
+  assert.equal(t.dropped_s, 0); assert.match(t.text, /held 0\.29 s.*no word is lost/);
+  assert.equal(tailNote(4.04, { seconds: 4.042 }).text, "");
+  assert.equal(tailNote(0, { seconds: 3 }).text, "");
+  assert.equal(buildCaptureGraph({ source: "a.mp4 [input]", performer: "M", consent: true, tail: "hold" })[1].inputs.tail, "hold");
+  assert.equal(buildCaptureGraph({ source: "a.mp4 [input]", performer: "M", consent: true })[1].inputs.tail, undefined, "an older server never sees the new input");
 });

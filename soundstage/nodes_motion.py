@@ -85,6 +85,10 @@ class SoundstageClipLoad(IO.ComfyNode):
                                tooltip="Retime to this rate (nearest frame). 0 = keep the clip's own rate."),
                 IO.Int.Input("start_frame", default=0, min=0, max=1_000_000),
                 IO.Int.Input("max_frames", default=161, min=0, max=10_000, tooltip="0 = to the end (at the new rate)."),
+                IO.Combo.Input("tail", options=["trim", "hold"], default="trim", optional=True,
+                               tooltip="LTX needs 8k+1 frames. trim drops up to 7 frames off the end; hold pads up "
+                                       "to the next 8k+1 by holding the last frame (and silence), so a clip keeps "
+                                       "its last word."),
             ],
             outputs=[IO.Image.Output(display_name="images"), IO.Audio.Output(display_name="audio"),
                      IO.Float.Output(display_name="fps"), IO.Int.Output(display_name="frames"),
@@ -92,7 +96,7 @@ class SoundstageClipLoad(IO.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, source, fps, start_frame, max_frames) -> IO.NodeOutput:
+    def execute(cls, source, fps, start_frame, max_frames, tail="trim") -> IO.NodeOutput:
         path = _safe_path(source)
         comp = InputImpl.VideoFromFile(path).get_components()
         src_fps = float(comp.frame_rate) or 24.0
@@ -100,7 +104,7 @@ class SoundstageClipLoad(IO.ComfyNode):
         n = images.shape[0]
         if n == 0:
             raise MotionError(f"{source}: no video frames.")
-        idx, out_fps = T.retime_indices(n, src_fps, fps, start_frame, max_frames)
+        idx, out_fps = T.retime_indices(n, src_fps, fps, start_frame, max_frames, tail=tail)
         frames = images[idx].contiguous()
         start_s = start_frame / src_fps
         audio = None

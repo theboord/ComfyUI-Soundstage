@@ -71,8 +71,37 @@ def save_voice(user_dir, name, x, sr, *, consent, owner, character="", notes="",
     return v
 
 
-def load_voice(user_dir, name):
+def resolve_name(user_dir, name):
+    """The saved voice a name means: the exact file, else case-insensitively, else the voice saved for that character
+    ("Ezra Hale" -> EZRA_HALE), else the one voice whose name or character starts with that first name
+    ("Ezra" / "EZRA" -> EZRA_HALE). An ambiguous first name resolves to nothing. -> the saved name, or None."""
     n = safe_name(name)
+    have = list_voices(user_dir)
+    if n in have:
+        return n
+    up = n.upper()
+    for h in have:
+        if h.upper() == up:
+            return h
+    d = voice_dir(user_dir)
+
+    def character(h):
+        try:
+            with open(os.path.join(d, h + ".json"), encoding="utf-8") as f:
+                return safe_name(json.load(f).get("character") or h).upper()
+        except (OSError, ValueError, VoiceError):
+            return h.upper()
+    chars = {h: character(h) for h in have}
+    for h, c in chars.items():
+        if c == up:
+            return h
+    first = up.split("_")[0]
+    hits = [h for h in have if any(x == first or x.startswith(first + "_") for x in (h.upper(), chars[h]))]
+    return hits[0] if len(hits) == 1 else None
+
+
+def load_voice(user_dir, name):
+    n = resolve_name(user_dir, name) or safe_name(name)
     d = voice_dir(user_dir)
     p = os.path.join(d, n + ".json")
     if not os.path.exists(p):
