@@ -17,6 +17,21 @@
 <a href="https://github.com/theboord/ComfyUI-Soundstage/commits/main"><img src="https://img.shields.io/github/commit-activity/w/theboord/ComfyUI-Soundstage?label=commits" alt="Commits per week"></a>
 </p>
 
+## Judging it? Start here
+
+Soundstage is ComfyUI custom nodes plus an App that work like a film set: you block a scene in 3D clay (set, cast, camera, stunts), and open-weight models render takes that follow that blocking (FLUX 3 Klein for the frame, LTX-2.5 for motion and sound).
+
+1. Open the [try-it demo](https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq) (no install). The first screen is a recorded wipe between the stage's clay and the take it guided.
+2. Press **Open the live stage**, then **Play**. Select the red car and pick a stunt in its properties.
+3. Open **What's new · tour** and run any stop. The table below says which parts run live in your browser and which are recordings of a real run, played back. If the demo's top bar shows a **Live / Replayed** badge, it says the same thing for the screen you are on.
+4. For the whole flow, script to delivered cut, read the [tutorial](https://claude.ai/artifact/Rf97KZZRHcrkt9ifFb2kFX).
+
+| Live in your browser (the real App code) | Replayed from a real run (made earlier, played back) |
+|---|---|
+| The 3D stage and its playback, cameras, live physics (climb, mount, pick up, push), stunts, Drive mode, boats and swimming, Presets, the Timeline editor (trimming and ordering; the clips in it are recorded) | The drafts and finals in ④ Frame, ⑤ Motion, ⑥ Review and ⑦ Deliver (FLUX 3 Klein frames, LTX-2.5 clips: the same recorded files in each step), the takes in Takes and ScriptSync, take checks, the Advisor's answers, the Look's compiled prompts (saved per scene; they do not change when you edit the Look), the joined cut from ⑦ Deliver's Cut → one video, Video → 3D (one pod run of 61 min wall time, most of it queue wait, played back in 9 s), every Watch clip and the first screen |
+
+Not in the demo at all (each one says "available in the full install"): new renders, the Director's language model, Timeline render, the phone viewfinder, Layer Packs, voices.
+
 <p align="center"><b>Built in 3 days. This is only the beginning:</b> more features are coming. &#11088; Star the repo and build with us.</p>
 
 Import your screenplay. Cast it. Block every scene in 3D clay with real camera rigs, then watch FLUX 3 Klein paint the frame and LTX-2.5 bring it to life **with sound, following your blocking shot for shot**. Approve takes like dailies and hand the cut to Premiere, Avid or Resolve. No cloud, no credits, no paid API: it all runs locally in ComfyUI.<sup>[1](#partner-footnote)</sup>
