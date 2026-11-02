@@ -373,7 +373,7 @@ export class Stage {
     this._setGroup = built.group;
     this._setCleanSig = clean;
     this.setFx = built.fx || null;   // Milestone 11 sets (web/stage/sets): animation per frame + per-pass look
-    ground.visible = !this.setFx?.hideGround;
+    ground.visible = ground.visible && !this.setFx?.hideGround;   // attach() above already hid it under an imported world
     // The clean street runs a long way: so does the road. Open land (desert, beach, field, forest, sea) runs to the horizon.
     const reach = clean ? 6 : groundReach(env.set);
     ground.scale.set(reach, reach, 1);
