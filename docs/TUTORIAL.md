@@ -4,6 +4,8 @@ Soundstage turns ComfyUI into a small film set. You bring in a script, cast it, 
 
 **100% open weights: every model runs locally.** (Paid partner API models are hidden; they are opt-in only, with `SOUNDSTAGE_PARTNER_MODELS=1` when you start ComfyUI.)
 
+**New here? Start with the [Quickstart](QUICKSTART.md):** your first shot in about ten minutes, then a one-page scene from script to delivery.
+
 This guide is for anyone who has just cloned the repo. It covers where every panel and button is, what each one does, and the habits that get good shots quickly. Every control named here is in the code, with the same label you see on screen.
 
 <p align="center"><img src="media/clay_to_final.gif" width="820" alt="Left: the clay stage render. Right: the final LTX-2.5 video of the same shot."></p>

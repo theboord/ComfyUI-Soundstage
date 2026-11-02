@@ -21,7 +21,7 @@ export function markTourSeen(storage = globalThis.localStorage) {
 
 /** The tour, one sentence a step. The host adds where each one points (target) and what to open first (before). */
 export const TOUR_STEPS = [
-  { id: "start", title: "Start here",
+  { id: "start", title: "Start here", interactive: true,   // the spotlit first-run card stays clickable (QA 2026-11-02)
     text: "Import a script, turn a video clip into 3D with Import video, or try the demo scene: each one builds a stage for you." },
   { id: "scene", title: "Pick a scene",
     text: "Pick a scene here and the stage builds itself: the set, the light, the people and the cars." },
@@ -102,6 +102,20 @@ function scrollParent(e) {
   }
   return null;
 }
+
+/**
+ * The dim layer's clip for an interactive step: the whole viewport with the spotlight cut out (inset so the hole's
+ * yellow border still draws), so clicks inside the hole reach the real control and clicks elsewhere stay blocked.
+ */
+export function holeClipPath(r, vw, vh, inset = 3) {
+  if (!r || !(r.width > 2 * inset) || !(r.height > 2 * inset)) return "";
+  const px = (v) => `${Math.round(v)}px`;
+  const L = px(r.left + inset), T = px(r.top + inset), R = px(r.right - inset), B = px(r.bottom - inset);
+  return `polygon(evenodd, 0px 0px, ${px(vw)} 0px, ${px(vw)} ${px(vh)}, 0px ${px(vh)}, 0px 0px, ${L} ${T}, ${R} ${T}, ${R} ${B}, ${L} ${B}, ${L} ${T})`;
+}
+
+/** Is the point inside the rect? */
+export function inRect(r, x, y) { return !!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; }
 
 /** The bounding box of several elements (the visible ones), or null. */
 export function unionRect(rects) {
@@ -277,6 +291,12 @@ export class Tour {
       if (k === "Tab" || k === "h" || k === "H") e.stopPropagation();   // keep the canvas's panel-hiding keys out of the tour
     };
     window.addEventListener("keydown", this._key, true);
+    // An interactive step (the first-run card): a click through the hole does what it says and ends the tour.
+    this._through = (e) => {
+      if (!this.el || !this.steps[this.i]?.interactive || !inRect(this._holeRect, e.clientX, e.clientY)) return;
+      setTimeout(() => this.close(false), 0);
+    };
+    window.addEventListener("click", this._through, true);
     this._re = () => this.place();
     window.addEventListener("resize", this._re);
     this._poll = setInterval(this._re, 300);   // views open, panels settle: keep the hole on the control
@@ -340,6 +360,9 @@ export class Tour {
       Object.assign(this.hole.style, { left: `${left}px`, top: `${top}px`, width: `${r.width}px`, height: `${r.height}px` });
       this.hole.dataset.none = "false";
     } else this.hole.dataset.none = "true";
+    const through = !!(r && this.steps[this.i]?.interactive);
+    this._holeRect = through ? r : null;
+    this.el.style.clipPath = through ? holeClipPath(r, vw, vh) : "";
     const cw = this.card.offsetWidth || 340, ch = this.card.offsetHeight || 160;
     const p = placeCard(r, { w: cw, h: ch }, { w: vw, h: vh });
     this.card.style.left = `${p.left}px`;
@@ -350,6 +373,7 @@ export class Tour {
   close(done = false) {
     if (!this.el) return;
     window.removeEventListener("keydown", this._key, true);
+    window.removeEventListener("click", this._through, true);
     window.removeEventListener("resize", this._re);
     clearInterval(this._poll);
     this.el.remove();

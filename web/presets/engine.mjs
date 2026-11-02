@@ -244,6 +244,17 @@ export function gradePatch(currentGrade = {}, grade = {}) {
 // ------------------------------------------------------------------------------------------------ action
 
 /** A pyramid of crates (3 · 2 · 1 …) across a path: centre `at`, the path's heading `deg` (0 = +Z). */
+/** n names "Base 1", "Base 2"... that skip the ones already taken (QA 2026-11-02: two "Crate 1" in the Outliner). */
+export function uniqueNames(base, n, taken = []) {
+  const used = new Set((taken || []).map((x) => String(x || "").trim().toLowerCase()));
+  const out = [];
+  for (let k = 1; out.length < n; k++) {
+    const nm = `${base} ${k}`;
+    if (!used.has(nm.toLowerCase())) { out.push(nm); used.add(nm.toLowerCase()); }
+  }
+  return out;
+}
+
 export function crateStack(at, deg, n = 6, size = 0.8) {
   const out = [];
   const across = [Math.cos(deg * D2R), 0, -Math.sin(deg * D2R)];   // +X turned with the heading

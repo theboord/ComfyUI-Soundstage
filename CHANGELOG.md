@@ -5,6 +5,14 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-02
 
+**04:40 PST · The Quickstart, tested by two fresh-eyes runs: a first shot in ten minutes, then a one-page scene; and four first-run snags fixed**
+- **New:** [docs/QUICKSTART.md](docs/QUICKSTART.md), linked from the README and the tutorial: four rules first (never ComfyUI's Run, one shot at a time, Esc only to close an open panel, read a yellow button), a ten-step first shot on the demo, the *Last Light at the Pump* scene through all seven steps, and the rough edges. Every step was checked against the live App by two headless testers with no GPU jobs.
+- **The Guide tour no longer swallows the demo click.** Its first step spotlights the *Let's make a shot* card; the dim layer now has a hole there (a clip-path), so *Try the demo scene* works with the tour up and ends the tour. Later steps stay modal, so a highlighted *Generate frames* never queues a job by accident.
+- **Esc closes the Director's Book wherever focus is.** Focus stayed on the top bar's Book button, so Esc reached the workspace and dropped it while the Book stayed open. Typing in a Book field keeps Esc.
+- **④ Frame's add-on list shows only FLUX Klein LoRAs**, never a Downloads or private folder. It listed every LoRA on the machine (LTX, SDXL and client-named files), which is wrong for Klein and showed private names on a screen share. The one already chosen stays listed.
+- **Crate crash never makes a second "Crate 1"**: its crates are numbered after the ones already on set. ④'s look box hint is now neutral ("Optional: the look you want…") instead of a western example on every scene.
+- Code: [web/ui/firstrun.mjs](web/ui/firstrun.mjs), [web/book/view.mjs](web/book/view.mjs), [web/pipeline/pipeline.mjs](web/pipeline/pipeline.mjs), [web/presets/engine.mjs](web/presets/engine.mjs), [web/presets/runner.mjs](web/presets/runner.mjs). Tests: [tests/js/tutorial_qa.test.mjs](tests/js/tutorial_qa.test.mjs).
+
 **04:15 PST · Real performance: the read's clock starts when the job starts; the dialog proven end to end on the pod**
 - **Why:** on the shared card the first end-to-end read waited 41 min in the queue, and once it started the status said "Reading… 2492 s".
 - **Fix** ([web/performance/performance.mjs](web/performance/performance.mjs)): `followPrompt` counts the running time from the moment the job starts. The wait shows as "Waiting in the queue…".

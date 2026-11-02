@@ -7,6 +7,14 @@ import { FIELDS, CATEGORIES, CAT, SOURCES, niceName, notesForScene, unsortedNote
 import { moveArrowSVG } from "./floorplan.mjs";
 import { TOKENS as T, TYPE, RADIUS, FONT } from "../ui/theme.mjs";
 
+/** Does this keydown close the open Book? Esc, the Book open, and not typing in one of the Book's own fields. */
+export function bookEscCloses(e, bookEl) {
+  if (!e || e.key !== "Escape" || !bookEl || bookEl.hidden) return false;
+  const t = e.target;
+  if (t && bookEl.contains?.(t) && /^(TEXTAREA|INPUT|SELECT)$/.test(t.tagName || "")) return false;
+  return true;
+}
+
 const BOOK_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>';
 const ICON = {
   x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
@@ -195,7 +203,13 @@ export class BookView {
     this.main = h("main", { class: "main" });
     this.el.append(top, h("div", { class: "body" }, this.rail, this.main));
     for (const ev of ["pointerdown", "wheel", "keydown", "keyup", "contextmenu"]) this.el.addEventListener(ev, (e) => e.stopPropagation());
-    this.el.addEventListener("keydown", (e) => { if (e.key === "Escape" && !/^(TEXTAREA|INPUT|SELECT)$/.test(e.target.tagName)) this.ctl.close(); });
+    // Esc closes the Book wherever focus is (QA 2026-11-02: focus stayed on the top bar's Book button, so Esc reached the
+    // workspace instead and dropped the full workspace while the Book stayed open). Typing in a Book field keeps Esc.
+    window.addEventListener("keydown", (e) => {
+      if (!bookEscCloses(e, this.el)) return;
+      e.preventDefault(); e.stopPropagation();
+      this.ctl.close();
+    }, true);
     document.body.append(this.el);
   }
 
