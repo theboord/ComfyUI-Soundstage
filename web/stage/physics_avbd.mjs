@@ -313,7 +313,7 @@ function syncRegistration() {
 function refreshBadges() {
   const doc = globalThis.document;
   if (!doc?.querySelectorAll) return;
-  for (const el of doc.querySelectorAll(".ss-stage")) mountBadge(el, active() ? "avbd" : "xpbd", doc);
+  for (const el of doc.querySelectorAll(".ss-stage:not(.ss-pophost)")) mountBadge(el, active() ? "avbd" : "xpbd", doc);
 }
 
 // In the browser: read the toggle, register, bring the GPU up in the background, keep the badge on new stages.

@@ -24,6 +24,7 @@
 import { coverageFor, setupLabel, sceneShots, takesFor, heroTake, setupColor, setupKind, SETUP_KIND_LABEL,
   isOffscreen, toggleOffscreen, moveCoverageEnd, syncPoint, fmtDuration, stackThumbs, LiningHistory } from "./model.mjs";
 import { SyncPlayer } from "./syncplayer.mjs";
+import { placePopover } from "../ui/popover.mjs";
 
 const SVGNS = "http://www.w3.org/2000/svg";
 const h = (tag, attrs = {}, ...kids) => {
@@ -560,9 +561,10 @@ export class LinedScript {
       h("div", { class: "t" }, h("b", {}, t ? `${st.label}-${t.n}` : st.label), h("span", {}, st.shot.name || "")),
       h("div", { class: "m" }, st.takes.length ? `${st.takes.length} take${st.takes.length > 1 ? "s" : ""}${t?.circled ? ` · Tk ${t.n} circled` : ""}${t?.seconds ? ` · ${fmtDuration(t.seconds)}` : ""}` : "No takes yet"));
     this.el.append(pop);
-    const left = Math.min(innerWidth - 270, Math.max(8, r.left + r.width / 2 - 130));
-    const top = r.top > 240 ? r.top - pop.offsetHeight - 8 : r.bottom + 8;
-    pop.style.left = `${left}px`; pop.style.top = `${top}px`;
+    // above the line (below when there is no room), always inside the window (ui/popover.mjs)
+    const at = placePopover(r, { width: pop.offsetWidth || 260, height: pop.offsetHeight }, { width: innerWidth, height: innerHeight },
+      { side: "top", align: "center", gap: 8 });
+    pop.style.left = `${at.left}px`; pop.style.top = `${at.top}px`; pop.style.maxHeight = `${at.maxHeight}px`; pop.style.overflow = at.scrolls ? "hidden" : "";
     this.pop = pop;
   }
 

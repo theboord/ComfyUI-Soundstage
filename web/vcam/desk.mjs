@@ -11,6 +11,7 @@
 //    Discard (on the phone) puts the previous keys back.
 
 import { qrSvg } from "./qr.mjs";
+import { openPopover } from "../ui/popover.mjs";
 import { takeToKeys, viewfinderUrl, isLoopback, VF_EVENT, fmtStop, fmtFocus } from "./vfcore.mjs";
 
 const CSS = `
@@ -42,6 +43,7 @@ export function attachViewfinder({ api, stage, host, seek = null, play = null, s
   host?.append(btn);
 
   const devices = new Map();       // device -> {last, cam, frame, recording}
+  let popHandle = null;
   let follow = true, pop = null, pending = null, lastPub = 0, lastSync = "", recording = false;
   let applied = null;              // {id, prev:{keys, rig}} for Discard
   const active = () => [...devices.values()].some((d) => performance.now() - d.last < 20000);
@@ -160,14 +162,16 @@ export function attachViewfinder({ api, stage, host, seek = null, play = null, s
       <ol><li>Same Wi-Fi as this computer, phone sideways.</li><li>Tap <b>Start</b>, allow motion.</li><li>● records from the top of the shot; Keep or Discard on the phone.</li></ol>`;
     pop.querySelector("h4 button").addEventListener("click", close);
     pop.querySelector("input").addEventListener("change", (e) => { follow = e.target.checked; if (!follow) stage.previewCamera(null); });
-    document.body.append(pop);
-    const r = btn.getBoundingClientRect();
-    pop.style.left = `${Math.max(8, Math.min(innerWidth - 316, r.left))}px`;
-    pop.style.top = r.top > 480 ? `${Math.max(8, r.top - pop.offsetHeight - 8)}px` : `${r.bottom + 8}px`;
+    // the App's pop-over layer (ui/popover.mjs): flipped, clamped and scrolling inside a short window; Esc and an
+    // outside click close it
+    const mine = pop;
+    popHandle = openPopover(pop, { anchor: btn, owner: btn, side: btn.getBoundingClientRect().top > innerHeight / 2 ? "top" : "bottom",
+      gap: 8, name: "phone-viewfinder", remove: true, focus: false, themeClasses: false,
+      onClose: () => { if (pop === mine) { pop = null; popHandle = null; btn.setAttribute("aria-pressed", String(active())); } } });
     btn.setAttribute("aria-pressed", "true");
     render();
   }
-  function close() { pop?.remove(); pop = null; btn.setAttribute("aria-pressed", String(active())); }
+  function close() { const hd = popHandle; popHandle = null; if (hd) hd.close("api"); else pop?.remove(); pop = null; btn.setAttribute("aria-pressed", String(active())); }
   btn.addEventListener("click", open);
 
   let statusAt = 0;

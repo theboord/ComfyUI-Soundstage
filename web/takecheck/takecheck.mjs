@@ -18,6 +18,7 @@ import { takeChips, blockingChip, realismChip, rerollOffer, fileOfUrl, annotated
   readFileTags, recipeFromTags, loadRecipeScene, recipeLine, MODELS_DOC_URL } from "./model.mjs";
 import { loaderWidgets, allNodes } from "../ui/modelguard.mjs";
 import { planModelFixes } from "../ui/modelmatch.mjs";
+import { openPopover } from "../ui/popover.mjs";
 
 const CSS = `
 .ss-tc-strip{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin:0 0 8px;font-size:var(--ss-fs-sm,12px);color:var(--ss-muted,rgba(240,239,237,.68))}
@@ -94,23 +95,21 @@ export function choose(title, text, buttons) {
   });
 }
 
-let pop = null;
+let pop = null, popHandle = null;
 function showPop(anchor, title, lines, link) {
-  pop?.remove();
+  if (popHandle) popHandle.close("replaced"); else pop?.remove();
   const box = el("div", "ss-tc-pop", el("b", "", title), el("div", "", lines.join("\n")));
   if (link) {
     const a = el("a", "", link.text);
     a.href = link.href; a.target = "_blank"; a.rel = "noopener";
     box.append(el("div", "", "Where to get them: ", a));
   }
-  document.body.append(box);
-  const r = anchor.getBoundingClientRect();
-  box.style.left = `${Math.max(12, Math.min(window.innerWidth - box.offsetWidth - 12, r.left))}px`;
-  box.style.top = `${Math.min(window.innerHeight - box.offsetHeight - 12, r.bottom + 6)}px`;
+  // the App's pop-over layer (ui/popover.mjs): flipped and clamped to the window, scrolling when the text is long;
+  // Esc or a click outside closes it
   pop = box;
-  const close = (e) => { if (!box.contains(e.target)) { box.remove(); if (pop === box) pop = null; document.removeEventListener("pointerdown", close, true); } };
-  setTimeout(() => document.addEventListener("pointerdown", close, true), 0);
-  box.addEventListener("pointerdown", stop);
+  const hd = openPopover(box, { anchor, gap: 6, margin: 12, name: "takecheck", remove: true, focus: false, themeClasses: false,
+    onClose: () => { if (pop === box) { pop = null; popHandle = null; } } });
+  popHandle = hd;
 }
 
 export function attachTakeChecks(ctx) {
