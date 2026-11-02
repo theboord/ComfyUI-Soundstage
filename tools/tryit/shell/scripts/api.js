@@ -13,6 +13,7 @@ export const demo = {
   getShot: () => null,  // set by the shell: the active shot id
   getStep: () => 1,     // set by the shell: the ladder step to climb to
   toast: () => {},      // set by the shell
+  v2s: null,            // the recorded Video → 3D run once it starts: { clip, total_s, replaySeconds, running, doneAt } (the badge)
 };
 
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
@@ -61,7 +62,7 @@ async function v2sRoute(p, path, init, method) {
   if (!rec) return null;
   if (p === "/soundstage/video2stage/runs") return json({ runs: [{ secs: rec.secs, samples: rec.samples, total_s: rec.total_s }] });
   const id = /[?&]id=([^&]+)/.exec(String(path))?.[1] || (() => { try { return JSON.parse(init.body || "{}").id; } catch { return ""; } })();
-  if (p === "/soundstage/video2stage/cancel") { v2sJobs.delete(id); return json({ ok: true }); }
+  if (p === "/soundstage/video2stage/cancel") { v2sJobs.delete(id); demo.v2s = null; return json({ ok: true }); }
   if (p === "/soundstage/video2stage" && method === "POST") {
     // Only the recorded clip replays: a visitor's own clip gets the full-install note, never someone else's result.
     let video = "";
@@ -69,14 +70,15 @@ async function v2sRoute(p, path, init, method) {
     if (!video.endsWith(rec.clip)) return null;
     const job = `demo-v2s-${++seq}`;
     v2sJobs.set(job, performance.now());
-    demo.toast(`Replaying a real Video → 3D run: ${Math.round(rec.total_s / 60)} min on the pod's GPU, shown here in ${REPLAY_S} s.`);
+    demo.v2s = { clip: rec.clip, total_s: rec.total_s, replaySeconds: REPLAY_S, running: true };
+    demo.toast(`Replaying a real Video → 3D run: ${Math.round(rec.total_s / 60)} min wall time on the pod, most of it queue wait, shown here in ${REPLAY_S} s.`);
     return json({ job });
   }
   if (p === "/soundstage/video2stage/job") {
     const t0 = v2sJobs.get(id);
     if (t0 == null) return json({ error: "no such job" }, 404);
     const frac = (performance.now() - t0) / 1000 / REPLAY_S;
-    if (frac >= 1) { v2sJobs.delete(id); return json({ state: "done", notes: rec.result.notes || [], result: JSON.parse(JSON.stringify(rec.result)) }); }
+    if (frac >= 1) { v2sJobs.delete(id); if (demo.v2s) Object.assign(demo.v2s, { running: false, doneAt: performance.now() }); return json({ state: "done", notes: rec.result.notes || [], result: JSON.parse(JSON.stringify(rec.result)) }); }
     const t = frac * rec.total_s;
     let i = 0, acc = 0;
     while (i < rec.steps.length - 1 && acc + rec.steps[i].s <= t) acc += rec.steps[i++].s;
@@ -138,7 +140,7 @@ export const api = {
     if (p === "/soundstage/takecheck/recipe") return json({ error: "no recipe in the demo" }, 404);
     if (p === "/soundstage/cut/render_video") {
       if (!s.cut) return json({ error: "This scene's cut wasn't rendered on the GPU yet." }, 422);
-      demo.toast("Demo: the cut as joined on the server.");
+      demo.toast(`Replayed: this scene's cut as joined earlier on the server (${s.cut}), not a new join of your trims.`);
       return json({ filename: s.cut, subfolder: "", type: "output", seconds: s.cutSeconds || 0, missing: [] });
     }
     if (p === "/queue") return json(method === "GET" ? { queue_running: [], queue_pending: [] } : {});
