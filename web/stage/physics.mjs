@@ -13,7 +13,9 @@
 // layout guide never run a simulation themselves.
 
 import { mergeEvents, MIN_IMPACT_SPEED } from "./impacts.mjs";
-import { jointStrengths, snapJoints, glueGroups, groupBox, dentFor, hash01, MAX_SCENE_PIECES } from "./fracture.mjs";
+import { glueGroups, dentFor, hash01, MAX_SCENE_PIECES, jointLoad, fractureNetwork, networkJoints, jointResponse, bendMember, asNetwork,
+  MAX_NETWORK_SCENE, networkMinLoad } from "./fracture.mjs";
+import { hullContacts, hullsSeparate, sphereHullContacts, makeHull, compoundMass, rayHulls } from "./convex.mjs";
 
 /** What a new object starts with. mode: "dynamic" (falls, tumbles, gets knocked), "static" (collides on its keyed
  *  motion: set dressing, and people and vehicles pushing props; the default), "off" (ignored). mass kg; bounce 0..1 (restitution); friction 0..1.5; lift m (drop height at the start). */
@@ -81,6 +83,7 @@ export const qyaw = (rad) => [0, Math.sin(rad / 2), 0, Math.cos(rad / 2)];
  *   release: frame it is let go (dynamic only) }
  */
 function makeBody(spec, index) {
+  if (spec.shape === "hull" && spec.hulls?.length) { const hb = makeHullBody(spec, index); if (hb) return hb; }
   const shape = spec.shape === "sphere" ? "sphere" : "box";
   const half = (spec.half || [0.5, 0.5, 0.5]).map((v) => Math.max(0.01, +v || 0.01));
   const r = shape === "sphere" ? Math.max(0.01, spec.radius || Math.min(...half)) : 0;
@@ -111,6 +114,36 @@ function makeBody(spec, index) {
   return b;
 }
 
+/**
+ * A body made of convex hulls (Milestone 27: a prop's real shape, convex.mjs). spec.hulls: point lists (or makeHull
+ * hulls) in the object's frame relative to its origin; spec.center: the centre of mass there (default: the hulls'
+ * own, at uniform density). Inertia from the hulls, scaled to the mass (its diagonal: props are near-symmetric).
+ */
+function makeHullBody(spec, index) {
+  const raw = spec.hulls.map((h) => (Array.isArray(h) ? makeHull(h) : h)).filter((h) => h && h.volume > 0);
+  if (!raw.length) return null;
+  const mp = spec.massProps || compoundMass(raw);
+  const center = mp.com;
+  const hulls = raw.map((h) => {
+    const v = h.v.map((p) => [p[0] - center[0], p[1] - center[1], p[2] - center[2]]);
+    const c = [h.c[0] - center[0], h.c[1] - center[1], h.c[2] - center[2]];
+    const planes = h.planes.map((P) => [P[0], P[1], P[2], P[3] - (P[0] * center[0] + P[1] * center[1] + P[2] * center[2])]);
+    return { v, p: v, planes, w: h.w, fp: h.fp, c, r: h.r, volume: h.volume };
+  });
+  const m = Math.max(0.05, +spec.mass || 1), k = m / Math.max(1e-9, mp.volume);
+  const Ilocal = [0, 1, 2].map((i) => Math.max(1e-6, mp.inertia[i][i] * k));
+  const probes = hulls.flatMap((h) => h.v);
+  const half = [0, 1, 2].map((a) => Math.max(0.01, ...probes.map((p) => Math.abs(p[a]))));
+  return {
+    id: spec.id, index, shape: "hull", hulls, half, r: 0, center, dynamic: !!spec.dynamic,
+    m, invM: 1 / m, invI: Ilocal.map((v) => 1 / v), bounce: +spec.bounce || 0, friction: spec.friction ?? 0.6,
+    poses: spec.poses || [], release: Math.max(0, Math.round(spec.release || 0)), probes, corners: probes,
+    bound: Math.max(...probes.map((p) => len(p))),
+    x: [0, 0, 0], q: [0, 0, 0, 1], v: [0, 0, 0], w: [0, 0, 0], xp: [0, 0, 0], qp: [0, 0, 0, 1], vp: [0, 0, 0], wp: [0, 0, 0],
+    free: false, asleep: false, still: 0, material: spec.material || null,
+  };
+}
+
 /** Origin pose of a keyed body at a fractional frame (lerp / slerp between its per-frame poses). */
 function poseAt(b, t) {
   const P = b.poses;
@@ -128,14 +161,22 @@ const originOf = (b) => sub(b.x, qrot(b.q, b.center));
 
 /** World inverse inertia times a vector. */
 function invIw(b, v) {
-  // R · diag(invI) · Rᵀ · v with R from the quaternion (scalar maths: this runs for every contact, many times a substep).
-  const [x, y, z, w] = b.q, I = b.invI;
-  const r00 = 1 - 2 * (y * y + z * z), r01 = 2 * (x * y - w * z), r02 = 2 * (x * z + w * y);
-  const r10 = 2 * (x * y + w * z), r11 = 1 - 2 * (x * x + z * z), r12 = 2 * (y * z - w * x);
-  const r20 = 2 * (x * z - w * y), r21 = 2 * (y * z + w * x), r22 = 1 - 2 * (x * x + y * y);
-  const l0 = (r00 * v[0] + r10 * v[1] + r20 * v[2]) * I[0], l1 = (r01 * v[0] + r11 * v[1] + r21 * v[2]) * I[1],
-    l2 = (r02 * v[0] + r12 * v[1] + r22 * v[2]) * I[2];
-  return [r00 * l0 + r01 * l1 + r02 * l2, r10 * l0 + r11 * l1 + r12 * l2, r20 * l0 + r21 * l1 + r22 * l2];
+  // R · diag(invI) · Rᵀ · v (scalar maths: this runs for every contact, many times a substep). R is cached per body
+  // while its quaternion is the same array (every update makes a new one; Milestone 27 speed-up).
+  const R = rotOf(b), I = b.invI;
+  const l0 = (R[0] * v[0] + R[3] * v[1] + R[6] * v[2]) * I[0], l1 = (R[1] * v[0] + R[4] * v[1] + R[7] * v[2]) * I[1],
+    l2 = (R[2] * v[0] + R[5] * v[1] + R[8] * v[2]) * I[2];
+  return [R[0] * l0 + R[1] * l1 + R[2] * l2, R[3] * l0 + R[4] * l1 + R[5] * l2, R[6] * l0 + R[7] * l1 + R[8] * l2];
+}
+/** A body's rotation matrix (rows), cached against its quaternion array. */
+export function rotOf(b) {
+  if (b._rq === b.q) return b._R;
+  const [x, y, z, w] = b.q;
+  b._R = [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y),
+    2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x),
+    2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)];
+  b._rq = b.q;
+  return b._R;
 }
 const movable = (b) => b.free && !b.asleep;
 /** Generalised inverse mass of a body at arm r along direction n. */
@@ -144,22 +185,45 @@ const ZERO3 = [0, 0, 0];
 const flatR = (b, other, r) => (other.pushFlat && !b.pushFlat ? ZERO3 : r);
 function wOf(b, r, n) {
   if (!movable(b)) return 0;
-  const rn = cross(r, n);
-  return b.invM + dot(rn, invIw(b, rn));
+  // (r × n)ᵀ I⁻¹ (r × n) in the body frame: Rᵀ(r × n) once, then the diagonal.
+  const c0 = r[1] * n[2] - r[2] * n[1], c1 = r[2] * n[0] - r[0] * n[2], c2 = r[0] * n[1] - r[1] * n[0];
+  const R = rotOf(b), I = b.invI;
+  const l0 = R[0] * c0 + R[3] * c1 + R[6] * c2, l1 = R[1] * c0 + R[4] * c1 + R[7] * c2, l2 = R[2] * c0 + R[5] * c1 + R[8] * c2;
+  return b.invM + l0 * l0 * I[0] + l1 * l1 * I[1] + l2 * l2 * I[2];
 }
 function applyPos(b, p, r) {
   if (!movable(b)) return;
-  b.x = add(b.x, scl(p, b.invM));
-  const d = invIw(b, cross(r, p));
-  const dq = qmul([d[0], d[1], d[2], 0], b.q);
-  b.q = qnorm([b.q[0] + 0.5 * dq[0], b.q[1] + 0.5 * dq[1], b.q[2] + 0.5 * dq[2], b.q[3] + 0.5 * dq[3]]);
+  const im = b.invM;
+  b.x = [b.x[0] + p[0] * im, b.x[1] + p[1] * im, b.x[2] + p[2] * im];
+  const d = invIw(b, [r[1] * p[2] - r[2] * p[1], r[2] * p[0] - r[0] * p[2], r[0] * p[1] - r[1] * p[0]]);
+  const [qx, qy, qz, qw] = b.q;
+  // q += 0.5 (d, 0) q, renormalised
+  const nx = qx + 0.5 * (d[0] * qw + d[1] * qz - d[2] * qy), ny = qy + 0.5 * (-d[0] * qz + d[1] * qw + d[2] * qx),
+    nz = qz + 0.5 * (d[0] * qy - d[1] * qx + d[2] * qw), nw = qw + 0.5 * (-d[0] * qx - d[1] * qy - d[2] * qz);
+  const l = Math.hypot(nx, ny, nz, nw) || 1;
+  b.q = [nx / l, ny / l, nz / l, nw / l];
 }
 function applyVel(b, p, r) {
   if (!movable(b)) return;
-  b.v = add(b.v, scl(p, b.invM));
-  b.w = add(b.w, invIw(b, cross(r, p)));
+  const im = b.invM;
+  b.v = [b.v[0] + p[0] * im, b.v[1] + p[1] * im, b.v[2] + p[2] * im];
+  const d = invIw(b, [r[1] * p[2] - r[2] * p[1], r[2] * p[0] - r[0] * p[2], r[0] * p[1] - r[1] * p[0]]);
+  b.w = [b.w[0] + d[0], b.w[1] + d[1], b.w[2] + d[2]];
 }
 const toLocal = (b, p) => qrot(qconj(b.q), sub(p, b.x));
+/** Where the body point now at world p was at the start of the substep (pose xp, qp). */
+function prevPoint(b, p) {
+  const R = rotOf(b), dx = p[0] - b.x[0], dy = p[1] - b.x[1], dz = p[2] - b.x[2];
+  const l0 = R[0] * dx + R[3] * dy + R[6] * dz, l1 = R[1] * dx + R[4] * dy + R[7] * dz, l2 = R[2] * dx + R[5] * dy + R[8] * dz;
+  let P = b._Rp;
+  if (b._rqp !== b.qp) {
+    const [x, y, z, w] = b.qp;
+    P = b._Rp = [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y), 2 * (x * y + w * z), 1 - 2 * (x * x + z * z),
+      2 * (y * z - w * x), 2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)];
+    b._rqp = b.qp;
+  }
+  return [b.xp[0] + P[0] * l0 + P[1] * l1 + P[2] * l2, b.xp[1] + P[3] * l0 + P[4] * l1 + P[5] * l2, b.xp[2] + P[6] * l0 + P[7] * l1 + P[8] * l2];
+}
 
 // ---------- contacts ----------
 // Every contact pushes body A along +n and body B along -n. Types: "pg" A's probe vs the floor; "pb" A's probe vs
@@ -216,7 +280,7 @@ function measure(c) {
       c.pA = sub(A.x, scl(c.n, A.r)); c.pB = add(B.x, scl(c.n, B.r));
       break;
     }
-    default: c.d = -1;
+    default: if (c.fn) c.fn(c); else c.d = -1;   // hull contacts (convex.mjs) measure themselves
   }
   return c;
 }
@@ -322,6 +386,12 @@ function edgeContact(A, B, out) {
 }
 
 function pairContacts(A, B, out, spec = SPEC) {
+  if (A.shape === "hull" || B.shape === "hull") {   // real collision shapes (Milestone 27): SAT + vertex probes, GJK/EPA
+    if (A.shape === "sphere") sphereHullContacts(A, B, out);
+    else if (B.shape === "sphere") sphereHullContacts(B, A, out);
+    else hullContacts(A, B, out, spec, SPEC);
+    return;
+  }
   if (A.shape === "box" && B.shape === "box") {
     if (facesSeparate(A, B, spec)) return;   // cheap rejection: a gap along a face axis means no contact at all
     probeContacts(A, B, out, spec); probeContacts(B, A, out, spec); edgeContact(A, B, out); return;
@@ -363,7 +433,11 @@ function relVel(c, useSaved) {
  * makeBody, plus an optional material); all poses arrays must have `frames` entries.
  * Breakable props (Milestone 24): a dynamic box spec may carry `breakable` (fracture.mjs fracturePieces() output plus
  * {strength, burst, seed}): its parts are glued and the body splits where a hit overloads the glue; and `dent`
- * (the material's dent settings): hits below the break strength leave permanent dents. Results:
+ * (the material's dent settings): hits below the break strength leave permanent dents.
+ * Milestone 27: `breakable: {lazy: true, material, strength, burst, seed, maxPieces}` builds a constraint network
+ * (fracture.mjs fractureNetwork: Voronoi cells, nail / fibre / crease / tear joints) at the prop's first real hit,
+ * clustered round it; joints bend (plastic), crack and break progressively, and broken groups collide as convex hulls.
+ * Any spec may be `shape: "hull"` with `hulls` (point lists, object frame): its real shape (convex.mjs). Results:
  *   fractures: {id: {frame, pieces: [{off, half, kind, center, track: [{pos (part centre), quat}] per frame}]}} (props
  *     that broke), dents: {id: [{frame, p, n, depth, radius}]} (object frame: relative to the origin, n points inward).
  * opts: { fps = 24, substeps = 20, iterations = 4 (contact passes a substep; with 2 a 20-box tower bows 16 cm before
@@ -381,24 +455,27 @@ export function simulate(specs, frames, opts = {}) {
   const roots = [];
   for (const b of dyn) {
     const sp = specs[b.index], bk = sp.breakable, dent = sp.dent || bk?.dent || null;
-    if (b.shape !== "box" || (!dent && !(bk?.pieces?.length > 1))) continue;
-    const frac = bk?.pieces?.length > 1 ? bk : null, n = frac ? frac.pieces.length : 0;
-    const R = { id: b.id, frac, center: [...b.center], half: [...b.half], mass: b.m, material: b.material, dent,
-      strength: +bk?.strength || 7, burst: bk?.burst ?? 0.5, seed: +bk?.seed || 1,
-      str: frac ? (bk.strengths || jointStrengths(frac, +bk.strength || 7, +bk.seed || 1)) : [], alive: frac ? frac.joints.map(() => true) : [],
-      owner: new Array(n).fill(b), tracks: Array.from({ length: n }, () => []), broke: null, breaks: 0, dents: [], lastDent: -99 };
-    b.fr = { R, set: Array.from({ length: n }, (_, i) => i), cOff: [0, 0, 0], whole: true };
+    const lazy = !!bk?.lazy;   // Milestone 27: the network is built at the first real hit, its cells clustered round it
+    if (b.shape !== "box" || (!dent && !lazy && !(bk?.pieces?.length > 1))) continue;
+    const R = { id: b.id, frac: null, lazy, net: lazy ? { material: bk.material, maxPieces: bk.maxPieces } : null,
+      center: [...b.center], half: [...b.half], mass: b.m, material: b.material, dent,
+      strength: +bk?.strength || 7, burst: bk?.burst ?? 0.5, seed: +bk?.seed || 1, broke: null, split: null, breaks: 0, cracks: 0,
+      dents: [], lastDent: -99, shaped: false, owner: [], tracks: [] };
+    // Below this a hit neither bends nor breaks anything (no network needed yet).
+    R.minLoad = lazy ? networkMinLoad(bk.material, R.strength) : Infinity;
+    b.fr = { R, set: [], cOff: [0, 0, 0], whole: true };
+    if (!lazy && bk?.pieces?.length > 1) initNetwork(R, b, asNetwork(bk), bk.strengths);
     roots.push(R);
   }
-  const maxAdd = Math.max(0, opts.maxPieces ?? MAX_SCENE_PIECES);
+  const maxAdd = Math.max(0, opts.maxPieces ?? (roots.some((R) => R.lazy) ? MAX_NETWORK_SCENE : MAX_SCENE_PIECES));
   let added = 0, breakEvents = [];
   const rootOf = (b) => (b.fr ? b.fr.R.id : b.id);
   const recordParts = () => {
     for (const R of roots) {
       if (!R.frac) continue;
       R.frac.pieces.forEach((pc, i) => {
-        const b = R.owner[i];
-        R.tracks[i].push({ pos: add(b.x, qrot(b.q, sub(pc.off, b.fr.cOff))), quat: [...b.q] });
+        const b = R.owner[i], lp = R.lp[i];
+        R.tracks[i].push({ pos: add(b.x, qrot(b.q, sub(lp.o, b.fr.cOff))), quat: lp.bent ? qnorm(qmul(b.q, lp.q)) : [...b.q] });
       });
     }
   };
@@ -410,7 +487,13 @@ export function simulate(specs, frames, opts = {}) {
     for (const b of new Set(R.owner)) if (!best || b.fr.set.length > best.fr.set.length) best = b;
     return best;
   };
-  let contactsSolved = 0;
+  let contactsSolved = 0, gsub = 0, uidSeq = 0, bpFor = null, bpPairs = [];
+  const pairCache = new Map();
+  const isDebris = (b) => !!(b.fr && !b.fr.whole);
+  const slowPair = (A, B) => {
+    const dv = [A.v[0] - B.v[0], A.v[1] - B.v[1], A.v[2] - B.v[2]];
+    return dot(dv, dv) < 4 && len(A.w) * A.bound < 2 && len(B.w) * B.bound < 2;   // under ~2 m/s apart
+  };
   // Speculative contacts for keyed movers: SPEC plus how far the keyed body moves this substep (capped), so a crate
   // that a neighbour shoves into a moving car mid-solve already has its contact with the car.
   const SPEC_K = opts.kinSpeculative ?? 1, SPEC_CAP = 0.06;
@@ -469,7 +552,7 @@ export function simulate(specs, frames, opts = {}) {
         const [qx, qy, qz, qw] = b.q, r0 = 2 * (qx * qy + qw * qz), r1 = 1 - 2 * (qx * qx + qz * qz), r2 = 2 * (qy * qz - qw * qx);
         // A loose piece of a broken prop (Milestone 24) touches the flat floor with its corners only: a plank lying flat
         // would otherwise solve 9 floor contacts a substep while it slides, and a big break has dozens of them.
-        const fp = b.fr && !b.fr.whole ? (b.corners ||= b.probes.filter((v) => v.every((c, i) => Math.abs(c) >= b.half[i] - 1e-9))) : b.probes;
+        const fp = b.shape === "hull" ? b.probes : b.fr && !b.fr.whole ? (b.corners ||= b.probes.filter((v) => v.every((c, i) => Math.abs(c) >= b.half[i] - 1e-9))) : b.probes;
         for (const lp of fp) {
           const y = b.x[1] + r0 * lp[0] + r1 * lp[1] + r2 * lp[2];
           if (y < 0) C.push({ type: "pg", a: b, b: GROUND, lp });
@@ -477,15 +560,23 @@ export function simulate(specs, frames, opts = {}) {
       }
       // Broad phase: sort-and-sweep on x finds the pairs whose bounding spheres can touch (a broken prop adds dozens of
       // bodies; all-pairs would grow with the square), then they are visited in the same i < j order as before.
-      const N = bodies.length, ord = Array.from({ length: N }, (_, i) => i);
-      const lo = bodies.map((b) => b.x[0] - b.bound - 0.025), hi = bodies.map((b) => b.x[0] + b.bound + 0.025);
-      ord.sort((p, q) => lo[p] - lo[q] || p - q);
-      const pairs = [];
-      for (let u = 0; u < N; u++) {
-        const p = ord[u];
-        for (let w = u + 1; w < N && lo[ord[w]] <= hi[p]; w++) { const q = ord[w]; pairs.push(p < q ? p * N + q : q * N + p); }
+      // Milestone 27: once a frame (or when bodies are added), with each body's bounds grown by how far it can move in
+      // the frame; the exact sphere test below still runs every substep.
+      const N = bodies.length;
+      if (s === 0 || bpFor !== bodies) {
+        const ord = Array.from({ length: N }, (_, i) => i);
+        const grow = bodies.map((b) => b.bound + 0.025 + (b.asleep ? 0 : 1.25 * len(b.v) * (nSub - s) * h + 0.02));
+        const lo = bodies.map((b, i) => b.x[0] - grow[i]), hi = bodies.map((b, i) => b.x[0] + grow[i]);
+        ord.sort((p, q) => lo[p] - lo[q] || p - q);
+        bpPairs = [];
+        for (let u = 0; u < N; u++) {
+          const p = ord[u];
+          for (let w = u + 1; w < N && lo[ord[w]] <= hi[p]; w++) { const q = ord[w]; bpPairs.push(p < q ? p * N + q : q * N + p); }
+        }
+        bpPairs.sort((p, q) => p - q);
+        bpFor = bodies;
       }
-      pairs.sort((p, q) => p - q);
+      const pairs = bpPairs;
       for (const key of pairs) {
         const A = bodies[Math.floor(key / N)], B = bodies[key % N];
         {
@@ -495,18 +586,31 @@ export function simulate(specs, frames, opts = {}) {
           // Two pieces of one broken prop: they pass through each other until they have come apart once (a piece's
           // box can overlap what is left of the crate), then collide like any two bodies.
           if (A.fr && B.fr && A.fr.R === B.fr.R && !A.armed?.has(B)) {
-            if (!facesSeparate(A, B, 0)) continue;
+            if (A.shape === "hull" || B.shape === "hull" ? !hullsSeparate(A, B, 0) : !facesSeparate(A, B, 0)) continue;
             (A.armed ||= new Set()).add(B); (B.armed ||= new Set()).add(A);
           }
           // Anything moving near a sleeper wakes it (a car arriving, the crate under it knocked away).
           if (A.asleep && !B.asleep && len(B.v) > WAKE_SPEED) { A.asleep = false; A.still = 0; }
           if (B.asleep && !A.asleep && len(A.v) > WAKE_SPEED) { B.asleep = false; B.still = 0; }
           if ((!A.free || A.asleep) && (!B.free || B.asleep)) continue;   // nothing here moves under physics
+          // Milestone 27 speed-up: two slow free bodies, one of them debris, reuse the last substep's contacts every
+          // other substep (re-measured, so only a contact that appears in between waits one substep).
+          const lite = isDebris(A) || isDebris(B);
+          if (lite && A.free && B.free) {
+            const key = (A.uid ||= ++uidSeq) * 1048576 + (B.uid ||= ++uidSeq), pc = pairCache.get(key);
+            if (pc && pc.sub === gsub - 1 && (gsub & 1) && slowPair(A, B)) { for (const c of pc.list) C.push(c); continue; }
+            const n0 = C.length;
+            pairContacts(A, B, C, kinSpec(A, B));
+            pairCache.set(key, { sub: gsub, list: C.slice(n0) });
+            continue;
+          }
           pairContacts(A, B, C, kinSpec(A, B));
         }
       }
+      gsub++;
+      if (pairCache.size > 4096) pairCache.clear();
       // Restitution needs the approach speed from before this substep.
-      for (const c of C) { measure(c); c.vnPrev = dot(c.n, relVel(c, true)); c.lam = 0; }
+      for (const c of C) { measure(c); c.rA = c.rB = null; c.vnPrev = dot(c.n, relVel(c, true)); c.lam = 0; c.lite = isDebris(c.a) || isDebris(c.b); }
       // Impact events (Milestone 21): a touching contact closing faster than MIN_IMPACT_SPEED is a hit. Its impulse is
       // the reduced mass times the speed change the bounce makes; mergeEvents() folds a hit's many probes into one.
       if (logHits && f >= 2) for (const c of C) {   // (frames 0-1: the authored start settling, not a hit)
@@ -540,6 +644,7 @@ export function simulate(specs, frames, opts = {}) {
       // Position solve: a couple of passes per substep, so a car shoving one crate into the next can't squeeze them
       // through each other (the substeps do the rest of the converging).
       for (let it = 0; it < iters; it++) for (const c of C) {
+        if (it > 1 && c.lite) continue;   // debris needs no stack-stiff solve: 2 passes (Milestone 27 speed-up)
         measure(c);
         if (c.d <= 0) continue;
         const A = c.a, B = c.b;
@@ -555,10 +660,9 @@ export function simulate(specs, frames, opts = {}) {
         // Static friction: undo the sliding of the touching points this substep while the normal force allows.
         const mu = Math.sqrt(Math.max(0, A.friction) * Math.max(0, B.friction));
         if (mu <= 0) continue;
-        const lA = qrot(qconj(A.q), sub(c.pA, A.x)), lB = qrot(qconj(B.q), sub(c.pB, B.x));
-        const pAn = add(A.x, qrot(A.q, lA)), pAp = add(A.xp, qrot(A.qp, lA));
-        const pBn = add(B.x, qrot(B.q, lB)), pBp = add(B.xp, qrot(B.qp, lB));
-        const dp = sub(sub(pAn, pAp), sub(pBn, pBp));
+        // The touching points now and where the same body points were at the substep start.
+        const pAn = c.pA, pAp = prevPoint(A, pAn), pBn = c.pB, pBp = prevPoint(B, pBn);
+        const dp = [pAn[0] - pAp[0] - pBn[0] + pBp[0], pAn[1] - pAp[1] - pBn[1] + pBp[1], pAn[2] - pAp[2] - pBn[2] + pBp[2]];
         const dpt = sub(dp, scl(c.n, dot(dp, c.n))), m = len(dpt);
         if (m < 1e-9) continue;
         const t = scl(dpt, 1 / m);
@@ -578,7 +682,7 @@ export function simulate(specs, frames, opts = {}) {
       }
       // Velocity solve: sliding friction once, then the bounce iterated so a box landing flat on four corners comes
       // off evenly (one Gauss-Seidel pass over several contacts spins it up and adds energy).
-      const act = C.filter((c) => c.lam > 0);
+      const act = C.filter((c) => c.lam > 0), groups = new Map();
       for (const c of act) {
         const A = c.a, B = c.b;
         c.rA = sub(c.pA, A.x); c.rB = sub(c.pB, B.x);
@@ -597,14 +701,27 @@ export function simulate(specs, frames, opts = {}) {
         const e = Math.abs(c.vnPrev) > 2 * g * h * 4 ? Math.max(A.bounce, B.bounce) : 0;
         c.target = Math.max(-e * c.vnPrev, 0);
         c.wn = wOf(A, c.rA, c.n) + wOf(B, c.rB, c.n);
+        // Milestone 27: the contacts between two bodies may together take back the separating speed the position
+        // solve gave the pair, never more: they must not pull. (A box resting on another held it down while a car's
+        // bonnet lifted it, so debris was bulldozed ahead of the car instead of thrown up over it.)
+        const key = (A.uid ||= ++uidSeq) * 1048576 + (B.uid ||= ++uidSeq);
+        let grp = groups.get(key);
+        if (!grp) {
+          const vl = sub(A.v, B.v), vn0 = dot(c.n, vl), im = (movable(A) ? A.invM : 0) + (movable(B) ? B.invM : 0);
+          groups.set(key, (grp = { acc: 0, min: im > 0 && vn0 > c.target ? -(vn0 - c.target) / im : 0 }));
+        }
+        c.grp = grp;
       }
       for (let it = 0; it < (act.length > 1 ? 6 : 1); it++) {
         for (const c of act) {
-          if (!(c.wn > 0)) continue;
+          if (!(c.wn > 0) || (it > 1 && c.lite)) continue;
           const vn = dot(c.n, relVel(c, false));
           const dvn = c.target - vn;
           if (Math.abs(dvn) < 1e-7) continue;
-          const P = scl(c.n, dvn / c.wn);
+          const G = c.grp, acc = Math.max(G.min, G.acc + dvn / c.wn), dP = acc - G.acc;
+          G.acc = acc;
+          if (dP === 0) continue;
+          const P = scl(c.n, dP);
           applyVel(c.a, P, c.rA); applyVel(c.b, scl(P, -1), c.rB);
         }
       }
@@ -616,7 +733,12 @@ export function simulate(specs, frames, opts = {}) {
         for (const [B, o] of loads) {
           if (B.dead || o.w <= 0) continue;
           const hitW = scl(o.p, 1 / o.w), nl = len(o.n), inW = nl > 1e-9 ? scl(o.n, 1 / nl) : [0, 1, 0];
-          if (breakBody(B, o, hitW, inW, fr)) continue;
+          const R = B.fr.R;
+          // Milestone 27: the first real hit builds the network round where it lands (cells clustered at the impact).
+          if (R.lazy && !R.frac && o.load >= R.minLoad && added < maxAdd) {
+            initNetwork(R, B, fractureNetwork(R.half, { material: R.net.material, seed: R.seed, impact: add(toLocal(B, hitW), B.fr.cOff), maxPieces: R.net.maxPieces }));
+          }
+          if (R.frac && stressBody(B, o, hitW, inW, fr)) continue;
           dentBody(B, o, hitW, inW, fr);
         }
       }
@@ -642,7 +764,7 @@ export function simulate(specs, frames, opts = {}) {
   // A broken prop has settled when every piece of it has.
   for (const R of roots) {
     if (R.broke == null) continue;
-    const parts = [...new Set(R.owner)].map((b) => settled[b.id]);
+    const parts = [...new Set(R.owner)].map((b) => settled[b.id] ?? (b.asleep ? frames - 1 : null));
     settled[R.id] = parts.some((v) => v == null) ? null : Math.max(...parts);
   }
   for (const k of Object.keys(settled)) if (!(k in tracks)) delete settled[k];
@@ -652,72 +774,201 @@ export function simulate(specs, frames, opts = {}) {
   const fractures = {}, dents = {};
   for (const R of roots) {
     if (R.frac && R.broke != null) {
-      fractures[R.id] = { frame: R.broke, breaks: R.breaks, pieces: R.frac.pieces.map((pc, i) => ({ off: pc.off, half: pc.half, kind: pc.kind,
-        center: add(R.center, pc.off), track: R.tracks[i] })) };
+      // frame: the first frame the prop is no longer whole (a bend, a crack or a break); split: when it came apart.
+      fractures[R.id] = { frame: R.broke, split: R.split, breaks: R.breaks, cracks: R.cracks, network: !!R.frac.network && R.lazy,
+        material: R.frac.material || R.material, pieces: R.frac.pieces.map((pc, i) => ({ off: pc.off, half: pc.half, kind: pc.kind,
+          center: add(R.center, pc.off), member: pc.member, v: pc.v, faces: pc.faces, grain: pc.grain, normal: pc.normal, boards: pc.boards, track: R.tracks[i] })) };
     }
     if (R.dents.length) dents[R.id] = R.dents;
   }
   return { tracks, settled, events, fractures, dents, stats: { bodies: bodies.length, dynamic: dyn.length, substeps: nSub, contacts: contactsSolved,
-    impacts: events.length, pieces: added, breaks: breakEvents.length } };
+    impacts: events.length, pieces: added, breaks: breakEvents.length, cracks: roots.reduce((s, R) => s + R.cracks, 0) } };
 
   /**
-   * Snap the glue a hit overloads; when the prop comes apart, each group of parts still glued together becomes a body
-   * of its own with the parent's velocity at its centre (v + w × r), the parent's spin, and a seeded kick away from the
-   * hit by how far the load went past the glue. Returns true when the body split.
+   * Give a breakable prop its constraint network (fracture.mjs): per-joint glue settings, every cell's rest pose in the
+   * prop frame, and the piece tracks so far (each cell rode with the whole prop until now).
    */
-  function breakBody(B, o, hitW, inW, frame) {
-    const R = B.fr.R;
-    if (!R.frac || B.fr.set.length < 2) return false;
-    const hitL = add(toLocal(B, hitW), B.fr.cOff);   // in the prop's frame, relative to its box centre
-    const before = [...R.alive];
-    const snapped = snapJoints(R.frac, R.str, R.alive, B.fr.set, hitL, o.load);
-    if (!snapped.length) return false;
-    const groups = glueGroups(R.frac, R.alive, B.fr.set);
-    if (groups.length < 2) return false;   // cracked, still in one piece
-    if (added + groups.length - 1 > maxAdd) { R.alive.splice(0, R.alive.length, ...before); return false; }   // piece budget spent
-    added += groups.length - 1;
-    const weakest = Math.min(...snapped.map((k) => R.str[k]));
-    const excess = Math.max(0, o.load - weakest);
+  function initNetwork(R, B, frac, strengths = null) {
+    R.frac = frac;
+    const n = frac.pieces.length;
+    R.J = networkJoints(frac, R.strength, R.seed);
+    if (strengths) strengths.forEach((v, k) => { if (R.J[k]) { R.J[k].str = v; R.J[k].yield = v; } });
+    R.J.forEach((J) => { J.str0 = J.str; });
+    R.alive = frac.joints.map(() => true);
+    R.lp = frac.pieces.map((pc) => ({ o0: pc.off, o: [...pc.off], q: [0, 0, 0, 1], bent: false }));
+    R.mb = frac.members.map(() => ({ theta: 0, s0: null, fold: 0, axis: null, pivot: null }));
+    R.owner = new Array(n).fill(B);
+    B.fr.set = Array.from({ length: n }, (_, i) => i);
+    const tr = tracks[R.id] || [];
+    R.tracks = frac.pieces.map((pc) => tr.map((p) => ({ pos: add(p.pos, qrot(p.quat, add(R.center, pc.off))), quat: [...p.quat] })));
+  }
+
+  /**
+   * One hit through a prop's network: every live joint of the struck body takes the hit's load (falling off with its
+   * distance from the hit) and snaps, yields (a board bends, a flap folds: plastic, permanent) or holds with some
+   * damage. When the shape changed, the body is rebuilt from its cells' hulls; when the glue no longer holds it in one
+   * piece, each glued group becomes a body of its own with the parent's velocity at its centre (v + w × r), its spin,
+   * and a seeded kick away from the hit by how far the load went past the glue. Returns true when anything gave.
+   */
+  function stressBody(B, o, hitW, inW, frame) {
+    const R = B.fr.R, F = R.frac;
+    if (B.fr.set.length < 1) return false;
+    const hitL = add(toLocal(B, hitW), B.fr.cOff), inL = qrot(qconj(B.q), inW);
+    const inSet = new Set(B.fr.set), snapped = [], before = [...R.alive];
+    let bent = false, weakest = Infinity;
+    F.joints.forEach((jt, k) => {
+      if (!R.alive[k] || !inSet.has(jt.i) || !inSet.has(jt.j)) return;
+      const J = R.J[k], ld = jointLoad(o.load, hitL, jt.p, F.size), rsp = jointResponse(J, ld);
+      if (rsp.snap) { R.alive[k] = false; snapped.push(k); weakest = Math.min(weakest, J.str); return; }
+      if (rsp.damage > 0) { const f = Math.max(0.5, 1 - rsp.damage); J.str = Math.max(0.3 * J.str0, J.str * f); J.yield = Math.min(J.yield, J.str); }
+      if (rsp.yield > 0) {
+        // Plastic flow: the joint's member bends (or a flap hanging by one crease folds) a share of its limit.
+        const m = F.pieces[jt.i].member;
+        const foldable = jt.type === "crease" && attachedMembers(R, m, inSet).size <= 1;
+        const target = jt.type === "crease" ? (foldable ? m : nearerMember(F, jt, hitL)) : m;
+        const T = R.mb[target];
+        const d = Math.min(0.12, 0.35 * rsp.yield * J.bend);
+        if (jt.type === "crease" && foldable) {
+          T.axis ||= jt.axis; T.pivot ||= jt.p;
+          T.fold = Math.min(J.bend, T.fold + d);
+        } else {
+          if (T.s0 == null) T.s0 = dot(sub(hitL, F.members[target].off), F.members[target].grain);
+          T.theta = Math.min(J.bend || 0.3, T.theta + d);
+          // Bent past its limit: the board splinters at the joint.
+          if (J.bend > 0 && T.theta >= J.bend - 1e-9 && jt.type !== "crease") { R.alive[k] = false; snapped.push(k); weakest = Math.min(weakest, J.str); }
+        }
+        bent = true;
+      }
+    });
+    if (!snapped.length && !bent) return false;
+    if (bent) posePieces(R, inL);
+    // A crack that leaves the prop in one piece opens a few millimetres (it reads in the clay as a dark line).
+    for (const k of snapped) {
+      const jt = F.joints[k], lp = R.lp[jt.j];
+      const dir = sub(F.pieces[jt.j].off, F.pieces[jt.i].off), dl = len(dir) || 1;
+      lp.crack = add(lp.crack || [0, 0, 0], scl(dir, 0.003 / dl));
+      lp.bent = true;
+    }
+    if (snapped.length) posePieces(R, inL);
+    const groups = glueGroups(F, R.alive, B.fr.set);
+    if (added + groups.length - 1 > maxAdd) {   // piece budget spent: the glue holds after all
+      R.alive.splice(0, R.alive.length, ...before);
+      return false;
+    }
+    R.cracks += snapped.length;
+    if (R.broke == null) R.broke = frame;
+    rebuild(B, groups, o, hitW, inW, frame, snapped.length && groups.length > 1 ? Math.max(0, o.load - weakest) : 0);
+    return true;
+  }
+
+  /** The members a member is still glued to (through live joints inside the body's set). */
+  function attachedMembers(R, m, inSet) {
+    const F = R.frac, out = new Set();
+    F.joints.forEach((jt, k) => {
+      if (!R.alive[k] || !inSet.has(jt.i) || !inSet.has(jt.j)) return;
+      const a = F.pieces[jt.i].member, b = F.pieces[jt.j].member;
+      if (a === m && b !== m) out.add(b); else if (b === m && a !== m) out.add(a);
+    });
+    return out;
+  }
+  function nearerMember(F, jt, hitL) {
+    const a = F.pieces[jt.i], b = F.pieces[jt.j];
+    return len(sub(a.off, hitL)) <= len(sub(b.off, hitL)) ? a.member : b.member;
+  }
+
+  /** Every cell's pose in the prop frame from its member's bend and fold and its own crack offset. */
+  function posePieces(R, inL) {
+    const F = R.frac;
+    F.members.forEach((M, m) => {
+      const mb = R.mb[m];
+      const bend = mb.theta > 0 ? bendMember(F, m, mb.theta, mb.s0 ?? 0, R.lp) : null;
+      let rot = null;
+      if (mb.fold > 0 && mb.axis) {
+        // Fold about the crease, the way the hit pushes (the member's centre moves along the blow).
+        const c = sub(M.off, mb.pivot), h = mb.fold / 2, ax = mb.axis;
+        let q = [ax[0] * Math.sin(h), ax[1] * Math.sin(h), ax[2] * Math.sin(h), Math.cos(h)];
+        if (mb.sign == null) mb.sign = dot(sub(qrot(q, c), c), inL) >= 0 ? 1 : -1;
+        if (mb.sign < 0) q = [-q[0], -q[1], -q[2], q[3]];
+        rot = q;
+      }
+      for (const i of M.cells) {
+        const lp = R.lp[i];
+        let o = lp.o0, q = [0, 0, 0, 1];
+        if (bend) { const e = bend.find((x) => x.i === i); if (e) { o = e.o; q = e.q; } }
+        if (rot) { o = add(mb.pivot, qrot(rot, sub(o, mb.pivot))); q = qmul(rot, q); }
+        if (lp.crack) o = add(o, lp.crack);
+        lp.o = o; lp.q = qnorm(q); lp.bent = lp.bent || !!(bend || rot);
+      }
+    });
+  }
+
+  /** Replace body B by one body per glued group, shaped by its cells' hulls (as they sit now: bent, folded, cracked). */
+  function rebuild(B, groups, o, hitW, inW, frame, excess) {
+    const R = B.fr.R, F = R.frac;
     const big = groups[0].length;
     B.dead = true;
+    if (groups.length > 1) {
+      added += groups.length - 1;
+      if (R.split == null) R.split = frame;
+      R.breaks++;
+      const other = o.other;
+      breakEvents.push({ frame, t: frame / fps, pos: [...hitW], normal: scl(inW, -1), impulse: o.load * B.m, speed: o.load, a: R.id,
+        b: other ? rootOf(other) : "__ground", mat_a: R.material || "wood", mat_b: other?.material || (other === GROUND || !other ? groundMat : "concrete"),
+        break: true, pieces: groups.length });
+    }
+    R.shaped = true;
     groups.forEach((grp, gi) => {
-      const gb = groupBox(R.frac, grp);
-      const nb = makeBody({ id: `${R.id}~${grp.join(".")}`, shape: "box", half: gb.half, center: add(R.center, gb.off), dynamic: true,
+      // Each cell's hull where it sits now; the body's mass comes from the cells, its collision shape from them too
+      // (one hull per cell for a small group, one per board for a bigger one, one for a nearly whole crate).
+      const cellPts = grp.map((i) => { const pc = F.pieces[i], lp = R.lp[i]; return pc.v.map((p) => add(lp.o, qrot(lp.q, sub(p, pc.off)))); });
+      const cellHulls = cellPts.map((pts) => makeHull(pts)).filter((h) => h && h.volume > 0);
+      if (!cellHulls.length) return;
+      const mp = compoundMass(cellHulls);
+      let coll = cellHulls;
+      if (grp.length > 4) {
+        const byM = new Map();
+        grp.forEach((i, k) => { const m = F.pieces[i].member; if (!byM.has(m)) byM.set(m, []); byM.get(m).push(...cellPts[k]); });
+        coll = byM.size > 5 ? [makeHull(cellPts.flat())] : [...byM.values()].map((pts) => makeHull(pts));
+        coll = coll.filter((h) => h && h.volume > 0);
+      }
+      const vol = grp.reduce((s, i) => s + (F.pieces[i].volume || 0), 0);
+      const mass = Math.max(0.05, R.mass * vol / Math.max(1e-9, F.volume));
+      const nb = makeBody({ id: groups.length === 1 && R.split == null ? `${R.id}~bent` : `${R.id}~${grp.join(".")}`, shape: "hull", hulls: coll, massProps: mp,
+        dynamic: true, mass,
         // Broken boards grind and catch on the ground (raw edges, splinters): more grip and less bounce than the whole
         // crate, so debris comes to rest in a second or two instead of skating across the street.
-        mass: Math.max(0.05, R.mass * gb.volume / Math.max(1e-9, R.frac.volume)), bounce: B.bounce * 0.5,
-        friction: Math.min(1.2, B.friction * 1.4), material: B.material }, bodies.length);
-      nb.x = add(B.x, qrot(B.q, sub(gb.off, B.fr.cOff))); nb.q = [...B.q]; nb.xp = [...nb.x]; nb.qp = [...nb.q];
+        bounce: B.bounce * (groups.length > 1 || !B.fr.whole ? 0.5 : 1), friction: Math.min(1.2, B.friction * (groups.length > 1 || !B.fr.whole ? 1.4 : 1)),
+        material: B.material }, bodies.length);
+      if (!nb) return;
+      const com = nb.center;   // in the prop frame (relative to its box centre)
+      nb.center = add(R.center, com);
+      nb.x = add(B.x, qrot(B.q, sub(com, B.fr.cOff))); nb.q = [...B.q]; nb.xp = [...nb.x]; nb.qp = [...nb.q];
       const r = sub(nb.x, B.x);
-      let v = add(B.v, cross(B.w, r));
-      const away = sub(nb.x, hitW), al = len(away) || 1;
-      const hs = R.seed * 0.37 + R.breaks * 5.1 + gi * 1.93;
-      const kick = R.burst * Math.min(8, excess) * (0.6 + 0.8 * hash01(hs, 1)) * (grp.length === big && gi === 0 ? 0.25 : 1);
-      // Away from the hit, and along the blow (the parts carry on the way they were struck).
-      v = add(v, scl(add(scl(away, 0.7 / al), scl(inW, 0.5)), kick));
-      const spin = R.burst * Math.min(8, excess) * 2.2 * (grp.length === big && gi === 0 ? 0.3 : 1);
-      nb.v = v; nb.w = add(B.w, [(hash01(hs, 2) - 0.5) * spin, (hash01(hs, 3) - 0.5) * spin, (hash01(hs, 4) - 0.5) * spin]);
-      nb.vp = [...nb.v]; nb.wp = [...nb.w];
+      let v = add(B.v, cross(B.w, r)), w = [...B.w];
+      if (excess > 0) {
+        const away = sub(nb.x, hitW), al = len(away) || 1;
+        const hs = R.seed * 0.37 + R.breaks * 5.1 + gi * 1.93, mainPart = grp.length === big && gi === 0;
+        const kick = R.burst * Math.min(8, excess) * (0.6 + 0.8 * hash01(hs, 1)) * (mainPart ? 0.25 : 1);
+        // Away from the hit, and along the blow (the parts carry on the way they were struck).
+        v = add(v, scl(add(scl(away, 0.7 / al), scl(inW, 0.5)), kick));
+        const spin = R.burst * Math.min(8, excess) * 2.2 * (mainPart ? 0.3 : 1);
+        w = add(w, [(hash01(hs, 2) - 0.5) * spin, (hash01(hs, 3) - 0.5) * spin, (hash01(hs, 4) - 0.5) * spin]);
+      }
+      nb.v = v; nb.w = w; nb.vp = [...v]; nb.wp = [...w];
       nb.free = true; nb.asleep = false; nb.still = 0;
-      nb.fr = { R, set: grp, cOff: gb.off, whole: false };
+      nb.fr = { R, set: grp, cOff: com, whole: false };
+      // Pieces of the same prop that were already apart stay apart (they collide); the rest start unarmed.
       for (const i of grp) R.owner[i] = nb;
       bodies.push(nb); dyn.push(nb);
       settled[nb.id] = null;
     });
     bodies = bodies.filter((b) => !b.dead); dyn = dyn.filter((b) => !b.dead);
-    if (R.broke == null) R.broke = frame;
-    R.breaks++;
-    const other = o.other;
-    breakEvents.push({ frame, t: frame / fps, pos: [...hitW], normal: scl(inW, -1), impulse: o.load * B.m, speed: o.load, a: R.id,
-      b: other ? rootOf(other) : "__ground", mat_a: R.material || "wood", mat_b: other?.material || (other === GROUND || !other ? groundMat : "concrete"),
-      break: true, pieces: groups.length });
-    return true;
   }
 
   /** A permanent dent on a dentable prop that is still whole: the struck side pushed in, by the hit. */
   function dentBody(B, o, hitW, inW, frame) {
     const R = B.fr.R;
-    if (!R.dent || !B.fr.whole || R.dents.length >= 10) return;
+    if (!R.dent || !B.fr.whole || R.shaped || R.dents.length >= 10) return;
     const d = dentFor({ dent: R.dent }, o.load, R.half);
     if (!d) return;
     const p = add(toLocal(B, hitW), B.center), n = qrot(qconj(B.q), inW);
@@ -730,7 +981,7 @@ export function simulate(specs, frames, opts = {}) {
 
 const GROUND = { id: "__ground", shape: "plane", half: [1e6, 0, 1e6], x: [0, 0, 0], q: [0, 0, 0, 1], v: [0, 0, 0], w: [0, 0, 0],
   vp: [0, 0, 0], wp: [0, 0, 0], xp: [0, 0, 0], qp: [0, 0, 0, 1], free: false, asleep: false, dynamic: false, friction: 0.8, bounce: 0,
-  invM: 0, invI: [0, 0, 0] };
+  invM: 0, invI: [0, 0, 0], uid: 1048575 };   // a fixed pair id (bodies number theirs per bake from 1)
 
 /**
  * Turn a simulated track into stage keys: one key per frame while it moves, the ends of every hold only (two equal
@@ -834,7 +1085,7 @@ export function createXpbdWorld(opts = {}) {
      *  restitution (or bounce), pos, quat, asleep}. Returns the id. */
     addBody(desc = {}) {
       const id = desc.id ?? `b${++seq}`;
-      const b = makeBody({ id, shape: desc.shape, half: desc.half, center: desc.center, radius: desc.radius, dynamic: true,
+      const b = makeBody({ id, shape: desc.shape, half: desc.half, center: desc.center, radius: desc.radius, dynamic: true, hulls: desc.hulls,
         mass: desc.mass ?? 20, bounce: desc.restitution ?? desc.bounce ?? 0.05, friction: desc.friction ?? 0.8 }, bodies.size);
       setPose(b, desc.pos, desc.quat);
       applyType(b, desc.type);
@@ -1056,6 +1307,7 @@ export function createXpbdWorld(opts = {}) {
 
 /** Ray against one body (slab test on the oriented box, or the sphere): {point, normal, distance} or null. */
 function rayBody(b, o, d) {
+  if (b.shape === "hull") return rayHulls(b, o, d);
   if (b.shape === "sphere") {
     const oc = sub(o, b.x), bb = dot(oc, d), c = dot(oc, oc) - b.r * b.r, disc = bb * bb - c;
     if (disc < 0) return null;
