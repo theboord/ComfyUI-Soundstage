@@ -16,6 +16,7 @@ import folder_paths
 from comfy_api.latest import ComfyExtension, IO
 
 from .look.look_start import look_start, quiet_background, blur_window_view
+from .look.frame_lock import frame1_layout
 
 STAGE_WIDGET = "SOUNDSTAGE_STAGE"
 
@@ -92,6 +93,15 @@ class SoundstageStage(IO.ComfyNode):
             ids = id_pass if passes.get("id") else None
             first_color, _ = look_start(first_color, ids[:1] if ids is not None else None, scene)
             guide = blur_window_view(quiet_background(clay, ids, scene), depth, scene)
+            # ④ Frame states what frame 1 really holds (sizes and places measured on the ID pass); off only to
+            # reproduce a frame picked before (stage sends frame_lock false), look/frame_lock.py.
+            if ids is not None and data.get("frame_lock", True) is not False:
+                try:
+                    lay = frame1_layout(ids[0, ..., :3].cpu().numpy(), scene)
+                    if lay:
+                        scene = {**scene, "frame1_layout": lay}
+                except Exception:  # noqa: BLE001 - a malformed palette never breaks the stage node
+                    pass
         else:
             scene = {**scene, "look_start": False}   # the Look node compiles that frame's prompts as they were
         return IO.NodeOutput(guide, depth, clay[:1], depth[:1], fps, int(clay.shape[0]), json.dumps(scene), id_pass,

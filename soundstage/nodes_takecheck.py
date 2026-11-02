@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 import numpy as np
 import torch
@@ -107,4 +108,145 @@ class SoundstageBlockingScore(IO.ComfyNode):
         return IO.NodeOutput(text, ui={"text": [text]})
 
 
-NODES = [SoundstageBlockingScore]
+# ---- ④ Frame: the first-frame check -------------------------------------------------------------------------------
+
+def _stage_of_png(path: str) -> dict | None:
+    """The 3D Stage node's input (scene + pass files) from a still's own PNG metadata (ComfyUI writes the prompt)."""
+    from PIL import Image
+    try:
+        info = Image.open(path).info
+        prompt = json.loads(info.get("prompt") or "{}")
+    except (OSError, ValueError):
+        return None
+    for n in prompt.values():
+        if isinstance(n, dict) and n.get("class_type") == "SoundstageStage":
+            v = (n.get("inputs") or {}).get("stage")
+            data = json.loads(v) if isinstance(v, str) and v.strip() else v
+            if isinstance(data, dict) and isinstance(data.get("scene"), dict):
+                return data
+    return None
+
+
+def _first_tile(ref: str, grid: dict | None) -> np.ndarray:
+    from PIL import Image
+    import folder_paths
+    img = np.asarray(Image.open(folder_paths.get_annotated_filepath(ref)).convert("RGB"))
+    if grid:
+        tw, th = grid["tile"]
+        img = img[:th, :tw]
+    return img
+
+
+def stage_silhouettes(id_rgb: np.ndarray, scene: dict) -> tuple[dict, dict]:
+    """{actor_id: {mask, kind}} for the people, animals and vehicles of frame 1 (a car's occupants inside its
+    silhouette), and {actor_id: name}."""
+    from .look import frame_lock as FLK
+    masks = FLK.id_masks(id_rgb, scene.get("id_colors") or {})
+    actors = B.tracked_actors(scene)
+    keep = {a.get("id") for a in actors}
+    out = {}
+    for a in actors:
+        k = prompt_for(a.get("kind"))
+        if k and a.get("id") in masks:
+            out[a["id"]] = {"mask": masks[a["id"]].copy(), "kind": k}
+    for a in scene.get("actors") or []:     # seated in a car: part of the car from outside
+        host = a.get("mount_id")
+        if a.get("id") not in keep and host in out and a.get("id") in masks and not float(a.get("mount_at") or 0) > 0:
+            out[host]["mask"] |= masks[a["id"]]
+    for a in scene.get("actors") or []:     # set pieces and props still occupy their pixels (no extras there)
+        if a.get("id") not in out and a.get("id") in masks:
+            out.setdefault("_set", {"mask": np.zeros_like(masks[a["id"]]), "kind": "_set"})["mask"] |= masks[a["id"]]
+    names = {a.get("id"): a.get("name") or a.get("kind") for a in scene.get("actors") or []}
+    return out, names
+
+
+MAX_PER_KIND = 8
+
+
+def detect(image: torch.Tensor, prompts: list[str], ckpt: str) -> list[dict]:
+    """SAM 3.1 detections per prompt on one image (1xHxWx3): [{mask, kind, score}]."""
+    import nodes
+    from comfy_extras import nodes_sam3 as S3
+    model, clip = nodes.CheckpointLoaderSimple().load_checkpoint(ckpt)[:2]
+    out = []
+    for p in prompts:
+        # "car:8": SAM 3's text encoder keeps ONE detection per prompt unless the prompt asks for more (sam3_clip.py)
+        cond = nodes.CLIPTextEncode().encode(clip, f"{p}:{MAX_PER_KIND}")[0]
+        res = S3.SAM3_Detect.execute(model=model, image=image, conditioning=cond, threshold=0.35 if p == "person" else 0.4,
+                                     refine_iterations=2, individual_masks=True)
+        args = getattr(res, "result", None) or getattr(res, "args", None) or res
+        masks, boxes = args[0], args[1]
+        boxes = boxes[0] if boxes and isinstance(boxes[0], list) else boxes
+        for i in range(int(masks.shape[0])):
+            out.append({"mask": masks[i].cpu().numpy() > 0.5, "kind": p,
+                        "score": float(boxes[i].get("score", 1.0)) if i < len(boxes) else 1.0})
+    return out
+
+
+def check_frame(path: str) -> dict:
+    from PIL import Image
+    from .takecheck import framecheck as FC
+    data = _stage_of_png(path)
+    for _ in range(3):        # a frame checked the moment it lands can read without its metadata: look again
+        if data:
+            break
+        time.sleep(1.5)
+        data = _stage_of_png(path)
+    if not data:
+        return {"verdict": "unknown", "why": "this frame carries no stage (made outside ④ Frame)"}
+    passes, scene = data.get("passes") or {}, data["scene"]
+    if not passes.get("id"):
+        return {"verdict": "unknown", "why": "the stage sent no ID pass"}
+    id_rgb = _first_tile(passes["id"], passes.get("grid"))
+    H, W = id_rgb.shape[:2]
+    stage, names = stage_silhouettes(id_rgb, scene)
+    prompts = sorted({s["kind"] for s in stage.values() if s["kind"] != "_set"})
+    if not prompts:
+        return {"verdict": "unknown", "why": "no person, animal or vehicle on the stage"}
+    still = Image.open(path).convert("RGB").resize((W, H), Image.BILINEAR)
+    img = torch.from_numpy(np.asarray(still).astype(np.float32) / 255.0)[None]
+    dets = detect(img, prompts, _ckpt())
+    res = FC.score(stage, dets, names)
+    res["size"] = [W, H]
+    res["detections"] = len(dets)
+    return res
+
+
+class SoundstageFrameCheck(IO.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> IO.Schema:
+        return IO.Schema(
+            node_id="SoundstageFrameCheck",
+            display_name="Soundstage · First Frame Check",
+            category="Soundstage/Review",
+            description="Does a ④ Frame candidate hold what the stage holds? SAM 3.1 finds the people, animals and "
+                        "vehicles in the frame and compares them with the stage's ID pass for frame 1: object count, "
+                        "silhouette IoU per actor, extra (ghost) objects. Reads the stage from the frame's own PNG "
+                        "metadata. The App queues it for every candidate (~3 s of GPU).",
+            inputs=[IO.String.Input("image", default="", tooltip="A frame in the output folder: 'soundstage/look_00001_.png [output]'.")],
+            outputs=[IO.String.Output(display_name="check_json")],
+            is_output_node=True,
+        )
+
+    @classmethod
+    def execute(cls, image="") -> IO.NodeOutput:
+        import folder_paths
+        path = folder_paths.get_annotated_filepath(image.strip()) if image.strip() else ""
+        if not path or not os.path.isfile(path):
+            raise ValueError(f"No such frame: {image}")
+        res = store.load(path, "framecheck")
+        if not res or res.get("v") != _fc_version():
+            res = check_frame(path)
+            res["v"] = _fc_version()
+            if res.get("verdict") != "unknown":     # an unreadable frame is checked again next time
+                store.save(path, "framecheck", res)
+        text = json.dumps(res)
+        return IO.NodeOutput(text, ui={"text": [text]})
+
+
+def _fc_version() -> int:
+    from .takecheck.framecheck import VERSION
+    return VERSION
+
+
+NODES = [SoundstageBlockingScore, SoundstageFrameCheck]

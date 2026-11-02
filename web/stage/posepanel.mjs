@@ -3,6 +3,7 @@
 // can change during the shot; LTX copies the clay pose, so this is how a head turn or a gesture gets directed.
 import { jointGroups, JOINT_AXES, jointKind, jointRange, POSE_PRESETS } from "./humans.mjs";
 import { captureTake, recordTake } from "./mocapcapture.mjs";
+import { gazeSummary } from "./gaze.mjs";
 import { clipSeconds, capturePlan } from "../ui/videoimport.mjs";
 import { sourceLine } from "../ui/sourcespec.mjs";
 
@@ -197,8 +198,10 @@ export class PosePanel {
     this.interRow = inter;
     this.target = document.createElement("select");
     this.action = document.createElement("select");
-    for (const [v, l] of [["look_at", "Look at"], ["talk", "Talk to (face each other)"], ["handshake", "Shake hands"], ["hug", "Hug"],
-      ["hold_hands", "Hold hands"], ["point_at", "Point at"], ["pet", "Pet (dog, cat, horse)"], ["lead", "Lead by the reins (horse)"], ["stop_look", "Stop looking"]])
+    for (const [v, l] of [["look_at", "Look at (head turns here)"], ["talk", "Talk to (face each other)"], ["handshake", "Shake hands"], ["hug", "Hug"],
+      ["hold_hands", "Hold hands"], ["point_at", "Point at"], ["pet", "Pet (dog, cat, horse)"], ["lead", "Lead by the reins (horse)"],
+      ["gaze:camera", "Look into the camera"], ["gaze:left", "Look off to their left"], ["gaze:right", "Look off to their right"],
+      ["gaze:down", "Look down"], ["stop_look", "Look ahead again (head steady)"]])
       this.action.append(new Option(l, v));
     for (const el of [this.target, this.action]) el.addEventListener("pointerdown", (e) => e.stopPropagation());
     this.action.setAttribute("aria-label", "Interaction");
@@ -206,7 +209,21 @@ export class PosePanel {
     inter.append(sectLabel("handshake", "Interact"), this.action,
       Object.assign(document.createElement("span"), { className: "note", textContent: "with" }), this.target,
       this._btn("Do it at the playhead", "Positions, faces and poses them for the interaction at the playhead",
-        () => { const m = this.stage.interact(this.id, this.target.value, this.action.value); this.refresh(); this.onStatus(m || "Pick someone or something to interact with."); }));
+        () => {
+          const act = this.action.value;
+          let m;
+          if (act.startsWith("gaze:")) {   // gaze blocking (web/stage/gaze.mjs): a head turn that starts at the playhead
+            const fps = this.stage.state?.shot?.fps || 24;
+            this.stage.setGaze(this.id, this.stage.frame, act.slice(5));
+            m = `Head turns ${{ camera: "to the camera", left: "to their left", right: "to their right", down: "down" }[act.slice(5)]} at ${(this.stage.frame / fps).toFixed(1)} s.`;
+          } else m = this.stage.interact(this.id, this.target.value, act);
+          this.refresh(); this.onStatus(m || "Pick someone or something to interact with.");
+        }));
+    // Where this person looks, key by key (head and gaze blocking). Empty = the head holds steady, facing their travel.
+    this.gazeNote = Object.assign(document.createElement("span"), { className: "note" });
+    inter.append(this.gazeNote,
+      this._btn("Clear head turns", "Remove every gaze key: the head holds steady, facing where they're going",
+        () => { this.stage.setGaze(this.id, null, null); this.refresh(); this.onStatus("Head steady: facing their travel, no turns."); }));
     // The person's big actions lead the panel; each brings you to its section below (or starts a capture).
     const lead = Object.assign(document.createElement("div"), { className: "lead" });
     lead.setAttribute("role", "toolbar");
@@ -309,6 +326,12 @@ export class PosePanel {
       for (const [n, inp, out] of ins) { inp.value = String(Math.round(v[n] || 0)); out.textContent = `${inp.value}°`; }
     }
     this._keys();
+    if (this.gazeNote) {
+      const a = (this.stage.state?.actors || []).find((x) => x.id === this.id);
+      const nameOf = (id) => (this.stage.state?.actors || []).find((x) => x.id === id)?.name || id;
+      const g = a ? gazeSummary(a, nameOf, this.stage.state?.shot?.fps || 24) : "";
+      this.gazeNote.textContent = g ? `Looks: ${g}` : "Looks: ahead, head steady (no turns)";
+    }
   }
 
   dispose() { clearInterval(this._poll); this.el.remove(); }

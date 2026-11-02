@@ -2774,6 +2774,36 @@
 "IMAGE"
 ]
 },
+"ImageScaleBy": {
+"input": {
+"required": {
+"image": [
+"IMAGE"
+],
+"scale_by": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 8.0,
+"min": 0.01,
+"step": 0.01
+}
+],
+"upscale_method": [
+[
+"nearest-exact",
+"bilinear",
+"area",
+"bicubic",
+"lanczos"
+]
+]
+}
+},
+"output": [
+"IMAGE"
+]
+},
 "ImageToMask": {
 "input": {
 "required": {
