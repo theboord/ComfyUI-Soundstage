@@ -239,3 +239,101 @@ def test_check_moved_actor_is_off_its_mark_not_missing_plus_extra():
     r = FC.score({"man": STAGE["man"]}, moved, {"man": "Man"})
     assert r["verdict"] == "flag" and r["extra"] == [] and r["actors"][0]["status"] == "off"
     assert r["why"] == "Man off its mark" and r["counts"]["person"] == {"stage": 1, "frame": 1}
+
+
+# ---- the crate crash's ghost car: the ID pass read without inventing objects ----------------------------------------
+# The stage canvas is antialiased: a 1-px seam between the yellow and green crates is a blend, and 3/4 yellow + 1/4
+# green IS the sports car's ID colour. Nearest-colour labelling gave the far sports car a box over the whole crate
+# pyramid, the still prompt said "close to the camera, half the frame wide" and Klein painted a ghost red car (M27,
+# M28). Fixtures: frame 1 of the M27 render's own ID pass and its scene (share/GhostCar_DetailLoss).
+
+FIX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "framelock_fixtures")
+CRASH = {"crate_6": [234, 255, 0], "crate_3": [11, 255, 0], "sports_car": [149, 255, 0]}   # the crash's real ID colours
+
+
+def _crate_crash():
+    import json
+    from PIL import Image
+    with open(os.path.join(FIX, "crate_crash_scene.json")) as f:
+        d = json.load(f)
+    ids = np.asarray(Image.open(os.path.join(FIX, "crate_crash_id_f1.png")).convert("RGB")).astype(np.float32) / 255
+    return d["look"], d["scene"], ids
+
+
+def _msaa(boxes, colors, h=100, w=200, s=4):
+    """An antialiased ID pass: flat boxes drawn s x s supersampled (edges at sub-pixel places), averaged down and
+    written as sRGB, the way the stage's WebGL canvas does it."""
+    hi = np.zeros((h * s, w * s, 3), np.float32)
+    for aid, (x0, y0, x1, y1) in boxes.items():
+        hi[round(y0 * s):round(y1 * s), round(x0 * s):round(x1 * s)] = FL._srgb(np.asarray(colors[aid], np.float32) / 255)
+    return hi.reshape(h, s, w, s, 3).mean((1, 3))
+
+
+def test_an_antialiased_seam_never_seeds_a_third_object():
+    img = _msaa({"crate_6": (40, 40, 70.75, 70), "crate_3": (70.75, 40, 100, 70), "sports_car": (170, 45, 182, 51)}, CRASH)
+    seam = img[50, 70] * 255
+    assert np.abs(seam - FL._srgb(np.asarray(CRASH["sports_car"], np.float32) / 255) * 255).max() < 4   # the trap is real
+    m = FL.id_masks(img, CRASH)
+    ys, xs = np.nonzero(m["sports_car"])
+    assert xs.min() >= 169 and ys.min() >= 44                     # only the far car, nothing on the crates
+    assert m["crate_6"][45:65, 70].all() or m["crate_3"][45:65, 70].all()   # the seam goes to a crate it borders
+    lay = FL.frame1_layout(img, {"id_colors": CRASH, "actors": [{"id": k} for k in CRASH]})
+    assert lay["sports_car"]["box"] == [0.85, 0.45, 0.91, 0.51]
+    assert lay["crate_6"]["box"][2] <= 0.355 and lay["crate_3"]["box"][0] >= 0.35
+
+
+def test_crate_crash_frame1_is_measured_as_staged_and_the_prompt_keeps_the_car_far():
+    look, scene, ids = _crate_crash()
+    lay = FL.frame1_layout(ids, scene)
+    car = lay["sports_car"]["box"]
+    assert car[0] > 0.8 and car[2] - car[0] < 0.08 and car[3] - car[1] < 0.1      # far down the street, by the pole
+    pyramid = FL.union([lay[f"crate_{i}"]["box"] for i in range(10)])
+    assert pyramid[0] > 0.3 and pyramid[2] < 0.65                                  # every crate stays in the pyramid
+    assert all(lay[f"crate_{i}"]["box"][2] - lay[f"crate_{i}"]["box"][0] < 0.1 for i in range(10))
+    still = compile_look(look, {**scene, "frame1_layout": lay})["still_prompt"]
+    assert "a sports car on the right edge of frame, small in the distance" in still
+    assert "close to the camera" not in still and "half the frame wide" not in still
+
+
+def test_layout_drops_a_box_its_own_pixels_do_not_fill():
+    img = _paint()
+    img[0:8, 0:8] = np.asarray(COLORS["car"], np.float32) / 255          # two solid specks of one ID colour at
+    img[90:98, 190:198] = np.asarray(COLORS["car"], np.float32) / 255     # opposite corners: no object a box describes
+    assert "car" not in FL.frame1_layout(img, {"id_colors": COLORS, "actors": [{"id": "car"}]})
+
+
+def test_check_flags_ghost_cars_on_the_crate_crash():
+    look, scene, ids = _crate_crash()
+    stage, names = FC.stage_silhouettes(ids, scene)
+    pyramid = np.zeros(ids.shape[:2], bool)
+    for k, m in FL.id_masks(ids, scene["id_colors"]).items():
+        if k.startswith("crate_"):
+            pyramid |= m
+    assert stage["sports_car"]["kind"] == "car" and not any(k.startswith("crate_") for k in stage)
+    assert not (stage.get("_set", {}).get("mask", np.zeros_like(pyramid)) & pyramid).any()   # crates excuse no car
+    far = {"mask": stage["sports_car"]["mask"].copy(), "kind": "car", "score": 0.8}
+    on_crates = {"mask": _box(300, 130, 560, 350, h=512, w=960), "kind": "car", "score": 0.9}   # M28: over the pyramid
+    parked = {"mask": _box(470, 200, 700, 330, h=512, w=960), "kind": "car", "score": 0.9}      # M27: right foreground
+    ok = FC.score(stage, [far], names)
+    assert ok["verdict"] == "ok" and ok["counts"]["car"]["frame"] == ok["counts"]["car"]["stage"]
+    both = FC.score(stage, [far, on_crates], names)
+    assert both["verdict"] == "flag" and [e["kind"] for e in both["extra"]] == ["car"] and both["why"].startswith("an extra car")
+    moved = FC.score(stage, [parked], names)                       # the far car painted big and near
+    assert moved["verdict"] == "flag" and moved["actors"][0]["status"] == "off"
+    assert FC.score(stage, [far, parked], names)["verdict"] == "flag"
+
+
+def test_set_piece_people_animals_and_cars_still_excuse_their_own_pixels():
+    scene = {"id_colors": {"hero": [255, 0, 0], "parked": [0, 0, 255], "crate": [0, 255, 0]},
+             "actors": [{"id": "hero", "kind": "sports_car", "position": [0, 0, 0]},
+                        {"id": "parked", "kind": "hatchback", "set_piece": True, "position": [5, 0, 5]},
+                        {"id": "crate", "kind": "crate", "position": [2, 0, 2]}]}
+    img = np.zeros((100, 200, 3), np.float32)
+    img[40:80, 10:90] = [1, 0, 0]
+    img[30:60, 120:190] = [0, 0, 1]
+    img[70:95, 100:140] = [0, 1, 0]
+    stage, _ = FC.stage_silhouettes(img, scene)
+    assert stage["_set"]["mask"][30:60, 120:190].all() and not stage["_set"]["mask"][70:95, 100:140].any()
+    hero = {"mask": stage["hero"]["mask"].copy(), "kind": "car", "score": 0.9}
+    assert FC.score(stage, [hero, {"mask": _box(121, 31, 189, 59), "kind": "car", "score": 0.9}])["verdict"] == "ok"
+    assert FC.score(stage, [hero, {"mask": _box(100, 66, 140, 96), "kind": "car", "score": 0.9}])["verdict"] == "flag"
