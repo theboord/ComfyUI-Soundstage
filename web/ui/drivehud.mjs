@@ -68,7 +68,9 @@ export function hintsFor(kind, pad = false, carrying = false) {
     [P ? "A / RB" : "Space", "handbrake"], [P ? "Y" : "E", "get out"], [P ? "D↑" : "L", "lights"], [P ? "D↓" : "O", "door"], [P ? "Menu" : "R", "● REC"], [P ? "View" : "V", "camera"], ["Esc", "leave"]];
   if (kind === "horse" || kind === "animal") return [[P ? "L stick ↑" : "W", "pace"], [P ? "L stick ↔" : "A D", "turn"], [P ? "L3 / LB" : "Shift", "gallop"],
     [P ? "L stick ↓" : "S", "stop · back"], [P ? "Y" : "E", "dismount"], [P ? "Menu" : "R", "● REC"], ["Esc", "leave"]];
-  if (kind === "bike" || kind === "boat") return [[P ? "RT" : "W", "throttle"], [P ? "LT" : "S", "brake"], [P ? "L stick" : "A D", "steer"], [P ? "Y" : "E", "get off"], [P ? "Menu" : "R", "● REC"], ["Esc", "leave"]];
+  if (kind === "boat") return [[P ? "RT" : "W", "throttle · paddle"], [P ? "LT" : "S", "slow · reverse"], [P ? "L stick" : "A D", "steer"], [P ? "L3 / LB" : "Shift", "harder"],
+    [P ? "A / B" : "Space Q", "motor trim out · in"], [P ? "Y" : "E", "get off"], [P ? "Menu" : "R", "● REC"], ["Esc", "leave"]];
+  if (kind === "bike") return [[P ? "RT" : "W", "throttle"], [P ? "LT" : "S", "brake"], [P ? "L stick" : "A D", "steer"], [P ? "Y" : "E", "get off"], [P ? "Menu" : "R", "● REC"], ["Esc", "leave"]];
   return [[P ? "L stick" : "WASD", "move"], [P ? "A" : "Space", "rise"], [P ? "B" : "Q", "sink"], [P ? "LB RB" : "Z X", "turn"], [P ? "Menu" : "R", "● REC"], ["Esc", "leave"]];
 }
 

@@ -39,6 +39,21 @@ export function boatCameraKeys(kind, run, last, { side = 1 } = {}) {
   return keys;
 }
 
+/**
+ * The script's beats fitted to the shot: a 4-5 s shot still shows the hole shot AND the start of the carve, the tack,
+ * the canoe's turn and the raft's ferry (the scripts' own times are for a long take). Keys in `apply` win.
+ */
+export function fitTimes(id, dur, apply = {}) {
+  const r1 = (v) => Math.round(v * 10) / 10, cl = (v, a, b) => Math.min(b, Math.max(a, v));
+  let t = {};
+  if (id === "speedboat_run") { const go = dur < 6 ? 0.25 : 0.5; t = { go_s: go, turn_s: r1(cl(dur - 1.4, go + 3.6, 6.5)) }; }
+  else if (id === "sailing_tack") t = { tack_s: r1(cl(dur * 0.25, 1, 2.5)) };
+  else if (id === "canoe_lake") t = { turn_s: r1(cl(dur * 0.5, 1.5, 5)) };
+  else if (id === "whitewater_raft") t = { ferry_s: r1(cl(dur * 0.2, 0.8, 2.4)) };
+  for (const k of Object.keys(t)) if (Number.isFinite(apply?.[k])) t[k] = apply[k];
+  return t;
+}
+
 /** Run one boat preset through a PresetRunner. */
 export function boatPreset(run, p) {
   const st = run.stage, id0 = p.apply.boat, spec = BOAT_PRESETS[id0];
@@ -64,7 +79,7 @@ export function boatPreset(run, p) {
   let heading = (+boat.rotation_deg || 0) * DEG;
   if (id0 === "sailing_tack") heading = headingForTwa(wind, 48);
   if (id0 === "whitewater_raft") heading = 0;                 // downstream (the river runs toward +z)
-  const script = boatScript(id0, {});
+  const script = boatScript(id0, fitTimes(id0, last / fps, p.apply));
   const res = simulateBoat(script, { frames: last + 1, fps, waves: F, wind, level, x: start[0], z: start[2], heading, kind: spec.boat });
   boat.keys = boatKeys(res, { every: 2 });
   boat.position = boat.keys[0].position;
@@ -96,7 +111,7 @@ export function boatPreset(run, p) {
   try { st.setCameraKeys?.(boatCameraKeys(id0, res, last)); } catch { /* no camera */ }
   const m = res.frames, top = Math.max(...m.map((s) => s.u));
   const extra = spec.boat === "speedboat" ? ` Peak trim ${Math.max(...m.map((s) => s.pitch)).toFixed(1)}° at the hump, ${(top * 1.944).toFixed(0)} kn on the plane.`
-    : spec.boat === "dinghy" ? ` Through the wind at ${p.apply.tack_s ?? 2.5} s; heel up to ${Math.max(...m.map((s) => Math.abs(s.roll))).toFixed(0)}°.`
+    : spec.boat === "dinghy" ? ` Through the wind at ${fitTimes(id0, last / fps, p.apply).tack_s} s; heel up to ${Math.max(...m.map((s) => Math.abs(s.roll))).toFixed(0)}°.`
     : ` ${strokeSpans(res).length} strokes, about ${(top * 1.944).toFixed(1)} kn.`;
   return { ok: true, said: `Applied '${p.label}': ${spec.words}${moved}.${extra}`, whereObj: `the ${(boat.name || spec.boat).toLowerCase()}` };
 }

@@ -32,6 +32,8 @@ export const SET_LOOK = Object.freeze({
   beach: { ground: "#d4bc90", reach: 12, water: "#2f6c7a" },                                                     // dry beach sand, sea
   water_tank: { ground: "#9db6bc", indoor: true, dress: { wall: "#c7d5d9" }, water: "#4f98aa" },                  // pale tiled tank
   open_water: { ground: "#8b7b58", reach: 12, dress: { headland: "#5b6447" }, water: "#285a6c" },               // seabed, green headlands
+  lake: { ground: "#6b6450", reach: 12, water: "#2f5a5c" },                                                      // silty lakebed, green-brown lake water
+  river_rapids: { ground: "#7a7466", reach: 8, water: "#456f6b" },                                               // cobbled riverbed, clear snowmelt
   stadium: { ground: "#3e6a2d", reach: 8, dress: { field: "#3e6a2d", dirt: "#9b6b44", infield: "#4b7b35", base: "#f1f1ee",
     mound: "#a06f46", stand: "#71767c", tower: "#8b8f94", lamp: "#ece8db" } },                                  // grass, clay infield, concrete
   underwater: { ground: "#b8a67e" },                                                                              // the reef's sand floor
