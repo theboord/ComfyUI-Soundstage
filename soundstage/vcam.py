@@ -17,6 +17,13 @@ POST /soundstage/vcam/scene           -> the desktop publishes {scene, sync?}; p
 POST /soundstage/vcam/sync            -> the desktop's playhead / view / take status, pushed to the devices
 GET|POST /soundstage/vcam/pair        -> the phone-facing URL a LAN bridge (tools/vcam_bridge.py) registered, for the QR
 
+Phone hand-off ("Film a move" on the viewfinder, docs/vcam.md):
+POST /soundstage/vcam/clipcode        -> the desktop mints {code, ttl_s}; its QR carries it (&clip=CODE)
+POST /soundstage/vcam/clip?code=&device=&dest=motion|performance|footage&name=
+                                      -> the phone's recorded video (raw body, <= 300 MB, the code required); saved as
+                                         an H.264 MP4 in input/soundstage_private/phone/ and announced to the desktop as a
+                                         "clip" event, which brings it in as Capture motion, Real performance or Footage
+
 Every pose / state / saved take is re-broadcast to all ComfyUI browser tabs with
 PromptServer.instance.send_sync("soundstage.vcam", payload) for live preview; see docs/vcam.md.
 Takes are JSON files in <ComfyUI user dir>/soundstage/takes/.
@@ -48,6 +55,14 @@ _devices = {}   # device id -> {"mode", "last", "recording", "last_sent"}
 _sockets = {}   # device id -> its WebSocket (server -> device pushes: scene, sync)
 _scene = {}     # the last scene a desktop published: {"rev", "scene", "sync", "at"}
 _pair = {}      # {"url", "at"} from the LAN bridge
+_clip_codes = {}  # code -> expiry (time.time()); minted by the desktop for "Film a move"
+
+CLIP_MAX_BYTES = 300 << 20     # ~2-3 min of phone video
+CLIP_TTL = 6 * 3600            # a QR's clip code stays good for a shoot day's session
+CLIP_SUB = "soundstage_private/phone"
+CLIP_DESTS = ("motion", "performance", "footage")
+CLIP_TYPES = {"video/mp4": ".mp4", "video/quicktime": ".mov", "video/webm": ".webm", "video/x-matroska": ".mkv"}
+CLIP_CODE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 
 
 # ---------------------------------------------------------------- pure helpers (no ComfyUI imports; unit-tested)
@@ -208,6 +223,58 @@ def set_pair(url, now=None):
         return False
     _pair.update(url=url, at=time.time() if now is None else now)
     return True
+
+
+def mint_clip_code(now=None):
+    """A new clip code (the desktop's QR carries it; the phone sends it with its clip)."""
+    import secrets
+    now = time.time() if now is None else now
+    for k in [k for k, t in _clip_codes.items() if t < now]:
+        _clip_codes.pop(k, None)
+    code = secrets.token_urlsafe(12)
+    _clip_codes[code] = now + CLIP_TTL
+    return code
+
+
+def check_clip_code(code, now=None):
+    import secrets
+    now = time.time() if now is None else now
+    if not isinstance(code, str) or not CLIP_CODE.match(code):
+        return False
+    for k, t in list(_clip_codes.items()):
+        if t >= now and secrets.compare_digest(k, code):
+            return True
+    return False
+
+
+def clip_ext(content_type):
+    """The upload's container from its Content-Type ("video/webm;codecs=vp9" -> ".webm"), or None (refused)."""
+    base = str(content_type or "").split(";")[0].strip().lower()
+    return CLIP_TYPES.get(base)
+
+
+def clip_dest(d):
+    return d if d in CLIP_DESTS else "motion"
+
+
+def clip_stem(device, name, now=None):
+    t = time.strftime("%Y%m%d-%H%M%S", time.localtime(time.time() if now is None else now))
+    return f"phone_{t}_{clean_device(device)[:20]}_{slug(name)[:30]}"
+
+
+def normalize_clip(src, dst):
+    """Phone video (VFR webm/mov) -> a constant-rate H.264/AAC MP4 the App's tools all read; keeps up to 60 fps."""
+    import shutil
+    import subprocess
+    ff = shutil.which("ffmpeg")
+    if not ff:
+        raise RuntimeError("ffmpeg is not installed on the server")
+    cmd = [ff, "-v", "error", "-y", "-i", src, "-vf", "fps=30,scale='min(1920,iw)':-2", "-c:v", "libx264", "-crf", "16",
+           "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", dst]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    if r.returncode != 0:
+        raise RuntimeError(f"could not read the phone's video: {r.stderr.strip()[-200:]}")
+    return dst
 
 
 def slug(text):
@@ -392,6 +459,54 @@ def register():
         if not set_pair(body.get("url") if isinstance(body, dict) else None):
             return web.json_response({"error": "bad url"}, status=422)
         return web.json_response({"ok": True})
+
+    @routes.post("/soundstage/vcam/clipcode")
+    async def vcam_clipcode(request):
+        return web.json_response({"code": mint_clip_code(), "ttl_s": CLIP_TTL})
+
+    @routes.post("/soundstage/vcam/clip")
+    async def vcam_clip(request):
+        import asyncio
+        import folder_paths
+        q = request.query
+        if not check_clip_code(q.get("code", "")):
+            return web.json_response({"error": "scan the QR code on the computer again (this phone isn't paired for clips)"},
+                                     status=403)
+        ext = clip_ext(request.headers.get("Content-Type"))
+        if not ext:
+            return web.json_response({"error": "send the video as video/mp4, video/quicktime or video/webm"}, status=415)
+        if request.content_length and request.content_length > CLIP_MAX_BYTES:
+            return web.json_response({"error": f"clip too large (max {CLIP_MAX_BYTES >> 20} MB)"}, status=413)
+        folder = os.path.join(folder_paths.get_input_directory(), CLIP_SUB)
+        os.makedirs(folder, exist_ok=True)
+        device, dest = clean_device(q.get("device")), clip_dest(q.get("dest"))
+        stem = clip_stem(device, q.get("name") or "move")
+        raw = os.path.join(folder, stem + ".upload" + ext)
+        size = 0
+        try:
+            with open(raw, "wb") as f:
+                async for chunk in request.content.iter_chunked(1 << 16):
+                    size += len(chunk)
+                    if size > CLIP_MAX_BYTES:
+                        raise ValueError(f"clip too large (max {CLIP_MAX_BYTES >> 20} MB)")
+                    f.write(chunk)
+            if size < 1024:
+                raise ValueError("the clip is empty")
+            out = await asyncio.to_thread(normalize_clip, raw, os.path.join(folder, stem + ".mp4"))
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=413 if "large" in str(exc) else 422)
+        except RuntimeError as exc:
+            return web.json_response({"error": str(exc)}, status=422)
+        finally:
+            try:
+                os.remove(raw)
+            except OSError:
+                pass
+        name = os.path.basename(out)
+        info = {"type": "clip", "device": device, "dest": dest, "name": name, "subfolder": CLIP_SUB, "kind": "input",
+                "ref": f"{CLIP_SUB}/{name} [input]", "bytes": os.path.getsize(out), "server_time": time.time()}
+        server.send_sync(EVENT, info)
+        return web.json_response(info)
 
     @routes.get("/soundstage/vcam")
     async def vcam_page(request):

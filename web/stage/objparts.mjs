@@ -508,6 +508,7 @@ export function installParts(Stage, deps) {
     else {
       const field = { focus_m: "focus_m", t_stop: "t_stop", roll_deg: "roll" }[ch];
       const lk = (sh.lens_keys ||= []);
+      const first = !lk.some((o) => o[field] != null);   // before a new key is seeded with what plays now
       let k = lk.find((x) => x.frame === frame);
       if (!k) {
         // Seed a new lens key with what plays there now, so the other lens channels don't jump.
@@ -518,8 +519,9 @@ export function installParts(Stage, deps) {
         lk.sort((p, q) => p.frame - q.frame);
       }
       k[field] = ch === "roll_deg" ? v * Math.PI / 180 : v;
-      // A lens channel used for the first time: every other lens key needs it too (they interpolate in pairs).
-      for (const o of lk) if (o[field] == null) o[field] = k[field];
+      // A lens channel used for the first time: every other lens key holds it too. Only then: a key whose value for this
+      // channel was removed (_dropCamKey) stays without it, since each channel plays between the keys that carry it.
+      if (first) for (const o of lk) if (o[field] == null) o[field] = k[field];
     }
     this.frame = was;
   };
@@ -549,7 +551,13 @@ export function installParts(Stage, deps) {
     const sh = this.activeShot();
     if (ch === "focal_mm") { const k = this._camKeys(); if (k.length > 1) sh.camera_keys = k.filter((x) => x.frame !== frame); }
     else if (ch === "shutter_deg") dropKey(sh, ch, frame);
-    else { const field = { focus_m: "focus_m", t_stop: "t_stop", roll_deg: "roll" }[ch]; sh.lens_keys = (sh.lens_keys || []).filter((k) => k.frame !== frame || Object.keys(k).some((q) => q !== "frame" && q !== field)); }
+    else {
+      // Remove only this channel's value at `frame`; the key stays for the other lens channels it still carries.
+      const field = { focus_m: "focus_m", t_stop: "t_stop", roll_deg: "roll" }[ch];
+      for (const k of sh.lens_keys || []) if (k.frame === frame) delete k[field];
+      sh.lens_keys = (sh.lens_keys || []).filter((k) => Object.keys(k).some((q) => q !== "frame"));
+      if (!sh.lens_keys.length) delete sh.lens_keys;
+    }
   };
 
   /** Key every animatable channel of an object at the playhead (K). */

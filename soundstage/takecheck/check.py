@@ -83,7 +83,7 @@ def check_take(path: str, scene: dict | None = None, faces: bool = True, vehicle
         if faces:
             f_issues, f_info = D.faces(rgb[::2], fps, every=every * 2)
             issues += f_issues
-            checks["face"] = True
+            checks["face"] = bool(f_info.get("detector"))     # False when this OpenCV build can't run it
             extra["face"] = f_info
         if vehicles and scene:
             v_issues, v_report = D.vehicle_direction(rgb, idx, scene, fps)
