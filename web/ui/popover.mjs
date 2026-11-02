@@ -181,10 +181,13 @@ export function openPopover(el, opts = {}) {
     el.classList.remove("ss-pop-scrolls");
     const wFix = typeof opts.width === "number" ? opts.width : opts.width?.getBoundingClientRect ? opts.width.getBoundingClientRect().width : null;
     if (wFix) el.style.width = Math.round(wFix) + "px";
-    const minW = opts.minWidth === true ? ar.right - ar.left : +opts.minWidth || 0;
-    if (minW) el.style.minWidth = Math.round(minW) + "px";
     const vw = doc.documentElement.clientWidth || win.innerWidth, vh = doc.documentElement.clientHeight || win.innerHeight;
-    if (wFix) el.style.width = Math.round(Math.min(wFix, vw - 2 * (opts.margin ?? MARGIN))) + "px";
+    const room = Math.max(0, vw - 2 * (opts.margin ?? MARGIN));
+    // min-width wins over max-width in CSS, so a min-width wider than the window (an anchor wider than a phone) would
+    // push the pop-over off-screen whatever max-width placement gives it: cap it at the window like the fixed width.
+    const minW = opts.minWidth === true ? ar.right - ar.left : +opts.minWidth || 0;
+    if (minW) el.style.minWidth = Math.round(Math.min(minW, room)) + "px";
+    if (wFix) el.style.width = Math.round(Math.min(wFix, room)) + "px";
     const full = el.scrollHeight > el.offsetHeight ? el.scrollHeight + (el.offsetHeight - el.clientHeight) : el.offsetHeight;
     const nat = { width: el.offsetWidth, height: Math.min(cssMax, full) };
     const p = placePopover(ar, nat, { width: vw, height: vh }, opts);
