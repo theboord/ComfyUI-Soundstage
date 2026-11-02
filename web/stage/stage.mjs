@@ -1799,15 +1799,7 @@ export class Stage {
         continue;
       }
       if (!climb && a.mount_at > 0 && this.frame < a.mount_at) {
-        // Hop on: arc from where they stand up into the saddle, turning to face the mount's way.
-        const t = (this.frame - hopStart) / hopN;
-        const e = t * t * (3 - 2 * t);
-        if (t < 0.5) applyPose(g, "stand", h);
-        const from = g.position.clone(); // standing spot, set by the free-actor pass above
-        g.position.lerpVectors(from, seatPos, e);
-        g.position.y += Math.sin(Math.PI * t) * 0.35 * h / 1.8;
-        const dy = Math.atan2(Math.sin(hg.rotation.y - g.rotation.y), Math.cos(hg.rotation.y - g.rotation.y));
-        g.rotation.y += dy * e;
+        this._hopOn(a, g, hg, seatPos, (this.frame - hopStart) / hopN, h, hopStart);
         continue;
       }
       g.position.copy(seatPos);
@@ -3125,6 +3117,53 @@ export class Stage {
     return out;
   }
 
+  /**
+   * The quick hop onto a mount (anything but a horse climbed from the ground, or a rider too short for this horse, or no
+   * time), at t (0..1 through HOP_FRAMES), the body already in the seat's pose (its limbs are where the hop ends). It
+   * stands on the ground where the keys left them (soles on it, never under), steps the near foot up while the off
+   * foot stays planted, then springs: the off foot leaves the ground only then, and the body arcs up into the seat,
+   * the limbs easing from the stance into the seat's pose. A pure function of t.
+   */
+  _hopOn(a, g, hg, seatPos, t, h, hopStart) {
+    const sst = (u) => { const v = Math.max(0, Math.min(1, u)); return v * v * (3 - 2 * v); };
+    const wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));
+    const limbs = g.userData.limbs || [], J = g.userData.joints || {};
+    const seat = limbs.map((l) => l.pivot.quaternion.clone()), seatTrunk = ["spine", "neck", "head"].map((n) => J[n]?.quaternion.clone());
+    const p0 = this._actorPosAt(a, hopStart), yaw0 = this._headingAt(a, hopStart);
+    const from = new THREE.Vector3(p0[0], this._heightAt(a, hopStart) + Gait.standLift(g), p0[2]);
+    const T1 = 0.4;
+    // Standing at the start (soles on the ground): where the off (right) foot stays planted.
+    const stand = (u) => {
+      Gait.release(g);
+      applyPose(g, "stand", h);
+      Mocap.resetFeet(g);
+      g.rotation.order = "YXZ";
+      g.rotation.set(0, yaw0, 0);                                       // (the turn and the move come with the spring)
+      g.position.copy(from);
+      for (const l of limbs) {                                          // the near foot steps up
+        if (l.side > 0 && l.part === "hip") l.pivot.rotation.set(-0.9 * sst(u), 0, 0);
+        if (l.side > 0 && l.part === "knee") l.pivot.rotation.set(1.3 * sst(u), 0, 0);
+      }
+      g.updateMatrixWorld(true);
+    };
+    stand(0);
+    const pin = Mocap.footState(g, "r")?.ankle.clone();
+    // (the near shoe kept level as it leaves the ground, so its toe never scuffs into it)
+    const standAt = (u) => { stand(u); if (pin) { Mocap.legIK(g, "r", pin, 1); Mocap.flattenFoot(g, "r", 1); } Mocap.flattenFoot(g, "l", 1 - sst(2 * u)); g.updateMatrixWorld(true); };
+    if (t < T1) { standAt(t / T1); return; }
+    // The spring: from the stance at T1 into the seat's pose, up and over in an arc.
+    standAt(1);
+    const A = limbs.map((l) => l.pivot.quaternion.clone()), posA = g.position.clone(), yawA = g.rotation.y;
+    const e = sst((t - T1) / (1 - T1));
+    limbs.forEach((l, i) => l.pivot.quaternion.copy(A[i]).slerp(seat[i], e));
+    ["spine", "neck", "head"].forEach((n, i) => { if (J[n] && seatTrunk[i]) J[n].quaternion.identity().slerp(seatTrunk[i], e); });
+    Mocap.resetFeet(g);
+    g.position.lerpVectors(posA, seatPos, e);
+    g.position.y += Math.sin(Math.PI * e) * 0.3 * h / 1.8;
+    g.rotation.y = yawA + wrap(hg.rotation.y - yawA) * e;
+    g.updateMatrixWorld(true);
+  }
+
   /** The horse's shape for climbing on (gait.mjs horseProfile), per mesh and size: the rigged horse is measured as it
    *  loads (Idle, first frame), the clay one here once, its swinging legs left out. */
   _horseShape(hg, k) {
@@ -3163,10 +3202,12 @@ export class Stage {
   /**
    * When a timed horse mount happens: seated by a.mount_at, the climb (Gait.mountFrames) before it, and before that
    * the walk from where their keys leave them to the near stirrup (round the horse's head when they come from the off
-   * side), so the climb starts on the spot and never slides there. When there isn't time to walk there first, the climb
-   * starts (and they are seated) late instead. {fA (walk starts), S (climb starts), E (seated), N, fromYaw, plan, pos,
-   * yaw}, or {hop: true} (the stage's quick hop) for a rider too short to get up on this horse from the ground, or when
-   * the horse is keyed to move off before they could be up.
+   * side), so the climb starts on the spot and never slides there. Their keys play as keyed up to the walk (it sets off
+   * from where the keys end, at the pace and heading the keys had, or from standing when they stopped there first), and
+   * the walk ends with both feet exactly where the climb stands them. When there isn't time to walk there first, the
+   * climb starts (and they are seated) late instead. {fA (walk starts), fW (arrives), S (climb starts), E (seated), N,
+   * fromYaw, plan, pos, yaw, lift, late}, or {hop: true, why} (the stage's quick hop) for a rider too short to get up on
+   * this horse from the ground, or when the horse is keyed to move off before they could be up.
    */
   _climbWindow(a, host, hg, g) {
     const fps = this.state.shot?.fps || 24, N = Gait.mountFrames(fps), last = this._lastFrame();
@@ -3176,49 +3217,12 @@ export class Stage {
     this._climbCache = this._climbCache || new WeakMap();
     const c = this._climbCache.get(a);
     if (c && c.sig === sig && c.g === g) return c.W;
-    const S0 = (a.mount_at || 0) - N;
-    const at = Math.max(0, Math.min(last, S0));
-    // Laid out by the horse where it stands at sf.
-    const plan = (sf) => {
-    const spot = this.climbSpot(a, host, hg, g, sf);
+    const S0 = (a.mount_at || 0) - N, at = Math.max(0, Math.min(last, S0));
+    const spot = this.climbSpot(a, host, hg, g, at);
     let W;
-    if (!spot?.ok) W = { hop: true };
+    if (!spot?.ok) W = { hop: true, why: "too short to get up on this horse from the ground" };
     else if (live) W = { fA: S0, S: S0, E: a.mount_at, N, fromYaw: null };     // Drive mode walked them there already
-    else {
-      const h = (a.height_m || 1.8) * (a.scale || 1), v = 1.4 * Math.sqrt(h / 1.8), settle = Math.round(0.3 * fps);
-      const hp = this._actorPosAt(host, sf), hy = this._headingAt(host, sf);
-      const toL = (x, z) => { const dx = x - hp[0], dz = z - hp[2], c2 = Math.cos(hy), s2 = Math.sin(hy); return [dx * c2 - dz * s2, dx * s2 + dz * c2]; };
-      const toW = (lx, lz) => { const c2 = Math.cos(hy), s2 = Math.sin(hy); return [hp[0] + lx * c2 + lz * s2, hp[2] - lx * s2 + lz * c2]; };
-      const k = (host.scale || 1) * ((host.height_m || 1.6) / 1.6);
-      const end = [spot.x, spot.z], pre = [spot.x - 0.7 * Math.sin(spot.yaw), spot.z - 0.7 * Math.cos(spot.yaw)];
-      // The way there: straight to a step back from the spot, then in; round the head from the off side.
-      const route = (p) => {
-        const pts = [[p[0], p[2]]];
-        if (toL(p[0], p[2])[0] < 0) pts.push(toW(-1.0 * k, 2.3 * k), toW(1.0 * k, 2.1 * k));   // never behind a horse
-        pts.push(pre, end);
-        return pts;
-      };
-      const length = (pts) => pts.slice(1).reduce((s2, q, i) => s2 + Math.hypot(q[0] - pts[i][0], q[1] - pts[i][1]), 0);
-      const p0 = this._actorPosAt(a, at);
-      if (Math.hypot(p0[0] - end[0], p0[2] - end[1]) < 0.02) W = { fA: at, S: at, E: at + N, N, fromYaw: this._headingAt(a, at) };
-      else {
-        // The latest the walk can set off from the keyed path and still be there when the climb is due; when no start
-        // gets there in time, the earliest arrival (from wherever on the keyed path it comes soonest).
-        const walk = (f) => { const q = route(this._actorPosAt(a, f)); return { f, pts: q, T: Math.ceil(length(q) / v * fps) + settle }; };
-        let pick = null;
-        for (let f = at - 1; f >= 0 && !pick; f--) { const w = walk(f); if (f + w.T <= at) pick = w; }
-        if (!pick) {
-          const lastKey = Math.max(at, ...keys.map((x) => x.frame || 0));
-          for (let f = 0; f <= lastKey; f++) { const w = walk(f); if (!pick || f + w.T < pick.f + pick.T) pick = w; }
-        }
-        const fA = pick.f, pts = pick.pts, T = pick.T;
-        const S = Math.max(at, fA + T);
-        W = { fA, S, E: S + N, N, fromYaw: spot.yaw, ...this._approachPath(a, g, fA, S - settle, S, pts, fps, h) };
-      }
-    }
-    return W;
-    };
-    let W = plan(at);
+    else W = this._approachPlan(a, host, g, spot, at, fps, N);
     // A horse that moves off before they could be up (keyed to leave too soon): nobody climbs onto a moving horse, so
     // the stage's quick hop puts them on at mount_at, and W.why says why (re-time the keys for a real climb).
     if (!W.hop) {
@@ -3229,48 +3233,114 @@ export class Stage {
     return W;
   }
 
-  /** The walk to the stirrup as per-frame positions and headings (frames fA..S), and the footstep plan for it. */
-  _approachPath(a, g, fA, fW, S, pts, fps, h) {
-    // A smooth line through the points (Catmull-Rom), measured along its length.
-    const P = [pts[0], ...pts, pts[pts.length - 1]], dense = [];
-    for (let i = 1; i < P.length - 2; i++) for (let j = 0; j < 24; j++) {
-      const u = j / 24, p0 = P[i - 1], p1 = P[i], p2 = P[i + 1], p3 = P[i + 2];
-      const cr = (c) => 0.5 * (2 * p1[c] + (-p0[c] + p2[c]) * u + (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * u * u + (-p0[c] + 3 * p1[c] - 3 * p2[c] + p3[c]) * u * u * u);
-      dense.push([cr(0), cr(1)]);
+  /** The walk to the stirrup (see _climbWindow): when it starts, its path frame by frame, and its footsteps. */
+  _approachPlan(a, host, g, spot, at, fps, N) {
+    const h = (a.height_m || 1.8) * (a.scale || 1), keys = this._actorKeys(a);
+    const hp = this._actorPosAt(host, at), hy = this._headingAt(host, at), k = (host.scale || 1) * ((host.height_m || 1.6) / 1.6);
+    const toL = (x, z) => { const dx = x - hp[0], dz = z - hp[2], c2 = Math.cos(hy), s2 = Math.sin(hy); return [dx * c2 - dz * s2, dx * s2 + dz * c2]; };
+    const toW = (lx, lz) => { const c2 = Math.cos(hy), s2 = Math.sin(hy); return [hp[0] + lx * c2 + lz * s2, hp[2] - lx * s2 + lz * c2]; };
+    const end = [spot.x, spot.z];
+    // Where the keys leave them: their last key (or the climb's due start, when the keys run on past it).
+    const lastKey = Math.max(0, ...keys.map((x) => x.frame || 0));
+    const fK = Math.min(lastKey, at);
+    const walkFrom = (f) => {
+      const p = this._actorPosAt(a, f), q = this._actorPosAt(a, Math.max(0, f - 1));
+      // (carrying on at the keys' pace through their last key; a run keyed to end there is the keys' own stop)
+      let v0 = f > 0 && f <= lastKey ? [(p[0] - q[0]) * fps, (p[2] - q[2]) * fps] : [0, 0];
+      if (f >= lastKey && Math.hypot(v0[0], v0[1]) > 2.2) v0 = [0, 0];
+      const p0 = [p[0], p[2]];
+      // the way there: round the head from the off side (never behind a horse), then along the near side to the spot
+      const via = toL(p0[0], p0[1])[0] < 0 ? [toW(-1.0 * k, 2.3 * k), toW(1.0 * k, 2.1 * k)] : [];
+      return { f, ...Gait.walkTo({ p0, v0, yaw0: this._headingAt(a, f), via, end, endYaw: spot.yaw, fps, h }) };
+    };
+    // Set off as late as still gets them there and square on the spot in time (from standing, once the keys are done),
+    // else from where the keys leave them (and the climb starts late).
+    const settle = Math.round(0.4 * fps);
+    const layout = (w) => {
+      const fA = w.f, fW = fA + w.T;
+      // The path frame by frame: the keys, the walk, then standing on the spot (2 s more, so the footsteps settle).
+      const pos = [], yaw = [], pad = fW + settle + 2 * fps;
+      for (let f = 0; f <= pad; f++) {
+        if (f < fA) { const p = this._actorPosAt(a, f); pos.push([p[0], 0, p[2]]); yaw.push(this._headingAt(a, f)); continue; }
+        const j = Math.min(f - fA, w.T);
+        pos.push(w.pos[j].slice()); yaw.push(w.yaw[j]);
+      }
+      // The body's heading follows the walk's like a body does (a critically damped turn, ~0.1 s behind): it carries on
+      // turning as the keys had it at the hand-over, and never starts or stops a turn in one frame.
+      const wn = 2 * Math.PI / 0.5, dt = 1 / fps, wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));
+      let y = yaw[Math.max(0, fA - 1)], wy = fA > 1 ? wrap(yaw[fA - 1] - yaw[fA - 2]) * fps : 0;
+      for (let f = Math.max(1, fA); f <= pad; f++) {
+        for (let k = 0; k < 4; k++) { const acc = wn * wn * wrap(yaw[f] - y) - 2 * wn * wy; wy += acc * dt / 4; y += wy * dt / 4; }
+        yaw[f] = y;
+      }
+      // The footsteps: walking there, then the last steps on the spot (as many as they take to stand square); the
+      // climb starts once both feet are down, and those last two land exactly where the climb stands the feet.
+      const st = this._approachSteps(a, g, pos, yaw, fps, h, fW + settle, spot, fW);
+      return { fA, fW, pos, yaw, plan: st?.plan || null, done: st ? st.S : fW + settle };
+    };
+    let lay = null;
+    if (fK < at) {
+      // (from standing: the walk and the last steps take about the same time wherever they set off)
+      let fL = at - (layout(walkFrom(at)).done - at);
+      for (let i = 0; i < 3 && fL > fK; i++) {
+        lay = layout(walkFrom(fL));
+        if (lay.done <= at) break;
+        fL -= lay.done - at;
+        lay = null;
+      }
     }
-    dense.push(pts[pts.length - 1]);
-    const acc = [0];
-    for (let i = 1; i < dense.length; i++) acc.push(acc[i - 1] + Math.hypot(dense[i][0] - dense[i - 1][0], dense[i][1] - dense[i - 1][1]));
-    const L = acc[acc.length - 1];
-    const at = (sArc) => { let i = 1; while (i < acc.length - 1 && acc[i] < sArc) i++; const u = (sArc - acc[i - 1]) / Math.max(1e-9, acc[i] - acc[i - 1]); return [dense[i - 1][0] + (dense[i][0] - dense[i - 1][0]) * u, dense[i - 1][1] + (dense[i][1] - dense[i - 1][1]) * u]; };
-    // Speed: carry on at the pace the keys had (a run slows to a walk), ease to a stop on the spot.
-    const pa = this._actorPosAt(a, Math.max(0, fA - 1)), pb = this._actorPosAt(a, fA + 1);
-    const Tw = Math.max(1, fW - fA), v0 = Math.hypot(pb[0] - pa[0], pb[2] - pa[2]) / 2 * fps;
-    const m0 = Math.min(v0 * Tw / fps, 2 * L);
-    const pos = [], yaw = [];
-    for (let f = 0; f <= S; f++) {
-      if (f < fA) { const p = this._actorPosAt(a, f); pos.push([p[0], 0, p[2]]); yaw.push(this._headingAt(a, f)); continue; }
-      const u = Math.min(1, (f - fA) / Tw), sArc = Math.min(L, Math.max(0, (u * u * u - 2 * u * u + u) * m0 + (3 * u * u - 2 * u * u * u) * L));
-      const p = at(sArc);
-      pos.push([p[0], 0, p[1]]);
-      const q = at(Math.min(L, sArc + 0.05)), r = at(Math.max(0, sArc - 0.05));
-      yaw.push(Math.hypot(q[0] - r[0], q[1] - r[1]) > 1e-4 ? Math.atan2(q[0] - r[0], q[1] - r[1]) : yaw[yaw.length - 1]);
-    }
-    const rest = Gait.humanFootRest(g);
-    if (rest) for (const r of rest) { r.x *= g.scale.x; r.z *= g.scale.z; }
-    const plan = rest ? Gait.planGait({ pos, yaw, fps, kind: "human", height: h, legs: rest }) : null;
-    if (plan) plan.id = a.id;
-    return { plan, pos, yaw };
+    lay ||= layout(walkFrom(fK));
+    const { fA, fW, pos, yaw, plan } = lay, S = Math.max(at, lay.done);
+    pos.length = S + 1; yaw.length = S + 1;
+    return { fA, fW, S, E: S + N, N, fromYaw: spot.yaw, plan, pos, yaw, lift: spot.lift, late: S > at };
   }
 
-  /** A person walking to the stirrup before a timed climb (frames before W.S). */
+  /** The walk's footsteps (gait.mjs planGait), then the last steps onto the climb's own stance (the sole's middle over
+   *  each ankle where the climb stands it, facing the saddle): taken once they have stopped, one foot after the other,
+   *  each down to stay (no step after it, no slide into the climb). S: when the last is down (no sooner than S0). */
+  _approachSteps(a, g, pos, yaw, fps, h, S0, spot, fW) {
+    const rest = Gait.humanFootRest(g), L = Gait.humanLegs(g);
+    if (!rest || !L) return null;
+    for (const r of rest) { r.x *= g.scale.x; r.z *= g.scale.z; }
+    const plan = Gait.planGait({ pos, yaw, fps, kind: "human", height: h, legs: rest });
+    plan.id = a.id;
+    const sc = g.scale.y, cy = Math.cos(spot.yaw), sy = Math.sin(spot.yaw), sw = Math.round(0.33 * fps);
+    const target = (lr) => { const A = spot.feet[lr], m = L[lr].mid; return [A.x + (m.x * cy + m.z * sy) * sc, A.z + (-m.x * sy + m.z * cy) * sc]; };
+    const at = (cs, t) => { let j = 0; while (j + 1 < cs.length && cs[j + 1].t0 <= t) j++; return j; };
+    const legs = ["l", "r"].map((lr, i) => { const cs = plan.legs[i].contacts, j = at(cs, fW), T = target(lr); return { lr, cs, j, T, off: Math.hypot(cs[j].p[0] - T[0], cs[j].p[1] - T[1]) }; });
+    // the foot furthest from where it must stand steps first, once the other is down
+    legs.sort((x, y) => y.off - x.off);
+    let t = Math.max(fW, legs[1].cs[legs[1].j].t0 + sw + 1, legs[0].cs[legs[0].j].t0 + 2);
+    for (const lg of legs) {
+      const { cs, T } = lg;
+      let j = at(cs, t - sw - 1);
+      if (Math.hypot(cs[j].p[0] - T[0], cs[j].p[1] - T[1]) < 0.02 && cs[j].t0 <= t - sw - 1) {
+        Object.assign(cs[j], { p: T, yaw: spot.yaw, t1: 1e9 });   // already there: it stays
+        cs.length = j + 1;
+        continue;
+      }
+      cs[j].t1 = Math.min(cs[j].t1, t - sw);
+      cs.length = j + 1;
+      cs.push({ k: cs[j].k + 1, t0: t, t1: 1e9, p: T, yaw: spot.yaw });
+      t += sw + 2;
+    }
+    const S = Math.max(S0, Math.ceil(Math.max(...legs.map((lg) => lg.cs[lg.cs.length - 1].t0))) + 3);
+    for (const lg of legs) lg.cs[lg.cs.length - 1].t1 = S + 10 * fps;
+    return { plan, S };
+  }
+
+  /** A person walking to the stirrup before a timed climb (frames before W.S): the keys' frames, then the walk; on
+   *  arriving they stand up straight on the climb's stance (the origin up to its standing height, arms down). */
   _approachPose(a, g, W, h) {
     const f = Math.min(this.frame, W.pos.length - 1), p = W.pos[f], yw = W.yaw[f];
+    const up = W.fW != null && W.S > W.fW ? Math.max(0, Math.min(1, (f - W.fW) / (W.S - W.fW))) : 0, w = up * up * (3 - 2 * up);
     g.position.set(p[0], 0, p[2]);
     g.rotation.order = "YXZ";
     g.rotation.set(0, yw, 0);
-    if (W.plan && g.userData.joints) Gait.applyHuman(g, W.plan, f, { yaw: yw, baseY: 0, support: (x, z) => this._supportAt(x, z, 0) });
-    else applyPose(g, "stand", h);
+    if (W.plan && g.userData.joints) {
+      Gait.applyHuman(g, W.plan, f, { yaw: yw, baseY: (W.lift || 0) * w, reach: 0.985 + 0.015 * w, support: (x, z) => this._supportAt(x, z, 0) });
+      if (w > 0) for (const l of g.userData.limbs || []) if (l.part === "elbow" || l.part === "shoulder") l.pivot.rotation.x *= 1 - w;
+    } else applyPose(g, "stand", h);
   }
 
   /**
