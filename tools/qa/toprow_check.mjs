@@ -213,7 +213,7 @@ async function checkSize([w, h], port) {
       if (at) {
         await b.move(at.x, at.y); await sleep(250);
         const c = JSON.parse(await js(`const e=document.elementFromPoint(${at.x},${at.y})?.closest('button'); const cs=getComputedStyle(e);
-          const rgb=(s)=>(s.match(/[\d.]+/g)||[]).slice(0,3).map(Number); const L=(c)=>{const [r,g,b]=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)}); return 0.2126*r+0.7152*g+0.0722*b;};
+          const rgb=(s)=>(s.match(/[\\d.]+/g)||[]).slice(0,3).map(Number); const L=(c)=>{const [r,g,b]=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)}); return 0.2126*r+0.7152*g+0.0722*b;};
           const a=L(rgb(cs.backgroundColor)), t=L(rgb(cs.color)); return JSON.stringify({hover:e.matches(':hover'), bg:cs.backgroundColor, color:cs.color, ratio:+((Math.max(a,t)+0.05)/(Math.min(a,t)+0.05)).toFixed(2)})`));
         await add("primary_hover_contrast [+ Shot]", c.hover && c.ratio >= 4.5, c);
         await b.move(5, 5);
