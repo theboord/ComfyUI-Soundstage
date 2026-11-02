@@ -265,7 +265,7 @@ function makeUnderwater(opts) {
 
   // ---- marine snow (drifting specks) and bubbles
   const SNOW = 900, snow = lightish(softPoints(SNOW, 0xdfeff0, 0.05, { opacity: 0.7 }));
-  const BUB = 1400, bubbles = lightish(bubblePoints(BUB));
+  const BUB = 3200, bubbles = lightish(bubblePoints(BUB));
   snow.userData.weather = "marine_snow"; bubbles.userData.weather = "bubbles";
   g.add(snow, bubbles);
   const sr = rng(91), snowSeed = Float32Array.from({ length: SNOW * 3 }, () => sr());

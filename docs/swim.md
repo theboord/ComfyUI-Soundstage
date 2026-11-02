@@ -60,7 +60,7 @@ The thrust is scaled so the cycle's mean speed is the keyed speed. The body move
 - **Breath.** Each diver breathes on a cycle of 3-5 s, seeded per diver.
 - **Buoyancy.** An inhale adds about 2.5 L of lung volume, roughly 25 N of lift. The diver rises a few centimetres and the chest tips up about 0.9 s later, because a heavy body in water lags its lungs.
 
-**Bubbles.** Each exhale leaves the regulator's exhaust tee as a burst. A few big spherical-cap bubbles come in the first moments, then a trickle of smaller ones.
+**Bubbles.** Each exhale leaves the regulator's exhaust tee as a burst that carries the breath's real volume, about 1-2 litres of gas. Most of it goes out in the first moments as a column of about twenty big, wobbling cap bubbles (3-6.5 cm), with a fizz of millimetre bubbles around them and trailing after.
 
 - **Rise speed by size.** Bubbles of about 1 mm rise at ~0.1 m/s. Wobbling bubbles of 2-15 mm rise at 0.24 m/s. Caps over 15 mm follow Davies & Taylor, 0.711·√(g·d).
 - **Growth.** Bubbles grow as they rise (Boyle's law, d ∝ P^-1/3): ×1.26 from 10 m to the surface.
