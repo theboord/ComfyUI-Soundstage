@@ -1,0 +1,62 @@
+{
+ "about": "Video -> Stage benchmark clips. Synthetic clips are rendered by blender_synth.py (exact truth). Stage clips are our own renders whose stage scene is known (the scene is the truth; exact = false where a video model re-rendered the clay, so the truth is as good as its adherence). No private media, no downloads, no real people.",
+ "clips": [
+  {
+   "id": "syn_interior",
+   "kind": "synthetic",
+   "scene": "interior",
+   "what": "Cluttered living room (table, 4 chairs, sofa, shelf of books, floor lamp, 3 plants, rug, door, window, picture, coffee and side tables, a box). A man walks in and sits down; a woman talks with her hands, reaches up to the shelf, walks over and picks the box up. Handheld camera with roll, 26 mm."
+  },
+  {
+   "id": "syn_street",
+   "kind": "synthetic",
+   "scene": "street",
+   "what": "Street corner (building fronts, kerbs, sidewalks, 8 street lights, stop and street signs, 2 bins, 2 benches, 4 trees, hydrant, 4 parked cars, crosswalk). A red car drives up and turns right; a man walks on his phone, a woman sits on a bench, a man gestures at the corner. Dolly + pan, 30 mm."
+  },
+  {
+   "id": "syn_drone",
+   "kind": "synthetic",
+   "scene": "drone",
+   "what": "Drone push at ~20 m over a four-lane road: 6 cars and a box van both ways, a cyclist (rider), two pedestrians, parked cars, 12 street lights, 10 trees, bins, bench, signs, 8 buildings, bike lanes, verges, crosswalk. 24 mm."
+  },
+  {
+   "id": "st_jturn",
+   "kind": "stage",
+   "exact": false,
+   "source": "~/OpenHiggsfieldContest/share/Hollywood_Rerenders/jturn_camB/jturn_camB_hollywood_1920_h264_trailer.mp4",
+   "scene_from_prompt": "~/OpenHiggsfieldContest/share/Hollywood_Rerenders/jturn_camB/src/hollywood_api_prompt.json",
+   "what": "Hollywood re-render: a red sports car J-turns on a wet night street; free camera (21 keys) swings round it.",
+   "sam_prompts": [
+    "car"
+   ]
+  },
+  {
+   "id": "st_chase",
+   "kind": "stage",
+   "exact": false,
+   "source": "~/OpenHiggsfieldContest/share/Hollywood_Rerenders/car_chase/car_chase_hollywood_1920_h264_trailer.mp4",
+   "scene_from_prompt": "~/OpenHiggsfieldContest/share/Hollywood_Rerenders/car_chase/src/hollywood_api_prompt.json",
+   "what": "Hollywood re-render: police car hood camera chasing the red sports car down a night street (two drivers inside).",
+   "sam_prompts": [
+    "car",
+    "person"
+   ]
+  },
+  {
+   "id": "st_riders",
+   "kind": "stage",
+   "exact": true,
+   "source": "~/OpenHiggsfieldContest/share/HeroGIF_v3/clay_hero_v3.mp4",
+   "scene": "~/OpenHiggsfieldContest/share/HeroGIF_v3/work/hero_v3.json",
+   "what": "Clay render: two people run to two horses, climb on and gallop away; tracking camera (7 keys)."
+  },
+  {
+   "id": "st_walk",
+   "kind": "stage",
+   "exact": true,
+   "source": "~/OpenHiggsfieldContest/share/HeroGIF_v2/clay_walk.mp4",
+   "scene": "~/OpenHiggsfieldContest/share/HeroGIF_v2/work/walk.json",
+   "what": "Clay render: a man walks across a desert flat; side tracking camera."
+  }
+ ]
+}
