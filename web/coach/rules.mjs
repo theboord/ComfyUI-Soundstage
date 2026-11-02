@@ -6,7 +6,11 @@
 // "set_step", "set_freedom", "open_tab", "describe", "tour_next", "tour_done".
 //
 // Geometry mirrors web/stage/stage.mjs (Catmull-Rom keys, 36 mm sensor) and soundstage/agent/catalog.py (set
-// camera areas, object footprints): metres, Y up, the default camera looks +Z.
+// camera areas, object footprints): metres, Y up, the default camera looks +Z. Camera rules judge the camera the shot
+// really films (cameraTrack: the keys through the shot's rig, from web/stage/camrig.mjs, carried along with a
+// ride-along host), not just the keyed spline.
+
+import { applyRig, RIGS, RIG_LIMITS, rigMotion } from "../stage/camrig.mjs";
 
 const SENSOR_W_MM = 36;
 const PEOPLE = new Set(["man", "woman", "child"]);
@@ -46,10 +50,12 @@ function cr(p0, p1, p2, p3, u) {
     + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * u3));
 }
 
-/** Same interpolation as Stage._sample. */
+/** Same interpolation as Stage._sample (a hold between two keys at the same spot stays still). */
 export function sample(keys, frame, field, ease = true) {
   const { i, j, u } = segment(keys, frame);
   if (i === j) return [...keys[i][field]];
+  const a = keys[i][field], b = keys[j][field];
+  if (Array.isArray(a) && a.every((x, k) => Math.abs(x - b[k]) < 1e-4)) return [...a];
   const n = keys.length - 1;
   let w = u;
   if (ease && n === 1) w = u * u * (3 - 2 * u);
@@ -69,6 +75,54 @@ export function cameraAt(shot, frame) {
 export function actorAt(a, frame) {
   const keys = a.keys?.length ? a.keys : [{ frame: 0, position: a.position || [0, 0, 0] }];
   return sample(keys, frame, "position", false);
+}
+
+/** Local -> world for a ride-along host at every frame: its position, and its heading from where it is going. */
+function hostFrames(scene, host) {
+  const last = lastFrame(scene), fps = fpsOf(scene);
+  const keys = host.keys?.length ? host.keys : [{ frame: 0, position: host.position || [0, 0, 0] }];
+  const out = [];
+  let yaw = ((host.rotation_deg || 0) * Math.PI) / 180;
+  for (let f = 0; f <= last; f++) {
+    const p = actorAt(host, f), p0 = actorAt(host, f - 1), p1 = actorAt(host, f + 1);
+    const hk = keys.filter((k) => Number.isFinite(k.heading_deg));
+    if (hk.length) yaw = (sample(hk.map((k) => ({ frame: k.frame, h: [k.heading_deg] })), f, "h", false)[0] * Math.PI) / 180;
+    else if (keys.length > 1 && (Math.hypot(p1[0] - p0[0], p1[2] - p0[2]) * fps) / 2 > 0.25) yaw = Math.atan2(p1[0] - p0[0], p1[2] - p0[2]);
+    const c = Math.cos(yaw), sn = Math.sin(yaw);
+    out.push((v) => [p[0] + v[0] * c + v[2] * sn, v[1], p[2] - v[0] * sn + v[2] * c]);
+  }
+  return out;
+}
+
+const TRACKS = new WeakMap();   // scene -> Map(shot id + space + noise -> track), for one round of rules
+
+/**
+ * The shot camera as the stage films it (Stage.cameraTrack()): the keys through the shot's rig for every frame,
+ * [{position, target, focal_mm, roll}]. A caller with the live stage can pass its tracks in as
+ * ctx.cameraTracks = {shotId: track}; otherwise this mirrors the stage with the same rig code. space "local" keeps a
+ * ride-along shot in its host's own space (the rig's own motion); "world" carries it along with the host (heading from
+ * the host's path). noise false = the rig's motion without its shake.
+ */
+export function cameraTrack(ctx, shot, { space = "world", noise = true } = {}) {
+  const scene = ctx.scene || {};
+  const given = ctx.cameraTracks?.[shot.id];
+  const host = shot.camera_follow ? (scene.actors || []).find((a) => a.id === shot.camera_follow) : null;
+  if (given?.length && space === "world" && noise) return given;
+  const rig = shot.rig?.type && shot.rig.type !== "free" && shot.rig.amount !== 0 ? shot.rig : null;
+  let memo = TRACKS.get(scene);
+  if (!memo) TRACKS.set(scene, (memo = new Map()));
+  const id = JSON.stringify([shot.id, space, noise, rig, shot.camera_keys]);
+  if (memo.has(id)) return memo.get(id);
+  const last = lastFrame(scene), fps = fpsOf(scene);
+  const keyed = [];
+  for (let f = 0; f <= last; f++) keyed.push(cameraAt(shot, f));
+  const toW = host ? hostFrames(scene, host) : null;
+  const seed = Number.isFinite(rig?.seed) ? rig.seed : ([...String(shot.id)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 9973, 7)) + 1;
+  const local = rig ? applyRig(keyed, { ...rig, seed }, fps, { keyFrames: (shot.camera_keys || []).map((k) => k.frame),
+    toWorld: toW && ((f, v) => toW[f](v)), noise }) : keyed;
+  const track = toW && space === "world" ? local.map((c, f) => ({ ...c, position: toW[f](c.position), target: toW[f](c.target) })) : local;
+  memo.set(id, track);
+  return track;
 }
 
 const sub = (a, b) => a.map((x, i) => x - b[i]);
@@ -169,9 +223,9 @@ function badCamera(ctx, cam) {
   return null;
 }
 
-function insideObject(ctx, cam, frame) {
+function insideObject(ctx, cam, frame, skip = null) {
   for (const a of ctx.scene.actors || []) {
-    if (a.mount_id) continue;
+    if (a.mount_id || (skip && a.id === skip)) continue;
     const fp = footprint(a, frame);
     const p = cam.position;
     if (Math.abs(p[0] - fp.cx) < fp.hw && Math.abs(p[2] - fp.cz) < fp.hd && p[1] < fp.h) return a;
@@ -197,22 +251,35 @@ export function fixCamera(ctx, key, frame) {
   return { ...key, position: r3([Math.min(Math.max(p0[0], area[0]), area[1]), p0[1], Math.min(Math.max(p0[2], area[2]), area[3])]) };
 }
 
-/** Camera inside a wall, under the floor or inside an object, at any point of the shot. */
+/**
+ * Camera inside a wall, under the floor or inside an object, at any point of the shot: the camera the shot really
+ * films (its rig included). A ride-along camera is meant to be on or in its vehicle, so that one doesn't count.
+ */
 export function cameraClipping(ctx) {
   const out = [];
   for (const shot of ctx.scene.shots || []) {
     const last = lastFrame(ctx.scene);
+    const track = cameraTrack(ctx, shot), host = shot.camera_follow || null;
     for (let f = 0; f <= last; f += 8) {
-      const cam = cameraAt(shot, f);
-      const why = badCamera(ctx, cam) || (insideObject(ctx, cam, f) ? `inside ${nameOf(insideObject(ctx, cam, f))}` : null);
+      const cam = track[f] || cameraAt(shot, f);
+      const hit = insideObject(ctx, cam, f, host);
+      const why = badCamera(ctx, cam) || (hit ? `inside ${nameOf(hit)}` : null);
       if (!why) continue;
-      const keys = shot.camera_keys.map((k) => (badCamera(ctx, k) || insideObject(ctx, k, k.frame) ? fixCamera(ctx, k, k.frame) : k));
+      // The keys are written in the host's space on a ride-along shot: only world keys are moved out automatically.
+      const keys = host ? shot.camera_keys
+        : shot.camera_keys.map((k) => (badCamera(ctx, k) || insideObject(ctx, k, k.frame) ? fixCamera(ctx, k, k.frame) : k));
       const changed = JSON.stringify(keys) !== JSON.stringify(shot.camera_keys);
+      const rig = shot.rig?.type && shot.rig.type !== "free" && shot.rig.amount !== 0 ? shot.rig.type : null;
+      const keyedOk = rig && !host && !badCamera(ctx, cameraAt(shot, f)) && !insideObject(ctx, cameraAt(shot, f), f);
+      const actions = changed ? [{ label: "Move it out", kind: "ops", primary: true, payload: [{ op: "update_shot", id: shot.id,
+        set: { camera_keys: keys }, undo: { op: "update_shot", id: shot.id, set: { camera_keys: shot.camera_keys } } }] }]
+        : keyedOk ? [{ label: "Keys as set (no rig)", kind: "ops", primary: true, payload: [{ op: "update_shot", id: shot.id,
+          set: { rig: { ...shot.rig, type: "free" } }, undo: { op: "update_shot", id: shot.id, set: { rig: shot.rig } } }] }] : [];
       out.push({ rule: "camera_clip", key: `camera_clip:${shot.id}`, level: "error", icon: "camera",
         title: "Camera goes through the set",
-        text: `In “${shot.name}” the camera is ${why} at ${(f / fpsOf(ctx.scene)).toFixed(1)} s. The render will show the inside of things.`,
-        actions: changed ? [{ label: "Move it out", kind: "ops", primary: true, payload: [{ op: "update_shot", id: shot.id,
-          set: { camera_keys: keys }, undo: { op: "update_shot", id: shot.id, set: { camera_keys: shot.camera_keys } } }] }] : [] });
+        text: `In “${shot.name}” the camera is ${why} at ${(f / fpsOf(ctx.scene)).toFixed(1)} s` +
+          `${keyedOk ? ` (the keys are clear: the ${RIG_NOUN[rig] || rig} takes it there)` : ""}. The render will show the inside of things.`,
+        actions });
       break;
     }
   }
@@ -231,8 +298,9 @@ export function framing(ctx) {
     if (ctx.cut?.cut?.length && !cutEntries.has(shot.id)) continue;
     const entry = cutEntries.get(shot.id);
     const outF = Math.min(last, entry?.out ?? last);
+    const track = cameraTrack(ctx, shot);
     const vis = (a, f) => {
-      const cam = cameraAt(shot, f);
+      const cam = track[f] || cameraAt(shot, f);
       const p = actorAt(a, f), h = sizeOf(a)[2];
       const feet = project([p[0], 0.1, p[2]], cam, aspect), head = project([p[0], h * 0.95, p[2]], cam, aspect);
       if (!feet || !head) return { in: false, area: 0 };
@@ -290,9 +358,9 @@ export function lineCrossing(ctx) {
   const axis = norm([B[0] - A[0], 0, B[2] - A[2]]);
   const n = [-axis[2], 0, axis[0]];
   const side = (shot) => {
-    const keys = shot.camera_keys || [];
-    if (keys.length > 1 && Math.sign(dot(sub(keys[0].position, A), n)) !== Math.sign(dot(sub(keys.at(-1).position, A), n))) return "moving";
-    const d = dot(sub(cameraAt(shot, 0).position, A), n);
+    const track = cameraTrack(ctx, shot), first = track[0]?.position || cameraAt(shot, 0).position, end = track.at(-1)?.position || first;
+    if (Math.sign(dot(sub(first, A), n)) !== Math.sign(dot(sub(end, A), n))) return "moving";
+    const d = dot(sub(first, A), n);
     return Math.abs(d) < 0.3 ? "on" : d > 0 ? "L" : "R";
   };
   for (let i = 1; i < order.length; i++) {
@@ -341,6 +409,56 @@ export function tooFast(ctx) {
         "The video model will smear or skate it.",
       actions: [{ label: "Slow down", kind: "ops", primary: true, payload: [{ op: "update_object", id: a.id,
         set: { keys: fixed, position: fixed[0].position }, undo: { op: "update_object", id: a.id, set: { keys: a.keys, position: a.position } } }] }] });
+  }
+  return out;
+}
+
+const RIG_NOUN = { tripod: "tripod", dolly: "dolly", chapman: "Chapman dolly", slider: "slider", jib: "jib", steadicam: "Steadicam",
+  handheld: "handheld operator", drone: "drone", drone_fpv: "FPV drone" };
+const RIG_ARTICLE = { tripod: "a", dolly: "a", chapman: "a", slider: "a", jib: "a", steadicam: "a", handheld: "a", drone: "a", drone_fpv: "an" };
+// The rigs to suggest instead, nearest in feel first.
+const RIG_TRY = ["dolly", "slider", "chapman", "steadicam", "jib", "handheld", "drone", "drone_fpv"];
+
+/**
+ * A move the shot's rig can't really make: a tripod that travels, a slider longer than any rail, a dolly faster or
+ * harder than grips can push it, a crane swung like a whip. Judged on the rig's own motion (a ride-along rig relative
+ * to its vehicle), smoothed over a quarter second so shake doesn't count. Offers a rig that can, or more time.
+ */
+export function rigLimits(ctx) {
+  const out = [];
+  const fps = fpsOf(ctx.scene), last = lastFrame(ctx.scene);
+  for (const shot of ctx.scene.shots || []) {
+    const rig = shot.rig, lim = RIG_LIMITS[rig?.type];
+    if (!lim || rig.amount === 0 || !shot.camera_keys?.length) continue;
+    // Where the keys ask the camera to go (a tripod's legs and a slider's rail can't), and how the rig moves to get there.
+    const keyed = rigMotion(cameraTrack(ctx, { ...shot, rig: null }, { space: "local", noise: false }), fps);
+    const moved = rigMotion(cameraTrack(ctx, shot, { space: "local", noise: false }), fps);
+    const m = { travel: keyed.travel, speed: Math.max(keyed.speed, moved.speed), accel: Math.max(keyed.accel, moved.accel) };
+    const fits = (L) => (L.travel == null || m.travel <= L.travel) && (L.speed == null || m.speed <= L.speed) && (L.accel == null || m.accel <= L.accel);
+    if (fits(lim)) continue;
+    const noun = RIG_NOUN[rig.type];
+    const tooFar = lim.travel != null && m.travel > lim.travel;
+    const what = tooFar ? `has to travel ${m.travel.toFixed(1)} m` : lim.speed != null && m.speed > lim.speed ? `has to move at ${m.speed.toFixed(1)} m/s`
+      : `has to accelerate at ${m.accel.toFixed(1)} m/s²`;
+    const actions = [];
+    const better = RIG_TRY.find((r) => r !== rig.type && fits(RIG_LIMITS[r]));
+    if (better) {
+      actions.push({ label: `Use ${RIG_ARTICLE[better]} ${RIG_NOUN[better]}`, kind: "ops", primary: true, payload: [{ op: "update_shot", id: shot.id,
+        set: { rig: { ...rig, type: better } }, undo: { op: "update_shot", id: shot.id, set: { rig } } }] });
+    }
+    // More time for the same move: speed falls with the stretch, acceleration with its square.
+    const factor = Math.max(lim.speed ? m.speed / (lim.speed * 0.9) : 1, lim.accel ? Math.sqrt(m.accel / (lim.accel * 0.9)) : 1);
+    const keys = shot.camera_keys, f0 = keys[0].frame, fn = keys.at(-1).frame;
+    if (!tooFar && factor > 1 && keys.length > 1 && f0 + (fn - f0) * factor <= last) {
+      const slow = keys.map((k) => ({ ...k, frame: Math.round(f0 + (k.frame - f0) * factor) }));
+      actions.push({ label: "Take it slower", kind: "ops", primary: !better, payload: [{ op: "update_shot", id: shot.id,
+        set: { camera_keys: slow }, undo: { op: "update_shot", id: shot.id, set: { camera_keys: keys } } }] });
+    }
+    out.push({ rule: "rig_limits", key: `rig_limits:${shot.id}:${rig.type}:${Math.round(m.travel * 10)}:${Math.round(m.speed * 10)}:${Math.round(m.accel * 10)}`,
+      level: "warn", icon: "camera", title: `No real ${noun} can do this move`,
+      text: `In “${shot.name}” the ${noun} ${what}, but ${lim.why}. The render would show a camera move no crew could make.` +
+        (better ? ` ${RIG_ARTICLE[better] === "an" ? "An" : "A"} ${RIG_NOUN[better]} can.` : ""),
+      actions });
   }
   return out;
 }
@@ -455,11 +573,11 @@ export function tour(ctx) {
 
 // Which rules run on which event. "run" is just before a job is queued.
 export const RULES = {
-  stage: [cameraClipping, tooFast, suddenTurn, motionFreedom, staleRender, emptyScene, tour],
-  shots: [cameraClipping, framing, lineCrossing, storyOrder, tour],
+  stage: [cameraClipping, tooFast, rigLimits, suddenTurn, motionFreedom, staleRender, emptyScene, tour],
+  shots: [cameraClipping, framing, lineCrossing, rigLimits, storyOrder, tour],
   tab: [noLook, emptyScene, staleDescription],
   open: [tour, emptyScene, motionFreedom, staleDescription],
-  run: [staleDescription, suddenTurn, storyOrder, lineCrossing, cameraClipping, framing, tooFast, motionFreedom, staleRender, noLook],
+  run: [staleDescription, suddenTurn, storyOrder, lineCrossing, cameraClipping, framing, tooFast, rigLimits, motionFreedom, staleRender, noLook],
 };
 export const LEVEL_RANK = { error: 0, warn: 1, tour: 2, tip: 3 };
 

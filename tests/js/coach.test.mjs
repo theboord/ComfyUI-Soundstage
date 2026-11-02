@@ -219,3 +219,100 @@ test("interpolation matches the stage (Catmull-Rom, eased ends)", async () => {
     assert.deepEqual(R.sample(keys, f, "position").map((x) => x.toFixed(6)), Stage._sample(keys, f, "position").map((x) => x.toFixed(6)));
   }
 });
+
+// ------------------------------------------------------------------ the camera the shot really films (rigs)
+
+test("cameraTrack: the Coach judges the stage's own shot camera (keys through the rig), frame for frame", async () => {
+  const THREE = await import("../../web/vendor/three.module.min.mjs");
+  const { Stage } = await import("../../web/stage/stage.mjs");
+  const s = duo();
+  s.shots[0].camera_keys = [key(0, [-4, 1.6, -8], [0, 1.2, 0], 28), key(48, [0, 2.2, -7], [0, 1.2, 0], 32), key(96, [4, 1.6, -8], [0, 1.2, 0], 28)];
+  const st = Object.create(Stage.prototype);
+  Object.assign(st, { state: structuredClone(s), view: "clay", key: "start", frame: 0, actorMeshes: new Map(), root: new THREE.Group(),
+    scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(40, 1.85, 0.1, 200), render() {}, onSelect() {}, onInteract() {}, _buildLights() {}, onChange() {} });
+  st.state.active_shot = "w";
+  for (const rig of ["jib", "handheld", "drone", "dolly", "tripod"]) {
+    st.setRig(rig);
+    const live = st.cameraTrack(), mine = R.cameraTrack(ctxOf(st.toJSON()), st.toJSON().shots[0]);
+    assert.equal(mine.length, live.length);
+    for (let f = 0; f < live.length; f++) {
+      for (const fld of ["position", "target"]) assert.ok(live[f][fld].every((v, i) => Math.abs(v - mine[f][fld][i]) < 1e-9), `${rig} f${f} ${fld}`);
+      assert.ok(Math.abs(live[f].focal_mm - mine[f].focal_mm) < 1e-9);
+    }
+  }
+  // A caller with the live stage can hand its tracks in.
+  const given = { w: [{ position: [0, 9, 0], target: [0, 0, 1], focal_mm: 35 }] };
+  assert.equal(R.cameraTrack(ctxOf(s, { cameraTracks: given }), s.shots[0]), given.w);
+});
+
+test("rig limits: a tripod asked to travel, a slider longer than any rail, a dolly faster than grips can push", () => {
+  const s = duo();
+  s.shots[0].camera_keys = [key(0, [-2, 1.6, -8], [0, 1.2, 0], 28), key(96, [2, 1.6, -8], [0, 1.2, 0], 28)];   // 4 m in 4 s
+  s.shots[0].rig = { type: "tripod", amount: 1, seed: 3 };
+  let [item] = R.rigLimits(ctxOf(s));
+  assert.equal(item?.rule, "rig_limits");
+  assert.match(item.text, /tripod has to travel 4\.0 m/);
+  assert.match(item.actions[0].label, /dolly/);
+  let fixed = applyFix(s, item);
+  assert.equal(fixed.shots[0].rig.type, "dolly");
+  assert.equal(fixed.shots[0].rig.seed, 3, "the fix keeps the rest of the rig");
+  assert.deepEqual(R.rigLimits(ctxOf(fixed)), []);
+  // A slider can run 1.5 m at most.
+  s.shots[0].rig = { type: "slider", amount: 1 };
+  [item] = R.rigLimits(ctxOf(s));
+  assert.match(item.text, /slider has to travel/);
+  // 12 m across in 4 s on a dolly (4.7 m/s at its peak): grips can't push that fast; an operator on foot can.
+  const fast = duo();
+  fast.shots[0].camera_keys = [key(0, [-6, 2, -10], [0, 1.2, 0], 28), key(96, [6, 2, -10], [0, 1.2, 0], 28)];
+  fast.shots[0].rig = { type: "dolly", amount: 1 };
+  [item] = R.rigLimits(ctxOf(fast));
+  assert.match(item.text, /dolly has to move at \d+\.\d m\/s, but grips push a dolly at a brisk walk/);
+  assert.match(item.actions[0].label, /^Use an? (handheld operator|Steadicam|drone)$/);
+  fixed = applyFix(fast, item);
+  assert.deepEqual(R.rigLimits(ctxOf(fixed)), []);
+  // A quick 3 m dolly move in 1.25 s (over a g of acceleration): or take it slower, the keys stretched over more of the shot.
+  const quick = duo();
+  quick.shots[0].camera_keys = [key(0, [-1.5, 1.6, -8], [0, 1.2, 0], 28), key(30, [1.5, 1.6, -8], [0, 1.2, 0], 28)];
+  quick.shots[0].rig = { type: "dolly", amount: 1 };
+  [item] = R.rigLimits(ctxOf(quick));
+  const slow = item.actions.find((a) => a.label === "Take it slower");
+  assert.ok(slow, "the shot has room to take longer");
+  const slowed = applyFix(quick, { actions: [slow] });
+  assert.ok(slowed.shots[0].camera_keys[1].frame > 30 && slowed.shots[0].camera_keys[1].frame <= 96);
+  assert.deepEqual(R.rigLimits(ctxOf(slowed)), [], "slower is within what grips can do");
+  // Free cameras and rigs at amount 0 are the keys as set: never judged.
+  fast.shots[0].rig = { type: "dolly", amount: 0 };
+  assert.deepEqual(R.rigLimits(ctxOf(fast)), []);
+  fast.shots[0].rig = { type: "free" };
+  assert.deepEqual(R.rigLimits(ctxOf(fast)), []);
+  assert.ok(R.RULES.stage.includes(R.rigLimits) && R.RULES.run.includes(R.rigLimits));
+});
+
+test("camera clipping judges the rig: keys clear but the rig takes it through the floor -> back to the keys as set", () => {
+  const s = duo();
+  s.shots[0].rig = { type: "jib", amount: 1 };
+  const track = Array.from({ length: 97 }, (_, f) => ({ position: [0, f === 40 ? 0.02 : 1.5, -8], target: [0, 1.2, 0], focal_mm: 28 }));
+  const [item] = R.cameraClipping(ctxOf(s, { cameraTracks: { w: track } }));
+  assert.match(item.text, /below the floor at 1\.7 s \(the keys are clear: the jib takes it there\)/);
+  const fixed = applyFix(s, item);
+  assert.equal(fixed.shots[0].rig.type, "free");
+  assert.deepEqual(R.cameraClipping(ctxOf(fixed)), []);
+});
+
+test("ride-along shots: a camera in its own car is not 'inside' it, and the judging happens in the world", () => {
+  const s = duo();
+  s.actors.push(actor("Car", "car", [{ frame: 0, position: [-25, 0, -20] }, { frame: 96, position: [25, 0, -20] }], { rotation_deg: 90 }));
+  // A dashboard two-shot in the car's own space: inside the car's footprint on purpose.
+  s.shots.push({ id: "dash", name: "Dashboard", setup: "two_shot", camera_follow: "Car", rig: { type: "handheld", amount: 1 },
+    camera_keys: [key(0, [0.3, 1.1, 0.9], [0, 1.0, -0.5], 24)] });
+  assert.deepEqual(R.cameraClipping(ctxOf(s)).map((x) => x.key), []);
+  const tr = R.cameraTrack(ctxOf(s), s.shots[3]);
+  assert.ok(Math.abs(tr[96].position[0] - (25 + 0.9)) < 0.05 && Math.abs(tr[96].position[2] - (-20 - 0.3)) < 0.05, "the camera rides 50 m across the plaza with the car");
+  assert.deepEqual(R.rigLimits(ctxOf(s)), [], "an operator sitting in the car is not 'running at 15 m/s'");
+});
+
+test("coach sample mirrors the stage's holds (two keys at the same spot stay still)", async () => {
+  const { Stage } = await import("../../web/stage/stage.mjs");
+  const keys = [{ frame: 0, position: [0, 0, 0] }, { frame: 30, position: [4, 0, 0] }, { frame: 60, position: [4, 0, 0] }, { frame: 96, position: [0, 0, 6] }];
+  for (const f of [35, 45, 55]) assert.deepEqual(R.sample(keys, f, "position", false), Stage._sample(keys, f, "position", false));
+});
