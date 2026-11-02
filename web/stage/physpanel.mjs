@@ -11,9 +11,14 @@ const CSS = `
 .ss-stage .ss-phys { display:flex; flex-direction:column; gap:8px; font-size:12px; }
 .ss-stage .ss-phys[hidden] { display:none !important; }
 .ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-phys { position:absolute; z-index:21; top:6px; right:calc(var(--ss-insp-w,320px) + 14px);
-  width:290px; max-height:calc(100% - 12px); overflow:auto; scrollbar-width:thin; background:var(--cv-glass-strong, rgba(26,20,31,.92));
+  width:290px; max-height:calc(100% - 6px - var(--ph-bottom, 6px)); overflow:auto; scrollbar-width:thin; background:var(--cv-glass-strong, rgba(26,20,31,.92));
   border:1px solid var(--cv-edge, rgba(255,255,255,.1)); border-radius:14px; padding:8px 10px 10px; backdrop-filter:blur(10px);
   box-shadow:0 10px 30px rgba(0,0,0,.35); }
+/* It never covers the shot strip: it floats beside the inspector and ends above the timeline bar (--ph-bottom), or, with
+   too little room there, it docks over the Properties column (soundstage.js placePhys). */
+/* Docked, it takes the Properties column (they come back when it closes: × or Esc). */
+.ss-stage.ss-cl[data-ws=wide] .ss-clarea[data-phys=dock] > .ss-insp { visibility:hidden; }
+.ss-stage.ss-cl[data-ws=wide] .ss-clarea[data-phys=dock] > .ss-phys { right:6px; width:var(--ss-insp-w,320px); max-height:calc(100% - 12px); box-sizing:border-box; }
 .ss-stage .ss-phys .ph-head { display:flex; align-items:center; gap:6px; font-weight:650; font-size:13px; }
 .ss-stage .ss-phys .ph-head .nm { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ss-stage .ss-phys .ph-head button { padding:0 8px !important; min-height:0; line-height:22px; }
