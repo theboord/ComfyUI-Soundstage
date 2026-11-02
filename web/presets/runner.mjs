@@ -11,6 +11,7 @@
 import { cameraKeys, lightingPlan, gradePatch, crateStack, driveKeys, throwKeys, editStyleCut, userCameraKeys,
   VEHICLE_KINDS, PERSON_KINDS, RIDE_KINDS, LOW_PROPS } from "./engine.mjs";
 import { imperfectStack, idSeed } from "../stage/impacts.mjs";
+import { SOFT_PRESET_KINDS, softPreset } from "./softpresets.mjs";
 
 const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
 const DEG = Math.PI / 180;
@@ -295,6 +296,7 @@ export class PresetRunner {
   }
 
   _physics(p) {
+    if (SOFT_PRESET_KINDS.includes(p.apply.physics)) return softPreset(this, p);   // Milestone 28: soft bodies
     const st = this.stage, kind = p.apply.physics, last = this._last();
     const s = this.scene();
     const stamp = Date.now().toString(36);

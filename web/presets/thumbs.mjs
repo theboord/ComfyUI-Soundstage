@@ -5,6 +5,7 @@
 //   drawThumb(ctx, preset, t, w, h, extra)   t = seconds since the panel opened; extra = { palettes, setups }
 import { cameraKeys, userCameraKeys, yaw } from "./engine.mjs";
 import { stuntKeys } from "../stage/stunts.mjs";
+import { SOFT_PRESET_KINDS, drawSoftThumb } from "./softpresets.mjs";
 
 const D2R = Math.PI / 180;
 const LOOP = 3.2;                       // seconds per loop
@@ -277,6 +278,8 @@ function actionThumb(c, p, t, w, h) {
     }
     c.fillStyle = "#c4473f"; c.fillRect(carX - S * 1.4, gy - S * 0.9, S * 2.8, S * 0.6); c.fillRect(carX - S * 0.7, gy - S * 1.35, S * 1.3, S * 0.5);
     c.fillStyle = "#111"; c.beginPath(); c.arc(carX - S * 0.8, gy - S * 0.25, S * 0.25, 0, 7); c.arc(carX + S * 0.8, gy - S * 0.25, S * 0.25, 0, 7); c.fill();
+  } else if (SOFT_PRESET_KINDS.includes(a.physics)) {
+    drawSoftThumb(c, a.physics, u, w, h, gy, S);   // Milestone 28: soft bodies
   } else if (a.shake) {
     // A crate lands; the frame (a camera's view) jolts after it and settles.
     const tt = u * 2.2, land = 0.55, age = tt - land - 0.1;
