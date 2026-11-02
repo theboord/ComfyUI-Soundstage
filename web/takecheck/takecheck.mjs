@@ -193,6 +193,7 @@ export function attachTakeChecks(ctx) {
     const k = keyOf(file);
     if (judging.has(k)) return null;
     judging.add(k); notify(k); renderStrip();
+    const sk0 = shotKey();   // the judge takes ~a minute: the re-roll offer is for the shot this take came from
     let r;
     try {
       r = await (await api.fetchApi("/soundstage/takecheck/realism", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file }) })).json();
@@ -202,13 +203,14 @@ export function attachTakeChecks(ctx) {
     if (have) have.realism = r;
     notify(k); renderStrip();
     if (r?.verdict === "fail") say(`Realism judge: ${realismChip(r).text.replace(/^✗ /, "")} (score ${r.score}/10).`);
-    const sk = shotKey();
-    if (auto && rung === 4 && rerollOffer(have || { hollywood: true, realism: r }, sk, offered)) {
+    const sk = sk0;
+    if (auto && rung === 4 && shotKey() === sk && rerollOffer(have || { hollywood: true, realism: r }, sk, offered)) {
       offered.add(sk);
       const d = (r.defects || []).map((x) => `• ${x.label}`).join("\n");
       const est = estimateLabel(estimateSeconds(timing, finalRung(renderPreset(pipeline)), frames()));
       const pick = await choose("This Hollywood take looks generated", `The realism judge failed it (${r.score}/10):\n${d}\n\nRe-roll it once with a new seed? (${est})`, ["Re-roll once", "Keep it"]);
-      if (pick === 0) reroll(4, { asked: true });
+      if (pick === 0 && shotKey() === sk) reroll(4, { asked: true });   // re-rolls the active shot: still this one?
+      else if (pick === 0) say("Re-roll skipped: you switched shots while it asked. Go back to that shot to re-roll it.");
     }
     return r;
   }
