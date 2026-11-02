@@ -11,6 +11,7 @@ import { icon } from "../ui/icons.mjs";
 import { openPopover } from "../ui/popover.mjs";
 import { sourceLine } from "../ui/sourcespec.mjs";
 import { impactClips, withImpactClips } from "./impactsfx.mjs";
+import * as GFX from "./gfx.mjs";
 
 /** A transport button's face: a Lucide icon (plus an optional speed like "2×"); the title names it for screen readers. */
 const face = (b, name, extra = "") => {
@@ -24,9 +25,12 @@ export const RUNG_COLORS = { clay: "#5b6475", look: "#3d6ea8", draft: "#7652b3",
 const ACCENT = "#e39a40";
 const RULER_H = 22;
 const HEADER_W = 92; // track header column (V2, V1, A1 Dialogue M S ...)
-const V2_Y = 26; // V2: title cards
+const V3_Y = 26; // V3: motion graphics (gfx.mjs); the lane shows once the cut has a graphic and pushes V2 / V1 down
+const V3_H = 18;
+const V3_LANE = V3_H + 2;
+const V2_Y0 = 26; // V2: title cards (with no V3 lane)
 const V2_H = 20;
-const TRACK_Y = V2_Y + V2_H + 4; // V1
+const TRACK_Y0 = V2_Y0 + V2_H + 4; // V1 (with no V3 lane)
 const TRACK_H = 60;
 const SUB_H = 14; // subtitles lane, under V1
 const A_H = 40; // audio track at its natural height
@@ -36,6 +40,7 @@ const TRACK_MIN = 34;
 const A_MIN = 22;
 const A_FOLD = 12;
 const AUDIO_COLOR = "#2c6a61";
+const GFX_COLOR = "#1f6f9f";
 const EDGE_PX = 6;
 const SNAP_PX = 8;
 const SHUTTLE = [1, 2, 4, 8];
@@ -184,7 +189,7 @@ function scheduleEnvelope(param, a, off, when, rate) {
 /** The project fields the host should save (cut, sound, titles, subtitles, the tail fade). */
 export function savedFields(p) {
   const out = { cut: p.cut, audio: p.audio, audio_tracks: p.audio_tracks };
-  for (const k of ["titles", "subtitles", "fade_out", "burn_subtitles"]) out[k] = p[k] ?? null;
+  for (const k of ["titles", "subtitles", "fade_out", "burn_subtitles", "graphics"]) out[k] = p[k] ?? null;
   return out;
 }
 
@@ -194,7 +199,7 @@ export class CutPanel {
    * @param {{getProject?: () => object, renderPreviewFrame?: (shotId: string, frame: number) => CanvasImageSource,
    *          onChange?: (project: object) => void}} host
    */
-  constructor(container, { getProject, renderPreviewFrame, onChange, onEditShot, getLining, generateAudio, uploadAudio, renderCut, impactCues } = {}) {
+  constructor(container, { getProject, renderPreviewFrame, onChange, onEditShot, getLining, generateAudio, uploadAudio, renderCut, impactCues, gfxSfx } = {}) {
     this._onEditShot = onEditShot || null;   // "edit original": jump to the step that made a clip, then back
     // Milestone 19 host hooks (all optional): the ScriptSync lining for "Assemble scene", in-place audio generation,
     // importing a sound file, and the server render (POST /soundstage/cut/render).
@@ -202,6 +207,9 @@ export class CutPanel {
     this._generateAudio = generateAudio || null;
     this._uploadAudio = uploadAudio || null;
     this._impactCues = impactCues || null;   // Milestone 21: () => {cues, library} for the baked hits
+    this._gfxSfx = gfxSfx || null;   // V3 graphics: () => {key: {url, seconds}}, the designed sound pack (soundstage/cut/gfx_sfx.py)
+    this._gfxLib = null;
+    this.gfxMedia = new Map();   // url -> media for graphic windows (their own elements: a window never fights V1 for a seek)
     this._renderCut = renderCut || ((body) => fetch("/soundstage/cut/render", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body) }).then((r) => r.json()));
     injectCSS();
@@ -236,6 +244,7 @@ export class CutPanel {
     this._aClock = null; // {t0, from} while audio drives the clock
     this.tSel = null; // selected transition: edit index, or "tail"
     this.titleSel = null; // selected title id
+    this.gfxSel = null; // selected V3 graphic id
     this.subSel = null; // selected subtitle id
     this.keysMode = false; // rubber bands: drag / add / ⌥-click delete level and opacity keys
     this.beats = []; // record frames of the music's beats (Beats button)
@@ -252,6 +261,11 @@ export class CutPanel {
     this.refresh();
   }
 
+  /** Lane geometry: V3 (graphics) shows once the cut has a graphic, and pushes V2 and V1 down. */
+  get _v3h() { return (this.project?.graphics || []).length ? V3_LANE : 0; }
+  get _v2y() { return V2_Y0 + this._v3h; }
+  get _ty() { return this._v2y + V2_H + 4; }
+
   // ------------------------------------------------------------------ public API
 
   /** Re-read the host project (new shots, new renders). Keeps the panel's cut unless the host sends one. */
@@ -264,7 +278,7 @@ export class CutPanel {
       audio: Array.isArray(host.audio) ? host.audio : this.project.audio,
       audio_tracks: Array.isArray(host.audio_tracks) ? host.audio_tracks : this.project.audio_tracks,
       // Titles, subtitles and the tail fade: the host's when it has them, else the panel's own.
-      ...Object.fromEntries(["titles", "subtitles", "fade_out", "burn_subtitles"].map((k) => [k, host[k] != null ? host[k] : this.project[k]])),
+      ...Object.fromEntries(["titles", "subtitles", "fade_out", "burn_subtitles", "graphics"].map((k) => [k, host[k] != null ? host[k] : this.project[k]])),
     });
     let assembled = false;
     if (!hostHasCut && !this.project.cut.length && p.shots.length) {
@@ -664,6 +678,137 @@ export class CutPanel {
     this._inspect();
   }
 
+  // ------------------------------------------------------------------ V3 graphics (gfx.mjs; rendered by soundstage/cut/gfx.py)
+
+  /** The designed sound pack ({key: {url, seconds}}), fetched once from the host; null without a server. */
+  async gfxLibrary() {
+    if (this._gfxLib) return this._gfxLib;
+    if (!this._gfxSfx) return null;
+    try { this._gfxLib = await this._gfxSfx(); } catch (err) { console.warn("Soundstage Cut: graphics sounds unavailable", err); this._gfxLib = null; }
+    return this._gfxLib;
+  }
+
+  /** One undoable edit of the graphics list; every graphic's designed sounds are re-laid on A2 with it. */
+  async _commitGfx(graphics, { quiet = false } = {}) {
+    const lib = await this.gfxLibrary();
+    const next = { ...this.project, graphics: GFX.normalizeGraphics(graphics) };
+    const extra = { graphics: next.graphics };
+    if (lib) extra.audio = GFX.withGfxClips(next, GFX.gfxClips(next, lib, next.fps));
+    else if (!quiet && !this._gfxWarned && next.graphics.some((g) => g.sfx)) {
+      this._gfxWarned = true;
+      this.say("Graphics sounds need the server (the App): the graphics render without them here.");
+    }
+    this._commit(this.project.cut, this.sel, extra);
+  }
+
+  /** Add a graphic at the playhead: title | kinetic | lower | callout | pip | dual | device | split | endcard. Windows
+   *  take the clip under the playhead (dual / split: the next clip for B). Returns its id. */
+  async addGraphic(template, patch = {}) {
+    const at = patch.start_frame ?? Math.floor(this.frame);
+    const rows = TL.layout(this.project);
+    const row = TL.eventAt(this.project, at) || rows[0];
+    const nextRow = row ? rows[row.index + 1] || row : null;
+    const g = { ...GFX.newGraphic(template, at, row ? { shot_id: row.shot.id, in: row.in + (at - row.recIn), shot_b: template === "dual" ? nextRow.shot.id : null } : {}), ...patch };
+    await this._commitGfx([...(this.project.graphics || []), g]);
+    this.gfxSel = g.id;
+    this.titleSel = this.subSel = this.tSel = null;
+    this._inspect();
+    this.requestDraw();
+    return g.id;
+  }
+
+  async updateGraphic(id, patch) {
+    await this._commitGfx((this.project.graphics || []).map((g) => (g.id === id ? { ...g, ...patch, id } : g)));
+  }
+
+  async removeGraphic(id) {
+    await this._commitGfx((this.project.graphics || []).filter((g) => g.id !== id), { quiet: true });
+    if (this.gfxSel === id) this.gfxSel = null;
+    this._inspect();
+  }
+
+  /** A window's picture for the viewer: that rung's media (its own element), live clay for clay / auto with no render. */
+  _gfxSrc(spec, lf) {
+    if (!spec) return null;
+    const shot = this.project.shots.find((x) => x.id === spec.shot_id);
+    if (!shot) return null;
+    const f = TL.clamp(spec.in + Math.max(0, Math.floor(lf)), 0, shot.frames - 1);
+    const url = spec.rung === "auto" ? ["final", "draft", "look"].map((r) => shot.renders[r]).find(Boolean) : shot.renders[spec.rung];
+    if (!url) return spec.rung === "auto" || spec.rung === "clay" ? this._clay(shot, f) : null;
+    let m = this.gfxMedia.get(url);
+    if (!m) {
+      const still = /\.(png|jpe?g|webp)(\?|$)/i.test(url) || spec.rung === "look";
+      const el = still ? new Image() : document.createElement("video");
+      m = { kind: still ? "image" : "video", el, ok: null };
+      if (still) { el.onload = () => { m.ok = true; this.requestDraw(); }; el.onerror = () => { m.ok = false; }; }
+      else {
+        el.muted = true; el.preload = "auto"; el.playsInline = true;
+        el.addEventListener("loadeddata", () => { m.ok = true; this.requestDraw(); });
+        el.addEventListener("seeked", () => this.requestDraw());
+        el.addEventListener("error", () => { m.ok = false; });
+      }
+      el.src = url;
+      this.gfxMedia.set(url, m);
+    }
+    if (m.kind === "image") return m.ok ? m.el : null;
+    const v = m.el, want = (f + 0.5) / this.rate;
+    if (!v.seeking && Math.abs(v.currentTime - want) * this.rate > 0.5) v.currentTime = want;
+    return v.readyState >= 2 ? v : null;
+  }
+
+  /** V3 graphics at frame f over the viewer, as the render draws them (the selected one's box dashed). */
+  _drawGraphics(ctx, f, W, H) {
+    for (const { g, lf } of GFX.graphicsAt(this.project, f)) {
+      const ops = GFX.stateAt(g, lf);
+      const still = g.template === "dual" && g.variant === "stack";
+      GFX.paint(ctx, this.pic, ops, { a: this._gfxSrc(g.a, lf), b: this._gfxSrc(g.b, still ? 0 : lf) }, W, H);
+    }
+    const sel = this.gfxSel && (this.project.graphics || []).find((g) => g.id === this.gfxSel);
+    if (sel && f >= sel.start_frame && f < sel.start_frame + sel.frames) {
+      const s = W / GFX.W0;
+      ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeStyle = ACCENT; ctx.lineWidth = 1.5;
+      if (sel.template === "callout") ctx.strokeRect(sel.rect[0] * s, sel.rect[1] * s, sel.rect[2] * s, sel.rect[3] * s);
+      else for (const op of GFX.stateAt(sel, f - sel.start_frame)) if (op.w && op.h && op.op !== "ring") ctx.strokeRect(op.x * s, op.y * s, op.w * s, op.h * s);
+      ctx.restore();
+    }
+  }
+
+  /** Drag a graphic in the viewer: its position (a callout: its target box). */
+  _viewDown(e) {
+    if (e.button !== 0) return;
+    const r = this.viewer.getBoundingClientRect();
+    const px = ((e.clientX - r.left) / r.width) * GFX.W0, py = ((e.clientY - r.top) / r.height) * GFX.H0;
+    const g = GFX.hitGraphic(this.project, Math.floor(this.frame), px, py);
+    if (!g) return;
+    this.stop();
+    this.gfxSel = g.id; this.titleSel = this.subSel = this.tSel = null;
+    const orig = { x: g.x, y: g.y, rect: g.rect ? [...g.rect] : null }, list = this.project.graphics;
+    let moved = false;
+    const move = (ev) => {
+      const dx = ((ev.clientX - e.clientX) / r.width) * GFX.W0, dy = ((ev.clientY - e.clientY) / r.height) * GFX.H0;
+      if (!moved && Math.hypot(dx, dy) < 4) return;
+      moved = true;
+      const patch = orig.rect ? { rect: [orig.rect[0] + dx, orig.rect[1] + dy, ...orig.rect.slice(2)] } : { x: Math.round(orig.x + dx), y: Math.round(orig.y + dy) };
+      this.project = { ...this.project, graphics: GFX.normalizeGraphics(list.map((q) => (q.id === g.id ? { ...q, ...patch } : q))) };
+      this.requestDraw();
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("pointercancel", up, true);
+      if (!moved) { this._inspect(); this.requestDraw(); return; }
+      this._vDragged = true;
+      const now = this.project.graphics;
+      this.project = { ...this.project, graphics: list };
+      this._commitGfx(now).then(() => this._inspect());
+    };
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("pointercancel", up, true);
+    this._inspect();
+    this.requestDraw();
+  }
+
   /**
    * Generate a sound in place with the App's open-weights audio nodes and drop it at the playhead on its track
    * (SFX -> A2, music -> A3, dialogue -> A1). kind: sfx | music | dialogue; text: the prompt / brief / line.
@@ -767,7 +912,7 @@ export class CutPanel {
   _snapshot() {
     const p = this.project;
     return { cut: p.cut, audio: p.audio, audio_tracks: p.audio_tracks, titles: p.titles, subtitles: p.subtitles, fade_out: p.fade_out,
-             burn_subtitles: p.burn_subtitles };
+             burn_subtitles: p.burn_subtitles, graphics: p.graphics };
   }
 
   undo() {
@@ -843,7 +988,8 @@ export class CutPanel {
     this.pic = document.createElement("canvas"); // last good picture, so a seeking video holds its frame
     this.pctx = this.pic.getContext("2d");
     vw.append(this.viewer);
-    this.viewer.addEventListener("click", () => this.togglePlay());
+    this.viewer.addEventListener("click", () => { if (this._vDragged) { this._vDragged = false; return; } this.togglePlay(); });
+    this.viewer.addEventListener("pointerdown", (e) => this._viewDown(e));
 
     // transport + edit bar
     const bar = document.createElement("div");
@@ -932,6 +1078,15 @@ export class CutPanel {
     sep3();
     this.b.assemble = btn3(bar3, "Assemble scene", "A first cut from the ScriptSync lining: the wide for action, the speaker's single for lines, cut on line ends (plus subtitles)", () => this.assembleScene());
     this.b.title = btn3(bar3, "+ Title", "A title card on V2 at the playhead (edit its text, style and length in the inspector)", () => this.addTitle({ text: this.project.name || "TITLE" }));
+    // V3 graphics: the motion design system's templates, each with its designed sounds on A2
+    const gsel = document.createElement("select");
+    gsel.title = "A motion graphic on V3 at the playhead: text, timing, position and colour edit in the inspector; drag it in the viewer. Its sounds land on A2.";
+    gsel.append(new Option("+ Graphic…", ""));
+    for (const [k, d] of Object.entries(GFX.TEMPLATES)) gsel.append(new Option(d.label, k));
+    gsel.addEventListener("change", () => { const t = gsel.value; gsel.value = ""; if (t) this.addGraphic(t); });
+    gsel.addEventListener("keydown", (e) => e.stopPropagation());
+    bar3.append(gsel);
+    this.b.gfx = gsel;
     this.b.subs = btn3(bar3, "Subtitles", "Subtitles from the typed dialogue lines (no speech recognition)", () => this.subtitlesFromDialogue());
     this.b.burn = btn3(bar3, "Burn in", "Burn the subtitles into the rendered picture", () => this.setBurnSubtitles(!this.project.burn_subtitles), true);
 
@@ -1181,7 +1336,7 @@ export class CutPanel {
     if (this.history.length > 200) this.history.shift();
     this.future = [];
     this.project = { ...this.project, cut, ...(audio ? { audio } : {}), ...(audio_tracks ? { audio_tracks } : {}) };
-    for (const k of ["titles", "subtitles", "fade_out", "burn_subtitles"]) if (k in extra) this.project[k] = extra[k];
+    for (const k of ["titles", "subtitles", "fade_out", "burn_subtitles", "graphics"]) if (k in extra) this.project[k] = extra[k];
     this.project = TL.normalizeProject(this.project);
     this.sel = sel;
     this._afterEdit();
@@ -1198,6 +1353,7 @@ export class CutPanel {
     const out = {};
     if (this.project.titles) out.titles = TL.rippleItems(this.project.titles, at, delta);
     if (this.project.subtitles) out.subtitles = TL.rippleItems(this.project.subtitles, at, delta);
+    if (this.project.graphics) out.graphics = TL.rippleItems(this.project.graphics, at, delta);   // their sounds ripple with the audio
     return out;
   }
 
@@ -1509,6 +1665,9 @@ export class CutPanel {
           num("fade out", t.fade_out, (v) => this.updateTitle(t.id, { fade_out: v }), { min: 0 }),
           button("Remove", () => this.removeTitle(t.id)));
       }
+    } else if (this.gfxSel) {
+      const g = (this.project.graphics || []).find((x) => x.id === this.gfxSel);
+      if (!g) this.gfxSel = null; else parts.push(...this._gfxInspector(g, { mk, num, sel, button }));
     } else if (this.subSel) {
       const c = (this.project.subtitles || []).find((x) => x.id === this.subSel);
       if (!c) this.subSel = null; else {
@@ -1524,6 +1683,62 @@ export class CutPanel {
     }
     box.hidden = !parts.length;
     box.replaceChildren(...parts);
+  }
+
+  /** The selected graphic's fields: template, look, text, timing, position, colour, sources, sound. */
+  _gfxInspector(g, { mk, num, sel, button }) {
+    const set = (patch) => this.updateGraphic(g.id, patch);
+    const d = GFX.TEMPLATES[g.template];
+    const field = (label, key, { area = false, width = 200 } = {}) => {
+      const l = mk("label", { textContent: label });
+      const inp = mk(area ? "textarea" : "input", { value: g[key] ?? "" });
+      if (area) inp.rows = 2;
+      inp.style.cssText = `width:${width}px;background:#0d1117;color:#e9edf2;border:1px solid #39404b;border-radius:3px;font:inherit;vertical-align:middle`;
+      inp.addEventListener("change", () => set({ [key]: inp.value }));
+      inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter" && !area) inp.blur(); });
+      l.append(inp);
+      return l;
+    };
+    const colour = (label, key) => {
+      const l = mk("label", { textContent: label });
+      const inp = mk("input", { type: "color", value: g[key].toLowerCase() });
+      inp.style.cssText = "width:28px;height:20px;padding:0;border:1px solid #39404b;background:none;vertical-align:middle";
+      inp.addEventListener("change", () => set({ [key]: inp.value }));
+      l.append(inp);
+      return l;
+    };
+    const LABELS = { title: ["Text (2 lines max)"], kinetic: ["Words (one per beat)"], lower: ["Line", "Eyebrow"], callout: ["Chip"],
+      pip: ["Label"], dual: ["Label A", "Label B"], device: ["Text"], split: ["Left chip (new)", "Right chip (old)"], endcard: ["Tagline", "Repo line", "Small print"] };
+    const labs = LABELS[g.template] || ["Text"];
+    const parts = [mk("b", { textContent: `V3 · ${d.label}` })];
+    if (d.variants.length > 1) parts.push(sel(d.variants.map((v) => [v, GFX.VARIANT_LABEL[v] || v]), g.variant, (v) => set({ variant: v })));
+    parts.push(field(labs[0], "text", { area: g.template === "title", width: 220 }));
+    if (labs[1]) parts.push(field(labs[1], "text2", { width: 160 }));
+    if (labs[2]) parts.push(field(labs[2], "text3", { width: 200 }));
+    if (["title", "kinetic", "lower", "device"].includes(g.template)) parts.push(field("Blue word", "blue", { width: 90 }));
+    parts.push(num("start", g.start_frame, (v) => set({ start_frame: v }), { min: 0, step: 1 }),
+      num("frames", g.frames, (v) => set({ frames: v }), { min: 12, step: 1 }));
+    if (g.template === "callout") {
+      ["x", "y", "w", "h"].forEach((k, i) => parts.push(num(k, g.rect[i], (v) => set({ rect: g.rect.map((q, j) => (j === i ? v : q)) }), { step: 1 })));
+    } else parts.push(num("x", g.x, (v) => set({ x: v }), { step: 8 }), num("y", g.y, (v) => set({ y: v }), { step: 8 }));
+    parts.push(colour("type", "color"), colour("accent", "accent"));
+    for (const slot of GFX.SLOTS[g.template] || []) {
+      const cur = g[slot] || { shot_id: "", in: 0, rung: "auto" };
+      const name = g.template === "split" ? (slot === "a" ? "Left" : "Right") : slot.toUpperCase();
+      const shots = [["", "(none)"], ...this.project.shots.map((x) => [x.id, x.name])];
+      parts.push(mk("span", { className: "ss-cut-ro", textContent: name }),
+        sel(shots, cur.shot_id, (v) => set({ [slot]: v ? { ...cur, shot_id: v } : null })),
+        sel(GFX.RUNGS.map((r) => [r, r === "auto" ? "best rung" : r]), cur.rung, (v) => set({ [slot]: { ...cur, rung: v } })),
+        num("in", cur.in, (v) => set({ [slot]: { ...cur, in: v } }), { min: 0, step: 1 }));
+    }
+    const sfx = mk("label", { textContent: "sounds" });
+    const cb = mk("input", { type: "checkbox", checked: g.sfx });
+    cb.addEventListener("change", () => set({ sfx: cb.checked }));
+    sfx.prepend(cb);
+    const cues = GFX.sfxCues(g);
+    parts.push(sfx, mk("span", { className: "ss-cut-ro", textContent: g.sfx ? `${cues.length} on A2: ${[...new Set(cues.map((c) => c.sfx))].join(" ")}` : "" }),
+      button("Remove", () => this.removeGraphic(g.id)));
+    return parts;
   }
 
   // drag a transition from the palette onto a cut (or click it: the cut nearest the playhead)
@@ -1689,6 +1904,7 @@ export class CutPanel {
       if (pic?.dip) { pc.fillStyle = pic.dip.color === "white" ? `rgba(255,255,255,${pic.dip.amount})` : `rgba(0,0,0,${pic.dip.amount})`; pc.fillRect(0, 0, W, H); }
     }
     ctx.drawImage(this.pic, 0, 0);
+    this._drawGraphics(ctx, f, W, H);
     this._drawOverlays(ctx, f, W, H);
 
     // burn-in
@@ -1809,10 +2025,11 @@ export class CutPanel {
   /** Track geometry for a timeline `budget` px tall: natural tracks (V1 60, audio 40) when they fit, else squeezed toward
    *  compact (V1 34, audio 22). Folded audio lanes are 12 px. Pure: exported via CutPanel.trackLayout for the tests. */
   _trackLayout(budget) {
-    return CutPanel.trackLayout(budget, TL.audioTrackCount(this.project), !!this.audioFolded);
+    return CutPanel.trackLayout(budget, TL.audioTrackCount(this.project), !!this.audioFolded, this._v3h > 0);
   }
 
-  static trackLayout(budget, n, folded = false) {
+  static trackLayout(budget, n, folded = false, gfxLane = false) {
+    const TRACK_Y = TRACK_Y0 + (gfxLane ? V3_LANE : 0);
     const fixed = TRACK_Y + 3 + SUB_H + 5 + 6;
     let th = TRACK_H, ah = folded ? A_FOLD : A_H, ag = folded ? 2 : A_GAP;
     if (fixed + th + n * (ah + ag) > budget) {
@@ -1942,20 +2159,38 @@ export class CutPanel {
       for (const b of this.beats) { const x = this._x(b); if (x >= HEADER_W && x <= w) ctx.fillRect(Math.round(x), RULER_H - 6, 1, 6); }
     }
 
+    // V3 (graphics), once there is one
+    ctx.fillStyle = "#171b21";
+    if (this._v3h) ctx.fillRect(0, V3_Y, w, V3_H);
+    ctx.font = "600 10px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
+    ctx.textBaseline = "middle"; ctx.textAlign = "left";
+    for (const g of p.graphics || []) {
+      const x0 = this._x(g.start_frame), x1 = this._x(g.start_frame + g.frames);
+      if (x1 < HEADER_W || x0 > w) continue;
+      roundRect(ctx, x0 + 0.5, V3_Y + 2, Math.max(2, x1 - x0 - 1), V3_H - 4, 3);
+      ctx.fillStyle = GFX_COLOR; ctx.fill();
+      ctx.lineWidth = g.id === this.gfxSel ? 2 : 1; ctx.strokeStyle = g.id === this.gfxSel ? ACCENT : "rgba(0,0,0,.5)"; ctx.stroke(); ctx.lineWidth = 1;
+      ctx.save(); ctx.beginPath(); ctx.rect(x0, V3_Y, x1 - x0, V3_H); ctx.clip();
+      ctx.fillStyle = "#fff"; ctx.fillText(`${GFX.TEMPLATES[g.template].label}${g.text ? " · " + g.text.replace(/\n/g, " ") : ""}`, x0 + 5, V3_Y + V3_H / 2);
+      ctx.fillStyle = "rgba(255,255,255,.55)";
+      for (const c of g.sfx ? GFX.sfxCues(g) : []) { const cx = this._x(g.start_frame + c.frame); ctx.fillRect(Math.round(cx), V3_Y + V3_H - 5, 1, 3); }
+      ctx.restore();
+    }
+
     // V2 (titles) and the subtitles lane
     ctx.fillStyle = "#1a1e24";
-    ctx.fillRect(0, V2_Y, w, V2_H);
+    ctx.fillRect(0, this._v2y, w, V2_H);
     ctx.fillRect(0, this._L.sy, w, SUB_H);
     ctx.font = "600 10px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
     ctx.textBaseline = "middle"; ctx.textAlign = "left";
     for (const t of p.titles || []) {
       const x0 = this._x(t.start_frame), x1 = this._x(t.start_frame + t.frames);
       if (x1 < HEADER_W || x0 > w) continue;
-      roundRect(ctx, x0 + 0.5, V2_Y + 2, Math.max(2, x1 - x0 - 1), V2_H - 4, 3);
+      roundRect(ctx, x0 + 0.5, this._v2y + 2, Math.max(2, x1 - x0 - 1), V2_H - 4, 3);
       ctx.fillStyle = "#6b4fa0"; ctx.fill();
       ctx.lineWidth = t.id === this.titleSel ? 2 : 1; ctx.strokeStyle = t.id === this.titleSel ? ACCENT : "rgba(0,0,0,.5)"; ctx.stroke(); ctx.lineWidth = 1;
-      ctx.save(); ctx.beginPath(); ctx.rect(x0, V2_Y, x1 - x0, V2_H); ctx.clip();
-      ctx.fillStyle = "#fff"; ctx.fillText((t.style === "card" ? "▣ " : t.style === "lower" ? "▁ " : t.style === "credit" ? "© " : "◇ ") + t.text, x0 + 5, V2_Y + V2_H / 2);
+      ctx.save(); ctx.beginPath(); ctx.rect(x0, this._v2y, x1 - x0, V2_H); ctx.clip();
+      ctx.fillStyle = "#fff"; ctx.fillText((t.style === "card" ? "▣ " : t.style === "lower" ? "▁ " : t.style === "credit" ? "© " : "◇ ") + t.text, x0 + 5, this._v2y + V2_H / 2);
       ctx.restore();
     }
     for (const c of p.subtitles || []) {
@@ -1971,11 +2206,11 @@ export class CutPanel {
 
     // track
     ctx.fillStyle = "#1f242b";
-    ctx.fillRect(0, TRACK_Y, w, this._L.th);
+    ctx.fillRect(0, this._ty, w, this._L.th);
     if (total) {
       ctx.fillStyle = "#15181d";
       const xe = this._x(total);
-      if (xe < w) ctx.fillRect(xe, TRACK_Y, w - xe, this._L.th);
+      if (xe < w) ctx.fillRect(xe, this._ty, w - xe, this._L.th);
     }
 
     // audio tracks
@@ -2018,13 +2253,13 @@ export class CutPanel {
       if (a.shot.id === b.shot.id && a.out === b.in) {
         ctx.strokeStyle = "rgba(255,255,255,.45)";
         ctx.setLineDash([2, 3]);
-        ctx.beginPath(); ctx.moveTo(x + 0.5, TRACK_Y + 2); ctx.lineTo(x + 0.5, TRACK_Y + this._L.th - 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x + 0.5, this._ty + 2); ctx.lineTo(x + 0.5, this._ty + this._L.th - 2); ctx.stroke();
         ctx.setLineDash([]);
       } else if (a.shot.scene_name && a.shot.scene_name === b.shot.scene_name && a.shot.id !== b.shot.id) {
         const on = TL.actionMatchIn(a.shot, a.out, b.shot) === b.in;
         ctx.fillStyle = on ? "#4fc27f" : ACCENT;
         ctx.beginPath();
-        const y = TRACK_Y + this._L.th - 1;
+        const y = this._ty + this._L.th - 1;
         ctx.moveTo(x, y - 9); ctx.lineTo(x + 5, y - 4); ctx.lineTo(x, y + 1); ctx.lineTo(x - 5, y - 4);
         ctx.closePath(); ctx.fill();
       }
@@ -2037,7 +2272,7 @@ export class CutPanel {
     for (const [sp, k] of allSpans) {
       const x0 = this._x(sp.at - sp.pre), x1 = this._x(sp.at + sp.post);
       if (x1 < HEADER_W || x0 > w) continue;
-      const y = TRACK_Y + 2, h = 16, ww = Math.max(6, x1 - x0);
+      const y = this._ty + 2, h = 16, ww = Math.max(6, x1 - x0);
       const selT = this.tSel === k;
       ctx.fillStyle = sp.limited ? "rgba(227,154,64,.85)" : sp.type === "dip_white" ? "rgba(235,235,235,.85)" : "rgba(20,22,26,.85)";
       roundRect(ctx, x0, y, ww, h, 3); ctx.fill();
@@ -2063,7 +2298,7 @@ export class CutPanel {
       if (r) {
         const x = Math.round(this._x(d.mode === "trimOut" ? r.recOut : r.recIn));
         ctx.fillStyle = d.mode === "roll" ? "#ffd27a" : ACCENT;
-        ctx.fillRect(x - (d.mode === "trimOut" ? 3 : d.mode === "roll" ? 1.5 : 0), TRACK_Y - 2, 3, this._L.th + 4);
+        ctx.fillRect(x - (d.mode === "trimOut" ? 3 : d.mode === "roll" ? 1.5 : 0), this._ty - 2, 3, this._L.th + 4);
       }
     }
 
@@ -2072,8 +2307,8 @@ export class CutPanel {
       const pts = TL.editPoints(p);
       const x = Math.round(this._x(pts[d.target]));
       ctx.fillStyle = "#fff";
-      ctx.fillRect(x - 1, TRACK_Y - 4, 2, this._L.th + 8);
-      ctx.beginPath(); ctx.moveTo(x - 5, TRACK_Y - 4); ctx.lineTo(x + 5, TRACK_Y - 4); ctx.lineTo(x, TRACK_Y + 1); ctx.fill();
+      ctx.fillRect(x - 1, this._ty - 4, 2, this._L.th + 8);
+      ctx.beginPath(); ctx.moveTo(x - 5, this._ty - 4); ctx.lineTo(x + 5, this._ty - 4); ctx.lineTo(x, this._ty + 1); ctx.fill();
       if (d.mode === "move") {
         const r = rows[d.idx];
         const gw = Math.max(16, r.len * this.ppf);
@@ -2112,9 +2347,11 @@ export class CutPanel {
     ctx.textBaseline = "middle";
     ctx.textAlign = "left";
     ctx.fillStyle = "#cfd5de";
-    ctx.fillText("V1", 8, TRACK_Y + this._L.th / 2);
+    ctx.fillText("V1", 8, this._ty + this._L.th / 2);
     ctx.fillStyle = "#b9a6dc";
-    ctx.fillText("V2  Titles", 8, V2_Y + V2_H / 2);
+    ctx.fillText("V2  Titles", 8, this._v2y + V2_H / 2);
+    ctx.fillStyle = "#8fc3e6";
+    if (this._v3h) ctx.fillText("V3  Graphics", 8, V3_Y + V3_H / 2);
     ctx.fillStyle = "#8b94a1";
     ctx.font = "600 9px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
     ctx.fillText(p.burn_subtitles ? "SUBS · burn" : "SUBS", 8, this._L.sy + SUB_H / 2);
@@ -2223,7 +2460,7 @@ export class CutPanel {
 
   _drawClip(ctx, r, x0, x1, alpha, ghost = false) {
     const rung = TL.bestRung(r.shot);
-    const y = TRACK_Y + 3, h = this._L.th - 6;
+    const y = this._ty + 3, h = this._L.th - 6;
     const cw = Math.max(2, x1 - x0 - 1);
     ctx.save();
     ctx.globalAlpha *= alpha;
@@ -2356,7 +2593,13 @@ export class CutPanel {
       }
       return { type: "header" };
     }
-    if (y >= V2_Y && y < V2_Y + V2_H) {
+    if (this._v3h && y >= V3_Y && y < V3_Y + V3_H) {
+      const f = this._frameAt(x);
+      const g = [...(this.project.graphics || [])].reverse().find((q) => f >= q.start_frame && f < q.start_frame + q.frames);
+      if (!g) return { type: "empty" };
+      return { type: "gfx", gfx: g, edge: Math.abs(x - this._x(g.start_frame + g.frames)) <= EDGE_PX };
+    }
+    if (y >= this._v2y && y < this._v2y + V2_H) {
       const f = this._frameAt(x);
       const t = [...(this.project.titles || [])].reverse().find((q) => f >= q.start_frame && f < q.start_frame + q.frames);
       return t ? { type: "title", title: t } : { type: "empty" };
@@ -2376,7 +2619,7 @@ export class CutPanel {
         return { type: "akey", audio: a, key: ki, yOf, top: yy, h: hh };
       }
     }
-    if (this.keysMode && y >= TRACK_Y && y <= TRACK_Y + this._L.th) {
+    if (this.keysMode && y >= this._ty && y <= this._ty + this._L.th) {
       const f = this._frameAt(x);
       const row = TL.layout(this.project).find((r) => f >= r.recIn && f < r.recOut);
       if (row) {
@@ -2403,8 +2646,8 @@ export class CutPanel {
       }
       return { type: "empty", track: t };
     }
-    if (y < TRACK_Y || y > TRACK_Y + this._L.th) return { type: "empty" };
-    if (y <= TRACK_Y + 19) {
+    if (y < this._ty || y > this._ty + this._L.th) return { type: "empty" };
+    if (y <= this._ty + 19) {
       const spans = FX.transSpans(this.project);
       const list = spans.map((sp, k) => [sp, k]).filter(([sp]) => sp);
       if (spans.tail) list.push([spans.tail, "tail"]);
@@ -2446,6 +2689,14 @@ export class CutPanel {
     this.tSel = hit.type === "trans" ? hit.edit : null;
     if (hit.type !== "title") this.titleSel = null;
     if (hit.type !== "sub") this.subSel = null;
+    if (hit.type !== "gfx") this.gfxSel = null;
+    if (hit.type === "gfx") {
+      this.stop();
+      this.gfxSel = hit.gfx.id;
+      this._drag = { mode: hit.edge ? "gtrim" : "gslide", id: hit.gfx.id, startX: x, orig: { ...hit.gfx }, list: this.project.graphics, moved: false };
+      this._inspect(); this.requestDraw();
+      return;
+    }
     if (hit.type === "trans") { this.stop(); this._inspect(); this.requestDraw(); return; }
     if (hit.type === "title" || hit.type === "sub") {
       this.stop();
@@ -2463,7 +2714,7 @@ export class CutPanel {
       const startF = isA ? hit.audio.start_frame : hit.row.recIn;
       const len = isA ? TL.audioLen(hit.audio) : hit.row.len;
       const valAt = (yy) => (isA ? TL.clamp(-30 + (1 - (yy - hit.top - 2) / (hit.h - 4)) * 36, -60, 24) - hit.audio.gain_db
-        : TL.clamp(1 - (yy - (TRACK_Y + 7)) / (this._L.th - 14), 0, 1));
+        : TL.clamp(1 - (yy - (this._ty + 7)) / (this._L.th - 14), 0, 1));
       let ki = hit.key;
       if (ki >= 0 && e.altKey) keys.splice(ki, 1), ki = -1;
       else if (ki < 0) {
@@ -2506,7 +2757,7 @@ export class CutPanel {
       else this._drag = { mode: "pending", idx: hit.idx, startX: x, x, grab: x - this._x(row.recIn) };
     } else {
       this.stop();
-      if (hit.type === "empty" && y >= TRACK_Y) { this.sel = -1; this.aSel = null; }
+      if (hit.type === "empty" && y >= this._ty) { this.sel = -1; this.aSel = null; }
       this._drag = { mode: "scrub" };
       this.seek(this._frameAt(x));
     }
@@ -2521,7 +2772,7 @@ export class CutPanel {
     const d = this._drag;
     if (!d) {
       const hit = this._hit(x, y);
-      this.tl.style.cursor = hit.type === "edge" ? (e.altKey ? "col-resize" : "ew-resize") : hit.type === "clip" ? "grab"
+      this.tl.style.cursor = hit.type === "gfx" ? (hit.edge ? "ew-resize" : "grab") : hit.type === "edge" ? (e.altKey ? "col-resize" : "ew-resize") : hit.type === "clip" ? "grab"
         : hit.type === "audio" ? (hit.mode === "aslide" ? "grab" : "ew-resize") : hit.button ? "pointer" : "default";
       return;
     }
@@ -2561,6 +2812,17 @@ export class CutPanel {
       const base = { ...this.project, cut: d.base };
       this.project = { ...this.project, cut: TL.slip(base, d.idx, -Math.round((x - d.startX) / this.ppf)) };
       d.changed = true;
+      this.requestDraw();
+      return;
+    }
+    if (d.mode === "gslide" || d.mode === "gtrim") {
+      const df = Math.round((x - d.startX) / this.ppf);
+      if (Math.abs(df) > 0) d.moved = true;
+      const tol = SNAP_PX / this.ppf;
+      const snap = (v) => { for (const pnt of [...TL.editPoints(this.project), Math.floor(this.frame), ...this.beats]) if (Math.abs(pnt - v) <= tol) return pnt; return v; };
+      const patch = d.mode === "gslide" ? { start_frame: Math.max(0, snap(d.orig.start_frame + df)) }
+        : { frames: Math.max(12, snap(d.orig.start_frame + d.orig.frames + df) - d.orig.start_frame) };
+      this.project = { ...this.project, graphics: GFX.normalizeGraphics(d.list.map((q) => (q.id === d.id ? { ...q, ...patch } : q))) };
       this.requestDraw();
       return;
     }
@@ -2616,6 +2878,13 @@ export class CutPanel {
       const cut = this.project.cut;
       this.project = { ...this.project, cut: d.base };
       if (d.changed && JSON.stringify(cut) !== JSON.stringify(d.base)) this._commit(cut, d.idx);
+      this.requestDraw();
+      return;
+    }
+    if (d.mode === "gslide" || d.mode === "gtrim") {
+      const now = this.project.graphics;
+      this.project = { ...this.project, graphics: d.list };
+      if (d.moved) this._commitGfx(now);
       this.requestDraw();
       return;
     }
@@ -2683,6 +2952,7 @@ export class CutPanel {
   _cancelDrag() {
     const d = this._drag;
     if (d && d.mode === "key") this.project = { ...this.project, ...d.base };
+    else if (d && (d.mode === "gslide" || d.mode === "gtrim")) this.project = { ...this.project, graphics: d.list };
     else if (d && (d.mode === "tslide" || d.mode === "sslide")) { if (d.list) this.project = { ...this.project, [d.mode === "tslide" ? "titles" : "subtitles"]: d.list }; }
     else if (d && d.mode && d.mode.startsWith("a")) this.project = { ...this.project, audio: d.base };
     else if (d && d.base) this.project = { ...this.project, cut: d.base, ...(d.baseAudio ? { audio: d.baseAudio } : {}) };
@@ -2813,6 +3083,7 @@ export class CutPanel {
         case "Delete": case "Backspace":
           if (this.tSel != null) this.removeTransition(this.tSel);
           else if (this.titleSel) this.removeTitle(this.titleSel);
+          else if (this.gfxSel) this.removeGraphic(this.gfxSel);
           else if (this.subSel) { this._commit(this.project.cut, this.sel, { subtitles: this.project.subtitles.filter((c) => c.id !== this.subSel) }); this.subSel = null; this._inspect(); }
           else this.rippleDelete();
           break;
@@ -2859,6 +3130,11 @@ export const CUT_ACTIONS = [
   { name: "cut.subtitles", description: "Subtitles from the typed dialogue lines", params: {} },
   { name: "cut.burn_subtitles", description: "Burn the subtitles into the render", params: { on: "true|false" } },
   { name: "cut.title", description: "Title card on V2", params: { text: "text", start_frame: "frame", frames: "length", style: "card|lower|center" } },
+  { name: "cut.graphic", description: "Motion graphic on V3 (its designed sounds land on A2)", params: { template: "title|kinetic|lower|callout|pip|dual|device|split|endcard",
+    text: "text", text2: "second line / label", start_frame: "frame", frames: "length", variant: "template look", x: "px", y: "px", color: "#hex", accent: "#hex",
+    a: "{shot_id, in, rung}", b: "{shot_id, in, rung}", rect: "[x, y, w, h, radius] (callout)" } },
+  { name: "cut.update_graphic", description: "Change a V3 graphic's fields", params: { id: "graphic id", "...": "any graphic field" } },
+  { name: "cut.remove_graphic", description: "Remove a V3 graphic and its sounds", params: { id: "graphic id" } },
   { name: "cut.loudness", description: "Loudness target for the render", params: { target: "social|ebu|atsc|none" } },
   { name: "cut.render", description: "Render the cut (MP4, ProRes, or a 9:16 social cut)", params: { format: "mp4|prores", aspect: "source|9:16" } },
   { name: "cut.undo", description: "Undo the last edit", params: {} },
@@ -2886,6 +3162,9 @@ export async function runCutAction(panel, name, a = {}) {
     case "cut.subtitles": return panel.subtitlesFromDialogue();
     case "cut.burn_subtitles": return panel.setBurnSubtitles(a.on !== false);
     case "cut.title": return panel.addTitle(a);
+    case "cut.graphic": { const { template, ...rest } = a; return panel.addGraphic(template || "title", rest); }
+    case "cut.update_graphic": { const { id, ...rest } = a; return panel.updateGraphic(id, rest); }
+    case "cut.remove_graphic": return panel.removeGraphic(a.id);
     case "cut.loudness": panel.loudTarget = a.target === "none" ? null : a.target || "social"; return panel.loudTarget;
     case "cut.render": return panel.render(a);
     case "cut.undo": return panel.undo();

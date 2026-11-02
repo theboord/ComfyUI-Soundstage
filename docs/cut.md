@@ -275,6 +275,56 @@ times stay contiguous, the Python and browser writers agree byte for byte).
 (split, ripple delete, trim, roll, slip, move, transition, keys, generate audio, auto-duck, beats, assemble,
 subtitles, titles, loudness, render). The panel is `node.ssCut`.
 
+## Motion graphics on V3
+
+Code: `web/cut/gfx.mjs` (templates, timing, the viewer painter), `soundstage/cut/gfx.py` (the Python twin and the
+render painter), `soundstage/cut/gfx_sfx.py` (the sound pack), `web/cut/cut.mjs` (V3 lane, inspector, viewer drag).
+Tests: `tests/js/cut_gfx.test.mjs`, `tests/test_cut_gfx.py`; QC: `tools/qa/gfx_sfx_qc.py`.
+The design comes from `share/Commercial/DESIGN_SYSTEM.md` v1.1 (§4 grid, §5 type, §6 colour, §7 surfaces, §8 motion,
+§9 layouts, §13 sounds).
+
+**Templates:** title (L7), kinetic (T2 slam + T3 swap, one word per 12-frame beat), lower (L6), callout (L8: zoom
+z* = min(0.6·1920/(w+96), 0.5·1080/(h+96), 2) on `glide` with exponential scale, the ring at f10 on a spring, the
+chip 4 f later, an optional cursor click), pip (L2), dual (L3 even / stagger / stack), device (L4 monitor / phone,
+no plane break yet), split (L5: the divider 0 → 960 in 14 f on `glide`, hold, then → 1920 in the last 24 f on `swift`),
+endcard (L10, a static logo: the clapper animation waits for Mike's OK). Geometry is in 1920×1080 design pixels and
+scales to the project.
+
+**One timing, two painters.** `stateAt(g, f)` (JS) and `state_at(g, f)` (Python) return the same draw ops for every
+frame: `tests/js/fixtures/gfx_states.json` pins 336 frames across every template and look, and both suites compare
+them exactly (`node tests/js/cut_gfx.test.mjs --update` rewrites it after a deliberate change). The viewer draws the
+ops with canvas 2D; the render draws them with Pillow: raqm layout when Pillow has it (the pod does: GPOS kerning),
+tracking by prefix advance so kerning survives. Type is Space Grotesk (the App's vendored OFL face). Inter Tight, the
+spec's face, is not vendored.
+
+**Render path.** With graphics, `render_cut` writes the picture so far (cut, transitions, Film Finish) to a lossless
+FFV1 file, paints every frame that has a graphic (windows decode their own clip and rung; a named rung that is not
+rendered shows a slate saying so), then lays the V2 titles, subtitles and the mix on that, as before. Frames that move
+more than 4 px or scale more than 2 % are averaged from 4 sub-frames (180° shutter); `spec.gfx_motion_blur: false`
+turns that off. The result reports `graphics: {frames, graphics, raqm, subframes}`.
+
+**Sounds.** `sfxCues(g)` gives one designed sound per event (SFX-01 tick, -02 swap, -03 thump, -04 whoosh with up 2 /
+down 3 semitone variants, -05 whoosh out, -06 riser ending on the zoom's sync frame, -07 ping, -08 click, -09 air
+pass, -12 puff, -15 sonic logo), panned left / centre / right by the element's x. The Cut lays them on A2 tagged
+`meta.gfx` and re-lays them on every graphics edit (`withGfxClips`), so they never stack. Files are synthesised once by
+`GET /soundstage/cut/gfx_sfx` into `output/soundstage_sfx/gfx/` with a `MANIFEST.json` (recipe, pan, length, peak,
+sha256): 48 kHz 24-bit stereo, peak −1 dBFS, the clip gain sets the §13 level (e.g. −27 dB on a tick for −28 dBFS).
+
+**Contract:**
+
+```jsonc
+"graphics": [{ "id": "g1", "template": "pip", "start_frame": 48, "frames": 96, "variant": "br",
+               "text": "Live clay", "text2": "", "text3": "", "blue": "", "x": 0, "y": 0,
+               "color": "#F0EFED", "accent": "#28AAFF", "sfx": true,
+               "a": { "shot_id": "s2", "in": 0, "rung": "auto" } }]    // callout: "rect": [x, y, w, h, radius]
+```
+
+**Director:** `cut.graphic`, `cut.update_graphic`, `cut.remove_graphic` in `CUT_ACTIONS`.
+
+**Not done:** the device plane break and through-the-screen transition (X5), the clapper animation, tracked tags,
+counters, the paper inversion, proper 9:16 layouts (a 9:16 render fits the 16:9 layout to the width), and NLE export
+of graphics.
+
 ## Exports: one folder for every NLE
 
 `SoundstageCutExport` writes **`output/soundstage_cuts/<name>/`**. It is the same folder on every

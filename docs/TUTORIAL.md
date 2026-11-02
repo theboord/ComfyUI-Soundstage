@@ -566,7 +566,7 @@ Avid AAF comes from the graph node **Soundstage · Cut: Export to Avid / Premier
 
 #### Transitions, sound, titles and render
 
-The timeline has **V2** (titles) over **V1**, a **SUBS** lane, and **A1 Dialogue · A2 SFX · A3 Music · A4 Ambience**.
+The timeline has **V3** (motion graphics, once you add one) and **V2** (titles) over **V1**, a **SUBS** lane, and **A1 Dialogue · A2 SFX · A3 Music · A4 Ambience**.
 
 <p align="center"><img src="media/timeline.jpg" width="860" alt="The Cut timeline: Transitions palette, Keys, Assemble scene, Title, Subtitles, Burn in, the Sound row with Generate, Auto-duck, Beats and the loudness target, Render MP4 / ProRes / 9:16"></p>
 
@@ -591,6 +591,30 @@ The timeline has **V2** (titles) over **V1**, a **SUBS** lane, and **A1 Dialogue
 - **+ Title** puts a card on V2 (card on black, lower third or centre) with text, length and fades in the inspector.
 - **Assemble scene** builds a first cut from the ScriptSync lining: the wide for action, an insert where one is lined, the speaker's single for their lines, cutting on line ends.
 - **Subtitles** builds cues from the typed dialogue lines; **Burn in** draws them into the render.
+
+**Motion graphics on V3**
+
+**+ Graphic…** (next to **+ Title**) puts a motion graphic on a **V3 Graphics** lane at the playhead. The lane appears with the first graphic. There are nine templates, all from one design system: one typeface, one accent blue, and the same easing and timing everywhere.
+
+| Template | What it does | Its sounds on A2 |
+| --- | --- | --- |
+| **Title** | A sentence (up to 2 lines) rises line by line on black, or over the picture, which recedes behind a scrim | a soft tick per line |
+| **Kinetic type** | One word per beat: the first slams in, each next word swaps in place | a sub thump on the slam, a tick pair per swap |
+| **Lower third** | A blue eyebrow and a line over a bottom scrim (or a glass plate) | a puff, then a tick |
+| **Callout zoom** | Zooms the picture into a control, rings it, and pops a chip with its words. *Ring only* skips the zoom. *Zoom + cursor click* adds a pointer that glides in and clicks | a riser that ends as the zoom lands, a glassy ping, a puff, a click |
+| **PiP corner** | Another clip in a rounded window (bottom right, top right or bottom left) while the picture recedes | a whoosh in, a whoosh out |
+| **Dual PiP** | Two windows side by side, staggered, or a window plus a still card ("picture on video on video") | two whooshes, the second a tone higher |
+| **Device frame** | A clip inside a plain monitor or phone (no logos, no notch) | a lower whoosh |
+| **Split** | The same shot in two rungs (Final on the left, Clay on the right): a divider sweeps to the centre, holds, then wipes on | an air pass that follows the divider |
+| **End card** | The Soundstage logo, a tagline, the repo line and optional small print | a warm chord swell, ticks for the lines |
+
+1. Pick a template from **+ Graphic…**. A window takes the clip under the playhead; **Dual PiP** takes the next clip for B.
+2. Edit it in the inspector: its look, the text fields, **start** and **frames**, **x / y** (or a callout's box), the **type** and **accent** colours, the clips in its windows with their rung (*best rung*, *clay*, *look*, *draft*, *final*) and in-frame, and **sounds** on or off. Mark one word **Blue** to colour it.
+3. Drag the graphic in the viewer to move it. A callout drags its target box. Drag the block on V3 to retime it, or drag its right edge to change its length. **⌫** removes the selected graphic.
+
+Each graphic places its own designed sounds on **A2**, on the frames where its events land, at the design system's levels. Move, retime or edit a graphic and its sounds follow. Turn **sounds** off and they go. The sounds are synthesised by the App (no samples, no downloads) and checked with an AudioSet classifier.
+
+The render draws the graphics at full resolution, frame by frame, with motion blur on moving frames, over the picture and under the V2 titles. The preview in the viewer uses the same timing and layout. Text in the render is set with the App's Space Grotesk face, so it can differ from the browser by a pixel or two. Graphics stay in the render only: the NLE exports don't carry them.
 
 **Render.** **MP4** (H.264 + AAC), **ProRes** (422 HQ + 24-bit PCM) or **9:16 social** (1080×1920, titles laid out for the phone), written to `output/soundstage_cuts/`. Transitions, fades, keys, titles, the mix and each Final's own sound are rendered, taken to the loudness target with a true-peak limiter. Details: [cut.md](cut.md).
 

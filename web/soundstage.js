@@ -596,6 +596,14 @@ function createStageWidget(node, inputName) {
         url: api.apiURL(`/view?${new URLSearchParams({ filename: f.filename, subfolder: f.subfolder, type: f.type })}`) }))]));
       return { cues: j.cues || [], library };
     },
+    // V3 graphics: their designed sounds (soundstage/cut/gfx_sfx.py, synthesised once on the server) for A2.
+    gfxSfx: async () => {
+      const r = await api.fetchApi("/soundstage/cut/gfx_sfx");
+      const j = await r.json();
+      if (j.error) throw new Error(j.error);
+      return Object.fromEntries(Object.entries(j.library || {}).map(([k, f]) => [k, { ...f,
+        url: api.apiURL(`/view?${new URLSearchParams({ filename: f.filename, subfolder: f.subfolder, type: f.type })}`) }]));
+    },
     renderCut: async (body) => {
       const r = await api.fetchApi("/soundstage/cut/render", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const j = await r.json().catch(() => ({ error: `server answered ${r.status}` }));

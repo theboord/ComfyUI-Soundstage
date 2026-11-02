@@ -299,6 +299,9 @@ def normalize_project(p) -> dict:
         project.pop("fade_out", None)
     if project.get("titles") is not None:
         project["titles"] = normalize_titles(project["titles"])
+    if project.get("graphics") is not None:   # V3 motion graphics (gfx.py; web/cut/gfx.mjs)
+        from .gfx import normalize_graphics
+        project["graphics"] = normalize_graphics(project["graphics"])
     if project.get("subtitles") is not None:
         project["subtitles"] = normalize_subtitles(project["subtitles"])
     return project
