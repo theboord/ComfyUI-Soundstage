@@ -270,3 +270,18 @@ test("drive kinds: people, horses, cars, bikes, boats and props drive; buildings
   assert.equal(D.driveKind({ kind: "building" }, K), null);
   assert.equal(D.driveKind(null, K), null);
 });
+
+test("take -> keys: a boat take keeps only the strokes paddled during the take, in order", async () => {
+  // LiveBoat.strokes held every stroke since the boat went live: strokes paddled before R were stamped at the paused
+  // playhead (from = to = 40), and the one in the water when R was pressed came out inverted ({from: 40, to: 12}).
+  // They sorted before the real spans, so boatsim.strokeAt found nothing and the crew sat still through the take.
+  const { strokeAt } = await import("../../web/stage/boatsim.mjs");
+  const boat = { id: "b", kind: "canoe", position: [0, 0, 0] };
+  const st = fakeStage([boat]);
+  const samples = Array.from({ length: 72 }, (_, f) => ({ f, p: [0, 0, f * 0.05], yaw: 0 }));
+  const strokes = [{ seat: 0, side: -1, from: 40, to: 40 }, { seat: 0, side: -1, from: 40, to: 12 },
+    { seat: 0, side: -1, from: 31, to: 46 }, { seat: 0, side: 1, from: 20, to: 29 }];
+  D.applyTake(st, { start: 0, fps: 24, tracks: { b: { type: "boat", samples, strokes } }, events: [] });
+  assert.deepEqual(boat.boat.strokes.map((s) => [s.from, s.to]), [[20, 29], [31, 46]]);
+  assert.ok(strokeAt(boat.boat.strokes, 0, 33), "the crew paddle at frame 33");
+});
