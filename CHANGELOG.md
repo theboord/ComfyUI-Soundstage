@@ -5,6 +5,15 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-02
 
+**04:15 PST · Real performance: the read's clock starts when the job starts; the dialog proven end to end on the pod**
+- **Why:** on the shared card the first end-to-end read waited 41 min in the queue, and once it started the status said "Reading… 2492 s".
+- **Fix** ([web/performance/performance.mjs](web/performance/performance.mjs)): `followPrompt` counts the running time from the moment the job starts. The wait shows as "Waiting in the queue…".
+- **Proven on the pod** (before the restart, with a non-private stand-in clip, 1 GPU job):
+  - opened on 1H via the real button; the title read "→ Ezra · shot 1H"; Voice preselected EZRA_HALE;
+  - the status showed "Waiting in the queue" for 41 min, then "Reading… and converting the voice to EZRA_HALE";
+  - the asset: 97 frames, 4.04 s of a 4.04 s clip (nothing dropped), face read on 100% of frames, "voice converted to EZRA_HALE".
+- **Tests:** tests/js/performance.test.mjs (the clock restarts at the start). JS 796 green.
+
 **03:58 PST · Cut: a "Credit" title style for licence credits and supers**
 - **Why:** the licensed-footage dialogue scene (CC BY-SA 3.0, SCP-096) needs its short credit line on screen during the first dialogue shot, and the establishing shot needs a small "Built in Soundstage" super. The Cut's title styles were a full card, a banded lower third and a centred title, all large; none could carry a small credit line.
 - **Credit** ([web/cut/timeline.mjs](web/cut/timeline.mjs) `TITLE_STYLES`, [web/cut/cut.mjs](web/cut/cut.mjs), [soundstage/cut/render.py](soundstage/cut/render.py)): small text (1/38 of the frame height), set from a 5% left margin at 91% down, with a soft drop shadow and no band. In a 2.39 picture inside 16:9 it sits in the lower letterbox bar. The viewer preview draws it the same way, and the inspector lists it as "Credit (small, lower left)".
