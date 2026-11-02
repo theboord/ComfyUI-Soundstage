@@ -978,7 +978,7 @@ def vehicle_camera(scene: dict) -> dict | None:
                 "motion": f"The camera is mounted on the hood of the {noun}, racing down the road ahead.",
                 "negative": ""}
     if looks_back and pz > 0.45 and not looks_sideways:
-        faces = f"{who_front} facing the camera, {'their faces' if len(front) > 1 else ('her face' if them == 'her' else 'his face')} toward the lens" if front else "the empty front seats"
+        faces = f"{who_front} facing the camera, {'their faces' if len(front) > 1 else ('her face' if pron([a for r in ('the driver', 'the front passenger', 'the passenger') for a in seat_names.get(r, [])]) == 'her' else 'his face')} toward the lens" if front else "the empty front seats"
         extra = f", {who_back} in the back seat between them" if back else ""
         return {"framing": "dash_two_shot", "where": "interior",
                 "lead": f"interior of a {noun}, camera on the dashboard looking back at the front seats, {faces}{extra}",
