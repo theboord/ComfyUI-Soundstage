@@ -13,19 +13,19 @@ For every panel and button in depth, see the [complete tutorial](TUTORIAL.md).
 1. **Never click ComfyUI's own Run button** (white, at the top) or its "Click Run to get started" text. It sends the whole graph to the GPU. Soundstage has its own button for every render.
 2. **One shot at a time.** Skip any button that works on many shots: "…for every shot", **Generate all missing**, **Render missing shots**. Each is a stack of GPU jobs.
 3. **Esc only to close an open panel** (Presets, a pop-over, Drive, pose, the Book). With nothing open, Esc leaves the full workspace; click **Open the full workspace** to come back.
-4. **Read a yellow button before you click it.** On ⑤ Motion the big yellow one is **Render final + sound**, about 13 minutes of GPU.
+4. **Read a yellow button before you click it.** On ⑤ Motion the big yellow one is **Render final + sound**, a full render: the App quotes about 4–6 minutes of GPU warm.
 
 ---
 
 ## Quickstart: your first shot
 
-**0. Give the App room.** On a small or scaled display (about 1024 points wide), choose **System Settings → Displays → More Space**, or use a bigger display. Otherwise Director, Guide, Done, Book and the Tools ▾ menu sit off the right edge. Make the browser full screen.
+**0. Give the App room.** On a small or scaled display (about 1024 points wide), the top bar's right-hand buttons turn into icons and the least-used ones (Shortcuts, Book, Guide, Presets, Director, Undo, Redo) fold into a **⋯** menu. For more room, choose **System Settings → Displays → More Space**, or use a bigger display. Make the browser full screen.
 
 **1. Load the Soundstage App.** Open ComfyUI (for example `http://127.0.0.1:8189`). If you see the node graph rather than the Soundstage side panel, open **Workflow → Browse templates**, pick **Soundstage_App** under Soundstage, then switch on **App** mode with the toggle at the top left. Do not click Run.
 
 **2. Open the full workspace.** In the App side panel, click **Open the full workspace**.
 
-**3. Load the demo.** A new browser opens a short Guide tour first (*1 of 6 · Start here*): click **Skip tour** (replay it from **Guide** later). On the **Let's make a shot** card, click **Try the demo scene**. The card closes and the shots appear within about 20 seconds; the stage can look empty for most of that. You get Scene 2 of *Dry Creek*: a rainy night street, Mara's sports car, Deputy Reed's police car and three shots (**Wide crane**, **Tracking front 3/4**, **Chase cam**). The card shows only on a brand-new stage: if you click *Import a script* by mistake, reload the browser tab to get it back.
+**3. Load the demo.** A new browser opens a short Guide tour first (*1 of 6 · Start here*): click **Skip tour** (replay it from **Guide** later). On the **Let's make a shot** card, click **Try the demo scene**. The card closes and the shots appear within about 20 seconds; the stage can look empty for most of that. You get Scene 2 of the sample script *Last Light on Route 9*: a rainy night street in Dry Creek, Mara's sports car, Deputy Reed's police car and three shots (**Wide crane**, **Tracking, front 3/4**, **Chase cam (police hood)**). The card shows only on a brand-new stage: if you click *Import a script* by mistake, reload the browser tab to get it back.
 
 <p align="center"><img src="media/qs_demo.gif" width="760" alt="Clicking Try the demo scene loads a rainy night street with a sports car and a police car"></p>
 
@@ -41,13 +41,13 @@ For every panel and button in depth, see the [complete tutorial](TUTORIAL.md).
 
 <p align="center"><img src="media/qs_presets.gif" width="640" alt="Presets opening and Push in being applied"></p>
 
-**7. Check the move.** Play starts from the playhead: click **⏮** at the left of the timeline bar, then **Play**, then **Stop**. If the camera ends up inside the car (a known issue on this shot, because the car turns), press **⌘Z**, click **▾** and choose shot 1, **Wide crane**, which already cranes in down the street.
+**7. Check the move.** Click **Play** (it always starts from the first frame), then **Stop**. If the camera ends up inside the car (a known issue on this shot, because the car turns), press **⌘Z**, click **▾** and choose shot 1, **Wide crane**, which already cranes in down the street.
 
 **8. Paint the first frame.** Click **④ Frame**. Leave the look box empty: the App describes the shot from your stage, and the grey text is only a hint. The defaults are Variations 4 and Standard (about 4 min); set **Variations 1** and **Fast** (about 1 min), then **Generate frames**. Wait for the frame: ⑤ says "Starts from your frame" even when there is none yet.
 
 <p align="center"><img src="media/qs_frame.webp" width="760" alt="Frame step with Variations 1, Fast and Generate frames"></p>
 
-**9. Animate it as a Draft.** Click **Animate this frame →**. In **⑤ Motion**, leave **Follow** on **Layout** and the model on **LTX-2.5 Layout-to-Render (recommended)**. **Quality** starts on **Final**: click **Draft**, then the grey **Preview motion (draft)** (about 3 minutes). Not the yellow **Render final + sound**.
+**9. Animate it as a Draft.** Click **Animate this frame →**. In **⑤ Motion**, leave **Follow** on **Layout** and the model on **LTX-2.5 Layout-to-Render (local, follows your clay; recommended)**. **Quality** starts on **Final**: click **Draft**, then the grey **Preview motion (draft)** (about 3 minutes). Not the yellow **Render final + sound**.
 
 <p align="center"><img src="media/qs_motion.webp" width="760" alt="Motion step with Follow Layout, the LTX model, Draft and Preview motion"></p>
 
@@ -56,7 +56,7 @@ For every panel and button in depth, see the [complete tutorial](TUTORIAL.md).
 <p align="center"><img src="media/qs_ladder.gif" width="760" alt="Dragging the wipe handle in Review"></p>
 
 <p align="center"><img src="media/qs_top_bar.webp" width="900" alt="The top bar: steps 1 to 7, the scene and shot switcher, Undo, Presets, the Tools menu, Shortcuts, Book, Director, Guide and Done"></p>
-<p align="center"><em>The top bar. Presets, the keyboard sheet (?) and Director are icon-only buttons. Tools ▾ holds Paint Studio, Shot ideas, Look, Takes, ScriptSync (lined script), Edit and Classic layout, and renames itself to the open tool (Takes ▾, Edit ▾).</em></p>
+<p align="center"><em>The top bar. The keyboard sheet (?) is an icon-only button; Presets and Director drop their words when the App is under 1720 px wide. Tools ▾ holds Paint Studio, Shot ideas, Look, Takes, ScriptSync (lined script), Edit and Classic layout, and renames itself to the open tool (Takes ▾, Edit ▾).</em></p>
 
 ---
 
@@ -108,7 +108,7 @@ Reed watches the dust settle. Reed does not chase.
 
 ### ② Cast & Locations (5 min, one GPU job)
 
-Mara and Deputy Reed have no pictures yet (initials on a gradient, *No reference yet*); that is fine for clay. Type *Gas station* into **Add a location…** and click **Add** (what you type is the card's name), then click that card's **✨ Generate** icon. Never click **Generate all missing**, the bright yellow button at the top right: one GPU job per empty card, about 20.
+Mara and Deputy Reed have no pictures yet (initials on a gradient, *No character sheet yet*); that is fine for clay. Type *Gas station* into **Add a location…** and click **Add** (what you type is the card's name), then click that card's **✨ Generate** icon. Never click **Generate all missing**, the bright yellow button at the top right: one GPU job per empty card, about 20.
 
 <p align="center"><img src="media/qs_fs_cast.webp" width="384" alt="A location card with its Generate button"></p>
 
@@ -117,7 +117,7 @@ Mara and Deputy Reed have no pictures yet (initials on a gradient, *No reference
 1. **Look.** Click **Clay**. Open **Set & weather** on the left toolbar: there is no gas-station set, so keep **City street** (or **Desert** for an open roadside). Set **Elements** to **Fog / haze** with a small **Amount**, and close the pop-over by clicking the stage, not with Esc. On the **Light** tab, set the time of day to **Dawn** (sun at −3°, blue hour). Both are subtle in Clay.
 2. **Props.** **Add object** → type *crate* → Enter. *Crate 1* often lands off camera: press **0** for Free view and **F** to frame it. Add two pumps and a kiosk the same way. **⌘D** duplicates (1 m to the side); press **G**, drag a copy on top and click to drop it (no Esc while moving). Faster: **Presets → Action → Crate crash** drops six crates in the car's path and sets the car to drive straight through; the stunt in steps 4-5 replaces that path.
 3. **Block the police car.** Press **0** for Free view; fly with **WASD**, **Q/E** down and up, **Shift** for speed. Drag the police car across the exit: **G** moves, **R** rotates (**Shift** snaps to 15°).
-4. **Drive the stunt.** Select the sports car, press **D** (or **🎮 Drive**). **R** starts a 3-2-1 countdown and records. **Shift+S** reverses fast (about 50 km/h; plain S tops out around 15-25), add **A** for full lock, **Space** is the handbrake, **W** drives off. **R** stops, **Enter** keeps, **Backspace** discards, **Esc** leaves Drive. A take over 10 s gets a **Cover this take** offer that splits it into renderable shots.
+4. **Drive the stunt.** Select the sports car, press **D** (or **🎮 Drive**). **R** starts a 3-2-1 countdown and records. **Shift+S** reverses fast (about 50 km/h; plain S tops out around 15-25), add **A** for full lock, **Space** is the handbrake, **W** drives off. **R** stops, **Enter** keeps, **Backspace** discards, **Esc** leaves Drive. A take ends at the end of the shot.
 5. **Or pick it.** Select the car and choose **Stunt → Reverse J-turn** (also Donut and Handbrake 180; **Presets → Action** calls it J-turn). Keep whichever take is better.
 
 <p align="center"><img src="media/qs_fs_stunt.gif" width="640" alt="Choosing Reverse J-turn from the Stunt list and playing it"></p>
@@ -153,7 +153,7 @@ Start with shot 3, the money shot. Slide **Follow the clay** high. **Camera** po
 
 - **Tools ▾ → Edit** (or **Open the editor** in ⑦). **Assemble scene** lays out the shots from the ScriptSync lining (read its message and drag in anything it left out). Cut on the car's first move into shot 3 (**M** match action), end on **Dip black**.
 - Type the forecourt ambience into the sound box (its hint reads *glass shatters on a tile floor*) and click **Generate**; **Impact sounds** on the crate hit, **Auto-duck** under Reed's line, the loudness drop-down on **Social −14 LUFS**, and a title: *LAST LIGHT AT THE PUMP*.
-- Render MP4 or ProRes; export **Avid EDL**, **Avid markers**, **Premiere XML**, **FCPXML** or **OTIO** (SRT needs subtitles; no AAF).
+- Render MP4 or ProRes; export **Avid EDL**, **Avid markers**, **Premiere XML**, **FCPXML** or **OTIO** (SRT needs subtitles; AAF comes only from the Cut Export node).
 
 <p align="center"><img src="media/qs_fs_cut.webp" width="760" alt="The Cut editor with transitions, sound and export rows"></p>
 
@@ -178,7 +178,7 @@ Your First Scene changed the demo's street, so start a fresh copy: **Workflow �
 
 - **Renders wait in line.** If ④ or ⑤ shows *queued*, it is waiting for the GPU and has not failed.
 - **The ■ Stop button's queue count can read wrong** until ComfyUI is restarted after an update. Ignore the number.
-- **Push in on the demo's car-following shots** (*Tracking front 3/4*, *Chase cam*) can carry the camera into the car, because the car turns. Quickstart step 7 shows the way round it.
+- **Push in on the demo's car-following shots** (*Tracking, front 3/4*, *Chase cam (police hood)*) can carry the camera into the car, because the car turns. Quickstart step 7 shows the way round it.
 - **① Script has no editable page or New scene button.** A scene of your own needs an imported screenplay.
 - **The demo entry** lives only on the first-run card.
 - **Drive:** above about 50 km/h the follow cam can lose the car; on stop it swings into a wall for about a second; the red REC chip overlaps the take text.

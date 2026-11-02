@@ -11,6 +11,11 @@ It is ready to re-shoot with your own camera.
 (objects) and MATCH (set scan and canvas UX). This page describes the new flow. Sections marked *(track)* are filled
 in as each track lands. Read **Limits** before trusting a result.
 
+**On `main` today** the App side below is live, but `POST /soundstage/video2stage` still runs the earlier pipeline:
+it reads only the sample count (clamped to 8-24), the vision-model switch and the set-scan switch, ignores trim, the
+people pick and the lens, and has no cancel or runs route. The set behind the rebuild is the Depth Anything 3 relief;
+the fused set scan (`backdrop.py`) and the LAYOUT stages are built and tested but not yet called by the route.
+
 ## In the App
 Every entry point uses the same wording, **Video → 3D set**, and opens the same one-screen chooser:
 - the yellow **Import video** button;
