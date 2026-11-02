@@ -840,15 +840,16 @@ In the **Camera** tab:
 
 | Rig | What it does to your move |
 |---|---|
-| **Free (keys as set)** | Exactly the keyed path. |
-| **Tripod (pan / tilt)** | The camera stays at the first key and only pans and tilts, eased like a fluid head. |
-| **Dolly on track** | The move runs on a straight track from the first to the last mark at a fixed height: it takes a moment to push off, overshoots and settles at the stop, and rumbles a little over the rail joints. |
-| **Chapman dolly (track + boom)** | A dolly whose boom keeps your keyed heights. |
-| **Slider** | A short, stiff, smooth dolly (up to 1.2 m). |
-| **Jib / crane arm** | The camera swings on an arm around a post, so moves arc, then lag and sway at the stop. |
-| **Steadicam** | Floats, bobs gently with the operator's steps, drifts and rolls slightly. |
-| **Handheld** | Breathes, shakes, reframes late, wanders. |
-| **Drone** | Very smooth, banks into turns. |
+| **Free (keys as set)** | Exactly the keyed path. Every other rig also lands on each key at its frame, the way a grip or a pilot hits a mark, and keeps a dutch angle you key. The rig only changes how the camera gets from one key to the next. |
+| **Tripod (pan / tilt)** | The camera stays at the first key and only pans and tilts. The fluid head eases the aim but keeps even a whip pan at full speed. If your keys travel, the keyed path shows as a faint dashed ghost, and the Coach offers a rig that can make the move. |
+| **Dolly on track** | Runs on a track laid through your keys, so curves and orbits keep their shape. The dolly's weight smooths out any sudden change of speed. The rails rumble a little, with a bump at each joint. The height stays locked unless your keys change it. |
+| **Chapman dolly (track + boom)** | A dolly whose boom takes your keyed heights, a little slower than the track moves. |
+| **Slider** | One straight rail from the first key, very smooth. A key off the rail shows the keyed path as a dashed ghost. The Coach warns when the move needs more than 1.5 m, or when any rig is asked to go faster than a real one can. |
+| **Jib / crane arm** | The camera rides an arm of 3 to 15 m on a post behind the first key. The arm's length and pivot are worked out from your keys. Rising moves swing and sideways moves arc, and the arm sways a little after it stops. For a key beyond the arm's reach, the base tracks across the floor. |
+| **Steadicam** | Floats a centimetre or two between keys, with a soft bob on each step and a little roll. |
+| **Handheld** | Breathes, shakes, dips with each footstep and lets the frame wander a little, but still gets to each key on time. |
+| **Drone (gimbal)** | Very smooth, with a slow drift from the wind. The gimbal keeps the horizon level. |
+| **Drone (FPV)** | A racing quad. It banks into each turn as far as the turn's physics says (atan of v² / (R·g)), and never rolls faster than 30° a second. |
 
 The rig is deterministic, so the clay, the first frame and the video model all see exactly the same move.
 
