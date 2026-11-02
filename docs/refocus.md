@@ -38,7 +38,7 @@ The result lands as a new take of the same kind (a draft stays a draft, a final 
 | T-stop | T1.4, 2, 2.8, 4, 5.6, 8, 11, 16 | the shot's lens key at frame 0 (shot open, any depth source), else T2 |
 | Pull starts / lands (clips) | the top … halfway / halfway … the end | 25% / 75% |
 | Lens | 18-135 mm | the shot's lens per frame, else 35 mm |
-| Distance to A | 60 cm … 10 m | the stage's distance at A, else 2.5 m |
+| Distance to A | 60 cm … 10 m | the stage's distance at A, else the shot's focus distance, else 2.5 m |
 | Depth | Auto, the stage's 3D set (no GPU: the Run button says so), Depth Anything 3 | Auto |
 | Bright bokeh | on / off (small clipped lights only) | off |
 
