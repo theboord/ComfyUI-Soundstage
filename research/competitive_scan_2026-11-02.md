@@ -99,7 +99,7 @@ Licence column: what the LICENSE file actually says. "(a)" means MIT, Apache-2.0
 | [0xMisterBailey/Boson](https://github.com/0xMisterBailey/Boson) | MIT (a) | Taste as files in git (`TASTE.json`, `LOOP.jsonl`): every judgement is a commit and you can branch from any round. Nodes run `stored` or `live`, so shipped work replays with no key. | Taste that builds up across rounds. Offline replay. |
 | [MajoorWaldi/HyperKut-Studio](https://github.com/MajoorWaldi/HyperKut-Studio) | MIT (a) | "Best of two takes": a local VLM picks the better generation. Lyrics transcribed and placed as kinetic text. | Auto-selecting the circled take. |
 | [slit-company/viral-hit](https://github.com/slit-company/viral-hit) | Apache-2.0 (a) | Reference → storyboard split at cuts → remake → multitrack → publish → metrics. Idempotent paid-job ledger. UI in four languages. | Publishing and i18n (mostly closed APIs). |
-| [Alvinvision/360-Scout-to-Film-Consistency](https://github.com/Alvinvision/360-Scout-to-Film-Consistency) | MIT (a); demo media excluded (`MEDIA_NOTICE.txt`) | 2:1 panorama → 5 overlapping perspective location refs + contact sheet + JSON manifest (`custom_nodes/comfyui_osmo360`, CPU only). | Location consistency from a real 360 capture. |
+| [Alvinvision/360-Scout-to-Film-Consistency](https://github.com/Alvinvision/360-Scout-to-Film-Consistency) | MIT (a); demo media excluded (`MEDIA_NOTICE.txt`) | 2:1 panorama → 5 overlapping perspective location refs + contact sheet + JSON manifest (`custom_nodes/comfyui_location360`, CPU only). | Location consistency from a real 360 capture. |
 | [GiveMePrompts/crew-cut](https://github.com/GiveMePrompts/crew-cut) | MIT (a) | A party game: phones join by QR, players direct scenes, the TV premieres the film. Runs on an M2 Max. | Social/viral hook. |
 
 GitHub-labelled entries I did not inspect in depth: `mojomast/open-higgsfield-skills` and `Orazen/conjure` (NOASSERTION), `audriu/fxjutsu` and `kingofmit/ComfyUI-HiggsOpen` (no licence file). Without reading a LICENSE, treat them as (b).
@@ -166,7 +166,7 @@ The ranking weighs judge impact before tomorrow's 9 AM PST resubmission, how muc
 
 - **Room acoustics from the set.** Reverb estimated from set geometry and materials, fed into our A1–A4 mix. Genobi, **(b)** (MIT, but its README names no small liftable piece; build our own).
 - **Per-run cost estimate, cap and ledger.** Only once a Comfy Cloud mode exists. Bullet-time and Shot Director, **(a)** MIT.
-- **360 panorama → location reference sheet** for ② Cast & Locations. 360 Scout `comfyui_osmo360`, **(a)** MIT.
+- **360 panorama → location reference sheet** for ② Cast & Locations. 360 Scout `comfyui_location360`, **(a)** MIT.
 - **Model-specific prompt linter** that checks our compiled LTX prompt and auto-repairs it. Picky, **(b)** GPL.
 - **Auto-pick the circled take with a VLM** (we already judge; this would select). HyperKut, **(b)** (no file named).
 - **Lip-synced dub to other languages** and the "no wide over speech" continuity rule. One-shot Multicam `continuity.py` / `lipcheck.py`, **(a)** MIT.
