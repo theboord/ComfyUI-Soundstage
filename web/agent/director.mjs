@@ -595,6 +595,18 @@ export const EXEC = {
     return { ok: true, said: `The ${a.target.toLowerCase()} swerves ${Math.hypot(r.offset[0], r.offset[1]).toFixed(1)} m round the ${a.around.toLowerCase()} at ${(r.frame / (this.stage.state.shot?.fps || 24)).toFixed(1)} s.` };
   },
 
+  // Reset to before (world collisions): crashed or broken objects back exactly as before, one Undo step.
+  async reset_crash(a) {
+    const r = this.stage.resetToBefore?.(a.target_id ?? null, { event: a.only !== "object" });
+    if (!r?.ids?.length) return { ok: false, said: a.target ? `The ${a.target.toLowerCase()} wasn't changed by the physics.` : "Nothing in the shot was changed by the physics." };
+    return { ok: true, said: r.message };
+  },
+
+  async ab(a) {
+    const r = this.stage.toggleAB?.(a.side ? a.side.toUpperCase() : null);
+    return { ok: !!r?.ok, said: r?.message || "Nothing to compare yet." };
+  },
+
   async keep_keyed(a) {
     const on = a.on !== "off";
     const r = this.stage.setKeepKeyed?.(a.target_id, on);

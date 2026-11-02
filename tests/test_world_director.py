@@ -77,3 +77,15 @@ def test_render_anyway_gets_past_the_consequence_check():
     assert t == "render" and "anyway" not in a
     c = D.validate_call({"tool": "render", "args": {"kind": "draft", "anyway": True}}, D.normalize_scene(SCENE), {})
     assert c["args"]["anyway"] == "true"
+
+
+def test_reset_to_before_and_ab_words():
+    assert calls("reset the crash")[0] == [("reset_crash", {})]
+    assert calls("reset everything to before the crash")[0] == [("reset_crash", {})]
+    (t, a), = calls("reset the red car to before")[0]
+    assert t == "reset_crash" and a["target_id"] == "rc" and "only" not in a
+    assert calls("reset just the red car")[0][0][1]["only"] == "object"
+    assert calls("reset the camera")[0] == [], "camera words are not a physics reset"
+    assert calls("compare with the previous run")[0] == [("ab", {})]
+    assert calls("a/b")[0] == [("ab", {})]
+    assert {"reset_crash", "ab"} <= {t["name"] for t in D.tool_specs()}

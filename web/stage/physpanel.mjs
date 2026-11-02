@@ -177,7 +177,12 @@ export class PhysicsPanel {
     this.worldBtn.addEventListener("click", () => { const on = this.worldBtn.getAttribute("aria-pressed") !== "true"; const r = this.stage.setWorldCollisions?.(on); this._msg(r?.message || (on ? "Everything collides." : "Only Dynamic props collide; keyed cars and people pass through each other.")); this.onBaked(r); this.sync(); });
     this.keepBtn = btn("Keep keyed", "", "This one stays on its keys whatever it hits (the Director's consequence check will say what it passes through). Off: the physics takes over at its first real hit.");
     this.keepBtn.addEventListener("click", () => { if (!this.id) return; const on = this.keepBtn.getAttribute("aria-pressed") !== "true"; const r = this.stage.setKeepKeyed?.(this.id, on); this._msg(r?.message || (on ? "Kept on its keys." : "The physics takes over at its first hit.")); this.onBaked(r); this.sync(); });
-    this.worldRow = el("div", "ph-fx", el("span", "", "World"), el("div", "ss-views", this.worldBtn, this.keepBtn));
+    // Reset to before: the selected object's whole crash back exactly as before (one Undo step); A/B the previous run.
+    this.resetBtn = btn("Reset to before", "", "Puts this object and everything its crash touched back exactly as they were before the crash (pieces, dents and hits go too). One Undo brings the crash back. Shift-click: just this object.");
+    this.resetBtn.addEventListener("click", (e) => { if (!this.id) return; const r = this.stage.resetToBefore?.(this.id, { event: !e.shiftKey }); this._msg(r?.message || ""); this.onBaked(r); this.sync(); });
+    this.abBtn = btn("A/B", "", "Flip between this physics run (A) and the one before it (B), exactly as each was.");
+    this.abBtn.addEventListener("click", () => { const r = this.stage.toggleAB?.(); this._msg(r?.message || ""); this.onBaked(r); this.sync(); });
+    this.worldRow = el("div", "ph-fx", el("span", "", "World"), el("div", "ss-views", this.worldBtn, this.keepBtn, this.resetBtn, this.abBtn));
     this.feelRow = el("div", "ph-fx", el("span", "", "Feel"), this.feelSeg);
     // Overcrank: shoot the action at k x 24 fps, play it at 24 (slow motion that reads as weight).
     this.ocSel = document.createElement("select");
@@ -277,6 +282,11 @@ export class PhysicsPanel {
     this.clearBtn.disabled = !this.stage.state.actors.some((a) => a.physics?.baked);
     this.worldBtn.setAttribute("aria-pressed", String(info.worldOn));
     this.keepBtn.hidden = !info.world;
+    this.resetBtn.hidden = !(this.stage.crashOf?.(this.id) || []).length;
+    const ab = this.stage.abInfo?.() || {};
+    this.abBtn.hidden = !ab.available;
+    this.abBtn.textContent = ab.side === "B" ? "A/B · B (previous)" : "A/B · A (this run)";
+    this.abBtn.setAttribute("aria-pressed", String(ab.side === "B"));
     this.keepBtn.setAttribute("aria-pressed", String(!!info.keepKeyed));
     const tk = info.takeover;
     this.note.textContent = tk ? `Physics took over at f ${tk.frame} (${(tk.frame / (this.stage.state.shot?.fps || 24)).toFixed(1)} s)` +

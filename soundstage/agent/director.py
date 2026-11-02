@@ -92,6 +92,11 @@ TOOLS: dict[str, dict] = {
                 "args": {"target": ("name", True, None), "around": ("name", True, None)}},
     "keep_keyed": {"kind": "app", "doc": "Keep someone or something on its keys through contacts (on), or let the physics take over at its first hit (off)",
                    "args": {"target": ("name", True, None), "on": ("enum", False, ["on", "off"])}},
+    "reset_crash": {"kind": "app", "doc": "Reset to before: put a crashed or broken object back exactly as it was before the crash "
+                                          "(its whole crash, or just it with only='object'), or every crash when no target",
+                    "args": {"target": ("name", False, None), "only": ("enum", False, ["crash", "object"])}},
+    "ab": {"kind": "app", "doc": "A/B: show the previous physics run against this one (side A = this run, B = the one before)",
+           "args": {"side": ("enum", False, ["a", "b"])}},
     "gaze": {"kind": "app", "doc": "Where someone looks: their head turns at a time in the shot (s) toward a person or thing, "
                                    "the camera, ahead (eyes on the road), left, right or down",
              "args": {"who": ("person", True, None), "at": ("text", True, None), "time": ("num", False, (0, 600))}},
@@ -125,7 +130,8 @@ ALIASES = {"move_camera": "camera_move", "camera": "camera_move", "dolly": "came
            "render_draft": "render", "render_final": "render", "review": "approve", "assemble": "cut", "edit": "cut",
            "playback": "play", "collide": "ram", "t_bone": "ram", "tbone": "ram", "rear_end": "ram", "smash_into": "ram",
            "consequences": "check", "check_collisions": "check", "consequence_check": "check", "avoid": "reroute", "swerve": "reroute",
-           "keep_on_keys": "keep_keyed", "camera_mount": "camera_on", "mount_camera": "camera_on", "nudge_camera": "reframe",
+           "keep_on_keys": "keep_keyed", "reset": "reset_crash", "reset_to_before": "reset_crash", "uncrash": "reset_crash",
+           "compare_runs": "ab", "a_b": "ab", "previous_run": "ab", "camera_mount": "camera_on", "mount_camera": "camera_on", "nudge_camera": "reframe",
            "look": "gaze", "look_at": "gaze", "head_turn": "gaze", "turn_head": "gaze", "eyes": "gaze", "eyeline": "gaze"}
 # Gaze targets that are directions, not things on set (web/stage/gaze.mjs).
 GAZE_WORDS = [("camera", ["camera", "the camera", "lens", "the lens", "us", "audience", "into camera"]),
@@ -705,6 +711,9 @@ def plan_line(call, work, ctx):
                        + ": the speed comes from momentum, and the physics bakes the crash from the hit on",
         "check": lambda: "check the shot for anything passing through anything else (cars, poles, walls, people)",
         "reroute": lambda: f"reroute {_the(a['target'])} round {_the(a['around'])}",
+        "reset_crash": lambda: (f"reset {_the(a['target'])}" + (" (just it)" if a.get("only") == "object" else " and everything its crash touched")
+                                if a.get("target") else "reset every crash") + " to exactly how it was before (one Undo brings the crash back)",
+        "ab": lambda: "show the previous physics run" if a.get("side") != "a" else "show this physics run",
         "keep_keyed": lambda: f"keep {_the(a['target'])} on its keys through contacts" if a.get("on") == "on"
                               else f"let the physics take over {_the(a['target'])} at its first hit",
         "gaze": lambda: f"block {a['who']}'s head: " + {"camera": "look into the camera", "ahead": "head steady, facing ahead",
@@ -1087,6 +1096,20 @@ def rules_calls(command: str, scene: dict, ctx: dict | None = None) -> list[dict
         m = re.search(r"\bkeep\s+(?:the\s+)?(.+?)\s+(?:keyed|on (?:its|his|her|their) keys)\b", cl)
         if m:
             here.append((m.start(), {"tool": "keep_keyed", "target": m.group(1).strip(), "on": "on"}))
+            used = rammed = True
+        m = re.search(r"\b(?:reset|restore|put back|un-?crash|un-?break)\s+(?:the\s+)?(.*?)\s*(?:(?:back\s+)?to (?:how it was )?before(?: the (?:crash|impact|hit))?|to pristine|as it was)?\s*$", cl)
+        if m and not re.search(r"\b(camera|lens|grade|look|light|lights|shot)\b", cl):
+            what = re.sub(r"\b(just|only)\b", "", m.group(1)).strip(" .")
+            only = "object" if re.search(r"\b(just|only)\b", cl) else None
+            if what in ("", "crash", "crashes", "the crash", "all", "everything", "all crashes", "every crash", "the physics", "physics", "it all"):
+                here.append((m.start(), {"tool": "reset_crash"}))
+            else:
+                here.append((m.start(), {"tool": "reset_crash", "target": what, **({"only": only} if only else {})}))
+            used = rammed = True
+        m = re.search(r"\b(?:a\s*/\s*b|a-b|compare (?:it )?(?:with|to|against) the (?:previous|last|other) (?:run|bake|take)|"
+                      r"show (?:me )?the (?:previous|last|other) (?:run|bake)|(?:previous|last) run)\b", cl)
+        if m:
+            here.append((m.start(), {"tool": "ab", **({"side": "a"} if re.search(r"\b(this|current|new) run\b", cl) else {})}))
             used = rammed = True
         m = re.search(r"\blet (?:the )?physics take over\s+(?:the\s+)?(.+)$", cl)
         if m:

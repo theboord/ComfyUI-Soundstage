@@ -503,15 +503,50 @@ export function bakeActor(a, keys, info = {}) {
   return a;
 }
 
-/** Undo bakeActor exactly; merge: keep key edits made on the baked object (mergeEdits) in its authored keys. */
+/** The fields a bake writes into actor.physics (everything else there is the director's settings). */
+export const BAKE_FIELDS = ["source", "baked", "world", "bakedKeys", "takeover", "dents", "fracture"];
+/** An actor's physics settings without what the bake wrote. */
+export function physicsSettings(p) {
+  const out = {};
+  for (const [k, v] of Object.entries(p || {})) if (!BAKE_FIELDS.includes(k)) out[k] = v;
+  return out;
+}
+
+/**
+ * Undo bakeActor exactly. merge: keep what was edited on the baked object since, so the next bake starts from the
+ * director's intent and never from the damaged result: key edits go into its authored keys (mergeEdits), a changed
+ * setting (mass, bounce, Keep keyed...) replaces the authored one.
+ */
 export function unbakeActor(a, { merge = false } = {}) {
   const src = a.physics?.source;
   if (!src || !a.physics.world) return false;
   const base = src.keys || (src.position ? [{ frame: 0, position: src.position }] : null);
   const merged = merge && a.physics.bakedKeys ? mergeEdits(base, a.physics.bakedKeys, a.keys) : null;
+  const now = physicsSettings(a.physics), was = physicsSettings(src.physics);
+  const edited = merge && JSON.stringify(now) !== JSON.stringify(was);
   const restore = (k, v) => { if (v === undefined) delete a[k]; else a[k] = v; };
   restore("keys", merged || src.keys);
   restore("position", merged ? [...merged[0].position] : src.position);
-  restore("physics", src.physics);
+  restore("physics", edited ? (Object.keys(now).length || src.physics ? now : undefined) : src.physics);
   return true;
+}
+
+/**
+ * Everything one crash touched: from an object, every body linked to it by a takeover (who hit whom) or a logged hit,
+ * through bodies the bake moved only (movable: ids with a pristine copy or a set track), never through the floor, the
+ * set or a Static prop (they would join two separate crashes). Returns the ids, the start one first.
+ */
+export function eventCluster(id, takeovers = {}, events = [], movable = []) {
+  const ok = new Set(movable), adj = new Map();
+  const link = (x, y) => {
+    if (!x || !y || x === y || !ok.has(x) || !ok.has(y)) return;
+    if (!adj.has(x)) adj.set(x, new Set());
+    if (!adj.has(y)) adj.set(y, new Set());
+    adj.get(x).add(y); adj.get(y).add(x);
+  };
+  for (const [x, t] of Object.entries(takeovers || {})) link(x, String(t?.by || "").split("~")[0]);
+  for (const e of events || []) link(String(e.a), String(e.b));
+  const out = [id], seen = new Set(out);
+  for (let i = 0; i < out.length; i++) for (const y of adj.get(out[i]) || []) if (!seen.has(y)) { seen.add(y); out.push(y); }
+  return out;
 }

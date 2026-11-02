@@ -59,6 +59,24 @@ Tests: [tests/js/world.test.mjs](../tests/js/world.test.mjs), [tests/js/world_st
 - Each takeover is marked: the bake message says *"Police car: physics took over at f 42 (1.8 s), hit the red car at
   44 km/h"*, the Physics panel says it for the selected actor, and `scene.physics.takeovers` has every one.
 
+## Reset to before, A/B
+
+Every crash or break is instantly reversible, so nobody has to fix a crash by hand on top of the damage.
+
+- **Reset to before** (Physics panel → World, on a crashed or broken object; the Director: *"reset the red car"*,
+  *"reset the crash"*): the object and everything its crash touched (who hit whom, what broke, a knocked lamp post) go
+  back exactly as they were before the bake, byte for byte, as one Undo step. Their pieces, dents and logged hits go too,
+  and the shards leave the scene. Shift-click (or *"reset just the red car"*) resets only that object. With no object,
+  every crash in the scene goes back. A reset doesn't re-bake by itself (that would crash it again); Simulate & bake plays
+  it again, and Undo brings the crash back.
+- **Pristine.** Each bake keeps a copy of every body it changed, as the bake started from it (`scene.physics.pristine`):
+  authored, with every key and setting edited since. A re-bake always starts from there, never from the damaged result.
+  A bake of a bake is the same bake, and a changed key or mass bakes exactly what a fresh scene authored that way would.
+- **Before the impact, the originals.** Up to the frame the physics took it over, a crashed body plays its authored self:
+  its own keys, its springs and wheels, no dents and no pieces. It is identical to the unbaked scene, part for part.
+- **A/B** (Physics panel → World, *"compare with the previous run"*): flip between this run (A) and the one before (B),
+  each exactly as it was, inputs included. It is a view with no Undo step; edit while on B and B is what you work from.
+
 ## Controls
 
 - **Physics panel → World → Everything collides** (on by default; off: only Dynamic props collide, the behaviour before).

@@ -34,7 +34,7 @@ import { simulate, bakeTrack, physicsOf, samplePos, sampleQuat, checkTracks, qro
 import { breakableOf, seedOf, dentOffset, MAX_NETWORK_CELLS } from "./fracture.mjs";
 import { decompose, vehicleBodyPoints } from "./convex.mjs";
 import { worldRole, worldSpecs, wallPieces, interpenetrations, consequences, takeoverWords, inputSig, rebaker, mergeEdits,
-  restingSpec, restingSupports, bakeActor, unbakeActor, rerouteKeys, clearOffset, personHalf } from "./world.mjs";
+  restingSpec, restingSupports, bakeActor, unbakeActor, rerouteKeys, clearOffset, personHalf, eventCluster } from "./world.mjs";
 import { shardGeometry } from "./shards.mjs";
 import { LiveEdit } from "./live.mjs";
 import { raycastShapes } from "./physics_avbd.mjs";
@@ -644,6 +644,9 @@ export class Stage {
       }
       delete a.physics.fracture; delete a.physics.dents; delete a.physics.bakedKeys;
     }
+    // Pristine (reset): each body exactly as this bake starts from it, authored, with every edit since kept. Reset to
+    // before puts these back byte for byte; a re-bake always starts from here, never from the damaged result.
+    const pristine = Object.fromEntries([...dynamic, ...worldActors, ...resting].map((a) => [a.id, clone(a)]));
     const setPosts = world ? this._setKnockables() : [];
     const keep = this.frame;
     const colliders = this.state.actors.filter((a) => a.physics?.mode !== "dynamic" && a.physics?.mode !== "off" && !a.mount_id && !a.carry_id
@@ -741,6 +744,7 @@ export class Stage {
     // A car's body / cabin boxes report as the car.
     const events = (res.events || []).map((e) => ({ ...e, a: String(e.a).split("#")[0].split("~")[0], b: String(e.b).split("#")[0].split("~")[0] }));
     this.state.physics = { ...(this.state.physics || {}), events, fps, frames: last + 1, baked: true };
+    delete this.state.physics.pristine;
     // World bodies the physics took over: their keys up to the hit are the authored ones, the physics after it.
     const tk = res.takeovers || {}, took = {};
     for (const a of worldActors) {
@@ -783,9 +787,17 @@ export class Stage {
       }
       if (res.dents?.[a.id]?.length) { a.physics.dents = res.dents[a.id]; dented++; }
     }
+    // Keep the pristine copy of every body the bake changed (the rest are as they were).
+    const kept = {};
+    for (const a of this.state.actors) if (pristine[a.id] && a.physics?.baked) kept[a.id] = pristine[a.id];
+    if (Object.keys(kept).length) this.state.physics.pristine = kept;
     this.setFrame(keep);
     if (opts.auto) this._mergeRec = true;   // an automatic re-bake joins the edit that caused it (one Undo)
     this._bakeSig = inputSig(this.state.actors);
+    // A/B: this run against the one before it (whole scenes, so B is exactly what the last run was, inputs and all).
+    const run = JSON.stringify(this.state);
+    this._ab = this._lastRun && this._lastRun !== run ? { a: run, b: this._lastRun, side: "A" } : null;
+    this._lastRun = run;
     this.onChange(this.toJSON());
     const moving = dynamic.filter((a) => a.keys.length > 2).length;
     const restless = dynamic.filter((a) => res.settled[a.id] == null).map((a) => a.name);
@@ -852,6 +864,68 @@ export class Stage {
     if (this._hasBake()) return this.simulatePhysics();
     this.setFrame(this.frame); this.onChange(this.toJSON());
     return { ok: true, message: on ? "Everything collides at the next Simulate & bake." : "Only Dynamic props collide." };
+  }
+
+  /**
+   * Reset to before (Mike: "so nobody opens a can of worms fixing the problem and making it worse"): put crashed or
+   * broken objects back exactly as they were before the bake, byte for byte, as one Undo step. id: one object (with
+   * event: true, the default, every body its crash touched: who hit whom, what broke); null: every crash in the scene.
+   * Its pieces, dents, knocked lamp posts and logged hits go too. Nothing re-bakes by itself afterwards (that would
+   * crash it again): change the setup, or Simulate & bake to see the crash again. Returns {ids, message}.
+   */
+  resetToBefore(id = null, { event = true } = {}) {
+    const P = this.state.physics || {}, pr = P.pristine || {};
+    const movable = [...Object.keys(pr), ...Object.keys(P.setTracks || {})];
+    const ids = id == null ? movable : event ? eventCluster(id, P.takeovers, P.events, movable) : [id];
+    const done = [];
+    for (const x of ids) {
+      if (P.setTracks?.[x]) { delete P.setTracks[x]; done.push(x); continue; }
+      const i = this.state.actors.findIndex((a) => a.id === x);
+      if (i < 0 || !pr[x]) continue;
+      this.state.actors[i] = clone(pr[x]);
+      delete pr[x];
+      done.push(x);
+    }
+    if (!done.length) return { ids: [], message: "Nothing here was changed by the physics." };
+    const gone = new Set(done);
+    if (P.takeovers) for (const x of done) delete P.takeovers[x];
+    if (P.events) P.events = P.events.filter((e) => !gone.has(e.a) && !gone.has(e.b));
+    for (const k of ["setTracks", "takeovers", "pristine"]) if (P[k] && !Object.keys(P[k]).length) delete P[k];
+    if (!this.state.actors.some((a) => a.physics?.baked) && !P.setTracks) for (const k of ["events", "baked", "takeovers", "pristine"]) delete P[k];
+    this._rebake?.cancel();
+    this._bakeSig = inputSig(this.state.actors);   // a reset is not an edit: no re-bake crashes it again
+    this._ab = null;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    const nm = (x) => this.state.actors.find((a) => a.id === x)?.name || (x.startsWith("setpost_") ? "street lamp" : x);
+    return { ids: done, message: `Reset to before: ${done.slice(0, 4).map(nm).join(", ")}${done.length > 4 ? ` and ${done.length - 4} more` : ""} ` +
+      `exactly as ${done.length === 1 ? "it was" : "they were"} before the crash. Simulate & bake plays it again; Undo brings the crash back.` };
+  }
+
+  /** The crash an object was in: the ids Reset to before would put back (the object itself first), [] when none. */
+  crashOf(id) {
+    const P = this.state.physics || {};
+    const movable = [...Object.keys(P.pristine || {}), ...Object.keys(P.setTracks || {})];
+    return movable.includes(id) ? eventCluster(id, P.takeovers, P.events, movable) : [];
+  }
+
+  /** A/B against the previous run: {available, side ("A" this run, "B" the one before)}. */
+  abInfo() { return { available: !!this._ab, side: this._ab?.side || "A" }; }
+
+  /**
+   * Show the other run (side "A" | "B", or the other one). B is the whole scene exactly as the previous Simulate & bake
+   * left it; A is this run. It is a view: no Undo step; edit while on B and B is what you work from.
+   */
+  toggleAB(side = null) {
+    if (!this._ab) return { ok: false, message: "Nothing to compare yet: bake, change something, bake again." };
+    const to = side || (this._ab.side === "A" ? "B" : "A");
+    if (to === this._ab.side) return { ok: true, side: to, message: `Showing ${to}.` };
+    this._ab[this._ab.side.toLowerCase()] = JSON.stringify(this.state);   // keep anything changed while looking
+    const ab = this._ab;
+    this._restore(to === "A" ? ab.a : ab.b);
+    this._ab = ab; ab.side = to;
+    this._lastRun = to === "A" ? ab.a : ab.b;   // the run on screen is the one the next bake compares against
+    return { ok: true, side: to, message: to === "B" ? "B: the previous run." : "A: this run." };
   }
 
   /** The scene has been through Simulate & bake (even when nothing in it ended up moved by the physics). */
@@ -960,7 +1034,7 @@ export class Stage {
       n++;
     }
     // No baked object left: its hits go too (no dust, shake or impact sounds from a crash that no longer happens).
-    if (n && this.state.physics && !this.state.actors.some((a) => a.physics?.baked)) { delete this.state.physics.events; delete this.state.physics.baked; delete this.state.physics.setTracks; delete this.state.physics.takeovers; }
+    if (n && this.state.physics && !this.state.actors.some((a) => a.physics?.baked)) { delete this.state.physics.events; delete this.state.physics.baked; delete this.state.physics.setTracks; delete this.state.physics.takeovers; delete this.state.physics.pristine; }
     if (n) { this.setFrame(this.frame); this.onChange(this.toJSON()); }
     return n;
   }
@@ -1035,11 +1109,34 @@ export class Stage {
    * shows its pieces on their baked keys (planks or panels, in the prop's own colour, a little varied); a dented prop's
    * mesh is pushed in by every dent up to this frame (subdivided once, so the dent has vertices to move).
    */
+  /**
+   * Before the frame the physics took it over, a baked world body is shown as its pristine, authored self (its own
+   * keys, its springs and wheels, no dents, no pieces), so scrubbing before the impact always shows the originals.
+   * A view on the actor: the authored fields over the live ones (cached, so per-actor caches hold).
+   */
+  _preImpact(a) {
+    const P = a.physics, tk = P?.takeover;
+    if (!P?.world || !P.source || !tk || !(this.frame < tk.frame)) return a;
+    this._preViews ||= new WeakMap();
+    let v = this._preViews.get(P.source);
+    if (!v || Object.getPrototypeOf(v) !== a) {
+      v = Object.create(a);
+      const src = P.source;
+      v.keys = src.keys; v.position = src.position; v.physics = src.physics;
+      this._preViews.set(P.source, v);
+    }
+    return v;
+  }
+
   _breakableAt(a, g) {
     const fr = a.physics?.baked ? a.physics.fracture : null;
     let grp = this._shards?.get(a.id);
     if (!fr?.pieces?.length) {
-      if (grp) grp.visible = false;
+      // No pieces any more (reset, cleared, re-baked whole): the shards go from the scene, not just out of sight.
+      // (Before the impact a is its authored view: the pieces only hide, they are needed again after it.)
+      const view = !Object.prototype.hasOwnProperty.call(a, "id");
+      if (grp && view) grp.visible = false;
+      else if (grp) { this._disposeShards(grp); this._shards.delete(a.id); grp = null; }
       if (g.userData.shattered) { g.visible = true; g.userData.shattered = false; }
     } else {
       if (!grp || grp.userData.src !== fr) {
@@ -1906,7 +2003,8 @@ export class Stage {
     // The set may have been rebuilt (new meshes): keep the gizmo on the selected object.
     if (this.tc && this.tc.object !== (this.poser?.target() ?? (this.selected ? this.actorMeshes.get(this.selected) : undefined))) this._attachGizmo();
     const swimNow = (this._swimNow = []);
-    for (const a of this.state.actors) {
+    for (const a0 of this.state.actors) {
+      const a = this._preImpact(a0);   // before its impact, a crashed body plays exactly its authored self
       const g = this.actorMeshes.get(a.id);
       if (!g) continue;
       if (this.drive?.on && this.drive.pose(a, g)) continue;   // driven live (drive.mjs)
