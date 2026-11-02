@@ -641,15 +641,20 @@ class SoundstageChatterboxVC(IO.ComfyNode):
             display_name="Soundstage · Chatterbox VC (step)",
             category="Soundstage/Audio/steps",
             description="Chatterbox speech-to-speech to a saved Character Voice (or the built-in voice). Output is "
-                        "padded/trimmed to the input length so the timing is unchanged.",
-            inputs=[IO.Audio.Input("audio"), IO.String.Input("voice_name", default="", optional=True),
+                        "padded/trimmed to the input length so the timing is unchanged. A take longer than 20 s is "
+                        "converted in pieces cut at its pauses. No sound in: no sound out (a silent clip passes).",
+            inputs=[IO.Audio.Input("audio", optional=True), IO.String.Input("voice_name", default="", optional=True),
                     IO.Int.Input("seed", default=0, min=0, max=0xFFFFFFFFFFFFFFFF, optional=True,
-                                 tooltip="The take: a different seed gives a different read of the same timing.")],
+                                 tooltip="The take: a different seed gives a different read of the same timing."),
+                    IO.Float.Input("chunk_s", default=20.0, min=0.0, max=60.0, step=1.0, optional=True,
+                                   tooltip="Longest piece converted in one go (cut at pauses). 0 = the whole take.")],
             outputs=[IO.Audio.Output("out_audio", display_name="audio")],
         )
 
     @classmethod
-    def execute(cls, audio, voice_name="", seed=0):
+    def execute(cls, audio=None, voice_name="", seed=0, chunk_s=20.0):
+        if audio is None or audio.get("waveform") is None:   # a clip without sound: nothing to re-voice
+            return IO.NodeOutput(audio)
         import comfy.model_management as mm
         from .audio import tts
         ref = V.load_voice(_user_dir(), voice_name)["path"] if voice_name else None
@@ -657,7 +662,7 @@ class SoundstageChatterboxVC(IO.ComfyNode):
         dev = mm.get_torch_device()
         mm.free_memory(4 * 1024 ** 3, dev)
         try:
-            y, ysr = tts.convert(x.mean(axis=1), sr, dev, ref_path=ref, seed=int(seed or 0))
+            y, ysr = tts.convert(x.mean(axis=1), sr, dev, ref_path=ref, seed=int(seed or 0), chunk_s=float(chunk_s))
         finally:
             tts.offload()
             mm.soft_empty_cache()

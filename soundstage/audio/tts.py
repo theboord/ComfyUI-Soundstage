@@ -193,24 +193,33 @@ def seeded(seed):
                 torch.cuda.set_rng_state_all(cuda)
 
 
-def convert(x, sr, device, ref_path=None, seed=None):
+def convert(x, sr, device, ref_path=None, seed=None, chunk_s=20.0):
     """Speech-to-speech (Chatterbox VC): re-voice a performance, keeping its timing. Reuses the TTS
     model's S3Gen, so no extra weights. Target = a saved voice's reference WAV, else the built-in voice.
-    seed: the take (S3Gen's flow matching samples noise); None leaves the RNG alone."""
+    seed: the take (S3Gen's flow matching samples noise); None leaves the RNG alone.
+    chunk_s: a take longer than this is converted in pieces cut at its pauses (audio/vcchunk.py); 0 = whole."""
     import numpy as np
     import soundfile as sf
     import torch
+    from . import vcchunk
     m = load(device)
     from chatterbox.vc import ChatterboxVC
     vc = ChatterboxVC(m.s3gen, str(m.device), ref_dict=None if ref_path else (_builtin.gen if _builtin else None))
     if not ref_path and vc.ref_dict is None:
         raise RuntimeError("Chatterbox VC needs a target voice: connect a Character Voice.")
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        src = f.name
-    try:
-        sf.write(src, np.asarray(x, np.float32), int(sr))
-        with torch.inference_mode(), seeded(seed):
-            wav = vc.generate(src, target_voice_path=ref_path)
-    finally:
-        os.unlink(src)
-    return wav[0].detach().float().cpu().numpy(), int(vc.sr)
+    if ref_path:
+        vc.set_target_voice(ref_path)   # once, not once per piece
+
+    def piece(seg, s):
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            src = f.name
+        try:
+            sf.write(src, np.asarray(seg, np.float32), int(s))
+            wav = vc.generate(src)
+        finally:
+            os.unlink(src)
+        return wav[0].detach().float().cpu().numpy(), int(vc.sr)
+
+    with torch.inference_mode(), seeded(seed):
+        y, ysr, _ = vcchunk.convert_in_pieces(np.asarray(x, np.float32), int(sr), piece, chunk_s=chunk_s)
+    return y, ysr
