@@ -134,6 +134,8 @@ class _Router(IO.ComfyNode):
         if cls.STAGE == "edit_image":
             if v.get("stage_denoise") is not None:
                 p["params"] = {**p["params"], "stage_denoise": float(v["stage_denoise"])}
+            if v.get("depth_lock") is not None:
+                p["params"] = {**p["params"], "depth_lock": FL.depth_lock(v["depth_lock"])}
             refs = _parse_ref_files(v.get("ref_files"))
             first = len(p["refs"]) + (2 if p["image"] is not None else 1)   # image 1 is the clay frame being edited
             p["refs"] += [g.node("LoadImage", image=f).out(0) for f, _ in refs]
@@ -228,6 +230,13 @@ class SoundstageEditImage(_Router):
                                        "the Color pass (img2img) at this denoise, so it keeps the stage's objects, sizes "
                                        "and places. Lower = closer to the clay. 1 = paint from noise with the pass as a "
                                        "reference only, as frames picked before Nov 1 were. The App's Follow the clay sets it."),
+                IO.Float.Input("depth_lock", default=0.0, min=0.0, max=FL.DEPTH_LOCK_MAX, step=0.05, optional=True,
+                               advanced=True,
+                               tooltip="④ Frame \"Lock to the stage depth\" (control_image = the stage depth pass). "
+                                       "FLUX 3 Klein: Krea 2 + its depth-control LoRA repaint the frame at this denoise "
+                                       "(about 0.5). Krea 2 Turbo: the frame starts from the blurred Color pass at "
+                                       "stage_denoise, held to the depth (cast pictures are not used). 0 = off (frames "
+                                       "picked before Nov 2)."),
             ],
             outputs=[IO.Image.Output(display_name="image")],
             hidden=HIDDEN,
