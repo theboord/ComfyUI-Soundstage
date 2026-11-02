@@ -34,7 +34,7 @@ import { simulate, bakeTrack, physicsOf, samplePos, sampleQuat, checkTracks, qro
 import { breakableOf, seedOf, dentOffset, MAX_NETWORK_CELLS } from "./fracture.mjs";
 import { decompose, vehicleBodyPoints } from "./convex.mjs";
 import { worldRole, worldSpecs, wallPieces, interpenetrations, consequences, takeoverWords, inputSig, rebaker, mergeEdits,
-  restingSpec, restingSupports, bakeActor, unbakeActor, rerouteKeys, clearOffset } from "./world.mjs";
+  restingSpec, restingSupports, bakeActor, unbakeActor, rerouteKeys, clearOffset, personHalf } from "./world.mjs";
 import { shardGeometry } from "./shards.mjs";
 import { LiveEdit } from "./live.mjs";
 import { raycastShapes } from "./physics_avbd.mjs";
@@ -631,7 +631,8 @@ export class Stage {
     for (const a of [...worldActors, ...resting]) unbakeActor(a, { merge: true });
     for (const a of dynamic) {
       if (a.physics.baked) {
-        const merged = mergeEdits(a.physics.source?.keys, a.physics.bakedKeys, a.keys);
+        // A bake from before world collisions has no bakedKeys to tell edits from: back to its source keys, as then.
+        const merged = a.physics.bakedKeys ? mergeEdits(a.physics.source?.keys, a.physics.bakedKeys, a.keys) : null;
         if (merged && a.physics.source) a.physics.source.keys = merged;
         a.keys = clone(a.physics.source?.keys || this._actorKeys(a)); a.physics.baked = false;
       }
@@ -907,7 +908,7 @@ export class Stage {
       const g = this.actorMeshes.get(a.id), box = g && this._localBox(g);
       if (!box) continue;
       let half = box.half;
-      if (PERSON_KINDS.has(a.kind)) half = [Math.max(0.17, half[0] * 0.6), half[1], Math.max(0.11, half[2] * 0.75)];
+      if (PERSON_KINDS.has(a.kind)) half = personHalf(half);   // the bake's body (world.mjs), so a resolved hit isn't reported
       if (a.kind === "lamp" || a.kind === "tree") half = [0.12, a.kind === "tree" ? Math.min(half[1], 1.5) : half[1], 0.12];
       const center = a.kind === "lamp" || a.kind === "tree" ? [0, box.center[1] - box.half[1] + half[1], 0] : box.center;
       const fr = a.physics?.baked ? a.physics.fracture : null;

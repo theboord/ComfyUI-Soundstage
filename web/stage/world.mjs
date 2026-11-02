@@ -107,6 +107,14 @@ export function vehicleMass(half, center, mass) {
 const num = (v, d) => (Number.isFinite(+v) && v !== null && v !== "" ? +v : d);
 
 /**
+ * A person's body box from its mesh's half extents (a body, not its outstretched arms or running stride). The bake and
+ * the consequence check both use it, so what the bake resolves the check does not report.
+ */
+export function personHalf([hx, hy, hz]) {
+  return [Math.max(0.17, Math.min(0.3, hx * 0.6)), hy, Math.max(0.11, Math.min(0.2, hz * 0.75))];
+}
+
+/**
  * simulate() specs for one actor in the world bake. body: {id, kind, half, center, poses, physics (the actor's), material,
  * name}. opts: {afterContact: "brake" | "coast"}. Returns [] when the actor isn't a world body (the stage keeps its own spec).
  * A keepKeyed actor stays on its keys (a keyed collider, as before Milestone 28).
@@ -125,7 +133,7 @@ export function worldSpecs(body, opts = {}) {
         aniso: { axis: [0, 0, 1], roll: after, side: 0.85 }, crush: K.crush || 1e6 }), stiffness: K.crush || 1e6 }];
   }
   if (role === "person") {
-    const half = [Math.max(0.17, Math.min(0.3, hx * 0.6)), hy, Math.max(0.11, Math.min(0.2, hz * 0.75))];
+    const half = personHalf(body.half);
     return [{ ...base, material: "flesh", shape: "box", half, center: body.center, dynamic: !keep, mass: num(ph.mass, K.mass),
       bounce: 0.05, friction: 0.7, stiffness: 5e4, ...(keep ? {} : { takeover: { dv: num(ph.takeoverDv, 0.6) } }) }];
   }
