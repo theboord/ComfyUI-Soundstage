@@ -57,6 +57,15 @@ const BIKES = new Set(["bicycle", "motorcycle"]);
 // ------------------------------------------------------------------ what drives how
 
 /** How an object is driven: "person" | "horse" | "animal" | "car" | "bike" | "boat" | "prop", or null (not drivable). */
+/** What the keys do at the helm of this kind of boat (the say line when Drive starts). */
+export function boatHelp(kind) {
+  const H = hullOf(kind);
+  if (!H) return "W throttle, S slow, A D steer.";
+  if (["paddle", "oars", "raft", "pole"].includes(H.drive)) return `W ${H.drive === "oars" ? "rows" : H.drive === "pole" ? "poles" : "paddles"} (Shift harder), A D steer, S back-paddles to stop.`;
+  if (H.drive === "sail") return "The wind sails it: A D steer (the sheet trims itself); turn through the wind to tack.";
+  return "W throttle, S slow / reverse, A D steer, Space trims the motor out (bow up), Q trims it in.";
+}
+
 export function driveKind(a, K = {}) {
   if (!a) return null;
   const L = LIBRARY[a.kind] || {};
@@ -746,7 +755,7 @@ export class DriveMode {
       .catch((err) => console.warn("Soundstage drive HUD", err));
     this._last = performance.now();
     this._raf = requestAnimationFrame((t) => this._tick(t));
-    this.say(`Driving ${this._name(a)}. ${kind === "person" ? "WASD or the left stick to move, Shift to run, Space to jump, E to get into a car or onto a horse." : kind === "car" ? "W throttle, S brake / reverse, A D steer, Space handbrake." : "WASD to move."} R records a take, Esc leaves.`);
+    this.say(`Driving ${this._name(a)}. ${kind === "person" ? "WASD or the left stick to move, Shift to run, Space to jump, E to get into a car or onto a horse." : kind === "car" ? "W throttle, S brake / reverse, A D steer, Space handbrake." : kind === "boat" ? boatHelp(a.kind) : "WASD to move."} R records a take, Esc leaves.`);
     return true;
   }
 
@@ -1225,13 +1234,15 @@ export class DriveMode {
     }
   }
 
-  /** A real boat: throttle / brake (reverse), steering, Q / E motor trim, the sheet on the mouse wheel; paddle craft
+  /** A real boat: throttle / brake (reverse), steering, Space / Q motor trim out / in, the sheet on the mouse wheel; paddle craft
    *  paddle on W (harder with Shift) and steer with A / D (the stern paddler's J-strokes). */
   _boatStep(b, inp, dt) {
     const H = hullOf(b.akind);
+    // Motor trim: automatic (in for the hole shot, out on the plane) until you touch Space / Q; then it stays where you put it.
+    if (inp.jump || inp.descend) { if (!b.trimSet) b.trim = b.boatS?.ctl?.trim ?? -2; b.trimSet = true; }
     b.trim = clamp((b.trim ?? -2) + ((inp.jump || 0) - (inp.descend || 0)) * 4 * dt, ...(H.trimRange || [-4, 6]));
     const thr = Math.max(inp.throttle || 0, inp.move[1] > 0 ? inp.move[1] : 0), brk = Math.max(inp.brake || 0, inp.move[1] < 0 ? -inp.move[1] : 0);
-    const s = b.boat.step({ throttle: thr, brake: brk, steer: -(inp.steer ?? inp.move[0]), sprint: inp.sprint > 0.5, trim: inp.descend || inp.jump ? b.trim : undefined,
+    const s = b.boat.step({ throttle: thr, brake: brk, steer: -(inp.steer ?? inp.move[0]), sprint: inp.sprint > 0.5, trim: b.trimSet ? b.trim : undefined,
       paddle: thr }, dt, this._recFrame?.() ?? null);
     b.boatS = s;
     const y0 = b.yaw;

@@ -228,3 +228,111 @@ test("presets: four cards, each a boat on its water with its crew and a camera o
     assert.ok(run.frames[96].speed > 0.5, `${id} moves`);
   }
 });
+
+// ------------------------------------------------------------------ verification round (2026-11-02)
+
+test("steering: steer + turns every craft to the left (heading up), and a paddle crew turns at a real rate", () => {
+  // Kayak sweeps, the rower's oars and the raft's back-paddling all used to steer the wrong way (or not at all).
+  for (const [kind, ctl, min] of [["raft", { effort: 0.9 }, 4], ["kayak", { effort: 0.9 }, 1.5], ["canoe", { effort: 0.9 }, 2], ["rowboat", { effort: 0.9 }, 1],
+    ["speedboat", { throttle: 0.4 }, 8], ["fishing_boat", { throttle: 0.4 }, 4]]) {
+    for (const st of [1, -1]) {
+      const b = new BS.Boat(kind, { speed: 1.3 });
+      Object.assign(b.ctl, ctl, { steer: st });
+      for (let i = 0; i < 240 * 4; i++) b.step(1 / 240);
+      const rate = b.h / D2R / 4;
+      assert.ok(Math.sign(rate) === st && Math.abs(rate) >= min, `${kind} steer ${st}: ${rate.toFixed(2)}°/s (want ≥ ${min} that way)`);
+    }
+  }
+});
+
+test("motor trim: trimmed out lifts the bow, trimmed in holds it down (the hole shot); the cowl tilts the same way", () => {
+  const peak = (mt) => { const b = new BS.Boat("speedboat", {}); b.ctl.throttle = 1; b.ctl.trim = mt; let m = 0;
+    for (let i = 0; i < 240 * 6; i++) { b.step(1 / 240); m = Math.max(m, b.pitch / D2R); } return m; };
+  const tin = peak(-4), tout = peak(6);
+  assert.ok(tout > tin + 0.6, `trim out ${tout.toFixed(2)}° vs trim in ${tin.toFixed(2)}° at the hump`);
+});
+
+test("people, not winches: no blade pulls harder than a strong paddler; a raft on the river starts riding the current", () => {
+  for (const id of ["canoe_lake", "whitewater_raft", "kayak_paddle", "rowboat_row"]) {
+    const sc = BS.boatScript(id, {});
+    const F = id === "whitewater_raft" ? W.fieldFor({ set: "river_rapids" }) : null;
+    const run = BS.simulateBoat(sc, { frames: 121, fps: 24, waves: F });
+    const top = Math.max(0, ...run.frames.flatMap((s) => (s.strokes || []).map((k) => k.force)));
+    assert.ok(top <= 320 * 1.2 * 1.6 + 1e-6 && top > 30, `${id} peak blade force ${top.toFixed(0)} N`);
+    if (id === "whitewater_raft") {
+      const f0 = run.frames[0];
+      assert.ok(f0.u > 3.2 && f0.u < 6, `raft starts at the current plus its own way (${f0.u.toFixed(2)} m/s over the ground)`);
+      // No first-stroke lurch: the hull doesn't jump a metre per second in a quarter second.
+      assert.ok(run.frames[8].u - f0.u < 0.6, `first strokes surge ${(run.frames[8].u - f0.u).toFixed(2)} m/s`);
+    }
+  }
+});
+
+test("a Laser sailor sails it flat: close-hauled in 6.5 m/s on flat water the dinghy heels 6-14°, and chop doesn't throw it past 25°", () => {
+  const wind = [Math.sin(35 * D2R) * 6.5, Math.cos(35 * D2R) * 6.5];
+  for (const sea of [null, "breeze"]) {
+    const F = sea ? W.fieldFor({ set: "open_water", sea_state: sea }) : null;
+    const r = BS.simulateBoat(BS.boatScript("sailing_tack", { tack_s: 30 }), { frames: 121, waves: F, wind: F ? [F.windDir[0] * 6.5, F.windDir[1] * 6.5] : wind,
+      heading: BS.headingForTwa(F ? [F.windDir[0] * 6.5, F.windDir[1] * 6.5] : wind, 48), kind: "dinghy" });
+    const heel = r.frames.slice(48).map((s) => Math.abs(s.roll));
+    const mean = heel.reduce((a, b) => a + b, 0) / heel.length, max = Math.max(...heel);
+    if (!sea) assert.ok(mean > 6 && mean < 14, `flat-water heel ${mean.toFixed(1)}°`);
+    else assert.ok(max < 25, `heel in chop peaks at ${max.toFixed(1)}°`);
+  }
+});
+
+test("paddle pose: the top hand stays at or below eye level all stroke (never overhead), the blade is buried in the drive and skims clear in the recovery", () => {
+  for (const kind of ["canoe", "raft"]) {
+    const H = BS.HULLS[kind], wl = BS.restDraft(H).T, seats = seatPositions(kind);
+    for (const si of [0, 1]) {
+      let prev = null, jump = 0;
+      for (let u = 0; u < 1; u += 0.01) {
+        const wet = u < H.drivePhase;
+        const p = paddlePose(H, seats[si], { u, wet }, H.style, H.paddlers[si].side, wl);
+        assert.ok(p.grip[1] - seats[si][1] <= 0.63, `${kind} seat ${si} u ${u.toFixed(2)}: top hand ${(p.grip[1] - seats[si][1]).toFixed(2)} m over the seat`);
+        const by = p.grip[1] + p.dir.y * 1.18;
+        if (wet && u > 0.1 * H.drivePhase && u < 0.9 * H.drivePhase) assert.ok(by < wl - 0.05, `${kind} blade buried at u ${u.toFixed(2)}`);
+        if (!wet && u > H.drivePhase + 0.1 && u < 0.94) assert.ok(by > wl - 0.005, `${kind} blade clear at u ${u.toFixed(2)} (${(by - wl).toFixed(3)})`);
+        if (prev) jump = Math.max(jump, Math.hypot(p.grip[0] - prev[0], p.grip[1] - prev[1], p.grip[2] - prev[2]));
+        prev = p.grip;
+      }
+      assert.ok(jump < 0.2, `${kind} seat ${si}: the top hand never snaps (${jump.toFixed(3)} m per 1 % of the cycle)`);
+    }
+  }
+});
+
+test("preset beats fit the shot: a 4-5 s shot still reaches the turn, the tack and the ferry", async () => {
+  const { fitTimes } = await import("../../web/presets/boatpresets.mjs");
+  for (const dur of [4, 5]) {
+    assert.ok(fitTimes("speedboat_run", dur).turn_s < dur, `speedboat turn inside a ${dur} s shot`);
+    assert.ok(fitTimes("sailing_tack", dur).tack_s < dur * 0.4, `tack early in a ${dur} s shot`);
+    assert.ok(fitTimes("canoe_lake", dur).turn_s < dur, "canoe turn inside the shot");
+    assert.ok(fitTimes("whitewater_raft", dur).ferry_s < dur * 0.4, "ferry early");
+  }
+  assert.equal(fitTimes("speedboat_run", 12).turn_s, 6.5, "a long take keeps the script's own beat");
+  assert.equal(fitTimes("sailing_tack", 5, { tack_s: 3 }).tack_s, 3, "a key in the card wins");
+});
+
+test("Drive mode at the helm: the live boat planes on throttle, turns the way you steer, paddles on W and records its strokes", () => {
+  const sp = new BS.LiveBoat("speedboat", {});
+  let s;
+  for (let i = 0; i < 24 * 8; i++) s = sp.step({ throttle: 1, sprint: true, steer: 0 }, 1 / 24, i);
+  assert.ok(s.u > 13 && s.planing > 0.5, `speedboat ${s.u.toFixed(1)} m/s, planing ${s.planing.toFixed(2)}`);
+  for (let i = 0; i < 24 * 2; i++) s = sp.step({ throttle: 1, sprint: true, steer: 1 }, 1 / 24, i);
+  assert.ok(sp.Hd > 0.3, `steer + turns left (${(sp.Hd / D2R).toFixed(0)}°)`);
+  const ky = new BS.LiveBoat("kayak", {});
+  for (let f = 0; f < 24 * 6; f++) s = ky.step({ throttle: 1, steer: 0 }, 1 / 24, f);
+  assert.ok(s.u > 1.2 && ky.strokes.length >= 8, `kayak ${s.u.toFixed(2)} m/s, ${ky.strokes.length} strokes recorded`);
+  const sail = new BS.LiveBoat("dinghy", { wind: [0, -6], heading: 0 });
+  sail.b.h = BS.headingForTwa([0, -6], 60);
+  for (let f = 0; f < 24 * 8; f++) s = sail.step({ steer: 0 }, 1 / 24, f);
+  assert.ok(s.u > 1.5, `the dinghy sails off the wind it's given (${s.u.toFixed(2)} m/s)`);
+});
+
+test("Drive mode says the boat's own controls: paddles, sails or the throttle and trim", async () => {
+  const { boatHelp } = await import("../../web/stage/drive.mjs");
+  const { hintsFor } = await import("../../web/ui/drivehud.mjs");
+  assert.match(boatHelp("canoe"), /paddles/); assert.match(boatHelp("rowboat"), /rows/); assert.match(boatHelp("dinghy"), /wind/);
+  assert.match(boatHelp("speedboat"), /trims the motor/);
+  assert.ok(hintsFor("boat").some(([, what]) => /motor trim/.test(what)), "the HUD lists motor trim");
+});

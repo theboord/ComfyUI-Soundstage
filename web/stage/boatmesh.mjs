@@ -216,7 +216,18 @@ export function buildBoat(kind, mesh, { main = "#f2f0ea", accent = "#1f3b5c", de
     // The outboard on the transom: a pivot at the clamp bracket (trim tilts it about X, steering swings it about Y).
     const motor = new THREE.Group(); motor.position.set(0, D * 0.92, -H.L / 2 - 0.08);
     const steerP = new THREE.Group(); motor.add(steerP);
-    const cowl = mesh(new THREE.SphereGeometry(0.5, 18, 12), dark); cowl.scale.set(0.46, 0.6, 0.66); cowl.position.set(0, 0.28, -0.2); steerP.add(cowl);
+    // The powerhead cowl: a tall rounded box (a 200 hp V6 cowl is ~0.45 m wide, 0.7 m long, 0.6 m tall), wider at the
+    // top and tapering aft, on a narrower midsection (the exhaust housing) down to the leg.
+    const cowlG = new THREE.BoxGeometry(0.44, 0.5, 0.68, 2, 3, 3);
+    { const P = cowlG.attributes.position;
+      for (let i = 0; i < P.count; i++) {
+        const x = P.getX(i), y = P.getY(i), z = P.getZ(i), up = (y + 0.25) / 0.5, aft = (0.34 - z) / 0.68;
+        P.setX(i, x * (0.82 + 0.18 * up) * (1 - 0.18 * aft));
+        P.setY(i, y + (up > 0.99 ? -0.06 * (Math.abs(z) / 0.34) ** 2 - 0.04 * (Math.abs(x) / 0.22) ** 2 : 0));
+      }
+      cowlG.computeVertexNormals(); }
+    const cowl = mesh(cowlG, dark); cowl.position.set(0, 0.32, -0.22); steerP.add(cowl);
+    const mid = mesh(new THREE.BoxGeometry(0.26, 0.2, 0.34), dark); mid.position.set(0, 0.0, -0.16); steerP.add(mid);
     const leg = mesh(new THREE.BoxGeometry(0.14, 0.95, 0.24), dark); leg.position.set(0, -0.45, -0.12); steerP.add(leg);
     const cav = mesh(new THREE.BoxGeometry(0.3, 0.03, 0.42), dark); cav.position.set(0, -0.82, -0.12); steerP.add(cav);
     const prop = new THREE.Group(); prop.position.set(0, -0.95, -0.28); steerP.add(prop);
