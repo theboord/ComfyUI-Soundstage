@@ -23,6 +23,13 @@ export function badgeOf(res) {
 }
 
 export const flagged = (res) => res?.verdict === "flag";
+/** A FLUX 3 Klein frame painted without "Lock to the stage depth" whose actors miss their marks: the next thing to try.
+ *  Not for ghosts (an extra object): neither lock stopped them in the test (share/OneClick/C). "" otherwise. */
+export function depthTip(res, dlock) {
+  if (!res || dlock > 0 || !(res.verdict === "flag" || res.verdict === "loose")) return "";
+  const off = (res.actors || []).some((a) => a.status === "off" || a.status === "loose");
+  return off ? " If it keeps missing the marks, try “Lock to the stage depth”: Strict." : "";
+}
 /** Rank for picking the best automatic frame: clean first, then by silhouette score. */
 export const rank = (res) => (!res || res.pending || res.error ? 1 : res.verdict === "ok" ? 3 : res.verdict === "loose" ? 2 : 0) + (res?.score || 0) * 0.5;
 
@@ -68,4 +75,14 @@ export const FRAMECHECK_CSS = `
 .ss-pipeview .cand .fc[data-tone=warn] { color:#ffd60a; }
 .ss-pipeview .cand .fc[data-tone=bad] { background:#ff453a; color:#fff; }
 .ss-pipeview .cand .fc[data-tone=wait] { color:#a9a3ad; font-weight:500; }
+.ss-stage .ss-hudp div.f { width:100%; }
+.ss-stage .ss-pipeview div.f { color:var(--ss-muted); }
+.ss-chk { display:flex; align-items:flex-start; gap:8px; cursor:pointer; line-height:1.35; }
+.ss-chk > input { flex:none; margin:2px 0 0; }
+.ss-chk > span { flex:1; min-width:0; }
+.ss-chk small { display:block; opacity:.72; font-size:11px; }
+.ss-chk:has(input:disabled) { cursor:default; }
+.ss-dlock { flex-wrap:wrap; align-items:center; cursor:default; }
+.ss-dlock > span:first-child { flex:1 1 140px; }
+.ss-dlock .seg { flex:none; }
 `;

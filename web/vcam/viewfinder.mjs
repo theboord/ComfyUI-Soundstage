@@ -17,6 +17,7 @@ import {
   timecode, gyroQuat, rollRad, VfRig, TakeRecorder, takeToKeys, vfMessage, vfState, sceneSig, patchCameras, parseServer, ASPECT_RATIO,
 } from "./vfcore.mjs";
 import { eulerOf, forwardOf } from "../movefit/stabilize.mjs";
+import { FilmPanel, clipCodeFrom } from "./film.mjs";
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -296,6 +297,10 @@ const toggle = (id, key, apply) => {
 toggle("levelBtn", "level", (v) => { rig.level = v; say(v ? "Level: the horizon stays flat" : "Level off: roll with the phone (Dutch angles)"); });
 toggle("stabBtn", "stab", (v) => say(v ? "Stabilize: takes are smoothed like a gimbal" : "Stabilize off: light smoothing only"));
 toggle("dofBtn", "dofOn", (v) => say(v ? "Depth of field preview on" : "Depth of field preview off"));
+// Film a move (web/vcam/film.mjs): the phone's own camera records a real clip and sends it to the desktop App.
+const film = new FilmPanel({ device: DEVICE, code: clipCodeFrom(location.search) || store.get("clipCode", null), toast: (m) => say(m) });
+if (clipCodeFrom(location.search)) store.set("clipCode", clipCodeFrom(location.search));
+$("filmBtn").addEventListener("click", () => film.open());
 toggle("guidesBtn", "grid");
 $("gyroBtn").addEventListener("click", () => {
   if (!S.gyroQ) { enableMotion(); say(window.isSecureContext ? "Waiting for the motion sensors…" : "Motion sensors need the https address (see the desktop's QR panel)"); return; }
