@@ -22,6 +22,7 @@ LIBRARY = {
     "sports_car": {"label": "Sports car", "height": 1.2, "rig": "vehicle", "foot": [1.9, 4.5]},
     "hatchback": {"label": "Hatchback", "height": 1.5, "rig": "vehicle", "foot": [1.75, 4.2]},
     "flashlight": {"label": "Flashlight", "height": 0.08, "rig": "static", "foot": [0.06, 0.26]},
+    "key": {"label": "Key", "height": 0.012, "rig": "static", "foot": [0.025, 0.06]},
     "ufo": {"label": "Flying saucer", "height": 3, "rig": "static", "foot": [12.0, 12.0]},
     "car": {"label": "Car", "height": 1.45, "rig": "vehicle", "foot": [1.8, 4.5]},
     "truck": {"label": "Truck", "height": 2.6, "rig": "vehicle", "foot": [2.3, 6.5]},

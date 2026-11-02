@@ -196,7 +196,7 @@ const SITTABLE = new Set(["chair", "bench", "sofa", "armchair", "couch", "stool"
 const NEVER_CARRIED = new Set(["horse", "cow", "car", "police_car", "sports_car", "hatchback", "truck", "bus", "bicycle", "motorcycle", "tree", "house", "building", "wall",
   "fridge", "wardrobe", "kitchen_counter", "bath", "bookshelf", "bed", "single_bed", "sofa", "door", "lamp_post", "post"]);
 // Physics: kinds that never collide (foliage, rugs, fire, lights) and cars that collide as a body plus a cabin.
-const NO_COLLIDE = new Set(["tree", "bush", "rug", "fire", "flashlight", "bird", "ufo", "houseplant", "lamp"]);
+const NO_COLLIDE = new Set(["tree", "bush", "rug", "fire", "flashlight", "key", "bird", "ufo", "houseplant", "lamp"]);
 const CAR_BODIES = new Set(["car", "police_car", "sports_car", "hatchback"]);
 const DEG = Math.PI / 180;
 const TURN_RATE = { horse: 150, cow: 120, dog: 400, cat: 500, car: 90, police_car: 90, sports_car: 110, hatchback: 90, truck: 60, bus: 45, bicycle: 200, motorcycle: 160 };
@@ -1002,6 +1002,10 @@ export class Stage {
 
   /** Object position keys [{frame, position}], migrated from position / position_end. */
   _actorKeys(a) {
+    // A shot's own blocking (actor.by_shot[shot id].keys): the shots of a scene share one timeline, so an action cut
+    // across setups (the key tossed in 1D, landing in 1L, snatched in 1N) is keyed at each setup's own beat.
+    const own = a.by_shot?.[this.state.active_shot]?.keys;
+    if (own?.length) return own;
     if (!a.keys?.length) {
       a.keys = [{ frame: 0, position: [...a.position] }];
       if (a.position_end && JSON.stringify(a.position_end) !== JSON.stringify(a.position)) {
@@ -1911,6 +1915,7 @@ export class Stage {
     // a swimmer's head is the stroke's (breathing to the side, a diver looking ahead): gaze keys still win
     applyGaze(this, new Set([...mocapIds, ...swimNow.filter((x) => !gazeKeys(x.a).length).map((x) => x.a.id)]));
     this._wakeAt(swimNow);
+    this._heldPropsAt(this.frame);   // after every pose: a held prop follows the final hand
     this.drive?.post();   // Drive mode: getting out of a seat or down from a saddle
     if (this.weather) {
       const cam = this._cameraAt(this.frame);
@@ -2223,6 +2228,70 @@ export class Stage {
     this.onChange(this.toJSON());
   }
 
+  /**
+   * Hand-held props and tosses (a small prop such as the key). On the prop, or per shot under by_shot[shot id]:
+   *   hold: [{from, to, actor, hand: "l"|"r", ease}]  frames in that person's hand (the wrist's grip point, turning
+   *        with the hand); `ease` frames to fly from where it lay into the hand (a snatch);
+   *   toss: {from, to, land: [x, y, z], bounce}  a ballistic flight (gravity) from the hand at `from` to `land` at
+   *        `to`, then one small bounce over `bounce` frames; after it the prop lies on its keys.
+   * Outside both the prop sits on its keys.
+   */
+  _propPlan(o) {
+    const own = o.by_shot?.[this.state.active_shot] || {};
+    return { hold: own.hold || o.hold || null, toss: own.toss || o.toss || null };
+  }
+
+  /** World grip point (THREE.Vector3) and wrist quaternion of a person's hand at the current pose, or null. */
+  _handGrip(id, hand = "l") {
+    const g = this.actorMeshes.get(id), a = this.state.actors.find((x) => x.id === id);
+    const w = g?.userData?.joints?.[`${hand === "r" ? "r" : "l"}_wrist`];
+    if (!w) return null;
+    g.updateMatrixWorld(true);
+    const k = ((a?.height_m || 1.8) * (a?.scale || 1)) / 1.8;
+    // between the thumb and the index knuckle (+z is the thumb side of both hands): the bow in the grip, the blade out
+    const p = w.localToWorld(new THREE.Vector3(0, -0.065 * k, 0.06 * k));
+    return { p, q: w.getWorldQuaternion(new THREE.Quaternion()) };
+  }
+
+  _heldPropsAt(f) {
+    for (const o of this.state.actors) {
+      if (!o.hold && !o.toss && !o.by_shot) continue;
+      const P = this._propPlan(o);
+      if (!P.hold && !P.toss) continue;
+      const og = this.actorMeshes.get(o.id);
+      if (!og) continue;
+      og.rotation.x = 0; og.rotation.z = 0;   // lying flat unless a hand turns it
+      const hold = (P.hold || []).find((h) => f >= (h.from ?? 0) && f <= (h.to ?? Infinity));
+      if (hold) {
+        const gp = this._handGrip(hold.actor, hold.hand);
+        if (!gp) continue;
+        const e = hold.ease > 0 ? Math.min(1, (f - (hold.from ?? 0)) / hold.ease) : 1;
+        const rest = og.position.clone(), s = e * e * (3 - 2 * e);
+        og.position.copy(rest.lerp(gp.p, s));
+        if (s >= 1) og.quaternion.copy(gp.q);   // the blade along the thumb side, turning with the hand
+        continue;
+      }
+      const T = P.toss;
+      if (!T || f <= T.from) continue;
+      const fps = this.state.shot?.fps || 24, b = T.bounce ?? 6;
+      if (f > T.to + b) continue;
+      const land = new THREE.Vector3(...T.land);
+      if (f <= T.to) {
+        // released from the hand that held it up to `from` (that hand's grip now: the thrower barely moves)
+        const before = (P.hold || []).filter((h) => (h.to ?? Infinity) <= T.from).sort((x, y) => y.to - x.to)[0];
+        const gp = before && this._handGrip(before.actor, before.hand);
+        const p0 = gp ? gp.p : new THREE.Vector3(...(T.release || T.land));
+        const D = (T.to - T.from) / fps, t = (f - T.from) / fps, g = 9.81;
+        const vy = (land.y - p0.y + 0.5 * g * D * D) / D;
+        og.position.set(p0.x + (land.x - p0.x) * (t / D), p0.y + vy * t - 0.5 * g * t * t, p0.z + (land.z - p0.z) * (t / D));
+        og.rotation.set(0, og.rotation.y + (t / D) * Math.PI * 3, 0);   // it tumbles flat as it flies
+      } else {
+        const u = (f - T.to) / b;   // one small hop and a skid along the throw, then it lies still
+        og.position.set(land.x, land.y + 0.03 * 4 * u * (1 - u), land.z);
+      }
+    }
+  }
+
   /** DP-style lighting note for prompts. */
   lightingPrompt() {
     const base = describeLighting(this.state.lighting, this.state.sun, this._cameraAt(0));
@@ -2276,7 +2345,10 @@ export class Stage {
    */
   _syncShotCamera() {
     if (this._preview || this._capturing || this._camShot === this.state.active_shot) return false;
-    this._applyCamera();
+    // A shot with its own blocking (by_shot: the key's toss, the gallop) re-poses the set too, not only the camera:
+    // a caller that flipped active_shot around a render left the set posed for the other setup.
+    if (this.state.actors?.some((a) => a.by_shot)) this.setFrameSilent(this.frame);
+    else this._applyCamera();
     return true;
   }
 
@@ -3068,7 +3140,9 @@ export class Stage {
    */
   _gaitPlan(a, g, kind = "human") {
     const keys = this._actorKeys(a);
-    if (keys.length < 2) return null;
+    // standing still (here, or in this shot: by_shot): no plan, and no cached one either, or the dust of a gallop keyed
+    // in another setup (1M) would still be kicked up here
+    if (keys.length < 2) { this._gaitCache?.delete(a); return null; }
     const last = this._lastFrame(), fps = this.state.shot?.fps || 24, sc = a.scale || 1;
     const height = (a.height_m || (kind === "horse" ? 1.6 : 1.8)) * (kind === "horse" ? 1 : sc);
     const sig = JSON.stringify([keys, last, fps, height, sc, a.rotation_deg || 0, kind, a.kind]);
