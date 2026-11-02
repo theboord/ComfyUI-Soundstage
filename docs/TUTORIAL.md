@@ -350,7 +350,7 @@ Each shot card in the row says where it stands: **no frame yet**, **painting…*
 | **Generate frames** | Queue the variations for this shot. About 6 to 10 s a frame once the models are warm; a new shot also renders its clay passes first. Pressing it again adds more candidates. |
 | **…for every shot** | The same number of variations for every shot in the scene. |
 | **Advanced: steps & CFG** | **Steps**, **CFG** and a negative prompt. Leave CFG at 1: above about 1.5 it burns and doubles the time. |
-| **Style** | The 31 style cards from the Look tab: one click sets film stock, lens, palette and grade. |
+| **Style** | The 32 style cards from the Look tab: one click sets film stock, lens, palette and grade. |
 | **Camera** | Body, lens, focal length and aperture cards, the same as the Look tab. |
 
 **Cast in this shot.** Under the main card: the characters, location, wardrobe, props and style references from ② Cast & Locations, as tiles. Tick who is in this shot (click the picture, or the **In this shot** box). The tiles that go to the model get a badge, **#1** to **#4**: FLUX 3 Klein takes **four references**, ranked characters first, then the location, wardrobe and props. A fifth tick shows **over** and is not sent. **S M L** sets the tile size, **② Cast & Locations** jumps to step 2, **Edit** opens a reference in Paint Studio (**Save to reference** keeps the edit for every shot that uses it), and **Add picture** / **Replace** uploads one. The note underneath says exactly what is sent ("Sent to the image model: …"). Nobody ticked means the frame is painted from the prompt and the clay alone.
@@ -701,11 +701,11 @@ The look lives apart from the stage. Change it and the clay, depth and camera ar
 2. In ④ Frame press **Generate frames**: new frames from the same clay and depth. Pick one.
 3. In ⑤ Motion render again. LTX is guided by the same clay animation, so the positions, the camera path and the timing stay; only the photography changes.
 
-**The 31 style swatches.** Each card shows its palette as a colour strip; hover for a one-line summary. One click sets the camera body, lens, aperture, film stock, genre, era, technique, mood, energy, palette and grade, and the stage lens. In-car cameras keep their wide lens. In the Look tab, a **director's notes** panel then explains the style's lighting, camera and framing, and ★ marks its suggested film stocks, lenses, focal lengths and apertures.
+**The 32 style swatches.** Each card shows its palette as a colour strip; hover for a one-line summary. One click sets the camera body, lens, aperture, film stock, genre, era, technique, mood, energy, palette and grade, and the stage lens. In-car cameras keep their wide lens. In the Look tab, a **director's notes** panel then explains the style's lighting, camera and framing, and ★ marks its suggested film stocks, lenses, focal lengths and apertures.
 
 | Group | Styles |
 |---|---|
-| Action | Action - Modern Blockbuster · Action - Gritty Desaturated · Action - Hong Kong / Martial Arts |
+| Action | Action - Modern Blockbuster · Action - Gritty Desaturated · Action - Hong Kong / Martial Arts · Racing Cinema |
 | Western | Western - Classic · Western - Spaghetti |
 | Noir and thriller | Film Noir · Neo-Noir · Thriller / Suspense · Korean Thriller · Nordic Noir |
 | Horror | Horror - Supernatural · Horror - Slasher (70s-80s) |
@@ -774,12 +774,25 @@ Say what you want and the Director does it with the App's own controls.
 <p align="center"><img src="media/presets.jpg" width="760" alt="The Presets window: camera move cards, with 'Applied Crane up to shot 1' and an Undo button"></p>
 
 1. Pick the shot in the strip, then press **V** (or **Presets** in the top bar).
-2. Choose a tab: **Camera moves** (push in, pull out, orbit, crane up / down, dolly zoom, whip pan, handheld follow, drone reveal, tracking side, car mount), **Lighting** (golden hour, blue hour, night street, noir hard key, neon, overcast, candle / firelight, studio three-point), **Looks**, **Action**, **Edit styles**, **Recipes** or **Mine**. Or type in **Search presets** ("crane", "golden hour", "J-turn", "trailer").
+2. Choose a tab: **Camera moves** (push in, pull out, orbit, crane up / down, dolly zoom, whip pan, handheld follow, drone reveal, tracking side, car mount, bumper cam, over the tyre, arm car tracking, long-lens pan), **Lighting** (golden hour, blue hour, night street, noir hard key, neon, overcast, candle / firelight, studio three-point), **Looks**, **Action**, **Edit styles**, **Recipes** or **Mine**. Or type in **Search presets** ("crane", "golden hour", "J-turn", "trailer").
 3. Hover a camera move to preview it on the shot; click it to apply. Camera moves write editable camera keys and a rig; lighting sets the time of day, a lighting setup, the prompt words and the grade.
 4. Every apply is **one undo step**: ⌘Z (even right after clicking a card) or **Undo** on the toast.
 5. To keep your own: set up a camera, light or look you like, open **Mine** and **Save current as Camera**, **Light** or **Look**. **Export** saves them as JSON.
 
 The Director can use presets too: *"make it a crane up at golden hour"*.
+
+**Racing cinema (car stunts).** For a J-turn that looks like *Ford v Ferrari* or *F1* rather than a game, select the car, apply **J-turn** (Action), then a racing camera, then the **Racing Cinema** look (Looks), or say it in one line: *"give the car a J-turn with a long-lens pan in the racing cinema look"*.
+
+| Preset | What it puts on the shot | From the films |
+|---|---|---|
+| **Long-lens pan** | A locked-off base 32 m from the middle of the car's path, lens 1.2 m up, 135 mm, a pan key on the car every 6 frames. It pulls in (the lens shortening with it) to keep the car inside the stage's 40 m depth guide, and moves to the other side of the path if a building is in the way; the toast says what it gave up. | Racing films reportedly shoot this on long zooms from far back at trackside; the stage's depth guide keeps it closer in. At a fast entry speed (60 km/h and up) the J-turn covers more road than one base can hold inside 40 m: the toast names the keys past it. |
+| **Arm car tracking** | A camera car 5 m off the car's side, lens 0.8 m up, 28 mm, keyed along the whole path; it never spins with the car. On a street it takes the side with room or pulls in to the kerb. | A U-Crane or Russian arm on a camera car. |
+| **Over the tyre** | Rides the car just above and outside the front wheel, 0.8 m up, 14 mm, looking back at the rear tyre, clear of the bodywork and the steered tyre | An over-the-tyre hard mount, as reported for F1: the spray (or the smoke on a dry road) at the contact patch. |
+| **Bumper cam** | Rides the car on the front bumper, 0.35 m up, 18 mm, looking down the road | A nose / bumper hard mount, with the road's vibration left in. |
+
+The two ride-along mounts spin with the car, as a real hard mount does; the prompts then say what the car does under the camera, and what the tyres throw only where the camera can see it (beside the lens on the tyre mount, past the windows from inside, nothing from the bumper). The strongest J-turn pair is the long-lens pan (the whole 180 in one frame) cut against the over-the-tyre mount. Applying the J-turn again re-aims a long-lens pan or arm car on the shot at the new path, unless you have edited its camera keys since (then your camera is kept, and the toast says so).
+
+The **Racing Cinema** look only puts car words on shots with a moving car in frame; on a reaction shot, a close-up or from inside the car it is the grade, the grain and the lens. With a car in frame: on a wet road (the stunt's **Road: Wet**, the default, or rain) a fine sheet of spray and mist off the tyres with a thin wisp of steam, never dense smoke, and a wet-down road said once; on **Road: Dry** rubber marks, heat shimmer and white tyre smoke as thick as the clay draws it; dust and grit on the desert, beach or forest; snow and slush when it snows. Always: real shutter blur on the wheels with the car body sharp, weight transfer under braking, and the background streaking only when the camera really pans with the car. Then large-format anamorphic glass (oval bokeh, soft frame edges), a filmic grade with fine grain and a grounded, desaturated palette. The look never sets the 2.39:1 frame (that is the stage's aspect) or a focal length.
 
 ---
 

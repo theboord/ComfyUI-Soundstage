@@ -9,7 +9,10 @@
 
 export const TAB_IDS = ["camera", "light", "look", "action", "edit", "recipe", "user"];
 export const CAMERA_MOVES = ["push_in", "pull_out", "orbit", "crane_up", "crane_down", "dolly_zoom", "whip_pan", "follow",
-  "drone_reveal", "tracking_side", "car_mount"];
+  "drone_reveal", "tracking_side", "car_mount", "long_lens_pan", "arm_car"];
+/** Moves keyed off a vehicle's whole path (the runner samples it into spec.path): world-space keys that never spin
+ *  with the car, unlike car_mount. A long lens panning from a fixed base, and a camera car pacing alongside. */
+export const CAR_PATH_MOVES = ["long_lens_pan", "arm_car"];
 export const RIG_TYPES = ["free", "tripod", "dolly", "chapman", "slider", "jib", "steadicam", "handheld", "drone"];
 export const TIME_KEYS = ["dawn", "golden_am", "midday", "overcast", "magic_hour", "blue_hour", "night", "keep"];
 export const GRADE_KEYS = ["warmth", "contrast", "saturation", "grain", "halation", "vignette"];
@@ -222,7 +225,127 @@ export function cameraKeys(k0, spec, last = 96) {
     return { keys: [key(0, p, t), key(L, add(p, mul(right, s)), add(t, mul(right, s)))], metres: s };
   }
   if (m === "car_mount") return { follow: "vehicle", carView: spec.view || "windshield", keys: [] };
+  if (CAR_PATH_MOVES.includes(m)) return carPathKeys(k0, spec, spec.path, L);
   return null;
+}
+
+/** The path sample at a frame (linear between samples; samples are [{frame, position}] in frame order). */
+function pathAt(path, f) {
+  if (f <= path[0].frame) return path[0].position;
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1], b = path[i];
+    if (f <= b.frame) { const u = (f - a.frame) / Math.max(1e-6, b.frame - a.frame); return add(a.position, mul(sub(b.position, a.position), u)); }
+  }
+  return path[path.length - 1].position;
+}
+
+/**
+ * Racing-cinema camera keys off a vehicle's path (world space). spec: { move: "long_lens_pan" | "arm_car", metres (how
+ * far to the side of the path), height (lens height), focal_mm, every (frames between keys), blockers }. path:
+ * [{frame, position}] of the car; without one the subject is k0.target, standing still. blockers: the set's solid boxes
+ * as [{min, max}] (world AABBs: street facades, the plaza building); the camera never sits inside one or looks through one.
+ *   long_lens_pan: a locked-off base `metres` from the path, on the side the shot's camera already is, panning with the
+ *     car (a key on it every `every` frames). The base sits opposite the middle of the path's extent and pulls in until
+ *     the farthest point of the path is inside PAN_DEPTH_M (the stage's depth guide ends at 40 m: stage.mjs DEPTH_FAR);
+ *     the focal length scales with the distance, so the car keeps its size in frame. Real ones sit much further back.
+ *   arm_car: a camera car `metres` off the car's side, pacing it (an arm car / U-Crane), lens `height` up; it holds a
+ *     fixed side of the path, so it never spins with the car the way a hard mount does.
+ * When a set's boxes are in the way, the move flips to the clear side or pulls in to the last clear distance; the
+ * result says so (shortened, flipped, wanted) so the toast can.
+ */
+export const PAN_DEPTH_M = 38;
+/** The closest a long-lens pan pulls in for the depth guide (135 mm at 32 m becomes about 50 mm here). */
+export const PAN_MIN_M = 12;
+export function carPathKeys(k0, spec = {}, path = null, last = 96) {
+  if (!k0?.position || !k0?.target) return null;
+  const L = Math.max(1, Math.round(last));
+  const pts = (Array.isArray(path) && path.length ? path : [{ frame: 0, position: k0.target }])
+    .filter((s) => Array.isArray(s?.position) && s.position.length === 3 && s.position.every(Number.isFinite))
+    .sort((a, b) => a.frame - b.frame);
+  if (!pts.length) return null;
+  const pan = spec.move === "long_lens_pan";
+  const wanted = Math.max(1, +spec.metres || (pan ? 32 : 5));
+  const height = clamp(+spec.height || (pan ? 1.2 : 0.8), 0.1, 6);
+  const focal0 = clamp(+spec.focal_mm || (pan ? 135 : 28), 8, 600);
+  const every = Math.max(1, Math.round(+spec.every || 6));
+  const aim = spec.aim != null && Number.isFinite(+spec.aim) ? clamp(+spec.aim, 0, 3) : 0.6;   // the car's body, not its roof or the road
+  const boxes = (Array.isArray(spec.blockers) ? spec.blockers : []).filter((b) => b?.min?.length === 3 && b?.max?.length === 3);
+  // The way the car travels: first sample to the one farthest from it (a J-turn comes back along the same line).
+  const a = pts[0].position;
+  let far = a, best = 0;
+  for (const s of pts) { const d = Math.hypot(s.position[0] - a[0], s.position[2] - a[2]); if (d > best) { best = d; far = s.position; } }
+  let axis;
+  if (best > 0.5) axis = [(far[0] - a[0]) / best, 0, (far[2] - a[2]) / best];
+  else { const v = [k0.target[0] - k0.position[0], 0, k0.target[2] - k0.position[2]], n = Math.hypot(v[0], v[2]) || 1; axis = [-v[2] / n, 0, v[0] / n]; }
+  // The middle of the path's extent along its axis (a J-turn's exit can run past its start).
+  const us = pts.map((s) => (s.position[0] - a[0]) * axis[0] + (s.position[2] - a[2]) * axis[2]);
+  const uc = (Math.min(...us) + Math.max(...us)) / 2;
+  const mid = [a[0] + axis[0] * uc, 0, a[2] + axis[2] * uc];
+  // The side of the path the shot's camera is on already: the screen direction the shot had stays.
+  let pref = [axis[2], 0, -axis[0]];
+  if ((k0.position[0] - mid[0]) * pref[0] + (k0.position[2] - mid[2]) * pref[2] < 0) pref = mul(pref, -1);
+  const frames = [];
+  for (let f = 0; f < L; f += every) frames.push(f);
+  frames.push(L);
+  const at = (f) => { const p = pathAt(pts, f); return [p[0], (p[1] || 0) + aim, p[2]]; };
+  const aims = frames.map(at);
+  const flatD = (p, q) => Math.hypot(p[0] - q[0], p[2] - q[2]);
+  const place = (side, m) => (pan
+    ? frames.map(() => [mid[0] + side[0] * m, height, mid[2] + side[2] * m])
+    : frames.map((f) => { const p = pathAt(pts, f); return [p[0] + side[0] * m, (p[1] || 0) + height, p[2] + side[2] * m]; }));
+  // Clear = no lens inside a box (0.5 m to spare) and no box between the lens and the car (the last 1.5 m is the car).
+  const hit = (p, i) => boxes.some((b) => insideBox(p, b, 0.5) || segmentHitsBox(p, aims[i], b, 1.5));
+  const beyond = (poss) => (pan ? poss.filter((p, i) => flatD(p, aims[i]) > PAN_DEPTH_M + 1e-6).length : 0);
+  // Every clear distance on both sides, best first: a long-lens pan keeps at least PAN_MIN_M when it can (closer than
+  // that it is a wide pan, not a long lens), then the fewest keys past the depth guide, then the most distance, with
+  // half a metre's preference for the side the shot's camera is on (its screen direction).
+  const minM = pan ? 3 : 1.5, step = 0.25, other = mul(pref, -1);
+  const cands = [];
+  for (const [sd, isPref] of [[pref, true], [other, false]]) {
+    for (let m = wanted; m >= minM - 1e-9; m -= step) {
+      const poss = place(sd, m);
+      if (boxes.length && poss.some(hit)) continue;
+      cands.push({ side: sd, isPref, m, over: beyond(poss), low: pan && m < PAN_MIN_M - 1e-9 });
+    }
+    if (!boxes.length) break;   // no set in the way: the camera's own side
+  }
+  cands.sort((x, y) => (x.low - y.low) || (x.over - y.over) || ((y.m + (y.isPref ? 0.5 : 0)) - (x.m + (x.isPref ? 0.5 : 0))));
+  let pick = cands[0], blocked = 0;
+  if (!pick) {   // nothing on either side is clear: keep the asked-for move and say how many keys the set blocks
+    pick = { side: pref, isPref: true, m: wanted, over: beyond(place(pref, wanted)) };
+    blocked = place(pref, wanted).filter(hit).length;
+  }
+  const { side, m } = pick;
+  // Why it is shorter: the set (the asked-for distance on the camera's side was blocked) or the depth guide.
+  const setForced = boxes.length > 0 && place(pref, wanted).some(hit);
+  // A pan pulled in keeps the car's size in frame: the focal length scales with the distance (never below a 24).
+  const focal = pan ? clamp(Math.round(focal0 * m / wanted), 24, 600) : focal0;
+  const poss = place(side, m);
+  const keys = frames.map((f, i) => ({ frame: f, position: R3(poss[i]), target: R3(aims[i]), focal_mm: r3(focal) }));
+  const shortened = m < wanted - 1e-6;
+  return { keys, metres: m, wanted, focal, world: true, flipped: !pick.isPref, shortened, blocked,
+    why: shortened ? (setForced ? "set" : "depth") : null, beyond: pick.over,
+    farthest: Math.max(...poss.map((p, i) => flatD(p, aims[i]))) };
+}
+
+/** A point inside an axis-aligned box ({min, max}), grown by `pad` metres. */
+export function insideBox(p, b, pad = 0) {
+  return p[0] > b.min[0] - pad && p[0] < b.max[0] + pad && p[1] > b.min[1] - pad && p[1] < b.max[1] + pad && p[2] > b.min[2] - pad && p[2] < b.max[2] + pad;
+}
+
+/** Does the segment p -> q pass through box b (slab test), ignoring its last `skipEnd` metres? */
+export function segmentHitsBox(p, q, b, skipEnd = 0) {
+  const d = sub(q, p), n = len(d);
+  if (n < 1e-6) return insideBox(p, b);
+  let t0 = 0, t1 = Math.max(0, 1 - skipEnd / n);
+  for (let k = 0; k < 3; k++) {
+    if (Math.abs(d[k]) < 1e-9) { if (p[k] <= b.min[k] || p[k] >= b.max[k]) return false; continue; }
+    let ta = (b.min[k] - p[k]) / d[k], tb = (b.max[k] - p[k]) / d[k];
+    if (ta > tb) [ta, tb] = [tb, ta];
+    t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
+    if (t0 > t1) return false;
+  }
+  return true;
 }
 
 // ------------------------------------------------------------------------------------------------ lighting
