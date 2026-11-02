@@ -413,3 +413,146 @@ export function metrics(run, { turn = 180 } = {}) {
     turned_deg: +turned[turned.length - 1].toFixed(0),
   };
 }
+
+// ---------- live driving (Milestone 29, Drive mode) ----------
+
+/**
+ * The same car, stepped live from a player's controls (web/stage/drive.mjs): the planar body, the four spinning wheels,
+ * the Magic Formula tyres on combined slip, weight transfer and the sprung body, exactly the equations of simulate()
+ * (a test drives both with the same controls and gets the same run). The driver here is a person on a controller, so
+ * there is no script: step(ctl, dt) takes {throttle, brake, handbrake 0..1, steer (road-wheel degrees, + left),
+ * gear "D" | "R" | "N"} and advances the car by dt seconds in fixed substeps. Positions are in the stage's world:
+ * heading = atan2(x, z), as everywhere on the stage.
+ */
+export class LiveCar {
+  constructor({ car = CAR, surface = "dry", x = 0, z = 0, heading = 0, speed = 0, substeps = 100, fps = 24 } = {}) {
+    this.car = car;
+    this.surf = typeof surface === "string" ? SURFACES[surface] || SURFACES.dry : surface;
+    this.dtStep = 1 / (fps * substeps);
+    const m = car.mass, L = car.a + car.b, tw = car.track / 2;
+    this.k = { m, Iz: m * car.k * car.k, L, W: [[car.a, tw, true], [car.a, -tw, true], [-car.b, tw, false], [-car.b, -tw, false]],
+      rollW: 2 * Math.PI * car.roll.hz, pitchW: 2 * Math.PI * car.pitch.hz };
+    this.k.Fz0 = this.k.W.map(([px]) => m * G * (px > 0 ? car.b : car.a) / L / 2);
+    Object.assign(this, { X: x, Z: z, H: heading, vx: speed, vy: 0, r: 0, w: this.k.W.map(() => speed / car.R),
+      roll: 0, rollV: 0, pitch: 0, pitchV: 0, axF: 0, ayF: 0, feather: 1, spinOk: 3, acc: 0 });
+    this.last = { slip: [0, 0, 0, 0], vs: [0, 0, 0, 0], Fz: this.k.Fz0.slice() };
+    this.ctl = { throttle: 0, brake: 0, handbrake: 0, steer: 0, gear: "D" };
+  }
+
+  get speed() { return Math.hypot(this.vx, this.vy); }
+  /** Forward speed (m/s, negative in reverse). */
+  get forward() { return this.vx; }
+  /** Body slip angle (deg): how sideways the car is going. */
+  get beta() { return this.speed > 0.5 ? Math.atan2(this.vy, Math.abs(this.vx)) / D2R : 0; }
+  /** The gear the automatic is in: "R", "N" or 1..4. */
+  get gearLabel() {
+    if (this.ctl.gear === "R") return "R";
+    if (this.ctl.gear === "N") return "N";
+    const i = this.car.gears.findIndex((g) => Math.abs(this.vx) < 0.8 * g);
+    return String(i < 0 ? this.car.gears.length : i + 1);
+  }
+  /** Smoke or spray from the slip energy now (0..1), as simulate() works it out. */
+  get smoke() { return this.smokeInfo.amount; }
+  /** {amount 0..1, wheels: "" | "front" | "rear" | "all"} now, as simulate() keys it for the stage's smoke. */
+  get smokeInfo() {
+    const amt = this.last.vs.map((vs, i) => clamp((this.surf.mu * this.last.Fz[i] * vs - 4000) / 21000, 0, 1) * this.surf.smoke);
+    const fr = Math.max(amt[0], amt[1]), re = Math.max(amt[2], amt[3]), a = Math.min(1, Math.max(fr, re));
+    return { amount: +a.toFixed(3), wheels: a <= 0.01 ? "" : fr > 0.45 * a && re > 0.45 * a ? "all" : fr > re ? "front" : "rear" };
+  }
+
+  /** Advance by dt seconds with these controls (held over the interval). Returns this. */
+  step(ctl, dt) {
+    Object.assign(this.ctl, ctl);
+    this.acc += dt;
+    while (this.acc >= this.dtStep - 1e-12) { this._sub(this.dtStep); this.acc -= this.dtStep; }
+    return this;
+  }
+
+  /** One substep: the body of simulate()'s loop after the driver (same order, same numbers). */
+  _sub(dt) {
+    const car = this.car, surf = this.surf, ctl = this.ctl, { m, Iz, L, W, Fz0, rollW, pitchW } = this.k;
+    let { vx, vy, r, H, X, Z, roll, rollV, pitch, pitchV, axF, ayF, feather } = this;
+    const w = this.w, last = this.last, spinOk = this.spinOk;
+    const speed = Math.hypot(vx, vy);
+    const delta = clamp(ctl.steer, -car.steerMax, car.steerMax) * D2R;
+    const ayEff = 0.35 * ayF + 0.65 * (roll / car.roll.grad) * G;
+    const axEff = 0.35 * axF + 0.65 * (pitch / car.pitch.grad) * G;
+    const dLong = m * axEff * car.h / L, dLat = m * ayEff * car.h / car.track;
+    const Fz = W.map(([, y, front], i) => {
+      const axle = Fz0[i] * 2 + (front ? -dLong : dLong);
+      const share = front ? car.rollFront : 1 - car.rollFront;
+      return Math.max(0, axle / 2 + (y > 0 ? -1 : 1) * share * dLat);
+    });
+    let Tdrive = 0;
+    const wRear = (w[2] + w[3]) / 2, vWheel = wRear * car.R;
+    if (ctl.gear === "R" || ctl.gear[0] === "D") {
+      const dir = ctl.gear === "R" ? -1 : 1;
+      let limit = car.vRev, gearT = car.torque;
+      if (dir > 0) {
+        const auto = car.gears.findIndex((g) => Math.abs(vx) < 0.8 * g);
+        const gi = ctl.gear.length > 1 ? clamp(+ctl.gear[1] - 1, 0, car.gears.length - 1) : auto < 0 ? car.gears.length - 1 : auto;
+        limit = car.gears[gi];
+        gearT = car.torque * car.gears[0] / limit;
+      }
+      const avail = Math.min(gearT, car.power * car.R / Math.max(1, Math.abs(vWheel)));
+      const vsR = Math.max(last.vs[2], last.vs[3]);
+      feather += (clamp(1 - (vsR - spinOk) / 3, 0.15, 1) - feather) * dt / 0.12;
+      Tdrive = dir * ctl.throttle * feather * avail * clamp((limit - dir * vWheel) / 1.0, 0, 1);
+      if (ctl.throttle < 0.05) Tdrive -= Math.sign(wRear) * 220 * Math.min(1, Math.abs(vWheel) / 2);
+    }
+    let Fx = 0, Fy = 0, Mz = 0;
+    const slip = [], vsA = [];
+    for (let i = 0; i < 4; i++) {
+      const [px, py, front] = W[i];
+      const cvx = vx - r * py, cvy = vy + r * px;
+      const d = front ? delta : 0, c = Math.cos(d), s = Math.sin(d);
+      const wvx = cvx * c + cvy * s, wvy = -cvx * s + cvy * c;
+      const T = front ? 0 : Tdrive / 2 + (i === 2 ? 1 : -1) * (car.diffLock ?? 30) * (w[3] - w[2]);
+      const tf0 = tyreForce(wvx, wvy, w[i] * car.R, Fz[i], surf);
+      const k = tyreStiff(wvx, w[i] * car.R, Fz[i], surf) * car.R * car.R;
+      const Ieff = car.Iw + dt * k;
+      let wn = w[i] + dt * (T - tf0.fx * car.R) / Ieff;
+      const Tb = ctl.brake * car.brake * (front ? car.brakeFront : 1 - car.brakeFront) / 2 + (front ? 0 : ctl.handbrake * car.handbrake / 2);
+      const dec = Tb * dt / Ieff;
+      wn = Math.abs(wn) <= dec ? 0 : wn - Math.sign(wn) * dec;
+      w[i] = wn;
+      const tf = tyreForce(wvx, wvy, w[i] * car.R, Fz[i], surf);
+      const bx = tf.fx * c - tf.fy * s, by = tf.fx * s + tf.fy * c;
+      Fx += bx; Fy += by; Mz += px * by - py * bx;
+      slip.push(tf.s); vsA.push(tf.vs);
+    }
+    const drag = 0.5 * 1.2 * car.cda * speed;
+    Fx += -drag * vx - car.crr * m * G * Math.tanh(vx / 0.5);
+    Fy += -drag * vy;
+    const ax = Fx / m, ay = Fy / m;
+    vx += (ax + r * vy) * dt;
+    vy += (ay - r * vx) * dt;
+    r += (Mz / Iz) * dt;
+    H += r * dt;
+    const sh = Math.sin(H), ch = Math.cos(H);
+    X += (vx * sh + vy * ch) * dt;
+    Z += (vx * ch - vy * sh) * dt;
+    const fa = dt / (0.02 + dt);
+    axF += (ax - axF) * fa; ayF += (ay - ayF) * fa;
+    const rollT = car.roll.grad * ayF / G, pitchT = car.pitch.grad * axF / G;
+    const bumpR = Math.abs(roll) > 8.5 ? -6 * rollW * rollW * (roll - Math.sign(roll) * 8.5) : 0;
+    const bumpP = Math.abs(pitch) > 5 ? -6 * pitchW * pitchW * (pitch - Math.sign(pitch) * 5) : 0;
+    rollV += (rollW * rollW * (rollT - roll) - 2 * car.roll.zeta * rollW * rollV + bumpR) * dt; roll += rollV * dt;
+    pitchV += (pitchW * pitchW * (pitchT - pitch) - 2 * car.pitch.zeta * pitchW * pitchV + bumpP) * dt; pitch += pitchV * dt;
+    Object.assign(this, { vx, vy, r, H, X, Z, roll, rollV, pitch, pitchV, axF, ayF, feather });
+    this.last = { slip, vs: vsA, Fz };
+  }
+
+  /** Stop dead where it is (it hit a wall): the body's velocities and the wheel spins go to the impact's leftovers. */
+  bump(nx, nz, restitution = 0.15) {
+    // World velocity, its component into the wall (normal n points out of the wall) removed (and a little bounce).
+    const sh = Math.sin(this.H), ch = Math.cos(this.H);
+    let wx = this.vx * sh + this.vy * ch, wz = this.vx * ch - this.vy * sh;
+    const into = wx * nx + wz * nz;
+    if (into < 0) { wx -= (1 + restitution) * into * nx; wz -= (1 + restitution) * into * nz; }
+    wx *= 0.7; wz *= 0.7;
+    this.vx = wx * sh + wz * ch; this.vy = wx * ch - wz * sh;
+    this.r *= 0.5;
+    for (let i = 0; i < 4; i++) this.w[i] = this.vx / this.car.R;
+  }
+}
