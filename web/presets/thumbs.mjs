@@ -290,6 +290,24 @@ function actionThumb(c, p, t, w, h) {
     if (age > 0 && age < 1.2) { c.fillStyle = `rgba(200,190,170,${0.35 * (1 - age / 1.2)})`; c.beginPath(); c.ellipse(w / 2, gy - S * 0.15, S * (0.8 + age * 1.6), S * (0.25 + age * 0.4), 0, 0, 7); c.fill(); }
     c.restore();
     c.strokeStyle = "rgba(242,255,89,.55)"; c.lineWidth = 1.5; c.strokeRect(6 + jolt * 0.6, 6 + jolt, w - 12, h - 12);
+  } else if (a.swim) {
+    // A diver lying level over the sand: the legs flutter, the fin blades bend against the kick, bubbles rise in bursts.
+    c.fillStyle = "#123a46"; c.fillRect(0, 0, w, h);
+    c.fillStyle = "#b9a983"; c.fillRect(0, gy, w, h - gy);
+    const tt = u * 4, x0 = lerp(w * 0.75, w * 0.3, u), y0 = gy - S * 1.3;
+    c.fillStyle = "rgb(40,42,46)";
+    c.fillRect(x0 - S * 0.9, y0 - S * 0.14, S * 0.9, S * 0.28);                        // body (head to the left)
+    c.beginPath(); c.arc(x0 - S * 0.95, y0 - S * 0.02, S * 0.15, 0, 7); c.fill();
+    c.fillStyle = "#9aa1a8"; c.fillRect(x0 - S * 0.75, y0 - S * 0.32, S * 0.6, S * 0.16);   // tank
+    for (const ph of [0, Math.PI]) {
+      const k = Math.sin(tt * Math.PI * 2 * 0.7 + ph), ang = 0.28 * k;
+      const hx = x0, hy = y0, kx = hx + Math.cos(ang) * S * 0.45, ky = hy + Math.sin(ang) * S * 0.45;
+      c.strokeStyle = "rgb(40,42,46)"; c.lineWidth = S * 0.12; c.beginPath(); c.moveTo(hx, hy); c.lineTo(kx, ky); c.lineTo(kx + Math.cos(ang * 1.3) * S * 0.42, ky + Math.sin(ang * 1.3) * S * 0.42); c.stroke();
+      const fx = kx + Math.cos(ang * 1.3) * S * 0.42, fy = ky + Math.sin(ang * 1.3) * S * 0.42, bend = -0.5 * Math.cos(tt * Math.PI * 2 * 0.7 + ph);
+      c.strokeStyle = "#d6b21e"; c.lineWidth = S * 0.06; c.beginPath(); c.moveTo(fx, fy); c.quadraticCurveTo(fx + S * 0.3, fy, fx + S * 0.55, fy + bend * S * 0.35); c.stroke();
+    }
+    c.fillStyle = "rgba(225,245,255,.8)";
+    for (let i = 0; i < 14; i++) { const age = (u * 6 + i * 0.13) % 2.4, bx = x0 - S * 1.0 + Math.sin(i * 3 + age * 9) * 3, by = y0 - S * 0.1 - age * S * 1.2; if (by > 4) { c.beginPath(); c.arc(bx, by, 1 + (i % 3), 0, 7); c.fill(); } }
   } else if (a.mount) {
     const hx = w * 0.62;
     c.fillStyle = "#8a6a4e"; c.fillRect(hx - S * 1.1, gy - S * 1.45, S * 2.2, S * 0.75);   // a horse body

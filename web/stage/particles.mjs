@@ -35,6 +35,10 @@ export const GROUND_PRESETS = Object.freeze({
     debris: { color: [0.82, 0.88, 0.94], size: [0.008, 0.018], shape: "drop", bounce: 0.0, friction: 1.0, amount: 0.5 } },
   wood_splinters: { label: "Wood splinters", dust: { color: [0.74, 0.64, 0.5], density: 0.6, buoy: 0.12, drag: 1.8, turb: 0.45, life: [1.4, 2.8], size: [0.2, 1.4] },
     debris: { color: [0.56, 0.41, 0.26], size: [0.02, 0.05], shape: "splinter", bounce: 0.22, friction: 0.7, amount: 1.4 } },
+  // Under water (swim.mjs fin wash): fine sand and silt lifted off the seabed hangs in the water for seconds, drifts
+  // with the current and settles back slowly (a few cm/s), instead of blowing away like dust in air.
+  seabed_silt: { label: "Seabed silt", internal: true, dust: { color: [0.74, 0.69, 0.55], density: 0.6, buoy: -0.035, drag: 1.3, turb: 0.1, life: [5, 9], size: [0.16, 1.1] },
+    debris: null },
   tyre_smoke: { label: "Tyre smoke", internal: true, dust: { color: [0.86, 0.86, 0.86], density: 0.34, buoy: 0.5, drag: 1.1, turb: 0.8, life: [1.6, 2.8], size: [0.7, 3.2] },
     debris: null },
 });
@@ -203,6 +207,7 @@ export function emitterSig(emitters, opts = {}) {
     str(e.preset); str(typeof e.debrisPreset === "string" ? e.debrisPreset : e.debrisPreset ? e.debrisPreset.shape : "-"); mix(e.density || 0);
   }
   mix(opts.frames || 0); mix(opts.fps || 24); mix(opts.seed ?? 1); mix(opts.wind?.[0] || 0); mix(opts.wind?.[1] || 0); mix((opts.boxes || []).length);
+  if (opts.floorKey) str(opts.floorKey);
   return `${emitters.length}:${(h >>> 0).toString(36)}`;
 }
 
@@ -319,7 +324,7 @@ export function simulateParticles(emitters, opts = {}) {
         p.vy += (ty - p.vy) * k + p.buoy * (1 - u) * dt - (p.buoy < 0 ? 0 : 0);
         p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
         const size = p.s0 + (p.s1 - p.s0) * (1 - (1 - u) * (1 - u));
-        const floor = size * 0.2;
+        const floor = size * 0.2 + (opts.floorAt ? opts.floorAt(p.x, p.z) || 0 : 0);
         if (p.y < floor) {   // hug the ground and spread along it
           p.y = floor;
           if (p.vy < 0) { const sp = -p.vy * 0.5; p.vy = 0; const l = Math.hypot(p.vx, p.vz) || 1; p.vx += (p.vx / l) * sp; p.vz += (p.vz / l) * sp; }
@@ -336,7 +341,8 @@ export function simulateParticles(emitters, opts = {}) {
         p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
         const r = Math.min(p.sx, p.sy, p.sz) * 0.5;
         let nrm = null;
-        if (p.y < r) { p.y = r; nrm = [0, 1, 0]; }
+        const gy = opts.floorAt ? opts.floorAt(p.x, p.z) || 0 : 0;
+        if (p.y < r + gy) { p.y = r + gy; nrm = [0, 1, 0]; }
         for (const b of boxes) { const n2 = boxContact(p, r, b); if (n2) nrm = n2; }
         if (nrm) {
           const vn = p.vx * nrm[0] + p.vy * nrm[1] + p.vz * nrm[2];

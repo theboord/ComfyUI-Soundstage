@@ -114,6 +114,9 @@
     { "id": "climb_mount", "tab": "action", "label": "Climb / mount", "words": ["get on", "climb on", "mount up", "get in"],
       "summary": "The selected person gets on the horse, into the car or onto a low prop a second into the shot.",
       "apply": { "mount": true, "at_seconds": 1 } },
+    { "id": "diver_swim", "tab": "action", "label": "Diver swim", "words": ["scuba diver", "dive over the reef", "flutter kick", "swim underwater", "scuba"],
+      "summary": "The person swims in scuba kit over the reef: real flutter kicks with bending fins, level trim, the regulator in the mouth and a burst of bubbles every few seconds.",
+      "apply": { "swim": "flutter", "speed": 0.5 } },
 
     { "id": "trailer_cut", "tab": "edit", "label": "Trailer cut", "words": ["trailer", "teaser cut", "promo cut"],
       "summary": "Short, punchy clips (about 1.2 s), dips to black between beats, a fade out at the end.",

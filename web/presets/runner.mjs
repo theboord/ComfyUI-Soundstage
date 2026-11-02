@@ -8,8 +8,9 @@
 // host (all optional; see web/ui/presets.mjs for the App's): look {get(), set(patch), load(json), applyStyle(id)} ·
 // cut {load(), save(v), add(ids), panel()} · pipeline · shotsInOrder() · wholeFrame(prompt) · importVideo() ·
 // confirm(message) -> Promise<bool> · say(msg).
-import { cameraKeys, lightingPlan, gradePatch, crateStack, driveKeys, throwKeys, editStyleCut, userCameraKeys,
+import { cameraKeys, lightingPlan, gradePatch, crateStack, driveKeys, throwKeys, editStyleCut, userCameraKeys, swimKeys,
   VEHICLE_KINDS, PERSON_KINDS, RIDE_KINDS, LOW_PROPS } from "./engine.mjs";
+import { seabedHeight } from "../stage/sets/underwater.mjs";
 import { imperfectStack, idSeed } from "../stage/impacts.mjs";
 import { SOFT_PRESET_KINDS, softPreset } from "./softpresets.mjs";
 
@@ -208,6 +209,7 @@ export class PresetRunner {
     if (a.shake) return this._shake(p);
     if (a.physics) return this._physics(p);
     if (a.mount) return this._mount(p);
+    if (a.swim) return this._swim(p);
     if (a.edit) return this._edit(p, opts);
     if (a.user_camera || a.user_light || a.user_look) return this._user(p);
     return { ok: false, said: `${p.label} has nothing to apply.` };
@@ -392,6 +394,41 @@ export class PresetRunner {
     const ok = st.mount(rider.id, host.id, null, at, vehicle ? (taken ? 1 : 0) : null);
     if (!ok) return { ok: false, said: `${nameOf(rider)} can't get onto ${nameOf(host).toLowerCase()}.` };
     return { ok: true, said: `Applied 'Climb / mount': ${nameOf(rider)} ${vehicle ? "gets into" : "mounts"} the ${nameOf(host).toLowerCase()} at ${(at / this._fps()).toFixed(1)} s.`, whereObj: nameOf(rider) };
+  }
+
+  /**
+   * Swim (web/stage/swim.mjs): the selected person (or the first) swims from where they are along their heading. Under
+   * water they get a scuba kit and a neoprene wetsuit and cruise over the reef (the set changes to the Underwater
+   * reef unless it is already a water set); at the surface they swim in open water (or the tank / the reef's surface).
+   */
+  _swim(p) {
+    const st = this.stage, kind = p.apply.swim, last = this._last(), fps = this._fps();
+    const who = this._person({ free: true });
+    if (!who) return { ok: false, said: `${p.label} needs a person on set: add one (type “man” in Add) and try again.` };
+    const s2 = this.scene();
+    const env = s2.environment || {};
+    const surface = kind === "freestyle" || kind === "breaststroke";
+    let moved = null;
+    if (!surface && env.set !== "underwater" && env.set !== "water_tank") { s2.environment = { ...env, set: "underwater" }; moved = "the Underwater reef"; }
+    if (surface && !["water_tank", "open_water", "underwater"].includes(env.set)) { s2.environment = { ...env, set: "open_water" }; moved = "Open water"; }
+    const r = s2.actors.find((x) => x.id === who.id);
+    const p0 = this._pos(r, 0), hd = this._heading(r);
+    const reef = s2.environment.set === "underwater";
+    const floor = reef ? seabedHeight(p0[0], p0[2]) : 0;
+    const speed = p.apply.speed ?? (surface ? (kind === "freestyle" ? 1.1 : 0.7) : 0.5);
+    const lift = reef && surface ? 10 - floor - 0.95 * (r.height_m || 1.8) / 1.8 : p.apply.lift ?? 0.5;
+    r.keys = swimKeys([p0[0], floor, p0[2]], hd, { speed, last, fps, lift, surface: surface && !reef });
+    r.position = [...r.keys[0].position];
+    r.rotation_deg = Math.round(hd);
+    delete r.mount_id; delete r.mount_at; delete r.pose;
+    r.swim = kind;
+    r.gear = surface ? "none" : "scuba";
+    if (!surface) r.appearance = { ...(r.appearance || {}), top: "shirt", top_color: "#16171a", bottom: "trousers", bottom_color: "#16171a", hair: "short", hair_color: "#16171a", shoes_color: "#16171a" };
+    this._loadState(s2);
+    st.onChange(st.toJSON());
+    const how = { flutter: "flutter-kicks", frog: "frog-kicks", freestyle: "swims freestyle", breaststroke: "swims breaststroke" }[kind];
+    return { ok: true, whereObj: nameOf(r),
+      said: `Applied '${p.label}': ${nameOf(r)} ${how} at ${speed.toFixed(1)} m/s${surface ? " along the surface" : " over the bottom in scuba kit (regulator in the mouth, bubbles every few seconds)"}${moved ? `; the set is now ${moved}` : ""}.` };
   }
 
   async _edit(p, opts) {
