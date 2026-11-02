@@ -185,6 +185,32 @@ def camera_keys(scene: dict) -> list[dict]:
     return sorted(out, key=lambda k: k["frame"])
 
 
+AERIAL_RIGS = {"aerial", "aerial_fpv", "drone", "drone_fpv"}   # drone, drone_fpv: an older scene's names for the aerial rigs
+
+
+def aerial_shot(scene: dict) -> str | None:
+    """'aerial shot' / 'aerial top-down shot' / 'aerial FPV shot' for a shot on an aerial rig, or one whose camera starts
+    8 m or more up (an aerial preset on another rig, a crane at full height reads the same). None otherwise, and
+    never for a camera inside a vehicle. The prompts say aerial, never drone (Mike, 2026-11-02)."""
+    shot = next((x for x in scene.get("shots") or [] if x.get("id") == scene.get("active_shot")), None) or {}
+    rig = str((shot.get("rig") or {}).get("type") or "")
+    keys = camera_keys(scene)
+    if not keys:
+        return None
+    c0 = keys[0]
+    p, t = c0["position"], c0["target"]
+    on_rig = rig in AERIAL_RIGS and (shot.get("rig") or {}).get("amount", 1) != 0
+    if not on_rig and p[1] < 8.0:
+        return None
+    if ride_host(scene) is not None:
+        return None
+    flat = math.hypot(t[0] - p[0], t[2] - p[2])
+    down = math.degrees(math.atan2(p[1] - t[1], max(flat, 1e-6)))
+    if rig in ("aerial_fpv", "drone_fpv"):
+        return "aerial FPV shot"
+    return "aerial top-down shot" if down >= 65 else "aerial shot"
+
+
 def _cam_sample(keys: list[dict], frame: int) -> dict:
     if frame <= keys[0]["frame"]:
         return dict(keys[0])
@@ -543,8 +569,8 @@ def look_view(scene: dict, in_shot: set) -> str:
     the over-the-tyre mount, where the tyre and the flank are in frame); "nocar" for everything else (nobody's car in
     frame, a parked car, or a camera riding inside, on the hood or on the bumper, where the wheels are out of frame)."""
     vcam = vehicle_camera(scene)
-    if vcam:
-        return "car" if vcam.get("where") == "wheel" else "nocar"
+    if vcam:   # a side mount sees the car's flank and its tyres too
+        return "car" if vcam.get("where") in ("wheel", "side") else "nocar"
     return "car" if _moving_vehicles(scene, in_shot) else "nocar"
 
 
@@ -1031,6 +1057,53 @@ def vehicle_camera(scene: dict) -> dict | None:
     return v
 
 
+_OUTSIDE_NEG = "camera inside the car, interior of the car, dashboard, steering wheel, the car seen from a distance"
+
+
+def _mount_words(view: str | None, noun: str, host: dict, scene: dict, px: float) -> dict | None:
+    """Words for the outside car mounts (hood looking ahead, rear bumper, trunk, roof, side door, low at a wheel, tyre
+    close-up). None for every other mount (the seat-by-seat reading in _vehicle_camera handles those) and for no mount."""
+    if view not in ("hood_forward", "rear_bumper", "trunk", "roof", "side_door", "side_front_wheel", "side_rear_wheel", "tyre_close"):
+        return None
+    frames, _ = frame_range(scene)
+    moving = G.length(G.sub(_pos_at(host, frames - 1, frames - 1), _pos_at(host, 0, frames - 1))) > 0.3
+    street = " as the street slides past" if moving else ""
+    side = "left" if px >= 0 else "right"
+    road = "the road streaking past" if moving else "the road"
+    W = {
+        "hood_forward": ("hood", f"camera hard-mounted on the hood of a {noun}, looking ahead over the bonnet",
+                         f"camera hard-mounted on the hood of the {noun}, the bonnet in the bottom of frame, looking ahead down the road",
+                         f"The camera is hard-mounted on the hood of the {noun}, looking ahead over the bonnet at {road}{street}."),
+        "rear_bumper": ("rear", f"low camera hard-mounted on the rear bumper of a {noun}, looking back down the road",
+                        f"camera hard-mounted low on the rear bumper of the {noun}, inches above the road, looking back down the road behind it",
+                        f"The camera is hard-mounted low on the rear bumper of the {noun}, looking back down the road as it falls away behind{street}."),
+        "trunk": ("rear", f"camera mounted on the trunk of a {noun}, looking ahead over its roof",
+                  f"camera mounted on the trunk lid of the {noun}, looking forward over the roof at the road ahead",
+                  f"The camera rides on the trunk of the {noun}, looking ahead over its roof at {road}{street}."),
+        "roof": ("roof", f"camera hard-mounted on the roof of a {noun}, looking ahead",
+                 f"camera hard-mounted on the roof of the {noun}, the top of the windscreen in the bottom of frame, looking ahead down the road",
+                 f"The camera is hard-mounted on the roof of the {noun}, looking ahead at {road}{street}."),
+        "side_door": ("side", f"camera hard-mounted on the {side} door of a {noun}, looking ahead along its flank",
+                      f"camera hard-mounted on the {side} side door of the {noun}, looking forward along the side of the car at the road ahead",
+                      f"The camera is hard-mounted on the {side} door of the {noun}, looking ahead along its flank{street}."),
+        "side_front_wheel": ("side", f"low camera hard-mounted on the {side} side of a {noun}, just behind the front wheel, looking ahead",
+                             f"low camera hard-mounted on the {side} flank of the {noun} just behind the front wheel, inches above the road, "
+                             "the front tyre in the foreground, looking forward along the car",
+                             f"The camera is hard-mounted low on the {side} flank of the {noun} behind the front wheel, the tyre turning beside "
+                             f"the lens and {road} just below{street}."),
+        "side_rear_wheel": ("side", f"low camera hard-mounted on the {side} side of a {noun} at the rear wheel, looking ahead along its flank",
+                            f"low camera hard-mounted on the {side} side of the {noun} at the rear wheel, inches above the road, the rear tyre "
+                            "in the foreground and the whole flank of the car stretching ahead",
+                            f"The camera is hard-mounted low at the rear wheel on the {side} side of the {noun}, looking ahead along its flank, "
+                            f"the tyre turning beside the lens{street}."),
+        "tyre_close": ("side", f"close low camera on the {side} front tyre of a {noun}",
+                       f"close-up of the {side} front tyre of the {noun} from a low camera mounted beside it, the tread and the wheel filling the frame",
+                       f"The camera is mounted low beside the {side} front tyre of the {noun}, the wheel spinning in close-up{street}."),
+    }
+    where, lead, still, motion = W[view]
+    return {"framing": view, "where": where, "lead": lead, "still": still, "motion": motion, "negative": _OUTSIDE_NEG}
+
+
 def _vehicle_camera(scene: dict) -> dict | None:
     """Where a ride-along camera sits on its vehicle, in words for the image and video models.
 
@@ -1056,6 +1129,11 @@ def _vehicle_camera(scene: dict) -> dict | None:
     k0 = keys[0]
     (px, py, pz), (tx, ty, tz) = k0["position"], k0["target"]
     noun = lib.get(kind, (kind.replace("_", " "),))[0].lower()
+    # A car mount picked in the App (shot.camera_mount, web/stage/carmounts.mjs) says where it is: the outside mounts
+    # added on 2026-11-02 sit where the seat-by-seat reading below would mistake them for a seat inside.
+    words = _mount_words((shot.get("camera_mount") or {}).get("view"), noun, host, scene, px)
+    if words:
+        return words
     if abs(px) > 1.4 or pz > 3.2 or pz < -3.0 or py > 2.6:
         return None                                              # tracking alongside / overhead: an outside shot
     frames, _ = frame_range(scene)

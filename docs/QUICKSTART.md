@@ -83,7 +83,7 @@ Press `0` to switch between the shot camera and the free view. Start every orbit
 
 Press `V` (or click **Presets**). On **Camera moves** (the tabs show counts, like *Camera moves 11*), hover a card to preview it in the shot-camera inset, then click **Crane up**. A toast reads *Crane up · Applied to shot 2 · Undo*. Press `V` again to close.
 
-There are 11 camera moves: Push in, Pull out, Orbit, Crane up, Crane down, Dolly zoom, Whip pan, Handheld follow, Drone reveal, Tracking side and Car mount. (*Wide crane* is the name of the demo's shot 1, not a preset.)
+The camera moves include Push in, Pull out, Orbit, Crane up, Crane down, Dolly zoom, Whip pan, Handheld follow, the five aerial moves (Aerial up, down, across, orbit and follow), Tracking side and the car mounts (the clip below was recorded before the aerial and car-mount cards were added). After you apply one, the **Adjust** card at the bottom right changes its height, distance, angle, speed and lens. (*Wide crane* is the name of the demo's shot 1, not a preset.)
 
 > **Watch out.** Don't use **Push in** on the car-following shots. The car turns and the camera can end up inside it.
 

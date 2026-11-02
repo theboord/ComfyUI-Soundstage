@@ -233,7 +233,7 @@ export const SHAKE_PRESETS = {
   earthquake: { label: "Earthquake", deg: 1.8, hz: 6, decay: 0.45, delay: 3 },
 };
 /** How much each camera support feels a hit: a tripod only gets a ground thump; handheld and car mounts get more. */
-const RIG_SHAKE = { free: 1, tripod: 0.35, dolly: 0.55, chapman: 0.5, slider: 0.4, jib: 0.7, steadicam: 0.8, handheld: 1.3, drone: 0.6, vehicle: 1.4 };
+const RIG_SHAKE = { free: 1, tripod: 0.35, dolly: 0.55, chapman: 0.5, slider: 0.4, jib: 0.7, steadicam: 0.8, handheld: 1.3, aerial: 0.6, aerial_fpv: 0.6, drone: 0.6, vehicle: 1.4 };   // drone: an older scene's name for aerial
 
 /**
  * Add impact shake to a sampled camera path ([{position, target, roll?}] per frame). Each hit adds a jolt `delay`

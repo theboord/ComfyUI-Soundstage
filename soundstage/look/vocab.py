@@ -80,6 +80,14 @@ def option(field: str, oid: str | None) -> dict | None:
     return None
 
 
+def renamed(field: str, oid: str | None) -> str | None:
+    """The id an option has now, for an id a saved look may still carry (old_ids: "drone" is "aerial" now)."""
+    for o in options(field):
+        if oid and oid in (o.get("old_ids") or []):
+            return o["id"]
+    return None
+
+
 def genre_of_subgenre(sid: str) -> str | None:
     for g in load_vocab()["genres"]:
         if any(s["id"] == sid for s in g.get("subgenres", [])):
@@ -105,6 +113,8 @@ def normalize_look(look: dict | None) -> tuple[dict, list[str]]:
             continue
         if option(field, str(val)):
             out[field] = str(val)
+        elif renamed(field, str(val)):
+            out[field] = renamed(field, str(val))
         else:
             notes.append(f"unknown {field} '{val}' ignored")
     sub = look.get("subgenre") or ""

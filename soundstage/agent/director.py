@@ -34,9 +34,13 @@ from . import parts as PT
 VEHICLES = {k for k, v in C.LIBRARY.items() if v.get("rig") == "vehicle"} | {"police_car", "sports_car", "bus", "boat"}
 SEATABLE = VEHICLES | set(C.MOUNTS) | {"sofa", "armchair", "couch", "stool", "chair", "bench"}
 STUNTS = {"reverse_jturn": "Reverse J-turn", "donut": "Donut", "handbrake_180": "Handbrake 180", "none": "No stunt"}
-RIGS = ["free", "tripod", "dolly", "chapman", "slider", "jib", "steadicam", "handheld", "drone"]
-CAM_VIEWS = {"hood": "windshield", "windshield": "windshield", "driver_pov": "driver_pov", "passenger": "passenger_on_driver",
-             "back_seat": "back_seat", "dashboard": "dash_two_shot", "side": "side_tracking", "top": "top_down", "off": None}
+RIGS = ["free", "tripod", "dolly", "chapman", "slider", "jib", "steadicam", "handheld", "aerial", "aerial_fpv"]
+# Car mounts the Director can rig (web/stage/carmounts.mjs; web/agent/director.mjs CAR_VIEW runs them).
+CAM_VIEWS = {"hood": "windshield", "windshield": "windshield", "hood_forward": "hood_forward", "bumper": "bumper",
+             "rear_bumper": "rear_bumper", "trunk": "trunk", "roof": "roof", "side_door": "side_door",
+             "front_wheel_low": "side_front_wheel", "rear_wheel_low": "side_rear_wheel", "tyre": "tyre_close",
+             "driver_pov": "driver_pov", "passenger": "passenger_on_driver", "back_seat": "back_seat",
+             "dashboard": "dash_two_shot", "chase": "chase", "side": "side_tracking", "top": "top_down", "off": None}
 MOVES = ["push_in", "pull_out", "truck_left", "truck_right", "crane_up", "crane_down", "orbit_left", "orbit_right", "static"]
 REFRAMES = ["push_in", "pull_out", "higher", "lower", "wider", "tighter"]
 GRADE_KEYS = ["warmth", "contrast", "saturation", "grain", "halation", "vignette"]
@@ -72,8 +76,8 @@ TOOLS: dict[str, dict] = {
     "lens": {"kind": "app", "doc": "Focal length in mm for the current shot", "args": {"mm": ("num", True, (8, 400))}},
     "camera_move": {"kind": "app", "doc": "An animated camera move over the shot",
                     "args": {"move": ("enum", True, MOVES), "speed": ("enum", False, ["slow", "medium", "fast"])}},
-    "rig": {"kind": "app", "doc": "Camera support: tripod, dolly, steadicam, handheld, drone...", "args": {"type": ("enum", True, RIGS)}},
-    "camera_on": {"kind": "app", "doc": "Rig the camera on a vehicle (hood mount, driver POV, back seat, side) or take it off",
+    "rig": {"kind": "app", "doc": "Camera support: tripod, dolly, steadicam, handheld, aerial (gimbal), aerial_fpv...", "args": {"type": ("enum", True, RIGS)}},
+    "camera_on": {"kind": "app", "doc": "Rig the camera on a vehicle (hood, bumpers, trunk, roof, side door, low at a wheel, tyre, dash, back seat, chase) or take it off",
                   "args": {"target": ("vehicle", False, None), "view": ("enum", False, list(CAM_VIEWS))}},
     "stunt": {"kind": "app", "doc": "A car stunt: reverse_jturn, donut, handbrake_180 (none clears it)",
               "args": {"target": ("vehicle", False, None), "stunt": ("enum", True, list(STUNTS))}},
@@ -434,6 +438,10 @@ def validate_call(raw, work: dict, ctx: dict) -> dict:
             out[a] = v
         elif typ == "enum":
             t = str(v).strip().lower().replace("-", "_").replace(" ", "_")
+            if name == "camera_on":   # car mounts by the words people use for them
+                t = {"boot": "trunk", "rear": "rear_bumper", "rear_mount": "rear_bumper", "roof_mount": "roof", "door": "side_door",
+                     "side_mount": "front_wheel_low", "wheel": "front_wheel_low", "tire": "tyre", "chase_car": "chase",
+                     "trailing": "chase"}.get(t, t)
             t = {"jturn": "reverse_jturn", "j_turn": "reverse_jturn", "reverse_j_turn": "reverse_jturn", "donuts": "donut",
                  "handbrake": "handbrake_180", "handbrake_turn": "handbrake_180", "pushin": "push_in", "dolly_in": "push_in",
                  "push": "push_in", "pull_back": "pull_out", "dolly_out": "pull_out", "pullout": "pull_out",
@@ -444,7 +452,9 @@ def validate_call(raw, work: dict, ctx: dict) -> dict:
                  "close_up": "single", "closeup": "single", "over_the_shoulder": "ots", "two": "two_shot", "establishing": "wide",
                  "master": "wide", "hand_held": "handheld", "crane": "jib", "street": "street_night", "city": "street_night",
                  "room": "interior", "bonnet": "hood", "hood_mount": "hood", "windscreen": "windshield", "pov": "driver_pov",
-                 "dash": "dashboard", "tracking": "side", "overhead": "top", "underwater": "water_tank",
+                 "dash": "dashboard", "tracking": "side", "overhead": "top",
+                 "drone": "aerial", "drone_fpv": "aerial_fpv", "fpv": "aerial_fpv", "fpv_drone": "aerial_fpv", "aerial_gimbal": "aerial",
+                 "underwater": "water_tank",
                  "boom_up": "crane_up", "boom_down": "crane_down", "track_left": "truck_left", "track_right": "truck_right",
                  "orbit": "orbit_left", "arc": "orbit_left", "locked_off": "static", "zoom_in": "tighter", "zoom_out": "wider",
                  "closer": "push_in" if name == "reframe" else "closer", "up": "higher" if name == "reframe" else "up",
@@ -1131,9 +1141,10 @@ def rules_calls(command: str, scene: dict, ctx: dict | None = None) -> list[dict
                 "truck_right" if "right" in w else "truck_left" if "left" in w else "static"
             here.append((m.start(), {"tool": "camera_move", "move": mv, "speed": speed}))
             used = True
-        m = re.search(r"\b(?:on\s+(?:a\s+)?|use\s+(?:a\s+)?|go\s+)(dolly|steadicam|drone|tripod|jib|crane arm|slider|chapman)\b|\b(handheld|hand-held)\b", cl)
+        m = re.search(r"\b(?:on\s+(?:a\s+)?|use\s+(?:a\s+)?|go\s+)(dolly|steadicam|drone|aerial|tripod|jib|crane arm|slider|chapman)\b|\b(handheld|hand-held)\b", cl)
         if m:
-            here.append((m.start(), {"tool": "rig", "type": (m.group(1) or m.group(2)).replace("crane arm", "jib").replace("hand-held", "handheld")}))
+            rig = (m.group(1) or m.group(2)).replace("crane arm", "jib").replace("hand-held", "handheld")
+            here.append((m.start(), {"tool": "rig", "type": "aerial" if rig == "drone" else rig}))
             used = True
         # Parts (Milestone 26): "open the driver's door at 2 s", "turn on the police lights", "the horse throws its head up".
         part_calls = PT.rules(cl, work, last_person)

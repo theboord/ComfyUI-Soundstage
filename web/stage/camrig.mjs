@@ -1,13 +1,13 @@
 // Camera rigs: the shot's keys say where the camera must be and when; the rig says how a real camera support gets
 // there. Every rig lands on its marks: the camera passes each key at the key's frame, the way a dolly grip, a crane
-// operator or a drone pilot hits marks for a living. What the rig changes is everything in between:
+// operator or an aerial pilot hits marks for a living. What the rig changes is everything in between:
 //   - where the support can physically put the camera (a tripod's legs stay put, a slider is one straight rail, a jib
 //     swings its arm round a post, so its moves arc),
 //   - its mass: zero-phase springs (run forward, then backward) smooth the speed changes a heavy rig can't make
 //     without the lag a one-way spring adds, and focal length rides the same spring so a dolly zoom keeps its subject,
-//   - its life: rail rumble, a jib's sway after it stops, an operator's breathing and footsteps, a drone's wind drift,
+//   - its life: rail rumble, a jib's sway after it stops, an operator's breathing and footsteps, an aerial gimbal's wind drift,
 //     an FPV quad banking into its turns. That noise lives in its own arrays and is added after every derivative, so
-//     a drone's horizon only tilts when the flight path really turns.
+//     an aerial camera's horizon only tilts when the flight path really turns.
 // Keyed roll (a dutch) passes through every rig; a rig's own roll is added on top. Everything is deterministic per
 // frame and per shot (rig.seed), so the clay previz, the first frame and the video model all see the same camera.
 
@@ -20,9 +20,14 @@ export const RIGS = {
   jib: { label: "Jib / crane arm" },
   steadicam: { label: "Steadicam" },
   handheld: { label: "Handheld" },
-  drone: { label: "Drone (gimbal)" },
-  drone_fpv: { label: "Drone (FPV)" },
+  aerial: { label: "Aerial (gimbal)" },
+  aerial_fpv: { label: "Aerial (FPV)" },
 };
+
+/** Old rig names still read from saved scenes (renamed to aerial on 2026-11-02): a shot on a "drone" plays as before. */
+export const RIG_ALIASES = { drone: "aerial", drone_fpv: "aerial_fpv" };
+/** A rig type as it is called now ("drone" -> "aerial"); anything else unchanged. */
+export const rigType = (t) => RIG_ALIASES[t] || t;
 
 /**
  * What each support can really do with the camera (metres, m/s, m/s²). The Coach (web/coach/rules.mjs rigLimits)
@@ -36,8 +41,8 @@ export const RIG_LIMITS = {
   jib: { speed: 4.0, accel: 3.0, why: "a counterweighted arm can only swing so fast" },
   steadicam: { speed: 6.0, accel: 3.5, why: "the operator is running with 30 kg on a vest" },
   handheld: { speed: 7.0, accel: 4.0, why: "the operator is sprinting with the camera" },
-  drone: { speed: 20, accel: 6, why: "a cinema drone tops out near 20 m/s" },
-  drone_fpv: { speed: 40, accel: 15, why: "even a racing quad has limits" },
+  aerial: { speed: 20, accel: 6, why: "a cinema aerial rig tops out near 20 m/s" },
+  aerial_fpv: { speed: 40, accel: 15, why: "even a racing quad has limits" },
 };
 
 /** Arm length limits (m) of the jib: a short jib to a 50 ft telescopic crane. */
@@ -135,7 +140,7 @@ export function zeroPhase(xs, fps, omega) {
 }
 
 /**
- * Hit the marks: take whatever the rig added (a spring's smoothing, a jib's sway, a drone's drift) back out at every
+ * Hit the marks: take whatever the rig added (a spring's smoothing, a jib's sway, an aerial rig's drift) back out at every
  * mark frame, with a smooth bump that only reaches as far as the neighbouring marks (at most `maxW` frames). At a
  * mark the camera is exactly where `base` says, and it keeps the rig's own speed through it (the bump is flat there).
  * out, base: per-frame numbers or vectors (out is changed in place); base null = take the offset to zero.
@@ -215,10 +220,10 @@ const SPRING = {
   jib: { pos: 3.2, aim: 8 },
   steadicam: { pos: 3.0, aim: 7 },
   handheld: { pos: 5.5, aim: 9 },
-  drone: { pos: 2.4, aim: 6 },
-  drone_fpv: { pos: 3.6, aim: 9 },
+  aerial: { pos: 2.4, aim: 6 },
+  aerial_fpv: { pos: 3.6, aim: 9 },
 };
-const TYPE_SEED = { tripod: 1, dolly: 2, chapman: 3, slider: 4, jib: 5, steadicam: 6, handheld: 7, drone: 8, drone_fpv: 9 };
+const TYPE_SEED = { tripod: 1, dolly: 2, chapman: 3, slider: 4, jib: 5, steadicam: 6, handheld: 7, aerial: 8, aerial_fpv: 9 };   // the old drone seeds: a renamed shot shakes the same
 
 /**
  * The jib: an arm of length L (3 to 15 m) turning on a pivot. The first mark sits exactly on the arm (pivot = mark -
@@ -326,7 +331,7 @@ function lateralAccel(p, fps) {
  * array's `info` says what the rig did ({arm, pivot, travel} for a jib, {run} for a slider, ...).
  */
 export function applyRig(path, rig, fps = 24, opts = {}) {
-  const type = RIGS[rig?.type] ? rig.type : "free";
+  const type = RIGS[rigType(rig?.type)] ? rigType(rig.type) : "free";
   const n = path.length;
   const k = clamp(Number.isFinite(rig?.amount) ? rig.amount : 1, 0, 2);
   if (type === "free" || !n || !(k > 0)) return path;
@@ -422,13 +427,13 @@ export function applyRig(path, rig, fps = 24, opts = {}) {
       aimHigh[f] = add(mul(ax.right, noise(seed + 7, t(f) * 8) * 0.0025 * ax.dist), mul(ax.up, noise(seed + 8, t(f) * 9) * 0.0025 * ax.dist));
       rollHigh[f] = noise(seed + 9, t(f) * 0.4) * 0.012 + noise(seed + 10, t(f) * 6) * 0.003;
     }
-  } else if (type === "drone") {
+  } else if (type === "aerial") {
     // GPS hold and wind: a slow drift of a centimetre or so; the gimbal keeps the horizon level (a slow drift < 0.1°).
     for (let f = 0; f < n; f++) {
       low[f] = [noise(seed, t(f) * 0.5) * 0.012, noise(seed + 1, t(f) * 0.4) * 0.008, noise(seed + 2, t(f) * 0.45) * 0.012];
       rollLow[f] = noise(seed + 3, t(f) * 0.05) * 0.0016;
     }
-  } else if (type === "drone_fpv") {
+  } else if (type === "aerial_fpv") {
     for (let f = 0; f < n; f++) {
       low[f] = [noise(seed, t(f) * 0.8) * 0.015, noise(seed + 1, t(f) * 0.7) * 0.012, noise(seed + 2, t(f) * 0.8) * 0.015];
       high[f] = [noise(seed + 4, t(f) * 11) * 0.0008, noise(seed + 5, t(f) * 13) * 0.0008, noise(seed + 6, t(f) * 12) * 0.0008];
@@ -442,7 +447,7 @@ export function applyRig(path, rig, fps = 24, opts = {}) {
   // 4. An FPV quad banks into its turns: atan(v² k / g) along its flight path before any shake (in the world, for a
   //    quad chasing a car), low-passed like the spring, never rolling faster than 30°/s.
   let bank = null;
-  if (type === "drone_fpv") {
+  if (type === "aerial_fpv") {
     const wp = opts.toWorld ? base.map((p, f) => opts.toWorld(f, p)) : base;
     const target = zeroPhase(lateralAccel(wp, fps).map((a) => clamp(Math.atan(a / G), -60 * D2R, 60 * D2R) * k), fps, 4);
     bank = rateLimit(target, FPV_ROLL_RATE / fps);

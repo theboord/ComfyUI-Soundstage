@@ -11,7 +11,7 @@ export function bodyIcon(id = "auto") {
   if (k === "auto") return SVG(56, 32, `<rect x="14" y="10" width="22" height="14" rx="3" ${FILL}/><text x="25" y="20.5" font-size="8" text-anchor="middle" fill="currentColor" stroke="none">A</text>`);
   if (/smartphone/.test(k)) return SVG(56, 32, `<rect x="21" y="4" width="14" height="24" rx="3" ${FILL}/><circle cx="31" cy="8" r="1.4"/>`);
   if (/action_cam/.test(k)) return SVG(56, 32, `<rect x="17" y="9" width="20" height="15" rx="2" ${FILL}/><circle cx="31" cy="16.5" r="4.5"/>`);
-  if (/drone/.test(k)) return SVG(56, 32, `<path d="M16 9 L40 23 M40 9 L16 23"/><circle cx="16" cy="9" r="4" ${FILL}/><circle cx="40" cy="9" r="4" ${FILL}/><circle cx="16" cy="23" r="4" ${FILL}/><circle cx="40" cy="23" r="4" ${FILL}/><rect x="24" y="13" width="8" height="6" rx="2" ${FILL}/>`);
+  if (/aerial|drone/.test(k)) return SVG(56, 32, `<path d="M16 9 L40 23 M40 9 L16 23"/><circle cx="16" cy="9" r="4" ${FILL}/><circle cx="40" cy="9" r="4" ${FILL}/><circle cx="16" cy="23" r="4" ${FILL}/><circle cx="40" cy="23" r="4" ${FILL}/><rect x="24" y="13" width="8" height="6" rx="2" ${FILL}/>`);
   if (/cctv/.test(k)) return SVG(56, 32, `<path d="M14 8 H42"/><path d="M18 8 A10 10 0 0 0 38 8" ${FILL}/><circle cx="28" cy="13" r="3"/>`);
   if (/bodycam/.test(k)) return SVG(56, 32, `<rect x="19" y="6" width="18" height="21" rx="3" ${FILL}/><circle cx="28" cy="14" r="4"/><path d="M23 23 H33"/>`);
   if (/camcorder|vhs|dv_|broadcast|early_hd/.test(k)) return SVG(56, 32, `<rect x="12" y="11" width="26" height="12" rx="3" ${FILL}/><path d="M38 14 L46 11 V23 L38 20"/><path d="M16 11 V7 H32 V11"/>`);

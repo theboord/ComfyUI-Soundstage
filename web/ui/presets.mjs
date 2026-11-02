@@ -20,6 +20,7 @@ import { loadCatalog, searchPresets, userPresetFrom, parseUserPresets, userPrese
 import { PresetRunner, RUNNERS, installDirectorTool } from "../presets/runner.mjs";
 import { drawThumb } from "../presets/thumbs.mjs";
 import { LiveThumbs, liveKind, THUMB_W, THUMB_H } from "../presets/livethumbs.mjs";
+import { mountCamAdjust } from "./camadjust.mjs";
 
 export const PRESETS_KEY = "V";
 const USER_FILE = "soundstage/presets.json";
@@ -190,7 +191,8 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
   const toastUndo = h("button", { type: "button", class: "un" }, "Undo");
   const toastSep = h("span", { class: "sep", "aria-hidden": "true" }, "·");
   const toastX = h("button", { type: "button", title: "Dismiss", "aria-label": "Dismiss" }, icon("x", 13));
-  const toast = h("div", { class: "ss-toast", hidden: true, role: "status", "aria-live": "polite" }, icon("check", 15), toastTx, toastSep, toastUndo, toastX);
+  const toastAdj = h("button", { type: "button", class: "un", title: "Fine-tune this camera preset: height, distance, angle, speed, lens", hidden: true }, "Adjust");
+  const toast = h("div", { class: "ss-toast", hidden: true, role: "status", "aria-live": "polite" }, icon("check", 15), toastTx, toastSep, toastUndo, toastAdj, toastX);
   toast.addEventListener("pointerdown", stop);
   root.append(panel, toast);
 
@@ -214,6 +216,9 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
   });
   const runner = new PresetRunner({ stage, host: { confirm: confirmBox, ...host }, catalog, setups });
   RUNNERS.set(stage, runner);
+  // The Adjust panel (camadjust.mjs): the applied camera preset's own numbers, re-keyed as one undo step each.
+  const adjust = mountCamAdjust({ root, runner, say, onChange: () => afterChange() });
+  toastAdj.addEventListener("click", () => { adjust.open(); toast.hidden = true; });
 
   const ready = (async () => {
     try {
@@ -500,7 +505,8 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
 
   // ---- apply, toast, undo
   let toastTimer = 0;
-  function showToast(text, { undo = false, bad = false, label = null } = {}) {
+  function showToast(text, { undo = false, bad = false, label = null, adjustable = false } = {}) {
+    toastAdj.hidden = !adjustable;
     toastTx.replaceChildren(...(label ? [h("b", {}, label), " · "] : []), text);
     toastSep.hidden = !undo;
     toast.dataset.bad = String(bad);
@@ -516,6 +522,7 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
   function afterChange() {
     try { host.onLoad?.(stage.toJSON()); } catch { /* */ }
     if (!panel.hidden) syncTarget();
+    try { adjust?.refresh(); } catch { /* not built yet */ }
   }
 
   async function apply(id, opts = {}) {
@@ -524,8 +531,10 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     const r = await runner.apply(id, opts);
     if (r.ok) {
       if (r.tab === "recipe") showToast(r.said, { undo: !!r.undoable });
-      else showToast(`Applied to ${r.target}`, { undo: !!r.undoable, label: r.label });
+      else showToast(`Applied to ${r.target}`, { undo: !!r.undoable, label: r.label, adjustable: r.tab === "camera" });
       say(r.said);
+      // A camera preset is a starting point: its Adjust panel opens with its numbers.
+      if (r.tab === "camera" && runner.adjustState()) adjust.open();
     } else if (!r.cancelled) { showToast(r.said, { bad: true }); say(r.said); }
     afterChange();
     // Still hovering the card just applied: a camera move keeps previewing; a light or look would only show itself again.
@@ -736,12 +745,12 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
   runner.onApplied = (res) => { if (res?.source === "director") afterChange(); };
 
   return {
-    el: panel, button, toast, runner, ready, get live() { return live; },
+    el: panel, button, toast, runner, ready, adjust, get live() { return live; },
     open, close, toggle, apply, isOpen: () => !panel.hidden, dock,
     undo: () => { const l = runner.undo(); afterChange(); return l; },
     redo: () => { const l = runner.redo(); afterChange(); return l; },
     saveCurrent, exportText, importText, removeUser,
     list: () => [...catalog.presets, ...runner.user].map((p) => ({ id: p.id, tab: p.tab, label: p.label, gpu: !!p.apply?.gpu })),
-    destroy() { close(); window.removeEventListener("keydown", onKey, true); panel.remove(); toast.remove(); button.remove(); RUNNERS.delete(stage); },
+    destroy() { close(); window.removeEventListener("keydown", onKey, true); panel.remove(); toast.remove(); button.remove(); adjust.destroy(); RUNNERS.delete(stage); },
   };
 }

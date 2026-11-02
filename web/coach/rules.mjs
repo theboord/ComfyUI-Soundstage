@@ -10,7 +10,7 @@
 // really films (cameraTrack: the keys through the shot's rig, from web/stage/camrig.mjs, carried along with a
 // ride-along host), not just the keyed spline.
 
-import { applyRig, RIGS, RIG_LIMITS, rigMotion } from "../stage/camrig.mjs";
+import { applyRig, RIGS, RIG_LIMITS, rigType, rigMotion } from "../stage/camrig.mjs";
 
 const SENSOR_W_MM = 36;
 const PEOPLE = new Set(["man", "woman", "child"]);
@@ -414,10 +414,11 @@ export function tooFast(ctx) {
 }
 
 const RIG_NOUN = { tripod: "tripod", dolly: "dolly", chapman: "Chapman dolly", slider: "slider", jib: "jib", steadicam: "Steadicam",
-  handheld: "handheld operator", drone: "drone", drone_fpv: "FPV drone" };
-const RIG_ARTICLE = { tripod: "a", dolly: "a", chapman: "a", slider: "a", jib: "a", steadicam: "a", handheld: "a", drone: "a", drone_fpv: "an" };
+  handheld: "handheld operator", aerial: "aerial gimbal", aerial_fpv: "FPV aerial", drone: "aerial gimbal", drone_fpv: "FPV aerial" };
+const RIG_ARTICLE = { tripod: "a", dolly: "a", chapman: "a", slider: "a", jib: "a", steadicam: "a", handheld: "a", aerial: "an", aerial_fpv: "an",
+  drone: "an", drone_fpv: "an" };
 // The rigs to suggest instead, nearest in feel first.
-const RIG_TRY = ["dolly", "slider", "chapman", "steadicam", "jib", "handheld", "drone", "drone_fpv"];
+const RIG_TRY = ["dolly", "slider", "chapman", "steadicam", "jib", "handheld", "aerial", "aerial_fpv"];
 
 /**
  * A move the shot's rig can't really make: a tripod that travels, a slider longer than any rail, a dolly faster or
@@ -428,7 +429,7 @@ export function rigLimits(ctx) {
   const out = [];
   const fps = fpsOf(ctx.scene), last = lastFrame(ctx.scene);
   for (const shot of ctx.scene.shots || []) {
-    const rig = shot.rig, lim = RIG_LIMITS[rig?.type];
+    const rig = shot.rig?.type ? { ...shot.rig, type: rigType(shot.rig.type) } : shot.rig, lim = RIG_LIMITS[rig?.type];   // "drone": an older scene's aerial
     if (!lim || rig.amount === 0 || !shot.camera_keys?.length) continue;
     // Where the keys ask the camera to go (a tripod's legs and a slider's rail can't), and how the rig moves to get there.
     const keyed = rigMotion(cameraTrack(ctx, { ...shot, rig: null }, { space: "local", noise: false }), fps);

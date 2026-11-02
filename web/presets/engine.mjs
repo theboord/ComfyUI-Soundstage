@@ -9,11 +9,19 @@
 
 export const TAB_IDS = ["camera", "light", "look", "action", "edit", "recipe", "user"];
 export const CAMERA_MOVES = ["push_in", "pull_out", "orbit", "crane_up", "crane_down", "dolly_zoom", "whip_pan", "follow",
-  "drone_reveal", "tracking_side", "car_mount", "long_lens_pan", "arm_car"];
+  "aerial_up", "aerial_down", "aerial_across", "aerial_orbit", "aerial_follow", "tracking_side", "car_mount", "long_lens_pan", "arm_car"];
+/** Old names still read from saved scenes, user presets and the Director (renamed to aerial on 2026-11-02). */
+export const PRESET_ALIASES = { drone_reveal: "aerial_up" };
+export const MOVE_ALIASES = { drone_reveal: "aerial_up" };
+export const RIG_ALIASES = { drone: "aerial", drone_fpv: "aerial_fpv" };
+/** A preset id, camera move or rig as it is called now ("drone_reveal" -> "aerial_up", "drone" -> "aerial"). */
+export const presetId = (id) => PRESET_ALIASES[id] || id;
+export const moveId = (m) => MOVE_ALIASES[m] || m;
+export const rigId = (r) => RIG_ALIASES[r] || r;
 /** Moves keyed off a vehicle's whole path (the runner samples it into spec.path): world-space keys that never spin
  *  with the car, unlike car_mount. A long lens panning from a fixed base, and a camera car pacing alongside. */
 export const CAR_PATH_MOVES = ["long_lens_pan", "arm_car"];
-export const RIG_TYPES = ["free", "tripod", "dolly", "chapman", "slider", "jib", "steadicam", "handheld", "drone"];
+export const RIG_TYPES = ["free", "tripod", "dolly", "chapman", "slider", "jib", "steadicam", "handheld", "aerial", "aerial_fpv"];
 export const TIME_KEYS = ["dawn", "golden_am", "midday", "overcast", "magic_hour", "blue_hour", "night", "keep"];
 export const GRADE_KEYS = ["warmth", "contrast", "saturation", "grain", "halation", "vignette"];
 export const STUNT_KINDS = ["reverse_jturn", "donut", "handbrake_180"];
@@ -74,7 +82,9 @@ export async function loadCatalog(fetchJson = null) {
 export function buildCatalog(base, styles = []) {
   const looks = (Array.isArray(styles) ? styles : []).map(styleToPreset);
   const presets = [...(base.presets || []), ...looks];
-  return { version: base.version || 1, tabs: base.tabs || [], presets, byId: new Map(presets.map((p) => [p.id, p])) };
+  const byId = new Map(presets.map((p) => [p.id, p]));
+  for (const [old, now] of Object.entries(PRESET_ALIASES)) if (!byId.has(old) && byId.has(now)) byId.set(old, byId.get(now));
+  return { version: base.version || 1, tabs: base.tabs || [], presets, byId };
 }
 
 /** Every problem with a catalog (empty = good). The same rules the Python side checks. */
@@ -176,7 +186,8 @@ export function cameraKeys(k0, spec, last = 96) {
   const right = [fn[2], 0, -fn[0]];
   const L = Math.max(1, Math.round(last));
   const key = (frame, pos, tgt, focal = f0) => ({ frame: Math.round(frame), position: R3(pos), target: R3(tgt), focal_mm: r3(focal) });
-  const m = spec?.move;
+  const m = moveId(spec?.move);
+  const up = [0, 1, 0];
   if (m === "push_in") {
     const go = Math.min(dist * (spec.amount ?? 0.4), Math.max(0, dist - 0.8));
     return { keys: [key(0, p, t), key(L, add(p, mul(n, go)), t)], metres: r3(go) };
@@ -211,14 +222,43 @@ export function cameraKeys(k0, spec, last = 96) {
   if (m === "follow") {
     // In the person's own space (+Z = where they face): behind the right shoulder, looking where they go.
     const back = spec.metres ?? 2.4;
-    return { follow: "person", keys: [key(0, [-0.45, 1.62, -back], [0, 1.4, 3])] };
+    return { follow: "person", keys: [key(0, [-0.45, spec.height ?? 1.62, -back], [0, 1.4, 3])] };
   }
-  if (m === "drone_reveal") {
+  if (m === "aerial_up") {
+    // Rising: lifts h metres and pulls back over the subject to reveal the whole set (the old Drone reveal, same keys).
     const h = spec.metres ?? 8;
     const p1 = [p[0] - fn[0] * h * 0.9, p[1] + h, p[2] - fn[2] * h * 0.9];
     const pm = [p[0] - fn[0] * h * 0.35, p[1] + h * 0.45, p[2] - fn[2] * h * 0.35];
     const t1 = add(t, mul(fn, h * 0.6));
     return { keys: [key(0, p, t), key(L * 0.5, pm, add(t, mul(fn, h * 0.25))), key(L, p1, [t1[0], 0, t1[2]])], metres: h };
+  }
+  if (m === "aerial_down") {
+    // Top-down: straight over the subject looking down, the frame's top toward where the shot looked, climbing slowly
+    // (a quarter higher by the end) and turning `degrees` round the subject: the classic bird's-eye.
+    const h = Math.max(2, spec.metres ?? 12), deg = spec.degrees ?? 20, ground = [t[0], 0, t[2]];
+    const over = (hh, a) => { const f = yaw(fn, [0, 0, 0], a); return [ground[0] - f[0] * 0.02, hh, ground[2] - f[2] * 0.02]; };
+    return { keys: [key(0, over(h, 0), ground), key(L, over(h * 1.25, deg), ground)], metres: h, degrees: deg };
+  }
+  if (m === "aerial_across") {
+    // Fly-over: at h metres, flies straight across the subject along the shot's direction, looking ahead and down at
+    // 40 degrees, so the subject comes in from the top of frame, passes under and goes out the bottom.
+    const h = Math.max(2, spec.metres ?? 10), run = spec.distance ?? Math.max(10, h * 1.6);
+    const g = [t[0], 0, t[2]];
+    const at = (u) => { const q = add(g, mul(fn, run * (u - 0.5))); return [q[0], h, q[2]]; };
+    const look = (q) => add(add(q, mul(fn, h / Math.tan(40 * D2R))), mul(up, -h));
+    return { keys: [0, 0.5, 1].map((u) => key(L * u, at(u), look(at(u)))), metres: h, distance: r3(run) };
+  }
+  if (m === "aerial_orbit") {
+    // A high orbit: `degrees` round the subject at h metres up, at the shot's distance, looking down at it.
+    const h = Math.max(2, spec.metres ?? 10), deg = spec.degrees ?? 90, N = 6;
+    const flatD = Math.max(4, spec.distance ?? Math.hypot(p[0] - t[0], p[2] - t[2]));
+    const start = [t[0] - fn[0] * flatD, t[1] + h, t[2] - fn[2] * flatD];
+    return { keys: Array.from({ length: N + 1 }, (_, i) => key((L * i) / N, yaw(start, t, (deg * i) / N), t)), metres: h, degrees: deg, distance: r3(flatD) };
+  }
+  if (m === "aerial_follow") {
+    // Follows the subject (a car or a person) from above and behind, in its own space (+Z = where it heads).
+    const h = Math.max(2, spec.metres ?? 8), back = spec.distance ?? 10;
+    return { follow: spec.follow || "any", keys: [key(0, [0, h, -back], [0, 0.8, 4])], metres: h, distance: back };
   }
   if (m === "tracking_side") {
     const s = spec.metres ?? 4;

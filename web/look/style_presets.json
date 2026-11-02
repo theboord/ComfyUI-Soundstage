@@ -902,7 +902,7 @@
     },
     "craft": {
       "lighting": "Large soft single sources, silhouette backlight, haze to lift the blacks; one accent colour at most.",
-      "camera_movement": "Slow, stately dollies and crane moves; drones for scale; no handheld.",
+      "camera_movement": "Slow, stately dollies and crane moves; aerial shots for scale; no handheld.",
       "framing": "Symmetrical one-point frames, tiny figures against massive structures, clean negative space.",
       "shot_tips": [
         "Make the architecture the subject: figures small, structures huge",
@@ -1941,12 +1941,12 @@
     },
     "craft": {
       "lighting": "Overcast flat daylight, cool low-key interiors, a single warm practical lamp.",
-      "camera_movement": "Patient static frames, slow dollies, drone shots over bleak landscapes.",
+      "camera_movement": "Patient static frames, slow dollies, aerial shots over bleak landscapes.",
       "framing": "Characters small in empty landscapes; tight faces in muted interiors.",
       "shot_tips": [
         "Shoot exteriors in overcast; avoid sun",
         "Keep one warm practical in every cool interior",
-        "Use drone wides to isolate a car on an empty road"
+        "Use aerial wides to isolate a car on an empty road"
       ]
     },
     "references": [

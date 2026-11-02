@@ -229,7 +229,7 @@ export function lockToShots(scene, beats) {
 
 // ------------------------------------------------------------------------------------------- the session
 
-export const PITCH_WORDS = "A film pitch, spoken out loud: night, day, dawn, rain, a rainy street, an alley, fog, snow, a detective, a woman, a car, headlights. The camera: low angle, high angle, handheld, steadicam, dolly, drone, close-up, wide shot, follows.";
+export const PITCH_WORDS = "A film pitch, spoken out loud: night, day, dawn, rain, a rainy street, an alley, fog, snow, a detective, a woman, a car, headlights. The camera: low angle, high angle, handheld, steadicam, dolly, aerial shot, close-up, wide shot, follows.";
 
 /** Fit the capture into maxW px wide, as JPEG (sketches are 0.3 MP; a PNG of the frame is ~6x the bytes, and the
  *  upload to a remote ComfyUI was the slowest stage of a beat: 1-10 s through a tunnel, measured). */

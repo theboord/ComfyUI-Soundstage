@@ -1687,9 +1687,11 @@ function createStageWidget(node, inputName) {
   });
   // Timed mount: on foot until the playhead frame, then they hop on and ride with it.
   // Vehicles: the shot camera can ride along (keys in the car's own space), with in-car framings.
+  // Car mounts (web/stage/carmounts.mjs): hood, bumpers, trunk, roof, side door, low at either wheel, tyre, inside, chase;
+  // each is placed from the car's own size, and the Adjust panel (camera presets) moves it, flips its side or changes its lens.
   const followOpts = { "": { label: "—" }, all: { label: "＋ All interior shots (one per angle)" }, ride: { label: "Ride along (keep framing)" },
-    ...Object.fromEntries(Object.entries(CAR_SHOTS).map(([k, v]) => [k, { label: v.label }])), off: { label: "Stop riding along" } };
-  const followSel = mkSelect("In-car camera", followOpts, "", (v) => {
+    ...Object.fromEntries(stage.carMountOptions().map((o) => [o.id, { label: `${o.group} · ${o.label}` }])), off: { label: "Stop riding along" } };
+  const followSel = mkSelect("Car camera mount", followOpts, "", (v) => {
     const sel = stage.selectedInfo();
     if (!sel || !v) return;
     if (v === "off") { stage.setCameraFollow(null); status.textContent = "The shot camera is back in the world."; }
@@ -1702,7 +1704,9 @@ function createStageWidget(node, inputName) {
     }
     else {
       stage.setCameraFollow(sel.id, v === "ride" ? null : v);
-      status.textContent = `The shot camera rides with ${sel.name}${v === "ride" ? "" : ": " + CAR_SHOTS[v].label}. Move the car and the world goes by outside.`;
+      status.textContent = `The shot camera rides with ${sel.name}${v === "ride" ? "" : ": " + CAR_SHOTS[v].label}. Move the car and the world goes by outside.`
+        + (v === "ride" ? "" : " Fine-tune it in the Adjust panel: side, forward, up, out, turn, tilt, lens.");
+      if (v !== "ride") try { node.ssPresets?.adjust?.open(); } catch { /* presets not mounted */ }
     }
     followSel.sel.value = "";
   });

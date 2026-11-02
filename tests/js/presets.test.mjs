@@ -100,7 +100,7 @@ test("catalog: every tab, unique ids, valid apply blocks, the asked-for presets"
   assert.deepEqual(validateCatalog(cat), []);
   assert.deepEqual(cat.tabs.map((t) => t.id), TAB_IDS);
   const by = (tab) => cat.presets.filter((p) => p.tab === tab).map((p) => p.id);
-  for (const id of ["push_in", "pull_out", "orbit", "crane_up", "crane_down", "dolly_zoom", "whip_pan", "handheld_follow", "drone_reveal", "tracking_side", "car_mount"]) assert.ok(by("camera").includes(id), id);
+  for (const id of ["push_in", "pull_out", "orbit", "crane_up", "crane_down", "dolly_zoom", "whip_pan", "handheld_follow", "aerial_up", "aerial_down", "aerial_across", "aerial_orbit", "aerial_follow", "tracking_side", "car_mount"]) assert.ok(by("camera").includes(id), id);
   for (const id of ["golden_hour", "blue_hour", "night_street", "noir_hard_key", "neon_night", "overcast", "candle_firelight", "studio_three_point"]) assert.ok(by("light").includes(id), id);
   for (const id of ["reverse_jturn", "donut", "handbrake_180", "crate_crash", "drop", "throw", "climb_mount"]) assert.ok(by("action").includes(id), id);
   for (const id of ["trailer_cut", "music_video", "dialogue_coverage", "social_vertical"]) assert.ok(by("edit").includes(id), id);
@@ -159,7 +159,7 @@ test("every camera move writes sensible keys", () => {
   assert.ok(Math.abs(dist(tr[0].position, tr[1].position) - 4) < 1e-6);
   assert.equal(cameraKeys(K0, { move: "follow" }, 96).follow, "person");
   assert.equal(cameraKeys(K0, { move: "car_mount" }, 96).follow, "vehicle");
-  assert.ok(cameraKeys(K0, { move: "drone_reveal", metres: 8 }, 96).keys[2].position[1] > 8);
+  assert.ok(cameraKeys(K0, { move: "aerial_up", metres: 8 }, 96).keys[2].position[1] > 8);
 });
 
 test("lighting, physics and edit helpers", () => {

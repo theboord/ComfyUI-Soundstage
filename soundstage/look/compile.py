@@ -266,12 +266,13 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     count = not lock or n > 0
     # A frame picked before Milestone 5 re-renders with the words it was painted with (stage sends look_start false).
     real = real_people_wanted(look) and not legacy
-    if vcam and vcam.get("where") in ("interior", "hood", "bumper", "wheel") and place and place != "underwater":
+    if vcam and vcam.get("where") in ("interior", "hood", "bumper", "wheel", "rear", "roof", "side") and place and place != "underwater":
         place_words = f"driving through {place}" if (S.camera_move(scene).get("rides") or {}).get("moving") else f"parked in {place}"
     else:
         place_words = (place and f"in {place}") if place != "underwater" else "underwater"
     prompt = _join([
         (vcam or {}).get("lead", ""),          # where the camera is goes first: depth alone reads a dashboard as a hood
+        S.aerial_shot(scene) or "",            # an aerial rig or a camera high over the set: "aerial shot", never "drone"
         *style,
         _frag("era", look, "still"),
         desc,
@@ -469,7 +470,10 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
         where = {"interior": f"Interior {f1['size_ltx'].lower()} inside a {going} {rides.get('noun', 'car')}{through}",
                  "hood": f"Exterior {f1['size_ltx'].lower()} from the hood of a {going} {rides.get('noun', 'car')}{through}",
                  "bumper": f"Exterior {f1['size_ltx'].lower()} from the front bumper of a {going} {rides.get('noun', 'car')}{through}",
-                 "wheel": f"Exterior {f1['size_ltx'].lower()} from just above the front wheel of a {going} {rides.get('noun', 'car')}{through}"}
+                 "wheel": f"Exterior {f1['size_ltx'].lower()} from just above the front wheel of a {going} {rides.get('noun', 'car')}{through}",
+                 "rear": f"Exterior {f1['size_ltx'].lower()} from the back of a {going} {rides.get('noun', 'car')}{through}",
+                 "roof": f"Exterior {f1['size_ltx'].lower()} from the roof of a {going} {rides.get('noun', 'car')}{through}",
+                 "side": f"Exterior {f1['size_ltx'].lower()} from the side of a {going} {rides.get('noun', 'car')}{through}"}
         head = where.get(vcam.get("where"), where["interior"])
     else:
         head = _join([
@@ -513,6 +517,7 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
         "" if scene.get("look_start") is False else body_words(scene, _in_shot_ids(scene, f1)),
         "" if scene.get("look_start") is False else people_identity(scene, look, _in_shot_ids(scene, f1)),
         head_beats(scene),                       # head and gaze blocking: every person's head, beat by beat
+        _cap(S.aerial_shot(scene) or "") + ("." if S.aerial_shot(scene) else ""),   # "Aerial shot.", never "drone"
         _camera_sentence(mf, f1, look),
         impact_beats(scene),                     # Milestone 21: timed material beats off the baked hits
         still_words(scene, {e["id"] for e in f1["people"] + f1["others"]}),   # Milestone 26: what each object's parts show

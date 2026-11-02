@@ -1,4 +1,4 @@
-// Camera rigs that hit their marks (web/stage/camrig.mjs and the Stage's rig cache): a level gimbal drone and a banking
+// Camera rigs that hit their marks (web/stage/camrig.mjs and the Stage's rig cache): a level aerial gimbal and a banking
 // FPV quad, a jib whose first mark sits on its arm, rigs that pass every key on time, dutch angles that survive the
 // rig, a cache that follows lens keys and the ride-along host, and rigs on a moving car that stay on their mount.
 // Pure maths on synthetic paths, then a headless Stage (no WebGL) on the demo scenes and the shipped camera presets.
@@ -95,7 +95,7 @@ test("pinToMarks: exactly on the base at every mark, untouched far from the mark
   for (const f of [0, 57, 60, 63, 120]) assert.ok(Math.abs(o2[f]) < 1e-12, `close marks: frame ${f}`);
 });
 
-test("Drone (gimbal): the horizon stays level on straight flights along ±X, ±Z and a diagonal, at 1 and 3 m/s", () => {
+test("Aerial (gimbal): the horizon stays level on straight flights along ±X, ±Z and a diagonal, at 1 and 3 m/s", () => {
   for (const dir of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [Math.SQRT1_2, 0, Math.SQRT1_2]]) {
     for (const v of [1, 3]) {
       const path = Array.from({ length: 121 }, (_, f) => {
@@ -103,7 +103,7 @@ test("Drone (gimbal): the horizon stays level on straight flights along ±X, ±Z
         return { position: [dir[0] * s, 10, dir[2] * s], target: [dir[0] * (s + 20), 0, dir[2] * (s + 20)], focal_mm: 28 };
       });
       for (const seed of [1, 7, 4242]) {
-        const out = applyRig(path, { type: "drone", amount: 1, seed }, 24, { keyFrames: [0, 120] });
+        const out = applyRig(path, { type: "aerial", amount: 1, seed }, 24, { keyFrames: [0, 120] });
         const worst = Math.max(...out.map((c) => Math.abs(deg(c.roll))));
         assert.ok(worst < 0.2, `${dir} at ${v} m/s (seed ${seed}): |roll| ${worst.toFixed(3)}°`);
       }
@@ -111,14 +111,14 @@ test("Drone (gimbal): the horizon stays level on straight flights along ±X, ±Z
   }
 });
 
-test("Drone (FPV): banks atan(v²/(R g)) = 7.3° into a 20 m turn at 5 m/s, rolling no faster than 30°/s", () => {
+test("Aerial (FPV): banks atan(v²/(R g)) = 7.3° into a 20 m turn at 5 m/s, rolling no faster than 30°/s", () => {
   const R = 20, v = 5, want = deg(Math.atan((v * v) / (R * 9.81)));
   for (const lookAhead of [false, true]) {
     const path = Array.from({ length: 121 }, (_, f) => {
       const th = (v * f) / 24 / R, th2 = th + 0.3;
       return { position: [R * Math.sin(th), 10, R * Math.cos(th)], target: lookAhead ? [R * Math.sin(th2), 9, R * Math.cos(th2)] : [0, 0, 0], focal_mm: 28 };
     });
-    const roll = applyRig(path, { type: "drone_fpv", amount: 1, seed: 3 }, 24, { keyFrames: [0, 120] }).map((c) => deg(c.roll));
+    const roll = applyRig(path, { type: "aerial_fpv", amount: 1, seed: 3 }, 24, { keyFrames: [0, 120] }).map((c) => deg(c.roll));
     for (let f = 24; f <= 120; f++) assert.ok(Math.abs(roll[f] - want) <= 1.5, `frame ${f}: bank ${roll[f].toFixed(2)}° (want ${want.toFixed(2)}°)`);
     assert.ok(peakRate(roll) <= 30 + 1e-9, `roll rate ${peakRate(roll).toFixed(1)}°/s`);
     // Turning toward +X from +Z is a left turn: the quad rolls left (positive roll = camera's right side up).
@@ -126,22 +126,22 @@ test("Drone (FPV): banks atan(v²/(R g)) = 7.3° into a 20 m turn at 5 m/s, roll
   }
   // Straight and level flight: no bank.
   const straight = Array.from({ length: 121 }, (_, f) => ({ position: [0, 10, f * 0.3], target: [0, 8, f * 0.3 + 20], focal_mm: 24 }));
-  assert.ok(Math.max(...applyRig(straight, { type: "drone_fpv", seed: 2 }, 24).map((c) => Math.abs(deg(c.roll)))) < 1e-6);
+  assert.ok(Math.max(...applyRig(straight, { type: "aerial_fpv", seed: 2 }, 24).map((c) => Math.abs(deg(c.roll)))) < 1e-6);
   // A snap into a hard turn still rolls at 30°/s at most.
   const snap = Array.from({ length: 121 }, (_, f) => {
     const s = f < 60 ? 0 : (f - 60) / 24, th = (12 * s) / 8;
     return { position: f < 60 ? [0, 10, -12 * (60 - f) / 24] : [8 - 8 * Math.cos(th), 10, 8 * Math.sin(th)], target: [0, 0, 30], focal_mm: 24 };
   });
-  const sr = applyRig(snap, { type: "drone_fpv", seed: 5 }, 24).map((c) => deg(c.roll));
+  const sr = applyRig(snap, { type: "aerial_fpv", seed: 5 }, 24).map((c) => deg(c.roll));
   assert.ok(peakRate(sr) <= 30 + 1e-9 && Math.max(...sr) > 20, `a 12 m/s turn on 8 m banks hard but smoothly (${Math.max(...sr).toFixed(1)}°)`);
 });
 
-test("rig list: gimbal and FPV drones are both offered, each rig with physical limits", () => {
-  assert.equal(RIGS.drone.label, "Drone (gimbal)");
-  assert.equal(RIGS.drone_fpv.label, "Drone (FPV)");
+test("rig list: gimbal and FPV aerial rigs are both offered, each rig with physical limits", () => {
+  assert.equal(RIGS.aerial.label, "Aerial (gimbal)");
+  assert.equal(RIGS.aerial_fpv.label, "Aerial (FPV)");
   for (const id of Object.keys(RIGS)) if (id !== "free") assert.ok(RIG_LIMITS[id]?.why, id);
   const st = crane();
-  assert.ok(st.rigInfo().options.some((o) => o.id === "drone_fpv"));
+  assert.ok(st.rigInfo().options.some((o) => o.id === "aerial_fpv"));
 });
 
 // ------------------------------------------------------------------ the jib
@@ -190,10 +190,10 @@ test("jib: arm and pivot are rig params, kept by the shot and reported by rigInf
 
 // ------------------------------------------------------------------ hitting the marks
 
-test("rigs hit their marks: Push in on a dolly, Drone reveal on the drone, Steadicam on the demo crane, within 2 cm", () => {
-  for (const [name, keys, rig, tol] of [["push in", preset("push_in", { amount: 0.4 }), "dolly"], ["drone reveal", preset("drone_reveal", { metres: 8 }), "drone"],
+test("rigs hit their marks: Push in on a dolly, Aerial up on the aerial gimbal, Steadicam on the demo crane, within 2 cm", () => {
+  for (const [name, keys, rig, tol] of [["push in", preset("push_in", { amount: 0.4 }), "dolly"], ["aerial up", preset("aerial_up", { metres: 8 }), "aerial"],
     ["demo crane", policeChase().shots[0].camera_keys, "steadicam"], ["tracking side", preset("tracking_side", { metres: 4 }), "dolly"],
-    ["demo crane", policeChase().shots[0].camera_keys, "drone_fpv"], ["demo crane", policeChase().shots[0].camera_keys, "jib"],
+    ["demo crane", policeChase().shots[0].camera_keys, "aerial_fpv"], ["demo crane", policeChase().shots[0].camera_keys, "jib"],
     ["demo crane", policeChase().shots[0].camera_keys, "chapman"], ["demo crane", policeChase().shots[0].camera_keys, "handheld", 0.03]]) {
     const { R, keys: ks } = onRig(crane(), keys, rig);
     const miss = worstKeyMiss(ks, R);
@@ -202,8 +202,8 @@ test("rigs hit their marks: Push in on a dolly, Drone reveal on the drone, Stead
   }
 });
 
-test("the Drone reveal preset stays level (|roll| < 0.2°)", () => {
-  const { R } = onRig(crane(), preset("drone_reveal", { metres: 8 }), "drone");
+test("the Aerial up preset stays level (|roll| < 0.2°)", () => {
+  const { R } = onRig(crane(), preset("aerial_up", { metres: 8 }), "aerial");
   assert.ok(Math.max(...R.map((c) => Math.abs(deg(c.roll || 0)))) < 0.2);
 });
 
@@ -255,8 +255,8 @@ test("amount 0 is exactly the keys (identical to Free); the amount scales the sh
   assert.ok(shake(0.5) < shake(1) && shake(1) < shake(2));
 });
 
-test("a keyed 12° dutch survives every rig: exact on the supports, ±1° handheld / Steadicam, ±0.2° gimbal drone", () => {
-  const tol = { tripod: 1e-9, dolly: 1e-9, chapman: 1e-9, slider: 1e-9, jib: 1e-9, handheld: 1, steadicam: 1, drone: 0.2, free: 1e-9 };
+test("a keyed 12° dutch survives every rig: exact on the supports, ±1° handheld / Steadicam, ±0.2° aerial gimbal", () => {
+  const tol = { tripod: 1e-9, dolly: 1e-9, chapman: 1e-9, slider: 1e-9, jib: 1e-9, handheld: 1, steadicam: 1, aerial: 0.2, free: 1e-9 };
   const st = crane();
   st.setPart("__camera__", "roll_deg", 12);
   for (const [rig, t] of Object.entries(tol)) {
@@ -321,7 +321,7 @@ test("ride-along: an FPV quad chasing a car banks with the car's real turns", ()
   car.keys = Array.from({ length: 7 }, (_, i) => { const th = (i / 6) * 2; return { frame: i * 20, position: [25 - 25 * Math.cos(th), 0, 25 * Math.sin(th)] }; });
   const st = headless(sc);
   st.setActiveShot("tracking");
-  st.setRig("drone_fpv");
+  st.setRig("aerial_fpv");
   const rolls = [];
   for (let f = 0; f <= LAST; f++) rolls.push(deg(st._shotCameraAt(f).roll || 0));
   assert.ok(Math.abs(rolls[60]) > 10, `banks ${rolls[60].toFixed(1)}°`);

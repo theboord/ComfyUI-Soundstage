@@ -54,7 +54,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 - **Script to ScriptSync dailies.** Import a screenplay; get a breakdown, slated setups, circled takes and an Avid-style lined script where a click on a coverage line plays that take.
 - **Actors you direct, not prompt.** Pose them to the fingertips with IK, or mocap them from any clip or your webcam into the set you already built. Horses and riders, cars with seated cast.
 - **Live physics and movie stunts.** Drag people onto crates and horses, knock stacks over, crash cars through crates; reverse J-turns, donuts and handbrake 180s that roll on their springs.
-- **Real camera rigs and true coverage.** Dolly, jib, Steadicam, handheld, drone, hood mounts, real lenses and solar-accurate light; several setups from one blocking, consistent by construction. Your **phone is the viewfinder**.
+- **Real camera rigs and true coverage.** Dolly, jib, Steadicam, handheld, aerial, car mounts anywhere on the car (hood, bumpers, trunk, roof, side, wheels, chase), real lenses and solar-accurate light; several setups from one blocking, consistent by construction. Your **phone is the viewfinder**.
 - **Hollywood-grade finals that check themselves.** Draft · Final · Hollywood (2624×1408) on LTX-2.5; every take is checked for freezes, jumps, face drift and cars driving backwards, and scored on how well it **follows your blocking**.
 - **A real NLE timeline, delivered at source spec.** Dissolves, dips, wipes, sound generated in place, loudness to broadcast targets; export to Avid, Premiere, Resolve and FCP (EDL, XML, FCPXML, OTIO, AAF) with the camera original's timecode, plus VFX Layer Packs.
 - **Round trip with Blender, Unreal, Maya and Nuke.** Import a whole world as the set; send the shot back with builder scripts (measured IoU 0.99+ in Blender).
@@ -64,6 +64,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 
 | When | Update |
 |---|---|
+| Nov 2, 15:50 PST | **Move the camera after the preset:** every camera preset opens an **Adjust** card (height, distance, angle, speed, lens); car mounts anywhere on any car (hood, bumpers, trunk, roof, side door, low at either wheel, tyre, inside, chase) that lean with the body; "drone" is now **aerial**: Aerial up, down, across, orbit and follow. |
 | Nov 2, 11:10 PST | **Try-it demo at phone width:** long chooser chips and the frame-generate row wrap, and the Coach pill steps below the **Identical?** bar. |
 | Nov 2, 10:45 PST | **Try it in your browser:** a first screen that shows clay becoming the shot, a 10-stop tour of what's new, and a real Video → 3D run replayed through the App. Video → 3D seats a car's driver and builds a city street; the rebuild is still the basic version. |
 | Nov 2, 10:13 PST | **Docs checked against the code:** README, Quickstart, Tutorial, MCP and Video → 3D pages match the App today, including what the Video → 3D server doesn't do yet. |
@@ -181,7 +182,7 @@ Press `/` (or **Director** in the top bar) and say what you want: *"put Mara in 
 
 ### Presets: one click, one undo
 
-Press `V` for a searchable window of **Camera moves** (push in, crane up, dolly zoom, drone reveal, car mount, and the racing set: bumper cam, over the tyre, arm car, long-lens pan…), **Lighting**, **Looks**, **Action**, **Edit styles**, **Recipes** and **Mine** (save your own camera, light or look). Hover a camera move to preview it on the shot; every apply is one ⌘Z. The Director can call them too ("make it a crane up at golden hour"). → [Tutorial](docs/TUTORIAL.md#presets-one-click-camera-moves-and-lighting)
+Press `V` for a searchable window of **Camera moves** (push in, crane up, dolly zoom, aerial up / down / across / orbit / follow, car mounts, and the racing set: bumper cam, over the tyre, arm car, long-lens pan…), **Lighting**, **Looks**, **Action**, **Edit styles**, **Recipes** and **Mine** (save your own camera, light or look). Hover a camera move to preview it on the shot; every apply is one ⌘Z. The Director can call them too ("make it a crane up at golden hour"). → [Tutorial](docs/TUTORIAL.md#presets-one-click-camera-moves-and-lighting)
 
 <p align="center"><img src="docs/media/presets.jpg" width="760" alt="The Presets window: camera move cards (Push in, Pull out, Orbit, Crane up, Dolly zoom, Whip pan, Handheld follow, Drone reveal, Tracking side, Car mount), with 'Applied Crane up to shot 1' and Undo"></p>
 
@@ -245,7 +246,7 @@ Scan a QR code and your phone shows the live stage through the shot camera, and 
 |---|---|
 | &#128221; **Import a script** (Fountain, Final Draft, PDF, text) and get a breakdown, a scene strip and auto scene setup | &#127917; **Cast every character and location** in one click with FLUX 3 Klein, then pick who is in each shot |
 | &#129521; **Block scenes in 3D clay**: actors with sculpted hair, horses, cars, props, lights and weather | &#9995; **Pose to the fingertips** in 3D with IK, or **capture motion** from any video or your webcam (SAM 3D Body) |
-| &#127909; **Shoot with real camera rigs**: dolly, jib, Steadicam, handheld, drone, with a Top plan view | &#127916; **Turn any clip into a 3D set** with Video &rarr; 3D set: rebuilt location, tracked camera, the performer |
+| &#127909; **Shoot with real camera rigs**: dolly, jib, Steadicam, handheld, aerial, with a Top plan view | &#127916; **Turn any clip into a 3D set** with Video &rarr; 3D set: rebuilt location, tracked camera, the performer |
 | &#127912; **Paint the first frame** in Paint Studio: fill, remove, extend to any aspect | &#128266; **Animate with sound** on LTX-2.5; type a line and LTX speaks it, lip-synced |
 | &#127902;&#65039; **Swap the film look** with one swatch: same animation, any look | &#9878;&#65039; **Compare Clay &#124; Draft &#124; Final** on a 3-way Ladder, approve or Redo every take |
 | &#128450;&#65039; **Review as dailies**: Avid-style scene bins and a lined script | &#128228; **Deliver to Premiere, Avid or Resolve** at the source spec (4K, 8K, RED via proxy relink), plus a VFX Layer Pack |
@@ -411,7 +412,7 @@ ComfyUI's cache means each Run only does the new work.
 - **3D stage.** Add objects by name ("cowboy on a horse", "police car"). Riders sit astride horses, bikes and motorcycles. Sets include a plaza, a night street, interiors, a studio, forest, desert, beach, a water tank, open water, a lake, river rapids, a stadium, an underwater reef, a burning building, an airplane cabin, a runway, above the clouds, a train carriage and a station platform, with rain, snow, fog, smoke, dust and sparks. GLB import and export.
 - **Rigged CC0 models.** A rigged horse (idle, walk, gallop) and three cars (hatchback, police car, sports car) by Quaternius, CC0.
 - **Flashlight prop.** A handheld flashlight with a real beam. Drag it onto a person to hand it to them.
-- **In-car camera presets.** The shot camera can ride along inside a vehicle, with interior framings. **＋ All interior shots** adds one shot per interior angle in a single click.
+- **Car camera mounts.** The shot camera can ride along on or in a vehicle: hood, bumpers, trunk, roof, side door, low at either wheel, tyre, interior framings or a chase car, each adjustable after you pick it. **＋ All interior shots** adds one shot per interior angle in a single click.
 - **Camera.** Real lenses and aspect ratios (1.85, 2.39, 16:9, 9:16 and more), Catmull-Rom keyframes, free-fly view. A virtual camera turns a phone, iPad, Quest or Vision Pro into the shot camera; its stabilizer smooths your move rather than replacing it. The **phone viewfinder** shows the live stage on the phone, with primes, focus pulls and an iris.
 - **Light.** Solar-accurate time of day: set the hour and North, and the sun sits where it would (the date and latitude come from the scene; Los Angeles in late October by default). Film lights (key, fill, rim, practical, spot, neon) with Kelvin, power and softness.
 - **Look tab.** 32 genre style presets and 18 ASC-style lighting setups (three-point, Rembrandt, low-key noir, book light and more), plus camera body, lens, film stock, era and grade. It compiles the still prompt and the LTX motion prompt from the stage itself.

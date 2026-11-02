@@ -8,9 +8,10 @@
 // host (all optional; see web/ui/presets.mjs for the App's): look {get(), set(patch), load(json), applyStyle(id)} ·
 // cut {load(), save(v), add(ids), panel()} · pipeline · shotsInOrder() · wholeFrame(prompt) · importVideo() ·
 // confirm(message) -> Promise<bool> · say(msg).
-import { uniqueNames, cameraKeys, CAR_PATH_MOVES, lightingPlan, gradePatch, crateStack, driveKeys, throwKeys, editStyleCut, userCameraKeys, swimKeys,
+import { uniqueNames, cameraKeys, CAR_PATH_MOVES, presetId, moveId, lightingPlan, gradePatch, crateStack, driveKeys, throwKeys, editStyleCut, userCameraKeys, swimKeys,
   VEHICLE_KINDS, PERSON_KINDS, RIDE_KINDS, LOW_PROPS } from "./engine.mjs";
 import { seabedHeight } from "../stage/sets/underwater.mjs";
+import { adjustedSpec, postAdjust, mountOpts, mountValues, adjustControls } from "./adjust.mjs";
 import { imperfectStack, idSeed } from "../stage/impacts.mjs";
 import { SOFT_PRESET_KINDS, softPreset } from "./softpresets.mjs";
 import { boatPreset, isBoat } from "./boatpresets.mjs";
@@ -43,7 +44,8 @@ function colliderBox({ half, pos, quat }) {
 const DEG = Math.PI / 180;
 /** The support a move gets when its preset doesn't name one. */
 const DEFAULT_RIG = { push_in: "dolly", pull_out: "dolly", dolly_zoom: "dolly", whip_pan: "tripod", car_mount: "free",
-  long_lens_pan: "tripod", arm_car: "free" };
+  long_lens_pan: "tripod", arm_car: "free", aerial_up: "aerial", aerial_down: "aerial", aerial_across: "aerial", aerial_orbit: "aerial",
+  aerial_follow: "aerial" };
 const STEP_SAID = {
   video_to_3d: "rebuild the video as a 3D set", new_angle: "add a new angle", ripple_mode: "open Ripple edit",
   whole_frame: "open Whole frame", quality_draft: "set Draft quality", quality_hollywood: "set Hollywood quality",
@@ -63,7 +65,7 @@ export class PresetRunner {
     this._hookUndo();
   }
 
-  get(id) { return this.catalog?.byId?.get(id) || this.user.find((p) => p.id === id) || null; }
+  get(id) { return this.catalog?.byId?.get(id) || this.catalog?.byId?.get(presetId(id)) || this.user.find((p) => p.id === id) || null; }
   all() { return [...(this.catalog?.presets || []), ...this.user]; }
 
   // ----------------------------------------------------------------------------------------- what it acts on
@@ -228,7 +230,7 @@ export class PresetRunner {
 
   async _run(p, opts) {
     const a = p.apply || {};
-    if (a.camera) return this._camera(p);
+    if (a.camera) return this._camera(p, opts);
     if (a.light) return this._light(p);
     if (a.look) return this._look(p);
     if (a.stunt) return this._stunt(p);
@@ -242,26 +244,50 @@ export class PresetRunner {
     return { ok: false, said: `${p.label} has nothing to apply.` };
   }
 
-  _camera(p) {
-    const st = this.stage, a = p.apply;
+  _camera(p, opts = {}) {
+    const st = this.stage, a0 = p.apply;
     const info = this.shotInfo();
     let sh = info.shot;
     const keys = sh.camera_keys || this.scene().camera_keys || [];
+    // Adjust (opts.adjust = the panel's values): the same move re-keyed from the camera it started from, with the
+    // preset's own numbers changed; a car mount moves on the car instead.
+    const values = opts.adjust || null;
+    const prev = values && sh.camera_preset?.id === p.id ? sh.camera_preset : null;
+    const a = values ? { ...a0, camera: adjustedSpec(a0.camera, values) } : a0;
+    if (values && moveId(a.camera.move) === "car_mount" && sh.camera_mount && this._liveShot()) {
+      const mo = mountOpts(values);
+      const m = st.setCarMount?.(mo);
+      if (!m) return { ok: false, said: `${p.label}: this shot's camera isn't on a car mount any more.` };
+      this._markPreset(p, values, null);
+      return { ok: true, said: `Adjusted '${p.label}' on ${info.label}.`, adjusted: true };
+    }
     // A move after a person-follow (handheld) goes back to world space first; a car mount keeps riding the car.
     const followed = sh.camera_follow ? this._actors().find((x) => x.id === sh.camera_follow) : null;
-    const carPath = CAR_PATH_MOVES.includes(a.camera.move);
-    // A car-path move (long-lens pan, arm car) is world space: off the car first, whatever it was riding.
-    if (followed && ((isPerson(followed) && a.camera.move !== "follow") || carPath)) { st.setCameraFollow(null); sh = this.shotInfo().shot; }
-    const k0 = (sh.camera_keys || keys)[0];
+    const move = moveId(a.camera.move);
+    const carPath = CAR_PATH_MOVES.includes(move);
+    // A car-path move (long-lens pan, arm car) is world space: off the car first, whatever it was riding. An aerial
+    // move (other than the aerial follow) is world space too: off a car mount first, or it would fly with the car.
+    const aerialWorld = /^aerial_/.test(move) && move !== "aerial_follow";
+    if (followed && ((isPerson(followed) && move !== "follow") || carPath || aerialWorld)) { st.setCameraFollow(null); sh = this.shotInfo().shot; }
+    const k0 = prev?.base || (sh.camera_keys || keys)[0];
     if (carPath && !this._vehicle()) return { ok: false, said: `${p.label} needs a car on set to track: add one (type “sports car” in Add) and try again.` };
     const plan = this.cameraPlan(a.camera, k0);
     if (!plan) return { ok: false, said: `${p.label}: this shot has no camera to move yet.` };
     let note = null;
+    // Angle, height, speed and lens from the panel go on the keys the move wrote.
+    if (values && plan.keys?.length) plan.keys = postAdjust(plan.keys, values, { k0, last: this._last(), local: !!plan.follow });
     if (plan.follow === "vehicle") {
       const v = this._vehicle();
       if (!v) return { ok: false, said: "Car mount needs a car on set: add one (type “sports car” in Add) and try again." };
-      st.setCameraFollow(v.id, plan.carView);
+      st.setCameraFollow(v.id, values?.view || plan.carView, values ? mountOpts(values) : null);
       note = `on the ${nameOf(v).toLowerCase()}`;
+    } else if (plan.follow === "any") {
+      // Aerial follow: the car if there is one (a chase camera's lag, so it swings round behind late), else a person.
+      const v = this._vehicle(), who = v ? null : this._person();
+      if (!v && !who) return { ok: false, said: `${p.label} needs a car or a person on set to follow.` };
+      if (v) st.setCameraFollow(v.id, null, { lag_s: 0.6 }); else st.setCameraFollow(who.id);
+      st.setCameraKeys(plan.keys);
+      note = `following ${v ? `the ${nameOf(v).toLowerCase()}` : nameOf(who)} from above`;
     } else if (plan.follow === "person") {
       const who = this._person();
       if (!who) return { ok: false, said: "Handheld follow needs a person on set to follow." };
@@ -272,11 +298,63 @@ export class PresetRunner {
       st.setCameraKeys(plan.keys);
       if (carPath) note = `tracking the ${nameOf(this._vehicle()).toLowerCase()} from ${Math.round(plan.metres)} m off its path, ${Math.round(plan.focal)} mm`;
     }
-    const rig = a.rig || DEFAULT_RIG[a.camera.move];
-    if (rig && typeof st.setRig === "function") st.setRig(rig);
+    const rig = a.rig || DEFAULT_RIG[move];
+    if (rig && typeof st.setRig === "function" && !(values && this._liveShot()?.rig?.type)) st.setRig(rig);   // Adjust keeps the rig you picked
+    this._markPreset(p, values, k0);
     const moved = carPath ? carPathSaid(p, plan) : "";
+    if (values) return { ok: true, said: `Adjusted '${p.label}' on ${info.label}: ${plan.keys.length || 1} editable camera key${(plan.keys.length || 1) === 1 ? "" : "s"}.${moved}`,
+      adjusted: true, log: carPath ? { keys_sig: keysSig(this.shotInfo().shot.camera_keys) } : undefined };
     return { ok: true, said: `Applied '${p.label}' to ${info.label}${note ? ` (${note})` : ""}: ${plan.keys.length || 1} editable camera key${(plan.keys.length || 1) === 1 ? "" : "s"}${rig && rig !== "free" ? ` on a ${rig}` : ""}.${moved}`,
       log: carPath ? { keys_sig: keysSig(this.shotInfo().shot.camera_keys) } : undefined };
+  }
+
+  /** The active shot in the stage's own state (what a preset writes on), or null on a fake stage. */
+  _liveShot() {
+    const st = this.stage;
+    try { if (typeof st.activeShot === "function") return st.activeShot() || null; } catch { /* */ }
+    const s = st.state;
+    return s?.shots?.find((x) => x.id === s.active_shot) || s?.shots?.[0] || null;
+  }
+
+  /**
+   * Remember on the shot which camera preset made its keys (shot.camera_preset: id, the camera it started from, the
+   * Adjust values and the keys' signature), so the Adjust panel can show its numbers and tell a hand edit apart.
+   */
+  _markPreset(p, values, base) {
+    const sh = this._liveShot();
+    if (!sh) return;
+    const prev = sh.camera_preset?.id === p.id ? sh.camera_preset : null;
+    sh.camera_preset = { id: p.id, base: clone(prev?.base || base || null), values: clone(values || {}), sig: keysSig(sh.camera_keys) };
+  }
+
+  /**
+   * What the Adjust panel shows for the active shot: the preset that made its camera (or, for a shot riding a car
+   * mount picked elsewhere, the Car mount preset), its controls with their values, and whether the keys were edited
+   * by hand since (an Adjust then replaces those edits; Undo brings them back). null when there is nothing to adjust.
+   */
+  adjustState() {
+    const sh = this._liveShot();
+    if (!sh) return null;
+    let id = sh.camera_preset?.id ? presetId(sh.camera_preset.id) : null;
+    let p = id ? this.get(id) : null;
+    if (p && !p.apply?.camera) p = null;
+    if (!p && sh.camera_mount?.view && sh.camera_mount.view !== "follow") { p = this.get("car_mount"); id = p?.id; }
+    if (!p) return null;
+    const spec = p.apply.camera;
+    const isMount = moveId(spec.move) === "car_mount";
+    const values = isMount ? { ...mountValues(sh.camera_mount || { view: spec.view }), ...(sh.camera_preset?.id === p.id ? sh.camera_preset.values : {}) }
+      : { ...(sh.camera_preset?.values || {}) };
+    if (isMount && sh.camera_mount) Object.assign(values, mountValues(sh.camera_mount));
+    const edited = !!sh.camera_preset?.sig && sh.camera_preset.id === p.id && sh.camera_preset.sig !== keysSig(sh.camera_keys);
+    return { id: p.id, label: p.label, move: moveId(spec.move), controls: adjustControls(spec, values), values, edited,
+      mounts: isMount ? (this.stage.carMountOptions?.() || []) : null, riding: !!sh.camera_follow };
+  }
+
+  /** Re-key the active shot's camera preset with the Adjust panel's values: one undo step, like applying it. */
+  async adjust(values, opts = {}) {
+    const st = this.adjustState();
+    if (!st) return { ok: false, said: "This shot's camera wasn't made by a camera preset: apply one first, then adjust it." };
+    return this.apply(st.id, { ...opts, adjust: { ...st.values, ...values }, source: opts.source || "adjust" });
   }
 
   /**

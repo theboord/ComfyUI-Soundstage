@@ -208,7 +208,7 @@ function camThumb(c, p, t, w, h) {
   }
   const plan = cameraKeys(K0, spec, 48);
   let cam = camAt(plan?.keys || [], f);
-  if (p.apply?.rig === "drone") cam = { ...cam, position: [cam.position[0] + wob(t, 0.5) * 0.05, cam.position[1], cam.position[2]] };
+  if (p.apply?.rig === "aerial" || p.apply?.rig === "drone") cam = { ...cam, position: [cam.position[0] + wob(t, 0.5) * 0.05, cam.position[1], cam.position[2]] };
   drawSet(c, cam, w, h);
 }
 

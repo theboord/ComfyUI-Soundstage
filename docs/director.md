@@ -38,8 +38,9 @@ scene, run in the browser by `web/agent/director.mjs`:
 - **Set and cast:** add, stack (crates, boxes, barrels), move, remove, turn, scale, mount / dismount (people into cars,
   onto horses, into seats), set, time of day, weather, film lights.
 - **Camera:** pick a shot, lens (mm), animated moves (push in, pull out, truck, crane, orbit, lock off, at a slow /
-  medium / fast speed), rigs (tripod, dolly, steadicam, handheld, drone...), camera on a vehicle (hood mount, driver
-  POV, passenger, back seat, dashboard, tracking alongside, overhead), new coverage setups, nudges.
+  medium / fast speed), rigs (tripod, dolly, steadicam, handheld, aerial, aerial FPV...), camera on a vehicle (hood mount,
+  front and rear bumper, trunk, roof, side door, low at the front or rear wheel, tyre, driver POV, passenger, back seat,
+  dashboard, chase, tracking alongside, overhead), new coverage setups, nudges.
 - **Action:** car stunts (reverse J-turn, donut, handbrake 180), drive a vehicle straight through something, physics
   dynamic / static / off, simulate and bake. World collisions ([world.md](world.md)): `ram` (*"the police car rams the
   red car into the boxes"*: the speed planned by momentum, the crash baked), `check` (the consequence check: anything

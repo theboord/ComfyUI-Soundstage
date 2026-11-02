@@ -774,12 +774,28 @@ Say what you want and the Director does it with the App's own controls.
 <p align="center"><img src="media/presets.jpg" width="760" alt="The Presets window: camera move cards, with 'Applied Crane up to shot 1' and an Undo button"></p>
 
 1. Pick the shot in the strip, then press **V** (or **Presets** in the top bar).
-2. Choose a tab: **Camera moves** (push in, pull out, orbit, crane up / down, dolly zoom, whip pan, handheld follow, drone reveal, tracking side, car mount, bumper cam, over the tyre, arm car tracking, long-lens pan), **Lighting** (golden hour, blue hour, night street, noir hard key, neon, overcast, candle / firelight, studio three-point), **Looks**, **Action**, **Edit styles**, **Recipes** or **Mine**. Or type in **Search presets** ("crane", "golden hour", "J-turn", "trailer").
+2. Choose a tab: **Camera moves** (push in, pull out, orbit, crane up / down, dolly zoom, whip pan, handheld follow, aerial up / down / across / orbit / follow, tracking side, car mount, bumper cam, over the tyre, rear bumper cam, side mount low at the wheel, roof cam, chase cam, arm car tracking, long-lens pan), **Lighting** (golden hour, blue hour, night street, noir hard key, neon, overcast, candle / firelight, studio three-point), **Looks**, **Action**, **Edit styles**, **Recipes** or **Mine**. Or type in **Search presets** ("crane", "golden hour", "J-turn", "trailer").
 3. Hover a camera move to preview it on the shot; click it to apply. Camera moves write editable camera keys and a rig; lighting sets the time of day, a lighting setup, the prompt words and the grade.
 4. Every apply is **one undo step**: ⌘Z (even right after clicking a card) or **Undo** on the toast.
-5. To keep your own: set up a camera, light or look you like, open **Mine** and **Save current as Camera**, **Light** or **Look**. **Export** saves them as JSON.
+5. **Adjust it.** A camera preset is a starting point. After you apply one, a small **Adjust** card opens at the bottom right of the canvas (or press **Adjust** on the toast) with the preset's own numbers: **Height**, **Distance**, **Angle** (swing the whole move round the subject), **Speed** (faster finishes early and holds; slower is still moving when the shot ends), **Lens**, and for an orbit or whip its arc. Let go of a slider and the move is re-keyed from the same starting camera, as one undo step. **Reset** goes back to the preset's numbers. The keys are still ordinary keys: drag them and the path in the **Top** view, move the camera with the gizmo, retime them on the timeline. If you did, the card says so in red: adjusting then re-keys the move and replaces those hand edits (⌘Z brings them back).
+6. To keep your own: set up a camera, light or look you like, open **Mine** and **Save current as Camera**, **Light** or **Look**. **Export** saves them as JSON.
 
 The Director can use presets too: *"make it a crane up at golden hour"*.
+
+**Aerial moves.** The aerial camera has five presets, all on the **Aerial (gimbal)** rig: **Aerial up** (rising: lifts 8 m and pulls back to reveal the set), **Aerial down** (top-down: straight over the subject 12 m up, climbing slowly and turning 20°), **Aerial across** (a fly-over: the subject comes in at the top of frame, passes under the lens and goes out the bottom), **Aerial orbit** (a quarter turn round the subject 10 m up) and **Aerial follow** (8 m up and 10 m behind the car, or a person when there is no car; it swings round behind the car a beat late, like a chase car). The prompts say *aerial shot*, *aerial top-down shot* or *aerial FPV shot*, never "drone". Scenes saved with the old **Drone reveal** preset or the **Drone** rigs open as **Aerial up** and the **Aerial** rigs, with the same keys and the same shake.
+
+**Car mounts.** Every car camera is a mount you can move. Apply **Car mount** (or **Bumper cam**, **Over the tyre**, **Rear bumper cam**, **Side mount, low at the wheel**, **Roof cam**, **Chase cam**), then pick any other mount in **Adjust → Mount**:
+
+| Group | Mounts |
+|---|---|
+| Front | Hood, looking ahead · Hood, looking back through the windshield · Front bumper |
+| Back | Rear bumper, looking back (at whoever is chasing) · On the trunk, looking ahead over the roof |
+| Top | Roof, looking ahead |
+| Side | Side door, looking ahead along the car · Side, low at the front wheel · Side, low at the rear wheel · Over the front tyre, looking back · Tyre close-up |
+| Inside | Dashboard · Driver's POV · Passenger seat · Back seat · Between the front seats |
+| Following | Chase, trailing behind · Tracking alongside · Aerial down (overhead) |
+
+**Side** flips a side mount to the other side of the car (left is the driver's side); **Forward**, **Up** and **Out** slide it on the car, **Turn** and **Tilt** aim the lens and **Lens** sets the focal length. Each mount is placed from the car's own size (a roof cam clears a police car's light bar; a side mount clears a sedan's door). The hard mounts and the interior cameras are bolted to the body, so they ride the car's motion and lean and dip with its roll and pitch on the springs: the horizon tilts through a hard turn and a J-turn. The chase camera is another car, not bolted on: it follows the path and swings round behind a beat late. All of this works with the stunts and Racing Cinema below.
 
 **Racing cinema (car stunts).** For a J-turn that looks like *Ford v Ferrari* or *F1* rather than a game, select the car, apply **J-turn** (Action), then a racing camera, then the **Racing Cinema** look (Looks), or say it in one line: *"give the car a J-turn with a long-lens pan in the racing cinema look"*.
 
@@ -889,8 +905,8 @@ In the **Camera** tab:
 | **Jib / crane arm** | The camera rides an arm of 3 to 15 m on a post behind the first key. The arm's length and pivot are worked out from your keys. Rising moves swing and sideways moves arc, and the arm sways a little after it stops. For a key beyond the arm's reach, the base tracks across the floor. |
 | **Steadicam** | Floats a centimetre or two between keys, with a soft bob on each step and a little roll. |
 | **Handheld** | Breathes, shakes, dips with each footstep and lets the frame wander a little, but still gets to each key on time. |
-| **Drone (gimbal)** | Very smooth, with a slow drift from the wind. The gimbal keeps the horizon level. |
-| **Drone (FPV)** | A racing quad. It banks into each turn as far as the turn's physics says (atan of v² / (R·g)), and never rolls faster than 30° a second. |
+| **Aerial (gimbal)** | Very smooth, with a slow drift from the wind. The gimbal keeps the horizon level. |
+| **Aerial (FPV)** | A racing quad. It banks into each turn as far as the turn's physics says (atan of v² / (R·g)), and never rolls faster than 30° a second. |
 
 The rig is deterministic, so the clay, the first frame and the video model all see exactly the same move.
 
@@ -924,11 +940,11 @@ Select a person and the **Object** tab shows their **Appearance**: **Build** (sl
 - **Hop on at playhead**: they stay on foot until the playhead, then hop on. Give them a walk to the horse before that frame. Move the playhead to 0 and press it again to ride from the start.
 - **Beam** (a selected flashlight): **On (steady)**, **Flicker**, **Blink on/off**, **Off**.
 
-### Vehicles and in-car cameras
+### Vehicles and car camera mounts
 
 Cars drive between their position keys and their wheels turn; horses walk or gallop to match the speed. Big animals and vehicles can't spin on the spot, so give them room to turn.
 
-Select a car (or truck, horse, motorcycle, bicycle or boat) and pick an **In-car camera**. The shot camera then rides along in the vehicle's own space: move the car and the world goes by outside.
+Select a car (or truck, horse, motorcycle, bicycle or boat) and pick a **Car camera mount** (it was called **In-car camera**). The shot camera then rides along in the vehicle's own space: move the car and the world goes by outside. Every mount in the list is grouped (Front, Back, Top, Side, Inside, Following) and opens the **Adjust** card, where you flip its side, slide it forward, up or out, turn or tilt it and change its lens (see [Car mounts](#presets-one-click-camera-moves-and-lighting)).
 
 
 
@@ -943,7 +959,8 @@ Select a car (or truck, horse, motorcycle, bicycle or boat) and pick an **In-car
 | **Dashboard, looking back at both front seats** | 20 mm |
 | **Between the front seats, back at the back seat** | 24 mm |
 | **Tracking alongside (outside)** | 35 mm |
-| **Top down (overhead)** | 24 mm |
+| **Aerial down (overhead)** | 24 mm |
+| **Hood, rear bumper, trunk, roof, side door, low at either wheel, tyre close-up, chase** | 14 to 35 mm: see the Car mounts table under Presets |
 | **Stop riding along** | Puts the camera back in the world. |
 
 A style's suggested lens never overrides an in-car camera: the status line tells you when the lens was kept wide.
@@ -1342,7 +1359,7 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 5. **Choose the rig after the keys.** Key the move as a clean path first, then try **Dolly on track**, **Jib / crane arm** or **Handheld** on the same keys. Use the slider next to **Rig** to dial the feel up or down.
 6. **People and vehicles turn by themselves.** They face where they are going, and a horse or a car turns at a realistic rate (it even turns before setting off). Give a car room to turn instead of a sharp corner between two keys.
 7. **Drop to interact.** Drag a person onto a horse to mount, onto a car to take a seat, onto a bench to sit; drop a flashlight on someone to hand it over. For a mount mid-shot, put the playhead at the frame and use **Hop on at playhead**.
-8. **A car dialogue scene in one click.** Put two people in a car, select the car, and pick **＋ All interior shots (one per angle)** under **In-car camera**: you get a dashboard two-shot, a driver profile, over the shoulders and the driver's POV, already in the cut.
+8. **A car dialogue scene in one click.** Put two people in a car, select the car, and pick **＋ All interior shots (one per angle)** under **Car camera mount**: you get a dashboard two-shot, a driver profile, over the shoulders and the driver's POV, already in the cut.
 9. **Type a room with its size.** "kitchen 4x3 m" builds a true-scale room with walls, a door, a window and a ceiling light. Free view shows it as a cutaway so you can block inside.
 10. **Use Measure for scale.** **Measure** shows the selection's width, depth and height in metres. A prop that's twice the size it should be will be twice the size in the frame.
 11. **Put the sun where you want it with North.** Pick **Magic hour**, then turn **North** until the sun sits behind your actors for a backlit rim. **Lighting note for the prompt** tells you how it will be described.

@@ -224,6 +224,11 @@ export class LookPanel {
     const s = clone(DEFAULT_LOOK);
     if (data && typeof data === "object") {
       for (const k of Object.keys(s)) if (data[k] !== undefined) s[k] = clone(data[k]);
+      // A saved look from before a rename ("drone" camera body is "aerial" now): its option's old id maps to the new one.
+      for (const [k, list] of [["camera_body", "camera_bodies"]]) {
+        const hit = typeof s[k] === "string" && !this._opt(list, s[k]) ? (VOCAB[list] || []).find((o) => (o.old_ids || []).includes(s[k])) : null;
+        if (hit) s[k] = hit.id;
+      }
       if (typeof s.palette === "string") s.palette = { preset: s.palette, name: "", swatches: [] };
       s.palette = { ...DEFAULT_LOOK.palette, ...(s.palette || {}) };
       const preset = this._opt("palettes", s.palette.preset);

@@ -3,7 +3,7 @@
 // double quotes, no comments, no trailing commas. tests/test_look.py checks it parses and that every
 // "kb" reference exists in soundstage/cine_kb.
 //
-// Option fields: id, label, aliases (free-text matching), still (frame-1 still prompt fragment, may use
+// Option fields: id, label, old_ids (ids a saved look may still carry: "drone" is "aerial" now), aliases (free-text matching), still (frame-1 still prompt fragment, may use
 // numbers), motion (LTX prose fragment, no numeric specs), hint (UI tooltip), kb (cine KB entry id),
 // neg (extra negative-prompt words), bw (true = black-and-white image, drops the colour palette).
 export const VOCAB = {
@@ -32,7 +32,7 @@ export const VOCAB = {
     {"id": "broadcast_tv", "label": "Broadcast studio TV camera", "aliases": ["studio camera"], "still": "broadcast television studio camera image, deep focus, flat even exposure, crisp video", "motion": "a crisp broadcast-television video image"},
     {"id": "smartphone", "label": "Smartphone", "aliases": ["iphone", "phone camera", "smartphone"], "still": "smartphone video frame, computational HDR, deep focus, slightly over-sharpened", "motion": "a smartphone video image with computational HDR and deep focus", "neg": "shallow depth of field, bokeh"},
     {"id": "action_cam", "label": "Action camera (GoPro)", "aliases": ["gopro", "action cam", "action camera"], "still": "action camera footage, ultra-wide barrel distortion, deep focus, high shutter crispness", "motion": "an ultra-wide action-camera image with barrel distortion"},
-    {"id": "drone", "label": "Drone camera", "aliases": [], "still": "drone camera image, stabilised aerial clarity, deep focus", "motion": "a smooth stabilised drone image"},
+    {"id": "aerial", "label": "Aerial camera", "old_ids": ["drone"], "aliases": [], "still": "aerial shot, stabilised aerial clarity, deep focus", "motion": "a smooth stabilised aerial shot"},
     {"id": "cctv", "label": "CCTV security camera", "aliases": ["cctv", "security camera", "surveillance"], "still": "CCTV security camera frame, high angle, wide-angle distortion, low resolution, compression artefacts, desaturated", "motion": "a low-resolution CCTV security-camera image with compression artefacts", "neg": "shallow depth of field, cinematic bokeh, text overlay, timestamp"},
     {"id": "bodycam", "label": "Body camera", "aliases": ["bodycam", "body camera", "body cam"], "still": "chest-mounted body camera footage, fisheye distortion, harsh auto-exposure, low resolution", "motion": "chest-mounted body-camera video, bouncing with each step", "neg": "text overlay, timestamp"}
   ],

@@ -10,7 +10,8 @@ import * as Mocap from "./mocap.mjs";
 import * as Gait from "./gait.mjs";
 import * as Swim from "./swim.mjs";
 import { CAUSTIC_U } from "./water.mjs";
-import { applyRig, RIGS } from "./camrig.mjs";
+import { applyRig, RIGS, rigType } from "./camrig.mjs";
+import { CAR_MOUNTS, mountKey, onSprungBody, offSprungBody, mountRoll, laggedHeading } from "./carmounts.mjs";
 import { materialOf, impactParticles, impactFlash, impactShakeAt, SHAKE_PRESETS, jitterPhysics, feelGravity, overcrankKeys } from "./impacts.mjs";
 import { STUNTS, hasHeadingKeys, headingTrack, channelAt, driveAt, isStunt, unwrapDeg, vehicleDynamics, smokeParticles, stuntKeys, stuntParams, stuntRun } from "./stunts.mjs";
 import { PoseGizmo } from "./posegizmo.mjs";
@@ -190,7 +191,7 @@ export const CAR_SHOTS = {
   dash_two_shot: { label: "Dashboard, looking back at both front seats", position: [0, 1.12, 0.78], target: [0, 1.1, -0.3], focal_mm: 20 },
   back_seat_single: { label: "Between the front seats, back at the back seat", position: [0, 1.18, 0.15], target: [0, 1.0, -1.0], focal_mm: 24 },
   side_tracking: { label: "Tracking alongside (outside)", position: [3.2, 1.2, 0.2], target: [0, 1.0, 0.2], focal_mm: 35 },
-  top_down: { label: "Top down (overhead)", position: [0, 9, 0.01], target: [0, 0, 0], focal_mm: 24 },
+  top_down: { label: "Aerial down (overhead)", position: [0, 9, 0.01], target: [0, 0, 0], focal_mm: 24 },
   // Racing-film hard mounts (the Racing cinema camera presets): a low bumper cam, and an F1-style mount just above and
   // outside the front tyre looking back at the rear tyre. Measured on sports_car.glb at stage scale: the tyre mount is
   // 0.25 m clear of the bodywork and 0.30 m clear of the front tyre at full steering lock (near plane 0.1 m), and above
@@ -198,6 +199,21 @@ export const CAR_SHOTS = {
   bumper: { label: "Bumper cam (low, road ahead)", position: [0, 0.35, 2.4], target: [0, 0.3, 12], focal_mm: 18 },
   front_wheel: { label: "Over the front tyre, looking back", position: [1.2, 0.8, 1.3], target: [0.9, 0.3, -4], focal_mm: 14 },
 };
+// Every other car mount (carmounts.mjs: hood, rear bumper, trunk, roof, side door, low at either wheel, tyre close-up,
+// chase), as measured on the sports car; on set each is placed from the car's own size (mountKey).
+for (const [id, m] of Object.entries(CAR_MOUNTS)) {
+  if (m.at && !CAR_SHOTS[id]) { const k = mountKey(id, { kind: "sports_car" }); CAR_SHOTS[id] = { label: m.label, position: k.position, target: k.target, focal_mm: k.focal_mm }; }
+}
+/** The Adjust panel's mount settings, cleaned for the shot (only what differs from the mount as it comes). */
+function cleanMountOpts(o, m = {}) {
+  const out = {};
+  if (!o) return out;
+  if (m.sided && +o.side === -1) out.side = -1;
+  if (Array.isArray(o.offset) && o.offset.length === 3 && o.offset.some((v) => Math.abs(+v || 0) > 1e-6)) out.offset = o.offset.map((v) => Math.round((+v || 0) * 1000) / 1000);
+  for (const k of ["yaw_deg", "tilt_deg"]) if (Number.isFinite(+o[k]) && Math.abs(+o[k]) > 1e-6) out[k] = +o[k];
+  if (Number.isFinite(+o.focal_mm) && +o.focal_mm > 0) out.focal_mm = +o.focal_mm;
+  return out;
+}
 const LIFT_FRAMES = 8;
 const RIDEABLE = new Set(["horse", "bicycle", "motorcycle"]);
 const SITTABLE = new Set(["chair", "bench", "sofa", "armchair", "couch", "stool"]);
@@ -1317,9 +1333,11 @@ export class Stage {
     // Ride-along: the shot's keys are in a vehicle's (or rider's) own space, so the world moves past outside.
     const host = local ? null : this._followActor?.();
     if (host) {
-      const toWorld = this._actorFrame(host, frame);
+      const toWorld = this._camHostFrame(host, frame);
       cam.position = toWorld(cam.position);
       cam.target = toWorld(cam.target);
+      // A camera bolted to the body leans with it: its horizon tilts with the body's roll (and the pitch, seen sideways).
+      if (toWorld.up) cam.roll = (cam.roll || 0) + mountRoll(cam.position, cam.target, toWorld.up);
     }
     return cam;
   }
@@ -1351,17 +1369,20 @@ export class Stage {
     const host = this._followActor?.();
     const keys = this._camKeys();
     const sig = JSON.stringify([shot.id, keys, shot.lens_keys || null, shot.parts || null, shot.sensor || null, rig, last, fps,
-      shot.camera_follow || "", host ? [host.keys, host.position, host.rotation_deg || 0, host.kind, host.drive || "",
+      shot.camera_follow || "", shot.camera_mount || null, host ? [host.keys, host.position, host.rotation_deg || 0, host.kind, host.drive || "",
         host.physics?.baked || false, host.stunt_sim || null] : null]);
     if (this._rigCache?.sig !== sig) {
       const local = [];
       for (let f = 0; f <= last; f++) local.push(this._cameraAt(f, { local: true }));
-      const toW = host ? local.map((_, f) => this._actorFrame(host, f)) : null;
+      const toW = host ? local.map((_, f) => this._camHostFrame(host, f)) : null;
       // Shake is per shot: a shot without a stored seed (older scenes) gets one from its id.
       const seeded = Number.isFinite(rig.seed) ? rig
         : { ...rig, seed: ([...String(shot.id)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 9973, 7)) + 1 };
       const out = applyRig(local, seeded, fps, { keyFrames: keys.map((k) => k.frame), toWorld: toW && ((f, v) => toW[f](v)) });
-      const path = toW ? out.map((c, f) => ({ ...c, position: toW[f](c.position), target: toW[f](c.target) })) : out;
+      const path = toW ? out.map((c, f) => {
+        const position = toW[f](c.position), target = toW[f](c.target), up = toW[f].up;
+        return { ...c, position, target, ...(up ? { roll: (c.roll || 0) + mountRoll(position, target, up) } : {}) };
+      }) : out;
       this._rigCache = { sig, path, info: out.info || null };
     }
     const p = this._rigCache.path, x = Math.max(0, Math.min(p.length - 1, Number(frame) || 0)), i = Math.floor(x), u = x - i;
@@ -1373,12 +1394,13 @@ export class Stage {
   }
 
   /**
-   * Put the active shot's camera on a rig: free, tripod, dolly, chapman, slider, jib, steadicam, handheld, drone,
-   * drone_fpv. amount 0..2 (how much of the rig's feel; 0 = the keys exactly). params: {seed, arm (m, 3 to 15: the
+   * Put the active shot's camera on a rig: free, tripod, dolly, chapman, slider, jib, steadicam, handheld, aerial,
+   * aerial_fpv (the old names drone and drone_fpv still work). amount 0..2 (how much of the rig's feel; 0 = the keys exactly). params: {seed, arm (m, 3 to 15: the
    * jib's arm), pivot ([x, y, z] where the jib's arm turns, in the shot camera's space; null = automatic)}. The shot
    * keeps a seed of its own, so two handheld shots never shake alike, and the jib keeps its arm and pivot.
    */
   setRig(type, amount, params) {
+    type = rigType(type);   // "drone" / "drone_fpv" from an older scene or the Director: the aerial rigs
     const shot = this.activeShot?.();
     if (!shot || !RIGS[type]) return;
     const prev = shot.rig || {}, q = params || {};
@@ -1444,32 +1466,133 @@ export class Stage {
   }
 
   /**
-   * Make the active shot's camera ride with an actor (null = back to the world). Keys are converted so the view
-   * doesn't jump. `preset` puts the camera somewhere useful inside a vehicle at the same time.
+   * The ride-along camera's host space → world at a frame. Like _actorFrame, plus the shot's car mount
+   * (shot.camera_mount, carmounts.mjs): a hard mount or an interior camera sits on the sprung body, so it rolls and
+   * pitches with it (the returned function carries .up, the body's up axis in the world, for the horizon); a chase
+   * camera swings round behind a beat late (lag_s). A shot without a mount (older scenes, "Ride along") is _actorFrame.
    */
-  setCameraFollow(actorId, preset = null) {
+  _camHostFrame(host, frame) {
+    const m = this._camMount(host);
+    if (!m) return this._actorFrame(host, frame);
+    const p = this._actorPosAt(host, frame);
+    const fps = this.state.shot?.fps || 24;
+    const yaw = m.lag_s > 0 ? laggedHeading((f) => this._headingAt(host, f), Math.round(frame), Math.round(m.lag_s * fps)) : this._headingAt(host, frame);
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    const rot = (v) => [v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c];
+    const body = m.sprung ? this._bodyTilt(host, frame) : null;
+    const fn = (v) => { const q = rot(body ? onSprungBody(v, body.pivot, body.roll, body.pitch) : v); return [p[0] + q[0], q[1], p[2] + q[2]]; };
+    if (body && (body.roll || body.pitch)) {
+      const u = onSprungBody([0, body.pivot + 1, 0], body.pivot, body.roll, body.pitch);
+      fn.up = rot([u[0], u[1] - body.pivot, u[2]]);
+    }
+    return fn;
+  }
+
+  /** The inverse of _camHostFrame: a world point in the ride-along camera's host space (what the keys are written in). */
+  _camHostFrameInverse(host, frame) {
+    const m = this._camMount(host);
+    if (!m) return this._actorFrameInverse(host, frame);
+    const p = this._actorPosAt(host, frame);
+    const fps = this.state.shot?.fps || 24;
+    const yaw = m.lag_s > 0 ? laggedHeading((f) => this._headingAt(host, f), Math.round(frame), Math.round(m.lag_s * fps)) : this._headingAt(host, frame);
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    const body = m.sprung ? this._bodyTilt(host, frame) : null;
+    return (v) => {
+      const dx = v[0] - p[0], dz = v[2] - p[2];
+      const l = [dx * c - dz * s, v[1], dx * s + dz * c];
+      return body ? offSprungBody(l, body.pivot, body.roll, body.pitch) : l;
+    };
+  }
+
+  /** The active shot's car mount on this host ({view, sprung, lag_s, ...}), or null (no mount, or not a vehicle). */
+  _camMount(host) {
+    const m = this.activeShot?.()?.camera_mount;
+    if (!m || !host || LIBRARY[host.kind]?.rig !== "vehicle") return null;
+    return m;
+  }
+
+  /** The car body's roll / pitch on its springs at a frame (deg) and its pivot height, as the stage draws it. */
+  _bodyTilt(a, frame) {
+    const keys = this._actorKeys(a);
+    const pivot = 0.3 * (a.height_m || LIBRARY[a.kind]?.height || 1.45);
+    if (keys.length < 2 || a.physics?.baked) return { pivot, roll: 0, pitch: 0 };
+    const dyn = this._vehicleDynamics(a);
+    const f = Math.max(0, Math.min(dyn.roll.length - 1, Math.round(frame)));
+    return { pivot, roll: dyn.roll[f] || 0, pitch: dyn.pitch[f] || 0 };
+  }
+
+  /**
+   * Make the active shot's camera ride with an actor (null = back to the world). Keys are converted so the view
+   * doesn't jump. `preset` puts the camera somewhere useful on or in a vehicle at the same time: any car mount
+   * (carmounts.mjs CAR_MOUNTS / CAR_SHOTS: hood, bumpers, trunk, roof, side door, low at a wheel, tyre, dash, back seat,
+   * chase...), placed from the car's own size. mountOpts: {side: 1 | -1, offset: [x, y, z] m, yaw_deg, tilt_deg,
+   * focal_mm}; the mount is written on the shot (camera_mount) so the Adjust panel can move it later.
+   */
+  setCameraFollow(actorId, preset = null, mountOpts = null) {
     const shot = this.activeShot();
     const keys = this._camKeys();
     const old = this._followActor();
     const world = keys.map((k) => {
-      const tw = old ? this._actorFrame(old, k.frame) : null;
+      const tw = old ? this._camHostFrame(old, k.frame) : null;
       return { ...k, position: tw ? tw(k.position) : k.position, target: tw ? tw(k.target) : k.target };
     });
     const host = actorId ? this.state.actors.find((x) => x.id === actorId) : null;
+    delete shot.camera_mount;
     if (!host) { delete shot.camera_follow; shot.camera_keys = world; }
     else {
       shot.camera_follow = host.id;
-      if (preset && CAR_SHOTS[preset]) {
-        const s = (host.height_m || LIBRARY[host.kind]?.height || 1.45) / (LIBRARY[host.kind]?.height || 1.45);
-        const q = CAR_SHOTS[preset];
-        shot.camera_keys = [{ frame: 0, position: q.position.map((v) => v * s), target: q.target.map((v) => v * s), focal_mm: q.focal_mm }];
+      const key = preset && CAR_SHOTS[preset] ? this.carMountKey(host, preset, mountOpts) : null;
+      if (key) {
+        shot.camera_keys = [key];
+        if (LIBRARY[host.kind]?.rig === "vehicle") {
+          const m = CAR_MOUNTS[preset] || {};
+          shot.camera_mount = { view: preset, sprung: m.sprung !== false, ...(m.lag_s ? { lag_s: m.lag_s } : {}), ...cleanMountOpts(mountOpts, m) };
+        }
       } else {
         shot.camera_keys = world.map((k) => { const inv = this._actorFrameInverse(host, k.frame); return { ...k, position: inv(k.position), target: inv(k.target) }; });
+        // A camera following a car from outside (the aerial follow): it swings round behind a beat late, like a chase car.
+        if (mountOpts?.lag_s > 0 && LIBRARY[host.kind]?.rig === "vehicle") shot.camera_mount = { view: "follow", sprung: false, lag_s: +mountOpts.lag_s };
       }
     }
     this.state.camera_keys = shot.camera_keys;
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
+  }
+
+  /** A car mount's camera key on this host (car space), placed from the car's size; null for an unknown mount. */
+  carMountKey(host, view, opts = null) {
+    if (!host || !CAR_SHOTS[view]) return null;
+    return mountKey(view, { kind: host.kind, height_m: host.height_m, ref: LIBRARY[host.kind]?.height }, opts || {}, CAR_SHOTS);
+  }
+
+  /**
+   * Move the active shot's car mount (the Adjust panel): another mount, the other side, an offset, a turn or a lens.
+   * opts as setCameraFollow's mountOpts, plus view; what is left out stays as it is. Returns the new mount or null.
+   */
+  setCarMount(opts = {}) {
+    const shot = this.activeShot?.();
+    const host = this._followActor?.();
+    const cur = shot?.camera_mount;
+    if (!host || !cur) return null;
+    const view = opts.view && CAR_SHOTS[opts.view] ? opts.view : cur.view;
+    const keep = view === cur.view ? cur : {};
+    const next = { side: keep.side, offset: keep.offset, yaw_deg: keep.yaw_deg, tilt_deg: keep.tilt_deg, focal_mm: keep.focal_mm };
+    for (const k of ["side", "offset", "yaw_deg", "tilt_deg", "focal_mm"]) if (k in opts) next[k] = opts[k];
+    const key = this.carMountKey(host, view, next);
+    if (!key) return null;
+    const m = CAR_MOUNTS[view] || {};
+    shot.camera_keys = [key];
+    this.state.camera_keys = shot.camera_keys;
+    shot.camera_mount = { view, sprung: m.sprung !== false, ...(m.lag_s ? { lag_s: m.lag_s } : {}), ...cleanMountOpts(next, m) };
+    this._rigCache = null;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    return shot.camera_mount;
+  }
+
+  /** The car mounts for the picker: [{id, label, group, sided}] in the order to show them. */
+  carMountOptions() {
+    return Object.keys(CAR_MOUNTS).filter((id) => CAR_SHOTS[id]).map((id) => ({ id, label: CAR_MOUNTS[id].label, group: CAR_MOUNTS[id].group, sided: !!CAR_MOUNTS[id].sided }));
   }
 
   /**
@@ -1489,7 +1612,7 @@ export class Stage {
     for (const [preset, name, setup] of plan) {
       const q = CAR_SHOTS[preset];
       const id = `car_${preset}_${Date.now().toString(36)}`;
-      shots.push({ id, name, setup, camera_follow: host.id,
+      shots.push({ id, name, setup, camera_follow: host.id, camera_mount: { view: preset, sprung: true },
         camera_keys: [{ frame: 0, position: q.position.map((v) => v * s), target: q.target.map((v) => v * s), focal_mm: q.focal_mm }] });
       names.push(name);
       if (names.length === 1) this.state.active_shot = id;
@@ -2195,7 +2318,7 @@ export class Stage {
     if (!k) {
       k = { frame: this.frame, ...clone(this._cameraAt(this.frame)) };
       const host = this._followActor();
-      if (host) { const inv = this._actorFrameInverse(host, this.frame); k.position = inv(k.position); k.target = inv(k.target); }
+      if (host) { const inv = this._camHostFrameInverse(host, this.frame); k.position = inv(k.position); k.target = inv(k.target); }
       keys.push(k);
       keys.sort((a, b) => a.frame - b.frame);
     }
@@ -4568,6 +4691,9 @@ export class Stage {
     this._bakeSig = inputSig(this.state.actors || []);   // a loaded scene carries its own bake (see the Director's _patch)
     if (!this.state.shot) this.state.shot = { frames: 97, fps: 24 };
     for (const a of this.state.actors || []) if (!a.kind) a.kind = "man";   // older scenes: drawn as a man, so a person
+    // Older scenes: the drone rigs and the Drone reveal preset are called aerial now (same rig, same seed, same keys).
+    for (const sh of this.state.shots || []) if (sh?.rig?.type) sh.rig.type = rigType(sh.rig.type);
+    for (const e of this.state.preset_log || []) if (e?.id === "drone_reveal") e.id = "aerial_up";
     this.camera.aspect = this.fw / this.fh;
     if (this.viewCam) { this.viewCam.aspect = this.fw / this.fh; this.viewCam.updateProjectionMatrix(); }
     this._snap = null;

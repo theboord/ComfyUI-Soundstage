@@ -20,7 +20,10 @@ STYLES = WEB / "look" / "style_presets.json"
 
 TAB_IDS = ["camera", "light", "look", "action", "edit", "recipe", "user"]
 CAMERA_MOVES = ["push_in", "pull_out", "orbit", "crane_up", "crane_down", "dolly_zoom", "whip_pan", "follow",
-                "drone_reveal", "tracking_side", "car_mount", "long_lens_pan", "arm_car"]
+                "aerial_up", "aerial_down", "aerial_across", "aerial_orbit", "aerial_follow", "tracking_side", "car_mount",
+                "long_lens_pan", "arm_car"]
+# Old preset ids a saved scene, a user's habit or a model may still use (renamed to aerial on 2026-11-02).
+PRESET_ALIASES = {"drone_reveal": "aerial_up"}
 TIME_KEYS = ["dawn", "golden_am", "midday", "overcast", "magic_hour", "blue_hour", "night", "keep"]
 GRADE_KEYS = ["warmth", "contrast", "saturation", "grain", "halation", "vignette"]
 RECIPE_STEPS = ["video_to_3d", "new_angle", "ripple_mode", "whole_frame", "quality_draft", "quality_hollywood",
@@ -183,6 +186,7 @@ def install(director=None) -> bool:
 
     def _resolve_id(nm):
         k = _key(nm)
+        k = PRESET_ALIASES.get(k, k)
         if k in cat["by_id"]:
             return k
         for p in cat["presets"]:

@@ -66,7 +66,7 @@ test("CameraViz draws the camera the shot films (_shotCameraAt), and rebuilds wh
   const st = await headlessStage();
   const viz = new CameraViz(st, { showInShot: true });
   const same = () => viz._frames.every((f, i) => viz._pts[i].toArray().every((v, j) => Math.abs(v - st._shotCameraAt(f).position[j]) < 1e-6));
-  for (const rig of ["free", "jib", "tripod", "handheld", "drone_fpv"]) {
+  for (const rig of ["free", "jib", "tripod", "handheld", "aerial_fpv"]) {
     st.setRig(rig);
     viz._sync();
     assert.ok(same(), `${rig}: path = shot camera`);

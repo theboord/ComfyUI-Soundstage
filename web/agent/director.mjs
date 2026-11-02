@@ -36,12 +36,17 @@ export const NO_RE = /^\s*(no|nope|cancel|never ?mind|stop|scrap that|discard|fo
 
 const MOVE = { slow: 0.18, medium: 0.33, fast: 0.5 };
 const SPEED_MS = { slow: 6, medium: 12, fast: 18 };          // drive speeds, m/s
-const CAR_VIEW = { hood: "windshield", windshield: "windshield", driver_pov: "driver_pov", passenger: "passenger_on_driver",
-  back_seat: "back_seat", dashboard: "dash_two_shot", side: "side_tracking", top: "top_down" };
+const CAR_VIEW = { hood: "windshield", windshield: "windshield", hood_forward: "hood_forward", bumper: "bumper", rear_bumper: "rear_bumper",
+  trunk: "trunk", roof: "roof", side_door: "side_door", front_wheel_low: "side_front_wheel", rear_wheel_low: "side_rear_wheel", tyre: "tyre_close",
+  driver_pov: "driver_pov", passenger: "passenger_on_driver", back_seat: "back_seat", dashboard: "dash_two_shot", chase: "chase",
+  side: "side_tracking", top: "top_down" };
 const VIEW_WORDS = { hood: "on the hood, looking back through the windscreen", windshield: "through the windscreen",
+  hood_forward: "on the hood, looking ahead", bumper: "low on the front bumper", rear_bumper: "on the rear bumper, looking back",
+  trunk: "on the trunk, looking ahead over the roof", roof: "on the roof", side_door: "on the side door, looking ahead along the car",
+  front_wheel_low: "low on the side at the front wheel", rear_wheel_low: "low on the side at the rear wheel", tyre: "close on the front tyre",
   driver_pov: "at the driver's eye line, on the road ahead", passenger: "in the passenger seat, on the driver",
-  back_seat: "in the back seat", dashboard: "on the dashboard, looking back at the front seats", side: "tracking alongside",
-  top: "straight overhead" };
+  back_seat: "in the back seat", dashboard: "on the dashboard, looking back at the front seats", chase: "in a chase car behind",
+  side: "tracking alongside", top: "straight overhead (aerial down)" };
 
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -487,7 +492,8 @@ export const EXEC = {
 
   async rig(a) {
     this.stage.setRig(a.type);
-    return { ok: true, said: a.type === "handheld" ? "Handheld: a little breathing life in the frame." : `Camera on a ${a.type}.` };
+    const rigWords = { aerial: "an aerial gimbal", aerial_fpv: "an FPV aerial", drone: "an aerial gimbal", drone_fpv: "an FPV aerial" };
+    return { ok: true, said: a.type === "handheld" ? "Handheld: a little breathing life in the frame." : `Camera on ${rigWords[a.type] || `a ${a.type}`}.` };
   },
 
   async camera_on(a) {

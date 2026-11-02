@@ -74,7 +74,7 @@ MOTION = [  # (regex, action): the person's blocking for this beat
 ]
 SWEEP_RE = r"\b(headlights?|car|taxi|cab|truck|van|police car|cruiser)\b.*\b(sweep|sweeps|sweeping|swing|swings|pass|passes|passing|race|races|roars?|drives?|speeds?) (across|by|past|through|over)\b"
 CAMERA_RIGS = [(r"\bhand ?held\b|\bshaky\b|\bdocumentary style\b", "handheld"), (r"\bsteadicam\b|\bglides?\b|\bgliding\b", "steadicam"),
-               (r"\bdrone\b|\baerial\b", "drone"), (r"\bdolly\b|\btracks? alongside\b|\btracking\b", "dolly"),
+               (r"\bdrone\b|\baerial\b", "aerial"), (r"\bdolly\b|\btracks? alongside\b|\btracking\b", "dolly"),
                (r"\btripod\b|\blocked off\b|\bstatic\b", "tripod"), (r"\bcrane\b|\bjib\b", "jib")]
 HEIGHTS = [(r"\blow(?:[- ]angle)?\b|\bfrom below\b|\bground level\b|\bat his feet\b|\bat her feet\b|\bworm'?s?[- ]eye\b", "low"),
            (r"\bhigh[- ]angle\b|\boverhead\b|\bfrom above\b|\bbird'?s?[- ]eye\b|\btop down\b", "high"),
@@ -226,7 +226,7 @@ def extract(text: str, memory: dict | None = None) -> dict:
     cam: dict = {}
     camera_talk = re.search(r"\b(camera|we|lens|shot|frame|angle|pov)\b", t) is not None
     for rx, rig in CAMERA_RIGS:
-        if re.search(rx, t) and (camera_talk or rig in ("handheld", "steadicam", "drone")):
+        if re.search(rx, t) and (camera_talk or rig in ("handheld", "steadicam", "aerial")):
             cam["rig"] = rig
             break
     for rx, hgt in HEIGHTS:
@@ -312,7 +312,7 @@ before) and answer with ONLY a JSON object holding what this sentence adds. Keys
 "props": ["dumpster"], "camera": {"height": "low|eye|high", "rig": "%s", "follow": "detective", "lens": 35}
 Example: "A cop in a raincoat runs away from us, we follow handheld" ->
 {"who":{"role":"cop"},"wardrobe":"raincoat","action":"flee","camera":{"rig":"handheld","follow":"cop"}}""" % (
-    "|".join(C.SETS), "|".join(C.TIME_PRESETS), "|".join(C.WEATHER), "|".join(["handheld", "steadicam", "drone", "dolly", "tripod", "jib"]))
+    "|".join(C.SETS), "|".join(C.TIME_PRESETS), "|".join(C.WEATHER), "|".join(["handheld", "steadicam", "aerial", "dolly", "tripod", "jib"]))
 
 
 def llm_prompt(text: str, memory: dict | None = None) -> dict:
@@ -367,8 +367,9 @@ def parse_llm_delta(text: str | None) -> dict:
         c = {}
         if cam.get("height") in ("low", "eye", "high"):
             c["height"] = cam["height"]
-        if cam.get("rig") in ("handheld", "steadicam", "drone", "dolly", "tripod", "jib"):
-            c["rig"] = cam["rig"]
+        rig = "aerial" if cam.get("rig") == "drone" else cam.get("rig")   # a model may still say drone
+        if rig in ("handheld", "steadicam", "aerial", "dolly", "tripod", "jib"):
+            c["rig"] = rig
         if isinstance(cam.get("follow"), str) and cam["follow"].lower() in P.ROLE_WORDS:
             c["follow"] = cam["follow"].lower()
         try:

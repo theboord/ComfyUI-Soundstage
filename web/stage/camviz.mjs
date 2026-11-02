@@ -801,14 +801,14 @@ export class TopView {
   _kw(k) {
     const h = this._host();
     if (!h) return { position: k.position, target: k.target };
-    const toW = this.stage._actorFrame(h, k.frame);
+    const toW = this.stage._camHostFrame?.(h, k.frame) || this.stage._actorFrame(h, k.frame);
     return { position: toW(k.position), target: toW(k.target) };
   }
 
   /** A world point in a camera key's own space. */
   _kl(k, w) {
     const h = this._host();
-    return h ? this.stage._actorFrameInverse(h, k.frame)(w) : w;
+    return h ? (this.stage._camHostFrameInverse?.(h, k.frame) || this.stage._actorFrameInverse(h, k.frame))(w) : w;
   }
 
   /** Cast that can be moved from here: not riders (they sit on their mount) and not set pieces. */

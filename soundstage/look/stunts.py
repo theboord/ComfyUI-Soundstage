@@ -266,16 +266,18 @@ RIDE_WORDS = {
 
 def ride_words(a: dict, noun: str, wet: bool = False, where: str = "wheel", framing: str = "") -> str:
     """One sentence for a camera riding on a stunt car: what the car does, and what its tyres throw where the camera can
-    see it. where: the vehicle_camera placement ("wheel", "bumper", "hood", "interior")."""
+    see it. where: the vehicle_camera placement ("wheel", "bumper", "hood", "interior", "rear", "roof", "side")."""
     if not is_stunt(a):
         return ""
     base = RIDE_WORDS.get(a.get("stunt") or "", "the {noun} slides through its stunt, so the street whips round the frame")
     wet = wet or (a.get("stunt_sim") or {}).get("surface") == "wet"
     smoke = ""
     if _smoke(a) != 0 and where != "bumper":
-        if where == "wheel":
+        if where == "wheel" or framing in ("side_front_wheel", "side_rear_wheel", "tyre_close"):
             smoke = (", a fine sheet of spray and mist peeling off the tyre right beside the lens" if wet
                      else ", white tyre smoke pouring off the tyre right beside the lens")
+        elif where in ("rear", "roof", "side"):   # outside the car, the tyres out of frame or below it
+            smoke = ", spray and mist streaming off the tyres" if wet else ", white tyre smoke streaming off the tyres"
         elif framing in ("windshield", "hood_forward") or where == "hood":
             smoke = ", spray and mist streaming past the hood" if wet else ", white tyre smoke billowing past the hood"
         else:

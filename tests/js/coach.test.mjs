@@ -231,7 +231,7 @@ test("cameraTrack: the Coach judges the stage's own shot camera (keys through th
   Object.assign(st, { state: structuredClone(s), view: "clay", key: "start", frame: 0, actorMeshes: new Map(), root: new THREE.Group(),
     scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(40, 1.85, 0.1, 200), render() {}, onSelect() {}, onInteract() {}, _buildLights() {}, onChange() {} });
   st.state.active_shot = "w";
-  for (const rig of ["jib", "handheld", "drone", "dolly", "tripod"]) {
+  for (const rig of ["jib", "handheld", "aerial", "dolly", "tripod"]) {
     st.setRig(rig);
     const live = st.cameraTrack(), mine = R.cameraTrack(ctxOf(st.toJSON()), st.toJSON().shots[0]);
     assert.equal(mine.length, live.length);
@@ -267,7 +267,7 @@ test("rig limits: a tripod asked to travel, a slider longer than any rail, a dol
   fast.shots[0].rig = { type: "dolly", amount: 1 };
   [item] = R.rigLimits(ctxOf(fast));
   assert.match(item.text, /dolly has to move at \d+\.\d m\/s, but grips push a dolly at a brisk walk/);
-  assert.match(item.actions[0].label, /^Use an? (handheld operator|Steadicam|drone)$/);
+  assert.match(item.actions[0].label, /^Use an? (handheld operator|Steadicam|aerial gimbal)$/);
   fixed = applyFix(fast, item);
   assert.deepEqual(R.rigLimits(ctxOf(fixed)), []);
   // A quick 3 m dolly move in 1.25 s (over a g of acceleration): or take it slower, the keys stretched over more of the shot.
