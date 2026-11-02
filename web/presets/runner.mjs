@@ -327,7 +327,9 @@ export class PresetRunner {
         const j = rough?.[i];
         const pos = j ? j.position : pos0;
         ids.push(id);
-        s2.actors.push({ id, name: crateNames[i], kind: "crate", position: pos, keys: [{ frame: 0, position: pos }], height_m: j ? j.height_m : 0.8,
+        // key_y: a prop keeps its keyed height only when flagged (stage _heightAt); without it every crate sits on the
+        // floor inside its neighbours and the bake flings them hundreds of metres.
+        s2.actors.push({ id, name: crateNames[i], kind: "crate", position: pos, keys: [{ frame: 0, position: pos }], key_y: true, height_m: j ? j.height_m : 0.8,
           rotation_deg: Math.round((deg + (j ? j.rotation_deg : 0)) * 10) / 10, physics: { mode: "dynamic" } });
       });
       this._loadState(s2);
@@ -364,6 +366,7 @@ export class PresetRunner {
         it.position = [...hand];
         msg = `${nameOf(who)} throws ${nameOf(it).toLowerCase()} half a second in`;
       }
+      it.key_y = true;   // keep the lift / hand height (a prop's keyed height is ignored without it)
       it.physics = { ...(it.physics || {}), mode: "dynamic", baked: false };
       delete it.physics.source;
       this._loadState(s2);
