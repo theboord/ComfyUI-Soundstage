@@ -195,7 +195,6 @@ The **Edit** tab (the Cut) is now a real editing timeline: V2 titles, V3 motion 
 
 ⑤ Motion's Quality is **Draft · Final · Hollywood**, saved per shot, Final by default. Hollywood renders stage 1 at 704p, upscales in latent space and refines at **2624×1408**: real detail in skin, rain and panel lines, and a spinning car that stays one coherent car. **Advanced (LTX)** opens the full LTX controls (resolution, steps, sigmas, sampler, CFG, seed, IC-LoRA strength, an extra LoRA) and a **ProRes 422 HQ** master. → [Tutorial](docs/TUTORIAL.md#quality-draft-final-hollywood) · [quality.md](docs/quality.md)
 
-<p align="center"><img src="docs/media/hollywood_final.jpg" width="860" alt="A Hollywood-preset final from the reverse J-turn shot: the red sports car mid-spin on a wet night street, tyre smoke, sharp reflections"></p>
 
 ### Takes that check themselves
 
@@ -209,8 +208,7 @@ The stage is alive while you drag: people walk where you pull them, climb onto c
 
 <table>
 <tr>
-<td width="50%"><img src="docs/media/live3d_mount.gif" alt="A person is dragged to a horse and swings up into the saddle, then is dragged off and hops down"></td>
-<td width="50%"><img src="docs/media/physics_crate_crash.gif" alt="A car crashes through a crate stack: the clay previz guide beside the LTX draft"></td>
+<td align="center"><img src="docs/media/live3d_mount.gif" width="720" alt="A person is dragged to a horse and swings up into the saddle, then is dragged off and hops down"></td>
 </tr>
 </table>
 
@@ -218,7 +216,6 @@ The stage is alive while you drag: people walk where you pull them, climb onto c
 
 Pick a car, then **Stunt ▸ Reverse J-turn / Donut / Handbrake 180**. The keys are written on your set from where the car starts, the body rolls, squats and dives on its springs, tyre smoke pours off the wheels, and the prompts say which end leads, so the video gets the spin right. → [Tutorial](docs/TUTORIAL.md#stunts-j-turn-donut-handbrake-180)
 
-<p align="center"><img src="docs/media/stunt_jturn.gif" width="760" alt="Reverse J-turn: the clay stage on the left, the final on the right, the red car spinning with tyre smoke on a wet night street"></p>
 
 ### New sets
 
@@ -226,8 +223,7 @@ Underwater coral reef, burning building (plus **Fire** on any set), airplane cab
 
 <table>
 <tr>
-<td width="50%"><img src="docs/media/new_sets_reef.gif" alt="A diver over a coral reef: the clay stage beside the final"></td>
-<td width="50%"><img src="docs/media/new_sets.jpg" alt="The new sets in clay: underwater reef, burning building, airplane cabin, train carriage, station platform, an airliner above the clouds"></td>
+<td align="center"><img src="docs/media/new_sets.jpg" width="720" alt="The new sets in clay: underwater reef, burning building, airplane cabin, train carriage, station platform, an airliner above the clouds"></td>
 </tr>
 </table>
 
@@ -257,8 +253,7 @@ Scan a QR code and your phone shows the live stage through the shot camera, and 
 
 <table>
 <tr>
-<td width="50%"><img src="docs/media/car_chase.gif" alt="Left the clay stage, right the final: a police car chasing a red sports car on a wet night street"><br><sub><b>Car chase, before and after:</b> left the 3D stage, right the final. Same cars, same positions, same camera: a crane wide, then a tracking shot.</sub></td>
-<td width="50%"><img src="docs/media/western.gif" alt="Riders galloping off at sunset"><br><sub><b>Western:</b> riders run to rigged horses, vault on and gallop off. Two camera setups, joined into one cut.</sub></td>
+<td align="center"><img src="docs/media/car_chase.gif" width="720" alt="Left the clay stage, right the final: a police car chasing a red sports car on a wet night street"><br><sub><b>Car chase, before and after:</b> left the 3D stage, right the final. Same cars, same positions, same camera: a crane wide, then a tracking shot.</sub></td>
 </tr>
 </table>
 
