@@ -637,7 +637,8 @@ export function applyTake(stage, take, { smoothing = "light" } = {}) {
     if (tr.type === "boat") {
       // The strokes you paddled (so the crew pull exactly when the hull surged) and the throttle / trim you used.
       const keep = (a.boat?.strokes || []).filter((x) => x.to <= f0);
-      a.boat = { ...(a.boat || {}), strokes: [...keep, ...(tr.strokes || []).map((x) => ({ ...x }))], driven: true };
+      const took = (tr.strokes || []).filter((x) => x.from >= f0 && x.to > x.from).map((x) => ({ ...x }));   // boatsim.strokeAt wants them in order
+      a.boat = { ...(a.boat || {}), strokes: [...keep, ...took].sort((p, q) => p.from - q.from), driven: true };
       for (const [ch, key] of [["throttle", "throttle"], ["motor_trim", "trim"]]) {
         const st = dropHolds(samples.filter((x, i) => Number.isFinite(x[key]) && (i % 4 === 0 || i === samples.length - 1)).map((x) => ({ f: x.f, v: Math.round(x[key] * 100) / 100 })), (p, q) => p.v === q.v);
         if (!st.length) continue;
@@ -1594,6 +1595,12 @@ export class DriveMode {
     this.rec = null;
     if (R.phase !== "rec" || !Object.keys(R.take.tracks).length) { this.say("Recording cancelled."); return; }
     R.take.end = Math.floor(R.f);
+    // A stroke still in the water when the take ends closes there (it would be lost otherwise).
+    for (const b of this.live.values()) {
+      if (!b.boat?._open?.size) continue;
+      for (const o of b.boat._open.values()) b.boat.strokes.push({ ...o, to: R.take.end });
+      b.boat._open.clear();
+    }
     this._review(R.take);
   }
 
@@ -1602,7 +1609,11 @@ export class DriveMode {
     if (!R) { this.s._obsCache = null; this.s.setFrame(this.s.frame); return; }
     if (R.phase === "count") {
       R.left -= dt;
-      if (R.left <= 0) { R.phase = "rec"; R.f = R.f0; this._sample(R.f0); this.say("● Recording. R (or Start) stops; the take ends at the end of the shot."); }
+      if (R.left <= 0) {
+        // The take's paddle strokes start now: strokes paddled before R (stamped at the paused playhead) aren't in it.
+        for (const b of this.live.values()) if (b.boat?.strokes) { b.boat.strokes = []; b.boat._open?.clear(); }
+        R.phase = "rec"; R.f = R.f0; this._sample(R.f0); this.say("● Recording. R (or Start) stops; the take ends at the end of the shot.");
+      }
       this.s.setFrame(R.f0);
       return;
     }

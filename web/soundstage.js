@@ -322,6 +322,9 @@ function createStageWidget(node, inputName) {
   guideBtn.style.marginLeft = "6px";
   // Keyboard shortcuts: the "?" cheat sheet (web/ui/shortcuts.mjs), also on the "?" key anywhere in the App.
   const keySheet = new CheatSheet({ onState: (open) => keysBtn.setAttribute("aria-pressed", String(open)) });
+  // Drive mode and the open shortcut sheet own the keyboard. Their window-capture guards are added after the App's
+  // own V / "/" / H / Tab handlers, so stopImmediatePropagation can't stop those: they check this instead.
+  const appKeysHeld = () => keySheet.isOpen || !!stage?.drive?.on;
   const keysBtn = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn ss-keysbtn",
     title: withKeys("Keyboard shortcuts: every key and mouse move in one list", ["?"]) });
   keysBtn.dataset.ssIcon = "keyboard";
@@ -3094,7 +3097,7 @@ function createStageWidget(node, inputName) {
   // Director's assistant (Milestone 15, web/agent/directorpanel.mjs): talk to the set ("/" or the top bar); it shows a
   // plan, Apply runs it through these same panels, and every turn can be undone. MCP clients drive it too.
   node.ssDirector = mountDirector({ root: el, topBar: tabs, before: guideBtn, api, stage,
-    isActive: () => el.isConnected && !!el.getClientRects().length && !el.dataset.tour
+    isActive: () => el.isConnected && !!el.getClientRects().length && !el.dataset.tour && !appKeysHeld()
       && (el.contains(document.activeElement) || el.matches(":hover") || el.classList.contains("ss-full")),
     host: {
       onLoad: () => { try { syncControls(); syncEnv(); syncLight(); syncShots(); strip.refresh(); } catch { /* rows not built */ } },
@@ -3116,7 +3119,7 @@ function createStageWidget(node, inputName) {
   // Presets (Milestone 17, web/ui/presets.mjs): one window of one-click camera moves, lighting, looks, stunts, edit
   // styles and recipes ("V" or the top bar). Each apply is one undo step; the Director gets them as its preset tool.
   node.ssPresets = mountPresets({ root: el, topBar: tabs, before: keysBtn, api, stage,
-    isActive: () => el.isConnected && !!el.getClientRects().length && !el.dataset.tour
+    isActive: () => el.isConnected && !!el.getClientRects().length && !el.dataset.tour && !appKeysHeld()
       && (el.contains(document.activeElement) || el.matches(":hover") || el.classList.contains("ss-full")),
     host: {
       onLoad: () => { try { syncControls(); syncEnv(); syncLight(); syncShots(); strip.refresh(); } catch { /* rows not built */ } },
@@ -3666,7 +3669,7 @@ function createStageWidget(node, inputName) {
     new MutationObserver(physLater).observe(el, { attributes: true, attributeFilter: ["data-ws", "class"] });
     // Tab or H hides every panel (not while typing, not in Paint Studio, which has its own keys).
     const onKey = (e) => {
-      if (!cvOn || !el.isConnected || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || el.dataset.tour) return;
+      if (!cvOn || !el.isConnected || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || el.dataset.tour || appKeysHeld()) return;
       const isH = e.key === "h" || e.key === "H", isTab = e.key === "Tab" && !e.shiftKey;
       if (!isH && !isTab) return;
       const t = e.target, a = document.activeElement;

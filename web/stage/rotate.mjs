@@ -102,9 +102,14 @@ export class RotateTools {
     this._buildRing();
     this._bindPointer();
     const snap = (e) => { if (e.key === "Shift") stage.tc?.setRotationSnap(e.type === "keydown" ? THREE.MathUtils.degToRad(SNAP_DEG) : null); };
+    const blur = () => stage.tc?.setRotationSnap(null);
     addEventListener("keydown", snap, true); addEventListener("keyup", snap, true);
-    addEventListener("blur", () => stage.tc?.setRotationSnap(null));
+    addEventListener("blur", blur);
+    this._unbindWindow = () => { removeEventListener("keydown", snap, true); removeEventListener("keyup", snap, true); removeEventListener("blur", blur); };
   }
+
+  /** Stage.dispose(): the window listeners go (they hold the stage). */
+  dispose() { this._unbindWindow?.(); this._unbindWindow = null; }
 
   _buildRing() {
     const mat = new THREE.MeshBasicMaterial({ color: 0xf2ff59, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false,

@@ -416,7 +416,7 @@ def render_cut(project, roots, out_path, spec=None) -> dict:
         cur = "[base]"
         # ---- Film Finish (Milestone 21): lens, fringe, halation, vignette, grain on the picture, under the titles
         if FINISH.get(spec.get("finish") or "off") or spec.get("motion_blur"):
-            filters += finish_graph(cur, "[fin]", spec.get("finish") if FINISH.get(spec.get("finish")) else "subtle", OW, OH,
+            filters += finish_graph(cur, "[fin]", spec.get("finish") if FINISH.get(spec.get("finish")) else "off", OW, OH,
                                     seed=int(spec.get("finish_seed") or 1), motion_blur=bool(spec.get("motion_blur")) or None)
             cur = "[fin]"
 

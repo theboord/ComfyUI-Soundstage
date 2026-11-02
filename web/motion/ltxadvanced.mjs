@@ -68,7 +68,7 @@ export function resolveSettings(saved) {
   for (const k of KEYS) if (s[k] !== undefined && s[k] !== null && s[k] !== "") out[k] = s[k];
   out.resolution = Math.round(clamp(num(out.resolution, 1088), 256, 2176));
   out.two_stage = !!out.two_stage;
-  out.steps_1 = Math.round(clamp(num(out.steps_1, 8), 4, 60));
+  out.steps_1 = Math.round(clamp(num(out.steps_1, 8), 8, 60));   // the schedule has 8 steps at least (ltx_settings.sigmas_1)
   out.steps_2 = Math.round(clamp(num(out.steps_2, 3), 1, 40));
   out.s2_start = clamp(num(out.s2_start, 0.909375), 0.3, 1);
   out.cfg = clamp(num(out.cfg, 1), 1, 10);
@@ -243,7 +243,7 @@ export class LtxAdvanced {
     const row = (label, ctl, tip) => [h("label", { title: tip || "" }, label), ctl];
     f.res = sel(RESOLUTIONS, () => this.patch({ resolution: +f.res.value }));
     f.two = h("input", { type: "checkbox", on: { change: () => this.patch({ two_stage: f.two.checked }) } });
-    f.s1 = n(4, 60, 1, () => this.patch({ steps_1: +f.s1.value }));
+    f.s1 = n(8, 60, 1, () => this.patch({ steps_1: +f.s1.value }));
     f.s2 = n(1, 40, 1, () => this.patch({ steps_2: +f.s2.value }));
     f.s2start = sel([["0.909375", "0.909 (re-draws more detail)"], ["0.85", "0.85 (Lightricks' 2.5 default, keeps stage 1)"]],
       () => this.patch({ s2_start: +f.s2start.value }));

@@ -25,6 +25,7 @@
 // Pure helpers are exported for tests (tests/js/oneclick.test.mjs); OneClickPanel and attachOneClick are the DOM part.
 
 import { refFromViewUrl, refOf, viewQuery, waitForOutput } from "../motion/ripple.mjs";
+import { renderPreset } from "../takecheck/model.mjs";
 
 export const GROUPS = [
   ["Effects", "Change the world in the picture: weather, time, flood, cut it out, empty it, bring it to life"],
@@ -553,7 +554,7 @@ export function attachOneClick(host) {
   const shotName = (sid) => { try { return (stage.toJSON().shots || []).find((s) => s.id === sid)?.name || sid; } catch { return sid; } };
   const panel = new OneClickPanel({
     api, root: host.root, stage, pipeline, checks: host.takeChecks, say: host.say, toast: host.toast || host.say,
-    quality: () => (pipeline?.m?.quality === "Final" ? "Final" : "Draft"),
+    quality: () => (renderPreset(pipeline) === "Draft" ? "Draft" : "Final"),
     openTake: (sid, take) => host.showTake?.(sid, take),
     addTake(sid, take, target) {
       if (!pipeline || !sid) return;
