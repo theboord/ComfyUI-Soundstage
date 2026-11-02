@@ -14,7 +14,7 @@ export const RIG_TYPES = ["free", "tripod", "dolly", "chapman", "slider", "jib",
 export const TIME_KEYS = ["dawn", "golden_am", "midday", "overcast", "magic_hour", "blue_hour", "night", "keep"];
 export const GRADE_KEYS = ["warmth", "contrast", "saturation", "grain", "halation", "vignette"];
 export const STUNT_KINDS = ["reverse_jturn", "donut", "handbrake_180"];
-export const PHYSICS_KINDS = ["crate_crash", "drop", "throw"];
+export const PHYSICS_KINDS = ["crate_crash", "drop", "throw", "tarp_wind", "rope_bridge", "cardboard_crush", "sand_pile"];   // the last four: soft bodies (Milestone 28)
 /** Camera shake on impact (Milestone 21): the shot camera jolts with each baked hit. */
 export const SHAKE_KINDS = ["light", "heavy", "earthquake", "off"];
 export const RECIPE_STEPS = ["video_to_3d", "new_angle", "ripple_mode", "whole_frame", "quality_draft", "quality_hollywood",

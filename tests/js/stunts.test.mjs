@@ -185,11 +185,12 @@ test("Stage.applyStunt writes the keys from where the car is, plays them, and 'n
   const bodyPivot = g.userData.vehicleBody;
   assert.ok(bodyPivot.userData.bodyPivot && Math.abs(bodyPivot.rotation.z) > 2 / DEG, `rolled ${bodyPivot.rotation.z * DEG}°`);
   for (const w of g.userData.wheelRig) assert.equal(w.parent, g, "wheels stay on the car, out of the rolling body");
-  const smoke = g.userData.tireSmoke;
-  assert.ok(smoke?.object.visible && smoke.object.geometry.drawRange.count > 10);
-  const snap = Array.from(smoke.object.geometry.attributes.position.array.slice(0, 30));
+  // Tyre smoke runs through the one particle system (Milestone 28, secondary.mjs): seeded, simulated, cached.
+  const smoke = st.secondary;
+  assert.ok(st._smokeSrc?.has("car") && smoke?.object.visible && smoke.dust.geometry.drawRange.count > 10);
+  const snap = Array.from(smoke.dust.geometry.attributes.position.array.slice(0, 30));
   st.setFrame(90); st.setFrame(48);
-  assert.deepEqual(Array.from(smoke.object.geometry.attributes.position.array.slice(0, 30)), snap, "the same puffs at frame 48 every time");
+  assert.deepEqual(Array.from(smoke.dust.geometry.attributes.position.array.slice(0, 30)), snap, "the same puffs at frame 48 every time");
   // Turn at a key edits that key's heading (kept continuous), not the car's rest Turn.
   st.selected = "car"; st.setFrame(48);
   st.rotateSelected(-170);
@@ -207,7 +208,7 @@ test("an ordinary car on the Car Chase keeps its heading and makes no smoke", as
   const a = st.state.actors.find((x) => x.id === "sports_car");
   const dyn = st._vehicleDynamics(a);
   assert.ok(!dyn.stunt && dyn.smoke.every((s) => s.amount === 0));
-  for (let f = 0; f <= 120; f += 10) { st.setFrame(f); assert.ok(!g.userData.tireSmoke?.object.visible); }
+  for (let f = 0; f <= 120; f += 10) { st.setFrame(f); assert.ok(!g.userData.tireSmoke?.object.visible && !st._smokeSrc?.has("sports_car")); }
 });
 
 test("the driver rides the rolling body: seat and lean follow the cabin, no legs out under the floor", async () => {
