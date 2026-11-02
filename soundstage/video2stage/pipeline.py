@@ -183,6 +183,13 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
               "driver", "player", "boxer", "fighter", "skater", "hiker", "actor", "guy", "lady")
     has_person = not vmodel or any(any(w in (o.get("label") or "").lower().split() for w in PEOPLE)
                                    for o in breakdown.get("objects") or [])
+    # Someone the read only sees inside a car is its driver, seated at the wheel (convert.mount_riders): capturing
+    # them would stand a clay figure beside the car and lock the camera for a "walking subject" that isn't there.
+    cars = {a["id"] for a in scene["actors"] if a.get("kind") in ("car", "truck")}
+    folk = [a for a in scene["actors"] if a.get("kind") in ("man", "woman", "child")]
+    if has_person and folk and all(a.get("mount_id") in cars for a in folk):
+        has_person = False
+        notes.append(f"people: {', '.join(a.get('name', 'the driver') for a in folk)} sits in the car; no motion capture")
     if mocap and has_person and performer.available(_detection_models()):
         say("Capturing the performance (SAM 3D Body)", 0.47)
         try:

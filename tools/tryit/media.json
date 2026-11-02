@@ -1,6 +1,6 @@
 {
-  "about": "Media the demo ships beyond the original r/ renders. Each encode entry is re-encoded into the media cache when its source is newer: videos 960 px, H.264 crf 28, AAC 96k (the r/ recipe); stills 1280 px JPEG. kind: video | still | frame0 (the clip's first frame as a still); vf: an ffmpeg crop applied first. Never list anything from soundstage_private/, Milestone6_Ripple_Pose/private_mike_test/ or the private-script challenge (the build refuses them).",
-  "always": ["r/canned/advisor_vocab.json", "refs/horse.jpg", "refs/man.jpg", "refs/woman.jpg", "r/canned/takecheck.json"],
+  "about": "Media the demo ships beyond the original r/ renders. Each encode entry is re-encoded into the media cache when its source is newer: videos 960 px, H.264 crf 28, AAC 96k (the r/ recipe); stills 1280 px JPEG. kind: video | still | frame0 (the clip's first frame as a still); vf: an ffmpeg crop applied first; copy: a file already encoded for the web (the hero and the Video → 3D clip), shipped as it is. Never list anything from soundstage_private/, Milestone6_Ripple_Pose/private_mike_test/ or the private-script challenge (the build refuses them).",
+  "always": ["r/m_v2s_source.mp4", "r/canned/advisor_vocab.json", "refs/horse.jpg", "refs/man.jpg", "refs/woman.jpg", "r/canned/takecheck.json", "r/m_hero_jturn.mp4"],
   "encode": [
     {"src": "~/OpenHiggsfieldContest/share/Milestone11_NewSets/showcase/underwater/draft_ltx.mp4", "out": "m_underwater_draft.mp4"},
     {"src": "~/OpenHiggsfieldContest/share/Milestone11_NewSets/showcase/underwater/draft_ltx.mp4", "out": "m_underwater_look.jpg", "kind": "frame0"},
@@ -63,6 +63,17 @@
     {"src": "~/OpenHiggsfieldContest/share/HeroGIF_v3/final.mp4", "out": "m_hero_v3_final.mp4"},
     {"src": "~/OpenHiggsfieldContest/share/HeroGIF_v3/clay_hero_v3.mp4", "out": "m_hero_v3_clay.mp4"},
     {"src": "~/OpenHiggsfieldContest/share/Stunt_Dynamics/round2/draft/stuntdyn2_draft_00001_.mp4", "out": "m_stuntdyn_draft.mp4"},
-    {"src": "~/OpenHiggsfieldContest/share/Stunt_Dynamics/round2/clay/clay_r1_vs_r2_camB.mp4", "out": "m_stuntdyn_clay.mp4"}
+    {"src": "~/OpenHiggsfieldContest/share/Stunt_Dynamics/round2/clay/clay_r1_vs_r2_camB.mp4", "out": "m_stuntdyn_clay.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/TryIt_Demo/hero_jturn_clay_final.mp4", "out": "m_hero_jturn.mp4", "kind": "copy"},
+    {"src": "~/OpenHiggsfieldContest/share/TryIt_Demo/v2s_source_jturn.mp4", "out": "m_v2s_source.mp4", "kind": "copy"},
+    {"src": "~/OpenHiggsfieldContest/share/Boats/_work/speed_klein.png", "out": "m_boat_speed_look.jpg", "kind": "still"},
+    {"src": "~/OpenHiggsfieldContest/share/Boats/draft/draft_speedboat_run.mp4", "out": "m_boat_speed_draft.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/Boats/draft/clay_vs_draft_speedboat_run.mp4", "out": "m_boat_speed_clay_draft.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/Boats/draft/clay_vs_draft_canoe_lake.mp4", "out": "m_boat_canoe_clay_draft.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/Milestone29_DriveMode/drive_mode_demo.mp4", "out": "m_drive_mode.mp4", "vf": "trim=0:62,setpts=PTS-STARTPTS"},
+    {"src": "~/OpenHiggsfieldContest/share/OneClick/A/renders/relight_neon_original_klein_krea2lock.jpg", "out": "m_oneclick_neon.jpg", "kind": "still", "vf": "crop=iw:ih*2/3:0:0"},
+    {"src": "~/OpenHiggsfieldContest/share/FullScene/KeyAndStrip_0650/key_camera_view_sheet.png", "out": "m_key_sheet.jpg", "kind": "still"},
+    {"src": "~/OpenHiggsfieldContest/share/FullScene/KeyAndStrip_0650/strip_1600_before.png", "out": "m_strip_before.jpg", "kind": "still"},
+    {"src": "~/OpenHiggsfieldContest/share/FullScene/KeyAndStrip_0650/strip_1600_after.png", "out": "m_strip_after.jpg", "kind": "still"}
   ]
 }
