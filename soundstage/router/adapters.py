@@ -14,7 +14,7 @@ image, images, mask, params (the chosen option's nested widgets), weights {role:
 """
 import math
 
-from ..look.frame_lock import INIT_DOWN, stage_denoise
+from ..look.frame_lock import DEFAULT_DENOISE, INIT_DOWN, KREA_STEPS, depth_lock, stage_denoise
 
 
 class RouterError(ValueError):
@@ -398,36 +398,92 @@ def _text(g, clip, prompt, negative=None):
     return pos, neg
 
 
+def blur_start(g, image, w=0, h=0):
+    """The frame lock's img2img start (look/frame_lock.py): the Color pass shrunk INIT_DOWN x and blown back up, so the
+    latent holds where things are, how big and what colour, but no clay surface to copy. Then w x h when given."""
+    src = g.node("ImageScaleBy", image=image, upscale_method="area", scale_by=1 / INIT_DOWN).out(0)
+    for up in (8, INIT_DOWN / 8):         # ImageScaleBy goes up to 8x per node
+        src = g.node("ImageScaleBy", image=src, upscale_method="bilinear", scale_by=up).out(0)
+    return resize(g, src, w, h) if w and h else src
+
+
+def depth_control(g, model, vae, control, latent, lora):
+    """Krea 2 held to the stage's exact depth pass: the Krea2 depth-control LoRA + the depth latent (near = white)."""
+    model = g.node("Krea2ControlLoRALoader", model=model, lora_name=lora, strength=1.0).out(0)
+    ctrl = g.node("Krea2ControlImageEncode", control_image=control, vae=vae, latent=latent,
+                  resize="match_latent_size", upscale_method="lanczos", crop="center",
+                  channel_mode="grayscale", normalize="per_image_minmax", invert=False,
+                  batch_mode="independent_images").out(0)
+    return g.node("Krea2ControlApply", model=model, control_latent=ctrl).out(0)
+
+
+DEPTH_MISSING = ("Lock to the stage depth needs Krea 2 Turbo, qwen_image_vae, krea2/cn/depth-control-lora.safetensors and "
+                 "the comfyui-krea2-controlnet nodes. Turn the lock off or install them.")
+
+
 def krea2(g, m, p):
     """Krea 2 Turbo. Generate = template image_krea2_turbo_t2i; edit = Soundstage look-still recipe
-    (img2img from the clay frame + Krea2 depth-control LoRA, docs/decisions.md 2026-10-27)."""
+    (img2img from the clay frame + Krea2 depth-control LoRA, docs/decisions.md 2026-10-27).
+    With depth_lock on (④ Frame "Lock to the stage depth", look/frame_lock.py VERSION 3) the edit starts from the
+    blurred Color pass at stage_denoise like the Klein frame lock and is held to the depth pass; cast pictures are not
+    used (the identity-edit patch breaks the depth hold)."""
     w = p["weights"]
     model, clip, vae = _loaders(g, w, "krea2")
     model = _with_lora(g, model, p)
-    pos, neg = _text(g, clip, p["prompt"], p.get("negative"))
-    if p["stage"] == "edit_image":
+    lock = depth_lock((p.get("params") or {}).get("depth_lock")) > 0 and p["stage"] == "edit_image"
+    if lock:
+        if p.get("control") is None or not w.get("depth_lora"):
+            raise RouterError(DEPTH_MISSING)
         src = need(p, "image", "Krea 2 edit", "an image (e.g. the stage clay frame)")
-        if p["width"] and p["height"]:
-            src = resize(g, src, p["width"], p["height"])
-        latent = g.node("VAEEncode", pixels=src, vae=vae).out(0)
-        denoise = float(p["params"].get("denoise", 0.85))
+        W, H = (snap(p["width"], 16), snap(p["height"], 16)) if p["width"] and p["height"] else (0, 0)
+        start = blur_start(g, src, W, H)
+        latent = g.node("VAEEncode", pixels=start, vae=vae).out(0)
+        sd = (p.get("params") or {}).get("stage_denoise")
+        denoise = stage_denoise(sd) if sd is not None else DEFAULT_DENOISE
+        model = depth_control(g, model, vae, p["control"], latent, w["depth_lora"])
+        # No identity edit here: the Krea 2 identity-edit patch overrides the depth hold (share/OneClick/C, gaze shot:
+        # both people grew and moved off their marks and the woman took the man's shirt), so cast pictures are not
+        # used while the frame is depth-locked. The App says so on the lock.
+        pos, neg = _text(g, clip, p["prompt"], p.get("negative"))
     else:
-        latent = g.node("EmptyLatentImage", width=snap(p["width"], 16), height=snap(p["height"], 16),
-                        batch_size=1).out(0)
-        denoise = 1.0
-    if p.get("control") is not None:
-        if not w.get("depth_lora"):
-            raise RouterError("Krea 2 depth control needs krea2/cn/depth-control-lora.safetensors and the "
-                              "comfyui-krea2-controlnet nodes. Disconnect control_image or install them.")
-        model = g.node("Krea2ControlLoRALoader", model=model, lora_name=w["depth_lora"], strength=1.0).out(0)
-        ctrl = g.node("Krea2ControlImageEncode", control_image=p["control"], vae=vae, latent=latent,
-                      resize="match_latent_size", upscale_method="lanczos", crop="center",
-                      channel_mode="grayscale", normalize="per_image_minmax", invert=False,
-                      batch_mode="independent_images").out(0)
-        model = g.node("Krea2ControlApply", model=model, control_latent=ctrl).out(0)
-    s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or 8, cfg=p.get("cfg") or 1.0, sampler_name="euler_ancestral",
+        pos, neg = _text(g, clip, p["prompt"], p.get("negative"))
+        if p["stage"] == "edit_image":
+            src = need(p, "image", "Krea 2 edit", "an image (e.g. the stage clay frame)")
+            if p["width"] and p["height"]:
+                src = resize(g, src, p["width"], p["height"])
+            latent = g.node("VAEEncode", pixels=src, vae=vae).out(0)
+            denoise = float(p["params"].get("denoise", 0.85))
+        else:
+            latent = g.node("EmptyLatentImage", width=snap(p["width"], 16), height=snap(p["height"], 16),
+                            batch_size=1).out(0)
+            denoise = 1.0
+        if p.get("control") is not None:
+            if not w.get("depth_lora"):
+                raise RouterError("Krea 2 depth control needs krea2/cn/depth-control-lora.safetensors and the "
+                                  "comfyui-krea2-controlnet nodes. Disconnect control_image or install them.")
+            model = depth_control(g, model, vae, p["control"], latent, w["depth_lora"])
+    s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or KREA_STEPS, cfg=p.get("cfg") or 1.0, sampler_name="euler_ancestral",
                scheduler="beta", positive=pos, negative=neg, latent_image=latent, denoise=denoise).out(0)
     return {"image": g.node("VAEDecode", samples=s, vae=vae).out(0)}
+
+
+def krea_depth_pass(g, p, image, seed):
+    """④ Frame "Lock to the stage depth" on a FLUX 3 Klein frame: Krea 2 Turbo repaints it at denoise depth_lock,
+    held to the stage's depth pass (control). The Klein frame is the start, so its look and likeness mostly stay;
+    what the depth pass disagrees with (a ghost car, a car the wrong size) is what moves. Weights: the Klein entry's
+    optional krea_* roles."""
+    w = p["weights"]
+    if not all(w.get(r) for r in ("krea_unet", "krea_text_encoder", "krea_vae", "depth_lora")):
+        raise RouterError(DEPTH_MISSING)
+    model, clip, vae = _loaders(g, {"unet": w["krea_unet"], "text_encoder": w["krea_text_encoder"],
+                                    "vae": w["krea_vae"]}, "krea2")
+    latent = g.node("VAEEncode", pixels=image, vae=vae).out(0)
+    model = depth_control(g, model, vae, p["control"], latent, w["depth_lora"])
+    pos, neg = _text(g, clip, p["prompt"])
+    s = g.node("KSampler", model=model, seed=int(seed), steps=KREA_STEPS, cfg=1.0, sampler_name="euler_ancestral",
+               scheduler="beta", positive=pos, negative=neg, latent_image=latent,
+               denoise=depth_lock((p.get("params") or {}).get("depth_lock"))).out(0)
+    return g.node("VAEDecode", samples=s, vae=vae).out(0)
 
 
 def z_image(g, m, p):
@@ -472,9 +528,7 @@ def flux3_klein(g, m, p):
             # ④ Frame from the stage (the frame node has the stage depth on control_image): start from the Color
             # pass itself so the silhouettes, sizes and the object count stay the stage's (look/frame_lock.py).
             # shrunk 16x and blown back up: where things are, how big and what colour, but no clay surface to copy
-            src = g.node("ImageScaleBy", image=images[0], upscale_method="area", scale_by=1 / INIT_DOWN).out(0)
-            for up in (8, INIT_DOWN / 8):         # ImageScaleBy goes up to 8x per node
-                src = g.node("ImageScaleBy", image=src, upscale_method="bilinear", scale_by=up).out(0)
+            src = blur_start(g, images[0])
             # on the reference's own canvas, the one a from-noise frame is painted on: the snapped 1680x896 canvas
             # (the reference sat on 1712x912) gave dark rounded borders and a porthole vignette (M27 frame 1)
             src = resize(g, src, *ref_canvas(p["width"], p["height"], mp))
@@ -488,7 +542,11 @@ def flux3_klein(g, m, p):
                         batch_size=1).out(0)
         s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or 15, cfg=p.get("cfg") or 1.0, sampler_name="er_sde",
                    scheduler="simple", positive=pos, negative=neg, latent_image=latent, denoise=1.0).out(0)
-    return {"image": g.node("VAEDecode", samples=s, vae=vae).out(0)}
+    img = g.node("VAEDecode", samples=s, vae=vae).out(0)
+    if (p["stage"] == "edit_image" and p.get("control") is not None
+            and depth_lock((p.get("params") or {}).get("depth_lock")) > 0):
+        img = krea_depth_pass(g, p, img, p["seed"])   # ④ Frame "Lock to the stage depth" (look/frame_lock.py)
+    return {"image": img}
 
 
 # ---------------------------------------------------------------- local: LTX-2.5
