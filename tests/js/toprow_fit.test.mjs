@@ -119,3 +119,26 @@ test("the headless checks know every step and tool, and the sweep opens the ⋯ 
   assert.deepEqual(TOOLS, ["canvas", "advisor", "look", "dailies", "cut"]);
   assert.ok(CASES.some((c) => c.name === "more_menu" && c.pop === ".ss-moremenu"));
 });
+
+// Verify pass, 2026-11-02 morning (a real click on every top-row control and strip trigger, each panel open, at
+// 1024x640, 1280x800 and 1600x1000): Presets opened over open tracks hid the shot strip, and the floating Physics panel
+// hid the Coach pill (and the axis gizmo) at 1600x1000.
+test("Presets ends above the timeline bar (or above the strip in a short window)", () => {
+  const pre = read("ui/presets.mjs");
+  assert.match(pre, /querySelectorAll\("\.ss-clarea > \.ss-bottom"\)/);
+  assert.match(pre, /barTop - pr\.top - DOCK_GAP < 260\) barTop = strip\.getBoundingClientRect\(\)\.top/);
+  assert.match(pre, /panel\.style\.maxHeight = mh/);
+});
+
+test("the Coach pill and the axis gizmo keep clear of the floating Physics panel", () => {
+  assert.match(rules(main, '.ss-stageview[data-ph-cover="1"] > .ss-gizmo').join(";"), /right\s*:\s*var\(--ph-cover\)/);
+  assert.match(rules(main, '.ss-stageview[data-ph-cover="1"] > .ss-coach').join(";"), /right\s*:\s*calc\(var\(--ph-cover\) \+ 92px\)/);
+  assert.match(main, /view\.style\.setProperty\("--ph-cover"/);
+  assert.match(main, /delete view\.dataset\.phCover; view\.style\.removeProperty\("--ph-cover"\);/, "cleared when Physics closes");
+});
+
+test("the sweep also opens Presets and Physics over tracks that are already open", async () => {
+  const src = readFileSync(new URL("../../tools/qa/popover_sweep.mjs", import.meta.url), "utf8");
+  assert.match(src, /none,tracks,presets,presets_tracks,physics,physics_tracks,parts,director/);
+  assert.match(src, /STATE_JS\.presets_tracks = \{ \.\.\.STATE_JS\.presets, tracks: true \}/);
+});
