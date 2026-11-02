@@ -181,7 +181,7 @@ Press `/` (or **Director** in the top bar) and say what you want: *"put Mara in 
 
 ### Presets: one click, one undo
 
-Press `V` for a searchable window of **Camera moves** (push in, crane up, dolly zoom, drone reveal, car mount…), **Lighting**, **Looks**, **Action**, **Edit styles**, **Recipes** and **Mine** (save your own camera, light or look). Hover a camera move to preview it on the shot; every apply is one ⌘Z. The Director can call them too ("make it a crane up at golden hour"). → [Tutorial](docs/TUTORIAL.md#presets-one-click-camera-moves-and-lighting)
+Press `V` for a searchable window of **Camera moves** (push in, crane up, dolly zoom, drone reveal, car mount, and the racing set: bumper cam, over the tyre, arm car, long-lens pan…), **Lighting**, **Looks**, **Action**, **Edit styles**, **Recipes** and **Mine** (save your own camera, light or look). Hover a camera move to preview it on the shot; every apply is one ⌘Z. The Director can call them too ("make it a crane up at golden hour"). → [Tutorial](docs/TUTORIAL.md#presets-one-click-camera-moves-and-lighting)
 
 <p align="center"><img src="docs/media/presets.jpg" width="760" alt="The Presets window: camera move cards (Push in, Pull out, Orbit, Crane up, Dolly zoom, Whip pan, Handheld follow, Drone reveal, Tracking side, Car mount), with 'Applied Crane up to shot 1' and Undo"></p>
 
@@ -313,7 +313,7 @@ A true-scale 3D stage: type what you need ("cowboy on a horse", "police car", "b
 
 ### &#9315; Frame: paint the first frame, then perfect it
 
-FLUX 3 Klein (or Krea 2 locked to the stage's depth) paints the first frame of every shot from your clay, keeping the framing and blocking, in any of 31 film styles with a real camera, lens and aperture picker. Generate a few, pick one, then fix it in **Paint Studio**, a small Photoshop with our own Generative Fill: Fill, Remove, Extend to any aspect, magic select (SAM 3.1), layers, history and before/after variations. *Why it matters:* the video inherits everything in this frame, so a ten-second fix here saves a re-render. → [Tutorial: ④ Frame](docs/TUTORIAL.md#step-4-frame)
+FLUX 3 Klein (or Krea 2 locked to the stage's depth) paints the first frame of every shot from your clay, keeping the framing and blocking, in any of 32 film styles with a real camera, lens and aperture picker. Generate a few, pick one, then fix it in **Paint Studio**, a small Photoshop with our own Generative Fill: Fill, Remove, Extend to any aspect, magic select (SAM 3.1), layers, history and before/after variations. *Why it matters:* the video inherits everything in this frame, so a ten-second fix here saves a re-render. → [Tutorial: ④ Frame](docs/TUTORIAL.md#step-4-frame)
 
 <p align="center"><img src="docs/media/paint_results.jpg" width="700" alt="Paint Studio results: remove a cowboy, fill a barrel, extend to 2.39"></p>
 
@@ -419,7 +419,7 @@ ComfyUI's cache means each Run only does the new work.
 - **In-car camera presets.** The shot camera can ride along inside a vehicle, with interior framings. **＋ All interior shots** adds one shot per interior angle in a single click.
 - **Camera.** Real lenses and aspect ratios (1.85, 2.39, 16:9, 9:16 and more), Catmull-Rom keyframes, free-fly view. A virtual camera turns a phone, iPad, Quest or Vision Pro into the shot camera; its stabilizer smooths your move rather than replacing it. The **phone viewfinder** shows the live stage on the phone, with primes, focus pulls and an iris.
 - **Light.** Solar-accurate time of day: set the hour and North, and the sun sits where it would (the date and latitude come from the scene; Los Angeles in late October by default). Film lights (key, fill, rim, practical, spot, neon) with Kelvin, power and softness.
-- **Look tab.** 31 genre style presets and 18 ASC-style lighting setups (three-point, Rembrandt, low-key noir, book light and more), plus camera body, lens, film stock, era and grade. It compiles the still prompt and the LTX motion prompt from the stage itself.
+- **Look tab.** 32 genre style presets and 18 ASC-style lighting setups (three-point, Rembrandt, low-key noir, book light and more), plus camera body, lens, film stock, era and grade. It compiles the still prompt and the LTX motion prompt from the stage itself.
 - **Coach.** Watches the stage, the cut and the App and shows at most two small cards: what looks wrong, why, and a one-click fix. It never blocks a Run. See [docs/coach.md](docs/coach.md).
 - **Director's Advisor.** Turns a scene description into a shot list with the reasoning, citing a film-language knowledge base. See [docs/advisor.md](docs/advisor.md).
 - **Scene agent.** "Describe your scene" builds the stage; then edit it by chat. See [docs/agent.md](docs/agent.md).

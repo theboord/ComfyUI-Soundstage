@@ -191,6 +191,12 @@ export const CAR_SHOTS = {
   back_seat_single: { label: "Between the front seats, back at the back seat", position: [0, 1.18, 0.15], target: [0, 1.0, -1.0], focal_mm: 24 },
   side_tracking: { label: "Tracking alongside (outside)", position: [3.2, 1.2, 0.2], target: [0, 1.0, 0.2], focal_mm: 35 },
   top_down: { label: "Top down (overhead)", position: [0, 9, 0.01], target: [0, 0, 0], focal_mm: 24 },
+  // Racing-film hard mounts (the Racing cinema camera presets): a low bumper cam, and an F1-style mount just above and
+  // outside the front tyre looking back at the rear tyre. Measured on sports_car.glb at stage scale: the tyre mount is
+  // 0.25 m clear of the bodywork and 0.30 m clear of the front tyre at full steering lock (near plane 0.1 m), and above
+  // the tyre's top (0.64 m); the bumper cam is 0.15 m clear (tests/js/racing_cinema.test.mjs).
+  bumper: { label: "Bumper cam (low, road ahead)", position: [0, 0.35, 2.4], target: [0, 0.3, 12], focal_mm: 18 },
+  front_wheel: { label: "Over the front tyre, looking back", position: [1.2, 0.8, 1.3], target: [0.9, 0.3, -4], focal_mm: 14 },
 };
 const LIFT_FRAMES = 8;
 const RIDEABLE = new Set(["horse", "bicycle", "motorcycle"]);
