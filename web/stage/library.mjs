@@ -52,6 +52,7 @@ export const LIBRARY = {
   rock: { label: "Rock", height: 0.8, rig: "static" },
   crate: { label: "Crate", height: 0.8, rig: "static" },
   flashlight: { label: "Flashlight", height: 0.08, rig: "static", light: true },
+  key: { label: "Key", height: 0.012, rig: "static" },
   ufo: { label: "Flying saucer", height: 3, rig: "static", light: true, flies: true },
   wall: { label: "Wall", height: 2.4, rig: "static" },
   cube: { label: "Cube", height: 1, rig: "static" },
@@ -206,7 +207,7 @@ export const OBJECT_COLORS = {
   motorcycle: ["#1f2a44", "#1b1b1d"], tree: ["#3e6b35", "#5b4029"], bush: ["#4a7a3e", "#4a7a3e"],
   house: ["#d8cbb2", "#7a3b2e"], bench: ["#8a5a35", "#2d2d2d"], table: ["#8a5a35", "#8a5a35"],
   chair: ["#7a5232", "#7a5232"], lamp: ["#2f3236", "#f3e3b0"], rock: ["#8c877e", "#8c877e"],
-  crate: ["#a7814f", "#a7814f"], flashlight: ["#2b2d31", "#d9dde2"], fire: ["#ff8a2a", "#5a3a22"], boat: ["#f2f0ea", "#1f3b5c"], sailboat: ["#f4f1e8", "#7a5a3a"],
+  crate: ["#a7814f", "#a7814f"], flashlight: ["#2b2d31", "#d9dde2"], key: ["#a8873c", "#9a9ea4"], fire: ["#ff8a2a", "#5a3a22"], boat: ["#f2f0ea", "#1f3b5c"], sailboat: ["#f4f1e8", "#7a5a3a"],
   catamaran: ["#f4f4f0", "#2c3e50"], jetski: ["#e8e8e8", "#c23b22"],
   speedboat: ["#f3f1ec", "#1d3f6e"], fishing_boat: ["#e9e4d8", "#9a2f25"], dinghy: ["#f2f2ee", "#2a5d8a"], yacht: ["#f4f2ec", "#20324a"],
   canoe: ["#b5512f", "#7a5232"], kayak: ["#e7b52c", "#2b2d31"], rowboat: ["#4f7a6a", "#8a6a44"], raft: ["#d2452f", "#2b2d31"], log_raft: ["#7a5b3a", "#6a4e32"], bird: ["#1d1d22", "#c9a227"], ufo: ["#8d949c", "#b8f5c4"], wall: ["#bdb7ad", "#bdb7ad"], flat: ["#cfc8bb", "#7a6a55"],
@@ -632,6 +633,17 @@ export function buildObject(kind, height, mesh, appearance = null) {
       g.add(beam, beam.target);
       g.userData.beam = beam;
       g.userData.beamBase = 30;
+      break;
+    }
+    case "key": {
+      // An old car ignition key, ~6 cm, lying flat along +Z (blade toward +Z): a round bow, the blade with a notched
+      // edge, and a small steel split ring through the bow. Held (actor.hold) it rides in a hand; tossed, it flies.
+      const k = h / LIBRARY.key.height;
+      const t = 0.0025 * k, y = 0.004 * k;
+      add(new THREE.TorusGeometry(0.0115 * k, 0.0042 * k, 8, 20), 0, y, -0.012 * k, Math.PI / 2);
+      add(new THREE.BoxGeometry(0.009 * k, t, 0.036 * k), 0, y, 0.016 * k);
+      for (let i = 0; i < 3; i++) add(new THREE.BoxGeometry(0.004 * k, t, 0.005 * k), 0.0055 * k, y, (0.006 + i * 0.009) * k);
+      add(new THREE.TorusGeometry(0.009 * k, 0.0012 * k, 6, 18), 0, y, -0.026 * k, Math.PI / 2, 0, 0, accent);
       break;
     }
     case "boat": case "jetski": {
