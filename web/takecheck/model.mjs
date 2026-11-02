@@ -116,7 +116,13 @@ export function estimateSeconds(timing, rung, frames = 121, count = 1) {
 }
 
 /** The final's rung key for ⑤ Motion's Quality picker (Draft / Final / Final HQ). */
-export const finalRung = (quality) => (/hq/i.test(String(quality || "")) ? "final_hq" : "final");
+export const finalRung = (quality) => (/hq|hollywood/i.test(String(quality || "")) ? "final_hq" : "final");
+
+/** The active shot's ⑤ Motion preset ("Draft" | "Final" | "Hollywood"). The Draft/Final buttons (pipeline.m.quality) were
+ * replaced by the LTX presets (pipeline.ltx); readers of the old field always saw undefined. */
+export function renderPreset(pipeline) {
+  try { return pipeline?.ltx?.settings?.()?.preset || pipeline?.m?.quality || "Final"; } catch { return "Final"; }
+}
 
 // ------------------------------------------------------------------------------------------- readiness
 
