@@ -75,7 +75,8 @@ one-click fixes:
 > **Crash them** · **Reroute**
 
 Before a render, a scene that hasn't been baked is baked first (the physics resolves what it can); whatever still passes
-through something (a Keep keyed actor) stops the render and asks.
+through something (a Keep keyed actor) stops the render and asks. *"render the draft anyway"* renders it as it is, and
+with **Everything collides** off the check doesn't stop a render (pass-throughs are what you asked for).
 
 ## Director
 
