@@ -777,14 +777,14 @@ export class CutPanel {
     }
     const sel = this.gfxSel && (this.project.graphics || []).find((g) => g.id === this.gfxSel);
     if (sel && f >= sel.start_frame && f < sel.start_frame + sel.frames) {
-      const s = W / GFX.W0;
+      const { s, oy } = GFX.designBox(W, H);   // letterboxed like GFX.paint (a 9:16 project is not 16:9)
       ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeStyle = ACCENT; ctx.lineWidth = 1.5;
       if (sel.template === "callout") {   // the target box as it is on screen now (projected through the zoom)
         const z = GFX.stateAt(sel, f - sel.start_frame).find((o) => o.op === "zoom") || { cx: 960, cy: 540, z: 1 };
         const [x, y, w, h] = sel.rect;
-        ctx.strokeRect(((x - z.cx) * z.z + 960) * s, ((y - z.cy) * z.z + 540) * s, w * z.z * s, h * z.z * s);
+        ctx.strokeRect(((x - z.cx) * z.z + 960) * s, ((y - z.cy) * z.z + 540) * s + oy, w * z.z * s, h * z.z * s);
       }
-      else for (const op of GFX.stateAt(sel, f - sel.start_frame)) if (op.w && op.h && op.op !== "ring") ctx.strokeRect(op.x * s, op.y * s, op.w * s, op.h * s);
+      else for (const op of GFX.stateAt(sel, f - sel.start_frame)) if (op.w && op.h && op.op !== "ring") ctx.strokeRect(op.x * s, op.y * s + oy, op.w * s, op.h * s);
       ctx.restore();
     }
   }
@@ -793,7 +793,7 @@ export class CutPanel {
   _viewDown(e) {
     if (e.button !== 0) return;
     const r = this.viewer.getBoundingClientRect();
-    const px = ((e.clientX - r.left) / r.width) * GFX.W0, py = ((e.clientY - r.top) / r.height) * GFX.H0;
+    const [px, py] = GFX.viewToDesign(e.clientX - r.left, e.clientY - r.top, r.width, r.height);   // paint()'s letterbox
     const g = GFX.hitGraphic(this.project, Math.floor(this.frame), px, py);
     if (!g) return;
     this.stop();
@@ -801,7 +801,7 @@ export class CutPanel {
     const orig = { x: g.x, y: g.y, rect: g.rect ? [...g.rect] : null }, list = this.project.graphics;
     let moved = false;
     const move = (ev) => {
-      const dx = ((ev.clientX - e.clientX) / r.width) * GFX.W0, dy = ((ev.clientY - e.clientY) / r.height) * GFX.H0;
+      const sc = GFX.designBox(r.width, r.height).s, dx = (ev.clientX - e.clientX) / sc, dy = (ev.clientY - e.clientY) / sc;
       if (!moved && Math.hypot(dx, dy) < 4) return;
       moved = true;
       const patch = orig.rect ? { rect: [orig.rect[0] + dx, orig.rect[1] + dy, ...orig.rect.slice(2)] } : { x: Math.round(orig.x + dx), y: Math.round(orig.y + dy) };
@@ -1353,6 +1353,9 @@ export class CutPanel {
     this.future = [];
     this.project = { ...this.project, cut, ...(audio ? { audio } : {}), ...(audio_tracks ? { audio_tracks } : {}) };
     for (const k of ["titles", "subtitles", "fade_out", "burn_subtitles", "graphics"]) if (k in extra) this.project[k] = extra[k];
+    // Graphics moved (a sync-locked ripple moves each one by its start; its A2 cues rippled one by one with the audio,
+    // so a graphic straddling the edit lost some of its sounds): rebuild their cues from where the graphics now are.
+    if ("graphics" in extra && this._gfxLib) this.project.audio = this._gfxAudio(this.project);
     this.project = TL.normalizeProject(this.project);
     this.sel = sel;
     this._afterEdit();
