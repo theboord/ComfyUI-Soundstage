@@ -13,7 +13,7 @@ For every panel and button in depth, see the [complete tutorial](TUTORIAL.md).
 1. **Never click ComfyUI's own Run button** (white, at the top) or its "Click Run to get started" text. It sends the whole graph to the GPU. Soundstage has its own button for every render.
 2. **One shot at a time.** Skip any button that works on many shots: "…for every shot", **Generate all missing**, **Render missing shots**. Each is a stack of GPU jobs.
 3. **Esc only to close an open panel** (Presets, a pop-over, Drive, pose, the Book). With nothing open, Esc leaves the full workspace; click **Open the full workspace** to come back.
-4. **Read a yellow button before you click it.** On ⑤ Motion the big yellow one is **Render final + sound**, a full render: the App quotes about 4–6 minutes of GPU warm.
+4. **Read a yellow button before you click it.** On ⑤ Motion the big yellow one is **Render final + sound**, a full render: about 8–9 minutes of GPU at the default Final quality (hover a Quality button for this GPU's estimate).
 
 ---
 
