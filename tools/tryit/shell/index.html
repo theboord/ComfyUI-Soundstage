@@ -51,6 +51,43 @@
   #clip .hd b { font-size: 14px; }
   #clip .hd button { font: inherit; font-weight: 600; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; cursor: pointer; min-height: 32px; }
   #clip p { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  /* The first screen: the pitch in one line, and the stage against the take it guided (one wipe, one video). */
+  #hero { position: fixed; inset: 0; z-index: 20045; overflow: auto; overscroll-behavior: contain;
+    background: radial-gradient(120% 90% at 78% 30%, #2b2232 0%, #18151b 55%, #0f0d11 100%); color: var(--text); }
+  #hero[hidden] { display: none; }
+  #hero .hwrap { min-height: 100%; display: grid; grid-template-columns: minmax(300px, 460px) minmax(0, 1fr); gap: clamp(20px, 3.4vw, 52px);
+    align-items: center; padding: clamp(20px, 4vw, 56px) max(16px, 4vw); max-width: 1680px; margin: 0 auto; }
+  #hero .eyebrow { margin: 0 0 14px; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  #hero .eyebrow b { color: var(--accent); font-weight: 600; }
+  #hero h2 { margin: 0; font-size: clamp(34px, 4vw, 60px); line-height: 1.02; text-wrap: balance; font-weight: 600; letter-spacing: -.02em; }
+  #hero h2 em { font-style: normal; color: var(--accent); }
+  #hero .lede { margin: 18px 0 0; font-size: clamp(15px, 1.15vw, 18px); line-height: 1.5; color: #d9d5dc; max-width: 34ch; }
+  #hero .cta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+  #hero .cta button { font: inherit; font-size: 14px; font-weight: 600; min-height: 44px; padding: 10px 18px; border-radius: 12px; cursor: pointer;
+    color: var(--text); background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.16); }
+  #hero .cta button:hover { background: rgba(255,255,255,.11); }
+  #hero .cta button.hi { background: var(--accent); color: var(--ink); border-color: var(--accent); }
+  #hero .cta button.hi:hover { filter: brightness(1.06); }
+  #hero .fine { margin: 22px 0 0; font-size: 12px; color: var(--muted); max-width: 44ch; }
+  #hero figure { margin: 0; min-width: 0; }
+  #hero .ba { position: relative; border-radius: 16px; overflow: hidden; background: #000; aspect-ratio: 1280 / 688; touch-action: none; cursor: ew-resize;
+    box-shadow: 0 30px 90px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.08); user-select: none; -webkit-user-select: none; }
+  #hero canvas { display: block; width: 100%; height: 100%; }
+  #hero .tag { position: absolute; top: 12px; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; pointer-events: none;
+    background: rgba(15,13,17,.72); color: var(--text); border: 1px solid rgba(255,255,255,.14); backdrop-filter: blur(6px); }
+  #hero .tag.l { left: 12px; } #hero .tag.r { right: 12px; }
+  #hero .tag i { font-style: normal; color: var(--muted); font-weight: 400; }
+  #heroSplit { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--accent); box-shadow: 0 0 18px rgba(242,255,89,.45); }
+  #heroSplit::after { content: ""; position: absolute; top: 50%; left: 50%; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 4px 16px rgba(0,0,0,.5);
+    -webkit-mask: radial-gradient(circle, transparent 5px, #000 5.5px); mask: radial-gradient(circle, transparent 5px, #000 5.5px); }
+  #hero figcaption { margin-top: 12px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+  #hero figcaption b { color: var(--text); font-weight: 600; }
+  @media (max-width: 900px) {
+    #hero .hwrap { grid-template-columns: minmax(0, 1fr); align-content: start; }
+    #hero .lede { max-width: none; }
+    #hero figure { order: -1; }
+  }
   @media (max-width: 720px) { #sceneNote { display: none; } .bar h1 .long { display: none; } #host { height: auto; min-height: 640px; } }
 </style>
 <div class="bar">
@@ -58,6 +95,7 @@
   <span class="pill">Live demo &middot; replays real GPU renders</span>
   <div class="pick"><label for="scene">Scene</label><select id="scene" aria-label="Demo scene"></select></div>
   <button id="tourBtn" type="button" class="hi" aria-expanded="false" aria-controls="tour">What&rsquo;s new &middot; tour</button>
+  <button id="introBtn" type="button" aria-controls="hero">Intro</button>
   <p id="sceneNote"></p>
 </div>
 <div id="host"></div>
@@ -72,5 +110,29 @@
   <div id="clipBody"></div>
   <p id="clipNote"></p>
 </dialog>
+<section id="hero" hidden aria-labelledby="heroTitle">
+  <div class="hwrap">
+    <div>
+      <p class="eyebrow"><b>Soundstage</b> &middot; a 3D stage inside ComfyUI</p>
+      <h2 id="heroTitle">Block it in clay.<br><em>Get the shot.</em></h2>
+      <p class="lede">Lay out the set, the cast, the camera and the stunt in 3D. The video model follows your blocking, frame for frame.</p>
+      <div class="cta">
+        <button id="heroGo" type="button" class="hi">Open the live stage</button>
+        <button id="heroTour" type="button">What&rsquo;s new &middot; 10 stops</button>
+        <button id="heroV2s" type="button">Video &rarr; 3D</button>
+      </div>
+      <p class="fine">This page runs the real App code in your browser. Every render on it was made on a GPU and is replayed here, unretouched.</p>
+    </div>
+    <figure>
+      <div class="ba">
+        <canvas id="heroCv" width="1280" height="688" aria-label="The reverse J-turn: the stage's coloured clay on the left, the Hollywood take on the right"></canvas>
+        <span class="tag l">Stage <i>&middot; coloured clay</i></span>
+        <span class="tag r">Take <i>&middot; LTX-2.5 Hollywood</i></span>
+        <div id="heroSplit" role="slider" tabindex="0" aria-label="Compare: clay and take" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></div>
+      </div>
+      <figcaption><b>The same 121 frames.</b> Left, the stage&rsquo;s Color pass; right, the 2624&thinsp;&times;&thinsp;1408 take it guided. Drag to compare. Flaws we haven&rsquo;t fixed yet: faint pseudo-letters on the front plate around 3.5&nbsp;s, and the nose rounds off in the last ten frames.</figcaption>
+    </figure>
+  </div>
+</section>
 <div id="toast" role="status" aria-live="polite" hidden></div>
 <script type="module" src="./demo.mjs"></script>
