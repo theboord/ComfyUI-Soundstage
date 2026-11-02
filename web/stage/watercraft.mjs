@@ -165,19 +165,39 @@ export function paddlePose(H, seat, st, style, side, wl) {
     const dir = new THREE.Vector3(bot[0] - top[0], bot[1] - top[1], bot[2] - top[2]).normalize();
     return { grip: top, dir, hands: { l: [top[0] + dir.x * 0.05, top[1] + dir.y * 0.05, top[2] + dir.z * 0.05], r: [top[0] + dir.x * 0.6, top[1] + dir.y * 0.6, top[2] + dir.z * 0.6] }, twist: 10, bend: 15 + 25 * v };
   }
-  // Single blade (canoe, raft): catch ahead, pull to the hip, lift and swing forward (feathered).
-  let bz, by, bx, feather = 0;
+  // Single blade (canoe, raft): catch ahead, pull to the hip, slice out, swing forward low over the water (feathered).
+  // One continuous loop: the blade spears in at the catch and slices out at the hip (no pop between phases).
+  const L = 1.18;                                   // grip to the blade's centre
+  let bz, by, bx, feather = 0, fore, lean;
   const b0 = bAt(sz);
   if (u < d) {
-    const v = (1 - Math.cos((Math.PI * u) / d)) / 2;
-    bz = sz + 0.62 - 1.0 * v; by = wl - 0.28 - 0.1 * Math.sin((Math.PI * u) / d); bx = s * (b0 + 0.16);
+    const q = u / d, v = (1 - Math.cos(Math.PI * q)) / 2;
+    bz = sz + 0.62 - 1.0 * v; by = wl + 0.1 - 0.38 * Math.pow(Math.sin(Math.PI * q), 0.6); bx = s * (b0 + 0.16);
+    fore = -Math.cos(Math.PI * q);                  // hand behind the blade at the reach, ahead of it at the exit
+    lean = 0.6 * (1 - Math.sin(Math.PI * q));       // the hands stack over the blade mid-drive (a vertical shaft)
   } else {
     const w = (u - d) / (1 - d), v = (1 - Math.cos(Math.PI * w)) / 2;
-    bz = sz - 0.38 + 1.0 * v; by = wl + 0.08 + 0.2 * Math.sin(Math.PI * w); bx = s * (b0 + 0.26); feather = Math.sin(Math.PI * w);
+    bz = sz - 0.38 + 1.0 * v; by = wl + 0.1 + 0.2 * Math.sin(Math.PI * w); bx = s * (b0 + 0.16 + 0.1 * Math.sin(Math.PI * w)); feather = Math.sin(Math.PI * w);
+    fore = Math.cos(Math.PI * w);
+    lean = 0.6 + 0.4 * Math.sin(Math.PI * w);       // and lean across the body as the blade swings forward
   }
-  const gripGuess = [s * 0.04, sy + 0.78, bz - 0.05];
-  const dir = new THREE.Vector3(bx - gripGuess[0], by - gripGuess[1], bz - gripGuess[2]).normalize();
-  const grip = [bx - dir.x * 1.18, by - dir.y * 1.18, bz - dir.z * 1.18];
+  // The top hand stays in front of the face: a little back at the reach (the shaft leans forward, blade ahead), a
+  // little forward at the exit (blade trailing), leaning across the body (at most to just inboard of the paddler) on
+  // the recovery, and never above the chin. The rider's shoulders sit ~0.5 m over the seat (measured on the
+  // clay rig, knees up in the hull), so the chin is ~0.52 and the eyes ~0.62. Each is a smooth function of the phase.
+  const gz = sz + 0.2 + 0.1 * fore, dz = bz - gz;
+  const lat = lean * Math.max(0.05, Math.abs(bx - (sx - s * 0.15)));
+  const gy = Math.min(sy + 0.52, by + Math.sqrt(Math.max(0, L * L - dz * dz - lat * lat)));
+  let grip = [bx - s * lat, gy, gz];
+  const dir = new THREE.Vector3(bx - grip[0], by - grip[1], bz - grip[2]);
+  const span = dir.length();
+  dir.normalize();
+  // Where the hands are closer to the blade than the shaft is long (the recovery), the top hand rises toward eye level
+  // (no higher) along the shaft rather than the blade dragging through the water.
+  if (span < L) {
+    const k = Math.min(L, span + Math.max(0, (sy + 0.62 - gy) / Math.max(0.2, -dir.y)));
+    grip = [bx - dir.x * k, by - dir.y * k, bz - dir.z * k];
+  }
   const lower = [grip[0] + dir.x * 0.62, grip[1] + dir.y * 0.62, grip[2] + dir.z * 0.62];
   const v = u < d ? u / d : 1 - (u - d) / (1 - d);
   // Top hand on the grip is the hand away from the water (a right-side stroke: left hand on top).
@@ -325,7 +345,7 @@ export function installWatercraft(Stage, deps = {}) {
     if (R.motor) {
       const trim = Number.isFinite(pv("motor_trim")) ? pv("motor_trim") : s.ctl?.trim ?? 0;
       const steer = Number.isFinite(pv("rudder")) ? pv("rudder") : clamp((s.r || 0) * -0.9, -30, 30);
-      R.motor.pivot.rotation.x = -trim * D2R;
+      R.motor.pivot.rotation.x = trim * D2R;   // + = trimmed out: the lower unit swings aft, away from the transom
       R.motor.steer.rotation.y = -steer * D2R;
       R.motor.prop.rotation.z = t * (s.ctl?.throttle || 0) * 90;
     }

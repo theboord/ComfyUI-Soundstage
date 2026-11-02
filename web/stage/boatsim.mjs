@@ -54,15 +54,15 @@ export const HULLS = {
     rocker: 0, forefoot: 0.55, sheer: 0.22, transom: 0.86, drive: "outboard", power: 165e3, eta: 0.56, bollard: 6200, steerMax: 32, trimRange: [-4, 8],
     planing: true, wave: 0.15, kp: 0.26, kr: 0.36, windage: 2.6, seats: 5 },
   fishing_boat: { label: "Fishing boat", L: 8.3, B: 2.9, D: 1.45, mass: 4300, zcg: 1.05, lcg: -0.45, plan: "transom", section: "vee", deadrise: 14, deadriseBow: 38,
-    rocker: 0, forefoot: 0.45, sheer: 0.35, transom: 0.8, drive: "inboard", power: 200e3, eta: 0.52, bollard: 13000, steerMax: 35, rudderArea: 0.32,
+    rocker: 0, forefoot: 0.45, sheer: 0.35, transom: 0.8, drive: "inboard", power: 200e3, eta: 0.52, bollard: 13000, steerMax: 35, rudderArea: 0.2,
     planing: true, wave: 0.17, kp: 0.27, kr: 0.38, windage: 7.5, seats: 4 },
   dinghy: { label: "Sailing dinghy", L: 4.2, B: 1.39, D: 0.42, mass: 140, zcg: 0.42, lcg: -0.25, plan: "transom", section: "round", bilge: 6, deadrise: 8, deadriseBow: 30,
     rocker: 0.08, forefoot: 0.25, sheer: 0.08, transom: 0.72, drive: "sail", sails: [{ id: "main", area: 7.06, ce: [-0.05, 2.6], tack: 0.65, boomLen: 2.75, mastH: 6.4 }],
-    foil: { area: 0.31, AR: 4.2, depth: 0.85, x: 0.3 }, rudderArea: 0.12, crewMass: 80, hike: 0.75, wave: 0.07, kp: 0.27, kr: 0.34, windage: 0.6, seats: 2, planing: true },
+    foil: { area: 0.31, AR: 4.2, depth: 0.85, x: 0.3 }, rudderArea: 0.12, crewMass: 80, hike: 1.05, rigI: 110, heelEase: 7, wave: 0.07, kp: 0.27, kr: 0.34, windage: 0.6, seats: 2, planing: true },
   yacht: { label: "Sailing yacht", L: 9.8, B: 3.3, D: 1.35, mass: 4600, zcg: 0.35, lcg: -0.2, plan: "transom", section: "round", bilge: 2.5, deadrise: 10, deadriseBow: 34,
     rocker: 0.22, forefoot: 0.3, sheer: 0.35, transom: 0.7, drive: "sail", ballast: { mass: 1650, z: -1.15 },
     sails: [{ id: "main", area: 26, ce: [-1.5, 5.6], tack: 0.9, boomLen: 4.1, mastH: 14.2 }, { id: "jib", area: 21, ce: [1.0, 4.6], tack: 4.05, foot: 3.5, mastH: 12.6 }],
-    foil: { area: 1.35, AR: 2.6, depth: 1.75, x: -0.35 }, rudderArea: 0.42, engine: 15e3, wave: 0.09, kp: 0.27, kr: 0.36, windage: 4.5, seats: 6 },
+    foil: { area: 1.35, AR: 2.6, depth: 1.75, x: -0.35 }, rudderArea: 0.42, engine: 15e3, rigI: 7000, wave: 0.09, kp: 0.27, kr: 0.36, windage: 4.5, seats: 6 },
   canoe: { label: "Canoe", L: 4.88, B: 0.9, D: 0.36, mass: 195, zcg: 0.36, lcg: 0, plan: "double", section: "round", bilge: 3.5, deadrise: 4, deadriseBow: 14,
     rocker: 0.05, sheer: 0.2, drive: "paddle", style: "canoe", spm: 42, blade: 0.12, stroke: 2.9, drivePhase: 0.46,
     paddlers: [{ x: 1.45, side: -1 }, { x: -1.55, side: 1, stern: true }], wave: 0.012, kp: 0.26, kr: 0.33, windage: 0.5, seats: 2 },
@@ -204,6 +204,7 @@ export function paddlePhases(H, cyc) {
 
 // ------------------------------------------------------------------ the body
 
+const PADDLE_FMAX = 320;   // N, one person's peak blade force at full effort
 const isSail = (H) => H.drive === "sail";
 const isPaddle = (H) => ["paddle", "oars", "raft", "pole"].includes(H.drive);
 
@@ -231,7 +232,8 @@ export class Boat {
     // Inertias: radii of gyration (k_pitch ≈ 0.26 L, k_roll ≈ 0.35 B) and the added mass of the water that moves with it.
     this.m = H.mass;
     this.Iyy = this.m * (H.kp * H.L) ** 2;
-    this.Ixx = this.m * (H.kr * H.B) ** 2;
+    // Roll: the hull's own radius of gyration, plus a rig's mast and sail aloft and a hiking sailor out at the rail.
+    this.Ixx = this.m * (H.kr * H.B) ** 2 + (H.rigI || 0) + (H.crewMass ? H.crewMass * H.hike ** 2 : 0);
     this.Izz = this.m * (0.27 * H.L) ** 2;
     this.mz = this.m * 1.6; this.Ip = this.Iyy * 1.7; this.Ir = this.Ixx * 1.25;    // + added mass / inertia
     this.mx = this.m * 1.05; this.my = this.m * 1.8; this.Iz = this.Izz * 1.5;
@@ -403,9 +405,16 @@ export class Boat {
       const xs = -H.L / 2, zs = -0.25;
       if (H.drive === "outboard") {
         X += T * Math.cos(d) * Math.cos(trimRad); Y -= T * Math.sin(d); N += xs * -T * Math.sin(d);
-        // The thrust line under the CG, tilted by the motor trim: trimming out lifts the bow.
-        Z += T * Math.sin(trimRad);
-        MY += -T * Math.cos(trimRad) * (zs - H.zcg) * 0.35 + T * Math.sin(trimRad) * (xs - this.lcg);
+        // The gearcase and skeg are a foil in the flow: at speed their lift, not the thrust vector, is what turns an
+        // outboard boat (∝ V², stalls past ~17° of effective angle; ~0.05 m² of gearcase and skeg on a 150-250 hp lower unit).
+        const Ag = H.gearcase ?? 0.05, ag = clamp(d - Math.atan2(vr - this.r * xs, Math.max(0.5, ur)), -0.3, 0.3);
+        const Fg = 0.5 * rho * ur * Math.abs(ur) * Ag * 3.2 * ag;
+        Y -= Fg; N += xs * -Fg;
+        // The thrust line under the CG, tilted by the motor trim. Trimmed out (+) the lower unit swings aft, the prop
+        // shaft points forward-down and its thrust pulls the transom down: the bow rises. Trimmed in (-) it lifts the
+        // transom: the bow goes down (the hole shot).
+        Z -= T * Math.sin(trimRad);
+        MY += -T * Math.cos(trimRad) * (zs - H.zcg) * 0.35 - T * Math.sin(trimRad) * (xs - this.lcg);
       } else {
         X += T; MY += -T * (zs - H.zcg) * 0.25;
       }
@@ -413,7 +422,8 @@ export class Boat {
       // An inboard (and the yacht's) rudder: lift from the flow over it (plus the prop wash).
       if (H.drive !== "outboard") {
         const Ar = H.rudderArea || 0.25, uw = Math.max(Math.abs(ur), Math.sqrt(Math.abs(T) / (rho * 0.6)) * 0.8);
-        const Fr = 0.5 * rho * uw * uw * Ar * 2 * Math.PI * 0.55 * clamp(d - Math.atan2(vr - this.r * xs, Math.max(0.5, ur)), -0.45, 0.45);
+        // Lift slope ~3.5 / rad, stalling near 17° (C_L ≈ 1.05): a hard-over rudder doesn't keep pulling.
+        const Fr = 0.5 * rho * uw * uw * Ar * 2 * Math.PI * 0.55 * clamp(d - Math.atan2(vr - this.r * xs, Math.max(0.5, ur)), -0.3, 0.3);
         Y -= Fr; N += xs * -Fr;
       }
     }
@@ -459,7 +469,8 @@ export class Boat {
       const maxOpen = (s.id === "jib" ? 32 : 85) * D2R, minOpen = (s.id === "jib" ? 7 : 3) * D2R;
       const limit = ctl.sheet == null ? maxOpen : minOpen + clamp(ctl.sheet, 0, 1) * (maxOpen - minOpen);
       // Auto trim also spills wind when it heels past 12° (a sailor eases the sheet in a gust rather than capsize).
-      const heelX = Math.max(0, Math.abs(this.roll) / D2R - 12);
+      // A Laser sailor depowers (sheet, vang, cunningham) to sail flat: past ~7°; a keelboat is built to heel to ~20°.
+      const heelX = Math.max(0, Math.abs(this.roll) / D2R - (H.heelEase ?? 12));
       const aoa = (16 - Math.min(12, heelX * 0.9)) * D2R;
       const open = clamp(ctl.sheet == null ? from - aoa : Math.min(limit, Math.max(0, from - 1 * D2R)), minOpen, limit);
       const target = lee * open;
@@ -488,6 +499,9 @@ export class Boat {
       // Where it acts: the centre of effort, s.ce = [ahead of midship, above the deck].
       const zce = this.H.D + s.ce[1] - H.zcg, xce = s.ce[0];
       mx += -Fl * zce * cr;                                   // side force aloft heels the boat
+      // Aerodynamic roll damping: rolling, the rig swings the sail sideways through the air (p·z at the CE), which
+      // changes its angle of attack against the motion. On a dinghy it is the largest roll damper there is.
+      mx += -0.5 * RHO_AIR * Aw * s.area * 3 * zce * zce * this.p * cr * cr;
       my += -Fu * zce * 0.15;                                  // the drive aloft pushes the bow down a little
       nz += Fl * (xce - this.lcg) + Fu * zce * sr;             // CE ahead / astern of the CG, and heeled: weather helm
       out.sails[s.id] = { boom: boom / D2R, alpha: alpha / D2R, luff: co.luff, cl: co.cl, force: Math.hypot(Fu, Fl), backed };
@@ -538,16 +552,24 @@ export class Boat {
       const pk = H.stroke * (0.55 + 0.45 * Math.min(1, eff)) * (eff > 0.01 ? 1 : 0);
       const { s: bs, wet } = strokeSpeed(s.u, H.drivePhase, pk);
       let f = 0;
-      // A stroke on the side you're turning toward is eased, the other side pulls harder (sweep strokes).
+      // A stroke on the side you're turning toward is eased, the other side pulls harder (sweep strokes). side +1 is
+      // the boat's left (a forward stroke there pushes the bow right), steer + is a turn to the left. A raft crew
+      // turns hard by back-paddling the inside ("left back, right forward"): the gain goes negative.
       let sideGain = 1;
-      if (s.side !== 0 && H.style !== "canoe") sideGain = 1 + 0.6 * steer * s.side;
+      if (s.side !== 0 && H.style === "raft") sideGain = clamp(1 - 1.6 * steer * s.side, -0.7, 1.6);
+      else if (s.side !== 0 && H.style !== "canoe") sideGain = clamp(1 - 0.9 * steer * s.side, 0.1, 1.9);
       if (wet && bs > ur) f = 0.5 * rho * 1.9 * H.blade * (bs - ur) ** 2 * sideGain * Math.min(1.2, eff + 0.2);
+      // A person, not a winch: a strong paddler's peak blade force is ~300-350 N (sprint kayakers reach ~400 N), so
+      // a hull drifting slower than the water (blade far faster than the flow) can't be yanked ahead.
+      f = Math.min(f, PADDLE_FMAX * Math.min(1.2, eff + 0.2) * (H.style === "row" ? 1.6 : 1));
       if (H.style === "row") {
         // Two oars at once (both sides): no yaw from the pair, differential effort steers.
-        const fl = f * (1 + 0.7 * steer), fr = f * (1 - 0.7 * steer);
+        // Turning left (steer +) the right oar pulls harder and the left one eases (or backs, hard over).
+        const fl = f * (1 - 0.9 * steer), fr = f * (1 + 0.9 * steer);
         fx += (fl + fr) * (p.facing === -1 ? 1 : 1); mz += -(H.B * 0.5) * (fl - fr);
       } else if (H.style === "kayak") {
-        fx += f; mz += -s.side * 0.45 * f;
+        // A sweep stroke: the blade swings wide from the bow to the stern, so its yaw arm is far longer than the hull's half beam.
+        fx += f; mz += -s.side * (0.45 + 0.9 * Math.abs(steer)) * f;
       } else if (H.style === "pole") {
         fx += f * 1.8; mz += steer * f * 0.6;
       } else {
@@ -608,7 +630,7 @@ export function boatScript(kind, p = {}) {
     { at: 0, set: { effort: p.effort ?? 0.6, steer: "aim", aim_deg: 0 } },
     { at: p.turn_s ?? 5, set: { steer: "aim", aim_deg: p.turn_deg ?? 15, ramp: 1 } },
   ] };
-  if (kind === "whitewater_raft") return { boat: "raft", start: { kmh: 6 }, steps: [
+  if (kind === "whitewater_raft") return { boat: "raft", start: { kmh: 4, water: true }, steps: [
     { at: 0, set: { effort: 0.9, cadence: 54, steer: "aim", aim_deg: 0 } },
     { at: p.ferry_s ?? 2.4, set: { steer: "aim", aim_deg: p.ferry_deg ?? -25, ramp: 0.8 } },
     { at: (p.ferry_s ?? 2.4) + 2.2, set: { steer: "aim", aim_deg: 8, effort: 1.1, ramp: 0.8 } },
@@ -630,7 +652,13 @@ const NUM = ["throttle", "trim", "effort", "cadence", "hike"];
 export function simulateBoat(script, opts = {}) {
   const frames = opts.frames ?? 121, fps = opts.fps ?? 24, hz = opts.hz ?? 240, dt = 1 / hz;
   const kind = opts.kind || script.boat;
-  const b = new Boat(kind, { x: opts.x ?? 0, z: opts.z ?? 0, heading: opts.heading ?? 0, speed: (script.start?.kmh ?? 0) / 3.6, waves: opts.waves || null,
+  // start.water: the speed is through the water (a raft already riding the river), so the current along the heading adds.
+  let u0 = (script.start?.kmh ?? 0) / 3.6;
+  if (script.start?.water && opts.waves) {
+    const hd = opts.heading ?? 0, c = velocityAt(opts.waves, opts.x ?? 0, opts.z ?? 0, 0);
+    u0 += c[0] * Math.sin(hd) + c[1] * Math.cos(hd);
+  }
+  const b = new Boat(kind, { x: opts.x ?? 0, z: opts.z ?? 0, heading: opts.heading ?? 0, speed: u0, waves: opts.waves || null,
     level: opts.level ?? 0, wind: opts.wind || null, scale: opts.scale ?? 1 });
   const h0 = b.h;
   warmUp(b, script.steps?.[0]?.set || {});
