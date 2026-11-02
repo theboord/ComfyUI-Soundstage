@@ -1,7 +1,7 @@
 // Key cameras in the 3D stage: which key is "hot", how big they get, and the frustum's aspect.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { nearestKey, keyCamBase, keyCamFrustum } from "../../web/stage/camviz.mjs";
+import { nearestKey, keyCamBase, keyCamFrustum, topViewHint } from "../../web/stage/camviz.mjs";
 
 test("nearestKey: the key at the playhead, else the nearest in time (earlier on a tie)", () => {
   const keys = [{ frame: 0 }, { frame: 24 }, { frame: 48 }];
@@ -89,4 +89,21 @@ test("CameraViz draws the camera the shot films (_shotCameraAt), and rebuilds wh
   viz._sync();
   assert.ok(Math.abs(viz._pts[30].distanceTo(before) - 5) < 1e-6 && same());
   viz.dispose();
+});
+
+// ------------------------------------------------------------------ Top view hover hint (2026-11-01)
+
+test("topViewHint: hovering the camera path, a key, its aim or the playhead never looks up cast keys (no 'reading keys' throw)", () => {
+  let calls = 0;
+  const keysOf = (a) => { calls++; return a.keys; };   // like stage._actorKeys: throws on undefined
+  assert.equal(topViewHint(null, keysOf), null);
+  assert.match(topViewHint({ kind: "key", i: 0 }, keysOf), /^Key 1 · drag to move/);
+  assert.match(topViewHint({ kind: "target", i: 2 }, keysOf), /^Aim of key 3/);
+  assert.match(topViewHint({ kind: "path", frame: 12 }, keysOf), /^Frame 12 · click = new key/);
+  assert.match(topViewHint({ kind: "playhead" }, keysOf), /^Playhead/);
+  assert.equal(calls, 0);
+  const car = { id: "sports_car_1", name: "Sports car 1", kind: "sports_car", keys: [{ frame: 0, position: [0, 0, 0] }, { frame: 48, position: [0, 0, 9] }] };
+  assert.equal(topViewHint({ kind: "akey", a: car, j: 1 }, keysOf), "Sports car 1 · key 2 (frame 48) · drag to move · right-click = delete");
+  assert.equal(topViewHint({ kind: "actor", a: car }, keysOf), "Sports car 1 · drag to move (keys it at the playhead)");
+  assert.equal(calls, 1);
 });
