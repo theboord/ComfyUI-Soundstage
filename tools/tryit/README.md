@@ -75,6 +75,7 @@ picks skip it.
 | `media.json` | Clips and stills encoded into the media cache from `share/`. |
 | `published.json` | The sha256 of every live file, written by `--mark-published`. |
 | `test_tryit.mjs` | The click-through test. |
+| `verify_tour.mjs` | Every tour stop through its own button and every Watch clip at one size (`SIZE=390x844`): clips play, nothing clipped, no sideways scroll. |
 
 ### The shims
 
