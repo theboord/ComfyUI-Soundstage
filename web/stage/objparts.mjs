@@ -26,6 +26,8 @@ export const PART_ENUMS = {
   finish: { factory: "As modelled", matte: "Matte", satin: "Satin", gloss: "Gloss", metallic: "Metallic", chrome: "Chrome" },
   damage_side: { front: "Front", rear: "Rear", left: "Left side", right: "Right side" },
   navlights: { off: "Off", on: "On", strobe: "+ strobes" },
+  anchor_light: { off: "Off", on: "On" },
+  deck_lights: { off: "Off", on: "On" },
   gait: { auto: "Auto (speed)", idle: "Stand", walk: "Walk", trot: "Trot", canter: "Canter", gallop: "Gallop" },
   expression: { neutral: "Neutral", smile: "Smile", laugh: "Laugh", frown: "Frown", angry: "Angry", sad: "Sad",
     surprised: "Surprised", afraid: "Afraid", disgust: "Disgust", talking: "Talking", shouting: "Shouting", eyes_closed: "Eyes closed" },
@@ -65,6 +67,15 @@ export const CHANNELS = {
   dirt: N("Paint", "Dirt", 0, 1, 0.05, "", 0, "Road grime and dust on the paint"),
   damage: N("Paint", "Damage", 0, 1, 0.02, "", 0, "Crumple the body (key it from 0 to animate a hit)"),
   damage_side: E("Paint", "Damage side", "front", "Where the damage is", { static: true }),
+  // ---- boats (watercraft.mjs + boatsim.mjs: auto = the physics' own value from the path and the wind)
+  throttle: N("Helm", "Throttle", 0, 1, 0.02, "", null, "Engine throttle 0..1. Auto holds the path's speed; key it for a hole shot (the bow climbs, then levels as it planes)", { auto: true }),
+  motor_trim: N("Helm", "Motor trim", -4, 8, 0.25, "°", null, "Outboard trim: in (-) for the hole shot, out (+) once planing lifts the bow and frees the hull", { auto: true }),
+  rudder: N("Helm", "Rudder / steering", -35, 35, 0.5, "°", null, "Rudder or outboard angle (+ = turn left). Auto follows the path's turn", { auto: true }),
+  sheet: N("Sails", "Sheet", 0, 1, 0.02, "", null, "How far the sails may open: 0 = sheeted hard in, 1 = fully eased. Auto trims them to the wind (and spills it in a gust)", { auto: true }),
+  boom: N("Sails", "Boom angle", -85, 85, 1, "°", null, "Boom angle (+ = out to the left). Auto: where the wind and the sheet put it, swinging across in a tack", { auto: true }),
+  effort: N("Paddles", "Paddling effort", 0, 1.4, 0.05, "", null, "How hard the crew paddles or rows: stroke rate and power. Auto from the path's speed", { auto: true }),
+  anchor_light: E("Lights", "Anchor light", "off", "All-round white masthead light (at anchor, at night)"),
+  deck_lights: E("Lights", "Deck lights", "off", "Work floodlights over the deck"),
   // ---- horses
   head_pitch: N("Head & neck", "Head up / down", -40, 35, 1, "°", 0, "Lift (+) or drop (-) the head"),
   head_yaw: N("Head & neck", "Head turn", -60, 60, 1, "°", 0, "Turn the head and neck (+ = to its left)"),
@@ -110,6 +121,12 @@ export function channelsFor(kind, opts = {}) {
   if (kind === "motorcycle") return ["steer", "headlights", "brake", "indicator", "finish", "dirt", "damage", "damage_side"];
   if (kind === "bicycle") return ["steer", "finish", "dirt"];
   if (["boat", "jetski", "sailboat", "catamaran"].includes(kind)) return ["headlights", "navlights", "finish", "dirt", "damage", "damage_side"];
+  if (kind === "speedboat") return ["throttle", "motor_trim", "rudder", "navlights", "anchor_light", "finish", "dirt", "damage", "damage_side"];
+  if (kind === "fishing_boat") return ["throttle", "rudder", "navlights", "deck_lights", "anchor_light", "finish", "dirt", "damage", "damage_side"];
+  if (kind === "dinghy") return ["sheet", "boom", "rudder", "finish", "dirt"];
+  if (kind === "yacht") return ["sheet", "boom", "rudder", "throttle", "navlights", "anchor_light", "finish", "dirt"];
+  if (["canoe", "kayak", "rowboat", "raft"].includes(kind)) return ["effort", "rudder", "finish", "dirt"];
+  if (kind === "log_raft") return ["effort", "anchor_light", "dirt"];
   if (kind === "airliner") return ["headlights", "navlights", "finish", "dirt"];
   if (kind === "train") return ["headlights", "finish", "dirt"];
   if (kind === "horse") return ["head_pitch", "head_yaw", "neck", "tail_lift", "tail_swish", "gait"];
@@ -302,6 +319,8 @@ export function stateWords(obj, frame, kind) {
   if (has("lightbar")) { const l = v("lightbar"); if (l === "flash") out.push("red and blue roof lights flashing"); if (l === "steady") out.push("roof light bar lit"); }
   if (has("indicator")) { const i = v("indicator"); if (i === "hazard") out.push("hazard lights blinking"); else if (i !== "off") out.push(`${i} turn signal blinking`); }
   if (has("brake") && v("brake") === "on") out.push("brake lights glowing red");
+  if (has("anchor_light") && v("anchor_light") === "on") out.push("a white anchor light glowing at the masthead");
+  if (has("deck_lights") && v("deck_lights") === "on") out.push("deck floodlights blazing over the work deck");
   if (has("navlights") && v("navlights") !== "off") out.push(v("navlights") === "strobe" ? "navigation lights and white strobes flashing" : "red and green navigation lights on");
   for (const ch of ["door_fl", "door_fr", "door_rl", "door_rr", "hood", "trunk"]) {
     if (!has(ch)) continue;
@@ -349,6 +368,9 @@ export function partEvents(obj, kind, last) {
       else if (ch === "indicator") w = b === "off" ? "the turn signal stops" : b === "hazard" ? "the hazard lights start blinking" : `the ${b} turn signal starts blinking`;
       else if (ch === "brake") w = b === "on" ? "the brake lights flare red" : null;
       else if (ch === "wipers") w = b === "off" ? "the wipers stop" : "the wipers start sweeping";
+      else if (ch === "throttle") w = b > a + 0.35 ? "the engine roars to full throttle and the bow lifts" : a > b + 0.35 ? "the throttle comes back and the hull settles off the plane" : null;
+      else if (ch === "sheet") w = b > a + 0.3 ? "the sheet is eased and the sail spills its wind" : a > b + 0.3 ? "the sheet is hauled in and the sail fills hard" : null;
+      else if (ch === "effort") w = b > a + 0.4 ? "the crew dig in and paddle hard" : a > b + 0.4 ? "the paddlers ease off and let the boat glide" : null;
       else if (ch === "damage") w = b > a + 0.1 ? "the body crumples" : null;
       else if (ch === "expression") w = b === "neutral" ? "the face relaxes" : `starts ${stateWords({ parts: { expression: [{ frame: 0, v: b }] } }, 0, kind)[0]}`;
       else if (ch === "gait") w = b === "auto" ? null : `breaks into a ${b === "idle" ? "halt" : b}`;
@@ -628,7 +650,7 @@ export function installParts(Stage, deps) {
   P._partsApply = function (a, g) {
     try {
       const rig = LIBRARY[a.kind]?.rig;
-      if (rig === "vehicle") vehicle.apply(this, a, g);
+      if (rig === "vehicle" && !LIBRARY[a.kind]?.hull) vehicle.apply(this, a, g);   // real hulls light their own lamps (watercraft.mjs)
       else if (a.kind === "horse") horse.apply(this, a, g);
       if (rig !== "vehicle" && !["man", "woman", "child", "horse"].includes(a.kind)) prop.apply(this, a, g);
     } catch (err) { if (!this._partsWarned) { this._partsWarned = true; console.warn("Soundstage parts", err); } }

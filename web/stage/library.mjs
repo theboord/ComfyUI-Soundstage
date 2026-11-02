@@ -5,6 +5,7 @@ import * as THREE from "../vendor/three.module.min.mjs";
 import { buildHuman } from "./humans.mjs";
 import { buildAirliner, buildPlaneSeats } from "./sets/airplane.mjs";
 import { buildTrain, buildTrainSeats } from "./sets/train.mjs";
+import { buildBoat } from "./boatmesh.mjs";
 
 /** kind -> default real-world size and how it moves. */
 export const LIBRARY = {
@@ -29,6 +30,16 @@ export const LIBRARY = {
   sailboat: { label: "Sailboat", height: 11, rig: "vehicle", length: 9, boat: true },
   catamaran: { label: "Catamaran", height: 13, rig: "vehicle", length: 12, boat: true },
   jetski: { label: "Jet ski", height: 1.1, rig: "vehicle", length: 3.2, boat: true },
+  // Watercraft with real hulls and physics (boatsim.mjs HULLS: the clay is lofted from the same stations it floats on).
+  speedboat: { label: "Speedboat", height: 1.75, rig: "vehicle", length: 6.4, boat: true, hull: true },
+  fishing_boat: { label: "Fishing boat", height: 4.0, rig: "vehicle", length: 8.3, boat: true, hull: true },
+  dinghy: { label: "Sailing dinghy", height: 6.85, rig: "vehicle", length: 4.2, boat: true, hull: true },
+  yacht: { label: "Sailing yacht", height: 15.6, rig: "vehicle", length: 9.8, boat: true, hull: true },
+  canoe: { label: "Canoe", height: 0.56, rig: "vehicle", length: 4.88, boat: true, hull: true },
+  kayak: { label: "Kayak", height: 0.42, rig: "vehicle", length: 5.2, boat: true, hull: true },
+  rowboat: { label: "Rowboat", height: 0.66, rig: "vehicle", length: 3.7, boat: true, hull: true },
+  raft: { label: "Whitewater raft", height: 0.66, rig: "vehicle", length: 4.3, boat: true, hull: true },
+  log_raft: { label: "Log raft", height: 0.5, rig: "vehicle", length: 3.6, boat: true, hull: true },
   bicycle: { label: "Bicycle", height: 1.05, rig: "vehicle" },
   motorcycle: { label: "Motorcycle", height: 1.15, rig: "vehicle" },
   tree: { label: "Tree", height: 6.5, rig: "static" },
@@ -107,8 +118,11 @@ const SYNONYMS = {
   scooter: "motorcycle", vespa: "motorcycle", shrub: "bush", hedge: "bush", plant: "bush",
   home: "house", cabin: "house", hut: "house", seat: "chair", lamppost: "lamp",
   crow: "bird", raven: "bird", eagle: "bird", hawk: "bird", owl: "bird", pigeon: "bird", seagull: "bird", gull: "bird", parrot: "bird",
-  motorboat: "boat", speedboat: "boat", "speed boat": "boat", yacht: "boat", dinghy: "boat", "fishing boat": "boat", ship: "boat",
-  "sail boat": "sailboat", "sailing boat": "sailboat", sloop: "sailboat", cat: "cat", "jet ski": "jetski", "jet-ski": "jetski", waverunner: "jetski",
+  motorboat: "speedboat", "speed boat": "speedboat", "power boat": "speedboat", powerboat: "speedboat", runabout: "speedboat", bowrider: "speedboat",
+  "fishing boat": "fishing_boat", trawler: "fishing_boat", "work boat": "fishing_boat", workboat: "fishing_boat", "lobster boat": "fishing_boat", ship: "fishing_boat",
+  "sail boat": "yacht", "sailing boat": "yacht", sloop: "yacht", "sailing yacht": "yacht", keelboat: "yacht", "sailing dinghy": "dinghy", laser: "dinghy",
+  "rowing boat": "rowboat", skiff: "rowboat", "row boat": "rowboat", "canadian canoe": "canoe", "sea kayak": "kayak", "rubber raft": "raft",
+  "whitewater raft": "raft", "white water raft": "raft", "inflatable raft": "raft", "river raft": "raft", "log raft": "log_raft", "wooden raft": "log_raft", cat: "cat", "jet ski": "jetski", "jet-ski": "jetski", waverunner: "jetski",
   campfire: "fire", bonfire: "fire", flames: "fire", flame: "fire", "camp fire": "fire", "fire pit": "fire", firepit: "fire",
   saucer: "ufo", "flying saucer": "ufo", spaceship: "ufo", "space ship": "ufo", mothership: "ufo", "alien ship": "ufo",
   alien: "man", martian: "man", invader: "man",
@@ -161,6 +175,9 @@ export function withoutPaint(text) {
     .replace(/\s+/g, " ").trim();
 }
 
+/** Words that now mean a newer object (old scenes keep their kind; typing the word gets the real hull). */
+const PREFER = { sailboat: "yacht", boat: "speedboat" };
+
 /** Map free text ("a big dog", "Woman", "bikes") to a library kind, or null. */
 export function resolveKind(text) {
   const t = String(text || "").toLowerCase().trim();
@@ -170,7 +187,7 @@ export function resolveKind(text) {
   const pairs = words.slice(1).map((w, i) => `${words[i]} ${w}`);
   const candidates = [t, ...pairs, ...pairs.map((p) => p.replace(/s$/, "")), ...words, ...words.map((w) => w.replace(/s$/, ""))];
   for (const c of candidates) {
-    if (LIBRARY[c]) return c;
+    if (LIBRARY[c]) return PREFER[c] || c;
     if (SYNONYMS[c]) return SYNONYMS[c];
   }
   return null;
@@ -190,7 +207,9 @@ export const OBJECT_COLORS = {
   house: ["#d8cbb2", "#7a3b2e"], bench: ["#8a5a35", "#2d2d2d"], table: ["#8a5a35", "#8a5a35"],
   chair: ["#7a5232", "#7a5232"], lamp: ["#2f3236", "#f3e3b0"], rock: ["#8c877e", "#8c877e"],
   crate: ["#a7814f", "#a7814f"], flashlight: ["#2b2d31", "#d9dde2"], fire: ["#ff8a2a", "#5a3a22"], boat: ["#f2f0ea", "#1f3b5c"], sailboat: ["#f4f1e8", "#7a5a3a"],
-  catamaran: ["#f4f4f0", "#2c3e50"], jetski: ["#e8e8e8", "#c23b22"], bird: ["#1d1d22", "#c9a227"], ufo: ["#8d949c", "#b8f5c4"], wall: ["#bdb7ad", "#bdb7ad"], flat: ["#cfc8bb", "#7a6a55"],
+  catamaran: ["#f4f4f0", "#2c3e50"], jetski: ["#e8e8e8", "#c23b22"],
+  speedboat: ["#f3f1ec", "#1d3f6e"], fishing_boat: ["#e9e4d8", "#9a2f25"], dinghy: ["#f2f2ee", "#2a5d8a"], yacht: ["#f4f2ec", "#20324a"],
+  canoe: ["#b5512f", "#7a5232"], kayak: ["#e7b52c", "#2b2d31"], rowboat: ["#4f7a6a", "#8a6a44"], raft: ["#d2452f", "#2b2d31"], log_raft: ["#7a5b3a", "#6a4e32"], bird: ["#1d1d22", "#c9a227"], ufo: ["#8d949c", "#b8f5c4"], wall: ["#bdb7ad", "#bdb7ad"], flat: ["#cfc8bb", "#7a6a55"],
   bed: ["#8a6a4c", "#e9e4da"], single_bed: ["#8a6a4c", "#e9e4da"], sofa: ["#5d6b78", "#7d8a96"], armchair: ["#8a5a3c", "#8a5a3c"],
   coffee_table: ["#6e4f35", "#6e4f35"], tv: ["#3a3a3c", "#111214"], kitchen_counter: ["#e8e4dc", "#9a9590"], fridge: ["#d9dcdf", "#8a8d90"],
   bath: ["#f1f1ee", "#dfe7ea"], toilet: ["#f3f3f0", "#f3f3f0"], washbasin: ["#e8e4dc", "#f3f3f0"], wardrobe: ["#a8865f", "#5a4630"],
@@ -257,6 +276,55 @@ export const SEATS = {
     { name: "Rider", pos: [0, 0.7, -0.15] },
     { name: "Pillion", pos: [0, 0.72, -0.75] },
   ],
+  speedboat: [
+    { name: "Driver", pos: [-0.5, 0.62, 0.25] },
+    { name: "Passenger", pos: [0.5, 0.62, 0.25] },
+    { name: "Stern left", pos: [0.55, 0.6, -1.7] },
+    { name: "Stern middle", pos: [0, 0.6, -1.75] },
+    { name: "Stern right", pos: [-0.55, 0.6, -1.7] },
+  ],
+  fishing_boat: [
+    { name: "Skipper", pos: [0.45, 1.25, -0.6] },
+    { name: "Mate", pos: [-0.45, 1.25, -0.6] },
+    { name: "Deck left", pos: [0.7, 1, -2.6] },
+    { name: "Deck right", pos: [-0.7, 1, -2.6] },
+  ],
+  dinghy: [
+    { name: "Helm", pos: [0, 0.33, -0.95] },
+    { name: "Crew", pos: [0, 0.33, -0.3] },
+  ],
+  yacht: [
+    { name: "Helm", pos: [0, 1.1, -4.05] },
+    { name: "Cockpit left", pos: [0.75, 1, -3.1] },
+    { name: "Cockpit right", pos: [-0.75, 1, -3.1] },
+    { name: "Cockpit forward left", pos: [0.7, 1, -2.3] },
+    { name: "Cockpit forward right", pos: [-0.7, 1, -2.3] },
+    { name: "Foredeck", pos: [0, 1.6, 2.6] },
+  ],
+  canoe: [
+    { name: "Bow paddler", pos: [-0.08, 0.24, 1.45] },
+    { name: "Stern paddler", pos: [0.07, 0.24, -1.55] },
+  ],
+  kayak: [
+    { name: "Paddler", pos: [0, 0.1, -0.15] },
+  ],
+  rowboat: [
+    { name: "Rower", pos: [0, 0.33, 0.1], yaw: 180 },
+    { name: "Stern seat", pos: [0, 0.33, -1.25] },
+    { name: "Bow seat", pos: [0, 0.4, 1.2] },
+  ],
+  raft: [
+    { name: "Front left", pos: [0.77, 0.45, 1.1] },
+    { name: "Front right", pos: [-0.77, 0.45, 1.1] },
+    { name: "Middle left", pos: [0.77, 0.45, 0.2] },
+    { name: "Middle right", pos: [-0.77, 0.45, 0.2] },
+    { name: "Back left", pos: [0.77, 0.45, -0.7] },
+    { name: "Guide", pos: [0, 0.45, -1.55] },
+  ],
+  log_raft: [
+    { name: "Poler", pos: [-0.18, 0.34, -1.2] },
+    { name: "Passenger", pos: [0.5, 0.34, 0.6] },
+  ],
   // = PLANE_SEATS in sets/airplane.mjs and TRAIN_SEATS in sets/train.mjs, written out: soundstage/look/scene.py reads this block
   plane_seats: [
     { name: "Left seat", pos: [0.49, 0.5, -0.02] },
@@ -279,6 +347,19 @@ export function buildObject(kind, height, mesh, appearance = null) {
   if (kind === "airliner") return buildAirliner(mesh, { main: mainCol, accent, height: h });
   if (kind === "train") return buildTrain(mesh, { main: mainCol, accent, height: h });
   if (kind === "plane_seats") return buildPlaneSeats(mesh);
+  if (spec?.hull) {
+    // A real hull at its own size inside a group scaled to the asked height (the parts poser works in hull metres).
+    const outer = new THREE.Group();
+    const inner = buildBoat(kind, mesh, { main: mainCol, accent });
+    const k = h / spec.height;
+    inner.scale.setScalar(k);
+    outer.add(inner);
+    outer.userData.limbs = [];
+    outer.userData.boat = inner.userData.boat;
+    outer.userData.boatInner = inner;
+    outer.userData.boatK = k;
+    return outer;
+  }
   if (kind === "train_seats") return buildTrainSeats(mesh);
   const g = new THREE.Group();
   g.userData.limbs = [];

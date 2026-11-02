@@ -26,6 +26,7 @@
 import * as THREE from "../vendor/three.module.min.mjs";
 import * as Gait from "./gait.mjs";
 import { LiveCar, carParams } from "./vehsim.mjs";
+import { LiveBoat, isBoatKind, hullOf } from "./boatsim.mjs";
 import { applyPose, MOUNTS } from "./humans.mjs";
 import { SEATS, LIBRARY } from "./library.mjs";
 import { writeKey } from "./objparts.mjs";
@@ -624,6 +625,17 @@ export function applyTake(stage, take, { smoothing = "light" } = {}) {
     a.keys = [...before, ...fresh];
     delete a.position_end;
     if (tr.type === "prop" && samples.some((s) => s.p[1] > 0.01)) a.key_y = true;
+    if (tr.type === "boat") {
+      // The strokes you paddled (so the crew pull exactly when the hull surged) and the throttle / trim you used.
+      const keep = (a.boat?.strokes || []).filter((x) => x.to <= f0);
+      a.boat = { ...(a.boat || {}), strokes: [...keep, ...(tr.strokes || []).map((x) => ({ ...x }))], driven: true };
+      for (const [ch, key] of [["throttle", "throttle"], ["motor_trim", "trim"]]) {
+        const st = dropHolds(samples.filter((x, i) => Number.isFinite(x[key]) && (i % 4 === 0 || i === samples.length - 1)).map((x) => ({ f: x.f, v: Math.round(x[key] * 100) / 100 })), (p, q) => p.v === q.v);
+        if (!st.length) continue;
+        a.parts = { ...(a.parts || {}), [ch]: (a.parts?.[ch] || []).filter((k) => k.frame < f0) };
+        for (const x of st) writeKey(a, ch, x.f, x.v, "linear");
+      }
+    }
     if (tr.type === "car") {
       a.stunt_sim = { ...(a.stunt_sim || {}), surface: tr.surface || "dry", driven: true };
       delete a.stunt; delete a.drive;
@@ -791,6 +803,13 @@ export class DriveMode {
       b.dist = 0;
     }
     if (kind === "bike") { b.wheelbase = a.kind === "motorcycle" ? 1.45 : 1.05; b.dist = 0; }
+    if (kind === "boat" && isBoatKind(a.kind)) {
+      // The real hull (boatsim.mjs): buoyancy on the wave field, planing, sails in the wind, paddle strokes.
+      const water = this.s.water, level = water ? water.position.y : 0;
+      b.boat = new LiveBoat(a.kind, { x: b.x, z: b.z, heading: b.yaw, waves: this.s.waveField?.() || null, level, scale: (g.userData.boatK || 1) * (a.scale || 1),
+        t0: this.s.frame / this.fps });
+      b.y = b.boat.b.y;
+    }
     if (kind === "animal") b.scaleSpeed = clamp((a.height_m || 0.6) / 1.6, 0.35, 1);
     this.live.set(id, b);
     this.involved.add(id);
@@ -916,6 +935,14 @@ export class DriveMode {
     else if (b.kind === "horse" || b.kind === "animal") this._poseHorse(a, g, b);
     else if (b.kind === "car") this._poseCar(a, g, b);
     else if (b.kind === "bike") { this._wheels(g, b.dist); g.rotation.z = -(b.lean || 0); }
+    else if (b.kind === "boat" && b.boat) {
+      const s = b.boatS;
+      if (s) {
+        g.rotation.x = -s.pitch * DEG; g.rotation.z = s.roll * DEG; g.position.y = s.y;
+        g.userData.boatState = { ...s, strokes: s.strokes, propWash: (s.ctl?.throttle || 0), bowSpray: 0 };
+        try { this.s._boatParts?.(a, g, g.userData.boatState); } catch { /* parts */ }
+      }
+    }
     else if (b.kind === "boat") { g.rotation.x = -clamp(b.speed / 40, 0, 0.12); g.rotation.z = clamp(-(b.turnRate || 0) * 0.04, -0.15, 0.15); }
     else if (b.kind === "prop" && b.q) g.quaternion.set(...b.q);
     try { this.s._partsApply?.(a, g); } catch { /* parts not installed */ }
@@ -1175,6 +1202,7 @@ export class DriveMode {
         this._personActions(b, hit, inp, env);
       } else if (b.kind === "horse" || b.kind === "animal") horseStep(b, I, env, dt);
       else if (b.kind === "bike") bikeStep(b, I, env, dt);
+      else if (b.kind === "boat" && b.boat) this._boatStep(b, I, dt);
       else if (b.kind === "boat") { const y0 = b.yaw; boatStep(b, I, env, dt); b.turnRate = (b.yaw - y0) / dt; }
       else if (b.kind === "prop") propStep(b, I, env, dt);
       else if (b.kind === "car") this._carStep(b, I, env, dt);
@@ -1195,6 +1223,20 @@ export class DriveMode {
         if (lb.hist.length > 75) lb.hist.shift();
       }
     }
+  }
+
+  /** A real boat: throttle / brake (reverse), steering, Q / E motor trim, the sheet on the mouse wheel; paddle craft
+   *  paddle on W (harder with Shift) and steer with A / D (the stern paddler's J-strokes). */
+  _boatStep(b, inp, dt) {
+    const H = hullOf(b.akind);
+    b.trim = clamp((b.trim ?? -2) + ((inp.jump || 0) - (inp.descend || 0)) * 4 * dt, ...(H.trimRange || [-4, 6]));
+    const thr = Math.max(inp.throttle || 0, inp.move[1] > 0 ? inp.move[1] : 0), brk = Math.max(inp.brake || 0, inp.move[1] < 0 ? -inp.move[1] : 0);
+    const s = b.boat.step({ throttle: thr, brake: brk, steer: -(inp.steer ?? inp.move[0]), sprint: inp.sprint > 0.5, trim: inp.descend || inp.jump ? b.trim : undefined,
+      paddle: thr }, dt, this._recFrame?.() ?? null);
+    b.boatS = s;
+    const y0 = b.yaw;
+    b.x = s.x; b.z = s.z; b.y = s.y; b.yaw = s.h; b.speed = s.u;
+    b.turnRate = (b.yaw - y0) / dt;
   }
 
   _carStep(b, inp, env, dt) {
@@ -1583,6 +1625,7 @@ export class DriveMode {
         continue;
       }
       if (b.kind === "car") { add(id, "car", { p: [b.car.X, 0, b.car.Z], yaw: b.car.H, roll: b.car.roll, pitch: b.car.pitch, steer: b.car.ctl.steer, smoke: b.car.smokeInfo }); T[id].surface = b.surface; continue; }
+      if (b.kind === "boat" && b.boat) { add(id, "boat", { p: [b.x, 0, b.z], yaw: b.yaw, throttle: b.boatS?.ctl?.throttle, trim: b.boatS?.ctl?.trim }); T[id].strokes = b.boat.strokes; continue; }
       add(id, b.kind === "prop" ? "prop" : "path", { p: [b.x, b.y, b.z], yaw: b.yaw });
     }
     // Something carried by the person (not live itself): its place in their hands.

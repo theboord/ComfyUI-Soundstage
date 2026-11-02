@@ -22,7 +22,9 @@ export const SWIM_KINDS = ["flutter", "frog", "freestyle", "breaststroke"];
 export const RECIPE_STEPS = ["video_to_3d", "new_angle", "ripple_mode", "whole_frame", "quality_draft", "quality_hollywood",
   "render_all_draft", "render_final"];
 export const TRANSITION_TYPES = ["dissolve", "dip_black", "dip_white", "wipe"];
+export const BOAT_KINDS = ["speedboat_run", "sailing_tack", "canoe_lake", "whitewater_raft"];   // watercraft (boatpresets.mjs)
 export const VEHICLE_KINDS = new Set(["car", "truck", "police_car", "sports_car", "hatchback", "boat", "sailboat", "catamaran", "jetski",
+  "speedboat", "fishing_boat", "dinghy", "yacht", "canoe", "kayak", "rowboat", "raft", "log_raft",
   "bicycle", "motorcycle", "bus"]);
 export const PERSON_KINDS = new Set(["man", "woman", "child"]);
 export const RIDE_KINDS = new Set(["horse", "bicycle", "motorcycle"]);
@@ -98,7 +100,7 @@ export function validateCatalog(cat) {
     } else if (p.tab === "look") {
       if (!a.look) errs.push(`${at}: look`);
     } else if (p.tab === "action") {
-      if (!(STUNT_KINDS.includes(a.stunt) || PHYSICS_KINDS.includes(a.physics) || SHAKE_KINDS.includes(a.shake) || a.mount || SWIM_KINDS.includes(a.swim))) errs.push(`${at}: no action`);
+      if (!(STUNT_KINDS.includes(a.stunt) || PHYSICS_KINDS.includes(a.physics) || SHAKE_KINDS.includes(a.shake) || a.mount || SWIM_KINDS.includes(a.swim) || BOAT_KINDS.includes(a.boat))) errs.push(`${at}: no action`);
     } else if (p.tab === "edit") {
       const e = a.edit;
       if (!e) errs.push(`${at}: edit`);
