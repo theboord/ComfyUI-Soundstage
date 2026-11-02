@@ -658,7 +658,14 @@ def riders_of(scene: dict, host_id, frame: int = 0) -> list[dict]:
 SEAT_ROWS = ("plane_seats", "train_seats")   # the cabin / carriage sets' seat rows (web/stage/sets): people sit in them
 
 
-def _ride_noun(noun: str, host: dict) -> str:
+def _seat_no(actor) -> int | None:
+    try:
+        return int((actor or {}).get("seat") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _ride_noun(noun: str, host: dict, seat: int | None = None) -> str:
     kind = host.get("kind", "")
     if kind in SEAT_ROWS:
         return f"{noun} seated by the window"
@@ -668,7 +675,7 @@ def _ride_noun(noun: str, host: dict) -> str:
     if kind in ("bicycle", "motorcycle", "jetski"):
         return f"{noun} riding {_article(hnoun)}"
     if BT.is_boat(kind):
-        return BT.ride_noun(noun, kind, hnoun)
+        return BT.ride_noun(noun, kind, hnoun, seat)   # the seat: at the wheel / rowing / poling / sailing
     return f"{noun} sitting on {_article(hnoun)}" if kind in mounts() else f"{noun} on {_article(hnoun)}"
 
 
@@ -742,7 +749,7 @@ def frame_facts(scene: dict, cam: dict, frame: int) -> dict:
                 name, _ = seat_of(scene, c["actor"])
                 noun = f"{noun} {_SEAT_WORDS.get(name, f'in the {name.lower()} seat' if name else '')}".strip()
             else:
-                noun = _ride_noun(noun, host)
+                noun = _ride_noun(noun, host, _seat_no(c.get("actor")))
         size = shot_size(pr["z"], c["height"], cam["focal_mm"])
         if seated and size in ("FS", "COWBOY"):
             size = "MS"                                # sitting: the legs are out of the picture however wide the frame
@@ -1210,7 +1217,7 @@ def actor_marks(scene: dict) -> list[dict]:
         startp = _project_body(c["start"], c["height"], cam0)
         endp = _project_body(c["end"], c["height"], cam1)
         inside = bool(dest.startswith("into"))
-        noun = _ride_noun(c["noun"], host) if host is not None and not timed else c["noun"]
+        noun = _ride_noun(c["noun"], host, _seat_no(c.get("actor"))) if host is not None and not timed else c["noun"]
         out.append({**c, "noun": noun, "verb": verb, "verb_pl": verb_pl, "way": way, "dest": dest, "inside_at_end": inside,
                     "end_visible": bool(endp and endp["visible"]) and not inside,
                     "end_where": screen_words(endp["sx"]) if endp else "", "sx0": startp["sx"] if startp else 0.0})
