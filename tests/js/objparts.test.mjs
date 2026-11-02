@@ -479,3 +479,14 @@ test("camera: removing a focus key at the playhead really removes it (T-stop key
   assert.deepEqual(st._camKeyFrames("t_stop"), [0, 48]);
   assert.ok(Math.abs(st._cameraAt(30).t_stop - 2.8) < 1e-6);
 });
+
+test("camera: the Sensor crop reaches camera_track and the DCC camera, not only the viewport", () => {
+  // Super 35 cropped this.camera.fov in the viewport and captures, but cameraTrack() (camera_track, the Layer Pack
+  // camera, camera.json, .chan) and the DCC kit's shot_cam used the raw focal on 36 mm: plates and cameras disagreed.
+  const st = headless([]);
+  st.setPart("__camera__", "sensor", "s35");
+  st._applyCamera();
+  const tr = st.cameraTrack()[0];
+  const vfov = 2 * Math.atan((36 / (st.fw / st.fh)) / (2 * tr.focal_mm)) * 180 / Math.PI;
+  assert.ok(Math.abs(vfov - st.camera.fov) < 1e-6, `${vfov} vs ${st.camera.fov}`);
+});
