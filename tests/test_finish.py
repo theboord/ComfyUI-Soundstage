@@ -63,6 +63,15 @@ def test_off_is_a_no_op_and_motion_blur_mixes_frames():
     assert out[2, 32, 12:20].mean() > 40, "the previous frame's bar shows through"
 
 
+def test_off_with_motion_blur_is_only_the_shutter_mix():
+    """Finish Off + motion blur used to render the whole Subtle look (lens, fringe, halation, vignette, grain), and
+    finish_graph('off', motion_blur=True) dropped the blur. Off + blur is the 2-frame mix and nothing else."""
+    assert F.finish_graph("[a]", "[b]", "off", 160, 96, motion_blur=True) == ["[a]tmix=frames=2:weights='1 1'[b]"]
+    still = np.full((4, 64, 64, 3), 120, np.uint8)
+    out = F.finish_frames(still, "off", motion_blur=True)
+    assert out.shape == still.shape and np.abs(out.astype(int) - 120).max() <= 1, "a still clip is unchanged by a frame mix"
+
+
 def test_the_cut_render_applies_the_finish_under_the_titles():
     from soundstage.cut import render as R
     g = ";".join(F.finish_graph("[base]", "[fin]", "35mm", 1920, 1080, 5))
