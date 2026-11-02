@@ -15,7 +15,7 @@
 //               and a failed Hollywood take gets ONE automatic re-roll offer per shot. Any take: the Judge button.
 // The pure parts (chips, scores, estimates, readiness, the MP4 tag reader) are in model.mjs.
 import { takeChips, blockingChip, realismChip, rerollOffer, fileOfUrl, annotated, estimateLabel, estimateSeconds, finalRung, readiness, readinessChip,
-  readFileTags, recipeFromTags, recipeLine, MODELS_DOC_URL } from "./model.mjs";
+  readFileTags, recipeFromTags, loadRecipeScene, recipeLine, MODELS_DOC_URL } from "./model.mjs";
 import { loaderWidgets, allNodes } from "../ui/modelguard.mjs";
 import { planModelFixes } from "../ui/modelmatch.mjs";
 
@@ -397,7 +397,7 @@ export function attachTakeChecks(ctx) {
   async function maybeRestore(file) {
     if (!file || !(/\.(mp4|m4v|mov)$/i.test(file.name || "") || /mp4|quicktime/.test(file.type || ""))) return false;
     let rec = null;
-    try { rec = recipeFromTags(await readFileTags(file)); } catch { rec = null; }
+    try { rec = await loadRecipeScene(api, recipeFromTags(await readFileTags(file))); } catch { rec = null; }
     if (!rec) return false;
     const pick = await choose("This video is a Soundstage take", `${file.name}\n${recipeLine(rec)}\n\nIts recipe is inside the MP4: the set, the shot${rec.look ? ", the look" : ""} and the seed.`,
       ["Restore its set and shot", "Bring it in as a video"]);

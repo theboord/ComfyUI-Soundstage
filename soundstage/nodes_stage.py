@@ -3,7 +3,8 @@
 The stage itself lives in the browser (web/stage/stage.mjs, a three.js set with actors,
 props, camera and sun). At queue time the widget renders the clay and depth passes from
 the shot camera, uploads them as temp images and sends the scene JSON plus those file
-references as the `stage` value. This node turns that into tensors for the rest of the graph.
+references as the `stage` value. This node turns that into tensors for the rest of the graph. A big scene
+travels by reference ('{"stage_ref": sha256}', soundstage/stagestore.py) so the queued prompt stays small.
 """
 import json
 
@@ -17,6 +18,7 @@ from comfy_api.latest import ComfyExtension, IO
 
 from .look.look_start import look_start, quiet_background, blur_window_view
 from .look.frame_lock import frame1_layout
+from . import stagestore
 
 STAGE_WIDGET = "SOUNDSTAGE_STAGE"
 
@@ -75,7 +77,8 @@ class SoundstageStage(IO.ComfyNode):
 
     @classmethod
     def execute(cls, stage="") -> IO.NodeOutput:
-        data = json.loads(stage) if isinstance(stage, str) and stage else (stage or {})
+        # Inline JSON (old workflows, small scenes) or a reference to the stage store (stagestore.py).
+        data = stagestore.resolve(stage)
         passes = data.get("passes") or {}
         if not passes.get("clay") or not passes.get("depth"):
             raise ValueError("The 3D stage sent no render passes. Open the stage and press Run again.")

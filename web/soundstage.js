@@ -55,6 +55,7 @@ import { mountBook } from "./book/book.mjs";
 import { mountPresets } from "./ui/presets.mjs";
 import { mountPerformance } from "./performance/performance.mjs";
 import { attachTakeChecks } from "./takecheck/takecheck.mjs";
+import { queueSummary, storeStage, resolveStageValue, stageRefOf } from "./ui/queue.mjs";
 
 const CSS = `
 .ss-stage { display:flex; flex-direction:column; gap:6px; padding:6px; background:#16191e; border-radius:6px;
@@ -174,8 +175,8 @@ async function designObject(name, onStatus) {
   };
   // Say so when a render holds the GPU: the design job goes to the front of the queue but waits for it to finish.
   try {
-    const q = await (await api.fetchApi("/queue")).json();
-    if ((q.queue_running || []).length) onStatus(`Designing “${name}”: the GPU is finishing a render, your design is next in line…`);
+    const q = await queueSummary(api);   // counts only: GET /queue would encode every queued prompt in full
+    if (q?.running) onStatus(`Designing “${name}”: the GPU is finishing a render, your design is next in line…`);
   } catch { /* queue unknown */ }
   const resp = await api.fetchApi("/prompt", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt: graph, client_id: api.clientId, front: true }) });
@@ -2111,24 +2112,34 @@ function createStageWidget(node, inputName) {
     try { syncLight(); } catch { /* row not built yet */ }
   }
 
+  const restoreStage = (v) => {
+    try {
+      const parsed = typeof v === "string" && v ? JSON.parse(v) : v;
+      const scene = parsed?.scene ?? parsed;
+      if (scene?.camera) {
+        stage.load(scene);
+        stage.resetHistory();   // opening a workflow: Undo starts here, never back to the default scene
+        sceneJSON = stage.toJSON();
+        syncControls();
+        syncEnv?.();
+        syncShots?.();
+        try { aspectSel.sel.value = stage.toJSON().shot?.aspect || "1.85"; } catch {}
+      }
+    } catch (err) {
+      console.warn("Soundstage: could not restore stage", err);
+    }
+  };
   const widget = node.addDOMWidget(inputName, "SOUNDSTAGE_STAGE", el, {
     getValue: () => JSON.stringify(stage.toJSON()),
     setValue: (v) => {
-      try {
-        const parsed = typeof v === "string" && v ? JSON.parse(v) : v;
-        const scene = parsed?.scene ?? parsed;
-        if (scene?.camera) {
-          stage.load(scene);
-          stage.resetHistory();   // opening a workflow: Undo starts here, never back to the default scene
-          sceneJSON = stage.toJSON();
-          syncControls();
-          syncEnv?.();
-          syncShots?.();
-          try { aspectSel.sel.value = stage.toJSON().shot?.aspect || "1.85"; } catch {}
-        }
-      } catch (err) {
-        console.warn("Soundstage: could not restore stage", err);
+      // A workflow saved from a queued render carries a big scene by reference (soundstage/stagestore.py): load it
+      // back from this server's stage store, then restore as usual.
+      if (stageRefOf(v)) {
+        resolveStageValue(api, v).then(restoreStage)
+          .catch((err) => console.warn("Soundstage: could not load the stored stage", err));
+        return;
       }
+      restoreStage(v);
     },
     getMinHeight: () => 720,
     hideOnZoom: false,
@@ -2148,7 +2159,10 @@ function createStageWidget(node, inputName) {
     // while re-rendering a frame picked before that existed.
     const withFlag = (v) => (node.ssLookStart === false || node.ssFrameLock === false
       ? JSON.stringify({ ...JSON.parse(v), ...(node.ssLookStart === false ? { look_start: false } : {}), ...(node.ssFrameLock === false ? { frame_lock: false } : {}) }) : v);
-    if (lastCapture?.stamp === stamp && await passOnServer(`stage_clay_${stamp}.jpg`)) return withFlag(lastCapture.value);
+    // A big stage goes to the server's stage store once and the prompt carries only its reference, so the queue and
+    // the history stay small (a busy scene is megabytes; GET /queue and /history encode every prompt in full).
+    const byRef = async (v) => (await storeStage(api, v)) || v;
+    if (lastCapture?.stamp === stamp && await passOnServer(`stage_clay_${stamp}.jpg`)) return byRef(withFlag(lastCapture.value));
     const passes = {};
     const uploads = [];
     // Same layout captureSequence uses, so a pass already on the server can be reused without re-rendering.
@@ -2174,7 +2188,7 @@ function createStageWidget(node, inputName) {
       lighting_prompt: stage.lightingPrompt(), id_colors: stage.idColors(),
       shot_id: stage.activeShot().id, shot_name: stage.activeShot().name }, passes });
     lastCapture = { stamp, value };
-    return withFlag(value);
+    return byRef(withFlag(value));
   };
 
   const onRemoved = node.onRemoved;

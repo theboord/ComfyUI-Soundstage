@@ -14,6 +14,7 @@
 // The Director's Book (web/book/, another milestone) can lend style and intent: host.getBookContext() or
 // globalThis.SoundstageBook.getBookContext() -> { style, intent } is read at each beat when present.
 import { applyOps, loadScene, runLocalModel } from "./agent.mjs";
+import { queueSummary, idsIn } from "../ui/queue.mjs";
 
 const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
 const now = () => (globalThis.performance?.now ? performance.now() : Date.now());
@@ -134,9 +135,9 @@ export class SketchJobs {
           if (e?.status?.status_str === "error" && this._waiters.has(pid)) { this._waiters.delete(pid); reject(new Error("the GPU job failed")); return; }
           // Gone from the queue with no history: someone cleared the queue. Say so now instead of waiting it out.
           if (!e && j && j.state !== "running") {
-            const q = await (await this.api.fetchApi("/queue")).json();
-            const ids = [...(q.queue_pending || []), ...(q.queue_running || [])].map((it) => (Array.isArray(it) ? it[1] : it?.prompt_id));
-            j.missing = ids.includes(pid) ? 0 : (j.missing || 0) + 1;
+            const q = await queueSummary(this.api, { ids: [pid] });   // our prompt only, never the full /queue
+            if (!q) throw new Error("queue unknown");
+            j.missing = idsIn(q).has(pid) ? 0 : (j.missing || 0) + 1;
             if (j.missing >= 2 && this._waiters.has(pid)) {
               this._waiters.delete(pid); j.state = "cancelled";
               reject(Object.assign(new Error("removed from the queue (not by Pitch)"), { cancelled: true }));
@@ -158,11 +159,9 @@ export class SketchJobs {
     const stale = [...this.mine].filter(([pid, j]) => pid !== keep && (j.state === "queued" || j.state === "running") &&
       (!kind || j.meta?.kind === kind) && (!match || match(j.meta || {}, j))).map(([pid]) => pid);
     if (!stale.length) return { deleted: [], running: [] };
-    let q = { queue_running: [], queue_pending: [] };
-    try { q = await (await this.api.fetchApi("/queue")).json(); } catch { /* treat as nothing pending */ }
-    const pidOf = (item) => (Array.isArray(item) ? item[1] : item?.prompt_id);
-    const pending = new Set((q.queue_pending || []).map(pidOf));
-    const running = new Set((q.queue_running || []).map(pidOf));
+    const q = await queueSummary(this.api, { ids: stale });   // unknown: treat as nothing pending
+    const pending = idsIn(q, "pending");
+    const running = idsIn(q, "running");
     const del = stale.filter((pid) => pending.has(pid) && this.mine.has(pid));
     if (del.length) {
       await this.api.fetchApi("/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delete: del }) });
@@ -184,8 +183,8 @@ export class SketchJobs {
   /** Is the GPU running a job that isn't one of ours (another user's render)? Our sketches wait behind it. */
   async busyWithOthers() {
     try {
-      const q = await (await this.api.fetchApi("/queue")).json();
-      return (q.queue_running || []).some((it) => !this.mine.has(Array.isArray(it) ? it[1] : it?.prompt_id));
+      const q = await queueSummary(this.api, { limit: 4 });   // the running item comes first
+      return (q?.items || []).some((it) => it.state === "running" && !this.mine.has(it.prompt_id));
     } catch { return false; }
   }
 

@@ -18,6 +18,8 @@
 //           set:    LoadDA3Model -> DA3Inference(mono) -> DA3GeometryToMesh(texture)  -> SaveGLB, + camera FOV
 //   cutout  BiRefNet bg removal -> JoinImageWithAlpha -> SaveImage (RGBA PNG)
 
+import { queueSummary } from "../ui/queue.mjs";
+
 let defaultApi = null;
 
 /** Set the ComfyUI api object used when a call does not pass {api}. */
@@ -125,11 +127,13 @@ export async function runGraph(graph, { api = defaultApi, timeoutMs = 900000, on
     if (Date.now() - lastQueueCheck > 5000) {
       lastQueueCheck = Date.now();
       try {
-        const qq = await json(api, "/queue");
-        const ahead = (qq.queue_pending || []).findIndex((x) => x[1] === pid);
-        const running = (qq.queue_running || []).some((x) => x[1] === pid);
-        if (ahead >= 0) onStatus(`Queued (${ahead + 1} job${ahead ? "s" : ""} ahead)…`);
-        else if (running) onStatus(`Working… ${Math.round((Date.now() - t0) / 1000)} s`);
+        // Our own prompt only, never the full /queue (it encodes every queued prompt).
+        const qq = await queueSummary(api, { ids: [pid] });
+        const mine = qq?.items?.find((x) => x.prompt_id === pid);
+        const ahead = mine?.state === "pending" ? mine.position - 1 : -1;
+        if (!qq) { /* summary unknown: keep waiting on /history */ }
+        else if (ahead >= 0) onStatus(`Queued (${ahead + 1} job${ahead ? "s" : ""} ahead)…`);
+        else if (mine?.state === "running") onStatus(`Working… ${Math.round((Date.now() - t0) / 1000)} s`);
         else if (!h[pid]) {
           const again = await json(api, `/history/${pid}`).catch(() => ({}));
           if (!again[pid]) throw new Error("the job left the queue without a result (server restarted?)");

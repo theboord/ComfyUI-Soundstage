@@ -55,7 +55,13 @@ function queueApi({ pending = [], running = [] } = {}) {
         q.queue_pending = q.queue_pending.filter((it) => !(body.delete || []).includes(it[1]));
         return { ok: true, status: 200, json: async () => ({}) };
       }
-      if (path === "/queue") return { ok: true, status: 200, json: async () => clone(q) };
+      if (path === "/queue") throw new Error("GET /queue: the App must use /soundstage/queue_summary");
+      if (path.startsWith("/soundstage/queue_summary")) {
+        const ids = new URLSearchParams(path.split("?")[1] || "").get("ids")?.split(",") || null;
+        const items = [...q.queue_running.map((it) => ({ prompt_id: it[1], state: "running", position: 0 })),
+          ...q.queue_pending.map((it, i) => ({ prompt_id: it[1], state: "pending", position: i + 1 }))].filter((it) => !ids || ids.includes(it.prompt_id));
+        return { ok: true, status: 200, json: async () => ({ running: q.queue_running.length, pending: q.queue_pending.length, items }) };
+      }
       if (path.startsWith("/history/")) return { ok: true, status: 200, json: async () => ({}) };
       return { ok: false, status: 404, json: async () => ({ error: "no" }) };
     },

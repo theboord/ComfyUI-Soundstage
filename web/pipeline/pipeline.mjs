@@ -3,6 +3,7 @@
 // (the step gate, the look-still sampler, the model pickers, Quality) so the user never touches raw switches.
 // Every view ends with one "Next →" button. Renders come back per shot and land on the Ladder (⑥ Review).
 import { icon } from "../ui/icons.mjs";
+import { queueSummary, idsIn } from "../ui/queue.mjs";
 import { setTouchupStill } from "../touchup/touchup.mjs";
 import { Mover, hudPanel, hudPop, cvEl, clipText } from "../ui/canvasui.mjs";
 import { RippleControls } from "../motion/ripple.mjs";
@@ -295,8 +296,9 @@ export class Pipeline {
 
   async _refreshStop() {
     try {
-      const q = await (await this.ctx.api.fetchApi("/queue")).json();
-      const n = (q.queue_running || []).length + (q.queue_pending || []).length;
+      const q = await queueSummary(this.ctx.api, { limit: 1 });   // counts only (GET /queue encodes every prompt)
+      if (!q) return;
+      const n = q.running + q.pending;
       this.stopBtn.hidden = n === 0;
       this.stopBtn.textContent = n > 1 ? `■ Stop (${n})` : "■ Stop";
     } catch { /* server away */ }
@@ -327,14 +329,15 @@ export class Pipeline {
     const api = this.ctx.api;
     this.stopBtn.disabled = true;
     try {
-      const q = await (await api.fetchApi("/queue")).json();
-      const pending = (q.queue_pending || []).map((x) => x[1]);
+      const q = await queueSummary(api, { limit: 2000 });
+      if (!q) throw new Error("the server didn't say what is queued");
+      const pending = [...idsIn(q, "pending")];
       if (pending.length) await api.fetchApi("/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delete: pending }) });
-      if ((q.queue_running || []).length) await api.fetchApi("/interrupt", { method: "POST" });
+      if (q.running) await api.fetchApi("/interrupt", { method: "POST" });
       this.inflight.clear();
       this._drawShotRows();
       this.ctx.setBatch?.(false);
-      this._say(`Stopped: ${pending.length} queued render${pending.length === 1 ? "" : "s"} cancelled${(q.queue_running || []).length ? ", the running one interrupted" : ""}.`);
+      this._say(`Stopped: ${pending.length} queued render${pending.length === 1 ? "" : "s"} cancelled${q.running ? ", the running one interrupted" : ""}.`);
     } catch (e) { this._say(`Couldn't stop: ${e.message}`); }
     this.stopBtn.disabled = false;
     this._refreshStop();

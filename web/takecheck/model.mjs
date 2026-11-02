@@ -253,11 +253,14 @@ const jparse = (v) => { if (v && typeof v === "object") return v; try { return t
 export function recipeFromTags(tags) {
   const rec = jparse(tags?.soundstage);
   if (rec && typeof rec.scene === "object" && rec.scene) return { ...rec, source: rec.source || "soundstage tag" };
+  // A big scene travels by reference (soundstage/stagestore.py): the caller loads it with loadRecipeScene().
+  if (rec && isHash(rec.scene_ref)) return { ...rec, source: rec.source || "soundstage tag" };
   const prompt = jparse(tags?.prompt);
   if (prompt) {
     const nodes = Object.values(prompt).filter((n) => n && typeof n === "object");
     const st = nodes.find((n) => n.class_type === "SoundstageStage");
     const raw = jparse(st?.inputs?.stage);
+    if (isHash(raw?.stage_ref)) return { v: 1, app: "Soundstage", scene_ref: raw.stage_ref, shot: { id: raw.shot_id }, source: "rebuilt from the prompt tag" };
     const scene = raw?.scene ?? raw;
     if (scene && scene.camera) {
       const lit = (v) => (Array.isArray(v) && v.length === 2 && Number.isInteger(v[1]) ? null : v);
@@ -277,9 +280,29 @@ export function recipeFromTags(tags) {
   const wf = jparse(tags?.workflow);
   const node = (wf?.nodes || []).find((n) => n.type === "SoundstageStage");
   const raw = jparse(node?.widgets_values?.[0]);
+  if (isHash(raw?.stage_ref)) return { v: 1, app: "Soundstage", scene_ref: raw.stage_ref, shot: { id: raw.shot_id }, source: "rebuilt from the workflow tag" };
   const scene = raw?.scene ?? raw;
   if (scene?.camera) return { v: 1, app: "Soundstage", scene, shot: { id: scene.active_shot }, source: "rebuilt from the workflow tag" };
   return null;
+}
+
+const isHash = (h) => typeof h === "string" && /^[0-9a-f]{64}$/.test(h);
+
+/** A recipe whose scene went by reference gets it back from this server's stage store. Returns the recipe with its
+ *  scene, or null when the server doesn't have it (an MP4 from another machine). */
+export async function loadRecipeScene(api, rec) {
+  if (!rec || (rec.scene && typeof rec.scene === "object")) return rec;
+  if (!isHash(rec.scene_ref)) return null;
+  try {
+    const r = await api.fetchApi(`/soundstage/stage_store/${rec.scene_ref}`);
+    if (!r || (r.status && r.status !== 200)) return null;
+    const d = await r.json();
+    const scene = d?.scene ?? d;
+    if (!scene?.camera) return null;
+    const shotId = rec.shot?.id || scene.active_shot || scene.shot_id;
+    const shot = (scene.shots || []).find((s) => s.id === shotId);
+    return { ...rec, scene, shot: { id: shotId, name: rec.shot?.name || shot?.name } };
+  } catch { return null; }
 }
 
 /** One line for the restore dialog: "Final · Chase cam (police hood) · seed 42". */

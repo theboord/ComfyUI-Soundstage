@@ -92,3 +92,7 @@ Routes (`soundstage/agent/director_routes.py`): `POST /soundstage/director/state
 `GET /soundstage/director/state`, `POST /soundstage/director/propose` (`{command}` or `{calls}`),
 `POST /soundstage/director/apply` (`{plan_id, confirm_gpu}`), `POST /soundstage/director/undo`. Only the App tab that
 reported last runs an apply, so two open tabs never both act on it. Plans expire after an hour and run once.
+
+## Watching the queue (tools and agents)
+
+Watch renders with `GET /soundstage/queue_summary` (`?ids=<prompt_id>` for yours): it returns running and pending counts plus ids, client ids and short labels, never a payload. Fetch one finished prompt with `GET /history/{prompt_id}`. Never poll the full `GET /queue` or `GET /history`: ComfyUI encodes every prompt in full there, and on 2026-11-01 that froze the pod. See [tools/qa/README.md](../tools/qa/README.md#watching-the-queue).

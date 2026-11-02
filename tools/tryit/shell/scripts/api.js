@@ -105,6 +105,7 @@ export const api = {
       return json({ filename: s.cut, subfolder: "", type: "output", seconds: s.cutSeconds || 0, missing: [] });
     }
     if (p === "/queue") return json(method === "GET" ? { queue_running: [], queue_pending: [] } : {});
+    if (p.startsWith("/soundstage/queue_summary")) return json({ running: 0, pending: 0, items: [] });
     if (p === "/interrupt" || p === "/free") return json({});
     if (p.startsWith("/history")) return json({});
     if (p.startsWith("/object_info")) return json({});
