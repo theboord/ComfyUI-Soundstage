@@ -15,6 +15,26 @@ import { FrameCheck, badgeOf, flagged, rank, REROLLS, FRAMECHECK_CSS } from "./f
 /** Version of the still's start image (soundstage/look/look_start.py). Frames record it; older frames reproduce
  * from the plain colour pass. 2 = the frame follows the stage exactly (soundstage/look/frame_lock.py): Klein starts
  * from the Color pass (stage_denoise) and the prompt states frame 1 as measured on the ID pass. */
+/** ④'s look box placeholder: optional, and no example that fights the scene (QA 2026-11-02: a western example on a rainy night chase). */
+export const FRAME_DESC_PLACEHOLDER = "Optional: the look you want on top of the stage, e.g. light, weather, mood, film stock…";
+
+/**
+ * ④ Frame's "Style or character add-on" list: only FLUX Klein LoRAs (a "klein" / "flux2" / "flux3" name or folder),
+ * never a private or downloads folder. QA 2026-11-02: the list showed every LoRA on the pod, client-named LTX and SDXL
+ * files included, which is both wrong for Klein and an NDA leak on a screen share. The one already chosen stays listed.
+ */
+export function stillLoras(vals, current = null) {
+  const PRIVATE = /(^|[\\/])(downloads?|private|nda|clients?)([\\/]|$)/i;
+  const KLEIN = /klein|flux[-_ .]?[23]\b|flux[-_ .]?[23][-_ .]/i;
+  const out = ["None"];
+  for (const v of vals || []) {
+    const s = String(v);
+    if (s === "None" || out.includes(s)) continue;
+    if (s === current || (KLEIN.test(s) && !PRIVATE.test(s))) out.push(s);
+  }
+  return out;
+}
+
 export const LOOK_START = 2;
 export const FRAME_DENOISE = 0.9;   // soundstage/look/frame_lock.py DEFAULT_DENOISE: Klein's default "Follow the clay"
 /** input/ subfolder where chosen ④ frames are kept (temp/ is emptied by a server restart). */
@@ -412,7 +432,7 @@ export class Pipeline {
     f.follow = h("input", { type: "range", min: "0.55", max: "1", step: "0.01", value: "0.85",
       on: { input: () => { f.followOut.textContent = this._followLabel(); this._applyStillModel(); } } });
     f.followOut = h("span", { class: "status" });
-    f.desc = h("textarea", { placeholder: "What's in the frame and how it should feel: golden hour, dust, worn leather saddles…",
+    f.desc = h("textarea", { placeholder: FRAME_DESC_PLACEHOLDER,
       on: { change: () => this._setDescription(f.desc.value) } });
     f.count = 4;
     f.countSeg = h("span", { class: "seg row", title: "Variations: how many frames one Generate makes" }, ...[1, 2, 4].map((n) => h("button", { type: "button", "aria-pressed": String(n === 4),
@@ -832,7 +852,7 @@ export class Pipeline {
     const loraW = this.w(9081, "lora");
     if (loraW && !f.lora.options.length) {
       const vals = loraW.options?.values || ["None"];
-      for (const v of (Array.isArray(vals) ? vals : ["None"])) f.lora.append(new Option(v === "None" ? "None" : String(v).replace(/\.safetensors$/, ""), v));
+      for (const v of stillLoras(Array.isArray(vals) ? vals : ["None"], loraW.value)) f.lora.append(new Option(v === "None" ? "None" : String(v).replace(/\.safetensors$/, ""), v));
     }
     f.lora.disabled = !loraW;
     this._syncSampling();
