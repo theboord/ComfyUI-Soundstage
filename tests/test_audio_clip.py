@@ -282,6 +282,8 @@ def test_voice_resolves_cast_names_and_aliases(tmp_path):
     assert VV.resolve_name(d, "ezra hale") == "EZRA_HALE" and VV.resolve_name(d, "Mara") == "MARA_VOSS"
     assert VV.resolve_name(d, "jordan lee") == "Jordan"   # by the character it was saved for
     assert VV.resolve_name(d, "Nobody") is None
+    assert VV.resolve_name(d, "Ezra Cole") is None, "a different full name never borrows EZRA_HALE's voice"
+    assert VV.resolve_name(d, "Jordan Smith") is None, "nor Jordan Lee's"
     assert VV.load_voice(d, "EZRA")["name"] == "EZRA_HALE"
     VV.save_voice(d, "EZRA_YOUNG", ref, SR, consent=True, owner="designed", character="EZRA YOUNG")
     assert VV.resolve_name(d, "Ezra") is None, "two Ezras: no guess"
