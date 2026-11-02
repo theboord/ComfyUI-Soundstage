@@ -172,6 +172,12 @@ export class PhysicsPanel {
     this.brkBtn = btn("Breakable", "", "Crates and cardboard boxes come apart: planks or panels glued until a hard hit snaps them, and cardboard dents where it is struck (seeded: the same break every bake). Re-simulates a baked scene.");
     this.brkBtn.addEventListener("click", () => { const on = this.brkBtn.getAttribute("aria-pressed") !== "true"; const r = this.stage.setPhysicsFeel?.({ breakables: on }); this._msg(r?.message || (on ? "Breakable: crates and boxes break and dent." : "Breakable: off, every prop stays whole.")); this.onBaked(); this.sync(); });
     this.feelSeg = el("div", "ss-views", this.impBtn, this.bigBtn, this.brkBtn);
+    // World collisions (world.mjs): cars, people, lamps and walls collide in the bake; Keep keyed holds one on its keys.
+    this.worldBtn = btn("Everything collides", "", "Cars crash into cars, knock lamps and people over, stop at solid walls and break weak ones: a keyed car keeps its keys until its first real hit, then the physics takes over. Re-simulates a baked scene.");
+    this.worldBtn.addEventListener("click", () => { const on = this.worldBtn.getAttribute("aria-pressed") !== "true"; const r = this.stage.setWorldCollisions?.(on); this._msg(r?.message || (on ? "Everything collides." : "Only Dynamic props collide; keyed cars and people pass through each other.")); this.onBaked(r); this.sync(); });
+    this.keepBtn = btn("Keep keyed", "", "This one stays on its keys whatever it hits (the Director's consequence check will say what it passes through). Off: the physics takes over at its first real hit.");
+    this.keepBtn.addEventListener("click", () => { if (!this.id) return; const on = this.keepBtn.getAttribute("aria-pressed") !== "true"; const r = this.stage.setKeepKeyed?.(this.id, on); this._msg(r?.message || (on ? "Kept on its keys." : "The physics takes over at its first hit.")); this.onBaked(r); this.sync(); });
+    this.worldRow = el("div", "ph-fx", el("span", "", "World"), el("div", "ss-views", this.worldBtn, this.keepBtn));
     this.feelRow = el("div", "ph-fx", el("span", "", "Feel"), this.feelSeg);
     // Overcrank: shoot the action at k x 24 fps, play it at 24 (slow motion that reads as weight).
     this.ocSel = document.createElement("select");
@@ -184,7 +190,7 @@ export class PhysicsPanel {
     this.note = el("div", "ph-note");
     this.msg = el("div", "ph-msg");
     this.msg.setAttribute("aria-live", "polite");
-    this.el.append(head, this.seg, this.mass.r, this.bounce.r, this.friction.r, this.lift.r, this.matRow, this.all, el("div", "ph-acts", this.simBtn, this.clearBtn), this.fxRow, this.feelRow, this.ocRow, this.eng, this.note, this.msg);
+    this.el.append(head, this.seg, this.mass.r, this.bounce.r, this.friction.r, this.lift.r, this.matRow, this.all, el("div", "ph-acts", this.simBtn, this.clearBtn), this.fxRow, this.feelRow, this.worldRow, this.ocRow, this.eng, this.note, this.msg);
   }
 
   /** Switch live physics to the GPU: bring WebGPU up, fall back to the CPU (and say why) if it can't run here. */
@@ -269,7 +275,14 @@ export class PhysicsPanel {
     this.all.hidden = info.kindCount < 2 || !info.canMove;
     this.all.textContent = `Same for all ${info.kindCount} ${info.kind.replace(/_/g, " ")}${/s$/.test(info.kind) ? "" : "s"}`;
     this.clearBtn.disabled = !this.stage.state.actors.some((a) => a.physics?.baked);
-    this.note.textContent = !info.canMove
+    this.worldBtn.setAttribute("aria-pressed", String(info.worldOn));
+    this.keepBtn.hidden = !info.world;
+    this.keepBtn.setAttribute("aria-pressed", String(!!info.keepKeyed));
+    const tk = info.takeover;
+    this.note.textContent = tk ? `Physics took over at f ${tk.frame} (${(tk.frame / (this.stage.state.shot?.fps || 24)).toFixed(1)} s)` +
+        `${tk.by ? `: ${tk.reason === "anchor" ? "knocked loose by" : "hit"} ${String(tk.by).split("~")[0].replace(/_/g, " ")}` : ""}. Before that it is on its own keys; scrub back to see them, Undo to take the bake back.`
+      : info.world && info.worldOn && !info.keepKeyed ? "On its keys until its first real hit; then the physics takes over (by real mass and speed). Simulate & bake to see it."
+      : !info.canMove
       ? "People, animals and vehicles push props with their keyed motion; they don't fall over themselves."
       : info.baked ? "Baked: it plays as keys now (edit them on the timeline). Simulate again to redo it from its own keys."
         : `${info.dynamicCount} dynamic object${info.dynamicCount === 1 ? "" : "s"} in the scene. Keyed moves play first; physics takes over at the last key, at that speed (a throw).`;
