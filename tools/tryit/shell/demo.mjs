@@ -3,25 +3,30 @@
 import "./scripts/glbshim.js";
 import { app } from "./scripts/app.js";
 import { api, demo } from "./scripts/api.js";
+import { LABEL, GLYPH, provenanceNow, stopProvenance, clipProvenance } from "./provenance.mjs";
 
 const $ = (id) => document.getElementById(id);
 export const SCENES = [
   ["Start here", [
+    ["stunt", "Stunt: reverse J-turn (clay to Hollywood)"],
     ["drycreek", "Dry Creek: a script, its takes and ScriptSync"],
     ["blank", "A brand-new stage (the first-run card)"],
+  ]],
+  ["Water", [
+    ["lake", "Lake: speedboat run"],
+    ["swim", "Reef: a diver swimming"],
+    ["underwater", "Underwater reef (renders)"],
   ]],
   ["Cars, stunts and horses", [
     ["car", "In the car: seated cast, see-through glass"],
     ["three", "Three in a car"],
     ["chase", "Night car chase (lit lamps)"],
-    ["stunt", "Stunt: reverse J-turn"],
     ["western", "Western: riders on horses"],
   ]],
   ["Live 3D", [
     ["physics", "Live physics: climb, mount, pick up, push"],
   ]],
   ["New sets", [
-    ["underwater", "Underwater reef"],
     ["fire", "Burning building"],
     ["airplane", "Airplane cabin"],
     ["train", "Train carriage"],
@@ -40,7 +45,8 @@ export const SCENES = [
 const KEYS = SCENES.flatMap(([, items]) => items.map(([k]) => k));
 // #scene or #scene--stop (a tour stop to run once the scene is up).
 const [hashKey, hashStop] = location.hash.slice(1).split("--");
-const key = KEYS.includes(hashKey) ? hashKey : "drycreek";
+const key = KEYS.includes(hashKey) ? hashKey : "stunt";
+const HERO = !location.hash;   // the first screen: only on a plain visit (tour links and scene picks go straight in)
 
 // The App's own Guide tour runs once per browser; in the demo it waits for "?" except on the brand-new stage.
 try { if (key === "blank") localStorage.removeItem("ss_tour_done"); else localStorage.setItem("ss_tour_done", "1"); } catch { /* storage blocked */ }
@@ -67,6 +73,74 @@ demo.toast = (msg) => {
   clearTimeout(toastT);
   toastT = setTimeout(() => (t.hidden = true), 5600);
 };
+
+// ---------------------------------------------------------------- the first screen: clay | take, one wipe
+// One video holds both halves side by side (left: the stage's Color pass, right: the Hollywood final), so the two can
+// never drift; a canvas draws the left half up to the split and the right half after it.
+let heroOpen = false, readyNow;
+const ready = new Promise((r) => (readyNow = r));   // the tour and its stops exist once the module has run to the end
+const HERO_FILE = "m_hero_jturn.mp4";
+/** A badge's look and its one-line note (title for the mouse, aria-label for screen readers). */
+function setProv(el, p, { long = "", keepText = false } = {}) {
+  el.classList.toggle("live", p.mode === "live");
+  el.classList.toggle("replayed", p.mode !== "live");
+  el.dataset.prov = p.mode;
+  el.title = p.note;
+  el.setAttribute("aria-label", p.note);
+  if (!keepText) {
+    el.replaceChildren(`${GLYPH[p.mode]} ${LABEL[p.mode]}`);
+    if (long) el.append(Object.assign(document.createElement("span"), { className: "long", textContent: long }));
+  }
+  return el;
+}
+const provBadge = (p) => setProv(Object.assign(document.createElement("span"), { className: "prov" }), p);
+function heroSetup() {
+  const sec = $("hero"), cv = $("heroCv"), box = cv.parentElement, knob = $("heroSplit");
+  const ctx = cv.getContext("2d");
+  const v = Object.assign(document.createElement("video"), { muted: true, loop: true, playsInline: true, preload: "auto", autoplay: true });
+  v.src = new URL(`./r/${HERO_FILE}`, import.meta.url).href;
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let split = 0.5, user = false, raf = 0, t0 = performance.now();
+  const W = cv.width, H = cv.height;
+  function draw() {
+    raf = requestAnimationFrame(draw);
+    if (!user && !still) split = 0.5 + 0.28 * Math.sin((performance.now() - t0) / 1900);
+    knob.style.left = `${(split * 100).toFixed(2)}%`;
+    knob.setAttribute("aria-valuenow", String(Math.round(split * 100)));
+    if (v.readyState < 2) return;
+    const x = Math.round(split * W), vw = v.videoWidth / 2 || W, k = vw / W;
+    if (x > 0) ctx.drawImage(v, 0, 0, x * k, v.videoHeight, 0, 0, x, H);
+    if (x < W) ctx.drawImage(v, vw + x * k, 0, (W - x) * k, v.videoHeight, x, 0, W - x, H);
+  }
+  const setFrom = (e) => { const r = box.getBoundingClientRect(); split = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); };
+  box.addEventListener("pointerdown", (e) => { user = true; setFrom(e); box.setPointerCapture(e.pointerId); });
+  box.addEventListener("pointermove", (e) => { if (box.hasPointerCapture(e.pointerId)) setFrom(e); });
+  knob.addEventListener("keydown", (e) => {
+    const d = { ArrowLeft: -0.05, ArrowRight: 0.05, Home: -1, End: 1 }[e.key];
+    if (d == null) return;
+    e.preventDefault(); user = true; split = Math.max(0, Math.min(1, split + d));
+  });
+  const close = () => {
+    if (!heroOpen) return;
+    heroOpen = false; sec.hidden = true; cancelAnimationFrame(raf); v.pause();
+    try { sessionStorage.setItem("ss_demo_hero", "0"); } catch { /* storage blocked */ }
+  };
+  const open = () => {
+    heroOpen = true; sec.hidden = false; t0 = performance.now();
+    v.play().catch(() => { /* autoplay blocked: the first frame still draws */ });
+    cancelAnimationFrame(raf); draw(); $("heroGo").focus({ preventScroll: true });
+  };
+  $("heroGo").addEventListener("click", close);
+  $("heroTour").addEventListener("click", async () => { close(); await ready; setTour(true); });
+  $("heroV2s").addEventListener("click", async () => { close(); await ready; setTour(true); runStop("v2s"); });
+  sec.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  $("introBtn").addEventListener("click", () => (heroOpen ? close() : open()));
+  return { open, close };
+}
+const hero = heroSetup();
+let heroSeen = null;
+try { heroSeen = sessionStorage.getItem("ss_demo_hero"); } catch { /* storage blocked */ }
+if (HERO && heroSeen !== "0") hero.open();
 
 // ---------------------------------------------------------------- the scene
 const data = key === "blank" ? { workflow: "Soundstage_App", note: "A brand-new stage: the first-run card offers the demo scene, a script or a video." }
@@ -124,7 +198,7 @@ $("sceneNote").textContent = data.note || "";
 $("sceneNote").title = data.note || "";
 
 // Open each scene where it reads best: in Color, mid-move.
-const START = { drycreek: 40, chase: 40, stunt: 52, car: 30, three: 30, western: 40, platform: 60, runway: 60, clouds: 40, aliens: 40, kaiju: 40 };
+const START = { lake: 40, drycreek: 40, chase: 40, stunt: 52, car: 30, three: 30, western: 40, platform: 60, runway: 60, clouds: 40, aliens: 40, kaiju: 40 };
 if (key !== "blank") setTimeout(() => {
   try {
     [...root().querySelectorAll("button")].find((x) => x.getClientRects().length && x.textContent.trim() === "Color")?.click();
@@ -223,7 +297,51 @@ const ACTIONS = {
     flash(pp);
   },
   async gaits() { await ACTIONS.rider(); },
+  // Drive mode (Milestone 29): the red car selected, its 🎮 Drive button shown; D starts it.
+  async drive() {
+    await ACTIONS.color(); await sleep(300);
+    selectKind(/^sports_car$/, /car/); await sleep(700);
+    flash(btn(/Drive/));
+  },
+  // Boats: the speedboat on the lake, playing.
+  async boats() {
+    await ACTIONS.color(); await sleep(300);
+    selectKind(/boat|canoe|kayak|raft|dinghy|yacht/); await sleep(300);
+    S().setFrame(0); await sleep(200); playStage();
+  },
+  // Swimming: Clay view (the kit and the kick read best in clay), the diver selected, playing.
+  async swim() {
+    P().go("set"); await sleep(300); view("Clay"); await sleep(300);
+    selectKind(/^(woman|man|child)$/); await sleep(300);
+    S().setFrame(0); await sleep(200); playStage();
+  },
+  // Video → 3D: the J-turn clip goes into the App's own chooser, exactly as a drop on the stage would.
+  async v2s() {
+    P().go("set"); await sleep(300);
+    const blob = await (await fetch(new URL("./r/m_v2s_source.mp4", import.meta.url))).blob();
+    const f = new File([blob], "jturn_night_street.mp4", { type: "video/mp4" });
+    const inp = [...root().querySelectorAll('input[type="file"]')].find((x) => /video|mp4/.test(x.accept || ""));
+    if (!inp) return;
+    const dt = new DataTransfer(); dt.items.add(f);
+    inp.files = dt.files;
+    inp.dispatchEvent(new Event("change", { bubbles: true }));
+    // The rebuild replaces the J-turn stage (the chooser's own Replace button), so the set you see is the clip's.
+    for (let i = 0; i < 20; i++) {
+      await sleep(250);
+      const rep = [...document.querySelectorAll(".ss-vi-modal button")].find((x) => /^Replace the set/.test(x.textContent.trim()));
+      if (rep) { rep.click(); break; }
+    }
+  },
+  // ✦ One-click: ④ Frame replays its candidates, then the ✦ on the first one opens the card window.
+  async oneclick() {
+    P().go("frame"); await sleep(900);
+    if (!(P().candidates?.[S().activeShot().id] || []).length) { P().f.goBtn.click(); await sleep(3200); }
+    const b1 = [...root().querySelectorAll("button")].find((x) => x.getClientRects().length && /^One-click/.test(x.title || ""));
+    flash(b1); b1?.click();
+  },
 };
+/** Play from the current frame (the transport's own Play). */
+function playStage() { btn(/^Play$/)?.click(); }
 async function runStop(id) {
   const stop = tour.steps.find((s) => s.id === id);
   if (!stop) return;
@@ -245,12 +363,18 @@ for (const s of tour.steps) {
   const row = document.createElement("div");
   row.className = "row";
   row.append(show);
+  // The clips are recordings: one Replayed badge leads them, and each Watch button carries its own note.
+  if ((s.clips || []).length) row.append(provBadge({ mode: "replayed", note: "Replayed: the Watch clips are recorded earlier (GPU renders or screen captures of the App)." }));
   for (const c of s.clips || []) {
     const w = Object.assign(document.createElement("button"), { type: "button", textContent: `Watch: ${c.label}` });
+    const p = clipProvenance(c);
+    w.dataset.prov = p.mode; w.title = p.note;
     w.addEventListener("click", () => playClip(c));
     row.append(w);
   }
-  li.append(Object.assign(document.createElement("b"), { textContent: s.title }), Object.assign(document.createElement("p"), { textContent: s.text }), row);
+  const hd = Object.assign(document.createElement("div"), { className: "hd" });
+  hd.append(Object.assign(document.createElement("b"), { textContent: s.title }), provBadge(stopProvenance(s)));
+  li.append(hd, Object.assign(document.createElement("p"), { textContent: s.text }), row);
   $("tourList").append(li);
 }
 function setTour(open) {
@@ -265,6 +389,7 @@ function playClip(c) {
   const d = $("clip");
   $("clipTitle").textContent = c.label;
   $("clipNote").textContent = c.note || "";
+  setProv($("clipProv"), clipProvenance(c));
   const src = new URL(`./r/${c.file}`, import.meta.url).href;
   const media = /\.(jpe?g|png)$/i.test(c.file)
     ? Object.assign(document.createElement("img"), { src, alt: c.label })
@@ -280,3 +405,43 @@ let keepOpen = null;
 try { keepOpen = sessionStorage.getItem("ss_demo_tour"); } catch { /* storage blocked */ }
 if (hashStop || keepOpen === "1") setTour(true);
 if (hashStop) setTimeout(() => runStop(hashStop), 1800);
+
+// ---------------------------------------------------------------- Live or Replayed: what the visitor is looking at now
+// The first screen's wipe is a recording; its note is the tour clip's own note for the same file.
+setProv($("heroProv"), clipProvenance(tour.steps.flatMap((s) => s.clips || []).find((c) => c.file === HERO_FILE) || { file: HERO_FILE }), { keepText: true });
+// The bar badge follows the screen: the tab that is up (a non-step tab such as Takes or the Timeline wins over the step
+// bar, which keeps the last step), the step's shot and its renders, and the Video → 3D replay (Replayed while it runs
+// and while its Identical? bar is up; after that the Live note says the set came from that run, until the scene changes).
+function v2sNow() {
+  const r = demo.v2s;
+  if (!r) return null;
+  const loading = r.doneAt && performance.now() - r.doneAt < 4000;   // the App loads the result, then opens the bar
+  const showing = r.running || loading || [...document.querySelectorAll(".ss-v2c")].some((e) => e.getClientRects().length);
+  return showing ? r : (r.doneAt ? { ...r, after: true } : null);
+}
+// soundstage.js showView marks these tabs on the stage root (and shows .ss-lookview for the Look).
+const VIEW_CLASSES = [["ss-advmode", "advisor"], ["ss-dailiesmode", "dailies"], ["ss-cutmode", "cut"], ["ss-canvasmode", "canvas"]];
+function viewNow() {
+  const el = root();
+  if (!el) return "";
+  for (const [cls, k] of VIEW_CLASSES) if (el.classList.contains(cls)) return k;
+  const look = el.querySelector(".ss-lookview");
+  return look && !look.hidden ? "look" : "";
+}
+function provNow() {
+  let step = "set", shot = null, view = "";
+  try { step = P()?.current || "set"; shot = S()?.activeShot()?.id ?? null; view = viewNow(); } catch { /* the stage isn't up */ }
+  return provenanceNow({ step, view, shot, scene: demo.scene, v2s: v2sNow() });
+}
+let provLast = "";
+function drawProv() {
+  const p = provNow();
+  if (p.mode + p.note === provLast) return;
+  provLast = p.mode + p.note;
+  setProv($("prov"), p, { long: p.mode === "live" ? " in your browser" : " from a real run" });
+}
+$("prov").addEventListener("click", () => demo.toast(provNow().note));   // a phone has no hover: a tap shows the note
+drawProv();
+setInterval(drawProv, 500);
+window.__demo.prov = provNow;
+readyNow();

@@ -24,13 +24,14 @@ const CSS = `
 .ss-vi-modal .opts3 { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
 .ss-vi-modal .opts3 .opt { padding:9px; gap:8px; }
 .ss-vi-modal .opts3 .opt b { font-size:13px; }
-.ss-vi-modal .opts3 .opt span.d { font-size:11.5px; line-height:1.3; display:block; }
+.ss-vi-modal .opts3 .opt span.d { font-size:11.5px; line-height:1.3; display:block; hyphens:auto; overflow-wrap:break-word; }
 .ss-vi-modal .rb { display:flex; flex-direction:column; gap:7px; border:1px solid rgba(255,255,255,.1); border-radius:12px; padding:10px; background:rgba(255,255,255,.025); }
 .ss-vi-modal .rrow { display:flex; align-items:center; gap:8px; min-width:0; }
 .ss-vi-modal .rrow .lab { width:56px; flex:0 0 auto; color:#a9a3ad; font-size:12px; }
 .ss-vi-modal .seg { display:flex; flex-wrap:wrap; gap:4px; min-width:0; }
 .ss-vi-modal .seg button { font:600 11.5px/1 "Soundstage Grotesk", system-ui, sans-serif; color:#f0efed; background:transparent; cursor:pointer;
-  border:1px solid rgba(255,255,255,.18); border-radius:999px; padding:6px 10px; white-space:nowrap; }
+  border:1px solid rgba(255,255,255,.18); border-radius:999px; padding:6px 10px; white-space:nowrap; max-width:100%; }
+.ss-vi-modal .seg button.long { white-space:normal; text-align:left; line-height:1.25; border-radius:12px; }
 .ss-vi-modal .seg button[aria-checked=true] { background:#F2FF59; color:#1a1420; border-color:#F2FF59; }
 .ss-vi-modal .strip { position:relative; height:54px; }
 .ss-vi-modal .film { position:absolute; inset:0 0 14px 0; display:flex; overflow:hidden; border-radius:6px; background:#120e16; color:#a9a3ad; font-size:11px; align-items:center; justify-content:center;
@@ -200,7 +201,7 @@ export function filmstrip(file, n = 8, w = 96) {
 export function chooseVideoUse(file, { person = null, selected = false, cast = 0, secs = 0, history = [] } = {}) {
   ensureCss();
   return new Promise((resolve) => {
-    const wrap = Object.assign(document.createElement("div"), { className: "ss-vi-modal" });
+    const wrap = Object.assign(document.createElement("div"), { className: "ss-vi-modal", lang: "en" });   // lang lets narrow cards hyphenate
     const card = Object.assign(document.createElement("div"), { className: "card" });
     card.setAttribute("role", "dialog");
     card.setAttribute("aria-label", "What is this video for?");
@@ -237,6 +238,7 @@ export function chooseVideoUse(file, { person = null, selected = false, cast = 0
       g.setAttribute("aria-label", label);
       const btns = items.map(([k, text, tip]) => {
         const b = Object.assign(document.createElement("button"), { type: "button", textContent: text, title: tip || "" });
+        if (text.length > 28) b.classList.add("long");   // a long chip wraps inside a narrow dialog instead of running off it
         b.dataset.k = k;
         b.setAttribute("role", "radio");
         b.addEventListener("click", () => { st[key] = k; sync(); onPick?.(k); });

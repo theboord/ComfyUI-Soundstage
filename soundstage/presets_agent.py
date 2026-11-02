@@ -20,7 +20,7 @@ STYLES = WEB / "look" / "style_presets.json"
 
 TAB_IDS = ["camera", "light", "look", "action", "edit", "recipe", "user"]
 CAMERA_MOVES = ["push_in", "pull_out", "orbit", "crane_up", "crane_down", "dolly_zoom", "whip_pan", "follow",
-                "drone_reveal", "tracking_side", "car_mount"]
+                "drone_reveal", "tracking_side", "car_mount", "long_lens_pan", "arm_car"]
 TIME_KEYS = ["dawn", "golden_am", "midday", "overcast", "magic_hour", "blue_hour", "night", "keep"]
 GRADE_KEYS = ["warmth", "contrast", "saturation", "grain", "halation", "vignette"]
 RECIPE_STEPS = ["video_to_3d", "new_angle", "ripple_mode", "whole_frame", "quality_draft", "quality_hollywood",

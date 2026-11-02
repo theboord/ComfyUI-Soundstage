@@ -40,6 +40,25 @@ const at = (id, y = 0.5) => js(`const g = stage.actorMeshes.get(${JSON.stringify
   const r = stage.canvas.getBoundingClientRect(); return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height };`);
 
 try {
+  // ---------------------------------------------------------------- the first screen: clay | take wipe on a plain visit
+  await b.send("Page.navigate", { url: `${URL0}?t=${Date.now()}` });
+  for (let i = 0; i < 40; i++) { await sleep(500); try { if (await b.ev("return !!document.getElementById('hero') && !document.getElementById('hero').hidden")) break; } catch { /* loading */ } }
+  await sleep(3500);
+  const hero = JSON.parse(await b.ev(`const c = document.getElementById('heroCv'), x = c.getContext('2d');
+    const px = (u) => { const d = x.getImageData(Math.round(u * c.width), c.height / 2, 1, 1).data; return d[0] + d[1] + d[2]; };
+    const r = document.querySelector('#hero .ba').getBoundingClientRect();
+    return JSON.stringify({ open: !document.getElementById('hero').hidden, lit: px(0.2) + px(0.8), w: r.width, h: r.height,
+      sideways: document.documentElement.scrollWidth > innerWidth + 1 })`));
+  await shot("hero_first_screen", JSON.stringify(hero));
+  check(hero.open && hero.lit > 30 && hero.w > 300 && !hero.sideways, "plain visit opens the first screen with the clay | take wipe drawing");
+  const heroProv = await b.ev("const e = document.getElementById('heroProv'); return e.dataset.prov + ' ' + e.title");
+  check(/^replayed .*m_hero_jturn\.mp4/.test(heroProv), `first screen's wipe is badged Replayed (${heroProv.slice(0, 90)})`);
+  await b.ev("document.getElementById('heroGo').click(); return 1"); await sleep(2500);
+  const after = await b.ev("return JSON.stringify({ hero: document.getElementById('hero').hidden, stage: !!window.__demo?.node?.ssStage, key: window.__demo?.key })");
+  await shot("hero_closed_stage", after);
+  check(/"hero":true,"stage":true,"key":"stunt"/.test(after), `Open the live stage lands on the J-turn stage (${after})`);
+  check(await b.ev("return document.getElementById('prov').dataset.prov") === "live", "the bar badge says Live on the stage");
+
   // ---------------------------------------------------------------- every scene loads clean
   const keys = await (async () => { await open("drycreek"); return js("return [...document.querySelectorAll('#scene option')].map((o) => o.value)"); })();
   check(keys.length >= 20, `scene picker lists ${keys.length} scenes`);
@@ -58,10 +77,14 @@ try {
     await js(`P.go('${st}'); return 1`); await sleep(2200);
     await shot(`drycreek_step_${st}`);
   }
+  const provDeliver = await js("await sleep(700); const e = document.getElementById('prov'); return e.dataset.prov + ' ' + e.title");
+  check(/^replayed .*⑦ Deliver/.test(provDeliver), `the bar badge says Replayed on ⑦ Deliver, which plays the shot's recorded final (${provDeliver.slice(0, 90)})`);
   await js("node.ssDailies.openScriptSync(); return 1"); await sleep(2500);
   const lined = await js("return document.querySelectorAll('.ss-dailies img, .ss-dailies video, .ss-dailies canvas').length");
   await shot("drycreek_scriptsync", `${lined} take pictures on the lined script`);
   check(lined > 0, "ScriptSync shows takes");
+  const provTakes = await js("await sleep(700); const e = document.getElementById('prov'); return e.dataset.prov + ' ' + e.title");
+  check(/^replayed .*Takes bin/.test(provTakes), `the bar badge says Replayed on ScriptSync / Takes (${provTakes.slice(0, 90)})`);
 
   // ---------------------------------------------------------------- replays: Frame (4 variations) and Motion on the stunt
   await open("stunt");
@@ -70,6 +93,8 @@ try {
   const cands = await js("return P.candidates[stage.activeShot().id]?.length || 0");
   await shot("stunt_frame_replay", `${cands} frames`);
   check(cands >= 4, "④ Frame replays the four FLUX 3 Klein variations");
+  const provFrame = await js("await sleep(700); const e = document.getElementById('prov'); return e.dataset.prov + ' ' + e.title");
+  check(/^replayed .*m_stunt_/.test(provFrame), `the bar badge says Replayed on ④ Frame and names the files (${provFrame.slice(0, 90)})`);
   await js("P.go('motion'); return 1"); await sleep(1500);
   await js("P.m.draftBtn.click(); return 1"); await sleep(4000);
   await shot("stunt_motion_draft");
@@ -80,6 +105,7 @@ try {
 
   // ---------------------------------------------------------------- stunt picker on a live car
   await js("P.go('set'); return 1"); await sleep(1200);
+  check(await js("return document.getElementById('prov').dataset.prov") === "live", "back on the stage, the bar badge says Live again");
   await js("stage.select('sports_car'); return 1"); await sleep(1200);
   const opts = await js("const s=[...document.querySelectorAll('.ss-stage select')].find(x=>x.getClientRects().length&&[...x.options].some(o=>/J-turn/.test(o.text))); if(!s) return ''; s.value=[...s.options].find(o=>/Donut/.test(o.text)).value; s.dispatchEvent(new Event('change',{bubbles:true})); return [...s.options].map(o=>o.text).join('|')");
   await sleep(1200);
@@ -153,6 +179,8 @@ try {
   const tl = await js("const v = document.querySelector('.ss-cutview'); return v && !v.hidden ? v.innerText.length : 0");
   await shot("timeline", `${tl} chars of Timeline UI`);
   check(tl > 0, "the Timeline (Edit tab) opens");
+  const provCut = await js("await sleep(700); const e = document.getElementById('prov'); return e.dataset.prov + ' ' + e.title");
+  check(/^replayed .*Timeline/.test(provCut), `the bar badge says Replayed on the Timeline, whose clips are recorded (${provCut.slice(0, 90)})`);
   const tlr = await js("const r = await D.api.fetchApi('/soundstage/cut/render', {method:'POST', body:'{}'}); await sleep(300); return r.status + ' ' + document.getElementById('toast').textContent");
   check(/^503 .*Timeline.*full install/.test(tlr), `Timeline render: ${tlr.slice(0, 90)}`);
   await js("document.querySelector('[data-tab=\"stage\"]')?.click(); stage.setActiveShot('crane'); P.go('review'); return 1"); await sleep(5000);
@@ -170,6 +198,27 @@ try {
   check(/viewfinder.*full install/i.test(vfToast), "phone viewfinder: the vcam bridge says \"available in the full install\"");
   await js("node.ssViewfinder.close(); return 1");
 
+  // ---------------------------------------------------------------- Video → 3D: the recorded run replays through the App
+  await open("stunt--v2s");
+  await sleep(4000);
+  const chooser = await js("return !!document.querySelector('.ss-vi-modal')");
+  await shot("v2s_chooser", `chooser ${chooser}`);
+  check(chooser, "Video → 3D: the J-turn clip opens the App's chooser");
+  await js("[...document.querySelectorAll('.ss-vi-modal button')].find(x=>/^Rebuild$/.test(x.textContent.trim()))?.click(); return 1");
+  await sleep(5000);
+  await shot("v2s_progress", (await js("const t=document.querySelector('.ss-stage'); return (t.innerText.match(/Step \\d+ of \\d+[^\\n]*/)||[''])[0]")));
+  const provRun = await js("const e = document.getElementById('prov'); return e.dataset.prov + ' ' + e.title");
+  check(/^replayed .*Video → 3D run/.test(provRun), `the bar badge says Replayed while the recorded run plays back (${provRun.slice(0, 90)})`);
+  await sleep(9000);
+  const v2s = JSON.parse(await js(`return JSON.stringify({ actors: stage.toJSON().actors.map(a=>a.name), bar: !!document.querySelector('.ss-v2c'),
+    keys: stage.activeShot()?.camera_keys?.length || 0 })`));
+  await shot("v2s_result", JSON.stringify(v2s).slice(0, 160));
+  check(v2s.bar && v2s.actors.some((n) => /car/i.test(n)), "Video → 3D replay loads the rebuilt set and the Identical? bar");
+  check(await js("return document.getElementById('prov').dataset.prov") === "replayed", "the bar badge stays Replayed while the Identical? bar shows the run's result");
+  await js("const b=[...document.querySelectorAll('.ss-v2c button')].find(x=>/^Wipe$/.test(x.textContent.trim())); b?.click(); stage.setFrame(60); return 1");
+  await sleep(2500);
+  await shot("v2s_wipe_f60");
+
   // ---------------------------------------------------------------- What's new tour: every stop, and a clip
   await open("drycreek");
   const stops = JSON.parse(await js("return JSON.stringify((await (await fetch(new URL('./tour.json', document.baseURI))).json()).steps.map(s=>[s.id,s.scene]))"));
@@ -178,10 +227,17 @@ try {
     await sleep(2500);
     await shot(`tour_${id}`);
   }
+  const badges = JSON.parse(await js(`return JSON.stringify([...document.querySelectorAll('#tourList li')].map((li) => ({ id: li.dataset.id,
+    stop: li.querySelector('.hd .prov')?.dataset.prov || '', watch: [...li.querySelectorAll('.row button:not(.go)')].map((w) => w.dataset.prov),
+    lead: li.querySelector('.row .prov')?.dataset.prov || '' })))`));
+  check(badges.every((x) => /^(live|replayed)$/.test(x.stop)), `every tour stop has a Live or Replayed badge (${badges.map((x) => `${x.id}:${x.stop}`).join(" ")})`);
+  check(badges.every((x) => x.watch.every((p) => p === "replayed") && (!x.watch.length || x.lead === "replayed")), "every Watch clip is badged Replayed");
+  check(badges.find((x) => x.id === "v2s")?.stop === "replayed" && badges.find((x) => x.id === "drive")?.stop === "live", "the Video → 3D stop is Replayed, Drive mode is Live");
   await js("[...document.querySelectorAll('#tourList button')].find(x=>/^Watch/.test(x.textContent))?.click(); return 1"); await sleep(2500);
   const playing = await js("const v=document.querySelector('#clip video'); return v ? v.readyState : -1");
   await shot("tour_clip_player", `readyState ${playing}`);
   check(playing >= 2, "a tour clip plays");
+  check(await js("return document.getElementById('clipProv').dataset.prov") === "replayed", "the clip player is badged Replayed");
 
   // ---------------------------------------------------------------- phone width
   await b.resize(390, 844);
@@ -189,6 +245,13 @@ try {
   const wide = await js("return document.documentElement.scrollWidth > innerWidth + 1");
   await shot("phone_chase", `page scrolls sideways: ${wide}`);
   check(!wide, "no sideways page scroll at phone width");
+  const provPhone = await js("const r = document.getElementById('prov').getBoundingClientRect(); return r.width > 20 && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight");
+  check(provPhone, "the Live / Replayed badge is on screen at phone width");
+  await js("sessionStorage.removeItem('ss_demo_hero'); return 1");   // closed earlier in this tab
+  await b.send("Page.navigate", { url: `${URL0}?t=${Date.now()}` }); await sleep(6000);
+  const heroPhone = await js("const h = document.getElementById('hero'); return JSON.stringify({ open: !h.hidden, wide: h.scrollWidth > innerWidth + 1 || document.documentElement.scrollWidth > innerWidth + 1 })");
+  await shot("phone_first_screen", heroPhone);
+  check(/"open":true,"wide":false/.test(heroPhone), `first screen fits a phone (${heroPhone})`);
 } finally {
   writeFileSync(join(DIR, "report.json"), JSON.stringify({ fails, report }, null, 1));
   b.close();

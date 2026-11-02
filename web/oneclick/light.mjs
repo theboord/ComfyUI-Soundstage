@@ -85,7 +85,8 @@ export function depthLockedRelightPrompt({ source, prompt, klein, krea, depth, s
 SETUPS.forEach((s, i) => {
   const { filter, overlay } = relightPreview(s);
   registerOneClick({
-    id: `relight_${s.id}`, group: "Light", label: s.label, hint: s.summary, applies: ["still", "clip"], gpu: true, minutes: 1, order: i,
+    // "Loop" alone reads like the Seamless loop card (group Loop); the card says it is the lighting setup
+    id: `relight_${s.id}`, group: "Light", label: s.label === "Loop" ? "Loop lighting" : s.label, hint: s.summary, applies: ["still", "clip"], gpu: true, minutes: 1, order: i,
     preview: filter, overlay, keywords: ["relight", "lighting", "light", ...(s.good_for || [])],
     jobsFor: (t) => (t?.kind === "clip" ? 2 : 1), minutesFor: (t) => (t?.kind === "clip" ? 4 : 1),
     // off by default: tested 2026-11-02 (Neon on the night chase), the Krea 2 pass at 0.45 painted a different street with

@@ -42,3 +42,13 @@ def test_traffic_lock_only_when_nobody_on_foot():
     assert "the only vehicles are a sports car and a police car" in lock["still"] and "pedestrians" in lock["negative"]
     assert S.traffic_lock({"actors": cars + [{"id": "w", "kind": "woman"}]}) is None   # someone on foot: leave the street alone
     assert S.traffic_lock({"actors": [{"id": "m", "kind": "man"}]}) is None
+
+
+def test_looking_back_at_a_lone_driver_names_their_face():
+    """One rider up front and a dashboard camera looking back used to raise NameError ('them' was never defined),
+    which stopped the shot's prompt from compiling. The face words follow the rider's kind."""
+    for kind, want in (("woman", "her face"), ("man", "his face")):
+        sc = _scene([0, 1.12, 0.78], [0, 1.1, -0.3])
+        sc["actors"].append({"id": "d", "kind": kind, "mount_id": "v", "seat": 0, "keys": [{"frame": 0, "position": [0, 0, 0]}]})
+        v = S.vehicle_camera(sc)
+        assert v["framing"] == "dash_two_shot" and want in v["lead"]

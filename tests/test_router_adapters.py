@@ -306,3 +306,97 @@ if __name__ == "__main__" and "--refresh-snapshot" in sys.argv:
             print("missing on server:", c)
     json.dump(snap, open(SNAPSHOT, "w"), indent=0, sort_keys=True)
     print(f"wrote {len(snap)} classes to {SNAPSHOT}")
+
+
+# ---------------------------------------------------------------- ④ Frame "Lock to the stage depth" (frame_lock VERSION 3)
+
+def _frame_p(mid, **kw):
+    m = next(x for x in WIRED if x["id"] == mid)
+    p = base_p(m, "edit_image", image=link("img"), control=link("ctrl"), width=960, height=512)
+    p["params"] = {**p["params"], "stage_denoise": 0.9, **kw.pop("params", {})}
+    p.update(kw)
+    return m, p
+
+
+def _classes(g):
+    return [n.class_type for n in g.nodes.values()]
+
+
+@pytest.mark.skipif(not OBJECT_INFO, reason="no object_info snapshot")
+def test_klein_depth_lock_off_builds_the_version_2_graph():
+    """depth_lock 0 / missing = the Nov 1 frame lock exactly, so a frame picked before reproduces from cache."""
+    m, p = _frame_p("open.flux3_klein")
+    g0 = FakeGraph(); A.flux3_klein(g0, m, p)
+    m, p = _frame_p("open.flux3_klein", params={"depth_lock": 0.0})
+    g1 = FakeGraph(); A.flux3_klein(g1, m, p)
+    assert _classes(g0) == _classes(g1)
+    assert "Krea2ControlApply" not in _classes(g0) and check_graph(g0) == []
+
+
+@pytest.mark.skipif(not OBJECT_INFO, reason="no object_info snapshot")
+def test_klein_depth_lock_adds_a_krea_depth_pass_on_the_klein_frame():
+    m, p = _frame_p("open.flux3_klein", params={"depth_lock": 0.5})
+    g = FakeGraph()
+    out = A.flux3_klein(g, m, p)
+    assert check_graph(g) == []
+    ks = [n for n in g.nodes.values() if n.class_type == "KSampler"]
+    assert len(ks) == 2
+    klein, krea = ks
+    assert klein.inputs["denoise"] == 0.9 and krea.inputs["denoise"] == 0.5
+    assert krea.inputs["steps"] == 8 and krea.inputs["sampler_name"] == "euler_ancestral"
+    # the Krea pass starts from the decoded Klein frame, held to the stage depth (control_image), and is the output
+    enc = g.nodes[krea.inputs["latent_image"][0]]
+    assert enc.class_type == "VAEEncode" and g.nodes[enc.inputs["pixels"][0]].class_type == "VAEDecode"
+    ctrl = next(n for n in g.nodes.values() if n.class_type == "Krea2ControlImageEncode")
+    assert ctrl.inputs["control_image"] == link("ctrl")
+    assert g.nodes[out["image"][0]].class_type == "VAEDecode"
+    assert g.nodes[out["image"][0]].inputs["samples"] == krea.out(0)
+    unets = {n.inputs["unet_name"] for n in g.nodes.values() if n.class_type == "UNETLoader"}
+    assert unets == {"flux3-image-klein-int8-convrot.safetensors", "Krea-2-Turbo.safetensors"}
+
+
+def test_klein_depth_lock_without_krea_is_a_friendly_error():
+    m, p = _frame_p("open.flux3_klein", params={"depth_lock": 0.5})
+    p["weights"] = {**p["weights"], "depth_lora": None}
+    with pytest.raises(A.RouterError, match="Lock to the stage depth"):
+        A.flux3_klein(FakeGraph(), m, p)
+
+
+def test_klein_depth_lock_needs_the_stage_depth():
+    """No control_image (a plain edit outside ④ Frame): the lock has nothing to hold to and stays off."""
+    m, p = _frame_p("open.flux3_klein", params={"depth_lock": 0.5}, control=None)
+    g = FakeGraph(); A.flux3_klein(g, m, p)
+    assert "Krea2ControlApply" not in _classes(g)
+
+
+@pytest.mark.skipif(not OBJECT_INFO, reason="no object_info snapshot")
+def test_krea_depth_lock_starts_from_the_blurred_color_pass_at_stage_denoise():
+    m, p = _frame_p("open.krea_2_turbo", params={"depth_lock": 0.5, "stage_denoise": 0.88}, steps=20, cfg=1.0)
+    g = FakeGraph(); A.krea2(g, m, p)
+    assert check_graph(g) == []
+    ks = next(n for n in g.nodes.values() if n.class_type == "KSampler")
+    assert ks.inputs["denoise"] == 0.88
+    assert ks.inputs["steps"] == 8 and ks.inputs["cfg"] == 1.0          # Krea's own schedule, not the App's Klein steps
+    scales = [n.inputs["scale_by"] for n in g.nodes.values() if n.class_type == "ImageScaleBy"]
+    assert scales[0] == pytest.approx(1 / 16) and scales[1:] == [8, 2]
+    assert "Krea2ControlApply" in _classes(g) and "Krea2EditModelPatch" not in _classes(g)
+
+
+@pytest.mark.skipif(not OBJECT_INFO, reason="no object_info snapshot")
+def test_krea_depth_lock_leaves_cast_pictures_out():
+    """The Krea 2 identity-edit patch overrides the depth hold (share/OneClick/C gaze shot), so a depth-locked Krea
+    frame never takes the cast pictures: the depth pass is the only thing steering where people stand."""
+    m, p = _frame_p("open.krea_2_turbo", params={"depth_lock": 0.5}, refs=[link("ref1"), link("ref2")])
+    g = FakeGraph(); A.krea2(g, m, p)
+    assert check_graph(g) == []
+    assert not {"Krea2EditModelPatch", "Krea2EditGroundedEncode", "LoraLoaderModelOnly"} & set(_classes(g))
+    assert not any(v == link("ref1") for n in g.nodes.values() for v in n.inputs.values())
+    ks = next(n for n in g.nodes.values() if n.class_type == "KSampler")
+    assert g.nodes[ks.inputs["model"][0]].class_type == "Krea2ControlApply"
+
+
+def test_krea_depth_lock_off_is_the_old_look_still():
+    m, p = _frame_p("open.krea_2_turbo")
+    g = FakeGraph(); A.krea2(g, m, p)
+    ks = next(n for n in g.nodes.values() if n.class_type == "KSampler")
+    assert ks.inputs["denoise"] == 0.85 and "ImageScaleBy" not in _classes(g)

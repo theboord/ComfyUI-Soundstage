@@ -17,6 +17,7 @@
 // · shotsInOrder() [{id, name}] · say(msg) the App status line.
 import { applyOps, loadScene, runLocalModel } from "./agent.mjs";
 import { queueSummary } from "../ui/queue.mjs";
+import { planRam, WORLD_KINDS, inputSig } from "../stage/world.mjs";
 
 const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -351,16 +352,21 @@ export class Director {
     else if (!r.some((k) => /final/.test(k))) out.push({ label: `Approve shot ${n}`, command: `approve shot ${n}` }, { label: `Render the final of shot ${n}`, command: `render the final of shot ${n}` });
     const withDraft = ctx.shots.filter((s) => (ctx.renders[s.id] || []).some((k) => /draft|final/.test(k))).length;
     if (withDraft >= 2 && !tools.includes("cut")) out.push({ label: "Cut it together", command: "cut it together with the best takes" });
-    if (tools.includes("drive") || tools.includes("stunt")) out.unshift({ label: "Play the stunt", command: "play it" });
+    if (tools.includes("drive") || tools.includes("stunt") || tools.includes("ram")) out.unshift({ label: "Play the stunt", command: "play it" });
+    // The consequence check's one-click fixes (world collisions): "Crash them" / "Reroute" come first.
+    if (this._fixes?.length) { out.unshift(...this._fixes.slice(0, 2).map((f) => ({ label: f.label, command: f.command }))); this._fixes = null; }
     const seen = new Set();
     return out.filter((x) => !seen.has(x.command) && seen.add(x.command)).slice(0, 3);
   }
 
   // ----------------------------------------------------------------- helpers the executors share
   _patch(fn) {
-    const s = this.stage.toJSON();
+    const s = this.stage.toJSON(), sig0 = inputSig(s.actors || []);
     fn(s);
-    return loadScene(this.stage, s);
+    const out = loadScene(this.stage, s);
+    // An edit to what a baked scene's physics depends on (a car moved, a key changed) re-bakes it, as a drag would.
+    if (this.stage._hasBake?.() && inputSig(this.stage.state.actors || []) !== sig0) { this.stage._bakeSig = sig0; this.stage._worldPoke?.(); }
+    return out;
   }
 
   _actor(id) { return (this.stage.toJSON().actors || []).find((a) => a.id === id) || null; }
@@ -541,6 +547,62 @@ export const EXEC = {
     return { ok: !!r?.ok, said: r?.message || "Nothing to simulate." };
   },
 
+  // World collisions (web/stage/world.mjs): the crash is planned by momentum and played out by the physics.
+  async ram(a) {
+    const s0 = this.stage.toJSON(), fps = s0.shot?.fps || 24, frames = s0.shot?.frames || 97;
+    const find = (id) => (s0.actors || []).find((x) => x.id === id);
+    const car = find(a.target_id), victim = find(a.victim_id), into = (s0.actors || []).filter((x) => (a.into_ids || []).includes(x.id));
+    if (!car || !victim) return { ok: false, said: "Couldn't find who rams whom." };
+    const at = (x) => (x.keys?.[0]?.position) || x.position || [0, 0, 0];
+    const massOf = (x) => +x.physics?.mass || WORLD_KINDS[x.kind]?.mass || 25;
+    const halfOf = (x) => (WORLD_KINDS[x.kind]?.role === "vehicle" ? [0.9, 0.72, 2.25] : WORLD_KINDS[x.kind]?.role === "person" ? [0.25, 0.9, 0.15] : [0.4, 0.5, 0.4]);
+    const target = into.length ? [into.reduce((t, x) => t + at(x)[0], 0) / into.length, 0, into.reduce((t, x) => t + at(x)[2], 0) / into.length] : null;
+    const plan = planRam({ pos: at(car), mass: massOf(car), half: halfOf(car), heading: ((car.rotation_deg || 0) * Math.PI) / 180 },
+      { pos: at(victim), mass: massOf(victim), half: halfOf(victim), heading: ((victim.rotation_deg || 0) * Math.PI) / 180 }, target, { frames, fps });
+    this._patch((s) => {
+      const v = s.actors.find((x) => x.id === car.id);
+      v.keys = plan.keys; v.position = [...plan.keys[0].position];
+      delete v.stunt; delete v.drive; delete v.position_end;
+      if (v.physics?.keepKeyed) delete v.physics.keepKeyed;
+      const w = s.actors.find((x) => x.id === victim.id);
+      if (w?.physics?.keepKeyed) delete w.physics.keepKeyed;
+      s.physics = { ...(s.physics || {}), world: true };
+    });
+    const loose = into.filter((x) => WORLD_KINDS[x.kind] == null).map((x) => x.id);
+    if (loose.length) this.stage.setPhysics(loose, { mode: "dynamic" });
+    await this._waitMeshes((s0.actors || []).map((x) => x.id));
+    const r = this.stage.simulatePhysics();
+    const nm = (x) => x.name.toLowerCase();
+    const took = r?.takeovers?.[victim.id] || r?.takeovers?.[car.id];   // a solid wall never moves: the car is the one taken over
+    const outcome = took ? ` Physics took over at f ${took.frame} (${(took.frame / fps).toFixed(1)} s).` : " They never touched: check the path.";
+    return { ok: !!r?.ok, said: `The ${nm(car)} ${plan.words.replace(/^hits/, `hits the ${nm(victim)}`).replace("shoves it", `shoves the ${nm(victim)}`)}${into.length ? ` towards the ${a.into.toLowerCase()}` : ""}.${outcome}` +
+      (r?.marks?.length > 2 ? ` Also: ${r.marks.slice(2, 4).join("; ")}.` : "") };
+  },
+
+  async check() {
+    const issues = this.stage.consequenceCheck?.() || [];
+    this._fixes = issues.flatMap((i) => i.fixes);
+    if (!issues.length) return { ok: true, said: "Nothing passes through anything: every crash in the shot plays out in the physics." };
+    const st = this.stage.state || {}, unbaked = st.physics?.world !== false && !st.physics?.baked && !(st.actors || []).some((x) => x.physics?.baked);
+    if (unbaked) this._fixes.unshift({ id: "bake", label: "Crash them all (bake)", command: "bake the physics" });
+    return { ok: true, said: issues.slice(0, 3).map((i) => i.text).join(" ") + (issues.length > 3 ? ` (and ${issues.length - 3} more)` : "") +
+      (unbaked ? " Simulate & bake turns every one of these into a real crash." : "") };
+  },
+
+  async reroute(a) {
+    const r = this.stage.rerouteAround?.(a.target_id, a.around_id);
+    if (!r) return { ok: false, said: `Couldn't reroute the ${a.target.toLowerCase()}: it has no path to change.` };
+    return { ok: true, said: `The ${a.target.toLowerCase()} swerves ${Math.hypot(r.offset[0], r.offset[1]).toFixed(1)} m round the ${a.around.toLowerCase()} at ${(r.frame / (this.stage.state.shot?.fps || 24)).toFixed(1)} s.` };
+  },
+
+  async keep_keyed(a) {
+    const on = a.on !== "off";
+    const r = this.stage.setKeepKeyed?.(a.target_id, on);
+    if (!r) return { ok: false, said: `The ${a.target.toLowerCase()} isn't something the physics takes over.` };
+    return { ok: true, said: on ? `The ${a.target.toLowerCase()} stays on its keys whatever it hits (the consequence check will flag what it passes through).`
+      : `The physics takes over the ${a.target.toLowerCase()} at its first hit.` };
+  },
+
   async direct(a) {
     const note = String(a.note || "").trim();
     this._patch((s) => {
@@ -596,6 +658,20 @@ export const EXEC = {
   async render(a) {
     const p = this.host.pipeline;
     if (!p?._render) return { ok: false, said: "Renders need the ⑤ Motion step." };
+    // The consequence check (world collisions), before any GPU time: a car through a car is resolved by the physics if
+    // the shot hasn't been baked since; whatever still passes through something stops the render and asks.
+    const st = this.stage;
+    let issues = st.consequenceCheck?.() || [];
+    if (issues.length && st.state?.physics?.world !== false && !(st.state?.actors || []).some((x) => x.physics?.baked)) {
+      st.simulatePhysics?.();
+      issues = st.consequenceCheck?.() || [];
+    }
+    // "Everything collides" switched off means pass-throughs are wanted; "render ... anyway" renders as it is.
+    if (issues.length && !a.anyway && st.state?.physics?.world !== false) {
+      this._fixes = issues.flatMap((i) => i.fixes);
+      return { ok: false, why: "consequences", said: `Not rendered yet: ${issues.slice(0, 2).map((i) => i.text).join(" ")}` +
+        ` (or say "render the ${a.kind === "final" ? "final" : "draft"} anyway").` };
+    }
     const step = a.kind === "final" ? 4 : 3;
     const prev = this.stage.toJSON().active_shot;
     let n = 0;
@@ -670,6 +746,8 @@ const WHY = {
   part: "Doors, lamps and light bars are blocking too: the guide shows them lit or open, and the prompt says when they change.",
   drive: "The crash happens in the physics: nothing is faked, so the boxes fly the way the speed says.",
   bake: "Baking freezes the simulation into keys, so every render of the shot gets the same crash.",
+  ram: "Stunt coordinators plan a hit by speed and weight: the keys set the speed, then the physics decides who flips, spins or stops.",
+  check: "Continuity for physics: nothing on screen may pass through anything else, or the audience stops believing the shot.",
   grade: "The grade is the film's colour; warmer reads nostalgic, intimate or hot, cooler reads lonely or tense.",
   time: "Time of day is the biggest lighting decision on a set.",
   render: "Drafts are cheap motion tests; you only pay for finals on the takes you like.",
@@ -680,7 +758,7 @@ const WHY = {
 
 export function explainFor(calls, results) {
   const ok = (calls || []).filter((c, i) => results?.[i]?.ok);
-  const pick = ["drive", "camera_move", "camera_on", "stunt", "direct", "grade", "render", "cut", "frames", "lens", "bake", "approve", "time"]
+  const pick = ["ram", "check", "drive", "camera_move", "camera_on", "stunt", "direct", "grade", "render", "cut", "frames", "lens", "bake", "approve", "time"]
     .find((t) => ok.some((c) => c.tool === t));
   return pick ? WHY[pick] : "";
 }

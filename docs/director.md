@@ -41,7 +41,10 @@ scene, run in the browser by `web/agent/director.mjs`:
   medium / fast speed), rigs (tripod, dolly, steadicam, handheld, drone...), camera on a vehicle (hood mount, driver
   POV, passenger, back seat, dashboard, tracking alongside, overhead), new coverage setups, nudges.
 - **Action:** car stunts (reverse J-turn, donut, handbrake 180), drive a vehicle straight through something, physics
-  dynamic / static / off, simulate and bake.
+  dynamic / static / off, simulate and bake. World collisions ([world.md](world.md)): `ram` (*"the police car rams the
+  red car into the boxes"*: the speed planned by momentum, the crash baked), `check` (the consequence check: anything
+  passing through anything, in plain words with Crash them / Reroute fixes; it also runs before every render),
+  `reroute`, `keep_keyed`.
 - **Performance and look:** a note for an actor ("nervous") that goes into the frame prompt; the grade (warmth,
   contrast, saturation, grain, halation, vignette).
 - **Production:** go to a script scene, paint first frames, render drafts or finals, approve / needs changes / reject a
