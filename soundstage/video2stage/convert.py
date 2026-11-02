@@ -10,6 +10,7 @@ Like Magnific's "3D Scenes from video", the clip is rebuilt as an editable layou
 from __future__ import annotations
 
 import math
+import re
 
 import numpy as np
 
@@ -26,7 +27,7 @@ ROAD_LEN = 320.0
 # model kind -> (library kind, height_m): the library scales its footprint with the height.
 SIZES = {"car": ("car", 1.45), "suv": ("car", 1.6), "pickup": ("truck", 2.0), "van": ("truck", 2.0),
          "truck": ("truck", 2.6), "bus": ("truck", 3.6), "motorcycle": ("motorcycle", 1.15),
-         "bicycle": ("bicycle", 1.05), "horse": ("horse", 1.6), "dog": ("dog", 0.6)}
+         "bicycle": ("bicycle", 1.05), "horse": ("horse", 1.6), "dog": ("dog", 0.6), "boat": ("boat", 1.5)}
 VEHICLES = {"car", "suv", "pickup", "van", "truck", "bus", "motorcycle", "bicycle"}
 CAMERA_HEIGHT = {"drone": 25.0, "crane": 6.0, "vehicle": 1.4, "handheld": 1.6, "ground": 1.6}
 COLOURS = {"road": "#3b3b3f", "line": "#e8e8e4", "yellow": "#d8c451", "water": "#1c6fae", "sand": "#d9c9a3",
@@ -161,10 +162,13 @@ def ground_point(pose, A, b, K, uv, depth=None, scale=1.0, max_dist=400.0, check
 
 
 def person_kind(label: str) -> str:
-    low = label.lower()
-    if any(w in low for w in ("child", "kid", "boy", "toddler")) or (" girl" in f" {low}" and "woman" not in low):
+    """'man' | 'woman' | 'child' from a description, by whole words (leather, feather, weather and other are not
+    'her'; a 'women's coat' on a man is still read by the subject words first)."""
+    words = set(re.findall(r"[a-z]+", (label or "").lower()))
+    if words & {"child", "kid", "kids", "boy", "boys", "toddler", "baby", "children"} or \
+            ("girl" in words and not words & {"woman", "women", "lady"}):
         return "child"
-    if any(w in low for w in ("woman", "lady", "female", "girl", "her ")):
+    if words & {"woman", "women", "lady", "ladies", "female", "girl", "she", "her", "mother", "grandmother", "bride"}:
         return "woman"
     return "man"
 
@@ -603,8 +607,16 @@ def time_preset(text: str) -> str:
     return "midday"
 
 
-def assemble(*, poses, scales, times, K, size, depths, ground, breakdown, clip, reference, notes, backdrop=None,
-             skies=None, repin: bool = True) -> dict:
+def assemble(ctx: dict | None = None, **legacy) -> dict:
+    """The single entry point. assemble(ctx): the LAYOUT rebuild from the agreed context (see assemble_ctx).
+    assemble(poses=..., scales=..., ...): the legacy keyword form (kept for the tests and the old route)."""
+    if ctx is not None:
+        return assemble_ctx(ctx)
+    return assemble_legacy(**legacy)
+
+
+def assemble_legacy(*, poses, scales, times, K, size, depths, ground, breakdown, clip, reference, notes, backdrop=None,
+                    skies=None, repin: bool = True) -> dict:
     """Everything -> a validated stage scene (see docs/video2stage.md)."""
     w, h = size
     mpu = metres_per_unit(breakdown, ground, depths[0], K, size, notes)
@@ -728,3 +740,436 @@ def _quat(R) -> list[float]:
         s = math.sqrt(1.0 + m[2, 2] - m[0, 0] - m[1, 1]) * 2
         w, x, y, z = (m[1, 0] - m[0, 1]) / s, (m[0, 2] + m[2, 0]) / s, (m[1, 2] + m[2, 1]) / s, 0.25 * s
     return [x, y, z, w]
+
+
+
+# ============================================================================================== LAYOUT (ctx)
+# The measured inventory -> stage actors. Library kinds when the measured box fits the library item within ±25 %
+# per dimension (vehicles and animals always: a car is a car); otherwise a clay recipe AT the measured size and colour.
+LIBRARY_KIND = {"car": "car", "sedan": "car", "taxi": "car", "coupe": "car", "suv": "car", "hatchback": "hatchback",
+                "sports car": "sports_car", "police car": "police_car", "pickup": "truck", "van": "truck",
+                "truck": "truck", "lorry": "truck", "bus": "truck", "bicycle": "bicycle", "bike": "bicycle",
+                "motorcycle": "motorcycle", "scooter": "motorcycle", "horse": "horse", "dog": "dog", "cat": "cat",
+                "tree": "tree", "bush": "bush", "shrub": "bush", "hedge": "bush", "bench": "bench", "table": "table",
+                "dining table": "table", "chair": "chair", "dining chair": "chair", "street light": "lamp",
+                "streetlight": "lamp", "lamp post": "lamp", "lamppost": "lamp", "rock": "rock", "boulder": "rock",
+                "crate": "crate"}
+ALWAYS_LIBRARY = {"car", "hatchback", "sports_car", "police_car", "truck", "bicycle", "motorcycle", "horse", "dog", "cat"}
+# Canonical class words the bench / outliner read (recipe.name): never the raw 'custom'.
+CLASS_WORD = {"couch": "sofa", "settee": "sofa", "armchair": "chair", "stool": "chair", "bookshelf": "shelf",
+              "bookcase": "shelf", "shelves": "shelf", "carpet": "rug", "mat": "rug", "floor lamp": "lamp",
+              "table lamp": "lamp", "coffee table": "table", "side table": "table", "desk": "table",
+              "potted plant": "plant", "houseplant": "plant", "flower pot": "plant", "trash can": "bin",
+              "dustbin": "bin", "garbage can": "bin", "fire hydrant": "hydrant", "stop sign": "sign",
+              "street sign": "sign", "painting": "picture", "poster": "picture", "frame": "picture",
+              "cardboard box": "box", "crate": "box", "street light": "light", "streetlight": "light",
+              "lamp post": "light", "pole": "pole"}
+COLOUR_WORDS = [("red", 0), ("orange", 30), ("yellow", 55), ("green", 120), ("teal", 170), ("blue", 220),
+                ("purple", 275), ("pink", 330), ("red", 360)]
+
+
+def colour_word(hexs: str | None) -> str:
+    if not hexs:
+        return ""
+    r, g, b = (int(hexs[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    mx, mn = max(r, g, b), min(r, g, b)
+    light = (mx + mn) / 2
+    sat = 0 if mx == mn else (mx - mn) / (1 - abs(2 * light - 1) + 1e-9)
+    if sat < 0.18 or mx - mn < 0.08:
+        return "black" if light < 0.18 else "dark grey" if light < 0.38 else "grey" if light < 0.7 else "white"
+    if mx == r:
+        hue = (60 * ((g - b) / (mx - mn)) + 360) % 360
+    elif mx == g:
+        hue = 60 * ((b - r) / (mx - mn)) + 120
+    else:
+        hue = 60 * ((r - g) / (mx - mn)) + 240
+    name = min(COLOUR_WORDS, key=lambda c: abs(c[1] - hue))[0]
+    if name in ("orange", "red") and light < 0.35 and sat < 0.6:
+        name = "brown"
+    return ("dark " if light < 0.25 and name != "brown" else "") + name
+
+
+def class_word(kind: str) -> str:
+    k = (kind or "").lower().strip()
+    if k in CLASS_WORD:
+        return CLASS_WORD[k]
+    last = k.split(" ")[-1] if k else "object"
+    return CLASS_WORD.get(last, last)
+
+
+def nice_name(rec: dict) -> str:
+    """'Grey fabric sofa', 'Dark sedan', 'Potted plant': the vision model's name, else colour + kind. Never 'custom'."""
+    n = (rec.get("name") or "").strip()
+    if n and n.lower() not in ("custom", "object", "da3", "thing"):
+        return n[:40][0].upper() + n[:40][1:]
+    w = colour_word(rec.get("colour"))
+    k = rec.get("kind") or "object"
+    return (f"{w} {k}" if w else k).strip().capitalize()
+
+
+def _part(shape, pos, size, color, rot=(0, 0, 0)):
+    return {"shape": shape, "pos": [round(float(v), 3) for v in pos], "size": [round(max(float(v), 0.003), 3) for v in size],
+            "rot": list(rot), "color": color}
+
+
+def _shade(hexs: str | None, k: float) -> str | None:
+    if not hexs:
+        return None
+    r, g, b = (int(hexs[i:i + 2], 16) for i in (1, 3, 5))
+    return "#" + "".join(f"{int(max(0, min(255, round(v * k)))):02x}" for v in (r, g, b))
+
+
+def recipe_for(kind: str, dims, colour: str | None) -> list[dict]:
+    """Clay parts (metres, origin on the floor at the centre, +Z front) at EXACTLY the measured size."""
+    w, h, d = (float(v) for v in dims)
+    c = colour or "#9a948a"
+    k = class_word(kind)
+    if k == "sofa":
+        seat_h = min(0.48, 0.55 * h)
+        return [_part("box", [0, seat_h / 2, 0.08 * d], [w, seat_h, 0.84 * d], c),
+                _part("box", [0, h / 2, -0.42 * d], [w, h, 0.16 * d], c),
+                _part("box", [-w / 2 + 0.06 * w, 0.62 * h / 2, 0], [0.12 * w, 0.62 * h, d], c),
+                _part("box", [w / 2 - 0.06 * w, 0.62 * h / 2, 0], [0.12 * w, 0.62 * h, d], c)]
+    if k == "chair":
+        seat = min(0.47, 0.55 * h)
+        legs = [_part("box", [sx * (w / 2 - 0.03), seat / 2, sz * (d / 2 - 0.03)], [0.04, seat, 0.04], c)
+                for sx in (-1, 1) for sz in (-1, 1)]
+        return [_part("box", [0, seat, 0], [w, 0.05, d], c), _part("box", [0, (seat + h) / 2, -d / 2 + 0.03],
+                                                                     [w, h - seat, 0.05], c)] + legs
+    if k == "table" or k == "desk":
+        legs = [_part("box", [sx * (w / 2 - 0.05), (h - 0.04) / 2, sz * (d / 2 - 0.05)], [0.05, h - 0.04, 0.05], c)
+                for sx in (-1, 1) for sz in (-1, 1)]
+        return [_part("box", [0, h - 0.02, 0], [w, 0.04, d], c)] + legs
+    if k == "shelf" or k == "cabinet":
+        return [_part("box", [0, h / 2, 0], [w, h, d], c)] + \
+               [_part("box", [0, h * (i + 1) / 5, 0.01], [w * 0.94, 0.02, d * 0.96], _shade(c, 0.85)) for i in range(4)]
+    if k == "rug":
+        return [_part("box", [0, max(h, 0.01) / 2, 0], [w, max(h, 0.01), d], c)]
+    if k == "plant":
+        pot = min(0.35 * h, 0.4)
+        return [_part("cylinder", [0, pot / 2, 0], [0.6 * w, pot, 0.6 * d], "#8a6a52"),
+                _part("sphere", [0, pot + (h - pot) / 2, 0], [w, h - pot, d], c)]
+    if k == "lamp" or k == "light":
+        shade = min(0.3, 0.2 * h)
+        return [_part("cylinder", [0, 0.015, 0], [0.6 * w, 0.03, 0.6 * d], "#2f2f2f"),
+                _part("cylinder", [0, (h - shade) / 2, 0], [0.03, h - shade, 0.03], "#2f2f2f"),
+                _part("cylinder", [0, h - shade / 2, 0], [w, shade, d], c)]
+    if k == "pole" or k == "sign":
+        if k == "sign":
+            plate = min(0.8, 0.35 * h)
+            return [_part("cylinder", [0, (h - plate) / 2, 0], [0.07, h - plate, 0.07], "#8c8c8c"),
+                    _part("box", [0, h - plate / 2, 0.04], [w, plate, max(0.02, min(d, 0.05))], c)]
+        return [_part("cylinder", [0, h / 2, 0], [max(0.08, min(w, 0.3)), h, max(0.08, min(d, 0.3))], c)]
+    if k in ("bin", "hydrant", "bollard", "vase", "barrel"):
+        return [_part("cylinder", [0, h / 2, 0], [w, h, d], c)]
+    if k == "tree":
+        trunk = 0.4 * h
+        return [_part("cylinder", [0, trunk / 2, 0], [0.12 * w, trunk, 0.12 * d], "#6b5440"),
+                _part("sphere", [0, trunk + (h - trunk) / 2, 0], [w, h - trunk, d], c)]
+    return [_part("box", [0, h / 2, 0], [w, h, d], c)]
+
+
+def _library_fit(lib: str, dims) -> tuple[bool, float]:
+    """Does the library item, scaled by height, match the measured box within ±25 % per dimension?"""
+    spec = C.LIBRARY[lib]
+    s = float(dims[1]) / spec["height"]
+    fw, fd = spec["foot"][0] * s, spec["foot"][1] * s
+    w, d = float(dims[0]), float(dims[2])
+    ok = all(0.75 <= a / max(b, 1e-6) <= 1.25 for a, b in ((fw, w), (fd, d)))
+    # A car's footprint might come back with width and length swapped.
+    ok2 = all(0.75 <= a / max(b, 1e-6) <= 1.25 for a, b in ((fw, d), (fd, w)))
+    return ok or ok2, s
+
+
+def object_actor(rec: dict, s: float, ids: set) -> tuple[dict, str]:
+    """One measured thing (solve units, x s -> metres) -> (stage actor, matched: 'library' | 'box')."""
+    dims = [float(v) * s for v in rec["dims"]]
+    c = [float(v) * s for v in rec["centre"]]
+    kind = rec.get("kind") or "object"
+    name = nice_name(rec)
+    lib = LIBRARY_KIND.get(kind) or LIBRARY_KIND.get(kind.split(" ")[-1])
+    if lib == "lamp" and dims[1] < 2.5:   # a floor lamp is not a street lamp
+        lib = None
+    if lib == "table" and dims[1] < 0.6:  # a coffee table: its own proportions
+        lib = None
+    matched = "box"
+    if lib and lib in C.LIBRARY:
+        fit, _ = _library_fit(lib, dims)
+        if fit or lib in ALWAYS_LIBRARY:
+            spec = C.LIBRARY[lib]
+            h = dims[1]
+            if lib in ALWAYS_LIBRARY:   # a class prior is steadier than mono depth on a vehicle's outline
+                h = min(max(h, 0.75 * spec["height"]), 1.25 * spec["height"])
+            a = B.make_object(lib, ids, kind=lib, label=name)
+            a["height_m"] = round(h, 3)
+            matched = "library"
+    if matched == "box":
+        word = class_word(kind)
+        a = B.make_object(name, ids, kind=None, label=name)
+        a.update(kind="custom", recipe={"name": word, "rig": "static", "size_m": [round(v, 3) for v in dims],
+                                        "parts": recipe_for(kind, dims, rec.get("colour")), "set_piece": True,
+                                        "measured": True},
+                 height_m=round(max(dims[1], 0.01), 3))
+        a.pop("design", None)
+        a["set_piece"] = True
+    if rec.get("colour"):
+        a["appearance"] = {"color": rec["colour"]}
+    y = 0.0 if rec.get("grounded", True) else round(c[1] - dims[1] / 2, 3)
+    a["position"] = [round(c[0], 3), y, round(c[2], 3)]
+    a["keys"] = [{"frame": 0, "position": list(a["position"])}]
+    a["rotation_deg"] = round(float(rec.get("yaw_deg") or 0.0), 1)
+    a["name"] = name
+    a["source"] = {"mask_ref": rec["id"], "dims_m": [round(v, 3) for v in dims], "matched": matched,
+                   "label": rec.get("name") or kind}
+    return a, matched
+
+
+def plane_actor(pl: dict, ids: set) -> dict:
+    size = [float(v) for v in pl["size"]]
+    word = {"ground": "ground", "road": "road", "floor": "floor", "water": "ocean"}.get(pl["kind"], pl["kind"])
+    col = pl.get("colour") or COLOURS.get(pl["kind"], "#a9a39a")
+    c = pl["centre"]
+    a = B.make_object(pl["name"], ids, kind=None, label=pl["name"])
+    a.update(kind="custom", recipe={"name": word, "rig": "static", "size_m": [round(v, 3) for v in size],
+                                    "parts": [_part("box", [0, size[1] / 2, 0], size, col)], "set_piece": True,
+                                    "measured": True},
+             height_m=round(max(size[1], 0.01), 3), rotation_deg=round(float(pl.get("yaw_deg") or 0.0), 1))
+    a.pop("design", None)
+    y0 = float(c[1]) - size[1] / 2
+    a["position"] = [round(float(c[0]), 3), round(y0, 3), round(float(c[2]), 3)]
+    a["keys"] = [{"frame": 0, "position": list(a["position"])}]
+    a["set_piece"] = True
+    a["structure"] = pl["kind"]
+    return a
+
+
+def dedupe_names(actors: list[dict]) -> None:
+    """'Tree 1' .. 'Tree 5', 'Dark sedan 1 / 2': every actor's name is unique and readable."""
+    groups: dict = {}
+    for a in actors:
+        groups.setdefault(a.get("name") or a.get("id"), []).append(a)
+    for name, grp in groups.items():
+        if len(grp) > 1:
+            for i, a in enumerate(grp, 1):
+                a["name"] = f"{name} {i}"
+
+
+def _project_inside(ctx: dict, pts: np.ndarray, frames: list[int], max_dist: float) -> bool:
+    from . import context as X
+    pw, ph = ctx["clip"]["pw"], ctx["clip"]["ph"]
+    for f in frames:
+        uv, z = X.world_to_pixel(ctx, f, pts)
+        ok = (z > 0.1) & (z < max_dist) & (uv[:, 0] >= 0) & (uv[:, 0] < pw) & (uv[:, 1] >= 0) & (uv[:, 1] < ph)
+        if ok.any():
+            return True
+    return False
+
+
+def outside_view(ctx: dict, actor: dict, s_world: float = 1.0, max_dist: float = 90.0) -> bool:
+    """True when no part of the actor is inside the solved camera's frame at any (6th) frame closer than max_dist m:
+    procedural dressing may only fill what the camera never sees."""
+    p = np.array(actor["position"], float)
+    size = (actor.get("recipe") or {}).get("size_m") or [1, actor.get("height_m") or 1, 1]
+    a = math.radians(actor.get("rotation_deg") or 0)
+    ax = np.array([math.cos(a), 0, -math.sin(a)])
+    az = np.array([math.sin(a), 0, math.cos(a)])
+    pts = []
+    for fx in np.linspace(-0.5, 0.5, 5):
+        for fz in np.linspace(-0.5, 0.5, 5):
+            for fy in (0.0, 0.5, 1.0):
+                pts.append(p + ax * fx * size[0] + az * fz * size[2] + np.array([0, fy * size[1], 0]))
+    for part in (actor.get("recipe") or {}).get("parts") or []:
+        q = np.array(part["pos"], float)
+        pts.append(p + ax * q[0] + az * q[2] + np.array([0, q[1], 0]))
+    frames = list(range(0, int(ctx["clip"]["frames"]), 6)) or [0]
+    return not _project_inside(ctx, np.array(pts) / s_world, frames, max_dist)
+
+
+def camera_keys_from_ctx(ctx: dict, mpu: float) -> list[dict]:
+    """SOLVE's keys when it wrote them (ctx['camera_keys'], stage metres); else one key per 4 frames from the poses."""
+    keys = ctx.get("camera_keys")
+    if keys:
+        return [dict(k) for k in keys]
+    from . import context as X
+    out = []
+    n = int(ctx["clip"]["frames"])
+    pw = ctx["clip"]["pw"]
+    for f in sorted(set(list(range(0, n, 4)) + [n - 1])):
+        P = X.pose_at(ctx, f)
+        pos = P[:3, 3]
+        fwd = P[:3, :3] @ np.array([0, 0, 1.0])
+        K = X.K_at(ctx, f)
+        out.append({"frame": int(f), "position": [round(float(v), 3) for v in pos],
+                    "target": [round(float(v), 3) for v in pos + fwd * 5.0],
+                    "focal_mm": round(float(K[0, 0]) * SENSOR_W_MM / pw, 2)})
+    return out
+
+
+def missing_from_inventory(ctx: dict) -> list[str]:
+    """Names the vision model saw that no track explains (by box overlap on the frame it read)."""
+    inv = ctx.get("vlm_inventory") or {}
+    seg = ctx.get("seg") or {}
+    pw, ph = ctx["clip"]["pw"], ctx["clip"]["ph"]
+    out = []
+    for it in inv.get("items") or []:
+        if not it.get("bbox") or it.get("kind") in ("person", "man", "woman", "child", "people"):
+            continue
+        b = [it["bbox"][0] / 1000 * pw, it["bbox"][1] / 1000 * ph, it["bbox"][2] / 1000 * pw, it["bbox"][3] / 1000 * ph]
+        f = int(it.get("frame") or 0)
+        hit = False
+        for o in seg.values():
+            st = o["frames"].get(f)
+            if st is None:
+                continue
+            bx = st["bbox"]
+            ix = max(0, min(b[2], bx[2]) - max(b[0], bx[0]))
+            iy = max(0, min(b[3], bx[3]) - max(b[1], bx[1]))
+            if ix * iy > 0.3 * max(1.0, (b[2] - b[0]) * (b[3] - b[1])):
+                hit = True
+                break
+        if not hit:
+            out.append(it.get("name") or it.get("kind"))
+    seen, uniq = set(), []
+    for n in out:
+        if n and n not in seen:
+            seen.add(n)
+            uniq.append(n)
+    return uniq
+
+
+def assemble_ctx(ctx: dict) -> dict:
+    """The LAYOUT rebuild: SOLVE's camera keys, mpu and frames as given; every measured thing, structure plane and
+    mover; procedural dressing only outside the solved view. People and the backdrop are added by the pipeline
+    (people.attach, backdrop.build), never here. Returns a validated scene with scene.video2stage.inventory."""
+    from . import context as X
+    from . import movers as MV
+    from . import planes as PL
+    from . import segment as SG
+    from . import vlm as V
+    mpu = ctx.get("mpu")
+    if not mpu:
+        X.note(ctx, "scale: no metric anchor was agreed; the set is in the solve's own units (about metres)", "warn")
+        mpu = 1.0
+    lay = ctx.get("layout") or {}
+    s = 1.0 if lay.get("units") == "metres" else float(mpu)
+    clip = ctx["clip"]
+    frames = max(9, int(clip["frames"]))
+    last = frames - 1
+    notes: list = []
+    ids: set = set()
+    actors: list = []
+    inventory: list = []
+    keys = camera_keys_from_ctx(ctx, mpu)
+    # ---- structure
+    st = PL.fit(ctx, notes)
+    interior = st["interior"] or bool((ctx.get("vlm_inventory") or {}).get("interior") and st["sky_share"] < 0.01)
+    surf_kinds = {sf["kind"] for sf in (ctx.get("vlm_inventory") or {}).get("surfaces") or []}
+    for pl in st["planes"]:
+        if pl["kind"] in ("ground",) and surf_kinds & {"water", "ocean", "sea", "lake"} and not surf_kinds & {"road", "street"}:
+            pl["kind"], pl["name"] = "water", "Water"
+        a = plane_actor(pl, ids)
+        actors.append(a)
+        inventory.append({"id": a["id"], "name": a["name"], "kind": pl["kind"], "dims_m": [round(v, 2) for v in pl["size"]],
+                          "colour": pl.get("colour"), "material": "", "matched": "box", "moving": False,
+                          "seen_frames": None, "notes": [], "structure": True})
+    # ---- things
+    objs = lay.get("objects") or {}
+    movers = ctx.get("movers") or set()
+    from . import measure as ME
+    for oid, rec in sorted(objs.items(), key=lambda kv: -float(np.prod(kv[1]["dims"]))):
+        ME.sanity(rec, s)
+        a, matched = object_actor(rec, s, ids)
+        onotes = list(rec.get("notes") or [])
+        if oid in movers or rec.get("moving"):
+            pth = None
+            try:
+                pth = MV.path(ctx, oid, rec, s, rec["kind"])
+            except Exception as exc:  # noqa: BLE001
+                onotes.append(f"path could not be keyed ({exc}); left at its first mark")
+            if pth and pth["keys"]:
+                a["keys"] = pth["keys"]
+                a["position"] = list(pth["keys"][0]["position"])
+                a["rotation_deg"] = round(float(pth["keys"][0].get("heading_deg") or a["rotation_deg"]), 1)
+                if pth["entered"] or pth["left"]:
+                    onotes.append(f"in frame {pth['frames'][0]}-{pth['frames'][-1]}; parked off-frame outside that")
+                a["source"]["path_coverage"] = round(pth["coverage"], 3)
+        actors.append(a)
+        inventory.append({"id": a["id"], "name": a["name"], "kind": rec["kind"], "dims_m": a["source"]["dims_m"],
+                          "colour": rec.get("colour"), "material": rec.get("material") or "", "matched": matched,
+                          "moving": bool(len(a["keys"]) > 1), "seen_frames": rec.get("seen_frames"), "notes": onotes,
+                          "source": a["source"]})
+    # ---- what nobody explained
+    try:
+        SG.unexplained(ctx, lambda f, shape: PL.coverage(ctx, st["planes"], f, shape))
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"layout: unexplained-pixel map failed ({exc})")
+    miss = missing_from_inventory(ctx)
+    if miss:
+        X.note(ctx, "layout: seen by the vision model but not tracked: " + ", ".join(miss[:12]) +
+               (" ..." if len(miss) > 12 else ""), "warn")
+    # ---- dressing only where the camera never looks (outdoors)
+    if not interior:
+        inv = ctx.get("vlm_inventory") or {}
+        bd = V.legacy_breakdown(inv)
+        cam_path = [{"position": k["position"], "target": k["target"]} for k in keys] or \
+            [{"position": [0, 1.6, 0], "target": [0, 1.6, 5]}]
+        veh = [dict(a, _vehicle=True) for a in actors if a.get("kind") in ("car", "truck", "motorcycle", "bicycle")]
+        try:
+            fill = build_set(bd, veh, cam_path, notes)
+        except Exception as exc:  # noqa: BLE001
+            fill, _ = [], notes.append(f"dressing: {exc}")
+        kept = 0
+        for a in fill:
+            nm = (a.get("name") or "").lower()
+            if nm.startswith("terrain"):   # the ground beyond the measured plate, under everything
+                a["name"] = "Ground beyond the plate"
+                actors.append(a)
+                continue
+            if nm.startswith("road") and any(p["kind"] in ("road", "ground") for p in st["planes"]):
+                continue
+            if outside_view(ctx, a, s_world=1.0):
+                a["name"] = (a.get("name") or "Dressing") + " (off-camera)"
+                a["procedural"] = True
+                actors.append(a)
+                kept += 1
+        if kept:
+            notes.append(f"dressing: {kept} procedural piece(s), all outside the solved view")
+    for a in actors:
+        for k in ("_vehicle", "_bbox", "_set_bbox"):
+            a.pop(k, None)
+    dedupe_names(actors)
+    nm = {a["id"]: a["name"] for a in actors}
+    for it in inventory:
+        it["name"] = nm.get(it["id"], it["name"])
+    inv = ctx.get("vlm_inventory") or {}
+    preset = time_preset(inv.get("time", ""))
+    lighting = B.lighting_for({"time": preset})
+    scene = {"version": 2, "shot": {"frames": frames, "fps": FPS},
+             "environment": {"set": "empty", "weather": "none", "density": 0.5, "water_level": 2.5},
+             "lighting": lighting, "sun": C.sun_for(lighting), "actors": actors, "props": [],
+             "shots": [{"id": "shot_1", "name": "Source camera", "setup": "master", "camera_keys": keys}],
+             "active_shot": "shot_1"}
+    scene, vnotes = validate_scene(scene, place=False)
+    notes += vnotes
+    w, h = clip.get("w") or clip["pw"], clip.get("h") or clip["ph"]
+    key = aspect_key(w / h)
+    scene["shot"]["aspect"] = key
+    crop = 1 - min(ASPECTS[key], w / h) / max(ASPECTS[key], w / h)
+    if crop > 0.005:
+        notes.append(f"frame: the stage's nearest frame is {key}; {100 * crop:.1f} % of the plate is cropped")
+    if ctx.get("reference"):
+        scene["reference"] = ctx["reference"]
+    if interior:
+        scene["environment"]["sky"] = "none"
+        scene["environment"]["interior"] = True
+    for t in notes:
+        X.note(ctx, t, "info")
+    un = ctx.get("unexplained") or {}
+    scene["video2stage"] = {
+        "metres_per_unit": round(float(mpu), 6), "setting": inv.get("setting", ""), "interior": bool(interior),
+        "inventory": inventory, "structure": [{k: p[k] for k in ("kind", "name", "centre", "size", "yaw_deg", "colour")}
+                                              for p in st["planes"]],
+        "unexplained_share": round(float(un.get("share", 0.0)), 4),
+        "missing": miss, "camera_type": (inv.get("camera") or {}).get("type", "")}
+    ctx["inventory"] = inventory
+    return scene
