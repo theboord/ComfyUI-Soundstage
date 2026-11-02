@@ -370,6 +370,8 @@ const CSS = `
   .ss-stage .ss-clbar > label.f.ss-cltight > select { font-size:13px; max-width:290px; }
   .ss-stage .ss-clbar > .row.ss-cltight > .status { display:none; }
 }
+/* Phone width: "Generate frames" and "…for every shot" wrap onto two lines instead of pushing the page sideways. */
+@container (max-width: 480px) { .ss-stage .ss-clbar > .row { flex-wrap:wrap !important; max-width:100%; } }
 /* Narrow (the App's side panel): everything stacks under the canvas, nothing floats. */
 .ss-stage.ss-cl[data-ws=narrow] .ss-clwrap { display:flex; flex-direction:column; gap:8px; }
 .ss-stage.ss-cl[data-ws=narrow] .ss-clmedia { display:flex; justify-content:center; min-height:120px; }
