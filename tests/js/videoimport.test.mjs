@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { progressAt, stepIndex, v2sPlan, capturePlan, fmtSecs, isVideoFile } from "../../web/ui/videoimport.mjs";
+import { progressAt, stepIndex, v2sPlan, capturePlan, fmtSecs, isVideoFile, estimateSecs, flawsFromNotes, sortFlaws, QUALITY, V2S_LABEL, V2S_TIP } from "../../web/ui/videoimport.mjs";
 
 test("Video → Stage steps map from the server's step names", () => {
   const p = v2sPlan(192);
@@ -8,7 +8,51 @@ test("Video → Stage steps map from the server's step names", () => {
   assert.equal(p[stepIndex(p, "Measuring depth (Depth Anything 3)")].key, "depth");
   assert.equal(p[stepIndex(p, "Reading the shot (vision model)")].key, "vlm");
   assert.equal(p[stepIndex(p, "Capturing the performance (SAM 3D Body)")].key, "mocap");
+  assert.equal(p[stepIndex(p, "Tracking the camera")].key, "track");
+  assert.equal(p[stepIndex(p, "Fusing the set scan")].key, "backdrop");
   assert.equal(stepIndex(p, "something new"), -1);
+});
+
+test("the fallback plan is honest: a 5 s clip is many minutes, not 2-3", () => {
+  const total = v2sPlan(120, 16).reduce((a, s) => a + s.secs, 0);
+  assert.ok(total > 8 * 60, `${total} s`);
+  assert.ok(v2sPlan(120, 64).reduce((a, s) => a + s.secs, 0) > total);
+});
+
+test("time estimates: server history wins, the measured baseline otherwise", () => {
+  const e = estimateSecs(5, 16);
+  assert.equal(e.from, "estimate");
+  assert.ok(e.secs >= 10 * 60 && e.secs <= 26 * 60, `${e.secs}`);   // the 2026-11-02 baseline: 11-26 min for 5 s clips
+  assert.ok(estimateSecs(5, 64).secs > e.secs && estimateSecs(10, 16).secs > e.secs);
+  const h = [{ secs: 5, samples: 16, total_s: 330 }, { secs: 5, samples: 16, total_s: 330 }];
+  const fromH = estimateSecs(5, 16, h);
+  assert.equal(fromH.from, "history");
+  assert.ok(Math.abs(fromH.secs - 330) < 1);
+  assert.deepEqual(QUALITY.map((q) => q.samples), [16, 32, 64]);
+});
+
+test("flaws lead the result card: red first, fix actions wired, plain notes read for failures", () => {
+  const lock = () => "locked";
+  const f = flawsFromNotes([
+    "depth: straightened on the floor (power 0.80-0.95)",
+    { text: "Camera solve confidence 31 %: the move may be wrong", level: "red", fix: { action: "lock_camera", label: "Lock to frame 0" } },
+    { text: "3 objects partly seen", level: "amber" },
+    "performer: motion capture failed (CUDA out of memory)",
+    { text: "fine", level: "info" },
+  ], { lock_camera: lock });
+  assert.equal(f.length, 3);
+  const s = sortFlaws(f);
+  assert.deepEqual(s.map((x) => x.level), ["red", "red", "amber"]);
+  const cam = s.find((x) => x.fix);
+  assert.equal(cam.fix.label, "Lock to frame 0");
+  assert.equal(cam.fix.run(), "locked");
+  assert.ok(!s.some((x) => /locked off/i.test(x.text)));
+});
+
+test("one wording for every entry point, with the real limits", () => {
+  assert.equal(V2S_LABEL, "Video → 3D set");
+  assert.match(V2S_TIP, /min/);
+  assert.doesNotMatch(V2S_TIP, /2[–-]3 min/);
 });
 
 test("progress keeps moving inside a long step but never finishes it early", () => {
@@ -17,7 +61,6 @@ test("progress keeps moving inside a long step but never finishes it early", () 
   assert.ok(a.frac < b.frac && b.frac < c.frac);
   assert.ok(c.frac < 1);
   assert.ok(a.left > b.left && c.left > 0);
-  // the SAM 3D step dominates a dance clip, as measured (~77 s of ~150 s)
   assert.ok(p[i].secs > 60);
   assert.ok(progressAt(p, 0, 0).frac === 0);
 });
