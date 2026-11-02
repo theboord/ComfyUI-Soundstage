@@ -101,6 +101,15 @@ def test_bridge_rewrites_one_request_per_connection_and_keeps_the_cookie_to_itse
     assert up and "Connection: Upgrade" in out.decode() and "Cookie" not in out.decode()
 
 
+def test_bridge_only_upgrades_the_vcam_websocket():
+    """An 'Upgrade: websocket' on an allowed non-WebSocket path kept the connection open, so a POST /prompt pipelined
+    after it reached ComfyUI past the allow-list ("refused even with the token")."""
+    for m, path in (("GET", "/soundstage/vcam/status"), ("GET", "/view?filename=x.png"), ("POST", "/soundstage/vcam/ws")):
+        out, up = bridge.rewrite_head(m, path, "HTTP/1.1", H(Host="h", Connection="Upgrade", Upgrade="websocket"))
+        text = out.decode()
+        assert not up and "Connection: close" in text and "Upgrade" not in text, path
+
+
 def test_bridge_parses_heads_strictly():
     assert bridge.parse_head(b"GET /a HTTP/1.1\r\nHost: x\r\nCookie: a=b") == ("GET", "/a", "HTTP/1.1", [("Host", "x"), ("Cookie", "a=b")])
     assert bridge.parse_head(b"GET /a\r\n") is None
