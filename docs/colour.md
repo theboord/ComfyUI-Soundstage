@@ -5,7 +5,7 @@ Soundstage grades its takes the way a dailies colourist would, and hands the gra
 1. **Takes → Match grade.** Every setup in a scene gets an ASC CDL (slope, offset, power, saturation) that matches its colour to a hero setup, judged in a perceptual space (OKLab).
 2. **Coach → Grade jumps at a cut.** "Sc 1 · 1G is 0.4 stops warmer than Sc 1 · 1H", with a one-click Match.
 3. **Look → Steal the look…** Pick a reference frame. Its tone curve, palette, grain and cast become the Look: the nearest film-stock preset, the grade sliders, a custom palette, and a CDL with a tone curve.
-4. **Cut → Grade, and the NLE package.** Per-clip `.cdl`, one `.ccc`, 33³ `.cube` LUTs, the show look, and `*ASC_SOP` lines in the EDL, so Resolve, Avid and Premiere open the cut already graded.
+4. **Cut → Grade, and the NLE package.** Per-clip `.cdl`, one `.ccc`, 33³ `.cube` LUTs, the show look, and `*ASC_SOP` lines in the EDL, so Resolve and Avid can read each clip's CDL from the EDL and Premiere can load each clip's .cube as an Input LUT (see GRADE.txt; not yet tried in any NLE).
 
 Everything runs on the CPU in numpy. There are no models and no downloads, and it needs no GPU.
 
