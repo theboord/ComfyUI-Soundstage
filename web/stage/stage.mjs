@@ -3,7 +3,7 @@
 // Drag empty space = orbit (look around in place when close in or inside a car; Alt+drag anywhere), Shift+drag = pan,
 // wheel = dolly (proportional, flies through the target), drag an actor = move it on the floor.
 import * as THREE from "../vendor/three.module.min.mjs";
-import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompound, makeGlass } from "./library.mjs";
+import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompound, makeGlass, paintColorOf, withoutPaint } from "./library.mjs";
 import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./humans.mjs";
 import { applyGaze, setGazeKey, clearGaze } from "./gaze.mjs";
 import * as Mocap from "./mocap.mjs";
@@ -2841,9 +2841,11 @@ export class Stage {
       this.select(host.id);
       return `${riderName} on ${hostName}`;
     }
-    const kind = resolveKind(text);
+    // "a red sports car": the colour paints it, the rest names it (a sports car, not a plain car).
+    const kind = resolveKind(withoutPaint(text)) || resolveKind(text);
     if (!kind) return null;
     const spec = LIBRARY[kind];
+    const paint = ["man", "woman", "child"].includes(kind) ? null : paintColorOf(text);
     const n = this.state.actors.filter((a) => a.kind === kind).length + 1;
     const id = `${kind}_${Date.now().toString(36)}`;
     // Drop it on the floor a few metres in front of the current camera.
@@ -2862,7 +2864,7 @@ export class Stage {
       : pos.add(dir.multiplyScalar(spec.rig === "static" ? 14 : 7 + (k % 3) * 1.5)).add(side);
     const p = [+spot.x.toFixed(2), 0, +spot.z.toFixed(2)];
     this.state.actors.push({ id, name: `${spec.label} ${n}`, kind, position: p, keys: [{ frame: 0, position: [...p] }],
-      height_m: spec.height, rotation_deg: 0 });
+      height_m: spec.height, rotation_deg: 0, ...(paint ? { appearance: { color: paint } } : {}) });
     this._buildSet();
     this.select(id);
     this.onChange(this.toJSON());
