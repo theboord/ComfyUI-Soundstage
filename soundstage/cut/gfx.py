@@ -563,6 +563,7 @@ class GfxPainter:
         self.oy = (H - H0 * self.s) / 2
         self._fonts = {}
         self._masks = {}
+        self._shadows = {}
         self.raqm = False
         try:
             from PIL import features
@@ -625,6 +626,13 @@ class GfxPainter:
         lo, hi = int(math.floor(tier)), int(math.ceil(tier))
         mixes = [(lo, 1.0)] if lo == hi else [(lo, hi - tier), (hi, tier - lo)]
         q = 4
+        key = ("shadow", int(round(w)), int(round(h)), int(round(r)), round(tier, 2), round(alpha, 2))
+        hit = self._shadows.get(key)
+        if hit is not None:
+            for lay, ox, oy in hit:
+                self._paste(dst, lay, x + ox, y + oy)
+            return
+        made = []
         for t, wt in mixes:
             if t <= 0 or wt <= 0:
                 continue
@@ -642,7 +650,11 @@ class GfxPainter:
                 m = m.point(lambda v, amt=amt: int(v * amt))
                 lay = Image.new("RGBA", m.size, (0, 0, 0, 0))
                 lay.putalpha(m)
+                made.append((lay, -pad, -pad + dy_s))
                 self._paste(dst, lay, x - pad, y - pad + dy_s)
+        if len(self._shadows) > 64:
+            self._shadows.clear()
+        self._shadows[key] = made
 
     def _text_layer(self, op):
         """An RGBA layer with op's text and the (x, y) of its top left in output px."""
@@ -719,8 +731,9 @@ class GfxPainter:
                 k = op["k"]
                 s = 1 + 0.03 * k
                 hw, hh = W / 2 / s, H / 2 / s
-                img = img.resize((W, H), Image.BICUBIC, box=(W / 2 - hw, H / 2 - hh, W / 2 + hw, H / 2 + hh))
-                img = img.filter(ImageFilter.GaussianBlur(8 * k * self.s / 2))
+                # scale +3 % and an 8 px blur (at quarter size: the plate behind a window is soft anyway)
+                small = img.resize((W // 4, H // 4), Image.BILINEAR, box=(W / 2 - hw, H / 2 - hh, W / 2 + hw, H / 2 + hh))
+                img = small.filter(ImageFilter.GaussianBlur(8 * k * self.s / 2 / 4)).resize((W, H), Image.BICUBIC)
                 img = ImageEnhance.Brightness(img).enhance(1 - 0.28 * k)
             elif op["op"] == "split":
                 a, b = sources.get(op["left"]), sources.get(op["right"])
@@ -818,7 +831,8 @@ class GfxPainter:
         k = max(w / sw, h / sh)
         cw, ch = w / k, h / k
         cw, ch = min(cw, sw), min(ch, sh)
-        return src.resize((w, h), Image.LANCZOS, box=(max(0.0, (sw - cw) / 2), max(0.0, (sh - ch) / 2), min(sw, (sw + cw) / 2), min(sh, (sh + ch) / 2)))
+        return src.resize((w, h), Image.BICUBIC, box=(max(0.0, (sw - cw) / 2), max(0.0, (sh - ch) / 2), min(sw, (sw + cw) / 2), min(sh, (sh + ch) / 2)),
+                          reducing_gap=2.0)
 
     def _bottom_scrim(self, alpha):
         from PIL import Image
@@ -910,29 +924,38 @@ class GfxPainter:
 
 # ---------------------------------------------------------------------------------------------- motion blur
 
-def _moving(a, b):
-    """Does anything move more than 4 px or scale more than 2 % between two op lists (§8.6)?"""
-    if len(a) != len(b):
-        return True
+def _travel(a, b):
+    """The largest on-screen move between two op lists, in 1080p px (a scale change counts at the element's edge).
+    inf when the ops differ in kind (something appears or goes)."""
+    if len(a) != len(b) or any(p["op"] != q["op"] for p, q in zip(a, b)):
+        return math.inf
+    d = 0.0
     for p, q in zip(a, b):
         for k in ("x", "y", "cx", "cy"):
-            if k in p and k in q and abs(p[k] - q[k]) > 4:
-                return True
+            if k in p and k in q:
+                d = max(d, abs(p[k] - q[k]))
         for k in ("w", "h"):
-            if k in p and k in q and p[k] and abs(q[k] / p[k] - 1) > 0.02:
-                return True
-        for k in ("scale", "z"):
-            if k in p and k in q and p[k] and abs(q[k] / p[k] - 1) > 0.02:
-                return True
-    return False
+            if k in p and k in q:
+                d = max(d, abs(p[k] - q[k]) / 2)
+        if "scale" in p and "scale" in q:
+            d = max(d, abs(p["scale"] - q["scale"]) * 400)      # a slam on a ~800 px word: its edge
+        if "z" in p and "z" in q:
+            d = max(d, abs(q["z"] / p["z"] - 1) * 960)          # a zoom: the frame edge
+    return d
 
 
 def frame_ops(g, f, motion_blur=True):
-    """[(weight, ops)] for local frame f: 4 sub-frames at t + {0, 1/8, 2/8, 3/8} where it moves, else one."""
+    """[(weight, ops)] for local frame f. Where something moves more than 4 px (or scales over 2 %) in the frame,
+    it is averaged over a 180-degree shutter (§8.6): 4 sub-frames at t + {0, 1/8, 2/8, 3/8}, more for fast moves so
+    no sub-frame step exceeds about 3 px (a split's divider sweeping 80 px a frame gets 14, not 4 ghost lines)."""
     ops = state_at(g, f)
-    if motion_blur and _moving(ops, state_at(g, f + 1)):
-        return [(0.25, state_at(g, f + k / 8)) for k in range(4)]
-    return [(1.0, ops)]
+    if not motion_blur:
+        return [(1.0, ops)]
+    d = _travel(ops, state_at(g, f + 1))
+    if d <= 4:
+        return [(1.0, ops)]
+    n = 4 if not math.isfinite(d) else int(_clamp(math.ceil(d / 2 / 3), 4, 16))
+    return [(1.0 / n, state_at(g, f + k / (2 * n))) for k in range(n)]
 
 
 # ---------------------------------------------------------------------------------------------- the render pass

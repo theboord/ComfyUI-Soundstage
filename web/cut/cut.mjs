@@ -680,25 +680,36 @@ export class CutPanel {
 
   // ------------------------------------------------------------------ V3 graphics (gfx.mjs; rendered by soundstage/cut/gfx.py)
 
-  /** The designed sound pack ({key: {url, seconds}}), fetched once from the host; null without a server. */
-  async gfxLibrary() {
-    if (this._gfxLib) return this._gfxLib;
-    if (!this._gfxSfx) return null;
-    try { this._gfxLib = await this._gfxSfx(); } catch (err) { console.warn("Soundstage Cut: graphics sounds unavailable", err); this._gfxLib = null; }
-    return this._gfxLib;
+  /** The designed sound pack ({key: {url, seconds}}), fetched once from the host (one request; the server builds the
+   *  pack the first time); null without a server. */
+  gfxLibrary() {
+    if (!this._gfxSfx) return Promise.resolve(null);
+    this._gfxLibP ||= Promise.resolve().then(() => this._gfxSfx()).then((lib) => (this._gfxLib = lib || null))
+      .catch((err) => {   // asked once per session: a server without the route (not restarted since the update) says so once
+        console.warn("Soundstage Cut: graphics sounds unavailable", err);
+        this.say("Graphics sounds are unavailable from this server (restart ComfyUI after updating Soundstage): the graphics work without them.");
+        return null;
+      });
+    return this._gfxLibP;
   }
 
-  /** One undoable edit of the graphics list; every graphic's designed sounds are re-laid on A2 with it. */
-  async _commitGfx(graphics, { quiet = false } = {}) {
-    const lib = await this.gfxLibrary();
+  /** The audio with every graphic's designed sounds re-laid on A2 (unchanged while the pack isn't here). */
+  _gfxAudio(project) {
+    return this._gfxLib ? GFX.withGfxClips(project, GFX.gfxClips(project, this._gfxLib, project.fps)) : project.audio;
+  }
+
+  /** One undoable edit of the graphics list, its sounds re-laid on A2 with it. It never waits for the server: when
+   *  the sound pack arrives later, the sounds are laid then (one more undo step, the first time only). */
+  async _commitGfx(graphics) {
     const next = { ...this.project, graphics: GFX.normalizeGraphics(graphics) };
-    const extra = { graphics: next.graphics };
-    if (lib) extra.audio = GFX.withGfxClips(next, GFX.gfxClips(next, lib, next.fps));
-    else if (!quiet && !this._gfxWarned && next.graphics.some((g) => g.sfx)) {
-      this._gfxWarned = true;
-      this.say("Graphics sounds need the server (the App): the graphics render without them here.");
+    this._commit(this.project.cut, this.sel, { graphics: next.graphics, audio: this._gfxAudio(next) });
+    if (this._gfxLib || !next.graphics.some((g) => g.sfx)) return;
+    if (!this._gfxSfx) {
+      if (!this._gfxWarned) { this._gfxWarned = true; this.say("Graphics sounds need the server (the App): the graphics render without them here."); }
+      return;
     }
-    this._commit(this.project.cut, this.sel, extra);
+    const lib = await this.gfxLibrary();
+    if (lib) this._commit(this.project.cut, this.sel, { audio: this._gfxAudio(this.project) });
   }
 
   /** Add a graphic at the playhead: title | kinetic | lower | callout | pip | dual | device | split | endcard. Windows
@@ -709,11 +720,12 @@ export class CutPanel {
     const row = TL.eventAt(this.project, at) || rows[0];
     const nextRow = row ? rows[row.index + 1] || row : null;
     const g = { ...GFX.newGraphic(template, at, row ? { shot_id: row.shot.id, in: row.in + (at - row.recIn), shot_b: template === "dual" ? nextRow.shot.id : null } : {}), ...patch };
-    await this._commitGfx([...(this.project.graphics || []), g]);
+    const done = this._commitGfx([...(this.project.graphics || []), g]);   // committed now; its sounds may land a moment later
     this.gfxSel = g.id;
     this.titleSel = this.subSel = this.tSel = null;
     this._inspect();
     this.requestDraw();
+    await done;
     return g.id;
   }
 
@@ -722,7 +734,7 @@ export class CutPanel {
   }
 
   async removeGraphic(id) {
-    await this._commitGfx((this.project.graphics || []).filter((g) => g.id !== id), { quiet: true });
+    await this._commitGfx((this.project.graphics || []).filter((g) => g.id !== id));
     if (this.gfxSel === id) this.gfxSel = null;
     this._inspect();
   }
@@ -767,7 +779,11 @@ export class CutPanel {
     if (sel && f >= sel.start_frame && f < sel.start_frame + sel.frames) {
       const s = W / GFX.W0;
       ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeStyle = ACCENT; ctx.lineWidth = 1.5;
-      if (sel.template === "callout") ctx.strokeRect(sel.rect[0] * s, sel.rect[1] * s, sel.rect[2] * s, sel.rect[3] * s);
+      if (sel.template === "callout") {   // the target box as it is on screen now (projected through the zoom)
+        const z = GFX.stateAt(sel, f - sel.start_frame).find((o) => o.op === "zoom") || { cx: 960, cy: 540, z: 1 };
+        const [x, y, w, h] = sel.rect;
+        ctx.strokeRect(((x - z.cx) * z.z + 960) * s, ((y - z.cy) * z.z + 540) * s, w * z.z * s, h * z.z * s);
+      }
       else for (const op of GFX.stateAt(sel, f - sel.start_frame)) if (op.w && op.h && op.op !== "ring") ctx.strokeRect(op.x * s, op.y * s, op.w * s, op.h * s);
       ctx.restore();
     }
