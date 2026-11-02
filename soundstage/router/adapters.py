@@ -442,6 +442,14 @@ def z_image(g, m, p):
     return {"image": g.node("VAEDecode", samples=s, vae=vae).out(0)}
 
 
+def ref_canvas(w: int, h: int, mp: float) -> tuple[int, int]:
+    """The size ReferenceMultiLatent's "resize" gives a w x h image at `mp` megapixels (it counts one as 1024 x 1024
+    px, comfy_extras/nodes_edit_model.py), before VAEEncode centre-crops it to a multiple of 16: the canvas Klein
+    paints a frame on from noise. An img2img start resized the same way lands on the same latent, pixel for pixel."""
+    s = math.sqrt(mp * 1024 * 1024 / (w * h))
+    return max(1, round(w * s)), max(1, round(h * s))
+
+
 def flux3_klein(g, m, p):
     """Templates image_flux3_klein_distilled_t2i / _image_edit."""
     model, clip, vae = _loaders(g, p["weights"], "flux3")
@@ -453,9 +461,8 @@ def flux3_klein(g, m, p):
         # A negative prompt only does anything with CFG above 1 (Klein is distilled for CFG 1).
         neg = (g.node("CLIPTextEncode", text=p["negative"], clip=clip).out(0) if p.get("negative") and (p.get("cfg") or 1) > 1
                else g.node("ConditioningZeroOut", conditioning=pos).out(0))
-        kw = {"positive": pos, "negative": neg, "vae": vae,
-              "resolution": "resize", "resolution.megapixels": round(max(0.25, p["width"] * p["height"] / 1e6), 2)
-              if p["width"] and p["height"] else 1.0}
+        mp = round(max(0.25, p["width"] * p["height"] / 1e6), 2) if p["width"] and p["height"] else 1.0
+        kw = {"positive": pos, "negative": neg, "vae": vae, "resolution": "resize", "resolution.megapixels": mp}
         for i, link in enumerate(images):
             kw[f"images.image{i}"] = link
         r = g.node("ReferenceMultiLatent", **kw)
@@ -468,7 +475,9 @@ def flux3_klein(g, m, p):
             src = g.node("ImageScaleBy", image=images[0], upscale_method="area", scale_by=1 / INIT_DOWN).out(0)
             for up in (8, INIT_DOWN / 8):         # ImageScaleBy goes up to 8x per node
                 src = g.node("ImageScaleBy", image=src, upscale_method="bilinear", scale_by=up).out(0)
-            src = resize(g, src, snap(p["width"], 16), snap(p["height"], 16))
+            # on the reference's own canvas, the one a from-noise frame is painted on: the snapped 1680x896 canvas
+            # (the reference sat on 1712x912) gave dark rounded borders and a porthole vignette (M27 frame 1)
+            src = resize(g, src, *ref_canvas(p["width"], p["height"], mp))
             latent, denoise = g.node("VAEEncode", pixels=src, vae=vae).out(0), lock
         s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or 16, cfg=p.get("cfg") or 1.0,
                    sampler_name="euler", scheduler="simple", positive=r.out(0), negative=r.out(1), latent_image=latent,
