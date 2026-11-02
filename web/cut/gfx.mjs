@@ -454,6 +454,12 @@ function logoImage() {
   return _logo;
 }
 
+/** The letterbox paint() uses: design (1920x1080) units -> a W x H view is x*s, y*s + oy. */
+export function designBox(W, H) { const s = W / W0; return { s, oy: (H - H0 * s) / 2 }; }
+
+/** A point on a W x H view (pixels from its top-left) in design units, the inverse of paint()'s mapping. */
+export function viewToDesign(x, y, W, H) { const { s, oy } = designBox(W, H); return [x / s, (y - oy) / s]; }
+
 /**
  * Paint ops over the viewer. pic: the V1 picture (a canvas of W x H, already drawn); sources: {a, b} images or
  * canvases (null shows a dark plate). The render (gfx.py GfxPainter) draws the same ops with Pillow.
