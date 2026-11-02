@@ -3,6 +3,7 @@
 import "./scripts/glbshim.js";
 import { app } from "./scripts/app.js";
 import { api, demo } from "./scripts/api.js";
+import { LABEL, GLYPH, provenanceNow, stopProvenance, clipProvenance } from "./provenance.mjs";
 
 const $ = (id) => document.getElementById(id);
 export const SCENES = [
@@ -78,11 +79,26 @@ demo.toast = (msg) => {
 // never drift; a canvas draws the left half up to the split and the right half after it.
 let heroOpen = false, readyNow;
 const ready = new Promise((r) => (readyNow = r));   // the tour and its stops exist once the module has run to the end
+const HERO_FILE = "m_hero_jturn.mp4";
+/** A badge's look and its one-line note (title for the mouse, aria-label for screen readers). */
+function setProv(el, p, { long = "", keepText = false } = {}) {
+  el.classList.toggle("live", p.mode === "live");
+  el.classList.toggle("replayed", p.mode !== "live");
+  el.dataset.prov = p.mode;
+  el.title = p.note;
+  el.setAttribute("aria-label", p.note);
+  if (!keepText) {
+    el.replaceChildren(`${GLYPH[p.mode]} ${LABEL[p.mode]}`);
+    if (long) el.append(Object.assign(document.createElement("span"), { className: "long", textContent: long }));
+  }
+  return el;
+}
+const provBadge = (p) => setProv(Object.assign(document.createElement("span"), { className: "prov" }), p);
 function heroSetup() {
   const sec = $("hero"), cv = $("heroCv"), box = cv.parentElement, knob = $("heroSplit");
   const ctx = cv.getContext("2d");
   const v = Object.assign(document.createElement("video"), { muted: true, loop: true, playsInline: true, preload: "auto", autoplay: true });
-  v.src = new URL("./r/m_hero_jturn.mp4", import.meta.url).href;
+  v.src = new URL(`./r/${HERO_FILE}`, import.meta.url).href;
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   let split = 0.5, user = false, raf = 0, t0 = performance.now();
   const W = cv.width, H = cv.height;
@@ -347,12 +363,18 @@ for (const s of tour.steps) {
   const row = document.createElement("div");
   row.className = "row";
   row.append(show);
+  // The clips are recordings: one Replayed badge leads them, and each Watch button carries its own note.
+  if ((s.clips || []).length) row.append(provBadge({ mode: "replayed", note: "Replayed: the Watch clips are recorded earlier (GPU renders or screen captures of the App)." }));
   for (const c of s.clips || []) {
     const w = Object.assign(document.createElement("button"), { type: "button", textContent: `Watch: ${c.label}` });
+    const p = clipProvenance(c);
+    w.dataset.prov = p.mode; w.title = p.note;
     w.addEventListener("click", () => playClip(c));
     row.append(w);
   }
-  li.append(Object.assign(document.createElement("b"), { textContent: s.title }), Object.assign(document.createElement("p"), { textContent: s.text }), row);
+  const hd = Object.assign(document.createElement("div"), { className: "hd" });
+  hd.append(Object.assign(document.createElement("b"), { textContent: s.title }), provBadge(stopProvenance(s)));
+  li.append(hd, Object.assign(document.createElement("p"), { textContent: s.text }), row);
   $("tourList").append(li);
 }
 function setTour(open) {
@@ -367,6 +389,7 @@ function playClip(c) {
   const d = $("clip");
   $("clipTitle").textContent = c.label;
   $("clipNote").textContent = c.note || "";
+  setProv($("clipProv"), clipProvenance(c));
   const src = new URL(`./r/${c.file}`, import.meta.url).href;
   const media = /\.(jpe?g|png)$/i.test(c.file)
     ? Object.assign(document.createElement("img"), { src, alt: c.label })
@@ -382,4 +405,43 @@ let keepOpen = null;
 try { keepOpen = sessionStorage.getItem("ss_demo_tour"); } catch { /* storage blocked */ }
 if (hashStop || keepOpen === "1") setTour(true);
 if (hashStop) setTimeout(() => runStop(hashStop), 1800);
+
+// ---------------------------------------------------------------- Live or Replayed: what the visitor is looking at now
+// The first screen's wipe is a recording; its note is the tour clip's own note for the same file.
+setProv($("heroProv"), clipProvenance(tour.steps.flatMap((s) => s.clips || []).find((c) => c.file === HERO_FILE) || { file: HERO_FILE }), { keepText: true });
+// The bar badge follows the screen: the tab that is up (a non-step tab such as Takes or the Timeline wins over the step
+// bar, which keeps the last step), the step's shot and its renders, and the Video → 3D replay (Replayed while it runs
+// and while its Identical? bar is up; after that the Live note says the set came from that run, until the scene changes).
+function v2sNow() {
+  const r = demo.v2s;
+  if (!r) return null;
+  const loading = r.doneAt && performance.now() - r.doneAt < 4000;   // the App loads the result, then opens the bar
+  const showing = r.running || loading || [...document.querySelectorAll(".ss-v2c")].some((e) => e.getClientRects().length);
+  return showing ? r : (r.doneAt ? { ...r, after: true } : null);
+}
+// soundstage.js showView marks these tabs on the stage root (and shows .ss-lookview for the Look).
+const VIEW_CLASSES = [["ss-advmode", "advisor"], ["ss-dailiesmode", "dailies"], ["ss-cutmode", "cut"], ["ss-canvasmode", "canvas"]];
+function viewNow() {
+  const el = root();
+  if (!el) return "";
+  for (const [cls, k] of VIEW_CLASSES) if (el.classList.contains(cls)) return k;
+  const look = el.querySelector(".ss-lookview");
+  return look && !look.hidden ? "look" : "";
+}
+function provNow() {
+  let step = "set", shot = null, view = "";
+  try { step = P()?.current || "set"; shot = S()?.activeShot()?.id ?? null; view = viewNow(); } catch { /* the stage isn't up */ }
+  return provenanceNow({ step, view, shot, scene: demo.scene, v2s: v2sNow() });
+}
+let provLast = "";
+function drawProv() {
+  const p = provNow();
+  if (p.mode + p.note === provLast) return;
+  provLast = p.mode + p.note;
+  setProv($("prov"), p, { long: p.mode === "live" ? " in your browser" : " from a real run" });
+}
+$("prov").addEventListener("click", () => demo.toast(provNow().note));   // a phone has no hover: a tap shows the note
+drawProv();
+setInterval(drawProv, 500);
+window.__demo.prov = provNow;
 readyNow();
