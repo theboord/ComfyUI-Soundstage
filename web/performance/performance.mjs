@@ -113,6 +113,81 @@ export async function characterBox(stage, id) {
   return kp ? boxOfPerson(P.toPixels(kp, cam, W, H), W, H) : null;
 }
 
+// A phone take is framed chest-up (a hand above the head to the belt), so its box runs out of the bottom of the frame
+// and has no hips or legs. Fitting that box to a whole character (a rider: hat to stirrups) made the actor's head
+// twice too big. A chest-up take, or a seated character (on a horse, in a car), is fitted face to face instead: the
+// upper body comes from the take, the hips, legs and horse from the shot's frame.
+export const CUT_OFF = 0.97;
+
+/** Median 0-1 box of the actor's face over a capture's face.json frames ({face: [[x, y, c] x 70]}), or null. */
+export function faceBoxOfFrames(frames, minConf = 0.3) {
+  const boxes = [];
+  for (const f of frames || []) {
+    const pts = (f?.face || []).slice(0, 68).filter((p) => p && p[2] >= minConf && (p[0] > 0 || p[1] > 0));
+    if (pts.length < 20) continue;
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    boxes.push([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]);
+  }
+  if (!boxes.length) return null;
+  const mid = (i) => { const v = boxes.map((b) => b[i]).sort((a, b) => a - b); return v[Math.floor(v.length / 2)]; };
+  return [0, 1, 2, 3].map((i) => +mid(i).toFixed(4));
+}
+
+/** A pixel person's face (68 points) -> its 0-1 box, unclamped (a face near the frame edge keeps its size), or null. */
+export function faceBoxOfPerson(person, W, H) {
+  const pts = (person?.face || []).filter(Boolean);
+  if (pts.length < 20) return null;
+  const xs = pts.map((p) => p[0] / W), ys = pts.map((p) => p[1] / H);
+  const b = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  return b[2] > b[0] && b[3] > b[1] ? b.map((v) => +v.toFixed(4)) : null;
+}
+
+/** The box to hand SoundstagePerformance (it fits the asset's box onto it: same height, centre x and top).
+ *  Face to face for a chest-up take or a seated character: the actor's box carried by the transform that puts the
+ *  actor's face on the character's face. Otherwise the character's whole box, as before. -> {box, fit} */
+export function fitTarget({ actorBox, actorFace, charBox, charFace, seated = false }) {
+  const ok = (b) => Array.isArray(b) && b.length === 4 && b[2] > b[0] && b[3] > b[1];
+  if (ok(actorBox) && ok(actorFace) && ok(charFace) && (actorBox[3] >= CUT_OFF || seated)) {
+    const s = (charFace[3] - charFace[1]) / (actorFace[3] - actorFace[1]);
+    const dx = (charFace[0] + charFace[2]) / 2 - (actorFace[0] + actorFace[2]) / 2 * s;
+    const dy = charFace[1] - actorFace[1] * s;
+    return { box: [actorBox[0] * s + dx, actorBox[1] * s + dy, actorBox[2] * s + dx, actorBox[3] * s + dy].map((v) => +v.toFixed(4)), fit: "face" };
+  }
+  return { box: ok(charBox) ? charBox : null, fit: ok(charBox) ? "body" : "" };
+}
+
+/** The active shot's own camera at frame 0 (where the take starts), not whatever the viewport shows: from ④ Frame or
+ *  a free view, stage.camera can be somewhere else entirely, and the fit then lands the actor in the wrong place. */
+export async function shotCamera(stage) {
+  const cam = stage.camera.clone();
+  cam.aspect = stage.fw / stage.fh;
+  const c = stage._shotCameraAt?.(0);
+  if (c?.position && c?.target) {
+    const { vfovFromFocal } = await import("../stage/interop/units.mjs");
+    cam.position.set(...c.position);
+    if (c.focal_mm) cam.fov = vfovFromFocal(c.focal_mm, cam.aspect);
+    cam.up.set(0, 1, 0);
+    cam.lookAt(...c.target);
+    if (c.roll) cam.rotateZ(c.roll);
+  }
+  cam.updateProjectionMatrix(); cam.updateMatrixWorld(true);
+  return cam;
+}
+
+/** Where the character is in the shot camera: {box (clamped), face (unclamped), seated}, or null. */
+export async function characterTarget(stage, id) {
+  const P = await import("../stage/posepass.mjs");
+  const g = stage.actorMeshes?.get?.(id);
+  if (!g?.userData?.joints?.l_shoulder) return null;
+  const W = 640, H = Math.round(640 * stage.fh / stage.fw);
+  const cam = await shotCamera(stage);
+  const kp = P.personKeypoints(g, cam.position);
+  if (!kp) return null;
+  const px = P.toPixels(kp, cam, W, H);
+  const a = (stage.state?.actors || []).find((x) => x.id === id);
+  return { box: boxOfPerson(px, W, H), face: faceBoxOfPerson(px, W, H), seated: !!(a?.mount_id || a?.seat) };
+}
+
 /** A finished render -> a take record on the shot (the Takes bin lists it with Ripple / Pose takes). */
 export function makePerformanceTake({ file, url, quality = "Draft", asset = "", name = "", prompt = "", now = Date.now() }) {
   return { id: `performance_${now.toString(36)}`, kind: quality === "Draft" ? "draft" : "final", url, file, created: now,
@@ -387,17 +462,26 @@ export function openPerformance({ api, stage, actorId, pipeline = () => null, ca
     if (!asset) return;
     const a = stage.state.actors.find((x) => x.id === actorId);
     if (a) a.performance = { asset: asset.file, name: asset.name, data: asset };
-    let box = null;
-    try { box = await characterBox(stage, actorId); } catch { box = null; }
+    let box = null, fit = "";
+    try {
+      const t = await characterTarget(stage, actorId);
+      let actorFace = asset.face_box || null;
+      if (!actorFace && asset.files?.keypoints) {
+        try { actorFace = faceBoxOfFrames((await (await api.fetchApi(`/view?${viewQuery(asset.files.keypoints)}`)).json()).frames); } catch { actorFace = null; }
+        if (actorFace) asset.face_box = actorFace;
+      }
+      ({ box, fit } = fitTarget({ actorBox: asset.box, actorFace, charBox: t?.box, charFace: t?.face, seated: t?.seated }));
+    } catch { box = null; }
     const p = pipeline(), sid = shot()?.id;
     if (p && sid) {
       const c = p.chosen[sid] = p.chosen[sid] || {};
-      c.performance = { asset: asset.file, actor: actorId, name: asset.name, box };
+      c.performance = { asset: asset.file, actor: actorId, name: asset.name, box, fit };
       p._saveChosen?.();
     }
     try { stage.onChange?.(stage.toJSON()); } catch { /* stage listener */ }
     renderRow.hidden = false;
-    say(`${who} now performs ${asset.name}${box ? "" : " (character not in view: the actor's own framing is used)"}. Render a Draft first.`);
+    const how = fit === "face" ? " (fitted face to face: your upper body on the character, the rest from the frame)" : box ? "" : " (character not in view: the actor's own framing is used)";
+    say(`${who} now performs ${asset.name}${how}. Render a Draft first.`);
     onStatus(`${who} has a real performance (${asset.name}).`);
   };
 

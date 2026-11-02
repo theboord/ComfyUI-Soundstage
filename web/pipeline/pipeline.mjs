@@ -935,7 +935,8 @@ export class Pipeline {
       if (meta) this.pending.delete(ev.promptId);
       // A shot's first frame is its pick until you choose another, so "every shot" flows straight into Motion.
       if (!this.chosen[ev.shotId] && meta) { this._setChosen(ev.shotId, cand); this._autoPick[ev.shotId] = true; }
-      if (meta && cand.file) this._checkFrame(ev.shotId, cand, meta);
+      // Unticked "Check each frame against the clay" means no check at all (it is a GPU job on the shared card).
+      if (meta && cand.file && this.f?.autoReroll?.checked !== false) this._checkFrame(ev.shotId, cand, meta);
       if (this.f && !this.views.frame.hidden) {
         this._drawCandidates();
         this.f.status.textContent = "Pick the frame you like: “Use this frame”. The video will start from it.";
