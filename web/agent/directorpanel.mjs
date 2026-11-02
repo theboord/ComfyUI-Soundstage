@@ -154,6 +154,18 @@ export function dockSlot(rr, obstacles, { isProps = (el) => !!el?.matches?.(".ss
   return got2 ? { ...got2, take: props.map((o) => o.el) } : null;
 }
 
+/** "Undo this" under a turn: undo is a stack, so it undoes that turn only while it is the newest one (it used to pop
+ * whatever was on top: Undo under turn A reverted turn B). -> {done, said}; done = the button has nothing left to do. */
+export function undoOwnTurn(director, mine) {
+  const st = director.undoStack || [];
+  if (mine && st[st.length - 1] !== mine) {
+    if (!st.includes(mine)) return { done: true, said: "That change is already undone." };
+    return { done: false, said: "Later changes sit on top of this one: undo those first (newest first), then this." };
+  }
+  const l = director.undo();
+  return { done: true, said: l ? `Undid: ${l}` : "Nothing to undo." };
+}
+
 export function mountDirector({ root, topBar = null, before = null, api, stage, host = {}, isActive = () => true }) {
   if (!document.getElementById("ss-dir-css")) document.head.append(h("style", { id: "ss-dir-css" }, CSS));
   if (getComputedStyle(root).position === "static") root.style.position = "relative";
@@ -312,7 +324,12 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     if (explain && res.explain) msg.append(h("div", { class: "why" }, res.explain));
     if (res.undoable) {
       const u = h("button", { type: "button" }, icon("undo-2", 13), "Undo this");
-      u.addEventListener("click", () => { const l = director.undo(); u.disabled = true; say("a", l ? `Undid: ${l}` : "Nothing to undo."); });
+      const mine = director.undoStack?.[director.undoStack.length - 1];   // this turn's undo entry (just pushed)
+      u.addEventListener("click", () => {
+        const r = undoOwnTurn(director, mine);
+        if (r.done) u.disabled = true;
+        say("a", r.said);
+      });
       msg.append(h("div", { class: "row" }, u));
     }
     if (explain && res.next?.length) msg.append(h("div", { class: "why" }, `Next, you could: ${res.next.map((n) => n.label.toLowerCase()).join(" · ")}`));
