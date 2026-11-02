@@ -11,6 +11,9 @@ from urllib.parse import parse_qs, quote
 RUNGS = ("clay", "look", "draft", "final")
 
 
+from ..grade.cdl import edl_sop
+from ..grade.package import grade_files, shot_grade
+
 def _round(v) -> int:
     """JavaScript Math.round (half up), so both sides agree on .5."""
     return int(math.floor(float(v) + 0.5))
@@ -265,6 +268,7 @@ def normalize_project(p) -> dict:
             "notes": s.get("notes") or "",
             "markers": _normalize_markers(s.get("markers")),
             **({"source": src} if src else {}),
+            **({"grade": dict(s["grade"])} if isinstance(s.get("grade"), dict) else {}),   # ASC CDL (soundstage/grade)
         })
     project["shots"] = shots
     _match_source(project)
@@ -751,6 +755,8 @@ def to_edl(project, reel_width=8, source_start=0, media_root="") -> str:
             lines.append(f"* FROM CLIP NAME: {name}")
         if not m["offline"]:
             lines.append(f"* SOURCE FILE: {m['path']}")
+        if shot_grade(row["shot"]):   # the clip's CDL, as Avid and Resolve read it from an EDL
+            lines += edl_sop(shot_grade(row["shot"]))
         if m["rung"] == "source":
             lines.append(f"* SOUNDSTAGE: CAMERA ORIGINAL {_src_spec_text(src)}")
             for n in source_notes(src, project):
@@ -1437,6 +1443,7 @@ def export_all(project, reel_width=8, source_start=0, media_root="", **_) -> dic
         f"{base}.otio": json.dumps(to_otio(project, media_root), indent=2, ensure_ascii=False) + "\n",
         "RELINK.txt": to_relink_list(project, media_root),
         **_subtitle_files(project, base),
+        **grade_files(normalize_project(project), base),   # .ccc / .cdl / .cube when the cut is graded
     }
 
 

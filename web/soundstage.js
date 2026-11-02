@@ -45,7 +45,7 @@ import { DEMO_SCRIPT } from "./script/demo_script.mjs";
 import { planSceneSetup, blockingSpots } from "./script/scenesetup.mjs";
 import { SceneStrip } from "./script/scenestrip.mjs";
 import { DailiesBin } from "./dailies/bin.mjs";
-import { takesFor } from "./dailies/model.mjs";
+import { heroTake, takesFor } from "./dailies/model.mjs";
 import { initApprovals, mountPipelineApprovals, showRedoNote } from "./dailies/approval.mjs";
 import { CastPanel } from "./cast/cast.mjs";
 import { stageSetupForScene } from "./script/parse.mjs";
@@ -548,8 +548,21 @@ function createStageWidget(node, inputName) {
   const cutView = Object.assign(document.createElement("div"), { className: "ss-cutview" });
   cutView.hidden = true;
   el.append(cutView);
+  // Colour pipeline (soundstage/grade): per-shot ASC CDLs from Takes → Match grade, each shot's colour statistics
+  // (for the Coach's grade-continuity check) and the Look's stolen show look ride with the cut into the NLE package.
+  const gradeStore = () => {
+    node.properties = node.properties || {};
+    const g = node.properties.ss_grade;
+    if (g && typeof g === "object" && g.shots && g.stats) return g;
+    return (node.properties.ss_grade = { shots: {}, stats: {} });
+  };
+  const showColour = () => {
+    const c = look.state?.colour;
+    return c && (c.cdl || c.curve) ? { colour: { show: { cdl: c.cdl, curve: c.curve, name: c.name || "Show look" } } } : {};
+  };
   const buildCutProject = () => {
     const sc = stage.toJSON();
+    const gs = gradeStore();
     return {
       name: node.title && node.title !== "Soundstage · 3D Stage" ? node.title : "Soundstage cut",
       fps: sc.shot?.fps || 24, width: stage.fw, height: stage.fh,
@@ -558,8 +571,10 @@ function createStageWidget(node, inputName) {
         const num = sceneNumOfShot(sh.id);
         return { id: sh.id, name: num ? `Sc ${num} · ${sh.name || sh.id}` : sh.name || sh.id, frames: sc.shot?.frames || 97,
           scene_name: num ? `SC${num}` : "SC1", setup: sh.setup || "master", renders: rendersFor(sh.id),
-          ...(sh.source ? { source: sh.source } : {}) }; // imported footage: exports link the camera original
+          ...(sh.source ? { source: sh.source } : {}), // imported footage: exports link the camera original
+          ...(gs.shots[sh.id] ? { grade: gs.shots[sh.id] } : {}), ...(gs.stats[sh.id] ? { colour_stats: gs.stats[sh.id] } : {}) };
       }),
+      ...showColour(),
     };
   };
   // One saved cut shared by the docked shot strip and the full Cut editor: {cut, audio, audio_tracks, excluded_shots}.
@@ -2750,6 +2765,46 @@ function createStageWidget(node, inputName) {
   // Approvals: every frame / draft / final can be Approved, Needs changes (with a note) or Rejected; kept in
   // node.properties.ss_approvals. "Redo" on a take that needs changes opens its shot on ④ Frame or ⑤ Motion with the note.
   const takeRenders = (sid) => ({ ...rendersFor(sid), candidates: pipeline.candidates?.[sid], chosen: pipeline.chosen?.[sid] });
+  // ---- Colour pipeline: the server does the pixels (numpy), the node keeps the numbers (properties.ss_grade).
+  const gradePost = async (path, body) => {
+    const r = await api.fetchApi(`/soundstage/grade/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
+  };
+  const bestTakeUrl = (sid) => {
+    try { return heroTake(takesFor(getShots().find((x) => x.id === sid) || { id: sid }, takeRenders(sid)))?.url || ""; } catch { return ""; }
+  };
+  const shotLabel = (sid) => getShots().find((x) => x.id === sid)?.name || sid;
+  /** Match shots to a hero shot: one CDL each, stored; returns a status line. items = [{id, url, name}]. */
+  async function matchGrade(heroItem, items) {
+    const j = await gradePost("match", { hero: { id: heroItem.id, url: heroItem.url }, takes: items.filter((x) => x.id !== heroItem.id).map((x) => ({ id: x.id, url: x.url })) });
+    const gs = gradeStore();
+    gs.hero = heroItem.id;
+    delete gs.shots[heroItem.id];   // the hero is the reference: no correction
+    gs.stats[heroItem.id] = j.hero_stats;
+    const lines = [];
+    for (const [id, g] of Object.entries(j.grades || {})) {
+      gs.shots[id] = { ...g.cdl, hero: heroItem.id, note: `matched to ${heroItem.name || heroItem.id}`, error_before: g.error_before, error_after: g.error_after };
+      gs.stats[id] = g.graded;
+      lines.push(`${items.find((x) => x.id === id)?.name || id} ${g.error_before.toFixed(1)} → ${g.error_after.toFixed(1)}`);
+    }
+    node.setDirtyCanvas?.(true, true);
+    try { coach?.notify("shots"); } catch { /* coach not built */ }
+    const bad = Object.keys(j.errors || {}).length;
+    return `Matched ${lines.length} to ${heroItem.name || heroItem.id} (OKLab error before → after: ${lines.join(", ") || "none"})` +
+      (bad ? `; ${bad} could not be read (${Object.keys(j.errors).map(shotLabel).join(", ")})` : "") + ". The cut exports the CDLs and LUTs.";
+  }
+  /** Measure the cut's shots (their best take, graded by their CDL) so the Coach can judge grade continuity. */
+  async function measureGrade(ids) {
+    const gs = gradeStore();
+    const frames = ids.map((id) => ({ id, url: bestTakeUrl(id), ...(gs.shots[id] ? { cdl: gs.shots[id] } : {}) })).filter((f) => f.url);
+    if (!frames.length) throw new Error("no shot in the cut has a take to measure yet");
+    const j = await gradePost("stats", { frames });
+    for (const [id, st] of Object.entries(j.stats || {})) gs.stats[id] = st.graded || st;
+    try { coach?.notify("shots"); } catch { /* coach not built */ }
+    return Object.keys(j.stats || {}).length;
+  }
   initApprovals({ props: () => (node.properties ||= {}), save: () => nudgeTracker(), getRenders: takeRenders,
     onRedo: (sid, take, step, note) => {
       if (!openShot(sid)) { status.textContent = "That shot is not in this script any more."; return; }
@@ -2773,6 +2828,8 @@ function createStageWidget(node, inputName) {
     onStatus: (m) => (status.textContent = m),
     decorateTake: (host, take, shot, where) => takeChecks?.decorate(host, take, shot, where),
     oneClickTake: (host, take, shot, where) => oneClick?.decorate(host, take, shot, where),
+    matchGrade: (hero, rows) => matchGrade({ id: hero.id, url: hero.hero?.url, name: hero.label },
+      rows.map((r) => ({ id: r.id, url: r.hero?.url, name: r.label }))),
   });
 
   node.ssDailies = { get bin() { return dailies; }, get lined() { return dailies?.lined || null; }, openScriptSync: (id) => openScriptSync(id) };   // scripts and tests
@@ -3187,6 +3244,17 @@ function createStageWidget(node, inputName) {
     getCut: () => ({ ...buildCutProject(), ...loadCut() }),
     onAction: (kind, payload = {}) => {
       if (kind === "open_tab") { showView(payload.tab); return true; }
+      if (kind === "match_grade") {   // Coach: grade continuity → match the shot to its neighbour across the cut
+        const a = payload.shot_id, b = payload.hero_id;
+        matchGrade({ id: b, url: bestTakeUrl(b), name: shotLabel(b) }, [{ id: a, url: bestTakeUrl(a), name: shotLabel(a) }])
+          .then((m) => { status.textContent = m; }).catch((e) => { status.textContent = `Match grade failed: ${e.message}`; });
+        return true;
+      }
+      if (kind === "measure_grade") {
+        measureGrade(payload.ids || []).then((n) => { status.textContent = `Measured the colour of ${n} shot${n === 1 ? "" : "s"} in the cut.`; })
+          .catch((e) => { status.textContent = `Could not measure the grade: ${e.message}`; });
+        return true;
+      }
       if (kind === "describe") { showView("stage"); inspect("ai"); describeInput.focus(); return true; }
       if (kind === "clear_description") { setDescription("", false); return true; }
       if (kind === "keep_description") { setDescription(look.state.description, true); return true; }

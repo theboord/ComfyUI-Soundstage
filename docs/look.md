@@ -69,6 +69,17 @@ Options marked ◆ in the UI come from `soundstage/cine_kb`. Their KB names and 
 - Any black-and-white choice (B&W stock, classic noir, silent camera, Soviet montage…) drops the colour palette and adds "colour" to the negative.
 - A shallow aperture on a phone, CCTV or DV body: the aperture wins in the prompt.
 
+## Steal the look
+
+**Steal the look…** sits under Grade. Pick a reference frame, and the panel sends it to `POST /soundstage/grade/steal`. That reads the frame's tone curve, cast, saturation, palette and grain, then sets:
+
+- **Film stock:** the nearest preset. The next two are named in the note.
+- **Sliders:** the grade sliders.
+- **Palette:** a custom palette.
+- **`look.colour`:** `{cdl, curve, stock, source, name}`.
+
+`look.colour` doesn't change the prompts. The Cut exports it as the show look (`.cdl` / `.cube`). **.cube** downloads it on its own, and **Clear grade** drops it. `normalize_look()` keeps `colour` when present. See [colour.md](colour.md).
+
 ## Restyle brief and the lock clause
 
 `brief` is optional. It follows the final-render brief in Higgsfield's 3D Jutsu: one free-text line each for `world`, `atmosphere`, `surfaces`, `furniture`, `colour`, `light` and `outside` (the view outside the windows). In the Look tab it's the collapsible **Restyle brief** card under Grade. The card header shows how many lines are filled in.

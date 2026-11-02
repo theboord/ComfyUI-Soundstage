@@ -26,6 +26,7 @@ export function normalizeProject(p) {
       notes: s.notes || "",
       markers: normalizeMarkers(s.markers),
       ...(normalizeSource(s.source) ? { source: normalizeSource(s.source) } : {}),
+      ...(s.grade && typeof s.grade === "object" && !Array.isArray(s.grade) ? { grade: { ...s.grade } } : {}),   // ASC CDL (web/grade)
     };
   });
   matchSource(project);

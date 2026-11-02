@@ -10,7 +10,11 @@
 // The preview is compiled on the server (POST /soundstage/look/compile, soundstage/look/routes.py) by the same
 // code the SoundstageLook node runs, so what you see is exactly what the node outputs. Self-contained: imports
 // only ./vocab.mjs, injects its own CSS, no ComfyUI imports (pass fetchApi to respect ComfyUI's base path).
+// Steal the look… (under Grade) sends a reference frame to POST /soundstage/grade/steal (soundstage/grade/steal.py)
+// and applies the nearest film stock, the grade sliders, the palette and a CDL + tone curve (look.colour, which the
+// Cut's NLE package exports as the show look .cdl/.cube).
 import { VOCAB } from "./vocab.mjs";
+import { cubeText, clipId } from "../grade/grade.mjs";
 import { bodyIcon, lensIcon, fovIcon, irisIcon, injectGearCss } from "../ui/cinegear.mjs";
 
 const CSS = `
@@ -146,6 +150,17 @@ const SELECTS = [
 ];
 
 /** k-means swatches from an image file (5 colours, sorted dark to light). */
+/** A picked image as a JPEG data URL, long side at most `max` px (what the grade routes read). */
+async function imageDataUrl(file, max = 512) {
+  const bmp = await createImageBitmap(file);
+  const f = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(bmp.width * f));
+  c.height = Math.max(1, Math.round(bmp.height * f));
+  c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.92);
+}
+
 async function swatchesFromImage(file, k = 5) {
   const bmp = await createImageBitmap(file);
   const c = document.createElement("canvas");
@@ -233,6 +248,7 @@ export class LookPanel {
       }
       s.grade = { ...DEFAULT_LOOK.grade, ...(s.grade || {}) };
       s.brief = { ...DEFAULT_LOOK.brief, ...(s.brief && typeof s.brief === "object" ? s.brief : {}) };
+      if (data.colour && typeof data.colour === "object") s.colour = clone(data.colour);   // Steal the look's CDL + curve
     }
     this.state = s;
     this._sync();
@@ -260,6 +276,42 @@ export class LookPanel {
   }
 
   _opt(list, id) { return (VOCAB[list] || []).find((o) => o.id === id); }
+
+  /** Steal the look from a reference image (File/Blob, or a data: URL string). Returns the server's answer. */
+  async stealLook(file) {
+    this.stealNote.textContent = "Reading the reference frame…";
+    try {
+      const image = typeof file === "string" ? file : await imageDataUrl(file);
+      const res = await this.fetchApi("/soundstage/grade/steal", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image }) });
+      const j = await res.json();
+      if (!res.ok || j.error) throw new Error(j.error || `HTTP ${res.status}`);
+      const p = j.look_patch || {};
+      const name = typeof file === "string" ? "reference" : (file.name || "reference").replace(/\.[^.]+$/, "");
+      this._set({ film_stock: p.film_stock || this.state.film_stock, grade: { ...this.state.grade, ...(p.grade || {}) },
+        ...(p.palette ? { palette: { ...p.palette, name: `From ${name}` } } : {}),
+        colour: { ...(p.colour || {}), name: `Stolen from ${name}` } });
+      const alt = (j.alternatives || []).map((a) => a.label).join(", ");
+      this.stealNote.textContent = `Nearest stock: ${j.stock?.label || p.film_stock}${alt ? ` (then ${alt})` : ""}. ` +
+        "Sliders, palette and a CDL + tone curve are set; the cut exports them as the show look.";
+      return j;
+    } catch (e) {
+      this.stealNote.textContent = `Could not steal that look: ${e.message}`;
+      return null;
+    }
+  }
+
+  _downloadCube() {
+    const c = this.state.colour;
+    if (!c) return;
+    const name = c.name || "Stolen look";
+    const a = el("a", { href: URL.createObjectURL(new Blob([cubeText([c.cdl], c.curve, name)], { type: "text/plain" })),
+      download: `${clipId(name)}.cube` });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
 
   _subgenres() { return this._opt("genres", this.state.genre)?.subgenres || []; }
 
@@ -369,6 +421,21 @@ export class LookPanel {
       gr.append(el("label", {}, el("span", {}, spec.label), inp, out));
     }
     r.append(gr);
+    // Steal the look: a reference frame -> nearest stock, sliders, palette, and a CDL + tone curve for the NLE.
+    this.stealIn = el("input", { type: "file", accept: "image/*", style: "display:none",
+      onchange: async () => {
+        const f = this.stealIn.files?.[0];
+        this.stealIn.value = "";
+        if (f) await this.stealLook(f);
+      } });
+    this.stealNote = el("div", { class: "ss-hint" });
+    this.stealCube = el("button", { class: "ss-btn", type: "button", hidden: "", title: "The stolen grade as a 33³ .cube LUT (CDL, then the tone curve; Rec.709)",
+      onclick: () => this._downloadCube() }, ".cube");
+    this.stealClear = el("button", { class: "ss-btn", type: "button", hidden: "", title: "Drop the stolen CDL and curve (the sliders, stock and palette stay)",
+      onclick: () => { delete this.state.colour; this._set({}); } }, "Clear grade");
+    r.append(el("div", { class: "ss-look-row" },
+      el("button", { class: "ss-btn", type: "button", title: "Pick a reference frame: its tone curve, palette, grain and cast become this look (nearest film stock, grade sliders, palette) plus a CDL and LUT for the NLE",
+        onclick: () => this.stealIn.click() }, "Steal the look…"), this.stealCube, this.stealClear, this.stealIn), this.stealNote);
     this.neg = el("input", { type: "text", placeholder: "Extra negative words (optional)", "aria-label": "Extra negative",
       oninput: () => { this.state.negative = this.neg.value; this.onChange?.(this.toJSON()); this.refresh(); } });
     r.append(this.neg);
@@ -584,6 +651,7 @@ export class LookPanel {
   }
 
   _sync() {
+    if (this.stealCube) this.stealCube.hidden = this.stealClear.hidden = !this.state.colour;
     this._syncStyles?.();
     this._syncGear();
     for (const field of Object.keys(this.sel)) this._fillSelect(field);

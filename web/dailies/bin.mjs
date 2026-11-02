@@ -26,6 +26,7 @@
 // shot of every scene, onPickScene(sceneId) -> open that scene's bin. Each bin is named "SC 03 – what the scene is
 // about" (model.sceneBinName; the description is written from the breakdown and editable inline) with its approval
 // progress. Every take carries a review status (approval.mjs): badges on cards, takes and list rows, a status filter.
+// Optional matchGrade(heroRow, rows) -> status line: the Match grade button (per-take CDL to the hero setup).
 import { takesFor, heroTake, setupLabel, sceneShots, setupKind, SETUP_KIND_LABEL, KIND_LABEL, fmtDuration, coverageFor,
   binRows, sortRows, filterRows, arrangeByScript, arrangeBySetup, tidyGrid, fillPositions, columnsFor, snap, SNAP, CARD_W, CARD_H,
   CELL_W, CELL_H, GAP, setupColor, clipName, isOffscreen, STATUS_META, STATUS_FILTERS, statusCounts, progressLabel, filterByStatus,
@@ -537,6 +538,24 @@ export class DailiesBin {
     return h("div", { class: "dl-menuwrap" }, this.menuBtn, this.menu);
   }
 
+  /**
+   * Match grade (host.matchGrade, optional): every setup's hero take is matched to the hero setup's (the selected
+   * card, else the scene's first setup, the master) with a per-take ASC CDL (soundstage/grade, POST /soundstage/grade/match).
+   */
+  _gradeBtn() {
+    if (!this.o.matchGrade) return [];
+    return [h("button", { type: "button", class: "dl-btn", title: "Match every setup's colour to the hero setup (the selected card, else the master; inserts are left out): one ASC CDL per take, exported with the cut",
+      on: { click: async () => {
+        // Inserts (a key on the dirt, a neon sign) show other things than the scene's coverage; matching their
+        // statistics to the master would push them wrong, so they are left out unless picked as the hero.
+        const rows = (this.rows || []).filter((r) => r.hero && (r.kind !== "insert" || r.id === this.sel));
+        const hero = rows.find((r) => r.id === this.sel) || rows[0];
+        if (!hero || rows.length < 2) { this.o.onStatus?.("Match grade needs two setups with a take."); return; }
+        this.o.onStatus?.(`Matching ${rows.length - 1} setup${rows.length > 2 ? "s" : ""} to ${hero.label}…`);
+        try { this.o.onStatus?.(await this.o.matchGrade(hero, rows)); } catch (e) { this.o.onStatus?.(`Match grade failed: ${e.message}`); }
+      } } }, svg("palette", 15), "Match grade")];
+  }
+
   /** Arrange ▾ opens in the App's pop-over layer (ui/popover.mjs): flipped and clamped to the window. */
   _openMenu() {
     this._pop = openPopover(this.menu, { anchor: this.menuBtn, owner: this.menuBtn, align: "start", gap: 6, name: "dailies-arrange",
@@ -574,7 +593,7 @@ export class DailiesBin {
     const sizeIn = h("input", { type: "range", min: "0.7", max: "1.5", step: "0.05", value: String(size), "aria-label": "Thumbnail size" });
     sizeIn.addEventListener("input", () => { this.board.style.setProperty("--sz", sizeIn.value); this._placeAll(+sizeIn.value); });
     sizeIn.addEventListener("change", () => this._save({ size: +sizeIn.value }));
-    const bar = h("div", { class: "dl-bar" }, this._arrangeMenu(), this._find(), this._statusSeg(),
+    const bar = h("div", { class: "dl-bar" }, this._arrangeMenu(), this._find(), this._statusSeg(), ...this._gradeBtn(),
       h("label", { class: "dl-size", title: "Thumbnail size" }, svg("small", 12), sizeIn, svg("small", 17)),
       h("span", { class: "dl-grow" }),
       h("span", { class: "dl-tip" }, "Drag to arrange · double-click opens · Space shows takes · click a badge to review"));
@@ -849,7 +868,7 @@ export class DailiesBin {
       this.tbody.append(tr);
     }
     const table = h("table", { class: "dl-list" }, thead, this.tbody);
-    const bar = h("div", { class: "dl-bar" }, this._find(), this._statusSeg(), h("span", { class: "dl-grow" }),
+    const bar = h("div", { class: "dl-bar" }, this._find(), this._statusSeg(), ...this._gradeBtn(), h("span", { class: "dl-grow" }),
       h("span", { class: "dl-tip" }, "Click a column to sort · double-click or Enter opens · C circles"));
     this._applyFilter();
     return [bar, h("div", { class: "dl-listwrap" }, table)];

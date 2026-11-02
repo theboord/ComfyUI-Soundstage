@@ -3,7 +3,7 @@
 //   {rule, key, level: "error"|"warn"|"tip", icon, title, text, actions: [{label, kind, payload, primary?}]}
 // `key` identifies the specific situation (rule + subject) so "Not now" snoozes just that one.
 // Action kinds the Coach executes: "ops" (scene ops, undoable through applyOps), "reorder_cut", "trim_shot",
-// "set_step", "set_freedom", "open_tab", "describe", "tour_next", "tour_done".
+// "set_step", "set_freedom", "open_tab", "describe", "tour_next", "tour_done", "match_grade", "measure_grade".
 //
 // Geometry mirrors web/stage/stage.mjs (Catmull-Rom keys, 36 mm sensor) and soundstage/agent/catalog.py (set
 // camera areas, object footprints): metres, Y up, the default camera looks +Z. Camera rules judge the camera the shot
@@ -11,6 +11,7 @@
 // ride-along host), not just the keyed spline.
 
 import { applyRig, RIGS, RIG_LIMITS, rigMotion } from "../stage/camrig.mjs";
+import { checkCut } from "../grade/grade.mjs";
 
 const SENSOR_W_MM = 36;
 const PEOPLE = new Set(["man", "woman", "child"]);
@@ -532,6 +533,33 @@ export function staleDescription(ctx) {
       { label: "It still fits", kind: "keep_description", payload: {} }] }];
 }
 
+/**
+ * Grade continuity across the cut (web/grade/grade.mjs checkCut = soundstage/grade/continuity.py): two shots of one
+ * scene cut together whose colour differs by 1/3 stop of exposure or 1/4 stop of warmth or tint. Reads each cut
+ * shot's colour_stats (measured from its best take, after its CDL). With two or more shots and no stats yet, a tip
+ * offers to measure them.
+ */
+export function gradeContinuity(ctx) {
+  const shots = ctx.cut?.shots || [], cut = ctx.cut?.cut || [];
+  const byId = new Map(shots.map((s) => [String(s.id), s]));
+  const inCut = cut.map((e) => byId.get(String(e.shot_id))).filter(Boolean);
+  if (inCut.length < 2) return [];
+  const rows = inCut.map((s) => ({ id: s.id, name: s.name || s.id, scene: s.scene_name || "", stats: s.colour_stats || null }));
+  const missing = [...new Set(rows.filter((r) => !r.stats && Object.values(byId.get(String(r.id))?.renders || {}).some(Boolean)).map((r) => r.id))];
+  const out = checkCut(rows).map((f) => ({ rule: "grade_continuity", key: `grade_continuity:${f.a}:${f.b}:${f.key}:${Math.round(f.deltas[f.key] * 10)}`,
+    level: "warn", icon: "palette", title: "Grade jumps at a cut",
+    text: `${f.text}. Cut together, the light changes between them.`,
+    actions: [{ label: `Match ${byId.get(String(f.a))?.name || f.a} to it`, kind: "match_grade", payload: { shot_id: f.a, hero_id: f.b }, primary: true },
+      { label: "Open Takes", kind: "open_tab", payload: { tab: "dailies" } }] }));
+  if (missing.length >= 2 || (missing.length && rows.some((r) => r.stats))) {
+    out.push({ rule: "grade_continuity", key: `grade_measure:${missing.join(",")}`, level: "tip", icon: "palette", title: "Check the grade across cuts?",
+      text: `${missing.length} shot${missing.length > 1 ? "s" : ""} in the cut ${missing.length > 1 ? "have" : "has"} not been measured for colour. ` +
+        "Measure them and the Coach flags a shot that is warmer, cooler, brighter or darker than the one it cuts from.",
+      actions: [{ label: "Measure", kind: "measure_grade", payload: { ids: rows.map((r) => r.id) }, primary: true }] });
+  }
+  return out;
+}
+
 /** No Look picked: the render falls back to a generic style. */
 export function noLook(ctx) {
   if (ctx.lookPicked !== false || !(ctx.scene.actors || []).length) return [];
@@ -574,8 +602,8 @@ export function tour(ctx) {
 // Which rules run on which event. "run" is just before a job is queued.
 export const RULES = {
   stage: [cameraClipping, tooFast, rigLimits, suddenTurn, motionFreedom, staleRender, emptyScene, tour],
-  shots: [cameraClipping, framing, lineCrossing, rigLimits, storyOrder, tour],
-  tab: [noLook, emptyScene, staleDescription],
+  shots: [cameraClipping, framing, lineCrossing, rigLimits, storyOrder, gradeContinuity, tour],
+  tab: [noLook, emptyScene, staleDescription, gradeContinuity],
   open: [tour, emptyScene, motionFreedom, staleDescription],
   run: [staleDescription, suddenTurn, storyOrder, lineCrossing, cameraClipping, framing, tooFast, rigLimits, motionFreedom, staleRender, noLook],
 };

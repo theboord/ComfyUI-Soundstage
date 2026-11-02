@@ -33,3 +33,9 @@ Model weights are not included. Each model has its own license: see `MODELS.md`.
 The lighting setups (`soundstage/look/lighting_setups.json`) and genre style presets (`soundstage/look/style_presets.json`) were written for this project from public sources, in our own words. Film titles are named only as viewing references; no stills, frames or copyrighted text are included, and no real person's name or likeness is used in any prompt.
 
 The film-language knowledge base (`soundstage/cine_kb/`) was written for this project. It summarises techniques in its own words and names its references. It contains no copyrighted text or stills.
+
+## Algorithms and ideas
+
+- **OKLab** (`soundstage/grade/colour.py`): the colour space and its matrices are by Björn Ottosson (2020), published as public domain / MIT at bottosson.github.io/posts/oklab. The matrices are reimplemented here; no code was copied.
+- **ASC CDL** (`soundstage/grade/cdl.py`, `web/grade/grade.mjs`): the American Society of Cinematographers Color Decision List v1.2 formula and the `urn:ASC:CDL:v1.01` XML layout, written from the published specification.
+- **The colour pipeline's feature set** (Steal the look, CDL shot matching, a continuity flag at cuts) follows the ideas of [RickBL99/gobo](https://github.com/RickBL99/gobo) (MIT or Apache-2.0). No gobo code is included: Soundstage's implementation was written separately in numpy.

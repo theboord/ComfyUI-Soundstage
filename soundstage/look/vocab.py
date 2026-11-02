@@ -141,6 +141,12 @@ def normalize_look(look: dict | None) -> tuple[dict, list[str]]:
     out["brief"] = {k: re.sub(r"\s+", " ", str(brief.get(k) or "")).strip()[:400] for k in BRIEF_FIELDS}
     out["description"] = str(look.get("description") or "").strip()
     out["negative"] = str(look.get("negative") or "").strip()
+    col = look.get("colour")   # Steal the look's grade (soundstage/grade): kept for the NLE package, not the prompts
+    if isinstance(col, dict) and (col.get("cdl") or col.get("curve")):
+        from ..grade.cdl import normalize_curve, round_cdl
+        out["colour"] = {"cdl": round_cdl(col.get("cdl")), "curve": normalize_curve(col.get("curve")),
+                         "stock": str(col.get("stock") or ""), "source": str(col.get("source") or ""),
+                         "name": str(col.get("name") or "")[:120]}
     return out, notes
 
 

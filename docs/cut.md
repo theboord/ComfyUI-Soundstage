@@ -339,10 +339,11 @@ export (overwritten), so paths stay predictable:
 | `<name>.fcpxml` | Resolve, Final Cut Pro | FCPXML 1.10: picture spine, audio as connected clips on lanes −1, −2..., `adjust-volume` with fades, markers, relink `<note>`s |
 | `<name>.otio` | Resolve, OTIO tools | V1 plus Audio tracks with gaps; gain and fades in `metadata.soundstage` |
 | `RELINK.txt` | everyone | Each clip still on a stand-in: its rung, its media and what to do |
+| `<name>_grades.ccc`, `<name>_<clip>.cdl` / `.cube`, `<name>_show.cdl` / `.cube`, `GRADE.txt` | Resolve, Avid, Premiere | Only when the cut is graded (Takes → Match grade, Look → Steal the look). Shows each clip's ASC CDL, the 33³ LUTs and the show look. The EDL then also carries `*ASC_SOP` / `*ASC_SAT` under each graded event. See [colour.md](colour.md) |
 | `project.json` | Soundstage | The normalised project as exported |
 | `audio/` | LTX | `<name>_mix.wav`, `<shot_id>_mix.wav` per shot, `index.json` |
 
-The panel's export buttons download the same text files from the browser. Paths are relative there;
+The panel's export buttons download the same text files from the browser. **Grade** downloads the grade files and the EDL as one `.zip`. Paths are relative there;
 the node writes absolute paths under the ComfyUI output folder. AAF and the WAVs are server-only.
 
 - **Media:** a `/view?filename=F&subfolder=S&type=T` URL becomes `S/F` under the matching ComfyUI

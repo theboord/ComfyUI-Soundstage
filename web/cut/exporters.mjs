@@ -6,6 +6,7 @@
 
 import { audible, audioLanes, audioLen, bestRung, layout, noteItems, normalizeProject, sequenceFrames, totalFrames } from "./timeline.mjs";
 import { isOverlap, mergedLevelKeys, toSRT, toVTT, transSpans } from "./fx.mjs";
+import { edlSop, gradeFiles, shotGrade } from "../grade/grade.mjs";
 
 // ---------------------------------------------------------------- time
 
@@ -212,6 +213,7 @@ export function toEDL(input, { reelWidth = 8, sourceStart = 0, mediaRoot = "" } 
       lines.push(`* FROM CLIP NAME: ${oneLine(row.shot.name)}`);
     }
     if (!m.offline) lines.push(`* SOURCE FILE: ${m.path}`);
+    if (shotGrade(row.shot)) lines.push(...edlSop(shotGrade(row.shot)));   // the clip's CDL, as Avid and Resolve read it
     if (m.rung === "source") {
       lines.push(`* SOUNDSTAGE: CAMERA ORIGINAL ${srcSpecText(src)}`);
       for (const n of sourceNotes(src, project)) lines.push(`* SOUNDSTAGE: ${n}`);
@@ -792,6 +794,7 @@ export function exportAll(project, opts = {}) {
     [`${base}.otio`]: JSON.stringify(toOTIO(project, opts), null, 2) + "\n",
     "RELINK.txt": toRelinkList(project, opts),
     ...subtitleFiles(project, base),
+    ...gradeFiles(normalizeProject(project), base),   // .ccc / .cdl / .cube when the cut is graded (web/grade/grade.mjs)
   };
 }
 

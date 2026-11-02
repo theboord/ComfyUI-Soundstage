@@ -48,6 +48,7 @@ Scene fixes (`ops`) don't go through `onAction`. The Coach applies them itself w
 | `story_order` | Advisor shot numbers (`shot.advisor.shot`) out of order in the cut, or a close-up opens the cut while a wide comes later (2+ people) | Reorder / Move the wide first |
 | `camera_clip` | any camera key, sampled every 8 frames, is below the floor, outside the room/tank/street walls, or inside an object | Move it out: back along the view line (or toward the target), lens rescaled to keep the framing |
 | `leaves_frame` | a person visible at the cut's in-frame is out of frame for the last ≥ 20% (min 12 frames) of what the cut shows | Trim the shot |
+| `grade_continuity` | two shots of one scene cut together differ by ≥ ⅓ stop of exposure or ≥ ¼ stop of warmth or tint (their `colour_stats`, measured after their CDL): "1G is 0.4 stops warmer than 1H". Unmeasured shots in the cut get a **Measure** tip | Match <shot> to it (`match_grade`) / Open Takes / Measure (`measure_grade`) |
 | `tiny_subject` | a single/OTS/insert/POV where nobody fills ≥ 3% of the frame | Push in (lens ×1.8) |
 | `line_crossing` | consecutive cut shots on opposite sides of the A–B line (moving cameras and on-axis neutrals are exempt) | Mirror the camera across the line |
 | `too_fast` | a segment faster than the kind's top speed: person 9 m/s, child 7, horse 20, dog 15, cat 13, bike 20, car 70… (mounted riders judged via their mount) | Slow down: retime the keys (or shorten the path if there's no room) to 90% of the limit |
@@ -99,6 +100,7 @@ With the server running, open `http://127.0.0.1:8765/coach/demo.html`.
 
 ## Limitations
 
+- Grade continuity is a grey-world measure. A shot full of red brick reads warmer than blue sky in the same light, so only cuts within a scene are judged (see [colour.md](colour.md)).
 - "Story order" knows the story only from Advisor shot numbers or the wide-first convention. Hand-made shots without tags are judged only by that convention.
 - The leaves-frame check projects the feet-to-head line, not the full silhouette. Someone half out of frame still counts as in.
 - `stale_render` only knows about final renders that happened while this page was open.

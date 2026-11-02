@@ -6,7 +6,9 @@
 
 import * as TL from "./timeline.mjs";
 import * as FX from "./fx.mjs";
-import { exportAll, fpsInfo, framesToTC, recordStart } from "./exporters.mjs";
+import { exportAll, fpsInfo, framesToTC, recordStart, safeName } from "./exporters.mjs";
+import { shotGrade, showLook } from "../grade/grade.mjs";
+import { zipSync, strToU8 } from "../vendor/addons/fflate.module.mjs";
 import { icon } from "../ui/icons.mjs";
 import { openPopover } from "../ui/popover.mjs";
 import { sourceLine } from "../ui/sourcespec.mjs";
@@ -1072,6 +1074,7 @@ export class CutPanel {
     btn2("FCPXML", "FCPXML 1.10 for DaVinci Resolve and Final Cut Pro, with the audio as connected clips", () => this._download(".fcpxml"));
     btn2("OTIO", "OpenTimelineIO for DaVinci Resolve and other OTIO tools", () => this._download(".otio"));
     this.b.srt = btn2("SRT", "Subtitles as SubRip (.srt); the WebVTT comes with the Cut Export node", () => this._download(".srt"));
+    this.b.grade = btn2("Grade", "The colour grade as a .zip: every clip's ASC CDL (.cdl and one .ccc), a 33³ .cube per clip and for the show look, the EDL with *ASC_SOP lines, and GRADE.txt (Resolve, Avid, Premiere). Grade takes in Takes → Match grade; steal a show look in Look", () => this._downloadGrade());
 
     // ---- Milestone 19: picture tools (transitions palette, keys, assemble, titles, subtitles)
     const bar3 = document.createElement("div");
@@ -1326,6 +1329,22 @@ export class CutPanel {
     this.b.keys?.setAttribute("aria-pressed", String(this.keysMode));
     this.b.burn?.setAttribute("aria-pressed", String(!!this.project.burn_subtitles));
     if (this.b.srt) this.b.srt.disabled = !(this.project.subtitles || []).length;
+    if (this.b.grade) this.b.grade.disabled = !this.project.shots.some((sh) => shotGrade(sh)) && !showLook(this.project);
+  }
+
+  /** Every grade file (web/grade/grade.mjs gradeFiles) plus the EDL that carries the CDLs, as one .zip. */
+  _downloadGrade() {
+    const files = this.exportFiles();
+    const keep = Object.keys(files).filter((k) => /(\.ccc|\.cdl|\.cube|\.edl)$/.test(k) || k === "GRADE.txt");
+    if (!keep.some((k) => k === "GRADE.txt")) return;
+    const zip = zipSync(Object.fromEntries(keep.map((k) => [k, strToU8(files[k])])), { level: 6 });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([zip], { type: "application/zip" }));
+    a.download = `${safeName(this.project.name)}_grade.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
 
   _download(suffix) {
