@@ -22,6 +22,7 @@ from comfy_api.latest import IO, InputImpl, Types, UI
 from comfy_execution.graph_utils import GraphBuilder
 
 from .audio import clip as AC
+from . import vram as V
 from .motion import timing as T
 from .nodes_motion import _safe_path, _mtime, _weights
 from .performance import asset as A
@@ -189,7 +190,7 @@ class SoundstagePerformanceCapture(IO.ComfyNode):
         save = g.node("SoundstagePerformanceSave", frames=clip.out(0), pose=pose.out(0), keypoints=pose.out(1),
                       audio=clip.out(1), fps=clip.out(2), name=name, performer=performer, consent=bool(consent),
                       source=source, character=character or "")
-        return IO.NodeOutput(save.out(0), save.out(1), expand=g.finalize())
+        return IO.NodeOutput(save.out(0), save.out(1), expand=V.finalize(g))
 
     @classmethod
     def fingerprint_inputs(cls, source, **kw):
@@ -269,7 +270,8 @@ class SoundstagePerformance(IO.ComfyNode):
         fps = float(a.get("fps") or 24.0)
         g = GraphBuilder()
         clip = g.node("SoundstageClipLoad", source=a["files"]["pose"], fps=fps, start_frame=0, max_frames=frames)
-        gw, gh = PG.render_size(width, height, quality)
+        tier = V.current()
+        gw, gh = PG.render_size(width, height, quality, tier)
         box = a.get("box")
         fit = g.node("SoundstagePoseFit", pose=clip.out(0), width=gw, height=gh,
                      actor_box=json.dumps(box) if box and A.parse_box(target_box) else "",
@@ -281,10 +283,10 @@ class SoundstagePerformance(IO.ComfyNode):
         out = PG.render(g, w, {"pose": fit, "first": first, "audio": clip.out(1) if a.get("has_audio") else None,
                                "frames": frames, "fps": fps, "width": int(width), "height": int(height),
                                "prompt": prompt, "seed": seed, "quality": quality, "audio_mask": float(audio_mask),
-                               "layout": lay, "layout_mix": float(layout_mix or 0.0)})
+                               "layout": lay, "layout_mix": float(layout_mix or 0.0), "vram": tier})
         kw = {"audio": out["audio"]} if keep_voice and out["audio"] is not None else {}
         video = g.node("CreateVideo", images=out["images"], fps=fps, **kw).out(0)
-        return IO.NodeOutput(video, out["images"], fit, expand=g.finalize())
+        return IO.NodeOutput(video, out["images"], fit, expand=V.finalize(g))
 
     @classmethod
     def fingerprint_inputs(cls, asset, first_frame, **kw):

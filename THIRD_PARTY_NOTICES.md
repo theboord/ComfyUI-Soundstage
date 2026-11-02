@@ -24,6 +24,13 @@
 | soundfile | audio I/O | BSD-3-Clause |
 | Chatterbox (optional) | open TTS, voice clone and voice change | MIT |
 
+## Ideas and figures credited (no code copied)
+
+| Project | What Soundstage follows | License |
+|---|---|---|
+| [Arfolomew/backlot](https://github.com/Arfolomew/backlot) | the 16 GB VRAM tier: the w4a8 LTX-2.5 build at 1280×704, `--reserve-vram 0.4 --disable-pinned-memory` (`soundstage/vram.py`, `web/ui/vram_tiers.json`) | MIT |
+| [harlixay7/Kinoloom](https://github.com/harlixay7/Kinoloom) `tool/gpu_broker.py` | unloading models through ComfyUI's `/free` between jobs on small cards (`web/ui/vramtier.mjs`); nothing from Kinoloom's GPL-licensed files is used | MIT |
+
 Openjutsu's patched node pack is GPL. Soundstage links to it as an optional install and does not include any of its code.
 
 Model weights are not included. Each model has its own license: see `MODELS.md`. MiniMax H3 (the optional second video engine) is by MiniMax, under the MiniMax H3 Community License; the App names it "MiniMax H3" wherever it can be picked. In the Router, every model shows its license badge, and non-commercial models are marked.

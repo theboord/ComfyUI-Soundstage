@@ -15,6 +15,7 @@ image, images, mask, params (the chosen option's nested widgets), weights {role:
 import math
 
 from ..look.frame_lock import DEFAULT_DENOISE, INIT_DOWN, KREA_STEPS, depth_lock, stage_denoise
+from .. import vram as V
 
 
 class RouterError(ValueError):
@@ -597,7 +598,7 @@ def ltx25(g, m, p):
 def ltx25_i2v(g, m, p):
     """Template video_ltx2_5_i2v (two-stage distilled with audio); t2v when no first_frame."""
     w = p["weights"]
-    W, H = snap(p["width"], 64), snap(p["height"], 64)
+    W, H = V.video_size(snap(p["width"], 64), snap(p["height"], 64), p.get("vram"))   # VRAM tier cap
     frames = ltx_frames(p["frames"])
     model, vae, pos, neg = _ltx_core(g, w, p)
     audio_vae = g.node("VAELoader", vae_name=w["audio_vae"]).out(0)
@@ -632,7 +633,7 @@ def ltx25_l2r(g, m, p):
     if not w.get("l2r_lora"):
         raise RouterError("Layout-to-Render needs the ComfyUI-LTXVideo nodes and "
                           "ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors in loras.")
-    W, H = snap(p["width"], 64), snap(p["height"], 64)
+    W, H = V.video_size(snap(p["width"], 64), snap(p["height"], 64), p.get("vram"))   # VRAM tier cap
     frames = ltx_frames(p["frames"])
     base, vae, pos, neg = _ltx_core(g, w, p)
     lora = g.node("LTXICLoRALoaderModelOnly", model=base, lora_name=w["l2r_lora"], strength_model=1.0)

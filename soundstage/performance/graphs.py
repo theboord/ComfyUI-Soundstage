@@ -15,6 +15,7 @@ in soundstage/footage/graphs.ltx_union_recast) driven by a captured performance 
 The voice on the result is the actor's own recording, untouched.
 """
 from ..footage import graphs as FG
+from .. import vram as V
 
 WEIGHTS = dict(FG.LTX_WEIGHTS)
 AUDIO_MASK = 0.3
@@ -25,10 +26,26 @@ LIPSYNC_HINT = "The person is talking, natural lip-sync with the dialogue, real 
 NEGATIVE = FG.LTX_NEGATIVE + ", frozen mouth, closed mouth while talking, mannequin face, plastic skin, waxy face"
 
 
-def render_size(width, height, quality="Draft"):
+def tier_quality(quality="Draft", vram=None):
+    """The quality's stage-1 short side and refine for the VRAM tier (soundstage/vram.py): stage 1 capped, the x2
+    refine off where the tier turns it off. 48 GB (or no tier): the table as measured."""
+    q = dict(QUALITY.get(quality, QUALITY["Draft"]))
+    if vram and vram.get("tier") != "48":
+        if vram.get("refine") == "off":
+            q["refine"] = False
+            cap = int(vram.get("one_pass_short") or 512)
+            if cap < q["short"]:
+                q["short"] = cap // 64 * 64
+        elif vram.get("stage1_short"):
+            cap = int(vram["stage1_short"])
+            if cap < q["short"]:
+                q["short"] = cap // 64 * 64   # guide_size rounds to 64: stay under the cap
+    return q
+
+
+def render_size(width, height, quality="Draft", vram=None):
     """Stage-1 / guide size for the render aspect: shorter side at the quality's size, multiples of 64."""
-    q = QUALITY.get(quality, QUALITY["Draft"])
-    return FG.guide_size(width, height, short=q["short"])
+    return FG.guide_size(width, height, short=tier_quality(quality, vram)["short"])
 
 
 def prompt_text(prompt, has_audio=True):
@@ -64,10 +81,10 @@ def render(g, w, p):
     """p: pose (IMAGE link, fitted skeleton frames), first (IMAGE link, the shot's frame), audio (AUDIO link or None),
     frames (int, 8k+1), fps, width/height (shot aspect), prompt, negative, seed, quality, audio_mask, layout (IMAGE link
     or None), layout_mix. Returns {"images", "audio"} links."""
-    q = QUALITY.get(p.get("quality", "Draft"), QUALITY["Draft"])
+    q = tier_quality(p.get("quality", "Draft"), p.get("vram"))
     fps = float(p["fps"])
     n = int(p["frames"])
-    gw, gh = render_size(p["width"], p["height"], p.get("quality", "Draft"))
+    gw, gh = render_size(p["width"], p["height"], p.get("quality", "Draft"), p.get("vram"))
     has_audio = p.get("audio") is not None
 
     base = g.node("UNETLoader", unet_name=w["unet"], weight_dtype="default").out(0)

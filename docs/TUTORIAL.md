@@ -34,7 +34,7 @@ This guide is for anyone who has just cloned the repo. It covers where every pan
 | | |
 |---|---|
 | ComfyUI | A recent version with **App mode**. |
-| GPU | NVIDIA, **48 GB of VRAM recommended** (tested on an RTX 6000 Ada). 24 GB cards need offloading and are untested. |
+| GPU | NVIDIA. **Tested on 48 GB** (an RTX 6000 Ada). The 24, 16 and 12 GB VRAM tiers (Settings › Soundstage › Hardware) shrink the render graphs but are **untested**: see [hardware.md](hardware.md). |
 | Disk | About 60 GB for the models. |
 | Browser | Any modern browser. The 3D stage, the Look tab and the Cut tab run in the browser and need no GPU models at all. |
 

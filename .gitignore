@@ -43,3 +43,4 @@ scratch/
 
 # Visual check runs (tools/qa/visual_baseline.mjs); the baselines in tests/visual/baselines/ are committed
 tests/visual/out/
+soundstage_vram.json

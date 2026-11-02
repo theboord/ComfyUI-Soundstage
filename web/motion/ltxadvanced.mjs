@@ -7,6 +7,8 @@
 //
 // Pure helpers (resolveSettings, stageSizes, estimateSeconds, compactSettings) have no DOM and are unit-tested.
 
+import { capSettings } from "../ui/vramtier.mjs";
+
 export const PRESETS = {
   Draft: {
     label: "Draft", tip: "A quick look: 8 + 3 steps, 1080p class. Faces readable, motion approximate.",
@@ -138,6 +140,15 @@ export function summary(s, w, h, frames, fps = 24) {
   const codec = s.codec === "prores_hq" ? "ProRes 422 HQ + H.264" : `H.264 CRF ${s.crf}`;
   return `${s.preset === "Hollywood" ? "Hollywood" : s.preset}: ${sz.output[0]}×${sz.output[1]}, ${steps}, ${outF} frames at ${outFps} fps, ` +
     `${codec}. ${fmtTime(estimateSeconds(s, w, h, frames))} for the final on this GPU.`;
+}
+
+/** The summary for the size the server will really render on this VRAM tier (web/ui/vramtier.mjs), plus why. */
+export function vramSummary(s, w, h, frames, fps = 24, tier = null) {
+  const { s: capped, note } = tier ? capSettings(s, tier) : { s, note: "" };
+  let line = summary(capped, w, h, frames, fps);
+  // the time is calibrated on the 48 GB card; offloading to system RAM on a smaller one is slower by an unmeasured amount
+  if (tier && tier !== "48") line = line.replace("for the final on this GPU.", "on the 48 GB card (slower on this one, not measured).");
+  return line + (note ? ` ${note}` : "");
 }
 
 /** Per-shot settings store: {sid: {preset, ...overrides}} kept compact, saved through `save` on every change. */
@@ -329,7 +340,7 @@ export class LtxAdvanced {
     const changed = Object.keys(compactSettings(sv)).filter((k) => k !== "preset");
     f.base.textContent = changed.length ? `${s.preset} preset, changed: ${changed.join(", ")}` : `${s.preset} preset, as tuned`;
     f.base.classList.toggle("chg", changed.length > 0);
-    f.est.textContent = summary(s, d.w, d.h, d.frames, d.fps);
+    f.est.textContent = vramSummary(s, d.w, d.h, d.frames, d.fps, globalThis.__ssVram?.tier);
     this.btn.textContent = changed.length ? "Advanced (LTX) •" : "Advanced (LTX)";
   }
 }

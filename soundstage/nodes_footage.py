@@ -21,6 +21,7 @@ from comfy_api.latest import IO, InputImpl
 from comfy_execution.graph_utils import GraphBuilder
 
 from .footage import clip as C
+from . import vram as V
 from .footage import graphs as GR
 from .footage import matte as M
 
@@ -213,7 +214,7 @@ class SoundstageFootage(IO.ComfyNode):
         sel = g.node("SoundstageTrackSelect", track_data=track, subject=0 if (pts and subject < 0) else subject,
                      footage_json=dec.out(4), subject_prompt=subject_prompt, points=pts or "")
         return IO.NodeOutput(dec.out(0), sel.out(0), sel.out(1), dec.out(1), dec.out(2), dec.out(3), sel.out(2),
-                             expand=g.finalize())
+                             expand=V.finalize(g))
 
 
 # ====================================================================== Composite
@@ -410,7 +411,7 @@ class SoundstageRecast(IO.ComfyNode):
         comp_video = g.node("CreateVideo", images=comp.out(0), fps=fps, **vid_kw).out(0)
         swap_video = g.node("CreateVideo", images=swap, fps=fps, **vid_kw).out(0)
         return IO.NodeOutput(comp_video, comp.out(0), swap_video, comp.out(1), comp.out(2), images,
-                             expand=g.finalize())
+                             expand=V.finalize(g))
 
     # ---------------------------------------------------------------- engines
 

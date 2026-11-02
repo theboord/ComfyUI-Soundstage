@@ -20,6 +20,7 @@ from comfy_execution.graph_utils import GraphBuilder
 from .router import registry as R
 from .look import frame_lock as FL
 from .router.adapters import ADAPTERS, RouterError
+from . import vram as V
 
 _TTL_S = 30
 _cache: dict[str, tuple[float, list]] = {}
@@ -128,6 +129,7 @@ class _Router(IO.ComfyNode):
              "refs": [v[k] for k in ("ref_1", "ref_2", "ref_3") if v.get(k) is not None],
              "image": v.get("image"), "images": v.get("images"), "mask": v.get("mask"),
              "params": params, "weights": weights, "variant": m.get("variant"),
+             "vram": V.current() if cls.STAGE == "generate_video" else None,
              "steps": int(v.get("steps") or 0), "cfg": float(v.get("cfg") or 0.0),
              "lora": v.get("lora") if v.get("lora") not in (None, "", "None") else None,
              "lora_strength": float(v.get("lora_strength") if v.get("lora_strength") is not None else 1.0)}
@@ -183,7 +185,7 @@ class SoundstageGenerateImage(_Router):
     @classmethod
     def execute(cls, prompt, model, width, height, seed, **kw) -> IO.NodeOutput:
         outs, g = cls._expand(model, prompt=prompt, width=width, height=height, seed=seed, **kw)
-        return IO.NodeOutput(outs["image"], expand=g.finalize())
+        return IO.NodeOutput(outs["image"], expand=V.finalize(g))
 
 
 class SoundstageEditImage(_Router):
@@ -246,7 +248,7 @@ class SoundstageEditImage(_Router):
     @classmethod
     def execute(cls, prompt, model, width, height, seed, **kw) -> IO.NodeOutput:
         outs, g = cls._expand(model, prompt=prompt, width=width, height=height, seed=seed, **kw)
-        return IO.NodeOutput(outs["image"], expand=g.finalize())
+        return IO.NodeOutput(outs["image"], expand=V.finalize(g))
 
 
 class SoundstageGenerateVideo(_Router):
@@ -303,7 +305,7 @@ class SoundstageGenerateVideo(_Router):
         outs, g = cls._expand(model, prompt=prompt, width=width, height=height, frames=frames, fps=fps,
                               seed=seed, **kw)
         frames_out = g.node("GetVideoComponents", video=outs["video"]).out(0)
-        return IO.NodeOutput(outs["video"], frames_out, expand=g.finalize())
+        return IO.NodeOutput(outs["video"], frames_out, expand=V.finalize(g))
 
 
 class SoundstageMatte(_Router):
@@ -335,7 +337,7 @@ class SoundstageMatte(_Router):
     @classmethod
     def execute(cls, prompt, model, fps, seed, **kw) -> IO.NodeOutput:
         outs, g = cls._expand(model, prompt=prompt, fps=fps, seed=seed, **kw)
-        return IO.NodeOutput(outs["images"], outs["mask"], expand=g.finalize())
+        return IO.NodeOutput(outs["images"], outs["mask"], expand=V.finalize(g))
 
 
 class SoundstageCleanPlate(_Router):
@@ -367,7 +369,7 @@ class SoundstageCleanPlate(_Router):
     @classmethod
     def execute(cls, prompt, model, fps, seed, **kw) -> IO.NodeOutput:
         outs, g = cls._expand(model, prompt=prompt, fps=fps, seed=seed, **kw)
-        return IO.NodeOutput(outs["images"], expand=g.finalize())
+        return IO.NodeOutput(outs["images"], expand=V.finalize(g))
 
 
 NODES = [SoundstageGenerateImage, SoundstageEditImage, SoundstageGenerateVideo, SoundstageMatte, SoundstageCleanPlate]

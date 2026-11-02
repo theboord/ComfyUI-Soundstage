@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "about": "VRAM tiers for the render graphs. Read by soundstage/vram.py and web/ui/vramtier.mjs (a test keeps the JS copy identical). Only 48 is tested on hardware (RTX 6000 Ada); 24/16/12 are untested estimates. 16 GB numbers follow Arfolomew/backlot (MIT): LTX-2.5 w4a8 at 1280x704 on a 16 GB card.",
+  "tested": [
+    "48"
+  ],
+  "tiers": {
+    "48": {
+      "te_device": "default",
+      "stage1_short": null,
+      "refine": "on",
+      "free_between": false,
+      "decode": null,
+      "prefer": "quality",
+      "flags": [],
+      "note": "48 GB: everything as tested on the RTX 6000 Ada."
+    },
+    "24": {
+      "te_device": "cpu",
+      "stage1_short": 544,
+      "refine": "on",
+      "free_between": true,
+      "decode": {
+        "tile_size": 384,
+        "overlap": 64,
+        "temporal_size": 64,
+        "temporal_overlap": 16
+      },
+      "prefer": "int8",
+      "flags": [
+        "--reserve-vram 1"
+      ],
+      "note": "24 GB (untested): text encoders on the CPU, int8 weights, stage 1 at most 544p (outputs up to 1088p, so Hollywood renders at 1088p, not 1408p), smaller decode tiles, models freed after each prompt."
+    },
+    "16": {
+      "te_device": "cpu",
+      "stage1_short": 352,
+      "refine": "tiled",
+      "free_between": true,
+      "decode": {
+        "tile_size": 256,
+        "overlap": 32,
+        "temporal_size": 32,
+        "temporal_overlap": 8
+      },
+      "prefer": "small",
+      "flags": [
+        "--reserve-vram 0.4",
+        "--disable-pinned-memory"
+      ],
+      "note": "16 GB (untested): needs the w4a8 LTX-2.5 build for Motion. Stage 1 at most 352p (outputs up to 704p, the size backlot renders on 16 GB). Hollywood's x2 refine stays on but decodes in small tiles, so Hollywood = Final at 704p. Text encoders on the CPU, models freed after each prompt."
+    },
+    "12": {
+      "te_device": "cpu",
+      "stage1_short": 256,
+      "refine": "off",
+      "one_pass_short": 512,
+      "free_between": true,
+      "decode": {
+        "tile_size": 256,
+        "overlap": 32,
+        "temporal_size": 32,
+        "temporal_overlap": 8
+      },
+      "prefer": "small",
+      "flags": [
+        "--reserve-vram 0.4",
+        "--disable-pinned-memory",
+        "--lowvram"
+      ],
+      "note": "12 GB (untested): the x2 refine is OFF for every preset, Hollywood included: Motion renders one pass at 512p. The w4a8 LTX-2.5 build (12.5 GB) still does not fit whole, so ComfyUI offloads part of it to system RAM: slow. Text encoders on the CPU, models freed after each prompt."
+    }
+  }
+}

@@ -16,6 +16,7 @@ import numpy as np
 from comfy_api.latest import IO
 
 from . import fill_math as F
+from . import vram as V
 from .nodes_router import HIDDEN, _common_tail, _loras, _media, _model_input, _Router
 from .router.fill_graph import FILL_DEFAULTS, build_fill
 
@@ -224,7 +225,7 @@ class SoundstageFill(_Router):
         # The router adds only the reference labels ("image 2 shows …") here; build_fill writes the instruction.
         m, p, g = cls._prepare(model, prompt="", seed=seed, **kw)
         outs = build_fill(g, m, p, settings)
-        return IO.NodeOutput(outs["image"], outs["layer"], outs["mask"], expand=g.finalize())
+        return IO.NodeOutput(outs["image"], outs["layer"], outs["mask"], expand=V.finalize(g))
 
 
 NODES = [SoundstageFill, SoundstageFillCrop, SoundstageFillStitch, SoundstagePadForFill]

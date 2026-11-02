@@ -21,6 +21,7 @@ from comfy_api.latest import IO, InputImpl
 from comfy_execution.graph_utils import GraphBuilder
 
 from .footage import clip as C
+from . import vram as V
 from .footage import graphs as FG
 from .motion import graphs as MG
 from .motion import timing as T
@@ -228,10 +229,10 @@ class SoundstageRipple(IO.ComfyNode):
         edited = g.node("SoundstageImageLoad", source=edited_frame).out(0)
         frames = MG.ripple(g, w, {"images": clip.out(0), "edited": edited, "frames": len(idx), "fps": fps,
                                   "width": W, "height": H, "prompt": prompt, "seed": seed, "strength": edit_strength,
-                                  "quality": quality, "color_match": color_match})
+                                  "quality": quality, "color_match": color_match, "vram": V.current()})
         kw = {"audio": clip.out(1)} if keep_audio else {}
         video = g.node("CreateVideo", images=frames, fps=fps, **kw).out(0)
-        return IO.NodeOutput(video, frames, clip.out(4), expand=g.finalize())
+        return IO.NodeOutput(video, frames, clip.out(4), expand=V.finalize(g))
 
 
 # ====================================================================== Pose follow
@@ -294,7 +295,7 @@ class SoundstagePoseFollow(IO.ComfyNode):
         if pose_vis is None:
             pose_vis = out
         video = g.node("CreateVideo", images=out, fps=float(fps)).out(0)
-        return IO.NodeOutput(video, out, pose_vis, expand=g.finalize())
+        return IO.NodeOutput(video, out, pose_vis, expand=V.finalize(g))
 
 
 NODES = [SoundstageClipLoad, SoundstageImageLoad, SoundstageSheetLoad, SoundstageRipple, SoundstagePoseFollow]

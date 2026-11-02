@@ -20,6 +20,7 @@ from comfy_api.latest import IO, UI
 
 from . import ltx_settings as L
 from . import quality as Q
+from . import vram as V
 
 QUALITIES = ["Draft", "Final HQ", "Final", "Hollywood"]   # appended, so saved workflows keep their values
 
@@ -120,7 +121,7 @@ class SoundstageQuality(IO.ComfyNode):
     @classmethod
     def execute(cls, motion_freedom, quality, guide, motion_prompt, scene_json=None, advanced="",
                 fps=None) -> IO.NodeOutput:
-        st = settings_for(quality, advanced)
+        st = V.cap_settings(settings_for(quality, advanced), V.current())   # VRAM tier (soundstage/vram.py)
         tier = "draft" if st["preset"] == "Draft" else "final"
         k = Q.knobs(motion_freedom, tier=tier)
         s1, s2 = L.schedules(st)

@@ -19,6 +19,7 @@ Pose follow = the union-control IC-LoRA (pose/depth/canny, ref0.5) driven by an 
 graph as Recast's LTX engine (soundstage/footage/graphs.ltx_union_recast) with the guide supplied directly.
 """
 from ..footage import graphs as FG
+from .. import vram as V
 
 RIPPLE_WEIGHTS = {
     "unet": FG.LTX_WEIGHTS["unet"],
@@ -61,6 +62,7 @@ def ripple(g, w, p):
     """p: images (source frames link), edited (edited frame-1 link), frames (int, 8k+1), fps, width/height (source
     size), prompt, seed, strength, quality, color_match. Returns the edited frames (IMAGE link) at the render size."""
     W, H = ripple_size(p["width"], p["height"], p.get("quality", "Draft"))
+    W, H = V.cap_short(W, H, V.one_pass_cap(p.get("vram")))   # VRAM tier: smaller single pass on small cards
     F = int(p["frames"])
     fps = float(p["fps"])
     steps = int(p.get("steps") or QUALITY.get(p.get("quality", "Draft"), QUALITY["Draft"])["steps"])

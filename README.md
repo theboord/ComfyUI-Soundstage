@@ -64,6 +64,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 
 | When | Update |
 |---|---|
+| Nov 2, 15:30 PST | **VRAM tiers (untested below 48 GB):** Settings › Soundstage › Hardware picks Auto, 48, 24, 16 or 12 GB, and a GPU setup check says what fits. See [docs/hardware.md](docs/hardware.md). |
 | Nov 2, 11:10 PST | **Try-it demo at phone width:** long chooser chips and the frame-generate row wrap, and the Coach pill steps below the **Identical?** bar. |
 | Nov 2, 10:45 PST | **Try it in your browser:** a first screen that shows clay becoming the shot, a 10-stop tour of what's new, and a real Video → 3D run replayed through the App. Video → 3D seats a car's driver and builds a city street; the rebuild is still the basic version. |
 | Nov 2, 10:13 PST | **Docs checked against the code:** README, Quickstart, Tutorial, MCP and Video → 3D pages match the App today, including what the Video → 3D server doesn't do yet. |
@@ -439,7 +440,7 @@ This link only opens for other people once the owner shares them publicly.
 **Requirements**
 
 - ComfyUI, a recent version with App mode.
-- An NVIDIA GPU. 48 GB of VRAM is recommended (tested on an RTX 6000 Ada). 24 GB cards need offloading and are untested.
+- An NVIDIA GPU. **Tested:** 48 GB (an RTX 6000 Ada), the only card Soundstage has rendered on. **Untested:** 24, 16 and 12 GB. Pick your card in **Settings › Soundstage › Hardware › VRAM tier** (or leave it on Auto): smaller weight builds when you have them, text encoders on the CPU, lower Motion resolution (24 GB: up to 1088p; 16 GB: up to 704p; 12 GB: one pass at 512p, no x2 refine) and smaller decode tiles. A GPU setup check says which features should fit; nobody has run them on those cards yet. See [docs/hardware.md](docs/hardware.md).
 - About 60 GB of disk for the models.
 - The stage, the Look tab and the Edit tab (the Cut) run in any browser and need no GPU models.
 
@@ -536,6 +537,7 @@ Vendored components and their licenses are listed in [THIRD_PARTY_NOTICES.md](TH
 - [decisions.md](docs/decisions.md): the development log, with every design decision and its reason.
 - Components: [director](docs/director.md), [mcp](docs/mcp.md), [quality](docs/quality.md), [look](docs/look.md), [agent](docs/agent.md), [advisor](docs/advisor.md), [coach](docs/coach.md), [layerpack](docs/layerpack.md), [cut](docs/cut.md), [audio](docs/audio.md), [recast](docs/recast.md), [vcam](docs/vcam.md), [router](docs/router.md), [assets3d](docs/assets3d.md), [interop](docs/interop.md), [oneclick](docs/oneclick.md), [swim](docs/swim.md), [performance](docs/performance.md), [ripple](docs/ripple.md), [touchup](docs/touchup.md), [video2stage](docs/video2stage.md), [floorplan](docs/floorplan.md), [canvas](docs/canvas.md), [source_fidelity](docs/source_fidelity.md).
 - [QUICKSTART.md](docs/QUICKSTART.md): a first shot, then a one-page scene.
+- [hardware.md](docs/hardware.md): VRAM tiers (48 GB tested; 24, 16 and 12 GB untested) and the GPU setup check.
 
 ## License
 

@@ -54,6 +54,7 @@ import { VIDEO_ACCEPT, cameraRaw, fetchSourceSpec, rawExplainer, sourceLine } fr
 import { JobCard, chooseVideoUse, clipSeconds, v2sPlan, wireVideoDrop, isVideoFile, flawsFromNotes, V2S_LABEL, V2S_TIP } from "./ui/videoimport.mjs";
 import { mountCompare } from "./ui/v2scompare.mjs";
 import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
+import { vramSetting, installFreeAfterRender, fetchReport, remember } from "./ui/vramtier.mjs";
 import { mountDirector } from "./agent/directorpanel.mjs";
 import { mountBook } from "./book/book.mjs";
 import { mountPresets } from "./ui/presets.mjs";
@@ -3894,6 +3895,17 @@ function decorate(root) {
     if (PRIMARY.has(label)) b.classList.add("ss-primary");
   }
 }
+
+// VRAM tier (Settings › Soundstage › Hardware): the server applies it to every graph (soundstage/vram.py); here we
+// keep its report for ⑤ Motion's summary and unload models after each finished prompt on 24 GB and below.
+app.registerExtension({
+  name: "soundstage.vram",
+  settings: [vramSetting(api)],
+  async setup() {
+    installFreeAfterRender(api);
+    try { remember(await fetchReport(api)); } catch { /* older server: no tier */ }
+  },
+});
 
 app.registerExtension({
   name: "soundstage.stage",
