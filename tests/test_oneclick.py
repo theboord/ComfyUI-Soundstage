@@ -19,7 +19,7 @@ WEB = ROOT / "web" / "oneclick"
 def _node_ids():
     """The ids the JS modules really register (node imports them and lists the registry)."""
     code = ("const o = await import(process.argv[1] + '/oneclick.mjs');"
-            "for (const m of ['effects','light','angle','expand']) await import(process.argv[1] + '/' + m + '.mjs');"
+            "for (const m of ['effects','light','angle','expand','refocus']) await import(process.argv[1] + '/' + m + '.mjs');"
             "console.log(JSON.stringify(o.oneClicks().map(s => [s.id, s.group])));")
     p = subprocess.run(["node", "--input-type=module", "-e", code, WEB.as_uri()], capture_output=True, text=True, timeout=60)
     if p.returncode != 0:

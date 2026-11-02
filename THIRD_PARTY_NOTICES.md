@@ -12,6 +12,12 @@
 | Car, Police Car, Sports Car by Quaternius | `web/stage/models/*.glb` | CC0 1.0 (public domain), via [poly.pizza](https://poly.pizza/u/Quaternius) |
 | [three-avbd](https://github.com/sbobyn/three-avbd) 0.3.0 (GPU rigid bodies, Augmented Vertex Block Descent) by Steven Bobyn, which ports Chris Giles's avbd-demo3d | `web/vendor/three-avbd/` (built ES modules, renamed `.mjs`; the WebGPURenderer drawing path left out; modified: speculative contacts for fast and kinematic bodies in `avbd3d/gpu/wgsl-collision.mjs` and `wgsl-solve.mjs`, marked `[Soundstage patch]`) | MIT, see `web/vendor/three-avbd/LICENSE` and its `THIRD_PARTY_NOTICES.md` (avbd-demo3d: MIT, © 2025 Chris Giles) |
 
+## Adapted code (modified, in our own files)
+
+| Component | Where | License |
+|---|---|---|
+| [Hero Frame Rig](https://github.com/metababe-eth/hero-frame-rig) focus pack, the folder `ComfyUI-HeroFrameRig/hfr_core/` at commit `946d80a` (2026-10-31): the optical renderer's thin-lens circle of confusion, antialiased disc kernel, sRGB/linear conversion, "behind" gather and far-to-near layer composite (`optical.py`), its gated 3-frame depth filter, colour-guided edge repair and quintic pull ease (`optical.py`), `_fft_size` (`__init__.py`) and `patch_level` (`_support.py`) | `soundstage/refocus/optics.py`, `plan.py`, `depth.py`: ported from torch to numpy and changed; each file's header says what was taken and what changed | MIT, Copyright (c) 2026 Maxwell / Hero Frame Rig contributors, see `soundstage/refocus/LICENSE.HeroFrameRig`. Only that MIT folder was used: nothing from the repo root's Apache-2.0 app code, and nothing from its Legacy renderer (tuned to match a third-party pack). The optional Bright bokeh highlight lift is ours, not Hero Frame Rig's (its renderer invents no radiance). |
+
 ## Used at runtime, installed separately (not vendored)
 
 | Component | Why | License |

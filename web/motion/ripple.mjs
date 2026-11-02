@@ -167,6 +167,29 @@ function ensureCss() {
   document.head.append(h("style", { id: "ss-ripple-css" }, CSS));
 }
 
+/** The last frame of a video URL as a PNG data URL (Refocus's mark B is tapped on it). */
+export function lastFrameDataURL(url) {
+  return new Promise((resolve, reject) => {
+    const v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.preload = "auto"; v.crossOrigin = "anonymous";
+    const fail = () => reject(new Error("the clip didn't load in the browser"));
+    const t = setTimeout(fail, 30000);
+    v.addEventListener("error", () => { clearTimeout(t); fail(); });
+    // a frame short of the end: seeking exactly to the duration shows nothing in some browsers
+    v.addEventListener("loadedmetadata", () => { try { v.currentTime = Math.max(0, (v.duration || 0) - 0.05); } catch { /* */ } });
+    v.addEventListener("seeked", () => {
+      clearTimeout(t);
+      try {
+        const c = document.createElement("canvas");
+        c.width = v.videoWidth; c.height = v.videoHeight;
+        c.getContext("2d").drawImage(v, 0, 0);
+        resolve(c.toDataURL("image/png"));
+      } catch (e) { reject(e); }
+    }, { once: true });
+    v.src = url;
+  });
+}
+
 /** Frame 1 of a video URL as a PNG data URL (the start of what Ripple edits). */
 export function firstFrameDataURL(url) {
   return new Promise((resolve, reject) => {

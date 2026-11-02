@@ -19,7 +19,8 @@
 //   // target = { kind: "still"|"clip", ref: "sub/x.mp4 [output]", url, shot, take_id, recipe, from, label, thumb }
 //
 // Optional spec fields: jobs (GPU jobs a run queues, default 1), fields ([{id, label, placeholder, type, when}],
-// shown in the ask strip), badge ("approximate", "exact", "experimental"), preview (a CSS filter or a draw(ctx, w, h)
+// shown in the ask strip; type "text" | "check" | "select" | "point": a tap on the take's first or last frame, value
+// "x,y" in 0..1, field.frame = "first" | "last"), badge ("approximate", "exact", "experimental"), preview (a CSS filter or a draw(ctx, w, h)
 // for the card thumbnail: a sketch of the effect on your own picture), order (sort inside the group).
 //
 // Pure helpers are exported for tests (tests/js/oneclick.test.mjs); OneClickPanel and attachOneClick are the DOM part.
@@ -123,6 +124,18 @@ export function makeTarget({ url = "", file = null, ref = "", shot = "", take_id
   if (!r) return null;
   return { kind: isClipRef(r) ? "clip" : "still", ref: r, url: url || "", shot: String(shot || ""), take_id: String(take_id || ""),
     take_kind: String(take_kind || ""), label: label || "", thumb: thumb || (isClipRef(r) ? "" : url), from, recipe, stage: !!stage, width: +width || 0, height: +height || 0 };
+}
+
+/** A tapped point "x,y" (0..1, 3 decimals), and back: [x, y] or null. */
+export function fmtPoint(x, y) {
+  const c = (v) => Math.min(1, Math.max(0, +v || 0)).toFixed(3);
+  return `${c(x)},${c(y)}`;
+}
+export function readPoint(v) {
+  const m = /^\s*(-?[\d.]+)\s*[,;]\s*(-?[\d.]+)\s*$/.exec(String(v ?? ""));
+  if (!m) return null;
+  const x = +m[1], y = +m[2];
+  return Number.isFinite(x) && Number.isFinite(y) ? [Math.min(1, Math.max(0, x)), Math.min(1, Math.max(0, y))] : null;
 }
 
 /** Where a one-click saves: output/soundstage_private/oneclick/<shot>_<id> (private: never the shared refs). */
@@ -270,12 +283,13 @@ export class OneClickPanel {
     this.ask = h("div", { class: "ss-oc-ask", hidden: true });
     this.foot = h("div", { class: "ss-oc-foot" }, this.status = h("span", { class: "tx" }, "Pick one. Each result lands as a new take on the shot."));
     this.res = h("div", { class: "ss-oc-res", hidden: true });
+    this.cmp = h("div", { class: "ss-oc-cmp", hidden: true });   // before / after wipe of a result, in place of the cards
     this.el = h("div", { class: "ss-oc", hidden: true, role: "dialog", "aria-label": "One-click" },
       h("div", { class: "ss-oc-head" }, h("span", { class: "t" }, h("span", { class: "st" }, "✦"), "One-click"), this.thumb, this.tname, this.q,
         h("button", { type: "button", class: "ib", title: "Close (Esc)", "aria-label": "Close", on: { click: () => this.close() } }, "✕")),
-      this.grid, this.res, this.ask, this.foot);
+      this.grid, this.cmp, this.res, this.ask, this.foot);
     for (const ev of ["pointerdown", "wheel", "keydown"]) this.el.addEventListener(ev, (e) => { if (ev !== "keydown" || e.key !== "Escape") e.stopPropagation(); }, { passive: ev === "wheel" });
-    this.el.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); if (!this.ask.hidden) this._hideAsk(); else this.close(); } });
+    this.el.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); if (!this.cmp.hidden) this._hideCompare(); else if (!this.ask.hidden) this._hideAsk(); else this.close(); } });
     (host.root || document.body).append(this.el);
   }
 
@@ -304,7 +318,7 @@ export class OneClickPanel {
     setTimeout(() => { try { this.q.focus({ preventScroll: true }); } catch { /* detached */ } }, 0);
   }
 
-  close() { this.el.hidden = true; this._hideAsk(); }
+  close() { this.el.hidden = true; this._hideAsk(); this._hideCompare(); }
 
   async refreshModels() {
     const api = this.host.api;
@@ -360,29 +374,120 @@ export class OneClickPanel {
     const t = this.target;
     const fields = (spec.fields || []).filter((f) => !f.when || f.when(t));
     const inputs = {};
+    const points = [];   // "point" fields (Refocus's marks) sit side by side at the left, the other controls in a grid beside them
     const rows = fields.map((f) => {
+      if (f.type === "point") { const p = this._pointField(f, t); inputs[f.id] = p.input; points.push(p.el); return null; }
       const inp = f.type === "check" ? h("input", { type: "checkbox" }) : f.type === "select"
         ? h("select", {}, ...(f.options || []).map(([v, l]) => h("option", { value: v }, l)))
         : h("input", { type: "text", placeholder: f.placeholder || "" });
       if (f.value != null) { if (f.type === "check") inp.checked = !!f.value; else inp.value = String(f.value); }
       inputs[f.id] = inp;
-      return f.type === "check" ? h("label", { class: "ck" }, inp, f.label) : h("label", { class: "fl" }, h("span", {}, f.label), inp);
-    });
-    const go = h("button", { type: "button", class: "go", "data-act": "oneclick-run" }, spec.gpu ? `Run (${costLabel(spec, t).replace(/^\$0 · /, "")})` : "Go");
-    const cancel = h("button", { type: "button", on: { click: () => this._hideAsk() } }, "Cancel");
-    go.addEventListener("click", () => {
+      if (f.title) inp.title = f.title;
+      return f.type === "check" ? h("label", { class: "ck", title: f.title || "" }, inp, f.label) : h("label", { class: "fl", title: f.title || "" }, h("span", {}, f.label), inp);
+    }).filter(Boolean);
+    const readOpts = () => {
       const opts = {};
       for (const [k, el] of Object.entries(inputs)) opts[k] = el.type === "checkbox" ? el.checked : el.value;
+      return opts;
+    };
+    // spec.gpuWith(opts, target): whether these choices use the GPU (Refocus on the stage's depth does not)
+    const runLabel = () => ((spec.gpuWith ? spec.gpuWith(readOpts(), t) : spec.gpu) ? `Run (${costLabel(spec, t).replace(/^\$0 · /, "")})` : spec.gpu ? "Run (no GPU)" : "Go");
+    const go = h("button", { type: "button", class: "go", "data-act": "oneclick-run" }, runLabel());
+    const cancel = h("button", { type: "button", on: { click: () => this._hideAsk() } }, "Cancel");
+    go.addEventListener("click", () => {
+      const opts = readOpts();
       this._hideAsk();
       this.run(spec, t, opts);
     });
-    this.ask.replaceChildren(h("div", { class: "q" }, h("b", {}, spec.label), h("span", {}, askText(spec, t))),
-      ...(rows.length ? [h("div", { class: "fs" }, ...rows)] : []), h("div", { class: "row" }, cancel, go));
+    const ask = askText(spec, t);
+    const fs = points.length
+      ? h("div", { class: "fs split" }, h("div", { class: "pts" }, ...points), h("div", { class: "ctl" }, ...rows))
+      : rows.length ? h("div", { class: "fs" }, ...rows) : null;
+    if (fs && spec.gpuWith) fs.addEventListener("change", () => { go.textContent = runLabel(); });
+    this.ask.classList.toggle("compact", !!points.length);
+    this.ask.replaceChildren(h("div", { class: "q", title: ask }, h("b", {}, spec.label), h("span", {}, ask)),
+      ...(fs ? [fs] : []), h("div", { class: "row" }, cancel, go));
     this.ask.hidden = false;
-    setTimeout(() => (rows.length ? Object.values(inputs)[0] : go).focus?.(), 0);
+    setTimeout(() => (Object.keys(inputs).length ? (points.length ? this.ask.querySelector(".pick") : Object.values(inputs)[0]) : go)?.focus?.(), 0);
   }
 
   _hideAsk() { this.ask.hidden = true; this.ask.replaceChildren(); }
+
+  /**
+   * A "point" field: the take's first (or last) frame, tap it to set the mark (arrow keys nudge it 1%, Shift 5%).
+   * -> {el, input} where input.value is "x,y" in 0..1 (what opts gets).
+   */
+  _pointField(f, t) {
+    const input = h("input", { type: "hidden", value: f.value != null ? String(f.value) : "0.500,0.500" });
+    const img = h("img", { alt: "", draggable: "false" });
+    const dot = h("span", { class: "dot", "aria-hidden": "true" });
+    const read = h("span", { class: "rd" });
+    const box = h("div", { class: "pick", tabindex: "0", role: "button", "aria-label": `${f.label}: tap the frame to set the mark` }, img, dot);
+    const place = () => {
+      const p = readPoint(input.value) || [0.5, 0.5];
+      dot.style.left = `${img.offsetLeft + p[0] * (img.clientWidth || 0)}px`;
+      dot.style.top = `${img.offsetTop + p[1] * (img.clientHeight || 0)}px`;
+      read.textContent = `${Math.round(p[0] * 100)}% across, ${Math.round(p[1] * 100)}% down`;
+    };
+    const set = (x, y) => { input.value = fmtPoint(x, y); place(); };
+    img.addEventListener("load", place);
+    img.addEventListener("click", (e) => { const r = img.getBoundingClientRect(); set((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height); });
+    box.addEventListener("keydown", (e) => {
+      const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+      if (!d) return;
+      e.preventDefault(); e.stopPropagation();
+      const p = readPoint(input.value) || [0.5, 0.5], k = e.shiftKey ? 0.05 : 0.01;
+      set(p[0] + d[0] * k, p[1] + d[1] * k);
+    });
+    const last = f.frame === "last" && t?.kind === "clip";
+    // a clip's marks are tapped on the clip's own frames: its thumbnail can be another picture (a Dailies take's look
+    // still, a Ladder draft's chosen Frame), with another framing or aspect
+    const src = t?.kind === "still" ? t.url : null;
+    if (src) img.src = src;
+    else if (t?.url) {
+      read.textContent = last ? "loading the last frame…" : "loading the first frame…";
+      import("../motion/ripple.mjs").then((R) => (last ? R.lastFrameDataURL(t.url) : R.firstFrameDataURL(t.url)))
+        .then((u) => { img.src = u; }).catch(() => { read.textContent = "the frame did not load: the mark stays at the centre"; });
+    }
+    setTimeout(place, 0);
+    return { input, el: h("div", { class: "fl pt", title: f.title || "" }, h("span", {}, f.label), box, read, input) };
+  }
+
+  /** Before / after: the take the one-click started from under its result, a wipe, videos in sync. Shown in place of
+   * the cards (in the window, no scrolling); Esc or the Back button returns. */
+  _compare(r) {
+    const before = r.target?.url, after = r.take?.url;
+    if (!before || !after) return;
+    const video = !!r.take?.video;
+    const mk = (src, cls) => (video ? h("video", { src, class: cls, muted: true, loop: true, playsinline: true, preload: "auto" })
+      : h("img", { src, class: cls, alt: "" }));
+    const base = mk(before, "base"), top = mk(after, "top");
+    if (video) { base.muted = true; top.muted = false; }   // one soundtrack (the result's): two would echo
+    const line = h("div", { class: "line" });
+    const slider = h("input", { type: "range", min: "0", max: "100", value: "50", "aria-label": "Before / after" });
+    const placeWipe = () => { const v = +slider.value; top.style.clipPath = `inset(0 0 0 ${v}%)`; line.style.left = `${v}%`; };
+    slider.addEventListener("input", placeWipe);
+    const kids = [h("div", { class: "stage" }, base, top, line, h("span", { class: "tag l" }, "Before"), h("span", { class: "tag r" }, `✦ ${r.spec.label}`))];
+    const bar = [slider];
+    if (video) {
+      top.addEventListener("play", () => { base.currentTime = top.currentTime; base.play().catch(() => {}); });
+      top.addEventListener("pause", () => base.pause());
+      top.addEventListener("seeked", () => { base.currentTime = top.currentTime; });
+      top.addEventListener("timeupdate", () => { if (Math.abs(base.currentTime - top.currentTime) > 0.08) base.currentTime = top.currentTime; });
+      bar.unshift(h("button", { type: "button", title: "Play / pause (both)", on: { click: () => (top.paused ? top.play().catch(() => {}) : top.pause()) } }, "▶ / ❚❚"));
+    }
+    bar.push(h("button", { type: "button", title: "Back to the one-clicks (Esc)", on: { click: () => this._hideCompare() } }, "✕ Back"));
+    this.cmp.replaceChildren(...kids, h("div", { class: "bar" }, ...bar));
+    placeWipe();
+    this.grid.hidden = true; this.cmp.hidden = false;
+    if (video) top.play().catch(() => { top.muted = true; top.play().catch(() => {}); });   // autoplay with sound refused: play muted
+  }
+
+  _hideCompare() {
+    if (!this.cmp || this.cmp.hidden) return;
+    for (const v of this.cmp.querySelectorAll("video")) { try { v.pause(); } catch { /* */ } }
+    this.cmp.hidden = true; this.cmp.replaceChildren(); this.grid.hidden = false;
+  }
 
   /** Run one one-click on a target (also what the MCP tool and tests call). Resolves to the take, or null. */
   async run(spec, target, opts = {}) {
@@ -495,6 +600,7 @@ export class OneClickPanel {
           r.spec.badge ? h("span", { class: `bd ${r.spec.badge}` }, r.spec.badge) : null, chip,
           h("div", { class: "acts" },
             h("button", { type: "button", title: "Open this take", on: { click: () => this.host.openTake?.(r.target.shot, t) } }, "Open"),
+            r.target?.url && t?.url ? h("button", { type: "button", title: "Wipe between the take it started from and this result", on: { click: () => this._compare(r) } }, "Before / after") : null,
             !t?.video && this.host.useAsFrame ? h("button", { type: "button", title: "Use it as this shot's ④ Frame", on: { click: () => this.host.useAsFrame(r.target.shot, t) } }, "Use as ④ Frame") : null,
             h("button", { type: "button", title: "Run another one-click on this result", on: { click: () => this.open(makeTarget({ url: t.url, file: t.file, shot: r.target.shot, take_id: t.id, label: `✦ ${r.spec.label}`, from: "result" })) } }, "✦ again")));
       })));
@@ -545,7 +651,8 @@ export function catalogFor(target) {
  * host = { api, root, stage, pipeline, ladder, takeChecks, say, toast, showTake, getShots, takesOf(sid), refresh() }
  */
 // The one-click modules the App loads (each registers its cards). Track B adds "loop", "reshoot", "opencomfy", "handoff".
-export const MODULES = ["effects", "light", "angle", "expand"];
+// refocus is listed here (not imported by soundstage.js like Track B) so the MCP catalog (catalog.py) knows it.
+export const MODULES = ["effects", "light", "angle", "expand", "refocus"];
 
 export function attachOneClick(host) {
   const { api, stage, pipeline, ladder } = host;

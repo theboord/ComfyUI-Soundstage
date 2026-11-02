@@ -251,6 +251,19 @@ const depthMaterial = new THREE.ShaderMaterial({
     void main(){ float d = clamp((vViewZ - uNear)/(uFar - uNear), 0.0, 1.0); gl_FragColor = vec4(vec3(1.0 - d), 1.0); }`,
 });
 
+// Refocus's depth pass ("depth16"; web/oneclick/refocus.mjs, docs/refocus.md): inverse distance 1/z in 16 bits, R = high
+// byte, G = low byte, full scale REFOCUS_DMAX diopters (0.1 m), black = infinity. The packing is linear, so antialiased
+// edges still decode to an in-between distance. Read back by soundstage/refocus/depth.py decode_sheet.
+export const REFOCUS_DMAX = 10.0;
+const depth16Material = new THREE.ShaderMaterial({
+  uniforms: { uDmax: { value: REFOCUS_DMAX } },
+  vertexShader: `varying float vViewZ;
+    void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vViewZ = -mv.z; gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: `uniform float uDmax; varying float vViewZ;
+    void main(){ float q = floor(clamp(1.0 / max(vViewZ, 0.1) / uDmax, 0.0, 1.0) * 65535.0 + 0.5); float hi = floor(q / 256.0);
+      gl_FragColor = vec4(hi / 255.0, (q - hi * 256.0) / 255.0, 0.0, 1.0); }`,
+});
+
 let wheelRouterInstalled = false;
 /** One capture-phase listener for the whole page: wheel over a stage dollies that stage only. */
 function installWheelRouter() {
@@ -4643,12 +4656,13 @@ export class Stage {
     }
     if (mode === "id") return this._renderId(this.camera);
     if (mode === "dust") return this._renderDustMatte(this.camera);   // Milestone 28: the dust matte (Layer Pack)
+    const depthish = mode === "depth" || mode === "depth16";          // depth16 = Refocus's 16-bit inverse depth
     if (this.selRing) this.selRing.visible = !forCapture && !!this.actorMeshes.get(this.selected);
-    for (const h of this.lightHandles?.values() || []) h.visible = !forCapture && mode !== "depth";
+    for (const h of this.lightHandles?.values() || []) h.visible = !forCapture && !depthish;
     const env = this.state.environment || {};
     const viewCam = forCapture ? this.camera : this._viewportCamera?.() || this.camera;
     const underwater = this._isUnderwater(viewCam);
-    if (this.weather) this.weather.object.visible = mode !== "depth";
+    if (this.weather) this.weather.object.visible = !depthish;
     if (this.water) this.water.visible = true;
     if (mode === "clay" && underwater) {
       this.scene.fog = new THREE.FogExp2(0x2f4a5c, 0.06);
@@ -4660,9 +4674,9 @@ export class Stage {
     // The backdrop plate is the shot camera's picture: it only lines up when looking through that camera. In Free view
     // it would hang behind the orbiting set as a giant flat photo, so the set is shown on its own there.
     const plate = !!this._backdropTex && (forCapture || !this.freeView);
-    if (mode === "depth") {
+    if (depthish) {
       this.scene.background = new THREE.Color(0x000000);
-      this.scene.overrideMaterial = depthMaterial;
+      this.scene.overrideMaterial = mode === "depth16" ? depth16Material : depthMaterial;
     } else if (mode === "wire") {
       this.scene.background = new THREE.Color(0x0d1117);
       this.scene.overrideMaterial = this.wireMat;
@@ -4707,7 +4721,7 @@ export class Stage {
       }
     }
     // Depth sees through vehicle glass (like an open window), so the riders behind it keep their depth.
-    if (mode === "depth") this.root.traverse((o) => { if (o.userData.glass && o.visible) { o.visible = false; cutaway.push(o); } });
+    if (depthish) this.root.traverse((o) => { if (o.userData.glass && o.visible) { o.visible = false; cutaway.push(o); } });
     // Measurement aids are for the viewport only.
     if (!forCapture) this._measureOverlay(cam, this.measure !== false);
     if (!forCapture) this.rotTools?.sync(cam);
@@ -4804,7 +4818,7 @@ export class Stage {
       this.setFrame(keepFrame);
       if (this._resizePending) { this._resizePending = false; this.resize(); }
     }
-    const lossless = mode === "depth" || mode === "id" || mode === "dust";
+    const lossless = mode === "depth" || mode === "depth16" || mode === "id" || mode === "dust";
     const type = lossless ? "image/png" : "image/jpeg";
     const blob = await sheet.convertToBlob({ type, quality: 0.95 });
     return { blob, cols, rows, frames, ext: lossless ? "png" : "jpg", tile: [this.fw, this.fh] };

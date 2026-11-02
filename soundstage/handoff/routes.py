@@ -9,6 +9,10 @@ POST /soundstage/loop/fix                  {ref, how: seal|trim|bridge|join, bri
 GET  /soundstage/reshoot/limits            -> the safe range and the presets
 POST /soundstage/reshoot                   {source, move, quality?, seed?, prompt?, keep_sound?, preview_only?} -> {job}
 GET  /soundstage/reshoot/job?id=           -> {state, step, progress, result?, error?}
+POST /soundstage/refocus                   {source, a, b?, t_stop, focal_mm?, sensor_mm?, subject_m?, start?, land?,
+                                            highlights?, depth?: auto|stage|da3, stage?: {sheet, cols, frames, tile, fps,
+                                            focal_mm, dmax}} -> {job}   (docs/refocus.md)
+GET  /soundstage/refocus/job?id=           -> {state, step, progress, result?, error?}
 """
 from __future__ import annotations
 
@@ -21,6 +25,15 @@ _REGISTERED = False
 JOBS: dict[str, dict] = {}
 _TASKS: set = set()     # running Reshoot jobs (asyncio tasks must be referenced or they can be collected)
 LOOP_SUB = "soundstage_private/loop"
+_REFOCUS_LOCK: asyncio.Lock | None = None   # one Refocus at a time: each takes half the CPU (the pod is shared)
+
+
+def _refocus_lock() -> asyncio.Lock:
+    """Made on first use, inside the running loop (a lock made at import can belong to no loop or another one)."""
+    global _REFOCUS_LOCK
+    if _REFOCUS_LOCK is None:
+        _REFOCUS_LOCK = asyncio.Lock()
+    return _REFOCUS_LOCK
 
 
 def _dirs() -> dict:
@@ -263,7 +276,46 @@ def register(routes=None) -> bool:
         j = JOBS.get(request.query.get("id", ""))
         if not j:
             return web.json_response({"error": "no such job"}, status=404)
-        return web.json_response({k: v for k, v in j.items() if k != "t"})
+        return web.json_response({k: v for k, v in j.items() if k not in ("t", "what")})
+
+    # Refocus after the render (soundstage/refocus, docs/refocus.md): the same job table and polling as Reshoot.
+    async def _refocus(jid, base, body):
+        from .. import refocus as RF
+        job = JOBS[jid]
+
+        def progress(step, frac):
+            job["step"], job["progress"] = step, round(frac, 2)
+        try:
+            lock = _refocus_lock()
+            if lock.locked():
+                job["step"] = "Waiting for the refocus before it to finish"
+            async with lock:        # one at a time; the job's CPU work runs off the event loop (asyncio.to_thread)
+                job["state"] = "running"
+                job["result"] = await RF.run(base, str(body.get("source") or ""), body, progress=progress)
+            job["state"] = "done"
+        except Exception as exc:  # noqa: BLE001 - reported to the browser
+            job["state"] = "error"
+            job["error"] = str(exc) if isinstance(exc, (ValueError, RuntimeError)) else f"{type(exc).__name__}: {exc}"
+
+    @routes.post("/soundstage/refocus")
+    async def refocus_start(request):
+        body = await _body(request)
+        if not body.get("source"):
+            return web.json_response({"error": "send {source: take reference, a: [x, y], b: [x, y], t_stop}"}, status=400)
+        _prune()
+        jid = uuid.uuid4().hex[:12]
+        JOBS[jid] = {"state": "queued", "step": "Queued", "progress": 0.0, "t": time.time(), "what": "refocus"}
+        task = asyncio.get_event_loop().create_task(_refocus(jid, _base(request), body))
+        _TASKS.add(task)                      # held until it finishes (the loop keeps only a weak reference)
+        task.add_done_callback(_TASKS.discard)
+        return web.json_response({"job": jid})
+
+    @routes.get("/soundstage/refocus/job")
+    async def refocus_job(request):
+        j = JOBS.get(request.query.get("id", ""))
+        if not j or j.get("what") != "refocus":
+            return web.json_response({"error": "no such job"}, status=404)
+        return web.json_response({k: v for k, v in j.items() if k not in ("t", "what")})
 
     _REGISTERED = True
     return True
