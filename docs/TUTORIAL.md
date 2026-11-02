@@ -1036,6 +1036,7 @@ Select a prop and press **Physics** in its card. A small panel opens beside the 
 | **Clear simulation** | Puts every simulated object back on the keys it had before. |
 
 - What it hits: the floor, the set's walls, kerbs and buildings, Static props, and people and vehicles on their keyed paths (a car is a low body plus a cabin, so a crate rides up over the bonnet).
+- **Everything collides** (World, on by default): cars, people, street lamps, benches and walls are bodies too. A keyed car keeps its keys until its first real hit, then the physics takes over: keyed through another car it crashes into it (momentum shared by real masses, spin, roll or stop), into a lamp it knocks it down, into a solid wall it stops and crumples (a dent the clay shows), through a weak (wooden) wall it breaks a hole. A person in the way is knocked over. The bake message and the panel say where: *"physics took over at f 42"*. **Keep keyed** holds one actor on its keys. Editing a key or dragging anything re-bakes by itself; one Undo takes the bake back. → [World collisions](world.md)
 - **Throw something:** key it moving (two keys or more). It follows its keys, then physics takes over at the last key at that speed.
 - The clay, the previz video and the LTX layout guide only ever play keys, so every render of a baked shot is the same. Simulate again (or Cmd/Ctrl+Z) to redo it.
 - The solver is a small built-in one (substepped XPBD rigid bodies, the position-based sibling of three-avbd's vertex block descent). Box-like props collide as boxes; a chair or a table collides as up to four convex hulls of its own mesh, not its bounding box.
@@ -1060,7 +1061,7 @@ Physics stays live while you drag, so you can block by hand the way you'd move t
 4. **Climb.** Drag a person against a crate or a table and they step up onto it. Drag them off the far side and they hop down.
 5. **Mount a horse.** Drag a person onto a horse and they swing up into the saddle; drag them off and they stand beside it, legs together.
 6. **Carry a prop.** Drag a person into a light box and, still dragging, press **C**: they pick it up. Carry it somewhere and press **C** again to put it down.
-7. **Crash.** Key a car through a crate stack (or tell the Director *"have the car crash through the crates"*): the car throws them clear. **Simulate & bake** when you like it, so every render plays the same crash.
+7. **Crash.** Key a car through a crate stack (or tell the Director *"have the car crash through the crates"*): the car throws them clear. **Simulate & bake** when you like it, so every render plays the same crash. Key it through another car, a lamp or a wall (or say *"the police car rams the red car into the crates"*) and the bake crashes them for real; *"check for collisions"* lists anything still passing through anything, with **Crash them** / **Reroute** fixes.
 
 Each drag is one undo step (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z redoes). Press on a selected person's body to grab the person; the move arrows still work where they stick out past them.
 

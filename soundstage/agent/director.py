@@ -82,6 +82,16 @@ TOOLS: dict[str, dict] = {
     "physics": {"kind": "app", "doc": "Physics for objects: dynamic (falls, gets knocked), static, off",
                 "args": {"target": ("names", True, None), "mode": ("enum", True, ["dynamic", "static", "off"])}},
     "bake": {"kind": "app", "doc": "Simulate the physics over the shot and bake it into keys", "args": {}},
+    # World collisions (web/stage/world.mjs): everything collides in the bake, by real masses, speeds and strengths.
+    "ram": {"kind": "app", "doc": "A vehicle rams, hits or crashes into another vehicle, a person or a thing (a lamp, a wall), optionally "
+                                  "shoving it into something: the speed is planned by momentum and the physics bakes the crash",
+            "args": {"target": ("vehicle", False, None), "victim": ("name", True, None), "into": ("names", False, None)}},
+    "check": {"kind": "app", "doc": "Consequence check: find anything that passes through anything else in the shot "
+                                    "(cars through cars, poles, walls, people), in plain words with fixes", "args": {}},
+    "reroute": {"kind": "app", "doc": "Reroute a mover round something it would pass through",
+                "args": {"target": ("name", True, None), "around": ("name", True, None)}},
+    "keep_keyed": {"kind": "app", "doc": "Keep someone or something on its keys through contacts (on), or let the physics take over at its first hit (off)",
+                   "args": {"target": ("name", True, None), "on": ("enum", False, ["on", "off"])}},
     "gaze": {"kind": "app", "doc": "Where someone looks: their head turns at a time in the shot (s) toward a person or thing, "
                                    "the camera, ahead (eyes on the road), left, right or down",
              "args": {"who": ("person", True, None), "at": ("text", True, None), "time": ("num", False, (0, 600))}},
@@ -93,7 +103,9 @@ TOOLS: dict[str, dict] = {
     "frames": {"kind": "app", "gpu": True, "doc": "Paint first frames (stills) for shots on the GPU",
                "args": {"shots": ("shots", False, None), "count": ("int", False, (1, 4))}},
     "render": {"kind": "app", "gpu": True, "doc": "Render draft or final video for shots on the GPU",
-               "args": {"kind": ("enum", True, ["draft", "final"]), "shots": ("shots", False, None)}},
+               "args": {"kind": ("enum", True, ["draft", "final"]), "shots": ("shots", False, None),
+                        # past the consequence check (world collisions): render even though something passes through something
+                        "anyway": ("enum", False, ["yes", "true"])}},
     "approve": {"kind": "app", "doc": "Review a shot's current take: approved, changes or rejected",
                 "args": {"shot": ("shot", False, None), "status": ("enum", True, ["approved", "changes", "rejected"]), "note": ("text", False, None)}},
     "cut": {"kind": "app", "doc": "Cut the scene together with each shot's best take", "args": {}},
@@ -111,7 +123,9 @@ ALIASES = {"move_camera": "camera_move", "camera": "camera_move", "dolly": "came
            "note": "direct", "colour": "grade", "color": "grade", "grade_frames": "grade", "script_scene": "scene",
            "select_scene": "scene", "paint": "frames", "paint_frames": "frames", "generate_frames": "frames",
            "render_draft": "render", "render_final": "render", "review": "approve", "assemble": "cut", "edit": "cut",
-           "playback": "play", "camera_mount": "camera_on", "mount_camera": "camera_on", "nudge_camera": "reframe",
+           "playback": "play", "collide": "ram", "t_bone": "ram", "tbone": "ram", "rear_end": "ram", "smash_into": "ram",
+           "consequences": "check", "check_collisions": "check", "consequence_check": "check", "avoid": "reroute", "swerve": "reroute",
+           "keep_on_keys": "keep_keyed", "camera_mount": "camera_on", "mount_camera": "camera_on", "nudge_camera": "reframe",
            "look": "gaze", "look_at": "gaze", "head_turn": "gaze", "turn_head": "gaze", "eyes": "gaze", "eyeline": "gaze"}
 # Gaze targets that are directions, not things on set (web/stage/gaze.mjs).
 GAZE_WORDS = [("camera", ["camera", "the camera", "lens", "the lens", "us", "audience", "into camera"]),
@@ -325,6 +339,8 @@ def _group(scene, text):
             return [x for x in scene["actors"] if x.get("stack") == a["stack"]]
         return [a]
     one = O.find_object(scene, t)
+    if one is None and re.search(r"(?:x|s|ch|sh)es$", t):   # "the boxes", "the benches": the singular names them
+        one = O.find_object(scene, t[:-2])
     if one is None:
         return []
     if one.get("stack"):
@@ -500,6 +516,17 @@ def validate_call(raw, work: dict, ctx: dict) -> dict:
         raise Invalid("grade: say what to change (warmer, more contrast...)")
     if name == "mount" and out.get("target_id") == out.get("on_id"):
         raise Invalid("mount: someone can't sit on themselves")
+    if name == "ram" and "target_id" not in out:
+        vs = [v for v in _vehicles(work) if v["id"] != out.get("victim_id")]
+        if not vs:
+            raise Invalid("ram: there's no other vehicle on set to do the ramming")
+        out["target"], out["target_id"] = vs[0]["name"], vs[0]["id"]
+    if name == "ram" and out.get("target_id") == out.get("victim_id"):
+        raise Invalid("ram: a vehicle can't ram itself")
+    if name == "reroute" and out.get("target_id") == out.get("around_id"):
+        raise Invalid("reroute: round what?")
+    if name == "keep_keyed":
+        out.setdefault("on", "on")
     if name in ("stunt", "drive", "camera_on") and "target_id" not in out:
         v = _default_vehicle(work)
         if v is None and not (name == "camera_on" and out.get("view") == "off"):
@@ -674,6 +701,12 @@ def plan_line(call, work, ctx):
         "drive": lambda: f"drive the {a['target'].lower()} straight through the {a['through'].lower()}",
         "physics": lambda: f"make the {a['target'].lower()} {a['mode']}",
         "bake": lambda: "simulate the physics and bake it into the shot",
+        "ram": lambda: f"have the {a['target'].lower()} ram {_the(a['victim'])}" + (f" into the {a['into'].lower()}" if a.get("into") else "")
+                       + ": the speed comes from momentum, and the physics bakes the crash from the hit on",
+        "check": lambda: "check the shot for anything passing through anything else (cars, poles, walls, people)",
+        "reroute": lambda: f"reroute {_the(a['target'])} round {_the(a['around'])}",
+        "keep_keyed": lambda: f"keep {_the(a['target'])} on its keys through contacts" if a.get("on") == "on"
+                              else f"let the physics take over {_the(a['target'])} at its first hit",
         "gaze": lambda: f"block {a['who']}'s head: " + {"camera": "look into the camera", "ahead": "head steady, facing ahead",
                                                           "left": "look off left", "right": "look off right", "down": "look down",
                                                           "up": "look up"}.get(a["at_id"], f"turn to {a['at']}")
@@ -913,7 +946,8 @@ def rules_calls(command: str, scene: dict, ctx: dict | None = None) -> list[dict
             kind = (m.group(2) or m.group(3))
             kind = "draft" if kind in ("draft", "preview") else "final"
             sh = _shots_in(cl) or _named_shot(cl, work, ctx)
-            calls.append({"tool": "render", "kind": kind, **({"shots": sh} if sh is not None else {})})
+            calls.append({"tool": "render", "kind": kind, **({"shots": sh} if sh is not None else {}),
+                          **({"anyway": "yes"} if re.search(r"\banyway\b", cl) else {})})
             continue
         m = re.search(r"\b(paint|generate|make|create|render|give me)\s+(?:me\s+)?(?:a\s+|the\s+|new\s+|some\s+|more\s+|(" + WORDNUM + r")\s+)?(?:new\s+)?(?:first[- ]?)?(frames?|stills?|keyframes?|variations?|options?)\b", cl)
         if m:
@@ -1033,8 +1067,33 @@ def rules_calls(command: str, scene: dict, ctx: dict | None = None) -> list[dict
             here.append((m.start(), {"tool": "stack", "what": what, **({"near": near.group(1)} if near else {}), **({"count": n} if n else {})}))
             last_obj = "__stack__"
             used = True
+        # World collisions: ram a vehicle, a person or a set piece (the physics plays the crash out); check; reroute; keep keyed.
+        rammed = False
+        m = re.search(r"\b(ram(?:s|med)?|crash(?:es)?|smash(?:es)?|slam(?:s)?|t-?bones?|rear-?ends?|shunts?|hits?|plough(?:s)?|plow(?:s)?)\s+"
+                      r"(?:right\s+|straight\s+|head-?on\s+)?(?:into\s+)?(?:the\s+)?(.+?)(?:\s+(?:into|through|onto|against)\s+(?:the\s+)?(.+?))?\s*$", cl)
+        if m:
+            rc = _ram_call(cl, m, work)
+            if rc:
+                here.append((m.start(), rc))
+                used = rammed = True
+        if re.search(r"\b(consequence check|check (?:for |the shot for )?(?:collisions|crashes|consequences|interpenetrations?|clipping)|"
+                     r"(?:does|is) anything (?:pass|go|drive|walk|clip)(?:ing)? through|check the physics)\b", cl):
+            here.append((0, {"tool": "check"}))
+            used = True
+        m = re.search(r"\b(?:reroute|re-route|steer|swerve)\s+(?:the\s+)?(.+?)\s+(?:around|round|past|away from|to miss)\s+(?:the\s+)?(.+)$", cl)
+        if m:
+            here.append((m.start(), {"tool": "reroute", "target": m.group(1).strip(), "around": m.group(2).strip(" .")}))
+            used = rammed = True
+        m = re.search(r"\bkeep\s+(?:the\s+)?(.+?)\s+(?:keyed|on (?:its|his|her|their) keys)\b", cl)
+        if m:
+            here.append((m.start(), {"tool": "keep_keyed", "target": m.group(1).strip(), "on": "on"}))
+            used = rammed = True
+        m = re.search(r"\blet (?:the )?physics take over\s+(?:the\s+)?(.+)$", cl)
+        if m:
+            here.append((m.start(), {"tool": "keep_keyed", "target": m.group(1).strip(" ."), "on": "off"}))
+            used = rammed = True
         # Drive / crash through.
-        m = re.search(r"\b(crash(?:es)?|smash(?:es)?|plow(?:s)?|plough(?:s)?|drive(?:s)?|ram(?:s)?|burst(?:s)?|barrel(?:s)?|go(?:es)?|plunge(?:s)?)\s+(?:right\s+|straight\s+)?(?:through|into)\s+(?:the\s+)?(.+)$", cl)
+        m = None if rammed else re.search(r"\b(crash(?:es)?|smash(?:es)?|plow(?:s)?|plough(?:s)?|drive(?:s)?|ram(?:s)?|burst(?:s)?|barrel(?:s)?|go(?:es)?|plunge(?:s)?)\s+(?:right\s+|straight\s+)?(?:through|into)\s+(?:the\s+)?(.+)$", cl)
         if m:
             obj = m.group(2).strip()
             obj = re.sub(r"\b(stack|pile)\b", "", obj).strip() or obj
@@ -1105,6 +1164,37 @@ def rules_calls(command: str, scene: dict, ctx: dict | None = None) -> list[dict
         here.sort(key=lambda x: x[0])
         calls += [c for _, c in here]
     return calls
+
+
+def _the(name):
+    """'Mara' stays 'Mara'; 'Red car' becomes 'the red car'."""
+    n = str(name)
+    return n if n[:1].isupper() and " " not in n and n.lower() not in ("car", "lamp", "wall") else f"the {n.lower()}"
+
+
+# Things a car really hits (world.mjs WORLD_KINDS): these get "ram", loose props keep "drive through".
+WORLD_HITS = {"car", "police_car", "sports_car", "hatchback", "truck", "motorcycle", "man", "woman", "child", "lamp", "wall",
+              "bench", "tree", "hydrant", "sign", "bollard"}
+
+
+def _ram_call(cl, m, work):
+    """'the police car rams the red car into the boxes', 'crash the police car into the red car', 'the car hits Mara'."""
+    a_txt, b_txt = m.group(2).strip(" ."), (m.group(3) or "").strip(" .")
+    sub = _vehicle_in(cl[:m.start()], work) if cl[:m.start()].strip() else None
+    if sub is not None:
+        rammer, victim_txt, into_txt = sub, a_txt, b_txt
+    else:
+        rammer = O.find_object(work, a_txt)
+        if rammer is None or rammer.get("kind") not in VEHICLES or not b_txt:
+            return None
+        victim_txt, into_txt = b_txt, ""
+    victim = O.find_object(work, victim_txt)
+    if victim is None or victim.get("id") == rammer.get("id") or victim.get("kind") not in WORLD_HITS:
+        return None
+    call = {"tool": "ram", "target": rammer["name"], "victim": victim["name"]}
+    if into_txt and _group(work, re.sub(r"\b(stack|pile)\b", "", into_txt).strip() or into_txt):
+        call["into"] = re.sub(r"\b(stack|pile)\b", "", into_txt).strip() or into_txt
+    return call
 
 
 def _vehicle_in(t, scene):
