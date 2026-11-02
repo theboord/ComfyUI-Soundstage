@@ -19,6 +19,7 @@ import uuid
 
 _REGISTERED = False
 JOBS: dict[str, dict] = {}
+_TASKS: set = set()     # running Reshoot jobs (asyncio tasks must be referenced or they can be collected)
 LOOP_SUB = "soundstage_private/loop"
 
 
@@ -252,7 +253,9 @@ def register(routes=None) -> bool:
         _prune()
         jid = uuid.uuid4().hex[:12]
         JOBS[jid] = {"state": "queued", "step": "Queued", "progress": 0.0, "t": time.time()}
-        asyncio.get_event_loop().create_task(_reshoot(jid, _base(request), body))
+        task = asyncio.get_event_loop().create_task(_reshoot(jid, _base(request), body))
+        _TASKS.add(task)                      # the loop keeps only a weak reference: hold it until it finishes
+        task.add_done_callback(_TASKS.discard)
         return web.json_response({"job": jid})
 
     @routes.get("/soundstage/reshoot/job")
