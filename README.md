@@ -167,7 +167,7 @@ Press `V` for a searchable window of **Camera moves** (push in, crane up, dolly 
 
 ### The Timeline: transitions and sound
 
-The Cut tab is now a real editing timeline: V2 titles, V3 motion graphics, a subtitles lane and A1 Dialogue · A2 SFX · A3 Music · A4 Ambience. Drag **Dissolve, Dip black, Dip white or Wipe** onto a cut, rubber-band keys, slip and roll. Type a sound and **Generate** it in place (open-weights LTX-2.5 audio and Chatterbox), **Auto-duck** the score under dialogue, snap cuts to the beat, **Assemble scene** from the ScriptSync lining, then render MP4, ProRes 422 HQ or a 9:16 cut at −14 / −23 / −24 LUFS. → [Tutorial](docs/TUTORIAL.md#transitions-sound-titles-and-render) · [cut.md](docs/cut.md)
+The **Edit** tab (the Cut) is now a real editing timeline: V2 titles, V3 motion graphics, a subtitles lane and A1 Dialogue · A2 SFX · A3 Music · A4 Ambience. Drag **Dissolve, Dip black, Dip white or Wipe** onto a cut, rubber-band keys, slip and roll. Type a sound and **Generate** it in place (open-weights LTX-2.5 audio and Chatterbox), **Auto-duck** the score under dialogue, snap cuts to the beat, **Assemble scene** from the ScriptSync lining, then render MP4, ProRes 422 HQ or a 9:16 cut at −14 / −23 / −24 LUFS. → [Tutorial](docs/TUTORIAL.md#transitions-sound-titles-and-render) · [cut.md](docs/cut.md)
 
 <p align="center"><img src="docs/media/timeline.jpg" width="900" alt="The Cut timeline: transitions palette, Keys, Assemble scene, Title, Subtitles, Generate sound, Auto-duck, Beats, loudness target, Render MP4 / ProRes / 9:16, with dips and dissolves drawn on V1 and a title on V2"></p>
 
@@ -426,7 +426,7 @@ This link only opens for other people once the owner shares them publicly.
 - ComfyUI, a recent version with App mode.
 - An NVIDIA GPU. 48 GB of VRAM is recommended (tested on an RTX 6000 Ada). 24 GB cards need offloading and are untested.
 - About 60 GB of disk for the models.
-- The stage, Look tab and Cut tab run in any browser and need no GPU models.
+- The stage, the Look tab and the Edit tab (the Cut) run in any browser and need no GPU models.
 
 **Steps**
 
@@ -458,9 +458,9 @@ bash ComfyUI/custom_nodes/ComfyUI-Soundstage/tools/install_runpod.sh /path/to/Co
 3. Open the workflow in the graph view once, then switch to **App** mode.
 4. **Set:** describe the scene or add objects and drag them into place. Add shots, move the playhead and set camera keys.
 5. Press **Run** (labelled **Next**) to climb the ladder: Frame, then Motion, for every shot.
-6. **Review** the shots on the Ladder, then **Deliver**: Layer Packs are written to `ComfyUI/output/soundstage_layerpacks/`, and the Cut tab renders one video or exports to your NLE.
+6. **Review** the shots on the Ladder (the **Compare** tab), then **Deliver**: Layer Packs are written to `ComfyUI/output/soundstage_layerpacks/`, and the Edit tab renders one video or exports to your NLE.
 
-**Without GPU models** you can still use the stage (Set), the Look tab and the Cut tab, including the NLE exports. Frame needs FLUX 3 Klein (or the optional Krea 2 group), Motion needs the LTX-2.5 group, and the Layer Pack uses SAM 3.1 and BiRefNet for mattes from the final frames (it falls back to the stage's own mattes without them).
+**Without GPU models** you can still use the stage (Set), the Look tab and the Edit tab (the Cut), including the NLE exports. Frame needs FLUX 3 Klein (or the optional Krea 2 group), Motion needs the LTX-2.5 group, and the Layer Pack uses SAM 3.1 and BiRefNet for mattes from the final frames (it falls back to the stage's own mattes without them).
 
 ### Headless (Comfy SDK)
 
