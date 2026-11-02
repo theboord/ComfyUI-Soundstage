@@ -234,6 +234,9 @@ const CSS = `
 .ss-stage .ss-clarea[data-r=open] { --cv-r:calc(var(--ss-insp-w,320px) + 12px); }
 .ss-stage .ss-clarea[data-r=closed] { --cv-r:64px; }
 .ss-stage.ss-cl-hide .ss-clarea { --cv-l:0px; --cv-r:0px; }
+/* Physics docked over the Properties column (too little room above the timeline bar to float beside it): the bar and
+   the picture end where the column starts, so the panel never covers the shot strip (soundstage.js placePhys). */
+.ss-stage:not(.ss-cl-hide) .ss-clarea[data-phys=dock] { --cv-r:calc(var(--ss-insp-w,320px) + 12px); }
 
 /* Look palette: pops over the canvas from the viewport toolbar. */
 .ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-clpop { position:absolute; top:6px; left:50%; transform:translateX(-50%); width:min(620px, calc(100% - 24px));
@@ -391,6 +394,9 @@ const CSS = `
 .ss-stage.ss-cl[data-ws=wide] .ss-canvasview > .ss-cv:not(.ss-cv-narrow) { flex:1 1 auto; min-height:0; }
 .ss-stage.ss-cl[data-ws=wide] .ss-canvasview > .ss-cv:not(.ss-cv-narrow) .ss-cv-view { height:auto; min-height:200px; }
 .ss-stage.ss-cl[data-ws=wide] .ss-canvasview > .ss-cv:not(.ss-cv-narrow) .ss-cv-side { min-height:0; overflow-y:auto; scrollbar-width:thin; }
+/* Its tool rail scrolls when the window is too short for every tool (QA 2026-11-02: at 1024x640 the last tools were cut off). */
+.ss-stage.ss-cl[data-ws=wide] .ss-canvasview > .ss-cv:not(.ss-cv-narrow) .ss-cv-rail { align-self:stretch; min-height:0; max-height:100%; overflow-y:auto;
+  overflow-x:hidden; scrollbar-width:none; }
 .ss-stage.ss-cl[data-ws=wide] .ss-clwrap > .ss-clclose { position:absolute; z-index:8; top:8px; right:8px; }
 
 /* ===== Milestone 2: one top row, the timeline as a bar over the canvas, pop-overs instead of scrolling. ===== */
@@ -450,6 +456,17 @@ const CSS = `
 .ss-stage.ss-cl:is([data-tw=s], [data-tw=m]) .ss-tabs.ss-toprow :is(.ss-presetsbtn, .ss-dirbtn) .lbl { display:none; }
 .ss-stage.ss-cl:is([data-tw=s], [data-tw=m]) .ss-tabs.ss-toprow :is(.ss-presetsbtn, .ss-dirbtn) { padding:5px 8px !important; }
 .ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-keysbtn { padding:5px 8px !important; }
+/* 2026-11-02, 1024 px wide: the row folds what it has no room for into "⋯" (ui/toprow.mjs), the least used first;
+   Book goes icon-only with Presets and Director below 1400 px. Steps, the scene picker, Tools and Done never fold. */
+.ss-stage .ss-tabs > .ss-ovf { display:none !important; }
+.ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-morebtn { padding:5px 8px !important; }
+/* The viewport header in a ~1024-wide window: Wire / Clay / Color / Depth go icon-only (their tooltips keep the words). */
+.ss-stage.ss-cl[data-ws=wide][data-xs=true] .ss-vphead .ss-dispviews button { font-size:0 !important; gap:0 !important; padding:5px 8px !important; }
+/* With the tracks open the bar covers the bottom of the picture: the small "Drop a video here" hint gives way there
+   (Import video in the header does the same, and a drop on the canvas still works). */
+.ss-stage.ss-cl[data-ws=wide] .ss-clarea[data-tl=open] .ss-vi-cta:not([data-big=true]) { display:none !important; }
+.ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow > .ss-bookbtn .lbl { display:none; }
+.ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow > .ss-bookbtn { padding:5px 8px !important; }
 /* The App's narrow side panel: the shortcut sheet is for the full workspace ("?" still opens it), so its button gives way. */
 .ss-stage.ss-cl[data-ws=narrow]:not(.ss-full) .ss-tabs.ss-toprow > .ss-keysbtn { display:none !important; }
 /* ⑤ Motion: the panel's FOLLOW heading already names the Follow switch; its own "Follow" line made the panel scroll by
@@ -487,7 +504,9 @@ const CSS = `
   max-height:calc(100% - 12px); display:flex; flex-direction:column; gap:2px; padding:2px 3px; border-radius:14px; background:var(--cv-glass-strong);
   border:1px solid var(--cv-edge); box-shadow:0 10px 30px rgba(0,0,0,.35); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); }
 .ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-bottom > .ss-time { background:transparent !important; border:0 !important; padding:2px 6px !important; }
-.ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-bottom > .ss-time { flex-wrap:nowrap !important; gap:6px 8px !important; min-width:0; }
+/* The transport wraps when the bar is too narrow for it (QA 2026-11-02: at 1024 and 1280 wide Length and Takes ran under
+   the Properties panel); the picture keeps clear of the folded bar's real height (--cv-b, soundstage.js). */
+.ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-bottom > .ss-time { flex-wrap:wrap !important; gap:4px 8px !important; min-width:0; }
 .ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-bottom > .ss-time > * { flex:none; min-width:0; }
 .ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-bottom > .ss-time > :nth-child(3) { flex:1 1 auto; min-width:80px; }
 .ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-bottom > .ss-time .ss-views button { padding:4px 7px !important; }

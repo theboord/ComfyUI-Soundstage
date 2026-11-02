@@ -106,7 +106,10 @@ const CSS = `
   background:var(--ss-accent) !important; color:var(--ss-accent-ink) !important; border-color:var(--ss-accent) !important;
   text-transform:uppercase; letter-spacing:.05em; font-weight:700 !important;
 }
-.ss-stage .ss-primary:hover, .ss-stage .ss-cta:hover { background:#f6ff8a !important; }
+/* The generic button hover above is (0,3,1) with :not(:disabled): the accent's hover must out-rank it, or "+ Shot" turned
+   dark with dark text on hover (QA 2026-11-02). */
+.ss-stage .ss-primary:hover:not(:disabled), .ss-stage button.ss-primary:hover:not(:disabled), .ss-stage .ss-cta:hover:not(:disabled),
+.ss-stage .ss-primary:hover, .ss-stage .ss-cta:hover { background:#f6ff8a !important; border-color:#f6ff8a !important; color:var(--ss-accent-ink) !important; }
 
 /* Segmented controls (tabs, view modes, wipe/fade): one pill track, the active segment raised. */
 .ss-stage .ss-tabs, .ss-stage .ss-views {

@@ -107,7 +107,23 @@ SS_ANGLE=metal node tools/qa/popover_sweep.mjs --sizes 1024x640 --only strip_add
 SS_ANGLE=metal node tools/qa/popover_sweep.mjs --local ui/popover.mjs,cut/strip.mjs   # check a fix before deploying it
 ```
 
-A trigger that sits under the panel a state opened (the Physics panel over the shot strip at 1024 and 1280 wide) is listed as UNDER PANEL: a layout note, not a menu failure. Results: `report.md`, `report.json` and a PNG of every failure, in `tests/visual/out/popovers-<time>/`.
+A trigger that sits under the panel a state opened is listed as UNDER PANEL: a layout note, not a menu failure. (Since 2026-11-02 Physics never covers the shot strip; docked over the Properties column, it lists the Properties' own triggers this way.) A top-row button folded into the "⋯" menu at that width is opened from the menu. Results: `report.md`, `report.json` and a PNG of every failure, in `tests/visual/out/popovers-<time>/`.
+
+## Small windows (toprow_check.mjs)
+
+Mike's iMac is 1024 pt wide. `tools/qa/toprow_check.mjs` opens the full workspace with the demo scene at **1024×640 and 1280×800** and checks:
+
+- **The top row**, in every step and tool view and with a render's Stop button showing: every control lies inside the window and inside the row, and a click at its centre lands on it. The row folds what it has no room for into "⋯" (`web/ui/toprow.mjs`, the least used first: shortcuts, Book, Guide, Presets, Director, Redo, Undo); that menu must open inside the window with exactly the folded buttons, every item clickable, and close on Esc.
+- **Every control in the App**, step by step: none partly outside the window, cut off by a box that cannot scroll, or covered by another panel. A control inside a scrolling box is first scrolled to the middle of that box (scrolling brings it back).
+- **Physics against the strip**: with the tracks open and Physics open on a car, + Shot, the clips and their menus stay uncovered; then again with the tracks folded.
+
+```sh
+SS_ANGLE=metal node tools/qa/toprow_check.mjs                                     # exits 1 on a failure
+SS_ANGLE=metal node tools/qa/toprow_check.mjs --sizes 1024x640 --only toprow       # toprow, app, physics
+SS_ANGLE=metal node tools/qa/toprow_check.mjs --local ui/toprow.mjs,soundstage.js  # check a fix before deploying it
+```
+
+Results: `report.md`, `report.json` and a PNG of every failing screen, in `tests/visual/out/toprow-<time>/`.
 
 ## Headless GPU note (2026-11-01)
 Run demo-scene flows with real GPU rendering (`--use-angle=metal`). Under SwiftShader, "Try the demo scene" keeps the page busy for minutes drawing shot-row previews, which looks like a freeze. Also, never call CDP `DOM.getDocument({depth:-1, pierce:true})` on the App: with 10k+ nodes it never returns. Find inputs with `Runtime.evaluate` and use `DOM.setFileInputFiles` by objectId.

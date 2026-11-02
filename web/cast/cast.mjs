@@ -430,7 +430,12 @@ export class CastPanel {
     const extra = card && pic ? Math.ceil(card.offsetHeight - pic.offsetHeight) : 120;
     const head = this.el.querySelector(".head")?.offsetHeight || 64;
     const counts = secs.map((sc) => sc.querySelectorAll(".card").length);
-    const fit = fitLayout(counts, { width: W, height: H, extra, head: head + 10 });
+    // never smaller than a card's own buttons (QA 2026-11-02: at 1024x640 the tiles shrank to 44 px and each card's
+    // Upload button sat under the next card's buttons): the page scrolls a little instead
+    const acts = card?.querySelector(".acts");
+    const btns = acts ? [...acts.children].filter((b) => b.getClientRects().length) : [];
+    const need = btns.reduce((a, b) => a + b.offsetWidth, 0) + Math.max(0, btns.length - 1) * 3 + 4;
+    const fit = fitLayout(counts, { width: W, height: H, extra, head: head + 10, min: Math.max(56, Math.ceil(need)) });
     this.el.style.setProperty("--ss-cast-tile", `${fit.tile}px`);
     secs.forEach((sc, i) => { sc.style.width = fit.widths[i] ? `${fit.widths[i]}px` : ""; });
   }

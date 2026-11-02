@@ -28,6 +28,7 @@ import * as maker from "./assets3d/maker.mjs";
 import { applyTheme, spotlight } from "./ui/theme.mjs";
 import { icon } from "./ui/icons.mjs";
 import { openPopover, closePopover, isPopoverOpen } from "./ui/popover.mjs";
+import { topRowFit } from "./ui/toprow.mjs";
 import { CheatSheet, isCheatSheetKey, withKeys } from "./ui/shortcuts.mjs";
 import { applyCanvasCss, layoutPref, setLayoutPref, rememberFlag, Mover } from "./ui/canvasui.mjs";
 import { Tour, TOUR_STEPS, tourSeen, markTourSeen, emptyCard, isBrandNewStage, applyFirstRunCss } from "./ui/firstrun.mjs";
@@ -912,9 +913,11 @@ function createStageWidget(node, inputName) {
     stage.setSun(stage.toJSON().sun.azimuth_deg, v); try { syncLight(); } catch {} });
 
   const views = document.createElement("div");
-  views.className = "ss-views";
-  for (const [mode, label] of [["wire", "Wire"], ["clay", "Clay"], ["color", "Color"], ["depth", "Depth"]]) {
-    const b = Object.assign(document.createElement("button"), { type: "button", textContent: label });
+  views.className = "ss-views ss-dispviews";
+  for (const [mode, label, tip] of [["wire", "Wire", "Wire: the models' wireframe"], ["clay", "Clay", "Clay: grey models, as the first pass renders them"],
+    ["color", "Color", "Color: materials, sky and light"], ["depth", "Depth", "Depth: the depth pass (near is light)"]]) {
+    const b = Object.assign(document.createElement("button"), { type: "button", textContent: label, title: tip });
+    b.setAttribute("aria-label", label);   // icon-only in a narrow window (data-xs): the tooltip keeps the words
     b.setAttribute("aria-pressed", String(mode === "clay"));
     b.addEventListener("pointerdown", (e) => e.stopPropagation());
     b.addEventListener("click", () => {
@@ -3264,6 +3267,9 @@ function createStageWidget(node, inputName) {
       el.style.setProperty("--ss-insp-w", `${w >= 1700 ? 380 : w >= 1300 ? 340 : 300}px`);
       const tw = w < 1400 ? "s" : w < 1720 ? "m" : "l";   // the top row drops words it can spare (tooltips keep them)
       if (el.dataset.tw !== tw) el.dataset.tw = tw;
+      // Narrower still (a 1024-wide window): the viewport's display modes go icon-only too, or Depth ran under the Properties.
+      const xs = w < 1150 ? "true" : "false";
+      if (el.dataset.xs !== xs) el.dataset.xs = xs;
       fitView();
     };
     new ResizeObserver(() => fitWs()).observe(el);
@@ -3400,6 +3406,14 @@ function createStageWidget(node, inputName) {
       });
     };
     const closePops = () => { setPop(scenePop, false, sceneStrip?.pick); setPop(toolsMenu, false, toolsBtn); };
+    // "⋯": the buttons the row has no room for (ui/toprow.mjs), the least used first. Steps, scene, Tools and Done stay.
+    const moreBtn = btn("ss-btn ss-morebtn ss-ovf", "More", icon("ellipsis", 15));
+    moreBtn.dataset.ssIcon = "ellipsis";
+    moreBtn.setAttribute("aria-haspopup", "menu");
+    moreBtn.setAttribute("aria-expanded", "false");
+    const topFit = topRowFit({ row: tabs, more: moreBtn, theme: el,
+      order: () => [...[".ss-keysbtn", ".ss-bookbtn", ".ss-guidebtn", ".ss-presetsbtn", ".ss-dirbtn"].map((q) => tabs.querySelector(`:scope > ${q}`)), redoBtn, undoBtn] });
+    node.ssTopFit = topFit;   // QA: tools/qa/toprow_check.mjs
     toolsBtn.addEventListener("click", () => { const o = toolsMenu.hidden; closePops(); setPop(toolsMenu, o, toolsBtn); });
     toolsMenu.addEventListener("click", (e) => { if (e.target.closest?.("button")) setPop(toolsMenu, false, toolsBtn); });
     const onDocDown = (e) => {
@@ -3487,8 +3501,9 @@ function createStageWidget(node, inputName) {
         mv.move(layoutBtn, toolsMenu);
         for (const k of STEP_TABS) mv.addClass(tabBtns[k], "ss-clgone");
         tabs.insertBefore(toolsBtn, keysBtn);
+        tabs.insertBefore(moreBtn, expand);
         tabs.append(toolsMenu, scenePop);
-        built.push(sceneGrp, scenePop, toolsBtn, toolsMenu, menuSep);
+        built.push(sceneGrp, scenePop, toolsBtn, toolsMenu, menuSep, moreBtn);
         // Timeline bar over the canvas.
         mv.move(bottom, cvArea);
         mv.addClass(tracksBtn, "ss-clgone");
@@ -3503,8 +3518,42 @@ function createStageWidget(node, inputName) {
       cvSync(curView);
       syncTop(curView);
       fitWs();
+      topFit.fit();
+      fitBarRoom();
+      placePhys();
       requestAnimationFrame(() => { fitView(); try { stage.resize(); } catch { /* disposed */ } if (!ladderView.hidden) ladder.draw(); });
     };
+    // Physics never covers the shot strip (QA 2026-11-02: at 1024x640 and 1280x800 it hid the clips' menus). It floats
+    // beside the inspector and ends above the timeline bar; when that leaves it under 340 px (the tracks open in a short
+    // window) it docks over the Properties column instead, and the bar and the picture end where that column starts.
+    const placePhys = () => {
+      const p = physPanel.el;
+      if (!cvOn || el.dataset.ws !== "wide" || p.hidden || !cvArea.getClientRects().length) {
+        delete cvArea.dataset.phys;
+        p.style.removeProperty("--ph-bottom");
+        return;
+      }
+      const a = cvArea.getBoundingClientRect();
+      const barOn = bottom.parentElement === cvArea && bottom.getClientRects().length > 0;
+      const bar = barOn ? bottom.getBoundingClientRect() : null;
+      const room = (bar ? bar.top - a.top : a.height) - 12;
+      const dock = room < 340;
+      if (cvArea.dataset.phys !== (dock ? "dock" : "float")) cvArea.dataset.phys = dock ? "dock" : "float";
+      p.style.setProperty("--ph-bottom", `${bar && !dock ? Math.ceil(a.bottom - bar.top + 6) : 6}px`);
+    };
+    // The folded timeline bar can wrap to two lines in a narrow window: the picture keeps clear of its real height.
+    const fitBarRoom = () => {
+      const on = cvOn && el.dataset.ws === "wide" && !el.classList.contains("ss-cl-hide") && cvArea.dataset.tl !== "open"
+        && bottom.parentElement === cvArea && bottom.getClientRects().length > 0;
+      const v = on ? `${Math.max(54, Math.ceil(bottom.offsetHeight) + 8)}px` : "";
+      if (cvArea.style.getPropertyValue("--cv-b") !== v) { if (v) cvArea.style.setProperty("--cv-b", v); else cvArea.style.removeProperty("--cv-b"); }
+    };
+    let physRaf = 0;
+    const physLater = () => { if (!physRaf) physRaf = requestAnimationFrame(() => { physRaf = 0; fitBarRoom(); placePhys(); }); };
+    new ResizeObserver(physLater).observe(cvArea);
+    new ResizeObserver(physLater).observe(bottom);
+    new MutationObserver(physLater).observe(physPanel.el, { attributes: true, attributeFilter: ["hidden"] });
+    new MutationObserver(physLater).observe(el, { attributes: true, attributeFilter: ["data-ws", "class"] });
     // Tab or H hides every panel (not while typing, not in Paint Studio, which has its own keys).
     const onKey = (e) => {
       if (!cvOn || !el.isConnected || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || el.dataset.tour) return;
