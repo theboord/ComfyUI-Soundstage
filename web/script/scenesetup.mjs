@@ -6,7 +6,7 @@
 //   plan.label  -> "Set up scene 3 — EXT. PACIFIC BEACH — SUNSET (Mara)"
 import { stageSetupForScene } from "./parse.mjs";
 import { libraryObjects } from "./breakdown.mjs";
-import { SEATS } from "../stage/library.mjs";
+import { SEATS, resolveKind, paintColorOf, withoutPaint } from "../stage/library.mjs";
 import { CABIN, PLANE_ROW } from "../stage/sets/airplane.mjs";
 import { CAR } from "../stage/sets/train.mjs";
 
@@ -291,7 +291,7 @@ const NOT_IN = { airplane_cabin: ["airliner", "plane_seats"], train_car: ["train
  * objects: [kind], removeIds: [id], changes: n, hosts: [{kind, reuseId, moving}], vehicle: {kind, moving, host} | null}.
  * people[i].mount = {host: index into hosts, seat: SEATS index | null}: that person sits in / rides that host.
  */
-export function planSceneSetup(sc, { actors = [], castItems = [], fresh = false, env = {}, lightingPreset = null, last = 96 } = {}) {
+export function planSceneSetup(sc, { actors = [], castItems = [], fresh = false, env = {}, lightingPreset = null, last = 96, scenes = [] } = {}) {
   const names = sceneCast(sc);
   const su = stageSetupForScene(sc);
   const time_preset = timePresetFor(sc);
@@ -300,8 +300,11 @@ export function planSceneSetup(sc, { actors = [], castItems = [], fresh = false,
   const humans = actors.filter((a) => PEOPLE.has(a.kind));
   for (const name of names) {
     const item = castItems.find((x) => x.kind === "character" && castSlug(x.name) === castSlug(name));
-    const description = [item?.description || "", introOf(sc, name)].filter(Boolean).join(", ");
-    const kind = guessPersonKind(name, { description, sc });
+    // Introduced in an earlier scene ("ROSA (30s, yellow rain jacket) ... her ear"): that introduction decides who
+    // they are in every scene, so "Rosa rides beside him" in scene 2 stays Rosa in her yellow jacket, not a man.
+    const introSc = introOf(sc, name) ? sc : (scenes || []).find((x) => x && x !== sc && x.id !== sc?.id && introOf(x, name)) || null;
+    const description = [item?.description || "", introSc ? introOf(introSc, name) : ""].filter(Boolean).join(", ");
+    const kind = guessPersonKind(name, { description, sc: introSc || sc });
     const appearance = appearanceFromText(description);
     if (!appearance.top && /\b(deputy|officer|cop|trooper|sergeant|captain|agent|nurse|soldier|private)\b/i.test(name)) appearance.top = "uniform";
     const hit = humans.find((a) => !used.has(a.id) && castSlug(a.name) === castSlug(name))
@@ -353,6 +356,9 @@ export function planSceneSetup(sc, { actors = [], castItems = [], fresh = false,
   const kinds = new Set(kept.map((a) => a.kind));
   const banned = new Set(NOT_IN[m11] || []);
   let objects = [...new Set((sc?.stage_hint?.objects || []).filter((k) => k && !kinds.has(k) && !hostKinds.has(k) && !banned.has(k)))].slice(0, 4);
+  // "A red SPORTS CAR tears out of the rain ... The car roars past her": one car, the sports car (a plain "car" beside a
+  // sports car or hatchback is that same car, not a second one; beside a police car it is the car being chased).
+  if (objects.includes("car") && ["sports_car", "hatchback"].some((k) => objects.includes(k) || kinds.has(k) || hostKinds.has(k))) objects = objects.filter((k) => k !== "car");
   if (SET_VEHICLE[m11] && !kinds.has(SET_VEHICLE[m11]) && !objects.includes(SET_VEHICLE[m11])) objects = [SET_VEHICLE[m11], ...objects].slice(0, 4);
   const set = m11 || su.set || null, weather = su.weather || "none";
   let changes = people.filter((p) => !p.reuseId).length + objects.length + removeIds.length + hosts.filter((h) => !h.reuseId).length;
@@ -364,8 +370,69 @@ export function planSceneSetup(sc, { actors = [], castItems = [], fresh = false,
   if (set && env.set !== set) changes++;
   if (set && (env.weather || "none") !== weather) changes++;
   if (time_preset && lightingPreset !== time_preset) changes++;
+  // colours = the paint the script names for the objects and hosts ({sports_car: "#a3262a"}); the host applies it
+  const colors = scenePaint(sc, [...objects, ...hosts.map((h) => h.kind)], { castItems, scenes });
   return { label: setupLabel(sc, names), names, env: { set, weather }, time_preset, people, objects, removeIds, changes,
-    hosts, vehicle: vehicle ? { ...vehicle, host: 0 } : null, stage: stageHintsForSet(m11, { last }) };
+    hosts, vehicle: vehicle ? { ...vehicle, host: 0 } : null, stage: stageHintsForSet(m11, { last }), colors };
+}
+
+// ---------------------------------------------------------------- Paint from the page
+// "A red SPORTS CAR tears out of the rain": the car on the stage is red. A colour word just before an object's name
+// (up to three words back, never past another object) paints that object; "the car" means the scene's one car.
+const CAR_KINDS = ["sports_car", "police_car", "hatchback", "car"];
+const objectWords = (clause) => [...String(clause).toLowerCase().matchAll(/[a-z]+(?:-[a-z]+)*/g)].map((m) => m[0]);
+
+/** {kind: "#hex"} for the wanted kinds whose name in `text` carries a colour ("a red sports car", "the black pickup"). */
+export function paintFromText(text, kinds) {
+  const want = new Set(kinds || []);
+  const out = {};
+  const target = (k) => (want.has(k) ? k : k === "car" ? CAR_KINDS.find((c) => want.has(c)) || null : null);
+  for (const clause of String(text || "").split(/[.!?;:()\n]+|,\s+|\s[-—]\s/)) {
+    const w = objectWords(clause);
+    for (let i = 0; i < w.length; i++) {
+      let kind = resolveKind(w[i]), len = 1;
+      if (i + 1 < w.length) {
+        const pair = resolveKind(`${w[i]} ${w[i + 1]}`);
+        if (pair && (pair === kind || pair !== resolveKind(w[i + 1]))) { kind = pair; len = 2; }   // "sports car", "police car"
+      }
+      if (!kind) continue;
+      const t = target(kind);
+      if (t && !out[t]) {
+        for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+          const c = paintColorOf(w[j]);
+          if (c) { out[t] = c; break; }
+          if (resolveKind(w[j])) break;   // another object's words
+        }
+      }
+      i += len - 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * The paint for each object kind this scene puts on the stage: Cast & Locations first (a prop's description, "cherry
+ * red 1967 coupe"), then this scene's action, then the rest of the script (scene 2's "INT. SPORTS CAR" is the red car
+ * scene 1 named). Only colours the words name: nothing named, nothing painted.
+ */
+export function scenePaint(sc, kinds, { castItems = [], scenes = [] } = {}) {
+  const list = [...new Set((kinds || []).filter(Boolean))];
+  const out = {};
+  for (const it of castItems || []) {
+    if (it?.kind !== "prop") continue;
+    const k = resolveKind(withoutPaint(it.name));
+    const t = list.includes(k) ? k : k === "car" ? CAR_KINDS.find((c) => list.includes(c)) : null;
+    const c = t && (paintColorOf(it.description) || paintColorOf(it.name));
+    if (c && !out[t]) out[t] = c;
+  }
+  const textOf = (x) => [x?.location || "", actionOf(x)].join(". ");
+  const rest = (scenes || []).filter((x) => x && x !== sc && x.id !== sc?.id);
+  for (const src of [sc, ...rest]) {
+    const missing = list.filter((k) => !out[k]);
+    if (!missing.length) break;
+    Object.assign(out, paintFromText(textOf(src), missing));
+  }
+  return out;
 }
 
 /** One chip of the scene strip: number, "EXT. Beach", time kind, the characters' initials. */

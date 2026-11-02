@@ -2705,7 +2705,7 @@ function createStageWidget(node, inputName) {
     let castItems = [];
     try { castItems = castPanel?.items() || []; } catch { /* cast not built */ }
     return planSceneSetup(sc, { actors: j.actors || [], castItems, fresh, env: j.environment || {}, lightingPreset: j.lighting?.preset || null,
-      last: Math.max(1, (j.shot?.frames || 97) - 1) });
+      last: Math.max(1, (j.shot?.frames || 97) - 1), scenes: script?.scenes || [] });
   }
   function setUpScene(sc, { fresh = false, auto = false } = {}) {
     if (!sc) return null;
@@ -2764,7 +2764,12 @@ function createStageWidget(node, inputName) {
         height_m: H[p.kind] || 1.75, rotation_deg: sp.rotation_deg, appearance: Object.keys(p.appearance).length ? p.appearance : undefined });
       personIds[p.name] = id;
     }
+    // The paint the script names ("a red SPORTS CAR"): on the vehicles and objects this setup adds or reuses, unless
+    // the user already painted that one.
+    const paintIt = (o) => { const c = plan.colors?.[o?.kind]; if (c && !o.appearance?.color) o.appearance = { ...(o.appearance || {}), color: c }; };
+    const hadIds = new Set(st.actors.map((a) => a.id));
     const seated = seatCast(plan, personIds, { fresh, center, camXZ });
+    for (const a of st.actors) if (!hadIds.has(a.id) || (plan.hosts || []).some((h) => h.reuseId === a.id)) paintIt(a);
     // Vehicles and animals the heading calls for, parked behind the group, spread out (behind the car it plays in).
     let vi = 0;
     for (const kind of plan.objects) {
@@ -2772,6 +2777,7 @@ function createStageWidget(node, inputName) {
       try { stage.addObject(kind.replace(/_/g, " ")); } catch { /* unknown kind */ }
       const o = st.actors.length > before ? st.actors[st.actors.length - 1] : null;
       if (!o) continue;
+      paintIt(o);
       const mark = plan.stage?.place?.[kind];
       if (mark) {   // the set's own vehicle on its mark: the train on its track, the airliner on the runway centreline
         o.position = [...mark.position]; o.rotation_deg = mark.rotation_deg || 0;

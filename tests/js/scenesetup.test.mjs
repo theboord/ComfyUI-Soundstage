@@ -115,3 +115,77 @@ test("riders: each gets a horse of their own and is up on it", () => {
   assert.deepEqual(ridersOfScene(sc3).riders, []);
   assert.ok(planSceneSetup(sc2, { actors: DEFAULTS, fresh: true }).people.every((x) => !x.mount));
 });
+
+// ------------------------------------------------------------------ paint the script names (2026-11-01)
+import { readFileSync } from "node:fs";
+import { paintFromText, scenePaint } from "../../web/script/scenesetup.mjs";
+import { parseScript } from "../../web/script/parse.mjs";
+import { resolveKind, paintColorOf, withoutPaint, PAINT_COLORS } from "../../web/stage/library.mjs";
+
+const fixture = (f) => readFileSync(new URL(`./fixtures/script/${f}`, import.meta.url), "utf8");
+
+test("paintFromText: the colour word before an object's name paints that object, and only that one", () => {
+  assert.deepEqual(paintFromText("A red SPORTS CAR tears out of the rain, DEX (40s, leather jacket) at the wheel.", ["sports_car"]), { sports_car: PAINT_COLORS.red });
+  assert.deepEqual(paintFromText("A cherry-red sports car and a black police car.", ["sports_car", "police_car"]),
+    { sports_car: PAINT_COLORS.red, police_car: PAINT_COLORS.black });
+  // "the car" is the scene's one car; a colour on another noun never jumps onto it
+  assert.deepEqual(paintFromText("The battered blue car idles.", ["sports_car"]), { sports_car: PAINT_COLORS.blue });
+  assert.deepEqual(paintFromText("Lights strobing red and blue across the wet asphalt. A POLICE CAR swings out.", ["police_car"]), {});
+  assert.deepEqual(paintFromText("ROSA (30s, yellow rain jacket) waits by the car.", ["sports_car"]), {});
+  assert.deepEqual(paintFromText("A vintage SPORTS CAR tears past.", ["sports_car"]), {});
+  assert.deepEqual(paintFromText("A white horse and a black dog.", ["horse", "dog"]), { horse: PAINT_COLORS.white, dog: PAINT_COLORS.black });
+});
+
+test("the Add box: 'a red sports car' is a red sports car (not a plain car)", () => {
+  assert.equal(resolveKind(withoutPaint("a red sports car")), "sports_car");
+  assert.equal(resolveKind("a sports car"), "sports_car");
+  assert.equal(resolveKind("the police cars"), "police_car");
+  assert.equal(paintColorOf("a red sports car"), PAINT_COLORS.red);
+  assert.equal(paintColorOf("a dog"), null);
+});
+
+test("Right On Time (the tutorial script): scene 1's car is red, one car only; scene 2's car is the same red car", () => {
+  const s = parseScript(fixture("right_on_time.fountain"), { name: "right_on_time.fountain" });
+  const [s1, s2] = s.scenes;
+  const p1 = planSceneSetup(s1, { actors: DEFAULTS, fresh: true, scenes: s.scenes });
+  assert.ok(p1.objects.includes("sports_car"));
+  assert.ok(!p1.objects.includes("car"), `one car, not a sports car and a plain car: ${p1.objects}`);
+  assert.equal(p1.colors.sports_car, PAINT_COLORS.red);
+  const rosa = p1.people.find((p) => p.name === "Rosa");
+  assert.equal(rosa.appearance.top_color, "#d9b43a");   // yellow rain jacket stays on Rosa, not on the car
+  const p2 = planSceneSetup(s2, { actors: DEFAULTS, fresh: true, scenes: s.scenes });
+  assert.equal(p2.vehicle?.kind, "sports_car");
+  assert.equal(p2.colors.sports_car, PAINT_COLORS.red);   // INT. SPORTS CAR names no colour: the script's red car
+});
+
+test("Cast & Locations wins: a prop's description paints it", () => {
+  const s = parseScript(fixture("right_on_time.fountain"));
+  const castItems = [{ kind: "prop", name: "Sports car", description: "midnight navy 1968 coupe" }];
+  assert.equal(planSceneSetup(s.scenes[0], { actors: DEFAULTS, fresh: true, castItems, scenes: s.scenes }).colors.sports_car, PAINT_COLORS.navy);
+});
+
+test("the demo scripts: Dry Creek, the car chase, inside the car, the beach name no paint, so nothing is painted", () => {
+  for (const sc of DEMO_SCRIPT.scenes) {
+    const plan = planSceneSetup(sc, { actors: DEFAULTS, fresh: true, scenes: DEMO_SCRIPT.scenes });
+    assert.deepEqual(plan.colors, {}, `${sc.heading}: ${JSON.stringify(plan.colors)}`);
+  }
+  // the chase keeps both its cars
+  assert.deepEqual(planSceneSetup(sc2, { actors: DEFAULTS, fresh: true }).objects.filter((k) => /car/.test(k)).sort(), ["police_car", "sports_car"]);
+  const b = parseScript(fixture("boardwalk.fountain"));
+  for (const sc of b.scenes) {
+    const plan = planSceneSetup(sc, { actors: DEFAULTS, fresh: true, scenes: b.scenes });
+    for (const [k, c] of Object.entries(plan.colors)) assert.ok([...plan.objects, ...plan.hosts.map((h) => h.kind)].includes(k) && /^#[0-9a-f]{6}$/.test(c));
+  }
+});
+
+test("a character introduced in scene 1 keeps who they are in scene 2 (Rosa is a woman in her yellow jacket in the car)", () => {
+  const s = parseScript(fixture("right_on_time.fountain"));
+  const p2 = planSceneSetup(s.scenes[1], { actors: DEFAULTS, fresh: true, scenes: s.scenes });
+  const rosa = p2.people.find((p) => p.name === "Rosa"), dex = p2.people.find((p) => p.name === "Dex");
+  assert.equal(rosa.kind, "woman");
+  assert.equal(rosa.appearance.top_color, "#d9b43a");
+  assert.equal(dex.kind, "man");
+  assert.equal(dex.mount?.seat, 0);   // Dex drives
+  // without the other scenes the old guess stands (nothing else changes for a lone scene)
+  assert.equal(planSceneSetup(s.scenes[1], { actors: DEFAULTS, fresh: true }).people.length, 2);
+});

@@ -139,12 +139,34 @@ export function resolveCompound(text) {
   return { rider, mount };
 }
 
+/** Paint colours a script or the Add box can name for an object ("a red sports car", "the black pickup"). */
+export const PAINT_COLORS = { red: "#a3262a", crimson: "#8e1c24", scarlet: "#b3202a", cherry: "#a3262a", maroon: "#5c1a1f",
+  burgundy: "#5e1a26", blue: "#2e4a7a", navy: "#1f2c4a", teal: "#246b6b", turquoise: "#2f9a9a", black: "#1b1b1d", white: "#e8e6e1",
+  cream: "#e6dcc4", ivory: "#ece6d4", grey: "#7a7a7a", gray: "#7a7a7a", silver: "#a8a8a8", gunmetal: "#4a4e54", brown: "#6b4a2f",
+  tan: "#b59a6a", beige: "#cbb894", green: "#3d5a3a", olive: "#5a5a32", lime: "#8fbf3a", yellow: "#d9b43a", gold: "#c9a227",
+  golden: "#c9a227", orange: "#c8692a", copper: "#b06a3a", bronze: "#8c6a3a", pink: "#d48a9a", purple: "#5d3f74", violet: "#6a4a8a" };
+
+/** The paint colour a phrase names ("a cherry-red sports car" -> "#a3262a"), the last colour word winning; null if none. */
+export function paintColorOf(text) {
+  let best = null;
+  for (const m of String(text || "").toLowerCase().matchAll(/[a-z]+/g)) if (PAINT_COLORS[m[0]]) best = PAINT_COLORS[m[0]];
+  return best;
+}
+
+/** The phrase without its colour words ("a red sports car" -> "a sports car"), so the kind resolves on the noun. */
+export function withoutPaint(text) {
+  return String(text || "").replace(/[A-Za-z]+(-[A-Za-z]+)*/g, (w) => (w.toLowerCase().split("-").some((p) => PAINT_COLORS[p]) ? "" : w))
+    .replace(/\s+/g, " ").trim();
+}
+
 /** Map free text ("a big dog", "Woman", "bikes") to a library kind, or null. */
 export function resolveKind(text) {
   const t = String(text || "").toLowerCase().trim();
   if (!t) return null;
   const words = t.replace(/[^a-z ]/g, " ").split(/\s+/).filter(Boolean);
-  const candidates = [t, ...words, ...words.map((w) => w.replace(/s$/, ""))];
+  // Two-word names before single words: "a sports car" is a sports car, not a car; "the police cars" a police car.
+  const pairs = words.slice(1).map((w, i) => `${words[i]} ${w}`);
+  const candidates = [t, ...pairs, ...pairs.map((p) => p.replace(/s$/, "")), ...words, ...words.map((w) => w.replace(/s$/, ""))];
   for (const c of candidates) {
     if (LIBRARY[c]) return c;
     if (SYNONYMS[c]) return SYNONYMS[c];

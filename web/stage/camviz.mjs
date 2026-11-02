@@ -691,6 +691,25 @@ export class PipViewer {
 //   drag the path / playhead-> scrub
 //   right-click a key       -> delete it (never the last one)
 //   drag empty space = pan, wheel = zoom, double-click empty = fit
+/**
+ * The Top view's hint for what the pointer is over (null = the idle hint). Only the hovered kind's text is built: a
+ * camera key, its aim, the path or the playhead has no cast member, so a cast key's frame is never looked up for them
+ * (that lookup threw "reading 'keys'" on every move over the camera path while dragging a car past it).
+ */
+export function topViewHint(hover, actorKeys) {
+  if (!hover) return null;
+  const who = hover.a ? hover.a.name || hover.a.kind || hover.a.id : "";
+  switch (hover.kind) {
+    case "key": return `Key ${hover.i + 1} · drag to move · Alt-drag = height · Shift = carry the aim · right-click = delete`;
+    case "target": return `Aim of key ${hover.i + 1} · drag to re-aim`;
+    case "playhead": return "Playhead · drag along the path to scrub";
+    case "path": return `Frame ${hover.frame} · click = new key here · drag = scrub`;
+    case "akey": return `${who} · key ${hover.j + 1} (frame ${hover.a ? actorKeys(hover.a)?.[hover.j]?.frame : "?"}) · drag to move · right-click = delete`;
+    case "actor": return `${who} · drag to move (keys it at the playhead)`;
+    default: return null;
+  }
+}
+
 // Each gesture is ONE undo step: keys are edited live (stage.setFrame re-renders) and
 // stage.onChange is called once on release, so stage._record pushes a single snapshot.
 
@@ -995,15 +1014,7 @@ export class TopView {
       if (!d) {
         this.hover = this.view ? this._hit(sx, sy) : null;
         cv.style.cursor = !this.hover ? "grab" : this.hover.kind === "path" ? "copy" : this.hover.kind === "playhead" ? "ew-resize" : "grab";
-        const who = this.hover?.a ? this.hover.a.name || this.hover.a.kind || this.hover.a.id : "";
-        this._hint(!this.hover ? null : {
-          key: `Key ${this.hover.i + 1} · drag to move · Alt-drag = height · Shift = carry the aim · right-click = delete`,
-          target: `Aim of key ${this.hover.i + 1} · drag to re-aim`,
-          playhead: "Playhead · drag along the path to scrub",
-          path: `Frame ${this.hover.frame} · click = new key here · drag = scrub`,
-          akey: `${who} · key ${this.hover.j + 1} (frame ${this.stage._actorKeys(this.hover.a)[this.hover.j]?.frame}) · drag to move · right-click = delete`,
-          actor: `${who} · drag to move (keys it at the playhead)`,
-        }[this.hover.kind]);
+        this._hint(topViewHint(this.hover, (a) => this.stage._actorKeys(a)));
         this.draw();
         return;
       }
