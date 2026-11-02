@@ -19,10 +19,12 @@ export const LIBRARY = {
   car: { label: "Car", height: 1.45, rig: "vehicle" },
   truck: { label: "Truck", height: 2.6, rig: "vehicle" },
   // Real-car looks (CC0, Quaternius): closed bodies over the built sedan's seats. `length` is bumper to bumper.
-  police_car: { label: "Police car", height: 1.6, rig: "vehicle", model: "police_car.glb", length: 4.8 },
-  sports_car: { label: "Sports car", height: 1.2, rig: "vehicle", model: "sports_car.glb", length: 4.5 },
+  // steer_lock: the most the front wheels turn on screen, measured on the GLB's arches (archfit.measureLock: past it
+  // the tread stands out of the fender); the stunt simulation may steer harder, the wheels on screen stop here.
+  police_car: { label: "Police car", height: 1.6, rig: "vehicle", model: "police_car.glb", length: 4.8, steer_lock: 18 },
+  sports_car: { label: "Sports car", height: 1.2, rig: "vehicle", model: "sports_car.glb", length: 4.5, steer_lock: 18 },
   // cabin: false: the built seats and dash poke through this low model's roof and hood, so they stay hidden under it.
-  hatchback: { label: "Hatchback", height: 1.5, rig: "vehicle", model: "car.glb", length: 4.2, cabin: false },
+  hatchback: { label: "Hatchback", height: 1.5, rig: "vehicle", model: "car.glb", length: 4.2, cabin: false, steer_lock: 19 },
   boat: { label: "Motorboat", height: 1.7, rig: "vehicle", length: 6.5, boat: true },
   sailboat: { label: "Sailboat", height: 11, rig: "vehicle", length: 9, boat: true },
   catamaran: { label: "Catamaran", height: 13, rig: "vehicle", length: 12, boat: true },
