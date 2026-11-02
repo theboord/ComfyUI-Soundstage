@@ -153,7 +153,7 @@ The ranking weighs judge impact before tomorrow's 9 AM PST resubmission, how muc
    - Marking: **(a)** MIT/Apache dual (pick MIT). The crates are Rust/WASM, so porting the maths to Python/JS may be simpler than vendoring. Credit either way.
 
 9. **Auto-rig any generated or imported GLB, and track who is in frame over time.** Photo → 3D and Import world give us meshes but not new rigged characters. Add:
-   - an auto-rig for humanoid, quadruped, flex-spine and prop meshes, so any TRELLIS/Hunyuan character can be posed and mocapped
+   - an auto-rig for humanoid, quadruped, flex-spine and prop meshes, so any Photo → 3D (TripoSplat) or imported character can be posed and mocapped
    - frame entry/exit times sampled from the camera frustum across the shot ("the rider enters frame left at 1.2 s") added to the LTX prompt; today `frame_lock` covers frame 1 only
    - Source: navarisun1982/comfyui-motion-previs-studio (`autoRigEngine.ts`, `povVisibilityEngine.ts`).
    - Marking: **(a)** MIT.
