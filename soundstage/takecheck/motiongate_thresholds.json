@@ -1,0 +1,13 @@
+{
+  "about": "Modified from MotionGuard config/thresholds.yaml (https://github.com/junco3/motion-guard, Apache-2.0; see MOTION_GUARD_NOTICE). Changed: only the keys the Soundstage motion gate uses are kept; the values are MotionGuard's own, still provisional and uncalibrated for Soundstage drafts.",
+  "min_estimator_score": 0.5,
+  "pck_normalized_distance": 0.1,
+  "min_active_valid_fraction": 0.6,
+  "min_evidence_frames": 6,
+  "max_abs_lag_seconds": 0.25,
+  "min_motion_energy_ratio": 0.4,
+  "min_active_mean_pck": 0.6,
+  "min_pose_motion_pixels_per_frame_normalized": 0.02,
+  "stable_reference_joint_fraction": 0.6,
+  "threshold_status": "PROVISIONAL_UNCALIBRATED"
+}

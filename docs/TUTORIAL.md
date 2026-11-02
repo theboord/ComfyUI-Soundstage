@@ -492,6 +492,34 @@ Every draft and final is checked on the CPU about 7 seconds after it lands. No m
 3. Click a chip and the Ladder jumps to that moment.
 4. Read **Follows blocking N%**: the take's camera move compared with the stage camera. Hover it for the breakdown. Press **Measure** to also score each actor against their stage position (SAM 3.1, through the queue). A camera-only score is never shown green, and "can't tell" never counts as a pass.
 5. On a flagged take, **Re-roll** renders it again with a new seed. It asks first and says how much GPU time it costs.
+6. On a draft with clay people, read the **Motion** chip (the [motion gate](#motion-gate-before-hollywood)): **✓ Motion 92%**, or red **✗ Motion: Ana's right wrist 1.2–1.8 s**. Click it to jump there; hover for every joint and time.
+
+<a id="motion-gate-before-hollywood"></a>
+
+#### Motion gate: check the draft before the Hollywood pass
+
+A Hollywood final is about 15 minutes of GPU, and most of it is the 2624×1408 refine. The refine sharpens the motion of its stage 1. It does not change it. The draft on the Ladder is that stage 1 (the "Draft decode (stage 1)" output, at 1312×704 for Hollywood), so bad motion is cheapest to catch there.
+
+1. Set the shot's Quality to **Hollywood** and press **Preview motion (draft)**.
+2. When the draft lands, the App queues the motion gate by itself: DWPose (already used by Real performance; nothing is downloaded) reads every person in the draft, and each joint is compared with the clay rig's skeleton through the shot camera (the same points as the Pose pass). It takes about 10 to 30 seconds of GPU. On other presets, press **Check motion** under the Ladder.
+3. Read the chip:
+   - **✗ Motion: Ana's right wrist 1.2–1.8 s** (red): a joint stayed off its pose, or a part of the body didn't move while the clay did. The hover lists each failing joint and its times.
+   - **⚠ Fingers: Ana's right index 2.0–2.4 s** (amber): a fingertip's shape differs. Advisory only.
+   - **✓ Motion 92%**: the share of joints on their marks for the worst person.
+   - **Motion: can't tell** (grey): DWPose did not find the person, the clay barely moves, or the motion is smaller than DWPose's own jitter. This is never a pass.
+4. Press **Render final + sound**. If the gate failed the draft, the App holds the render and asks: **Re-roll the draft** (a new seed on the cheap draft), **Render Hollywood anyway**, or **Cancel**. If the gate is still checking, it asks whether to wait.
+
+What it measures, per clay person (shoulders, elbows, wrists, hips, knees, ankles; head and face are not judged):
+
+| Check | Passes when |
+|---|---|
+| Time shift | One shift for the whole clip, searched within ±0.25 s, and one scale and offset for the framing. A draft that runs a little early or late passes. |
+| PCK | On moving frames, at least 60% of joints sit within 0.1 torso lengths of the clay. |
+| Wrong pose | No joint stays more than 0.1 torso lengths from every clay position within ±0.25 s for 0.25 s or longer. |
+| Missing motion | Where the clay moves clearly more than DWPose's noise (3×), the draft moves at least 0.4 as far, in any window within ±0.25 s. |
+| Fingertips | Each fingertip's shape stays within 0.6 palm sizes of the clay's, where the hand is at least 12 px across the palm. Advisory. |
+
+The method and thresholds come from [MotionGuard](https://github.com/junco3/motion-guard) (Apache-2.0); the thresholds are its provisional ones, not yet calibrated on Soundstage drafts. Code: [motiongate.py](../soundstage/takecheck/motiongate.py), the **Soundstage · Motion Gate** node, [model.mjs](../web/takecheck/model.mjs) `motionChip` / `hollywoodHold`.
 
 Also new on every step button: a **Ready / Needs X** dot (the models it needs are installed, or which are missing, with a link to MODELS.md), and **$0 · about N min on your GPU** under the render buttons, from your own measured render times. Every App render carries its recipe in the MP4: drop a Soundstage MP4 on the stage and it offers to restore its set and shot.
 

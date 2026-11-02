@@ -12,6 +12,12 @@
 | Car, Police Car, Sports Car by Quaternius | `web/stage/models/*.glb` | CC0 1.0 (public domain), via [poly.pizza](https://poly.pizza/u/Quaternius) |
 | [three-avbd](https://github.com/sbobyn/three-avbd) 0.3.0 (GPU rigid bodies, Augmented Vertex Block Descent) by Steven Bobyn, which ports Chris Giles's avbd-demo3d | `web/vendor/three-avbd/` (built ES modules, renamed `.mjs`; the WebGPURenderer drawing path left out; modified: speculative contacts for fast and kinematic bodies in `avbd3d/gpu/wgsl-collision.mjs` and `wgsl-solve.mjs`, marked `[Soundstage patch]`) | MIT, see `web/vendor/three-avbd/LICENSE` and its `THIRD_PARTY_NOTICES.md` (avbd-demo3d: MIT, © 2025 Chris Giles) |
 
+## Adapted code
+
+| Component | Where | License |
+|---|---|---|
+| [MotionGuard](https://github.com/junco3/motion-guard) (junco3/motion-guard), reference-based motion inspection: the clip-wide time-shift search, scale + offset fit, PCK, per-joint wrong-pose windows with a ±0.25 s tolerance, missing-motion windows judged against estimator noise, the fingertip shape check and the provisional thresholds | `soundstage/takecheck/motiongate.py` and `motiongate_thresholds.json` (modified: the reference is the stage's own clay skeletons, the estimator is DWPose, noise is DWPose's jitter on the draft, per-joint motion is window displacement, fingers are advisory; each file lists its changes). Its NOTICE is carried verbatim in `soundstage/takecheck/MOTION_GUARD_NOTICE` and its licence in `MOTION_GUARD_LICENSE` | Apache-2.0. MotionGuard's NOTICE names no copyright holder yet ("TBD by owner") |
+
 ## Used at runtime, installed separately (not vendored)
 
 | Component | Why | License |

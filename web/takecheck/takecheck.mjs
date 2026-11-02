@@ -13,12 +13,17 @@
 //   Realism     Hollywood takes are judged by the VFX-supervisor pass (POST /soundstage/takecheck/realism): a local
 //               vision model inspects cars, faces and hands; "✗ AI slop: rear lights incoherent, f24–64" is a red chip
 //               and a failed Hollywood take gets ONE automatic re-roll offer per shot. Any take: the Judge button.
+//   Motion gate the stage-1 draft is checked joint by joint against the clay skeletons (DWPose, queued; modified from
+//               MotionGuard): "✗ Motion: Ana's right wrist 1.2–1.8 s". It runs by itself on a draft when the shot's
+//               preset is Hollywood (Check motion otherwise), and a Hollywood final waits while the draft is being
+//               checked and asks before it spends the 2624×1408 pass on a draft that failed (re-roll the draft instead).
 // The pure parts (chips, scores, estimates, readiness, the MP4 tag reader) are in model.mjs.
-import { takeChips, blockingChip, realismChip, rerollOffer, fileOfUrl, annotated, estimateLabel, estimateSeconds, finalRung, renderPreset, readiness, readinessChip,
+import { takeChips, blockingChip, realismChip, rerollOffer, motionChip, hollywoodHold, motionGateGraph, fileOfUrl, annotated, estimateLabel, estimateSeconds, finalRung, renderPreset, readiness, readinessChip,
   readFileTags, recipeFromTags, loadRecipeScene, recipeLine, MODELS_DOC_URL } from "./model.mjs";
 import { loaderWidgets, allNodes } from "../ui/modelguard.mjs";
 import { planModelFixes } from "../ui/modelmatch.mjs";
 import { openPopover } from "../ui/popover.mjs";
+import { captureMotionReference, riggedActors } from "./motionref.mjs";
 
 const CSS = `
 .ss-tc-strip{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin:0 0 8px;font-size:var(--ss-fs-sm,12px);color:var(--ss-muted,rgba(240,239,237,.68))}
@@ -164,7 +169,12 @@ export function attachTakeChecks(ctx) {
       const bc = blockingChip(res?.blocking);
       if (bc) g.append(chipEl(bc, () => showPop(g, `Follows your blocking · ${name}`, bc.title.split("\n"))));
       if (bc?.action === "measure") g.append(actBtn("Measure", "Measure the actors: SAM 3.1 tracks them in the take (about 20 s of GPU, queued)", (b) => measure(file, b)));
-      if (res && !res.error && (res.verdict !== "clean" || res.realism?.verdict === "fail")) g.append(actBtn("Re-roll", "Render this shot again with a new seed (asks first: it uses your GPU)", () => reroll(rung)));
+      if (rung === 3) {
+        const mc = motionChip(gating.has(keyOf(file)) ? { pending: true } : res?.motion);
+        if (mc) g.append(chipEl(mc, () => { if (mc.start != null) { try { ladder.setFrame(Math.round(mc.start * fps())); } catch { /* */ } } showPop(g, `Motion gate · ${name}`, mc.title.split("\n")); }));
+        else if (res && !res.error && riggedActors(ctx.stage).length) g.append(actBtn("Check motion", "Motion gate: DWPose reads the draft and compares every joint with the clay skeletons (about 10–30 s of GPU, queued)", () => gateMotion(file)));
+      }
+      if (res && !res.error && (res.verdict !== "clean" || res.realism?.verdict === "fail" || (rung === 3 && res.motion?.verdict === "fail"))) g.append(actBtn("Re-roll", "Render this shot again with a new seed (asks first: it uses your GPU)", () => reroll(rung)));
       parts.push(g);
     }
     strip.replaceChildren(...parts);
@@ -181,12 +191,18 @@ export function attachTakeChecks(ctx) {
     const file = fileOfUrl(url);
     if (!file || file.type !== "output") { renderStrip(); return; }
     watch(file, () => { renderStrip(); return true; });
-    check(file).then((res) => { if (rung === 4 && res?.hollywood && !res.realism && !res.error) judge(file, rung, { auto: true }); });
+    check(file).then((res) => {
+      if (rung === 4 && res?.hollywood && !res.realism && !res.error) judge(file, rung, { auto: true });
+      // The stage-1 draft of a Hollywood shot is gated by itself: the 2624×1408 pass waits on it.
+      if (rung === 3 && res && !res.error && !res.motion && /hollywood/i.test(renderPreset(pipeline)) && riggedActors(ctx.stage).length) gateMotion(file, { auto: true });
+    });
     renderStrip();
   }
 
   // ------------------------------------------------------------------ Realism judge (the VFX-supervisor pass)
   const judging = new Set();        // "sub/file" being judged
+  const gating = new Map();         // "sub/file" -> prompt id while DWPose reads it (the motion gate, below)
+  const gatePrompts = new Map();    // prompt id -> file
   const offered = new Set();        // shots that already had their one automatic re-roll offer
   const shotKey = () => ctx.stage?.activeShot?.()?.id || ctx.stage?.activeShot?.()?.name || "shot";
   async function judge(file, rung, { auto = false } = {}) {
@@ -220,6 +236,62 @@ export function attachTakeChecks(ctx) {
     ladder.setSource = (rung, kind, url) => { const r = set(rung, kind, url); try { onLadderSource(rung, kind, url); } catch { /* never block the Ladder */ } return r; };
     ladder.clearSource = (rung) => { const r = clear(rung); try { renderStrip(); } catch { /* */ } return r; };
     for (const [rung] of RUNGS) { const s = ladder.sources?.[rung]; if (s?.kind === "video") onLadderSource(rung, "video", s.url); }
+  }
+
+  // ------------------------------------------------------------------ Motion gate (the stage-1 draft, before Hollywood)
+  async function gateMotion(file, { auto = false } = {}) {
+    const k = keyOf(file);
+    if (gating.has(k)) return;
+    gating.set(k, null); notify(k); renderStrip();
+    try {
+      const reference = await captureMotionReference(ctx.stage);
+      if (!reference?.people?.length) throw new Error("no clay people on this shot (the gate judges people)");
+      const r0 = await api.fetchApi("/soundstage/takecheck/motionref", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file, reference }) });
+      if (!r0.ok) throw new Error((await r0.json().catch(() => ({})))?.error || "the server did not take the stage skeletons");
+      const r = await api.fetchApi("/prompt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client_id: api.clientId, prompt: motionGateGraph(file) }) });
+      const j = await r.json();
+      if (!r.ok || !j.prompt_id) throw new Error(j?.node_errors ? "DWPose (comfyui_controlnet_aux) or the Motion Gate node isn't available" : (j?.error?.message || "could not queue"));
+      gating.set(k, j.prompt_id);
+      gatePrompts.set(j.prompt_id, file);
+      say(`${auto ? "Hollywood shot: c" : "C"}hecking the draft's motion against the clay skeletons (DWPose, queued, about 10–30 s)…`);
+    } catch (e) {
+      gating.delete(k);
+      const have = results.get(k)?.res;
+      if (have) have.motion = { error: e.message };
+      notify(k); renderStrip();
+      say(`Motion gate: ${e.message}`);
+    }
+  }
+  /** Before a Hollywood final: true = go on. Waits on (or asks about) the motion gate of this shot's stage-1 draft. */
+  async function holdForMotion() {
+    const src = ladder?.sources?.[3];
+    const file = src?.kind === "video" ? fileOfUrl(src.url) : null;
+    const k = file ? keyOf(file) : null;
+    const res = k ? results.get(k)?.res : null;
+    const sid = ctx.stage?.activeShot?.()?.id ?? null;
+    const d = hollywoodHold({ preset: renderPreset(pipeline), h3: /MiniMax H3/.test(pipeline?.m?.engine?.value || ""),
+      motion: k && gating.has(k) ? { pending: true } : res?.motion, draftShot: res?.recipe?.shot?.id ?? null, shot: sid,
+      draftQuality: res?.recipe?.quality?.quality ?? null });
+    if (!d.hold) return true;
+    const est = estimateLabel(estimateSeconds(timing, "final_hq", frames()));
+    if (d.state === "pending") return (await choose(d.title, d.text, ["Wait for the check", "Render Hollywood anyway"])) === 1;
+    const pick = await choose(d.title, `${d.text}\n\nThe Hollywood pass (${est}) refines this motion; it does not fix it.`,
+      ["Re-roll the draft", "Render Hollywood anyway", "Cancel"]);
+    if (pick === 0) { reroll(3, { asked: true }); return false; }
+    if (pick === 1) say("Rendering Hollywood over a draft the motion gate failed (your call).");
+    return pick === 1;
+  }
+  if (pipeline?._render && !pipeline._ssMotionGate) {
+    pipeline._ssMotionGate = true;
+    const render = pipeline._render.bind(pipeline);
+    pipeline._render = async (step, allShots = false, ...rest) => {
+      if (step === 4 && !allShots) {
+        let go = true;
+        try { go = await holdForMotion(); } catch { go = true; }      // the gate never blocks a render by breaking
+        if (!go) return undefined;
+      }
+      return render(step, allShots, ...rest);
+    };
   }
 
   // ------------------------------------------------------------------ Re-roll and Measure
@@ -259,6 +331,19 @@ export function attachTakeChecks(ctx) {
   }
   const settled = (ev) => {
     const pid = ev.detail?.prompt_id;
+    if (gatePrompts.has(pid)) {
+      const f = gatePrompts.get(pid);
+      gatePrompts.delete(pid);
+      gating.delete(keyOf(f));
+      if (ev.type === "execution_error") {
+        const have = results.get(keyOf(f))?.res;
+        if (have) have.motion = { error: `the motion gate failed on the GPU: ${ev.detail?.exception_message || "see the ComfyUI log"}` };
+        notify(keyOf(f)); renderStrip();
+      } else {
+        results.delete(keyOf(f));
+        check(f).then((res) => { const m = res?.motion; say(m?.summary ? `Motion gate: ${m.summary}` : "Motion gate: no verdict came back."); });
+      }
+    }
     if (measuring.has(pid)) {
       const f = measuring.get(pid);
       measuring.delete(pid);
@@ -413,5 +498,5 @@ export function attachTakeChecks(ctx) {
     return true;
   }
 
-  return { check, judge, decorate, maybeRestore, restoreTake, refreshReadiness, refreshEstimates, renderStrip, results, get timing() { return timing; }, get ready() { return ready; } };
+  return { check, judge, gateMotion, holdForMotion, decorate, maybeRestore, restoreTake, refreshReadiness, refreshEstimates, renderStrip, results, get timing() { return timing; }, get ready() { return ready; } };
 }

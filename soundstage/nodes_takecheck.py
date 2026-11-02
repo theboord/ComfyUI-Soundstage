@@ -214,4 +214,57 @@ def _fc_version() -> int:
     return VERSION
 
 
-NODES = [SoundstageBlockingScore, SoundstageFrameCheck]
+# ---- ⑥ Review: the motion gate on the draft ------------------------------------------------------------------------
+
+PoseKeypoint = IO.Custom("POSE_KEYPOINT")
+
+
+def gate_take(path: str, pose_keypoint) -> dict:
+    """DWPose's read of a draft against the stage skeletons the App stored for it (POST /soundstage/takecheck/motionref)."""
+    from .takecheck import motiongate as MG
+    ref = store.load(path, "motionref")
+    if not ref:
+        return {"version": MG.VERSION, "verdict": "unmeasured", "why": "the App sent no stage skeletons for this take"}
+    frames = pose_keypoint if isinstance(pose_keypoint, list) else [pose_keypoint]
+    t0 = time.time()
+    res = MG.gate(ref, frames, probe(path).get("fps") or None)
+    res["elapsed_s"] = round(time.time() - t0, 2)
+    return res
+
+
+class SoundstageMotionGate(IO.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> IO.Schema:
+        return IO.Schema(
+            node_id="SoundstageMotionGate",
+            display_name="Soundstage · Motion Gate",
+            category="Soundstage/Review",
+            description="Does the draft move like the stage? Compares DWPose's read of the draft with every clay "
+                        "person's skeleton, joint by joint: PCK after one clip-wide time shift, wrong-pose windows per "
+                        "joint (±0.25 s), missing motion judged against DWPose's own noise, fingertips (advisory). "
+                        "Modified from MotionGuard (Apache-2.0). The App queues it on the draft before a Hollywood final.",
+            inputs=[
+                IO.String.Input("video", default="", tooltip="The draft in the output folder: 'soundstage/draft_00001_.mp4 [output]'."),
+                PoseKeypoint.Input("pose_keypoint", tooltip="DWPose Estimator's POSE_KEYPOINT for every frame of that draft."),
+            ],
+            outputs=[IO.String.Output(display_name="gate_json")],
+            is_output_node=True,
+        )
+
+    @classmethod
+    def execute(cls, video="", pose_keypoint=None) -> IO.NodeOutput:
+        import folder_paths
+        path = folder_paths.get_annotated_filepath(video.strip()) if video.strip() else ""
+        if not path or not os.path.isfile(path):
+            raise ValueError(f"No such take: {video}")
+        res = gate_take(path, pose_keypoint or [])
+        store.save(path, "motion", res)
+        text = json.dumps({k: v for k, v in res.items() if k != "people"} | {"people": [p.get("name") for p in res.get("people", [])]})
+        return IO.NodeOutput(text, ui={"text": [text]})
+
+    @classmethod
+    def fingerprint_inputs(cls, video="", **kw):
+        return time.time()          # the stage skeletons in the store may have changed: always run
+
+
+NODES = [SoundstageBlockingScore, SoundstageFrameCheck, SoundstageMotionGate]

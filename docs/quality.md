@@ -18,6 +18,11 @@ the larger stage-1 canvas gives LTX more latent pixels for the car, the face and
 subject coherent through fast motion (the J-turn car stayed one car instead of flipping front-to-back), and detail
 is genuinely sharper, not upscaled. Same distilled model, same seed in both stages.
 
+**Motion gate before the refine.** Because the refine keeps stage 1's motion, the App checks the stage-1 draft of a
+Hollywood shot joint by joint against the clay skeletons (DWPose, about 10–30 s queued) and holds **Render final +
+sound** on a failed draft until you choose: re-roll the draft, render anyway, or cancel. See
+[Tutorial › Motion gate](TUTORIAL.md#motion-gate-before-hollywood).
+
 **Advanced (LTX)** (the button beside Quality; a pop-over in the canvas layout) exposes the normal LTX controls on
 top of the preset: output resolution, two-stage on/off, frame rate (the clay is retimed) and the frame count it gives,
 temporal x2 (LTX-2.5 temporal upscaler, twice the frames), steps for each stage, the stage-2 start sigma (0.909 or

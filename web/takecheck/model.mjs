@@ -9,6 +9,10 @@
 //   recipeFromTags(tags)        the Soundstage recipe in those tags (the soundstage tag, else rebuilt)
 //   realismChip(realism)        the realism judge's chip: "✓ real 9.5/10" or red "✗ AI slop: rear lights incoherent, f24–64"
 //   rerollOffer(res, offered)   whether a judged Hollywood take earns its one automatic re-roll offer
+//   motionChip(motion)          the motion gate's chip: "✓ Motion 92%" or red "✗ Motion: Ana's right wrist 1.2–1.8 s"
+//   hollywoodHold(...)          whether a Hollywood final waits: the stage-1 draft failed (or is still being) gated
+//   motionGateGraph(file)       the queued job: Load Clip -> DWPose (body + hands) -> Soundstage · Motion Gate
+//   packReference(...)          the stage skeletons (pixels per frame) -> the payload the gate compares against
 
 export const MODELS_DOC_URL = "https://github.com/theboord/ComfyUI-Soundstage/blob/main/MODELS.md";
 
@@ -319,4 +323,101 @@ export function recipeLine(rec) {
   const rung = rec.rung ? rec.rung[0].toUpperCase() + rec.rung.slice(1) : "";
   const n = (rec.scene?.actors || []).length;
   return [rung, shot, `${n} on the stage`, seed != null ? `seed ${seed}` : ""].filter(Boolean).join(" · ");
+}
+
+// ------------------------------------------------------------------------------------------- the motion gate
+// Server: soundstage/takecheck/motiongate.py (modified from MotionGuard, Apache-2.0). DWPose reads the stage-1 draft;
+// every clay person's skeleton is the reference. "can't tell" is never green; fingers alone never hold a render.
+
+const KIND = { wrong_pose: "off its pose", missing_motion: "doesn't move", finger: "off its shape" };
+
+/** "Ana's right wrist" / "Ana's body" for one failure. */
+export function motionPart(f) {
+  const who = f.who ? `${f.who}'s ` : "";
+  if (f.type === "missing_motion" && f.scope === "whole body") return `${who}body`;
+  if (f.scope === "whole body" && !f.names?.length) return `${who}body`;
+  return `${who}${(f.names || []).slice(0, 2).join(" + ") || "body"}`;
+}
+const span = (f) => `${Number(f.t0).toFixed(1)}–${Number(f.t1).toFixed(1)} s`;
+/** One line per failure for the hover and the hold dialog. */
+export const motionLine = (f) => `${motionPart(f)} ${KIND[f.type] || f.type} ${span(f)}`;
+
+export function motionChip(m) {
+  if (!m) return null;
+  if (m.pending || m.verdict === "pending")
+    return { tone: "info", text: "Motion: checking…", title: "Motion gate: DWPose reads the draft's people and compares every joint with the clay skeletons (queued, about 10–30 s of GPU).", kind: "motion" };
+  if (m.error) return { tone: "info", text: "Motion: not checked", title: String(m.error), kind: "motion" };
+  const lines = [];
+  for (const p of m.people || []) {
+    const bits = [p.verdict === "pass" ? "follows" : p.verdict === "fail" ? "fails" : "can't tell"];
+    if (p.pck != null) bits.push(`${fmtPct(p.pck)} of joints on their marks`);
+    if (p.shift_s) bits.push(`${p.shift_s > 0 ? "late" : "early"} ${Math.abs(p.shift_s).toFixed(2)} s overall`);
+    lines.push(`${p.name}: ${bits.join(", ")}${p.uncertain?.length && p.verdict !== "fail" ? ` (${p.uncertain[0]})` : ""}`);
+  }
+  for (const f of (m.failures || []).slice(0, 8)) lines.push(`✗ ${motionLine(f)}`);
+  if ((m.failures || []).length > 8) lines.push(`… ${m.failures.length - 8} more`);
+  for (const f of (m.advisory || []).slice(0, 4)) lines.push(`· ${motionLine(f)} (fingers are advisory)`);
+  lines.push("DWPose on the draft against the clay skeletons, after one clip-wide time shift (±0.25 s). Thresholds: MotionGuard's, provisional.");
+  const title = lines.join("\n");
+  if (m.verdict === "fail") {
+    const f = m.failures?.[0] || {};
+    const more = (m.failures?.length || 1) - 1;
+    return { tone: "bad", text: `✗ Motion: ${motionPart(f)} ${span(f)}${more > 0 ? ` +${more}` : ""}`, title, kind: "motion", start: f.t0 ?? null };
+  }
+  if (m.verdict === "pass") {
+    const pcks = (m.people || []).map((p) => p.pck).filter((x) => x != null);
+    const pct = pcks.length ? ` ${fmtPct(Math.min(...pcks))}` : "";
+    if (m.advisory?.length) { const f = m.advisory[0]; return { tone: "warn", text: `⚠ Fingers: ${motionPart(f).replace(/ fingertip$/, "")} ${span(f)}`, title, kind: "motion", start: f.t0 ?? null }; }
+    return { tone: "ok", text: `✓ Motion${pct}`, title, kind: "motion" };
+  }
+  const why = m.why || m.people?.find((p) => p.uncertain?.length)?.uncertain?.[0] || "not enough to judge";
+  return { tone: "info", text: "Motion: can't tell", title: [`Not a pass: ${why}.`, ...lines].join("\n"), kind: "motion" };
+}
+
+/** Does a Hollywood final wait for (or on) the motion gate of this shot's stage-1 draft?
+ *  -> {hold, state, title?, text?}. state: "off" (not Hollywood) | "none" (no gated draft) | "other" (the draft is
+ *  another shot's) | "pending" | "fail" | "pass" | "uncertain" | "unmeasured". */
+export function hollywoodHold({ preset, h3 = false, motion = null, draftShot = null, shot = null, draftQuality = null } = {}) {
+  if (h3 || !/hollywood/i.test(String(preset || ""))) return { hold: false, state: "off" };
+  if (!motion) return { hold: false, state: "none" };
+  if (draftShot && shot && draftShot !== shot) return { hold: false, state: "other" };
+  const notSame = draftQuality && !/hollywood/i.test(String(draftQuality))
+    ? `\nThis draft was rendered with ${draftQuality}, not Hollywood, so the Hollywood stage 1 renders again and its motion can differ.` : "";
+  if (motion.pending || motion.verdict === "pending") {
+    return { hold: true, state: "pending", title: "The motion gate is still checking the draft",
+      text: `DWPose is reading the stage-1 draft (about 10–30 s). Wait for it before spending the Hollywood pass?${notSame}` };
+  }
+  if (motion.verdict !== "fail") return { hold: false, state: motion.verdict || "none" };
+  const f = motion.failures || [];
+  const list = f.slice(0, 5).map((x) => `• ${motionLine(x)}`);
+  if (f.length > 5) list.push(`• … ${f.length - 5} more`);
+  return { hold: true, state: "fail", title: "Hold the Hollywood render? The draft's motion is off",
+    text: `The motion gate failed the stage-1 draft:\n${list.join("\n")}${notSame}` };
+}
+
+/** The motion gate's ComfyUI job for one take (DWPose from comfyui_controlnet_aux, already used by Real performance). */
+export function motionGateGraph(file) {
+  const video = annotated(file);
+  return {
+    ss_mg_clip: { class_type: "SoundstageClipLoad", inputs: { source: video, fps: 0, start_frame: 0, max_frames: 0, tail: "trim" } },
+    ss_mg_pose: { class_type: "DWPreprocessor", inputs: { image: ["ss_mg_clip", 0], detect_hand: "enable", detect_body: "enable", detect_face: "disable",
+      resolution: 512, bbox_detector: "yolox_l.onnx", pose_estimator: "dw-ll_ucoco_384_bs5.torchscript.pt", scale_stick_for_xinsr_cn: "disable" } },
+    ss_mg_gate: { class_type: "SoundstageMotionGate", inputs: { video, pose_keypoint: ["ss_mg_pose", 1] } },
+  };
+}
+
+const r4 = (v) => Math.round(v * 1e4) / 1e4;
+const normPt = (p, W, H) => (p ? [r4(p[0] / W), r4(p[1] / H)] : null);
+
+/** Stage skeletons in pixels of a W×H stage frame -> the gate's payload (0-1 coordinates, compact).
+ *  people: [{id, name, body: [per frame: 18 × [x,y]|null] | null, hands: [per frame: [right21|null, left21|null]] | null}] */
+export function packReference(people, { W, H, frames, fps = 24, shot = null } = {}) {
+  return {
+    v: 1, frames, fps, aspect: W / H, shot,
+    people: (people || []).filter((p) => p.body?.some(Boolean)).map((p) => ({
+      id: p.id, name: p.name,
+      body: p.body.map((fr) => (fr ? fr.map((q) => normPt(q, W, H)) : null)),
+      hands: (p.hands || []).map((fr) => (fr ? fr.map((hand) => (hand ? hand.map((q) => normPt(q, W, H)) : null)) : null)),
+    })),
+  };
 }

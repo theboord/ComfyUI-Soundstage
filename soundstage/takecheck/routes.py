@@ -3,6 +3,8 @@
 POST /soundstage/takecheck            {file: {filename, subfolder, type}, force?} -> the take's checks + blocking score
                                       (+ "realism" once judged, + "hollywood": a Hollywood-quality take)
 POST /soundstage/takecheck/realism    {file, force?} -> the realism judge's verdict (VLM through the queue, ~1 min)
+POST /soundstage/takecheck/motionref  {file, reference} -> stores the stage skeletons the motion gate compares the
+                                      draft with (the SoundstageMotionGate node reads them, runs DWPose's verdict)
 GET  /soundstage/takecheck/recipe     ?filename=&subfolder=&type= -> the stage + shot recipe inside the MP4
 GET  /soundstage/takecheck/timing     -> measured render times per rung (from ComfyUI's history)
 GET  /soundstage/takecheck/readiness  ?still=&video=&l2r=1&krea=0 -> what each App step still needs
@@ -17,6 +19,7 @@ import os
 import shutil
 
 from . import check as C
+from . import motiongate as MG
 from . import realism as RJ
 from . import recipe as R
 from . import store
@@ -54,6 +57,9 @@ def run(path: str, force: bool = False) -> dict:
         rec = R.read(path)
         res["blocking"] = C.blocking_summary(actors, (res.get("blocking") or {}).get("camera"), (rec or {}).get("scene"))
     res["hollywood"] = RJ.is_hollywood(res, res.get("recipe"))
+    gated = store.load(path, "motion")
+    if gated and gated.get("version") == MG.VERSION:
+        res["motion"] = slim_motion(gated)
     judged = store.load(path, "realism")
     if judged and judged.get("version") == RJ.VERSION:
         res["realism"] = slim(judged)
@@ -63,6 +69,22 @@ def run(path: str, force: bool = False) -> dict:
 def slim(judged: dict) -> dict:
     """A realism verdict without the model's raw replies (the Ladder and Dailies don't need them)."""
     return {k: v for k, v in judged.items() if k not in ("raw", "observations")}
+
+
+def slim_motion(g: dict) -> dict:
+    """The motion gate's verdict without the per-person metrics (the chip and the Hollywood hold need the failures)."""
+    out = {k: v for k, v in g.items() if k != "people"}
+    out["people"] = [{k: v for k, v in p.items() if k != "metrics"} for p in g.get("people") or []]
+    return out
+
+
+def save_reference(path: str, reference: dict) -> dict:
+    """The stage skeletons for this take's motion gate. A new reference clears an old verdict (the stage changed)."""
+    if not isinstance(reference, dict) or not isinstance(reference.get("people"), list):
+        raise ValueError("reference: {frames, aspect, people: [...]} expected")
+    store.save(path, "motionref", reference)
+    store.save(path, "motion", {"version": -1, "verdict": "pending"})
+    return {"ok": True, "people": len(reference["people"])}
 
 
 def judge(path: str, base_url: str, force: bool = False) -> dict:
@@ -137,6 +159,18 @@ def register(routes=None) -> bool:
             return web.json_response(res)
         except Exception as exc:  # noqa: BLE001 - the chip shows the message
             return web.json_response({"verdict": "unavailable", "error": str(exc)}, status=422)
+
+    @routes.post("/soundstage/takecheck/motionref")
+    async def motionref(request):
+        try:
+            body = await request.json()
+            path = _resolve(body.get("file"))
+            if not path:
+                return web.json_response({"error": "no such take"}, status=404)
+            res = await asyncio.to_thread(save_reference, path, body.get("reference"))
+            return web.json_response(res)
+        except Exception as exc:  # noqa: BLE001
+            return web.json_response({"error": str(exc)}, status=422)
 
     @routes.get("/soundstage/takecheck/recipe")
     async def recipe(request):

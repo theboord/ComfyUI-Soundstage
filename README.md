@@ -198,7 +198,7 @@ The **Edit** tab (the Cut) is now a real editing timeline: V2 titles, V3 motion 
 
 ### Takes that check themselves
 
-Every draft and final is checked on the CPU in seconds: black frames, freezes, jumps, smear, face drift, and **cars facing the wrong way** (the stage knows every car's path). Chips sit on the Ladder and in Dailies; **Re-roll** asks first. A **Follows your blocking %** score compares the take's camera and each actor's matte with the clay, the ground truth only Soundstage has. → [Tutorial](docs/TUTORIAL.md#takes-that-check-themselves)
+Every draft and final is checked on the CPU in seconds: black frames, freezes, jumps, smear, face drift, and **cars facing the wrong way** (the stage knows every car's path). Chips sit on the Ladder and in Dailies; **Re-roll** asks first. A **Follows your blocking %** score compares the take's camera and each actor's matte with the clay, the ground truth only Soundstage has. Before a Hollywood final, a **motion gate** checks the cheap stage-1 draft joint by joint against the clay skeletons (DWPose; method from [MotionGuard](https://github.com/junco3/motion-guard)) and holds the 2624×1408 pass on a draft that fails. → [Tutorial](docs/TUTORIAL.md#takes-that-check-themselves)
 
 <p align="center"><img src="docs/media/takecheck.jpg" width="860" alt="The Ladder with take-check chips: 'Sports car faces the wrong way' in red, 'Follows blocking 94%' in green, Measure and Re-roll"></p>
 
