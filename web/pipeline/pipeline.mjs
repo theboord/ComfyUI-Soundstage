@@ -16,9 +16,9 @@ import { FrameCheck, badgeOf, flagged, rank, REROLLS, FRAMECHECK_CSS } from "./f
  * from the plain colour pass. 2 = the frame follows the stage exactly (soundstage/look/frame_lock.py): Klein starts
  * from the Color pass (stage_denoise) and the prompt states frame 1 as measured on the ID pass. */
 export const LOOK_START = 2;
-export const FRAME_DENOISE = 0.9;
+export const FRAME_DENOISE = 0.9;   // soundstage/look/frame_lock.py DEFAULT_DENOISE: Klein's default "Follow the clay"
 /** input/ subfolder where chosen ④ frames are kept (temp/ is emptied by a server restart). */
-export const KEPT_FRAMES = "soundstage_frames";   // soundstage/look/frame_lock.py DEFAULT_DENOISE: Klein's default "Follow the clay"
+export const KEPT_FRAMES = "soundstage_frames";
 export function lookStartFor(c) {
   return !c || !!c.edited || c.seed == null || (c.ls || 0) >= 1;
 }
