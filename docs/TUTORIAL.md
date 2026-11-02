@@ -815,9 +815,9 @@ Set pieces (a rebuilt location, walls, sidewalks, photo-built sets) never move f
 
 | View | Use it for |
 |---|---|
-| **Shot cam** | Framing. You look through the camera that renders. **Every orbit, pan, dolly or W A S D move edits the camera key at the playhead** (it makes one if there is none). |
+| **Camera view** (the shot cam) | Framing. You look through the camera that renders. **Every orbit, pan, dolly or W A S D move edits the camera key at the playhead** (it makes one if there is none). |
 | **Free view** (key **0**) | Looking around the set without touching the shot. The shot camera is drawn in the world: its path as a violet line, **a small numbered camera at every camera key** (body, lens and a frustum in the shot's aspect, showing where it stands and where it looks; the one at the playhead is highlighted), blue start and end arrows, the lens frustum at the playhead, and a label with its height and focal length. A picture-in-picture monitor (bottom left) shows the shot camera, with **Play the shot**, a scrubber and a button to **Look through the shot camera**. |
-| **Top** | A top-down plan of the set, bottom right: grid, set footprints, the cast with their paths and their keys (small squares), and the camera move coloured by time (◆ keys), with a lens wedge and an aim line for every key. It is the second way to edit the camera and the cast keys, and usually the easiest. Ride-along shots follow their vehicle here too. |
+| **Top view** | A top-down plan of the set, bottom right: grid, set footprints, the cast with their paths and their keys (small squares), and the camera move coloured by time (◆ keys), with a lens wedge and an aim line for every key. It is the second way to edit the camera and the cast keys, and usually the easiest. Ride-along shots follow their vehicle here too. |
 
 **Editing the camera move in Top view:**
 
@@ -1198,7 +1198,7 @@ Keys only reach the 3D stage while the pointer is over it (or you clicked it), a
 | A / D | Fly left / right (D with something drivable selected: Drive mode) |
 | Q / E | Fly down / up |
 | Shift + W A S D Q E | Fly four times faster |
-| 0 | Toggle Shot cam / Free view |
+| 0 | Toggle Camera view / Free view |
 | F | Frame the selection (or everything, with nothing selected) |
 | P | Toggle Pose in 3D (select a person first) |
 | Esc | End pose mode; otherwise leave the full window |
