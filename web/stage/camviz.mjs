@@ -172,6 +172,27 @@ function paintKeyCam(g, hot) {
   fill.opacity = hot ? 0.16 : 0.06;
 }
 
+/**
+ * Everything the shot camera's path depends on: keys, lens keys, rig, the ride-along host's keys and the baked hits
+ * that shake it. The path (CameraViz, TopView) is rebuilt when this changes.
+ */
+export function shotPathSig(st) {
+  const sh = st.activeShot?.() || {};
+  const host = st._followActor?.() || null;
+  const ev = sh.impact_shake && sh.impact_shake !== "off" ? st.state?.physics?.events : null;
+  const evSig = ev?.length ? ev.reduce((h, e) => h + (e.frame || 0) * 31 + (e.t || 0) * 7 + (e.pos?.[0] || 0) * 13 + (e.pos?.[2] || 0) * 17, ev.length) : 0;
+  return JSON.stringify([sh.id, st._lastFrame(), st.state?.shot?.fps, st._camKeys(), sh.lens_keys || null, sh.rig || null, sh.camera_follow || "",
+    host ? [host.keys, host.position, host.rotation_deg || 0, host.drive || "", host.physics?.baked || false] : null, sh.impact_shake || "", evSig]);
+}
+
+/**
+ * The path the shot camera really takes (its rig included: a tripod stays put, a jib arcs, handheld shakes) at the
+ * given frames, and the keyed spline at the same frames, as [x, y, z] points.
+ */
+export function shotPath(st, frames) {
+  return { shot: frames.map((f) => [...st._shotCameraAt(f).position]), keyed: frames.map((f) => [...st._cameraAt(f).position]) };
+}
+
 // ---------------------------------------------------------------- CameraViz
 export class CameraViz {
   /**
@@ -273,7 +294,7 @@ export class CameraViz {
   // ---- building
   _signature() {
     const st = this.stage;
-    return [st.activeShot?.()?.id, st._lastFrame(), st.fw, st.fh, JSON.stringify(st._camKeys())].join("|");
+    return [st.fw, st.fh, shotPathSig(st)].join("|");
   }
 
   _sync(force = false) {
@@ -290,9 +311,22 @@ export class CameraViz {
     for (let f = 0; f < last; f += step) frames.push(f);
     frames.push(last);
     this._frames = frames;
-    const pts = frames.map((f) => new THREE.Vector3(...st._cameraAt(f).position));
+    // The camera the shot films (through its rig), not just the keyed spline.
+    const path = shotPath(st, frames);
+    const pts = path.shot.map((p) => new THREE.Vector3(...p));
     this._pts = pts;
     const moving = pts.some((p) => p.distanceToSquared(pts[0]) > 1e-6);
+    // Where the rig takes the camera off the keyed spline (a tripod that stays put, a jib's arc), the keyed spline
+    // shows as a faint dashed ghost, so you can see both what you asked for and what the rig does.
+    const keyedPts = path.keyed.map((p) => new THREE.Vector3(...p));
+    this.keyedLine = null;
+    if (keyedPts.some((p, i) => p.distanceTo(pts[i]) > 0.02)) {
+      const g = new THREE.BufferGeometry().setFromPoints(keyedPts);
+      this.keyedLine = new THREE.Line(g, new THREE.LineDashedMaterial(overlayMat({ color: COLORS.pathStart, dashSize: 0.12, gapSize: 0.1, opacity: 0.45 })));
+      this.keyedLine.computeLineDistances();
+      this.keyedLine.renderOrder = 1;
+      this.pathGroup.add(this.keyedLine);
+    }
 
     // Thin 1px line (always readable from far away) + a slim tube for body up close.
     const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
@@ -770,12 +804,15 @@ export class TopView {
 
   _refresh() {
     const st = this.stage, last = st._lastFrame();
-    const sig = [st.activeShot?.()?.id, last, JSON.stringify(st._camKeys()), st.state.actors.length,
+    const sig = [shotPathSig(st), st.state.actors.length,
       JSON.stringify(st.state.actors.map((a) => a.keys || a.position)), st.root.children.length, st.interiorGroup?.uuid].join("|");
     if (sig === this._sig) return;
     this._sig = sig;
-    this.track = [];
-    for (let f = 0; f <= last; f++) this.track.push(st._cameraAt(f).position);
+    // The track the shot camera really takes (through its rig); the keyed spline too, drawn as a ghost where they part.
+    const frames = Array.from({ length: last + 1 }, (_, f) => f);
+    const path = shotPath(st, frames);
+    this.track = path.shot;
+    this.keyedTrack = path.keyed.some((p, f) => Math.hypot(p[0] - this.track[f][0], p[2] - this.track[f][2]) > 0.02) ? path.keyed : null;
     const step = Math.max(1, Math.ceil(last / 120));
     this.actors = st.state.actors.map((a) => {
       const path = [];
@@ -1126,6 +1163,11 @@ export class TopView {
       label(a.name || a.kind || a.id, x, y);
     }
 
+    // The keyed spline as a faint dashed ghost where the rig takes the camera somewhere else.
+    if (this.keyedTrack) {
+      g.strokeStyle = "rgba(221,211,255,.35)"; g.lineWidth = 1.2; g.setLineDash([4, 4]); g.beginPath();
+      this.keyedTrack.forEach((p, i) => { const [x, y] = S(p); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke(); g.setLineDash([]);
+    }
     // Camera track, coloured by time, dimmer after the playhead.
     const last = Math.max(1, st._lastFrame()), c = new THREE.Color();
     g.lineWidth = 2.5; g.lineCap = "round";

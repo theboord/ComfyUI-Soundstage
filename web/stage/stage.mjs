@@ -1042,8 +1042,11 @@ export class Stage {
     return Stage._cr(P(i - 1), P(i), P(j), P(j + 1), w);
   }
 
-  /** Shot camera at any frame (interpolated through all camera keys). */
-  _cameraAt(frame) {
+  /**
+   * Shot camera at any frame (interpolated through all camera keys). {local: true} leaves a ride-along camera in its
+   * host's own space (what the keys are written in; a rig runs there, so it stays on its mount).
+   */
+  _cameraAt(frame, { local = false } = {}) {
     const keys = this._camKeys();
     const { i, j, u } = Stage._segment(keys, frame);
     const fa = keys[i].focal_mm, fb = keys[j].focal_mm;
@@ -1062,7 +1065,7 @@ export class Stage {
       if (Number.isFinite(ka.roll) || Number.isFinite(kb.roll)) cam.roll = (ka.roll || 0) + ((kb.roll || 0) - (ka.roll || 0)) * e;
     }
     // Ride-along: the shot's keys are in a vehicle's (or rider's) own space, so the world moves past outside.
-    const host = this._followActor?.();
+    const host = local ? null : this._followActor?.();
     if (host) {
       const toWorld = this._actorFrame(host, frame);
       cam.position = toWorld(cam.position);
@@ -1084,27 +1087,59 @@ export class Stage {
     return impactShakeAt(cam, Math.round(frame), ev, { preset: shake, rig, fps: this.state.shot?.fps || 24, seed: this.state.physics?.seed ?? 3 });
   }
 
-  /** The keys through the shot's rig, without impact shake. */
+  /**
+   * The keys through the shot's rig, without impact shake. The rig hits every key at its frame. A ride-along rig runs
+   * in its host's own space and then rides along to the world, so a tripod or jib on a car is a hard mount or a
+   * Russian arm and a handheld operator sits in the car. Cached until anything it reads changes: the camera and lens
+   * keys, the shot's camera parts, the rig, the shot's length and the followed host's keys and baked state.
+   */
   _rigCameraAt(frame) {
     const shot = this.activeShot?.();
     const rig = shot?.rig;
-    if (!rig?.type || rig.type === "free") return this._cameraAt(frame);
-    const last = this._lastFrame();
-    const sig = JSON.stringify([shot.id, this._camKeys(), rig, last, shot.camera_follow || "", this.state.shot?.fps]);
+    if (!rig?.type || rig.type === "free" || rig.amount === 0) return this._cameraAt(frame);   // amount 0 = the keys exactly
+    const last = this._lastFrame(), fps = this.state.shot?.fps || 24;
+    const host = this._followActor?.();
+    const keys = this._camKeys();
+    const sig = JSON.stringify([shot.id, keys, shot.lens_keys || null, shot.parts || null, shot.sensor || null, rig, last, fps,
+      shot.camera_follow || "", host ? [host.keys, host.position, host.rotation_deg || 0, host.kind, host.drive || "",
+        host.physics?.baked || false, host.stunt_sim || null] : null]);
     if (this._rigCache?.sig !== sig) {
-      const path = [];
-      for (let f = 0; f <= last; f++) path.push(this._cameraAt(f));
-      this._rigCache = { sig, path: applyRig(path, rig, this.state.shot?.fps || 24) };
+      const local = [];
+      for (let f = 0; f <= last; f++) local.push(this._cameraAt(f, { local: true }));
+      const toW = host ? local.map((_, f) => this._actorFrame(host, f)) : null;
+      // Shake is per shot: a shot without a stored seed (older scenes) gets one from its id.
+      const seeded = Number.isFinite(rig.seed) ? rig
+        : { ...rig, seed: ([...String(shot.id)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 9973, 7)) + 1 };
+      const out = applyRig(local, seeded, fps, { keyFrames: keys.map((k) => k.frame), toWorld: toW && ((f, v) => toW[f](v)) });
+      const path = toW ? out.map((c, f) => ({ ...c, position: toW[f](c.position), target: toW[f](c.target) })) : out;
+      this._rigCache = { sig, path, info: out.info || null };
     }
-    const p = this._rigCache.path;
-    return p[Math.max(0, Math.min(p.length - 1, Math.round(frame)))];
+    const p = this._rigCache.path, x = Math.max(0, Math.min(p.length - 1, Number(frame) || 0)), i = Math.floor(x), u = x - i;
+    if (u < 1e-6 || i >= p.length - 1) return p[Math.round(x)];
+    // Between frames (a sub-frame sample): blend the two frames either side.
+    const a = p[i], b = p[i + 1], mix = (q, r) => q.map((v, j) => v + (r[j] - v) * u), num = (q, r) => (Number.isFinite(q) && Number.isFinite(r) ? q + (r - q) * u : q);
+    return { ...a, position: mix(a.position, b.position), target: mix(a.target, b.target), focal_mm: num(a.focal_mm, b.focal_mm),
+      roll: num(a.roll, b.roll), ...(a.focus_m != null ? { focus_m: num(a.focus_m, b.focus_m) } : {}), ...(a.t_stop != null ? { t_stop: num(a.t_stop, b.t_stop) } : {}) };
   }
 
-  /** Put the active shot's camera on a rig: free, tripod, dolly, chapman, slider, jib, steadicam, handheld, drone. */
-  setRig(type, amount) {
+  /**
+   * Put the active shot's camera on a rig: free, tripod, dolly, chapman, slider, jib, steadicam, handheld, drone,
+   * drone_fpv. amount 0..2 (how much of the rig's feel; 0 = the keys exactly). params: {seed, arm (m, 3 to 15: the
+   * jib's arm), pivot ([x, y, z] where the jib's arm turns, in the shot camera's space; null = automatic)}. The shot
+   * keeps a seed of its own, so two handheld shots never shake alike, and the jib keeps its arm and pivot.
+   */
+  setRig(type, amount, params) {
     const shot = this.activeShot?.();
     if (!shot || !RIGS[type]) return;
-    shot.rig = { type, amount: amount ?? shot.rig?.amount ?? 1 };
+    const prev = shot.rig || {}, q = params || {};
+    const a = Number(amount ?? prev.amount ?? 1);
+    const seed = Number.isFinite(q.seed) ? Math.round(q.seed) : Number.isFinite(prev.seed) ? prev.seed
+      : ([...String(shot.id)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 9973, 7)) + 1;
+    const rig = { type, amount: Number.isFinite(a) ? Math.max(0, Math.min(2, a)) : 1, seed };
+    const arm = "arm" in q ? q.arm : prev.arm, pivot = "pivot" in q ? q.pivot : prev.pivot;
+    if (Number.isFinite(arm)) rig.arm = Math.max(3, Math.min(15, +arm));
+    if (Array.isArray(pivot) && pivot.length === 3 && pivot.every(Number.isFinite)) rig.pivot = pivot.map((v) => +v);
+    shot.rig = rig;
     this._rigCache = null;
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
@@ -1120,9 +1155,24 @@ export class Stage {
     return { preset, hits: this.impactEvents().length };
   }
 
+  /**
+   * The active shot's rig: {type, amount, seed, options}, and for a jib the arm (m) and pivot it really uses (set or
+   * automatic: arm_set / pivot_set say which) and how far its base has to track to reach marks beyond the arm.
+   */
   rigInfo() {
     const r = this.activeShot?.()?.rig;
-    return { type: r?.type || "free", amount: r?.amount ?? 1, options: Object.entries(RIGS).map(([id, v]) => ({ id, label: v.label })) };
+    const out = { type: r?.type || "free", amount: r?.amount ?? 1, seed: r?.seed ?? null,
+      options: Object.entries(RIGS).map(([id, v]) => ({ id, label: v.label })) };
+    if (r?.type === "jib") {
+      if (r.amount !== 0) this._rigCameraAt(this.frame || 0);
+      const info = r.amount !== 0 ? this._rigCache?.info : null;
+      Object.assign(out, { arm: info?.arm ?? r.arm ?? null, pivot: info?.pivot ?? r.pivot ?? null, arm_set: Number.isFinite(r.arm),
+        pivot_set: Array.isArray(r.pivot), base_travel: info?.travel ?? 0, pivot_space: this.activeShot()?.camera_follow ? "host" : "world" });
+    } else if (r?.type === "slider" && r.amount !== 0) {
+      this._rigCameraAt(this.frame || 0);
+      out.run = this._rigCache?.info?.run ?? 0;
+    }
+    return out;
   }
 
   _followActor() {
