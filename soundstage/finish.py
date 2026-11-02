@@ -36,8 +36,8 @@ def finish_graph(inp: str, out: str, preset: str, w: int, h: int, seed: int = 1,
                  tag: str = "ff") -> list[str]:
     """Filter-graph strings taking [inp] to [out] (a plain copy for 'off'). w, h: the stream's size (kept exactly)."""
     P = PRESETS.get(preset or "off")
-    if not P:
-        return [f"{inp}null{out}"]
+    if not P:   # 'off': a plain copy, or only the 2-frame shutter mix when motion blur is asked for on its own
+        return [f"{inp}tmix=frames=2:weights='1 1'{out}" if motion_blur else f"{inp}null{out}"]
     t = tag
     f: list[str] = []
     # 1. barrel distortion; the black corners it opens are hidden by the vignette and a 1% overscan.
@@ -74,7 +74,7 @@ def finish_frames(frames: np.ndarray, preset: str, seed: int = 1, motion_blur: b
         return frames
     from .cut.render import _exe
     n, h, w, _ = frames.shape
-    graph = ";".join(finish_graph("[0:v]", "[v]", preset if PRESETS.get(preset) else "subtle", w, h, seed, motion_blur))
+    graph = ";".join(finish_graph("[0:v]", "[v]", preset if PRESETS.get(preset) else "off", w, h, seed, motion_blur))
     cmd = [_exe("ffmpeg"), "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{w}x{h}", "-r", f"{fps}", "-i", "-",
            "-filter_complex", graph, "-map", "[v]", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
     r = subprocess.run(cmd, input=np.ascontiguousarray(frames, dtype=np.uint8).tobytes(), capture_output=True, check=False)

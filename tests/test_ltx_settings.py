@@ -58,7 +58,7 @@ def test_manual_sigmas_override_steps():
 def test_overrides_and_clamps():
     s = L.resolve({"preset": "Draft", "resolution": 99999, "steps_1": 0, "cfg": 0, "crf": 99, "codec": "gif", "sampler": "x",
                    "seed": 7, "ic_lora": 3, "fps": 1000})
-    assert s["resolution"] == 2176 and s["steps_1"] == 4 and s["cfg"] == 1.0 and s["crf"] == 51
+    assert s["resolution"] == 2176 and s["steps_1"] == 8 and s["cfg"] == 1.0 and s["crf"] == 51
     assert s["codec"] == "h264" and s["sampler"] == "euler_ancestral" and s["seed"] == 7 and s["ic_lora"] == 2.0 and s["fps"] == 60.0
     assert L.resolve('{"preset":"Hollywood","codec":"prores_hq"}')["codec"] == "prores_hq"
     assert L.resolve("not json")["preset"] == "Final"
@@ -221,3 +221,10 @@ def test_on_prompt_handler_never_raises():
     assert RT.on_prompt_reference(body)["prompt"]["9002:9042"]["inputs"]["strength"] == 0.5
     assert RT.on_prompt_reference({"prompt": None}) == {"prompt": None}
     assert RT.on_prompt_reference({}) == {}
+
+
+def test_steps_1_never_reports_fewer_steps_than_it_renders():
+    """resolve() and the Advanced pop-over allowed 4-7 stage-1 steps, but sigmas_1 builds at least 8: settings_json and
+    the time estimate said 5 while 8 rendered."""
+    r = L.resolve({"preset": "Draft", "steps_1": 5})
+    assert r["steps_1"] == 8 and len(L.sigmas_1(r["steps_1"]).split(",")) - 1 == 8

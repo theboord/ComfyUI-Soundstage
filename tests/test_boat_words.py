@@ -28,3 +28,11 @@ def test_sets_and_parts():
     assert "lake" in S.SET_PLACES["lake"][1] and "rapids" in S.SET_PLACES["river_rapids"][1]
     assert "motor_trim" in channels_for("speedboat") and "sheet" in channels_for("yacht") and "effort" in channels_for("canoe")
     assert S.seats()["canoe"][0][0] == "Bow paddler" and len(S.seats()["raft"]) == 6
+
+
+def test_the_seat_reaches_the_compiled_prompt():
+    """_ride_noun called BT.ride_noun without the seat, so every speedboat / rowboat / log raft rider was 'riding in'
+    one in the real prompt; test_verbs_and_riders passed because it called BT.ride_noun with the seat directly."""
+    from soundstage.look import compile as C
+    for kind, want in (("speedboat", "at the wheel of a speedboat"), ("rowboat", "rowing a rowboat"), ("log_raft", "poling a log raft")):
+        assert want in str(C.compile_look({}, _scene(kind))), kind

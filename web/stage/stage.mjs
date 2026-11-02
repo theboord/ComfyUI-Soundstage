@@ -375,7 +375,7 @@ export class Stage {
     this._setGroup = built.group;
     this._setCleanSig = clean;
     this.setFx = built.fx || null;   // Milestone 11 sets (web/stage/sets): animation per frame + per-pass look
-    ground.visible = !this.setFx?.hideGround;
+    ground.visible = ground.visible && !this.setFx?.hideGround;   // attach() above already hid it under an imported world
     // The clean street runs a long way: so does the road. Open land (desert, beach, field, forest, sea) runs to the horizon.
     const reach = clean ? 6 : groundReach(env.set);
     ground.scale.set(reach, reach, 1);
@@ -1296,10 +1296,17 @@ export class Stage {
     // focus eases in diopters like a focus ring, the T-stop in stops, roll linearly. Shots without them add nothing.
     const lk = this.activeShot?.()?.lens_keys;
     if (lk?.length) {
-      const s = Stage._segment(lk, frame), ka = lk[s.i], kb = lk[s.j], e = s.i === s.j ? 0 : s.u * s.u * (3 - 2 * s.u);
-      if (ka.focus_m > 0 && kb.focus_m > 0) cam.focus_m = 1 / (1 / ka.focus_m + (1 / kb.focus_m - 1 / ka.focus_m) * e);
-      if (ka.t_stop > 0 && kb.t_stop > 0) cam.t_stop = ka.t_stop * Math.pow(kb.t_stop / ka.t_stop, e);
-      if (Number.isFinite(ka.roll) || Number.isFinite(kb.roll)) cam.roll = (ka.roll || 0) + ((kb.roll || 0) - (ka.roll || 0)) * e;
+      // Each channel between the nearest keys that carry it (Parts can remove one channel's key and keep the others).
+      const seg = (ok) => {
+        const ks = lk.filter(ok);
+        if (!ks.length) return null;
+        const s = Stage._segment(ks, frame);
+        return [ks[s.i], ks[s.j], s.i === s.j ? 0 : s.u * s.u * (3 - 2 * s.u)];
+      };
+      const f = seg((k) => k.focus_m > 0), t = seg((k) => k.t_stop > 0), r = seg((k) => Number.isFinite(k.roll));
+      if (f) cam.focus_m = 1 / (1 / f[0].focus_m + (1 / f[1].focus_m - 1 / f[0].focus_m) * f[2]);
+      if (t) cam.t_stop = t[0].t_stop * Math.pow(t[1].t_stop / t[0].t_stop, t[2]);
+      if (r) cam.roll = r[0].roll + (r[1].roll - r[0].roll) * r[2];
     }
     // Ride-along: the shot's keys are in a vehicle's (or rider's) own space, so the world moves past outside.
     const host = local ? null : this._followActor?.();
@@ -2241,8 +2248,15 @@ export class Stage {
   /** Per-frame shot camera (for exports: Layer Pack camera, Nuke .chan, etc.). */
   cameraTrack() {
     const out = [];
-    for (let f = 0; f <= this._lastFrame(); f++) out.push({ frame: f, ...this._shotCameraAt(f) });
+    for (let f = 0; f <= this._lastFrame(); f++) out.push({ frame: f, ...this._filmCameraAt(f) });
     return out;
+  }
+
+  /** _shotCameraAt with the shot's Sensor (Parts) folded in: focal_mm as the full-frame focal with the same view, which
+   * is what the viewport and every capture show (objparts' _applyCamera crop). Exports and camera_track use this. */
+  _filmCameraAt(f) {
+    const c = this._shotCameraAt(f), crop = this._sensorCrop?.() || 1;
+    return crop === 1 ? c : { ...c, focal_mm: c.focal_mm * crop };
   }
 
   _applyCamera() {
@@ -4834,6 +4848,8 @@ export class Stage {
 
   dispose() {
     this._ro?.disconnect();
+    try { this.rotTools?.dispose?.(); } catch { /* not built */ }
+    try { this._partsPanels?.dispose?.(); } catch { /* not mounted */ }
     this.renderer.dispose();
   }
 }
