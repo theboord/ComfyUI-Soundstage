@@ -1,5 +1,5 @@
 """Render the Cut to one finished file (Milestone 19): the picture with its transitions, fades and clip opacity, the
-title cards on V2, burned-in subtitles if asked for, and the mixed sound (every audio track with its gain, fades,
+title cards on V2, the motion graphics on V3 (gfx.py), burned-in subtitles if asked for, and the mixed sound (every audio track with its gain, fades,
 volume keys and auto-duck, plus each clip's own sync sound) at a loudness target. MP4 (H.264 + AAC) or ProRes 422 HQ
 (+ 24-bit PCM, .mov) at the project's size and rate, or a 9:16 social version cropped from it.
 
@@ -27,6 +27,7 @@ import numpy as np
 from .export import is_overlap, key_at, layout, normalize_project, sequence_frames, total_frames, trans_spans, wrap_cue, fps_info
 from ..finish import PRESETS as FINISH, finish_graph
 from .mix import SR, _f2s, decode, render_mix, resolve_audio_path, write_wav24
+from .gfx import render_graphics
 
 VIDEO_EXT = (".mp4", ".mov", ".webm", ".mkv", ".m4v")
 IMAGE_EXT = (".png", ".jpg", ".jpeg", ".webp")
@@ -145,6 +146,24 @@ def shot_media(shot, roots):
     if src and os.path.isfile(src.get("path", "")):
         return "video", src["path"], "source"
     return "slate", None, "clay"
+
+
+def rung_media(shot, rung, roots):
+    """(kind, path, label) of one rung of a shot for a V3 graphic's window: "auto" is the best that exists; a named
+    rung that is not rendered is a slate saying so (a split never shows the same render on both sides)."""
+    if not shot:
+        return "slate", None, "missing shot"
+    if rung in (None, "", "auto"):
+        kind, path, r = shot_media(shot, roots)
+        return kind, path, f"{shot['name']} · {r}"
+    if rung == "source":
+        src = shot.get("source") or {}
+        return ("video", src["path"], f"{shot['name']} · source") if os.path.isfile(src.get("path", "")) else ("slate", None, f"{shot['name']} · source")
+    raw = (shot.get("renders") or {}).get(rung)
+    p = resolve_audio_path({"url": raw}, roots) if raw else None
+    if p and os.path.isfile(p):
+        return ("image" if p.lower().endswith(IMAGE_EXT) else "video"), p, f"{shot['name']} · {rung}"
+    return "slate", None, f"{shot['name']} · {rung}"
 
 
 def _opacity_expr(keys, pre, rate):
@@ -401,6 +420,21 @@ def render_cut(project, roots, out_path, spec=None) -> dict:
                                     seed=int(spec.get("finish_seed") or 1), motion_blur=bool(spec.get("motion_blur")) or None)
             cur = "[fin]"
 
+        # ---- V3 graphics (soundstage/cut/gfx.py): the picture so far goes to a lossless file, the graphics are
+        # painted over it frame by frame, and the titles + sound are laid on the result as before.
+        gstats = None
+        if p.get("graphics"):
+            filters.append(f"{cur}format=bgr0[vb]")
+            base_mkv, gfx_mkv = os.path.join(tmp, "base.mkv"), os.path.join(tmp, "gfx.mkv")
+            _run(args + ["-filter_complex", ";".join(filters), "-map", "[vb]", "-c:v", "ffv1", "-r", fps_s, "-frames:v", str(seq), base_mkv],
+                 "picture pass")
+            shots = {s["id"]: s for s in p["shots"]}
+            gstats = render_graphics(_exe("ffmpeg"), base_mkv, p["graphics"], gfx_mkv, OW, OH, rate, seq,
+                                     lambda src: rung_media(shots.get(src["shot_id"]), src.get("rung"), roots),
+                                     motion_blur=spec.get("gfx_motion_blur", True) is not False)
+            os.remove(base_mkv)
+            args, filters, cur, idx = [_exe("ffmpeg"), "-y", "-v", "error", "-i", gfx_mkv], [], "[0:v]", 1
+
         # ---- titles (V2) and burned-in subtitles: Pillow PNGs overlaid in time
         overlays = []
         for n, t in enumerate(p.get("titles") or []):
@@ -475,7 +509,7 @@ def render_cut(project, roots, out_path, spec=None) -> dict:
                 "sources": {it["row"]["shot"]["id"]: it["rung"] for it in items}, "sync_clips": sync_used,
                 "transitions": [{"edit": k, **{x: sp[x] for x in ("type", "frames", "pre", "post", "limited")}} for k, sp in enumerate(spans) if sp]
                 + ([{"edit": "tail", **{x: tail[x] for x in ("type", "frames", "pre", "post", "limited")}}] if tail else []),
-                "problems": problems, "encode_s": round(time.perf_counter() - t0, 2)}
+                "problems": problems, "graphics": gstats, "encode_s": round(time.perf_counter() - t0, 2)}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -519,5 +553,7 @@ def register(routes=None) -> bool:
 
     from .impact_sfx import add_routes as _impact_routes   # Milestone 21: impact sounds for A2
     _impact_routes(routes)
+    from .gfx_sfx import add_routes as _gfx_routes   # the V3 graphics' designed sounds for A2
+    _gfx_routes(routes)
     _REGISTERED = True
     return True

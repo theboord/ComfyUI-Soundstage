@@ -2,6 +2,8 @@
 // The cut is a gapless list of events {shot_id, in, out} (out exclusive, shot-relative frames);
 // record time is the running sum of event lengths starting at 01:00:00:00.
 
+import { normalizeGraphics } from "./gfx.mjs";
+
 export const RUNGS = ["clay", "look", "draft", "final"];
 
 /** Fill defaults and drop cut events that point at missing shots. Returns a new object. */
@@ -51,6 +53,7 @@ export function normalizeProject(p) {
   if (fo) project.fade_out = { type: fo.type === "dip_white" ? "dip_white" : "dip_black", frames: fo.frames };
   else delete project.fade_out;
   if (project.titles != null) project.titles = normalizeTitles(project.titles);
+  if (project.graphics != null) project.graphics = normalizeGraphics(project.graphics);   // V3 motion graphics (gfx.mjs)
   if (project.subtitles != null) project.subtitles = normalizeSubtitles(project.subtitles);
   return project;
 }
