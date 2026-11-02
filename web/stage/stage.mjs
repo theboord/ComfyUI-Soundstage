@@ -130,6 +130,28 @@ function beamLevel(mode, f) {
 
 /** Frames a timed mount takes to hop from standing into the saddle. */
 const HOP_FRAMES = 10;
+const _wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+/** Climbing onto a horse at t (0..1): from the standing spot up into the near stirrup, over the croup, down into the
+ *  seat, limbs from Gait.mountMotion. seatPos is the seated origin; drop the ride pose's seat drop. */
+function mountHorse(g, hg, seatPos, t, h, drop) {
+  const M = Gait.mountMotion(t), s = h / 1.8, yw = hg.rotation.y;
+  const lx = Math.cos(yw), lz = -Math.sin(yw);                     // the horse's left (near side)
+  const from = g.position.clone();                                 // standing spot, set by the free-actor pass
+  const stirX = seatPos.x + lx * 0.42 * s, stirZ = seatPos.z + lz * 0.42 * s, stirY = seatPos.y + drop - 0.55 * s;
+  const hx = from.x + (stirX - from.x) * M.rise, hz = from.z + (stirZ - from.z) * M.rise;
+  g.position.set(hx + (seatPos.x - hx) * M.over, from.y + (stirY - from.y) * M.rise, hz + (seatPos.z - hz) * M.over);
+  g.position.y += (seatPos.y - g.position.y) * M.sit;
+  g.rotation.order = "YXZ";
+  g.rotation.y += _wrap(yw - g.rotation.y) * M.turn;
+  g.rotation.x = M.lean;
+  for (const l of g.userData.limbs || []) {
+    const L = M.limbs[l.side > 0 ? 1 : -1];
+    if (l.part === "hip") l.pivot.rotation.set(L.hip[0], 0, L.hip[1]);
+    if (l.part === "knee") l.pivot.rotation.set(L.knee, 0, 0);
+    if (l.part === "shoulder") l.pivot.rotation.set(L.shoulder, 0, -l.side * 0.1);
+    if (l.part === "elbow") l.pivot.rotation.set(L.elbow, 0, 0);
+  }
+}
 
 export const FRAME_W = 960;
 export const FRAME_H = 512;
@@ -1628,8 +1650,13 @@ export class Stage {
       if (bodyG) seatLocal.sub(bodyG.position).applyEuler(bodyG.rotation).add(bodyG.position);
       const seat = seatLocal.applyAxisAngle(new THREE.Vector3(0, 1, 0), hg.rotation.y);
       const h = (a.height_m || 1.8) * (a.scale || 1);
-      const hopStart = (a.mount_at || 0) - HOP_FRAMES;
-      if (a.mount_at > 0 && this.frame < hopStart) { applyPose(g, "stand", h); continue; } // still on foot
+      // On a horse they climb on (foot in the stirrup, leg over: Gait.mountMotion, ~1 s); elsewhere a quick hop.
+      const climb = host.kind === "horse" && (a.pose || m.pose) === "ride";
+      const hopN = climb ? Gait.MOUNT_FRAMES : HOP_FRAMES;
+      const hopStart = (a.mount_at || 0) - hopN;
+      // Still on foot: a keyed rider keeps the legs the gait gave them (running to the horse, not gliding on straight
+      // legs); only an unkeyed one is reset to standing.
+      if (a.mount_at > 0 && this.frame < hopStart) { if (!this._gaitPlan(a, g)) applyPose(g, "stand", h); continue; }
       Gait.release(g);
       const drop = applyPose(g, a.pose || m.pose, h);
       for (const jn of ["spine", "neck", "head"]) g.userData.joints?.[jn]?.rotation.set(0, 0, 0);   // seated: no walk / idle sway left over
@@ -1642,7 +1669,8 @@ export class Stage {
       const seatPos = new THREE.Vector3(hg.position.x + seat.x, hg.position.y + seat.y - drop, hg.position.z + seat.z);
       if (a.mount_at > 0 && this.frame < a.mount_at) {
         // Hop on: arc from where they stand up into the saddle, turning to face the mount's way.
-        const t = (this.frame - hopStart) / HOP_FRAMES;
+        const t = (this.frame - hopStart) / hopN;
+        if (climb) { mountHorse(g, hg, seatPos, t, h, drop); continue; }
         const e = t * t * (3 - 2 * t);
         if (t < 0.5) applyPose(g, "stand", h);
         const from = g.position.clone(); // standing spot, set by the free-actor pass above

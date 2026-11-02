@@ -141,3 +141,30 @@ test("dust: seeded (same frame, same particles), scales with speed and ground", 
   assert.ok(walk < a.length / 8, `a walk barely marks the ground (${walk} vs ${a.length})`);
   assert.equal(Gait.groundDust("interior").amount, 0);
 });
+
+test("mount: foot in the stirrup, spring up, off leg over the croup, settle into the ride pose (~1 s)", () => {
+  assert.equal(Gait.MOUNT_FRAMES, 24);
+  const a = Gait.mountMotion(0), r = Gait.mountMotion(0.2), up = Gait.mountMotion(0.5), ov = Gait.mountMotion(0.75), e = Gait.mountMotion(1);
+  assert.equal(a.rise, 0); assert.equal(a.over, 0); assert.equal(a.limbs[1].hip[0], 0);
+  assert.ok(r.limbs[1].hip[0] < -1.2 && r.limbs[1].knee > 1.5, "near foot lifted into the stirrup");
+  assert.ok(r.limbs[1].shoulder < -2, "hands up to the saddle");
+  assert.ok(up.rise > 0.95 && up.limbs[-1].hip[0] > 0.6, "standing in the stirrup, off leg swung back");
+  assert.ok(Math.abs(ov.limbs[-1].hip[1]) > 1.2 && ov.over > 0.5, "off leg out and over the croup");
+  // ends in humans.mjs's ride pose: hips -1.1 spread side*0.45, knees 1.3, upright, seated
+  assert.equal(e.sit, 1); assert.equal(e.over, 1); assert.equal(e.lean, 0);
+  for (const sd of [1, -1]) {
+    assert.ok(Math.abs(e.limbs[sd].hip[0] + 1.1) < 1e-9 && Math.abs(e.limbs[sd].hip[1] - sd * 0.45) < 1e-9);
+    assert.ok(Math.abs(e.limbs[sd].knee - 1.3) < 1e-9);
+  }
+});
+
+test("horse cadence through canter -> gallop follows the speed (planted hooves don't slide mid-change)", () => {
+  const sweep = { walk: 0.55, gallop: 1.1 };
+  for (const v of [7, 7.6, 8, 8.4, 9, 11, 13]) {
+    const g = Gait.horseGait(v, 1.6, sweep);
+    const w = g.weights, sw = (w.walk + w.trot) * sweep.walk + (w.canter + w.gallop) * sweep.gallop;
+    const base = g.duty - 0.16 * Math.max(0, Math.min(1, 1 - v / 1.5));
+    // ground covered by a hoof in stance (duty / freq * v) matches the clip's sweep within 10%
+    assert.ok(Math.abs(base / g.freq * v - sw) / sw < 0.1, `v=${v}: stance ${(base / g.freq * v).toFixed(2)} vs sweep ${sw.toFixed(2)}`);
+  }
+});
