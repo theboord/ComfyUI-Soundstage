@@ -289,7 +289,11 @@ def face_detector_name() -> str:
     cv2 = _cv2()
     if cv2 is None:
         return ""
-    return "YuNet" if (yunet_path() and hasattr(cv2, "FaceDetectorYN")) else "Haar"
+    if not hasattr(cv2, "HOGDescriptor"):
+        return ""          # OpenCV 5 moved HOG (and Haar) out of the main build: no face check
+    if yunet_path() and hasattr(cv2, "FaceDetectorYN"):
+        return "YuNet"
+    return "Haar" if hasattr(cv2, "CascadeClassifier") else ""
 
 
 def _detect_faces(cv2, bgr, det):
@@ -323,7 +327,11 @@ def faces(rgb: np.ndarray, fps: float, every: int = 2, sim_min: float = 0.55, mi
     info = {"detector": "", "faces_seen": 0}
     if cv2 is None or rgb.shape[0] < 3:
         return [], info
-    if yunet_path() and hasattr(cv2, "FaceDetectorYN"):
+    name = face_detector_name()
+    if not name:           # e.g. opencv-python 5.x: no HOGDescriptor / CascadeClassifier in the main module
+        info["skipped"] = "this OpenCV build has no HOG/Haar face tools"
+        return [], info
+    if name == "YuNet":
         det = ("yunet", cv2.FaceDetectorYN.create(yunet_path(), "", (320, 320), 0.75, 0.3, 50))
         info["detector"] = "YuNet"
     else:

@@ -384,3 +384,16 @@ def test_people_seated_in_a_car_are_not_judged_on_their_own():
                         {"id": "driver", "kind": "man", "mount_id": "car", "position": [0, 0, 0]},
                         {"id": "walker", "kind": "woman", "position": [2, 0, 0]}]}
     assert [a["id"] for a in B.tracked_actors(scene)] == ["car", "walker"]
+
+
+def test_face_check_skips_cleanly_on_an_opencv_without_hog_or_haar(monkeypatch):
+    """opencv-python 5.x (what `pip install opencv-python-headless>=4.8` now resolves to) dropped
+    cv2.CascadeClassifier and cv2.HOGDescriptor from the main module. The face check used both unguarded, so on
+    such a build every take check with faces on raised AttributeError and the whole check failed."""
+    import types
+    fake = types.SimpleNamespace(FaceDetectorYN=object, data=types.SimpleNamespace(haarcascades=""))
+    monkeypatch.setattr(D, "_cv2", lambda: fake)
+    assert D.face_detector_name() == ""
+    rgb = np.zeros((4, 64, 64, 3), np.uint8)
+    issues, info = D.faces(rgb, 24.0)
+    assert issues == [] and info["detector"] == "" and "skipped" in info
