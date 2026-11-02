@@ -5,6 +5,23 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-02
 
+**05:30 PST · ✦ One-click: effects, relights, new angles and expands on every take and ④ Frame candidate**
+- **What:** a **✦ One-click** button on every Dailies take (card and takes list), the Ladder bar and every ④ Frame candidate opens one in-canvas card window in the Presets style ([web/oneclick/oneclick.mjs](web/oneclick/oneclick.mjs)). All 52 cards are always visible; one that doesn't fit the take is greyed with the reason. One ask (jobs, minutes, $0 on local models), then the result lands as a new take (a still is also a ④ Frame candidate), checked by the take checks and the realism judge.
+- **Effects** ([effects.mjs](web/oneclick/effects.mjs)): Nightfall, Flood, Rain, Snow, Fog and Golden hour with our own physical prompts (FLUX 3 Klein on a still; frame 1 then LTX Ripple on a clip, with its sound); Empty the scene (Klein, or the LTX-2.5 clean-plate IC-LoRA on clips); Cutout (BiRefNet or SAM 3.1; LTX-2.5 alpha-gen to ProRes 4444 with alpha on clips); Living photo (LTX-2.5 I2V). Pop, Inflate, Cake, Squish, Unzip and Gulp are experimental practical-FX readings.
+- **Light** ([light.mjs](web/oneclick/light.mjs)): the 18 lighting setups as relights written from each setup's lights (an experimental, off-by-default Krea 2 pass on the stage depth).
+- **Camera** ([angle.mjs](web/oneclick/angle.mjs)): six moves, each **approximate** (Klein) or **exact** (experimental: the shot camera moves on the 3D stage, Klein locked to that depth pass). **Frame** ([expand.mjs](web/oneclick/expand.mjs)): Expand to six aspects with Paint Studio's Extend.
+- **MCP:** `soundstage_one_click` (list, propose, run with confirm_gpu) through `/soundstage/oneclick/ask`; the App runs it. Docs: [docs/oneclick.md](docs/oneclick.md).
+- **Tests:** tests/js/oneclick.test.mjs (14), tests/test_oneclick.py (5).
+- **Rendered through the App (8 GPU jobs, judged frame by frame; evidence in share/OneClick/A):**
+  - **Neon relight (Klein):** good. The Klein relight kept every object and lit the street magenta and cyan with wet reflections.
+  - **Krea 2 depth-locked pass:** failed. It invented three people and a different street, so it is now off by default and labelled experimental.
+  - **Flood still:** the first prompt left a thin film with the feet on top of the water.
+  - **Flood clip:** the second prompt invented a man in the street. Ripple carried the flood up to the crash, then the water vanished. The prompts now ask for knee-deep water and add nothing.
+  - **Exact orbit:** with the original as a reference, Klein copied the original camera. Without it, the geometry is right but the look is clay-like, so the card is marked experimental.
+  - **Living photo:** steam bloomed round the canoe and the canoe morphed. The prompt now says nothing new appears.
+  - **Realism judge:** it timed out in the browser on the busy queue, and passed the thin-film Flood 10/10.
+- **Still open:** none of the prompt fixes is re-rendered yet; clip Expand waits for one LTX-2.3 in/out-painting test on LTX-2.5; Reshoot, Loop, Open in ComfyUI and the phone hand-off come from Track B.
+
 **04:40 PST · The Quickstart, tested by two fresh-eyes runs: a first shot in ten minutes, then a one-page scene; and four first-run snags fixed**
 - **New:** [docs/QUICKSTART.md](docs/QUICKSTART.md), linked from the README and the tutorial: four rules first (never ComfyUI's Run, one shot at a time, Esc only to close an open panel, read a yellow button), a ten-step first shot on the demo, the *Last Light at the Pump* scene through all seven steps, and the rough edges. Every step was checked against the live App by two headless testers with no GPU jobs.
 - **The Guide tour no longer swallows the demo click.** Its first step spotlights the *Let's make a shot* card; the dim layer now has a hole there (a clip-path), so *Try the demo scene* works with the tour up and ends the tour. Later steps stay modal, so a highlighted *Generate frames* never queues a job by accident.

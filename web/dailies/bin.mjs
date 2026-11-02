@@ -189,6 +189,7 @@ const STYLE = `
 .ss-dailies .dl-card[data-drag] .dl-takes { visibility:hidden; opacity:0; }
 .ss-dailies .dl-card[data-open] .dl-takes { transition-delay:0s; }
 .ss-dailies .dl-takes .row { display:grid; grid-template-columns:44px minmax(0, 1fr) auto; align-items:center; gap:8px; padding:3px; border-radius:7px; }
+.ss-dailies .dl-takes .row:has(> .ss-oc-btn) { grid-template-columns:44px minmax(0, 1fr) auto auto auto; }
 .ss-dailies .dl-takes .row:hover, .ss-dailies .dl-takes .row:focus-within { background:rgba(255,255,255,.06); }
 .ss-dailies .dl-takes button.op { display:contents; background:none !important; border:0 !important; color:inherit !important; }
 .ss-dailies .dl-takes .mini { width:44px; aspect-ratio:16/9; border-radius:4px; background:#120e15 center/cover no-repeat; }
@@ -658,6 +659,7 @@ export class DailiesBin {
     if (r.judged) approvalBadge(card.querySelector(".dl-th"), r.judged, { shotId: r.id, place: true,
       label: `${clipName(this.scene, r.idx, r.judged.n, r.shot)} · ${KIND_LABEL[r.judged.kind]}` });
     if (hero) this.o.decorateTake?.(card.querySelector(".dl-th"), hero, r.shot, "card");   // take checks (Milestone 16)
+    if (hero) this.o.oneClickTake?.(card.querySelector(".dl-cap .mt"), hero, r.shot, "card");   // ✦ One-click (web/oneclick)
     this._wireCard(card, r);
     return card;
   }
@@ -678,6 +680,7 @@ export class DailiesBin {
           "aria-label": t.circled ? `Uncircle take ${t.n}` : `Circle take ${t.n}`,
           on: { click: (e) => { e.stopPropagation(); this.circle(r.shot, t.circled ? null : t); } } }, String(t.n))));
       this.o.decorateTake?.(row.querySelector(".lb"), t, r.shot, "row");
+      this.o.oneClickTake?.(row, t, r.shot, "row");
     }
     return pop;
   }
