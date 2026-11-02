@@ -76,7 +76,7 @@ WIRED = [
     # ---------------- generate_image -------------------------------------------------------------
     local("open.krea_2_turbo", "Krea 2 Turbo", "Krea", ["generate_image", "edit_image"], "krea2",
           ["UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "ConditioningZeroOut",
-           "EmptyLatentImage", "KSampler", "VAEDecode", "VAEEncode"],
+           "EmptyLatentImage", "KSampler", "VAEDecode", "VAEEncode", "ImageScaleBy"],
           [{"role": "unet", "folder": "diffusion_models",
             "any": ["Krea-2-Turbo.safetensors", "krea2_turbo_fp8_scaled.safetensors",
                     "krea2_turbo_int8_convrot.safetensors"]},
@@ -88,7 +88,8 @@ WIRED = [
                              "classes": ["Krea2ControlLoRALoader", "Krea2ControlImageEncode", "Krea2ControlApply"]}],
           notes="8 steps cfg 1. control_image = stage depth steers the layout (Krea2 depth-control LoRA). "
                 "Edit stage = the proven Soundstage look-still: img2img from the clay frame @0.85 + depth. "
-                "Depth control needs the comfyui-krea2-controlnet pack.",
+                "Depth control needs the comfyui-krea2-controlnet pack. depth_lock (④ Frame \"Lock to the stage "
+                "depth\"): start from the blurred Color pass at stage_denoise, held to the depth pass (no cast pictures).",
           source_ids=["open.krea_2"]),
     local("open.z_image_turbo", "Z-Image Turbo", "Alibaba Tongyi-MAI", ["generate_image"], "z_image",
           ["UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "ConditioningZeroOut",
@@ -107,7 +108,16 @@ WIRED = [
             "any": ["qwen3vl_4b_int8_convrot.safetensors", "qwen3vl_4b_fp8_scaled.safetensors"]},
            {"role": "vae", "folder": "vae", "any": ["flux2-vae.safetensors"]}],
           "FLUX Kommunity License: free non-commercial; commercial use of outputs OK if you+affiliates <$5M annual revenue",
-          notes="Edit = ReferenceMultiLatent (image + refs, 1 MP). Distilled template settings.",
+          optional_weights=[
+              {"role": "krea_unet", "folder": "diffusion_models",
+               "any": ["Krea-2-Turbo.safetensors", "krea2_turbo_fp8_scaled.safetensors", "krea2_turbo_int8_convrot.safetensors"]},
+              {"role": "krea_text_encoder", "folder": "text_encoders", "any": ["qwen3vl_4b_fp8_scaled.safetensors"]},
+              {"role": "krea_vae", "folder": "vae", "any": ["qwen_image_vae.safetensors"]},
+              {"role": "depth_lora", "folder": "loras", "any": ["depth-control-lora.safetensors"],
+               "classes": ["Krea2ControlLoRALoader", "Krea2ControlImageEncode", "Krea2ControlApply"]}],
+          notes="Edit = ReferenceMultiLatent (image + refs, 1 MP). Distilled template settings. depth_lock (④ Frame "
+                "\"Lock to the stage depth\"): a Krea 2 Turbo + depth-control LoRA pass on the Klein frame, held to the "
+                "stage depth pass (optional krea_* weights).",
           source_ids=["open.flux3_klein"]),
     partner("api.nano_banana_2_1", "Nano Banana 2.1", "Google", ["generate_image", "edit_image"], "nano_banana",
             ["GeminiNanoBanana2V2"], variant="Gemini Nano Banana 2.1", params=res(["1K", "2K", "4K"], "2K")),

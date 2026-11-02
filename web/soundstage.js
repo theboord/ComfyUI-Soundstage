@@ -30,6 +30,7 @@ import { icon } from "./ui/icons.mjs";
 import { openPopover, closePopover, isPopoverOpen } from "./ui/popover.mjs";
 import { topRowFit } from "./ui/toprow.mjs";
 import { CheatSheet, isCheatSheetKey, withKeys } from "./ui/shortcuts.mjs";
+import { isStagePlayKey, stageUndoKey } from "./ui/spaceplay.mjs";
 import { applyCanvasCss, layoutPref, setLayoutPref, rememberFlag, Mover } from "./ui/canvasui.mjs";
 import { Tour, TOUR_STEPS, tourSeen, markTourSeen, emptyCard, isBrandNewStage, applyFirstRunCss } from "./ui/firstrun.mjs";
 import * as THREE from "./vendor/three.module.min.mjs";
@@ -59,6 +60,8 @@ import { mountPresets } from "./ui/presets.mjs";
 import { mountPerformance } from "./performance/performance.mjs";
 import { attachTakeChecks } from "./takecheck/takecheck.mjs";
 import { attachOneClick } from "./oneclick/oneclick.mjs";
+import "./oneclick/loop.mjs"; import "./oneclick/reshoot.mjs"; import "./oneclick/opencomfy.mjs";   // ✦ Track B one-clicks
+import { listenPhoneClips, landPhoneClip, openPerformanceWith } from "./oneclick/handoff.mjs";
 import { queueSummary, stageInputsByRef, resolveStageValue, stageRefOf } from "./ui/queue.mjs";
 
 const CSS = `
@@ -1577,6 +1580,12 @@ function createStageWidget(node, inputName) {
   };
   job.onShow = job.onHide = () => syncVideoCta();
   wireVideoDrop(el, view, (f) => { if (view.hidden) showView("stage"); importVideo(f); });
+  // Phone hand-off (web/oneclick/handoff.mjs): a move filmed with the phone viewfinder's Film lands where the phone said.
+  listenPhoneClips(api, (info) => landPhoneClip(info, { api, say: (m) => (status.textContent = m), ask: (f) => importVideo(f),
+    capture: (f) => { if (!pickPerson()) return; inspect("obj"); try { posePanel.focusSection("capture"); } catch { /* panel not built */ } posePanel._capture(f, 0); },
+    footage: async (f) => { pipeline.go("motion"); await pipeline.ripple.importClip(f); },
+    performance: (f) => { const cur = stage.selectedInfo?.(); return openPerformanceWith(f, { api, stage, actorId: (cur && isPerson(cur.kind) ? cur : people()[0])?.id,
+      pipeline: () => pipeline, cast: () => castPanel, say: (m) => (status.textContent = m) }); } }));
   photoIn.addEventListener("change", async () => {
     const f = photoIn.files?.[0], kind = photoIn.dataset.kind;
     photoIn.value = "";
@@ -3684,10 +3693,36 @@ function createStageWidget(node, inputName) {
       keySheet.open();
     };
     window.addEventListener("keydown", onHelpKey, true);
+    // Space plays / stops the shot on ③ Set, like the Play button (web/ui/spaceplay.mjs).
+    const onPlayKey = (e) => {
+      if (!cvOn || !el.isConnected || e.defaultPrevented || el.dataset.tour || keySheet.isOpen || !el.getClientRects().length) return;
+      if (!(el.contains(document.activeElement) || el.matches(":hover") || el.classList.contains("ss-full"))) return;
+      if (!isStagePlayKey(e, { view: curView, driving: !!stage.drive?.on, active: document.activeElement,
+        painting: !!el.querySelector(".ss-frameview.ss-painting:not([hidden])") })) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (document.activeElement?.closest?.(".ss-pre-grid, .ss-pre-tabs")) document.activeElement.blur();
+      play.click();
+    };
+    window.addEventListener("keydown", onPlayKey, true);
+    // ⌘Z / ⇧⌘Z undo the stage from anywhere in the workspace, not only with the 3D canvas focused.
+    const onUndoKey = (e) => {
+      if (!cvOn || !el.isConnected || e.defaultPrevented || el.dataset.tour || !el.getClientRects().length) return;
+      if (!(el.contains(document.activeElement) || el.matches(":hover") || el.classList.contains("ss-full"))) return;
+      const what = stageUndoKey(e, { view: curView, driving: !!stage.drive?.on, active: document.activeElement,
+        painting: !!el.querySelector(".ss-frameview.ss-painting:not([hidden])") });
+      if (!what) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (what === "redo") stage.redo(); else stage.undo();
+    };
+    window.addEventListener("keydown", onUndoKey, true);
     const removed0 = node.onRemoved;
     node.onRemoved = function (...a) {
       window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("keydown", onHelpKey, true);
+      window.removeEventListener("keydown", onPlayKey, true);
+      window.removeEventListener("keydown", onUndoKey, true);
       try { keySheet.destroy(); } catch { /* never opened */ }
       document.removeEventListener("pointerdown", onDocDown, true);
       try { tour?.close(false); } catch { /* no tour */ }

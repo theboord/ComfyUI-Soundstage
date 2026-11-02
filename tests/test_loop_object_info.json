@@ -1,0 +1,2008 @@
+{
+"CreateVideo": {
+"api_node": false,
+"category": "video",
+"deprecated": false,
+"description": "Create a video from images.",
+"dev_only": false,
+"display_name": "Create Video",
+"essentials_category": "Video Tools",
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"optional": {
+"audio": [
+"AUDIO",
+{
+"tooltip": "The audio to add to the video."
+}
+],
+"bit_depth": [
+"COMBO",
+{
+"default": "auto",
+"multiselect": false,
+"options": [
+"auto",
+8,
+10
+],
+"tooltip": "Auto uses 8-bit for sRGB and 10-bit for HDR. Explicit 8-bit and 10-bit choices are independent of colorspace."
+}
+],
+"codec": [
+"COMBO",
+{
+"advanced": true,
+"default": "none",
+"multiselect": false,
+"options": [
+"none",
+"auto",
+"h264",
+"av1"
+],
+"tooltip": "Optionally encode the video immediately. None keeps the images in tensor form; Auto uses H.264."
+}
+],
+"color_space": [
+"COMBO",
+{
+"default": "sRGB",
+"multiselect": false,
+"options": [
+"sRGB",
+"HDR",
+"HDR PQ"
+],
+"tooltip": "Colorspace of the input images. HDR selects BT.2020/HLG and HDR PQ selects BT.2020/PQ."
+}
+]
+},
+"required": {
+"fps": [
+"FLOAT",
+{
+"default": 30.0,
+"max": 120.0,
+"min": 1.0,
+"step": 1.0
+}
+],
+"images": [
+"IMAGE",
+{
+"tooltip": "The images to create a video from."
+}
+]
+}
+},
+"input_order": {
+"optional": [
+"audio",
+"bit_depth",
+"color_space",
+"codec"
+],
+"required": [
+"images",
+"fps"
+]
+},
+"is_input_list": false,
+"name": "CreateVideo",
+"output": [
+"VIDEO"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"VIDEO"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_video",
+"search_aliases": [
+"images to video"
+]
+},
+"DA3Inference": {
+"api_node": false,
+"category": "image/geometry estimation",
+"deprecated": false,
+"description": "Run Depth Anything 3 on an image. In multi-view mode each image is treated as a separate view of the same scene.",
+"dev_only": false,
+"display_name": "Run Depth Anything 3",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"da3_model": [
+"DA3_MODEL",
+{}
+],
+"image": [
+"IMAGE",
+{}
+],
+"mode": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "mono"
+},
+{
+"inputs": {
+"required": {
+"pose_method": [
+"COMBO",
+{
+"default": "cam_dec",
+"multiselect": false,
+"options": [
+"cam_dec",
+"ray_pose"
+],
+"tooltip": "How the camera field-of-view is estimated (for Small/Base models only).\n- cam_dec: learned from image features.\n- ray_pose: derived geometrically from the model's 3D ray output.\nAffects perspective correctness of the 3D output. Try both if results look distorted."
+}
+],
+"ref_view_strategy": [
+"COMBO",
+{
+"default": "saddle_balanced",
+"multiselect": false,
+"options": [
+"saddle_balanced",
+"saddle_sim_range",
+"first",
+"middle"
+],
+"tooltip": "Which view acts as the geometric anchor.\n- saddle_balanced: the view most 'average' across all others (best general choice).\n- saddle_sim_range: the view most visually distinct from the others.\n- first / middle: fixed positional picks."
+}
+]
+}
+},
+"key": "multiview"
+}
+],
+"tooltip": "mono: single view image (works with any model variant).\nmultiview: all images processed together for geometric consistency + camera pose (for Small/Base models only)."
+}
+],
+"resize_method": [
+"COMBO",
+{
+"default": "upper_bound_resize",
+"multiselect": false,
+"options": [
+"upper_bound_resize",
+"lower_bound_resize"
+],
+"tooltip": "upper_bound_resize: scale so the longest side = resolution (caps memory, default).\nlower_bound_resize: scale so the shortest side = resolution (preserves more detail on tall/wide images, uses more memory)."
+}
+],
+"resolution": [
+"INT",
+{
+"default": 504,
+"max": 2520,
+"min": 140,
+"step": 14,
+"tooltip": "Resolution the model runs at (longest side, multiple of 14).\nLower = faster / less VRAM.\nHigher = more detail.\nOutput is upsampled back to the original size."
+}
+]
+}
+},
+"input_order": {
+"required": [
+"da3_model",
+"image",
+"resolution",
+"resize_method",
+"mode"
+]
+},
+"is_input_list": false,
+"name": "DA3Inference",
+"output": [
+"DA3_GEOMETRY"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"da3_geometry"
+],
+"output_node": false,
+"output_tooltips": [
+"Dictionary of non-normalized tensors.\nAlways has the keys: depth, image, mode.\nOptional keys: sky (for Mono/Metric), confidence (for Small/Base), extrinsics + intrinsics (for multi-view)."
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_depth_anything_3",
+"search_aliases": [
+"depth",
+"geometry",
+"da3",
+"depth anything",
+"monocular",
+"pointmap",
+"sky",
+"3d",
+"metric depth",
+"disparity"
+]
+},
+"GetImageSize": {
+"api_node": false,
+"category": "image",
+"deprecated": false,
+"description": "Returns the width, height, and batch size of the image.",
+"dev_only": false,
+"display_name": "Get Image Size",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"hidden": {
+"unique_id": [
+"UNIQUE_ID"
+]
+},
+"required": {
+"image": [
+"IMAGE",
+{}
+]
+}
+},
+"input_order": {
+"hidden": [
+"unique_id"
+],
+"required": [
+"image"
+]
+},
+"is_input_list": false,
+"name": "GetImageSize",
+"output": [
+"INT",
+"INT",
+"INT"
+],
+"output_is_list": [
+false,
+false,
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"width",
+"height",
+"batch_size"
+],
+"output_node": false,
+"output_tooltips": [
+null,
+null,
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_images",
+"search_aliases": [
+"dimensions",
+"resolution",
+"image info"
+]
+},
+"ImageBatch": {
+"category": "image/batch",
+"deprecated": true,
+"description": "",
+"display_name": "Batch Images (DEPRECATED)",
+"has_intermediate_output": false,
+"input": {
+"required": {
+"image1": [
+"IMAGE"
+],
+"image2": [
+"IMAGE"
+]
+}
+},
+"input_order": {
+"required": [
+"image1",
+"image2"
+]
+},
+"is_input_list": false,
+"name": "ImageBatch",
+"output": [
+"IMAGE"
+],
+"output_is_list": [
+false
+],
+"output_name": [
+"IMAGE"
+],
+"output_node": false,
+"python_module": "nodes",
+"search_aliases": [
+"combine images",
+"merge images",
+"stack images"
+]
+},
+"ImageFromBatch": {
+"api_node": false,
+"category": "image/batch",
+"deprecated": false,
+"description": "",
+"dev_only": false,
+"display_name": "Get Image from Batch",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"batch_index": [
+"INT",
+{
+"default": 0,
+"max": 16384,
+"min": -16384
+}
+],
+"image": [
+"IMAGE",
+{}
+],
+"length": [
+"INT",
+{
+"default": 1,
+"max": 4096,
+"min": 1
+}
+]
+}
+},
+"input_order": {
+"required": [
+"image",
+"batch_index",
+"length"
+]
+},
+"is_input_list": false,
+"name": "ImageFromBatch",
+"output": [
+"IMAGE"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"IMAGE"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_images",
+"search_aliases": [
+"select image",
+"pick from batch",
+"extract image"
+]
+},
+"LTXVAddGuide": {
+"api_node": false,
+"category": "model/conditioning/ltxv",
+"deprecated": false,
+"description": "",
+"dev_only": false,
+"display_name": null,
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"optional": {
+"attention_mask": [
+"MASK",
+{
+"tooltip": "Optional pixel-space spatial mask. Controls per-region conditioning influence via self-attention, multiplied by strength."
+}
+],
+"iclora_parameters": [
+"IC_LORA_PARAMETERS",
+{
+"tooltip": "Optional IC-LoRA parameters from a Get IC-LoRA Parameters node. Used for adjusting guide processing as required by certain IC-LoRAs (eg. those with a reference_downscale_factor > 1). When chained, each LTXVAddGuide uses only the parameters connected to it."
+}
+]
+},
+"required": {
+"frame_idx": [
+"INT",
+{
+"default": 0,
+"max": 9999,
+"min": -9999,
+"tooltip": "Frame index to start the conditioning at. For single-frame images or videos with 1-8 frames, any frame_idx value is acceptable. For videos with 9+ frames, frame_idx must be divisible by 8, otherwise it will be rounded down to the nearest multiple of 8. Negative values are counted from the end of the video."
+}
+],
+"image": [
+"IMAGE",
+{
+"tooltip": "Image or video to condition the latent video on. Must be 8*n + 1 frames. If the video is not 8*n + 1 frames, it will be cropped to the nearest 8*n + 1 frames."
+}
+],
+"latent": [
+"LATENT",
+{}
+],
+"negative": [
+"CONDITIONING",
+{}
+],
+"positive": [
+"CONDITIONING",
+{}
+],
+"strength": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 10.0,
+"min": 0.0,
+"step": 0.01
+}
+],
+"vae": [
+"VAE",
+{}
+]
+}
+},
+"input_order": {
+"optional": [
+"attention_mask",
+"iclora_parameters"
+],
+"required": [
+"positive",
+"negative",
+"vae",
+"latent",
+"image",
+"frame_idx",
+"strength"
+]
+},
+"is_input_list": false,
+"name": "LTXVAddGuide",
+"output": [
+"CONDITIONING",
+"CONDITIONING",
+"LATENT"
+],
+"output_is_list": [
+false,
+false,
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"positive",
+"negative",
+"latent"
+],
+"output_node": false,
+"output_tooltips": [
+null,
+null,
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_lt",
+"search_aliases": null
+},
+"LTXVAudioVAEDecode": {
+"api_node": false,
+"category": "model/latent/ltxv",
+"deprecated": false,
+"description": "",
+"dev_only": false,
+"display_name": "LTXV Audio VAE Decode",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"audio_vae": [
+"VAE",
+{
+"display_name": "Audio VAE",
+"tooltip": "The Audio VAE model used for decoding the latent."
+}
+],
+"samples": [
+"LATENT",
+{
+"tooltip": "The latent to be decoded."
+}
+]
+}
+},
+"input_order": {
+"required": [
+"samples",
+"audio_vae"
+]
+},
+"is_input_list": false,
+"name": "LTXVAudioVAEDecode",
+"output": [
+"AUDIO"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"Audio"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_lt_audio",
+"search_aliases": null
+},
+"LTXVCropGuides": {
+"api_node": false,
+"category": "model/conditioning/ltxv",
+"deprecated": false,
+"description": "",
+"dev_only": false,
+"display_name": null,
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"latent": [
+"LATENT",
+{}
+],
+"negative": [
+"CONDITIONING",
+{}
+],
+"positive": [
+"CONDITIONING",
+{}
+]
+}
+},
+"input_order": {
+"required": [
+"positive",
+"negative",
+"latent"
+]
+},
+"is_input_list": false,
+"name": "LTXVCropGuides",
+"output": [
+"CONDITIONING",
+"CONDITIONING",
+"LATENT"
+],
+"output_is_list": [
+false,
+false,
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"positive",
+"negative",
+"latent"
+],
+"output_node": false,
+"output_tooltips": [
+null,
+null,
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_lt",
+"search_aliases": null
+},
+"LTXVImgToVideoInplace": {
+"api_node": false,
+"category": "model/conditioning/ltxv",
+"deprecated": false,
+"description": "",
+"dev_only": false,
+"display_name": null,
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"bypass": [
+"BOOLEAN",
+{
+"default": false,
+"tooltip": "Bypass the conditioning."
+}
+],
+"image": [
+"IMAGE",
+{}
+],
+"latent": [
+"LATENT",
+{}
+],
+"strength": [
+"FLOAT",
+{
+"default": 1.0,
+"max": 1.0,
+"min": 0.0
+}
+],
+"vae": [
+"VAE",
+{}
+]
+}
+},
+"input_order": {
+"required": [
+"vae",
+"image",
+"latent",
+"strength",
+"bypass"
+]
+},
+"is_input_list": false,
+"name": "LTXVImgToVideoInplace",
+"output": [
+"LATENT"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"latent"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_lt",
+"search_aliases": null
+},
+"LTXVLatentUpsampler": {
+"api_node": false,
+"category": "model/latent/ltxv",
+"deprecated": false,
+"description": "",
+"dev_only": false,
+"display_name": null,
+"essentials_category": null,
+"experimental": true,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"samples": [
+"LATENT",
+{}
+],
+"upscale_model": [
+"LATENT_UPSCALE_MODEL",
+{}
+],
+"vae": [
+"VAE",
+{}
+]
+}
+},
+"input_order": {
+"required": [
+"samples",
+"upscale_model",
+"vae"
+]
+},
+"is_input_list": false,
+"name": "LTXVLatentUpsampler",
+"output": [
+"LATENT"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"LATENT"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_lt_upsampler",
+"search_aliases": null
+},
+"LTXVPreprocess": {
+"api_node": false,
+"category": "video/preprocessors",
+"deprecated": false,
+"description": "",
+"dev_only": false,
+"display_name": "LTXV Preprocess",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"image": [
+"IMAGE",
+{}
+],
+"img_compression": [
+"INT",
+{
+"default": 35,
+"max": 100,
+"min": 0,
+"tooltip": "Amount of compression to apply on image."
+}
+]
+}
+},
+"input_order": {
+"required": [
+"image",
+"img_compression"
+]
+},
+"is_input_list": false,
+"name": "LTXVPreprocess",
+"output": [
+"IMAGE"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"output_image"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_lt",
+"search_aliases": null
+},
+"LTXVSetAudioRefTokens": {
+"api_node": false,
+"category": "Lightricks/IC-LoRA",
+"deprecated": false,
+"description": "Provides speaker identity context for audio generation by attaching reference audio tokens to the conditioning. The tokens are prepended with negative temporal positions so the model treats them as context rather than generation targets.",
+"dev_only": false,
+"display_name": "\ud83c\udd5b\ud83c\udd63\ud83c\udd67 Set Audio Ref Tokens",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"audio_latent": [
+"LATENT",
+{
+"tooltip": "Encoded audio latent from LTXV Audio VAE Encode."
+}
+],
+"negative": [
+"CONDITIONING",
+{
+"tooltip": "Negative conditioning to attach the reference audio tokens to."
+}
+],
+"positive": [
+"CONDITIONING",
+{
+"tooltip": "Positive conditioning to attach the reference audio tokens to."
+}
+]
+}
+},
+"input_order": {
+"required": [
+"positive",
+"negative",
+"audio_latent"
+]
+},
+"is_input_list": false,
+"name": "LTXVSetAudioRefTokens",
+"output": [
+"CONDITIONING",
+"CONDITIONING",
+"LATENT"
+],
+"output_is_list": [
+false,
+false,
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"positive",
+"negative",
+"frozen_audio"
+],
+"output_node": false,
+"output_tooltips": [
+"Positive conditioning with reference audio tokens attached.",
+"Negative conditioning with reference audio tokens attached.",
+"Audio latent with noise_mask=0, fully frozen during denoising."
+],
+"price_badge": null,
+"python_module": "custom_nodes.ComfyUI-LTXVideo",
+"search_aliases": null
+},
+"LatentUpscaleModelLoader": {
+"api_node": false,
+"category": "model/loaders",
+"deprecated": false,
+"description": "",
+"dev_only": false,
+"display_name": "Load Latent Upscale Model",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"model_name": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"ltx-2-spatial-upscaler-x2-1.0.safetensors",
+"ltx-2-temporal-upscaler-x2-1.0.safetensors",
+"ltx-2.3-spatial-upscaler-x2-1.1.safetensors",
+"ltx-2.3-temporal-upscaler-x2-1.0.safetensors",
+"ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+"ltx-2.5-latent-temporal-upscaler-x2-bf16-1.0.safetensors",
+"minimax_h3_latent_upscaler_3d_bf16.safetensors"
+]
+}
+]
+}
+},
+"input_order": {
+"required": [
+"model_name"
+]
+},
+"is_input_list": false,
+"name": "LatentUpscaleModelLoader",
+"output": [
+"LATENT_UPSCALE_MODEL"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"LATENT_UPSCALE_MODEL"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_hunyuan",
+"search_aliases": null
+},
+"LoadDA3Model": {
+"api_node": false,
+"category": "model/loaders",
+"deprecated": false,
+"description": "",
+"dev_only": false,
+"display_name": "Load Depth Anything 3",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"model_name": [
+"COMBO",
+{
+"multiselect": false,
+"options": [
+"depth_anything_3_mono_large.safetensors"
+]
+}
+],
+"weight_dtype": [
+"COMBO",
+{
+"default": "default",
+"multiselect": false,
+"options": [
+"default",
+"fp16",
+"bf16",
+"fp32"
+]
+}
+]
+}
+},
+"input_order": {
+"required": [
+"model_name",
+"weight_dtype"
+]
+},
+"is_input_list": false,
+"name": "LoadDA3Model",
+"output": [
+"DA3_MODEL"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"DA3_MODEL"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_depth_anything_3",
+"search_aliases": null
+},
+"LoadImage": {
+"category": "image",
+"description": "",
+"display_name": "Load Image",
+"essentials_category": "Basics",
+"has_intermediate_output": false,
+"input": {
+"required": {
+"image": [
+[
+"Screenshot 2026-10-29 at 1.27.26\u202fPM.png",
+"example.png",
+"hippie_first.png",
+"plan_a.png",
+"recast_test_charref.png",
+"recast_test_frame1.png",
+"ss_plan_e20a0dbc772e.png",
+"ss_plan_test_a.png",
+"walkin_clay_f0001.png",
+"walkin_depth_f0001.png",
+"walkin_look.png",
+"wow_first.png"
+],
+{
+"image_upload": true
+}
+]
+}
+},
+"input_order": {
+"required": [
+"image"
+]
+},
+"is_input_list": false,
+"name": "LoadImage",
+"output": [
+"IMAGE",
+"MASK"
+],
+"output_is_list": [
+false,
+false
+],
+"output_name": [
+"IMAGE",
+"MASK"
+],
+"output_node": false,
+"python_module": "nodes",
+"search_aliases": [
+"load image",
+"open image",
+"import image",
+"image input",
+"upload image",
+"read image",
+"image loader"
+]
+},
+"SaveVideo": {
+"api_node": false,
+"category": "video",
+"deprecated": false,
+"description": "Saves the input videos to your ComfyUI output directory.",
+"dev_only": false,
+"display_name": "Save Video",
+"essentials_category": "Basics",
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"hidden": {
+"extra_pnginfo": [
+"EXTRA_PNGINFO"
+],
+"prompt": [
+"PROMPT"
+]
+},
+"optional": {
+"codec": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"hidden": true,
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 18.0,
+"max": 51.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible H.264 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "h264"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 24.0,
+"max": 63.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible AV1 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "av1"
+}
+],
+"tooltip": "The output video codec. Auto preserves a compatible source stream. H.264 and AV1 re-encoding support SDR, HDR (HLG), and HDR PQ."
+}
+]
+},
+"required": {
+"filename_prefix": [
+"STRING",
+{
+"default": "video/ComfyUI",
+"multiline": false,
+"tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes."
+}
+],
+"format": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {
+"codec": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 18.0,
+"max": 51.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible H.264 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "h264"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 24.0,
+"max": 63.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible AV1 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "av1"
+}
+],
+"tooltip": "The output video codec. Auto preserves a compatible source stream. H.264 and AV1 re-encoding support SDR, HDR (HLG), and HDR PQ."
+}
+]
+}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"codec": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 18.0,
+"max": 51.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible H.264 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "h264"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 24.0,
+"max": 63.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible AV1 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "av1"
+}
+],
+"tooltip": "The output video codec. Auto preserves a compatible source stream. H.264 and AV1 re-encoding support SDR, HDR (HLG), and HDR PQ."
+}
+]
+}
+},
+"key": "mp4"
+},
+{
+"inputs": {
+"required": {
+"codec": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 18.0,
+"max": 51.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible H.264 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "h264"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 24.0,
+"max": 63.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible AV1 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "av1"
+}
+],
+"tooltip": "The output video codec. Auto preserves a compatible source stream. H.264 and AV1 re-encoding support SDR, HDR (HLG), and HDR PQ."
+}
+]
+}
+},
+"key": "mkv"
+},
+{
+"inputs": {
+"required": {
+"codec": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"optional": {
+"encoding": [
+"COMFY_DYNAMICCOMBO_V3",
+{
+"display_name": "encoding mode",
+"options": [
+{
+"inputs": {
+"required": {}
+},
+"key": "auto"
+},
+{
+"inputs": {
+"required": {
+"crf": [
+"FLOAT",
+{
+"default": 24.0,
+"max": 63.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Lower values produce higher quality and larger files."
+}
+]
+}
+},
+"key": "re-encode"
+}
+],
+"tooltip": "Automatic preserves compatible AV1 streams. Re-encode applies custom encoding options."
+}
+]
+},
+"required": {}
+},
+"key": "av1"
+}
+],
+"tooltip": "The output video codec. Auto preserves a compatible source stream. H.264 and AV1 re-encoding support SDR, HDR (HLG), and HDR PQ."
+}
+]
+}
+},
+"key": "webm"
+}
+],
+"tooltip": "The output container. Auto uses MP4 for Auto/H.264 and WebM for AV1. MP4, MKV, and WebM select a specific container."
+}
+],
+"video": [
+"VIDEO",
+{
+"tooltip": "The video to save."
+}
+]
+}
+},
+"input_order": {
+"hidden": [
+"prompt",
+"extra_pnginfo"
+],
+"optional": [
+"codec"
+],
+"required": [
+"video",
+"filename_prefix",
+"format"
+]
+},
+"is_input_list": false,
+"name": "SaveVideo",
+"output": [
+"VIDEO"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"video"
+],
+"output_node": true,
+"output_tooltips": [
+"The input video, unchanged."
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_video",
+"search_aliases": [
+"export video"
+]
+},
+"SoundstageClipLoad": {
+"api_node": false,
+"category": "Soundstage/Motion/advanced",
+"deprecated": false,
+"description": "Load a clip from input/, output/ or temp/ by its file reference, retimed to an LTX frame rate and trimmed to 8k+1 frames, with its audio cut to match.",
+"dev_only": false,
+"display_name": "Soundstage \u00b7 Load Clip",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"fps": [
+"FLOAT",
+{
+"default": 24.0,
+"max": 60.0,
+"min": 0.0,
+"step": 1.0,
+"tooltip": "Retime to this rate (nearest frame). 0 = keep the clip's own rate."
+}
+],
+"max_frames": [
+"INT",
+{
+"default": 161,
+"max": 10000,
+"min": 0,
+"tooltip": "0 = to the end (at the new rate)."
+}
+],
+"source": [
+"STRING",
+{
+"default": "",
+"multiline": false,
+"tooltip": "File reference, e.g. \"soundstage/draft_00012_.mp4 [output]\"."
+}
+],
+"start_frame": [
+"INT",
+{
+"default": 0,
+"max": 1000000,
+"min": 0
+}
+]
+}
+},
+"input_order": {
+"required": [
+"source",
+"fps",
+"start_frame",
+"max_frames"
+]
+},
+"is_input_list": false,
+"name": "SoundstageClipLoad",
+"output": [
+"IMAGE",
+"AUDIO",
+"FLOAT",
+"INT",
+"STRING"
+],
+"output_is_list": [
+false,
+false,
+false,
+false,
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"images",
+"audio",
+"fps",
+"frames",
+"clip_json"
+],
+"output_node": false,
+"output_tooltips": [
+null,
+null,
+null,
+null,
+null
+],
+"price_badge": null,
+"python_module": "custom_nodes.ComfyUI-Soundstage",
+"search_aliases": null
+},
+"SoundstageDA3Export": {
+"api_node": false,
+"category": "Soundstage",
+"deprecated": false,
+"description": "Save Depth Anything 3 geometry (per-frame depth, sky, camera intrinsics/extrinsics) as output/soundstage_v2s/<name>.npz for the Video \u2192 Stage camera tracker.",
+"dev_only": false,
+"display_name": "Soundstage \u00b7 Video \u2192 Stage: Save DA3 geometry",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"hidden": {
+"extra_pnginfo": [
+"EXTRA_PNGINFO"
+],
+"prompt": [
+"PROMPT"
+]
+},
+"required": {
+"da3_geometry": [
+"DA3_GEOMETRY",
+{}
+],
+"name": [
+"STRING",
+{
+"default": "v2s",
+"multiline": false
+}
+]
+}
+},
+"input_order": {
+"hidden": [
+"prompt",
+"extra_pnginfo"
+],
+"required": [
+"da3_geometry",
+"name"
+]
+},
+"is_input_list": false,
+"name": "SoundstageDA3Export",
+"output": [
+"STRING"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"path"
+],
+"output_node": true,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "custom_nodes.ComfyUI-Soundstage",
+"search_aliases": [
+"da3 export",
+"depth npz",
+"video to stage",
+"camera track"
+]
+},
+"SoundstageImageLoad": {
+"api_node": false,
+"category": "Soundstage/Motion/advanced",
+"deprecated": false,
+"description": "Load a picture from input/, output/ or temp/ by its file reference (a video gives its first frame).",
+"dev_only": false,
+"display_name": "Soundstage \u00b7 Load Picture",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"source": [
+"STRING",
+{
+"default": "",
+"multiline": false,
+"tooltip": "e.g. \"soundstage_refs/frame1_edit.png [input]\"."
+}
+]
+}
+},
+"input_order": {
+"required": [
+"source"
+]
+},
+"is_input_list": false,
+"name": "SoundstageImageLoad",
+"output": [
+"IMAGE"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"image"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "custom_nodes.ComfyUI-Soundstage",
+"search_aliases": null
+},
+"SoundstageRipple": {
+"api_node": false,
+"category": "Soundstage/Motion",
+"deprecated": false,
+"description": "Edit frame 1 of any clip (swap a face, change wardrobe or background, relight) and LTX Ripple carries the edit through the whole clip, keeping its motion, timing, camera and audio.",
+"dev_only": false,
+"display_name": "Soundstage \u00b7 Ripple Edit",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"optional": {
+"prompt": [
+"STRING",
+{
+"default": "",
+"multiline": true,
+"tooltip": "Optional: what changed (helps hard edits). The Ripple instruction is always added."
+}
+]
+},
+"required": {
+"color_match": [
+"COMBO",
+{
+"advanced": true,
+"default": "off",
+"multiselect": false,
+"options": [
+"off",
+"edited frame",
+"source"
+],
+"tooltip": "Match the result's colours to the edited frame or to the source. Off keeps a relight."
+}
+],
+"edit_strength": [
+"FLOAT",
+{
+"default": 1.35,
+"max": 3.0,
+"min": 0.0,
+"step": 0.05,
+"tooltip": "Ripple LoRA strength (1.35 recommended). Raise it if the edit doesn't carry; lower it if parts you didn't edit change."
+}
+],
+"edited_frame": [
+"STRING",
+{
+"default": "",
+"multiline": false,
+"tooltip": "Frame 1 after your edit (Paint Studio saves it in input/soundstage_refs/)."
+}
+],
+"keep_audio": [
+"BOOLEAN",
+{
+"default": true,
+"tooltip": "Put the clip's own audio back on the result."
+}
+],
+"max_frames": [
+"INT",
+{
+"default": 161,
+"max": 481,
+"min": 9,
+"tooltip": "Longest clip, in frames at 24 fps."
+}
+],
+"quality": [
+"COMBO",
+{
+"default": "Draft",
+"multiselect": false,
+"options": [
+"Draft",
+"Final"
+],
+"tooltip": "Draft: shorter side 544 px. Final: 768 px. 25 steps either way."
+}
+],
+"seed": [
+"INT",
+{
+"control_after_generate": true,
+"default": 7,
+"max": 281474976710655,
+"min": 0
+}
+],
+"source": [
+"STRING",
+{
+"default": "",
+"multiline": false,
+"tooltip": "The clip: \"soundstage/draft_00012_.mp4 [output]\", an imported clip in input/..."
+}
+]
+}
+},
+"input_order": {
+"optional": [
+"prompt"
+],
+"required": [
+"source",
+"edited_frame",
+"edit_strength",
+"quality",
+"seed",
+"max_frames",
+"color_match",
+"keep_audio"
+]
+},
+"is_input_list": false,
+"name": "SoundstageRipple",
+"output": [
+"VIDEO",
+"IMAGE",
+"STRING"
+],
+"output_is_list": [
+false,
+false,
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"video",
+"frames",
+"clip_json"
+],
+"output_node": false,
+"output_tooltips": [
+null,
+null,
+null
+],
+"price_badge": null,
+"python_module": "custom_nodes.ComfyUI-Soundstage",
+"search_aliases": [
+"ripple",
+"first frame edit",
+"ffaf",
+"propagate edit",
+"video edit",
+"relight video"
+]
+},
+"VAEEncodeAudio": {
+"api_node": false,
+"category": "model/latent",
+"deprecated": false,
+"description": "",
+"dev_only": false,
+"display_name": "VAE Encode Audio",
+"essentials_category": null,
+"experimental": false,
+"has_intermediate_output": false,
+"input": {
+"required": {
+"audio": [
+"AUDIO",
+{}
+],
+"vae": [
+"VAE",
+{}
+]
+}
+},
+"input_order": {
+"required": [
+"audio",
+"vae"
+]
+},
+"is_input_list": false,
+"name": "VAEEncodeAudio",
+"output": [
+"LATENT"
+],
+"output_is_list": [
+false
+],
+"output_matchtypes": null,
+"output_name": [
+"LATENT"
+],
+"output_node": false,
+"output_tooltips": [
+null
+],
+"price_badge": null,
+"python_module": "comfy_extras.nodes_audio",
+"search_aliases": [
+"audio to latent"
+]
+}
+}
