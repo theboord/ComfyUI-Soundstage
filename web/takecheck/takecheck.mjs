@@ -10,8 +10,11 @@
 //   Step bar    a "Ready" / "Needs 2" chip on every step (what's missing, where it goes, MODELS.md).
 //   Run         "$0 · about 2 min on your GPU" under ④ Generate and ⑤ Draft / Final, from measured render times.
 //   Recipe      tc.maybeRestore(file): a Soundstage MP4 dropped on the stage restores its set and shot.
+//   Realism     Hollywood takes are judged by the VFX-supervisor pass (POST /soundstage/takecheck/realism): a local
+//               vision model inspects cars, faces and hands; "✗ AI slop: rear lights incoherent, f24–64" is a red chip
+//               and a failed Hollywood take gets ONE automatic re-roll offer per shot. Any take: the Judge button.
 // The pure parts (chips, scores, estimates, readiness, the MP4 tag reader) are in model.mjs.
-import { takeChips, blockingChip, fileOfUrl, annotated, estimateLabel, estimateSeconds, finalRung, readiness, readinessChip,
+import { takeChips, blockingChip, realismChip, rerollOffer, fileOfUrl, annotated, estimateLabel, estimateSeconds, finalRung, readiness, readinessChip,
   readFileTags, recipeFromTags, recipeLine, MODELS_DOC_URL } from "./model.mjs";
 import { loaderWidgets, allNodes } from "../ui/modelguard.mjs";
 import { planModelFixes } from "../ui/modelmatch.mjs";
@@ -156,10 +159,13 @@ export function attachTakeChecks(ctx) {
       for (const c of takeChips(res)) {
         g.append(chipEl(c, c.start != null ? () => { try { ladder.setFrame(Math.round(c.start * fps())); } catch { /* */ } } : null));
       }
+      const rc = realismChip(judging.has(keyOf(file)) ? { pending: true } : res?.realism);
+      if (rc) g.append(chipEl(rc, () => { if (rc.start != null) { try { ladder.setFrame(rc.start); } catch { /* */ } } showPop(g, `Realism · ${name}`, rc.title.split("\n")); }));
+      else if (res && !res.error) g.append(actBtn("Judge", "VFX-supervisor pass: a local vision model checks the cars, faces and hands are real (about a minute of GPU, queued)", () => judge(file, rung)));
       const bc = blockingChip(res?.blocking);
       if (bc) g.append(chipEl(bc, () => showPop(g, `Follows your blocking · ${name}`, bc.title.split("\n"))));
       if (bc?.action === "measure") g.append(actBtn("Measure", "Measure the actors: SAM 3.1 tracks them in the take (about 20 s of GPU, queued)", (b) => measure(file, b)));
-      if (res && !res.error && res.verdict !== "clean") g.append(actBtn("Re-roll", "Render this shot again with a new seed (asks first: it uses your GPU)", () => reroll(rung)));
+      if (res && !res.error && (res.verdict !== "clean" || res.realism?.verdict === "fail")) g.append(actBtn("Re-roll", "Render this shot again with a new seed (asks first: it uses your GPU)", () => reroll(rung)));
       parts.push(g);
     }
     strip.replaceChildren(...parts);
@@ -176,8 +182,36 @@ export function attachTakeChecks(ctx) {
     const file = fileOfUrl(url);
     if (!file || file.type !== "output") { renderStrip(); return; }
     watch(file, () => { renderStrip(); return true; });
-    check(file);
+    check(file).then((res) => { if (rung === 4 && res?.hollywood && !res.realism && !res.error) judge(file, rung, { auto: true }); });
     renderStrip();
+  }
+
+  // ------------------------------------------------------------------ Realism judge (the VFX-supervisor pass)
+  const judging = new Set();        // "sub/file" being judged
+  const offered = new Set();        // shots that already had their one automatic re-roll offer
+  const shotKey = () => ctx.stage?.activeShot?.()?.id || ctx.stage?.activeShot?.()?.name || "shot";
+  async function judge(file, rung, { auto = false } = {}) {
+    const k = keyOf(file);
+    if (judging.has(k)) return null;
+    judging.add(k); notify(k); renderStrip();
+    let r;
+    try {
+      r = await (await api.fetchApi("/soundstage/takecheck/realism", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file }) })).json();
+    } catch (e) { r = { verdict: "unavailable", error: e.message }; }
+    judging.delete(k);
+    const have = results.get(k)?.res;
+    if (have) have.realism = r;
+    notify(k); renderStrip();
+    if (r?.verdict === "fail") say(`Realism judge: ${realismChip(r).text.replace(/^✗ /, "")} (score ${r.score}/10).`);
+    const sk = shotKey();
+    if (auto && rung === 4 && rerollOffer(have || { hollywood: true, realism: r }, sk, offered)) {
+      offered.add(sk);
+      const d = (r.defects || []).map((x) => `• ${x.label}`).join("\n");
+      const est = estimateLabel(estimateSeconds(timing, finalRung(pipeline?.m?.quality), frames()));
+      const pick = await choose("This Hollywood take looks generated", `The realism judge failed it (${r.score}/10):\n${d}\n\nRe-roll it once with a new seed? (${est})`, ["Re-roll once", "Keep it"]);
+      if (pick === 0) reroll(4, { asked: true });
+    }
+    return r;
   }
   if (ladder && !ladder._ssTakeChecks) {
     ladder._ssTakeChecks = true;
@@ -189,13 +223,15 @@ export function attachTakeChecks(ctx) {
 
   // ------------------------------------------------------------------ Re-roll and Measure
   const frames = () => ctx.stage?.state?.shot?.frames || ctx.stage?.toJSON?.().shot?.frames || 121;
-  async function reroll(rung) {
+  async function reroll(rung, { asked = false } = {}) {
     const kind = rung === 4 ? "final" : "draft";
     const r = rung === 4 ? finalRung(pipeline?.m?.quality) : "draft";
     const est = estimateLabel(estimateSeconds(timing, r, frames()));
     const shot = ctx.stage?.activeShot?.()?.name || "this shot";
-    const pick = await choose(`Re-roll the ${kind}?`, `${shot}: the same set, shot and settings with a new seed. It queues one ${kind} on your GPU (${est}).`, [`Re-roll ${kind}`, "Cancel"]);
-    if (pick !== 0) return;
+    if (!asked) {
+      const pick = await choose(`Re-roll the ${kind}?`, `${shot}: the same set, shot and settings with a new seed. It queues one ${kind} on your GPU (${est}).`, [`Re-roll ${kind}`, "Cancel"]);
+      if (pick !== 0) return;
+    }
     const seed = Math.floor(Math.random() * 2 ** 31);
     for (const id of [9091, 9083, 5516, 9034]) {
       for (const w of pipeline?.node?.(id)?.widgets || []) {
@@ -246,7 +282,10 @@ export function attachTakeChecks(ctx) {
       const res = results.get(keyOf(file))?.res;
       const chips = takeChips(res);
       const first = chips.find((c) => c.tone === "bad") || chips[0];
-      const kids = first ? [chipEl({ ...first, title: chips.map((c) => c.title || c.text).join("\n") })] : [];
+      const rc = realismChip(res?.realism);
+      const lead = rc?.tone === "bad" ? rc : first;
+      const kids = lead ? [chipEl({ ...lead, title: [rc?.title, ...chips.map((c) => c.title || c.text)].filter(Boolean).join("\n") })] : [];
+      if (rc?.tone === "ok" && where === "card") kids.push(chipEl(rc));
       const bc = blockingChip(res?.blocking);
       if (bc && where === "card") kids.push(chipEl({ ...bc, text: bc.text.replace("Follows blocking ", "Blocking ") }));
       box.replaceChildren(...kids);
@@ -373,5 +412,5 @@ export function attachTakeChecks(ctx) {
     return true;
   }
 
-  return { check, decorate, maybeRestore, restoreTake, refreshReadiness, refreshEstimates, renderStrip, results, get timing() { return timing; }, get ready() { return ready; } };
+  return { check, judge, decorate, maybeRestore, restoreTake, refreshReadiness, refreshEstimates, renderStrip, results, get timing() { return timing; }, get ready() { return ready; } };
 }
