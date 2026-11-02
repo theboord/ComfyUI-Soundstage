@@ -51,11 +51,6 @@ def _resolve_stage(value):
     return try_resolve(value)
 
 
-def _scene_ref(scene: dict) -> str:
-    from ..stagestore import put
-    return put(json.dumps(scene, separators=(",", ":")))
-
-
 def scene_of_ref(ref) -> dict | None:
     """A recipe's scene stored by reference (stagestore), or None when this server doesn't have it."""
     try:
@@ -63,6 +58,8 @@ def scene_of_ref(ref) -> dict | None:
     except ImportError:
         return None
     s = _loads(get(ref)) if isinstance(ref, str) else None
+    if isinstance(s, dict) and isinstance(s.get("scene"), dict):   # a whole stage value (scene + passes): its scene
+        s = s["scene"]
     return s if isinstance(s, dict) else None
 
 
@@ -72,6 +69,11 @@ def _with_scene(rec):
         s = scene_of_ref(rec["scene_ref"])
         if s is not None:
             rec["scene"] = s
+            shot = rec.get("shot") if isinstance(rec.get("shot"), dict) else {}
+            sid = shot.get("id") or s.get("active_shot") or s.get("shot_id")
+            name = shot.get("name") or next((x.get("name") for x in s.get("shots") or []
+                                             if isinstance(x, dict) and x.get("id") == sid), None)
+            rec["shot"] = {**shot, "id": sid, "name": name}
     return rec
 
 
@@ -92,17 +94,21 @@ def build(prompt: dict) -> dict | None:
         return None
     value = stages[0][1].get("stage")
     ref = _stage_ref(value)
-    raw = _resolve_stage(value) if ref else _loads(value)
-    scene = (raw or {}).get("scene") if isinstance(raw, dict) and "scene" in raw else raw
-    if not isinstance(scene, dict):
-        return None
-    shot_id = scene.get("active_shot") or scene.get("shot_id")
-    shot = next((s for s in scene.get("shots") or [] if s.get("id") == shot_id), None)
-    rec = {"v": VERSION, "app": "Soundstage", "made": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-           "scene": scene, "shot": {"id": shot_id, "name": (shot or {}).get("name")}}
-    if ref:   # the stage travels by reference: so does the recipe's scene (the queue stays light; from_tags loads it)
-        rec["scene_ref"] = _scene_ref(scene)
-        del rec["scene"]
+    made = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    if ref:
+        # The stage travels by reference: so does the recipe's scene, pointing at the same stored stage (readers take
+        # its "scene"). The reference carries the shot, so this on-prompt handler never loads megabytes of stage.
+        rec = {"v": VERSION, "app": "Soundstage", "made": made, "scene_ref": ref["stage_ref"],
+               "shot": {"id": ref.get("shot_id"), "name": ref.get("shot_name")}}
+    else:
+        raw = _loads(value)
+        scene = (raw or {}).get("scene") if isinstance(raw, dict) and "scene" in raw else raw
+        if not isinstance(scene, dict):
+            return None
+        shot_id = scene.get("active_shot") or scene.get("shot_id")
+        shot = next((s for s in scene.get("shots") or [] if s.get("id") == shot_id), None)
+        rec = {"v": VERSION, "app": "Soundstage", "made": made,
+               "scene": scene, "shot": {"id": shot_id, "name": (shot or {}).get("name")}}
     step = next((_literal(i.get("step")) for _, i in _by_class(prompt, "SoundstageStep")), None)
     if isinstance(step, (int, float)):
         rec["step"] = int(step)

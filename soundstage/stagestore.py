@@ -101,6 +101,10 @@ def _facts(data) -> dict:
         sid = scene.get("shot_id") or scene.get("active_shot")
         if isinstance(sid, str) and sid:
             out["shot_id"] = sid[:80]
+            name = scene.get("shot_name") or next((s.get("name") for s in scene.get("shots") or []
+                                                   if isinstance(s, dict) and s.get("id") == sid), None)
+            if isinstance(name, str) and name:
+                out["shot_name"] = name[:80]   # the MP4 recipe and the queue label, without loading the stage
     return out
 
 
@@ -157,20 +161,33 @@ def try_resolve(value, base: str | None = None):
 
 # ---- on-prompt: keep every queued prompt light, whoever sent it ---------------------------------------------------
 
-def _slim_str(v, base):
-    """A big inline stage string -> its reference string; anything else unchanged."""
-    if not isinstance(v, str) or len(v) <= INLINE_MAX or parse_ref(v) is not None:
+def _slim_str(v, base, memo=None, facts=True):
+    """A big inline stage string -> its reference string; anything else unchanged. `memo` (text -> result) lets one
+    prompt's copies of the same stage (node input, widgets_values, widgets_values_named) be hashed once.
+    facts=False (the workflow copy, which nothing reads facts from) skips parsing the JSON: on the event loop that
+    parse is ~50 ms for a 2 MB stage, on every queue. A value that only looks like a JSON object is stored as is; the
+    reader parses it (an invalid stage fails where it would have failed inline)."""
+    if not isinstance(v, str) or len(v) <= INLINE_MAX:
         return v
-    try:
-        data = json.loads(v)
-    except ValueError:
-        return v
-    if not isinstance(data, dict):
-        return v
-    return ref_value(v, base, data)
+    if memo is not None and v in memo:
+        return memo[v]
+    out = v
+    if parse_ref(v) is None:
+        if facts:
+            try:
+                data = json.loads(v)
+            except ValueError:
+                data = None
+        else:
+            data = {} if v.lstrip()[:1] == "{" and v.rstrip()[-1:] == "}" else None
+        if isinstance(data, dict):
+            out = ref_value(v, base, data)
+    if memo is not None:
+        memo[v] = out
+    return out
 
 
-def _slim_workflow(wf, base) -> int:
+def _slim_workflow(wf, base, memo=None) -> int:
     """SoundstageStage widget values in a UI workflow (top level and subgraph definitions) -> references."""
     n = 0
     if not isinstance(wf, dict):
@@ -185,13 +202,13 @@ def _slim_workflow(wf, base) -> int:
                 continue
             wv = node.get("widgets_values")
             if isinstance(wv, list) and wv:
-                new = _slim_str(wv[0], base)
+                new = _slim_str(wv[0], base, memo, facts=False)
                 if new is not wv[0]:
                     wv[0] = new
                     n += 1
             named = node.get("widgets_values_named")   # newer frontends write the value a second time, by name
             if isinstance(named, dict) and "stage" in named:
-                new = _slim_str(named["stage"], base)
+                new = _slim_str(named["stage"], base, memo, facts=False)
                 if new is not named["stage"]:
                     named["stage"] = new
                     n += 1
@@ -201,6 +218,7 @@ def _slim_workflow(wf, base) -> int:
 def slim_prompt(body: dict, base: str | None = None) -> dict:
     """ComfyUI on-prompt handler. Big inline stage JSON in the API prompt, in extra_pnginfo.workflow and in the
     Soundstage recipe tag becomes a reference to the store. Never raises; never touches a small or foreign prompt."""
+    memo: dict = {}
     try:
         prompt = body.get("prompt") if isinstance(body, dict) else None
         if isinstance(prompt, dict):
@@ -208,10 +226,10 @@ def slim_prompt(body: dict, base: str | None = None) -> dict:
                 if isinstance(node, dict) and node.get("class_type") == STAGE_CLASS:
                     inp = node.get("inputs")
                     if isinstance(inp, dict) and "stage" in inp:
-                        inp["stage"] = _slim_str(inp["stage"], base)
+                        inp["stage"] = _slim_str(inp["stage"], base, memo)
         pnginfo = ((body.get("extra_data") or {}).get("extra_pnginfo")) if isinstance(body, dict) else None
         if isinstance(pnginfo, dict):
-            _slim_workflow(pnginfo.get("workflow"), base)
+            _slim_workflow(pnginfo.get("workflow"), base, memo)
             rec = pnginfo.get("soundstage")
             if isinstance(rec, dict) and isinstance(rec.get("scene"), dict):
                 text = json.dumps(rec["scene"], separators=(",", ":"))

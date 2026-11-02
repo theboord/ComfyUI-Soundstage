@@ -55,7 +55,7 @@ import { mountBook } from "./book/book.mjs";
 import { mountPresets } from "./ui/presets.mjs";
 import { mountPerformance } from "./performance/performance.mjs";
 import { attachTakeChecks } from "./takecheck/takecheck.mjs";
-import { queueSummary, storeStage, resolveStageValue, stageRefOf } from "./ui/queue.mjs";
+import { queueSummary, stageInputsByRef, resolveStageValue, stageRefOf } from "./ui/queue.mjs";
 
 const CSS = `
 .ss-stage { display:flex; flex-direction:column; gap:6px; padding:6px; background:#16191e; border-radius:6px;
@@ -522,6 +522,9 @@ function createStageWidget(node, inputName) {
     api.__ssQueueHooks = [];
     const orig = api.queuePrompt.bind(api);
     api.queuePrompt = async (...args) => {
+      // Queue time only: a big 3D stage goes to the server's stage store and the prompt carries its reference (the
+      // queue and the history stay small). serializeValue keeps it inline, so Export (API) stays self-contained.
+      try { await stageInputsByRef(api, args[1]?.output); } catch { /* sent inline; the server slims it */ }
       const r = await orig(...args);
       for (const f of api.__ssQueueHooks) { try { f(r?.prompt_id); } catch { /* one listener never breaks the queue */ } }
       return r;
@@ -2135,8 +2138,11 @@ function createStageWidget(node, inputName) {
       // A workflow saved from a queued render carries a big scene by reference (soundstage/stagestore.py): load it
       // back from this server's stage store, then restore as usual.
       if (stageRefOf(v)) {
-        resolveStageValue(api, v).then(restoreStage)
-          .catch((err) => console.warn("Soundstage: could not load the stored stage", err));
+        resolveStageValue(api, v).then(restoreStage).catch((err) => {
+          // Say so on the stage: Run would otherwise render the default set instead of the saved one.
+          console.warn("Soundstage: could not load the stored stage", err);
+          try { status.textContent = "This workflow's set is stored on the server it was rendered on, and this server doesn't have it. The stage shows the default set."; } catch { /* row not built */ }
+        });
         return;
       }
       restoreStage(v);
@@ -2159,10 +2165,9 @@ function createStageWidget(node, inputName) {
     // while re-rendering a frame picked before that existed.
     const withFlag = (v) => (node.ssLookStart === false || node.ssFrameLock === false
       ? JSON.stringify({ ...JSON.parse(v), ...(node.ssLookStart === false ? { look_start: false } : {}), ...(node.ssFrameLock === false ? { frame_lock: false } : {}) }) : v);
-    // A big stage goes to the server's stage store once and the prompt carries only its reference, so the queue and
-    // the history stay small (a busy scene is megabytes; GET /queue and /history encode every prompt in full).
-    const byRef = async (v) => (await storeStage(api, v)) || v;
-    if (lastCapture?.stamp === stamp && await passOnServer(`stage_clay_${stamp}.jpg`)) return byRef(withFlag(lastCapture.value));
+    // Inline here, so Export (API) carries the whole scene. Queueing swaps a big stage for a reference to the server's
+    // stage store (the api.queuePrompt wrapper above, web/ui/queue.mjs stageInputsByRef).
+    if (lastCapture?.stamp === stamp && await passOnServer(`stage_clay_${stamp}.jpg`)) return withFlag(lastCapture.value);
     const passes = {};
     const uploads = [];
     // Same layout captureSequence uses, so a pass already on the server can be reused without re-rendering.
@@ -2188,7 +2193,7 @@ function createStageWidget(node, inputName) {
       lighting_prompt: stage.lightingPrompt(), id_colors: stage.idColors(),
       shot_id: stage.activeShot().id, shot_name: stage.activeShot().name }, passes });
     lastCapture = { stamp, value };
-    return byRef(withFlag(value));
+    return withFlag(value);
   };
 
   const onRemoved = node.onRemoved;
