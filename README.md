@@ -51,6 +51,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 |---|---|
 | Nov 2, 11:10 PST | **Try-it demo at phone width:** long chooser chips and the frame-generate row wrap, and the Coach pill steps below the **Identical?** bar. |
 | Nov 2, 10:45 PST | **Try it in your browser:** a first screen that shows clay becoming the shot, a 10-stop tour of what's new, and a real Video → 3D run replayed through the App. Video → 3D seats a car's driver and builds a city street; the rebuild is still the basic version. |
+| Nov 2, 10:13 PST | **Docs checked against the code:** README, Quickstart, Tutorial, MCP and Video → 3D pages match the App today, including what the Video → 3D server doesn't do yet. |
 | Nov 2, 09:45 PST | **Presets fix:** Crate crash, Drop and Throw keep their stack height again (the crash pile had sat inside itself and the bake flung crates). |
 | Nov 2, 08:36 PST | **Video → 3D set, LAYOUT stage:** an inventory of what's in frame, SAM 3.1 tracks, measured boxes, floors and walls, keyed movers. Built and tested; the import route doesn't call it yet. |
 | Nov 2, 08:30 PST | **Video → 3D set in the App:** one chooser for every way in, a progress card, flaws-first results and an **Identical?** bar that lays the source over the Camera view. The server hasn't caught up yet: trim, the people pick and Cancel don't reach the job ([docs/video2stage.md](docs/video2stage.md)). |
