@@ -114,6 +114,23 @@ test("exhaled bubbles: bursts that start at an exhale, rise, never pass the surf
   assert.ok(near(Swim.exhaleBubbles(3, exStart + 2 * P + 0.15, emit, { surface: 10 })) > 3, "the exhale starts with a gush");
 });
 
+test("an exhale carries a real breath: 1-2.5 L of gas, mostly in big cap bubbles that read on screen", () => {
+  const emit = () => [0, 0, 0];
+  for (const seed of [1, 3, 7, 11]) {
+    const b = Swim.breathAt(20, seed), P = b.period, tEnd = b.start + 0.6 * P + 0.001;
+    const out = Swim.exhaleBubbles(seed, tEnd, emit, { surface: 10, maxAge: 0.6 * P + 0.05 });
+    let v0 = 0, big = 0;
+    const pres = (z) => 101325 + 1025 * 9.81 * z;
+    for (let i = 0; i < out.size.length; i++) {
+      const y = out.pos[i * 3 + 1], d = out.size[i];
+      v0 += Math.PI / 6 * d ** 3 * pres(10 - y) / pres(10);          // back to the regulator's depth (Boyle)
+      if (d > 0.025) big++;
+    }
+    assert.ok(v0 > 0.001 && v0 < 0.0025, `seed ${seed}: ${(v0 * 1000).toFixed(2)} L exhaled`);
+    assert.ok(big >= 10, `seed ${seed}: ${big} big caps`);
+  }
+});
+
 // ------------------------------------------------------------------ the figure
 test("a diver lies level, kicks from the hips, hands folded under the chest; every frame is a pure function", () => {
   const { g, plan } = swimmer(0.5);
