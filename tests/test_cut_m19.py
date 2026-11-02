@@ -40,7 +40,8 @@ def m19(fps=24):
     p["fade_out"] = {"type": "dip_black", "frames": 20}
     p["audio"][0]["keys"] = [[0, 0], [30, -6.5], [60, 0]]
     p["audio"][0]["duck"] = [[10, 0], [16, -12], [40, -12], [52, 0]]
-    p["titles"] = [{"text": "DINER NIGHT", "start_frame": 0, "frames": 48}, {"text": "Mara & \"Ezra\"", "start_frame": 100, "frames": 40, "style": "lower"}]
+    p["titles"] = [{"text": "DINER NIGHT", "start_frame": 0, "frames": 48}, {"text": "Mara & \"Ezra\"", "start_frame": 100, "frames": 40, "style": "lower"},
+                   {"text": "\"096 | SCP Short Film\" by Klay Abele / Dark Math, CC BY-SA 3.0. Modified.", "start_frame": 150, "frames": 60, "style": "credit"}]
     p["subtitles"] = [{"start_frame": 30, "end_frame": 70, "text": "Drove all night to find you, and you're eating pie. And more words to wrap", "speaker": "EZRA"},
                       {"start_frame": 80, "end_frame": 100, "text": "I'm not <eating> it."}]
     return p
@@ -233,3 +234,36 @@ def test_render_with_film_finish(media, tmp_path):
     info = probe(out)
     assert (info["width"], info["height"]) == (probe(str(tmp_path / "plain.mp4"))["width"], probe(str(tmp_path / "plain.mp4"))["height"])
     assert r["frames"] == plain["frames"]
+
+
+def test_credit_title_normalises_and_exports():
+    """The "credit" title style (small, lower left: a CC BY credit line) survives normalising and goes to FCPXML left-aligned."""
+    from soundstage.cut.export import TITLE_STYLES, export_all, normalize_titles
+    assert "credit" in TITLE_STYLES
+    t = normalize_titles([{"text": "by X, CC BY 4.0", "style": "credit"}, {"text": "y", "style": "bogus"}])
+    assert [x["style"] for x in t] == ["credit", "card"]
+    xml = next(v for k, v in export_all(m19()).items() if k.endswith(".fcpxml"))
+    assert 'fontSize="28" fontColor="1 1 1 1" alignment="left"' in xml
+    assert 'alignment="center"' in xml   # the other titles keep theirs
+
+
+@needs_ffmpeg
+def test_render_credit_title_lower_left(media, tmp_path):
+    """A credit renders small in the lower-left corner over the picture: no band, no full-width card."""
+    pytest.importorskip("PIL")
+    from soundstage.cut.render import render_cut
+    p = _project(media)
+    p["width"], p["height"] = 640, 360
+    p["titles"] = [{"text": "CREDIT LINE CREDIT LINE", "start_frame": 30, "frames": 60, "style": "credit", "fade_in": 0, "fade_out": 0}]
+    p["cut"][0].pop("trans", None)
+    out = str(tmp_path / "credit.mp4")
+    render_cut(p, {"output": str(media)}, out, {"loudness": "social"})
+    with_t = subprocess.run(["ffmpeg", "-v", "error", "-ss", "2.0", "-i", out, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                            capture_output=True, check=True).stdout
+    img = np.frombuffer(with_t, np.uint8).reshape(360, 640, 3).astype(int)
+    white = (img.min(2) > 200)
+    ys, xs = np.nonzero(white)
+    assert len(ys) > 30                                   # the text is there
+    assert ys.min() > 360 * 0.85 and xs.min() < 640 * 0.12  # low and left
+    assert xs.max() < 640 * 0.6                           # small: it does not span the frame
+    assert not white[: int(360 * 0.8)].any()              # nothing drawn over the picture above it (no card, no band)

@@ -1503,7 +1503,7 @@ export class CutPanel {
         txt.addEventListener("change", () => this.updateTitle(t.id, { text: txt.value }));
         txt.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") txt.blur(); });
         parts.push(mk("b", { textContent: "V2 title" }), txt,
-          sel([["card", "Card (on black)"], ["lower", "Lower third"], ["center", "Centre, over picture"]], t.style, (v) => this.updateTitle(t.id, { style: v })),
+          sel([["card", "Card (on black)"], ["lower", "Lower third"], ["center", "Centre, over picture"], ["credit", "Credit (small, lower left)"]], t.style, (v) => this.updateTitle(t.id, { style: v })),
           num("frames", t.frames, (v) => this.updateTitle(t.id, { frames: v }), { min: 1 }),
           num("fade in", t.fade_in, (v) => this.updateTitle(t.id, { fade_in: v }), { min: 0 }),
           num("fade out", t.fade_out, (v) => this.updateTitle(t.id, { fade_out: v }), { min: 0 }),
@@ -1708,7 +1708,14 @@ export class CutPanel {
     if (t) {
       ctx.save();
       ctx.globalAlpha = t.alpha;
-      const st = t.title.style, size = st === "lower" ? Math.round(H / 16) : Math.round(H / 11);
+      const st = t.title.style, size = st === "credit" ? Math.round(H / 38) : st === "lower" ? Math.round(H / 16) : Math.round(H / 11);
+      if (st === "credit") {   // small, lower left, a soft shadow, no band (soundstage/cut/render.py draws the same)
+        ctx.font = `500 ${size}px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif`;
+        ctx.textAlign = "left"; ctx.textBaseline = "middle";
+        ctx.fillStyle = "rgba(0,0,0,.7)"; ctx.fillText(t.title.text, W * 0.05 + 2, H * 0.91 + 2, W * 0.9);
+        ctx.fillStyle = "rgba(255,255,255,.92)"; ctx.fillText(t.title.text, W * 0.05, H * 0.91, W * 0.9);
+        ctx.restore();
+      } else {
       if (st === "card") { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); }
       ctx.font = `700 ${size}px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -1718,6 +1725,7 @@ export class CutPanel {
       if (st !== "card") ctx.strokeText(t.title.text, W / 2, y, W * 0.9);
       ctx.fillStyle = "#fff"; ctx.fillText(t.title.text, W / 2, y, W * 0.9);
       ctx.restore();
+      }
     }
     const c = FX.cueAt(this.project, f);
     if (c) {
@@ -1947,7 +1955,7 @@ export class CutPanel {
       ctx.fillStyle = "#6b4fa0"; ctx.fill();
       ctx.lineWidth = t.id === this.titleSel ? 2 : 1; ctx.strokeStyle = t.id === this.titleSel ? ACCENT : "rgba(0,0,0,.5)"; ctx.stroke(); ctx.lineWidth = 1;
       ctx.save(); ctx.beginPath(); ctx.rect(x0, V2_Y, x1 - x0, V2_H); ctx.clip();
-      ctx.fillStyle = "#fff"; ctx.fillText((t.style === "card" ? "▣ " : t.style === "lower" ? "▁ " : "◇ ") + t.text, x0 + 5, V2_Y + V2_H / 2);
+      ctx.fillStyle = "#fff"; ctx.fillText((t.style === "card" ? "▣ " : t.style === "lower" ? "▁ " : t.style === "credit" ? "© " : "◇ ") + t.text, x0 + 5, V2_Y + V2_H / 2);
       ctx.restore();
     }
     for (const c of p.subtitles || []) {

@@ -36,6 +36,8 @@ test("normalize: transitions, keys, titles, subtitles are optional and clamped",
   assert.deepEqual(p.cut[1].opacity, [[0, 0.25], [50, 1]]);
   assert.deepEqual(p.audio[0].keys, [[0, -60], [10, 3]]);
   assert.deepEqual(p.titles, [{ id: "t1", text: "A", start_frame: 0, frames: 10, style: "card", fade_in: 8, fade_out: 2 }]);
+  // a licence credit keeps its style
+  assert.equal(TL.normalizeProject({ ...demo(), titles: [{ text: "by X, CC BY 4.0", style: "credit" }] }).titles[0].style, "credit");
   assert.deepEqual(p.subtitles.map((c) => [c.start_frame, c.end_frame, c.text]), [[5, 6, "a"], [50, 98, "b c"]]);
   assert.deepEqual(p.fade_out, { type: "dip_black", frames: 12 });
   // an old project normalises exactly as before

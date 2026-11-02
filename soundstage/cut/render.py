@@ -80,8 +80,9 @@ def _font(size):
         return ImageFont.load_default()
 
 
-def _text_png(path, w, h, lines, *, size, y_frac=0.5, card=False, band=False, outline=True):
-    """An RGBA PNG of w x h with centred lines of text; card = opaque black behind it, band = a dark band behind it."""
+def _text_png(path, w, h, lines, *, size, y_frac=0.5, card=False, band=False, outline=True, align="center", shadow=False):
+    """An RGBA PNG of w x h with centred lines of text; card = opaque black behind it, band = a dark band behind it.
+    align="left" sets the lines from a 5% margin; shadow = a soft 2 px drop shadow instead of the outline (credits)."""
     from PIL import Image, ImageDraw
     img = Image.new("RGBA", (w, h), (0, 0, 0, 255 if card else 0))
     d = ImageDraw.Draw(img)
@@ -100,8 +101,12 @@ def _text_png(path, w, h, lines, *, size, y_frac=0.5, card=False, band=False, ou
         d.rectangle([0, y0 - pad, w, y0 + total + pad], fill=(0, 0, 0, 150))
     for ln, b in zip(lines, boxes):
         tw = b[2] - b[0]
-        x = (w - tw) // 2 - b[0]
-        if outline:
+        x = (w - tw) // 2 - b[0] if align != "left" else int(w * 0.05) - b[0]
+        if shadow:
+            off = max(1, size // 16)
+            d.text((x + off, y0 + off), ln, font=font, fill=(0, 0, 0, 180))
+            d.text((x, y0), ln, font=font, fill=(255, 255, 255, 235))
+        elif outline:
             sw = max(2, size // 14)
             d.text((x, y0), ln, font=font, fill=(255, 255, 255, 255), stroke_width=sw, stroke_fill=(0, 0, 0, 230))
         else:
@@ -400,6 +405,12 @@ def render_cut(project, roots, out_path, spec=None) -> dict:
         overlays = []
         for n, t in enumerate(p.get("titles") or []):
             style = t["style"]
+            if style == "credit":   # small, lower left, soft shadow, no band: a licence credit or a super
+                size = OH // 30 if social else OH // 38
+                png = _text_png(os.path.join(tmp, f"title_{n}.png"), OW, OH, _wrap(t["text"], 34 if social else 110), size=size,
+                                y_frac=0.88 if social else 0.91, align="left", shadow=True)
+                overlays.append((png, t["start_frame"], t["frames"], t["fade_in"], t["fade_out"]))
+                continue
             size = (OH // 9 if social else OH // 11) if style != "lower" else (OH // 26 if social else OH // 16)
             png = _text_png(os.path.join(tmp, f"title_{n}.png"), OW, OH, _wrap(t["text"], 16 if social else 28), size=size,
                             y_frac={"card": 0.5, "center": 0.5, "lower": 0.8 if social else 0.82}[style],
