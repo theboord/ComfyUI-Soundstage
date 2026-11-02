@@ -1,10 +1,17 @@
 // Underwater set: a reef channel 10 m down. Sandy seabed with rock outcrops, coral (branching, brain, fan, table,
 // tube sponges), swaying kelp, the rippling surface seen from below, slanting light shafts, marine snow and bubbles,
-// blue-green depth fog. People off the seabed swim (body level, flutter kick) instead of walking.
+// blue-green depth fog. People off the seabed swim (web/stage/swim.mjs: flutter or frog kick, trim, buoyancy, the
+// regulator's exhaled bubbles) instead of walking.
+// The water (web/stage/water.mjs): one wave field moves the surface (displaced, with Snell's window seen from below),
+// focuses the caustics on the seabed, coral and divers (Color guide), and flickers the light shafts, which fall along
+// the refracted sun. A current (mean drift + the swell's orbital surge) sways the kelp, sea fans and sea grass, and
+// carries the marine snow, bubbles and stirred sand.
 // Deterministic: every moving part is a pure function of the frame (and the shot camera, for particles).
 import * as THREE from "../../vendor/three.module.min.mjs";
 import { mergeVertices } from "../../vendor/addons/BufferGeometryUtils.mjs";
-import { rng, fbm, noise2, Batch, lightish, softPoints, wrap, memoSet, PERSON } from "./common.mjs";
+import { rng, fbm, noise2, Batch, lightish, softPoints, wrap, memoSet } from "./common.mjs";
+import { CAUSTIC_U, patchCaustics, underSurfaceMaterial, refractedSun, currentAt, surgeAt, causticAt } from "../water.mjs";
+import { exhaleBubbles, bodyAt, poseAt } from "../swim.mjs";
 
 export const SURFACE = 10;          // the water surface, metres above the seabed datum
 const WATER_CLAY = 0x34585f;        // depth fog in Clay: the layout guide fades to water, not to a grey void
@@ -57,7 +64,7 @@ function makeUnderwater(opts) {
   }
   bed.setAttribute("color", new THREE.BufferAttribute(col, 3));
   bed.computeVertexNormals();
-  const bedMesh = new THREE.Mesh(bed, new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.95 }));
+  const bedMesh = new THREE.Mesh(bed, patchCaustics(new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.95 })));
   bedMesh.receiveShadow = true;
   bedMesh.userData.seabed = true;
   g.add(bedMesh);
@@ -89,26 +96,49 @@ function makeUnderwater(opts) {
     return geo;
   };
   place(46, (x, y, z, r) => { const s = 0.5 + r() * 1.9; B.add(rockGeo(s, Math.floor(r() * 1e6)), r() < 0.5 ? "#6f6a5e" : "#5d5a52", x, y + s * 0.15, z, 0, r() * 6, 0); }, { minAx: 3.5 });
-  // branching (staghorn) coral: tapered cylinders, two levels of branches, round tips
+  // branching (staghorn) coral: a colony of tapered, slightly curving branches that grow up toward the light and
+  // fork irregularly (some branches stop short, some fork three ways), knobbed with corallites, the growing tips pale
   const branchy = (x, y, z, r, color) => {
+    const tipCol = "#" + new THREE.Color(color).lerp(new THREE.Color("#f2e6cf"), 0.45).getHexString();
     const twig = (bx, by, bz, len, rad, yaw, pitch, depth) => {
       const dir = new THREE.Vector3(Math.sin(pitch) * Math.sin(yaw), Math.cos(pitch), Math.sin(pitch) * Math.cos(yaw));
       const mid = new THREE.Vector3(bx, by, bz).addScaledVector(dir, len / 2);
       const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-      B.addMatrix(new THREE.CylinderGeometry(rad * 0.7, rad, len, 6, 1, true), color, new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)));
+      B.addMatrix(new THREE.CylinderGeometry(rad * 0.72, rad, len, 7, 1, true), depth > 0 ? color : tipCol, new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)));
+      // corallites: a few knobs along the branch
+      for (let c = 0; c < (depth > 0 ? 2 : 1); c++) {
+        const u = 0.25 + r() * 0.6, side = new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).cross(dir).normalize().multiplyScalar(rad * 0.85);
+        const kp = new THREE.Vector3(bx, by, bz).addScaledVector(dir, len * u).add(side);
+        B.add(new THREE.SphereGeometry(rad * 0.38, 4, 3), color, kp.x, kp.y, kp.z);
+      }
       const tip = new THREE.Vector3(bx, by, bz).addScaledVector(dir, len);
-      if (depth <= 0) { B.add(new THREE.SphereGeometry(rad * 0.85, 5, 3), color, tip.x, tip.y, tip.z); return; }
-      const k = 2 + Math.floor(r() * 2);
-      for (let i = 0; i < k; i++) twig(tip.x, tip.y, tip.z, len * (0.55 + r() * 0.25), rad * 0.7, yaw + (i - (k - 1) / 2) * 1.3 + r() * 0.6, 0.35 + r() * 0.5, depth - 1);
+      if (depth <= 0 || r() < 0.12) { B.add(new THREE.SphereGeometry(rad * 0.8, 6, 4), tipCol, tip.x, tip.y, tip.z); return; }
+      const k = r() < 0.25 ? 1 : r() < 0.8 ? 2 : 3;
+      for (let i = 0; i < k; i++) {
+        const turn = yaw + (k === 1 ? (r() - 0.5) * 0.8 : (i - (k - 1) / 2) * (0.9 + r() * 0.9) + (r() - 0.5) * 0.7);
+        twig(tip.x, tip.y, tip.z, len * (0.5 + r() * 0.45), rad * (0.66 + r() * 0.12), turn, Math.max(0.08, pitch * (0.55 + r() * 0.5) + (r() - 0.5) * 0.3), depth - 1);
+      }
     };
-    const n = 3 + Math.floor(r() * 3);
-    for (let i = 0; i < n; i++) twig(x + (r() - 0.5) * 0.4, y, z + (r() - 0.5) * 0.4, 0.35 + r() * 0.35, 0.06 + r() * 0.03, r() * 6.3, 0.15 + r() * 0.5, 2);
+    const n = 3 + Math.floor(r() * 4);
+    for (let i = 0; i < n; i++) twig(x + (r() - 0.5) * 0.5, y, z + (r() - 0.5) * 0.5, 0.25 + r() * 0.4, 0.045 + r() * 0.035, r() * 6.3, 0.2 + r() * 0.75, 2 + (r() < 0.4 ? 1 : 0));
   };
   const corals = ["#d07a4f", "#b3618f", "#d9b36c", "#c9504c", "#e0a14e"];
   place(34, (x, y, z, r) => branchy(x, y, z, r, corals[Math.floor(r() * corals.length)]), { minAx: 2.8, maxAx: 18, z0: -18, z1: 40 });
   // brain coral: squashed lumpy spheres
   place(30, (x, y, z, r) => { const s = 0.35 + r() * 0.7; B.add(rockGeo(s, Math.floor(r() * 1e6)), r() < 0.5 ? "#b9a36a" : "#9aa060", x, y + s * 0.2, z, 0, r() * 6, 0, 1, 0.75, 1); },
     { minAx: 2.6, maxAx: 20, z0: -18, z1: 40 });
+  // sea fans, sea grass and anemone tufts sway with the surge: they go into their own mesh, moved on the CPU (so the
+  // motion is in Clay and Depth too), each vertex by its height above its holdfast
+  const SW = { geos: [], meta: [] };
+  const swayAdd = (geo, color, matrix, base, height, stiff) => {
+    const gg = (geo.index ? geo.toNonIndexed() : geo.clone()).applyMatrix4(matrix);
+    geo.dispose();
+    for (const k of Object.keys(gg.attributes)) if (k !== "position") gg.deleteAttribute(k);
+    const c = new THREE.Color(color), pa = gg.attributes.position, col = new Float32Array(pa.count * 3);
+    for (let i = 0; i < pa.count; i++) col.set([c.r, c.g, c.b], i * 3);
+    gg.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    SW.geos.push(gg); SW.meta.push({ n: pa.count, base, height, stiff });
+  };
   // sea fans (gorgonians): a lattice of fine branches spreading in one plane from a short trunk
   const fan = (x, y, z, r, color) => {
     const yaw = r() * Math.PI, ux = Math.cos(yaw), uz = Math.sin(yaw), size = 0.5 + r() * 0.8;
@@ -116,8 +146,8 @@ function makeUnderwater(opts) {
       const dx = Math.sin(ang), dy = Math.cos(ang);
       const mid = new THREE.Vector3(x + ux * (ax + dx * len / 2), y + ay + dy * len / 2, z + uz * (ax + dx * len / 2));
       const dir = new THREE.Vector3(ux * dx, dy, uz * dx).normalize();
-      B.addMatrix(new THREE.CylinderGeometry(rad * 0.75, rad, len, 4, 1, true), color, new THREE.Matrix4().compose(mid,
-        new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir), new THREE.Vector3(1, 1, 1)));
+      swayAdd(new THREE.CylinderGeometry(rad * 0.75, rad, len, 4, 1, true), color, new THREE.Matrix4().compose(mid,
+        new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir), new THREE.Vector3(1, 1, 1)), [x, y, z], size, 1);
       if (depth <= 0) return;
       const tx = ax + dx * len, ty = ay + dy * len;
       for (const s of [-1, 1]) stick(tx, ty, len * (0.72 + r() * 0.15), ang + s * (0.28 + r() * 0.25), rad * 0.72, depth - 1);
@@ -134,7 +164,9 @@ function makeUnderwater(opts) {
     for (let i = 0; i < 3 + Math.floor(r() * 3); i++) { const h = 0.4 + r() * 0.8; B.add(new THREE.CylinderGeometry(0.09, 0.07, h, 8, 1, true), color, x + (r() - 0.5) * 0.4, y + h / 2, z + (r() - 0.5) * 0.4, (r() - 0.5) * 0.3, 0, (r() - 0.5) * 0.3); } },
     { minAx: 3, maxAx: 16, z0: -12, z1: 36 });
   // little anemone tufts and sea grass on the open sand
-  place(40, (x, y, z, r) => { for (let i = 0; i < 4; i++) B.add(new THREE.ConeGeometry(0.03, 0.25 + r() * 0.25, 4), "#7c9a52", x + (r() - 0.5) * 0.3, y + 0.15, z + (r() - 0.5) * 0.3, (r() - 0.5) * 0.4, 0, (r() - 0.5) * 0.4); },
+  place(40, (x, y, z, r) => { for (let i = 0; i < 4; i++) { const h = 0.25 + r() * 0.25, bx = x + (r() - 0.5) * 0.3, bz = z + (r() - 0.5) * 0.3;
+    swayAdd(new THREE.ConeGeometry(0.03, h, 4), "#7c9a52", new THREE.Matrix4().compose(new THREE.Vector3(bx, y + h / 2 - 0.02, bz),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler((r() - 0.5) * 0.4, 0, (r() - 0.5) * 0.4)), new THREE.Vector3(1, 1, 1)), [bx, y - 0.02, bz], h, 0.35); } },
     { minAx: 0, maxAx: 14, z0: -12, z1: 30, lane: false });
   // the reef proper: dense coral along both sides of the swim lane, where the camera looks (a diver swims past it)
   const reef = { minAx: 3.0, maxAx: 11, z0: -10, z1: 26 };
@@ -145,7 +177,24 @@ function makeUnderwater(opts) {
     for (let i = 0; i < 3 + Math.floor(r() * 4); i++) { const h = 0.3 + r() * 0.7; B.add(new THREE.CylinderGeometry(0.08, 0.06, h, 8, 1, true), color, x + (r() - 0.5) * 0.45, y + h / 2, z + (r() - 0.5) * 0.45, (r() - 0.5) * 0.3, 0, (r() - 0.5) * 0.3); } }, reef);
   place(16, (x, y, z, r) => { const s = 0.5 + r() * 0.8; B.add(new THREE.CylinderGeometry(0.07, 0.12, 0.4, 6), "#a88f6a", x, y + 0.2, z);
     B.add(new THREE.CylinderGeometry(s, s * 0.85, 0.07, 16), "#b59a70", x, y + 0.43, z, r() * 0.15, 0, r() * 0.15); }, { ...reef, minAx: 4 });
-  B.build(g);
+  const reefMeshes = B.build(g);
+  for (const m of reefMeshes) patchCaustics(m.material);
+  // the swaying sea fans and grass: one vertex-coloured mesh; per vertex its rest position, its height share and phase
+  const swayGeo = mergeKelp(SW.geos, true);
+  const swayBase = Float32Array.from(swayGeo.attributes.position.array), swayW = new Float32Array(swayBase.length / 3), swayPh = new Float32Array(swayW.length);
+  {
+    let o = 0;
+    for (const m of SW.meta) {
+      const ph = (m.base[0] * 0.37 + m.base[2] * 0.53) % 6.28;
+      for (let i = 0; i < m.n; i++, o++) {
+        const u = Math.max(0, Math.min(1, (swayBase[o * 3 + 1] - m.base[1]) / Math.max(0.05, m.height)));
+        swayW[o] = u * u * m.height * 0.12 / m.stiff; swayPh[o] = ph;
+      }
+    }
+  }
+  const sway = new THREE.Mesh(swayGeo, patchCaustics(new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.85 })));
+  sway.castShadow = true; sway.receiveShadow = true; sway.frustumCulled = false;
+  g.add(sway);
 
   // ---- kelp: tall ribbons in stands on the reef walls; one mesh, swayed on the CPU each frame
   const kelpParts = [], kelpBase = [];
@@ -167,48 +216,40 @@ function makeUnderwater(opts) {
     }
   }
   const kelpGeo = mergeKelp(kelpParts);
-  const kelp = new THREE.Mesh(kelpGeo, new THREE.MeshStandardMaterial({ color: 0x6b7a33, roughness: 0.8, side: THREE.DoubleSide }));
+  const kelp = new THREE.Mesh(kelpGeo, patchCaustics(new THREE.MeshStandardMaterial({ color: 0x6b7a33, roughness: 0.8, side: THREE.DoubleSide })));
   kelp.castShadow = true; kelp.receiveShadow = true;
   g.add(kelp);
 
-  // ---- the surface from below: a rippling silver-blue sheet (vertex brightness = the ripple), seen through fog
-  const surf = new THREE.PlaneGeometry(240, 240, 56, 56);
+  // ---- the surface from below: displaced by the wave field, bright inside Snell's window, a dim mirror outside it
+  const surf = new THREE.PlaneGeometry(240, 240, 120, 120);
   surf.rotateX(Math.PI / 2);              // facing down
   surf.translate(0, SURFACE, 20);
-  surf.setAttribute("color", new THREE.BufferAttribute(new Float32Array(surf.attributes.position.count * 3), 3));
-  // the underside of the surface: bright, rippling silver right overhead, fading into the blue-green with distance
-  // (its own falloff, not the scene fog, which would swallow it whole at 10 m up)
-  const surfMat = new THREE.ShaderMaterial({ transparent: true, side: THREE.DoubleSide, depthWrite: false, vertexColors: true,
-    uniforms: { uWater: { value: new THREE.Color(WATER_COLOR) } },
-    vertexShader: "varying vec3 vC; varying float vD; void main(){ vC = color; vec4 mv = modelViewMatrix * vec4(position,1.0); vD = length(mv.xyz); gl_Position = projectionMatrix * mv; }",
-    fragmentShader: "uniform vec3 uWater; varying vec3 vC; varying float vD; void main(){ float k = exp(-vD * 0.045); gl_FragColor = vec4(mix(uWater, vC * 1.15, k), 0.92); }" });
-  surfMat.allowOverride = false;
+  const surfMat = underSurfaceMaterial({ water: new THREE.Color(WATER_COLOR), deep: new THREE.Color(DEEP_COLOR) });
   const surface = lightish(new THREE.Mesh(surf, surfMat));
   surface.userData.water = true;            // ID pass hides water
+  surface.frustumCulled = false;
   g.add(surface);
 
-  // ---- light shafts: slanted cones from the surface, bright at the top and fading down (additive, one mesh)
-  const rays = [], rayBase = [];
+  // ---- light shafts: cones hanging from the surface along the refracted sun, bright at the top and fading down, each
+  // flickering with the focus of the waves above it (additive, one mesh, aimed every frame from the sun)
+  const rays = [], rayBase = [], rayRoots = [];
   const rr = rng(5);
-  const slant = new THREE.Vector3(0.28, -1, 0.12).normalize();
-  for (let i = 0; i < 14; i++) {
-    const L = SURFACE + 2, w = 0.5 + rr() * 1.6;
-    const cone = new THREE.CylinderGeometry(w * 0.7, w * 1.4, L, 10, 6, true);
+  for (let i = 0; i < 18; i++) {
+    const L = SURFACE + 2, w = 0.35 + rr() * 1.3;
+    const cone = new THREE.CylinderGeometry(w * 0.7, w * 1.35, L, 10, 6, true);
     cone.translate(0, -L / 2, 0);
-    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), slant);
-    cone.applyQuaternion(q);
-    const x = -16 + rr() * 30, z = -6 + rr() * 34;
-    cone.translate(x, SURFACE + 0.5, z);
+    const x = -18 + rr() * 34, z = -8 + rr() * 38;
+    cone.translate(x, 0.5, z);
     const gc = cone.toNonIndexed(), qp = gc.attributes.position, cc = new Float32Array(qp.count * 3);
-    const I = 0.07 + rr() * 0.1;
+    const I = 0.06 + rr() * 0.1;
     for (let v = 0; v < qp.count; v++) {
-      const k = Math.max(0, Math.min(1, (qp.getY(v) - 0.5) / (SURFACE + 0.5)));   // 1 at the surface, 0 at the bottom
+      const k = Math.max(0, Math.min(1, (qp.getY(v) + SURFACE) / (SURFACE + 0.5)));   // 1 at the surface, 0 at the bottom
       const a = I * Math.pow(k, 1.6);
       cc.set([a * 0.75, a * 0.95, a], v * 3);
       rayBase.push(a, i);
     }
     gc.setAttribute("color", new THREE.BufferAttribute(cc, 3));
-    rays.push(gc);
+    rays.push(gc); rayRoots.push([x, z]);
   }
   const rayGeo = mergeKelp(rays, true, true);
   // soft-edged shafts: brightest where the cone faces the camera, fading to nothing at its silhouette (no hard edges)
@@ -219,17 +260,20 @@ function makeUnderwater(opts) {
   rayMat.allowOverride = false;
   const rayMesh = lightish(new THREE.Mesh(rayGeo, rayMat));
   rayMesh.frustumCulled = false;
+  rayMesh.position.y = SURFACE;
   g.add(rayMesh);
 
   // ---- marine snow (drifting specks) and bubbles
   const SNOW = 900, snow = lightish(softPoints(SNOW, 0xdfeff0, 0.05, { opacity: 0.7 }));
-  const BUB = 260, bubbles = lightish(softPoints(BUB, 0xe8fbff, 0.07, { opacity: 0.85 }));
+  const BUB = 1400, bubbles = lightish(bubblePoints(BUB));
   snow.userData.weather = "marine_snow"; bubbles.userData.weather = "bubbles";
   g.add(snow, bubbles);
   const sr = rng(91), snowSeed = Float32Array.from({ length: SNOW * 3 }, () => sr());
   const vents = [[-4.5, 6], [5.2, 14], [-6, 22]].map(([x, z]) => [x, seabedHeight(x, z), z]);
 
   const _fog = { clay: new THREE.FogExp2(WATER_CLAY, 0.038), color: new THREE.FogExp2(WATER_COLOR, 0.05) };
+  const DRIFT = [0.05, 0.02];
+  const currentAtFn = (x, y, z, t) => currentAt(x, y, z, t, { surface: SURFACE, drift: DRIFT });
   const _bg = { clay: new THREE.Color(WATER_CLAY), color: new THREE.Color(DEEP_COLOR) };
   const fps = () => 24;
 
@@ -238,112 +282,106 @@ function makeUnderwater(opts) {
     underwater: true,
     floorAt: seabedHeight,
     surface: SURFACE,
+    drift: DRIFT,
+    /** Water velocity (m/s) at a point and time: the mean drift plus the swell's surge (water.mjs). */
+    currentAt: currentAtFn,
     /** Animate everything for frame f (the stage calls this from setFrame). */
     update(f, stage) {
       const t = f / (stage?.state?.shot?.fps || fps());
-      // surface ripples: brightness from a few travelling waves
-      const sp = surf.attributes.position, sc = surf.attributes.color;
-      for (let i = 0; i < sp.count; i++) {
-        const x = sp.getX(i), z = sp.getZ(i);
-        const w = Math.sin(x * 0.55 + t * 1.3) * 0.5 + Math.sin(z * 0.43 - t * 1.1 + x * 0.2) * 0.35 + Math.sin((x + z) * 1.1 + t * 2.3) * 0.15;
-        const b = 0.62 + 0.28 * w;
-        sc.setXYZ(i, b * 0.78, b * 0.93, b);
-      }
-      sc.needsUpdate = true;
-      // kelp sways from the root (the tip moves most)
+      const sunDir = refractedSun(stage?.state?.sun);
+      CAUSTIC_U.uCauT.value = t; CAUSTIC_U.uCauSurf.value = SURFACE; CAUSTIC_U.uCauDir.value.set(...sunDir);
+      const sa = stage?.state?.sun || { azimuth_deg: 190, elevation_deg: 42 }, el = Math.max(2, sa.elevation_deg) * Math.PI / 180, az = sa.azimuth_deg * Math.PI / 180;
+      CAUSTIC_U.uSunAir.value.set(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
+      // kelp: the stipe leans with the current and is carried to and fro by the surge, the motion travelling up the
+      // blade (the tip lags the root), plus a fast flutter of the ribbon edges
       const kp = kelpGeo.attributes.position;
       for (let v = 0; v < kp.count; v++) {
         const o = v * 6, h = kelpBase[o + 3], ph = kelpBase[o + 4], H = kelpBase[o + 5];
-        const sway = Math.sin(t * 0.7 + ph + h * 1.6) * 0.55 * h * h * (H / 6);
-        kp.setXYZ(v, kelpBase[o] + sway, kelpBase[o + 1], kelpBase[o + 2] + 0.4 * Math.sin(t * 0.5 + ph * 1.3) * h * h);
+        const x0 = kelpBase[o], z0 = kelpBase[o + 2];
+        const lag = h * 0.9;                                          // seconds: the wave climbs the blade
+        const sg = surgeAt(x0, kelpBase[o + 1], z0, t - lag, { surface: SURFACE });
+        const k = h * h * (H / 6);
+        const flutter = 0.05 * h * Math.sin(t * 2.3 + ph * 3 + h * 7);
+        kp.setXYZ(v, x0 + (sg[0] * 1.1 + DRIFT[0] * 9) * k + 0.18 * Math.sin(t * 0.21 + ph) * k + flutter,
+          kelpBase[o + 1] - 0.08 * k * k, z0 + (sg[1] * 1.1 + DRIFT[1] * 9) * k + 0.12 * Math.sin(t * 0.17 + ph * 1.3) * k);
       }
       kp.needsUpdate = true;
       kelpGeo.computeVertexNormals();
-      // light shafts breathe
-      const rc = rayGeo.attributes.color;
+      // sea fans and grass: bend with the surge about their holdfasts (soft, flexible: the top moves most)
+      const sp = swayGeo.attributes.position;
+      for (let i = 0; i < swayW.length; i++) {
+        const w = swayW[i];
+        if (w <= 0) continue;
+        const bx = swayBase[i * 3], bz = swayBase[i * 3 + 2];
+        const sg = surgeAt(bx, swayBase[i * 3 + 1], bz, t - 0.25, { surface: SURFACE });
+        const jit = 0.25 * Math.sin(t * 0.9 + swayPh[i]);
+        sp.setXYZ(i, bx + (sg[0] * 3 + DRIFT[0] * 2 + jit * 0.12) * w, swayBase[i * 3 + 1] - 0.15 * w * w, bz + (sg[1] * 3 + DRIFT[1] * 2 + jit * 0.09) * w);
+      }
+      sp.needsUpdate = true;
+      // light shafts: aimed down the refracted sun; each breathes with the wave focus over its root
+      const dirV = new THREE.Vector3(...sunDir);
+      rayMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), dirV);
+      const rc = rayGeo.attributes.color, foc = rayRoots.map(([x, z]) => causticAt(x, z, 1.5, t, sunDir));
       for (let v = 0; v < rc.count; v++) {
         const a = rayBase[v * 2], id = rayBase[v * 2 + 1];
-        const k = a * (0.7 + 0.3 * Math.sin(t * 0.6 + id * 1.9));
+        const k = a * Math.min(1.6, 0.55 + 0.45 * foc[id]) * (0.85 + 0.15 * Math.sin(t * 0.5 + id * 1.9));
         rc.setXYZ(v, k * 0.75, k * 0.95, k);
       }
       rc.needsUpdate = true;
-      // marine snow drifts in a box in front of the shot camera
+      // marine snow drifts with the current (and the surge) in a box in front of the shot camera, sinking very slowly
       const cam = stage?._cameraAt ? stage._cameraAt(f) : { position: [0, 2, -10], target: [0, 2, 0] };
       const cp = cam.position, ct = cam.target;
       const dx = ct[0] - cp[0], dz = ct[2] - cp[2], dl = Math.hypot(dx, dz) || 1;
       const cx = cp[0] + dx / dl * 7, cz = cp[2] + dz / dl * 7;
       const pp = snow.geometry.attributes.position;
+      const sg0 = surgeAt(cx, 2, cz, t, { surface: SURFACE });
       for (let i = 0; i < SNOW; i++) {
         const a = snowSeed[i * 3], b = snowSeed[i * 3 + 1], d = snowSeed[i * 3 + 2];
-        const x = cx + wrap((a - 0.5) * 22 + Math.sin(t * 0.3 + b * 30) * 0.3 + t * 0.12, 22);
-        const y = 0.3 + ((b * 9.5 - t * 0.05) % 9.5 + 9.5) % 9.5;
-        const z = cz + wrap((d - 0.5) * 22 + Math.cos(t * 0.25 + a * 20) * 0.3, 22);
+        const x = cx + wrap((a - 0.5) * 22 + DRIFT[0] * t + sg0[0] + Math.sin(t * 0.3 + b * 30) * 0.12, 22);
+        const y = 0.3 + ((b * 9.5 - t * 0.012 + 0.05 * Math.sin(t * 0.4 + a * 40)) % 9.5 + 9.5) % 9.5;
+        const z = cz + wrap((d - 0.5) * 22 + DRIFT[1] * t + sg0[1] + Math.cos(t * 0.25 + a * 20) * 0.12, 22);
         pp.setXYZ(i, x, y, z);
       }
       pp.needsUpdate = true;
-      // bubbles: streams from seabed vents and from each swimmer's head (exhaled), rising and wobbling
-      const swimmers = fx.swim(f, stage, t);
-      const sources = [...vents, ...swimmers];
-      const bp = bubbles.geometry.attributes.position;
-      for (let i = 0; i < BUB; i++) {
-        const s = sources[i % Math.max(1, sources.length)] || [0, -50, 0];
-        const life = 3.2 + (i % 5) * 0.4, age = ((t + i * 0.23) % life) / life;
-        const rise = age * (SURFACE - s[1]) * 0.9;
-        bp.setXYZ(i, s[0] + Math.sin(t * 3 + i) * 0.06 + age * 0.3 * Math.sin(i), s[1] + rise, s[2] + Math.cos(t * 2.6 + i * 1.3) * 0.06);
+      // bubbles: each diver's exhaled bursts (swim.mjs) and a few seeps from the reef, rising, growing and drifting
+      const bp = bubbles.geometry.attributes.position, bs = bubbles.geometry.attributes.size;
+      let n = 0;
+      const push = (x, y, z, d) => { if (n < BUB) { bp.setXYZ(n, x, y, z); bs.setX(n, d); n++; } };
+      for (const s of stage?._swimNow || []) {
+        if (s.plan.gear !== "scuba" || !s.g.userData.swimKit?.userData.exhaust) continue;
+        const off = regulatorOffset(s);
+        if (!off) continue;
+        const fpsS = s.plan.fps;
+        // before the shot the diver was already swimming: older breaths left from further back along the path
+        const p0 = s.plan.pos[0], p1 = s.plan.pos[Math.min(s.plan.n - 1, 4)], back = Math.min(s.plan.n - 1, 4) / fpsS;
+        const emitAt = (te) => {
+          const fq = Math.max(0, te * fpsS);
+          const pose = poseAt(s.plan, fq), B = bodyAt(s.plan, fq, pose, { ...s.ctx, hipY: off.hipY });
+          const v = off.v.clone().applyQuaternion(B.q);
+          const pre = Math.min(0, te) / back;
+          return [B.hips[0] + v.x + (p1[0] - p0[0]) * pre, B.hips[1] + v.y, B.hips[2] + v.z + (p1[2] - p0[2]) * pre];
+        };
+        const out = exhaleBubbles(s.plan.seed, t, emitAt, { surface: SURFACE, current: currentAtFn });
+        for (let i = 0; i < out.size.length; i++) push(out.pos[i * 3], out.pos[i * 3 + 1], out.pos[i * 3 + 2], out.size[i]);
       }
-      bp.needsUpdate = true;
-    },
-    /**
-     * Swimmers: people off the seabed (feet more than 0.35 m up) lie level along their heading and flutter-kick.
-     * Returns head positions (bubble sources).
-     */
-    swim(f, stage, t) {
-      const heads = [];
-      if (!stage?.state?.actors || !stage.actorMeshes) return heads;
-      for (const a of stage.state.actors) {
-        if (!PERSON.has(a.kind) || a.mount_id || a.mocap) continue;
-        const gm = stage.actorMeshes.get(a.id);
-        if (!gm) continue;
-        const ground = seabedHeight(gm.position.x, gm.position.z);
-        if (gm.position.y - ground < 0.35) continue;
-        const s = (a.height_m || 1.8) * (a.scale || 1) / 1.8;
-        const moving = (gm.userData.speed || 0) > 0.15;
-        const th = moving ? 1.3 : 0.55;                                 // level when swimming, upright-ish when hovering
-        const yaw = gm.rotation.y;
-        gm.rotation.order = "YXZ";
-        gm.rotation.x = th + 0.04 * Math.sin(t * 1.7 + s);
-        gm.position.y += 0.95 * s * (1 - Math.cos(th)) + 0.05 * Math.sin(t * 1.1 + gm.position.x);
-        gm.position.x -= 0.95 * s * Math.sin(th) * Math.sin(yaw);
-        gm.position.z -= 0.95 * s * Math.sin(th) * Math.cos(yaw);
-        const kick = moving ? 2 * Math.PI * 1.1 : 2 * Math.PI * 0.5;
-        const stroke = a.swim === "stroke";
-        if (!a.pose_keys?.length) for (const l of gm.userData.limbs || []) {
-          l.pivot.rotation.set(0, 0, 0);
-          const ph = (l.side || 1) > 0 ? 0 : Math.PI;
-          if (l.part === "hip") l.pivot.rotation.x = 0.32 * Math.sin(t * kick + ph) - 0.05;
-          if (l.part === "knee") l.pivot.rotation.x = 0.28 + 0.22 * Math.sin(t * kick + ph + 0.9);
-          if (l.part === "shoulder") {
-            if (stroke) { l.pivot.rotation.x = -2.7 + 0.5 * Math.sin(t * 1.2 + ph); l.pivot.rotation.z = -(l.side || 1) * 0.25; }
-            else { l.pivot.rotation.x = 0.15; l.pivot.rotation.z = -(l.side || 1) * 0.12; }
-          }
-          if (l.part === "elbow") l.pivot.rotation.x = stroke ? -0.15 : -0.35;
-        }
-        const j = gm.userData.joints || {};
-        j.spine?.rotation.set(-0.12, 0, 0);
-        j.neck?.rotation.set(-0.35 * th, 0, 0);
-        j.head?.rotation.set(-0.45 * th, 0, 0);
-        gm.updateMatrixWorld(true);
-        const hp = new THREE.Vector3();
-        if (j.head) j.head.getWorldPosition(hp); else hp.set(gm.position.x, gm.position.y + 1.6 * s, gm.position.z);
-        heads.push([hp.x, hp.y + 0.12, hp.z]);
+      for (const [vi, s] of vents.entries()) for (let i = 0; i < 24; i++) {
+        const life = 26, age = ((t + i * 1.07 + vi * 3.1) % life + life) % life, d = 0.002 + 0.004 * ((i * 7) % 5) / 5;
+        const y = s[1] + 0.1 + age * 0.24;
+        if (y > SURFACE - 0.05) continue;
+        push(s[0] + Math.sin(t * 3 + i) * 0.03 + DRIFT[0] * age, y, s[2] + Math.cos(t * 2.6 + i * 1.3) * 0.03 + DRIFT[1] * age, d);
       }
-      return heads;
+      for (let i = n; i < BUB; i++) { bp.setXYZ(i, 0, -100, 0); bs.setX(i, 0); }
+      bp.needsUpdate = true; bs.needsUpdate = true;
+      bubbles.geometry.setDrawRange(0, Math.max(1, n));
     },
-    /** Per pass, just before the stage renders: water fog and colour in Clay and Color, shorter Depth. */
+    /** Per pass, just before the stage renders: water fog and colour in Clay and Color, shorter Depth, caustics. */
     pass(mode, { stage, cam }) {
       if (!stage?.scene || !cam || cam.position.y >= SURFACE) return;
+      // bubbles are drawn at their true size: pixels per metre at 1 m for this camera and canvas
+      const H = stage.renderer?.domElement?.height || 512;
+      bubbles.material.uniforms.uScale.value = (H / 2) / Math.tan(((cam.fov || 40) * Math.PI / 180) / 2);
       if (mode === "clay") { stage.scene.fog = _fog.clay; stage.scene.background = _bg.clay; }
-      else if (mode === "color") { stage.scene.fog = _fog.color; stage.scene.background = _bg.color; }
+      else if (mode === "color") { stage.scene.fog = _fog.color; stage.scene.background = _bg.color; CAUSTIC_U.uCauK.value = 0.85; }
       else if (mode === "depth") stage.scene.overrideMaterial = underwaterDepth();
     },
   };
@@ -370,4 +408,32 @@ function mergeKelp(list, withColor = false, keepNormals = false) {
   if (nor) out.setAttribute("normal", new THREE.BufferAttribute(nor, 3)); else out.computeVertexNormals();
   out.computeBoundingSphere();
   return out;
+}
+
+/** Where a diver's regulator exhaust sits in their body frame (measured on the posed figure, updated each frame). */
+function regulatorOffset(s) {
+  const kit = s.g.userData.swimKit, J = s.g.userData.joints;
+  if (!kit?.userData.exhaust || !J?.head || !s.out?.body) return null;
+  s.g.updateMatrixWorld(true);
+  const w = J.head.localToWorld(kit.userData.exhaust.clone());
+  const B = s.out.body, v = w.sub(new THREE.Vector3(...B.hips)).applyQuaternion(B.q.clone().invert());
+  return { v, hipY: (J.l_hip?.position.y || 0.9 * s.plan.height) * (s.g.scale.y || 1) };
+}
+
+/**
+ * Bubbles as round, rim-lit points sized by their real diameter (a bubble under water shows as a bright silver ring:
+ * total internal reflection at its edge), visible in every pass but Depth and the ID matte.
+ */
+function bubblePoints(n) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  geo.setAttribute("size", new THREE.BufferAttribute(new Float32Array(n), 1));
+  const m = new THREE.ShaderMaterial({ transparent: true, depthWrite: false,
+    uniforms: { uScale: { value: 900 } },
+    vertexShader: "attribute float size; uniform float uScale; varying float vA; void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); float px = uScale * max(size, 0.0) * 2.2 / max(0.3, -mv.z); gl_PointSize = clamp(px, 1.5, 64.0); vA = clamp(px / 3.0, 0.25, 1.0) * clamp(1.0 - (-mv.z - 6.0) / 18.0, 0.0, 1.0); gl_Position = projectionMatrix * mv; }",
+    fragmentShader: "varying float vA; void main(){ vec2 c = gl_PointCoord * 2.0 - 1.0; float r = length(c); if (r > 1.0) discard; float rim = smoothstep(0.55, 0.95, r) * (1.0 - smoothstep(0.95, 1.0, r)); float body = 0.18 + 0.5 * pow(max(0.0, 1.0 - length(c - vec2(-0.35, -0.35)) * 2.2), 2.0); gl_FragColor = vec4(vec3(0.88, 0.97, 1.0), (rim * 0.95 + body * 0.6) * vA); }" });
+  m.allowOverride = false;
+  const p = new THREE.Points(geo, m);
+  p.frustumCulled = false;
+  return p;
 }
