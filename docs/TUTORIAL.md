@@ -952,7 +952,6 @@ A style's suggested lens never overrides an in-car camera: the status line tells
 
 ### Stunts: J-turn, donut, handbrake 180
 
-<p align="center"><img src="media/stunt_jturn.gif" width="760" alt="Reverse J-turn: the clay stage on the left, the final on the right, the red car spinning with tyre smoke"></p>
 
 1. Put a car on the set where the stunt should start, facing the way it should go.
 2. Select it and pick **Stunt** in its properties: **Reverse J-turn** (races backwards, whips round 180° and drives off nose first), **Donut** (two tight spins in a cloud of tyre smoke) or **Handbrake 180** (slides round and roars back the way it came).
@@ -997,7 +996,6 @@ The line **Lighting note for the prompt:** shows exactly how your lighting will 
 4. **Airplane cabin** and **Train carriage:** seat people by the window (drag them onto a seat); clouds and countryside stream past the windows in the stage and the guides, and the view out of the train is softened so the video paints real fields and trees.
 5. **Airport runway**, **Above the clouds** (with an airliner) and **Train station platform** (with a train) for the exteriors.
 
-<p align="center"><img src="media/new_sets_reef.gif" width="700" alt="A diver over the coral reef: the clay stage beside the final"></p>
 
 ### Posing people
 
@@ -1078,7 +1076,6 @@ Physics stays live while you drag, so you can block by hand the way you'd move t
 
 Each drag is one undo step (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z redoes). Press on a selected person's body to grab the person; the move arrows still work where they stick out past them.
 
-<p align="center"><img src="media/physics_crate_crash.gif" width="700" alt="A car crashes through a crate stack: the clay guide beside the LTX draft"></p>
 
 ### Drive mode: control anything like a video game, and record it
 
