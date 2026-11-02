@@ -31,6 +31,10 @@ BRIEF_LEADS = {"world": "", "atmosphere": "the air", "surfaces": "surfaces", "fu
                "light": "light", "outside": "outside the windows"}
 BASE_NEGATIVE = ("motion blur trails, multiple exposures, split screen, collage, text, watermark, logo, "
                  "frame border, letterbox bars, deformed hands, extra fingers")
+# A look that asks for real shutter blur (Racing cinema: the wheels, a pan's background) must not also have it in the
+# negative; the ghosting the base negative guards against stays out by name.
+_ASKS_BLUR = re.compile(r"motion[- ]blur", re.I)
+BLUR_SAFE_NEGATIVE = BASE_NEGATIVE.replace("motion blur trails", "ghosted double images")
 
 # Words that put a clause after frame 1 ("then they walk inside"); dropped from the still prompt.
 _LATER = re.compile(r"\b(then|after(?:wards)?|until|finally|eventually|later|ends?|ending|by the end|"
@@ -61,14 +65,47 @@ def _frag(field: str, look: dict, key: str) -> str:
     return (o or {}).get(key, "")
 
 
-def look_parts(look: dict) -> dict:
-    """Every chosen option, its still/motion fragment, negatives, KB refs and conflict notes."""
+def look_context(scene: dict) -> dict:
+    """What a car look may say about this shot, from the stage (scene.py): view "car" (a moving car in frame, the camera
+    outside it or on the over-the-tyre mount) or "nocar"; the surface under the tyres ("wet", "dry", "dirt", "snow" or
+    None); and how much the camera smears the background, at frame 1 (pan_still) and over the shot (pan_motion)."""
+    f1 = S.frame1_facts(scene)
+    frames, _ = S.frame_range(scene)
+    return {"view": S.look_view(scene, _in_shot_ids(scene, f1)), "surface": S.look_surface(scene),
+            "pan_still": S.camera_blur(scene, 0, min(12, frames - 1)), "pan_motion": S.camera_blur(scene)}
+
+
+def _car_layers(o: dict, ctx: dict | None) -> dict:
+    """A car look's option (the motorsport subgenre) as the words this shot may carry: its head, then the surface the
+    stage has, the car (wheels, body, weight), and the background blur the camera really makes. Without a moving car in
+    frame (or riding inside it, on its hood or bumper) only the car-free words: grade, grain and lens do the rest."""
+    ctx = ctx or {"view": "car"}
+    if ctx.get("view") != "car":
+        v = o.get("nocar") or {}
+        return {**o, "still": v.get("still", ""), "motion": v.get("motion", ""), "neg": v.get("neg", "")}
+    srf = (o.get("surface") or {}).get(ctx.get("surface") or "") or {}
+    car = o.get("car") or {}
+    pan_s = (o.get("pan") or {}).get(ctx.get("pan_still") or "") or {}
+    pan_m = (o.get("pan") or {}).get(ctx.get("pan_motion") or "") or {}
+    still = _join([o.get("still", ""), srf.get("still", ""), car.get("still", ""), pan_s.get("still", "")])
+    body = "; ".join(x for x in (srf.get("motion", ""), car.get("motion", ""), pan_m.get("motion", "")) if x)
+    motion = f"{o.get('motion', '')}: {body}" if body else o.get("motion", "")
+    return {**o, "still": still, "motion": motion, "neg": _join([car.get("neg", ""), srf.get("neg", "")])}
+
+
+def look_parts(look: dict, ctx: dict | None = None) -> dict:
+    """Every chosen option, its still/motion fragment, negatives, KB refs and conflict notes.
+
+    ctx: look_context(scene). An option with car layers (the motorsport subgenre) only says what this shot has in it:
+    see _car_layers."""
     notes: list[str] = []
     chosen = {}
     for field in ("camera_body", "lens", "aperture", "film_stock", "genre", "subgenre", "movement", "era",
                   "technique", "mood", "energy"):
         o = option(field, look.get(field))
         if o and o["id"] not in ("auto", "general"):
+            if isinstance(o.get("surface"), dict):
+                o = _car_layers(o, ctx)
             chosen[field] = o
     bw = any(o.get("bw") for o in chosen.values())
     pal = look.get("palette") or {}
@@ -209,7 +246,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
             facing_neg += f", {g['nouns']} facing the camera, headlights toward the camera, driving in reverse"
         elif "headlights and grille facing us" in fw:
             facing_neg += f", rear of {g['nouns']} toward the camera, tail lights toward the camera, driving in reverse"
-        elif "nose pointing" in fw:
+        elif "nose pointing" in fw and "revers" not in fw:   # the J-turn's frame 1 IS reversing: never negate it
             facing_neg += f", {g['nouns']} driving backwards, reversing"
     facing_neg = facing_neg.lstrip(", ")
     who = people + others
@@ -229,7 +266,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     count = not lock or n > 0
     # A frame picked before Milestone 5 re-renders with the words it was painted with (stage sends look_start false).
     real = real_people_wanted(look) and not legacy
-    if vcam and vcam.get("where") in ("interior", "hood") and place and place != "underwater":
+    if vcam and vcam.get("where") in ("interior", "hood", "bumper", "wheel") and place and place != "underwater":
         place_words = f"driving through {place}" if (S.camera_move(scene).get("rides") or {}).get("moving") else f"parked in {place}"
     else:
         place_words = (place and f"in {place}") if place != "underwater" else "underwater"
@@ -269,7 +306,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     # Never tell the model "no people" when the shot has people in it: riders in the car, someone walking in later.
     no_people = n == 0 and not S.people_in_shot(scene)
     negative = _join([FRAME1_NEGATIVE + (", people, person, figure" if no_people else "") if n <= 3 else "extra people",
-                      BASE_NEGATIVE, REAL_PEOPLE_NEG if n and real else "", facing_neg, NOTHING_EXTRA_NEG, vcam["negative"] if vcam else "", lock["negative"] if lock else "",
+                      BLUR_SAFE_NEGATIVE if _ASKS_BLUR.search(prompt) else BASE_NEGATIVE, REAL_PEOPLE_NEG if n and real else "", facing_neg, NOTHING_EXTRA_NEG, vcam["negative"] if vcam else "", lock["negative"] if lock else "",
                       SW.negative_words(scene), *parts["negatives"], look.get("negative", "")])
     return _dedupe(prompt), _dedupe(negative)
 
@@ -430,7 +467,9 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
         going = "driving" if rides.get("moving") else "parked"
         through = loc["place"] and (f" through {loc['place']}" if rides.get("moving") else f" in {loc['place']}")
         where = {"interior": f"Interior {f1['size_ltx'].lower()} inside a {going} {rides.get('noun', 'car')}{through}",
-                 "hood": f"Exterior {f1['size_ltx'].lower()} from the hood of a {going} {rides.get('noun', 'car')}{through}"}
+                 "hood": f"Exterior {f1['size_ltx'].lower()} from the hood of a {going} {rides.get('noun', 'car')}{through}",
+                 "bumper": f"Exterior {f1['size_ltx'].lower()} from the front bumper of a {going} {rides.get('noun', 'car')}{through}",
+                 "wheel": f"Exterior {f1['size_ltx'].lower()} from just above the front wheel of a {going} {rides.get('noun', 'car')}{through}"}
         head = where.get(vcam.get("where"), where["interior"])
     else:
         head = _join([
@@ -504,7 +543,7 @@ def compile_look(look_in: dict | None, scene: dict | None) -> dict:
     """The whole compile: normalised look + the three prompts + notes and KB refs."""
     look, notes = normalize_look(look_in)
     scene = scene if isinstance(scene, dict) and scene else dict(DEFAULT_SCENE)
-    parts = look_parts(look)
+    parts = look_parts(look, look_context(scene))
     still, negative = compile_still(look, scene, parts)
     motion = compile_motion(look, scene, parts)
     # The Director's Book (Milestone 23): Imagery & Tone as style words, Pitfalls said positively (CFG 1: no negatives).

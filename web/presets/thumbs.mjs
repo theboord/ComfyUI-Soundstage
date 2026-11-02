@@ -4,7 +4,7 @@
 //
 //   drawThumb(ctx, preset, t, w, h, extra)   t = seconds since the panel opened; extra = { palettes, setups }
 import { drawBoatThumb } from "./boatpresets.mjs";
-import { cameraKeys, userCameraKeys, yaw } from "./engine.mjs";
+import { cameraKeys, userCameraKeys, yaw, CAR_PATH_MOVES } from "./engine.mjs";
 import { stuntKeys } from "../stage/stunts.mjs";
 import { SOFT_PRESET_KINDS, drawSoftThumb } from "./softpresets.mjs";
 
@@ -143,6 +143,48 @@ function camThumb(c, p, t, w, h) {
     const z = -1 + f * 0.08, local = [-0.45, 1.62, -2.4];
     const cam = { position: [local[0] + wob(t) * 0.04, local[1] + wob(t, 1.7) * 0.04, z + local[2]], target: [wob(t, 0.6) * 0.1, 1.4, z + 3], focal_mm: 30 };
     drawSet(c, cam, w, h, { figure: [0, 0, z + Math.abs(Math.sin(t * 9)) * 0.0] });
+    return;
+  }
+  if (CAR_PATH_MOVES.includes(spec.move)) {
+    // The preset's own keys off a car driving down the set (z -9 -> 10): the pan holds it from its base, the arm car paces it.
+    const path = [{ frame: 0, position: [0, 0, -9] }, { frame: 48, position: [0, 0, 10.2] }];
+    const plan = cameraKeys(K0, { ...spec, path }, 48);
+    const cam = camAt(plan?.keys || [], f);
+    const shake = spec.move === "arm_car" ? 0.03 : 0;
+    drawSet(c, { ...cam, position: [cam.position[0], cam.position[1] + wob(t, 2.4) * shake, cam.position[2]] }, w, h,
+      { car: [0, 0, -9 + f * 0.4], noFigure: true });
+    return;
+  }
+  if (spec.move === "car_mount" && (spec.view === "bumper" || spec.view === "front_wheel")) {
+    // Racing hard mounts: low over a dark road that streaks past, the frame shuddering with the road.
+    const sh = wob(t, 3.1) * h * 0.012;
+    c.fillStyle = "#3a3346"; c.fillRect(0, 0, w, h);
+    const hz = h * (spec.view === "bumper" ? 0.4 : 0.36) + sh;
+    c.fillStyle = "#1c1a20"; c.beginPath(); c.moveTo(0, h); c.lineTo(w * 0.42, hz); c.lineTo(w * 0.58, hz); c.lineTo(w, h); c.fill();
+    c.strokeStyle = "rgba(235,235,240,.55)"; c.lineWidth = 2;
+    for (let i = 0; i < 6; i++) {        // lane dashes rushing toward (bumper) or away from (tyre cam) the lens
+      let z = ((i / 6) + t * 1.6) % 1;
+      if (spec.view === "front_wheel") z = 1 - z;
+      const y0 = hz + (h - hz) * z * z, y1 = hz + (h - hz) * Math.min(1, (z + 0.07) * (z + 0.07));
+      const x0 = w / 2 + (w * 0.02) * (1 + z * 6), x1 = w / 2 + (w * 0.02) * (1 + (z + 0.07) * 6);
+      c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+    }
+    c.fillStyle = "rgba(220,225,235,.10)";   // the wet sheen
+    c.fillRect(0, hz + (h - hz) * 0.25, w, (h - hz) * 0.3);
+    if (spec.view === "bumper") {
+      c.fillStyle = "rgb(120,44,40)"; c.beginPath(); c.moveTo(0, h); c.lineTo(0, h * 0.94 + sh); c.quadraticCurveTo(w / 2, h * 0.9 + sh, w, h * 0.94 + sh); c.lineTo(w, h); c.fill();
+    } else {
+      // The car's flank down the left of frame to the rear tyre, and the front tyre's smeared disc under the lens.
+      c.fillStyle = "rgb(140,52,48)"; c.beginPath(); c.moveTo(0, h * 0.12 + sh); c.lineTo(w * 0.36, hz - h * 0.08); c.lineTo(w * 0.36, hz + h * 0.06); c.lineTo(0, h * 0.86 + sh); c.fill();
+      c.fillStyle = "#121014"; c.beginPath(); c.ellipse(w * 0.3, hz + h * 0.04, w * 0.035, h * 0.06, 0, 0, 7); c.fill();
+      c.fillStyle = "#0d0c0f"; c.beginPath(); c.arc(w * 0.06, h * 0.98 + sh, h * 0.32, 0, 7); c.fill();
+      c.strokeStyle = "rgba(160,160,170,.35)"; c.lineWidth = 3; c.beginPath(); c.arc(w * 0.06, h * 0.98 + sh, h * 0.2, 0, 7); c.stroke();
+      for (let i = 0; i < 4; i++) {        // spray and smoke rolling back off the rear tyre
+        const u = ((i / 4) + t * 0.9) % 1;
+        c.fillStyle = `rgba(235,235,240,${0.28 * (1 - u)})`;
+        c.beginPath(); c.arc(w * (0.33 + u * 0.12), hz + h * (0.02 - u * 0.05), h * (0.04 + u * 0.12), 0, 7); c.fill();
+      }
+    }
     return;
   }
   if (spec.move === "car_mount") {

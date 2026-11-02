@@ -58,6 +58,11 @@ WEATHER_WORDS = {
     "fire": "open flames burning, glowing embers and smoke rising",
 }
 PROP_WORDS = {"building": "a building facade", "box": "a box", "post": "a lamp post"}
+# A stunt car's Road: Wet with no rain falling: the road is wet down (both racing films wet the track down; the spray
+# off the tyres comes from it). Never "rain": the stage owns the weather.
+WET_ROAD_WORDS = "a wet-down asphalt road, slick and dark with a soft sheen, standing water in the low spots"
+PAVED_SETS = {"plaza", "street_night", "runway", "empty"}   # sets with tarmac to wet down (not the desert or the beach)
+DIRT_SETS = {"desert", "beach", "forest"}                  # loose ground: a car throws dust and grit, never spray off asphalt
 
 
 @lru_cache(maxsize=1)
@@ -490,11 +495,94 @@ def _inside(pos, pr, margin=0.3) -> bool:
     return abs(pos[0] - x) <= w / 2 + margin and abs(pos[2] - z) <= d / 2 + margin
 
 
+def road_surface(scene: dict) -> str | None:
+    """The road as the stage has it: "wet" (rain, or a stunt car's Road: Wet), "dry" (Road: Dry, or dust in the
+    air) or None when nothing on the stage says."""
+    weather = (scene.get("environment") or {}).get("weather", "none")
+    if weather == "rain":
+        return "wet"
+    for a in scene.get("actors") or []:
+        s = (a.get("stunt_sim") or {}).get("surface") if isinstance(a, dict) else None
+        if s in ("wet", "dry"):
+            return s
+    return "dry" if weather == "dust" else None
+
+
+def look_surface(scene: dict) -> str | None:
+    """What a car's tyres are on, for a look's road words (the Racing cinema look): "wet" / "dry" asphalt on a paved
+    set (the stage's Road setting, or rain), "dirt" on the desert, beach or forest, "snow" when it snows, None when the
+    set has no road (a studio, a room, water) or nothing on the stage says."""
+    env = scene.get("environment") or {}
+    if env.get("weather") == "snow":
+        return "snow"
+    set_id = env.get("set", "plaza")
+    if set_id in DIRT_SETS:
+        return "dirt"
+    if set_id in PAVED_SETS:
+        return road_surface(scene)
+    return None
+
+
+def _moving_vehicles(scene: dict, ids: set) -> bool:
+    """Any vehicle among `ids` that moves during the shot (a stunt car, a car driving through)."""
+    frames, _ = frame_range(scene)
+    last = frames - 1
+    for a in scene.get("actors") or []:
+        if a.get("id") not in ids or classify(a)[1] != "vehicle":
+            continue
+        if ST.is_stunt(a):
+            return True
+        p0 = _pos_at(a, 0, last)
+        if any(G.length(G.sub(_pos_at(a, f, last), p0)) > 0.5 for f in range(0, frames, max(1, frames // 12))):
+            return True
+    return False
+
+
+def look_view(scene: dict, in_shot: set) -> str:
+    """Which words a car look may use: "car" when a moving vehicle is in the shot and the camera is outside it (or on
+    the over-the-tyre mount, where the tyre and the flank are in frame); "nocar" for everything else (nobody's car in
+    frame, a parked car, or a camera riding inside, on the hood or on the bumper, where the wheels are out of frame)."""
+    vcam = vehicle_camera(scene)
+    if vcam:
+        return "car" if vcam.get("where") == "wheel" else "nocar"
+    return "car" if _moving_vehicles(scene, in_shot) else "nocar"
+
+
+def camera_blur(scene: dict, first: int = 0, last: int | None = None) -> str:
+    """How much a 180-degree shutter smears the background between `first` and `last`: "fast" (horizontal streaks),
+    "slow" (a slight pan blur) or "locked" (none). Measured as the blur across the frame per exposure (1/48 s): the
+    camera's turn rate plus its travel (as parallax on a background ~15 m away), over the lens's horizontal view."""
+    frames, fps = frame_range(scene)
+    last = frames - 1 if last is None else min(last, frames - 1)
+    _, _, path = camera_at_ends(scene)
+    step = 2
+    worst = 0.0
+    prev = None
+    for f in list(range(first, last + 1, step)) + ([last] if (last - first) % step else []):
+        c = _cam_sample(path, f)
+        if prev is not None and f > prev[0]:
+            dt = (f - prev[0]) / fps
+            d0 = G.sub(prev[1]["target"], prev[1]["position"])
+            d1 = G.sub(c["target"], c["position"])
+            n0, n1 = G.length(d0), G.length(d1)
+            turn = 0.0
+            if n0 > 1e-6 and n1 > 1e-6:
+                turn = math.degrees(math.acos(max(-1.0, min(1.0, G.dot(d0, d1) / (n0 * n1)))))
+            travel = math.degrees(G.length(G.sub(c["position"], prev[1]["position"])) / 15.0)
+            rate = (turn + travel) / dt
+            hfov = math.degrees(2 * math.atan(18.0 / max(1.0, c["focal_mm"])))
+            worst = max(worst, rate / 48.0 / hfov)
+        prev = (f, c)
+    return "fast" if worst >= 0.012 else "slow" if worst >= 0.002 else "locked"
+
+
 def location(scene: dict) -> dict:
     env = scene.get("environment") or {}
     set_id = env.get("set", "plaza")
     int_ext, place = SET_PLACES.get(set_id, ("EXT", set_id.replace("_", " ")))
     weather = WEATHER_WORDS.get(env.get("weather", "none"), "")
+    if not weather and set_id in PAVED_SETS and road_surface(scene) == "wet":
+        weather = WET_ROAD_WORDS
     return {"set": set_id, "int_ext": int_ext, "place": place, "weather": weather}
 
 
@@ -928,6 +1016,22 @@ def _who(roles: list[str]) -> str:
 
 
 def vehicle_camera(scene: dict) -> dict | None:
+    """Where a ride-along camera sits on its vehicle, in words (see _vehicle_camera). On a stunt car (the J-turn) the
+    motion words also say what the car does under the camera, so the world whipping round reads as the stunt."""
+    v = _vehicle_camera(scene)
+    if v is None:
+        return None
+    host = follow_host(scene)
+    if host is not None and ST.is_stunt(host):
+        kind = host.get("kind", "")
+        noun = library().get(kind, (kind.replace("_", " "),))[0].lower()
+        words = ST.ride_words(host, noun, wet=road_surface(scene) == "wet", where=v.get("where", ""), framing=v.get("framing", ""))
+        if words:
+            v = {**v, "motion": f"{v['motion']} {words}"}
+    return v
+
+
+def _vehicle_camera(scene: dict) -> dict | None:
     """Where a ride-along camera sits on its vehicle, in words for the image and video models.
 
     A shot with camera_follow keeps its camera keys in the vehicle's own frame (x = the vehicle's left, +z forward).
@@ -971,6 +1075,24 @@ def vehicle_camera(scene: dict) -> dict | None:
     looks_back = tz < pz - 0.5
     looks_sideways = abs(tx - px) > abs(tz - pz)
     street = " as the street slides past" if moving else ""
+    # Racing-film hard mounts (a nose / bumper cam, an over-the-tyre mount): low and outside the body, the road's
+    # vibration left in the frame.
+    if py < 0.75 and pz > 1.6 and not looks_back:
+        return {"framing": "bumper", "where": "bumper",
+                "lead": f"low camera hard-mounted on the front bumper of a {noun}, inches above the road",
+                "still": f"camera hard-mounted on the front bumper of the {noun}, inches above the road, looking down the road ahead, "
+                         "the road surface streaking past just under the lens",
+                "motion": f"The camera is hard-mounted on the front bumper of the {noun}, skimming inches above the road; the road "
+                          f"surface streaks past just under the lens and road vibration shudders through the frame{street}.",
+                "negative": "camera inside the car, interior of the car, dashboard, steering wheel, the car seen from a distance"}
+    if py < 0.95 and abs(px) > 0.7 and looks_back:
+        return {"framing": "tyre", "where": "wheel",
+                "lead": f"low camera hard-mounted just above and outside the front wheel of a {noun}, looking back along its flank",
+                "still": f"camera hard-mounted just above and outside the front wheel of the {noun}, looking back along the side of the "
+                         "car at the rear tyre and the road behind",
+                "motion": f"The camera is hard-mounted just above and outside the front wheel of the {noun}, looking back along its flank "
+                          f"at the rear tyre gripping the road; road vibration shudders through the frame{street}.",
+                "negative": "camera inside the car, interior of the car, the car seen from a distance, exterior wide shot of the whole car"}
     if pz > 1.6 and looks_back:
         inside = f"{who_all} seated inside behind the glass, facing the camera" if roles else "the empty seats inside"
         return {"framing": "windshield", "where": "hood",
@@ -1201,7 +1323,8 @@ def actor_marks(scene: dict) -> list[dict]:
         if c["rig"] == "vehicle" and host is None:
             # A movie stunt (Milestone 13): beat by beat, which end leads (reverse, the spin, then nose first).
             loc = location(scene)
-            stunt = ST.stunt_mark(c["actor"], frames, fps, _pos_at, fwd, right, spray=bool(re.search(r"rain|wet|storm", loc["weather"] or "")))
+            stunt = ST.stunt_mark(c["actor"], frames, fps, _pos_at, fwd, right, spray=bool(re.search(r"rain|wet|storm", loc["weather"] or "")),
+                                  ground=look_surface(scene))
             if stunt:
                 verb, way = stunt
         dest = ""
