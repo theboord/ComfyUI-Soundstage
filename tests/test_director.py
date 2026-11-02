@@ -456,3 +456,13 @@ def test_js_fixture_is_current():
 if __name__ == "__main__" and "--write-fixture" in sys.argv:
     PLAN_FIXTURE.write_text(json.dumps(_fixture(), indent=0))
     print("wrote", PLAN_FIXTURE)
+
+
+def test_odd_shaped_tool_calls_are_rejected_not_a_crash():
+    """A small local model's malformed tool call (args as a list or a string, OpenAI arguments that decode to a list)
+    raised ValueError/TypeError out of _norm_call/parse_llm: a 500 from /director/plan, /calls and /propose."""
+    for text in ('[{"tool":"camera_move","args":["push_in"]}]', '{"tool":"lens","args":"35mm"}',
+                 '[{"function":{"name":"lens","arguments":"[35]"}}]'):
+        assert isinstance(D.plan("make it moody", {}, {}, text), dict)
+    r = D.run_calls([{"tool": "lens", "args": [35]}], {}, {})
+    assert r["calls"] == [] and r["rejected"]
