@@ -5,6 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { queueSummary, idsIn, storeStage, resolveStageValue, stageRefOf, stageInputsByRef, INLINE_MAX, _resetStored } from "../../web/ui/queue.mjs";
 import { recipeFromTags, loadRecipeScene } from "../../web/takecheck/model.mjs";
@@ -106,7 +107,7 @@ test("an MP4 recipe whose scene went by reference restores from this server's st
 });
 
 test("no App, tool or QA code fetches the full /queue or /history", () => {
-  const root = new URL("../../", import.meta.url).pathname;
+  const root = fileURLToPath(new URL("../../", import.meta.url));
   const bad = [];
   const pat = /(fetchApi\(|fetch\(|json\(api,\s*)\s*[`'"][^`'"]*?\/(queue|history)[`'"?]/;
   const walk = (d) => {

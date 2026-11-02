@@ -5,6 +5,10 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-02
 
+**12:41 PST · Tests: two JS tests no longer fail when the checkout path contains a space**
+- **Still wrong (read first):** contributed by Ron Rauch (Secret Lab); checked on macOS only. Python tests that import `tests.<module>` still fail in a ComfyUI venv where another package (e.g. `color_matcher`, `ultralytics`) installed a top-level `tests` package, because `tests/` has no `__init__.py`; not touched here.
+- `queue.test.mjs` and `physics_avbd.test.mjs` turned `import.meta.url` into a folder with `.pathname`, which keeps `%20` for a space, so `readdirSync` found nothing (e.g. a checkout under `~/Claude MD/`). Both now use `fileURLToPath` ([tests/js/queue.test.mjs](tests/js/queue.test.mjs), [tests/js/physics_avbd.test.mjs](tests/js/physics_avbd.test.mjs)). JS: 879 passed, 0 failed, 1 skipped, from a path with a space.
+
 **11:10 PST · Try-it demo checked at desktop and phone width: three fixes to the phone and the Video → 3D bar**
 - **Still wrong (read first):** checked headless only (Chrome with Metal on the Mac mini), not watched in a real browser or on a real phone. On a phone, the What's new card covers the stage until it is closed, and ✦ One-click shows a hint instead of the card window (the window needs the full workspace). The Video → 3D rebuild is still the basic version (see 10:45). The Identical? bar still covers the end of the "Camera view · Source camera" label. The chooser quotes 61–117 min for the 5 s clip, which is the real estimate but reads as slow.
 - **Phone width:** in Video → 3D's "What is this video for?", the "Replace the set (2 things; Undo brings them back)" chip ran off the dialog; long chips now wrap ([web/ui/videoimport.mjs](web/ui/videoimport.mjs)), and the option cards hyphenate ("perfor-mance") instead of overflowing. On ④ Frame, "Generate frames" and "…for every shot" pushed the page 11 px sideways; the row now wraps below 480 px ([web/ui/canvasui.mjs](web/ui/canvasui.mjs)).

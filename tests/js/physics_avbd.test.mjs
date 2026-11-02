@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import * as AV from "../../web/stage/physics_avbd.mjs";
 import * as PE from "../../web/stage/physengine.mjs";
 
@@ -145,7 +146,7 @@ test("the badge: one per stage, says which solver runs", () => {
 });
 
 test("vendored three-avbd: MIT licence kept, .mjs only (ComfyUI loads every .js under web/), no three/webgpu import", () => {
-  const root = new URL("../../web/vendor/three-avbd/", import.meta.url).pathname;
+  const root = fileURLToPath(new URL("../../web/vendor/three-avbd/", import.meta.url));
   assert.match(readFileSync(join(root, "LICENSE"), "utf8"), /MIT License[\s\S]*Steven Bobyn/);
   const walk = (d) => readdirSync(d).flatMap((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : [join(d, f)]));
   const files = walk(root);
