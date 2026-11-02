@@ -1,6 +1,8 @@
 """HTTP routes for take checks (Milestone 16). Registered from the pack's __init__ (register()).
 
 POST /soundstage/takecheck            {file: {filename, subfolder, type}, force?} -> the take's checks + blocking score
+                                      (+ "realism" once judged, + "hollywood": a Hollywood-quality take)
+POST /soundstage/takecheck/realism    {file, force?} -> the realism judge's verdict (VLM through the queue, ~1 min)
 GET  /soundstage/takecheck/recipe     ?filename=&subfolder=&type= -> the stage + shot recipe inside the MP4
 GET  /soundstage/takecheck/timing     -> measured render times per rung (from ComfyUI's history)
 GET  /soundstage/takecheck/readiness  ?still=&video=&l2r=1&krea=0 -> what each App step still needs
@@ -15,11 +17,13 @@ import os
 import shutil
 
 from . import check as C
+from . import realism as RJ
 from . import recipe as R
 from . import store
 
 _REGISTERED = False
 _SEM = None
+_JUDGE = None
 
 
 def _resolve(file: dict | None) -> str | None:
@@ -49,7 +53,27 @@ def run(path: str, force: bool = False) -> dict:
     if actors is not None:
         rec = R.read(path)
         res["blocking"] = C.blocking_summary(actors, (res.get("blocking") or {}).get("camera"), (rec or {}).get("scene"))
+    res["hollywood"] = RJ.is_hollywood(res, res.get("recipe"))
+    judged = store.load(path, "realism")
+    if judged and judged.get("version") == RJ.VERSION:
+        res["realism"] = slim(judged)
     return res
+
+
+def slim(judged: dict) -> dict:
+    """A realism verdict without the model's raw replies (the Ladder and Dailies don't need them)."""
+    return {k: v for k, v in judged.items() if k not in ("raw", "observations")}
+
+
+def judge(path: str, base_url: str, force: bool = False) -> dict:
+    """The cached realism verdict of a take, judged now when there is none (or `force`). "unavailable" verdicts
+    (no model, ComfyUI busy elsewhere) are not cached, so the next ask tries again."""
+    res = None if force else store.load(path, "realism")
+    if not res or res.get("version") != RJ.VERSION:
+        res = RJ.judge_video(path, base_url)
+        if res.get("verdict") in ("pass", "fail"):
+            store.save(path, "realism", res)
+    return slim(res)
 
 
 def on_prompt_reference(body: dict) -> dict:
@@ -64,7 +88,7 @@ def on_prompt_reference(body: dict) -> dict:
 
 
 def register(routes=None) -> bool:
-    global _REGISTERED, _SEM
+    global _REGISTERED, _SEM, _JUDGE
     if _REGISTERED and routes is None:
         return False
     from aiohttp import web
@@ -78,6 +102,15 @@ def register(routes=None) -> bool:
         except Exception:  # noqa: BLE001 - an older ComfyUI: renders just don't carry the recipe
             pass
     _SEM = asyncio.Semaphore(2)   # two takes at a time: the checks are CPU work beside a GPU render
+    _JUDGE = asyncio.Semaphore(1)  # one realism judge at a time: it queues VLM jobs on the GPU
+
+    def _base() -> str:
+        try:
+            from server import PromptServer
+            port = getattr(PromptServer.instance, "port", None) or 8188
+        except Exception:  # noqa: BLE001
+            port = 8188
+        return f"http://127.0.0.1:{port}"
 
     @routes.post("/soundstage/takecheck")
     async def takecheck(request):
@@ -91,6 +124,19 @@ def register(routes=None) -> bool:
             return web.json_response(res)
         except Exception as exc:  # noqa: BLE001 - the chip shows the message
             return web.json_response({"error": str(exc)}, status=422)
+
+    @routes.post("/soundstage/takecheck/realism")
+    async def realism(request):
+        try:
+            body = await request.json()
+            path = _resolve(body.get("file"))
+            if not path:
+                return web.json_response({"error": "no such take"}, status=404)
+            async with _JUDGE:
+                res = await asyncio.to_thread(judge, path, _base(), bool(body.get("force")))
+            return web.json_response(res)
+        except Exception as exc:  # noqa: BLE001 - the chip shows the message
+            return web.json_response({"verdict": "unavailable", "error": str(exc)}, status=422)
 
     @routes.get("/soundstage/takecheck/recipe")
     async def recipe(request):

@@ -7,6 +7,8 @@
 //   readiness(...)              each step's "Ready" / "Needs 2" chip from the server's answer + the graph's loaders
 //   parseMp4Tags(bytes)         the metadata tags of an MP4 (the recipe travels in them)
 //   recipeFromTags(tags)        the Soundstage recipe in those tags (the soundstage tag, else rebuilt)
+//   realismChip(realism)        the realism judge's chip: "✓ real 9.5/10" or red "✗ AI slop: rear lights incoherent, f24–64"
+//   rerollOffer(res, offered)   whether a judged Hollywood take earns its one automatic re-roll offer
 
 export const MODELS_DOC_URL = "https://github.com/theboord/ComfyUI-Soundstage/blob/main/MODELS.md";
 
@@ -26,6 +28,29 @@ export function takeChips(result) {
       ? `No problems found (${ran}). ${result.frames || "?"} frames checked in ${result.elapsed_s ?? "?"} s on the CPU.`
       : [c.text.replace(/^⚠\s*/, ""), c.detail].filter(Boolean).join(": "),
   }));
+}
+
+/** The realism judge's chip (server: soundstage/takecheck/realism.py chip()). null = not judged and not asked. */
+export function realismChip(r) {
+  if (!r) return null;
+  if (r.pending) return { tone: "info", text: "Realism: judging…", title: "The VFX-supervisor pass: a local vision model inspects the main subjects (about a minute, queued on the GPU)." };
+  if (r.error || r.verdict === "unavailable") return { tone: "info", text: "Realism: not judged", title: String(r.error || r.why || "no vision model on this server") };
+  const lines = [`VFX-supervisor score ${r.score}/10${r.model ? ` (${r.model}` : ""}${r.frames_judged ? `, ${r.frames_judged} frames)` : r.model ? ")" : ""}`];
+  for (const d of r.defects || []) lines.push(`✗ ${d.label}${d.examples?.[0] ? `: ${d.examples[0]}` : ""}`);
+  for (const d of (r.minor || []).slice(0, 4)) lines.push(`· ${d.label}`);
+  if (r.verdict === "pass") return { tone: "ok", text: `✓ real ${r.score}/10`, title: lines.join("\n"), kind: "realism" };
+  const first = r.defects?.[0];
+  return { tone: "bad", text: `✗ AI slop: ${first?.label || "looks generated"}`, title: lines.join("\n"), kind: "realism",
+    start: first?.frames?.length ? first.frames[0] : null, frame: true };
+}
+
+/** A Hollywood take the judge failed gets ONE automatic re-roll offer per shot: not again for the re-roll itself
+ *  (a second failure means the shot needs a fix, not more GPU), not for drafts, not for unjudged takes.
+ *  offered: Set of shot keys already offered. */
+export function rerollOffer(res, shotKey, offered) {
+  if (!res || res.error || !res.hollywood) return false;
+  if (res.realism?.verdict !== "fail") return false;
+  return !offered?.has?.(shotKey);
 }
 
 /** The one blocking score per take, with its breakdown for the hover. */
