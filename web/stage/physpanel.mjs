@@ -289,8 +289,27 @@ export class PhysicsPanel {
   }
 
   isOpen() { return !this.el.hidden; }
-  open() { this.el.hidden = false; this.btn.setAttribute("aria-expanded", "true"); this.btn.setAttribute("aria-pressed", "true"); this.sync(); }
-  close() { this.el.hidden = true; this.btn.setAttribute("aria-expanded", "false"); this.btn.setAttribute("aria-pressed", "false"); }
+  open() {
+    this.el.hidden = false; this.btn.setAttribute("aria-expanded", "true"); this.btn.setAttribute("aria-pressed", "true"); this.sync();
+    if (typeof addEventListener === "function") addEventListener("keydown", this._escKey, true);
+  }
+  close() {
+    this.el.hidden = true; this.btn.setAttribute("aria-expanded", "false"); this.btn.setAttribute("aria-pressed", "false");
+    if (typeof removeEventListener === "function") removeEventListener("keydown", this._escKey, true);
+  }
+  /**
+   * Esc closes the open panel wherever the focus is, as its × says (tutorial test 2026-11-02: with the focus on the
+   * stage or the page, Esc left the full workspace and the panel stayed open). Not while driving or posing, and not
+   * while a menu, pop-over or the shortcut sheet is open: those close first.
+   */
+  _escKey = (e) => {
+    if (e.key !== "Escape" || this.el.hidden || !this.el.isConnected || !this.el.getClientRects().length) return;
+    if (this.stage?.drive?.on || this.stage?.poser?.active) return;
+    if (document.querySelector(".ss-toppop:not([hidden]), .ss-clpop:not([hidden]), .ss-keys:not([hidden])")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.close();
+  };
   toggle() { if (this.isOpen()) this.close(); else this.open(); }
 }
 

@@ -306,16 +306,21 @@ function smoothSeries(v, sigma, log = false) {
  * on a ring), T-stop in stops, roll linearly, all with the same smoothstep the stage uses for the focal length.
  */
 export function lensAt(keys, frame) {
-  const n = keys.length - 1;
-  let i = 0, j = 0, u = 0;
-  if (n > 0 && frame > keys[0].frame) {
-    if (frame >= keys[n].frame) { i = j = n; }
-    else { while (keys[i + 1].frame < frame) i++; j = i + 1; u = (frame - keys[i].frame) / Math.max(1e-6, keys[j].frame - keys[i].frame); }
-  }
-  const e = i === j ? 0 : u * u * (3 - 2 * u), a = keys[i], b = keys[j], out = {};
-  if (a.focus_m > 0 && b.focus_m > 0) out.focus_m = 1 / (1 / a.focus_m + (1 / b.focus_m - 1 / a.focus_m) * e);
-  if (a.t_stop > 0 && b.t_stop > 0) out.t_stop = a.t_stop * Math.pow(b.t_stop / a.t_stop, e);
-  if (Number.isFinite(a.roll) || Number.isFinite(b.roll)) out.roll = (a.roll || 0) + ((b.roll || 0) - (a.roll || 0)) * e;
+  // Each channel between the nearest keys that carry it (Stage._cameraAt plays lens_keys the same way).
+  const seg = (ok) => {
+    const ks = keys.filter(ok), n = ks.length - 1;
+    if (n < 0) return null;
+    let i = 0, j = 0, u = 0;
+    if (n > 0 && frame > ks[0].frame) {
+      if (frame >= ks[n].frame) { i = j = n; }
+      else { while (ks[i + 1].frame < frame) i++; j = i + 1; u = (frame - ks[i].frame) / Math.max(1e-6, ks[j].frame - ks[i].frame); }
+    }
+    return [ks[i], ks[j], i === j ? 0 : u * u * (3 - 2 * u)];
+  };
+  const out = {}, f = seg((k) => k.focus_m > 0), t = seg((k) => k.t_stop > 0), r = seg((k) => Number.isFinite(k.roll));
+  if (f) out.focus_m = 1 / (1 / f[0].focus_m + (1 / f[1].focus_m - 1 / f[0].focus_m) * f[2]);
+  if (t) out.t_stop = t[0].t_stop * Math.pow(t[1].t_stop / t[0].t_stop, t[2]);
+  if (r) out.roll = r[0].roll + (r[1].roll - r[0].roll) * r[2];
   return out;
 }
 

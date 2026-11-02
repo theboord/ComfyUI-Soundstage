@@ -91,3 +91,32 @@ test("project model: normalised, saved, rippled with sync lock; the V3 lane only
   assert.equal(G.hitGraphic({ graphics: p.graphics }, 60, 300, 940)?.id, "g1");      // the lower third's line
   assert.equal(G.hitGraphic({ graphics: p.graphics }, 60, 1800, 100), null);
 });
+
+test("the viewer's click mapping is paint()'s letterbox inverted (a 9:16 project too)", async () => {
+  // _viewDown mapped clicks with py = v * 1080 while paint() letterboxes (s = W / 1920, oy = (H - 1080 s) / 2), so in a
+  // 9:16 project a click in the middle of a PiP window missed it and the dashed selection box was drawn off the graphic.
+  const G = await import("../../web/cut/gfx.mjs");
+  for (const [W, H] of [[960, 540], [540, 960], [1080, 1080]]) {
+    const { s, oy } = G.designBox(W, H);
+    const [x, y] = G.viewToDesign(1400 * s, 826 * s + oy, W, H);
+    assert.ok(Math.abs(x - 1400) < 1e-9 && Math.abs(y - 826) < 1e-9, `${W}x${H}`);
+  }
+  const [, y169] = G.viewToDesign(0, 270, 960, 540);
+  assert.equal(y169, 540, "16:9 is the plain scale it always was");
+});
+
+test("a sync-locked ripple keeps a graphic's A2 sounds on the graphic", async () => {
+  // _rippleV2 moves each graphic by its start_frame while _ripple moved its cue clips one by one by their own frame: a
+  // graphic straddling the edit kept its picture where it was and lost some of its sounds to later frames.
+  const TL = await import("../../web/cut/timeline.mjs");
+  const { CutPanel } = await import("../../web/cut/cut.mjs");
+  const lib = new Proxy({}, { get: (_, k) => ({ url: `/${String(k)}.wav`, seconds: 0.5 }), has: () => true });
+  const project = TL.normalizeProject({ fps: 24, cut: [], graphics: G.normalizeGraphics([{ id: "k", template: "kinetic", start_frame: 0, text: "Recast. Rebuild. Rewrite." }]) });
+  project.audio = G.withGfxClips(project, G.gfxClips(project, lib, 24));
+  const p = Object.assign(Object.create(CutPanel.prototype), { project, history: [], future: [], sel: 0, syncLock: true, _gfxLib: lib,
+    _snapshot: () => ({}), _afterEdit() {} });
+  p._commit(project.cut, 0, { audio: p._ripple(15, 24), ...p._rippleV2(15, 24) });
+  const want = G.gfxClips(p.project, lib, 24).map((a) => [a.meta.cue, a.start_frame]);
+  const got = p.project.audio.filter((a) => a.meta?.gfx).map((a) => [a.meta.cue, a.start_frame]);
+  assert.deepEqual(got, want);
+});
