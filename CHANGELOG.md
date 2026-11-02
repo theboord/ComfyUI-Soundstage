@@ -5,6 +5,11 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-01
 
+**19:28 PST · Try it in your browser: six new tour stops**
+- The [try-it demo](https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq) now runs `main` at 81cc81b (Drive mode, Houdini-grade destruction, soft bodies and QA round 07 included) and its What's new tour adds **Pitch Mode** (the live pitch recording, the locked pitch, a beat's motion preview), **the Director's Book** (the PDF binder), **Real performance** (actor, pose read and Hollywood result), **Parts** (the controls recording and a Draft with full beam and the driver's door open), **new gaits** (the hero v3: run, climb on, gallop, clay and final) and **stunt dynamics** (the simulated J-turn Draft, round 1 vs 2 clay).
+- The stunt and Parts stops select the car itself (they picked the getaway driver, whose id matched).
+- Checked with tools/tryit/test_tryit.mjs (Metal): every scene, step and tour stop, all clear. Code: [tools/tryit/shell/](tools/tryit/shell/), [tools/tryit/media.json](tools/tryit/media.json).
+
 **19:05 PST · QA round 07: the Move · Rotate · Scale bar in Camera view, tilt drags that take, night prompts without a sun**
 - **The object bar now shows in Camera view** (with or without the Physics panel open). On a tracking or crane shot the camera moves with the frame before the renderer refreshes its matrices, so the bar was placed with last frame's camera: the selected car "went behind the camera" and the bar hid. The bar now projects with this frame's camera, keeps a box for an object whose near corners are behind the lens, and moves out from under the Physics panel and the view badge.
 - **Tilting a car with Rotate works.** In Rotate mode the yellow yaw ring is hidden, but it still took the press, and a car's tilt circle runs right over it: a tilt drag turned the car instead. The ring now takes a press only while it is drawn and never from under a gizmo handle (real mouse drags: sedan, crate and man all tilt).
