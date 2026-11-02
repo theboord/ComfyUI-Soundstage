@@ -1759,7 +1759,8 @@ function createStageWidget(node, inputName) {
     if (!info?.mount_id) return;
     stage.mount(info.id, info.mount_id, info.pose, stage.frame);
     syncAppearance(stage.selectedInfo());
-    status.textContent = stage.frame > 0 ? `${info.name} hops on at frame ${stage.frame}. Give them a walk to the mount before that.` : `${info.name} rides from the start.`;
+    const T = stage.frame > 0 ? stage.mountTiming?.(info.id) : null;   // a horse: the climb, or the hop and why
+    status.textContent = T ? stage.mountSentence(info.id, T) : stage.frame > 0 ? `${info.name} hops on at frame ${stage.frame}. Give them a walk to the mount before that.` : `${info.name} rides from the start.`;
   });
   const personCtl = [apBuild.wrap, apHair.wrap, cHair.wrap, apTop.wrap, cTop.wrap, apBottom.wrap, cBottom.wrap, apSkin.wrap, rideSel.wrap, seatSel.wrap, hopBtn];
   apRow.append(...personCtl, cMain.wrap, followSel.wrap, stuntSel.wrap, stuntKmh, stuntRoad.wrap, stuntMass, beamSel.wrap);
@@ -1802,7 +1803,9 @@ function createStageWidget(node, inputName) {
         seatSel.sel.value = String(info.seat ?? 0);
       }
       const at = stage.toJSON().actors.find((a) => a.id === info.id)?.mount_at;
-      hopBtn.textContent = at ? `Hops on at ${at} · set to playhead` : "Hop on at playhead";
+      const T = at ? stage.mountTiming?.(info.id) : null;   // a horse: the climb's real seated frame, or the hop
+      hopBtn.textContent = at ? `${T?.climb ? "Climbs on, seated at" : "Hops on at"} ${T ? T.seated : at} · set to playhead` : "Hop on at playhead";
+      hopBtn.title = T ? stage.mountSentence(info.id, T) : "";
     } else {
       cMain.inp.value = ap.color || (OBJECT_COLORS[info.kind] || ["#9a9a9a"])[0];
     }

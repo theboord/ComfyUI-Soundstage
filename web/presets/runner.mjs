@@ -404,7 +404,25 @@ export class PresetRunner {
     if (host.kind === "horse") at = Math.max(at, mountFrames(this._fps()));
     const ok = st.mount(rider.id, host.id, null, at, vehicle ? (taken ? 1 : 0) : null);
     if (!ok) return { ok: false, said: `${nameOf(rider)} can't get onto ${nameOf(host).toLowerCase()}.` };
-    return { ok: true, said: `Applied 'Climb / mount': ${nameOf(rider)} ${vehicle ? "gets into" : "mounts"} the ${nameOf(host).toLowerCase()} at ${(at / this._fps()).toFixed(1)} s.`, whereObj: nameOf(rider) };
+    // The walk over and the climb take what they take: seated when they really are (the stage says, when it can), the
+    // shot made long enough for it when it is too short (to the next 8k+1 frames, as the Length slider has them).
+    let longer = "";
+    const T = host.kind === "horse" ? st.mountTiming?.(rider.id) : null;
+    if (T && !T.climb && T.need > at) {
+      const fps = this._fps(), s2 = this.scene();
+      if (T.need > this._last()) {
+        const frames = 8 * Math.ceil((T.need + Math.round(0.5 * fps)) / 8) + 1;
+        s2.shot = { ...(s2.shot || {}), frames };
+        longer = ` (the shot is now ${(frames / fps).toFixed(1)} s long so there is time to walk over and climb on)`;
+      }
+      const r = s2.actors.find((x) => x.id === rider.id);
+      if (r) r.mount_at = T.need;
+      this._loadState(s2);
+      at = T.need;
+    }
+    const T2 = host.kind === "horse" ? st.mountTiming?.(rider.id) : null;
+    if (T2) at = T2.seated;
+    return { ok: true, said: `Applied 'Climb / mount': ${nameOf(rider)} ${vehicle ? "gets into" : !T2 ? "mounts" : T2.climb ? "walks over and climbs onto" : "hops onto"} the ${nameOf(host).toLowerCase()}, seated at ${(at / this._fps()).toFixed(1)} s${longer}.`, whereObj: nameOf(rider) };
   }
 
   /**

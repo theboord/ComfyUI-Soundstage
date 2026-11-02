@@ -499,14 +499,18 @@ export function applyHorse(g, R, plan, f, ctx) {
   g.updateMatrixWorld(true);
   // A hoof planted further out than the leg reaches pulls the body down onto it (at a fast gallop the stride's
   // ends): lower the barrel just enough, never more than a tenth of the height.
+  // (Weighted as the hooves are pinned below, easing on and off their spots: the body never drops or bounces up by
+  // a hand's breadth in one frame as a hoof lifts.)
   let drop = 0;
   info.legs.forEach((leg, i) => {
     const ft = footAt(plan, i, fi);
-    if (!ft.stance) return;
+    const wt = ft.stance ? 1 : ft.s < 0.2 ? 1 - sstep(0, 0.2, ft.s) : ft.s > 0.85 ? sstep(0.85, 1, ft.s) : 0;
+    if (wt <= 0) return;
+    const c = ft.stance || ft.s < 0.2 ? ft.c : ft.next;
     const P = leg.chain[0].getWorldPosition(new THREE.Vector3());
-    const ty = (ctx.support ? ctx.support(ft.c.p[0], ft.c.p[1]) : 0) + Math.max(0, info.rest[i].y * sc.y);
-    const reach = leg.len * sc.y * 0.97, hz = Math.hypot(P.x - ft.c.p[0], P.z - ft.c.p[1]);
-    if (hz < reach) drop = Math.max(drop, P.y - ty - Math.sqrt(reach * reach - hz * hz));
+    const ty = (ctx.support ? ctx.support(c.p[0], c.p[1]) : 0) + Math.max(0, info.rest[i].y * sc.y);
+    const reach = leg.len * sc.y * 0.97, hz = Math.hypot(P.x - c.p[0], P.z - c.p[1]);
+    if (hz < reach) drop = Math.max(drop, wt * (P.y - ty - Math.sqrt(reach * reach - hz * hz)));
   });
   if (drop > 0) { g.position.y -= Math.min(drop, 0.1 * plan.height); g.updateMatrixWorld(true); }
   // Pin planted hooves (and ease them on and off their spots at the ends of the swing).
@@ -760,6 +764,13 @@ export const CLAY_HORSE_PROFILE = (() => {
   return profileDone(P);
 })();
 /** Top of the back at z (k units), the highest over z0..z1 when given a span. */
+/** How much higher a horse's back is at the seat than the clay horse's (k units: x k for metres): the seat humans.mjs
+ *  MOUNTS.horse gives was set on the clay horse, so a rider on another horse (the rigged one sits 13-14 cm higher at the
+ *  saddle) sits this much higher. 0 for the clay horse itself. */
+export function seatRaise(prof) {
+  if (!prof || prof === CLAY_HORSE_PROFILE) return 0;
+  return backTop(prof, -0.1, 0) - backTop(CLAY_HORSE_PROFILE, -0.1, 0);
+}
 function backTop(prof, z, z1 = z) {
   let m = -1;
   for (let iz = Math.max(0, Math.floor((Math.min(z, z1) - PZ0) / PD)); iz <= Math.min(NZ - 1, Math.ceil((Math.max(z, z1) - PZ0) / PD)); iz++) m = Math.max(m, prof.top[iz]);
@@ -909,6 +920,9 @@ function mountFrame(g, o) {
   const ankleY = (J.l_hip.position.y + J.l_knee.position.y + F.l.ankle.y) * sc;
   const soleY = ankleY + (L ? L.l.heel.y * sc : -0.08 * s);
   const lift = Math.max(0, -soleY);
+  // The ground they stand on (horse frame): o.ground (world) when the stage gives it, else the horse's base height. (A
+  // rigged horse's origin idles a couple of cm under the ground: the climb is laid out on the ground, not on it.)
+  const gy = o.ground != null ? o.ground - H.y : 0;
   // The ride pose at the seat (forward kinematics): its ankles are the stirrups, its wrists the rein hands.
   g.rotation.order = "YXZ";
   g.rotation.set(0, yaw, 0);
@@ -927,7 +941,7 @@ function mountFrame(g, o) {
   const rideKnee = { l: kneePole("l"), r: kneePole("r") };
   const seat = toL(o.seatPos);
   const Q = [seat[0], seat[1] + hipY, seat[2]];                 // the pelvis seated
-  const standHip = lift + hipY;
+  const standHip = gy + lift + hipY;
   const back = backTop(prof, seat[2] / k - 0.1, seat[2] / k + 0.1) * k;
   // The stirrup for the climb: the ride stirrup let down to the rider's hip height (the knee turns out to it, no
   // split), but no lower than lets the hips reach the back when they stand in it.
@@ -941,7 +955,7 @@ function mountFrame(g, o) {
   const step = 0.58 * span, side = 0.85;                       // the stirrup ~50 deg left of straight ahead
   const nh = [Sc[0] - step * (Math.cos(side) * f0[0] + Math.sin(side) * l0[0]), 0, Sc[2] - step * (Math.cos(side) * f0[2] + Math.sin(side) * l0[2])];
   const C0 = [nh[0] - hipX * l0[0], standHip, nh[2] - hipX * l0[2]];
-  const ankle0 = lift + ankleY;
+  const ankle0 = gy + lift + ankleY;
   const G = { l: [C0[0] + hipX * l0[0], ankle0, C0[2] + hipX * l0[2]], r: [C0[0] - hipX * l0[0], ankle0, C0[2] - hipX * l0[2]] };
   // Standing in the stirrup: the near leg straight, the hips out over the near side until they are above the back (the
   // pelvis at least 0.4 m out), turned part way to the front.
@@ -969,7 +983,9 @@ function mountFrame(g, o) {
   const hornOff = [-0.06 * k, horn[1] - 0.01 * k, horn[2] - 0.02 * k];
   // A short rider (or a tall horse) can't reach the top of the horn from the ground: the hand takes the pommel lower
   // down its near side (the swell), and the cantle lower down the near side of the seat, and keeps that hold.
-  const hornLow = [0.17 * k, horn[1] - 0.24 * k, horn[2] - 0.02 * k], cantLow = [0.2 * k, cantle[1] - 0.18 * k, cantle[2]];
+  // (on the saddle's side, a saddle's thickness out from the horse: never a hold inside its withers or its back)
+  const onSide = (q) => { q[0] = Math.max(q[0], hwAt(prof, q[1] / k, q[2] / k) * k + 0.06 * k); return q; };
+  const hornLow = onSide([0.17 * k, horn[1] - 0.24 * k, horn[2] - 0.02 * k]), cantLow = onSide([0.2 * k, cantle[1] - 0.18 * k, cantle[2]]);
   // (and further down the near side of the saddle, on its skirt, the lowest a hand keeps hold at)
   const skirt = (lo, hi) => { const p = add3(lo, add3(lo, hi, -1), 0.6); p[0] = Math.max(p[0], hwAt(prof, p[1] / k, p[2] / k) * k + 0.05 * k); return p; };
   const hornLow2 = skirt(hornLow, horn), cantLow2 = skirt(cantLow, cantle);
@@ -998,7 +1014,7 @@ function mountFrame(g, o) {
   // their hips reach the back, and the off leg clears the croup without kicking higher than ~25 degrees above the hip.
   const ok = Sc[1] <= standHip + 0.1 * s && Ptop[1] >= back - 0.04 * k && yc - Ptop[1] <= 0.42 * span;
   return { J, F, L, sc, yaw, k, s, prof, toW, toL, dirW, shX, shY, arm, hipY, hipX, thigh, shin, span, lift, ankleY: ankle0, standHip, S, Kr, Q,
-    Sc, C0, face, G, Ptop, Hp, Pb, Pover, gripHorn, gripCantle, gripHornR, hornLow, cantLow, hornLow2, cantLow2, leanAdd, faceTop, zc, yc, croup, back, horn, cantle, hornOff, ok, rideKnee, Hr, seatPos: o.seatPos };
+    gy, Sc, C0, face, G, Ptop, Hp, Pb, Pover, gripHorn, gripCantle, gripHornR, hornLow, cantLow, hornLow2, cantLow2, leanAdd, faceTop, zc, yc, croup, back, horn, cantle, hornOff, ok, rideKnee, Hr, seatPos: o.seatPos };
 }
 
 /** Put the body's pelvis at P (horse frame) facing psi (relative to the horse), pitched by lean (forward, about the
@@ -1058,7 +1074,7 @@ export function mountSpot(g, o) {
   const J = g.userData.joints, F = feetOf(g);
   const saved = { p: g.position.clone(), r: g.rotation.clone(), q: [...(g.userData.limbs || []).map((l) => l.pivot.quaternion.clone())],
     t: ["spine", "neck", "head"].map((n) => J[n]?.quaternion.clone()), f: Object.values(F).map((f) => [f.shoe.position.clone(), f.shoe.quaternion.clone()]) };
-  const R = mountFrame(g, o), p = R.toW([R.C0[0], 0, R.C0[2]]);
+  const R = mountFrame(g, o), p = R.toW([R.C0[0], R.gy, R.C0[2]]);
   g.position.copy(saved.p); g.rotation.copy(saved.r);
   (g.userData.limbs || []).forEach((l, i) => l.pivot.quaternion.copy(saved.q[i]));
   ["spine", "neck", "head"].forEach((n, i) => { if (J[n]) J[n].quaternion.copy(saved.t[i]); });
@@ -1099,9 +1115,10 @@ export function walkTo({ p0, v0 = [0, 0], yaw0 = 0, via = [], end, endYaw, fps =
   for (let i = 1; i < dense.length; i++) acc.push(acc[i - 1] + len([dense[i][0] - dense[i - 1][0], dense[i][1] - dense[i - 1][1]]));
   const L = acc[acc.length - 1];
   const at = (s) => { let i = 1; while (i < acc.length - 1 && acc[i] < s) i++; const u = clamp((s - acc[i - 1]) / Math.max(1e-9, acc[i] - acc[i - 1]), 0, 1); return [lerp(dense[i - 1][0], dense[i][0], u), lerp(dense[i - 1][1], dense[i][1], u)]; };
-  // The pace along the path: a calm walk (1.1 m/s at 1.8 m), slower round a tight turn (people slow down to turn: no more
-  // than ~1 m/s2 sideways), up to it at ~1.4 m/s2 and down to a stop at ~1.4 (a run brakes harder, ~3).
-  const vc = 1.1 * Math.sqrt(h / 1.8), aU = 1.4, aB = 3.0, aD = Math.max(1.4, sp0 * sp0 / Math.max(0.05, 2 * L)), aLat = 1.0, wMax = 1.6;
+  // The pace along the path: a purposeful walk (1.3 m/s at 1.8 m), slower round a tight turn (no more than ~2 m/s2
+  // sideways, the body turning at most ~150 deg/s), up to it at ~1.6 m/s2 and down to a stop at ~1.6 (a run brakes
+  // harder, ~3).
+  const vc = 1.3 * Math.sqrt(h / 1.8), aU = 1.6, aB = 3.0, aD = Math.max(1.6, sp0 * sp0 / Math.max(0.05, 2 * L)), aLat = 2.0, wMax = 2.6;
   // the heading along the way: the path's own, and round to endYaw over the last steps as they stop (they walk up
   // alongside and turn to face it, not loop round behind it); a short shuffle just turns
   const tanYaw = (s) => { const a = at(Math.max(0, s - 0.04)), b = at(Math.min(L, s + 0.04)); return Math.atan2(b[0] - a[0], b[1] - a[1]); };
@@ -1111,11 +1128,11 @@ export function walkTo({ p0, v0 = [0, 0], yaw0 = 0, via = [], end, endYaw, fps =
     const s0 = i * ds, a0 = at(Math.max(0, s0 - 0.1)), a1 = at(s0), a2 = at(Math.min(L, s0 + 0.1));
     const th = Math.abs(wrapPi(Math.atan2(a2[0] - a1[0], a2[1] - a1[1]) - Math.atan2(a1[0] - a0[0], a1[1] - a0[1])));
     const kap = th / Math.max(0.02, 0.5 * (len([a2[0] - a1[0], a2[1] - a1[1]]) + len([a1[0] - a0[0], a1[1] - a0[1]])));
-    // (and slow enough that the body turns no faster than ~90 deg/s while walking)
+    // (and slow enough that the body turns no faster than ~150 deg/s while walking)
     const dy = Math.abs(wrapPi(yawS(Math.min(L, s0 + 0.05)) - yawS(Math.max(0, s0 - 0.05)))) / 0.1;
-    // (never slower than a shuffle, ~0.35 m/s; a short shuffle just turns, so only the path's bends slow it)
+    // (never slower than a shuffle, ~0.5 m/s; a short shuffle just turns, so only the path's bends slow it)
     const turnCap = L > 0.3 ? Math.min(Math.sqrt(aLat / Math.max(kap, 1e-6)), wMax / Math.max(dy, 1e-6)) : Infinity;
-    v.push(Math.min(Math.max(vc, Math.sqrt(Math.max(0, sp0 * sp0 - 2 * aB * s0))), Math.max(0.35, turnCap)));
+    v.push(Math.min(Math.max(vc, Math.sqrt(Math.max(0, sp0 * sp0 - 2 * aB * s0))), Math.max(0.5, turnCap)));
   }
   v[0] = sp0; v[M] = 0;
   for (let i = 1; i <= M; i++) v[i] = Math.min(v[i], Math.sqrt(v[i - 1] ** 2 + 2 * aU * ds));                       // speeding up
@@ -1197,11 +1214,14 @@ function shoulderOf(R, P, psi, lean, side) {
 }
 /** The lean (<= lean) at which both shoulders and the head are clear of the horse (out from its side or above it). */
 function trunkClear(R, P, psi, lean) {
-  const k = R.k, gap = 0.1 * R.s;
+  const k = R.k, s = R.s, G = 0.1 * s;
   // (into the body: neither a gap out from its side at that height nor a gap above its top there)
-  // (both shoulders, and the head: leaning over the withers it must not go into a rigged horse's neck)
-  const pts = [[R.shX, R.shY], [-R.shX, R.shY], [0, R.shY + 0.2 * R.s]];
-  const need = (ln) => Math.max(...pts.map(([x, y]) => { const v = new THREE.Vector3(x, y, 0).applyEuler(new THREE.Euler(ln, psi, 0, "YXZ")), q = [P[0] + v.x, P[1] + v.y, P[2] + v.z], ax = Math.abs(q[0]);
+  // Both shoulders and the head (centres, a body's half-thickness clear), and the surfaces that lead when leaning over
+  // the saddle (the face, the crown, the chest and the belly, 2-4 cm clear): over the withers nothing goes into a rigged
+  // horse's neck, and nothing lies in its back. [x, y above the hips, z forward, gap], m.
+  const pts = [[R.shX, R.shY, 0, G], [-R.shX, R.shY, 0, G], [0, R.shY + 0.2 * s, 0, G], [0, R.shY + 0.19 * s, 0.11 * s, 0.035 * s],
+    [0, R.shY + 0.31 * s, 0, 0.03 * s], [0, 1.35 * s - R.hipY, 0.12 * s, 0.03 * s], [0, 1.08 * s - R.hipY, 0.1 * s, 0.03 * s]];
+  const need = (ln) => Math.max(...pts.map(([x, y, z, gap]) => { const v = new THREE.Vector3(x, y, z).applyEuler(new THREE.Euler(ln, psi, 0, "YXZ")), q = [P[0] + v.x, P[1] + v.y, P[2] + v.z], ax = Math.abs(q[0]);
     return Math.min(hwAt(R.prof, q[1] / k, q[2] / k) * k + gap - ax, surfaceTop(R.prof, Math.max(0, ax - gap) / k, q[2] / k) * k + gap - q[1]); }));
   if (lean <= 0 || need(lean) <= 0) return lean;
   if (need(0) > 0) return 0;
@@ -1232,7 +1252,21 @@ function swingAims(R, hip) {
   let lo = H[2] - 0.1 * k, hi = H[2] - 1.0 * k;
   if (fz(hi) < 0) hi = H[2] - 1.0 * k; else if (fz(lo) > 0) hi = lo;
   else for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (fz(m) < 0) lo = m; else hi = m; }
-  const zc = hi, cross = [0, backTop(R.prof, zc / k - 0.05, zc / k + 0.05) * k + clr, zc];
+  const zc = hi;
+  let cross = [0, backTop(R.prof, zc / k - 0.05, zc / k + 0.05) * k + clr, zc];
+  // ... and the whole leg over it, not just the boot: the line from the hip to the boot clears the croup by the leg's own
+  // thickness (thigh .. shin) and 2 cm everywhere along it, raised behind (hip extension, the trunk over the saddle) as
+  // far as that takes, so the thigh and knee never drag through the hindquarters.
+  {
+    const legR = (u) => (0.06 - 0.02 * u) * s + 0.01;   // (the profile's top already stands a few cm proud of the mesh)
+    const clearOf = (d) => { let m = Infinity; for (let u = 0.3; u <= 1.001; u += 0.07) { const q = add3(H, d, u * r), top = surfaceTop(R.prof, q[0] / k, q[2] / k); if (top > -Infinity) m = Math.min(m, q[1] - top * k - legR(u)); } return m; };
+    const c0 = norm3(add3(cross, H, -1)), hz = Math.hypot(c0[0], c0[2]) || 1, h0 = [c0[0] / hz, 0, c0[2] / hz];
+    const dirE = (e) => [h0[0] * Math.cos(e), Math.sin(e), h0[2] * Math.cos(e)];
+    let e = Math.asin(clamp(c0[1], -1, 1));
+    const eMax = Math.max(e, 0.45);   // (no higher than ~25 deg above the hip behind: a kick, not a mount)
+    for (let i = 0; i < 40 && clearOf(dirE(e)) < 0 && e < eMax; i++) e = Math.min(eMax, e + 0.02);
+    cross = add3(H, dirE(e), r);
+  }
   const hwB = bodyHalf(R.prof, (cross[1] - 0.3 * k) / k, zc / k - 0.15, zc / k + 0.25) * k;
   // (behind and below the hip while it is still coming up: the leg never points up behind it)
   const behind = [Math.max(hwB, 0.2 * k) + 0.16 * s, Math.min(cross[1] - 0.24 * k, hip[1] - 0.3 * r), 0.5 * (H[2] + zc) - 0.1 * k];
@@ -1327,13 +1361,72 @@ function bootDeficit(R, clear) {
   }
   return best && add3([0, 0, 0], best.n, best.need);
 }
+/** How far (m) the off leg (hip to ankle, as thick as a thigh tapering to a shin) is into the horse past `margin` of
+ *  clearance at its worst point (a point u of the way down weighs 1/u: the leg turns about its hip); <= 0 when clear. */
+function legLineNeed(R, hip, A, margin = 0.02) {
+  const k = R.k, s = R.s;
+  let m = -1;
+  for (let u = 0.3; u <= 1.001; u += 0.07) {
+    const q = lerp3(hip, A, u), od = outlineDist(R.prof, Math.abs(q[0]) / k, q[1] / k, q[2] / k);
+    if (od) m = Math.max(m, ((0.06 - 0.02 * u) * s + margin - od.d * k) / u);
+  }
+  return m;
+}
+/** How deep (m) the near leg (thigh, shin; hip, knee and ankle in the horse frame) is into the horse, past its own
+ *  thickness: 0 when clear. */
+function nearLegDepth(R, hip, knee, ankle) {
+  const k = R.k, s = R.s;
+  let m = 0;
+  for (const [a, b, r0, r1] of [[hip, knee, 0.075, 0.06], [knee, ankle, 0.055, 0.045]]) for (let u = 0.15; u <= 1.001; u += 0.17) {
+    const q = lerp3(a, b, u), od = outlineDist(R.prof, Math.abs(q[0]) / k, q[1] / k, q[2] / k);
+    if (od) m = Math.max(m, lerp(r0, r1, u) * s - od.d * k);
+  }
+  return m;
+}
+/** Sample points of a hand (palm and fingers): [mesh, vertex index], read once per figure. */
+function armPts(g, lr) {
+  const c = g.userData._armPts || (g.userData._armPts = {});
+  if (c[lr]) return c[lr];
+  const out = [];
+  g.userData.joints[`${lr}_wrist`].traverse((o) => {
+    const n = o.isMesh ? o.geometry?.attributes?.position?.count || 0 : 0, step = Math.max(1, Math.floor(n / 14));
+    for (let i = 0; i < n; i += step) out.push([o, i]);
+  });
+  return (c[lr] = out);
+}
+const _v = new THREE.Vector3();
+/** How far a hand (palm, fingers) is into the `clear` margin round the horse, as the move (horse frame,
+ *  m) that takes the hand out along the outline's normal; null when it is clear. (As bootDeficit, for the arm.) */
+function armDeficit(R, g, lr, clear) {
+  const k = R.k;
+  let best = null;
+  for (const [o, i] of armPts(g, lr)) {
+    o.getVertexPosition(i, _v).applyMatrix4(o.matrixWorld);
+    const p = R.toL(_v), od = outlineDist(R.prof, Math.abs(p[0]) / k, p[1] / k, p[2] / k);
+    if (!od) continue;
+    const need = clear - od.d * k;
+    if (need > 0.002 && (!best || need > best.need)) best = { need, n: [od.n[0] * Math.sign(p[0] || 1), od.n[1], 0] };
+  }
+  return best && add3([0, 0, 0], best.n, best.need);
+}
+/** The fingers curled round a hold (c 0 open .. 1 a loose fist), as humans.mjs's Curl. */
+function curlFingers(g, lr, c) {
+  for (const [id, j] of Object.entries(g.userData.joints)) {
+    if (j.userData.jkind !== "finger" || !id.startsWith(lr + "_")) continue;
+    const rest = j.userData.rest || [0, 0, 0], thumb = j.userData.finger === "thumb", a = c * (thumb ? 0.7 : 1.35), sd = j.userData.side || 1;
+    j.rotation.order = "XYZ";
+    j.rotation.set(rest[0] - (thumb ? a * 0.6 : 0), 0, -sd * (thumb ? a * 0.5 : a));
+  }
+}
+
 /**
  * Where a hand is on its way from `A` (where the arm hangs or holds the reins) to its hold `B` on the saddle, at u (0
  * A .. 1 B), horse frame: up the outside of the horse first, then in over the top (never through the flank or the
  * hindquarters on the way).
  */
 function handPath(A, B, u) {
-  return [lerp(A[0], B[0], sstep(0.35, 1, u)), lerp(A[1], B[1], sstep(0, 0.75, u)), lerp(A[2], B[2], sstep(0.1, 0.9, u))];
+  // (u is already eased in and out: the rise follows it directly, so the hand's top speed stays a reach's, ~5 m/s)
+  return [lerp(A[0], B[0], sstep(0.3, 1, u)), lerp(A[1], B[1], clamp(u * 1.15, 0, 1)), lerp(A[2], B[2], sstep(0.05, 0.95, u))];
 }
 
 /** Pose the body from a climb state. Returns where the feet went. */
@@ -1357,7 +1450,32 @@ function poseClimb(g, R, st, psiA, offGround, offHeelYaw) {
   const nearPole = lerp3(lerp3(fw, kneeOut, sstep(0, 0.6, st.lift)), R.rideKnee.l, st.settle);
   const swingPole = norm3(add3(add3(down, fw, 0.3), leftOf(psi), -1));       // soft knee down and out (not dragged through the croup)
   const offPole = st.swing <= 0 ? lerp3(fw, swingPole, st.air) : lerp3(swingPole, R.rideKnee.r, sstep(2, 3.3, st.swing));
+  // The off leg in the air never drags through the hindquarters: swung out about its hip until the thigh, knee and shin
+  // clear the horse by their own thickness (not just the boot).
+  // (down the off side toward its stirrup the leg comes onto the horse's side as a seated leg is: the margin eases from
+  // 2 cm clear to the 6 cm a seated thigh presses in, so the push lets go smoothly)
+  // (getting off, the leg comes back down behind past the near haunch as the hips come out: kept clear down to there)
+  const wLine = (st.down ? sstep(0.5, 1.3, st.swing) : sstep(0.9, 1.4, st.swing)) * (1 - sstep(3.2, 3.8, st.swing)) * wIK, margin = lerp(0.01, -0.06, sstep(2.2, 3.4, st.swing));
+  if (wLine > 0 && legLineNeed(R, hipOff, Ao, margin) > 0) {
+    // the leg raised about its hip (in its own vertical plane) by the least angle that clears it, found by halving: a
+    // smooth function of the pose, so the boot never jumps as the push comes and goes
+    const r0 = len3(add3(Ao, hipOff, -1)), d = norm3(add3(Ao, hipOff, -1)), up = norm3(add3([0, 1, 0], d, -d[1]));
+    const at = (a) => add3(hipOff, add3(d.map((x) => x * Math.cos(a)), up, Math.sin(a)), r0);
+    let lo = 0, hi = 0.8;
+    if (legLineNeed(R, hipOff, at(hi), margin) > 0) lo = hi;
+    else for (let i = 0; i < 14; i++) { const m = (lo + hi) / 2; if (legLineNeed(R, hipOff, at(m), margin) > 0) lo = m; else hi = m; }
+    const moved = at(hi * wLine);
+    Ao[0] = moved[0]; Ao[1] = moved[1]; Ao[2] = moved[2];
+  }
   legTo(g, R, "l", R.toW(An), R.dirW(nearPole), wIK);
+  // The near knee in its stirrup turns out from the horse as far as keeps the thigh and shin out of its side (no deeper
+  // than the ride pose has them): a smooth turn, by how deep they would go.
+  if (st.lift > 0 && wIK > 0) {
+    const kneeAt = () => { R.J.l_knee.updateWorldMatrix(true, false); return R.toL(R.J.l_knee.getWorldPosition(new THREE.Vector3())); };
+    const hipN = hipAt(R, P, psi, lean, 0, 1), dep = nearLegDepth(R, hipN, kneeAt(), An);
+    const w = clamp((dep - 0.01) / 0.05, 0, 1) * sstep(0, 0.5, st.lift) * (1 - st.settle * st.sit);
+    if (w > 0) legTo(g, R, "l", R.toW(An), R.dirW(norm3(lerp3(nearPole, [0.85, -0.2, 0.5], w))), wIK);
+  }
   legTo(g, R, "r", R.toW(Ao), R.dirW(offPole), wIK);
   // Shoes: flat on the ground; level in the stirrup with the toe toward the horse's shoulder; pointed in the swing;
   // as built (square to the shin) in the ride pose.
@@ -1404,8 +1522,9 @@ function poseClimb(g, R, st, psiA, offGround, offHeelYaw) {
       for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (far(m) > 0) lo = m; else hi = m; }
       return at(hi);
     };
-    const cant = slide(R.gripCantle, R.cantLow, R.cantLow2, seedSh.r), hornR = slide(R.gripHornR, back7(R.hornLow), back7(R.hornLow2), seedSh.r);
-    const holds = { l: slide(R.gripHorn, R.hornLow, R.hornLow2, seedSh.l), r: st.swap <= 1 ? lerp3(cant, R.hornOff, st.swap) : lerp3(R.hornOff, hornR, st.swap - 1) };
+    // (re-solved every frame from where the shoulder is: up in the stirrup the hand has the top of the horn again)
+    const cant = slide(R.cantle, R.cantLow, R.cantLow2, seedSh.r), hornR = slide(back7(R.horn), back7(R.hornLow), back7(R.hornLow2), seedSh.r);
+    const holds = { l: slide(R.horn, R.hornLow, R.hornLow2, seedSh.l), r: st.swap <= 1 ? lerp3(cant, R.hornOff, st.swap) : lerp3(R.hornOff, hornR, st.swap - 1) };
     for (const [lr, side] of [["l", 1], ["r", -1]]) {
       // away from the horse (out from its barrel, through the middle of the arm), to the rider's side, a little back
       const mid = lerp3(seedSh[lr], holds[lr], 0.5), radial = norm3([mid[0], mid[1] - 1.25 * R.k, 0]);
@@ -1416,9 +1535,22 @@ function poseClimb(g, R, st, psiA, offGround, offHeelYaw) {
       const d = e[0] * u[0] + e[1] * u[1] + e[2] * u[2], off = [e[0] - d * u[0], e[1] - d * u[1], e[2] - d * u[2]];
       const seedPole = len3(off) > 0.01 ? norm3(off) : holdPole;
       const pole = norm3(lerp3(seedPole, holdPole, sstep(0, 0.35, st.grip)));
-      armTo(g, R, lr, R.toW(handPath(Wr, holds[lr], st.grip)), R.dirW(pole), sstep(0, 0.12, st.grip));
+      // the fingers close round the hold as the hand gets there
+      curlFingers(g, lr, sstep(0.6, 1, st.grip));
+      let T = handPath(Wr, holds[lr], st.grip);
+      const wA = sstep(0, 0.12, st.grip);
+      armTo(g, R, lr, R.toW(T), R.dirW(pole), wA);
+      // Never a hand (palm or fingers) in the horse: lifted out along its outline, a little clear of it
+      // (the hold is on tack the clay horse doesn't show: the horn stands above the withers).
+      for (let it = 0; it < 8; it++) {
+        R.J[`${lr}_shoulder`].updateWorldMatrix(false, true);
+        const mv = armDeficit(R, g, lr, 0.015 * R.s);
+        if (!mv) break;
+        T = add3(T, mv, 1.15 * (st.down ? 1 : 0.35 + 0.65 * sstep(0.3, 0.9, st.grip)));   // (eased in as the hand reaches: no snap)
+        armTo(g, R, lr, R.toW(T), R.dirW(pole), wA);
+      }
     }
-  }
+  } else for (const lr of ["l", "r"]) curlFingers(g, lr, 0);
   g.updateMatrixWorld(true);
   return { P, psi, lean, near: An, off: Ao };
 }
@@ -1436,7 +1568,7 @@ function ridePoseLegsBlend(g, w) {
 /** The mount's script: each channel of the climb state as [seconds, value] keys (read-only). */
 export const MK = {
   pivot: [[0, 0], [0.2, 1]],                                           // the stepped turn to the saddle (PIVOT_*)
-  grip: [[0, 0], [0.5, 1], [1.95, 1], [2.25, 0]],                      // hands to the horn and the cantle (0.5 s), then the reins
+  grip: [[0, 0], [0.6, 1], [1.95, 1], [2.25, 0]],                      // hands to the horn and the cantle (0.6 s), then the reins
   swap: [[0.95, 0], [1.3, 1]],                                         // right hand from the cantle to the off side of the horn
   shift: [[0.1, 0], [0.4, 1]],                                         // weight over the off foot while the near one goes up
   lift: [[0.16, 0], [0.62, 1]],                                        // near foot into the stirrup, as the turn ends (0.46 s)
@@ -1511,7 +1643,7 @@ export function applyMount(g, t, o) {
 /** The dismount's script, as MK. */
 export const DK = {
   ride: [[0, 1], [0.12, 0]],                                           // the first frames take over from the ride pose
-  grip: [[0.03, 0], [0.3, 1], [1.5, 1], [1.98, 0]],
+  grip: [[0.03, 0], [0.3, 1], [1.4, 1], [1.98, 0]],
   swap: [[0, 1], [1.2, 1], [1.45, 0]],                                 // right hand on the horn's off side, then (down) the cantle
   arms: [[0.25, 1], [0.5, 0]],                                         // (the hands on the saddle before the arms come down)
   swing: [[0.06, 4], [0.22, 3.5], [0.28, 3.5], [0.56, 3], [0.8, 2], [0.99, 1], [1.36, 0]],   // off foot out of its stirrup, hanging, then back over the croup

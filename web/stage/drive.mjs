@@ -1054,7 +1054,7 @@ export class DriveMode {
       if (host.kind === "horse" && (a.pose || MOUNTS.horse.pose) === "ride" && hg && this.s._rideFrame) {
         const m = MOUNTS.horse, k = (host.scale || 1) * ((host.height_m || m.refHeight) / m.refHeight), h = (a.height_m || 1.8) * (a.scale || 1);
         const seat = new THREE.Vector3(m.seat[0] * k, m.seat[1] * k, m.seat[2] * k).applyAxisAngle(new THREE.Vector3(0, 1, 0), hg.rotation.y);
-        const seatPos = new THREE.Vector3(hg.position.x + seat.x, hg.position.y + seat.y - 0.95 * h / 1.8, hg.position.z + seat.z);
+        const seatPos = new THREE.Vector3(hg.position.x + seat.x, hg.position.y + seat.y - 0.95 * h / 1.8 + (this.s._seatRaise?.(hg, k) || 0), hg.position.z + seat.z);
         Gait.release(g);
         Gait.applyDismount(g, clamp(t, 0, 1), this.s._rideFrame(a, host, hg, seatPos));
         continue;
