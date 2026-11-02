@@ -5,6 +5,13 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-01
 
+**17:10 PST · Riders run, climb on and gallop: running legs before a timed mount, a real 1 s mount on horses, gait-blended cadence**
+- **Why:** the horse hero shot "looks horrible… they're not even running": riders glided to the horses, the mount was a cut, the gallop slid.
+- **Running to the horse.** A rider with a timed `mount_at` was reset to a standing pose every frame before the hop, wiping the gait's legs, so the clay (and the Pose pass) glided on straight legs. A keyed rider now keeps its foot-locked run until the mount starts ([stage.mjs](web/stage/stage.mjs)).
+- **Mounting a horse** is now a climb, not a 10-frame hop: near foot into the left stirrup with hands to the saddle, spring up to stand in it, off leg swung back and over the croup, settle into the ride pose, 24 frames (`Gait.mountMotion`, [gait.mjs](web/stage/gait.mjs)). Other mounts keep the hop.
+- **No hoof slide through canter → gallop.** The cadence is set from the blended stance share and the blended clip sweep, so a planted hoof covers the body's travel mid-change, not only at each gait's own weight of 1.
+- Hero v3 (share/HeroGIF_v3): side-on camera-car track, 50 mm at 1 m; Pose follow (union-control IC-LoRA) on a guide of the stage skeletons over dimmed depth with the horses' silhouettes lifted (their legs no longer melt into the ground's depth). Tests: tests/js/gait.test.mjs (mount keys, cadence vs sweep).
+
 **16:20 PST · Clay → first frame → video, all on the blocking: a locked ④ Frame, a first-frame check that re-rolls ghost cars, and blocked head turns**
 - **Why:** "There's a red car behind that car, like ghosting… the FLUX frames aren't adhering to the blocking" and "heads turn in the final render that aren't in the blocking."
 - **④ Frame starts from the stage.** FLUX 3 Klein used to see the Color pass only as an edit reference and paint from noise, so it recomposed the shot (the car-chase hero car, 58 % of the frame wide on the stage, came out small and far). Now the latent starts from the Color pass shrunk 16x and blown back up (where things are, how big, what colour; no clay surface to copy) at `stage_denoise` 0.90, which **Follow the clay** sets for Klein. A sharp start was tested and rejected: at 0.75 Klein kept the clay mannequins. No depth or edge control exists for Klein on the pod, so none is used (nothing downloaded).
