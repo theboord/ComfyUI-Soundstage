@@ -27,6 +27,7 @@ import { AdvisorPanel } from "./advisor/advisor.mjs";
 import * as maker from "./assets3d/maker.mjs";
 import { applyTheme, spotlight } from "./ui/theme.mjs";
 import { icon } from "./ui/icons.mjs";
+import { openPopover, closePopover, isPopoverOpen } from "./ui/popover.mjs";
 import { CheatSheet, isCheatSheetKey, withKeys } from "./ui/shortcuts.mjs";
 import { applyCanvasCss, layoutPref, setLayoutPref, rememberFlag, Mover } from "./ui/canvasui.mjs";
 import { Tour, TOUR_STEPS, tourSeen, markTourSeen, emptyCard, isBrandNewStage, applyFirstRunCss } from "./ui/firstrun.mjs";
@@ -80,9 +81,9 @@ const CSS = `
 .ss-chip { background:#3a2810; color:#e39a40; border-radius:999px; padding:2px 10px; }
 .ss-tabs { display:flex; gap:2px; align-items:center; }
 .ss-bar select { background:#0f1216; color:#e6e9ee; border:1px solid #39404b; border-radius:4px; padding:3px 6px; font:inherit; }
-.ss-tabs button { background:#262b33; color:#cfd5de; border:1px solid #39404b; padding:4px 12px; cursor:pointer; font:inherit; font-weight:600; }
+:is(.ss-tabs, :where(.ss-pophost) > .ss-toppop) button { background:#262b33; color:#cfd5de; border:1px solid #39404b; padding:4px 12px; cursor:pointer; font:inherit; font-weight:600; }
 .ss-tabs button:first-child { border-radius:4px 0 0 4px; } .ss-tabs button:last-child { border-radius:0 4px 4px 0; }
-.ss-tabs button[aria-pressed=true] { background:#e39a40; color:#16191e; border-color:#e39a40; }
+:is(.ss-tabs, :where(.ss-pophost) > .ss-toppop) button[aria-pressed=true] { background:#e39a40; color:#16191e; border-color:#e39a40; }
 .ss-ladderbar[hidden], .ss-ladder[hidden], .ss-stagebar[hidden], .ss-stageview[hidden] { display:none !important; }
 .ss-rungs { display:flex; justify-content:space-between; color:#7d8694; font-size:11px; padding:0 2px; }
 .ss-rungs span[data-ready=true] { color:#e39a40; }
@@ -3329,17 +3330,22 @@ function createStageWidget(node, inputName) {
     const lookTitle = mk("span", "ss-hudp-title");
     lookTitle.append(icon("palette", 13), Object.assign(document.createElement("span"), { textContent: "Look · one click sets stock, lens, palette, grade" }));
     const lookFull = btn("", "Open the full Look tab: camera body, lens, palette, genre and the compiled prompt", "All Look settings →");
-    lookFull.addEventListener("click", () => { lookPop.hidden = true; showView("look"); });
+    // The palette opens in the pop-over layer (ui/popover.mjs): over every floating panel (Director, Physics…),
+    // clamped to the window; Esc or a click outside closes it.
+    const closeLook = () => { if (isPopoverOpen(lookPop)) closePopover(lookPop); else lookPop.hidden = true; lookBtn.setAttribute("aria-pressed", "false"); };
+    lookFull.addEventListener("click", () => { closeLook(); showView("look"); });
     const lookClose = btn("ss-hudp-tog", "Close (Esc)", icon("x", 15));
     lookClose.setAttribute("aria-label", "Close");
-    lookClose.addEventListener("click", () => { lookPop.hidden = true; lookBtn.setAttribute("aria-pressed", "false"); });
+    lookClose.addEventListener("click", () => closeLook());
     lookHead.append(lookTitle, lookFull, lookClose);
     const lookBody = mk("div", "ss-hudp-body");
     lookPop.append(lookHead, lookBody);
     lookBtn.addEventListener("click", () => {
       if (!lookBody.firstChild && look.makeStyles) lookBody.append(look.makeStyles());
-      lookPop.hidden = !lookPop.hidden;
-      lookBtn.setAttribute("aria-pressed", String(!lookPop.hidden));
+      if (isPopoverOpen(lookPop)) { closeLook(); return; }
+      openPopover(lookPop, { anchor: lookBtn, owner: lookBtn, theme: el, gap: 6, name: "look", focus: false,
+        onClose: () => lookBtn.setAttribute("aria-pressed", "false") });
+      lookBtn.setAttribute("aria-pressed", "true");
     });
 
     // Icons + labels when the whole rail fits the canvas height, else icons only (labels stay in the tooltips).
@@ -3362,7 +3368,7 @@ function createStageWidget(node, inputName) {
       cvArea.dataset.l = "none";
       if (isStage) railFit();
       setInsp(inspFlag(k).get());
-      if (k !== "stage") { lookPop.hidden = true; lookBtn.setAttribute("aria-pressed", "false"); }
+      if (k !== "stage") closeLook();
     }
 
     // ---- One top row: the steps, the scene picker (the scene strip folds into a drop-down), the tools in a menu.
@@ -3380,7 +3386,19 @@ function createStageWidget(node, inputName) {
     const toolsMenu = stopEv(mk("div", "ss-toppop ss-toolsmenu"));
     toolsMenu.hidden = true;
     const menuSep = mk("div", "sep");
-    const setPop = (pop, open, owner) => { pop.hidden = !open; owner?.setAttribute("aria-expanded", String(open)); };
+    // Both open in the pop-over layer (ui/popover.mjs): flipped and clamped to the window, Esc / outside click close them.
+    const setPop = (pop, open, owner) => {
+      if (!open) { if (isPopoverOpen(pop)) closePopover(pop); else pop.hidden = true; owner?.setAttribute("aria-expanded", "false"); return; }
+      const isScene = pop === scenePop;
+      openPopover(pop, {
+        // under the whole top row, as before: the scene strip from its left edge, the tools menu at its right edge
+        anchor: tabs.getClientRects().length ? tabs : owner, owner, theme: el,
+        align: isScene ? "start" : "end", gap: 6, name: isScene ? "scenes" : "tools",
+        // the scene strip spans the row, as it did inside it
+        width: isScene ? tabs : undefined,
+        onClose: () => owner?.setAttribute("aria-expanded", "false"),
+      });
+    };
     const closePops = () => { setPop(scenePop, false, sceneStrip?.pick); setPop(toolsMenu, false, toolsBtn); };
     toolsBtn.addEventListener("click", () => { const o = toolsMenu.hidden; closePops(); setPop(toolsMenu, o, toolsBtn); });
     toolsMenu.addEventListener("click", (e) => { if (e.target.closest?.("button")) setPop(toolsMenu, false, toolsBtn); });
@@ -3392,6 +3410,8 @@ function createStageWidget(node, inputName) {
     document.addEventListener("pointerdown", onDocDown, true);
     el.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && (!scenePop.hidden || !toolsMenu.hidden)) { e.stopPropagation(); closePops(); }
+      // Esc closes the Look palette first (before it would leave the full workspace)
+      else if (e.key === "Escape" && cvOn && !lookPop.hidden) { e.stopPropagation(); e.preventDefault(); closeLook(); lookBtn.focus?.({ preventScroll: true }); }
     }, true);
     if (sceneStrip) {
       sceneStrip.onPick = () => {
@@ -3433,6 +3453,7 @@ function createStageWidget(node, inputName) {
     applyLayout = (mode) => {
       cvOn = mode !== "classic";
       closePops();
+      closeLook();
       mv.restore();
       for (const x of built) x.remove();
       built = [];

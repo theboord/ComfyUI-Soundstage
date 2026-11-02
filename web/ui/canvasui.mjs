@@ -130,11 +130,17 @@ export function hudPop({ title, icon = null, onClose = null }) {
   const body = el("div", "ss-hudp-body");
   root.append(head, body);
   for (const t of ["pointerdown", "wheel"]) root.addEventListener(t, (e) => e.stopPropagation(), { passive: true });
+  // Esc closes it wherever the focus is (not only inside it), before anything else hears the key
+  const onEsc = (e) => {
+    if (e.key !== "Escape" || root.hidden || !root.isConnected || !root.getClientRects().length) return;
+    if (document.querySelector("body > .ss-pophost")) return;   // a menu over it closes first (ui/popover.mjs)
+    e.stopPropagation(); e.preventDefault(); api.close(); api.btn?.focus?.({ preventScroll: true });
+  };
   const api = {
     el: root, body, btn: null, onState: null,
     isOpen: () => !root.hidden,
-    open() { if (!root.hidden) return; root.hidden = false; api.onState?.(true); },
-    close() { if (root.hidden) return; root.hidden = true; api.onState?.(false); onClose?.(); },
+    open() { if (!root.hidden) return; root.hidden = false; document.addEventListener("keydown", onEsc, true); api.onState?.(true); },
+    close() { if (root.hidden) return; root.hidden = true; document.removeEventListener("keydown", onEsc, true); api.onState?.(false); onClose?.(); },
     toggle() { if (root.hidden) api.open(); else api.close(); },
   };
   x.addEventListener("click", () => api.close());
@@ -165,7 +171,7 @@ const CSS = `
 .ss-stage.ss-cl[data-ws=wide] .ss-pipe button .t { font-size:13px; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .ss-stage.ss-cl[data-ws=wide] .ss-pipe button .n { flex:none; font-size:10px; }
 .ss-stage.ss-cl[data-ws=wide] .ss-tabs { padding:2px; flex-wrap:nowrap; overflow:hidden; }
-.ss-stage.ss-cl[data-ws=wide] .ss-tabs button { padding:4px 10px !important; white-space:nowrap; }
+.ss-stage.ss-cl[data-ws=wide] :is(.ss-tabs, :where(.ss-pophost) > .ss-toppop) button { padding:4px 10px !important; white-space:nowrap; }
 .ss-stage.ss-cl[data-ws=wide] .ss-scstrip { height:44px; margin:0 !important; }
 .ss-stage.ss-cl[data-ws=wide] .ss-scstrip .chip { height:40px !important; padding:2px 10px 2px 8px !important; }
 .ss-stage.ss-cl[data-ws=wide] .ss-scstrip .chip .num, .ss-stage.ss-cl[data-ws=wide] .ss-scstrip .chip b { font-size:16px; }
@@ -232,6 +238,8 @@ const CSS = `
 /* Look palette: pops over the canvas from the viewport toolbar. */
 .ss-stage.ss-cl[data-ws=wide] .ss-clarea > .ss-clpop { position:absolute; top:6px; left:50%; transform:translateX(-50%); width:min(620px, calc(100% - 24px));
   max-height:min(72%, 540px); z-index:30; background:var(--cv-glass-strong); }
+/* ...in the pop-over layer (ui/popover.mjs), under the Look button and over every floating panel. */
+.ss-stage.ss-pophost > .ss-clpop { width:min(620px, calc(100vw - 24px)); max-height:min(72vh, 540px); background:var(--cv-glass-strong); }
 .ss-stage .ss-clpop[hidden] { display:none !important; }
 .ss-stage .ss-clpop .ss-styles { max-height:none; }
 .ss-stage .ss-clpop .ss-hudp-head > button:not(.ss-hudp-tog) { font-size:12px !important; padding:3px 10px !important; flex:none; }
@@ -448,19 +456,19 @@ const CSS = `
    19 px at 1280×800, cutting off "Cast in this shot" (QA round 02). */
 .ss-stage.ss-cl .ss-hudp-secbody > .ss-follow > .status:first-child { display:none; }
 /* Its drop-downs: the scene strip (full) and the tools menu. */
-.ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-toppop { position:absolute; top:calc(100% + 6px); z-index:60; background:var(--cv-glass-strong); border:1px solid var(--cv-edge);
+:is(.ss-stage.ss-cl .ss-tabs.ss-toprow, .ss-stage.ss-cl.ss-pophost) > .ss-toppop { position:absolute; top:calc(100% + 6px); z-index:60; background:var(--cv-glass-strong); border:1px solid var(--cv-edge);
   border-radius:14px; box-shadow:0 14px 40px rgba(0,0,0,.5); backdrop-filter:blur(14px) saturate(1.2); -webkit-backdrop-filter:blur(14px) saturate(1.2); padding:6px; }
 .ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-scenepop { left:0; right:0; }
 .ss-stage.ss-cl .ss-scenepop > .ss-scstrip { height:64px !important; margin:0 !important; }
 .ss-stage.ss-cl .ss-scenepop > .ss-scstrip .chip { height:60px !important; }
-.ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-toolsmenu { right:0; width:310px; display:flex; flex-direction:column; gap:2px; }
-.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-toolsmenu > button { display:grid !important; grid-template-columns:18px minmax(0,1fr); column-gap:10px !important; row-gap:1px;
+:is(.ss-stage.ss-cl .ss-tabs.ss-toprow, .ss-stage.ss-cl.ss-pophost) > .ss-toolsmenu { right:0; width:310px; display:flex; flex-direction:column; gap:2px; }
+:is(.ss-stage.ss-cl .ss-tabs.ss-toprow, .ss-stage.ss-cl.ss-pophost) .ss-toolsmenu > button { display:grid !important; grid-template-columns:18px minmax(0,1fr); column-gap:10px !important; row-gap:1px;
   align-items:center; justify-items:start; text-align:left; width:100%; padding:7px 10px !important; margin:0 !important; border-radius:10px !important; color:var(--ss-text) !important; }
-.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-toolsmenu > button:hover { background:rgba(255,255,255,.06) !important; }
-.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-toolsmenu > button .lbl { font-weight:600; }
-.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-toolsmenu > button[data-desc]::after { content:attr(data-desc); grid-column:2; font-size:11px; color:var(--ss-muted); font-weight:400;
+:is(.ss-stage.ss-cl .ss-tabs.ss-toprow, .ss-stage.ss-cl.ss-pophost) .ss-toolsmenu > button:hover { background:rgba(255,255,255,.06) !important; }
+:is(.ss-stage.ss-cl .ss-tabs.ss-toprow, .ss-stage.ss-cl.ss-pophost) .ss-toolsmenu > button .lbl { font-weight:600; }
+:is(.ss-stage.ss-cl .ss-tabs.ss-toprow, .ss-stage.ss-cl.ss-pophost) .ss-toolsmenu > button[data-desc]::after { content:attr(data-desc); grid-column:2; font-size:11px; color:var(--ss-muted); font-weight:400;
   white-space:normal; line-height:1.3; }
-.ss-stage.ss-cl .ss-tabs.ss-toprow .ss-toolsmenu > button[aria-pressed=true] { background:rgba(242,255,89,.08) !important; border-color:rgba(242,255,89,.35) !important; }
+:is(.ss-stage.ss-cl .ss-tabs.ss-toprow, .ss-stage.ss-cl.ss-pophost) .ss-toolsmenu > button[aria-pressed=true] { background:rgba(242,255,89,.08) !important; border-color:rgba(242,255,89,.35) !important; }
 .ss-stage.ss-cl .ss-toolsmenu > .sep { height:1px; background:var(--cv-edge); margin:4px 6px; }
 /* Narrow (the App's side panel): the same row wraps; the steps and the scene picker get a line each. */
 .ss-stage.ss-cl[data-ws=narrow] > .ss-tabs.ss-toprow { flex-wrap:wrap; row-gap:4px !important; border-radius:14px !important; }
@@ -468,7 +476,7 @@ const CSS = `
 .ss-stage.ss-cl[data-ws=narrow] .ss-tabs.ss-toprow > .ss-pipe { order:5; flex:1 1 100%; flex-wrap:wrap; }
 .ss-stage.ss-cl[data-ws=narrow] .ss-tabs.ss-toprow > .ss-topscene { order:6; flex:1 1 100%; border-left:0; padding-left:0; }
 .ss-stage.ss-cl[data-ws=narrow] .ss-tabs.ss-toprow > .ss-brand { margin-right:auto; }
-.ss-stage.ss-cl[data-ws=narrow] .ss-tabs.ss-toprow > .ss-toolsmenu { width:min(310px, 100%); }
+:is(.ss-stage.ss-cl[data-ws=narrow] .ss-tabs.ss-toprow, .ss-stage.ss-cl.ss-pophost[data-ws=narrow]) > .ss-toolsmenu { width:min(310px, 100%); }
 
 /* The timeline: a bar over the bottom of the canvas. Folded: playhead and transport; "Tracks" opens the rows. */
 .ss-stage.ss-cl[data-ws=wide] .ss-ws { grid-template-areas:"center" !important; grid-template-rows:minmax(0,1fr) !important; }

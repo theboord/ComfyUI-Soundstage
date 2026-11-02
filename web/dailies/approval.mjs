@@ -14,6 +14,7 @@
 // Host (initApprovals): props() -> the object holding ss_approvals and ss_scene_desc (node.properties; without a host
 // an in-memory object), save() after a change, getRenders(shotId) -> anything takesFor accepts,
 // onRedo(shotId, take, step, note) for "Redo" on a take that needs changes (step "frame" or "motion").
+import { placePopover } from "../ui/popover.mjs";
 import { takesFor, takeKey, getTakeStatus, withTakeStatus, shotStatus, normStatus, STATUS_META, KIND_LABEL } from "./model.mjs";
 
 const mem = {};
@@ -261,10 +262,12 @@ export function openReview(anchor, shotId, take, label = null) {
   note.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { note.blur(); closeReview(); } });
   for (const ev of ["pointerdown", "wheel", "keydown"]) pop.addEventListener(ev, (e) => { if (!(ev === "keydown" && e.key === "Escape")) e.stopPropagation(); });
   document.body.append(pop);
-  const r = anchor.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
-  const left = Math.max(8, Math.min(innerWidth - pw - 8, r.right - pw + 12));
-  const top = r.bottom + 6 + ph < innerHeight ? r.bottom + 6 : Math.max(8, r.top - ph - 6);
-  pop.style.left = `${left}px`; pop.style.top = `${top}px`;
+  // below its badge (above when there is no room), clamped to the window, scrolling in a short one (ui/popover.mjs)
+  const r = anchor.getBoundingClientRect();
+  const at = placePopover({ left: r.left, top: r.top, right: r.right + 12, bottom: r.bottom }, { width: pop.offsetWidth, height: pop.offsetHeight },
+    { width: innerWidth, height: innerHeight }, { align: "end", gap: 6 });
+  pop.style.left = `${at.left}px`; pop.style.top = `${at.top}px`; pop.style.maxHeight = `${at.maxHeight}px`;
+  if (at.scrolls) pop.style.overflow = "auto";
   const away = (e) => { if (!pop.contains(e.target) && e.target !== anchor) { if (note.value !== takeStatus(shotId, take).note) note.dispatchEvent(new Event("change")); closeReview(); } };
   const key = (e) => { if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); if (note.value !== takeStatus(shotId, take).note) note.dispatchEvent(new Event("change")); closeReview(); } };
   document.addEventListener("pointerdown", away, true);

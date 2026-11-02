@@ -33,6 +33,7 @@ import { takesFor, heroTake, setupLabel, sceneShots, setupKind, SETUP_KIND_LABEL
 import { approvalBadge, statusOf, onApprovalsChange, sceneDescription, setSceneDescription } from "./approval.mjs";
 import { LinedScript } from "./lined.mjs";
 import { icon as lucide } from "../ui/icons.mjs";
+import { openPopover } from "../ui/popover.mjs";
 
 const h = (tag, attrs = {}, ...kids) => {
   const e = document.createElement(tag);
@@ -127,14 +128,14 @@ const STYLE = `
 .ss-dailies .dl-size input { width:110px; accent-color:var(--dl-accent); }
 .ss-dailies .dl-grow { flex:1; }
 .ss-dailies .dl-tip { color:var(--dl-faint); font-size:12px; }
-.ss-dailies .dl-menuwrap { position:relative; }
-.ss-dailies .dl-menu { position:absolute; z-index:40; top:calc(100% + 6px); left:0; min-width:230px; padding:5px; border-radius:12px;
+:is(.ss-dailies, .ss-pophost) .dl-menuwrap { position:relative; }
+:is(.ss-dailies, .ss-pophost) .dl-menu { position:absolute; z-index:40; top:calc(100% + 6px); left:0; min-width:230px; padding:5px; border-radius:12px;
   background:#2a2330; border:1px solid var(--dl-line2); box-shadow:0 18px 48px rgba(0,0,0,.55); display:flex; flex-direction:column; }
-.ss-dailies .dl-menu[hidden] { display:none; }
-.ss-dailies .dl-menu button { display:flex; flex-direction:column; align-items:flex-start; gap:1px; text-align:left; width:100%;
+:is(.ss-dailies, .ss-pophost) .dl-menu[hidden] { display:none; }
+:is(.ss-dailies, .ss-pophost) .dl-menu button { display:flex; flex-direction:column; align-items:flex-start; gap:1px; text-align:left; width:100%;
   background:transparent !important; border:0 !important; border-radius:8px !important; padding:7px 10px !important; color:var(--dl-text) !important; }
-.ss-dailies .dl-menu button:hover, .ss-dailies .dl-menu button:focus-visible { background:rgba(242,255,89,.12) !important; outline:none !important; }
-.ss-dailies .dl-menu button small { color:var(--dl-faint); font-size:11.5px; }
+:is(.ss-dailies, .ss-pophost) .dl-menu button:hover, :is(.ss-dailies, .ss-pophost) .dl-menu button:focus-visible { background:rgba(242,255,89,.12) !important; outline:none !important; }
+:is(.ss-dailies, .ss-pophost) .dl-menu button small { color:var(--dl-faint); font-size:11.5px; }
 
 /* Frame view */
 .ss-dailies .dl-body { position:relative; min-height:0; flex:1 1 auto; display:flex; flex-direction:column; }
@@ -313,7 +314,7 @@ export class DailiesBin {
     this.el = h("section", { class: "ss-dailies", "aria-label": "Dailies bin" });
     guard(this.el);
     container.append(this.el);
-    this._onDocDown = (e) => { if (this.menu && !this.menu.hidden && !e.target.closest?.(".dl-menuwrap")) this._closeMenu(); };
+    this._onDocDown = (e) => { if (this.menu && !this.menu.hidden && !e.target.closest?.(".dl-menuwrap") && !this.menu.contains(e.target)) this._closeMenu(); };
     document.addEventListener("pointerdown", this._onDocDown, true);
     this._ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => this._sizePlane()) : null;
     // A status changed anywhere (here, ④ Frame, ⑤ Motion): redraw, keeping the scroll and the focus.
@@ -535,8 +536,16 @@ export class DailiesBin {
     return h("div", { class: "dl-menuwrap" }, this.menuBtn, this.menu);
   }
 
-  _openMenu() { this.menu.hidden = false; this.menuBtn.setAttribute("aria-expanded", "true"); this.menu.querySelector("button")?.focus(); }
-  _closeMenu() { if (!this.menu) return; this.menu.hidden = true; this.menuBtn?.setAttribute("aria-expanded", "false"); }
+  /** Arrange ▾ opens in the App's pop-over layer (ui/popover.mjs): flipped and clamped to the window. */
+  _openMenu() {
+    this._pop = openPopover(this.menu, { anchor: this.menuBtn, owner: this.menuBtn, align: "start", gap: 6, name: "dailies-arrange",
+      focus: "first", onClose: () => { this._pop = null; } });
+  }
+  _closeMenu() {
+    if (!this.menu) return;
+    if (this._pop) this._pop.close("api");
+    else { this.menu.hidden = true; this.menuBtn?.setAttribute("aria-expanded", "false"); }
+  }
 
   // ---------------------------------------------------------------- frame view
 

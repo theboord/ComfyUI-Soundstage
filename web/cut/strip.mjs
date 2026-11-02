@@ -7,6 +7,7 @@
 import * as TL from "./timeline.mjs";
 import { framesToTC, fpsInfo, recordStart } from "./exporters.mjs";
 import { icon } from "../ui/icons.mjs";
+import { openPopover } from "../ui/popover.mjs";
 
 export const SETUP_PRESETS = [
   ["master", "Master"], ["wide", "Wide"], ["two_shot", "Two-shot"], ["ots_a", "Over-the-shoulder A"],
@@ -167,12 +168,12 @@ const CSS = `
 .ss-strip-play::before{content:"";position:absolute;top:0;left:-4px;border:5px solid transparent;border-top:6px solid var(--a)}
 .ss-strip-ins{position:absolute;top:10px;width:3px;height:50px;margin-left:-1.5px;background:var(--a);border-radius:2px;z-index:7;pointer-events:none}
 .ss-strip-empty{position:absolute;inset:12px 0 0 0;display:flex;align-items:center;justify-content:center;color:var(--mut);border:1px dashed var(--ln);border-radius:8px}
-.ss-strip-menu{position:absolute;z-index:20;min-width:190px;max-height:260px;overflow:auto;background:rgba(33,25,39,.97);border:1px solid rgba(255,255,255,.16);
-  border-radius:12px;padding:5px;box-shadow:0 16px 40px rgba(0,0,0,.6);backdrop-filter:blur(8px)}
-.ss-strip .ss-strip-menu button{display:flex !important;width:100%;justify-content:flex-start;background:transparent !important;border:1px solid transparent !important;
-  border-radius:8px !important;padding:5px 9px !important;gap:8px;color:var(--tx) !important;font-size:12px !important}
-.ss-strip .ss-strip-menu button:hover:not(:disabled){background:rgba(255,255,255,.07) !important}
-.ss-strip .ss-strip-menu button.ss-danger{color:var(--ss-danger,#ff7a7a) !important}
+.ss-strip-menu{min-width:190px;overflow:auto;background:rgba(33,25,39,.97);border:1px solid rgba(255,255,255,.16);
+  border-radius:12px;padding:5px;box-shadow:0 16px 40px rgba(0,0,0,.6);backdrop-filter:blur(8px);display:flex;flex-direction:column}
+:is(.ss-strip, .ss-pophost) .ss-strip-menu button{display:flex !important;width:100%;justify-content:flex-start;background:transparent !important;border:1px solid transparent !important;
+  border-radius:8px !important;padding:5px 9px !important;gap:8px;color:var(--tx) !important;font-size:12px !important;flex:none}
+:is(.ss-strip, .ss-pophost) .ss-strip-menu button:hover:not(:disabled), :is(.ss-strip, .ss-pophost) .ss-strip-menu button:focus-visible{background:rgba(255,255,255,.07) !important}
+:is(.ss-strip, .ss-pophost) .ss-strip-menu button.ss-danger{color:var(--ss-danger,#ff7a7a) !important}
 .ss-strip-menu hr{border:0;border-top:1px solid var(--ln);margin:4px 2px}
 .ss-strip-menu .ss-strip-mh{color:var(--mut);font-size:10px;text-transform:uppercase;letter-spacing:.08em;padding:4px 9px 2px}
 `;
@@ -344,6 +345,7 @@ export class ShotStrip {
 
   dispose() {
     this.stop();
+    this._closeMenu();
     clearInterval(this._poll);
     this._ro?.disconnect();
     this.root.remove();
@@ -469,7 +471,7 @@ export class ShotStrip {
       root.addEventListener(t, (e) => e.stopPropagation());
     }
     root.addEventListener("contextmenu", (e) => e.preventDefault());
-    root.addEventListener("pointerdown", (e) => { if (!e.target.closest(".ss-strip-menu")) this._closeMenu(); root.focus({ preventScroll: true }); });
+    root.addEventListener("pointerdown", (e) => { if (!e.target.closest(".ss-strip-menu") && !this._popOwner?.contains(e.target)) this._closeMenu(); root.focus({ preventScroll: true }); });
     root.addEventListener("keydown", (e) => this._onKey(e));
 
     const bar = h("div", "ss-strip-bar");
@@ -588,7 +590,7 @@ export class ShotStrip {
     const more = h("span", "ss-strip-more", { title: "More" });
     more.append(icon("sliders-horizontal", 12));
     more.addEventListener("pointerdown", (e) => { e.stopPropagation(); });
-    more.addEventListener("click", (e) => { e.stopPropagation(); this._clipMenu(Number(el.dataset.index), e); });
+    more.addEventListener("click", (e) => { e.stopPropagation(); this._clipMenu(Number(el.dataset.index), more); });
     const hl = h("span", "ss-strip-h l"), hr = h("span", "ss-strip-h r");
     el.append(c, h("span", "ss-strip-shade"), el._name, el._dur, el._dot, more, hl, hr);
     el.addEventListener("pointerdown", (e) => this._clipDown(e, el));
@@ -912,31 +914,40 @@ export class ShotStrip {
   // ------------------------------------------------------------------ menus
 
   _closeMenu() {
-    this.menu?.remove();
+    const pop = this._pop;
+    this._pop = null;
+    this._popOwner = null;
     this.menu = null;
+    pop?.close("api");
   }
 
+  /** A menu in the App's pop-over layer (document.body): never cut off by the scrolling box under the canvas. */
   _openMenu(items, anchor) {
+    const again = !!anchor && this._pop && this._popOwner === anchor;
     this._closeMenu();
-    const m = (this.menu = h("div", "ss-strip-menu"));
+    if (again) return;   // a second click on its button closes it
+    const m = (this.menu = h("div", "ss-strip-menu", { role: "menu" }));
     for (const it of items) {
       if (it === "-") { m.append(h("hr")); continue; }
       if (it.header) { m.append(h("div", "ss-strip-mh", { text: it.header })); continue; }
-      const b = h("button", it.danger ? "ss-danger" : "", { type: "button", title: it.title || "" });
+      const b = h("button", it.danger ? "ss-danger" : "", { type: "button", title: it.title || "", role: "menuitem" });
       if (it.icon) b.append(icon(it.icon, 14));
       b.append(document.createTextNode(it.label));
       b.disabled = !!it.disabled;
-      b.addEventListener("click", (e) => { e.stopPropagation(); this._closeMenu(); it.run(); this.root.focus({ preventScroll: true }); });
+      b.addEventListener("click", (e) => { e.stopPropagation(); this._closeMenu(); it.run(); this.root?.focus({ preventScroll: true }); });
       m.append(b);
     }
-    this.root.append(m);
-    const rr = this.root.getBoundingClientRect();
-    const ax = (anchor.clientX ?? anchor.getBoundingClientRect().left) - rr.left;
-    const left = Math.max(4, Math.min(rr.width - m.offsetWidth - 4, ax));
-    m.style.left = left + "px";
-    // open upward (the strip sits at the bottom of the node)
-    m.style.bottom = (rr.height - 4) + "px";
-    if (rr.top - m.offsetHeight < 0) { m.style.bottom = ""; m.style.top = "30px"; }
+    const isEvent = anchor && anchor.clientX != null && !anchor.getBoundingClientRect;
+    // the strip sits at the bottom of the canvas: menus open upward, flipping down when there is no room above
+    this._popOwner = isEvent ? null : anchor;
+    const pop = (this._pop = openPopover(m, {
+      anchor, side: "top", align: "start", name: "strip-menu", theme: this.root, focus: "first",
+      owner: isEvent ? null : anchor,
+      onClose: (why) => {
+        if (this._pop === pop) { this._pop = null; this._popOwner = null; this.menu = null; }
+        if (why === "escape") this.root?.focus({ preventScroll: true });
+      },
+    }));
   }
 
   _addMenu(anchorBtn) {
