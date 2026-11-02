@@ -7,7 +7,9 @@ https and forwards to the tunnel, with three locks so ComfyUI is never simply "o
 
   1. a pairing token: the QR code carries it once (?vk=...), the phone keeps it as a cookie; no token, no entry;
   2. an allow-list: only the viewfinder page, its WebSocket, its take and clip uploads and the read-only files the stage needs
-     (/extensions/<pack>/..., /view). /prompt, /queue, /api/userdata, /upload... are refused (403) even with the token;
+     (/extensions/<pack>/..., /view). /prompt, /queue, /api/userdata, /upload... are refused (403) even with the token.
+     One request per connection: only its declared body is forwarded, and the WebSocket turns into a raw pipe only
+     after ComfyUI answers 101, so nothing can be pipelined behind an allowed request;
   3. it is LAN only (nothing is exposed to the internet) and runs only while this command runs (Ctrl-C stops it).
 
 Usage (on the Mac, with the tunnel up):
@@ -53,7 +55,7 @@ ALLOW = [
 ALLOW_METHODS = {"GET", "HEAD", "POST"}
 
 
-# ---------------------------------------------------------------- pure helpers (unit-tested: tests/test_vcam_bridge.py)
+# ---------------------------------------------------------------- pure helpers (unit-tested: tests/test_vcam_viewfinder.py; end to end: tests/test_vcam_bridge.py)
 
 def parse_head(raw):
     """b"GET /x?y HTTP/1.1\\r\\nHost: a\\r\\n\\r\\n" -> (method, target, version, [(name, value)]) or None."""
@@ -285,16 +287,122 @@ async def handle(reader, writer, cfg):
         await writer.drain()
         writer.close()
         return
+    out, upgrade = rewrite_head(method, target, version, headers)
+    length, why = body_length(headers, upgrade)
+    if length is None:
+        log(f"{peer[0]} {method} {target.split('?')[0]} -> refused ({why})")
+        status, reason = (411, "Length Required") if why == "chunked" else (400, "Bad Request")
+        writer.write(response(status, reason, f"{why}\n".encode(), [("Content-Type", "text/plain")]))
+        await writer.drain()
+        writer.close()
+        return
     try:
         up_r, up_w = await asyncio.open_connection(cfg["target_host"], cfg["target_port"])
     except Exception:
         writer.write(response(502, "Bad Gateway", b"The App is not reachable: is the SSH tunnel up?\n", [("Content-Type", "text/plain")]))
         writer.close()
         return
-    out, upgrade = rewrite_head(method, target, version, headers)
-    up_w.write(out)
-    await up_w.drain()
-    await asyncio.gather(pipe(reader, up_w), pipe(up_r, writer))
+    try:
+        up_w.write(out)
+        await up_w.drain()
+        if upgrade:
+            await relay_upgrade(reader, writer, up_r, up_w, log, peer)
+        else:
+            # One request, then its response. Only the declared body goes up: anything the phone sends after it (a
+            # pipelined second request) stays here, so the allow-list above is the only way in.
+            await asyncio.gather(copy_exactly(reader, up_w, length), pipe(up_r, writer))
+    except Exception:
+        pass
+    finally:
+        for w in (up_w, writer):
+            try:
+                w.close()
+            except Exception:
+                pass
+
+
+def body_length(headers, upgrade):
+    """(bytes of request body to forward, None) or (None, why). The bridge forwards exactly this many bytes and no more,
+    so it never has to understand a second request on the same connection. Chunked bodies are refused (the phone pages
+    always send a Content-Length); a WebSocket handshake carries no body."""
+    if header(headers, "transfer-encoding") is not None:
+        return None, "chunked"
+    lengths = {v.strip() for k, v in headers if k.lower() == "content-length"}
+    if not lengths:
+        return 0, None
+    if len(lengths) != 1:
+        return None, "content-length"
+    v = lengths.pop()
+    if not v.isdigit() or len(v) > 12:
+        return None, "content-length"
+    if upgrade and int(v):
+        return None, "body on upgrade"
+    return int(v), None
+
+
+async def copy_exactly(reader, writer, n):
+    """Copy exactly n bytes from reader to writer and leave whatever follows unread."""
+    while n > 0:
+        data = await reader.read(min(n, 65536))
+        if not data:                      # the phone hung up mid-body: let ComfyUI see the end too
+            writer.close()
+            break
+        n -= len(data)
+        writer.write(data)
+        await writer.drain()
+
+
+def upgrade_accepted(raw):
+    """Is the response head `raw` (without the final blank line) a 101 Switching Protocols with Upgrade: websocket?"""
+    head = parse_response_head(raw)
+    return bool(head) and head[0] == 101 and (header(head[2], "upgrade") or "").lower() == "websocket"
+
+
+def parse_response_head(raw):
+    """b"HTTP/1.1 101 Switching Protocols\\r\\nUpgrade: websocket" -> (101, "Switching Protocols", [(name, value)]) or None."""
+    try:
+        lines = raw.decode("latin-1").split("\r\n")
+    except Exception:
+        return None
+    parts = lines[0].split(" ", 2)
+    if len(parts) < 2 or not parts[0].startswith("HTTP/1.") or not parts[1].isdigit() or len(parts[1]) != 3:
+        return None
+    hdrs = []
+    for ln in lines[1:]:
+        if ":" in ln:
+            k, v = ln.split(":", 1)
+            hdrs.append((k.strip(), v.strip()))
+    return int(parts[1]), (parts[2] if len(parts) > 2 else ""), hdrs
+
+
+async def relay_upgrade(reader, writer, up_r, up_w, log, peer):
+    """The vcam WebSocket. Raw two-way piping starts only after ComfyUI answers 101 Switching Protocols with
+    Upgrade: websocket. Any other answer (a broken handshake gets a 400 on a connection ComfyUI keeps open) is relayed
+    as one response and both sides are closed, so nothing the phone sent after the handshake reaches ComfyUI."""
+    try:
+        raw = await asyncio.wait_for(up_r.readuntil(b"\r\n\r\n"), timeout=15)
+    except Exception:
+        writer.write(response(502, "Bad Gateway", b"no answer to the WebSocket handshake\n", [("Content-Type", "text/plain")]))
+        await writer.drain()
+        return
+    if len(raw) <= MAX_HEAD and upgrade_accepted(raw[:-4]):
+        writer.write(raw)
+        await writer.drain()
+        await asyncio.gather(pipe(reader, up_w), pipe(up_r, writer))
+        return
+    head = parse_response_head(raw[:-4]) if len(raw) <= MAX_HEAD else None
+    status, reason, hdrs = head if head and head[0] != 101 else (502, "Bad Gateway", [])
+    body = b""
+    n = header(hdrs, "content-length")
+    if n and n.isdigit():
+        try:
+            body = await asyncio.wait_for(up_r.readexactly(min(int(n), 65536)), timeout=5)
+        except Exception:
+            body = b""
+    log(f"{peer[0]} WebSocket handshake not accepted upstream ({status}): one response, connection closed")
+    ctype = header(hdrs, "content-type")
+    writer.write(response(status, reason or "Error", body, [("Content-Type", ctype)] if ctype else ()))
+    await writer.drain()
 
 
 async def serve_ca(reader, writer, cfg):
