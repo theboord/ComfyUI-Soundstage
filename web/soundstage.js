@@ -15,6 +15,7 @@ import { LookPanel } from "./look/look.mjs";
 import { SceneAgent, loadScene } from "./agent/agent.mjs";
 import { CutPanel, savedFields } from "./cut/cut.mjs";
 import { makeAudioGenerator, makeAudioUploader } from "./cut/gen.mjs";
+import { makeTransitionGenerator } from "./cut/gentransitions.mjs";
 import { ShotStrip, readSaved } from "./cut/strip.mjs";
 import { CanvasPanel } from "./canvas/canvas.mjs";
 import { CameraViz, PipViewer, TopView } from "./stage/camviz.mjs";
@@ -591,6 +592,7 @@ function createStageWidget(node, inputName) {
       } catch { return null; }
     },
     generateAudio: makeAudioGenerator(api, { shotId: () => stage.activeShot?.()?.id || "cut" }),
+    generateTransition: makeTransitionGenerator(api),   // generative transitions (web/cut/gentransitions.mjs)
     uploadAudio: makeAudioUploader(api),
     // Milestone 21: impact sounds on A2 for the stage's baked hits (soundstage/cut/impact_sfx.py).
     impactCues: async () => {

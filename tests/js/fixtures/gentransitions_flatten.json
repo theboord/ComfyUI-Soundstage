@@ -1,0 +1,760 @@
+{
+ "_doc": "Shared by tests/test_gentransitions.py and tests/js/gentransitions.test.mjs: status of each bridge and the flattened cut.",
+ "cases": [
+  {
+   "name": "ready",
+   "project": {
+    "name": "t",
+    "fps": 24,
+    "width": 1920,
+    "height": 1080,
+    "shots": [
+     {
+      "id": "a",
+      "name": "A",
+      "frames": 120,
+      "renders": {
+       "draft": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      }
+     },
+     {
+      "id": "b",
+      "name": "B",
+      "frames": 100,
+      "renders": {
+       "final": "/view?filename=b_final.mp4&subfolder=renders&type=output",
+       "draft": "/view?filename=b_draft.mp4&subfolder=renders&type=output"
+      }
+     },
+     {
+      "id": "c",
+      "name": "C",
+      "frames": 50,
+      "renders": {}
+     }
+    ],
+    "cut": [
+     {
+      "shot_id": "a",
+      "in": 0,
+      "out": 60
+     },
+     {
+      "shot_id": "b",
+      "in": 10,
+      "out": 80,
+      "trans": {
+       "type": "dissolve",
+       "frames": 12
+      }
+     }
+    ],
+    "gen_transitions": [
+     {
+      "id": "g1",
+      "style": "smoke",
+      "from": "a",
+      "to": "b",
+      "occ": 0,
+      "pre": 12,
+      "post": 13,
+      "url": "/view?filename=bridge_smoke_00001_.mp4&subfolder=soundstage_private/gentrans&type=output",
+      "rendered_frames": 25,
+      "a": {
+       "frame": 48,
+       "media": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      },
+      "b": {
+       "frame": 22,
+       "media": "/view?filename=b_final.mp4&subfolder=renders&type=output"
+      }
+     }
+    ]
+   },
+   "status": [
+    "ready"
+   ],
+   "cut": [
+    {
+     "shot_id": "a",
+     "in": 0,
+     "out": 48
+    },
+    {
+     "shot_id": "gt_g1",
+     "in": 0,
+     "out": 25
+    },
+    {
+     "shot_id": "b",
+     "in": 23,
+     "out": 80
+    }
+   ]
+  },
+  {
+   "name": "planned",
+   "project": {
+    "name": "t",
+    "fps": 24,
+    "width": 1920,
+    "height": 1080,
+    "shots": [
+     {
+      "id": "a",
+      "name": "A",
+      "frames": 120,
+      "renders": {
+       "draft": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      }
+     },
+     {
+      "id": "b",
+      "name": "B",
+      "frames": 100,
+      "renders": {
+       "final": "/view?filename=b_final.mp4&subfolder=renders&type=output",
+       "draft": "/view?filename=b_draft.mp4&subfolder=renders&type=output"
+      }
+     },
+     {
+      "id": "c",
+      "name": "C",
+      "frames": 50,
+      "renders": {}
+     }
+    ],
+    "cut": [
+     {
+      "shot_id": "a",
+      "in": 0,
+      "out": 60
+     },
+     {
+      "shot_id": "b",
+      "in": 10,
+      "out": 80,
+      "trans": {
+       "type": "dissolve",
+       "frames": 12
+      }
+     }
+    ],
+    "gen_transitions": [
+     {
+      "id": "g1",
+      "style": "smoke",
+      "from": "a",
+      "to": "b",
+      "occ": 0,
+      "pre": 12,
+      "post": 13,
+      "rendered_frames": 25,
+      "a": {
+       "frame": 48,
+       "media": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      },
+      "b": {
+       "frame": 22,
+       "media": "/view?filename=b_final.mp4&subfolder=renders&type=output"
+      }
+     }
+    ]
+   },
+   "status": [
+    "planned"
+   ],
+   "cut": [
+    {
+     "shot_id": "a",
+     "in": 0,
+     "out": 60
+    },
+    {
+     "shot_id": "b",
+     "in": 10,
+     "out": 80,
+     "trans": {
+      "type": "dissolve",
+      "frames": 12
+     }
+    }
+   ]
+  },
+  {
+   "name": "stale_trim",
+   "project": {
+    "name": "t",
+    "fps": 24,
+    "width": 1920,
+    "height": 1080,
+    "shots": [
+     {
+      "id": "a",
+      "name": "A",
+      "frames": 120,
+      "renders": {
+       "draft": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      }
+     },
+     {
+      "id": "b",
+      "name": "B",
+      "frames": 100,
+      "renders": {
+       "final": "/view?filename=b_final.mp4&subfolder=renders&type=output",
+       "draft": "/view?filename=b_draft.mp4&subfolder=renders&type=output"
+      }
+     },
+     {
+      "id": "c",
+      "name": "C",
+      "frames": 50,
+      "renders": {}
+     }
+    ],
+    "cut": [
+     {
+      "shot_id": "a",
+      "in": 0,
+      "out": 58
+     },
+     {
+      "shot_id": "b",
+      "in": 10,
+      "out": 80,
+      "trans": {
+       "type": "dissolve",
+       "frames": 12
+      }
+     }
+    ],
+    "gen_transitions": [
+     {
+      "id": "g1",
+      "style": "smoke",
+      "from": "a",
+      "to": "b",
+      "occ": 0,
+      "pre": 12,
+      "post": 13,
+      "url": "/view?filename=bridge_smoke_00001_.mp4&subfolder=soundstage_private/gentrans&type=output",
+      "rendered_frames": 25,
+      "a": {
+       "frame": 48,
+       "media": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      },
+      "b": {
+       "frame": 22,
+       "media": "/view?filename=b_final.mp4&subfolder=renders&type=output"
+      }
+     }
+    ]
+   },
+   "status": [
+    "stale"
+   ],
+   "cut": [
+    {
+     "shot_id": "a",
+     "in": 0,
+     "out": 58
+    },
+    {
+     "shot_id": "b",
+     "in": 10,
+     "out": 80,
+     "trans": {
+      "type": "dissolve",
+      "frames": 12
+     }
+    }
+   ]
+  },
+  {
+   "name": "stale_new_render",
+   "project": {
+    "name": "t",
+    "fps": 24,
+    "width": 1920,
+    "height": 1080,
+    "shots": [
+     {
+      "id": "a",
+      "name": "A",
+      "frames": 120,
+      "renders": {
+       "draft": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      }
+     },
+     {
+      "id": "b",
+      "name": "B",
+      "frames": 100,
+      "renders": {
+       "final": "/view?filename=b_final_v2.mp4&subfolder=renders&type=output",
+       "draft": "/view?filename=b_draft.mp4&subfolder=renders&type=output"
+      }
+     },
+     {
+      "id": "c",
+      "name": "C",
+      "frames": 50,
+      "renders": {}
+     }
+    ],
+    "cut": [
+     {
+      "shot_id": "a",
+      "in": 0,
+      "out": 60
+     },
+     {
+      "shot_id": "b",
+      "in": 10,
+      "out": 80,
+      "trans": {
+       "type": "dissolve",
+       "frames": 12
+      }
+     }
+    ],
+    "gen_transitions": [
+     {
+      "id": "g1",
+      "style": "smoke",
+      "from": "a",
+      "to": "b",
+      "occ": 0,
+      "pre": 12,
+      "post": 13,
+      "url": "/view?filename=bridge_smoke_00001_.mp4&subfolder=soundstage_private/gentrans&type=output",
+      "rendered_frames": 25,
+      "a": {
+       "frame": 48,
+       "media": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      },
+      "b": {
+       "frame": 22,
+       "media": "/view?filename=b_final.mp4&subfolder=renders&type=output"
+      }
+     }
+    ]
+   },
+   "status": [
+    "stale"
+   ],
+   "cut": [
+    {
+     "shot_id": "a",
+     "in": 0,
+     "out": 60
+    },
+    {
+     "shot_id": "b",
+     "in": 10,
+     "out": 80,
+     "trans": {
+      "type": "dissolve",
+      "frames": 12
+     }
+    }
+   ]
+  },
+  {
+   "name": "too_short",
+   "project": {
+    "name": "t",
+    "fps": 24,
+    "width": 1920,
+    "height": 1080,
+    "shots": [
+     {
+      "id": "a",
+      "name": "A",
+      "frames": 120,
+      "renders": {
+       "draft": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      }
+     },
+     {
+      "id": "b",
+      "name": "B",
+      "frames": 100,
+      "renders": {
+       "final": "/view?filename=b_final.mp4&subfolder=renders&type=output",
+       "draft": "/view?filename=b_draft.mp4&subfolder=renders&type=output"
+      }
+     },
+     {
+      "id": "c",
+      "name": "C",
+      "frames": 50,
+      "renders": {}
+     }
+    ],
+    "cut": [
+     {
+      "shot_id": "a",
+      "in": 0,
+      "out": 20
+     },
+     {
+      "shot_id": "b",
+      "in": 10,
+      "out": 80,
+      "trans": {
+       "type": "dissolve",
+       "frames": 12
+      }
+     }
+    ],
+    "gen_transitions": [
+     {
+      "id": "g1",
+      "style": "smoke",
+      "from": "a",
+      "to": "b",
+      "occ": 0,
+      "pre": 12,
+      "post": 13,
+      "url": "/view?filename=bridge_smoke_00001_.mp4&subfolder=soundstage_private/gentrans&type=output",
+      "rendered_frames": 25,
+      "a": {
+       "frame": 8,
+       "media": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      },
+      "b": {
+       "frame": 22,
+       "media": "/view?filename=b_final.mp4&subfolder=renders&type=output"
+      }
+     }
+    ]
+   },
+   "status": [
+    "stale"
+   ],
+   "cut": [
+    {
+     "shot_id": "a",
+     "in": 0,
+     "out": 20
+    },
+    {
+     "shot_id": "b",
+     "in": 10,
+     "out": 80,
+     "trans": {
+      "type": "dissolve",
+      "frames": 12
+     }
+    }
+   ]
+  },
+  {
+   "name": "lost",
+   "project": {
+    "name": "t",
+    "fps": 24,
+    "width": 1920,
+    "height": 1080,
+    "shots": [
+     {
+      "id": "a",
+      "name": "A",
+      "frames": 120,
+      "renders": {
+       "draft": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      }
+     },
+     {
+      "id": "b",
+      "name": "B",
+      "frames": 100,
+      "renders": {
+       "final": "/view?filename=b_final.mp4&subfolder=renders&type=output",
+       "draft": "/view?filename=b_draft.mp4&subfolder=renders&type=output"
+      }
+     },
+     {
+      "id": "c",
+      "name": "C",
+      "frames": 50,
+      "renders": {}
+     }
+    ],
+    "cut": [
+     {
+      "shot_id": "a",
+      "in": 0,
+      "out": 60
+     },
+     {
+      "shot_id": "b",
+      "in": 10,
+      "out": 80,
+      "trans": {
+       "type": "dissolve",
+       "frames": 12
+      }
+     }
+    ],
+    "gen_transitions": [
+     {
+      "id": "g1",
+      "style": "smoke",
+      "from": "a",
+      "to": "c",
+      "occ": 0,
+      "pre": 12,
+      "post": 13,
+      "url": "/view?filename=bridge_smoke_00001_.mp4&subfolder=soundstage_private/gentrans&type=output",
+      "rendered_frames": 25,
+      "a": {
+       "frame": 48,
+       "media": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      },
+      "b": {
+       "frame": 22,
+       "media": "/view?filename=b_final.mp4&subfolder=renders&type=output"
+      }
+     }
+    ]
+   },
+   "status": [
+    "lost"
+   ],
+   "cut": [
+    {
+     "shot_id": "a",
+     "in": 0,
+     "out": 60
+    },
+    {
+     "shot_id": "b",
+     "in": 10,
+     "out": 80,
+     "trans": {
+      "type": "dissolve",
+      "frames": 12
+     }
+    }
+   ]
+  },
+  {
+   "name": "stale_length",
+   "project": {
+    "name": "t",
+    "fps": 24,
+    "width": 1920,
+    "height": 1080,
+    "shots": [
+     {
+      "id": "a",
+      "name": "A",
+      "frames": 120,
+      "renders": {
+       "draft": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      }
+     },
+     {
+      "id": "b",
+      "name": "B",
+      "frames": 100,
+      "renders": {
+       "final": "/view?filename=b_final.mp4&subfolder=renders&type=output",
+       "draft": "/view?filename=b_draft.mp4&subfolder=renders&type=output"
+      }
+     },
+     {
+      "id": "c",
+      "name": "C",
+      "frames": 50,
+      "renders": {}
+     }
+    ],
+    "cut": [
+     {
+      "shot_id": "a",
+      "in": 0,
+      "out": 60
+     },
+     {
+      "shot_id": "b",
+      "in": 10,
+      "out": 80,
+      "trans": {
+       "type": "dissolve",
+       "frames": 12
+      }
+     }
+    ],
+    "gen_transitions": [
+     {
+      "id": "g1",
+      "style": "smoke",
+      "from": "a",
+      "to": "b",
+      "occ": 0,
+      "pre": 12,
+      "post": 13,
+      "url": "/view?filename=bridge_smoke_00001_.mp4&subfolder=soundstage_private/gentrans&type=output",
+      "rendered_frames": 33,
+      "a": {
+       "frame": 48,
+       "media": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      },
+      "b": {
+       "frame": 22,
+       "media": "/view?filename=b_final.mp4&subfolder=renders&type=output"
+      }
+     }
+    ]
+   },
+   "status": [
+    "stale"
+   ],
+   "cut": [
+    {
+     "shot_id": "a",
+     "in": 0,
+     "out": 60
+    },
+    {
+     "shot_id": "b",
+     "in": 10,
+     "out": 80,
+     "trans": {
+      "type": "dissolve",
+      "frames": 12
+     }
+    }
+   ]
+  },
+  {
+   "name": "two_bridges_second_occurrence",
+   "project": {
+    "name": "t2",
+    "fps": 24,
+    "width": 1920,
+    "height": 1080,
+    "shots": [
+     {
+      "id": "a",
+      "name": "A",
+      "frames": 120,
+      "renders": {
+       "draft": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      }
+     },
+     {
+      "id": "b",
+      "name": "B",
+      "frames": 100,
+      "renders": {
+       "look": "/view?filename=b_look.png&subfolder=renders&type=output"
+      }
+     }
+    ],
+    "cut": [
+     {
+      "shot_id": "a",
+      "in": 0,
+      "out": 40
+     },
+     {
+      "shot_id": "b",
+      "in": 0,
+      "out": 40
+     },
+     {
+      "shot_id": "a",
+      "in": 40,
+      "out": 80
+     },
+     {
+      "shot_id": "b",
+      "in": 40,
+      "out": 80
+     }
+    ],
+    "gen_transitions": [
+     {
+      "id": "x1",
+      "style": "whip_pan",
+      "from": "b",
+      "to": "a",
+      "occ": 0,
+      "pre": 8,
+      "post": 9,
+      "url": "/view?filename=x1.mp4&subfolder=renders&type=output",
+      "rendered_frames": 17,
+      "a": {
+       "frame": 32,
+       "media": "/view?filename=b_look.png&subfolder=renders&type=output"
+      },
+      "b": {
+       "frame": 48,
+       "media": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      }
+     },
+     {
+      "id": "x2",
+      "style": "morph",
+      "from": "a",
+      "to": "b",
+      "occ": 1,
+      "pre": 9,
+      "post": 8,
+      "path": "soundstage_private/gentrans/x2.mp4",
+      "rendered_frames": 17,
+      "a": {
+       "frame": 71,
+       "media": "/view?filename=a_draft.mp4&subfolder=renders&type=output"
+      },
+      "b": {
+       "frame": 47,
+       "media": "/view?filename=b_look.png&subfolder=renders&type=output"
+      }
+     }
+    ]
+   },
+   "status": [
+    "ready",
+    "ready"
+   ],
+   "cut": [
+    {
+     "shot_id": "a",
+     "in": 0,
+     "out": 40
+    },
+    {
+     "shot_id": "b",
+     "in": 0,
+     "out": 32
+    },
+    {
+     "shot_id": "gt_x1",
+     "in": 0,
+     "out": 17
+    },
+    {
+     "shot_id": "a",
+     "in": 49,
+     "out": 71
+    },
+    {
+     "shot_id": "gt_x2",
+     "in": 0,
+     "out": 17
+    },
+    {
+     "shot_id": "b",
+     "in": 48,
+     "out": 80
+    }
+   ]
+  }
+ ]
+}

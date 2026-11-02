@@ -28,6 +28,7 @@ from .export import is_overlap, key_at, layout, normalize_project, sequence_fram
 from ..finish import PRESETS as FINISH, finish_graph
 from .mix import SR, _f2s, decode, render_mix, resolve_audio_path, write_wav24
 from .gfx import render_graphics
+from .gentransitions import flatten as _gen_transitions_flatten   # [gen-transitions hook]
 
 VIDEO_EXT = (".mp4", ".mov", ".webm", ".mkv", ".m4v")
 IMAGE_EXT = (".png", ".jpg", ".jpeg", ".webp")
@@ -317,7 +318,7 @@ def measure(path):
 def render_cut(project, roots, out_path, spec=None) -> dict:
     """Render the whole cut. roots: {"output": dir, "input": dir, "temp": dir} for /view URLs and relative paths."""
     spec = dict(spec or {})
-    p = normalize_project(project)
+    p = normalize_project(_gen_transitions_flatten(normalize_project(project)))   # [gen-transitions hook] bridges as clips
     rows = layout(p)
     if not rows:
         raise ValueError("the cut is empty")
@@ -555,5 +556,7 @@ def register(routes=None) -> bool:
     _impact_routes(routes)
     from .gfx_sfx import add_routes as _gfx_routes   # the V3 graphics' designed sounds for A2
     _gfx_routes(routes)
+    from .gentransitions_routes import add_routes as _gt_routes   # [gen-transitions hook] POST /soundstage/cut/gentransition
+    _gt_routes(routes)
     _REGISTERED = True
     return True

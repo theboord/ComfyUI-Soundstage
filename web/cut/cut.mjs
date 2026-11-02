@@ -12,6 +12,7 @@ import { openPopover } from "../ui/popover.mjs";
 import { sourceLine } from "../ui/sourcespec.mjs";
 import { impactClips, withImpactClips } from "./impactsfx.mjs";
 import * as GFX from "./gfx.mjs";
+import { GenTransitions } from "./gentransitions.mjs";   // [gen-transitions hook] web/cut/gentransitions.mjs
 
 /** A transport button's face: a Lucide icon (plus an optional speed like "2×"); the title names it for screen readers. */
 const face = (b, name, extra = "") => {
@@ -189,7 +190,7 @@ function scheduleEnvelope(param, a, off, when, rate) {
 /** The project fields the host should save (cut, sound, titles, subtitles, the tail fade). */
 export function savedFields(p) {
   const out = { cut: p.cut, audio: p.audio, audio_tracks: p.audio_tracks };
-  for (const k of ["titles", "subtitles", "fade_out", "burn_subtitles", "graphics"]) out[k] = p[k] ?? null;
+  for (const k of ["titles", "subtitles", "fade_out", "burn_subtitles", "graphics", "gen_transitions"]) out[k] = p[k] ?? null;   // [gen-transitions hook] saved
   return out;
 }
 
@@ -199,7 +200,7 @@ export class CutPanel {
    * @param {{getProject?: () => object, renderPreviewFrame?: (shotId: string, frame: number) => CanvasImageSource,
    *          onChange?: (project: object) => void}} host
    */
-  constructor(container, { getProject, renderPreviewFrame, onChange, onEditShot, getLining, generateAudio, uploadAudio, renderCut, impactCues, gfxSfx } = {}) {
+  constructor(container, { getProject, renderPreviewFrame, onChange, onEditShot, getLining, generateAudio, uploadAudio, renderCut, impactCues, gfxSfx, generateTransition } = {}) {
     this._onEditShot = onEditShot || null;   // "edit original": jump to the step that made a clip, then back
     // Milestone 19 host hooks (all optional): the ScriptSync lining for "Assemble scene", in-place audio generation,
     // importing a sound file, and the server render (POST /soundstage/cut/render).
@@ -252,6 +253,7 @@ export class CutPanel {
     this.finish = "off";   // Film Finish preset for renders (FX.FINISH_PRESETS)
 
     this._build(container);
+    this.gt = new GenTransitions(this, { generate: generateTransition || null, slot: this._gtSlot });   // [gen-transitions hook] generative transitions
     this._onSfx = (e) => {
       const d = e.detail;
       const clips = Array.isArray(d) ? d : d && Array.isArray(d.clips) ? d.clips : d ? [d] : [];
@@ -278,7 +280,7 @@ export class CutPanel {
       audio: Array.isArray(host.audio) ? host.audio : this.project.audio,
       audio_tracks: Array.isArray(host.audio_tracks) ? host.audio_tracks : this.project.audio_tracks,
       // Titles, subtitles and the tail fade: the host's when it has them, else the panel's own.
-      ...Object.fromEntries(["titles", "subtitles", "fade_out", "burn_subtitles", "graphics"].map((k) => [k, host[k] != null ? host[k] : this.project[k]])),
+      ...Object.fromEntries(["titles", "subtitles", "fade_out", "burn_subtitles", "graphics", "gen_transitions"].map((k) => [k, host[k] != null ? host[k] : this.project[k]])),   // [gen-transitions hook]
     });
     let assembled = false;
     if (!hostHasCut && !this.project.cut.length && p.shots.length) {
@@ -928,7 +930,7 @@ export class CutPanel {
   _snapshot() {
     const p = this.project;
     return { cut: p.cut, audio: p.audio, audio_tracks: p.audio_tracks, titles: p.titles, subtitles: p.subtitles, fade_out: p.fade_out,
-             burn_subtitles: p.burn_subtitles, graphics: p.graphics };
+             burn_subtitles: p.burn_subtitles, graphics: p.graphics, gen_transitions: p.gen_transitions };   // [gen-transitions hook]
   }
 
   undo() {
@@ -1089,6 +1091,7 @@ export class CutPanel {
       chip.addEventListener("pointerdown", (e) => this._fxDown(e, type));
       bar3.append(chip);
     }
+    this._gtSlot = bar3.appendChild(document.createElement("span"));   // [gen-transitions hook] the ✦ Generative chip
     this.b.keys = btn3(bar3, "Keys", "Rubber bands: click a clip's level / opacity line to add a key, drag keys, ⌥-click deletes one (R)", () => { this.keysMode = !this.keysMode; this._updateButtons(); this.requestDraw(); }, true);
     const sep3 = () => { const x = document.createElement("span"); x.className = "ss-cut-sep"; bar3.append(x); };
     sep3();
@@ -1352,7 +1355,7 @@ export class CutPanel {
     if (this.history.length > 200) this.history.shift();
     this.future = [];
     this.project = { ...this.project, cut, ...(audio ? { audio } : {}), ...(audio_tracks ? { audio_tracks } : {}) };
-    for (const k of ["titles", "subtitles", "fade_out", "burn_subtitles", "graphics"]) if (k in extra) this.project[k] = extra[k];
+    for (const k of ["titles", "subtitles", "fade_out", "burn_subtitles", "graphics", "gen_transitions"]) if (k in extra) this.project[k] = extra[k];   // [gen-transitions hook] undoable
     // Graphics moved (a sync-locked ripple moves each one by its start; its A2 cues rippled one by one with the audio,
     // so a graphic straddling the edit lost some of its sounds): rebuild their cues from where the graphics now are.
     if ("graphics" in extra && this._gfxLib) this.project.audio = this._gfxAudio(this.project);
@@ -1923,6 +1926,7 @@ export class CutPanel {
       if (pic?.dip) { pc.fillStyle = pic.dip.color === "white" ? `rgba(255,255,255,${pic.dip.amount})` : `rgba(0,0,0,${pic.dip.amount})`; pc.fillRect(0, 0, W, H); }
     }
     ctx.drawImage(this.pic, 0, 0);
+    this.gt?.drawViewer(ctx, f, W, H);   // [gen-transitions hook] a ready bridge plays over the cut
     this._drawGraphics(ctx, f, W, H);
     this._drawOverlays(ctx, f, W, H);
 
@@ -2311,6 +2315,8 @@ export class CutPanel {
       }
     }
 
+    this.gt?.drawTimeline(ctx, w);   // [gen-transitions hook] bridges on V1
+
     // trim highlight
     if (d && (d.mode === "trimIn" || d.mode === "trimOut" || d.mode === "roll")) {
       const r = rows[d.mode === "trimOut" ? d.idx : d.idx];
@@ -2696,6 +2702,7 @@ export class CutPanel {
     if (e.button !== 0) return;
     this.root.focus({ preventScroll: true });
     const { x, y } = this._local(e);
+    if (this.gt?.pointerDown(e, x, y)) return;   // [gen-transitions hook] select / drag a bridge's ends
     const hit = this._hit(x, y);
     this.tl.setPointerCapture(e.pointerId);
     if (hit.type === "header") {

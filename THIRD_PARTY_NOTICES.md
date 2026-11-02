@@ -12,6 +12,12 @@
 | Car, Police Car, Sports Car by Quaternius | `web/stage/models/*.glb` | CC0 1.0 (public domain), via [poly.pizza](https://poly.pizza/u/Quaternius) |
 | [three-avbd](https://github.com/sbobyn/three-avbd) 0.3.0 (GPU rigid bodies, Augmented Vertex Block Descent) by Steven Bobyn, which ports Chris Giles's avbd-demo3d | `web/vendor/three-avbd/` (built ES modules, renamed `.mjs`; the WebGPURenderer drawing path left out; modified: speculative contacts for fast and kinematic bodies in `avbd3d/gpu/wgsl-collision.mjs` and `wgsl-solve.mjs`, marked `[Soundstage patch]`) | MIT, see `web/vendor/three-avbd/LICENSE` and its `THIRD_PARTY_NOTICES.md` (avbd-demo3d: MIT, © 2025 Chris Giles) |
 
+## Adapted from
+
+| Component | What we took | License |
+|---|---|---|
+| [Seam](https://github.com/jdnichollsc/seam) by jdnichollsc | Generative transitions (`soundstage/cut/gentransitions.py`): the approach of filling a graph only through named slots (`[node_id, input]` maps traced from the graph), presets split into what happens, the camera and the sound, and some preset wording (Whip pan, Zoom through, Ink bleed, Morph and Water bend, and several camera and sound phrases), reworded for short bridges between two pictures. No Seam code, graph or media is included; the graph is the App's own Seamless-loop bridge | MIT, © 2026 jdnichollsc, see `soundstage/cut/SEAM_LICENSE.txt` |
+
 ## Used at runtime, installed separately (not vendored)
 
 | Component | Why | License |

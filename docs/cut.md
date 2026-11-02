@@ -18,6 +18,7 @@ stand-in with a relink note.
 | `web/cut/timeline.mjs` | Edit model, pure functions: picture edits, cut on action, audio clips, lanes, sync-lock ripple |
 | `web/cut/fx.mjs` | Transitions, keys, auto-duck, loudness, beats, assembly from the lining, subtitles (Milestone 19) |
 | `web/cut/gen.mjs` | Generate / import sound in place from the Cut editor |
+| `web/cut/gentransitions.mjs`, `soundstage/cut/gentransitions.py` | Generative transitions: a short LTX-2.5 bridge between two clips ([below](#generative-transitions)) |
 | `soundstage/cut/render.py` | Render the cut to MP4 / ProRes / 9:16 with transitions, titles and the mix at a loudness target |
 | `web/cut/exporters.mjs` | Browser-side exports: EDL, Avid locators, Premiere XML, FCPXML, OTIO, RELINK.txt |
 | `soundstage/cut/export.py` | Python twin of the two files above, byte for byte (the test diffs them) |
@@ -274,6 +275,109 @@ times stay contiguous, the Python and browser writers agree byte for byte).
 **For the director.** `CUT_ACTIONS` / `runCutAction(panel, name, args)` in `web/cut/cut.mjs` list and run every edit
 (split, ripple delete, trim, roll, slip, move, transition, keys, generate audio, auto-duck, beats, assemble,
 subtitles, titles, loudness, render). The panel is `node.ssCut`.
+
+## Generative transitions
+
+Code: `web/cut/gentransitions.mjs` (placement, the ✦ Generative chip, the bridge bar on V1, the viewer, the generator),
+`soundstage/cut/gentransitions.py` (styles, the slot-mapped graph, the render's flatten),
+`soundstage/cut/gentransitions_routes.py` (`POST /soundstage/cut/gentransition`). Tests:
+`tests/js/gentransitions.test.mjs`, `tests/test_gentransitions.py`, sharing `tests/js/fixtures/gentransitions_flatten.json`.
+
+### Known limits (read first)
+
+- **No bridge has been rendered on a GPU yet.** The graph is checked against the pod's `/object_info` snapshots and the
+  rest was tested headless; how each style looks is not known.
+- **The end can snap.** Frame 0 of a bridge is exactly A's picture (`LTXVImgToVideoInplace`); B's picture is only a
+  guide at the last index (`LTXVAddGuide`, frame_idx -1). On the Seamless-loop tests the last latent block jumped
+  toward the picture about 3 frames from the end ([loop.md](loop.md)). A bridge can show the same jump into B.
+- **Bridges are short.** They are 17 to 97 frames (0.7 to 4 s at 24 fps) and take under half of each clip. Seam
+  qualified its effects on 5 to 10 s takes. A 17-frame Smoke or Morph may not have room for its effect.
+- The viewer plays a bridge's picture only. Its own sound is heard in the render, not in the panel's preview.
+- Not yet in the NLE exports (EDL, XML, FCPXML, OTIO, AAF). They still show the plain cut, as does the director's
+  `CUT_ACTIONS` list. The MP4 / ProRes render has them.
+- A clip that is live clay (no render on disk) is captured from the stage when you press Render. If the stage changes
+  later, the bridge is not marked stale.
+- The anchor is "the n-th time A is followed by B". A splice that adds an earlier A → B edit moves the bridge onto
+  that edit. Its frames differ there, so it goes stale; it never plays on the wrong cut.
+- Opacity keys on B count from B's own first frame. After a bridge, the render starts B `post` frames later, so B's
+  opacity keys come `post` frames later in the render than in the panel.
+
+### Using it
+
+**✦ Generative** (next to the Transitions chips) opens the styles: Smoke, Water bend, Whip pan, Match cut, Light
+leak, Ink bleed, Zoom through, Morph. Picking one plans a bridge on the cut nearest the playhead. It shows as a
+hatched purple bar at the foot of V1 and in a **Bridge** row under the transition chips, with these controls:
+
+| Control | What it does |
+| --- | --- |
+| Style, Length | The effect, and the length in LTX steps (17, 25, 33 … frames; the seconds are shown) |
+| Words | Optional words added to the style's prompt, e.g. "the smoke is red" |
+| Draft / Final | Draft: 544 px, one pass. Final: the x2 latent upsampler and a 3-step refine with both pictures again |
+| sound | Keep the bridge's own generated sound in the render |
+| Render (GPU) | One prompt on the queue. When it finishes, the bridge is put in place (one undoable edit) |
+| ▶ Preview | Plays the bridge with a second of each clip around it |
+| Remove, ⌫ | Takes the bridge out (⌘Z brings it back) |
+
+Drag the white handles at either end of the bar to change the length. The other end stays where it is, and the
+length snaps to the next LTX length that fits. Every change is one undo step, like the panel's other edits.
+
+### How it sits in the cut
+
+A bridge on the edit from A into B covers record frames `[at - pre, at + post)`: A's last `pre` frames and B's first
+`post` frames. The cut keeps its length, so sound, titles and graphics stay where they are. It is rendered:
+
+- from **A's frame `A.out - pre`**, held exactly at bridge frame 0,
+- to **B's frame `B.in + post - 1`**, a guide at the last bridge frame,
+- at the project's frame rate, so each bridge frame is one record frame,
+
+so both ends of the bridge are the pictures it replaces. The pictures come from each clip's best render (Final ›
+Draft › Look). The route writes a video's frame once as a PNG under `input/soundstage_private/gentrans/`. Placing a
+bridge removes a dissolve, dip or wipe on that edit (in the same undo step).
+
+The bridge remembers the two frames, the two renders and its length. A trim, slip or roll that moves either frame, a
+new render of A or B, or a new length makes it **stale**: hatched orange, not played, not rendered, and the Bridge row
+says why. Render it again to bring it back. A bridge whose edit has gone (a clip removed) is **lost** and is not drawn.
+
+**Render:** `render_cut` first runs `flatten()`. Each ready bridge becomes a clip of its own between A (shortened by
+`pre`) and B (starting `post` later), with its video as that clip's Final. A stale or planned bridge leaves the cut as
+it was, including its own transition.
+
+### The graph
+
+It is the Seamless-loop bridge graph (`soundstage/loop/graphs.py` `loop()`) with no new nodes and no new models:
+SoundstageImageLoad ×2 → resize → `LTXVImgToVideoInplace` (A, frame 0) + `LTXVAddGuide` (B, frame_idx -1) → LTX-2.5
+distilled 8 steps (+ Final: x2 latent upsampler, both guides again, 3-step refine) → `LTXVCropGuides` → tiled decode
+and the audio VAE → CreateVideo → SaveVideo (`output/soundstage_private/gentrans/bridge_<style>_*.mp4`). The prompt
+asks the model to use the start and end pictures as the first and last frames. Each style adds its own words (what
+happens, the camera, the sound), and its negative adds what would spoil it. The loop's negative bans "dissolve, zoom,
+morphing", so the bridge does not use it.
+
+**Slots** (the approach, and some of the style wording, come from [Seam](https://github.com/jdnichollsc/seam), MIT;
+see THIRD_PARTY_NOTICES.md). The graph is built once per size,
+quality and sound setting as a template with a sentinel value in each slot. `trace_slots()` finds where each sentinel
+landed: `image_a`, `image_b`, `prompt`, `negative`, `seed`, `frames`, `fps`, `guide_last` and `prefix`, each a list
+of `[node_id, input]`. `fill()` then writes values through that map only. An unknown slot name raises an error, and
+so does a slot left unfilled. `missing_slots()` reports a template that has drifted.
+
+**Route:** `POST /soundstage/cut/gentransition {style, frames, fps, quality, seed, prompt, sound, a: {ref, frame},
+b: {ref, frame}}` returns `{prompt, frames, seconds, size, style, a, b}`. The App queues the prompt and reads the
+SaveVideo file from `/history`.
+
+**Project contract:**
+
+```jsonc
+"gen_transitions": [{ "id": "k3f9a2", "style": "smoke", "from": "sc1_master", "to": "sc1_ots_a", "occ": 0,
+                      "pre": 16, "post": 17, "prompt": "", "seed": 1234, "quality": "Draft", "sound": true,
+                      "url": "/view?...", "path": "soundstage_private/gentrans/bridge_smoke_00001_.mp4",
+                      "rendered_frames": 33,
+                      "a": { "frame": 44, "media": "/view?...a.mp4" }, "b": { "frame": 26, "media": "/view?...b.mp4" } }]
+```
+
+**Hooks in `web/cut/cut.mjs`** (each marked `[gen-transitions hook]`, ten lines): the import, the panel's
+`this.gt`, the chip's slot, `gen_transitions` in `savedFields` / `refresh` / `_commit` / `_snapshot` (so it is saved,
+restored and undone), and one call each in `_drawViewer`, `_drawTimeline` and `_tlDown`. The host passes
+`generateTransition: makeTransitionGenerator(api)` (`web/soundstage.js`). `render.py` has two hooks: the flatten and
+the route registration.
 
 ## Motion graphics on V3
 
