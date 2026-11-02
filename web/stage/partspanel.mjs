@@ -117,6 +117,7 @@ export class PartsPanel {
       hd.append(ak);
     }
     if (this.id !== "__camera__") hd.append(this._btn("chip", "Key all", withKeys("Key every part at the playhead", ["K"]), () => this.keyAll()));
+    if (!this.fixedId && this.stage.drive?.canDrive(this.id)) hd.append(this._btn("chip", "🎮 Drive", withKeys("Drive it like a video game (keys, mouse or a controller); ● REC records it as keys", ["D"]), () => this.stage.drive.start(this.id)));
     el.append(hd);
     const groups = new Map();
     for (const c of chans) { if (!groups.has(c.spec.group)) groups.set(c.spec.group, []); groups.get(c.spec.group).push(c); }
