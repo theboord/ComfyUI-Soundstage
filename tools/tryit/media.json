@@ -51,6 +51,18 @@
     {"src": "~/OpenHiggsfieldContest/share/Milestone16_TakeChecks/01_ladder_red_car_flagged.png", "out": "m_takecheck_flagged.jpg", "kind": "still"},
     {"src": "~/OpenHiggsfieldContest/share/Milestone16_TakeChecks/02_ladder_new_take_clean.png", "out": "m_takecheck_clean.jpg", "kind": "still"},
     {"src": "~/OpenHiggsfieldContest/share/Milestone16_TakeChecks/04_motion_run_estimates_ready.png", "out": "m_takecheck_ready.jpg", "kind": "still"},
-    {"src": "~/OpenHiggsfieldContest/share/Milestone16_TakeChecks/06_dailies_chips.png", "out": "m_takecheck_dailies.jpg", "kind": "still"}
+    {"src": "~/OpenHiggsfieldContest/share/Milestone16_TakeChecks/06_dailies_chips.png", "out": "m_takecheck_dailies.jpg", "kind": "still"},
+    {"src": "~/OpenHiggsfieldContest/share/Milestone22_Pitch/pitch_mode_live.mp4", "out": "m_pitch_live.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/Milestone22_Pitch/end_locked.png", "out": "m_pitch_locked.jpg", "kind": "still"},
+    {"src": "~/OpenHiggsfieldContest/share/Milestone22_Pitch/beat6_motion_draft.mp4", "out": "m_pitch_beat6.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/Milestone23_DirectorsBook/pdf_contact_sheet.png", "out": "m_book_pdf.jpg", "kind": "still"},
+    {"src": "~/OpenHiggsfieldContest/share/Milestone25_Performance/source_vs_result.mp4", "out": "m_perf_source_vs_result.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/Milestone25_Performance/result_final_hollywood.mp4", "out": "m_perf_final.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/Milestone26_FullControl/driving_the_new_controls.mp4", "out": "m_parts_controls.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/QA/round_07/m26_draft/draft.mp4", "out": "m_parts_door_draft.jpg", "kind": "frame0"},
+    {"src": "~/OpenHiggsfieldContest/share/HeroGIF_v3/final.mp4", "out": "m_hero_v3_final.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/HeroGIF_v3/clay_hero_v3.mp4", "out": "m_hero_v3_clay.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/Stunt_Dynamics/round2/draft/stuntdyn2_draft_00001_.mp4", "out": "m_stuntdyn_draft.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/Stunt_Dynamics/round2/clay/clay_r1_vs_r2_camB.mp4", "out": "m_stuntdyn_clay.mp4"}
   ]
 }

@@ -33,9 +33,50 @@ export function toolbarPos(box, canvas, bar, gap = 28, margin = 8) {   // gap cl
   let left = Math.round(cx - bar.w / 2);
   left = Math.max(margin, Math.min(canvas.w - bar.w - margin, left));
   let top = Math.round(box.y0 - gap - bar.h);
-  if (top < margin) top = Math.round(Math.min(canvas.h - bar.h - margin, box.y1 + gap));
+  if (top < margin) {
+    top = Math.round(box.y1 + gap);
+    // No room above or below (the object fills the view): the top edge, over the object, where a toolbar is expected,
+    // not the bottom edge on top of the playback row and the drop-a-video pill (QA round 07).
+    if (top + bar.h > canvas.h - margin) top = margin;
+  }
   return { left, top: Math.max(margin, top) };
 }
+
+/**
+ * The object's on-screen box from its 8 projected corners ([{x, y, behind}], px in the canvas), clipped to the canvas.
+ * Corners behind the camera are skipped, so a car filling a close camera view still gets a box (and its tool bar);
+ * null only when every corner is behind or the box is entirely off the canvas.
+ */
+export function screenBox(corners, canvas) {
+  const front = corners.filter((c) => !c.behind);
+  if (!front.length) return null;
+  let x0 = Math.min(...front.map((c) => c.x)), x1 = Math.max(...front.map((c) => c.x));
+  let y0 = Math.min(...front.map((c) => c.y)), y1 = Math.max(...front.map((c) => c.y));
+  if (front.length < corners.length) {   // part of the box is behind the camera: it runs off the canvas toward the camera
+    const cx = canvas.w / 2, cy = canvas.h / 2;
+    if ((x0 + x1) / 2 < cx) x0 = Math.min(x0, 0); else x1 = Math.max(x1, canvas.w);
+    if ((y0 + y1) / 2 < cy) y0 = Math.min(y0, 0); else y1 = Math.max(y1, canvas.h);
+  }
+  if (x1 < 0 || y1 < 0 || x0 > canvas.w || y0 > canvas.h) return null;
+  return { x0: Math.max(0, x0), y0: Math.max(0, y0), x1: Math.min(canvas.w, x1), y1: Math.min(canvas.h, y1) };
+}
+
+/**
+ * Keep the tool bar ({left, top, w, h}, canvas px) out from under floating panels (rects in canvas px): move it
+ * beside the panel (left first), else below it; unchanged when it doesn't overlap or there's nowhere free.
+ */
+export function avoidPanels(pos, bar, rects, canvas, margin = 8) {
+  const hit = (p) => rects.find((r) => p.left < r.x1 && p.left + bar.w > r.x0 && p.top < r.y1 && p.top + bar.h > r.y0);
+  const r = hit(pos);
+  if (!r) return pos;
+  const inside = (p) => p.left >= margin && p.top >= margin && p.left + bar.w <= canvas.w - margin && p.top + bar.h <= canvas.h - margin;
+  for (const p of [{ left: Math.round(r.x0 - bar.w - margin), top: pos.top }, { left: Math.round(r.x1 + margin), top: pos.top },
+    { left: pos.left, top: Math.round(r.y1 + margin) }]) if (inside(p) && !hit(p)) return p;
+  return pos;
+}
+
+/** Whether the yaw ring may grab a press: only while it is drawn, and not when a gizmo handle is under the cursor. */
+export const ringTakesPress = (ringVisible, gizmoAxis) => !!ringVisible && !gizmoAxis;
 
 export const TOOLS = [
   { mode: "translate", label: "Move", key: "G", icon: "move-3d" },
@@ -142,22 +183,28 @@ export class RotateTools {
     if (!bar) return;
     // The object's on-screen box.
     const r = s.canvas.getBoundingClientRect(), pr = s.canvas.parentElement.getBoundingClientRect();
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, behind = false;
+    // The shot camera moves with the frame (tracking, crane...) before the renderer refreshes its matrices: project with
+    // this frame's camera, not the last one (stale matrices put the box behind the camera and hid the bar).
+    cam.updateMatrixWorld();
+    const corners = [];
     const v = new THREE.Vector3();
     for (let i = 0; i < 8; i++) {
       v.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(cam);
-      if (v.z > 1) behind = true;
-      const x = ((v.x + 1) / 2) * r.width, y = ((1 - v.y) / 2) * r.height;
-      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+      corners.push({ x: ((v.x + 1) / 2) * r.width, y: ((1 - v.y) / 2) * r.height, behind: v.z > 1 });
     }
-    this._box = behind ? null : { x0, y0, x1, y1 };
-    const off = behind || x1 < 0 || y1 < 0 || x0 > r.width || y0 > r.height;
-    const hide = off || s._dragging || s.tc.dragging || !!this.drag || r.width < 260;
+    const sb = this._box = screenBox(corners, { w: r.width, h: r.height });
+    const hide = !sb || s._dragging || s.tc.dragging || !!this.drag || r.width < 260;
     bar.style.display = hide ? "none" : "flex";
     if (hide) return;
     for (const [m, b] of Object.entries(this.btns)) b.setAttribute("aria-pressed", String(m === s.gizmoMode));
     this.resetBtn.style.display = (t.a.rotation_deg || 0) !== 0 || t.a.tilt ? "flex" : "none";
-    const p = toolbarPos({ x0, y0, x1, y1 }, { w: r.width, h: r.height }, { w: bar.offsetWidth || 220, h: bar.offsetHeight || 32 });
+    const bw = bar.offsetWidth || 220, bh = bar.offsetHeight || 32;
+    // Floating panels and the pills over the canvas (view badge, drop a video, Coach): the bar sits beside them, not on them.
+    const host = s.canvas.closest(".ss-clarea") || s.canvas.parentElement;
+    const panels = [...host.querySelectorAll(".ss-phys:not([hidden]), .ss-viewbadge, .ss-vi-cta, .ss-coach-toggle")]
+      .map((e) => e.getBoundingClientRect()).filter((q) => q.width > 0)
+      .map((q) => ({ x0: q.left - r.left, y0: q.top - r.top, x1: q.right - r.left, y1: q.bottom - r.top }));
+    const p = avoidPanels(toolbarPos(sb, { w: r.width, h: r.height }, { w: bw, h: bh }), { w: bw, h: bh }, panels, { w: r.width, h: r.height });
     bar.style.left = `${r.left - pr.left + p.left}px`;
     bar.style.top = `${r.top - pr.top + p.top}px`;
   }
@@ -194,7 +241,9 @@ export class RotateTools {
     cv.addEventListener("pointerdown", (e) => {
       if (e.button !== 0 || this.drag) return;
       let t = this._target();
-      const p = t && this._onRing(e);
+      // The yaw ring only takes a press while it is drawn, and never from a gizmo handle under the cursor: in Rotate
+      // mode it is hidden, and a car's tilt circle runs right over where the ring was (a tilt drag turned the car).
+      const p = t && ringTakesPress(this.ring.visible, s.tc?.axis) && this._onRing(e);
       let kind = p ? "ring" : null;
       if (!kind && e.altKey) {
         // Alt + drag on an object turns it (the shortcut sheet's "Alt + Drag"), from the press, not only mid-hold.

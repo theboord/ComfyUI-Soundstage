@@ -27,6 +27,7 @@ const CSS = `
 .ss-parts .row { display:grid; grid-template-columns:78px minmax(0,1fr) 44px 16px 36px; gap:4px; align-items:center; padding:2px 0; }
 .ss-parts .row > select { grid-column:2 / 4; }
 .ss-parts .row > span { opacity:.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ss-parts .row > span:first-child { white-space:normal; overflow-wrap:anywhere; text-overflow:clip; line-height:1.15; }
 .ss-parts .row input[type=range] { width:100%; accent-color:#f2ff59; min-width:0; }
 .ss-parts .row select { width:100%; min-width:0; font:inherit; font-size:11px; background:rgba(255,255,255,.06); color:inherit;
   border:1px solid rgba(255,255,255,.14); border-radius:6px; padding:2px 4px; }
@@ -82,7 +83,9 @@ export class PartsPanel {
     const sig = `${id}|${chans.map((c) => c.ch).join(",")}`;
     this.id = id; this.name = name;
     this.el.hidden = !chans.length && !this._isPerson();
-    if (sig !== this._sig) { this._sig = sig; this._build(chans); }
+    // New rows always get their values: refresh() skips when the frame and the parts JSON are unchanged, and two
+    // untouched objects have the same parts JSON, so a crate then a car left the car's sliders mid-track (QA round 07).
+    if (sig !== this._sig) { this._sig = sig; this._build(chans); this.refresh(true); return; }
     this.refresh();
   }
 

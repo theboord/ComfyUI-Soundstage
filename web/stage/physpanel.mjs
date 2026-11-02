@@ -33,7 +33,9 @@ const CSS = `
 .ss-stage .ss-phys .ph-mat { display:grid; grid-template-columns:64px minmax(0,1fr); gap:6px; align-items:center; color:var(--ss-muted); }
 .ss-stage .ss-phys .ph-mat select { width:100%; min-width:0; }
 .ss-stage .ss-phys .ph-fx { display:grid; grid-template-columns:64px minmax(0,1fr); gap:6px; align-items:center; color:var(--ss-muted); }
-.ss-stage .ss-phys .ph-fx .ss-views button { white-space:nowrap; padding-left:4px !important; padding-right:4px !important; }`;
+.ss-stage .ss-phys .ph-fx .ss-views button { white-space:nowrap; padding-left:4px !important; padding-right:4px !important; }
+.ss-stage .ss-phys .ph-fx .ss-views { flex-wrap:wrap; row-gap:2px; min-width:0; }
+.ss-stage .ss-phys .ph-fx .ss-views button { flex:1 1 auto; }`;
 
 const MODES = [["dynamic", "Dynamic", "Falls, tumbles and gets knocked over"], ["static", "Static", "Stays put; things hit it and land on it"],
   ["off", "Off", "Ignored by the simulation"]];

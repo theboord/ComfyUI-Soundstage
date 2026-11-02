@@ -94,7 +94,9 @@ export function describeLighting(lighting, sun, cam) {
     "blue hour": "blue hour twilight", "dawn/dusk": "first light at the horizon", night: "night, cool moonlight",
     overcast: "soft overcast daylight" }[sky.phase];
   parts.push(phase);
-  if (sky.sun > 0 && cam) {
+  // At night the key is the moon (skyFor's sun > 0 with moon): no "low sun 0° above the horizon, 4100K warm sunlight"
+  // after "night, cool moonlight" (QA round 07: it put a sunset glow on the horizon of a night draft).
+  if (sky.sun > 0 && !sky.moon && cam) {
     // Where the sun comes from relative to the camera: front, side, back; left or right.
     const az = sun.azimuth_deg * D2R;
     const sunDir = new THREE.Vector3(Math.sin(az), 0, Math.cos(az));
