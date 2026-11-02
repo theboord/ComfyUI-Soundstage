@@ -319,7 +319,7 @@ export const ltxFrames = (n, tail = "trim") => {
  */
 export function followPrompt(api, { summary = queueSummary, every = 10000 } = {}) {
   const started = new Set();
-  let pid = null, ahead = null, timer = null;
+  let pid = null, ahead = null, timer = null, ranFrom = null;
   const on = (e) => {
     const d = e?.detail;
     const id = d?.prompt_id ?? (typeof d === "object" && d ? d.prompt_id : null);
@@ -341,7 +341,8 @@ export function followPrompt(api, { summary = queueSummary, every = 10000 } = {}
     ahead: () => ahead,
     started: (id) => started.has(id),
     text(doing, s) {
-      if (pid && started.has(pid)) return `${doing} ${s} s`;
+      // Once it runs, count from the start (a 40-minute wait in the queue is not 40 minutes of reading).
+      if (pid && started.has(pid)) { if (ranFrom == null) ranFrom = s; return `${doing} ${s - ranFrom} s`; }
       const n = ahead;
       return `Waiting in the queue${n != null ? ` (${n} job${n === 1 ? "" : "s"} ahead)` : ""}: the GPU is shared, your job starts when the card is free. ${s} s`;
     },
