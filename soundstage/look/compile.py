@@ -21,6 +21,7 @@ from .gaze import frame1_looks, head_beats
 from .identity import motion_identity, plain_word, still_identity
 from .impacts import impact_beats
 from .objstate import motion_beats, still_words
+from . import swim as SW
 from .vocab import load_vocab, normalize_look, option
 
 FRAME1_NEGATIVE = "extra people, crowd, duplicate figures, the same person twice"
@@ -240,6 +241,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         *brief_parts(look, still=True),
         shot,
         "; ".join(who),
+        SW.still_words(scene),                 # divers and swimmers: the kit, the regulator in the mouth (look/swim.py)
         "; ".join(frame1_looks(scene)),
         "" if legacy else still_identity(scene, {e["id"] for e in f1["people"] + f1["others"]}),   # which car is which
         lock["still"] if lock else "",
@@ -267,7 +269,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     no_people = n == 0 and not S.people_in_shot(scene)
     negative = _join([FRAME1_NEGATIVE + (", people, person, figure" if no_people else "") if n <= 3 else "extra people",
                       BASE_NEGATIVE, REAL_PEOPLE_NEG if n and real else "", facing_neg, NOTHING_EXTRA_NEG, vcam["negative"] if vcam else "", lock["negative"] if lock else "",
-                      *parts["negatives"], look.get("negative", "")])
+                      SW.negative_words(scene), *parts["negatives"], look.get("negative", "")])
     return _dedupe(prompt), _dedupe(negative)
 
 
@@ -457,6 +459,7 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
         _cap("; ".join(brief_parts(look))) + "." if brief_parts(look) else "",
         _marks_sentence(mf, {e["id"] for e in f1["people"] + f1["others"]}
                         if len(S.groups(f1["people"] + f1["others"], f1["camera"])) == 1 else None),
+        SW.motion_sentence(scene),               # the stroke, the exhaled bubbles, the drift (look/swim.py)
         # each vehicle's paint and livery for the whole shot: the clay guide carries none (look/identity.py)
         "" if scene.get("look_start") is False else motion_identity(scene, {e["id"] for e in f1["people"] + f1["others"]}),
         head_beats(scene),                       # head and gaze blocking: every person's head, beat by beat

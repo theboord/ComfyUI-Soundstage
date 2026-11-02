@@ -17,6 +17,8 @@ export const STUNT_KINDS = ["reverse_jturn", "donut", "handbrake_180"];
 export const PHYSICS_KINDS = ["crate_crash", "drop", "throw", "tarp_wind", "rope_bridge", "cardboard_crush", "sand_pile"];   // the last four: soft bodies (Milestone 28)
 /** Camera shake on impact (Milestone 21): the shot camera jolts with each baked hit. */
 export const SHAKE_KINDS = ["light", "heavy", "earthquake", "off"];
+/** Swim presets (web/stage/swim.mjs): under water (flutter, frog) or at the surface (freestyle, breaststroke). */
+export const SWIM_KINDS = ["flutter", "frog", "freestyle", "breaststroke"];
 export const RECIPE_STEPS = ["video_to_3d", "new_angle", "ripple_mode", "whole_frame", "quality_draft", "quality_hollywood",
   "render_all_draft", "render_final"];
 export const TRANSITION_TYPES = ["dissolve", "dip_black", "dip_white", "wipe"];
@@ -96,7 +98,7 @@ export function validateCatalog(cat) {
     } else if (p.tab === "look") {
       if (!a.look) errs.push(`${at}: look`);
     } else if (p.tab === "action") {
-      if (!(STUNT_KINDS.includes(a.stunt) || PHYSICS_KINDS.includes(a.physics) || SHAKE_KINDS.includes(a.shake) || a.mount)) errs.push(`${at}: no action`);
+      if (!(STUNT_KINDS.includes(a.stunt) || PHYSICS_KINDS.includes(a.physics) || SHAKE_KINDS.includes(a.shake) || a.mount || SWIM_KINDS.includes(a.swim))) errs.push(`${at}: no action`);
     } else if (p.tab === "edit") {
       const e = a.edit;
       if (!e) errs.push(`${at}: edit`);
@@ -305,6 +307,19 @@ export function editStyleCut(saved, edit, { fps = 24, styleId = null } = {}) {
 }
 
 // ------------------------------------------------------------------------------------------------ user presets
+
+/**
+ * A swim path: from `start` ([x, y, z], y = the floor under it) along `headingDeg` at `speed` m/s to the last frame.
+ * Under water the diver cruises `lift` m over the floor (the figure's origin; the hips are ~0.95 m higher) with a
+ * gentle rise and settle mid-shot (a diver's depth breathes); at the surface the keys sit on the floor and the stage
+ * floats them. Returns keys [{frame, position}].
+ */
+export function swimKeys(start, headingDeg, { speed = 0.5, last = 96, fps = 24, lift = 0.5, surface = false } = {}) {
+  const h = headingDeg * D2R, d = speed * last / fps, dir = [Math.sin(h), 0, Math.cos(h)];
+  const y = surface ? 0 : start[1] + lift;
+  const at = (u, dy = 0) => R3([start[0] + dir[0] * d * u, y + dy, start[2] + dir[2] * d * u]);
+  return [{ frame: 0, position: at(0) }, { frame: Math.round(last / 2), position: at(0.5, surface ? 0 : 0.08) }, { frame: last, position: at(1) }];
+}
 
 export const USER_KINDS = ["camera", "light", "look"];
 

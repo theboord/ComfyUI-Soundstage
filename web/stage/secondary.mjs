@@ -310,6 +310,7 @@ export function installSecondary(Stage, deps) {
       }
       em.push(...PT.emittersFromStrikes(strikes, { amount: gd.amount, ground, seed, color: ground === "wet_spray" ? null : gd.color }));
     }
+    em.push(...(this._swimEmitters?.() || []));   // swim.mjs: seabed sand stirred by fin wash
     for (const [id, s] of this._smokeSrc || []) {
       if (!this.state.actors.some((a) => a.id === id)) continue;
       const memo = (this._smokeEm ||= new WeakMap());
@@ -329,6 +330,8 @@ export function installSecondary(Stage, deps) {
     const fps = this.state.shot?.fps || 24, frames = this._lastFrame() + 1, seed = this.state.physics?.seed ?? 1;
     const boxes = this._setCollidersCached?.() || [];
     const opts = { frames, fps, seed, boxes };
+    // Under water the "wind" is the current and the floor is the seabed (the reef set)
+    if (this.setFx?.underwater) { opts.wind = this.setFx.drift || [0.05, 0.02]; opts.floorAt = this.setFx.floorAt; opts.floorKey = this.setFx.id; }
     const sig = PT.emitterSig(em, opts);
     if (this._secSim?.sig !== sig) {
       const t0 = performance.now();

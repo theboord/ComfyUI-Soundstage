@@ -5,9 +5,11 @@
 import * as THREE from "../vendor/three.module.min.mjs";
 import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompound, makeGlass, paintColorOf, withoutPaint } from "./library.mjs";
 import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./humans.mjs";
-import { applyGaze, setGazeKey, clearGaze } from "./gaze.mjs";
+import { applyGaze, setGazeKey, clearGaze, gazeKeys } from "./gaze.mjs";
 import * as Mocap from "./mocap.mjs";
 import * as Gait from "./gait.mjs";
+import * as Swim from "./swim.mjs";
+import { CAUSTIC_U } from "./water.mjs";
 import { applyRig, RIGS } from "./camrig.mjs";
 import { materialOf, impactParticles, impactFlash, impactShakeAt, SHAKE_PRESETS, jitterPhysics, feelGravity, overcrankKeys } from "./impacts.mjs";
 import { STUNTS, hasHeadingKeys, headingTrack, channelAt, driveAt, isStunt, unwrapDeg, vehicleDynamics, smokeParticles, stuntKeys, stuntParams, stuntRun } from "./stunts.mjs";
@@ -1654,6 +1656,7 @@ export class Stage {
     if (this._setGroup !== undefined && this._cleanStreetSig() !== this._setCleanSig) this._swapSetGroup();
     // The set may have been rebuilt (new meshes): keep the gizmo on the selected object.
     if (this.tc && this.tc.object !== (this.poser?.target() ?? (this.selected ? this.actorMeshes.get(this.selected) : undefined))) this._attachGizmo();
+    const swimNow = (this._swimNow = []);
     for (const a of this.state.actors) {
       const g = this.actorMeshes.get(a.id);
       if (!g) continue;
@@ -1686,7 +1689,16 @@ export class Stage {
       g.rotation.order = "YXZ";
       g.rotation.x = 0;
       if (g.userData.tilted) { g.rotation.z = 0; g.userData.tilted = false; }
-      if (rig === "quadruped" && speed > 4) {
+      // Swimmers (swim.mjs): divers off the seabed and people in a pool or the sea swim instead of walking.
+      const sw = rig === "biped" && !a.mocap && g.userData.joints ? this._swimAt(a, g) : null;
+      if (sw) {
+        Gait.release(g);
+        sw.out = Swim.applySwim(g, sw.plan, this.frame, sw.ctx);
+        swimNow.push({ a, g, plan: sw.plan, ctx: sw.ctx, out: sw.out });
+      } else if (g.userData.swimOn) Swim.unswim(g);
+      if (sw) {
+        // posed by the swim
+      } else if (rig === "quadruped" && speed > 4) {
         // Gallop: four-beat rotary gait (hind-hind-fore-fore), long stride, the body rocks and bounds.
         const gs = 2.6 * (a.height_m || 1.6);
         const gc = (dist / gs) * Math.PI * 2;
@@ -1717,7 +1729,7 @@ export class Stage {
           if (rig === "biped" && g.userData.joints && !air) this._bodyMotion(g, a, moving, speed, cycle);
         }
       }
-      if (this.water) this._waterPhysics(a, g);
+      if (this.water && !sw) this._waterPhysics(a, g);
       if (g.userData.flames) this._animateFire(g, a);
       if (g.userData.mixer) g.userData.mixer.setTime(this.frame / (this.state.shot?.fps || 24));
       if (g.userData.horseRig) this._driveHorse(g, a, speed, dist);
@@ -1888,7 +1900,9 @@ export class Stage {
     }
     // Head and gaze blocking (web/stage/gaze.mjs): each person's head follows their gaze keys (the Interact menu's
     // "Look at" too), eased and within natural limits; with none it holds steady facing their travel.
-    applyGaze(this, mocapIds);
+    // a swimmer's head is the stroke's (breathing to the side, a diver looking ahead): gaze keys still win
+    applyGaze(this, new Set([...mocapIds, ...swimNow.filter((x) => !gazeKeys(x.a).length).map((x) => x.a.id)]));
+    this._wakeAt(swimNow);
     this.drive?.post();   // Drive mode: getting out of a seat or down from a saddle
     if (this.weather) {
       const cam = this._cameraAt(this.frame);
@@ -2910,6 +2924,121 @@ export class Stage {
       Gait.rigHorse(g, model, g.userData.horseRig);
       this.setFrame(this.frame);
     }).catch((err) => console.warn("Soundstage: rigged horse failed, keeping the built one", err));
+  }
+
+  /**
+   * Is this person swimming at this frame, and how (swim.mjs)? On the reef a person off the seabed swims (at the
+   * surface when keyed up near it); in a water tank or open water a person in the water swims at the surface (treads
+   * water when still), or under it with swim set to an underwater style. Returns {plan, ctx} or null.
+   */
+  _swimAt(a, g) {
+    if (!PERSON_KINDS.has(a.kind) || a.carry_id || a.swim === "off" || (a.mount_id && !(a.mount_at > this.frame))) return null;
+    const plan = this._swimPlan(a, g);
+    if (!plan || !plan.mode[Math.max(0, Math.min(plan.n - 1, this.frame))]) return null;
+    Swim.ensureKit(g, { gear: plan.gear, height: (a.height_m || 1.8), kind: a.kind, appearance: a.appearance || {} });
+    return { plan, ctx: plan.ctx };
+  }
+
+  /** The swim plan of a person (cached until their keys, the set or the water change); null if they never swim. */
+  _swimPlan(a, g) {
+    const fx = this.setFx, reef = !!fx?.underwater;
+    const pool = !reef && this.water && this.water.position.y >= 0.3 ? this.water.position.y : null;
+    if (!reef && pool == null) return null;
+    const keys = this._actorKeys(a), last = this._lastFrame(), fps = this.state.shot?.fps || 24;
+    const h = (a.height_m || 1.8) * (a.scale || 1);
+    const wp = this.water ? [this.water.position.x, this.water.position.z, this.water.geometry.parameters.width, this.water.geometry.parameters.height] : null;
+    const sig = JSON.stringify([keys, last, fps, h, a.rotation_deg || 0, a.swim || null, a.gear || null, reef ? fx.id : pool, wp, a.kind]);
+    this._swimCache = this._swimCache || new WeakMap();
+    const c = this._swimCache.get(a);
+    if (c && c.sig === sig && c.g === g) return c.plan;
+    const UNDER = ["flutter", "frog", "stroke", "hover"];
+    const pos = [], yaw = [], mode = [];
+    let any = false, under = 0;
+    for (let f = 0; f <= last; f++) {
+      const p = this._actorPosAt(a, f);
+      let m = null;
+      if (reef) {
+        const bed = fx.floorAt ? fx.floorAt(p[0], p[2]) : 0;
+        if ((p[1] || 0) - bed > 0.35) m = (p[1] || 0) + 0.95 * h / 1.8 >= fx.surface - 0.45 ? "surface" : "under";
+      } else if (this._overWater(p[0], p[2]) && (p[1] || 0) <= pool + 0.05) {
+        m = UNDER.includes(a.swim) && (p[1] || 0) > 0.35 && (p[1] || 0) + h < pool ? "under" : "surface";
+      }
+      if (m) { any = true; if (m === "under") under++; }
+      pos.push([p[0], p[1] || 0, p[2]]); yaw.push(this._headingAt(a, f)); mode.push(m);
+    }
+    let plan = null;
+    if (any) {
+      const gear = a.gear || (under > 0 ? "scuba" : "none");
+      plan = Swim.planSwim({ pos, yaw, mode, fps, height: h, style: a.swim || null, seed: Swim.seedOf(a.id), gear });
+      plan.id = a.id;
+      plan.ctx = { surface: reef ? fx.surface : pool, current: reef ? fx.currentAt : null, caustics: reef, floorAt: reef ? fx.floorAt : null };
+    }
+    this._swimCache.set(a, { sig, g, plan });
+    return plan;
+  }
+
+  /** Foam on the water around surface swimmers (bow wave, kick, hand entries, the Kelvin wake): Clay and Color. */
+  _wakeAt(swimNow) {
+    const list = swimNow.filter((x) => x.plan.mode[Math.min(x.plan.n - 1, this.frame)] === "surface");
+    if (!list.length) { if (this._wakeFx) this._wakeFx.visible = false; return; }
+    if (!this._wakeFx) {
+      const N = 900, geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+      geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+      const m = new THREE.PointsMaterial({ size: 0.45, map: Swim.foamSprite(), vertexColors: true, transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending, sizeAttenuation: true });
+      m.allowOverride = false;
+      this._wakeFx = new THREE.Points(geo, m);
+      this._wakeFx.frustumCulled = false;
+      this._wakeFx.userData.glass = true;      // not in Depth or the ID matte
+      this._wakeFx.userData.max = N;
+    }
+    if (this._wakeFx.parent !== this.root) this.root.add(this._wakeFx);
+    const fps = this.state.shot?.fps || 24, pa = this._wakeFx.geometry.attributes.position, ca = this._wakeFx.geometry.attributes.color;
+    let n = 0;
+    for (const { a, plan, ctx } of list) {
+      const at = (fq) => {
+        const f0 = Math.max(0, Math.min(plan.n - 1, Math.floor(fq))), f1 = Math.min(plan.n - 1, f0 + 1), u = Math.max(0, Math.min(1, fq - f0));
+        if (fq < 0 || plan.mode[f0] !== "surface") return null;
+        return { x: plan.pos[f0][0] + (plan.pos[f1][0] - plan.pos[f0][0]) * u, z: plan.pos[f0][2] + (plan.pos[f1][2] - plan.pos[f0][2]) * u, yaw: plan.yaw[f0], v: plan.speed[f0] };
+      };
+      const y = ctx.surface + (this.setFx?.underwater ? -0.03 : 0.02);
+      for (const p of Swim.wakeFoam(at, this.frame, plan, { fps, seed: plan.seed })) {
+        if (n >= this._wakeFx.userData.max) break;
+        pa.setXYZ(n, p.x, y, p.z); ca.setXYZ(n, p.a, p.a, p.a); n++;
+      }
+    }
+    for (let i = n; i < this._wakeFx.userData.max; i++) pa.setXYZ(i, 0, -1000, 0);
+    pa.needsUpdate = true; ca.needsUpdate = true;
+    this._wakeFx.visible = n > 0;
+  }
+
+  /**
+   * Sand stirred off the seabed by fin wash (particles.mjs, preset seabed_silt): the fin tips over the whole shot,
+   * measured on each diver's posed figure (cached per plan), then the figure is put back on this frame.
+   */
+  _swimEmitters() {
+    const fx = this.setFx;
+    if (!fx?.underwater || !this._swimNow?.length) return [];
+    const out = [], fps = this.state.shot?.fps || 24;
+    this._finTips = this._finTips || new WeakMap();
+    for (const s of this._swimNow) {
+      if (!s.g.userData.swimKit?.userData.fins?.length) continue;
+      let tips = this._finTips.get(s.plan);
+      if (!tips) {
+        tips = [];
+        for (let f = 0; f < s.plan.n; f++) {
+          if (s.plan.mode[f] !== "under") { tips.push([]); continue; }
+          Swim.applySwim(s.g, s.plan, f, { ...s.ctx, kit: false, flex: false, caustics: false });
+          tips.push(Swim.finTipsWorld(s.g).map((v) => [v.x, v.y, v.z]));
+        }
+        this._finTips.set(s.plan, tips);
+        Swim.applySwim(s.g, s.plan, this.frame, s.ctx);
+        if (s.a.pose_keys?.length) applyJoints(s.g, this.poseAt(s.a, this.frame));
+      }
+      out.push(...Swim.finWashEmitters(tips, fx.floorAt, { fps, seed: this.state.physics?.seed ?? 1, id: s.a.id }));
+    }
+    return out;
   }
 
   /**
@@ -4247,6 +4376,7 @@ export class Stage {
         this.ground.visible = false;
       }
     }
+    CAUSTIC_U.uCauK.value = 0;   // caustics are the underwater set's (its pass turns them on for Color)
     try { this.setFx?.pass?.(mode, { stage: this, cam, forCapture }); } catch (err) { console.warn("Soundstage set pass", err); }
     this._inRender = true;
     this.renderer.render(this.scene, cam);
