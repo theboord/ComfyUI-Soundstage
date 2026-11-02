@@ -10,6 +10,8 @@ const clip = O.makeTarget({ url: "/api/view?filename=draft_00012_.mp4&subfolder=
 
 const VIS = { verdict: "visible", seam: 8.3, badge: "Visible seam · 8.3x (jump at frame 86)" };
 const OK = { verdict: "seamless", seam: 1.2, badge: "Seamless · 1.2x" };
+// /soundstage/loop/fix seal on a clip whose last frame is not a copy of frame 0: nothing dropped, the same file back
+const SEAL_NONE = (b) => ({ ref: b.ref, before: VIS, after: VIS });
 
 /** A fake App server: records every call; `answers` maps "POST path how" -> body. */
 function fakeServer(answers) {
@@ -67,7 +69,7 @@ test("Seamless loop: render, seal, trim fixes it: no bridge queued", async () =>
   const { api, calls } = fakeServer({
     "/soundstage/loop/prompt": { prompt: { save: { class_type: "SaveVideo" } } },
     "/soundstage/loop/seam": VIS,
-    "/soundstage/loop/fix seal": { ref: "x [output]", before: VIS, after: VIS },
+    "/soundstage/loop/fix seal": SEAL_NONE,
     "/soundstage/loop/fix trim": { ref: "soundstage_private/loop/pid1_trim2-80.mp4 [output]", before: VIS, after: OK },
   });
   const ctx = ctxFor(api, { motion: "paddles dip", seconds: "4" });
@@ -84,7 +86,7 @@ test("Seamless loop: trim no better -> one bridge render, joined, before and aft
   const { api, calls } = fakeServer({
     "/soundstage/loop/prompt": { prompt: { save: {} } },
     "/soundstage/loop/seam": VIS,
-    "/soundstage/loop/fix seal": { ref: "x", before: VIS, after: VIS },
+    "/soundstage/loop/fix seal": SEAL_NONE,
     "/soundstage/loop/fix trim": { ref: "t", before: VIS, after: { ...VIS, seam: 9 } },
     "/soundstage/loop/fix bridge": { prompt: { save: {} }, clip_end: 85 },
     "/soundstage/loop/fix join": (b) => ({ ref: "soundstage_private/loop/j.mp4 [output]", before: VIS, after: { ...OK, seam: 1.5 }, _b: b }),
@@ -103,7 +105,7 @@ test("Seamless loop: trim no better -> one bridge render, joined, before and aft
 
 test("Seamless loop with the fixer off never queues a second job", async () => {
   const { api } = fakeServer({ "/soundstage/loop/prompt": { prompt: {} }, "/soundstage/loop/seam": VIS,
-    "/soundstage/loop/fix seal": { ref: "x", before: VIS, after: VIS }, "/soundstage/loop/fix trim": { ref: "t", before: VIS, after: VIS } });
+    "/soundstage/loop/fix seal": SEAL_NONE, "/soundstage/loop/fix trim": { ref: "t", before: VIS, after: VIS } });
   const ctx = ctxFor(api, { fix: false });
   const r = await O.getOneClick("loop").run(still, ctx);
   assert.equal(ctx.queued.length, 1);
@@ -125,8 +127,36 @@ test("Seam meter reports the numbers and makes no take", async () => {
 });
 
 test("Fix a loop seam: no fix better -> no new take", async () => {
-  const { api } = fakeServer({ "/soundstage/loop/seam": VIS, "/soundstage/loop/fix seal": { ref: "x", before: VIS, after: VIS },
+  const { api } = fakeServer({ "/soundstage/loop/seam": VIS, "/soundstage/loop/fix seal": SEAL_NONE,
     "/soundstage/loop/fix trim": { ref: "t", before: VIS, after: VIS }, "/soundstage/loop/fix bridge": { prompt: {}, clip_end: 10 },
     "/soundstage/loop/fix join": { ref: "j", before: VIS, after: { ...VIS, seam: 12 } } });
   assert.equal(await O.getOneClick("loop_fix").run(clip, ctxFor(api)), null);
+});
+
+test("a render that lands on its picture reads seamless and is still sealed: the take is the file without the repeat", async () => {
+  const SEALED = "soundstage_private/loop/pid1_sealed.mp4 [output]";
+  const { api, calls } = fakeServer({
+    "/soundstage/loop/prompt": { prompt: { save: {} } },
+    "/soundstage/loop/seam": { ...OK, dup_last: true },
+    // re-encoding nudges the number up a hair: the sealed file is kept anyway (the meter already left the repeat out)
+    "/soundstage/loop/fix seal": { ref: SEALED, before: { ...OK, dup_last: true }, after: { ...OK, seam: 1.3, badge: "Seamless · 1.3x" } },
+  });
+  const r = await O.getOneClick("loop").run(still, ctxFor(api));
+  assert.equal(r.file.filename, "pid1_sealed.mp4");
+  assert.equal(r.extra.seamless, true);
+  assert.deepEqual(r.extra.tried.map((t) => [t.how, t.kept]), [["seal", true]]);
+  assert.ok(!calls.some((c) => c.body?.how === "trim" || c.body?.how === "bridge"));
+});
+
+test("a visible seam with a repeated last frame: trim works on the sealed file", async () => {
+  const SEALED = "soundstage_private/loop/pid1_sealed.mp4 [output]";
+  const { api, calls } = fakeServer({
+    "/soundstage/loop/prompt": { prompt: { save: {} } },
+    "/soundstage/loop/seam": { ...VIS, dup_last: true },
+    "/soundstage/loop/fix seal": { ref: SEALED, before: VIS, after: VIS },
+    "/soundstage/loop/fix trim": { ref: "soundstage_private/loop/pid1_sealed_trim1-80.mp4 [output]", before: VIS, after: OK },
+  });
+  const r = await O.getOneClick("loop").run(still, ctxFor(api, { fix: false }));
+  assert.equal(calls.find((c) => c.body?.how === "trim").body.ref, SEALED);
+  assert.equal(r.file.filename, "pid1_sealed_trim1-80.mp4");
 });
