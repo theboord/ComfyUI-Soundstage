@@ -4616,6 +4616,8 @@ export class Stage {
 
   dispose() {
     this._ro?.disconnect();
+    try { this.rotTools?.dispose?.(); } catch { /* not built */ }
+    try { this._partsPanels?.dispose?.(); } catch { /* not mounted */ }
     this.renderer.dispose();
   }
 }
