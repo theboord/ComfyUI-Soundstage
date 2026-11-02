@@ -7,6 +7,7 @@ If environments.mjs / library.mjs change, update the numbers here (tests/test_ag
 from __future__ import annotations
 
 import math
+import re
 
 # ---- library objects (web/stage/library.mjs LIBRARY) ---------------------------------------------
 # kind -> label, height, rig, footprint [width X, depth Z] at rotation 0.
@@ -170,11 +171,118 @@ SETS = {
                                      "stands": [0, 90], "centre": [0, 19.4], "field": [0, 19.4]},
         "stage": [0, 19.4],
     },
+    "lake": {
+        "label": "Lake (calm, wooded shore, a dock)", "interior": False, "bounds": [-20, 20, -25, 40],
+        "obstacles": [], "anchors": {"dock": [-6, -12], "jetty": [-6, -12], "water": [0, 10], "lake": [0, 10],
+                                     "shore": [0, -24], "centre": [0, 0]}, "stage": [0, 0],
+    },
+    "river_rapids": {
+        "label": "River rapids (whitewater)", "interior": False, "bounds": [-11, 11, -30, 120],
+        "obstacles": [], "anchors": {"river": [0, 0], "rapids": [0, 20], "bank": [[11, 0], [-11, 0]], "centre": [0, 0]},
+        "stage": [0, 0],
+    },
+    "underwater": {
+        "label": "Underwater reef", "interior": False, "bounds": [-25, 25, -18, 40],
+        "obstacles": [], "anchors": {"reef": [0, 12], "coral": [0, 12], "seabed": [0, 0], "sand": [0, 0], "centre": [0, 0]},
+        "stage": [0, 0],
+    },
+    "burning_building": {
+        "label": "Burning building (night)", "interior": False, "bounds": [-20, 20, -20, 11],
+        "obstacles": [], "anchors": {"building": [0, 11.5], "door": [0, 11.5], "front door": [0, 11.5], "street": [0, 0],
+                                     "centre": [0, 0]}, "stage": [0, 0],
+    },
+    "airplane_cabin": {
+        "label": "Airplane cabin", "interior": True, "bounds": [-1.7, 1.7, -12.2, 13.0],
+        "obstacles": [], "anchors": {"aisle": [0, 0], "window": [[1.7, 0], [-1.7, 0]], "galley": [0, 12.6],
+                                     "cockpit door": [0, 13.0], "centre": [0, 0]}, "stage": [0, 0],
+    },
+    "runway": {
+        "label": "Airport runway", "interior": False, "bounds": [-25, 25, -60, 60],
+        "obstacles": [], "anchors": {"runway": [0, 0], "tarmac": [0, 0], "centre": [0, 0]}, "stage": [0, 0],
+    },
+    "above_clouds": {
+        "label": "Above the clouds", "interior": False, "bounds": [-20, 20, -20, 20],
+        "obstacles": [], "anchors": {"clouds": [0, 20], "centre": [0, 0]}, "stage": [0, 0],
+    },
+    "train_car": {
+        "label": "Train carriage", "interior": True, "bounds": [-1.25, 1.25, -11.3, 11.3],
+        "obstacles": [], "anchors": {"aisle": [0, 0], "window": [[1.25, 0], [-1.25, 0]], "door": [0, 11.3],
+                                     "centre": [0, 0]}, "stage": [0, 0],
+    },
+    "train_station": {
+        "label": "Train station platform", "interior": False, "bounds": [1.8, 9.2, -60, 90],
+        "obstacles": [], "anchors": {"platform": [5.5, 0], "platform edge": [2.0, 0], "track": [1.8, 0], "centre": [5.5, 0]},
+        "stage": [5.5, 0],
+    },
     "empty": {
         "label": "Empty stage", "interior": False, "bounds": [-15, 15, -15, 15],
         "obstacles": [], "anchors": {"centre": [0, 0]}, "stage": [0, 0],
     },
 }
+
+# ---- rooms of any size (the "interior" set at the size the words ask for) ---------------------------
+# environments.mjs builds the interior room at environment.room = [width X, depth Z, ceiling height] (default
+# 8 x 10 x 3.2 m, the "interior" entry above): a back wall at +Z, side walls at +/-X, the -Z side open for the camera.
+# The agent addresses a sized room by a derived key, "interior@WxDxH", registered here on first use; the scene itself
+# keeps environment.set = "interior" plus environment.room, which is all the stage needs.
+DEFAULT_ROOM = (8.0, 10.0, 3.2)
+ROOMS: dict[str, dict] = {}  # sized rooms by key, kept apart from the presets in SETS
+ROOM_LIMITS = ((1.6, 60.0), (1.6, 80.0), (2.0, 12.0))
+
+
+def clamp_room(room) -> tuple[float, float, float] | None:
+    try:
+        w, d, h = (float(v) for v in list(room)[:3])
+    except (TypeError, ValueError):
+        return None
+    (w0, w1), (d0, d1), (h0, h1) = ROOM_LIMITS
+    return (round(min(max(w, w0), w1), 2), round(min(max(d, d0), d1), 2), round(min(max(h, h0), h1), 2))
+
+
+def room_set(room) -> str:
+    """The SETS key for an interior room of this size (registering it on first use). The default size is "interior"."""
+    r = clamp_room(room)
+    if r is None or r == DEFAULT_ROOM:
+        return "interior"
+    w, d, h = r
+    key = f"interior@{w:g}x{d:g}x{h:g}"
+    if key not in ROOMS:
+        hw, hd = w / 2, d / 2
+        m = 0.15 if min(w, d) > 2.5 else 0.08  # air between the walls and what stands against them
+        ROOMS[key] = {
+            "label": f"Interior room {w:g} x {d:g} m", "interior": True, "room": [w, d, h],
+            "bounds": [round(-hw + m, 2), round(hw - m, 2), round(-hd + m, 2), round(hd - m, 2)], "obstacles": [],
+            "anchors": {"window": [round(-w * 0.19, 2), round(hd - 0.1, 2)], "door": [round(min(w * 0.31, hw - 0.7), 2), round(hd - 0.1, 2)],
+                        "back wall": [0, round(hd - 0.1, 2)], "left wall": [round(hw - 0.1, 2), 0], "right wall": [round(-hw + 0.1, 2), 0],
+                        "corner": [round(hw - 0.4, 2), round(hd - 0.4, 2)], "centre": [0, 0], "middle of the room": [0, 0]},
+            "stage": [0, round(min(0.5, d * 0.05), 2)],
+            # Where a camera may stand: in the room (its open -Z side runs on out), under the ceiling.
+            "camera_area": ([round(-hw + 0.25, 2), round(hw - 0.25, 2), round(-hd - max(6.0, d), 2), round(hd - 0.25, 2)],
+                            [0.15, round(h - 0.2, 2)]),
+        }
+    return key
+
+
+def set_key(env) -> str | None:
+    """The SETS key for a scene's environment: its set, or the sized room when environment.room is given."""
+    env = env if isinstance(env, dict) else {}
+    s = env.get("set")
+    if s == "interior" and env.get("room"):
+        return room_set(env["room"])
+    if isinstance(s, str) and s.startswith("interior@"):
+        return s if s in ROOMS else room_set([float(v) for v in s.split("@", 1)[1].split("x")]) if re.fullmatch(
+            r"interior@[\d.]+x[\d.]+x[\d.]+", s) else None
+    return s if s in SETS else None
+
+
+def base_set(key: str) -> str:
+    """The stage's set name for a SETS key ("interior@6x4x2.6" -> "interior")."""
+    return key.split("@", 1)[0] if isinstance(key, str) else "empty"
+
+
+def set_room(key: str):
+    """[w, d, h] for a sized room key, None otherwise."""
+    return list(ROOMS.get(key, {}).get("room") or []) or None
 
 # The plaza is drawn from the scene's own props (stage.mjs only renders props[] on the plaza).
 PLAZA_PROPS = [
@@ -185,9 +293,21 @@ PLAZA_PROPS = [
 ]
 
 SET_WORDS = [  # first match wins; order matters (specific before generic)
+    ("underwater", ["reef", "coral", "seabed", "sea floor", "ocean floor", "kelp forest", "shipwreck"]),
+    ("burning_building", ["burning building", "building on fire", "house fire", "house on fire", "firefighter",
+                          "firefighters", "fire fighter", "fire truck", "fire engine", "inferno", "blaze"]),
+    ("airplane_cabin", ["airplane cabin", "plane cabin", "aircraft cabin", "airliner", "in-flight", "on a plane", "on the plane",
+                        "aboard a plane", "flight attendant", "cabin crew", "aisle seat", "window seat", "int. plane"]),
+    ("runway", ["runway", "tarmac", "airfield", "airstrip", "taxiway"]),
+    ("above_clouds", ["above the clouds", "over the clouds", "cloudscape", "in mid-air", "in midair", "skydiving", "skydiver"]),
+    ("train_car", ["train carriage", "train car", "railway carriage", "on a train", "on the train", "aboard a train",
+                   "aboard the train", "train compartment", "int. train"]),
+    ("train_station", ["train station", "station platform", "railway station", "railway platform", "train platform"]),
+    ("lake", ["lake", "lakeside", "pond", "dock", "jetty"]),
+    ("river_rapids", ["rapids", "whitewater", "white water", "river", "rafting"]),
     ("water_tank", ["underwater", "water tank", "tank", "pool", "submerged", "diver", "scuba"]),
     ("beach", ["beach", "shore", "seaside", "surf", "coast", "pier", "sand"]),
-    ("open_water", ["open water", "out on the water", "on the water", "out at sea", "at sea", "ocean", "sea", "lake",
+    ("open_water", ["open water", "out on the water", "on the water", "out at sea", "at sea", "ocean", "sea",
                     "water", "boat", "sailboat", "sailing", "catamaran", "jet ski", "jetski", "yacht", "speedboat", "fishing"]),
     ("stadium", ["stadium", "ballpark", "ballfield", "baseball", "football field", "soccer field", "pitch", "arena", "field",
                  "bleachers", "home plate", "pitcher", "batter", "touchdown", "goal"]),
@@ -222,7 +342,7 @@ TIME_WORDS = [
     ("overcast", ["overcast", "cloudy", "grey day", "gray day", "gloomy"]),
     ("midday", ["noon", "midday", "high noon", "daytime", "day", "afternoon", "sunny", "bright"]),
 ]
-WEATHER = ["none", "rain", "snow", "fog", "smoke", "dust", "sparks"]
+WEATHER = ["none", "rain", "snow", "fog", "smoke", "dust", "sparks", "fire"]
 WEATHER_WORDS = [
     ("rain", ["rain", "rainy", "raining", "storm", "downpour", "drizzle", "wet"]),
     ("snow", ["snow", "snowy", "snowing", "blizzard", "winter"]),

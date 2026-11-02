@@ -393,7 +393,7 @@ def _last(scene) -> int:
 
 
 def _clamp_pt(set_name, x, z, margin=1.2):
-    b = C.SETS.get(set_name, C.SETS["empty"])["bounds"]
+    b = S.set_def(set_name)["bounds"]
     return [round(min(max(x, b[0] + margin), b[1] - margin), 2), 0.0, round(min(max(z, b[2] + margin), b[3] - margin), 2)]
 
 
@@ -411,8 +411,8 @@ def pitch_axis(scene) -> tuple[list, list, list]:
 
 def _fresh_camera(scene, set_name):
     """A pitch establishing camera on a new set: eye height, looking down the set's long axis."""
-    b = C.SETS.get(set_name, C.SETS["empty"])["bounds"]
-    st = C.SETS.get(set_name, C.SETS["empty"]).get("stage", [0, 0])
+    b = S.set_def(set_name)["bounds"]
+    st = S.set_def(set_name).get("stage", [0, 0])
     long_z = (b[3] - b[2]) >= (b[1] - b[0])
     if long_z:
         cz = min(st[1] + 10, b[3] - 1.5)
@@ -506,7 +506,7 @@ def beat_ops(delta: dict, memory: dict, scene: dict, ids: dict | None = None) ->
             o.said.append(f"Time: {delta['time'].replace('_', ' ')}")
         if delta.get("weather"):
             o.said.append(f"Weather: {delta['weather']}")
-    set_name = o.work["environment"].get("set") or "empty"
+    set_name = C.set_key(o.work["environment"]) or "empty"
     sh = _ensure_shot(o)
     if delta.get("set") and delta["set"] != cur_set:
         cam = _fresh_camera(o.work, set_name)

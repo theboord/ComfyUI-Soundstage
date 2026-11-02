@@ -9,6 +9,7 @@ Symbolic ops are what the LLM writes (names, not coordinates):
   {"op":"light","type":"key","on":"woman"}                     {"op":"remove_light","type":"rim"}
   {"op":"shot","setup":"ots","on":"woman","over":"man"}        {"op":"camera","move":"push_in"} / {"op":"camera","focal":85}
   {"op":"mount","target":"cowboy","on":"horse"}                {"op":"dismount","target":"cowboy"}
+  {"op":"location","describe":"a 1950s diner at night"}       (any set from words: location.py; keeps what you placed)
 
 Concrete ops are what the stage applies. Every concrete op carries "undo": the concrete op that reverts
 it, so the inverse of a list is [op["undo"] for op in reversed(ops)]:
@@ -31,12 +32,13 @@ import re
 from ..cine import geometry as G
 from . import catalog as C
 from . import cameras as CAM
+from . import location as LOC
 from . import plan as P
 from . import space as S
 from .build import make_object
 
 SYMBOLIC = {"move", "add", "remove", "rotate", "scale", "time", "weather", "set", "light", "remove_light", "shot",
-            "camera", "mount", "dismount"}
+            "camera", "mount", "dismount", "location"}
 SHOT_WORDS = [("ots", ["over-the-shoulder", "over the shoulder", "ots", "dirty single"]),
               ("insert", ["insert", "detail shot"]), ("pov", ["pov", "point of view", "point-of-view"]),
               ("two_shot", ["two-shot", "two shot", "2-shot", "fifty-fifty", "50/50"]),
@@ -76,7 +78,9 @@ def apply_op(s: dict, op: dict) -> None:
                 else:
                     a[k] = copy.deepcopy(v)
     elif kind == "set_environment":
-        s["environment"] = {**s.get("environment", {}), **op["set"]}
+        # None removes the field (the undo of a new field such as environment.room leaves no trace).
+        env = {**s.get("environment", {}), **copy.deepcopy(op["set"])}
+        s["environment"] = {k: v for k, v in env.items() if v is not None}
     elif kind == "set_lighting":
         s["lighting"] = {**s.get("lighting", {}), **copy.deepcopy(op["set"])}
         if op.get("sun"):
@@ -181,7 +185,7 @@ def find_place(scene: dict, text: str, exclude=()) -> tuple[list[float] | None, 
     if not text:
         return None, None, ""
     obj = find_object(scene, text, exclude)
-    set_name = scene["environment"]["set"]
+    set_name = C.set_key(scene["environment"]) or "empty"
     name, pts = S.find_anchor(set_name, text)
     if obj is not None and not (name and len(name) > 3 and name in str(text).lower() and not
                                 (_labels(obj) & set(_words(text)) - {"the"})):
@@ -222,7 +226,7 @@ def resolve(scene: dict, sym_ops: list[dict]) -> tuple[list[dict], list[str]]:
     work = copy.deepcopy(scene)
     out: list[dict] = []
     notes: list[str] = []
-    set_name = lambda: work["environment"]["set"]  # noqa: E731
+    set_name = lambda: C.set_key(work["environment"]) or "empty"  # noqa: E731
 
     def emit(op, undo):
         op = dict(op, undo=undo)
@@ -275,7 +279,7 @@ def resolve(scene: dict, sym_ops: list[dict]) -> tuple[list[dict], list[str]]:
                            "upstage": fwd, "forward": G.mul(fwd, -1), "closer": G.mul(fwd, -1),
                            "downstage": G.mul(fwd, -1), "toward camera": G.mul(fwd, -1)}.get(d)
                     if d in ("centre", "center", "middle"):
-                        sx, sz = C.SETS[set_name()]["stage"]
+                        sx, sz = S.set_def(set_name())["stage"]
                         want = (sx, sz)
                     elif vec is None:
                         notes.append(f"move: no direction or place given for {a['name']}")
@@ -333,7 +337,7 @@ def resolve(scene: dict, sym_ops: list[dict]) -> tuple[list[dict], list[str]]:
                 if pt is None:
                     cast = CAM.people(work)
                     pt = ([sum(c["position"][0] for c in cast) / len(cast) + 1.5, sum(c["position"][2] for c in cast) / len(cast) + 1.0]
-                          if cast else list(C.SETS[set_name()]["stage"]))
+                          if cast else list(S.set_def(set_name())["stage"]))
                 cast = CAM.people(work)
                 if cast and o["kind"] in C.PEOPLE:  # face the others (decided first: it changes the footprint)
                     cx = sum(c["position"][0] for c in cast) / len(cast)
@@ -420,13 +424,34 @@ def resolve(scene: dict, sym_ops: list[dict]) -> tuple[list[dict], list[str]]:
                 env = work["environment"]
                 emit({"op": "set_environment", "set": patch},
                      {"op": "set_environment", "set": {k: env.get(k) for k in patch}})
+            elif kind == "location" or (kind == "set" and not (P._norm_key(so.get("set"), C.SETS, None) or
+                                                                P.pick(C.SET_WORDS, str(so.get("set", "")).lower(), None))
+                                         and LOC.compose(str(so.get("set") or ""))["known"]):
+                # Any set from words ("a 1950s diner at night", "a 6 x 4 m cell"): build it, keep what's placed.
+                text = str(so.get("describe") or so.get("set") or so.get("text") or so.get("what") or "").strip()
+                if not text:
+                    notes.append("location: no description")
+                    continue
+
+                def _light(pre):
+                    L = work.get("lighting", {})
+                    patch = {"mode": "time", "hour": C.preset_hour(pre, L.get("day_of_year", 300), L.get("latitude", 34.05)),
+                             "preset": pre, "overcast": bool(C.TIME_PRESETS[pre].get("overcast"))}
+                    emit({"op": "set_lighting", "set": patch, "sun": C.sun_for({**L, **patch})},
+                         {"op": "set_lighting", "set": {k: L.get(k) for k in patch}, "sun": copy.deepcopy(work.get("sun"))})
+                notes += [n for n in LOC.relocate(work, text, emit, _light) if n]
             elif kind == "set":
                 sn = P._norm_key(so.get("set"), C.SETS, None) or P.pick(C.SET_WORDS, str(so.get("set", "")).lower(), None)
                 if not sn:
                     notes.append(f"set: unknown '{so.get('set')}'")
                     continue
+                if sn.startswith("interior@"):
+                    sn = "interior"
                 old = work["environment"]
-                emit({"op": "set_environment", "set": {"set": sn}}, {"op": "set_environment", "set": {"set": old.get("set")}})
+                # A preset is a plain set: a sized room, its colours and its name go with the old set.
+                patch = {"set": sn, **{k: None for k in ("room", "look", "location") if k in old}}
+                emit({"op": "set_environment", "set": patch}, {"op": "set_environment", "set": {k: copy.deepcopy(old.get(k)) for k in patch}})
+                sn = C.set_key(work["environment"]) or sn
                 # Everything must still stand inside the new set: move what no longer fits.
                 placed = []
                 for a in list(work["actors"]):
@@ -576,6 +601,11 @@ def _num_in(t: str, default=None):
 def rules_ops(command: str, scene: dict) -> list[dict]:
     """Best-effort symbolic ops from a command, without a model."""
     text = command.lower().strip().rstrip(".!")
+    # "make it a 1950s diner at night", "set it in a 6 x 4 m prison cell", "set: a medieval throne room": the whole
+    # command describes the set (its time and weather included), so it is one location op, not clauses.
+    where = LOC.relocation_text(text, scene)
+    if where:
+        return [{"op": "location", "describe": where}]
     clauses = re.split(r"\s*(?:,|;|\bthen\b|\band also\b|\band\b(?=\s+(?:add|move|remove|make|turn|put|give|set|switch|change|rotate|delete|bring)))\s*", text)
     ops: list[dict] = []
     for cl in [c for c in clauses if c.strip()]:
@@ -703,9 +733,25 @@ def _clause_ops(cl: str, scene: dict) -> list[dict]:
 def summarize(ops: list[dict], scene_before: dict) -> str:
     """One readable line per op for the chat box."""
     names = {a["id"]: a.get("name", a["id"]) for a in scene_before.get("actors", [])}
+    dressing = {a["id"] for a in scene_before.get("actors", []) if a.get("set_dressing")}
     lines = []
+    # A set change adds and removes whole dressings: one line each, not one per booth.
+    added = [op["object"] for op in ops if op["op"] == "add_object" and op["object"].get("set_dressing")]
+    gone = [op for op in ops if op["op"] == "remove_object" and op["id"] in dressing]
+    if gone:
+        lines.append(f"Took down the old set dressing ({len(gone)} piece{'s' if len(gone) != 1 else ''})")
+    if added:
+        kinds: dict[str, int] = {}
+        for o in added:
+            nm = (o.get("design") or o.get("name") or "").lower().rstrip(" 0123456789")
+            kinds[nm] = kinds.get(nm, 0) + 1
+        lines.append("Dressed the set: " + ", ".join(f"{n} {k}" if n > 1 else k for k, n in kinds.items()))
+    skip = {id(op) for op in ops if (op["op"] == "add_object" and op["object"].get("set_dressing")) or op in gone
+            or (op["op"] in ("add_light", "remove_light") and (op.get("light") or {}).get("from_location"))}
     for op in ops:
         k = op["op"]
+        if id(op) in skip:
+            continue
         if k == "add_object":
             p = op["object"]["position"]
             lines.append(f"Added {op['object']['name']} at ({p[0]:.1f}, {p[2]:.1f})")
@@ -726,8 +772,12 @@ def summarize(ops: list[dict], scene_before: dict) -> str:
             lines.append(f"Resized {names.get(op['id'], op['id'])} to {op['set']['height_m']:.2f} m tall")
         elif k == "set_lighting" and op["set"].get("preset"):
             lines.append(f"Time of day: {C.TIME_PRESETS[op['set']['preset']]['label']}")
+        elif k == "set_environment" and isinstance(op["set"].get("location"), dict):
+            lc = op["set"]["location"]
+            room = op["set"].get("room")
+            lines.append(f"Set: {lc.get('label') or op['set'].get('set')}" + (f" ({room[0]:g} x {room[1]:g} m)" if room else ""))
         elif k == "set_environment":
-            lines.append("Set: " + ", ".join(f"{a}={b}" for a, b in op["set"].items()))
+            lines.append("Set: " + ", ".join(f"{a}={b}" for a, b in op["set"].items() if b is not None))
         elif k == "add_light":
             lines.append(f"Added {op['light']['name']}")
         elif k == "remove_light":

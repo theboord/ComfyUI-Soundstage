@@ -12,6 +12,7 @@ The local model (Qwen3.5-4B via core `TextGenerate`, the same graph as the objec
 |---|---|
 | `web/agent/agent.mjs` | `SceneAgent` (describe / edit / undo / redo / prop design), `applyOps(stage, ops)`, `applyOpsToScene(scene, ops)`, `inverseOf(ops)`, `runLocalModel(api, …)` |
 | `soundstage/agent/catalog.py` | Python mirror of the stage: library kinds and footprints, set bounds, obstacles and named places, time presets (sun math ported), light types |
+| `soundstage/agent/location.py` | Any set from a sentence: words → a composed location (a preset or a room at any size, its colours, real-size dressing, practical lights); `relocate()` changes the set of an existing scene and keeps what was placed |
 | `soundstage/agent/plan.py` | Text → plan with rules; LLM answer parsing and repair; merging the two |
 | `soundstage/agent/build.py` | Plan → full scene: blocking patterns, furniture with the blocking, dressing out of the camera's sight line, lights |
 | `soundstage/agent/cameras.py` | Advisor coverage → stage shots (`camera_keys`); single setups on demand (OTS, single, insert, POV, two-shot, wide) |
@@ -22,7 +23,7 @@ The local model (Qwen3.5-4B via core `TextGenerate`, the same graph as the objec
 | `soundstage/agent/routes.py` | HTTP routes, `register()` |
 | `soundstage/agent/live.py` | CLI and live client against a running ComfyUI |
 | `soundstage/nodes_agent.py` | `NODES = [SoundstageSceneAgent, SoundstageSceneEdit, SoundstageSceneBrief]` |
-| `tests/test_agent.py`, `tests/js/agent.test.mjs`, `tests/agent_fixtures/ops_parity.json` | 63 Python and 13 JS tests |
+| `tests/test_agent.py`, `tests/test_any_set.py`, `tests/js/agent.test.mjs`, `tests/agent_fixtures/ops_parity.json` | Python and JS tests (20 any-set prompts in `test_any_set.py`) |
 
 ## Integrator wiring
 
@@ -110,6 +111,19 @@ shots[] = {id, name, setup, camera_keys:[{frame, position, target, focal_mm}], w
 
 **Cameras:** the advisor's shot list (recipe, size, lens, height, move) is converted to keys. A/B are ordered so the coverage side is −Z, the open side of the interior and tank sets. A lone actor's coverage is rotated to the way they face. Cameras that would sit inside a wall are pulled toward their target, and the lens is narrowed to keep the framing. Duplicate setups are dropped.
 
+## Any set from a sentence
+
+The 20 stage sets are presets: quick starts. `location.compose(text)` reads any place from the words and composes it:
+
+- **Base:** a preset when the words name one more specifically than anything else (reef, train carriage, runway); else a **room at any size** (the stage's interior set built at `environment.room = [w, d, h]`; sizes from "6 by 4 metres", "30 x 20 ft", "with a 2.4 m ceiling", or the place's own size scaled by "tiny"/"small"/"large"/"huge", clamped to 1.6–60 m wide, 1.6–80 m deep, 2–12 m high); else open ground (`empty`, desert, forest, a street...) re-coloured.
+- **Look:** floor, wall, ceiling, window and door colours (`environment.look`, hex), from the place and its era (1920s, 1950s, 1970s, 1980s, Victorian, medieval, western, futuristic, modern, abandoned). The stage paints the room and the ground with them.
+- **Dressing:** about 50 places (diner, bar, office, prison cell, courtroom, church, warehouse, gym, hospital, bus, subway car, starship bridge, throne room, cave, farm, graveyard, campsite, trench, Mars...), each a list of pieces with real sizes, colours and where they go (back wall, side walls, rows, an aisle, pillars, scattered, along the kerbs). Library kinds are used where they fit (table, chair, car, tree, rock, wall, crate...); the rest are built from boxes and cylinders at real size (a booth is seats, backs and a table; a pew is a seat and a back). Anything that is only one box carries `recipe.placeholder` (the object designer may detail it) and the notes name it. Pieces are placed with `space.free_spot` around what is already there, never overlapping, and out of the master camera's view of the cast; what doesn't fit is named ("No room for: 2 x booth").
+- **Light:** time and weather from the words, else what the place implies (a nightclub is at night, a graveyard foggy); practicals the place has (pendant lamps, fluorescent panels, neon, a chandelier, candles, firelight) as film lights with `from_location: true`.
+
+Every piece carries `set_dressing: true`, and so does scene-type dressing the words didn't name. `environment.location = {label, place, era, source, prompt, approximations}` says what was built.
+
+**Changing a set** (`{"op": "location", "describe": "..."}`, from "make it a 1950s diner at night", "turn it into …", "set it in …", "set: …", or the Director's `location` tool, or **Build set** in the Set step): the old dressing and its lights are removed, the new set, look, dressing and lights come in, the time and weather from the words are applied, and every other actor stays (moved to the nearest free floor only if it would now stand in a wall). An era alone ("make it 1920s") restyles the current place. The whole change is one undo. Picking a preset (`set` op or the **Start from preset** menu) clears `room`, `look` and `location` and keeps everything on the stage.
+
 ## Ops (undo-friendly)
 
 The model writes **symbolic** ops, by name with no coordinates:
@@ -118,7 +132,7 @@ The model writes **symbolic** ops, by name with no coordinates:
 move{target, near | dir+amount | away_from}  add{what, near}  remove{target}  rotate{target, face | deg}
 scale{target, factor}  time{preset}  weather{weather}  set{set}  light{type, on}  remove_light{type}
 shot{setup: wide|two_shot|single|ots|insert|pov, on, over, focal?}  camera{move: push_in|pull_out|higher|lower|wider|tighter, focal?}
-mount{target, on}  dismount{target}
+mount{target, on}  dismount{target}  location{describe}
 ```
 
 The server resolves these into **concrete** ops. Each concrete op carries `undo`, and `inverse = [op.undo for op in reversed(ops)]`.
@@ -127,7 +141,7 @@ The server resolves these into **concrete** ops. Each concrete op carries `undo`
 |---|---|
 | `add_object {object, index}` | `remove_object {id}` |
 | `move_object` / `rotate_object` / `scale_object` / `update_object {id, set}` | same op with the old field values |
-| `set_environment {set}` | old values |
+| `set_environment {set}` | old values (`null` removes a field, so undoing a new `room` leaves no trace) |
 | `set_lighting {set, sun}` | old values and old sun |
 | `add_light {light}` | `remove_light {id}` |
 | `add_shot {shot, index}` | `remove_shot {id}` |
@@ -194,6 +208,10 @@ python3 -m soundstage.agent.live edit /tmp/scene.json "add a second detective by
 
 ## Limitations
 
+- **Composed sets are clay blocks.** A booth is five boxes and a post; a jukebox or a pie case is one box at its real size until the object designer details it. Rooms are rectangles open on −Z (no L-shapes, no second room; use a floor plan for those), with one window and one door on the back wall.
+- **A set change replaces dressing you moved.** Pieces the composer placed are `set_dressing`; if you moved a booth by hand and then say "make it 1920s", the booth is rebuilt where the composer puts it. Things you added yourself always stay.
+- **Approximations:** a bus or subway car is a room with seats (no street outside the windows), a mountain is the desert's dunes in snow colours, another planet is the desert re-coloured under Earth's sky, a cave has flat rock-coloured walls. The notes say so each time.
+- **Pitch mode** still picks from its own short list of places (street, room, forest...); describe the set in the Set step or by chat for anything else.
 - **The stage has no vertical placement.** Everything stands on y=0, so nothing sits on a table (a desk lamp becomes a practical light), swimmers stand on the tank floor, and there is no seated pose.
 - **Rooftops** use the `empty` set plus designed rooftop dressing. There is no roof edge or drop.
 - **The plaza building** comes from `props[]`. Switching to the plaza by chat from another set does not re-create it; describe a plaza scene instead.

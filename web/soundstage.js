@@ -86,6 +86,10 @@ const CSS = `
 .ss-sel[hidden] { display:none !important; }
 .ss-chip { background:#3a2810; color:#e39a40; border-radius:999px; padding:2px 10px; }
 .ss-tabs { display:flex; gap:2px; align-items:center; }
+.ss-set-describe-wrap { display:flex; gap:6px; flex:1 1 100%; align-items:center; }
+.ss-set-describe { flex:1 1 auto; min-width:0; background:#0f1216; color:#e6e9ee; border:1px solid #e39a40; border-radius:6px; padding:7px 10px; font:inherit; font-size:14px; }
+.ss-set-describe:focus { outline:2px solid #e39a40; outline-offset:1px; }
+.ss-btn-primary { background:#e39a40 !important; color:#14100a !important; font-weight:600; }
 .ss-bar select { background:#0f1216; color:#e6e9ee; border:1px solid #39404b; border-radius:4px; padding:3px 6px; font:inherit; }
 :is(.ss-tabs, :where(.ss-pophost) > .ss-toppop) button { background:#262b33; color:#cfd5de; border:1px solid #39404b; padding:4px 12px; cursor:pointer; font:inherit; font-weight:600; }
 .ss-tabs button:first-child { border-radius:4px 0 0 4px; } .ss-tabs button:last-child { border-radius:0 4px 4px 0; }
@@ -1896,7 +1900,34 @@ function createStageWidget(node, inputName) {
   const envRow = document.createElement("div");
   envRow.className = "ss-bar";
   const env0 = stage.toJSON().environment || {};
-  const setSel = mkSelect("Set", SETS, env0.set || "plaza", (v) => { stage.setEnvironment({ set: v }); syncEnv(); });
+  // Any set from a sentence: the scene agent composes the place (size, era, colours, dressing, light) and keeps what
+  // is already on the stage. The presets below are quick starts: pick one, then change it in words.
+  const setDescribe = Object.assign(document.createElement("input"), { type: "text", className: "ss-set-describe",
+    placeholder: "Describe your set: a cramped 1950s diner at night · a 6 × 4 m prison cell · inside a city bus · a medieval throne room…" });
+  setDescribe.setAttribute("aria-label", "Describe your set");
+  const setBuild = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn ss-btn-primary", textContent: "Build set" });
+  setBuild.title = "Builds any place from your words: real dimensions, materials and colours, light for the time and weather. "
+    + "Things the library lacks are made from simple shapes at their real size, and it says so. Your cast and props stay.";
+  for (const x of [setDescribe, setBuild]) {
+    x.addEventListener("pointerdown", (e) => e.stopPropagation());
+    x.addEventListener("keydown", (e) => e.stopPropagation());
+  }
+  const buildSet = () => {
+    const t = setDescribe.value.trim();
+    if (!t) { setDescribe.focus(); status.textContent = "Describe any set in words, or start from a preset and change it."; return; }
+    runAgent(async () => { await agent.edit(`set: ${t}`, { useModel: false }); syncEnv(); });
+  };
+  setBuild.addEventListener("click", buildSet);
+  setDescribe.addEventListener("keydown", (e) => { if (e.key === "Enter") buildSet(); });
+  const setDescribeWrap = Object.assign(document.createElement("div"), { className: "ss-set-describe-wrap" });
+  setDescribeWrap.append(setDescribe, setBuild);
+  const setSel = mkSelect("Start from preset", SETS, env0.set || "plaza", (v) => {
+    // A preset is a plain starting set: a composed room's size, colours and name go; everything on the stage stays.
+    stage.setEnvironment({ set: v, room: null, look: null, location: null });
+    syncEnv();
+    status.textContent = `Preset: ${SETS[v]?.label || v}, a quick start. Change it in words above ("make it a 1950s diner at night"): what you placed stays.`;
+  });
+  setSel.wrap.title = "Presets are quick starts. Describe any set in the box instead, or pick a preset and change it in words.";
   const wxSel = mkSelect("Elements", WEATHER, env0.weather || "none", (v) => stage.setEnvironment({ weather: v }));
   const dens = slider("Amount", 0, 1, 0.05, env0.density ?? 0.5, (v) => `${Math.round(v * 100)}%`, (v) => {
     clearTimeout(dens._t); dens._t = setTimeout(() => stage.setEnvironment({ density: v }), 120);
@@ -1909,7 +1940,7 @@ function createStageWidget(node, inputName) {
   const streetSel = mkSelect("Street", { off: { label: "Blocks and lamp posts" }, on: { label: "Clean facades (experimental)" } },
     streetOf(env0), (v) => stage.setEnvironment({ clean_street: v === "on" ? true : undefined }));
   streetSel.wrap.title = "Clean facades: one smooth wall a side, no gaps or lamp posts. Experimental: in a ride-along LTX test it removed an early passing car but added parked cars later in the shot.";
-  envRow.append(setSel.wrap, wxSel.wrap, dens.wrap, waterLv.wrap, streetSel.wrap);
+  envRow.append(setDescribeWrap, setSel.wrap, wxSel.wrap, dens.wrap, waterLv.wrap, streetSel.wrap);
   function syncEnv() {
     const e = stage.toJSON().environment || {};
     setSel.sel.value = e.set || "plaza";
@@ -2178,8 +2209,8 @@ function createStageWidget(node, inputName) {
       tip: "Lens, camera setups (wide, over-the-shoulder, insert…), aspect ratio; drag in the view to frame, keys make the move.",
       run: () => { inspect("cam"); spotlight(lensRow); spotlight(shotRow, null, { scroll: false }); status.textContent = "Frame in the view (drag, scroll), pick a lens, add setups for coverage. A key at the playhead records the move."; } },
     { k: "set", ic: "cloud-sun", label: "Set & weather",
-      tip: "Where it happens (desert, street at night, interior, water tank…) and the elements: rain, snow, fog, dust.",
-      run: () => { inspect("set"); spotlight(envRow, setSel.sel); } },
+      tip: "Describe any set in words (a 1950s diner at night, a 6 × 4 m prison cell, inside a bus), or start from a preset and change it; then the elements: rain, snow, fog, dust.",
+      run: () => { inspect("set"); spotlight(envRow, setDescribe); status.textContent = "Describe your set, or start from a preset (a quick start) and change it in words."; } },
     { k: "light", ic: "lightbulb", label: "Lighting",
       tip: "Time of day with a real sun, film lights (key, fill, rim, practicals) and classic setups like Rembrandt.",
       run: () => { inspect("light"); spotlight(lightRow, presetSel.sel); } },

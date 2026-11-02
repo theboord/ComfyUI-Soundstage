@@ -9,6 +9,8 @@ backend answers alone, so both calls always return something sensible.
 """
 from __future__ import annotations
 
+from . import catalog as C
+from . import location as LOC
 from . import ops as O
 from . import plan as P
 from .build import build_scene, pending_designs
@@ -26,9 +28,23 @@ def describe(text: str, genre: str = "", llm_text: str | None = None) -> dict:
         plan, n = P.merge_llm_plan(rules, raw)
         notes += n
         backend = "llm" if isinstance(raw, dict) else "rules (llm unreadable)"
+    # Any set from the sentence: the location composer reads the place (any place, era, size) and builds it from
+    # the library and real-size primitives; the presets are only what it starts from when the words name one.
+    loc = LOC.compose(f"{text} {genre}".strip())
+    # A preset the words name is already the plan's set (rules + model); a composed place replaces it.
+    if loc["known"] and loc["source"] == "composed":
+        plan = dict(plan, set=loc["key"], location=loc)
+        t = text.lower()
+        if loc["time"] and not P.pick(C.TIME_WORDS, t, None):
+            plan["time"] = loc["time"]
+        if loc["weather"] and not P.pick(C.WEATHER_WORDS, t, None):
+            plan["weather"] = loc["weather"]
     scene, n = build_scene(plan, text)
     notes += n
-    return {"scene": scene, "plan": plan, "notes": notes, "backend": backend, "designs": pending_designs(scene)}
+    out_plan = {k: v for k, v in plan.items() if k != "location"}
+    out_plan["set"] = scene["environment"]["set"]
+    return {"scene": scene, "plan": out_plan, "notes": notes, "backend": backend, "designs": pending_designs(scene),
+            "location": (scene.get("environment") or {}).get("location")}
 
 
 def _llm_sym_ops(llm_text: str) -> list[dict]:
@@ -53,7 +69,7 @@ def edit(scene: dict, command: str, llm_text: str | None = None) -> dict:
         l_ops, l_notes = O.resolve(scene, l_sym)
         # Prefer the model unless it resolved less than the rules did (unknown names, bad ops), or the rules matched
         # an unambiguous pattern the model tends to flatten (mount / dismount become plain moves).
-        exact = any(o.get("op") in ("mount", "dismount") for o in rules_sym) and r_ops
+        exact = any(o.get("op") in ("mount", "dismount", "location") for o in rules_sym) and r_ops
         if exact:
             chosen = (r_ops, r_notes, rules_sym, "rules")
         elif l_ops and (len(l_notes) <= len(r_notes) or not r_ops):

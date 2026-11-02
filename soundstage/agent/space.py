@@ -35,25 +35,35 @@ def overlap(a, b, clear: float = CLEAR) -> bool:
     return abs(a[0] - b[0]) < a[2] + b[2] + clear and abs(a[1] - b[1]) < a[3] + b[3] + clear
 
 
+def set_def(set_name: str) -> dict:
+    """The SETS entry for a key (a preset or a sized room "interior@WxDxH"); unknown keys read as the empty stage."""
+    if set_name in C.SETS:
+        return C.SETS[set_name]
+    if isinstance(set_name, str) and set_name.startswith("interior@"):
+        C.set_key({"set": set_name})  # registers the sized room
+        return C.ROOMS.get(set_name) or C.SETS["interior"]
+    return C.SETS["empty"]
+
+
 def obstacles(set_name: str) -> list[tuple]:
-    return [(o[0], o[1], o[2] / 2, o[3] / 2) for o in C.SETS[set_name]["obstacles"]]
+    return [(o[0], o[1], o[2] / 2, o[3] / 2) for o in set_def(set_name)["obstacles"]]
 
 
 def in_bounds(fp, set_name: str, margin: float = 0.05) -> bool:
-    x0, x1, z0, z1 = C.SETS[set_name]["bounds"]
+    x0, x1, z0, z1 = set_def(set_name)["bounds"]
     return (fp[0] - fp[2] >= x0 - margin and fp[0] + fp[2] <= x1 + margin
             and fp[1] - fp[3] >= z0 - margin and fp[1] + fp[3] <= z1 + margin)
 
 
 def clamp_into(fp, set_name: str) -> tuple[float, float]:
     """Nearest centre that keeps the footprint inside the set bounds."""
-    x0, x1, z0, z1 = C.SETS[set_name]["bounds"]
+    x0, x1, z0, z1 = set_def(set_name)["bounds"]
     hw, hd = min(fp[2], (x1 - x0) / 2), min(fp[3], (z1 - z0) / 2)
     return min(max(fp[0], x0 + hw), x1 - hw), min(max(fp[1], z0 + hd), z1 - hd)
 
 
 def anchor_points(set_name: str, name: str) -> list[list[float]]:
-    a = C.SETS[set_name]["anchors"].get(name)
+    a = set_def(set_name)["anchors"].get(name)
     if a is None:
         return []
     return [a] if isinstance(a[0], (int, float)) else list(a)
@@ -62,7 +72,7 @@ def anchor_points(set_name: str, name: str) -> list[list[float]]:
 def find_anchor(set_name: str, text: str):
     """Longest anchor name that appears in the text -> (name, points)."""
     t = (text or "").lower()
-    for name in sorted(C.SETS[set_name]["anchors"], key=len, reverse=True):
+    for name in sorted(set_def(set_name)["anchors"], key=len, reverse=True):
         if name in t or name.replace(" ", "") in t.replace(" ", ""):
             return name, anchor_points(set_name, name)
     return None, []
@@ -124,6 +134,8 @@ CAMERA_AREA = {
     "street_night": ([-6.4, 6.4, -24.5, 34], [0.1, 30]),
     "plaza": ([-30, 30, -40, 10.2], [0.1, 40]),
     "studio": ([-11, 11, -30, 9.6], [0.1, 15]),
+    "airplane_cabin": ([-1.75, 1.75, -12.3, 13.1], [0.3, 2.0]),
+    "train_car": ([-1.3, 1.3, -11.4, 11.4], [0.3, 2.3]),
 }
 DEFAULT_CAMERA_AREA = ([-45, 45, -45, 45], [0.1, 60])
 
@@ -131,7 +143,7 @@ DEFAULT_CAMERA_AREA = ([-45, 45, -45, 45], [0.1, 60])
 def clamp_camera(cam: dict, set_name: str) -> tuple[dict, bool]:
     """Pull a camera that would sit inside a wall back toward its target; keep the framing by narrowing
     the lens by the same ratio. Returns (camera, changed)."""
-    (x0, x1, z0, z1), (y0, y1) = CAMERA_AREA.get(set_name, DEFAULT_CAMERA_AREA)
+    (x0, x1, z0, z1), (y0, y1) = set_def(set_name).get("camera_area") or CAMERA_AREA.get(set_name, DEFAULT_CAMERA_AREA)
     p, t = [float(v) for v in cam["position"]], [float(v) for v in cam["target"]]
     inside = lambda q: x0 <= q[0] <= x1 and z0 <= q[2] <= z1  # noqa: E731
     changed = False

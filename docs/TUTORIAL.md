@@ -179,7 +179,7 @@ In ③ Set, a column of labelled icons. A tool never hides a feature of its own:
 | **Video → Stage** | Pick a clip; Soundstage rebuilds the location, the performer and the camera move (about a minute). |
 | **Photo → 3D** | Turn a photo into a whole 3D set, a solid object, a splat, a cut-out card, a backdrop or a floor plan. |
 | **Camera** | Lens, camera setups (wide, over-the-shoulder, insert...), aspect ratio. |
-| **Set & weather** | Where it happens (desert, night street, interior, water tank...) and rain, snow, fog, dust. |
+| **Set & weather** | Where it happens: **Describe your set** in words (any place, era and size), or **Start from preset** (desert, night street, interior, water tank...) and change it. Then rain, snow, fog, dust. |
 | **Lighting** | Time of day with a real sun, film lights and classic setups like Rembrandt. |
 | **Phone camera** | Hand-hold the shot camera with your phone or headset. |
 
@@ -206,7 +206,7 @@ Five tabs. Selecting something in the view switches it for you: an object or per
 |---|---|
 | **Object** | The add box, **Import 3D…**, the **Import an image as…** menu, **Export GLB**, the **Outliner**, and the selected object's controls: **Move** / **Rotate** / **Scale** gizmo, **Measure**, **Snap**, **Turn**, **Scale**, **Duplicate**, **Delete**; for people also Appearance, Pose, Interact and Capture. |
 | **Camera** | **Shot** picker, **New setup**, **Delete setup**, **Aspect**, **Lens & rig** (the lens slider, lens cards 14 to 135 mm, **Rig** and its amount), and the phone camera. |
-| **Set** | **Set**, **Elements**, **Amount**, and **Water** for the water tank. |
+| **Set** | **Describe your set** + **Build set**, **Start from preset**, **Elements**, **Amount**, and **Water** for the water tank. |
 | **Light** | **Light** (time-of-day presets or **Manual sun**), **Time**, **North**, **Add light**, **Auto 3-point**, **Light it like…**, the **Sun** dial, and the selected light's **K**, **Power**, **Height**, **Soft**, **Delete light**. |
 | **AI** | **Describe your scene…** + **Build scene**, then a second box to change it by chat ("move the camera lower", "add rain"). |
 
@@ -312,7 +312,7 @@ Block the scene in 3D clay: who stands where, what moves, where the camera is an
 A typical pass through the step:
 
 1. **Get the scene on the stage.** With a script, just pick the scene in the scene strip: its set, light, characters and vehicles appear. Or press **Build with AI** and describe it ("two cops question a cowboy on a horse outside a diner at magic hour"), or use **Build this scene on the stage** in ① Script, or add things by hand with **Add object**. To start from real material, use **Video → Stage** or **Photo → 3D**.
-2. **Pick the world.** **Set & weather** for the location and the elements; **Lighting** for the time of day, film lights or a classic setup.
+2. **Pick the world.** In **Set & weather**, type any place into **Describe your set** ("a cramped 1950s diner at night", "a 6 × 4 m prison cell", "inside a city bus") and press **Build set**, or **Start from preset** and change it in words. **Lighting** sets the time of day, film lights or a classic setup.
 3. **Place and move the cast.** Click a person to select it, drag it to place it. Move the playhead and drag again: a key is set at the playhead and the person walks between keys. Use **Person**, **Interact** and **Capture motion** for poses, interactions and real performances.
 4. **Frame the shot.** Stay in **Camera view**, pick a lens, and frame by dragging in the view, scrolling, or flying with W A S D. Move the playhead and reframe for a camera move; choose a **Rig** to give the move a real dolly, jib or handheld feel.
 5. **Add coverage.** **New setup** (Master, Wide, Two-shot, Over-the-shoulder A/B, Single A/B, Insert, POV) or **+ Shot** on the shot strip adds another camera on the same action.
@@ -322,8 +322,8 @@ A typical pass through the step:
 
 | Control | What it does |
 |---|---|
-| **Describe your scene: …** + **Build scene** | The scene agent blocks the whole scene: cast, set, light and camera. Enter also builds. |
-| **Change it: "move the camera lower", "add rain"… (Enter)** | Edit the scene by chat after it is built. |
+| **Describe your scene: …** + **Build scene** | The scene agent blocks the whole scene: cast, any set your words describe, light and camera. Enter also builds. |
+| **Change it: "move the camera lower", "add rain"… (Enter)** | Edit the scene by chat after it is built. "Make it a 1950s diner at night" changes the set and keeps your cast and props. |
 
 The scene agent runs on Qwen3.5 4B if you installed it, and on its own rules otherwise. The section [The 3D stage in depth](#4-the-3d-stage-in-depth) covers every stage control.
 
@@ -963,9 +963,26 @@ Tip: in ② Cast, **Generate** on a car makes a vehicle turnaround (front, rear,
 
 ### Sets, weather and light
 
+<a id="any-set"></a>
+
+#### Any set from a sentence
+
+You don't have to pick from a list. Type the place into **Describe your set** (the top of the **Set** tab) and press **Build set**, or put it in the scene you describe to **Build with AI**:
+
+- *a cramped 1950s diner at night*: a 7.2 × 5.4 m room with a checkerboard floor and mint walls, booths, a counter with stools, a jukebox, pendant lamps and neon, at night.
+- *a 6 by 4 metre prison cell*, *a 30 x 20 ft warehouse*: the room is built at the size you give (metres or feet; also "with a 2.4 m ceiling"). Without numbers, the place sets the size (an elevator is 2 × 2 m, a church 14 × 28 m) and "tiny", "small", "large" or "huge" scale it.
+- *inside a city bus*, *a subway car*, *the bridge of a starship*: vehicle interiors as rooms at the vehicle's size, with seat rows and poles. The airliner cabin and train carriage are full presets.
+- *a snowy mountain pass at dawn*, *a foggy graveyard*, *a farm*, *a campsite at night*, *the surface of Mars*: landscapes on open ground or a preset, re-coloured and dressed.
+- Eras and styles (*1920s*, *1950s*, *1980s*, *Victorian*, *medieval*, *futuristic*, *abandoned*) change the colours and add period pieces.
+
+Everything is placed at real size, against the walls, in rows or around the action, with no overlaps and out of the camera's view of the cast. Library objects (tables, chairs, cars, trees, rocks, walls) are used where they fit; anything else is built from boxes and cylinders at its real size and colour, and the status line says which ones ("Approximated with simple shapes at real size: jukebox…"). The object designer details those boxes if the local model is installed. If the stage can't build something as asked (a room bigger than 60 m, a planet's sky), it builds the nearest thing and says so.
+
+**Presets are quick starts.** **Start from preset** picks one of the 20 sets below. Then change it in words in the same box or in the chat ("make it a 1950s diner at night", "turn it into a medieval throne room", "make it 1920s"): the set, its colours, dressing and lights change, and your cast, your props and your cameras stay (anything that would now stand in a wall steps to the nearest free floor). One ⌘Z undoes the whole change. The Director understands the same words.
+
 **Set & weather** (the **Set** tab):
 
-- **Set**: Plaza exterior, City street, Interior room, Studio cyc / green screen, Forest, Desert, Beach & ocean, Water tank, Open water (sea / lake), Lake (calm, wooded shore, a dock), River rapids (whitewater), Stadium / ballfield, Underwater reef, Burning building (night), Airplane cabin, Airport runway, Above the clouds, Train carriage, Train station platform, Empty stage.
+- **Describe your set** + **Build set**: any place from your words (above).
+- **Start from preset**: Plaza exterior, City street, Interior room, Studio cyc / green screen, Forest, Desert, Beach & ocean, Water tank, Open water (sea / lake), Lake (calm, wooded shore, a dock), River rapids (whitewater), Stadium / ballfield, Underwater reef, Burning building (night), Airplane cabin, Airport runway, Above the clouds, Train carriage, Train station platform, Empty stage.
 - **Elements**: Clear, Rain, Snow, Fog / haze, Smoke, Dust, Fire sparks, Fire (flames, embers, smoke) on any set, with an **Amount**.
 - **Water**: the water level in the Water tank (0 to 4 m).
 

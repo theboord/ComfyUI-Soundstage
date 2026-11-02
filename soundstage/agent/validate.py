@@ -67,13 +67,23 @@ def validate_scene(scene, place: bool = True) -> tuple[dict, list[str]]:
     last = s["shot"]["frames"] - 1
 
     env = s.get("environment") if isinstance(s.get("environment"), dict) else {}
-    set_name = env.get("set") if env.get("set") in C.SETS else None
+    set_name = C.set_key(env)
     if set_name is None:
         notes.append(f"unknown set {env.get('set')!r}; using empty") if env.get("set") else None
         set_name = "empty" if env.get("set") else "plaza"
     weather = env.get("weather") if env.get("weather") in C.WEATHER else "none"
-    s["environment"] = {"set": set_name, "weather": weather, "density": min(max(_num(env.get("density"), 0.5), 0), 1),
-                        "water_level": min(max(_num(env.get("water_level"), 2.5), 0.3), 3.8)}
+    base = C.base_set(set_name)
+    out_env = {"set": base, "weather": weather, "density": min(max(_num(env.get("density"), 0.5), 0), 1),
+               "water_level": min(max(_num(env.get("water_level"), 2.5), 0.3), 3.8)}
+    # A composed set (soundstage/agent/location.py): the room size, its colours and what it is, kept as they are.
+    if C.set_room(set_name):
+        out_env["room"] = C.set_room(set_name)
+    if isinstance(env.get("look"), dict):
+        out_env["look"] = {str(k)[:24]: str(v)[:9] for k, v in env["look"].items()
+                           if isinstance(v, str) and len(v) in (4, 7) and v.startswith("#")}
+    if isinstance(env.get("location"), dict):
+        out_env["location"] = json.loads(json.dumps(env["location"]))
+    s["environment"] = out_env
 
     L = s.get("lighting") if isinstance(s.get("lighting"), dict) else {}
     lighting = {"mode": L.get("mode") if L.get("mode") in ("time", "manual") else "manual",
@@ -98,6 +108,9 @@ def validate_scene(scene, place: bool = True) -> tuple[dict, list[str]]:
             "intensity": min(max(_num(lt.get("intensity"), spec["intensity"]), 0), 50),
             "softness": min(max(_num(lt.get("softness"), spec["softness"]), 0), 1),
             "angle": min(max(_num(lt.get("angle"), spec["angle"]), 1), 180)})
+        for flag in ("from_location", "from_interior"):  # whose light it is: a set change takes its own lights with it
+            if lt.get(flag) is True:
+                lighting["lights"][-1][flag] = True
     s["lighting"] = lighting
     if lighting["mode"] == "time":
         s["sun"] = C.sun_for(lighting)
@@ -256,7 +269,7 @@ def validate_scene(scene, place: bool = True) -> tuple[dict, list[str]]:
 def check_scene(scene: dict) -> list[str]:
     """Problems that remain (used by tests): empty list = valid, on the floor, inside, no overlaps."""
     errs = []
-    set_name = scene["environment"]["set"]
+    set_name = C.set_key(scene["environment"]) or "empty"
     placed = []
     ids = {a["id"] for a in scene["actors"]}
     for a in scene["actors"]:

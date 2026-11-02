@@ -16,6 +16,7 @@ from soundstage.agent import core  # noqa: E402
 from soundstage.agent import ops as O  # noqa: E402
 from soundstage.agent import plan as P  # noqa: E402
 from soundstage.agent import prompts as PR  # noqa: E402
+from soundstage.agent import space as S  # noqa: E402
 from soundstage.agent.validate import check_scene, validate_scene  # noqa: E402
 
 PROMPTS = {
@@ -270,7 +271,8 @@ def test_edit_second_detective_by_window(scenes):
     res = core.edit(scenes["office"], "add a second detective by the window")
     new = res["ops"][0]["object"]
     assert new["kind"] == "man" and new["name"] == "Detective 2"
-    win = C.SETS["interior"]["anchors"]["window"]
+    # The office is a room at an office's size (location.py); its window anchor moves with the room.
+    win = S.set_def(C.set_key(scenes["office"]["environment"]))["anchors"]["window"]
     assert math.dist([new["position"][0], new["position"][2]], win) < 1.5
 
 

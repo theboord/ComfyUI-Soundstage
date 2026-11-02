@@ -50,6 +50,13 @@ export const WEATHER = {
   fire: { label: "Fire (flames, embers, smoke)" },
 };
 
+/** [w, d, h] of the interior room: environment.room clamped to what the stage builds, else the default. */
+export function roomSize(room, W = 8, D = 10, H = 3.2) {
+  if (!Array.isArray(room) || room.length < 3 || !room.every((v) => Number.isFinite(+v))) return [W, D, H];
+  const c = (v, a, b) => Math.min(b, Math.max(a, +v));
+  return [c(room[0], 1.6, 60), c(room[1], 1.6, 80), c(room[2], 2, 12)];
+}
+
 /** Tiny deterministic PRNG so "random" set dressing and particles are identical every render. */
 function rng(seed) {
   let s = seed >>> 0 || 1;
@@ -65,7 +72,8 @@ function rng(seed) {
 export function buildSet(preset, mesh, opts = {}) {
   if (SET_BUILDERS[preset]) return SET_BUILDERS[preset](opts);
   const g = new THREE.Group();
-  const col = (role) => dressColor(preset, role);
+  // opts.look: the scene's own colours by role (environment.look, from the scene agent's composed sets), else the set's.
+  const col = (role) => opts.look?.[role] || dressColor(preset, role);
   const box = (w, h, d, x, y, z, role) => {
     const m = mesh(new THREE.BoxGeometry(w, h, d), col(role));
     m.position.set(x, y, z);
@@ -104,14 +112,18 @@ export function buildSet(preset, mesh, opts = {}) {
       box(1.6, 0.18, 70, 6.2, 0.09, 8, "kerb");
       break;
     case "interior": {
+      // The default room; environment.room [width, depth, ceiling] builds it at any size (the scene agent's rooms:
+      // a 2 x 2 m lift, a 6 x 4 m cell, a 14 x 24 m throne room). Open on -Z for the camera, like the default.
       const W = 8, D = 10, H = 3.2;
-      box(W, H, 0.2, 0, H / 2, D / 2, "wall"); // back wall
-      box(0.2, H, D, -W / 2, H / 2, 0, "wall");
-      box(0.2, H, D, W / 2, H / 2, 0, "wall");
-      const win = box(2.2, 1.4, 0.25, -1.5, 1.7, D / 2 - 0.05, "window"); // window frame reads as a lighter patch
+      const [w, d, h] = roomSize(opts.room, W, D, H);
+      box(w, h, 0.2, 0, h / 2, d / 2, "wall"); // back wall
+      box(0.2, h, d, -w / 2, h / 2, 0, "wall");
+      box(0.2, h, d, w / 2, h / 2, 0, "wall");
+      const ww = Math.min(2.2, w * 0.3), wh = Math.min(1.4, h * 0.45);
+      const win = box(ww, wh, 0.25, -w * 0.19, Math.min(1.7, h - wh / 2 - 0.3), d / 2 - 0.05, "window"); // window frame reads as a lighter patch
       win.scale.z = 0.5;
-      box(W, 0.2, D, 0, H, 0, "ceiling"); // ceiling
-      box(1.0, 2.1, 0.25, 2.5, 1.05, D / 2 - 0.1, "door"); // door
+      box(w, 0.2, d, 0, h, 0, "ceiling"); // ceiling
+      box(Math.min(1.0, w * 0.3), Math.min(2.1, h - 0.1), 0.25, Math.min(w * 0.31, w / 2 - 0.7), Math.min(2.1, h - 0.1) / 2, d / 2 - 0.1, "door"); // door
       break;
     }
     case "studio": {

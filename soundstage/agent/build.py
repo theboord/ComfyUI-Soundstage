@@ -12,6 +12,7 @@ import re
 
 from . import catalog as C
 from . import cameras as CAM
+from . import location as LOC
 from . import space as S
 from .validate import validate_scene
 
@@ -59,7 +60,7 @@ def _put(obj: dict, pos, rot=None, end=None):
 
 
 def _span(set_name: str, want: float, axis: int = 0) -> float:
-    x0, x1, z0, z1 = C.SETS[set_name]["bounds"]
+    x0, x1, z0, z1 = S.set_def(set_name)["bounds"]
     room = (x1 - x0) if axis == 0 else (z1 - z0)
     return min(want, room - 2.0)
 
@@ -67,7 +68,7 @@ def _span(set_name: str, want: float, axis: int = 0) -> float:
 def block_cast(plan: dict, ids: set, notes: list[str]) -> tuple[list[dict], list[dict]]:
     """Cast on their marks. Returns (cast objects, furniture objects placed with them)."""
     set_name = plan["set"]
-    sx, sz = C.SETS[set_name]["stage"]
+    sx, sz = S.set_def(set_name)["stage"]
     people, animals, passers = [], [], []
     for c in plan["cast"]:
         o = make_object(c["kind"], ids, kind=c["kind"], label=c.get("name") or c["kind"].title())
@@ -121,7 +122,7 @@ def block_cast(plan: dict, ids: set, notes: list[str]) -> tuple[list[dict], list
             if ch:
                 furn.append(_put(make_object(ch, ids), (sx + side * 1.35, 0, sz), 90 * side * -1))
     elif b == "chase" and n >= 2:
-        x0, x1, _, _ = C.SETS[set_name]["bounds"]
+        x0, x1, _, _ = S.set_def(set_name)["bounds"]
         run = min(14.0, (x1 - x0) - 3)
         _put(people[0], (sx - run / 2 + 3.5, 0, sz), 90, end=(sx + run / 2, 0, sz + 0.6))
         _put(people[1], (sx - run / 2, 0, sz), 90, end=(sx + run / 2 - 3.5, 0, sz + 0.6))
@@ -129,7 +130,7 @@ def block_cast(plan: dict, ids: set, notes: list[str]) -> tuple[list[dict], list
         _put(people[1], (sx + 1.4, 0, sz), -90)
         _put(people[0], (sx - 4.0, 0, sz - 1.0), 90, end=(sx + 0.65, 0, sz))
     elif b == "walk_and_talk" and n >= 2:
-        z0 = min(sz + 6, C.SETS[set_name]["bounds"][3] - 1)
+        z0 = min(sz + 6, S.set_def(set_name)["bounds"][3] - 1)
         for i, a in enumerate(people[:2]):
             x = sx + (i - 0.5) * 0.9
             _put(a, (x, 0, z0), 180, end=(x, 0, sz - 1.5))
@@ -163,7 +164,7 @@ def block_cast(plan: dict, ids: set, notes: list[str]) -> tuple[list[dict], list
         ref = people[0]["position"] if people else [sx, 0, sz]
         _put(a, (ref[0] + 1.6 + i * 1.5, 0, ref[2] + 1.2), 180 if a["kind"] != "horse" else 90)
     # Whoever passes by crosses the frame upstage of the others, screen-left (+X) to screen-right (-X).
-    x0, x1, z0, z1 = C.SETS[set_name]["bounds"]
+    x0, x1, z0, z1 = S.set_def(set_name)["bounds"]
     if people:
         gx = sum(a["position"][0] for a in people) / len(people)
         gz = sum(a["position"][2] for a in people) / len(people)
@@ -194,7 +195,7 @@ def block_cast(plan: dict, ids: set, notes: list[str]) -> tuple[list[dict], list
 def dress(plan: dict, placed: list[dict], ids: set, master_cam: dict | None) -> list[dict]:
     """Place the remaining props in free floor around the action, out of the master camera's sight line."""
     set_name = plan["set"]
-    sx, sz = C.SETS[set_name]["stage"]
+    sx, sz = S.set_def(set_name)["stage"]
     cast = [a for a in placed if a["kind"] in C.PEOPLE and len(a.get("keys") or []) <= 1 and not a.get("mount_id")]
     cast = cast or [a for a in placed if a["kind"] in C.PEOPLE]
     cx = sum(a["position"][0] for a in cast) / len(cast) if cast else sx
@@ -227,7 +228,7 @@ def dress(plan: dict, placed: list[dict], ids: set, master_cam: dict | None) -> 
         return math.hypot(x - px, z - pz) < 1.0 + 2.2 * u
 
     out = []
-    x0, x1, z0, z1 = C.SETS[set_name]["bounds"]
+    x0, x1, z0, z1 = S.set_def(set_name)["bounds"]
     for i, name in enumerate(plan["props"]):
         if set_name in ("street_night", "plaza") and any(w in name.lower() for w in BUILDINGS):
             continue  # these sets already have their buildings
@@ -246,7 +247,7 @@ def dress(plan: dict, placed: list[dict], ids: set, master_cam: dict | None) -> 
             want, rot = (side * (5.3 - w[0] / 2), cz + 4 + 3 * i), 0
         elif o["kind"] == "horse":
             want, rot = (cx + 3.0, cz + 2.5), 90
-        elif C.SETS[set_name]["interior"] and any(k in lname for k in WALL_PROPS):
+        elif S.set_def(set_name)["interior"] and any(k in lname for k in WALL_PROPS):
             # Back wall first, then the side walls.
             spots = [((-2.2 + 2.2 * (i % 3)), z1 - w[2] / 2, 180), (x1 - w[2] / 2, cz + 1.5, -90), (x0 + w[2] / 2, cz + 1.5, 90)]
             sxx, szz, rot = spots[i % 3]
@@ -271,8 +272,14 @@ def dress(plan: dict, placed: list[dict], ids: set, master_cam: dict | None) -> 
         if not S.is_free(o, pos, set_name, placed + out):
             continue  # nowhere it fits (a 12 m diner on the street set): leave it out rather than overlap
         _put(o, pos)
+        if plan.get("text") and not _has_word(plan["text"].lower(), lname.split()[-1]):
+            o["set_dressing"] = True  # scene-type dressing the words didn't name: a set change replaces it
         out.append(o)
     return out
+
+
+def _has_word(t: str, w: str) -> bool:
+    return re.search(r"(?<![a-z])" + re.escape(w) + r"s?(?![a-z])", t) is not None
 
 
 def lights_for(plan: dict, scene: dict, master_cam: dict) -> list[dict]:
@@ -306,8 +313,9 @@ def lights_for(plan: dict, scene: dict, master_cam: dict) -> list[dict]:
             desk = next((a for a in scene["actors"] if a.get("kind") == "table" or "desk" in a.get("name", "").lower()), None)
             if desk:
                 pos = [round(desk["position"][0] + 0.45, 2), 1.05, round(desk["position"][2] - 0.1, 2)]
-        if scene["environment"]["set"] in S.CAMERA_AREA:
-            (x0, x1, z0, z1), (y0, y1) = S.CAMERA_AREA[scene["environment"]["set"]]
+        area = S.set_def(plan["set"]).get("camera_area") or S.CAMERA_AREA.get(plan["set"])
+        if area:
+            (x0, x1, z0, z1), (y0, y1) = area
             pos = [min(max(pos[0], x0 + 0.1), x1 - 0.1), min(pos[1], y1 - 0.1), min(max(pos[2], z0), z1 - 0.1)]
         lights.append({"id": f"light_{t}_{i + 1}", "type": t, "name": f"{spec['label']} {i + 1}", "position": pos,
                        "target": subj_pt, "kelvin": kelvin, "intensity": spec["intensity"], "softness": spec["softness"],
@@ -328,8 +336,11 @@ def build_scene(plan: dict, text: str = "") -> tuple[dict, list[str]]:
     ids: set = set()
     cast, furn = block_cast(plan, ids, notes)
     set_name = plan["set"]
-    env = {"set": set_name, "weather": plan.get("weather", "none"),
+    loc = plan.get("location") if isinstance(plan.get("location"), dict) and plan["location"].get("known") else None
+    env = {"set": C.base_set(set_name), "weather": plan.get("weather", "none"),
            "density": 0.6 if plan.get("weather") in ("rain", "snow") else 0.5, "water_level": 2.5}
+    if loc:
+        env.update({k: v for k, v in LOC.env_patch(loc).items() if v is not None})
     lighting = lighting_for(plan)
     scene = {"version": 2, "shot": {"frames": FRAMES, "fps": 24}, "environment": env, "lighting": lighting,
              "sun": C.sun_for(lighting), "actors": cast + furn,
@@ -340,17 +351,35 @@ def build_scene(plan: dict, text: str = "") -> tuple[dict, list[str]]:
     shots, cnotes = CAM.coverage(scene, text or plan.get("genre", ""), plan.get("shots", 3), plan.get("camera"))
     notes += cnotes
     master = {k: shots[0]["camera_keys"][0][k] for k in ("position", "target", "focal_mm")}
+    loc_lights = []
+    if loc:
+        # The place's own dressing first (walls, counters, pews...), then the props the words named that it lacks.
+        dressing, lnotes = LOC.place(loc, scene, ids, master)
+        scene["actors"] += dressing
+        notes += [LOC.describe_line(loc)] + lnotes + loc["approximations"]
+        have = [p["name"] for p in loc["pieces"]] + [a.get("name", "").lower() for a in dressing]
+        plan["props"] = [p for p in plan["props"] if not any(p in h or h in p for h in have if h)]
+        # The place's own practicals, unless the words asked for a lighting style (a bright sitcom three-point).
+        loc_lights = [] if "fill" in plan.get("lights", []) else LOC.practicals(loc, scene, dressing, master)
     scene["actors"] += dress(plan, scene["actors"], ids, master)
-    scene["lighting"]["lights"] = lights_for(plan, scene, master)
+    scene["lighting"]["lights"] = lights_for(plan, scene, master) + loc_lights
     scene["shots"] = shots
     scene["active_shot"] = shots[0]["id"]
     scene["camera_keys"] = shots[0]["camera_keys"]
     scene["camera"] = dict(master)
     last = shots[0]["camera_keys"][-1]
     scene["camera_end"] = {k: last[k] for k in ("position", "target", "focal_mm")}
-    scene["agent"] = {"prompt": text, "plan": {k: v for k, v in plan.items() if k not in ("props", "text")}}
+    scene["agent"] = {"prompt": text, "plan": {k: v for k, v in plan.items() if k not in ("props", "text", "location")}}
+    scene["agent"]["plan"]["set"] = env["set"]
     scene, vnotes = validate_scene(scene)
     notes += vnotes
+    # Say what is a stand-in: props the library lacks are one box at the thing's real size until the object designer
+    # (the local model) details them. The composed set already listed its own.
+    told = " ".join(notes)
+    boxes = sorted({a["design"] for a in scene["actors"] if a.get("kind") == "custom" and (a.get("recipe") or {}).get("placeholder")
+                    and a.get("design") and f"{a['design']}:" not in told})
+    if boxes:
+        notes.append("Approximated with simple shapes at real size until the object designer details them: " + ", ".join(boxes))
     return scene, notes
 
 

@@ -75,3 +75,13 @@ test("SceneAgent edit + undo/redo against a fake server (rules path, no model)",
   assert.equal(canon(stage.state), canon(c.expected));
   assert.equal(agent.history.length, 2);
 });
+
+test("set_environment: null clears a field, so undoing a composed set (room, look, location) leaves no trace", () => {
+  const before = { environment: { set: "desert", weather: "none" }, actors: [] };
+  const op = { op: "set_environment", set: { set: "interior", room: [12, 9, 3.2], look: { floor: "#d8d8d4" }, location: { label: "1950s diner" } },
+    undo: { op: "set_environment", set: { set: "desert", room: null, look: null, location: null } } };
+  const after = applyOpsToScene(before, [op]);
+  assert.deepEqual(after.environment.room, [12, 9, 3.2]);
+  const back = applyOpsToScene(after, inverseOf([op]));
+  assert.deepEqual(back.environment, before.environment);
+});

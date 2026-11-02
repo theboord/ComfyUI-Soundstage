@@ -47,7 +47,9 @@ export function applyOp(s, op) {
       break;
     }
     case "set_environment":
-      s.environment = { ...(s.environment || {}), ...op.set };
+      // null removes the field (the undo of a new field such as environment.room leaves no trace).
+      s.environment = { ...(s.environment || {}), ...clone(op.set) };
+      for (const [k, v] of Object.entries(op.set)) if (v === null) delete s.environment[k];
       break;
     case "set_lighting":
       s.lighting = { ...(s.lighting || {}), ...clone(op.set) };
@@ -240,9 +242,13 @@ export class SceneAgent {
     this.undoStack.push({ kind: "scene", before, after: res.scene, label: `Describe: ${text}` });
     this.redoStack = [];
     const s = res.plan;
-    const msg = `Built a ${s.set.replace("_", " ")} at ${s.time.replace("_", " ")}${s.weather !== "none" ? ` with ${s.weather}` : ""}: `
+    const loc = res.location;
+    const room = res.scene.environment?.room;
+    const where = loc?.label ? `${loc.label}${room ? ` (${room[0]} × ${room[1]} m)` : ""}` : s.set.replaceAll("_", " ");
+    const approx = loc?.approximations?.length ? ` Approximated: ${loc.approximations.join("; ")}.` : "";
+    const msg = `Built a ${where} at ${s.time.replace("_", " ")}${s.weather !== "none" ? ` with ${s.weather}` : ""}: `
       + `${res.scene.actors.length} objects, ${res.scene.shots.length} camera setup${res.scene.shots.length > 1 ? "s" : ""} `
-      + `(${res.backend}, ${((performance.now() - t0) / 1000).toFixed(1)} s).`;
+      + `(${res.backend}, ${((performance.now() - t0) / 1000).toFixed(1)} s).${approx} Change it in words: "make it a 1950s diner at night".`;
     this.history.push({ role: "agent", text: msg });
     this.onStatus(msg);
     if (this.designProps && res.designs?.length) this._designAll(res.designs); // fills in while you look
@@ -250,12 +256,12 @@ export class SceneAgent {
   }
 
   /** A chat command -> small undoable ops applied to the stage. */
-  async edit(command) {
+  async edit(command, { useModel = true } = {}) {
     const t0 = performance.now();
     this.history.push({ role: "user", text: command });
     this.onStatus("Working…");
     const scene = this.stage.toJSON();
-    const llm_text = await this._ask("edit", { command, scene });
+    const llm_text = useModel ? await this._ask("edit", { command, scene }) : null;   // "set: …" is exact by rules
     const res = await postJSON(this.api, "/soundstage/agent/edit", { scene, command, llm_text });
     if (res.ops.length) {
       this.onLoad(applyOps(this.stage, res.ops));

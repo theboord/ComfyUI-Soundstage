@@ -32,11 +32,13 @@ unless you said "go" ("render a draft of shot 2, go"). "Go to scene 2" is not a 
 
 ## What it can do (the tool layer)
 
-33 typed tools, defined once in `soundstage/agent/director.py` (`TOOLS`), validated on the server against the live
+40 typed tools, defined once in `soundstage/agent/director.py` (`TOOLS`), validated on the server against the live
 scene, run in the browser by `web/agent/director.mjs`:
 
 - **Set and cast:** add, stack (crates, boxes, barrels), move, remove, turn, scale, mount / dismount (people into cars,
-  onto horses, into seats), set, time of day, weather, film lights.
+  onto horses, into seats), **location** (any set from words: "make it a 1950s diner at night", "a 6 x 4 m prison cell";
+  it keeps the cast and what you placed, see [agent.md](agent.md#any-set-from-a-sentence)), a preset set (a quick
+  start), time of day, weather, film lights.
 - **Camera:** pick a shot, lens (mm), animated moves (push in, pull out, truck, crane, orbit, lock off, at a slow /
   medium / fast speed), rigs (tripod, dolly, steadicam, handheld, drone...), camera on a vehicle (hood mount, driver
   POV, passenger, back seat, dashboard, tracking alongside, overhead), new coverage setups, nudges.

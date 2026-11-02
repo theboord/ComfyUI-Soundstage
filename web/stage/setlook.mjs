@@ -50,6 +50,7 @@ const CLAY = "#9a9a9a";
 
 /** The floor colour of a set in the Color pass; snow lies on every outdoor set when it snows. */
 export function groundColor(env = {}) {
+  if (typeof env.look?.floor === "string") return env.look.floor;   // a composed set's own floor (scene agent)
   const look = SET_LOOK[env.set || "plaza"];
   if (env.weather === "snow" && look && !look.indoor && env.set !== "underwater") return SNOW;
   return look?.ground || CLAY;

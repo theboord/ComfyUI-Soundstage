@@ -67,9 +67,9 @@ def coverage(scene: dict, text: str, n_shots: int = 4, intent: dict | None = Non
 
     notes: list[str] = []
     cast = people(scene)
-    set_name = scene["environment"]["set"]
+    set_name = C.set_key(scene["environment"]) or "empty"
     if not cast:  # a set with no people: one wide on the stage centre
-        sx, sz = C.SETS[set_name]["stage"]
+        sx, sz = S.set_def(set_name)["stage"]
         cam = {"position": [sx, 1.7, sz - 8], "target": [sx, 1.0, sz], "focal_mm": 28}
         cam, _ = S.clamp_camera(cam, set_name)
         return [{"id": "shot_1", "name": "Wide", "setup": "wide", "camera_keys": keys_from(cam, None, scene)}], notes
@@ -109,7 +109,7 @@ def coverage(scene: dict, text: str, n_shots: int = 4, intent: dict | None = Non
         cam, ch1 = S.clamp_camera(cam, set_name)
         end, ch2 = S.clamp_camera(end, set_name)
         if ch1 or ch2:
-            notes.append(f"shot {s['shot_id']}: camera pulled inside the {C.SETS[set_name]['label'].lower()}")
+            notes.append(f"shot {s['shot_id']}: camera pulled inside the {S.set_def(set_name)['label'].lower()}")
         setup = _setup_for(s, by_letter)
         subj = str(s.get("subject", ""))
         who = by_letter.get(subj[:1])
@@ -207,7 +207,7 @@ def _limit_pitch(cam: dict, max_deg: float) -> dict:
 
 def shape(setup: str, cam: dict, end: dict, who: dict | None, scene: dict, intent: dict) -> tuple[dict, dict]:
     """Apply height intent, sane pitch and tracking to one advisor camera."""
-    set_name = scene["environment"]["set"]
+    set_name = C.set_key(scene["environment"]) or "empty"
     h = intent.get("height", "eye")
     moved = (G.sub(tuple(end["position"]), tuple(cam["position"])), G.sub(tuple(end["target"]), tuple(cam["target"])),
              float(end["focal_mm"]) / max(float(cam["focal_mm"]), 1e-6))
@@ -291,10 +291,10 @@ def _frame_points(pts, view, f, top, size, cam_y, margin):
 def compose(setup: str, subject: dict | None, other: dict | None, scene: dict, focal: float | None = None,
             height: float | None = None) -> dict:
     """One camera {position, target, focal_mm} for a named setup on a subject, in stage coordinates."""
-    set_name = scene["environment"]["set"]
+    set_name = C.set_key(scene["environment"]) or "empty"
     cast = people(scene) or scene.get("actors", [])
     if subject is None:
-        subject = cast[0] if cast else {"position": [*C.SETS[set_name]["stage"][:1], 0, C.SETS[set_name]["stage"][1]],
+        subject = cast[0] if cast else {"position": [*S.set_def(set_name)["stage"][:1], 0, S.set_def(set_name)["stage"][1]],
                                         "kind": "man"}
     sp = tuple(subject["position"])
     top = _top(subject)

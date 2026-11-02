@@ -544,8 +544,9 @@ export function noLook(ctx) {
 export function emptyScene(ctx) {
   if ((ctx.scene.actors || []).length) return [];
   return [{ rule: "empty_scene", key: "empty_scene", level: "tip", icon: "wand-sparkles", title: "Start with a sentence",
-    text: "The stage is empty. Describe the scene (“two gunfighters face off at noon”) and it builds the set, cast and cameras, " +
-      "or ask the Director's Advisor for a shot list.",
+    text: "The stage is empty. Describe the scene (“two gunfighters face off at noon”, “first date in a cramped 1950s diner at night”) " +
+      "and it builds any set from your words, plus the cast and cameras. Presets are only quick starts: pick one and change it in words. " +
+      "Or ask the Director's Advisor for a shot list.",
     actions: [{ label: "Describe the scene", kind: "describe", payload: {}, primary: true },
       { label: "Open Advisor", kind: "open_tab", payload: { tab: "advisor" } }] }];
 }

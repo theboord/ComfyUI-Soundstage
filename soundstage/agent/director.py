@@ -25,6 +25,7 @@ import json
 import re
 
 from . import catalog as C
+from . import location as LOC
 from . import ops as O
 from . import plan as P
 from . import parts as PT
@@ -59,7 +60,10 @@ TOOLS: dict[str, dict] = {
     "scale": {"kind": "edit", "doc": "Make something bigger or smaller", "args": {"target": ("name", True, None), "factor": ("num", True, (0.2, 5))}},
     "time": {"kind": "edit", "doc": "Time of day", "args": {"preset": ("enum", True, list(C.TIME_PRESETS))}},
     "weather": {"kind": "edit", "doc": "Weather and atmosphere", "args": {"weather": ("enum", True, C.WEATHER)}},
-    "set": {"kind": "edit", "doc": "Change the set", "args": {"set": ("enum", True, SETS)}},
+    "set": {"kind": "edit", "doc": "Switch to a preset set (a quick start)", "args": {"set": ("enum", True, SETS)}},
+    "location": {"kind": "edit", "doc": "Build or change the set from words: any place, era, size, time and weather "
+                 "('a 1950s diner at night', 'a 6 x 4 m prison cell', 'inside a city bus'); keeps the cast and what was placed",
+                 "args": {"describe": ("text", True, None)}},
     "light": {"kind": "edit", "doc": "Add a film light, aimed at someone", "args": {"type": ("enum", True, list(C.LIGHT_TYPES)), "on": ("name", False, None)}},
     "add_shot": {"kind": "edit", "doc": "A new camera setup (coverage)",
                  "args": {"setup": ("enum", True, ["wide", "two_shot", "single", "ots", "insert", "pov"]), "on": ("name", False, None), "over": ("name", False, None)}},
@@ -115,7 +119,8 @@ TOOLS: dict[str, dict] = {
 }
 TOOLS.update(PT.TOOL)   # Milestone 26: doors, lamps, light bar, wipers, steering, horse head / gait, faces, light flicker
 ALIASES = {"move_camera": "camera_move", "camera": "camera_move", "dolly": "camera_move", "set_lens": "lens", "focal": "lens",
-           "focal_length": "lens", "time_of_day": "time", "tod": "time", "atmosphere": "weather", "location": "set",
+           "focal_length": "lens", "time_of_day": "time", "tod": "time", "atmosphere": "weather", "build_set": "location", "describe_set": "location",
+           "redress": "location", "set_dressing": "location", "relocate": "location", "scenery": "location",
            "shot": "select_shot", "goto_shot": "select_shot", "new_shot": "add_shot", "coverage": "add_shot",
            "rotate": "turn", "delete": "remove", "put": "add", "place": "add", "seat": "mount", "ride": "mount",
            "get_in": "mount", "get_out": "dismount", "simulate": "bake", "bake_physics": "bake", "car_stunt": "stunt",
@@ -160,7 +165,7 @@ def normalize_scene(scene: dict) -> dict:
     """A deep copy the ops can work on, without moving anything (unlike validate_scene)."""
     s = copy.deepcopy(scene if isinstance(scene, dict) else {})
     s.setdefault("environment", {}).setdefault("set", "plaza")
-    if s["environment"].get("set") not in C.SETS:
+    if C.set_key(s["environment"]) is None:
         s["environment"]["set"] = "empty"
     s.setdefault("lighting", {}).setdefault("lights", [])
     acts = []
@@ -381,6 +386,13 @@ def validate_call(raw, work: dict, ctx: dict) -> dict:
     name = c["tool"]
     if name not in TOOLS:
         raise Invalid(f"no tool called '{name}'")
+    if name == "set":
+        # The model often names a place that isn't a preset ("set": "1950s diner"): that's a location to build.
+        v = next((c["args"][k] for k in ("set", "name", "preset", "location") if c["args"].get(k)), "")
+        key = str(v).strip().lower().replace("-", "_").replace(" ", "_")
+        if key not in C.SETS and key not in ("street", "city", "room", "reef") and LOC.compose(str(v))["known"]:
+            c = {"tool": "location", "args": {"describe": str(v)}}
+            name = "location"
     spec = TOOLS[name]
     given = c["args"]
     # Synonym args the model likes.
@@ -408,6 +420,8 @@ def validate_call(raw, work: dict, ctx: dict) -> dict:
             k2 = "shots"
         if name == "set" and k in ("name", "preset", "location"):
             k2 = "set"
+        if name == "location" and k in ("text", "description", "set", "place", "what", "location", "name", "prompt"):
+            k2 = "describe"
         if name == "weather" and k in ("type", "preset", "kind"):
             k2 = "weather"
         if name == "camera_move" and k in ("type", "kind", "direction"):
@@ -444,7 +458,7 @@ def validate_call(raw, work: dict, ctx: dict) -> dict:
                  "close_up": "single", "closeup": "single", "over_the_shoulder": "ots", "two": "two_shot", "establishing": "wide",
                  "master": "wide", "hand_held": "handheld", "crane": "jib", "street": "street_night", "city": "street_night",
                  "room": "interior", "bonnet": "hood", "hood_mount": "hood", "windscreen": "windshield", "pov": "driver_pov",
-                 "dash": "dashboard", "tracking": "side", "overhead": "top", "underwater": "water_tank",
+                 "dash": "dashboard", "tracking": "side", "overhead": "top", "reef": "underwater",
                  "boom_up": "crane_up", "boom_down": "crane_down", "track_left": "truck_left", "track_right": "truck_right",
                  "orbit": "orbit_left", "arc": "orbit_left", "locked_off": "static", "zoom_in": "tighter", "zoom_out": "wider",
                  "closer": "push_in" if name == "reframe" else "closer", "up": "higher" if name == "reframe" else "up",
@@ -598,6 +612,8 @@ def _sym(call):
         return [{"op": "weather", "weather": a["weather"]}]
     if t == "set":
         return [{"op": "set", "set": a["set"]}]
+    if t == "location":
+        return [{"op": "location", "describe": a["describe"]}]
     if t == "light":
         return [{"op": "light", "type": a["type"], **({"on": a["on_id"]} if a.get("on_id") else {})}]
     if t == "add_shot":
@@ -685,7 +701,8 @@ def plan_line(call, work, ctx):
         "scale": lambda: f"make {a['target']} {'bigger' if a['factor'] > 1 else 'smaller'} (x{a['factor']:g})",
         "time": lambda: f"move the clock to {C.TIME_PRESETS[a['preset']]['label'].lower()}",
         "weather": lambda: "clear the weather" if a["weather"] == "none" else f"bring in {a['weather']}",
-        "set": lambda: f"move us to the {a['set'].replace('_', ' ')} set",
+        "set": lambda: f"start from the {C.SETS[a['set']]['label'].lower()} preset",
+        "location": lambda: f"build the set: {a['describe']}",
         "light": lambda: f"add a {C.LIGHT_TYPES[a['type']]['label'].lower()} light" + (f" on {a['on']}" if a.get("on") else ""),
         "add_shot": lambda: f"add a {a['setup'].replace('_', ' ')} setup" + (f" on {a['on']}" if a.get("on") else ""),
         "reframe": lambda: f"nudge the camera: {a['move'].replace('_', ' ')}",
@@ -908,6 +925,10 @@ def rules_calls(command: str, scene: dict, ctx: dict | None = None) -> list[dict
         return [{"tool": "build", "text": text[m.start(1):].strip()}]
     if re.match(r"^\s*(undo|take that back|revert that|go back one)\b", low):
         return [{"tool": "undo"}]
+    # A set description ("make it a 1950s diner at night"): one location call carries its time and weather too.
+    where = LOC.relocation_text(re.sub(r"^(?:please|ok(?:ay)?|now|can you|could you|let'?s)\s+", "", low.strip()), work)
+    if where:
+        return [{"tool": "location", "describe": where}]
     last_person = None
     last_obj = None
     people = _people(work)
@@ -1217,6 +1238,7 @@ def _from_sym(so: dict) -> dict | None:
          "time": lambda: {"tool": "time", "preset": so.get("preset")},
          "weather": lambda: {"tool": "weather", "weather": so.get("weather")},
          "set": lambda: {"tool": "set", "set": so.get("set")},
+         "location": lambda: {"tool": "location", "describe": so.get("describe")},
          "light": lambda: {"tool": "light", "type": so.get("type"), **({"on": so["on"]} if so.get("on") else {})},
          "shot": lambda: {"tool": "add_shot", "setup": so.get("setup"), **{k: so[k] for k in ("on", "over") if so.get(k)}},
          "camera": lambda: ({"tool": "lens", "mm": so["focal"]} if so.get("focal") and not so.get("move") else {"tool": "reframe", "move": so.get("move")}),

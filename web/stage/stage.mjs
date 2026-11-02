@@ -376,7 +376,7 @@ export class Stage {
 
     const env = this.state.environment || { set: "plaza", weather: "none", density: 0.5 };
     const clean = this._cleanStreetSig();
-    const built = buildSet(env.set || "plaza", (geom, color) => this._mesh(geom, color), { water_level: env.water_level, ...(clean ? JSON.parse(clean) : {}) });
+    const built = buildSet(env.set || "plaza", (geom, color) => this._mesh(geom, color), { water_level: env.water_level, room: env.room, look: env.look, ...(clean ? JSON.parse(clean) : {}) });
     if (built.group) this.root.add(built.group);
     this._setGroup = built.group;
     this._setCleanSig = clean;
@@ -476,7 +476,7 @@ export class Stage {
     const env = this.state.environment || {};
     if (this._setGroup) this.root.remove(this._setGroup);
     const clean = this._cleanStreetSig();
-    const built = buildSet(env.set || "plaza", (geom, color) => this._mesh(geom, color), { water_level: env.water_level, ...(clean ? JSON.parse(clean) : {}) });
+    const built = buildSet(env.set || "plaza", (geom, color) => this._mesh(geom, color), { water_level: env.water_level, room: env.room, look: env.look, ...(clean ? JSON.parse(clean) : {}) });
     if (built.group) this.root.add(built.group);
     this._setGroup = built.group;
     this._setCleanSig = clean;
@@ -3949,6 +3949,7 @@ export class Stage {
   /** Change set / weather / density / water level, e.g. setEnvironment({ set: "water_tank" }). */
   setEnvironment(patch) {
     this.state.environment = { ...(this.state.environment || {}), ...patch };
+    for (const [k, v] of Object.entries(patch)) if (v === null) delete this.state.environment[k];   // null clears (room, look…)
     this._buildSet();
     this.setFrame(this.frame);
     this.onChange(this.toJSON());

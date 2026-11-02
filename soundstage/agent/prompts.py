@@ -66,7 +66,7 @@ def scene_context(scene: dict) -> str:
         what = (a.get("design") or (a.get("recipe") or {}).get("name")) if k == "custom" else k
         items.append(f"{a.get('name')} ({what})" if str(a.get("name", "")).lower() != str(what).lower() else str(a.get("name")))
     lines.append("On set: " + (", ".join(items) or "nothing"))
-    places = [p for p in C.SETS.get(env.get("set"), C.SETS["empty"])["anchors"] if p not in ("centre",)]
+    places = [p for p in C.SETS.get(C.set_key(env) or "empty", C.SETS["empty"])["anchors"] if p not in ("centre",)]
     if places:
         lines.append("Places: " + ", ".join(places[:8]))
     shots = scene.get("shots") or []

@@ -58,12 +58,14 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 - **Hollywood-grade finals that check themselves.** Draft · Final · Hollywood (2624×1408) on LTX-2.5; every take is checked for freezes, jumps, face drift and cars driving backwards, and scored on how well it **follows your blocking**.
 - **A real NLE timeline, delivered at source spec.** Dissolves, dips, wipes, sound generated in place, loudness to broadcast targets; export to Avid, Premiere, Resolve and FCP (EDL, XML, FCPXML, OTIO, AAF) with the camera original's timecode, plus VFX Layer Packs.
 - **Round trip with Blender, Unreal, Maya and Nuke.** Import a whole world as the set; send the shot back with builder scripts (measured IoU 0.99+ in Blender).
+- **Any set from a sentence.** Type any place, era and size and the stage builds it: rooms of any size, vehicle interiors, landscapes and period details, with real dimensions, colours and light for the time and weather. Anything the library lacks is a simple shape at its real size, and the notes say so. The 20 sets are presets, quick starts you can change in words without losing what you placed.
 - **An AI Director plus MCP.** Talk or type to the set; Claude Desktop or Code can drive the open App over MCP. Every change is proposed first and undoable.
 
 ### What's new (updated continuously, times US Pacific)
 
 | When | Update |
 |---|---|
+| Nov 2, 15:50 PST | **Any set from a sentence:** type any place ("a cramped 1950s diner at night", "a 6 × 4 m prison cell", "inside a city bus", "a medieval throne room") and the stage builds it at real size, in its colours, dressed and lit for the time and weather. Things the library lacks are simple shapes at their real size, and it says so. The 20 sets are presets: quick starts you change in words ("make it a 1950s diner at night"), keeping everything you placed. |
 | Nov 2, 11:10 PST | **Try-it demo at phone width:** long chooser chips and the frame-generate row wrap, and the Coach pill steps below the **Identical?** bar. |
 | Nov 2, 10:45 PST | **Try it in your browser:** a first screen that shows clay becoming the shot, a 10-stop tour of what's new, and a real Video → 3D run replayed through the App. Video → 3D seats a car's driver and builds a city street; the rebuild is still the basic version. |
 | Nov 2, 10:13 PST | **Docs checked against the code:** README, Quickstart, Tutorial, MCP and Video → 3D pages match the App today, including what the Video → 3D server doesn't do yet. |
@@ -408,7 +410,7 @@ ComfyUI's cache means each Run only does the new work.
 - **Dailies and ScriptSync.** Setups and takes as an Avid-style bin with circled takes; ScriptSync (lined script): thumbnails on the coverage lines, click a line to play that take from there, editable lining.
 - **Tool dock.** Every Set feature has a labelled icon (Build with AI, Add object, Person, Interact, Capture motion, Video → 3D set, Photo → 3D, Camera, Set & weather, Lighting, Phone camera).
 - **Multi-shot through every step.** One scene, several camera setups. Frame, Motion, Review and Deliver all run per shot.
-- **3D stage.** Add objects by name ("cowboy on a horse", "police car"). Riders sit astride horses, bikes and motorcycles. Sets include a plaza, a night street, interiors, a studio, forest, desert, beach, a water tank, open water, a lake, river rapids, a stadium, an underwater reef, a burning building, an airplane cabin, a runway, above the clouds, a train carriage and a station platform, with rain, snow, fog, smoke, dust and sparks. GLB import and export.
+- **3D stage.** Add objects by name ("cowboy on a horse", "police car"). Riders sit astride horses, bikes and motorcycles. **Any set from a sentence** (a room at any size, a diner, a prison cell, a bus, a throne room, a graveyard, Mars...), and 20 preset sets as quick starts: a plaza, a night street, interiors, a studio, forest, desert, beach, a water tank, open water, a lake, river rapids, a stadium, an underwater reef, a burning building, an airplane cabin, a runway, above the clouds, a train carriage and a station platform, with rain, snow, fog, smoke, dust and sparks. GLB import and export.
 - **Rigged CC0 models.** A rigged horse (idle, walk, gallop) and three cars (hatchback, police car, sports car) by Quaternius, CC0.
 - **Flashlight prop.** A handheld flashlight with a real beam. Drag it onto a person to hand it to them.
 - **In-car camera presets.** The shot camera can ride along inside a vehicle, with interior framings. **＋ All interior shots** adds one shot per interior angle in a single click.
