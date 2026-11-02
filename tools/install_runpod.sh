@@ -37,6 +37,10 @@ get() {
   mv "$tmp/$file" "$dir/$name"; rm -rf "$tmp"
 }
 
+echo "== FLUX 3 Klein (first frame, cast sheets: the App default)"
+get black-forest-labs/flux-3-image-klein-comfy diffusion_models/flux3-image-klein-int8-convrot.safetensors diffusion_models
+get Comfy-Org/flux2-dev split_files/vae/flux2-vae.safetensors vae
+
 echo "== Krea 2 (look still)"
 get Comfy-Org/Krea-2 diffusion_models/krea2_turbo_fp8_scaled.safetensors diffusion_models Krea-2-Turbo.safetensors
 get Comfy-Org/Krea-2 text_encoders/qwen3vl_4b_fp8_scaled.safetensors text_encoders
@@ -53,5 +57,9 @@ get Lightricks/LTX-2.5-22b-IC-LoRA-Layout-To-Render ltx-2.5-22b-ic-lora-layout-t
 
 echo "== optional: object designer + scene agent (Qwen3.5 4B)"
 [ "${SKIP_LLM:-0}" = "1" ] || get Comfy-Org/Qwen3.5 text_encoders/qwen3.5_4b_bf16.safetensors text_encoders
+
+echo "== optional: offline Director voice (whisper-base)"
+[ "${SKIP_LLM:-0}" = "1" ] || [ -s models/whisper/whisper-base/model.safetensors ] || \
+  hf download openai/whisper-base --include "*.json" "*.txt" "model.safetensors" --local-dir models/whisper/whisper-base >/dev/null
 
 echo "Done. Start ComfyUI, open Workflows → Soundstage_App (graph view once, then App mode)."
