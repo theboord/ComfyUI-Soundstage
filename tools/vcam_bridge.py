@@ -6,7 +6,7 @@ Mac's 127.0.0.1, and its motion sensors only work on an https page. This bridge 
 https and forwards to the tunnel, with three locks so ComfyUI is never simply "open on the network":
 
   1. a pairing token: the QR code carries it once (?vk=...), the phone keeps it as a cookie; no token, no entry;
-  2. an allow-list: only the viewfinder page, its WebSocket, its take upload and the read-only files the stage needs
+  2. an allow-list: only the viewfinder page, its WebSocket, its take and clip uploads and the read-only files the stage needs
      (/extensions/<pack>/..., /view). /prompt, /queue, /api/userdata, /upload... are refused (403) even with the token;
   3. it is LAN only (nothing is exposed to the internet) and runs only while this command runs (Ctrl-C stops it).
 
@@ -45,7 +45,7 @@ MAX_HEAD = 32 * 1024
 ALLOW = [
     ("GET", re.compile(r"^/soundstage/vcam(/(viewfinder|status|pair|takes|take|device\.mjs|stabilize\.mjs))?$")),
     ("GET", re.compile(r"^/soundstage/vcam/ws$")),                     # WebSocket upgrade
-    ("POST", re.compile(r"^/soundstage/vcam/(take|pose)$")),
+    ("POST", re.compile(r"^/soundstage/vcam/(take|pose|clip)$")),           # clip: "Film a move" (needs the clip code too)
     ("GET", re.compile(r"^/extensions/" + re.escape(PACK) + r"/[A-Za-z0-9_./-]+$")),
     ("GET", re.compile(r"^/(api/)?view$")),                            # models, backdrops, mocap takes the stage loads
     ("GET", re.compile(r"^/favicon\.ico$")),
