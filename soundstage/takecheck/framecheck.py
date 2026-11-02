@@ -14,13 +14,20 @@ verdict: "ok" (every actor on its silhouette, nothing extra), "loose" (an actor 
 than ON_MARK) or "flag" (an extra or a missing object, or an actor off its mark). The App puts a badge on each
 candidate in ④ Frame and re-rolls flagged ones (web/pipeline/framecheck.mjs).
 
-Pure numpy; SoundstageFrameCheck (nodes_takecheck.py) runs SAM and calls score().
+A re-roll only cures a ghost that one seed made up. A ghost the prompt asks for comes back with every seed: the crate
+crash's "sports car close to the camera, half the frame wide" came from a misread ID pass (look/frame_lock.py), so
+the check's own ground truth is read the same careful way.
+
+Pure numpy; SoundstageFrameCheck (nodes_takecheck.py) runs SAM and calls stage_silhouettes() and score().
 """
 from __future__ import annotations
 
 import numpy as np
 
-VERSION = 2               # 2: SAM asked for up to 8 objects per kind (1 before: a second car went unseen)
+VERSION = 3               # 2: SAM asked for up to 8 objects per kind (1 before: a second car went unseen)
+                          # 3: solid ID silhouettes; a car painted over crates (a prop SAM never looks for) is extra
+SAM_PROMPT = {"man": "person", "woman": "person", "child": "person", "person": "person", "boy": "person", "girl": "person",
+              "horse": "horse", "dog": "dog", "cat": "cat", "bird": "bird", "cow": "cow"}
 ON_MARK = 0.45           # silhouette IoU at which an actor is on its mark in the frame
 OFF_MARK = 0.2           # below this it is somewhere else (or a different size) altogether
 EXTRA_SCORE = 0.5        # detector confidence for an object to count as extra
@@ -36,6 +43,46 @@ def iou(a: np.ndarray, b: np.ndarray) -> float:
 
 def _label(kind_prompt: str) -> str:
     return {"person": "person", "car": "car", "truck": "truck", "horse": "horse"}.get(kind_prompt, kind_prompt)
+
+
+def prompt_for(kind: str) -> str | None:
+    """The SAM 3.1 text prompt that finds an actor of this kind ("person", "horse", "car"), or None."""
+    k = (kind or "").lower()
+    if k in SAM_PROMPT:
+        return SAM_PROMPT[k]
+    from .detect import is_road_vehicle
+    if is_road_vehicle(k):
+        return "truck" if k == "truck" else "car"
+    return None
+
+
+def stage_silhouettes(id_rgb: np.ndarray, scene: dict) -> tuple[dict, dict]:
+    """{actor_id: {mask, kind}} for the people, animals and vehicles of frame 1 (a car's occupants inside its
+    silhouette), plus "_set": the set pieces SAM itself would find (a parked car, a person or horse standing as set
+    dressing), so a detection on one is that set piece, not an extra. Crates, tarps and sand are nothing SAM looks
+    for: they are left out, so a car painted over the crate pyramid is a ghost car. And {actor_id: name}."""
+    from ..look import frame_lock as FLK
+    from ..look import scene as S
+    from . import blocking as B
+    masks = FLK.id_masks(id_rgb, scene.get("id_colors") or {})
+    actors = B.tracked_actors(scene)
+    keep = {a.get("id") for a in actors}
+    out = {}
+    for a in actors:
+        k = prompt_for(a.get("kind"))
+        if k and a.get("id") in masks:
+            out[a["id"]] = {"mask": masks[a["id"]].copy(), "kind": k}
+    for a in scene.get("actors") or []:     # seated in a car: part of the car from outside
+        host = a.get("mount_id")
+        if a.get("id") not in keep and host in out and a.get("id") in masks and not float(a.get("mount_at") or 0) > 0:
+            out[host]["mask"] |= masks[a["id"]]
+    for a in scene.get("actors") or []:
+        if a.get("id") in out or a.get("id") not in masks:
+            continue
+        if prompt_for(a.get("kind")) or S.classify(a)[1] in ("biped", "quadruped", "vehicle"):
+            out.setdefault("_set", {"mask": np.zeros_like(masks[a["id"]]), "kind": "_set"})["mask"] |= masks[a["id"]]
+    names = {a.get("id"): a.get("name") or a.get("kind") for a in scene.get("actors") or []}
+    return out, names
 
 
 def score(stage: dict, detections: list[dict], names: dict | None = None) -> dict:
