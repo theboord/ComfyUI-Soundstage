@@ -29,6 +29,10 @@ CORE = [
     {"name": "soundstage_apply", "description": "Apply a proposed plan in the open App (it shows up on the stage and in the Director panel, undoable). Plans that render on the GPU need confirm_gpu=true: ask the user first.",
      "inputSchema": {"type": "object", "properties": {"plan_id": {"type": "string"}, "confirm_gpu": {"type": "boolean", "default": False}}, "required": ["plan_id"]}},
     {"name": "soundstage_undo", "description": "Undo the last Director change in the open App.", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "soundstage_judge_take", "description": "The realism judge (VFX-supervisor pass): a local vision model inspects a rendered take's cars, faces and hands and says whether they could be real. Returns pass/fail, a 0-10 score and specific defects with frames (\"rear lights incoherent, f24-64\"). Check every Hollywood take with it before calling it done. About a minute, queued on the GPU; cached per take.",
+     "inputSchema": {"type": "object", "properties": {"filename": {"type": "string", "description": "the take's file name, e.g. final_00028_.mp4"},
+                                                       "subfolder": {"type": "string", "default": "soundstage"}, "type": {"type": "string", "default": "output"},
+                                                       "force": {"type": "boolean", "default": False}}, "required": ["filename"]}},
 ]
 
 
@@ -115,6 +119,15 @@ def _apply_text(res: dict) -> str:
         (f"\nNext: {', '.join(n['label'] for n in nxt)}" if nxt else "") + "\n(Undo with soundstage_undo.)"
 
 
+def judge_text(r: dict) -> str:
+    if r.get("verdict") not in ("pass", "fail"):
+        return f"Not judged: {r.get('error') or r.get('why') or 'no verdict'}"
+    lines = [f"{'PASS' if r['verdict'] == 'pass' else 'FAIL (AI slop)'}: realism {r.get('score')}/10 ({r.get('model')}, frames {r.get('frames')})"]
+    lines += [f"- {d['label']}: {'; '.join(d.get('examples') or [])[:200]}" for d in r.get("defects") or []]
+    lines += [f"- minor: {d['label']}" for d in (r.get("minor") or [])[:4]]
+    return "\n".join(lines)
+
+
 def call_tool(name: str, args: dict) -> tuple[str, bool]:
     args = dict(args or {})
     if name == "soundstage_state":
@@ -133,6 +146,10 @@ def call_tool(name: str, args: dict) -> tuple[str, bool]:
     if name == "soundstage_undo":
         r = http("POST", "/soundstage/director/undo", {})
         return ("Error: " + r["error"]) if r.get("error") else (f"Undid: {r.get('undid')}" if r.get("undid") else "Nothing to undo."), bool(r.get("error"))
+    if name == "soundstage_judge_take":
+        f = {"filename": args.get("filename", ""), "subfolder": args.get("subfolder", "soundstage"), "type": args.get("type", "output")}
+        r = http("POST", "/soundstage/takecheck/realism", {"file": f, "force": bool(args.get("force"))}, timeout=900)
+        return judge_text(r), r.get("verdict") not in ("pass", "fail")
     if name.startswith("ss_"):
         dry = args.pop("dry_run", True)
         confirm = bool(args.pop("confirm_gpu", False))
