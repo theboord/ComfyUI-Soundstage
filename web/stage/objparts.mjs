@@ -549,7 +549,13 @@ export function installParts(Stage, deps) {
     const sh = this.activeShot();
     if (ch === "focal_mm") { const k = this._camKeys(); if (k.length > 1) sh.camera_keys = k.filter((x) => x.frame !== frame); }
     else if (ch === "shutter_deg") dropKey(sh, ch, frame);
-    else { const field = { focus_m: "focus_m", t_stop: "t_stop", roll_deg: "roll" }[ch]; sh.lens_keys = (sh.lens_keys || []).filter((k) => k.frame !== frame || Object.keys(k).some((q) => q !== "frame" && q !== field)); }
+    else {
+      // Remove only this channel's value at `frame`; the key stays for the other lens channels it still carries.
+      const field = { focus_m: "focus_m", t_stop: "t_stop", roll_deg: "roll" }[ch];
+      for (const k of sh.lens_keys || []) if (k.frame === frame) delete k[field];
+      sh.lens_keys = (sh.lens_keys || []).filter((k) => Object.keys(k).some((q) => q !== "frame"));
+      if (!sh.lens_keys.length) delete sh.lens_keys;
+    }
   };
 
   /** Key every animatable channel of an object at the playhead (K). */
