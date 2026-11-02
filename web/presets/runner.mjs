@@ -14,6 +14,7 @@ import { seabedHeight } from "../stage/sets/underwater.mjs";
 import { imperfectStack, idSeed } from "../stage/impacts.mjs";
 import { SOFT_PRESET_KINDS, softPreset } from "./softpresets.mjs";
 import { boatPreset, isBoat } from "./boatpresets.mjs";
+import { mountFrames } from "../stage/gait.mjs";
 
 const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
 const DEG = Math.PI / 180;
@@ -378,7 +379,8 @@ export class PresetRunner {
   }
 
   _mount(p) {
-    const st = this.stage, at = Math.round((p.apply.at_seconds ?? 1) * this._fps());
+    const st = this.stage;
+    let at = Math.round((p.apply.at_seconds ?? 1) * this._fps());
     const rider = this._person({ free: true });
     if (!rider) return { ok: false, said: "Climb / mount needs a person on set." };
     const others = this._actors().filter((x) => x.id !== rider.id && x.id !== rider.mount_id);
@@ -397,6 +399,9 @@ export class PresetRunner {
     }
     const vehicle = isVehicle(host) && !RIDE_KINDS.has(host.kind);
     const taken = this._actors().some((x) => x.mount_id === host.id && (x.seat ?? 0) === 0);
+    // On a horse they climb on from the ground (gait.mjs, a few seconds): seated no sooner than the climb takes (the
+    // stage walks them to the stirrup first, and seats them later still when that walk needs the time).
+    if (host.kind === "horse") at = Math.max(at, mountFrames(this._fps()));
     const ok = st.mount(rider.id, host.id, null, at, vehicle ? (taken ? 1 : 0) : null);
     if (!ok) return { ok: false, said: `${nameOf(rider)} can't get onto ${nameOf(host).toLowerCase()}.` };
     return { ok: true, said: `Applied 'Climb / mount': ${nameOf(rider)} ${vehicle ? "gets into" : "mounts"} the ${nameOf(host).toLowerCase()} at ${(at / this._fps()).toFixed(1)} s.`, whereObj: nameOf(rider) };

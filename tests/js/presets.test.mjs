@@ -9,6 +9,7 @@ import { loadCatalog, buildCatalog, validateCatalog, cameraKeys, lightingPlan, e
   searchPresets, presetsInText, userPresetFrom, userCameraKeys, parseUserPresets, userPresetsFile, CAMERA_MOVES, TAB_IDS } from "../../web/presets/engine.mjs";
 import { PresetRunner, RUNNERS, presetExecutor, installDirectorTool } from "../../web/presets/runner.mjs";
 import { drawThumb, projector, camAt } from "../../web/presets/thumbs.mjs";
+import { mountFrames } from "../../web/stage/gait.mjs";
 import { SHORTCUTS, allCombos } from "../../web/ui/shortcuts.mjs";
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -298,7 +299,8 @@ test("action: stunts, crate crash, drop, throw, climb / mount", async () => {
     const r = await runner.apply("climb_mount");
     assert.equal(r.ok, true, r.said);
     const cole = stage.state.actors.find((a) => a.id === "cole");
-    assert.equal(cole.mount_id, "horse_1"); assert.equal(cole.mount_at, 24);
+    // On a horse the climb from the ground takes Gait.mountFrames: seated no sooner (the climb never starts before frame 0).
+    assert.equal(cole.mount_id, "horse_1"); assert.ok(cole.mount_at >= mountFrames(24), `mount_at ${cole.mount_at} vs the climb ${mountFrames(24)}`);
   }
   {
     const sc = clone(SCENE); sc.actors = sc.actors.filter((a) => a.kind !== "sports_car");

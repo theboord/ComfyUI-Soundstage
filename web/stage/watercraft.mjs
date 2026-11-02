@@ -13,6 +13,7 @@ import * as W from "./waves.mjs";
 import * as BS from "./boatsim.mjs";
 import { shapeSail } from "./boatmesh.mjs";
 import { applyPose } from "./humans.mjs";
+import { armIK } from "./mocap.mjs";
 
 const D2R = Math.PI / 180;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -215,35 +216,8 @@ export function oarPose(st, d = 0.38) {
   return { th: th * D2R, e, bend };
 }
 
-/** Two-bone arm IK: bend the elbow so shoulder-to-wrist spans the target, then swing the shoulder onto it. */
-export function armIK(g, lr, target) {
-  const J = g.userData.joints;
-  const sh = J?.[`${lr}_shoulder`], el = J?.[`${lr}_elbow`], wr = J?.[`${lr}_wrist`];
-  if (!sh || !el || !wr) return false;
-  g.updateMatrixWorld(true);
-  const S = sh.getWorldPosition(new THREE.Vector3());
-  const want = target.clone().sub(S);
-  const dist = want.length();
-  if (dist < 1e-4) return false;
-  const sc = new THREE.Vector3(); g.getWorldScale(sc);
-  const upper = el.position.clone().multiply(sc), lower = wr.position.clone().multiply(sc);
-  const spanAt = (th) => upper.clone().add(lower.clone().applyAxisAngle(new THREE.Vector3(1, 0, 0), -th)).length();
-  let lo = 0, hi = 2.5, th;
-  if (dist >= spanAt(lo)) th = lo; else if (dist <= spanAt(hi)) th = hi;
-  else { for (let i = 0; i < 26; i++) { const m = (lo + hi) / 2; if (spanAt(m) > dist) lo = m; else hi = m; } th = (lo + hi) / 2; }
-  el.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -th);
-  sh.quaternion.identity();
-  sh.updateMatrixWorld(true);
-  const cur = wr.getWorldPosition(new THREE.Vector3()).sub(S);
-  if (cur.lengthSq() > 1e-10) {
-    const swing = new THREE.Quaternion().setFromUnitVectors(cur.normalize(), want.clone().normalize());
-    const shW = sh.getWorldQuaternion(new THREE.Quaternion());
-    const parentW = sh.parent.getWorldQuaternion(new THREE.Quaternion());
-    sh.quaternion.copy(parentW.invert().multiply(swing.multiply(shW)));
-  }
-  g.updateMatrixWorld(true);
-  return true;
-}
+/** Two-bone arm IK (moved to mocap.mjs, next to legIK, so the horse mount can use it too). */
+export { armIK };
 
 /** The seated pose for a seat on a boat: "paddle" (low seat, knees up), "kayak", "row" (facing aft), "stand", "sit". */
 export function seatPoseFor(kind, seat) {

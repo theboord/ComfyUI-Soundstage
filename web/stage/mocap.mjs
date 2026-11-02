@@ -667,3 +667,39 @@ export function legIK(g, lr, target, w = 1) {
   }
   g.updateMatrixWorld(true);
 }
+
+/**
+ * Two-bone arm IK: bend the elbow so shoulder-to-wrist spans the target, then swing the shoulder onto it. Blended with
+ * weight w (0 = the arm as posed, 1 = the hand on the target). Used for oars and paddles (watercraft.mjs) and the hands
+ * on the horn and cantle when getting on a horse (gait.mjs).
+ */
+export function armIK(g, lr, target, w = 1) {
+  const J = g.userData.joints;
+  const sh = J?.[`${lr}_shoulder`], el = J?.[`${lr}_elbow`], wr = J?.[`${lr}_wrist`];
+  if (!sh || !el || !wr || w <= 0) return false;
+  g.updateMatrixWorld(true);
+  const S = sh.getWorldPosition(new THREE.Vector3());
+  const want = target.clone().sub(S);
+  const dist = want.length();
+  if (dist < 1e-4) return false;
+  const q0Sh = sh.quaternion.clone(), q0El = el.quaternion.clone();
+  const sc = new THREE.Vector3(); g.getWorldScale(sc);
+  const upper = el.position.clone().multiply(sc), lower = wr.position.clone().multiply(sc);
+  const spanAt = (th) => upper.clone().add(lower.clone().applyAxisAngle(new THREE.Vector3(1, 0, 0), -th)).length();
+  let lo = 0, hi = 2.5, th;
+  if (dist >= spanAt(lo)) th = lo; else if (dist <= spanAt(hi)) th = hi;
+  else { for (let i = 0; i < 26; i++) { const m = (lo + hi) / 2; if (spanAt(m) > dist) lo = m; else hi = m; } th = (lo + hi) / 2; }
+  el.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -th);
+  sh.quaternion.identity();
+  sh.updateMatrixWorld(true);
+  const cur = wr.getWorldPosition(new THREE.Vector3()).sub(S);
+  if (cur.lengthSq() > 1e-10) {
+    const swing = new THREE.Quaternion().setFromUnitVectors(cur.normalize(), want.clone().normalize());
+    const shW = sh.getWorldQuaternion(new THREE.Quaternion());
+    const parentW = sh.parent.getWorldQuaternion(new THREE.Quaternion());
+    sh.quaternion.copy(parentW.invert().multiply(swing.multiply(shW)));
+  }
+  if (w < 1) { sh.quaternion.copy(q0Sh.slerp(sh.quaternion, w)); el.quaternion.copy(q0El.slerp(el.quaternion, w)); }
+  g.updateMatrixWorld(true);
+  return true;
+}

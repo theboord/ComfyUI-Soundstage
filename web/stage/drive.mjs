@@ -41,11 +41,13 @@ const sstep = (t) => { const u = clamp(t, 0, 1); return u * u * (3 - 2 * u); };
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const r3 = (v) => Math.round(v * 1000) / 1000;
 
-/** Frames the stage's own timed mount takes (stage.mjs HOP_FRAMES / Gait.MOUNT_FRAMES): the live climb-in matches it. */
+/** Frames the stage's own timed mount takes at a shot's fps (stage.mjs HOP_FRAMES; on a horse Gait.mountFrames: the
+ *  climb from the ground): the live climb-in matches it. */
 export const HOP_FRAMES = 10;
-export const hopFrames = (hostKind, pose) => (hostKind === "horse" && (pose || MOUNTS.horse.pose) === "ride" ? Gait.MOUNT_FRAMES : HOP_FRAMES);
-/** Frames getting out (or down) takes, and the door's lead before it. */
-export const exitFrames = (hostKind) => (hostKind === "horse" ? 20 : SEATS[hostKind] ? 14 : 10);
+export const hopFrames = (hostKind, pose, fps = 24) => (hostKind === "horse" && (pose || MOUNTS.horse.pose) === "ride" ? Gait.mountFrames(fps) : HOP_FRAMES);
+/** Frames getting out (or down: on a horse Gait.dismountFrames, the real reverse of the climb) takes, and the door's
+ *  lead before it. */
+export const exitFrames = (hostKind, fps = 24) => (hostKind === "horse" ? Gait.dismountFrames(fps) : SEATS[hostKind] ? 14 : 10);
 export const DOOR_LEAD = 6;
 export const JUMP_H = 0.55;           // m: a standing jump clears a kerb, a running one a low crate
 export const STEP_UP = 0.45;          // m: walked up onto without a jump
@@ -919,7 +921,7 @@ export class DriveMode {
       for (const sp of a.mount_spans) {
         const host = this._actor(sp.host);
         if (!host) continue;
-        const hop = hopFrames(host.kind, sp.pose), ex = exitFrames(host.kind);
+        const hop = hopFrames(host.kind, sp.pose, this.fps), ex = exitFrames(host.kind, this.fps);
         if (f >= sp.from - hop && f < sp.to + ex) { on = sp; break; }
       }
       if (on) {
@@ -1039,14 +1041,24 @@ export class DriveMode {
       const lx = this.exiting?.id === a.id ? this.exiting : null;
       if (lx) { t = lx.t; stand = lx.stand; }
       else if (a.mount_spans?.length && !this.involved.has(a.id)) {
-        const sp = a.mount_spans.find((s) => s.host === a.mount_id && f >= s.to && f < s.to + exitFrames(host.kind));
+        const sp = a.mount_spans.find((s) => s.host === a.mount_id && f >= s.to && f < s.to + exitFrames(host.kind, this.fps));
         if (sp) {
-          t = (f - sp.to) / exitFrames(host.kind);
+          t = (f - sp.to) / exitFrames(host.kind, this.fps);
           const p = this.s._actorPosAt(a, f);
           stand = { x: p[0], y: this.s._heightAt?.(a, f) ?? 0, z: p[2], yaw: this.s._headingAt(a, f) };
         }
       }
       if (t == null || !stand) continue;
+      // Down off a horse: the real reverse of the climb (gait.mjs applyDismount), ending at the near stirrup.
+      const hg = this.s.actorMeshes.get(host.id);
+      if (host.kind === "horse" && (a.pose || MOUNTS.horse.pose) === "ride" && hg && this.s._rideFrame) {
+        const m = MOUNTS.horse, k = (host.scale || 1) * ((host.height_m || m.refHeight) / m.refHeight), h = (a.height_m || 1.8) * (a.scale || 1);
+        const seat = new THREE.Vector3(m.seat[0] * k, m.seat[1] * k, m.seat[2] * k).applyAxisAngle(new THREE.Vector3(0, 1, 0), hg.rotation.y);
+        const seatPos = new THREE.Vector3(hg.position.x + seat.x, hg.position.y + seat.y - 0.95 * h / 1.8, hg.position.z + seat.z);
+        Gait.release(g);
+        Gait.applyDismount(g, clamp(t, 0, 1), this.s._rideFrame(a, host, hg, seatPos));
+        continue;
+      }
       const e = sstep(t), h = (a.height_m || 1.8) * (a.scale || 1);
       if (t > 0.35) { Gait.release(g); applyPose(g, "stand", h); for (const l of g.userData.limbs || []) if (l.part === "knee") l.pivot.rotation.x = 0.5 * (1 - e); }
       const from = g.position.clone();
@@ -1352,14 +1364,23 @@ export class DriveMode {
     spot.door = (pick.side > 0) === (own > 0) ? (own > 0 ? "door_fl" : "door_fr") : (own > 0 ? "door_fr" : "door_fl");
     return spot;
   }
-  _mountSpot(host, g) { const sl = this._seatLocal(host, 0); return this._toWorld(g, [0.75 * Math.sqrt((host.height_m || 1.6) / 1.6), 0, sl[2]]); }
+  /** Where a person gets on (and off) a ride: by a horse's near stirrup (gait.mjs mountSpot, facing the saddle, as
+   *  .yaw), else beside the seat. */
+  _mountSpot(host, g, riderId = this.avatar?.id) {
+    const ra = riderId && this._actor(riderId), rg = riderId && this.s.actorMeshes.get(riderId);
+    if (host.kind === "horse" && ra && rg?.userData?.joints && this.s.climbSpot) {
+      const sp = this.s.climbSpot(ra, host, g, rg);
+      if (sp?.ok) { const out = [sp.x, 0, sp.z]; out.yaw = sp.yaw; return out; }
+    }
+    const sl = this._seatLocal(host, 0); return this._toWorld(g, [0.75 * Math.sqrt((host.height_m || 1.6) / 1.6), 0, sl[2]]);
+  }
 
   /** Walk over to the door (or the stirrup), then climb in. */
   _approach(b, n) {
     const host = this._actor(n.id), g = this.s.actorMeshes.get(n.id);
     if (!host || !g) return;
     const spot = n.act === "enter" ? this._doorSpot(host, g, 0, [b.x, 0, b.z]) : n.act === "mount" ? this._mountSpot(host, g) : [g.position.x + Math.sin(g.rotation.y) * 0.55, 0, g.position.z + Math.cos(g.rotation.y) * 0.55];
-    this._auto = { to: spot, host: n.id, act: n.act, door: spot.door || "door_fl", face: n.act === "sit" ? g.rotation.y + Math.PI : g.rotation.y };
+    this._auto = { to: spot, host: n.id, act: n.act, door: spot.door || "door_fl", face: n.act === "sit" ? g.rotation.y + Math.PI : spot.yaw ?? g.rotation.y };
   }
 
   _autopilot(b, env, dt) {
@@ -1389,7 +1410,7 @@ export class DriveMode {
     a.mount_id = hostId;
     if (SEATS[host.kind]) a.seat = 0; else delete a.seat;
     if (act === "sit") a.pose = "sit"; else delete a.pose;
-    const hop = hopFrames(host.kind, a.pose);
+    const hop = hopFrames(host.kind, a.pose, this.fps);
     this.involved.add(hostId);
     this.entering = { id: b.id, host: hostId, act, t: 0, dur: hop / this.fps, hop, door: !!SEATS[host.kind] && this.s.partChannels?.(hostId)?.some((c) => c.ch === doorCh) ? doorCh : null };
     this.entering.f0 = this._recFrame();
@@ -1453,12 +1474,13 @@ export class DriveMode {
     if (!a || a.mount_id !== b.id) return;
     if (Math.abs(b.speed) > 2.2) { this._wantOut = true; return; }   // slow down first (it brakes for you)
     const host = this._actor(b.id), g = this.s.actorMeshes.get(b.id);
-    const spot = host.kind === "horse" || this.K.RIDEABLE?.has(host.kind) ? this._mountSpot(host, g) : SEATS[host.kind] ? this._doorSpot(host, g, a.seat ?? 0) : this._toWorld(g, [0, 0, 0.8]);
+    const spot = host.kind === "horse" || this.K.RIDEABLE?.has(host.kind) ? this._mountSpot(host, g, a.id) : SEATS[host.kind] ? this._doorSpot(host, g, a.seat ?? 0) : this._toWorld(g, [0, 0, 0.8]);
     const y = this.s._supportAt?.(spot[0], spot[2], 0) ?? 0;
-    const n = exitFrames(host.kind);
+    const n = exitFrames(host.kind, this.fps);
     const door = !!SEATS[host.kind] && (a.seat ?? 0) === 0 && this.s.partChannels?.(b.id)?.some((c) => c.ch === "door_fl");
-    this.exiting = { id: a.id, host: b.id, t: 0, t0: 0, dur: n / this.fps, n, door, stand: { x: spot[0], y, z: spot[2], yaw: g.rotation.y } };
-    Object.assign(p, { x: spot[0], y, z: spot[2], yaw: g.rotation.y, speed: 0 });   // (recorded as where they step out to)
+    const yaw = spot.yaw ?? g.rotation.y;                          // off a horse: facing the saddle, as the dismount ends
+    this.exiting = { id: a.id, host: b.id, t: 0, t0: 0, dur: n / this.fps, n, door, stand: { x: spot[0], y, z: spot[2], yaw } };
+    Object.assign(p, { x: spot[0], y, z: spot[2], yaw, speed: 0 });   // (recorded as where they step out to)
     this.seated = null;
     this.say(host.kind === "horse" ? `${this._name(a)} swings down from ${this._name(host)}.` : `${this._name(a)} opens the door and gets out.`);
   }
