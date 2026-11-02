@@ -59,6 +59,8 @@ import { mountPresets } from "./ui/presets.mjs";
 import { mountPerformance } from "./performance/performance.mjs";
 import { attachTakeChecks } from "./takecheck/takecheck.mjs";
 import { attachOneClick } from "./oneclick/oneclick.mjs";
+import "./oneclick/loop.mjs"; import "./oneclick/reshoot.mjs"; import "./oneclick/opencomfy.mjs";   // ✦ Track B one-clicks
+import { listenPhoneClips, landPhoneClip, openPerformanceWith } from "./oneclick/handoff.mjs";
 import { queueSummary, stageInputsByRef, resolveStageValue, stageRefOf } from "./ui/queue.mjs";
 
 const CSS = `
@@ -1574,6 +1576,12 @@ function createStageWidget(node, inputName) {
   };
   job.onShow = job.onHide = () => syncVideoCta();
   wireVideoDrop(el, view, (f) => { if (view.hidden) showView("stage"); importVideo(f); });
+  // Phone hand-off (web/oneclick/handoff.mjs): a move filmed with the phone viewfinder's Film lands where the phone said.
+  listenPhoneClips(api, (info) => landPhoneClip(info, { api, say: (m) => (status.textContent = m), ask: (f) => importVideo(f),
+    capture: (f) => { if (!pickPerson()) return; inspect("obj"); try { posePanel.focusSection("capture"); } catch { /* panel not built */ } posePanel._capture(f, 0); },
+    footage: async (f) => { pipeline.go("motion"); await pipeline.ripple.importClip(f); },
+    performance: (f) => { const cur = stage.selectedInfo?.(); return openPerformanceWith(f, { api, stage, actorId: (cur && isPerson(cur.kind) ? cur : people()[0])?.id,
+      pipeline: () => pipeline, cast: () => castPanel, say: (m) => (status.textContent = m) }); } }));
   photoIn.addEventListener("change", async () => {
     const f = photoIn.files?.[0], kind = photoIn.dataset.kind;
     photoIn.value = "";
