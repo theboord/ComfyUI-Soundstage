@@ -42,6 +42,125 @@ CORE = [
          "confirm_gpu": {"type": "boolean", "default": False, "description": "the user agreed to spend GPU time (needed to run)"}}}},
 ]
 
+# Track B: Seamless loop, Reshoot, the graph inside a take (soundstage/handoff/routes.py; these run on the server, no
+# open App needed). A take is named by its file reference, e.g. "soundstage/draft_00012_.mp4 [output]".
+CORE += [
+    {"name": "soundstage_loop", "description": "Seamless loop from a still or a take's first frame (LTX-2.5, the same picture at the first and last frame). The seam meter then scores the wrap (Seamless / Visible seam with a number) and the fixer trims to the best frame pair, then (fix=true) one bridge render back to frame 1: before and after are reported, never a crossfade. Without confirm_gpu it only proposes; ask the user, then call with confirm_gpu=true. 1-2 GPU jobs, about 1-4 min.",
+     "inputSchema": {"type": "object", "properties": {
+         "source": {"type": "string", "description": "a still or a take, e.g. \"soundstage/look_00166_.png [output]\""},
+         "prompt": {"type": "string", "description": "what moves (\"waves roll onto the sand\"); empty = gentle natural motion"},
+         "seconds": {"type": "number", "default": 4}, "fix": {"type": "boolean", "default": True},
+         "quality": {"type": "string", "enum": ["Draft", "Final"], "default": "Draft"},
+         "confirm_gpu": {"type": "boolean", "default": False}}, "required": ["source"]}},
+    {"name": "soundstage_reshoot", "description": "Reshoot a take from a slightly different camera: the take is measured in 3D frame by frame (Depth Anything 3), the camera re-aimed relative to the original on every frame, then rendered with LTX-2.5 union control and the take's own sound. Safe range: orbit +-15 deg, tilt +-8 deg, dolly +-0.25 (of the subject distance), lens 0.7-1.6x; past that the render invents what the camera never saw. 2 GPU jobs (the depth is cached per take). Proposes without confirm_gpu.",
+     "inputSchema": {"type": "object", "properties": {
+         "source": {"type": "string", "description": "the take, e.g. \"soundstage/final_00063_.mp4 [output]\""},
+         "orbit_deg": {"type": "number"}, "tilt_deg": {"type": "number"}, "dolly": {"type": "number"}, "lens": {"type": "number"},
+         "quality": {"type": "string", "enum": ["Draft", "Final"], "default": "Draft"},
+         "confirm_gpu": {"type": "boolean", "default": False}}, "required": ["source"]}},
+    {"name": "soundstage_take_workflow", "description": "The exact ComfyUI graph that made a take or a still (read from the file's own tags, no GPU): the UI workflow when it was queued from a canvas, else the API prompt, plus the Soundstage recipe. save_to writes the JSON to a local file.",
+     "inputSchema": {"type": "object", "properties": {"ref": {"type": "string"}, "save_to": {"type": "string"}}, "required": ["ref"]}},
+]
+
+
+def _wait_prompt(pid: str, timeout: float = 3600) -> dict:
+    import time
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        h = http("GET", f"/history/{pid}", timeout=30)
+        e = h.get(pid) if isinstance(h, dict) else None
+        if e:
+            if (e.get("status") or {}).get("status_str") == "error":
+                msg = next((m[1].get("exception_message") for m in e["status"].get("messages", []) if m[0] == "execution_error"), "")
+                raise RuntimeError(msg or "the render failed")
+            f = ((e.get("outputs") or {}).get("save") or {})
+            f = next((v[0] for v in f.values() if isinstance(v, list) and v and isinstance(v[0], dict)), None)
+            if f:
+                return f
+            if (e.get("status") or {}).get("completed"):
+                raise RuntimeError("finished without a video")
+        time.sleep(3)
+    raise RuntimeError("timed out")
+
+
+def _ref(f: dict) -> str:
+    return f"{f.get('subfolder') + '/' if f.get('subfolder') else ''}{f['filename']} [{f.get('type', 'output')}]"
+
+
+def track_b(name: str, args: dict) -> tuple[str, bool]:
+    """soundstage_loop / soundstage_reshoot / soundstage_take_workflow."""
+    try:
+        if name == "soundstage_take_workflow":
+            import urllib.parse
+            r = http("GET", "/soundstage/handoff/workflow?ref=" + urllib.parse.quote(str(args.get("ref") or "")), timeout=60)
+            if r.get("error") or not r.get("kind"):
+                return f"Error: {r.get('error') or r.get('why')}", True
+            out = {k: r[k] for k in ("workflow", "prompt") if r.get(k)}
+            text = f"{r['name']}: {r['nodes']} nodes ({'the canvas workflow' if r['kind'] == 'workflow' else 'the API prompt'})"
+            if r.get("recipe"):
+                text += f"; recipe {json.dumps(r['recipe'])}"
+            if args.get("save_to"):
+                with open(os.path.expanduser(args["save_to"]), "w") as fh:
+                    json.dump(out, fh, indent=1)
+                return text + f". Saved to {args['save_to']}.", False
+            return text + ".\n" + json.dumps(out)[:20000], False
+        if name == "soundstage_loop":
+            body = {"source": args.get("source"), "prompt": args.get("prompt") or "", "seconds": args.get("seconds") or 4,
+                    "quality": args.get("quality") or "Draft", "seed": 7}
+            if not args.get("confirm_gpu"):
+                return (f"Proposed (nothing ran yet): a {body['seconds']} s seamless loop of {body['source']} on LTX-2.5, then the seam "
+                        f"meter{' and, if the seam shows, a trim then one bridge render' if args.get('fix', True) else ''}. 1-2 GPU jobs, "
+                        "about 1-4 min. Ask the user, then call again with confirm_gpu=true."), False
+            g = http("POST", "/soundstage/loop/prompt", body, timeout=120)
+            if g.get("error"):
+                return f"Error: {g['error']}", True
+            q = http("POST", "/prompt", {"prompt": g["prompt"], "client_id": "soundstage-mcp"})
+            if not q.get("prompt_id"):
+                return f"Error: the queue refused it: {q}", True
+            ref = _ref(_wait_prompt(q["prompt_id"]))
+            lines, best = [], http("POST", "/soundstage/loop/seam", {"ref": ref}, timeout=300)
+            for how in ("seal", "trim") + (("bridge",) if args.get("fix", True) else ()):
+                if best.get("verdict") == "seamless":
+                    break
+                if how == "bridge":
+                    b = http("POST", "/soundstage/loop/fix", {"ref": ref, "how": "bridge", "prompt": body["prompt"]}, timeout=300)
+                    bq = http("POST", "/prompt", {"prompt": b["prompt"], "client_id": "soundstage-mcp"})
+                    bf = _wait_prompt(bq["prompt_id"])
+                    r = http("POST", "/soundstage/loop/fix", {"ref": ref, "how": "join", "bridge_ref": _ref(bf), "clip_end": b["clip_end"]}, timeout=300)
+                else:
+                    r = http("POST", "/soundstage/loop/fix", {"ref": ref, "how": how}, timeout=300)
+                if r.get("error"):
+                    lines.append(f"{how}: {r['error']}")
+                    continue
+                a = r["after"]
+                kept = a.get("verdict") == "seamless" and best.get("verdict") != "seamless" or float(a.get("seam", 99)) < float(best.get("seam", 99))
+                lines.append(f"{how}: {r['before']['badge']} -> {a['badge']}{' (kept)' if kept else ' (no better)'}")
+                if kept:
+                    ref, best = r["ref"], a
+            return f"Loop: {ref}\n{best.get('badge')}\n" + "\n".join(f"- {x}" for x in lines), False
+        if name == "soundstage_reshoot":
+            move = {k: args[k] for k in ("orbit_deg", "tilt_deg", "dolly", "lens") if args.get(k) is not None}
+            if not args.get("confirm_gpu"):
+                return (f"Proposed (nothing ran yet): reshoot {args.get('source')} with {move or 'no move'} (clamped to orbit +-15, "
+                        "tilt +-8, dolly +-0.25, lens 0.7-1.6). 2 GPU jobs (depth, cached per take; the render), about 3-6 min. "
+                        "Ask the user, then call again with confirm_gpu=true."), False
+            j = http("POST", "/soundstage/reshoot", {"source": args.get("source"), "move": move, "quality": args.get("quality") or "Draft"})
+            if not j.get("job"):
+                return f"Error: {j.get('error')}", True
+            import time
+            while True:
+                time.sleep(3)
+                s = http("GET", f"/soundstage/reshoot/job?id={j['job']}", timeout=30)
+                if s.get("state") == "done":
+                    res = s["result"]
+                    return (f"Reshot: {_ref(res['file'])}\nThe camera {res['words']}; {round(res['holes'] * 100)}% of the new view "
+                            f"was never seen by the original camera.\n" + "\n".join(f"- {n}" for n in res.get("notes") or [])), False
+                if s.get("state") == "error" or s.get("error"):
+                    return f"Error: {s.get('error')}", True
+    except Exception as e:  # noqa: BLE001
+        return f"Error: {e}", True
+    return f"Unknown tool {name}", True
+
 
 def http(method: str, path: str, body=None, timeout=150):
     data = json.dumps(body).encode() if body is not None else None
@@ -186,6 +305,8 @@ def call_tool(name: str, args: dict) -> tuple[str, bool]:
         return judge_text(r), r.get("verdict") not in ("pass", "fail")
     if name == "soundstage_one_click":
         return one_click(args)
+    if name in ("soundstage_loop", "soundstage_reshoot", "soundstage_take_workflow"):
+        return track_b(name, args)
     if name.startswith("ss_"):
         dry = args.pop("dry_run", True)
         confirm = bool(args.pop("confirm_gpu", False))
