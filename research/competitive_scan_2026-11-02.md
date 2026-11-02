@@ -12,7 +12,7 @@ Research only, for review by the lead session. Nothing here changes Soundstage.
   - The curated list `jutsuhq/open-source-higgsfield` returned 404 when fetched (it may have been deleted or made private).
 - **Licences.** For every entry below I downloaded and read the actual `LICENSE` file (raw from the default branch), not GitHub's label. Where a README says a subfolder carries a different licence, I fetched that file too.
 - **Features.** Feature claims come from each project's README, not from running the code. Numbers such as "runs on 8 GB" or "37/42 hits within 1 frame" are the authors' claims.
-- **Shortlist.** Out of about 110 repos I shortlisted the 42 closest to Soundstage: film studios, previs, camera, re-shoot, take QC, timeline/edit, VFX on plates, and the most-starred entries. Pure ad, meme and avatar tools were skipped.
+- **Shortlist.** Out of about 110 repos I shortlisted the 43 closest to Soundstage: film studios, previs, camera, re-shoot, take QC, timeline/edit, VFX on plates, and the most-starred entries. Pure ad, meme and avatar tools were skipped.
 
 ## Headline findings
 
