@@ -143,6 +143,8 @@ export class LadderViewer {
       modes.append(chip(label, this.mode === m, true, label, () => { this.mode = m; this._drawBar(); this.draw(); }));
     }
     parts.push(modes);
+    // ✦ One-click on the layer on view (web/oneclick/oneclick.mjs sets extraBar)
+    try { parts.push(...(this.extraBar?.() || [])); } catch { /* never block the bar */ }
     this.bar.replaceChildren(...parts);
   }
 

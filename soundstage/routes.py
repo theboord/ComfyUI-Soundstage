@@ -103,3 +103,12 @@ async def saved_voices(request):
         out.append({"name": v["name"], "character": v.get("character") or v["name"],
                     "duration_s": v.get("duration_s"), "owner": (v.get("consent") or {}).get("owner", "")})
     return web.json_response({"voices": out})
+
+
+# ✦ One-click (soundstage/oneclick/routes.py): the MCP relay; the App runs the one-clicks.
+try:
+    from .oneclick import routes as _oneclick_routes
+    _oneclick_routes.register()
+except Exception:  # noqa: BLE001 - never let one feature stop the pack loading
+    import logging as _lg
+    _lg.getLogger(__name__).exception("Soundstage: could not register the one-click routes")
