@@ -103,7 +103,9 @@ TOOLS: dict[str, dict] = {
     "frames": {"kind": "app", "gpu": True, "doc": "Paint first frames (stills) for shots on the GPU",
                "args": {"shots": ("shots", False, None), "count": ("int", False, (1, 4))}},
     "render": {"kind": "app", "gpu": True, "doc": "Render draft or final video for shots on the GPU",
-               "args": {"kind": ("enum", True, ["draft", "final"]), "shots": ("shots", False, None)}},
+               "args": {"kind": ("enum", True, ["draft", "final"]), "shots": ("shots", False, None),
+                        # past the consequence check (world collisions): render even though something passes through something
+                        "anyway": ("enum", False, ["yes", "true"])}},
     "approve": {"kind": "app", "doc": "Review a shot's current take: approved, changes or rejected",
                 "args": {"shot": ("shot", False, None), "status": ("enum", True, ["approved", "changes", "rejected"]), "note": ("text", False, None)}},
     "cut": {"kind": "app", "doc": "Cut the scene together with each shot's best take", "args": {}},
@@ -943,7 +945,8 @@ def rules_calls(command: str, scene: dict, ctx: dict | None = None) -> list[dict
             kind = (m.group(2) or m.group(3))
             kind = "draft" if kind in ("draft", "preview") else "final"
             sh = _shots_in(cl) or _named_shot(cl, work, ctx)
-            calls.append({"tool": "render", "kind": kind, **({"shots": sh} if sh is not None else {})})
+            calls.append({"tool": "render", "kind": kind, **({"shots": sh} if sh is not None else {}),
+                          **({"anyway": "yes"} if re.search(r"\banyway\b", cl) else {})})
             continue
         m = re.search(r"\b(paint|generate|make|create|render|give me)\s+(?:me\s+)?(?:a\s+|the\s+|new\s+|some\s+|more\s+|(" + WORDNUM + r")\s+)?(?:new\s+)?(?:first[- ]?)?(frames?|stills?|keyframes?|variations?|options?)\b", cl)
         if m:

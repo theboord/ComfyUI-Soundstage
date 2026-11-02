@@ -67,3 +67,13 @@ def test_ram_tool_validation():
         assert "itself" in str(e)
     names = {t["name"] for t in D.tool_specs()}
     assert {"ram", "check", "reroute", "keep_keyed"} <= names
+
+
+def test_render_anyway_gets_past_the_consequence_check():
+    # The render gate (director.mjs render) honours `anyway`; the schema must let it through, and the rules must say it.
+    (t, a), = calls("render the draft anyway")[0]
+    assert t == "render" and a["anyway"] == "yes"
+    (t, a), = calls("render the draft")[0]
+    assert t == "render" and "anyway" not in a
+    c = D.validate_call({"tool": "render", "args": {"kind": "draft", "anyway": True}}, D.normalize_scene(SCENE), {})
+    assert c["args"]["anyway"] == "true"
