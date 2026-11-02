@@ -27,6 +27,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 <p align="center">
 <a href="docs/media/soundstage_showcase.mp4"><b>&#9654;&#65039; Watch the trailer</b></a> &nbsp;&middot;&nbsp;
 <a href="https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq"><b>&#128421;&#65039; Try it in your browser</b></a> &nbsp;&middot;&nbsp;
+<a href="docs/QUICKSTART.md"><b>&#9201;&#65039; First shot in 10 minutes</b></a> &nbsp;&middot;&nbsp;
 <a href="docs/TUTORIAL.md"><b>&#128214; Read the tutorial</b></a> &nbsp;&middot;&nbsp;
 <a href="#install"><b>&#9881;&#65039; Install</b></a>
 </p>

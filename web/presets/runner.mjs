@@ -8,7 +8,7 @@
 // host (all optional; see web/ui/presets.mjs for the App's): look {get(), set(patch), load(json), applyStyle(id)} ·
 // cut {load(), save(v), add(ids), panel()} · pipeline · shotsInOrder() · wholeFrame(prompt) · importVideo() ·
 // confirm(message) -> Promise<bool> · say(msg).
-import { cameraKeys, lightingPlan, gradePatch, crateStack, driveKeys, throwKeys, editStyleCut, userCameraKeys, swimKeys,
+import { uniqueNames, cameraKeys, lightingPlan, gradePatch, crateStack, driveKeys, throwKeys, editStyleCut, userCameraKeys, swimKeys,
   VEHICLE_KINDS, PERSON_KINDS, RIDE_KINDS, LOW_PROPS } from "./engine.mjs";
 import { seabedHeight } from "../stage/sets/underwater.mjs";
 import { imperfectStack, idSeed } from "../stage/impacts.mjs";
@@ -321,12 +321,13 @@ export class PresetRunner {
       // a few degrees, each sitting on the tallest crate under it, so the pile isn't a perfect video-game grid.
       const pts = crateStack(at, deg, p.apply.count || 6);
       const rough = p.apply.imperfect === false ? null : imperfectStack(pts, 0.8, idSeed(stamp) % 997 + 1);
+      const crateNames = uniqueNames("Crate", pts.length, [...(s2.actors || []), ...(s2.props || [])].map((x) => x.name));   // never a second "Crate 1"
       pts.forEach((pos0, i) => {
         const id = `crate_${stamp}_${i}`;
         const j = rough?.[i];
         const pos = j ? j.position : pos0;
         ids.push(id);
-        s2.actors.push({ id, name: `Crate ${i + 1}`, kind: "crate", position: pos, keys: [{ frame: 0, position: pos }], height_m: j ? j.height_m : 0.8,
+        s2.actors.push({ id, name: crateNames[i], kind: "crate", position: pos, keys: [{ frame: 0, position: pos }], height_m: j ? j.height_m : 0.8,
           rotation_deg: Math.round((deg + (j ? j.rotation_deg : 0)) * 10) / 10, physics: { mode: "dynamic" } });
       });
       this._loadState(s2);
