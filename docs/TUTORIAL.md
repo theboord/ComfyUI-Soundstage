@@ -586,7 +586,7 @@ The timeline has **V3** (motion graphics, once you add one) and **V2** (titles) 
 2. In the **Sound** row pick **SFX → A2**, **Music → A3** or **Dialogue → A1**, type it (a line as `MARA: Drove all night to find you`) and a length, then **Generate**. It's made by the App's own open-weights nodes (LTX-2.5 audio, Chatterbox) and lands on its track. **Import…** puts your own file there.
 3. **Auto-duck** dips the music −12 dB under every dialogue line (amber keys you can drag).
 4. **Beats** finds the music's tempo; trims snap to it, and **Cuts → beat** rolls each cut onto the nearest beat.
-5. Pick the loudness target: **Social −14 LUFS**, **EBU R128 −23** or **ATSC −24**. **Measure** reads the mix.
+5. Pick the loudness target: **Social −14 LUFS**, **EBU R128 −23 LUFS** or **ATSC A/85 −24 LKFS**. **Measure** reads the mix.
 
 **Titles, subtitles and a first cut**
 
@@ -622,13 +622,13 @@ The render draws the graphics at full resolution, frame by frame, with motion bl
 
 ### Dailies and the lined script
 
-The **Dailies** tab shows a scene's setups and takes the way an editor's bin does. It has no step of its own: open it from the tab bar.
+The **Takes** tab (Dailies) shows a scene's setups and takes the way an editor's bin does. It has no step of its own: open it from **Tools ▾** (the tab bar in the classic layout).
 
 <p align="center"><img src="media/dailies.jpg" width="860" alt="Dailies: setups and takes as a bin"></p>
 
 **Every render is a take.** The clay preview, each frame variation, each Draft and each Final of a setup become takes 1, 2, 3… Setups are slated like a real shoot: the first setup of scene 12 is **12**, then **12A**, **12B** (I and O are skipped). A clip is named **12B-3**: scene 12, setup B, take 3.
 
-The header shows `Dailies · Scene N`, the counts of setups, takes and circled takes, and three views: **Frame**, **List** and **ScriptSync**.
+The header shows `SC N ·` and the scene heading, the counts of setups, takes, circled and approved takes, and three views: **Frame**, **List** and **ScriptSync**.
 
 **Frame view**
 
@@ -647,7 +647,7 @@ Drag cards to arrange them (Option/Alt-drag places freely), arrow keys nudge, En
 
 **Scene bins.** Like an Avid project, there is one bin per script scene, named like **SC 03 – what happens**, in script order, each showing how much of it is approved.
 
-**List view** is a sortable table: Setup, Name, Type, Takes, Circled, Kind, Duration, Coverage. Click a column header to sort, Enter opens, C circles.
+**List view** is a sortable table: Setup, Name, Type, Takes, Circled, Status, Kind, Duration, Coverage. Click a column header to sort, Enter opens, C circles.
 
 #### ScriptSync (lined script)
 
@@ -731,7 +731,7 @@ The 18 lighting setups (**Light it like…**) live with the lights in ③ Set �
 
 ### The Stop button
 
-The red **■ Stop** at the end of the step bar is there whenever ComfyUI is rendering. With several jobs waiting it shows the count, **■ Stop (4)**.
+The red **■ Stop** at the end of the step bar is there whenever ComfyUI is rendering. With more than one job queued or running it shows the count, **■ Stop (4)**.
 
 Press it to **cancel every queued render and interrupt the one running now**. The status line confirms: "Stopped: 3 queued renders cancelled, the running one interrupted." Shots marked painting… or rendering… go back to normal, and anything already rendered stays.
 
