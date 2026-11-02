@@ -160,7 +160,9 @@
     "EmptyFlux2LatentImage",
     "KSampler",
     "VAEDecode",
-    "ReferenceMultiLatent"
+    "ReferenceMultiLatent",
+    "VAEEncode",
+    "ImageScaleBy"
    ],
    "weights": [
     {

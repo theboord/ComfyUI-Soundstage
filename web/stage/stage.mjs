@@ -5,6 +5,7 @@
 import * as THREE from "../vendor/three.module.min.mjs";
 import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompound, makeGlass } from "./library.mjs";
 import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./humans.mjs";
+import { applyGaze, setGazeKey, clearGaze } from "./gaze.mjs";
 import * as Mocap from "./mocap.mjs";
 import * as Gait from "./gait.mjs";
 import { applyRig, RIGS } from "./camrig.mjs";
@@ -1739,33 +1740,9 @@ export class Stage {
       Mocap.apply(g, take, a.mocap, this.frame, baseAt(this.frame), (a.height_m || 1.8) * (a.scale || 1), this.state.shot?.fps || 24);
       mocapIds.add(a.id);
     }
-    // Look at: the head and neck turn toward a target every frame (from look_at_frame on), within a natural range.
-    for (const a of this.state.actors) {
-      if (mocapIds.has(a.id)) continue;
-      if (!a.look_at || this.frame < (a.look_at_frame || 0) - 8) continue;
-      if (a.look_until != null && this.frame > a.look_until + 8) continue;
-      // Ease in over 8 frames from look_at_frame, and back out over 8 frames after look_until.
-      const ease = (x) => { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t); };
-      const w = ease((this.frame - (a.look_at_frame || 0) + 8) / 8) * (a.look_until != null ? ease((a.look_until + 8 - this.frame) / 8) : 1);
-      const g = this.actorMeshes.get(a.id), t = this.actorMeshes.get(a.look_at);
-      if (!g?.userData?.joints?.head || !t) continue;
-      g.updateMatrixWorld(true);
-      const head = new THREE.Vector3(); g.userData.joints.head.getWorldPosition(head);
-      const box = new THREE.Box3().setFromObject(t), tgt = box.getCenter(new THREE.Vector3());
-      tgt.y = Math.min(box.max.y - 0.12, PERSON_KINDS.has(this.state.actors.find((x) => x.id === a.look_at)?.kind) ? box.max.y - 0.12 : tgt.y);
-      const local = g.worldToLocal(tgt.clone()), lh = g.worldToLocal(head.clone());
-      const dx = local.x - lh.x, dy = local.y - lh.y, dz = local.z - lh.z;
-      let yaw = Math.atan2(dx, dz) * 180 / Math.PI;               // + = toward the figure's left
-      const pitch = -Math.atan2(dy, Math.hypot(dx, dz)) * 180 / Math.PI;
-      yaw = Math.max(-150, Math.min(150, yaw));
-      const spine = Math.max(-40, Math.min(40, yaw - Math.max(-110, Math.min(110, yaw))));   // past 110 the chest turns too
-      const rest = yaw - spine, neckY = rest * 0.3, headY = rest * 0.7;
-      const cur = this.poseAt(a, this.frame) || {};
-      const mix = (base, v) => base + (v - base) * w;
-      applyJoints(g, { head: [mix(cur.head?.[0] || 0, Math.max(-40, Math.min(40, pitch * 0.7))), mix(cur.head?.[1] || 0, Math.max(-80, Math.min(80, headY))), cur.head?.[2] || 0],
-        neck: [mix(cur.neck?.[0] || 0, Math.max(-20, Math.min(20, pitch * 0.3))), mix(cur.neck?.[1] || 0, Math.max(-35, Math.min(35, neckY))), cur.neck?.[2] || 0],
-        ...(spine ? { spine: [cur.spine?.[0] || 0, mix(cur.spine?.[1] || 0, spine), cur.spine?.[2] || 0] } : {}) });
-    }
+    // Head and gaze blocking (web/stage/gaze.mjs): each person's head follows their gaze keys (the Interact menu's
+    // "Look at" too), eased and within natural limits; with none it holds steady facing their travel.
+    applyGaze(this, mocapIds);
     if (this.weather) {
       const cam = this._cameraAt(this.frame);
       this.weather.update(this.frame, { x: cam.target[0], z: cam.target[2] }, this);
@@ -3717,6 +3694,19 @@ export class Stage {
     this.onChange(this.toJSON());
   }
 
+  /**
+   * Gaze blocking (web/stage/gaze.mjs): from `frame` on, `id` looks at `target` ("ahead", "camera", "left", "right",
+   * "up", "down" or an actor id), turning there with an eased head move that starts at that frame. target null
+   * removes the key at that frame (frame null too: every key, back to holding steady). Returns the keys.
+   */
+  setGaze(id, frame, target) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a) return null;
+    const keys = target == null ? clearGaze(a, frame) : setGazeKey(a, frame ?? this.frame, target);
+    this.setFrame(this.frame); this.onChange(this.toJSON());
+    return keys;
+  }
+
   /** Person-to-person / person-to-animal / look-at interactions, built from positions + Pose Studio keys. */
   interact(id, targetId, action) {
     const a = this.state.actors.find((x) => x.id === id), b = this.state.actors.find((x) => x.id === targetId);
@@ -3724,16 +3714,15 @@ export class Stage {
     const name = (x) => x.name || LIBRARY[x.kind]?.label || x.kind;
     const fps = this.state.shot?.fps || 24, when = this.frame > 0 ? ` from ${(this.frame / fps).toFixed(1)} s` : "";
     if (action === "look_at") {
-      a.look_at = b.id; a.look_at_frame = this.frame; delete a.look_until;
+      setGazeKey(a, this.frame, b.id);
       this.setFrame(this.frame); this.onChange(this.toJSON());
-      return `${name(a)} looks at ${name(b)}${when}.`;
+      return `${name(a)} turns to look at ${name(b)}${when}.`;
     }
     if (action === "stop_look") {
-      // From the playhead on they look away again (eased); before it, the look stays.
-      if (a.look_at && this.frame > (a.look_at_frame || 0)) a.look_until = this.frame;
-      else { delete a.look_at; delete a.look_at_frame; delete a.look_until; this._buildSet(); }
+      // From the playhead on they look ahead again (eased); a look that starts here is removed.
+      setGazeKey(a, this.frame, "ahead");
       this.setFrame(this.frame); this.onChange(this.toJSON());
-      return `${name(a)} looks away at ${(this.frame / fps).toFixed(1)} s.`;
+      return `${name(a)} looks ahead again at ${(this.frame / fps).toFixed(1)} s.`;
     }
     const pa = this._actorPosAt(a, this.frame), pb = this._actorPosAt(b, this.frame);
     const dir = new THREE.Vector2(pb[0] - pa[0], pb[2] - pa[2]);
@@ -3765,7 +3754,7 @@ export class Stage {
     switch (action) {
       case "talk":
         place(1.0); poseBoth({ r_shoulder: [25, 10, 0], r_elbow: [60, 0] }, { l_shoulder: [10, 8, 0], l_elbow: [30, 0] });
-        a.look_at = b.id; a.look_at_frame = this.frame; if (PERSON_KINDS.has(b.kind)) { b.look_at = a.id; b.look_at_frame = this.frame; }
+        setGazeKey(a, this.frame, b.id); if (PERSON_KINDS.has(b.kind)) setGazeKey(b, this.frame, a.id);
         msg = `${name(a)} and ${name(b)} talk face to face${when}.`; break;
       case "handshake":
         place(0.8); poseBoth({ r_shoulder: [45, 8, 0], r_elbow: [40, 0], ...grip("r") }, { r_shoulder: [45, 8, 0], r_elbow: [40, 0], ...grip("r") });
@@ -3785,11 +3774,11 @@ export class Stage {
       case "point_at":
         face(a, pb[0], pb[2]);
         Object.assign(this._poseKeyHere(a).joints, POSE_PRESETS.Point);
-        a.look_at = b.id; a.look_at_frame = this.frame;
+        setGazeKey(a, this.frame, b.id);
         msg = `${name(a)} points at ${name(b)}${when}.`; break;
       case "pet":
         place(0.55); Object.assign(this._poseKeyHere(a).joints, { spine: [40, 0, 0], r_shoulder: [60, 5, 0], r_elbow: [20, 0], l_hip: [20, 0, 0], r_hip: [20, 0, 0], l_knee: [35], r_knee: [35] });
-        a.look_at = b.id; a.look_at_frame = this.frame;
+        setGazeKey(a, this.frame, b.id);
         msg = `${name(a)} pets ${name(b)}${when}.`; break;
       case "lead": {
         const k = this._editActorKey(a), side = new THREE.Vector2(-dir.y, dir.x);

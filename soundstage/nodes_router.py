@@ -18,6 +18,7 @@ from comfy_api.latest import IO
 from comfy_execution.graph_utils import GraphBuilder
 
 from .router import registry as R
+from .look import frame_lock as FL
 from .router.adapters import ADAPTERS, RouterError
 
 _TTL_S = 30
@@ -131,6 +132,8 @@ class _Router(IO.ComfyNode):
              "lora": v.get("lora") if v.get("lora") not in (None, "", "None") else None,
              "lora_strength": float(v.get("lora_strength") if v.get("lora_strength") is not None else 1.0)}
         if cls.STAGE == "edit_image":
+            if v.get("stage_denoise") is not None:
+                p["params"] = {**p["params"], "stage_denoise": float(v["stage_denoise"])}
             refs = _parse_ref_files(v.get("ref_files"))
             first = len(p["refs"]) + (2 if p["image"] is not None else 1)   # image 1 is the clay frame being edited
             p["refs"] += [g.node("LoadImage", image=f).out(0) for f, _ in refs]
@@ -219,6 +222,12 @@ class SoundstageEditImage(_Router):
                 IO.String.Input("ref_files", multiline=True, default="", optional=True,
                                 tooltip="Character sheets / style references by file name in ComfyUI's input "
                                         "folder, one per line (added after ref_1-3). The App's Frame step fills this."),
+                IO.Float.Input("stage_denoise", default=FL.DEFAULT_DENOISE, min=FL.MIN_DENOISE, max=1.0, step=0.01, optional=True,
+                               advanced=True,
+                               tooltip="FLUX 3 Klein with the stage depth on control_image (④ Frame): the frame starts from "
+                                       "the Color pass (img2img) at this denoise, so it keeps the stage's objects, sizes "
+                                       "and places. Lower = closer to the clay. 1 = paint from noise with the pass as a "
+                                       "reference only, as frames picked before Nov 1 were. The App's Follow the clay sets it."),
             ],
             outputs=[IO.Image.Output(display_name="image")],
             hidden=HIDDEN,

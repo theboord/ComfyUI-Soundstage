@@ -20,6 +20,7 @@ from pathlib import Path
 from ..cine import geometry as G
 from ..cine.prompts import SIZE_LTX, SIZE_STILL
 from . import stunts as ST
+from .frame_lock import union
 
 LIBRARY_PATH = Path(__file__).resolve().parents[2] / "web" / "stage" / "library.mjs"
 
@@ -791,16 +792,32 @@ def groups(entries: list[dict], cam: dict) -> list[dict]:
     for g in clusters:
         sx = sum(e["sx"] for e in g) / len(g)
         h = min(e["screen_h"] for e in g)
+        lay = _measured(g)
         facing = _facing_words(g[0]["heading"], cam, len(g) > 1, animal=g[0].get("rig") not in (None, "biped", "vehicle"),
                                vehicle=g[0].get("rig") == "vehicle", reversing=bool(g[0].get("reversing")))
         if all(e.get("riding") for e in g) and "back" in facing and any("horseback" in e["noun"] for e in g):
             facing += ", the horse's tail toward us" if len(g) == 1 else ", the horses' tails toward us"
-        out.append({"nouns": _group_nouns([e["noun"] for e in g]), "plural": len(g) > 1, "where": screen_words(sx),
-                    "far": h < 0.18, "distance": _distance_words(h, all(e.get("rig") == "biped" for e in g)),
+        if lay:   # frame 1 measured on the ID pass (look/frame_lock.py): where it really is and how big
+            where, far, dist = lay
+        else:
+            where, far, dist = screen_words(sx), h < 0.18, _distance_words(h, all(e.get("rig") == "biped" for e in g))
+        out.append({"nouns": _group_nouns([e["noun"] for e in g]), "plural": len(g) > 1, "where": where,
+                    "far": far, "distance": dist,
                     "facing": facing,
                     "pose": "ride" if all(e.get("riding") for e in g) else "sit" if all(e.get("seated") for e in g) else "",
                     "moving": any(e.get("moves", True) and G.length(G.sub(e["end"], e["start"])) > 0.3 for e in g)})
     return out
+
+
+def _measured(g: list[dict]) -> tuple[str, bool, str] | None:
+    """(where, far, size words) of a group from its ID-pass boxes in frame 1, when every member has one."""
+    from . import frame_lock as FL
+    boxes = [e.get("layout", {}).get("box") for e in g]
+    if not boxes or any(b is None for b in boxes):
+        return None
+    b = FL.union(boxes)
+    tall = any(e.get("rig") != "vehicle" for e in g)
+    return FL.where_words(b), (b[3] - b[1]) < 0.18 and (b[2] - b[0]) < 0.12, FL.size_words(b, tall)
 
 
 def group_phrase(entries: list[dict], cam: dict, with_facing: bool = True) -> list[str]:
@@ -1009,6 +1026,15 @@ def people_in_shot(scene: dict, step: int = 6) -> bool:
 def frame1_facts(scene: dict) -> dict:
     cam0, _, _ = camera_at_ends(scene)
     ff = frame_facts(scene, cam0, 0)
+    lay = scene.get("frame1_layout") if scene.get("look_start") is not False else None
+    if isinstance(lay, dict) and lay:
+        # The stage measured frame 1 on its ID pass (3D Stage node): every entry says where it really is. A rider
+        # reads as one figure with the horse under them.
+        for e in ff["people"] + ff["others"]:
+            box = (lay.get(e["id"]) or {}).get("box")
+            host = (lay.get(e.get("host_id")) or {}).get("box") if e.get("riding") else None
+            if box or host:
+                e["layout"] = {"box": union([b for b in (box, host) if b])}
     loc = location(scene)
     return {**ff, "camera": cam0, "angle": angle_of(cam0), "height_m": cam0["position"][1],
             "focal_mm": cam0["focal_mm"], "lens_band": lens_band(cam0["focal_mm"]), "location": loc,

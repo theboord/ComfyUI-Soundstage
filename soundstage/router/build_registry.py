@@ -101,7 +101,7 @@ WIRED = [
           source_ids=["open.z_image"]),
     local("open.flux3_klein", "FLUX 3 Klein", "Black Forest Labs", ["generate_image", "edit_image"], "flux3_klein",
           ["UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "ConditioningZeroOut",
-           "EmptyFlux2LatentImage", "KSampler", "VAEDecode", "ReferenceMultiLatent"],
+           "EmptyFlux2LatentImage", "KSampler", "VAEDecode", "ReferenceMultiLatent", "VAEEncode", "ImageScaleBy"],
           [{"role": "unet", "folder": "diffusion_models", "any": ["flux3-image-klein-int8-convrot.safetensors"]},
            {"role": "text_encoder", "folder": "text_encoders",
             "any": ["qwen3vl_4b_int8_convrot.safetensors", "qwen3vl_4b_fp8_scaled.safetensors"]},

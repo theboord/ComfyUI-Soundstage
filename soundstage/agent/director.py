@@ -82,6 +82,9 @@ TOOLS: dict[str, dict] = {
     "physics": {"kind": "app", "doc": "Physics for objects: dynamic (falls, gets knocked), static, off",
                 "args": {"target": ("names", True, None), "mode": ("enum", True, ["dynamic", "static", "off"])}},
     "bake": {"kind": "app", "doc": "Simulate the physics over the shot and bake it into keys", "args": {}},
+    "gaze": {"kind": "app", "doc": "Where someone looks: their head turns at a time in the shot (s) toward a person or thing, "
+                                   "the camera, ahead (eyes on the road), left, right or down",
+             "args": {"who": ("person", True, None), "at": ("text", True, None), "time": ("num", False, (0, 600))}},
     "direct": {"kind": "app", "doc": "A performance note for someone (nervous, angry, tired...)",
                "args": {"who": ("person", False, None), "note": ("text", True, None)}},
     "grade": {"kind": "app", "doc": "Colour grade for the frames: warmth, contrast, saturation, grain (-1..1 change)",
@@ -108,7 +111,17 @@ ALIASES = {"move_camera": "camera_move", "camera": "camera_move", "dolly": "came
            "note": "direct", "colour": "grade", "color": "grade", "grade_frames": "grade", "script_scene": "scene",
            "select_scene": "scene", "paint": "frames", "paint_frames": "frames", "generate_frames": "frames",
            "render_draft": "render", "render_final": "render", "review": "approve", "assemble": "cut", "edit": "cut",
-           "playback": "play", "camera_mount": "camera_on", "mount_camera": "camera_on", "nudge_camera": "reframe"}
+           "playback": "play", "camera_mount": "camera_on", "mount_camera": "camera_on", "nudge_camera": "reframe",
+           "look": "gaze", "look_at": "gaze", "head_turn": "gaze", "turn_head": "gaze", "eyes": "gaze", "eyeline": "gaze"}
+# Gaze targets that are directions, not things on set (web/stage/gaze.mjs).
+GAZE_WORDS = [("camera", ["camera", "the camera", "lens", "the lens", "us", "audience", "into camera"]),
+              ("ahead", ["ahead", "straight ahead", "forward", "front", "the road", "road", "where he's going",
+                         "where she's going", "where they're going", "away"]),
+              ("left", ["left", "to the left", "his left", "her left", "their left"]),
+              ("right", ["right", "to the right", "his right", "her right", "their right"]),
+              ("down", ["down", "the ground", "the floor", "his feet", "her feet"]), ("up", ["up", "the sky", "upward"])]
+
+ALIASES.update({k: v for k, v in PT.ALIASES.items() if k not in ALIASES})
 
 ALIASES.update({k: v for k, v in PT.ALIASES.items() if k not in ALIASES})
 
@@ -370,6 +383,10 @@ def validate_call(raw, work: dict, ctx: dict) -> dict:
             k2 = "kind"
         if name == "direct" and k in ("target", "actor", "person", "name"):
             k2 = "who"
+        if name == "gaze":
+            k2 = {"target": "who", "actor": "who", "person": "who", "name": "who", "toward": "at", "towards": "at",
+                  "to": "at", "look_at": "at", "object": "at", "direction": "at", "seconds": "time", "from": "time",
+                  "when": "time", "t": "time", "at_s": "time", "time": "time", "at": "at", "who": "who"}.get(k, k2)
         if name == "light" and k == "target":
             k2 = "on"
         if name in ("frames", "render") and k == "shot":
@@ -496,6 +513,18 @@ def validate_call(raw, work: dict, ctx: dict) -> dict:
             raise Invalid(why)
     if name == "camera_on":
         out.setdefault("view", "hood")
+    if name == "gaze":
+        t = re.sub(r"^(?:at|to|toward|towards|into|on)\s+", "", out["at"].lower()).strip(" .")
+        word = next((k for k, ws in GAZE_WORDS if t in ws), None)
+        if word:
+            out["at"], out["at_id"] = word, word
+        else:
+            obj = O.find_object(work, t)
+            if obj is None:
+                raise Invalid(f"gaze: nothing called '{out['at']}' to look at")
+            if obj.get("id") == out.get("who_id"):
+                raise Invalid("gaze: someone can't look at themselves")
+            out["at"], out["at_id"] = obj["name"], obj["id"]
     if name == "direct" and "who_id" not in out:
         ppl = _people(work)
         if not ppl:
@@ -646,6 +675,10 @@ def plan_line(call, work, ctx):
         "drive": lambda: f"drive the {a['target'].lower()} straight through the {a['through'].lower()}",
         "physics": lambda: f"make the {a['target'].lower()} {a['mode']}",
         "bake": lambda: "simulate the physics and bake it into the shot",
+        "gaze": lambda: f"block {a['who']}'s head: " + {"camera": "look into the camera", "ahead": "head steady, facing ahead",
+                                                          "left": "look off left", "right": "look off right", "down": "look down",
+                                                          "up": "look up"}.get(a["at_id"], f"turn to {a['at']}")
+                        + (f" at {a['time']:g} s" if a.get("time") else " from the first frame"),
         "direct": lambda: f"note for {a['who']}: {a['note']} (it goes into the frame prompt)",
         "grade": lambda: "grade the frames " + ", ".join(
             f"{'warmer' if k == 'warmth' and v > 0 else 'cooler' if k == 'warmth' else ('more ' if v > 0 else 'less ') + k} ({v:+.2f})"
@@ -957,6 +990,27 @@ def rules_calls(command: str, scene: dict, ctx: dict | None = None) -> list[dict
                 rest = m.group(2)[len(host_text):]
                 if used and rest:
                     cl = cl[:m.start()] + " " + rest   # "... at night" still counts below
+        # Head and gaze blocking: "Ben looks at Ellie at 2 s", "she turns her head toward the camera", "he keeps his
+        # eyes on the road". The time is when the turn starts.
+        m = re.search(r"\b([a-z]+)\s+(?:looks?|glances?|stares?|turns?\s+(?:his|her|their)\s+head|turns?\s+to\s+look|"
+                      r"keeps?\s+(?:his|her|their)\s+eyes)\s+(?:over\s+)?((?:at|to|toward|towards|into|on)\s+)?"
+                      r"(?:the\s+)?([a-z][a-z' ]*?)(?:\s+(?:at|after|from)\s+(\d+(?:\.\d+)?)\s*(?:s|sec|secs|seconds?)\b.*)?$", cl)
+        if m and not m.group(2) and not any(m.group(3).strip() in ws for _, ws in GAZE_WORDS):
+            m = None          # "Mara looks scared" is a performance note, not a look
+        if m:
+            w = m.group(1)
+            who = last_person if w in ("she", "he", "they", "her", "him", "them") else O.find_object(work, w)
+            if who is None and w in ("she", "her"):
+                who = next((p for p in people if p.get("kind") == "woman"), None)
+            if who is None and w in ("he", "him"):
+                who = next((p for p in people if p.get("kind") == "man"), None)
+            if who is not None and who.get("kind") in C.PEOPLE:
+                call = {"tool": "gaze", "who": who["name"], "at": m.group(3).strip()}
+                if m.group(4):
+                    call["time"] = float(m.group(4))
+                here.append((m.start(), call))
+                last_person = who
+                used = True
         # Performance notes: "she's nervous", "Mara looks scared".
         emo = "|".join(re.escape(e) for e in EMOTIONS)
         m = re.search(rf"\b([a-z]+)(?:'s|’s| is| looks| seems| feels| gets| getting| acts| sounds| are| was)\s+(?:a (?:little|bit) |very |really |so |quite |more )?({emo})\b", cl) \

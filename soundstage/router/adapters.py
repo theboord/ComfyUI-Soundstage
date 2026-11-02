@@ -14,6 +14,8 @@ image, images, mask, params (the chosen option's nested widgets), weights {role:
 """
 import math
 
+from ..look.frame_lock import INIT_DOWN, stage_denoise
+
 
 class RouterError(ValueError):
     """User-facing: shown in the ComfyUI error dialog as is."""
@@ -457,9 +459,20 @@ def flux3_klein(g, m, p):
         for i, link in enumerate(images):
             kw[f"images.image{i}"] = link
         r = g.node("ReferenceMultiLatent", **kw)
+        latent, denoise = r.out(2), 1.0
+        lock = stage_denoise((p.get("params") or {}).get("stage_denoise"))
+        if lock < 1.0 and p["stage"] == "edit_image" and p.get("control") is not None and p["width"] and p["height"]:
+            # ④ Frame from the stage (the frame node has the stage depth on control_image): start from the Color
+            # pass itself so the silhouettes, sizes and the object count stay the stage's (look/frame_lock.py).
+            # shrunk 16x and blown back up: where things are, how big and what colour, but no clay surface to copy
+            src = g.node("ImageScaleBy", image=images[0], upscale_method="area", scale_by=1 / INIT_DOWN).out(0)
+            for up in (8, INIT_DOWN / 8):         # ImageScaleBy goes up to 8x per node
+                src = g.node("ImageScaleBy", image=src, upscale_method="bilinear", scale_by=up).out(0)
+            src = resize(g, src, snap(p["width"], 16), snap(p["height"], 16))
+            latent, denoise = g.node("VAEEncode", pixels=src, vae=vae).out(0), lock
         s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or 16, cfg=p.get("cfg") or 1.0,
-                   sampler_name="euler", scheduler="simple", positive=r.out(0), negative=r.out(1), latent_image=r.out(2),
-                   denoise=1.0).out(0)
+                   sampler_name="euler", scheduler="simple", positive=r.out(0), negative=r.out(1), latent_image=latent,
+                   denoise=denoise).out(0)
     else:
         neg = g.node("CLIPTextEncode", text=p.get("negative") or "", clip=clip).out(0)
         latent = g.node("EmptyFlux2LatentImage", width=snap(p["width"], 16), height=snap(p["height"], 16),

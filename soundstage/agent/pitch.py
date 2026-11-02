@@ -146,6 +146,21 @@ def extract(text: str, memory: dict | None = None) -> dict:
     memory = _norm_memory(memory)
     t = " " + _clean(text).lower() + " "
     d: dict = {}
+    # Head and gaze blocking: "she looks at the detective", "he turns his head to the camera at 2 seconds", "keeps
+    # his eyes on the road". The time is when the turn starts (web/stage/gaze.mjs).
+    gm = re.search(r"\b(?:looks?|glances?|stares?|turns? (?:his|her|their) head|turns? to look|keeps? (?:his|her|their) eyes)"
+                   r"\s+(?:over\s+)?(at|to|toward|towards|into|on)?\s*(?:the\s+)?(camera|lens|us|road|ahead|straight ahead|left|right|down|[a-z]+)"
+                   r"(?:\s+(?:at|after|from)\s+(\d+(?:\.\d+)?)\s*(?:s|sec|secs|seconds?)\b)?", t)
+    if gm and (gm.group(1) or gm.group(2) in ("ahead", "straight ahead", "left", "right", "down")):
+        w = gm.group(2)
+        at = {"lens": "camera", "us": "camera", "road": "ahead", "straight ahead": "ahead"}.get(w, w)
+        if at not in ("camera", "ahead", "left", "right", "down"):
+            role = next((c["role"] for c in memory["cast"] if c["role"] == w or c.get("kind") == w), None) or \
+                (w if w in P.ROLE_WORDS else None)
+            at = {"role": role} if role else None
+        if at:
+            d["gaze"] = {"at": at, **({"time": float(gm.group(3))} if gm.group(3) else {})}
+            t = t.replace(gm.group(0), " ")      # "eyes on the road" is not a road set
     s = _first(PLACE_SETS, t)
     if s:
         d["set"] = s
@@ -563,6 +578,16 @@ def beat_ops(delta: dict, memory: dict, scene: dict, ids: dict | None = None) ->
             person = o.actor(person["id"])
     if person is None and memory.get("last_who") and ids.get(memory["last_who"]):
         person = o.actor(ids[memory["last_who"]])
+    gz = delta.get("gaze")
+    if gz and person is not None:
+        at = gz["at"]
+        target = ids.get(at["role"]) if isinstance(at, dict) else at
+        if target and target != person["id"]:
+            frame = int(round(float(gz.get("time") or 0) * FPS))
+            keys = [k for k in (person.get("gaze") or []) if k.get("frame") != frame] + [{"frame": frame, "target": target}]
+            o.patch_actor(person, {"gaze": sorted(keys, key=lambda k: k["frame"])})
+            person = o.actor(person["id"])
+            o.said.append(f"Looks: {person['name']} → {at['role'] if isinstance(at, dict) else at}" + (f" at {gz['time']:g} s" if gz.get("time") else ""))
     # A vehicle: headlights sweeping across the person, or one parked / pulling up.
     v = delta.get("vehicle")
     if v:
