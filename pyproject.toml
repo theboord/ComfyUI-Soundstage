@@ -3,7 +3,11 @@ name = "comfyui-soundstage"
 description = "A film set in a box: block a shot in 3D (actors, horses, cars, sets, water tank, real sun and film lights, keyframed camera, phone/Quest virtual camera), pick a cinematic look, then press Run to climb a preview ladder from clay to final LTX-2.5 video and per-object layers for AE/Nuke/Resolve/Blender. Includes a scene agent, director's advisor, editing timeline with Avid/Premiere/Resolve export, and an audio department."
 version = "0.1.0"
 license = { file = "LICENSE" }
-dependencies = ["soundfile>=0.12"]
+requires-python = ">=3.10"
+# Kept equal to requirements.txt (tests/test_packaging.py). ComfyUI itself provides torch, numpy, Pillow, av, aiohttp.
+dependencies = ["soundfile>=0.12", "opencv-python-headless>=4.8", "scipy>=1.10"]
+# Tested on Linux with an NVIDIA GPU (RTX 6000 Ada, 48 GB). The stage, Look and Cut run in any browser.
+classifiers = ["Operating System :: POSIX :: Linux", "Environment :: GPU :: NVIDIA CUDA"]
 
 [project.optional-dependencies]
 aaf = ["pyaaf2>=1.7"]
@@ -11,9 +15,16 @@ sdk = ["comfy-sdk>=0.5", "comfy-api-proxy>=0.1.6"]
 
 [project.urls]
 Repository = "https://github.com/theboord/ComfyUI-Soundstage"
+Documentation = "https://github.com/theboord/ComfyUI-Soundstage/blob/main/docs/TUTORIAL.md"
+Issues = "https://github.com/theboord/ComfyUI-Soundstage/issues"
 
+# Comfy Registry. Publishing is Mike's call: set PublisherId to his Registry publisher, then run the manual
+# "Publish to Comfy Registry" GitHub Action (.github/workflows/publish_action.yml) or `comfy node publish`.
+# The archive is the git-tracked files minus .comfyignore (docs/media, tests); `includes` would force paths back in,
+# so it stays empty.
 [tool.comfy]
 PublisherId = ""
 DisplayName = "Soundstage"
-Icon = "docs/icon.svg"
-includes = ["web", "docs", "example_workflows"]
+Icon = "https://raw.githubusercontent.com/theboord/ComfyUI-Soundstage/main/docs/icon.svg"
+includes = []
+requires-comfyui = ">=0.43.0"

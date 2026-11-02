@@ -1,0 +1,19 @@
+# Publish Soundstage to the Comfy Registry. Manual only: nothing publishes on a push or a merge.
+# Before the first run: set [tool.comfy] PublisherId in pyproject.toml, and add the Registry's publishing key
+# as the repository secret REGISTRY_ACCESS_TOKEN (Settings › Secrets and variables › Actions).
+name: Publish to Comfy Registry
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.repository_owner == 'theboord'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Comfy-Org/publish-node-action@v1
+        with:
+          personal_access_token: ${{ secrets.REGISTRY_ACCESS_TOKEN }}

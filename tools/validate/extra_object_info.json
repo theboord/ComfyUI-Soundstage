@@ -1,0 +1,317 @@
+{
+ "_about": "Hand-copied /object_info entries for classes the example workflows use that the pod snapshots in tests/test_*_object_info.json do not cover. Core classes from ComfyUI v0.43.0 (comfy_extras/nodes_audio.py, nodes_logic.py, nodes_preview_any.py, nodes_primitive.py, nodes_string.py, nodes_textgen.py); GemmaAPITextEncode from ComfyUI-LTXVideo (gemma_api_conditioning.py). 'loose': true = links and required sockets are checked, widget values are not (dynamic inputs, or copied without the source at hand). To refresh an entry, paste the class's entry from a live server's /object_info/<Class> over it.",
+ "AudioMerge": {
+  "input": {
+   "required": {
+    "audio1": [
+     "AUDIO",
+     {}
+    ],
+    "audio2": [
+     "AUDIO",
+     {}
+    ],
+    "merge_method": [
+     "COMBO",
+     {
+      "options": [
+       "add",
+       "mean",
+       "subtract",
+       "multiply"
+      ]
+     }
+    ]
+   },
+   "optional": {}
+  },
+  "output": [
+   "AUDIO"
+  ],
+  "output_name": [
+   "AUDIO"
+  ]
+ },
+ "ComfyNotNode": {
+  "input": {
+   "required": {
+    "value": [
+     "*",
+     {}
+    ]
+   },
+   "optional": {}
+  },
+  "output": [
+   "BOOLEAN"
+  ],
+  "output_name": [
+   "BOOLEAN"
+  ]
+ },
+ "ComfySwitchNode": {
+  "input": {
+   "required": {
+    "switch": [
+     "BOOLEAN",
+     {}
+    ]
+   },
+   "optional": {
+    "on_false": [
+     "COMFY_MATCHTYPE_V3",
+     {}
+    ],
+    "on_true": [
+     "COMFY_MATCHTYPE_V3",
+     {}
+    ]
+   }
+  },
+  "output": [
+   "*"
+  ],
+  "output_name": [
+   "output"
+  ]
+ },
+ "PreviewAny": {
+  "input": {
+   "required": {
+    "source": [
+     "*",
+     {}
+    ]
+   }
+  },
+  "output": [
+   "STRING"
+  ],
+  "output_name": [
+   "STRING"
+  ],
+  "output_node": true
+ },
+ "PrimitiveBoolean": {
+  "input": {
+   "required": {
+    "value": [
+     "BOOLEAN",
+     {}
+    ]
+   },
+   "optional": {}
+  },
+  "output": [
+   "BOOLEAN"
+  ],
+  "output_name": [
+   "BOOLEAN"
+  ]
+ },
+ "PrimitiveStringMultiline": {
+  "input": {
+   "required": {
+    "value": [
+     "STRING",
+     {
+      "multiline": true
+     }
+    ]
+   },
+   "optional": {}
+  },
+  "output": [
+   "STRING"
+  ],
+  "output_name": [
+   "STRING"
+  ]
+ },
+ "StringConcatenate": {
+  "input": {
+   "required": {
+    "string_a": [
+     "STRING",
+     {
+      "multiline": true
+     }
+    ],
+    "string_b": [
+     "STRING",
+     {
+      "multiline": true
+     }
+    ],
+    "delimiter": [
+     "STRING",
+     {
+      "default": ""
+     }
+    ]
+   },
+   "optional": {}
+  },
+  "output": [
+   "STRING"
+  ],
+  "output_name": [
+   "STRING"
+  ]
+ },
+ "StringContains": {
+  "input": {
+   "required": {
+    "string": [
+     "STRING",
+     {
+      "multiline": true
+     }
+    ],
+    "substring": [
+     "STRING",
+     {
+      "multiline": true
+     }
+    ],
+    "case_sensitive": [
+     "BOOLEAN",
+     {
+      "default": true
+     }
+    ]
+   },
+   "optional": {}
+  },
+  "output": [
+   "BOOLEAN"
+  ],
+  "output_name": [
+   "contains"
+  ]
+ },
+ "TextGenerateLTX2Prompt": {
+  "loose": true,
+  "input": {
+   "required": {
+    "clip": [
+     "CLIP",
+     {}
+    ],
+    "prompt": [
+     "STRING",
+     {
+      "multiline": true
+     }
+    ],
+    "max_length": [
+     "INT",
+     {
+      "default": 512,
+      "min": 1,
+      "max": 32768
+     }
+    ],
+    "sampling_mode": [
+     "COMFY_DYNAMICCOMBO_V3",
+     {}
+    ]
+   },
+   "optional": {
+    "image": [
+     "IMAGE",
+     {}
+    ],
+    "video": [
+     "IMAGE",
+     {}
+    ],
+    "audio": [
+     "AUDIO",
+     {}
+    ],
+    "thinking": [
+     "BOOLEAN",
+     {}
+    ],
+    "use_default_template": [
+     "BOOLEAN",
+     {}
+    ],
+    "mtp": [
+     "COMBO",
+     {}
+    ],
+    "system_prompt": [
+     "STRING",
+     {
+      "force_input": true
+     }
+    ]
+   }
+  },
+  "output": [
+   "STRING",
+   "STRING"
+  ],
+  "output_name": [
+   "generated_text",
+   "thinking"
+  ]
+ },
+ "GemmaAPITextEncode": {
+  "input": {
+   "required": {
+    "api_key": [
+     "STRING",
+     {
+      "default": ""
+     }
+    ],
+    "prompt": [
+     "STRING",
+     {
+      "multiline": true,
+      "default": ""
+     }
+    ],
+    "enhance_prompt": [
+     "BOOLEAN",
+     {
+      "default": true
+     }
+    ],
+    "ckpt_name": [
+     "COMBO",
+     {
+      "options": []
+     }
+    ]
+   }
+  },
+  "output": [
+   "CONDITIONING"
+  ],
+  "output_name": [
+   "conditioning"
+  ]
+ },
+ "CannyEdgePreprocessor": {
+  "loose": true,
+  "input": {
+   "required": {
+    "image": [
+     "IMAGE",
+     {}
+    ]
+   },
+   "optional": {}
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ]
+ }
+}

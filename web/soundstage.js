@@ -53,6 +53,7 @@ import { VIDEO_ACCEPT, cameraRaw, fetchSourceSpec, rawExplainer, sourceLine } fr
 import { JobCard, chooseVideoUse, clipSeconds, v2sPlan, wireVideoDrop, isVideoFile, flawsFromNotes, V2S_LABEL, V2S_TIP } from "./ui/videoimport.mjs";
 import { mountCompare } from "./ui/v2scompare.mjs";
 import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
+import { openDoctor } from "./ui/doctor.mjs";
 import { mountDirector } from "./agent/directorpanel.mjs";
 import { mountBook } from "./book/book.mjs";
 import { mountPresets } from "./ui/presets.mjs";
@@ -307,6 +308,14 @@ function createStageWidget(node, inputName) {
     applyLayout(next);
   });
   layoutBtn.style.marginLeft = "6px";
+  // Tools ▾ › Check my setup: node packs, model files, VRAM and Python packages (web/ui/doctor.mjs, soundstage/doctor.py).
+  const doctorBtn = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn ss-doctorbtn",
+    title: "Check my setup: node packs, model files, VRAM and Python packages, with what to install" });
+  doctorBtn.dataset.ssIcon = "check";
+  doctorBtn.append(icon("check", 13), Object.assign(document.createElement("span"), { className: "lbl", textContent: "Check my setup" }));
+  doctorBtn.dataset.desc = "Node packs, model files, VRAM, Python packages";
+  doctorBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  doctorBtn.addEventListener("click", () => { openDoctor({ fetchApi: (p) => api.fetchApi(p) }); });
   // Guide: the first-run tour, any time (web/ui/firstrun.mjs).
   const guideBtn = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn ss-guidebtn",
     title: "Guide: a one-minute tour of how a shot gets made here (6 steps; Esc to leave it)" });
@@ -3592,11 +3601,12 @@ function createStageWidget(node, inputName) {
         toolsMenu.append(menuSep);
         mv.move(syncBtn, toolsMenu, tabBtns.dailies.nextSibling);
         mv.move(layoutBtn, toolsMenu);
+        toolsMenu.append(doctorBtn);
         for (const k of STEP_TABS) mv.addClass(tabBtns[k], "ss-clgone");
         tabs.insertBefore(toolsBtn, keysBtn);
         tabs.insertBefore(moreBtn, expand);
         tabs.append(toolsMenu, scenePop);
-        built.push(sceneGrp, scenePop, toolsBtn, toolsMenu, menuSep, moreBtn);
+        built.push(sceneGrp, scenePop, toolsBtn, toolsMenu, menuSep, moreBtn, doctorBtn);
         // Timeline bar over the canvas.
         mv.move(bottom, cvArea);
         mv.addClass(tracksBtn, "ss-clgone");

@@ -1,0 +1,60 @@
+# CPU checks: no GPU, no model downloads.
+#   offline: every example workflow against node schemas (pod snapshots + Soundstage's own nodes read from the code),
+#            the doctor and packaging tests.
+#   live:    a real ComfyUI on the CPU with the required node packs and empty model files; every workflow's node
+#            schemas are read one class at a time (/object_info/<Class>). Not yet seen green: continue-on-error
+#            until it has run once on GitHub.
+name: validate
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest numpy pillow typing_extensions -r requirements.txt
+      - run: python tools/validate_workflows.py
+      - run: python -m soundstage.doctor --help
+      - run: python -m pytest -q tests/test_validate_workflows.py tests/test_doctor.py tests/test_packaging.py
+
+  live:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ComfyUI-Soundstage
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: ComfyUI v0.43.0 and the required node packs
+        run: |
+          git clone --depth 1 --branch v0.43.0 https://github.com/comfyanonymous/ComfyUI ComfyUI
+          git clone --depth 1 https://github.com/Lightricks/ComfyUI-LTXVideo ComfyUI/custom_nodes/ComfyUI-LTXVideo
+          git clone --depth 1 https://github.com/facok/comfyui-krea2-controlnet ComfyUI/custom_nodes/comfyui-krea2-controlnet
+          ln -s "$GITHUB_WORKSPACE/ComfyUI-Soundstage" ComfyUI/custom_nodes/ComfyUI-Soundstage
+          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install -r ComfyUI/requirements.txt -r ComfyUI-Soundstage/requirements.txt -r ComfyUI/custom_nodes/ComfyUI-LTXVideo/requirements.txt
+      - name: Start ComfyUI on the CPU
+        run: |
+          cd ComfyUI && nohup python main.py --cpu --listen 127.0.0.1 --port 8188 > ../comfy.log 2>&1 &
+          for i in $(seq 1 90); do curl -sf http://127.0.0.1:8188/system_stats >/dev/null && break; sleep 2; done
+          curl -sf http://127.0.0.1:8188/system_stats
+      - name: Doctor (in ComfyUI's own process, via /soundstage/doctor)
+        run: python -m soundstage.doctor --url http://127.0.0.1:8188
+        working-directory: ComfyUI-Soundstage
+        continue-on-error: true   # it reports missing models (there are none here) with exit status 1
+      - name: Every example workflow against the live schemas, with empty model files
+        run: python tools/validate_workflows.py --url http://127.0.0.1:8188 --comfy-dir ../ComfyUI --placeholders
+        working-directory: ComfyUI-Soundstage
+      - if: always()
+        run: tail -200 comfy.log

@@ -31,6 +31,7 @@ const FULL = [
   [/^\/soundstage\/layerpack/, "The Layer Pack (EXR, PSD, ProRes)"],
   [/^\/soundstage\/(voice|tts|lipsync|ltxvoice)/, "Voices and lip sync"],
   [/^\/prompt/, "Rendering on the GPU"],
+  [/^\/soundstage\/doctor/, "Check my setup (it checks your own ComfyUI)"],
 ];
 const told = new Set();
 // Take checks: the real results the server computed for the takes these scenes replay (soundstage/takecheck/check.py).

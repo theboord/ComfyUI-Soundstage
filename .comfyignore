@@ -1,0 +1,7 @@
+# Left out of the Comfy Registry archive (git-tracked files minus these). Nothing at run time reads them.
+# docs/media: the README's videos and GIFs (about 95 MB); they stay on GitHub.
+docs/media/
+tests/
+submission/
+tools/tryit/
+.github/

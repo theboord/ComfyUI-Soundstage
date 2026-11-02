@@ -51,7 +51,9 @@ pip install -r ComfyUI-Soundstage/requirements.txt
 pip install -r ComfyUI-LTXVideo/requirements.txt
 ```
 
-Soundstage itself only needs `soundfile` (audio read/write). `pyaaf2` is optional and only used for Avid AAF export from the Cut tab; EDL, XML and OTIO exports need nothing extra.
+Soundstage's own requirements are `soundfile` (audio read/write), `scipy` and `opencv-python-headless` (Video → Stage and Photo → 3D). `pyaaf2` is optional and only used for Avid AAF export from the Cut tab; EDL, XML and OTIO exports need nothing extra.
+
+When everything is in place, **Tools ▾ › Check my setup** in the App (or `python -m soundstage.doctor` in the `ComfyUI-Soundstage` folder) lists what is still missing and where to get it: see [doctor.md](doctor.md).
 
 **On Linux or RunPod** one script installs the node packs, copies the workflows into `user/default/workflows/` and downloads the Krea 2, LTX-2.5 and Qwen3.5 files listed below:
 
@@ -1360,7 +1362,7 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 
 ## 7. Troubleshooting and FAQ
 
-**Missing models, or "N issues found" when I press Run.** App mode lists problems before running; **Show errors in graph** shows which node. "Value not in list" on a loader means that model file isn't where ComfyUI looks: check the exact filename and folder in [Download the models](#download-the-models), then refresh ComfyUI (or restart it) so the new file is listed. Missing node types mean a node pack is missing: install ComfyUI-LTXVideo and comfyui-krea2-controlnet as in [Install](#install-the-node-packs).
+**Missing models, or "N issues found" when I press Run.** **Tools ▾ › Check my setup** lists every missing node pack and model file, with its folder and a link. App mode lists problems before running; **Show errors in graph** shows which node. "Value not in list" on a loader means that model file isn't where ComfyUI looks: check the exact filename and folder in [Download the models](#download-the-models), then refresh ComfyUI (or restart it) so the new file is listed. Missing node types mean a node pack is missing: install ComfyUI-LTXVideo and comfyui-krea2-controlnet as in [Install](#install-the-node-packs).
 
 **"No image edit model is installed (FLUX 3 Klein or Krea 2): Generative Fill is off."** Paint Studio's fill needs one of the two image models. Painting, masking, layers and extending the canvas still work without them.
 

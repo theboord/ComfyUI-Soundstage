@@ -49,6 +49,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 
 | When | Update |
 |---|---|
+| Nov 2, 13:10 PST | **Check my setup:** Tools ▾ › Check my setup (or `python -m soundstage.doctor`) checks the node packs, the model files per feature, the GPU's VRAM and the Python packages, and says what to install and where. Comfy Registry metadata is ready (not published). Every example workflow is checked against node schemas on a CPU (`tools/validate_workflows.py`). |
 | Nov 2, 08:15 PST | **Motion graphics in the Cut:** + Graphic puts a title, kinetic type, lower third, callout zoom, PiP, dual PiP, device frame, split or end card on a V3 lane, editable in the inspector and by dragging in the viewer, each with its own designed sounds placed on A2. The render draws them at full resolution with motion blur ([docs/cut.md](docs/cut.md)). |
 | Nov 2, 05:30 PST | **✦ One-click:** a ✦ on every take and ④ Frame candidate opens 52 one-click cards: Nightfall, Flood, Rain, Snow, Fog, Golden hour, Empty the scene, Cutout (ProRes 4444 alpha on clips), Living photo, the 18 lighting setups, approximate new angles and experimental exact ones from the 3D stage, and Expand to six aspects. Clips carry the edit with Ripple; every result lands as a take and meets the realism judge ([docs/oneclick.md](docs/oneclick.md)). |
 | Nov 2, 01:20 PST | **Boats, verified:** every boat now steers the way you turn it (the kayak and rowboat were reversed), motor trim lifts the bow as it should, paddlers pull with a person's strength, a speedboat carves a real ~35 m turn banked into it, the Laser sails flat, and the top hand stays below the eyes on every stroke; presets fit a 4–5 s shot. |
@@ -389,12 +390,27 @@ pip install -r ComfyUI-LTXVideo/requirements.txt
 
 Use the same Python environment that runs ComfyUI. Then download the models listed in [MODELS.md](MODELS.md) into `ComfyUI/models/`. Some repos are gated: accept the license on Hugging Face first, then `hf auth login`.
 
-**Linux / RunPod:** one script installs the node packs, copies the workflows and downloads the models:
+**ComfyUI-Manager:** Soundstage is not on the Comfy Registry yet, so it isn't in the Manager's search. Use **Manager › Install via Git URL** with `https://github.com/theboord/ComfyUI-Soundstage` (the Manager then installs `requirements.txt`), and install ComfyUI-LTXVideo and comfyui-krea2-controlnet the same way. The Registry metadata is ready in `pyproject.toml`; publishing is manual and hasn't happened.
+
+**Linux / RunPod:** one script installs the node packs, copies the workflows and downloads the Krea 2, LTX-2.5 and Qwen3.5 files. It does not download FLUX 3 Klein (the default Frame model): get those three files from [MODELS.md](MODELS.md).
 
 ```bash
 bash ComfyUI/custom_nodes/ComfyUI-Soundstage/tools/install_runpod.sh /path/to/ComfyUI
 # SKIP_MODELS=1 to install the node packs only; SKIP_LLM=1 to skip the optional Qwen3.5 file
 ```
+
+### Check your setup
+
+The doctor checks a ComfyUI install for Soundstage and says, in plain words, what is missing and where to get it: the node packs (class by class), the model files per feature (another build of the same model counts, as in the App), the GPU's VRAM and which features fit it, and the Python packages.
+
+- **In the App:** **Tools ▾ › Check my setup** (canvas layout). It runs inside ComfyUI, so it sees exactly what ComfyUI sees, including `extra_model_paths.yaml`.
+- **From a terminal**, in the `ComfyUI-Soundstage` folder:
+
+```bash
+python -m soundstage.doctor
+```
+
+With ComfyUI running it asks the server (`--url` for another address); with ComfyUI stopped it reads the folders (`--comfy /path/to/ComfyUI`). `--sizes` asks Hugging Face how big each missing file is, `--json` prints the full report. Exit status 0 means the required node packs, Python packages and the default Frame and Motion models are there. See [docs/doctor.md](docs/doctor.md).
 
 ## Run it locally
 
@@ -426,7 +442,10 @@ python tools/soundstage_sdk.py shot_api.json --rung 4 --look "Korean thriller, a
 ```bash
 python3 -m pytest -q
 for f in tests/js/*.test.mjs; do node --test "$f"; done
+python3 tools/validate_workflows.py
 ```
+
+`tools/validate_workflows.py` checks every workflow in `example_workflows/` against ComfyUI node schemas on a CPU with no model files: node types, links and their types, required inputs, combo values and number ranges, and that every model file a workflow names is in MODELS.md. Offline it uses the pod's `/object_info` snapshots plus Soundstage's own nodes read from the code; `--url http://127.0.0.1:8188 --comfy-dir /path/to/ComfyUI --placeholders` checks against a running ComfyUI (`--cpu`) with empty placeholder model files. GitHub Actions runs both (`.github/workflows/validate.yml`).
 
 ## Models and licenses
 
@@ -460,6 +479,7 @@ Model weights are not included in this repo. Check each license before commercia
 - Chatterbox by Resemble AI (open TTS).
 - [three.js](https://threejs.org) and [Spark](https://sparkjs.dev): the 3D stage and splat rendering.
 - [Quaternius](https://quaternius.com): the CC0 horse and car models.
+- [freefield](https://github.com/neuregex/freefield) by neuregex (MIT): the idea behind `tools/validate_workflows.py`, checking workflows on a CPU against empty placeholder model files (from its `tools/comfy_validate.py`; no code copied).
 - [Lucide](https://lucide.dev): icons. [Space Grotesk](https://fonts.google.com/specimen/Space+Grotesk): the UI font.
 
 Vendored components and their licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
@@ -467,6 +487,7 @@ Vendored components and their licenses are listed in [THIRD_PARTY_NOTICES.md](TH
 ## Docs
 
 - [decisions.md](docs/decisions.md): the development log, with every design decision and its reason.
+- [doctor.md](docs/doctor.md): Check my setup (`python -m soundstage.doctor`).
 - Components: [director](docs/director.md), [mcp](docs/mcp.md), [quality](docs/quality.md), [look](docs/look.md), [agent](docs/agent.md), [advisor](docs/advisor.md), [coach](docs/coach.md), [layerpack](docs/layerpack.md), [cut](docs/cut.md), [audio](docs/audio.md), [recast](docs/recast.md), [vcam](docs/vcam.md), [router](docs/router.md), [assets3d](docs/assets3d.md), [interop](docs/interop.md).
 
 ## License
