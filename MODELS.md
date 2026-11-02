@@ -2,7 +2,7 @@
 
 **100% open weights: every model runs locally.** Everything below is a weight file on your own GPU; no paid API is used by default.
 
-The Soundstage App (`example_workflows/Soundstage_App.json`) needs the models below. Folder paths are relative to `ComfyUI/models/`. `tools/install_runpod.sh` downloads them. Some repos are gated: accept the license on Hugging Face first, then `huggingface-cli login`.
+The Soundstage App (`example_workflows/Soundstage_App.json`) needs the models below. Folder paths are relative to `ComfyUI/models/`. `tools/install_runpod.sh` downloads them. To put them in another folder, such as an external drive, use `python tools/fetch_models.py <models folder>` (`--verify` checks what is already there). Some repos are gated: accept the license on Hugging Face first, then `huggingface-cli login`.
 
 **Other builds are fine.** If you already have a model as a different build (bf16, fp8, int8-convrot) or in a subfolder (`loras/ltx2.5/…`), keep it: when a Soundstage workflow loads, each model loader that names a file you don't have is pointed at your build of the same model, and a small notice says so ("Using ltx-2.5-…int8-convrot (you don't have the bf16 file)"). If you have no build of it at all, the notice names the missing file and links here.
 
