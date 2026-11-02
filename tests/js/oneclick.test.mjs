@@ -219,3 +219,14 @@ test("the MCP catalog is plain data", () => {
   assert.equal(JSON.parse(JSON.stringify(rows)).length, rows.length);
   assert.ok(E.EFFECT_IDS.includes("nightfall") && X.EXPAND_IDS.includes("expand_clip") && A.ANGLE_IDS.length === 12 && L.LIGHT_IDS.length === 18);
 });
+
+test("card names never collide across groups (Light's Loop setup reads 'Loop lighting', not the Seamless loop)", async () => {
+  await import("../../web/oneclick/loop.mjs");
+  const names = new Map();
+  for (const s of O.oneClicks()) {
+    const k = s.label.toLowerCase();
+    assert.ok(!names.has(k), `two cards are called "${s.label}" (${names.get(k)} and ${s.id})`);
+    names.set(k, s.id);
+  }
+  assert.equal(O.getOneClick("relight_loop").label, "Loop lighting");
+});

@@ -13,6 +13,7 @@ export const demo = {
   getShot: () => null,  // set by the shell: the active shot id
   getStep: () => 1,     // set by the shell: the ladder step to climb to
   toast: () => {},      // set by the shell
+  v2s: null,            // the recorded Video → 3D run once it starts: { clip, total_s, replaySeconds, running, doneAt } (the badge)
 };
 
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
@@ -22,7 +23,7 @@ const asset = (name) => new URL(`r/${String(name).replace(/\.png$/i, ".jpg")}`, 
 const FULL = [
   [/^\/soundstage\/director/, "The Director's language model (local Qwen or Ollama)"],
   [/^\/soundstage\/cut\/render$/, "Rendering the Timeline (MP4, ProRes, 9:16)"],
-  [/^\/soundstage\/(video2stage|mocap)/, "Video to 3D (pose and camera from a clip)"],
+  [/^\/soundstage\/(video2stage|mocap)/, "Video to 3D on your own clips (pose and camera from a clip)"],
   [/^\/soundstage\/(object_designer|object\b|assets3d)/, "Making a 3D object from a prompt or a photo"],
   [/^\/soundstage\/(import_world|world|interop)/, "Uploading a world to the server"],
   [/^\/soundstage\/vcam/, "The phone viewfinder (the vcam bridge to your phone)"],
@@ -49,10 +50,48 @@ globalThis.fetch = (u, init) => {
   }
   return realFetch(u, init);
 };
+// Video → 3D: one real run of the pipeline on the pod, recorded (r/canned/v2s_run.json: its steps with their measured
+// times, notes and result scene). Rebuild replays it in REPLAY_S seconds: the progress card walks the real steps with
+// the real elapsed times, then the App loads the real result through its own code.
+const REPLAY_S = 9;
+let v2sRec = null;
+const v2sRun = () => (v2sRec ||= fetch(new URL("r/canned/v2s_run.json", BASE)).then((r) => (r.ok ? r.json() : null)).catch(() => null));
+const v2sJobs = new Map();
+async function v2sRoute(p, path, init, method) {
+  const rec = await v2sRun();
+  if (!rec) return null;
+  if (p === "/soundstage/video2stage/runs") return json({ runs: [{ secs: rec.secs, samples: rec.samples, total_s: rec.total_s }] });
+  const id = /[?&]id=([^&]+)/.exec(String(path))?.[1] || (() => { try { return JSON.parse(init.body || "{}").id; } catch { return ""; } })();
+  if (p === "/soundstage/video2stage/cancel") { v2sJobs.delete(id); demo.v2s = null; return json({ ok: true }); }
+  if (p === "/soundstage/video2stage" && method === "POST") {
+    // Only the recorded clip replays: a visitor's own clip gets the full-install note, never someone else's result.
+    let video = "";
+    try { video = JSON.parse(init.body || "{}").video || ""; } catch { /* not JSON */ }
+    if (!video.endsWith(rec.clip)) return null;
+    const job = `demo-v2s-${++seq}`;
+    v2sJobs.set(job, performance.now());
+    demo.v2s = { clip: rec.clip, total_s: rec.total_s, replaySeconds: REPLAY_S, running: true };
+    demo.toast(`Replaying a real Video → 3D run: ${Math.round(rec.total_s / 60)} min wall time on the pod, most of it queue wait, shown here in ${REPLAY_S} s.`);
+    return json({ job });
+  }
+  if (p === "/soundstage/video2stage/job") {
+    const t0 = v2sJobs.get(id);
+    if (t0 == null) return json({ error: "no such job" }, 404);
+    const frac = (performance.now() - t0) / 1000 / REPLAY_S;
+    if (frac >= 1) { v2sJobs.delete(id); if (demo.v2s) Object.assign(demo.v2s, { running: false, doneAt: performance.now() }); return json({ state: "done", notes: rec.result.notes || [], result: JSON.parse(JSON.stringify(rec.result)) }); }
+    const t = frac * rec.total_s;
+    let i = 0, acc = 0;
+    while (i < rec.steps.length - 1 && acc + rec.steps[i].s <= t) acc += rec.steps[i++].s;
+    return json({ state: "running", step: rec.steps[i].name, step_index: i, steps: rec.steps.map((x) => x.name),
+      queue_position: 0, elapsed_s: t, eta_s: rec.total_s - t });
+  }
+  return null;
+}
 function fullInstall(p) {
-  const what = (FULL.find(([re]) => re.test(p)) || [null, "This"])[1];
+  const hit = FULL.find(([re]) => re.test(p)), what = hit ? hit[1] : "This";
   const msg = `${what} is available in the full install (ComfyUI with a GPU). This demo replays renders made earlier.`;
-  if (!told.has(what)) { told.add(what); demo.toast(msg); }
+  // Background lookups the App makes on its own (model lists, readiness) answer quietly: a note only for named features.
+  if (hit && !told.has(what)) { told.add(what); demo.toast(msg); }
   return msg;
 }
 
@@ -101,7 +140,7 @@ export const api = {
     if (p === "/soundstage/takecheck/recipe") return json({ error: "no recipe in the demo" }, 404);
     if (p === "/soundstage/cut/render_video") {
       if (!s.cut) return json({ error: "This scene's cut wasn't rendered on the GPU yet." }, 422);
-      demo.toast("Demo: the cut as joined on the server.");
+      demo.toast(`Replayed: this scene's cut as joined earlier on the server (${s.cut}), not a new join of your trims.`);
       return json({ filename: s.cut, subfolder: "", type: "output", seconds: s.cutSeconds || 0, missing: [] });
     }
     if (p === "/queue") return json(method === "GET" ? { queue_running: [], queue_pending: [] } : {});
@@ -124,6 +163,7 @@ export const api = {
       const r = await fetch(asset(name)).catch(() => null);
       return r && r.ok ? r : json({ error: "not in the demo" }, 404);
     }
+    if (p.startsWith("/soundstage/video2stage")) { const r = await v2sRoute(p, path, init, method); if (r) return r; }
     const msg = fullInstall(p);
     // /prompt callers read error.message; the others read error.
     return p === "/prompt" ? json({ error: { type: "demo", message: msg }, node_errors: {} }, 503) : json({ error: msg, message: msg, available: false }, 503);

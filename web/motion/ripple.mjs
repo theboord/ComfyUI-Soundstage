@@ -4,6 +4,8 @@
 // with its motion, timing, camera and sound. The result lands as a new take on the shot (Takes, approvals, compare).
 // Pure helpers are exported for tests (tests/js/ripple.test.mjs); RippleControls is the DOM part the pipeline mounts.
 
+import { renderPreset } from "../takecheck/model.mjs";
+
 export const FOLLOW_MODES = [
   ["layout", "Layout", "Follow the clay: positions, camera and timing from your 3D blocking (default)"],
   ["pose", "Pose", "Experimental: an OpenPose skeleton of every clay actor (body, hands and face) drives LTX through the union-control IC-LoRA"],
@@ -197,7 +199,7 @@ export class RippleControls {
     ensureCss();
     this.p = pipe;
     this.mode = "layout";
-    this.quality = () => pipe.m?.quality === "Draft" ? "Draft" : "Final";
+    this.quality = () => renderPreset(pipe) === "Draft" ? "Draft" : "Final";
     this.seg = h("div", { class: "seg row" }, ...FOLLOW_MODES.map(([k, t, tip]) => h("button", { type: "button", "data-follow": k,
       "aria-pressed": String(k === "layout"), title: tip, on: { click: () => this.setMode(k) } }, t, k === "pose" ? h("span", { class: "exp" }, "exp") : null)));
     this.note = h("div", { class: "status" });

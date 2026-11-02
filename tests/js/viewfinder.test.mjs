@@ -228,7 +228,11 @@ test("stage keys carry the lens channels and play them back like vfcore.lensAt",
   near(l.roll, 0.05, 1e-9);
   assert.deepEqual(V.lensAt([{ frame: 0 }, { frame: 10 }], 5), {}, "old keys: nothing");
   const src = (await import("node:fs")).readFileSync(new URL("../../web/stage/stage.mjs", import.meta.url), "utf8");
-  assert.match(src, /cam\.focus_m = 1 \/ \(1 \/ ka\.focus_m \+ \(1 \/ kb\.focus_m - 1 \/ ka\.focus_m\) \* e\)/);
+  assert.match(src, /cam\.focus_m = 1 \/ \(1 \/ f\[0\]\.focus_m \+ \(1 \/ f\[1\]\.focus_m - 1 \/ f\[0\]\.focus_m\) \* f\[2\]\)/);
+  // Each channel plays between the keys that carry it (Parts can remove one channel's key and keep the others).
+  const mixed = V.lensAt([{ frame: 0, focus_m: 1, t_stop: 2 }, { frame: 10, t_stop: 8 }, { frame: 20, focus_m: 4, t_stop: 8 }], 10);
+  near(1 / mixed.focus_m, (1 + 0.25) / 2, 1e-9, "focus eases from frame 0 to 20 past the T-stop-only key");
+  near(mixed.t_stop, 8, 1e-9);
   assert.match(src, /const lk = this\.activeShot\?\.\(\)\?\.lens_keys;/, "the stage plays the shot's lens_keys");
   assert.match(src, /setLensKeys\(keys\) \{/);
 });

@@ -36,6 +36,17 @@ def test_parse_reply_fenced_and_typed():
     assert r["set"][0]["lanes"] == 4 and r["set"][1]["distance"] == "far"
 
 
+def test_parse_reply_keeps_furniture_and_props_listed_as_objects():
+    """SET_TYPES grew sofa/box/plant/... for the LAYOUT inventory; parse_reply used it to drop 'other' objects that
+    name a set piece, so a sofa or a crate the shot breakdown placed before vanished from the rebuild."""
+    text = ('{"objects":[{"label":"sofa","kind":"other","bbox":[10,10,200,120]},'
+            '{"label":"crate","kind":"other","bbox":[300,10,400,90]},'
+            '{"label":"potted plant","kind":"other","bbox":[500,10,560,90]},'
+            '{"label":"bench","kind":"other","bbox":[600,10,700,90]}]}')
+    labels = [o["label"] for o in vlm.parse_reply(text)["objects"]]
+    assert labels == ["sofa", "crate", "potted plant"]          # the bench is still scenery (folded into the set)
+
+
 def test_parse_reply_truncated_and_bare_list():
     cut = '{"objects":[{"label":"woman in yellow coat","kind":"person","bbox":[400,100,520,900],"moving":true},' \
           '{"label":"man on bench","kind":"person","bbox":[700,300,780,'
@@ -242,7 +253,19 @@ def test_mount_riders_and_drivers():
     convert.mount_riders(acts)
     ids = {a["id"]: a for a in acts}
     assert ids["rider"]["mount_id"] == "bike" and ids["rider"]["pose"] == "cycle"
-    assert "driver" not in ids and "mount_id" not in ids["walker"]
+    assert ids["driver"]["mount_id"] == "car" and ids["driver"]["pose"] == "sit" and ids["driver"]["occupant"]
+    assert "mount_id" not in ids["walker"]
+
+
+def test_driver_seen_only_on_the_last_frame_sits_in_the_car():
+    # The J-turn read: the car boxed on both frames, its driver only on the last (through the side window).
+    acts = [{"id": "car", "kind": "car", "position": [0, 0, 0], "_bbox": [380, 360, 720, 615],
+             "_boxes": [[380, 360, 720, 615], [110, 240, 950, 740]]},
+            {"id": "driver", "kind": "man", "position": [3, 0, -2], "_bbox": [410, 310, 460, 380],
+             "_boxes": [None, [410, 310, 460, 380]]}]
+    convert.mount_riders(acts)
+    d = acts[1]
+    assert d["mount_id"] == "car" and d["pose"] == "sit" and d["occupant"] and d["position"] == [0, 0, 0]
 
 
 def test_time_preset():
@@ -337,3 +360,21 @@ def test_performer_gets_a_readable_name():
     a = scene["actors"][0]
     assert aid == "p" and a["name"] == "Performer" and a["mocap"]["world"]["path"][0] == [1.0, 2.0]
     assert a["appearance"].get("top") == "shirt"
+
+
+def test_street_buildings_are_a_city_block_not_houses():
+    # The J-turn read: a night street with buildings on both sides. Two cottages with red roofs read as a suburb.
+    bd = {"set": [{"type": "road", "side": "all", "distance": "near", "lanes": 2},
+                  {"type": "building", "side": "right", "distance": "far"},
+                  {"type": "building", "side": "left", "distance": "far"}]}
+    car = {"id": "car", "kind": "car", "_vehicle": True, "rotation_deg": 0.0, "position": [0, 0, 0],
+           "keys": [{"frame": 0, "position": [0, 0, 0]}, {"frame": 120, "position": [0, 0, 20]}]}
+    cam = [{"position": [-8, 1.5, -6], "target": [0, 1, 0]}]
+    out = convert.build_set(bd, [car], cam, [])
+    names = [a.get("name") for a in out]
+    assert not any(a.get("kind") == "house" for a in out), names
+    blocks = [a for a in out if (a.get("name") or "").startswith("City block")]
+    assert len(blocks) == 2 and all(len(b["recipe"]["parts"]) == 6 for b in blocks)
+    # On the kerb line, not 70 m out: the street reads as a street.
+    for b in blocks:
+        assert 5 < abs(b["position"][0]) < 20, b["position"]

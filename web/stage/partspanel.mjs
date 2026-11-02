@@ -303,7 +303,10 @@ export function mountParts({ stage, poseHost, posePanel, lightSel, lensRow, onSt
     catch (err) { console.warn("Soundstage parts key", err); }
   });
   obj.bind(stage.selected || null);
-  return { obj, light, cam };
+  // Stage.dispose() stops their 250 ms polls (each held the stage alive after its node was removed).
+  const panels = { obj, light, cam, dispose() { for (const p of [obj, light, cam]) p.dispose(); } };
+  stage._partsPanels = panels;
+  return panels;
 }
 
 export { specOf };

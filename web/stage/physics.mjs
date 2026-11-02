@@ -403,6 +403,12 @@ function pairContacts(A, B, out, spec = SPEC) {
 }
 
 const SPEC = 0.01;   // m: contact margin (see probeContacts)
+/** World collisions (Milestone 28): a keyed body is let go when a hit would change its speed by more than this (m/s). */
+export const TAKEOVER_DV = 1.0;
+/** ... and whatever happens, once it presses this deep into something that won't move (m). */
+const PEN_MAX = 0.02;
+/** Contact stiffness (N/m) of a body that names none: a stiff prop. A car's crush stiffness is about 1e6. */
+const STIFF_DEFAULT = 5e6;
 
 /** Two boxes with a gap along one of their 6 face axes (the cheap half of a separating-axis test). */
 function facesSeparate(A, B, margin = 0) {
@@ -448,6 +454,23 @@ export function simulate(specs, frames, opts = {}) {
   const fps = opts.fps || 24, nSub = Math.max(4, Math.min(64, opts.substeps || 20));
   const h = 1 / (fps * nSub), g = opts.gravity ?? GRAVITY, floor = opts.floor !== false, iters = Math.max(1, Math.min(8, opts.iterations || 4));
   let bodies = specs.map((s, i) => makeBody(s, i));
+  // World collisions (Milestone 28): keyed bodies that follow their keys until something real stops them (takeover:
+  // cars, people), set pieces anchored to the ground until a hit is hard enough to snap them (anchor: poles, signs,
+  // hydrants, wall blocks), cars' tyre grip on the road (aniso) and their crush (crush: N/m).
+  for (const b of bodies) {
+    const sp = specs[b.index];
+    if (sp.kerb) b.kerb = true;
+    b.stiff = +sp.stiffness > 0 ? +sp.stiffness : +sp.crush > 0 ? +sp.crush : STIFF_DEFAULT;
+    if (!b.dynamic) continue;
+    if (sp.takeover) b.takeover = { dv: +sp.takeover.dv > 0 ? +sp.takeover.dv : TAKEOVER_DV };
+    if (sp.anchor) b.anchor = { force: +sp.anchor.force > 0 ? +sp.anchor.force : 4e4, energy: Math.max(0, +sp.anchor.energy || 0),
+      impulse: Math.max(0, +sp.anchor.impulse || 0), supports: sp.anchor.supports || [] };
+    if (b.takeover || b.anchor) { b.hold = true; if (!(+sp.release > 0)) b.release = Infinity; }
+    if (sp.aniso) b.aniso = { axis: sp.aniso.axis || [0, 0, 1], up: sp.aniso.up || [0, 1, 0], roll: Math.max(0, +sp.aniso.roll || 0), side: Math.max(0, sp.aniso.side ?? 0.8) };
+    if (+sp.crush > 0) b.crushK = +sp.crush;
+  }
+  const byId = new Map(bodies.map((b) => [b.id, b])), takeovers = {}, crush = {};
+  const crushOn = bodies.some((b) => b.crushK);
   let dyn = bodies.filter((b) => b.dynamic);
   const origDyn = [...dyn];
   const tracks = {}, settled = {};
@@ -580,9 +603,18 @@ export function simulate(specs, frames, opts = {}) {
       for (const key of pairs) {
         const A = bodies[Math.floor(key / N)], B = bodies[key % N];
         {
-          if (!A.free && !B.free) continue;   // two keyed things never push each other
+          // Two keyed things never push each other, unless one of them is a keyed mover that physics may take over.
+          if (!A.free && !B.free && !(A.takeover && !A.free) && !(B.takeover && !B.free)) continue;
           const dx = A.x[0] - B.x[0], dy = A.x[1] - B.x[1], dz = A.x[2] - B.x[2], R = A.bound + B.bound + 0.05;
           if (dx * dx + dy * dy + dz * dz > R * R) continue;
+          if (!A.free && !B.free) {
+            // Milestone 28: a keyed car meeting another keyed car, a pole or a wall. They don't pass through each
+            // other: whoever would really be stopped or knocked is let go to the physics, from this substep on.
+            const tmp = [];
+            pairContacts(A, B, tmp, SPEC);
+            if (tmp.length && holdCheck(A, B, tmp, f, s)) for (const c of tmp) C.push(c);
+            continue;
+          }
           // Two pieces of one broken prop: they pass through each other until they have come apart once (a piece's
           // box can overlap what is left of the crate), then collide like any two bodies.
           if (A.fr && B.fr && A.fr.R === B.fr.R && !A.armed?.has(B)) {
@@ -604,7 +636,9 @@ export function simulate(specs, frames, opts = {}) {
             pairCache.set(key, { sub: gsub, list: C.slice(n0) });
             continue;
           }
+          const n0 = C.length;
           pairContacts(A, B, C, kinSpec(A, B));
+          if (C.length > n0 && ((A.hold && !A.free) || (B.hold && !B.free))) holdCheck(A, B, C.slice(n0), f, s);
         }
       }
       gsub++;
@@ -623,6 +657,7 @@ export function simulate(specs, frames, opts = {}) {
         rawHits.push({ frame: Math.round(f + (s + 1) / nSub), t: (f + (s + 1) / nSub) / fps, pos: [...c.pA], normal: [...c.n],
           impulse: (sp * (1 + e)) / (iA + iB), speed: sp, a: rootOf(c.a), b: rootOf(c.b), mat_a: c.a.material || "wood", mat_b: c.b.material || (c.b === GROUND ? groundMat : "concrete") });
       }
+      if (crushOn && f >= 1) for (const c of C) logCrush(c, f, s);
       // Loads on breakable / dentable bodies (Milestone 24): per body, the hardest hit this substep (its velocity
       // change, m/s) and the load-weighted hit point and inward direction (A is pushed along +n, so +n points into A).
       const loads = roots.length && f >= 2 ? new Map() : null;
@@ -665,12 +700,17 @@ export function simulate(specs, frames, opts = {}) {
         const dp = [pAn[0] - pAp[0] - pBn[0] + pBp[0], pAn[1] - pAp[1] - pBn[1] + pBp[1], pAn[2] - pAp[2] - pBn[2] + pBp[2]];
         const dpt = sub(dp, scl(c.n, dot(dp, c.n))), m = len(dpt);
         if (m < 1e-9) continue;
-        const t = scl(dpt, 1 / m);
         rA = sub(pAn, A.x); rB = sub(pBn, B.x);
-        const wtA = wOf(A, rA, t), wtB = wOf(B, rB, t);
-        if (wtA + wtB <= 0) continue;
-        const lt = m / (wtA + wtB);
-        if (lt < mu * c.lam) { applyPos(A, scl(t, -lt), rA); applyPos(B, scl(t, lt), rB); }
+        const an = (A.aniso || B.aniso) ? tyreFrame(c) : null;
+        for (const [comp, muC] of an ? splitTyre(dpt, an) : [[dpt, mu]]) {
+          const mc = len(comp);
+          if (mc < 1e-9) continue;
+          const t = scl(comp, 1 / mc);
+          const wtA = wOf(A, rA, t), wtB = wOf(B, rB, t);
+          if (wtA + wtB <= 0) continue;
+          const lt = mc / (wtA + wtB);
+          if (lt < muC * c.lam) { applyPos(A, scl(t, -lt), rA); applyPos(B, scl(t, lt), rB); }
+        }
       }
       // Velocities from positions.
       for (const b of dyn) {
@@ -690,7 +730,17 @@ export function simulate(specs, frames, opts = {}) {
         // Coulomb: the sliding impulse is at most mu x the normal impulse (lam / h), whatever the masses; one mu for
         // sticking and sliding, as Bullet and Houdini use (physbench: a box on a 30 deg ramp now matches g(sin - mu cos)).
         const vr = relVel(c, false), vn = dot(c.n, vr), vt = sub(vr, scl(c.n, vn)), vtl = len(vt);
-        if (vtl > 1e-6 && mu > 0) {
+        const an = (A.aniso || B.aniso) && vtl > 1e-6 ? tyreFrame(c) : null;
+        if (an) {   // a car on its wheels: rolling (or braking) grip along the tyre, cornering grip across it
+          for (const [comp, muC] of splitTyre(vt, an)) {
+            const cl = len(comp);
+            if (cl < 1e-6 || muC <= 0) continue;
+            const t = scl(comp, 1 / cl), wtA = wOf(A, c.rA, t), wtB = wOf(B, c.rB, t);
+            if (wtA + wtB <= 0) continue;
+            const P = scl(t, -Math.min(muC * c.lam / h, cl / (wtA + wtB)));
+            applyVel(A, P, c.rA); applyVel(B, scl(P, -1), c.rB);
+          }
+        } else if (vtl > 1e-6 && mu > 0) {
           const t = scl(vt, 1 / vtl);
           const wtA = wOf(A, c.rA, t), wtB = wOf(B, c.rB, t);
           if (wtA + wtB > 0) {
@@ -781,8 +831,128 @@ export function simulate(specs, frames, opts = {}) {
     }
     if (R.dents.length) dents[R.id] = R.dents;
   }
-  return { tracks, settled, events, fractures, dents, stats: { bodies: bodies.length, dynamic: dyn.length, substeps: nSub, contacts: contactsSolved,
-    impacts: events.length, pieces: added, breaks: breakEvents.length, cracks: roots.reduce((s, R) => s + R.cracks, 0) } };
+  return { tracks, settled, events, fractures, dents, takeovers, crush, stats: { bodies: bodies.length, dynamic: dyn.length, substeps: nSub, contacts: contactsSolved,
+    impacts: events.length, pieces: added, breaks: breakEvents.length, cracks: roots.reduce((s, R) => s + R.cracks, 0), takeovers: Object.keys(takeovers).length } };
+
+  /**
+   * Milestone 28. A held body (keyed until contact, or anchored) touching something: decide, by real masses, speeds and
+   * strengths, who is let go to the physics. Estimates per pair, from the closing speed v at the deepest contact:
+   *   an anchor gives when the peak contact force v * sqrt(k * m_hitter) (k: the two crush stiffnesses in series)
+   *   passes its strength and the hitter's momentum passes anchor.impulse; the hitter then pays its break energy
+   *   (v' = sqrt(v^2 - 2E/m));
+   *   a keyed body is let go when the hit would change its own speed by more than takeover.dv (default 1 m/s):
+   *   v against anything that won't move, v * m_o / (m + m_o) against something that will (a perfectly plastic hit).
+   * A keyed car shoving a 25 kg crate keeps its keys (0.25 m/s); against another car, a pole that holds or a wall, it
+   * is let go. Anything still pressing in more than PEN_MAX after that is let go regardless: nothing passes through.
+   * Returns true when anything was let go (the caller then solves the contacts).
+   */
+  function holdCheck(A, B, cs, f, s) {
+    if ((A.kerb && !B.free) || (B.kerb && !A.free)) return false;   // a keyed car's wheels climb a kerb
+    let best = null;
+    for (const c of cs) {
+      measure(c);
+      if (!(c.d > 0)) continue;
+      c.rA = c.rB = null;
+      const v = -dot(c.n, relVel(c, false));
+      if (!best || v > best.v || (v === best.v && c.d > best.c.d)) best = { c, v };
+    }
+    if (!best) return false;
+    const v = Math.max(0, best.v), c = best.c, fr = f + (s + 1) / nSub;
+    const kser = 1 / (1 / (A.stiff || STIFF_DEFAULT) + 1 / (B.stiff || STIFF_DEFAULT));
+    // ... and only when the hitter brings the momentum to carry it through (a thrown crate's force spike doesn't shear a
+    // lamp's base: anchor.impulse, N s).
+    const gives = (P, H) => !!(P.anchor && !P.free && v * Math.sqrt(kser * H.m) > P.anchor.force && H.m * v > P.anchor.impulse);
+    const aGives = gives(A, B), bGives = gives(B, A);
+    const fixed = (O, oGives) => !O.free && !O.takeover && !oGives;   // the set, a keyed body, an anchor that holds
+    const dvOf = (K, O, oGives) => {
+      if (fixed(O, oGives)) return v;
+      const vv = oGives && O.anchor.energy > 0 ? Math.sqrt(Math.max(0, v * v - 2 * O.anchor.energy / K.m)) : v;
+      return v - vv + vv * O.m / (K.m + O.m);
+    };
+    let any = false;
+    const deep = Math.max(...cs.map((x) => x.d || 0));
+    for (const [K, O, oGives] of [[A, B, bGives], [B, A, aGives]]) {
+      if (!K.takeover || K.free) continue;
+      const dv = dvOf(K, O, oGives), seen = (K.seen ||= new Set()), key = O.uid || (O.uid = ++uidSeq);
+      // Small hits add up (a car through a wall of 30 kg blocks, through two people): each one met adds its speed
+      // change, and the sum lets the car go too; the momentum the keyed car gave away so far is then taken off it.
+      const total = (K.debt || 0) + (seen.has(key) ? 0 : dv);
+      if (dv > K.takeover.dv || total > K.takeover.dv || (deep > PEN_MAX && fixed(O, oGives))) {
+        releaseBody(K, fr, O, v, dv > K.takeover.dv || total > K.takeover.dv ? "hit" : "pressed");
+        const owed = K.debt || 0, sp = len(K.v);
+        if (owed > 0 && sp > 1e-6) K.x = add(K.x, scl(K.v, -Math.min(owed, sp) / sp * h));
+        K.debt = 0;
+        any = true;
+      } else if (!seen.has(key)) { seen.add(key); K.debt = total; }
+    }
+    for (const [P, H, g] of [[A, B, aGives], [B, A, bGives]]) {
+      if (!g || P.free) continue;
+      releaseBody(P, fr, H, v, "anchor");
+      any = true;
+      if (H.free && P.anchor.energy > 0) {   // the hitter pays the anchor's break energy, along the blow
+        const dvn = v - Math.sqrt(Math.max(0, v * v - 2 * P.anchor.energy / H.m));
+        H.x = add(H.x, scl(H === c.a ? c.n : scl(c.n, -1), dvn * h));
+      }
+    }
+    if (!any && deep > PEN_MAX) {   // two takeover bodies easing into each other: neither may pass through
+      for (const K of [A, B]) if (K.takeover && !K.free) { releaseBody(K, fr, K === A ? B : A, v, "pressed"); any = true; }
+    }
+    return any;
+  }
+
+  function releaseBody(b, fr, other, v, reason) {
+    if (b.free) return;
+    b.free = true; b.asleep = false; b.still = 0;   // from where its keys put it this substep, at its keyed speed
+    const id = rootOf(b);
+    if (!takeovers[id]) takeovers[id] = { frame: Math.round(fr), t: +(fr / fps).toFixed(3), by: String(rootOf(other)), speed: +v.toFixed(2), reason };
+    for (const sid of b.anchor?.supports || []) {   // what stood on it falls (a wall block above a knocked-out one)
+      const sb = byId.get(sid);
+      if (sb && !sb.free && sb.hold) releaseBody(sb, fr, b, 0, "unsupported");
+    }
+  }
+
+  /** The tyre frame of a contact between a car on its wheels and the road: {F (forward, in the contact plane), roll, side}. */
+  function tyreFrame(c) {
+    const V = c.a.aniso ? c.a : c.b.aniso ? c.b : null, O = V === c.a ? c.b : c.a;
+    if (!V || O.free) return null;
+    const nIn = V === c.a ? c.n : scl(c.n, -1);   // from the road into the car
+    if (nIn[1] < 0.7 || dot(qrot(V.q, V.aniso.up), nIn) < 0.7) return null;   // on its side or roof: it scrapes
+    let F = qrot(V.q, V.aniso.axis);
+    F = sub(F, scl(c.n, dot(F, c.n)));
+    const l = len(F);
+    return l > 1e-6 ? { F: scl(F, 1 / l), roll: V.aniso.roll, side: V.aniso.side } : null;
+  }
+  function splitTyre(vec, an) {
+    const along = scl(an.F, dot(vec, an.F));
+    return [[along, an.roll], [sub(vec, along), an.side]];
+  }
+
+  /**
+   * Crush (Milestone 28): a car hit at closing speed v absorbs E = 1/2 mu v^2 (mu the pair's reduced mass); its share
+   * against the other side goes by stiffness (springs in series), and its crush depth is sqrt(2 E_car / k), so a
+   * 1500 kg car into a rigid wall at 13.4 m/s (30 mph) crushes ~0.5 m at k = 1e6 N/m, as the crash tests do.
+   */
+  function logCrush(c, f, s) {
+    if (!(c.a.crushK || c.b.crushK)) return;
+    const sp = -c.vnPrev;
+    if (sp < 1 || !(c.d > 0)) return;   // touching, not a speculative contact (that one may yet give way)
+    if ((c.a === GROUND || c.b === GROUND) && sp < 4) return;   // landing on its wheels is not a crash
+    const iA = movable(c.a) ? c.a.invM : 0, iB = movable(c.b) ? c.b.invM : 0;
+    if (iA + iB <= 0) return;
+    const E = 0.5 * sp * sp / (iA + iB), frame = Math.round(f + (s + 1) / nSub);
+    for (const [X, O, p, nIn] of [[c.a, c.b, c.pA, c.n], [c.b, c.a, c.pB, scl(c.n, -1)]]) {
+      if (!X.crushK || !(rootOf(X) in tracks)) continue;
+      const kO = O === GROUND ? 1e8 : O.stiff || STIFF_DEFAULT;
+      const Ex = E * kO / (X.crushK + kO), depth = Math.min(0.9, Math.sqrt(2 * Ex / X.crushK));
+      if (depth < 0.01) continue;
+      const id = rootOf(X), w = String(rootOf(O)), list = (crush[id] ||= []);
+      const pl = add(toLocal(X, p), X.center), nl = qrot(qconj(X.q), nIn);
+      const near = list.find((e) => e.with === w && frame - e.frame <= 6);
+      const e = { frame, p: pl.map((v) => +v.toFixed(4)), n: nl.map((v) => +v.toFixed(4)), depth: +depth.toFixed(3), radius: +(0.35 + 1.2 * depth).toFixed(3),
+        speed: +sp.toFixed(2), with: w };
+      if (near) { if (depth > near.depth) Object.assign(near, e, { frame: near.frame }); } else if (list.length < 12) list.push(e);
+    }
+  }
 
   /**
    * Give a breakable prop its constraint network (fracture.mjs): per-joint glue settings, every cell's rest pose in the
