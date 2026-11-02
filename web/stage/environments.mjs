@@ -8,6 +8,7 @@ import { buildAirplaneCabin, buildRunway, buildAboveClouds } from "./sets/airpla
 import { buildTrainCar, buildTrainStation } from "./sets/train.mjs";
 import { softSprite } from "./sets/common.mjs";
 import { SMOKE } from "./stunts.mjs";
+import { dressColor, waterColor } from "./setlook.mjs";
 
 export const SETS = {
   plaza: { label: "Plaza exterior" },
@@ -54,15 +55,17 @@ function rng(seed) {
 }
 
 /**
- * Build the static set for a preset. `mesh(geom)` returns a shadowed clay mesh.
+ * Build the static set for a preset. `mesh(geom, color)` returns a shadowed clay mesh; the colour is the set
+ * dressing's real colour (setlook.mjs), which only the Color pass shows.
  * opts: { seed, water_level, clean: a smooth empty streetscape (street sets), span: [z0, z1] it must cover }.
  * Returns {group, water: {level, size} | null}.
  */
 export function buildSet(preset, mesh, opts = {}) {
   if (SET_BUILDERS[preset]) return SET_BUILDERS[preset](opts);
   const g = new THREE.Group();
-  const box = (w, h, d, x, y, z) => {
-    const m = mesh(new THREE.BoxGeometry(w, h, d));
+  const col = (role) => dressColor(preset, role);
+  const box = (w, h, d, x, y, z, role) => {
+    const m = mesh(new THREE.BoxGeometry(w, h, d), col(role));
     m.position.set(x, y, z);
     g.add(m);
     return m;
@@ -78,43 +81,43 @@ export function buildSet(preset, mesh, opts = {}) {
         const [z0, z1] = opts.span || [-200, 200];
         const L = z1 - z0, zc = (z0 + z1) / 2;
         for (const side of [-1, 1]) {
-          box(9, 12, L, side * 11.5, 6, zc);           // facade front at 7 m from the centre line
-          box(1.6, 0.18, L, side * 6.2, 0.09, zc);     // kerb + sidewalk edge
+          box(9, 12, L, side * 11.5, 6, zc, "facade");           // facade front at 7 m from the centre line
+          box(1.6, 0.18, L, side * 6.2, 0.09, zc, "kerb");     // kerb + sidewalk edge
         }
         break;
       }
       for (const side of [-1, 1]) {
         for (let i = 0; i < 6; i++) {
           const h = 8 + rand() * 14;
-          box(9, h, 10, side * 11, h / 2, -25 + i * 11);
+          box(9, h, 10, side * 11, h / 2, -25 + i * 11, "facade");
         }
         for (let i = 0; i < 5; i++) {
-          const p = mesh(new THREE.CylinderGeometry(0.1, 0.12, 4.5, 10));
+          const p = mesh(new THREE.CylinderGeometry(0.1, 0.12, 4.5, 10), col("post"));
           p.position.set(side * 5.6, 2.25, -22 + i * 11);
           g.add(p);
         }
       }
-      box(1.6, 0.18, 70, -6.2, 0.09, 8); // kerbs
-      box(1.6, 0.18, 70, 6.2, 0.09, 8);
+      box(1.6, 0.18, 70, -6.2, 0.09, 8, "kerb"); // kerbs
+      box(1.6, 0.18, 70, 6.2, 0.09, 8, "kerb");
       break;
     case "interior": {
       const W = 8, D = 10, H = 3.2;
-      box(W, H, 0.2, 0, H / 2, D / 2); // back wall
-      box(0.2, H, D, -W / 2, H / 2, 0);
-      box(0.2, H, D, W / 2, H / 2, 0);
-      const win = box(2.2, 1.4, 0.25, -1.5, 1.7, D / 2 - 0.05); // window frame reads as a lighter patch
+      box(W, H, 0.2, 0, H / 2, D / 2, "wall"); // back wall
+      box(0.2, H, D, -W / 2, H / 2, 0, "wall");
+      box(0.2, H, D, W / 2, H / 2, 0, "wall");
+      const win = box(2.2, 1.4, 0.25, -1.5, 1.7, D / 2 - 0.05, "window"); // window frame reads as a lighter patch
       win.scale.z = 0.5;
-      box(W, 0.2, D, 0, H, 0); // ceiling
-      box(1.0, 2.1, 0.25, 2.5, 1.05, D / 2 - 0.1); // door
+      box(W, 0.2, D, 0, H, 0, "ceiling"); // ceiling
+      box(1.0, 2.1, 0.25, 2.5, 1.05, D / 2 - 0.1, "door"); // door
       break;
     }
     case "studio": {
       // Curved cyc wall: a quarter-cylinder sweep into the floor plus a tall back plane.
-      const cyc = mesh(new THREE.CylinderGeometry(4, 4, 24, 24, 1, true, Math.PI, Math.PI / 2));
+      const cyc = mesh(new THREE.CylinderGeometry(4, 4, 24, 24, 1, true, Math.PI, Math.PI / 2), col("cyc"));
       cyc.rotation.z = Math.PI / 2;
       cyc.position.set(0, 4, 12);
       g.add(cyc);
-      box(24, 12, 0.2, 0, 10, 16.1);
+      box(24, 12, 0.2, 0, 10, 16.1, "cyc");
       break;
     }
     case "forest":
@@ -122,16 +125,16 @@ export function buildSet(preset, mesh, opts = {}) {
         const x = (rand() - 0.5) * 70, z = (rand() - 0.2) * 70;
         if (Math.abs(x) < 3 && z < 14) continue; // keep a clearing for the action
         const h = 7 + rand() * 9;
-        const t = mesh(new THREE.CylinderGeometry(0.18, 0.3, h * 0.55, 8));
+        const t = mesh(new THREE.CylinderGeometry(0.18, 0.3, h * 0.55, 8), col("trunk"));
         t.position.set(x, (h * 0.55) / 2, z);
-        const c = mesh(new THREE.ConeGeometry(h * 0.18, h * 0.6, 10));
+        const c = mesh(new THREE.ConeGeometry(h * 0.18, h * 0.6, 10), col("canopy"));
         c.position.set(x, h * 0.7, z);
         g.add(t, c);
       }
       break;
     case "desert":
       for (let i = 0; i < 14; i++) {
-        const d = mesh(new THREE.SphereGeometry(1, 20, 12));
+        const d = mesh(new THREE.SphereGeometry(1, 20, 12), col("dune"));
         const r = 8 + rand() * 18;
         d.scale.set(r, 1.2 + rand() * 3, r * (0.6 + rand() * 0.6));
         d.position.set((rand() - 0.5) * 120, 0, 25 + rand() * 80);
@@ -143,39 +146,39 @@ export function buildSet(preset, mesh, opts = {}) {
       break;
     case "water_tank": {
       const W = 16, D = 16, H = 4;
-      box(W, H, 0.4, 0, H / 2, D / 2);
-      box(W, H, 0.4, 0, H / 2, -D / 2);
-      box(0.4, H, D, -W / 2, H / 2, 0);
-      box(0.4, H, D, W / 2, H / 2, 0);
+      box(W, H, 0.4, 0, H / 2, D / 2, "wall");
+      box(W, H, 0.4, 0, H / 2, -D / 2, "wall");
+      box(0.4, H, D, -W / 2, H / 2, 0, "wall");
+      box(0.4, H, D, W / 2, H / 2, 0, "wall");
       water = { level: opts.water_level ?? 2.5, size: [W - 0.4, D - 0.4], center: [0, 0] };
       break;
     }
     case "stadium": {
       // A ballfield: grass, an infield diamond (home plate at the origin, facing +Z), bases and a mound,
       // tiered stands around the outfield and light towers. Real-ish scale: 27.4 m between bases.
-      const flat = (w, d, x, z, y = 0.01, rot = 0) => { const m = box(w, 0.02, d, x, y, z); m.rotation.y = rot; return m; };
-      flat(140, 140, 0, 45);                                            // field
-      flat(27.4 * 1.45, 27.4 * 1.45, 0, 19.4, 0.02, Math.PI / 4);       // infield dirt
-      flat(19, 19, 0, 19.4, 0.03, Math.PI / 4);                         // infield grass
-      for (const [x, z] of [[0, 0], [19.4, 19.4], [0, 38.8], [-19.4, 19.4]]) box(0.4, 0.08, 0.4, x, 0.05, z);   // bases
-      const mound = mesh(new THREE.CylinderGeometry(2.7, 2.9, 0.25, 24)); mound.position.set(0, 0.12, 18.4); g.add(mound);
+      const flat = (w, d, x, z, y = 0.01, rot = 0, role) => { const m = box(w, 0.02, d, x, y, z, role); m.rotation.y = rot; return m; };
+      flat(140, 140, 0, 45, 0.01, 0, "field");                          // field
+      flat(27.4 * 1.45, 27.4 * 1.45, 0, 19.4, 0.02, Math.PI / 4, "dirt");   // infield dirt
+      flat(19, 19, 0, 19.4, 0.03, Math.PI / 4, "infield");              // infield grass
+      for (const [x, z] of [[0, 0], [19.4, 19.4], [0, 38.8], [-19.4, 19.4]]) box(0.4, 0.08, 0.4, x, 0.05, z, "base");   // bases
+      const mound = mesh(new THREE.CylinderGeometry(2.7, 2.9, 0.25, 24), col("mound")); mound.position.set(0, 0.12, 18.4); g.add(mound);
       for (let i = 0; i < 9; i++) {                                     // stands: three tiers on an arc behind the field
         const ang = -Math.PI * 0.42 + (i / 8) * Math.PI * 0.84, R = 92;
         for (let t = 0; t < 3; t++) {
-          const m = box(26, 3 + t * 3, 6, Math.sin(ang) * (R + t * 6), (3 + t * 3) / 2, 30 + Math.cos(ang) * (R + t * 6));
+          const m = box(26, 3 + t * 3, 6, Math.sin(ang) * (R + t * 6), (3 + t * 3) / 2, 30 + Math.cos(ang) * (R + t * 6), "stand");
           m.rotation.y = ang;
         }
       }
       for (const [x, z] of [[-60, 10], [60, 10], [-55, 95], [55, 95]]) {
-        box(1, 38, 1, x, 19, z);
-        box(8, 3, 1, x, 38, z);
+        box(1, 38, 1, x, 19, z, "tower");
+        box(8, 3, 1, x, 38, z, "lamp");
       }
       break;
     }
     case "open_water": {
       // Sea to the horizon over a seabed 1.5 m down; a few low headlands far off give the eye a horizon line.
       for (let i = 0; i < 5; i++) {
-        const d = mesh(new THREE.SphereGeometry(1, 18, 10));
+        const d = mesh(new THREE.SphereGeometry(1, 18, 10), col("headland"));
         d.scale.set(40 + rand() * 60, 6 + rand() * 10, 30 + rand() * 30);
         d.position.set((rand() - 0.5) * 700, 0, 260 + rand() * 120);
         g.add(d);
@@ -188,13 +191,15 @@ export function buildSet(preset, mesh, opts = {}) {
     default: // plaza
       return { group: null, water: null }; // the plaza is built from the scene's own props
   }
+  if (water) water.color = waterColor(preset);
   return { group: g, water };
 }
 
-/** A water surface: translucent in clay, opaque-ish in depth (so the model sees the waterline). */
+/** A water surface: translucent in clay, opaque-ish in depth (so the model sees the waterline). water.color: the
+ * set's sea / tank colour for the Color pass (setlook.mjs), else the old grey-blue. */
 export function buildWater(water) {
   const geo = new THREE.PlaneGeometry(water.size[0], water.size[1], 1, 1);
-  const mat = new THREE.MeshStandardMaterial({ color: 0x7f97a8, roughness: 0.15, metalness: 0.0,
+  const mat = new THREE.MeshStandardMaterial({ color: water.color || 0x7f97a8, roughness: 0.15, metalness: 0.0,
     transparent: true, opacity: 0.55, side: THREE.DoubleSide });
   const m = new THREE.Mesh(geo, mat);
   m.rotation.x = -Math.PI / 2;

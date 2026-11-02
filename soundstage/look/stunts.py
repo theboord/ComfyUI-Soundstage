@@ -171,6 +171,56 @@ def _smoke(a: dict) -> float:
     return max(vals) if vals else -1.0
 
 
+def _smoke_keys(a: dict) -> list[tuple[int, float, str]]:
+    """[(frame, amount 0..1, wheels)] of the baked tyre smoke (the stunt sim's slip, as the clay draws it)."""
+    out = []
+    for k in a.get("keys") or []:
+        fx = k.get("fx") or {}
+        if "tire_smoke" in fx:
+            out.append((int(k.get("frame", 0)), float(fx.get("tire_smoke") or 0), str(fx.get("wheels") or "")))
+    return sorted(out)
+
+
+def smoke_at(a: dict, frame: float) -> float:
+    """The clay's tyre smoke amount at a frame (linear between the baked keys; 0 before / after none)."""
+    ks = _smoke_keys(a)
+    if not ks:
+        return 0.0
+    if frame <= ks[0][0]:
+        return ks[0][1]
+    for (f0, v0, _), (f1, v1, _) in zip(ks, ks[1:]):
+        if frame <= f1:
+            return v0 + (v1 - v0) * (frame - f0) / max(1e-6, f1 - f0)
+    return ks[-1][1]
+
+
+def _smoke_in(a: dict, s: int, e: int) -> tuple[float, str]:
+    """(peak amount, the wheels smoking most often: front | rear | all | '') over frames s..e."""
+    ks = [k for k in _smoke_keys(a) if s <= k[0] <= e]
+    peak = max([smoke_at(a, f) for f in range(s, e + 1)] or [0.0])
+    votes: dict[str, float] = {}
+    for _, v, w in ks:
+        if w and v > 0.05:
+            votes[w] = votes.get(w, 0.0) + v
+    return peak, (max(votes, key=votes.get) if votes else "")
+
+
+# How thick the clay draws it -> how thick the words make it. README media v2 QC (2026-11-02): the clay's J-turn poured
+# out dense white smoke and the final showed almost none ("a thick burst of white tyre smoke" once, mid-sentence, was
+# not enough for LTX). The smoke is now in every beat it is in, as strong as the clay shows it, with when it starts
+# and that it is still hanging there at the end.
+def _cloud(peak: float, puff: str) -> str:
+    if peak >= 0.75:
+        return f"thick, billowing clouds of {puff}"
+    if peak >= 0.4:
+        return f"clouds of {puff}"
+    return f"a burst of {puff}"
+
+
+def _tyres(which: str, fallback: str) -> str:
+    return {"all": "all four tyres", "front": "the front tyres", "rear": "the rear tyres"}.get(which, f"the {fallback} tyres")
+
+
 def _way(d: tuple, fwd: tuple, right: tuple) -> str:
     n = math.hypot(*d)
     if n < 1e-6:
@@ -204,15 +254,19 @@ def stunt_mark(a: dict, frames: int, fps: float, pos_at: PosAt, fwd: tuple, righ
     if not bs:
         return None
     smoke_amt = _smoke(a)
+    baked = bool(_smoke_keys(a))       # the stunt sim's per-frame smoke: say it as thick as the clay draws it
+    spray = spray or (a.get("stunt_sim") or {}).get("surface") == "wet"
     puff = "white tyre smoke and spray" if spray else "white tyre smoke"
     parts: list[str] = []
     prev = None
     for i, b in enumerate(bs):
         way = _way(b["dir"], fwd, right)
+        peak, wheels = _smoke_in(a, b["start"], b["end"]) if baked else (max(0.0, smoke_amt), "")
         if b["beat"] == "reverse":
             verb = "races backwards" if b["speed"] > 6 else "reverses"
             parts.append(f"{'then ' if parts else ''}{verb} {way}, rear end first, its red tail lights and white reverse lights glowing, "
-                         "the driver twisted round looking back over the seat")
+                         "the driver twisted round looking back over the seat"
+                         + (f", smoke starting to curl off {_tyres(wheels, 'front')}" if baked and peak >= 0.3 else ""))
         elif b["beat"] == "spin":
             turn = b["turn_deg"]
             if a.get("stunt") in ("reverse_jturn", "handbrake_180") and 120 < turn < 240:
@@ -221,7 +275,12 @@ def stunt_mark(a: dict, frames: int, fps: float, pos_at: PosAt, fwd: tuple, righ
             nxt = bs[i + 1]["beat"] if i + 1 < len(bs) else ""
             donut = turn > 300 or (a.get("stunt") == "donut" and turn > 200)
             which = "rear" if prev == "forward" or donut else "front"
-            tail = f", a thick burst of {puff} pouring off the {which} tyres" if smoke else ""
+            if baked and peak > 0.05:
+                t0 = next((f for f in range(b["start"], b["end"] + 1) if smoke_at(a, f) >= 0.3), b["start"]) / fps
+                tail = (f"; from {t0:.1f} s {_cloud(peak, puff)} pour off {_tyres(wheels, which)}, rolling out across the road "
+                        f"and wrapping round {'the car' if wheels == 'all' else 'the ' + (wheels or which) + ' of the car'}")
+            else:
+                tail = f", a thick burst of {puff} pouring off the {which} tyres" if smoke else ""
             if donut:
                 parts.append(f"spins {_degrees_words(turn)} on the spot, the nose locked inside a tight circle and the tail sliding "
                              f"round, the body leaning out hard on its springs, the tyres screaming{tail}")
@@ -236,8 +295,15 @@ def stunt_mark(a: dict, frames: int, fps: float, pos_at: PosAt, fwd: tuple, righ
                 parts[-1] += ", rocking to a stop on its springs"
         elif b["beat"] == "forward":
             if prev in ("spin", "stop"):
+                if baked and peak >= 0.4:
+                    trail = (f", bursting out of its own cloud with {_tyres(wheels, 'rear')} still pouring thick {puff}, "
+                             "leaving a wall of white smoke hanging over the road behind it")
+                elif baked and peak > 0.05:
+                    trail = ", trailing white tyre smoke"
+                else:
+                    trail = ", trailing smoke" if smoke_amt != 0 else ""
                 parts.append(f"it wobbles straight on its springs, now facing the way it is moving, the rear squats as the driver feeds in the throttle and it "
-                             f"drives forward, nose first, {way}" + (", trailing smoke" if smoke_amt != 0 else ""))
+                             f"drives forward, nose first, {way}" + trail)
             else:
                 parts.append(f"{'then ' if parts else ''}{'charges' if b['speed'] > 8 else 'drives'} forward {way}, nose first")
         elif b["beat"] == "stop":
@@ -246,4 +312,9 @@ def stunt_mark(a: dict, frames: int, fps: float, pos_at: PosAt, fwd: tuple, righ
         prev = b["beat"]
     if not any(b["beat"] in ("reverse", "spin") for b in bs):
         return None
+    if baked and smoke_amt >= 0.4:
+        end = smoke_at(a, frames - 1)
+        parts.append("the smoke is dense and white, as thick as the tyres make it, and it "
+                     + ("is still hanging in the air, rolling slowly, at the end of the shot" if end >= 0.25 or smoke_amt >= 0.75
+                        else "thins out slowly once the tyres stop smoking"))
     return "; ".join(parts), ""

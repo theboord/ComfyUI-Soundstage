@@ -3,6 +3,25 @@
 Soundstage is updated continuously on `main`. Newest first. Times are US Pacific.
 Each entry links to the code; every milestone ships with tests.
 
+## 2026-11-02
+
+**00:55 PST · Behind the README media: real set colours in Color, lit dust, real car words, smoke and riders kept apart**
+- **Why:** round 1 of the README media refresh failed QC. In the western the desert came out flat grey-blue, the dust was flat white blobs and the man's hat turned into long hair at f40-48. In the J-turn the car was a generic toy coupé with a garbled plate, the front wheel stood out of the fender at f76 and f100, and the final had almost none of the clay's tyre smoke.
+- **Every set's real colour in the Color pass** ([web/stage/setlook.mjs](web/stage/setlook.mjs)): the floor, the backdrop and the set dressing of all 18 sets are now coloured: desert sand (the same sand its dust is made of, from particles.mjs), grass and infield clay, asphalt, brick, leaf litter, beach sand, sea and tank water, and fresh snow on every outdoor set when it snows. Open land (desert, beach, field, forest, sea) now runs out to the horizon instead of stopping 40 m out. Clay, Depth and the ID matte are unchanged (they override every material).
+- **Dust and smoke as lit volumes** ([web/stage/secondary.mjs](web/stage/secondary.mjs)): each puff is shaded as a soft ball lit by the set's sun (wrapped), sky and ground light, darker in its thick core and glowing at its thin edges when backlit (forward scatter). Street lamps and headlights light the smoke at night, and a floor keeps a plume from sinking into the dark. The colour was also a bug: the sRGB sand was used as linear, so sand dust rendered near-white. Puffs now sit on the ground instead of being sliced flat by it.
+- **Wheels inside the arches** ([web/stage/archfit.mjs](web/stage/archfit.mjs)): measured on the GLBs, the tyres are flush with these bodies, so past ~18-19° one edge of the tyre stands out of the bodywork (9 cm at 24°, 14 cm at 35°). Every on-screen steer (path, keyed, driven live, the sim's 52° stunt lock) is now clamped to `steer_lock` in [library.mjs](web/stage/library.mjs). A rolled or pitched body is lifted by however far its lowest arch lip would sink into its tyre, so the stunt lean pivots on the outside wheels instead of dropping the fenders through them.
+- **The prompts** ([soundstage/look/identity.py](soundstage/look/identity.py), [stunts.py](soundstage/look/stunts.py)):
+  - Each car is named as the body style its model really is, with no brand names: the sports car is "a modern two-door fastback sports coupé with a long low hood, a short rear deck…", and car.glb (the library's "hatchback") is a four-door sedan. It always has "a blank plain white license plate with no lettering, and no badges or logos".
+  - Tyre smoke is said in every beat it is in, as thick as the stunt sim bakes it: when it starts, "thick, billowing clouds of white tyre smoke and spray pour off all four tyres", the car "bursting out of its own cloud", and the smoke "still hanging in the air at the end of the shot".
+  - With two or more people, each one's hat or hair and clothes are said by name, from the Look description and the appearance picker: "the man wears … a cowboy hat, his short dark hair under the hat; the woman … bareheaded, her long dark hair down her back. Each rider keeps their own hat, hair and clothes from the first frame to the last".
+- **Checked in the App** (Mac mini, headless Metal, origin/main against this change, the round-1 western and J-turn scenes): the desert is sand-coloured to the horizon, the J-turn's front wheel sits inside its arch at f64, and the tyre smoke reads as soft grey plumes instead of white cut-outs.
+- **Tests:** new tests/js/mediafix.test.mjs (every set's colour and reach, the floor colour on the stage, snow cover, lit dust in linear colour, the steering lock re-measured from each GLB, the 52° clamp, the arch lift) and tests/test_mediafix_words.py (body words with no brands, the blank plate, smoke beats from the baked keys, per-person anchors).
+- **Still open:**
+  - Backlit desert dust reads as a tan haze rather than a bright glowing plume; it no longer reads as white blobs, but it is low contrast against the sand.
+  - The night street is now dark asphalt, so the J-turn Color pass is darker overall than before.
+  - The western's man still wears no hat in the clay (default short hair): his hat comes only from the Look words.
+  - No GPU render was made with these changes: the README media are re-rendered separately.
+
 ## 2026-11-01
 
 **23:20 PST · Swim verification: an exhale now carries a real breath of gas, so the bubble bursts read**

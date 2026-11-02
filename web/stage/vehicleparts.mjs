@@ -15,6 +15,7 @@
 import * as THREE from "../vendor/three.module.min.mjs";
 import { partAt, autoSteer, blinkOn, lightbarAt, navAt, wiperAt } from "./objparts.mjs";
 import { glassMaterial, LIBRARY } from "./library.mjs";
+import { archLift } from "./archfit.mjs";
 
 const DEG = Math.PI / 180;
 const CAR = new Set(["car", "police_car", "sports_car", "hatchback"]);
@@ -377,6 +378,11 @@ function ensureLights(R, need) {
 }
 
 const speedCache = new WeakMap();
+/** The most a vehicle's front wheels turn on screen (deg): the model's measured arch limit (archfit.mjs), else 35. */
+export function steerLock(a) {
+  return LIBRARY[a?.kind]?.steer_lock ?? 35;
+}
+
 /** Signed forward speed (m/s) and auto steering per frame over the shot, cached until the path changes. */
 function pathInfo(st, a, R) {
   const keys = st._actorKeys(a), last = st._lastFrame(), fps = st.state.shot?.fps || 24;
@@ -391,7 +397,7 @@ function pathInfo(st, a, R) {
     const dx = pos[j][0] - pos[i][0], dz = pos[j][2] - pos[i][2];
     return (dx * Math.sin(yaw[f]) + dz * Math.cos(yaw[f])) * fps / (j - i);
   });
-  const steer = keys.length > 1 ? autoSteer(pos, yaw, fps, R?.wb || 2.7) : pos.map(() => 0);
+  const steer = keys.length > 1 ? autoSteer(pos, yaw, fps, R?.wb || 2.7, steerLock(a)) : pos.map(() => 0);
   const out = { sig, speed, steer, fps };
   speedCache.set(a, out);
   return out;
@@ -421,7 +427,8 @@ export function apply(st, a, g) {
   const path = pathInfo(st, a, R);
   const fi = Math.max(0, Math.min(path.speed.length - 1, f));
   // Steering: keyed, else from the path.
-  const steer = a.parts?.steer?.length ? v("steer") : path.steer[fi] || 0;
+  // Keyed (or driven live) steering is clamped to the model's arch too: the sim may run a 52° stunt lock.
+  const lock = steerLock(a), steer = Math.max(-lock, Math.min(lock, a.parts?.steer?.length ? v("steer") || 0 : path.steer[fi] || 0));
   for (const n of R.steerNodes) n.rotation.y = steer * DEG;
   // Suspension offsets on the sprung body (its roll / pitch were just set from the weight transfer).
   const body = g.userData.vehicleBody;
@@ -429,6 +436,13 @@ export function apply(st, a, g) {
     body.position.y = R.baseY + (v("susp_h") || 0);
     body.rotation.x -= (v("susp_pitch") || 0) * DEG;
     body.rotation.z += (v("susp_roll") || 0) * DEG;
+    // A rolled or pitched body leans about its outside wheels: lifted by however far its lowest arch lip would sink
+    // into its tyre (archfit.mjs), so the tyres never come up through the fenders in a stunt lean.
+    // Cars and trucks only: a bike leans into a turn on its tyres, it has no arches to clear.
+    if (CAR.has(a.kind) || a.kind === "truck") {
+      const hubs = R.wheels.map((w) => ({ x: w.position.x, y: w.position.y, z: w.position.z, r: w.userData.radius || 0.3 }));
+      body.position.y += archLift(hubs, R.baseY, body.rotation.z, body.rotation.x);
+    }
   }
   // Doors, hood, trunk.
   for (const [ch, d] of Object.entries(R.doors || {})) {

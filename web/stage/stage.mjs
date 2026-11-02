@@ -17,6 +17,7 @@ import { PoseGizmo } from "./posegizmo.mjs";
 import { RotateTools, gizmoTurnToActor } from "./rotate.mjs";
 import { DriveMode, installDriveButton } from "./drive.mjs";
 import { buildSet, buildWater, buildWeather, buildTireSmoke, buildImpactFx } from "./environments.mjs";
+import { groundColor, groundReach, dressColor } from "./setlook.mjs";
 import { installSecondary } from "./secondary.mjs";
 import { buildCard, loadBackdrop, coverFit } from "./cards.mjs";
 import { buildInterior, fixtureActors, interiorCamera, normalizeSpec, toStage } from "./interior.mjs";
@@ -347,7 +348,8 @@ export class Stage {
   _buildSet() {
     this.root.clear();
     this.actorMeshes.clear();
-    const ground = this._mesh(new THREE.PlaneGeometry(80, 80));
+    // The floor carries the set's real colour (sand, grass, asphalt, snow...) for the Color pass: setlook.mjs.
+    const ground = this._mesh(new THREE.PlaneGeometry(80, 80), groundColor(this.state.environment || {}));
     ground.rotation.x = -Math.PI / 2;
     ground.castShadow = false;
     ground.userData.ground = true;
@@ -365,13 +367,15 @@ export class Stage {
 
     const env = this.state.environment || { set: "plaza", weather: "none", density: 0.5 };
     const clean = this._cleanStreetSig();
-    const built = buildSet(env.set || "plaza", (geom) => this._mesh(geom), { water_level: env.water_level, ...(clean ? JSON.parse(clean) : {}) });
+    const built = buildSet(env.set || "plaza", (geom, color) => this._mesh(geom, color), { water_level: env.water_level, ...(clean ? JSON.parse(clean) : {}) });
     if (built.group) this.root.add(built.group);
     this._setGroup = built.group;
     this._setCleanSig = clean;
     this.setFx = built.fx || null;   // Milestone 11 sets (web/stage/sets): animation per frame + per-pass look
     ground.visible = !this.setFx?.hideGround;
-    ground.scale.set(clean ? 6 : 1, clean ? 6 : 1, 1);   // the clean street runs a long way: so does the road
+    // The clean street runs a long way: so does the road. Open land (desert, beach, field, forest, sea) runs to the horizon.
+    const reach = clean ? 6 : groundReach(env.set);
+    ground.scale.set(reach, reach, 1);
     this.water = built.water ? buildWater(built.water) : null;
     if (this.water) this.root.add(this.water);
     this.weather = buildWeather(env.weather || "none", env.density ?? 0.5);
@@ -384,17 +388,18 @@ export class Stage {
         const front = z - d / 2;
         const side = (w - dw) / 2;
         const g = new THREE.Group();
-        const wallL = this._mesh(new THREE.BoxGeometry(side, h, 0.6));
+        const stone = dressColor("plaza", "building");
+        const wallL = this._mesh(new THREE.BoxGeometry(side, h, 0.6), stone);
         wallL.position.set(x - dw / 2 - side / 2, h / 2, front);
         const wallR = wallL.clone();
         wallR.position.x = x + dw / 2 + side / 2;
-        const lintel = this._mesh(new THREE.BoxGeometry(dw, h - dh, 0.6));
+        const lintel = this._mesh(new THREE.BoxGeometry(dw, h - dh, 0.6), stone);
         lintel.position.set(x, dh + (h - dh) / 2, front);
-        const back = this._mesh(new THREE.BoxGeometry(w, h, 0.6));
+        const back = this._mesh(new THREE.BoxGeometry(w, h, 0.6), stone);
         back.position.set(x, h / 2, z + d / 2);
-        const roof = this._mesh(new THREE.BoxGeometry(w, 0.6, d));
+        const roof = this._mesh(new THREE.BoxGeometry(w, 0.6, d), stone);
         roof.position.set(x, h, z);
-        const sideL = this._mesh(new THREE.BoxGeometry(0.6, h, d));
+        const sideL = this._mesh(new THREE.BoxGeometry(0.6, h, d), stone);
         sideL.position.set(x - w / 2, h / 2, z);
         const sideR = sideL.clone();
         sideR.position.x = x + w / 2;
@@ -402,11 +407,11 @@ export class Stage {
         g.userData.setPiece = true;
         this.root.add(g);
       } else if (p.kind === "post") {
-        const m = this._mesh(new THREE.CylinderGeometry(p.size[0], p.size[0], p.size[1], 12));
+        const m = this._mesh(new THREE.CylinderGeometry(p.size[0], p.size[0], p.size[1], 12), dressColor("plaza", "post"));
         m.position.set(x, p.size[1] / 2, z);
         this.root.add(m);
       } else {
-        const m = this._mesh(new THREE.BoxGeometry(...p.size));
+        const m = this._mesh(new THREE.BoxGeometry(...p.size), dressColor("plaza", "box"));
         m.position.set(x, p.size[1] / 2, z);
         m.userData.setPiece = true;
         this.root.add(m);
@@ -461,12 +466,13 @@ export class Stage {
     const env = this.state.environment || {};
     if (this._setGroup) this.root.remove(this._setGroup);
     const clean = this._cleanStreetSig();
-    const built = buildSet(env.set || "plaza", (geom) => this._mesh(geom), { water_level: env.water_level, ...(clean ? JSON.parse(clean) : {}) });
+    const built = buildSet(env.set || "plaza", (geom, color) => this._mesh(geom, color), { water_level: env.water_level, ...(clean ? JSON.parse(clean) : {}) });
     if (built.group) this.root.add(built.group);
     this._setGroup = built.group;
     this._setCleanSig = clean;
     this.setFx = built.fx || null;
-    this.ground?.scale.set(clean ? 6 : 1, clean ? 6 : 1, 1);
+    const reach = clean ? 6 : groundReach(env.set);
+    this.ground?.scale.set(reach, reach, 1);
   }
 
   // ---------- physics: simulate, then bake into ordinary keys ----------
@@ -4378,6 +4384,7 @@ export class Stage {
     }
     CAUSTIC_U.uCauK.value = 0;   // caustics are the underwater set's (its pass turns them on for Color)
     try { this.setFx?.pass?.(mode, { stage: this, cam, forCapture }); } catch (err) { console.warn("Soundstage set pass", err); }
+    this.secondary?.lightFrom?.(this, cam);   // the dust is lit by the set's sun and sky, as seen from this camera
     this._inRender = true;
     this.renderer.render(this.scene, cam);
     if (!forCapture && this.highlight) {

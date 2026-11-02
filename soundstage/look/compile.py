@@ -18,7 +18,7 @@ from ..cine.prompts import SIZE_STILL, _cap, _join
 from . import scene as S
 from .colors import palette_phrase, palette_words
 from .gaze import frame1_looks, head_beats
-from .identity import motion_identity, plain_word, still_identity
+from .identity import body_words, motion_identity, people_identity, plain_word, still_identity
 from .impacts import impact_beats
 from .objstate import motion_beats, still_words
 from . import swim as SW
@@ -244,6 +244,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         SW.still_words(scene),                 # divers and swimmers: the kit, the regulator in the mouth (look/swim.py)
         "; ".join(frame1_looks(scene)),
         "" if legacy else still_identity(scene, {e["id"] for e in f1["people"] + f1["others"]}),   # which car is which
+        "" if legacy else body_words(scene, {e["id"] for e in f1["others"]}).rstrip("."),   # what the car is; a blank plate
         lock["still"] if lock else "",
         _still_count(n) if count else "",
         REAL_PEOPLE if n and real else "",
@@ -411,6 +412,13 @@ def _frame_holds(scene: dict, f1: dict, lock: dict | None, rides: dict) -> str:
     return "Nobody and nothing else enters the frame: no bystanders, no extra cars."
 
 
+def _in_shot_ids(scene: dict, f1: dict) -> set:
+    """Everyone in frame at the start, plus every rider and mover that enters later (the western's riders run in)."""
+    ids = {e["id"] for e in f1["people"] + f1["others"]}
+    ids |= {m["id"] for m in S.actor_marks(scene)}
+    return ids
+
+
 def compile_motion(look: dict, scene: dict, parts: dict) -> str:
     f1 = S.frame1_facts(scene)
     mf = S.motion_facts(scene)
@@ -462,6 +470,9 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
         SW.motion_sentence(scene),               # the stroke, the exhaled bubbles, the drift (look/swim.py)
         # each vehicle's paint and livery for the whole shot: the clay guide carries none (look/identity.py)
         "" if scene.get("look_start") is False else motion_identity(scene, {e["id"] for e in f1["people"] + f1["others"]}),
+        # what each car is (a real body style, a blank plate) and who each person is (hat or hair): look/identity.py
+        "" if scene.get("look_start") is False else body_words(scene, _in_shot_ids(scene, f1)),
+        "" if scene.get("look_start") is False else people_identity(scene, look, _in_shot_ids(scene, f1)),
         head_beats(scene),                       # head and gaze blocking: every person's head, beat by beat
         _camera_sentence(mf, f1, look),
         impact_beats(scene),                     # Milestone 21: timed material beats off the baked hits
