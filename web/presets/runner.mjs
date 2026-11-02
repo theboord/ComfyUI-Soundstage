@@ -8,7 +8,7 @@
 // host (all optional; see web/ui/presets.mjs for the App's): look {get(), set(patch), load(json), applyStyle(id)} ·
 // cut {load(), save(v), add(ids), panel()} · pipeline · shotsInOrder() · wholeFrame(prompt) · importVideo() ·
 // confirm(message) -> Promise<bool> · say(msg).
-import { uniqueNames, cameraKeys, lightingPlan, gradePatch, crateStack, driveKeys, throwKeys, editStyleCut, userCameraKeys, swimKeys,
+import { uniqueNames, cameraKeys, CAR_PATH_MOVES, lightingPlan, gradePatch, crateStack, driveKeys, throwKeys, editStyleCut, userCameraKeys, swimKeys,
   VEHICLE_KINDS, PERSON_KINDS, RIDE_KINDS, LOW_PROPS } from "./engine.mjs";
 import { seabedHeight } from "../stage/sets/underwater.mjs";
 import { imperfectStack, idSeed } from "../stage/impacts.mjs";
@@ -16,9 +16,34 @@ import { SOFT_PRESET_KINDS, softPreset } from "./softpresets.mjs";
 import { boatPreset, isBoat } from "./boatpresets.mjs";
 
 const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
+/** A shot's camera keys as a short signature: a car-path preset logs it, so a re-aim never overwrites a hand edit. */
+export const keysSig = (keys) => JSON.stringify((keys || []).map((k) => [k.frame, ...(k.position || []), ...(k.target || []), k.focal_mm]
+  .map((v) => (Number.isFinite(+v) ? Math.round(+v * 100) / 100 : v))));
+/** What a car-path move had to give up, for the toast: "" when it got the distance and side it asked for. */
+function carPathSaid(p, plan) {
+  if (!plan?.shortened && !plan?.flipped && !plan?.blocked && !plan?.beyond) return "";
+  const out = [];
+  if (plan.flipped) out.push("it moved to the other side of the path, because the set was in the way on this side");
+  if (plan.blocked) out.push(`the set still blocks the car on ${plan.blocked} of ${plan.keys.length} keys: move the car into the open or pick another set`);
+  else if (plan.shortened && plan.why === "depth") out.push(`it pulled in from ${Math.round(plan.wanted)} m to ${Math.round(plan.metres)} m (${plan.focal} mm) to keep as much of the path as it can inside the stage's 40 m depth guide`);
+  else if (plan.shortened) out.push(`the set left room for only ${plan.metres.toFixed(1)} of the ${Math.round(plan.wanted)} m it wanted, so it pulled in`
+    + (p.apply?.camera?.move === "long_lens_pan" ? ` to ${plan.focal} mm: a wide pan, not a long lens (for the real long-lens look use an open set: plaza or runway)` : ""));
+  if (plan.beyond) out.push(`${plan.beyond} of ${plan.keys.length} keys still put the car past the stage's 40 m depth guide (farthest ${Math.round(plan.farthest)} m), where the depth flattens it: at this entry speed the stunt covers too much road for one locked-off base, so lower the entry speed or cut the shot in two`);
+  return ` Note: ${out.join("; ")}.`;
+}
+/** A set collider ({half, pos, quat}, stage._setColliders) as the world axis-aligned box that holds it. */
+function colliderBox({ half, pos, quat }) {
+  const [x, y, z, w] = quat || [0, 0, 0, 1];
+  const m = [[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+    [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+    [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]];
+  const e = m.map((r) => Math.abs(r[0]) * half[0] + Math.abs(r[1]) * half[1] + Math.abs(r[2]) * half[2]);
+  return { min: [pos[0] - e[0], pos[1] - e[1], pos[2] - e[2]], max: [pos[0] + e[0], pos[1] + e[1], pos[2] + e[2]] };
+}
 const DEG = Math.PI / 180;
 /** The support a move gets when its preset doesn't name one. */
-const DEFAULT_RIG = { push_in: "dolly", pull_out: "dolly", dolly_zoom: "dolly", whip_pan: "tripod", car_mount: "free" };
+const DEFAULT_RIG = { push_in: "dolly", pull_out: "dolly", dolly_zoom: "dolly", whip_pan: "tripod", car_mount: "free",
+  long_lens_pan: "tripod", arm_car: "free" };
 const STEP_SAID = {
   video_to_3d: "rebuild the video as a 3D set", new_angle: "add a new angle", ripple_mode: "open Ripple edit",
   whole_frame: "open Whole frame", quality_draft: "set Draft quality", quality_hollywood: "set Hollywood quality",
@@ -185,7 +210,7 @@ export class PresetRunner {
     // The preset is written on the scene (what's on this shot), which also makes it its own history step.
     const s = st.state || null;
     if (s) {
-      s.preset_log = [...(s.preset_log || []).slice(-9), { id: p.id, tab: p.tab, shot: target.id, t: Math.round(Date.now() / 1000) }];
+      s.preset_log = [...(s.preset_log || []).slice(-9), { id: p.id, tab: p.tab, shot: target.id, t: Math.round(Date.now() / 1000), ...(res.log || {}) }];
       st._muteRecord = true;
       try { st.onChange(st.toJSON()); } finally { st._muteRecord = false; }
     }
@@ -224,9 +249,12 @@ export class PresetRunner {
     const keys = sh.camera_keys || this.scene().camera_keys || [];
     // A move after a person-follow (handheld) goes back to world space first; a car mount keeps riding the car.
     const followed = sh.camera_follow ? this._actors().find((x) => x.id === sh.camera_follow) : null;
-    if (followed && isPerson(followed) && a.camera.move !== "follow") { st.setCameraFollow(null); sh = this.shotInfo().shot; }
+    const carPath = CAR_PATH_MOVES.includes(a.camera.move);
+    // A car-path move (long-lens pan, arm car) is world space: off the car first, whatever it was riding.
+    if (followed && ((isPerson(followed) && a.camera.move !== "follow") || carPath)) { st.setCameraFollow(null); sh = this.shotInfo().shot; }
     const k0 = (sh.camera_keys || keys)[0];
-    const plan = cameraKeys(k0, a.camera, this._last());
+    if (carPath && !this._vehicle()) return { ok: false, said: `${p.label} needs a car on set to track: add one (type “sports car” in Add) and try again.` };
+    const plan = this.cameraPlan(a.camera, k0);
     if (!plan) return { ok: false, said: `${p.label}: this shot has no camera to move yet.` };
     let note = null;
     if (plan.follow === "vehicle") {
@@ -242,10 +270,40 @@ export class PresetRunner {
       note = `following ${nameOf(who)}`;
     } else {
       st.setCameraKeys(plan.keys);
+      if (carPath) note = `tracking the ${nameOf(this._vehicle()).toLowerCase()} from ${Math.round(plan.metres)} m off its path, ${Math.round(plan.focal)} mm`;
     }
     const rig = a.rig || DEFAULT_RIG[a.camera.move];
     if (rig && typeof st.setRig === "function") st.setRig(rig);
-    return { ok: true, said: `Applied '${p.label}' to ${info.label}${note ? ` (${note})` : ""}: ${plan.keys.length || 1} editable camera key${(plan.keys.length || 1) === 1 ? "" : "s"}${rig && rig !== "free" ? ` on a ${rig}` : ""}.` };
+    const moved = carPath ? carPathSaid(p, plan) : "";
+    return { ok: true, said: `Applied '${p.label}' to ${info.label}${note ? ` (${note})` : ""}: ${plan.keys.length || 1} editable camera key${(plan.keys.length || 1) === 1 ? "" : "s"}${rig && rig !== "free" ? ` on a ${rig}` : ""}.${moved}`,
+      log: carPath ? { keys_sig: keysSig(this.shotInfo().shot.camera_keys) } : undefined };
+  }
+
+  /**
+   * The keys a camera preset would write on this shot, without writing them (the Presets hover previews these too).
+   * A car-path move (long-lens pan, arm car) samples the car's whole path first: the J-turn's reverse, spin and exit.
+   */
+  cameraPlan(spec, k0 = null) {
+    const last = this._last();
+    k0 = k0 || (this.shotInfo().shot.camera_keys || this.scene().camera_keys || [])[0];
+    if (!k0) return null;
+    if (!CAR_PATH_MOVES.includes(spec?.move)) return cameraKeys(k0, spec, last);
+    const v = this._vehicle();
+    if (!v) return null;
+    const path = [];
+    for (let f = 0; f <= last; f += 3) path.push({ frame: f, position: this._pos(v, f) });
+    if (path[path.length - 1].frame !== last) path.push({ frame: last, position: this._pos(v, last) });
+    return cameraKeys(k0, { ...spec, path, blockers: this._blockers() }, last);
+  }
+
+  /** The set's solid boxes (street facades, the plaza building, interior walls) as world AABBs; none on a fake stage. */
+  _blockers() {
+    try {
+      const st = this.stage;
+      const list = typeof st._setCollidersCached === "function" ? st._setCollidersCached()
+        : (st._setColliders?.() || []).map((c) => ({ half: c.half, pos: c.poses[0].pos, quat: c.poses[0].quat }));
+      return list.filter((c) => c?.half && c?.pos).map(colliderBox);
+    } catch { return []; }
   }
 
   _light(p) {
@@ -285,7 +343,34 @@ export class PresetRunner {
     if (!v) return { ok: false, said: `${p.label} needs a car on set: add one (type “sports car” in Add) and try again.` };
     const got = this.stage.applyStunt(v.id, p.apply.stunt);
     if (!got) return { ok: false, said: `The ${nameOf(v).toLowerCase()} can't do a ${p.label}.` };
-    return { ok: true, said: `Applied '${p.label}' to the ${nameOf(v).toLowerCase()}: its keys now drive the stunt (drag them to change it).`, whereObj: `the ${nameOf(v).toLowerCase()}` };
+    // A long-lens pan or arm car already on this shot was aimed at the old path: aim it at the stunt's, unless the
+    // camera keys were edited after the preset wrote them (then they are the user's and stay).
+    const again = this._reaimCarPath();
+    const said = !again ? "" : again.kept
+      ? ` The shot's camera keys were edited after the ${again.label}, so your edited camera was kept (apply ${again.label} again to aim it at the new path).`
+      : ` The shot's ${again.label} now follows the new path.${again.moved}`;
+    return { ok: true, said: `Applied '${p.label}' to the ${nameOf(v).toLowerCase()}: its keys now drive the stunt (drag them to change it).` + said,
+      whereObj: `the ${nameOf(v).toLowerCase()}` };
+  }
+
+  /**
+   * Re-key this shot's car-path camera (the last camera preset on it, from the scene's preset log) to the car's path,
+   * only while the shot's keys are still the ones that preset wrote (keys_sig in its log entry). Returns
+   * {label, moved} when re-aimed, {label, kept: true} when the keys were edited since, null when there is nothing to aim.
+   */
+  _reaimCarPath() {
+    const s = this.stage.state, info = this.shotInfo();
+    const last = [...(s?.preset_log || [])].reverse().find((e) => e.shot === info.id && e.tab === "camera");
+    const cp = last && this.get(last.id);
+    if (!cp || !CAR_PATH_MOVES.includes(cp.apply?.camera?.move) || info.shot.camera_follow) return null;
+    const label = cp.label.toLowerCase();
+    if (!last.keys_sig || keysSig(info.shot.camera_keys) !== last.keys_sig) return { label, kept: true };
+    const plan = this.cameraPlan(cp.apply.camera);
+    if (!plan?.keys?.length) return null;
+    this.stage.setCameraKeys(plan.keys);
+    const sig = keysSig(this.shotInfo().shot.camera_keys);
+    s.preset_log = s.preset_log.map((e) => (e === last ? { ...e, keys_sig: sig } : e));
+    return { label, moved: carPathSaid(cp, plan) };
   }
 
   /** Camera shake on impact for this shot: jolts keyed off the baked hits (simulate first if nothing is baked). */

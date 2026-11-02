@@ -16,7 +16,7 @@
 import { FONT, TOKENS as T, RADIUS } from "./theme.mjs";
 import { icon } from "./icons.mjs";
 import { withKeys } from "./shortcuts.mjs";
-import { loadCatalog, searchPresets, userPresetFrom, parseUserPresets, userPresetsFile, cameraKeys } from "../presets/engine.mjs";
+import { loadCatalog, searchPresets, userPresetFrom, parseUserPresets, userPresetsFile, cameraKeys, CAR_PATH_MOVES } from "../presets/engine.mjs";
 import { PresetRunner, RUNNERS, installDirectorTool } from "../presets/runner.mjs";
 import { drawThumb } from "../presets/thumbs.mjs";
 import { LiveThumbs, liveKind, THUMB_W, THUMB_H } from "../presets/livethumbs.mjs";
@@ -377,7 +377,9 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
       const sh = runner.shotInfo().shot;
       const k0 = (sh.camera_keys || [])[0];
       const last = runner._last();
-      const plan = k0 && cameraKeys(k0, p.apply.camera, last);
+      // A car-path move (long-lens pan, arm car) samples the car's path; its world keys can't preview on a ride-along shot.
+      const carPath = CAR_PATH_MOVES.includes(p.apply.camera.move);
+      const plan = k0 && !(carPath && sh.camera_follow) && (runner.cameraPlan ? runner.cameraPlan(p.apply.camera, k0) : cameraKeys(k0, p.apply.camera, last));
       if (plan?.keys?.length) {
         const live = stage.activeShot?.();
         hover.last = last;
