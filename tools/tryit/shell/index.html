@@ -6,7 +6,7 @@
   @font-face { font-family: "Space Grotesk"; font-weight: 400; font-display: swap; src: url("./extensions/soundstage/vendor/fonts/space-grotesk-400.woff2") format("woff2"); }
   @font-face { font-family: "Space Grotesk"; font-weight: 600; font-display: swap; src: url("./extensions/soundstage/vendor/fonts/space-grotesk-600.woff2") format("woff2"); }
   :root {
-    --bg: #18151b; --panel: #211927; --panel2: #2a2330; --line: rgba(255,255,255,.09); --text: #f0efed; --muted: #a9a3ad; --accent: #F2FF59; --ink: #1a1420;
+    --bg: #18151b; --panel: #211927; --panel2: #2a2330; --line: rgba(255,255,255,.09); --text: #f0efed; --muted: #a9a3ad; --accent: #F2FF59; --ink: #1a1420; --replay: #8fd3ff;
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
@@ -16,7 +16,14 @@
     padding-block: 8px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
   .bar h1 { margin: 0; font-size: 16px; font-weight: 600; white-space: nowrap; }
   .bar h1 span { color: var(--accent); }
-  .pill { font-size: 12px; color: var(--ink); background: var(--accent); border-radius: 999px; padding: 3px 10px; font-weight: 600; white-space: nowrap; }
+  /* Live or Replayed (shell/provenance.mjs): computed in this browser, or a recording of a real run played back. */
+  .prov { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 11px; font-weight: 600; line-height: 1.2; white-space: nowrap;
+    border-radius: 999px; padding: 2px 8px; border: 1px solid; background: transparent; vertical-align: middle; }
+  .prov.live { color: var(--accent); border-color: rgba(242,255,89,.55); }
+  .prov.replayed { color: var(--replay); border-color: rgba(143,211,255,.5); background: rgba(143,211,255,.08); }
+  .bar button.prov { cursor: help; min-height: 28px; padding: 3px 10px; font-size: 12px; border-radius: 999px; }
+  .bar button.prov.live { color: var(--accent); background: transparent; border-color: rgba(242,255,89,.55); }
+  .bar button.prov.replayed { color: var(--replay); background: rgba(143,211,255,.08); border-color: rgba(143,211,255,.5); }
   .pick { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .pick label { color: var(--muted); font-size: 12px; }
   #scene { font: inherit; font-size: 13px; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; max-width: min(64vw, 360px); }
@@ -88,11 +95,16 @@
     #hero .lede { max-width: none; }
     #hero figure { order: -1; }
   }
-  @media (max-width: 720px) { #sceneNote { display: none; } .bar h1 .long { display: none; } #host { height: auto; min-height: 640px; } }
+  #hero .tag.prov { top: auto; bottom: 12px; left: 12px; font-size: 11px; color: var(--replay); border-color: rgba(143,211,255,.5); }
+  #tour li .hd { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; }
+  #tour li .hd b { min-width: 0; }
+  #tour li .row .prov { align-self: center; }
+  #clip .hd .prov { margin-left: auto; }
+  @media (max-width: 720px) { #sceneNote { display: none; } .bar h1 .long, .bar .prov .long { display: none; } #host { height: auto; min-height: 640px; } }
 </style>
 <div class="bar">
   <h1><span>Soundstage</span><span class="long"> &middot; ComfyUI App</span></h1>
-  <span class="pill">Live demo &middot; replays real GPU renders</span>
+  <button id="prov" type="button" class="prov live" aria-live="polite">&#9679; Live<span class="long"> in your browser</span></button>
   <div class="pick"><label for="scene">Scene</label><select id="scene" aria-label="Demo scene"></select></div>
   <button id="tourBtn" type="button" class="hi" aria-expanded="false" aria-controls="tour">What&rsquo;s new &middot; tour</button>
   <button id="introBtn" type="button" aria-controls="hero">Intro</button>
@@ -106,7 +118,7 @@
   <ol id="tourList"></ol>
 </aside>
 <dialog id="clip" aria-labelledby="clipTitle">
-  <div class="hd"><b id="clipTitle"></b><button type="button" id="clipClose">Close</button></div>
+  <div class="hd"><b id="clipTitle"></b><span id="clipProv" class="prov replayed">&#8634; Replayed</span><button type="button" id="clipClose">Close</button></div>
   <div id="clipBody"></div>
   <p id="clipNote"></p>
 </dialog>
@@ -128,6 +140,7 @@
         <canvas id="heroCv" width="1280" height="688" aria-label="The reverse J-turn: the stage's coloured clay on the left, the Hollywood take on the right"></canvas>
         <span class="tag l">Stage <i>&middot; coloured clay</i></span>
         <span class="tag r">Take <i>&middot; LTX-2.5 Hollywood</i></span>
+        <span class="tag prov replayed" id="heroProv">&#8634; Replayed <i>&middot; a recorded render</i></span>
         <div id="heroSplit" role="slider" tabindex="0" aria-label="Compare: clay and take" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></div>
       </div>
       <figcaption><b>The same 121 frames.</b> Left, the stage&rsquo;s Color pass; right, the 2624&thinsp;&times;&thinsp;1408 take it guided. Drag to compare. Flaws we haven&rsquo;t fixed yet: faint pseudo-letters on the front plate around 3.5&nbsp;s, and the nose rounds off in the last ten frames.</figcaption>
