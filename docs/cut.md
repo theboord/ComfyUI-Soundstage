@@ -209,7 +209,7 @@ role; a project's own names, such as docs/audio.md's DX1/FX1/MX1, win).
 | Click a chip, or T | The transition (T: a dissolve) on the cut nearest the playhead |
 | Click a transition bar | Inspector: type, length, Remove (⌫ removes it too) |
 | R, or Keys | Rubber bands: click a clip's level (audio) or opacity (V1) line to add a key, drag it, ⌥-click deletes |
-| + Title, drag on V2 | A title card (Card on black, Lower third, Centre), text, length and fades in the inspector |
+| + Title, drag on V2 | A title card (Card on black, Lower third, Centre, Credit), text, length and fades in the inspector. **Credit** is a small lower-left line with a soft shadow and no band: the on-screen credit a CC BY licence asks for, or a production super. In a 2.39 picture inside 16:9 it sits in the lower letterbox bar |
 
 **Where a transition sits.** A dissolve or wipe is centred on the cut and overlaps the clips, so it uses their
 handles: the outgoing clip runs past its out point, the incoming one starts before its in point. When one side is

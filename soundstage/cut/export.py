@@ -157,6 +157,10 @@ def key_at(keys, f, dflt=0):
     return keys[-1][1]
 
 
+# web/cut/timeline.mjs TITLE_STYLES. "credit": the small lower-left line a CC BY licence asks for (and a super).
+TITLE_STYLES = ("card", "lower", "center", "credit")
+
+
 def normalize_titles(lst) -> list:
     seen, out = set(), []
     for i, t in enumerate([x for x in (lst if isinstance(lst, list) else []) if x and str(x.get("text") or "").strip()]):
@@ -167,7 +171,7 @@ def normalize_titles(lst) -> list:
         frames = max(1, _round(t.get("frames") or 48))
         fi = _clamp(_round(t["fade_in"] if t.get("fade_in") is not None else 6), 0, frames)
         out.append({"id": tid, "text": str(t["text"])[:400], "start_frame": max(0, _round(t.get("start_frame") or 0)),
-                    "frames": frames, "style": t.get("style") if t.get("style") in ("card", "lower", "center") else "card",
+                    "frames": frames, "style": t.get("style") if t.get("style") in TITLE_STYLES else "card",
                     "fade_in": fi, "fade_out": _clamp(_round(t["fade_out"] if t.get("fade_out") is not None else 6), 0, frames - fi)})
     return out
 
@@ -1133,12 +1137,12 @@ def to_fcpxml(project, media_root="") -> str:
 
     def title_xml(tt, it):
         ts_n[0] += 1
-        tid, size = f"ts{ts_n[0]}", 48 if tt["style"] == "lower" else 72
+        tid, size = f"ts{ts_n[0]}", 28 if tt["style"] == "credit" else 48 if tt["style"] == "lower" else 72
         return [f'              <title ref="{title_id}" lane="1" offset="{it["local"](tt["start_frame"] - it["recIn"])}" '
                 f'name="{_esc(tt["text"][:60])}" start="0s" duration="{t(tt["frames"])}">',
                 f'                <text><text-style ref="{tid}">{_esc(tt["text"])}</text-style></text>',
                 f'                <text-style-def id="{tid}"><text-style font="Helvetica" fontSize="{size}" fontColor="1 1 1 1" '
-                'alignment="center"/></text-style-def>',
+                f'alignment="{"left" if tt["style"] == "credit" else "center"}"/></text-style-def>',
                 "              </title>"]
 
     tnames = {"dissolve": "Cross Dissolve", "dip_black": "Dip to Black", "dip_white": "Dip to White", "wipe": "Wipe"}
