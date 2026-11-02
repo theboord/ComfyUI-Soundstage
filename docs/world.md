@@ -11,7 +11,8 @@ Code: [web/stage/world.mjs](../web/stage/world.mjs) (the world model, pure JS), 
 `setWorldCollisions`, `rerouteAround`) and the Director tools `ram`, `check`, `reroute`, `keep_keyed`
 ([soundstage/agent/director.py](../soundstage/agent/director.py), [web/agent/director.mjs](../web/agent/director.mjs)).
 Tests: [tests/js/world.test.mjs](../tests/js/world.test.mjs), [tests/js/world_stage.test.mjs](../tests/js/world_stage.test.mjs),
-[tests/test_world_director.py](../tests/test_world_director.py).
+[tests/js/world_edges.test.mjs](../tests/js/world_edges.test.mjs) (chain reactions, many cars, people, overlaps, re-bakes,
+degenerate input), [tests/test_world_director.py](../tests/test_world_director.py), [tests/test_world_edges.py](../tests/test_world_edges.py).
 
 ## What each thing is
 
@@ -36,6 +37,11 @@ Tests: [tests/js/world.test.mjs](../tests/js/world.test.mjs), [tests/js/world_st
   passes its strength and the hitter brings more momentum than 10 × the anchor's mass. The hitter then pays its break energy
   (`v' = sqrt(v² − 2E/m)`). A breakaway lamp costs a car at 43 km/h about 1 m/s; a thrown crate doesn't shear it.
 - **Nothing passes through.** Anything keyed still pressing more than 2 cm into something that won't move is taken over too.
+- **Hits pass along.** A car shunted into a parked car it touches (a queue bumper to bumper) passes the hit on: the one in
+  front is judged by the same rule at the speed the hit arrives with, so a queue moves as it would with gaps.
+- **Placed inside each other.** Things that start more than 2 cm inside each other or the set (a car parked into a wall,
+  someone standing in a bumper) stay exactly where they were put; once hit they are eased apart slowly, with no speed from
+  the overlap, and still stop each other going further in. The consequence check reports the overlap after the bake.
 - **Crush.** A car absorbs `E = ½ μ v²` (μ: the pair's reduced mass), shared with the other side by stiffness; its crush depth
   is `sqrt(2 E_car / k)`. That is about 0.46 m for a 1.45 t car into a rigid wall at 43 km/h. The crush is stored as a dent
   on the car (`physics.dents`), which the clay shows.
