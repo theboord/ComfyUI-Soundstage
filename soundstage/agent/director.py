@@ -349,7 +349,8 @@ def _norm_call(raw) -> dict | None:
         return None
     name = str(name).strip().lower().replace("-", "_").replace(" ", "_")
     name = ALIASES.get(name, name)
-    args = dict(raw.get("args") or raw.get("arguments") or raw.get("parameters") or {})
+    a = raw.get("args") or raw.get("arguments") or raw.get("parameters") or {}
+    args = dict(a) if isinstance(a, dict) else {}   # a model's ["push_in"] or "35mm" is a bad call, not a crash
     for k, v in raw.items():
         if k not in ("tool", "name", "op", "action", "args", "arguments", "parameters"):
             args.setdefault(k, v)
@@ -790,7 +791,7 @@ def parse_llm(text: str) -> list[dict]:
                     args = json.loads(args)
                 except ValueError:
                     args = {}
-            c = {"tool": f.get("name"), **(args or {})}
+            c = {"tool": f.get("name"), **(args if isinstance(args, dict) else {})}
         if isinstance(c, dict):
             out.append(c)
     return out[:16]
