@@ -69,8 +69,8 @@ const CSS = `
 .ss-bk .ri.drop { border-color:${T.accentLine}; background:${T.accentSoft}; }
 .ss-bk .ri .n { flex:none; min-width:26px; font-weight:700; color:${T.accent}; }
 .ss-bk .ri .t { flex:1; min-width:0; }
-.ss-bk .ri .t b { display:block; font-weight:500; font-size:${TYPE.sm}px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.ss-bk .ri .t small { display:block; color:${T.faint}; font-size:${TYPE.xs}px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ss-bk .ri .t b { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; font-weight:500; font-size:${TYPE.sm}px; overflow:hidden; overflow-wrap:anywhere; }
+.ss-bk .ri .t small { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; color:${T.faint}; font-size:${TYPE.xs}px; overflow:hidden; }
 .ss-bk .ri .cnt { flex:none; font-size:${TYPE.xs}px; color:${T.muted}; background:${T.card}; border-radius:${RADIUS.pill}px; padding:1px 7px; }
 .ss-bk .ri .cnt.warn { color:${T.accentInk}; background:${T.accent}; }
 .ss-bk .main { overflow:auto; min-height:0; }

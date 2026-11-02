@@ -137,7 +137,8 @@ async function captureSize([w, h], port) {
           demoDone = true;
         }
         if (sc.step) { await openFull(b); await js(`__qa.p.go('${sc.step}'); return 1`); await sleep(3000); }
-        if (sc.run && (wanted || sc.name === "app_panel" || sc.name === "firstrun_card")) await sc.run({ b, js });
+        const ran = !!sc.run && (wanted || sc.name === "app_panel" || sc.name === "firstrun_card");
+        if (ran) await sc.run({ b, js });
         if (wanted) {
           await sleep(500);
           await b.move(2, 2);   // the pointer off every control (no hover states)
@@ -148,7 +149,9 @@ async function captureSize([w, h], port) {
           res.screens[sc.name] = { jpg: file, metrics, errors, what: sc.what };
           console.log(`  ${tag} ${sc.name}${errors.length ? `  (${errors.length} console error${errors.length > 1 ? "s" : ""})` : ""}`);
         }
-        if (sc.after) await sc.after({ b, js });
+        // Only undo what this screen's run did: with --only, a skipped canvas_hidden's after() pressed H and hid every
+        // panel for the screens after it (QA round 07: physics_panel came out with no Physics panel).
+        if (sc.after && (ran || !sc.run)) await sc.after({ b, js });
       } catch (e) {
         res.screens[sc.name] = { error: String(e.message || e).slice(0, 300), what: sc.what };
         console.log(`  ${tag} ${sc.name}  FAILED TO CAPTURE: ${String(e.message || e).slice(0, 160)}`);

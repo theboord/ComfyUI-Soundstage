@@ -493,7 +493,7 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
       rec.lang = navigator.language || "en-US";
       rec.interimResults = true;
       rec.continuous = true;
-      let alive = true;
+      let alive = true, told = false, me = null;
       rec.onresult = (ev) => {
         let interim = "";
         for (let i = ev.resultIndex; i < ev.results.length; i++) {
@@ -502,10 +502,17 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
         }
         if (interim) pitch.hear(interim, { interim: true });
       };
-      rec.onerror = (ev) => { if (ev.error !== "no-speech") say("a", `Speech recognition stopped (${ev.error}). Switch Voice to Whisper in ⚙ for the offline one.`); };
+      rec.onerror = (ev) => {
+        if (ev.error === "no-speech" || ev.error === "aborted") return;
+        // A denied or missing mic doesn't fix itself: stop the restart loop (onend restarted it, and every restart said
+        // this again, a dozen times a second; QA round 07) and say it once.
+        const fatal = /not-allowed|service-not-allowed|audio-capture/.test(ev.error);
+        if (fatal) { alive = false; setTimeout(() => { if (me && pitchListen === me) stopPitchListen(); }, 0); }
+        if (!told) { told = true; say("a", `Speech recognition stopped (${ev.error}). Switch Voice to Whisper in ⚙ for the offline one.`); }
+      };
       rec.onend = () => { if (alive && pitch.active) { try { rec.start(); } catch { /* */ } } };   // Chrome stops after ~60 s of talk
       try { rec.start(); } catch (e) { say("a", `Mic: ${e.message}`); return; }
-      pitchListen = { stop: () => { alive = false; try { rec.stop(); } catch { /* */ } } };
+      me = pitchListen = { stop: () => { alive = false; try { rec.stop(); } catch { /* */ } } };
     } else {
       // Whisper hears the pitch better when it knows the words to expect: film terms and the last beats.
       let warned = false;

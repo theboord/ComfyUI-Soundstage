@@ -1721,7 +1721,8 @@ function createStageWidget(node, inputName) {
     syncAppearance(info);
     try { posePanel.show(info); } catch { /* panel not built */ }
     try { physPanel.show(info); } catch { /* panel not built */ }
-    if (!info) return;
+    // Nothing selected: the Outliner says so (or names the selected light) instead of keeping the last object (QA round 07).
+    if (!info) { try { outlineSelEl.value = stage.selectedLight ? `light|${stage.selectedLight}` : ""; } catch { /* not built */ } return; }
     selName.textContent = info.name;
     turn.input.value = info.rotation_deg; turn.out.textContent = `${info.rotation_deg}°`;
     scl.input.value = info.scale || 1; scl.out.textContent = `${(+(info.scale || 1)).toFixed(2)}×`;
@@ -1869,6 +1870,7 @@ function createStageWidget(node, inputName) {
   lightSel.append(lightName, kel.wrap, inten.wrap, lheight.wrap, soft.wrap, ldel);
   stage.onSelectLight = (l) => {
     lightSel.hidden = !l;
+    if (l) try { syncOutline(); outlineSelEl.value = `light|${l.id}`; } catch { /* not built */ }
     if (!l) return;
     lightName.textContent = l.name;
     const set = (sl, v, f) => { sl.input.value = v; sl.out.textContent = f(v); };

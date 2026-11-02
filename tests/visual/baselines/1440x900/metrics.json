@@ -4,51 +4,8 @@
   "pageScroll": false,
   "pageScrollH": 900,
   "pageOverflowX": false,
-  "clipped": [
-   {
-    "text": "Step 1✓ScriptScriptReady",
-    "ellipsis": false,
-    "w": 76,
-    "need": 78
-   },
-   {
-    "text": "Step 2✓Cast & LocationsCastReady",
-    "ellipsis": false,
-    "w": 66,
-    "need": 68
-   },
-   {
-    "text": "Step 3✓SetSetReady",
-    "ellipsis": false,
-    "w": 59,
-    "need": 61
-   },
-   {
-    "text": "Step 4✓FrameFrameReady",
-    "ellipsis": false,
-    "w": 76,
-    "need": 78
-   },
-   {
-    "text": "Step 5✓MotionMotionReady",
-    "ellipsis": false,
-    "w": 82,
-    "need": 84
-   },
-   {
-    "text": "Step 6✓ReviewReviewReady",
-    "ellipsis": false,
-    "w": 82,
-    "need": 84
-   },
-   {
-    "text": "Step 7✓DeliverDeliverReady",
-    "ellipsis": false,
-    "w": 81,
-    "need": 83
-   }
-  ],
-  "clippedHard": 7,
+  "clipped": [],
+  "clippedHard": 0,
   "overlaps": [],
   "scrollers": [],
   "offscreen": [
@@ -984,66 +941,16 @@
   "pageScroll": false,
   "pageScrollH": 900,
   "pageOverflowX": false,
-  "clipped": [
-   {
-    "text": "Step 1✓ScriptScriptReady",
-    "ellipsis": false,
-    "w": 80,
-    "need": 82
-   },
-   {
-    "text": "Step 2✓Cast & LocationsCastReady",
-    "ellipsis": false,
-    "w": 70,
-    "need": 72
-   },
-   {
-    "text": "Step 3✓SetSetReady",
-    "ellipsis": false,
-    "w": 63,
-    "need": 65
-   },
-   {
-    "text": "Step 4✓FrameFrameReady",
-    "ellipsis": false,
-    "w": 80,
-    "need": 82
-   },
-   {
-    "text": "Step 5✓MotionMotionReady",
-    "ellipsis": false,
-    "w": 86,
-    "need": 88
-   },
-   {
-    "text": "Step 6✓ReviewReviewReady",
-    "ellipsis": false,
-    "w": 86,
-    "need": 88
-   },
-   {
-    "text": "Step 7✓DeliverDeliverReady",
-    "ellipsis": false,
-    "w": 85,
-    "need": 87
-   },
-   {
-    "text": "EXT. Dry Creek - Main Street",
-    "ellipsis": true,
-    "w": 76,
-    "need": 161
-   },
-   {
-    "text": "Tracking, front 3/4",
-    "ellipsis": true,
-    "w": 76,
-    "need": 105
-   }
-  ],
-  "clippedHard": 7,
+  "clipped": [],
+  "clippedHard": 0,
   "overlaps": [],
-  "scrollers": [],
-  "offscreen": [],
+  "scrollers": [
+   "ss-insp-body 1029/637"
+  ],
+  "offscreen": [
+   "○",
+   "○"
+  ],
   "errors": []
  },
  "deliver_dcc_kit": {
