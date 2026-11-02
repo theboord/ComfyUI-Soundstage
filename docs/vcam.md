@@ -73,9 +73,14 @@ python3 tools/vcam_bridge.py            # https://<mac>.local:8443 -> 127.0.0.1:
 * Every phone needs the **pairing token** that the QR code carries (`?vk=…`, then kept as an HttpOnly cookie). Without
   it the answer is 401. `--new-token` un-pairs every phone.
 * There is an **allow-list**. Even with the token, a phone can only reach the viewfinder page, its WebSocket, the
-  take upload and the read-only files the stage loads (`/extensions/ComfyUI-Soundstage/…`, `/view`). `/prompt`,
-  `/queue`, `/api/userdata`, `/upload`, the agent and every other route answer 403. The bridge forwards one request per
-  connection, so this check runs on every request.
+  take and clip uploads and the read-only files the stage loads (`/extensions/ComfyUI-Soundstage/…`, `/view`).
+  `/prompt`, `/queue`, `/api/userdata`, `/upload`, the agent and every other route answer 403. The bridge forwards one
+  request per connection and only that request's declared body (`Content-Length`; chunked uploads are refused), so a
+  second request pipelined behind an allowed one never reaches ComfyUI. The WebSocket (`/soundstage/vcam/ws` only)
+  becomes a raw two-way pipe only after ComfyUI answers `101 Switching Protocols` with `Upgrade: websocket`; any other
+  answer to the handshake goes back as a single response and the connection closes. Tests:
+  [tests/test_vcam_bridge.py](../tests/test_vcam_bridge.py) (a real bridge in front of a fake ComfyUI, and in front of
+  a real aiohttp server).
 * The bridge registers its phone URL with the App (`POST /soundstage/vcam/pair`, re-sent every 30 s, expires after
   3 min). The desktop's QR code then points at the bridge. Without the bridge, the QR shows the page's own address and
   warns when that is a loopback address.
@@ -111,7 +116,7 @@ The phone only rebuilds its set when the scene minus its cameras changes (`scene
 | `web/vcam/desk.mjs` | the desktop half (QR popover, publishing, live preview, applying takes) |
 | `web/vcam/qr.mjs` | a QR encoder (versions 1–10, checked against OpenCV's decoder) |
 | `tools/vcam_bridge.py` | the LAN bridge |
-| `tests/js/viewfinder.test.mjs`, `tests/test_vcam_viewfinder.py` | tests |
+| `tests/js/viewfinder.test.mjs`, `tests/test_vcam_viewfinder.py`, `tests/test_vcam_bridge.py` | tests |
 
 ## Files
 

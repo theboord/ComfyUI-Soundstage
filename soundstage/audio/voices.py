@@ -95,7 +95,11 @@ def resolve_name(user_dir, name):
     for h, c in chars.items():
         if c == up:
             return h
-    first = up.split("_")[0]
+    # First-name fallback, for a one-word cue only ("EZRA" finds EZRA_HALE): a full name that matched no voice or
+    # character above never borrows someone else's ("Ezra Cole" must not find EZRA_HALE).
+    if "_" in up:
+        return None
+    first = up
     hits = [h for h in have if any(x == first or x.startswith(first + "_") for x in (h.upper(), chars[h]))]
     return hits[0] if len(hits) == 1 else None
 

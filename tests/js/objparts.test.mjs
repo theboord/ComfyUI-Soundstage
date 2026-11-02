@@ -464,3 +464,32 @@ test("Director: the part call is one setParts (one undo step), keyed at its time
   const r3 = await EXEC.part.call(host, { part: "lightbar", value: "flash", target: "Police car", target_id: "cop" });
   assert.match(r3.said, /red and blue roof lights flashing/);
 });
+
+test("camera: removing a focus key at the playhead really removes it (T-stop keys stay)", () => {
+  // Every lens key carries every lens channel, so the old filter (keep a key that has any other field) never dropped
+  // anything: keyPartHere said "removed" while the focus pull kept playing.
+  const st = headless([]);
+  st.setPart("__camera__", "focus_m", 2, { frame: 0 });
+  st.setPart("__camera__", "focus_m", 8, { frame: 48 });
+  st.setPart("__camera__", "t_stop", 2.8, { frame: 0 });
+  st.setFrame(48);
+  assert.equal(st.keyPartHere("__camera__", "focus_m"), false);
+  assert.deepEqual(st._camKeyFrames("focus_m"), [0]);
+  assert.ok(Math.abs(st._cameraAt(48).focus_m - 2) < 1e-6, "focus holds its one remaining key");
+  assert.deepEqual(st._camKeyFrames("t_stop"), [0, 48]);
+  assert.ok(Math.abs(st._cameraAt(30).t_stop - 2.8) < 1e-6);
+  // Keying focus again elsewhere must not refill the removed one (the first-use fill ran on every set).
+  st.setPart("__camera__", "focus_m", 5, { frame: 90 });
+  assert.deepEqual(st._camKeyFrames("focus_m"), [0, 90]);
+});
+
+test("camera: the Sensor crop reaches camera_track and the DCC camera, not only the viewport", () => {
+  // Super 35 cropped this.camera.fov in the viewport and captures, but cameraTrack() (camera_track, the Layer Pack
+  // camera, camera.json, .chan) and the DCC kit's shot_cam used the raw focal on 36 mm: plates and cameras disagreed.
+  const st = headless([]);
+  st.setPart("__camera__", "sensor", "s35");
+  st._applyCamera();
+  const tr = st.cameraTrack()[0];
+  const vfov = 2 * Math.atan((36 / (st.fw / st.fh)) / (2 * tr.focal_mm)) * 180 / Math.PI;
+  assert.ok(Math.abs(vfov - st.camera.fov) < 1e-6, `${vfov} vs ${st.camera.fov}`);
+});
