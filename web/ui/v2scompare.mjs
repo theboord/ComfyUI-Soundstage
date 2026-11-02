@@ -342,6 +342,8 @@ const CSS = `
   display:flex; flex-direction:column; gap:3px; padding:6px 8px 5px; border-radius:12px; background:rgba(20,14,26,.88);
   border:1px solid rgba(242,255,89,.35); color:#f0efed; font:12px/1.2 "Soundstage Grotesk", system-ui, sans-serif;
   box-shadow:0 8px 28px rgba(0,0,0,.4); user-select:none; }
+/* the Coach pill shares the top edge: step it below the bar so the bar's close button stays reachable */
+:has(> .ss-v2c) > .ss-coach { top:58px; }
 .ss-v2c .row { display:flex; align-items:center; gap:6px; flex-wrap:nowrap; min-width:0; }
 .ss-v2c b.t { color:#F2FF59; white-space:nowrap; }
 .ss-v2c .seg { display:flex; border:1px solid rgba(255,255,255,.18); border-radius:999px; overflow:hidden; flex:0 0 auto; }

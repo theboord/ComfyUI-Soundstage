@@ -4,7 +4,7 @@ Soundstage turns ComfyUI into a small film set. You bring in a script, cast it, 
 
 **100% open weights: every model runs locally.** (Paid partner API models are hidden; they are opt-in only, with `SOUNDSTAGE_PARTNER_MODELS=1` when you start ComfyUI.)
 
-**New here? Start with the [Quickstart](QUICKSTART.md):** your first shot in about ten minutes, then a one-page scene from script to delivery.
+**New here? Start with the [Quickstart](QUICKSTART.md):** the [four rules](QUICKSTART.md#four-rules-before-you-click-anything), [your first shot](QUICKSTART.md#quickstart-your-first-shot) in about ten minutes on the demo, then [*High Water*](QUICKSTART.md#first-scene-high-water), a three-shot scene from script to delivery (drive, stunt, physics crash, gaze, cut, Avid EDL), and a one-screen [cheat sheet](QUICKSTART.md#cheat-sheet).
 
 This guide is for anyone who has just cloned the repo. It covers where every panel and button is, what each one does, and the habits that get good shots quickly. Every control named here is in the code, with the same label you see on screen.
 
@@ -51,7 +51,7 @@ pip install -r ComfyUI-Soundstage/requirements.txt
 pip install -r ComfyUI-LTXVideo/requirements.txt
 ```
 
-Soundstage itself only needs `soundfile` (audio read/write). `pyaaf2` is optional and only used for Avid AAF export from the Cut tab; EDL, XML and OTIO exports need nothing extra.
+Soundstage itself needs `soundfile` (audio read/write), plus `opencv-python-headless` and `scipy` for Video → Stage, Photo → 3D and motion capture. `pyaaf2` is optional and only used for Avid AAF export from the Cut tab; EDL, XML and OTIO exports need nothing extra.
 
 **On Linux or RunPod** one script installs the node packs, copies the workflows into `user/default/workflows/` and downloads the Krea 2, LTX-2.5 and Qwen3.5 files listed below:
 
@@ -141,11 +141,13 @@ From top to bottom:
 
 ### The step bar
 
-Seven big buttons, **Step 1** to **Step 7**, in production order: **Script**, **Cast & Locations**, **Set**, **Frame**, **Motion**, **Review**, **Deliver**. Click one to go to that step. Hover for a one-line reminder of what it does. A green **✓** appears next to a step once it is done for the current shot (a clay preview exists, a frame is chosen, a video has rendered...).
+Seven buttons, **1** to **7** (**Step 1** to **Step 7** in the classic layout), in production order: **Script**, **Cast & Locations**, **Set**, **Frame**, **Motion**, **Review**, **Deliver**. Click one to go to that step. Hover for a one-line reminder of what it does. A step's number turns green (a **✓** in the classic layout) once it is done for the current shot (a clay preview exists, a frame is chosen, a video has rendered...).
 
-On the right of the step bar, a red **■ Stop** button appears whenever anything is rendering. It shows how many jobs are waiting, for example **■ Stop (3)**. See [The Stop button](#the-stop-button).
+On the right of the step bar, a red **■ Stop** button appears whenever anything is rendering. It shows how many jobs are queued or running, for example **■ Stop (3)**. See [The Stop button](#the-stop-button).
 
 ### The tab bar
+
+In the default canvas layout the steps, **↶** / **↷**, **Tools ▾** and **Expand** share one top row: Script, Cast, Stage and Compare open from the steps, and Paint Studio, Shot ideas, Look, Takes, Edit and ScriptSync sit in the **Tools ▾** menu. **Classic layout** in that menu brings back the tab bar below.
 
 | Control | What it does |
 |---|---|
@@ -155,12 +157,12 @@ On the right of the step bar, a red **■ Stop** button appears whenever anythin
 | **Script** | The screenplay view (same as Step 1). |
 | **Cast** | Cast & Locations (same as Step 2). |
 | **Stage** | The 3D stage (same as Step 3). |
-| **Canvas** | Paint Studio on its own, for touching up any frame. |
-| **Advisor** | The Director's Advisor: describe a scene and get a shot list with the reasons. |
+| **Paint Studio** | Paint Studio on its own (the Canvas), for touching up any frame. |
+| **Shot ideas** | The Director's Advisor: describe a scene and get a shot list with the reasons. |
 | **Look** | The film look: style presets, camera body, lens, film stock, grade. See [the Look tab](#the-look-tab-re-render-in-any-film-look). |
-| **Ladder** | The compare view (same as Step 6). |
-| **Dailies** | Setups and takes as an editor's bin, plus the lined script. |
-| **Cut** | The full Cut editor (timeline, audio, NLE export). |
+| **Compare** | The Ladder, the compare view (same as Step 6). |
+| **Takes** | Dailies: setups and takes as an editor's bin, plus the lined script. |
+| **Edit** | The full Cut editor (timeline, audio, NLE export). |
 | **Layers** / **Lite** | Appear after a Layer Pack is written: download the whole pack, or the same pack without the per-frame PNG sequences. |
 
 ### The tool rail (left)
@@ -187,14 +189,14 @@ The header above the picture:
 
 | Control | What it does |
 |---|---|
-| **Shot cam** | Look through the camera that renders. What you frame here is the shot. |
+| **Camera view** | Look through the camera that renders (the shot cam). What you frame here is the shot. |
 | **Free view** | Fly around the set without moving the shot camera; the shot camera is drawn as a frustum. Key **0** toggles it. |
-| **Top** | A top-down plan: the camera move and the cast's paths as lines with keys. Drag a camera key or a cast key, re-aim, add or delete keys. |
-| **Cams** | In Free view, show a small camera at every camera key (where it stands, where it looks). Click one to jump the playhead there. Turning it on switches to Free view. |
+| **Top view** | A top-down plan: the camera move and the cast's paths as lines with keys. Drag a camera key or a cast key, re-aim, add or delete keys. |
+| **Show cameras** | In Free view, show a small camera at every camera key (where it stands, where it looks). Click one to jump the playhead there. Turning it on switches to Free view. |
 | hint line | A reminder of the mouse and keyboard moves. Hover it to read it in full. |
 | **Wire** / **Clay** / **Color** / **Depth** | How the stage is drawn: wireframe, grey clay (default), flat colour (splats and backdrop plates show here), or the depth pass the image model reads. |
 
-Inside the picture: a badge in the top-left corner (**Shot cam · Master**, or **Free view · shot camera shown**), the **Coach** pill in the top right, just left of the axis gizmo (it collects tips as **Coach · 2**; click to read them, each with a one-click fix and **Not now**), and the coloured axis gizmo: click an axis dot to look straight along it.
+Inside the picture: a badge in the top-left corner (**Camera view · Master**, or **Free view · shot camera shown**), the **Coach** pill in the top right, just left of the axis gizmo (it collects tips as **Coach · 2**; click to read them, each with a one-click fix and **Not now**), and the coloured axis gizmo: click an axis dot to look straight along it.
 
 ### The inspector (right)
 
@@ -222,7 +224,7 @@ Five tabs. Selecting something in the view switches it for you: an object or per
 | timecode | Seconds:frames at 24 fps. |
 | **Length** | Shot length, 2 to 10 seconds. |
 
-Under the timeline sits the **shot strip**: every camera setup as a clip in cut order. Click a clip to edit that setup. **+ Shot** adds a setup (a copy of the current camera, or a new angle: Master, Wide, Two-shot, Over-the-shoulder, Single, Insert, POV), **Editor** opens the full Cut editor, and the play button plays the cut on the stage. Drag clips to reorder them and drag their edges to trim. Right-click a clip for **Edit this setup on the stage**, **Repaint its frame (④ Frame)**, **Touch up its frame in Canvas**, **Re-render its motion (⑤ Motion)**, **Compare on the Ladder (⑥ Review)**, **Duplicate setup**, **Duplicate clip**, **Split at playhead**, **Remove from cut** and **Delete setup**. Below it, **Cut → one video** and **Render missing shots** (see [⑦ Deliver](#step-7-deliver)).
+Under the timeline sits the **shot strip**: every camera setup as a clip in cut order. Click a clip to edit that setup. **+ Shot** adds a setup (a copy of the current camera, or a new angle: Master, Wide, Two-shot, Over-the-shoulder, Single, Insert, POV), **Editor** opens the full Cut editor, and the play button plays the cut on the stage. Drag clips to reorder them and drag their edges to trim. Right-click a clip for **Edit this setup on the stage**, **Repaint its frame (④ Frame)**, **Touch up its frame in Paint Studio**, **Re-render its motion (⑤ Motion)**, **Compare in ⑥ Review**, **Duplicate setup**, **Duplicate clip**, **Split at playhead**, **Remove from cut** and **Delete setup**. Below it, **Cut → one video** and **Render missing shots** (see [⑦ Deliver](#step-7-deliver)).
 
 The grey **status line** at the very bottom tells you what just happened and what to do next. Read it: most messages end with the next step.
 
@@ -252,7 +254,7 @@ Optional, but it makes everything after it faster. Soundstage reads your screenp
 | **Re-import revised draft…** | Bring in a new version. Scenes are matched by number; your notes and shot links carry over. |
 | **Replace script…** | Bring in a different script. If you have notes, it asks first and offers **Re-import as revised draft…** instead. |
 
-Scenes are found by their headings, so every scene must start with `INT.` or `EXT.`. A PDF needs a text layer: a scanned PDF has no text to read. PDF reading loads pdf.js from cdnjs the first time, so it needs an internet connection; `.fdx` and `.fountain` work offline.
+Scenes are found by their headings, so every scene must start with `INT.` or `EXT.` (or `INT./EXT.`, `I/E`, `EST.`). A PDF needs a text layer: a scanned PDF has no text to read. PDF reading loads pdf.js from cdnjs the first time, so it needs an internet connection; `.fdx` and `.fountain` work offline.
 
 **The scene list (left)**
 
@@ -283,7 +285,7 @@ Everyone and everything that must look the same in every shot. Each item gets a 
 
 <p align="center"><img src="media/cast.jpg" width="860" alt="Cast and Locations: characters, locations and props with reference pictures"></p>
 
-The list fills itself: from the script's breakdown if you have one (characters, locations, props, vehicles, animals; clothing props are filed under Wardrobe), otherwise from the people and props on the stage. There are four sections, **Characters**, **Locations**, **Wardrobe** and **Props, vehicles & animals**, each with its own **Add** box ("Add a character…", "Add a location…", "Add a costume piece…", "Add a prop or vehicle…"). **S M L XL** at the top sets the thumbnail size, and a counter shows how many items have a reference.
+The list fills itself: from the script's breakdown if you have one (characters, locations, props, vehicles, animals; clothing props are filed under Wardrobe), otherwise from the people and props on the stage. There are four sections, **Characters**, **Locations**, **Wardrobe** and **Props, vehicles & animals**, each with its own **Add** box ("Add a character…", "Add a location…", "Add a costume piece…", "Add a prop or vehicle…"). **Fit S M L XL** at the top sets the thumbnail size, and a counter shows how many items have a reference.
 
 Each card:
 
@@ -312,7 +314,7 @@ A typical pass through the step:
 1. **Get the scene on the stage.** With a script, just pick the scene in the scene strip: its set, light, characters and vehicles appear. Or press **Build with AI** and describe it ("two cops question a cowboy on a horse outside a diner at magic hour"), or use **Build this scene on the stage** in ① Script, or add things by hand with **Add object**. To start from real material, use **Video → Stage** or **Photo → 3D**.
 2. **Pick the world.** **Set & weather** for the location and the elements; **Lighting** for the time of day, film lights or a classic setup.
 3. **Place and move the cast.** Click a person to select it, drag it to place it. Move the playhead and drag again: a key is set at the playhead and the person walks between keys. Use **Person**, **Interact** and **Capture motion** for poses, interactions and real performances.
-4. **Frame the shot.** Stay in **Shot cam**, pick a lens, and frame by dragging in the view, scrolling, or flying with W A S D. Move the playhead and reframe for a camera move; choose a **Rig** to give the move a real dolly, jib or handheld feel.
+4. **Frame the shot.** Stay in **Camera view**, pick a lens, and frame by dragging in the view, scrolling, or flying with W A S D. Move the playhead and reframe for a camera move; choose a **Rig** to give the move a real dolly, jib or handheld feel.
 5. **Add coverage.** **New setup** (Master, Wide, Two-shot, Over-the-shoulder A/B, Single A/B, Insert, POV) or **+ Shot** on the shot strip adds another camera on the same action.
 6. **Press Play** to watch the clay, then go to ④ Frame.
 
@@ -339,10 +341,10 @@ Each shot card in the row says where it stands: **no frame yet**, **painting…*
 
 | Control | What it does |
 |---|---|
-| **Image model** | **FLUX 3 Klein (local, recommended)**: steered by the stage picture and depth, and it takes the cast's reference pictures. **Krea 2 Turbo + stage depth (local, strict depth lock)**: holds the stage's depth very tightly, but takes no references. Other installed image models are listed after them. |
+| **Image model** | **FLUX 3 Klein · local · recommended**: steered by the stage picture and depth, and it takes the cast's reference pictures. **Krea 2 + depth · local · strict**: holds the stage's depth very tightly, but takes no references. Other installed image models are listed after them. |
 | **Prompt: describe the frame** | What's in the frame and how it should feel ("golden hour, dust, worn leather saddles…"). The Look tab adds camera, lens and style to it. This is the same text as the Look tab's **Describe the scene**. |
-| **Follow the clay** | How closely the frame sticks to the clay, from **strict** through **balanced (recommended)** to **free**. It drives the Krea 2 + stage depth path. |
-| **LoRA (character, product, style)** + **LoRA strength** | Add a LoRA to the image model, for a recurring character, a product or a house style. |
+| **Follow the clay** | How closely the frame sticks to the clay, from **strict** through **balanced (recommended)** to **free**. It works with both image models. |
+| **Style or character add-on** + **Add-on strength** | Add a LoRA to the image model, for a recurring character, a product or a house style. |
 | **Variations** | 1, 2 or 4 frames per click (default 4). |
 | **Quality** | **Fast**, **Standard**, **High**, **Max**: the number of steps. FLUX 3 Klein: 8, 20 (default), 28, 40. Krea 2: 6, 8 (default), 14, 20. CFG stays at 1: these models are distilled. |
 | **Generate frames** | Queue the variations for this shot. About 6 to 10 s a frame once the models are warm; a new shot also renders its clay passes first. Pressing it again adds more candidates. |
@@ -361,7 +363,7 @@ Then **⑤ Animate this frame →**.
 
 #### Paint Studio
 
-Paint Studio is a layered image editor with Soundstage's own Generative Fill (FLUX 3 Klein by default, crop and stitch: nothing outside your area changes). It opens inside ④ Frame, from a Cast reference's **Edit**, and on its own in the **Canvas** tab.
+Paint Studio is a layered image editor with Soundstage's own Generative Fill (FLUX 3 Klein by default, crop and stitch: nothing outside your area changes). It opens inside ④ Frame, from a Cast reference's **Edit**, and on its own in the **Paint Studio** tab.
 
 <p align="center"><img src="media/paint_studio.jpg" width="860" alt="Paint Studio: tool rail, layers, history, Generative Fill bar, variations"></p>
 
@@ -420,7 +422,7 @@ Keyboard: Cmd/Ctrl+Z / Shift+Cmd/Ctrl+Z undo and redo, Cmd/Ctrl+A select all, Cm
 |---|---|
 | **Starts from your frame** | The frame this shot will animate. |
 | **Video model** | **LTX-2.5 Layout-to-Render (local, follows your clay; recommended)**. Other installed image-to-video models are listed after it, and **MiniMax H3** if you installed it (see below). |
-| **Motion freedom** | How freely the video moves away from the clay: **exact** (copies the clay motion), **natural (recommended)** (real weight, same blocking), **loose** (more invention, framing may drift). Default 0.5. |
+| **Adherence to your blocking** | How closely the video follows the clay: **Loose** (more invention, framing may drift), **Balanced** (close, with a little freedom for gait and limbs), **Exact** (as close as LTX goes; the default). |
 | **Quality** | **Draft**, **Final** (the default) or **Hollywood**. Saved per shot, so a shot reopens on its own preset. See [Quality](#quality-draft-final-hollywood) below. |
 | **Advanced (LTX)** | Beside Quality: the full LTX controls on top of the preset (see below). |
 | **Sound (generated with the final)** | The sound effects ("hooves galloping on packed dirt, wind…"). Left empty, it is filled in from what's on the stage. |
@@ -442,7 +444,7 @@ Keyboard: Cmd/Ctrl+Z / Shift+Cmd/Ctrl+Z undo and redo, Cmd/Ctrl+A select all, Cm
 | **Final** (default) | 1984×1088 | 12 + 6 | about 8–9 min | Your keeper renders. |
 | **Hollywood** | 2624×1408 | 12 + 6 | about 15–17 min | Hero shots: real detail in skin, rain and panel lines, and fast motion stays coherent (a spinning car stays one car). |
 
-Each button shows its time. Renders write H.264 (CRF 18 / 14 / 12).
+Each button's tooltip shows its time. Renders write H.264 (CRF 18 / 14 / 12).
 
 1. Pick the shot in the strip, then click **Draft**, **Final** or **Hollywood** under **Quality**. The choice is kept with the shot.
 2. Optional: click **Advanced (LTX)** for resolution, two-stage on or off, frame rate and frame count, temporal x2, steps for each stage, the stage-2 start sigma, manual sigmas, sampler, CFG, seed, the layout IC-LoRA strength, one extra LoRA, decode tiles, and the codec: H.264 at a CRF, or a **ProRes 422 HQ** master beside an H.264 preview. **Reset to preset** clears your overrides.
@@ -450,9 +452,9 @@ Each button shows its time. Renders write H.264 (CRF 18 / 14 / 12).
 
 Older saved App workflows keep their old graph: open the Soundstage App template again to get the Hollywood wiring. Details: [quality.md](quality.md).
 
-**Lip sync: type the line.** A line pasted over a mouth that never heard it doesn't sync. So when you type or pick a **Dialogue line**, Soundstage turns on **Let the sound/dialogue drive the video** for you, and the final is rendered *from* the line (LTX audio-driven): the status line says "Lip sync on: the final is driven by the line, so the mouth follows the words." You can still untick it on purpose.
+**Lip sync: type the line.** A line pasted over a mouth that never heard it doesn't sync. So when you type or pick a **Dialogue line**, Soundstage turns on **Let the sound/dialogue drive the video** for you. With **Who speaks the line** on **Made with the video** (the default), LTX-2.5 speaks the line in the shot and the status line says "Lip sync on: LTX speaks the line in the shot, voice and lips together." With **A saved voice**, a Chatterbox voice reads the line and that audio drives the final. You can still untick it on purpose.
 
-Shot length comes from **Length** in ③ Set, frame size from **Aspect**, and the camera move from the keys and **Rig**. The video panel at the bottom shows the **Latest result** for the shot. Then **⑥ Review on the Ladder →**.
+Shot length comes from **Length** in ③ Set, frame size from **Aspect**, and the camera move from the keys and **Rig**. The video panel at the bottom shows the **Latest result** for the shot. Then **⑥ Review →**.
 
 **MiniMax H3 (optional).** If installed, **MiniMax H3 (local, looser blocking, rich motion, own sound; ~20+ min)** appears in **Video model**. It makes richer motion and its own sound in one pass, but follows your blocking only loosely, and a final takes 20 to 30 minutes. Drafts still preview with LTX. Extra options: **Use the clay as a motion reference** (slower, closer blocking) and **Add images** (up to 7 reference pictures). See [MODELS.md](../MODELS.md) for its files and region-limited license.
 
@@ -464,7 +466,7 @@ Shot length comes from **Length** in ③ Set, frame size from **Aspect**, and th
 
 <p align="center"><img src="media/step4_ladder.jpg" width="860" alt="Review on the Ladder"></p>
 
-Use it to check that the final still matches your blocking: the same people in the same places, the car going the right way, the camera doing what you keyed. A stage that hasn't been rendered yet says so on the picture. If something's off, right-click the shot in the strip and use **Edit original** to go straight back to the step that made it.
+Use it to check that the final still matches your blocking: the same people in the same places, the car going the right way, the camera doing what you keyed. A stage that hasn't been rendered yet says so on the picture. If something's off, right-click the shot in the strip (or its clip in the Cut editor, **Edit original**) to go straight back to the step that made it.
 
 The bar above the picture picks what you compare and how:
 
@@ -489,7 +491,7 @@ Every draft and final is checked on the CPU about 7 seconds after it lands. No m
 2. Look under the Ladder's bar (and on the Dailies cards and take rows): a chip says **✓ clean**, or what it found, such as **⚠ freeze 2.1–2.6 s** or **⚠ Sports car faces the wrong way**. It checks for black frames, frozen or stuttering stretches, jumps between frames, heavy smear, face drift, and cars whose lit lamps don't match the end that should face the camera.
 3. Click a chip and the Ladder jumps to that moment.
 4. Read **Follows blocking N%**: the take's camera move compared with the stage camera. Hover it for the breakdown. Press **Measure** to also score each actor against their stage position (SAM 3.1, through the queue). A camera-only score is never shown green, and "can't tell" never counts as a pass.
-5. Not happy? **Re-roll** renders it again with a new seed. It asks first and says how much GPU time it costs.
+5. On a flagged take, **Re-roll** renders it again with a new seed. It asks first and says how much GPU time it costs.
 
 Also new on every step button: a **Ready / Needs X** dot (the models it needs are installed, or which are missing, with a link to MODELS.md), and **$0 · about N min on your GPU** under the render buttons, from your own measured render times. Every App render carries its recipe in the MP4: drop a Soundstage MP4 on the stage and it offers to restore its set and shot.
 
@@ -507,7 +509,7 @@ Hand a shot to post, or the whole cut to an editor. The shot cards at the top sh
 | **Layer Packs for every shot with a final** | The same for every shot that has a final. |
 | **Cut → one video** | Every shot in the strip, trimmed and in order, with sound, joined into one MP4. Each clip uses its best render (Final with sound, then Final, Draft, the clay preview, the frame); a shot with nothing yet becomes a black slate of the right length. When it's done you get **Watch** and **Download**. |
 | **Render missing shots first** | Queue a Final for every shot in the cut that has none, then join the cut. |
-| **Open the editor (Avid / Premiere / Resolve / FCP / OTIO)** | Opens the Cut tab. |
+| **Open the editor** | Opens the Cut tab, for export to Avid, Premiere, Resolve, FCP or OTIO. |
 
 When a Layer Pack is ready, **Layers** and **Lite** download links appear in the tab bar, top right. **Lite** is the same pack without the per-frame PNG sequences (the ProRes 4444 movies, EXRs, camera and builders are kept).
 
@@ -516,8 +518,8 @@ When a Layer Pack is ready, **Layers** and **Lite** download links appear in the
 | Folder / file | Contents |
 |---|---|
 | `layers/<nn>_<name>/png/` | RGBA frames per actor, straight alpha, numbered from 1001 |
-| `matte/` | 16-bit mattes |
-| `<name>_4444.mov` | ProRes 4444 with alpha, timecode from 1001 |
+| `layers/<nn>_<name>/matte/` | 16-bit mattes |
+| `layers/<nn>_<name>/<name>_4444.mov` | ProRes 4444 with alpha, timecode from 1001 |
 | `aovs/depth/` | depth EXRs in metres, plus a viewable `depth_vis/` |
 | `camera/camera.json`, `camera/camera.chan` | the exact staged camera |
 | `dcc/ae/`, `dcc/nuke/`, `dcc/blender/`, `dcc/resolve/`, `dcc/photoshop/` | an After Effects `.jsx`, a Nuke script, a Blender script, a Resolve OTIO timeline and a layered PSD |
@@ -525,7 +527,7 @@ When a Layer Pack is ready, **Layers** and **Lite** download links appear in the
 
 #### The Cut editor
 
-The **Cut** tab (or **Editor** on the shot strip) is a real timeline over your coverage, with the keys editors expect.
+The **Edit** tab (the Cut; or **Editor** on the shot strip) is a real timeline over your coverage, with the keys editors expect.
 
 <p align="center"><img src="media/cut_editor.gif" width="860" alt="The Cut editor: a clip is split at the playhead, then dragged to the end of the timeline"></p>
 
@@ -548,7 +550,7 @@ The **Cut** tab (or **Editor** on the shot strip) is a real timeline over your c
 
 On the timeline: drag a clip to reorder, drag its edge to trim, Option/Alt-drag an edit to roll it (the viewer shows a two-up trim monitor). Mark in and out with I and O, clear with G.
 
-**Right-click any clip → Edit original.** This jumps back to whatever made the clip: **Edit the shot on the Stage (blocking, camera)**, **Repaint its frame (④ Frame)**, **Touch up its frame in Canvas**, **Re-render its motion (⑤ Motion)**, or **Compare on the Ladder (⑥ Review)**. Fix it there and the cut picks up the new render by itself, because the cut always plays each shot's latest render.
+**Right-click any clip → Edit original.** This jumps back to whatever made the clip: **Edit the shot on the Stage (blocking, camera)**, **Repaint its frame (④ Frame)**, **Touch up its frame in Paint Studio**, **Re-render its motion (⑤ Motion)**, or **Compare in ⑥ Review**. Fix it there and the cut picks up the new render by itself, because the cut always plays each shot's latest render.
 
 **Export to your NLE** (the **Export** buttons; all download straight from the browser):
 
@@ -584,7 +586,7 @@ The timeline has **V3** (motion graphics, once you add one) and **V2** (titles) 
 2. In the **Sound** row pick **SFX → A2**, **Music → A3** or **Dialogue → A1**, type it (a line as `MARA: Drove all night to find you`) and a length, then **Generate**. It's made by the App's own open-weights nodes (LTX-2.5 audio, Chatterbox) and lands on its track. **Import…** puts your own file there.
 3. **Auto-duck** dips the music −12 dB under every dialogue line (amber keys you can drag).
 4. **Beats** finds the music's tempo; trims snap to it, and **Cuts → beat** rolls each cut onto the nearest beat.
-5. Pick the loudness target: **Social −14 LUFS**, **EBU R128 −23** or **ATSC −24**. **Measure** reads the mix.
+5. Pick the loudness target: **Social −14 LUFS**, **EBU R128 −23 LUFS** or **ATSC A/85 −24 LKFS**. **Measure** reads the mix.
 
 **Titles, subtitles and a first cut**
 
@@ -620,13 +622,13 @@ The render draws the graphics at full resolution, frame by frame, with motion bl
 
 ### Dailies and the lined script
 
-The **Dailies** tab shows a scene's setups and takes the way an editor's bin does. It has no step of its own: open it from the tab bar.
+The **Takes** tab (Dailies) shows a scene's setups and takes the way an editor's bin does. It has no step of its own: open it from **Tools ▾** (the tab bar in the classic layout).
 
 <p align="center"><img src="media/dailies.jpg" width="860" alt="Dailies: setups and takes as a bin"></p>
 
 **Every render is a take.** The clay preview, each frame variation, each Draft and each Final of a setup become takes 1, 2, 3… Setups are slated like a real shoot: the first setup of scene 12 is **12**, then **12A**, **12B** (I and O are skipped). A clip is named **12B-3**: scene 12, setup B, take 3.
 
-The header shows `Dailies · Scene N`, the counts of setups, takes and circled takes, and three views: **Frame**, **List** and **ScriptSync**.
+The header shows `SC N ·` and the scene heading, the counts of setups, takes, circled and approved takes, and three views: **Frame**, **List** and **ScriptSync**.
 
 **Frame view**
 
@@ -645,7 +647,7 @@ Drag cards to arrange them (Option/Alt-drag places freely), arrow keys nudge, En
 
 **Scene bins.** Like an Avid project, there is one bin per script scene, named like **SC 03 – what happens**, in script order, each showing how much of it is approved.
 
-**List view** is a sortable table: Setup, Name, Type, Takes, Circled, Kind, Duration, Coverage. Click a column header to sort, Enter opens, C circles.
+**List view** is a sortable table: Setup, Name, Type, Takes, Circled, Status, Kind, Duration, Coverage. Click a column header to sort, Enter opens, C circles.
 
 #### ScriptSync (lined script)
 
@@ -729,7 +731,7 @@ The 18 lighting setups (**Light it like…**) live with the lights in ③ Set �
 
 ### The Stop button
 
-The red **■ Stop** at the end of the step bar is there whenever ComfyUI is rendering. With several jobs waiting it shows the count, **■ Stop (4)**.
+The red **■ Stop** at the end of the step bar is there whenever ComfyUI is rendering. With more than one job queued or running it shows the count, **■ Stop (4)**.
 
 Press it to **cancel every queued render and interrupt the one running now**. The status line confirms: "Stopped: 3 queued renders cancelled, the running one interrupted." Shots marked painting… or rendering… go back to normal, and anything already rendered stays.
 
@@ -752,7 +754,7 @@ Say what you want and the Director does it with the App's own controls.
 
 **What it can do:** cast and props, crate stacks, mounting people in cars and on horses, time, weather and lights, coverage setups, lenses, animated camera moves, rigs and hood mounts, car stunts and drive-through crashes, physics and bake, notes for an actor, the grade, script scenes, presets, frames, drafts and finals, approvals and the cut. Anything that uses the GPU always asks first, unless you said "go" ("render a draft of shot 2, go").
 
-**The model.** By default a local **Qwen3.5 4B** through ComfyUI's queue (offline). It can also use an Ollama model on your computer, which answers while the GPU is busy, or plain rules with no model. Voice uses the browser's speech recognition or **Whisper** on the server (offline, on the CPU). Pick these in the panel's settings. Details: [director.md](director.md).
+**The model.** By default a local **Qwen3.5 4B** through ComfyUI's queue (offline). It can also use an Ollama model on your computer, which answers while the GPU is busy, or plain rules with no model. Voice uses the browser's speech recognition or **Whisper** on the server (offline; on the GPU when there is one, else the CPU). Pick these in the panel's settings. Details: [director.md](director.md).
 
 **Drive it from Claude (MCP).** The same tools are an MCP server, `tools/soundstage_mcp.py` (Python standard library only).
 
@@ -813,9 +815,9 @@ Set pieces (a rebuilt location, walls, sidewalks, photo-built sets) never move f
 
 | View | Use it for |
 |---|---|
-| **Shot cam** | Framing. You look through the camera that renders. **Every orbit, pan, dolly or W A S D move edits the camera key at the playhead** (it makes one if there is none). |
+| **Camera view** (the shot cam) | Framing. You look through the camera that renders. **Every orbit, pan, dolly or W A S D move edits the camera key at the playhead** (it makes one if there is none). |
 | **Free view** (key **0**) | Looking around the set without touching the shot. The shot camera is drawn in the world: its path as a violet line, **a small numbered camera at every camera key** (body, lens and a frustum in the shot's aspect, showing where it stands and where it looks; the one at the playhead is highlighted), blue start and end arrows, the lens frustum at the playhead, and a label with its height and focal length. A picture-in-picture monitor (bottom left) shows the shot camera, with **Play the shot**, a scrubber and a button to **Look through the shot camera**. |
-| **Top** | A top-down plan of the set, bottom right: grid, set footprints, the cast with their paths and their keys (small squares), and the camera move coloured by time (◆ keys), with a lens wedge and an aim line for every key. It is the second way to edit the camera and the cast keys, and usually the easiest. Ride-along shots follow their vehicle here too. |
+| **Top view** | A top-down plan of the set, bottom right: grid, set footprints, the cast with their paths and their keys (small squares), and the camera move coloured by time (◆ keys), with a lens wedge and an aim line for every key. It is the second way to edit the camera and the cast keys, and usually the easiest. Ride-along shots follow their vehicle here too. |
 
 **Editing the camera move in Top view:**
 
@@ -881,7 +883,7 @@ The rig is deterministic, so the clay, the first frame and the video model all s
 
 ### Adding and arranging things
 
-**Add object** takes plain words: "dog", "police car", "man on a horse", "driver in a red car", "woman on a bench". The built-in library has people (man, woman, child), animals (dog, horse, cat, bird), vehicles (car, truck, police car, sports car, hatchback, motorboat, sailboat, catamaran, jet ski, bicycle, motorcycle), street and set dressing (tree, bush, house, bench, table, chair, street lamp, rock, crate, wall, campfire, flashlight, flying saucer), furniture (beds, sofa, armchair, tables, TV, kitchen counter, fridge, bathtub, toilet, washbasin, wardrobe, bookshelf, desk, rug, door, house plant) and primitives (cube, sphere, pyramid, cylinder, cone, set flat). The horse and the police, sports and hatchback cars are rigged CC0 models: the horse walks and gallops, the wheels turn. Anything else you type ("food truck") is designed as a clay stand-in by the local LLM, if Qwen3.5 is installed.
+**Add object** takes plain words: "dog", "police car", "man on a horse", "driver in a red car", "woman on a bench". The built-in library has people (man, woman, child), animals (dog, horse, cat, bird), vehicles (car, truck, police car, sports car, hatchback, motorboat, speedboat, fishing boat, sailboat, sailing dinghy, sailing yacht, catamaran, jet ski, canoe, kayak, rowboat, whitewater raft, log raft, bicycle, motorcycle), street and set dressing (tree, bush, house, bench, table, chair, street lamp, rock, crate, wall, campfire, flashlight, flying saucer), furniture (beds, sofa, armchair, tables, TV, kitchen counter, fridge, bathtub, toilet, washbasin, wardrobe, bookshelf, desk, rug, door, house plant) and primitives (cube, sphere, pyramid, cylinder, cone, set flat). The horse and the police, sports and hatchback cars are rigged CC0 models: the horse walks and gallops, the wheels turn. Anything else you type ("food truck") is designed as a clay stand-in by the local LLM, if Qwen3.5 is installed.
 
 **Type a room with its size** and you get a true-scale interior: "bedroom 4x3.5 m", "studio 6x4 m, ceiling 2.7". Rooms get walls, doors, a ceiling light and a first camera at eye height; Free view shows them as a cutaway.
 
@@ -890,7 +892,7 @@ In the **Object** tab:
 | Control | What it does |
 |---|---|
 | **Import 3D…** | Your own models: GLB/glTF, FBX (Mixamo animations play on the timeline), OBJ, PLY, STL, or a Gaussian splat (`.ply .spz .splat .ksplat .sog`). Splats show in **Color** view; a clay stand-in drives the passes. |
-| **Import an image as…** | **Floor plan → true-scale interior**, **Backdrop plate (behind everything)**, **Cut-out card** (removes the background, ~7 s), **Card as-is**, **Location photo → the whole 3D set** (~5 s), **Video clip → set + camera move** (Video → Stage), **Object → Gaussian splat** (~15 s), **Object → solid 3D mesh** (~12 s), **Remove the backdrop plate**. |
+| **Import an image as…** | **Floor plan → true-scale interior**, **Backdrop plate (behind everything)**, **Cut-out card** (removes the background, ~7 s), **Card as-is**, **Location photo → the whole 3D set** (~5 s), **Video → 3D set** (Video → Stage), **Object → Gaussian splat** (~15 s), **Object → solid 3D mesh** (~12 s), **Remove the backdrop plate**. |
 | **Export GLB** | Download the whole set as a `.glb` for Blender, Unreal, Unity, C4D. |
 | **Outliner** | A list of everything on the set, lights included. Pick one to select it. |
 | **Move** / **Rotate** / **Scale** | The gizmo mode (G, R, T). Move works on the floor plane; Rotate turns around the vertical. |
@@ -951,7 +953,7 @@ Tip: in ② Cast, **Generate** on a car makes a vehicle turnaround (front, rear,
 
 **Set & weather** (the **Set** tab):
 
-- **Set**: Plaza exterior, City street, Interior room, Studio cyc / green screen, Forest, Desert, Beach & ocean, Water tank, Open water (sea / lake), Stadium / ballfield, Underwater reef, Burning building (night), Airplane cabin, Airport runway, Above the clouds, Train carriage, Train station platform, Empty stage.
+- **Set**: Plaza exterior, City street, Interior room, Studio cyc / green screen, Forest, Desert, Beach & ocean, Water tank, Open water (sea / lake), Lake (calm, wooded shore, a dock), River rapids (whitewater), Stadium / ballfield, Underwater reef, Burning building (night), Airplane cabin, Airport runway, Above the clouds, Train carriage, Train station platform, Empty stage.
 - **Elements**: Clear, Rain, Snow, Fog / haze, Smoke, Dust, Fire sparks, Fire (flames, embers, smoke) on any set, with an **Amount**.
 - **Water**: the water level in the Water tank (0 to 4 m).
 
@@ -1036,7 +1038,7 @@ Select a prop and press **Physics** in its card. A small panel opens beside the 
 - What it hits: the floor, the set's walls, kerbs and buildings, Static props, and people and vehicles on their keyed paths (a car is a low body plus a cabin, so a crate rides up over the bonnet).
 - **Throw something:** key it moving (two keys or more). It follows its keys, then physics takes over at the last key at that speed.
 - The clay, the previz video and the LTX layout guide only ever play keys, so every render of a baked shot is the same. Simulate again (or Cmd/Ctrl+Z) to redo it.
-- The solver is a small built-in one (substepped XPBD rigid bodies, the position-based sibling of three-avbd's vertex block descent). Boxes and spheres only: a chair or a table falls as its bounding box.
+- The solver is a small built-in one (substepped XPBD rigid bodies, the position-based sibling of three-avbd's vertex block descent). Box-like props collide as boxes; a chair or a table collides as up to four convex hulls of its own mesh, not its bounding box.
 - **Live solver: CPU / GPU · beta.** At the bottom of the panel. **CPU** (XPBD) runs in every browser; **GPU · beta** solves live drags, car hits and drops on the graphics card with [three-avbd](https://github.com/sbobyn/three-avbd) (WebGPU), and falls back to the CPU, saying why, where WebGPU isn't available. Simulate & bake always runs on the CPU.
 
 <a id="live-3d-drag-climb-mount-carry"></a>
@@ -1057,7 +1059,7 @@ Physics stays live while you drag, so you can block by hand the way you'd move t
 3. **Walk people.** Drag a person: they turn to face where they're going and their legs swing.
 4. **Climb.** Drag a person against a crate or a table and they step up onto it. Drag them off the far side and they hop down.
 5. **Mount a horse.** Drag a person onto a horse and they swing up into the saddle; drag them off and they stand beside it, legs together.
-6. **Carry a prop.** Walk a person into a light box and press **C**: they pick it up. Carry it somewhere and press **C** again to put it down.
+6. **Carry a prop.** Drag a person into a light box and, still dragging, press **C**: they pick it up. Carry it somewhere and press **C** again to put it down.
 7. **Crash.** Key a car through a crate stack (or tell the Director *"have the car crash through the crates"*): the car throws them clear. **Simulate & bake** when you like it, so every render plays the same crash.
 
 Each drag is one undo step (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z redoes). Press on a selected person's body to grab the person; the move arrows still work where they stick out past them.
@@ -1112,11 +1114,13 @@ The take row under the panel shows **Name · seconds · frames a–b** with:
 
 ### Video → Stage
 
-**Video → Stage** turns a clip into an editable 3D scene in about a minute: the location, the camera move, the set pieces and the performer.
+**Video → Stage** (labelled **Video → 3D set** in the App) turns a clip into an editable 3D scene: the location, the camera move, the set pieces and the performer.
 
 <p align="center"><img src="media/video_to_stage.jpg" width="760" alt="A source clip next to the rebuilt 3D stage with a mocap clay actor"></p>
 
-Press **Video → Stage** in the tool rail (or **Import an image as… → Video clip → set + camera move**) and pick an `.mp4`, `.mov`, `.webm` or `.mkv`. The status line walks through the steps: sampling frames, measuring depth (Depth Anything 3), tracking the camera, reading the shot (the vision model), building the set, capturing the performance (SAM 3D Body).
+Press the yellow **Import video** button, **Video → 3D set** in the tool rail or **Import an image as… → Video → 3D set**, or drop a clip on the stage, and pick an `.mp4`, `.mov`, `.webm`, `.mkv`, `.mxf` or `.m4v`. A one-screen chooser asks what the clip is for: **Rebuild as a 3D set**, **Capture motion** (onto a person, as above) or **Edit with Ripple**. For a rebuild it also offers **Quality** (Fast, Standard, Max), **Stage** (**Replace the set** or **Add to it**) and, under **Advanced**, **Set scan** (on this server, a depth mesh of the first frame behind the set) and the vision model on or off. Press **Rebuild**. The chooser also shows a **Trim** filmstrip, **People** and lens fields, but the server doesn't use them yet: it rebuilds the whole clip, and it caps Quality at 24 depth samples.
+
+A progress card shows the server's current step: sampling frames, measuring depth (Depth Anything 3), tracking the camera, reading the shot (the vision model), building the set, capturing the performance (SAM 3D Body). **Cancel** stops waiting and leaves your set as it was; a job already on the server finishes there.
 
 What you get:
 
@@ -1125,7 +1129,9 @@ What you get:
 - **The camera move as keys** (up to 8) that you can drag in **Top** view to re-shoot it.
 - **The performer**, motion-captured, standing on the rebuilt floor where they stood.
 
-Notes: it **replaces the current stage**, so start a new setup or scene first if you want to keep what you have. It needs a Depth Anything 3 checkpoint; without Qwen3.5 you get the camera move only (no subjects or set pieces); without SAM 3D Body, no performer. Camera roll isn't tracked, and very fast whip pans can break the track. The clip is also saved in `input/` so the graph's Footage and Recast nodes can use it.
+The result card offers **Play the take** (when there is a performer), **Identical? Compare**, **Undo: bring the old set back** (after replacing a set) and **Shoot it → Frame**. The **Identical?** bar over the view puts the source clip over the stage (**Overlay**, **Wipe**, **Onion**, **Off**; keys 1 to 4). Its per-object **Match** score and one-click fixes (**Fit to plate**, **Swap**, **Nudge**, **Re-key**, **Lock camera**) need clip masks, which the current server doesn't write yet. Details: [video2stage.md](video2stage.md).
+
+Notes: **Replace the set** (the default on an empty stage) clears what is there; **Undo: bring the old set back** restores it. **Add to it** keeps your actors and adds the clip's camera as a new shot. It needs a Depth Anything 3 checkpoint; without Qwen3.5 you get the camera move only (no subjects or set pieces); without SAM 3D Body, no performer. Camera roll isn't tracked, and very fast whip pans can break the track. The clip is also saved in `input/` so the graph's Footage and Recast nodes can use it.
 
 <a id="interop-blender-unreal-maya-nuke"></a>
 
@@ -1192,10 +1198,12 @@ Keys only reach the 3D stage while the pointer is over it (or you clicked it), a
 | A / D | Fly left / right (D with something drivable selected: Drive mode) |
 | Q / E | Fly down / up |
 | Shift + W A S D Q E | Fly four times faster |
-| 0 | Toggle Shot cam / Free view |
+| 0 | Toggle Camera view / Free view |
+| F | Frame the selection (or everything, with nothing selected) |
 | P | Toggle Pose in 3D (select a person first) |
 | Esc | End pose mode; otherwise leave the full window |
 | G / R / T | Gizmo: move / rotate / scale (with something selected) |
+| L, Shift+L, I, O, K | On a selected vehicle: headlights, light bar, indicators, driver's door, key every part at the playhead |
 | Cmd/Ctrl+D | Duplicate the selection |
 | Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z | Undo / redo (up to 120 steps; a drag is one step) |
 
@@ -1255,7 +1263,7 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 | B or Cmd/Ctrl+B | Split |
 | X | Extract the I/O range |
 | M | Match action |
-| Delete / Backspace | Ripple delete |
+| Delete / Backspace | Delete the selected transition, title, graphic or subtitle; otherwise ripple delete |
 | [ / ] | Gain −1 / +1 dB on the selected audio clip |
 | = / - / \ | Zoom in / out / fit |
 | Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z (or Cmd/Ctrl+Y) | Undo / redo |
@@ -1304,6 +1312,7 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 | Anywhere in the App | / | Open the Director, cursor in the box |
 | Anywhere in the App | hold ` | Talk to the Director (let go to send) |
 | Director | Enter / Esc | Send, or apply the plan on an empty box / cancel the plan, then close |
+| Anywhere in the App | Shift+P | Start or stop Pitch Mode in the Director |
 | Anywhere in the App | V | Open Presets |
 | Anywhere in the App | ? | Keyboard shortcut sheet |
 | Act it out | Esc | Cancel the recording |
