@@ -8,6 +8,7 @@
 //
 //   const strip = new SceneStrip(host, { getScript, current, getShots, activeShot, onScene, onShot, shotStatus,
 //     setupInfo, onSetup, onUndo });
+// setupInfo() -> {label, changes, canUndo, undoLabel, actors}: with actors > 0 the setup button asks before it runs.
 //   strip.render();
 import { sceneChip, stepScene } from "./scenesetup.mjs";
 
@@ -61,10 +62,17 @@ const CSS = `
 .ss-scpick[data-setup=true] .car::before { content:"●"; font-size:8px; margin-right:3px; vertical-align:2px; }
 @keyframes ss-scdot { from { opacity:.35; } to { opacity:1; } }
 .ss-scstrip .noshot { font-size:11px; color:var(--ss-muted,#a9a3ad); }
-.ss-scstrip .act { flex:0 0 auto; display:flex; flex-direction:column; justify-content:center; gap:4px; max-width:300px; }
-.ss-stage .ss-scstrip .act button { border-radius:999px !important; padding:5px 12px !important; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px;
+/* The setup action has its own line under the tiles (never beside them: at 1600 px it sat on 1M, 1N and 1P, so a click
+   on a tile set the scene up). The strip grows by that line only while there is an action. */
+.ss-scstrip { flex-wrap:wrap; row-gap:6px; }
+.ss-scstrip.ss-scstrip.ss-scstrip.ss-scstrip[data-act=true] { height:auto !important; }
+.ss-scstrip[data-act=true] > .nav, .ss-scstrip[data-act=true] > .rail { align-self:stretch; }
+.ss-scstrip .act { order:9; flex:1 0 100%; display:flex; flex-direction:row; flex-wrap:wrap; align-items:center; gap:6px; min-width:0; padding-left:34px; }
+.ss-scstrip .act[hidden] { display:none; }
+.ss-scstrip .act .ask { font-size:12px; color:var(--ss-text,#f0efed); min-width:0; }
+.ss-stage .ss-scstrip .act button, .ss-scstrip .act button { border-radius:999px !important; padding:5px 12px !important; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:min(100%, 520px);
   border:1px solid rgba(255,255,255,.16) !important; background:rgba(255,255,255,.05) !important; }
-.ss-stage .ss-scstrip .act button.go { background:var(--ss-accent,#F2FF59) !important; color:#1a1420 !important; border-color:transparent !important; font-weight:700; }
+.ss-stage .ss-scstrip .act button.go, .ss-scstrip .act button.go { background:var(--ss-accent,#F2FF59) !important; color:#1a1420 !important; border-color:transparent !important; font-weight:700; }
 `;
 
 const TOD = { day: ["#ffd75a", "Day"], night: ["#6f86ff", "Night"], dawn: ["#ff9f7a", "Dawn"], dusk: ["#ff8a3d", "Dusk"], cont: ["#a9a3ad", "Continuous"] };
@@ -231,13 +239,23 @@ export class SceneStrip {
     // The setup action for the scene on the stage (and Undo right after one).
     const info = this.o.setupInfo?.() || null;
     const acts = [];
-    if (info?.canUndo) acts.push(h("button", { type: "button", title: `Undo: ${info.undoLabel || "the scene setup"}`, on: { click: () => this.o.onUndo?.() } }, "↶ Undo setup"));
-    if (info?.label && info.changes > 0) acts.push(h("button", { type: "button", class: info.canUndo ? "" : "go", title: `${info.label}: its set, time of day, characters and vehicles (adds what's missing, removes nothing you placed)`,
-      on: { click: () => this.o.onSetup?.() } }, info.label));
+    if (this._confirm && (this._confirm.k !== cur || !(info?.label && info.changes > 0))) this._confirm = null;
+    if (this._confirm) {
+      // The scene already has actors: say so, and set it up only on a second, deliberate click.
+      const n = info.actors || 0;
+      acts.push(h("span", { class: "ask", role: "status" }, `This scene already has ${n} actor${n === 1 ? "" : "s"} on the stage. Set it up anyway? It adds the script's cast, set and vehicles to them (Undo setup puts it back).`),
+        h("button", { type: "button", class: "go", "data-confirm": "yes", on: { click: () => { this._confirm = null; this.o.onSetup?.(); this.render(); } } }, "Set up anyway"),
+        h("button", { type: "button", "data-confirm": "no", on: { click: () => { this._confirm = null; this.render(); } } }, "Cancel"));
+    } else {
+      if (info?.canUndo) acts.push(h("button", { type: "button", title: `Undo: ${info.undoLabel || "the scene setup"}`, on: { click: () => this.o.onUndo?.() } }, "↶ Undo setup"));
+      if (info?.label && info.changes > 0) acts.push(h("button", { type: "button", class: info.canUndo ? "" : "go", title: `${info.label}: its set, time of day, characters and vehicles (adds what's missing, removes nothing you placed)${info.actors ? `\nThe stage already has ${info.actors} actor${info.actors === 1 ? "" : "s"}: you'll be asked first.` : ""}`,
+        on: { click: () => { if (info.actors > 0) { this._confirm = { k: cur }; this.render(); } else this.o.onSetup?.(); } } }, info.label));
+    }
     this.act.replaceChildren(...acts);
     this.act.hidden = !acts.length;
+    this.el.dataset.act = String(!!acts.length);
     // Folded, a dot on the scene button says "this scene can be set up" (the button itself is in the drop-down).
-    this.pick.dataset.setup = String(acts.some((b) => b.classList.contains("go")));
+    this.pick.dataset.setup = String(!this._confirm && acts.some((b) => b.classList.contains("go")));
     // Keep the active scene in view.
     const a = this.rail.querySelector('.chip[aria-current="true"]');
     if (a && this._lastCur !== cur) {

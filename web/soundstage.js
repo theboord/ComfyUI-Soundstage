@@ -3071,7 +3071,10 @@ function createStageWidget(node, inputName) {
       if (!sc) return null;
       let plan = null;
       try { plan = scenePlan(sc, { fresh: untouchedFresh() }); } catch { /* stage not ready */ }
-      return { label: plan?.label, changes: plan?.changes || 0, canUndo: !!lastSetup && lastSetup.key === liveKey, undoLabel: lastSetup?.label };
+      // A scene that already has actors asks before it is set up (the strip's confirm line); a fresh stage's stand-ins
+      // don't count, since the setup only swaps them for the cast.
+      const actors = untouchedFresh() ? 0 : (stage.toJSON().actors || []).length;
+      return { label: plan?.label, changes: plan?.changes || 0, canUndo: !!lastSetup && lastSetup.key === liveKey, undoLabel: lastSetup?.label, actors };
     },
     onSetup: () => { const sc = sceneById(liveKey); if (!sc) return; const fresh = untouchedFresh(); setUpScene(sc, { fresh }); if (fresh) freshSig = stageSig(stage.toJSON()); },
     onUndo: () => undoSetup(),
