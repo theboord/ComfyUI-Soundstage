@@ -96,6 +96,7 @@ export function buildSet(preset, mesh, opts = {}) {
         for (let i = 0; i < 5; i++) {
           const p = mesh(new THREE.CylinderGeometry(0.1, 0.12, 4.5, 10), col("post"));
           p.position.set(side * 5.6, 2.25, -22 + i * 11);
+          p.userData.knock = "lamp";   // a street lamp: world collisions knock it down (stage.mjs _setKnockables)
           g.add(p);
         }
       }
