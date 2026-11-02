@@ -4,6 +4,7 @@
 // union-control IC-LoRA, their voice in the sampler (0.3 audio noise mask, the lip-sync fix) and on the result.
 // "Keep the real footage" hands the clip to ⑤ Motion's Ripple edit instead.
 import { refOf, viewQuery, firstFrameRef, addTake, waitForOutput } from "../motion/ripple.mjs";
+import { matchesActor } from "../cast/shotcast.mjs";
 
 export const PRIVATE_INPUT = "soundstage_private/performances";
 export const QUALITIES = ["Draft", "Final", "Hollywood"];
@@ -11,11 +12,26 @@ export const CONSENT_TEXT = "I am the performer in this clip, or the performer a
 
 const safeName = (s) => (String(s || "take").replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 32) || "take");
 
-/** The capture job: Load Clip -> DWPose (body + hands + face) -> Save Performance (node "3" returns the asset JSON). */
-export function buildCaptureGraph({ source, name = "take", performer = "", consent = false, maxFrames = 241, character = "" }) {
+/** The node id of the voice change in the capture job (between the clip's sound ["1", 1] and Save's audio). */
+export const VOICE_NODE = "10";
+
+/** The capture job: Load Clip -> DWPose (body + hands + face) -> Save Performance (node "3" returns the asset JSON).
+ *  voice = a saved Character Voice name: the clip's sound goes through Chatterbox VC (node VOICE_NODE) first, so the
+ *  asset keeps the performer's timing, breaths and pauses in the character's voice. "" keeps the performer's voice. */
+export function buildCaptureGraph({ source, name = "take", performer = "", consent = false, maxFrames = 241, character = "", voice = "", voiceSeed = 0 }) {
   if (!source) throw new Error("bring in a clip first");
   if (!consent) throw new Error("tick the consent box first");
   if (!String(performer).trim()) throw new Error("say who the performer is");
+  const g = buildCaptureNodes({ source, name, performer, maxFrames, character });
+  const v = String(voice || "").trim();
+  if (v) {
+    g[VOICE_NODE] = { class_type: "SoundstageChatterboxVC", inputs: { audio: g[3].inputs.audio, voice_name: v, seed: Math.max(0, Math.floor(+voiceSeed || 0)) } };
+    g[3].inputs.audio = [VOICE_NODE, 0];
+  }
+  return g;
+}
+
+function buildCaptureNodes({ source, name, performer, maxFrames, character }) {
   return {
     1: { class_type: "SoundstageClipLoad", inputs: { source, fps: 24, start_frame: 0, max_frames: Math.max(9, Math.min(481, Math.floor(+maxFrames || 241))) } },
     2: { class_type: "DWPreprocessor", inputs: { image: ["1", 0], detect_hand: "enable", detect_body: "enable", detect_face: "enable",
@@ -23,6 +39,42 @@ export function buildCaptureGraph({ source, name = "take", performer = "", conse
     3: { class_type: "SoundstagePerformanceSave", inputs: { frames: ["1", 0], pose: ["2", 0], keypoints: ["2", 1], audio: ["1", 1], fps: ["1", 2],
       name: safeName(name), performer: String(performer).trim(), consent: true, source, character: String(character || "") } },
   };
+}
+
+/** A saved voice's name for a character: "Mara Voss" -> "MARA_VOSS" (voices.safe_name, upper case). */
+export const voiceNameFor = (name) => String(name || "").replace(/[^A-Za-z0-9 _-]+/g, "").trim().replace(/\s+/g, "_").slice(0, 48).toUpperCase();
+
+/** The ② Cast entry for a stage actor (by name), or null. */
+export function castEntryFor(items, actor) {
+  return (items || []).find((it) => (it.kind || "character") === "character" && matchesActor({ ...it, kind: "character" }, actor)) || null;
+}
+
+/**
+ * The Voice choice: keep the performer's voice, or convert it to the character's voice (the cast entry's `voice`, else a
+ * saved voice named after the character), then any other saved voice. -> {options: [{value, label}], value}.
+ * saved = GET /soundstage/voices, or null when the server can't list them (then the character's own name is offered).
+ * value is the cast entry's voice when it has one (the character's voice is the default once chosen), else "" (keep mine).
+ */
+export function voiceChoices({ who = "", castVoice = "", saved = [] } = {}) {
+  const list = Array.isArray(saved) ? saved : [];
+  const names = list.map((v) => v.name);
+  const guess = !Array.isArray(saved) ? (who ? voiceNameFor(who) : "")
+    : names.find((n) => n.toUpperCase() === voiceNameFor(who)) || list.find((v) => voiceNameFor(v.character) === voiceNameFor(who))?.name || "";
+  const mine = castVoice || guess;
+  const options = [{ value: "", label: "Keep my voice" }];
+  if (mine) options.push({ value: mine, label: `Convert to ${who || mine} (${mine})${Array.isArray(saved) && !names.includes(mine) ? " · not saved yet" : ""}` });
+  for (const v of list) if (v.name !== mine) options.push({ value: v.name, label: `Convert to ${v.character && voiceNameFor(v.character) !== v.name ? `${v.character} (${v.name})` : v.name}` });
+  return { options, value: castVoice || "" };
+}
+
+/** GET /soundstage/voices -> [{name, character, duration_s, owner}], or null when the server has no such route. */
+export async function savedVoices(api) {
+  try {
+    const r = await api.fetchApi("/soundstage/voices");
+    if (!r.ok) return null;
+    const j = await r.json();
+    return Array.isArray(j?.voices) ? j.voices : null;
+  } catch { return null; }
 }
 
 /** The render job: SoundstagePerformance -> SaveVideo (node "2"). */
@@ -79,7 +131,7 @@ export function captureSummary(a) {
   if (!a) return "";
   const face = Math.round((a.face_seen || 0) * 100);
   const parts = [`${(+a.seconds || 0).toFixed(1)} s`, `face read on ${face}% of frames`];
-  if (a.has_audio) parts.push(`voice kept · ${(a.onsets || []).length} mouth openings`);
+  if (a.has_audio) parts.push(`${a.voice ? `voice converted to ${a.voice}` : "voice kept"} · ${(a.onsets || []).length} mouth openings`);
   else parts.push("no sound in this clip");
   return parts.join(" · ");
 }
@@ -128,6 +180,7 @@ const CSS = `
   background:rgba(255,255,255,.06); color:inherit; }
 .ss-perf button.primary { background:#f2ff59; color:#111; border-color:#f2ff59; font-weight:650; }
 .ss-perf button:disabled { opacity:.45; cursor:default; }
+.ss-perf select { font:inherit; background:#27272a; color:inherit; border:1px solid rgba(255,255,255,.14); border-radius:8px; padding:6px 8px; max-width:100%; }
 .ss-perf input[type=text] { font:inherit; background:#27272a; color:inherit; border:1px solid rgba(255,255,255,.14); border-radius:8px; padding:6px 8px; }
 .ss-perf .consent { display:flex; gap:8px; align-items:flex-start; padding:8px 10px; border-radius:10px; background:rgba(242,255,89,.05);
   border:1px solid rgba(242,255,89,.18); }
@@ -189,7 +242,7 @@ async function waitText(api, pid, outId, onTick) {
 }
 
 /** The "Use a real performance…" dialog for one character. Resolves when closed. */
-export function openPerformance({ api, stage, actorId, pipeline = () => null, onStatus = () => {} }) {
+export function openPerformance({ api, stage, actorId, pipeline = () => null, cast = () => null, onStatus = () => {} }) {
   if (!document.getElementById("ss-perf-css")) document.head.append(Object.assign(document.createElement("style"), { id: "ss-perf-css", textContent: CSS }));
   const actor = stage.state.actors.find((a) => a.id === actorId);
   const who = actor?.name || "this character";
@@ -205,6 +258,22 @@ export function openPerformance({ api, stage, actorId, pipeline = () => null, on
   const performer = el("input", { type: "text", placeholder: "Performer: your name, or the actor who agreed", value: asset?.consent?.performer || "" });
   const consent = el("input", { type: "checkbox" });
   const clay = el("input", { type: "checkbox" });
+  // Voice: keep the performer's own voice, or convert it to the character's voice (stored on the ② Cast entry).
+  const castPanel = () => { try { return cast() || null; } catch { return null; } };
+  const castItem = () => { const c = castPanel(); try { return c ? castEntryFor(c.items(), actor) : null; } catch { return null; } };
+  const voiceSel = el("select", { "aria-label": "Voice", title: "Your timing, breaths and pauses are kept; only the voice changes (Chatterbox VC on the GPU)" });
+  const fillVoices = (saved) => {
+    const cur = voiceSel.value, { options, value } = voiceChoices({ who, castVoice: castItem()?.voice || "", saved });
+    voiceSel.replaceChildren(...options.map((o) => el("option", { value: o.value }, o.label)));
+    voiceSel.value = [cur, value].find((v) => v && options.some((o) => o.value === v)) || "";
+  };
+  fillVoices([]);
+  savedVoices(api).then(fillVoices);
+  voiceSel.onchange = () => {
+    const it = castItem(), c = castPanel();
+    if (voiceSel.value && it && c?.setVoice) c.setVoice(it.key, voiceSel.value);   // the character's voice from now on
+    if (asset && voiceSel.value !== (asset.voice || "")) say("Voice changed: Read the performance again to hear it.");
+  };
   const mouth = el("div", { hidden: true });
   const summary = el("div", { class: "sub" });
   const recBtn = el("button", { type: "button" }, "● Record (camera + mic)");
@@ -222,6 +291,7 @@ export function openPerformance({ api, stage, actorId, pipeline = () => null, on
     view,
     el("label", { class: "consent" }, consent, el("span", {}, CONSENT_TEXT)),
     el("div", { class: "row" }, performer, el("label", { class: "row tip", title: "Also run SAM 3D Body so the clay figure moves like the actor (best with a head-to-toe clip)" }, clay, "Also drive the clay body (SAM 3D Body)")),
+    el("div", { class: "row" }, el("span", { class: "sub" }, "Voice"), voiceSel, el("span", { class: "tip" }, "Your timing is kept: the converted voice lines up with your mouth.")),
     el("div", { class: "row" }, capBtn, el("span", { class: "grow" }), rippleBtn, applyBtn),
     mouth, summary, renderRow, status,
     el("div", { class: "row" }, el("span", { class: "grow" }), closeBtn));
@@ -300,9 +370,13 @@ export function openPerformance({ api, stage, actorId, pipeline = () => null, on
   capBtn.onclick = async () => {
     capBtn.disabled = true;
     try {
-      const pid = await queue(api, buildCaptureGraph({ source: clipRef, name: clipName || who, performer: performer.value, consent: consent.checked, character: who }));
-      say("Reading body, hands and face on the GPU (DWPose)…");
-      const a = await waitText(api, pid, "3", (s) => say(`Reading body, hands and face on the GPU (DWPose)… ${s} s`));
+      const voice = voiceSel.value;
+      const pid = await queue(api, buildCaptureGraph({ source: clipRef, name: clipName || who, performer: performer.value, consent: consent.checked, character: who,
+        voice, voiceSeed: 0 }));
+      const doing = `Reading body, hands and face on the GPU (DWPose)${voice ? ` and converting the voice to ${voice}` : ""}…`;
+      say(doing);
+      const a = await waitText(api, pid, "3", (s) => say(`${doing} ${s} s`));
+      if (voice) a.voice = voice;
       showAsset(a);
       say("Here is what was read: the skeleton and face landmarks over the actor, with their voice. Apply to shot when it looks right.");
     } catch (e) { say(`Performance capture failed: ${e.message}`); } finally { ready(); }
@@ -370,7 +444,7 @@ export function openPerformance({ api, stage, actorId, pipeline = () => null, on
 }
 
 /** Hook: a "Real performance…" button beside Motion capture's Act it out, on the selected person's panel. */
-export function mountPerformance(posePanel, { api, stage, pipeline = () => null, onStatus = () => {} } = {}) {
+export function mountPerformance(posePanel, { api, stage, pipeline = () => null, cast = () => null, onStatus = () => {} } = {}) {
   if (!posePanel?.mcAct || posePanel.perfBtn) return null;
   const btn = posePanel._tool("scan-eye", "Real performance…", "Use a real performance: record or import an actor with their voice; their body, face and lip sync drive this character");
   btn.dataset.act = "performance";
@@ -378,7 +452,7 @@ export function mountPerformance(posePanel, { api, stage, pipeline = () => null,
     const id = posePanel.id || stage.selected;
     if (!id) { onStatus("Select a person first."); return; }
     if (!api) { onStatus("Real performances need the ComfyUI server (DWPose and LTX run on the GPU)."); return; }
-    openPerformance({ api, stage, actorId: id, pipeline, onStatus });
+    openPerformance({ api, stage, actorId: id, pipeline, cast, onStatus });
   });
   posePanel.mcAct.after(btn);
   posePanel.perfBtn = btn;
