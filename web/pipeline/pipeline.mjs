@@ -50,6 +50,10 @@ export function frameLockFor(c) {
 }
 /** The depth_lock a candidate was painted with (0 = off: every frame from before LOOK_START 3, and Paint Studio frames). */
 export const depthLockFor = (c) => (!c || c.edited || c.seed == null || (c.ls || 0) < 3 ? 0 : +c.dlock || 0);
+/** The router's Krea 2 Turbo option (the frame node's "Strict" depth lock paints on it). */
+export const isKreaTurbo = (m) => /^Krea 2 Turbo/.test(String(m || ""));
+/** "off" | "light" (Krea 2 depth pass over the Klein frame) | "strict" (Krea 2 paints the frame on the depth pass). */
+export const depthModeOf = (c) => (depthLockFor(c) > 0 ? (isKreaTurbo(c?.model) ? "strict" : "light") : "off");
 /** The stage_denoise a candidate was painted with (1 = the pre-lock way). */
 export const frameDenoiseFor = (c) => (frameLockFor(c) ? (c?.lock ?? FRAME_DENOISE) : 1);
 
@@ -63,12 +67,17 @@ const STEPS = [
   { k: "deliver", n: 7, label: "Deliver", short: "Deliver", view: "deliver", hint: "Layers for VFX, the cut as one video, NLE export." },
 ];
 const STILL_KREA = "__krea_depth__";
-// ④ Frame "Lock to the stage depth" (soundstage/look/frame_lock.py VERSION 3; numbers: docs/decisions.md 2026-11-02)
-const DEPTH_TITLE = "After FLUX 3 Klein paints the frame, Krea 2 repaints it at half strength, held to your stage's exact depth pass " +
-  "(Krea2 depth-control LoRA): cars, horses and people snap back to their clay silhouettes and sizes, and nothing can stand where " +
-  "the stage is empty. About 10-20 s more per frame. Frames you already picked keep the way they were painted.";
-const DEPTH_NOTE_ON = "Krea 2 depth pass on the Klein frame";
-const DEPTH_NOTE_OFF = "off: Klein alone";
+// ④ Frame "Lock to the stage depth" (soundstage/look/frame_lock.py VERSION 3; numbers: docs/decisions.md 2026-11-02,
+// share/OneClick/C). Off is the default: neither lock beat Klein on all three test shots.
+const DEPTH_TITLE = "Hold the frame to your stage's exact depth pass with Krea 2 and its depth-control LoRA.\n" +
+  "Light: Klein paints the frame, then Krea 2 repaints it at half strength on the depth pass. Real surfaces (clothes, headlights), " +
+  "keeps your cast pictures; silhouettes move only a little. It can add small far-off people (the check flags them).\n" +
+  "Strict: Krea 2 paints the frame itself on the depth pass. Best when subjects stand out from their surroundings in depth " +
+  "(horses against the sky: on their marks where Klein made them 3x too big); weak when a car sits on a road at its own depth. " +
+  "Cast pictures are not used.\nAbout 10-30 s more per frame. Frames you already picked keep the way they were painted.";
+const DEPTH_MODES = [["off", "Off"], ["light", "Light"], ["strict", "Strict"]];
+const DEPTH_NOTES = { off: "Klein alone", light: "Krea 2 depth pass over the Klein frame",
+  strict: "Krea 2 paints on the depth pass; no cast pictures" };
 const VIDEO_L2R = "__ltx_l2r__";
 // Optional second engine: MiniMax H3 through the video picker (router key starts with this). LTX stays the default.
 const H3_KEY = "MiniMax H3 · local";
@@ -501,9 +510,10 @@ export class Pipeline {
             h("label", { class: "f" }, "Prompt: describe the frame (the Look tab adds camera, lens and style to it)", f.desc),
             // a div, not a label: it holds two labelled check boxes of its own (the canvas panel moves this whole block)
             h("div", { class: "f" }, h("span", { class: "row" }, "Follow the clay", f.followOut), f.follow,
-              h("label", { class: "ss-chk status", title: DEPTH_TITLE },
-                f.depthLock = h("input", { type: "checkbox", on: { change: () => this._applyStillModel() } }),
-                h("span", {}, "Lock to the stage depth", f.depthNote = h("small", {}))),
+              h("div", { class: "ss-chk ss-dlock status", title: DEPTH_TITLE },
+                h("span", {}, "Lock to the stage depth", f.depthNote = h("small", {})),
+                f.depthSeg = h("span", { class: "seg row" }, ...DEPTH_MODES.map(([k, label]) => h("button", { type: "button", "data-k": k,
+                  "aria-pressed": String(k === "off"), on: { click: () => this._setDepthMode(k) } }, label)))),
               h("label", { class: "ss-chk status", title: "Each new frame is compared with your clay (SAM 3.1 against the stage's ID pass): object count, silhouettes, extra objects. A flagged frame is painted again with a new seed, at most twice per Generate." },
                 f.autoReroll = h("input", { type: "checkbox", checked: "" }),
                 h("span", {}, "Check each frame against the clay; re-roll extra or missing objects"))),
@@ -861,7 +871,9 @@ export class Pipeline {
       f.model.value = klein;
       this._applyStillModel();
     } else {
-      f.model.value = usePicker ? (this.w(9081, "model")?.value || STILL_KREA) : STILL_KREA;
+      const cur = this.w(9081, "model")?.value;
+      // Strict depth lock leaves Krea 2 Turbo on the frame node: the picker still reads FLUX 3 Klein
+      f.model.value = usePicker ? ((isKreaTurbo(cur) ? klein : cur) || STILL_KREA) : STILL_KREA;
     }
     const loraW = this.w(9081, "lora");
     if (loraW && !f.lora.options.length) {
@@ -878,7 +890,10 @@ export class Pipeline {
     if (dn != null) f.follow.value = String(dn);
     this._sliderFor = f.model.value === STILL_KREA;
     f.followOut.textContent = this._followLabel();
-    if (f.depthLock && f.model.value !== STILL_KREA) f.depthLock.checked = +(this.w(9081, "depth_lock")?.value || 0) > 0;
+    if (this._dmode == null) {
+      const saved = this.node(9081)?.properties?.ssDepthMode;
+      this._dmode = saved || (+(this.w(9081, "depth_lock")?.value || 0) > 0 ? (isKreaTurbo(this.w(9081, "model")?.value) ? "strict" : "light") : "off");
+    }
     this._syncDepthLock();
     f.desc.value = this.ctx.look?.state?.description || "";
     // A clip brought in with Video → Stage: start the prompt from what the vision model saw (who, and the set), so the
@@ -919,21 +934,43 @@ export class Pipeline {
     queueMicrotask(() => { try { this._drawShotCast(); } catch { /* view not built */ } });
   }
 
-  /** "Lock to the stage depth" (soundstage/look/frame_lock.py VERSION 3): a Krea 2 + depth-control pass on the Klein
-   *  frame, held to the stage's exact depth pass. Krea 2 + depth is always depth-held, so the box is ticked and fixed
-   *  there; a ComfyUI that predates the lock (no depth_lock on the frame node) shows why it is off. */
+  /** "Lock to the stage depth" (soundstage/look/frame_lock.py VERSION 3) for FLUX 3 Klein frames: Off, Light (a Krea 2
+   *  + depth-control pass over the Klein frame, depth_lock) or Strict (the frame node paints on Krea 2 Turbo from the
+   *  blurred Color pass, held to the depth). Krea 2 + depth is always depth-held; a ComfyUI that predates the lock (no
+   *  depth_lock on the frame node) shows why the choice is off. */
   _syncDepthLock() {
     const f = this.f;
-    if (!f?.depthLock) return;
+    if (!f?.depthSeg) return;
     const krea = f.model.value === STILL_KREA, has = !!this.w(9081, "depth_lock");
-    const kleinish = /^FLUX 3 Klein/.test(f.model.value) || /^Krea 2 Turbo/.test(f.model.value);
-    f.depthLock.disabled = krea || !has || !kleinish;
-    if (krea) f.depthLock.checked = true;
-    else if (!has || !kleinish) f.depthLock.checked = false;
-    if (!krea && has) this.set(9081, "depth_lock", f.depthLock.checked && kleinish ? DEPTH_LOCK : 0);
-    f.depthNote.textContent = krea ? "always, with Krea 2" : !has ? "needs ComfyUI restarted (new frame node)" :
-      !kleinish ? "FLUX 3 Klein only" : f.depthLock.checked ? DEPTH_NOTE_ON : DEPTH_NOTE_OFF;
+    const klein = /^FLUX 3 Klein/.test(f.model.value), turbo = this._kreaTurboKey();
+    const usable = !krea && has && klein;
+    let mode = this._dmode || "off";
+    if (mode === "strict" && !turbo) mode = "off";
+    for (const b of f.depthSeg.children) {
+      b.disabled = !usable || (b.dataset.k === "strict" && !turbo);
+      b.setAttribute("aria-pressed", String(usable && b.dataset.k === mode));
+    }
+    if (usable) {
+      this.set(9081, "depth_lock", mode === "off" ? 0 : DEPTH_LOCK);
+      this.set(9081, "model", mode === "strict" ? turbo : f.model.value);
+    }
+    f.depthNote.textContent = krea ? "always on with Krea 2 + depth" : !has ? "needs ComfyUI restarted (new frame node)" :
+      !klein ? "FLUX 3 Klein only" : DEPTH_NOTES[mode];
   }
+
+  _setDepthMode(k) {
+    this._dmode = k;
+    const n = this.node(9081);
+    if (n) (n.properties ||= {}).ssDepthMode = k;
+    this._applyStillModel();
+  }
+
+  _kreaTurboKey() {
+    const vals = this.w(9081, "model")?.options?.values || [];
+    return (Array.isArray(vals) ? vals : []).map((v) => (typeof v === "string" ? v : v?.key)).find(isKreaTurbo) || null;
+  }
+
+  _kleinKey() { return [...(this.f?.model?.options || [])].find((o) => /^FLUX 3 Klein/.test(o.value))?.value; }
 
   /** dlock for a new candidate: what the frame node will paint with. */
   _depthLockNow() {
@@ -964,8 +1001,9 @@ export class Pipeline {
         this._tick(f.status, `Queueing ${n > 1 ? `${shot.name} (${si + 1}/${n}), ` : ""}frame ${i + 1}/${f.count}${i === 0 ? ": capturing your clay passes for the whole shot first" : ""}…`);
         this.ctx.setLookStart?.(true);
         this.ctx.setFrameLock?.(true);
-        await this.queueAt(2, { seed, model: f.model.value, seedNode, refFiles, ls: LOOK_START, lock: krea ? undefined : +f.follow.value,
-          dlock: krea ? undefined : this._depthLockNow() });
+        // the frame node's own model: Strict paints on Krea 2 Turbo, so the pick reproduces on it
+        await this.queueAt(2, { seed, model: krea ? f.model.value : (this.w(9081, "model")?.value || f.model.value), seedNode, refFiles,
+          ls: LOOK_START, lock: krea ? undefined : +f.follow.value, dlock: krea ? undefined : this._depthLockNow() });
       }
     };
     try {
@@ -1078,9 +1116,9 @@ export class Pipeline {
       const krea = c.model === STILL_KREA;
       this.set(9082, "switch", !krea);
       if (!krea) this.set(9081, "model", c.model);
-      this.f.model.value = c.model;
+      this.f.model.value = isKreaTurbo(c.model) ? (this._kleinKey() || c.model) : c.model;
     }
-    if (this.f?.depthLock && !c.edited && c.model !== STILL_KREA) { this.f.depthLock.checked = depthLockFor(c) > 0; this._syncDepthLock(); }
+    if (this.f?.depthSeg && !c.edited && c.model !== STILL_KREA) { this._dmode = depthModeOf(c); this._syncDepthLock(); }
     if (c.seed != null) this.set(c.seedNode || 9056, "seed", c.seed);
     try { this.ctx.ladder.setSource(2, "image", c.url); } catch { /* ladder not ready */ }
     this._drawCandidates();
