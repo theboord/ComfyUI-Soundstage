@@ -23,13 +23,12 @@ export function badgeOf(res) {
 }
 
 export const flagged = (res) => res?.verdict === "flag";
-/** A flagged or loose FLUX 3 Klein frame painted without "Lock to the stage depth": the next thing to try, in words.
- *  "" when the lock was on (a re-roll is all that is left) or the frame matches. */
+/** A FLUX 3 Klein frame painted without "Lock to the stage depth" whose actors miss their marks: the next thing to try.
+ *  Not for ghosts (an extra object): neither lock stopped them in the test (share/OneClick/C). "" otherwise. */
 export function depthTip(res, dlock) {
   if (!res || dlock > 0 || !(res.verdict === "flag" || res.verdict === "loose")) return "";
-  const ghost = (res.extra || []).length > 0;
-  return ghost ? " Tick “Lock to the stage depth”: nothing can stand where the stage is empty." :
-    " Tick “Lock to the stage depth” to hold every silhouette to its clay.";
+  const off = (res.actors || []).some((a) => a.status === "off" || a.status === "loose");
+  return off ? " If it keeps missing the marks, try “Lock to the stage depth”: Strict." : "";
 }
 /** Rank for picking the best automatic frame: clean first, then by silhouette score. */
 export const rank = (res) => (!res || res.pending || res.error ? 1 : res.verdict === "ok" ? 3 : res.verdict === "loose" ? 2 : 0) + (res?.score || 0) * 0.5;
@@ -83,4 +82,7 @@ export const FRAMECHECK_CSS = `
 .ss-chk > span { flex:1; min-width:0; }
 .ss-chk small { display:block; opacity:.72; font-size:11px; }
 .ss-chk:has(input:disabled) { cursor:default; }
+.ss-dlock { flex-wrap:wrap; align-items:center; cursor:default; }
+.ss-dlock > span:first-child { flex:1 1 140px; }
+.ss-dlock .seg { flex:none; }
 `;

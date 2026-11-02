@@ -371,11 +371,12 @@ def test_klein_depth_lock_needs_the_stage_depth():
 
 @pytest.mark.skipif(not OBJECT_INFO, reason="no object_info snapshot")
 def test_krea_depth_lock_starts_from_the_blurred_color_pass_at_stage_denoise():
-    m, p = _frame_p("open.krea_2_turbo", params={"depth_lock": 0.5, "stage_denoise": 0.88})
+    m, p = _frame_p("open.krea_2_turbo", params={"depth_lock": 0.5, "stage_denoise": 0.88}, steps=20, cfg=1.0)
     g = FakeGraph(); A.krea2(g, m, p)
     assert check_graph(g) == []
     ks = next(n for n in g.nodes.values() if n.class_type == "KSampler")
     assert ks.inputs["denoise"] == 0.88
+    assert ks.inputs["steps"] == 8 and ks.inputs["cfg"] == 1.0          # Krea's own schedule, not the App's Klein steps
     scales = [n.inputs["scale_by"] for n in g.nodes.values() if n.class_type == "ImageScaleBy"]
     assert scales[0] == pytest.approx(1 / 16) and scales[1:] == [8, 2]
     assert "Krea2ControlApply" in _classes(g) and "Krea2EditModelPatch" not in _classes(g)
