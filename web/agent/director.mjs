@@ -422,6 +422,17 @@ export const EXEC = {
     return { ok, said: ok ? `${r.name} is ${vehicle ? "at the wheel of" : "on"} the ${h.name.toLowerCase()}.` : `${r.name} can't get on the ${h.name}.` };
   },
 
+  /** Head and gaze blocking (web/stage/gaze.mjs): the turn starts at `time` (s), from the first frame without one. */
+  async gaze(a) {
+    const fps = this.stage.state?.shot?.fps || 24, frame = Math.round((a.time || 0) * fps);
+    const keys = this.stage.setGaze?.(a.who_id, frame, a.at_id);
+    if (!keys) return { ok: false, said: `Couldn't find ${a.who}.` };
+    const at = { camera: "into the camera", ahead: "ahead, head steady", left: "off to the left", right: "off to the right",
+      down: "down", up: "up" }[a.at_id] || `at ${a.at}`;
+    return { ok: true, said: frame ? `${a.who} turns to look ${at} at ${(frame / fps).toFixed(1)} s; the clay shows the head turn.`
+      : `${a.who} looks ${at} from the first frame.` };
+  },
+
   async dismount(a) {
     this.stage.unmount(a.target_id);
     return { ok: true, said: `${a.target} is out and on foot.` };

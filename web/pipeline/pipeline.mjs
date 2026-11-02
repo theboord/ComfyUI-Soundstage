@@ -9,13 +9,22 @@ import { RippleControls } from "../motion/ripple.mjs";
 import { LtxAdvanced, ADHERENCE, ADHERENCE_NAMES, adherenceKnobs } from "../motion/ltxadvanced.mjs";
 import { castPool, shotSelection, pickRefs, refLines, refLabel, shotKind, refViewParams, REF_LIMIT } from "../cast/shotcast.mjs";
 import { downloadDCCKit } from "../stage/interop/exportdcc.mjs";
+import { FrameCheck, badgeOf, flagged, rank, REROLLS, FRAMECHECK_CSS } from "./framecheck.mjs";
 
 /** Version of the still's start image (soundstage/look/look_start.py). Frames record it; older frames reproduce
- * from the plain colour pass. */
-export const LOOK_START = 1;
+ * from the plain colour pass. 2 = the frame follows the stage exactly (soundstage/look/frame_lock.py): Klein starts
+ * from the Color pass (stage_denoise) and the prompt states frame 1 as measured on the ID pass. */
+export const LOOK_START = 2;
+export const FRAME_DENOISE = 0.9;   // soundstage/look/frame_lock.py DEFAULT_DENOISE: Klein's default "Follow the clay"
 export function lookStartFor(c) {
-  return !c || !!c.edited || c.seed == null || (c.ls || 0) >= LOOK_START;
+  return !c || !!c.edited || c.seed == null || (c.ls || 0) >= 1;
 }
+/** Was this frame painted with the stage lock (Nov 1 on)? Older ones re-render from noise with the old prompt. */
+export function frameLockFor(c) {
+  return !c || !!c.edited || c.seed == null || (c.ls || 0) >= 2;
+}
+/** The stage_denoise a candidate was painted with (1 = the pre-lock way). */
+export const frameDenoiseFor = (c) => (frameLockFor(c) ? (c?.lock ?? FRAME_DENOISE) : 1);
 
 const STEPS = [
   { k: "script", n: 1, label: "Script", short: "Script", view: "script", hint: "Bring in your screenplay: scenes, breakdown, director's notes. Optional." },
@@ -250,6 +259,11 @@ export class Pipeline {
     this.inflight = new Map();       // promptId -> {sid, step} while a render is queued or running
     this.views = { frame: this._frameView(), motion: this._motionView(), deliver: this._deliverView() };
     this.pending = new Map();        // promptId -> {seed, model} for Frame variations
+    // The first-frame check (web/pipeline/framecheck.mjs): a badge per candidate, flagged ones re-rolled.
+    this.fc = new FrameCheck(ctx.api);
+    this._rerolls = {};               // shotId -> automatic re-rolls left in the current Generate
+    this._autoPick = {};              // shotId -> true while its pick is the App's, not yours
+    if (!document.getElementById("ss-framecheck-css")) document.head.append(h("style", { id: "ss-framecheck-css" }, FRAMECHECK_CSS));
     ctx.onRung((ev) => this._onRung(ev));
     const settle = (ev) => { if (this.inflight.delete(ev.detail?.prompt_id)) this._drawShotRows(); };
     for (const t of ["execution_success", "execution_error", "execution_interrupted"]) ctx.api?.addEventListener?.(t, settle);
@@ -450,7 +464,10 @@ export class Pipeline {
           h("div", { class: "card" },
             h("label", { class: "f" }, "Image model", f.model),
             h("label", { class: "f" }, "Prompt: describe the frame (the Look tab adds camera, lens and style to it)", f.desc),
-            h("label", { class: "f" }, h("span", { class: "row" }, "Follow the clay", f.followOut), f.follow),
+            h("label", { class: "f" }, h("span", { class: "row" }, "Follow the clay", f.followOut), f.follow,
+              h("span", { class: "row status", title: "Each new frame is compared with your clay (SAM 3.1 against the stage's ID pass): object count, silhouettes, extra objects. A flagged frame is painted again with a new seed, at most twice per Generate." },
+                f.autoReroll = h("input", { type: "checkbox", checked: "", "aria-label": "Check frames and re-roll flagged ones" }),
+                "Check each frame against the clay; re-roll extra or missing objects")),
             h("label", { class: "f", title: "LoRA: a small add-on model trained on your own pictures (a character, a product or a house style)" }, "Style or character add-on", f.lora),
             h("label", { class: "f", title: "How strongly the LoRA add-on is applied" }, h("span", { class: "row" }, "Add-on strength", f.loraOut), f.loraStrength),
             h("div", { class: "row" }, h("span", { class: "status" }, "Variations"), f.countSeg),
@@ -818,8 +835,9 @@ export class Pipeline {
     f.neg.disabled = !negW;
     if (negW) f.neg.value = negW.value || "";
     if (loraW) { f.lora.value = loraW.value || "None"; f.loraStrength.value = String(this.w(9081, "lora_strength")?.value ?? 1); f.loraOut.textContent = (+f.loraStrength.value).toFixed(2); }
-    const dn = this.w(9056, "denoise")?.value;
+    const dn = f.model.value === STILL_KREA ? this.w(9056, "denoise")?.value : this.w(9081, "stage_denoise")?.value;
     if (dn != null) f.follow.value = String(dn);
+    this._sliderFor = f.model.value === STILL_KREA;
     f.followOut.textContent = this._followLabel();
     f.desc.value = this.ctx.look?.state?.description || "";
     // A clip brought in with Video → Stage: start the prompt from what the vision model saw (who, and the set), so the
@@ -847,9 +865,15 @@ export class Pipeline {
     const f = this.f;
     queueMicrotask(() => { try { this._syncSampling(); } catch { /* view not built */ } });
     const krea = f.model.value === STILL_KREA;
+    if (this._sliderFor !== krea) {   // switching models: Follow the clay shows that model's own setting
+      this._sliderFor = krea;
+      const v = krea ? this.w(9056, "denoise")?.value : this.w(9081, "stage_denoise")?.value;
+      if (v != null) { f.follow.value = String(v); f.followOut.textContent = this._followLabel(); }
+    }
     this.set(9082, "switch", !krea);
     if (!krea) this.set(9081, "model", f.model.value);
-    this.set(9056, "denoise", +f.follow.value);
+    // Krea 2: the img2img denoise of its depth-steered still; FLUX 3 Klein: stage_denoise, the Color pass as the start.
+    this.set(krea ? 9056 : 9081, krea ? "denoise" : "stage_denoise", +f.follow.value);
     queueMicrotask(() => { try { this._drawShotCast(); } catch { /* view not built */ } });
   }
 
@@ -865,6 +889,7 @@ export class Pipeline {
     f.goBtn.disabled = f.allBtn.disabled = true;
     const one = async (shot, si, n) => {
       const base = Math.floor(Math.random() * 1e9);
+      this._rerolls[shot.id] = f.autoReroll?.checked === false ? 0 : REROLLS;
       this.set(9086, "switch", !!this.touched[shot.id]);
       const cast = this._applyShotCast(shot.id);
       if (cast.dropped.length && n === 1) this._say(`Only ${REF_LIMIT} references go to the model: ${cast.dropped.map((x) => x.name).join(", ")} left out.`);
@@ -874,7 +899,8 @@ export class Pipeline {
         this.set(seedNode, "seed", seed);
         this._tick(f.status, `Queueing ${n > 1 ? `${shot.name} (${si + 1}/${n}), ` : ""}frame ${i + 1}/${f.count}${i === 0 ? ": capturing your clay passes for the whole shot first" : ""}…`);
         this.ctx.setLookStart?.(true);
-        await this.queueAt(2, { seed, model: f.model.value, seedNode, refFiles, ls: LOOK_START });
+        this.ctx.setFrameLock?.(true);
+        await this.queueAt(2, { seed, model: f.model.value, seedNode, refFiles, ls: LOOK_START, lock: krea ? undefined : +f.follow.value });
       }
     };
     try {
@@ -900,11 +926,13 @@ export class Pipeline {
     if (ev.rung === 2) {
       const meta = this.pending.get(ev.promptId);
       const list = (this.candidates[ev.shotId] = this.candidates[ev.shotId] || []);
-      const cand = { url: ev.url, file: ev.file, seed: meta?.seed, model: meta?.model, seedNode: meta?.seedNode, refFiles: meta?.refFiles, ls: meta?.ls };
+      const cand = { url: ev.url, file: ev.file, seed: meta?.seed, model: meta?.model, seedNode: meta?.seedNode, refFiles: meta?.refFiles, ls: meta?.ls,
+        lock: meta?.lock };
       list.unshift(cand);
       if (meta) this.pending.delete(ev.promptId);
       // A shot's first frame is its pick until you choose another, so "every shot" flows straight into Motion.
-      if (!this.chosen[ev.shotId] && meta) this._setChosen(ev.shotId, cand);
+      if (!this.chosen[ev.shotId] && meta) { this._setChosen(ev.shotId, cand); this._autoPick[ev.shotId] = true; }
+      if (meta && cand.file) this._checkFrame(ev.shotId, cand, meta);
       if (this.f && !this.views.frame.hidden) {
         this._drawCandidates();
         this.f.status.textContent = "Pick the frame you like: “Use this frame”. The video will start from it.";
@@ -915,6 +943,34 @@ export class Pipeline {
     if (this.current === "review" && ev.shotId === this.ctx.stage.activeShot().id) this.restoreLadder();
     this.mark(this.current);
     this._drawShotRows();
+  }
+
+  /** The first-frame check of one candidate: badge it, keep the best clean frame as an automatic pick, re-roll a
+   * flagged one (an extra car, someone missing or off their mark) while this Generate has re-rolls left. */
+  _checkFrame(sid, cand, meta) {
+    cand.check = { pending: true };
+    const redraw = () => { if (this.f && !this.views.frame.hidden && sid === this.ctx.stage.activeShot().id) this._drawCandidates(); };
+    redraw();
+    this.fc.check(cand.file, (res) => {
+      cand.check = res;
+      const list = this.candidates[sid] || [];
+      if (this._autoPick[sid]) {
+        const best = list.filter((c) => c.check && !c.check.pending && c.seed != null).sort((a, b) => rank(b.check) - rank(a.check))[0];
+        const cur = list.find((c) => c.url === this.chosen[sid]?.url);
+        if (best && best.url !== this.chosen[sid]?.url && rank(best.check) > rank(cur?.check)) this._setChosen(sid, best);
+      }
+      if (flagged(res) && (this._rerolls[sid] || 0) > 0 && sid === this.ctx.stage.activeShot().id && meta.seedNode) {
+        this._rerolls[sid]--;
+        const b = badgeOf(res);
+        const seed = Math.floor(Math.random() * 1e9);
+        this.set(meta.seedNode, "seed", seed);
+        if (this.f?.status) this.f.status.textContent = `${b.text.replace(/^⚠ /, "Off the clay: ")}. Re-rolling it with a new seed (${this._rerolls[sid]} more re-roll${this._rerolls[sid] === 1 ? "" : "s"} allowed)…`;
+        this.ctx.setLookStart?.(true);
+        this.ctx.setFrameLock?.(meta.ls >= 2);
+        this.queueAt(2, { ...meta, seed, reroll: true }).catch(() => { /* the status says why on the next queue */ });
+      }
+      redraw();
+    });
   }
 
   _drawCandidates() {
@@ -929,6 +985,7 @@ export class Pipeline {
       return h("div", { class: "cand", "data-chosen": String(!!isChosen), title: c.seed != null ? `seed ${c.seed}` : "",
         on: { click: () => this.choose(c) } },
         h("img", { src: c.url, alt: "candidate frame" }),
+        ...(() => { const b = badgeOf(c.check); return b ? [h("span", { class: "fc", "data-tone": b.tone, title: b.title }, b.text)] : []; })(),
         h("div", { class: "cap" }, h("span", {}, c.edited ? "Paint Studio" : (c.model === STILL_KREA || !c.model) ? "Krea 2" : String(c.model).split(" ·")[0]),
           h("span", { class: "pill" }, isChosen ? "✓ Chosen" : "Use this frame")));
     }));
@@ -938,7 +995,11 @@ export class Pipeline {
   choose(c) {
     const sid = this.ctx.stage.activeShot().id;
     this._setChosen(sid, c);
+    this._autoPick[sid] = false;
     this.ctx.setLookStart?.(lookStartFor(c));
+    // A frame painted before the stage lock re-renders the old way (from noise, no measured layout) so it comes back.
+    this.ctx.setFrameLock?.(frameLockFor(c));
+    if (!c.edited) this.set(9081, "stage_denoise", frameDenoiseFor(c));
     // A Paint Studio frame animates through the touch-up still; a generated one through its model + seed.
     this.touched[sid] = !!c.edited;
     this.set(9086, "switch", !!c.edited);
@@ -1356,6 +1417,8 @@ export class Pipeline {
     // A frame painted before the prepared start image (softened clay heads) re-renders from the plain colour pass,
     // so the video starts from exactly the frame that was picked.
     this.ctx.setLookStart?.(lookStartFor(c));
+    this.ctx.setFrameLock?.(frameLockFor(c));
+    if (c && !c.edited) this.set(9081, "stage_denoise", frameDenoiseFor(c));
     if (c?.model) {
       const krea = c.model === STILL_KREA;
       this.set(9082, "switch", !krea);
@@ -1379,7 +1442,7 @@ export class Pipeline {
 
   _setChosen(sid, c) {
     this.chosen[sid] = { ...this.chosen[sid], url: c.url, file: c.file, seed: c.seed, model: c.model, seedNode: c.seedNode, edited: c.edited || undefined,
-      refFiles: c.refFiles, ls: c.ls };
+      refFiles: c.refFiles, ls: c.ls, lock: c.lock, check: c.check && !c.check.pending ? c.check : undefined };
     if (c.file) this.ctx.rememberRender?.(sid, "look", c.file);
     this.ctx.saveChosen?.({ chosen: this.chosen, touched: this.touched });
   }

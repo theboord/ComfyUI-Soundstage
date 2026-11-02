@@ -17,6 +17,7 @@ from ..cine.kb import get_kb
 from ..cine.prompts import SIZE_STILL, _cap, _join
 from . import scene as S
 from .colors import palette_phrase, palette_words
+from .gaze import frame1_looks, head_beats
 from .impacts import impact_beats
 from .objstate import motion_beats, still_words
 from .vocab import load_vocab, normalize_look, option
@@ -237,6 +238,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         *brief_parts(look, still=True),
         shot,
         "; ".join(who),
+        "; ".join(frame1_looks(scene)),
         lock["still"] if lock else "",
         _still_count(n) if count else "",
         REAL_PEOPLE if n and real else "",
@@ -452,6 +454,7 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
         _cap("; ".join(brief_parts(look))) + "." if brief_parts(look) else "",
         _marks_sentence(mf, {e["id"] for e in f1["people"] + f1["others"]}
                         if len(S.groups(f1["people"] + f1["others"], f1["camera"])) == 1 else None),
+        head_beats(scene),                       # head and gaze blocking: every person's head, beat by beat
         _camera_sentence(mf, f1, look),
         impact_beats(scene),                     # Milestone 21: timed material beats off the baked hits
         still_words(scene, {e["id"] for e in f1["people"] + f1["others"]}),   # Milestone 26: what each object's parts show
