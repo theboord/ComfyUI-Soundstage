@@ -40,7 +40,7 @@ import numpy as np
 
 from .video import _exe, probe
 
-VERSION = 2
+VERSION = 3                # 3: the framing check (a dark vignette / porthole around the picture)
 SAMPLES = 6
 MODELS = ["qwen3vl_8b_fp8_scaled.safetensors", "qwen3vl_4b_fp8_scaled.safetensors", "qwen3.5_4b_bf16.safetensors"]
 SUBFOLDER = "soundstage_realism"
@@ -63,6 +63,20 @@ LOCATE_SYSTEM = (
     "an empty list when none can."
 )
 LOCATE_PROMPT = "Find the main subjects."
+
+# Whole-frame framing: a dark rounded vignette, porthole or border that the stage never had. Built after M27's
+# Hollywood crate crash, whose every frame was shot "through a tube" (share/GhostCar_DetailLoss): the ④ Frame still had
+# it and LTX kept it for 5 s. Calibrated on 29 labelled Klein stills: 15/17 porthole frames answered "corners", and of
+# 12 clean ones only a pillar in the blocking ("right") and one mild corner shadow came back true, so only a ring
+# (corners, all round, or two sides at once) counts, and only when it repeats like any other defect.
+FRAMING_SYSTEM = "You check the framing of one frame from a film. Reply with JSON only."
+FRAMING_PROMPT = (
+    "Look only at the four edges and the four corners of this image. Is the picture framed by a dark circular or rounded "
+    "vignette, a black porthole- or tunnel-shaped ring, or a dark rounded border, so that the scene does not reach some "
+    "of the frame edges? Ordinary dark scenery that runs right up to the edge (buildings, shadows, poles, a dark sky) "
+    "does not count.\n"
+    'Reply as {"framed": true or false, "where": "left|right|top|bottom|corners|all|none"}')
+_SIDES = ("left", "right", "top", "bottom")
 
 _CHECKS = {
     "vehicle": (
@@ -172,6 +186,46 @@ def parse_locate(text: str) -> list[dict]:
         out.append({"label": label, "kind": norm_kind(str(s.get("kind") or ""), label), "bbox": [x0, y0, x1, y1],
                     "visible": vis})
     out.sort(key=lambda s: -(s["bbox"][2] - s["bbox"][0]) * (s["bbox"][3] - s["bbox"][1]))
+    return out
+
+
+def parse_framing(text: str) -> dict:
+    """The framing reply -> {"framed": bool, "ring": bool}. ring = it goes round the picture (corners, all, or two
+    sides at once), the only answer that counts: a single dark side is usually scenery (a pillar, a wall)."""
+    try:
+        obj = _json_obj(text)
+    except ValueError:
+        obj = None
+    if not isinstance(obj, dict):
+        return {"framed": False, "ring": False}
+    framed = obj.get("framed")
+    framed = framed if isinstance(framed, bool) else str(framed).strip().lower() in ("true", "yes", "1")
+    where = str(obj.get("where") or "").lower()
+    ring = framed and ("corner" in where or "all" in where or sum(s in where for s in _SIDES) >= 2)
+    return {"framed": framed, "ring": ring}
+
+
+def framing_defect(answers: list[dict], frames: list[int]) -> dict | None:
+    """A dark ring around the picture, confirmed like any defect: in at least half (and 2) of the sampled frames of a
+    video, or in a still's one frame."""
+    hits = [f for f, a in zip(frames, answers) if a.get("ring")]
+    need = 1 if len(frames) <= 1 else max(2, math.ceil(len(frames) / 2))
+    if len(hits) < need:
+        return None
+    return {"kind": "frame", "category": "framing", "frames": hits, "of": len(frames), "severity": "major",
+            "examples": ["dark rounded vignette / porthole ring at the frame edges"],
+            "label": "dark vignette or porthole around the frame" + (f", {frame_span(hits)}" if len(frames) > 1 else "")}
+
+
+def with_framing(res: dict, defect: dict | None) -> dict:
+    """The take's verdict with the framing defect on top (it convicts even when no subject was judged)."""
+    if not defect:
+        return res
+    out = dict(res)
+    out["defects"] = [defect] + list(res.get("defects") or [])
+    out["score"] = round(max(0.0, (res.get("score") if res.get("score") is not None else 10.0) - 3.0), 1)
+    out["verdict"] = "fail"
+    out.pop("why", None)
     return out
 
 
@@ -525,8 +579,12 @@ def judge_video(path: str, base_url: str, samples: int = SAMPLES, model: str | N
         names.append(q.upload(f"rj_{tag}_f{i}.jpg", data))
         if keep:
             open(f"{keep}/frame_f{i:03d}.jpg", "wb").write(_jpeg(f))
-    g, outs = graph(mdl, [(nm, LOCATE_SYSTEM, LOCATE_PROMPT) for nm in names], max_length=300)
-    located = [parse_locate(t) for t in q.run(g, outs)]
+    # one queued job: where the subjects are, and whether the picture is framed by a dark ring
+    g, outs = graph(mdl, [(nm, LOCATE_SYSTEM, LOCATE_PROMPT) for nm in names] +
+                    [(nm, FRAMING_SYSTEM, FRAMING_PROMPT) for nm in names], max_length=300)
+    replies = q.run(g, outs)
+    located = [parse_locate(t) for t in replies[:len(names)]]
+    framing = [parse_framing(t) for t in replies[len(names):]]
     jobs = []      # (frame index, subject, crop name)
     for i, f, subs in zip(idx, frames, located):
         for k, s in enumerate(pick_subjects(subs)):
@@ -549,6 +607,8 @@ def judge_video(path: str, base_url: str, samples: int = SAMPLES, model: str | N
     res = aggregate(observations, len(idx))
     if not jobs:
         res.update({"verdict": "unavailable", "why": "the judge found no main subject to inspect"})
+    res = with_framing(res, framing_defect(framing, idx))
+    res["framing"] = [{"frame": i, **a} for i, a in zip(idx, framing)]
     res.update({"version": VERSION, "model": mdl, "frames": idx, "fps": info["fps"],
                 "hollywood": is_hollywood(info, None), "elapsed_s": round(time.time() - t0, 1), "raw": raw})
     res["chip"] = chip(res)
