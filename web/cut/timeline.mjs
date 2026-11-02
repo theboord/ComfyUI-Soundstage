@@ -99,7 +99,11 @@ export function keyAt(keys, f, dflt = 0) {
   return keys[keys.length - 1][1];
 }
 
-/** Titles on V2: {id, text, start_frame, frames, style: "card" (full frame on black) | "lower" | "center", fade_in, fade_out}. */
+/** Title styles on V2. "credit" is the small lower-left line a CC BY licence asks for (and a production super). */
+export const TITLE_STYLES = ["card", "lower", "center", "credit"];
+
+/** Titles on V2: {id, text, start_frame, frames, style: "card" (full frame on black) | "lower" | "center" | "credit"
+ *  (small, lower left, no band: a licence credit or a super), fade_in, fade_out}. */
 export function normalizeTitles(list) {
   const seen = new Set();
   return (Array.isArray(list) ? list : []).filter((t) => t && String(t.text || "").trim()).map((t, i) => {
@@ -110,7 +114,7 @@ export function normalizeTitles(list) {
     const fi = clamp(Math.round(t.fade_in ?? 6), 0, frames);
     return {
       id, text: String(t.text).slice(0, 400), start_frame: Math.max(0, Math.round(t.start_frame || 0)), frames,
-      style: ["card", "lower", "center"].includes(t.style) ? t.style : "card",
+      style: TITLE_STYLES.includes(t.style) ? t.style : "card",
       fade_in: fi, fade_out: clamp(Math.round(t.fade_out ?? 6), 0, frames - fi),
     };
   });

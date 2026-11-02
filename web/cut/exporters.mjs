@@ -543,10 +543,10 @@ export function toFCPXML(input, { mediaRoot = "" } = {}) {
   }
   let tsN = 0;
   const titleXml = (tt, it) => {
-    const id = `ts${++tsN}`, size = tt.style === "lower" ? 48 : 72;
+    const id = `ts${++tsN}`, size = tt.style === "credit" ? 28 : tt.style === "lower" ? 48 : 72;
     return [`              <title ref="${titleId}" lane="1" offset="${it.local(tt.start_frame - it.recIn)}" name="${esc(tt.text.slice(0, 60))}" start="0s" duration="${t(tt.frames)}">`,
             `                <text><text-style ref="${id}">${esc(tt.text)}</text-style></text>`,
-            `                <text-style-def id="${id}"><text-style font="Helvetica" fontSize="${size}" fontColor="1 1 1 1" alignment="center"/></text-style-def>`,
+            `                <text-style-def id="${id}"><text-style font="Helvetica" fontSize="${size}" fontColor="1 1 1 1" alignment="${tt.style === "credit" ? "left" : "center"}"/></text-style-def>`,
             "              </title>"];
   };
   const transXml = (sp) => [`            <transition name="${{ dissolve: "Cross Dissolve", dip_black: "Dip to Black", dip_white: "Dip to White", wipe: "Wipe" }[sp.type]}" ` +

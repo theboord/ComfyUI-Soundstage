@@ -5,6 +5,12 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-02
 
+**03:58 PST · Cut: a "Credit" title style for licence credits and supers**
+- **Why:** the licensed-footage dialogue scene (CC BY-SA 3.0, SCP-096) needs its short credit line on screen during the first dialogue shot, and the establishing shot needs a small "Built in Soundstage" super. The Cut's title styles were a full card, a banded lower third and a centred title, all large; none could carry a small credit line.
+- **Credit** ([web/cut/timeline.mjs](web/cut/timeline.mjs) `TITLE_STYLES`, [web/cut/cut.mjs](web/cut/cut.mjs), [soundstage/cut/render.py](soundstage/cut/render.py)): small text (1/38 of the frame height), set from a 5% left margin at 91% down, with a soft drop shadow and no band. In a 2.39 picture inside 16:9 it sits in the lower letterbox bar. The viewer preview draws it the same way, and the inspector lists it as "Credit (small, lower left)".
+- **Exports** ([web/cut/exporters.mjs](web/cut/exporters.mjs), [soundstage/cut/export.py](soundstage/cut/export.py)): FCPXML writes a credit as a 28 pt, left-aligned title; the browser and server writers stay byte for byte the same.
+- **Tests:** 2 new in [tests/test_cut_m19.py](tests/test_cut_m19.py): normalising and the FCPXML text style, and a render that checks the credit is low, left, small and draws nothing over the picture. The parity test now carries a credit title, and [tests/js/cut_m19.test.mjs](tests/js/cut_m19.test.mjs) checks it survives normalising. JS suites 826 passed; pytest 1133 passed, 25 skipped.
+
 **03:20 PST · Verify pass for the 1024 fit: Presets no longer hides the shot strip, Physics no longer hides the Coach pill**
 - **Why:** from fresh main, a real click on every top-row control and every strip trigger, with Tracks, Presets, Physics, Parts and Director open in turn, at 1024x640, 1280x800 and 1600x1000 against the pod App. Two things still got in the way.
 - **Presets over open tracks** ([web/ui/presets.mjs](web/ui/presets.mjs)): the window ran down over the timeline bar, so the clips, "+ Shot", Play and Hide tracks could not be clicked (1280x800: all ten strip controls; 1600x1000: Hide tracks). It now ends above the bar and its cards scroll. In a short window (1024x640 with the tracks open) it ends above the shot strip instead, so it covers only the keyframe tracks and the transport while it is open.
