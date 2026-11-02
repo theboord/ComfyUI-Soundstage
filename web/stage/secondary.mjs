@@ -60,33 +60,60 @@ export function buildSecondaryFx() {
   // Dust.
   const dg = new THREE.BufferGeometry();
   const dpos = new Float32Array(L.dust * 3), dcol = new Float32Array(L.dust * 4), dsz = new Float32Array(L.dust), drot = new Float32Array(L.dust), dtex = new Float32Array(L.dust);
+  const dlit = new Float32Array(L.dust * 3);   // practical light (street lamps, headlights, the set's lamps) at each puff
   dg.setAttribute("position", new THREE.BufferAttribute(dpos, 3));
   dg.setAttribute("color", new THREE.BufferAttribute(dcol, 4));
   dg.setAttribute("pSize", new THREE.BufferAttribute(dsz, 1));
   dg.setAttribute("pRot", new THREE.BufferAttribute(drot, 1));
   dg.setAttribute("pTex", new THREE.BufferAttribute(dtex, 1));
+  dg.setAttribute("pLit", new THREE.BufferAttribute(dlit, 3));
   dg.setDrawRange(0, 0);
+  let nDust = 0;
   const uMatte = { value: 0 };
+  // The set's light on the dust (lightFrom): sun direction in view space, sun colour x intensity, sky and ground light.
+  // Unlit, the puffs were flat white cut-outs whatever the light (README media v2 QC: "flat white blobs").
+  const U = { uSunV: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color(2.2, 2.2, 2.2) },
+    uSky: { value: new THREE.Color(0.8, 0.83, 0.87) }, uGnd: { value: new THREE.Color(0.2, 0.2, 0.2) } };
   const dm = new THREE.PointsMaterial({ color: 0xffffff, size: 1, map: puffAtlas(), vertexColors: true, transparent: true, depthWrite: false, sizeAttenuation: true });
   dm.allowOverride = false;   // Clay would draw them as squares
   dm.onBeforeCompile = (sh) => {
-    sh.uniforms.uMatte = uMatte;
-    sh.vertexShader = sh.vertexShader.replace("uniform float size;", "uniform float size;\nattribute float pSize;\nattribute float pRot;\nattribute float pTex;\nvarying float vRot;\nvarying float vTex;\nvarying float vFade;")
-      .replace("gl_PointSize = size;", "gl_PointSize = size * pSize * projectionMatrix[1][1];\nvRot = pRot; vTex = pTex;")
-      .replace("#include <project_vertex>", "#include <project_vertex>\nvFade = smoothstep(0.8, 4.5, -mvPosition.z);");
-    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform float uMatte;\nvarying float vRot;\nvarying float vTex;\nvarying float vFade;")
+    Object.assign(sh.uniforms, { uMatte }, U);
+    sh.vertexShader = sh.vertexShader.replace("uniform float size;", "uniform float size;\nattribute float pSize;\nattribute float pRot;\nattribute float pTex;\nattribute vec3 pLit;\nvarying float vRot;\nvarying float vTex;\nvarying float vFade;\nvarying vec3 vView;\nvarying vec3 vLit;")
+      .replace("gl_PointSize = size;", "gl_PointSize = size * pSize * projectionMatrix[1][1];\nvRot = pRot; vTex = pTex; vLit = pLit;")
+      .replace("#include <project_vertex>", "#include <project_vertex>\nvFade = smoothstep(0.8, 4.5, -mvPosition.z);\nvView = normalize(mvPosition.xyz);");
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform float uMatte;\nuniform vec3 uSunV;\nuniform vec3 uSunCol;\nuniform vec3 uSky;\nuniform vec3 uGnd;\nvarying float vRot;\nvarying float vTex;\nvarying float vFade;\nvarying vec3 vView;\nvarying vec3 vLit;")
       .replace("#include <map_particle_fragment>", `
         vec2 pc = gl_PointCoord - 0.5; float cs = cos(vRot), sn = sin(vRot);
         pc = clamp(vec2(cs * pc.x - sn * pc.y, sn * pc.x + cs * pc.y) + 0.5, 0.0, 1.0);
         vec2 cuv = (vec2(mod(vTex, 2.0), floor(vTex / 2.0)) + vec2(pc.x, 1.0 - pc.y)) * 0.5;
         vec4 tx = texture2D(map, cuv);
-        // Top-lit, self-shadowed underside: the cheap read of a volume.
-        float shade = mix(0.68, 1.08, 1.0 - gl_PointCoord.y);
-        diffuseColor.rgb *= mix(shade, 1.0, uMatte);
-        diffuseColor.a *= tx.a * 2.2 * vFade;
+        // A lit volume, not a cut-out: each puff is shaded as a soft ball (normal from the sprite coordinate), lit by
+        // the set's sun (wrapped, so the shadow side is not black) and its sky and ground light, darker where the
+        // puff is thick (self-shadowing), and glowing at its thin edges when the sun is behind it (forward scatter,
+        // the rim light of backlit dust). Divided by pi like a Lambert surface under the same lights.
+        vec2 q = gl_PointCoord * 2.0 - 1.0;
+        vec3 nrm = normalize(vec3(q.x, -q.y, sqrt(max(0.05, 1.0 - dot(q, q)))));
+        float dens = clamp(tx.a * 3.0, 0.0, 1.0);
+        float wrap = clamp((dot(nrm, uSunV) + 0.6) / 1.6, 0.0, 1.0);
+        float g = 0.55, ct = dot(uSunV, vView);
+        float fwd = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * ct, 1.5);
+        vec3 amb = mix(uGnd, uSky, clamp(0.5 + 0.5 * nrm.y, 0.0, 1.0));
+        // Dust scatters light many times over, so the sky light barely darkens in its core; the sun lights the side
+        // facing it, and from behind it the whole plume glows (forward scatter, capped: g = 0.55 peaks near x8).
+        vec3 light = amb * (0.75 + 0.25 * (1.0 - dens)) + uSunCol * (0.9 * wrap * (0.55 + 0.45 * (1.0 - dens)) + 0.45 * min(fwd, 6.0) * (1.0 - 0.5 * dens))
+          + vLit * mix(0.5, 0.8, 1.0 - dens);   // street lamps and headlights at night: smoke reads where the light is
+        // A floor so a plume never sinks into the dark (night tyre smoke, dust in shadow): a set would light it, and
+        // the guide must show it. It keeps the volume's shape: brighter on top, darker in the thick core.
+        float lum = dot(light, vec3(0.2126, 0.7152, 0.0722));
+        light += vec3(max(0.0, 2.2 - lum)) * mix(0.6, 1.0, clamp(0.5 + 0.5 * nrm.y, 0.0, 1.0)) * (0.65 + 0.35 * (1.0 - dens));
+        // Fine dust scatters most of the light it catches (albedo ~0.9), so a plume is paler and less saturated than
+        // the bulk sand it came off: the sand colour, a third of the way to white.
+        diffuseColor.rgb = mix(mix(diffuseColor.rgb, vec3(1.0), 0.35) * light / 3.14159, diffuseColor.rgb, uMatte);
+        // Density builds up softly (Beer-Lambert), so overlapping puffs thicken into a plume instead of a flat sheet.
+        diffuseColor.a *= (1.0 - exp(-tx.a * 3.6)) * vFade;
         if (uMatte > 0.5) diffuseColor.rgb = vec3(1.0);`);
   };
-  dm.customProgramCacheKey = () => "ss_m28_dust";
+  dm.customProgramCacheKey = () => "ss_m28_dust_lit";
   const dust = new THREE.Points(dg, dm);
   dust.frustumCulled = false; dust.renderOrder = 2; dust.userData.glass = true; dust.userData.m28Dust = true;
   group.add(dust);
@@ -121,11 +148,17 @@ export function buildSecondaryFx() {
     const nd = fr ? fr.n.dust : 0, nb = fr ? fr.n.debris : 0, ns = fr ? fr.n.sparks : 0;
     for (let i = 0; i < nd; i++) {
       const o = i * PT.STRIDE.dust, d = fr.dust;
-      dpos[i * 3] = d[o]; dpos[i * 3 + 1] = d[o + 1]; dpos[i * 3 + 2] = d[o + 2];
-      dsz[i] = d[o + 3]; dcol[i * 4] = d[o + 5]; dcol[i * 4 + 1] = d[o + 6]; dcol[i * 4 + 2] = d[o + 7]; dcol[i * 4 + 3] = d[o + 4];
+      // A puff near the ground sits on it: its sprite centre is kept at least ~0.4 of its size up, so the ground never
+      // slices it into a flat-bottomed blob (the sprite is a camera-facing square, not a volume).
+      const sz = d[o + 3], y = d[o + 1];
+      dpos[i * 3] = d[o]; dpos[i * 3 + 1] = y > -0.05 && y < 0.4 * sz ? 0.4 * sz : y; dpos[i * 3 + 2] = d[o + 2];
+      // The presets are sRGB (like the debris below): linear for the shader, or sand dust renders near-white.
+      C.setRGB(d[o + 5], d[o + 6], d[o + 7], THREE.SRGBColorSpace);
+      dsz[i] = sz; dcol[i * 4] = C.r; dcol[i * 4 + 1] = C.g; dcol[i * 4 + 2] = C.b; dcol[i * 4 + 3] = d[o + 4];
       drot[i] = d[o + 8]; dtex[i] = d[o + 9];
     }
     dg.setDrawRange(0, nd);
+    nDust = nd;
     for (const k of ["position", "color", "pSize", "pRot", "pTex"]) dg.attributes[k].needsUpdate = true;
     for (let i = 0; i < nb; i++) {
       const o = i * PT.STRIDE.debris, d = fr.debris;
@@ -149,7 +182,52 @@ export function buildSecondaryFx() {
     group.visible = nd + nb + ns > 0 || !!flash?.intensity;
     return { dust: nd, debris: nb, sparks: ns };
   };
-  return { object: group, set, light, dust, debris, sparks, matte: (on) => { uMatte.value = on ? 1 : 0; } };
+  /** Light the dust with the stage's sun and sky as seen from `cam` (call before each render). */
+  const lightFrom = (stage, cam) => {
+    const sun = stage?.sun, hemi = stage?.hemi;
+    if (sun && cam) {
+      cam.updateMatrixWorld?.();
+      V.copy(sun.position);
+      if (sun.target) V.sub(sun.target.position);
+      if (V.lengthSq() < 1e-9) V.set(0, 1, 0);
+      U.uSunV.value.copy(V).transformDirection(cam.matrixWorldInverse);
+      U.uSunCol.value.copy(sun.color).multiplyScalar(sun.visible === false ? 0 : sun.intensity);
+    }
+    // Point and spot lights (practicals, lamps, headlights): their light at each puff, three's falloff and cone.
+    const lamps = [];
+    stage?.scene?.traverse?.((o) => { if ((o.isPointLight || o.isSpotLight) && o.visible && o.intensity > 0 && o.parent) lamps.push(o); });
+    dlit.fill(0, 0, nDust * 3);
+    for (const l of lamps) {
+      l.updateMatrixWorld?.();
+      const lp = new THREE.Vector3().setFromMatrixPosition(l.matrixWorld);
+      let axis = null, cosOuter = -1, cosInner = -1;
+      if (l.isSpotLight) {
+        l.target.updateMatrixWorld?.();
+        axis = new THREE.Vector3().setFromMatrixPosition(l.target.matrixWorld).sub(lp).normalize();
+        cosOuter = Math.cos(l.angle); cosInner = Math.cos(l.angle * (1 - (l.penumbra || 0)));
+      }
+      const r = l.color.r * l.intensity, gr = l.color.g * l.intensity, b = l.color.b * l.intensity;
+      for (let i = 0; i < nDust; i++) {
+        const dx = dpos[i * 3] - lp.x, dy = dpos[i * 3 + 1] - lp.y, dz = dpos[i * 3 + 2] - lp.z;
+        const d = Math.hypot(dx, dy, dz) || 1e-3;
+        let k = 1 / Math.max(Math.pow(d, l.decay ?? 2), 0.01);
+        if (l.distance > 0) { const u = Math.min(1, Math.max(0, 1 - (d / l.distance) ** 4)); k *= u * u; }
+        if (axis) {
+          const c = (dx * axis.x + dy * axis.y + dz * axis.z) / d;
+          const t = Math.min(1, Math.max(0, (c - cosOuter) / Math.max(1e-4, cosInner - cosOuter)));
+          k *= t * t * (3 - 2 * t);
+        }
+        if (k <= 0) continue;
+        dlit[i * 3] += r * k; dlit[i * 3 + 1] += gr * k; dlit[i * 3 + 2] += b * k;
+      }
+    }
+    dg.attributes.pLit.needsUpdate = true;
+    if (hemi) {
+      U.uSky.value.copy(hemi.color).multiplyScalar(hemi.visible === false ? 0 : hemi.intensity);   // as three's lights: colour x intensity, / pi in the shader
+      U.uGnd.value.copy(hemi.groundColor).multiplyScalar(hemi.visible === false ? 0 : hemi.intensity);
+    }
+  };
+  return { object: group, set, light, dust, debris, sparks, lightFrom, uniforms: U, matte: (on) => { uMatte.value = on ? 1 : 0; } };
 }
 
 // ---------- soft-body meshes ----------

@@ -12,6 +12,7 @@ import { CHANNELS, PART_ENUMS, channelsFor, specOf, coerce, sampleKeys, partAt, 
   wiperAt, autoSteer, stateWords, partEvents, navAt } from "../../web/stage/objparts.mjs";
 import { lightAt, lightWords } from "../../web/stage/lightrig.mjs";
 import * as VehicleParts from "../../web/stage/vehicleparts.mjs";
+import { archLift } from "../../web/stage/archfit.mjs";
 
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
@@ -260,12 +261,16 @@ test("steering turns the front wheels (keyed, or along the path), spin is kept; 
   const g = await loaded(st, "cop");
   const R = g.userData.partsRig;
   assert.equal(R.steerNodes.length, 2, "two front wheels steer");
-  st.setPart("cop", "steer", 25);
-  for (const w of R.steerNodes) assert.ok(Math.abs(w.rotation.y - 25 * Math.PI / 180) < 1e-6);
+  st.setPart("cop", "steer", 15);   // inside the police car's measured arch lock (library steer_lock, archfit.mjs)
+  for (const w of R.steerNodes) assert.ok(Math.abs(w.rotation.y - 15 * Math.PI / 180) < 1e-6);
   assert.ok(!R.wheels.filter((w) => !R.steerNodes.includes(w)).some((w) => Math.abs(w.rotation.y) > 1e-9), "rear axle stays straight");
   const body = g.userData.vehicleBody, y0 = body.position.y;
   st.setParts("cop", { susp_h: -0.1, susp_roll: 6, susp_pitch: -3 });
-  assert.ok(Math.abs(body.position.y - (y0 - 0.1)) < 1e-6);
+  // ... plus the arch lift that keeps the lowered, rolled body's arches off the tyres (archfit.mjs)
+  const hubs = R.wheels.map((w) => ({ x: w.position.x, y: w.position.y, z: w.position.z, r: w.userData.radius }));
+  const lift = archLift(hubs, R.baseY, body.rotation.z, body.rotation.x);
+  assert.ok(lift > 0.03, `a 6° roll lifts the body off its outside tyres: ${lift}`);
+  assert.ok(Math.abs(body.position.y - (y0 - 0.1 + lift)) < 1e-6);
   assert.ok(Math.abs(body.rotation.z - 6 * Math.PI / 180) < 1e-6);
   assert.ok(Math.abs(body.rotation.x - 3 * Math.PI / 180) < 1e-6, "pitch - = nose down");
   // A car driving a curve steers by itself.
