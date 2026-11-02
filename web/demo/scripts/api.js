@@ -51,6 +51,7 @@ export const api = {
       return json({ filename: s.cut, subfolder: "", type: "output", seconds: s.cutSeconds || 0, missing: [] });
     }
     if (p === "/queue") return json({ queue_running: [], queue_pending: [] });
+    if (p.startsWith("/soundstage/queue_summary")) return json({ running: 0, pending: 0, items: [] });
     if (p.startsWith("/object_info")) return json({});
     if (p === "/upload/image") {
       // Kept in this browser tab only: the image shows in the App like a real upload (nothing leaves the page).

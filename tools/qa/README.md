@@ -77,6 +77,18 @@ The guard needs Google Chrome and ComfyUI at `http://127.0.0.1:8189` (set `SS_UR
 
 `tools/qa/lib.mjs` is the shared driver: launch, guard, mouse and keys, screenshots and `METRICS`. QA rounds build their end-to-end scripts on it.
 
+## Watching the queue
+
+Never poll `GET /queue` or `GET /history` from a tool, a QA driver or an agent. ComfyUI encodes every queued and finished prompt in full for those two endpoints, and a busy Soundstage scene used to be megabytes per prompt. On 2026-11-01 a few queued renders plus a few polling pages kept the pod's event loop at 100% CPU and the server stopped answering.
+
+Use these instead:
+
+- `GET /soundstage/queue_summary` gives `{running, pending, items: [{prompt_id, state, position, client_id, label, number}], ms}`. It never includes a payload. `?ids=a,b` lists only those prompts, `?client_id=` lists only one client's, and `?limit=` caps the list (the counts always cover the whole queue). `position` 0 is the running prompt and 1 is next. In `lib.mjs` this is `queueSummary({ ids, clientId })`.
+- `GET /history/{prompt_id}` gives one finished prompt (yours), never the whole history.
+- ComfyUI's websocket events (`execution_start`, `executing`, `progress`, `executed`, `execution_error`) report progress.
+
+Big stages travel by reference: the 3D Stage node's input reads `{"stage_ref": "<sha256>", "bytes": N, "frames": F}`, and the JSON itself sits in ComfyUI's `input/soundstage_stages/`. `GET /soundstage/stage_store/<sha256>` returns it ([soundstage/stagestore.py](../../soundstage/stagestore.py)).
+
 ## When a baseline should change
 
 Update the baselines in the same commit as an intended visual change, and say so in the commit message.

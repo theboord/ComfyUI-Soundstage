@@ -281,7 +281,7 @@ test("talk-through: an explanation and next steps", async () => {
 
 test("a render running on the queue: the local model is skipped (Ollama, else the rules) instead of waiting", async () => {
   const stage = new FakeStage(FIX.scene);
-  const api = fakeApi({ "/queue": () => ({ queue_running: [[1, "render"]], queue_pending: [] }),
+  const api = fakeApi({ "/soundstage/queue_summary": () => ({ running: 1, pending: 0, items: [{ prompt_id: "render", state: "running", position: 0 }] }),
     "/soundstage/director/info": () => ({ available: true, tools: [] }),
     "/soundstage/director/prompt": () => ({ system: "S", prompt: "U" }),
     "/soundstage/director/plan": (b) => ({ calls: [], notes: [], llm: b.llm_text }) });
