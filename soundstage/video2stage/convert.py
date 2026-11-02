@@ -251,6 +251,7 @@ def place_objects(objs, cams, A, b, K, size, frames_last, depths=None, scales=No
             a["rotation_deg"] = facing_rotation(o.get("facing"), start, cam0, A, cams[0])
         a["source"] = {"label": o["label"], "bbox_start": o.get("bbox_start"), "bbox_end": o.get("bbox_end")}
         a["_bbox"] = o.get("bbox_start") or o.get("bbox_end")
+        a["_boxes"] = [o.get("bbox_start"), o.get("bbox_end")]   # first and last frame: compare boxes from one frame
         out.append(a)
     return out
 
@@ -279,28 +280,45 @@ def pick_hero(objs):
 
 
 def mount_riders(actors: list[dict]) -> None:
-    """A person whose box sits on a horse / bike / bench rides or sits on it; one inside a car's box is dropped
-    (they are the driver)."""
+    """A person whose box sits on a horse / bike / bench rides or sits on it; one inside a car's box is its driver
+    (or passenger) and sits in it, so no clay figure stands beside the car. Boxes are compared within one frame: a
+    driver the model only saw on the last frame is matched against the car's last-frame box."""
     hosts = [a for a in actors if a.get("kind") in C.MOUNTS and a.get("kind") not in C.PEOPLE]
     taken = set()
-    drop = []
+
+    def frames_of(a):
+        bs = a.get("_boxes") or [a.get("_bbox"), None]
+        return [(i, bb) for i, bb in enumerate(bs) if bb]
+
     for p in actors:
-        if p.get("kind") not in C.PEOPLE or not p.get("_bbox"):
+        if p.get("kind") not in C.PEOPLE or not frames_of(p):
             continue
-        px = (p["_bbox"][0] + p["_bbox"][2]) / 2
         for hst in hosts:
-            hb = hst.get("_bbox")
-            if not hb or hst["id"] in taken or not (hb[0] <= px <= hb[2]):
+            if hst["id"] in taken:
                 continue
-            if p["_bbox"][3] < hb[1] + 0.2 * (hb[3] - hb[1]) or p["_bbox"][3] > hb[3] + 0.1 * (hb[3] - hb[1]):
+            hit = None
+            for i, pb in frames_of(p):
+                hb = dict(frames_of(hst)).get(i) or hst.get("_bbox")
+                if not hb:
+                    continue
+                px = (pb[0] + pb[2]) / 2
+                if not (hb[0] <= px <= hb[2]):
+                    continue
+                if pb[3] < hb[1] + 0.2 * (hb[3] - hb[1]) or pb[3] > hb[3] + 0.1 * (hb[3] - hb[1]):
+                    continue
+                hit = (pb, hb)
+                break
+            if not hit:
                 continue
-            if hst["kind"] in ("car", "truck") and p["_bbox"][3] < hb[3]:
-                drop.append(p["id"])
+            p["mount_id"], p["pose"] = hst["id"], C.MOUNTS[hst["kind"]]
+            if hst["kind"] in ("car", "truck"):
+                p["occupant"] = True   # seated inside: not the clip's performer
+                if hst.get("position") is not None:
+                    p["position"] = list(hst["position"])
+                    p["keys"] = [{"frame": 0, "position": list(hst["position"])}]
             else:
-                p["mount_id"], p["pose"] = hst["id"], C.MOUNTS[hst["kind"]]
-                taken.add(hst["id"])
+                taken.add(hst["id"])   # one rider per horse or bike; a car seats several
             break
-    actors[:] = [a for a in actors if a["id"] not in drop]
 
 
 # ---------------------------------------------------------------------------------------------- the set
@@ -505,6 +523,20 @@ def build_set(breakdown, movers, cam_path, notes, seed: int = 7):
                 c = cam0 * np.array([1, 0, 1]) + f0 * (max(along) + 6.0)
                 out.append(_custom(ids, "Building facade", [_box([0, 4.5, 0], [30.0, 9.0, 1.0], COLOURS["building"])],
                                    heading(f0), c, [30.0, 9.0, 1.0]))
+            elif t == "building" and road is not None and v is not None:
+                # A street: a row of city blocks on the kerb line, facing the road (two houses read as a suburb).
+                rr = np.random.default_rng(seed + len(out))
+                widths = rr.uniform(12.0, 20.0, 6)
+                heights = rr.uniform(10.0, 26.0, 6)
+                tones = ["#8e8378", "#7b7067", "#9a8f83", "#6f6a66", "#a39686", "#857a70"]
+                total, x, parts = float(widths.sum()), 0.0, []
+                for i, (wd, ht) in enumerate(zip(widths, heights)):
+                    x0 = -total / 2 + x
+                    parts.append(_box([round(x0 + wd / 2, 2), round(ht / 2, 2), 0], [round(wd - 0.4, 2), round(ht, 2), 12.0], tones[i]))
+                    x += wd
+                c = origin + v * (half + 3.0 + 6.0)   # pavement, then the block's own depth
+                out.append(_custom(ids, "City block" + name_side, parts, heading(-v), c,
+                                   [total, float(heights.max()), 12.0]))
             elif t == "trees" or t in ("building", "bench", "lamp", "table", "chair"):
                 kind = {"trees": "tree", "building": "house", "bench": "bench", "lamp": "lamp", "table": "table",
                         "chair": "chair"}[t]
@@ -678,7 +710,7 @@ def assemble_legacy(*, poses, scales, times, K, size, depths, ground, breakdown,
     actors = objs + dressing
     mount_riders(actors)
     for a in actors:
-        for k in ("_vehicle", "_bbox", "_set_bbox"):
+        for k in ("_vehicle", "_bbox", "_boxes", "_set_bbox"):
             a.pop(k, None)
 
     preset = time_preset(breakdown.get("time", ""))
@@ -1135,7 +1167,7 @@ def assemble_ctx(ctx: dict) -> dict:
         if kept:
             notes.append(f"dressing: {kept} procedural piece(s), all outside the solved view")
     for a in actors:
-        for k in ("_vehicle", "_bbox", "_set_bbox"):
+        for k in ("_vehicle", "_bbox", "_boxes", "_set_bbox"):
             a.pop(k, None)
     dedupe_names(actors)
     nm = {a["id"]: a["name"] for a in actors}

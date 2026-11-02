@@ -42,7 +42,9 @@ soundstage_apply("3f9c1a2b7e")
 | `soundstage_direct` | Plain words in, a proposed plan out (the same planner as the Director panel). |
 | `soundstage_apply` | Run a proposed plan in the open App. `confirm_gpu: true` for renders. |
 | `soundstage_undo` | Undo the last Director change. |
-| `ss_<tool>` | One typed tool per App action (32 of them; 36 tools in all): `ss_add`, `ss_stack`, `ss_move`, `ss_remove`, `ss_turn`, `ss_scale`, `ss_time`, `ss_weather`, `ss_set`, `ss_light`, `ss_add_shot`, `ss_reframe`, `ss_mount`, `ss_dismount`, `ss_select_shot`, `ss_lens`, `ss_camera_move`, `ss_rig`, `ss_camera_on`, `ss_stunt`, `ss_drive`, `ss_physics`, `ss_bake`, `ss_direct`, `ss_grade`, `ss_scene`, `ss_frames`, `ss_render`, `ss_approve`, `ss_cut`, `ss_play`, `ss_build`. Each takes `dry_run` (default `true`: propose only; `false`: propose and apply). |
+| `soundstage_judge_take` | The realism judge on a rendered take: pass/fail, a 0-10 score and named defects with frames. |
+| `soundstage_one_click` | ✦ One-click effects, relights, new angles and expands on a take or frame; proposes first, runs with `confirm_gpu: true`. |
+| `ss_<tool>` | One typed tool per App action (34 of them; 40 tools in all): `ss_add`, `ss_stack`, `ss_move`, `ss_remove`, `ss_turn`, `ss_scale`, `ss_time`, `ss_weather`, `ss_set`, `ss_light`, `ss_add_shot`, `ss_reframe`, `ss_mount`, `ss_dismount`, `ss_select_shot`, `ss_lens`, `ss_camera_move`, `ss_rig`, `ss_camera_on`, `ss_stunt`, `ss_drive`, `ss_physics`, `ss_bake`, `ss_gaze`, `ss_direct`, `ss_grade`, `ss_scene`, `ss_frames`, `ss_render`, `ss_approve`, `ss_cut`, `ss_play`, `ss_build`, `ss_part`. Each takes `dry_run` (default `true`: propose only; `false`: propose and apply). |
 
 The typed tools carry a JSON schema (enums, ranges, required fields), and the server validates every call against
 the live scene: names must be on the set, numbers stay in range (a lens is 8 to 400 mm), and a call that would break
