@@ -197,7 +197,7 @@ export function lengthCheck(project, indexes, secs, fi) {
   const mine = EL.framesNeeded(project, i);
   if (!fits(mine)) Object.assign(res, { ok: false, okAll: false, why: `The take is ${secs.toFixed(1)} s; the clip runs to ${runs(mine)}. Trim the clip, or render a longer take.` });
   const bad = rest.map((k) => [k, EL.framesNeeded(project, k)]).find(([, n]) => !fits(n));
-  if (bad) Object.assign(res, { okAll: false, whyAll: `Replace all is off: clip ${bad[0] + 1} of this setup runs to ${runs(bad[1])}; the take is ${secs.toFixed(1)} s.` });
+  if (bad) Object.assign(res, { okAll: false, whyAll: `Replace all is off: clip ${bad[0] + 1} of this shot runs to ${runs(bad[1])}; the take is ${secs.toFixed(1)} s.` });
   return res;
 }
 
@@ -672,7 +672,7 @@ export function attachEditLink(host) {
     if (!ok) { tell(`${name} already plays that take.`); return; }
     const v = cut.project.cut[i].take?.version;
     end({ quiet: true });
-    tell(`Replaced: ${name} plays v${v} now${also.length ? ` (and ${also.length} more clip${also.length === 1 ? "" : "s"} of this setup)` : ""}. ` +
+    tell(`Replaced: ${name} plays v${v} now${also.length ? ` (and ${also.length} more clip${also.length === 1 ? "" : "s"} of this shot)` : ""}. ` +
       (restore ? "The hold had been undone, so the old take went back into its versions first. ⌘Z undoes both: the clip then follows the newest render."
         : "⌘Z brings the old take back; a second ⌘Z ends the hold, and the clip follows the newest render again."));
     focusCut();
@@ -720,7 +720,7 @@ export function attachEditLink(host) {
       const when = [t.created ? hhmm(t.created) : "", Number.isFinite(secs) && secs ? `${secs.toFixed(1)} s` : ""].filter(Boolean).join(", ");
       row.append(el("span", "", `New ${what} for ${name}${when ? ` (${when})` : ""}.`));
       const rep = btn("Replace in cut", "go", () => replace(t, false), "This clip plays the new take; the old one stays in its versions (one ⌘Z undoes it)");
-      const repAll = btn(`Replace all ${n} clips of this setup`, "", () => replace(t, true));
+      const repAll = btn(`Replace all ${n} clips of this shot`, "", () => replace(t, true));
       rep.disabled = !fit.ok || secs === null;
       repAll.disabled = !fit.okAll || secs === null;
       row.append(rep);

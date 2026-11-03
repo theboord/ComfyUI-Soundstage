@@ -371,6 +371,24 @@ export function clipShot(shot, e) {
   return { ...rest, renders: t.rung === "look" ? { look: url } : { [t.rung]: url, ...(look ? { look } : {}) } };
 }
 
+/**
+ * Every render file the cut can show, as [{url, rung}] (rung final / draft / look), each URL once: every shot's own
+ * renders, then what each layout() row plays (a clip pinned to an earlier take plays a file its shot no longer lists).
+ * The Cut viewer loads exactly these (cut.mjs _syncMedia), so a held or replaced clip keeps its picture.
+ */
+export function playedUrls(project) {
+  const out = [], seen = new Set();
+  const add = (renders) => {
+    for (const rung of ["final", "draft", "look"]) {
+      const url = renders?.[rung];
+      if (url && !seen.has(url)) { seen.add(url); out.push({ url, rung }); }
+    }
+  };
+  for (const s of project?.shots || []) add(s.renders);
+  if (Array.isArray(project?.cut)) for (const r of layout(project)) add(r.shot?.renders);
+  return out;
+}
+
 /** Does a clip pinned to a take play just what its shot plays (the take is the shot's current best render, no camera
  *  original involved)? Then its media is the shot's own: a hold alone changes no reel, asset or master name. */
 export function playsOwn(shot, e) {

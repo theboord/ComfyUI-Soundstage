@@ -452,7 +452,7 @@ def _js_string(v) -> str:
     return str(v)
 
 
-def _finite(x) -> bool:
+def _is_finite(x) -> bool:
     """Number.isFinite for a JSON number: an integer too big for a float is Infinity in JavaScript."""
     try:
         return math.isfinite(x)
@@ -465,7 +465,7 @@ def _version_number(x) -> float:
     if isinstance(x, bool):
         return float("nan")
     if isinstance(x, (int, float)):
-        return float(x) if _finite(x) else float("inf")
+        return float(x) if _is_finite(x) else float("inf")
     if isinstance(x, str) and _DEC_RE.fullmatch(x):
         return float(x.strip(" \t\n\r"))
     return float("nan")
@@ -483,7 +483,7 @@ def normalize_take(t):
     out = {"url": url, "rung": t["rung"], "version": v if v >= 0 else 0}
     for k in ("at", "kind", "label"):
         x = t.get(k)   # a string, a finite number or a boolean (an object or a list is dropped, as in the browser)
-        if (isinstance(x, str) and x != "") or isinstance(x, bool) or (isinstance(x, (int, float)) and _finite(x)):
+        if (isinstance(x, str) and x != "") or isinstance(x, bool) or (isinstance(x, (int, float)) and _is_finite(x)):
             out[k] = _js_string(x)[:200]
     rec = t.get("recipe")
     if isinstance(rec, dict):
@@ -491,7 +491,7 @@ def normalize_take(t):
         for k, x in rec.items():
             if isinstance(x, str):
                 r[k] = x[:500]
-            elif isinstance(x, bool) or x is None or (isinstance(x, (int, float)) and _finite(x)):
+            elif isinstance(x, bool) or x is None or (isinstance(x, (int, float)) and _is_finite(x)):
                 r[k] = _num(x) if isinstance(x, float) else x
         if r:
             out["recipe"] = r
@@ -764,22 +764,29 @@ def source_reel(src, width=8) -> str:
 def reel_names(project, width=8) -> dict:
     used, out = set(), {}
 
-    def add(key, name):
-        base = re.sub(r"[^A-Z0-9_]+", "_", name.upper()).strip("_")[:width] or "AX"
-        reel, n = base, 1
+    def rbase(name, w=None):
+        b = re.sub(r"[^A-Z0-9_]+", "_", name.upper()).strip("_") or "AX"
+        return b if w is None else b[:w]
+
+    def add(key, name, tag=""):
+        # tag: a pinned take's "V2" / "CLAY", kept at the END of the reel so a short reel still shows its version
+        base, full = rbase(name, width), rbase(name)
+        fit = lambda t: full[:max(0, width - len(t))].rstrip("_") + t   # noqa: E731
+        reel = base if not tag else f"{full}_{tag}" if len(full) + 1 + len(tag) <= width else fit(tag)
+        n = 1
         while reel in used:
             suf = str(n)
             n += 1
-            reel = base[:width - len(suf)] + suf
+            reel = fit(f"{suf}_{tag}") if tag else base[:width - len(suf)] + suf
         used.add(reel)
         out[key] = reel
 
     for s in project["shots"]:
         add(s["id"], s["name"])
-    for r in layout(project):   # a clip pinned to an earlier take gets its own reel: one reel per file
+    for r in layout(project):   # a clip pinned to a take its shot does not play now gets its own reel: one per file
         if r["event"].get("take") and media_key(r) not in out:
             pin = r["event"]["take"]
-            add(media_key(r), f'{r["shot"]["name"]} {"v" + str(pin["version"]) if pin.get("url") else "clay"}')
+            add(media_key(r), r["shot"]["name"], f'V{pin["version"]}' if pin.get("url") else "CLAY")
     for a in project.get("audio") or []:
         add("audio:" + a["id"], a["label"])
     return out

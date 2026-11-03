@@ -522,7 +522,7 @@ loaded. **↩ Back to the cut** brings you back, and the new take comes in as a 
 | Item | Final / Draft | Look still | Clay | Ripple, Pose, Performance or ✦ take | Imported footage |
 | --- | --- | --- | --- | --- | --- |
 | **First frame** (④ Frame) | the frame the take started from, outlined "From the cut" | this still | the shot's chosen frame, or "no frame yet" | Ripple: its edited frame 1; ✦: its source | on |
-| **Re-generate** (⑤ Motion) | the take's preset, seed, Adherence and overrides | "Animate this frame": the shot's settings | "Render it": the shot's settings | runs again from the take's record (✦: the same card) | the shot's settings |
+| **Re-generate** (⑤ Motion) | the take's preset, seed, Adherence and overrides | "Animate this frame": the shot's settings | "Render it": the shot's settings | Ripple runs again from the take's record, ✦ the same card; Pose and Performance start from the stage as it is now | the shot's settings |
 | **Re-block** (③ Set) | the shot camera at the clip's frame | on | on | on | on |
 | **Ripple**, **Paint video-to-video** | on | off: a still has no motion | off: clay is drawn live | on (edit an edit) | off: not a ComfyUI file |
 | **Recast camera** (✦ Reshoot) | on | off: Reshoot needs a clip | off | on | off |
@@ -551,7 +551,7 @@ undoable edit. Nothing in the cut changes while you are away, even when new rend
   trip; the hold stays.
 - Back switches to the trip's scene first (while a render runs there it does not switch, and the pill says why), then
   opens the Cut with the same clip selected and the playhead where you left it.
-- The Cut then offers the new take: **Replace in cut**, **Replace all N clips of this setup**, **Compare**, **Keep the
+- The Cut then offers the new take: **Replace in cut**, **Replace all N clips of this shot**, **Compare**, **Keep the
   old one**. Replace is off, with the numbers, when the take is shorter than the clip's out point.
 - **Replace in cut** is one undoable edit: the clip plays the new take as its next version (`v3`), keeps its in and
   out points, transitions, opacity and notes, and lists the old take under its versions. The first ⌘Z brings the old
@@ -569,10 +569,11 @@ pinned file.
 
 **Still wrong (read first)**
 - Pinning changes what the cut promises: a held clip stops following new renders until you Replace or Follow.
-- The Cut viewer can only show a pinned take while that file is also its shot's current render, until the D8 player
-  loads every file a clip plays. Exports, the strip, the server render and the AAF already use the pinned file.
-- Re-generate is exact only when the take's `prompt` tag is readable. Ripple, Pose, Performance and ✦ takes re-run
-  from their record (a shot keeps its last 40).
+- The Cut viewer loads every file a clip plays (`TL.playedUrls`), so a held or replaced clip keeps its picture, after
+  Undo too. The D8 player must keep doing this when it lands.
+- Re-generate is exact only when the take's `prompt` tag is readable. Ripple and ✦ takes re-run
+  from their record (a shot keeps its last 40), as a new take with a new seed. Pose re-opens Pose mode on the stage
+  and frame as they are now. Performance renders a Layout take with the shot's current settings.
 - A reload during a trip forgets the trip (the hold is saved in the cut; the menu still lists the newest render).
 - There are two undo stacks: a hold or a Replace started from the strip is undone in the Cut editor, not in the strip.
 - Picking another take from a clip's menu (a version, or one of the shot's Ripple / ✦ takes) has no length check; the
