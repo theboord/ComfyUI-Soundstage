@@ -127,3 +127,27 @@ Results: `report.md`, `report.json` and a PNG of every failing screen, in `tests
 
 ## Headless GPU note (2026-11-01)
 Run demo-scene flows with real GPU rendering (`--use-angle=metal`). Under SwiftShader, "Try the demo scene" keeps the page busy for minutes drawing shot-row previews, which looks like a freeze. Also, never call CDP `DOM.getDocument({depth:-1, pierce:true})` on the App: with 10k+ nodes it never returns. Find inputs with `Runtime.evaluate` and use `DOM.setFileInputFiles` by objectId.
+
+## Real-time playback (playback_bench.mjs)
+
+Directive 8: rendered takes must play in real time in the Cut. `tools/qa/playback_bench.mjs` plays a whole cut at 1x through the Cut panel's own play path and measures what reached the viewer, tick by tick, against what the timeline asked for. Nothing in the app is changed for it: `tools/qa/playback_server.mjs` serves this repo's `web/` (so `web/cut/demo.html` and `cut.mjs` run as committed), swaps the demo project for a fixture, and reverse-proxies `GET /view` and `GET /api/view` to the pod (Range passed through, nothing but GET ever forwarded), or answers them from local files with `--local-media` (decode cost without the network).
+
+```sh
+# A 60 s cut from a media list (pod filenames, frame counts, rungs); keep the generated JSON outside the repo.
+node tools/qa/playback_fixture.mjs --media media.json --out cut60.json --seconds 60 --seed 8 --clay 2 --bed /bench-media/bed.wav --width 2624 --height 1408
+# Through the tunnel / from local copies; profiles: desktop, laptop-sim (software decode, CPU x4), stress (x20).
+node tools/qa/playback_bench.mjs --project cut60.json --out <dir> --profile laptop-sim --bench-media <dir with bed.wav> --runs 2
+node tools/qa/playback_bench.mjs --project cut60.json --out <dir> --profile desktop --local-media <dir with the takes> --headful
+node tools/qa/playback_report.mjs <dir>                     # one markdown row per run
+node tools/qa/playback_bench.mjs --reanalyse <dir>/<label>.raw.json.gz   # recompute a run after a change to the math
+```
+
+What it measures (the math is `tools/qa/playback_metrics.mjs`, pinned by `tests/js/playback_metrics.test.mjs`):
+
+- **Which frame was on screen.** A probe wraps `drawImage` on the viewer's picture canvas and, right after a `<video>` is drawn, reads that element's current frame with `new VideoFrame(video).timestamp`; clay frames are known from the panel's own `_clay(shot, f)` call. `requestVideoFrameCallback` logs every frame each element presented, as a cross-check.
+- **Dropped frames per minute.** A timeline frame (24 per second, on the Cut's own clock) is *lost* when its correct source frame never reached the screen within ±1 s; a picture up longer than its cadence allows (past 3 vsyncs plus half a vsync for 24p on 60 Hz) *holds* the slots of the frames that came due meanwhile. Each clip counts max(lost, held), since one stall shows both ways.
+- **getVideoPlaybackQuality** per element, `waiting` / `stalled` events, every `currentTime` assignment during play (pre-roll vs on the playing element).
+- **A/V offset**: the picture on screen (centre of its frame slot) against the record position the WebAudio output is playing when it is presented, from `AudioContext.getOutputTimestamp()`. Chrome runs with `--disable-audio-output`, a fake sink that clocks WebAudio in real time without a sound.
+- **Cut hitch** at every edit point, **time to first frame**, **scrub** latency (six seeks deep into the takes' GOPs) and **J / K / L** reaction times.
+
+CDP CPU throttling slows only the renderer's main thread; the software decoder's threads run at full speed. On Windows `--cores <hex mask>` pins Chrome to fewer, slower cores as well. Headless and headful (`--headful`, a real window) are both supported; say which one a number comes from.

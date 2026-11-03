@@ -14,6 +14,7 @@ export const demo = {
   getStep: () => 1,     // set by the shell: the ladder step to climb to
   toast: () => {},      // set by the shell
   v2s: null,            // the recorded Video → 3D run once it starts: { clip, total_s, replaySeconds, running, doneAt } (the badge)
+  onReplay: null,       // set by the shell: ({shot, step}) before a Run / Generate replays, so it can say an edited stage isn't re-rendered
 };
 
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
@@ -67,7 +68,9 @@ async function v2sRoute(p, path, init, method) {
     // Only the recorded clip replays: a visitor's own clip gets the full-install note, never someone else's result.
     let video = "";
     try { video = JSON.parse(init.body || "{}").video || ""; } catch { /* not JSON */ }
-    if (!video.endsWith(rec.clip)) return null;
+    // The demo's upload is "<n>_<name>" (/upload/image below): only that one prefix comes off, so "my_jturn_night_street.mp4"
+    // is not the recorded clip (endsWith said it was).
+    if (String(video).replace(/^\d+_/, "") !== rec.clip) return null;
     const job = `demo-v2s-${++seq}`;
     v2sJobs.set(job, performance.now());
     demo.v2s = { clip: rec.clip, total_s: rec.total_s, replaySeconds: REPLAY_S, running: true };
@@ -193,6 +196,7 @@ const lookTurn = new Map();   // shot -> how many frames it has replayed (cycles
 
 function replay(id, shot, step) {
   const r = (demo.scene?.renders || {})[shot] || {};
+  try { demo.onReplay?.({ shot, step }); } catch { /* the shell's note never blocks a replay */ }
   api.dispatchCustomEvent("execution_start", { prompt_id: id });
   let t = 250, any = false, missing = [];
   for (const rung of RUNGS) {

@@ -81,8 +81,8 @@ test("the App wires it: ⋯ before Done, folded buttons hidden, steps / scene / 
   assert.match(main, /import \{ topRowFit \} from "\.\/ui\/toprow\.mjs"/);
   assert.match(main, /tabs\.insertBefore\(moreBtn, expand\)/);
   const order = main.match(/order: \(\) => \[([^\n]+)\]/)?.[1] || "";
-  for (const k of ["ss-keysbtn", "ss-bookbtn", "ss-guidebtn", "ss-presetsbtn", "ss-dirbtn", "redoBtn", "undoBtn"]) assert.ok(order.includes(k), k);
-  for (const k of ["ss-pipe", "ss-topscene", "toolsBtn", "expand"]) assert.ok(!order.includes(k), `${k} never folds`);
+  for (const k of ["ss-keysbtn", "ss-bookbtn", "ss-guidebtn", "ss-presetsbtn", "redoBtn", "undoBtn"]) assert.ok(order.includes(k), k);
+  for (const k of ["ss-pipe", "ss-topscene", "toolsBtn", "expand", "ss-dirbtn", "ss-askbtn"]) assert.ok(!order.includes(k), `${k} never folds`);
   assert.match(rules(canvasui, `.ss-stage .ss-tabs > .${FOLDED}`).join(";"), /display\s*:\s*none\s*!important/);
   assert.match(rules(canvasui, ".ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow > .ss-bookbtn .lbl").join(";"), /display\s*:\s*none/, "Book is icon-only below 1400 px");
   // the menu is built in the pop-over layer, like every other menu
