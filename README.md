@@ -71,7 +71,8 @@ Not in the demo at all (each one says "available in the full install"): new rend
 
 <p align="center"><img src="docs/media/readme_v4/card_ask.png" width="880" alt="Ask: ask how and it lights up the real buttons; or say what you want, see the plan and press Apply. Shown: how do I add rain?"></p>
 
-<p align="center"><img src="docs/media/readme_v4/card_carpass.gif" width="880" alt="Night, rain, sound (Final render): police cars come out of the rain toward the lens, their sound generated with the picture."></p>
+<p align="center"><img src="docs/media/readme_v4/card_carpass.gif" width="880" alt="Night, rain, sound (Final render): a police car tears down a wet street at pursuit speed, lights strobing, from a still tripod camera."></p>
+<p align="center"><sub><b>Night, rain, sound.</b> A police car at about 72 km/h, lights strobing, rendered from the 3D blocking. Move the camera and the same take renders from a new angle.</sub></p>
 <p align="center"><sub><a href="docs/media/readme_v4/carpass_final_sound.mp4">▶ The police cars with their sound (MP4)</a></sub></p>
 
 <p align="center"><img src="docs/media/readme_v4/card_cut.gif" width="880" alt="Cut and deliver: a real-time timeline with generated sound. Out to Avid, Premiere, Resolve and FCP; Blender and Unreal round trip."></p>
