@@ -145,7 +145,7 @@ Quality starts on **Final**. Switch it to **Draft**, then click **Preview motion
 
 Click **6 Review**. It opens with three rungs, **Left**, **Middle** and **Right**, in **3-way**. Put **Clay** on the left rung and your **Draft** on the right, choose **Wipe** and drag the yellow handle. *Frame*, *Draft* and *Final* stay greyed out (*not rendered yet*) until those renders exist.
 
-That's a directed, rendered shot. Your Draft now has a **✦ One-click** button on the Review bar: Nightfall, Rain, a relight, a new angle or a wider aspect, each asking first with its GPU time. See [✦ One-click](TUTORIAL.md#one-click-effects-relight-angles-expand).
+That's a directed, rendered shot. Your Draft now has a **✦ One-click** button on the Review bar: Nightfall, Rain, a relight or a new angle (Reshoot), each asking first with its GPU time. See [✦ One-click](TUTORIAL.md#one-click-effects-relight-angles-expand).
 
 If you ever land on the narrow panel (a stray Esc, or **Done**), click **Open the full workspace**.
 
