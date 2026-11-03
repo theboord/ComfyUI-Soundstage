@@ -331,14 +331,19 @@ test("settingsFromPrompt reads the Quality node's advanced JSON (seed, Adherence
     "9081": { class_type: "SoundstageEditImage", inputs: { model: "FLUX 3 Klein · local", seed: 77 } },
     "9086": { class_type: "ComfySwitchNode", inputs: { switch: false } },
     "5516:1": { class_type: "RandomNoise", inputs: { noise_seed: ["9096", 11] } },
+    "9079": { class_type: "SoundstageLook", inputs: { look: '{"version":1,"genre":"noir","grade":{"contrast":1.2,"warmth":0}}' } },
   };
   assert.deepEqual(APP.settingsFromPrompt(prompt), { settings: { preset: "Final", seed: 1234, adherence: "Balanced", steps_1: 14 },
-    engine: "MiniMax H3 · local", still: { model: "FLUX 3 Klein · local", seed: 77, touchup: false } });
+    engine: "MiniMax H3 · local", still: { model: "FLUX 3 Klein · local", seed: 77, touchup: false },
+    look: { version: 1, genre: "noir", grade: { contrast: 1.2, warmth: 0 } } });
   const krea = { "9096": { class_type: "SoundstageQuality", inputs: { quality: "Draft", advanced: "not json" } }, "9084": { inputs: { switch: false } },
     "9082": { inputs: { switch: false } }, "9056": { class_type: "KSampler", inputs: { seed: 5 } } };
-  assert.deepEqual(APP.settingsFromPrompt(krea), { settings: { preset: "Draft" }, engine: "l2r", still: { model: "__krea_depth__", seed: 5, touchup: false } });
+  assert.deepEqual(APP.settingsFromPrompt(krea), { settings: { preset: "Draft" }, engine: "l2r", still: { model: "__krea_depth__", seed: 5, touchup: false }, look: null });
   assert.equal(APP.settingsFromPrompt(null), null);
-  assert.deepEqual(APP.settingsFromPrompt({ "1": { class_type: "SaveVideo", inputs: {} } }), { settings: null, engine: null, still: null });
+  assert.deepEqual(APP.settingsFromPrompt({ "1": { class_type: "SaveVideo", inputs: {} } }), { settings: null, engine: null, still: null, look: null });
+  // "Use this take's Look" is offered only when the Look differs (key order does not count)
+  assert.deepEqual(APP.lookDiff({ genre: "noir", grade: { warmth: 0, contrast: 1.2 } }, { genre: "noir", grade: { contrast: 1.2, warmth: 0 }, version: 1 }), []);
+  assert.deepEqual(APP.lookDiff({ genre: "noir", grade: { contrast: 1.2 } }, { genre: "western", grade: { contrast: 1 } }), ["genre", "grade"]);
 });
 
 test("takesOfShot lists what the Takes bin lists, so a trip's before / landed keys agree with it", () => {
