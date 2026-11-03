@@ -16,6 +16,14 @@
    ]
   },
   {
+   "id": "script",
+   "scene": "script",
+   "do": "loadscript",
+   "title": "Load a script → scenes, cast, stage",
+   "text": "Load a screenplay (a sample, your own Fountain, Final Draft or PDF, or paste one) and ① Script breaks it down in your browser: scenes, cast, locations, props and vehicles, with the pages. Pick a scene and the 3D stage sets itself up from its heading: the set, the light, the cast blocked. ④ Frame and ⑤ Motion then replay the closest recorded example, labelled as such.",
+   "say": "Low Tide is broken down and scene 1 is on the stage. Pick another scene, or Load a script (top bar) for your own. ③ Set shows the stage."
+  },
+  {
    "id": "drive",
    "scene": "chase",
    "do": "drive",

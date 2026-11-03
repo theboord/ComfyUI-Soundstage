@@ -86,6 +86,44 @@ try {
   const provTakes = await js("await sleep(700); const e = document.getElementById('prov'); return e.dataset.prov + ' ' + e.title");
   check(/^replayed .*Takes bin/.test(provTakes), `the bar badge says Replayed on ScriptSync / Takes (${provTakes.slice(0, 90)})`);
 
+  // ---------------------------------------------------------------- Load a script: break it down live, stage a scene, replay an example
+  await open("script");
+  check(await js("await sleep(900); return document.getElementById('scriptDlg').open"), "the Load-a-script entry opens on the loader");
+  await shot("script_loader");
+  for (const smp of ["low_tide", "night_train", "brush_fire"]) {
+    const r = JSON.parse(await js(`const ok = await D.loadSample('${smp}'); await sleep(600); const s = node.properties.ss_script?.script;
+      return JSON.stringify({ ok, scenes: s?.scenes?.length || 0, rows: document.querySelectorAll('.ss-script button.scn').length,
+        cast: new Set((s?.scenes || []).flatMap((x) => (x.elements || []).filter((e) => e.type === "character").map((e) => e.character))).size,
+        title: s?.title })`));
+    await shot(`script_${smp}`, JSON.stringify(r));
+    // rows: the scenes plus Whole script; the PDF's title page names it
+    check(r.ok && r.scenes >= 3 && r.rows === r.scenes + 1 && r.cast >= 2 && (smp !== "brush_fire" || /brush fire/i.test(r.title)), `${smp}: ① Script breaks it down (${JSON.stringify(r)})`);
+  }
+  const pasted = JSON.parse(await js(`document.getElementById('scriptBtn').click(); await sleep(300);
+    const ta = document.getElementById('scriptPaste'); ta.value = 'INT. LIGHTHOUSE - NIGHT\\n\\nNELL (70s) climbs the stairs.\\n\\nNELL\\nStill burning.\\n';
+    document.getElementById('scriptPasteGo').click(); await sleep(1200); const s = node.properties.ss_script?.script;
+    return JSON.stringify({ name: s?.source_name, heads: (s?.scenes || []).map((x) => x.heading), closed: !document.getElementById('scriptDlg').open })`));
+  check(pasted.heads[0] === "INT. LIGHTHOUSE - NIGHT" && pasted.closed, `a pasted script breaks down (${JSON.stringify(pasted)})`);
+  await js("await D.loadSample('low_tide'); await sleep(400); D.openScriptScene('sc_1'); await sleep(1800); return 1");
+  const staged = JSON.parse(await js(`const j = stage.toJSON(); return JSON.stringify({ set: j.environment.set,
+    people: j.actors.filter((a) => /^(man|woman|child)$/.test(a.kind)).map((a) => a.name), slug: document.querySelector('.ss-script .slug')?.textContent })`));
+  await shot("script_scene_1", JSON.stringify(staged));
+  check(staged.set === "beach" && staged.people.length >= 2 && /BEACH/.test(staged.slug || ""), `scene 1 opens: breakdown and the stage set up from its heading (${JSON.stringify(staged)})`);
+  await js(`[...document.querySelectorAll('.ss-script button')].find((x) => /Build this scene/i.test(x.textContent))?.click(); await sleep(900); return 1`);
+  const built = await js("return document.querySelector('.ss-script .banner')?.textContent || ''");
+  check(/full install/.test(built) && /already set it up/.test(built), `Build this scene says the scene agent needs the full install (${built.slice(0, 90)})`);
+  await js("P.go('set'); return 1"); await sleep(1500);
+  await shot("script_scene_1_set");
+  check(await js("return document.getElementById('prov').dataset.prov") === "live", "the script's scene on ③ Set is Live");
+  await js("P.go('frame'); return 1"); await sleep(1200);
+  await js("P.f.goBtn.click(); return 1"); await sleep(4500);
+  const ex = JSON.parse(await js(`const id = stage.activeShot().id; const e = document.getElementById('prov');
+    return JSON.stringify({ ex: D.demo.scene.examples?.[id]?.scene, prov: e.dataset.prov, note: e.title, above: document.querySelector('.demo-editnote:not([hidden])')?.textContent || '',
+      tiles: document.querySelectorAll('.ss-stage .cand > .prov.rec').length })`));
+  await shot("script_scene_1_frame_example", `${ex.ex}, ${ex.tiles} tiles`);
+  check(ex.ex === "romance" && ex.prov === "replayed" && /not your shot/.test(ex.note) && /not your shot/.test(ex.above) && ex.tiles > 0,
+    `④ Frame replays the closest recorded example, labelled as one (${ex.ex}, ${ex.note.slice(0, 80)})`);
+
   // ---------------------------------------------------------------- replays: Frame (4 variations) and Motion on the stunt
   await open("stunt");
   await js("P.go('frame'); return 1"); await sleep(1500);
