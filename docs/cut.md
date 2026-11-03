@@ -549,8 +549,8 @@ undoable edit. Nothing in the cut changes while you are away, even when new rend
 - While you are away, the step bar shows **↩ Back to the cut**; it turns yellow, "· new take", when a take of that shot
   lands (an App render, a Ripple / Pose / Performance / ✦ take, or a new frame for a Look or clay clip). Its ✕ ends the
   trip; the hold stays.
-- Back switches to the trip's scene first (it waits while a render runs there), then opens the Cut with the same clip
-  selected and the playhead where you left it.
+- Back switches to the trip's scene first (while a render runs there it does not switch, and the pill says why), then
+  opens the Cut with the same clip selected and the playhead where you left it.
 - The Cut then offers the new take: **Replace in cut**, **Replace all N clips of this setup**, **Compare**, **Keep the
   old one**. Replace is off, with the numbers, when the take is shorter than the clip's out point.
 - **Replace in cut** is one undoable edit: the clip plays the new take as its next version (`v3`), keeps its in and
@@ -575,6 +575,8 @@ pinned file.
   from their record (a shot keeps its last 40).
 - A reload during a trip forgets the trip (the hold is saved in the cut; the menu still lists the newest render).
 - There are two undo stacks: a hold or a Replace started from the strip is undone in the Cut editor, not in the strip.
+- Picking another take from a clip's menu (a version, or one of the shot's Ripple / ✦ takes) has no length check; the
+  offer's Replace has one.
 - In and out points are clamped to the stage's length, not the take's; a take rendered at another rate lines up by
   time in the viewer, not in the EDL's source timecode.
 - V3 graphic windows show the shot's latest render, not the clip's pinned take.
