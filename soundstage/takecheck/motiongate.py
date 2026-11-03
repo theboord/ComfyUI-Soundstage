@@ -344,11 +344,12 @@ def finger_check(rh, rhv, gh, ghs, shift, n, fps, t, ev, tol, fail, into) -> dic
 # ------------------------------------------------------------------------------------------------ the take
 
 def _pts(flat, k) -> np.ndarray:
-    """OpenPose flat [x, y, c, ...] -> [k, 3] (zeros when missing or short)."""
+    """OpenPose flat [x, y, c, ...] -> [k, 3] (zeros when missing, short or not finite)."""
     a = np.zeros((k, 3))
     flat = list(flat or [])[: 3 * k]
     if flat:
         v = np.asarray(flat, float).reshape(-1, 3)
+        v[~np.isfinite(v).all(1)] = 0.0          # a NaN / None point is "not found", never a joint at x = 0
         a[: len(v)] = v
     return a
 

@@ -110,6 +110,14 @@ def test_normalised_dwpose_coordinates_read_the_same():
     assert a["size"] == [W, H]
 
 
+def test_a_non_finite_dwpose_point_counts_as_missing():
+    for bad in (float("nan"), None):        # the right wrist's x: not found, never a confident joint at x = 0
+        frames = dwpose()
+        for i in range(30, 60):
+            frames[i]["people"][0]["pose_keypoints_2d"][3 * 4] = bad
+        assert MG.gate(reference(), frames, FPS)["verdict"] == "pass", bad
+
+
 def test_a_frozen_arm_fails_on_that_arm_where_it_froze():
     res = MG.gate(reference(), dwpose(freeze_arm=(40, 84)), FPS)
     assert res["verdict"] == "fail"
