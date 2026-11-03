@@ -125,6 +125,8 @@ export function worldControls(stage, { api, status = null } = {}) {
       if (info.lods) bits.push(`${info.lods} far LODs`);
       if (info.shots?.length) bits.push(`cameras → shots: ${info.shots.join(", ")}`);
       if (info.animated) bits.push(`${info.animated} animated object${info.animated > 1 ? "s" : ""} play on the timeline`);
+      if (info.animStart > 0) bits.push(`the file's animation starts at ${+info.animStart.toFixed(3)} s (frame ${Math.round(info.animStart * (stage.state.shot?.fps || 24))} at the shot fps): that is shot frame 0`);
+      if (info.orthoCameras) bits.push(`${info.orthoCameras} orthographic camera${info.orthoCameras > 1 ? "s" : ""} left out (shots need a lens)`);
       if (info.lights) bits.push(`${info.lights} file light${info.lights > 1 ? "s" : ""} off (the stage lights the set)`);
       if (w.temporary) bits.push("not uploaded: this world lasts until you reload the page");
       kids.push(el("div", { class: "stats" }, bits.join(" · ")));

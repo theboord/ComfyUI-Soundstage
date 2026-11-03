@@ -431,7 +431,7 @@ test("kit README names every app and is honest about what was tested where", () 
   const r = X.kitReadme({ shot: "Master", fps: 24, frameStart: 1001, frameEnd: 1097, width: 1920, height: 1038, obj: "set_frame1001.obj" });
   for (const app of ["BLENDER", "UNREAL", "MAYA", "NUKE"]) assert.match(r, new RegExp(app));
   assert.match(r, /verified headless in Blender/);
-  assert.match(r, /NOT tested in Unreal/);
+  assert.match(r, /run headless in UE 5\.7; not yet checked by eye/);
   assert.match(r, /NOT tested in Maya/);
   assert.match(r, /NOT tested in Nuke/);
 });
