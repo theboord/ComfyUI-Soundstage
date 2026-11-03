@@ -79,7 +79,7 @@ def test_layout_plays_the_pin_and_media_for_follows():
     m = media_for(rows[0]["shot"], "/out")
     assert m["path"] == "/out/soundstage/a_v1.mp4" and m["rung"] == "draft"
     assert media_for(rows[4]["shot"])["path"] == "soundstage/f_ripple.mp4"
-    assert media_key(rows[0]) == f"a|{A1}" and media_key(rows[2]) == "a" and media_key(rows[3]) == "a|clay"
+    assert media_key(rows[0]) == f"a|{view_key(A1)}" and media_key(rows[2]) == "a" and media_key(rows[3]) == "a|clay"
     assert view_key(V("x.mp4", 9)) == "output:soundstage/x.mp4"
 
 
@@ -99,7 +99,9 @@ def test_server_render_picks_the_pinned_file(tmp_path):
 def test_reels_assets_and_relink_lines_per_file():
     p = normalize_project(PINNED)
     reels = reel_names(p)
-    assert reels["a"] != reels[f"a|{A1}"] and f"a|{A1}" in reels and "a|clay" in reels
+    k1 = f"a|{view_key(A1)}"
+    assert k1 in reels and "a|clay" in reels and reels["a"] != reels[k1]
+    assert reels[k1].endswith("V1") and reels["a|clay"].endswith("CLAY"), "the version stays at the end of a short reel"
     edl = to_edl(p)
     assert "SOURCE FILE: soundstage/a_v1.mp4" in edl and "SOURCE FILE: soundstage/a_v2.mp4" in edl
     fcp = to_fcpxml(p)

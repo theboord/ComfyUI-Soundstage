@@ -56,7 +56,7 @@ test("layout plays the pin: its file, the shot's Look for the thumbnail, clay fo
   // the pinned file that is still the shot's own render plays under the shot's URL (the one the viewer loaded)
   const same = project([{ shot_id: "a", in: 0, out: 40, take: { url: A2, rung: "final", version: 2 } }]);
   assert.equal(TL.layout(same)[0].shot.renders.final, V("a_v2.mp4", 77));
-  assert.equal(TL.mediaKey(rows[0]), `a|${A1}`);
+  assert.equal(TL.mediaKey(rows[0]), `a|${TL.viewKey(A1)}`, "one key per file, whatever its URL spelling");
   assert.equal(TL.mediaKey(rows[1]), "a");
   assert.equal(TL.viewKey(V("x.mp4", 9)), "output:soundstage/x.mp4");
 });
@@ -186,7 +186,7 @@ const holdCut = () => project([
   { shot_id: "a", in: 40, out: 80, trans: { type: "dip_black", frames: 4 } },
   { shot_id: "c", in: 0, out: 10 }, { shot_id: "f", in: 0, out: 10 }, { shot_id: "c", in: 10, out: 20 }], { fade_out: { type: "dip_black", frames: 12 } });
 
-test("the hold pins every clip of the setup (clay too, not footage originals), mints one uid, in one edit", async () => {
+test("the hold pins every clip of the setup (not clay, not footage originals), mints one uid, in one edit", async () => {
   const p = await panelOf(holdCut());
   const uid = EL.holdClip(p, p.clipContext(0));
   assert.equal(p.history.length, 1);
@@ -195,7 +195,9 @@ test("the hold pins every clip of the setup (clay too, not footage originals), m
     [["a", A2, 1, uid], ["b", null, null, null], ["a", A2, 1, null], ["c", null, null, null], ["f", null, null, null], ["c", null, null, null]]);
   const q = await panelOf(holdCut());
   EL.holdClip(q, q.clipContext(3));
-  assert.deepEqual(q.project.cut.map((e) => e.take?.rung ?? null), [null, null, null, "clay", null, "clay"]);
+  // clay has no file to lose: a clay clip is not held (a clay pin would hide the shot's renders after the trip)
+  assert.deepEqual(q.project.cut.map((e) => e.take?.rung ?? null), [null, null, null, null, null, null]);
+  assert.match(q.project.cut[3].uid, /^c/, "the clicked clay clip still gets its uid");
   const f = await panelOf(holdCut());
   EL.holdClip(f, f.clipContext(4));
   assert.equal(f.project.cut[4].take, undefined, "footage that plays its camera original is not held");
@@ -353,4 +355,56 @@ test("takesOfShot lists what the Takes bin lists, so a trip's before / landed ke
   const list = APP.takesOfShot(app);
   assert.deepEqual(list.map((t) => [t.rung, t.kind, t.video]).slice(-3), [["look", "frame", false], ["final", "ripple", true], ["look", "oneclick", false]]);
   assert.deepEqual([...APP.beforeKeys(app)].sort(), ["output:soundstage/a.png", "output:soundstage/a_v2.mp4", "output:soundstage/cand.png", "output:soundstage/oc.png", "output:soundstage/rip.mp4"]);
+});
+
+// ------------------------------------------------------------------------------------------------ review blockers
+
+test("B1: the Cut loads every file a clip plays, so a pinned take keeps its picture after refresh and undo", async () => {
+  // clip 0 is pinned to a_v1, which shot a no longer lists (it plays a_v2 now)
+  const p = project([{ shot_id: "a", in: 0, out: 40, take: { url: A1, rung: "final", version: 1 } }, { shot_id: "b", in: 0, out: 20 }]);
+  const urls = TL.playedUrls(p).map((x) => x.url);
+  assert.ok(urls.includes(A1), "the pinned file is wanted");
+  assert.ok(urls.includes(V("a_v2.mp4", 77)) && urls.includes(V("b.mp4")) && urls.includes(LOOK), "the shots' own renders too");
+  assert.equal(new Set(urls).size, urls.length, "each URL once");
+  // the real _syncMedia keeps the pinned file loaded and still releases one nothing plays
+  const { CutPanel } = await import("../../web/cut/cut.mjs");
+  const fake = () => ({ kind: "video", ok: true, el: { pause() {}, removeAttribute() {}, load() {} } });
+  const panel = Object.assign(Object.create(CutPanel.prototype), { project: p, media: new Map() });
+  for (const u of [...urls, V("gone.mp4")]) panel.media.set(u, fake());
+  panel._syncMedia();
+  assert.ok(panel.media.has(A1), "the pinned take is not evicted");
+  assert.equal(panel.media.has(V("gone.mp4")), false, "a file nothing plays is released");
+  // undo re-syncs: a take that Replace swapped out comes back with its file loaded
+  let synced = 0;
+  const q = Object.assign(Object.create(CutPanel.prototype), { project: p, history: [{ cut: p.cut }], future: [], sel: 0, frame: 0,
+    _afterEdit() {}, _syncMedia() { synced++; } });
+  q.undo();
+  assert.equal(synced, 1);
+});
+
+test("B2: the hold, Replace all and versions key on the shot, never the setup label two shots share", async () => {
+  const same = shots().map((s) => ({ ...s, setup: "master" }));   // every shot of this script is a "master"
+  const proj = TL.normalizeProject({ fps: 24, shots: same, cut: [{ shot_id: "a", in: 0, out: 40 }, { shot_id: "b", in: 0, out: 30 }, { shot_id: "a", in: 40, out: 80 }] });
+  const pins = EL.holdPins(proj, 0, { uid: "c1" });
+  assert.deepEqual(pins.map((x) => x.index).sort(), [0, 2], "shot b's clip is not held, though it has the same setup label");
+  const held = EL.applyPins(proj.cut, pins);
+  assert.equal(held[1].take, undefined);
+  assert.equal(EL.versionFor(held, "b", V("b2.mp4")) >= 1, true);
+  assert.equal(EL.versionFor(held, "a", V("a_v3.mp4")), 2, "a's numbering counts only a's takes");
+  // the length check's words name the shot (Replace all changes the clips of this shot only)
+  const r = APP.lengthCheck(TL.normalizeProject({ fps: 24, shots: same, cut: [{ shot_id: "a", in: 0, out: 24 }, { shot_id: "a", in: 0, out: 96 }] }),
+    [0, 1], 2, { num: 24, den: 1 });
+  assert.equal(r.okAll, false);
+  assert.match(r.whyAll, /of this shot/);
+});
+
+test("a second Edit in… on a pinned clip with a uid keeps the uid on that clip (an earlier sibling never takes it)", async () => {
+  const p = await panelOf(project([{ shot_id: "a", in: 0, out: 40 }, { shot_id: "b", in: 0, out: 30 },
+    { shot_id: "a", in: 40, out: 80, uid: "u1", take: { url: A1, rung: "final", version: 1 } }]));
+  const uid = EL.holdClip(p, p.clipContext(2));
+  assert.equal(uid, "u1");
+  assert.deepEqual(p.project.cut.map((e) => e.uid ?? null), [null, null, "u1"]);
+  assert.equal(EL.findClip(p.project.cut, { uid: "u1", index: 2 }), 2);
+  // applyPins never gives a second clip a uid one already has
+  assert.equal(EL.applyPins(p.project.cut, [{ index: 0, uid: "u1" }])?.[0]?.uid, undefined);
 });

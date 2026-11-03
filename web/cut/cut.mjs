@@ -950,6 +950,7 @@ export class CutPanel {
     if (!this.history.length) return;
     this.future.push(this._snapshot());
     this.project = { ...this.project, ...this.history.pop() };
+    this._syncMedia();   // the restored clips may play files the current cut did not (a take Replace had swapped out)
     this._afterEdit();
   }
 
@@ -957,6 +958,7 @@ export class CutPanel {
     if (!this.future.length) return;
     this.history.push(this._snapshot());
     this.project = { ...this.project, ...this.future.pop() };
+    this._syncMedia();
     this._afterEdit();
   }
 
@@ -1416,10 +1418,9 @@ export class CutPanel {
 
   _syncMedia() {
     const want = new Set();
-    for (const s of this.project.shots) {
-      for (const rung of ["final", "draft", "look"]) {
-        const url = s.renders[rung];
-        if (!url) continue;
+    // every shot's renders AND every file a clip plays (a pinned take's file is not among its shot's renders any more)
+    {
+      for (const { url, rung } of TL.playedUrls(this.project)) {
         want.add(url);
         if (this.media.has(url)) continue;
         if (rung === "look") {
