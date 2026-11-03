@@ -111,6 +111,67 @@ export function writeGLB(json, bin) {
   return out.buffer;
 }
 
+const GPU_INSTANCING = "EXT_mesh_gpu_instancing";
+
+/** A float accessor's values as arrays of `n` (non-sparse, as GLTFExporter writes them). */
+function readFloatAccessor(json, bin, index, n) {
+  const acc = json.accessors[index], bv = json.bufferViews[acc.bufferView];
+  if (acc.componentType !== 5126 || acc.sparse) return null;
+  const dv = new DataView(bin.buffer, bin.byteOffset, bin.byteLength);
+  const stride = bv.byteStride || n * 4, base = (bv.byteOffset || 0) + (acc.byteOffset || 0), out = [];
+  for (let i = 0; i < acc.count; i++) {
+    const v = [];
+    for (let c = 0; c < n; c++) v.push(dv.getFloat32(base + i * stride + c * 4, true));
+    out.push(v);
+  }
+  return out;
+}
+
+/**
+ * Make GLTFExporter's EXT_mesh_gpu_instancing safe for DCC importers. Three lists it in extensionsRequired, and
+ * Unreal 5.8's Interchange importer then skips the whole file without a word (only the camera arrived). Each instanced
+ * node becomes one child node per instance, all sharing the one mesh (no geometry is copied), so every importer sees
+ * the instances. Past `maxInstances` in one node the extension stays, but only in extensionsUsed, never required.
+ * Returns the new GLB (or the input when nothing is instanced).
+ */
+export function expandGPUInstancing(glb, { maxInstances = 20000 } = {}) {
+  const { json, bin } = readGLB(glb);
+  const nodes = json.nodes || [];
+  if (!nodes.some((n) => n.extensions?.[GPU_INSTANCING])) return glb;
+  let kept = false;
+  const count = nodes.length;
+  for (let i = 0; i < count; i++) {
+    const node = nodes[i], ext = node.extensions?.[GPU_INSTANCING];
+    if (!ext || node.mesh === undefined) continue;
+    const a = ext.attributes || {};
+    const T = a.TRANSLATION !== undefined ? readFloatAccessor(json, bin, a.TRANSLATION, 3) : null;
+    const R = a.ROTATION !== undefined ? readFloatAccessor(json, bin, a.ROTATION, 4) : null;
+    const S = a.SCALE !== undefined ? readFloatAccessor(json, bin, a.SCALE, 3) : null;
+    const n = Math.max(T?.length || 0, R?.length || 0, S?.length || 0);
+    if ((a.TRANSLATION !== undefined && !T) || (a.ROTATION !== undefined && !R) || (a.SCALE !== undefined && !S) || n > maxInstances) {
+      kept = true;
+      continue;
+    }
+    node.children = node.children || [];
+    for (let k = 0; k < n; k++) {
+      const child = { name: `${node.name || "instance"}_${k}`, mesh: node.mesh };
+      if (T) child.translation = T[k];
+      if (R) child.rotation = R[k];
+      if (S) child.scale = S[k];
+      node.children.push(nodes.length);
+      nodes.push(child);
+    }
+    delete node.mesh;
+    delete node.extensions[GPU_INSTANCING];
+    if (!Object.keys(node.extensions).length) delete node.extensions;
+  }
+  const drop = (list) => (list || []).filter((e) => e !== GPU_INSTANCING);
+  json.extensionsUsed = kept ? json.extensionsUsed : drop(json.extensionsUsed);
+  json.extensionsRequired = drop(json.extensionsRequired);
+  for (const k of ["extensionsUsed", "extensionsRequired"]) if (!json[k]?.length) delete json[k];
+  return writeGLB(json, bin);
+}
+
 /**
  * Add a KHR_animation_pointer channel animating a camera's yfov (radians, one value a frame) to the first animation,
  * reusing the camera node's own time accessor. Returns the new GLB (or the input when there is nothing to add).
@@ -261,6 +322,7 @@ export async function stageAnimatedGLB(stage, { probes = true } = {}) {
     cam.userData = { soundstage: { focal_mm: focal.map((v) => +v.toFixed(4)), frame_start: KIT_FRAME_START, fps, sensor_width_mm: U.SENSOR_W_MM } };
     const clip = clipFromTracks("soundstage_shot", tracks, N, fps);
     glb = await new GLTFExporter().parseAsync(root, { binary: true, onlyVisible: true, trs: true, animations: clip.tracks.length ? [clip] : [] });
+    glb = expandGPUInstancing(glb);
     if (focal.some((v) => Math.abs(v - focal[0]) > 1e-4) && clip.tracks.length) {
       glb = addFovAnimation(glb, "shot_cam", focal.map((f) => (U.vfovFromFocal(f, aspect) * Math.PI) / 180));
     }

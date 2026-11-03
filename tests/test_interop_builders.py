@@ -175,3 +175,15 @@ def test_unreal_scene_sequences_picks_interchange_animation_not_the_camera_seque
              "/Game/Soundstage/Chase/scene/StaticMeshes/mesh_0.mesh_0", "/Game/Soundstage/Chase/scene/LevelSequences/soundstage_shot.soundstage_shot"]
     assert mod.scene_sequences(paths, own) == ["/Game/Soundstage/Chase/scene/LevelSequences/soundstage_shot"]
     assert mod.scene_sequences([], own) == []
+
+
+def test_unreal_builder_always_adds_the_set_animation_after_the_camera_sequence():
+    """Every kit ships this one build_unreal.py (exportdcc.mjs copies it verbatim), so every shot with animated set
+    pieces gets the step. UE 5.8: Western and back-seat kits made from the stale try-it copy lacked it."""
+    import ast
+    src = open(os.path.join(DCC, "build_unreal.py")).read()
+    main = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "main")
+    order = [a.id for n in ast.walk(main) if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_step"
+             for a in n.args[1:2] if isinstance(a, ast.Name)]
+    assert "build_sequence" in order and "add_scene_animation" in order
+    assert order.index("add_scene_animation") > order.index("build_sequence")

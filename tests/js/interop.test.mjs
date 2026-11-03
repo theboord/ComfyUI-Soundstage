@@ -455,3 +455,53 @@ test("a Nuke / Maya .chan and a camera.json come back in as the same camera keys
   }
   assert.throws(() => U.keysFromCameraFile("hello"), /no camera frames/);
 });
+
+// ---------------------------------------------------------------- Unreal 5.8 (docs/INTEROP_TESTED.md)
+
+/** A stand-in stage with an instanced prop (the Western's debris / scatter) and a moving one. */
+function fakeKitStage() {
+  const root = new THREE.Group();
+  const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshStandardMaterial(), 3);
+  inst.name = "debris";
+  for (let i = 0; i < 3; i++) inst.setMatrixAt(i, new THREE.Matrix4().compose(new THREE.Vector3(i, 0.1, -i), new THREE.Quaternion(), new THREE.Vector3(1, 1 + i, 1)));
+  root.add(inst);
+  const wagon = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 1), new THREE.MeshStandardMaterial()); root.add(wagon);
+  const s = {
+    root, frame: 0, fw: 1920, fh: 1080, _lastFrame: () => 11, state: { shot: { fps: 24 }, actors: [{ id: "a1", name: "wagon", kind: "prop" }] },
+    actorMeshes: new Map([["a1", wagon]]), activeShot: () => ({ name: "Western" }),
+    setFrameSilent(f) { this.frame = f; wagon.position.set(f * 0.5, 0, 0); }, setFrame(f) { this.setFrameSilent(f); },
+    _shotCameraAt: () => ({ position: [0, 1.6, 10], target: [0, 1, 0], focal_mm: 35, roll: 0 }),
+    cameraTrack() { return Array.from({ length: 12 }, (_, f) => this._shotCameraAt(f)); },
+  };
+  return s;
+}
+
+test("UE 5.8: the kit's scene.glb never requires EXT_mesh_gpu_instancing; instances become plain nodes sharing one mesh", async () => {
+  const { readFileSync } = await import("node:fs");
+  globalThis.fetch = async (u) => new Response(readFileSync(new URL(u)));
+  const kit = await X.exportForDCC(fakeKitStage(), { obj: false });
+  const { json } = X.readGLB(kit.files["soundstage_Western/scene.glb"].buffer.slice(0));
+  assert.ok(!(json.extensionsRequired || []).includes("EXT_mesh_gpu_instancing"), "Interchange skips a file that requires it");
+  assert.ok(!(json.extensionsUsed || []).includes("EXT_mesh_gpu_instancing"));
+  const parent = json.nodes.find((n) => n.name === "debris");
+  assert.equal(parent.mesh, undefined);
+  const kids = parent.children.map((i) => json.nodes[i]);
+  assert.equal(kids.length, 3);
+  assert.ok(kids.every((k) => k.mesh === kids[0].mesh), "one mesh, shared");
+  nearV(kids[2].translation, [2, 0.1, -2], 1e-6);
+  nearV(kids[2].scale, [1, 3, 1], 1e-6);
+  assert.ok(json.animations?.length, "the wagon's move is baked");
+  // Every kit carries the same Unreal builder, and it adds the set's animation after the camera sequence.
+  const ue = new TextDecoder().decode(kit.files["soundstage_Western/unreal/build_unreal.py"]);
+  assert.match(ue, /seq = _step\("build the Level Sequence"[^\n]*\n\s*n_anim = _step\("add the set's animation to the sequence", add_scene_animation, seq, dest, shot\)/);
+});
+
+test("UE 5.8: past the instance cap the extension stays, but only as used, never required", async () => {
+  const root = new THREE.Group();
+  const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial(), 5); root.add(inst);
+  const glb = await new (await import("../../web/vendor/addons/GLTFExporter.mjs")).GLTFExporter().parseAsync(root, { binary: true });
+  assert.ok(X.readGLB(glb).json.extensionsRequired.includes("EXT_mesh_gpu_instancing"), "three requires it");
+  const { json } = X.readGLB(X.expandGPUInstancing(glb, { maxInstances: 4 }));
+  assert.equal(json.extensionsRequired, undefined);
+  assert.ok(json.extensionsUsed.includes("EXT_mesh_gpu_instancing"));
+});

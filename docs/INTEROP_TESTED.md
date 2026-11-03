@@ -33,6 +33,13 @@ Found by these tests and **fixed on this branch** (with tests in `tests/js/inter
    `SEQ_<shot>` as a subsequence from frame 1001.
 8. **An orthographic camera became a shot with a made-up 40° lens** (Khronos `Cameras` sample). Orthographic cameras
    are now left out, and the panel says how many.
+9. **Unreal 5.8 skipped the Western kit's `scene.glb` without a word** (only the camera imported; Blender was fine).
+   three's GLTFExporter lists `EXT_mesh_gpu_instancing` under `extensionsRequired` for instanced meshes (the
+   Western's scatter). The kit now expands each instanced mesh into one plain child node per instance, all sharing
+   the one mesh (`expandGPUInstancing` in `exportdcc.mjs`); past 20 000 instances in one mesh the extension stays, but
+   only under `extensionsUsed`. The same 5.8 test found the *Back seat* and *Western* kits' `build_unreal.py` without
+   the set-animation step (fix 7): every kit ships the same builder file, and those kits came from the hosted try-it
+   demo, which still serves the copy from before fix 7. Re-publishing the demo brings it in.
 
 Still open (**not fixed**):
 
@@ -49,9 +56,9 @@ Still open (**not fixed**):
 - **Unreal was run headless, and its viewport was not checked by eye.** The offscreen SceneCapture of the kit level
   renders almost black: the Soundstage GLB brings no sky or sun into Unreal, so only the car's emissive tail-lights
   show. They are where the car is in Soundstage at frames 1001 and 1061, so the subsequence animates.
-- **Unreal 5.8 on the M4 Mac mini: not run.** The plan was to repeat the Unreal steps there on UE 5.8. Copying the
-  project to the mini was refused by the permission check (writing on a remote machine), so nothing ran on the mini.
-  All the Unreal results here are **UE 5.7.4 on the Intel iMac**.
+- **Unreal 5.8 was tested after this page was first written** (the rows in the table). The car chase matches 5.7.4
+  exactly. The Western failed until fix 9 and has not been re-run in 5.8 since. The detailed numbers above are
+  **UE 5.7.4 on the Intel iMac**.
 - **The western round trip is lower** (IoU 0.80–0.83 in the full silhouette): the horses sit about 4 px to the side.
   In Soundstage's own id pass the same frames score 0.90–0.97, with outlines within 0.6 px, so the gap is probably
   how this test drew the skinned horses for the mask. It is not explained yet.
@@ -74,7 +81,8 @@ same pixels. "Outline" is the mean distance between the two outlines, in pixels.
 | Unreal 5.7.4 | Soundstage → | DCC kit + `build_unreal.py` | *Car chase* | **Pass, headless** (`UnrealEditor-Cmd -run=pythonscript`, 40 s). The level and the `SEQ_` sequence save and reload in a fresh run: 320 actors and a CineCameraActor (36 × 19.2 mm filmback, 35 mm). 121 keys at 24 fps over 1001–1122, plus a camera cut. Against camera.json the keys are within **1.6 µm** and **0.000006°**. The axis probes measured UE = (x, z, y) × 100. The set's animation plays after fix 7. Not checked by eye. |
 | Unreal 5.7.4 | → Soundstage | glTF (GLTFExporter) | A level built from the Kenney room (CC0) with a UE CineCamera | **Pass.** 8.1 × 8.1 × 2.6 m. The UE camera (650, −250, 160 cm, pitch −6°, yaw −118°, 28 mm) comes in at exactly that place, direction and lens. IoU 0.9997 against a Blender render through the same camera (the room fills most of the frame, so the camera numbers are the stronger evidence). |
 | Unreal 5.7.4 | → Soundstage | FBX (LevelExporterFBX) | Same level | **Pass.** cm / Z up read from the file. Same size, camera and IoU. |
-| Unreal 5.8 (M4 Mac mini) | both | — | — | **Not run** (see Flaws). |
+| Unreal 5.8 | Soundstage → | DCC kit + `build_unreal.py` | *Car chase* | **Pass.** Matches the 5.7.4 run exactly (same actors, camera keys, camera cut, and the set's animation plays). |
+| Unreal 5.8 | Soundstage → | DCC kit + `build_unreal.py` | *Western* | **Failed before fix 9** (only the camera came in: Interchange skipped a scene.glb that requires `EXT_mesh_gpu_instancing`, with no message). Fixed in the code by fix 9; not yet re-run in 5.8. |
 | Houdini | → Soundstage | USD, Alembic | — | **App not run.** Soundstage refuses both with a message. Through Blender: the ASWF *OpenChessSet* USD (CC-BY 4.0) comes in at 71 × 71 × 19 cm, 21 materials; the *Teapot* USD (CC0) at 31 × 49 × 23 cm. The USD and Alembic written from the Kenney room match the GLB (IoU 0.988). |
 | Nuke | Soundstage → | `shot_cam.chan` | All three kits | **App not run; the file was checked as text** against the .chan layout (one line a frame: frame tx ty tz rx ry rz vfov, degrees, rotation order ZXY, the layout Nuke and Blender's chan add-on use). 8 columns, frames 1001…end, every line. Rebuilding R = Ry·Rx·Rz matches camera.json's cam_to_world to < 1e-7, and the vfov matches the focal length on the 36 mm horizontal sensor. Soundstage writes no `.nk`: `build_nuke.py` builds the script inside Nuke, and that is still untested. |
 | Maya | both | — | — | Not run (Maya isn't installed). The same `.chan` and the zxy maths apply. |
