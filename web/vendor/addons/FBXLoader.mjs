@@ -2827,6 +2827,12 @@ class AnimationParser {
 		initialPosition = initialPosition.toArray();
 		initialScale = initialScale.toArray();
 
+		// Soundstage patch: one transform's axes can carry different key times (Blender's FBX exporter simplifies each
+		// axis on its own). interpolateRotations reads curvex.times for all three axes and getKeyframeTrackValues holds
+		// the last key, so a camera turning on two axes came in wrong between keys. Resample every axis at the union of
+		// the times, linearly, first.
+		for ( const k of [ 'T', 'R', 'S' ] ) if ( rawTracks[ k ] !== undefined ) rawTracks[ k ].curves = resampleCurves( rawTracks[ k ].curves );
+
 		if ( rawTracks.T !== undefined && Object.keys( rawTracks.T.curves ).length > 0 ) {
 
 			const positionTrack = this.generateVectorTrack( rawTracks.modelName, rawTracks.T.curves, initialPosition, 'position' );
@@ -4380,3 +4386,32 @@ function slice( a, b, from, to ) {
 
 
 export { FBXLoader };
+
+/** Soundstage patch: {x, y, z} animation curves resampled at the union of their key times (linear between keys, held
+ *  outside them), so every axis has a value at every time. Exported for the tests. */
+function resampleCurves( curves ) {
+
+	const axes = [ 'x', 'y', 'z' ].filter( ( a ) => curves && curves[ a ] !== undefined && curves[ a ].times && curves[ a ].times.length );
+	if ( axes.length < 2 ) return curves;
+	const same = axes.every( ( a ) => curves[ a ].times.length === curves[ axes[ 0 ] ].times.length && curves[ a ].times.every( ( t, i ) => t === curves[ axes[ 0 ] ].times[ i ] ) );
+	if ( same ) return curves;
+	const all = [ ...new Set( axes.flatMap( ( a ) => Array.from( curves[ a ].times ) ) ) ].sort( ( a, b ) => a - b );
+	const at = ( c, t ) => {
+
+		const ts = c.times, vs = c.values, n = ts.length;
+		if ( t <= ts[ 0 ] ) return vs[ 0 ];
+		if ( t >= ts[ n - 1 ] ) return vs[ n - 1 ];
+		let i = 1;
+		while ( ts[ i ] < t ) i ++;
+		const u = ( t - ts[ i - 1 ] ) / ( ts[ i ] - ts[ i - 1 ] );
+		return vs[ i - 1 ] + ( vs[ i ] - vs[ i - 1 ] ) * u;
+
+	};
+	const out = { ...curves };
+	for ( const a of axes ) out[ a ] = { ...curves[ a ], times: all.slice(), values: all.map( ( t ) => at( curves[ a ], t ) ) };
+	return out;
+
+}
+
+export { resampleCurves };
+

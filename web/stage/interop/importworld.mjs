@@ -99,7 +99,9 @@ export async function loadWorldFile(url, format, { files = {} } = {}) {
   if (format === "glb" || format === "gltf") {
     const g = await new GLTFLoader(manager).parseAsync(await buf(), base);
     await readFovAnimation(g);
-    return { scene: g.scene, animations: g.animations || [], declared: { up: "y", units: "m", source: g.asset?.generator || "" } };
+    matteUntranslated(g);
+    const animStart = startAtFirstKey(g.animations || [], g.scene);
+    return { scene: g.scene, animations: g.animations || [], animStart, declared: { up: "y", units: "m", source: g.asset?.generator || "" } };
   }
   if (format === "fbx") {
     const data = await buf();
@@ -108,14 +110,16 @@ export async function loadWorldFile(url, format, { files = {} } = {}) {
     // FBX cameras look down their local +X (three's FBX reader keeps that), and three reads the lens on a 35 mm gauge.
     o.traverse((c) => { if (c.isCamera) Object.assign(c.userData, { forwardX: true, fbxFocal: c.getFocalLength?.(), filmWidthMm: hdr.filmWidthMm || null }); });
     o.animations = pickTakes(o, o.animations || []);
+    const animStart = startAtFirstKey(o.animations, o);
     const usf = hdr.unitScale ?? o.userData?.unitScaleFactor ?? null;
     const units = usf == null ? null : Math.abs(usf - 1) < 1e-6 ? "cm" : Math.abs(usf - 100) < 1e-4 ? "m" : Math.abs(usf - 2.54) < 1e-4 ? "in" : Math.abs(usf - 0.1) < 1e-6 ? "mm" : null;
-    return { scene: o, animations: o.animations || [], declared: { up: hdr.up, units, unitScale: usf, source: "FBX" } };
+    return { scene: o, animations: o.animations || [], animStart, declared: { up: hdr.up, units, unitScale: usf, source: "FBX" } };
   }
   if (format === "obj") {
     const txt = new TextDecoder().decode(await buf());
     return { scene: new OBJLoader(manager).parse(txt), animations: [], declared: { up: null, units: null, source: "OBJ" } };
   }
+  if (format !== "stl" && format !== "ply") throw new Error(unsupportedWorldFormat(format));
   const geom = (format === "stl" ? new STLLoader(manager) : new PLYLoader(manager)).parse(await buf());
   if (!geom.attributes.normal) geom.computeVertexNormals();
   const vc = !!geom.attributes.color;
@@ -143,6 +147,52 @@ async function readFovAnimation(g) {
     const [ti, vo] = await Promise.all([g.parser.getDependency("accessor", smp.input), g.parser.getDependency("accessor", smp.output)]);
     cam.userData.yfovTrack = { times: Array.from(ti.array), values: Array.from(vo.array), step: smp.interpolation === "STEP" };
   }
+}
+
+/**
+ * An exporter that can't translate a material (Blender's glTF exporter on a Cycles node setup it doesn't know) writes
+ * it with no pbrMetallicRoughness at all. The glTF defaults then make it white, fully metallic, and on a stage with no
+ * environment map a metal renders black. Treat such a material as untranslated: matte (metalness 0, roughness 0.8).
+ * Returns how many were changed.
+ */
+export function matteUntranslated(g) {
+  const defs = g.parser?.json?.materials || [];
+  let n = 0;
+  for (const [obj, a] of g.parser?.associations || []) {
+    if (!obj?.isMaterial || a?.materials === undefined) continue;
+    const d = defs[a.materials];
+    if (!d || d.pbrMetallicRoughness || Object.keys(d.extensions || {}).length) continue;
+    obj.metalness = 0; obj.roughness = 0.8; obj.userData.untranslated = true; obj.needsUpdate = true;
+    n++;
+  }
+  return n;
+}
+
+/** Why a file can't be a world, for formats the importer doesn't read (USD and Alembic from Houdini, Maya, Blender). */
+export function unsupportedWorldFormat(format) {
+  const f = String(format || "").toLowerCase();
+  if (/^usd[acz]?$/.test(f)) return `USD (.${f}) isn't read here. Export the set as GLB (glTF) or FBX: Houdini ROP glTF / FBX, Blender File › Export › glTF 2.0, Maya FBX`;
+  if (f === "abc") return "Alembic (.abc) isn't read here. Export the set as GLB (glTF) or FBX; a camera can come in as a .chan";
+  return `.${f || "?"} isn't a world format. Pick a GLB, glTF, FBX, OBJ, PLY, STL or splat file`;
+}
+
+/**
+ * A DCC timeline rarely starts at 0 s: Blender and Maya start at frame 1 (the first key at 1/fps), a VFX shot at
+ * frame 1001 (41.7 s at 24 fps). The shot's frame 0 should be the file's first frame, so every track (and a camera's
+ * yfov pointer track) is moved back by the earliest key time of the whole file. Returns that offset in seconds (0
+ * when the file already starts at 0 or has no animation). Clips keep playing together: one offset for all of them.
+ */
+export function startAtFirstKey(clips, root = null) {
+  let t0 = Infinity;
+  for (const c of clips || []) for (const tr of c.tracks || []) if (tr.times?.length) t0 = Math.min(t0, tr.times[0]);
+  const cams = [];
+  root?.traverse?.((o) => { if (o.isCamera && o.userData?.yfovTrack?.times?.length) cams.push(o.userData.yfovTrack); });
+  for (const y of cams) t0 = Math.min(t0, y.times[0]);
+  if (!(t0 > 1e-6) || !Number.isFinite(t0)) return 0;
+  // glTF tracks that share a sampler input share one times array: copy before shifting, or it moves twice.
+  for (const c of clips) { for (const tr of c.tracks || []) { tr.times = tr.times.slice(); tr.shift(-t0); } c.resetDuration(); }
+  for (const y of cams) y.times = y.times.map((t) => t - t0);
+  return t0;
 }
 
 /** yfov (deg) of a camera at time t from its pointer track, or its static fov. */
@@ -275,8 +325,12 @@ export function prepareWorld(raw, { merge = true, lodTris = 60000 } = {}) {
   const toRoot = new THREE.Matrix4().copy(scene.matrixWorld).invert();
   const anim = animatedNodes(scene, raw.animations || []);
   const cameras = [], lights = [], meshes = [];
+  let ortho = 0;
   scene.traverse((o) => {
-    if (o.isCamera) cameras.push(o);
+    // An orthographic camera has no lens; the stage camera is perspective, so it can't be a shot (it used to come in
+    // as a shot with a made-up 40° lens).
+    if (o.isCamera && !o.isPerspectiveCamera) ortho++;
+    else if (o.isCamera) cameras.push(o);
     else if (o.isLight) lights.push(o);
     else if (o.isMesh || o.isPoints) meshes.push(o);
   });
@@ -285,8 +339,11 @@ export function prepareWorld(raw, { merge = true, lodTris = 60000 } = {}) {
   const info = meshes.map((m) => {
     const bb = new THREE.Box3();
     if (m.geometry?.attributes?.position) {
-      if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
-      bb.copy(m.geometry.boundingBox).applyMatrix4(new THREE.Matrix4().multiplyMatrices(toRoot, m.matrixWorld));
+      // A skinned mesh's vertices are in its bind space; its posed bounds come from the bones (an FBX rig's bind
+      // space can be metres away from where it stands, which once made a classroom read 7.6 m tall).
+      if (m.isSkinnedMesh && m.skeleton && m.computeBoundingBox) { m.computeBoundingBox(); bb.copy(m.boundingBox); }
+      else { if (!m.geometry.boundingBox) m.geometry.computeBoundingBox(); bb.copy(m.geometry.boundingBox); }
+      bb.applyMatrix4(new THREE.Matrix4().multiplyMatrices(toRoot, m.matrixWorld));
     }
     return { m, bb };
   });
@@ -397,8 +454,8 @@ export function prepareWorld(raw, { merge = true, lodTris = 60000 } = {}) {
   const sizes = info.filter((x) => !sky.has(x.m) && !x.bb.isEmpty()).map((x) => x.bb.getSize(new THREE.Vector3()));
   const now = (typeof performance !== "undefined" ? performance : Date).now();
   return {
-    scene, animations: raw.animations || [], declared: raw.declared || {}, cameras, anim, sky, soup, bounds, area, sizes,
-    stats: { meshes: drawsBefore, draws: drawsAfter, tris, lods, lights: lights.length, cameras: cameras.length,
+    scene, animations: raw.animations || [], animStart: raw.animStart || 0, declared: raw.declared || {}, cameras, anim, sky, soup, bounds, area, sizes,
+    stats: { meshes: drawsBefore, draws: drawsAfter, tris, lods, lights: lights.length, cameras: cameras.length, orthoCameras: ortho,
       animated: anim.size, materials: new Set(meshes.map((m) => (Array.isArray(m.material) ? m.material[0] : m.material)?.uuid)).size,
       sky: sky.size, prepMs: Math.round(now - t0) },
   };
@@ -659,6 +716,7 @@ export class WorldMount {
       readout: U.sizeReadout(xf.size), up: xf.up, units: xf.units, factor: xf.factor, reasons: xf.reasons, floor: +xf.floor.toFixed(3), offset: xf.offset.map((v) => +v.toFixed(3)),
       fixes, ...st, colliders: this._col.list.length, colliderKinds: kinds, collidersDropped: this._col.dropped, colliderMs: this._col.ms,
       shots: (this.s.state.shots || []).filter((x) => x.from_world === this.url).map((x) => x.name),
+      animStart: +(this.prep.animStart || 0).toFixed(4),
     };
     this.onInfo?.(this.info);
   }

@@ -4,9 +4,8 @@ Bring a whole world in from Blender, Unreal Engine, Maya or Sketchfab and shoot 
 out to any of the four apps. Code: `web/stage/interop/` (the import, the export, and the builder scripts in `dcc/`).
 Tests: `tests/js/interop.test.mjs` and `tests/test_interop_builders.py`. Round-trip tools: `tools/interop/`.
 
-**What was verified where.** Blender 4.3 was run headless in both directions (see [Verified](#verified)). Unreal,
-Maya and Nuke are not installed on the development machine, so their builder scripts have **not** been run in those
-apps. Their maths (axes, centimetres, rotation orders, film backs, frame rates) is unit-tested outside the apps.
+**What was verified where.** Blender 4.3 was run headless in both directions (see [Verified](#verified)), and Unreal 5.7 headless in both directions with real CC0 / CC-BY scenes ([INTEROP_TESTED.md](INTEROP_TESTED.md)). Maya
+and Nuke are not installed on the development machine, so their builder scripts have **not** been run in those apps. Their maths (axes, centimetres, rotation orders, film backs, frame rates) is unit-tested outside the apps.
 
 ## Bring your world in
 
@@ -50,7 +49,8 @@ What happens on import:
   `KHR_animation_pointer`, which Soundstage's own export writes. Camera roll is dropped, because the stage camera has
   none. When units or axes change, the shots are re-keyed so they stay locked to the world.
 - **Animation.** Animated objects keep the file's own keys and play on the shot timeline at the shot fps, holding
-  their last pose. FBX files with one take per object (Blender's "all actions") play one take per node.
+  their last pose. The file's first key is shot frame 0: a Blender or Maya timeline that starts at frame 1, or a VFX
+  one at 1001, starts on the first frame. FBX files with one take per object (Blender's "all actions") play one take per node.
 - **Heavy worlds.** Static meshes are merged by material. Big worlds (over 300k triangles) are merged into spatial
   chunks, so the camera still culls what it can't see. Chunks over 60k triangles get a decimated far LOD. Lights in
   the file are switched off, because the stage lights the set.
@@ -91,7 +91,7 @@ fit. Frame 1001 is Soundstage frame 0, as in the Layer Pack.
 | App | Run | What the builder does | Status |
 |---|---|---|---|
 | **Blender** | `blender --python blender/build_blender.py`, or Scripting › Run | Sets the fps first (the glTF importer keys at the scene fps). Imports scene.glb and moves its keys so Soundstage frame 0 = 1001. Builds `shot_cam` from camera.json (sensor 36 mm, horizontal fit, lens keyed). Sets the frame range and render resolution. Shows `plates/` (Layer Pack frames) as the camera background. Clears Blender's untouched default cube. `--render out.png --frame N` makes a check render headless. | **Verified, Blender 4.3 headless** |
-| **Unreal 5.x** | Tools › Execute Python Script… | Imports scene.glb into the open level with Interchange. Measures the importer's axis and unit mapping from the four probes, falling back to UE = (x, z, y) × 100. Spawns a CineCameraActor with a 36 mm filmback. Builds a Level Sequence at the shot fps over 1001–end, with location, rotation (FRotator from the camera's forward and up) and Current Focal Length keyed every frame, plus a camera cut. | Not tested in Unreal |
+| **Unreal 5.x** | Tools › Execute Python Script… | Imports scene.glb into the open level with Interchange. Measures the importer's axis and unit mapping from the four probes, falling back to UE = (x, z, y) × 100. Spawns a CineCameraActor with a 36 mm filmback. Builds a Level Sequence at the shot fps over 1001–end, with location, rotation (FRotator from the camera's forward and up) and Current Focal Length keyed every frame, plus a camera cut, and plays the set's own animation (the sequence Interchange made) as a subsequence. | **Run headless in UE 5.7** ([INTEROP_TESTED.md](INTEROP_TESTED.md)); not checked by eye |
 | **Maya** | Script Editor › Source Script… | Imports scene.glb when a glTF importer plug-in is loaded, else the OBJ. Scales either to the size shot.json records, in your working units. Creates `shot_cam` with rotate order zxy, a 36 mm film back (inches) and focal length keyed. Sets the fps, range and resolution. | Not tested in Maya |
 | **Nuke 13+** | Script Editor › Source…, or `nuke -t` | Builds a Camera with rot order ZXY and haperture 36 mm, translate/rotate/focal keyed from camera.json. Adds a ReadGeo of the OBJ (Nuke doesn't read glTF), a Scene and a ScanlineRender at the shot format. | Not tested in Nuke |
 
