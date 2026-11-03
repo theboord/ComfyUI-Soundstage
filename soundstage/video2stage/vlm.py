@@ -71,8 +71,12 @@ def available_model() -> str | None:
     return next((m for m in MODELS if m in names), None)
 
 
-def graph(model: str, first_image: str, last_image: str) -> dict:
-    """Two reads (first and last frame) in one queued prompt, sharing one model load."""
+def graph(model: str, first_image: str, last_image: str, seed: int = 0) -> dict:
+    """Two reads (first and last frame) in one queued prompt, sharing one model load. seed 0: greedy (the same read
+    every time); any other seed samples (temperature 0.6), so ↻ Regenerate can get a different read."""
+    samp = {"sampling_mode": "off"} if not seed else {
+        "sampling_mode": "on", "sampling_mode.temperature": 0.6, "sampling_mode.top_k": 50, "sampling_mode.top_p": 0.95,
+        "sampling_mode.min_p": 0.0, "sampling_mode.repetition_penalty": 1.05, "sampling_mode.seed": int(seed)}
     g = {
         "v1": {"class_type": "CLIPLoader", "inputs": {"clip_name": model, "type": "stable_diffusion", "device": "default"}},
         "v2": {"class_type": "PrimitiveStringMultiline", "inputs": {"value": SYSTEM}},
@@ -80,7 +84,7 @@ def graph(model: str, first_image: str, last_image: str) -> dict:
     for tag, img, prompt in (("a", first_image, PROMPT_FIRST), ("b", last_image, PROMPT_LAST)):
         g[f"{tag}1"] = {"class_type": "LoadImage", "inputs": {"image": img}}
         g[f"{tag}2"] = {"class_type": "TextGenerate", "inputs": {
-            "clip": ["v1", 0], "image": [f"{tag}1", 0], "prompt": prompt, "max_length": 1600, "sampling_mode": "off",
+            "clip": ["v1", 0], "image": [f"{tag}1", 0], "prompt": prompt, "max_length": 1600, **samp,
             "thinking": False, "use_default_template": True, "system_prompt": ["v2", 0]}}
         g[f"{tag}3"] = {"class_type": "PreviewAny", "inputs": {"source": [f"{tag}2", 0]}}
     return g
