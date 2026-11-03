@@ -5,12 +5,13 @@
 //
 // This file is the Cut side, with no App imports (cut.mjs and demo.html load it):
 //   pure:  clipContext, clipType, playingTake, canonicalUrl, fileKey, versionFor, holdPins, applyPins, findClip,
-//          menuItems, newTakes, mintUid (tests/js/editlink.test.mjs)
+//          menuItems, newTakes, mintUid, framesNeeded (tests/js/editlink.test.mjs)
 //   DOM:   openEditMenu (the pop-over layer, ../ui/popover.mjs), attachPencil (the ✎ overlay), attachKeys,
 //          attachCutLink (all three on a CutPanel: panel.editLink = attachCutLink(panel, {onEdit}))
 // The App side (the trip, the jumps, the Back pill, the offer, take detection) is web/cut/editlink_app.mjs.
 
 import * as TL from "./timeline.mjs";
+import { isOverlap, transSpans } from "./fx.mjs";
 import { openPopover } from "../ui/popover.mjs";
 
 export const RUNG_LABEL = { final: "Final", draft: "Draft", look: "Look", clay: "Clay" };
@@ -107,6 +108,14 @@ export function mintUid(cut, rnd = Math.random) {
   return `c${Date.now().toString(36)}`;
 }
 
+/** A take as a pin. A take from the bins (web/dailies/model.mjs takesFor: `kind` is its rung, the tool that made it a
+ *  flag) becomes {url, rung, kind: tool, label}; anything with a rung (a pin) is returned as it is. */
+export function asPin(t) {
+  if (!t || typeof t !== "object" || t.rung || !TL.RUNGS.includes(t.kind)) return t;
+  const via = t.ripple ? "ripple" : t.pose ? "pose" : t.performance ? "performance" : t.oneclick ? "oneclick" : "";
+  return { url: t.url, rung: t.kind, ...(via ? { kind: via } : {}), ...(t.label ? { label: t.label } : {}) };
+}
+
 const sameTake = (a, b) => (a?.url || b?.url ? !!(a?.url && b?.url) && fileKey(a.url) === fileKey(b.url) : a?.rung === b?.rung);
 
 function withVersion(list, t, cap) {
@@ -129,7 +138,8 @@ export function applyPins(cut, pins, { cap = TL.MAX_VERSIONS } = {}) {
   for (const p of pins || []) {
     const e = out[p?.index];
     if (!e) return null;
-    if (p.uid && !e.uid) { e.uid = p.uid; changed = true; }
+    // a uid names one clip: never a second one (normalize would keep the earlier copy and the clip would lose it)
+    if (p.uid && !e.uid && !out.some((x) => x !== e && x.uid === p.uid)) { e.uid = p.uid; changed = true; }
     if (p.take === undefined) continue;
     const old = e.take || null;
     if (p.take === null) {
@@ -139,7 +149,8 @@ export function applyPins(cut, pins, { cap = TL.MAX_VERSIONS } = {}) {
       changed = true;
       continue;
     }
-    const t = TL.normalizeTake({ ...p.take, url: canonicalUrl(p.take.url), version: p.take.version ?? versionFor(out, e.shot_id, p.take.url) });
+    const pin = asPin(p.take);
+    const t = TL.normalizeTake({ ...pin, url: canonicalUrl(pin.url), version: pin.version ?? versionFor(out, e.shot_id, pin.url) });
     if (!t) return null;
     if (old && sameTake(old, t)) continue;
     const vs = (old ? withVersion(e.versions, old, cap) : [...(e.versions || [])]).filter((v) => !sameTake(v, t));
@@ -152,8 +163,10 @@ export function applyPins(cut, pins, { cap = TL.MAX_VERSIONS } = {}) {
 
 /**
  * The hold before a trip (docs/cut.md): the clicked clip and every other unpinned clip of its shot, each pinned to the
- * take it plays now (clay to clay), so nothing in the cut changes while you are away. Clips that show imported footage's
- * camera original are not held. The clicked clip also gets `uid`. Pins for applyPins, the clicked clip first.
+ * file it plays now, so no render that lands while you are away changes the cut. Clay clips are not held (clay has no
+ * file to lose, and a clay pin that outlives its trip would hide the shot's renders), nor are clips that show imported
+ * footage's camera original. The clicked clip also gets `uid` (on its own pin only). Pins for applyPins, the clicked
+ * clip first when it has one.
  */
 export function holdPins(project, index, { uid = null } = {}) {
   const rows = TL.layout(project);
@@ -164,13 +177,26 @@ export function holdPins(project, index, { uid = null } = {}) {
   for (const r of [row, ...rows.filter((x) => x.index !== index)]) {
     if (String(r.event.shot_id) !== sid) continue;
     const mine = r.index === index;
-    const hold = !r.event.take && !playsSource(r.shot);
+    const hold = !r.event.take && !playsSource(r.shot) && TL.bestRung(r.shot) !== "clay";
     const give = mine && uid && !r.event.uid;
     if (!hold && !give) continue;
     const t = hold ? playingTake(r) : null;
     pins.push({ index: r.index, take: hold ? { url: t.url, rung: t.rung } : undefined, ...(give ? { uid } : {}) });
   }
   return pins;
+}
+
+/**
+ * The frames clip `index` reads from its file: its out point, plus the handle a dissolve or wipe out of it plays past
+ * that (fx.mjs transSpans: the outgoing clip runs `post` frames past its out). {out, post, type, need}, null for no clip.
+ * Replace's length check holds a take against `need`.
+ */
+export function framesNeeded(project, index) {
+  const e = project?.cut?.[index];
+  if (!e) return null;
+  const sp = transSpans(project)[index + 1];
+  const post = sp && isOverlap(sp.type) ? sp.post : 0;
+  return { out: e.out, post, type: post ? sp.type : "", need: e.out + post };
 }
 
 /** A clip's index in a cut: by uid, else the same shot and in/out at `index`, else anywhere; -1 when it is gone. */
@@ -359,8 +385,10 @@ export function clipRect(panel, index) {
 }
 
 /**
- * The ✎ on the hovered clip: a 24×20 button inside the timeline box (.ss-cut-tl, so it scrolls with the canvas) at the
- * clip's top-right, x = _x(recOut) - 28, y = _ty + 6. Only on clips at least 48 px wide; hidden on pointerdown, wheel,
+ * The ✎ on the hovered clip: a 24×20 button inside the timeline box (.ss-cut-tl, so it scrolls with the canvas) in the
+ * clip's lower band, right side: x = _x(recOut) - 34, y = _ty + th - 25 (never above _ty + 20). That keeps it off the
+ * rung badge (top right), the transition handles (the top 19 px) and the 6 px trim edge. Only on clips at least 48 px
+ * wide; hidden on pointerdown, wheel,
  * scroll and drag, and when the pointer leaves the canvas (unless onto the ✎). Not in the tab order: E is the keyboard
  * way. Returns hover(index, x, y) for CutPanel._tlMove (index -1: nothing under the pointer).
  */
@@ -396,8 +424,8 @@ export function attachPencil(panel, onOpen) {
     const x0 = Math.max(panel._x(row.recIn), head), x1 = Math.min(panel._x(row.recOut), W);
     if (x1 - x0 < 48) { hide(); return; }
     idx = i;
-    b.style.left = `${Math.round(tl.offsetLeft + x1 - 28)}px`;
-    b.style.top = `${Math.round(tl.offsetTop + panel._ty + 6)}px`;
+    b.style.left = `${Math.round(tl.offsetLeft + x1 - 34)}px`;
+    b.style.top = `${Math.round(tl.offsetTop + panel._ty + Math.max(20, (panel._L?.th || 56) - 25))}px`;
     b.hidden = false;
   };
   hover.button = b;
@@ -416,6 +444,7 @@ export function attachKeys(panel, onOpen) {
     return TL.eventAt(panel.project, Math.floor(panel.frame))?.index ?? -1;
   };
   root.addEventListener("keydown", (e) => {
+    if (e.defaultPrevented) return;   // another handler took the key (cut_interface_v1.md A7)
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || "") || e.target?.isContentEditable) return;
     const plain = !e.metaKey && !e.ctrlKey && !e.altKey;
     if (!(plain && (/^e$/i.test(e.key) || (e.shiftKey && e.key === "F10") || e.key === "ContextMenu"))) return;
@@ -432,7 +461,8 @@ export function attachKeys(panel, onOpen) {
 export function holdClip(panel, link) {
   const uid = link.clip.uid || mintUid(panel.project.cut);
   const pins = holdPins(panel.project, link.clip.index, { uid });
-  if (pins.length) { const [first, ...also] = pins; panel.replaceClipTake(first.index, first.take, { also, uid }); }
+  // the uid rides on the clicked clip's own pin (holdPins): `first` is a sibling when the clicked clip needs no pin
+  if (pins.length) { const [first, ...also] = pins; panel.replaceClipTake(first.index, first.take, { also, uid: first.uid ?? null }); }
   return uid;
 }
 
@@ -448,6 +478,7 @@ export function attachCutLink(panel, { onEdit = null, caps = {}, extend = null, 
   const link = { panel, handle: null };
   link.pick = (it, l, how = from) => {
     if (it.disabled) return;
+    if (typeof it.run === "function") return it.run(l);   // a host's own item (panel.clipMenuExtras): no hold, no jump
     if (it.where === "version" || it.where === "follow") {
       const i = findClip(panel.project.cut, { ...l.clip });
       if (i >= 0) panel.replaceClipTake(i, it.where === "follow" ? null : { ...it.take });
@@ -463,6 +494,9 @@ export function attachCutLink(panel, { onEdit = null, caps = {}, extend = null, 
     link.close();
     let items = menuItems(l, caps);
     if (extend) items = extend(items, l) || items;
+    // the Cut's own extension point (cut_interface_v1.md A7): [{header} | {label, sub?, disabled?, why?, run(link)}]
+    const more = typeof panel.clipMenuExtras === "function" ? panel.clipMenuExtras(l) : panel.clipMenuExtras;
+    if (Array.isArray(more) && more.length) items = [...items, ...more.map((x) => (x?.header || x?.head ? x : { where: "extra", ...x, disabled: !!(x?.disabled || x?.why) }))];
     link.handle = openEditMenu(items, anchor, { theme: panel.tl, doc: panel.tl?.ownerDocument || document,
       pick: (it) => link.pick(it, l, how), onClose: () => { link.handle = null; } });
     return link.handle;
