@@ -45,6 +45,22 @@ function hash(a, b = 0, c = 0) {
   return s - Math.floor(s);
 }
 
+/**
+ * A seed as a number the sin-hash resolves (the sea's, a diver's breath). Numeric strings read as numbers ("3" is the sea of 3, not one whose chop
+ * is seeded "317" by string concatenation), other strings hash to one, NaN / Infinity / null fall back to `d`, and a
+ * huge seed folds below 2^31: past ~1e17 the train index (b * 311.7) vanishes in the rounding of a * 127.1 and every
+ * train gets the same phase and direction (all the crests in step).
+ */
+export function seedNumber(s, d = 1) {
+  if (typeof s === "string") {
+    const t = s.trim();
+    if (t !== "" && Number.isFinite(+t)) s = +t;
+    else return [...t].reduce((n, ch) => (n * 31 + ch.charCodeAt(0)) % 100003, 7);
+  }
+  if (typeof s !== "number" || !Number.isFinite(s)) return d;
+  return Math.abs(s) < 2147483648 ? s : s % 2147483647;
+}
+
 /** JONSWAP spectral density S(ω) (unnormalised shape: the field scales it to Hs). */
 export function jonswap(w, wp, gamma = 3.3) {
   if (w <= 0) return 0;
@@ -60,7 +76,7 @@ export function jonswap(w, wp, gamma = 3.3) {
  */
 export function makeField(spec = "calm_lake", opts = {}) {
   const S = typeof spec === "string" ? { ...(SEA_STATES[spec] || SEA_STATES.calm_lake), id: spec } : { ...spec };
-  const n = opts.n ?? 28, seed = opts.seed ?? 1;
+  const n = opts.n ?? 28, seed = seedNumber(opts.seed);
   const th0 = ((opts.wind_deg ?? 0) * Math.PI) / 180;
   const wp = (2 * Math.PI) / S.tp;
   // Frequencies from 0.7 ωp to 3.2 ωp (the energy-carrying band), log-spaced, each with its own direction.
