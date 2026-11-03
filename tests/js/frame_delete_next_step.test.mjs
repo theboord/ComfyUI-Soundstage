@@ -333,7 +333,7 @@ test("the shell wires it: the replay asks first, the note reuses the Replayed ba
   const api = src("tools", "tryit", "shell", "scripts", "api.js");
   const demo = src("tools", "tryit", "shell", "demo.mjs");
   assert.match(api, /function replay\(id, shot, step\) \{\n[^\n]*\n\s*try \{ demo\.onReplay\?\.\(\{ shot, step \}\); \}/, "replay() tells the shell before it plays anything back");
-  assert.match(demo, /demo\.onReplay = \(\{ step \}\) => \{\n\s*const n = replayNotice\(\{ step, edited: edited\(\) \}\);/);
+  assert.match(demo, /demo\.onReplay = \(\{ shot, step \}\) => \{\n\s*const n = replayNotice\(\{ step, edited: edited\(\), example: demo\.scene\.examples\?\.\[shot\] \|\| null \}\);/);
   assert.match(demo, /editNote\.replaceChildren\(provBadge\(\{ mode: REPLAYED, note: n\.note \}\)/, "the note leads with the same Replayed badge as the bar");
   assert.match(demo, /b\.textContent = `\$\{GLYPH\[REPLAYED\]\} \$\{RECORDED_LABEL\}`/);
   assert.match(demo, /baseline\(true\);\s+\/\/ what a stop sets up/, "a tour stop's own changes are not the visitor's edit");
