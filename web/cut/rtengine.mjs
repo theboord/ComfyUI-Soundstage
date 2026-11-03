@@ -148,7 +148,14 @@ export class ProxyBook {
     if (e) { e.state = "none"; e.play = null; }
   }
 
+  /** Stop: queued probes are dropped, pending retries do nothing, no answer is reported. */
+  dispose() {
+    this.disposed = true;
+    this.queue.length = 0;
+  }
+
   _pump() {
+    if (this.disposed) return;
     // one at a time until the route has answered once: a server without it says so with a single 404
     while (this.busy < (this.routeSeen ? this.parallel : 1) && this.queue.length) {
       const e = this.queue.shift();
@@ -184,7 +191,7 @@ export class ProxyBook {
       e.state = "building";
       const ms = clamp(Number(json?.retry_ms) || Number(r.headers?.get?.("retry-after")) * 1000 || this.retryMs, 250, 15000);
       this._timer(() => {
-        if (e.state !== "building" || this.noRoute) return;
+        if (e.state !== "building" || this.noRoute || this.disposed) return;
         e.state = "queued";
         this.queue.push(e);
         this._pump();
@@ -201,7 +208,7 @@ export class ProxyBook {
     e.state = state;
     e.play = play;
     if (info) e.info = info;
-    this.onChange(e.src);
+    if (!this.disposed) this.onChange(e.src);
   }
 }
 
@@ -233,14 +240,16 @@ export class RtPlayer {
   }
 
   /** The media set after an edit: a record for every take a clip or a window can play (no element until one is
-   *  wanted); takes no longer in the set are released with their elements. */
+   *  wanted); takes no longer in the set are released with their elements. A take that would not load keeps its
+   *  record (ok false) for the session, so failed() stays true and its clips stay down the ladder: never reloaded. */
   sync(urls) {
     const keep = new Set(urls);
     for (const u of keep) this.rec(u);
     for (const [u, r] of this.recs) {
       if (keep.has(u)) continue;
-      this.recs.delete(u);
       for (const s of this.slots) if (s.key === u) this._unload(s);
+      if (r.ok === false) continue;
+      this.recs.delete(u);
       if (r.blob && r.blob !== "pending") URL.revokeObjectURL(r.blob);
     }
   }
@@ -285,6 +294,8 @@ export class RtPlayer {
   pause() { for (const s of this.slots) if (s.el && !s.el.paused) s.el.pause(); }
 
   dispose() {
+    this.disposed = true;   // no element is created again; the proxy book stops asking
+    this.book.dispose();
     for (const s of this.slots) { this._unload(s); if (s.vfc != null) s.el.cancelVideoFrameCallback?.(s.vfc); }
     this.slots = [];
     for (const r of this.recs.values()) if (r.blob && r.blob !== "pending") URL.revokeObjectURL(r.blob);
@@ -309,7 +320,7 @@ export class RtPlayer {
 
   /**
    * Want the take `key` as `id` this tick. d: {role: "active", src (exact source frame now), lo (first source frame of
-   * this showing), still (a held frame), volume (0..1, its sound under a transition), stale (draw a picture still
+   * this showing), still (a held frame), silent (never heard: a V3 window), volume (0..1, its sound under a transition), stale (draw a picture still
    * settling)} or {role: "preroll", park, at, lo}. Returns the element when it presents this clip, else null.
    */
   want(id, key, d) {
@@ -318,7 +329,7 @@ export class RtPlayer {
     // A take already playing into this clip (a through edit) needs no element of its own: the playing one carries on.
     if (!active && this.slots.some((x) => x.key === key && x.tick === this.tick && x.role === "active" && x.el && !x.el.paused
       && Math.abs(x.src + (d.at - this.ctx.frame) - d.park) <= 1)) return null;
-    this.rec(key);
+    if (this.disposed || this.rec(key).ok === false) return null;   // a take that would not load is never loaded again
     const s = this._slot(id, key, d);
     if (!s) return null;
     Object.assign(s, { id, tick: this.tick, role: d.role, src: active ? d.src : d.park, lo: d.lo ?? 0 });
@@ -326,7 +337,7 @@ export class RtPlayer {
     const url = this._playUrl(key);
     // Never swap the picture that is playing on screen; anywhere else a proxy that became ready takes over.
     if (s.url !== url && !(active && mode === "play" && s.url && el.readyState >= HAVE_CURRENT_DATA && !el.paused)) this._load(s, url);
-    const audible = active && this.ctx.audio && !d.still;
+    const audible = active && this.ctx.audio && !d.still && !d.silent;   // silent: a V3 window (the render has no sound for it)
     if (el.muted !== !audible) el.muted = !audible;
     if (audible) el.volume = clamp(d.volume ?? 1, 0, 1);
     if (el.readyState < HAVE_METADATA) return null;

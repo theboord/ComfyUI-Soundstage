@@ -63,7 +63,7 @@ export const PROBE = String.raw`(() => {
   Document.prototype.createElement = function (tag, opts) { const el = oc.call(this, tag, opts); if (String(tag).toLowerCase() === "video") track(el); return el; };
   const sd = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "src");
   Object.defineProperty(HTMLMediaElement.prototype, "src", { configurable: true, get: sd.get, set(x) {
-    if (this.__pb != null) { const r = P.vids[this.__pb]; if (!r.url && x && !String(x).startsWith("blob:")) r.url = String(x); if (String(x).startsWith("blob:")) r.blob = 1; }
+    if (this.__pb != null) { const r = P.vids[this.__pb]; if (!r.url && x && !String(x).startsWith("blob:")) r.url = String(x); if (x && !String(x).startsWith("blob:")) r.cur = String(x); if (String(x).startsWith("blob:")) r.blob = 1; }
     return sd.set.call(this, x); } });
   const cd = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime");
   Object.defineProperty(HTMLMediaElement.prototype, "currentTime", { configurable: true, get: cd.get, set(x) {
@@ -79,7 +79,7 @@ export const PROBE = String.raw`(() => {
       if (src instanceof HTMLVideoElement) {
         let ts = null;
         try { const vf = new VideoFrame(src); ts = vf.timestamp; vf.close(); P.vfOk++; } catch (e) { P.vfErr++; }
-        P.last = ["v", src.__pb == null ? -1 : src.__pb, ts, src.currentTime, src.readyState, null, null];
+        P.last = ["v", src.__pb == null ? -1 : src.__pb, ts, src.currentTime, src.readyState, null, null, src.__pb == null ? null : P.vids[src.__pb].cur || null];
       } else if (src instanceof HTMLCanvasElement && P.clay) P.last = ["c", -1, null, null, null, P.clay[0], P.clay[1]];
       else P.last = ["o", -1, null, null, null, null, null];
     }
@@ -116,6 +116,16 @@ export function rowsOf(project) {
   });
 }
 
+/** A drawn element's URL as the take it shows: /soundstage/proxy?...&w=N is that take's /view URL. */
+export function takeOf(u) {
+  if (!u) return null;
+  const m = /^(.*?)soundstage\/proxy\?(.*)$/.exec(u);
+  if (!m) return u;
+  const q = new URLSearchParams(m[2]);
+  for (const k of ["w", "probe", "v"]) q.delete(k);
+  return `${m[1]}view?${q}`;
+}
+
 /** Turn the probe's raw tick log into metric ticks ({t, tl, draw, au, speed, phase}). */
 export function ticksOf(raw, fps) {
   const urlOf = new Map(raw.vids.map((v) => [v.id, v.url]));
@@ -123,7 +133,8 @@ export function ticksOf(raw, fps) {
     let draw = null;
     if (last && last[0] === "v") {
       const ts = last[2];
-      draw = { key: urlOf.get(last[1]) || "video:" + last[1], vid: last[1], src: ts != null ? Math.round((ts / 1e6) * fps) : Math.round(last[3] * fps - 0.5), exact: ts != null };
+      // the take the element plays at this draw (a pooled element is re-pointed at other takes; a proxy maps back to its take)
+      draw = { key: takeOf(last[7]) || urlOf.get(last[1]) || "video:" + last[1], vid: last[1], src: ts != null ? Math.round((ts / 1e6) * fps) : Math.round(last[3] * fps - 0.5), exact: ts != null };
     } else if (last && last[0] === "c") draw = { key: "clay:" + last[5], src: last[6], exact: true };
     else if (last) draw = { key: "other", src: -1, exact: false };
     return { t, run, tl: Math.floor(frame + 1e-6), frame, speed, phase, draw,
