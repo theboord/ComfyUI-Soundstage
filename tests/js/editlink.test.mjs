@@ -359,6 +359,8 @@ test("takesOfShot lists what the Takes bin lists, so a trip's before / landed ke
 
 // ------------------------------------------------------------------------------------------------ review blockers
 
+globalThis.Image ||= class { set src(u) { this._src = u; } };   // _syncMedia's Look stills, no DOM here (never loads)
+
 test("B1: the Cut loads every file a clip plays, so a pinned take keeps its picture after refresh and undo", async () => {
   // clip 0 is pinned to a_v1, which shot a no longer lists (it plays a_v2 now)
   const p = project([{ shot_id: "a", in: 0, out: 40, take: { url: A1, rung: "final", version: 1 } }, { shot_id: "b", in: 0, out: 20 }]);
@@ -366,20 +368,41 @@ test("B1: the Cut loads every file a clip plays, so a pinned take keeps its pict
   assert.ok(urls.includes(A1), "the pinned file is wanted");
   assert.ok(urls.includes(V("a_v2.mp4", 77)) && urls.includes(V("b.mp4")) && urls.includes(LOOK), "the shots' own renders too");
   assert.equal(new Set(urls).size, urls.length, "each URL once");
-  // the real _syncMedia keeps the pinned file loaded and still releases one nothing plays
+  // the real _syncMedia registers the pinned file with the real-time engine (rtengine.mjs) and releases one nothing plays
   const { CutPanel } = await import("../../web/cut/cut.mjs");
-  const fake = () => ({ kind: "video", ok: true, el: { pause() {}, removeAttribute() {}, load() {} } });
-  const panel = Object.assign(Object.create(CutPanel.prototype), { project: p, media: new Map() });
-  for (const u of [...urls, V("gone.mp4")]) panel.media.set(u, fake());
+  const img = () => ({ kind: "image", ok: true, el: {} });
+  const panel = Object.assign(Object.create(CutPanel.prototype), { project: p, media: new Map([[LOOK, img()], [V("gone.png"), img()]]) });
+  panel._rt.rec(V("gone.mp4"));
   panel._syncMedia();
-  assert.ok(panel.media.has(A1), "the pinned take is not evicted");
-  assert.equal(panel.media.has(V("gone.mp4")), false, "a file nothing plays is released");
-  // undo re-syncs: a take that Replace swapped out comes back with its file loaded
-  let synced = 0;
+  assert.ok(panel._rt.recs.has(A1), "the pinned take is an engine record");
+  assert.ok(TL.playedUrls(p).every(({ url, rung }) => (rung === "look" ? panel.media : panel._rt.recs).has(url)), "every played file is registered");
+  assert.equal(panel._rt.recs.has(V("gone.mp4")), false, "a video nothing plays is released");
+  assert.ok(panel.media.has(LOOK) && !panel.media.has(V("gone.png")), "the image set keeps the Look and drops a still nothing shows");
+  // undo goes through _afterEdit, which re-syncs: a take that Replace swapped out comes back with its file registered
+  let edits = 0;
   const q = Object.assign(Object.create(CutPanel.prototype), { project: p, history: [{ cut: p.cut }], future: [], sel: 0, frame: 0,
-    _afterEdit() {}, _syncMedia() { synced++; } });
+    _afterEdit() { edits++; } });
   q.undo();
-  assert.equal(synced, 1);
+  assert.equal(edits, 1);
+});
+
+test("a pinned take's URL reaches the rt engine: the clip plays it and the engine holds its record, before and after Replace", async () => {
+  const { CutPanel } = await import("../../web/cut/cut.mjs");
+  const p = project([{ shot_id: "a", in: 0, out: 40 }, { shot_id: "b", in: 0, out: 20 }]);
+  const panel = Object.assign(Object.create(CutPanel.prototype), { project: p, media: new Map([[LOOK, { kind: "image", ok: true, el: {} }]]),
+    history: [], future: [], sel: 0, frame: 0, _afterEdit() { this._syncMedia(); } });
+  panel._syncMedia();
+  assert.equal(panel._rt.recs.has(A1), false, "a_v1 is nobody's file yet");
+  assert.equal(panel.replaceClipTake(0, { url: A1, rung: "final", version: 1 }), true);
+  assert.ok(panel._rt.recs.has(A1), "Replace registers the pinned take with the engine");
+  const row = TL.layout(panel.project)[0];
+  const src = panel._source(row.shot, row.event);
+  assert.equal(src.kind, "video");
+  assert.equal(TL.viewKey(src.url), TL.viewKey(A1), "the clip plays the pinned take");
+  assert.equal(src.m, panel._rt.recs.get(src.url), "under the very record the engine holds (one record per file)");
+  // the same file under another spelling (a cache-buster) is still one record
+  const again = panel._source(row.shot, { ...row.event, take: { ...row.event.take, url: `${A1}&t=9` } });
+  assert.equal(again.url, src.url);
 });
 
 test("B2: the hold, Replace all and versions key on the shot, never the setup label two shots share", async () => {

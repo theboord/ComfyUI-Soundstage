@@ -40,14 +40,13 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 <p align="center"><em>Left: the 3D stage's clay render. Right: what Soundstage renders from it. Same blocking, same camera.</em></p>
 
 <p align="center">
-<a href="docs/media/soundstage_showcase.mp4"><b>&#9654;&#65039; Watch the trailer</b></a> &nbsp;&middot;&nbsp;
 <a href="https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq"><b>&#128421;&#65039; Try it in your browser</b></a> &nbsp;&middot;&nbsp;
 <a href="docs/QUICKSTART.md"><b>&#9201;&#65039; First shot in 10 minutes, then a 3-shot scene</b></a> &nbsp;&middot;&nbsp;
 <a href="docs/TUTORIAL.md"><b>&#128214; Read the tutorial</b></a> &nbsp;&middot;&nbsp;
 <a href="#install"><b>&#9881;&#65039; Install</b></a>
 </p>
 
-<p align="center"><sub>The browser demo is the real App UI replaying real GPU renders, no install needed. Also: <a href="docs/media/soundstage_demo.mp4">the longer walkthrough</a>. Built for Comfy Org's <i>Open Source Higgsfield</i> challenge.</sub></p>
+<p align="center"><sub>The browser demo is the real App UI replaying real GPU renders, no install needed. Built for Comfy Org's <i>Open Source Higgsfield</i> challenge.</sub></p>
 
 ### Highlights: what only Soundstage does
 
@@ -511,6 +510,8 @@ The full list, with folders, sources and licenses, is in [MODELS.md](MODELS.md).
 | Optional | Qwen3.5 4B (object designer, scene agent), Chatterbox (TTS) | Apache-2.0; MIT |
 
 Model weights are not included in this repo. Check each license before commercial use.
+
+To add an image, video, matte or clean-plate model (one registry entry plus one adapter), see [docs/ADD_A_MODEL.md](docs/ADD_A_MODEL.md). A model added that way does not reach the 19 generation paths that build their own graphs, including the App's default final render and all audio; [docs/MODEL_AUDIT.md](docs/MODEL_AUDIT.md) lists them.
 
 <a id="partner-footnote"></a><sup>1</sup> Partner API models (ElevenLabs, Kling, Veo, Nano Banana and the like, through ComfyUI partner nodes and your Comfy credits) are hidden by default. To list them anyway, start ComfyUI with `SOUNDSTAGE_PARTNER_MODELS=1`. A saved workflow that still names one loads fine and says so when it runs.
 

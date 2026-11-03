@@ -50,6 +50,17 @@ def _size(path: str) -> tuple[int, int]:
     return i["width"], i["height"]
 
 
+SEED_MAX = 0xFFFFFFFFFFFFFFFF    # RandomNoise.noise_seed's range on the pod: 0 .. 2**64 - 1
+
+
+def _seed(value, default: int) -> int:
+    """A request's seed inside the sampler's range: absent -> default (0 is a seed, not "absent"); negative or past
+    2**64 wraps (it was queued as is and ComfyUI refused the whole prompt). Garbage raises ValueError (a 422)."""
+    if value is None or value == "":
+        return default
+    return int(value) % (SEED_MAX + 1)
+
+
 def _list(folder: str) -> list[str]:
     try:
         import folder_paths
@@ -77,7 +88,7 @@ def loop_prompt(body: dict) -> dict:
     seconds = min(10.0, max(0.7, float(body.get("seconds") or 4.0)))
     quality = "Final" if body.get("quality") == "Final" else "Draft"
     prompt = LG.build(weights, source=src, end_source=end, width=w, height=h, seconds=seconds,
-                      prompt=str(body.get("prompt") or ""), seed=int(body.get("seed") or 7), quality=quality,
+                      prompt=str(body.get("prompt") or ""), seed=_seed(body.get("seed"), 7), quality=quality,
                       sound=bool(body.get("sound", True)), bridge=bool(body.get("bridge")),
                       prefix=f"{LOOP_SUB}/{'bridge' if body.get('bridge') else 'loop'}")
     W2, H2 = LG.render_size(w, h, LG.QUALITY[quality]["short"])
@@ -107,6 +118,8 @@ def fix(body: dict) -> dict:
     if not path:
         raise ValueError("ref: no such take")
     how = body.get("how")
+    if how not in ("seal", "trim", "bridge", "join"):   # before the seam meter reads the whole take
+        raise ValueError("how: seal, trim, bridge or join")
     out_dir = os.path.join(_dirs()["output"], LOOP_SUB)
     os.makedirs(out_dir, exist_ok=True)
     stem = os.path.splitext(os.path.basename(path))[0]
@@ -132,7 +145,7 @@ def fix(body: dict) -> dict:
         a = F.frame_png(path, last_i, os.path.join(in_dir, f"{stem}_f{last_i}.png"))
         b = F.frame_png(path, 0, os.path.join(in_dir, f"{stem}_f0.png"))
         res = loop_prompt({"source": _out_ref(a), "end_source": _out_ref(b), "seconds": F.BRIDGE_SECONDS,
-                           "prompt": body.get("prompt") or "", "seed": body.get("seed") or 11,
+                           "prompt": body.get("prompt") or "", "seed": _seed(body.get("seed"), 11),
                            "quality": body.get("quality") or "Draft", "sound": True, "bridge": True})
         res.update(clip_end=last_i, before=before)
         return res
@@ -234,7 +247,7 @@ def register(routes=None) -> bool:
         try:
             job["result"] = await R.run(base, str(body.get("source") or ""), body.get("move") or {},
                                         quality="Final" if body.get("quality") == "Final" else "Draft",
-                                        seed=int(body.get("seed") or 7), prompt=str(body.get("prompt") or ""),
+                                        seed=_seed(body.get("seed"), 7), prompt=str(body.get("prompt") or ""),
                                         keep_sound=bool(body.get("keep_sound", True)), progress=progress,
                                         render=not body.get("preview_only"),
                                         guide="depth" if body.get("guide") == "depth" else "edges",
