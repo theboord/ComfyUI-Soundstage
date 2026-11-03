@@ -135,7 +135,7 @@ Without SAM 3.1 and BiRefNet the Layer Pack falls back to the stage's own mattes
 
 Soundstage is laid out like Blender, Maya or After Effects: one screen, nothing to scroll past. Tools on the left, the picture in the middle, settings on the right, the timeline underneath.
 
-<p align="center"><img src="media/tool_dock.jpg" width="900" alt="The Soundstage workspace: step bar, tab bar, tool dock and the 3D view"></p>
+<p align="center"><img src="media/tool_dock.jpg" width="900" alt="The Soundstage workspace: the top row, the tool rail, Properties and the 3D view"></p>
 
 From top to bottom:
 
@@ -242,7 +242,7 @@ Every step works on every shot in the scene. Each step screen has a row of shot 
 
 Optional, but it makes everything after it faster. Soundstage reads your screenplay scene by scene; it never changes it. There are no writing tools: it is your script.
 
-<p align="center"><img src="media/script_tab.jpg" width="860" alt="The Script tab: scene list, scene header, breakdown, director's notes and the page"></p>
+<p align="center"><img src="media/script_tab.jpg" width="860" alt="The Script step: scene list, scene header, shots, outline, director's notes, breakdown, the page and the Director's Book"></p>
 
 **Bringing a script in**
 
@@ -307,7 +307,7 @@ Each card:
 
 Block the scene in 3D clay: who stands where, what moves, where the camera is and how it moves. Nothing here needs a GPU model. Everything later (the frame, the video, the layers) follows what you block here, so this is where the film is made.
 
-<p align="center"><img src="media/step1_set.jpg" width="860" alt="The Set step: the 3D stage"></p>
+<p align="center"><img src="media/step1_set.jpg" width="860" alt="The Set step: the 3D stage in Color"></p>
 
 A typical pass through the step:
 
@@ -333,7 +333,7 @@ The scene agent runs on Qwen3.5 4B if you installed it, and on its own rules oth
 
 **Paint the first frame from your clay.** The image model keeps your blocking (layout, camera, who stands where) and adds the photography. Generate a few, pick one, fix it in Paint Studio if needed, and the video starts from it. Every shot gets its own frame: pick the shot in the row at the top.
 
-<p align="center"><img src="media/step2_frame.jpg" width="860" alt="The Frame step: shot row, style cards, camera picker"></p>
+<p align="center"><img src="media/step2_frame.jpg" width="860" alt="The Frame step: the chosen first frame, the shot row, Follow the clay with Lock to the stage depth, the Style picker"></p>
 
 Each shot card in the row says where it stands: **no frame yet**, **painting…**, **N to pick from**, **✓ frame chosen**.
 
@@ -365,7 +365,7 @@ Then **⑤ Animate this frame →**.
 
 Paint Studio is a layered image editor with Soundstage's own Generative Fill (FLUX 3 Klein by default, crop and stitch: nothing outside your area changes). It opens inside ④ Frame, from a Cast reference's **Edit**, and on its own in the **Paint Studio** tab.
 
-<p align="center"><img src="media/paint_studio.jpg" width="860" alt="Paint Studio: tool rail, layers, history, Generative Fill bar, variations"></p>
+<p align="center"><img src="media/paint_studio.jpg" width="860" alt="Paint Studio: tool rail, layers, history, a brush mask and the Generative Fill bar (Generative Fill, Remove, Extend, Whole frame)"></p>
 
 **Tools** (left rail; the letter is the shortcut):
 
@@ -416,7 +416,7 @@ Keyboard: Cmd/Ctrl+Z / Shift+Cmd/Ctrl+Z undo and redo, Cmd/Ctrl+A select all, Cm
 
 **Animate it with LTX-2.5.** LTX follows your clay animation (positions, camera, timing) and paints it in the style of your chosen frame, with generated sound. Pick a shot, or render them all.
 
-<p align="center"><img src="media/step3_motion.jpg" width="860" alt="The Motion step"></p>
+<p align="center"><img src="media/step3_motion.jpg" width="860" alt="The Motion step: the shot's rendered final, Adherence, Draft · Final · Hollywood, sound and dialogue"></p>
 
 | Control | What it does |
 |---|---|
@@ -570,7 +570,7 @@ Avid AAF comes from the graph node **Soundstage · Cut: Export to Avid / Premier
 
 The timeline has **V3** (motion graphics, once you add one) and **V2** (titles) over **V1**, a **SUBS** lane, and **A1 Dialogue · A2 SFX · A3 Music · A4 Ambience**.
 
-<p align="center"><img src="media/timeline.jpg" width="860" alt="The Cut timeline: Transitions palette, Keys, Assemble scene, Title, Subtitles, Burn in, the Sound row with Generate, Auto-duck, Beats and the loudness target, Render MP4 / ProRes / 9:16"></p>
+<p align="center"><img src="media/timeline.jpg" width="860" alt="The Cut timeline: Transitions palette, Keys, Assemble scene, Title, + Graphic, Subtitles, Burn in, the Sound row with Generate, Impact sounds, Auto-duck, Beats and the loudness target, Render MP4 / ProRes / 9:16 with Finish, a lower third on V3"></p>
 
 **Add a transition or a fade**
 
@@ -743,7 +743,7 @@ It clears the **whole ComfyUI queue**, including jobs you queued from other work
 
 Say what you want and the Director does it with the App's own controls.
 
-<p align="center"><img src="media/director.jpg" width="860" alt="The Director panel beside the stage: 'Use the J-turn stunt' becomes a plan, applied, with Undo this and next-step buttons"></p>
+<p align="center"><img src="media/director.jpg" width="860" alt="The Director docked beside Properties: a request becomes a plan, applied, with Undo this"></p>
 
 1. Press **/** (or **Director** in the top bar). The panel opens with the cursor in the box.
 2. Type what you want, for example *"put Mara in the sports car at night, rain, camera on the hood, she's nervous"*, and press Enter. Or **hold `** anywhere in the App (or Space in the empty box) and talk; let go to send.
@@ -771,7 +771,7 @@ Say what you want and the Director does it with the App's own controls.
 
 ### Presets: one-click camera moves and lighting
 
-<p align="center"><img src="media/presets.jpg" width="760" alt="The Presets window: camera move cards, with 'Applied Crane up to shot 1' and an Undo button"></p>
+<p align="center"><img src="media/presets.jpg" width="760" alt="The Presets window: camera move cards previewed live on the stage, with 'Arm car tracking · Applied to shot 2' and an Undo button"></p>
 
 1. Pick the shot in the strip, then press **V** (or **Presets** in the top bar).
 2. Choose a tab: **Camera moves** (push in, pull out, orbit, crane up / down, dolly zoom, whip pan, handheld follow, drone reveal, tracking side, car mount, bumper cam, over the tyre, arm car tracking, long-lens pan), **Lighting** (golden hour, blue hour, night street, noir hard key, neon, overcast, candle / firelight, studio three-point), **Looks**, **Action**, **Edit styles**, **Recipes** or **Mine**. Or type in **Search presets** ("crane", "golden hour", "J-turn", "trailer").
@@ -988,7 +988,7 @@ The line **Lighting note for the prompt:** shows exactly how your lighting will 
 
 #### The new sets
 
-<p align="center"><img src="media/new_sets.jpg" width="700" alt="The new sets in clay: underwater reef, burning building, airplane cabin, train carriage, station platform, an airliner above the clouds"></p>
+<p align="center"><img src="media/new_sets.jpg" width="700" alt="The new sets in the stage's Color pass: underwater coral reef with a scuba diver, burning building, airplane cabin, train carriage, station platform, an airliner above the clouds"></p>
 
 1. Pick one under **Set** (or start from a script scene whose slugline names it: *UNDERWATER*, *EXT. BURNING BUILDING*, *INT. AIRPLANE CABIN*, *INT. TRAIN*, *EXT. TRAIN STATION*). Scene setup then places the set, a camera and the blocking for you.
 2. **Underwater reef:** a dense coral swim lane. People off the seabed swim (the prompts say "swims", not "walks").

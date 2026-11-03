@@ -177,19 +177,19 @@ Every section links to its tutorial chapter. All pictures are real App screens a
 
 Press `/` (or **Director** in the top bar) and say what you want: *"put Mara in the sports car at night, rain, camera on the hood, she's nervous"*. It shows a short plan, **Apply** runs it through the App's own controls, and every turn has **Undo this**. Hold `` ` `` to talk (offline Whisper); the model is a local Qwen3.5 4B. The same tools are an **MCP server**, so Claude Desktop or Claude Code can block, rig and render in the open App: propose first, apply on your OK, GPU work only with `confirm_gpu`. → [Tutorial](docs/TUTORIAL.md#the-director-chat-voice-and-mcp) · [director.md](docs/director.md) · [mcp.md](docs/mcp.md)
 
-<p align="center"><img src="docs/media/director.jpg" width="860" alt="The Director panel beside the stage: 'Use the J-turn stunt' becomes a one-step plan, applied, with Undo this and next-step buttons"></p>
+<p align="center"><img src="docs/media/director.jpg" width="860" alt="The Director docked beside Properties: 'put Mara in the sports car at night, rain, camera on the hood, she's nervous' becomes a plan, applied, with Undo this"></p>
 
 ### Presets: one click, one undo
 
 Press `V` for a searchable window of **Camera moves** (push in, crane up, dolly zoom, drone reveal, car mount, and the racing set: bumper cam, over the tyre, arm car, long-lens pan…), **Lighting**, **Looks**, **Action**, **Edit styles**, **Recipes** and **Mine** (save your own camera, light or look). Hover a camera move to preview it on the shot; every apply is one ⌘Z. The Director can call them too ("make it a crane up at golden hour"). → [Tutorial](docs/TUTORIAL.md#presets-one-click-camera-moves-and-lighting)
 
-<p align="center"><img src="docs/media/presets.jpg" width="760" alt="The Presets window: camera move cards (Push in, Pull out, Orbit, Crane up, Dolly zoom, Whip pan, Handheld follow, Drone reveal, Tracking side, Car mount), with 'Applied Crane up to shot 1' and Undo"></p>
+<p align="center"><img src="docs/media/presets.jpg" width="760" alt="The Presets window docked beside Properties: 15 camera moves previewed live on the stage (Push in, Pull out, Orbit, Crane up, Crane down, Dolly zoom, Whip pan, Handheld follow, Drone reveal, Tracking side, Car mount and the racing set: Bumper cam, Over the tyre, Arm car tracking, Long-lens pan), with 'Arm car tracking · Applied to shot 2' and Undo"></p>
 
 ### The Timeline: transitions and sound
 
 The **Edit** tab (the Cut) is now a real editing timeline: V2 titles, V3 motion graphics, a subtitles lane and A1 Dialogue · A2 SFX · A3 Music · A4 Ambience. Drag **Dissolve, Dip black, Dip white or Wipe** onto a cut, rubber-band keys, slip and roll. Type a sound and **Generate** it in place (open-weights LTX-2.5 audio and Chatterbox), **Auto-duck** the score under dialogue, snap cuts to the beat, **Assemble scene** from the ScriptSync lining, then render MP4, ProRes 422 HQ or a 9:16 cut at −14 / −23 / −24 LUFS. → [Tutorial](docs/TUTORIAL.md#transitions-sound-titles-and-render) · [cut.md](docs/cut.md)
 
-<p align="center"><img src="docs/media/timeline.jpg" width="900" alt="The Cut timeline: transitions palette, Keys, Assemble scene, Title, Subtitles, Generate sound, Auto-duck, Beats, loudness target, Render MP4 / ProRes / 9:16, with dips and dissolves drawn on V1 and a title on V2"></p>
+<p align="center"><img src="docs/media/timeline.jpg" width="900" alt="The Cut timeline: transitions palette, Keys, Assemble scene, Title, + Graphic, Subtitles, Generate sound, Impact sounds, Auto-duck, Beats, loudness target, Render MP4 / ProRes / 9:16 with Finish, and a lower third on the V3 Graphics lane"></p>
 
 ### Hollywood quality presets
 
@@ -223,7 +223,7 @@ Underwater coral reef, burning building (plus **Fire** on any set), airplane cab
 
 <table>
 <tr>
-<td align="center"><img src="docs/media/new_sets.jpg" width="720" alt="The new sets in clay: underwater reef, burning building, airplane cabin, train carriage, station platform, an airliner above the clouds"></td>
+<td align="center"><img src="docs/media/new_sets.jpg" width="720" alt="The new sets in the stage's Color pass: underwater coral reef with a scuba diver, burning building, airplane cabin, train carriage, station platform, an airliner above the clouds"></td>
 </tr>
 </table>
 
@@ -270,7 +270,7 @@ Scan a QR code and your phone shows the live stage through the shot camera, and 
 
 One step bar, in production order. Every step works on every shot in the scene. Each block links to its chapter in the **[tutorial](docs/TUTORIAL.md)**.
 
-<p align="center"><img src="docs/media/script_tab.jpg" width="960" alt="The Script tab: scenes, outline, director's notes, breakdown, the screenplay page"></p>
+<p align="center"><img src="docs/media/script_tab.jpg" width="960" alt="The Script step: scene list, scene header with Build this scene on the stage, shots, outline, director's notes, breakdown, the screenplay page and the Director's Book"></p>
 
 ### &#9312; Script: bring in your screenplay
 
@@ -282,7 +282,7 @@ Import Fountain, Final Draft (.fdx), PDF or plain text, or try the sample script
 
 Every character, location, wardrobe piece and prop from the breakdown gets a reference picture: upload a character sheet or photo, or **Generate** one with FLUX 3 Klein (front, side and back for characters). In ④ Frame, **Cast in this shot** lets you tick who and what appears in each shot; up to four pictures go to the image model, characters first. *Why it matters:* the same face, costume, car and place in every shot, which is what keeps AI coverage from falling apart. → [Tutorial: ② Cast & Locations](docs/TUTORIAL.md#step-2-cast)
 
-<p align="center"><img src="docs/media/step1_set.jpg" width="960" alt="The Set step: the 3D stage with the tool dock"></p>
+<p align="center"><img src="docs/media/step1_set.jpg" width="960" alt="The Set step: the 3D stage in Color with the tool rail, Properties and the transport"></p>
 
 <table>
 <tr>
@@ -291,7 +291,7 @@ Every character, location, wardrobe piece and prop from the breakdown gets a ref
 </tr>
 <tr>
 <td><img src="docs/media/camera_rigs.gif" alt="The same push-in on four rigs: free, dolly, jib, handheld"></td>
-<td><img src="docs/media/camera_keys.jpg" alt="A numbered camera at every camera key in the 3D stage"></td>
+<td><img src="docs/media/camera_keys.jpg" alt="A numbered camera at every camera key in the 3D stage, with the shot camera inset"></td>
 </tr>
 <tr>
 <td colspan="2" align="center"><img src="docs/media/in_the_car.gif" width="720" alt="Riding inside a car: the clay two-shot through the windshield and the back-seat angle (left) next to the LTX-2.5 draft (right), the same two people in the front seats"></td>
@@ -302,9 +302,9 @@ Every character, location, wardrobe piece and prop from the breakdown gets a ref
 
 A true-scale 3D stage: type what you need ("cowboy on a horse", "police car", "bedroom 4x3.5 m") or **Build with AI** from one sentence. Pose anyone in 3D (click a joint, drag a hand: IK), make them interact, or copy a real performance with **motion capture** from a clip or your webcam. **Video → 3D set** rebuilds a whole clip (location, tracked camera, performer). Keyframe the camera, put it on a dolly, jib, Steadicam or handheld rig, ride along inside cars, light it with a real sun and film lights, and add setups for coverage. *Why it matters:* the clay is the director's plan, and every later step follows it exactly. → [Tutorial: ③ Set](docs/TUTORIAL.md#step-3-set) · [the 3D stage in depth](docs/TUTORIAL.md#4-the-3d-stage-in-depth)
 
-<p align="center"><img src="docs/media/step2_frame.jpg" width="960" alt="The Frame step: shot row, style cards, camera picker"></p>
+<p align="center"><img src="docs/media/step2_frame.jpg" width="960" alt="The Frame step: the chosen first frame, the shot row, Follow the clay with Lock to the stage depth, the Style picker"></p>
 
-<p align="center"><img src="docs/media/paint_studio.jpg" width="960" alt="Paint Studio: tool rail, layers, history, Generative Fill bar, variations"></p>
+<p align="center"><img src="docs/media/paint_studio.jpg" width="960" alt="Paint Studio: tool rail, layers, history, a brush mask and the Generative Fill bar (Generative Fill, Remove, Extend, Whole frame)"></p>
 
 ### &#9315; Frame: paint the first frame, then perfect it
 
@@ -312,7 +312,7 @@ FLUX 3 Klein (or Krea 2 locked to the stage's depth) paints the first frame of e
 
 <p align="center"><img src="docs/media/paint_results.jpg" width="700" alt="Paint Studio results: remove a cowboy, fill a barrel, extend to 2.39"></p>
 
-<p align="center"><img src="docs/media/step3_motion.jpg" width="960" alt="The Motion step"></p>
+<p align="center"><img src="docs/media/step3_motion.jpg" width="960" alt="The Motion step: the shot's rendered final, the video model, Adherence, Draft · Final · Hollywood, sound and dialogue"></p>
 
 ### &#9316; Motion: animate it with sound
 
