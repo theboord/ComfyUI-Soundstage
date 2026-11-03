@@ -21,6 +21,7 @@ import { groundPresetFor } from "./particles.mjs";
 
 const MARKER_COLORS = { explosion: "#e0522a", fire: "#ff8a2a", sparks: "#ffd25a", squib: "#c9c9c9", smoke_bomb: "#8a8f99", breakaway_glass: "#a9d8ea",
   flare: "#ff3b30", body_squib: "#b0121b", stab: "#b0121b" };
+const BAKE_KEYS = ["events", "fps", "frames", "baked", "setTracks", "takeovers"];   // what a bake writes on scene.physics
 const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
 const BLOOD = new THREE.Color(0.32, 0.015, 0.02);
 
@@ -267,26 +268,33 @@ export function installSfx(Stage, deps) {
     const pristine = this.state.physics?.sfx?.pristine;
     const others = this._sfxRigs().some((a) => { const s = X.sfxOf(a); return s.armed && s.kind === "explosion"; });
     const dyn = this.state.actors.some((a) => a.physics?.mode === "dynamic");
-    if (others || dyn) {
+    // The first SFX bake landed on a scene that was already baked (a crash, a ram): no pristine copy was kept, and that
+    // bake has to come back, so re-bake from the authored keys without the disarmed rigs.
+    const priorBake = pristine == null && !!this.state.physics?.baked;
+    if (others || dyn || priorBake) {
       const r = this.simulatePhysics();
       return { ok: true, message: `Reset to before: ${rigs.map((a) => a.name).join(", ")} disarmed; re-baked from the untouched scene. ${r?.message || ""}`.trim() };
     }
-    // Nothing else bakes: the scene from before the first SFX bake, exactly.
-    if (pristine) {
-      const P0 = JSON.parse(pristine);
-      const keep = new Map(P0.actors.map((a) => [a.id, a]));
-      this.state.actors = this.state.actors.map((a) => {
-        if (X.isSfxRig(a) || !keep.has(a.id)) return a;
-        // An object edited since (its authored keys changed) keeps the edit: it is only unbaked.
-        const p0 = keep.get(a.id), authored = a.physics?.baked ? (a.physics.source?.keys ?? null) : a.keys;
-        if (JSON.stringify(authored) === JSON.stringify(p0.keys) || JSON.stringify(a.keys) === JSON.stringify(p0.keys)) return clone(p0);
-        const b = clone(a); unbakeActor(b); return b;
-      });
-      this.state.physics = P0.physics == null ? {} : clone(P0.physics);   // (+ the rigs' record, re-made below)
-    } else {
-      for (const a of this.state.actors) if (a.physics?.baked) unbakeActor(a);
-      if (this.state.physics) for (const k of ["events", "baked", "setTracks", "takeovers"]) delete this.state.physics[k];
-    }
+    // Nothing else bakes: every baked object goes back to its authored keys, position and physics (from the pristine
+    // copy when it has one), and everything else about it (its name, colour, wardrobe...) stays as it is now. The
+    // scene's physics keeps its settings (ground type, shake...); only what the bake wrote goes.
+    const P0 = pristine ? JSON.parse(pristine) : { actors: [], physics: null };
+    const keep = new Map(P0.actors.map((a) => [a.id, a]));
+    this.state.actors = this.state.actors.map((a) => {
+      if (X.isSfxRig(a) || !a.physics?.baked) return a;
+      const b = clone(a), p0 = keep.get(a.id);
+      unbakeActor(b);
+      if (!p0) return b;
+      // The authored state as it was before the blast (unless the authored keys were edited since), in its key order.
+      if (JSON.stringify(b.keys) === JSON.stringify(p0.keys)) for (const k of ["keys", "position", "physics"]) { if (p0[k] === undefined) delete b[k]; else b[k] = clone(p0[k]); }
+      const out = {};
+      for (const k of Object.keys(p0)) if (k in b) out[k] = b[k];
+      for (const k of Object.keys(b)) if (!(k in out)) out[k] = b[k];
+      return out;
+    });
+    const ph = { ...(this.state.physics || {}) }, ph0 = P0.physics || {};
+    for (const k of BAKE_KEYS) { if (ph0[k] === undefined) delete ph[k]; else ph[k] = clone(ph0[k]); }
+    this.state.physics = ph;
     if (this.state.physics?.sfx) { delete this.state.physics.sfx.pristine; this.state.physics.sfx.affected = []; }
     this._bakeSig = null;
     this._sfxCache = null;
