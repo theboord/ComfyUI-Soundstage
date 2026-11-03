@@ -570,7 +570,14 @@ function createStageWidget(node, inputName) {
   };
   // One saved cut shared by the docked shot strip and the full Cut editor: {cut, audio, audio_tracks, excluded_shots}.
   const loadCut = () => readSaved(node.properties?.ss_cut);
-  const saveCut = (v) => { node.properties = node.properties || {}; node.properties.ss_cut = v; };
+  const saveCut = (v) => {
+    node.properties = node.properties || {};
+    const was = JSON.stringify(node.properties.ss_cut ?? null);
+    node.properties.ss_cut = v;
+    // A property write alone isn't seen by ComfyUI's change tracker (as rememberRender): nudge it when the cut changed,
+    // so the draft and Save keep the edit (a clip's pinned take and versions included).
+    if (JSON.stringify(v ?? null) !== was) try { app.extensionManager?.workflow?.activeWorkflow?.changeTracker?.checkState?.(); } catch { /* older frontend */ }
+  };
   let strip = null; // created below; the Cut editor may report changes before then
   let editLink = null; // Edit from the timeline (web/cut/editlink_app.mjs), attached once the pipeline is built
   const cut = new CutPanel(cutView, {
@@ -580,7 +587,10 @@ function createStageWidget(node, inputName) {
       return stage.renderFrameTo("clay", frame, { shot: shotId });
     },
     onChange: (project) => {
+      const was = JSON.stringify(node.properties?.ss_cut ?? null);
       saveCut({ ...loadCut(), ...savedFields(project) });   // cut, sound, titles, subtitles, tail fade (Milestone 19)
+      // The strip's undo snapshots predate this edit: a strip ⌘Z would write one over it (a held or replaced take too).
+      if (strip && JSON.stringify(node.properties.ss_cut) !== was) { strip.undoStack = []; strip.redoStack = []; }
       strip?.refresh();
     },
     onEditShot: (id, where, ctx) => editShot(id, where, ctx),

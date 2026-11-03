@@ -125,16 +125,18 @@ export const sourceReel = (src, width = 8) => reelBase(src.reel || src.path.spli
 
 export function reelNames(project, width = 8) {
   const used = new Set(), out = new Map();
-  const add = (key, name) => {
-    const base = reelBase(name, width);
-    let reel = base, n = 1;
-    while (used.has(reel)) { const suf = String(n++); reel = base.slice(0, width - suf.length) + suf; }
+  // tag: a pinned take's "V2" / "CLAY", kept at the END of the reel so a short reel still shows which version it is
+  const add = (key, name, tag = "") => {
+    const base = reelBase(name, width), full = reelBase(name, Infinity);
+    const fit = (t) => full.slice(0, Math.max(0, width - t.length)).replace(/_+$/, "") + t;
+    let reel = !tag ? base : full.length + 1 + tag.length <= width ? `${full}_${tag}` : fit(tag), n = 1;
+    while (used.has(reel)) { const suf = String(n++); reel = tag ? fit(`${suf}_${tag}`) : base.slice(0, width - suf.length) + suf; }
     used.add(reel);
     out.set(key, reel);
   };
   for (const s of project.shots) add(s.id, s.name);
-  // A clip pinned to an earlier take (docs/cut.md, Edit from the timeline) gets its own reel: one reel per file.
-  for (const r of layout(project)) if (r.event.take && !out.has(mediaKey(r))) add(mediaKey(r), `${r.shot.name} ${r.event.take.url ? `v${r.event.take.version}` : "clay"}`);
+  // A clip pinned to a take its shot does not play now (docs/cut.md, Edit from the timeline) gets its own reel: one per file.
+  for (const r of layout(project)) if (r.event.take && !out.has(mediaKey(r))) add(mediaKey(r), r.shot.name, r.event.take.url ? `V${r.event.take.version}` : "CLAY");
   for (const a of project.audio || []) add("audio:" + a.id, a.label);
   return out;
 }

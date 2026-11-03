@@ -371,8 +371,18 @@ export function clipShot(shot, e) {
   return { ...rest, renders: t.rung === "look" ? { look: url } : { [t.rung]: url, ...(look ? { look } : {}) } };
 }
 
-/** The media a layout row plays, as a key: the shot id, or "shotId|url" for a pinned clip (one reel / asset per file). */
-export const mediaKey = (row) => (row.event?.take ? `${row.shot.id}|${row.event.take.url || "clay"}` : row.shot.id);
+/** Does a clip pinned to a take play just what its shot plays (the take is the shot's current best render, no camera
+ *  original involved)? Then its media is the shot's own: a hold alone changes no reel, asset or master name. */
+export function playsOwn(shot, e) {
+  const t = e?.take;
+  if (!shot || !t || shot.source) return false;
+  const r = bestRung(shot);
+  return t.url ? r === t.rung && viewKey(shot.renders[r]) === viewKey(t.url) : r === "clay";
+}
+
+/** The media a layout row plays, as a key: the shot id, or "shotId|type:subfolder/filename" ("shotId|clay") for a clip
+ *  pinned to a file its shot does not play now (row.own false): one reel / asset per file, whatever its URL spelling. */
+export const mediaKey = (row) => (row.event?.take && !row.own ? `${row.shot.id}|${row.event.take.url ? viewKey(row.event.take.url) : "clay"}` : row.shot.id);
 
 // ---------------------------------------------------------------- audio
 
@@ -537,14 +547,16 @@ export function noteItems(row) {
   return items;
 }
 
-/** Events with record positions: [{index, shot, in, out, len, recIn, recOut}] (rec frames from 0). row.shot is the shot
- *  as the clip plays it (clipShot: a pinned take wins over the shot's latest render). */
+/** Events with record positions: [{index, shot, in, out, len, recIn, recOut, own}] (rec frames from 0). row.shot is the
+ *  shot as the clip plays it (clipShot: a pinned take wins over the shot's latest render); own: a pinned clip that plays
+ *  what its shot plays (playsOwn, for mediaKey). */
 export function layout(project) {
   const byId = shotMap(project);
   let rec = 0;
   return project.cut.map((e, index) => {
     const len = e.out - e.in;
-    const row = { index, event: e, shot: clipShot(byId.get(String(e.shot_id)), e), in: e.in, out: e.out, len, recIn: rec, recOut: rec + len };
+    const base = byId.get(String(e.shot_id));
+    const row = { index, event: e, shot: clipShot(base, e), in: e.in, out: e.out, len, recIn: rec, recOut: rec + len, own: playsOwn(base, e) };
     rec += len;
     return row;
   });
