@@ -123,6 +123,8 @@ Click **4 Frame**. (**④ Make the first frame →** at the right end of ③ Set
 
 Do **not** click *…for every shot*. It queues a GPU batch.
 
+While it paints, the **Activity** pill in the top row (left of **✦ Ask**) says what the GPU is doing, for example **Sampling · 8/12 · ~1 min**. Click it to see each node as it runs, how long so far and about how long is left, and **Cancel**. Tick **Node types** under **Details** for the raw ComfyUI node names. See [Activity](TUTORIAL.md#activity).
+
 <p align="center"><img src="media/qs_C08.webp" width="760" alt="④ Frame: prompt, Follow the clay, Lock to the stage depth, Variations 1, Quality Fast, Generate frames. '…for every shot' is a batch."></p>
 <p align="center"><em>④ Frame: prompt, Follow the clay, Lock to the stage depth, Variations 1, Quality Fast, Generate frames. '…for every shot' is a batch.</em></p>
 
@@ -331,7 +333,7 @@ Cole steps out into the rain and looks off at the wrecked crates. Then Cole turn
 
 **Where things live:**
 
-- **Top bar:** Steps 1-7, scene switcher on ③-⑤ (◀ ▶ = scene, ▾ = shots), Undo / Redo, Presets, Tools ▾, Book, ✦ Ask, Guide, Done. Below 1400 px some are icons (hover for the name); in a narrow window the least used fold into **⋯** (✦ Ask never does)
+- **Top bar:** Steps 1-7, scene switcher on ③-⑤ (◀ ▶ = scene, ▾ = shots), Undo / Redo, Presets, Tools ▾, Activity (what the GPU is doing, node by node), Book, ✦ Ask, Guide, Done. Below 1400 px some are icons (hover for the name); in a narrow window the least used fold into **⋯** (✦ Ask and Activity never do)
 - **Left dock:** Build with AI, Add object, Person, Interact, Capture motion, Video → 3D, Photo → 3D, Camera, Set & weather, Lighting, Phone camera
 - **Right inspector:** Everything for what you selected: Object, Camera, Set, Light, AI. Long: scroll for Lens & rig, Parts and Eyes
 - **Above the viewport:** Camera view, Free view, Top view, Show cameras, Look, Coach; Wire / Clay / Color / Depth
