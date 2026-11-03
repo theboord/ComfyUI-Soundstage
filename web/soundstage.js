@@ -1279,7 +1279,14 @@ function createStageWidget(node, inputName) {
     mkToggle("Snap", "grid-3x3", "Snap the gizmo: 0.1 m moves, 15° turns", () => !!stage.snap, (v) => stage.setSnap(v)));
   stage.onGizmoMode = (m) => { for (const [k, b] of Object.entries(gizmoBtns)) b.setAttribute("aria-pressed", String(k === m)); };
   stage.onGizmoMode(stage.gizmoMode || "translate");
-  sel.append(selName, gizmoSeg, measureSeg, turn.wrap, scl.wrap, dup, del);
+  // Video → 3D: rebuild just the selected object from the clip (shown while the Identical? bar is up).
+  const fixBtn = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn", hidden: true,
+    title: "Re-analyse only this object in the source clip (SAM 3.1) and rebuild it alone; it keeps its place. Undo puts the old one back" });
+  fixBtn.dataset.act = "v2s-fix";
+  fixBtn.append(icon("sparkles", 13), "Fix this object");
+  fixBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  fixBtn.addEventListener("click", () => { const id = stage.selected; if (id && compare) compare.fixObject(id); });
+  sel.append(selName, gizmoSeg, measureSeg, turn.wrap, scl.wrap, dup, del, fixBtn);
   const outlineWrap = document.createElement("label");
   const outlineSelEl = document.createElement("select");
   outlineSelEl.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -1699,6 +1706,7 @@ function createStageWidget(node, inputName) {
     if (fixUndo.size) items.push({ key: "undo", label: `Undo: ${fixUndo.peek().label}`, icon: "undo-2", run: () => undoFix() });
     if (!a) items.unshift({ note: "Select a rebuilt object first to fix or remove it" });
     openFixMenu(items, e, { theme: el });
+    if (a) setTimeout(() => { if (stage.selected !== a.id) stage.select(a.id); }, 0);   // the menu is about this one: keep it selected
   });
   /** Play the shot from the top (the take with it). */
   function playTake() {
@@ -2013,6 +2021,7 @@ function createStageWidget(node, inputName) {
     // Nothing selected: the Outliner says so (or names the selected light) instead of keeping the last object (QA round 07).
     if (!info) { try { outlineSelEl.value = stage.selectedLight ? `light|${stage.selectedLight}` : ""; } catch { /* not built */ } return; }
     selName.textContent = info.name;
+    fixBtn.hidden = !(compare && fixesFor((stage.state?.actors || []).find((a) => a.id === info.id)).includes("fix"));
     turn.input.value = info.rotation_deg; turn.out.textContent = `${info.rotation_deg}°`;
     scl.input.value = info.scale || 1; scl.out.textContent = `${(+(info.scale || 1)).toFixed(2)}×`;
     try { syncOutline(); outlineSel.sel.value = `object|${info.id}`; } catch {}
