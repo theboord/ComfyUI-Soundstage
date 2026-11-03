@@ -13,6 +13,7 @@ import { uniqueNames, cameraKeys, CAR_PATH_MOVES, lightingPlan, gradePatch, crat
 import { seabedHeight } from "../stage/sets/underwater.mjs";
 import { imperfectStack, idSeed } from "../stage/impacts.mjs";
 import { SOFT_PRESET_KINDS, softPreset } from "./softpresets.mjs";
+import { SFX_PRESET_KINDS, sfxPreset } from "./sfxpresets.mjs";
 import { boatPreset, isBoat } from "./boatpresets.mjs";
 
 const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
@@ -386,6 +387,7 @@ export class PresetRunner {
 
   _physics(p) {
     if (SOFT_PRESET_KINDS.includes(p.apply.physics)) return softPreset(this, p);   // Milestone 28: soft bodies
+    if (SFX_PRESET_KINDS.includes(p.apply.physics)) return sfxPreset(this, p);     // practical effects (SFX rigs)
     const st = this.stage, kind = p.apply.physics, last = this._last();
     const s = this.scene();
     const stamp = Date.now().toString(36);

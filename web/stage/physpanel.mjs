@@ -316,3 +316,6 @@ export class PhysicsPanel {
 // Soft-body types and the scene's ground type (Milestone 28): softpanel.mjs extends _build and sync.
 import { installSoftPanel } from "./softpanel.mjs";
 installSoftPanel(PhysicsPanel);
+// Practical effects (SFX rigs): sfxpanel.mjs adds its section the same way.
+import { installSfxPanel } from "./sfxpanel.mjs";
+installSfxPanel(PhysicsPanel);
