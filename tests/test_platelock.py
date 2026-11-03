@@ -73,7 +73,7 @@ def test_local_lock_takes_only_the_edit_and_keeps_the_rest_bit_identical():
 
 def test_tone_fit_recovers_the_drift_and_ignores_the_edit():
     plate = plate_clip(noise=0.0)
-    gen = add_box(model_render(plate, scale=1.0, gain=1.2, bias=-0.05), 10, 70, 10, 90)  # the edit covers ~40%
+    gen = add_box(model_render(plate, scale=1.0, gain=1.2, bias=-0.05), 10, 70, 10, 90)  # the edit covers ~31%
     gain, bias = PL.fit_tone(plate, gen)
     assert torch.allclose(gain.mean(0), torch.tensor([1.2, 1.2, 1.2]), atol=0.08)
     assert torch.allclose(bias.mean(0), torch.tensor([-0.05, -0.05, -0.05]), atol=0.05)

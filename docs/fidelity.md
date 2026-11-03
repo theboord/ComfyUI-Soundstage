@@ -132,7 +132,7 @@ node --test tests/js/oneclick.test.mjs
 ```
 
 - `tests/test_platelock.py`: a local edit is taken and everything else stays bit-identical (and far from the raw
-  model's 26 dB). The tone fit recovers a 1.2× / −0.05 drift with 40% of the frame edited. Hysteresis works in space
+  model's 26 dB). The tone fit recovers a 1.2× / −0.05 drift with about 31% of the frame edited. Hysteresis works in space
   and time. One-pixel sparkle stays out of the matte. A dropout is filled and a fast mover leaves no trail. Re-grain
   adds only the missing grain. In look mode the light alone is no edit, snow on a ledge is taken, and the rest is the
   plate's texture re-lit. Alpha mode keeps the picture and steadies the matte. The report counts are checked.
