@@ -55,6 +55,7 @@ import { JobCard, chooseVideoUse, clipSeconds, v2sPlan, wireVideoDrop, isVideoFi
 import { mountCompare } from "./ui/v2scompare.mjs";
 import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
 import { mountDirector } from "./agent/directorpanel.mjs";
+import { mountAsk } from "./agent/ask.mjs";
 import { mountBook } from "./book/book.mjs";
 import { mountPresets } from "./ui/presets.mjs";
 import { mountPerformance } from "./performance/performance.mjs";
@@ -103,10 +104,10 @@ const CSS = `
 /* Where the header's Import video shows (the narrow App panel), the viewport header's copy would be a second, identical button. */
 .ss-stage:not([data-ws=wide]):not(.ss-full) .ss-vi-head:not(.ss-vi-tabbtn) { display:none !important; }
 .ss-stage [hidden] { display:none !important; }
-.ss-stage.ss-cutmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-cutview) { display:none !important; }
-.ss-stage.ss-scriptmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-scriptview):not(.ss-status) { display:none !important; }
-.ss-stage.ss-dailiesmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-dailiesview):not(.ss-status) { display:none !important; }
-.ss-stage.ss-castmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-castview):not(.ss-status) { display:none !important; }
+.ss-stage.ss-cutmode > :not(.ss-tabs):not(.ss-dir):not(.ss-pipe):not(.ss-cutview) { display:none !important; }
+.ss-stage.ss-scriptmode > :not(.ss-tabs):not(.ss-dir):not(.ss-pipe):not(.ss-scriptview):not(.ss-status) { display:none !important; }
+.ss-stage.ss-dailiesmode > :not(.ss-tabs):not(.ss-dir):not(.ss-pipe):not(.ss-dailiesview):not(.ss-status) { display:none !important; }
+.ss-stage.ss-castmode > :not(.ss-tabs):not(.ss-dir):not(.ss-pipe):not(.ss-castview):not(.ss-status) { display:none !important; }
 .ss-castview { min-width:0; }
 .ss-dailiesview { min-width:0; display:flex; flex-direction:column; gap:8px; }
 /* The bin fills the Takes view, so ScriptSync's page scrolls inside its own panel and the player stays in view. */
@@ -119,9 +120,9 @@ const CSS = `
 .ss-scriptview { min-width:0; }
 .ss-scenehead { display:flex; align-items:center; gap:8px; min-width:0; }
 .ss-cutview > .ss-scenehead { margin:0 0 6px; }
-.ss-stage.ss-pipemode > :not(.ss-tabs):not(.ss-pipe):not(.ss-pipeview) { display:none !important; }
-.ss-stage.ss-advmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-advisorview):not(.ss-striphost) { display:none !important; }
-.ss-stage.ss-canvasmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-canvasview):not(.ss-striphost):not(.ss-status) { display:none !important; }
+.ss-stage.ss-pipemode > :not(.ss-tabs):not(.ss-dir):not(.ss-pipe):not(.ss-pipeview) { display:none !important; }
+.ss-stage.ss-advmode > :not(.ss-tabs):not(.ss-dir):not(.ss-pipe):not(.ss-advisorview):not(.ss-striphost) { display:none !important; }
+.ss-stage.ss-canvasmode > :not(.ss-tabs):not(.ss-dir):not(.ss-pipe):not(.ss-canvasview):not(.ss-striphost):not(.ss-status) { display:none !important; }
 .ss-stage.ss-full { position:fixed !important; inset:12px !important; z-index:10000 !important; width:auto !important;
   height:auto !important; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,.6); border:1px solid #39404b; }
 .ss-stage.ss-full:not(.ss-ws) .ss-ladder canvas { max-height:calc(100vh - 260px); object-fit:contain; }
@@ -3116,6 +3117,26 @@ function createStageWidget(node, inputName) {
       say: (m) => (status.textContent = m),
     } });
 
+  // Ask (web/agent/ask.mjs): the Director's button, pinned beside Guide / Expand (never in "⋯"), Cmd/Ctrl+K, a floating
+  // ✦ when the top row is out of sight. It reads where you are before every answer and every plan.
+  node.ssAsk = mountAsk({ root: el, dir: node.ssDirector,
+    isActive: () => el.isConnected && !!el.getClientRects().length && !el.dataset.tour && !appKeysHeld(),
+    host: {
+      context: () => {
+        const step = { script: "script", cast: "cast", stage: "set", frame: "frame", motion: "motion", ladder: "review", deliver: "deliver" }[curView] || null;
+        let selected = null, shot = null;
+        try { const s = stage.selectedInfo(); if (s) selected = { id: s.id, name: s.name, kind: s.kind }; } catch { /* no stage */ }
+        try {
+          const a = stage.activeShot(), list = pipeline.shots();
+          if (a) shot = { id: a.id, name: a.name || a.id, n: Math.max(1, list.findIndex((x) => x.id === a.id) + 1) };
+        } catch { /* no shots */ }
+        const open = (q) => [...el.querySelectorAll(q)].some((x) => !x.hidden && x.getClientRects().length);
+        const panel = open(".ss-phys") ? "Physics" : open(".ss-pre") ? "Presets" : open(".ss-clpop") ? "Look" : null;
+        return { step, view: curView, selected, shot, panel, layout: el.classList.contains("ss-cl") ? "canvas" : "classic" };
+      },
+      goStep: (k) => { if (pipeline.btns?.[k]) pipeline.go(k); },
+    } });
+
   // Presets (Milestone 17, web/ui/presets.mjs): one window of one-click camera moves, lighting, looks, stunts, edit
   // styles and recipes ("V" or the top bar). Each apply is one undo step; the Director gets them as its preset tool.
   node.ssPresets = mountPresets({ root: el, topBar: tabs, before: keysBtn, api, stage,
@@ -3517,7 +3538,7 @@ function createStageWidget(node, inputName) {
     moreBtn.setAttribute("aria-haspopup", "menu");
     moreBtn.setAttribute("aria-expanded", "false");
     const topFit = topRowFit({ row: tabs, more: moreBtn, theme: el,
-      order: () => [...[".ss-keysbtn", ".ss-bookbtn", ".ss-guidebtn", ".ss-presetsbtn", ".ss-dirbtn"].map((q) => tabs.querySelector(`:scope > ${q}`)), redoBtn, undoBtn] });
+      order: () => [...[".ss-keysbtn", ".ss-bookbtn", ".ss-guidebtn", ".ss-presetsbtn"].map((q) => tabs.querySelector(`:scope > ${q}`)), redoBtn, undoBtn] });
     node.ssTopFit = topFit;   // QA: tools/qa/toprow_check.mjs
     toolsBtn.addEventListener("click", () => { const o = toolsMenu.hidden; closePops(); setPop(toolsMenu, o, toolsBtn); });
     toolsMenu.addEventListener("click", (e) => { if (e.target.closest?.("button")) setPop(toolsMenu, false, toolsBtn); });

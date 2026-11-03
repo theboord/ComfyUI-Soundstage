@@ -3,6 +3,13 @@
 Soundstage is updated continuously on `main`. Newest first. Times are US Pacific.
 Each entry links to the code; every milestone ships with tests.
 
+## 2026-11-03
+
+**05:10 PST · Ask: an always-visible assistant button (✦ Ask) on every step, with where-you-are context, how-to answers, Show me and hold-to-talk**
+- **Still wrong (read first):** not clicked through in the live App or on the pod (no GPU or ComfyUI in this session); the 1024 / 1280 / 1920 fit is checked with the measured row widths, not in Chrome; the Show me spotlight is checked against the source (each selector and label exists), not on screen. At 1024 wide the labelled Ask takes room, so Guide (and other buttons) can still fold into **⋯**. Answers come from 20 written recipes; other questions need the local model. Cmd/Ctrl+K can clash with a browser or ComfyUI shortcut while the App has focus (the App takes it).
+- **What:** the Director's top-row button is now **✦ Ask** ([web/agent/directorpanel.mjs](web/agent/directorpanel.mjs)), pinned (`ss-pin`: [web/ui/toprow.mjs](web/ui/toprow.mjs) never folds it), with Cmd/Ctrl+K, a floating ✦ when the row is out of sight, and the chat kept on screen on every step (the step screens used to hide it). [web/agent/ask.mjs](web/agent/ask.mjs): where you are (step, selected object, shot, open panel) shown in the chat and sent to the planner (`ctx.ui`, [soundstage/agent/director.py](soundstage/agent/director.py)); questions get step-by-step recipes with **Show me** (the Guide's spotlight) and **Do it for me** (Director plan → Apply → Undo this) and suggested next steps; hold Ask to talk (the Director's mic: browser speech or Whisper).
+- **Tests:** [tests/js/ask.test.mjs](tests/js/ask.test.mjs); [tests/js/toprow_fit.test.mjs](tests/js/toprow_fit.test.mjs) updated (Ask is out of the fold order). Docs: [TUTORIAL: Ask](docs/TUTORIAL.md#ask-the-assistant), [QUICKSTART](docs/QUICKSTART.md).
+
 ## 2026-11-02
 
 **13:50 PST · Tests: the fracture network's bake-time check no longer flakes inside the full suite**
