@@ -13,7 +13,7 @@ This guide is for anyone who has just cloned the repo. It covers where every pan
 
 ## Contents
 
-0. **[New on 1 and 2 November](#new-on-1-and-2-november)** (limits first): [world collisions](#world-collisions-everything-collides) · [✦ One-click](#one-click-effects-relight-angles-expand) · [Seamless loop](#seamless-loop-and-the-seam-meter) · [Reshoot](#reshoot-from-a-new-angle) · [Open in ComfyUI](#open-in-comfyui-and-download-the-graph) · [Film a move](#film-a-move-on-your-phone) · [Racing Cinema](#racing-cinema-and-the-racing-camera-moves) · [boats](#boats) · [swimming](#swimming-and-water) · [Drive mode](#drive-mode-what-changed) · [voice conversion](#voice-conversion-in-real-performance) · [1024 layout and ⋯](#the-1024-wide-layout-and-the-menu) · [pop-over layer](#one-pop-over-layer-for-every-menu) · [brass key and strip](#the-brass-key-and-the-shot-strip-fixes) · [Cut timeline note](#the-cut-timeline-being-upgraded-tonight) · [Passes viewer](#passes-judge-the-matte-pose-talking-and-depth)
+0. **[New on 1 and 2 November](#new-on-1-and-2-november)** (limits first): [world collisions](#world-collisions-everything-collides) · [✦ One-click](#one-click-effects-relight-angles-expand) · [Seamless loop](#seamless-loop-and-the-seam-meter) · [Reshoot](#reshoot-from-a-new-angle) · [Open in ComfyUI](#open-in-comfyui-and-download-the-graph) · [Film a move](#film-a-move-on-your-phone) · [Racing Cinema](#racing-cinema-and-the-racing-camera-moves) · [boats](#boats) · [swimming](#swimming-and-water) · [Drive mode](#drive-mode-what-changed) · [voice conversion](#voice-conversion-in-real-performance) · [1024 layout and ⋯](#the-1024-wide-layout-and-the-menu) · [pop-over layer](#one-pop-over-layer-for-every-menu) · [brass key and strip](#the-brass-key-and-the-shot-strip-fixes) · [Passes viewer](#passes-judge-the-matte-pose-talking-and-depth) · **2 Nov evening:** [real-time playback in the Cut](#real-time-playback-in-the-cut) · [Activity bar](#activity-bar-which-node-your-render-is-on) · [✦ Ask](#ask-on-every-step) · [④ Delete, Clear all, Make the first frame](#frame-delete-clear-all-and-make-the-first-frame) · [the first frame shows only what the camera sees](#the-first-frame-shows-only-what-the-camera-sees) · [Drive takes over from keys](#drive-takes-over-from-keys-and-cleans-the-take) · [⌂ Back to the set and ↶ Last view](#back-to-the-set-and-last-view)
 1. [Install](#1-install)
 2. [A tour of the workspace](#2-a-tour-of-the-workspace)
 3. [The seven steps, one by one](#3-the-seven-steps-one-by-one)
@@ -54,8 +54,14 @@ Everything below landed on `main` on 1 and 2 November 2026 ([CHANGELOG](../CHANG
 | [1024-wide layout](#the-1024-wide-layout-and-the-menu) | Checked headless at 1024×640, not on a real 1024-pt iMac. At 1024 the picture is small. |
 | [Pop-over layer](#one-pop-over-layer-for-every-menu) | Coach tips were not part of the sweep (the demo scene has none). |
 | [Brass key and the strip](#the-brass-key-and-the-shot-strip-fixes) | Holding and tossing a key is set in the scene data; there is no button for it yet. In Clay the key reads small and grey: it shows brass only in Color. |
-| [Cut timeline](#the-cut-timeline-being-upgraded-tonight) | Playback, frame rates and *Edit in* are being rebuilt tonight, so they aren't documented here yet. |
 | [Passes viewer](#passes-judge-the-matte-pose-talking-and-depth) | The matte tools were checked headless on a synthetic Layer Pack only: no real SAM 3.1 or BiRefNet matte has been judged in it yet. A clip ✦ Cutout's alpha is ProRes 4444, which browsers can't decode, so it isn't shown. Pose has per-point confidence for the face only, until a new Real performance read (body and hands come with the next ComfyUI restart). |
+| [Real-time playback](#real-time-playback-in-the-cut) | Measured on a 60 s test cut in headless Chrome, one run per profile, not on a real laptop. The bench did not exercise the proxies. Frame rates other than 24 and *Edit in* from the timeline are not in this build. |
+| [Activity bar](#activity-bar-which-node-your-render-is-on) | Not run against a live ComfyUI yet (simulated events in ComfyUI's shapes). A job from another tab shows node numbers until it ends; another session's job has no node detail. |
+| [✦ Ask](#ask-on-every-step) | Not clicked through in the live App. Answers come from 20 written recipes; anything else needs the local model. ⌘K / Ctrl+K can clash with a browser shortcut. |
+| [④ Delete and Make the first frame](#frame-delete-clear-all-and-make-the-first-frame) | Delete takes a frame off the list, not off the disk. Only the newest delete can be undone, for 5 s, and only while you stay on ④ Frame. |
+| [First frame, camera only](#the-first-frame-shows-only-what-the-camera-sees) | The Look description is filtered by word, not meaning; a car named only by brand slips through. Checked on 2 shots with stills, no motion renders. |
+| [Drive takes over from keys](#drive-takes-over-from-keys-and-cleans-the-take) | Checked in Node tests and headless Chrome, not in the live App. A fast weaving car still needs a key every 6-9 frames. Undo to the raw take covers only the last kept take. |
+| [⌂ Back to the set / ↶ Last view](#back-to-the-set-and-last-view) | `.` and `,` work only while the viewport has the keyboard (click it first), and the buttons hide while you drive. On a set with a big floor, Back to the set can land far out. |
 
 <a id="world-collisions-everything-collides"></a>
 
@@ -284,17 +290,87 @@ It has four tabs. A tab with a green dot has something to show. A pass the App d
 3. **Talking.** The sound's waveform runs under the timeline, with the actor's mouth-open curve (yellow) and a tick at each mouth opening. Click the strip to jump. **Play** plays the sound. **Mouth close-up** zooms the picture to the lips. When the render's mouth was measured too, its curve is blue and the panel gives the lip-sync *r* and the best lag.
 4. **Depth.** The stage depth through the shot camera (the guide the render followed; near = white, 1 to 40 m), or a Layer Pack's depth AOV. Pick **Greyscale** or **Turbo**, and set **Near** and **Far** (in metres for stage depth) to spread the colours over the range you care about.
 
-**Common to every tab:** **Play** (Space), the scrub bar, **◁ ▷** frame steps (← →), **Original: Off · Wipe · Side by side · Flicker** (F toggles Flicker; drag the yellow line to move a wipe), a zoom menu (**Fit**, 100 to 800 %; the mouse wheel zooms on the cursor, drag pans, double-click toggles Fit and 200 %), and **Still**, which saves a PNG of the view as it is. From 200 % the pixels are drawn square, so you judge the real edge, not a smoothed one. 1 to 4 switch tabs; Esc closes.
+**Common to every tab:** **Play** (Space), the scrub bar, **◁ ▷** frame steps (← → or , .), **Original: Off · Wipe · Side by side · Flicker** (F toggles Flicker; drag the yellow line to move a wipe), a zoom menu (**Fit**, 100 to 800 %; the mouse wheel zooms on the cursor, drag pans, double-click toggles Fit and 200 %; **+** / **−** double or halve the zoom, **0** fits), and **Still**, which saves a PNG of the view as it is. From 200 % the pixels are drawn square, so you judge the real edge, not a smoothed one. 1 to 4 switch tabs; Esc closes.
 
 **In the try-it demo:** the **Three in a car** scene's *Driver profile* setup has the Milestone 25 performance (a talking head Soundstage generated) as its take 6: Pose, Talking with the recorded lip sync (*r* = 0.92) and Depth all work. The demo has no matte media (cutouts and Layer Packs are made on the GPU server), and the Matte tab says so.
 
 **Limit:** the matte tools were checked headless on a synthetic Layer Pack (a soft figure with hair-like strands), not on a real SAM 3.1 or BiRefNet matte yet. Layer Packs made before today aren't linked to their shot: the viewer lists every pack on the server as *not linked to this shot*. A clip ✦ Cutout keeps its alpha in ProRes 4444, which browsers can't decode; make a Layer Pack to judge a clip's matte. Video → 3D keeps no per-frame Depth Anything 3 depth and Recast doesn't save its pose guide, so neither can be shown. Older Real performance reads have face points only; body and hands show as DWPose drew them, without confidence. Playback seeks frame by frame, so a long clip can play below real time.
 
 <a id="the-cut-timeline-being-upgraded-tonight"></a>
+<a id="real-time-playback-in-the-cut"></a>
 
-### The Cut timeline: being upgraded tonight
+### Real-time playback in the Cut
 
-The Cut timeline's playback, frame rates and *Edit in* are being rebuilt tonight (2 November). This tutorial will document them once that lands. Until then, the transport and timecode rows in [the Cut editor](#the-cut-editor) describe today's build and may change.
+**Where:** the **Edit** tab (the Cut). Nothing to switch on: press **Space** (or **L**) and rendered takes play at their real speed, cuts and dissolves included.
+
+**What changed** ([web/cut/rtengine.mjs](../web/cut/rtengine.mjs), [soundstage/proxy.py](../soundstage/proxy.py)):
+
+1. **The clip on screen no longer seeks while it plays.** It plays on its own and is nudged 3 to 8 % faster or slower to stay on the timeline's clock; it only jumps when it is more than 6 frames off (or after you scrub, loop or edit).
+2. **The next clip is ready before the cut.** It is loaded and parked on its first frame 1.5 s before its edit (3 s while it is still loading), then started just ahead of the cut, so the cut lands on time. While a picture settles, the last one holds (up to 6 frames) instead of flashing black, then the clay stands in.
+3. **Proxies.** The server makes a small copy of each take (480 to 1920 wide, the width your viewer needs, with a keyframe every 12 frames) the first time the Cut asks for it, and the Cut switches to it when it's ready. Scrubbing, reverse and 8× use it, so they seek in milliseconds instead of decoding from the start of the take. A small **proxy** note sits beside the clip's badge while one plays.
+4. **Each clip says what is playing:** a **Final**, **Draft**, **Look** or **Clay** badge in that stage's colour, on the clip and over the viewer. While a take loads, **Clay** stands in and the note says *Final loading*. A take that won't load falls to the next stage down instead of being reloaded forever.
+5. **Sound:** with **Audio** on, both sides of a dissolve play and their sound crossfades (a dip goes down and up), as the server render mixes it. Picture-in-picture and dual windows on V3 stay silent.
+6. **New Finals seek faster everywhere.** Final takes saved by Soundstage's own save node now get a keyframe every 24 frames (sound and metadata copied), not one for the whole take.
+
+**Measured** (60 s test cut, 17 events, six real takes; local media, headless Chrome, one run per profile; [PR #30](https://github.com/theboord/ComfyUI-Soundstage/pull/30)): on the simulated laptop (software decode, CPU slowed ×4), dropped frames went from 84-90 a minute to 6, A/V p95 from about 160 ms to 45 ms, and the worst cut hitch from about 4 s (a clip that never caught up) to 0. On the desktop: 4-6 to 3 a minute.
+
+**Limit:** "laptop" is a simulation, not a real laptop, and each figure is one run. The bench played the original takes, so the proxies were not part of those numbers. Proxies need `ffmpeg` on the ComfyUI server and a ComfyUI restart after you update (the route is new); until then, or if a proxy fails, the Cut plays the take itself. They are kept in ComfyUI's temp folder, up to 4 GB (`SOUNDSTAGE_PROXY_CACHE_GB`), and are made one at a time so the GPU's machine isn't starved. The short keyframe interval costs every Final save a second, quick re-encode. The Cut still runs at 24 fps only, and editing a clip from the timeline (*Edit in*) is not in this build.
+
+<a id="activity-bar-which-node-your-render-is-on"></a>
+
+### Activity bar: which node your render is on
+
+**Where:** the **Activity** pill in the top row, left of **Book** and **✦ Ask**; it never folds into **⋯**. While your render runs it leads with the step: **Sampling: stage 1 · 8/12 · 2 queued · ~6 min**, with a thin progress bar under it. Click it for the panel: each job's stage in plain words (*Depth map*, *Pose (DWPose)*, *Decoding video (VAE)*…), sampler steps, **node 7 of 11 · 2 cached**, time so far and left, **Details** (every node with its time) and **Cancel**. A failure names its node: *Failed at Decoding video (VAE) (VAEDecodeTiled #16)*. The full guide: [Activity](#activity).
+
+**Limit:** checked with simulated events, not a live render. Before the first finished run of a kind, time left is only the current sampler's rate, shown as **at least**.
+
+<a id="ask-on-every-step"></a>
+
+### ✦ Ask on every step
+
+**Where:** **✦ Ask** in the top row on every step (pinned: it never folds into **⋯**), **⌘K** / **Ctrl+K** or **/** from anywhere, or a floating **✦** when the top row is scrolled out of sight. Hold **Ask** (or **`**) to talk. It knows where you are (step, shot, selection, open panel), answers "how do I…" with numbered steps and **Show me** (it lights up the real button), and **Do it for me** shows the Director's plan, then **Apply** and **Undo this**. The full guide: [Ask](#ask-the-assistant).
+
+**Limit:** recipes cover 20 how-to questions; the rest need the local model (Qwen3.5 4B or your Ollama model).
+
+<a id="frame-delete-clear-all-and-make-the-first-frame"></a>
+
+### ④ Frame: Delete, Clear all, and Make the first frame
+
+**Where:** the trash on each ④ Frame candidate, **Clear all** over the list (on the filmstrip's label in the canvas layout), and **④ Make the first frame →** at the right end of ③ Set's time bar (**④ Remake the first frame →** once the shot has one).
+
+1. Delete or Clear all takes frames off the list; a toast offers **Undo** for 5 s. The shot's chosen frame is never deleted without a red bar asking first (**Delete it** / **Keep it**; for Clear all, **Keep the chosen one, clear N**).
+2. **④ Make the first frame →** opens ④ Frame and starts painting the active shot at once, with ④'s current image model, Variations and Quality (4 at Standard to start). Remake keeps the old frame in the list, still chosen, until you pick a new one.
+3. **✕ Reject** is different: it keeps the take and marks it. Details: [④ Frame](#step-4-frame).
+
+**Limit:** the files stay on disk. A second delete replaces the first one's Undo, and leaving ④ Frame ends it. After a reload only the chosen frame comes back.
+
+<a id="the-first-frame-shows-only-what-the-camera-sees"></a>
+
+### The first frame shows only what the camera sees
+
+**Where:** nothing to click: ④ Frame's prompt. The still's prompt now names only what the shot camera sees at frame 0. A car up the street that drives in later, a diver still below frame, or the Look description's sentence about the police stays out of the still (they stay in ⑤ Motion's prompt). A figure or car behind a building is left out too. People are described from the clay's facing in five bands: facing the camera, three-quarter toward it, profile, three-quarter from behind, and seen from behind.
+
+**Limit:** the description is filtered by word, not meaning ("no cars" is kept; a car named only by its brand is not caught). Only buildings and houses hide things. A clay turned three-quarter away can still come back from the image model facing the lens.
+
+<a id="drive-takes-over-from-keys-and-cleans-the-take"></a>
+
+### Drive takes over from keys, and cleans the take
+
+**Where:** select anything keyed and press **D**. Its keys pause (unchanged) while you drive, and the HUD says **Took over from keys: Esc to leave**. It starts settled: on its wheels or feet, eased out of a keyed lean in 0.3 s, and pushed clear of a wall or car it was keyed through. **Keep** a take and it is auto-corrected (spikes, teleports, over-speed, impossible roll, floating or sinking) and fitted with far fewer keys; the toast reads, for example, **Smoothed 3 spikes, settled roll · 1,440 keys → 38**, with **Undo** to the raw take. The full guide: [Drive mode](#drive-mode-control-anything-like-a-video-game-and-record-it).
+
+**Limit:** a fast weaving car still needs a key every 6-9 frames. Props, thrown things and paddle strokes aren't corrected. Undo to raw covers only the last kept take, until the next one. A car driven into a wall at an angle stops against it instead of sliding along it.
+
+<a id="back-to-the-set-and-last-view"></a>
+
+### ⌂ Back to the set and ↶ Last view
+
+**Where:** two buttons at the top left of the 3D viewport, under the view badge, with keys **.** and **,** (on the shortcut sheet, **?**).
+
+- **⌂ Back to the set** (**.**) flies the free view in 0.4 s to a view of the whole set (its buildings, walls and everything on it) from the front right, a little above. It never moves the shot camera.
+- **↶ Last view** (**,**) steps back through your last 10 views: a view counts once you rest on it for half a second, and the view just before Drive, ● REC, Back to the set, **F** or a compass click is always kept. The button greys out when there is nowhere to go back to.
+- A **Lost? Back to the set** chip appears over the view when the camera is more than three set radii (half the set's diagonal) from its centre, or inside a wall or building. One tap brings you back.
+
+**Limit:** the keys work only while the viewport has the keyboard (click it first) and not with ⌘, Ctrl or Alt held. The buttons hide while you drive. On a set with a big floor, Back to the set frames all of it, so it can sit far out. In the **Passes** viewer, **.** and **,** step a frame instead.
 
 ---
 
@@ -802,7 +878,7 @@ When a Layer Pack is ready, **Layers** and **Lite** download links appear in the
 
 #### The Cut editor
 
-> **Being upgraded tonight (2 November).** The Cut timeline's playback, frame rates and *Edit in* are being rebuilt. The new parts are left out until they land, and the transport and timecode rows below may change with them.
+> **Real-time playback (2 November).** Rendered takes now play at their real speed, from proxies the server makes, with a **Final** / **Draft** / **Look** / **Clay** badge on every clip: see [Real-time playback in the Cut](#real-time-playback-in-the-cut). The Cut runs at 24 fps only, and editing a clip from the timeline (*Edit in*) is not in this build.
 
 The **Edit** tab (the Cut; or **Editor** on the shot strip) is a real timeline over your coverage, with the keys editors expect.
 
@@ -811,7 +887,7 @@ The **Edit** tab (the Cut; or **Editor** on the shot strip) is a real timeline o
 | Control | What it does |
 |---|---|
 | timecode box | Record timecode: 24 fps non-drop, starting at 01:00:00:00. |
-| transport | Previous edit (↑), shuttle reverse (J), play/stop (Space), shuttle forward (L), next edit (↓). Press J or L again for 2×, 4×, 8×. |
+| transport | Previous edit (↑), shuttle reverse (J), play/stop (Space), stop (K), shuttle forward (L), next edit (↓). Press J or L again for 2×, 4×, 8×. Play runs in real time; reverse and 8× seek on the take's proxy once it is ready. |
 | **Loop** | Loop playback (the I/O range when marked). |
 | **Audio** | Play the audio of Draft and Final clips. |
 | **−** / **Fit** / **+** | Zoom the timeline (`-`, `\`, `=`). |
@@ -1436,7 +1512,7 @@ Select a person, a car, a horse or a prop and press **D** (or **🎮 Drive** on 
 
 Then the take is fitted with **as few keys as possible** that still play back within about 2 cm and 1° (scaled to the object's size). A change of mode (getting in, getting out, a take-off and a landing) always keeps its own key. The HUD shows what happened, for example **Smoothed 3 spikes, settled roll · 1,440 keys → 38**, with **Undo** to put the raw take back, as you drove it (a key every 2 frames, no corrections).
 
-**Finding your way back.** If you drove or flew the view far away, use the two buttons at the top-left of the viewport: **⌂ Back to the set** (key **.**) frames the whole set from the front in the free view, and **↶ Last view** (key **,**) steps back through your last 10 views (each view you rest on for half a second, and the view just before Drive, Back to the set or **F**). When the camera ends up far outside the set or inside a building, a **Lost? Back to the set** chip appears: one tap brings you back.
+**Finding your way back.** If you drove or flew the view far away, use the two buttons at the top-left of the viewport: **⌂ Back to the set** (key **.**) frames the whole set from the front in the free view, and **↶ Last view** (key **,**) steps back through your last 10 views (each view you rest on for half a second, and the view just before Drive, ● REC, Back to the set, **F** or a compass click). The keys work while the viewport has the keyboard, and both buttons hide while you drive. When the camera ends up far outside the set or inside a building, a **Lost? Back to the set** chip appears: one tap brings you back. More: [⌂ Back to the set and ↶ Last view](#back-to-the-set-and-last-view).
 
 **Boats** run on the boat physics: a speedboat climbs its bow wave and planes, a sailboat sails on the wind (steer through it to tack; the sheet trims itself), and paddle craft paddle while you hold W (Shift harder). See [Boats](#boats).
 
@@ -1557,6 +1633,8 @@ Keys only reach the 3D stage while the pointer is over it (or you clicked it), a
 | L, Shift+L, I, O, K | On a selected vehicle: headlights, light bar, indicators, driver's door, key every part at the playhead |
 | Cmd/Ctrl+D | Duplicate the selection |
 | Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z | Undo / redo (up to 120 steps; a drag is one step; a bake is one step). Works from anywhere in the workspace, not only on the 3D canvas |
+| . | ⌂ Back to the set: fly the free view to the whole set (the shot camera doesn't move) |
+| , | ↶ Last view: step back through your last 10 views |
 
 In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the playhead. Use **Free view** (0) to look around without changing the shot.
 
@@ -1660,8 +1738,8 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 | Script search | Esc | Clear the search |
 | Add, Build scene, Change it, Look boxes | Enter | Add / build / apply |
 | Advisor | Cmd/Ctrl+Enter | Suggest shots |
-| Anywhere in the App | / | Open the Director, cursor in the box |
-| Anywhere in the App | hold ` | Talk to the Director (let go to send) |
+| Anywhere in the App | / or Cmd/Ctrl+K | ✦ Ask: open the assistant (the Director's chat), cursor in the box |
+| Anywhere in the App | hold ` (or hold the Ask button) | Talk to it (let go to send) |
 | Director | Enter / Esc | Send, or apply the plan on an empty box / cancel the plan, then close |
 | Anywhere in the App | Shift+P | Start or stop Pitch Mode in the Director |
 | Anywhere in the App | V | Open Presets |
@@ -1669,6 +1747,7 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 | Drive mode, on a motorboat | Space / Q | Motor trim out (bow up) / in |
 | Any menu or pop-over | ↑ ↓, Home / End, Esc | Move between items, close |
 | ✦ One-click window | Esc | Back out of the ask, then close |
+| Passes viewer | Space · ← → or , . · 1-4 · F · + − 0 · Esc | Play · step a frame · switch tab · Flicker against the original · zoom in / out / fit · close |
 | Act it out | Esc | Cancel the recording |
 | Full window | Esc | Back to the App panel |
 
