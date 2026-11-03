@@ -160,6 +160,10 @@ def build(web, rev, out, media):
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             if rel == "index.html":
                 open(dst, "w").write(ascii_html(open(src, encoding="utf-8").read()))
+            elif rel == "tour.json":   # a stop marked "off": true (wired, waiting for Mike's OK) never ships
+                t = json.load(open(src, encoding="utf-8"))
+                t["steps"] = [x for x in t.get("steps", []) if not x.get("off")]
+                json.dump(t, open(dst, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
             else:
                 shutil.copy(src, dst)
     open(os.path.join(out, "build.json"), "w").write(json.dumps({"rev": rev}))
@@ -212,6 +216,8 @@ def build(web, rev, out, media):
     tour = os.path.join(HERE, "shell", "tour.json")
     if os.path.exists(tour):
         for s in json.load(open(tour)).get("steps", []):
+            if s.get("off"):
+                continue
             for c in s.get("clips") or []:
                 need.add(f"r/{c['file']}")
     missing = []

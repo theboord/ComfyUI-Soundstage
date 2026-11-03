@@ -1,0 +1,63 @@
+{
+ "workflow": "Soundstage_Set_street_night",
+ "scene": "{\"version\": 2, \"shot\": {\"frames\": 121, \"fps\": 24}, \"environment\": {\"set\": \"street_night\", \"weather\": \"rain\", \"density\": 0.4, \"water_level\": 2.5}, \"lighting\": {\"mode\": \"time\", \"hour\": 21.5, \"day_of_year\": 300, \"latitude\": 34.05, \"north_deg\": 0, \"overcast\": false, \"preset\": \"night\", \"lights\": [{\"id\": \"sodium_1\", \"type\": \"practical\", \"name\": \"Street lamp 2\", \"position\": [5.4, 4.3, -11], \"target\": [5.4, 0, -11], \"kelvin\": 2100, \"intensity\": 2.2, \"softness\": 1, \"angle\": 180}, {\"id\": \"sodium_3\", \"type\": \"practical\", \"name\": \"Street lamp 4\", \"position\": [5.4, 4.3, 0], \"target\": [5.4, 0, 0], \"kelvin\": 2100, \"intensity\": 2.2, \"softness\": 1, \"angle\": 180}, {\"id\": \"sodium_5\", \"type\": \"practical\", \"name\": \"Street lamp 6\", \"position\": [5.4, 4.3, 11], \"target\": [5.4, 0, 11], \"kelvin\": 2100, \"intensity\": 2.2, \"softness\": 1, \"angle\": 180}, {\"id\": \"sodium_0\", \"type\": \"practical\", \"name\": \"Street lamp 1\", \"position\": [-5.4, 4.3, -11], \"target\": [-5.4, 0, -11], \"kelvin\": 2100, \"intensity\": 2.2, \"softness\": 1, \"angle\": 180}, {\"id\": \"sodium_2\", \"type\": \"practical\", \"name\": \"Street lamp 3\", \"position\": [-5.4, 4.3, 11], \"target\": [-5.4, 0, 11], \"kelvin\": 2100, \"intensity\": 2.2, \"softness\": 1, \"angle\": 180}]}, \"sun\": {\"azimuth_deg\": 250, \"elevation_deg\": -18}, \"actors\": [{\"id\": \"cop\", \"name\": \"Officer\", \"kind\": \"man\", \"height_m\": 1.8, \"keys\": [{\"frame\": 0, \"position\": [2.2, 0, -16.8]}], \"mount_id\": \"police_car\", \"seat\": 0, \"pose\": \"sit\", \"position\": [2.2, 0, -16.8]}, {\"id\": \"police_car\", \"name\": \"Police car\", \"kind\": \"police_car\", \"height_m\": 1.6, \"keys\": [{\"frame\": 0, \"position\": [2.2, 0, -16.8]}, {\"frame\": 120, \"position\": [2.2, 0, 18.2]}], \"parts\": {\"headlights\": [{\"frame\": 0, \"v\": \"low\"}], \"lightbar\": [{\"frame\": 0, \"v\": \"flash\"}]}, \"position\": [2.2, 0, -16.8]}], \"props\": [], \"shots\": [{\"id\": \"pass\", \"name\": \"Car pass (locked off)\", \"setup\": \"wide\", \"camera_keys\": [{\"frame\": 0, \"position\": [-5.2, 1.4, 6], \"target\": [6, 1.1, 0], \"focal_mm\": 35}], \"frames\": 121}], \"active_shot\": \"pass\", \"camera\": {\"position\": [-5.2, 1.4, 6], \"target\": [6, 1.1, 0], \"focal_mm\": 35}, \"camera_keys\": [{\"frame\": 0, \"position\": [-5.2, 1.4, 6], \"target\": [6, 1.1, 0], \"focal_mm\": 35}]}",
+ "look": "{\"version\": 1, \"camera_body\": \"arri_alexa_mini_lf\", \"lens\": \"cooke_s4\", \"aperture\": \"f2.8\", \"film_stock\": \"kodak_500t\", \"palette\": \"auto\", \"genre\": \"thriller\", \"movement\": \"auto\", \"era\": \"contemporary\", \"technique\": \"auto\", \"mood\": \"auto\", \"mood_intensity\": 0.5, \"energy\": \"dynamic\", \"grade\": {\"contrast\": 0.35, \"saturation\": 0.35, \"warmth\": 0.1, \"grain\": 0.15, \"halation\": 0.15, \"vignette\": 0.1}, \"description\": \"A real city street at night in steady rain, shot on a locked-off camera from the sidewalk at chest height. Across the street: a dark brick building with shuttered shop fronts, wet glass and a few lit windows; a sodium street lamp throws warm orange light and the asphalt is soaked, mirror-like, full of reflections and rain ripples. A black-and-white American police sedan with its roof light bar flashing red and blue and its headlights on drives past from left to right at city speed, tyres throwing low sheets of spray off the wet road, the red and blue light washing across the wet street and the building. The sidewalks are empty. The camera does not move.\", \"negative\": \"\", \"description_cast\": \"\", \"style\": \"auto\", \"brief\": {\"world\": \"\", \"atmosphere\": \"\", \"surfaces\": \"\", \"furniture\": \"\", \"colour\": \"\", \"light\": \"\", \"outside\": \"\"}}",
+ "props": {
+  "ss_renders": {
+   "pass": {
+    "look": {
+     "filename": "m_tr3_nightpass_look.jpg",
+     "subfolder": "",
+     "type": "output"
+    },
+    "draft": {
+     "filename": "m_tr3_nightpass_draft.mp4",
+     "subfolder": "",
+     "type": "output"
+    },
+    "final_sound": {
+     "filename": "m_tr3_nightpass_final.mp4",
+     "subfolder": "",
+     "type": "output"
+    }
+   }
+  }
+ },
+ "widgets": {},
+ "stillModels": [
+  "Krea 2 Turbo \u00b7 local [<$1M]",
+  "FLUX 3 Klein \u00b7 local [<$5M]",
+  "Nano Banana 2.1 \u00b7 Google [API]",
+  "Nano Banana 2 (Gemini 3.1 Flash Image) \u00b7 Google [API]",
+  "GPT Image 2.5 \u00b7 OpenAI [API]",
+  "GPT Image 2 \u00b7 OpenAI [API]",
+  "FLUX 3 Image \u00b7 BFL [API]",
+  "Seedream 5.0 Pro \u00b7 ByteDance [API]",
+  "Seedream 5.0 Flash \u00b7 ByteDance [API]"
+ ],
+ "videoModels": [
+  "LTX-2.5 22B distilled \u00b7 local [<$10M]",
+  "Kling 4.0 \u00b7 Kling [API]",
+  "Veo 3.1 \u00b7 Google [API]",
+  "Veo 3.1 Fast \u00b7 Google [API]",
+  "Seedance 2.5 \u00b7 ByteDance [API]",
+  "Seedance 2.5 Draft \u00b7 ByteDance [API]",
+  "Seedance 2.0 \u00b7 ByteDance [API]",
+  "MiniMax H3 \u00b7 MiniMax [API]",
+  "MiniMax H3 Max \u00b7 MiniMax [API]",
+  "Runway Gen-4 Turbo \u00b7 Runway [API]",
+  "Luma Ray 3.2 \u00b7 Luma [API]",
+  "LTX-2.5 Pro (API) \u00b7 Lightricks [API]",
+  "LTX-2.5 Fast (API) \u00b7 Lightricks [API]"
+ ],
+ "candidates": {
+  "pass": [
+   {
+    "filename": "m_tr3_nightpass_look.jpg",
+    "subfolder": "",
+    "type": "output"
+   }
+  ]
+ },
+ "note": "NIGHT STREET - RAIN: a police car passes a locked-off sidewalk camera (35 mm, 1.4 m). Frame and Motion replay the real renders made from this stage on 2 Nov: the FLUX 3 Klein frame, the LTX-2.5 Draft and the Final with sound. Flaws: the car's rear smears as it exits right; the light bar reads steady."
+}
