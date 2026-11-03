@@ -745,12 +745,17 @@ def main(argv=None) -> int:
     if url and (a.url or _reachable(url)):
         report = _fetch_server_report(url)
         if report is None:
+            if a.url and not _reachable(url):  # nothing answered: every check would be "unknown", not "ready"
+                print(f"No ComfyUI answered at {url}. Start it, check the address, or pass --comfy /path/to/ComfyUI.",
+                      file=sys.stderr)
+                return 2
             report = build_report(HttpProbe(url), sizes=a.sizes)
         elif a.sizes:
             add_hf_sizes(report["features"])
             report["steps"] = next_steps(report)
     if report is None:
-        comfy = a.comfy or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        # soundstage/doctor.py -> ComfyUI-Soundstage -> custom_nodes -> the ComfyUI folder
+        comfy = a.comfy or os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), *[os.pardir] * 3))
         if not os.path.isdir(os.path.join(comfy, "models")):
             print(f"No ComfyUI answered at {url} and {comfy} has no models/ folder. "
                   "Start ComfyUI, or pass --url or --comfy /path/to/ComfyUI.", file=sys.stderr)

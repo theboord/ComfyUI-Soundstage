@@ -195,6 +195,25 @@ def test_cli_falls_back_to_single_class_queries(monkeypatch, capsys):
     assert asked[0] == "/soundstage/doctor" and "/object_info" not in asked
 
 
+def test_cli_url_that_does_not_answer_is_not_ready(monkeypatch, capsys):
+    def refused(url, timeout=0):
+        raise D.urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(D.urllib.request, "urlopen", refused)
+    assert D.main(["--url", "http://127.0.0.1:8188"]) == 2  # was 0 with "Ready", every check unknown
+    assert "Ready" not in capsys.readouterr().out
+
+
+def test_cli_default_reads_the_comfyui_folder_the_pack_sits_in(tmp_path, monkeypatch, capsys):
+    pack = tmp_path / "ComfyUI" / "custom_nodes" / "ComfyUI-Soundstage" / "soundstage"
+    pack.mkdir(parents=True)
+    (tmp_path / "ComfyUI" / "models").mkdir()
+    monkeypatch.setattr(D, "__file__", str(pack / "doctor.py"))
+    monkeypatch.setattr(D, "_reachable", lambda *a, **k: False)  # ComfyUI stopped; nothing is contacted
+    assert D.main(["--json"]) != 2  # was 2: it looked for models/ in custom_nodes/
+    assert json.loads(capsys.readouterr().out)["mode"] == "from disk"
+
+
 def test_in_process_probe_uses_comfyuis_own_lists(monkeypatch, tmp_path):
     lora = tmp_path / "loras" / "ltx2.5" / "ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors"
     _write(str(lora), 3 * MB)
