@@ -2,6 +2,8 @@
 
 Your first shot in about ten minutes on the built-in demo, then a whole three-shot scene, *High Water*, from script to delivery. Every picture is the real App on the built-in demo (*Last Light on Route 9*, Scene 2, Dry Creek; recorded 2 Nov 2026, steps re-checked against the live App the same evening). For every panel in depth, see the [complete tutorial](TUTORIAL.md).
 
+**Judging it?** Start with [Judging it? Start here](../README.md#judging-it-start-here) in the README, then come back here.
+
 **Contents:** [Four rules](#four-rules-before-you-click-anything) · [Rough edges](#rough-edges-we-know-about) · [Quickstart](#quickstart-your-first-shot) · [First scene: High Water](#first-scene-high-water) · [Cheat sheet](#cheat-sheet)
 
 ---
@@ -22,6 +24,9 @@ Your first shot in about ten minutes on the built-in demo, then a whole three-sh
 - **The Tools ▾ button renames itself** to the tool you opened (*Takes ▾*, *Edit ▾*). It is the same button, next to the Undo arrows.
 - **The status line can go stale.** After an Undo it can still describe the last bake. Trust the stage, not the old message.
 - **In Drive mode the view can stay on the shot camera** instead of following the car you drive (one test watched the red sports car while the police car drove off). Press `V` while driving to cycle the camera: chase, shot, orbit. The red REC pill can also overlap the timecode text, and the key legend can sit over the *Drop a video here* chip.
+- **Physics now crashes keyed cars into each other.** With **Everything collides** on (the default, Physics panel › **World**), a car keyed through another car, a lamp or a wall crashes in **Simulate & bake** instead of passing through. Checked headless only. **Keep keyed** holds one car on its path.
+- **✦ One-click's Loop, Reshoot, Open in ComfyUI and Send a move from your phone need a ComfyUI restart** after you update. Until then a card says *this server needs a restart*. No loop made so far is seamless.
+- **The Cut timeline's playback, frame rates and *Edit in* are being upgraded tonight (2 Nov).** Step G below still works; its J K L shuttle may change.
 - **The 8 template cards have blank thumbnails** and look alike. Pick by name: **Soundstage_App**, not *Soundstage_App_Full*.
 - **Hollywood's time estimate still reads about 13 min**, the same as Final. The real render takes much longer. Run it during a break.
 - **The Dialogue card can still say *No line*** after you type one in the pop-over. Open the pop-over again to check the line is there.
@@ -34,7 +39,7 @@ Your first shot in about ten minutes on the built-in demo, then a whole three-sh
 
 ### 0. Give the App room (1 min)
 
-Open **System Settings → Displays** and choose **More Space**, or move the browser to a bigger screen. At 1024 px the viewport is tiny, the scene name is cut off and the lens cards sit off-screen.
+Open **System Settings → Displays** and choose **More Space**, or move the browser to a bigger screen. Since 2 Nov the App fits a 1024-wide window: buttons that don't fit fold into **⋯** at the right of the top row (at 1024 it holds the shortcuts, Book, Guide and Presets; `V` still opens Presets). But at 1024 the picture is small, so give it more room if you can.
 
 Then reload the ComfyUI tab at `http://127.0.0.1:8189` so you start from a fresh session.
 
@@ -140,7 +145,9 @@ Quality starts on **Final**. Switch it to **Draft**, then click **Preview motion
 
 Click **6 Review**. It opens with three rungs, **Left**, **Middle** and **Right**, in **3-way**. Put **Clay** on the left rung and your **Draft** on the right, choose **Wipe** and drag the yellow handle. *Frame*, *Draft* and *Final* stay greyed out (*not rendered yet*) until those renders exist.
 
-That's a directed, rendered shot. If you ever land on the narrow panel (a stray Esc, or **Done**), click **Open the full workspace**.
+That's a directed, rendered shot. Your Draft now has a **✦ One-click** button on the Review bar: Nightfall, Rain, a relight or a new angle (Reshoot), each asking first with its GPU time. See [✦ One-click](TUTORIAL.md#one-click-effects-relight-angles-expand).
+
+If you ever land on the narrow panel (a stray Esc, or **Done**), click **Open the full workspace**.
 
 <p align="center"><img src="media/qs_C10.gif" width="760" alt="⑥ Review: Clay on the left rung, the render on the right, Wipe, drag the yellow handle."></p>
 <p align="center"><em>⑥ Review: Clay on the left rung, the render on the right, Wipe, drag the yellow handle.</em></p>
@@ -214,7 +221,7 @@ Reed steps out into the rain and looks off at the wrecked crates. Then Reed turn
 13. **The eyes.** Scroll the inspector to **Parts › Eyes, hands, in hand** (it's far down; at 1440 px it sits about 1000 px below the top). With the playhead early, pick **At Crate 1** (any crate) in **Eyes**: picking keys the gaze at the playhead, there's no separate Key button. Move the playhead later and pick **Into the lens**.
 14. **Play each shot.** Click **Play** or press `Space` (not while typing in a box). Playback starts from the top of the shot.
 
-> **Watch out.** Drive the **police car**, not the red sports car. The cop's keyed path runs straight through a sports car you start from a standstill. Change shots only with the switcher's **▾**: ◀ ▶ change the scene and rebuild the stage. On the clay figures the gaze change is small.
+> **Watch out.** Drive the **police car**, not the red sports car. The cop's keyed path runs straight through a sports car you start from a standstill, and with **Everything collides** on, the bake in step 8 crashes the two cars for real. If that's not your story, turn **Everything collides** off in the Physics panel's **World** row: the scene re-bakes, the crates still crash and the two cars pass through each other. Or press **Clear simulation**, ask the Director (`/`) to *reroute the police car around the red car*, then **Simulate & bake** again (the swerve can take it past the crates too). **Keep keyed** on the police car alone doesn't stop it: it still hits the red car and pushes it ahead. Change shots only with the switcher's **▾**: ◀ ▶ change the scene and rebuild the stage. On the clay figures the gaze change is small.
 
 <p align="center"><img src="media/qs_C14.webp" width="760" alt="Color draw mode, Properties › Set: Rain and Night (moonlight). The demo already has all three set. Sped up."></p>
 <p align="center"><em>Color draw mode, Properties › Set: Rain and Night (moonlight). The demo already has all three set. Sped up.</em></p>
@@ -271,6 +278,8 @@ Reed steps out into the rain and looks off at the wrecked crates. Then Reed turn
 
 ### G. Edit (step 7)
 
+> **Being upgraded tonight (2 Nov).** The Cut timeline's playback, frame rates and *Edit in* are being rebuilt. The steps below are today's build.
+
 1. Click **7 Deliver → Open the editor** and click **Assemble scene**. It rebuilds the cut from the ScriptSync lining and replaces what's on the timeline.
 2. Check what it laid down. With no dialogue in the scene it can put the Wide under all the action (3 clips of *Wide crane*). If your crash and Single A are missing, click them in the editor's **Shots** row: a click splices the shot in at the playhead (⇧-click overwrites). Delete extra clips with **Ripple delete**.
 3. Select the crash clip and click **Match action** (`M`): it slides the clip to continue the action of the clip before it. Drag **Dip black** onto the cut before the Single A. `J` `K` `L` shuttle; **Split** and **Ripple delete** trim.
@@ -300,7 +309,7 @@ Reed steps out into the rain and looks off at the wrecked crates. Then Reed turn
 
 ## Cheat sheet
 
-**Anywhere:** `V` Presets · `/` Director chat (preview) · `?` Shortcuts sheet, or the keyboard icon · `H` / `Tab` Hide or show every panel · `⌘Z` / `⇧⌘Z` Undo / redo · `←` `→` Change scene (rebuilds the stage) · `Space` On ③ Set: Play / stop
+**Anywhere:** `V` Presets · `/` or `⌘K` / `Ctrl+K` Ask (the assistant) · `?` Shortcuts sheet, or the keyboard icon · `H` / `Tab` Hide or show every panel · `⌘Z` / `⇧⌘Z` Undo / redo · `←` `→` Change scene (rebuilds the stage) · `Space` On ③ Set: Play / stop · `Esc` Closes the open panel, menu or pop-over first
 
 **Look around:** `0` Shot camera / free view · Drag Orbit; Shift+drag pans, wheel dollies · `W` `A` `S` `D` Fly; `Q` / `E` down / up · Top view Inset from above, with Fit and ✕ · `F` Frame the selection · `Esc` Deselect before WASD (with a car selected, `D` = Drive)
 
@@ -314,11 +323,13 @@ Reed steps out into the rain and looks off at the wrecked crates. Then Reed turn
 
 **Quality:** Frame Fast (~1 min) · Standard (~4 min) · High · Max · Motion Draft → Final (~13 min) → Hollywood (hero only) · Adherence Exact Follow my blocking
 
+**New on 1-2 Nov:** **✦** on every take, ④ Frame candidate and the Review bar (effects, relight, angles, expand, Seamless loop, Reshoot, Open in ComfyUI, Send a move from your phone) · Physics › World: **Everything collides** / **Keep keyed** · Director: *check for collisions* · Real performance… › **Voice**: Keep my voice / Convert to … · Presets › Looks › **Racing Cinema**; Camera moves › **Bumper cam**, **Over the tyre**, **Arm car tracking**, **Long-lens pan** · Action › **Speedboat run**, **Sailing tack**, **Canoe on a calm lake**, **Whitewater raft**, **Diver swim** · Motorboat in Drive: `Space` / `Q` trim out / in · Menus: `↑` `↓` `Home` `End`, `Esc` · All of it, with limits: [New on 1 and 2 November](TUTORIAL.md#new-on-1-and-2-november)
+
 **Tools ▾ (shows the open tool's name):** Paint Studio Paint on a frame · Shot ideas Coverage suggestions · Look Genre looks · Takes The bin · ScriptSync Lined script (also a tab in Takes) · Edit The cut editor · Classic layout Skip it
 
 **Where things live:**
 
-- **Top bar:** Steps 1-7, scene switcher on ③-⑤ (◀ ▶ = scene, ▾ = shots), Undo / Redo, Presets, Tools ▾, Book, Director, Guide, Done
+- **Top bar:** Steps 1-7, scene switcher on ③-⑤ (◀ ▶ = scene, ▾ = shots), Undo / Redo, Presets, Tools ▾, Book, ✦ Ask, Guide, Done. Below 1400 px some are icons (hover for the name); in a narrow window the least used fold into **⋯** (✦ Ask never does)
 - **Left dock:** Build with AI, Add object, Person, Interact, Capture motion, Video → 3D, Photo → 3D, Camera, Set & weather, Lighting, Phone camera
 - **Right inspector:** Everything for what you selected: Object, Camera, Set, Light, AI. Long: scroll for Lens & rig, Parts and Eyes
 - **Above the viewport:** Camera view, Free view, Top view, Show cameras, Look, Coach; Wire / Clay / Color / Depth

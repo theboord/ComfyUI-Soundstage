@@ -40,14 +40,13 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 <p align="center"><em>Left: the 3D stage's clay render. Right: what Soundstage renders from it. Same blocking, same camera.</em></p>
 
 <p align="center">
-<a href="docs/media/soundstage_showcase.mp4"><b>&#9654;&#65039; Watch the trailer</b></a> &nbsp;&middot;&nbsp;
 <a href="https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq"><b>&#128421;&#65039; Try it in your browser</b></a> &nbsp;&middot;&nbsp;
 <a href="docs/QUICKSTART.md"><b>&#9201;&#65039; First shot in 10 minutes, then a 3-shot scene</b></a> &nbsp;&middot;&nbsp;
 <a href="docs/TUTORIAL.md"><b>&#128214; Read the tutorial</b></a> &nbsp;&middot;&nbsp;
 <a href="#install"><b>&#9881;&#65039; Install</b></a>
 </p>
 
-<p align="center"><sub>The browser demo is the real App UI replaying real GPU renders, no install needed. Also: <a href="docs/media/soundstage_demo.mp4">the longer walkthrough</a>. Built for Comfy Org's <i>Open Source Higgsfield</i> challenge.</sub></p>
+<p align="center"><sub>The browser demo is the real App UI replaying real GPU renders, no install needed. Built for Comfy Org's <i>Open Source Higgsfield</i> challenge.</sub></p>
 
 ### Highlights: what only Soundstage does
 
