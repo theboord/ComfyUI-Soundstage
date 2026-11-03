@@ -33,13 +33,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, HERE)
 
-POD = os.environ.get("V2S_POD", "root@216.81.245.80")
-POD_PORT = os.environ.get("V2S_POD_PORT", "19835")
+POD = os.environ.get("V2S_POD", "")   # e.g. root@<pod ip>; set in your shell, never in the repo
+POD_PORT = os.environ.get("V2S_POD_PORT", "22")
 POD_KEY = os.path.expanduser(os.environ.get("V2S_POD_KEY", "~/.ssh/id_ed25519"))
 DEV_ROOT = "/workspace/soundstage/v2s_dev"
 PIDFILE = "/workspace/soundstage/comfy8189.pid"
-DEFAULT_OUT = os.path.expanduser("~/OpenHiggsfieldContest/share/Video3D_Boost/devrun")
-BENCH_OUT = os.path.expanduser("~/OpenHiggsfieldContest/share/Video3D_Boost/bench")
+DEFAULT_OUT = os.path.expanduser(os.environ.get("V2S_OUT", "~/soundstage_v2s/devrun"))
+BENCH_OUT = os.path.expanduser(os.environ.get("V2S_BENCH_OUT", "~/soundstage_v2s/bench"))
 
 SSH = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=30", "-p", POD_PORT, "-i", POD_KEY]
 
