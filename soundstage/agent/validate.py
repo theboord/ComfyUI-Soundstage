@@ -51,6 +51,14 @@ def _cam(c, notes, what, limit: float = 100) -> dict:
     return {"position": [round(v, 3) for v in pos], "target": [round(v, 3) for v in tgt], "focal_mm": round(f, 1)}
 
 
+SFX_KINDS = {"explosion", "fire", "sparks", "squib", "smoke_bomb", "breakaway_glass", "flare", "body_squib", "stab"}   # web/stage/sfx.mjs SFX_KINDS
+
+
+def _is_sfx_rig(a: dict) -> bool:
+    k = a.get("kind")
+    return isinstance(k, str) and k.startswith("sfx_") and k[4:] in SFX_KINDS
+
+
 def validate_scene(scene, place: bool = True) -> tuple[dict, list[str]]:
     """place=False keeps measured layouts as they are (Video → Stage): no bounds/overlap repair, no camera clamp."""
     notes: list[str] = []
@@ -111,6 +119,22 @@ def validate_scene(scene, place: bool = True) -> tuple[dict, list[str]]:
         if not isinstance(a, dict):
             continue
         kind = a.get("kind")
+        if _is_sfx_rig(a):
+            # A practical-effects rig (web/stage/sfx.mjs): not a library prop and takes no floor space. Keep its kind,
+            # settings and its height (sparks on a gantry, a squib on a wall); only its id and numbers are checked.
+            aid = str(a.get("id") or f"{kind}_{i + 1}")
+            while aid in ids:
+                aid += "_b"
+            ids.add(aid)
+            keys = [k for k in (a.get("keys") or []) if isinstance(k, dict)] or [{"frame": 0, "position": a.get("position")}]
+            clean = {}
+            for k in keys:
+                clean[int(min(max(_num(k.get("frame")), 0), last))] = _metres(_vec(k.get("position")), notes, aid, 100 if place else 1e5)
+            out = {**a, "id": aid, "name": str(a.get("name") or aid), "rotation_deg": round(((_num(a.get("rotation_deg")) + 180) % 360) - 180, 1),
+                   "keys": [{"frame": f, "position": [round(v, 3) for v in clean[f]]} for f in sorted(clean)]}
+            out["position"] = list(out["keys"][0]["position"])
+            actors.append(out)
+            continue
         if kind != "custom" and kind not in C.LIBRARY:
             k2 = C.resolve_kind(str(kind or a.get("name") or ""))
             if k2:
@@ -183,7 +207,7 @@ def validate_scene(scene, place: bool = True) -> tuple[dict, list[str]]:
     placed: list[dict] = []
     for i in order if place else []:
         a = actors[i]
-        if a["id"] in riders:
+        if a["id"] in riders or _is_sfx_rig(a):
             continue
         phys = a.get("physics") if isinstance(a.get("physics"), dict) else {}
         if phys.get("baked") or _num(phys.get("lift")) > 0:
