@@ -1,4 +1,4 @@
-# Practical effects (SFX rigs)
+# Practical effects rigs
 
 Soundstage rigs special effects the way a film crew does: you place an effect on the set, give it a **cue**, and when
 the cue comes the set reacts. Crates fly, a car rocks or rolls by its weight, a lamp post goes down, a stunt performer
