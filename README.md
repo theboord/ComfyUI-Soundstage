@@ -61,7 +61,7 @@ Not in the demo at all (each one says "available in the full install"): new rend
 <p align="center"><img src="docs/media/readme_v4/card_boat.gif" width="880" alt="You block it. It renders. Left, the 3D stage; right, the Final render of the same shot (FLUX 3 Klein + LTX-2.5, with sound): a speedboat on a lake."></p>
 <p align="center"><sub><a href="docs/media/readme_v4/boat_final_sound.mp4">▶ The boat with its sound (MP4)</a></sub></p>
 
-<p align="center"><img src="docs/media/readme_v4/card_sfx.gif" width="880" alt="Shoot dailies, not lottery tickets. Final render: a runner sprints down a night street, glancing at the blasts as practical effects rigs fire on cue beside the parked cars."></p>
+<p align="center"><img src="docs/media/readme_v4/card_sfx_dailies.gif" width="880" alt="Shoot dailies, not lottery tickets. Final render: a runner sprints down a night street, glancing at the blasts as practical effects rigs fire on cue beside the parked cars."></p>
 <p align="center"><sub><a href="docs/media/readme_v4/explosion_final_sound.mp4">▶ The explosion run with its sound (MP4)</a></sub></p>
 
 > **Shoot dailies, not the perfect shot.** Don't chase one perfect generation. Shoot takes like dailies, then let the editor find the exact frame. Still not happy? Go from the timeline back to the soundstage for the reshoots and inserts you missed.
