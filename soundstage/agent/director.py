@@ -786,6 +786,19 @@ def context_text(scene: dict, ctx: dict) -> str:
     scenes = (ctx or {}).get("scenes") or []
     if scenes:
         lines.append("Script scenes: " + ", ".join(f"{s.get('number')}={str(s.get('heading', ''))[:40]}" for s in scenes[:8]))
+    # Ask (web/agent/ask.mjs): where the user is in the App, so "it", "this" and "here" resolve to what they see.
+    ui = (ctx or {}).get("ui")
+    if isinstance(ui, dict):
+        where = []
+        if ui.get("step"):
+            where.append(f"step {str(ui['step'])[:20]}")
+        sel = ui.get("selected")
+        if isinstance(sel, dict) and (sel.get("name") or sel.get("id")):
+            where.append(f"selected: {str(sel.get('name') or sel.get('id'))[:40]} ({str(sel.get('kind') or 'object')[:20]})")
+        if ui.get("panel"):
+            where.append(f"open panel: {str(ui['panel'])[:30]}")
+        if where:
+            lines.append("User is on " + ", ".join(where) + " (\"it\" / \"this\" means the selected object)")
     # The Director's Book (Milestone 23, web/book getBookContext): the scene's intent, style and the director's rules.
     book = (ctx or {}).get("book")
     if isinstance(book, dict) and str(book.get("text") or "").strip():
