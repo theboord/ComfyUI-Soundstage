@@ -67,7 +67,9 @@ async function v2sRoute(p, path, init, method) {
     // Only the recorded clip replays: a visitor's own clip gets the full-install note, never someone else's result.
     let video = "";
     try { video = JSON.parse(init.body || "{}").video || ""; } catch { /* not JSON */ }
-    if (!video.endsWith(rec.clip)) return null;
+    // The demo's upload is "<n>_<name>" (/upload/image below): only that one prefix comes off, so "my_jturn_night_street.mp4"
+    // is not the recorded clip (endsWith said it was).
+    if (String(video).replace(/^\d+_/, "") !== rec.clip) return null;
     const job = `demo-v2s-${++seq}`;
     v2sJobs.set(job, performance.now());
     demo.v2s = { clip: rec.clip, total_s: rec.total_s, replaySeconds: REPLAY_S, running: true };

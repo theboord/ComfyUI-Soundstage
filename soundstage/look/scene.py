@@ -1025,7 +1025,8 @@ def vehicle_camera(scene: dict) -> dict | None:
     if host is not None and ST.is_stunt(host):
         kind = host.get("kind", "")
         noun = library().get(kind, (kind.replace("_", " "),))[0].lower()
-        words = ST.ride_words(host, noun, wet=road_surface(scene) == "wet", where=v.get("where", ""), framing=v.get("framing", ""))
+        words = ST.ride_words(host, noun, wet=road_surface(scene) == "wet", where=v.get("where", ""), framing=v.get("framing", ""),
+                              ground=look_surface(scene))
         if words:
             v = {**v, "motion": f"{v['motion']} {words}"}
     return v
@@ -1054,7 +1055,8 @@ def _vehicle_camera(scene: dict) -> dict | None:
     if not keys:
         return None
     k0 = keys[0]
-    (px, py, pz), (tx, ty, tz) = k0["position"], k0["target"]
+    # Read like camera_keys reads a world key: a key without a target (or a short one) must not stop the compile.
+    (px, py, pz), (tx, ty, tz) = _v(k0.get("position")), _v(k0.get("target"))
     noun = lib.get(kind, (kind.replace("_", " "),))[0].lower()
     if abs(px) > 1.4 or pz > 3.2 or pz < -3.0 or py > 2.6:
         return None                                              # tracking alongside / overhead: an outside shot
@@ -1215,17 +1217,20 @@ def camera_move(scene: dict) -> dict:
     shake = 0.0
     if len(path) > 8:  # handheld: the path wobbles around its own smooth line
         # Only the wobble across the path counts: a camera car braking and speeding up with a stunt car bunches its
-        # samples along the line (a large second difference) without any shake.
+        # samples along the line (a large second difference) without any shake. And only a wobble that flips side from
+        # one sample to the next is a hand: an arm car pacing a J-turn swerves with the car in one smooth S-curve
+        # (it bends to one side for many samples), which read as "handheld and breathing" before.
         def _wobble(a, b, c):
             d = G.sub(G.mul(G.add(a, c), 0.5), b)
             t = G.sub(c, a)
-            n = G.length(t)
+            n = math.hypot(t[0], t[2])
             if n < 1e-6:
-                return G.length(d)
-            u = G.mul(t, 1.0 / n)
-            return G.length(G.sub(d, G.mul(u, G.dot(d, u))))
-        jitter = [_wobble(path[i - 1]["position"], path[i]["position"], path[i + 1]["position"]) for i in range(1, len(path) - 1)]
-        shake = sum(jitter) / len(jitter)
+                return 0.0, d[1]
+            return (d[2] * t[0] - d[0] * t[2]) / n, d[1]   # (signed sideways, vertical) off the line
+        dev = [_wobble(path[i - 1]["position"], path[i]["position"], path[i + 1]["position"]) for i in range(1, len(path) - 1)]
+        flips = [math.hypot(min(abs(h0), abs(h1)) if h0 * h1 < 0 else 0.0, min(abs(v0), abs(v1)) if v0 * v1 < 0 else 0.0)
+                 for (h0, v0), (h1, v1) in zip(dev, dev[1:])]
+        shake = sum(flips) / len(flips)
     parts = []
     tgt_moved = G.length(G.sub(t1, t0))
     if abs(darc) > 15 and abs(r1 - r0) < 0.35 * max(r0, 0.1) and tgt_moved < 0.5:

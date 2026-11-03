@@ -24,6 +24,7 @@ QUALITY = {"Draft": {"short": 544, "two_stage": False}, "Final": {"short": 544, 
 SECONDS = (2.0, 3.0, 4.0, 5.0, 6.0, 8.0)
 FPS = 24.0
 MAX_LONG = 1024          # stage-1 longer side (Final upsamples x2)
+MIN_SIDE = 64            # EmptyLTXVLatentVideo's smallest width / height
 
 # Our own words (docs/loop.md). Real-world cyclic motion, a locked-off camera, no cuts.
 LOOP_SUFFIX = ("One continuous take on a locked-off camera that loops perfectly: every movement in the shot is cyclic "
@@ -72,12 +73,14 @@ def ltx_frames(seconds: float, fps: float = FPS) -> int:
 
 
 def render_size(width: int, height: int, short: int = 544, multiple: int = 32) -> tuple[int, int]:
-    """Stage-1 size: the picture's aspect, shorter side `short`, both sides a multiple of 32, longer side <= 1024."""
+    """Stage-1 size: the picture's aspect, shorter side `short`, both sides a multiple of 32, longer side <= 1024,
+    neither under EmptyLTXVLatentVideo's 64 (a strip wider than 16:1 snapped its short side to 32: refused)."""
     w, h = float(max(1, width)), float(max(1, height))
     k = short / min(w, h)
     if max(w, h) * k > MAX_LONG:
         k = MAX_LONG / max(w, h)
-    snap = lambda v: max(multiple, int(round(v * k / multiple)) * multiple)  # noqa: E731
+    floor = max(MIN_SIDE, multiple)
+    snap = lambda v: max(floor, int(round(v * k / multiple)) * multiple)  # noqa: E731
     return snap(w), snap(h)
 
 
