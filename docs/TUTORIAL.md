@@ -90,7 +90,7 @@ What's in the groups:
 - **Effects:** Nightfall, Flood, Rain, Snow, Fog, Golden hour, **Empty the scene**, **Cutout** (a PNG, or ProRes 4444 with alpha for a clip), **Living photo** (five seconds of small real motion and sound, camera locked off). Pop, Inflate, Cake, Squish, Unzip and Gulp are experimental.
 - **Light:** the 18 lighting setups as relights. The box *Experimental: add a Krea 2 pass locked to the stage depth (it can invent things)* is off by default.
 - **Camera:** Orbit left, Orbit right, Low angle and three more, each approximate (FLUX 3 Klein) or **· exact** (experimental: the shot camera really moves on the stage), plus **Reshoot from a new angle** for clips (below).
-- **Frame:** **Expand to 2.39:1**, 1.85:1, 16:9, 4:3, 1:1 or 9:16 on a still (Paint Studio's Extend; the original pixels never change), and **Expand a clip**.
+- **Frame:** **Expand to 2.39:1**, 1.85:1, 16:9, 4:3, 1:1 or 9:16 on a still (Paint Studio's Extend; the original pixels never change), and **Expand a clip** (greyed for now: *not yet*, its out-painting LoRA is untested on LTX-2.5).
 
 **Limit:** the first renders found problems: the depth-locked Krea 2 pass invented three people and a different street (now off by default), the first Flood left a thin film of water with feet on top, and Living photo morphed a canoe. The prompts are fixed but not re-rendered yet. Every card costs $0 (local models) but uses your GPU. Details: [oneclick.md](oneclick.md).
 
