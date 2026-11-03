@@ -1,7 +1,7 @@
 <p align="center"><img src="docs/media/readme_v4/banner.png" width="880" alt="Soundstage: a real 3D film set inside ComfyUI. Script in, finished scene out. 100% open weights, on your own GPU. #OpenSourceHiggsfield"></p>
 
 <p align="center"><img src="docs/media/readme_v4/hero_jturn.gif" width="880" alt="A wipe between the 3D stage's clay and the Final render of the same J-turn: a red car on a wet night street, same blocking, same camera."></p>
-<p align="center"><sub>The wipe: the 3D stage's clay, then the Final render of the same J-turn. Same blocking, same camera. <a href="docs/media/readme_v4/jturn_final_sound.mp4">▶ The render with its sound (MP4)</a></sub></p>
+<p align="center"><sub>The wipe: the 3D stage's clay, then the Final render of the same J-turn. Same blocking, same camera. <a href="docs/media/readme_v4/jturn_final_sound.mp4">▶ The render with its sound (MP4)</a> · <a href="docs/media/readme_v4/intro_mike.mp4">▶ A 15 s hello from Mike on the lot (MP4)</a></sub></p>
 
 <p align="center">
 <a href="https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq"><img src="docs/media/readme_v4/btn_try.png" width="260" alt="Try it in your browser (no install)"></a>
@@ -49,7 +49,8 @@ Not in the demo at all (each one says "available in the full install"): new rend
 <p align="center"><img src="docs/media/readme_v4/card_boat.gif" width="880" alt="You block it. It renders. Left, the 3D stage; right, the Final render of the same shot (FLUX 3 Klein + LTX-2.5, with sound): a speedboat on a lake."></p>
 <p align="center"><sub><a href="docs/media/readme_v4/boat_final_sound.mp4">▶ The boat with its sound (MP4)</a></sub></p>
 
-<p align="center"><img src="docs/media/readme_v4/card_sfx.gif" width="880" alt="Stunts and SFX rigs, shown in the live stage preview: a runner sprints as timed explosions throw the parked cars. Explosions, fire, squibs and breakaway glass, cued in time; cars and people thrown by physics."></p>
+<p align="center"><img src="docs/media/readme_v4/card_sfx.gif" width="880" alt="Stunts and SFX rigs, Final render: a runner sprints down a night street as timed explosions go off beside the parked cars. Explosions, fire, squibs and breakaway glass, cued in time; cars and people thrown by physics."></p>
+<p align="center"><sub><a href="docs/media/readme_v4/explosion_final_sound.mp4">▶ The explosion run with its sound (MP4)</a></sub></p>
 
 <p align="center"><img src="docs/media/readme_v4/card_drive.gif" width="880" alt="Drive anything, a live stage capture: select a car, person, horse or boat and press D. REC keys the take; Drive takes over from keys."></p>
 
@@ -59,8 +60,8 @@ Not in the demo at all (each one says "available in the full install"): new rend
 
 <p align="center"><img src="docs/media/readme_v4/card_ask.png" width="880" alt="Ask: ask how and it lights up the real buttons; or say what you want, see the plan and press Apply. Shown: how do I add rain?"></p>
 
-<p align="center"><img src="docs/media/readme_v4/card_carpass.gif" width="880" alt="Night, rain, sound: a locked-off street plate where a police car passes in the rain, its sound generated with the picture (Final render)."></p>
-<p align="center"><sub><a href="docs/media/readme_v4/carpass_final_sound.mp4">▶ The plate with its sound (MP4)</a></sub></p>
+<p align="center"><img src="docs/media/readme_v4/card_carpass.gif" width="880" alt="Night, rain, sound (Final render): police cars come out of the rain toward the lens, their sound generated with the picture."></p>
+<p align="center"><sub><a href="docs/media/readme_v4/carpass_final_sound.mp4">▶ The police cars with their sound (MP4)</a></sub></p>
 
 <p align="center"><img src="docs/media/readme_v4/card_cut.gif" width="880" alt="Cut and deliver: a real-time timeline with generated sound. Out to Avid, Premiere, Resolve and FCP; Blender and Unreal round trip."></p>
 
