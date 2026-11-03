@@ -506,10 +506,10 @@ def view_key(url) -> str:
 def clip_shot(shot, e):
     """timeline.mjs clipShot: the shot as a clip plays it (a pinned take wins over the shot's latest render)."""
     t = (e or {}).get("take")
-    if not shot or not t:
+    if not shot or not isinstance(t, dict):
         return shot
     renders = shot.get("renders") or {}
-    if t["rung"] == "clay" or not t.get("url"):
+    if t.get("rung") == "clay" or not t.get("url"):
         return {**shot, "renders": {"clay": renders["clay"]} if renders.get("clay") else {}}
     rest = {k: v for k, v in shot.items() if k != "source"}
     cur = renders.get(t["rung"])
