@@ -85,7 +85,10 @@ export function buildSecondaryFx() {
       .replace("#include <map_particle_fragment>", `
         vec2 pc = gl_PointCoord - 0.5; float cs = cos(vRot), sn = sin(vRot);
         pc = clamp(vec2(cs * pc.x - sn * pc.y, sn * pc.x + cs * pc.y) + 0.5, 0.0, 1.0);
-        vec2 cuv = (vec2(mod(vTex, 2.0), floor(vTex / 2.0)) + vec2(pc.x, 1.0 - pc.y)) * 0.5;
+        // tex 4..7: a self-lit puff (a fireball or a flame from an SFX rig): its own colour, not the set's light.
+        float emis = step(3.5, vTex), tI = mod(vTex, 4.0);
+        vec3 base0 = diffuseColor.rgb;
+        vec2 cuv = (vec2(mod(tI, 2.0), floor(tI / 2.0)) + vec2(pc.x, 1.0 - pc.y)) * 0.5;
         vec4 tx = texture2D(map, cuv);
         // A lit volume, not a cut-out: each puff is shaded as a soft ball (normal from the sprite coordinate), lit by
         // the set's sun (wrapped, so the shadow side is not black) and its sky and ground light, darker where the
@@ -109,11 +112,12 @@ export function buildSecondaryFx() {
         // Fine dust scatters most of the light it catches (albedo ~0.9), so a plume is paler and less saturated than
         // the bulk sand it came off: the sand colour, a third of the way to white.
         diffuseColor.rgb = mix(mix(diffuseColor.rgb, vec3(1.0), 0.35) * light / 3.14159, diffuseColor.rgb, uMatte);
+        diffuseColor.rgb = mix(diffuseColor.rgb, base0 * mix(1.5, 1.1, dens), emis * (1.0 - uMatte));
         // Density builds up softly (Beer-Lambert), so overlapping puffs thicken into a plume instead of a flat sheet.
         diffuseColor.a *= (1.0 - exp(-tx.a * 3.6)) * vFade;
         if (uMatte > 0.5) diffuseColor.rgb = vec3(1.0);`);
   };
-  dm.customProgramCacheKey = () => "ss_m28_dust_lit";
+  dm.customProgramCacheKey = () => "ss_m28_dust_lit_glow";
   const dust = new THREE.Points(dg, dm);
   dust.frustumCulled = false; dust.renderOrder = 2; dust.userData.glass = true; dust.userData.m28Dust = true;
   group.add(dust);

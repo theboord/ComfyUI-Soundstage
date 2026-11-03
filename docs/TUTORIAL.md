@@ -21,7 +21,7 @@ This guide is for anyone who has just cloned the repo. It covers where every pan
    - [Dailies and the lined script](#dailies-and-the-lined-script) ([ScriptSync](#scriptsync-lined-script)) · [The Look tab: re-render in any film look](#the-look-tab-re-render-in-any-film-look) · [The Stop button](#the-stop-button) · [Activity: what the GPU is doing](#activity)
    - **New since the contest:** [Ask: the assistant, on every screen](#ask-the-assistant) · [The Director: chat, voice and MCP](#the-director-chat-voice-and-mcp) · [Presets](#presets-one-click-camera-moves-and-lighting) · [Quality: Draft, Final, Hollywood](#quality-draft-final-hollywood) · [Takes that check themselves](#takes-that-check-themselves) · [Timeline: transitions, sound, titles and render](#transitions-sound-titles-and-render)
 4. [The 3D stage in depth](#4-the-3d-stage-in-depth)
-   - **New since the contest:** [Live 3D: drag, climb, mount, carry](#live-3d-drag-climb-mount-carry) · [Drive mode](#drive-mode-control-anything-like-a-video-game-and-record-it) · [Stunts](#stunts-j-turn-donut-handbrake-180) · [The new sets](#the-new-sets) · [Interop: Blender, Unreal, Maya, Nuke](#interop-blender-unreal-maya-nuke) · [Phone camera and the phone viewfinder](#phone-camera)
+   - **New since the contest:** [Practical effects: explosions, fire, squibs](#practical-effects-explosions-fire-squibs) · [Live 3D: drag, climb, mount, carry](#live-3d-drag-climb-mount-carry) · [Drive mode](#drive-mode-control-anything-like-a-video-game-and-record-it) · [Stunts](#stunts-j-turn-donut-handbrake-180) · [The new sets](#the-new-sets) · [Interop: Blender, Unreal, Maya, Nuke](#interop-blender-unreal-maya-nuke) · [Phone camera and the phone viewfinder](#phone-camera)
 5. [Keyboard and mouse cheat sheet](#5-keyboard-and-mouse-cheat-sheet)
 6. [Tips and tricks](#6-tips-and-tricks)
 7. [Troubleshooting and FAQ](#7-troubleshooting-and-faq)
@@ -1462,6 +1462,26 @@ Select a prop and press **Physics** in its card. A small panel opens beside the 
 - The solver is a small built-in one (substepped XPBD rigid bodies, the position-based sibling of three-avbd's vertex block descent). Box-like props collide as boxes; a chair or a table collides as up to four convex hulls of its own mesh, not its bounding box.
 - **Live solver: CPU / GPU · beta.** At the bottom of the panel. **CPU** (XPBD) runs in every browser; **GPU · beta** solves live drags, car hits and drops on the graphics card with [three-avbd](https://github.com/sbobyn/three-avbd) (WebGPU), and falls back to the CPU, saying why, where WebGPU isn't available. Simulate & bake always runs on the CPU.
 
+<a id="practical-effects-explosions-fire-squibs"></a>
+
+### Practical effects: explosions, fire, squibs
+
+Rig an effect the way an SFX crew does: **Physics → SFX · practical effects → Add rig** (an explosion, fire, a sparks
+shower, a bullet-hit squib, a smoke bomb, breakaway glass, a road flare, a body squib or blood pack on a person, a
+stunt-knife gag). Give it a **cue**: at a time, on contact, a delay after another cue, or **Manual**: press **💥 Fire**
+or **K** at the moment during playback (or **K** during a Drive-mode ● REC take) and that moment becomes its key.
+
+When it fires the set reacts in the bake: an explosion pushes every body near it, falling off with distance and by
+mass (crates fly, a car rocks or rolls, a lamp post falls, a person is knocked down, crates break), lights what burns
+and leaves a scorch; fire spreads along wooden and cardboard props; a body squib bursts on the wardrobe with stage blood,
+the performer reacts by where it hit (a chest hit falls back, an arm flinches) and the stain stays. The fireball, smoke
+and sparks show in Clay and Color, the rigs' markers never do, and the motion prompt names each beat (*"At 1.5 s a huge
+fireball erupts beside the red car…"*).
+
+Scrub back before a cue: everything is untouched. **Reset to before** puts everything an effect touched back exactly
+(one Undo step); changing a setting re-bakes from the untouched scene; **A / B** compares the last two runs. One-click
+versions are in **Presets → Action**: Car explosion, Building blast, Sparks shower, Squib hit. → [Practical effects](sfx.md)
+
 <a id="live-3d-drag-climb-mount-carry"></a>
 
 ### Live 3D: drag, climb, mount, carry
@@ -1645,6 +1665,7 @@ Keys only reach the 3D stage while the pointer is over it (or you clicked it), a
 | Esc | Close what is open first (the Physics panel, the ✦ One-click window, the ⋯ menu or any other menu or pop-over); end pose mode; leave Drive mode; with nothing open, leave the full window |
 | G / R / T | Gizmo: move / rotate / scale (with something selected) |
 | L, Shift+L, I, O, K | On a selected vehicle: headlights, light bar, indicators, driver's door, key every part at the playhead |
+| K, Shift+K | Fire the SFX cue at the playhead (the selected rig, else the first armed manual one) and write it as its key; with a vehicle selected plain K keys its parts, so use Shift+K. In Drive mode, K during ● REC records the cue into the take. → [Practical effects](sfx.md) |
 | Cmd/Ctrl+D | Duplicate the selection |
 | Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z | Undo / redo (up to 120 steps; a drag is one step; a bake is one step). Works from anywhere in the workspace, not only on the 3D canvas |
 | . | ⌂ Back to the set: fly the free view to the whole set (the shot camera doesn't move) |
