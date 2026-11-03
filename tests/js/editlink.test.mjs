@@ -3,6 +3,7 @@
 // node --test tests/js/editlink.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import * as TL from "../../web/cut/timeline.mjs";
 import { exportAll, reelNames, toEDL, toFCPXML, toOTIO, toRelinkList } from "../../web/cut/exporters.mjs";
@@ -101,4 +102,160 @@ test("the strip's split and remove keep the pins (its _project() normalizes the 
   assert.deepEqual(n.map((e) => [e.in, e.out, e.take?.url, e.versions?.length, e.uid]), [[0, 20, A1, 1, "c1"], [20, 40, A1, 1, undefined], [0, 30, undefined, undefined, undefined]]);
   strip.removeClip(2);
   assert.deepEqual(strip.saved.cut.map((e) => e.take?.url), [A1, A1]);
+});
+
+// ------------------------------------------------------------------------------------------------ the Cut side
+
+const EL = await import("../../web/cut/editlink.mjs");
+
+test("clipContext reads each clip type: final, draft, look, clay, a Ripple take, footage", () => {
+  const p = TL.normalizeProject({ fps: 24, shots: [
+    ...shots(), { id: "d", name: "Sc 6 · Two", frames: 97, renders: { draft: V("d.mp4", 3) } },
+    { id: "l", name: "Sc 7 · Look", frames: 97, renders: { look: V("l.png", 4) } }],
+  cut: [{ shot_id: "a", in: 0, out: 40, uid: "c1" }, { shot_id: "d", in: 5, out: 25 }, { shot_id: "l", in: 0, out: 20 },
+    { shot_id: "c", in: 0, out: 20 }, { shot_id: "b", in: 10, out: 30, take: { url: V("b_rip.mp4"), rung: "draft", kind: "ripple", version: 2, label: "Ripple" } },
+    { shot_id: "f", in: 0, out: 20 }] });
+  const rec = TL.layout(p).map((r) => r.recIn);
+  const ctx = (i) => EL.clipContext(p, i, { playhead: rec[i] + 3 });
+  const got = [0, 1, 2, 3, 4, 5].map((i) => { const c = ctx(i); return [c.type, c.footage, c.take.url, c.clip.srcFrame, c.clip.uid]; });
+  assert.deepEqual(got, [
+    ["final", false, A2, 3, "c1"],
+    ["draft", false, V("d.mp4"), 8, null],
+    ["look", false, V("l.png"), 3, null],
+    ["clay", false, "", 3, null],
+    ["take", false, V("b_rip.mp4"), 13, null],
+    ["look", true, V("f.png"), 3, null],
+  ]);
+  for (const i of [0, 1, 2]) assert.doesNotMatch(ctx(i).take.url, /[?&]t=/);
+  // the playhead outside the clip: the right-click point, else the in point
+  assert.equal(EL.clipContext(p, 1, { playhead: 0, recFrame: rec[1] + 10 }).clip.srcFrame, 15);
+  assert.equal(EL.clipContext(p, 1, { playhead: 0, recFrame: 9999 }).clip.srcFrame, 5);
+  assert.equal(ctx(0).recipeUrl, "/soundstage/takecheck/recipe?filename=a_v2.mp4&subfolder=soundstage&type=output");
+  assert.equal(ctx(2).recipeUrl, "", "the recipe route reads MP4 tags only");
+  assert.equal(EL.headLine(ctx(4)), "Sc 3 · Close · Ripple v2");
+  assert.equal(EL.clipContext(p, 99), null);
+});
+
+test("menuItems matches the item table (docs/cut.md): on / off per clip type, with the reason", () => {
+  const p = TL.normalizeProject({ fps: 24, shots: [...shots(), { id: "l", name: "L", frames: 97, renders: { look: V("l.png") } }],
+    cut: [{ shot_id: "a", in: 0, out: 10 }, { shot_id: "l", in: 0, out: 10 }, { shot_id: "c", in: 0, out: 10 },
+      { shot_id: "b", in: 0, out: 10, take: { url: V("b_rip.mp4"), rung: "draft", kind: "ripple" } }, { shot_id: "f", in: 0, out: 10 }] });
+  const table = (i) => Object.fromEntries(EL.menuItems(EL.clipContext(p, i)).filter((x) => x.where && x.where !== "version")
+    .map((x) => [x.where, x.disabled ? x.why : "on"]));
+  const NOCLIP = { look: "a still has no motion to keep: use First frame or ✦", clay: "clay is drawn live, so there is no clip: render a Draft first, or Re-block",
+    foot: "the camera original is not a ComfyUI file" };
+  const on = { frame: "on", motion: "on", stage: "on", canvas: "on", review: "on" };
+  assert.deepEqual(table(0), { ...on, ripple: "on", paint_v2v: "on", reshoot: "on", oneclick: "on" });
+  assert.deepEqual(table(1), { ...on, ripple: NOCLIP.look, paint_v2v: NOCLIP.look, reshoot: "Reshoot needs a clip", oneclick: "on" });
+  assert.deepEqual(table(2), { ...on, ripple: NOCLIP.clay, paint_v2v: NOCLIP.clay, reshoot: NOCLIP.clay, oneclick: "nothing rendered to work on" });
+  assert.deepEqual(table(3), { ...on, ripple: "on", paint_v2v: "on", reshoot: "on", oneclick: "on", follow: "on" });
+  assert.deepEqual(table(4), { ...on, ripple: NOCLIP.foot, paint_v2v: NOCLIP.foot, reshoot: NOCLIP.foot, oneclick: NOCLIP.foot });
+  const label = (i, w) => EL.menuItems(EL.clipContext(p, i)).find((x) => x.where === w).label;
+  assert.deepEqual([label(0, "motion"), label(1, "motion"), label(2, "motion")], ["Re-generate", "Animate this frame", "Render it"]);
+  // a host without ✦ turns it off and says so; versions are not offered on footage
+  assert.equal(EL.menuItems(EL.clipContext(p, 0), { oneclick: false }).find((x) => x.where === "oneclick").why, "not available here");
+  assert.equal(EL.menuItems(EL.clipContext(p, 4)).some((x) => x.where === "version" || x.where === "follow"), false);
+});
+
+/** A CutPanel with the REAL _snapshot, _commit, undo and redo (no DOM: _afterEdit and _syncMedia are stubbed). */
+async function panelOf(proj) {
+  const { CutPanel } = await import("../../web/cut/cut.mjs");
+  return Object.assign(Object.create(CutPanel.prototype), { project: proj, history: [], future: [], sel: 0, frame: 0, _afterEdit() {}, _syncMedia() {} });
+}
+const holdCut = () => project([
+  { shot_id: "a", in: 0, out: 40, notes: "keep", opacity: [[0, 1], [20, 0.5]] },
+  { shot_id: "b", in: 0, out: 30, trans: { type: "dissolve", frames: 6 } },
+  { shot_id: "a", in: 40, out: 80, trans: { type: "dip_black", frames: 4 } },
+  { shot_id: "c", in: 0, out: 10 }, { shot_id: "f", in: 0, out: 10 }, { shot_id: "c", in: 10, out: 20 }], { fade_out: { type: "dip_black", frames: 12 } });
+
+test("the hold pins every clip of the setup (clay too, not footage originals), mints one uid, in one edit", async () => {
+  const p = await panelOf(holdCut());
+  const uid = EL.holdClip(p, p.clipContext(0));
+  assert.equal(p.history.length, 1);
+  assert.match(uid, /^[A-Za-z0-9_-]{1,40}$/);
+  assert.deepEqual(p.project.cut.map((e) => [e.shot_id, e.take?.url ?? null, e.take?.version ?? null, e.uid ?? null]),
+    [["a", A2, 1, uid], ["b", null, null, null], ["a", A2, 1, null], ["c", null, null, null], ["f", null, null, null], ["c", null, null, null]]);
+  const q = await panelOf(holdCut());
+  EL.holdClip(q, q.clipContext(3));
+  assert.deepEqual(q.project.cut.map((e) => e.take?.rung ?? null), [null, null, null, "clay", null, "clay"]);
+  const f = await panelOf(holdCut());
+  EL.holdClip(f, f.clipContext(4));
+  assert.equal(f.project.cut[4].take, undefined, "footage that plays its camera original is not held");
+  assert.match(f.project.cut[4].uid, /^c/);
+  // holding again changes nothing: no second history entry
+  EL.holdClip(p, p.clipContext(0));
+  assert.equal(p.history.length, 1);
+});
+
+test("Replace in cut is ONE undo: same in/out and transitions, old take in versions, survives save and reload", async () => {
+  const { savedFields } = await import("../../web/cut/cut.mjs");
+  const p = await panelOf(holdCut());
+  EL.holdClip(p, p.clipContext(0));
+  const before = JSON.parse(JSON.stringify(p.project));
+  assert.equal(p.replaceClipTake(0, { url: V("a_v3.mp4", 99), rung: "final", kind: "app", at: "14:20" }), true);
+  assert.equal(p.history.length, 2);
+  const e = p.project.cut[0];
+  assert.deepEqual([e.in, e.out, e.notes, e.opacity, e.uid], [0, 40, "keep", [[0, 1], [20, 0.5]], before.cut[0].uid]);
+  assert.deepEqual(e.take, { url: V("a_v3.mp4"), rung: "final", version: 2, at: "14:20", kind: "app" });
+  assert.deepEqual(e.versions, [before.cut[0].take]);
+  assert.deepEqual(p.project.cut[1].trans, before.cut[1].trans);
+  assert.deepEqual(p.project.cut[2], before.cut[2], "the sibling stays held on the old take");
+  assert.deepEqual(p.project.fade_out, before.fade_out);
+  assert.equal(TL.layout(p.project)[0].shot.renders.final, V("a_v3.mp4"));
+  // save + reload (the host stores savedFields, the Cut normalizes what it reads back)
+  const reloaded = TL.normalizeProject({ fps: 24, shots: shots(), ...JSON.parse(JSON.stringify(savedFields(p.project))) });
+  assert.deepEqual(reloaded.cut[0].versions, [before.cut[0].take]);
+  assert.deepEqual(reloaded.cut, p.project.cut);
+  p.undo();
+  assert.deepEqual(p.project.cut, before.cut, "one undo brings the old take back");
+  p.redo();
+  assert.equal(p.project.cut[0].take.url, V("a_v3.mp4"));
+  // Follow the latest render: the pin goes, the old take joins the versions; then a replace of a version swaps back
+  assert.equal(p.replaceClipTake(0, null), true);
+  assert.equal(p.project.cut[0].take, undefined);
+  assert.deepEqual(p.project.cut[0].versions.map((v) => v.version), [1, 2]);
+  assert.equal(p.replaceClipTake(0, p.project.cut[0].versions[0]), true);
+  assert.deepEqual([p.project.cut[0].take.version, p.project.cut[0].versions.map((v) => v.version)], [1, [2]]);
+  assert.equal(p.replaceClipTake(99, { url: A1, rung: "final" }), false);
+  assert.equal(p.replaceClipTake(0, { url: "", rung: "final" }), false, "a final needs a file");
+});
+
+test("versions are capped at 12, numbered per shot, and findClip finds a clip after edits", () => {
+  let cut = project([{ shot_id: "a", in: 0, out: 10, uid: "c1" }, { shot_id: "a", in: 10, out: 20 }]).cut;
+  for (let k = 1; k <= 15; k++) cut = EL.applyPins(cut, [{ index: 0, take: { url: V(`a_${k}.mp4`), rung: "draft" } }]);
+  assert.equal(cut[0].take.version, 15);
+  assert.equal(cut[0].versions.length, TL.MAX_VERSIONS);
+  assert.deepEqual(cut[0].versions.map((v) => v.version), [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+  assert.equal(EL.versionFor(cut, "a", V("a_9.mp4", 1)), 9, "a file keeps its number");
+  assert.equal(EL.versionFor(cut, "a", V("new.mp4")), 16);
+  assert.equal(EL.versionFor(cut, "b", V("new.mp4")), 1);
+  assert.equal(EL.applyPins(cut, [{ index: 0, take: { url: V("a_15.mp4", 5), rung: "draft" } }]), null, "the same file again changes nothing");
+  const moved = [{ shot_id: "b", in: 0, out: 5 }, ...cut];
+  assert.equal(EL.findClip(moved, { uid: "c1", index: 0, shot_id: "a", in: 0, out: 10 }), 1);
+  assert.equal(EL.findClip(moved, { index: 1, shot_id: "a", in: 10, out: 20 }), 2);
+  assert.equal(EL.findClip(moved, { index: 0, shot_id: "zz", in: 0, out: 1 }), -1);
+  assert.notEqual(EL.mintUid([{ uid: "c000001" }], () => 1 / 36 ** 6), "c000001");
+});
+
+test("newTakes sees only takes that landed: an App final, a Ripple take, a new still for Look clips; not a new cache-buster", () => {
+  const before = new Set([A1, V("a_look.png"), V("old_rip.mp4")].map(EL.fileKey));
+  const takes = [
+    { url: V("a_v1.mp4", 555) },                                     // the same file, a new cache-buster: not new
+    { url: V("a_v2.mp4", 556), created: 2 },                         // an App final
+    { url: V("rip.mp4"), created: 3, kind: "draft", ripple: true },  // a Ripple take
+    { url: V("new_look.png"), created: 1 },                          // a new chosen still
+    { url: V("old_rip.mp4"), created: 9 },
+  ];
+  assert.deepEqual(EL.newTakes(before, takes, "final").map((t) => t.url), [V("rip.mp4"), V("a_v2.mp4", 556)]);
+  assert.deepEqual(EL.newTakes(before, takes, "look").map((t) => t.url), [V("rip.mp4"), V("a_v2.mp4", 556), V("new_look.png")]);
+  assert.equal(EL.newTakes(before, takes, "clay").length, 3);
+  assert.deepEqual(EL.newTakes(before, [], "final"), []);
+});
+
+test("the Cut's menu goes through the pop-over layer, keeps the class the sweep opens, and pulls in nothing from the App", () => {
+  const src = (f) => readFileSync(new URL(`../../web/cut/${f}`, import.meta.url), "utf8");
+  assert.match(src("editlink.mjs"), /from "\.\.\/ui\/popover\.mjs"/);
+  assert.match(src("editlink.mjs"), /ss-cut-ctx ss-editmenu/);
+  assert.doesNotMatch(src("editlink.mjs"), /from "\.\.\/(pipeline|motion|oneclick|dailies|takecheck|performance)\//);
+  assert.match(src("cut.mjs"), /openPopover\(/);
 });
