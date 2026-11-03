@@ -83,7 +83,6 @@
   },
   {
    "id": "boat3",
-   "off": true,
    "scene": "speedboat",
    "do": "boats",
    "title": "Boats: the blocking, then the shot",
@@ -93,7 +92,7 @@
     {
      "label": "Clay | Final (no dock)",
      "file": "m_tr3_boat3_sbs.mp4",
-     "note": "Left: this staging's Color pass (no dock, one driver). Right: the LTX-2.5 Final it guided, first frame FLUX 3 Klein. A separate staging, not a render of the stage behind it. Not yet approved."
+     "note": "Left: this staging's Color pass (no dock, one driver). Right: the LTX-2.5 HQ Final it guided (seed 2201, Loose adherence, with sound), first frame FLUX 3 Klein. A separate staging, not a render of the stage behind it."
     }
    ]
   },
