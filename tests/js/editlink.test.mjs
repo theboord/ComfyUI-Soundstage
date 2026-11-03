@@ -88,6 +88,24 @@ test("exports use each clip's own file: two reels, two assets, both files relink
   assert.deepEqual(exportAll(tagged), exportAll(plain));
 });
 
+test("the strip's clip menu has Edit in… when the host wires it (the old Edit original items otherwise)", async () => {
+  const { ShotStrip } = await import("../../web/cut/strip.mjs");
+  const make = (extra) => Object.assign(Object.create(ShotStrip.prototype), {
+    saved: { cut: [{ shot_id: "a", in: 0, out: 40 }] }, frame: 0, stage: { state: { shots: [{ id: "a", name: "Sc 3 · Wide" }, { id: "b" }] } },
+    _clock: () => ({ fps: 24, frames: 97 }), _getRenders: () => ({}), _sceneName: () => "SC3", _onEditShot: () => {},
+    _openMenu(items) { this.items = items; }, ...extra });
+  const calls = [];
+  const s = make({ _onEditClip: (i, ev) => calls.push([i, ev]) });
+  s._clipMenu(0, "EV");
+  const labels = s.items.filter((x) => x && x.label).map((x) => x.label);
+  assert.ok(labels.includes("Edit in…") && !labels.includes("Repaint its frame (④ Frame)"), labels.join(" | "));
+  s.items.find((x) => x.label === "Edit in…").run();
+  assert.deepEqual(calls, [[0, "EV"]]);
+  const old = make({});
+  old._clipMenu(0, "EV");
+  assert.ok(old.items.some((x) => x?.label === "Repaint its frame (④ Frame)"), "a host without Edit in… keeps Edit original");
+});
+
 test("the strip's split and remove keep the pins (its _project() normalizes the saved cut)", async () => {
   const { ShotStrip } = await import("../../web/cut/strip.mjs");
   const saved = { cut: [{ shot_id: "a", in: 0, out: 40, uid: "c1", take: { url: A1, rung: "final", version: 1 }, versions: [{ url: V("a_v0.mp4"), rung: "final", version: 0 }] },

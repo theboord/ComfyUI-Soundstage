@@ -633,6 +633,7 @@ function createStageWidget(node, inputName) {
     save: (v) => { saveCut(v); if (!cutView.hidden) cut.refresh(); },
     onOpenEditor: () => showView("cut"),
     onEditShot: (id, where, ctx) => editShot(id, where, ctx),
+    onEditClip: (index, anchor) => editLink?.fromStrip(index, anchor),   // Edit in… (web/cut/editlink_app.mjs)
     getSceneName: (id) => { const n = sceneNumOfShot(id); return n ? `SC${n}` : null; },
     renderPreviewFrame: (id, f) => stage.renderFrameTo("clay", f, { shot: id }),
   });

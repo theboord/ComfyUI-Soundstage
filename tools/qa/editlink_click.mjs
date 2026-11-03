@@ -315,6 +315,23 @@ try {
   await b.ev(`window.__link.end({ quiet: true }); window.__showView("cut"); return 1`);
   await snap("10_after_jumps");
 
+  // 11 · the docked strip's Edit in… (soundstage.js wires it to editLink.fromStrip): the same menu; the trip is from
+  // the strip and Back lands in the Cut editor
+  await b.ev(`window.__showView("stage"); window.__log.length = 0; window.__link.fromStrip(2, { left: 300, top: 120, right: 300, bottom: 120 }); return 1`);
+  await sleep(300);
+  const m11 = await b.ev("return window.__menu()");
+  check(11, "the strip's Edit in… opens the same menu for its clip (clip 2)", /^Sc 3 · Wide/.test(m11?.head || "") && m11.items.some((x) => x.label === "Re-generate"), m11?.head);
+  const reg11 = await b.byText("^Re-generate", ".ss-cut-ctx button");
+  if (reg11) { await b.click(reg11.cx, reg11.cy); report.clicked.push("Re-generate (from the strip, clip 2)"); }
+  await sleep(300);
+  const t11 = await b.ev("const t = window.__link.trip; return t ? { from: t.from, index: t.clip.index, where: t.where } : null");
+  const back11 = await b.rect(".ss-backpill .ss-back");
+  if (back11) await b.click(back11.cx, back11.cy);
+  await sleep(300);
+  const v11 = await b.ev("return { view: window.__view, sel: window.cutPanel.sel }");
+  check(11, "its trip is from the strip, and Back lands in the Cut editor on that clip", t11?.from === "strip" && t11.index === 2 && v11.view === "cut" && v11.sel === 2, { t11, v11 });
+  await b.ev(`window.__link.end({ quiet: true }); return 1`);
+
   const errs = b.logs.filter((l) => /^(EXC|ERR)/.test(l) && !/favicon|ResizeObserver/.test(l));
   check("all", "no page errors", !errs.length, errs.slice(-8));
   report.log = await b.ev("return window.__log.filter((x) => x[0] !== 'say').map((x) => x.slice(0, 3))");
