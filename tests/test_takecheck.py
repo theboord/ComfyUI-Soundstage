@@ -345,6 +345,21 @@ def test_on_prompt_tags_soundstage_renders_only():
     assert R.on_prompt({"prompt": "garbage"}) == {"prompt": "garbage"}
 
 
+def test_recipe_records_the_quality_nodes_advanced_json():
+    """The App graph links the LTX seed from the Quality node (RandomNoise.noise_seed = ["9096", 11]), so seeds.ltx is
+    never a literal: the recipe keeps the Quality node's `advanced` JSON instead (the seed, the Adherence, the overrides
+    the render used), which Edit from the timeline's Re-generate loads back (web/cut/editlink_app.mjs)."""
+    prompt = json.loads(json.dumps(PROMPT))
+    prompt["9096"]["inputs"]["advanced"] = json.dumps({"preset": "Final", "seed": 1234, "adherence": "Balanced", "steps_1": 14})
+    prompt["5516:1"]["inputs"]["noise_seed"] = ["9096", 11]
+    rec = R.build(prompt)
+    assert rec["quality"] == {"motion_freedom": 0.5, "quality": "Final",
+                              "advanced": {"preset": "Final", "seed": 1234, "adherence": "Balanced", "steps_1": 14}}
+    assert "ltx" not in rec["seeds"]
+    prompt["9096"]["inputs"]["advanced"] = ["9000", 0]   # a linked or unreadable value is left out
+    assert "advanced" not in R.build(prompt)["quality"]
+
+
 @needs_ffmpeg
 def test_recipe_round_trip_through_the_mp4(tmp_path):
     rec = R.build(PROMPT)
