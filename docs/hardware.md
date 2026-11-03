@@ -32,7 +32,7 @@ Ripple's single pass is capped to 704p (16 GB) and 512p (12 GB). The Performance
 | Model | Smaller build | Folder | Source | Size |
 |---|---|---|---|---|
 | LTX-2.5 22B distilled | `ltx-2.5-22b-distilled-transformer-w4a8_convrot.safetensors` | `diffusion_models/` | Winnougan/ltx-2.5-w4a8-convrot-int4-convrot-Winnougan-Blessing (community repack, LTX-2 Community License) | 12.5 GB (int8: 21.5 GB) |
-| Gemma 4 12B (LTX-2.5 encoder) | `gemma4-12b-with-proj-ltx-2.5-w4a8_convrot.safetensors` | `text_encoders/` | same repo | not stated |
+| Gemma 4 12B (LTX-2.5 encoder) | `gemma4-12b-with-proj-ltx-2.5-w4a8_convrot.safetensors` | `text_encoders/` | same repo (LTX-2 Community License + Gemma terms) | 10.6 GB |
 | Krea 2 Turbo | `krea2_turbo_fp8_scaled.safetensors` | `diffusion_models/` | Comfy-Org/Krea-2 | 13.1 GB |
 | Z-Image Turbo | `z_image_turbo_int8_convrot.safetensors` | `diffusion_models/` | Comfy-Org | not stated |
 | UMT5-XXL (Wan) | `umt5_xxl_fp8_e4m3fn_scaled.safetensors` | `text_encoders/` | Comfy-Org | not stated |
