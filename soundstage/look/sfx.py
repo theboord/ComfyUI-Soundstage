@@ -129,6 +129,16 @@ def _reaction(point: str, power: float, fall, who: dict | None) -> str:
     return f"{sub} jolts with the hit"
 
 
+def _stab_reaction(point: str, power: float, fall, who: dict | None) -> str:
+    """A stunt-knife gag's reaction, as the stage plays it (sfx.mjs hitReaction, kind "stab"): she folds over the
+    wound with both hands; she goes down only onto her knees, and only when the fall is asked for or the gag is hard
+    (power 1.5 or more). Never "drops forward"."""
+    sub, pos = _subj(who), _poss(who)
+    part = POINTS.get(point, "stomach")
+    goes = fall is True or (fall is None and power >= 1.5)
+    return f"{sub} folds over, clutching {pos} {part} with both hands" + (" and sinks to {} knees".format(pos) if goes else " and stays on {} feet".format(pos))
+
+
 def sfx_beats(scene: dict | None) -> str:
     """The timed SFX beat sentences ("" when the scene has no rig that fires)."""
     if not isinstance(scene, dict):
@@ -198,7 +208,7 @@ def sfx_beats(scene: dict | None) -> str:
                 s = (f"{when} a retractable stunt knife strikes {name}'s {part}: a slash opens across {pos} {_wear(who)}"
                      + (" with a thin line of stage blood" if blood else ""))
             if react:
-                s += "; " + _reaction(point, power, fall, who)
+                s += "; " + (_stab_reaction if kind == "stab" else _reaction)(point, power, fall, who)
             beats.append((t, s))
     for surf, run in squib_runs.items():
         t = float(run[0].get("t") or 0)
