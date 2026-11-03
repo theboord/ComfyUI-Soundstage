@@ -549,7 +549,11 @@ export class LiveCar {
     const sh = Math.sin(this.H), ch = Math.cos(this.H);
     let wx = this.vx * sh + this.vy * ch, wz = this.vx * ch - this.vy * sh;
     const into = wx * nx + wz * nz;
-    if (into < 0) { wx -= (1 + restitution) * into * nx; wz -= (1 + restitution) * into * nz; }
+    // Only a hit takes speed off: touching a wall while driving away from it (or resting against it) is not a hit.
+    // (It used to scrub 30 % of the speed and half the yaw rate on every contact, so a car started against a wall,
+    // as a keyed stunt pose often is, could never drive clear of it.)
+    if (!(into < 0)) return;
+    wx -= (1 + restitution) * into * nx; wz -= (1 + restitution) * into * nz;
     wx *= 0.7; wz *= 0.7;
     this.vx = wx * sh + wz * ch; this.vy = wx * ch - wz * sh;
     this.r *= 0.5;

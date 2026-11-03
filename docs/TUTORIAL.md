@@ -199,6 +199,9 @@ What's in the groups:
 3. **R** records as before; a boat take keeps its own throttle, trim and paddle strokes.
 4. Drive mode and the shortcut sheet keep the keyboard to themselves, so keys don't leak to the stage behind them.
 
+5. Driving something keyed takes over from its keys (they wait, unchanged, and play again when you leave); it starts settled upright on the ground. A kept take is auto-corrected and fitted with far fewer keys, with **Undo** to the raw take. See [Drive mode](#drive-mode-control-anything-like-a-video-game-and-record-it).
+6. **⌂ Back to the set** (**.**) and **↶ Last view** (**,**) on the viewport, and a **Lost?** chip when the camera is far off or inside a building.
+
 **Limit:** the view can stay on the shot camera; press `V` to cycle chase, shot and orbit. The red REC pill can overlap the timecode.
 
 <a id="voice-conversion-in-real-performance"></a>
@@ -1372,6 +1375,20 @@ Select a person, a car, a horse or a prop and press **D** (or **🎮 Drive** on 
 **Cars** run on the same vehicle dynamics as the stunt presets (Pacejka tyres, weight transfer, a body that rolls and pitches): hold the brake at a stop and it reverses, flick the wheel at 40 km/h in reverse and the nose comes round (a J-turn by hand), pull the handbrake through a corner and the tail slides.
 
 **Recording.** Press **R** (● REC): a 3-2-1 countdown, then the timeline plays from frame 0 (or from the playhead) while you drive. Everything already animated plays back, so you can drive actor A, keep the take, rewind and drive actor B around A, like Sequencer's Take Recorder. When you stop (or the shot ends) the take plays back once: **Keep** (one undo step), **Discard**, or **Again**. Pick the smoothing (raw, light, smooth, heavy) before you keep it. A take writes ordinary keys on the current shot: position and heading for everything you moved; a car's body roll, pitch and steering; the door opening as they get in; when they were in the car or the saddle; where the head looked (look at someone with the camera and they look at them); the lights you switched; and a thrown crate's whole flight. Nothing you do in Drive mode changes the shot unless you keep a take.
+
+**Driving takes over from the keys.** You can drive anything, even when it is keyed: a stunt car in the middle of its J-turn, a person mid-jump, someone with Pose Studio keys or a mocap take. While you drive it, its keys stop applying to it (they are not changed), and the HUD says **Took over from keys: Esc to leave**. It starts where the keys had it at the playhead, settled to a physical state: a car keeps its heading, stands on its wheels and eases out of its keyed roll and pitch in about 0.3 s; a person stands upright with their feet on the ground; a horse the same. If the keyed pose was cutting through a kerb, a wall or a parked car, it is moved clear first. Leave without keeping a take (**Esc**) and the keys play again exactly as before.
+
+**Kept takes are auto-corrected.** When you keep a take, Soundstage cleans what isn't physical before writing the keys, using the limits of the thing you drove (a car's own tyre grip, top gear and body roll; a person's or a horse's top speed, acceleration and turn rate):
+
+- a frame that jumps out and back (a spike) is put back on the path; a hit, a stop or a launch is kept;
+- a teleport (a jump far past what it could travel in a frame) is taken out, and the rest of the take carries on from there;
+- faster than its top speed is held to its top speed; turn-rate spikes are clamped;
+- a car rolled or pitched further than its tyres and springs allow is settled;
+- feet and wheels stay on the ground (no floating, no sinking), except in a jump or a climb.
+
+Then the take is fitted with **as few keys as possible** that still play back within about 2 cm and 1° (scaled to the object's size). A change of mode (getting in, getting out, a take-off and a landing) always keeps its own key. The HUD shows what happened, for example **Smoothed 3 spikes, settled roll · 1,440 keys → 38**, with **Undo** to put the raw take back, as you drove it (a key every 2 frames, no corrections).
+
+**Finding your way back.** If you drove or flew the view far away, use the two buttons at the top-left of the viewport: **⌂ Back to the set** (key **.**) frames the whole set from the front in the free view, and **↶ Last view** (key **,**) steps back through your last 10 views (each view you rest on for half a second, and the view just before Drive, Back to the set or **F**). When the camera ends up far outside the set or inside a building, a **Lost? Back to the set** chip appears: one tap brings you back.
 
 **Boats** run on the boat physics: a speedboat climbs its bow wave and planes, a sailboat sails on the wind (steer through it to tack; the sheet trims itself), and paddle craft paddle while you hold W (Shift harder). See [Boats](#boats).
 
