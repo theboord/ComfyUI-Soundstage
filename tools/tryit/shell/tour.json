@@ -24,6 +24,14 @@
    "say": "Low Tide is broken down and scene 1 is on the stage. Pick another scene, or Load a script (top bar) for your own. ③ Set shows the stage."
   },
   {
+   "id": "ask",
+   "scene": "chase",
+   "do": "ask",
+   "title": "✦ Ask: Show me, then Do it for me",
+   "text": "Ask how to do anything. Here the question is \"how do I make it rain?\". First press Show me, step by step: it lights up the real controls so you can do it yourself. Then press Do it for me: the App plans \"make it rain\", you press Apply, and rain falls on the stage. Undo this puts it back.",
+   "say": "1. Show me, step by step (lights up the controls). 2. Do it for me, then Apply: rain on the stage. Undo this puts it back."
+  },
+  {
    "id": "drive",
    "scene": "chase",
    "do": "drive",

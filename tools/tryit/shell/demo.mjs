@@ -341,6 +341,15 @@ const ACTIONS = {
       if (rep) { rep.click(); break; }
     }
   },
+  // ✦ Ask: a how-to question, so the answer card shows both buttons. "Show me" lights up the real controls; "Do it for
+  // me" plans "make it rain" (the server's recorded plan) and Apply puts the rain on the stage, with Undo this.
+  async ask() {
+    P().go("set"); await sleep(300);
+    const d = stageNode.ssDirector; if (!d) return;
+    d.open(); await sleep(300);
+    await d.send("how do I make it rain?"); await sleep(600);
+    flash([...d.panel.querySelectorAll("button")].reverse().find((b) => /^Show me, step by step/.test(b.textContent.trim())));
+  },
   // ✦ One-click: ④ Frame replays its candidates, then the ✦ on the first one opens the card window.
   async oneclick() {
     P().go("frame"); await sleep(900);
