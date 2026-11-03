@@ -33,6 +33,14 @@
   #sceneNote { color: var(--muted); font-size: 12px; margin: 0; flex: 1 1 320px; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   #host { flex: 1 1 auto; min-height: 560px; height: calc(100dvh - 52px); padding-block: 0 max(8px, env(safe-area-inset-bottom, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); min-width: 0; }
   #host > .ss-stage { height: 100% !important; }
+  /* Your edits are not re-rendered in the demo: the note above ④ Frame's frames (and ⑤ Motion's status), and a label on every replayed frame. */
+  .demo-editnote { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.4;
+    color: var(--text); background: rgba(143,211,255,.10); border: 1px solid rgba(143,211,255,.5); }
+  .demo-editnote[hidden] { display: none; }
+  .demo-editnote a { color: var(--replay); font-weight: 600; }
+  .ss-stage .cand > .prov.rec { position: absolute; left: 50%; transform: translateX(-50%); bottom: 30px; z-index: 2; pointer-events: none;
+    background: rgba(15,13,17,.82); font-size: 10.5px; padding: 1px 7px; }
+  .ss-stage.ss-cl .ss-clfilm .cand > .prov.rec { bottom: auto; top: 50%; transform: translate(-50%, -50%); font-size: 9.5px; padding: 0 5px; z-index: 4; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   #toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); max-width: min(92vw, 640px);
     background: var(--panel2); border: 1px solid var(--accent); color: var(--text); border-radius: 12px; padding: 10px 14px; font-size: 13px; z-index: 20050; }

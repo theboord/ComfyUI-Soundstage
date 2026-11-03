@@ -82,7 +82,10 @@ export function matchVoice(who, saved = [], aliases = []) {
     const v = list.find((x) => x.name.toUpperCase() === c) || list.find((x) => voiceNameFor(x.character) === c);
     if (v) return v.name;
   }
-  const first = voiceNameFor(String(who || "").trim().split(/\s+/)[0]);
+  // First-name fallback for a one-word cue only, as the server (voices.resolve_name): a full name that matched no
+  // voice above never borrows another character's ("Ezra Reed" must not get EZRA_HALE's voice).
+  if (voiceNameFor(who).includes("_")) return "";
+  const first = voiceNameFor(who);
   if (!first) return "";
   const hits = list.filter((x) => [x.name.toUpperCase(), voiceNameFor(x.character)].some((n) => n === first || n.startsWith(first + "_")));
   return hits.length === 1 ? hits[0].name : "";

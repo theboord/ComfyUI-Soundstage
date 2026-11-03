@@ -42,13 +42,13 @@ def resolve(ref: str, dirs: dict | None = None) -> str | None:
         import folder_paths
         dirs = {"input": folder_paths.get_input_directory(), "output": folder_paths.get_output_directory(),
                 "temp": folder_paths.get_temp_directory()}
-    base = os.path.realpath(dirs.get(kind) or "")
-    if not base:
+    if not dirs.get(kind):
         return None
-    path = os.path.realpath(os.path.join(base, sub, name))
     try:
+        base = os.path.realpath(dirs[kind])
+        path = os.path.realpath(os.path.join(base, sub, name))
         inside = os.path.commonpath([base, path]) == base
-    except ValueError:      # Windows: "D:/x.mp4" joins onto another drive, which is never inside
+    except ValueError:      # Windows: "D:/x.mp4" joins onto another drive; a NUL byte in the ref: never inside
         return None
     if not inside or not os.path.isfile(path):
         return None

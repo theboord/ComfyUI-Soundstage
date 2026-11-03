@@ -485,7 +485,7 @@ def validate_call(raw, work: dict, ctx: dict) -> dict:
             g = _group(work, v)
             if not g:
                 raise Invalid(f"{name}: nothing called '{v}' on set")
-            out[a] = g[0]["name"] if len(g) == 1 else f"{len(g)} {C.LIBRARY.get(g[0]['kind'], {}).get('label', g[0]['kind']).lower()}s"
+            out[a] = g[0]["name"] if len(g) == 1 else f"{len(g)} {_plural(C.LIBRARY.get(g[0]['kind'], {}).get('label', g[0]['kind']).lower())}"
             out[a + "_ids"] = [x["id"] for x in g]
         elif typ == "place":
             ok, place = _place_ok(work, v)
@@ -701,12 +701,12 @@ def plan_line(call, work, ctx):
         "drive": lambda: f"drive the {a['target'].lower()} straight through the {a['through'].lower()}",
         "physics": lambda: f"make the {a['target'].lower()} {a['mode']}",
         "bake": lambda: "simulate the physics and bake it into the shot",
-        "ram": lambda: f"have the {a['target'].lower()} ram {_the(a['victim'])}" + (f" into the {a['into'].lower()}" if a.get("into") else "")
+        "ram": lambda: f"have the {a['target'].lower()} ram {_the(a['victim'], _kind(work, a.get('victim_id')))}" + (f" into the {a['into'].lower()}" if a.get("into") else "")
                        + ": the speed comes from momentum, and the physics bakes the crash from the hit on",
         "check": lambda: "check the shot for anything passing through anything else (cars, poles, walls, people)",
-        "reroute": lambda: f"reroute {_the(a['target'])} round {_the(a['around'])}",
-        "keep_keyed": lambda: f"keep {_the(a['target'])} on its keys through contacts" if a.get("on") == "on"
-                              else f"let the physics take over {_the(a['target'])} at its first hit",
+        "reroute": lambda: f"reroute {_the(a['target'], _kind(work, a.get('target_id')))} round {_the(a['around'], _kind(work, a.get('around_id')))}",
+        "keep_keyed": lambda: f"keep {_the(a['target'], _kind(work, a.get('target_id')))} on its keys through contacts" if a.get("on") == "on"
+                              else f"let the physics take over {_the(a['target'], _kind(work, a.get('target_id')))} at its first hit",
         "gaze": lambda: f"block {a['who']}'s head: " + {"camera": "look into the camera", "ahead": "head steady, facing ahead",
                                                           "left": "look off left", "right": "look off right", "down": "look down",
                                                           "up": "look up"}.get(a["at_id"], f"turn to {a['at']}")
@@ -786,6 +786,19 @@ def context_text(scene: dict, ctx: dict) -> str:
     scenes = (ctx or {}).get("scenes") or []
     if scenes:
         lines.append("Script scenes: " + ", ".join(f"{s.get('number')}={str(s.get('heading', ''))[:40]}" for s in scenes[:8]))
+    # Ask (web/agent/ask.mjs): where the user is in the App, so "it", "this" and "here" resolve to what they see.
+    ui = (ctx or {}).get("ui")
+    if isinstance(ui, dict):
+        where = []
+        if ui.get("step"):
+            where.append(f"step {str(ui['step'])[:20]}")
+        sel = ui.get("selected")
+        if isinstance(sel, dict) and (sel.get("name") or sel.get("id")):
+            where.append(f"selected: {str(sel.get('name') or sel.get('id'))[:40]} ({str(sel.get('kind') or 'object')[:20]})")
+        if ui.get("panel"):
+            where.append(f"open panel: {str(ui['panel'])[:30]}")
+        if where:
+            lines.append("User is on " + ", ".join(where) + " (\"it\" / \"this\" means the selected object)")
     # The Director's Book (Milestone 23, web/book getBookContext): the scene's intent, style and the director's rules.
     book = (ctx or {}).get("book")
     if isinstance(book, dict) and str(book.get("text") or "").strip():
@@ -1166,10 +1179,26 @@ def rules_calls(command: str, scene: dict, ctx: dict | None = None) -> list[dict
     return calls
 
 
-def _the(name):
-    """'Mara' stays 'Mara'; 'Red car' becomes 'the red car'."""
+PERSON_KINDS = {"man", "woman", "child"}
+
+
+def _the(name, kind=None):
+    """'Mara' stays 'Mara'; 'Red car', 'Truck', 'Bench' become 'the red car', 'the truck', 'the bench' (world.mjs does the
+    same: only a person's name is a name). Without a kind, a capitalised single word is taken for a name."""
     n = str(name)
+    if kind is not None:
+        return n if kind in PERSON_KINDS and n[:1].isupper() else f"the {n.lower()}"
     return n if n[:1].isupper() and " " not in n and n.lower() not in ("car", "lamp", "wall") else f"the {n.lower()}"
+
+
+def _plural(word):
+    """'bench' -> 'benches', 'bus' -> 'buses', 'crate' -> 'crates' (world.mjs consequences() says the same)."""
+    return word + ("es" if re.search(r"(ss|us|x|z|ch|sh)$", word) else "" if word.endswith("s") else "s")
+
+
+def _kind(work, aid):
+    """The kind of the actor with this id in the working scene, or None."""
+    return next((x.get("kind") for x in (work or {}).get("actors", []) if aid is not None and x.get("id") == aid), None)
 
 
 # Things a car really hits (world.mjs WORLD_KINDS): these get "ram", loose props keep "drive through".

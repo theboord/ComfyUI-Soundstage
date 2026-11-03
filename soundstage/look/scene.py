@@ -385,13 +385,25 @@ def _facing_words(direction, cam, plural: bool = False, animal: bool = False, ve
             return "front toward the camera, headlights and grille facing us, driving forward toward the camera"
         side = "screen-right" if G.dot(d, right) > 0 else "screen-left"
         return f"in profile, its nose pointing {side}, driving forward to {side}"
+    side = "screen-right" if G.dot(d, right) > 0 else "screen-left"
+    if not animal:
+        # People in five bands (frame-1 bug, 2026-11-02): a dancer turned ~52° off the lens read "facing the camera"
+        # and Klein drew her square to the lens; a back to the camera has to say "seen from behind" or it paints a face.
+        if a > 0.7:
+            return f"seen from behind, with their back{'s' if plural else ''} to the camera"
+        if a > 0.35:
+            return f"in three-quarter view from behind, turned away from the camera toward {side}"
+        if a < -0.7:
+            return "facing the camera"
+        if a < -0.35:
+            return f"in three-quarter view, turned toward the camera, facing {side}"
+        return f"in profile, facing {side}"
     if a > 0.55:
-        # Animals and vehicles: say it bluntly; a clay horse from behind reads as a horse facing us otherwise.
-        return ("seen from behind, facing away from the camera" + (", tails toward us" if animal else "")) if animal is not None and animal \
-            else f"with their back{'s' if plural else ''} to the camera"
+        # Animals: say it bluntly; a clay horse from behind reads as a horse facing us otherwise.
+        return "seen from behind, facing away from the camera, tails toward us"
     if a < -0.55:
-        return "facing the camera" + (", heads toward us" if animal else "")
-    return "in profile, facing screen-right" if G.dot(d, right) > 0 else "in profile, facing screen-left"
+        return "facing the camera, heads toward us"
+    return f"in profile, facing {side}"
 
 
 def _heading(a: dict, frames: int) -> tuple:
@@ -493,6 +505,34 @@ def _inside(pos, pr, margin=0.3) -> bool:
     x, _, z = pr["position"]
     w, _, d = pr["size"]
     return abs(pos[0] - x) <= w / 2 + margin and abs(pos[2] - z) <= d / 2 + margin
+
+
+def _segment_hits_box(a, b, pr) -> bool:
+    """Does the segment a->b pass through prop pr's box (axis-aligned, standing on its position)? Slab test."""
+    x, y, z = pr["position"]
+    w, h, d = pr["size"]
+    lo, hi = (x - w / 2, y, z - d / 2), (x + w / 2, y + h, z + d / 2)
+    t0, t1 = 0.0, 1.0
+    for i in range(3):
+        da = b[i] - a[i]
+        if abs(da) < 1e-9:
+            if not lo[i] <= a[i] <= hi[i]:
+                return False
+            continue
+        u, v = (lo[i] - a[i]) / da, (hi[i] - a[i]) / da
+        t0, t1 = max(t0, min(u, v)), min(t1, max(u, v))
+        if t0 > t1:
+            return False
+    return t1 > 0.0 and t0 < 0.98          # the far end is the subject itself
+
+
+def _occluded_by_props(pos, height: float, cam: dict, props: list[dict]) -> bool:
+    """A figure or car the camera can't see at all: its head and its middle are both behind one solid set piece
+    (a building, a house). Frame 1 must not name what the wall hides."""
+    p = cam["position"]
+    head, mid = (pos[0], pos[1] + height * 0.92, pos[2]), (pos[0], pos[1] + height * 0.5, pos[2])
+    return any(q["kind"] in ("building", "house") and _segment_hits_box(p, head, q) and _segment_hits_box(p, mid, q)
+               for q in props)
 
 
 def road_surface(scene: dict) -> str | None:
@@ -767,6 +807,18 @@ def _ride_noun(noun: str, host: dict, seat: int | None = None) -> str:
     return f"{noun} sitting on {_article(hnoun)}" if kind in mounts() else f"{noun} on {_article(hnoun)}"
 
 
+def mocap_yaw0(a: dict) -> float | None:
+    """The yaw (radians) a mocap-driven clay figure has at frame 0, as web/stage/mocap.mjs place() poses it: the
+    Video -> Stage world track when there is one, else the actor's own facing (the take starts turned to it)."""
+    m = a.get("mocap")
+    if not isinstance(m, dict):
+        return None
+    yaw = (m.get("world") or {}).get("yaw")
+    if isinstance(yaw, list) and yaw:
+        return math.radians(float(yaw[0]))
+    return math.radians(float(a["rotation_deg"])) if "rotation_deg" in a else None
+
+
 def cast(scene: dict) -> list[dict]:
     frames, _ = frame_range(scene)
     last = frames - 1
@@ -779,9 +831,12 @@ def cast(scene: dict) -> list[dict]:
         start, h0 = world_pos(scene, a, 0, last)
         end, _ = world_pos(scene, a, last, last)
         heading = _heading(a, frames)
+        clay = mocap_yaw0(a)
         if h0 is not None:
             y = _yaw_at(h0, 0, last)
             heading = (math.sin(y), 0.0, math.cos(y))
+        elif clay is not None:   # a captured performance: the clay's own facing at frame 0, not its drift
+            heading = (math.sin(clay), 0.0, math.cos(clay))
         reversing = False
         if rig == "vehicle" and ST.is_stunt(a):    # the nose, not the travel: a stunt car may lead with its tail
             y = ST.stunt_yaw(a, 0, last, _pos_at)
@@ -825,7 +880,9 @@ def frame_facts(scene: dict, cam: dict, frame: int) -> dict:
         s = c["height"] / 1.8
         body = 0.92 * s if seated else c["height"]       # from the seat up: the head sits ~0.85 m above the seat
         pr = _project_body(pos, body, cam)
-        hidden = not seated and any(q["kind"] in ("building", "house") and _inside(pos, q, margin=-0.2) for q in _props(scene))
+        solid = _props(scene)
+        hidden = not seated and (any(q["kind"] in ("building", "house") and _inside(pos, q, margin=-0.2) for q in solid)
+                                 or _occluded_by_props(pos, body, cam, solid))
         if not pr or not pr["visible"] or hidden:
             continue
         noun = c["noun"]
@@ -928,7 +985,8 @@ def group_phrase(entries: list[dict], cam: dict, with_facing: bool = True) -> li
     if in_car and with_facing and len({g["facing"] for g in gs}) == 1 and gs[0]["facing"]:
         # Seat by seat, the way they all face once (a repeated "facing the camera" would be deduped off the last seat).
         both = "both" if len(gs) == 2 else f"all {_COUNTS.get(len(gs), len(gs))}"
-        return [_join_and([f"{g['nouns']} {g['where']}" for g in gs]) + f", {both} {_facing_words(entries[0]['heading'], cam, True)}"]
+        facing = _facing_words(entries[0]["heading"], cam, True).replace("seen from behind, ", "")   # "both with their backs ..."
+        return [_join_and([f"{g['nouns']} {g['where']}" for g in gs]) + f", {both} {facing}"]
     for g in gs:
         bits = [g["nouns"] + (" side by side" if g["plural"] else "") + " " + g["where"],
                 g["distance"], g["facing"] if with_facing else ""]
@@ -949,10 +1007,12 @@ def blocking_sentence(entries: list[dict], cam: dict) -> str:
     return " ".join(out)
 
 
-def traffic_lock(scene: dict) -> dict | None:
+def traffic_lock(scene: dict, visible: set | None = None) -> dict | None:
     """Vehicles on stage and nobody on foot: say the road holds only those vehicles (video models add traffic,
     pedestrians and duplicate cars that drive through each other). Returns {"still", "motion", "negative"} or None.
-    With the camera riding in one of them, that one is "the car" and the street is outside the windows."""
+    With the camera riding in one of them, that one is "the car" and the street is outside the windows.
+    visible: the ids in frame at frame 0 (frame1_facts). The still then names only those; a car that drives in later
+    is the motion prompt's (the car-pass plate's frame 1 painted the police car that only enters at 1.7 s)."""
     lib = library()
     actors = scene.get("actors") or []
     cars = [a for a in actors if lib.get(a.get("kind"), ("", 0, ""))[2] == "vehicle"]
@@ -969,12 +1029,19 @@ def traffic_lock(scene: dict) -> dict | None:
         count = {n: names.count(n) for n in names}
         return " and ".join(_article(n) if c == 1 else f"{c} {n}s" for n, c in count.items())
     if not cars:
-        return BT.water_lock(scene, boats, words)   # boats only: the water, not a street
+        lock = BT.water_lock(scene, boats, words)   # boats only: the water, not a street
+        seen = boats if visible is None else [a for a in boats if a.get("id") in visible]
+        if len(seen) != len(boats):
+            sea = BT.sea_words(scene)
+            lock["still"] = (f"{sea + ', ' if sea else ''}the only boats on the water are {words(seen)}" if seen
+                             else sea or "open water")
+        return lock
     neg = ("pedestrians, people walking in the road, people crossing the street, extra cars, duplicate cars, a second police car, "
            "cars passing through each other, merging cars")
     if ride is not None:
         rest = [a for a in cars if a is not ride]
-        tail = f", the only other vehicle{'s are' if len(rest) > 1 else ' is'} {words(rest)}" if rest else ", no other cars on the road"
+        seen = rest if visible is None else [a for a in rest if a.get("id") in visible]
+        tail = f", the only other vehicle{'s are' if len(seen) > 1 else ' is'} {words(seen)}" if seen else ", no other cars on the road"
         # LTX drifts toward ordinary traffic as the shot goes on (a car overtaking at the frame edge), and its
         # Draft/Final sample at CFG 1, where a negative prompt does nothing. Naming what is absent ("nothing pulls
         # alongside or overtakes", "no other vehicles") primed the very cars it ruled out (Milestone 5, two seeds):
@@ -999,8 +1066,10 @@ def traffic_lock(scene: dict) -> dict | None:
                            if legacy else f"The car has the street to itself: {whole}."),
                 "negative": neg}
     w = words(cars)
+    seen = cars if visible is None else [a for a in cars if a.get("id") in visible]
     # Krea 2 Turbo has no negative prompt, and naming what's absent invites it: describe the empty street instead.
-    return {"still": f"a deserted street with empty sidewalks, the only vehicles are {w}",
+    return {"still": f"a deserted street with empty sidewalks, the only vehicles are {words(seen)}" if seen
+            else "a deserted street with empty sidewalks and an empty road",
             "motion": f"The street is deserted apart from {w}, the sidewalks empty for the whole shot; each car stays whole and keeps its own lane, "
                       "and no other vehicle drives into frame, from the first frame to the last.",
             "negative": neg}
@@ -1025,7 +1094,8 @@ def vehicle_camera(scene: dict) -> dict | None:
     if host is not None and ST.is_stunt(host):
         kind = host.get("kind", "")
         noun = library().get(kind, (kind.replace("_", " "),))[0].lower()
-        words = ST.ride_words(host, noun, wet=road_surface(scene) == "wet", where=v.get("where", ""), framing=v.get("framing", ""))
+        words = ST.ride_words(host, noun, wet=road_surface(scene) == "wet", where=v.get("where", ""), framing=v.get("framing", ""),
+                              ground=look_surface(scene))
         if words:
             v = {**v, "motion": f"{v['motion']} {words}"}
     return v
@@ -1054,7 +1124,8 @@ def _vehicle_camera(scene: dict) -> dict | None:
     if not keys:
         return None
     k0 = keys[0]
-    (px, py, pz), (tx, ty, tz) = k0["position"], k0["target"]
+    # Read like camera_keys reads a world key: a key without a target (or a short one) must not stop the compile.
+    (px, py, pz), (tx, ty, tz) = _v(k0.get("position")), _v(k0.get("target"))
     noun = lib.get(kind, (kind.replace("_", " "),))[0].lower()
     if abs(px) > 1.4 or pz > 3.2 or pz < -3.0 or py > 2.6:
         return None                                              # tracking alongside / overhead: an outside shot
@@ -1215,17 +1286,20 @@ def camera_move(scene: dict) -> dict:
     shake = 0.0
     if len(path) > 8:  # handheld: the path wobbles around its own smooth line
         # Only the wobble across the path counts: a camera car braking and speeding up with a stunt car bunches its
-        # samples along the line (a large second difference) without any shake.
+        # samples along the line (a large second difference) without any shake. And only a wobble that flips side from
+        # one sample to the next is a hand: an arm car pacing a J-turn swerves with the car in one smooth S-curve
+        # (it bends to one side for many samples), which read as "handheld and breathing" before.
         def _wobble(a, b, c):
             d = G.sub(G.mul(G.add(a, c), 0.5), b)
             t = G.sub(c, a)
-            n = G.length(t)
+            n = math.hypot(t[0], t[2])
             if n < 1e-6:
-                return G.length(d)
-            u = G.mul(t, 1.0 / n)
-            return G.length(G.sub(d, G.mul(u, G.dot(d, u))))
-        jitter = [_wobble(path[i - 1]["position"], path[i]["position"], path[i + 1]["position"]) for i in range(1, len(path) - 1)]
-        shake = sum(jitter) / len(jitter)
+                return 0.0, d[1]
+            return (d[2] * t[0] - d[0] * t[2]) / n, d[1]   # (signed sideways, vertical) off the line
+        dev = [_wobble(path[i - 1]["position"], path[i]["position"], path[i + 1]["position"]) for i in range(1, len(path) - 1)]
+        flips = [math.hypot(min(abs(h0), abs(h1)) if h0 * h1 < 0 else 0.0, min(abs(v0), abs(v1)) if v0 * v1 < 0 else 0.0)
+                 for (h0, v0), (h1, v1) in zip(dev, dev[1:])]
+        shake = sum(flips) / len(flips)
     parts = []
     tgt_moved = G.length(G.sub(t1, t0))
     if abs(darc) > 15 and abs(r1 - r0) < 0.35 * max(r0, 0.1) and tgt_moved < 0.5:
