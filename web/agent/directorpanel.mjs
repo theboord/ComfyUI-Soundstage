@@ -154,6 +154,12 @@ export function dockSlot(rr, obstacles, { isProps = (el) => !!el?.matches?.(".ss
   return got2 ? { ...got2, take: props.map((o) => o.el) } : null;
 }
 
+/** The part of a rect inside the window (the chat docks there, so it never needs the page scrolled to be seen). */
+export function visibleRect(r, vw, vh) {
+  const left = Math.max(r.left, 0), top = Math.max(r.top, 0), right = Math.min(r.right, vw), bottom = Math.min(r.bottom, vh);
+  if (right - left < 2 || bottom - top < 2) return r;   // off screen: dock against the whole App, as before
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
+}
 /** "Undo this" under a turn: undo is a stack, so it undoes that turn only while it is the newest one (it used to pop
  * whatever was on top: Undo under turn A reverted turn B). -> {done, said}; done = the button has nothing left to do. */
 export function undoOwnTurn(director, mine) {
@@ -172,8 +178,11 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   const restore0 = host.restore;
   host = { approvals: { statusOf, setTakeStatus }, ...host,
     restore: (x) => { restore0?.(x); try { refreshBadges(); } catch { /* no badges */ } } };
+  let uiCtx = null;             // Ask: where the user is (step, selection, shot, panel), for the planner's ctx.ui
+  host = { ...host, ui: () => { try { return uiCtx?.() || null; } catch { return null; } } };
   const director = new Director({ api, stage, host, onEvent: (ev) => onEvent(ev) });
   let pending = null;           // the plan waiting for Apply
+  let answerHook = null;        // Ask: text -> {nodes, chips, cls} for a question, else null (web/agent/ask.mjs)
   let busy = false;
   let listening = null;          // {stop()} while the mic is on
   let explain = localStorage.getItem("ss_director_explain") !== "0";
@@ -183,7 +192,7 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
 
   // ---------------------------------------------------------------- DOM
   const log = h("div", { class: "log", "aria-live": "polite" });
-  const input = h("input", { type: "text", placeholder: "Tell the set what you want… (Enter)", "aria-label": "Talk to the Director's assistant" });
+  const input = h("input", { type: "text", placeholder: "Ask how, or tell the set what you want… (Enter)", "aria-label": "Ask, or talk to the Director's assistant" });
   const mic = h("button", { type: "button", class: "ib mic", title: "Hold to talk (or hold ` / Space)", "aria-label": "Hold to talk" }, icon("mic", 16));
   const sendB = h("button", { type: "button", class: "ib", title: "Send (Enter)", "aria-label": "Send" }, icon("send", 16));
   const beLbl = h("span", { class: "be" }, "");
@@ -217,15 +226,17 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     h("label", { class: "cb" }, exCb, "Explain each step in film terms and suggest the next one"),
     h("label", { class: "cb" }, autoCb, "Apply without asking (renders still ask unless you say “go”)"),
     h("label", { class: "cb" }, pitchModelCb, "Pitch: the local model also reads each beat (slower, 2–6 s a beat)"));
-  const panel = h("section", { class: "ss-dir", hidden: true, role: "dialog", "aria-label": "Director's assistant" },
-    h("header", {}, h("span", { class: "t" }, icon("clapperboard", 16), "Director"), pitchBtn, beLbl, setBtn, closeBtn),
+  const panel = h("section", { class: "ss-dir", hidden: true, role: "dialog", "aria-label": "Ask: the Director's assistant" },
+    h("header", {}, h("span", { class: "t", title: "Ask: questions get step-by-step answers with Show me; orders become a plan you Apply (and can Undo)" }, icon("sparkles", 16), "Ask"), pitchBtn, beLbl, setBtn, closeBtn),
     settings, log, chips, pitchBox, h("div", { class: "comp" }, mic, input, sendB), hint);
   for (const ev of ["pointerdown", "wheel", "keydown", "keyup", "contextmenu"]) panel.addEventListener(ev, stop);
   root.append(panel);
 
-  const button = h("button", { type: "button", class: "ss-btn ss-dirbtn", title: "Director: talk to the set (/)", "aria-label": "Open the Director's assistant",
-    "aria-pressed": "false" }, icon("message-square", 15), h("span", { class: "lbl" }, " Director"));
-  button.dataset.ssIcon = "message-square";
+  // The Ask button (web/agent/ask.mjs): pinned in the top row (ss-pin: ui/toprow.mjs never folds it into "⋯").
+  const button = h("button", { type: "button", class: "ss-btn ss-dirbtn ss-askbtn ss-pin",
+    title: "Ask: how to do anything, or have it done for you (/ or Cmd/Ctrl+K; hold to talk)", "aria-label": "Ask the assistant",
+    "aria-pressed": "false" }, icon("sparkles", 15), h("span", { class: "lbl" }, "Ask"));
+  button.dataset.ssIcon = "sparkles";
   button.addEventListener("pointerdown", stop);
   button.addEventListener("click", () => toggle());
   if (topBar) { if (before && before.parentNode === topBar) topBar.insertBefore(button, before); else topBar.append(button); }
@@ -270,8 +281,9 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     chips.replaceChildren(...(list || []).map((c) => h("button", { type: "button", title: c.command, on: { click: () => send(c.command) } }, c.label)));
   };
   const greet = () => {
-    say("a", "Tell me what you want on the set, in your own words. I'll show you the plan; press Apply (or Enter, or say “yes”) and watch the stage. Every change can be undone.");
-    setChips(EXAMPLES.slice(0, 4).map((c) => ({ label: c.length > 34 ? `${c.slice(0, 32)}…` : c, command: c })));
+    say("a", "Ask me how to do anything (“how do I make the car crash into the boxes?”): I'll walk you through it and light up the real buttons. Or tell me what you want on the set and I'll do it: you see the plan first, press Apply, and every change can be undone.");
+    setChips([{ label: "How do I make the car crash into the boxes?", command: "how do I make the car crash into the boxes?" }, { label: "What should I do next?", command: "what should I do next?" },
+      ...EXAMPLES.slice(0, 2).map((c) => ({ label: c.length > 34 ? `${c.slice(0, 32)}…` : c, command: c }))]);
   };
 
   function onEvent(ev) {
@@ -353,6 +365,18 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     if (pending && YES_RE.test(text)) { say("u", text); return { result: await applyPending(pending) }; }
     if (pending && NO_RE.test(text)) { say("u", text); discard(pending); return null; }
     if (busy) { say("a wait", "One moment: still on the last one."); return null; }
+    // Ask (web/agent/ask.mjs): a question gets a step-by-step answer with Show me; nothing on the set changes.
+    if (answerHook && source !== "mcp") {
+      let ans = null;
+      try { ans = await answerHook(text); } catch (e) { console.warn("[Soundstage] ask", e); }
+      if (ans) {
+        open();
+        say("u", text);
+        say(`a ${ans.cls || ""}`.trim(), ...(ans.nodes || []));
+        setChips(ans.chips || []);
+        return { answer: ans };
+      }
+    }
     if (pending) discard(pending);
     open();
     say("u", text);
@@ -631,8 +655,9 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   function undock() { for (const el of dockState.took) el.style.visibility = el.dataset.ssPreVis || ""; dockState.took = []; }
   function dock() {
     if (panel.hidden) return null;
-    const rr = root.getBoundingClientRect();
-    if (!rr.width || !rr.height) return null;
+    const rr0 = root.getBoundingClientRect();
+    if (!rr0.width || !rr0.height) return null;
+    const rr = visibleRect(rr0, window.innerWidth, window.innerHeight);
     undock();   // weigh Properties again (same task: no frame shows it), so it comes back once there's room beside it
     const obstacles = [...root.querySelectorAll(DIR_OTHERS)].filter((el) => {
       if (el === panel || panel.contains(el) || el.contains(panel) || !el.getClientRects().length) return false;
@@ -642,11 +667,16 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
       return r.width > 8 && r.height > 8 && r.width < rr.width * 0.9;
     }).map((el) => ({ el, r: el.getBoundingClientRect() }));
     const r = dockSlot(rr, obstacles);
-    if (!r) { Object.assign(panel.style, { left: "", right: "", top: "", bottom: "", width: "", maxHeight: "" }); return null; }
+    if (!r) {
+      // No free band: the CSS corner, lifted into the part of the App on screen (the App's side panel scrolls).
+      const lift = Math.max(0, Math.round(rr0.bottom - rr.bottom));
+      Object.assign(panel.style, { left: "", right: "", top: "", width: "", bottom: lift ? `${lift + 64}px` : "", maxHeight: lift ? `${Math.max(DIR_MIN_H, Math.round(rr.height - 80))}px` : "" });
+      return null;
+    }
     for (const el of r.take) { el.dataset.ssPreVis = el.style.visibility || ""; el.style.visibility = "hidden"; dockState.took.push(el); }
-    Object.assign(panel.style, { left: "auto", top: "auto", right: Math.round(rr.right - r.right) + "px", bottom: Math.round(rr.bottom - r.bottom) + "px",
+    Object.assign(panel.style, { left: "auto", top: "auto", right: Math.round(rr0.right - r.right) + "px", bottom: Math.round(rr0.bottom - r.bottom) + "px",
       width: Math.round(r.right - r.left) + "px", maxHeight: Math.round(r.bottom - r.top) + "px" });
-    return { left: Math.round(r.left - rr.left), top: Math.round(r.top - rr.top), right: Math.round(r.right - rr.left), bottom: Math.round(r.bottom - rr.top), took: dockState.took.length };
+    return { left: Math.round(r.left - rr0.left), top: Math.round(r.top - rr0.top), right: Math.round(r.right - rr0.left), bottom: Math.round(r.bottom - rr0.top), took: dockState.took.length };
   }
   const onResize = () => { if (!panel.hidden) { undock(); dock(); } };
   window.addEventListener("resize", onResize);
@@ -714,7 +744,8 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     stopPitchListen(); pitch.destroy();
     panel.remove(); button.remove();
   };
-  return { director, panel, button, open, close, toggle, send, apply: () => applyPending(pending), discard: () => discard(pending),
+  return { director, panel, button, input, open, close, toggle, send, say, setChips,
+    setAnswer: (f) => { answerHook = typeof f === "function" ? f : null; }, setContext: (f) => { uiCtx = typeof f === "function" ? f : null; }, apply: () => applyPending(pending), discard: () => discard(pending),
     get pending() { return pending?.plan || null; }, startTalk, dock, isOpen: () => !panel.hidden, stopTalk, destroy, transcribe,
     pitch, startPitch, stopPitch,
     setVoice: (v) => { if (v === "browser" && !SR) return voice; voice = v; localStorage.setItem("ss_director_voice", v); if ([...vSel.options].some((o) => o.value === v)) vSel.value = v; return voice; } };

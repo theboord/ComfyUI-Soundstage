@@ -19,7 +19,7 @@ This guide is for anyone who has just cloned the repo. It covers where every pan
 3. [The seven steps, one by one](#3-the-seven-steps-one-by-one)
    - [① Script](#step-1-script) · [② Cast & Locations](#step-2-cast) · [③ Set](#step-3-set) · [④ Frame](#step-4-frame) · [⑤ Motion](#step-5-motion) · [⑥ Review](#step-6-review) · [⑦ Deliver](#step-7-deliver)
    - [Dailies and the lined script](#dailies-and-the-lined-script) ([ScriptSync](#scriptsync-lined-script)) · [The Look tab: re-render in any film look](#the-look-tab-re-render-in-any-film-look) · [The Stop button](#the-stop-button)
-   - **New since the contest:** [The Director: chat, voice and MCP](#the-director-chat-voice-and-mcp) · [Presets](#presets-one-click-camera-moves-and-lighting) · [Quality: Draft, Final, Hollywood](#quality-draft-final-hollywood) · [Takes that check themselves](#takes-that-check-themselves) · [Timeline: transitions, sound, titles and render](#transitions-sound-titles-and-render)
+   - **New since the contest:** [Ask: the assistant, on every screen](#ask-the-assistant) · [The Director: chat, voice and MCP](#the-director-chat-voice-and-mcp) · [Presets](#presets-one-click-camera-moves-and-lighting) · [Quality: Draft, Final, Hollywood](#quality-draft-final-hollywood) · [Takes that check themselves](#takes-that-check-themselves) · [Timeline: transitions, sound, titles and render](#transitions-sound-titles-and-render)
 4. [The 3D stage in depth](#4-the-3d-stage-in-depth)
    - **New since the contest:** [Live 3D: drag, climb, mount, carry](#live-3d-drag-climb-mount-carry) · [Drive mode](#drive-mode-control-anything-like-a-video-game-and-record-it) · [Stunts](#stunts-j-turn-donut-handbrake-180) · [The new sets](#the-new-sets) · [Interop: Blender, Unreal, Maya, Nuke](#interop-blender-unreal-maya-nuke) · [Phone camera and the phone viewfinder](#phone-camera)
 5. [Keyboard and mouse cheat sheet](#5-keyboard-and-mouse-cheat-sheet)
@@ -985,13 +985,27 @@ It clears the **whole ComfyUI queue**, including jobs you queued from other work
 
 <a id="the-director-chat-voice-and-mcp"></a>
 
+<a id="ask-the-assistant"></a>
+
+### Ask: the assistant, on every screen
+
+**✦ Ask** sits in the top row beside **Guide** and **Expand** on every step and tool, and never folds into **⋯**, even 1024 px wide. **⌘K** / **Ctrl+K** (or **/**) opens it from anywhere. If the top row is out of sight (the App's side panel scrolled down), a small floating **✦** appears in the corner of the App instead.
+
+1. Press **Ask**. The chat opens inside the canvas; its top line says where you are, for example *You're on ③ Set · shot 2 (Tracking) · Red car selected · Physics open*.
+2. **Ask how:** *"how do I make the car crash into the boxes?"*. You get numbered steps. Each step has **Show me**, which opens that step and lights up the real button (the same spotlight the Guide uses). **Show me, step by step** walks through all of them.
+3. **Or have it done:** press **Do it for me**. You see the Director's plan first, then press **Apply**, and **Undo this** puts it all back.
+4. **Learn as you go:** the buttons under each answer suggest what to do next from where you are. *"What should I do next?"* works too.
+5. **Talk:** hold the **Ask** button (or the floating ✦, or **`** anywhere) and speak; let go to send.
+
+Questions about controls are answered from built-in recipes, so they work offline with no model. For other questions it uses the local model (Qwen3.5 4B, or your Ollama model) if it's free, and never waits behind a render. Orders ("make it rain") go straight to the Director below.
+
 ### The Director: chat, voice and MCP
 
 Say what you want and the Director does it with the App's own controls.
 
 <p align="center"><img src="media/director.jpg" width="860" alt="The Director panel beside the stage: 'Use the J-turn stunt' becomes a plan, applied, with Undo this and next-step buttons"></p>
 
-1. Press **/** (or **Director** in the top bar). The panel opens with the cursor in the box.
+1. Press **/** (or **✦ Ask** in the top bar). The panel opens with the cursor in the box.
 2. Type what you want, for example *"put Mara in the sports car at night, rain, camera on the hood, she's nervous"*, and press Enter. Or **hold `** anywhere in the App (or Space in the empty box) and talk; let go to send.
 3. Read the plan: a short numbered list of steps.
 4. Press **Apply**, Enter on the empty box, or say "yes". Each step runs in front of you on the stage.
