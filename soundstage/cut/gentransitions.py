@@ -33,7 +33,7 @@ QUALITY = LG.QUALITY
 MIN_FRAMES, MAX_FRAMES = 17, 97
 PREFIX = "soundstage_private/gentrans/bridge"
 
-# Written for short bridges between two pictures. The path / camera / sound split follows Seam's presets, and Whip pan,
+# Written for short bridges between two pictures. The path / camera / sound split follows Seam's presets, and Smoke, Whip pan,
 # Zoom through, Ink bleed, Morph and Water bend (and several camera and sound phrases) adapt Seam's preset wording
 # (github.com/jdnichollsc/seam, MIT, (c) 2026 jdnichollsc: soundstage/cut/SEAM_LICENSE.txt, THIRD_PARTY_NOTICES.md).
 # frames: the default length (8k + 1), end: the strength of the end-picture guide.

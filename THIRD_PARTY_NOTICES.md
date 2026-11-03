@@ -16,7 +16,7 @@
 
 | Component | What we took | License |
 |---|---|---|
-| [Seam](https://github.com/jdnichollsc/seam) by jdnichollsc | Generative transitions (`soundstage/cut/gentransitions.py`): the approach of filling a graph only through named slots (`[node_id, input]` maps traced from the graph), presets split into what happens, the camera and the sound, and some preset wording (Whip pan, Zoom through, Ink bleed, Morph and Water bend, and several camera and sound phrases), reworded for short bridges between two pictures. No Seam code, graph or media is included; the graph is the App's own Seamless-loop bridge | MIT, © 2026 jdnichollsc, see `soundstage/cut/SEAM_LICENSE.txt` |
+| [Seam](https://github.com/jdnichollsc/seam) by jdnichollsc | Generative transitions (`soundstage/cut/gentransitions.py`): the approach of filling a graph only through named slots (`[node_id, input]` maps traced from the graph), presets split into what happens, the camera and the sound, and some preset wording (Smoke, Whip pan, Zoom through, Ink bleed, Morph and Water bend, and several camera and sound phrases), reworded for short bridges between two pictures. `missing_slots()` and `fill()`'s unknown-slot check follow Seam's `src/seam/workflows.py`. No Seam graph or media is included; the graph is the App's own Seamless-loop bridge | MIT, © 2026 jdnichollsc, see `soundstage/cut/SEAM_LICENSE.txt` |
 
 ## Used at runtime, installed separately (not vendored)
 
