@@ -194,6 +194,10 @@ export function sceneOBJ(root, { name = "set", maxTris = 1500000, skip = () => f
 /**
  * The whole stage as one animated GLB. Returns {glb (ArrayBuffer), frames, fps, moving (node count), names, focal}.
  */
+/** glTF attributes a DCC understands; anything else on a geometry is a stage shader's own (exported for the tests). */
+export const STANDARD_ATTRIBUTES = new Set(["position", "normal", "uv", "uv1", "uv2", "color", "tangent", "skinIndex", "skinWeight"]);
+export const hasShaderOnlyAttributes = (geo) => Object.keys(geo?.attributes || {}).some((k) => !STANDARD_ATTRIBUTES.has(k));
+
 export async function stageAnimatedGLB(stage, { probes = true } = {}) {
   const s = stage, root = s.root;
   const keep = s.frame, last = s._lastFrame(), N = last + 1, fps = s.state.shot?.fps || 24;
@@ -206,6 +210,9 @@ export async function stageAnimatedGLB(stage, { probes = true } = {}) {
   for (const h of s.lightHandles?.values() || []) hide(h);
   hide(s.weather?.object);
   root.traverse((o) => { if (o.userData.splatOnly) hide(o); });
+  // Sprite particles (hoof and tyre dust, footstep puffs) carry shader-only attributes (pSize, pRot, pTex, pLit). They
+  // mean nothing outside the stage, and Blender 4.3's glTF importer stops on them, so a shot with dust didn't build.
+  root.traverse((o) => { if (o.userData.secondaryFx || (o.isPoints && hasShaderOnlyAttributes(o.geometry))) hide(o); });
   root.traverse((o) => { if (o.userData.proxyOnly && !o.visible) { o.visible = true; undo.push(() => { o.visible = false; }); } });
   // Readable names in the DCC outliners.
   const taken = new Set();
@@ -291,7 +298,7 @@ BLENDER (verified headless in Blender 4.3: camera framing matches the Soundstage
   kit in plates/ and they show as the camera background.  Headless check render:
   blender --background --python blender/build_blender.py -- --render check.png --frame ${frameStart}
 
-UNREAL ENGINE 5.x (NOT tested in Unreal: written against the UE 5 Python API)
+UNREAL ENGINE 5.x (run headless in UE 5.7; not yet checked by eye in the editor viewport)
   Enable the Python Editor Script plugin (and glTF / Interchange, on by default in 5.x).
   Tools > Execute Python Script... > unreal/build_unreal.py  (or: py "<kit>/unreal/build_unreal.py" in the console)
   Imports scene.glb into the open level, spawns a CineCameraActor with a 36 mm filmback, builds a Level Sequence at

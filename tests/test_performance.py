@@ -153,6 +153,18 @@ def test_read_keypoints_picks_the_biggest_person():
     assert kp["frames"][0]["box"][0] == pytest.approx(0.3) and len(kp["frames"][0]["face"]) == 70
 
 
+def test_read_keypoints_keeps_body_and_hands_for_the_passes_viewer():
+    # Pixel coordinates (DWPose's raw output) come back in 0-1 units, with each point's confidence.
+    person = {"pose_keypoints_2d": [640, 352, 0.9, 700, 400, 0.2] + [0, 0, 0] * 16, "face_keypoints_2d": face68(0.05),
+              "hand_left_keypoints_2d": [320, 176, 0.8] * 21, "hand_right_keypoints_2d": []}
+    kp = A.read_keypoints([{"people": [person], "canvas_width": 1280, "canvas_height": 704}])
+    fr = kp["frames"][0]
+    assert len(fr["body"]) == 18 and fr["body"][0] == [0.5, 0.5, 0.9] and fr["body"][1][2] == 0.2
+    assert fr["hands"][0][0] == [0.25, 0.25, 0.8] and fr["hands"][1] is None
+    empty = A.read_keypoints([{"people": [], "canvas_width": 1280, "canvas_height": 704}])["frames"][0]
+    assert empty["body"] is None and empty["hands"] is None
+
+
 def test_consent_is_required():
     with pytest.raises(A.PerformanceError):
         A.check_consent("Jane Doe", False)

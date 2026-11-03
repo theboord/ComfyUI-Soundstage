@@ -264,22 +264,26 @@ RIDE_WORDS = {
 }
 
 
-def ride_words(a: dict, noun: str, wet: bool = False, where: str = "wheel", framing: str = "") -> str:
+def ride_words(a: dict, noun: str, wet: bool = False, where: str = "wheel", framing: str = "", ground: str | None = None) -> str:
     """One sentence for a camera riding on a stunt car: what the car does, and what its tyres throw where the camera can
-    see it. where: the vehicle_camera placement ("wheel", "bumper", "hood", "interior")."""
+    see it. where: the vehicle_camera placement ("wheel", "bumper", "hood", "interior"). ground: what the tyres are on
+    (scene.look_surface): loose ground ("dirt") throws dust and grit and snow throws slush, whatever the stunt's Road
+    says, as stunt_mark does for the same shot."""
     if not is_stunt(a):
         return ""
     base = RIDE_WORDS.get(a.get("stunt") or "", "the {noun} slides through its stunt, so the street whips round the frame")
     wet = wet or (a.get("stunt_sim") or {}).get("surface") == "wet"
+    throw = ("dust and grit" if ground == "dirt" else "a fine spray of snow and slush" if ground == "snow"
+             else "a fine sheet of spray and mist" if wet else "")
     smoke = ""
     if _smoke(a) != 0 and where != "bumper":
         if where == "wheel":
-            smoke = (", a fine sheet of spray and mist peeling off the tyre right beside the lens" if wet
+            smoke = (f", {throw} {'kicking up' if ground == 'dirt' else 'peeling'} off the tyre right beside the lens" if throw
                      else ", white tyre smoke pouring off the tyre right beside the lens")
         elif framing in ("windshield", "hood_forward") or where == "hood":
-            smoke = ", spray and mist streaming past the hood" if wet else ", white tyre smoke billowing past the hood"
+            smoke = f", {throw.removeprefix('a fine sheet of ')} streaming past the hood" if throw else ", white tyre smoke billowing past the hood"
         else:
-            smoke = ", spray and mist streaking past the windows" if wet else ", white tyre smoke billowing past the windows"
+            smoke = f", {throw.removeprefix('a fine sheet of ')} streaking past the windows" if throw else ", white tyre smoke billowing past the windows"
     text = base.format(noun=noun) + smoke
     return text[:1].upper() + text[1:] + "."
 

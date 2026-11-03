@@ -51,12 +51,13 @@ export async function waitJob(api, job, onStep = () => {}, { every = 2000, timeo
   const t0 = Date.now();
   for (;;) {
     await new Promise((r) => setTimeout(r, every));
+    // checked before the poll: a server that stopped answering must still time out (the catch below skips the rest)
+    if (Date.now() - t0 > timeoutMs) throw new Error("timed out");
     let j;
     try { j = await (await api.fetchApi(`/soundstage/reshoot/job?id=${encodeURIComponent(job)}`)).json(); } catch { continue; }
     if (j.state === "done") return j.result;
     if (j.state === "error" || j.error) throw new Error(j.error || "the reshoot failed");
     onStep(j.step || "Working", j.progress || 0);
-    if (Date.now() - t0 > timeoutMs) throw new Error("timed out");
   }
 }
 

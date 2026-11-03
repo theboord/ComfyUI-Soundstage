@@ -37,8 +37,9 @@ def load_catalog() -> dict:
         styles = json.loads(STYLES.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         styles = []
+    # The match word is styleToPreset's (web/presets/engine.mjs): every hyphen a space ("Neo-Noir" -> "neo noir").
     looks = [{"id": s["id"], "tab": "look", "label": s.get("label", s["id"]), "group": s.get("group", "Style"),
-              "summary": s.get("summary", ""), "words": [str(s.get("label", "")).lower().replace(" - ", " ")],
+              "summary": s.get("summary", ""), "words": [w for w in [re.sub(r"\s*-\s*", " ", str(s.get("label", "")).lower())] if w],
               "apply": {"look": s["id"]}} for s in styles if isinstance(s, dict) and s.get("id")]
     presets = list(base.get("presets", [])) + looks
     return {"version": base.get("version", 1), "tabs": base.get("tabs", []), "presets": presets,
