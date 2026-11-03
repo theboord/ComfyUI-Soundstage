@@ -53,7 +53,7 @@ Not in the demo at all (each one says "available in the full install"): new rend
 
 > **The Director's Book.** Like the binders great directors such as Coppola and Hitchcock planned their films in, Soundstage gives every project a book: a page per scene for the tone, emotion, look, camera, music and sound, written before anything renders. It flows straight into every first frame and video prompt, and the assistants read it before every command. Artist-first: be the director, not the operator.
 >
-> **Built like the pro tools you already use.** Script breakdown, ScriptSync's lined script, the Director's Book, versioned takes, dailies with circled takes, a real-time Cut with bins and transitions, and exports to Avid, Premiere, Resolve and Final Cut: the same pipeline a production runs, so swapping a take, a look or an actor is a change, not a rebuild.
+> **Built like the pro tools you already use.** Script breakdown, ScriptSync's lined script, the Director's Book, every take kept, dailies with circled takes, a real-time Cut with transitions and sound, and exports to Avid, Premiere, Resolve and Final Cut: the same pipeline a production runs, so swapping a take, a look or an actor is a change, not a rebuild.
 
 
 <p align="center"><img src="docs/media/readme_v4/card_boat.gif" width="880" alt="You block it. It renders. Left, the 3D stage; right, the Final render of the same shot (FLUX 3 Klein + LTX-2.5, with sound): a speedboat on a lake."></p>
