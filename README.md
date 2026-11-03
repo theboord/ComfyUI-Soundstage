@@ -1,10 +1,9 @@
-<p align="center"><img src="docs/media/readme_v4/banner.png" width="880" alt="Soundstage: a real 3D film set inside ComfyUI. Script in, finished scene out, on 100% open weights. #OpenSourceHiggsfield"></p>
+<p align="center"><img src="docs/media/readme_v4/banner.png" width="880" alt="Soundstage: a real 3D film set inside ComfyUI. Script in, finished scene out. 100% open weights, on your own GPU. #OpenSourceHiggsfield"></p>
 
-<p align="center"><img src="docs/media/clay_to_final.gif" width="880" alt="Left: the clay stage render. Right: the final LTX-2.5 video of the same shot, same blocking and camera."></p>
-<p align="center"><sub>Left: the 3D stage's clay. Right: what Soundstage renders from it. Same blocking, same camera.</sub></p>
+<p align="center"><img src="docs/media/readme_v4/hero_jturn.gif" width="880" alt="A wipe between the 3D stage's clay and the Final render of the same J-turn: a red car on a wet night street, same blocking, same camera."></p>
+<p align="center"><sub>The wipe: the 3D stage's clay, then the Final render of the same J-turn. Same blocking, same camera. <a href="docs/media/readme_v4/jturn_final_sound.mp4">▶ The render with its sound (MP4)</a></sub></p>
 
 <p align="center">
-<a id="watch" href="#watch"><img src="docs/media/readme_v4/btn_watch.png" width="260" alt="Watch the commercial"></a>
 <a href="https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq"><img src="docs/media/readme_v4/btn_try.png" width="260" alt="Try it in your browser (no install)"></a>
 <a href="#install"><img src="docs/media/readme_v4/btn_install.png" width="260" alt="Install"></a>
 </p>
@@ -16,14 +15,15 @@
 <a href="CHANGELOG.md"><img src="https://img.shields.io/github/last-commit/theboord/ComfyUI-Soundstage/main?label=last%20update" alt="Last update"></a>
 </p>
 
-<p align="center"><a href="docs/QUICKSTART.md">Quickstart</a> &nbsp;·&nbsp; <a href="docs/TUTORIAL.md">Tutorial</a> &nbsp;·&nbsp; <a href="CHANGELOG.md">Changelog</a></p>
+<p align="center"><b>On this page:</b> <a href="#judging-it-start-here">Judging it? Start here</a> · <a href="#whats-inside">What's inside</a> · <a href="#install">Install</a> · <a href="#more">Everything else</a><br>
+<a href="docs/QUICKSTART.md">Quickstart</a> · <a href="docs/TUTORIAL.md">Tutorial</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="MODELS.md">Models</a></p>
 
 <a id="judging-it-start-here"></a>
-<p><img src="docs/media/readme_v4/h_judging.png" width="880" alt="Judging it? Start here"></p>
+<p><img src="docs/media/readme_v4/h_judging.png" width="880" alt="Judging it? Start here. 3 steps, no install."></p>
 
-<p><a href="https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq"><img src="docs/media/readme_v4/step1.png" width="880" alt="1. Open the try-it demo. No install. It opens on the clay stage becoming the finished shot."></a></p>
+<p><a href="https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq"><img src="docs/media/readme_v4/step1.png" width="880" alt="1. Open the try-it demo. No install. It opens on the clay stage becoming the shot. Or load a script and watch it break down."></a></p>
 <p><img src="docs/media/readme_v4/step2.png" width="880" alt="2. Open the live stage, press Play. Select the red car and give it a stunt in its properties."></p>
-<p><img src="docs/media/readme_v4/step3.png" width="880" alt="3. Take the What's new tour. A Live / Replayed badge says what runs in your browser and what is a recorded run."></p>
+<p><img src="docs/media/readme_v4/step3.png" width="880" alt="3. Take the What's new tour. The badge says what runs live in your browser and what replays a real GPU run."></p>
 
 <details>
 <summary><b>What's live in the demo, what's replayed, and what's not in it</b></summary>
@@ -44,27 +44,31 @@ Not in the demo at all (each one says "available in the full install"): new rend
 </details>
 
 <a id="whats-inside"></a>
-<p><img src="docs/media/readme_v4/h_inside.png" width="880" alt="What's inside"></p>
+<p><img src="docs/media/readme_v4/h_inside.png" width="880" alt="What's inside, on main today"></p>
 
-<p align="center">
-<img width="48%" src="docs/media/readme_v4/card_block.png" alt="Block in 3D: pose people, cars and horses in true-scale clay, on real camera rigs.">
-<img width="48%" src="docs/media/readme_v4/card_clay.png" alt="Clay to Hollywood: FLUX 3 Klein and LTX-2.5 render with sound, on your blocking. Up to 2624x1408.">
-</p>
-<p align="center">
-<img width="48%" src="docs/media/readme_v4/card_stunts.gif" alt="Stunts and collisions: climb, mount, carry, crash crates. J-turns, donuts, handbrake 180s.">
-<img width="48%" src="docs/media/readme_v4/card_drive.png" alt="Drive anything: press D to drive a car, person, horse or boat. REC records the take.">
-</p>
-<p align="center">
-<img width="48%" src="docs/media/readme_v4/card_perf.png" alt="Real performances: your body, face and voice drive the character, lip sync included.">
-<img width="48%" src="docs/media/readme_v4/card_v2s.png" alt="Video to 3D: drop a clip; set, tracked camera and performer rebuilt in 3D. Early version.">
-</p>
-<p align="center">
-<img width="48%" src="docs/media/readme_v4/card_oneclick.png" alt="One-click and Ask: 52 one-click effects on any take. Ask answers how-to and shows you.">
-<img width="48%" src="docs/media/readme_v4/card_cut.png" alt="Cut and deliver: an NLE timeline with generated sound. Out to Avid, Premiere, Resolve, FCP and VFX.">
-</p>
+<p align="center"><img src="docs/media/readme_v4/card_boat.gif" width="880" alt="You block it. It renders. Left, the 3D stage; right, the Final render of the same shot (FLUX 3 Klein + LTX-2.5, with sound): a speedboat on a lake."></p>
+<p align="center"><sub><a href="docs/media/readme_v4/boat_final_sound.mp4">▶ The boat with its sound (MP4)</a></sub></p>
+
+<p align="center"><img src="docs/media/readme_v4/card_sfx.gif" width="880" alt="Stunts and SFX rigs, shown in the live stage preview: a runner sprints as timed explosions throw the parked cars. Explosions, fire, squibs and breakaway glass, cued in time; cars and people thrown by physics."></p>
+
+<p align="center"><img src="docs/media/readme_v4/card_drive.gif" width="880" alt="Drive anything, a live stage capture: select a car, person, horse or boat and press D. REC keys the take; Drive takes over from keys."></p>
+
+<p align="center"><img src="docs/media/readme_v4/card_v2s.gif" width="880" alt="Video to 3D (early version). Left, the source clip of a street dancer; right, a reshoot from the rebuilt 3D stage. Drop a clip and the set, camera and performer come back in 3D; Regenerate or Fix this object."></p>
+
+<p align="center"><img src="docs/media/readme_v4/card_passes.png" width="880" alt="Passes: check any take's depth, pose, talking and alpha matte, wiped against the picture. Shown: the depth pass of a Video to 3D result."></p>
+
+<p align="center"><img src="docs/media/readme_v4/card_ask.png" width="880" alt="Ask: ask how and it lights up the real buttons; or say what you want, see the plan and press Apply. Shown: how do I add rain?"></p>
+
+<p align="center"><img src="docs/media/readme_v4/card_carpass.gif" width="880" alt="Night, rain, sound: a locked-off street plate where a police car passes in the rain, its sound generated with the picture (Final render)."></p>
+<p align="center"><sub><a href="docs/media/readme_v4/carpass_final_sound.mp4">▶ The plate with its sound (MP4)</a></sub></p>
+
+<p align="center"><img src="docs/media/readme_v4/card_cut.gif" width="880" alt="Cut and deliver: a real-time timeline with generated sound. Out to Avid, Premiere, Resolve and FCP; Blender and Unreal round trip."></p>
+
+<p align="center"><b>Also on main:</b> the Activity bar shows which node your render is on, with an ETA · right-click a clip in the Cut to edit it at the step that made it · kept Drive takes are auto-corrected · the try-it demo loads your script.</p>
 
 <p align="center"><sub>Built in 3 days for Comfy Org's <i>Open Source Higgsfield</i> challenge, and shipping daily since. &#11088; Star the repo to follow along.</sub></p>
 
+<a id="more"></a>
 <details>
 <summary><b>The pitch, the highlights and every link</b></summary>
 
@@ -183,16 +187,16 @@ Scan a QR code and your phone shows the live stage through the shot camera, and 
 
 <table>
 <tr>
-<td align="center"><img src="docs/media/car_chase.gif" width="720" alt="Left the clay stage, right the final: a police car chasing a red sports car on a wet night street"><br><sub><b>Car chase, before and after:</b> left the 3D stage, right the final. Same cars, same positions, same camera: a crane wide, then a tracking shot.</sub></td>
+<td align="center"><a href="docs/media/car_chase.gif">▶ Left the clay stage, right the final: a police car chasing a red sports car on a wet night street (GIF)</a><br><sub><b>Car chase, before and after:</b> left the 3D stage, right the final. Same cars, same positions, same camera: a crane wide, then a tracking shot.</sub></td>
 </tr>
 </table>
 
-<p align="center"><img src="docs/media/looks.gif" width="720" alt="The same animated shot rendered in four different film looks"></p>
+<p align="center"><a href="docs/media/looks.gif">▶ The same animated shot rendered in four different film looks (GIF)</a></p>
 <p align="center"><em>Film-look swatches: one animation, four looks. Pick a swatch and the same blocking and motion come back in a new style.</em></p>
 
 <p align="center"><em>Any genre: Film noir in the rain, then horror in the woods.</em></p>
 
-<p align="center"><img src="docs/media/mocap.gif" width="720" alt="Three source clips (a street dance, a walk, kicks), each playing beside a person in an existing Soundstage set doing the same moves: the dancer in her Video to Stage set, a detective on the rainy noir street, a gunslinger on the western main street"></p>
+<p align="center"><a href="docs/media/mocap.gif">▶ Three source clips (a street dance, a walk, kicks), each playing beside a person in an existing Soundstage set doing the same moves: the dancer in her Video to Stage set, a detective on the rainy noir street, a gunslinger on the western main street (GIF)</a></p>
 <p align="center"><em>Motion capture into the set you already have: open your set, click a person, <b>Capture motion</b> &rarr; <b>Capture from video</b> (or <b>Act it out</b> on your webcam). The take plays on that person, right where they stand in your blocking, in your set's light and camera: body, hands, fingers and path, for the whole clip (the shot stretches to fit). SAM 3D Body runs in ComfyUI; the clay then directs LTX. Clips: Pexels, free licence.</em></p>
 
 </details>
@@ -218,7 +222,7 @@ Every character, location, wardrobe piece and prop from the breakdown gets a ref
 
 <table>
 <tr>
-<td width="50%"><img src="docs/media/pose_3d.gif" alt="Pose in 3D: click the head, shoulder and elbow and turn them with the ring, curl every finger knuckle into a point, drag the yellow hand and foot dots (IK), the same values in the Pose sliders, two keys playing as motion"></td>
+<td width="50%"><a href="docs/media/pose_3d.gif">▶ Pose in 3D: click the head, shoulder and elbow and turn them with the ring, curl every finger knuckle into a point, drag the yellow hand and foot dots (IK), the same values in the Pose sliders, two keys playing as motion (GIF)</a></td>
 <td width="50%"><img src="docs/media/video_to_stage.jpg" alt="A source clip next to the rebuilt 3D stage with a mocap clay actor"></td>
 </tr>
 <tr>
@@ -370,7 +374,7 @@ ComfyUI's cache means each Run only does the new work.
 </details>
 
 <details>
-<summary><b>What's new, by the hour</b></summary>
+<summary><b>What's new, by the hour (to Nov 2; newer in the Changelog)</b></summary>
 
 #### What's new (updated continuously, times US Pacific)
 
@@ -484,7 +488,7 @@ Full history with every milestone: **[CHANGELOG.md](CHANGELOG.md)**.
 </details>
 
 <a id="install"></a>
-<p><img src="docs/media/readme_v4/h_install.png" width="880" alt="Install"></p>
+<p><img src="docs/media/readme_v4/h_install.png" width="880" alt="Install: ComfyUI, NVIDIA GPU"></p>
 
 ComfyUI with App mode, an NVIDIA GPU (48 GB recommended) and about 60 GB of models. Or [try it in your browser](https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq) first.
 
