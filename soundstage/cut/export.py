@@ -269,7 +269,7 @@ def normalize_project(p) -> dict:
     project["shots"] = shots
     _match_source(project)
     by_id = {s["id"]: s for s in shots}
-    cut = []
+    cut, seen_uid = [], set()
     for e in project.get("cut") or []:
         shot = by_id.get(_js_str(e.get("shot_id")))
         if not shot:
@@ -286,6 +286,17 @@ def normalize_project(p) -> dict:
         op = normalize_keys(e.get("opacity"), out_f - in_f, 0, 1, 1000)
         if op:
             ev["opacity"] = op
+        # Edit from the timeline (web/cut/editlink.mjs): the clip's stable id, the take it is pinned to, its versions.
+        uid = e.get("uid")
+        if isinstance(uid, str) and _UID_RE.fullmatch(uid) and uid not in seen_uid:
+            ev["uid"] = uid
+            seen_uid.add(uid)
+        tk = normalize_take(e.get("take"))
+        if tk:
+            ev["take"] = tk
+        vs = [v for v in (normalize_take(x) for x in (e.get("versions") if isinstance(e.get("versions"), list) else [])) if v]
+        if vs:
+            ev["versions"] = vs[-MAX_VERSIONS:]
         cut.append(ev)
     project["cut"] = cut
     project["audio"] = normalize_audio(project.get("audio"))
@@ -425,13 +436,125 @@ def best_rung(shot) -> str:
     return "clay"
 
 
+# ---------------------------------------------------------------- takes (Edit from the timeline, timeline.mjs)
+
+MAX_VERSIONS = 12
+_UID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")   # used with fullmatch: "$" alone would let a final newline through
+_DEC_RE = re.compile(r"[ \t\n\r]*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?[ \t\n\r]*")
+
+
+def _js_string(v) -> str:
+    """JavaScript String(v) for the plain values a take carries (strings, numbers, booleans)."""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, float) and math.isfinite(v):
+        return _js_str(v)
+    return str(v)
+
+
+def _is_finite(x) -> bool:
+    """Number.isFinite for a JSON number: an integer too big for a float is Infinity in JavaScript."""
+    try:
+        return math.isfinite(x)
+    except OverflowError:
+        return False
+
+
+def _version_number(x) -> float:
+    """timeline.mjs normalizeTake's version: a number, or a plain decimal string; anything else is NaN."""
+    if isinstance(x, bool):
+        return float("nan")
+    if isinstance(x, (int, float)):
+        return float(x) if _is_finite(x) else float("inf")
+    if isinstance(x, str) and _DEC_RE.fullmatch(x):
+        return float(x.strip(" \t\n\r"))
+    return float("nan")
+
+
+def normalize_take(t):
+    """timeline.mjs normalizeTake: {url, rung, version, at?, kind?, label?, recipe?} or None."""
+    if not isinstance(t, dict) or t.get("rung") not in RUNGS:
+        return None
+    url = t["url"][:2000] if isinstance(t.get("url"), str) else ""
+    if not url and t["rung"] != "clay":
+        return None
+    v = _version_number(t.get("version"))
+    v = _round(v) if math.isfinite(v) else -1
+    out = {"url": url, "rung": t["rung"], "version": v if v >= 0 else 0}
+    for k in ("at", "kind", "label"):
+        x = t.get(k)   # a string, a finite number or a boolean (an object or a list is dropped, as in the browser)
+        if (isinstance(x, str) and x != "") or isinstance(x, bool) or (isinstance(x, (int, float)) and _is_finite(x)):
+            out[k] = _js_string(x)[:200]
+    rec = t.get("recipe")
+    if isinstance(rec, dict):
+        r = {}
+        for k, x in rec.items():
+            if isinstance(x, str):
+                r[k] = x[:500]
+            elif isinstance(x, bool) or x is None or (isinstance(x, (int, float)) and _is_finite(x)):
+                r[k] = _num(x) if isinstance(x, float) else x
+        if r:
+            out["recipe"] = r
+    return out
+
+
+def view_key(url) -> str:
+    """timeline.mjs viewKey: a /view URL -> "type:subfolder/filename"; any other URL without its query."""
+    u = str(url or "")
+    q = u.find("?")
+    if q < 0:
+        return u
+    params = parse_qs(u[q + 1:].split("#")[0], keep_blank_values=True)
+    get = lambda k: (params.get(k) or [""])[0]  # noqa: E731
+    fn = get("filename")
+    return f"{get('type') or 'output'}:{get('subfolder') + '/' if get('subfolder') else ''}{fn}" if fn else u[:q]
+
+
+def clip_shot(shot, e):
+    """timeline.mjs clipShot: the shot as a clip plays it (a pinned take wins over the shot's latest render)."""
+    t = (e or {}).get("take")
+    if not shot or not isinstance(t, dict):
+        return shot
+    renders = shot.get("renders") or {}
+    if t.get("rung") == "clay" or not t.get("url"):
+        return {**shot, "renders": {"clay": renders["clay"]} if renders.get("clay") else {}}
+    rest = {k: v for k, v in shot.items() if k != "source"}
+    cur = renders.get(t["rung"])
+    url = cur if cur and view_key(cur) == view_key(t["url"]) else t["url"]
+    if t["rung"] == "look":
+        return {**rest, "renders": {"look": url}}
+    return {**rest, "renders": {t["rung"]: url, **({"look": renders["look"]} if renders.get("look") else {})}}
+
+
+def plays_own(shot, e) -> bool:
+    """timeline.mjs playsOwn: a pinned clip that plays just what its shot plays (its current best render, no camera
+    original involved): its media is the shot's own, so a hold alone changes no reel, asset or master name."""
+    t = (e or {}).get("take")
+    if not shot or not isinstance(t, dict) or shot.get("source"):
+        return False
+    r = best_rung(shot)
+    if t.get("url"):
+        return r == t.get("rung") and view_key((shot.get("renders") or {}).get(r)) == view_key(t["url"])
+    return r == "clay"
+
+
+def media_key(row) -> str:
+    """timeline.mjs mediaKey: the shot id, or "shotId|type:subfolder/filename" ("shotId|clay") for a clip pinned to a
+    file its shot does not play now: one reel / asset per file, whatever its URL spelling."""
+    t = row["event"].get("take")
+    if not t or row.get("own"):
+        return row["shot"]["id"]
+    return f'{row["shot"]["id"]}|{view_key(t["url"]) if t.get("url") else "clay"}'
+
+
 def layout(project) -> list:
     by_id = {s["id"]: s for s in project["shots"]}
     rows, rec = [], 0
     for i, e in enumerate(project["cut"]):
         n = e["out"] - e["in"]
-        rows.append({"index": i, "event": e, "shot": by_id[e["shot_id"]], "in": e["in"], "out": e["out"], "len": n,
-                     "recIn": rec, "recOut": rec + n})
+        base = by_id[e["shot_id"]]
+        rows.append({"index": i, "event": e, "shot": clip_shot(base, e), "in": e["in"], "out": e["out"], "len": n,
+                     "recIn": rec, "recOut": rec + n, "own": plays_own(base, e)})
         rec += n
     return rows
 
@@ -641,18 +764,29 @@ def source_reel(src, width=8) -> str:
 def reel_names(project, width=8) -> dict:
     used, out = set(), {}
 
-    def add(key, name):
-        base = re.sub(r"[^A-Z0-9_]+", "_", name.upper()).strip("_")[:width] or "AX"
-        reel, n = base, 1
+    def rbase(name, w=None):
+        b = re.sub(r"[^A-Z0-9_]+", "_", name.upper()).strip("_") or "AX"
+        return b if w is None else b[:w]
+
+    def add(key, name, tag=""):
+        # tag: a pinned take's "V2" / "CLAY", kept at the END of the reel so a short reel still shows its version
+        base, full = rbase(name, width), rbase(name)
+        fit = lambda t: full[:max(0, width - len(t))].rstrip("_") + t   # noqa: E731
+        reel = base if not tag else f"{full}_{tag}" if len(full) + 1 + len(tag) <= width else fit(tag)
+        n = 1
         while reel in used:
             suf = str(n)
             n += 1
-            reel = base[:width - len(suf)] + suf
+            reel = fit(f"{suf}_{tag}") if tag else base[:width - len(suf)] + suf
         used.add(reel)
         out[key] = reel
 
     for s in project["shots"]:
         add(s["id"], s["name"])
+    for r in layout(project):   # a clip pinned to a take its shot does not play now gets its own reel: one per file
+        if r["event"].get("take") and media_key(r) not in out:
+            pin = r["event"]["take"]
+            add(media_key(r), r["shot"]["name"], f'V{pin["version"]}' if pin.get("url") else "CLAY")
     for a in project.get("audio") or []:
         add("audio:" + a["id"], a["label"])
     return out
@@ -691,7 +825,7 @@ def to_edl(project, reel_width=8, source_start=0, media_root="") -> str:
 
     def reel_of(row):
         return source_reel(row["shot"]["source"], reel_width) if media_for(row["shot"], media_root)["rung"] == "source" \
-            else reels[row["shot"]["id"]]
+            else reels[media_key(row)]
 
     def stc_of(row):
         if media_for(row["shot"], media_root)["rung"] != "source":
@@ -1053,7 +1187,7 @@ def to_fcpxml(project, media_root="") -> str:
 
     assets, formats = {}, []
     for row in rows:
-        sid = row["shot"]["id"]
+        sid = media_key(row)
         if sid in assets:
             continue
         media = media_for(row["shot"], media_root)
@@ -1117,7 +1251,7 @@ def to_fcpxml(project, media_root="") -> str:
     out.append("          <spine>")
 
     def local_fn(r):
-        src = assets[r["shot"]["id"]]["src"]
+        src = assets[media_key(r)]["src"]
         if src:
             st = src["st"]
             return lambda d: _fcp_sum(st["start"] + st["map"](r["in"]), st["sfi"], d, fi)
@@ -1195,7 +1329,7 @@ def to_fcpxml(project, media_root="") -> str:
                 out += [f"            {opening}>", *inner, "            </gap>"]
             continue
         row = it["row"]
-        a = assets[row["shot"]["id"]]
+        a = assets[media_key(row)]
         still = a["media"]["kind"] == "image"
         timing = (f'offset="{t(start + row["recIn"])}" name="{_esc(row["shot"]["name"])}" '
                   f'start="{it["local"](0)}" duration="{t(row["len"])}"')
@@ -1408,9 +1542,9 @@ def to_relink_list(project, media_root="") -> str:
              "\t".join(["CLIP", "RUNG", "MEDIA", "TODO"])]
     seen = set()
     for row in layout(project):
-        if row["shot"]["id"] in seen:
+        if media_key(row) in seen:
             continue
-        seen.add(row["shot"]["id"])
+        seen.add(media_key(row))
         m = media_for(row["shot"], media_root)
         if m["rung"] == "final" or (m["rung"] == "source" and not relink_note(m)):
             continue
