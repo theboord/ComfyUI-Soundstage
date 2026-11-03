@@ -12,6 +12,7 @@ import { openPopover } from "../ui/popover.mjs";
 import { sourceLine } from "../ui/sourcespec.mjs";
 import { impactClips, withImpactClips } from "./impactsfx.mjs";
 import * as GFX from "./gfx.mjs";
+import * as EL from "./editlink.mjs";
 import { RtPlayer, planAt, viewerWidth, HOLD_FRAMES, LEAD_S, LEAD_PENDING_S } from "./rtengine.mjs";
 
 /** A transport button's face: a Lucide icon (plus an optional speed like "2×"); the title names it for screen readers. */
@@ -324,6 +325,19 @@ export class CutPanel {
   /** Every browser-side export as text, keyed by file name (see exporters.mjs exportAll). */
   exportFiles(opts = {}) {
     return exportAll(this.project, opts);
+  }
+
+  /** Edit from the timeline: clip `index`'s link (web/cut/editlink.mjs clipContext): uid, shot, in/out, the source frame
+   *  under the playhead (else under recFrame, else the in point), the take it plays, its versions. */
+  clipContext(index, recFrame = this.frame) { return EL.clipContext(this.project, index, { recFrame, playhead: this.frame }); }
+
+  /** Pin clip `index` (and the `also` pins, editlink.mjs applyPins) to a take in ONE undoable edit; take null = follow
+   *  the latest render again. The old take is kept in the clip's versions; in, out and transitions stay. */
+  replaceClipTake(index, take, { also = [], uid = null } = {}) {
+    const cut = EL.applyPins(this.project.cut, [{ index, take, uid }, ...also]);
+    if (!cut) return false;
+    this._commit(cut, index);   // _afterEdit re-syncs the engine's media set: the new take is registered at once
+    return true;
   }
 
   /** Picture length in frames. */
@@ -942,7 +956,7 @@ export class CutPanel {
     if (!this.history.length) return;
     this.future.push(this._snapshot());
     this.project = { ...this.project, ...this.history.pop() };
-    this._afterEdit();
+    this._afterEdit();   // re-syncs media: the restored clips may play files the current cut did not
   }
 
   redo() {
@@ -1185,15 +1199,15 @@ export class CutPanel {
     this.tl.addEventListener("pointermove", (e) => this._tlMove(e));
     this.tl.addEventListener("pointerup", (e) => this._tlUp(e));
     this.tl.addEventListener("pointercancel", () => { this._cancelDrag(); });
-    // Right-click a clip: edit its original (stage, frame, Canvas touch-up, motion), Dynamic Link style.
-    // Every render is kept per shot, so the clip shows the new render as soon as it lands.
+    // Right-click a clip: Edit in… (web/cut/editlink.mjs, when a host attached it as this.editLink); else Edit original.
     this.tl.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const hit = this._hit(this._local(e).x, this._local(e).y);
-      if (hit.type !== "clip" || !this._onEditShot) return;
+      const { x, y } = this._local(e);
+      const hit = this._hit(x, y);
+      if (hit.type !== "clip" || !(this._onEditShot || this.editLink)) return;
       const row = TL.layout(this.project)[hit.idx];
-      if (row?.shot?.id) this._clipMenu(row.shot.id, row.shot.name || row.shot.id, e);
+      if (row?.shot?.id) this._clipMenu(row.shot.id, row.shot.name || row.shot.id, e, { index: hit.idx, recFrame: Math.floor(this._frameAt(x)) });
     });
     this.tl.addEventListener("dblclick", (e) => {
       const hit = this._hit(this._local(e).x, this._local(e).y);
@@ -1426,6 +1440,9 @@ export class CutPanel {
       add(this._source(row.shot, row.event));
       if (row.shot.renders?.look) imgs.add(row.shot.renders.look);   // the timeline's filmstrip frame
     }
+    // Every file the cut can show (TL.playedUrls): every shot's renders and what each clip plays, so a pinned take (a
+    // file no longer among its shot's renders) and a held clip keep their picture, and Back / Replace swap at once.
+    for (const { url, rung } of TL.playedUrls(this.project)) (rung === "look" ? imgs : vids).add(url);
     for (const g of this.project.graphics || []) {
       for (const spec of [g.a, g.b]) {
         const w = this._gfxUrl(spec, shots.get(spec?.shot_id));
@@ -1462,7 +1479,11 @@ export class CutPanel {
   _source(shot, entry = null) {
     const take = entry?.take;
     if (take?.rung === "clay") return { rung: "clay", kind: "clay", m: null, url: null };   // a clay pin plays clay (A3)
-    if (take?.url && !this._failed(take.url)) return this._sourceOf(TAKE_RUNG[take.rung] || "final", take.url);
+    if (take?.url) {
+      // the same file under the shot's spelling (TL.clipShot), so it is the record playedUrls registered: one per file
+      const own = shot?.renders?.[take.rung], url = own && TL.viewKey(own) === TL.viewKey(take.url) ? own : take.url;
+      if (!this._failed(url)) return this._sourceOf(TAKE_RUNG[take.rung] || "final", url);
+    }
     for (const rung of ["final", "draft", "look"]) {
       const url = shot?.renders?.[rung];
       if (url && !this._failed(url)) return this._sourceOf(rung, url);
@@ -2669,7 +2690,9 @@ export class CutPanel {
    * {type: "ruler"|"empty"|"clip"|"edge"|"header"|"audio", idx, mode, edit, audio, track}.
    * Audio modes: aslide (body), atrimIn / atrimOut (edges), afadeIn / afadeOut (the top-corner handles).
    */
-  _clipMenu(shotId, name, e) {
+  _clipMenu(shotId, name, e, ctx = null) {
+    if (ctx && this.editLink?.menu) return this.editLink.menu(this.clipContext(ctx.index, ctx.recFrame), e);
+    if (!this._onEditShot) return;
     this._menuPop?.close("replaced");
     const m = (this._menu = document.createElement("div"));
     m.className = "ss-cut-ctx";
@@ -2893,6 +2916,7 @@ export class CutPanel {
       const hit = this._hit(x, y);
       this.tl.style.cursor = hit.type === "gfx" ? (hit.edge ? "ew-resize" : "grab") : hit.type === "edge" ? (e.altKey ? "col-resize" : "ew-resize") : hit.type === "clip" ? "grab"
         : hit.type === "audio" ? (hit.mode === "aslide" ? "grab" : "ew-resize") : hit.button ? "pointer" : "default";
+      this.editLink?.hover?.(hit.type === "clip" ? hit.idx : -1, x, y);   // Edit from the timeline: the ✎ on the hovered clip
       return;
     }
     if (d.mode === "apending" && Math.hypot(x - d.startX, y - d.startY) > 4) { d.mode = "aslide"; this.tl.style.cursor = "grabbing"; }

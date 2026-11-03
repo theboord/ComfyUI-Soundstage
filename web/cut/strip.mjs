@@ -223,7 +223,7 @@ export class ShotStrip {
    * load/save: the shared saved cut ({cut, audio, audio_tracks, excluded_shots}, node.properties.ss_cut).
    */
   constructor(container, { stage, api = null, getRenders = null, onSelect = null, onStatus = null, load = null, save = null,
-                           onOpenEditor = null, renderPreviewFrame = null, onEditShot = null, getSceneName = null } = {}) {
+                           onOpenEditor = null, renderPreviewFrame = null, onEditShot = null, getSceneName = null, onEditClip = null } = {}) {
     injectCSS();
     installWheelRouter();
     this.stage = stage;
@@ -236,6 +236,7 @@ export class ShotStrip {
     this._onOpenEditor = onOpenEditor;
     this._sceneName = getSceneName || (() => null);   // shot id -> "SC12A" (a script's scene number) for the NLE scene field
     this._onEditShot = onEditShot;   // "edit original" (Dynamic Link style): jump to the step that made this clip
+    this._onEditClip = onEditClip;   // Edit from the timeline (web/cut/editlink.mjs): the Cut's Edit in… menu for clip i
     this._renderPreview = renderPreviewFrame || ((id, f) => this._clay(id, f));
     this._mem = {}; // saved cut when no load/save is given
     this.saved = readSaved(load ? load() : this._mem);
@@ -400,8 +401,10 @@ export class ShotStrip {
     const { frames } = this._clock();
     const cut = this.saved.cut || [];
     const old = oldFrames || Math.max(0, ...cut.map((e) => e.out));
-    if (!(frames > old) || !cut.some((e) => e.out >= old - 1)) return;
-    this._set({ cut: cut.map((e) => (e.out >= old - 1 ? { ...e, out: frames } : e)) });
+    // a clip pinned to a take (Edit from the timeline) keeps its out point: its file is as long as it was rendered
+    const grows = (e) => e.out >= old - 1 && !e.take;
+    if (!(frames > old) || !cut.some(grows)) return;
+    this._set({ cut: cut.map((e) => (grows(e) ? { ...e, out: frames } : e)) });
   }
 
   /** One edit: patch the saved cut, persist, redraw. eids: the event ids after the edit, when known. */
@@ -965,7 +968,8 @@ export class ShotStrip {
     const setups = this._setups().length;
     this._openMenu([
       { icon: "camera", label: "Edit this setup on the stage", run: () => this._select(index) },
-      ...(this._onEditShot ? [
+      ...(this._onEditClip ? [{ icon: "film", label: "Edit in…", title: "First frame, Re-generate, Re-block, Ripple, Recast… for this clip; Back to the cut brings the new take",
+        run: () => this._onEditClip(index, ev) }] : this._onEditShot ? [
         { icon: "image", label: "Repaint its frame (④ Frame)", title: "New stills for this shot; the clip updates when you re-render", run: () => this._onEditShot(row.shot.id, "frame") },
         { icon: "wand-sparkles", label: "Touch up its frame in Paint Studio", title: "Paint, mask or regenerate this shot's frame, then re-render", run: () => this._onEditShot(row.shot.id, "canvas") },
         { icon: "film", label: "Re-render its motion (⑤ Motion)", title: "Draft or final for this shot; the cut picks up the new render", run: () => this._onEditShot(row.shot.id, "motion") },
@@ -1048,7 +1052,9 @@ export class ShotStrip {
     const row = TL.layout(this._project())[index];
     if (!row) return;
     const cut = (this.saved.cut || []).map((e) => ({ ...e }));
-    cut.splice(index + 1, 0, { shot_id: row.shot.id, in: row.in, out: row.out });
+    // the copy keeps the clip's pinned take and versions (Edit from the timeline), not its uid: a uid names one clip
+    const { take, versions } = row.event || {};
+    cut.splice(index + 1, 0, { shot_id: row.shot.id, in: row.in, out: row.out, ...(take ? { take } : {}), ...(versions ? { versions } : {}) });
     const eids = [...this._eids];
     eids.splice(index + 1, 0, this._nextEid++);
     this._set({ cut, audio: TL.rippleAudio(this.saved.audio || [], row.recOut, row.len) }, { eids });

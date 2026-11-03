@@ -14,6 +14,7 @@ import { LadderViewer, RUNG_NAMES } from "./ladder/ladder.mjs";
 import { LookPanel } from "./look/look.mjs";
 import { SceneAgent, loadScene } from "./agent/agent.mjs";
 import { CutPanel, savedFields } from "./cut/cut.mjs";
+import { attachEditLink, flattenClip } from "./cut/editlink_app.mjs";
 import { makeAudioGenerator, makeAudioUploader } from "./cut/gen.mjs";
 import { ShotStrip, readSaved } from "./cut/strip.mjs";
 import { CanvasPanel } from "./canvas/canvas.mjs";
@@ -598,8 +599,16 @@ function createStageWidget(node, inputName) {
   };
   // One saved cut shared by the docked shot strip and the full Cut editor: {cut, audio, audio_tracks, excluded_shots}.
   const loadCut = () => readSaved(node.properties?.ss_cut);
-  const saveCut = (v) => { node.properties = node.properties || {}; node.properties.ss_cut = v; };
+  const saveCut = (v) => {
+    node.properties = node.properties || {};
+    const was = JSON.stringify(node.properties.ss_cut ?? null);
+    node.properties.ss_cut = v;
+    // A property write alone isn't seen by ComfyUI's change tracker (as rememberRender): nudge it when the cut changed,
+    // so the draft and Save keep the edit (a clip's pinned take and versions included).
+    if (JSON.stringify(v ?? null) !== was) try { app.extensionManager?.workflow?.activeWorkflow?.changeTracker?.checkState?.(); } catch { /* older frontend */ }
+  };
   let strip = null; // created below; the Cut editor may report changes before then
+  let editLink = null; // Edit from the timeline (web/cut/editlink_app.mjs), attached once the pipeline is built
   const cut = new CutPanel(cutView, {
     getProject: () => ({ ...buildCutProject(), ...loadCut() }),
     renderPreviewFrame: (shotId, frame) => {
@@ -607,10 +616,13 @@ function createStageWidget(node, inputName) {
       return stage.renderFrameTo("clay", frame, { shot: shotId });
     },
     onChange: (project) => {
+      const was = JSON.stringify(node.properties?.ss_cut ?? null);
       saveCut({ ...loadCut(), ...savedFields(project) });   // cut, sound, titles, subtitles, tail fade (Milestone 19)
+      // The strip's undo snapshots predate this edit: a strip ⌘Z would write one over it (a held or replaced take too).
+      if (strip && JSON.stringify(node.properties.ss_cut) !== was) { strip.undoStack = []; strip.redoStack = []; }
       strip?.refresh();
     },
-    onEditShot: (id, where) => editShot(id, where),
+    onEditShot: (id, where, ctx) => editShot(id, where, ctx),
     // Milestone 19: Assemble scene from the ScriptSync lining; generate / import sound in place; the server render.
     getLining: () => {
       try {
@@ -659,14 +671,17 @@ function createStageWidget(node, inputName) {
     load: loadCut,
     save: (v) => { saveCut(v); if (!cutView.hidden) cut.refresh(); },
     onOpenEditor: () => showView("cut"),
-    onEditShot: (id, where) => editShot(id, where),
+    onEditShot: (id, where, ctx) => editShot(id, where, ctx),
+    onEditClip: (index, anchor) => editLink?.fromStrip(index, anchor),   // Edit in… (web/cut/editlink_app.mjs)
     getSceneName: (id) => { const n = sceneNumOfShot(id); return n ? `SC${n}` : null; },
     renderPreviewFrame: (id, f) => stage.renderFrameTo("clay", f, { shot: id }),
   });
 
   // "Edit original" from a clip (Dynamic Link style): open the step that made it, for that shot. Renders are kept
-  // per shot and the cut always plays each shot's latest, so a re-render shows up in the cut by itself.
-  function editShot(id, where) {
+  // per shot and the cut plays each shot's latest, unless the clip is pinned to a take. With a clip's context (the
+  // Edit in… menu, web/cut/editlink.mjs) the trip takes over: the step with that clip loaded, then Back to the cut.
+  function editShot(id, where, ctx = null) {
+    if (ctx && editLink) return editLink.start(id, where, ctx);
     if (id !== stage.activeShot().id) stage.setActiveShot(id);
     const name = shotName(id);
     if (where === "stage") { showView("stage"); status.textContent = `Editing ${name} on the stage. Re-render it in ⑤ Motion and the cut updates.`; return; }
@@ -708,11 +723,8 @@ function createStageWidget(node, inputName) {
     const entries = cutEntries();
     if (!entries.length) { cutOut.textContent = "The cut is empty: add shots to the strip first."; return; }
     const saved = savedRenders();
-    const clips = entries.map((e) => {
-      const r = saved[e.shot_id] || {};
-      const kind = BEST.find((k) => r[k]);
-      return { shot_id: e.shot_id, name: shotName(e.shot_id), in: e.in, out: e.out, file: kind ? r[kind] : null, kind: kind || null };
-    });
+    // a clip pinned to a take (Edit from the timeline) joins its pinned file
+    const clips = entries.map((e) => ({ shot_id: e.shot_id, name: shotName(e.shot_id), in: e.in, out: e.out, ...flattenClip(e, saved[e.shot_id] || {}, BEST) }));
     oneBtn.disabled = true;
     cutOut.textContent = `Joining ${clips.length} clips…`;
     try {
@@ -888,6 +900,7 @@ function createStageWidget(node, inputName) {
     el.classList.toggle("ss-cutmode", k === "cut"); // the timeline has its own transport; hide the stage rows
     el.classList.toggle("ss-pipemode", ["frame", "motion", "deliver"].includes(k)); // step screens stand alone
     if (k === "cut") { cut.refresh(); cut.resize(); } else cut.stop();
+    try { editLink?.onView(k); } catch { /* not built yet */ }   // the Back pill out of the Cut, the Replace offer in it
     try { syncWorkspace(k); } catch { /* workspace not built yet */ }
     if (isLadder) ladder.setFrame(stage.frame || 0);
     else if (isLook) look.refresh();
@@ -2466,6 +2479,14 @@ function createStageWidget(node, inputName) {
   node.ssPipeline = pipeline;
   node.ssCut = cut;
   node.ssLadder = ladder;
+  // Edit from the timeline (Directive 9, web/cut/editlink_app.mjs): Edit in… on every clip (right-click, ✎, E), the step
+  // that made it with the clip loaded, ↩ Back to the cut, and Replace in cut as a new version (one ⌘Z).
+  editLink = attachEditLink({ api, app, stage, pipeline, cut, strip, cutView, oneClick, look,
+    openShot, showView, afterTimeChange, rendersFor, savedRenders, viewURL, showTake,
+    sceneKey: () => liveKey, switchScene: (k) => switchScene(k, { keepFilter: true }),
+    say: (m) => (status.textContent = m) });
+  cut.editLink = editLink;          // CutPanel reads .menu and .hover
+  node.ssEditLink = editLink;       // scripts and tests, like node.ssOneClick
   for (const ms of [500, 2500]) setTimeout(() => { try { pipeline.restoreLadder(); } catch { /* ladder not ready */ } }, ms);
 
   // ---------------------------------------------------------------- Script

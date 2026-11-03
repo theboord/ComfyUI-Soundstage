@@ -585,7 +585,7 @@ Five tabs. Selecting something in the view switches it for you: an object or per
 | timecode | Seconds:frames at 24 fps. |
 | **Length** | Shot length, 2 to 10 seconds. |
 
-Under the timeline sits the **shot strip**: every camera setup as a clip in cut order. Click a clip to edit that setup. **+ Shot** adds a setup (a copy of the current camera, or a new angle: Master, Wide, Two-shot, Over-the-shoulder, Single, Insert, POV), **Editor** opens the full Cut editor, and the play button plays the cut on the stage. Drag clips to reorder them and drag their edges to trim. Right-click a clip for **Edit this setup on the stage**, **Repaint its frame (④ Frame)**, **Touch up its frame in Paint Studio**, **Re-render its motion (⑤ Motion)**, **Compare in ⑥ Review**, **Duplicate setup**, **Duplicate clip**, **Split at playhead**, **Remove from cut** and **Delete setup**. Below it, **Cut → one video** and **Render missing shots** (see [⑦ Deliver](#step-7-deliver)).
+Under the timeline sits the **shot strip**: every camera setup as a clip in cut order. Click a clip to edit that setup. **+ Shot** adds a setup (a copy of the current camera, or a new angle: Master, Wide, Two-shot, Over-the-shoulder, Single, Insert, POV), **Editor** opens the full Cut editor, and the play button plays the cut on the stage. Drag clips to reorder them and drag their edges to trim. Right-click a clip for **Edit this setup on the stage**, **Edit in…** (First frame, Re-generate, Re-block, Ripple, Recast camera, ✦, Touch up, Compare: see the Cut editor below), **Duplicate setup**, **Duplicate clip**, **Split at playhead**, **Remove from cut** and **Delete setup**. Below it, **Cut → one video** and **Render missing shots** (see [⑦ Deliver](#step-7-deliver)).
 
 The grey **status line** at the very bottom tells you what just happened and what to do next. Read it: most messages end with the next step.
 
@@ -831,7 +831,7 @@ Shot length comes from **Length** in ③ Set, frame size from **Aspect**, and th
 
 <p align="center"><img src="media/step4_ladder.jpg" width="860" alt="Review on the Ladder"></p>
 
-Use it to check that the final still matches your blocking: the same people in the same places, the car going the right way, the camera doing what you keyed. A stage that hasn't been rendered yet says so on the picture. If something's off, right-click the shot in the strip (or its clip in the Cut editor, **Edit original**) to go straight back to the step that made it.
+Use it to check that the final still matches your blocking: the same people in the same places, the car going the right way, the camera doing what you keyed. A stage that hasn't been rendered yet says so on the picture. If something's off, right-click the shot in the strip (or its clip in the Cut editor, **Edit in…**) to go straight back to the step that made it.
 
 The bar above the picture picks what you compare and how:
 
@@ -917,7 +917,7 @@ The **Edit** tab (the Cut; or **Editor** on the shot strip) is a real timeline o
 
 On the timeline: drag a clip to reorder, drag its edge to trim, Option/Alt-drag an edit to roll it (the viewer shows a two-up trim monitor). Mark in and out with I and O, clear with G.
 
-**Right-click any clip → Edit original.** This jumps back to whatever made the clip: **Edit the shot on the Stage (blocking, camera)**, **Repaint its frame (④ Frame)**, **Touch up its frame in Paint Studio**, **Re-render its motion (⑤ Motion)**, or **Compare in ⑥ Review**. Fix it there and the cut picks up the new render by itself, because the cut always plays each shot's latest render.
+**Right-click any clip (or hover it and click ✎, or press E) → Edit in….** Each item opens the step that made the clip, with that clip loaded: **First frame** (④ Frame, the frame this take started from), **Re-generate** (⑤ Motion, with this take's settings), **Re-block** (③ Set, at the clip's frame), **Ripple**, **Paint video-to-video**, **Recast camera** and **✦ One-click cards** for the video itself, plus **Touch up its frame in Paint Studio** and **Compare in ⑥ Review**. The clip and the other clips of that shot hold their take while you are away. **↩ Back to the cut** in the step bar brings you back to the same clip, and **Replace in cut** makes the new take the clip's next version (⌘Z brings the old one back). Details: [docs/cut.md](cut.md#edit-from-the-timeline).
 
 **Export to your NLE** (the **Export** buttons; all download straight from the browser):
 
@@ -1807,7 +1807,7 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 
 26. **Re-render the same animation in another look.** Change the style card, **Generate frames**, render Motion again: the same blocking and camera, a different film.
 27. **Copy the prompts.** **Compiled prompts** in the Look tab shows exactly what goes to the models, with **Copy**. Handy for testing a look in another tool.
-28. **Edit original from the cut.** Right-click a clip in the strip or the Cut editor and jump straight to the stage, the frame, Paint Studio or Motion for that shot. The cut picks up the new render by itself.
+28. **Edit from the timeline.** Right-click a clip in the Cut editor (or ✎, or E; in the strip, **Edit in…**) and jump to the step that made it with that clip loaded; ↩ Back to the cut, then Replace in cut makes the new take a new version of the clip.
 29. **Fill the gaps before you export.** **Render missing shots** queues a Final for any shot that has none, then joins the cut into one video.
 30. **Hand off the set.** **Export GLB** takes the whole set into Blender, Unreal, Unity or C4D, and the Layer Pack's `camera.chan` carries the exact camera into Nuke or After Effects.
 31. **Take the full window.** **Open the full workspace** (or **Expand**) gives Soundstage the screen; Esc puts it back in the App panel.
