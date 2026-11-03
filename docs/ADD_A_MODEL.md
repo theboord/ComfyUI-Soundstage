@@ -172,7 +172,7 @@ This rewrites the whole snapshot (`tests/test_router_adapters.py:287-308`). Or a
 
 ### Run the tests
 
-No ComfyUI, GPU or network is needed. From the repo root:
+No ComfyUI, GPU or network is needed, only Python with pytest (`pip install pytest`; it is not in `requirements.txt`). From the repo root:
 
 ```bash
 PYTHONUTF8=1 PYTHONDONTWRITEBYTECODE=1 python -m pytest -p no:cacheprovider tests/test_router_registry.py tests/test_router_adapters.py tests/test_router_h3.py tests/test_router_app.py tests/test_fill.py -q
@@ -180,10 +180,11 @@ PYTHONUTF8=1 PYTHONDONTWRITEBYTECODE=1 python -m pytest -p no:cacheprovider test
 
 - Before the change: 383 collected, 374 passed, 9 skipped. The skips are adapters refusing an input combination by design.
 - The new entry needs no test edits. NEWMODEL adds 5 tests, all passing: `test_param_defaults_valid[open.newmodel]`, `test_every_wired_model_builds_for_some_input[open.newmodel]` and `test_adapter_builds_valid_graph[open.newmodel-generate_image-0..2]`. Result: 388 collected, 379 passed, 9 skipped.
+- Run between Step 1 and Step 2, the same command fails 5 tests (`test_registry_shape` and the 4 graph tests above), because the entry names an adapter that does not exist yet. They pass once the adapter is registered.
 - Add `-k newmodel` to run only its tests.
 - If the model also serves edit_image, it adds 8 more: 3 edit_image graph scenarios, a keep-input-size test and 4 Generative Fill tests. FLUX 3 Klein, which serves both image stages, has 13.
 
-These numbers were measured on a scratch copy of `0b89169` with NEWMODEL added as above.
+These numbers, and the dropdown output below, were measured on 2026-11-02 by following this page step by step on a scratch copy of `0b89169` (Python 3.14, pytest 9.2). "Check it live" was not run.
 
 ### Check the dropdown offline
 
