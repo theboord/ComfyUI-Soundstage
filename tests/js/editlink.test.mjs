@@ -259,3 +259,75 @@ test("the Cut's menu goes through the pop-over layer, keeps the class the sweep 
   assert.doesNotMatch(src("editlink.mjs"), /from "\.\.\/(pipeline|motion|oneclick|dailies|takecheck|performance)\//);
   assert.match(src("cut.mjs"), /openPopover\(/);
 });
+
+// ------------------------------------------------------------------------------------------------ the App side
+
+const APP = await import("../../web/cut/editlink_app.mjs");
+
+test("flattenCut's per-clip file honours the pin (Cut → one video joins the pinned file; a clay pin is a slate)", () => {
+  const BEST = ["final_sound", "final_audio", "final", "draft", "previz", "look"];
+  const r = { final: { filename: "a_v2.mp4", subfolder: "soundstage", type: "output" }, look: { filename: "a.png", subfolder: "", type: "output" } };
+  assert.deepEqual(APP.flattenClip({ shot_id: "a", in: 0, out: 10 }, r, BEST), { file: r.final, kind: "final" });
+  assert.deepEqual(APP.flattenClip({ shot_id: "a", take: { url: A1, rung: "final", version: 1 } }, r, BEST),
+    { file: { filename: "a_v1.mp4", subfolder: "soundstage", type: "output" }, kind: "final" });
+  assert.deepEqual(APP.flattenClip({ shot_id: "a", take: { url: "", rung: "clay" } }, r, BEST), { file: null, kind: "clay" });
+  assert.deepEqual(APP.flattenClip({ shot_id: "a" }, {}, BEST), { file: null, kind: null });
+});
+
+test("the link resolver: step, frame, recipe and a plain sentence for each missing link, per clip type", () => {
+  const rip = { id: "ripple_1", kind: "draft", url: V("b_rip.mp4", 3), file: { filename: "b_rip.mp4" }, created: 5, label: "Ripple", ripple: true,
+    strength: 1.2, source: "soundstage/b.mp4 [output]", edited: "soundstage_private/b_f1.png [input]", prompt: "red jacket" };
+  const oc = { id: "oneclick_x", kind: "look", url: V("b_oc.png"), oneclick: { id: "night", label: "Night", from: "soundstage/b.png [output]" } };
+  const p = TL.normalizeProject({ fps: 24, shots: [...shots(), { id: "l", name: "L", frames: 97, renders: { look: V("l.png") } }],
+    cut: [{ shot_id: "a", in: 0, out: 10 }, { shot_id: "l", in: 0, out: 10 }, { shot_id: "c", in: 0, out: 10 },
+      { shot_id: "b", in: 0, out: 10, take: { url: V("b_rip.mp4"), rung: "draft", kind: "ripple" } },
+      { shot_id: "b", in: 0, out: 10, take: { url: V("b_gone.mp4"), rung: "draft", kind: "ripple" } },
+      { shot_id: "b", in: 0, out: 10, take: { url: V("b_oc.png"), rung: "look", kind: "oneclick" } }, { shot_id: "f", in: 0, out: 10 }] });
+  const chosen = { url: V("a_frame.png"), seed: 42, model: "FLUX 3 Klein", takes: [rip, oc] };
+  const R = (i, ch = chosen) => APP.resolveLink(EL.clipContext(p, i), { chosen: ch, renders: {}, candidates: [] });
+  const fin = R(0);
+  assert.deepEqual([fin.step, fin.recipe.state, fin.frame.url, fin.frame.exact], [{ app: "motion", rung: 4, via: "app" }, "unread", V("a_frame.png"), false]);
+  assert.deepEqual(fin.missing, []);
+  const look = R(1, { url: V("l.png"), seed: 9, model: "Krea" });
+  assert.deepEqual([look.step.app, look.frame.url, look.frame.exact, look.recipe.seed], ["frame", V("l.png"), true, 9]);
+  assert.deepEqual(look.missing, [APP.MISSING.look]);
+  const clay = R(2, null);
+  assert.deepEqual([clay.step.app, clay.frame], ["set", null]);
+  assert.deepEqual(clay.missing, [APP.MISSING.frame, APP.MISSING.clay]);
+  const r = R(3);
+  assert.deepEqual([r.type, r.step, r.record?.id, r.frame.ref, r.recipe.strength], ["take", { app: "motion", rung: 3, via: "ripple" }, "ripple_1", rip.edited, 1.2]);
+  assert.deepEqual(r.missing, [APP.MISSING.outside]);
+  assert.deepEqual(R(4).missing, [APP.MISSING.record], "the take's record fell off the 40 kept");
+  const o = R(5);
+  assert.deepEqual([o.step.via, o.frame.ref, o.recipe.card], ["oneclick", "soundstage/b.png [output]", "night"]);
+  assert.deepEqual(o.missing, [APP.MISSING.oneclick]);
+  assert.deepEqual(R(6).missing, [APP.MISSING.footage]);
+});
+
+test("settingsFromPrompt reads the Quality node's advanced JSON (seed, Adherence), the engine and the still from ComfyUI's prompt tag", () => {
+  const prompt = {
+    "9096": { class_type: "SoundstageQuality", inputs: { motion_freedom: 0, quality: "Final", advanced: '{"preset":"Final","seed":1234,"adherence":"Balanced","steps_1":14}' } },
+    "9084": { class_type: "ComfySwitchNode", inputs: { switch: true }, _meta: { title: "Video model · use picker (off = Soundstage LTX-2.5 L2R)" } },
+    "9083": { class_type: "SoundstageGenerateVideo", inputs: { model: "MiniMax H3 · local", seed: 1 } },
+    "9082": { class_type: "ComfySwitchNode", inputs: { switch: true } },
+    "9081": { class_type: "SoundstageEditImage", inputs: { model: "FLUX 3 Klein · local", seed: 77 } },
+    "9086": { class_type: "ComfySwitchNode", inputs: { switch: false } },
+    "5516:1": { class_type: "RandomNoise", inputs: { noise_seed: ["9096", 11] } },
+  };
+  assert.deepEqual(APP.settingsFromPrompt(prompt), { settings: { preset: "Final", seed: 1234, adherence: "Balanced", steps_1: 14 },
+    engine: "MiniMax H3 · local", still: { model: "FLUX 3 Klein · local", seed: 77, touchup: false } });
+  const krea = { "9096": { class_type: "SoundstageQuality", inputs: { quality: "Draft", advanced: "not json" } }, "9084": { inputs: { switch: false } },
+    "9082": { inputs: { switch: false } }, "9056": { class_type: "KSampler", inputs: { seed: 5 } } };
+  assert.deepEqual(APP.settingsFromPrompt(krea), { settings: { preset: "Draft" }, engine: "l2r", still: { model: "__krea_depth__", seed: 5, touchup: false } });
+  assert.equal(APP.settingsFromPrompt(null), null);
+  assert.deepEqual(APP.settingsFromPrompt({ "1": { class_type: "SaveVideo", inputs: {} } }), { settings: null, engine: null, still: null });
+});
+
+test("takesOfShot lists what the Takes bin lists, so a trip's before / landed keys agree with it", () => {
+  const app = { renders: { final: V("a_v2.mp4", 3), final_sound: V("a_v2.mp4", 3), look: V("a.png") },
+    chosen: { url: V("a.png"), takes: [{ url: V("rip.mp4"), kind: "final", ripple: true, created: 7, label: "Ripple" }, { url: V("oc.png"), kind: "look", oneclick: { id: "x" } }] },
+    candidates: [{ url: V("cand.png"), seed: 3 }] };
+  const list = APP.takesOfShot(app);
+  assert.deepEqual(list.map((t) => [t.rung, t.kind, t.video]).slice(-3), [["look", "frame", false], ["final", "ripple", true], ["look", "oneclick", false]]);
+  assert.deepEqual([...APP.beforeKeys(app)].sort(), ["output:soundstage/a.png", "output:soundstage/a_v2.mp4", "output:soundstage/cand.png", "output:soundstage/oc.png", "output:soundstage/rip.mp4"]);
+});
