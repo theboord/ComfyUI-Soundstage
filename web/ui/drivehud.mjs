@@ -43,6 +43,11 @@ const CSS = `.ss-drive{position:absolute;z-index:6;pointer-events:none;font:500 
  border-radius:12px;background:rgba(24,18,30,.92);border:1px solid rgba(255,255,255,.16);max-width:92%}
 .ss-drive .take .sum{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.85;padding:0 6px}
 .ss-drive .take .keep{background:#f2ff59;color:#1d1622}
+.ss-drive .fix{position:absolute;left:50%;bottom:58px;transform:translateX(-50%);pointer-events:auto;display:flex;gap:8px;align-items:center;padding:6px 8px 6px 12px;
+  border-radius:999px;background:rgba(24,18,30,.82);max-width:calc(100% - 24px)}
+.ss-drive .fix span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ss-drive .fix button{background:rgba(255,255,255,.12)}
+.ss-drive .note{margin-left:6px;opacity:.8;font-weight:500}
 .ss-drive .busy{position:absolute;left:50%;top:22%;transform:translateX(-50%);padding:4px 10px;border-radius:999px;background:rgba(24,18,30,.75);font-weight:650}
 .ss-drive .binds{position:absolute;left:10px;top:46px;width:330px;max-height:70%;overflow:auto;pointer-events:auto;padding:8px;border-radius:12px;
  background:rgba(24,18,30,.95);border:1px solid rgba(255,255,255,.16)}
@@ -108,7 +113,7 @@ export class DriveHud {
     el.className = "ss-drive";
     el.setAttribute("role", "region"); el.setAttribute("aria-label", "Drive mode");
     el.innerHTML = `
-      <div class="tl pill"><span class="tag">🎮 Drive</span><span class="name"></span>
+      <div class="tl pill"><span class="tag">🎮 Drive</span><span class="name"></span><span class="note" hidden></span>
         <select data-cam title="Camera while driving (V)"><option value="chase">Follow cam</option><option value="shot">Shot camera</option><option value="orbit">Orbit</option></select>
         <button data-inputs title="Draw the controller and keys on screen (for recordings)">Inputs</button>
         <button data-binds title="Remap keys and controller buttons">Bindings</button>
@@ -126,14 +131,15 @@ export class DriveHud {
         <button class="keep" data-keep title="Keep it: one undo step (Enter)">Keep <kbd>⏎</kbd></button>
         <button data-discard title="Throw it away (Backspace)">Discard <kbd>⌫</kbd></button>
         <button data-again title="Record it again (R)">Again <kbd>R</kbd></button></div>
+      <div class="fix" hidden role="status"><span></span><button data-raw title="Put the raw take back, as you drove it (no auto-correct, a key every 2 frames)">Undo</button></div>
       <div class="pad" hidden></div>
       <div class="binds" hidden></div>`;
     host.append(el);
     const q = (sel) => el.querySelector(sel);
     this.$ = { name: q(".name"), cam: q("[data-cam]"), rec: q("[data-rec]"), tc: q(".tc"), from: q("[data-from]"), smooth: q("[data-smooth]"), count: q(".count"),
       recdot: q(".recdot"), busy: q(".busy"), stack: q(".stack"), prompts: q(".prompts"), hints: q(".bl"), spd: q(".spd"), unit: q(".unit"), gear: q(".gear"), sub: q(".sub"),
-      take: q(".take"), sum: q(".take .sum"), pad: q(".pad"), binds: q(".binds") };
-    for (const e of ["pointerdown", "wheel", "keydown"]) el.addEventListener(e, (ev) => { if (ev.target.closest(".pill,.take,.binds")) ev.stopPropagation(); });
+      take: q(".take"), sum: q(".take .sum"), note: q(".note"), fix: q(".fix"), fixText: q(".fix span"), pad: q(".pad"), binds: q(".binds") };
+    for (const e of ["pointerdown", "wheel", "keydown"]) el.addEventListener(e, (ev) => { if (ev.target.closest(".pill,.take,.binds,.fix")) ev.stopPropagation(); });
     this.$.cam.addEventListener("change", () => dm.setCamera(this.$.cam.value));
     this.$.from.addEventListener("change", () => { dm.fromStart = this.$.from.value === "start"; });
     this.$.smooth.addEventListener("change", () => dm.setSmoothing(this.$.smooth.value));
@@ -142,6 +148,7 @@ export class DriveHud {
     q("[data-keep]").addEventListener("click", () => dm.keep());
     q("[data-discard]").addEventListener("click", () => dm.discard());
     q("[data-again]").addEventListener("click", () => dm.again());
+    q("[data-raw]").addEventListener("click", () => dm.useRaw());
     q("[data-binds]").addEventListener("click", () => this.toggleBindings());
     q("[data-inputs]").addEventListener("click", () => this.showInputs(this.$.pad.hidden));
     try { if (localStorage.getItem("ss_drive_inputs") === "1") this.showInputs(true); } catch { /* */ }
@@ -207,6 +214,10 @@ export class DriveHud {
   update(I) {
     const $ = this.$, dm = this.dm;
     $.name.textContent = I.name || "";
+    $.note.hidden = !I.note;
+    if (I.note && $.note.textContent !== I.note) $.note.textContent = I.note;
+    $.fix.hidden = !I.fix;
+    if (I.fix && $.fixText.textContent !== I.fix) $.fixText.textContent = I.fix;
     if ($.cam.value !== I.camera) $.cam.value = I.camera;
     if ($.smooth.value !== I.smoothing) $.smooth.value = I.smoothing;
     $.from.value = I.fromStart ? "start" : "here";
