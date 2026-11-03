@@ -6,12 +6,12 @@
    "do": "color",
    "title": "Coloured clay → the take",
    "text": "Block the shot on the stage: the set, the cast, the camera and the stunt. The Color pass (coloured clay) guides the video model, and the take keeps the blocking frame for frame. Press Play on the stage, then replay ④ Frame and ⑤ Motion.",
-   "say": "The J-turn in Color: press Play, or run ④ Frame and ⑤ Motion to replay the real renders.",
+   "say": "The J-turn in Color, from the bumper cam: press Play, or run ④ Frame and ⑤ Motion to replay the real renders.",
    "clips": [
     {
-     "label": "Clay | Hollywood take",
+     "label": "Clay | Final",
      "file": "m_hero_jturn.mp4",
-     "note": "Left: the stage's Color pass. Right: the LTX-2.5 Hollywood final it guided (layout-to-render IC-LoRA, 2624 × 1408, seed 7). Same 121 frames. Flaws: faint pseudo-letters on the front plate around 3.5 s; the nose rounds off in the last 10 frames."
+     "note": "Left: this stage's Color pass (Stunt B, bumper cam in the next lane, 26 mm). Right: the LTX-2.5 Final it guided (1984 × 1088, seed 5101, first frame FLUX 3 Klein seed 5101, Racing Cinema look). Same 121 frames."
     }
    ]
   },
@@ -59,6 +59,67 @@
    ]
   },
   {
+   "id": "boatfinal",
+   "scene": "speedboat",
+   "do": "boats",
+   "title": "Boats: clay → Final",
+   "text": "The Speedboat run preset with one driver and a 30 mm lens, so the whole hull stays in frame. The coloured clay guided the take: the hull climbs onto the plane at 2.3 s exactly as blocked. ④ Frame and ⑤ Motion replay the real renders from this stage.",
+   "say": "Press Play: the one-driver speedboat. ④ Frame and ⑤ Motion replay this stage's own Klein frame, Draft and Final.",
+   "clips": [
+    {
+     "label": "Color | Final",
+     "file": "m_tr3_speedboat_sbs.mp4",
+     "note": "Left: this stage's Color pass. Right: the LTX-2.5 Final it guided (1984 × 1088, seed 2201, with sound). Flaws: the pines are evenly spaced cones from the clay and read slightly CG; a tiny figure on the far dock from about 2.5 s; the wake is cut by the right edge."
+    }
+   ]
+  },
+  {
+   "id": "boat2",
+   "off": true,
+   "scene": "speedboat",
+   "do": "boats",
+   "title": "Boats: the blocking, then the shot",
+   "text": "First the 3D blocking: the speedboat run on the stage in coloured clay, one driver, no dock. Then the render of the same shot from the same camera: the clay guided it frame for frame.",
+   "say": "Press Play: the speedboat run in Color. The clip shows a second staging (no dock) with its own clay and Final.",
+   "clips": [
+    {
+     "label": "Clay | Final (no dock)",
+     "file": "m_tr3_boat2_sbs.mp4",
+     "note": "Left: the no-dock staging's Color pass. Right: the LTX-2.5 Final it guided (seed 2201, first frame FLUX 3 Klein seed 2211). A second staging, not a render of the stage behind it. Not yet approved."
+    }
+   ]
+  },
+  {
+   "id": "underwaterfinal",
+   "scene": "goingunder",
+   "do": "color",
+   "title": "Underwater: going under",
+   "text": "The camera sinks from 1 m to 2.5 m under the surface and settles, aimed near level so the god rays stay in shot and the seabed clutter stays small. Depth of field, water attenuation (reds die first) and grain are added in post, never in the video prompt.",
+   "say": "The reef stage in Color. ④ Frame and ⑤ Motion replay this stage's own Klein frame and Hollywood take.",
+   "clips": [
+    {
+     "label": "Color | Hollywood + lens pass",
+     "file": "m_tr3_goingunder_sbs.mp4",
+     "note": "Left: this stage's Color pass. Right: the LTX-2.5 Hollywood take (2624 × 1408, seed 3304) with a post depth-of-field, attenuation and grain pass. Flaws: no fish; the rays and ripples are too regular."
+    }
+   ]
+  },
+  {
+   "id": "nightstreet",
+   "scene": "nightpass",
+   "do": "color",
+   "title": "Night street: a car pass",
+   "text": "A locked-off camera on the sidewalk in the rain; a police car drives through frame from 1.7 s to 3.4 s, so the plate is empty before and after. The ④ still names only what the camera sees at frame 1.",
+   "say": "Night street in Color: press Play. ④ Frame and ⑤ Motion replay this stage's own Klein frame, Draft and Final.",
+   "clips": [
+    {
+     "label": "Color | Final",
+     "file": "m_tr3_nightpass_sbs.mp4",
+     "note": "Left: this stage's Color pass. Right: the LTX-2.5 Final it guided (1984 × 1088, seed 1101, with sound). Flaws: the rear quarter smears as the car exits right; the light bar reads steady rather than strobing; the rain is thin."
+    }
+   ]
+  },
+  {
    "id": "swim",
    "scene": "swim",
    "do": "swim",
@@ -72,7 +133,14 @@
    "do": "v2s",
    "title": "Video → 3D set",
    "text": "Drop a clip on the stage: the App solves the camera, finds the people and things, and rebuilds the shot as a 3D set you can re-shoot. The Identical? bar lays the source over the rebuild (Wipe, Overlay, Onion) and scores the match. Here the clip is loaded for you: press Rebuild to replay a real run.",
-   "say": "The J-turn clip is in the Video → 3D chooser: press Rebuild as a 3D set to replay the real run."
+   "say": "The J-turn clip is in the Video → 3D chooser: press Rebuild as a 3D set to replay the real run.",
+   "clips": [
+    {
+     "label": "Another clip: source | reshoot",
+     "file": "m_tr3_v2s_reshoot.mp4",
+     "note": "A different run, not the J-turn: a 5 s street-dance clip (Pexels) rebuilt as a 3D set, then re-shot from a new ±52° orbit with LTX-2.5 (HQ Hollywood, seed 4402) and a post lens pass. Left: the source. Right: the reshoot. Flaws: the model invents a second leaning slab and a pillar as the orbit swings round; the head-wrap knot changes shape at 1.9-2.6 s; the face is a look-alike, not the performer."
+    }
+   ]
   },
   {
    "id": "oneclick",
@@ -151,11 +219,6 @@
    "text": "Stunts are driven by a vehicle-dynamics simulation, not hand keys: a floored launch with a fishtail, a closed-loop donut, a handbrake 180. The stunt-sprung body rolls and pitches on its springs; the tyres smoke on dry ground and throw spray on wet.",
    "say": "The red car is selected: pick a stunt, then Play. The keys stay editable.",
    "clips": [
-    {
-     "label": "J-turn, Draft",
-     "file": "m_stuntdyn_draft.mp4",
-     "note": "LTX-2.5 Draft on the simulated J-turn."
-    },
     {
      "label": "Push and stack",
      "file": "m_live_push_stack.mp4"

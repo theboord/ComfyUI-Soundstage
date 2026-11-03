@@ -10,20 +10,21 @@ import { SAMPLES, pastedName, closestExample, scriptSig } from "./scriptload.mjs
 const $ = (id) => document.getElementById(id);
 export const SCENES = [
   ["Start here", [
-    ["stunt", "Stunt: reverse J-turn (clay to Hollywood)"],
+    ["stunt", "Stunt: reverse J-turn (Racing Cinema)"],
     ["script", "Load a script: watch it break down"],
     ["drycreek", "Dry Creek: a script, its takes and ScriptSync"],
     ["blank", "A brand-new stage (the first-run card)"],
   ]],
   ["Water", [
     ["lake", "Lake: speedboat run"],
+    ["speedboat", "Lake: one-driver speedboat (Final)"],
+    ["goingunder", "Underwater: going under (Hollywood)"],
     ["swim", "Reef: a diver swimming"],
     ["underwater", "Underwater reef (renders)"],
   ]],
   ["Cars, stunts and horses", [
-    ["car", "In the car: seated cast, see-through glass"],
-    ["three", "Three in a car"],
     ["chase", "Night car chase (lit lamps)"],
+    ["nightpass", "Night street: a police car passes (Final)"],
     ["western", "Western: riders on horses"],
   ]],
   ["Live 3D", [
@@ -31,8 +32,6 @@ export const SCENES = [
   ]],
   ["New sets", [
     ["fire", "Burning building"],
-    ["airplane", "Airplane cabin"],
-    ["train", "Train carriage"],
     ["platform", "Train station platform"],
     ["runway", "Airport runway"],
     ["clouds", "Above the clouds"],
@@ -202,7 +201,7 @@ $("sceneNote").textContent = data.note || "";
 $("sceneNote").title = data.note || "";
 
 // Open each scene where it reads best: in Color, mid-move.
-const START = { lake: 40, drycreek: 40, chase: 40, stunt: 52, car: 30, three: 30, western: 40, platform: 60, runway: 60, clouds: 40, aliens: 40, kaiju: 40 };
+const START = { lake: 40, speedboat: 40, goingunder: 60, nightpass: 40, drycreek: 40, chase: 40, stunt: 52, western: 40, platform: 60, runway: 60, clouds: 40, aliens: 40, kaiju: 40 };
 if (key !== "blank" && key !== "script") setTimeout(() => {
   try {
     [...root().querySelectorAll("button")].find((x) => x.getClientRects().length && x.textContent.trim() === "Color")?.click();

@@ -130,7 +130,7 @@ try {
   await js("P.f.goBtn.click(); return 1"); await sleep(5000);
   const cands = await js("return P.candidates[stage.activeShot().id]?.length || 0");
   await shot("stunt_frame_replay", `${cands} frames`);
-  check(cands >= 4, "④ Frame replays the four FLUX 3 Klein variations");
+  check(cands >= 3, "④ Frame replays the three FLUX 3 Klein variations");
   const provFrame = await js("await sleep(700); const e = document.getElementById('prov'); return e.dataset.prov + ' ' + e.title");
   check(/^replayed .*m_stunt_/.test(provFrame), `the bar badge says Replayed on ④ Frame and names the files (${provFrame.slice(0, 90)})`);
   await js("P.go('motion'); return 1"); await sleep(1500);
@@ -138,7 +138,7 @@ try {
   await shot("stunt_motion_draft");
   await js("P.m.finalBtn?.click(); return 1"); await sleep(4000);
   await shot("stunt_motion_final");
-  const rs = await js("return JSON.stringify(Object.keys(node.properties.ss_renders?.jturn || {}))");
+  const rs = await js("return JSON.stringify(Object.keys(node.properties.ss_renders?.stunt_b || {}))");
   check(/draft/.test(rs) && /final/.test(rs), `Motion replays draft and final (${rs})`);
 
   // ---------------------------------------------------------------- stunt picker on a live car

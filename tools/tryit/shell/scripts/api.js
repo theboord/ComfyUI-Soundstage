@@ -226,7 +226,7 @@ function replay(id, shot, step) {
   }
   setTimeout(() => {
     if (step >= 5) demo.toast("The Layer Pack (EXR, PSD, ProRes) is written on the GPU server: available in the full install.");
-    else if (!any || missing.length) demo.toast("This shot wasn't rendered on the GPU for that step yet. Scenes with renders: Dry Creek, the cars, the chase, the stunt, the western, and the underwater, fire, airplane and train sets.");
+    else if (!any || missing.length) demo.toast("This shot wasn't rendered on the GPU for that step yet. Scenes with renders: the J-turn stunt (bumper cam), Dry Creek, the chase, the western, the genre scenes, the night street pass, the speedboat, going under, and the underwater and fire sets.");
     api.dispatchCustomEvent("executing", { prompt_id: id, node: null });
     api.dispatchCustomEvent("execution_success", { prompt_id: id });
   }, t + 100);
