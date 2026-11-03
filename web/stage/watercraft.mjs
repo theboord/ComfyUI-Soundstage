@@ -565,6 +565,9 @@ export function installWatercraft(Stage, deps = {}) {
 export function boatEmitters(track, H, { fps = 24, level = 0, id = "boat", every = 2 } = {}) {
   const out = [];
   const seed0 = [...String(id)].reduce((n, ch) => (n * 31 + ch.charCodeAt(0)) % 9973, 7);
+  // The particles of an emitter draw hash(seed + i): two emitters whose seeds differ by a whole number share a stream
+  // (port sheet particle i + 2 = starboard particle i; a raft's paddlers catching together dripped the same drops),
+  // so the side and the seat move the seed by a fraction.
   for (let f = 0; f < track.length; f += every) {
     const s = track[f];
     if (!s) continue;
@@ -579,7 +582,7 @@ export function boatEmitters(track, H, { fps = 24, level = 0, id = "boat", every
         const p = at(H.L * (H.planing ? 0.12 + 0.18 * (1 - (s.planing || 0)) : 0.42), sd * H.B * 0.35);
         out.push({ src: "boat", t: f / fps, pos: p, vel: [vel[0] * 0.6 + ch * sd * (1.5 + V * 0.25), 1.2 + V * 0.18, vel[2] * 0.6 - sh * sd * (1.5 + V * 0.25)], normal: [ch * sd, 0.8, -sh * sd],
           k, dust: Math.round(2 + 5 * k), debris: Math.round(4 + 10 * k), sparks: 0, preset: "wet_spray", debrisPreset: "wet_spray", size: 0.6 + 0.4 * k, spread: 0.3, kick: 1.2 + V * 0.12,
-          seed: seed0 * 13.7 + f * 0.37 + sd, density: Math.min(1, 0.5 + 0.4 * k) });
+          seed: seed0 * 13.7 + f * 0.37 + sd * 0.29, density: Math.min(1, 0.5 + 0.4 * k) });
       }
     }
     // Prop wash and stern foam.
@@ -597,7 +600,7 @@ export function boatEmitters(track, H, { fps = 24, level = 0, id = "boat", every
       const side = st.side || 1;
       const p = at(pd.x + (st.wet ? 0.6 : -0.35), side * (H.B * 0.5 + 0.2));
       out.push({ src: "boat", t: f / fps, pos: p, vel: [vel[0], 0.6, vel[2]], normal: [0, 1, 0], k: 0.4, dust: 1, debris: st.wet ? 3 : 6, sparks: 0, preset: "wet_spray", debrisPreset: "wet_spray",
-        size: 0.25, spread: 0.1, kick: 0.4, seed: seed0 * 3.3 + f * 0.71 + st.seat, density: 0.4 });
+        size: 0.25, spread: 0.1, kick: 0.4, seed: seed0 * 3.3 + f * 0.71 + st.seat * 0.137, density: 0.4 });
     }
   }
   return out;

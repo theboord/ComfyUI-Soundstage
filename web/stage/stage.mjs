@@ -731,7 +731,8 @@ export class Stage {
     }
     for (const p of setPosts) specs.push(...worldSpecs(p));
     // The set: a kerb (anything under 30 cm) is climbed by a keyed car's wheels, not crashed into.
-    for (const c of this._setColliders()) { if (c.poses[0].pos[1] + c.half[1] < 0.3) c.kerb = true; specs.push(c); }
+    const setCols = this._setColliders();
+    for (const c of setCols) { if (c.poses[0].pos[1] + c.half[1] < 0.3) c.kerb = true; specs.push(c); }
     // Weight & overcrank (Milestone 21): "feels bigger" lowers gravity (DNEG's trick for majestic debris); an overcranked
     // shot plays the whole action k times slower (the keys are already stretched), so gravity is g / k².
     const gravity = feelGravity(this.physicsFeel());
@@ -793,6 +794,7 @@ export class Stage {
     const who = Object.fromEntries(this.state.actors.map((a) => [a.id, { name: a.name, kind: a.kind }]));
     who.__fps = fps;
     for (const p of setPosts) who[p.id] = { name: "street lamp", kind: "lamp" };
+    for (const c of setCols) who[c.id] = { name: c.kerb ? "kerb" : "set wall", kind: "wall" };   // the consequence check's words
     const marks = takeoverWords(took, who);
     const nBodies = dynamic.length + worldActors.length + resting.length + setPosts.length;
     return { ok: true, bodies: dynamic.length, colliders: specs.length - dynamic.length, moving, restless, ms, impacts: events.length, ...qa,

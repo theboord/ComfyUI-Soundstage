@@ -12,7 +12,8 @@ import { fileURLToPath } from "node:url";
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-export const CHROME = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+export const CHROME = process.env.CHROME || (process.platform === "win32" ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+  : "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 export const BASE = process.env.SS_URL || "http://127.0.0.1:8189";
 
 export const GUARD = String.raw`(() => { if (window.__fetchGuard) return; window.__fetchGuard = true; window.__blocked = [];
@@ -32,13 +33,15 @@ export const STILL_CSS = "*,*::before,*::after{animation-duration:0s!important;a
 
 /** Start a hidden Chrome at w x h. opts: port, firstRun (keep the Guide tour unseen), localFiles (serve these web/ files from the repo),
  *  angle: "swiftshader" (default, what the baselines use) or "metal" (real GPU: use it for demo-scene flows; SS_ANGLE=metal sets it). */
-export async function launch({ port = 9770, w = 1440, h = 900, firstRun = false, localFiles = [], angle = process.env.SS_ANGLE || "swiftshader" } = {}) {
+export async function launch({ port = 9770, w = 1440, h = 900, firstRun = false, localFiles = [], angle = process.env.SS_ANGLE || "swiftshader", headless = true, mute = true, extraFlags = [] } = {}) {
+  // headless: false opens a real window (place it with extraFlags such as --window-position); extraFlags go on Chrome's command line.
+  // mute: false drops --mute-audio (a muted Chrome's WebAudio clock may not advance, so audio-clock measurements need it off).
   let W = w, H = h;
   const prof = mkdtempSync(join(tmpdir(), "ssqa-"));
-  const flags = ["--headless=new", `--remote-debugging-port=${port}`, `--window-size=${W},${H}`, "--hide-scrollbars",
-    ...(angle === "swiftshader" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : [`--use-angle=${angle}`, "--enable-gpu", "--ignore-gpu-blocklist"]), "--no-first-run", "--no-default-browser-check", "--mute-audio",
+  const flags = [...(headless ? ["--headless=new"] : []), `--remote-debugging-port=${port}`, `--window-size=${W},${H}`, "--hide-scrollbars",
+    ...(angle === "swiftshader" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : [`--use-angle=${angle}`, "--enable-gpu", "--ignore-gpu-blocklist"]), "--no-first-run", "--no-default-browser-check", ...(mute ? ["--mute-audio"] : []),
     "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows",
-    "--force-color-profile=srgb", "--font-render-hinting=none", `--user-data-dir=${prof}`, "about:blank"];
+    "--force-color-profile=srgb", "--font-render-hinting=none", ...extraFlags, `--user-data-dir=${prof}`, "about:blank"];
   const chrome = spawn(CHROME, flags, { stdio: "ignore" });
   let list;
   for (let i = 0; i < 80 && !list; i++) { try { list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json(); } catch { await sleep(250); } }

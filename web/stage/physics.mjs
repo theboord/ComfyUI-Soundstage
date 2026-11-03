@@ -203,6 +203,14 @@ function applyPos(b, p, r) {
   const l = Math.hypot(nx, ny, nz, nw) || 1;
   b.q = [nx / l, ny / l, nz / l, nw / l];
 }
+/** applyPos that moves the body's substep start the same way: a position correction that adds no velocity. */
+function shiftPos(b, p, r) {
+  if (!movable(b)) return;
+  const x0 = b.x, q0 = b.q;
+  applyPos(b, p, r);
+  b.xp = [b.xp[0] + b.x[0] - x0[0], b.xp[1] + b.x[1] - x0[1], b.xp[2] + b.x[2] - x0[2]];
+  b.qp = qnorm(qmul(qmul(b.q, qconj(q0)), b.qp));
+}
 function applyVel(b, p, r) {
   if (!movable(b)) return;
   const im = b.invM;
@@ -407,6 +415,10 @@ const SPEC = 0.01;   // m: contact margin (see probeContacts)
 export const TAKEOVER_DV = 1.0;
 /** ... and whatever happens, once it presses this deep into something that won't move (m). */
 const PEN_MAX = 0.02;
+/** How far a pair that started inside each other is eased apart a substep at most (m): 1 mm is ~0.5 m/s at 20 substeps. */
+const GHOST_EASE = 0.001;
+/** A hit faster than this (m/s) is passed on to a held body it touches, to be judged by its hold (see the velocity solve). */
+const HOLD_PASS = 0.5;
 /** Contact stiffness (N/m) of a body that names none: a stiff prop. A car's crush stiffness is about 1e6. */
 const STIFF_DEFAULT = 5e6;
 
@@ -533,9 +545,24 @@ export function simulate(specs, frames, opts = {}) {
   }
   for (const b of dyn) { tracks[b.id] = [{ pos: originOf(b), quat: [...b.q] }]; settled[b.id] = null; }
   recordParts();
+  // Milestone 28: held bodies that start more than PEN_MAX inside each other or the set (a car parked 30 cm into a wall,
+  // a person standing in a bumper: set dressing, not a crash) are a "ghost" pair until they have come apart once: their
+  // contacts ease them apart slowly with no speed from it (GHOST_EASE) and still stop them going further in, but are no
+  // hit, dent, push or "pressed" takeover. Pushed apart by the solver at full depth, the overlap came out as speed: when
+  // something hit one of them, it and its hitter flew back faster than the hit came in.
+  const apart = (A, B, m) => (A.shape === "hull" || B.shape === "hull" ? hullsSeparate(A, B, m) : facesSeparate(A, B, -m));
+  const near = (A, B) => { const d = sub(A.x, B.x), R = A.bound + B.bound + 0.05; return dot(d, d) <= R * R; };
+  const fixedOrHeld = bodies.filter((b) => (b.hold || !b.dynamic) && b.shape !== "sphere");
+  for (let i = 0; i < fixedOrHeld.length; i++) for (let j = i + 1; j < fixedOrHeld.length; j++) {
+    const A = fixedOrHeld[i], B = fixedOrHeld[j];
+    if ((!A.hold && !B.hold) || !near(A, B) || apart(A, B, PEN_MAX)) continue;
+    (A.ghost ||= new Set()).add(B); (B.ghost ||= new Set()).add(A);
+  }
+  const unghost = (A, B) => { A.ghost.delete(B); B.ghost.delete(A); };
   const LIN_SLEEP = 0.06, ANG_SLEEP = 0.12, SLEEP_FRAMES = 8, WAKE_SPEED = 0.25;
 
   for (let f = 0; f < frames - 1; f++) {
+    for (const A of fixedOrHeld) if (A.ghost?.size) for (const B of [...A.ghost]) if (!near(A, B)) unghost(A, B);   // far apart: come apart
     // A dynamic body is let go at its release frame, with the speed its last keys gave it.
     for (const b of dyn) {
       if (b.free || f < b.release) continue;
@@ -606,12 +633,14 @@ export function simulate(specs, frames, opts = {}) {
           // Two keyed things never push each other, unless one of them is a keyed mover that physics may take over.
           if (!A.free && !B.free && !(A.takeover && !A.free) && !(B.takeover && !B.free)) continue;
           const dx = A.x[0] - B.x[0], dy = A.x[1] - B.x[1], dz = A.x[2] - B.x[2], R = A.bound + B.bound + 0.05;
-          if (dx * dx + dy * dy + dz * dz > R * R) continue;
+          if (dx * dx + dy * dy + dz * dz > R * R) { if (A.ghost?.has(B)) unghost(A, B); continue; }
+          const ghost = !!A.ghost?.has(B) && (!apart(A, B, 0) || (unghost(A, B), false));   // started inside each other
           if (!A.free && !B.free) {
             // Milestone 28: a keyed car meeting another keyed car, a pole or a wall. They don't pass through each
             // other: whoever would really be stopped or knocked is let go to the physics, from this substep on.
             const tmp = [];
             pairContacts(A, B, tmp, SPEC);
+            if (ghost) for (const c of tmp) c.ghost = true;
             if (tmp.length && holdCheck(A, B, tmp, f, s)) for (const c of tmp) C.push(c);
             continue;
           }
@@ -638,6 +667,7 @@ export function simulate(specs, frames, opts = {}) {
           }
           const n0 = C.length;
           pairContacts(A, B, C, kinSpec(A, B));
+          if (ghost) for (let i = n0; i < C.length; i++) C[i].ghost = true;
           if (C.length > n0 && ((A.hold && !A.free) || (B.hold && !B.free))) holdCheck(A, B, C.slice(n0), f, s);
         }
       }
@@ -649,7 +679,7 @@ export function simulate(specs, frames, opts = {}) {
       // the reduced mass times the speed change the bounce makes; mergeEvents() folds a hit's many probes into one.
       if (logHits && f >= 2) for (const c of C) {   // (frames 0-1: the authored start settling, not a hit)
         const sp = -c.vnPrev;
-        if (sp < minHit || c.d < -0.02) continue;
+        if (sp < minHit || c.d < -0.02 || c.ghost) continue;
         const iA = movable(c.a) ? c.a.invM : 0, iB = movable(c.b) ? c.b.invM : 0;
         if (iA + iB <= 0) continue;
         if (c.a.fr && c.a.fr.R === c.b.fr?.R) continue;   // two pieces of one prop knocking: part of its break
@@ -657,13 +687,13 @@ export function simulate(specs, frames, opts = {}) {
         rawHits.push({ frame: Math.round(f + (s + 1) / nSub), t: (f + (s + 1) / nSub) / fps, pos: [...c.pA], normal: [...c.n],
           impulse: (sp * (1 + e)) / (iA + iB), speed: sp, a: rootOf(c.a), b: rootOf(c.b), mat_a: c.a.material || "wood", mat_b: c.b.material || (c.b === GROUND ? groundMat : "concrete") });
       }
-      if (crushOn && f >= 1) for (const c of C) logCrush(c, f, s);
+      if (crushOn && f >= 1) for (const c of C) if (!c.ghost) logCrush(c, f, s);
       // Loads on breakable / dentable bodies (Milestone 24): per body, the hardest hit this substep (its velocity
       // change, m/s) and the load-weighted hit point and inward direction (A is pushed along +n, so +n points into A).
       const loads = roots.length && f >= 2 ? new Map() : null;
       if (loads) for (const c of C) {
         const sp = -c.vnPrev;
-        if (sp < 0.5 || c.d < -0.02) continue;
+        if (sp < 0.5 || c.d < -0.02 || c.ghost) continue;
         const iA = movable(c.a) ? c.a.invM : 0, iB = movable(c.b) ? c.b.invM : 0;
         if (iA + iB <= 0 || (c.a.fr && c.a.fr.R === c.b.fr?.R)) continue;
         const J = (sp * (1 + Math.max(c.a.bounce || 0, c.b.bounce || 0))) / (iA + iB);
@@ -676,103 +706,131 @@ export function simulate(specs, frames, opts = {}) {
           o.w += L; o.p = add(o.p, scl(p, L)); o.n = add(o.n, scl(nn, L));
         }
       }
-      // Position solve: a couple of passes per substep, so a car shoving one crate into the next can't squeeze them
-      // through each other (the substeps do the rest of the converging).
-      for (let it = 0; it < iters; it++) for (const c of C) {
-        if (it > 1 && c.lite) continue;   // debris needs no stack-stiff solve: 2 passes (Milestone 27 speed-up)
-        measure(c);
-        if (c.d <= 0) continue;
-        const A = c.a, B = c.b;
-        let rA = sub(c.pA, A.x), rB = sub(c.pB, B.x);
-        const wA = wOf(A, rA, c.n), wB = wOf(B, rB, c.n);
-        if (wA + wB <= 0) continue;
-        const dl = c.d / (wA + wB);
-        c.lam += dl;
-        if (it > 0) { applyPos(A, scl(c.n, dl), rA); applyPos(B, scl(c.n, -dl), rB); continue; }   // friction once
-        applyPos(A, scl(c.n, dl), rA);
-        applyPos(B, scl(c.n, -dl), rB);
-        contactsSolved++;
-        // Static friction: undo the sliding of the touching points this substep while the normal force allows.
-        const mu = Math.sqrt(Math.max(0, A.friction) * Math.max(0, B.friction));
-        if (mu <= 0) continue;
-        // The touching points now and where the same body points were at the substep start.
-        const pAn = c.pA, pAp = prevPoint(A, pAn), pBn = c.pB, pBp = prevPoint(B, pBn);
-        const dp = [pAn[0] - pAp[0] - pBn[0] + pBp[0], pAn[1] - pAp[1] - pBn[1] + pBp[1], pAn[2] - pAp[2] - pBn[2] + pBp[2]];
-        const dpt = sub(dp, scl(c.n, dot(dp, c.n))), m = len(dpt);
-        if (m < 1e-9) continue;
-        rA = sub(pAn, A.x); rB = sub(pBn, B.x);
-        const an = (A.aniso || B.aniso) ? tyreFrame(c) : null;
-        for (const [comp, muC] of an ? splitTyre(dpt, an) : [[dpt, mu]]) {
-          const mc = len(comp);
-          if (mc < 1e-9) continue;
-          const t = scl(comp, 1 / mc);
-          const wtA = wOf(A, rA, t), wtB = wOf(B, rB, t);
-          if (wtA + wtB <= 0) continue;
-          const lt = mc / (wtA + wtB);
-          if (lt < muC * c.lam) { applyPos(A, scl(t, -lt), rA); applyPos(B, scl(t, lt), rB); }
-        }
+      // Milestone 28: a held body (keyed until contact, or anchored) is immovable in the solve, so a hit passed on through
+      // a resting contact (a car shunted into the parked car it touches) stopped dead against it, and so did whatever
+      // shunted it, before its hold was ever checked: a queue of parked cars was a wall. When the solve takes a real hit
+      // (over HOLD_PASS) out of something against a held body, the substep is solved again from the same start, with
+      // the hold checked at that speed first (heldHits / holdCheck).
+      const heldC = C.filter(heldBy), snap = heldC.length ? new Map() : null;
+      if (snap) for (const c of C) for (const b of [c.a, c.b]) if (movable(b) && !snap.has(b)) snap.set(b, [b.x, b.q, b.v, b.w, b.xp, b.qp]);
+      solveContacts();
+      const hits = snap ? heldHits(heldC) : null;
+      if (hits?.length) {
+        for (const [b, st] of snap) [b.x, b.q, b.v, b.w, b.xp, b.qp] = st;
+        for (const c of C) { c.lam = 0; c.rA = c.rB = null; c.grp = null; }
+        // (no faster than the fastest thing in it was going: against an immovable body the impulse overstates it)
+        const vMax = Math.max(...[...snap.values()].map((st) => len(st[2])));
+        for (const [A, B, cs, v] of hits) holdCheck(A, B, cs, f, s, Math.min(v, vMax));
+        solveContacts();
       }
-      // Velocities from positions.
-      for (const b of dyn) {
-        if (!b.free) continue;
-        if (b.asleep) { b.v = [0, 0, 0]; b.w = [0, 0, 0]; continue; }
-        b.v = scl(sub(b.x, b.xp), 1 / h);
-        const dq = qmul(b.q, qconj(b.qp));
-        b.w = scl([dq[0], dq[1], dq[2]], (dq[3] >= 0 ? 2 : -2) / h);
-      }
-      // Velocity solve: sliding friction once, then the bounce iterated so a box landing flat on four corners comes
-      // off evenly (one Gauss-Seidel pass over several contacts spins it up and adds energy).
-      const act = C.filter((c) => c.lam > 0), groups = new Map();
-      for (const c of act) {
-        const A = c.a, B = c.b;
-        c.rA = sub(c.pA, A.x); c.rB = sub(c.pB, B.x);
-        const mu = Math.sqrt(Math.max(0, A.friction) * Math.max(0, B.friction));
-        // Coulomb: the sliding impulse is at most mu x the normal impulse (lam / h), whatever the masses; one mu for
-        // sticking and sliding, as Bullet and Houdini use (physbench: a box on a 30 deg ramp now matches g(sin - mu cos)).
-        const vr = relVel(c, false), vn = dot(c.n, vr), vt = sub(vr, scl(c.n, vn)), vtl = len(vt);
-        const an = (A.aniso || B.aniso) && vtl > 1e-6 ? tyreFrame(c) : null;
-        if (an) {   // a car on its wheels: rolling (or braking) grip along the tyre, cornering grip across it
-          for (const [comp, muC] of splitTyre(vt, an)) {
-            const cl = len(comp);
-            if (cl < 1e-6 || muC <= 0) continue;
-            const t = scl(comp, 1 / cl), wtA = wOf(A, c.rA, t), wtB = wOf(B, c.rB, t);
+      function solveContacts() {
+        // Position solve: a couple of passes per substep, so a car shoving one crate into the next can't squeeze them
+        // through each other (the substeps do the rest of the converging).
+        for (let it = 0; it < iters; it++) for (const c of C) {
+          if (it > 1 && c.lite) continue;   // debris needs no stack-stiff solve: 2 passes (Milestone 27 speed-up)
+          measure(c);
+          if (c.d <= 0) continue;
+          const A = c.a, B = c.b;
+          let rA = sub(c.pA, A.x), rB = sub(c.pB, B.x);
+          const wA = wOf(A, rA, c.n), wB = wOf(B, rB, c.n);
+          if (wA + wB <= 0) continue;
+          // A pair that started inside each other is eased apart slowly (GHOST_EASE a substep) and with no speed from
+          // it: the overlap was set dressing, not a crash.
+          if (c.ghost) {
+            if (it > 0) continue;
+            const dg = Math.min(c.d, GHOST_EASE) / (wA + wB);
+            shiftPos(A, scl(c.n, dg), rA); shiftPos(B, scl(c.n, -dg), rB);
+            c.lam += dg;   // still a contact for the velocity solve: pushed further in, it stops as against a touching face
+            continue;
+          }
+          const dl = c.d / (wA + wB);
+          c.lam += dl;
+          if (it > 0) { applyPos(A, scl(c.n, dl), rA); applyPos(B, scl(c.n, -dl), rB); continue; }   // friction once
+          applyPos(A, scl(c.n, dl), rA);
+          applyPos(B, scl(c.n, -dl), rB);
+          contactsSolved++;
+          // Static friction: undo the sliding of the touching points this substep while the normal force allows.
+          const mu = Math.sqrt(Math.max(0, A.friction) * Math.max(0, B.friction));
+          if (mu <= 0) continue;
+          // The touching points now and where the same body points were at the substep start.
+          const pAn = c.pA, pAp = prevPoint(A, pAn), pBn = c.pB, pBp = prevPoint(B, pBn);
+          const dp = [pAn[0] - pAp[0] - pBn[0] + pBp[0], pAn[1] - pAp[1] - pBn[1] + pBp[1], pAn[2] - pAp[2] - pBn[2] + pBp[2]];
+          const dpt = sub(dp, scl(c.n, dot(dp, c.n))), m = len(dpt);
+          if (m < 1e-9) continue;
+          rA = sub(pAn, A.x); rB = sub(pBn, B.x);
+          const an = (A.aniso || B.aniso) ? tyreFrame(c) : null;
+          for (const [comp, muC] of an ? splitTyre(dpt, an) : [[dpt, mu]]) {
+            const mc = len(comp);
+            if (mc < 1e-9) continue;
+            const t = scl(comp, 1 / mc);
+            const wtA = wOf(A, rA, t), wtB = wOf(B, rB, t);
             if (wtA + wtB <= 0) continue;
-            const P = scl(t, -Math.min(muC * c.lam / h, cl / (wtA + wtB)));
-            applyVel(A, P, c.rA); applyVel(B, scl(P, -1), c.rB);
-          }
-        } else if (vtl > 1e-6 && mu > 0) {
-          const t = scl(vt, 1 / vtl);
-          const wtA = wOf(A, c.rA, t), wtB = wOf(B, c.rB, t);
-          if (wtA + wtB > 0) {
-            const P = scl(t, -Math.min(mu * c.lam / h, vtl / (wtA + wtB)));
-            applyVel(A, P, c.rA); applyVel(B, scl(P, -1), c.rB);
+            const lt = mc / (wtA + wtB);
+            if (lt < muC * c.lam) { applyPos(A, scl(t, -lt), rA); applyPos(B, scl(t, lt), rB); }
           }
         }
-        const e = Math.abs(c.vnPrev) > 2 * g * h * 4 ? Math.max(A.bounce, B.bounce) : 0;
-        c.target = Math.max(-e * c.vnPrev, 0);
-        c.wn = wOf(A, c.rA, c.n) + wOf(B, c.rB, c.n);
-        // Milestone 27: the contacts between two bodies may together take back the separating speed the position
-        // solve gave the pair, never more: they must not pull. (A box resting on another held it down while a car's
-        // bonnet lifted it, so debris was bulldozed ahead of the car instead of thrown up over it.)
-        const key = (A.uid ||= ++uidSeq) * 1048576 + (B.uid ||= ++uidSeq);
-        let grp = groups.get(key);
-        if (!grp) {
-          const vl = sub(A.v, B.v), vn0 = dot(c.n, vl), im = (movable(A) ? A.invM : 0) + (movable(B) ? B.invM : 0);
-          groups.set(key, (grp = { acc: 0, min: im > 0 && vn0 > c.target ? -(vn0 - c.target) / im : 0 }));
+        // Velocities from positions.
+        for (const b of dyn) {
+          if (!b.free) continue;
+          if (b.asleep) { b.v = [0, 0, 0]; b.w = [0, 0, 0]; continue; }
+          b.v = scl(sub(b.x, b.xp), 1 / h);
+          const dq = qmul(b.q, qconj(b.qp));
+          b.w = scl([dq[0], dq[1], dq[2]], (dq[3] >= 0 ? 2 : -2) / h);
         }
-        c.grp = grp;
-      }
-      for (let it = 0; it < (act.length > 1 ? 6 : 1); it++) {
+        // Velocity solve: sliding friction once, then the bounce iterated so a box landing flat on four corners comes
+        // off evenly (one Gauss-Seidel pass over several contacts spins it up and adds energy).
+        const act = C.filter((c) => c.lam > 0), groups = new Map();
         for (const c of act) {
-          if (!(c.wn > 0) || (it > 1 && c.lite)) continue;
-          const vn = dot(c.n, relVel(c, false));
-          const dvn = c.target - vn;
-          if (Math.abs(dvn) < 1e-7) continue;
-          const G = c.grp, acc = Math.max(G.min, G.acc + dvn / c.wn), dP = acc - G.acc;
-          G.acc = acc;
-          if (dP === 0) continue;
-          const P = scl(c.n, dP);
-          applyVel(c.a, P, c.rA); applyVel(c.b, scl(P, -1), c.rB);
+          const A = c.a, B = c.b;
+          c.rA = sub(c.pA, A.x); c.rB = sub(c.pB, B.x);
+          const mu = Math.sqrt(Math.max(0, A.friction) * Math.max(0, B.friction));
+          // Coulomb: the sliding impulse is at most mu x the normal impulse (lam / h), whatever the masses; one mu for
+          // sticking and sliding, as Bullet and Houdini use (physbench: a box on a 30 deg ramp now matches g(sin - mu cos)).
+          const vr = relVel(c, false), vn = dot(c.n, vr), vt = sub(vr, scl(c.n, vn)), vtl = len(vt);
+          const an = (A.aniso || B.aniso) && vtl > 1e-6 ? tyreFrame(c) : null;
+          if (an) {   // a car on its wheels: rolling (or braking) grip along the tyre, cornering grip across it
+            for (const [comp, muC] of splitTyre(vt, an)) {
+              const cl = len(comp);
+              if (cl < 1e-6 || muC <= 0) continue;
+              const t = scl(comp, 1 / cl), wtA = wOf(A, c.rA, t), wtB = wOf(B, c.rB, t);
+              if (wtA + wtB <= 0) continue;
+              const P = scl(t, -Math.min(muC * c.lam / h, cl / (wtA + wtB)));
+              applyVel(A, P, c.rA); applyVel(B, scl(P, -1), c.rB);
+            }
+          } else if (vtl > 1e-6 && mu > 0) {
+            const t = scl(vt, 1 / vtl);
+            const wtA = wOf(A, c.rA, t), wtB = wOf(B, c.rB, t);
+            if (wtA + wtB > 0) {
+              const P = scl(t, -Math.min(mu * c.lam / h, vtl / (wtA + wtB)));
+              applyVel(A, P, c.rA); applyVel(B, scl(P, -1), c.rB);
+            }
+          }
+          const e = Math.abs(c.vnPrev) > 2 * g * h * 4 ? Math.max(A.bounce, B.bounce) : 0;
+          c.target = Math.max(-e * c.vnPrev, 0);
+          c.wn = wOf(A, c.rA, c.n) + wOf(B, c.rB, c.n);
+          // Milestone 27: the contacts between two bodies may together take back the separating speed the position
+          // solve gave the pair, never more: they must not pull. (A box resting on another held it down while a car's
+          // bonnet lifted it, so debris was bulldozed ahead of the car instead of thrown up over it.)
+          const key = (A.uid ||= ++uidSeq) * 1048576 + (B.uid ||= ++uidSeq);
+          let grp = groups.get(key);
+          if (!grp) {
+            const vl = sub(A.v, B.v), vn0 = dot(c.n, vl), im = (movable(A) ? A.invM : 0) + (movable(B) ? B.invM : 0);
+            groups.set(key, (grp = { acc: 0, min: im > 0 && vn0 > c.target ? -(vn0 - c.target) / im : 0 }));
+          }
+          c.grp = grp;
+        }
+        for (let it = 0; it < (act.length > 1 ? 6 : 1); it++) {
+          for (const c of act) {
+            if (!(c.wn > 0) || (it > 1 && c.lite)) continue;
+            const vn = dot(c.n, relVel(c, false));
+            const dvn = c.target - vn;
+            if (Math.abs(dvn) < 1e-7) continue;
+            const G = c.grp, acc = Math.max(G.min, G.acc + dvn / c.wn), dP = acc - G.acc;
+            G.acc = acc;
+            if (dP === 0) continue;
+            const P = scl(c.n, dP);
+            applyVel(c.a, P, c.rA); applyVel(c.b, scl(P, -1), c.rB);
+          }
         }
       }
       // A touch of air and rolling drag, so a ball doesn't roll for ever.
@@ -834,6 +892,28 @@ export function simulate(specs, frames, opts = {}) {
   return { tracks, settled, events, fractures, dents, takeovers, crush, stats: { bodies: bodies.length, dynamic: dyn.length, substeps: nSub, contacts: contactsSolved,
     impacts: events.length, pieces: added, breaks: breakEvents.length, cracks: roots.reduce((s, R) => s + R.cracks, 0), takeovers: Object.keys(takeovers).length } };
 
+  /** The free body of a contact between a free body and a held one (keyed until contact, or anchored), else null. */
+  function heldBy(c) {
+    const F = movable(c.a) && !c.b.free ? c.a : movable(c.b) && !c.a.free ? c.b : null, K = F === c.a ? c.b : c.a;
+    return F && K.hold && !K.kerb ? F : null;
+  }
+  /** Per (free, held) pair, the speed the solve just took out of the free body against the held one: [A, B, cs, v]. */
+  function heldHits(cs) {
+    const by = new Map(), out = [];
+    for (const c of cs) {
+      const F = heldBy(c), K = F === c.a ? c.b : c.a, key = (F.uid ||= ++uidSeq) * 1048576 + (K.uid ||= ++uidSeq);
+      let e = by.get(key);
+      if (!e) by.set(key, (e = { c, F, list: [], lam: 0, grp: new Set() }));
+      e.list.push(c); e.lam += c.lam;
+      if (c.grp) e.grp.add(c.grp);
+    }
+    for (const e of by.values()) {
+      const v = (e.lam / h + [...e.grp].reduce((t, G) => t + Math.max(0, G.acc), 0)) * e.F.invM;
+      if (v > HOLD_PASS) out.push([e.c.a, e.c.b, e.list, v]);
+    }
+    return out;
+  }
+
   /**
    * Milestone 28. A held body (keyed until contact, or anchored) touching something: decide, by real masses, speeds and
    * strengths, who is let go to the physics. Estimates per pair, from the closing speed v at the deepest contact:
@@ -844,20 +924,21 @@ export function simulate(specs, frames, opts = {}) {
    *   v against anything that won't move, v * m_o / (m + m_o) against something that will (a perfectly plastic hit).
    * A keyed car shoving a 25 kg crate keeps its keys (0.25 m/s); against another car, a pole that holds or a wall, it
    * is let go. Anything still pressing in more than PEN_MAX after that is let go regardless: nothing passes through.
+   * vHit: the closing speed to judge by, when it is known better than from the contacts (heldHits: a hit passed on).
    * Returns true when anything was let go (the caller then solves the contacts).
    */
-  function holdCheck(A, B, cs, f, s) {
+  function holdCheck(A, B, cs, f, s, vHit = null) {
     if ((A.kerb && !B.free) || (B.kerb && !A.free)) return false;   // a keyed car's wheels climb a kerb
     let best = null;
     for (const c of cs) {
       measure(c);
-      if (!(c.d > 0)) continue;
+      if (!(c.d > (vHit == null ? 0 : -SPEC_CAP))) continue;   // (a hit passed on: its speculative contact will do)
       c.rA = c.rB = null;
       const v = -dot(c.n, relVel(c, false));
       if (!best || v > best.v || (v === best.v && c.d > best.c.d)) best = { c, v };
     }
     if (!best) return false;
-    const v = Math.max(0, best.v), c = best.c, fr = f + (s + 1) / nSub;
+    const v = Math.max(0, vHit ?? best.v), c = best.c, fr = f + (s + 1) / nSub;
     const kser = 1 / (1 / (A.stiff || STIFF_DEFAULT) + 1 / (B.stiff || STIFF_DEFAULT));
     // ... and only when the hitter brings the momentum to carry it through (a thrown crate's force spike doesn't shear a
     // lamp's base: anchor.impulse, N s).
@@ -870,7 +951,7 @@ export function simulate(specs, frames, opts = {}) {
       return v - vv + vv * O.m / (K.m + O.m);
     };
     let any = false;
-    const deep = Math.max(...cs.map((x) => x.d || 0));
+    const deep = Math.max(...cs.map((x) => (x.ghost ? 0 : x.d || 0)));   // a start overlap isn't pressing
     for (const [K, O, oGives] of [[A, B, bGives], [B, A, aGives]]) {
       if (!K.takeover || K.free) continue;
       const dv = dvOf(K, O, oGives), seen = (K.seen ||= new Set()), key = O.uid || (O.uid = ++uidSeq);
