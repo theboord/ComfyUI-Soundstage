@@ -26,7 +26,7 @@ Your first shot in about ten minutes on the built-in demo, then a whole three-sh
 - **In Drive mode the view can stay on the shot camera** instead of following the car you drive (one test watched the red sports car while the police car drove off). Press `V` while driving to cycle the camera: chase, shot, orbit. The red REC pill can also overlap the timecode text, and the key legend can sit over the *Drop a video here* chip.
 - **Physics now crashes keyed cars into each other.** With **Everything collides** on (the default, Physics panel › **World**), a car keyed through another car, a lamp or a wall crashes in **Simulate & bake** instead of passing through. Checked headless only. **Keep keyed** holds one car on its path.
 - **✦ One-click's Loop, Reshoot, Open in ComfyUI and Send a move from your phone need a ComfyUI restart** after you update. Until then a card says *this server needs a restart*. No loop made so far is seamless.
-- **The Cut timeline's playback, frame rates and *Edit in* are being upgraded tonight (2 Nov).** Step G below still works; its J K L shuttle may change.
+- **The Cut now plays takes in real time (2 Nov evening), but only at 24 fps, and *Edit in* from the timeline isn't in this build.** Its fast proxies need `ffmpeg` on the server and a ComfyUI restart after you update; until then the Cut plays the takes themselves. The speed-up was measured on a simulated laptop, not a real one.
 - **The 8 template cards have blank thumbnails** and look alike. Pick by name: **Soundstage_App**, not *Soundstage_App_Full*.
 - **Hollywood's time estimate still reads about 13 min**, the same as Final. The real render takes much longer. Run it during a break.
 - **The Dialogue card can still say *No line*** after you type one in the pop-over. Open the pop-over again to check the line is there.
@@ -78,6 +78,8 @@ Press `0` to switch between the shot camera and the free view. Start every orbit
 
 > **Watch out.** With a car selected, `D` means **Drive**, not fly right. Press `Esc` or click empty ground to deselect before you fly with WASD. If you land in Drive mode, `Esc` leaves it.
 
+> **Lost?** Press `.` (or **⌂ Back to the set**, top left of the viewport) to see the whole set again, and `,` (**↶ Last view**) to step back to where you were. Click the viewport first so it has the keyboard. A **Lost? Back to the set** chip also appears when the camera is far off or inside a building.
+
 <p align="center"><img src="media/qs_C03.webp" width="760" alt="The seven steps on the top bar. A green dot means that step is installed and ready, not that you have done it."></p>
 <p align="center"><em>The seven steps on the top bar. A green dot means that step is installed and ready, not that you have done it.</em></p>
 
@@ -123,7 +125,7 @@ Click **4 Frame**. (**④ Make the first frame →** at the right end of ③ Set
 
 Do **not** click *…for every shot*. It queues a GPU batch.
 
-While it paints, the **Activity** pill in the top row (left of **✦ Ask**) says what the GPU is doing, for example **Sampling · 8/12 · ~1 min**. Click it to see each node as it runs, how long so far and about how long is left, and **Cancel**. Tick **Node types** under **Details** for the raw ComfyUI node names. See [Activity](TUTORIAL.md#activity).
+While it paints, the **Activity** pill in the top row (left of **✦ Ask**) says what the GPU is doing, for example **Sampling · 8/12 · ~1 min** (with a thin bar filling under it). Click it to see each node as it runs, how long so far and about how long is left, and **Cancel**. Tick **Node types** under **Details** for the raw ComfyUI node names. See [Activity](TUTORIAL.md#activity).
 
 <p align="center"><img src="media/qs_C08.webp" width="760" alt="④ Frame: prompt, Follow the clay, Lock to the stage depth, Variations 1, Quality Fast, Generate frames. '…for every shot' is a batch."></p>
 <p align="center"><em>④ Frame: prompt, Follow the clay, Lock to the stage depth, Variations 1, Quality Fast, Generate frames. '…for every shot' is a batch.</em></p>
@@ -282,7 +284,7 @@ Cole steps out into the rain and looks off at the wrecked crates. Then Cole turn
 
 ### G. Edit (step 7)
 
-> **Being upgraded tonight (2 Nov).** The Cut timeline's playback, frame rates and *Edit in* are being rebuilt. The steps below are today's build.
+> **New (2 Nov evening).** Press **Space** and the cut plays in real time. Each clip's badge (**Final**, **Draft**, **Look**, **Clay**) says what is playing; **Clay** stands in while a take loads. 24 fps only; *Edit in* from the timeline is not in this build. See [Real-time playback](TUTORIAL.md#real-time-playback-in-the-cut).
 
 1. Click **7 Deliver → Open the editor** and click **Assemble scene**. It rebuilds the cut from the ScriptSync lining and replaces what's on the timeline.
 2. Check what it laid down. With no dialogue in the scene it can put the Wide under all the action (3 clips of *Wide crane*). If your crash and Single A are missing, click them in the editor's **Shots** row: a click splices the shot in at the playhead (⇧-click overwrites). Delete extra clips with **Ripple delete**.
@@ -315,7 +317,7 @@ Cole steps out into the rain and looks off at the wrecked crates. Then Cole turn
 
 **Anywhere:** `V` Presets · `/` or `⌘K` / `Ctrl+K` Ask (the assistant) · `?` Shortcuts sheet, or the keyboard icon · `H` / `Tab` Hide or show every panel · `⌘Z` / `⇧⌘Z` Undo / redo · `←` `→` Change scene (rebuilds the stage) · `Space` On ③ Set: Play / stop · `Esc` Closes the open panel, menu or pop-over first
 
-**Look around:** `0` Shot camera / free view · Drag Orbit; Shift+drag pans, wheel dollies · `W` `A` `S` `D` Fly; `Q` / `E` down / up · Top view Inset from above, with Fit and ✕ · `F` Frame the selection · `Esc` Deselect before WASD (with a car selected, `D` = Drive)
+**Look around:** `0` Shot camera / free view · `.` Back to the set (⌂) · `,` Last view (↶) · Drag Orbit; Shift+drag pans, wheel dollies · `W` `A` `S` `D` Fly; `Q` / `E` down / up · Top view Inset from above, with Fit and ✕ · `F` Frame the selection · `Esc` Deselect before WASD (with a car selected, `D` = Drive)
 
 **Move things:** `G` `R` `T` Move, rotate, scale · Shift Snap 15° · Alt+drag Turn · `⌘D` Duplicate · Add anything… + `Enter` Add a typed object. Then click the stage before F or G
 
@@ -323,11 +325,11 @@ Cole steps out into the rain and looks off at the wrecked crates. Then Cole turn
 
 **Car:** `D` Drive; `W` `A` `S` `D`, Shift, Space, E · `R` Record / stop · `Enter` / `Backspace` Keep / discard the take · `V` (driving) Camera: chase, shot, orbit · `Esc` Leave Drive · `L` / `Shift`+`L` Headlights / light bar · `I` / `O` Indicators / doors · `K` Key every part
 
-**Edit:** `J` `K` `L` Shuttle · `Space` Play · `C` Circle a take (Takes)
+**Edit:** `J` `K` `L` Shuttle · `Space` Play (real time; Final / Draft / Look / Clay badge per clip) · `C` Circle a take (Takes)
 
 **Quality:** Frame Fast (~1 min) · Standard (~4 min) · High · Max · Motion Draft → Final (~13 min) → Hollywood (hero only) · Adherence Exact Follow my blocking
 
-**New on 1-2 Nov:** **✦** on every take, ④ Frame candidate and the Review bar (effects, relight, angles, expand, Seamless loop, Reshoot, Open in ComfyUI, Send a move from your phone) · Physics › World: **Everything collides** / **Keep keyed** · Director: *check for collisions* · Real performance… › **Voice**: Keep my voice / Convert to … · Presets › Looks › **Racing Cinema**; Camera moves › **Bumper cam**, **Over the tyre**, **Arm car tracking**, **Long-lens pan** · Action › **Speedboat run**, **Sailing tack**, **Canoe on a calm lake**, **Whitewater raft**, **Diver swim** · Motorboat in Drive: `Space` / `Q` trim out / in · Menus: `↑` `↓` `Home` `End`, `Esc` · All of it, with limits: [New on 1 and 2 November](TUTORIAL.md#new-on-1-and-2-november)
+**New on 1-2 Nov:** **✦** on every take, ④ Frame candidate and the Review bar (effects, relight, angles, expand, Seamless loop, Reshoot, Open in ComfyUI, Send a move from your phone) · Physics › World: **Everything collides** / **Keep keyed** · Director: *check for collisions* · Real performance… › **Voice**: Keep my voice / Convert to … · Presets › Looks › **Racing Cinema**; Camera moves › **Bumper cam**, **Over the tyre**, **Arm car tracking**, **Long-lens pan** · Action › **Speedboat run**, **Sailing tack**, **Canoe on a calm lake**, **Whitewater raft**, **Diver swim** · Motorboat in Drive: `Space` / `Q` trim out / in · Menus: `↑` `↓` `Home` `End`, `Esc` · **2 Nov evening:** **✦ Ask** (`⌘K` / `Ctrl+K` or `/`; hold Ask or `` ` `` to talk; **Show me**, **Do it for me**) · **Activity** pill: the node your render is on, steps, time left, **Details**, **Cancel** · real-time playback in the Cut · ④ Frame: trash / **Clear all** (Undo 5 s); ③ Set: **④ Make the first frame →** · Drive takes over from keys; kept takes auto-corrected, **Undo** to raw · `.` **⌂ Back to the set** / `,` **↶ Last view** / **Lost?** chip · **Passes** on every Dailies take, the Ladder bar and Video → 3D: Alpha matte (Matte, Over, Rubylith, Edges), Pose, Talking, Depth; `1`-`4` tabs, `F` Flicker, `,` `.` step · All of it, with limits: [New on 1 and 2 November](TUTORIAL.md#new-on-1-and-2-november)
 
 **Tools ▾ (shows the open tool's name):** Paint Studio Paint on a frame · Shot ideas Coverage suggestions · Look Genre looks · Takes The bin · ScriptSync Lined script (also a tab in Takes) · Edit The cut editor · Classic layout Skip it
 
