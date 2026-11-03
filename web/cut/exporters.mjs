@@ -4,7 +4,7 @@
 // Pure functions of the project contract (docs/cut.md). soundstage/cut/export.py mirrors this file
 // byte for byte; tests/test_cut.py checks the two agree.
 
-import { audible, audioLanes, audioLen, bestRung, layout, noteItems, normalizeProject, sequenceFrames, totalFrames } from "./timeline.mjs";
+import { audible, audioLanes, audioLen, bestRung, layout, mediaKey, noteItems, normalizeProject, sequenceFrames, totalFrames } from "./timeline.mjs";
 import { isOverlap, mergedLevelKeys, toSRT, toVTT, transSpans } from "./fx.mjs";
 
 // ---------------------------------------------------------------- time
@@ -133,6 +133,8 @@ export function reelNames(project, width = 8) {
     out.set(key, reel);
   };
   for (const s of project.shots) add(s.id, s.name);
+  // A clip pinned to an earlier take (docs/cut.md, Edit from the timeline) gets its own reel: one reel per file.
+  for (const r of layout(project)) if (r.event.take && !out.has(mediaKey(r))) add(mediaKey(r), `${r.shot.name} ${r.event.take.url ? `v${r.event.take.version}` : "clay"}`);
   for (const a of project.audio || []) add("audio:" + a.id, a.label);
   return out;
 }
@@ -170,7 +172,7 @@ export function toEDL(input, { reelWidth = 8, sourceStart = 0, mediaRoot = "" } 
   // the head's fade is BL -> the first clip, the tail's the last clip -> BL. Dips to white go out as BL with a note.
   const spans = transSpans(project);
   const rows = layout(project);
-  const reelOf = (row) => (mediaFor(row.shot, mediaRoot).rung === "source" ? sourceReel(row.shot.source, reelWidth) : reels.get(row.shot.id));
+  const reelOf = (row) => (mediaFor(row.shot, mediaRoot).rung === "source" ? sourceReel(row.shot.source, reelWidth) : reels.get(mediaKey(row)));
   const stcOf = (row) => {
     if (mediaFor(row.shot, mediaRoot).rung !== "source") return [(f) => f, undefined];
     const st = sourceTiming(row.shot.source, project);
@@ -459,7 +461,7 @@ export function toFCPXML(input, { mediaRoot = "" } = {}) {
   const formats = [];
   let nextId = 2;
   for (const row of rows) {
-    if (assets.has(row.shot.id)) continue;
+    if (assets.has(mediaKey(row))) continue;
     const media = mediaFor(row.shot, mediaRoot);
     // The camera original keeps its own format (size, rate, colour) and starts at its own timecode.
     let src = null;
@@ -469,7 +471,7 @@ export function toFCPXML(input, { mediaRoot = "" } = {}) {
       formats.push(`    <format id="${src.fid}" frameDuration="${fcpTime(1, st.sfi)}" width="${s.width || project.width}" ` +
                    `height="${s.height || project.height}" colorSpace="${fcpColour(s)}"/>`);
     }
-    assets.set(row.shot.id, { id: `r${nextId++}`, shot: row.shot, media, src });
+    assets.set(mediaKey(row), { id: `r${nextId++}`, shot: row.shot, media, src });
   }
   const lanes = audioLanes(project);
   const audioAssets = new Map(); // url -> {id, name, frames, url}
@@ -522,7 +524,7 @@ export function toFCPXML(input, { mediaRoot = "" } = {}) {
   // local(d): the time d sequence frames into an item, in that item's own clock (a camera original runs on its
   // timecode and rate).
   const items = rows.map((r) => {
-    const src = assets.get(r.shot.id).src;
+    const src = assets.get(mediaKey(r)).src;
     const local = src ? (d) => fcpSum(src.st.start + src.st.map(r.in), src.st.sfi, d, fi) : (d) => t(r.in + d);
     return { row: r, recIn: r.recIn, recOut: r.recOut, local };
   });
@@ -585,7 +587,7 @@ export function toFCPXML(input, { mediaRoot = "" } = {}) {
       return;
     }
     const row = it.row;
-    const a = assets.get(row.shot.id);
+    const a = assets.get(mediaKey(row));
     const still = a.media.kind === "image";
     const timing = `offset="${t(start + row.recIn)}" name="${esc(row.shot.name)}" start="${it.local(0)}" duration="${t(row.len)}"`;
     const note = relinkNote(a.media);
@@ -763,8 +765,8 @@ export function toRelinkList(input, { mediaRoot = "" } = {}) {
                  ["CLIP", "RUNG", "MEDIA", "TODO"].join("\t")];
   const seen = new Set();
   for (const row of layout(project)) {
-    if (seen.has(row.shot.id)) continue;
-    seen.add(row.shot.id);
+    if (seen.has(mediaKey(row))) continue;
+    seen.add(mediaKey(row));
     const m = mediaFor(row.shot, mediaRoot);
     if (m.rung === "final" || (m.rung === "source" && !relinkNote(m))) continue;
     lines.push([row.shot.name, m.offline ? "clay (offline)" : m.rung === "source" ? "camera original" : m.rung, m.path, relinkNote(m)].join("\t"));

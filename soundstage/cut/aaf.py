@@ -6,7 +6,7 @@ the sequence with media offline and relinks by name. One composition: TC (01:00:
 track per lane (A1, A2...), and an Avid locator track holding the notes (and a RELINK locator on each
 stand-in clip). Clip gain and fades stay in the EDL comments / XMLs, not here.
 """
-from .export import (audible, audio_lanes, audio_len, audio_media, fps_info, layout, locator_entries, media_for,
+from .export import (audible, audio_lanes, audio_len, audio_media, fps_info, layout, locator_entries, media_for, media_key,
                      normalize_project, record_start, relink_note, sequence_frames)
 
 # Avid's locator colours as 16-bit RGB.
@@ -124,8 +124,9 @@ def write_aaf(path, project, media_root="") -> str:
         vslot.segment = vseq
         for row in layout(p):
             m = media_for(row["shot"], media_root)
-            master, mslot = master_for("shot:" + row["shot"]["id"], row["shot"]["name"], m["url"], row["shot"]["frames"],
-                                       "video", relink_note(m))
+            pin = row["event"].get("take")   # a clip pinned to an earlier take: its own master, named with its version
+            master, mslot = master_for("shot:" + media_key(row), row["shot"]["name"] + ((f' v{pin["version"]}' if pin.get("url") else " clay") if pin else ""),
+                                       m["url"], row["shot"]["frames"], "video", relink_note(m))
             vseq.components.append(place(vslot, master, mslot, row["in"], row["len"], "video"))
 
         # A1, A2... (one per lane, so no track has overlapping clips)
