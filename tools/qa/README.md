@@ -77,6 +77,12 @@ The guard needs Google Chrome and ComfyUI at `http://127.0.0.1:8189` (set `SS_UR
 
 `tools/qa/lib.mjs` is the shared driver: launch, guard, mouse and keys, screenshots and `METRICS`. QA rounds build their end-to-end scripts on it.
 
+`launch({ serveWeb: true })` serves every `/extensions/ComfyUI-Soundstage/*` file from this repo's `web/` (with its content type, and byte ranges for video), so a server that runs older code shows the App as it is on your branch. A file the repo doesn't have still comes from the server, and the guard still answers every write. `launch({ localFiles: [...] })` does the same for a few listed files.
+
+## README media (readme_media_v3.mjs)
+
+`tools/qa/readme_media_v3.mjs` re-captures the UI stills and GIFs that README.md and docs/TUTORIAL.md show, from this branch's `web/` (serveWeb), into `docs/media/` under the same file names. Takes, frames and videos are real renders already on the server, opened like a saved workflow from the try-it scenes. `--list` shows what each entry captures; `--only cast,step2_frame --out <dir>` runs some of them somewhere else. GIFs need ffmpeg.
+
 ## Watching the queue
 
 Never poll `GET /queue` or `GET /history` from a tool, a QA driver or an agent. ComfyUI encodes every queued and finished prompt in full for those two endpoints, and a busy Soundstage scene used to be megabytes per prompt. On 2026-11-01 a few queued renders plus a few polling pages kept the pod's event loop at 100% CPU and the server stopped answering.
