@@ -46,7 +46,7 @@ def test_default_scene_frame1():
     assert f1["location"]["place"] == "a city plaza" and f1["location"]["int_ext"] == "EXT"
     phrase = S.group_phrase(f1["people"], f1["camera"])
     assert phrase == ["a woman and a man side by side left of frame, full figures in the middle distance, "
-                      "empty ground in the foreground, with their backs to the camera"]
+                      "empty ground in the foreground, seen from behind, with their backs to the camera"]
     assert any(p["kind"] == "building" for p in f1["props"])
 
 
