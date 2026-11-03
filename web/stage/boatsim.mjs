@@ -650,7 +650,10 @@ const NUM = ["throttle", "trim", "effort", "cadence", "hike"];
  * (rad), level (still-water height), wind, kind (overrides the script's boat), scale, hz}.
  */
 export function simulateBoat(script, opts = {}) {
-  const frames = opts.frames ?? 121, fps = opts.fps ?? 24, hz = opts.hz ?? 240, dt = 1 / hz;
+  const frames = opts.frames ?? 121, fps = opts.fps ?? 24, hz = opts.hz ?? 240;
+  // A whole number of substeps per output frame, sized so they add up to exactly one frame (25 or 50 fps would
+  // otherwise step 10 or 5 x 1/240 s = 1/24 or 1/48 s per frame and the boat would run 4 % ahead of the shot's clock).
+  const perFrame = Math.max(1, Math.round(hz / fps)), dt = 1 / (fps * perFrame);
   const kind = opts.kind || script.boat;
   // start.water: the speed is through the water (a raft already riding the river), so the current along the heading adds.
   let u0 = (script.start?.kmh ?? 0) / 3.6;
@@ -668,7 +671,6 @@ export function simulateBoat(script, opts = {}) {
   let si = 0, lastFire = 0, turned = 0, prevH = b.h;
   const steps = script.steps || [];
   const out = [];
-  const perFrame = Math.round(hz / fps);
   for (let f = 0; f < frames; f++) {
     out.push(b.sample());
     for (let k = 0; k < perFrame; k++) {

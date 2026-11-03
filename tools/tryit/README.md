@@ -50,6 +50,7 @@ node tools/tryit/test_tryit.mjs http://127.0.0.1:8771/local.html /tmp/tryit_shot
 - replays the recorded Video → 3D run through the App's chooser and checks the rebuilt set and the Identical? bar;
 - runs every tour stop;
 - checks the Live / Replayed badge: Live on the stage, Replayed on ④ Frame, ⑦ Deliver, ScriptSync and the Timeline, during the Video → 3D replay, on every Watch clip and the first screen;
+- loads the three sample scripts and a pasted one, opens a scene (its breakdown, and the stage set up from its heading), checks that **Build this scene** gives the full-install note, and replays ④ Frame on it: the closest recorded example, labelled as one;
 - checks the phone width.
 
 It saves a screenshot of each.
@@ -69,11 +70,13 @@ picks skip it.
 | `build_tryit.py` | The build. Options: `--ref <commit>`, `--web <dir>`, `--out <dir>`, `--media <dir>`, `--mark-published`. |
 | `shell/index.html`, `shell/demo.mjs` | The page: the scene picker, the What's new tour and the clip player, around the real App widget. |
 | `shell/scripts/api.js`, `app.js`, `glbshim.js` | The stand-in ComfyUI. See "The shims" below. |
+| `shell/scriptload.mjs`, `shell/samples/` | Load a script: three short original scripts (*Low Tide* `.fountain`, *The Night Train* `.fdx`, *Brush Fire* `.pdf`; the text ones ship as `.txt`), pasted text named so the importer picks Fountain or Final Draft, and `closestExample`, the recorded render a shot of the visitor's own script borrows (by the stage's set). The **Load a script** dialog (top bar, first screen, the `#script` entry) feeds ① Script's own file input, so the breakdown is the App's importer, `web/script/`; there is no server-side parser. tests/js/tryit_scriptload.test.mjs checks the samples, the FDX and Fountain paths against each other, and every example. |
 | `shell/tour.json` | The What's new stops. Each has a scene, an action (`do`), text and optional clips (`r/<file>`). |
 | `shell/provenance.mjs` | The Live / Replayed badge rules: a step that shows a shot's recorded renders (④ to ⑦, plus the joined cut on ⑦), the tabs that show saved results (Shot ideas, Look, Takes, the Timeline), the Video → 3D replay, every tour clip and the first screen are Replayed; the stage is Live. The shell reads which tab is on screen from the stage root's classes, so the badge follows the screen, not the last step. Worked out from `ss_renders`, `candidates`, the saved `advisor`, `compile` and `cut`, `tour.json` and the packed run, so new scenes and clips are labelled on their own. A new tour action must be added to `REPLAY_ACTIONS` or `LIVE_ACTIONS` (tests/js/tryit_provenance.test.mjs checks). |
 | `scenes/*.json` | The demo scenes: the stage, node properties (`ss_renders`, `ss_script`, `ss_cut`), widgets, the precomputed Look and Advisor, and `candidates` (the ④ Frame variations the replay cycles through). |
 | `pack_v2s.py` | Packs one real Video → 3D run (a `tools/v2s_bench/devrun.py` result folder and its set GLB) into the media cache as `r/canned/v2s_run.json`. Rebuild in the demo replays it: the progress card walks the run's measured steps in 9 s, then the App loads the real result scene through its own code and opens the Identical? bar. Only the demo clip replays; a visitor's own clip gets the full-install note. |
 | `make_scenes.mjs` | Remakes the generated scenes with the real App in a hidden Chrome: `drycreek`, `stunt`, `physics` and the seven new sets. The new sets are set up from sluglines. Run it against a local build, then build again. `ONLY=stunt,fire` limits it. |
+| `canned/m_perf_asset.json` | The Milestone 25 performance asset with its file references pointed at the demo media (`m_perf_*`), so the Passes viewer opens its Pose and Talking tabs on *Three in a car* › *Driver profile*. `media.json` copies it into the cache (an encode `src` without `~` is relative to the repo). |
 | `media.json` | Clips and stills encoded into the media cache from `share/`. |
 | `published.json` | The sha256 of every live file, written by `--mark-published`. |
 | `test_tryit.mjs` | The click-through test. |
@@ -86,6 +89,8 @@ picks skip it.
 - **`api.js`** answers take checks with the server's real results for the replayed takes (`r/canned/takecheck.json` in the media cache, from `share/Milestone16_TakeChecks/detector_results_212_takes.json`). A checked take's URL keeps `?filename=` so the Ladder and Dailies find its chips. There are no Ready chips, because the demo has no models.
 - **`api.js`** stubs `fetch` to a local Ollama (port 11434): the Director's language model gets the same full-install note. The Director's background scene report (`director/state`) gets a quiet answer.
 - **`api.js`** keeps uploads in the tab.
+- **`api.js`** asks the shell (`demo.resolveShot`) before a Run replays. A shot from a script the visitor loaded has no render, so the shell copies in the closest recorded example (`scriptload.mjs`) and marks it in `demo.scene.examples`. The badge, the note above the frames and each frame's label then say "a recorded example, not your shot".
+- **`api.js`** answers **Build this scene** (the scene agent, `/soundstage/agent/build`) with the full-install note, and adds that picking the scene already set it up in the browser.
 - **`api.js`** answers every other server route with a toast: "… is available in the full install (ComfyUI with a GPU)". This covers the Director's language model, Timeline renders, the phone viewfinder (vcam bridge), Video to 3D, Ripple and Pose renders, the Layer Pack and world uploads. It never throws an error.
 - **`scripts/app.js`** stands in for ComfyUI's graph. It holds the nodes the App reads, using the same ids as `example_workflows/Soundstage_App.json`.
 - **`scripts/glbshim.js`** maps `.glb` to `.glb.b64.txt` and the DCC builder scripts `.py` to `.py.txt`. The host serves web media types only.

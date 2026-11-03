@@ -33,6 +33,14 @@
   #sceneNote { color: var(--muted); font-size: 12px; margin: 0; flex: 1 1 320px; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   #host { flex: 1 1 auto; min-height: 560px; height: calc(100dvh - 52px); padding-block: 0 max(8px, env(safe-area-inset-bottom, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); min-width: 0; }
   #host > .ss-stage { height: 100% !important; }
+  /* Your edits are not re-rendered in the demo: the note above ④ Frame's frames (and ⑤ Motion's status), and a label on every replayed frame. */
+  .demo-editnote { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.4;
+    color: var(--text); background: rgba(143,211,255,.10); border: 1px solid rgba(143,211,255,.5); }
+  .demo-editnote[hidden] { display: none; }
+  .demo-editnote a { color: var(--replay); font-weight: 600; }
+  .ss-stage .cand > .prov.rec { position: absolute; left: 50%; transform: translateX(-50%); bottom: 30px; z-index: 2; pointer-events: none;
+    background: rgba(15,13,17,.82); font-size: 10.5px; padding: 1px 7px; }
+  .ss-stage.ss-cl .ss-clfilm .cand > .prov.rec { bottom: auto; top: 50%; transform: translate(-50%, -50%); font-size: 9.5px; padding: 0 5px; z-index: 4; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   #toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); max-width: min(92vw, 640px);
     background: var(--panel2); border: 1px solid var(--accent); color: var(--text); border-radius: 12px; padding: 10px 14px; font-size: 13px; z-index: 20050; }
@@ -100,6 +108,26 @@
   #tour li .hd b { min-width: 0; }
   #tour li .row .prov { align-self: center; }
   #clip .hd .prov { margin-left: auto; }
+  /* Load a script: the samples, a paste box and a file picker, all into ① Script's own importer. */
+  #scriptDlg { border: 1px solid var(--line); border-radius: 14px; background: var(--panel2); color: var(--text); padding: 14px; width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
+  #scriptDlg::backdrop { background: rgba(0,0,0,.6); }
+  #scriptDlg.drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
+  #scriptDlg .hd { display: flex; gap: 10px; align-items: center; margin-bottom: 4px; }
+  #scriptDlg .hd b { font-size: 15px; margin-right: auto; }
+  #scriptDlg .sub { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  #scriptDlg .samples { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  #scriptDlg .smp { display: grid; gap: 2px; text-align: left; font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; cursor: pointer; min-height: 44px; }
+  #scriptDlg .smp:hover { border-color: var(--accent); }
+  #scriptDlg .smp b { font-size: 14px; }
+  #scriptDlg .smp .fmt { font-size: 11px; font-weight: 600; color: var(--accent); }
+  #scriptDlg .smp .blurb { font-size: 12px; color: var(--muted); }
+  #scriptDlg label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  #scriptDlg textarea { width: 100%; font: 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; resize: vertical; }
+  #scriptDlg .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  #scriptDlg button:not(.smp) { font: inherit; font-size: 13px; font-weight: 600; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; cursor: pointer; min-height: 32px; }
+  #scriptDlg button.hi { background: var(--accent); color: var(--ink); border-color: var(--accent); }
+  #scriptDlg .fine { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  #scriptDlg .row .fine { margin: 0; }
   @media (max-width: 720px) { #sceneNote { display: none; } .bar h1 .long, .bar .prov .long { display: none; } #host { height: auto; min-height: 640px; } }
 </style>
 <div class="bar">
@@ -107,6 +135,7 @@
   <button id="prov" type="button" class="prov live" aria-live="polite">&#9679; Live<span class="long"> in your browser</span></button>
   <div class="pick"><label for="scene">Scene</label><select id="scene" aria-label="Demo scene"></select></div>
   <button id="tourBtn" type="button" class="hi" aria-expanded="false" aria-controls="tour">What&rsquo;s new &middot; tour</button>
+  <button id="scriptBtn" type="button" aria-controls="scriptDlg">Load a script</button>
   <button id="introBtn" type="button" aria-controls="hero">Intro</button>
   <p id="sceneNote"></p>
 </div>
@@ -130,8 +159,9 @@
       <p class="lede">Lay out the set, the cast, the camera and the stunt in 3D. The video model follows your blocking, frame for frame.</p>
       <div class="cta">
         <button id="heroGo" type="button" class="hi">Open the live stage</button>
-        <button id="heroTour" type="button">What&rsquo;s new &middot; 10 stops</button>
+        <button id="heroTour" type="button">What&rsquo;s new &middot; 11 stops</button>
         <button id="heroV2s" type="button">Video &rarr; 3D</button>
+        <button id="heroScript" type="button">Load a script</button>
       </div>
       <p class="fine">This page runs the real App code in your browser. Every render on it was made on a GPU and is replayed here, unretouched.</p>
     </div>
@@ -147,5 +177,15 @@
     </figure>
   </div>
 </section>
+<dialog id="scriptDlg" aria-labelledby="scriptDlgTitle">
+  <div class="hd"><b id="scriptDlgTitle">Load a script</b><span class="prov live" title="Live: the App's own importer reads the script in your browser.">&#9679; Live</span><button type="button" id="scriptDlgClose">Close</button></div>
+  <p class="sub">&#9312; Script breaks it down in your browser: scenes, cast, locations, props and vehicles. Pick a scene and the 3D stage sets itself up from its heading.</p>
+  <div id="scriptSamples" class="samples" role="group" aria-label="Sample scripts"></div>
+  <label for="scriptPaste">Or paste a script (Fountain or Final Draft XML)</label>
+  <textarea id="scriptPaste" rows="6" spellcheck="false" placeholder="INT. KITCHEN - NIGHT&#10;&#10;MAYA (30s) stares at the phone.&#10;&#10;MAYA&#10;Pick up."></textarea>
+  <div class="row"><button type="button" id="scriptPasteGo" class="hi">Break it down</button><button type="button" id="scriptFile">Choose a file&hellip;</button>
+    <span class="fine">.fountain, .fdx, .pdf or .txt, or drop the file here.</span></div>
+  <p class="fine">A PDF is read from its text in your browser (pdf.js, loaded from cdnjs); a scanned PDF with no text layer can&rsquo;t be read. Nothing is uploaded. &#9315; Frame and &#9316; Motion replay a recorded example for your scenes: the demo has no GPU.</p>
+</dialog>
 <div id="toast" role="status" aria-live="polite" hidden></div>
 <script type="module" src="./demo.mjs"></script>

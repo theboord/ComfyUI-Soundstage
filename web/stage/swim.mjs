@@ -27,6 +27,7 @@ import * as THREE from "../vendor/three.module.min.mjs";
 import { feetOf } from "./mocap.mjs";
 import { currentAt, patchCaustics } from "./water.mjs";
 import { softSprite } from "./sets/common.mjs";
+import { seedNumber } from "./waves.mjs";
 
 /** The soft round sprite foam and bubbles are drawn with. */
 export const foamSprite = () => softSprite();
@@ -157,6 +158,7 @@ const sampleLoop = (arr, u) => { const n = arr.length, x = frac(u) * n, i = Math
  * of the inhale); exhale: 0..1 through the exhale, or -1 while inhaling.
  */
 export function breathAt(t, seed = 1) {
+  seed = seedNumber(seed);
   const period = 3 + 2 * hash01(seed, 3.1), off = hash01(seed, 7.7) * period;
   const b = frac((t + off) / period), INH = 0.38, HOLD = 0.02;
   const lung = b < INH ? sstep(0, INH, b) : b < INH + HOLD ? 1 : 1 - sstep(INH + HOLD, 1, b);
@@ -193,6 +195,7 @@ export function bubbleGrow(d0, z0, z) {
  */
 export function exhaleBubbles(seed, t, emitAt, { surface = 10, perBreath = 64, maxAge = 40, current = null } = {}) {
   const pos = [], size = [];
+  seed = seedNumber(seed);   // a string seed would concatenate ("3" + 13.1 * idx), a missing one put every bubble on one spot
   const br = breathAt(t, seed), P = br.period;
   for (let n = 0; n < Math.ceil(maxAge / P) + 1; n++) {
     const start = br.start - n * P;
@@ -728,7 +731,7 @@ export function finTipsWorld(g) {
 export const WASH_REACH = 1.2;
 export function finWashEmitters(tips, floorAt, { fps = 24, seed = 1, id = "diver" } = {}) {
   const out = [];
-  const sd = seedOf(id) * 0.37 + seed * 11.3;
+  const sd = seedOf(id) * 0.37 + seedNumber(seed) * 11.3;
   for (let f = 1; f < tips.length; f += 2) {
     for (let i = 0; i < (tips[f] || []).length; i++) {
       const p = tips[f][i], q = tips[f - 1]?.[i];
@@ -753,6 +756,7 @@ export function finWashEmitters(tips, floorAt, { fps = 24, seed = 1, id = "diver
  * at(fq) -> {x, z, yaw, v} the swimmer at a fractional frame. Returns [{x, z, size, a}].
  */
 export function wakeFoam(at, f, plan, { fps = 24, seed = 1, history = 2.5 } = {}) {
+  seed = seedNumber(seed);
   const out = [], K = Math.tan(19.47 * Math.PI / 180);
   const now = at(f);
   if (!now) return out;

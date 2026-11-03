@@ -17,7 +17,7 @@
 // · shotsInOrder() [{id, name}] · say(msg) the App status line.
 import { applyOps, loadScene, runLocalModel } from "./agent.mjs";
 import { queueSummary } from "../ui/queue.mjs";
-import { planRam, WORLD_KINDS, inputSig } from "../stage/world.mjs";
+import { planRam, WORLD_KINDS, inputSig, unbakeActor } from "../stage/world.mjs";
 
 const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -183,7 +183,10 @@ export class Director {
     // The Director's Book (Milestone 23): the scene's intent, style, rules and notes, read before every command.
     let book = null;
     try { book = this.host.book?.context?.() || null; } catch { book = null; }
-    return { shots, active_shot: st.active_shot, scenes, live_scene: this.host.script?.liveKey || null, renders, book };
+    // Ask (web/agent/ask.mjs): where the user is (step, selected object, shot, open panel), so "it" and "this" resolve.
+    let ui = null;
+    try { ui = this.host.ui?.() || null; } catch { ui = null; }
+    return { shots, active_shot: st.active_shot, scenes, live_scene: this.host.script?.liveKey || null, renders, book, ui };
   }
 
   async _post(path, body) {
@@ -528,6 +531,7 @@ export const EXEC = {
       heading: ((car.rotation_deg || 0) * Math.PI) / 180 });
     this._patch((s) => {
       const v = s.actors.find((x) => x.id === car.id);
+      unbakeActor(v);   // a car the world bake took over: new keys replace its authored ones (not merged into them as edits)
       v.keys = res.keys; v.position = [...res.keys[0].position];
       delete v.stunt; delete v.drive; delete v.position_end;
     });
@@ -561,6 +565,7 @@ export const EXEC = {
       { pos: at(victim), mass: massOf(victim), half: halfOf(victim), heading: ((victim.rotation_deg || 0) * Math.PI) / 180 }, target, { frames, fps });
     this._patch((s) => {
       const v = s.actors.find((x) => x.id === car.id);
+      unbakeActor(v);   // a car the last bake took over: the ram's keys replace its authored ones (not merged into them as edits)
       v.keys = plan.keys; v.position = [...plan.keys[0].position];
       delete v.stunt; delete v.drive; delete v.position_end;
       if (v.physics?.keepKeyed) delete v.physics.keepKeyed;

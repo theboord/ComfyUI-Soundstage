@@ -21,6 +21,14 @@
 // like Sequencer's Take Recorder: drive A, rewind, drive B while A plays back. Keep / Discard / Again, one undo step
 // per kept take, and a choice of smoothing. Nothing changes the shot until you keep a take.
 //
+// Driving takes the object over from its keys: while it is driven the keys (path, stunt heading, Pose Studio keys, mocap,
+// keyed smoke) stop applying to it; they are not changed, and leaving without keeping a take plays them again. The body
+// starts where the keys had it but settled to a physical state (takeover): upright with the yaw kept, a car's wheels on
+// the ground and its keyed roll / pitch eased out over SETTLE_S, a person's feet planted, and pushed clear of anything the
+// keyed pose overlapped (a stunt path cuts through kerbs and walls; the car would otherwise be pinned there).
+// A kept take is auto-corrected (takefix.mjs: spikes, teleports, top speed, roll, feet on the ground) and fitted with the
+// fewest keys that stay within tolerance; the HUD reports both with Undo back to the raw take.
+//
 // Everything that decides behaviour is a pure function here (input mapping, speed from the stick, the person, horse,
 // bike and prop steps, the projectile, take -> keys), so the tests drive it without a browser.
 import * as THREE from "../vendor/three.module.min.mjs";
@@ -31,6 +39,7 @@ import { applyPose, MOUNTS } from "./humans.mjs";
 import { SEATS, LIBRARY } from "./library.mjs";
 import { writeKey } from "./objparts.mjs";
 import { setGazeKey } from "./gaze.mjs";
+import { limitsFor, correctTrack, fixWords, sumFixes, reduceKeys, reduceLinear } from "./takefix.mjs";
 
 const DEG = Math.PI / 180;
 const G = 9.81;
@@ -51,6 +60,7 @@ export const JUMP_H = 0.55;           // m: a standing jump clears a kerb, a run
 export const STEP_UP = 0.45;          // m: walked up onto without a jump
 export const CLIMB_MAX = 1.75;        // m: the highest box a person climbs onto (jump next to it)
 export const SIM_HZ = 60;
+export const SETTLE_S = 0.3;          // s: a taken-over body eases from its keyed lean / roll / pitch to upright
 const CAR_SIM = new Set(["car", "police_car", "sports_car", "hatchback", "truck", "van", "bus", "taxi"]);
 const BIKES = new Set(["bicycle", "motorcycle"]);
 
@@ -583,10 +593,12 @@ function annotateHeading(stage, a, keys) {
 /**
  * Write a take onto the scene (the actors the take touched). take: {start, end, fps, tracks: {id: {type, samples,
  * events}}}. Old keys before each track's first frame stay; from there on the take replaces them (and the last pose
- * holds to the end of the shot). Returns a short summary per actor.
+ * holds to the end of the shot). reduce: fit each path with the fewest keys within tolerance (takefix.reduceKeys)
+ * instead of a key every 2 frames. Returns a short summary per actor, with .stats = {raw (samples), keys (written)}.
  */
-export function applyTake(stage, take, { smoothing = "light" } = {}) {
+export function applyTake(stage, take, { smoothing = "light", reduce = false } = {}) {
   const out = [];
+  out.stats = { raw: 0, keys: 0 };
   for (const [id, tr] of Object.entries(take.tracks || {})) {
     const a = stage.state.actors.find((x) => x.id === id);
     if (!a || !tr.samples?.length) continue;
@@ -601,6 +613,7 @@ export function applyTake(stage, take, { smoothing = "light" } = {}) {
       const dense = keys.filter((k, i) => i === 0 || i === keys.length - 1 || !same(keys[i - 1], k) || !same(k, keys[i + 1]));
       if (before.length && f0 > 0 && !before.some((k) => k.frame === f0 - 1)) before.push({ ...before[before.length - 1], frame: f0 - 1 });
       a.keys = [...before, ...dense];
+      out.stats.raw += tr.samples.length; out.stats.keys += dense.length;
       a.physics = { ...(a.physics || {}), mode: a.physics?.mode === "static" ? "dynamic" : a.physics?.mode || "dynamic", baked: true, driven: true };
       a.key_y = true;
       delete a.position_end; delete a.carry_id; delete a.carry_at;
@@ -630,7 +643,19 @@ export function applyTake(stage, take, { smoothing = "light" } = {}) {
         s.keep = s.f === sp.from || s.f === sp.from + 3 || s.f === sp.to - 1;
       }
     }
-    const fresh = pathKeys(samples, { smoothing: tr.type === "person" ? smoothing : smoothing, every: tr.type === "car" ? 2 : 2 });
+    let fresh = pathKeys(samples, { smoothing, every: reduce ? 1 : 2 });
+    if (reduce) {
+      // Sharp events stay exact keys: a change of mode (on foot, climbing in, seated, getting out), a take-off and a
+      // landing, the frames a mount span pins. Tolerance scales with the object (2 cm on a person, more on a bus).
+      const keep = new Set();
+      samples.forEach((x, i) => {
+        const p = samples[i - 1], n = samples[i + 1];
+        if (x.keep || (p && (p.mode !== x.mode || !!p.air !== !!x.air || !!p.climb !== !!x.climb)) || (n && (n.mode !== x.mode || !!n.air !== !!x.air))) keep.add(x.f);
+      });
+      const size = clamp(((a.height_m || LIBRARY[a.kind]?.height || 1.7) * (a.scale || 1)) / 1.7, 0.6, 3);
+      fresh = reduceKeys(fresh, { pos: 0.02 * size, ang: 1, keep });
+    }
+    out.stats.raw += samples.length; out.stats.keys += fresh.length;
     const before = annotateHeading(stage, a, (stage._actorKeys(a) || []).filter((k) => k.frame < f0).map((k) => ({ ...k })));
     a.keys = [...before, ...fresh];
     delete a.position_end;
@@ -652,7 +677,7 @@ export function applyTake(stage, take, { smoothing = "light" } = {}) {
       delete a.stunt; delete a.drive;
       // The wheel as you turned it (opposite lock and all), keyed linear every 2 frames.
       const st0 = samples.filter((s, i) => Number.isFinite(s.steer) && (i % 2 === 0 || i === samples.length - 1)).map((s) => ({ f: s.f, v: Math.round(s.steer * 10) / 10 }));
-      const st = dropHolds(st0, (p, q) => p.v === q.v);
+      const st = reduce ? reduceLinear(st0, 1) : dropHolds(st0, (p, q) => p.v === q.v);
       if (st.length) {
         const keep = (a.parts?.steer || []).filter((k) => k.frame < f0);
         a.parts = { ...(a.parts || {}), steer: keep };
@@ -685,6 +710,30 @@ export function applyTake(stage, take, { smoothing = "light" } = {}) {
   }
   stage._obsCache = null;
   return out;
+}
+
+/**
+ * Auto-correct a take (takefix.correctTrack on every track that carries its body's limits, tr.lim): the same take with
+ * cleaned samples, and the fixes summed over its tracks. ground(x, z, y): the walkable floor, for feet and hooves.
+ */
+export function correctTake(take, { ground = null } = {}) {
+  const fixes = [];
+  const out = { ...take, tracks: {} };
+  for (const [id, tr] of Object.entries(take.tracks || {})) {
+    if (!tr.lim || !tr.samples?.length || tr.type === "baked" || tr.type === "prop") { out.tracks[id] = tr; continue; }
+    const r = correctTrack(tr.samples, tr.lim, { fps: take.fps || 24, ground: tr.type === "person" || tr.type === "path" ? ground : null });
+    out.tracks[id] = { ...tr, samples: r.samples };
+    fixes.push(r.fixes);
+  }
+  return { take: out, fixes: sumFixes(fixes) };
+}
+
+/** The toast line for a kept take: "Smoothed 3 spikes, settled roll · 1,440 keys → 38". */
+export function takeReport(fixes, stats) {
+  const w = fixWords(fixes);
+  const keys = stats && stats.raw > stats.keys ? `${stats.raw.toLocaleString("en-US")} keys → ${stats.keys.toLocaleString("en-US")}` : null;
+  const head = w.length ? w.join(", ") : "Physical as driven";
+  return [head.charAt(0).toUpperCase() + head.slice(1), keys].filter(Boolean).join(" · ");
 }
 
 /** The door's angle over a climb-in (frames relative to the take): opens before, shuts after. */
@@ -730,6 +779,8 @@ export class DriveMode {
   }
 
   // ---------- what can be driven
+  /** Is this object driven live right now (its keys suspended)? The stage skips its Pose Studio keys and mocap. */
+  owns(id) { return this.on && !this.pending && this.live.has(id); }
   canDrive(id) { const a = this.s.state.actors.find((x) => x.id === id); return !!driveKind(a, this.K); }
   _actor(id) { return this.s.state.actors.find((x) => x.id === id); }
   _name(a) { return a?.name || LIBRARY[a?.kind]?.label || a?.kind || "it"; }
@@ -741,6 +792,7 @@ export class DriveMode {
     const kind = driveKind(a, this.K);
     if (!kind) { this.say("Select a person, a vehicle, a horse or a prop first, then press D to drive it."); return false; }
     if (this.on) this.stop();
+    this.s.viewNav?.mark();   // ↶ Last view comes back here after the drive
     this.s.live?.finish?.();
     if (this.s.poser?.active) this.s.setPoseMode(false);
     this.snap = clone(this.s.state.actors);
@@ -758,7 +810,9 @@ export class DriveMode {
       .catch((err) => console.warn("Soundstage drive HUD", err));
     this._last = performance.now();
     this._raf = requestAnimationFrame((t) => this._tick(t));
-    this.say(`Driving ${this._name(a)}. ${kind === "person" ? "WASD or the left stick to move, Shift to run, Space to jump, E to get into a car or onto a horse." : kind === "car" ? "W throttle, S brake / reverse, A D steer, Space handbrake." : kind === "boat" ? boatHelp(a.kind) : "WASD to move."} R records a take, Esc leaves.`);
+    // Took over from keys: a path, a stunt, Pose Studio keys or mocap would have moved it here.
+    this.tookOver = this._keyed(a);
+    this.say(`${this.tookOver ? "Took over from keys: Esc to leave. " : ""}Driving ${this._name(a)}. ${kind === "person" ? "WASD or the left stick to move, Shift to run, Space to jump, E to get into a car or onto a horse." : kind === "car" ? "W throttle, S brake / reverse, A D steer, Space handbrake." : kind === "boat" ? boatHelp(a.kind) : "WASD to move."} R records a take, Esc leaves.`);
     return true;
   }
 
@@ -780,6 +834,12 @@ export class DriveMode {
     this.s.setFrame(this.s.frame);
     if (this.prevSel && this.s.actorMeshes.has(this.prevSel)) this.s.select(this.prevSel);
     this.say("Drive mode off. Kept takes are on the timeline; anything not recorded is back where it was.");
+  }
+
+  /** Does something keyed move this object (so driving it takes over from its keys)? */
+  _keyed(a) {
+    const keys = a ? this.s._actorKeys?.(a) || a.keys || [] : [];
+    return !!a && (keys.length > 1 || !!a.stunt || !!a.pose_keys?.length || !!a.mocap || !!a.physics?.baked);
   }
 
   /** Put the actors back as they were in a snapshot (same objects, so the stage's caches and meshes stay valid). */
@@ -825,8 +885,50 @@ export class DriveMode {
     if (kind === "animal") b.scaleSpeed = clamp((a.height_m || 0.6) / 1.6, 0.35, 1);
     this.live.set(id, b);
     this.involved.add(id);
+    this._settle(b, g);
     return b;
   }
+
+  /**
+   * Takeover: the body starts where the keys had it, settled to a physical state. Yaw is kept (the true heading even
+   * when the keyed pose is tilted or flipped); the lean, roll and pitch it was keyed with ease out over SETTLE_S;
+   * feet and wheels go onto the ground; a pose that overlaps a wall or a parked car is pushed clear (without the hit
+   * that would bleed its speed every step).
+   */
+  _settle(b, g) {
+    const e = new THREE.Euler().setFromQuaternion(g.quaternion, "YXZ");
+    const body = g.userData.vehicleBody, piv = !!body?.userData.bodyPivot;
+    b.yaw = e.y;
+    b.settle = { t: 0, T: SETTLE_S, tx: wrap(e.x), tz: wrap(e.z), roll: piv ? body.rotation.z / DEG : 0, pitch: piv ? -body.rotation.x / DEG : 0 };
+    if (Math.max(Math.abs(b.settle.tx), Math.abs(b.settle.tz), Math.abs(b.settle.roll), Math.abs(b.settle.pitch)) < 1e-3) b.settle = null;
+    if (this._actor(b.id)?.mount_id) return;   // seated: the seat places them, nothing to plant or push clear
+    if (b.kind === "person" || b.kind === "horse" || b.kind === "animal" || b.kind === "bike") {
+      b.air = false; b.vy = 0; b.climb = null;
+      b.y = this.s._supportAt?.(b.x, b.z, b.kind === "person" ? b.y : 0) ?? 0;
+    }
+    if (b.kind === "car") b.car.H = b.yaw;
+    if (b.kind === "prop" || b.kind === "boat") return;
+    let env;
+    try { env = this._env(b); } catch { return; }
+    for (let it = 0; it < 8; it++) {
+      let moved = false;
+      if (b.kind === "car") {
+        const c = b.car, fx = Math.sin(c.H), fz = Math.cos(c.H), r = b.box ? b.box.hx : 0.9, half = b.halfLen || 1.3;
+        for (const sgn of [1, -1]) {
+          const cx = c.X + fx * half * sgn, cz = c.Z + fz * half * sgn, res = env.collide(cx, cz, 0, 1.4, r);
+          if (res.hit) { c.X += res.x - cx; c.Z += res.z - cz; moved = true; }
+        }
+        b.x = c.X; b.z = c.Z;
+      } else {
+        const res = env.collide(b.x, b.z, b.y, b.y + (b.height || 1.7), b.kind === "person" ? 0.28 : b.radius || 0.55);
+        if (res.hit) { b.x = res.x; b.z = res.z; moved = true; }
+      }
+      if (!moved) break;
+    }
+  }
+
+  /** How much of the keyed lean is left (1 at the takeover, 0 once settled). */
+  _settleK(b) { return b.settle ? 1 - sstep(b.settle.t / b.settle.T) : 0; }
 
   _take(id) {
     const b = this.live.get(id) || this._make(id);
@@ -957,6 +1059,11 @@ export class DriveMode {
     }
     else if (b.kind === "boat") { g.rotation.x = -clamp(b.speed / 40, 0, 0.12); g.rotation.z = clamp(-(b.turnRate || 0) * 0.04, -0.15, 0.15); }
     else if (b.kind === "prop" && b.q) g.quaternion.set(...b.q);
+    // The keyed lean easing out (takeover), on top of whatever the live body does.
+    const k = this._settleK(b);
+    if (k > 0 && b.kind !== "prop") { g.rotation.x += b.settle.tx * k; g.rotation.z += b.settle.tz * k; }
+    // The stunt's keyed tyre smoke would keep pouring where the keys had the car: the live car owns it now.
+    if (b.kind === "car") this.s._smokeSrc?.delete(a.id);
     try { this.s._partsApply?.(a, g); } catch { /* parts not installed */ }
     return true;
   }
@@ -1011,7 +1118,8 @@ export class DriveMode {
     g.rotation.y = c.H;
     this._wheels(g, b.dist);
     const body = g.userData.vehicleBody;
-    if (body?.userData.bodyPivot) body.rotation.set(-c.pitch * DEG, 0, c.roll * DEG);
+    const k = this._settleK(b), sr = k ? b.settle.roll * k : 0, sp = k ? b.settle.pitch * k : 0;
+    if (body?.userData.bodyPivot) body.rotation.set(-(c.pitch + sp) * DEG, 0, (c.roll + sr) * DEG);
     // The wheel and the brake lights, as live parts (put back when drive mode ends).
     a.parts = { ...(a.parts || {}), steer: [{ frame: 0, v: Math.round(c.ctl.steer * 10) / 10 }], brake: [{ frame: 0, v: c.ctl.brake > 0.1 ? "on" : "off" }] };
   }
@@ -1159,11 +1267,16 @@ export class DriveMode {
     // Fixed simulation steps, the same live or recording.
     this._acc = (this._acc || 0) + dt;
     let n = 0;
-    const h = 1 / SIM_HZ;
+    // A whole number of steps per shot frame (72 Hz at 24 fps), so every recorded frame samples the body exactly at its
+    // own time: at 60 Hz the frames fell 2 and 3 steps apart and a steady drive was keyed 40 % fast, slow, fast.
+    const h = 1 / (this.fps * this._stepsPerFrame());
     // A press waits for the next simulation step (a short tap between two steps is not lost).
     const P = this._hits ||= {};
     for (const k of ["jump", "interact", "pickup", "throw", "drop"]) P[k] = P[k] || hit[k];
-    while (this._acc >= h && n < 12) { this._sim(inp, { ...hit, ...P }, h); for (const k in P) P[k] = false; this._acc -= h; n++; }
+    while (this._acc >= h && n < 12) {
+      this._sim(inp, { ...hit, ...P }, h); for (const k in P) P[k] = false; this._acc -= h; n++;
+      if (this.rec?.phase === "rec") this._recStep();
+    }
     if (n === 12) this._acc = 0;
     this._clock(dt);
     this._camera(inp, dt);
@@ -1201,6 +1314,7 @@ export class DriveMode {
   /** One fixed step of whatever is under control (and of whatever is in the air). */
   _sim(inp, hit, dt) {
     this.vclock += dt;
+    for (const lb of this.live.values()) if (lb.settle && (lb.settle.t += dt) >= lb.settle.T) lb.settle = null;
     const b = this.ctl;
     const frozen = this.rec?.phase === "count";
     if (b && !frozen) {
@@ -1607,6 +1721,8 @@ export class DriveMode {
     this.rec = null;
     if (R.phase !== "rec" || !Object.keys(R.take.tracks).length) { this.say("Recording cancelled."); return; }
     R.take.end = Math.floor(R.f);
+    // Each track keeps its body's limits (top speed, grip, turn rate) for the auto-correct.
+    for (const [id, tr] of Object.entries(R.take.tracks)) tr.lim = limitsFor(this.live.get(id), { personSpeed, horseSpeed });
     // A stroke still in the water when the take ends closes there (it would be lost otherwise).
     for (const b of this.live.values()) {
       if (!b.boat?._open?.size) continue;
@@ -1629,14 +1745,26 @@ export class DriveMode {
       this.s.setFrame(R.f0);
       return;
     }
-    const last = this.s._lastFrame();
-    const prev = Math.floor(R.f);
-    R.f = Math.min(last, R.f + dt * this.fps);
-    this.s._obsCache = null;
-    for (let f = prev + 1; f <= Math.floor(R.f); f++) { this.s.setFrame(f); this._sample(f); }
-    if (Math.floor(R.f) === prev) this.s.setFrame(prev);
+    // The frames themselves advance inside the simulation steps (_recStep), so a slow screen frame never samples one
+    // body state twice and then jumps: here the playhead is only shown.
+    if (!R.stepped) this.s.setFrame(Math.floor(R.f));
+    R.stepped = false;
     this.s.onDriveFrame?.(Math.floor(R.f));
-    if (R.f >= last) this.stopRec();
+    if (R.f >= this.s._lastFrame()) this.stopRec();
+  }
+
+  _stepsPerFrame() { return Math.max(1, Math.round(SIM_HZ / this.fps)); }
+
+  /** One simulation step of recording time: on a frame boundary the frame is posed and sampled at the body's state then. */
+  _recStep() {
+    const R = this.rec, k = this._stepsPerFrame();
+    R.n = (R.n || 0) + 1;
+    if (R.n % k) return;
+    const f = Math.min(this.s._lastFrame(), R.f0 + R.n / k);
+    if (f <= R.f) return;
+    R.f = f;
+    this.s._obsCache = null;
+    this.s.setFrame(f); this._sample(f); R.stepped = true;
   }
 
   /** One recorded frame: every live object, from the stage as it was just posed. */
@@ -1653,7 +1781,7 @@ export class DriveMode {
         if (this.entering?.id === id) mode = "hop";
         else if (this.exiting?.id === id) mode = this.exiting.marked ? "exit" : "mounted";
         else if (a.mount_id) mode = "mounted";
-        const s = { p: [b.x, b.y, b.z], yaw: b.yaw, mode, air: b.air };
+        const s = { p: [b.x, b.y, b.z], yaw: b.yaw, mode, air: b.air, ...(b.climb ? { climb: true } : {}) };
         if (mode !== "foot") { s.host = a.mount_id || this.entering?.host; s.seat = a.seat ?? null; s.pose = a.pose ?? null; }
         add(id, "person", s);
         continue;
@@ -1677,12 +1805,20 @@ export class DriveMode {
     this._restore(snap);
     const mute = this.s._muteRecord;
     this.s._muteRecord = true;
-    let summary;
-    try { summary = applyTake(this.s, take, { smoothing: this.smoothing }); } finally { this.s._muteRecord = mute; }
-    this.pending = { take, snap, summary };
+    let summary, fix;
+    try { ({ summary, fix } = this._applyClean(take)); } finally { this.s._muteRecord = mute; }
+    this.pending = { take, snap, summary, fix };
     this.s.setFrame(take.start);
     this._playback(take.start, take.end);
     this.say(`Take: ${summary.join("; ")}. Enter keeps it, Backspace discards, R records it again.`);
+  }
+
+  /** The take as it goes on the shot: auto-corrected and fitted with the fewest keys. {summary, fix: {fixes, stats}}. */
+  _applyClean(take) {
+    const ground = this.s._supportAt ? (x, z, y) => this.s._supportAt(x, z, Math.max(0, y)) : null;
+    const { take: clean, fixes } = correctTake(take, { ground });
+    const summary = applyTake(this.s, clean, { smoothing: this.smoothing, reduce: true });
+    return { summary, fix: { fixes, stats: summary.stats } };
   }
 
   _playback(f0, f1) {
@@ -1711,7 +1847,7 @@ export class DriveMode {
     if (!this.pending) return;
     this._restore(this.pending.snap);
     const mute = this.s._muteRecord; this.s._muteRecord = true;
-    try { this.pending.summary = applyTake(this.s, this.pending.take, { smoothing: name }); } finally { this.s._muteRecord = mute; }
+    try { Object.assign(this.pending, (({ summary, fix }) => ({ summary, fix }))(this._applyClean(this.pending.take))); } finally { this.s._muteRecord = mute; }
     this.s.setFrame(this.s.frame);
   }
 
@@ -1721,10 +1857,27 @@ export class DriveMode {
     cancelAnimationFrame(this._pbRaf);
     this.pending = null;
     this.s.onChange(this.s.toJSON());           // ONE undo step for the whole take
+    this.kept = { snap: P.snap, take: P.take, after: clone(this.s.state.actors), report: takeReport(P.fix.fixes, P.fix.stats), raw: false };
     this.snap = clone(this.s.state.actors);     // the next take layers on this one
     this.takes = (this.takes || 0) + 1;
     this._resume(P.take.end);
-    this.say(`Take ${this.takes} kept (${P.summary.join("; ")}). Rewind and drive someone else to layer another take.`);
+    this.say(`Take ${this.takes} kept (${P.summary.join("; ")}). ${this.kept.report}. Undo (in the bar) puts the raw take back. Rewind and drive someone else to layer another take.`);
+  }
+
+  /** Undo the auto-correct and key fit of the last kept take: the raw take as recorded (a key every 2 frames). */
+  useRaw() {
+    const K = this.kept;
+    if (!K || K.raw || this.pending || this.rec) return false;
+    this._restore(K.snap);
+    const mute = this.s._muteRecord; this.s._muteRecord = true;
+    let summary;
+    try { summary = applyTake(this.s, K.take, { smoothing: this.smoothing }); } finally { this.s._muteRecord = mute; }
+    this.s.onChange(this.s.toJSON());
+    K.raw = true;
+    this.snap = clone(this.s.state.actors);
+    this._resume(this.s.frame);
+    this.say(`Raw take back (${summary.join("; ")}): as you drove it, uncorrected.`);
+    return true;
   }
 
   discard(silent = false) {
@@ -1820,6 +1973,8 @@ export class DriveMode {
       prompts: this.pending || !b ? [] : this.seated && b.kind === "person" ? [{ key: "E", label: "Stand up", act: "exit" }] : b.kind === "person" ? this.nearby(b) : this.avatar ? [{ key: "E", label: b.kind === "horse" ? "Dismount" : "Get out", act: "exit" }] : [],
       busy: this.entering ? "Getting in" : this.exiting ? "Getting out" : this._auto ? "Walking over" : null,
       input: inp, pad: !!inp.pad, frame: this.s.frame, last: this.s._lastFrame(),
+      note: this.tookOver ? "Took over from keys: Esc to leave" : null,
+      fix: this.kept && !this.kept.raw && !this.pending && !this.rec ? this.kept.report : null,
     };
   }
 

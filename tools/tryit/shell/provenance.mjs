@@ -46,7 +46,7 @@ export const REPLAY_ACTIONS = {
   v2s: "Rebuild plays back one recorded Video → 3D run of this clip made on the pod (most of that run's wall time was queue wait).",
   oneclick: "④ Frame plays back FLUX 3 Klein frames made earlier; running a ✦ card needs the full install.",
 };
-export const LIVE_ACTIONS = ["set", "color", "script", "rider", "seated", "physics", "stunt", "firstrun",
+export const LIVE_ACTIONS = ["set", "color", "script", "loadscript", "rider", "seated", "physics", "stunt", "firstrun",
   "director", "presets", "viewfinder", "pitch", "book", "performance", "parts", "gaits", "drive", "boats", "swim"];
 
 const fileOf = (f) => (f && typeof f === "object" ? f.filename : f) || "";
@@ -140,6 +140,9 @@ export function provenanceNow({ step, view, shot, scene, v2s } = {}) {
   if (byView) return after(byView);
   const where = RENDER_STEPS[step];
   if (where) {
+    // A shot from the visitor's own script: the closest recorded example stands in for it (shell/scriptload.mjs).
+    const ex = scene?.examples?.[shot];
+    if (ex && shotReplays(scene, shot).length) return { mode: REPLAYED, note: `Replayed: ${where} ${exampleNote(ex)}` };
     // The step's own files first (④ the frames, ⑤ the clips, ⑥ the finals, ⑦ the final, its poster and the cut), then the rest.
     const r = rendersOf(scene)[shot] || {};
     const own = step === "frame" ? [r.look, ...((scene?.candidates || {})[shot] || [])] : STEP_FILES[step].map((k) => r[k]);
@@ -157,6 +160,15 @@ export function provenanceNow({ step, view, shot, scene, v2s } = {}) {
   return after({ mode: LIVE, note: LIVE_NOTE });
 }
 
+/** A shot from the visitor's own script never had a render: the demo replays the closest recorded example and says so.
+ *  ex: {label, set, exact} (shell/scriptload.mjs closestExample). */
+export function exampleNote(ex) {
+  const set = String(ex?.set || "this set").replace(/_/g, " ");
+  const why = ex?.exact ? `the closest recorded set to this scene (${set})` : `the nearest recorded example (nothing was rendered on a ${set} set)`;
+  return `plays a recorded example, not your shot: a render a GPU made earlier for the "${ex?.label || "demo"}" demo scene, `
+    + `${why}. It was not made from your script or this stage. With the full install, Run renders your own scene.`;
+}
+
 /** A tour stop (tour.json): what its "Show me" opens. */
 export function stopProvenance(stop) {
   const why = REPLAY_ACTIONS[stop?.do || "set"];
@@ -167,4 +179,60 @@ export function stopProvenance(stop) {
 export function clipProvenance(clip) {
   const note = clip?.note ? ` ${clip.note}` : "";
   return { mode: REPLAYED, note: `Replayed: recorded earlier (a GPU render or a screen capture of the App), shown as it was made: ${clip?.file || "a file"}.${note}` };
+}
+
+// ---------------------------------------------------------------- your edits, replayed renders
+// ④ Frame and ⑤ Motion replay what a GPU made earlier for the scene as it shipped. When the visitor has changed the
+// stage (moved a person, the camera, added something) and asks for a new frame or render, the replay is still the old
+// one: say so next to it, and label every replayed frame, so the same four frames coming back never look like a bug.
+export const INSTALL_URL = "https://github.com/theboord/ComfyUI-Soundstage#install";
+export const RECORDED_LABEL = "Recorded example";
+export const EDITED_NOTE = "This demo replays recorded renders, so your edits don't re-render here. "
+  + "With the full install, ④ makes new frames from your edited set.";
+export const RECORDED_NOTE = "Recorded example: a frame a GPU made earlier for this scene as it shipped, replayed here. "
+  + "Nothing is generated in your browser.";
+
+// What a render is made from: the cast and their moves, every setup's camera, the set and the light. Selection, the
+// playhead and the view mode are not (they don't change a render). Numbers are rounded so float noise is not an edit.
+const STAGE_KEYS = ["actors", "shots", "environment", "lighting", "sun", "camera"];
+const TRANSIENT = new Set(["selected", "selection", "frame", "playhead", "view", "free_view", "freeView", "hover", "_ui"]);
+function canon(v) {
+  if (typeof v === "number") return Number.isFinite(v) ? Math.round(v * 1e4) / 1e4 : null;
+  if (Array.isArray(v)) return v.map(canon);
+  if (v && typeof v === "object") {
+    const out = {};
+    for (const k of Object.keys(v).sort()) if (!TRANSIENT.has(k) && v[k] !== undefined) out[k] = canon(v[k]);
+    return out;
+  }
+  return v;
+}
+/** A fingerprint of everything on the stage that a render is made from (stage.toJSON()). */
+export function stageSig(state) {
+  const s = state || {};
+  return JSON.stringify(STAGE_KEYS.map((k) => canon(s[k] ?? null)));
+}
+/** Which scene the stage holds (a script's scenes tag their shots with scene_id); one baseline per scene. */
+export const sceneKeyOf = (state) => [...new Set((state?.shots || []).map((x) => x?.scene_id || ""))].sort().join("|");
+/** Remember the stage as it is now as the scene's untouched state (only the first time, unless `force`). */
+export function rememberBaseline(base, state, force = false) {
+  const k = sceneKeyOf(state);
+  if (force || !(k in base)) base[k] = stageSig(state);
+  return base;
+}
+/** Has the visitor changed this scene's stage since it loaded? (false before a baseline exists) */
+export function editedSince(base, state) {
+  const k = sceneKeyOf(state);
+  return k in (base || {}) && base[k] !== stageSig(state);
+}
+/** The note for a replay the visitor asked for (ladder step 2 = ④ Frame, 3-4 = ⑤ Motion): null on an unedited stage. */
+export function replayNotice({ step, edited, example = null } = {}) {
+  if (!(edited || example) || !(step >= 2 && step <= 4)) return null;   // ⑦'s Layer Pack has its own full-install note
+  const where = step >= 3 ? "⑤ Motion" : "④ Frame";
+  if (example) {
+    const note = `This ${exampleNote(example)}`;
+    return { mode: REPLAYED, where, note, link: INSTALL_URL, linkText: "How to install",
+      label: `${GLYPH[REPLAYED]} ${RECORDED_LABEL}`, toast: `${where}: a recorded example from "${example.label}", not your script's shot.` };
+  }
+  return { mode: REPLAYED, where, note: EDITED_NOTE, link: INSTALL_URL, linkText: "How to install",
+    label: `${GLYPH[REPLAYED]} ${RECORDED_LABEL}`, toast: `${where}: these are the recorded renders, not your edited set. ${EDITED_NOTE}` };
 }

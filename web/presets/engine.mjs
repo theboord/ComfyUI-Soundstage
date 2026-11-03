@@ -277,7 +277,12 @@ export function carPathKeys(k0, spec = {}, path = null, last = 96) {
   for (const s of pts) { const d = Math.hypot(s.position[0] - a[0], s.position[2] - a[2]); if (d > best) { best = d; far = s.position; } }
   let axis;
   if (best > 0.5) axis = [(far[0] - a[0]) / best, 0, (far[2] - a[2]) / best];
-  else { const v = [k0.target[0] - k0.position[0], 0, k0.target[2] - k0.position[2]], n = Math.hypot(v[0], v[2]) || 1; axis = [-v[2] / n, 0, v[0] / n]; }
+  else {
+    // A parked car: across the camera's view. A camera straight above it has no view direction on the ground: any
+    // axis (before: a zero axis put the lens on the car, position == target).
+    const v = [k0.target[0] - k0.position[0], 0, k0.target[2] - k0.position[2]], n = Math.hypot(v[0], v[2]);
+    axis = n > 1e-6 ? [-v[2] / n, 0, v[0] / n] : [1, 0, 0];
+  }
   // The middle of the path's extent along its axis (a J-turn's exit can run past its start).
   const us = pts.map((s) => (s.position[0] - a[0]) * axis[0] + (s.position[2] - a[2]) * axis[2]);
   const uc = (Math.min(...us) + Math.max(...us)) / 2;

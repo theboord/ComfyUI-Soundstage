@@ -88,11 +88,14 @@ STROKE = {
 }
 
 
-def still_words(scene: dict) -> str:
-    """Frame 1: what each swimmer wears and how they lie in the water."""
+def still_words(scene: dict, ids: set | None = None) -> str:
+    """Frame 1: what each swimmer wears and how they lie in the water. ids: who is in frame at frame 0 (the reef
+    shot's diver swims in later; his kit in the still painted a diver into the empty open water)."""
     sw = swimmers(scene)
     out = []
     for i, x in enumerate(sw):
+        if ids is not None and x["actor"].get("id") not in ids:
+            continue
         g = _gear(x)
         lie = "lying level in the water" if x["mode"] == "under" and x["style"] != "tread" else ""
         if x["mode"] == "surface" and x["style"] in ("freestyle", "breaststroke"):
@@ -103,9 +106,9 @@ def still_words(scene: dict) -> str:
     return "; ".join(out)
 
 
-def negative_words(scene: dict) -> str:
+def negative_words(scene: dict, ids: set | None = None) -> str:
     """The still's negative: the regulator out of the mouth is the classic diver failure."""
-    if any(x["gear"] == "scuba" for x in swimmers(scene)):
+    if any(x["gear"] == "scuba" and (ids is None or x["actor"].get("id") in ids) for x in swimmers(scene)):
         return "regulator hanging below the chin, regulator out of the mouth, mouthpiece dangling, no fins, walking on the seabed"
     return ""
 

@@ -43,10 +43,48 @@ _LATER = re.compile(r"\b(then|after(?:wards)?|until|finally|eventually|later|end
                     r"turns? (?:to|around)|begins? to|starts? to)\b", re.I)
 
 
-def frame1_safe(text: str) -> str:
-    """Keep only the clauses of a description that can be true in the first frame."""
+# Words that name a cast member in a description, by kind of thing (for the sentences frame1_safe drops when that
+# member is out of frame at frame 0). A negation ("no cars, no people") is kept: it is true of frame 1 too.
+_PERSON_WORDS = ("man", "men", "woman", "women", "person", "child", "boy", "girl", "diver", "divers", "swimmer",
+                 "swimmers", "scuba", "dancer", "dancers", "runner", "rider", "riders", "officer", "cop", "cyclist")
+_VEHICLE_WORDS = ("car", "cars", "sedan", "coupe", "vehicle", "vehicles", "truck", "suv", "van", "motorcycle",
+                  "motorbike", "boat", "boats", "speedboat", "jet ski", "jetski")
+_NEGATED = re.compile(r"\b(no|not|without|nobody|nothing|empty)\b", re.I)
+
+
+def absent_words(scene: dict, f1: dict) -> list[str]:
+    """Words for the cast that is on stage but not in frame at frame 0 (it enters later, or never shows): the kind's
+    own words ("police"), plus the generic ones when nothing of that sort is in frame (no person, no vehicle)."""
+    lib = S.library()
+    seen = {e["id"] for e in f1["people"] + f1["others"]}
+    seen |= {e.get("host_id") for e in f1["people"] if e.get("host_id")}
+    ride = S.ride_host(scene)
+    if ride is not None:
+        seen.add(ride.get("id"))                  # the camera is in or on it: vehicle_camera() words it
+    cast = S.cast(scene)
+    out: list[str] = []
+    for c in cast:
+        if c["id"] in seen or c.get("host") is not None:
+            continue
+        label = (lib.get(c["actor"].get("kind"), ("",))[0] or "").lower()
+        out += [w for w in re.findall(r"[a-z]+", label) if w not in _VEHICLE_WORDS + _PERSON_WORDS + ("the", "a", "an")]
+        rig = c["rig"]
+        if rig == "biped" and not f1["people"]:
+            out += list(_PERSON_WORDS)
+        if rig == "vehicle" and not any(e.get("rig") == "vehicle" for e in f1["others"]):
+            out += list(_VEHICLE_WORDS)
+    return list(dict.fromkeys(out))
+
+
+def frame1_safe(text: str, absent: list[str] | tuple = ()) -> str:
+    """Keep only the clauses of a description that can be true in the first frame. absent: words naming cast that is
+    out of frame at frame 0 (absent_words); a sentence that names one is dropped whole, its spray and light with it."""
     if not text:
         return ""
+    if absent:
+        name = re.compile(r"\b(?:" + "|".join(re.escape(w) for w in absent) + r")\b", re.I)
+        sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+        text = " ".join(x for x in sentences if not name.search(x) or _NEGATED.search(x))
     # Everything from the first "then" / "after" etc. onward happens later in the shot ("…, then they
     # sprint in, vault up and gallop away" drops all three actions, not just the first clause).
     clauses = re.split(r"(?<=[.;!?])\s+|,\s*|;\s*|\s+(?=(?:and\s+)?then\b)", text.strip())
@@ -72,8 +110,12 @@ def look_context(scene: dict) -> dict:
     None); and how much the camera smears the background, at frame 1 (pan_still) and over the shot (pan_motion)."""
     f1 = S.frame1_facts(scene)
     frames, _ = S.frame_range(scene)
+    # A camera hard-mounted on the car never pans with it: the motion prompt says it "stays locked to the car" and
+    # the ride words say how the street whips round, so no "as the camera pans with the car" on top.
+    rides = S.vehicle_camera(scene) is not None
     return {"view": S.look_view(scene, _in_shot_ids(scene, f1)), "surface": S.look_surface(scene),
-            "pan_still": S.camera_blur(scene, 0, min(12, frames - 1)), "pan_motion": S.camera_blur(scene)}
+            "pan_still": "locked" if rides else S.camera_blur(scene, 0, min(12, frames - 1)),
+            "pan_motion": "locked" if rides else S.camera_blur(scene)}
 
 
 def _car_layers(o: dict, ctx: dict | None) -> dict:
@@ -240,6 +282,10 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     grps = S.groups(f1["others"], f1["camera"])
     away = [g for g in grps if "facing away" in (g["facing"] or "")]
     facing_neg = ", ".join(f"{g['nouns']} facing the camera, heads toward the camera" for g in away)
+    # A person with their back (or three-quarter back) to the lens at frame 0: Klein turns them round otherwise.
+    for g in S.groups(f1["people"], f1["camera"]):
+        if (g["facing"] or "").startswith(("seen from behind", "in three-quarter view from behind")):
+            facing_neg += f", {g['nouns']} facing the camera, face toward the lens"
     # Vehicles: the opposite end toward the camera, and any reversing, are the classic failure.
     for g in grps:
         fw = g["facing"] or ""
@@ -258,9 +304,10 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     legacy = scene.get("look_start") is False
     # crates and boxes in plain words: Klein letters "shipping crates" with gibberish stencils (look/identity.py)
     props = [f"{p['word'] if legacy else plain_word(p['word'], p.get('kind'))} {p['where']}" for p in f1["props"][:3]]
-    desc = frame1_safe(look.get("description", ""))
+    seen = {e["id"] for e in f1["people"] + f1["others"]}   # in the shot camera's frame at frame 0, not hidden
+    desc = frame1_safe(look.get("description", ""), absent_words(scene, f1))
     vcam = S.vehicle_camera(scene)
-    lock = S.traffic_lock(scene)
+    lock = S.traffic_lock(scene, seen)
     shot = vcam["still"] if vcam else SIZE_STILL[f1["size"]] + ("" if who else " of the location")
     # A head count only when people show: seen from outside, a car's driver is part of the car and a count of
     # zero (or one) makes Krea paint pedestrians; seen from inside, the riders ARE the people in frame.
@@ -279,7 +326,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         *brief_parts(look, still=True),
         shot,
         "; ".join(who),
-        SW.still_words(scene),                 # divers and swimmers: the kit, the regulator in the mouth (look/swim.py)
+        SW.still_words(scene, seen),           # divers and swimmers: the kit, the regulator in the mouth (look/swim.py)
         "; ".join(frame1_looks(scene)),
         "" if legacy else still_identity(scene, {e["id"] for e in f1["people"] + f1["others"]}),   # which car is which
         "" if legacy else body_words(scene, {e["id"] for e in f1["others"]}).rstrip("."),   # what the car is; a blank plate
@@ -288,7 +335,9 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         REAL_PEOPLE if n and real else "",
         _only_blocking(n, sum(1 for e in f1["others"] if e.get("rig") == "vehicle")) if count and not lock else
         ("nobody else in the car, nobody else in the background" if count and vcam else ""),
-        S.ANGLE_STILL[f1["angle"]] if f1["angle"] != "eye" else "eye-level camera",
+        # The bumper and over-the-tyre mounts lead with "low camera hard-mounted": never "eye-level" after that.
+        S.ANGLE_STILL[f1["angle"]] if f1["angle"] != "eye" else
+        "low angle" if (vcam or {}).get("where") in ("bumper", "wheel") else "eye-level camera",
         f"{round(f1['focal_mm'])}mm lens",
         c.get("lens", {}).get("still", ""),
         c.get("aperture", {}).get("still", ""),
@@ -308,7 +357,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     no_people = n == 0 and not S.people_in_shot(scene)
     negative = _join([FRAME1_NEGATIVE + (", people, person, figure" if no_people else "") if n <= 3 else "extra people",
                       BLUR_SAFE_NEGATIVE if _ASKS_BLUR.search(prompt) else BASE_NEGATIVE, REAL_PEOPLE_NEG if n and real else "", facing_neg, NOTHING_EXTRA_NEG, vcam["negative"] if vcam else "", lock["negative"] if lock else "",
-                      SW.negative_words(scene), *parts["negatives"], look.get("negative", "")])
+                      SW.negative_words(scene, seen), *parts["negatives"], look.get("negative", "")])
     return _dedupe(prompt), _dedupe(negative)
 
 
@@ -483,7 +532,7 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
     props = [p for p in f1["props"] if p["kind"] == "building"]
     set_s = _cap(f"{props[0]['word']} {'fills the background' if props[0]['where'] == 'filling the background' else 'stands ' + props[0]['where']}") + "." if props else ""
     desc = (look.get("description") or "").strip().rstrip(".")
-    lens_s = _join([f"a {f1['lens_band']}", c.get("lens", {}).get("motion", ""),
+    lens_s = _join([S._article(f1['lens_band']), c.get("lens", {}).get("motion", ""),
                     c.get("aperture", {}).get("motion", "")])
     look_s = _join([
         c.get("camera_body", {}).get("motion", ""),
