@@ -99,3 +99,13 @@ for (const how of ["disarm", "delete"]) {
     assert.ok(st.state.actors.find((a) => a.id === "crate").physics?.baked, "Undo brings the blast back");
   });
 }
+
+test("blocker 4: with two explosions, each thing is credited to the blast that threw it (and timed by it)", () => {
+  const st = headless([...yard(), at("box", "Box", "crate", [-14, 0, -10]), at("ball", "Ball", "crate", [3, 0, 2], { physics: { mode: "dynamic" } })]);
+  const far = st.addSfxRig("explosion", { position: [-14, 0, -12], name: "Far blast", sfx: { trigger: { type: "time", at: 0.5 }, power: 1 } });
+  const near = st.addSfxRig("explosion", { position: [3.2, 0, 0], name: "Near blast", sfx: { trigger: { type: "time", at: 2 }, power: 1 } });
+  const by = Object.fromEntries(st.state.physics.sfx.affected.map((x) => [x.id, x.by]));
+  assert.equal(by.box, far.id, "the box beside the far blast");
+  assert.equal(by.crate, near.id, "the crate beside the near blast");
+  assert.equal(by.ball, near.id, "a loose (dynamic) prop beside the near blast, not the first one to go off");
+});

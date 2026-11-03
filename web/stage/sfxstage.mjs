@@ -176,7 +176,8 @@ export function installSfx(Stage, deps) {
     for (const [id, dv] of Object.entries(blasted)) {
       const aid = String(id).split("#")[0].split("~")[0], a = this.state.actors.find((x) => x.id === aid);
       if (!a || affected.some((x) => x.id === aid)) continue;
-      const by = tk[id]?.by || X.blastsFrom(rigs, fires, { posOf }).map((b) => b.id)[0];
+      // The blast that pushed it hardest (not simply the first one to go off), else the one that took it over.
+      const by = res?.blastedBy?.[id]?.by || (rigs.some((r) => r.id === tk[id]?.by) ? tk[id].by : null) || X.blastsFrom(rigs, fires, { posOf }).map((b) => b.id)[0];
       affected.push({ id: aid, by, dv, how: X.blastOutcome({ kind: a.kind, role: worldRole(a), keys: a.keys, broke: !!a.physics?.fracture, dv }) });
     }
     this.state.physics = { ...(this.state.physics || {}) };

@@ -462,7 +462,7 @@ function relVel(c, useSaved) {
  * opts: { fps = 24, substeps = 20, iterations = 4 (contact passes a substep; with 2 a 20-box tower bows 16 cm before
  *   anything touches it), gravity = 9.81, floor = true, events = true, minImpactSpeed, groundMaterial,
  *   maxPieces (most loose bodies a bake may add, MAX_SCENE_PIECES),
- *   blasts: [{id, frame, pos, power, radius, lift}] (sfx.mjs blastsFrom: explosions; result.blasted = {id: dv m/s}) }
+ *   blasts: [{id, frame, pos, power, radius, lift}] (sfx.mjs blastsFrom: explosions; result.blasted = {id: dv m/s}, result.blastedBy = {id: {by, frame, dv}}: the strongest) }
  */
 export function simulate(specs, frames, opts = {}) {
   const fps = opts.fps || 24, nSub = Math.max(4, Math.min(64, opts.substeps || 20));
@@ -539,7 +539,7 @@ export function simulate(specs, frames, opts = {}) {
     const K = !A.free ? A : !B.free ? B : null;
     return K ? Math.min(SPEC_CAP, SPEC + SPEC_K * len(K.v) * h) : SPEC;
   };
-  const blasts = Array.isArray(opts.blasts) ? opts.blasts.filter((B) => B && Array.isArray(B.pos) && Number.isFinite(+B.frame)) : [], blastHits = {};
+  const blasts = Array.isArray(opts.blasts) ? opts.blasts.filter((B) => B && Array.isArray(B.pos) && Number.isFinite(+B.frame)) : [], blastHits = {}, blastBy = {};
   const logHits = opts.events !== false, minHit = opts.minImpactSpeed ?? MIN_IMPACT_SPEED, groundMat = opts.groundMaterial || "ground", rawHits = [];
   // Frame 0: every body where its keys put it.
   for (const b of bodies) {
@@ -603,6 +603,7 @@ export function simulate(specs, frames, opts = {}) {
           blastLoads.set(b, o);
         }
         blastHits[b.id] = Math.max(blastHits[b.id] || 0, +k.dv.toFixed(2));
+        if (!blastBy[b.id] || k.dv > blastBy[b.id].dv) blastBy[b.id] = { by: B.id, frame: f, dv: +k.dv.toFixed(2) };   // the blast that threw it
       }
     }
     for (let s = 0; s < nSub; s++) {
@@ -923,7 +924,7 @@ export function simulate(specs, frames, opts = {}) {
     }
     if (R.dents.length) dents[R.id] = R.dents;
   }
-  return { tracks, settled, events, fractures, dents, takeovers, crush, blasted: blastHits, stats: { bodies: bodies.length, dynamic: dyn.length, substeps: nSub, contacts: contactsSolved,
+  return { tracks, settled, events, fractures, dents, takeovers, crush, blasted: blastHits, blastedBy: blastBy, stats: { bodies: bodies.length, dynamic: dyn.length, substeps: nSub, contacts: contactsSolved,
     impacts: events.length, pieces: added, breaks: breakEvents.length, cracks: roots.reduce((s, R) => s + R.cracks, 0), takeovers: Object.keys(takeovers).length } };
 
   /** The free body of a contact between a free body and a held one (keyed until contact, or anchored), else null. */
