@@ -511,7 +511,7 @@ The full list, with folders, sources and licenses, is in [MODELS.md](MODELS.md).
 
 Model weights are not included in this repo. Check each license before commercial use.
 
-To add an image, video, matte or clean-plate model (one registry entry plus one adapter), see [docs/ADD_A_MODEL.md](docs/ADD_A_MODEL.md); audio and several App paths still call LTX-2.5 directly, listed in [docs/MODEL_AUDIT.md](docs/MODEL_AUDIT.md).
+To add an image, video, matte or clean-plate model (one registry entry plus one adapter), see [docs/ADD_A_MODEL.md](docs/ADD_A_MODEL.md). A model added that way does not reach the 19 generation paths that build their own graphs, including the App's default final render and all audio; [docs/MODEL_AUDIT.md](docs/MODEL_AUDIT.md) lists them.
 
 <a id="partner-footnote"></a><sup>1</sup> Partner API models (ElevenLabs, Kling, Veo, Nano Banana and the like, through ComfyUI partner nodes and your Comfy credits) are hidden by default. To list them anyway, start ComfyUI with `SOUNDSTAGE_PARTNER_MODELS=1`. A saved workflow that still names one loads fine and says so when it runs.
 
