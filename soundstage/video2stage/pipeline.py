@@ -6,11 +6,12 @@ import asyncio
 import hashlib
 import math
 import os
+import re
 import time
 
 import numpy as np
 
-from . import convert, frames, graphs, performer, queue, track, vlm
+from . import convert, frames, graphs, performer, queue, stages, track, vlm
 
 
 def _input_dir() -> str:
@@ -99,8 +100,14 @@ def run_kwargs(body: dict) -> dict:
 
 
 async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = True, backdrop: bool = True,
-              progress=None, mocap: bool = True, original: str = "") -> dict:
+              progress=None, mocap: bool = True, original: str = "", mpu_known: float | None = None,
+              seed: int = 0, reuse: set | None = None, tag: str | None = None) -> dict:
+    """The whole rebuild. seed 0 = the first, deterministic build; ↻ Regenerate passes a new seed (the camera solve's
+    RANSAC, the vision model's sampling, the set dressing) and `reuse` = the stages to take from the last run's record
+    (stages.py) instead of running them again."""
     say = progress or (lambda step, frac: None)
+    reuse = set(reuse or ())
+    ran: dict = {}
     t0 = time.perf_counter()
     timings: dict = {}
     notes: list[str] = []
@@ -115,11 +122,18 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
     except Exception as exc:  # noqa: BLE001 - the rebuild never depends on it
         source = None
         notes.append(f"source spec: could not read it ({exc})")
-    tag = hashlib.sha1(f"{video}:{os.path.getsize(path)}:{os.path.getmtime(path)}".encode()).hexdigest()[:10]
+    # tag: the last run's (Regenerate sends it, so a copied or re-uploaded clip still finds its stages)
+    if not (tag and re.fullmatch(r"[0-9a-f]{10}", str(tag))):
+        tag = hashlib.sha1(f"{video}:{os.path.getsize(path)}:{os.path.getmtime(path)}".encode()).hexdigest()[:10]
     sub = f"soundstage/v2s_{tag}"
     say("Sampling frames", 0.05)
     times = frames.sample_times(clip["duration"], clip["fps"], samples)
-    files = await asyncio.to_thread(frames.extract, path, os.path.join(_input_dir(), sub), times)
+    fdir = os.path.join(_input_dir(), sub)
+    kept = [os.path.join(fdir, f"f_{i:02d}.png") for i in range(len(times))]
+    if "depth" in reuse and all(os.path.isfile(f) for f in kept):
+        files = kept   # the very frames the reused depth measured
+    else:
+        files = await asyncio.to_thread(frames.extract, path, fdir, times)
     names = [f"{sub}/{os.path.basename(f)}" for f in files]
     timings["frames_ms"] = round((time.perf_counter() - t0) * 1000)
 
@@ -129,31 +143,38 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
     if not multiview:
         notes.append(f"{model} is mono-only: the camera is tracked from its depth. A DA3 Small/Base checkpoint "
                      "would give multi-view poses directly")
-    say("Measuring depth (Depth Anything 3)", 0.08)
-    g = graphs.da3_graph(model, names, f"v2s_{tag}", multiview,
-                         backdrop_prefix=f"soundstage/v2s_{tag}_set" if backdrop else None)
-    out, t = await queue.run_graph(base_url, g, "depth")
-    timings["da3_ms"] = t.get("exec_ms", t["total_ms"])
-    npz_path = queue.text_of(out, "x1")
+    rec = stages.load(tag) if reuse else {"tag": tag}
+    rec.update(tag=tag, video=video, samples=len(names))
+    reuse = {s for s in reuse if stages.usable(rec, s)}
+    if "depth" in reuse:
+        say("Measuring depth (Depth Anything 3): reused", 0.08)
+        npz_path, glb = rec["depth"]["npz"], (rec["depth"].get("glb") if backdrop else None)
+    else:
+        say("Measuring depth (Depth Anything 3)", 0.08)
+        g = graphs.da3_graph(model, names, f"v2s_{tag}", multiview,
+                             backdrop_prefix=f"soundstage/v2s_{tag}_set" if backdrop else None)
+        out, t = await queue.run_graph(base_url, g, "depth")
+        timings["da3_ms"] = t.get("exec_ms", t["total_ms"])
+        npz_path = queue.text_of(out, "x1")
+        glb = graphs.saved_glb(out) if backdrop else None
+        rec["depth"] = {"npz": npz_path, "glb": glb}
+    ran["depth"] = "reused" if "depth" in reuse else "ran"
     with np.load(npz_path, allow_pickle=False) as z:
         packet = {k: z[k] for k in z.files}
-    glb = graphs.saved_glb(out) if backdrop else None
-
-    say("Tracking the camera", 0.18)
-    t1 = time.perf_counter()
-    poses, scales, K, ground, tn, lin = await asyncio.to_thread(solve, packet, files)
-    packet["depth"] = lin
-    notes += tn
-    timings["track_ms"] = round((time.perf_counter() - t1) * 1000)
 
     breakdown = {"setting": "", "time": "", "camera": {}, "objects": [], "set": []}
     vmodel = vlm.available_model() if use_vlm else None
+    if "breakdown" in reuse:
+        breakdown, vmodel = rec["breakdown"]["read"], rec["breakdown"].get("model")
+        set_seed = int(rec["breakdown"].get("set_seed") or 7)
+    else:
+        set_seed = 7 if not seed else 7 + int(seed)
     if use_vlm and not vmodel:
         notes.append("no local vision model (qwen3.5_4b): camera move only, no subjects or set pieces")
-    if vmodel:
+    if vmodel and "breakdown" not in reuse:
         say("Reading the shot (vision model)", 0.2)
         try:
-            vo, vt = await queue.run_graph(base_url, vlm.graph(vmodel, names[0], names[-1]), "shot breakdown")
+            vo, vt = await queue.run_graph(base_url, vlm.graph(vmodel, names[0], names[-1], seed=seed), "shot breakdown")
             timings["vlm_ms"] = vt.get("exec_ms", vt["total_ms"])
             first = vlm.parse_reply(queue.text_of(vo, "a3"))
             try:
@@ -161,37 +182,28 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
             except ValueError as exc:
                 last, _ = None, notes.append(f"last-frame read unusable ({exc}); movers keep their start marks")
             breakdown = vlm.merge_reads(first, last)
+            rec["breakdown"] = {"read": breakdown, "model": vmodel, "seed": int(seed), "set_seed": set_seed}
         except Exception as exc:  # noqa: BLE001 - still deliver the camera move
             notes.append(f"vision model failed ({exc}); camera move only")
+    ran["breakdown"] = "reused" if "breakdown" in reuse else "ran"
 
-    say("Building the set", 0.45)
-    h, w = packet["depth"].shape[1:]
-    view = lambda f: {"filename": os.path.basename(f), "subfolder": sub, "type": "input"}  # noqa: E731
-    reference = {"video": video, "fps": clip["fps"], "frames": clip["frames"], "duration": clip["duration"],
-                 "width": clip["width"], "height": clip["height"], "sample_times": times,
-                 "samples": [view(f) for f in files], "footage_node": "SoundstageFootage", "source": source}
-    scene = convert.assemble(poses=poses, scales=scales, times=times, K=K, size=(w, h), depths=list(packet["depth"]),
-                             ground=ground, breakdown=breakdown, clip=clip, reference=reference, notes=notes,
-                             skies=None if packet.get("sky") is None else list(packet["sky"].astype(np.float32)),
-                             repin=any(n.startswith("depth: straightened") for n in notes),
-                             backdrop={"url": "/view?filename={}&subfolder={}&type={}".format(
-                                 glb["filename"], glb.get("subfolder", ""), glb.get("type", "output"))} if glb else None)
-    if source and scene.get("shots"):
-        scene["shots"][0]["source"] = source   # the setup that re-shoots the clip: its plate, for the NLE export
-    # The performer: SAM 3D Body copies the person's whole performance onto a clay actor standing in the rebuilt set.
+    # The performer is captured BEFORE the camera is solved: SAM 3D Body's focal (fitted to the person) becomes the
+    # shot's one lens, so the camera, the set and the clay all share it (performer.shared_K).
     PEOPLE = ("person", "man", "woman", "boy", "girl", "child", "kid", "people", "dancer", "runner", "athlete", "rider",
               "driver", "player", "boxer", "fighter", "skater", "hiker", "actor", "guy", "lady")
     has_person = not vmodel or any(any(w in (o.get("label") or "").lower().split() for w in PEOPLE)
                                    for o in breakdown.get("objects") or [])
-    # Someone the read only sees inside a car is its driver, seated at the wheel (convert.mount_riders): capturing
-    # them would stand a clay figure beside the car and lock the camera for a "walking subject" that isn't there.
-    cars = {a["id"] for a in scene["actors"] if a.get("kind") in ("car", "truck")}
-    folk = [a for a in scene["actors"] if a.get("kind") in ("man", "woman", "child")]
-    if has_person and folk and all(a.get("mount_id") in cars for a in folk):
-        has_person = False
-        notes.append(f"people: {', '.join(a.get('name', 'the driver') for a in folk)} sits in the car; no motion capture")
-    if mocap and has_person and performer.available(_detection_models()):
-        say("Capturing the performance (SAM 3D Body)", 0.47)
+    take = info = None
+    if mocap and "mocap" in reuse:
+        import json as _json
+        import folder_paths
+        info = dict(rec["mocap"])
+        with open(os.path.join(folder_paths.get_output_directory(), info["file"])) as f:
+            take = _json.load(f)
+        ran["mocap"] = "reused"
+    elif mocap and has_person and performer.available(_detection_models()):
+        ran["mocap"] = "ran"
+        say("Capturing the performance (SAM 3D Body)", 0.3)
         try:
             mo, mt = await queue.run_graph(base_url, performer.mocap_graph(video, f"v2s_{tag}"), "motion capture")
             timings["mocap_ms"] = mt.get("exec_ms", mt["total_ms"])
@@ -200,6 +212,70 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
             info = _json.loads(queue.text_of(mo, "p6"))
             with open(os.path.join(folder_paths.get_output_directory(), info["file"])) as f:
                 take = _json.load(f)
+            rec["mocap"] = {"file": info["file"], "frames": int(info.get("frames") or 0)}
+        except Exception as exc:  # noqa: BLE001 - the set and camera still stand without the performer
+            notes.append(f"performer: motion capture failed ({exc})")
+    hd, wd = packet["depth"].shape[1:]
+    K_da3 = np.asarray(packet["intrinsics"][0], np.float64).copy()
+    if take is not None:
+        K_one, kn = performer.shared_K(np.asarray(packet["intrinsics"][0], np.float64), take, (wd, hd))
+        if kn:
+            notes.append(kn)
+        packet["intrinsics"] = np.repeat(K_one[None].astype(np.float32), len(packet["intrinsics"]), axis=0)
+
+    t1 = time.perf_counter()
+    if "camera" in reuse:
+        say("Tracking the camera: reused", 0.4)
+        poses, scales, K, ground, tn, lin = stages.load_solve(rec["camera"]["npz"])
+    else:
+        say("Tracking the camera", 0.4)
+        poses, scales, K, ground, tn, lin = await asyncio.to_thread(solve, packet, files, seed)
+        try:
+            rec["camera"] = {"npz": stages.save_solve(tag, poses, scales, K, ground, tn, lin, seed), "seed": int(seed)}
+        except Exception as exc:  # noqa: BLE001 - the record is a convenience; the rebuild stands without it
+            notes.append(f"stages: could not keep the camera solve for Regenerate ({exc})")
+    ran["camera"] = "reused" if "camera" in reuse else "ran"
+    packet["depth"] = lin
+    notes += tn
+    timings["track_ms"] = round((time.perf_counter() - t1) * 1000)
+
+    say("Building the set", 0.45)
+    h, w = packet["depth"].shape[1:]
+    view = lambda f: {"filename": os.path.basename(f), "subfolder": sub, "type": "input"}  # noqa: E731
+    reference = {"video": video, "fps": clip["fps"], "frames": clip["frames"], "duration": clip["duration"],
+                 "width": clip["width"], "height": clip["height"], "sample_times": times,
+                 "samples": [view(f) for f in files], "footage_node": "SoundstageFootage", "source": source}
+    notes0 = list(notes)
+
+    def build(mpu=None):
+        nn = list(notes0)
+        sc = convert.assemble(poses=poses, scales=scales, times=times, K=K, size=(w, h), depths=list(packet["depth"]),
+                              ground=ground, breakdown=breakdown, clip=clip, reference=reference, notes=nn,
+                              skies=None if packet.get("sky") is None else list(packet["sky"].astype(np.float32)),
+                              repin=any(n.startswith("depth: straightened") for n in nn), mpu=mpu, seed=set_seed,
+                              backdrop={"url": "/view?filename={}&subfolder={}&type={}".format(
+                                  glb["filename"], glb.get("subfolder", ""), glb.get("type", "output"))} if glb else None)
+        lens_k = float(K_da3[0, 0] / K[0, 0])
+        bd0 = next((a for a in sc["actors"] if a.get("id") == "v2s_backdrop"), None)
+        if bd0 and abs(lens_k - 1) > 1e-3:
+            # The set mesh was built in DA3's own camera (its focal): re-lens it to the shot's one K (x, y go as 1/f).
+            fx = bd0["set_xform"].get("flip_xyz") or [1, -1, -1]
+            bd0["set_xform"]["flip_xyz"] = [round(fx[0] * lens_k, 6), round(fx[1] * lens_k, 6), fx[2]]
+        if source and sc.get("shots"):
+            sc["shots"][0]["source"] = source   # the setup that re-shoots the clip: its plate, for the NLE export
+        return sc, nn
+
+    scene, notes = build(mpu_known)
+    # The performer: SAM 3D Body copies the person's whole performance onto a clay actor standing in the rebuilt set.
+    # Someone the read only sees inside a car is its driver, seated at the wheel (convert.mount_riders): capturing
+    # them would stand a clay figure beside the car and lock the camera for a "walking subject" that isn't there.
+    cars = {a["id"] for a in scene["actors"] if a.get("kind") in ("car", "truck")}
+    folk = [a for a in scene["actors"] if a.get("kind") in ("man", "woman", "child")]
+    if take is not None and folk and all(a.get("mount_id") in cars for a in folk):
+        take = None
+        notes.append(f"people: {', '.join(a.get('name', 'the driver') for a in folk)} sits in the car; no motion capture")
+    if take is not None:
+        try:
             xf = scene["video2stage"]["xform"]
             cam_poses = poses
             if performer.camera_drifted(scene, breakdown):
@@ -208,18 +284,47 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
                 keys = scene["shots"][0]["camera_keys"]
                 scene["shots"][0]["camera_keys"] = [keys[0]]
                 cam_poses = [poses[0]] * len(poses)
-                notes.append("camera: the track drifted on a near-static shot (moving subject); locked to the first frame")
-            placed = performer.place(take, cam_poses, times, np.array(xf["A"]), np.array(xf["b"]), K, (w, h), clip["fps"])
+                notes0.append("camera: the track drifted on a near-static shot (moving subject); locked to the first frame")
+                notes.append(notes0[-1])
+            A_, b_ = np.array(xf["A"]), np.array(xf["b"])
+            placed = performer.place(take, cam_poses, times, A_, b_, K, (w, h), clip["fps"])
             if placed:
                 aid = performer.attach(scene, info["file"], take, placed)
+                # Its size: the clay's projection must cover SAM's 2D joints through this camera (same K as SAM's).
+                s_fit = performer.fit_scale(take, placed, cam_poses, times, A_, b_, K, (w, h), clip["fps"])
+                mpu0 = mpu = scene["video2stage"]["metres_per_unit"]
+                for _ in range(4):
+                    if abs(s_fit - 1) <= 0.01 or mpu_known:
+                        break
+                    # SAM 3D Body measured the performer in metres: that is the shot's scale (the camera-height /
+                    # people guess put her 1/s too far). Rebuild the set at that scale, place her again, refit.
+                    mpu = mpu / s_fit
+                    scene, notes = build(mpu)
+                    xf = scene["video2stage"]["xform"]
+                    A_, b_ = np.array(xf["A"]), np.array(xf["b"])
+                    if cam_poses is not poses:
+                        scene["shots"][0]["camera_keys"] = scene["shots"][0]["camera_keys"][:1]
+                    placed = performer.place(take, cam_poses, times, A_, b_, K, (w, h), clip["fps"]) or placed
+                    aid = performer.attach(scene, info["file"], take, placed)
+                    s_fit = performer.fit_scale(take, placed, cam_poses, times, A_, b_, K, (w, h), clip["fps"])
+                if mpu != mpu0:
+                    notes.append(f"scale from the performer (SAM 3D Body): {mpu:.4g} m per unit (the camera-height "
+                                 f"guess was {abs(mpu0 / mpu - 1) * 100:.0f}% off)")
+                act = next(a for a in scene["actors"] if a["id"] == aid)
+                act["height_m"] = round(performer.stature(take) * s_fit, 3)
+                fit = performer.overlay_error(take, placed, cam_poses, times, A_, b_, K, (w, h), clip["fps"], s_fit)
+                act.setdefault("source", {})["overlay"] = {k: round(v, 3) if isinstance(v, float) else v for k, v in fit.items()}
+                if abs(s_fit - 1) > 0.15:
+                    notes.append(f"performer: the set's scale and SAM 3D Body's distance disagree by {abs(s_fit - 1) * 100:.0f}%;"
+                                 f" the clay is sized to the picture ({act['height_m']:.2f} m)")
                 dropped = performer.drop_background_people(scene, aid)
                 if dropped:
                     notes.append(f"performer: left out {dropped} small background figure(s) the depth could not place")
                 cut = performer.cutout(take, scene["video2stage"]["metres_per_unit"])
                 bd = next((a for a in scene["actors"] if a.get("id") == "v2s_backdrop"), None)
                 if cut and bd and min(times) < 0.25:   # the set mesh is the first frame's
-                    cut["K"] = [round(float(K[0, 0] / w), 5), round(float(K[1, 1] / h), 5),
-                                round(float(K[0, 2] / w), 5), round(float(K[1, 2] / h), 5)]
+                    cut["K"] = [round(float(K_da3[0, 0] / w), 5), round(float(K_da3[1, 1] / h), 5),   # the mesh's own
+                                round(float(K_da3[0, 2] / w), 5), round(float(K_da3[1, 2] / h), 5)]
                     bd["set_xform"]["cut"] = cut
                 notes.append(f"performer: {info['frames']} frames of motion capture on '{aid}', standing on the rebuilt floor")
             else:
@@ -227,9 +332,14 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
         except Exception as exc:  # noqa: BLE001 - the set and camera still stand without the performer
             notes.append(f"performer: motion capture failed ({exc})")
     timings["total_ms"] = round((time.perf_counter() - t0) * 1000)
+    try:
+        stages.save(tag, rec)
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"stages: could not keep this run's record for Regenerate ({exc})")
     say("Done", 1.0)
     movers = [a for a in scene["actors"] if len(a.get("keys", [])) > 1]
-    return {"scene": scene, "notes": notes, "timings": timings, "breakdown": breakdown,
+    return {"scene": scene, "notes": notes, "timings": timings, "breakdown": breakdown, "tag": tag, "seed": int(seed),
+            "stages": ran,
             "summary": {"objects": len([a for a in scene["actors"] if not a.get("set_piece") and a["kind"] != "glb"]),
                         "set_pieces": len([a for a in scene["actors"] if a.get("set_piece")]),
                         "movers": len(movers),

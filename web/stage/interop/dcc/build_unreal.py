@@ -1,7 +1,8 @@
 """Soundstage DCC kit -> Unreal Engine 5.x level + Level Sequence.
 
-NOT TESTED IN UNREAL. Written against the UE 5 editor Python API (unreal module); the maths (axes, centimetres,
-rotators, frame rates) is unit-tested outside the engine. If a call differs in your engine version, the script says
+Run headless in Unreal Engine 5.7 (UnrealEditor-Cmd -run=pythonscript, docs/INTEROP_TESTED.md): the level saves and
+reloads with the camera keys within 2 micrometres and 0.00001 degrees of camera.json. Not yet checked by eye in the
+editor viewport. The maths (axes, centimetres, rotators, frame rates) is also unit-tested outside the engine. If a call differs in your engine version, the script says
 which step failed and carries on with the rest.
 
 What it does, in the level that is open:
@@ -11,7 +12,9 @@ What it does, in the level that is open:
      UE = (x, z, y) * 100;
   3. spawns a CineCameraActor "shot_cam" with a 36 mm filmback;
   4. builds a Level Sequence at the shot's fps over its frame range with the camera's location, rotation and focal
-     length keyed every frame, plus a camera cut.
+     length keyed every frame, plus a camera cut;
+  5. adds the Level Sequence Interchange made for the set's own animation (actors, cars) as a subsequence from the
+     first frame, so playing the camera sequence plays the whole shot.
 Run: Tools > Execute Python Script... > build_unreal.py  (Python Editor Script plugin on), or in the Output Log:
      py "<kit>/unreal/build_unreal.py"
 """
@@ -248,6 +251,40 @@ def build_sequence(shot, keys, cam_actor, dest):
     return seq
 
 
+def scene_sequences(asset_paths, own=None):
+    """The Level Sequences the glTF import made for the file's animation (Interchange puts them in .../LevelSequences/),
+    as asset paths without the object suffix, leaving out the camera sequence this script builds."""
+    out = []
+    for p in asset_paths:
+        p = str(p).split(".")[0]
+        if "/LevelSequences/" in p and p != own and p not in out:
+            out.append(p)
+    return out
+
+
+def add_scene_animation(seq, dest, shot):
+    """Play the imported set's animation (actors, cars, props: baked keys in scene.glb) inside the camera sequence.
+    Interchange gives it its own Level Sequence starting at 0 at its own rate; a subsequence section from frame_start
+    lines it up with the camera (sections map by time, so the rates may differ)."""
+    first, last = shot["frame_start"], shot["frame_end"]
+    found = scene_sequences(unreal.EditorAssetLibrary.list_assets(dest, recursive=True), seq.get_path_name().split(".")[0])
+    if not found:
+        return 0
+    try:
+        track = seq.add_track(unreal.MovieSceneSubTrack)
+    except Exception:  # noqa: BLE001 - UE 5.0 / 5.1
+        track = seq.add_master_track(unreal.MovieSceneSubTrack)
+    for path in found:
+        sub = unreal.load_asset(path)
+        if sub is None:
+            continue
+        sec = track.add_section()
+        sec.set_sequence(sub)
+        sec.set_range(first, last + 1)
+    unreal.EditorAssetLibrary.save_loaded_asset(seq)
+    return len(found)
+
+
 def main():
     kit = find_kit(globals().get("__file__"))
     with open(os.path.join(kit, "shot.json")) as f:
@@ -288,6 +325,9 @@ def main():
     comp.set_editor_property("current_focal_length", k0["focal_mm"])
     _step("turn depth of field off", lambda: comp.get_editor_property("focus_settings").set_editor_property("focus_method", unreal.CameraFocusMethod.DISABLE))
     seq = _step("build the Level Sequence", build_sequence, shot, keys, cam, dest)
+    n_anim = _step("add the set's animation to the sequence", add_scene_animation, seq, dest, shot) if seq else None
+    if n_anim:
+        unreal.log("Soundstage: the set's animation (%d imported sequence%s) plays inside the camera sequence" % (n_anim, "s" if n_anim > 1 else ""))
     unreal.log("Soundstage: built %s (%d frames at %s fps)%s" % (shot["shot"], len(keys), shot["fps"], " -> " + seq.get_path_name() if seq else ""))
 
 

@@ -121,6 +121,7 @@ export const ACTIONS = [
   { id: "lightbar", label: "Police light bar", keys: ["KeyB"], pad: [15] },
   { id: "camera", label: "Camera: chase · shot · orbit", keys: ["KeyV"], pad: [8] },
   { id: "record", label: "● REC / stop", keys: ["KeyR"], pad: [9] },
+  { id: "sfxFire", label: "Fire the SFX cue (practical effects)", keys: ["KeyK"], pad: [] },
   { id: "keep", label: "Keep the take", keys: ["Enter"], pad: [] },
   { id: "discard", label: "Discard the take", keys: ["Backspace"], pad: [] },
   { id: "exit", label: "Leave Drive mode", keys: ["Escape"], pad: [] },
@@ -705,6 +706,7 @@ export function applyTake(stage, take, { smoothing = "light", reduce = false } =
       if (!keys?.length && ev.frame > 0) writeKey(a, ev.ch, 0, ev.prev ?? (ev.ch.startsWith("door") ? 0 : "off"), ev.ch.startsWith("door") ? undefined : "step");
       writeKey(a, ev.ch, ev.frame, ev.v, ev.ch.startsWith("door") ? undefined : "step");
     } else if (ev.type === "gaze") setGazeKey(a, ev.frame, ev.target);
+    else if (ev.type === "sfx") stage.sfxRecordFire?.(a.id, ev.frame, { silent: true });   // a practical-effects cue fired during the take
   }
   stage._obsCache = null;
   return out;
@@ -1287,6 +1289,7 @@ export class DriveMode {
     if (hit.keep && this.pending) this.keep();
     if (hit.discard && this.pending) this.discard();
     if (hit.camera) this.cycleCamera();
+    if (hit.sfxFire) this._sfxFire();
     const b = this.ctl;
     if (!b || this.pending) return;
     if (hit.lights) this._toggle(b, "headlights", { off: "low", low: "high", high: "off", auto: "low" });
@@ -1689,6 +1692,15 @@ export class DriveMode {
     this._gazeNow = { target, t: this.vclock, f: this._recFrame() };
     a.gaze = [{ frame: this.s.frame, target }];
     this._event({ type: "gaze", id: b.id, target });
+  }
+
+  /** K: fire the practical-effects cue now (sfxstage.mjs). During REC it goes into the take; Keep writes it as the rig's key. */
+  _sfxFire() {
+    const s = this.s, rig = s.sfxCueRig?.();
+    if (!rig) { this.say("No SFX rig to fire: add one in the Physics panel's SFX section first."); return; }
+    const f = this._recFrame(), t = (f / this.fps).toFixed(2);
+    if (this.rec?.phase === "rec") { this._event({ type: "sfx", id: rig.id }); this.say(`💥 ${rig.name} fired at ${t} s (recorded: it becomes its cue when you keep the take).`); }
+    else this.say(`💥 ${rig.name}: press ● REC to record the cue in a take (outside Drive mode, K fires it at the playhead).`);
   }
 
   // ---------- time and recording

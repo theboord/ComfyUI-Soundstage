@@ -15,15 +15,21 @@ export const demo = {
   toast: () => {},      // set by the shell
   v2s: null,            // the recorded Video → 3D run once it starts: { clip, total_s, replaySeconds, running, doneAt } (the badge)
   onReplay: null,       // set by the shell: ({shot, step}) before a Run / Generate replays, so it can say an edited stage isn't re-rendered
+  resolveShot: null,    // set by the shell: async (shot) before a replay; a shot from the visitor's own script borrows the
+                        // closest recorded example into scene.renders / candidates and is marked in scene.examples
 };
 
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
 const asset = (name) => new URL(`r/${String(name).replace(/\.png$/i, ".jpg")}`, BASE).href;
 
-// What each server-only feature is, for the "available in the full install" note.
+// What each server-only feature is, for the "available in the full install" note (an optional third item follows it).
 const FULL = [
+  [/^\/soundstage\/agent\/build/, "The scene agent (it reads the action lines and blocks camera setups)",
+    "Picking a scene in ① Script already set it up from its heading, in your browser: open ③ Set."],
   [/^\/soundstage\/director/, "The Director's language model (local Qwen or Ollama)"],
   [/^\/soundstage\/cut\/render$/, "Rendering the Timeline (MP4, ProRes, 9:16)"],
+  [/^\/soundstage\/video2stage\/(regenerate|fix_object)/, "Regenerate and Fix this object (they re-run the Video to 3D steps on the GPU)",
+    "This demo only replays one recorded rebuild."],
   [/^\/soundstage\/(video2stage|mocap)/, "Video to 3D on your own clips (pose and camera from a clip)"],
   [/^\/soundstage\/(object_designer|object\b|assets3d)/, "Making a 3D object from a prompt or a photo"],
   [/^\/soundstage\/(import_world|world|interop)/, "Uploading a world to the server"],
@@ -92,7 +98,7 @@ async function v2sRoute(p, path, init, method) {
 }
 function fullInstall(p) {
   const hit = FULL.find(([re]) => re.test(p)), what = hit ? hit[1] : "This";
-  const msg = `${what} is available in the full install (ComfyUI with a GPU). This demo replays renders made earlier.`;
+  const msg = `${what} is available in the full install (ComfyUI with a GPU). ${hit?.[2] || "This demo replays renders made earlier."}`;
   // Background lookups the App makes on its own (model lists, readiness) answer quietly: a note only for named features.
   if (hit && !told.has(what)) { told.add(what); demo.toast(msg); }
   return msg;
@@ -177,7 +183,10 @@ export const api = {
     const id = `demo-${++seq}`;
     const shot = demo.getShot();
     const step = Math.max(1, Math.min(5, demo.getStep()));
-    setTimeout(() => replay(id, shot, step), 30);
+    setTimeout(async () => {
+      try { await demo.resolveShot?.(shot); } catch { /* no example: the replay says the shot has no render */ }
+      replay(id, shot, step);
+    }, 30);
     return { prompt_id: id, number: seq, node_errors: {} };
   },
   async interrupt() {},

@@ -483,8 +483,8 @@ export const EXEC = {
     const name = this._shotIndex(this.stage.toJSON().active_shot);
     const w = { push_in: `pushes in ${info.metres} m`, pull_out: `pulls out ${info.metres} m`, truck_left: `trucks ${info.metres} m left`,
       truck_right: `trucks ${info.metres} m right`, crane_up: `cranes up ${info.metres} m`, crane_down: `cranes down ${info.metres} m`,
-      orbit_left: `orbits ${info.metres}° left`, orbit_right: `orbits ${info.metres}° right`, static: "is locked off" }[a.move];
-    return { ok: true, said: a.move === "static" ? `${name} is locked off: one camera position for the whole take.` :
+      orbit_left: `orbits ${info.metres}° left`, orbit_right: `orbits ${info.metres}° right`, static: "holds still" }[a.move];
+    return { ok: true, said: a.move === "static" ? `${name} holds still now (a tripod shot, "locked off" on set): one camera position for the whole take.` :
       `${name} is a ${a.speed} move now: the camera ${w} over ${info.secs} s.` };
   },
 
