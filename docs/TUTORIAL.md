@@ -132,7 +132,7 @@ What's in the groups:
 3. Tweak and queue it there like any ComfyUI graph.
 4. **Download the graph** saves the UI workflow and the API prompt as JSON files instead.
 
-**Limit:** it opens the graph saved inside the take (the UI workflow when the take carries one, else the API prompt), and only for files inside ComfyUI's own folders: anything else is refused as *no such file*. Details: [handoff.md](handoff.md).
+**Limit:** it opens the graph saved inside the take (the UI workflow when the take carries one, else the API prompt), and only for files inside ComfyUI's own folders: anything else is refused (*a file in input/output/temp*). Details: [handoff.md](handoff.md).
 
 <a id="film-a-move-on-your-phone"></a>
 
