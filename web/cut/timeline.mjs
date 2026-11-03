@@ -3,6 +3,7 @@
 // record time is the running sum of event lengths starting at 01:00:00:00.
 
 import { normalizeGraphics } from "./gfx.mjs";
+import { normalizeNle, trackExtras } from "./nle_model.mjs";
 
 export const RUNGS = ["clay", "look", "draft", "final"];
 

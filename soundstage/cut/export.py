@@ -8,6 +8,8 @@ import math
 import re
 from urllib.parse import parse_qs, quote
 
+from .nle_model import normalize_nle, track_extras  # noqa: F401  (D12 S0a; called from normalize_project)
+
 RUNGS = ("clay", "look", "draft", "final")
 
 

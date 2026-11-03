@@ -13,6 +13,12 @@ import { sourceLine } from "../ui/sourcespec.mjs";
 import { impactClips, withImpactClips } from "./impactsfx.mjs";
 import * as GFX from "./gfx.mjs";
 import * as EL from "./editlink.mjs";
+import * as KM from "./keymap.mjs";
+import { EDIT_FIELDS } from "./nle_model.mjs";
+import { install as installCore } from "./nle_core.mjs";
+import { install as installBins } from "./nle_bins.mjs";
+import { install as installMixer } from "./nle_mixer.mjs";
+import { install as installTrims } from "./nle_trims.mjs";
 
 /** A transport button's face: a Lucide icon (plus an optional speed like "2×"); the title names it for screen readers. */
 const face = (b, name, extra = "") => {
