@@ -34,6 +34,8 @@ const yard = () => [
   at("crate", "Crate", "crate", [2.2, 0, 0]),
   at("man", "Man", "man", [0, 0, 4]),
 ];
+const nonRig = (st) => JSON.stringify(st.state.actors.filter((a) => !X.isSfxRig(a)));
+const physNoSfx = (st) => { const { sfx, ...p } = st.state.physics || {}; return JSON.stringify(p); };
 const pose = (g) => [g.position.toArray(), g.quaternion.toArray()].flat().map((v) => +v.toFixed(5)).join();
 
 test("blocker 1: a hit reaction is a function of the time since the hit (playing frame by frame = jumping there)", () => {
@@ -50,4 +52,32 @@ test("blocker 1: a hit reaction is a function of the time since the hit (playing
   st2.setFrame(60);
   assert.equal(pose(st2.actorMeshes.get("man")), played, "and a fresh stage jumping straight there");
   assert.ok(Math.acos(Math.min(1, up.y)) * 180 / Math.PI < 100, `a shoulder hit drops him, never past lying down (${(Math.acos(Math.min(1, up.y)) * 180 / Math.PI).toFixed(0)} deg)`);
+});
+
+test("blocker 2a: Reset to before keeps a crash baked before the explosion was added", () => {
+  const st = headless([at("car", "Red car", "sports_car", [0, 0, -15], { keys: [{ frame: 0, position: [0, 0, -15] }, { frame: 48, position: [0, 0, 10] }] }), at("crate", "Crate", "crate", [0, 0, 0]), at("man", "Man", "man", [6, 0, 6])]);
+  st.simulatePhysics();
+  assert.ok(st.state.actors.find((a) => a.id === "crate").physics?.baked, "the car knocks the crate loose");
+  const before = nonRig(st), physBefore = physNoSfx(st);
+  const rig = st.addSfxRig("explosion", { position: [6, 0, 8], sfx: { power: 1.2 } });
+  assert.ok(st.state.actors.find((a) => a.id === "man").physics?.baked, "the blast knocks the man down");
+  st.sfxReset([rig.id]);
+  assert.equal(nonRig(st), before, "the crash bake is back exactly, the man unbaked");
+  assert.equal(physNoSfx(st), physBefore, "and its hits");
+});
+
+test("blocker 2b: Reset to before keeps edits made after the blast (name, colour, ground)", () => {
+  const st = headless(yard());
+  const rig = st.addSfxRig("explosion", { position: [0, 0, 0], sfx: { power: 1.5 } });
+  const crate = () => st.state.actors.find((a) => a.id === "crate"), car = () => st.state.actors.find((a) => a.id === "car");
+  const keys0 = JSON.stringify(yard().find((a) => a.id === "crate").keys);
+  crate().name = "Apple crate"; car().color = "#2244ff"; st.state.physics.ground = "sand";
+  st.onChange(st.toJSON());
+  st.sfxReset([rig.id]);
+  assert.equal(crate().name, "Apple crate", "the rename is kept");
+  assert.equal(car().color, "#2244ff", "the colour is kept");
+  assert.equal(st.state.physics.ground, "sand", "the ground type is kept");
+  assert.ok(!crate().physics?.baked && !car().physics?.baked, "nothing is left baked");
+  assert.equal(JSON.stringify(crate().keys), keys0, "the crate is back on its authored keys");
+  assert.ok(!st.state.physics.events?.length, "no blast hits left");
 });
