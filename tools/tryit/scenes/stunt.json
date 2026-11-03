@@ -20,6 +20,11 @@
      "filename": "m_stunt_jt2_final.mp4",
      "subfolder": "",
      "type": "output"
+    },
+    "draft": {
+     "filename": "m_stunt_jt2_draft.mp4",
+     "subfolder": "",
+     "type": "output"
     }
    }
   },
