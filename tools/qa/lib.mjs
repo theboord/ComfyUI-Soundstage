@@ -5,9 +5,9 @@
 // /settings, /userdata, /upload/ and /soundstage/ locally (no GPU renders, no queue changes, nothing written to
 // the server or to Mike's ComfyUI settings). Each run uses a throwaway Chrome profile.
 import { spawn } from "node:child_process";
-import { writeFileSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { writeFileSync, readFileSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve, sep, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -30,9 +30,26 @@ export const GUARD = String.raw`(() => { if (window.__fetchGuard) return; window
 // Freezes CSS animation / transitions / carets so two captures of the same screen match.
 export const STILL_CSS = "*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition:none!important;caret-color:transparent!important}";
 
+// Content types for the web/ files served from the repo (serveWeb / localFiles).
+const WEB_TYPES = { ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".html": "text/html",
+  ".htm": "text/html", ".txt": "text/plain", ".md": "text/plain", ".fountain": "text/plain", ".svg": "image/svg+xml", ".png": "image/png",
+  ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".ico": "image/x-icon", ".glb": "model/gltf-binary",
+  ".gltf": "model/gltf+json", ".bin": "application/octet-stream", ".wasm": "application/wasm", ".mp4": "video/mp4", ".webm": "video/webm",
+  ".mov": "video/quicktime", ".wav": "audio/wav", ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".m4a": "audio/mp4", ".woff": "font/woff",
+  ".woff2": "font/woff2", ".ttf": "font/ttf", ".otf": "font/otf", ".hdr": "application/octet-stream", ".exr": "application/octet-stream", ".ktx2": "image/ktx2" };
+const WEB_ROOT = resolve(REPO, "web");
+/** A web/ file for an extension URL path (relative to /extensions/ComfyUI-Soundstage/), or null if the repo has none. */
+function webFile(rel) {
+  const f = resolve(WEB_ROOT, rel);
+  if (!f.startsWith(WEB_ROOT + sep)) return null;   // never outside web/
+  try { return statSync(f).isFile() ? f : null; } catch { return null; }
+}
+
 /** Start a hidden Chrome at w x h. opts: port, firstRun (keep the Guide tour unseen), localFiles (serve these web/ files from the repo),
+ *  serveWeb (serve EVERY /extensions/ComfyUI-Soundstage/* file from this repo's web/ when it has one, the server's copy otherwise: the
+ *  App as it is on this branch, on a server that runs older code; Range requests get 206 partial content),
  *  angle: "swiftshader" (default, what the baselines use) or "metal" (real GPU: use it for demo-scene flows; SS_ANGLE=metal sets it). */
-export async function launch({ port = 9770, w = 1440, h = 900, firstRun = false, localFiles = [], angle = process.env.SS_ANGLE || "swiftshader" } = {}) {
+export async function launch({ port = 9770, w = 1440, h = 900, firstRun = false, localFiles = [], serveWeb = false, angle = process.env.SS_ANGLE || "swiftshader" } = {}) {
   let W = w, H = h;
   const prof = mkdtempSync(join(tmpdir(), "ssqa-"));
   const flags = ["--headless=new", `--remote-debugging-port=${port}`, `--window-size=${W},${H}`, "--hide-scrollbars",
@@ -63,17 +80,32 @@ export async function launch({ port = 9770, w = 1440, h = 900, firstRun = false,
   await send("Page.enable"); await send("Runtime.enable"); await send("Log.enable");
   await send("Page.setInterceptFileChooserDialog", { enabled: true });   // a file picker never opens
   await send("Page.addScriptToEvaluateOnNewDocument", { source: (firstRun ? "window.name = window.name.includes('FIRSTRUN') ? window.name : 'FIRSTRUN';" : "") + GUARD });
-  // Serve the listed extension files from this repo (check a fix before it is deployed to the pod).
-  if (localFiles.length) {
+  // Serve extension files from this repo: the listed ones (check a fix before it is deployed to the pod), or with serveWeb all of
+  // them (the whole App as it is on this branch). The guard above still answers every write.
+  if (localFiles.length || serveWeb) {
     await send("Fetch.enable", { patterns: [{ urlPattern: "*/extensions/ComfyUI-Soundstage/*", requestStage: "Request" }] });
     handlers.add((m) => {
       if (m.method !== "Fetch.requestPaused") return;
-      const rel = decodeURIComponent(new URL(m.params.request.url).pathname.replace(/^.*\/extensions\/ComfyUI-Soundstage\//, ""));
-      if (localFiles.includes(rel)) {
-        send("Fetch.fulfillRequest", { requestId: m.params.requestId, responseCode: 200,
-          responseHeaders: [{ name: "Content-Type", value: "text/javascript" }, { name: "Cache-Control", value: "no-store" }],
-          body: readFileSync(join(REPO, "web", rel)).toString("base64") });
-      } else send("Fetch.continueRequest", { requestId: m.params.requestId });
+      const req = m.params.request;
+      let rel = "";
+      try { rel = decodeURIComponent(new URL(req.url).pathname.replace(/^.*\/extensions\/ComfyUI-Soundstage\//, "")); } catch { /* bad escape */ }
+      const file = (serveWeb ? /^(GET|HEAD)$/.test(req.method) : localFiles.includes(rel)) ? webFile(rel) : null;
+      if (!file) { send("Fetch.continueRequest", { requestId: m.params.requestId }); return; }
+      const body = readFileSync(file);
+      const headers = [{ name: "Content-Type", value: WEB_TYPES[extname(file).toLowerCase()] || "application/octet-stream" },
+        { name: "Cache-Control", value: "no-store" }, { name: "Accept-Ranges", value: "bytes" }];
+      const range = /^bytes=(\d*)-(\d*)$/.exec(Object.entries(req.headers || {}).find(([k]) => k.toLowerCase() === "range")?.[1] || "");
+      let code = 200, part = body;
+      if (range && body.length) {   // a <video> asks for byte ranges
+        let a = range[1] === "" ? Math.max(0, body.length - +range[2]) : +range[1];
+        let z = range[1] !== "" && range[2] !== "" ? Math.min(+range[2], body.length - 1) : body.length - 1;
+        if (a > z || a >= body.length) { a = 0; z = body.length - 1; }
+        code = 206; part = body.subarray(a, z + 1);
+        headers.push({ name: "Content-Range", value: `bytes ${a}-${z}/${body.length}` });
+      }
+      headers.push({ name: "Content-Length", value: String(part.length) });
+      send("Fetch.fulfillRequest", { requestId: m.params.requestId, responseCode: code, responseHeaders: headers,
+        body: req.method === "HEAD" ? "" : part.toString("base64") });
     });
   }
   const ev = async (js) => {
