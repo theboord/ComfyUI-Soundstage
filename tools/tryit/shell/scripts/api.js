@@ -43,6 +43,7 @@ const FULL = [
 const told = new Set();
 // Take checks: the real results the server computed for the takes these scenes replay (soundstage/takecheck/check.py).
 let checked = null, checkedNow = {};
+let directorPlans = null;   // r/canned/director_plans.json, loaded on the first plan
 const takeChecks = () => (checked ||= fetch(new URL("r/canned/takecheck.json", BASE)).then((r) => r.json()).then((j) => (checkedNow = j.results || {})).catch(() => ({})));
 takeChecks();
 
@@ -173,6 +174,16 @@ export const api = {
       return r && r.ok ? r : json({ error: "not in the demo" }, 404);
     }
     if (p.startsWith("/soundstage/video2stage")) { const r = await v2sRoute(p, path, init, method); if (r) return r; }
+    // The Director: no language model in the demo, so it plans with the rules; the plan itself comes from the server, so
+    // the commands Ask's "Do it for me" hands it (r/canned/director_plans.json) get the server's real answer, recorded.
+    // Apply then runs on the stage in the browser, with Undo. Any other order gets the full-install note.
+    if (p === "/soundstage/director/info") return json({ available: false, tools: [] });
+    if (p === "/soundstage/director/plan" && method === "POST") {
+      let cmd = "";
+      try { cmd = String(JSON.parse(init.body || "{}").command || "").trim().toLowerCase(); } catch { /* no body */ }
+      const plans = await (directorPlans ||= fetch(new URL("r/canned/director_plans.json", BASE)).then((r) => r.json()).then((j) => j.plans || {}).catch(() => ({})));
+      if (plans[cmd]) { demo.toast("Demo: the server's real plan for this order, recorded earlier. Apply and Undo run here in your browser."); return json(plans[cmd]); }
+    }
     const msg = fullInstall(p);
     // /prompt callers read error.message; the others read error.
     return p === "/prompt" ? json({ error: { type: "demo", message: msg }, node_errors: {} }, 503) : json({ error: msg, message: msg, available: false }, 503);
@@ -226,7 +237,7 @@ function replay(id, shot, step) {
   }
   setTimeout(() => {
     if (step >= 5) demo.toast("The Layer Pack (EXR, PSD, ProRes) is written on the GPU server: available in the full install.");
-    else if (!any || missing.length) demo.toast("This shot wasn't rendered on the GPU for that step yet. Scenes with renders: Dry Creek, the cars, the chase, the stunt, the western, and the underwater, fire, airplane and train sets.");
+    else if (!any || missing.length) demo.toast("This shot wasn't rendered on the GPU for that step yet. Scenes with renders: the J-turn stunt (bumper cam), Dry Creek, the chase, the western, the genre scenes, the night street pass, the speedboat, going under, and the underwater and fire sets.");
     api.dispatchCustomEvent("executing", { prompt_id: id, node: null });
     api.dispatchCustomEvent("execution_success", { prompt_id: id });
   }, t + 100);

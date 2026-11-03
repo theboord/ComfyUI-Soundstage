@@ -47,7 +47,7 @@ export const REPLAY_ACTIONS = {
   oneclick: "④ Frame plays back FLUX 3 Klein frames made earlier; running a ✦ card needs the full install.",
 };
 export const LIVE_ACTIONS = ["set", "color", "script", "loadscript", "rider", "seated", "physics", "stunt", "firstrun",
-  "director", "presets", "viewfinder", "pitch", "book", "performance", "parts", "gaits", "drive", "boats", "swim"];
+  "director", "presets", "viewfinder", "pitch", "book", "performance", "parts", "gaits", "drive", "boats", "swim", "ask"];
 
 const fileOf = (f) => (f && typeof f === "object" ? f.filename : f) || "";
 const uniq = (xs) => [...new Set(xs.filter(Boolean))];
