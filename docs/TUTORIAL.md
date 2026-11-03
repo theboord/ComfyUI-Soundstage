@@ -517,7 +517,7 @@ What it measures, per clay person (shoulders, elbows, wrists, hips, knees, ankle
 | PCK | On moving frames, at least 60% of joints sit within 0.1 torso lengths of the clay. |
 | Wrong pose | No joint stays more than 0.1 torso lengths from every clay position within ±0.25 s for 0.25 s or longer. |
 | Missing motion | Where the clay moves clearly more than DWPose's noise (3×), the draft moves at least 0.4 as far, in any window within ±0.25 s. |
-| Fingertips | Each fingertip's shape stays within 0.6 palm sizes of the clay's, where the hand is at least 12 px across the palm. Advisory. |
+| Fingertips | Each fingertip's shape stays within 0.6 palm sizes of the clay's, where the palm (wrist to knuckles) is at least 12 px. Advisory. |
 
 The method and thresholds come from [MotionGuard](https://github.com/junco3/motion-guard) (Apache-2.0); the thresholds are its provisional ones, not yet calibrated on Soundstage drafts. Code: [motiongate.py](../soundstage/takecheck/motiongate.py), the **Soundstage · Motion Gate** node, [model.mjs](../web/takecheck/model.mjs) `motionChip` / `hollywoodHold`.
 
