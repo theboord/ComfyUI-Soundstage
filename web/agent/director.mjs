@@ -183,7 +183,10 @@ export class Director {
     // The Director's Book (Milestone 23): the scene's intent, style, rules and notes, read before every command.
     let book = null;
     try { book = this.host.book?.context?.() || null; } catch { book = null; }
-    return { shots, active_shot: st.active_shot, scenes, live_scene: this.host.script?.liveKey || null, renders, book };
+    // Ask (web/agent/ask.mjs): where the user is (step, selected object, shot, open panel), so "it" and "this" resolve.
+    let ui = null;
+    try { ui = this.host.ui?.() || null; } catch { ui = null; }
+    return { shots, active_shot: st.active_shot, scenes, live_scene: this.host.script?.liveKey || null, renders, book, ui };
   }
 
   async _post(path, body) {
