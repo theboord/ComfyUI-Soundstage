@@ -309,7 +309,7 @@ Cole steps out into the rain and looks off at the wrecked crates. Then Cole turn
 
 ## Cheat sheet
 
-**Anywhere:** `V` Presets · `/` Director chat (preview) · `?` Shortcuts sheet, or the keyboard icon · `H` / `Tab` Hide or show every panel · `⌘Z` / `⇧⌘Z` Undo / redo · `←` `→` Change scene (rebuilds the stage) · `Space` On ③ Set: Play / stop · `Esc` Closes the open panel, menu or pop-over first
+**Anywhere:** `V` Presets · `/` or `⌘K` / `Ctrl+K` Ask (the assistant) · `?` Shortcuts sheet, or the keyboard icon · `H` / `Tab` Hide or show every panel · `⌘Z` / `⇧⌘Z` Undo / redo · `←` `→` Change scene (rebuilds the stage) · `Space` On ③ Set: Play / stop · `Esc` Closes the open panel, menu or pop-over first
 
 **Look around:** `0` Shot camera / free view · Drag Orbit; Shift+drag pans, wheel dollies · `W` `A` `S` `D` Fly; `Q` / `E` down / up · Top view Inset from above, with Fit and ✕ · `F` Frame the selection · `Esc` Deselect before WASD (with a car selected, `D` = Drive)
 
@@ -329,7 +329,7 @@ Cole steps out into the rain and looks off at the wrecked crates. Then Cole turn
 
 **Where things live:**
 
-- **Top bar:** Steps 1-7, scene switcher on ③-⑤ (◀ ▶ = scene, ▾ = shots), Undo / Redo, Presets, Tools ▾, Book, Director, Guide, Done. Below 1400 px some are icons (hover for the name); in a narrow window the least used fold into **⋯**
+- **Top bar:** Steps 1-7, scene switcher on ③-⑤ (◀ ▶ = scene, ▾ = shots), Undo / Redo, Presets, Tools ▾, Book, ✦ Ask, Guide, Done. Below 1400 px some are icons (hover for the name); in a narrow window the least used fold into **⋯** (✦ Ask never does)
 - **Left dock:** Build with AI, Add object, Person, Interact, Capture motion, Video → 3D, Photo → 3D, Camera, Set & weather, Lighting, Phone camera
 - **Right inspector:** Everything for what you selected: Object, Camera, Set, Light, AI. Long: scroll for Lens & rig, Parts and Eyes
 - **Above the viewport:** Camera view, Free view, Top view, Show cameras, Look, Coach; Wire / Clay / Color / Depth
