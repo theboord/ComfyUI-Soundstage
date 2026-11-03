@@ -300,7 +300,7 @@ Reed steps out into the rain and looks off at the wrecked crates. Then Reed turn
 
 ## Cheat sheet
 
-**Anywhere:** `V` Presets · `/` Director chat (preview) · `?` Shortcuts sheet, or the keyboard icon · `H` / `Tab` Hide or show every panel · `⌘Z` / `⇧⌘Z` Undo / redo · `←` `→` Change scene (rebuilds the stage) · `Space` On ③ Set: Play / stop
+**Anywhere:** `V` Presets · `/` or `⌘K` / `Ctrl+K` Ask (the assistant) · `?` Shortcuts sheet, or the keyboard icon · `H` / `Tab` Hide or show every panel · `⌘Z` / `⇧⌘Z` Undo / redo · `←` `→` Change scene (rebuilds the stage) · `Space` On ③ Set: Play / stop
 
 **Look around:** `0` Shot camera / free view · Drag Orbit; Shift+drag pans, wheel dollies · `W` `A` `S` `D` Fly; `Q` / `E` down / up · Top view Inset from above, with Fit and ✕ · `F` Frame the selection · `Esc` Deselect before WASD (with a car selected, `D` = Drive)
 
@@ -318,7 +318,7 @@ Reed steps out into the rain and looks off at the wrecked crates. Then Reed turn
 
 **Where things live:**
 
-- **Top bar:** Steps 1-7, scene switcher on ③-⑤ (◀ ▶ = scene, ▾ = shots), Undo / Redo, Presets, Tools ▾, Book, Director, Guide, Done
+- **Top bar:** Steps 1-7, scene switcher on ③-⑤ (◀ ▶ = scene, ▾ = shots), Undo / Redo, Presets, Tools ▾, Book, ✦ Ask, Guide, Done
 - **Left dock:** Build with AI, Add object, Person, Interact, Capture motion, Video → 3D, Photo → 3D, Camera, Set & weather, Lighting, Phone camera
 - **Right inspector:** Everything for what you selected: Object, Camera, Set, Light, AI. Long: scroll for Lens & rig, Parts and Eyes
 - **Above the viewport:** Camera view, Free view, Top view, Show cameras, Look, Coach; Wire / Clay / Color / Depth
