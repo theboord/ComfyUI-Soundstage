@@ -335,6 +335,9 @@ export const PRO_CSS = `
 .ss-stage :is(.ss-pipeview, .ss-time) button.go.next { background:transparent !important; color:var(--ss-text) !important; border:1px solid var(--ss-line-strong) !important; }
 .ss-stage :is(.ss-pipeview, .ss-time) button.go.next:hover:not(:disabled) { background:rgba(255,255,255,.06) !important; border-color:var(--ss-accent-line) !important; filter:none; }
 .ss-stage :is(.ss-pipeview, .ss-time) button.go.next:active:not(:disabled) { background:var(--ss-pressed) !important; filter:none; }
+/* ③ Set's way on is the step's main exit (Mike, Nov 3): the yellow fill, a little larger, so it can't be missed at the end of the time bar. */
+.ss-stage .ss-time button.go.next.ss-setnext { background:var(--ss-accent) !important; color:var(--ss-on-accent, #1a1420) !important; border-color:var(--ss-accent) !important; padding:6px 14px !important; font-size:13px !important; }
+.ss-stage .ss-time button.go.next.ss-setnext:hover:not(:disabled) { background:var(--ss-accent) !important; filter:brightness(1.06); }
 /* Paint Studio, inside ④ Frame's panel: a strong secondary next to Generate frames. */
 .ss-stage .ss-hudp button.go.ss-paint-open { background:var(--ss-raised) !important; color:var(--ss-text) !important; border:1px solid var(--ss-line-strong) !important; }
 .ss-stage .ss-hudp button.go.ss-paint-open .ss-icon { color:var(--ss-accent); }
