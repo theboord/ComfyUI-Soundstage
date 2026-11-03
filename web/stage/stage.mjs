@@ -741,7 +741,7 @@ export class Stage {
     const gravity = feelGravity(this.physicsFeel());
     // SFX blasts (sfxstage.mjs passes them in): every body near an explosion gets its radial push at the cue.
     const res = simulate(specs, last + 1, { fps, substeps: opts.substeps || 20, gravity, blasts: opts.blasts || [] });
-    this._lastSim = { blasted: res.blasted || {}, takeovers: res.takeovers || {} };
+    this._lastSim = { blasted: res.blasted || {}, blastedBy: res.blastedBy || {}, takeovers: res.takeovers || {} };
     const qa = checkTracks(specs, res, fps);
     // The hits, stored with the bake (Milestone 21): impact dust, camera shake, prompt beats and A2 sounds key off them.
     // A car's body / cabin boxes report as the car.
