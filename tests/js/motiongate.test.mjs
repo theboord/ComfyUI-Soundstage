@@ -122,6 +122,7 @@ function harness({ preset = "Hollywood", motion = FAIL, shot = "s1" } = {}) {
   const api = {
     clientId: "c", listeners: {},
     addEventListener(t, f) { (this.listeners[t] ||= []).push(f); },
+    emit(t, detail) { for (const f of this.listeners[t] || []) f({ type: t, detail }); },
     async fetchApi(url) {
       const body = url === "/soundstage/takecheck" ? { verdict: "clean", chips: [{ tone: "ok", text: "✓ clean" }], checks: {}, recipe: { shot: { id: "s1" } }, motion }
         : url === "/soundstage/takecheck/timing" ? {} : { steps: {} };
@@ -204,4 +205,39 @@ test("the reference is captured from the clay rig on every frame of the shot, th
   assert.ok(ref.people[0].hands[0][0]?.length === 21, "a right hand of 21 points");
   assert.equal(frame, 0, "the playhead is put back");
   assert.equal(await captureMotionReference({ ...stage, actorMeshes: new Map() }), null);
+});
+
+test("an interrupted gate is settled: Check motion comes back and a Hollywood final is not held", async () => {
+  const THREE = await import("../../web/vendor/three.module.min.mjs");
+  const { buildHuman } = await import("../../web/stage/humans.mjs");
+  const { attachTakeChecks } = await import("../../web/takecheck/takecheck.mjs");
+  const h = harness({ motion: null });                // a Hollywood draft not gated yet: the App gates it by itself
+  const g = buildHuman("man", 1.8, {}, (geo, mat) => new THREE.Mesh(geo, mat));
+  const camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 100);
+  camera.position.set(0, 1.2, 6); camera.lookAt(0, 1, 0);
+  Object.assign(h.stage, {
+    fw: 960, fh: 540, camera, frame: 0, state: { shot: { frames: 10, fps: 24 } }, actorMeshes: new Map([["a1", g]]),
+    toJSON: () => ({ actors: [{ id: "a1", name: "Ana", kind: "man" }] }),
+    setFrameSilent(f) { g.position.x = f * 0.1; g.updateMatrixWorld(true); }, setFrame(f) { this.setFrameSilent(f); },
+  });
+  const posts = [], fetchApi = h.api.fetchApi;
+  h.api.fetchApi = async (url, opts) => {
+    posts.push(url);
+    if (url === "/soundstage/takecheck/motionref") return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    if (url === "/prompt") return { ok: true, status: 200, json: async () => ({ prompt_id: "gate-1" }) };
+    return fetchApi.call(h.api, url, opts);
+  };
+  attachTakeChecks({ app: { graph: null }, api: h.api, ladder: h.ladder, pipeline: h.pipeline, stage: h.stage, say: () => {} });
+  for (let i = 0; i < 60 && !posts.includes("/prompt"); i++) await tick();
+  await tick();
+  assert.ok(posts.includes("/prompt"), "the gate queued its DWPose prompt");
+  const strip = h.ladder.bar.parent.children[1];
+  assert.match(strip.textContent, /Motion: checking…/);
+
+  h.api.emit("execution_interrupted", { prompt_id: "gate-1" });      // ComfyUI's event for an interrupted prompt
+  for (let i = 0; i < 60 && !/Check motion/.test(strip.textContent); i++) await tick();
+  assert.match(strip.textContent, /Check motion/, "not 'Motion: checking…' forever");
+  await h.pipeline._render(4);
+  assert.equal(modalButtons().length, 0, "no 'still checking' dialog");
+  assert.deepEqual(h.calls, [[4, false]]);
 });

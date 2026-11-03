@@ -351,7 +351,7 @@ export function attachTakeChecks(ctx) {
       check(f).then((res) => { const b = res?.blocking; say(b?.score != null ? `Blocking measured: ${Math.round(b.score * 100)}% (${b.basis}).` : "Blocking: can't tell from this take."); });
     }
   };
-  for (const t of ["execution_success", "execution_error"]) api?.addEventListener?.(t, settled);
+  for (const t of ["execution_success", "execution_error", "execution_interrupted"]) api?.addEventListener?.(t, settled);
 
   // ------------------------------------------------------------------ Dailies
   /** Put a take's verdict on a Dailies card thumb ("card") or a takes row ("row"). */
