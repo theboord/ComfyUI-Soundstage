@@ -344,7 +344,8 @@ def test_performer_wardrobe_and_placement():
     poses = [np.hstack([np.eye(3), np.zeros((3, 1))])] * 2
     out = P.place(take, poses, [0.0, 1.0], A, b, K, (640, 480), 24.0)
     x, z = out["path"][0]
-    assert abs(z - 1.6 * 500 / 160) < 0.2 and abs(x) < 0.3      # the ray through the feet hits the floor 5 m out
+    # The ray through the ankle meets ankle height (P.ANKLE_M up), not the floor: 4.75 m out.
+    assert abs(z - (1.6 - P.ANKLE_M) * 500 / 160) < 0.2 and abs(x) < 0.3
     assert abs(abs(out["yaw"][0]) - 180) < 1                      # facing back toward the camera
 
 

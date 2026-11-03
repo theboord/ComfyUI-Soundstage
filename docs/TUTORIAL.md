@@ -1558,7 +1558,7 @@ The take row under the panel shows **Name · seconds · frames a–b** with:
 
 Press the yellow **Import video** button, **Video → 3D set** in the tool rail or **Import an image as… → Video → 3D set**, or drop a clip on the stage, and pick an `.mp4`, `.mov`, `.webm`, `.mkv`, `.mxf` or `.m4v`. A one-screen chooser asks what the clip is for: **Rebuild as a 3D set**, **Capture motion** (onto a person, as above) or **Edit with Ripple**. For a rebuild it also offers **Quality** (Fast, Standard, Max), **Stage** (**Replace the set** or **Add to it**) and, under **Advanced**, **Set scan** (on this server, a depth mesh of the first frame behind the set) and the vision model on or off. Press **Rebuild**. The chooser also shows a **Trim** filmstrip, **People** and lens fields, but the server doesn't use them yet: it rebuilds the whole clip, and it caps Quality at 24 depth samples.
 
-A progress card shows the server's current step: sampling frames, measuring depth (Depth Anything 3), tracking the camera, reading the shot (the vision model), building the set, capturing the performance (SAM 3D Body). **Cancel** stops waiting and leaves your set as it was; a job already on the server finishes there.
+A progress card shows the server's current step: sampling frames, measuring depth (Depth Anything 3), reading the shot (the vision model), capturing the performance (SAM 3D Body), tracking the camera (with SAM's lens), building the set. **Cancel** stops waiting and leaves your set as it was; a job already on the server finishes there.
 
 What you get:
 
@@ -1567,7 +1567,18 @@ What you get:
 - **The camera move as keys** (up to 8) that you can drag in **Top** view to re-shoot it.
 - **The performer**, motion-captured, standing on the rebuilt floor where they stood.
 
-The result card offers **Play the take** (when there is a performer), **Identical? Compare**, **Undo: bring the old set back** (after replacing a set) and **Shoot it → Frame**. The **Identical?** bar over the view puts the source clip over the stage (**Overlay**, **Wipe**, **Onion**, **Off**; keys 1 to 4). Its per-object **Match** score and one-click fixes (**Fit to plate**, **Swap**, **Nudge**, **Re-key**, **Lock camera**) need clip masks, which the current server doesn't write yet. Details: [video2stage.md](video2stage.md).
+The result card offers **Play the take** (when there is a performer), **Identical? Compare**, **Passes**, **Undo: bring the old set back** (after replacing a set), **↻ Regenerate** and **Shoot it → Frame**. The **Identical?** bar over the view puts the source clip over the stage (**Overlay**, **Wipe**, **Onion**, **Off**; keys 1 to 4). Its per-object **Match** score and one-click fixes (**Fit to plate**, **Swap**, **Nudge**, **Re-key**, **Lock camera**) need clip masks, which the current server doesn't write yet. Details: [video2stage.md](video2stage.md).
+
+**When it comes out wrong (it may take one or two tries).**
+
+- **↻ Regenerate** (on the result card) runs the rebuild again with a new seed. A dialog asks what to keep: **Keep the camera solve**, **Keep the performer**, **Keep the set**. What you tick is not run again: the server reuses that stage from the last run (the camera solve, SAM 3D Body's take, the vision model's read), and the App keeps it from your scene as it is now, edits included. Depth is always reused (Depth Anything 3 has no seed). The card then says what was kept and what was re-run ("camera solve kept · set read re-run").
+- **Fix this object** rebuilds ONE object instead of the whole world. Select a rebuilt object and right-click the view (or use its row in the Identical? bar), then click the object on the source frame (Esc: start from where the rebuild has it). SAM 3.1 tracks just that object over the source frames, the clearest frames are picked, and it is rebuilt alone through the Photo → 3D object path (TripoSplat, then a mesh). It keeps its place, turn and size from the solve and comes in as a new version: **Undo** puts the old one back.
+- **Remove (not in the video)** takes out an object the rebuild invented (Undo puts it back).
+- **Add a missed object** (the right-click menu, or **+ Missed object** on the Identical? bar): click it on the source frame. It is tracked and rebuilt the same way, and stood where the bottom of its mask meets the floor.
+
+Regenerate and the fixes are server jobs: the job card shows their steps and they appear by name in **Activity**. In the try-it demo they only give the "available in the full install" note. A fix needs the rebuild's stage record, so a clip rebuilt before this version must be rebuilt (or regenerated) once first. Without TripoSplat on the server, Fix this object keeps the shape and only re-reads its colour (a note says so).
+
+**One lens.** When there is a performer, the camera, the set and the clay share SAM 3D Body's focal length (it is fitted to the person), and the set's scale comes from the performer's measured size, so the clay covers the person in the picture. On the street-dance clip the clay used to come out at about two-thirds of the dancer's size, with its shoulders at her chest, because the solve used Depth Anything 3's 25 mm guess against SAM's 41 mm.
 
 Notes: **Replace the set** (the default on an empty stage) clears what is there; **Undo: bring the old set back** restores it. **Add to it** keeps your actors and adds the clip's camera as a new shot. It needs a Depth Anything 3 checkpoint; without Qwen3.5 you get the camera move only (no subjects or set pieces); without SAM 3D Body, no performer. Camera roll isn't tracked, and very fast whip pans can break the track. The clip is also saved in `input/` so the graph's Footage and Recast nodes can use it.
 
