@@ -151,6 +151,7 @@ test("the App wires ↻ Regenerate, the fixes, Undo and the Activity names; the 
   assert.match(app, /onFix: \(id, pick\) => fixObject\(id, pick\), onRemove: \(id\) => removeInvented\(id\), onAdd: \(pick\) => addMissed\(pick\)/);
   assert.match(app, /mergeLocked\(before, scene, regen\.lock\)/);
   assert.match(app, /new CustomEvent\(JOB_EVENT/);
+  assert.match(app, /fixBtn\.dataset\.act = "v2s-fix"/);                 // the inspector button
   const cmp = readFileSync(join(ROOT, "web", "ui", "v2scompare.mjs"), "utf8");
   for (const k of ["refit", "remove", "add-missed"]) assert.match(cmp, new RegExp(`"${k}"`));
   const demo = readFileSync(join(ROOT, "tools", "tryit", "shell", "scripts", "api.js"), "utf8");
