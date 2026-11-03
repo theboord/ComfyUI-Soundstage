@@ -128,7 +128,16 @@ export function settingsFromPrompt(prompt) {
   const still = stillPicker === true && pick ? { model: pick.inputs?.model ?? null, seed: num(pick.inputs?.seed) }
     : stillPicker === false && krea ? { model: "__krea_depth__", seed: num(krea.inputs?.seed) } : null;
   const touchup = sw("9086", /touched-up still/i) === true;
-  return { settings, engine, still: still ? { ...still, touchup } : touchup ? { touchup } : null };
+  let look = nodes.find((n) => n.class_type === "SoundstageLook")?.inputs?.look;
+  if (typeof look === "string") { try { look = JSON.parse(look); } catch { look = null; } }
+  return { settings, engine, still: still ? { ...still, touchup } : touchup ? { touchup } : null,
+    look: look && typeof look === "object" && !Array.isArray(look) ? look : null };
+}
+
+/** The Look keys where the take's Look differs from the scene's Look now (sorted-key JSON per key). */
+export function lookDiff(take, now) {
+  const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort()) : x));
+  return Object.keys(take || {}).filter((k) => canon(take[k]) !== canon(now?.[k]));
 }
 
 /** "Cut → one video" (soundstage.js flattenCut): one clip's file. A pinned clip joins its pinned file (clay: a slate). */
@@ -322,10 +331,12 @@ export function attachEditLink(host) {
 
   // A one-line note in the step's own status area (as Review's Redo does), plus the App's status line.
   const stepNote = el("div", "ss-editnote");
-  function note(step, text) {
+  function note(step, text, buttons = []) {
     say(text);
     const anchor = (step === "frame" ? pipeline.f : step === "motion" ? pipeline.m : null)?.status;
-    if (anchor?.parentNode) { stepNote.textContent = `From the cut · ${text}`; anchor.parentNode.insertBefore(stepNote, anchor); } else stepNote.remove();
+    if (!anchor?.parentNode) { stepNote.remove(); return; }
+    stepNote.replaceChildren(`From the cut · ${text}`, ...buttons.map((b) => { b.style.marginLeft = "8px"; return b; }));
+    anchor.parentNode.insertBefore(stepNote, anchor);
   }
 
   function rippleTo(l, { paint = false, rerun = false } = {}) {
@@ -417,8 +428,24 @@ export function attachEditLink(host) {
         if (want && [...pipeline.m.engine.options].some((o) => o.value === want)) { pipeline.m.engine.value = want; pipeline._applyVideo?.(); }
       }
       const what = l.type === "look" ? "Animate this frame" : l.type === "clay" ? "Render it" : "Re-generate";
+      // What differs from when the take was rendered: offered as buttons, never applied for you.
+      const extras = [], differs = [];
+      const st = got?.still;
+      if (st?.seed != null && pipeline.chosen?.[sid]?.seed !== st.seed) {
+        const c = (pipeline.candidates?.[sid] || []).find((x) => x.seed === st.seed && (!st.model || !x.model || x.model === st.model));
+        if (c) extras.push(btn("Use this take's frame", "ghost", () => { try { pipeline.choose(c); } catch { /* frame view not built */ } say(`${shotName(l)}: this take's frame is the shot's frame again.`); }));
+        else differs.push(`its frame (seed ${st.seed}) is no longer among the shot's frames`);
+      }
+      if (got?.look && host.look?.toJSON && lookDiff(got.look, host.look.toJSON()).length) {
+        extras.push(btn("Use this take's Look (all shots)", "ghost", () => {
+          host.look.load(got.look);
+          try { host.look.onChange?.(host.look.toJSON()); } catch { /* the widget write */ }
+          say("The scene's Look is this take's again (every shot of the scene uses it).");
+        }));
+      }
       note("motion", s ? `${shotName(l)}: ${what} with this take's settings (${s.preset || "Final"}${s.seed != null ? `, seed ${s.seed}` : ""}${s.adherence ? `, ${s.adherence}` : ""}). ` +
-        "The same seed gives the same take only with the same frame, Look and stage." : `${shotName(l)}: ${what}. ${why || "The shot's current settings."}`);
+        `The same seed gives the same take only with the same frame, Look and stage${differs.length ? `: ${differs.join("; ")}` : ""}.`
+        : `${shotName(l)}: ${what}. ${why || "The shot's current settings."}`, extras);
     },
     ripple: (l) => rippleTo(l),
     paint_v2v: (l) => rippleTo(l, { paint: true }),
