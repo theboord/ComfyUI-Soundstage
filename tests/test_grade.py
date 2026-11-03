@@ -9,6 +9,7 @@ import base64
 import io
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -303,7 +304,7 @@ def _node(script, arg):
 
 @pytest.mark.skipif(not NODE, reason="node not installed")
 def test_package_parity_with_browser_writers():
-    mod = "file://" + os.path.join(ROOT, "web", "cut", "exporters.mjs")
+    mod = pathlib.Path(ROOT, "web", "cut", "exporters.mjs").as_uri()
     js = _node(f'import {{ exportAll }} from "{mod}"; process.stdout.write(JSON.stringify(exportAll(JSON.parse(process.argv[1]))));', GRADED)
     py = export_all(GRADED)
     assert list(js) == list(py)
@@ -319,7 +320,7 @@ def test_continuity_parity_with_coach():
             {"id": "c", "name": "1C", "scene": "SC1", "stats": frame_stats(expose(warm(base, -0.3), 0.6))},
             {"id": "d", "name": "1D", "scene": "SC2", "stats": frame_stats(expose(base, -2))},
             {"id": "e", "name": "1E", "scene": "SC2", "stats": frame_stats(base)}]
-    mod = "file://" + os.path.join(ROOT, "web", "grade", "grade.mjs")
+    mod = pathlib.Path(ROOT, "web", "grade", "grade.mjs").as_uri()
     js = _node(f'import {{ checkCut }} from "{mod}"; process.stdout.write(JSON.stringify(checkCut(JSON.parse(process.argv[1]))));', rows)
     py = check_cut(rows)
     assert len(py) >= 2
