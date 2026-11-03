@@ -13,17 +13,288 @@ This guide is for anyone who has just cloned the repo. It covers where every pan
 
 ## Contents
 
+0. **[New on 1 and 2 November](#new-on-1-and-2-november)** (limits first): [world collisions](#world-collisions-everything-collides) · [✦ One-click](#one-click-effects-relight-angles-expand) · [Seamless loop](#seamless-loop-and-the-seam-meter) · [Reshoot](#reshoot-from-a-new-angle) · [Open in ComfyUI](#open-in-comfyui-and-download-the-graph) · [Film a move](#film-a-move-on-your-phone) · [Racing Cinema](#racing-cinema-and-the-racing-camera-moves) · [boats](#boats) · [swimming](#swimming-and-water) · [Drive mode](#drive-mode-what-changed) · [voice conversion](#voice-conversion-in-real-performance) · [1024 layout and ⋯](#the-1024-wide-layout-and-the-menu) · [pop-over layer](#one-pop-over-layer-for-every-menu) · [brass key and strip](#the-brass-key-and-the-shot-strip-fixes) · [Cut timeline note](#the-cut-timeline-being-upgraded-tonight) · [Passes viewer](#passes-judge-the-matte-pose-talking-and-depth)
 1. [Install](#1-install)
 2. [A tour of the workspace](#2-a-tour-of-the-workspace)
 3. [The seven steps, one by one](#3-the-seven-steps-one-by-one)
    - [① Script](#step-1-script) · [② Cast & Locations](#step-2-cast) · [③ Set](#step-3-set) · [④ Frame](#step-4-frame) · [⑤ Motion](#step-5-motion) · [⑥ Review](#step-6-review) · [⑦ Deliver](#step-7-deliver)
-   - [Dailies and the lined script](#dailies-and-the-lined-script) ([ScriptSync](#scriptsync-lined-script)) · [The Look tab: re-render in any film look](#the-look-tab-re-render-in-any-film-look) · [The Stop button](#the-stop-button)
-   - **New since the contest:** [The Director: chat, voice and MCP](#the-director-chat-voice-and-mcp) · [Presets](#presets-one-click-camera-moves-and-lighting) · [Quality: Draft, Final, Hollywood](#quality-draft-final-hollywood) · [Takes that check themselves](#takes-that-check-themselves) · [Timeline: transitions, sound, titles and render](#transitions-sound-titles-and-render)
+   - [Dailies and the lined script](#dailies-and-the-lined-script) ([ScriptSync](#scriptsync-lined-script)) · [The Look tab: re-render in any film look](#the-look-tab-re-render-in-any-film-look) · [The Stop button](#the-stop-button) · [Activity: what the GPU is doing](#activity)
+   - **New since the contest:** [Ask: the assistant, on every screen](#ask-the-assistant) · [The Director: chat, voice and MCP](#the-director-chat-voice-and-mcp) · [Presets](#presets-one-click-camera-moves-and-lighting) · [Quality: Draft, Final, Hollywood](#quality-draft-final-hollywood) · [Takes that check themselves](#takes-that-check-themselves) · [Timeline: transitions, sound, titles and render](#transitions-sound-titles-and-render)
 4. [The 3D stage in depth](#4-the-3d-stage-in-depth)
    - **New since the contest:** [Live 3D: drag, climb, mount, carry](#live-3d-drag-climb-mount-carry) · [Drive mode](#drive-mode-control-anything-like-a-video-game-and-record-it) · [Stunts](#stunts-j-turn-donut-handbrake-180) · [The new sets](#the-new-sets) · [Interop: Blender, Unreal, Maya, Nuke](#interop-blender-unreal-maya-nuke) · [Phone camera and the phone viewfinder](#phone-camera)
 5. [Keyboard and mouse cheat sheet](#5-keyboard-and-mouse-cheat-sheet)
 6. [Tips and tricks](#6-tips-and-tricks)
 7. [Troubleshooting and FAQ](#7-troubleshooting-and-faq)
+
+---
+
+<a id="new-on-1-and-2-november"></a>
+
+## New on 1 and 2 November
+
+Everything below landed on `main` on 1 and 2 November 2026 ([CHANGELOG](../CHANGELOG.md)). Each part says where it is in the App, gives the steps, and names one limit. The limits come first, because they are what you will hit.
+
+**Judging it?** Start with [Judging it? Start here](../README.md#judging-it-start-here) at the top of the README: a 60-second path through the [try-it demo](https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq) and a table of what runs live in your browser and what is a recording of a real run, played back. Then do the [Quickstart](QUICKSTART.md).
+
+### Known limits, first
+
+| Feature | The limit you will meet |
+|---|---|
+| [World collisions](#world-collisions-everything-collides) | Checked headless in Node only; not yet watched in a browser or rendered. After a hit a car is one rigid body: it dents, but nothing folds or comes off, and its wheels stop spinning and steering. |
+| [✦ One-click](#one-click-effects-relight-angles-expand) | Most prompt fixes are not re-rendered yet. The Krea 2 depth pass and the **· exact** angles are experimental (one invented people, the other can look like clay). |
+| [Seamless loop](#seamless-loop-and-the-seam-meter) | No loop made so far is seamless: the meter read *Visible seam* on every test render. The meter and the fixer work; the loop render isn't good enough yet. |
+| [Reshoot from a new angle](#reshoot-from-a-new-angle) | Not Hollywood yet: on the riders test a shirt drifted from red to brown, a hat appeared mid-clip and the last half second dissolved into dust. |
+| [Open in ComfyUI](#open-in-comfyui-and-download-the-graph) | Needs a ComfyUI restart after updating; until then the card says *"this server needs a restart to know the hand-off route"*. |
+| [Film a move](#film-a-move-on-your-phone) | Needs the https address (run `tools/vcam_bridge.py`); a plain http page can't record. Uploads stop at 300 MB. |
+| [Racing Cinema](#racing-cinema-and-the-racing-camera-moves) | No frame or video has been rendered with it yet. **Long-lens pan** cannot hold a fast J-turn inside the 40 m depth guide (at 60 km/h 2 of 21 keys fall past it; the toast says so). |
+| [Boats](#boats) | No capsize, no swamping, no rock collisions (the raft passes through boulders). Canoe and rowboat turns are slow, and the log raft's pole barely steers. |
+| [Swimming](#swimming-and-water) | No swim-style picker: the style follows the speed. Renders look like CG animation, not photographed water. |
+| [Drive mode](#drive-mode-what-changed) | The view can stay on the shot camera instead of following what you drive: press `V` to cycle it. |
+| [Voice conversion](#voice-conversion-in-real-performance) | On a voice Chatterbox did not make, Whisper misheard 39-51% of Ezra's words. Listen to every converted line. Clips over 20 s need a ComfyUI restart to convert in pieces. |
+| [1024-wide layout](#the-1024-wide-layout-and-the-menu) | Checked headless at 1024×640, not on a real 1024-pt iMac. At 1024 the picture is small. |
+| [Pop-over layer](#one-pop-over-layer-for-every-menu) | Coach tips were not part of the sweep (the demo scene has none). |
+| [Brass key and the strip](#the-brass-key-and-the-shot-strip-fixes) | Holding and tossing a key is set in the scene data; there is no button for it yet. In Clay the key reads small and grey: it shows brass only in Color. |
+| [Cut timeline](#the-cut-timeline-being-upgraded-tonight) | Playback, frame rates and *Edit in* are being rebuilt tonight, so they aren't documented here yet. |
+| [Passes viewer](#passes-judge-the-matte-pose-talking-and-depth) | The matte tools were checked headless on a synthetic Layer Pack only: no real SAM 3.1 or BiRefNet matte has been judged in it yet. A clip ✦ Cutout's alpha is ProRes 4444, which browsers can't decode, so it isn't shown. Pose has per-point confidence for the face only, until a new Real performance read (body and hands come with the next ComfyUI restart). |
+
+<a id="world-collisions-everything-collides"></a>
+
+### World collisions: everything collides
+
+**Where:** select a prop, press **Physics** in its card. The panel's **World** row holds **Everything collides** (on by default) and **Keep keyed**. The Director runs the consequence check.
+
+Cars, people, street lamps, benches, hydrants, trees and walls are real bodies in **Simulate & bake**. A keyed car keeps its keys until its first real hit; then the physics takes over.
+
+1. Key a car through another car, a lamp, a wall or a crate stack (or tell the Director *"the police car rams the red car into the boxes"*).
+2. Press **Simulate & bake**. The panel and the status line say where the physics took over: *"Physics took over at f 42 (1.8 s)"*.
+3. Scrub back and forth: the bake is deterministic, so every pass plays the same frames.
+4. Change your mind? One **⌘Z** restores the scene from before the bake. Edit a key or drag anything in a baked scene and it re-bakes about half a second after you stop; the edit and its re-bake are one Undo step.
+5. To keep one actor on its path whatever it hits, select it and press **Keep keyed**. To let everything pass through everything again, turn **Everything collides** off.
+6. **The consequence check.** Type *"check for collisions"* in the Director (press **/**). It runs by itself before every Director render too. It says what passes through what, in plain words, with one-click fixes: **Crash them** or **Reroute** for two cars, **Make them collide** for a group of props, **Crash them all (bake)** for an unbaked scene. Anything still passing through stops the render; say *"render the draft anyway"* to render it as it is. With **Everything collides** off the check doesn't stop the render.
+
+**Limit:** checked headless only. People are "ragdoll-lite": one body that topples, still playing its walk cycle while it slides. A car stops against a solid wall in one substep (a real crush takes about 0.1 s). Of the set pieces, only the street and plaza lamp posts can be knocked down; facades and planters stay put. The *ram* plan assumes a constant speed, but the stage eases between keys, so the real hit comes a little later and faster than the Director says. Details: [world.md](world.md).
+
+<a id="one-click-effects-relight-angles-expand"></a>
+
+### ✦ One-click: effects, relight, angles, expand
+
+**Where:** the **✦** button on every Dailies take (its card and its row in the takes list), the **✦ One-click** button on ⑥ Review's Ladder bar (it works on the best layer on view: Final, else Draft, else Frame), and a **✦** on every ④ Frame candidate.
+
+1. Click **✦**. One card window opens over the canvas with every card in groups: **Effects**, **Light**, **Camera**, **Frame**, **Loop** and **Hand-off**. A card that doesn't fit this take is greyed; hover it for the reason.
+2. Click a card. It asks once, with the cost: **Run (about N min on your GPU)** for a GPU card, **Go** for one that needs none, or **Cancel**. Fill its fields first if it has any (*What to take out*, *What to keep*).
+3. The result lands as a new take: *"✦ Nightfall landed as a new take."* A still also becomes a ④ Frame candidate. The take checks and the realism judge run on it.
+4. Under the result: **Open**, **Use as ④ Frame** (stills) and **✦ again** to run another card on the result.
+5. **Esc** closes the window (or backs out of the ask first).
+
+What's in the groups:
+
+- **Effects:** Nightfall, Flood, Rain, Snow, Fog, Golden hour, **Empty the scene**, **Cutout** (a PNG, or ProRes 4444 with alpha for a clip), **Living photo** (five seconds of small real motion and sound, camera locked off). Pop, Inflate, Cake, Squish, Unzip and Gulp are experimental.
+- **Light:** the 18 lighting setups as relights. The box *Experimental: add a Krea 2 pass locked to the stage depth (it can invent things)* is off by default.
+- **Camera:** Orbit left, Orbit right, Low angle and three more, each approximate (FLUX 3 Klein) or **· exact** (experimental: the shot camera really moves on the stage), plus **Reshoot from a new angle** for clips (below).
+- **Frame:** **Expand to 2.39:1**, 1.85:1, 16:9, 4:3, 1:1 or 9:16 on a still (Paint Studio's Extend; the original pixels never change), and **Expand a clip** (greyed for now: *not yet*, its out-painting LoRA is untested on LTX-2.5).
+
+**Limit:** the first renders found problems: the depth-locked Krea 2 pass invented three people and a different street (now off by default), the first Flood left a thin film of water with feet on top, and Living photo morphed a canoe. The prompts are fixed but not re-rendered yet. Every card costs $0 (local models) but uses your GPU. Details: [oneclick.md](oneclick.md).
+
+<a id="seamless-loop-and-the-seam-meter"></a>
+
+### Seamless loop and the seam meter
+
+**Where:** ✦ One-click › **Loop**: **Seamless loop**, **Seam meter**, **Fix a loop seam**.
+
+1. Open ✦ on a still or a take and pick **Seamless loop**.
+2. Say **What moves** and the **Length**. Leave *If the seam shows: trim it, then one bridge render (a 2nd GPU job)* ticked if you want the fixer.
+3. Run it. LTX-2.5 starts on the picture and is guided back to it at the end.
+4. Read the badge on the take: **Seamless · 1.2x**, or **Visible seam · 8.3x (jump at frame 86)**, with what the fixer tried.
+5. On any clip, **Seam meter** scores the wrap on the CPU (no GPU). **Fix a loop seam** trims to the best frame pair, then makes one bridge render back to frame 1, and reports before → after. It never crossfades.
+
+**Limit:** no loop made so far is seamless. On a canoe the meter read *Visible seam · 8.3x*; a bridge render fixed the paddlers but not the water (17x), so the fixer kept the original. On a crash shot LTX drove the car through the crates. The loop routes need a ComfyUI restart; until then the card says *"this server needs a restart"*. Details: [loop.md](loop.md).
+
+<a id="reshoot-from-a-new-angle"></a>
+
+### Reshoot from a new angle
+
+**Where:** ✦ One-click › **Camera** › **Reshoot from a new angle** (clips only).
+
+1. Open ✦ on a clip take and pick **Reshoot from a new angle**.
+2. Choose a **Move** (orbit, rise, dolly or lens), or **Or type it**: *orbit 12, tilt -4, dolly 10, lens 1.2*.
+3. Run it (two GPU jobs, about 4 min). Depth Anything 3 reads every frame, the camera is moved, and LTX-2.5 re-renders the take with its own sound.
+4. The take says the move in words and how much of the view had to be invented.
+
+**Limit:** the moves are capped at ±15° orbit, ±8° rise, 25% dolly and 0.7-1.6x lens, because past that too much is invented. Even inside the caps it isn't Hollywood yet (see the table above). Details: [reshoot.md](reshoot.md).
+
+<a id="open-in-comfyui-and-download-the-graph"></a>
+
+### Open in ComfyUI and Download the graph
+
+**Where:** ✦ One-click › **Hand-off** › **Open in ComfyUI** and **Download the graph**. No GPU.
+
+1. Open ✦ on any take and pick **Open in ComfyUI**.
+2. The exact graph that made the take opens in a **new workflow tab**, framed. Your App tab keeps its nodes and its stage.
+3. Tweak and queue it there like any ComfyUI graph.
+4. **Download the graph** saves the UI workflow and the API prompt as JSON files instead.
+
+**Limit:** it opens the graph saved inside the take (the UI workflow when the take carries one, else the API prompt), and only for files inside ComfyUI's own folders: anything else is refused (*a file in input/output/temp*). Details: [handoff.md](handoff.md).
+
+<a id="film-a-move-on-your-phone"></a>
+
+### Film a move on your phone
+
+**Where:** ✦ One-click › **Hand-off** › **Send a move from your phone** (a QR code), then **Film** on the phone viewfinder's side rail.
+
+1. If ComfyUI runs on another machine, start `python3 tools/vcam_bridge.py` on your computer first (https on your Wi-Fi only).
+2. Pick **Send a move from your phone** and scan the QR.
+3. On the phone, tap **Film**. Under **Send it as**, choose **Capture motion** (your movement onto a person), **Real performance** (your body, face and voice drive a character) or **Footage** (keep the real clip for Ripple or Recast).
+4. Tap the red record button, act, stop. The clip goes to the computer and lands where you said: Real performance opens with the clip already loaded.
+
+**Limit:** https only (the bridge gives you that); uploads are capped at 300 MB. Film only yourself or someone who agreed. Details: [handoff.md](handoff.md).
+
+<a id="racing-cinema-and-the-racing-camera-moves"></a>
+
+### Racing Cinema and the racing camera moves
+
+**Where:** **Presets** (key `V`): the **Racing Cinema** card on **Looks**; **Bumper cam**, **Over the tyre**, **Arm car tracking** and **Long-lens pan** on **Camera moves**; **J-turn** on **Action**.
+
+1. Select the car and apply **J-turn** (Action).
+2. Apply a racing camera: **Long-lens pan** for the whole 180 in one frame, or **Over the tyre** to ride the wheel.
+3. Apply the **Racing Cinema** look.
+4. Read the toast: it says what the camera gave up (pulled in for the depth guide, moved to the side with room).
+5. Or say it in one line to the Director: *"give the car a J-turn with a long-lens pan in the racing cinema look"*.
+
+**Limit:** see the table above; on the City street the long-lens pan finds only 13 m between the buildings (a 55 mm pan, not a long lens), and the toast says to use the plaza or runway. The full table of what each camera does: [Presets](#presets-one-click-camera-moves-and-lighting).
+
+<a id="boats"></a>
+
+### Boats
+
+**Where:** the add box (**Add object**): **Speedboat**, **Fishing boat**, **Sailing dinghy**, **Sailing yacht**, **Canoe**, **Kayak**, **Rowboat**, **Whitewater raft**, **Log raft**. The sets **Lake (calm, wooded shore, a dock)** and **River rapids (whitewater)** in **Set & weather**. Presets › **Action**: **Speedboat run**, **Sailing tack**, **Canoe on a calm lake**, **Whitewater raft**.
+
+1. In **Set & weather**, pick **Lake** or **River rapids**.
+2. Press `V` › **Action** and click **Speedboat run** (or another boat preset). Or add a boat and key it like a car.
+3. Press **Play**. The hull floats on the waves, a speedboat climbs over its bow wave and then planes, a dinghy heels in the wind, paddlers pull in time.
+4. To steer it yourself, select the boat and press `D` ([Drive mode](#drive-mode-what-changed)).
+5. Fine-tune in **Parts**: throttle, motor trim, rudder, sheet, boom, paddling effort, and the nav, anchor and deck lights.
+
+**Limit:** see the table above. The wake is drawn, not simulated. On the test Drafts the speedboat's crew grew from 2 to 3-4 and the canoe gained a third paddler.
+
+<a id="swimming-and-water"></a>
+
+### Swimming and water
+
+**Where:** the sets **Underwater reef**, **Water tank** and **Open water (sea / lake)** in **Set & weather**; Presets › **Action** › **Diver swim**.
+
+1. In **Set & weather**, pick **Underwater reef**.
+2. Press `V` › **Action** › **Diver swim**, or key a person more than 0.35 m above the seabed.
+3. Press **Play**: they flutter-kick at a speed-matched cadence, with the regulator in the mouth and bursts of bubbles on each exhale. Caustics move on the sand in **Color**.
+4. In a **Water tank** or **Open water**, a person at the water's level swims at the surface: they tread water when still, swim breaststroke when slow and freestyle when faster.
+
+**Limit:** no swim-style picker yet (the style follows the speed; [swim.md](swim.md) lists the scene fields). The fins read as thin lines from the side, small bubbles are 1-2 px at 960 px wide, and a low diver path goes straight through coral.
+
+<a id="drive-mode-what-changed"></a>
+
+### Drive mode: what changed
+
+**Where:** select something and press `D`, or **🎮 Drive** on its bar or in **Properties › Parts**. The full guide: [Drive mode](#drive-mode-control-anything-like-a-video-game-and-record-it).
+
+1. Boats drive on the same physics as their presets: **W** throttle (or paddle), **S** slow / reverse (back-paddle), **A** **D** steer, **Shift** harder.
+2. On a motorboat, **Space** trims the motor out (bow up) and **Q** trims it in; the trim now stays where you set it. A sailboat sails on the wind: steer through the wind to tack.
+3. **R** records as before; a boat take keeps its own throttle, trim and paddle strokes.
+4. Drive mode and the shortcut sheet keep the keyboard to themselves, so keys don't leak to the stage behind them.
+
+5. Driving something keyed takes over from its keys (they wait, unchanged, and play again when you leave); it starts settled upright on the ground. A kept take is auto-corrected and fitted with far fewer keys, with **Undo** to the raw take. See [Drive mode](#drive-mode-control-anything-like-a-video-game-and-record-it).
+6. **⌂ Back to the set** (**.**) and **↶ Last view** (**,**) on the viewport, and a **Lost?** chip when the camera is far off or inside a building.
+
+**Limit:** the view can stay on the shot camera; press `V` to cycle chase, shot and orbit. The red REC pill can overlap the timecode.
+
+<a id="voice-conversion-in-real-performance"></a>
+
+### Voice conversion in Real performance
+
+**Where:** select a person, then **Real performance…** in the person's pose panel, next to **Act it out** (low in the inspector: scroll). In the **Use a real performance** dialog, the **Voice** row.
+
+1. **● Record (camera + mic)** or **Import a clip…** of yourself acting the line.
+2. Tick the consent box and type the performer's name.
+3. In **Voice**, choose **Keep my voice**, **Convert to Mara Voss (MARA_VOSS)** (the character's own voice), or any other saved Character Voice.
+4. Press **Read the performance**. The sound goes through Chatterbox VC (local, free) before the performance is saved, so the converted voice keeps your timing, breaths and pauses and lines up with your mouth.
+5. **Apply to shot**, then render from the dialog's row. The voice you chose is saved on the character's ② Cast card for the next take.
+
+**Limit:** see the table above. Changing **Voice** after a read means reading again (the dialog says so). Details: [performance.md](performance.md#voice-keep-mine--convert-to-the-character).
+
+<a id="the-1024-wide-layout-and-the-menu"></a>
+
+### The 1024-wide layout and the ⋯ menu
+
+**Where:** the right end of the top row.
+
+1. Below 1400 px wide, **Book**, **Presets**, **Director**, **Tools** and **Guide** become icons; hover one for its name.
+2. If the row still doesn't fit, whole buttons fold into **⋯**, the least used first: the shortcuts, Book, Guide, Presets, Director, then Redo and Undo. At 1024 wide, ⋯ holds the shortcuts, Book, Guide and Presets.
+3. Click **⋯** and pick one: it runs the real button. Its tooltip lists what's inside (*More: …*).
+4. The steps, the scene picker, **Tools** and **Done** never fold. The keys still work: `V` opens Presets wherever its button is.
+
+Also at 1024: **Physics** docks over the Properties column when it would be too short to float, and never covers the shot strip. Presets ends above the timeline bar. Wire, Clay, Color and Depth become icons below 1150 px.
+
+**Limit:** see the table above. The tester runs for the Quickstart were at 1440 and 1600 wide.
+
+<a id="one-pop-over-layer-for-every-menu"></a>
+
+### One pop-over layer for every menu
+
+**Where:** every menu, drop-down and context menu: the shot strip's **+ Shot**, clip and right-click menus, the scene picker, **Tools ▾**, the Look palette, Takes › **Arrange ▾**, the Cut editor's right-click menu, the phone viewfinder's QR, the take-check pop-over and **⋯**.
+
+1. Open any menu: it opens on the side of its button that has room and is never cut off by the window.
+2. A tall menu scrolls inside itself.
+3. The arrow keys, **Home** and **End** move between items.
+4. **Esc** or a click outside closes it. Esc also closes the ④ / ⑤ settings pop-overs and the Look palette from anywhere, without leaving the full workspace.
+
+**Limit:** see the table above.
+
+<a id="the-brass-key-and-the-shot-strip-fixes"></a>
+
+### The brass key and the shot strip fixes
+
+**The key.** **Where:** type *key* in the add box (**Add object**): a 6 cm old ignition key with a round bow and a split ring.
+
+1. Add the key and place it like any prop.
+2. To put it in a hand or throw it, the scene data takes `hold` (whose hand, from when to when) and `toss` (from the hand to a mark, with one small bounce). The try-it demo's brass-key stop shows it on *Last Light on Route 9*.
+3. Check it in **Color**: that's where it reads as brass.
+
+**Limit:** no button for hold and toss yet, and the *Last Light* key setup lives in the pod's copy of the workflow, not in `example_workflows/`. No rider leans down for the snatch: the key leaves the frame but no glove comes in.
+
+**The shot strip.**
+
+1. The yellow **Set up scene N — …** button now sits on its own line under the shot tiles, so a click on a tile can't set the scene up again.
+2. On a scene that already has actors, the first click asks: *"This scene already has 5 actors on the stage. Set it up anyway?"*: **Set up anyway** or **Cancel**.
+3. Picking a shot in the strip now puts **Camera view** on that shot's camera, so clicking a rider selects the rider you see.
+
+**Limit:** the long-take build (shot windows) used on the pod is not on `main`.
+
+<a id="passes-judge-the-matte-pose-talking-and-depth"></a>
+
+### Passes: judge the matte, pose, talking and depth
+
+**Where:** the **Passes** button (a layers icon) on every Dailies take (its card, and under each take's name in the takes list), on ⑥ Review's Ladder bar (it opens the layer on view: Final, else Draft, else Frame), and on the Video → 3D result (the **Identical?** bar and the result card). It opens one full-window viewer, in the canvas and classic layouts and on a phone.
+
+It has four tabs. A tab with a green dot has something to show. A pass the App didn't make for this clip is still listed, with the reason (*Not available here*).
+
+1. **Alpha matte** (it opens first when there is one). The sources are a still **✦ Cutout** (its PNG alpha), a **Layer Pack** layer (pick the layer: SAM 3.1 with BiRefNet edges, one PNG per frame), and a Video → 3D run's clip masks. Then pick a **View**:
+   - **Matte**: black and white, white = kept.
+   - **Over**: the cut-out over **Checker**, **Black**, **White**, **Colour** (any flat colour, green by default; use the swatch) or **Busy test** (stripes, fine checks and a gradient, to catch fringes).
+   - **Rubylith**: the original with red over everything the matte throws away.
+   - **Edges**: only the soft band, where alpha is between 0.02 and 0.98, lit from magenta (almost gone) to yellow (almost kept), over a dark picture. The panel counts it: *"Soft edge 8,898 px (3.9 % of the frame) · about 14.4 px wide"*. A hard-edged matte says *"Hard edge: no pixel between 0.02 and 0.98 alpha"*.
+2. **Pose.** A Real performance read: DWPose's body (18 points), both hands (21 each), the 68 face points and the pupils over the actor's clip. **By confidence** colours each point green (0.6 and up), amber (0.3 to 0.6) or red (below 0.3: DWPose drops it). Toggle **Body**, **Hands** and **Face**, and **Numbers** (the iBUG index of each face point). **Picture** dims the clip. A Video → 3D result or any shot with clay people shows the stage skeleton through the shot camera instead (no confidence: it isn't read from a video).
+3. **Talking.** The sound's waveform runs under the timeline, with the actor's mouth-open curve (yellow) and a tick at each mouth opening. Click the strip to jump. **Play** plays the sound. **Mouth close-up** zooms the picture to the lips. When the render's mouth was measured too, its curve is blue and the panel gives the lip-sync *r* and the best lag.
+4. **Depth.** The stage depth through the shot camera (the guide the render followed; near = white, 1 to 40 m), or a Layer Pack's depth AOV. Pick **Greyscale** or **Turbo**, and set **Near** and **Far** (in metres for stage depth) to spread the colours over the range you care about.
+
+**Common to every tab:** **Play** (Space), the scrub bar, **◁ ▷** frame steps (← →), **Original: Off · Wipe · Side by side · Flicker** (F toggles Flicker; drag the yellow line to move a wipe), a zoom menu (**Fit**, 100 to 800 %; the mouse wheel zooms on the cursor, drag pans, double-click toggles Fit and 200 %), and **Still**, which saves a PNG of the view as it is. From 200 % the pixels are drawn square, so you judge the real edge, not a smoothed one. 1 to 4 switch tabs; Esc closes.
+
+**In the try-it demo:** the **Three in a car** scene's *Driver profile* setup has the Milestone 25 performance (a talking head Soundstage generated) as its take 6: Pose, Talking with the recorded lip sync (*r* = 0.92) and Depth all work. The demo has no matte media (cutouts and Layer Packs are made on the GPU server), and the Matte tab says so.
+
+**Limit:** the matte tools were checked headless on a synthetic Layer Pack (a soft figure with hair-like strands), not on a real SAM 3.1 or BiRefNet matte yet. Layer Packs made before today aren't linked to their shot: the viewer lists every pack on the server as *not linked to this shot*. A clip ✦ Cutout keeps its alpha in ProRes 4444, which browsers can't decode; make a Layer Pack to judge a clip's matte. Video → 3D keeps no per-frame Depth Anything 3 depth and Recast doesn't save its pose guide, so neither can be shown. Older Real performance reads have face points only; body and hands show as DWPose drew them, without confidence. Playback seeks frame by frame, so a long clip can play below real time.
+
+<a id="the-cut-timeline-being-upgraded-tonight"></a>
+
+### The Cut timeline: being upgraded tonight
+
+The Cut timeline's playback, frame rates and *Edit in* are being rebuilt tonight (2 November). This tutorial will document them once that lands. Until then, the transport and timecode rows in [the Cut editor](#the-cut-editor) describe today's build and may change.
 
 ---
 
@@ -147,7 +418,7 @@ On the right of the step bar, a red **■ Stop** button appears whenever anythin
 
 ### The tab bar
 
-In the default canvas layout the steps, **↶** / **↷**, **Tools ▾** and **Expand** share one top row: Script, Cast, Stage and Compare open from the steps, and Paint Studio, Shot ideas, Look, Takes, Edit and ScriptSync sit in the **Tools ▾** menu. **Classic layout** in that menu brings back the tab bar below.
+In the default canvas layout the steps, **↶** / **↷**, **Tools ▾** and **Expand** share one top row: Script, Cast, Stage and Compare open from the steps, and Paint Studio, Shot ideas, Look, Takes, Edit and ScriptSync sit in the **Tools ▾** menu. **Classic layout** in that menu brings back the tab bar below. In a narrow window the right-hand buttons turn into icons and then fold into a **⋯** menu (see [the 1024-wide layout](#the-1024-wide-layout-and-the-menu)).
 
 | Control | What it does |
 |---|---|
@@ -316,7 +587,7 @@ A typical pass through the step:
 3. **Place and move the cast.** Click a person to select it, drag it to place it. Move the playhead and drag again: a key is set at the playhead and the person walks between keys. Use **Person**, **Interact** and **Capture motion** for poses, interactions and real performances.
 4. **Frame the shot.** Stay in **Camera view**, pick a lens, and frame by dragging in the view, scrolling, or flying with W A S D. Move the playhead and reframe for a camera move; choose a **Rig** to give the move a real dolly, jib or handheld feel.
 5. **Add coverage.** **New setup** (Master, Wide, Two-shot, Over-the-shoulder A/B, Single A/B, Insert, POV) or **+ Shot** on the shot strip adds another camera on the same action.
-6. **Press Play** to watch the clay, then go to ④ Frame.
+6. **Press Play** to watch the clay, then click **④ Make the first frame →** at the right end of the time bar. It opens ④ Frame and paints this shot's first frame from the clay and camera as they are now, with ④ Frame's image model (FLUX 3 Klein unless you picked another there) and its Variations and Quality settings. Paint Studio stays closed. When the shot already has a frame the button reads **④ Remake the first frame →**: the frame you had stays in the list, still chosen, until you pick a new one.
 
 **The AI box** (**Build with AI**, or the **AI** tab in the inspector):
 
@@ -356,6 +627,10 @@ Each shot card in the row says where it stands: **no frame yet**, **painting…*
 **Cast in this shot.** Under the main card: the characters, location, wardrobe, props and style references from ② Cast & Locations, as tiles. Tick who is in this shot (click the picture, or the **In this shot** box). The tiles that go to the model get a badge, **#1** to **#4**: FLUX 3 Klein takes **four references**, ranked characters first, then the location, wardrobe and props. A fifth tick shows **over** and is not sent. **S M L** sets the tile size, **② Cast & Locations** jumps to step 2, **Edit** opens a reference in Paint Studio (**Save to reference** keeps the edit for every shot that uses it), and **Add picture** / **Replace** uploads one. The note underneath says exactly what is sent ("Sent to the image model: …"). Nobody ticked means the frame is painted from the prompt and the clay alone.
 
 **The candidates (right).** Your clay ("your clay, frame 1") and the frames as they land. Click a frame's **Use this frame** to choose it (**✓ Chosen**). The first frame to land is chosen for you. Choosing locks that model and seed, so ⑤ Motion reproduces exactly this frame from cache.
+
+**Delete and Clear all.** The trash on a frame takes it off the list, and **Clear all** (over the list) takes every frame off. The files stay on disk. A toast offers **Undo** for 5 seconds; a newer delete replaces it. The shot's chosen frame is never deleted straight away: a red bar over the list asks first (**Delete it** / **Keep it**; for Clear all, **Clear all**, **Keep the chosen one, clear N** or **Cancel**). Deleting the chosen frame also clears the shot's saved frame, so ⑤ Motion has nothing to start from until you pick another or Generate again.
+
+**Delete or Reject?** They do different things, so both stay. **Delete** removes a frame from ④ Frame's list. **✕ Reject** in the round review badge (see [Approvals](#approvals)) keeps the frame and marks it: the Takes bin shows it dimmed and can filter it, the shot's status dot turns red, and the Director's cut does not add a shot whose current take is rejected. Neither one steers the next generation. Reject's tooltip says the same.
 
 **Paint Studio.** The card **Paint Studio: get the first frame right before you animate it** has **Open Paint Studio**, which opens the chosen frame in a small Photoshop right here. When you press **Use as first frame** in Paint Studio, the painted picture becomes the shot's frame (captioned **Paint Studio** in the candidates) and **Animate my edited frame** is ticked for you.
 
@@ -527,6 +802,8 @@ When a Layer Pack is ready, **Layers** and **Lite** download links appear in the
 
 #### The Cut editor
 
+> **Being upgraded tonight (2 November).** The Cut timeline's playback, frame rates and *Edit in* are being rebuilt. The new parts are left out until they land, and the transport and timecode rows below may change with them.
+
 The **Edit** tab (the Cut; or **Editor** on the shot strip) is a real timeline over your coverage, with the keys editors expect.
 
 <p align="center"><img src="media/cut_editor.gif" width="860" alt="The Cut editor: a clip is split at the playhead, then dragged to the end of the timeline"></p>
@@ -643,7 +920,9 @@ The header shows `SC N ·` and the scene heading, the counts of setups, takes, c
 
 Drag cards to arrange them (Option/Alt-drag places freely), arrow keys nudge, Enter or double-click opens the circled take, `C` or `*` circles.
 
-**Approvals.** Review every take the way a director signs off dailies. A small round badge sits on each frame, draft and final (in the bin, on ④ Frame's variations, on ⑤ Motion's latest result and in the shot rows). Click it for the **Review** pop-over: **✓ Approve**, **↺ Needs changes** or **✕ Reject**, plus **Clear** to go back to unreviewed. With **Needs changes**, write what should change ("warmer light, she looks left, slower push-in") and press **↺ Redo in ④ Frame** or **↺ Redo in ⑤ Motion**: Soundstage opens that step for the shot with your note on top, and in ④ Frame it adds the note to the frame prompt (**Undo prompt edit** takes it back out). The same status shows everywhere and is saved with the workflow. The bin has a status filter to show setups by review status, such as the takes that need changes.
+<a id="approvals"></a>
+
+**Approvals.** Review every take the way a director signs off dailies. A small round badge sits on each frame, draft and final (in the bin, on ④ Frame's variations, on ⑤ Motion's latest result and in the shot rows). Click it for the **Review** pop-over: **✓ Approve**, **↺ Needs changes** or **✕ Reject**, plus **Clear** to go back to unreviewed. **Reject** keeps the take on record (dimmed in the bin, in the status filter); to take a frame off ④ Frame's list instead, use the trash on its tile ([Delete or Reject?](#step-4-frame)). With **Needs changes**, write what should change ("warmer light, she looks left, slower push-in") and press **↺ Redo in ④ Frame** or **↺ Redo in ⑤ Motion**: Soundstage opens that step for the shot with your note on top, and in ④ Frame it adds the note to the frame prompt (**Undo prompt edit** takes it back out). The same status shows everywhere and is saved with the workflow. The bin has a status filter to show setups by review status, such as the takes that need changes.
 
 **Scene bins.** Like an Avid project, there is one bin per script scene, named like **SC 03 – what happens**, in script order, each showing how much of it is approved.
 
@@ -737,7 +1016,45 @@ Press it to **cancel every queued render and interrupt the one running now**. Th
 
 It clears the **whole ComfyUI queue**, including jobs you queued from other workflows or tabs on the same server.
 
+<a id="activity"></a>
+
+### Activity: what the GPU is doing, node by node
+
+The **Activity** pill sits in the top row, left of **Book** and **✦ Ask**, in both layouts, and never folds into **⋯**. It reads **Idle**, or, while one of your jobs runs, the step it is on first: **Sampling: stage 1 · 8/12 · 2 queued · ~6 min**. A thin bar along its bottom edge fills as the job goes. Click it for the panel.
+
+**Running now**, for a job you queued from this browser:
+
+- The job (**Final · shot 1G**), then the stage it is on in plain words: *Loading model*, *Encoding prompt (Gemma)*, *Depth map*, *Pose (DWPose)*, *3D stage (clay passes)*, *Sampling: stage 1*, *Upscaling ×2: stage 2*, *Sampling: stage 2*, *Decoding video (VAE)*, *Saving MP4*. A node you gave a title shows its title; a node the App doesn't know shows its class name.
+- On a sampler, the steps (**step 8/12**) and a thin blue bar for them, over the job's own bar.
+- **node 7 of 11 · 2 cached · 0:12 so far · about 2 min left**. Cached nodes are ones ComfyUI skipped because their inputs had not changed.
+- **Details**: every node as it ran, with its time (**✓ Depth map · 2.0 s**, **▶ Sampling: stage 1 · 8/12**), cached ones on one line. Tick **Node types (class and id)** to see `KSampler #12` instead of the plain names; the App remembers it in this browser.
+- **Cancel** stops it (ComfyUI interrupts that prompt).
+
+**Queued next**: place in line, what queued it, and about when it starts. **Cancel** takes your own queued job off the queue.
+
+**Finished recently**: done, failed or cancelled, how long it took, links to the results. A failure names the node and the message, for example *Failed at Decoding video (VAE) (VAEDecodeTiled #16)*, *Ran out of GPU memory…*, then ComfyUI's own first line. A job you stopped says where: *Cancelled at Depth map*.
+
+Jobs from other browsers or people on the same server show too, marked **another session**, with their place and time but no node detail and no Cancel (ComfyUI sends node events only to the session that queued a job).
+
+**Time left** is the average of your last runs of that kind and size in this browser. Before the first one it is the current sampler's step rate, which only counts that sampler, so it reads **at least** (and the pill **≥**). Past its average it says *longer than usual* instead of a number.
+
+Limits: the stage names come from the prompt your browser sent, so a job queued from another tab of the same browser shows node numbers only until it finishes. The node count is every node in the prompt; nodes ComfyUI doesn't need are never run, so the count can jump at the end. More: [activity.md](activity.md).
+
 <a id="the-director-chat-voice-and-mcp"></a>
+
+<a id="ask-the-assistant"></a>
+
+### Ask: the assistant, on every screen
+
+**✦ Ask** sits in the top row beside **Guide** and **Expand** on every step and tool, and never folds into **⋯**, even 1024 px wide. **⌘K** / **Ctrl+K** (or **/**) opens it from anywhere. If the top row is out of sight (the App's side panel scrolled down), a small floating **✦** appears in the corner of the App instead.
+
+1. Press **Ask**. The chat opens inside the canvas; its top line says where you are, for example *You're on ③ Set · shot 2 (Tracking) · Red car selected · Physics open*.
+2. **Ask how:** *"how do I make the car crash into the boxes?"*. You get numbered steps. Each step has **Show me**, which opens that step and lights up the real button (the same spotlight the Guide uses). **Show me, step by step** walks through all of them.
+3. **Or have it done:** press **Do it for me**. You see the Director's plan first, then press **Apply**, and **Undo this** puts it all back.
+4. **Learn as you go:** the buttons under each answer suggest what to do next from where you are. *"What should I do next?"* works too.
+5. **Talk:** hold the **Ask** button (or the floating ✦, or **`** anywhere) and speak; let go to send.
+
+Questions about controls are answered from built-in recipes, so they work offline with no model. For other questions it uses the local model (Qwen3.5 4B, or your Ollama model) if it's free, and never waits behind a render. Orders ("make it rain") go straight to the Director below.
 
 ### The Director: chat, voice and MCP
 
@@ -745,7 +1062,7 @@ Say what you want and the Director does it with the App's own controls.
 
 <p align="center"><img src="media/director.jpg" width="860" alt="The Director panel beside the stage: 'Use the J-turn stunt' becomes a plan, applied, with Undo this and next-step buttons"></p>
 
-1. Press **/** (or **Director** in the top bar). The panel opens with the cursor in the box.
+1. Press **/** (or **✦ Ask** in the top bar). The panel opens with the cursor in the box.
 2. Type what you want, for example *"put Mara in the sports car at night, rain, camera on the hood, she's nervous"*, and press Enter. Or **hold `** anywhere in the App (or Space in the empty box) and talk; let go to send.
 3. Read the plan: a short numbered list of steps.
 4. Press **Apply**, Enter on the empty box, or say "yes". Each step runs in front of you on the stage.
@@ -793,6 +1110,8 @@ The Director can use presets too: *"make it a crane up at golden hour"*.
 The two ride-along mounts spin with the car, as a real hard mount does; the prompts then say what the car does under the camera, and what the tyres throw only where the camera can see it (beside the lens on the tyre mount, past the windows from inside, nothing from the bumper). The strongest J-turn pair is the long-lens pan (the whole 180 in one frame) cut against the over-the-tyre mount. Applying the J-turn again re-aims a long-lens pan or arm car on the shot at the new path, unless you have edited its camera keys since (then your camera is kept, and the toast says so).
 
 The **Racing Cinema** look only puts car words on shots with a moving car in frame; on a reaction shot, a close-up or from inside the car it is the grade, the grain and the lens. With a car in frame: on a wet road (the stunt's **Road: Wet**, the default, or rain) a fine sheet of spray and mist off the tyres with a thin wisp of steam, never dense smoke, and a wet-down road said once; on **Road: Dry** rubber marks, heat shimmer and white tyre smoke as thick as the clay draws it; dust and grit on the desert, beach or forest; snow and slush when it snows. Always: real shutter blur on the wheels with the car body sharp, weight transfer under braking, and the background streaking only when the camera really pans with the car. Then large-format anamorphic glass (oval bokeh, soft frame edges), a filmic grade with fine grain and a grounded, desaturated palette. The look never sets the 2.39:1 frame (that is the stage's aspect) or a focal length.
+
+**Limit:** no frame or video has been rendered with Racing Cinema yet: its words are checked by tests, not by eye, and the hard mounts were measured on the car model, not looked at in the 3D view. Heat shimmer can still appear on a dry road at night. The craft notes are reported practice from trade press.
 
 ---
 
@@ -952,7 +1271,6 @@ A style's suggested lens never overrides an in-car camera: the status line tells
 
 ### Stunts: J-turn, donut, handbrake 180
 
-<p align="center"><img src="media/stunt_jturn.gif" width="760" alt="Reverse J-turn: the clay stage on the left, the final on the right, the red car spinning with tyre smoke"></p>
 
 1. Put a car on the set where the stunt should start, facing the way it should go.
 2. Select it and pick **Stunt** in its properties: **Reverse J-turn** (races backwards, whips round 180° and drives off nose first), **Donut** (two tight spins in a cloud of tyre smoke) or **Handbrake 180** (slides round and roars back the way it came).
@@ -997,7 +1315,6 @@ The line **Lighting note for the prompt:** shows exactly how your lighting will 
 4. **Airplane cabin** and **Train carriage:** seat people by the window (drag them onto a seat); clouds and countryside stream past the windows in the stage and the guides, and the view out of the train is softened so the video paints real fields and trees.
 5. **Airport runway**, **Above the clouds** (with an airliner) and **Train station platform** (with a train) for the exteriors.
 
-<p align="center"><img src="media/new_sets_reef.gif" width="700" alt="A diver over the coral reef: the clay stage beside the final"></p>
 
 ### Posing people
 
@@ -1035,7 +1352,7 @@ Actions: **Look at**, **Talk to (face each other)**, **Shake hands**, **Hug**, *
 
 ### Physics: drop it, knock it over, bake it
 
-Select a prop and press **Physics** in its card. A small panel opens beside the inspector:
+Select a prop and press **Physics** in its card. A small panel opens beside the inspector (in a short window it docks over the Properties column instead). **Esc** closes it wherever the focus is.
 
 | Control | What it does |
 |---|---|
@@ -1049,7 +1366,7 @@ Select a prop and press **Physics** in its card. A small panel opens beside the 
 | **Clear simulation** | Puts every simulated object back on the keys it had before. |
 
 - What it hits: the floor, the set's walls, kerbs and buildings, Static props, and people and vehicles on their keyed paths (a car is a low body plus a cabin, so a crate rides up over the bonnet).
-- **Everything collides** (World, on by default): cars, people, street lamps, benches and walls are bodies too. A keyed car keeps its keys until its first real hit, then the physics takes over: keyed through another car it crashes into it (momentum shared by real masses, spin, roll or stop), into a lamp it knocks it down, into a solid wall it stops and crumples (a dent the clay shows), through a weak (wooden) wall it breaks a hole. A person in the way is knocked over. The bake message and the panel say where: *"physics took over at f 42"*. **Keep keyed** holds one actor on its keys. Editing a key or dragging anything re-bakes by itself; one Undo takes the bake back. → [World collisions](world.md)
+- **Everything collides** (World, on by default): cars, people, street lamps, benches and walls are bodies too. A keyed car keeps its keys until its first real hit, then the physics takes over: keyed through another car it crashes into it (momentum shared by real masses, spin, roll or stop), into a lamp it knocks it down, into a solid wall it stops and crumples (a dent the clay shows), through a weak (wooden) wall it breaks a hole. A person in the way is knocked over. The bake message and the panel say where: *"physics took over at f 42"*. **Keep keyed** holds one actor on its keys. Editing a key or dragging anything re-bakes by itself; one Undo takes the bake back. The Director's consequence check (*"check for collisions"*) says what still passes through what. Steps and limits: [World collisions](#world-collisions-everything-collides), [world.md](world.md)
 - **Throw something:** key it moving (two keys or more). It follows its keys, then physics takes over at the last key at that speed.
 - The clay, the previz video and the LTX layout guide only ever play keys, so every render of a baked shot is the same. Simulate again (or Cmd/Ctrl+Z) to redo it.
 - The solver is a small built-in one (substepped XPBD rigid bodies, the position-based sibling of three-avbd's vertex block descent). Box-like props collide as boxes; a chair or a table collides as up to four convex hulls of its own mesh, not its bounding box.
@@ -1078,7 +1395,6 @@ Physics stays live while you drag, so you can block by hand the way you'd move t
 
 Each drag is one undo step (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z redoes). Press on a selected person's body to grab the person; the move arrows still work where they stick out past them.
 
-<p align="center"><img src="media/physics_crate_crash.gif" width="700" alt="A car crashes through a crate stack: the clay guide beside the LTX draft"></p>
 
 ### Drive mode: control anything like a video game, and record it
 
@@ -1091,6 +1407,8 @@ Select a person, a car, a horse or a prop and press **D** (or **🎮 Drive** on 
 | Jump · climb a crate (on foot) | Space | A / Cross |
 | Throttle · brake and reverse · steer (cars, bikes, boats) | W · S · A D | RT · LT · left stick |
 | Handbrake (J-turns, drifts) | Space | A or RB |
+| Motor trim out (bow up) · in (motorboats) | Space · Q | A · B |
+| Paddle, row or pole (canoe, kayak, rowboat, rafts) · back-paddle | W (Shift harder) · S | RT · LT |
 | Get in / out of a car, mount / dismount, sit | E | Y / Triangle |
 | Pick up · set down | C | X / Square |
 | Throw (hold to aim) · drop | F or a click (hold the right button) · X | RT (hold LT) · B |
@@ -1105,6 +1423,22 @@ Select a person, a car, a horse or a prop and press **D** (or **🎮 Drive** on 
 **Cars** run on the same vehicle dynamics as the stunt presets (Pacejka tyres, weight transfer, a body that rolls and pitches): hold the brake at a stop and it reverses, flick the wheel at 40 km/h in reverse and the nose comes round (a J-turn by hand), pull the handbrake through a corner and the tail slides.
 
 **Recording.** Press **R** (● REC): a 3-2-1 countdown, then the timeline plays from frame 0 (or from the playhead) while you drive. Everything already animated plays back, so you can drive actor A, keep the take, rewind and drive actor B around A, like Sequencer's Take Recorder. When you stop (or the shot ends) the take plays back once: **Keep** (one undo step), **Discard**, or **Again**. Pick the smoothing (raw, light, smooth, heavy) before you keep it. A take writes ordinary keys on the current shot: position and heading for everything you moved; a car's body roll, pitch and steering; the door opening as they get in; when they were in the car or the saddle; where the head looked (look at someone with the camera and they look at them); the lights you switched; and a thrown crate's whole flight. Nothing you do in Drive mode changes the shot unless you keep a take.
+
+**Driving takes over from the keys.** You can drive anything, even when it is keyed: a stunt car in the middle of its J-turn, a person mid-jump, someone with Pose Studio keys or a mocap take. While you drive it, its keys stop applying to it (they are not changed), and the HUD says **Took over from keys: Esc to leave**. It starts where the keys had it at the playhead, settled to a physical state: a car keeps its heading, stands on its wheels and eases out of its keyed roll and pitch in about 0.3 s; a person stands upright with their feet on the ground; a horse the same. If the keyed pose was cutting through a kerb, a wall or a parked car, it is moved clear first. Leave without keeping a take (**Esc**) and the keys play again exactly as before.
+
+**Kept takes are auto-corrected.** When you keep a take, Soundstage cleans what isn't physical before writing the keys, using the limits of the thing you drove (a car's own tyre grip, top gear and body roll; a person's or a horse's top speed, acceleration and turn rate):
+
+- a frame that jumps out and back (a spike) is put back on the path; a hit, a stop or a launch is kept;
+- a teleport (a jump far past what it could travel in a frame) is taken out, and the rest of the take carries on from there;
+- faster than its top speed is held to its top speed; turn-rate spikes are clamped;
+- a car rolled or pitched further than its tyres and springs allow is settled;
+- feet and wheels stay on the ground (no floating, no sinking), except in a jump or a climb.
+
+Then the take is fitted with **as few keys as possible** that still play back within about 2 cm and 1° (scaled to the object's size). A change of mode (getting in, getting out, a take-off and a landing) always keeps its own key. The HUD shows what happened, for example **Smoothed 3 spikes, settled roll · 1,440 keys → 38**, with **Undo** to put the raw take back, as you drove it (a key every 2 frames, no corrections).
+
+**Finding your way back.** If you drove or flew the view far away, use the two buttons at the top-left of the viewport: **⌂ Back to the set** (key **.**) frames the whole set from the front in the free view, and **↶ Last view** (key **,**) steps back through your last 10 views (each view you rest on for half a second, and the view just before Drive, Back to the set or **F**). When the camera ends up far outside the set or inside a building, a **Lost? Back to the set** chip appears: one tap brings you back.
+
+**Boats** run on the boat physics: a speedboat climbs its bow wave and planes, a sailboat sails on the wind (steer through it to tack; the sheet trims itself), and paddle craft paddle while you hold W (Shift harder). See [Boats](#boats).
 
 **Bindings.** The HUD's Bindings button remaps any action to another key or controller button (remembered in this browser). The Inputs button draws the controller and the keys on screen, for screen recordings.
 
@@ -1188,6 +1522,8 @@ Details and how to rerun the checks: [interop.md](interop.md).
 
 Details: [vcam.md](vcam.md).
 
+**Film a real clip on the phone.** The viewfinder's **Film** button records with the phone's own camera and sends the clip to the computer as **Capture motion**, **Real performance** or **Footage**. Start it from ✦ One-click › **Send a move from your phone**: see [Film a move](#film-a-move-on-your-phone).
+
 **The VCam page (phone, iPad, Quest, Vision Pro).** Hand-hold the shot camera with a phone, iPad, Quest or Vision Pro. In the **Camera** tab press **Connect a phone**, then open `/soundstage/vcam` on the device (on the same ComfyUI address). The device page offers AR and VR 6-DoF tracking or a 3-DoF gyro, a **Recenter** button, and recording. Motion sensors need https or localhost on the device.
 
 Recorded takes land in the **Take** list. **Steady** sets how much the stabilizer smooths (it removes shake but keeps your move); **Use take** turns the take into camera keys. If the move looks like a known rig, a **Snap to …?** button offers to make it that rig's clean move.
@@ -1215,11 +1551,12 @@ Keys only reach the 3D stage while the pointer is over it (or you clicked it), a
 | 0 | Toggle Camera view / Free view |
 | F | Frame the selection (or everything, with nothing selected) |
 | P | Toggle Pose in 3D (select a person first) |
-| Esc | End pose mode; otherwise leave the full window |
+| Space | On ③ Set: play / stop the shot |
+| Esc | Close what is open first (the Physics panel, the ✦ One-click window, the ⋯ menu or any other menu or pop-over); end pose mode; leave Drive mode; with nothing open, leave the full window |
 | G / R / T | Gizmo: move / rotate / scale (with something selected) |
 | L, Shift+L, I, O, K | On a selected vehicle: headlights, light bar, indicators, driver's door, key every part at the playhead |
 | Cmd/Ctrl+D | Duplicate the selection |
-| Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z | Undo / redo (up to 120 steps; a drag is one step) |
+| Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z | Undo / redo (up to 120 steps; a drag is one step; a bake is one step). Works from anywhere in the workspace, not only on the 3D canvas |
 
 In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the playhead. Use **Free view** (0) to look around without changing the shot.
 
@@ -1329,6 +1666,9 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 | Anywhere in the App | Shift+P | Start or stop Pitch Mode in the Director |
 | Anywhere in the App | V | Open Presets |
 | Anywhere in the App | ? | Keyboard shortcut sheet |
+| Drive mode, on a motorboat | Space / Q | Motor trim out (bow up) / in |
+| Any menu or pop-over | ↑ ↓, Home / End, Esc | Move between items, close |
+| ✦ One-click window | Esc | Back out of the ask, then close |
 | Act it out | Esc | Cancel the recording |
 | Full window | Esc | Back to the App panel |
 

@@ -16,6 +16,7 @@ import { STUNTS, hasHeadingKeys, headingTrack, channelAt, driveAt, isStunt, unwr
 import { PoseGizmo } from "./posegizmo.mjs";
 import { RotateTools, gizmoTurnToActor } from "./rotate.mjs";
 import { DriveMode, installDriveButton } from "./drive.mjs";
+import { installViewNav } from "./viewnav.mjs";
 import { buildSet, buildWater, buildWeather, buildTireSmoke, buildImpactFx } from "./environments.mjs";
 import { groundColor, groundReach, dressColor } from "./setlook.mjs";
 import { installSecondary } from "./secondary.mjs";
@@ -336,6 +337,7 @@ export class Stage {
     this.rotTools = new RotateTools(this);   // the floating Move · Rotate · Scale bar, the yaw ring, Alt + drag to turn
     this.drive = new DriveMode(this, liveKinds());   // Drive mode (Milestone 29): D drives the selected object, ● REC records it
     installDriveButton(this);
+    installViewNav(this);   // ⌂ Back to the set (.), ↶ Last view (,) and the "Lost?" chip (viewnav.mjs)
     this.resize();
     this._ro = new ResizeObserver(() => this.resize());
     this._ro.observe(container);
@@ -731,7 +733,8 @@ export class Stage {
     }
     for (const p of setPosts) specs.push(...worldSpecs(p));
     // The set: a kerb (anything under 30 cm) is climbed by a keyed car's wheels, not crashed into.
-    for (const c of this._setColliders()) { if (c.poses[0].pos[1] + c.half[1] < 0.3) c.kerb = true; specs.push(c); }
+    const setCols = this._setColliders();
+    for (const c of setCols) { if (c.poses[0].pos[1] + c.half[1] < 0.3) c.kerb = true; specs.push(c); }
     // Weight & overcrank (Milestone 21): "feels bigger" lowers gravity (DNEG's trick for majestic debris); an overcranked
     // shot plays the whole action k times slower (the keys are already stretched), so gravity is g / k².
     const gravity = feelGravity(this.physicsFeel());
@@ -793,6 +796,7 @@ export class Stage {
     const who = Object.fromEntries(this.state.actors.map((a) => [a.id, { name: a.name, kind: a.kind }]));
     who.__fps = fps;
     for (const p of setPosts) who[p.id] = { name: "street lamp", kind: "lamp" };
+    for (const c of setCols) who[c.id] = { name: c.kerb ? "kerb" : "set wall", kind: "wall" };   // the consequence check's words
     const marks = takeoverWords(took, who);
     const nBodies = dynamic.length + worldActors.length + resting.length + setPosts.length;
     return { ok: true, bodies: dynamic.length, colliders: specs.length - dynamic.length, moving, restless, ms, impacts: events.length, ...qa,
@@ -2126,7 +2130,7 @@ export class Stage {
     }
     // Pose Studio keys last: they override the walk cycle / seat pose for the joints they name.
     for (const a of this.state.actors) {
-      if (!a.pose_keys?.length) continue;
+      if (!a.pose_keys?.length || this.drive?.owns(a.id)) continue;   // driven live: Drive owns the body, its keys wait
       const g = this.actorMeshes.get(a.id);
       if (g) applyJoints(g, this.poseAt(a, this.frame));
     }
@@ -2134,7 +2138,7 @@ export class Stage {
     // its first / last pose before and after.
     const mocapIds = new Set();
     for (const a of this.state.actors) {
-      if (!a.mocap || a.mount_id) continue;
+      if (!a.mocap || a.mount_id || this.drive?.owns(a.id)) continue;
       const take = Mocap.takeFor(a.mocap);
       if (!take) { this._loadMocap(a); continue; }
       const g = this.actorMeshes.get(a.id);

@@ -56,14 +56,17 @@ import { JobCard, chooseVideoUse, clipSeconds, v2sPlan, wireVideoDrop, isVideoFi
 import { mountCompare } from "./ui/v2scompare.mjs";
 import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
 import { mountDirector } from "./agent/directorpanel.mjs";
+import { mountAsk } from "./agent/ask.mjs";
 import { mountBook } from "./book/book.mjs";
 import { mountPresets } from "./ui/presets.mjs";
 import { mountPerformance } from "./performance/performance.mjs";
 import { attachTakeChecks } from "./takecheck/takecheck.mjs";
 import { attachOneClick } from "./oneclick/oneclick.mjs";
+import { attachPasses } from "./passes/passes.mjs";
 import "./oneclick/loop.mjs"; import "./oneclick/reshoot.mjs"; import "./oneclick/opencomfy.mjs";   // ✦ Track B one-clicks
 import { listenPhoneClips, landPhoneClip, openPerformanceWith } from "./oneclick/handoff.mjs";
 import { queueSummary, stageInputsByRef, resolveStageValue, stageRefOf } from "./ui/queue.mjs";
+import { mountActivity, JOB_EVENT } from "./ui/activity.mjs";
 
 const CSS = `
 .ss-stage { display:flex; flex-direction:column; gap:6px; padding:6px; background:#16191e; border-radius:6px;
@@ -104,10 +107,10 @@ const CSS = `
 /* Where the header's Import video shows (the narrow App panel), the viewport header's copy would be a second, identical button. */
 .ss-stage:not([data-ws=wide]):not(.ss-full) .ss-vi-head:not(.ss-vi-tabbtn) { display:none !important; }
 .ss-stage [hidden] { display:none !important; }
-.ss-stage.ss-cutmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-cutview) { display:none !important; }
-.ss-stage.ss-scriptmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-scriptview):not(.ss-status) { display:none !important; }
-.ss-stage.ss-dailiesmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-dailiesview):not(.ss-status) { display:none !important; }
-.ss-stage.ss-castmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-castview):not(.ss-status) { display:none !important; }
+.ss-stage.ss-cutmode > :not(.ss-tabs):not(.ss-dir):not(.ss-pipe):not(.ss-cutview) { display:none !important; }
+.ss-stage.ss-scriptmode > :not(.ss-tabs):not(.ss-dir):not(.ss-pipe):not(.ss-scriptview):not(.ss-status) { display:none !important; }
+.ss-stage.ss-dailiesmode > :not(.ss-tabs):not(.ss-dir):not(.ss-pipe):not(.ss-dailiesview):not(.ss-status) { display:none !important; }
+.ss-stage.ss-castmode > :not(.ss-tabs):not(.ss-dir):not(.ss-pipe):not(.ss-castview):not(.ss-status) { display:none !important; }
 .ss-castview { min-width:0; }
 .ss-dailiesview { min-width:0; display:flex; flex-direction:column; gap:8px; }
 /* The bin fills the Takes view, so ScriptSync's page scrolls inside its own panel and the player stays in view. */
@@ -120,9 +123,9 @@ const CSS = `
 .ss-scriptview { min-width:0; }
 .ss-scenehead { display:flex; align-items:center; gap:8px; min-width:0; }
 .ss-cutview > .ss-scenehead { margin:0 0 6px; }
-.ss-stage.ss-pipemode > :not(.ss-tabs):not(.ss-pipe):not(.ss-pipeview) { display:none !important; }
-.ss-stage.ss-advmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-advisorview):not(.ss-striphost) { display:none !important; }
-.ss-stage.ss-canvasmode > :not(.ss-tabs):not(.ss-pipe):not(.ss-canvasview):not(.ss-striphost):not(.ss-status) { display:none !important; }
+.ss-stage.ss-pipemode > :not(.ss-tabs):not(.ss-dir):not(.ss-pipe):not(.ss-pipeview) { display:none !important; }
+.ss-stage.ss-advmode > :not(.ss-tabs):not(.ss-dir):not(.ss-pipe):not(.ss-advisorview):not(.ss-striphost) { display:none !important; }
+.ss-stage.ss-canvasmode > :not(.ss-tabs):not(.ss-dir):not(.ss-pipe):not(.ss-canvasview):not(.ss-striphost):not(.ss-status) { display:none !important; }
 .ss-stage.ss-full { position:fixed !important; inset:12px !important; z-index:10000 !important; width:auto !important;
   height:auto !important; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,.6); border:1px solid #39404b; }
 .ss-stage.ss-full:not(.ss-ws) .ss-ladder canvas { max-height:calc(100vh - 260px); object-fit:contain; }
@@ -336,6 +339,9 @@ function createStageWidget(node, inputName) {
   keysBtn.addEventListener("click", () => keySheet.toggle());
   keysBtn.style.marginLeft = "6px";
   tabs.append(undoBtn, redoBtn, keysBtn, guideBtn, expand, layoutBtn);
+  // Activity: every job on the GPU queue, always in the row (never folded into "⋯"), next to Guide (web/ui/activity.mjs).
+  const activity = mountActivity({ api, row: tabs, before: guideBtn, theme: el });
+  node.ssActivity = activity;   // QA and tests
 
   let sceneJSON = JSON.parse(JSON.stringify(DEFAULT_SCENE));
   const stage = new Stage(view, (s) => {
@@ -531,6 +537,18 @@ function createStageWidget(node, inputName) {
     // A property write alone isn't seen by ComfyUI's change tracker: nudge it so the draft (and Save) keep it.
     try { app.extensionManager?.workflow?.activeWorkflow?.changeTracker?.checkState?.(); } catch { /* older frontend */ }
   };
+  /** Drop one saved render of a shot (④ Frame's Delete on the chosen frame). Returns the file it was, for Undo. */
+  const forgetRender = (sid, kind) => {
+    const all = { ...savedRenders() };
+    const was = all[sid]?.[kind] || null;
+    if (all[sid]) { all[sid] = { ...all[sid] }; delete all[sid][kind]; }
+    node.properties = node.properties || {};
+    node.properties.ss_renders = all;
+    try { localStorage.setItem(lsKey(), JSON.stringify(all)); } catch { /* storage blocked */ }
+    if (shotRenders[sid]) { shotRenders[sid] = { ...shotRenders[sid] }; delete shotRenders[sid][kind]; }
+    try { app.extensionManager?.workflow?.activeWorkflow?.changeTracker?.checkState?.(); } catch { /* older frontend */ }
+    return was;
+  };
   // Which setup each queued prompt was for (a render can finish after you switch shots).
   const promptShot = {};
   if (!api.__ssQueueHooks) {
@@ -548,7 +566,18 @@ function createStageWidget(node, inputName) {
   let lastPid = null;
   // A node from a workflow you switched away from keeps its listeners: only the node on the live graph counts.
   const isLive = () => !!node.graph && app.graph?.getNodeById?.(node.id) === node;
-  const onQueued = (pid) => { if (pid && isLive()) { promptShot[pid] = stage.activeShot().id; lastPid = pid; } };
+  const onQueued = (pid) => {
+    if (!pid || !isLive()) return;
+    promptShot[pid] = stage.activeShot().id; lastPid = pid;
+    // The App's own job registry (web/ui/activity.mjs): the step and the shot in plain words.
+    try {
+      const sh = stage.activeShot();
+      const stepW = app.graph?._nodes?.find((n) => n.comfyClass === "SoundstageStep" || n.type === "SoundstageStep")?.widgets?.find((x) => x.name === "step");
+      const rung = ["", "Stage", "Frame", "Draft", "Final", "Layers"][stepW?.value | 0] || "Render";
+      window.dispatchEvent(new CustomEvent(JOB_EVENT, { detail: { prompt_id: pid, name: `${rung} · shot ${sh?.name || sh?.id || ""}`.replace(/ · shot $/, ""),
+        trigger: "Run", width: stage.fw, height: stage.fh } }));
+    } catch { /* a name is never worth breaking the queue */ }
+  };
   const rungListeners = [];
   api.__ssQueueHooks.push(onQueued);
   const cutView = Object.assign(document.createElement("div"), { className: "ss-cutview" });
@@ -908,6 +937,9 @@ function createStageWidget(node, inputName) {
       const t = d.output?.text;
       const folder = Array.isArray(t) ? t.flat().find((x) => typeof x === "string") : t;
       if (folder) offerLayerPack(folder);
+      // Remember which shot the pack belongs to (the Passes viewer opens its mattes from that shot's takes).
+      const psid = promptShot[d.prompt_id], pname = folder && String(folder).split(/[\\/]/).filter(Boolean).pop();
+      if (psid && pname && pipeline) { (pipeline.chosen[psid] ||= {}).layerpack = pname; pipeline._saveChosen?.(); }
       return;
     }
     const m = /^Rung\s+(\d)/.exec(src?.title || "");
@@ -1490,6 +1522,7 @@ function createStageWidget(node, inputName) {
       compare = mountCompare({ stage, host: view, videoUrl: api.apiURL(`/view?filename=${encodeURIComponent(video)}&type=input`),
         onFrame: () => afterTimeChange(), onStatus: say, lockCamera: lockCameraToFrame0 });
       compare.onDestroy = () => { compare = null; };
+      try { compare.row.insertBefore(passes.v2sButton(), compare.row.lastElementChild); } catch { /* bar not built */ }
       const sh = stage.toJSON().shot, keys = stage.activeShot()?.camera_keys?.length || 0;
       const secsTxt = `${(sh.frames / sh.fps).toFixed(1)} s`;
       const things = all.filter((a) => !a.mocap && !a.scan && !a.set_piece && !before.actors?.some((b) => b.id === a.id)).length;
@@ -1509,6 +1542,7 @@ function createStageWidget(node, inputName) {
       job.done(flaws.some((x) => x.level === "red") ? "Rebuilt, with problems to check" : "Your clip is now a 3D set", summary, [
         ...(performers.length ? [{ key: "play", label: "Play the take", icon: "play", go: true, close: false, run: () => playTake() }] : []),
         { key: "compare", label: "Identical? Compare", icon: "scan-eye", close: false, run: () => { compare?.setMode("wipe"); compare?.scoreAll(); } },
+        { key: "passes", label: "Passes", icon: "layers", close: false, run: () => passes?.openV2s() },
         ...(adding ? [] : (before.actors || []).length ? [{ key: "undo", label: "Undo: bring the old set back", icon: "undo-2", run: () => { compare?.destroy(); loadScene(stage, before); afterTimeChange(); } }] : []),
         { key: "frame", label: "Shoot it → Frame", icon: "image", go: !performers.length, run: () => pipeline?.go("frame") },
       ], notes, flaws);
@@ -2321,6 +2355,7 @@ function createStageWidget(node, inputName) {
   node.onRemoved = function () {
     try { canvasPanel.dispose(); } catch { /* already gone */ }
     for (const x of [camViz, pip, topView, coach, tracks, posePanel]) { try { x?.dispose?.(); } catch { /* already gone */ } }
+    try { activity.dispose(); } catch { /* already gone */ }
     stage.dispose();
     return onRemoved?.apply(this, arguments);
   };
@@ -2363,6 +2398,8 @@ function createStageWidget(node, inputName) {
     castDone: () => Object.values(node.properties?.ss_cast?.items || {}).some((x) => x?.ref),
     getRenders: (sid) => rendersFor(sid),
     rememberRender: (sid, kind, f) => { if (f?.filename) { rememberRender(sid, kind, f); shotRenders[sid] = { ...shotRenders[sid], [kind]: viewURL(f) }; } },
+    // ④ Frame's Delete on the chosen frame: the shot's saved render of that kind goes too; returns it for Undo.
+    forgetRender: (sid, kind) => forgetRender(sid, kind),
     onRung: (fn) => rungListeners.push(fn),
     lastPromptId: () => lastPid,
     setDescription: (text) => setDescription(text, true),
@@ -2424,6 +2461,8 @@ function createStageWidget(node, inputName) {
     openCast: () => pipeline?.go("cast"),
   });
   for (const v of Object.values(pipeline.views)) el.append(v);
+  // ③ Set's way on, at the end of the time bar: "④ Make the first frame →" (or Remake) paints it from the clay as it is now.
+  time.append(pipeline.setNextButton());
   // Milestone 16: takes that check themselves (Ladder + Dailies chips, Re-roll), Ready chips, Run estimates, the recipe in the MP4.
   var takeChecks = attachTakeChecks({ app, api, stage, ladder, pipeline, look, say: (m) => (status.textContent = m),
     restoreScene: (sc) => { (widget.options?.setValue || ((v) => widget.setValue(v, {})))(JSON.stringify(sc)); nudgeTracker?.(); } });
@@ -2433,6 +2472,10 @@ function createStageWidget(node, inputName) {
     showTake: (sid, take) => showTake({ id: sid, name: (stage.toJSON().shots || []).find((x) => x.id === sid)?.name || sid }, take),
     takesOf: (sh) => takesFor(sh, takeRenders(sh.id)), refresh: () => { try { dailies?.refresh(); } catch { /* bin not built */ } } });
   node.ssOneClick = oneClick;
+  // Passes (web/passes): judge the matte, pose, talking and depth of a take by eye. After One-click: it adds to the Ladder bar.
+  var passes = attachPasses({ api, stage, pipeline, ladder, say: (m) => (status.textContent = m),
+    v2sSource: () => (compare?.video?.src ? { url: compare.video.src, start: compare.start || 0 } : null) });
+  node.ssPasses = passes;
   node.ssPipeline = pipeline;
   node.ssCut = cut;
   node.ssLadder = ladder;
@@ -2804,7 +2847,7 @@ function createStageWidget(node, inputName) {
     getSeconds: () => { const sh = stage.toJSON().shot || {}; return (sh.frames || 97) / (sh.fps || 24); },
     onStatus: (m) => (status.textContent = m),
     decorateTake: (host, take, shot, where) => takeChecks?.decorate(host, take, shot, where),
-    oneClickTake: (host, take, shot, where) => oneClick?.decorate(host, take, shot, where),
+    oneClickTake: (host, take, shot, where) => { oneClick?.decorate(host, take, shot, where); passes?.decorate(host, take, shot, where); },
   });
 
   node.ssDailies = { get bin() { return dailies; }, get lined() { return dailies?.lined || null; }, openScriptSync: (id) => openScriptSync(id) };   // scripts and tests
@@ -3135,6 +3178,26 @@ function createStageWidget(node, inputName) {
       },
       play: () => { if (play.textContent === "Play") play.click(); },
       say: (m) => (status.textContent = m),
+    } });
+
+  // Ask (web/agent/ask.mjs): the Director's button, pinned beside Guide / Expand (never in "⋯"), Cmd/Ctrl+K, a floating
+  // ✦ when the top row is out of sight. It reads where you are before every answer and every plan.
+  node.ssAsk = mountAsk({ root: el, dir: node.ssDirector,
+    isActive: () => el.isConnected && !!el.getClientRects().length && !el.dataset.tour && !appKeysHeld(),
+    host: {
+      context: () => {
+        const step = { script: "script", cast: "cast", stage: "set", frame: "frame", motion: "motion", ladder: "review", deliver: "deliver" }[curView] || null;
+        let selected = null, shot = null;
+        try { const s = stage.selectedInfo(); if (s) selected = { id: s.id, name: s.name, kind: s.kind }; } catch { /* no stage */ }
+        try {
+          const a = stage.activeShot(), list = pipeline.shots();
+          if (a) shot = { id: a.id, name: a.name || a.id, n: Math.max(1, list.findIndex((x) => x.id === a.id) + 1) };
+        } catch { /* no shots */ }
+        const open = (q) => [...el.querySelectorAll(q)].some((x) => !x.hidden && x.getClientRects().length);
+        const panel = open(".ss-phys") ? "Physics" : open(".ss-pre") ? "Presets" : open(".ss-clpop") ? "Look" : null;
+        return { step, view: curView, selected, shot, panel, layout: el.classList.contains("ss-cl") ? "canvas" : "classic" };
+      },
+      goStep: (k) => { if (pipeline.btns?.[k]) pipeline.go(k); },
     } });
 
   // Presets (Milestone 17, web/ui/presets.mjs): one window of one-click camera moves, lighting, looks, stunts, edit
@@ -3538,7 +3601,7 @@ function createStageWidget(node, inputName) {
     moreBtn.setAttribute("aria-haspopup", "menu");
     moreBtn.setAttribute("aria-expanded", "false");
     const topFit = topRowFit({ row: tabs, more: moreBtn, theme: el,
-      order: () => [...[".ss-keysbtn", ".ss-bookbtn", ".ss-guidebtn", ".ss-presetsbtn", ".ss-dirbtn"].map((q) => tabs.querySelector(`:scope > ${q}`)), redoBtn, undoBtn] });
+      order: () => [...[".ss-keysbtn", ".ss-bookbtn", ".ss-guidebtn", ".ss-presetsbtn"].map((q) => tabs.querySelector(`:scope > ${q}`)), redoBtn, undoBtn] });
     node.ssTopFit = topFit;   // QA: tools/qa/toprow_check.mjs
     toolsBtn.addEventListener("click", () => { const o = toolsMenu.hidden; closePops(); setPop(toolsMenu, o, toolsBtn); });
     toolsMenu.addEventListener("click", (e) => { if (e.target.closest?.("button")) setPop(toolsMenu, false, toolsBtn); });
