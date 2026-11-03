@@ -64,6 +64,7 @@ import { attachOneClick } from "./oneclick/oneclick.mjs";
 import "./oneclick/loop.mjs"; import "./oneclick/reshoot.mjs"; import "./oneclick/opencomfy.mjs";   // ✦ Track B one-clicks
 import { listenPhoneClips, landPhoneClip, openPerformanceWith } from "./oneclick/handoff.mjs";
 import { queueSummary, stageInputsByRef, resolveStageValue, stageRefOf } from "./ui/queue.mjs";
+import { mountActivity, JOB_EVENT } from "./ui/activity.mjs";
 
 const CSS = `
 .ss-stage { display:flex; flex-direction:column; gap:6px; padding:6px; background:#16191e; border-radius:6px;
@@ -336,6 +337,9 @@ function createStageWidget(node, inputName) {
   keysBtn.addEventListener("click", () => keySheet.toggle());
   keysBtn.style.marginLeft = "6px";
   tabs.append(undoBtn, redoBtn, keysBtn, guideBtn, expand, layoutBtn);
+  // Activity: every job on the GPU queue, always in the row (never folded into "⋯"), next to Guide (web/ui/activity.mjs).
+  const activity = mountActivity({ api, row: tabs, before: guideBtn, theme: el });
+  node.ssActivity = activity;   // QA and tests
 
   let sceneJSON = JSON.parse(JSON.stringify(DEFAULT_SCENE));
   const stage = new Stage(view, (s) => {
@@ -560,7 +564,18 @@ function createStageWidget(node, inputName) {
   let lastPid = null;
   // A node from a workflow you switched away from keeps its listeners: only the node on the live graph counts.
   const isLive = () => !!node.graph && app.graph?.getNodeById?.(node.id) === node;
-  const onQueued = (pid) => { if (pid && isLive()) { promptShot[pid] = stage.activeShot().id; lastPid = pid; } };
+  const onQueued = (pid) => {
+    if (!pid || !isLive()) return;
+    promptShot[pid] = stage.activeShot().id; lastPid = pid;
+    // The App's own job registry (web/ui/activity.mjs): the step and the shot in plain words.
+    try {
+      const sh = stage.activeShot();
+      const stepW = app.graph?._nodes?.find((n) => n.comfyClass === "SoundstageStep" || n.type === "SoundstageStep")?.widgets?.find((x) => x.name === "step");
+      const rung = ["", "Stage", "Frame", "Draft", "Final", "Layers"][stepW?.value | 0] || "Render";
+      window.dispatchEvent(new CustomEvent(JOB_EVENT, { detail: { prompt_id: pid, name: `${rung} · shot ${sh?.name || sh?.id || ""}`.replace(/ · shot $/, ""),
+        trigger: "Run", width: stage.fw, height: stage.fh } }));
+    } catch { /* a name is never worth breaking the queue */ }
+  };
   const rungListeners = [];
   api.__ssQueueHooks.push(onQueued);
   const cutView = Object.assign(document.createElement("div"), { className: "ss-cutview" });
@@ -2321,6 +2336,7 @@ function createStageWidget(node, inputName) {
   node.onRemoved = function () {
     try { canvasPanel.dispose(); } catch { /* already gone */ }
     for (const x of [camViz, pip, topView, coach, tracks, posePanel]) { try { x?.dispose?.(); } catch { /* already gone */ } }
+    try { activity.dispose(); } catch { /* already gone */ }
     stage.dispose();
     return onRemoved?.apply(this, arguments);
   };
