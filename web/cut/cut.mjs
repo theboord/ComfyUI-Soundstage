@@ -13,8 +13,9 @@ import { sourceLine } from "../ui/sourcespec.mjs";
 import { impactClips, withImpactClips } from "./impactsfx.mjs";
 import * as GFX from "./gfx.mjs";
 import * as EL from "./editlink.mjs";
+import { RUNG_COLORS, sourceSize, drawContain, PEAK_BLOCK, peaksOf } from "./cututil.mjs";
 import * as KM from "./keymap.mjs";
-import { EDIT_FIELDS } from "./nle_model.mjs";
+import { EDIT_FIELDS, NLE_FIELDS } from "./nle_model.mjs";
 import { install as installCore } from "./nle_core.mjs";
 import { install as installBins } from "./nle_bins.mjs";
 import { install as installMixer } from "./nle_mixer.mjs";
@@ -28,7 +29,7 @@ const face = (b, name, extra = "") => {
   b.setAttribute("aria-label", b.title || name);
 };
 
-export const RUNG_COLORS = { clay: "#5b6475", look: "#3d6ea8", draft: "#7652b3", final: "#3c9561" };
+export { RUNG_COLORS, sourceSize, drawContain, PEAK_BLOCK, peaksOf };   // moved to cututil.mjs (D12 S0a)
 const ACCENT = "#e39a40";
 const RULER_H = 22;
 const HEADER_W = 92; // track header column (V2, V1, A1 Dialogue M S ...)
@@ -56,7 +57,12 @@ const CSS = `
 .ss-cut{display:flex;flex-direction:column;gap:6px;color:#cfd5de;font:12px/1.3 "Soundstage Grotesk", ui-sans-serif, system-ui, sans-serif;outline:none;background:#16191e;padding:6px;border-radius:6px;box-sizing:border-box;min-width:0}
 .ss-cut:focus-visible{box-shadow:0 0 0 1px #e39a4088}
 .ss-cut-viewer{background:#0d1117;border-radius:4px;overflow:hidden;display:flex;justify-content:center}
-.ss-cut-viewer canvas{display:block;width:100%;height:auto;max-height:52vh;object-fit:contain}
+.ss-cut-mon.rec>canvas{display:block;width:100%;height:auto;max-height:52vh;object-fit:contain}
+.ss-cut-mon{flex:1 1 0;min-width:0;display:flex;justify-content:center;align-items:center;position:relative}
+.ss-cut-pane{flex:0 0 300px;min-width:220px;overflow:auto;border-right:1px solid #262b33}
+.ss-cut-mon[hidden],.ss-cut-pane[hidden]{display:none}
+.ss-cut:not([data-ws=simple]) .ss-cut-mon.active{box-shadow:inset 0 0 0 2px #e39a40}
+.ss-cut-nlesel{background:#1b1f26;color:#cfd5de;border:1px solid #2a3038;border-radius:4px;font:inherit;font-size:11px;padding:1px 2px}
 .ss-cut-bar{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
 .ss-cut-bar button{background:#262b33;color:#cfd5de;border:1px solid #39404b;border-radius:4px;padding:3px 8px;cursor:pointer;font:inherit;min-width:26px;line-height:16px}
 .ss-cut-bar button:hover:not(:disabled){border-color:#5a6370;color:#fff}
@@ -85,7 +91,8 @@ const CSS = `
    tracks scale to their share and scroll inside .ss-cut-tl when even compact tracks overflow. */
 .ss-cut.fit>*{flex:none}
 .ss-cut.fit>.ss-cut-viewer{flex:1 1 0;min-height:0}
-.ss-cut.fit>.ss-cut-viewer canvas{width:100%;height:100%;max-height:none;object-fit:contain}
+.ss-cut.fit>.ss-cut-viewer .ss-cut-mon{height:100%}
+.ss-cut.fit>.ss-cut-viewer .ss-cut-mon.rec>canvas{width:100%;height:100%;max-height:none;object-fit:contain}
 .ss-cut.fit>.ss-cut-tl{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;overscroll-behavior:contain}
 .ss-cut.fit>.ss-cut-help{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ss-cut-src{flex-basis:100%;color:#8fb8ad;font-size:11px;line-height:1.35}
@@ -142,38 +149,6 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-function sourceSize(src) {
-  return [src.videoWidth || src.naturalWidth || src.width || 0, src.videoHeight || src.naturalHeight || src.height || 0];
-}
-
-/** Draw src into the rect (x, y, w, h), letterboxed. */
-function drawContain(ctx, src, x, y, w, h) {
-  const [sw, sh] = sourceSize(src);
-  if (!sw || !sh) return false;
-  const s = Math.min(w / sw, h / sh);
-  const dw = sw * s, dh = sh * s;
-  ctx.drawImage(src, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
-  return true;
-}
-
-const PEAK_BLOCK = 256;
-
-/** Max |sample| per PEAK_BLOCK samples across channels: enough to draw a waveform at any zoom. */
-function peaksOf(buffer) {
-  const n = Math.ceil(buffer.length / PEAK_BLOCK);
-  const peaks = new Float32Array(n);
-  for (let c = 0; c < buffer.numberOfChannels; c++) {
-    const d = buffer.getChannelData(c);
-    for (let i = 0; i < n; i++) {
-      let m = peaks[i];
-      const end = Math.min(d.length, (i + 1) * PEAK_BLOCK);
-      for (let j = i * PEAK_BLOCK; j < end; j++) { const v = d[j] < 0 ? -d[j] : d[j]; if (v > m) m = v; }
-      peaks[i] = m;
-    }
-  }
-  return peaks;
-}
-
 /**
  * Clip level on a GainNode for a clip starting `off` frames in, at context time `when`: gain, fades, volume keys and
  * the auto-duck (fx.mjs clipGainAt), as linear ramps between its breakpoints (keys are linear in dB, so long key
@@ -197,6 +172,7 @@ function scheduleEnvelope(param, a, off, when, rate) {
 export function savedFields(p) {
   const out = { cut: p.cut, audio: p.audio, audio_tracks: p.audio_tracks };
   for (const k of ["titles", "subtitles", "fade_out", "burn_subtitles", "graphics"]) out[k] = p[k] ?? null;
+  for (const k of NLE_FIELDS) if (p[k] != null) out[k] = p[k];   // D12: only when set, so old workflows gain no null keys
   return out;
 }
 
@@ -206,7 +182,8 @@ export class CutPanel {
    * @param {{getProject?: () => object, renderPreviewFrame?: (shotId: string, frame: number) => CanvasImageSource,
    *          onChange?: (project: object) => void}} host
    */
-  constructor(container, { getProject, renderPreviewFrame, onChange, onEditShot, getLining, generateAudio, uploadAudio, renderCut, impactCues, gfxSfx } = {}) {
+  constructor(container, { getProject, renderPreviewFrame, onChange, onEditShot, getLining, generateAudio, uploadAudio, renderCut, impactCues, gfxSfx, takesOf } = {}) {
+    this._takesOf = takesOf || null;   // D12 bins: (shot) => its Dailies takes, from the host (else takesFor over shot.renders)
     this._onEditShot = onEditShot || null;   // "edit original": jump to the step that made a clip, then back
     // Milestone 19 host hooks (all optional): the ScriptSync lining for "Assemble scene", in-place audio generation,
     // importing a sound file, and the server render (POST /soundstage/cut/render).
@@ -257,6 +234,13 @@ export class CutPanel {
     this.beats = []; // record frames of the music's beats (Beats button)
     this.loudTarget = "social";
     this.finish = "off";   // Film Finish preset for renders (FX.FINISH_PRESETS)
+    // D12 (the Cut as an NLE, docs/cut_nle.md): the active monitor, the key map, the workspace, the key-map actions,
+    // and the hooks the NLE pieces subscribe to (refresh, edit, buttons, dispose, play, drawRuler).
+    this.activeMon = "rec";
+    this.keymapName = KM.DEFAULT_KEYMAP;
+    this.workspace = "simple";
+    this.actions = {};   // action name -> (event, binding) => false when it did not apply; filled by the installs
+    this._hooks = {};
 
     this._build(container);
     this._onSfx = (e) => {
@@ -265,7 +249,23 @@ export class CutPanel {
       clips.forEach((c) => this.addAudioClip(c));
     };
     window.addEventListener("soundstage.sfx", this._onSfx);
+    installCore(this);
+    installBins(this);
+    installMixer(this);
+    installTrims(this);
     this.refresh();
+  }
+
+  /** Subscribe to a D12 hook; returns the unsubscribe function. */
+  on(event, fn) {
+    (this._hooks[event] ||= []).push(fn);
+    return () => { this._hooks[event] = (this._hooks[event] || []).filter((f) => f !== fn); };
+  }
+
+  _hook(event, ...args) {
+    for (const fn of this._hooks?.[event] || []) {
+      try { fn(...args); } catch (err) { console.error(`Soundstage Cut: ${event} hook failed`, err); }
+    }
   }
 
   /** Lane geometry: V3 (graphics) shows once the cut has a graphic, and pushes V2 and V1 down. */
@@ -285,7 +285,7 @@ export class CutPanel {
       audio: Array.isArray(host.audio) ? host.audio : this.project.audio,
       audio_tracks: Array.isArray(host.audio_tracks) ? host.audio_tracks : this.project.audio_tracks,
       // Titles, subtitles and the tail fade: the host's when it has them, else the panel's own.
-      ...Object.fromEntries(["titles", "subtitles", "fade_out", "burn_subtitles", "graphics"].map((k) => [k, host[k] != null ? host[k] : this.project[k]])),
+      ...Object.fromEntries(EDIT_FIELDS.map((k) => [k, host[k] != null ? host[k] : this.project[k]]).filter(([, v]) => v !== undefined)),
     });
     let assembled = false;
     if (!hostHasCut && !this.project.cut.length && p.shots.length) {
@@ -305,6 +305,7 @@ export class CutPanel {
     this._updateButtons();
     this.requestDraw();
     if (assembled) this._emit();
+    this._hook("refresh");
   }
 
   /** Replace the whole project (clears undo). */
@@ -404,6 +405,7 @@ export class CutPanel {
   }
 
   play(speed = 1) {
+    this._hook("play", speed);
     if (!this.seqLen) return;
     if (speed > 0 && Math.floor(this.frame) >= this._playEnd() - 1) this.frame = this._playStart();
     if (speed < 0 && this.frame <= 0) this.frame = this.seqLen;
@@ -948,8 +950,7 @@ export class CutPanel {
 
   _snapshot() {
     const p = this.project;
-    return { cut: p.cut, audio: p.audio, audio_tracks: p.audio_tracks, titles: p.titles, subtitles: p.subtitles, fade_out: p.fade_out,
-             burn_subtitles: p.burn_subtitles, graphics: p.graphics };
+    return { cut: p.cut, audio: p.audio, audio_tracks: p.audio_tracks, ...Object.fromEntries(EDIT_FIELDS.map((k) => [k, p[k]])) };
   }
 
   undo() {
@@ -994,6 +995,7 @@ export class CutPanel {
   }
 
   dispose() {
+    this._hook("dispose");
     this.stop();
     window.removeEventListener("soundstage.sfx", this._onSfx);
     this._audioStop();
@@ -1026,7 +1028,14 @@ export class CutPanel {
     this.vctx = this.viewer.getContext("2d");
     this.pic = document.createElement("canvas"); // last good picture, so a seeking video holds its frame
     this.pctx = this.pic.getContext("2d");
-    vw.append(this.viewer);
+    // D12: the viewer is a row: a pane (bins / mixer / markers) | the source monitor | the record monitor (this canvas)
+    this.slots = { pane: document.createElement("div"), source: document.createElement("div"), rec: document.createElement("div") };
+    this.slots.pane.className = "ss-cut-pane";
+    this.slots.source.className = "ss-cut-mon src";
+    this.slots.rec.className = "ss-cut-mon rec active";
+    this.slots.pane.hidden = this.slots.source.hidden = true;
+    this.slots.rec.append(this.viewer);
+    vw.append(this.slots.pane, this.slots.source, this.slots.rec);
     this.viewer.addEventListener("click", () => { if (this._vDragged) { this._vDragged = false; return; } this.togglePlay(); });
     this.viewer.addEventListener("pointerdown", (e) => this._viewDown(e));
 
@@ -1068,6 +1077,21 @@ export class CutPanel {
     this.b.fit = btn("Fit", "Fit the cut to the timeline (\\)", () => this.fit());
     this.b.zoomIn = btn("+", "Zoom in (=)", () => this.zoom(1.5));
     this.b.fold = btn("A ▾", "Fold the audio tracks to thin lanes, so V1 gets the room", () => this.foldAudio(), true);
+    // D12: the workspace and the key map (nle_core.mjs fills in setWorkspace / setKeymap and reads the saved choices)
+    const nleSel = (title, opts, fn) => {
+      const s = document.createElement("select");
+      s.className = "ss-cut-nlesel";
+      s.title = title;
+      for (const [v, t] of opts) s.append(Object.assign(document.createElement("option"), { value: v, textContent: t }));
+      s.addEventListener("change", () => fn(s.value));
+      bar.append(s);
+      return s;
+    };
+    this.b.ws = nleSel("Workspace: Simple is the Cut as before; Edit adds bins and a source monitor; Audio adds the mixer",
+      [["simple", "Simple"], ["edit", "Edit"], ["audio", "Audio"]], (v) => this.setWorkspace?.(v));
+    this.b.keymap = nleSel("Keyboard: Avid (Media Composer), Premiere, or Soundstage (the keys as before)",
+      [["avid", "Avid keys"], ["premiere", "Premiere keys"], ["soundstage", "Soundstage keys"]], (v) => this.setKeymap?.(v));
+    this.b.keymap.value = this.keymapName;
 
     const bar2 = document.createElement("div");
     bar2.className = "ss-cut-bar";
@@ -1271,6 +1295,8 @@ export class CutPanel {
       "S split · ⌘-drag a clip (or , and .) to slip · T dissolve at the nearest cut · drag a transition onto a cut · R keys (rubber bands)";
 
     help.title = help.textContent;
+    this._helpEl = help;
+    this._legacyHelp = help.textContent;
 
     root.append(vw, bar, bar2, ...this._bars, tlw, insp, this.insp2, this.bin, help);
     container.appendChild(root);
@@ -1349,6 +1375,7 @@ export class CutPanel {
     this.b.keys?.setAttribute("aria-pressed", String(this.keysMode));
     this.b.burn?.setAttribute("aria-pressed", String(!!this.project.burn_subtitles));
     if (this.b.srt) this.b.srt.disabled = !(this.project.subtitles || []).length;
+    this._hook("buttons");
   }
 
   _download(suffix) {
@@ -1371,17 +1398,19 @@ export class CutPanel {
   /** One undoable edit: a new cut, plus audio / audio_tracks when they change. */
   _commit(cut, sel = this.sel, extra = {}) {
     const { audio, audio_tracks } = extra;
+    // D12: an edit of track parameters only (a fader, a pan) re-applies the gains instead of restarting playback
+    const paramOnly = cut === this.project.cut && !audio && Object.keys(extra).every((k) => k === "audio_tracks" || k === "mix");
     this.history.push(this._snapshot());
     if (this.history.length > 200) this.history.shift();
     this.future = [];
     this.project = { ...this.project, cut, ...(audio ? { audio } : {}), ...(audio_tracks ? { audio_tracks } : {}) };
-    for (const k of ["titles", "subtitles", "fade_out", "burn_subtitles", "graphics"]) if (k in extra) this.project[k] = extra[k];
+    for (const k of EDIT_FIELDS) if (k in extra) this.project[k] = extra[k];
     // Graphics moved (a sync-locked ripple moves each one by its start; its A2 cues rippled one by one with the audio,
     // so a graphic straddling the edit lost some of its sounds): rebuild their cues from where the graphics now are.
     if ("graphics" in extra && this._gfxLib) this.project.audio = this._gfxAudio(this.project);
     this.project = TL.normalizeProject(this.project);
     this.sel = sel;
-    this._afterEdit();
+    this._afterEdit({ paramOnly });
   }
 
   /** Audio after a picture ripple at record frame `at` by `delta` frames (unchanged with sync lock off). */
@@ -1399,17 +1428,18 @@ export class CutPanel {
     return out;
   }
 
-  _afterEdit() {
+  _afterEdit({ paramOnly = false } = {}) {
     this.sel = Math.min(this.sel, this.project.cut.length - 1);
     if (this.aSel && !this.project.audio.some((a) => a.id === this.aSel)) this.aSel = null;
     this.frame = Math.min(this.frame, Math.max(0, this.seqLen - 1));
-    if (this.speed === 1) this._audioStart(this.frame);
+    if (this.speed === 1 && !paramOnly) this._audioStart(this.frame);
     this._applyTrackGains();
     this._inspect();
     this._clampScroll();
     this._updateButtons();
     this.requestDraw();
     this._emit();
+    this._hook("edit");
   }
 
   _emit() {
@@ -2104,7 +2134,7 @@ export class CutPanel {
         if (ch !== this._vw && ch !== this._tlw) others += ch.offsetHeight;
       }
       others += (parseFloat(rs.rowGap) || 0) * Math.max(0, shown - 1);
-      budget = Math.max(110, Math.floor(rootH - others - Math.max(140, rootH * 0.3)));
+      budget = Math.max(110, Math.floor(rootH - others - Math.max(140, rootH * (this._viewerShare ?? 0.3))));
     } else if (root) {
       root.classList.remove("fit");
       root.style.height = "";
@@ -2199,6 +2229,7 @@ export class CutPanel {
       ctx.fillStyle = "rgba(127,209,192,.8)";
       for (const b of this.beats) { const x = this._x(b); if (x >= HEADER_W && x <= w) ctx.fillRect(Math.round(x), RULER_H - 6, 1, 6); }
     }
+    this._hook("drawRuler", ctx, w);
 
     // V3 (graphics), once there is one
     ctx.fillStyle = "#171b21";
@@ -2333,31 +2364,9 @@ export class CutPanel {
       }
     }
 
-    // trim highlight
-    if (d && (d.mode === "trimIn" || d.mode === "trimOut" || d.mode === "roll")) {
-      const r = rows[d.mode === "trimOut" ? d.idx : d.idx];
-      if (r) {
-        const x = Math.round(this._x(d.mode === "trimOut" ? r.recOut : r.recIn));
-        ctx.fillStyle = d.mode === "roll" ? "#ffd27a" : ACCENT;
-        ctx.fillRect(x - (d.mode === "trimOut" ? 3 : d.mode === "roll" ? 1.5 : 0), this._ty - 2, 3, this._L.th + 4);
-      }
-    }
+    this._drawTrimMarks(ctx, rows, d);
 
-    // insertion indicator (dragging a clip or a shot from the bin)
-    if (d && d.target != null && (d.mode === "move" || d.mode === "bin" || d.mode === "fx")) {
-      const pts = TL.editPoints(p);
-      const x = Math.round(this._x(pts[d.target]));
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(x - 1, this._ty - 4, 2, this._L.th + 8);
-      ctx.beginPath(); ctx.moveTo(x - 5, this._ty - 4); ctx.lineTo(x + 5, this._ty - 4); ctx.lineTo(x, this._ty + 1); ctx.fill();
-      if (d.mode === "move") {
-        const r = rows[d.idx];
-        const gw = Math.max(16, r.len * this.ppf);
-        ctx.globalAlpha = 0.85;
-        this._drawClip(ctx, r, d.x - d.grab, d.x - d.grab + gw, 1, true);
-        ctx.globalAlpha = 1;
-      }
-    }
+    this._drawDropGhosts(ctx, rows, d, p);
 
     // playhead
     if (this.seqLen) {
@@ -2379,7 +2388,11 @@ export class CutPanel {
       ctx.fillRect(HEADER_W + (this.scrollX / span) * vw, TL_H - 4, Math.max(20, (vw / span) * vw), 3);
     }
 
-    // track headers (drawn last: they cover anything scrolled under them)
+    this._drawTrackHeaders(ctx, TL_H, p, nTracks);
+  }
+
+  /** Track headers (drawn last: they cover anything scrolled under them). Owner: D12 P3. */
+  _drawTrackHeaders(ctx, TL_H, p, nTracks) {
     ctx.fillStyle = "#181b20";
     ctx.fillRect(0, 0, HEADER_W, TL_H);
     ctx.fillStyle = "#2a3038";
@@ -3012,6 +3025,18 @@ export class CutPanel {
   }
 
   /** Snap a trim to the cut-on-action frame (same scene) or to the playhead. */
+  /** The trim highlight on the edit being dragged. Owner: D12 P3. */
+  _drawTrimMarks(ctx, rows, d) {
+    if (d && (d.mode === "trimIn" || d.mode === "trimOut" || d.mode === "roll")) {
+      const r = rows[d.mode === "trimOut" ? d.idx : d.idx];
+      if (r) {
+        const x = Math.round(this._x(d.mode === "trimOut" ? r.recOut : r.recIn));
+        ctx.fillStyle = d.mode === "roll" ? "#ffd27a" : ACCENT;
+        ctx.fillRect(x - (d.mode === "trimOut" ? 3 : d.mode === "roll" ? 1.5 : 0), this._ty - 2, 3, this._L.th + 4);
+      }
+    }
+  }
+
   _snapTrim(base, d, delta) {
     const rows = TL.layout(base);
     const tol = SNAP_PX / this.ppf;
@@ -3052,6 +3077,24 @@ export class CutPanel {
   }
 
   // drag a shot from the bin
+  /** The insertion indicator and the ghost of a dragged clip (a clip or a bin item). Owner: D12 P1a. */
+  _drawDropGhosts(ctx, rows, d, p) {
+    if (d && d.target != null && (d.mode === "move" || d.mode === "bin" || d.mode === "fx")) {
+      const pts = TL.editPoints(p);
+      const x = Math.round(this._x(pts[d.target]));
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(x - 1, this._ty - 4, 2, this._L.th + 8);
+      ctx.beginPath(); ctx.moveTo(x - 5, this._ty - 4); ctx.lineTo(x + 5, this._ty - 4); ctx.lineTo(x, this._ty + 1); ctx.fill();
+      if (d.mode === "move") {
+        const r = rows[d.idx];
+        const gw = Math.max(16, r.len * this.ppf);
+        ctx.globalAlpha = 0.85;
+        this._drawClip(ctx, r, d.x - d.grab, d.x - d.grab + gw, 1, true);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
   _chipDown(e, shotId) {
     e.stopPropagation();
     if (e.button !== 0) return;
@@ -3094,6 +3137,34 @@ export class CutPanel {
   _onKey(e) {
     e.stopPropagation();
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || "")) return; // typing in the inspector
+    // D12 key dispatch (nle_design 9.1): the active map's binding wins; in the Soundstage map only keys today's switch
+    // does not use reach the map (keymap.mjs LEGACY_KEYS), so every old key still does what it did.
+    const hit = KM.resolve(this.keymapName, e, this._keyCtx(e));
+    if (hit) {
+      const fn = this.actions[hit.action];
+      if (fn && fn(e, hit) !== false) { e.preventDefault(); return; }
+    }
+    if (!KM.MAPS[this.keymapName]?.exclusive) this._legacyKey(e);
+  }
+
+  /** The context a binding's `when` is checked against. */
+  _keyCtx(e) {
+    const t = e?.target;
+    return {
+      trim: !!this._trimMode, src: this.activeMon === "src", sel: this.sel >= 0, aSel: !!this.aSel, tool: !!this.tool,
+      drag: !!this._drag, root: t === this.root, bin: !!t?.closest?.(".ss-cut-bins"), mac: KM.isMac(),
+    };
+  }
+
+  /** True when the Cut would act on this key now (the App's Presets V and Director / step aside only then). */
+  claimsKey(e) {
+    const ctx = this._keyCtx(e);
+    if (KM.claimsKey(this.keymapName, e, ctx)) return true;
+    return !KM.MAPS[this.keymapName]?.exclusive && KM.legacyClaims(e);
+  }
+
+  /** Today's _onKey switch, moved verbatim (the Soundstage map). */
+  _legacyKey(e) {
     const k = e.key, lower = k.length === 1 ? k.toLowerCase() : k;
     const mod = e.metaKey || e.ctrlKey;
     let handled = true;

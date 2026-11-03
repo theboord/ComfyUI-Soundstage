@@ -722,7 +722,7 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
   const onKey = (e) => {
     if (!root.isConnected || e.defaultPrevented) return;
     if (e.key === "Escape" && !panel.hidden && !panel.contains(e.target)) { close(); return; }
-    if (!isPresetsKey(e) || root.dataset.tour || !root.getClientRects().length || !isActive()) return;
+    if (!isPresetsKey(e) || root.dataset.tour || !root.getClientRects().length || !isActive(e)) return;
     e.preventDefault();
     e.stopPropagation();
     toggle();

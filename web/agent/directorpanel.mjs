@@ -444,7 +444,7 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
 
   // ---------------------------------------------------------------- keys
   const onKey = (e) => {
-    if (e.metaKey || e.ctrlKey || e.altKey || !root.isConnected || !isActive()) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || !root.isConnected || !isActive(e)) return;
     const typing = editable(e.target) && e.target !== input;
     if (e.key === "/" && !typing && (e.target !== input || !input.value)) { e.preventDefault(); e.stopPropagation(); open(); input.focus(); return; }
     if ((e.key === "p" || e.key === "P") && e.shiftKey && !typing && e.target !== input && !e.repeat) { e.preventDefault(); e.stopPropagation(); togglePitch(); return; }

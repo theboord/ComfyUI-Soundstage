@@ -55,7 +55,7 @@ export function normalizeProject(p) {
     });
   project.audio = normalizeAudio(project.audio, project.fps);
   project.audio_tracks = (project.audio_tracks || [])
-    .map((t) => ({ track: Math.max(1, Math.round(t.track || 1)), name: t.name ? String(t.name) : "", mute: !!t.mute, solo: !!t.solo }));
+    .map((t) => ({ track: Math.max(1, Math.round(t.track || 1)), name: t.name ? String(t.name) : "", mute: !!t.mute, solo: !!t.solo, ...trackExtras(t) }));
   // Milestone 19 (all optional; absent = the cut as before): a fade to black/white at the tail, title cards on V2,
   // subtitles (from the typed dialogue) with an optional burn-in.
   const fo = normalizeTrans(project.fade_out);
@@ -64,7 +64,7 @@ export function normalizeProject(p) {
   if (project.titles != null) project.titles = normalizeTitles(project.titles);
   if (project.graphics != null) project.graphics = normalizeGraphics(project.graphics);   // V3 motion graphics (gfx.mjs)
   if (project.subtitles != null) project.subtitles = normalizeSubtitles(project.subtitles);
-  return project;
+  return normalizeNle(project);   // D12 NLE fields (nle_model.mjs): all optional, written only when set
 }
 
 // ---------------------------------------------------------------- transitions, keys, titles, subtitles (Milestone 19)

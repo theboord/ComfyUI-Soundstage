@@ -594,6 +594,8 @@ function createStageWidget(node, inputName) {
       strip?.refresh();
     },
     onEditShot: (id, where, ctx) => editShot(id, where, ctx),
+    // D12 bins: every Dailies take of a shot (takeRenders is defined further down; this only runs after mount)
+    takesOf: (sh) => { try { return takesFor(sh, takeRenders(sh.id)); } catch { return null; } },
     // Milestone 19: Assemble scene from the ScriptSync lining; generate / import sound in place; the server render.
     getLining: () => {
       try {
@@ -3115,10 +3117,16 @@ function createStageWidget(node, inputName) {
       onNotes: () => { try { if (!scriptView.hidden) scriptPanel?.render(); } catch { /* panel */ } },
     } });
 
+  // D12 (nle_design 9.4): the Cut's active key map may use V or / (Avid's splice-in, Trim Mode); then Presets and the
+  // Director step aside, only for keys that map really uses while the Cut has focus.
+  const cutOwnsKeys = (e) => {
+    try { return !!e && curView === "cut" && cutView.contains(document.activeElement) && !!cut.claimsKey?.(e); } catch { return false; }
+  };
+
   // Director's assistant (Milestone 15, web/agent/directorpanel.mjs): talk to the set ("/" or the top bar); it shows a
   // plan, Apply runs it through these same panels, and every turn can be undone. MCP clients drive it too.
   node.ssDirector = mountDirector({ root: el, topBar: tabs, before: guideBtn, api, stage,
-    isActive: () => el.isConnected && !!el.getClientRects().length && !el.dataset.tour && !appKeysHeld()
+    isActive: (e) => el.isConnected && !!el.getClientRects().length && !el.dataset.tour && !appKeysHeld() && !cutOwnsKeys(e)
       && (el.contains(document.activeElement) || el.matches(":hover") || el.classList.contains("ss-full")),
     host: {
       onLoad: () => { try { syncControls(); syncEnv(); syncLight(); syncShots(); strip.refresh(); } catch { /* rows not built */ } },
@@ -3140,7 +3148,7 @@ function createStageWidget(node, inputName) {
   // Presets (Milestone 17, web/ui/presets.mjs): one window of one-click camera moves, lighting, looks, stunts, edit
   // styles and recipes ("V" or the top bar). Each apply is one undo step; the Director gets them as its preset tool.
   node.ssPresets = mountPresets({ root: el, topBar: tabs, before: keysBtn, api, stage,
-    isActive: () => el.isConnected && !!el.getClientRects().length && !el.dataset.tour && !appKeysHeld()
+    isActive: (e) => el.isConnected && !!el.getClientRects().length && !el.dataset.tour && !appKeysHeld() && !cutOwnsKeys(e)
       && (el.contains(document.activeElement) || el.matches(":hover") || el.classList.contains("ss-full")),
     host: {
       onLoad: () => { try { syncControls(); syncEnv(); syncLight(); syncShots(); strip.refresh(); } catch { /* rows not built */ } },

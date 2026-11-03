@@ -8,7 +8,7 @@ import math
 import re
 from urllib.parse import parse_qs, quote
 
-from .nle_model import normalize_nle, track_extras  # noqa: F401  (D12 S0a; called from normalize_project)
+from .nle_model import normalize_nle, track_extras  # D12 S0a: called from normalize_project
 
 RUNGS = ("clay", "look", "draft", "final")
 
@@ -303,7 +303,7 @@ def normalize_project(p) -> dict:
     project["cut"] = cut
     project["audio"] = normalize_audio(project.get("audio"))
     project["audio_tracks"] = [{"track": max(1, _round(t.get("track") or 1)), "name": str(t["name"]) if t.get("name") else "",
-                                "mute": bool(t.get("mute")), "solo": bool(t.get("solo"))}
+                                "mute": bool(t.get("mute")), "solo": bool(t.get("solo")), **track_extras(t)}
                                for t in (project.get("audio_tracks") or [])]
     fo = normalize_trans(project.get("fade_out"))
     if fo:
@@ -317,7 +317,7 @@ def normalize_project(p) -> dict:
         project["graphics"] = normalize_graphics(project["graphics"])
     if project.get("subtitles") is not None:
         project["subtitles"] = normalize_subtitles(project["subtitles"])
-    return project
+    return normalize_nle(project)   # D12 NLE fields (nle_model.py): all optional, written only when set
 
 
 def is_overlap(t) -> bool:

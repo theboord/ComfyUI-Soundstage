@@ -5,8 +5,11 @@ import { normalizeFillerFields } from "./filler.mjs";
 import { normalizeMixFields } from "./mixmodel.mjs";
 import { normalizeTrimFields } from "./trimmodel.mjs";
 
-/** Fields one edit snapshots, commits and re-reads from the host (filled by S0a commit 2). */
-export const EDIT_FIELDS = ["titles", "subtitles", "fade_out", "burn_subtitles", "graphics"];
+/** The NLE's own project fields, saved only when set (cut.mjs savedFields). */
+export const NLE_FIELDS = ["markers", "lanes", "mix"];
+
+/** Fields one edit snapshots, commits and re-reads from the host. B's rate keys join when B lands (nle_design 3.4). */
+export const EDIT_FIELDS = ["titles", "subtitles", "fade_out", "burn_subtitles", "graphics", ...NLE_FIELDS];
 
 /** Runs the three piece normalizers. Each returns the project unchanged until its owner fills it. */
 export function normalizeNle(project) {
