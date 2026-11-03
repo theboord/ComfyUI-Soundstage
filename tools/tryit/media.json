@@ -74,6 +74,7 @@
     {"src": "~/OpenHiggsfieldContest/share/Commercial/v5_renders/jturn_redo/jturn_frame_s5102_00001_.png", "out": "m_stunt_jt2_seed_2.jpg", "kind": "still"},
     {"src": "~/OpenHiggsfieldContest/share/Commercial/v5_renders/jturn_redo/jturn_frame_s5103_00001_.png", "out": "m_stunt_jt2_seed_3.jpg", "kind": "still"},
     {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/tr3_jturn_redo_clay.mp4", "out": "m_stunt_jt2_previz.mp4"},
+    {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/jturn_draft_s5101_00001_.mp4", "out": "m_stunt_jt2_draft.mp4"},
     {"src": "~/OpenHiggsfieldContest/share/Commercial/v5_renders/jturn_redo/jturn_final_sound_s5101_00001_.mp4", "out": "m_stunt_jt2_final.mp4"},
     {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/tr3_boat2_color_vs_final.mp4", "out": "m_tr3_boat2_sbs.mp4", "kind": "copy"},
     {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/chase_crane_frame_s6101_00001_.png", "out": "m_tr3_chase_crane_frame.jpg", "kind": "still"},
@@ -81,6 +82,7 @@
     {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/western_shot_1_frame_s6103_00001_.png", "out": "m_tr3_western_shot_1_frame.jpg", "kind": "still"},
     {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/chase_tracking_frame_s6104_00001_.png", "out": "m_tr3_chase_tracking_frame.jpg", "kind": "still"},
     {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/chase_chase_frame_s6105_00001_.png", "out": "m_tr3_chase_chase_frame.jpg", "kind": "still"},
-    {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/western_shot_mvtzikwz_frame_s6106_00001_.png", "out": "m_tr3_western_shot_mvtzikwz_frame.jpg", "kind": "still"}
+    {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/western_shot_mvtzikwz_frame_s6106_00001_.png", "out": "m_tr3_western_shot_mvtzikwz_frame.jpg", "kind": "still"},
+    {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/western_shot_mvtzil1n_frame_s6107_00001_.png", "out": "m_tr3_western_shot_mvtzil1n_frame.jpg", "kind": "still"}
   ]
 }
