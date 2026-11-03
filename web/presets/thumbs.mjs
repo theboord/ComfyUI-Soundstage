@@ -7,6 +7,7 @@ import { drawBoatThumb } from "./boatpresets.mjs";
 import { cameraKeys, userCameraKeys, yaw, CAR_PATH_MOVES } from "./engine.mjs";
 import { stuntKeys } from "../stage/stunts.mjs";
 import { SOFT_PRESET_KINDS, drawSoftThumb } from "./softpresets.mjs";
+import { SFX_PRESET_KINDS, drawSfxThumb } from "./sfxpresets.mjs";
 
 const D2R = Math.PI / 180;
 const LOOP = 3.2;                       // seconds per loop
@@ -324,6 +325,8 @@ function actionThumb(c, p, t, w, h) {
     c.fillStyle = "#111"; c.beginPath(); c.arc(carX - S * 0.8, gy - S * 0.25, S * 0.25, 0, 7); c.arc(carX + S * 0.8, gy - S * 0.25, S * 0.25, 0, 7); c.fill();
   } else if (SOFT_PRESET_KINDS.includes(a.physics)) {
     drawSoftThumb(c, a.physics, u, w, h, gy, S);   // Milestone 28: soft bodies
+  } else if (SFX_PRESET_KINDS.includes(a.physics)) {
+    drawSfxThumb(c, a.physics, u, w, h, gy, S);    // practical effects
   } else if (a.shake) {
     // A crate lands; the frame (a camera's view) jolts after it and settles.
     const tt = u * 2.2, land = 0.55, age = tt - land - 0.1;

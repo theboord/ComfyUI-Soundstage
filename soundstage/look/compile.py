@@ -20,6 +20,7 @@ from .colors import palette_phrase, palette_words
 from .gaze import frame1_looks, head_beats
 from .identity import body_words, motion_identity, people_identity, plain_word, still_identity
 from .impacts import impact_beats
+from .sfx import sfx_beats, sfx_still_words, without_rigs
 from .objstate import motion_beats, still_words
 from . import swim as SW
 from .vocab import load_vocab, normalize_look, option
@@ -515,6 +516,7 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
         head_beats(scene),                       # head and gaze blocking: every person's head, beat by beat
         _camera_sentence(mf, f1, look),
         impact_beats(scene),                     # Milestone 21: timed material beats off the baked hits
+        sfx_beats(scene),                        # practical effects: the fireball, squibs, stage blood (look/sfx.py)
         still_words(scene, {e["id"] for e in f1["people"] + f1["others"]}),   # Milestone 26: what each object's parts show
         motion_beats(scene, {e["id"] for e in f1["people"] + f1["others"]}),  # and when they change ("At 2.0 s the door opens")
         f"Shot on {lens_s}." if lens_s else "",
@@ -543,8 +545,12 @@ def compile_look(look_in: dict | None, scene: dict | None) -> dict:
     """The whole compile: normalised look + the three prompts + notes and KB refs."""
     look, notes = normalize_look(look_in)
     scene = scene if isinstance(scene, dict) and scene else dict(DEFAULT_SCENE)
+    scene = without_rigs(scene)   # SFX rigs are crew equipment, never things in the shot (their effects get beats)
     parts = look_parts(look, look_context(scene))
     still, negative = compile_still(look, scene, parts)
+    sw = sfx_still_words(scene)
+    if sw:
+        still = f"{still.rstrip(' .')}. {sw}"
     motion = compile_motion(look, scene, parts)
     # The Director's Book (Milestone 23): Imagery & Tone as style words, Pitfalls said positively (CFG 1: no negatives).
     from ..book.prompting import prompt_words
