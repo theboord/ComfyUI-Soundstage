@@ -165,6 +165,21 @@ def sbs(src, t0, dur, fps, tag, half_w=640, half_h=344):
     return out
 
 
+def sbs2(left, right, t0, dur, fps, tag):
+    """Two clips side by side, each center-cropped to 4:3 and scaled to 440 x 330."""
+    vf = "crop=ih*4/3:ih,scale=440:330:flags=lanczos"
+    L = frames(left, t0, dur, fps, vf, tag + "_l")
+    R = frames(right, t0, dur, fps, vf, tag + "_r")
+    out = []
+    for a, b in zip(L, R):
+        c = Image.new("RGB", (W, 330), INK)
+        c.paste(a, (0, 0))
+        c.paste(b, (440, 0))
+        c.paste(Image.new("RGB", (2, 330), (242, 255, 89)), (439, 0))
+        out.append(c)
+    return out
+
+
 # ---------- banner, headers, buttons ----------
 def banner():
     body = f"""
@@ -277,19 +292,20 @@ def main():
              still(ask2, 0.2, "crop=1000:136:0:0,scale=880:-1:flags=lanczos", "s3"))
 
     # You block it, it renders: the boat, clay | Final (the same shot, frame for frame).
+    B = C / "v5_renders" / "boat"
     gif_card("card_boat", "You block it. It renders.",
              "Left, the 3D stage. Right, the Final render of the same shot: FLUX 3 Klein + LTX-2.5, with sound.", "Final render",
-             lambda: sbs(TRY / "tr3_boat2_color_vs_final.mp4", 0.3, 4.0, 8, "boat"), 8)
+             lambda: sbs2(B / "boat3_clay_color.mp4", B / "boat3_finalhq_loose_sound_s2201_00001_.mp4", 0.3, 4.0, 8, "boat"), 8)
     # Night, rain, sound: the car-pass plate, trimmed to the pass.
-    cp = C / "v5_renders" / "carpass" / "carpass2_final_sound_s1101_small.mp4"
+    cp = C / "v5_renders" / "carpass" / "angles" / "cpa_closeup_final_sound_s1101_00001_.mp4"
     gif_card("card_carpass", "Night, rain, sound",
-             "A locked-off street plate: a police car passes in the rain, its sound generated with the picture.", "Final render",
-             lambda: frames(cp, 1.9, 2.0, 8, "crop=1280:640:0:31,scale=880:440:flags=lanczos", "cp"), 8, colors=96)
+             "Police cars come out of the rain toward the lens, their sound generated with the picture.", "Final render",
+             lambda: frames(cp, 0.2, 2.4, 8, "crop=1984:992:0:48,scale=880:440:flags=lanczos", "cp"), 8, colors=96)
     # Stunts & SFX rigs: the explosion run, a live stage capture.
-    ex = C / "v6" / "captures" / "CAP-v6_sfx_run_full.mp4"
+    ex = C / "v5_renders" / "expl" / "expl2_final_ff6112_sound_s6101_00001_.mp4"
     gif_card("card_sfx", "Stunts &amp; SFX rigs",
-             "Explosions, fire, squibs and breakaway glass, cued in time. Cars and people thrown by physics.", "Stage preview",
-             lambda: frames(ex, 2.5, 3.5, 8, "crop=1356:678:130:222,scale=880:440:flags=lanczos", "ex"), 8)
+             "Explosions, fire, squibs and breakaway glass, cued in time. Cars and people thrown by physics.", "Final render",
+             lambda: frames(ex, 0.8, 3.6, 8, "crop=1984:992:0:48,scale=880:440:flags=lanczos", "ex"), 8, colors=112)
     # Drive anything: the scripted Drive capture.
     dr = C / "v6" / "captures" / "CAP-v6d_drive.mp4"
     gif_card("card_drive", "Drive anything",
@@ -317,9 +333,11 @@ def main():
     # Sound versions to link from the captions.
     if want("mp4"):
         for name, src in [("jturn_final_sound.mp4", C / "v5_renders" / "jturn_redo" / "jturn_final_sound_s5101_small.mp4"),
-                          ("boat_final_sound.mp4", C / "v5_renders" / "boat" / "boat2_final_sound_s2201_small.mp4"),
-                          ("carpass_final_sound.mp4", C / "v5_renders" / "carpass" / "carpass2_final_sound_s1101_small.mp4")]:
-            ff("-i", src, "-c:v", "libx264", "-crf", "26", "-preset", "slow", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
+                          ("boat_final_sound.mp4", C / "v5_renders" / "boat" / "boat3_finalhq_loose_sound_s2201_00001__small.mp4"),
+                          ("carpass_final_sound.mp4", C / "v5_renders" / "carpass" / "angles" / "cpa_closeup_final_sound_s1101_00001__small.mp4"),
+                          ("explosion_final_sound.mp4", C / "v5_renders" / "expl" / "expl2_final_ff6112_sound_s6101_00001__small.mp4"),
+                          ("intro_mike.mp4", C / "v5_presenter" / "wip" / "OPENING_ripple_lot_small.mp4")]:
+            ff("-i", src, "-c:v", "libx264", "-crf", "28", "-preset", "slow", "-vf", "scale=-2:'min(720,ih)'", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
                "-movflags", "+faststart", OUT / name)
             print(f"{name}: {(OUT / name).stat().st_size/1e6:.2f} MB")
     shutil.rmtree(TMP, ignore_errors=True)
