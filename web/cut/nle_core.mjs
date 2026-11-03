@@ -242,6 +242,14 @@ export function install(panel) {
       if (!a) return false;
       panel.updateAudioClip(panel.aSel, { gain_db: a.gain_db + b.arg });
     },
+    escape: (e) => {   // Avid's Esc: cancel a drag, else toggle the source / record monitor, else deselect
+      if (panel._drag) { panel._cancelDrag(); return; }
+      if (A.toggleMon(e) !== false) return;
+      A.deselect();
+    },
+    monSrc: () => { if (!panel.monitors.src || panel.slots.source.hidden) return false; panel.setActiveMon("src"); },
+    monRec: () => panel.setActiveMon("rec"),
+    legacy: (e) => panel._legacyKey(e),   // the same meaning as today's key (Delete / Backspace)
     deselect: () => { panel._cancelDrag(); panel.sel = -1; panel.aSel = null; panel._inspect(); panel._updateButtons(); },
     // Bound in a map but built by a later piece (P1a, P1b, P2, P3): the key says so instead of doing something else.
     later: (e, b) => { panel.say(b.note || "Not built yet in this Cut.", { error: true }); },
