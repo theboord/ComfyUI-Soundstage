@@ -15,11 +15,11 @@ lock finds what the model really changed and takes only that:
   6. fidelity report      % of pixels bit-identical to the plate, PSNR outside the edit (locked and raw model).
 
 Three modes:
-  local  the edit is a thing in the picture (empty the scene, a recast person, flood water): tone-matched generated
+  local  the edit is a thing in the picture (empty the scene, a recast person): tone-matched generated
          pixels inside the matte, the plate bit-for-bit outside it.
-  look   the edit is the light (relight, nightfall, golden hour, rain, fog, snow): the change of light is carried onto
-         the plate's own pixels as a smooth per-pixel gain (a light map), and generated pixels are taken only where
-         the model changed structure beyond the light (snow on a ledge, a lit window, a puddle). Nothing is
+  look   the edit is the light (relight, nightfall, golden hour, rain, fog, snow, flood): the change of light is
+         carried onto the plate's own pixels as a smooth per-pixel gain (a light map), and generated pixels are taken
+         only where the model changed structure beyond the light (snow on a ledge, a lit window, a puddle). Nothing is
          bit-identical in this mode by design; every pixel outside the matte is the plate's own detail, re-lit.
   alpha  the edit is a matte (cutout): RGB is the plate bit-for-bit, alpha is the model's matte, steadied in time.
 
