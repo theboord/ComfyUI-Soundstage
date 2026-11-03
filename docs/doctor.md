@@ -19,7 +19,8 @@ python -m soundstage.doctor --json                          # the full report
 ```
 
 Exit status: 0 when the required node packs, the Python packages and the default models (Frame and Motion) are
-there; 1 when something required is missing; 2 when it found neither a server nor a ComfyUI folder.
+there; 1 when something required is missing; 2 when the `--url` given does not answer, or when it found neither a
+server nor a ComfyUI folder.
 
 ## What it checks
 
