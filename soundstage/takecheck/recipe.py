@@ -119,6 +119,9 @@ def build(prompt: dict) -> dict | None:
     q = next((i for _, i in _by_class(prompt, "SoundstageQuality")), None)
     if q:
         rec["quality"] = {k: _literal(q.get(k)) for k in ("motion_freedom", "quality") if _literal(q.get(k)) is not None}
+        adv = _loads(_literal(q.get("advanced")))   # what the render used: preset overrides, the LTX seed, the Adherence
+        if isinstance(adv, dict):
+            rec["quality"]["advanced"] = adv
     seeds = {}
     for cls, key in (("SoundstageAudioDrivenShot", "video"), ("SoundstageGenerateVideo", "video_router"),
                      ("SoundstageEditImage", "still"), ("KSampler", "still_krea")):

@@ -88,6 +88,13 @@ export class PresetRunner {
     if (sel?.mount_id) { const h = this._actors().find((a) => a.id === sel.mount_id); if (isVehicle(h)) return h; }
     return this._actors().find((a) => isVehicle(a) && !isBoat(a)) || this._actors().find(isVehicle) || null;
   }
+  /** The vehicle a camera preset rides or tracks: the selected one (or its rider's), else the one doing a stunt (two
+   *  cars, the J-turn applied to the second: a long-lens pan with nothing selected used to frame the parked first). */
+  _camVehicle() {
+    const sel = this.selected();
+    if (isVehicle(sel) || sel?.mount_id) return this._vehicle();
+    return this._actors().find((a) => isVehicle(a) && !isBoat(a) && a.stunt && a.stunt !== "none") || this._vehicle();
+  }
   _person({ free = false } = {}) {
     const sel = this.selected();
     if (isPerson(sel)) return sel;
@@ -254,12 +261,12 @@ export class PresetRunner {
     // A car-path move (long-lens pan, arm car) is world space: off the car first, whatever it was riding.
     if (followed && ((isPerson(followed) && a.camera.move !== "follow") || carPath)) { st.setCameraFollow(null); sh = this.shotInfo().shot; }
     const k0 = (sh.camera_keys || keys)[0];
-    if (carPath && !this._vehicle()) return { ok: false, said: `${p.label} needs a car on set to track: add one (type “sports car” in Add) and try again.` };
+    if (carPath && !this._camVehicle()) return { ok: false, said: `${p.label} needs a car on set to track: add one (type “sports car” in Add) and try again.` };
     const plan = this.cameraPlan(a.camera, k0);
     if (!plan) return { ok: false, said: `${p.label}: this shot has no camera to move yet.` };
     let note = null;
     if (plan.follow === "vehicle") {
-      const v = this._vehicle();
+      const v = this._camVehicle();
       if (!v) return { ok: false, said: "Car mount needs a car on set: add one (type “sports car” in Add) and try again." };
       st.setCameraFollow(v.id, plan.carView);
       note = `on the ${nameOf(v).toLowerCase()}`;
@@ -271,7 +278,7 @@ export class PresetRunner {
       note = `following ${nameOf(who)}`;
     } else {
       st.setCameraKeys(plan.keys);
-      if (carPath) note = `tracking the ${nameOf(this._vehicle()).toLowerCase()} from ${Math.round(plan.metres)} m off its path, ${Math.round(plan.focal)} mm`;
+      if (carPath) note = `tracking the ${nameOf(this._camVehicle()).toLowerCase()} from ${Math.round(plan.metres)} m off its path, ${Math.round(plan.focal)} mm`;
     }
     const rig = a.rig || DEFAULT_RIG[a.camera.move];
     if (rig && typeof st.setRig === "function") st.setRig(rig);
@@ -289,7 +296,7 @@ export class PresetRunner {
     k0 = k0 || (this.shotInfo().shot.camera_keys || this.scene().camera_keys || [])[0];
     if (!k0) return null;
     if (!CAR_PATH_MOVES.includes(spec?.move)) return cameraKeys(k0, spec, last);
-    const v = this._vehicle();
+    const v = this._camVehicle();
     if (!v) return null;
     const path = [];
     for (let f = 0; f <= last; f += 3) path.push({ frame: f, position: this._pos(v, f) });

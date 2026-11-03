@@ -125,7 +125,13 @@ def track_b(name: str, args: dict) -> tuple[str, bool]:
                     break
                 if how == "bridge":
                     b = http("POST", "/soundstage/loop/fix", {"ref": ref, "how": "bridge", "prompt": body["prompt"]}, timeout=300)
+                    if b.get("error") or not b.get("prompt"):   # the loop made so far is still reported
+                        lines.append(f"bridge: {b.get('error') or 'no bridge graph'}")
+                        continue
                     bq = http("POST", "/prompt", {"prompt": b["prompt"], "client_id": "soundstage-mcp"})
+                    if not bq.get("prompt_id"):
+                        lines.append(f"bridge: the queue refused it: {bq.get('error') or bq}")
+                        continue
                     bf = _wait_prompt(bq["prompt_id"])
                     r = http("POST", "/soundstage/loop/fix", {"ref": ref, "how": "join", "bridge_ref": _ref(bf), "clip_end": b["clip_end"]}, timeout=300)
                 else:

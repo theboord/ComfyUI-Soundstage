@@ -309,7 +309,7 @@ export function consequences(overlaps, who, { fps = 24 } = {}) {
     const rest = consequences(groups.filter((g) => g.ids.length === 1), who, { fps });
     const lines = many.map((g) => {
       const M = (() => { const w = who[g.m] || {}; const nm = w.name || g.m; return /^[A-Z]/.test(nm) && PERSON_KINDS.has(w.kind) ? nm : `the ${String(nm).toLowerCase()}`; })();
-      const what = `${g.ids.length} ${String(g.kind || "thing").replace(/_/g, " ")}${/s$/.test(g.kind || "") ? "" : g.kind === "box" ? "es" : "s"}`;
+      const k = String(g.kind || "thing").replace(/_/g, " "), what = `${g.ids.length} ${k}${/(ss|us|x|z|ch|sh)$/.test(k) ? "es" : /s$/.test(k) ? "" : "s"}`;   // 3 buses, 2 glasses, 4 plane seats
       return { a: g.m, b: g.ids[0], ids: g.ids, frame: g.frame, t: +(g.frame / fps).toFixed(1), depth: g.depth,
         text: `${M[0].toUpperCase()}${M.slice(1)} passes through ${what} at ${(g.frame / fps).toFixed(1)} s: make them collide, or reroute?`,
         fixes: [{ id: "crash", label: "Make them collide", command: "bake the physics" }, { id: "reroute", label: "Reroute", command: `reroute ${M} around the ${String(who[g.ids[0]]?.name || g.ids[0]).toLowerCase()}` }] };
@@ -365,7 +365,8 @@ export function planRam(rammer, victim, into = null, opts = {}) {
   const reach = rammer.half[2] + reachV;   // the rammer's nose touches the victim's side
   const contact = [victim.pos[0] - dir[0] * reach, 0, victim.pos[2] - dir[2] * reach];
   let hitFrame = Math.round(last * (opts.hitAt ?? 0.4));
-  hitFrame = Math.max(Math.ceil(fps * 0.6), Math.min(last - 6, hitFrame));
+  // At least 0.6 s of run-up and 6 frames after the hit; a shot too short for both keeps the hit inside it.
+  hitFrame = Math.max(1, Math.min(last - 6, Math.max(Math.ceil(fps * 0.6), hitFrame)));
   const before = v * hitFrame / fps, after = v * (last - hitFrame) / fps;
   const p0 = [contact[0] - dir[0] * before, 0, contact[2] - dir[2] * before], p1 = [contact[0] + dir[0] * after, 0, contact[2] + dir[2] * after];
   const r3 = (a) => a.map((x) => Math.round(x * 1000) / 1000);
@@ -454,7 +455,7 @@ export function rebaker(run, { delay = 450, setTimer = setTimeout, clearTimer = 
 /** The bake's takeover markers in words: "physics took over at f 49 (2.0 s): the police car hit the red car". */
 export function takeoverWords(takeovers, who = {}) {
   return Object.entries(takeovers || {}).filter(([, t]) => t.reason !== "unsupported").sort((a, b) => a[1].frame - b[1].frame).map(([id, t]) => {
-    const nm = (x) => String(who[x]?.name || x.split("~")[0]).toLowerCase();
+    const nm = (x) => String(who[x]?.name || who[x.split(/[~#]/)[0]]?.name || x.split(/[~#]/)[0]).toLowerCase();   // a wall's block, a car's body
     const how = t.reason === "anchor" ? `knocked loose by the ${nm(t.by)}` : `hit the ${nm(t.by)}`;
     return `${nm(id)}: physics took over at f ${t.frame} (${(t.frame / (who.__fps || 24)).toFixed(1)} s), ${how} at ${(t.speed * 3.6).toFixed(0)} km/h`;
   });

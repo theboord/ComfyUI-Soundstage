@@ -28,7 +28,7 @@ Soundstage is ComfyUI custom nodes plus an App that work like a film set: you bl
 
 | Live in your browser (the real App code) | Replayed from a real run (made earlier, played back) |
 |---|---|
-| The 3D stage and its playback, cameras, live physics (climb, mount, pick up, push), stunts, Drive mode, boats and swimming, Presets, the Timeline editor (trimming and ordering; the clips in it are recorded) | The drafts and finals in ④ Frame, ⑤ Motion, ⑥ Review and ⑦ Deliver (FLUX 3 Klein frames, LTX-2.5 clips: the same recorded files in each step), the takes in Takes and ScriptSync, take checks, the Advisor's answers, the Look's compiled prompts (saved per scene; they do not change when you edit the Look), the joined cut from ⑦ Deliver's Cut → one video, Video → 3D (one pod run of 61 min wall time, most of it queue wait, played back in 9 s), every Watch clip and the first screen |
+| The 3D stage and its playback, cameras, live physics (climb, mount, pick up, push), stunts, Drive mode, boats and swimming, Presets, the Timeline editor (trimming and ordering; the clips in it are recorded), **Load a script**: your Fountain, Final Draft or PDF (or a sample) broken down into scenes, cast and locations, and each scene's stage set up from its heading | The drafts and finals in ④ Frame, ⑤ Motion, ⑥ Review and ⑦ Deliver (FLUX 3 Klein frames, LTX-2.5 clips: the same recorded files in each step; for a scene of a script you loaded, the closest demo set's recording, labelled as an example), the takes in Takes and ScriptSync, take checks, the Advisor's answers, the Look's compiled prompts (saved per scene; they do not change when you edit the Look), the joined cut from ⑦ Deliver's Cut → one video, Video → 3D (one pod run of 61 min wall time, most of it queue wait, played back in 9 s), every Watch clip and the first screen |
 
 Not in the demo at all (each one says "available in the full install"): new renders, the Director's language model, Timeline render, the phone viewfinder, Layer Packs, voices.
 
@@ -40,14 +40,13 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 <p align="center"><em>Left: the 3D stage's clay render. Right: what Soundstage renders from it. Same blocking, same camera.</em></p>
 
 <p align="center">
-<a href="docs/media/soundstage_showcase.mp4"><b>&#9654;&#65039; Watch the trailer</b></a> &nbsp;&middot;&nbsp;
 <a href="https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq"><b>&#128421;&#65039; Try it in your browser</b></a> &nbsp;&middot;&nbsp;
 <a href="docs/QUICKSTART.md"><b>&#9201;&#65039; First shot in 10 minutes, then a 3-shot scene</b></a> &nbsp;&middot;&nbsp;
 <a href="docs/TUTORIAL.md"><b>&#128214; Read the tutorial</b></a> &nbsp;&middot;&nbsp;
 <a href="#install"><b>&#9881;&#65039; Install</b></a>
 </p>
 
-<p align="center"><sub>The browser demo is the real App UI replaying real GPU renders, no install needed. Also: <a href="docs/media/soundstage_demo.mp4">the longer walkthrough</a>. Built for Comfy Org's <i>Open Source Higgsfield</i> challenge.</sub></p>
+<p align="center"><sub>The browser demo is the real App UI replaying real GPU renders, no install needed. Built for Comfy Org's <i>Open Source Higgsfield</i> challenge.</sub></p>
 
 ### Highlights: what only Soundstage does
 
@@ -511,6 +510,8 @@ The full list, with folders, sources and licenses, is in [MODELS.md](MODELS.md).
 | Optional | Qwen3.5 4B (object designer, scene agent), Chatterbox (TTS) | Apache-2.0; MIT |
 
 Model weights are not included in this repo. Check each license before commercial use.
+
+To add an image, video, matte or clean-plate model (one registry entry plus one adapter), see [docs/ADD_A_MODEL.md](docs/ADD_A_MODEL.md). A model added that way does not reach the 19 generation paths that build their own graphs, including the App's default final render and all audio; [docs/MODEL_AUDIT.md](docs/MODEL_AUDIT.md) lists them.
 
 <a id="partner-footnote"></a><sup>1</sup> Partner API models (ElevenLabs, Kling, Veo, Nano Banana and the like, through ComfyUI partner nodes and your Comfy credits) are hidden by default. To list them anyway, start ComfyUI with `SOUNDSTAGE_PARTNER_MODELS=1`. A saved workflow that still names one loads fine and says so when it runs.
 

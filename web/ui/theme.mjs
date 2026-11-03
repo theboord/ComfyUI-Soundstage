@@ -331,10 +331,10 @@ export const PRO_CSS = `
   background:var(--ss-selected) !important; color:var(--ss-text) !important; border-color:var(--ss-line-strong) !important; font-weight:600 !important;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.06); }
 .ss-stage :is(.ss-pipeview .seg, .ss-lcmp) button:not([aria-pressed=true]):hover:not(:disabled) { background:rgba(255,255,255,.07) !important; }
-/* The step's way on ("Animate this frame →", "Review →") is a quiet outlined button: the step's own action is the yellow one. */
-.ss-stage .ss-pipeview button.go.next { background:transparent !important; color:var(--ss-text) !important; border:1px solid var(--ss-line-strong) !important; }
-.ss-stage .ss-pipeview button.go.next:hover:not(:disabled) { background:rgba(255,255,255,.06) !important; border-color:var(--ss-accent-line) !important; filter:none; }
-.ss-stage .ss-pipeview button.go.next:active:not(:disabled) { background:var(--ss-pressed) !important; filter:none; }
+/* The step's way on ("Animate this frame →", "Review →", ③ Set's "Make the first frame →" on the time bar) is a quiet outlined button: the step's own action is the yellow one. */
+.ss-stage :is(.ss-pipeview, .ss-time) button.go.next { background:transparent !important; color:var(--ss-text) !important; border:1px solid var(--ss-line-strong) !important; }
+.ss-stage :is(.ss-pipeview, .ss-time) button.go.next:hover:not(:disabled) { background:rgba(255,255,255,.06) !important; border-color:var(--ss-accent-line) !important; filter:none; }
+.ss-stage :is(.ss-pipeview, .ss-time) button.go.next:active:not(:disabled) { background:var(--ss-pressed) !important; filter:none; }
 /* Paint Studio, inside ④ Frame's panel: a strong secondary next to Generate frames. */
 .ss-stage .ss-hudp button.go.ss-paint-open { background:var(--ss-raised) !important; color:var(--ss-text) !important; border:1px solid var(--ss-line-strong) !important; }
 .ss-stage .ss-hudp button.go.ss-paint-open .ss-icon { color:var(--ss-accent); }

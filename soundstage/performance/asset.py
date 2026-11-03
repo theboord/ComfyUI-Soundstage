@@ -113,17 +113,28 @@ def normalise_box(box, w, h):
 
 
 def read_keypoints(frames):
-    """DWPose POSE_KEYPOINT list -> per-frame {mouth, box (0-1), face (68+2 points, 0-1)} and summary stats."""
+    """DWPose POSE_KEYPOINT list -> per-frame {mouth, box (0-1), face (68+2 points, 0-1), body (18), hands ([left 21,
+    right 21] or None)}, every point [x, y, confidence] in 0-1 units, and summary stats. The Passes viewer
+    (web/passes) draws body, hands and face from this with confidence colours."""
     out = []
     for fr in frames or []:
         w, h = float(fr.get("canvas_width") or 1), float(fr.get("canvas_height") or 1)
         person, box = main_person(fr)
         face = _pts(person.get("face_keypoints_2d") or []) if person else []
         scale = (1.0, 1.0) if (face and max(max(p[0], p[1]) for p in face) <= 1.5) else (w, h)
+        body = _pts(person.get("pose_keypoints_2d") or []) if person else []
+        hands = [_pts(person.get(k) or []) if person else [] for k in ("hand_left_keypoints_2d", "hand_right_keypoints_2d")]
+        allp = body + hands[0] + hands[1]
+        bscale = (1.0, 1.0) if (allp and max(max(p[0], p[1]) for p in allp) <= 1.5) else (w, h)
+
+        def norm(pts, sc):
+            return [[round(x / sc[0], 4), round(y / sc[1], 4), round(c, 3)] for x, y, c in pts]
         out.append({
             "mouth": mouth_open(face) if face else None,
             "box": normalise_box(box, w, h),
-            "face": [[round(x / scale[0], 4), round(y / scale[1], 4), round(c, 3)] for x, y, c in face] if face else None,
+            "face": norm(face, scale) if face else None,
+            "body": norm(body, bscale) if body else None,
+            "hands": [norm(hp, bscale) if hp else None for hp in hands] if any(hands) else None,
         })
     seen = sum(1 for f in out if f["face"] and f["mouth"] is not None)
     return {"frames": out, "face_seen": round(seen / max(1, len(out)), 3)}

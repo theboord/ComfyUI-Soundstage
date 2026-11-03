@@ -3,12 +3,15 @@
 import "./scripts/glbshim.js";
 import { app } from "./scripts/app.js";
 import { api, demo } from "./scripts/api.js";
-import { LABEL, GLYPH, provenanceNow, stopProvenance, clipProvenance } from "./provenance.mjs";
+import { LABEL, GLYPH, provenanceNow, stopProvenance, clipProvenance, rememberBaseline, editedSince, replayNotice, RECORDED_LABEL,
+  RECORDED_NOTE, REPLAYED, exampleNote } from "./provenance.mjs";
+import { SAMPLES, pastedName, closestExample, scriptSig } from "./scriptload.mjs";
 
 const $ = (id) => document.getElementById(id);
 export const SCENES = [
   ["Start here", [
     ["stunt", "Stunt: reverse J-turn (clay to Hollywood)"],
+    ["script", "Load a script: watch it break down"],
     ["drycreek", "Dry Creek: a script, its takes and ScriptSync"],
     ["blank", "A brand-new stage (the first-run card)"],
   ]],
@@ -144,6 +147,7 @@ if (HERO && heroSeen !== "0") hero.open();
 
 // ---------------------------------------------------------------- the scene
 const data = key === "blank" ? { workflow: "Soundstage_App", note: "A brand-new stage: the first-run card offers the demo scene, a script or a video." }
+  : key === "script" ? { workflow: "Soundstage_App", note: "Load a script: a sample, your own Fountain, Final Draft or PDF, or paste one. ① Script breaks it down in your browser; pick a scene and the stage sets itself up." }
   : await (await fetch(new URL(`./r/scenes/${key}.json`, import.meta.url))).json();
 const vocab = await fetch(new URL("./r/canned/advisor_vocab.json", import.meta.url)).then((r) => r.json()).catch(() => ({}));
 demo.scene = { key, compile: data.compile, advisor: data.advisor, vocab, cut: data.cut, cutSeconds: data.cutSeconds,
@@ -199,7 +203,7 @@ $("sceneNote").title = data.note || "";
 
 // Open each scene where it reads best: in Color, mid-move.
 const START = { lake: 40, drycreek: 40, chase: 40, stunt: 52, car: 30, three: 30, western: 40, platform: 60, runway: 60, clouds: 40, aliens: 40, kaiju: 40 };
-if (key !== "blank") setTimeout(() => {
+if (key !== "blank" && key !== "script") setTimeout(() => {
   try {
     [...root().querySelectorAll("button")].find((x) => x.getClientRects().length && x.textContent.trim() === "Color")?.click();
     if (START[key] != null) S().setFrame(START[key]);
@@ -261,6 +265,12 @@ const ACTIONS = {
     flash(btn(/DCC kit/i));
   },
   async firstrun() { /* the card is the stage */ },
+  // Load a script: the Low Tide sample through ① Script's own importer, then its first scene (breakdown + the stage set up).
+  async loadscript() {
+    if (!(await loadSample("low_tide"))) return;
+    await sleep(500);
+    openScriptScene("sc_1");
+  },
   // Director: the panel opens; its planner and language model answer "available in the full install".
   async director() { P().go("set"); await sleep(300); stageNode.ssDirector?.open(); flash(stageNode.ssDirector?.panel); },
   async presets() { P().go("set"); await sleep(300); stageNode.ssPresets?.open("camera"); },
@@ -347,8 +357,106 @@ async function runStop(id) {
   if (!stop) return;
   markCurrent(id);
   try { await ACTIONS[stop.do || "set"]?.(); } catch (e) { console.warn("[demo] tour stop", id, e); }
+  baseline(true);   // what a stop sets up is the demo's own doing, not the visitor's edit
   if (stop.say) demo.toast(stop.say);
 }
+
+// ---------------------------------------------------------------- Load a script
+// The App does the work: a sample, a pasted script or a chosen / dropped file goes into ① Script's own file input, as
+// its Choose file… would, so the breakdown (scenes, cast, locations, props, vehicles) is the real App code running in
+// this browser. Picking a scene then sets the stage up from its heading (soundstage.js setUpScene, also in the browser).
+const script0 = scriptSig(stageNode.properties?.ss_script);   // the script this demo scene shipped with, if any
+const visitorScript = () => { const s = scriptSig(stageNode.properties?.ss_script); return !!s && s !== script0; };
+const scriptPanel = () => root().querySelector(".ss-script");
+async function feedScript(file) {
+  $("scriptDlg").open && $("scriptDlg").close();
+  P().go("script");
+  await sleep(250);
+  const inp = scriptPanel()?.querySelector('input[type="file"]');
+  if (!inp) { demo.toast("① Script isn't ready yet: try again in a moment."); return false; }
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  inp.files = dt.files;
+  inp.dispatchEvent(new Event("change", { bubbles: true }));
+  // pdf.js loads on the first PDF, so allow it time; a text script reads in a few milliseconds.
+  for (let i = 0; i < 160; i++) { await sleep(125); if (i > 1 && !scriptPanel()?.classList.contains("busy")) break; }
+  const saved = stageNode.properties?.ss_script?.script;
+  // The panel says what went wrong itself (its red banner: no scene headings, a PDF with no text layer, pdf.js offline).
+  if (!saved?.scenes?.length || scriptPanel()?.querySelector(".banner.err")) return false;
+  // The stored script is compact (no per-scene cast list): count the speakers from the cues.
+  const n = saved.scenes.length;
+  const cast = new Set(saved.scenes.flatMap((x) => [...(x.characters || []), ...(x.elements || []).filter((e) => e.type === "character").map((e) => e.character)])).size;
+  demo.toast(`“${saved?.title || file.name}” is broken down in your browser: ${n} scene${n === 1 ? "" : "s"}, ${cast} speaking part${cast === 1 ? "" : "s"}. `
+    + "Pick a scene: the stage sets itself up from its heading. Then open ③ Set.");
+  return true;
+}
+async function loadSample(id) {
+  const smp = SAMPLES.find((x) => x.id === id);
+  if (!smp) return false;
+  const r = await fetch(new URL(`./${smp.file}`, import.meta.url)).catch(() => null);
+  if (!r?.ok) { demo.toast(`The sample “${smp.title}” didn't load.`); return false; }
+  return feedScript(new File([await r.blob()], smp.name, { type: smp.type }));
+}
+/** A scene of the loaded script: its row in ① Script (the App's own click: breakdown, pages, the stage set up). */
+function openScriptScene(id) {
+  const row = scriptPanel()?.querySelector(`button.scn[data-id="${id}"]`);
+  if (row) { row.click(); flash(row); }
+  return !!row;
+}
+function scriptDialog() {
+  const dlg = $("scriptDlg"), list = $("scriptSamples");
+  for (const smp of SAMPLES) {
+    const b = Object.assign(document.createElement("button"), { type: "button", className: "smp" });
+    b.dataset.sample = smp.id;
+    b.append(Object.assign(document.createElement("b"), { textContent: smp.title }),
+      Object.assign(document.createElement("span"), { className: "fmt", textContent: smp.format }),
+      Object.assign(document.createElement("span"), { className: "blurb", textContent: smp.blurb }));
+    b.addEventListener("click", () => loadSample(smp.id));
+    list.append(b);
+  }
+  $("scriptPasteGo").addEventListener("click", () => {
+    const text = $("scriptPaste").value;
+    if (!text.trim()) { $("scriptPaste").focus(); return; }
+    feedScript(new File([text], pastedName(text), { type: "text/plain" }));
+  });
+  const pick = Object.assign(document.createElement("input"), { type: "file", accept: ".fountain,.spmd,.fdx,.pdf,.txt,.text,.md", hidden: true });
+  pick.addEventListener("change", () => { const f = pick.files?.[0]; pick.value = ""; if (f) feedScript(f); });
+  dlg.append(pick);
+  $("scriptFile").addEventListener("click", () => pick.click());
+  dlg.addEventListener("dragover", (e) => { if ([...(e.dataTransfer?.types || [])].includes("Files")) { e.preventDefault(); dlg.classList.add("drop"); } });
+  dlg.addEventListener("dragleave", () => dlg.classList.remove("drop"));
+  dlg.addEventListener("drop", (e) => {
+    const f = e.dataTransfer?.files?.[0];
+    dlg.classList.remove("drop");
+    if (f) { e.preventDefault(); feedScript(f); }
+  });
+  $("scriptDlgClose").addEventListener("click", () => dlg.close());
+  const open = () => { if (!dlg.open) dlg.showModal(); };
+  $("scriptBtn").addEventListener("click", open);
+  return { open };
+}
+const scriptDlg = scriptDialog();
+window.__demo.loadSample = loadSample;
+window.__demo.openScriptScene = openScriptScene;
+
+// A shot from the visitor's own script was never rendered: Run / Generate replays the closest recorded example (by the
+// stage's set) and every place that shows it says so (provenance.mjs exampleNote).
+const exampleScenes = new Map();
+const exampleScene = (k) => {
+  if (!exampleScenes.has(k)) exampleScenes.set(k, fetch(new URL(`./r/scenes/${k}.json`, import.meta.url)).then((r) => (r.ok ? r.json() : null)).catch(() => null));
+  return exampleScenes.get(k);
+};
+demo.resolveShot = async (shot) => {
+  const sc = demo.scene;
+  if (!shot || !visitorScript() || Object.keys(sc.renders[shot] || {}).length) return;
+  const ex = closestExample(S().toJSON());
+  const src = await exampleScene(ex.scene);
+  const r = src?.props?.ss_renders?.[ex.shot];
+  if (!r) return;
+  sc.renders[shot] = JSON.parse(JSON.stringify(r));
+  sc.candidates[shot] = JSON.parse(JSON.stringify(src.candidates?.[ex.shot] || []));
+  (sc.examples ||= {})[shot] = ex;
+};
 
 const tour = await fetch(new URL("./tour.json", import.meta.url)).then((r) => r.json()).catch(() => ({ steps: [] }));
 function markCurrent(id) { for (const li of $("tourList").children) li.toggleAttribute("aria-current", false), li.dataset.id === id && li.setAttribute("aria-current", "step"); }
@@ -405,6 +513,13 @@ let keepOpen = null;
 try { keepOpen = sessionStorage.getItem("ss_demo_tour"); } catch { /* storage blocked */ }
 if (hashStop || keepOpen === "1") setTour(true);
 if (hashStop) setTimeout(() => runStop(hashStop), 1800);
+// The Load-a-script entry opens on ① Script with the loader up (the hero's "Load a script" and the scene picker land here).
+else if (key === "script") setTimeout(async () => {
+  for (let i = 0; i < 40 && !P(); i++) await sleep(150);
+  try { P().go("script"); } catch { /* the stage isn't up: the loader still works */ }
+  scriptDlg.open();
+}, 1200);
+$("heroScript").addEventListener("click", () => openScene("script"));
 
 // ---------------------------------------------------------------- Live or Replayed: what the visitor is looking at now
 // The first screen's wipe is a recording; its note is the tour clip's own note for the same file.
@@ -444,4 +559,61 @@ $("prov").addEventListener("click", () => demo.toast(provNow().note));   // a ph
 drawProv();
 setInterval(drawProv, 500);
 window.__demo.prov = provNow;
+
+// ---------------------------------------------------------------- your edits are not re-rendered here
+// Each scene's stage as it loaded is the baseline (provenance.mjs stageSig). A Run / Generate on a stage you changed
+// still replays the recorded renders: a note says so right above the frames, with the install link, and every
+// replayed ④ Frame tile says "Recorded example" (the same Replayed badge as the bar).
+const baseState = {};
+function baseline(force = false) { try { rememberBaseline(baseState, S().toJSON(), force); } catch { /* the stage isn't up */ } }
+const edited = () => { try { return editedSince(baseState, S().toJSON()); } catch { return false; } };
+setTimeout(() => baseline(), 1500);       // after the widget value and the scene's own settling
+setInterval(() => baseline(), 1000);      // a script scene switched to on the stage gets its own baseline once
+let editNote = null;
+function showEditNote(n) {
+  const f = P()?.f, m = P()?.m;
+  if (!editNote) {
+    editNote = Object.assign(document.createElement("div"), { className: "demo-editnote" });
+    editNote.setAttribute("role", "note");
+  }
+  const link = Object.assign(document.createElement("a"), { href: n.link, target: "_blank", rel: "noopener", textContent: n.linkText });
+  editNote.replaceChildren(provBadge({ mode: REPLAYED, note: n.note }), " ",
+    Object.assign(document.createElement("span"), { textContent: n.note }), " ", link);
+  editNote.dataset.where = n.where;
+  // ④ Frame: right above its frames (both layouts); ⑤ Motion: above its status line.
+  const anchor = n.where === "④ Frame" ? f?.candBar || f?.grid : m?.status;
+  if (anchor?.parentNode && editNote.nextSibling !== anchor) anchor.parentNode.insertBefore(editNote, anchor);
+  editNote.hidden = false;
+}
+demo.onReplay = ({ shot, step }) => {
+  const n = replayNotice({ step, edited: edited(), example: demo.scene.examples?.[shot] || null });
+  if (!n) { if (editNote) editNote.hidden = true; return; }
+  showEditNote(n);
+  demo.toast(n.toast);
+};
+// Every ④ Frame tile is a recording in the demo: label it.
+function labelFrames() {
+  const grid = P()?.f?.grid;
+  if (!grid) return;
+  for (const c of grid.querySelectorAll(":scope > .cand")) {
+    // The first-frame check needs the GPU: in the demo it never ran, so its "Check failed" badge would only look broken.
+    for (const fc of c.querySelectorAll(":scope > .fc")) if (/full install/.test(fc.title || "")) fc.hidden = true;
+    const ex = demo.scene.examples?.[S()?.activeShot()?.id];
+    const note = ex ? `Recorded example ${exampleNote(ex)}` : RECORDED_NOTE;
+    const had = c.querySelector(":scope > .prov.rec");
+    if (had) { if (had.title !== note) setProv(had, { mode: REPLAYED, note }, { keepText: true }); continue; }
+    const b = provBadge({ mode: REPLAYED, note });
+    b.classList.add("rec");
+    b.textContent = `${GLYPH[REPLAYED]} ${RECORDED_LABEL}`;
+    c.append(b);
+  }
+}
+const watchFrames = () => {
+  const grid = P()?.f?.grid;
+  if (!grid) { setTimeout(watchFrames, 500); return; }
+  new MutationObserver(labelFrames).observe(grid, { childList: true, subtree: true });
+  labelFrames();
+};
+watchFrames();
+window.__demo.edited = edited;
 readyNow();

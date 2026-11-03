@@ -44,7 +44,7 @@ The assets are saved to `output/soundstage_private/performances/<id>/`:
 - `pose.mp4`, the skeleton with the voice;
 - `overlay.mp4`;
 - `voice.wav`;
-- `face.json`, the face landmarks and mouth value per frame.
+- `face.json`, the face landmarks and mouth value per frame, and (reads made after this change) the body and hand points with their confidence, which the [Passes viewer](TUTORIAL.md#passes-judge-the-matte-pose-talking-and-depth) draws.
 
 Recorded clips go to `input/soundstage_private/performances/`.
 
