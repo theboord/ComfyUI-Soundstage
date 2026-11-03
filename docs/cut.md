@@ -509,11 +509,13 @@ Finals with sound are stored as `final_sound`/`final_audio`. `rendersFor()` also
 Every clip in the Cut editor opens an **Edit in…** menu. Each item opens the step that made the clip, with that clip
 loaded. **↩ Back to the cut** brings you back, and the new take comes in as a new version of the clip.
 
-**Three ways in**
+**Three ways in** (and the docked strip)
 - Right-click a clip.
 - The **✎** that shows at the top right of the clip under the pointer (clips at least 48 px wide).
 - **E** (or Shift+F10, or the menu key): the selected clip, else the clip under the playhead. Arrows, Enter and Esc
   work in the menu.
+- In the docked shot strip, a clip's right-click (or its … button) has **Edit in…**, which opens the same menu. That
+  trip also comes back to the Cut editor: the hold and Replace are Cut edits (the strip's own Undo does not see them).
 
 **What each item does, and when it is off.** An item that is off says why on its second line.
 
@@ -572,7 +574,7 @@ pinned file.
 - Re-generate is exact only when the take's `prompt` tag is readable. Ripple, Pose, Performance and ✦ takes re-run
   from their record (a shot keeps its last 40).
 - A reload during a trip forgets the trip (the hold is saved in the cut; the menu still lists the newest render).
-- A trip from the docked strip is not wired yet: the strip keeps its Edit original items.
+- There are two undo stacks: a hold or a Replace started from the strip is undone in the Cut editor, not in the strip.
 - In and out points are clamped to the stage's length, not the take's; a take rendered at another rate lines up by
   time in the viewer, not in the EDL's source timecode.
 - V3 graphic windows show the shot's latest render, not the clip's pinned take.

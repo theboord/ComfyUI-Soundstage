@@ -438,7 +438,7 @@ export function holdClip(panel, link) {
 
 /**
  * Edit in… on a CutPanel: the menu (right-click through CutPanel._clipMenu), the ✎ (CutPanel._tlMove's hover hook) and
- * the keys. Returns {menu(link, anchor), hover(i, x, y), open(index, anchor?), close(), pick(item, link)}; set it as
+ * the keys. Returns {menu(link, anchor, {from}), hover(i, x, y), open(index, anchor?), close(), pick(item, link)}; set it as
  * panel.editLink. A jump holds the clip's shot first, then calls onEdit(where, ctx) (default: the panel's host hook
  * onEditShot(shotId, where, ctx), cut_interface_v1.md contract 6). Versions and Follow are done here, with no jump.
  * extend(items, link) may add host items (the App's other takes of the shot).
@@ -446,7 +446,7 @@ export function holdClip(panel, link) {
 export function attachCutLink(panel, { onEdit = null, caps = {}, extend = null, from = "cut" } = {}) {
   const edit = onEdit || ((where, ctx) => panel._onEditShot?.(ctx.link.shot.id, where, ctx));
   const link = { panel, handle: null };
-  link.pick = (it, l) => {
+  link.pick = (it, l, how = from) => {
     if (it.disabled) return;
     if (it.where === "version" || it.where === "follow") {
       const i = findClip(panel.project.cut, { ...l.clip });
@@ -456,15 +456,15 @@ export function attachCutLink(panel, { onEdit = null, caps = {}, extend = null, 
     const uid = holdClip(panel, l);
     const i = findClip(panel.project.cut, { ...l.clip, uid });
     const fresh = i >= 0 ? panel.clipContext(i, l.clip.recFrame) : l;
-    return edit(it.where, hookCtx(fresh, from));
+    return edit(it.where, hookCtx(fresh, how));
   };
-  link.menu = (l, anchor) => {
+  link.menu = (l, anchor, { from: how = from } = {}) => {
     if (!l) return null;
     link.close();
     let items = menuItems(l, caps);
     if (extend) items = extend(items, l) || items;
     link.handle = openEditMenu(items, anchor, { theme: panel.tl, doc: panel.tl?.ownerDocument || document,
-      pick: (it) => link.pick(it, l), onClose: () => { link.handle = null; } });
+      pick: (it) => link.pick(it, l, how), onClose: () => { link.handle = null; } });
     return link.handle;
   };
   link.open = (index, anchor = null) => link.menu(panel.clipContext(index), anchor?.getBoundingClientRect ? anchor : anchor || clipRect(panel, index));

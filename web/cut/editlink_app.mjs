@@ -474,6 +474,15 @@ export function attachEditLink(host) {
     if (had && !quiet) say("Trip ended: the clip stays on the take it was held on (its menu: Follow the latest render).");
   }
 
+  /** The docked strip's "Edit in…" on clip `index`: the same menu, over the Cut's copy of the saved cut (the Cut editor
+   *  holds and replaces: its Undo has the edits; the strip keeps its own undo for its own edits). */
+  function fromStrip(index, anchor) {
+    try { cut.refresh(); } catch { /* the Cut reads the saved cut the strip just wrote */ }
+    const l = cut.clipContext(index);
+    if (!l) { say("That clip is not in the cut any more."); return null; }
+    return link.menu(l, anchor, { from: "strip" });
+  }
+
   function onView(k) {
     view = k;
     if (!trip) { pill.hidden = true; offer.hidden = true; return; }
@@ -552,7 +561,7 @@ export function attachEditLink(host) {
     offer.hidden = false;
   }
 
-  Object.assign(link, { start, back, end, onView, refresh, pill, offer });
+  Object.assign(link, { start, back, end, onView, refresh, fromStrip, pill, offer });
   Object.defineProperty(link, "trip", { get: () => trip });
   return link;
 }
