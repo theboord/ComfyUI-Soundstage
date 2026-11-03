@@ -17,6 +17,7 @@
 //   sparks: hot streaks that fall, bounce once and die.
 // Pure functions, no three.js. The stage draws the result (secondary.mjs) in Clay and Color only: never in Depth or
 // the ID matte; an optional dust matte pass ("dust") renders the dust density alone for the Layer Pack.
+import { seedNumber } from "./waves.mjs";
 
 export const G = 9.81;
 
@@ -301,7 +302,7 @@ function boxContact(p, r, b) {
  */
 export function simulateParticles(emitters, opts = {}) {
   const frames = Math.max(1, opts.frames || 97), fps = opts.fps || 24, sub = Math.max(1, opts.substeps || 2), dt = 1 / (fps * sub);
-  const wind = opts.wind || [0.35, 0.12], curl = makeCurl((opts.seed ?? 1) * 7 + 3), boxes = opts.boxes || [];
+  const wind = opts.wind || [0.35, 0.12], curl = makeCurl(seedNumber(opts.seed) * 7 + 3), boxes = opts.boxes || [];
   const queue = [...(emitters || [])].sort((a, b) => a.t - b.t || a.seed - b.seed);
   const P = { dust: [], debris: [], sparks: [] };
   const out = [];
