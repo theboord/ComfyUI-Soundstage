@@ -238,6 +238,10 @@ class SoundstageSaveVideo(IO.ComfyNode):
         file = f"{name}_{counter:05}_.mp4"
         video.save_to(os.path.join(folder, file), format=Types.VideoContainer("mp4"), codec=Types.VideoCodec("h264"),
                       metadata=meta or None, crf=crf)
+        # Core save_to sets no keyint, so x264 gives a whole take one keyframe and every seek in the App decodes from
+        # frame 0. A keyframe every 24 frames at the same CRF; sound and metadata copied (soundstage/proxy.py).
+        from .proxy import short_gop
+        short_gop(os.path.join(folder, file), crf)
         ui = UI.PreviewVideo([UI.SavedResult(file, subfolder, IO.FolderType.output)])
         if codec == "prores_hq":
             master = f"{name}_{counter:05}_.mov"
