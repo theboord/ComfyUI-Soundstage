@@ -21,6 +21,7 @@ import { buildSet, buildWater, buildWeather, buildTireSmoke, buildImpactFx } fro
 import { groundColor, groundReach, dressColor } from "./setlook.mjs";
 import { installSecondary } from "./secondary.mjs";
 import { installWatercraft } from "./watercraft.mjs";
+import { installSfx } from "./sfxstage.mjs";
 import { buildCard, loadBackdrop, coverFit } from "./cards.mjs";
 import { buildInterior, fixtureActors, interiorCamera, normalizeSpec, toStage } from "./interior.mjs";
 import { GLTFLoader } from "../vendor/addons/GLTFLoader.mjs";
@@ -633,7 +634,7 @@ export class Stage {
       if (!dynamic.length) { this.setFrame(this.frame); this.onChange(this.toJSON()); return { ok: true, message: "Everything collides: off. Cars and people play their own keys again." }; }
     }
     const movers = worldActors.filter((a) => authored(a).length > 1 && authored(a).some((k) => Math.hypot(k.position[0] - authored(a)[0].position[0], k.position[2] - authored(a)[0].position[2]) > 0.01));
-    if (!dynamic.length && !movers.length) return { ok: false, message: "Nothing is Dynamic yet: select a prop and set Physics to Dynamic (or key a car or a person to move)." };
+    if (!dynamic.length && !movers.length && !opts.blasts?.length) return { ok: false, message: "Nothing is Dynamic yet: select a prop and set Physics to Dynamic (or key a car or a person to move)." };
     // Back to the authored keys (and the start height) before sampling; last bake's pieces and dents go. A key edited on
     // a baked object since is kept in its authored keys (world.mjs mergeEdits), so dragging re-bakes from the edit.
     for (const a of [...worldActors, ...resting]) unbakeActor(a, { merge: true });
@@ -738,7 +739,9 @@ export class Stage {
     // Weight & overcrank (Milestone 21): "feels bigger" lowers gravity (DNEG's trick for majestic debris); an overcranked
     // shot plays the whole action k times slower (the keys are already stretched), so gravity is g / k².
     const gravity = feelGravity(this.physicsFeel());
-    const res = simulate(specs, last + 1, { fps, substeps: opts.substeps || 20, gravity });
+    // SFX blasts (sfxstage.mjs passes them in): every body near an explosion gets its radial push at the cue.
+    const res = simulate(specs, last + 1, { fps, substeps: opts.substeps || 20, gravity, blasts: opts.blasts || [] });
+    this._lastSim = { blasted: res.blasted || {}, blastedBy: res.blastedBy || {}, takeovers: res.takeovers || {} };
     const qa = checkTracks(specs, res, fps);
     // The hits, stored with the bake (Milestone 21): impact dust, camera shake, prompt beats and A2 sounds key off them.
     // A car's body / cabin boxes report as the car.
@@ -2886,6 +2889,12 @@ export class Stage {
         this.frameSelected();
         return;
       }
+      // Practical effects: K fires the SFX cue at the playhead (Shift+K always; plain K keys a selected car's parts instead).
+      if (k === "k" && !e.metaKey && !e.ctrlKey && !e.altKey && this.sfxFire && (e.shiftKey || !(this.selected && this.partChannels?.(this.selected)?.length))) {
+        e.preventDefault(); e.stopPropagation();
+        this.sfxFire();
+        return;
+      }
       if (k === "0") {
         e.preventDefault(); e.stopPropagation();
         this.setFreeView(!this.freeView);
@@ -4868,4 +4877,5 @@ export class Stage {
 installParts(Stage, { vehicle: VehicleParts, light: LightRig, horse: HorseParts, prop: PropParts, LIGHT_TYPES, LIBRARY });
 // Secondary simulations and soft bodies (Milestone 28): see secondary.mjs.
 installSecondary(Stage, { LIBRARY, NO_COLLIDE, PERSON_KINDS, CAR_BODIES });
-installWatercraft(Stage, { LIBRARY, PERSON_KINDS });   // boats float on the wave field, wakes, spray, paddlers (watercraft.mjs)
+installWatercraft(Stage, { LIBRARY, PERSON_KINDS });
+installSfx(Stage, { LIBRARY, NO_COLLIDE, PERSON_KINDS });   // practical effects: explosions, fire, squibs, blood packs (sfxstage.mjs)   // boats float on the wave field, wakes, spray, paddlers (watercraft.mjs)

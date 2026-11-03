@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<FinalDraft DocumentType="Script" Template="No" Version="5">
+  <Content>
+    <Paragraph Type="Scene Heading"><Text>INT. TRAIN - PASSENGER CAR - NIGHT</Text></Paragraph>
+    <Paragraph Type="Action"><Text>The overnight express rocks through the dark. Most seats are empty. Reading lamps glow in a row.</Text></Paragraph>
+    <Paragraph Type="Action"><Text>ODESSA (60s, a conductor's cap, half-moon glasses) clips tickets down the aisle.</Text></Paragraph>
+    <Paragraph Type="Action"><Text>In the last row, a boy, FINN (10), hugs a battered SUITCASE. No ticket in sight.</Text></Paragraph>
+    <Paragraph Type="Character"><Text>ODESSA</Text></Paragraph>
+    <Paragraph Type="Dialogue"><Text>Ticket, young man.</Text></Paragraph>
+    <Paragraph Type="Character"><Text>FINN</Text></Paragraph>
+    <Paragraph Type="Parenthetical"><Text>(too fast)</Text></Paragraph>
+    <Paragraph Type="Dialogue"><Text>My grandmother has it. She's in the next car.</Text></Paragraph>
+    <Paragraph Type="Action"><Text>Odessa looks toward the next car. It is dark. The door between them is chained.</Text></Paragraph>
+    <Paragraph Type="Character"><Text>ODESSA</Text></Paragraph>
+    <Paragraph Type="Dialogue"><Text>Nobody has ridden in that car for thirty years.</Text></Paragraph>
+    <Paragraph Type="Scene Heading"><Text>EXT. TRAIN STATION PLATFORM - DAWN</Text></Paragraph>
+    <Paragraph Type="Action"><Text>Fog lies on the tracks. A single lamp buzzes over an empty bench. The train HISSES to a stop.</Text></Paragraph>
+    <Paragraph Type="Action"><Text>Finn steps down with the suitcase. Odessa follows, keys jangling.</Text></Paragraph>
+    <Paragraph Type="Character"><Text>ODESSA</Text></Paragraph>
+    <Paragraph Type="Dialogue"><Text>This isn't a stop. We don't stop here.</Text></Paragraph>
+    <Paragraph Type="Character"><Text>FINN</Text></Paragraph>
+    <Paragraph Type="Dialogue"><Text>She said we would.</Text></Paragraph>
+    <Paragraph Type="Action"><Text>A station master in an old-fashioned coat raises a lantern at the far end of the platform, then walks into the fog.</Text></Paragraph>
+    <Paragraph Type="Scene Heading"><Text>EXT. PINE FOREST - NIGHT</Text></Paragraph>
+    <Paragraph Type="Action"><Text>Tall pines, moonlight in stripes. Finn runs between the trees with the suitcase banging his knees.</Text></Paragraph>
+    <Paragraph Type="Action"><Text>Odessa follows with a FLASHLIGHT, breath smoking in the cold.</Text></Paragraph>
+    <Paragraph Type="Character"><Text>ODESSA</Text></Paragraph>
+    <Paragraph Type="Dialogue"><Text>Finn! Wait for me!</Text></Paragraph>
+    <Paragraph Type="Action"><Text>An OWL lifts off a branch. Somewhere ahead, a train whistle answers, though the tracks are far behind them.</Text></Paragraph>
+    <Paragraph Type="Transition"><Text>FADE OUT.</Text></Paragraph>
+  </Content>
+  <TitlePage>
+    <Content>
+      <Paragraph Type="Title"><Text>The Night Train</Text></Paragraph>
+      <Paragraph><Text>An original sample for Soundstage, free to use</Text></Paragraph>
+    </Content>
+  </TitlePage>
+</FinalDraft>
