@@ -48,6 +48,9 @@ Not in the demo at all (each one says "available in the full install"): new rend
 
 <p align="center"><img src="docs/media/readme_v4/card_story.png" width="880" alt="Story first. Every shot starts from the script, not a prompt box: load a Fountain, Final Draft or PDF script; ScriptSync links the lined script to every take; the Director and Advisor suggest coverage and keep notes and the Director's Book (intent, style and rules per scene)."></p>
 
+<p align="center"><img src="docs/media/scriptsync.gif" width="880" alt="ScriptSync in action: each camera setup is a coverage line down the lined script; click a line and that take plays in the player at that moment, with every take for that section listed; edit the lining by dragging a line's end."></p>
+<p align="center"><sub>ScriptSync: click any line of the script and the take that covers it plays at that moment, with every take for that section beside it.</sub></p>
+
 <p align="center"><img src="docs/media/readme_v4/card_boat.gif" width="880" alt="You block it. It renders. Left, the 3D stage; right, the Final render of the same shot (FLUX 3 Klein + LTX-2.5, with sound): a speedboat on a lake."></p>
 <p align="center"><sub><a href="docs/media/readme_v4/boat_final_sound.mp4">▶ The boat with its sound (MP4)</a></sub></p>
 
