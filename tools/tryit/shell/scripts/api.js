@@ -28,6 +28,8 @@ const FULL = [
     "Picking a scene in ① Script already set it up from its heading, in your browser: open ③ Set."],
   [/^\/soundstage\/director/, "The Director's language model (local Qwen or Ollama)"],
   [/^\/soundstage\/cut\/render$/, "Rendering the Timeline (MP4, ProRes, 9:16)"],
+  [/^\/soundstage\/video2stage\/(regenerate|fix_object)/, "Regenerate and Fix this object (they re-run the Video to 3D steps on the GPU)",
+    "This demo only replays one recorded rebuild."],
   [/^\/soundstage\/(video2stage|mocap)/, "Video to 3D on your own clips (pose and camera from a clip)"],
   [/^\/soundstage\/(object_designer|object\b|assets3d)/, "Making a 3D object from a prompt or a photo"],
   [/^\/soundstage\/(import_world|world|interop)/, "Uploading a world to the server"],

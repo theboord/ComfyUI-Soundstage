@@ -6,9 +6,12 @@
 //   - per-object match chips: each rebuilt object's silhouette (the stage's own ID pass, renderFrameTo('id')) against
 //     its mask from the clip (scene.video2stage.masks, COCO RLE), green >= 0.7, amber, red < 0.4, and a headline
 //     Match score with the bench formula (tools/v2s_bench/metrics.py: 100 x (0.5 mIoU + 0.3 explained + 0.2 colour));
-//   - one-click fixes with stage undo: Fit to plate, Swap, Nudge, Re-key mover, Lock camera.
+//   - one-click fixes with stage undo: Fit to plate, Swap, Nudge, Re-key mover, Lock camera;
+//   - the server fixes (web/ui/v2sfix.mjs): Fix this object (SAM 3.1 re-tracks it, rebuilt alone), Remove (not in the
+//     video), and "+ Missed object" (click it on the source frame). A click on the source picks the seed point.
 // Keys (1-4: modes) only act while the bar has focus; it never touches the keyrouter or the global shortcuts.
 import { icon } from "./icons.mjs";
+import { coverToSource, nearestSample } from "./v2sfix.mjs";
 
 export const FPS = 24;
 const GREEN = 0.7, RED = 0.4;
@@ -370,6 +373,7 @@ const CSS = `
 .ss-v2c-wipe { position:absolute; z-index:6; width:14px; margin-left:-7px; cursor:ew-resize; display:none; }
 .ss-v2c-wipe::after { content:""; position:absolute; left:6px; top:0; bottom:0; width:2px; background:#F2FF59; box-shadow:0 0 6px rgba(0,0,0,.6); }
 .ss-v2c-nudge { position:absolute; z-index:7; cursor:move; display:none; }
+.ss-v2c-pick { position:absolute; z-index:8; cursor:crosshair; display:none; outline:2px dashed #F2FF59; outline-offset:-2px; }
 `;
 
 export function ensureCss() {
@@ -389,9 +393,11 @@ export function mountCompare(opts) {
 }
 
 export class CompareBar {
-  constructor({ stage, host, videoUrl, masks = null, onFrame = null, onStatus = null, lockCamera = null, maxRows = 6 }) {
+  constructor({ stage, host, videoUrl, masks = null, onFrame = null, onStatus = null, lockCamera = null, maxRows = 6,
+    onFix = null, onRemove = null, onAdd = null }) {
     this.stage = stage; this.host = host; this.onFrame = onFrame; this.say = onStatus || (() => {});
     this.lockCamera = lockCamera; this.maxRows = maxRows;
+    this.onFix = onFix; this.onRemove = onRemove; this.onAdd = onAdd;
     const v2s = stage.state?.video2stage || {};
     this.masks = masks || v2s.masks || null;
     this.start = Number((v2s.trim || [])[0]) || Number(stage.state?.reference?.start) || 0;
@@ -400,6 +406,7 @@ export class CompareBar {
     if (videoUrl) this.video.src = videoUrl;
     this.wipeEl = el("div", { className: "ss-v2c-wipe", title: "Drag: source on the left, the rebuild on the right" });
     this.nudgeEl = el("div", { className: "ss-v2c-nudge", title: "Drag on the ground to move the object; release to keep it" });
+    this.pickEl = el("div", { className: "ss-v2c-pick", title: "Click the object on the source frame (Esc: cancel)" });
     this.el = el("div", { className: "ss-v2c", tabIndex: -1 });
     this.el.setAttribute("role", "toolbar");
     this.el.setAttribute("aria-label", "Identical? Compare the source clip with the 3D rebuild");
@@ -411,9 +418,10 @@ export class CompareBar {
       e.stopPropagation();
     });
     this._build(v2s.solve);
-    host.append(this.video, this.wipeEl, this.nudgeEl, this.el);
+    host.append(this.video, this.wipeEl, this.nudgeEl, this.pickEl, this.el);
     this._wireWipe();
     this._wireNudge();
+    this._wirePick();
     this._last = -1;
     const tick = () => { if (this.dead) return; this._sync(); this._raf = requestAnimationFrame(tick); };
     this._raf = requestAnimationFrame(tick);
@@ -442,7 +450,12 @@ export class CompareBar {
     this.matchBtn.addEventListener("click", () => (this.scores ? this.toggleList() : this.scoreAll()));
     const x = el("button", { type: "button", className: "b x", textContent: "×", title: "Close the compare bar" });
     x.addEventListener("click", () => this.destroy());
-    this.row = el("div", { className: "row" }, el("b", { className: "t", textContent: "Identical?" }), seg, this.slider, this.solveChip, this.matchBtn, x);
+    this.addBtn = el("button", { type: "button", className: "b", title: "Something in the clip the rebuild missed: click it on the source frame and it is tracked and rebuilt alone" },
+      icon("plus", 12), el("span", { textContent: "Missed object" }));
+    this.addBtn.dataset.act = "add-missed";
+    this.addBtn.hidden = !this.onAdd;
+    this.addBtn.addEventListener("click", () => this.addMissed());
+    this.row = el("div", { className: "row" }, el("b", { className: "t", textContent: "Identical?" }), seg, this.slider, this.solveChip, this.matchBtn, this.addBtn, x);
     this.spark = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     this.spark.setAttribute("class", "spark");
     this.spark.setAttribute("preserveAspectRatio", "none");
@@ -714,6 +727,9 @@ export class CompareBar {
     if (!x.moving) b("nudge", "Nudge", "move-3d", () => this.nudge(x.id), "Drag it along the ground in the view");
     if (x.moving) b("rekey", "Re-key", "step-forward", () => this.rekey(x.id), "Re-fit its path to where the clip shows it, frame by frame");
     if (this.lockCamera) b("lock", "Lock camera", "camera", () => this.lockCamera(), "Hold the camera on frame 0 (when the solve is unreliable)");
+    if (this.onFix && !x.moving) b("refit", "Fix this object", "sparkles", () => this.fixObject(x.id),
+      "Re-analyse only this object in the clip (SAM 3.1) and rebuild it alone; it keeps its place. Undo puts the old one back");
+    if (this.onRemove) b("remove", "Remove (not in the video)", "trash-2", () => this.onRemove(x.id), "The rebuild invented it: take it out (Undo puts it back)");
     return fix;
   }
 
@@ -871,8 +887,70 @@ export class CompareBar {
     return kept;
   }
 
+  // ------------------------------------------------------------------------------------------------ source picks
+  /** The source sample nearest the frame on show; the stage goes to it so you click the frame SAM will see. */
+  _toSample() {
+    const ref = this.stage.state?.reference || {};
+    const times = ref.sample_times || [];
+    if (!times.length) return null;
+    const i = nearestSample(times, this.stage.frame || 0, FPS);
+    this.goto(Math.round(times[i] * FPS));
+    return i;
+  }
+
+  /** Wait for one click on the source frame: resolves {sample, point:{x, y} 0-1} or null (Esc / cancelled). */
+  pickOnSource(message) {
+    const sample = this._toSample();
+    if (sample == null) { this.say("This rebuild has no source samples to click on."); return Promise.resolve(null); }
+    if (this.mode === "off" || this.mode === "onion") this.setMode("overlay");
+    this._pickPrev = this.opacity;
+    this.opacity = Math.max(this.opacity, 0.85);
+    this._style();
+    Object.assign(this.pickEl.style, { left: this.video.style.left, top: this.video.style.top, width: this.video.style.width,
+      height: this.video.style.height, display: "block" });
+    this.say(message || "Click the object on the source frame (Esc to cancel).");
+    return new Promise((resolve) => { this._pickDone = (v) => { this._endPick(); resolve(v ? { sample, point: v } : null); }; });
+  }
+
+  _endPick() {
+    this.pickEl.style.display = "none";
+    if (this._pickPrev != null) { this.opacity = this._pickPrev; this._pickPrev = null; this._style(); }
+    this._pickDone = null;
+  }
+
+  _wirePick() {
+    this.pickEl.addEventListener("pointerdown", (e) => {
+      e.stopPropagation(); e.preventDefault();
+      const r = this.pickEl.getBoundingClientRect();
+      const p = coverToSource(e.clientX - r.left, e.clientY - r.top, r.width, r.height, this.video.videoWidth || r.width, this.video.videoHeight || r.height);
+      this._pickDone?.(p);
+    });
+    this._pickKey = (e) => { if (e.key === "Escape" && this._pickDone) { e.stopPropagation(); this._pickDone(null); } };
+    document.addEventListener("keydown", this._pickKey, true);
+  }
+
+  /** Fix this object: a click on the source seeds the track (Esc: seed it from where the rebuild has the object). */
+  async fixObject(id) {
+    const a = (this.stage.state?.actors || []).find((x) => x.id === id);
+    if (!a || !this.onFix) return null;
+    this.stage.select?.(id);
+    const pick = await this.pickOnSource(`Fix ${a.name || id}: click it on the source frame (Esc: use where the rebuild has it).`);
+    return this.onFix(id, pick || { sample: nearestSample(this.stage.state?.reference?.sample_times || [], this.stage.frame || 0, FPS) });
+  }
+
+  /** + Missed object: click it on the source frame. */
+  async addMissed() {
+    if (!this.onAdd) return null;
+    const pick = await this.pickOnSource("Click the missed object on the source frame (Esc to cancel).");
+    if (!pick) { this.say("Nothing added."); return null; }
+    return this.onAdd(pick);
+  }
+
   destroy() {
     this.dead = true;
+    this._pickDone?.(null);
+    try { document.removeEventListener("keydown", this._pickKey, true); } catch { /* no document */ }
+    this.pickEl?.remove();
     cancelAnimationFrame(this._raf);
     try { this.video.pause(); this.video.removeAttribute("src"); this.video.load(); } catch { /* already gone */ }
     this.video.remove(); this.wipeEl.remove(); this.nudgeEl.remove(); this.el.remove();
