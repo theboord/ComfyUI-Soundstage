@@ -71,7 +71,7 @@ def test_stab_gag_and_other_cues():
                {"id": "g", "kind": "breakaway_glass", "frame": 30, "t": 1.25, "by": "contact"}, {"id": "sm", "kind": "smoke_bomb", "frame": 48, "t": 2, "by": "time"}])
     b = SFX.sfx_beats(s)
     assert b.index("From the start orange flames") < b.index("road flare") < b.index("shower of bright orange sparks") < b.index("stunt knife") < b.index("pane of glass shatters")
-    assert "a retractable stunt knife strikes the man's stomach: a slash opens across his shirt with a thin line of stage blood; he doubles over" in b
+    assert "a retractable stunt knife strikes the man's stomach: a slash opens across his shirt with a thin line of stage blood; he folds over, clutching his stomach with both hands and stays on his feet" in b
     assert "At 2.0 s a smoke canister pours out a thick plume of red smoke" in b
     assert SFX.sfx_still_words(s) == "Orange flames burning with dark smoke rising."
     assert "Orange flames burning with dark smoke rising." in compile_look({}, s)["still_prompt"]
@@ -91,3 +91,17 @@ def test_burning_props_and_no_rigs_unchanged():
     s3 = scene([actor("man", "man", (0, 0, 0))], [])
     del s3["physics"]["sfx"]
     assert compile_look({}, s2)["motion_prompt"] == compile_look({}, s3)["motion_prompt"]
+
+
+def test_stab_words_match_the_stage():
+    """Blocker 5 (PR #26): the stage keeps a stabbed performer up unless the gag is hard (power >= 1.5) or the fall
+    is asked for, and then only to the knees; the prompt must not say "drops forward"."""
+    who = {"kind": "woman"}
+    for power, fall, want in [(1.0, None, "stays on her feet"), (0.5, None, "stays on her feet"), (1.5, None, "sinks to her knees"),
+                              (2.0, False, "stays on her feet"), (1.0, True, "sinks to her knees")]:
+        w = SFX._stab_reaction("belly", power, fall, who)
+        assert want in w and "forward" not in w, (power, fall, w)
+    s = scene([actor("w", "woman", (0, 0, 0)), rig("stab", "k", target="w", point="belly")],
+              [{"id": "k", "kind": "stab", "frame": 24, "t": 1, "by": "time"}])
+    b = SFX.sfx_beats(s)
+    assert "drops forward" not in b and "stays on her feet" in b, b
