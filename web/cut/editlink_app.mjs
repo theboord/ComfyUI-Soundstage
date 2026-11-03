@@ -392,7 +392,9 @@ export function attachEditLink(host) {
       if (via === "app" && l.take.url && (l.type === "final" || l.type === "draft")) {
         const j = await readPrompt(l.take.url);
         got = settingsFromPrompt(j?.prompt);
-        if (!got?.settings && j?.recipe?.quality?.quality) got = { ...(got || {}), settings: { preset: j.recipe.quality.quality } };
+        // without ComfyUI's prompt tag: the soundstage tag (its preset, and the advanced JSON since recipe.py records it)
+        const rq = j?.recipe?.quality;
+        if (!got?.settings && (rq?.quality || rq?.advanced)) got = { ...(got || {}), settings: { ...(rq.quality ? { preset: rq.quality } : {}), ...(rq.advanced || {}) } };
         why = got?.settings ? "" : MISSING.recipe;
       }
       if (!trip || trip.link !== l) return;
