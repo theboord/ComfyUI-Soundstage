@@ -401,8 +401,10 @@ export class ShotStrip {
     const { frames } = this._clock();
     const cut = this.saved.cut || [];
     const old = oldFrames || Math.max(0, ...cut.map((e) => e.out));
-    if (!(frames > old) || !cut.some((e) => e.out >= old - 1)) return;
-    this._set({ cut: cut.map((e) => (e.out >= old - 1 ? { ...e, out: frames } : e)) });
+    // a clip pinned to a take (Edit from the timeline) keeps its out point: its file is as long as it was rendered
+    const grows = (e) => e.out >= old - 1 && !e.take;
+    if (!(frames > old) || !cut.some(grows)) return;
+    this._set({ cut: cut.map((e) => (grows(e) ? { ...e, out: frames } : e)) });
   }
 
   /** One edit: patch the saved cut, persist, redraw. eids: the event ids after the edit, when known. */
@@ -1050,7 +1052,9 @@ export class ShotStrip {
     const row = TL.layout(this._project())[index];
     if (!row) return;
     const cut = (this.saved.cut || []).map((e) => ({ ...e }));
-    cut.splice(index + 1, 0, { shot_id: row.shot.id, in: row.in, out: row.out });
+    // the copy keeps the clip's pinned take and versions (Edit from the timeline), not its uid: a uid names one clip
+    const { take, versions } = row.event || {};
+    cut.splice(index + 1, 0, { shot_id: row.shot.id, in: row.in, out: row.out, ...(take ? { take } : {}), ...(versions ? { versions } : {}) });
     const eids = [...this._eids];
     eids.splice(index + 1, 0, this._nextEid++);
     this._set({ cut, audio: TL.rippleAudio(this.saved.audio || [], row.recOut, row.len) }, { eids });

@@ -288,7 +288,7 @@ def normalize_project(p) -> dict:
             ev["opacity"] = op
         # Edit from the timeline (web/cut/editlink.mjs): the clip's stable id, the take it is pinned to, its versions.
         uid = e.get("uid")
-        if isinstance(uid, str) and _UID_RE.match(uid) and uid not in seen_uid:
+        if isinstance(uid, str) and _UID_RE.fullmatch(uid) and uid not in seen_uid:
             ev["uid"] = uid
             seen_uid.add(uid)
         tk = normalize_take(e.get("take"))
@@ -439,11 +439,12 @@ def best_rung(shot) -> str:
 # ---------------------------------------------------------------- takes (Edit from the timeline, timeline.mjs)
 
 MAX_VERSIONS = 12
-_UID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+_UID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")   # used with fullmatch: "$" alone would let a final newline through
+_DEC_RE = re.compile(r"[ \t\n\r]*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?[ \t\n\r]*")
 
 
 def _js_string(v) -> str:
-    """JavaScript String(v) for the plain values a take carries."""
+    """JavaScript String(v) for the plain values a take carries (strings, numbers, booleans)."""
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, float) and math.isfinite(v):
@@ -451,17 +452,22 @@ def _js_string(v) -> str:
     return str(v)
 
 
-def _js_number(x) -> float:
-    """JavaScript Number(x) for JSON values (None stands for both null and a missing key: 0 either way here)."""
-    if x is None:
-        return 0.0
-    if isinstance(x, (bool, int, float)):
-        return float(x)
-    if isinstance(x, str):
-        try:
-            return float(x.strip()) if x.strip() else 0.0
-        except ValueError:
-            return float("nan")
+def _finite(x) -> bool:
+    """Number.isFinite for a JSON number: an integer too big for a float is Infinity in JavaScript."""
+    try:
+        return math.isfinite(x)
+    except OverflowError:
+        return False
+
+
+def _version_number(x) -> float:
+    """timeline.mjs normalizeTake's version: a number, or a plain decimal string; anything else is NaN."""
+    if isinstance(x, bool):
+        return float("nan")
+    if isinstance(x, (int, float)):
+        return float(x) if _finite(x) else float("inf")
+    if isinstance(x, str) and _DEC_RE.fullmatch(x):
+        return float(x.strip(" \t\n\r"))
     return float("nan")
 
 
@@ -472,19 +478,20 @@ def normalize_take(t):
     url = t["url"][:2000] if isinstance(t.get("url"), str) else ""
     if not url and t["rung"] != "clay":
         return None
-    v = _js_number(t.get("version"))
+    v = _version_number(t.get("version"))
     v = _round(v) if math.isfinite(v) else -1
     out = {"url": url, "rung": t["rung"], "version": v if v >= 0 else 0}
     for k in ("at", "kind", "label"):
-        if t.get(k) is not None and t.get(k) != "":
-            out[k] = _js_string(t[k])[:200]
+        x = t.get(k)   # a string, a finite number or a boolean (an object or a list is dropped, as in the browser)
+        if (isinstance(x, str) and x != "") or isinstance(x, bool) or (isinstance(x, (int, float)) and _finite(x)):
+            out[k] = _js_string(x)[:200]
     rec = t.get("recipe")
     if isinstance(rec, dict):
         r = {}
         for k, x in rec.items():
             if isinstance(x, str):
                 r[k] = x[:500]
-            elif isinstance(x, bool) or x is None or (isinstance(x, (int, float)) and math.isfinite(x)):
+            elif isinstance(x, bool) or x is None or (isinstance(x, (int, float)) and _finite(x)):
                 r[k] = _num(x) if isinstance(x, float) else x
         if r:
             out["recipe"] = r
@@ -519,10 +526,25 @@ def clip_shot(shot, e):
     return {**rest, "renders": {t["rung"]: url, **({"look": renders["look"]} if renders.get("look") else {})}}
 
 
+def plays_own(shot, e) -> bool:
+    """timeline.mjs playsOwn: a pinned clip that plays just what its shot plays (its current best render, no camera
+    original involved): its media is the shot's own, so a hold alone changes no reel, asset or master name."""
+    t = (e or {}).get("take")
+    if not shot or not isinstance(t, dict) or shot.get("source"):
+        return False
+    r = best_rung(shot)
+    if t.get("url"):
+        return r == t.get("rung") and view_key((shot.get("renders") or {}).get(r)) == view_key(t["url"])
+    return r == "clay"
+
+
 def media_key(row) -> str:
-    """timeline.mjs mediaKey: the shot id, or "shotId|url" for a pinned clip (one reel / asset per file)."""
+    """timeline.mjs mediaKey: the shot id, or "shotId|type:subfolder/filename" ("shotId|clay") for a clip pinned to a
+    file its shot does not play now: one reel / asset per file, whatever its URL spelling."""
     t = row["event"].get("take")
-    return f'{row["shot"]["id"]}|{t.get("url") or "clay"}' if t else row["shot"]["id"]
+    if not t or row.get("own"):
+        return row["shot"]["id"]
+    return f'{row["shot"]["id"]}|{view_key(t["url"]) if t.get("url") else "clay"}'
 
 
 def layout(project) -> list:
@@ -530,8 +552,9 @@ def layout(project) -> list:
     rows, rec = [], 0
     for i, e in enumerate(project["cut"]):
         n = e["out"] - e["in"]
-        rows.append({"index": i, "event": e, "shot": clip_shot(by_id[e["shot_id"]], e), "in": e["in"], "out": e["out"], "len": n,
-                     "recIn": rec, "recOut": rec + n})
+        base = by_id[e["shot_id"]]
+        rows.append({"index": i, "event": e, "shot": clip_shot(base, e), "in": e["in"], "out": e["out"], "len": n,
+                     "recIn": rec, "recOut": rec + n, "own": plays_own(base, e)})
         rec += n
     return rows
 
