@@ -47,7 +47,7 @@ def frames(n=4, seed=3):
 def test_builders_compile_and_import_without_their_app(name, tmp_path):
     py_compile.compile(os.path.join(DCC, name), cfile=str(tmp_path / (name + "c")), doraise=True)
     mod = load(name)
-    assert mod.__doc__ and ("NOT TESTED" in mod.__doc__ or "verified headless" in mod.__doc__)
+    assert mod.__doc__ and ("NOT TESTED" in mod.__doc__ or "verified headless" in mod.__doc__ or "Run headless in Unreal Engine" in mod.__doc__)
 
 
 def test_blender_axes_and_fps():
@@ -161,3 +161,17 @@ def test_js_camera_frames_match_layerpack_camera_py():
         np.testing.assert_allclose(a["rotate_zxy_deg"], b["rotate_zxy_deg"], atol=1e-5)
         np.testing.assert_allclose(a["cam_to_world"], b["cam_to_world"], atol=1e-8)
         np.testing.assert_allclose(a["position"], b["position"], atol=1e-6)
+
+
+def test_unreal_scene_sequences_picks_interchange_animation_not_the_camera_sequence():
+    """build_unreal adds the Level Sequence Interchange made for scene.glb's baked keys as a subsequence (run in UE 5.7:
+    without it the camera sequence played over a frozen set)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("build_unreal", os.path.join(DCC, "build_unreal.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    own = "/Game/Soundstage/Chase/SEQ_Chase"
+    paths = [own + ".SEQ_Chase", "/Game/Soundstage/Chase/scene/LevelSequences/soundstage_shot.soundstage_shot",
+             "/Game/Soundstage/Chase/scene/StaticMeshes/mesh_0.mesh_0", "/Game/Soundstage/Chase/scene/LevelSequences/soundstage_shot.soundstage_shot"]
+    assert mod.scene_sequences(paths, own) == ["/Game/Soundstage/Chase/scene/LevelSequences/soundstage_shot"]
+    assert mod.scene_sequences([], own) == []
