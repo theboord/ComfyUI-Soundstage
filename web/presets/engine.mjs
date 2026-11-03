@@ -17,7 +17,8 @@ export const RIG_TYPES = ["free", "tripod", "dolly", "chapman", "slider", "jib",
 export const TIME_KEYS = ["dawn", "golden_am", "midday", "overcast", "magic_hour", "blue_hour", "night", "keep"];
 export const GRADE_KEYS = ["warmth", "contrast", "saturation", "grain", "halation", "vignette"];
 export const STUNT_KINDS = ["reverse_jturn", "donut", "handbrake_180"];
-export const PHYSICS_KINDS = ["crate_crash", "drop", "throw", "tarp_wind", "rope_bridge", "cardboard_crush", "sand_pile"];   // the last four: soft bodies (Milestone 28)
+export const PHYSICS_KINDS = ["crate_crash", "drop", "throw", "tarp_wind", "rope_bridge", "cardboard_crush", "sand_pile",   // then four soft bodies (Milestone 28)
+  "car_explosion", "building_blast", "sparks_shower", "squib_hit"];   // and the practical effects (SFX rigs, web/presets/sfxpresets.mjs)
 /** Camera shake on impact (Milestone 21): the shot camera jolts with each baked hit. */
 export const SHAKE_KINDS = ["light", "heavy", "earthquake", "off"];
 /** Swim presets (web/stage/swim.mjs): under water (flutter, frog) or at the surface (freestyle, breaststroke). */

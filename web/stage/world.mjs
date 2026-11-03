@@ -432,7 +432,9 @@ export function inputSig(actors) {
     const { baked, source, fracture, dents, takeover, crush, bakedKeys, world, ...settings } = p;
     const edited = baked && bakedKeys && JSON.stringify(a.keys) !== JSON.stringify(bakedKeys) ? a.keys : 0;
     const motion = baked ? ["baked", source?.keys ?? source?.position ?? null, edited] : ["keys", a.keys || null, a.position || null];
-    return [a.id, a.kind, a.rotation_deg ?? 0, a.scale ?? 1, a.height_m ?? null, a.mount_id || null, motion, settings];
+    const row = [a.id, a.kind, a.rotation_deg ?? 0, a.scale ?? 1, a.height_m ?? null, a.mount_id || null, motion, settings];
+    if (a.sfx) row.push(a.sfx);   // an SFX rig's cue, power, target... (sfx.mjs): a change re-bakes
+    return row;
   }));
 }
 

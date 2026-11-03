@@ -15,6 +15,8 @@
 //   debris: small chunks (instanced boxes: grains, chunks, splinters, droplets) under gravity and quadratic drag, with
 //           spin, restitution and friction on the ground and on the set's boxes; they settle and go to sleep.
 //   sparks: hot streaks that fall, bounce once and die.
+//   practical effects (sfx.mjs): fireballs and flames (self-lit puffs that cool to smoke), smoke columns and smoke bombs,
+//           a squib's fabric puff, stage blood, charred debris, glass.
 // Pure functions, no three.js. The stage draws the result (secondary.mjs) in Clay and Color only: never in Depth or
 // the ID matte; an optional dust matte pass ("dust") renders the dust density alone for the Layer Pack.
 
@@ -42,6 +44,29 @@ export const GROUND_PRESETS = Object.freeze({
   // White water: the churn behind a propeller and a hull's wake foam. It hugs the water surface (secondary.mjs floorAt) and spreads.
   foam: { label: "Foam", internal: true, dust: { color: [0.95, 0.97, 0.98], density: 0.75, buoy: -0.3, drag: 3.2, turb: 0.3, life: [1.8, 3.6], size: [0.35, 1.8] },
     debris: null },
+  // Practical effects (sfx.mjs). glow: the share of its life a puff is self-lit (a fireball, a flame) before it cools to
+  // smoke; cool: the colour it cools to.
+  fireball: { label: "Fireball", internal: true, dust: { color: [1.0, 0.62, 0.22], cool: [0.2, 0.18, 0.17], glow: 0.38, density: 1, buoy: 4.2, drag: 2.6, turb: 1.1, life: [1.1, 2.2], size: [0.6, 3.4] },
+    debris: null },
+  flame: { label: "Flame", internal: true, dust: { color: [1.0, 0.66, 0.26], cool: [0.3, 0.27, 0.25], glow: 0.7, density: 0.9, buoy: 3.0, drag: 3.2, turb: 0.7, life: [0.35, 0.75], size: [0.25, 0.75] },
+    debris: null },
+  flare_glow: { label: "Flare", internal: true, dust: { color: [1.0, 0.22, 0.16], cool: [0.75, 0.55, 0.55], glow: 0.5, density: 0.9, buoy: 1.2, drag: 3, turb: 0.3, life: [0.2, 0.45], size: [0.12, 0.3] },
+    debris: null },
+  smoke_column: { label: "Smoke column", internal: true, dust: { color: [0.2, 0.2, 0.21], density: 0.75, buoy: 1.6, drag: 1.3, turb: 0.6, life: [4, 7], size: [0.9, 4.2] },
+    debris: null },
+  smoke_bomb: { label: "Smoke bomb", internal: true, dust: { color: [0.62, 0.62, 0.63], density: 0.85, buoy: 0.35, drag: 1.6, turb: 0.5, life: [5, 8], size: [0.6, 3.6] },
+    debris: null },
+  fabric_puff: { label: "Fabric puff", internal: true, dust: { color: [0.55, 0.5, 0.47], density: 0.6, buoy: 0.05, drag: 4, turb: 0.2, life: [0.35, 0.8], size: [0.05, 0.3] },
+    debris: null },
+  // Debris-only internal presets: stage blood (a film-safe red, drops that splash and are gone), charred chunks, glass and metal.
+  blood: { label: "Stage blood", internal: true, dust: { color: [0.45, 0.06, 0.06], density: 0.4, buoy: -2, drag: 4, turb: 0, life: [0.2, 0.4], size: [0.03, 0.08] },
+    debris: { color: [0.48, 0.03, 0.04], size: [0.006, 0.016], shape: "drop", bounce: 0, friction: 1, amount: 1 } },
+  char: { label: "Charred debris", internal: true, dust: { color: [0.2, 0.2, 0.2], density: 0.5, buoy: 0.5, drag: 2, turb: 0.4, life: [1, 2], size: [0.2, 1] },
+    debris: { color: [0.16, 0.15, 0.14], size: [0.03, 0.12], shape: "chunk", bounce: 0.25, friction: 0.6, amount: 1 } },
+  glass: { label: "Glass", internal: true, dust: { color: [0.85, 0.88, 0.9], density: 0.2, buoy: 0.1, drag: 2, turb: 0.3, life: [0.6, 1.2], size: [0.1, 0.5] },
+    debris: { color: [0.85, 0.92, 0.95], size: [0.01, 0.04], shape: "chunk", bounce: 0.3, friction: 0.5, amount: 1.4 } },
+  metal: { label: "Metal", internal: true, dust: { color: [0.62, 0.62, 0.62], density: 0.3, buoy: 0.1, drag: 2, turb: 0.3, life: [0.6, 1.2], size: [0.1, 0.5] },
+    debris: { color: [0.36, 0.37, 0.39], size: [0.01, 0.03], shape: "chunk", bounce: 0.35, friction: 0.5, amount: 0.3 } },
   tyre_smoke: { label: "Tyre smoke", internal: true, dust: { color: [0.86, 0.86, 0.86], density: 0.34, buoy: 0.5, drag: 1.1, turb: 0.8, life: [1.6, 2.8], size: [0.7, 3.2] },
     debris: null },
 });
@@ -207,6 +232,9 @@ export function emitterSig(emitters, opts = {}) {
   const str = (t) => { for (const ch of String(t)) mix(ch.charCodeAt(0) / 1000); };
   for (const e of emitters) {
     mix(e.t); mix(e.pos[0]); mix(e.pos[1]); mix(e.pos[2]); mix(e.dust); mix(e.debris); mix(e.sparks); mix(e.vel[0]); mix(e.vel[2]); mix(e.seed);
+    if (e.color) { mix(e.color[0]); mix(e.color[1]); mix(e.color[2]); }
+    if (e.normal) { mix(e.normal[0]); mix(e.normal[1]); mix(e.normal[2]); }
+    mix(e.size || 0); mix(e.kick || 0); mix(e.k || 0);
     str(e.preset); str(typeof e.debrisPreset === "string" ? e.debrisPreset : e.debrisPreset ? e.debrisPreset.shape : "-"); mix(e.density || 0);
   }
   mix(opts.frames || 0); mix(opts.fps || 24); mix(opts.seed ?? 1); mix(opts.wind?.[0] || 0); mix(opts.wind?.[1] || 0); mix((opts.boxes || []).length);
@@ -250,7 +278,8 @@ function spawn(e, P, opts) {
       vz: e.vel[2] * (0.35 + 0.3 * r1) + dir[2] * kick + n[2] * up * e.kick * 0.4,
       age: 0, life: D.life[0] + (D.life[1] - D.life[0]) * r1, s0: D.size[0] * e.size * (0.7 + 0.6 * r2), s1: D.size[1] * e.size * (0.75 + 0.5 * r3),
       a0: e.density * (0.75 + 0.25 * r4), r: clamp(col[0] * (0.93 + 0.1 * r3), 0, 1), g: clamp(col[1] * (0.93 + 0.1 * r3), 0, 1), b: clamp(col[2] * (0.93 + 0.1 * r3) + 0.01, 0, 1),
-      drag: D.drag * (0.8 + 0.4 * r2), buoy: D.buoy * (0.7 + 0.6 * r4), turb: D.turb, rot: r1 * 6.2832, spin: (r2 - 0.5) * 0.8, tex: Math.floor(r4 * 4) });
+      drag: D.drag * (0.8 + 0.4 * r2), buoy: D.buoy * (0.7 + 0.6 * r4), turb: D.turb, rot: r1 * 6.2832, spin: (r2 - 0.5) * 0.8, tex: Math.floor(r4 * 4),
+      glow: D.glow ? D.glow * (0.75 + 0.5 * r3) : 0, cool: D.cool || null });
   }
   const db = typeof e.debrisPreset === "string" ? GROUND_PRESETS[e.debrisPreset]?.debris : e.debrisPreset;
   if (db) for (let i = 0; i < e.debris && P.debris.length < LIMITS.debris; i++) {
@@ -389,7 +418,12 @@ export function simulateParticles(emitters, opts = {}) {
       const u = Math.min(1, p.age / p.life), size = p.s0 + (p.s1 - p.s0) * (1 - (1 - u) * (1 - u));
       // Density thins as the puff spreads (the same dust over a bigger sprite), fades in fast and out slowly.
       const a = p.a0 * Math.min(1, u * 10) * Math.pow(1 - u, 1.6) * Math.sqrt(p.s0 / Math.max(p.s0, size));
-      dust.set([p.x, p.y, p.z, size, Math.min(1, a), p.r, p.g, p.b, p.rot, p.tex], i * STRIDE.dust);
+      // A self-lit puff (fireball, flame: tex + 4 tells the shader) cools to its smoke colour as it ages.
+      let r = p.r, g = p.g, b = p.b, tex = p.tex;
+      if (p.cool) { const c = Math.min(1, Math.max(0, (u - p.glow * 0.6) / Math.max(0.05, p.glow * 0.8))); const k = c * c * (3 - 2 * c);
+        r += (p.cool[0] - r) * k; g += (p.cool[1] - g) * k; b += (p.cool[2] - b) * k; }
+      if (p.glow && u < p.glow) tex += 4;
+      dust.set([p.x, p.y, p.z, size, Math.min(1, a), r, g, b, p.rot, tex], i * STRIDE.dust);
     });
     const debris = new Float32Array(P.debris.length * STRIDE.debris);
     P.debris.forEach((p, i) => debris.set([p.x, p.y, p.z, p.q[0], p.q[1], p.q[2], p.q[3], p.sx, p.sy, p.sz, p.r, p.g, p.b], i * STRIDE.debris));

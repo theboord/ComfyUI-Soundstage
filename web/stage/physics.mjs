@@ -13,6 +13,7 @@
 // layout guide never run a simulation themselves.
 
 import { mergeEvents, MIN_IMPACT_SPEED } from "./impacts.mjs";
+import { blastImpulse } from "./sfx.mjs";
 import { glueGroups, dentFor, hash01, MAX_SCENE_PIECES, jointLoad, fractureNetwork, networkJoints, jointResponse, bendMember, asNetwork,
   MAX_NETWORK_SCENE, networkMinLoad } from "./fracture.mjs";
 import { hullContacts, hullsSeparate, sphereHullContacts, makeHull, compoundMass, rayHulls } from "./convex.mjs";
@@ -448,7 +449,8 @@ function relVel(c, useSaved) {
  *     that broke), dents: {id: [{frame, p, n, depth, radius}]} (object frame: relative to the origin, n points inward).
  * opts: { fps = 24, substeps = 20, iterations = 4 (contact passes a substep; with 2 a 20-box tower bows 16 cm before
  *   anything touches it), gravity = 9.81, floor = true, events = true, minImpactSpeed, groundMaterial,
- *   maxPieces (most loose bodies a bake may add, MAX_SCENE_PIECES) }
+ *   maxPieces (most loose bodies a bake may add, MAX_SCENE_PIECES),
+ *   blasts: [{id, frame, pos, power, radius, lift}] (sfx.mjs blastsFrom: explosions; result.blasted = {id: dv m/s}) }
  */
 export function simulate(specs, frames, opts = {}) {
   const fps = opts.fps || 24, nSub = Math.max(4, Math.min(64, opts.substeps || 20));
@@ -525,6 +527,7 @@ export function simulate(specs, frames, opts = {}) {
     const K = !A.free ? A : !B.free ? B : null;
     return K ? Math.min(SPEC_CAP, SPEC + SPEC_K * len(K.v) * h) : SPEC;
   };
+  const blasts = Array.isArray(opts.blasts) ? opts.blasts.filter((B) => B && Array.isArray(B.pos) && Number.isFinite(+B.frame)) : [], blastHits = {};
   const logHits = opts.events !== false, minHit = opts.minImpactSpeed ?? MIN_IMPACT_SPEED, groundMat = opts.groundMaterial || "ground", rawHits = [];
   // Frame 0: every body where its keys put it.
   for (const b of bodies) {
@@ -544,6 +547,36 @@ export function simulate(specs, frames, opts = {}) {
       b.x = comOf(b, p1); b.q = [...p1.quat];
       b.v = f > 0 ? scl(sub(comOf(b, p1), comOf(b, p0)), fps) : [0, 0, 0];
       b.w = [0, 0, 0];
+    }
+    // SFX blasts (sfx.mjs): at the blast frame every dynamic body in reach gets its radial push with falloff, at the side
+    // facing the charge (the near side lifts: a car rocks or rolls away). A keyed or held body (a parked car, a person, a
+    // lamp post that holds, a resting crate) is let go to the physics first if the push is big enough to move it.
+    // Breakable props also take the push as a load, so they crack or burst like after a hard hit.
+    let blastLoads = null;
+    for (const B of blasts) {
+      if (B.frame !== f) continue;
+      for (const b of dyn) {
+        if (b.dead) continue;
+        const k = blastImpulse(B, { pos: b.x, mass: b.m, half: b.half });
+        if (!k || k.dv < 0.05) continue;
+        if (!b.free) {
+          // A blast loads the whole of a pole or a sign, so its base gives at a third of the momentum a car's bumper needs.
+          const holds = b.anchor ? k.impulse < 0.3 * b.anchor.impulse : b.takeover ? k.dv < b.takeover.dv : k.dv < 0.3;
+          if (holds) continue;
+          if (b.hold || b.takeover || b.anchor) releaseBody(b, f, { id: B.id, material: "concrete" }, k.dv, "blast");
+          else { b.free = true; b.v = [0, 0, 0]; b.w = [0, 0, 0]; }
+        }
+        b.asleep = false; b.still = 0;
+        applyVel(b, k.J, k.r);
+        if (b.fr && roots.length && f >= 0) {
+          const o = ((blastLoads ||= new Map()).get(b) || { load: 0, w: 0, p: [0, 0, 0], n: [0, 0, 0], other: null });
+          const hitW = add(b.x, k.r), L = k.dv;
+          if (L > o.load) o.load = L;
+          o.w += L; o.p = add(o.p, scl(hitW, L)); o.n = add(o.n, scl(k.J, L / (len(k.J) || 1)));
+          blastLoads.set(b, o);
+        }
+        blastHits[b.id] = Math.max(blastHits[b.id] || 0, +k.dv.toFixed(2));
+      }
     }
     for (let s = 0; s < nSub; s++) {
       const t0 = f + s / nSub, t1 = f + (s + 1) / nSub;
@@ -660,7 +693,8 @@ export function simulate(specs, frames, opts = {}) {
       if (crushOn && f >= 1) for (const c of C) logCrush(c, f, s);
       // Loads on breakable / dentable bodies (Milestone 24): per body, the hardest hit this substep (its velocity
       // change, m/s) and the load-weighted hit point and inward direction (A is pushed along +n, so +n points into A).
-      const loads = roots.length && f >= 2 ? new Map() : null;
+      const loads = roots.length && (f >= 2 || (blastLoads && s === 0)) ? new Map() : null;
+      if (loads && blastLoads && s === 0) { for (const [b, o] of blastLoads) loads.set(b, o); blastLoads = null; }
       if (loads) for (const c of C) {
         const sp = -c.vnPrev;
         if (sp < 0.5 || c.d < -0.02) continue;
@@ -831,7 +865,7 @@ export function simulate(specs, frames, opts = {}) {
     }
     if (R.dents.length) dents[R.id] = R.dents;
   }
-  return { tracks, settled, events, fractures, dents, takeovers, crush, stats: { bodies: bodies.length, dynamic: dyn.length, substeps: nSub, contacts: contactsSolved,
+  return { tracks, settled, events, fractures, dents, takeovers, crush, blasted: blastHits, stats: { bodies: bodies.length, dynamic: dyn.length, substeps: nSub, contacts: contactsSolved,
     impacts: events.length, pieces: added, breaks: breakEvents.length, cracks: roots.reduce((s, R) => s + R.cracks, 0), takeovers: Object.keys(takeovers).length } };
 
   /**
