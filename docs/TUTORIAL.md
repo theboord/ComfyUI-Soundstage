@@ -13,7 +13,7 @@ This guide is for anyone who has just cloned the repo. It covers where every pan
 
 ## Contents
 
-0. **[New on 1 and 2 November](#new-on-1-and-2-november)** (limits first): [world collisions](#world-collisions-everything-collides) · [✦ One-click](#one-click-effects-relight-angles-expand) · [Seamless loop](#seamless-loop-and-the-seam-meter) · [Reshoot](#reshoot-from-a-new-angle) · [Open in ComfyUI](#open-in-comfyui-and-download-the-graph) · [Film a move](#film-a-move-on-your-phone) · [Racing Cinema](#racing-cinema-and-the-racing-camera-moves) · [boats](#boats) · [swimming](#swimming-and-water) · [Drive mode](#drive-mode-what-changed) · [voice conversion](#voice-conversion-in-real-performance) · [1024 layout and ⋯](#the-1024-wide-layout-and-the-menu) · [pop-over layer](#one-pop-over-layer-for-every-menu) · [brass key and strip](#the-brass-key-and-the-shot-strip-fixes) · [Cut timeline note](#the-cut-timeline-being-upgraded-tonight) · [Passes viewer](#passes-judge-the-matte-pose-talking-and-depth)
+0. **[New on 1 and 2 November](#new-on-1-and-2-november)** (limits first): [world collisions](#world-collisions-everything-collides) · [✦ One-click](#one-click-effects-relight-angles-expand) · [Seamless loop](#seamless-loop-and-the-seam-meter) · [Reshoot](#reshoot-from-a-new-angle) · [Open in ComfyUI](#open-in-comfyui-and-download-the-graph) · [Film a move](#film-a-move-on-your-phone) · [Racing Cinema](#racing-cinema-and-the-racing-camera-moves) · [boats](#boats) · [swimming](#swimming-and-water) · [Drive mode](#drive-mode-what-changed) · [voice conversion](#voice-conversion-in-real-performance) · [1024 layout and ⋯](#the-1024-wide-layout-and-the-menu) · [pop-over layer](#one-pop-over-layer-for-every-menu) · [brass key and strip](#the-brass-key-and-the-shot-strip-fixes) · [Cut timeline note](#the-cut-timeline-being-upgraded-tonight) · [Passes viewer](#passes-judge-the-matte-pose-talking-and-depth) · [Load a script in the try-it demo](#load-a-script-in-the-try-it-demo)
 1. [Install](#1-install)
 2. [A tour of the workspace](#2-a-tour-of-the-workspace)
 3. [The seven steps, one by one](#3-the-seven-steps-one-by-one)
@@ -56,6 +56,7 @@ Everything below landed on `main` on 1 and 2 November 2026 ([CHANGELOG](../CHANG
 | [Brass key and the strip](#the-brass-key-and-the-shot-strip-fixes) | Holding and tossing a key is set in the scene data; there is no button for it yet. In Clay the key reads small and grey: it shows brass only in Color. |
 | [Cut timeline](#the-cut-timeline-being-upgraded-tonight) | Playback, frame rates and *Edit in* are being rebuilt tonight, so they aren't documented here yet. |
 | [Passes viewer](#passes-judge-the-matte-pose-talking-and-depth) | The matte tools were checked headless on a synthetic Layer Pack only: no real SAM 3.1 or BiRefNet matte has been judged in it yet. A clip ✦ Cutout's alpha is ProRes 4444, which browsers can't decode, so it isn't shown. Pose has per-point confidence for the face only, until a new Real performance read (body and hands come with the next ComfyUI restart). |
+| [Load a script in the demo](#load-a-script-in-the-try-it-demo) | ④ and ⑤ replay a recorded example from the closest demo set, never a render of your scene. **Build this scene on the stage** (the scene agent) needs the full install. The extractor picks some words wrongly (a capitalised name can show up as a prop). |
 
 <a id="world-collisions-everything-collides"></a>
 
@@ -295,6 +296,19 @@ It has four tabs. A tab with a green dot has something to show. A pass the App d
 ### The Cut timeline: being upgraded tonight
 
 The Cut timeline's playback, frame rates and *Edit in* are being rebuilt tonight (2 November). This tutorial will document them once that lands. Until then, the transport and timecode rows in [the Cut editor](#the-cut-editor) describe today's build and may change.
+
+<a id="load-a-script-in-the-try-it-demo"></a>
+
+### Load a script in the try-it demo
+
+**Where:** the [try-it demo](https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq): **Load a script** in the top bar or on the first screen, *Load a script: watch it break down* in the scene picker, or the tour's **Load a script** stop.
+
+1. Pick a sample, paste a script, or choose or drop a file. The samples are three short original scripts: *Low Tide* (Fountain), *The Night Train* (Final Draft .fdx) and *Brush Fire* (PDF). You can paste Fountain or Final Draft XML. A file can be `.fountain`, `.fdx`, `.pdf` or `.txt`.
+2. ① Script breaks it down in your browser with the App's own importer, the same code as the full install. You get the outline, each scene's cast, location, time of day, pages, props, vehicles, animals, sound and effects, and the pages in screenplay format. A PDF is read from its text by pdf.js, which loads from cdnjs. A scan has no text layer, so it can't be read. Nothing is uploaded.
+3. Click a scene. The 3D stage sets itself up from the heading and the breakdown, as in the App: the set, the time of day and the weather, the cast blocked, and the vehicles. **New shot in this scene** adds camera setups, and they show under *Shots in this scene*. Open **③ Set** to work on the stage.
+4. **④ Frame** and **⑤ Motion** replay a recorded example: a render a GPU made for the demo scene with the closest set (a beach plays the *Romance* sunset, a forest plays the *Horror* woods, a night street plays the car chase). The note above the frames, the label on every frame and the bar badge all say it's an example and not your shot.
+
+**Limit:** the demo has no GPU, so your own scene is never rendered. **Build this scene on the stage** asks the scene agent, which runs on the ComfyUI server. In the demo it says so, and the scene is already set up from its heading. *Shot ideas* (the Advisor) has no saved answer for your script. The breakdown is keyword work: on *Low Tide* it lists a mirror as set dressing because the sand "mirrors" the sky.
 
 ---
 
