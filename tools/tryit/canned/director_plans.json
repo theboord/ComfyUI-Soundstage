@@ -1,0 +1,43 @@
+{
+ "about": "The server's real Director plans (POST /soundstage/director/plan, rules backend, pod 1, 3 Nov 2026) for the commands the demo's Ask stop hands it. api.js answers those commands with them; any other order gets the full-install note.",
+ "plans": {
+  "make it rain": {
+   "calls": [
+    {
+     "tool": "weather",
+     "args": {
+      "weather": "rain"
+     },
+     "kind": "edit",
+     "gpu": false,
+     "ops": [
+      {
+       "op": "set_environment",
+       "set": {
+        "weather": "rain"
+       },
+       "undo": {
+        "op": "set_environment",
+        "set": {
+         "weather": "none"
+        }
+       }
+      }
+     ],
+     "plan": "I'll bring in rain"
+    }
+   ],
+   "plan": [
+    "I'll bring in rain"
+   ],
+   "confirm": false,
+   "gpu": 0,
+   "notes": [],
+   "rejected": [],
+   "backend": "rules",
+   "summary": "bring in rain",
+   "command": "make it rain",
+   "ms": 33
+  }
+ }
+}
