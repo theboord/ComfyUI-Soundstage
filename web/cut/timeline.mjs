@@ -30,6 +30,7 @@ export function normalizeProject(p) {
   });
   matchSource(project);
   const byId = shotMap(project);
+  const seenUid = new Set();
   project.cut = (project.cut || [])
     .filter((e) => byId.has(String(e.shot_id)))
     .map((e) => {
@@ -42,6 +43,13 @@ export function normalizeProject(p) {
       if (tr) ev.trans = tr;
       const op = normalizeKeys(e.opacity, outF - inF, 0, 1, 1000);
       if (op) ev.opacity = op;
+      // Edit from the timeline (web/cut/editlink.mjs): a stable clip id (kept, never minted here; a split's copy is
+      // dropped), the take the clip is pinned to, and the takes it played before. All optional: absent = as before.
+      if (typeof e.uid === "string" && UID_RE.test(e.uid) && !seenUid.has(e.uid)) { ev.uid = e.uid; seenUid.add(e.uid); }
+      const tk = normalizeTake(e.take);
+      if (tk) ev.take = tk;
+      const vs = Array.isArray(e.versions) ? e.versions.map(normalizeTake).filter(Boolean).slice(-MAX_VERSIONS) : [];
+      if (vs.length) ev.versions = vs;
       return ev;
     });
   project.audio = normalizeAudio(project.audio, project.fps);
@@ -305,6 +313,67 @@ export function bestRung(shot) {
   return "clay";
 }
 
+// ---------------------------------------------------------------- takes (Edit from the timeline, docs/cut.md)
+
+/** The most earlier takes a clip remembers (its versions). */
+export const MAX_VERSIONS = 12;
+const UID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+
+/**
+ * A take a clip is pinned to, {url, rung, version, at?, kind?, label?, recipe?}, or null. rung is one of RUNGS; only
+ * clay may have no url (it is drawn live). version is an integer >= 0; at, kind and label are short strings; recipe is
+ * a flat object of short values.
+ */
+export function normalizeTake(t) {
+  if (!t || typeof t !== "object" || !RUNGS.includes(t.rung)) return null;
+  const url = typeof t.url === "string" ? t.url.slice(0, 2000) : "";
+  if (!url && t.rung !== "clay") return null;
+  const v = Math.round(Number(t.version));
+  const out = { url, rung: t.rung, version: Number.isFinite(v) && v >= 0 ? v : 0 };
+  for (const k of ["at", "kind", "label"]) if (t[k] != null && t[k] !== "") out[k] = String(t[k]).slice(0, 200);
+  if (t.recipe && typeof t.recipe === "object" && !Array.isArray(t.recipe)) {
+    const r = {};
+    for (const [k, x] of Object.entries(t.recipe)) {
+      if (typeof x === "string") r[k] = x.slice(0, 500);
+      else if ((typeof x === "number" && Number.isFinite(x)) || typeof x === "boolean" || x === null) r[k] = x;
+    }
+    if (Object.keys(r).length) out.recipe = r;
+  }
+  return out;
+}
+
+/** A ComfyUI /view URL -> "type:subfolder/filename" (host and cache-buster dropped, as web/dailies/model.mjs takeKey);
+ *  any other URL -> itself without its query. Two URLs of one file give one key. */
+export function viewKey(url) {
+  const u = String(url || "");
+  const q = u.indexOf("?");
+  if (q < 0) return u;
+  const p = new URLSearchParams(u.slice(q + 1).split("#")[0]);
+  const fn = p.get("filename");
+  return fn ? `${p.get("type") || "output"}:${p.get("subfolder") ? `${p.get("subfolder")}/` : ""}${fn}` : u.slice(0, q);
+}
+
+/**
+ * What a clip plays: its shot as it is (each shot's latest render), or, for a clip pinned to a take (event.take), the
+ * shot with that one file. A clay pin plays clay (a renders.clay capture and imported footage's camera original stay);
+ * a generated take is not the camera original. A video pin keeps the shot's Look still (the clip's thumbnail). While
+ * the pinned file is still the shot's own render, the shot's URL is used (the viewer has that one loaded).
+ */
+export function clipShot(shot, e) {
+  const t = e?.take;
+  if (!shot || !t) return shot;
+  if (t.rung === "clay" || !t.url) return { ...shot, renders: shot.renders?.clay ? { clay: shot.renders.clay } : {} };
+  const rest = { ...shot };
+  delete rest.source;
+  const cur = shot.renders?.[t.rung];
+  const url = cur && viewKey(cur) === viewKey(t.url) ? cur : t.url;
+  const look = shot.renders?.look;
+  return { ...rest, renders: t.rung === "look" ? { look: url } : { [t.rung]: url, ...(look ? { look } : {}) } };
+}
+
+/** The media a layout row plays, as a key: the shot id, or "shotId|url" for a pinned clip (one reel / asset per file). */
+export const mediaKey = (row) => (row.event?.take ? `${row.shot.id}|${row.event.take.url || "clay"}` : row.shot.id);
+
 // ---------------------------------------------------------------- audio
 
 export const audioLen = (a) => (a.out == null ? 0 : a.out - a.in);
@@ -468,13 +537,14 @@ export function noteItems(row) {
   return items;
 }
 
-/** Events with record positions: [{index, shot, in, out, len, recIn, recOut}] (rec frames from 0). */
+/** Events with record positions: [{index, shot, in, out, len, recIn, recOut}] (rec frames from 0). row.shot is the shot
+ *  as the clip plays it (clipShot: a pinned take wins over the shot's latest render). */
 export function layout(project) {
   const byId = shotMap(project);
   let rec = 0;
   return project.cut.map((e, index) => {
     const len = e.out - e.in;
-    const row = { index, event: e, shot: byId.get(String(e.shot_id)), in: e.in, out: e.out, len, recIn: rec, recOut: rec + len };
+    const row = { index, event: e, shot: clipShot(byId.get(String(e.shot_id)), e), in: e.in, out: e.out, len, recIn: rec, recOut: rec + len };
     rec += len;
     return row;
   });
