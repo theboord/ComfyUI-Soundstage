@@ -33,19 +33,13 @@ export const EXAMPLES = {
   lake: { scene: "lake", shot: "boat_a", label: "Lake: speedboat run" },
   open_water: { scene: "lake", shot: "boat_a", label: "Lake: speedboat run" },
   burning_building: { scene: "fire", shot: "sc_1__shot_1", label: "Burning building" },
-  airplane_cabin: { scene: "airplane", shot: "sc_1__shot_1", label: "Airplane cabin" },
-  train_car: { scene: "train", shot: "sc_1__shot_1", label: "Train carriage" },
 };
 // The street at night: a car chase when the scene has a vehicle, else the chase's crane wide of the street.
 export const STREET_CAR = { scene: "chase", shot: "tracking", label: "Night car chase" };
 export const STREET = { scene: "chase", shot: "crane", label: "Night car chase" };
-// No recorded render on a set like this one (an interior, a platform, a runway...): the nearest in kind.
-export const NEAREST = {
-  interior: { scene: "train", shot: "sc_1__shot_1", label: "Train carriage" },
-  train_station: { scene: "train", shot: "sc_1__shot_1", label: "Train carriage" },
-  runway: { scene: "airplane", shot: "sc_1__shot_1", label: "Airplane cabin" },
-  above_clouds: { scene: "airplane", shot: "sc_1__shot_1", label: "Airplane cabin" },
-};
+// No recorded render on a set like this one (an interior, a platform, a runway...): the street default. The old
+// airplane and train renders were retired from the demo (3 Nov), so nothing is nearer in kind.
+export const NEAREST = {};
 const VEHICLE = /^(car|truck|police_car|sports_car|hatchback|motorcycle|bicycle)$/;
 
 /** The stage (stage.toJSON()) -> {scene, shot, label, set, exact}: the recorded example to replay for a shot that has none. */
