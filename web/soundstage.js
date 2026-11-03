@@ -61,6 +61,7 @@ import { mountPresets } from "./ui/presets.mjs";
 import { mountPerformance } from "./performance/performance.mjs";
 import { attachTakeChecks } from "./takecheck/takecheck.mjs";
 import { attachOneClick } from "./oneclick/oneclick.mjs";
+import { attachPasses } from "./passes/passes.mjs";
 import "./oneclick/loop.mjs"; import "./oneclick/reshoot.mjs"; import "./oneclick/opencomfy.mjs";   // ✦ Track B one-clicks
 import { listenPhoneClips, landPhoneClip, openPerformanceWith } from "./oneclick/handoff.mjs";
 import { queueSummary, stageInputsByRef, resolveStageValue, stageRefOf } from "./ui/queue.mjs";
@@ -908,6 +909,9 @@ function createStageWidget(node, inputName) {
       const t = d.output?.text;
       const folder = Array.isArray(t) ? t.flat().find((x) => typeof x === "string") : t;
       if (folder) offerLayerPack(folder);
+      // Remember which shot the pack belongs to (the Passes viewer opens its mattes from that shot's takes).
+      const psid = promptShot[d.prompt_id], pname = folder && String(folder).split(/[\\/]/).filter(Boolean).pop();
+      if (psid && pname && pipeline) { (pipeline.chosen[psid] ||= {}).layerpack = pname; pipeline._saveChosen?.(); }
       return;
     }
     const m = /^Rung\s+(\d)/.exec(src?.title || "");
@@ -1490,6 +1494,7 @@ function createStageWidget(node, inputName) {
       compare = mountCompare({ stage, host: view, videoUrl: api.apiURL(`/view?filename=${encodeURIComponent(video)}&type=input`),
         onFrame: () => afterTimeChange(), onStatus: say, lockCamera: lockCameraToFrame0 });
       compare.onDestroy = () => { compare = null; };
+      try { compare.row.insertBefore(passes.v2sButton(), compare.row.lastElementChild); } catch { /* bar not built */ }
       const sh = stage.toJSON().shot, keys = stage.activeShot()?.camera_keys?.length || 0;
       const secsTxt = `${(sh.frames / sh.fps).toFixed(1)} s`;
       const things = all.filter((a) => !a.mocap && !a.scan && !a.set_piece && !before.actors?.some((b) => b.id === a.id)).length;
@@ -1509,6 +1514,7 @@ function createStageWidget(node, inputName) {
       job.done(flaws.some((x) => x.level === "red") ? "Rebuilt, with problems to check" : "Your clip is now a 3D set", summary, [
         ...(performers.length ? [{ key: "play", label: "Play the take", icon: "play", go: true, close: false, run: () => playTake() }] : []),
         { key: "compare", label: "Identical? Compare", icon: "scan-eye", close: false, run: () => { compare?.setMode("wipe"); compare?.scoreAll(); } },
+        { key: "passes", label: "Passes", icon: "layers", close: false, run: () => passes?.openV2s() },
         ...(adding ? [] : (before.actors || []).length ? [{ key: "undo", label: "Undo: bring the old set back", icon: "undo-2", run: () => { compare?.destroy(); loadScene(stage, before); afterTimeChange(); } }] : []),
         { key: "frame", label: "Shoot it → Frame", icon: "image", go: !performers.length, run: () => pipeline?.go("frame") },
       ], notes, flaws);
@@ -2437,6 +2443,10 @@ function createStageWidget(node, inputName) {
     showTake: (sid, take) => showTake({ id: sid, name: (stage.toJSON().shots || []).find((x) => x.id === sid)?.name || sid }, take),
     takesOf: (sh) => takesFor(sh, takeRenders(sh.id)), refresh: () => { try { dailies?.refresh(); } catch { /* bin not built */ } } });
   node.ssOneClick = oneClick;
+  // Passes (web/passes): judge the matte, pose, talking and depth of a take by eye. After One-click: it adds to the Ladder bar.
+  var passes = attachPasses({ api, stage, pipeline, ladder, say: (m) => (status.textContent = m),
+    v2sSource: () => (compare?.video?.src ? { url: compare.video.src, start: compare.start || 0 } : null) });
+  node.ssPasses = passes;
   node.ssPipeline = pipeline;
   node.ssCut = cut;
   node.ssLadder = ladder;
@@ -2800,7 +2810,7 @@ function createStageWidget(node, inputName) {
     getSeconds: () => { const sh = stage.toJSON().shot || {}; return (sh.frames || 97) / (sh.fps || 24); },
     onStatus: (m) => (status.textContent = m),
     decorateTake: (host, take, shot, where) => takeChecks?.decorate(host, take, shot, where),
-    oneClickTake: (host, take, shot, where) => oneClick?.decorate(host, take, shot, where),
+    oneClickTake: (host, take, shot, where) => { oneClick?.decorate(host, take, shot, where); passes?.decorate(host, take, shot, where); },
   });
 
   node.ssDailies = { get bin() { return dailies; }, get lined() { return dailies?.lined || null; }, openScriptSync: (id) => openScriptSync(id) };   // scripts and tests

@@ -173,6 +173,8 @@ def build(web, rev, out, media):
     manifest = json.load(open(os.path.join(HERE, "media.json")))
     for m in manifest.get("encode", []):
         src = os.path.expanduser(m["src"])
+        if not os.path.isabs(src):   # a file kept in this repo (tools/tryit/canned/…)
+            src = os.path.join(REPO, src)
         if PRIVATE.search(src):
             sys.exit(f"refusing private source {src}")
         dst = os.path.join(media, "r", m["out"])

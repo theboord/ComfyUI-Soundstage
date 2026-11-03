@@ -74,6 +74,7 @@ picks skip it.
 | `scenes/*.json` | The demo scenes: the stage, node properties (`ss_renders`, `ss_script`, `ss_cut`), widgets, the precomputed Look and Advisor, and `candidates` (the ④ Frame variations the replay cycles through). |
 | `pack_v2s.py` | Packs one real Video → 3D run (a `tools/v2s_bench/devrun.py` result folder and its set GLB) into the media cache as `r/canned/v2s_run.json`. Rebuild in the demo replays it: the progress card walks the run's measured steps in 9 s, then the App loads the real result scene through its own code and opens the Identical? bar. Only the demo clip replays; a visitor's own clip gets the full-install note. |
 | `make_scenes.mjs` | Remakes the generated scenes with the real App in a hidden Chrome: `drycreek`, `stunt`, `physics` and the seven new sets. The new sets are set up from sluglines. Run it against a local build, then build again. `ONLY=stunt,fire` limits it. |
+| `canned/m_perf_asset.json` | The Milestone 25 performance asset with its file references pointed at the demo media (`m_perf_*`), so the Passes viewer opens its Pose and Talking tabs on *Three in a car* › *Driver profile*. `media.json` copies it into the cache (an encode `src` without `~` is relative to the repo). |
 | `media.json` | Clips and stills encoded into the media cache from `share/`. |
 | `published.json` | The sha256 of every live file, written by `--mark-published`. |
 | `test_tryit.mjs` | The click-through test. |
