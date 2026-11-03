@@ -165,6 +165,7 @@ const CSS = `
 .ss-editoffer button:disabled { opacity:.45; cursor:default; }
 .ss-editoffer .why { color:#ffb340; font-size:12px; }
 .ss-pipeview .cand.ss-fromcut { border-color:#e39a40 !important; }
+.ss-editnote { font-size:12px; line-height:1.35; color:#f0c48a; border-left:3px solid #e39a40; padding:2px 0 2px 8px; }
 .ss-pipeview .cand .ss-fromcut-tag { position:absolute; left:6px; top:6px; background:#e39a40; color:#1a1420; border-radius:999px; padding:1px 8px; font-size:11px; font-weight:700; }
 `;
 
@@ -319,6 +320,14 @@ export function attachEditLink(host) {
     return fr;
   }
 
+  // A one-line note in the step's own status area (as Review's Redo does), plus the App's status line.
+  const stepNote = el("div", "ss-editnote");
+  function note(step, text) {
+    say(text);
+    const anchor = (step === "frame" ? pipeline.f : step === "motion" ? pipeline.m : null)?.status;
+    if (anchor?.parentNode) { stepNote.textContent = `From the cut · ${text}`; anchor.parentNode.insertBefore(stepNote, anchor); } else stepNote.remove();
+  }
+
   function rippleTo(l, { paint = false, rerun = false } = {}) {
     const sid = l.shot.id, r = l.record;
     pipeline.go("motion");
@@ -335,7 +344,7 @@ export function attachEditLink(host) {
     if (rerun && r?.edited) pipeline.ripple?._store?.({ edited: { ref: r.edited, url: urlOf(r.edited), for: ref }, strength: r.strength, prompt: r.prompt || "" });
     pipeline.ripple?.setMode?.("ripple");
     if (paint) pipeline.ripple?.editFirstFrame?.();
-    say(rerun ? `${shotName(l)}: the Ripple take again, from its record (clip, edited frame, strength, prompt). “Ripple it” runs it.`
+    note("motion", rerun ? `${shotName(l)}: the Ripple take again, from its record (clip, edited frame, strength, prompt). “Ripple it” runs it.`
       : paint ? `${shotName(l)}: frame 1 of this clip is open in Paint Studio. “Save to reference”, then “Ripple it” carries it through the clip.`
         : `${shotName(l)}: this clip is the Ripple source${listed ? "" : " (through the import slot: it replaces the shot's imported clip)"}. Edit its first frame, then Ripple it. Ripple starts at frame 0 of the clip.`);
   }
@@ -373,7 +382,7 @@ export function attachEditLink(host) {
         trip.marked = EL.fileKey(fr.url);
       }
       try { pipeline._drawCandidates(); } catch { /* frame view not built */ }
-      say(fr?.url ? `${shotName(l)}: ${fr.exact ? "the frame this take started from" : "the shot's chosen frame"} is outlined “From the cut”. “Use this frame” stays your click.${fr.why ? ` ${fr.why}` : ""}`
+      note("frame", fr?.url ? `${shotName(l)}: ${fr.exact ? "the frame this take started from" : "the shot's chosen frame"} is outlined “From the cut”. “Use this frame” stays your click.${fr.why ? ` ${fr.why}` : ""}`
         : `${shotName(l)}: ${MISSING.frame}`);
     },
     async motion(l) {
@@ -382,7 +391,7 @@ export function attachEditLink(host) {
         if (via === "ripple") return rippleTo(l, { rerun: true });
         pipeline.go("motion");
         pipeline.ripple?.setMode?.("pose");
-        say(`${shotName(l)}: Pose follow again (the record keeps its prompt: ${l.record?.prompt || "none"}). Preview / Render below run it.`);
+        note("motion", `${shotName(l)}: Pose follow again (the record keeps its prompt: ${l.record?.prompt || "none"}). Preview / Render below run it.`);
         return;
       }
       if (via === "oneclick" && l.record) return oneClickOn(l, l.record.oneclick?.label || "", { ref: l.record.oneclick?.from || null });
@@ -408,7 +417,7 @@ export function attachEditLink(host) {
         if (want && [...pipeline.m.engine.options].some((o) => o.value === want)) { pipeline.m.engine.value = want; pipeline._applyVideo?.(); }
       }
       const what = l.type === "look" ? "Animate this frame" : l.type === "clay" ? "Render it" : "Re-generate";
-      say(s ? `${shotName(l)}: ${what} with this take's settings (${s.preset || "Final"}${s.seed != null ? `, seed ${s.seed}` : ""}${s.adherence ? `, ${s.adherence}` : ""}). ` +
+      note("motion", s ? `${shotName(l)}: ${what} with this take's settings (${s.preset || "Final"}${s.seed != null ? `, seed ${s.seed}` : ""}${s.adherence ? `, ${s.adherence}` : ""}). ` +
         "The same seed gives the same take only with the same frame, Look and stage." : `${shotName(l)}: ${what}. ${why || "The shot's current settings."}`);
     },
     ripple: (l) => rippleTo(l),
@@ -469,6 +478,7 @@ export function attachEditLink(host) {
     pill.hidden = true;
     offer.hidden = true;
     offer.replaceChildren();
+    stepNote.remove();
     label.textContent = "↩ Back to the cut";
     try { if (had) markTiles(); } catch { /* */ }
     if (had && !quiet) say("Trip ended: the clip stays on the take it was held on (its menu: Follow the latest render).");
@@ -529,6 +539,8 @@ export function attachEditLink(host) {
     if (!trip) { offer.hidden = true; return; }
     const name = shotName(trip.link), list = trip.landed || [];
     const rows = [];
+    // ✦ and Reshoot run while you stay in the Cut: the offer shows when their take lands
+    if (!list.length && (trip.where === "reshoot" || trip.where === "oneclick")) { offer.hidden = true; return; }
     if (!list.length) {
       const row = el("div", "row");
       row.append(el("span", "", `Nothing new for ${name} yet.`),
