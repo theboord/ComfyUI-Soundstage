@@ -62,6 +62,9 @@ Not in the demo at all (each one says "available in the full install"): new rend
 
 <p align="center"><img src="docs/media/readme_v4/card_drive.gif" width="880" alt="Drive anything, a live stage capture: select a car, person, horse or boat and press D. REC keys the take; Drive takes over from keys."></p>
 
+<p align="center"><img src="docs/media/readme_v4/card_drive_horse.gif" width="880" alt="Drive anything, a live stage capture: walk up to a horse, swing into the saddle and ride it from a canter to a gallop with the keyboard."></p>
+<p align="center"><sub>Same Drive mode on a horse: walk up, mount, ride it into a gallop. Planes, trains, boats and birds fly or move the same way (Q / E up and down).</sub></p>
+
 <p align="center"><img src="docs/media/readme_v4/card_v2s.gif" width="880" alt="Video to 3D (early version). Left, the source clip of a street dancer; right, a reshoot from the rebuilt 3D stage. Drop a clip and the set, camera and performer come back in 3D; Regenerate or Fix this object."></p>
 
 <p align="center"><img src="docs/media/readme_v4/card_passes.png" width="880" alt="Passes: check any take's depth, pose, talking and alpha matte, wiped against the picture. Shown: the depth pass of a Video to 3D result."></p>
