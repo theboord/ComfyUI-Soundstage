@@ -9,6 +9,7 @@ POST /soundstage/oneclick/result {id, result}           the App's answer to an a
 from __future__ import annotations
 
 import asyncio
+import math
 import uuid
 
 _REGISTERED = False
@@ -49,12 +50,27 @@ def register(routes=None, send=None) -> bool:
     async def catalog(request):
         return web.json_response({"ids": C.describe(), "groups": list(C.GROUPS)})
 
-    @routes.post("/soundstage/oneclick/ask")
-    async def ask(request):
+    async def _body(request):
+        """The JSON object sent ({} when there is no JSON body), or None for JSON that isn't an object (a list or a
+        string answered 500)."""
         try:
             b = await request.json()
         except Exception:  # noqa: BLE001
-            b = {}
+            return {}
+        return b if isinstance(b, dict) else None
+
+    def _timeout(value, kind) -> float:
+        try:
+            t = float(value) if value not in (None, "") else TIMEOUT[kind]
+        except (TypeError, ValueError):
+            t = TIMEOUT[kind]
+        return t if math.isfinite(t) and t > 0 else TIMEOUT[kind]
+
+    @routes.post("/soundstage/oneclick/ask")
+    async def ask(request):
+        b = await _body(request)
+        if b is None:
+            return web.json_response({"error": "send a JSON object: {kind, oneclick?, shot?, take?, opts?}"}, status=400)
         kind = str(b.get("kind") or "list")
         if kind not in TIMEOUT:
             return web.json_response({"error": "kind must be list, propose or run"}, status=400)
@@ -69,7 +85,7 @@ def register(routes=None, send=None) -> bool:
         try:
             send(EVENT, {"id": rid, "kind": kind, "oneclick": oc, "shot": b.get("shot"), "take": b.get("take"),
                          "opts": b.get("opts") if isinstance(b.get("opts"), dict) else {}}, _app_sid())
-            res = await asyncio.wait_for(fut, float(b.get("timeout") or TIMEOUT[kind]))
+            res = await asyncio.wait_for(fut, _timeout(b.get("timeout"), kind))
         except asyncio.TimeoutError:
             return web.json_response({"error": "the App didn't answer (is the Soundstage App open in a browser?)"}, status=504)
         finally:
@@ -78,10 +94,7 @@ def register(routes=None, send=None) -> bool:
 
     @routes.post("/soundstage/oneclick/result")
     async def result(request):
-        try:
-            b = await request.json()
-        except Exception:  # noqa: BLE001
-            b = {}
+        b = await _body(request) or {}
         fut = WAITING.get(str(b.get("id", "")))
         if fut and not fut.done():
             fut.set_result(b.get("result") if isinstance(b.get("result"), dict) else {"result": b.get("result")})

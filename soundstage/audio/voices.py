@@ -32,7 +32,8 @@ def voice_dir(user_dir):
 
 
 def safe_name(name):
-    n = re.sub(r"[^A-Za-z0-9 _-]+", "", str(name or "")).strip().replace(" ", "_")
+    # a run of spaces is one "_", as the App's voiceNameFor (web/performance/performance.mjs): "Mara  Voss" -> Mara_Voss
+    n = re.sub(r" +", "_", re.sub(r"[^A-Za-z0-9 _-]+", "", str(name or "")).strip())
     if not n:
         raise VoiceError("Give the voice a name (letters, numbers, spaces, - and _).")
     return n[:48]
@@ -88,7 +89,8 @@ def resolve_name(user_dir, name):
     def character(h):
         try:
             with open(os.path.join(d, h + ".json"), encoding="utf-8") as f:
-                return safe_name(json.load(f).get("character") or h).upper()
+                rec = json.load(f)
+            return safe_name((rec.get("character") if isinstance(rec, dict) else None) or h).upper()
         except (OSError, ValueError, VoiceError):
             return h.upper()
     chars = {h: character(h) for h in have}
@@ -111,10 +113,18 @@ def load_voice(user_dir, name):
     if not os.path.exists(p):
         have = ", ".join(list_voices(user_dir)) or "none yet"
         raise VoiceError(f"No saved voice '{n}'. Saved voices: {have}.")
-    v = json.load(open(p, encoding="utf-8"))
-    if not (v.get("consent") or {}).get("confirmed"):
+    with open(p, encoding="utf-8") as f:
+        v = json.load(f)
+    if not isinstance(v, dict):
+        raise VoiceError(f"Voice '{n}': {n}.json is not a voice record.")
+    if not (isinstance(v.get("consent"), dict) and v["consent"].get("confirmed")):
         raise VoiceError(f"Voice '{n}' has no consent record; re-create it with the consent box ticked.")
-    v["path"] = os.path.join(d, v["reference"])
+    ref = v.get("reference")
+    # the recording sits next to its record: a reference with a folder in it ("../x.wav") is never read
+    if not isinstance(ref, str) or not ref or os.path.basename(ref.replace("\\", "/")) != ref:
+        raise VoiceError(f"Voice '{n}': its reference recording is not a file in the voices folder.")
+    v.setdefault("name", n)
+    v["path"] = os.path.join(d, ref)
     if not os.path.exists(v["path"]):
         raise VoiceError(f"Voice '{n}': reference file {v['reference']} is missing.")
     return v

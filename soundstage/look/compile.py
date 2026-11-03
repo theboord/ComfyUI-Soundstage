@@ -71,8 +71,12 @@ def look_context(scene: dict) -> dict:
     None); and how much the camera smears the background, at frame 1 (pan_still) and over the shot (pan_motion)."""
     f1 = S.frame1_facts(scene)
     frames, _ = S.frame_range(scene)
+    # A camera hard-mounted on the car never pans with it: the motion prompt says it "stays locked to the car" and
+    # the ride words say how the street whips round, so no "as the camera pans with the car" on top.
+    rides = S.vehicle_camera(scene) is not None
     return {"view": S.look_view(scene, _in_shot_ids(scene, f1)), "surface": S.look_surface(scene),
-            "pan_still": S.camera_blur(scene, 0, min(12, frames - 1)), "pan_motion": S.camera_blur(scene)}
+            "pan_still": "locked" if rides else S.camera_blur(scene, 0, min(12, frames - 1)),
+            "pan_motion": "locked" if rides else S.camera_blur(scene)}
 
 
 def _car_layers(o: dict, ctx: dict | None) -> dict:
@@ -287,7 +291,9 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         REAL_PEOPLE if n and real else "",
         _only_blocking(n, sum(1 for e in f1["others"] if e.get("rig") == "vehicle")) if count and not lock else
         ("nobody else in the car, nobody else in the background" if count and vcam else ""),
-        S.ANGLE_STILL[f1["angle"]] if f1["angle"] != "eye" else "eye-level camera",
+        # The bumper and over-the-tyre mounts lead with "low camera hard-mounted": never "eye-level" after that.
+        S.ANGLE_STILL[f1["angle"]] if f1["angle"] != "eye" else
+        "low angle" if (vcam or {}).get("where") in ("bumper", "wheel") else "eye-level camera",
         f"{round(f1['focal_mm'])}mm lens",
         c.get("lens", {}).get("still", ""),
         c.get("aperture", {}).get("still", ""),
@@ -482,7 +488,7 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
     props = [p for p in f1["props"] if p["kind"] == "building"]
     set_s = _cap(f"{props[0]['word']} {'fills the background' if props[0]['where'] == 'filling the background' else 'stands ' + props[0]['where']}") + "." if props else ""
     desc = (look.get("description") or "").strip().rstrip(".")
-    lens_s = _join([f"a {f1['lens_band']}", c.get("lens", {}).get("motion", ""),
+    lens_s = _join([S._article(f1['lens_band']), c.get("lens", {}).get("motion", ""),
                     c.get("aperture", {}).get("motion", "")])
     look_s = _join([
         c.get("camera_body", {}).get("motion", ""),

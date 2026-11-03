@@ -53,6 +53,9 @@ ALLOW = [
     ("GET", re.compile(r"^/favicon\.ico$")),
 ]
 ALLOW_METHODS = {"GET", "HEAD", "POST"}
+CTL = re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")          # control characters other than HTAB
+TOKEN = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+\Z")    # an HTTP token (method, header name)
+TARGET = re.compile(r"[\x21-\x7e]+\Z")                 # a request target: visible ASCII only
 
 
 # ---------------------------------------------------------------- pure helpers (unit-tested: tests/test_vcam_viewfinder.py; end to end: tests/test_vcam_bridge.py)
@@ -64,8 +67,12 @@ def parse_head(raw):
     except Exception:
         return None
     lines = text.split("\r\n")
+    # A bare LF or CR (or any other control character) inside the head is refused: the bridge reads lines on CRLF
+    # only, so a server that also accepts a lone LF (RFC 9112 lets it) would see a second request hidden in one header.
+    if any(CTL.search(ln) for ln in lines):
+        return None
     parts = lines[0].split(" ")
-    if len(parts) != 3 or not parts[2].startswith("HTTP/1."):
+    if len(parts) != 3 or not parts[2].startswith("HTTP/1.") or not TOKEN.match(parts[0]):
         return None
     headers = []
     for ln in lines[1:]:
@@ -74,7 +81,9 @@ def parse_head(raw):
         if ":" not in ln:
             return None
         k, v = ln.split(":", 1)
-        headers.append((k.strip(), v.strip()))
+        if not TOKEN.match(k):            # "Transfer-Encoding : chunked", a folded line: refused, not guessed at
+            return None
+        headers.append((k, v.strip()))
     return parts[0].upper(), parts[1], parts[2], headers
 
 
@@ -108,6 +117,8 @@ def decide(method, target, headers, token):
     """What to do with a request: ("pass", None) | ("pair", clean_target) | ("deny", why) | ("forbid", why)."""
     if method not in ALLOW_METHODS:
         return "forbid", "method"
+    if not TARGET.match(target):          # urlsplit drops tabs and newlines: check what is forwarded, not a cleaned copy
+        return "forbid", "target"
     url = urllib.parse.urlsplit(target)
     if url.scheme or url.netloc or not url.path.startswith("/") or ".." in url.path or "\\" in url.path:
         return "forbid", "target"
@@ -333,7 +344,7 @@ def body_length(headers, upgrade):
     if len(lengths) != 1:
         return None, "content-length"
     v = lengths.pop()
-    if not v.isdigit() or len(v) > 12:
+    if not re.fullmatch(r"[0-9]{1,12}", v):     # str.isdigit() also says yes to "²", which int() then refuses
         return None, "content-length"
     if upgrade and int(v):
         return None, "body on upgrade"
@@ -365,7 +376,7 @@ def parse_response_head(raw):
     except Exception:
         return None
     parts = lines[0].split(" ", 2)
-    if len(parts) < 2 or not parts[0].startswith("HTTP/1.") or not parts[1].isdigit() or len(parts[1]) != 3:
+    if len(parts) < 2 or not parts[0].startswith("HTTP/1.") or not re.fullmatch(r"[0-9]{3}", parts[1]):
         return None
     hdrs = []
     for ln in lines[1:]:
