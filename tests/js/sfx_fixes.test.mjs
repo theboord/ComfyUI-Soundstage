@@ -81,3 +81,21 @@ test("blocker 2b: Reset to before keeps edits made after the blast (name, colour
   assert.equal(JSON.stringify(crate().keys), keys0, "the crate is back on its authored keys");
   assert.ok(!st.state.physics.events?.length, "no blast hits left");
 });
+
+for (const how of ["disarm", "delete"]) {
+  test(`blocker 3: ${how === "disarm" ? "disarming" : "deleting"} an explosion puts the set back as it was before the blast`, () => {
+    const st = headless(yard());
+    const before = nonRig(st);
+    const rig = st.addSfxRig("explosion", { position: [0, 0, 0], sfx: { power: 1.5 } });
+    assert.notEqual(nonRig(st), before, "the blast changed the set");
+    const n = st._hist.length;
+    if (how === "disarm") st.setSfx(rig.id, { armed: false });
+    else { st.selected = rig.id; st.removeSelected(); }
+    assert.equal(nonRig(st), before, "every object back on its authored keys");
+    assert.ok(!st.state.physics.events?.length, "no blast hits left");
+    assert.equal(st._hist.length, n + 1, "one Undo step");
+    if (how === "delete") assert.ok(!st.state.actors.some((a) => a.id === rig.id), "the rig is gone");
+    assert.ok(st.undo());
+    assert.ok(st.state.actors.find((a) => a.id === "crate").physics?.baked, "Undo brings the blast back");
+  });
+}

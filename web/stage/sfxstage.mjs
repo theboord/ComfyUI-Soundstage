@@ -225,7 +225,10 @@ export function installSfx(Stage, deps) {
     const a = this.state.actors.find((x) => x.id === id && X.isSfxRig(x));
     if (!a) return null;
     const t = patch.trigger ? { ...(a.sfx?.trigger || {}), ...patch.trigger } : a.sfx?.trigger;
+    const wasLive = X.sfxOf(a).armed && X.SFX_KINDS[X.sfxKindOf(a)]?.physical;
     a.sfx = { ...(a.sfx || {}), ...patch, ...(t ? { trigger: t } : {}) };
+    // Disarming an explosion is Reset to before for it: the set it blasted goes back (one Undo step, its settings kept).
+    if (wasLive && !X.sfxOf(a).armed) { this.sfxReset([a.id]); return X.sfxOf(a); }
     this._sfxCache = null;
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
@@ -302,6 +305,18 @@ export function installSfx(Stage, deps) {
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
     return { ok: true, message: `Reset to before: ${rigs.map((a) => a.name).join(", ")} disarmed; every object it touched is back as it was.` };
+  };
+  /** Deleting an armed explosion takes its blast with it: the set is reset to before it, in the same Undo step. */
+  const removeSelected0 = P.removeSelected;
+  P.removeSelected = function () {
+    const a = this.state.actors.find((x) => x.id === this.selected && X.isSfxRig(x));
+    if (a && X.sfxOf(a).armed && X.SFX_KINDS[X.sfxKindOf(a)]?.physical) {
+      const mute = this._muteRecord, sel = this.selected;
+      this._muteRecord = true;
+      try { this.sfxReset([a.id]); } finally { this._muteRecord = mute; }
+      this.selected = sel;
+    }
+    return removeSelected0.call(this);
   };
   /** Reset to before, from an affected object: every rig whose blast, fire or wound touched it. */
   P.sfxResetObject = function (id) {
