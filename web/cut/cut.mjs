@@ -12,6 +12,7 @@ import { openPopover } from "../ui/popover.mjs";
 import { sourceLine } from "../ui/sourcespec.mjs";
 import { impactClips, withImpactClips } from "./impactsfx.mjs";
 import * as GFX from "./gfx.mjs";
+import { RtPlayer, planAt, viewerWidth, HOLD_FRAMES, LEAD_S, LEAD_PENDING_S } from "./rtengine.mjs";
 
 /** A transport button's face: a Lucide icon (plus an optional speed like "2×"); the title names it for screen readers. */
 const face = (b, name, extra = "") => {
@@ -22,6 +23,8 @@ const face = (b, name, extra = "") => {
 };
 
 export const RUNG_COLORS = { clay: "#5b6475", look: "#3d6ea8", draft: "#7652b3", final: "#3c9561" };
+export const RUNG_LABEL = { clay: "Clay", look: "Look", draft: "Draft", final: "Final" };
+const TAKE_RUNG = { final: "final", hollywood: "final", draft: "draft", look: "look" };   // a take's rung as the badges show it
 const ACCENT = "#e39a40";
 const RULER_H = 22;
 const HEADER_W = 92; // track header column (V2, V1, A1 Dialogue M S ...)
@@ -739,33 +742,37 @@ export class CutPanel {
     this._inspect();
   }
 
-  /** A window's picture for the viewer: that rung's media (its own element), live clay for clay / auto with no render. */
-  _gfxSrc(spec, lf) {
+  /** A window's media: that rung's (auto: final > draft > look) {url, still}, or null. */
+  _gfxUrl(spec, shot) {
+    if (!spec || !shot) return null;
+    const rung = spec.rung === "auto" ? ["final", "draft", "look"].find((r) => shot.renders[r]) : spec.rung;
+    const url = rung && shot.renders[rung];
+    return url ? { url, still: rung === "look" || /\.(png|jpe?g|webp)(\?|$)/i.test(url) } : null;
+  }
+
+  /** A window's picture for the viewer: that rung's take playing natively alongside V1 (the real-time engine: no seek
+   *  per frame), its still, or live clay for clay / auto with no render. id names the window; held: a frozen frame. */
+  _gfxSrc(spec, lf, id = null, held = false) {
     if (!spec) return null;
     const shot = this.project.shots.find((x) => x.id === spec.shot_id);
     if (!shot) return null;
     const f = TL.clamp(spec.in + Math.max(0, Math.floor(lf)), 0, shot.frames - 1);
-    const url = spec.rung === "auto" ? ["final", "draft", "look"].map((r) => shot.renders[r]).find(Boolean) : shot.renders[spec.rung];
-    if (!url) return spec.rung === "auto" || spec.rung === "clay" ? this._clay(shot, f) : null;
-    let m = this.gfxMedia.get(url);
-    if (!m) {
-      const still = /\.(png|jpe?g|webp)(\?|$)/i.test(url) || spec.rung === "look";
-      const el = still ? new Image() : document.createElement("video");
-      m = { kind: still ? "image" : "video", el, ok: null };
-      if (still) { el.onload = () => { m.ok = true; this.requestDraw(); }; el.onerror = () => { m.ok = false; }; }
-      else {
-        el.muted = true; el.preload = "auto"; el.playsInline = true;
-        el.addEventListener("loadeddata", () => { m.ok = true; this.requestDraw(); });
-        el.addEventListener("seeked", () => this.requestDraw());
-        el.addEventListener("error", () => { m.ok = false; });
-      }
-      el.src = url;
-      this.gfxMedia.set(url, m);
+    const w = this._gfxUrl(spec, shot);
+    if (!w) return spec.rung === "auto" || spec.rung === "clay" ? this._clay(shot, f) : null;
+    if (!w.still) {
+      const pos = Math.min(spec.in + Math.max(0, lf + (held ? 0 : this.frame - Math.floor(this.frame))), shot.frames - 1);
+      return this._rt.want(id ?? `g:${spec.shot_id}:${spec.in}`, w.url, { role: "active", src: pos, lo: spec.in, still: held || pos >= shot.frames - 1, stale: true, silent: true });
     }
-    if (m.kind === "image") return m.ok ? m.el : null;
-    const v = m.el, want = (f + 0.5) / this.rate;
-    if (!v.seeking && Math.abs(v.currentTime - want) * this.rate > 0.5) v.currentTime = want;
-    return v.readyState >= 2 ? v : null;
+    let m = this.gfxMedia.get(w.url);
+    if (!m) {
+      const el = new Image();
+      m = { kind: "image", el, ok: null };
+      el.onload = () => { m.ok = true; this.requestDraw(); };
+      el.onerror = () => { m.ok = false; };
+      el.src = w.url;
+      this.gfxMedia.set(w.url, m);
+    }
+    return m.ok ? m.el : null;
   }
 
   /** V3 graphics at frame f over the viewer, as the render draws them (the selected one's box dashed). */
@@ -773,7 +780,7 @@ export class CutPanel {
     for (const { g, lf } of GFX.graphicsAt(this.project, f)) {
       const ops = GFX.stateAt(g, lf);
       const still = g.template === "dual" && g.variant === "stack";
-      GFX.paint(ctx, this.pic, ops, { a: this._gfxSrc(g.a, lf), b: this._gfxSrc(g.b, still ? 0 : lf) }, W, H);
+      GFX.paint(ctx, this.pic, ops, { a: this._gfxSrc(g.a, lf, `g:${g.id}:a`), b: this._gfxSrc(g.b, still ? 0 : lf, `g:${g.id}:b`, still) }, W, H);
     }
     const sel = this.gfxSel && (this.project.graphics || []).find((g) => g.id === this.gfxSel);
     if (sel && f >= sel.start_frame && f < sel.start_frame + sel.frames) {
@@ -979,6 +986,7 @@ export class CutPanel {
     this._ro?.disconnect();
     for (const m of this.media.values()) this._release(m);
     this.media.clear();
+    this.__rt?.dispose();
     this.root.remove();
   }
 
@@ -1380,6 +1388,7 @@ export class CutPanel {
     this.sel = Math.min(this.sel, this.project.cut.length - 1);
     if (this.aSel && !this.project.audio.some((a) => a.id === this.aSel)) this.aSel = null;
     this.frame = Math.min(this.frame, Math.max(0, this.seqLen - 1));
+    this._syncMedia();   // every clip's source again: a new take plays at once, a dropped one is released
     if (this.speed === 1) this._audioStart(this.frame);
     this._applyTrackGains();
     this._inspect();
@@ -1399,53 +1408,45 @@ export class CutPanel {
 
   // ------------------------------------------------------------------ media
 
+  /** The real-time player (rtengine.mjs): the <video> pool, held to the clock, its pre-roll and the proxies. */
+  get _rt() {
+    return (this.__rt ||= new RtPlayer({
+      onChange: () => this.requestDraw(),
+      onFail: () => { this._syncMedia(); this.requestDraw(); },   // a take that won't load: its clips fall down the ladder
+      need: () => viewerWidth(this.viewer?.clientWidth, globalThis.devicePixelRatio || 1, this.viewer?.width || 960),
+    }));
+  }
+
+  /** After every edit: the Look stills of the shots in the cut (and their V3 windows) as <img>, and every take a clip or
+   *  a window plays as an engine record. Nothing loads a video until a clip needs it (rtengine.mjs). */
   _syncMedia() {
-    const want = new Set();
-    for (const s of this.project.shots) {
-      for (const rung of ["final", "draft", "look"]) {
-        const url = s.renders[rung];
-        if (!url) continue;
-        want.add(url);
-        if (this.media.has(url)) continue;
-        if (rung === "look") {
-          const img = new Image();
-          const m = { kind: "image", el: img, ok: null };
-          img.onload = () => { m.ok = true; this.thumbs.clear(); this.requestDraw(); };
-          img.onerror = () => { m.ok = false; this.requestDraw(); };
-          img.src = url;
-          this.media.set(url, m);
-        } else {
-          const v = document.createElement("video");
-          const m = { kind: "video", el: v, ok: null };
-          v.muted = true;
-          v.preload = "auto";
-          v.playsInline = true;
-          v.addEventListener("loadeddata", () => { m.ok = true; this.requestDraw(); });
-          // Servers without HTTP Range support make the video unseekable: reload it from memory.
-          v.addEventListener("loadedmetadata", () => {
-            const sk = v.seekable;
-            if (m.blob || (sk.length && sk.end(sk.length - 1) >= v.duration - 0.05)) return;
-            m.blob = "pending";
-            fetch(url).then((r) => (r.ok ? r.blob() : Promise.reject(r.status))).then((b) => {
-              if (this.media.get(url) !== m) return;
-              m.blob = URL.createObjectURL(b);
-              v.src = m.blob;
-            }).catch(() => {});
-          });
-          v.addEventListener("seeked", () => this.requestDraw());
-          // A seek asked for before the data arrived can land on 0: look again once it has.
-          v.addEventListener("canplaythrough", () => { if (!this.speed) this.requestDraw(); });
-          v.addEventListener("error", () => { m.ok = false; this.requestDraw(); });
-          v.src = url;
-          this.media.set(url, m);
-        }
+    const imgs = new Set(), vids = new Set(), shots = new Map(this.project.shots.map((s) => [s.id, s]));
+    const add = (s) => (s.kind === "video" ? vids : s.kind === "image" ? imgs : null)?.add(s.url);
+    for (const row of TL.layout(this.project)) {
+      add(this._source(row.shot, row.event));
+      if (row.shot.renders?.look) imgs.add(row.shot.renders.look);   // the timeline's filmstrip frame
+    }
+    for (const g of this.project.graphics || []) {
+      for (const spec of [g.a, g.b]) {
+        const w = this._gfxUrl(spec, shots.get(spec?.shot_id));
+        if (w && !w.still) vids.add(w.url);
       }
     }
+    for (const url of imgs) {
+      if (this.media.has(url)) continue;
+      const img = new Image();
+      const m = { kind: "image", el: img, ok: null };
+      img.onload = () => { m.ok = true; this.thumbs.clear(); this.requestDraw(); };
+      img.onerror = () => { m.ok = false; this._syncMedia(); this.requestDraw(); };
+      img.src = url;
+      this.media.set(url, m);
+    }
     for (const [url, m] of this.media) {
-      if (want.has(url)) continue;
+      if (imgs.has(url)) continue;
       this._release(m);
       this.media.delete(url);
     }
+    this._rt.sync([...vids]);
   }
 
   _release(m) {
@@ -1453,17 +1454,30 @@ export class CutPanel {
     m.el.pause();
     m.el.removeAttribute("src");
     m.el.load();
-    if (m.blob && m.blob !== "pending") URL.revokeObjectURL(m.blob);
   }
 
-  /** What actually plays for a shot: best rung whose media loaded, falling back down the ladder. */
-  _source(shot) {
+  /** What plays for a clip; the one place that decides (the engine, the badges and the proxy choice all ask here): the
+   *  take put on its cut entry (Replace in cut), else the shot's best rung whose media has not failed (final > draft >
+   *  look), else clay. {rung, kind: video | image | clay, m (its media record), url}. */
+  _source(shot, entry = null) {
+    const take = entry?.take;
+    if (take?.rung === "clay") return { rung: "clay", kind: "clay", m: null, url: null };   // a clay pin plays clay (A3)
+    if (take?.url && !this._failed(take.url)) return this._sourceOf(TAKE_RUNG[take.rung] || "final", take.url);
     for (const rung of ["final", "draft", "look"]) {
-      const url = shot.renders[rung];
-      const m = url && this.media.get(url);
-      if (m && m.ok !== false) return { rung, kind: m.kind, m };
+      const url = shot?.renders?.[rung];
+      if (url && !this._failed(url)) return this._sourceOf(rung, url);
     }
-    return { rung: "clay", kind: "clay", m: null };
+    return { rung: "clay", kind: "clay", m: null, url: null };
+  }
+
+  _sourceOf(rung, url) {
+    if (rung === "look") return { rung, kind: "image", m: this.media.get(url) || { kind: "image", el: null, ok: null }, url };
+    return { rung, kind: "video", m: this.__rt?.recs.get(url) || { ok: null }, url };
+  }
+
+  _failed(url) {
+    const m = this.media.get(url);
+    return m ? m.ok === false : !!this.__rt?.failed(url);
   }
 
   _clay(shot, f) {
@@ -1487,26 +1501,66 @@ export class CutPanel {
     return c;
   }
 
-  /** Frame `f` of a shot as a drawable, driving its <video> for realtime play or a paused seek. */
-  _frameOf(shot, f, { realtime = false } = {}) {
-    const s = this._source(shot);
+  /**
+   * Frame `f` of a clip as a drawable: its take through the real-time engine, the Look still, or live clay. opts: entry
+   * (the cut entry: its take wins), id (the place on screen: "v1:3", the trim two-up), pos (the exact source position
+   * while playing), lo (its first source frame here: an incoming clip draws once its element showed a frame from there),
+   * volume (its take's sound under a transition). null: keep the last picture, the element is settling (a seek, the
+   * start at an edit, a swap to its proxy). Past HOLD_FRAMES of real-time play, or stopped / shuttling on a take that
+   * is still loading, the clip plays its clay on the same clock rather than freeze.
+   */
+  _frameOf(shot, f, { entry = null, id = null, pos = f, lo = 0, volume = 1 } = {}) {
+    const s = this._source(shot, entry);
     if (s.kind === "image") return s.m.ok ? s.m.el : null;
     if (s.kind === "clay") return this._clay(shot, f);
-    const v = s.m.el;
-    const want = (f + 0.5) / this.rate;
-    if (realtime) {
-      if (this._activeVideo && this._activeVideo !== v) this._activeVideo.pause();
-      this._activeVideo = v;
-      v.playbackRate = this.speed;
-      v.muted = !(this.audio && this.speed === 1);
-      const drift = Math.abs(v.currentTime - want) * this.rate;
-      if ((v.paused || drift > 3) && !v.seeking && drift > 0.5) v.currentTime = want;
-      if (v.paused) v.play().catch(() => {});
-    } else {
-      if (!v.paused) v.pause();
-      if (!v.seeking && Math.abs(v.currentTime - want) * this.rate > 0.5) v.currentTime = want;
+    const key = id ?? `clip:${shot.id}`;
+    const el = this._rt.want(key, s.url, { role: "active", src: pos, lo, volume });
+    const holds = (this._holds ||= new Map());
+    if (el) { holds.delete(key); return el; }
+    const now = performance.now(), tick = this._rt.tick;
+    let h = holds.get(key);
+    if (!h || h.tick < tick - 1) holds.set(key, (h = { since: now, tick }));
+    h.tick = tick;
+    const held = ((now - h.since) / 1000) * this.rate * Math.max(1, Math.abs(this.speed));
+    if (this.speed > 0 && this.speed <= 4 ? held < HOLD_FRAMES : this._rt.waiting(key) === "settle") return null;
+    (this._clayed ||= new Set()).add(key);
+    return this._clay(shot, f);
+  }
+
+  /** What can be on screen when (cached per edit): every V1 clip with its transition handles (a dissolve shows the
+   *  incoming clip `pre` frames before its cut, the outgoing one `post` frames past it) and every V3 window, each with
+   *  the take it plays now (null: clay or a still, nothing to pre-roll). Spans for planAt (rtengine.mjs). */
+  _spans() {
+    const p = this.project;
+    if (this.__spans?.p !== p) {
+      const rows = TL.layout(p), tr = FX.transSpans(p), shots = new Map(p.shots.map((s) => [s.id, s]));
+      const over = (sp) => !!sp && !sp.head && FX.isOverlap(sp.type);
+      const v1 = rows.map((r) => {
+        const pre = over(tr[r.index]) ? tr[r.index].pre : 0, post = over(tr[r.index + 1]) ? tr[r.index + 1].post : 0;
+        return { id: `v1:${r.event.uid ?? r.index}`, row: r, lo: r.recIn - pre, hi: r.recOut + post, src0: r.in - pre };
+      });
+      const gfx = [];
+      for (const g of p.graphics || []) {
+        for (const k of ["a", "b"]) {
+          const spec = g[k], w = this._gfxUrl(spec, shots.get(spec?.shot_id));
+          if (w && !w.still) gfx.push({ id: `g:${g.id}:${k}`, url: w.url, lo: g.start_frame, hi: g.start_frame + g.frames, src0: spec.in });
+        }
+      }
+      this.__spans = { p, v1, gfx };
     }
-    return v.readyState >= 2 ? v : null;
+    const { v1, gfx } = this.__spans;
+    for (const s of v1) { const src = this._source(s.row.shot, s.row.event); s.key = src.kind === "video" ? src.url : null; }
+    for (const s of gfx) s.key = this._failed(s.url) ? null : s.url;
+    return this.__spans;
+  }
+
+  /** The engine's view of this tick: how the transport moves, and the master clock (record frame at a performance time). */
+  _rtCtx() {
+    const sp = this.speed, jump = !!this._jump;
+    this._jump = false;
+    const playing = sp && this._clockAt;
+    return { mode: sp > 0 && sp <= 4 ? "play" : sp ? "shuttle" : "still", speed: sp, rate: this.rate, frame: this.frame, jump,
+             now: playing ? this._clockNow : performance.now(), clock: playing ? this._clockAt : () => this.frame, audio: this.audio && sp === 1 };
   }
 
   // ------------------------------------------------------------------ audio engine
@@ -1798,38 +1852,57 @@ export class CutPanel {
     return this.marks.in != null && this.marks.out != null && this.loop ? this.marks.out : this.seqLen;
   }
 
-  _advance(dt) {
-    let f = this.frame + this.speed * this.rate * dt;
-    // While WebAudio is playing, its clock is the master: the picture follows the sound.
-    // (Unless that clock is stuck, e.g. no output device: then wall time drives as usual.)
-    const ac = this._ac, ck = this._aClock;
-    if (ck && this.speed === 1 && ac && ac.state === "running" && !ck.stuck) {
-      const wall = (performance.now() - ck.wall0) / 1000 - 0.05;
-      const audioT = ac.currentTime - ck.t0;
-      if (wall > 0.3 && audioT < wall - 0.25) { ck.stuck = true; f = ck.from + wall * this.rate; }
-      else f = ck.from + Math.max(0, audioT) * this.rate;
+  /**
+   * The master clock: the record frame as a function of performance time (this._clockAt), read at the tick's time. While
+   * WebAudio plays, its clock is the master and the picture follows the sound as the speakers play it
+   * (getOutputTimestamp); with no sound (or a stuck audio clock: no output device) the wall clock is, restarted from the
+   * playhead on play, a speed change, or a jump (a seek or an edit moved this.frame). Starting from a stop it holds
+   * 50 ms, as the sound does, so the picture can start with it. No tick's length is clamped away.
+   */
+  _advance(now) {
+    const ac = this._ac, ck = this._aClock, rate = this.rate, speed = this.speed;
+    let c = this._clock;
+    this._jump = !!(c && this._last && this.frame !== c.last);
+    if (!this._last || !c || c.speed !== speed || this._jump) c = this._clock = { from: this.frame, wall0: now + (c ? 0 : 50), speed, last: this.frame };
+    this._last = now;
+    const wall = (t) => c.from + Math.max(0, (t - c.wall0) / 1000) * speed * rate;
+    let clock = wall;
+    if (ck && speed === 1 && ac && ac.state === "running" && !ck.stuck) {
+      const w = (performance.now() - ck.wall0) / 1000 - 0.05;
+      if (w > 0.3 && ac.currentTime - ck.t0 < w - 0.25) ck.stuck = true;
+      else {
+        const ts = ac.getOutputTimestamp?.();
+        const at = ts?.performanceTime > 0 ? (t) => ts.contextTime + (t - ts.performanceTime) / 1000
+          : (t) => ac.currentTime - (ac.outputLatency || ac.baseLatency || 0) + (t - performance.now()) / 1000;
+        clock = (t) => ck.from + Math.max(0, at(t) - ck.t0) * rate;
+      }
     }
+    let f = clock(now);
     const end = this._playEnd(), start = this.loop ? this._playStart() : 0;
+    let wrapped = false;
     if (f >= end) {
-      if (this.loop) { f = start + ((f - start) % Math.max(1, end - start)); if (this.speed === 1) this._audioStart(f); }
+      if (this.loop) { f = start + ((f - start) % Math.max(1, end - start)); wrapped = true; if (speed === 1) this._audioStart(f); }
       else { f = Math.max(0, this.seqLen - 1); this.stop(); }
     } else if (f < start) {
-      if (this.loop) f = end - 1;
+      if (this.loop) { f = end - 1; wrapped = true; }
       else { f = 0; this.stop(); }
     }
+    // the wall clock carries on from here: after a wrap, and in step with the sound should it stop
+    if (wrapped || clock !== wall) c = this._clock = { from: f, wall0: now, speed, last: f };
+    if (wrapped) { clock = (t) => c.from + Math.max(0, (t - c.wall0) / 1000) * speed * rate; this._jump = true; }
+    c.last = f;
     this.frame = f;
+    this._clockAt = clock;
+    this._clockNow = now;
     this._follow();
-    // Pre-roll: park the next clip's video on its in point just before the edit.
-    if (this.speed > 0) {
-      const row = TL.eventAt(this.project, Math.floor(f));
-      const next = row && TL.layout(this.project)[row.index + 1];
-      if (next && row.recOut - f < 12) {
-        const s = this._source(next.shot);
-        if (s.kind === "video" && s.m.el !== this._activeVideo) {
-          const v = s.m.el, want = (next.in + 0.5) / this.rate;
-          if (v.paused && !v.seeking && Math.abs(v.currentTime - want) * this.rate > 0.5) v.currentTime = want;
-        }
-      }
+    // Pre-roll: the clips (and V3 windows) starting within the lead get their element now, loaded and parked on their
+    // first frame 1.5 s ahead (3 s while their media or proxy is still on its way), and started just ahead of the edit.
+    this._preroll = [];
+    if (this.speed > 0 && this.speed <= 4) {
+      const lead = (key) => (this._rt.ready(key) ? LEAD_S : LEAD_PENDING_S) * rate * this.speed;
+      const loop = this.loop ? { start: this._playStart(), end: this._playEnd() } : null;
+      const { v1, gfx } = this._spans();
+      this._preroll = [...planAt(v1, f, { lead, loop }), ...planAt(gfx, f, { lead, loop })].filter((q) => q.role === "preroll");
     }
   }
 
@@ -1849,11 +1922,8 @@ export class CutPanel {
 
   _tick(now) {
     this._raf = 0;
-    if (this.speed) {
-      const dt = this._last ? Math.min(0.1, (now - this._last) / 1000) : 0;
-      this._last = now;
-      this._advance(dt);
-    } else this._last = 0;
+    if (this.speed) this._advance(now);
+    else this._last = this._clock = null;
     this._drawViewer();
     this._drawTimeline();
     this._readouts();
@@ -1869,13 +1939,21 @@ export class CutPanel {
     const ctx = this.vctx, pc = this.pctx;
     const f = Math.floor(this.frame);
     const d = this._drag;
+    // The real-time engine: every picture on screen is wanted this tick (then the clips about to start); end() pauses
+    // the rest. Proxies are asked for once the viewer is on screen.
+    const rt = this._rt;
+    if (this.viewer.clientWidth) rt.probe();
+    rt.begin(this._rtCtx());
+    this._clayed = new Set();
 
     // Trim / roll: two-up of the outgoing and incoming frames, like a trim monitor.
     if (d && (d.mode === "trimIn" || d.mode === "trimOut" || d.mode === "roll") && d.edit > 0 && d.edit < p.cut.length) {
       const rows = TL.layout(p);
       const a = rows[d.edit - 1], b = rows[d.edit];
+      const ia = this._frameOf(a.shot, a.out - 1, { entry: a.event, id: "trim:a" }), ib = this._frameOf(b.shot, b.in, { entry: b.event, id: "trim:b" });
+      rt.end();
+      this._activeVideo = null;
       pc.fillStyle = "#0d1117"; pc.fillRect(0, 0, W, H);
-      const ia = this._frameOf(a.shot, a.out - 1), ib = this._frameOf(b.shot, b.in);
       if (ia) drawContain(pc, ia, 0, 0, W / 2 - 2, H);
       if (ib) drawContain(pc, ib, W / 2 + 2, 0, W / 2 - 2, H);
       ctx.drawImage(this.pic, 0, 0);
@@ -1891,23 +1969,29 @@ export class CutPanel {
 
     const row = TL.eventAt(p, f);
     if (!row) {
-      this._activeVideo?.pause();
+      rt.end();
+      this._activeVideo = null;
       pc.fillStyle = "#0d1117"; pc.fillRect(0, 0, W, H);
       ctx.drawImage(this.pic, 0, 0);
       this._label(ctx, p.cut.length ? "End of sequence" : p.shots.length ? "Empty cut: click a shot below to add it" : "No shots yet", W / 2, H / 2, "center");
       return;
     }
     const src = row.in + (f - row.recIn);
-    const realtime = this.speed > 0 && this.speed <= 4;
-    const playing = this._source(row.shot);
-    if (this._activeVideo && (!realtime || playing.kind !== "video")) { this._activeVideo.pause(); this._activeVideo = null; }
+    const playing = this._source(row.shot, row.event);
     // Milestone 19: the picture after transitions (dissolve / wipe mix two clips, dips and fades go to a colour),
     // clip opacity (over black), then the V2 title and the subtitle, as the render will have them.
     const pic = FX.pictureAt(p, f);
     const other = pic && pic.b ? (pic.row.index === row.index ? pic.b : { row: pic.row, src: pic.src }) : null;
-    const img = this._frameOf(row.shot, src, { realtime });
-    const img2 = other ? this._frameOf(other.row.shot, TL.clamp(other.src, 0, other.row.shot.frames - 1)) : null;
-    if (img || pic?.dip || other) {
+    // Both clips of a dissolve / wipe play (no seek per frame); each take's sound follows its share of the picture, as
+    // the server render mixes it (a dissolve crossfades it, a dip takes it down and up).
+    const { v1 } = this._spans(), frac = this.frame - f, gain = pic?.dip ? 1 - pic.dip.amount : 1;
+    const vRow = !other ? 1 : pic.row.index === row.index ? 1 - pic.mix : pic.mix;
+    const at = (r, s, vol) => ({ entry: r.event, id: v1[r.index].id, pos: s + frac, lo: v1[r.index].src0, volume: gain * vol });
+    const img = this._frameOf(row.shot, src, at(row, src, vRow));
+    const img2 = other ? this._frameOf(other.row.shot, TL.clamp(other.src, 0, other.row.shot.frames - 1), at(other.row, other.src, 1 - vRow)) : null;
+    this._activeVideo = playing.kind === "video" ? rt.el(v1[row.index].id) : null;
+    // A picture still settling (null) holds the last one whole: never a black flash at an edit.
+    if (img && (!other || img2)) {
       pc.fillStyle = "#000"; pc.fillRect(0, 0, W, H);
       if (other && pic) {
         const aImg = pic.row.index === row.index ? img : img2, bImg = pic.row.index === row.index ? img2 : img;
@@ -1925,13 +2009,16 @@ export class CutPanel {
     ctx.drawImage(this.pic, 0, 0);
     this._drawGraphics(ctx, f, W, H);
     this._drawOverlays(ctx, f, W, H);
+    for (const q of this._preroll || []) if (this.speed) rt.want(q.id, q.key, q);
+    rt.end();
 
-    // burn-in
-    const s = row.shot;
-    const rung = playing.rung;
+    // burn-in; the badge says what is on screen: the clip's rung, or Clay standing in while its take loads
+    const s = row.shot, id = v1[row.index].id;
+    const rung = this._clayed.has(id) ? "clay" : playing.rung;
+    const hint = rung !== playing.rung ? `${RUNG_LABEL[playing.rung]} loading` : playing.kind === "video" && rt.proxied(id) ? "proxy" : "";
     this._label(ctx, s.name + (s.setup ? `  ·  ${s.setup}` : ""), 10, 22, "left");
     if (s.scene_name) this._label(ctx, s.scene_name, 10, 44, "left", "#9aa3af");
-    this._badge(ctx, rung.toUpperCase(), RUNG_COLORS[rung], W - 10, 10);
+    this._badge(ctx, RUNG_LABEL[rung], RUNG_COLORS[rung], W - 10, 10, hint);
     this._label(ctx, framesToTC(recordStart(this.fi.base) + f, this.fi.base), 10, H - 12, "left");
     this._label(ctx, `src ${src}/${s.frames}`, W - 10, H - 12, "right", "#9aa3af");
     if (this.speed && this.speed !== 1) this._label(ctx, (this.speed > 0 ? "▶▶ " : "◀◀ ") + Math.abs(this.speed) + "×", W / 2, 22, "center", ACCENT);
@@ -1989,7 +2076,8 @@ export class CutPanel {
     ctx.fillText(text, x, y);
   }
 
-  _badge(ctx, text, color, right, top) {
+  /** A rung badge, right-aligned at (right, top); a hint to its left ("proxy", "Final loading"). */
+  _badge(ctx, text, color, right, top, hint = "") {
     ctx.font = "700 12px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
     const w = ctx.measureText(text).width + 14;
     roundRect(ctx, right - w, top, w, 20, 4);
@@ -1999,6 +2087,14 @@ export class CutPanel {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, right - w / 2, top + 10.5);
+    if (!hint) return;
+    ctx.font = "600 11px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
+    ctx.textAlign = "right";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,0,0,.65)";
+    ctx.strokeText(hint, right - w - 6, top + 10.5);
+    ctx.fillStyle = "#cfd5de";
+    ctx.fillText(hint, right - w - 6, top + 10.5);
   }
 
   _readouts() {
@@ -2512,14 +2608,18 @@ export class CutPanel {
       ctx.fillStyle = "rgba(255,255,255,.75)";
       if (r.shot.setup && h >= 44) ctx.fillText(r.shot.setup, tx, y + 19);
       ctx.fillText(`${this._dur(r.len)}  [${r.in}-${r.out - 1}]`, tx, y + h - 14);
-      // rung badge
+      // rung badge: what plays for this clip (_source: its take, else the best rung that loads), in that rung's colour
       ctx.font = "700 9px 'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
-      const label = rung.toUpperCase();
+      const plays = this._source(r.shot, r.event).rung;
+      const label = RUNG_LABEL[plays];
       const bw = ctx.measureText(label).width + 8;
       if (cw - (tx - x0) > nameW + bw + 14) {
         roundRect(ctx, x0 + cw - bw - 4, y + 4, bw, 13, 3);
-        ctx.fillStyle = "rgba(0,0,0,.35)";
+        ctx.fillStyle = RUNG_COLORS[plays];
         ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "rgba(0,0,0,.45)";
+        ctx.stroke();
         ctx.fillStyle = "#fff";
         ctx.textAlign = "center";
         ctx.fillText(label, x0 + cw - bw / 2 - 4, y + 6.5);

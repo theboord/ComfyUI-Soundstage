@@ -121,3 +121,12 @@ try:
 except Exception as _exc:  # noqa: BLE001 - never stop the pack loading
     import logging as _logging
     _logging.exception("Soundstage: could not register the hand-off routes: %s", _exc)
+
+
+# Playback proxies: short-GOP copies of takes the App's players seek in milliseconds (soundstage/proxy.py)
+try:
+    from . import proxy as _proxy
+    _proxy.register()
+except Exception as _exc:  # noqa: BLE001 - never stop the pack loading
+    import logging as _logging
+    _logging.exception("Soundstage: could not register the proxy routes: %s", _exc)
