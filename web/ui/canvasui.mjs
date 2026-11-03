@@ -455,7 +455,7 @@ const CSS = `
 .ss-stage.ss-cl[data-tw=s] .ss-tabs.ss-toprow > .ss-toolsbtn:not([aria-pressed=true]) .lbl { display:none; }
 /* Milestone 17 added Presets beside Director: below 1720 px both go icon-only (tooltips keep the words), so the scene picker
    keeps its room and Done stays on screen (QA round 04: "Don" cut at 1440). */
-.ss-stage.ss-cl:is([data-tw=s], [data-tw=m]) .ss-tabs.ss-toprow :is(.ss-presetsbtn, .ss-dirbtn) .lbl { display:none; }
+.ss-stage.ss-cl:is([data-tw=s], [data-tw=m]) .ss-tabs.ss-toprow :is(.ss-presetsbtn, .ss-dirbtn:not(.ss-askbtn)) .lbl { display:none; }
 .ss-stage.ss-cl:is([data-tw=s], [data-tw=m]) .ss-tabs.ss-toprow :is(.ss-presetsbtn, .ss-dirbtn) { padding:5px 8px !important; }
 .ss-stage.ss-cl .ss-tabs.ss-toprow > .ss-keysbtn { padding:5px 8px !important; }
 /* 2026-11-02, 1024 px wide: the row folds what it has no room for into "⋯" (ui/toprow.mjs), the least used first;
