@@ -68,6 +68,14 @@ export function installSfx(Stage, deps) {
     if (s && X.SFX_KINDS[s.kind].onActor && s.target) { const pt = this._sfxPointAt(a, f); if (pt) return pt.pos; }
     return this._actorPosAt(a, f);
   };
+  /** Where a rig sits for its effect: its own place, or (sfx.follow: an object's id, e.g. a car explosion's wreck fire)
+   *  where that object ends up after the bake, so the fire burns on the wreck and not where the car was parked. */
+  P._sfxRigPos = function (a) {
+    const id = a.sfx?.follow, obj = id && this.state.actors.find((x) => x.id === id && !X.isSfxRig(x));
+    if (!obj) return this._actorPosAt(a, 0);
+    const q = this._actorPosAt(obj, this._lastFrame());
+    return [q[0], a.position?.[1] || 0, q[2]];
+  };
   /** A body squib's or stab's wardrobe point at frame f: {pos, normal} in the world. */
   P._sfxPointAt = function (a, f) {
     const s = X.sfxOf(a), who = s?.target && this._sfxPersonOf(s.target);
@@ -109,9 +117,9 @@ export function installSfx(Stage, deps) {
     const rigs = this._sfxRigs();
     if (!rigs.length) return null;
     const fps = this.state.shot?.fps || 24, frames = this._lastFrame() + 1, ev = this.state.physics?.events || [];
-    const key = JSON.stringify([this._sfxGen || 0, frames, fps, rigs.map((a) => [a.id, a.sfx, a.keys, a.position]), ev.length, ev[0]?.t, ev[ev.length - 1]?.t]);
+    const key = JSON.stringify([this._sfxGen || 0, frames, fps, rigs.map((a) => [a.id, a.sfx, a.keys, a.position, a.sfx?.follow && JSON.stringify(this.state.actors.find((x) => x.id === a.sfx.follow)?.keys?.at(-1))]), ev.length, ev[0]?.t, ev[ev.length - 1]?.t]);
     if (this._sfxCache?.key === key) return this._sfxCache.v;
-    const posOf = (a) => this._actorPosAt(a, 0);
+    const posOf = (a) => this._sfxRigPos(a);
     const fires = X.resolveFires(rigs, { fps, frames, events: ev, posOf, proximity: (a, s) => (s.trigger.type === "contact" ? this._sfxProximity(a, s) : null) });
     const flammables = this._sfxFlammables();
     const burning = X.burnSchedule(rigs, fires, flammables, { fps, frames, posOf });
@@ -151,7 +159,7 @@ export function installSfx(Stage, deps) {
   P.simulatePhysics = function (opts = {}) {
     const rigs = this._sfxRigs();
     if (!rigs.length || opts.blasts) return sim0.call(this, opts);
-    const fps = this.state.shot?.fps || 24, frames = this._lastFrame() + 1, posOf = (a) => this._actorPosAt(a, 0);
+    const fps = this.state.shot?.fps || 24, frames = this._lastFrame() + 1, posOf = (a) => this._sfxRigPos(a);
     // The pristine scene, the first time an SFX bake lands on an unbaked scene: Reset to before puts it back exactly.
     let pristine = this.state.physics?.sfx?.pristine ?? null;
     if (pristine == null && !hasBake0.call(this)) {

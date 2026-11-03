@@ -109,3 +109,22 @@ test("blocker 4: with two explosions, each thing is credited to the blast that t
   assert.equal(by.crate, near.id, "the crate beside the near blast");
   assert.equal(by.ball, near.id, "a loose (dynamic) prop beside the near blast, not the first one to go off");
 });
+
+test("blocker 6: the car explosion's wreck fire burns where the car lands, not where it started", async () => {
+  const { PresetRunner } = await import("../../web/presets/runner.mjs");
+  const { loadCatalog } = await import("../../web/presets/engine.mjs");
+  const st = headless([at("car", "Red car", "sports_car", [0, 0, 0])]);
+  const runner = new PresetRunner({ stage: st, host: {}, catalog: await loadCatalog(), setups: [] });
+  assert.ok((await runner.apply("car_explosion")).ok);
+  const car = st.state.actors.find((a) => a.id === "car"), last = st._lastFrame();
+  const end = st._actorPosAt(car, last);
+  assert.ok(Math.hypot(end[0], end[2]) > 1.5, `the car is thrown clear of where it stood (${end.map((v) => v.toFixed(2))})`);
+  st.setFrame(last);
+  const lit = st._sfxFx.lights.filter((l) => l.intensity > 0);
+  assert.ok(lit.length, "the wreck is burning at the end");
+  const d = Math.min(...lit.map((l) => Math.hypot(l.position.x - end[0], l.position.z - end[2])));
+  assert.ok(d < 1.0, `the fire's light is on the wreck (${d.toFixed(2)} m off)`);
+  const fireRig = st._sfxRigs().find((a) => X.sfxKindOf(a) === "fire");
+  const p = st._sfxState().posOf(fireRig);
+  assert.ok(Math.hypot(p[0] - end[0], p[2] - end[2]) < 0.5, "the flames are emitted at the wreck");
+});
