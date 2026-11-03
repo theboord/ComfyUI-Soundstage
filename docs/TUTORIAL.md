@@ -13,7 +13,7 @@ This guide is for anyone who has just cloned the repo. It covers where every pan
 
 ## Contents
 
-0. **[New on 1 and 2 November](#new-on-1-and-2-november)** (limits first): [world collisions](#world-collisions-everything-collides) · [✦ One-click](#one-click-effects-relight-angles-expand) · [Seamless loop](#seamless-loop-and-the-seam-meter) · [Reshoot](#reshoot-from-a-new-angle) · [Open in ComfyUI](#open-in-comfyui-and-download-the-graph) · [Film a move](#film-a-move-on-your-phone) · [Racing Cinema](#racing-cinema-and-the-racing-camera-moves) · [boats](#boats) · [swimming](#swimming-and-water) · [Drive mode](#drive-mode-what-changed) · [voice conversion](#voice-conversion-in-real-performance) · [1024 layout and ⋯](#the-1024-wide-layout-and-the-menu) · [pop-over layer](#one-pop-over-layer-for-every-menu) · [brass key and strip](#the-brass-key-and-the-shot-strip-fixes) · [Cut timeline note](#the-cut-timeline-being-upgraded-tonight)
+0. **[New on 1 and 2 November](#new-on-1-and-2-november)** (limits first): [world collisions](#world-collisions-everything-collides) · [✦ One-click](#one-click-effects-relight-angles-expand) · [Seamless loop](#seamless-loop-and-the-seam-meter) · [Reshoot](#reshoot-from-a-new-angle) · [Open in ComfyUI](#open-in-comfyui-and-download-the-graph) · [Film a move](#film-a-move-on-your-phone) · [Racing Cinema](#racing-cinema-and-the-racing-camera-moves) · [boats](#boats) · [swimming](#swimming-and-water) · [Drive mode](#drive-mode-what-changed) · [voice conversion](#voice-conversion-in-real-performance) · [1024 layout and ⋯](#the-1024-wide-layout-and-the-menu) · [pop-over layer](#one-pop-over-layer-for-every-menu) · [brass key and strip](#the-brass-key-and-the-shot-strip-fixes) · [Cut timeline note](#the-cut-timeline-being-upgraded-tonight) · [Passes viewer](#passes-judge-the-matte-pose-talking-and-depth)
 1. [Install](#1-install)
 2. [A tour of the workspace](#2-a-tour-of-the-workspace)
 3. [The seven steps, one by one](#3-the-seven-steps-one-by-one)
@@ -55,6 +55,7 @@ Everything below landed on `main` on 1 and 2 November 2026 ([CHANGELOG](../CHANG
 | [Pop-over layer](#one-pop-over-layer-for-every-menu) | Coach tips were not part of the sweep (the demo scene has none). |
 | [Brass key and the strip](#the-brass-key-and-the-shot-strip-fixes) | Holding and tossing a key is set in the scene data; there is no button for it yet. In Clay the key reads small and grey: it shows brass only in Color. |
 | [Cut timeline](#the-cut-timeline-being-upgraded-tonight) | Playback, frame rates and *Edit in* are being rebuilt tonight, so they aren't documented here yet. |
+| [Passes viewer](#passes-judge-the-matte-pose-talking-and-depth) | The matte tools were checked headless on a synthetic Layer Pack only: no real SAM 3.1 or BiRefNet matte has been judged in it yet. A clip ✦ Cutout's alpha is ProRes 4444, which browsers can't decode, so it isn't shown. Pose has per-point confidence for the face only, until a new Real performance read (body and hands come with the next ComfyUI restart). |
 
 <a id="world-collisions-everything-collides"></a>
 
@@ -265,6 +266,29 @@ Also at 1024: **Physics** docks over the Properties column when it would be too 
 3. Picking a shot in the strip now puts **Camera view** on that shot's camera, so clicking a rider selects the rider you see.
 
 **Limit:** the long-take build (shot windows) used on the pod is not on `main`.
+
+<a id="passes-judge-the-matte-pose-talking-and-depth"></a>
+
+### Passes: judge the matte, pose, talking and depth
+
+**Where:** the **Passes** button (a layers icon) on every Dailies take (its card, and under each take's name in the takes list), on ⑥ Review's Ladder bar (it opens the layer on view: Final, else Draft, else Frame), and on the Video → 3D result (the **Identical?** bar and the result card). It opens one full-window viewer, in the canvas and classic layouts and on a phone.
+
+It has four tabs. A tab with a green dot has something to show. A pass the App didn't make for this clip is still listed, with the reason (*Not available here*).
+
+1. **Alpha matte** (it opens first when there is one). The sources are a still **✦ Cutout** (its PNG alpha), a **Layer Pack** layer (pick the layer: SAM 3.1 with BiRefNet edges, one PNG per frame), and a Video → 3D run's clip masks. Then pick a **View**:
+   - **Matte**: black and white, white = kept.
+   - **Over**: the cut-out over **Checker**, **Black**, **White**, **Colour** (any flat colour, green by default; use the swatch) or **Busy test** (stripes, fine checks and a gradient, to catch fringes).
+   - **Rubylith**: the original with red over everything the matte throws away.
+   - **Edges**: only the soft band, where alpha is between 0.02 and 0.98, lit from magenta (almost gone) to yellow (almost kept), over a dark picture. The panel counts it: *"Soft edge 8,898 px (3.9 % of the frame) · about 14.4 px wide"*. A hard-edged matte says *"Hard edge: no pixel between 0.02 and 0.98 alpha"*.
+2. **Pose.** A Real performance read: DWPose's body (18 points), both hands (21 each), the 68 face points and the pupils over the actor's clip. **By confidence** colours each point green (0.6 and up), amber (0.3 to 0.6) or red (below 0.3: DWPose drops it). Toggle **Body**, **Hands** and **Face**, and **Numbers** (the iBUG index of each face point). **Picture** dims the clip. A Video → 3D result or any shot with clay people shows the stage skeleton through the shot camera instead (no confidence: it isn't read from a video).
+3. **Talking.** The sound's waveform runs under the timeline, with the actor's mouth-open curve (yellow) and a tick at each mouth opening. Click the strip to jump. **Play** plays the sound. **Mouth close-up** zooms the picture to the lips. When the render's mouth was measured too, its curve is blue and the panel gives the lip-sync *r* and the best lag.
+4. **Depth.** The stage depth through the shot camera (the guide the render followed; near = white, 1 to 40 m), or a Layer Pack's depth AOV. Pick **Greyscale** or **Turbo**, and set **Near** and **Far** (in metres for stage depth) to spread the colours over the range you care about.
+
+**Common to every tab:** **Play** (Space), the scrub bar, **◁ ▷** frame steps (← →), **Original: Off · Wipe · Side by side · Flicker** (F toggles Flicker; drag the yellow line to move a wipe), a zoom menu (**Fit**, 100 to 800 %; the mouse wheel zooms on the cursor, drag pans, double-click toggles Fit and 200 %), and **Still**, which saves a PNG of the view as it is. From 200 % the pixels are drawn square, so you judge the real edge, not a smoothed one. 1 to 4 switch tabs; Esc closes.
+
+**In the try-it demo:** the **Three in a car** scene's *Driver profile* setup has the Milestone 25 performance (a talking head Soundstage generated) as its take 6: Pose, Talking with the recorded lip sync (*r* = 0.92) and Depth all work. The demo has no matte media (cutouts and Layer Packs are made on the GPU server), and the Matte tab says so.
+
+**Limit:** the matte tools were checked headless on a synthetic Layer Pack (a soft figure with hair-like strands), not on a real SAM 3.1 or BiRefNet matte yet. Layer Packs made before today aren't linked to their shot: the viewer lists every pack on the server as *not linked to this shot*. A clip ✦ Cutout keeps its alpha in ProRes 4444, which browsers can't decode; make a Layer Pack to judge a clip's matte. Video → 3D keeps no per-frame Depth Anything 3 depth and Recast doesn't save its pose guide, so neither can be shown. Older Real performance reads have face points only; body and hands show as DWPose drew them, without confidence. Playback seeks frame by frame, so a long clip can play below real time.
 
 <a id="the-cut-timeline-being-upgraded-tonight"></a>
 
