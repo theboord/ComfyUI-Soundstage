@@ -28,7 +28,7 @@ export function sfxPreset(run, p) {
     // The charge under the car's near sill, so it lifts that side and rolls the car away from it.
     const boom = add(makeRig("explosion", { id: `sfx_boom_${stamp}`, name: "Car explosion (mortar)", position: [c[0] + side[0] * 1.0, 0, c[2] + side[2] * 1.0],
       sfx: { trigger: { type: "time", at: cue }, power: p.apply.power ?? 2.2, radius: 9 } }));
-    add(makeRig("fire", { id: `sfx_fire_${stamp}`, name: "Burning wreck (fire bars)", position: [c[0], 0, c[2]], sfx: { trigger: { type: "chain", after: boom.id, delay: 0.15 }, power: 1.6, radius: 1.4 } }));
+    add(makeRig("fire", { id: `sfx_fire_${stamp}`, name: "Burning wreck (fire bars)", position: [c[0], 0, c[2]], sfx: { trigger: { type: "chain", after: boom.id, delay: 0.15 }, power: 1.6, radius: 1.4, follow: car.id } }));
     said = `A pyro mortar under the ${(car.name || "car").toLowerCase()}'s sill fires at ${cue} s: a fireball, the shockwave, the car thrown over, then it burns`;
     where = `the ${car.name || car.kind}`;
   } else if (kind === "building_blast") {
