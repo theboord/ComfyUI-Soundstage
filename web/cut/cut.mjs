@@ -12,6 +12,7 @@ import { openPopover } from "../ui/popover.mjs";
 import { sourceLine } from "../ui/sourcespec.mjs";
 import { impactClips, withImpactClips } from "./impactsfx.mjs";
 import * as GFX from "./gfx.mjs";
+import * as EL from "./editlink.mjs";
 
 /** A transport button's face: a Lucide icon (plus an optional speed like "2×"); the title names it for screen readers. */
 const face = (b, name, extra = "") => {
@@ -321,6 +322,20 @@ export class CutPanel {
   /** Every browser-side export as text, keyed by file name (see exporters.mjs exportAll). */
   exportFiles(opts = {}) {
     return exportAll(this.project, opts);
+  }
+
+  /** Edit from the timeline: clip `index`'s link (web/cut/editlink.mjs clipContext): uid, shot, in/out, the source frame
+   *  under the playhead (else under recFrame, else the in point), the take it plays, its versions. */
+  clipContext(index, recFrame = this.frame) { return EL.clipContext(this.project, index, { recFrame, playhead: this.frame }); }
+
+  /** Pin clip `index` (and the `also` pins, editlink.mjs applyPins) to a take in ONE undoable edit; take null = follow
+   *  the latest render again. The old take is kept in the clip's versions; in, out and transitions stay. */
+  replaceClipTake(index, take, { also = [], uid = null } = {}) {
+    const cut = EL.applyPins(this.project.cut, [{ index, take, uid }, ...also]);
+    if (!cut) return false;
+    this._commit(cut, index);
+    this._syncMedia();   // until the D8 engine re-resolves after every commit (cut_interface_v1.md contract 5, amendment A2)
+    return true;
   }
 
   /** Picture length in frames. */
@@ -1177,15 +1192,15 @@ export class CutPanel {
     this.tl.addEventListener("pointermove", (e) => this._tlMove(e));
     this.tl.addEventListener("pointerup", (e) => this._tlUp(e));
     this.tl.addEventListener("pointercancel", () => { this._cancelDrag(); });
-    // Right-click a clip: edit its original (stage, frame, Canvas touch-up, motion), Dynamic Link style.
-    // Every render is kept per shot, so the clip shows the new render as soon as it lands.
+    // Right-click a clip: Edit in… (web/cut/editlink.mjs, when a host attached it as this.editLink); else Edit original.
     this.tl.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const hit = this._hit(this._local(e).x, this._local(e).y);
-      if (hit.type !== "clip" || !this._onEditShot) return;
+      const { x, y } = this._local(e);
+      const hit = this._hit(x, y);
+      if (hit.type !== "clip" || !(this._onEditShot || this.editLink)) return;
       const row = TL.layout(this.project)[hit.idx];
-      if (row?.shot?.id) this._clipMenu(row.shot.id, row.shot.name || row.shot.id, e);
+      if (row?.shot?.id) this._clipMenu(row.shot.id, row.shot.name || row.shot.id, e, { index: hit.idx, recFrame: Math.floor(this._frameAt(x)) });
     });
     this.tl.addEventListener("dblclick", (e) => {
       const hit = this._hit(this._local(e).x, this._local(e).y);
@@ -2569,7 +2584,9 @@ export class CutPanel {
    * {type: "ruler"|"empty"|"clip"|"edge"|"header"|"audio", idx, mode, edit, audio, track}.
    * Audio modes: aslide (body), atrimIn / atrimOut (edges), afadeIn / afadeOut (the top-corner handles).
    */
-  _clipMenu(shotId, name, e) {
+  _clipMenu(shotId, name, e, ctx = null) {
+    if (ctx && this.editLink?.menu) return this.editLink.menu(this.clipContext(ctx.index, ctx.recFrame), e);
+    if (!this._onEditShot) return;
     this._menuPop?.close("replaced");
     const m = (this._menu = document.createElement("div"));
     m.className = "ss-cut-ctx";
@@ -2793,6 +2810,7 @@ export class CutPanel {
       const hit = this._hit(x, y);
       this.tl.style.cursor = hit.type === "gfx" ? (hit.edge ? "ew-resize" : "grab") : hit.type === "edge" ? (e.altKey ? "col-resize" : "ew-resize") : hit.type === "clip" ? "grab"
         : hit.type === "audio" ? (hit.mode === "aslide" ? "grab" : "ew-resize") : hit.button ? "pointer" : "default";
+      this.editLink?.hover?.(hit.type === "clip" ? hit.idx : -1, x, y);   // Edit from the timeline: the ✎ on the hovered clip
       return;
     }
     if (d.mode === "apending" && Math.hypot(x - d.startX, y - d.startY) > 4) { d.mode = "aslide"; this.tl.style.cursor = "grabbing"; }
