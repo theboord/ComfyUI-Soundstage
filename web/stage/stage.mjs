@@ -16,6 +16,7 @@ import { STUNTS, hasHeadingKeys, headingTrack, channelAt, driveAt, isStunt, unwr
 import { PoseGizmo } from "./posegizmo.mjs";
 import { RotateTools, gizmoTurnToActor } from "./rotate.mjs";
 import { DriveMode, installDriveButton } from "./drive.mjs";
+import { installViewNav } from "./viewnav.mjs";
 import { buildSet, buildWater, buildWeather, buildTireSmoke, buildImpactFx } from "./environments.mjs";
 import { groundColor, groundReach, dressColor } from "./setlook.mjs";
 import { installSecondary } from "./secondary.mjs";
@@ -336,6 +337,7 @@ export class Stage {
     this.rotTools = new RotateTools(this);   // the floating Move · Rotate · Scale bar, the yaw ring, Alt + drag to turn
     this.drive = new DriveMode(this, liveKinds());   // Drive mode (Milestone 29): D drives the selected object, ● REC records it
     installDriveButton(this);
+    installViewNav(this);   // ⌂ Back to the set (.), ↶ Last view (,) and the "Lost?" chip (viewnav.mjs)
     this.resize();
     this._ro = new ResizeObserver(() => this.resize());
     this._ro.observe(container);
@@ -2128,7 +2130,7 @@ export class Stage {
     }
     // Pose Studio keys last: they override the walk cycle / seat pose for the joints they name.
     for (const a of this.state.actors) {
-      if (!a.pose_keys?.length) continue;
+      if (!a.pose_keys?.length || this.drive?.owns(a.id)) continue;   // driven live: Drive owns the body, its keys wait
       const g = this.actorMeshes.get(a.id);
       if (g) applyJoints(g, this.poseAt(a, this.frame));
     }
@@ -2136,7 +2138,7 @@ export class Stage {
     // its first / last pose before and after.
     const mocapIds = new Set();
     for (const a of this.state.actors) {
-      if (!a.mocap || a.mount_id) continue;
+      if (!a.mocap || a.mount_id || this.drive?.owns(a.id)) continue;
       const take = Mocap.takeFor(a.mocap);
       if (!take) { this._loadMocap(a); continue; }
       const g = this.actorMeshes.get(a.id);

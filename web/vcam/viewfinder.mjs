@@ -422,7 +422,8 @@ async function stopRecording() {
   S.review = { id: null, name: `Take ${S.takes}`, keys, lensKeys, info, prev, t0: performance.now(), frames: info.frames };
   applyKeys(keys, lensKeys);
   $("rvName").textContent = `Take ${S.takes}`;
-  $("rvInfo").textContent = `${timecode(info.frames, fps)} · ${keys.length} camera + ${lensKeys.length} lens keys${S.stab ? " · stabilized" : ""}`;
+  // The fit: every recorded frame -> the fewest keys within 1.2 cm (movefit/stabilize.mjs reduceKeys).
+  $("rvInfo").textContent = `${timecode(info.frames, fps)} · ${info.frames.toLocaleString("en-US")} frames → ${keys.length} camera + ${lensKeys.length} lens keys${S.stab ? " · stabilized" : ""}`;
   $("rvDesk").textContent = "sending to the desktop…"; $("rvDesk").className = "";
   $("review").className = "open"; document.body.classList.add("review");
   $("takeCount").textContent = `${S.takes} take${S.takes > 1 ? "s" : ""}`;
