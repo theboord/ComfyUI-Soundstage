@@ -500,3 +500,62 @@ test("a proxy that becomes ready takes over a parked element, never the one play
   assert.equal(sim.loads[3], proxyUrl(A, 960), "stopped, the picture moves to its proxy too");
   assert.equal(rt.waiting("a"), "settle", "and holds its last picture meanwhile");
 });
+
+// ---------------------------------------------------------------- review fixes (interface-regressions)
+
+const poolSim = () => {
+  const sim = { now: 0, videos: [], seeks: [], loads: [], media: () => ({ frames: 100, width: 640, loadMs: 10, startMs: 10, seekMs: () => 10 }) };
+  const failed = [];
+  let rt;
+  rt = new RtPlayer({ create: () => new FakeVideo(sim), now: () => sim.now, onFail: (u) => { failed.push(u); rt.sync(["GOOD"]); } });
+  const tick = (wants, ctx = {}) => {
+    sim.now += VSYNC;
+    for (const v of sim.videos) v.step(sim.now - VSYNC, sim.now);
+    rt.begin({ mode: "still", speed: 0, rate: RATE, now: sim.now, frame: 0, clock: () => 0, ...ctx });
+    const out = wants.map(([k, d = {}]) => rt.want(`id:${k}`, k, { role: "active", src: 0, lo: 0, ...d }));
+    rt.end();
+    return out;
+  };
+  return { sim, rt, failed, tick };
+};
+
+test("a take that would not load stays failed after the caller re-syncs without it: never reloaded (no reload loop)", () => {
+  const { sim, rt, failed, tick } = poolSim();
+  rt.sync(["BAD", "GOOD"]);
+  tick([["BAD"]]);
+  rt.slots.find((s) => s.key === "BAD").el.emit("error");   // onFail re-syncs to the next rung, as the Cut does
+  assert.deepEqual(failed, ["BAD"]);
+  assert.equal(rt.failed("BAD"), true, "the failure sticks after sync() dropped the take");
+  for (let i = 0; i < 30; i++) tick([["BAD"], ["GOOD"]]);   // even asked again, it is not loaded again
+  assert.equal(sim.loads.filter((u) => u === "BAD").length, 1, "one load of the broken take");
+  assert.equal(sim.loads.filter((u) => u === "GOOD").length, 1, "the next rung loads once");
+});
+
+test("a silent picture (a V3 window) stays muted with the take sound on; the V1 clip is heard", () => {
+  const { rt, tick } = poolSim();
+  rt.sync(["V1", "WIN"]);
+  for (let i = 0; i < 5; i++) tick([["V1"], ["WIN", { silent: true }]], { audio: true });
+  assert.equal(rt.el("id:V1").muted, false);
+  assert.equal(rt.el("id:WIN").muted, true);
+});
+
+test("after dispose no element is loaded and a pending proxy retry neither probes nor redraws", async () => {
+  const timers = [];
+  let probes = 0, changes = 0;
+  const fetch = async () => { probes++; return { status: 202, ok: true, headers: { get: (h) => (/content-type/i.test(h) ? "application/json" : null) }, json: async () => ({ status: "pending", retry_ms: 500 }) }; };
+  const sim = { now: 0, videos: [], seeks: [], loads: [], media: () => ({ frames: 100, width: 640, loadMs: 10, startMs: 10, seekMs: () => 10 }) };
+  const rt = new RtPlayer({ create: () => new FakeVideo(sim), now: () => sim.now, fetch, timer: (fn) => timers.push(fn), onChange: () => changes++ });
+  rt.sync(["/view?filename=a.mp4&type=output"]);
+  rt.probe();
+  await flush();
+  assert.equal(probes, 1);
+  rt.dispose();
+  const before = changes;
+  for (const fn of timers.splice(0)) fn();
+  await flush();
+  assert.equal(probes, 1, "no probe after dispose");
+  assert.equal(changes, before, "no redraw after dispose");
+  rt.begin({ mode: "still", speed: 0, rate: RATE, now: 1, frame: 0, clock: () => 0 });
+  assert.equal(rt.want("v1:0", "/view?filename=a.mp4&type=output", { role: "active", src: 0, lo: 0 }), null);
+  assert.equal(sim.videos.length, 0, "no element created on a disposed player");
+});

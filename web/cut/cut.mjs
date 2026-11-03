@@ -761,7 +761,7 @@ export class CutPanel {
     if (!w) return spec.rung === "auto" || spec.rung === "clay" ? this._clay(shot, f) : null;
     if (!w.still) {
       const pos = Math.min(spec.in + Math.max(0, lf + (held ? 0 : this.frame - Math.floor(this.frame))), shot.frames - 1);
-      return this._rt.want(id ?? `g:${spec.shot_id}:${spec.in}`, w.url, { role: "active", src: pos, lo: spec.in, still: held || pos >= shot.frames - 1, stale: true });
+      return this._rt.want(id ?? `g:${spec.shot_id}:${spec.in}`, w.url, { role: "active", src: pos, lo: spec.in, still: held || pos >= shot.frames - 1, stale: true, silent: true });
     }
     let m = this.gfxMedia.get(w.url);
     if (!m) {
@@ -1461,6 +1461,7 @@ export class CutPanel {
    *  look), else clay. {rung, kind: video | image | clay, m (its media record), url}. */
   _source(shot, entry = null) {
     const take = entry?.take;
+    if (take?.rung === "clay") return { rung: "clay", kind: "clay", m: null, url: null };   // a clay pin plays clay (A3)
     if (take?.url && !this._failed(take.url)) return this._sourceOf(TAKE_RUNG[take.rung] || "final", take.url);
     for (const rung of ["final", "draft", "look"]) {
       const url = shot?.renders?.[rung];
