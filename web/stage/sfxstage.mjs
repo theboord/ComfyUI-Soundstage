@@ -342,6 +342,11 @@ export function installSfx(Stage, deps) {
     return em;
   };
 
+  // The hit reactions are undone before the stage poses the people for a new frame: the stage only sets the heading
+  // (rotation.y), so a lean or roll left on the group would otherwise carry into the next frame and add up.
+  const setFrame0 = P.setFrame;
+  P.setFrame = function (...args) { try { this._sfxUndoPeople?.(); } catch (err) { console.warn("Soundstage SFX", err); } return setFrame0.apply(this, args); };
+
   const sec0 = P._secondaryAt;
   P._secondaryAt = function (frame) {
     sec0.call(this, frame);
@@ -453,6 +458,13 @@ export function installSfx(Stage, deps) {
         if (Math.abs(r.x - s.wrote[0]) < 1e-9 && Math.abs(r.y - s.wrote[1]) < 1e-9 && Math.abs(r.z - s.wrote[2]) < 1e-9) r.set(s.orig[0], s.orig[1], s.orig[2]);
       }
       g.userData.sfxSaved = null;
+      // The body itself: back to where the stage put it (only if nothing moved it since), so the next reaction starts
+      // from the authored pose and never adds onto the last frame's lean, roll or shift.
+      const b = g.userData.sfxBody;
+      if (b && g.position.toArray().every((v, i) => Math.abs(v - b.wrote[0][i]) < 1e-9) && g.quaternion.toArray().every((v, i) => Math.abs(v - b.wrote[1][i]) < 1e-9)) {
+        g.position.fromArray(b.orig[0]); g.quaternion.fromArray(b.orig[1]);
+      }
+      g.userData.sfxBody = null;
     }
     this._sfxPosed = [];
   };
@@ -473,6 +485,7 @@ export function installSfx(Stage, deps) {
     const axis = new THREE.Vector3(dir.z, 0, -dir.x).normalize();   // up × dir: a positive turn tips the head towards dir
     const qT = new THREE.Quaternion().setFromAxisAngle(axis, Math.abs(ang));
     const qW = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), z.twist);
+    const body0 = [g.position.toArray(), g.quaternion.toArray()];
     const base = g.quaternion.clone();
     const shift = away.clone().multiplyScalar(z.back).applyQuaternion(base);
     g.position.add(shift);
@@ -496,6 +509,7 @@ export function installSfx(Stage, deps) {
     }
     if (kneel > 0) g.position.y -= 0.42 * H / 1.8 * kneel;   // down on the knees (the shins on the ground)
     g.userData.sfxSaved = saved;
+    g.userData.sfxBody = { orig: body0, wrote: [g.position.toArray(), g.quaternion.toArray()] };
     this._sfxPosed.push(g);
   };
 
