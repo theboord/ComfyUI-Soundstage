@@ -425,6 +425,7 @@ ComfyUI's cache means each Run only does the new work.
 - **Director and MCP.** Chat or voice to the set (local Qwen3.5 4B, offline Whisper); an MCP server lets Claude drive the open App. See [docs/director.md](docs/director.md) and [docs/mcp.md](docs/mcp.md).
 - **Presets.** Camera moves, lighting, looks, action, edit styles and recipes, one click and one undo each (`V`).
 - **Take checks.** Automatic QC chips, Re-roll and a Follows-your-blocking score on every draft and final.
+- **Shot Project.** Publish a take as the next version of a shot (`SEQ/SHOT/task/v001`) with its recipe, exact ComfyUI graph, take checks and checksums; Load Version brings the latest or approved one into any workflow. See [docs/project.md](docs/project.md).
 - **Headless runner.** `tools/soundstage_sdk.py` renders a saved shot through the Comfy SDK.
 
 ## Try it
@@ -535,7 +536,7 @@ Vendored components and their licenses are listed in [THIRD_PARTY_NOTICES.md](TH
 ## Docs
 
 - [decisions.md](docs/decisions.md): the development log, with every design decision and its reason.
-- Components: [director](docs/director.md), [mcp](docs/mcp.md), [quality](docs/quality.md), [look](docs/look.md), [agent](docs/agent.md), [advisor](docs/advisor.md), [coach](docs/coach.md), [layerpack](docs/layerpack.md), [cut](docs/cut.md), [audio](docs/audio.md), [recast](docs/recast.md), [vcam](docs/vcam.md), [router](docs/router.md), [assets3d](docs/assets3d.md), [interop](docs/interop.md), [oneclick](docs/oneclick.md), [swim](docs/swim.md), [performance](docs/performance.md), [ripple](docs/ripple.md), [touchup](docs/touchup.md), [video2stage](docs/video2stage.md), [floorplan](docs/floorplan.md), [canvas](docs/canvas.md), [source_fidelity](docs/source_fidelity.md).
+- Components: [director](docs/director.md), [mcp](docs/mcp.md), [quality](docs/quality.md), [look](docs/look.md), [agent](docs/agent.md), [advisor](docs/advisor.md), [coach](docs/coach.md), [layerpack](docs/layerpack.md), [project](docs/project.md), [cut](docs/cut.md), [audio](docs/audio.md), [recast](docs/recast.md), [vcam](docs/vcam.md), [router](docs/router.md), [assets3d](docs/assets3d.md), [interop](docs/interop.md), [oneclick](docs/oneclick.md), [swim](docs/swim.md), [performance](docs/performance.md), [ripple](docs/ripple.md), [touchup](docs/touchup.md), [video2stage](docs/video2stage.md), [floorplan](docs/floorplan.md), [canvas](docs/canvas.md), [source_fidelity](docs/source_fidelity.md).
 - [QUICKSTART.md](docs/QUICKSTART.md): a first shot, then a one-page scene.
 
 ## License
