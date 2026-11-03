@@ -287,8 +287,8 @@ def bridge_shot_id(gt: dict) -> str:
 def flatten(project: dict) -> dict:
     """The project with every ready bridge cut in as a clip of its own: A ends `pre` frames early, the bridge plays,
     B starts `post` frames late; a transition on that edit is dropped (the bridge replaces it). Same length, same
-    sound. Everything else, stale and planned bridges included, is left as it is. The render (render.py) and exports
-    take this; the browser twin is flatten() in web/cut/gentransitions.mjs."""
+    sound. Everything else, stale and planned bridges included, is left as it is. The render (render.py) takes this
+    (the NLE exports do not yet); the browser twin is flatten() in web/cut/gentransitions.mjs."""
     gts = project.get("gen_transitions") or []
     ready = []
     for gt in gts:
