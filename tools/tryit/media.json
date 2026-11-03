@@ -78,7 +78,6 @@
     {"src": "~/OpenHiggsfieldContest/share/Commercial/v5_renders/jturn_redo/jturn_final_sound_s5101_00001_.mp4", "out": "m_stunt_jt2_final.mp4"},
     {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/tr3_boat3_color_vs_final.mp4", "out": "m_tr3_boat3_sbs.mp4", "kind": "copy"},
     {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/chase_crane_frame_s6101_00001_.png", "out": "m_tr3_chase_crane_frame.jpg", "kind": "still"},
-    {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/horror_close_frame_s6102_00001_.png", "out": "m_tr3_horror_close_frame.jpg", "kind": "still"},
     {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/western_shot_1_frame_s6103_00001_.png", "out": "m_tr3_western_shot_1_frame.jpg", "kind": "still"},
     {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/chase_tracking_frame_s6104_00001_.png", "out": "m_tr3_chase_tracking_frame.jpg", "kind": "still"},
     {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/chase_chase_frame_s6105_00001_.png", "out": "m_tr3_chase_chase_frame.jpg", "kind": "still"},
