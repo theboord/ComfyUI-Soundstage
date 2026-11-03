@@ -135,7 +135,7 @@ export function attachViewfinder({ api, stage, host, seek = null, play = null, s
     if (stage.setLensKeys) stage.setLensKeys(lensKeys); else sh.lens_keys = lensKeys;
     stage.setCameraKeys(keys);
     recording = false;
-    say(`Phone ${take.name || "take"}: ${keys.length} camera keys + ${lensKeys.length} lens keys (focus, iris) on ${sh.name || "the shot"}, ${info.seconds} s. Playing it back.`);
+    say(`Phone ${take.name || "take"}: ${(info.frames || 0).toLocaleString("en-US")} frames → ${keys.length} camera keys + ${lensKeys.length} lens keys (focus, iris) on ${sh.name || "the shot"}, ${info.seconds} s. Playing it back.`);
     postSync({ take: { id: m.id, status: "applied", keys: keys.length, lensKeys: lensKeys.length, shot: sh.name || "" } });
     seek?.(info.startFrame || 0);
     play?.();

@@ -94,6 +94,8 @@ export const SHORTCUTS = [
     { keys: ["W"], alts: [["A"], ["S"], ["D"]], what: "Fly forward, left, back, right (Shift: faster)" },
     { keys: ["Q"], alts: [["E"]], what: "Fly down, up" },
     { keys: ["0"], what: "The shot's camera, or a free view" },
+    { keys: ["."], what: "Back to the set: frame the whole set from the front (⌂ on the viewport)" },
+    { keys: [","], what: "Last view: step back through the views you were at (↶ on the viewport)" },
   ] },
   { group: "Edit and Paint Studio", items: [
     { keys: ["Left"], alts: [["Right"]], what: "Edit: one frame back or on (Shift: a second)" },
