@@ -18,7 +18,7 @@ This guide is for anyone who has just cloned the repo. It covers where every pan
 2. [A tour of the workspace](#2-a-tour-of-the-workspace)
 3. [The seven steps, one by one](#3-the-seven-steps-one-by-one)
    - [① Script](#step-1-script) · [② Cast & Locations](#step-2-cast) · [③ Set](#step-3-set) · [④ Frame](#step-4-frame) · [⑤ Motion](#step-5-motion) · [⑥ Review](#step-6-review) · [⑦ Deliver](#step-7-deliver)
-   - [Dailies and the lined script](#dailies-and-the-lined-script) ([ScriptSync](#scriptsync-lined-script)) · [The Look tab: re-render in any film look](#the-look-tab-re-render-in-any-film-look) · [The Stop button](#the-stop-button)
+   - [Dailies and the lined script](#dailies-and-the-lined-script) ([ScriptSync](#scriptsync-lined-script)) · [The Look tab: re-render in any film look](#the-look-tab-re-render-in-any-film-look) · [The Stop button](#the-stop-button) · [Activity: what the GPU is doing](#activity)
    - **New since the contest:** [Ask: the assistant, on every screen](#ask-the-assistant) · [The Director: chat, voice and MCP](#the-director-chat-voice-and-mcp) · [Presets](#presets-one-click-camera-moves-and-lighting) · [Quality: Draft, Final, Hollywood](#quality-draft-final-hollywood) · [Takes that check themselves](#takes-that-check-themselves) · [Timeline: transitions, sound, titles and render](#transitions-sound-titles-and-render)
 4. [The 3D stage in depth](#4-the-3d-stage-in-depth)
    - **New since the contest:** [Live 3D: drag, climb, mount, carry](#live-3d-drag-climb-mount-carry) · [Drive mode](#drive-mode-control-anything-like-a-video-game-and-record-it) · [Stunts](#stunts-j-turn-donut-handbrake-180) · [The new sets](#the-new-sets) · [Interop: Blender, Unreal, Maya, Nuke](#interop-blender-unreal-maya-nuke) · [Phone camera and the phone viewfinder](#phone-camera)
@@ -988,6 +988,30 @@ The red **■ Stop** at the end of the step bar is there whenever ComfyUI is ren
 Press it to **cancel every queued render and interrupt the one running now**. The status line confirms: "Stopped: 3 queued renders cancelled, the running one interrupted." Shots marked painting… or rendering… go back to normal, and anything already rendered stays.
 
 It clears the **whole ComfyUI queue**, including jobs you queued from other workflows or tabs on the same server.
+
+<a id="activity"></a>
+
+### Activity: what the GPU is doing, node by node
+
+The **Activity** pill sits in the top row, left of **Book** and **✦ Ask**, in both layouts, and never folds into **⋯**. It reads **Idle**, or, while one of your jobs runs, the step it is on first: **Sampling: stage 1 · 8/12 · 2 queued · ~6 min**. A thin bar along its bottom edge fills as the job goes. Click it for the panel.
+
+**Running now**, for a job you queued from this browser:
+
+- The job (**Final · shot 1G**), then the stage it is on in plain words: *Loading model*, *Encoding prompt (Gemma)*, *Depth map*, *Pose (DWPose)*, *3D stage (clay passes)*, *Sampling: stage 1*, *Upscaling ×2: stage 2*, *Sampling: stage 2*, *Decoding video (VAE)*, *Saving MP4*. A node you gave a title shows its title; a node the App doesn't know shows its class name.
+- On a sampler, the steps (**step 8/12**) and a thin blue bar for them, over the job's own bar.
+- **node 7 of 11 · 2 cached · 0:12 so far · about 2 min left**. Cached nodes are ones ComfyUI skipped because their inputs had not changed.
+- **Details**: every node as it ran, with its time (**✓ Depth map · 2.0 s**, **▶ Sampling: stage 1 · 8/12**), cached ones on one line. Tick **Node types (class and id)** to see `KSampler #12` instead of the plain names; the App remembers it in this browser.
+- **Cancel** stops it (ComfyUI interrupts that prompt).
+
+**Queued next**: place in line, what queued it, and about when it starts. **Cancel** takes your own queued job off the queue.
+
+**Finished recently**: done, failed or cancelled, how long it took, links to the results. A failure names the node and the message, for example *Failed at Decoding video (VAE) (VAEDecodeTiled #16)*, *Ran out of GPU memory…*, then ComfyUI's own first line. A job you stopped says where: *Cancelled at Depth map*.
+
+Jobs from other browsers or people on the same server show too, marked **another session**, with their place and time but no node detail and no Cancel (ComfyUI sends node events only to the session that queued a job).
+
+**Time left** is the average of your last runs of that kind and size in this browser. Before the first one it is the current sampler's step rate, which only counts that sampler, so it reads **at least** (and the pill **≥**). Past its average it says *longer than usual* instead of a number.
+
+Limits: the stage names come from the prompt your browser sent, so a job queued from another tab of the same browser shows node numbers only until it finishes. The node count is every node in the prompt; nodes ComfyUI doesn't need are never run, so the count can jump at the end. More: [activity.md](activity.md).
 
 <a id="the-director-chat-voice-and-mcp"></a>
 
