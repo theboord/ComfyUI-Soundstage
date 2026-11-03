@@ -6,8 +6,9 @@ exports to every NLE in that NLE's best format. Each shot also gets a mix WAV th
 LTX as audio conditioning for its final render.
 
 Each picture clip plays the best rung it has: Final, then Draft (`<video>`), then the Look still,
-then live clay from the stage. Exports use the same order. Anything that isn't a Final goes out as a
-stand-in with a relink note.
+then live clay from the stage. A clip pinned to a take plays that take instead
+([Edit from the timeline](#edit-from-the-timeline)). Exports use the same order. Anything that isn't a
+Final goes out as a stand-in with a relink note.
 
 ## Files
 
@@ -18,6 +19,8 @@ stand-in with a relink note.
 | `web/cut/timeline.mjs` | Edit model, pure functions: picture edits, cut on action, audio clips, lanes, sync-lock ripple |
 | `web/cut/fx.mjs` | Transitions, keys, auto-duck, loudness, beats, assembly from the lining, subtitles (Milestone 19) |
 | `web/cut/gen.mjs` | Generate / import sound in place from the Cut editor |
+| `web/cut/editlink.mjs` | Edit from the timeline, the Cut side: a clip's link, the Edit in… items, the hold, the menu, ✎ and `E` (no App imports) |
+| `web/cut/editlink_app.mjs` | Edit from the timeline, the App side: the trip, the jumps, ↩ Back to the cut, take detection, Replace in cut |
 | `soundstage/cut/render.py` | Render the cut to MP4 / ProRes / 9:16 with transitions, titles and the mix at a loudness target |
 | `web/cut/exporters.mjs` | Browser-side exports: EDL, Avid locators, Premiere XML, FCPXML, OTIO, RELINK.txt |
 | `soundstage/cut/export.py` | Python twin of the two files above, byte for byte (the test diffs them) |
@@ -27,6 +30,7 @@ stand-in with a relink note.
 | `soundstage/nodes_cut.py` | `NODES = [SoundstageCutExport, SoundstageCutShotAudio]` |
 | `web/cut/demo.html`, `demo_project.json`, `demo_media/` | Stand-alone harness with a 2D clay stand-in and two SFX clips |
 | `tests/js/cut.test.mjs`, `tests/js/strip.test.mjs`, `tests/test_cut.py` | Tests |
+| `tests/js/editlink.test.mjs`, `tests/test_cut_editlink.py`, `tools/qa/editlink_click.mjs` | Edit from the timeline: tests and the headless click-through |
 
 ## Shot strip (docked under the stage)
 
@@ -143,7 +147,13 @@ or draw its waveform.
       { "frame": 80, "text": "eyeline drifts", "color": "Yellow", "user": "ADVISOR" }
     ]
   }],
-  "cut": [ { "shot_id": "sc1_master", "in": 0, "out": 60, "notes": "optional" } ],   // gapless picture
+  "cut": [ { "shot_id": "sc1_master", "in": 0, "out": 60, "notes": "optional" },   // gapless picture
+           { "shot_id": "sc1_ots_a", "in": 60, "out": 110,
+             "uid": "c4k2x9q",                                   // optional: a stable clip id (Edit from the timeline)
+             "take": { "url": "/view?filename=ots_a_00003_.mp4&subfolder=soundstage&type=output",
+                       "rung": "final", "version": 2, "at": "14:02" },   // optional: the take this clip plays
+             "versions": [ { "url": "/view?filename=ots_a_00001_.mp4&subfolder=soundstage&type=output",
+                             "rung": "final", "version": 1 } ] } ],      // optional: the takes it played before
   "audio": [ { "id": "rain", "track": 1, "url": "...", "path": "...", "start_frame": 0, "in": 0, "out": 96,
                "frames": 96, "gain_db": -6, "fade_in": 12, "fade_out": 24, "label": "Rain on glass", "meta": {} } ],
   "audio_tracks": [ { "track": 3, "name": "", "mute": true, "solo": false } ],
@@ -158,6 +168,12 @@ or draw its waveform.
   gain to 0.1 dB in [-60, +24], and drops cut events whose shot is missing. An audio clip with no `out`
   and no `frames` gets them filled in when the browser decodes the file. Until then exports leave it out.
 - Marker colours: Red, Green, Blue, Cyan, Magenta, Yellow, Black, White (anything else is Red).
+- **Pinned clips.** A clip with `take` plays that file (its `rung`: `final`, `draft`, `look`, or `clay` with no `url`)
+  in the viewer, the strip, every export, the AAF and the server render. A clip without `take` plays its shot's best
+  render. `versions` keeps the takes a clip played before (newest 12). `uid` is kept when valid and unique (a split's
+  copy loses it) and never made up by normalising. The three fields are optional: a cut without them normalises and
+  exports exactly as before. JS `layout()` / Python `layout()` apply the pin (`clipShot` / `clip_shot`), so every reader
+  of a layout row gets it.
 
 ## Cut on action
 
@@ -441,6 +457,12 @@ With `opentimelineio`, `otio-cmx3600-adapter`, `otio-fcpx-xml-adapter` and `otio
 installed, the EDL, FCPXML and AAF are also read back through OTIO's own readers. All of that passes
 (27 tests; OTIO 0.18.1, pyaaf2 1.7).
 
+Edit from the timeline: `node --test tests/js/editlink.test.mjs` (the pins through normalize, layout and every
+exporter, the link per clip type, the menu table, the hold, Replace as one Undo, versions, new takes, the App's link
+resolver and prompt-tag reader) and `python -m pytest tests/test_cut_editlink.py -q` (the Python twin, the server
+render's file, one AAF master per file, and byte parity with the browser writers for a pinned cut). The headless
+click-through at the Cut level (no ComfyUI): `CHROME=<chrome> node tools/qa/editlink_click.mjs`.
+
 Harness: serve `web/` over HTTP and open `/cut/demo.html`:
 
 ```bash
@@ -482,13 +504,80 @@ The guided steps work on every camera setup in the scene, not just the active on
 
 Finals with sound are stored as `final_sound`/`final_audio`. `rendersFor()` also exposes them as `final`, so the Cut editor, the strip thumbnails and the Ladder play them.
 
-## Edit original (Dynamic Link style)
+## Edit from the timeline
 
-Right-click a clip in the Cut editor or the shot strip to open the step that made it, for that shot:
-- Edit the shot on the Stage
-- Repaint its frame (② Frame)
-- Touch up its frame in Canvas
-- Re-render its motion (③ Motion)
-- Compare on the Ladder (④ Review)
+Every clip in the Cut editor opens an **Edit in…** menu. Each item opens the step that made the clip, with that clip
+loaded. **↩ Back to the cut** brings you back, and the new take comes in as a new version of the clip.
 
-Renders are kept per shot and the cut always plays each shot's latest. A re-render therefore shows up in the cut by itself, with nothing to relink.
+**Three ways in** (and the docked strip)
+- Right-click a clip.
+- The **✎** that shows at the top right of the clip under the pointer (clips at least 48 px wide).
+- **E** (or Shift+F10, or the menu key): the selected clip, else the clip under the playhead. Arrows, Enter and Esc
+  work in the menu.
+- In the docked shot strip, a clip's right-click (or its … button) has **Edit in…**, which opens the same menu. That
+  trip also comes back to the Cut editor: the hold and Replace are Cut edits (the strip's own Undo does not see them).
+
+**What each item does, and when it is off.** An item that is off says why on its second line.
+
+| Item | Final / Draft | Look still | Clay | Ripple, Pose, Performance or ✦ take | Imported footage |
+| --- | --- | --- | --- | --- | --- |
+| **First frame** (④ Frame) | the frame the take started from, outlined "From the cut" | this still | the shot's chosen frame, or "no frame yet" | Ripple: its edited frame 1; ✦: its source | on |
+| **Re-generate** (⑤ Motion) | the take's preset, seed, Adherence and overrides | "Animate this frame": the shot's settings | "Render it": the shot's settings | Ripple runs again from the take's record, ✦ the same card; Pose and Performance start from the stage as it is now | the shot's settings |
+| **Re-block** (③ Set) | the shot camera at the clip's frame | on | on | on | on |
+| **Ripple**, **Paint video-to-video** | on | off: a still has no motion | off: clay is drawn live | on (edit an edit) | off: not a ComfyUI file |
+| **Recast camera** (✦ Reshoot) | on | off: Reshoot needs a clip | off | on | off |
+| **✦ One-click cards…** | clip cards | still cards | off: nothing rendered | on | off |
+| **Versions**, **Follow the latest render** | when the clip is pinned or has other takes | same | same | same | not shown |
+| **Touch up its frame in Paint Studio**, **Compare in ⑥ Review** | on | on | on | on | on |
+
+- **First frame never picks the frame for you.** "Use this frame" stays your click: choosing it changes the shot's
+  frame, model, seed and Look file for every clip of that shot.
+- **Re-generate** reads the take's settings from ComfyUI's own `prompt` tag in the file (the Quality node's `advanced`
+  JSON: the preset, the seed, the Adherence). A take without a readable tag starts from the shot's current settings,
+  and the step says so. The same seed gives the same take only with the same frame, Look and stage.
+- **Re-block** shows the stage as it is now, not as it was when the take was rendered.
+- **Ripple** needs the clip on Ripple's list: a clip pinned to an older take goes in through the import slot, which
+  replaces the shot's one imported clip. Ripple starts at frame 0 of the clip.
+- **Recast camera** opens ✦ Reshoot (it runs on Recast's engine); the App has no Recast panel. To recast a person, use
+  Paint video-to-video.
+
+**The hold.** Any jump first pins the clip, and every other clip of the same shot that follows the latest render, to
+the take each plays now (clay stays clay; clips showing imported footage's camera original are not held). That is one
+undoable edit. Nothing in the cut changes while you are away, even when new renders land.
+
+**Back, Replace and Undo**
+- While you are away, the step bar shows **↩ Back to the cut**; it turns yellow, "· new take", when a take of that shot
+  lands (an App render, a Ripple / Pose / Performance / ✦ take, or a new frame for a Look or clay clip). Its ✕ ends the
+  trip; the hold stays.
+- Back switches to the trip's scene first (while a render runs there it does not switch, and the pill says why), then
+  opens the Cut with the same clip selected and the playhead where you left it.
+- The Cut then offers the new take: **Replace in cut**, **Replace all N clips of this shot**, **Compare**, **Keep the
+  old one**. Replace is off, with the numbers, when the take is shorter than the clip's out point.
+- **Replace in cut** is one undoable edit: the clip plays the new take as its next version (`v3`), keeps its in and
+  out points, transitions, opacity and notes, and lists the old take under its versions. The first ⌘Z brings the old
+  take back (still held); a second ⌘Z undoes the hold, and the clip follows the newest render again.
+
+**Versions and Follow the latest render.** The menu of a pinned clip lists its versions (`v1 · Final · 13:40`, the one
+playing, the latest render when it is newer) and the shot's Ripple and ✦ takes: pick one to play it (one ⌘Z).
+**Follow the latest render** unpins the clip: it plays its shot's newest render again and keeps the old take in its
+versions.
+
+**What the exports use.** Each clip's own take: the EDL gets one reel per file (a pinned file's reel carries its
+version, e.g. `SC_3_WIDE_V1` with 32-character reels), FCPXML one asset per file, RELINK.txt one line per file, the AAF
+one master per file (named with the version), OTIO and the Premiere XML each clip's own path. The server render and **Cut → one video** join the
+pinned file.
+
+**Still wrong (read first)**
+- Pinning changes what the cut promises: a held clip stops following new renders until you Replace or Follow.
+- The Cut viewer loads every file a clip plays (`TL.playedUrls`), so a held or replaced clip keeps its picture, after
+  Undo too. The D8 player must keep doing this when it lands.
+- Re-generate is exact only when the take's `prompt` tag is readable. Ripple and ✦ takes re-run
+  from their record (a shot keeps its last 40), as a new take with a new seed. Pose re-opens Pose mode on the stage
+  and frame as they are now. Performance renders a Layout take with the shot's current settings.
+- A reload during a trip forgets the trip (the hold is saved in the cut; the menu still lists the newest render).
+- There are two undo stacks: a hold or a Replace started from the strip is undone in the Cut editor, not in the strip.
+- Picking another take from a clip's menu (a version, or one of the shot's Ripple / ✦ takes) has no length check; the
+  offer's Replace has one.
+- In and out points are clamped to the stage's length, not the take's; a take rendered at another rate lines up by
+  time in the viewer, not in the EDL's source timecode.
+- V3 graphic windows show the shot's latest render, not the clip's pinned take.
