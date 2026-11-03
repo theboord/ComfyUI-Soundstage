@@ -2,8 +2,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import time
 import uuid
+
+# The route's job dict while a job runs (routes._work sets it): each prompt we queue is named there, so the browser can
+# put it in the Activity bar under the job's own name (prompt_id, what).
+JOB: contextvars.ContextVar = contextvars.ContextVar("soundstage_v2s_job", default=None)
 
 
 async def drop_prompt(session, base_url: str, pid: str) -> None:
@@ -30,6 +35,10 @@ async def run_graph(base_url: str, graph: dict, what: str, timeout_s: float = 90
                                                       "client_id": f"soundstage-v2s-{uuid.uuid4().hex[:8]}"}) as r:
             body = await r.json()
         pid = body.get("prompt_id")
+        job = JOB.get()
+        if pid and isinstance(job, dict):
+            job["prompt_id"], job["prompt_what"] = pid, what
+            job.setdefault("prompts", []).append(pid)
         if not pid:
             err = body.get("error") or body
             nerr = body.get("node_errors")
@@ -44,7 +53,9 @@ async def run_graph(base_url: str, graph: dict, what: str, timeout_s: float = 90
                 if on_wait:
                     on_wait(time.perf_counter() - t0)
                 if time.perf_counter() - t0 > timeout_s:
-                    raise TimeoutError(f"{what} still queued after {timeout_s:.0f} s (job {pid} left in the queue)")
+                    # Nobody will read it any more: take our own prompt off the queue (never anyone else's).
+                    await asyncio.shield(drop_prompt(s, base_url, pid))
+                    raise TimeoutError(f"{what} still queued after {timeout_s:.0f} s (its job {pid} was taken off the queue)")
         except asyncio.CancelledError:   # the rebuild was cancelled: its GPU job goes too, nobody else's
             await asyncio.shield(drop_prompt(s, base_url, pid))
             raise
