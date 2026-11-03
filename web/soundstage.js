@@ -54,6 +54,8 @@ import { NO_SCENE, scopeShots, stageSig, listShots, keyOfShot, packScript, unpac
 import { VIDEO_ACCEPT, cameraRaw, fetchSourceSpec, rawExplainer, sourceLine } from "./ui/sourcespec.mjs";
 import { JobCard, chooseVideoUse, clipSeconds, v2sPlan, wireVideoDrop, isVideoFile, flawsFromNotes, V2S_LABEL, V2S_TIP } from "./ui/videoimport.mjs";
 import { mountCompare } from "./ui/v2scompare.mjs";
+import { REGEN_LABEL, chooseLocks, regenBody, mergeLocked, stagesLine, fixBody, swapActor, removeActor, FixUndo, fixPlan,
+  activityName, fixesFor, openFixMenu } from "./ui/v2sfix.mjs";
 import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
 import { mountDirector } from "./agent/directorpanel.mjs";
 import { mountAsk } from "./agent/ask.mjs";
@@ -1277,7 +1279,14 @@ function createStageWidget(node, inputName) {
     mkToggle("Snap", "grid-3x3", "Snap the gizmo: 0.1 m moves, 15° turns", () => !!stage.snap, (v) => stage.setSnap(v)));
   stage.onGizmoMode = (m) => { for (const [k, b] of Object.entries(gizmoBtns)) b.setAttribute("aria-pressed", String(k === m)); };
   stage.onGizmoMode(stage.gizmoMode || "translate");
-  sel.append(selName, gizmoSeg, measureSeg, turn.wrap, scl.wrap, dup, del);
+  // Video → 3D: rebuild just the selected object from the clip (shown while the Identical? bar is up).
+  const fixBtn = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn", hidden: true,
+    title: "Re-analyse only this object in the source clip (SAM 3.1) and rebuild it alone; it keeps its place. Undo puts the old one back" });
+  fixBtn.dataset.act = "v2s-fix";
+  fixBtn.append(icon("sparkles", 13), "Fix this object");
+  fixBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  fixBtn.addEventListener("click", () => { const id = stage.selected; if (id && compare) compare.fixObject(id); });
+  sel.append(selName, gizmoSeg, measureSeg, turn.wrap, scl.wrap, dup, del, fixBtn);
   const outlineWrap = document.createElement("label");
   const outlineSelEl = document.createElement("select");
   outlineSelEl.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -1401,6 +1410,16 @@ function createStageWidget(node, inputName) {
   const job = new JobCard(view);
   job.onTick = (line) => { status.textContent = line; };
   let videoBusy = false, compare = null, v2sHistory = null;
+  // The last Video → 3D run (↻ Regenerate and Fix this object build on it) and the fixes' own Undo.
+  let lastV2s = null;
+  const fixUndo = new FixUndo();
+  /** A server job's GPU prompt, named in the Activity bar (the server queues it with its own client id). */
+  const nameJobPrompt = (s, kind, label) => {
+    if (!s?.prompt_id || s.prompt_id === nameJobPrompt[s.prompt_id + kind]) return;
+    nameJobPrompt[s.prompt_id + kind] = s.prompt_id;
+    try { window.dispatchEvent(new CustomEvent(JOB_EVENT, { detail: { prompt_id: s.prompt_id, name: activityName(kind, s.prompt_what, label), kind: "video3d", trigger: kind } })); }
+    catch { /* a name is never worth breaking the job */ }
+  };
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
   /** The server's recent Video → 3D runs (for honest time estimates); [] when it keeps none. */
   async function v2sRuns() {
@@ -1442,8 +1461,9 @@ function createStageWidget(node, inputName) {
       shot: { ...(cur.shot || {}), frames: Math.max(cur.shot?.frames || 0, scene.shot?.frames || 0), fps: cur.shot?.fps || scene.shot?.fps || 24 },
       reference: scene.reference, video2stage: scene.video2stage };
   }
-  /** Video → 3D set. options come from the chooser (quality, trim, people, mode, lens…); retry = reuse the upload. */
-  async function rebuildFromVideo(f, options = {}, retry = null) {
+  /** Video → 3D set. options come from the chooser (quality, trim, people, mode, lens…); retry = reuse the upload.
+   *  regen = {lock, last}: ↻ Regenerate (a new seed; the locked parts are reused on the server and kept from your scene). */
+  async function rebuildFromVideo(f, options = {}, retry = null, regen = null) {
     const say = (m) => (status.textContent = m);
     // Camera RAW (docs/source_fidelity.md): no SDK to decode it, so the next clip picked is its proxy.
     if (cameraRaw(f.name)) { videoIn.dataset.original = f.name; say(`${rawExplainer(f.name)} Choose "${V2S_LABEL}" again and pick the proxy.`); return; }
@@ -1461,7 +1481,7 @@ function createStageWidget(node, inputName) {
       try { await api.fetchApi("/soundstage/video2stage/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: jobId }) }); }
       catch { /* the poll below reports it */ }
     };
-    job.start(`${V2S_LABEL}: ${f.name}`, v2sPlan(Math.round((secs || 5) * 24), options.samples || 16), { onCancel: cancel });
+    job.start(`${regen ? "Regenerating" : V2S_LABEL}: ${f.name}`, v2sPlan(Math.round((secs || 5) * 24), options.samples || 16), { onCancel: cancel });
     let video = retry?.video || null;
     const before = stage.toJSON();
     try {
@@ -1475,10 +1495,11 @@ function createStageWidget(node, inputName) {
         video = (await up.json()).name;
       }
       if (cancelled) throw Object.assign(new Error("cancelled"), { cancelled: true });
-      const req = { video, original, ...options };
-      const r = await api.fetchApi("/soundstage/video2stage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(req) });
+      const req = regen ? regenBody({ video, original, options, last: regen.last, lock: regen.lock }) : { video, original, ...options };
+      const r = await api.fetchApi(regen ? "/soundstage/video2stage/regenerate" : "/soundstage/video2stage",
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(req) });
       const j = await r.json().catch(() => ({}));
-      if (r.status === 404 || r.status === 405) throw new Error(`${V2S_LABEL} isn't installed on this server yet (restart ComfyUI)`);
+      if (r.status === 404 || r.status === 405) throw new Error(`${regen ? "Regenerate" : V2S_LABEL} isn't installed on this server yet (restart ComfyUI)`);
       if (r.status >= 400 || !j.job) throw new Error(j.error || `start failed (${r.status})`);
       jobId = j.job;
       if (cancelled) { await cancel(); throw Object.assign(new Error("cancelled"), { cancelled: true }); }
@@ -1494,11 +1515,12 @@ function createStageWidget(node, inputName) {
         if (s.state === "cancelled" || (cancelled && s.state !== "done")) throw Object.assign(new Error("cancelled"), { cancelled: true });
         if (s.state === "error") throw new Error(s.error);
         if (s.state === "done") res = s.result;
-        else job.serverStatus(s);
+        else { job.serverStatus(s); nameJobPrompt(s, regen ? "regenerate" : "rebuild"); }
       }
       if (!res) throw new Error("it took longer than an hour (is the GPU queue stuck?)");
       v2sHistory = null;   // the server's estimate history just grew
-      const scene = res.scene;
+      let scene = res.scene;
+      scene.video2stage = { ...(scene.video2stage || {}), tag: res.tag || scene.video2stage?.tag, seed: res.seed ?? 0 };
       for (const a of scene.actors || []) {
         if (a.kind === "glb" && a.url?.startsWith("/view")) a.url = api.apiURL(a.url);
         if (a.proxy_url?.startsWith("/view")) a.proxy_url = api.apiURL(a.proxy_url);
@@ -1508,7 +1530,10 @@ function createStageWidget(node, inputName) {
         const s0 = scene.reference.samples[0];
         scene.backdrop = { url: api.apiURL(`/view?filename=${encodeURIComponent(s0.filename)}&subfolder=${encodeURIComponent(s0.subfolder)}&type=input`) };
       }
-      const adding = options.mode === "add" && (before.actors || []).length > 0;
+      const adding = !regen && options.mode === "add" && (before.actors || []).length > 0;
+      if (regen) scene = mergeLocked(before, scene, regen.lock);   // the locked parts: yours, as they are now
+      lastV2s = { file: f, options, video, original, tag: scene.video2stage.tag, seed: res.seed ?? 0, lock: regen?.lock || null };
+      fixUndo.clear();
       loadScene(stage, adding ? addToSet(before, scene) : scene);
       try { syncEnv(); syncLight(); syncShots(); } catch { /* rows not built yet */ }
       try { strip?.resetToShots(); } catch { /* strip not built */ }   // the cut is the whole clip, not the old shot's length
@@ -1520,7 +1545,8 @@ function createStageWidget(node, inputName) {
       // "Identical?": the source over the rebuild, per-object match chips and one-click fixes.
       compare?.destroy();
       compare = mountCompare({ stage, host: view, videoUrl: api.apiURL(`/view?filename=${encodeURIComponent(video)}&type=input`),
-        onFrame: () => afterTimeChange(), onStatus: say, lockCamera: lockCameraToFrame0 });
+        onFrame: () => afterTimeChange(), onStatus: say, lockCamera: lockCameraToFrame0,
+        onFix: (id, pick) => fixObject(id, pick), onRemove: (id) => removeInvented(id), onAdd: (pick) => addMissed(pick) });
       compare.onDestroy = () => { compare = null; };
       try { compare.row.insertBefore(passes.v2sButton(), compare.row.lastElementChild); } catch { /* bar not built */ }
       const sh = stage.toJSON().shot, keys = stage.activeShot()?.camera_keys?.length || 0;
@@ -1530,7 +1556,7 @@ function createStageWidget(node, inputName) {
       const summary = `${performers.length ? `${plural(performers.length, "person")} with ${secsTxt} of full-body motion` : "No person captured"}, ` +
         `${plural(things, "thing")} at real size${pieces ? `, ${plural(pieces, "set piece")}` : ""}${scan ? ", and a set scan of the location" : ""}, ` +
         `seen through the clip's camera (${keys > 1 ? `${keys} keys` : "one key: the solve found no camera move"}). ` +
-        `${adding ? "Added to your set." : ""} Took ${fmtMin(job.elapsed())}.`;
+        `${adding ? "Added to your set." : ""}${regen ? ` Regenerated (seed ${res.seed}): ${stagesLine(res.stages)}.` : ""} Took ${fmtMin(job.elapsed())}.`;
       const raw = res.notes || [];
       const fixes = { lock_camera: lockCameraToFrame0,
         retry_quality: () => rebuildFromVideo(f, { ...options, quality: "max", samples: 64 }, { video, original }) };
@@ -1544,6 +1570,7 @@ function createStageWidget(node, inputName) {
         { key: "compare", label: "Identical? Compare", icon: "scan-eye", close: false, run: () => { compare?.setMode("wipe"); compare?.scoreAll(); } },
         { key: "passes", label: "Passes", icon: "layers", close: false, run: () => passes?.openV2s() },
         ...(adding ? [] : (before.actors || []).length ? [{ key: "undo", label: "Undo: bring the old set back", icon: "undo-2", run: () => { compare?.destroy(); loadScene(stage, before); afterTimeChange(); } }] : []),
+        { key: "regen", label: REGEN_LABEL, icon: "rotate-ccw", close: false, run: () => regenerate() },
         { key: "frame", label: "Shoot it → Frame", icon: "image", go: !performers.length, run: () => pipeline?.go("frame") },
       ], notes, flaws);
       if (performers.length) playTake();
@@ -1570,6 +1597,117 @@ function createStageWidget(node, inputName) {
     }
   }
   const fmtMin = (s) => (s < 90 ? `${Math.round(s)} s` : `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`);
+  /** ↻ Regenerate: ask what to keep, then the same rebuild with a new seed (web/ui/v2sfix.mjs). */
+  async function regenerate() {
+    if (!lastV2s) { status.textContent = "Regenerate works on the last Video → 3D rebuild; rebuild a clip first."; return; }
+    const pick = await chooseLocks({ initial: lastV2s.lock });
+    if (!pick) return;
+    const l = lastV2s;
+    return rebuildFromVideo(l.file, l.options, { video: l.video, original: l.original }, { lock: pick.lock, last: l });
+  }
+  /** One server fix job (Fix this object / Add a missed object) on the job card; resolves its result or throws. */
+  async function runFixJob(body, label) {
+    const plan = fixPlan(body.mode);
+    let jobId = null, cancelled = false;
+    job.start(body.mode === "add" ? `Adding a missed object: ${label}` : `Fixing ${label}`, plan, { onCancel: async () => {
+      cancelled = true;
+      if (jobId) { try { await api.fetchApi("/soundstage/video2stage/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: jobId }) }); } catch { /* the poll reports it */ } }
+    } });
+    const r = await api.fetchApi("/soundstage/video2stage/fix_object", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 404 || r.status === 405) throw new Error("Fix this object isn't installed on this server yet (restart ComfyUI)");
+    if (r.status >= 400 || !j.job) throw new Error(j.error || `start failed (${r.status})`);
+    jobId = j.job;
+    job.step("queued");
+    for (let t = 0, misses = 0; t < 2400; t++) {
+      await new Promise((ok) => setTimeout(ok, 1500));
+      let s;
+      try { s = await (await api.fetchApi(`/soundstage/video2stage/job?id=${jobId}`)).json(); misses = 0; }
+      catch { if (++misses > 20) throw new Error("lost touch with the server for 30 s (tunnel down?)"); continue; }
+      if (s.error === "no such job") throw new Error("the server restarted and lost the job");
+      if (s.state === "cancelled" || cancelled) throw Object.assign(new Error("cancelled"), { cancelled: true });
+      if (s.state === "error") throw new Error(s.error);
+      if (s.state === "done") return s.result;
+      job.step(s.step || "queued");
+      nameJobPrompt(s, "fix", label);
+    }
+    throw new Error("it took longer than an hour (is the GPU queue stuck?)");
+  }
+  /** Put a fix's result on the stage: the new version of that actor (or a new one), Undo kept. */
+  function applyFix(res, label, verb) {
+    const before = stage.toJSON();
+    const a = res.actor;
+    if (a.url?.startsWith("/view")) a.url = api.apiURL(a.url);
+    const { scene: next, previous } = swapActor(before, a);
+    fixUndo.push(before, `${verb} ${label}`);
+    const frame = stage.frame;
+    loadScene(stage, next);
+    stage.setFrame(frame); afterTimeChange();
+    stage.select(a.id);
+    const frames = (res.frames || []).map((r) => r.sample + 1).join(", ");
+    const msg = `${verb} ${label}${previous ? ` (version ${a.version || 2})` : ""}: rebuilt from source frame${(res.frames || []).length > 1 ? "s" : ""} ${frames}.`;
+    status.textContent = `${msg} Undo puts the old one back.`;
+    job.done(previous ? "Object fixed" : "Missed object added", msg, [
+      { key: "fix-undo", label: "Undo", icon: "undo-2", run: () => undoFix() },
+      { key: "compare", label: "Identical? Compare", icon: "scan-eye", close: false, run: () => { compare?.setMode("wipe"); compare?.scoreAll(); } },
+    ], res.notes || [], flawsFromNotes(res.notes || []));
+  }
+  function undoFix() {
+    const u = fixUndo.pop();
+    if (!u) { status.textContent = "Nothing to undo."; return; }
+    const frame = stage.frame;
+    loadScene(stage, u.scene);
+    stage.setFrame(frame); afterTimeChange();
+    status.textContent = `Undone: ${u.label}.`;
+  }
+  function fixFailed(err, label) {
+    const msg = String(err?.message || err).replace(/^(\w+Error): /, "");
+    if (err?.cancelled) { job.fail(`Stopped: ${label}`, "Cancelled. Only this job's own GPU prompt left the queue; your set is unchanged."); return; }
+    status.textContent = `Couldn't fix ${label}: ${msg}`;
+    job.fail(`Couldn't fix ${label}`, `${msg}. Your set is unchanged.`);
+  }
+  /** Fix this object: re-analyse only it in the clip (SAM 3.1) and rebuild it alone; same place, new version. */
+  async function fixObject(id, pick = null) {
+    const sc = stage.toJSON(), a = (sc.actors || []).find((x) => x.id === id);
+    if (!a) return;
+    if (!lastV2s && !sc.video2stage?.tag) { status.textContent = "Fix this object needs the clip's Video → 3D rebuild (rebuild it in this session)."; return; }
+    const label = a.name || id;
+    try { applyFix(await runFixJob(fixBody({ video: lastV2s?.video || sc.reference?.video, scene: sc, actor: a, pick, last: lastV2s || {} }), label), label, "Fixed"); }
+    catch (err) { fixFailed(err, label); }
+  }
+  /** Add a missed object: clicked on a source frame; tracked, rebuilt and stood on the floor through the solve. */
+  async function addMissed(pick) {
+    const sc = stage.toJSON();
+    if (!lastV2s && !sc.video2stage?.tag) { status.textContent = "Adding a missed object needs the clip's Video → 3D rebuild."; return; }
+    try { applyFix(await runFixJob(fixBody({ video: lastV2s?.video || sc.reference?.video, scene: sc, pick, mode: "add", last: lastV2s || {} }), "object"), "the missed object", "Added"); }
+    catch (err) { fixFailed(err, "the missed object"); }
+  }
+  /** Remove (not in the video): the rebuild invented it. Undo puts it back. */
+  function removeInvented(id) {
+    const before = stage.toJSON();
+    const { scene: next, removed } = removeActor(before, id);
+    if (!removed) return;
+    fixUndo.push(before, `removed ${removed.name || id}`);
+    const frame = stage.frame;
+    loadScene(stage, next);
+    stage.setFrame(frame); afterTimeChange();
+    status.textContent = `Removed ${removed.name || id} (not in the video). Undo puts it back.`;
+    job.done("Removed", `${removed.name || id} is out of the set.`, [{ key: "fix-undo", label: "Undo", icon: "undo-2", run: () => undoFix() }]);
+  }
+  // Right-click over the 3D view on a rebuilt object (while the Identical? bar is up): its fixes.
+  view.addEventListener("contextmenu", (e) => {
+    if (!compare) return;
+    const sel = stage.selected, a = (stage.state?.actors || []).find((x) => x.id === sel);
+    const fx = fixesFor(a);
+    const items = [];
+    if (fx.includes("fix")) items.push({ key: "fix", label: "Fix this object", icon: "sparkles", tip: "Re-analyse only this object in the clip and rebuild it alone", run: () => compare?.fixObject(a.id) });
+    if (fx.includes("remove")) items.push({ key: "remove", label: "Remove (not in the video)", icon: "trash-2", run: () => removeInvented(a.id) });
+    items.push({ key: "add", label: "Add a missed object", icon: "plus", tip: "Click it on the source frame", run: () => compare?.addMissed() });
+    if (fixUndo.size) items.push({ key: "undo", label: `Undo: ${fixUndo.peek().label}`, icon: "undo-2", run: () => undoFix() });
+    if (!a) items.unshift({ note: "Select a rebuilt object first to fix or remove it" });
+    openFixMenu(items, e, { theme: el });
+    if (a) setTimeout(() => { if (stage.selected !== a.id) stage.select(a.id); }, 0);   // the menu is about this one: keep it selected
+  });
   /** Play the shot from the top (the take with it). */
   function playTake() {
     if (playing) play.click();   // stop first, so it restarts from frame 0
@@ -1883,6 +2021,7 @@ function createStageWidget(node, inputName) {
     // Nothing selected: the Outliner says so (or names the selected light) instead of keeping the last object (QA round 07).
     if (!info) { try { outlineSelEl.value = stage.selectedLight ? `light|${stage.selectedLight}` : ""; } catch { /* not built */ } return; }
     selName.textContent = info.name;
+    fixBtn.hidden = !(compare && fixesFor((stage.state?.actors || []).find((a) => a.id === info.id)).includes("fix"));
     turn.input.value = info.rotation_deg; turn.out.textContent = `${info.rotation_deg}°`;
     scl.input.value = info.scale || 1; scl.out.textContent = `${(+(info.scale || 1)).toFixed(2)}×`;
     try { syncOutline(); outlineSel.sel.value = `object|${info.id}`; } catch {}
