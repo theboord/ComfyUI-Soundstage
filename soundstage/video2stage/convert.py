@@ -648,10 +648,14 @@ def assemble(ctx: dict | None = None, **legacy) -> dict:
 
 
 def assemble_legacy(*, poses, scales, times, K, size, depths, ground, breakdown, clip, reference, notes, backdrop=None,
-                    skies=None, repin: bool = True) -> dict:
-    """Everything -> a validated stage scene (see docs/video2stage.md)."""
+                    skies=None, repin: bool = True, mpu: float | None = None, seed: int = 7) -> dict:
+    """Everything -> a validated stage scene (see docs/video2stage.md). mpu: a known scale (metres per depth unit,
+    e.g. from the performer SAM 3D Body measured) instead of the camera-height / people guess."""
     w, h = size
-    mpu = metres_per_unit(breakdown, ground, depths[0], K, size, notes)
+    if mpu:
+        mpu = float(mpu)
+    else:
+        mpu = metres_per_unit(breakdown, ground, depths[0], K, size, notes)
     if ground is not None and any(n.startswith("scale: the floor fit disagrees") for n in notes):
         cam = breakdown.get("camera") or {}
         guess = cam.get("height_m") or CAMERA_HEIGHT.get(cam.get("type") or "", 1.6)
@@ -705,7 +709,7 @@ def assemble_legacy(*, poses, scales, times, K, size, depths, ground, breakdown,
             k["position"] = mv(k["position"])
         a["_vehicle"] = a["kind"] in ("car", "truck", "motorcycle", "bicycle")
     keys = simplify_keys(raw_keys)
-    dressing = build_set(breakdown, objs, keys, notes)
+    dressing = build_set(breakdown, objs, keys, notes, seed=seed)
     place_set_bboxes(dressing, poses[0], A, b, K, size, depths[0], scales[0])
     actors = objs + dressing
     mount_riders(actors)
