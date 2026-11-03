@@ -500,7 +500,7 @@ export class GenTransitions {
   }
 
   _key(e) {
-    if (!this.sel || e.target?.closest?.(".ss-gt-card")) return;
+    if (!this.sel || e.target?.closest?.(".ss-gt-card, input, textarea, select, [contenteditable]")) return;
     if (e.key === "Backspace" || e.key === "Delete") {
       e.preventDefault(); e.stopImmediatePropagation();
       this.remove(this.sel);

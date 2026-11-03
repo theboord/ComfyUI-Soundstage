@@ -206,6 +206,17 @@ test("GenTransitions: setLength and remove are undoable edits", () => {
   assert.equal(P.history.length, 2);
 });
 
+test("GenTransitions: Backspace typed in another Cut field leaves the selected bridge alone", () => {
+  const P = fakePanel(project());
+  const gt = new GT.GenTransitions(P, {});
+  const id = gt.add("smoke");
+  const key = (target) => gt._key({ key: "Backspace", target, preventDefault() {}, stopImmediatePropagation() {} });
+  key({ closest: (s) => (s.includes("input") ? {} : null) });     // the Sound prompt, a title, the inspector
+  assert.ok(gt.byId(id));
+  key({ closest: () => null });                                    // on the timeline it still removes the bridge
+  assert.equal(gt.byId(id), null);
+});
+
 test("the Cut panel saves, restores and undoes gen_transitions (hooks in web/cut/cut.mjs)", () => {
   const src = readFileSync(new URL("../../web/cut/cut.mjs", import.meta.url), "utf8");
   const hooks = src.split("\n").filter((l) => l.includes("[gen-transitions hook]"));
