@@ -82,18 +82,18 @@
    ]
   },
   {
-   "id": "boat2",
+   "id": "boat3",
    "off": true,
    "scene": "speedboat",
    "do": "boats",
    "title": "Boats: the blocking, then the shot",
    "text": "First the 3D blocking: the speedboat run on the stage in coloured clay, one driver, no dock. Then the render of the same shot from the same camera: the clay guided it frame for frame.",
-   "say": "Press Play: the speedboat run in Color. The clip shows a second staging (no dock) with its own clay and Final.",
+   "say": "Press Play: the speedboat run in Color. The clip shows the newest staging (no dock) with its own clay and Final.",
    "clips": [
     {
      "label": "Clay | Final (no dock)",
-     "file": "m_tr3_boat2_sbs.mp4",
-     "note": "Left: the no-dock staging's Color pass. Right: the LTX-2.5 Final it guided (seed 2201, first frame FLUX 3 Klein seed 2211). A second staging, not a render of the stage behind it. Not yet approved."
+     "file": "m_tr3_boat3_sbs.mp4",
+     "note": "Left: this staging's Color pass (no dock, one driver). Right: the LTX-2.5 Final it guided, first frame FLUX 3 Klein. A separate staging, not a render of the stage behind it. Not yet approved."
     }
    ]
   },
