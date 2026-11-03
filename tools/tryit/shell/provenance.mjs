@@ -46,7 +46,7 @@ export const REPLAY_ACTIONS = {
   v2s: "Rebuild plays back one recorded Video → 3D run of this clip made on the pod (most of that run's wall time was queue wait).",
   oneclick: "④ Frame plays back FLUX 3 Klein frames made earlier; running a ✦ card needs the full install.",
 };
-export const LIVE_ACTIONS = ["set", "color", "script", "rider", "seated", "physics", "stunt", "firstrun",
+export const LIVE_ACTIONS = ["set", "color", "script", "loadscript", "rider", "seated", "physics", "stunt", "firstrun",
   "director", "presets", "viewfinder", "pitch", "book", "performance", "parts", "gaits", "drive", "boats", "swim"];
 
 const fileOf = (f) => (f && typeof f === "object" ? f.filename : f) || "";
@@ -140,6 +140,9 @@ export function provenanceNow({ step, view, shot, scene, v2s } = {}) {
   if (byView) return after(byView);
   const where = RENDER_STEPS[step];
   if (where) {
+    // A shot from the visitor's own script: the closest recorded example stands in for it (shell/scriptload.mjs).
+    const ex = scene?.examples?.[shot];
+    if (ex && shotReplays(scene, shot).length) return { mode: REPLAYED, note: `Replayed: ${where} ${exampleNote(ex)}` };
     // The step's own files first (④ the frames, ⑤ the clips, ⑥ the finals, ⑦ the final, its poster and the cut), then the rest.
     const r = rendersOf(scene)[shot] || {};
     const own = step === "frame" ? [r.look, ...((scene?.candidates || {})[shot] || [])] : STEP_FILES[step].map((k) => r[k]);
@@ -155,6 +158,15 @@ export function provenanceNow({ step, view, shot, scene, v2s } = {}) {
     return after({ mode: LIVE, note: `${where}: this shot has no recorded render, so Run has nothing to play back. ${LIVE_NOTE}` });
   }
   return after({ mode: LIVE, note: LIVE_NOTE });
+}
+
+/** A shot from the visitor's own script never had a render: the demo replays the closest recorded example and says so.
+ *  ex: {label, set, exact} (shell/scriptload.mjs closestExample). */
+export function exampleNote(ex) {
+  const set = String(ex?.set || "this set").replace(/_/g, " ");
+  const why = ex?.exact ? `the closest recorded set to this scene (${set})` : `the nearest recorded example (nothing was rendered on a ${set} set)`;
+  return `plays a recorded example, not your shot: a render a GPU made earlier for the "${ex?.label || "demo"}" demo scene, `
+    + `${why}. It was not made from your script or this stage. With the full install, Run renders your own scene.`;
 }
 
 /** A tour stop (tour.json): what its "Show me" opens. */
@@ -213,9 +225,14 @@ export function editedSince(base, state) {
   return k in (base || {}) && base[k] !== stageSig(state);
 }
 /** The note for a replay the visitor asked for (ladder step 2 = ④ Frame, 3-4 = ⑤ Motion): null on an unedited stage. */
-export function replayNotice({ step, edited } = {}) {
-  if (!edited || !(step >= 2 && step <= 4)) return null;   // ⑦'s Layer Pack has its own full-install note
+export function replayNotice({ step, edited, example = null } = {}) {
+  if (!(edited || example) || !(step >= 2 && step <= 4)) return null;   // ⑦'s Layer Pack has its own full-install note
   const where = step >= 3 ? "⑤ Motion" : "④ Frame";
+  if (example) {
+    const note = `This ${exampleNote(example)}`;
+    return { mode: REPLAYED, where, note, link: INSTALL_URL, linkText: "How to install",
+      label: `${GLYPH[REPLAYED]} ${RECORDED_LABEL}`, toast: `${where}: a recorded example from "${example.label}", not your script's shot.` };
+  }
   return { mode: REPLAYED, where, note: EDITED_NOTE, link: INSTALL_URL, linkText: "How to install",
     label: `${GLYPH[REPLAYED]} ${RECORDED_LABEL}`, toast: `${where}: these are the recorded renders, not your edited set. ${EDITED_NOTE}` };
 }
