@@ -15,7 +15,7 @@
 // Exit 1 on any failed check or page error. One screenshot per step goes to --out (default: a temp folder).
 import { createServer } from "node:http";
 import { spawnSync } from "node:child_process";
-import { createReadStream, mkdirSync, mkdtempSync, statSync, writeFileSync, existsSync } from "node:fs";
+import { createReadStream, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { launch, sleep, REPO } from "./lib.mjs";
@@ -341,6 +341,7 @@ try {
 } finally {
   b.close();
   srv.close();
+  try { rmSync(media, { recursive: true, force: true }); } catch { /* the synthetic clips are temp files */ }
 }
 writeFileSync(join(out, "report.json"), JSON.stringify(report, null, 1));
 console.log(`\n${report.steps.filter((s) => s.ok).length}/${report.steps.length} checks passed; screenshots and report.json in ${out}`);
