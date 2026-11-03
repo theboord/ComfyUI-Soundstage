@@ -56,6 +56,12 @@ export const isKreaTurbo = (m) => /^Krea 2 Turbo/.test(String(m || ""));
 export const depthModeOf = (c) => (depthLockFor(c) > 0 ? (isKreaTurbo(c?.model) ? "strict" : "light") : "off");
 /** The stage_denoise a candidate was painted with (1 = the pre-lock way). */
 export const frameDenoiseFor = (c) => (frameLockFor(c) ? (c?.lock ?? FRAME_DENOISE) : 1);
+/** ③ Set's way on (the button the time bar carries): a shot with a frame remakes it, the old one stays a candidate. */
+export const setNextLabel = (hasFrame) => (hasFrame ? "④ Remake the first frame" : "④ Make the first frame");
+/** How long ④ Frame's "Deleted … Undo" toast stays (candidates are not on the stage's undo stack). */
+export const FRAME_UNDO_MS = 5000;
+/** The candidate list without `gone`: candidate records (that very tile; the demo replays the same file twice) or urls. */
+export const withoutFrames = (list, gone) => { const g = new Set(gone); return (list || []).filter((c) => !g.has(c) && !g.has(c.url)); };
 
 const STEPS = [
   { k: "script", n: 1, label: "Script", short: "Script", view: "script", hint: "Bring in your screenplay: scenes, breakdown, director's notes. Optional." },
@@ -145,6 +151,29 @@ const CSS = `
 .ss-pipeview .cand .cap { position:absolute; left:6px; bottom:6px; right:6px; display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#fff; text-shadow:0 1px 2px #000; }
 .ss-pipeview .cand[data-chosen="true"] { border-color:var(--ss-accent,#F2FF59); }
 .ss-pipeview .cand .pill { background:var(--ss-accent,#F2FF59); color:#1a1420; border-radius:999px; padding:2px 8px; font-weight:700; text-shadow:none; }
+.ss-stage .ss-pipeview .cand > button.ss-cdel { all:unset; box-sizing:border-box; position:absolute; left:6px; top:6px; z-index:3; width:26px !important; height:26px !important;
+  min-width:0 !important; min-height:0 !important; padding:0 !important; display:grid !important; place-items:center; border-radius:50% !important; cursor:pointer; color:#fff !important;
+  background:rgba(18,14,21,.78) !important; border:1px solid rgba(255,255,255,.28) !important; box-shadow:0 1px 4px rgba(0,0,0,.45); }
+.ss-stage .ss-pipeview .cand > button.ss-cdel:hover { background:#c0392b !important; border-color:#f5a39b !important; }
+.ss-stage .ss-pipeview .cand > button.ss-cdel:focus-visible { outline:2px solid var(--ss-accent,#F2FF59); outline-offset:2px; }
+.ss-pipeview .cand > .ss-cdel + .fc { left:38px; max-width:calc(100% - 44px); }
+.ss-stage.ss-cl .ss-clfilm .cand > button.ss-cdel { top:auto; bottom:3px; left:3px; width:20px !important; height:20px !important; }
+.ss-stage.ss-cl .ss-clfilm .cand > .ss-cdel + .fc { left:3px; }
+.ss-stage.ss-cl .ss-clfilm .cand .cap { left:26px; justify-content:flex-end; }
+.ss-stage.ss-cl .ss-clfilm .cand .pill { white-space:nowrap; }
+.ss-stage .ss-pipeview > .ss-fdel-toast { bottom:232px; }   /* over the picture, clear of the filmstrip and the bottom bar */
+.ss-pipeview .ss-candbar { gap:8px; }
+.ss-pipeview .ss-candbar[hidden] { display:none; }
+.ss-pipeview .ss-cask { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:7px 10px; border-radius:12px; font-size:12.5px;
+  background:rgba(192,57,43,.16); border:1px solid rgba(245,163,155,.45); color:var(--ss-text,#f0efed); }
+.ss-pipeview .ss-cask[hidden] { display:none; }
+.ss-stage .ss-pipeview .ss-cask button { border-radius:999px; padding:4px 11px; cursor:pointer; font:inherit; font-size:12px; border:1px solid rgba(255,255,255,.18); background:#342c3b; color:#f0efed; }
+.ss-stage .ss-pipeview .ss-cask button.del { background:#c0392b; border-color:#f5a39b; }
+.ss-stage .ss-pipeview button.ss-cclear { display:inline-flex; align-items:center; gap:5px; padding:4px 11px; font-size:12px; }
+.ss-stage .ss-clfilm .ss-cllab button.ss-cclear { all:unset; display:inline-flex; align-items:center; gap:4px; margin-left:auto; cursor:pointer; text-transform:none; letter-spacing:0;
+  font-size:11px; font-weight:600; color:var(--ss-muted,#a9a3ad); padding:1px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.14); }
+.ss-stage .ss-clfilm .ss-cllab button.ss-cclear:hover { color:#fff; border-color:#f5a39b; }
+.ss-stage .ss-time button.go.next.ss-setnext { border-radius:999px; padding:6px 14px; font-weight:600; cursor:pointer; white-space:nowrap; flex:none; margin-left:auto; }
 .ss-pipeview .clay { width:100%; border-radius:12px; display:block; }
 .ss-pipeview .status { font-size:12px; color:var(--ss-muted,#a9a3ad); min-height:16px; }
 .ss-pipeview video { width:100%; border-radius:12px; background:#000; }
@@ -423,6 +452,7 @@ export class Pipeline {
       this.btns[s.k].setAttribute("aria-current", s.k === k ? "step" : "false");
       this.btns[s.k].querySelector(".done").hidden = !done[s.k];
     }
+    this._drawSetNext();
   }
 
   /** Put this shot's saved renders on the Ladder rungs (look still, draft, final). */
@@ -442,6 +472,52 @@ export class Pipeline {
 
   _next(label, k) {
     return h("button", { type: "button", class: "go next", on: { click: () => this.go(k) } }, `${label} →`);
+  }
+
+  /** ③ Set's way on, in the style of "⑤ Animate this frame →" (the host puts it at the end of the time bar): straight
+   *  to ④ Frame painting this shot's first frame from the clay as it is now. Built once; the label follows the shot. */
+  setNextButton() {
+    if (!this.setNext) {
+      this.setNext = h("button", { type: "button", class: "go next ss-setnext", on: { click: () => this.makeFirstFrame() } });
+      this.setNext.addEventListener("pointerenter", () => this._drawSetNext());
+      this._drawSetNext();
+    }
+    return this.setNext;
+  }
+
+  /** Does the active shot already have a first frame (chosen, or a saved look render)? */
+  _hasFrame(sid = this.ctx.stage.activeShot().id) {
+    return !!(this.chosen?.[sid]?.url || (this.ctx.getRenders?.(sid) || {}).look);
+  }
+
+  _drawSetNext() {
+    const b = this.setNext;
+    if (!b) return;
+    let sid = null, has = false;
+    try { sid = this.ctx.stage.activeShot().id; has = this._hasFrame(sid); } catch { /* stage not ready */ }
+    const label = `${setNextLabel(has)} →`;
+    if (b.textContent !== label) b.textContent = label;
+    b.title = has ? "Go to ④ Frame and paint new first frames for this shot from the clay and camera as they are now. "
+      + "The frame you have stays in the list, so you can go back to it."
+      : "Go to ④ Frame and paint this shot's first frame from your clay and camera (the step's image model, no Paint Studio)";
+    b.dataset.shot = sid || "";
+  }
+
+  /** ③ Set → ④ Frame in one click: open the step (it re-renders the clay and picks the default image model) and
+   *  Generate for the active shot. An existing frame stays a candidate (after a reload the list starts empty). */
+  async makeFirstFrame() {
+    const sid = this.ctx.stage.activeShot().id;
+    const old = this.chosen?.[sid]?.url ? this.chosen[sid] : null;
+    const look = (this.ctx.getRenders?.(sid) || {}).look;
+    const list = (this.candidates[sid] = this.candidates[sid] || []);
+    const keep = old || (look ? { url: look } : null);
+    if (keep && !list.some((c) => c.url === keep.url)) list.push({ ...keep });
+    this.go("frame");
+    if ([...this.inflight.values()].some((x) => x.sid === sid && x.step === 2)) {
+      if (this.f?.status) this.f.status.textContent = "Frames for this shot are already painting: they land below.";
+      return;
+    }
+    await this.generateFrames(false);
   }
 
   // ------------------------------------------------------------------ ④ Frame
@@ -473,6 +549,13 @@ export class Pipeline {
       on: { click: () => this.generateFrames(true) } }, "…for every shot");
     f.status = h("div", { class: "status" });
     f.grid = h("div", { class: "grid" });
+    // Delete / Clear all (the trash on each frame): the list only, the files stay on disk; Undo for 5 s. Asking before
+    // the shot's chosen frame goes happens here in the page, never in a browser dialog.
+    f.clearAll = h("button", { type: "button", class: "ghost ss-cclear", hidden: "",
+      title: "Clear all: take every frame off this shot's list (the files stay on disk). Undo for 5 s.",
+      on: { click: () => this.clearCandidates() } }, icon("trash-2", 13), "Clear all");
+    f.ask = h("div", { class: "ss-cask", role: "alertdialog", "aria-label": "Delete the chosen frame?", hidden: "" });
+    f.candBar = h("div", { class: "row ss-candbar", hidden: "" }, f.ask, h("span", { style: "flex:1" }), f.clearAll);
     f.touch = h("button", { type: "button", class: "ghost", title: "Paint, mask or regenerate parts of your chosen frame; come back with “Use my edited frame”",
       on: { click: () => {
         const sid = this.ctx.stage.activeShot().id;
@@ -539,6 +622,7 @@ export class Pipeline {
           f.status,
           f.hero = h("img", { alt: "The chosen frame for this shot", hidden: "",
             style: "width:100%;aspect-ratio:16/9;object-fit:contain;background:#0f0d11;border-radius:14px;border:1px solid rgba(255,255,255,.08)" }),
+          f.candBar,
           f.grid,
           f.paintCard = h("div", { class: "card ss-paintcard" },
             h("div", { class: "ss-paint-head" },
@@ -1096,11 +1180,145 @@ export class Pipeline {
       return h("div", { class: "cand", "data-chosen": String(!!isChosen), title: c.seed != null ? `seed ${c.seed}` : "",
         on: { click: () => this.choose(c) } },
         h("img", { src: c.url, alt: "candidate frame" }),
+        h("button", { type: "button", class: "ss-cdel", "aria-label": isChosen ? "Delete this frame (the shot's chosen frame: asks first)" : "Delete this frame",
+          title: isChosen ? "Delete: take this frame off the list. It is the shot's chosen frame, so you are asked first. Undo for 5 s."
+            : "Delete: take this frame off the list (the file stays on disk). Undo for 5 s. Reject (the round badge) keeps it on record instead.",
+          on: { click: (e) => { e.stopPropagation(); this.deleteCandidate(c); } } }, icon("trash-2", 13)),
         ...(() => { const b = badgeOf(c.check); return b ? [h("span", { class: "fc", "data-tone": b.tone, title: b.title }, b.text)] : []; })(),
         h("div", { class: "cap" }, h("span", {}, (c.edited ? "Paint Studio" : (c.model === STILL_KREA || !c.model) ? "Krea 2" : String(c.model).split(" ·")[0]) +
           (depthLockFor(c) > 0 ? " · depth-locked" : "")),
           h("span", { class: "pill" }, isChosen ? "✓ Chosen" : "Use this frame")));
     }));
+    f.clearAll.hidden = !list.length;
+    if (this._ask && this._ask.sid !== sid) this._closeAsk();
+    this._drawCandBar();
+  }
+
+  _drawCandBar() {
+    const f = this.f;
+    if (!f?.candBar) return;
+    f.candBar.hidden = f.ask.hidden && (f.clearAll.hidden || f.clearAll.parentElement !== f.candBar);
+  }
+
+  /** The in-page question before the shot's chosen frame goes: text, then [label, action, danger?] buttons. */
+  _askHere(sid, text, buttons) {
+    const f = this.f;
+    this._ask = { sid };
+    f.ask.replaceChildren(h("span", {}, text), ...buttons.map(([label, fn, danger]) => h("button", { type: "button", class: danger ? "del" : null,
+      on: { click: () => { this._closeAsk(); fn?.(); } } }, label)));
+    f.ask.hidden = false;
+    this._drawCandBar();
+    try { f.ask.querySelector("button")?.focus({ preventScroll: true }); } catch { /* not focusable here */ }
+  }
+
+  _closeAsk() {
+    this._ask = null;
+    if (!this.f?.ask) return;
+    this.f.ask.hidden = true;
+    this.f.ask.replaceChildren();
+    this._drawCandBar();
+  }
+
+  /** Delete one ④ Frame candidate (the trash on its tile). The shot's chosen frame asks first, in the page. */
+  deleteCandidate(c, { confirmed = false } = {}) {
+    const sid = this.ctx.stage.activeShot().id;
+    const twin = (this.candidates[sid] || []).some((x) => x !== c && x.url === c.url);   // the same file twice: the other tile stays chosen
+    if (!confirmed && !twin && this.chosen?.[sid]?.url === c.url) {
+      this._askHere(sid, "This is the shot's chosen frame: ⑤ Motion has no first frame until you pick another. Delete it?",
+        [["Delete it", () => this.deleteCandidate(c, { confirmed: true }), true], ["Keep it", null]]);
+      return false;
+    }
+    return this._removeFrames(sid, [c]);
+  }
+
+  /** Clear all: every candidate of the active shot. With the chosen frame among them, asks first (or keeps just it). */
+  clearCandidates({ confirmed = false } = {}) {
+    const sid = this.ctx.stage.activeShot().id;
+    const list = this.candidates[sid] || [];
+    if (!list.length) return false;
+    const chosenUrl = this.chosen?.[sid]?.url;
+    if (!confirmed && list.some((c) => c.url === chosenUrl)) {
+      const others = list.filter((c) => c.url !== chosenUrl);
+      this._askHere(sid, `Clear all ${list.length} frames, the shot's chosen frame too?`,
+        [["Clear all", () => this.clearCandidates({ confirmed: true }), true],
+          ...(others.length ? [[`Keep the chosen one, clear ${others.length}`, () => this._removeFrames(sid, others)]] : []), ["Cancel", null]]);
+      return false;
+    }
+    return this._removeFrames(sid, [...list]);
+  }
+
+  /** Take candidates (records) off a shot's list (the chosen one too, once asked). The files stay on disk; Undo for
+   *  FRAME_UNDO_MS. The chosen frame goes when its last tile goes. */
+  _removeFrames(sid, cands) {
+    const before = [...(this.candidates[sid] || [])];
+    const gone = before.filter((c) => cands.includes(c));
+    if (!gone.length) return false;
+    const undo = { sid, list: before, chosen: null, touched: this.touched[sid], autoPick: this._autoPick?.[sid], look: null };
+    this.candidates[sid] = withoutFrames(before, gone);
+    const chosen = this.chosen?.[sid];
+    if (chosen && gone.some((c) => c.url === chosen.url) && !this.candidates[sid].some((c) => c.url === chosen.url)) {
+      undo.chosen = chosen;
+      delete this.chosen[sid];
+      if (this._autoPick) this._autoPick[sid] = false;
+      if (this.touched[sid]) { this.touched[sid] = false; this.set(9086, "switch", false); if (this.f?.useTouch) this.f.useTouch.checked = false; }
+      undo.look = this.ctx.forgetRender?.(sid, "look") || null;   // the shot's saved first frame goes with it
+      try { this.ctx.ladder?.clearSource?.(2); this.ctx.ladder?.draw?.(); } catch { /* ladder not ready */ }
+      this._saveChosen();
+    }
+    this._closeAsk();
+    this._redrawFrame();
+    const n = gone.length;
+    const what = `Deleted ${n === 1 ? "1 frame" : `${n} frames`}${undo.chosen ? ", the chosen one too: pick another or Generate" : ""}.`;
+    this._undoToast(what, () => this._restoreFrames(undo));
+    return true;
+  }
+
+  _restoreFrames(u) {
+    this.candidates[u.sid] = u.list;
+    if (u.chosen) {
+      this.chosen[u.sid] = u.chosen;
+      if (this._autoPick) this._autoPick[u.sid] = !!u.autoPick;
+      if (u.touched) { this.touched[u.sid] = true; if (u.sid === this.ctx.stage.activeShot().id) { this.set(9086, "switch", true); if (this.f?.useTouch) this.f.useTouch.checked = true; } }
+      if (u.look) this.ctx.rememberRender?.(u.sid, "look", u.look);
+      if (u.sid === this.ctx.stage.activeShot().id) { try { this.ctx.ladder?.setSource?.(2, "image", u.chosen.url); } catch { /* ladder not ready */ } }
+      this._saveChosen();
+    }
+    this._redrawFrame();
+  }
+
+  _redrawFrame() {
+    try { if (this.f && !this.views?.frame?.hidden) this._drawCandidates(); } catch { /* view not built */ }
+    this._drawShotRows();
+    this.mark(this.current);
+  }
+
+  /** "Deleted … · Undo" for FRAME_UNDO_MS, like the Presets toast; a newer delete replaces it (the older one stays done). */
+  _undoToast(text, undo) {
+    const host = this.views?.frame;   // inside the step: the step screens hide everything else on the stage root
+    if (!host?.append) return;
+    if (!this._toast) {
+      this._toast = { tx: h("span", { class: "tx" }) };
+      this._toast.un = h("button", { type: "button", class: "un" }, "Undo");
+      this._toast.x = h("button", { type: "button", title: "Dismiss", "aria-label": "Dismiss", on: { click: () => this._hideToast() } }, icon("x", 13));
+      this._toast.el = h("div", { class: "ss-toast ss-fdel-toast", role: "status", "aria-live": "polite", hidden: "" },
+        icon("trash-2", 15), this._toast.tx, h("span", { class: "sep", "aria-hidden": "true" }, "·"), this._toast.un, this._toast.x);
+      this._toast.el.addEventListener("pointerdown", (e) => e.stopPropagation());
+    }
+    const t = this._toast;
+    if (t.el.parentNode !== host) host.append(t.el);
+    t.tx.textContent = text;
+    t.un.onclick = () => { this._hideToast(); undo(); if (this.f?.status) this.f.status.textContent = "Undone: the frames are back."; };
+    t.el.hidden = false;
+    clearTimeout(t.timer);
+    t.timer = setTimeout(() => this._hideToast(), FRAME_UNDO_MS);
+  }
+
+  _hideToast() {
+    const t = this._toast;
+    if (!t) return;
+    clearTimeout(t.timer);
+    t.el.hidden = true;
+    t.un.onclick = null;
   }
 
   /** Pick a candidate: lock its model + seed so the next steps reproduce exactly this frame (from cache). */
@@ -1762,6 +1980,7 @@ export class Pipeline {
     this._popSum = null;
     this._frameSum = null;
     this.cv = !!on;
+    this._drawCandBar();   // Clear all is back in its own row (the canvas layout puts it on the filmstrip's label)
     // A pop-over closes when you click anywhere else (its own button toggles it).
     if (!this._popDoc) {
       this._popDoc = (e) => {
@@ -1941,8 +2160,11 @@ export class Pipeline {
     mv.addClass(f.status, "ss-clpill");
     // Bottom dock: shots and candidates as filmstrips, then model · variations · quality · Generate · Next.
     const film = cvEl("div", "ss-clfilm");
-    const cands = cvEl("div", "ss-clgrp ss-clcands", cvEl("div", "ss-cllab", "Frames for this shot · click one to use it"));
+    const candLab = cvEl("div", "ss-cllab", "Frames for this shot · click one to use it");
+    const cands = cvEl("div", "ss-clgrp ss-clcands", candLab);
     film.append(this._cvShots(this.shotRows.find((x) => x.where === "frame")?.row), cands);
+    mv.move(f.clearAll, candLab);   // Clear all sits on the filmstrip's label line; the question shows over the strip
+    mv.move(f.candBar, cands);
     mv.move(f.grid, cands);
     const bar = cvEl("div", "ss-clbar");
     bottom.append(film, bar);
@@ -1959,6 +2181,7 @@ export class Pipeline {
     mv.move(f.nextRow.lastElementChild, bar);
     mv.addClass(f.studio, "ss-clgone");
     mv.addClass(f.nextRow, "ss-clgone");
+    this._drawCandBar();
   }
 
   _cvMotion() {

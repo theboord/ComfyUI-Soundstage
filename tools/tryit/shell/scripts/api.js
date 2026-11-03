@@ -14,6 +14,7 @@ export const demo = {
   getStep: () => 1,     // set by the shell: the ladder step to climb to
   toast: () => {},      // set by the shell
   v2s: null,            // the recorded Video → 3D run once it starts: { clip, total_s, replaySeconds, running, doneAt } (the badge)
+  onReplay: null,       // set by the shell: ({shot, step}) before a Run / Generate replays, so it can say an edited stage isn't re-rendered
 };
 
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
@@ -195,6 +196,7 @@ const lookTurn = new Map();   // shot -> how many frames it has replayed (cycles
 
 function replay(id, shot, step) {
   const r = (demo.scene?.renders || {})[shot] || {};
+  try { demo.onReplay?.({ shot, step }); } catch { /* the shell's note never blocks a replay */ }
   api.dispatchCustomEvent("execution_start", { prompt_id: id });
   let t = 250, any = false, missing = [];
   for (const rung of RUNGS) {
