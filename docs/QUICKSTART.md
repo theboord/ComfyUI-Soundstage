@@ -119,7 +119,7 @@ The **Coach** pill at the top right offers one-click fixes, such as *Move it out
 
 ### 7. Make the frame (about 1 to 4 min of GPU)
 
-Click **4 Frame**. The prompt box starts empty: type one line about the shot,, for example *rain-soaked night street, police lights on wet asphalt*. Set **Variations** to 1 (it starts at 4) and **Quality** to **Fast** (it starts on Standard; the button then says about 1 min). Click **Generate frames**.
+Click **4 Frame**. (**④ Make the first frame →** at the right end of ③ Set's time bar also opens ④ Frame, but it starts painting at once with ④'s current settings, which begin at 4 variations at Standard. Use it once you have set them.) The prompt box starts empty: type one line about the shot,, for example *rain-soaked night street, police lights on wet asphalt*. Set **Variations** to 1 (it starts at 4) and **Quality** to **Fast** (it starts on Standard; the button then says about 1 min). Click **Generate frames**.
 
 Do **not** click *…for every shot*. It queues a GPU batch.
 
@@ -128,7 +128,9 @@ Do **not** click *…for every shot*. It queues a GPU batch.
 
 ### 8. Pick a frame and animate it
 
-Click the frame you like best, then click **5 Animate this frame →**.
+Click the frame you like best, then click **5 Animate this frame →**. A frame you don't want: its trash takes it off the list (**Undo** for 5 s; the chosen frame asks first). **✕ Reject** in the round badge keeps it on record instead.
+
+After you change the clay or the camera, **④ Remake the first frame →** on ③ Set's time bar paints new frames from the edited set and keeps the old one in the list.
 
 ### 9. Get a moving shot
 
