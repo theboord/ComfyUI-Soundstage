@@ -1,6 +1,6 @@
 {
   "about": "Media the demo ships beyond the original r/ renders. Each encode entry is re-encoded into the media cache when its source is newer: videos 960 px, H.264 crf 28, AAC 96k (the r/ recipe); stills 1280 px JPEG. kind: video | still | frame0 (the clip's first frame as a still); vf: an ffmpeg crop applied first; copy: a file already encoded for the web (the hero and the Video → 3D clip), shipped as it is. Never list anything from soundstage_private/, Milestone6_Ripple_Pose/private_mike_test/ or the 24-hour challenge (the build refuses them).",
-  "always": ["r/m_v2s_source.mp4", "r/canned/advisor_vocab.json", "refs/horse.jpg", "refs/man.jpg", "refs/woman.jpg", "r/canned/takecheck.json", "r/m_hero_jturn.mp4"],
+  "always": ["r/m_v2s_source.mp4", "r/canned/advisor_vocab.json", "refs/horse.jpg", "refs/man.jpg", "refs/woman.jpg", "r/canned/takecheck.json", "r/canned/director_plans.json", "r/m_hero_jturn.mp4"],
   "encode": [
     {"src": "~/OpenHiggsfieldContest/share/Milestone11_NewSets/showcase/underwater/draft_ltx.mp4", "out": "m_underwater_draft.mp4"},
     {"src": "~/OpenHiggsfieldContest/share/Milestone11_NewSets/showcase/underwater/draft_ltx.mp4", "out": "m_underwater_look.jpg", "kind": "frame0"},
@@ -52,6 +52,7 @@
     {"src": "~/OpenHiggsfieldContest/share/FullScene/KeyAndStrip_0650/key_camera_view_sheet.png", "out": "m_key_sheet.jpg", "kind": "still"},
     {"src": "~/OpenHiggsfieldContest/share/FullScene/KeyAndStrip_0650/strip_1600_before.png", "out": "m_strip_before.jpg", "kind": "still"},
     {"src": "~/OpenHiggsfieldContest/share/FullScene/KeyAndStrip_0650/strip_1600_after.png", "out": "m_strip_after.jpg", "kind": "still"},
+    {"src": "tools/tryit/canned/director_plans.json", "out": "canned/director_plans.json", "kind": "copy"},
     {"src": "tools/tryit/canned/m_perf_asset.json", "out": "m_perf_asset.json", "kind": "copy"},
     {"src": "~/OpenHiggsfieldContest/share/LipSync_Wow_fixed.mp4", "out": "m_perf_actor.mp4"},
     {"src": "~/OpenHiggsfieldContest/share/Milestone25_Performance/_work/m25_wow_20261101_195614/pose.mp4", "out": "m_perf_pose.mp4"},
@@ -77,6 +78,9 @@
     {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/tr3_boat2_color_vs_final.mp4", "out": "m_tr3_boat2_sbs.mp4", "kind": "copy"},
     {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/chase_crane_frame_s6101_00001_.png", "out": "m_tr3_chase_crane_frame.jpg", "kind": "still"},
     {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/horror_close_frame_s6102_00001_.png", "out": "m_tr3_horror_close_frame.jpg", "kind": "still"},
-    {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/western_shot_1_frame_s6103_00001_.png", "out": "m_tr3_western_shot_1_frame.jpg", "kind": "still"}
+    {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/western_shot_1_frame_s6103_00001_.png", "out": "m_tr3_western_shot_1_frame.jpg", "kind": "still"},
+    {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/chase_tracking_frame_s6104_00001_.png", "out": "m_tr3_chase_tracking_frame.jpg", "kind": "still"},
+    {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/chase_chase_frame_s6105_00001_.png", "out": "m_tr3_chase_chase_frame.jpg", "kind": "still"},
+    {"src": "~/OpenHiggsfieldContest/share/TryIt_Refresh3/western_shot_mvtzikwz_frame_s6106_00001_.png", "out": "m_tr3_western_shot_mvtzikwz_frame.jpg", "kind": "still"}
   ]
 }
