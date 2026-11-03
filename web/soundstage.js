@@ -531,6 +531,18 @@ function createStageWidget(node, inputName) {
     // A property write alone isn't seen by ComfyUI's change tracker: nudge it so the draft (and Save) keep it.
     try { app.extensionManager?.workflow?.activeWorkflow?.changeTracker?.checkState?.(); } catch { /* older frontend */ }
   };
+  /** Drop one saved render of a shot (④ Frame's Delete on the chosen frame). Returns the file it was, for Undo. */
+  const forgetRender = (sid, kind) => {
+    const all = { ...savedRenders() };
+    const was = all[sid]?.[kind] || null;
+    if (all[sid]) { all[sid] = { ...all[sid] }; delete all[sid][kind]; }
+    node.properties = node.properties || {};
+    node.properties.ss_renders = all;
+    try { localStorage.setItem(lsKey(), JSON.stringify(all)); } catch { /* storage blocked */ }
+    if (shotRenders[sid]) { shotRenders[sid] = { ...shotRenders[sid] }; delete shotRenders[sid][kind]; }
+    try { app.extensionManager?.workflow?.activeWorkflow?.changeTracker?.checkState?.(); } catch { /* older frontend */ }
+    return was;
+  };
   // Which setup each queued prompt was for (a render can finish after you switch shots).
   const promptShot = {};
   if (!api.__ssQueueHooks) {
@@ -2351,6 +2363,8 @@ function createStageWidget(node, inputName) {
     castDone: () => Object.values(node.properties?.ss_cast?.items || {}).some((x) => x?.ref),
     getRenders: (sid) => rendersFor(sid),
     rememberRender: (sid, kind, f) => { if (f?.filename) { rememberRender(sid, kind, f); shotRenders[sid] = { ...shotRenders[sid], [kind]: viewURL(f) }; } },
+    // ④ Frame's Delete on the chosen frame: the shot's saved render of that kind goes too; returns it for Undo.
+    forgetRender: (sid, kind) => forgetRender(sid, kind),
     onRung: (fn) => rungListeners.push(fn),
     lastPromptId: () => lastPid,
     setDescription: (text) => setDescription(text, true),
@@ -2412,6 +2426,8 @@ function createStageWidget(node, inputName) {
     openCast: () => pipeline?.go("cast"),
   });
   for (const v of Object.values(pipeline.views)) el.append(v);
+  // ③ Set's way on, at the end of the time bar: "④ Make the first frame →" (or Remake) paints it from the clay as it is now.
+  time.append(pipeline.setNextButton());
   // Milestone 16: takes that check themselves (Ladder + Dailies chips, Re-roll), Ready chips, Run estimates, the recipe in the MP4.
   var takeChecks = attachTakeChecks({ app, api, stage, ladder, pipeline, look, say: (m) => (status.textContent = m),
     restoreScene: (sc) => { (widget.options?.setValue || ((v) => widget.setValue(v, {})))(JSON.stringify(sc)); nudgeTracker?.(); } });
