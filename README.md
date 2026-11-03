@@ -71,6 +71,14 @@ Not in the demo at all (each one says "available in the full install"): new rend
 
 > **Shoot dailies, not the perfect shot.** Don't chase one perfect generation. Shoot takes like dailies, then let the editor find the exact frame. Still not happy? Go from the timeline back to the soundstage for the reshoots and inserts you missed.
 
+### 📱 Shoot it with your phone
+
+Scan a QR code and your phone becomes the shot camera on the live 3D set. Walk it around to aim, pick a real prime (14 to 135 mm), tap to focus, open the iris to T1.4 and see the depth of field, set A/B marks and pull focus, then roll. The take lands on the desktop as the shot's camera move, lens, focus and stop: one handheld pass, ready to render. No app to install; it runs in the phone's browser over your own network.
+
+<p align="center"><img src="docs/media/readme_v4/phone_rec.gif" width="880" alt="The phone viewfinder rolling a take: a 3-2-1 count-in, then REC with the timecode running, 35 mm at T1.4, focus 22 m, as two actors walk across the clay set."></p>
+<p align="center"><img src="docs/media/readme_v4/card_phone.gif" width="880" alt="Your phone is the viewfinder, step by step: scan the QR, the live stage on the phone, aim and zoom, pick a prime, tap to focus, T1.4 with live depth of field, pull focus between A and B marks, roll, and keep the take on the shot."></p>
+<p align="center"><sub><a href="https://github.com/user-attachments/assets/9cf05272-476e-446f-b067-99361772ee13">▶ Watch the phone and the desktop side by side, in real time</a></sub></p>
+
 <p align="center"><img src="docs/media/readme_v4/card_drive.gif" width="880" alt="Drive anything, a live stage capture: select a car, person, horse or boat and press D. REC keys the take; Drive takes over from keys."></p>
 
 <p align="center"><img src="docs/media/readme_v4/card_drive_horse.gif" width="880" alt="Drive anything, a live stage capture: walk up to a horse, swing into the saddle and ride it from a canter to a gallop with the keyboard."></p>
