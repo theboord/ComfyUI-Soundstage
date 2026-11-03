@@ -13,6 +13,7 @@ from . import convert as C
 from . import track as T
 
 MOCAP_MODEL = "sam_3d_body_dinov3_bf16.safetensors"
+ANKLE_M = 0.08   # the ankle joint above the sole (m)
 
 
 def mocap_graph(video: str, name: str) -> dict:
@@ -80,7 +81,13 @@ def place(take: dict, poses, times, A, b, K, size, clip_fps: float) -> dict | No
         ra, la = px[k][0], px[k][1]
         foot = ra if ra[1] > la[1] else la                   # the lower foot in the picture carries the weight
         uv = (foot[0] * sx, foot[1] * sy)
-        hit, _ = C.ground_point(P, A, b, K, uv)
+        hit, ray = C.ground_point(P, A, b, K, uv)
+        if hit is not None:
+            # The joint is the ANKLE, ~8 cm above the sole: the ray through it meets that height, not the floor (on a
+            # low camera the floor hit is metres too far, which shrinks the clay in the picture).
+            o = A @ T.camera_center(P) + b
+            if ray[1] < -1e-6 and o[1] > ANKLE_M:
+                hit = o + ray * ((ANKLE_M - o[1]) / ray[1])
         airborne = feet3[k].min() - ground3 > 0.12
         path.append(None if hit is None else [float(hit[0]), float(hit[2])])
         ok.append(hit is not None and not airborne)
@@ -94,6 +101,10 @@ def place(take: dict, poses, times, A, b, K, size, clip_fps: float) -> dict | No
     good = [i for i in range(n) if ok[i]]
     if not good:
         return None
+    hits = []
+    for k in range(n):
+        hk = path[k]
+        hits.append(None if hk is None else [hk[0], ANKLE_M, hk[1]])
     # Off the ground (a jump) or feet out of frame: carry the path straight between the contacts around it.
     xs = np.array([path[i] for i in good], float)
     full = np.stack([np.interp(range(n), good, xs[:, 0]), np.interp(range(n), good, xs[:, 1])], axis=1)
@@ -101,7 +112,127 @@ def place(take: dict, poses, times, A, b, K, size, clip_fps: float) -> dict | No
     yaw_u = np.degrees(np.unwrap(np.radians(yaw)))
     return {"path": [[round(float(x), 3), round(float(z), 3)] for x, z in full],
             "yaw": [round(float(y), 2) for y in _smooth(yaw_u[:, None], 2)[:, 0]],
-            "start_frame": int(round(src[0] / float(clip_fps) * C.FPS))}
+            "start_frame": int(round(src[0] / float(clip_fps) * C.FPS)),
+            "hits": hits, "contact": ok}
+
+
+# ------------------------------------------------------------------ one lens for the solve and the performer
+# SAM 3D Body fits its own focal length to the person (take["focal_px"], on the source picture) and its joints reproject
+# onto them with it. The solve used Depth Anything 3's mono focal, which on the street-dance clip was 896 px against
+# SAM's 1468 px at 1280 wide (25 mm vs 41 mm): the clay, placed and seen through the solved camera, came out about 2/3
+# the dancer's size with its shoulders at her chest (share/QA/v2s_motion_fidelity). The fix: the shot uses ONE set of
+# intrinsics (SAM's, when it captured someone) for the camera solve, the set and the performer; then the performer's
+# height is fitted so its projection matches SAM's 2D joints (fit_scale).
+TORSO = (1, 8, 11)   # neck, r_hip, l_hip (body_names of the take)
+
+
+def source_size(take: dict, size) -> tuple[float, float]:
+    """(W, H) of the picture the take was captured on, the same way round as the proxy frames (size = (w, h))."""
+    w, h = size
+    img = take.get("image_size") or []
+    W, H = (float(img[1]), float(img[0])) if len(img) >= 2 else (float(w), float(h))   # SAM stores (H, W)
+    if W < H and w > h or W > H and w < h:
+        W, H = H, W
+    return W, H
+
+
+def sam_focal(take: dict, size) -> float | None:
+    """SAM 3D Body's focal length on the proxy grid (size = (w, h)), or None."""
+    f = take.get("focal_px")
+    if not f or not math.isfinite(float(f)) or float(f) <= 0:
+        return None
+    W, _ = source_size(take, size)
+    return float(f) * size[0] / W
+
+
+def shared_K(K: np.ndarray, take: dict, size, lo_mm: float = 10.0, hi_mm: float = 400.0):
+    """The one K for the shot: DA3's principal point with SAM 3D Body's focal (it is fitted to the person, whose
+    joints are what the clay must cover). Returns (K, note); K unchanged (note None) when the take has no sane focal."""
+    f = sam_focal(take, size)
+    if f is None:
+        return np.asarray(K, float), None
+    mm = C.focal_mm(np.array([[f, 0, 0], [0, f, 0], [0, 0, 1]], float), size[0])
+    if not (lo_mm <= mm <= hi_mm):
+        return np.asarray(K, float), f"lens: SAM 3D Body's focal ({mm:.0f} mm) is implausible; kept Depth Anything 3's"
+    K2 = np.array(K, float).copy()
+    old = C.focal_mm(K2, size[0])
+    K2[0, 0] = K2[1, 1] = f
+    return K2, (f"lens: one focal for the camera, the set and the performer: {mm:.1f} mm from SAM 3D Body "
+                f"(Depth Anything 3 guessed {old:.1f} mm)")
+
+
+def sam_points(take: dict, k: int) -> np.ndarray:
+    """The take's body joints at take frame k in SAM's camera space, OpenCV axes (x right, y down, z forward), metres."""
+    body = np.asarray(take["body"][k], float)
+    root = np.asarray((take.get("root") or [[0.0, 0.0, 0.0]] * (k + 1))[k], float)
+    P = body + root
+    return np.stack([P[:, 0], -P[:, 1], -P[:, 2]], axis=1)
+
+
+def project(Xc: np.ndarray, K: np.ndarray) -> np.ndarray:
+    z = np.maximum(Xc[:, 2], 1e-6)
+    return np.stack([K[0, 0] * Xc[:, 0] / z + K[0, 2], K[1, 1] * Xc[:, 1] / z + K[1, 2]], axis=1)
+
+
+def sam_2d(take: dict, k: int, size) -> np.ndarray:
+    """Where SAM 3D Body saw the joints at take frame k, on the proxy grid: its own camera, its own focal."""
+    W, H = source_size(take, size)
+    f = float(take["focal_px"])
+    uv = project(sam_points(take, k), np.array([[f, 0, W / 2], [0, f, H / 2], [0, 0, 1]], float))
+    return uv * np.array([size[0] / W, size[1] / H])
+
+
+def stature(take: dict) -> float:
+    """The performer's standing height (m) from the take: nose above the ankles at their most upright, plus the head
+    top and heel (nose to ankle is ~0.87 of a person's height)."""
+    body = np.asarray(take["body"], float)
+    up = body[:, 0, 1] - body[:, [10, 13], 1].min(axis=1)
+    return float(np.clip(np.percentile(up, 90) / 0.87, 0.9, 2.3))
+
+
+def clay_points(take: dict, k: int, hit, pose, A, b, scale: float) -> np.ndarray | None:
+    """The clay at take frame k in the stage camera's metric space: SAM's body, scaled by `scale` about its lower
+    ankle, with that ankle on the stage floor point `hit` (stage metres) the placement found."""
+    if hit is None:
+        return None
+    mpu = float(np.linalg.norm(A[0]))
+    p0 = np.linalg.solve(A, np.asarray(hit, float) - b)            # stage -> cam0 (solve units)
+    P = np.asarray(pose, float)
+    c = (P[:, :3] @ p0 + P[:, 3]) * mpu                            # -> this frame's camera, metres
+    J = sam_points(take, k)
+    a = J[10] if J[10, 1] > J[13, 1] else J[13]                     # the lower ankle in the picture (y down)
+    return c + scale * (J - a)
+
+
+def overlay_error(take: dict, placed: dict, poses, times, A, b, K, size, clip_fps: float, scale: float = 1.0,
+                  frames=None) -> dict:
+    """How well the clay covers the performer through the stage camera: per contact frame, the projected torso
+    (neck to mid-hip, px) of the clay and of SAM's own 2D joints, and the mean joint error over SAM's torso length."""
+    src = take.get("source_frames") or list(range(int(take.get("frames") or 0)))
+    tc, ts, errs = [], [], []
+    ks = frames if frames is not None else [k for k, ok in enumerate(placed.get("contact") or []) if ok]
+    for k in ks:
+        P = pose_at(poses, times, src[k] / float(clip_fps))
+        X = clay_points(take, k, placed["hits"][k], P, A, b, scale)
+        if X is None or (X[:, 2] <= 0.05).any():
+            continue
+        uv, ref = project(X, K), sam_2d(take, k, size)
+        tor = lambda q: float(np.linalg.norm(q[TORSO[0]] - (q[TORSO[1]] + q[TORSO[2]]) / 2))  # noqa: E731
+        tc.append(tor(uv)); ts.append(tor(ref))
+        errs.append(float(np.linalg.norm(uv - ref, axis=1).mean() / max(1e-6, ts[-1])))
+    if not ts:
+        return {"frames": 0}
+    return {"frames": len(ts), "torso_clay_px": float(np.median(tc)), "torso_sam_px": float(np.median(ts)),
+            "size_ratio": float(np.median(np.array(tc) / np.array(ts))), "err_torso": float(np.mean(errs))}
+
+
+def fit_scale(take: dict, placed: dict, poses, times, A, b, K, size, clip_fps: float) -> float:
+    """The clay's scale that makes its projected torso match SAM's (the floor solve's distance and SAM's metric
+    distance disagree when the set's scale is off): 1 / the median size ratio, kept within 0.5-2."""
+    e = overlay_error(take, placed, poses, times, A, b, K, size, clip_fps, 1.0)
+    if not e.get("frames"):
+        return 1.0
+    return float(np.clip(1.0 / max(1e-6, e["size_ratio"]), 0.5, 2.0))
 
 
 COLORS = {"black": "#1d1d1f", "white": "#ecebe7", "grey": "#8a8a8a", "gray": "#8a8a8a", "red": "#b3302b", "blue": "#2e4f8a",
