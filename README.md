@@ -1,5 +1,10 @@
 <p align="center"><img src="docs/media/readme_v4/banner.png" width="880" alt="Soundstage: a real 3D film set inside ComfyUI. Script in, finished scene out. 100% open weights, on your own GPU. #OpenSourceHiggsfield"></p>
 
+<p align="center"><b>▶ Watch the commercial (1:54, sound on).</b> Made with Soundstage: the sets, stunts, effects and cut. Music and narration: ElevenLabs.</p>
+
+https://github.com/user-attachments/assets/1c7d7bb2-db5d-472e-b025-3168c633c531
+
+
 <p align="center"><img src="docs/media/readme_v4/hero_jturn.gif" width="880" alt="A wipe between the 3D stage's clay and the Final render of the same J-turn: a red car on a wet night street, same blocking, same camera."></p>
 <p align="center"><sub>The wipe: the 3D stage's clay, then the Final render of the same J-turn. Same blocking, same camera. <a href="https://github.com/user-attachments/assets/161d858e-5137-4887-abc2-995dd2b83574">▶ The render with its sound </a> · <a href="https://github.com/user-attachments/assets/9a4114c4-b9a9-442c-820e-d55c4dc18bbd">▶ A 15 s hello from Mike on the lot </a></sub></p>
 
