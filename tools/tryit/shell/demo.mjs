@@ -3,7 +3,8 @@
 import "./scripts/glbshim.js";
 import { app } from "./scripts/app.js";
 import { api, demo } from "./scripts/api.js";
-import { LABEL, GLYPH, provenanceNow, stopProvenance, clipProvenance } from "./provenance.mjs";
+import { LABEL, GLYPH, provenanceNow, stopProvenance, clipProvenance, rememberBaseline, editedSince, replayNotice, RECORDED_LABEL,
+  RECORDED_NOTE, REPLAYED } from "./provenance.mjs";
 
 const $ = (id) => document.getElementById(id);
 export const SCENES = [
@@ -347,6 +348,7 @@ async function runStop(id) {
   if (!stop) return;
   markCurrent(id);
   try { await ACTIONS[stop.do || "set"]?.(); } catch (e) { console.warn("[demo] tour stop", id, e); }
+  baseline(true);   // what a stop sets up is the demo's own doing, not the visitor's edit
   if (stop.say) demo.toast(stop.say);
 }
 
@@ -444,4 +446,58 @@ $("prov").addEventListener("click", () => demo.toast(provNow().note));   // a ph
 drawProv();
 setInterval(drawProv, 500);
 window.__demo.prov = provNow;
+
+// ---------------------------------------------------------------- your edits are not re-rendered here
+// Each scene's stage as it loaded is the baseline (provenance.mjs stageSig). A Run / Generate on a stage you changed
+// still replays the recorded renders: a note says so right above the frames, with the install link, and every
+// replayed ④ Frame tile says "Recorded example" (the same Replayed badge as the bar).
+const baseState = {};
+function baseline(force = false) { try { rememberBaseline(baseState, S().toJSON(), force); } catch { /* the stage isn't up */ } }
+const edited = () => { try { return editedSince(baseState, S().toJSON()); } catch { return false; } };
+setTimeout(() => baseline(), 1500);       // after the widget value and the scene's own settling
+setInterval(() => baseline(), 1000);      // a script scene switched to on the stage gets its own baseline once
+let editNote = null;
+function showEditNote(n) {
+  const f = P()?.f, m = P()?.m;
+  if (!editNote) {
+    editNote = Object.assign(document.createElement("div"), { className: "demo-editnote" });
+    editNote.setAttribute("role", "note");
+  }
+  const link = Object.assign(document.createElement("a"), { href: n.link, target: "_blank", rel: "noopener", textContent: n.linkText });
+  editNote.replaceChildren(provBadge({ mode: REPLAYED, note: n.note }), " ",
+    Object.assign(document.createElement("span"), { textContent: n.note }), " ", link);
+  editNote.dataset.where = n.where;
+  // ④ Frame: right above its frames (both layouts); ⑤ Motion: above its status line.
+  const anchor = n.where === "④ Frame" ? f?.candBar || f?.grid : m?.status;
+  if (anchor?.parentNode && editNote.nextSibling !== anchor) anchor.parentNode.insertBefore(editNote, anchor);
+  editNote.hidden = false;
+}
+demo.onReplay = ({ step }) => {
+  const n = replayNotice({ step, edited: edited() });
+  if (!n) { if (editNote) editNote.hidden = true; return; }
+  showEditNote(n);
+  demo.toast(n.toast);
+};
+// Every ④ Frame tile is a recording in the demo: label it.
+function labelFrames() {
+  const grid = P()?.f?.grid;
+  if (!grid) return;
+  for (const c of grid.querySelectorAll(":scope > .cand")) {
+    // The first-frame check needs the GPU: in the demo it never ran, so its "Check failed" badge would only look broken.
+    for (const fc of c.querySelectorAll(":scope > .fc")) if (/full install/.test(fc.title || "")) fc.hidden = true;
+    if (c.querySelector(":scope > .prov.rec")) continue;
+    const b = provBadge({ mode: REPLAYED, note: RECORDED_NOTE });
+    b.classList.add("rec");
+    b.textContent = `${GLYPH[REPLAYED]} ${RECORDED_LABEL}`;
+    c.append(b);
+  }
+}
+const watchFrames = () => {
+  const grid = P()?.f?.grid;
+  if (!grid) { setTimeout(watchFrames, 500); return; }
+  new MutationObserver(labelFrames).observe(grid, { childList: true, subtree: true });
+  labelFrames();
+};
+watchFrames();
+window.__demo.edited = edited;
 readyNow();

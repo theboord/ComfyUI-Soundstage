@@ -229,6 +229,13 @@ function closeReview() {
   if (back?.isConnected) back.focus?.({ preventScroll: true });
 }
 
+/** Reject's tooltip: what it keeps that ④ Frame's Delete does not (it never steers the next generation). */
+export function rejectTip(step) {
+  return "Reject: keep this take on record as rejected. Takes shows it dimmed and can filter it, the shot's status dot turns red, "
+    + "and the Director's cut does not add a shot whose current take is rejected. It does not change the next generation. "
+    + (step === "frame" ? "To take a frame off ④ Frame's list instead, use the trash on its tile (Undo for 5 s)." : "The take stays in the bin.");
+}
+
 /** The review pop-over for one take, next to `anchor`. */
 export function openReview(anchor, shotId, take, label = null) {
   injectCss();
@@ -238,7 +245,7 @@ export function openReview(anchor, shotId, take, label = null) {
   const step = take?.kind === "draft" || take?.kind === "final" || (take?.video ?? false) ? "motion" : "frame";
   const name = label || `${take?.n ? `Tk ${take.n} · ` : ""}${KIND_LABEL[take?.kind] || (step === "motion" ? "Video" : "Frame")}`;
   const note = h("textarea", { placeholder: "What should change? (e.g. warmer light, she looks left, slower push-in)", "aria-label": "Note" }, st.note);
-  const choice = (k, sym, text) => h("button", { type: "button", "data-k": k, "aria-pressed": String(st.status === k), title: STATUS_META[k].label,
+  const choice = (k, sym, text, tip = STATUS_META[k].label) => h("button", { type: "button", "data-k": k, "aria-pressed": String(st.status === k), title: tip,
     on: { click: () => {
       const cur = takeStatus(shotId, take).status;
       const next = cur === k ? "" : k;
@@ -253,7 +260,7 @@ export function openReview(anchor, shotId, take, label = null) {
     `↺ Redo in ${step === "frame" ? "④ Frame" : "⑤ Motion"}`);
   const pop = h("div", { class: "ss-appr-pop", role: "dialog", "aria-label": `Review ${name}` },
     h("div", { class: "hd" }, "Review", h("small", {}, name)),
-    h("div", { class: "ch" }, choice("approved", "✓", "Approve"), choice("changes", "↺", "Needs changes"), choice("rejected", "✕", "Reject")),
+    h("div", { class: "ch" }, choice("approved", "✓", "Approve"), choice("changes", "↺", "Needs changes"), choice("rejected", "✕", "Reject", rejectTip(step))),
     note,
     h("div", { class: "ft" }, HOST.onRedo ? redo : null,
       h("button", { type: "button", class: "clr", title: "Back to unreviewed (clears the note)",
