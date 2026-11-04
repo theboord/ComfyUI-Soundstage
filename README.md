@@ -88,6 +88,26 @@ Bring in a real clip and recast one person with a character photo. Everyone and 
 
 So it's one place for the whole job: script, blocking, shooting, phone camera, character swaps, Ripple edits and the cut. See [docs/recast.md](docs/recast.md).
 
+### 🎙️ Record yourself: webcam or phone
+
+Your own performance drives the shot. No mocap suit, no app to install.
+
+- **Lip sync and acting (Real performance):** press **● Record** and act it out on your webcam and mic (3-2-1 count-in, up to 10 s). Your face, body and voice drive the character; voice conversion can turn your voice into theirs.
+- **Pose control (Capture motion):** act it out on the webcam, or bring any clip of one person. Body, hands, fingers, the path and the jumps go onto a person on the stage, and the render follows that pose.
+- **From your phone:** scan the QR, tap **Film**, and send it as **Capture motion**, **Real performance**, or **Footage** (keep the real clip for **Recast** character swaps or **Ripple** edits).
+
+See [docs/performance.md](docs/performance.md).
+
+### 🎛️ Full control, presets optional
+
+Presets are a starting point, never a cage. Every setting stays open:
+
+- **⑤ Motion → Advanced (LTX):** steps for each stage, the stage-2 start, your own sigma schedule, sampler, CFG and seed, an extra LoRA and its strength, how literally to follow the clay (layout IC-LoRA, clay blur, frame reference), resolution, two-stage, frame rate, temporal x2, decode tiles and the codec. **Reset to preset** puts it back.
+- **④ Frame:** steps, CFG, a negative prompt, and a style or character LoRA with its strength.
+- **Open in ComfyUI** on any take opens its exact node graph, every node and wire, to change anything else.
+
+The video and image models here are distilled (few-step) versions, so speed is built in: no separate step-reduction LoRA needed.
+
 <p align="center"><img src="docs/media/readme_v4/card_drive.gif" width="880" alt="Drive anything, a live stage capture: select a car, person, horse or boat and press D. REC keys the take; Drive takes over from keys."></p>
 
 <p align="center"><img src="docs/media/readme_v4/card_drive_horse.gif" width="880" alt="Drive anything, a live stage capture: walk up to a horse, swing into the saddle and ride it from a canter to a gallop with the keyboard."></p>
