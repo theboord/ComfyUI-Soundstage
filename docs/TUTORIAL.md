@@ -13,7 +13,7 @@ This guide is for anyone who has just cloned the repo. It covers where every pan
 
 ## Contents
 
-0. **[New on 1 and 2 November](#new-on-1-and-2-november)** (limits first): [world collisions](#world-collisions-everything-collides) · [✦ One-click](#one-click-effects-relight-angles-expand) · [Seamless loop](#seamless-loop-and-the-seam-meter) · [Reshoot](#reshoot-from-a-new-angle) · [Open in ComfyUI](#open-in-comfyui-and-download-the-graph) · [Film a move](#film-a-move-on-your-phone) · [Racing Cinema](#racing-cinema-and-the-racing-camera-moves) · [boats](#boats) · [swimming](#swimming-and-water) · [Drive mode](#drive-mode-what-changed) · [voice conversion](#voice-conversion-in-real-performance) · [1024 layout and ⋯](#the-1024-wide-layout-and-the-menu) · [pop-over layer](#one-pop-over-layer-for-every-menu) · [brass key and strip](#the-brass-key-and-the-shot-strip-fixes) · [Passes viewer](#passes-judge-the-matte-pose-talking-and-depth) · **2 Nov evening:** [real-time playback in the Cut](#real-time-playback-in-the-cut) · [Activity bar](#activity-bar-which-node-your-render-is-on) · [✦ Ask](#ask-on-every-step) · [④ Delete, Clear all, Make the first frame](#frame-delete-clear-all-and-make-the-first-frame) · [the first frame shows only what the camera sees](#the-first-frame-shows-only-what-the-camera-sees) · [Drive takes over from keys](#drive-takes-over-from-keys-and-cleans-the-take) · [⌂ Back to the set and ↶ Last view](#back-to-the-set-and-last-view) · [Load a script in the demo](#load-a-script-in-the-try-it-demo)
+0. **[New on 1 and 2 November](#new-on-1-and-2-november)** (limits first): [world collisions](#world-collisions-everything-collides) · [✦ One-click](#one-click-effects-relight-angles-expand) · [Seamless loop](#seamless-loop-and-the-seam-meter) · [Reshoot](#reshoot-from-a-new-angle) · [Open in ComfyUI](#open-in-comfyui-and-download-the-graph) · [Film a move](#film-a-move-on-your-phone) · [Racing Cinema](#racing-cinema-and-the-racing-camera-moves) · [boats](#boats) · [swimming](#swimming-and-water) · [Drive mode](#drive-mode-what-changed) · [voice conversion](#voice-conversion-in-real-performance) · [1024 layout and ⋯](#the-1024-wide-layout-and-the-menu) · [pop-over layer](#one-pop-over-layer-for-every-menu) · [move, fold or pop out a panel](#move-fold-or-pop-out-any-panel) · [brass key and strip](#the-brass-key-and-the-shot-strip-fixes) · [Passes viewer](#passes-judge-the-matte-pose-talking-and-depth) · **2 Nov evening:** [real-time playback in the Cut](#real-time-playback-in-the-cut) · [Activity bar](#activity-bar-which-node-your-render-is-on) · [✦ Ask](#ask-on-every-step) · [④ Delete, Clear all, Make the first frame](#frame-delete-clear-all-and-make-the-first-frame) · [the first frame shows only what the camera sees](#the-first-frame-shows-only-what-the-camera-sees) · [Drive takes over from keys](#drive-takes-over-from-keys-and-cleans-the-take) · [⌂ Back to the set and ↶ Last view](#back-to-the-set-and-last-view) · [Load a script in the demo](#load-a-script-in-the-try-it-demo)
 1. [Install](#1-install)
 2. [A tour of the workspace](#2-a-tour-of-the-workspace)
 3. [The seven steps, one by one](#3-the-seven-steps-one-by-one)
@@ -255,6 +255,16 @@ Also at 1024: **Physics** docks over the Properties column when it would be too 
 **Limit:** see the table above.
 
 <a id="the-brass-key-and-the-shot-strip-fixes"></a>
+
+### Move, fold or pop out any panel
+
+**Where:** any panel over the canvas (Properties, Presets, Physics, Look, ✦ Ask, Coach, each step's panels and pop-overs, Drive's key hints).
+
+1. Drag a panel by its header to move it out of the way (or click its header and use the arrow keys; Shift moves further). It stays where you put it, and on screen when the window shrinks.
+2. **—** folds it to a title chip; click the chip to open it again.
+3. **⧉** (Properties, Presets, ✦ Ask) opens the panel in its own window: drag that to a second monitor. **Dock back** (or closing the window) puts it back. If the browser blocks pop-ups, the status line says so.
+4. **Drive mode** folds every other panel to a chip on the right edge, clear of Exit, ● REC, the speed and Keep / Discard / Again, and puts them back when you leave. H or Tab still hides every panel.
+5. **Tools ▾ › Reset panel positions** puts every panel back where it started.
 
 ### The brass key and the shot strip fixes
 
