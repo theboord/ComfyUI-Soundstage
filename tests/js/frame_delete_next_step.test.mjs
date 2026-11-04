@@ -326,7 +326,7 @@ test("the note: exact words, the install link, only for ④ Frame and ⑤ Motion
   assert.equal(prov.replayNotice({ step: 4, edited: true }).where, "⑤ Motion");
   assert.equal(prov.replayNotice({ step: 5, edited: true }), null, "⑦'s Layer Pack keeps its own note");
   assert.equal(prov.RECORDED_LABEL, "Recorded example");
-  assert.match(src("README.md"), /^## Install$/m, "the README section the link points at");
+  assert.match(src("README.md"), /^<a id="install"><\/a>$|^#{2,3} Install$/m, "the README section the link points at (#install)");
 });
 
 test("the shell wires it: the replay asks first, the note reuses the Replayed badge, every frame tile is labelled", () => {
