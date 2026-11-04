@@ -19,10 +19,12 @@
 // Pure: no DOM. The chat UI is web/agent/ask.mjs + directorpanel.mjs; tests/js/assistant.test.mjs.
 import { normalizeCharacter, hydrateScript, compactScript } from "../script/parse.mjs";
 export { applyBreakdownFixes } from "../script/breakdown.mjs";
+import { searchDocs, troubleshoot, planRecipe, SOUNDSTAGE_MAP } from "./knowledge.mjs";
 import { gatherCharacter, gatherText, draftProfile, parseProfile, PROFILE_SYSTEM, cardFields, crossCheck, resolveCharacter } from "./charbuild.mjs";
 
 export const CHAR_TOOLS = ["gather_character", "profile_character", "update_character", "regenerate_character"];
-export const TOOL_NAMES = ["analyze_script", "check_cast", "check_props", "check_locations", "apply_fixes", "plan_stage", "show_me", "add_note", ...CHAR_TOOLS];
+export const KNOW_TOOLS = ["search_docs", "troubleshoot", "plan_recipe"];
+export const TOOL_NAMES = [...KNOW_TOOLS, "analyze_script", "check_cast", "check_props", "check_locations", "apply_fixes", "plan_stage", "show_me", "add_note", ...CHAR_TOOLS];
 
 // ---------------------------------------------------------------- small helpers
 const uniq = (xs) => [...new Set(xs)];
@@ -329,7 +331,12 @@ export function projectSummary(script, { shots = [], max = 2400 } = {}) {
 }
 
 export const ASSISTANT_SYSTEM = `You ARE the Soundstage assistant (✦ Ask), built into Soundstage, a film-making app in ComfyUI: you act on the user's project with the tools below, you are not a chatbot giving general advice. Steps: ① Script (screenplay, scene breakdown: cast, props, set dressing, wardrobe, vehicles), ② Cast & Locations (a card per character / location: description and a reference picture made by ✨ Generate), ③ Set (a 3D stage), ④ Frame (paint stills), ⑤ Motion (video), ⑥ Review, ⑦ Deliver.
+You are a collaborative director, DP and editor: when an intent is vague (tone, coverage, pacing) ask ONE sharp creative question; suggest film-grammar options with a short why; always ground suggestions in what Soundstage can actually do (the tools, presets and panels), name the exact step, panel and button, and be honest about limits.
+${SOUNDSTAGE_MAP}
 You talk with the user over several turns and do what they ask with these tools:
+- search_docs {query}: the Soundstage docs and every control, preset, setting, shortcut and server route; use it for any how / where / what-is question
+- troubleshoot {symptom}: known problems (clay not followed in the final, characters drift, camera clips the set, slow render, lip sync, LoRA ignored, physics) with the fix
+- plan_recipe {intent}: a creative intent (a stunt, a gunshot wound / squib, an explosion, a camera move, coverage, a look, an edit: match cut, dissolve, J/L cut, montage, Ripple edit, reshoot, Recast, phone viewfinder, record yourself) -> the Soundstage steps and the preset that does it
 - analyze_script {scenes?}: summary, scene list, beats and issues of the screenplay
 - check_cast {scenes?}: duplicate or near-duplicate characters (two names for one person, typos, age clashes)
 - check_props {scenes?}: which breakdown props are really set dressing, wardrobe, vehicles, characters or not props at all
@@ -388,6 +395,11 @@ export function sameAgain(text) {
   const nums = [...t.matchAll(/\bscenes?\s+((?:\d+[a-z]?(?:\s*(?:,|and|&)\s*)?)+)/gi)].flatMap((m) => m[1].split(/\s*(?:,|and|&)\s*/)).map((x) => x.trim()).filter(Boolean);
   return nums.length ? { scenes: nums } : (/\b(same|again)\b/i.test(t) ? { scenes: null } : null);
 }
+
+export const ANSWER_SYSTEM = `You are the Soundstage assistant, a collaborative director, DP and editor. Answer the user from what was found in Soundstage below: name the exact step, panel and control, in order, briefly; add one film-craft tip if it helps. If what was found doesn't answer it, say so. Never claim you did something: you are only explaining. Plain text, at most 6 short lines.`;
+/** A problem report ("having trouble", "doesn't", "won't", "is off") and a creative intent ("I want a gunshot wound"). */
+export const SYMPTOM = /\b(trouble|problem|issue|not working|doesn'?t|does not|won'?t|isn'?t|can'?t get|cannot get|fails?|broken|wrong|stuck|slow|off\b|drift\w*|ignor\w+|clips?|clipping|out of sync|no effect)/i;
+export const INTENT = /\b(i want|i'd like|i would like|let'?s (?:do|add|have|make|shoot)|how (?:do|can|would) (?:i|we) (?:do|add|make|shoot|stage|film|get)|(?:add|do|stage|shoot|make|plan|need) (?:a|an|some|the)\b|give me a)/i;
 
 export const YES = /^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|please(?: do)?|do it|go ahead|go for it|apply(?: it)?|lock it in|sounds good|perfect|looks good|regenerate(?: it)?|y)\b/i;
 export const NO = /^\s*(?:no|nope|not now|skip|cancel|later|don'?t|leave it|nah)\b/i;
@@ -521,6 +533,13 @@ export class Conversation {
     return out;
   }
 
+  /** Without the model: a problem -> troubleshoot, a creative intent -> plan_recipe (only when one matches), else null. */
+  builtInKnow(text) {
+    if (SYMPTOM.test(text) && troubleshoot(text).entries.length) return { tools: [{ name: "troubleshoot", args: { symptom: text } }] };
+    if (INTENT.test(text) && !this.host.hasRecipe?.(text) && planRecipe(text).steps.length) return { tools: [{ name: "plan_recipe", args: { intent: text } }] };
+    return null;
+  }
+
   /** The built-in router: the checks the words ask for, "the same for scene N", a question when unsure, else null. */
   builtIn(text) {
     const who = buildTarget(text, this.host.script?.());
@@ -535,7 +554,24 @@ export class Conversation {
     return null;
   }
 
-  async turn(text, { signal = null, useModel = true } = {}) {
+  /** The model words the answer from what the knowledge tools found (a second, short round trip). */
+  async _answerFrom(text, results, signal) {
+    const ctx = results.map((r) => r.tool === "search_docs" ? r.context : r.tool === "troubleshoot" ? r.entries.map((e) => `Problem: ${e.symptom}\nCause: ${e.cause}\nFix: ${e.fix.join(" ")}`).join("\n")
+      : r.steps?.length ? `${r.title}: ${r.steps.join(" ")} ${r.craft || ""}` : "").filter(Boolean).join("\n\n").slice(0, 3600);
+    if (!ctx) return "";
+    try {
+      const raw = await this.host.llm(ANSWER_SYSTEM, `Found in Soundstage:\n${ctx}\n\nUser: ${text}`, { signal });
+      return String(raw || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim().slice(0, 900);
+    } catch (e) { if (e?.cancelled || signal?.aborted) throw e; return ""; }
+  }
+
+  async _know(name, args, text) {
+    if (name === "search_docs") return searchDocs(String(args.query || text));
+    if (name === "troubleshoot") return troubleshoot(String(args.symptom || text));
+    return planRecipe(String(args.intent || text));
+  }
+
+  async turn(text, { signal = null, useModel = true, question = false } = {}) {
     this.remember("user", text);
     // writing a card may be asked for outright ("apply it to his card"); regenerating (the GPU) always asks first
     const yes = YES.test(text) || /\b(apply|update|write)\b/i.test(text);
@@ -567,6 +603,7 @@ export class Conversation {
         if (t.name === "show_me") { out.recipe = String(t.args.topic || text); continue; }
         if (t.name === "add_note") { out.note = { text: String(t.args.text || "").slice(0, 600), scene: t.args.scene ?? null }; continue; }
         if (t.name === "apply_fixes") { out.applyAsked = true; continue; }   // only the user's button applies
+        if (KNOW_TOOLS.includes(t.name)) { out.results.push(await this._know(t.name, t.args, text)); ran.push(t.name); continue; }
         const nm = String(t.args.name || t.args.character || "");
         if (t.name === "gather_character" || t.name === "profile_character") {
           const r = t.name === "profile_character" ? await this.profile(nm, { signal, useModel }) : { ...gatherCharacter(this.host.script?.(), nm, { extra: this._castNames() }) };
@@ -581,18 +618,23 @@ export class Conversation {
         const r = TOOL_NAMES.includes(t.name) ? this.run(t.name, t.args) : null;
         if (r) { out.results.push(r); ran.push(t.name); } else unknown.push(t.name);
       }
-      if (ran.length) { this.lastTools = ran; }
+      if (ran.some((n) => KNOW_TOOLS.includes(n))) {
+        const said = await this._answerFrom(text, out.results.filter((r) => KNOW_TOOLS.includes(r.tool)), signal);
+        if (said) out.reply = said;
+      }
+      if (ran.length) { this.lastTools = ran.filter((n) => !KNOW_TOOLS.includes(n) && !CHAR_TOOLS.includes(n)); }
       if (unknown.length) out.cant = `I can't do ${unknown.join(", ")} yet. The nearest I can do: analyse the script, check the cast, props or locations, build a character into ② Cast, change the set, or add a Book note.`;
       if (!plan.tools.length && !out.reply) out.reply = "I'm not sure what to do with that.";
     } else {
-      const r = this.builtIn(text);
+      const r = this.builtIn(text) || (question || SYMPTOM.test(text) || INTENT.test(text) ? this.builtInKnow(text) : null);
       if (r?.clarify) { out.question = CLARIFY.question; out.options = CLARIFY.options; this.remember("assistant", CLARIFY.question); return out; }
       if (!r) return null;   // nothing for the checks: the recipes / the Director's planner take it (ask.mjs)
       for (const t of r.tools) {
+        if (KNOW_TOOLS.includes(t.name)) { out.results.push(await this._know(t.name, t.args, text)); continue; }
         const x = t.name === "profile_character" ? await this.profile(t.args.name, { signal, useModel: false }) : this.run(t.name, t.args);
         if (x) out.results.push(x);
       }
-      this.lastTools = r.tools.map((t) => t.name).filter((n) => !CHAR_TOOLS.includes(n));
+      this.lastTools = r.tools.map((t) => t.name).filter((n) => !CHAR_TOOLS.includes(n) && !KNOW_TOOLS.includes(n));
     }
     this._after(out);
     return out;
