@@ -245,6 +245,18 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   button.addEventListener("click", () => toggle());
   if (topBar) { if (before && before.parentNode === topBar) topBar.insertBefore(button, before); else topBar.append(button); }
 
+  // Warm-up (soundstage/assistant.py): one tiny request when the App opens, so the first real answer is fast. Shown
+  // quietly in the Ask button's tooltip and the panel header, never in the chat.
+  const title0 = button.title;
+  const warmNote = (text) => { button.title = text ? `✦ Ask: ${text}\n${title0}` : title0; button.dataset.warm = text || ""; if (text) beLbl.textContent = `✦ ${text}`; };
+  setTimeout(() => {
+    director.warmUp((state, st) => {
+      if (state === "warming") warmNote(`warming up ${st?.model || ""}…`.replace(" …", "…"));
+      else if (state === "ready") { warmNote(`ready (${st?.device === "cpu" ? "on the CPU" : "on the GPU"})`); setTimeout(() => { warmNote(""); try { syncSettings(); } catch { /* not built */ } }, 8000); }
+      else warmNote("");
+    }).catch(() => {});
+  }, 0);
+
   // ---------------------------------------------------------------- settings
   const fillBackends = async () => {
     const info = await director.info();
