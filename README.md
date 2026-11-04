@@ -597,7 +597,10 @@ Use the same Python environment that runs ComfyUI. Then download the models list
 ```bash
 bash ComfyUI/custom_nodes/ComfyUI-Soundstage/tools/install_runpod.sh /path/to/ComfyUI
 # SKIP_MODELS=1 to install the node packs only; SKIP_LLM=1 to skip the optional Qwen3.5 file
+# SKIP_OLLAMA=1 to skip ✦ Ask's assistant; SOUNDSTAGE_ASSISTANT_MODEL=qwen3:8b for a smaller one
 ```
+
+**✦ Ask's brain:** the script also installs [Ollama](https://ollama.com) (MIT) and pulls Qwen3-30B-A3B (Apache-2.0, ~19 GB). It runs on the GPU when it has 24 GB of VRAM or more (it steps aside before every render), otherwise on the CPU with about 20 GB of RAM, so renders keep the GPU. With less RAM, Ask says so and uses the built-in Qwen3.5 4B. On RunPod the model lives on the network volume (`/workspace/ollama/models`); add `bash /workspace/ComfyUI/custom_nodes/ComfyUI-Soundstage/tools/start_ollama.sh` to the pod's start command (Soundstage also starts an installed Ollama when ComfyUI loads). Everything stays on your machine. See [MODELS.md](MODELS.md).
 
 ### Run it locally
 
