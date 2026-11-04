@@ -3339,6 +3339,12 @@ function createStageWidget(node, inputName) {
         return { step, view: curView, selected, shot, panel, layout: el.classList.contains("ss-cl") ? "canvas" : "classic" };
       },
       goStep: (k) => { if (pipeline.btns?.[k]) pipeline.go(k); },
+      // The conversation's project tools (web/agent/assistant.mjs): read the script, apply its fixes (one Undo: Ask
+      // keeps the script from before and puts it back), the shots, and Book notes.
+      script: () => script,
+      setScript: (s) => { script = s || null; persistScript(); refreshScriptUI(); },
+      shots: () => { try { return pipeline.shots(); } catch { return []; } },
+      book: () => node.ssBook,
     } });
 
   // Projects (web/project, docs/projects.md): the name + "Saved 12 s ago · Autosave on" pill in the top row, Save / Open /
