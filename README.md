@@ -435,6 +435,7 @@ ComfyUI's cache means each Run only does the new work.
 - **Audio department.** DX/FX/MX tracks; TTS, voice clone and voice change (Chatterbox, open weights). Audio can drive the video. See [docs/audio.md](docs/audio.md).
 - **Footage and Recast.** Bring in real footage and recast one person; the plate and its audio stay real. See [docs/recast.md](docs/recast.md).
 - **Model router.** Stage-aware model pickers with license badges. See [docs/router.md](docs/router.md).
+- **✦ Ask acts.** Fixes, recipes and requests ("a gunshot wound on Cole in shot 3") become a plan of real App actions you lock in, run step by step with a self-check and one Undo. See [docs/assistant.md](docs/assistant.md).
 - **Director and MCP.** Chat or voice to the set (local Qwen3.5 4B, offline Whisper); an MCP server lets Claude drive the open App. See [docs/director.md](docs/director.md) and [docs/mcp.md](docs/mcp.md).
 - **Presets.** Camera moves, lighting, looks, action, edit styles and recipes, one click and one undo each (`V`).
 - **Take checks.** Automatic QC chips, Re-roll and a Follows-your-blocking score on every draft and final.
