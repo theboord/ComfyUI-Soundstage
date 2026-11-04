@@ -137,7 +137,7 @@ test("withTimeout settles: the value, a timeout (timedOut) or Stop (cancelled), 
   await assert.rejects(p, (e) => e.cancelled === true);
   await assert.rejects(withTimeout(never(), 5000, "x", c.signal), (e) => e.cancelled, "already stopped: at once");
   assert.equal(cancelledError().cancelled, true);
-  assert.ok(ASK_TIMEOUT_MS >= 15000 && ASK_TIMEOUT_MS <= 30000, "about 20 s");
+  assert.ok(ASK_TIMEOUT_MS >= 60000 && ASK_TIMEOUT_MS <= 120000, "room for the local model's cold load, still bounded");
 });
 
 test("root cause 3: \"lock it in\" and friends apply a waiting plan; a new order still replans", () => {
