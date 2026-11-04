@@ -20,6 +20,7 @@ from comfy_execution.graph_utils import GraphBuilder
 from .router import registry as R
 from .look import frame_lock as FL
 from .router.adapters import ADAPTERS, RouterError
+from .router import lora_check as LC
 
 _TTL_S = 30
 _cache: dict[str, tuple[float, list]] = {}
@@ -131,6 +132,12 @@ class _Router(IO.ComfyNode):
              "steps": int(v.get("steps") or 0), "cfg": float(v.get("cfg") or 0.0),
              "lora": v.get("lora") if v.get("lora") not in (None, "", "None") else None,
              "lora_strength": float(v.get("lora_strength") if v.get("lora_strength") is not None else 1.0)}
+        if p["lora"]:
+            # ④ Frame lists every LoRA (web/pipeline/pipeline.mjs stillLoraGroups): one that's gone, or made for another
+            # model family, stops here with a sentence instead of a "Value not in list" or a silently ignored add-on.
+            why = LC.check(p["lora"], m.get("adapter"), _loras(), lambda n: folder_paths.get_full_path("loras", n))
+            if why:
+                raise RouterError(why)
         if cls.STAGE == "edit_image":
             if v.get("stage_denoise") is not None:
                 p["params"] = {**p["params"], "stage_denoise": float(v["stage_denoise"])}
