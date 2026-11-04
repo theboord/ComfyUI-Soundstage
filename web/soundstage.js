@@ -71,7 +71,9 @@ import { listenPhoneClips, landPhoneClip, openPerformanceWith } from "./oneclick
 import { queueSummary, stageInputsByRef, resolveStageValue, stageRefOf } from "./ui/queue.mjs";
 import { mountActivity, JOB_EVENT } from "./ui/activity.mjs";
 import { mountProjectBar } from "./project/projectbar.mjs";
-import { shouldShowHome } from "./project/home.mjs";
+import { shouldShowHome, launchEnabled } from "./project/home.mjs";
+import { showSplash } from "./project/splash.mjs";
+import { projectNameOf } from "./project/store.mjs";
 import { exportAll as exportCutFiles } from "./cut/exporters.mjs";
 
 const CSS = `
@@ -4055,19 +4057,17 @@ function createStageWidget(node, inputName) {
       el.classList.toggle("ss-brandnew", fresh);
     };
     setTimeout(() => syncEmpty(), 1200);   // node.properties (renders, the script) land after the widget is built
-    // The start screen (web/project/home.mjs) on its own, once per workflow tab, for a blank Soundstage App only.
-    setTimeout(() => {
+    // The launch splash, then the start screen (web/project/home.mjs): the App always opens on the project screen, once
+    // per page load (Mike, 2026-11-04). "Show this screen when Soundstage opens" turns it off.
+    setTimeout(async () => {
       try {
-        const key = app.extensionManager?.workflow?.activeWorkflow?.path || "wf";
-        const seen = (window.__ssHomeShown ||= new Set());
-        const renders = renderCount();
-        if (projectCtl?.home && el.getClientRects().length && shouldShowHome({ workflow: app.graph?.serialize?.(), hasScript: !!script, renders,
-          brandNew: isBrandNewStage(stage.toJSON(), { hasScript: !!script, renders }), tryit: !!window.__demo, shown: seen.has(key) })) {
-          seen.add(key);
-          projectCtl.home({ onDemand: false });
-        }
+        if (!projectCtl?.home || !el.getClientRects().length) return;
+        if (!shouldShowHome({ tryit: !!window.__demo, shown: !!window.__ssLaunchShown, launch: launchEnabled() })) return;
+        window.__ssLaunchShown = true;
+        await showSplash();
+        projectCtl.home({ onDemand: false, current: projectNameOf(app.graph?.serialize?.()) || null });
       } catch (e) { console.warn("Soundstage: start screen unavailable", e); }
-    }, 1600);
+    }, 900);
 
     /** "Try the demo scene": the sample script, and its scene 2 staged as the night car chase (tryit/scenes.mjs). */
     async function loadDemo() {
