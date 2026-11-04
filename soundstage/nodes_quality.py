@@ -254,6 +254,17 @@ class SoundstageSaveVideo(IO.ComfyNode):
         return IO.NodeOutput(video, ui=ui)
 
 
+def ltx_lora_problem(name: str, path: str) -> str | None:
+    """A sentence when the Extra LoRA's own header says it was made for another model than LTX (else None: it loads;
+    a LoRA it can't place keys for would otherwise be skipped silently, "lora key not loaded" in the log only)."""
+    from .router import lora_check as LC
+    got = LC.family_of(LC.read_header(path))
+    if got and got != "ltx":
+        return (f"The Extra LoRA {name!r} was made for {LC.FAMILY_LABEL.get(got, got)}, not LTX: it can't load into the "
+                "video model. Pick an LTX LoRA in ⑤ Motion > Advanced (LTX) > Extra LoRA, or None.")
+    return None
+
+
 class SoundstageLTXLoRA(IO.ComfyNode):
     """An optional extra LoRA on the LTX model, set per shot from the App's Advanced (LTX) pop-over."""
 
@@ -295,6 +306,9 @@ class SoundstageLTXLoRA(IO.ComfyNode):
         path = folder_paths.get_full_path("loras", name)
         if not path:
             raise ValueError(f"Extra LoRA not found on this server: {name}")
+        why = ltx_lora_problem(name, path)
+        if why:
+            raise ValueError(why)
         lora = comfy.utils.load_torch_file(path, safe_load=True)
         m, _ = comfy.sd.load_lora_for_models(model, None, lora, strength, 0)
         return IO.NodeOutput(m)

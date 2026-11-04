@@ -15,7 +15,7 @@
 // {switchScene(id), script, liveKey} · sceneAgent (SceneAgent) · cut {entries(), add(ids), flatten()} · renders(sid)
 // · chosen(sid) · approvals {statusOf, setTakeStatus} · snapshot() / restore(snap) for non-scene state · play()
 // · shotsInOrder() [{id, name}] · say(msg) the App status line.
-import { applyOps, loadScene, runLocalModel } from "./agent.mjs";
+import { applyOps, loadScene, runLocalModel, withTimeout, cancelledError } from "./agent.mjs";
 import { queueSummary } from "../ui/queue.mjs";
 import { planRam, WORLD_KINDS, inputSig, unbakeActor } from "../stage/world.mjs";
 
@@ -25,13 +25,19 @@ const LS = "ss_director_";
 const lsGet = (k, d = null) => { try { const v = localStorage.getItem(LS + k); return v == null ? d : JSON.parse(v); } catch { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(LS + k, JSON.stringify(v)); } catch { /* storage blocked */ } };
 
+/** How long the chat waits for any one answer before it says so (a question, a plan): never a silent hang. */
+export const ASK_TIMEOUT_MS = 20000;
+const POST_MS = 8000;   // a Director route (prompt, plan) on the ComfyUI server
+
 export const BACKENDS = {
   qwen: "Local Qwen3.5 4B (offline, on the GPU queue)",
   ollama: "Ollama on this computer",
   rules: "Rules only (instant, no model)",
   api: "API model (opt-in)",
 };
-export const YES_RE = /^\s*(yes|yeah|yep|yup|apply|apply it|go|go ahead|do it|confirm|ok(ay)?|sure|make it so|action|let'?s go)\b[\s.!]*$/i;
+// "lock it in", "looks good", "ship it"... apply the plan too: any other words while a plan waits throw it away and plan
+// again, so a missing phrase here read as "it won't lock in" (QA 2026-11-04).
+export const YES_RE = /^\s*(?:(?:yes|yeah|yep|yup|ok(?:ay)?|sure|great|perfect)[\s,!.]*)?(?:yes|yeah|yep|yup|apply|apply it|apply (?:the|that) plan|go|go ahead|do it|do that|run it|confirm|ok(ay)?|sure|make it so|action|let'?s go|lock it(?: in)?|lock that(?: in)?|lock in|ship it|send it|looks good|sounds good|that'?s (?:it|good|right|perfect)|perfect|please do|yes please)(?:\s+please)?\b[\s.!]*$/i;
 export const NO_RE = /^\s*(no|nope|cancel|never ?mind|stop|scrap that|discard|forget it)\b[\s.!]*$/i;
 
 const MOVE = { slow: 0.18, medium: 0.33, fast: 0.5 };
@@ -145,11 +151,13 @@ export class Director {
     this.ollama = { url: lsGet("ollama_url", "http://127.0.0.1:11434"), model: lsGet("ollama_model", "") };
     this.apiModel = { url: lsGet("api_url", ""), model: lsGet("api_model", ""), key: "" };
     this._info = null;
+    this.limits = { turnMs: ASK_TIMEOUT_MS, postMs: POST_MS };   // how long a turn / a Director route may take
   }
 
   async info(force = false) {
     if (!this._info || force) {
-      try { this._info = await (await this.api.fetchApi("/soundstage/director/info")).json(); } catch { this._info = { available: false, tools: [] }; }
+      try { this._info = await withTimeout((async () => (await this.api.fetchApi("/soundstage/director/info")).json())(), 5000, "the server"); }
+      catch { this._info = { available: false, tools: [] }; }
     }
     return this._info;
   }
@@ -189,9 +197,12 @@ export class Director {
     return { shots, active_shot: st.active_shot, scenes, live_scene: this.host.script?.liveKey || null, renders, book, ui };
   }
 
-  async _post(path, body) {
-    const r = await this.api.fetchApi(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    const j = await r.json();
+  async _post(path, body, { signal = null, timeoutMs = this.limits.postMs } = {}) {
+    const go = async () => {
+      const r = await this.api.fetchApi(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: signal || undefined });
+      return { r, j: await r.json() };
+    };
+    const { r, j } = await withTimeout(go(), timeoutMs, `the server (${path.replace(/^\/soundstage\/director\//, "")})`, signal);
     if (r.status !== 200) throw new Error(j.error || `${path} failed (${r.status})`);
     return j;
   }
@@ -199,16 +210,23 @@ export class Director {
   /** Is something already running on the ComfyUI queue (a render)? */
   async _gpuBusy() {
     try {
-      const q = await queueSummary(this.api);   // counts only (GET /queue encodes every queued prompt)
+      const q = await withTimeout(queueSummary(this.api), 3000, "the queue");   // counts only (GET /queue encodes every queued prompt)
       return (q?.running || 0) > 0;
     } catch { return false; }
   }
 
   /** Ask the chosen model for tool calls (raw text, or null to use the rules). */
-  async _llm(backend, p) {
+  async _llm(backend, p, { timeoutMs = ASK_TIMEOUT_MS, signal = null } = {}) {
+    if (signal?.aborted) throw cancelledError();
     if (backend === "qwen") {
-      return runLocalModel(this.api, { system: p.system, prompt: p.prompt, max_length: p.max_length, model: p.model }, { timeoutMs: 90000 });
+      return runLocalModel(this.api, { system: p.system, prompt: p.prompt, max_length: p.max_length, model: p.model }, { timeoutMs, signal });
     }
+    return withTimeout(this._llmFetch(backend, p, { timeoutMs, signal }), timeoutMs, backend === "ollama" ? "Ollama" : "the API model", signal);
+  }
+
+  async _llmFetch(backend, p, { timeoutMs, signal }) {
+    timeoutMs = Math.max(1, Math.round(timeoutMs));
+    const sig = signal && AbortSignal.any ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout?.(timeoutMs);
     const messages = [{ role: "system", content: p.system }, { role: "user", content: p.prompt }];
     if (backend === "ollama") {
       let model = this.ollama.model;
@@ -216,7 +234,7 @@ export class Director {
       if (!model) throw new Error("no Ollama model found");
       const r = await fetch(`${this.ollama.url.replace(/\/$/, "")}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model, messages, stream: false, format: "json", think: false, options: { temperature: 0, num_predict: 400 } }),
-        signal: AbortSignal.timeout?.(60000) });
+        signal: sig });
       const j = await r.json();
       if (j.error) throw new Error(j.error);
       return j.message?.content || "";
@@ -226,7 +244,7 @@ export class Director {
       if (!this.apiModel.url || !this.apiModel.key) throw new Error("set the API URL and key first");
       const r = await fetch(`${this.apiModel.url.replace(/\/$/, "")}/chat/completions`, { method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.apiModel.key}` },
-        body: JSON.stringify({ model: this.apiModel.model, messages, temperature: 0, response_format: { type: "json_object" } }) });
+        body: JSON.stringify({ model: this.apiModel.model, messages, temperature: 0, response_format: { type: "json_object" } }), signal: sig });
       const j = await r.json();
       return j.choices?.[0]?.message?.content || "";
     }
@@ -234,8 +252,10 @@ export class Director {
   }
 
   /** Words -> a proposed plan. Nothing on the stage changes. */
-  async propose(command, { backend = null } = {}) {
+  async propose(command, { backend = null, signal = null, timeoutMs = this.limits.turnMs } = {}) {
     const t0 = performance.now();
+    // The whole turn fits in timeoutMs: the model gets what's left after the routes, then the rules plan without it.
+    const left = () => Math.round(Math.max(1000, timeoutMs - (performance.now() - t0) - 3000));
     const scene = this.stage.toJSON(), ctx = this.context();
     let be = backend || (await this.resolvedBackend());
     let llm_text = null, llm_ms = 0, llm_error = null, busyNote = null;
@@ -252,15 +272,18 @@ export class Director {
     }
     if (be !== "rules") {
       try {
-        const p = await this._post("/soundstage/director/prompt", { command, scene, ctx });
+        const p = await this._post("/soundstage/director/prompt", { command, scene, ctx }, { signal });
         this.onEvent({ type: "thinking", backend: be });
         const t1 = performance.now();
-        llm_text = await this._llm(be, p);
+        llm_text = await this._llm(be, p, { timeoutMs: left(), signal });
         llm_ms = performance.now() - t1;
-      } catch (e) { llm_error = e.message || String(e); }
+      } catch (e) {
+        if (e.cancelled || signal?.aborted) throw e.cancelled ? e : cancelledError();
+        llm_error = e.message || String(e);
+      }
     }
     const t2 = performance.now();
-    const plan = await this._post("/soundstage/director/plan", { command, scene, ctx, llm_text });
+    const plan = await this._post("/soundstage/director/plan", { command, scene, ctx, llm_text }, { signal });
     const plan_ms = performance.now() - t2;
     plan.timing = { llm_ms: Math.round(llm_ms), plan_ms: Math.round(plan_ms), propose_ms: Math.round(performance.now() - t0) };
     plan.requested_backend = backend || this.backend;
