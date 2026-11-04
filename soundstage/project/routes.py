@@ -8,6 +8,14 @@ POST /soundstage/project/open_collected   {name} -> {name, workflow (relinked to
 POST /soundstage/project/upload_collected (multipart "file": a collected-project .zip) -> {name}
 GET  /soundstage/project/template         -> example_workflows/Soundstage_App.json (the New project template)
 
+The start screen (web/project/home.mjs, soundstage/project/library.py), all in the requesting user's folder:
+GET  /soundstage/project/list             -> {"projects": [{name, saved_at, counts, thumb, thumb_kind, autosave_newer...}]}
+POST /soundstage/project/duplicate        {name, to} -> {name}
+POST /soundstage/project/rename           {name, to} -> {name}
+POST /soundstage/project/trash            {name} -> {trash}   (moves to projects/.trash/, never deletes)
+GET  /soundstage/project/trash            -> {"trash": [...]}
+POST /soundstage/project/untrash          {trash} -> {name}
+
 Only ComfyUI's output / input / temp / user folders are read and only output/soundstage_projects/ is written. Names
 are cleaned to one path segment, and every copy / unzip target is checked to stay inside its folder.
 """
@@ -22,6 +30,7 @@ import time
 from pathlib import Path
 
 from . import collect as C
+from . import library as L
 
 _REGISTERED = False
 TEMPLATE = Path(__file__).resolve().parents[2] / "example_workflows" / "Soundstage_App.json"
@@ -51,6 +60,21 @@ def _user_dir() -> Path | None:
         return Path(folder_paths.get_user_directory())
     except Exception:  # noqa: BLE001
         return None
+
+
+def user_root(request=None) -> Path:
+    """The requesting user's userdata folder (user/<user>/), as ComfyUI's /userdata API resolves it."""
+    try:
+        from server import PromptServer
+        um = getattr(PromptServer.instance, "user_manager", None)
+        if um is not None and request is not None:
+            p = um.get_request_user_filepath(request, None)
+            if p:
+                return Path(p)
+    except Exception:  # noqa: BLE001 - older ComfyUI, or tests
+        pass
+    import folder_paths
+    return Path(folder_paths.get_user_directory()) / "default"
 
 
 def project_dir(name: str) -> Path | None:
@@ -198,6 +222,41 @@ def register(routes=None) -> bool:
         if not TEMPLATE.is_file():
             return web.json_response({"error": "template missing"}, status=404)
         return web.json_response(json.loads(TEMPLATE.read_text(encoding="utf-8")))
+
+    @routes.get("/soundstage/project/list")
+    async def _list(request):
+        return web.json_response({"projects": await asyncio.to_thread(L.list_projects, user_root(request), _roots())})
+
+    async def _lib(request, fn, *keys):
+        try:
+            body = await request.json()
+            return web.json_response(await asyncio.to_thread(fn, user_root(request), *[str(body.get(k, "")) for k in keys]))
+        except FileNotFoundError as e:
+            return web.json_response({"error": str(e)}, status=404)
+        except FileExistsError as e:
+            return web.json_response({"error": str(e)}, status=409)
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
+
+    @routes.post("/soundstage/project/duplicate")
+    async def _dup(request):
+        return await _lib(request, lambda u, n, t: {"name": L.duplicate(u, n, t)}, "name", "to")
+
+    @routes.post("/soundstage/project/rename")
+    async def _ren(request):
+        return await _lib(request, lambda u, n, t: {"name": L.rename(u, n, t)}, "name", "to")
+
+    @routes.post("/soundstage/project/trash")
+    async def _trash(request):
+        return await _lib(request, lambda u, n: {"trash": L.trash(u, n)}, "name")
+
+    @routes.get("/soundstage/project/trash")
+    async def _trash_list(request):
+        return web.json_response({"trash": await asyncio.to_thread(L.list_trash, user_root(request))})
+
+    @routes.post("/soundstage/project/untrash")
+    async def _untrash(request):
+        return await _lib(request, lambda u, n: {"name": L.untrash(u, n)}, "trash")
 
     _REGISTERED = True
     return True
