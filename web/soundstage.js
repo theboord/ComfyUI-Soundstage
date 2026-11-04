@@ -70,6 +70,7 @@ import { listenPhoneClips, landPhoneClip, openPerformanceWith } from "./oneclick
 import { queueSummary, stageInputsByRef, resolveStageValue, stageRefOf } from "./ui/queue.mjs";
 import { mountActivity, JOB_EVENT } from "./ui/activity.mjs";
 import { mountProjectBar } from "./project/projectbar.mjs";
+import { shouldShowHome } from "./project/home.mjs";
 import { exportAll as exportCutFiles } from "./cut/exporters.mjs";
 
 const CSS = `
@@ -3343,9 +3344,23 @@ function createStageWidget(node, inputName) {
 
   // Projects (web/project, docs/projects.md): the name + "Saved 12 s ago · Autosave on" pill in the top row, Save / Open /
   // New / Restore autosave, and Collect project (also a card in ⑦ Deliver). Autosaves to userdata projects/<name>/autosave/.
+  let projectCtl = null;
   try {
-    mountProjectBar({ app, api, row: tabs, before: guideBtn, host: {
+    projectCtl = mountProjectBar({ app, api, row: tabs, before: guideBtn, host: {
+      alive: () => el.isConnected,
       say: (m) => (status.textContent = m),
+      // The start screen's "Try the demo scene" / "Import a script" (web/project/home.mjs). A script goes into this tab
+      // when it is still a blank App, else into a New project (pick the file in its ① Script).
+      onDemo: () => node.ssDemo?.load?.(),
+      onScript: async () => {
+        if (node.ssDemo?.visible || (!script && !Object.keys(node.properties?.ss_renders || {}).length)) {
+          pipeline.go("script");
+          try { scriptPanel._pick("replace"); } catch { /* the Script step has its own Choose file button */ }
+          return;
+        }
+        await projectCtl?.newProject();
+        projectCtl?.say("New project: choose your screenplay in ① Script (Choose file).");
+      },
       deliverView: pipeline.views?.deliver || null,
       summary: () => ({ title: script?.title || null, scenes: script?.scenes?.length || 0, shots: (() => { try { return pipeline.shots().length; } catch { return 0; } })() }),
       collectExtras: () => {
@@ -3999,6 +4014,19 @@ function createStageWidget(node, inputName) {
       el.classList.toggle("ss-brandnew", fresh);
     };
     setTimeout(() => syncEmpty(), 1200);   // node.properties (renders, the script) land after the widget is built
+    // The start screen (web/project/home.mjs) on its own, once per workflow tab, for a blank Soundstage App only.
+    setTimeout(() => {
+      try {
+        const key = app.extensionManager?.workflow?.activeWorkflow?.path || "wf";
+        const seen = (window.__ssHomeShown ||= new Set());
+        const renders = renderCount();
+        if (projectCtl?.home && el.getClientRects().length && shouldShowHome({ workflow: app.graph?.serialize?.(), hasScript: !!script, renders,
+          brandNew: isBrandNewStage(stage.toJSON(), { hasScript: !!script, renders }), tryit: !!window.__demo, shown: seen.has(key) })) {
+          seen.add(key);
+          projectCtl.home({ onDemand: false });
+        }
+      } catch (e) { console.warn("Soundstage: start screen unavailable", e); }
+    }, 1600);
 
     /** "Try the demo scene": the sample script, and its scene 2 staged as the night car chase (tryit/scenes.mjs). */
     async function loadDemo() {

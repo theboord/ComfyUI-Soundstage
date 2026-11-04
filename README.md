@@ -347,6 +347,8 @@ A real timeline over your coverage with J/K/L, splits, ripple, match action, dis
 
 The pill at the top of the App shows the project's name and `Saved 12 s ago · Autosave on`. Click it to **Save**, **Save As**, **Open**, **Open recent**, start a **New project** from a clean App template, or **Restore autosave**. Save writes `workflows/<name>.json` through ComfyUI's userdata API, the same file Workflow → Save writes. Autosave writes `projects/<name>/autosave/` 4 s after a change and at least once a minute while you work, and keeps the last 20. An unnamed project autosaves as `Untitled <date>`, and closing the tab with unsaved changes asks first. **Collect project** (the pill or ⑦ Deliver) copies every file the project uses into one folder, like Avid Consolidate: `scenes/S01/shots/S01_010/takes/final/…`, `cast/<character>/`, `locations/`, `cut/` with the NLE exports, a `project.json` and a `MISSING.txt`. It downloads as a zip. **Open collected project** opens that zip on another machine and relinks every file. → [Projects](docs/projects.md)
 
+A blank App opens on a **start screen**, like a project window in an editing suite. It shows your projects newest first, with a picture, "Saved 2 h ago" and their scenes, shots and takes. From there you can open, duplicate, rename, collect or restore an autosave, and delete moves a project to a trash folder instead of erasing it. You can also start a new project, try the demo or import a script. **Home** in the top row brings it back.
+
 <p align="center"><img src="docs/media/app_mode.jpg" width="760" alt="Soundstage in ComfyUI App mode"><br><em>All of it runs inside ComfyUI's App mode, on open models on your own GPU.</em></p>
 
 </details>
