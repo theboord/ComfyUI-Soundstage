@@ -1,15 +1,22 @@
-"""LTX-2.5 render settings for ⑤ Motion: the Draft · Final · Hollywood presets and the "Advanced (LTX)" overrides.
+"""LTX-2.5 render settings for ⑤ Motion: the Draft · Final · Advanced presets and the "Advanced (LTX)" overrides.
 
 Pure Python (no ComfyUI imports). The single source of truth for the presets is web/motion/ltx_presets.json, which
 the App's pop-over (web/motion/ltxadvanced.mjs) reads too, so both sides always agree.
 
 A settings dict (every key optional; missing keys come from the preset):
-  preset           "Draft" | "Final" | "Hollywood"
+  preset           "Draft" | "Final" | "Advanced" (Advanced starts from Final's values; every knob is the user's).
+                   The retired "Hollywood" loads as Advanced pre-filled with its old values (legacy_presets).
+  from             the preset an Advanced shot started from ("Draft" | "Final"), for the App's "Reset to …" button
   resolution       output shorter side in px (1088 = 1080p class; stage 1 renders at half when two_stage)
   two_stage        True: half-res stage 1 -> learned latent x2 upscaler -> distilled refine (same seed). False: one pass
   steps_1/steps_2  sampling steps (stage 1 / stage-2 refine), on the distilled sigma curve
   s2_start         stage-2 start sigma (0.909375 = more re-drawing, 0.85 = Lightricks' LTX-2.5 two-stage default)
-  sigmas_1/_2      manual schedules ("1.0, 0.99, ..., 0.0"); override the steps when set
+  sigmas_1/_2      manual schedules ("1.0, 0.99, ..., 0.0"); override the steps (and the scheduler) when set
+  scheduler        "distilled" (Lightricks' tuned knots, the default) | "linear" (even steps, what LTXVScheduler
+                   starts from) | "linear_quadratic" (LTX's own paper schedule: linear, then quadratic near 0)
+  shift            sigma shift on the schedule, the same curve as ModelSamplingLTXV / LTXVScheduler's shift:
+                   s' = shift*s / (1 + (shift-1)*s). 1 = as tuned; above 1 spends more steps at high noise
+                   (composition), below 1 more on detail. Stage 2 keeps its start sigma and shifts the steps below it.
   sampler, cfg, seed
   adherence        "Loose" | "Balanced" | "Exact" (default Exact): how tightly the render follows the clay blocking.
                    Sets the four raw knobs below unless they are given explicitly (see adherence_knobs).
@@ -31,8 +38,10 @@ import math
 from pathlib import Path
 
 PRESETS_FILE = Path(__file__).resolve().parents[1] / "web" / "motion" / "ltx_presets.json"
-PRESET_NAMES = ("Draft", "Final", "Hollywood")
+PRESET_NAMES = ("Draft", "Final", "Advanced")
 SAMPLERS = ("euler_ancestral", "euler", "res_multistep", "dpmpp_2m", "lcm")
+SCHEDULERS = ("distilled", "linear", "linear_quadratic")
+MIN_STEPS_1 = 1     # below 8 the distilled curve is thinned (sigmas_1); linear / linear_quadratic take any count
 CODECS = ("h264", "h264_10bit", "prores_hq")
 
 # The distilled LTX-2.5 schedule (Lightricks): 4 near-1.0 "composition" steps, then the detail-forming tail.
@@ -43,6 +52,11 @@ DISTILLED_TAIL = [0.909375, 0.725, 0.421875, 0.0]
 def load_presets(path: Path = PRESETS_FILE) -> dict:
     data = json.loads(Path(path).read_text())
     return data["presets"]
+
+
+def legacy_presets(path: Path = PRESETS_FILE) -> dict:
+    """Retired presets ({"Hollywood": {...}}): a shot saved on one resolves to Advanced pre-filled with its values."""
+    return {k: v for k, v in json.loads(Path(path).read_text()).get("legacy", {}).items() if isinstance(v, dict)}
 
 
 def load_adherence(path: Path = PRESETS_FILE) -> dict:
@@ -125,15 +139,66 @@ def _known():
             {3: Q.DRAFT_SIGMAS_2, 6: Q.FINAL_SIGMAS_2, 12: Q.HQ_SIGMAS_2})
 
 
+def _thin(knots, n_steps):
+    """Fewer steps than the curve has gaps: keep both ends and the n-1 knots spread evenly along the list."""
+    n = max(1, int(n_steps))
+    idx = sorted({round(i * (len(knots) - 1) / n) for i in range(n + 1)})
+    return [knots[i] for i in idx]
+
+
 def sigmas_1(steps: int) -> str:
-    """Stage-1 (or single-pass) schedule with `steps` steps: the four near-1.0 head steps stay as Lightricks tuned
-    them, the tail is split by width. 8 / 12 / 18 -> the App's Draft / Final / Final HQ schedules exactly."""
-    steps = max(8, int(steps))
+    """Stage-1 (or single-pass) schedule with `steps` steps on the distilled curve: the four near-1.0 head steps stay
+    as Lightricks tuned them, the tail is split by width. 8 / 12 / 18 -> the App's Draft / Final / Final HQ schedules
+    exactly. Below 8 the curve's nine knots are thinned (1.0 and 0.0 always kept): untested on the GPU, a draft knob."""
+    steps = max(MIN_STEPS_1, int(steps))
     if steps in _known()[0]:
         return _known()[0][steps]
+    if steps < 8:
+        return _fmt(_thin(DISTILLED_1, steps))
     head = DISTILLED_1[:5]
     tail = _densify(DISTILLED_1[4:], steps - 4)
     return _fmt(head[:-1] + tail)
+
+
+def _even(start: float, steps: int) -> list[float]:
+    n = max(1, int(steps))
+    return [start * (1 - i / n) for i in range(n)] + [0.0]
+
+
+def linear_quadratic(steps: int, threshold_noise: float = 0.025, linear_steps: int | None = None) -> list[float]:
+    """LTX's own schedule (Lightricks' linear_quadratic_schedule, also in ComfyUI's samplers): the first half of the
+    steps are linear in sigma near 1.0, the rest quadratic so the small sigmas get the finer steps. steps + 1 values,
+    1.0 down to 0.0."""
+    n = max(1, int(steps))
+    if n == 1:
+        return [1.0, 0.0]
+    ls = n // 2 if linear_steps is None else max(1, min(n - 1, int(linear_steps)))
+    lin = [i * threshold_noise / ls for i in range(ls)]
+    diff = ls - threshold_noise * n
+    qs = n - ls
+    qc = diff / (ls * qs ** 2)
+    lc = threshold_noise / ls - 2 * diff / (qs ** 2)
+    const = qc * ls ** 2
+    quad = [qc * i * i + lc * i + const for i in range(ls, n)]
+    out = [1.0 - x for x in lin + quad + [1.0]]
+    out[0], out[-1] = 1.0, 0.0
+    return out
+
+
+def shift_sigmas(sigmas: list[float], shift: float, top: float | None = None) -> list[float]:
+    """ModelSamplingLTXV / LTXVScheduler's time shift on a descending schedule: s' = shift*s / (1 + (shift-1)*s).
+    `top` (a stage-2 start below 1.0) keeps that start where it is and shifts the steps below it in proportion."""
+    shift = float(shift)
+    if abs(shift - 1.0) < 1e-9 or not sigmas:
+        return list(sigmas)
+    top = float(top or sigmas[0] or 1.0)
+    out = []
+    for s in sigmas:
+        u = s / top if top else s
+        u = shift * u / (1.0 + (shift - 1.0) * u)
+        out.append(u * top)
+    out[-1] = 0.0
+    return out
 
 
 def sigmas_2(steps: int, start: float = 0.909375) -> str:
@@ -154,19 +219,29 @@ def resolve(settings: dict | str | None, presets: dict | None = None) -> dict:
             settings = {}
     s = dict(settings or {})
     presets = presets or load_presets()
-    name = s.get("preset") if s.get("preset") in presets else "Final"
-    out = dict(presets[name])
+    legacy = legacy_presets() if s.get("preset") not in presets else {}
+    if s.get("preset") in legacy:        # a shot saved on the retired Hollywood preset: Advanced with its values
+        out = dict(presets.get("Advanced") or presets["Final"])
+        out.update(legacy[s["preset"]])
+        name = "Advanced"
+    else:
+        name = s.get("preset") if s.get("preset") in presets else "Final"
+        out = dict(presets[name])
     out["preset"] = name
     for k, v in s.items():
         if k != "preset" and v is not None and v != "":
             out[k] = v
     out["resolution"] = int(min(2176, max(256, int(out.get("resolution", 1088)))))
     out["two_stage"] = bool(out.get("two_stage", True))
-    out["steps_1"] = int(min(60, max(8, int(out.get("steps_1", 8)))))   # sigmas_1 builds 8 at least: say what renders
+    out["steps_1"] = int(min(60, max(MIN_STEPS_1, int(out.get("steps_1", 8)))))
     out["steps_2"] = int(min(40, max(1, int(out.get("steps_2", 3)))))
     out["s2_start"] = float(min(1.0, max(0.3, float(out.get("s2_start", 0.909375)))))
     out["cfg"] = float(min(10.0, max(1.0, float(out.get("cfg", 1.0)))))
     out["sampler"] = out.get("sampler") if out.get("sampler") in SAMPLERS else "euler_ancestral"
+    out["scheduler"] = out.get("scheduler") if out.get("scheduler") in SCHEDULERS else "distilled"
+    out["shift"] = float(min(10.0, max(0.1, float(out.get("shift") or 1.0))))
+    if name == "Advanced" and out.get("from") not in ("Draft", "Final"):
+        out["from"] = "Final"
     out["codec"] = out.get("codec") if out.get("codec") in CODECS else "h264"
     out["crf"] = int(min(51, max(0, int(out.get("crf", 14)))))
     out["temporal_x2"] = bool(out.get("temporal_x2", False))
@@ -184,7 +259,8 @@ def resolve(settings: dict | str | None, presets: dict | None = None) -> dict:
 
 
 # The Quality node's combo (saved workflows keep their value): what each one means as a preset.
-LEGACY = {"Draft": {"preset": "Draft"}, "Final": {"preset": "Final"}, "Hollywood": {"preset": "Hollywood"},
+LEGACY = {"Draft": {"preset": "Draft"}, "Final": {"preset": "Final"}, "Advanced": {"preset": "Advanced"},
+          "Hollywood": {"preset": "Hollywood"},                            # retired: resolve() maps it to Advanced
           "Final HQ": {"preset": "Final", "steps_1": 18, "steps_2": 12}}   # the old tier: Final with 18 + 12 steps
 
 
@@ -199,7 +275,7 @@ def from_quality(quality: str, advanced: str | dict | None = None, presets: dict
             adv = {}
     if not isinstance(adv, dict):
         adv = {}
-    base = {} if adv.get("preset") in PRESET_NAMES else dict(LEGACY.get(quality, LEGACY["Draft"]))
+    base = {} if adv.get("preset") in PRESET_NAMES or adv.get("preset") in legacy_presets() else dict(LEGACY.get(quality, LEGACY["Draft"]))
     base.update(adv)
     return resolve(base, presets)
 
@@ -217,8 +293,24 @@ def stage_sizes(width: int, height: int, s: dict) -> dict:
 
 
 def schedules(s: dict) -> tuple[str, str]:
-    s1 = s.get("sigmas_1") or sigmas_1(s["steps_1"])
-    s2 = s.get("sigmas_2") or sigmas_2(s["steps_2"], s["s2_start"])
+    """The two sigma strings the graph's ManualSigmas nodes get: the scheduler's curve for the step counts, then the
+    shift. Manual sigmas override both. Draft / Final (distilled, shift 1) are the App's tuned strings bit for bit."""
+    sched = s.get("scheduler") if s.get("scheduler") in SCHEDULERS else "distilled"
+    shift = float(s.get("shift") or 1.0)
+    start = float(s.get("s2_start", 0.909375))
+    if sched == "distilled":
+        s1, s2 = sigmas_1(s["steps_1"]), sigmas_2(s["steps_2"], start)
+        if abs(shift - 1.0) > 1e-9:
+            s1 = _fmt(shift_sigmas([float(x) for x in s1.split(",")], shift))
+            s2 = _fmt(shift_sigmas([float(x) for x in s2.split(",")], shift, top=start))
+    else:
+        curve = linear_quadratic if sched == "linear_quadratic" else (lambda n: _even(1.0, n))
+        s1 = _fmt(shift_sigmas(curve(s["steps_1"]), shift))
+        s2 = _fmt(shift_sigmas([x * start for x in curve(s["steps_2"])], shift, top=start))
+    if s.get("sigmas_1"):
+        s1 = s["sigmas_1"]
+    if s.get("sigmas_2"):
+        s2 = s["sigmas_2"]
     return s1, s2
 
 

@@ -1,9 +1,12 @@
-// ⑤ Motion: the render presets (Draft · Final · Hollywood) and the "Advanced (LTX)" pop-over.
+// ⑤ Motion: the render presets (Draft · Final · Advanced) and the "Advanced (LTX)" pop-over.
 //
 // The presets are web/motion/ltx_presets.json (soundstage/ltx_settings.py reads the same file; a test keeps the copy
 // below identical). A shot's settings are {preset, ...overrides}, saved per shot in the Stage node's properties
 // (ss_ltx) and written to the Quality node's `advanced` widget at queue time. Python resolves them into the graph:
-// stage-1 size, steps → sigmas, two-stage / one pass, temporal x2, CFG, seed, IC-LoRA, decode tiles, codec / CRF.
+// stage-1 size, steps + scheduler + shift → sigmas, two-stage / one pass, temporal x2, CFG, seed, IC-LoRA, decode
+// tiles, codec / CRF. Draft and Final are fixed recipes; Advanced starts from Final and every knob is the user's:
+// editing a quality knob on Draft or Final turns the shot into Advanced (its values carried over), "Reset to Draft /
+// Final" goes back. The retired Hollywood preset (1408p, CRF 12) loads as Advanced with its old values (LEGACY_PRESETS).
 //
 // Pure helpers (resolveSettings, stageSizes, estimateSeconds, compactSettings) have no DOM and are unit-tested.
 import { ltxLoraGroups } from "../pipeline/loras.mjs";
@@ -19,13 +22,23 @@ export const PRESETS = {
     resolution: 1088, two_stage: true, steps_1: 12, steps_2: 6, s2_start: 0.909375, sampler: "euler_ancestral", cfg: 1.0,
     temporal_x2: false, decode: { tile_size: 512, overlap: 64, temporal_size: 128, temporal_overlap: 32 }, codec: "h264", crf: 14,
   },
+  Advanced: {
+    label: "Advanced", tip: "Your own numbers: starts from Final (12 + 6 steps, 1080p class) and opens every setting: steps, shift, scheduler, sampler, CFG, seed, resolution, codec…",
+    resolution: 1088, two_stage: true, steps_1: 12, steps_2: 6, s2_start: 0.909375, sampler: "euler_ancestral", cfg: 1.0,
+    temporal_x2: false, decode: { tile_size: 512, overlap: 64, temporal_size: 128, temporal_overlap: 32 }, codec: "h264", crf: 14,
+  },
+};
+export const PRESET_NAMES = ["Draft", "Final", "Advanced"];
+/** Retired presets (ltx_presets.json "legacy"): a shot saved on one resolves to Advanced pre-filled with its values. */
+export const LEGACY_PRESETS = {
   Hollywood: {
-    label: "Hollywood (max)", tip: "The best this GPU does: 1408p (stage 1 at 704p, x2), 12 + 6 steps, near-lossless master. About 15 min a shot.",
+    label: "Hollywood (retired)", tip: "The retired Hollywood preset (1408p, 12 + 6 steps, CRF 12): a shot saved on it opens as Advanced with these values.",
     resolution: 1408, two_stage: true, steps_1: 12, steps_2: 6, s2_start: 0.909375, sampler: "euler_ancestral", cfg: 1.0,
     temporal_x2: false, decode: { tile_size: 512, overlap: 64, temporal_size: 128, temporal_overlap: 32 }, codec: "h264", crf: 12,
   },
 };
-export const PRESET_NAMES = ["Draft", "Final", "Hollywood"];
+/** The hero recipe (the old Hollywood numbers) as Advanced overrides: the "Hero final" preset recipe uses it. */
+export const HERO = { resolution: 1408, steps_1: 12, steps_2: 6, crf: 12 };
 // ⑤ Motion › Adherence: how tightly the render follows the clay (ltx_presets.json "adherence"; a test keeps them equal).
 // Measured in share/Blocking_Adherence/REPORT.txt. Each level sets the raw knobs Advanced (LTX) can still override.
 export const ADHERENCE = {
@@ -48,6 +61,9 @@ export const ADHERENCE = {
 export const ADHERENCE_NAMES = ["Loose", "Balanced", "Exact"];
 export const DEFAULT_PRESET = "Final";
 export const SAMPLERS = ["euler_ancestral", "euler", "res_multistep", "dpmpp_2m", "lcm"];
+export const SCHEDULERS = [["distilled", "Distilled (LTX-2.5's tuned curve)"], ["linear", "Linear (even steps, LTXVScheduler's base)"],
+  ["linear_quadratic", "Linear-quadratic (LTX's paper schedule)"]];
+export const MIN_STEPS_1 = 1;   // below 8 the distilled curve is thinned (ltx_settings.sigmas_1); the other schedulers take any count
 export const CODECS = [["h264", "H.264 MP4 (plays everywhere)"], ["prores_hq", "ProRes 422 HQ master (.mov) + H.264 preview"]];
 export const RESOLUTIONS = [[544, "544p (fast, half HD)"], [720, "720p"], [1088, "1080p (1088)"], [1408, "1440p (1408)"], [1536, "1536p"]];
 export const DECODES = [
@@ -55,8 +71,12 @@ export const DECODES = [
   ["768/192/128/32", "Medium tiles, wide overlap (cleaner seams)", { tile_size: 768, overlap: 192, temporal_size: 128, temporal_overlap: 32 }],
   ["1024/256/128/48", "Large tiles (fastest, most memory)", { tile_size: 1024, overlap: 256, temporal_size: 128, temporal_overlap: 48 }],
 ];
-const KEYS = ["resolution", "two_stage", "steps_1", "steps_2", "s2_start", "sigmas_1", "sigmas_2", "sampler", "cfg", "seed",
-  "ic_lora", "fps", "temporal_x2", "decode", "codec", "crf", "extra_lora", "adherence", "guide_blur", "reference"];
+const KEYS = ["resolution", "two_stage", "steps_1", "steps_2", "s2_start", "sigmas_1", "sigmas_2", "sampler", "scheduler", "shift", "cfg", "seed",
+  "ic_lora", "fps", "temporal_x2", "decode", "codec", "crf", "extra_lora", "adherence", "guide_blur", "reference", "from"];
+/** The quality knobs: changing one of these on a Draft / Final shot makes it Advanced. The seed (the take), Adherence and
+ *  its raw knobs (the blocking) and the LoRAs (add-ons) are their own controls and never move a shot off its preset. */
+export const QUALITY_KEYS = ["resolution", "two_stage", "steps_1", "steps_2", "s2_start", "sigmas_1", "sigmas_2", "sampler", "scheduler", "shift",
+  "cfg", "fps", "temporal_x2", "decode", "codec", "crf"];
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const num = (v, d) => (v === null || v === undefined || v === "" || !Number.isFinite(+v) ? d : +v);
@@ -64,16 +84,20 @@ const num = (v, d) => (v === null || v === undefined || v === "" || !Number.isFi
 /** Preset + overrides → complete settings (mirrors soundstage/ltx_settings.resolve). */
 export function resolveSettings(saved) {
   const s = saved && typeof saved === "object" ? saved : {};
-  const name = PRESET_NAMES.includes(s.preset) ? s.preset : DEFAULT_PRESET;
-  const out = { ...structuredClone(PRESETS[name]), preset: name };
+  const legacy = LEGACY_PRESETS[s.preset];
+  const name = legacy ? "Advanced" : PRESET_NAMES.includes(s.preset) ? s.preset : DEFAULT_PRESET;
+  const out = { ...structuredClone(PRESETS[name]), ...(legacy ? structuredClone(legacy) : {}), preset: name, label: PRESETS[name].label, tip: PRESETS[name].tip };
   for (const k of KEYS) if (s[k] !== undefined && s[k] !== null && s[k] !== "") out[k] = s[k];
   out.resolution = Math.round(clamp(num(out.resolution, 1088), 256, 2176));
   out.two_stage = !!out.two_stage;
-  out.steps_1 = Math.round(clamp(num(out.steps_1, 8), 8, 60));   // the schedule has 8 steps at least (ltx_settings.sigmas_1)
+  out.steps_1 = Math.round(clamp(num(out.steps_1, 8), MIN_STEPS_1, 60));
   out.steps_2 = Math.round(clamp(num(out.steps_2, 3), 1, 40));
   out.s2_start = clamp(num(out.s2_start, 0.909375), 0.3, 1);
   out.cfg = clamp(num(out.cfg, 1), 1, 10);
   out.sampler = SAMPLERS.includes(out.sampler) ? out.sampler : "euler_ancestral";
+  out.scheduler = SCHEDULERS.some(([k]) => k === out.scheduler) ? out.scheduler : "distilled";
+  out.shift = clamp(num(out.shift, 1) || 1, 0.1, 10);
+  if (name === "Advanced") out.from = ["Draft", "Final"].includes(out.from) ? out.from : "Final"; else delete out.from;
   out.codec = CODECS.some(([k]) => k === out.codec) ? out.codec : "h264";
   out.crf = Math.round(clamp(num(out.crf, 14), 0, 51));
   out.temporal_x2 = !!out.temporal_x2;
@@ -98,6 +122,7 @@ export function adherenceKnobs(s) {
 /** Only what differs from the preset (what is saved per shot and sent to the Quality node). */
 export function compactSettings(s) {
   const r = resolveSettings(s), base = resolveSettings({ preset: r.preset }), out = { preset: r.preset };
+  if (r.preset !== "Advanced") delete r.from;
   for (const k of KEYS) if (r[k] !== undefined && JSON.stringify(r[k]) !== JSON.stringify(base[k])) out[k] = r[k];
   return out;
 }
@@ -137,7 +162,7 @@ export function summary(s, w, h, frames, fps = 24) {
   const steps = s.two_stage ? `${s.steps_1} + ${s.steps_2} steps` : `${s.steps_1} steps, one pass`;
   const outF = s.temporal_x2 ? frames * 2 - 1 : frames, outFps = (s.fps || fps) * (s.temporal_x2 ? 2 : 1);
   const codec = s.codec === "prores_hq" ? "ProRes 422 HQ + H.264" : `H.264 CRF ${s.crf}`;
-  return `${s.preset === "Hollywood" ? "Hollywood" : s.preset}: ${sz.output[0]}×${sz.output[1]}, ${steps}, ${outF} frames at ${outFps} fps, ` +
+  return `${s.preset}: ${sz.output[0]}×${sz.output[1]}, ${steps}, ${outF} frames at ${outFps} fps, ` +
     `${codec}. ${fmtTime(estimateSeconds(s, w, h, frames))} for the final on this GPU.`;
 }
 
@@ -147,12 +172,31 @@ export class LtxStore {
   saved(sid) { return this.byShot[sid] || { preset: DEFAULT_PRESET }; }
   settings(sid) { return resolveSettings(this.saved(sid)); }
   put(sid, s) { this.byShot[sid] = compactSettings(s); try { this.save?.(this.byShot); } catch { /* no store */ } return this.byShot[sid]; }
-  patch(sid, over) { return this.put(sid, { ...this.saved(sid), ...over }); }
-  /** A preset click starts clean from that preset; the seed is kept (it is the take, not the quality). */
-  setPreset(sid, q) {
-    const { seed, adherence } = this.saved(sid);   // the seed is the take and Adherence its own control: both survive a preset click
-    return this.put(sid, { preset: q, ...(seed != null ? { seed } : {}), ...(adherence ? { adherence } : {}) });
+  /** Change settings. A quality knob (QUALITY_KEYS) edited on a Draft / Final shot makes it Advanced, with every other
+   *  value carried over from that preset, so the picture only changes by what was edited; "Reset to Draft / Final" undoes it. */
+  patch(sid, over) {
+    const saved = this.saved(sid), cur = resolveSettings(saved);
+    const moves = cur.preset !== "Advanced" && Object.keys(over || {}).some((k) => QUALITY_KEYS.includes(k) && JSON.stringify(over[k] ?? null) !== JSON.stringify(cur[k] ?? null));
+    if (!moves) return this.put(sid, { ...saved, ...over });
+    const full = {};
+    for (const k of KEYS) if (cur[k] !== undefined && cur[k] !== null) full[k] = cur[k];
+    return this.put(sid, { ...full, ...over, preset: "Advanced", from: cur.preset });
   }
+  /** A preset click starts clean from that preset; the seed is kept (it is the take, not the quality). Advanced starts
+   *  from Final's values and remembers where it came from (the "Reset to …" button). */
+  setPreset(sid, q) {
+    const saved = this.saved(sid), { seed, adherence, extra_lora } = saved;   // the take, the blocking and the add-ons are their own controls
+    const keep = { ...(seed != null ? { seed } : {}), ...(adherence ? { adherence } : {}), ...(extra_lora ? { extra_lora } : {}) };
+    if (q === "Advanced") {
+      const cur = resolveSettings(saved);
+      return this.put(sid, { preset: "Advanced", from: cur.preset === "Advanced" ? cur.from : cur.preset, ...keep });
+    }
+    return this.put(sid, { preset: q, ...keep });
+  }
+  /** The hero recipe: Advanced with the retired Hollywood numbers (1408p, 12 + 6 steps, CRF 12). */
+  setHero(sid) { this.setPreset(sid, "Advanced"); return this.put(sid, { ...this.saved(sid), ...HERO }); }
+  /** Back to the preset an Advanced shot started from (or Draft / Final itself: clears the add-on overrides only). */
+  reset(sid) { const s = resolveSettings(this.saved(sid)); return this.setPreset(sid, s.preset === "Advanced" ? s.from : s.preset); }
   /** Write a shot's settings into the App graph: the Quality node (preset + advanced JSON) and both samplers. */
   writeGraph(set, sid) {
     const s = this.settings(sid);
@@ -199,8 +243,8 @@ export class LtxAdvanced {
     this.store = new LtxStore(saved, (v) => pipe.ctx.saveLtx?.(v));
     if (typeof document !== "undefined" && !document.getElementById("ss-ltxadv-css")) document.head.append(h("style", { id: "ss-ltxadv-css" }, CSS));
     this.seg = h("span", { class: "seg row" }, ...PRESET_NAMES.map((q) => h("button", { type: "button", "data-q": q, "aria-pressed": String(q === DEFAULT_PRESET),
-      title: PRESETS[q].tip, on: { click: () => this.setPreset(q) } }, q === "Hollywood" ? "Hollywood" : q)));
-    this.btn = h("button", { type: "button", class: "ghost ss-ltxbtn", title: "Advanced (LTX): resolution, steps, sigmas, two-stage, temporal x2, CFG, seed, LoRA strengths, decode tiles, codec",
+      title: PRESETS[q].tip, on: { click: () => this.setPreset(q) } }, q)));
+    this.btn = h("button", { type: "button", class: "ghost ss-ltxbtn", title: "Advanced (LTX): resolution, steps, shift, scheduler, sigmas, two-stage, temporal x2, CFG, seed, LoRAs, decode tiles, codec",
       "aria-expanded": "false", on: { click: () => this.toggle() } }, "Advanced (LTX)");
     this.panel = h("div", { class: "card ss-ltxadv", hidden: "" });
     this.pop = null;   // the canvas layout hands us a hudPop to live in
@@ -216,7 +260,16 @@ export class LtxAdvanced {
     return { w, h: hh, frames: Math.max(9, j.shot?.frames || 97), fps: j.shot?.fps || 24 };
   }
 
-  setPreset(q) { this.store.setPreset(this.sid(), q); this.refresh(); this.apply(); this.pipe._motionNote?.(); }
+  /** A quality button. Advanced also opens the settings (pre-filled from Final, or the shot's own numbers if it already is Advanced). */
+  setPreset(q) {
+    const was = this.settings().preset;
+    if (!(q === "Advanced" && was === "Advanced")) this.store.setPreset(this.sid(), q);
+    this.refresh(); this.apply(); this.pipe._motionNote?.();
+    if (q === "Advanced") this.toggle(true);
+  }
+  /** The hero recipe (presets.json "Hero final"): Advanced with the retired Hollywood numbers. */
+  setHero() { this.store.setHero(this.sid()); this.refresh(); this.apply(); this.pipe._motionNote?.(); }
+  reset() { this.store.reset(this.sid()); this.refresh(); this.apply(); this.pipe._motionNote?.(); }
   patch(over) { this.store.patch(this.sid(), over); this.refresh(); this.apply(); this.pipe._motionNote?.(); }
   /** Write a shot's settings into the graph (the Quality node's advanced JSON + the samplers' combo). */
   apply(sid = this.sid()) { return this.store.writeGraph((id, k, v) => this.pipe.set(id, k, v), sid); }
@@ -244,13 +297,15 @@ export class LtxAdvanced {
     const row = (label, ctl, tip) => [h("label", { title: tip || "" }, label), ctl];
     f.res = sel(RESOLUTIONS, () => this.patch({ resolution: +f.res.value }));
     f.two = h("input", { type: "checkbox", on: { change: () => this.patch({ two_stage: f.two.checked }) } });
-    f.s1 = n(8, 60, 1, () => this.patch({ steps_1: +f.s1.value }));
+    f.s1 = n(MIN_STEPS_1, 60, 1, () => this.patch({ steps_1: +f.s1.value }));
     f.s2 = n(1, 40, 1, () => this.patch({ steps_2: +f.s2.value }));
     f.s2start = sel([["0.909375", "0.909 (re-draws more detail)"], ["0.85", "0.85 (Lightricks' 2.5 default, keeps stage 1)"]],
       () => this.patch({ s2_start: +f.s2start.value }));
     f.sig1 = h("input", { type: "text", placeholder: "auto from steps (e.g. 1.0, 0.99375, …, 0.0)", on: { change: () => this.patch({ sigmas_1: f.sig1.value.trim() }) } });
     f.sig2 = h("input", { type: "text", placeholder: "auto from steps", on: { change: () => this.patch({ sigmas_2: f.sig2.value.trim() }) } });
     f.sampler = sel(SAMPLERS.map((x) => [x, x]), () => this.patch({ sampler: f.sampler.value }));
+    f.sched = sel(SCHEDULERS, () => this.patch({ scheduler: f.sched.value }));
+    f.shift = n(0.1, 10, 0.05, () => this.patch({ shift: +f.shift.value || 1 }));
     f.cfg = n(1, 10, 0.1, () => this.patch({ cfg: +f.cfg.value || 1 }));
     f.seed = n(0, 2 ** 48, 1, () => this.patch({ seed: Math.max(0, Math.round(+f.seed.value || 0)) }));
     f.seedNew = h("button", { type: "button", class: "ghost", title: "A new random seed: a different take with the same settings",
@@ -268,7 +323,7 @@ export class LtxAdvanced {
     f.crf = n(0, 51, 1, () => this.patch({ crf: +f.crf.value }));
     f.est = h("div", { class: "note est" });
     f.base = h("div", { class: "note" });
-    f.reset = h("button", { type: "button", class: "ghost", on: { click: () => this.setPreset(this.settings().preset) } }, "Reset to preset");
+    f.reset = h("button", { type: "button", class: "ghost", title: "Back to the preset this shot started from; the seed, Adherence and LoRAs stay", on: { click: () => this.reset() } }, "Reset to preset");
     this.panel.append(
       h("div", { class: "row" }, f.base, h("span", { style: "flex:1" }), f.reset),
       h("h4", {}, "Size and time"),
@@ -277,8 +332,11 @@ export class LtxAdvanced {
         ...row("Frame rate", f.fps, "The clay animation is retimed to this rate."), ...row("Frames", f.frames),
         ...row("Temporal x2", h("label", { class: "row" }, f.temporal, "LTX-2.5 temporal upscaler: twice the frames (48 fps from 24)"))),
       h("h4", {}, "Sampling"),
-      h("div", { class: "g" }, ...row("Steps, stage 1", f.s1), ...row("Steps, stage 2", f.s2), ...row("Stage-2 start", f.s2start),
-        ...row("Sigmas 1 (manual)", f.sig1, "Overrides the steps. Comma-separated, descending, ending at 0."), ...row("Sigmas 2 (manual)", f.sig2),
+      h("div", { class: "g" }, ...row("Steps, stage 1", f.s1, "Draft 8, Final 12. Below 8 the distilled curve is thinned (its nine tuned knots sampled evenly), which is untested on the GPU: use it for rough drafts. The Linear and Linear-quadratic schedulers take any count."),
+        ...row("Steps, stage 2", f.s2, "The refine pass after the x2 latent upscale: Draft 3, Final 6."), ...row("Stage-2 start", f.s2start),
+        ...row("Scheduler", f.sched, "The curve the step counts are spread on. Distilled = Lightricks' tuned knots (Draft and Final, bit for bit). Linear = even steps (what LTXVScheduler starts from). Linear-quadratic = LTX's paper schedule, finer steps near the end. Manual sigmas override it."),
+        ...row("Shift", f.shift, "Sigma shift, the same curve as ModelSamplingLTXV / LTXVScheduler's shift (this graph feeds sigmas directly, so it is applied to the schedule). 1 = as tuned. Above 1 spends more steps at high noise (composition, motion), below 1 more on fine detail. Stage 2 keeps its start sigma."),
+        ...row("Sigmas 1 (manual)", f.sig1, "Overrides the steps, scheduler and shift. Comma-separated, descending, ending at 0."), ...row("Sigmas 2 (manual)", f.sig2),
         ...row("Sampler", f.sampler), ...row("CFG", f.cfg, "LTX-2.5 here is the distilled model: CFG 1 is its tuned setting. Above 1 doubles the time and uses the negative prompt."),
         ...row("Seed", h("span", { class: "row" }, f.seed, f.seedNew), "The same seed is used in both stages (refinement, not a new take).")),
       h("div", { class: "note" }, "STG and CFG rescale need the non-distilled LTX-2.5 dev model, which is not installed here (see MODELS.md); the distilled model has guidance baked in."),
@@ -323,7 +381,7 @@ export class LtxAdvanced {
     f.s1.value = String(s.steps_1); f.s2.value = String(s.steps_2); f.s2.disabled = f.s2start.disabled = f.sig2.disabled = !s.two_stage;
     f.s2start.value = Math.abs(s.s2_start - 0.85) < 1e-6 ? "0.85" : "0.909375";
     f.sig1.value = s.sigmas_1 || ""; f.sig2.value = s.sigmas_2 || "";
-    f.sampler.value = s.sampler; f.cfg.value = String(s.cfg); f.seed.value = String(s.seed ?? 42);
+    f.sampler.value = s.sampler; f.sched.value = s.scheduler; f.shift.value = String(s.shift); f.cfg.value = String(s.cfg); f.seed.value = String(s.seed ?? 42);
     f.fps.value = s.fps ? String(s.fps) : "";
     const fps = s.fps || d.fps, fr = Math.max(9, Math.floor(((d.frames - 1) / d.fps * fps) / 8) * 8 + 1);
     f.frames.textContent = `${s.temporal_x2 ? fr * 2 - 1 : fr} (${((d.frames - 1) / d.fps).toFixed(1)} s from the shot's timeline)`;
@@ -338,9 +396,11 @@ export class LtxAdvanced {
     const dk = DECODES.find(([, , v]) => JSON.stringify(v) === JSON.stringify(s.decode))?.[0];
     if (dk) f.decode.value = dk;
     f.codec.value = s.codec; f.crf.value = String(s.crf);
-    const changed = Object.keys(compactSettings(sv)).filter((k) => k !== "preset");
-    f.base.textContent = changed.length ? `${s.preset} preset, changed: ${changed.join(", ")}` : `${s.preset} preset, as tuned`;
+    const changed = Object.keys(compactSettings(sv)).filter((k) => !["preset", "from"].includes(k));
+    f.base.textContent = s.preset === "Advanced" ? (changed.length ? `Advanced (from ${s.from}), changed: ${changed.join(", ")}` : `Advanced: Final's numbers, yours to change`)
+      : changed.length ? `${s.preset} preset, changed: ${changed.join(", ")}` : `${s.preset} preset, as tuned`;
     f.base.classList.toggle("chg", changed.length > 0);
+    f.reset.textContent = s.preset === "Advanced" ? `Reset to ${s.from}` : "Reset to preset";
     f.est.textContent = summary(s, d.w, d.h, d.frames, d.fps);
     this.btn.textContent = changed.length ? "Advanced (LTX) •" : "Advanced (LTX)";
   }

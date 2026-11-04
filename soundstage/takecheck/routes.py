@@ -1,7 +1,7 @@
 """HTTP routes for take checks (Milestone 16). Registered from the pack's __init__ (register()).
 
 POST /soundstage/takecheck            {file: {filename, subfolder, type}, force?} -> the take's checks + blocking score
-                                      (+ "realism" once judged, + "hollywood": a Hollywood-quality take)
+                                      (+ "realism" once judged, + "hollywood": a hero-sized take, 1408p and up)
 POST /soundstage/takecheck/realism    {file, force?} -> the realism judge's verdict (VLM through the queue, ~1 min)
 GET  /soundstage/takecheck/recipe     ?filename=&subfolder=&type= -> the stage + shot recipe inside the MP4
 GET  /soundstage/takecheck/timing     -> measured render times per rung (from ComfyUI's history)

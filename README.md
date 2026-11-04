@@ -158,7 +158,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 - **Actors you direct, not prompt.** Pose them to the fingertips with IK, or mocap them from any clip or your webcam into the set you already built. Horses and riders, cars with seated cast.
 - **Live physics and movie stunts.** Drag people onto crates and horses, knock stacks over, crash cars through crates; reverse J-turns, donuts and handbrake 180s that roll on their springs.
 - **Real camera rigs and true coverage.** Dolly, jib, Steadicam, handheld, drone, hood mounts, real lenses and solar-accurate light; several setups from one blocking, consistent by construction. Your **phone is the viewfinder**.
-- **Hollywood-grade finals that check themselves.** Draft · Final · Hollywood (2624×1408) on LTX-2.5; every take is checked for freezes, jumps, face drift and cars driving backwards, and scored on how well it **follows your blocking**.
+- **Finals that check themselves.** Draft · Final · Advanced (every LTX knob yours: steps, shift, scheduler, CFG, resolution up to 2624×1408) on LTX-2.5; every take is checked for freezes, jumps, face drift and cars driving backwards, and scored on how well it **follows your blocking**.
 - **A real NLE timeline, delivered at source spec.** Dissolves, dips, wipes, sound generated in place, loudness to broadcast targets; export to Avid, Premiere, Resolve and FCP (EDL, XML, FCPXML, OTIO, AAF) with the camera original's timecode, plus VFX Layer Packs.
 - **Round trip with Blender, Unreal, Maya and Nuke.** Import a whole world as the set; send the shot back with builder scripts (measured IoU 0.99+ in Blender).
 - **An AI Director plus MCP.** Talk or type to the set; Claude Desktop or Code can drive the open App over MCP. Every change is proposed first and undoable.
@@ -166,7 +166,7 @@ Import your screenplay. Cast it. Block every scene in 3D clay with real camera r
 </details>
 
 <details>
-<summary><b>Everything new since the contest (Director, Presets, Timeline, Hollywood, take checks, live physics, stunts, sets, interop, phone)</b></summary>
+<summary><b>Everything new since the contest (Director, Presets, Timeline, quality presets, take checks, live physics, stunts, sets, interop, phone)</b></summary>
 
 Every section links to its tutorial chapter. All pictures are real App screens and real renders from the milestone evidence.
 
@@ -188,9 +188,9 @@ The **Edit** tab (the Cut) is now a real editing timeline: V2 titles, V3 motion 
 
 <p align="center"><img src="docs/media/timeline.jpg" width="900" alt="The Cut timeline: transitions palette, Keys, Assemble scene, Title, Subtitles, Generate sound, Auto-duck, Beats, loudness target, Render MP4 / ProRes / 9:16, with dips and dissolves drawn on V1 and a title on V2"></p>
 
-#### Hollywood quality presets
+#### Quality presets: Draft · Final · Advanced
 
-⑤ Motion's Quality is **Draft · Final · Hollywood**, saved per shot, Final by default. Hollywood renders stage 1 at 704p, upscales in latent space and refines at **2624×1408**: real detail in skin, rain and panel lines, and a spinning car that stays one coherent car. **Advanced (LTX)** opens the full LTX controls (resolution, steps, sigmas, sampler, CFG, seed, IC-LoRA strength, an extra LoRA) and a **ProRes 422 HQ** master. → [Tutorial](docs/TUTORIAL.md#quality-draft-final-hollywood) · [quality.md](docs/quality.md)
+⑤ Motion's Quality is **Draft · Final · Advanced**, saved per shot, Final by default. Draft and Final are fixed recipes (8 + 3 and 12 + 6 steps at 1080p class). **Advanced** starts from Final and opens every LTX knob: steps for each stage (down to 1 for rough drafts), **shift**, **scheduler**, sampler, CFG, seed, resolution (up to 2624×1408 for hero shots: real detail in skin, rain and panel lines, and a spinning car that stays one coherent car), two-stage, frame rate, temporal x2, decode tiles, codec / CRF and a **ProRes 422 HQ** master, plus a stack of LoRAs. Change any of those on Draft or Final and the shot becomes Advanced; **Reset to Draft / Final** takes it back. → [Tutorial](docs/TUTORIAL.md#quality-draft-final-advanced) · [quality.md](docs/quality.md)
 
 
 #### Takes that check themselves
@@ -312,7 +312,7 @@ FLUX 3 Klein (or Krea 2 locked to the stage's depth) paints the first frame of e
 
 #### &#9316; Motion: animate it with sound
 
-LTX-2.5 Layout-to-Render animates each shot from its frame, following your clay: positions, camera, timing. **Draft** (quick look), **Final** (the default) or **Hollywood** (2624×1408, hero shots), saved per shot, with an **Advanced (LTX)** pop-over; one shot or every shot. Sound effects and music are generated with the final, and typing a **dialogue line** turns on audio-driven lip sync, so the mouth follows the words. MiniMax H3 is an optional second engine. Every take then checks itself (freezes, jumps, face drift, cars driving backwards) and gets a **Follows your blocking %** score. *Why it matters:* the motion is directed, not hoped for. → [Tutorial: ⑤ Motion](docs/TUTORIAL.md#step-5-motion)
+LTX-2.5 Layout-to-Render animates each shot from its frame, following your clay: positions, camera, timing. **Draft** (quick look), **Final** (the default) or **Advanced** (your own steps, shift, scheduler, CFG, resolution up to 2624×1408 for hero shots), saved per shot; one shot or every shot. Sound effects and music are generated with the final, and typing a **dialogue line** turns on audio-driven lip sync, so the mouth follows the words. MiniMax H3 is an optional second engine. Every take then checks itself (freezes, jumps, face drift, cars driving backwards) and gets a **Follows your blocking %** score. *Why it matters:* the motion is directed, not hoped for. → [Tutorial: ⑤ Motion](docs/TUTORIAL.md#step-5-motion)
 
 <p align="center"><img src="docs/media/step4_ladder.jpg" width="960" alt="Review on the Ladder"></p>
 

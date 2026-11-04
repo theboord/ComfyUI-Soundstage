@@ -74,6 +74,9 @@ const STEPS = [
   { k: "deliver", n: 7, label: "Deliver", short: "Deliver", view: "deliver", hint: "Layers for VFX, the cut as one video, NLE export." },
 ];
 const STILL_KREA = "__krea_depth__";
+// The frame node's sampler / scheduler combos (soundstage/router/adapters.py IMAGE_SAMPLERS / IMAGE_SCHEDULERS).
+export const STILL_SAMPLERS = ["auto", "euler", "euler_ancestral", "res_multistep", "dpmpp_2m", "er_sde", "lcm"];
+export const STILL_SCHEDULERS = ["auto", "simple", "normal", "beta", "sgm_uniform", "karras", "linear_quadratic"];
 // ④ Frame "Lock to the stage depth" (soundstage/look/frame_lock.py VERSION 3; numbers: docs/decisions.md 2026-11-02,
 // share/OneClick/C). Off is the default: neither lock beat Klein on all three test shots.
 const DEPTH_TITLE = "Hold the frame to your stage's exact depth pass with Krea 2 and its depth-control LoRA.\n" +
@@ -578,6 +581,10 @@ export class Pipeline {
     const num = (min, max, step, on) => h("input", { type: "number", min, max, step, style: "width:90px", on: { change: on } });
     f.steps = num("0", "100", "1", () => this._applySampling());
     f.cfg = num("0", "20", "0.1", () => this._applySampling());
+    // sampler / scheduler / shift for the image model (the frame node's new widgets; "auto" = the model's tuned ones)
+    f.sampler = h("select", { on: { change: () => this._applySampling() } }, ...STILL_SAMPLERS.map((x) => new Option(x === "auto" ? "auto (the model's)" : x, x)));
+    f.sched = h("select", { on: { change: () => this._applySampling() } }, ...STILL_SCHEDULERS.map((x) => new Option(x === "auto" ? "auto (the model's)" : x, x)));
+    f.shift = num("0", "12", "0.05", () => this._applySampling());
     f.sampNote = h("div", { class: "status" });
     f.neg = h("textarea", { placeholder: "Negative prompt: what to keep out (extra people, text, blur…)", style: "min-height:44px",
       on: { change: () => { this.set(9081, "negative", f.neg.value); } } });
@@ -613,8 +620,11 @@ export class Pipeline {
             h("div", { class: "row" }, h("span", { class: "status" }, "Quality"), f.qualSeg),
             h("div", { class: "row" }, f.goBtn, f.allBtn)),
           f.refsCard,
-          h("details", { class: "card" }, h("summary", {}, "Advanced: steps & CFG"),
+          h("details", { class: "card" }, h("summary", {}, "Advanced: steps, CFG, sampler, shift"),
             h("div", { class: "row" }, h("label", { class: "row status" }, "Steps", f.steps), h("label", { class: "row status" }, "CFG", f.cfg)),
+            h("div", { class: "row" }, h("label", { class: "row status", title: "auto = the model's tuned sampler (Klein euler, Krea 2 euler_ancestral)" }, "Sampler", f.sampler),
+              h("label", { class: "row status", title: "auto = the model's tuned scheduler (Klein simple, Krea 2 beta)" }, "Scheduler", f.sched),
+              h("label", { class: "row status", title: "Sigma shift (ModelSamplingAuraFlow) on the flow-matching image model. 0 = the model's default, untouched. Not on the Krea 2 + depth path." }, "Shift", f.shift)),
             h("label", { class: "f" }, "Negative prompt (used when CFG is above 1)", f.neg),
             f.sampNote),
           h("details", { class: "card" }, h("summary", {}, "Style"),
@@ -862,8 +872,17 @@ export class Pipeline {
   _applySampling() {
     const f = this.f, t = this._samplingTarget();
     const st = Math.round(+f.steps.value || 0), cf = +f.cfg.value || 0;
-    if (t.id === 9056) { if (st) this.set(9056, "steps", st); if (cf) this.set(9056, "cfg", cf); }
-    else { this.set(9081, "steps", st); this.set(9081, "cfg", cf); }
+    const sa = f.sampler?.value || "auto", sc = f.sched?.value || "auto", sh = Math.max(0, +f.shift?.value || 0);
+    if (t.id === 9056) {   // the App's own KSampler (Krea 2 + depth): its combos take a real name, "auto" = Krea 2's tuned pair
+      if (st) this.set(9056, "steps", st); if (cf) this.set(9056, "cfg", cf);
+      if (this.w(9056, "sampler_name")) this.set(9056, "sampler_name", sa === "auto" ? "euler_ancestral" : sa);
+      if (this.w(9056, "scheduler")) this.set(9056, "scheduler", sc === "auto" ? "beta" : sc);
+    } else {
+      this.set(9081, "steps", st); this.set(9081, "cfg", cf);
+      if (this.w(9081, "sampler")) this.set(9081, "sampler", sa);
+      if (this.w(9081, "scheduler")) this.set(9081, "scheduler", sc);
+      if (this.w(9081, "shift")) this.set(9081, "shift", sh);
+    }
     this._samplingNote();
   }
 
@@ -876,6 +895,14 @@ export class Pipeline {
     if (cw && !+cw.value) { cw.value = 1; cw.callback?.(1); }
     f.steps.value = sw ? String(sw.value || 0) : "";
     f.cfg.value = cw ? String(cw.value || 0) : "";
+    if (f.sampler) {
+      const krea = t.id === 9056;
+      const saW = this.w(t.id, krea ? "sampler_name" : "sampler"), scW = this.w(t.id, "scheduler"), shW = krea ? null : this.w(9081, "shift");
+      f.sampler.disabled = !saW; f.sched.disabled = !scW; f.shift.disabled = !shW;
+      const pick = (sel, v) => { sel.value = [...sel.options].some((o) => o.value === v) ? v : "auto"; };
+      pick(f.sampler, saW ? String(saW.value || "auto") : "auto"); pick(f.sched, scW ? String(scW.value || "auto") : "auto");
+      f.shift.value = shW ? String(+shW.value || 0) : "";
+    }
     this._samplingNote();
     try { f.drawQuality?.(); } catch { /* not built */ }
   }
@@ -1409,7 +1436,7 @@ export class Pipeline {
       m.h3Refs = h("div", { class: "row", style: "flex-wrap:wrap;gap:6px;margin-top:4px" }),
       h("label", { class: "row", style: "margin-top:4px" }, "Add images",
         m.h3RefIn = h("input", { type: "file", accept: "image/*", multiple: "", on: { change: (e) => this._addRefs(e.target.files) } })));
-    // Quality: Draft · Final · Hollywood presets, saved per shot, plus the Advanced (LTX) pop-over (web/motion/ltxadvanced.mjs).
+    // Quality: Draft · Final · Advanced presets, saved per shot, plus the Advanced (LTX) pop-over (web/motion/ltxadvanced.mjs).
     this.ltx = new LtxAdvanced(this);
     m.qSeg = this.ltx.seg;
     m.cfg = h("input", { type: "number", min: "1", max: "10", step: "0.1", style: "width:90px",
