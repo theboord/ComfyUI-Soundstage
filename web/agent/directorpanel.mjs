@@ -13,6 +13,7 @@ import { Director, BACKENDS, YES_RE, NO_RE, encodeWav, downsample, wantsGo, pick
 import { withTimeout } from "./agent.mjs";
 import { PitchSession } from "./pitch.mjs";
 import { icon } from "../ui/icons.mjs";
+import { floatPanel } from "../ui/floating.mjs";
 import { statusOf, setTakeStatus, refreshBadges } from "../dailies/approval.mjs";
 
 const CSS = `
@@ -235,6 +236,7 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     settings, log, chips, pitchBox, h("div", { class: "comp" }, mic, input, sendB), hint);
   for (const ev of ["pointerdown", "wheel", "keydown", "keyup", "contextmenu"]) panel.addEventListener(ev, stop);
   root.append(panel);
+  floatPanel(panel, { key: "ask", title: "Ask", handle: ":scope > header", popout: true });   // drag, fold, pop out (ui/floating.mjs)
 
   // The Ask button (web/agent/ask.mjs): pinned in the top row (ss-pin: ui/toprow.mjs never folds it into "⋯").
   const button = h("button", { type: "button", class: "ss-btn ss-dirbtn ss-askbtn ss-pin",
