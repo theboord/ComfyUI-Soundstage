@@ -69,6 +69,8 @@ import "./oneclick/loop.mjs"; import "./oneclick/reshoot.mjs"; import "./oneclic
 import { listenPhoneClips, landPhoneClip, openPerformanceWith } from "./oneclick/handoff.mjs";
 import { queueSummary, stageInputsByRef, resolveStageValue, stageRefOf } from "./ui/queue.mjs";
 import { mountActivity, JOB_EVENT } from "./ui/activity.mjs";
+import { mountProjectBar } from "./project/projectbar.mjs";
+import { exportAll as exportCutFiles } from "./cut/exporters.mjs";
 
 const CSS = `
 .ss-stage { display:flex; flex-direction:column; gap:6px; padding:6px; background:#16191e; border-radius:6px;
@@ -3338,6 +3340,21 @@ function createStageWidget(node, inputName) {
       },
       goStep: (k) => { if (pipeline.btns?.[k]) pipeline.go(k); },
     } });
+
+  // Projects (web/project, docs/projects.md): the name + "Saved 12 s ago · Autosave on" pill in the top row, Save / Open /
+  // New / Restore autosave, and Collect project (also a card in ⑦ Deliver). Autosaves to userdata projects/<name>/autosave/.
+  try {
+    mountProjectBar({ app, api, row: tabs, before: guideBtn, host: {
+      say: (m) => (status.textContent = m),
+      deliverView: pipeline.views?.deliver || null,
+      summary: () => ({ title: script?.title || null, scenes: script?.scenes?.length || 0, shots: (() => { try { return pipeline.shots().length; } catch { return 0; } })() }),
+      collectExtras: () => {
+        const out = { script_full: script ? packScript(script, Infinity).script : null };
+        try { const p = strip._project(); out.timeline = p; out.cut_files = exportCutFiles(p); } catch { /* no cut yet */ }
+        return out;
+      },
+    } });
+  } catch (e) { console.warn("Soundstage: project bar unavailable", e); }
 
   // Presets (Milestone 17, web/ui/presets.mjs): one window of one-click camera moves, lighting, looks, stunts, edit
   // styles and recipes ("V" or the top bar). Each apply is one undo step; the Director gets them as its preset tool.
