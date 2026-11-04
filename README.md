@@ -127,7 +127,7 @@ The video and image models here are distilled (few-step) versions, so speed is b
 
 <p align="center"><img src="docs/media/readme_v4/card_quality.png" width="880" alt="Draft it low, then go high-res: Draft (lower quality, quick look) to Final (clean motion and detail) to high-res (up to 2624 x 1408). Every ComfyUI setting for your favourite models is still there: steps, CFG, sampler, seeds, LoRAs, resolution."></p>
 
-<p align="center"><b>Also on main:</b> the Activity bar shows which node your render is on, with an ETA · right-click a clip in the Cut to edit it at the step that made it · kept Drive takes are auto-corrected · the try-it demo loads your script.</p>
+<p align="center"><b>Also on main:</b> a live timer with percent, steps and time left, and a soft done-chime · the Activity bar shows which node your render is on, with an ETA · right-click a clip in the Cut to edit it at the step that made it · kept Drive takes are auto-corrected · the try-it demo loads your script.</p>
 
 <p align="center"><sub>Built in 3 days for Comfy Org's <i>Open Source Higgsfield</i> challenge, and shipping daily since. &#11088; Star the repo to follow along.</sub></p>
 

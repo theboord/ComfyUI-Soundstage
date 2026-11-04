@@ -25,6 +25,7 @@
 //   mountActivity({ api, row, before, theme })        -> the top-row pill and its panel, wired to the live App
 import { openPopover, closePopover, isPopoverOpen } from "./popover.mjs";
 import { queueSummary } from "./queue.mjs";
+import { timerModel, queueLine, loadSound, saveSound, cuesFor, FinishWatcher, playChime } from "./jobTimer.mjs";
 
 export const JOB_EVENT = "soundstage:job";
 export const ETA_KEY = "ss_activity_eta";
@@ -183,6 +184,11 @@ export class EtaBook {
   get(key) {
     const hit = this.avg[key] || this.avg[`${String(key).split("@")[0]}@any`];
     return hit && Number.isFinite(hit.ms) ? hit.ms : null;
+  }
+  /** How many runs back this average (0 = never measured): a thin book gets a range, not a single number. */
+  runs(key) {
+    const hit = this.avg[key] || this.avg[`${String(key).split("@")[0]}@any`];
+    return hit ? hit.n || 1 : 0;
   }
   record(key, ms) {
     if (!Number.isFinite(ms) || ms <= 0) return;
@@ -594,7 +600,7 @@ export class ActivityRegistry {
       if (pct != null) pct = Math.max(0, Math.min(99, pct));
     }
     return { id: j.id, kind, name: base, state: j.state, own: !!j.own, position: j.position, trigger: j.trigger || "",
-      elapsedMs, remainingMs: rem.ms, remainingAtLeast: rem.atLeast, overdue: rem.over && rem.ms == null, pct,
+      elapsedMs, etaRuns: this.eta.runs(etaKey(kind, j.width, j.height)), remainingMs: rem.ms, remainingAtLeast: rem.atLeast, overdue: rem.over && rem.ms == null, pct,
       step: j.state === "running" ? j.step : null, steps: j.state === "running" ? j.steps : null,
       endedAt: j.endedAt, error: j.error, outputs: j.outputs.slice(), preview: j.preview, detail,
       waitedMs: j.state === "queued" ? now - j.queuedAt : null };
@@ -706,11 +712,44 @@ function detailsList(d, { raw = false, open = false, onToggle = null, onRaw = nu
   return det;
 }
 
-export function renderPanel(v, { onCancel = null, urlOf = viewUrl, raw = false, open = {}, onToggle = null, onRaw = null } = {}) {
+/** The sound settings: on/off, volume, only in the background, only for jobs longer than N seconds, and a Test button. */
+function soundBox(sound) {
+  const { prefs, onChange, onTest } = sound;
+  const det = h("details", "ss-act-sound");
+  det.open = !!sound.open;
+  det.addEventListener("toggle", () => sound.onToggle?.(det.open));
+  det.append(h("summary", null, `Sound · ${prefs.on ? "chime on" : "off"}`));
+  const field = (label, input) => { const l = h("label", "ss-act-field"); l.append(input, h("span", null, label)); det.append(l); return input; };
+  const box = (key, label) => {
+    const i = h("input"); i.type = "checkbox"; i.checked = !!prefs[key];
+    i.addEventListener("change", () => onChange({ [key]: i.checked }));
+    return field(label, i);
+  };
+  box("on", "Play a soft chime when a job finishes");
+  const vol = h("input"); vol.type = "range"; vol.min = "0"; vol.max = "1"; vol.step = "0.05"; vol.value = String(prefs.volume);
+  vol.setAttribute("aria-label", "Chime volume");
+  vol.addEventListener("input", () => onChange({ volume: Number(vol.value) }, { quiet: true }));
+  field("Volume", vol);
+  box("bgOnly", "Only when this tab is in the background");
+  const min = h("input"); min.type = "number"; min.min = "0"; min.max = "3600"; min.value = String(prefs.minSec);
+  min.addEventListener("change", () => onChange({ minSec: Number(min.value) }));
+  field("Only for jobs longer than (seconds)", min);
+  const row = h("div", "ss-act-testrow");
+  for (const [k, t] of [["done", "Test: finished"], ["stopped", "Test: stopped"]]) {
+    const b = h("button", "ss-btn ss-act-test", t); b.type = "button";
+    b.addEventListener("click", (e) => { e.stopPropagation(); onTest(k); });
+    row.append(b);
+  }
+  det.append(row);
+  return det;
+}
+
+export function renderPanel(v, { onCancel = null, urlOf = viewUrl, raw = false, open = {}, onToggle = null, onRaw = null, sound = null } = {}) {
   const root = h("div", "ss-act");
   root.setAttribute("role", "dialog");
   root.setAttribute("aria-label", "Activity");
   root.append(h("div", "ss-act-head", `Activity · ${pillText(v.totals)}`));
+  if (sound) root.append(soundBox(sound));
   const nodeWord = (n) => (n ? (raw ? n.raw : n.name) : null);
   const section = (title, rows, fill) => {
     const s = h("section", "ss-act-sec");
@@ -797,6 +836,27 @@ export const ACTIVITY_CSS = `
 .ss-actbtn[data-busy=true] .ss-act-dot { opacity:1; animation:ss-act-pulse 1.4s ease-in-out infinite; }
 .ss-actbtn .ss-act-lbl { display:inline-block; max-width:22em; overflow:hidden; text-overflow:ellipsis; vertical-align:bottom; }
 .ss-stage[data-tw=s] .ss-actbtn .ss-act-lbl, .ss-stage[data-ws=narrow] .ss-actbtn .ss-act-lbl { max-width:11em; }
+.ss-actbtn[data-pulse=true] { animation:ss-act-done 1.6s ease-out 1; }
+@keyframes ss-act-done { 0% { box-shadow:0 0 0 0 color-mix(in srgb, var(--ss-accent, #e39a40) 60%, transparent); } 100% { box-shadow:0 0 0 12px transparent; } }
+.ss-jobtimer { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px; padding:6px 10px 8px; position:relative; font-size:12px; }
+.ss-jobtimer[hidden] { display:none; }
+.ss-jobtimer .ss-jt-name { font-weight:600; max-width:24em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ss-jobtimer .ss-jt-clock { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:.02em; }
+.ss-jobtimer .ss-jt-pct { font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; }
+.ss-jobtimer .ss-jt-dim { opacity:.75; }
+.ss-jobtimer .ss-jt-bar { flex:1 0 100%; height:5px; border-radius:3px; background:rgba(128,128,128,.25); overflow:hidden; }
+.ss-jobtimer .ss-jt-fill { height:100%; width:0; background:var(--ss-accent, #e39a40); border-radius:3px; transition:width .9s linear; }
+.ss-jobtimer[data-indet=true] .ss-jt-fill { width:35%; animation:ss-jt-slide 2.4s ease-in-out infinite alternate; transition:none; }
+@keyframes ss-jt-slide { from { margin-left:0; } to { margin-left:65%; } }
+@media (prefers-reduced-motion: reduce) {
+  .ss-actbtn[data-pulse=true], .ss-jobtimer[data-indet=true] .ss-jt-fill { animation:none; }
+  .ss-jobtimer .ss-jt-fill { transition:none; }
+  .ss-jobtimer[data-indet=true] .ss-jt-fill { width:100%; opacity:.35; }
+}
+.ss-act-sound { margin:4px 0 8px; font-size:12px; }
+.ss-act-sound .ss-act-field { display:flex; align-items:center; gap:8px; margin:4px 0; }
+.ss-act-sound input[type=number] { width:5em; }
+.ss-act-testrow { display:flex; gap:6px; margin-top:6px; }
 .ss-actbtn .ss-act-mini { position:absolute; left:0; right:0; bottom:0; height:2px; background:transparent; pointer-events:none; }
 .ss-actbtn .ss-act-mini > i { display:block; height:100%; width:0; background:currentColor; opacity:.9; transition:width .3s linear; }
 .ss-actbtn .ss-act-mini[hidden] { display:none; }
@@ -908,7 +968,18 @@ function sharedFor(api, win) {
   let s = shared.get(api);
   if (s) return s;
   const reg = new ActivityRegistry({ clientId: api.clientId || api.initialClientId || null, defaultTitle: liveDefaultTitle });
-  s = { reg, refs: 0, pills: new Set(), timer: 0, inflight: false, stopped: false };
+  s = { reg, refs: 0, pills: new Set(), timer: 0, inflight: false, stopped: false, sound: { prefs: loadSound() } };
+  // Browsers keep audio locked until the first click or key: make the context then (before that, the chime is skipped).
+  const audio = s.audio = { c: null, ctx: () => audio.c,
+    unlock() {
+      try { const AC = win?.AudioContext || win?.webkitAudioContext; if (!audio.c && AC) audio.c = new AC(); audio.c?.resume?.()?.catch?.(() => {}); } catch { /* no sound: fine */ }
+      return audio.c;
+    } };
+  const unlockEvents = ["pointerdown", "keydown"];
+  const onUnlock = () => { audio.unlock(); for (const t of unlockEvents) win?.removeEventListener?.(t, onUnlock, true); };
+  for (const t of unlockEvents) win?.addEventListener?.(t, onUnlock, true);
+  s.cues = attachFinishCues({ reg, win, sound: s.sound, audio, onPulse: () => { for (const p of s.pills) p.pulse?.(); } });
+  s.test = (kind) => playChime(kind, s.sound.prefs, audio.unlock(), { reduced: s.cues.reduced() });
   const handlers = WS_EVENTS.map((t) => [t, (ev) => { if (!reg.clientId && api.clientId) reg.clientId = api.clientId; reg.onEvent(t, ev?.detail); }]);
   for (const [t, f] of handlers) api.addEventListener?.(t, f);
   // The live preview ComfyUI sends while sampling (no prompt id: it belongs to the job running now).
@@ -947,6 +1018,8 @@ function sharedFor(api, win) {
   s.start = () => tick();
   s.dispose = () => {
     s.stopped = true; clearTimeout(s.timer); clearTimeout(s.soon); offLost();
+    s.cues.dispose();
+    for (const t of unlockEvents) win?.removeEventListener?.(t, onUnlock, true);
     for (const [t, f] of handlers) api.removeEventListener?.(t, f);
     api.removeEventListener?.("b_preview", onPreview);
     win?.removeEventListener?.(JOB_EVENT, onJob);
@@ -958,6 +1031,64 @@ function sharedFor(api, win) {
   shared.set(api, s);
   s.start();
   return s;
+}
+
+// ---- The prominent timer for the running job, under the top row.
+/** The timer's DOM and an update(view) that paints the running job (or hides when nothing runs). Text only. */
+export function createJobTimer() {
+  const el = h("div", "ss-jobtimer");
+  el.setAttribute("role", "timer");
+  el.setAttribute("aria-label", "Running job timer");
+  el.hidden = true;
+  const name = h("span", "ss-jt-name"), clockEl = h("span", "ss-jt-clock"), pct = h("span", "ss-jt-pct"),
+    step = h("span", "ss-jt-dim"), left = h("span", "ss-jt-dim"), node = h("span", "ss-jt-dim"), queue = h("span", "ss-jt-dim");
+  const bar = h("div", "ss-jt-bar"), fill = h("div", "ss-jt-fill");
+  bar.append(fill);
+  bar.setAttribute("role", "progressbar");
+  bar.setAttribute("aria-valuemin", "0");
+  bar.setAttribute("aria-valuemax", "100");
+  el.append(name, clockEl, pct, step, left, node, queue, bar);
+  const update = (v) => {
+    const run = v.running.find((r) => r.own) || v.running[0] || null;
+    const m = timerModel(run);
+    el.hidden = !m;
+    if (!m) return null;
+    name.textContent = m.name;
+    clockEl.textContent = m.clock;
+    pct.textContent = m.pct != null ? `${m.pct}%` : "";
+    step.textContent = m.stepText || "";
+    left.textContent = m.left;
+    node.textContent = m.node && m.own ? `on ${m.node}` : "";
+    queue.textContent = queueLine(v.totals) || "";
+    el.dataset.indet = String(m.indeterminate);
+    fill.style.width = m.indeterminate ? "" : `${m.pct}%`;
+    if (m.indeterminate) bar.removeAttribute?.("aria-valuenow"); else bar.setAttribute("aria-valuenow", String(m.pct));
+    return m;
+  };
+  return { el, update };
+}
+
+/** One chime and one set of visual cues per finished job of this browser: sound (if the settings allow), the pill
+ *  pulse, and a "✓ Done" tab title until the tab is focused. */
+export function attachFinishCues({ reg, win = globalThis.window, sound, audio, onPulse = null }) {
+  const watcher = new FinishWatcher();
+  const doc = win?.document;
+  let saved = null;
+  const restore = () => { if (saved != null && doc) { doc.title = saved; saved = null; } };
+  const onVis = () => { if (!doc?.hidden) restore(); };
+  win?.addEventListener?.("focus", restore);
+  doc?.addEventListener?.("visibilitychange", onVis);
+  const reduced = () => { try { return !!win?.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches; } catch { return false; } };
+  const check = () => {
+    for (const f of watcher.check(reg.view().finished)) {
+      const cue = cuesFor(sound.prefs, { elapsedMs: f.elapsedMs, hidden: !!doc?.hidden });
+      if (cue.sound) playChime(f.kind, sound.prefs, audio.ctx(), { reduced: reduced() });
+      if (cue.pulse) onPulse?.();
+      if (cue.title && doc) { if (saved == null) saved = doc.title; doc.title = `${f.kind === "done" ? "✓ Done" : "■ Stopped"} · ${String(saved).replace(/^(✓ Done|■ Stopped) · /, "")}`; }
+    }
+  };
+  const off = reg.onChange(check);
+  return { watcher, check, reduced, dispose() { off(); win?.removeEventListener?.("focus", restore); doc?.removeEventListener?.("visibilitychange", onVis); restore(); } };
 }
 
 function readRaw() { try { return globalThis.localStorage?.getItem(RAW_KEY) === "1"; } catch { return false; } }
@@ -987,18 +1118,28 @@ export function mountActivity({ api, row, before = null, theme = null, win = glo
   btn.append(dot, lbl, mini);
   btn.addEventListener("pointerdown", (e) => e.stopPropagation());
   row.insertBefore(btn, before && before.parentNode === row ? before : null);
+  const timer = createJobTimer();
+  row.parentNode?.insertBefore(timer.el, row.nextSibling);
+  let pulseT = 0;
 
   let panel = null, pressed = false, pending = 0, raw = readRaw();
   const open = {};   // which jobs' Details are open (kept across redraws)
   const isOpen = () => !!(panel && isPopoverOpen(panel));
-  const opts = () => ({ onCancel, raw, open, onToggle: (id, o) => { open[id] = o; },
+  const setSound = (patch, { quiet = false } = {}) => {
+    s.sound.prefs = { ...s.sound.prefs, ...patch };
+    saveSound(s.sound.prefs);
+    if (!quiet) paint();
+  };
+  const soundOpt = () => ({ prefs: s.sound.prefs, onChange: setSound, onTest: s.test, open: open.sound, onToggle: (o) => { open.sound = o; } });
+  const opts = () => ({ onCancel, raw, open, sound: soundOpt(), onToggle: (id, o) => { open[id] = o; },
     onRaw: (on) => { raw = on; writeRaw(on); paint(); } });
   // The panel is rebuilt at most 4 times a second, and never while a button in it is pressed (a click would land on
   // a replaced button and be lost).
   const paint = () => {
     pending = 0;
     if (!isOpen()) return;
-    if (pressed) { pending = setTimeout(paint, 150); return; }
+    const ae = win?.document?.activeElement;
+    if (pressed || (ae && ae.tagName === "INPUT" && panel.contains?.(ae))) { pending = setTimeout(paint, 150); return; }
     const top = panel.scrollTop;
     const lists = [...panel.querySelectorAll(".ss-act-nodes")].map((u) => [u.closest(".ss-act-det")?.dataset.id, u.scrollTop]);
     panel.replaceChildren(...renderPanel(reg.view(), opts()).childNodes);
@@ -1014,6 +1155,7 @@ export function mountActivity({ api, row, before = null, theme = null, win = glo
     btn.title = `Activity: ${txt}. Every job on the GPU queue, which node yours is on, time left and Cancel for yours`;
     btn.setAttribute("aria-label", btn.title);
     btn.dataset.busy = String(!!(v.totals.running || v.totals.queued));
+    timer.update(v);
     mini.hidden = !(run && run.pct != null);
     if (run && run.pct != null) miniFill.style.width = `${run.pct}%`;
     if (isOpen() && !pending) pending = setTimeout(paint, 250);
@@ -1031,7 +1173,11 @@ export function mountActivity({ api, row, before = null, theme = null, win = glo
   const up = () => { pressed = false; };
   win?.addEventListener?.("pointerup", up, true);
   win?.addEventListener?.("pointercancel", up, true);
-  const pill = { isOpen };
+  const pill = { isOpen, pulse() {
+    btn.dataset.pulse = "true";
+    clearTimeout(pulseT);
+    pulseT = setTimeout(() => { delete btn.dataset.pulse; }, 1800);
+  } };
   s.pills.add(pill);
   const offChange = reg.onChange(draw);
   draw();
@@ -1040,7 +1186,7 @@ export function mountActivity({ api, row, before = null, theme = null, win = glo
   return {
     button: btn, registry: reg, draw, poll: () => s.poll(),
     dispose() {
-      clearInterval(sec); clearTimeout(pending); offChange(); s.pills.delete(pill);
+      clearInterval(sec); clearTimeout(pending); clearTimeout(pulseT); offChange(); timer.el.remove?.(); s.pills.delete(pill);
       win?.removeEventListener?.("pointerup", up, true);
       win?.removeEventListener?.("pointercancel", up, true);
       if (isOpen()) closePopover(panel);
