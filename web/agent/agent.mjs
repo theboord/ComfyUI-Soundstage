@@ -127,8 +127,37 @@ export function applyOps(stage, ops) {
 
 // ---------------------------------------------------------------------------------------------- model
 
+/** The error a cancelled request rejects with (Stop, or a newer question replaced it): e.cancelled is true. */
+export function cancelledError(what = "the request") {
+  const e = new Error(`${what} was stopped`);
+  e.cancelled = true;
+  return e;
+}
+
+/**
+ * Settle within ms, whatever p does: rejects with "<what> took longer than N s" (e.timedOut) or, when signal aborts,
+ * with cancelledError (e.cancelled). The chat uses it so no question can hang without an answer or an error.
+ */
+export function withTimeout(p, ms, what = "the request", signal = null) {
+  return new Promise((resolve, reject) => {
+    let t = 0;
+    const onAbort = () => { clearTimeout(t); reject(cancelledError(what)); };
+    if (signal?.aborted) { onAbort(); return; }
+    signal?.addEventListener?.("abort", onAbort, { once: true });
+    t = setTimeout(() => {
+      signal?.removeEventListener?.("abort", onAbort);
+      const e = new Error(`${what} took longer than ${Math.round(ms / 1000)} s`);
+      e.timedOut = true;
+      reject(e);
+    }, ms);
+    Promise.resolve(p).then(
+      (v) => { clearTimeout(t); signal?.removeEventListener?.("abort", onAbort); resolve(v); },
+      (e) => { clearTimeout(t); signal?.removeEventListener?.("abort", onAbort); reject(e); });
+  });
+}
+
 /** Run the local model once through the ComfyUI queue. Resolves with its text. */
-export async function runLocalModel(api, { system, prompt, max_length, model }, { timeoutMs = 120000 } = {}) {
+export async function runLocalModel(api, { system, prompt, max_length, model }, { timeoutMs = 120000, signal = null } = {}) {
   const graph = {
     sa1: { class_type: "CLIPLoader", inputs: { clip_name: model, type: "stable_diffusion", device: "default" } },
     sa2: { class_type: "PrimitiveStringMultiline", inputs: { value: system } },
@@ -141,6 +170,7 @@ export async function runLocalModel(api, { system, prompt, max_length, model }, 
   const early = [];
   let settle;
   const done = new Promise((resolve, reject) => (settle = { resolve, reject }));
+  done.catch(() => {});   // settled by a timer / Stop before anyone awaits it: not an unhandled rejection
   const onExec = (ev) => {
     const d = ev.detail || {};
     if (d.node !== "sa4") return;
@@ -153,7 +183,11 @@ export async function runLocalModel(api, { system, prompt, max_length, model }, 
   api.addEventListener("executed", onExec);
   api.addEventListener("execution_error", onErr);
   const timer = setTimeout(() => settle.reject(new Error(`no answer after ${Math.round(timeoutMs / 1000)} s`)), timeoutMs);
+  // Stop (the chat's Stop, or a newer question): give up now and take the job off the queue below.
+  const onAbort = () => settle.reject(cancelledError());
+  if (signal?.aborted) onAbort(); else signal?.addEventListener?.("abort", onAbort, { once: true });
   try {
+    if (signal?.aborted) throw cancelledError();
     const resp = await api.fetchApi("/prompt", { method: "POST", headers: { "Content-Type": "application/json" },
       // front: a short text job goes ahead of queued renders (it still waits for the one running).
       body: JSON.stringify({ prompt: graph, client_id: api.clientId, front: true }) });
@@ -162,6 +196,7 @@ export async function runLocalModel(api, { system, prompt, max_length, model }, 
     pid = j.prompt_id;
     const hit = early.find((d) => d.prompt_id === pid);
     if (hit) return hit.output?.text?.[0] ?? "";
+    if (signal?.aborted) throw cancelledError();
     return await done;
   } catch (err) {
     // Gave up waiting: take the job out of the queue so it doesn't run later for nobody.
@@ -169,6 +204,7 @@ export async function runLocalModel(api, { system, prompt, max_length, model }, 
     throw err;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener?.("abort", onAbort);
     api.removeEventListener("executed", onExec);
     api.removeEventListener("execution_error", onErr);
   }

@@ -9,7 +9,8 @@
 // then closes · hold ` (backquote) anywhere in the App to talk, or hold Space in the empty box / with the panel open.
 // Voice: the browser's speech recognition where it has one, or Whisper on the ComfyUI server (offline, open weights).
 // MCP: Claude Desktop / Code proposals arrive as "soundstage.director" events and run here, in view, undoable.
-import { Director, BACKENDS, YES_RE, NO_RE, encodeWav, downsample, wantsGo, pickOllama } from "./director.mjs";
+import { Director, BACKENDS, YES_RE, NO_RE, encodeWav, downsample, wantsGo, pickOllama, ASK_TIMEOUT_MS } from "./director.mjs";
+import { withTimeout } from "./agent.mjs";
 import { PitchSession } from "./pitch.mjs";
 import { icon } from "../ui/icons.mjs";
 import { statusOf, setTakeStatus, refreshBadges } from "../dailies/approval.mjs";
@@ -31,6 +32,8 @@ const CSS = `
 .ss-dir .msg.u .src { display:block; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--ss-muted, #aaa); margin-bottom:2px; }
 .ss-dir .msg.a { align-self:flex-start; background:rgba(255,255,255,.045); border:1px solid var(--ss-line, rgba(255,255,255,.08)); }
 .ss-dir .msg.a.wait { color:var(--ss-muted, #aaa); font-style:italic; }
+.ss-dir .msg.a.wait .stop { margin-left:6px; padding:1px 8px; border-radius:999px; font:inherit; font-style:normal; font-size:11px; cursor:pointer;
+  border:1px solid var(--ss-line-strong, rgba(255,255,255,.2)); background:transparent; color:var(--ss-text, #eee); display:inline-flex; align-items:center; gap:3px; vertical-align:baseline; }
 .ss-dir .msg ol, .ss-dir .msg ul { margin:4px 0 2px; padding-left:20px; }
 .ss-dir .msg li { margin:2px 0; }
 .ss-dir .msg li.no { color:var(--ss-faint, rgba(240,239,237,.54)); text-decoration:line-through; }
@@ -209,7 +212,7 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   const pLock = h("button", { type: "button", class: "go", title: "Turn the pitch into shots: one per beat, each sketch as its first frame" }, icon("check", 13), "Lock it");
   const pitchBox = h("div", { class: "pitch", hidden: true }, pTx, pHud, pStrip, h("div", { class: "row" }, pMic, pUndo, pMotion, pLock));
   const chips = h("div", { class: "chips" });
-  const hint = h("div", { class: "hint" }, "Enter sends · Enter again (or say “yes”) applies · Esc cancels · hold ` or Space to talk");
+  const hint = h("div", { class: "hint" }, "Enter sends · Enter again (or say “yes” / “lock it in”) applies · Esc stops or cancels · hold ` or Space to talk");
   const beSel = h("select", { "aria-label": "Language model" });
   const olSel = h("select", { "aria-label": "Ollama model" });
   const vSel = h("select", { "aria-label": "Voice" });
@@ -357,36 +360,89 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     entry.row.replaceChildren(h("span", { class: "meta" }, "Cancelled: nothing changed."));
   }
 
+  // One turn at a time, and every turn ends (QA 2026-11-04, "it's not responding back... hanging on to the question"):
+  // the question shows at once with "Thinking…" and a Stop; the answer hook and the planner each run under a time
+  // limit (ASK_TIMEOUT_MS, plus the routes'); a newer question stops a stuck one instead of being turned away; a stale
+  // answer (stopped, or replaced) is dropped. Applying a plan is not stopped: the text goes back in the box instead.
+  let escUsed = false;           // the keydown Esc stopped / cancelled something: its keyup doesn't also close the chat
+  let turn = null;               // {ctrl: AbortController, msg} while a question / plan is being worked out
+  function stopTurn(why = "stopped") {
+    const t = turn;
+    if (!t) return false;
+    turn = null; busy = false;
+    try { t.ctrl.abort(); } catch { /* */ }
+    if (waitMsg === t.msg.querySelector(".t")) waitMsg = null;
+    if (why === "stopped") t.msg.replaceChildren("Stopped. Ask again whenever you like.");
+    else t.msg.remove();
+    t.msg.classList.remove("wait");
+    return true;
+  }
+  function startTurn(text) {
+    open();
+    say("u", text);
+    const stopB = h("button", { type: "button", class: "stop", title: "Stop waiting for this one (Esc)" }, icon("x", 12), "Stop");
+    const msg = say("a wait", h("span", { class: "t" }, "Thinking…"), " ", stopB);
+    const t = { ctrl: new AbortController(), msg };
+    stopB.addEventListener("click", () => { if (turn === t) { stopTurn("stopped"); input.focus(); } });
+    turn = t; busy = true; waitMsg = msg.querySelector(".t");
+    return t;
+  }
+  function endTurn(t) {
+    if (turn !== t) return false;      // stopped or replaced meanwhile: its result is dropped
+    turn = null; busy = false;
+    if (waitMsg === t.msg.querySelector(".t")) waitMsg = null;
+    t.msg.remove();
+    return true;
+  }
+
   /** Send a command (typed, spoken, or a chip). Resolves with {plan, result?}. */
   async function send(text, { source = "panel", apply = null } = {}) {
     text = String(text || "").trim();
     if (pitch.active && source === "panel") { if (text) pitch.hear(text, { final: true }); return null; }
-    if (!text) { if (pending) return { result: await applyPending(pending) }; return null; }
+    if (!text) {
+      if (pending) return { result: await applyPending(pending) };
+      if (turn) { say("a wait", "Still thinking about the last one: Stop (or Esc) gives up on it."); }
+      return null;
+    }
     if (pending && YES_RE.test(text)) { say("u", text); return { result: await applyPending(pending) }; }
     if (pending && NO_RE.test(text)) { say("u", text); discard(pending); return null; }
-    if (busy) { say("a wait", "One moment: still on the last one."); return null; }
+    if (turn && NO_RE.test(text)) { stopTurn("replaced"); say("u", text); say("a", "Stopped. Ask again whenever you like."); return null; }
+    if (turn) stopTurn("replaced");       // the newest question wins: a stuck one never blocks the next
+    if (busy) {                           // a plan is being applied: keep the words, don't lose them
+      say("a wait", "One moment: still applying the last plan. Your words are back in the box: press Enter again in a second.");
+      if (!input.value) input.value = text;
+      return null;
+    }
+    const t = startTurn(text);
+    const signal = t.ctrl.signal;
     // Ask (web/agent/ask.mjs): a question gets a step-by-step answer with Show me; nothing on the set changes.
     if (answerHook && source !== "mcp") {
-      let ans = null;
-      try { ans = await answerHook(text); } catch (e) { console.warn("[Soundstage] ask", e); }
+      let ans = null, err = null;
+      try { ans = await withTimeout(answerHook(text, { signal }), director.limits.turnMs, "the answer", signal); }
+      catch (e) { err = e; if (!e.cancelled) console.warn("[Soundstage] ask", e); }
+      if (turn !== t) return null;
+      if (err && !err.cancelled) {
+        endTurn(t);
+        say("a", `I couldn't answer that: ${err.message || err}. Ask again, or tell me what you want on the set and I'll plan it.`);
+        return { error: String(err.message || err) };
+      }
       if (ans) {
-        open();
-        say("u", text);
+        endTurn(t);
         say(`a ${ans.cls || ""}`.trim(), ...(ans.nodes || []));
         setChips(ans.chips || []);
         return { answer: ans };
       }
     }
     if (pending) discard(pending);
-    open();
-    say("u", text);
-    waitMsg = say("a wait", "Reading that…");
-    busy = true;
+    if (waitMsg) waitMsg.textContent = "Reading that…";
     let p;
-    try { p = await director.propose(text); }
-    catch (e) { waitMsg.remove(); waitMsg = null; busy = false; say("a", `I couldn't plan that: ${e.message || e}`); return null; }
-    busy = false;
-    waitMsg.remove(); waitMsg = null;
+    try { p = await withTimeout(director.propose(text, { signal }), director.limits.turnMs + director.limits.postMs + 4000, "planning", signal); }
+    catch (e) {
+      if (!endTurn(t)) return null;
+      say("a", `I couldn't plan that: ${e.message || e}. Try again, or say it more simply ("make it rain", "add a dog").`);
+      return { error: String(e.message || e) };
+    }
+    if (!endTurn(t)) return null;
     const entry = planCard(p, { source });
     if (!entry) return { plan: p };
     pending = entry;
@@ -397,11 +453,11 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
 
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); const t = input.value; input.value = ""; send(t); }
-    else if (e.key === "Escape") { e.preventDefault(); if (pending) discard(pending); else { close(); host.focusStage?.(); } }
+    else if (e.key === "Escape") { e.preventDefault(); if (turn) { escUsed = true; stopTurn("stopped"); } else if (pending) { escUsed = true; discard(pending); } else { close(); host.focusStage?.(); } }
     else if (e.key === " " && !input.value && !e.repeat) { e.preventDefault(); startTalk("space"); }
   });
   input.addEventListener("keyup", (e) => { if (e.key === " " && listening?.key === "space") { e.preventDefault(); stopTalk(); } });
-  sendB.addEventListener("click", () => { const t = input.value; input.value = ""; send(t); });
+  sendB.addEventListener("click", () => { const t = input.value; input.value = ""; send(t); input.focus(); });
 
   // ---------------------------------------------------------------- voice
   async function startTalk(key = "mouse") {
@@ -432,9 +488,15 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
       return;
     }
     // Whisper: record PCM, encode WAV, transcribe on the server.
+    // Let go before the mic is granted (the browser's permission prompt): that press is over, it never keeps recording
+    // in the background, and the next press can talk (listening used to stay set and block it).
+    let released = false;
+    const early = { key, stop: () => { released = true; } };
+    listening = early;
     let stream;
     try { stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } }); }
     catch (e) { done(""); say("a", `No microphone (${e.message}).`); return; }
+    if (released || listening !== early) { for (const t of stream.getTracks()) t.stop(); if (listening === early) done(""); return; }
     const ac = new (globalThis.AudioContext || globalThis.webkitAudioContext)();
     const src = ac.createMediaStreamSource(stream);
     const proc = ac.createScriptProcessor(4096, 1, 1);
@@ -450,7 +512,7 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
       ac.close?.();
       if (n < rate * 0.25) { done(""); return; }
       input.placeholder = "Transcribing (Whisper)…";
-      try { done(await transcribe(encodeWav(downsample(all, rate, 16000), 16000))); }
+      try { done(await withTimeout(transcribe(encodeWav(downsample(all, rate, 16000), 16000)), ASK_TIMEOUT_MS, "Whisper")); }
       catch (e) { done(""); say("a", `Couldn't transcribe: ${e.message}`); }
     } };
   }
@@ -478,6 +540,7 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   const onKeyUp = (e) => {
     if ((e.key === "`" || e.code === "Backquote") && listening?.key === "bq") { e.preventDefault(); stopTalk(); }
     if (e.key === " " && listening?.key === "space") { e.preventDefault(); e.stopPropagation(); stopTalk(); }
+    if (e.key === "Escape" && escUsed) { escUsed = false; return; }   // that Esc stopped a question or a plan: keep the chat open
     if (e.key === "Escape" && !panel.hidden && panel.contains(document.activeElement) && !pending) close();
   };
   window.addEventListener("keydown", onKey, true);
