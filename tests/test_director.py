@@ -185,6 +185,9 @@ def test_nonsense_gives_nothing_not_a_crash():
 @pytest.mark.parametrize("cmd,confirm", [
     ("render a draft of shot 2", True),
     ("paint frames for shot 1", True),
+    ("generate a new image for shot 1", True),       # "image / picture / photo" mean frames; the GPU confirm still applies
+    ("make me another picture of shot 2", True),
+    ("regenerate the frame for shot 1", True),
     ("render a draft of shot 2, go", False),
     ("go ahead and render the final of shot 1", False),
     ("go to scene 2 and render a draft", True),   # "go to" is not "go"

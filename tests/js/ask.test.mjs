@@ -60,6 +60,10 @@ test("context: the step, selection, shot and panel reach the chat and the planne
 test("questions are answered, orders go to the planner", () => {
   for (const q of ["how do I make the car crash into the boxes?", "what should I do next", "where is physics", "help"]) assert.ok(isQuestion(q), q);
   for (const o of ["make it rain", "Use the J-turn stunt", "put Mara in the car"]) assert.ok(!isQuestion(o), o);
+  // Mike, 2026-11-04: a lead-in word must not turn a question into a set order ("I couldn't turn that into a change").
+  for (const q of ["so how is Chase's character described in the movie", "Okay, tell me about Chase", "no, I just wanted you to describe to me what you think Chase is",
+    "now describe the burly man", "so what do you think of the second scene", "and can you summarize scene 3", "well, why is the camera inside the car"]) assert.ok(isQuestion(q), q);
+  for (const o of ["so put Mara in the car", "okay make it rain", "now add a crash", "no, move the camera back"]) assert.ok(!isQuestion(o), o);
   const m = matchHowto("how do I make the car crash into the boxes?");
   assert.equal(m.recipe.id, "crash");
   assert.match(doItCommand(m.recipe, "", null), /crate stack/);
