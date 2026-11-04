@@ -6,6 +6,7 @@
 // so every listener keeps working and "Classic layout" puts every element back exactly where it was.
 
 import { icon as lucide } from "./icons.mjs";   // hudPanel / hudPop take an `icon` element argument
+import { floatPanel } from "./floating.mjs";
 
 const LS_LAYOUT = "ss_layout";
 
@@ -92,6 +93,7 @@ export function hudPanel({ key, title, tip = "", side = "left", collapsed = fals
   btn.addEventListener("click", () => set(root.dataset.collapsed !== "true", true));
   ttl.addEventListener("click", () => { if (root.dataset.collapsed === "true") set(false, true); });
   set(flag.get());
+  floatPanel(root, { key: `cv_${key}`, title, handle: head, chipBtn: false });   // drag by the header; it folds itself
   const api = {
     el: root, body, head,
     collapsed: () => root.dataset.collapsed === "true",
@@ -136,6 +138,7 @@ export function hudPop({ title, icon = null, onClose = null }) {
     if (document.querySelector("body > .ss-pophost")) return;   // a menu over it closes first (ui/popover.mjs)
     e.stopPropagation(); e.preventDefault(); api.close(); api.btn?.focus?.({ preventScroll: true });
   };
+  floatPanel(root, { key: `pop_${title}`, title, handle: head });   // drag, fold (ui/floating.mjs)
   const api = {
     el: root, body, btn: null, onState: null,
     isOpen: () => !root.hidden,

@@ -3,6 +3,7 @@
 // bar (Keep / Discard / Again, smoothing), the camera choice, a bindings sheet to remap keys and controller buttons,
 // and an optional drawing of the controller and keys showing what is pressed (for screen recordings and teaching).
 import { ACTIONS, SMOOTHING, remap, resetBindings } from "../stage/drive.mjs";
+import { floatPanel, enterDrive } from "./floating.mjs";
 
 const CSS = `.ss-drive{position:absolute;z-index:6;pointer-events:none;font:500 12px/1.3 "Soundstage Grotesk",system-ui,sans-serif;color:#f1ecf6}
 .ss-drive *{box-sizing:border-box}
@@ -25,6 +26,7 @@ const CSS = `.ss-drive{position:absolute;z-index:6;pointer-events:none;font:500 
 .ss-drive .bl{position:absolute;left:10px;bottom:10px;display:flex;flex-wrap:wrap;gap:4px 10px;max-width:62%;padding:6px 10px;border-radius:10px;
  background:rgba(24,18,30,.7);border:1px solid rgba(255,255,255,.1);font-size:11px;opacity:.95}
 .ss-drive .bl span{white-space:nowrap}
+.ss-drive .bl .keys{display:contents}
 .ss-drive .br{position:absolute;right:12px;bottom:10px;text-align:right;text-shadow:0 1px 3px rgba(0,0,0,.6)}
 .ss-drive .spd{font:700 34px/1 ui-monospace,monospace;letter-spacing:-.02em}
 .ss-drive .unit{font:600 11px/1 inherit;opacity:.7;margin-left:3px}
@@ -125,7 +127,7 @@ export class DriveHud {
       <div class="count" hidden></div><div class="recdot" hidden><i></i><span></span></div>
       <div class="busy" hidden></div>
       <div class="stack"></div><div class="prompts"></div>
-      <div class="bl"></div>
+      <div class="bl"><div class="keys"></div></div>
       <div class="br"><div><span class="spd">0</span><span class="unit">km/h</span><span class="gear" hidden></span></div><div class="sub"></div></div>
       <div class="take" hidden><strong>Take</strong><span class="sum"></span>
         <button class="keep" data-keep title="Keep it: one undo step (Enter)">Keep <kbd>⏎</kbd></button>
@@ -137,9 +139,9 @@ export class DriveHud {
     host.append(el);
     const q = (sel) => el.querySelector(sel);
     this.$ = { name: q(".name"), cam: q("[data-cam]"), rec: q("[data-rec]"), tc: q(".tc"), from: q("[data-from]"), smooth: q("[data-smooth]"), count: q(".count"),
-      recdot: q(".recdot"), busy: q(".busy"), stack: q(".stack"), prompts: q(".prompts"), hints: q(".bl"), spd: q(".spd"), unit: q(".unit"), gear: q(".gear"), sub: q(".sub"),
+      recdot: q(".recdot"), busy: q(".busy"), stack: q(".stack"), prompts: q(".prompts"), hints: q(".bl .keys"), spd: q(".spd"), unit: q(".unit"), gear: q(".gear"), sub: q(".sub"),
       take: q(".take"), sum: q(".take .sum"), note: q(".note"), fix: q(".fix"), fixText: q(".fix span"), pad: q(".pad"), binds: q(".binds") };
-    for (const e of ["pointerdown", "wheel", "keydown"]) el.addEventListener(e, (ev) => { if (ev.target.closest(".pill,.take,.binds,.fix")) ev.stopPropagation(); });
+    for (const e of ["pointerdown", "wheel", "keydown"]) el.addEventListener(e, (ev) => { if (ev.target.closest(".pill,.take,.binds,.fix,.ss-fl-bar")) ev.stopPropagation(); });
     this.$.cam.addEventListener("change", () => dm.setCamera(this.$.cam.value));
     this.$.from.addEventListener("change", () => { dm.fromStart = this.$.from.value === "start"; });
     this.$.smooth.addEventListener("change", () => dm.setSmoothing(this.$.smooth.value));
@@ -162,9 +164,32 @@ export class DriveHud {
     this._fit();
     this._ro = new ResizeObserver(this._fit);
     this._ro.observe(s.canvas);
+    // The key hints and the bindings sheet move and fold like any panel; every other panel folds to a chip on the
+    // right edge, clear of the name / REC / speed / take bars, and comes back as it was on exit (ui/floating.mjs).
+    this._fl = [floatPanel(q(".bl"), { key: "drive_keys", title: "Keys", essential: true }),
+      floatPanel(this.$.binds, { key: "drive_binds", title: "Bindings", essential: true })];
+    const dock = () => {
+      if (!el.isConnected || this._dock) return;
+      try { this._dock = enterDrive(this.avoid(), viewRect(s.canvas)); } catch (err) { console.warn("Soundstage drive dock", err); }
+    };
+    dock();   // the HUD is laid out now (its CSS is injected above); a frame later catches panels that were still opening
+    requestAnimationFrame(() => { if (this._dock) { this._dock.restore(); this._dock = null; dock(); } });
   }
 
-  close() { this._ro?.disconnect(); this.el.remove(); }
+  /** What the docked chips must never cover: the HUD's bars, the take review row, the App's top row and transport. */
+  avoid() {
+    const c = this.dm.s.canvas.getBoundingClientRect(), out = [];
+    for (const n of this.el.querySelectorAll(".tl, .tr, .br")) out.push(n.getBoundingClientRect());
+    out.push({ left: c.left + c.width / 2 - 330, right: c.left + c.width / 2 + 330, top: c.bottom - 130, bottom: c.bottom });   // Keep / Discard / Again
+    for (const n of document.querySelectorAll(".ss-toprow, .ss-clbottom")) if (n.getClientRects().length) out.push(n.getBoundingClientRect());
+    return out;
+  }
+
+  close() {
+    this._dock?.restore(); this._dock = null;
+    for (const f of this._fl || []) f?.destroy();
+    this._ro?.disconnect(); this.el.remove();
+  }
 
   showInputs(on) {
     this.$.pad.hidden = !on;
@@ -263,6 +288,12 @@ export class DriveHud {
     }
   }
 }
+
+/** The canvas's rect, inside the window. */
+const viewRect = (cv) => {
+  const r = cv.getBoundingClientRect(), L = Math.max(0, r.left), T = Math.max(0, r.top);
+  return { left: L, top: T, width: Math.min(innerWidth, r.right) - L, height: Math.min(innerHeight, r.bottom) - T };
+};
 
 const tc = (frames, fps = 24) => {
   const f = Math.max(0, Math.floor(frames)), r = Math.round(fps), s = Math.floor(f / r), p = (x) => String(x).padStart(2, "0");
