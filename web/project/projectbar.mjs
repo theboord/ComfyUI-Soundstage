@@ -9,6 +9,7 @@
 // autosaves a workflow that has a Soundstage stage in it. Each stage widget gets its own pill bound to it.
 import { openMenu } from "../ui/popover.mjs";
 import { icon } from "../ui/icons.mjs";
+import { openHome } from "./home.mjs";
 import { ProjectStore, AutosaveClock, cleanName, untitledName, statusText, workflowSig, projectNameOf, stampWorkflow, ago } from "./store.mjs";
 
 const TICK_MS = 3_000;
@@ -181,28 +182,31 @@ export class ProjectController {
     if (name) await this.save();
   }
 
-  async restore(file) {
+  /** Restore one autosave of the open project, or of `project` (the start screen's card menu). */
+  async restore(file, project = null) {
     const t = this._cur();
-    if (!t?.name) return;
-    const wf = await this.store.readAutosave(t.name, file);
+    if (!project && !t?.name) return;
+    const pname = project || t.name;
+    const wf = await this.store.readAutosave(pname, file);
     if (!wf) { this.say("That autosave could not be read."); return; }
     if (!(await confirmBox(this.app, "Restore autosave?", `Load the autosave from ${file.replace(/\.json$/, "")} into this tab? `
       + "Your current state is autosaved first, so you can come back to it."))) return;
-    await this.autosaveNow();
-    const name = t.name;
+    if (!project) await this.autosaveNow();
+    const name = pname;
     await this.load(wf, name);
     this.say(`Restored the autosave ${file.replace(/\.json$/, "")}. Save to keep it as the project.`);
   }
 
   // ------------------------------------------------------------------ Collect project (server: soundstage/project/routes.py)
 
-  async collect() {
-    const wf = this.serialize();
+  /** Collect the open project, or a saved one by name (the start screen: its saved workflow, without the live cut exports). */
+  async collect(project = null) {
     const t = this._cur();
-    if (!wf || !t) return;
-    const name = this._ensureName(t);
+    const wf = project ? await this.store.open(project) : this.serialize();
+    if (!wf || (!project && !t)) { if (project) this.say(`No saved project "${project}".`); return; }
+    const name = project || this._ensureName(t);
     let extras = {};
-    for (const h of this.hosts) { try { extras = { ...extras, ...((await h.collectExtras?.()) || {}) }; } catch { /* */ } }
+    if (!project) for (const h of this.hosts) { try { extras = { ...extras, ...((await h.collectExtras?.()) || {}) }; } catch { /* */ } }
     this.say(`Collecting "${name}": copying every file it uses into output/soundstage_projects/${name}/ …`);
     try {
       const r = await this.api.fetchApi("/soundstage/project/collect", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -278,6 +282,7 @@ export class ProjectController {
     ]);
     const sub = (items, a) => openMenu(items, a, { makeIcon: icon });
     const items = [
+      { label: "All projects…", icon: "grid-3x3", run: () => this.home?.({ onDemand: true }), title: "The start screen: every project, newest first" },
       { label: "Save", icon: "download", run: () => this.save(), title: "Write the project to workflows/<name>.json (same as Workflow → Save)" },
       { label: "Save As…", icon: "copy", run: () => this.save({ as: true }) },
       { label: "Open…", icon: "file-text", disabled: !recent.length, run: () => sub(recent.map((p) => ({ label: p.name, run: () => this.open(p.name) })), anchor) },
@@ -324,6 +329,20 @@ export function mountProjectBar({ app, api, row, before = null, host = {} }) {
   }
   const ctl = (window.__ssProject ||= new ProjectController({ app, api }));
   ctl.hosts.add(host);
+  // The start screen (web/project/home.mjs): on demand from "All projects…" or the Home button, or on its own for a
+  // blank Soundstage App (the host calls ctl.home({ onDemand: false }) when shouldShowHome() says so).
+  ctl.home ||= (opts = {}) => {
+    const h = [...ctl.hosts].reverse().find((x) => (x.onDemo || x.onScript) && (x.alive?.() ?? true)) || {};
+    return openHome({ ctl, api, host: h, tryit: !!window.__demo, askName: (t, v) => askName(app, t, v), ...opts });
+  };
+  const homeBtn = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn ss-homebtn",
+    title: "Home: every project, newest first (the start screen)" });
+  homeBtn.setAttribute("aria-label", "Home: all projects");
+  homeBtn.append(icon("grid-3x3", 14));
+  homeBtn.style.marginLeft = "6px";
+  homeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  homeBtn.addEventListener("click", () => ctl.home({ onDemand: true }));
+  if (before && before.parentNode === row) row.insertBefore(homeBtn, before); else row.append(homeBtn);
   ctl.mountPill(row, before);
   if (host.deliverView) {
     const card = document.createElement("div");
