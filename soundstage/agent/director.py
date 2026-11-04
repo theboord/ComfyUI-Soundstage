@@ -962,7 +962,7 @@ def rules_calls(command: str, scene: dict, ctx: dict | None = None) -> list[dict
             calls.append({"tool": "render", "kind": kind, **({"shots": sh} if sh is not None else {}),
                           **({"anyway": "yes"} if re.search(r"\banyway\b", cl) else {})})
             continue
-        m = re.search(r"\b(paint|generate|make|create|render|give me)\s+(?:me\s+)?(?:a\s+|the\s+|new\s+|some\s+|more\s+|(" + WORDNUM + r")\s+)?(?:new\s+)?(?:first[- ]?)?(frames?|stills?|keyframes?|variations?|options?)\b", cl)
+        m = re.search(r"\b(paint|generate|regenerate|make|create|draw|render|redo|remake|give me|get me)\s+(?:me\s+)?(?:a\s+|an\s+|the\s+|new\s+|another\s+|different\s+|some\s+|more\s+|(" + WORDNUM + r")\s+)?(?:new\s+|different\s+)?(?:first[- ]?)?(frames?|stills?|keyframes?|variations?|options?|images?|pictures?|photos?)\b", cl)
         if m:
             sh = _shots_in(cl) or _named_shot(cl, work, ctx)
             n = _int(m.group(2)) if m.group(2) else None
