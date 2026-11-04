@@ -3345,6 +3345,35 @@ function createStageWidget(node, inputName) {
       setScript: (s) => { script = s || null; persistScript(); refreshScriptUI(); },
       shots: () => { try { return pipeline.shots(); } catch { return []; } },
       book: () => node.ssBook,
+      // The co-pilot's hands (web/agent/copilot.mjs, docs/assistant.md): one ② Cast card at a time, the set, ⑤ Motion's
+      // quality, the Cut and the shot length. Each change is undone by the co-pilot's one Undo for its plan.
+      cast: {
+        items: () => { try { return castPanel?.items() || []; } catch { return []; } },
+        set: (key, patch) => { castPanel?._set(key, patch); try { castPanel?.render(); } catch { /* cast view not built */ } },
+        generate: (key) => { const it = castPanel?.items().find((x) => x.key === key); return it ? castPanel._generate(it) : Promise.reject(new Error("no such card")); },
+      },
+      stage: { toJSON: () => stage.toJSON(), select: (id) => stage.select(id) },
+      quality: {
+        get: () => {
+          try {
+            const ltx = pipeline.ltx, saved = ltx?.saved?.() || {}, set = ltx?.settings?.() || {};
+            return { adherence: saved.adherence || set.adherence || "Exact", ic_lora: set.ic_lora ?? null, preset: saved.preset || null,
+              follow_clay: pipeline.f?.follow ? +pipeline.f.follow.value : null };
+          } catch { return {}; }
+        },
+        set: (p) => {
+          if (p.adherence) pipeline._setAdherence?.(p.adherence);
+          if (p.preset) pipeline.ltx?.setPreset?.(p.preset);
+          if (p.ic_lora != null) pipeline.ltx?.patch?.({ ic_lora: p.ic_lora });
+          if (p.follow_clay != null && pipeline.f?.follow) { pipeline.f.follow.value = String(p.follow_clay); pipeline.f.follow.dispatchEvent(new Event("input")); }
+        },
+      },
+      cut: { setTransition: (edit, type) => cut.setTransition(edit, type), undo: () => cut.undo() },
+      shotLength: (secs) => {
+        const s = stage.toJSON(), was = Math.round(s.shot.frames / s.shot.fps);
+        dur.input.value = String(secs); dur.input.dispatchEvent(new Event("input"));
+        return was;
+      },
     } });
 
   // Projects (web/project, docs/projects.md): the name + "Saved 12 s ago · Autosave on" pill in the top row, Save / Open /
