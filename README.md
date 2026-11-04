@@ -343,6 +343,10 @@ A real timeline over your coverage with J/K/L, splits, ripple, match action, dis
 
 <p align="center"><img src="docs/media/exports.jpg" width="960" alt="Exports: Avid EDL, Premiere XML, FCPXML, OTIO, Layer Pack with ProRes 4444 and alpha, depth EXR, camera, AE/Nuke/Blender builders, GLB"></p>
 
+#### Save, autosave and Collect project
+
+The pill at the top of the App shows the project's name and `Saved 12 s ago · Autosave on`. Click it to **Save**, **Save As**, **Open**, **Open recent**, start a **New project** from a clean App template, or **Restore autosave**. Save writes `workflows/<name>.json` through ComfyUI's userdata API, the same file Workflow → Save writes. Autosave writes `projects/<name>/autosave/` 4 s after a change and at least once a minute while you work, and keeps the last 20. An unnamed project autosaves as `Untitled <date>`, and closing the tab with unsaved changes asks first. **Collect project** (the pill or ⑦ Deliver) copies every file the project uses into one folder, like Avid Consolidate: `scenes/S01/shots/S01_010/takes/final/…`, `cast/<character>/`, `locations/`, `cut/` with the NLE exports, a `project.json` and a `MISSING.txt`. It downloads as a zip. **Open collected project** opens that zip on another machine and relinks every file. → [Projects](docs/projects.md)
+
 <p align="center"><img src="docs/media/app_mode.jpg" width="760" alt="Soundstage in ComfyUI App mode"><br><em>All of it runs inside ComfyUI's App mode, on open models on your own GPU.</em></p>
 
 </details>
@@ -681,7 +685,7 @@ Vendored components and their licenses are listed in [THIRD_PARTY_NOTICES.md](TH
 ### Docs
 
 - [decisions.md](docs/decisions.md): the development log, with every design decision and its reason.
-- Components: [director](docs/director.md), [mcp](docs/mcp.md), [quality](docs/quality.md), [look](docs/look.md), [agent](docs/agent.md), [advisor](docs/advisor.md), [coach](docs/coach.md), [layerpack](docs/layerpack.md), [cut](docs/cut.md), [audio](docs/audio.md), [recast](docs/recast.md), [vcam](docs/vcam.md), [router](docs/router.md), [assets3d](docs/assets3d.md), [interop](docs/interop.md), [oneclick](docs/oneclick.md), [swim](docs/swim.md), [performance](docs/performance.md), [ripple](docs/ripple.md), [touchup](docs/touchup.md), [video2stage](docs/video2stage.md), [floorplan](docs/floorplan.md), [canvas](docs/canvas.md), [source_fidelity](docs/source_fidelity.md).
+- Components: [director](docs/director.md), [mcp](docs/mcp.md), [quality](docs/quality.md), [look](docs/look.md), [agent](docs/agent.md), [advisor](docs/advisor.md), [coach](docs/coach.md), [layerpack](docs/layerpack.md), [cut](docs/cut.md), [audio](docs/audio.md), [recast](docs/recast.md), [vcam](docs/vcam.md), [router](docs/router.md), [assets3d](docs/assets3d.md), [interop](docs/interop.md), [oneclick](docs/oneclick.md), [swim](docs/swim.md), [performance](docs/performance.md), [ripple](docs/ripple.md), [touchup](docs/touchup.md), [video2stage](docs/video2stage.md), [floorplan](docs/floorplan.md), [canvas](docs/canvas.md), [source_fidelity](docs/source_fidelity.md), [projects](docs/projects.md).
 - [QUICKSTART.md](docs/QUICKSTART.md): a first shot, then a one-page scene.
 
 </details>
