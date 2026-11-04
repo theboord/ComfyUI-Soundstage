@@ -16,6 +16,7 @@
 import { FONT, TOKENS as T, RADIUS } from "./theme.mjs";
 import { icon } from "./icons.mjs";
 import { withKeys } from "./shortcuts.mjs";
+import { floatPanel } from "./floating.mjs";
 import { loadCatalog, searchPresets, userPresetFrom, parseUserPresets, userPresetsFile, cameraKeys, CAR_PATH_MOVES } from "../presets/engine.mjs";
 import { PresetRunner, RUNNERS, installDirectorTool } from "../presets/runner.mjs";
 import { drawThumb } from "../presets/thumbs.mjs";
@@ -186,6 +187,7 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     h("header", { class: "ss-pre-head" }, h("span", { class: "t" }, icon("shapes", 17), "Presets"), q, toLbl, closeB),
     tabsEl, sub, grid, foot, ask);
   for (const ev of ["pointerdown", "wheel", "keydown", "keyup", "contextmenu"]) panel.addEventListener(ev, stop, { passive: ev === "wheel" });
+  floatPanel(panel, { key: "presets", title: "Presets", handle: ".ss-pre-head", popout: true });   // drag, fold, pop out (ui/floating.mjs)
   const toastTx = h("span", { class: "tx" });
   const toastUndo = h("button", { type: "button", class: "un" }, "Undo");
   const toastSep = h("span", { class: "sep", "aria-hidden": "true" }, "·");

@@ -450,6 +450,7 @@ ComfyUI's cache means each Run only does the new work.
 
 | When | Update |
 |---|---|
+| Nov 3 | **Floating panels:** drag any panel by its header, fold it to a chip, or pop Properties, Presets or ✦ Ask out to a second screen; Drive mode clears the HUD. |
 | Nov 2, 11:10 PST | **Try-it demo at phone width:** long chooser chips and the frame-generate row wrap, and the Coach pill steps below the **Identical?** bar. |
 | Nov 2, 10:45 PST | **Try it in your browser:** a first screen that shows clay becoming the shot, a 10-stop tour of what's new, and a real Video → 3D run replayed through the App. Video → 3D seats a car's driver and builds a city street; the rebuild is still the basic version. |
 | Nov 2, 10:13 PST | **Docs checked against the code:** README, Quickstart, Tutorial, MCP and Video → 3D pages match the App today, including what the Video → 3D server doesn't do yet. |
