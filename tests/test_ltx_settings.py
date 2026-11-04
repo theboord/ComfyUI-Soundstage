@@ -1,4 +1,5 @@
-"""Milestone 18: Draft · Final · Hollywood presets, the Advanced (LTX) settings mapping and the App wiring."""
+"""Milestone 18: Draft · Final · Advanced presets, the Advanced (LTX) settings mapping (steps, shift, scheduler…),
+the retired Hollywood preset's migration and the App wiring."""
 import json
 import sys
 from pathlib import Path
@@ -16,15 +17,66 @@ parse = lambda s: [float(x) for x in s.split(",")]  # noqa: E731
 
 def test_presets_file_has_the_three_presets():
     p = L.load_presets()
-    assert list(p) == ["Draft", "Final", "Hollywood"]
+    assert list(p) == ["Draft", "Final", "Advanced"] and "Hollywood" not in p
     for name, s in p.items():
         r = L.resolve({"preset": name})
         assert r["preset"] == name and r["two_stage"] is True and r["cfg"] == 1.0
-    # Hollywood works harder than Final, Final harder than Draft.
-    d, f, h = (L.resolve({"preset": n}) for n in ("Draft", "Final", "Hollywood"))
-    assert d["steps_1"] < f["steps_1"] <= h["steps_1"] and d["steps_2"] < f["steps_2"] <= h["steps_2"]
-    assert d["resolution"] <= f["resolution"] <= h["resolution"]
-    assert h["crf"] <= f["crf"] < d["crf"]
+        assert r["scheduler"] == "distilled" and r["shift"] == 1.0
+    # Final works harder than Draft; Advanced starts from Final's numbers (every knob is then the user's).
+    d, f, a = (L.resolve({"preset": n}) for n in ("Draft", "Final", "Advanced"))
+    assert d["steps_1"] < f["steps_1"] and d["steps_2"] < f["steps_2"] and f["crf"] < d["crf"]
+    keys = ("resolution", "two_stage", "steps_1", "steps_2", "s2_start", "sampler", "cfg", "temporal_x2", "decode", "codec", "crf")
+    assert {k: a[k] for k in keys} == {k: f[k] for k in keys}
+    assert a["from"] == "Final" and "from" not in f
+
+
+def test_the_retired_hollywood_preset_loads_as_advanced_with_its_values():
+    """A shot saved on Hollywood (1408p, 12 + 6 steps, CRF 12) keeps rendering that way, as an Advanced shot."""
+    h = L.resolve({"preset": "Hollywood"})
+    assert h["preset"] == "Advanced" and h["from"] == "Final"
+    assert (h["resolution"], h["steps_1"], h["steps_2"], h["crf"]) == (1408, 12, 6, 12)
+    assert L.resolve({"preset": "Hollywood", "codec": "prores_hq", "steps_1": 14})["steps_1"] == 14   # its overrides still win
+    assert L.resolve({"preset": "Hollywood", "codec": "prores_hq"})["codec"] == "prores_hq"
+    # the Quality node's combo on an old saved workflow, and an old advanced JSON naming it
+    assert L.from_quality("Hollywood", "")["resolution"] == 1408
+    assert L.from_quality("Draft", '{"preset":"Hollywood"}')["preset"] == "Advanced"
+    assert L.legacy_presets()["Hollywood"]["resolution"] == 1408
+    assert L.stage_sizes(960, 512, h)["output"][1] == 1408
+    assert L.estimate_seconds(h, 960, 512, 121) > L.estimate_seconds(L.resolve({"preset": "Final"}), 960, 512, 121)
+
+
+def test_shift_and_scheduler_reach_the_graphs_sigmas():
+    """The graph samples on ManualSigmas strings from the Quality node, so shift and the scheduler are applied to the
+    schedule itself (the same curve as ModelSamplingLTXV / LTXVScheduler's shift)."""
+    final = L.resolve({"preset": "Final"})
+    s1, s2 = L.schedules(final)
+    assert L.schedules(L.resolve({"preset": "Advanced"})) == (s1, s2), "Advanced starts as Final, bit for bit"
+    assert L.schedules(L.resolve({"preset": "Advanced", "shift": 1.0, "scheduler": "distilled"})) == (s1, s2)
+    up = parse(L.schedules(L.resolve({"preset": "Advanced", "shift": 2.0}))[0])
+    assert len(up) == len(parse(s1)) and up[0] == 1.0 and up[-1] == 0.0 and up == sorted(up, reverse=True)
+    assert all(a >= b for a, b in zip(up[1:-1], parse(s1)[1:-1])), "shift above 1 keeps the sigmas higher (more composition steps)"
+    down = parse(L.schedules(L.resolve({"preset": "Advanced", "shift": 0.5}))[0])
+    assert all(a <= b for a, b in zip(down[1:-1], parse(s1)[1:-1]))
+    t2 = parse(L.schedules(L.resolve({"preset": "Advanced", "shift": 2.0}))[1])
+    assert abs(t2[0] - 0.909375) < 1e-6 and t2[-1] == 0.0, "stage 2 keeps its start sigma"
+    lin = parse(L.schedules(L.resolve({"preset": "Advanced", "scheduler": "linear", "steps_1": 5, "steps_2": 2}))[0])
+    assert lin == [1.0, 0.8, 0.6, 0.4, 0.2, 0.0]
+    lq = parse(L.schedules(L.resolve({"preset": "Advanced", "scheduler": "linear_quadratic", "steps_1": 10}))[0])
+    assert len(lq) == 11 and lq[0] == 1.0 and lq[-1] == 0.0 and lq == sorted(lq, reverse=True)
+    assert lq[1] > 0.99 and (lq[-2] - lq[-1]) > (lq[0] - lq[1]), "tiny linear steps near 1.0, quadratic growth toward 0"
+    assert L.resolve({"scheduler": "bogus", "shift": 0})["scheduler"] == "distilled"
+    assert L.resolve({"scheduler": "bogus", "shift": 0})["shift"] == 1.0
+    assert L.resolve({"shift": 99})["shift"] == 10.0
+    # manual sigmas still win over everything
+    assert L.schedules(L.resolve({"scheduler": "linear", "shift": 3, "sigmas_1": "1.0, 0.5, 0.0"}))[0] == "1.0, 0.5, 0.0"
+
+
+def test_fewer_than_8_steps_thins_the_distilled_curve():
+    for n in (1, 2, 4, 6):
+        s = parse(L.sigmas_1(n))
+        assert len(s) == n + 1 and s[0] == 1.0 and s[-1] == 0.0 and s == sorted(s, reverse=True)
+        assert set(s) <= set(L.DISTILLED_1), "only the tuned knots, fewer of them"
+    assert L.resolve({"steps_1": 0})["steps_1"] == L.MIN_STEPS_1 == 1
 
 
 def test_default_is_final_not_draft():
@@ -58,9 +110,9 @@ def test_manual_sigmas_override_steps():
 def test_overrides_and_clamps():
     s = L.resolve({"preset": "Draft", "resolution": 99999, "steps_1": 0, "cfg": 0, "crf": 99, "codec": "gif", "sampler": "x",
                    "seed": 7, "ic_lora": 3, "fps": 1000})
-    assert s["resolution"] == 2176 and s["steps_1"] == 8 and s["cfg"] == 1.0 and s["crf"] == 51
+    assert s["resolution"] == 2176 and s["steps_1"] == 1 and s["cfg"] == 1.0 and s["crf"] == 51
     assert s["codec"] == "h264" and s["sampler"] == "euler_ancestral" and s["seed"] == 7 and s["ic_lora"] == 2.0 and s["fps"] == 60.0
-    assert L.resolve('{"preset":"Hollywood","codec":"prores_hq"}')["codec"] == "prores_hq"
+    assert L.resolve('{"preset":"Advanced","codec":"prores_hq"}')["codec"] == "prores_hq"
     assert L.resolve("not json")["preset"] == "Final"
 
 
@@ -68,7 +120,7 @@ def test_quality_combo_maps_to_presets_and_advanced_wins():
     assert L.from_quality("Draft", "")["preset"] == "Draft"
     hq = L.from_quality("Final HQ", "")
     assert (hq["preset"], hq["steps_1"], hq["steps_2"]) == ("Final", 18, 12)
-    assert L.from_quality("Draft", '{"preset":"Hollywood"}')["preset"] == "Hollywood"
+    assert L.from_quality("Draft", '{"preset":"Advanced"}')["preset"] == "Advanced"
     assert L.from_quality("Draft", '{"steps_1": 10}')["steps_1"] == 10      # no preset named: the combo's preset + override
     assert L.from_quality("Draft", '{"steps_1": 10}')["preset"] == "Draft"
 
@@ -79,15 +131,16 @@ def test_stage_sizes_match_todays_final_and_scale():
     assert final == {"stage1": (992, 544), "output": (1984, 1088)}
     one = L.stage_sizes(960, 512, L.resolve({"preset": "Final", "two_stage": False}))
     assert one["stage1"] == one["output"] and one["output"][1] == 1088
-    hw = L.stage_sizes(960, 512, L.resolve({"preset": "Hollywood"}))
+    hw = L.stage_sizes(960, 512, L.resolve({"preset": "Advanced", "resolution": 1408}))
     for k in ("stage1", "output"):
         assert all(v % 32 == 0 for v in hw[k])
     assert hw["output"][1] > 1088
 
 
 def test_time_estimate_orders_the_presets():
-    t = [L.estimate_seconds(L.resolve({"preset": n}), 960, 512, 121) for n in ("Draft", "Final", "Hollywood")]
+    t = [L.estimate_seconds(L.resolve(n), 960, 512, 121) for n in ({"preset": "Draft"}, {"preset": "Final"}, {"preset": "Advanced", "resolution": 1408})]
     assert t[0] < t[1] < t[2]
+    assert L.estimate_seconds(L.resolve({"preset": "Advanced", "steps_1": 4, "steps_2": 1}), 960, 512, 121) < t[0], "fewer steps, a faster draft"
     s = L.resolve({"preset": "Final"})
     assert L.estimate_seconds({**s, "cfg": 2.0}, 960, 512, 121) > t[1]
     assert L.estimate_seconds({**s, "temporal_x2": True}, 960, 512, 121) > t[1]
@@ -224,7 +277,24 @@ def test_on_prompt_handler_never_raises():
 
 
 def test_steps_1_never_reports_fewer_steps_than_it_renders():
-    """resolve() and the Advanced pop-over allowed 4-7 stage-1 steps, but sigmas_1 builds at least 8: settings_json and
-    the time estimate said 5 while 8 rendered."""
+    """resolve() and the Advanced pop-over allowed 4-7 stage-1 steps, but sigmas_1 built at least 8: settings_json and
+    the time estimate said 5 while 8 rendered. Now 5 renders 5 (the distilled curve thinned)."""
     r = L.resolve({"preset": "Draft", "steps_1": 5})
-    assert r["steps_1"] == 8 and len(L.sigmas_1(r["steps_1"]).split(",")) - 1 == 8
+    assert r["steps_1"] == 5 and len(L.sigmas_1(r["steps_1"]).split(",")) - 1 == 5
+    assert len(L.schedules(r)[0].split(",")) - 1 == 5
+
+
+def test_ltx_lora_stack_saves_loads_and_migrates_the_old_single_extra_lora():
+    one = L.resolve({"extra_lora": {"name": "ltx/style.safetensors", "strength": 0.6}})
+    assert one["loras"] == [{"name": "ltx/style.safetensors", "strength": 0.6}] and "extra_lora" not in one, "an old save is a one-row stack"
+    st = L.resolve({"loras": [{"name": "a.safetensors", "strength": 0.5}, {"name": "None"}, {"name": "b.safetensors", "strength": 9}, {"name": "c.safetensors", "strength": 0}]})
+    assert st["loras"] == [{"name": "a.safetensors", "strength": 0.5}, {"name": "b.safetensors", "strength": 4.0}], "order kept, clamped, empty rows dropped"
+    assert "loras" not in L.resolve({}) and "loras" not in L.resolve({"loras": []})
+    assert L.resolve({"loras": [], "extra_lora": {"name": "x"}}).get("loras") is None, "an explicit empty stack wins over a stale single"
+    # the Layout IC-LoRA is its own control: Adherence sets it, the stack never touches it
+    both = L.resolve({"loras": [{"name": "a.safetensors"}], "adherence": "Loose"})
+    assert L.adherence_knobs(both)["ic_lora"] == 0.825 and "ic_lora" not in both
+    assert L.from_quality("Final", json.dumps({"preset": "Final", "loras": [{"name": "a.safetensors", "strength": 1}]}))["loras"][0]["name"] == "a.safetensors"
+    # the node reads the same rows from settings_json (nodes_quality imports torch: its helper is read from the source)
+    src = (ROOT / "soundstage" / "nodes_quality.py").read_text()
+    assert 'L.lora_rows(st["loras"] if "loras" in st else st.get("extra_lora"))' in src

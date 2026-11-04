@@ -1,4 +1,4 @@
-"""LTX advanced part (Milestone 18): presets Draft · Final · Hollywood and the per-shot "Advanced (LTX)" settings.
+"""LTX advanced part (Milestone 18): presets Draft · Final · Advanced and the per-shot "Advanced (LTX)" settings.
 
 The Quality node (tools/app_build/quality.py) gets an `advanced` JSON widget and the shot's fps, and now drives:
 

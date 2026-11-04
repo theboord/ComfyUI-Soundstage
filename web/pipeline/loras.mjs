@@ -50,3 +50,29 @@ export function ltxLoraGroups(vals, current = null) {
   }
   return { match, other };
 }
+
+// ---- the LoRA stack (QA 2026-11-04: several at once). Rows are {name, strength}, applied in order. Pure.
+/** Any saved shape -> a clean stack: an array of {name, strength}, or one old single pick ({name, strength} / "file"), or nothing. */
+export function normalizeStack(raw, max = 8) {
+  const list = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : typeof raw === "string" && raw && raw !== "None" ? [{ name: raw }] : [];
+  const out = [];
+  for (const r of list) {
+    const name = typeof r === "string" ? r : r?.name;
+    if (!name || name === "None") continue;
+    const s = typeof r === "object" && r.strength !== undefined && r.strength !== "" && Number.isFinite(+r.strength) ? +r.strength : 1;
+    out.push({ name: String(name), strength: Math.max(-4, Math.min(4, s)) });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+/** The single add-on of before the stack (④ Frame's lora + lora_strength widgets) as a one-row stack. */
+export const stackFromLegacy = (name, strength = 1) => normalizeStack(name && name !== "None" ? [{ name, strength }] : []);
+/** The warning under an LTX stack row ("" when it looks like an LTX LoRA, or none is picked). */
+export function ltxLoraWarning(name) {
+  if (!name || name === "None") return "";
+  const got = loraFamily(name);
+  if (got === "ltx") return "";
+  const NAMES = { klein: "FLUX 3 Klein", krea: "Krea 2", wan: "Wan video", hunyuan: "HunyuanVideo", qwen: "Qwen-Image", sdxl: "SDXL", flux1: "FLUX.1", sd: "Stable Diffusion 1.5/2" };
+  return got ? `Looks like a ${NAMES[got]} LoRA: it may not work with LTX video (if its file says so, the render stops and tells you).`
+    : "Not sure this LoRA was made for LTX video: it may do nothing, or change the picture in odd ways.";
+}

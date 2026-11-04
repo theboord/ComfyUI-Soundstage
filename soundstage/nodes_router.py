@@ -19,7 +19,7 @@ from comfy_execution.graph_utils import GraphBuilder
 
 from .router import registry as R
 from .look import frame_lock as FL
-from .router.adapters import ADAPTERS, RouterError
+from .router.adapters import ADAPTERS, RouterError, IMAGE_SAMPLERS, IMAGE_SCHEDULERS, lora_stack
 from .router import lora_check as LC
 
 _TTL_S = 30
@@ -130,12 +130,17 @@ class _Router(IO.ComfyNode):
              "image": v.get("image"), "images": v.get("images"), "mask": v.get("mask"),
              "params": params, "weights": weights, "variant": m.get("variant"),
              "steps": int(v.get("steps") or 0), "cfg": float(v.get("cfg") or 0.0),
+             "sampler": v.get("sampler") if v.get("sampler") in IMAGE_SAMPLERS else "auto",
+             "scheduler": v.get("scheduler") if v.get("scheduler") in IMAGE_SCHEDULERS else "auto",
+             "shift": float(v.get("shift") or 0.0),
              "lora": v.get("lora") if v.get("lora") not in (None, "", "None") else None,
              "lora_strength": float(v.get("lora_strength") if v.get("lora_strength") is not None else 1.0)}
-        if p["lora"]:
+        # ④ Frame's LoRA stack (the `loras` JSON), or the older single lora / lora_strength as a one-row stack.
+        p["loras"] = lora_stack(v.get("loras"), p["lora"], p["lora_strength"])
+        for row in p["loras"]:
             # ④ Frame lists every LoRA (web/pipeline/pipeline.mjs stillLoraGroups): one that's gone, or made for another
             # model family, stops here with a sentence instead of a "Value not in list" or a silently ignored add-on.
-            why = LC.check(p["lora"], m.get("adapter"), _loras(), lambda n: folder_paths.get_full_path("loras", n))
+            why = LC.check(row["name"], m.get("adapter"), _loras(), lambda n: folder_paths.get_full_path("loras", n))
             if why:
                 raise RouterError(why)
         if cls.STAGE == "edit_image":
@@ -244,6 +249,17 @@ class SoundstageEditImage(_Router):
                                        "(about 0.5). Krea 2 Turbo: the frame starts from the blurred Color pass at "
                                        "stage_denoise, held to the depth (cast pictures are not used). 0 = off (frames "
                                        "picked before Nov 2)."),
+                IO.Combo.Input("sampler", options=list(IMAGE_SAMPLERS), default="auto", optional=True,
+                               tooltip="Sampler for local image models. auto = the model's tuned one (Klein euler / er_sde, "
+                                       "Krea 2 euler_ancestral)."),
+                IO.Combo.Input("scheduler", options=list(IMAGE_SCHEDULERS), default="auto", optional=True,
+                               tooltip="Scheduler for local image models. auto = the model's tuned one (Klein simple, Krea 2 beta)."),
+                IO.Float.Input("shift", default=0.0, min=0.0, max=12.0, step=0.05, optional=True,
+                               tooltip="Sigma shift (ModelSamplingAuraFlow) for the flow-matching image models. 0 = the model's "
+                                       "default, untouched. Above ~3 spends more steps on composition, below on detail."),
+                IO.String.Input("loras", multiline=True, default="", optional=True,
+                                tooltip="The ④ Frame LoRA stack as JSON: [{\"name\": \"file.safetensors\", \"strength\": 0.8}, …], "
+                                        "applied in order on the image model. Wins over the single lora / lora_strength above."),
             ],
             outputs=[IO.Image.Output(display_name="image")],
             hidden=HIDDEN,
