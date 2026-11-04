@@ -27,6 +27,66 @@ Click it for the menu:
 | **Collect project (zip)…** | See below. Also a card in ⑦ Deliver. |
 | **Open collected project…** | Re-opens a collected project from the server, or uploads a collected `.zip` and opens that. |
 
+## The start screen
+
+Like Avid's project window, Resolve's Project Manager or Premiere's Home screen. It covers the whole window
+([web/project/home.mjs](../web/project/home.mjs)).
+
+**When it shows:**
+
+- On its own, once per workflow tab, when the App opens on a blank Soundstage App. Blank means no `extra.ss_project`, the
+  untouched default stage, no script and no renders.
+- Never for a workflow that already holds a named project, such as a restored tab.
+- Never in the try-it demo.
+- On demand from the pill's **All projects…** or the **Home** button (the grid icon in the top row).
+
+**Left column:**
+
+- **＋ New project**: asks for a name.
+- **Open project…**: moves the focus to the list.
+- **Open collected project…**: the collected folders on the server, or upload a collected zip.
+- **Try the demo scene**: the first-run demo loader.
+- **Import a script**: into this tab when it is still a blank App. Otherwise it starts a New project and you choose the
+  file in its ① Script (a browser will not open a file picker after the tab reloads).
+- **Start with this blank stage** (or **Back to the App**): closes it.
+
+**Main area:** recent projects, newest first, with a search box and a Recent / Name sort (remembered per browser).
+Each card shows:
+
+- the picture: the latest chosen first frame, else a look frame, else the final or draft render (as a video poster),
+  else a clay frame, else the project's initial on a colour picked from its name;
+- the name, "Saved 2 h ago" and scenes · shots · takes;
+- an **Autosave newer** badge when the newest autosave is later than the last Save.
+
+The ⋯ menu has Open, Duplicate…, Rename…, Collect (zip), Restore autosave… and Delete…. **Delete** asks on the card
+itself and then moves the project to `projects/.trash/<name> <stamp>/`, with its workflow as `workflow.json`. Nothing
+is deleted. `POST /soundstage/project/untrash` puts it back.
+
+**Keys:**
+
+- Arrows move between cards, and Home / End jump to the first and last.
+- Enter opens. Enter in the search box opens the first match.
+- ⌘N / Ctrl+N starts a new project.
+- Esc closes it when it was opened on demand.
+
+**Try-it demo:** only Try the demo scene and Load a script show, and nothing calls the server.
+
+Server (`soundstage/project/library.py`), all in the requesting user's folder (`user/<user>/`, as ComfyUI's
+`/userdata` resolves it):
+
+```
+GET  /soundstage/project/list        -> {"projects": [{name, saved_at, counts{scenes,shots,takes}, thumb, thumb_kind,
+                                         autosaves, autosave_at, autosave_newer}]} newest first
+POST /soundstage/project/duplicate   {name, to}   workflow + manifest, not the autosaves
+POST /soundstage/project/rename      {name, to}   folder, autosaves and workflow; the stamp inside is updated
+POST /soundstage/project/trash       {name}       -> projects/.trash/<name> <stamp>/
+GET  /soundstage/project/trash       -> {"trash": [...]}
+POST /soundstage/project/untrash     {trash}      back under its name, or "<name> (restored)"
+```
+
+Names must be one clean path segment and never start with a dot, so `.trash` can't be opened, renamed or trashed.
+Thumbnails are `/view` URLs, and only for files that exist inside ComfyUI's output, input or temp folder.
+
 ## Where things are saved
 
 All in ComfyUI's per-user folder (`ComfyUI/user/<user>/`), never in `output/`:
@@ -114,6 +174,11 @@ Path safety:
   symlink, rejects the whole zip.
 
 ## Known gaps
+
+- The start screen decides "App mode" by whether the stage is on screen. ComfyUI's frontend has no App-mode flag that
+  Soundstage reads, so a blank Soundstage_App opened in the graph view shows it too. Start with this blank stage closes it.
+- Card counts and thumbnails are read from each project's saved workflow every time the list opens. Hundreds of large
+  projects will make that slower.
 
 - The pill writes the files itself. ComfyUI's own workflow tab can still show its "modified" dot after a Save from the
   pill, because the frontend's change tracker does not expose a clean way to mark a tab saved. The file on disk is
