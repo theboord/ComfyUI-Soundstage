@@ -38,12 +38,13 @@ test("Esc closes the open Book even when focus is outside it", () => {
   assert.equal(bookEscCloses({ key: "Escape", target: topBarBtn }, { ...book, hidden: true }), false);
 });
 
-test("④ Frame's add-on list keeps Klein LoRAs and hides the rest", () => {
+test("④ Frame's add-on list: every LoRA, Klein's first, private folders still hidden", () => {
   const pod = ["None", "Garage Force Lora_v1.safetensors", "Garage Force Lora_v1_000007500.safetensors", "Downloads/klein_style.safetensors",
     "VNCCS_PoseStudioKlein9b.safetensors", "dmd2_sdxl_4step_lora.safetensors", "ltx-2.5-spatial-upscaler.safetensors",
     "styles/flux2_noir.safetensors", "private/klein_mike.safetensors", "Flux3-film-grain.safetensors"];
-  assert.deepEqual(stillLoras(pod), ["None", "VNCCS_PoseStudioKlein9b.safetensors", "styles/flux2_noir.safetensors", "Flux3-film-grain.safetensors"]);
-  assert.ok(stillLoras(pod, "dmd2_sdxl_4step_lora.safetensors").includes("dmd2_sdxl_4step_lora.safetensors"), "the chosen one stays");
+  assert.deepEqual(stillLoras(pod), ["None", "VNCCS_PoseStudioKlein9b.safetensors", "styles/flux2_noir.safetensors", "Flux3-film-grain.safetensors",
+    "Garage Force Lora_v1.safetensors", "Garage Force Lora_v1_000007500.safetensors", "dmd2_sdxl_4step_lora.safetensors", "ltx-2.5-spatial-upscaler.safetensors"]);
+  assert.ok(stillLoras(pod, "private/klein_mike.safetensors").includes("private/klein_mike.safetensors"), "the chosen one stays");
   assert.deepEqual(stillLoras([]), ["None"]);
 });
 

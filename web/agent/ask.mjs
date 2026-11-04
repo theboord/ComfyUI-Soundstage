@@ -17,6 +17,10 @@
 //   ask.open(); ask.ask("how do I add rain?"); ask.showMe(recipe, 0); ask.button; ask.fab
 import { icon } from "../ui/icons.mjs";
 import { Tour } from "../ui/firstrun.mjs";
+import { withTimeout } from "./agent.mjs";
+
+/** The longest a free-form answer may take before Ask offers the nearest recipes instead (the chat's own limit is longer). */
+export const FREE_ANSWER_MS = 15000;
 
 /** The steps, in order (the step bar's ① to ⑦). */
 export const ASK_STEPS = [
@@ -361,6 +365,29 @@ export function parseAnswer(raw) {
   return lines.length ? { answer: lines[0], steps: lines.slice(1, 6), command: "" } : null;
 }
 
+/**
+ * A free-form answer from the Director's local model (d: a Director). -> {answer, steps, command, by}, null when there's
+ * no model or the GPU is busy, or {error} when it failed or took longer than ms. Never hangs: tests/js/ask_robust.test.mjs.
+ */
+export async function freeAnswerWith(d, text, ctx, { signal = null, ms = FREE_ANSWER_MS } = {}) {
+  const run = async () => {
+    const be = await d.resolvedBackend();
+    if (be !== "qwen" && be !== "ollama") return null;
+    if (be === "qwen" && await d._gpuBusy()) return null;   // never wait behind a render for a help answer
+    const info = await d.info();
+    const raw = await d._llm(be, { system: ASK_SYSTEM, prompt: `${contextLine(ctx) || "You're in the App"}.\nQuestion: ${text}`, max_length: 320, model: info.model },
+      { timeoutMs: ms, signal });
+    const p = parseAnswer(raw);
+    return p ? { ...p, by: be === "qwen" ? "Qwen3.5 4B (local)" : `Ollama ${d.ollama?.model || ""}` } : null;
+  };
+  try { return await withTimeout(run(), ms + 500, "the local model", signal); }
+  catch (e) {
+    if (e.cancelled || signal?.aborted) return null;
+    console.warn("[Soundstage] ask: free answer", e);
+    return { error: e.timedOut ? `no answer within ${Math.round(ms / 1000)} s` : String(e.message || e) };
+  }
+}
+
 // ---------------------------------------------------------------- mount
 const CSS = `
 .ss-askbtn { gap:5px; }
@@ -446,13 +473,18 @@ export function mountAsk({ root, dir, host = {}, isActive = () => true }) {
   }
 
   // ---- the Director's question hook: questions get an answer; orders go on to the planner.
-  async function answer(text) {
+  async function answer(text, { signal = null } = {}) {
     if (!isQuestion(text)) return null;
     const ctx = refreshCtx();
     const m = contextRecipe(text, ctx) ? { recipe: contextRecipe(text, ctx) } : matchHowto(text, ctx);
     if (m) return { cls: "how", nodes: answerCard(m.recipe, text, ctx), chips: chipsFor(ctx, m.recipe) };
     // No recipe: the local model, offline, if one is there and the GPU is free.
-    const free = await freeAnswer(text, ctx);
+    const free = await freeAnswer(text, ctx, signal);
+    if (signal?.aborted) return null;
+    if (free?.error) {
+      return { cls: "how", nodes: [h("div", {}, `The local model didn't answer (${free.error}), so here are the nearest things I know. Ask again, or tell me what you want on the set and I'll plan it.`)],
+        chips: [...teachNext(ctx, null).map((c) => ({ label: c.label, command: c.ask })), { label: "Take the tour", command: "how does this work?" }].slice(0, 4) };
+    }
     if (free) {
       const nodes = [h("div", {}, free.answer || "Here's how:"), free.steps.length ? h("ol", {}, ...free.steps.map((s) => h("li", {}, s))) : null];
       if (free.command) nodes.push(h("div", { class: "row" }, h("button", { type: "button", class: "go", on: { click: () => dir.send(free.command) } }, icon("wand-sparkles", 13), "Do it for me")));
@@ -462,17 +494,10 @@ export function mountAsk({ root, dir, host = {}, isActive = () => true }) {
     return { cls: "how", nodes: [h("div", {}, "I don't have a recipe for that one yet. Try one of these, or tell me what you want on the set and I'll plan it.")],
       chips: [...teachNext(ctx, null).map((c) => ({ label: c.label, command: c.ask })), { label: "Take the tour", command: "how does this work?" }].slice(0, 4) };
   }
-  async function freeAnswer(text, ctx) {
-    const d = dir.director;
-    try {
-      const be = await d.resolvedBackend();
-      if (be !== "qwen" && be !== "ollama") return null;
-      if (be === "qwen" && await d._gpuBusy()) return null;   // never wait behind a render for a help answer
-      const info = await d.info();
-      const raw = await d._llm(be, { system: ASK_SYSTEM, prompt: `${contextLine(ctx) || "You're in the App"}.\nQuestion: ${text}`, max_length: 320, model: info.model });
-      const p = parseAnswer(raw);
-      return p ? { ...p, by: be === "qwen" ? "Qwen3.5 4B (local)" : `Ollama ${d.ollama.model || ""}` } : null;
-    } catch { return null; }
+  // -> {answer, steps, command, by}, null (no model / GPU busy / nothing usable), or {error} (it failed or ran out of
+  // time: said in the chat, never swallowed). FREE_ANSWER_MS bounds the whole thing, whatever the model does.
+  async function freeAnswer(text, ctx, signal = null) {
+    return freeAnswerWith(dir.director, text, ctx, { signal });
   }
   dir.setAnswer(answer);
   dir.setContext(() => uiForPlanner(refreshCtx()));
