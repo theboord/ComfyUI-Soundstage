@@ -87,7 +87,8 @@ globalThis.Node = El;
 globalThis.navigator ||= {};
 
 const { mountDirector } = await import("../../web/agent/directorpanel.mjs");
-const { mountAsk, freeAnswerWith } = await import("../../web/agent/ask.mjs");
+const { mountAsk, modelFor } = await import("../../web/agent/ask.mjs");
+const { Conversation } = await import("../../web/agent/assistant.mjs");
 const { withTimeout, cancelledError } = await import("../../web/agent/agent.mjs");
 const { YES_RE, ASK_TIMEOUT_MS } = await import("../../web/agent/director.mjs");
 
@@ -108,11 +109,11 @@ function fakeApi(routes = {}) {
 const PLAN = (b) => ({ command: b.command, calls: [{ tool: "weather", args: { kind: "rain" }, plan: "I'll make it rain" }], backend: "rules", confirm: false });
 const alive = [];
 after(() => { for (const f of alive) f(); });   // a failed assertion never leaves the chat's timers running
-function mount(routes = {}, { ask = true } = {}) {
+function mount(routes = {}, { ask = true, host: extra = {} } = {}) {
   const root = new El("div"); doc.body.append(root);
   const api = fakeApi({ "/soundstage/director/plan": PLAN, ...routes });
   const dir = mountDirector({ root, api, stage, host: {} });
-  const a = ask ? mountAsk({ root, dir, host: { context: () => ({ step: "set" }) } }) : null;
+  const a = ask ? mountAsk({ root, dir, host: { context: () => ({ step: "set" }), ...extra } }) : null;
   dir.director.backend = "rules";
   dir.director.limits = { turnMs: 300, postMs: 120 };   // the same code path, with short limits for the test
   const msgs = () => dir.panel.querySelectorAll(".msg").map((m) => ({ cls: m.className, text: m.textContent }));
@@ -145,19 +146,26 @@ test("root cause 3: \"lock it in\" and friends apply a waiting plan; a new order
   for (const n of ["yes, and make it rain", "lock the car in place", "make it look good at night"]) assert.ok(!YES_RE.test(n), n);
 });
 
-test("root cause 4: a free-form answer that fails or never comes is said, within its limit", async () => {
+test("root cause 4: a model that fails, never answers, or isn't there is said, within its limit", async () => {
   const base = { resolvedBackend: async () => "ollama", _gpuBusy: async () => false, info: async () => ({ model: "m" }), ollama: { model: "q" } };
+  const convo = (d) => new Conversation({ script: () => null, llm: modelFor(d, { ms: 60 }) });
   const t0 = Date.now();
-  const slow = await freeAnswerWith({ ...base, _llm: never }, "how do I juggle?", {}, { ms: 60 });
-  assert.match(slow.error, /no answer within/);
+  const slow = await convo({ ...base, _llm: never }).turn("how do I juggle?");
+  assert.equal(slow, null, "nothing for the checks: the chat falls back to the recipes");
+  const c1 = convo({ ...base, _llm: never }); await c1.turn("how do I juggle?");
+  assert.match(c1.lastWhy, /didn't answer in time/);
   assert.ok(Date.now() - t0 < 2000, "bounded");
-  const bad = await freeAnswerWith({ ...base, _llm: async () => { throw new Error("connection refused"); } }, "q?", {}, { ms: 60 });
-  assert.equal(bad.error, "connection refused");
-  const ok = await freeAnswerWith({ ...base, _llm: async () => '{"answer":"Open ③ Set.","steps":["Press Add object"]}' }, "q?", {}, { ms: 60 });
-  assert.equal(ok.answer, "Open ③ Set.");
-  assert.equal(await freeAnswerWith({ ...base, resolvedBackend: async () => "rules" }, "q?", {}), null, "no model: the recipes fallback");
+  const c2 = convo({ ...base, _llm: async () => { throw new Error("connection refused"); } }); await c2.turn("q?");
+  assert.match(c2.lastWhy, /failed \(connection refused\)/);
+  const c3 = convo({ ...base, resolvedBackend: async () => "rules" }); await c3.turn("q?");
+  assert.match(c3.lastWhy, /language model isn't loaded/);
+  const c4 = convo({ ...base, resolvedBackend: async () => "qwen", _gpuBusy: async () => true }); await c4.turn("q?");
+  assert.match(c4.lastWhy, /GPU is busy/);
+  const ok = await convo({ ...base, _llm: async () => '{"reply":"Open ③ Set, then Add object.","tools":[]}' }).turn("q?");
+  assert.equal(ok.reply, "Open ③ Set, then Add object.");
+  assert.equal(ok.by, "model");
   const c = new AbortController(); c.abort();
-  assert.equal(await freeAnswerWith({ ...base, _llm: never }, "q?", {}, { signal: c.signal, ms: 5000 }), null, "stopped: nothing to say");
+  await assert.rejects(convo({ ...base, _llm: never }).turn("q?", { signal: c.signal }), (e) => e.cancelled, "stopped: no answer, no error card");
 });
 
 test("the local model's job takes a Stop: it rejects at once and leaves the queue", async () => {
@@ -289,18 +297,16 @@ test("Ask: a question with a recipe answers at once with Show me and Do it for m
 test("Ask: an unknown question with a model that never answers still gets an answer card, not a hang", async () => {
   const m = mount();
   const d = m.dir.director;
-  d.limits = { turnMs: 2000, postMs: 120 };
+  d.limits = { turnMs: 2000, postMs: 120, modelMs: 60 };   // the same code path, with short limits
   d.resolvedBackend = async () => "ollama";
   d._gpuBusy = async () => false;
   d.info = async () => ({ model: "m" });
   d._llm = never;
   const ask = await import("../../web/agent/ask.mjs");
-  assert.ok(ask.FREE_ANSWER_MS <= ASK_TIMEOUT_MS, "the free answer gives up before the chat does");
-  // shorten the wait for the test: the hook is the same code path with a smaller limit
-  m.dir.setAnswer(async (text, o) => { const f = await freeAnswerWith(d, text, {}, { ...o, ms: 50 }); return f?.error ? { cls: "how", nodes: [`The local model didn't answer (${f.error})`] } : null; });
+  assert.ok(ask.FREE_ANSWER_MS < ASK_TIMEOUT_MS, "the model gives up before the chat does");
   const r = await m.dir.send("how do I juggle flaming torches?");
   assert.ok(r.answer);
-  assert.match(m.last().text, /didn't answer \(no answer within/);
+  assert.match(m.last().text, /didn't answer in time\.I don't have a recipe for that one yet/);
   m.done();
 });
 
@@ -346,4 +352,50 @@ test("root cause 5: letting go of the mic before it's granted ends that press; t
   assert.equal(asked, 1, "the next press talks (it used to be blocked)");
   m.done();
   delete globalThis.navigator.mediaDevices;
+});
+
+test("Mike's request in the chat: no model, so it says so and runs the cast, props and script checks; Apply, then Undo", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { parseScript } = await import("../../web/script/parse.mjs");
+  let script = parseScript(readFileSync(new URL("./fixtures/script/planted.fountain", import.meta.url), "utf8"), { format: "fountain" });
+  const original = script;
+  const m = mount({ "/soundstage/director/plan": () => { throw new Error("the planner must not run"); } },
+    { host: { script: () => script, setScript: (s) => { script = s; } } });
+  const r = await m.dir.send("double-check the characters to make sure they don't match (no duplicates), check the props are actually props, read the script and analyse it");
+  assert.ok(r.answer, "an answer, not a plan");
+  assert.equal(m.dir.pending, null, "no shot or beat was planned");
+  const txt = m.last().text;
+  assert.match(txt, /language model isn't loaded .* so I used the built-in checks/);
+  for (const t of ["Script analysis", "Cast check", "Props check", "What I did:"]) assert.ok(txt.includes(t), t);
+  assert.match(txt, /MARA and MARRA are 1 letter apart/);
+  const apply = m.dir.panel.querySelector(".log").querySelectorAll("button.go").find((b) => /^Apply \d+ fix/.test(b.textContent.trim()));
+  assert.ok(apply, "fixes wait for an OK");
+  apply.click();
+  assert.ok(!script.characters.some((c) => c.name === "MARRA"), "applied");
+  assert.match(m.last().text, /What I did/);
+  const undo = m.dir.panel.querySelector(".log").children.at(-1).querySelectorAll("button").find((b) => /Undo/.test(b.textContent));
+  undo.click();
+  assert.equal(script, original, "one Undo puts the script back");
+  // a vague one gets a question with choices
+  await m.dir.send("check it");
+  assert.match(m.last().text, /What should I check\?/);
+  assert.ok(m.dir.panel.querySelector(".chips").children.some((b) => /The props/.test(b.textContent)));
+  // New chat: the log and the conversation start over
+  assert.ok(m.ask.conversation.history.length > 0);
+  m.dir.panel.querySelector("button.newchat").click();
+  assert.equal(m.ask.conversation.history.length, 0);
+  assert.equal(m.dir.panel.querySelectorAll(".msg").length, 1, "only the greeting");
+  m.done();
+});
+
+test("an error gets a Retry that asks again", async () => {
+  let n = 0;
+  const m = mount({ "/soundstage/director/plan": (b) => (++n === 1 ? never() : PLAN(b)) });
+  await m.dir.send("make it rain");
+  const retry = m.dir.panel.querySelector(".log").children.at(-1).querySelectorAll("button").find((b) => /Retry/.test(b.textContent));
+  assert.ok(retry, "Retry under the error");
+  retry.click();
+  await tick(20);
+  assert.equal(m.dir.pending?.command, "make it rain");
+  m.done();
 });

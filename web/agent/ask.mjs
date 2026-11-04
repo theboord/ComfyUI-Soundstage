@@ -18,6 +18,7 @@
 import { icon } from "../ui/icons.mjs";
 import { Tour } from "../ui/firstrun.mjs";
 import { withTimeout } from "./agent.mjs";
+import { Conversation, applyFixes, wantedTools, isVagueCheck } from "./assistant.mjs";
 
 /** The longest a free-form answer may take before Ask offers the nearest recipes instead (the chat's own limit is longer). */
 export const FREE_ANSWER_MS = 15000;
@@ -366,26 +367,28 @@ export function parseAnswer(raw) {
 }
 
 /**
- * A free-form answer from the Director's local model (d: a Director). -> {answer, steps, command, by}, null when there's
- * no model or the GPU is busy, or {error} when it failed or took longer than ms. Never hangs: tests/js/ask_robust.test.mjs.
+ * The conversation's language model (web/agent/assistant.mjs Conversation host.llm): the Director's own backend (the
+ * local Qwen3.5 4B on the queue, or the Ollama / API model picked in ⚙), bounded by ms. Throws an error with noModel
+ * (and a sentence for the chat) when there is none to ask: the Director on the rules, Qwen not installed (the try-it
+ * demo), or the GPU busy with a render (the local model would wait behind it).
  */
-export async function freeAnswerWith(d, text, ctx, { signal = null, ms = FREE_ANSWER_MS } = {}) {
-  const run = async () => {
+export function modelFor(d, { ms: fixed = null } = {}) {
+  const noModel = (why) => Object.assign(new Error(why), { noModel: true });
+  return async (system, prompt, { signal = null } = {}) => {
+    const ms = fixed ?? d.limits?.modelMs ?? FREE_ANSWER_MS;
     const be = await d.resolvedBackend();
-    if (be !== "qwen" && be !== "ollama") return null;
-    if (be === "qwen" && await d._gpuBusy()) return null;   // never wait behind a render for a help answer
+    if (be !== "qwen" && be !== "ollama" && be !== "api") throw noModel("the language model isn't loaded (no local Qwen3.5 4B here, or the Director is set to the rules in ⚙)");
+    if (be === "qwen" && await d._gpuBusy()) throw noModel("the GPU is busy rendering and the local model would wait behind it");
     const info = await d.info();
-    const raw = await d._llm(be, { system: ASK_SYSTEM, prompt: `${contextLine(ctx) || "You're in the App"}.\nQuestion: ${text}`, max_length: 320, model: info.model },
-      { timeoutMs: ms, signal });
-    const p = parseAnswer(raw);
-    return p ? { ...p, by: be === "qwen" ? "Qwen3.5 4B (local)" : `Ollama ${d.ollama?.model || ""}` } : null;
+    return withTimeout(d._llm(be, { system, prompt, max_length: 400, model: info.model }, { timeoutMs: ms, signal }), ms + 500, "the language model", signal);
   };
-  try { return await withTimeout(run(), ms + 500, "the local model", signal); }
-  catch (e) {
-    if (e.cancelled || signal?.aborted) return null;
-    console.warn("[Soundstage] ask: free answer", e);
-    return { error: e.timedOut ? `no answer within ${Math.round(ms / 1000)} s` : String(e.message || e) };
-  }
+}
+
+/** A stage order the Director's planner takes straight away (no extra model round trip): "make it rain", "put Mara in the car". */
+export function isStageOrder(text) {
+  const t = String(text || "");
+  if (isQuestion(t) || wantedTools(t).length || isVagueCheck(t)) return false;
+  return /\b(rain|snow|fog|night|day|dawn|dusk|sunset|car|truck|van|bike|boat|camera|lens|light|lights|lighting|shot|frames?|render|draft|final|put|add|move|place|drive|crash|turn|push|zoom|pan|tilt|orbit|weather|stunt|physics|approve|undo|play|cut|seat|mount|look at|walk|run)\b/i.test(t);
 }
 
 // ---------------------------------------------------------------- mount
@@ -407,6 +410,9 @@ const CSS = `
   background:transparent; color:var(--ss-accent, #f2ff59); cursor:pointer; vertical-align:baseline; }
 .ss-dir .msg.how li .show:hover { background:rgba(242,255,89,.12); }
 .ss-dir .msg.how .ttl { font-weight:700; }
+.ss-dir .msg .tool { margin-top:6px; padding:7px 9px; border-radius:9px; border:1px solid var(--ss-line, rgba(255,255,255,.1)); background:rgba(0,0,0,.18); }
+.ss-dir .msg .tool ul.fixes li::marker { content:"→ "; }
+.ss-dir .msg .tool details summary { cursor:pointer; font-size:12px; color:var(--ss-muted, #bbb); margin-top:4px; }
 `;
 const h = (tag, attrs = {}, ...kids) => {
   const e = document.createElement(tag);
@@ -472,34 +478,95 @@ export function mountAsk({ root, dir, host = {}, isActive = () => true }) {
     return teachNext(ctx, recipe).map((c) => ({ label: c.label, command: c.ask || c.command }));
   }
 
-  // ---- the Director's question hook: questions get an answer; orders go on to the planner.
-  async function answer(text, { signal = null } = {}) {
-    if (!isQuestion(text)) return null;
-    const ctx = refreshCtx();
-    const m = contextRecipe(text, ctx) ? { recipe: contextRecipe(text, ctx) } : matchHowto(text, ctx);
-    if (m) return { cls: "how", nodes: answerCard(m.recipe, text, ctx), chips: chipsFor(ctx, m.recipe) };
-    // No recipe: the local model, offline, if one is there and the GPU is free.
-    const free = await freeAnswer(text, ctx, signal);
-    if (signal?.aborted) return null;
-    if (free?.error) {
-      return { cls: "how", nodes: [h("div", {}, `The local model didn't answer (${free.error}), so here are the nearest things I know. Ask again, or tell me what you want on the set and I'll plan it.`)],
-        chips: [...teachNext(ctx, null).map((c) => ({ label: c.label, command: c.ask })), { label: "Take the tour", command: "how does this work?" }].slice(0, 4) };
+  // ---- the conversation (web/agent/assistant.mjs): history, the project's tools, the model or the built-in checks.
+  const convo = new Conversation({
+    script: () => { try { return host.script?.() || null; } catch { return null; } },
+    shots: () => { try { return host.shots?.() || []; } catch { return []; } },
+    where: () => contextLine(lastCtx),
+    llm: modelFor(dir.director),
+  });
+  const noRecipeChips = (ctx) => [...teachNext(ctx, null).map((c) => ({ label: c.label, command: c.ask })), { label: "Take the tour", command: "how does this work?" }].slice(0, 4);
+
+  /** A check's card: what it found, what it did, the fixes behind an Apply (your OK), then Undo. */
+  function resultCard(r) {
+    const box = h("div", { class: "tool" }, h("div", { class: "ttl" }, r.title), h("div", {}, r.said));
+    if (r.summary && r.scenes) {
+      box.append(h("details", {}, h("summary", {}, `Scenes (${r.scenes.length})`), h("ol", {}, ...r.scenes.slice(0, 60).map((x) => h("li", {}, x.replace(/^\d+[a-z]?\.\s*/i, ""))))));
+      if (r.beats?.length) box.append(h("div", { class: "why" }, "Beats:"), h("ol", {}, ...r.beats.map((x) => h("li", {}, x))));
     }
-    if (free) {
-      const nodes = [h("div", {}, free.answer || "Here's how:"), free.steps.length ? h("ol", {}, ...free.steps.map((s) => h("li", {}, s))) : null];
-      if (free.command) nodes.push(h("div", { class: "row" }, h("button", { type: "button", class: "go", on: { click: () => dir.send(free.command) } }, icon("wand-sparkles", 13), "Do it for me")));
-      nodes.push(h("div", { class: "meta" }, `answered by ${free.by}`));
-      return { cls: "how", nodes, chips: chipsFor(ctx, null) };
+    const list = r.tool === "analyze_script" ? r.issues || [] : r.findings.map((f) => f.why);
+    if (list.length) box.append(h("ul", {}, ...list.slice(0, 14).map((x) => h("li", {}, x)), list.length > 14 ? h("li", {}, `…and ${list.length - 14} more`) : null));
+    if (r.did?.length) box.append(h("div", { class: "meta" }, `What I did: ${r.did.join("; ")}.`));
+    if (r.limits) box.append(h("div", { class: "meta" }, r.limits));
+    if (r.fixes?.length && host.setScript) {
+      const go = h("button", { type: "button", class: "go", title: r.fixes.map((f) => f.why).join("\n") }, icon("check", 13), `Apply ${r.fixes.length} fix${r.fixes.length === 1 ? "" : "es"}`);
+      const row = h("div", { class: "row" }, go);
+      go.addEventListener("click", () => {
+        const before = host.script?.();
+        if (!before) { row.replaceChildren(h("span", { class: "meta" }, "The script is gone: nothing changed.")); return; }
+        const res = applyFixes(before, r.fixes);
+        host.setScript(res.script);
+        const undo = h("button", { type: "button" }, icon("undo-2", 13), "Undo");
+        undo.addEventListener("click", () => { host.setScript(before); undo.disabled = true; dir.say("a", "Put the script back as it was before those fixes."); });
+        row.replaceChildren(undo);
+        dir.say("a", h("div", { class: "ttl" }, "What I did"), h("ul", {}, ...res.did.map((x) => h("li", { class: "ok" }, x)), ...res.skipped.map((x) => h("li", { class: "bad" }, x))),
+          h("div", { class: "row" }, undo));
+        convo.remember("assistant", `Applied: ${res.did.join("; ")}`);
+      });
+      box.append(h("ul", { class: "fixes" }, ...r.fixes.slice(0, 14).map((f) => h("li", {}, f.why))), row);
     }
-    return { cls: "how", nodes: [h("div", {}, "I don't have a recipe for that one yet. Try one of these, or tell me what you want on the set and I'll plan it.")],
-      chips: [...teachNext(ctx, null).map((c) => ({ label: c.label, command: c.ask })), { label: "Take the tour", command: "how does this work?" }].slice(0, 4) };
+    return box;
   }
-  // -> {answer, steps, command, by}, null (no model / GPU busy / nothing usable), or {error} (it failed or ran out of
-  // time: said in the chat, never swallowed). FREE_ANSWER_MS bounds the whole thing, whatever the model does.
-  async function freeAnswer(text, ctx, signal = null) {
-    return freeAnswerWith(dir.director, text, ctx, { signal });
+
+  function turnAnswer(r, text, ctx) {
+    const nodes = [];
+    if (r.by === "built-in" && r.why) nodes.push(h("div", { class: "meta" }, `${r.why[0].toUpperCase()}${r.why.slice(1)}, so I used the built-in checks.`));
+    if (r.reply) nodes.push(h("div", {}, r.reply));
+    if (r.question) nodes.push(h("div", {}, r.question));
+    if (r.cant) nodes.push(h("div", { class: "why" }, r.cant));
+    for (const x of r.results) nodes.push(resultCard(x));
+    if (r.recipe) {
+      const m = matchHowto(r.recipe, ctx) || matchHowto(text, ctx);
+      if (m) nodes.push(...answerCard(m.recipe, text, ctx));
+      else nodes.push(h("div", { class: "why" }, "I don't have step-by-step help for that yet: the Guide (top right) walks through every step."));
+    }
+    if (r.note?.text) {
+      const book = host.book?.();
+      if (book?.addNote) {
+        const sc = host.script?.()?.scenes?.find((x) => String(x.number) === String(r.note.scene) || x.id === r.note.scene);
+        Promise.resolve(book.addNote(r.note.text, { sceneId: sc?.id || null, source: "ask" })).catch(() => {});
+        nodes.push(h("div", { class: "meta" }, `What I did: added a note to the Director's Book${sc ? ` (scene ${sc.number})` : ""}: "${r.note.text}".`));
+      } else nodes.push(h("div", { class: "why" }, "I couldn't add that note: the Director's Book isn't open in this App."));
+    }
+    if (r.applyAsked && r.results.every((x) => !x.fixes?.length)) nodes.push(h("div", { class: "why" }, "I only apply fixes from a check you've seen: run the check, then press Apply on its card."));
+    if (r.by === "model") nodes.push(h("div", { class: "meta" }, "answered by the language model; the checks themselves are the App's own"));
+    if (!nodes.length) nodes.push(h("div", {}, "I'm not sure what to do with that. Say what you'd like checked or changed."));
+    const chips = r.options || (r.question ? [] : chipsFor(ctx, null));
+    return { cls: "how", nodes, chips, plan: r.plan || null };
+  }
+
+  // ---- the chat's hook: how-to questions get a recipe (the fast path), set orders go to the Director's planner, the
+  // rest is a conversation turn (the model with the project's tools, or the built-in checks), never a keyword guess at
+  // a set change.
+  async function answer(text, { signal = null } = {}) {
+    const ctx = refreshCtx();
+    const tasks = wantedTools(text).length || isVagueCheck(text);
+    if (isQuestion(text) && !tasks) {
+      const m = contextRecipe(text, ctx) ? { recipe: contextRecipe(text, ctx) } : matchHowto(text, ctx);
+      if (m) { convo.remember("user", text); convo.remember("assistant", m.recipe.title); return { cls: "how", nodes: answerCard(m.recipe, text, ctx), chips: chipsFor(ctx, m.recipe) }; }
+    }
+    if (isStageOrder(text)) { convo.remember("user", text); convo.remember("assistant", `(planned on the set: ${text})`); return null; }
+    const r = await convo.turn(text, { signal });
+    if (signal?.aborted) return null;
+    if (r) return turnAnswer(r, text, ctx);
+    if (!isQuestion(text)) return null;   // an order the checks don't cover: the Director's planner
+    const why = convo.lastWhy || "";
+    return { cls: "how", nodes: [why ? h("div", { class: "meta" }, `${why[0].toUpperCase()}${why.slice(1)}.`) : null,
+      h("div", {}, "I don't have a recipe for that one yet. Try one of these, or tell me what you want on the set and I'll plan it.")].filter(Boolean),
+      chips: noRecipeChips(ctx) };
   }
   dir.setAnswer(answer);
+  dir.onNewChat?.(() => convo.reset());
   dir.setContext(() => uiForPlanner(refreshCtx()));
 
   // ---- open, the shortcut, hold to talk
@@ -555,5 +622,5 @@ export function mountAsk({ root, dir, host = {}, isActive = () => true }) {
     tour?.close(false);
     fab.remove(); ctxRow.remove();
   };
-  return { button, fab, open, ask, answer, showMe, context: () => refreshCtx(), syncFab, destroy };
+  return { button, fab, open, ask, answer, showMe, conversation: convo, context: () => refreshCtx(), syncFab, destroy };
 }

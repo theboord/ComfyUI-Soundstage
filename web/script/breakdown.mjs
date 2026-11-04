@@ -370,6 +370,23 @@ function namedIn(name, text) {
  * The breakdown sheet for one scene, from its action lines (dialogue is never mined).
  * `known` = every character name in the script (speaking cues + introductions), upper case.
  */
+/**
+ * A scene's own corrections to its derived breakdown (scene.breakdown_fix, written by ✦ Ask's apply_fixes,
+ * web/agent/assistant.mjs): [{cat: "props", item, to: "set_dressing" | "wardrobe" | ... | null (drop)}]. Kept on the
+ * scene, so a re-read of the breakdown (hydrateScript, a revised draft) keeps them.
+ */
+export function applyBreakdownFixes(b, fixes) {
+  for (const f of fixes || []) {
+    const from = b[f.cat || "props"];
+    if (!Array.isArray(from)) continue;
+    const i = from.findIndex((x) => String(x).toLowerCase() === String(f.item).toLowerCase());
+    if (i < 0) continue;
+    const [item] = from.splice(i, 1);
+    if (f.to && Array.isArray(b[f.to]) && !b[f.to].includes(item)) b[f.to].push(item);
+  }
+  return b;
+}
+
 export function breakdownScene(scene, { known = new Set() } = {}) {
   const b = emptyBreakdown();
   const knownSet = known instanceof Set ? known : new Set(known);

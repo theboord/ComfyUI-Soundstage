@@ -201,6 +201,7 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   const beLbl = h("span", { class: "be" }, "");
   const setBtn = h("button", { type: "button", title: "Model, voice and how it applies", "aria-label": "Director settings" }, icon("sliders-horizontal", 15));
   const closeBtn = h("button", { type: "button", title: "Close (Esc)", "aria-label": "Close the Director panel" }, icon("x", 15));
+  const newBtn = h("button", { type: "button", class: "newchat", title: "New chat: start the conversation over (changes stay, and so does Undo)", "aria-label": "New chat" }, icon("plus", 15));
   const pitchBtn = h("button", { type: "button", class: "pitchb", title: "Pitch Mode: talk through your idea and watch the set build itself, a sketch per beat (P)",
     "aria-label": "Pitch Mode", "aria-pressed": "false" }, h("span", { class: "dot" }), "Pitch");
   const pTx = h("div", { class: "tx", "aria-live": "polite" });
@@ -230,7 +231,7 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     h("label", { class: "cb" }, autoCb, "Apply without asking (renders still ask unless you say “go”)"),
     h("label", { class: "cb" }, pitchModelCb, "Pitch: the local model also reads each beat (slower, 2–6 s a beat)"));
   const panel = h("section", { class: "ss-dir", hidden: true, role: "dialog", "aria-label": "Ask: the Director's assistant" },
-    h("header", {}, h("span", { class: "t", title: "Ask: questions get step-by-step answers with Show me; orders become a plan you Apply (and can Undo)" }, icon("sparkles", 16), "Ask"), pitchBtn, beLbl, setBtn, closeBtn),
+    h("header", {}, h("span", { class: "t", title: "Ask: questions get step-by-step answers with Show me; orders become a plan you Apply (and can Undo)" }, icon("sparkles", 16), "Ask"), pitchBtn, beLbl, newBtn, setBtn, closeBtn),
     settings, log, chips, pitchBox, h("div", { class: "comp" }, mic, input, sendB), hint);
   for (const ev of ["pointerdown", "wheel", "keydown", "keyup", "contextmenu"]) panel.addEventListener(ev, stop);
   root.append(panel);
@@ -276,6 +277,7 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   autoCb.addEventListener("change", () => { autoApply = autoCb.checked; localStorage.setItem("ss_director_auto", autoApply ? "1" : "0"); });
   setBtn.addEventListener("click", () => { settings.hidden = !settings.hidden; if (!settings.hidden) fillBackends(); });
   closeBtn.addEventListener("click", () => close());
+  newBtn.addEventListener("click", () => newChat());
 
   // ---------------------------------------------------------------- log
   const scroll = () => { log.scrollTop = log.scrollHeight; };
@@ -284,9 +286,9 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     chips.replaceChildren(...(list || []).map((c) => h("button", { type: "button", title: c.command, on: { click: () => send(c.command) } }, c.label)));
   };
   const greet = () => {
-    say("a", "Ask me how to do anything (“how do I make the car crash into the boxes?”): I'll walk you through it and light up the real buttons. Or tell me what you want on the set and I'll do it: you see the plan first, press Apply, and every change can be undone.");
-    setChips([{ label: "How do I make the car crash into the boxes?", command: "how do I make the car crash into the boxes?" }, { label: "What should I do next?", command: "what should I do next?" },
-      ...EXAMPLES.slice(0, 2).map((c) => ({ label: c.length > 34 ? `${c.slice(0, 32)}…` : c, command: c }))]);
+    say("a", "Talk to me like a person on the crew. Ask how to do anything (“how do I make the car crash into the boxes?”) and I'll light up the real buttons; ask me to check your script (duplicate characters, props that aren't props, locations) or analyse it, and I'll say what I found and what I did; tell me what you want on the set and you see the plan first, then Apply. Every change can be undone; + starts a new chat.");
+    setChips([{ label: "Check the cast for duplicates", command: "check the cast for duplicate characters" }, { label: "Analyse the script", command: "analyse the script" },
+      { label: "How do I make the car crash into the boxes?", command: "how do I make the car crash into the boxes?" }, { label: "What should I do next?", command: "what should I do next?" }]);
   };
 
   function onEvent(ev) {
@@ -415,6 +417,7 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     }
     const t = startTurn(text);
     const signal = t.ctrl.signal;
+    let planText = text;
     // Ask (web/agent/ask.mjs): a question gets a step-by-step answer with Show me; nothing on the set changes.
     if (answerHook && source !== "mcp") {
       let ans = null, err = null;
@@ -423,23 +426,27 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
       if (turn !== t) return null;
       if (err && !err.cancelled) {
         endTurn(t);
-        say("a", `I couldn't answer that: ${err.message || err}. Ask again, or tell me what you want on the set and I'll plan it.`);
+        say("a", `I couldn't answer that: ${err.message || err}. Ask again, or tell me what you want on the set and I'll plan it.`, retryRow(text));
         return { error: String(err.message || err) };
       }
-      if (ans) {
+      if (ans && !ans.plan) {
         endTurn(t);
         say(`a ${ans.cls || ""}`.trim(), ...(ans.nodes || []));
         setChips(ans.chips || []);
         return { answer: ans };
       }
+      if (ans?.plan) {   // the conversation wants the set changed: say why, then plan it like any order
+        if (ans.nodes?.length) say(`a ${ans.cls || ""}`.trim(), ...ans.nodes);
+        planText = ans.plan;
+      }
     }
     if (pending) discard(pending);
     if (waitMsg) waitMsg.textContent = "Reading that…";
     let p;
-    try { p = await withTimeout(director.propose(text, { signal }), director.limits.turnMs + director.limits.postMs + 4000, "planning", signal); }
+    try { p = await withTimeout(director.propose(planText, { signal }), director.limits.turnMs + director.limits.postMs + 4000, "planning", signal); }
     catch (e) {
       if (!endTurn(t)) return null;
-      say("a", `I couldn't plan that: ${e.message || e}. Try again, or say it more simply ("make it rain", "add a dog").`);
+      say("a", `I couldn't plan that: ${e.message || e}. Try again, or say it more simply ("make it rain", "add a dog").`, retryRow(text));
       return { error: String(e.message || e) };
     }
     if (!endTurn(t)) return null;
@@ -449,6 +456,23 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     const auto = apply ?? (autoApply && !p.confirm);
     if (auto || (p.confirm === false && p.gpu && wantsGo(text))) return { plan: p, result: await applyPending(entry) };
     return { plan: p };
+  }
+  /** Retry under an error: the same words again. */
+  function retryRow(text) {
+    const b = h("button", { type: "button", class: "retry" }, icon("rotate-ccw", 13), "Retry");
+    b.addEventListener("click", () => { b.disabled = true; send(text); });
+    return h("div", { class: "row" }, b);
+  }
+  /** New chat: the log, the waiting plan and the conversation's memory start over (Undo stays: it's the set's). */
+  const newChatHooks = [];
+  function newChat() {
+    if (turn) stopTurn("replaced");
+    if (pending) discard(pending);
+    log.replaceChildren();
+    for (const f of newChatHooks) { try { f(); } catch { /* */ } }
+    greet();
+    input.value = "";
+    input.focus();
   }
 
   input.addEventListener("keydown", (e) => {
@@ -810,6 +834,6 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   return { director, panel, button, input, open, close, toggle, send, say, setChips,
     setAnswer: (f) => { answerHook = typeof f === "function" ? f : null; }, setContext: (f) => { uiCtx = typeof f === "function" ? f : null; }, apply: () => applyPending(pending), discard: () => discard(pending),
     get pending() { return pending?.plan || null; }, startTalk, dock, isOpen: () => !panel.hidden, stopTalk, destroy, transcribe,
-    pitch, startPitch, stopPitch,
+    pitch, startPitch, stopPitch, newChat, onNewChat: (f) => { if (typeof f === "function") newChatHooks.push(f); },
     setVoice: (v) => { if (v === "browser" && !SR) return voice; voice = v; localStorage.setItem("ss_director_voice", v); if ([...vSel.options].some((o) => o.value === v)) vSel.value = v; return voice; } };
 }
