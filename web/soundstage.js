@@ -3337,6 +3337,12 @@ function createStageWidget(node, inputName) {
         return { step, view: curView, selected, shot, panel, layout: el.classList.contains("ss-cl") ? "canvas" : "classic" };
       },
       goStep: (k) => { if (pipeline.btns?.[k]) pipeline.go(k); },
+      // The conversation's project tools (web/agent/assistant.mjs): read the script, apply its fixes (one Undo: Ask
+      // keeps the script from before and puts it back), the shots, and Book notes.
+      script: () => script,
+      setScript: (s) => { script = s || null; persistScript(); refreshScriptUI(); },
+      shots: () => { try { return pipeline.shots(); } catch { return []; } },
+      book: () => node.ssBook,
     } });
 
   // Presets (Milestone 17, web/ui/presets.mjs): one window of one-click camera moves, lighting, looks, stunts, edit
