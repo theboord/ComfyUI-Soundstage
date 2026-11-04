@@ -14,6 +14,7 @@
 
 import { TOKENS } from "../ui/theme.mjs";
 import { icon } from "../ui/icons.mjs";
+import { floatPanel } from "../ui/floating.mjs";
 import { applyOps } from "../agent/agent.mjs";
 import { advise, sceneHash, TOUR } from "./rules.mjs";
 
@@ -145,6 +146,7 @@ export class Coach {
     this.cards.style.cssText = "display:flex;flex-direction:column;gap:8px;width:100%";
     this.root.append(this.toggle, this.cards);
     container?.append(this.root);
+    floatPanel(this.root, { key: "coach", title: "Coach", handle: this.toggle, chipBtn: false });   // drag by the pill (ui/floating.mjs)
     this._syncToggle();
 
     COACHES.add(this);
