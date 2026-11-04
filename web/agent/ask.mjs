@@ -37,9 +37,17 @@ const stepName = (k) => (STEP_OF[k] ? `${STEP_OF[k].n} ${STEP_OF[k].label}` : ""
 
 /** Is this a question (or a "teach me"), not an order? Orders go straight to the Director's planner. */
 export function isQuestion(text) {
-  const t = String(text || "").trim().toLowerCase();
+  let t = String(text || "").trim().toLowerCase();
   if (!t) return false;
   if (/\?\s*$/.test(t)) return true;
+  // Lead-in words don't change what it is: "so how is…", "okay, tell me…", "no, I just wanted you to describe…".
+  for (let i = 0; i < 4; i++) {
+    const n = t.replace(/^(?:so|ok(?:ay)?|and|now|well|hey|um+|uh+|please|no|yes|yeah|right|actually|alright|but|then|also)\b[\s,.:;-]*/, "")
+      .replace(/^(?:i\s+(?:just\s+)?want(?:ed)?\s+you\s+to|i\s+(?:just\s+)?need\s+you\s+to|can\s+you|could\s+you|would\s+you|will\s+you)\s+(?=(?:describe|tell|explain|summari[sz]e|walk|show|give me|break down))/, "");
+    if (n === t) break;
+    t = n;
+  }
+  if (/^(?:describe|summari[sz]e|break down|what do you think|what would you say)\b/.test(t)) return true;
   return /^(how|what|where|why|which|when|who|can i|could i|is there|are there|do i|does|should i|explain|teach|help|show me|tell me|walk me|i don'?t (?:know|get|understand)|i'?m (?:lost|stuck|new)|where do i|what'?s next|what now|next step)\b/.test(t);
 }
 
