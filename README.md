@@ -79,6 +79,15 @@ Scan a QR code and your phone becomes the shot camera on the live 3D set. Walk i
 <p align="center"><img src="docs/media/readme_v4/card_phone.gif" width="880" alt="Your phone is the viewfinder, step by step: scan the QR, the live stage on the phone, aim and zoom, pick a prime, tap to focus, T1.4 with live depth of field, pull focus between A and B marks, roll, and keep the take on the shot."></p>
 <p align="center"><sub><a href="https://github.com/user-attachments/assets/9cf05272-476e-446f-b067-99361772ee13">▶ Watch the phone and the desktop side by side, in real time</a></sub></p>
 
+### 🎭 Swap a character in real footage (Recast)
+
+Bring in a real clip and recast one person with a character photo. Everyone and everything else stays the real plate, and the original audio is kept. Recast tracks the subject with SAM 3.1, re-performs them with the new look, and composites them back (or hands you the layer and matte for your compositor).
+
+- **Default, open weights:** LTX-2.5 union control (pose + face), on your own GPU.
+- **Optional engine: Openjutsu,** Comfy's own character-swap app (MiniMax H3), built in as a Recast engine: through the MiniMax H3 API (a partner model, off by default), or on local H3 weights with the separately installed Akatz Labs node pack (check the H3 licence for your region).
+
+So it's one place for the whole job: script, blocking, shooting, phone camera, character swaps, Ripple edits and the cut. See [docs/recast.md](docs/recast.md).
+
 <p align="center"><img src="docs/media/readme_v4/card_drive.gif" width="880" alt="Drive anything, a live stage capture: select a car, person, horse or boat and press D. REC keys the take; Drive takes over from keys."></p>
 
 <p align="center"><img src="docs/media/readme_v4/card_drive_horse.gif" width="880" alt="Drive anything, a live stage capture: walk up to a horse, swing into the saddle and ride it from a canter to a gallop with the keyboard."></p>
