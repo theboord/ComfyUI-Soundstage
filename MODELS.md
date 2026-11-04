@@ -76,13 +76,28 @@ The 32B text encoder is loaded on the CPU so it fits next to the video model on 
 | `sam3.1_multiplex_fp16.safetensors` | `checkpoints/` | [Comfy-Org SAM 3.1 repackage](https://huggingface.co/Comfy-Org) of [facebook/sam3](https://huggingface.co/facebook/sam3) | SAM License (Meta) |
 | `birefnet.safetensors` | `background_removal/` | ComfyUI core Remove Background ([BiRefNet](https://github.com/ZhengPeng7/BiRefNet)) | MIT |
 
+## ✦ Ask's brain: Qwen3-30B-A3B through Ollama (installed by default)
+
+| Model | Where | Source | License |
+|---|---|---|---|
+| `qwen3:30b-a3b` (MoE, 30.5B total, ~3B active, Q4_K_M ~19 GB) | Ollama's model store (`OLLAMA_MODELS`; on RunPod `/workspace/ollama/models`) | [ollama.com/library/qwen3](https://ollama.com/library/qwen3) · [Qwen/Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B) | Apache-2.0 |
+| Ollama (the runtime) | system install (official `install.sh`) | [ollama.com](https://ollama.com) · [github.com/ollama/ollama](https://github.com/ollama/ollama) | MIT |
+
+`tools/install_runpod.sh` installs Ollama and runs `ollama pull qwen3:30b-a3b` (tag from Ollama's qwen3 library page; not re-checked live when this was written, so confirm it with `ollama pull` once). The server picks where it runs (`GET /soundstage/assistant/status`):
+
+- **GPU with 24 GB VRAM or more:** on the GPU. It is unloaded before every render (`keep_alive: 0`) and reloads on the next Ask turn; an Ask turn during a render runs on the CPU for that turn.
+- **Less VRAM, 20 GB RAM or more:** on the CPU (`num_gpu=0`), so the GPU stays free for renders. Answers are slower.
+- **Under ~20 GB RAM:** not run. Ask says so and uses the built-in Qwen3.5 4B below.
+
+Opt-outs: `SKIP_OLLAMA=1` (no Ollama; Ask uses the Qwen3.5 4B). Smaller pull: `SOUNDSTAGE_ASSISTANT_MODEL=qwen3:8b` (~5 GB; ~8 GB VRAM for the GPU tier, ~8 GB RAM for the CPU tier). Set it for ComfyUI too, or Soundstage finds an installed `qwen3:8b` itself.
+
 ## Optional
 
 | Feature | File | Source |
 |---|---|---|
 | Object designer: type any object | `text_encoders/qwen3.5_4b_bf16.safetensors` | [Comfy-Org/Qwen3.5](https://huggingface.co/Comfy-Org/Qwen3.5/resolve/main/text_encoders/qwen3.5_4b_bf16.safetensors) (Apache-2.0) |
 | Scene agent | Uses the same Qwen3.5 file. Without it, the agent builds from its rules instead. | |
-| Director: talk to the set (docs/director.md) | Uses the same Qwen3.5 file (or an Ollama model on your computer). Without one it plans from its rules. | |
+| Director / ✦ Ask: talk to the set (docs/director.md) | The Ollama assistant above when it's installed; otherwise the same Qwen3.5 file. Without either it plans from its rules. | |
 | Director voice, offline | `whisper/whisper-base/` (the Hugging Face folder: config.json, model.safetensors, tokenizer and preprocessor files, about 290 MB) | [openai/whisper-base](https://huggingface.co/openai/whisper-base) (MIT). Without it, the browser's own speech recognition still works. |
 | Audio: TTS, clone, voice change | Chatterbox (MIT), installed by its own node pack. | see `docs/audio.md` |
 | Recast (video-to-video swap) | see `docs/recast.md` | |
