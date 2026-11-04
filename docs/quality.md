@@ -48,6 +48,14 @@ reads), and the Quality node outputs the stage-1-sized guide (its size sets the 
 seed, frame rates, decode tiles and a `settings_json` that the two switches (one pass / two-stage, temporal x2), the
 Extra LTX LoRA node and **Soundstage · Save Final** read. Built by `tools/app_build/ltx_advanced.py`.
 
+**LoRA stack.** ⑤ Motion › Advanced (LTX) has **＋ Add LoRA** rows (a LoRA, a strength from -2 to 2, ✕), saved with the shot in
+`ss_ltx` as `loras` and applied in order on the LTX model by the *Extra LTX LoRAs* node (9101). Every LoRA in the folder is
+listed, LTX ones first, the rest marked as possibly not working with LTX; a file whose own header says it is for another
+model stops the render with a sentence before any row is applied. A shot saved with the old single `extra_lora` opens as
+a one-row stack. The Layout IC-LoRA (Adherence) is loaded separately and is not in the stack. ④ Frame has the same stack
+for the image model (`loras` on the frame node; the old single add-on is a one-row stack), plus sampler, scheduler and
+sigma shift beside steps and CFG.
+
 **Older saved App workflows** keep their old graph: open the Soundstage App template again to get the new wiring.
 
 ## Motion freedom and the older tiers

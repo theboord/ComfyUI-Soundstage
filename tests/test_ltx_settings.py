@@ -282,3 +282,19 @@ def test_steps_1_never_reports_fewer_steps_than_it_renders():
     r = L.resolve({"preset": "Draft", "steps_1": 5})
     assert r["steps_1"] == 5 and len(L.sigmas_1(r["steps_1"]).split(",")) - 1 == 5
     assert len(L.schedules(r)[0].split(",")) - 1 == 5
+
+
+def test_ltx_lora_stack_saves_loads_and_migrates_the_old_single_extra_lora():
+    one = L.resolve({"extra_lora": {"name": "ltx/style.safetensors", "strength": 0.6}})
+    assert one["loras"] == [{"name": "ltx/style.safetensors", "strength": 0.6}] and "extra_lora" not in one, "an old save is a one-row stack"
+    st = L.resolve({"loras": [{"name": "a.safetensors", "strength": 0.5}, {"name": "None"}, {"name": "b.safetensors", "strength": 9}, {"name": "c.safetensors", "strength": 0}]})
+    assert st["loras"] == [{"name": "a.safetensors", "strength": 0.5}, {"name": "b.safetensors", "strength": 4.0}], "order kept, clamped, empty rows dropped"
+    assert "loras" not in L.resolve({}) and "loras" not in L.resolve({"loras": []})
+    assert L.resolve({"loras": [], "extra_lora": {"name": "x"}}).get("loras") is None, "an explicit empty stack wins over a stale single"
+    # the Layout IC-LoRA is its own control: Adherence sets it, the stack never touches it
+    both = L.resolve({"loras": [{"name": "a.safetensors"}], "adherence": "Loose"})
+    assert L.adherence_knobs(both)["ic_lora"] == 0.825 and "ic_lora" not in both
+    assert L.from_quality("Final", json.dumps({"preset": "Final", "loras": [{"name": "a.safetensors", "strength": 1}]}))["loras"][0]["name"] == "a.safetensors"
+    # the node reads the same rows from settings_json (nodes_quality imports torch: its helper is read from the source)
+    src = (ROOT / "soundstage" / "nodes_quality.py").read_text()
+    assert 'L.lora_rows(st["loras"] if "loras" in st else st.get("extra_lora"))' in src
