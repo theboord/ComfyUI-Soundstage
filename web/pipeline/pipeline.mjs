@@ -11,7 +11,8 @@ import { LtxAdvanced, ADHERENCE, ADHERENCE_NAMES, adherenceKnobs } from "../moti
 import { castPool, shotSelection, pickRefs, refLines, refLabel, shotKind, refViewParams, REF_LIMIT } from "../cast/shotcast.mjs";
 import { downloadDCCKit } from "../stage/interop/exportdcc.mjs";
 import { FrameCheck, badgeOf, flagged, rank, depthTip, REROLLS, FRAMECHECK_CSS } from "./framecheck.mjs";
-import { stillLoraGroups, stillLoraWarning, LORA_MATCH_LABEL, LORA_OTHER_LABEL } from "./loras.mjs";
+import { stillLoraGroups, stillLoraWarning, LORA_MATCH_LABEL, LORA_OTHER_LABEL, normalizeStack, stackFromLegacy } from "./loras.mjs";
+import { createLoraStack } from "./lorastack.mjs";
 
 /** ④'s look box placeholder: optional, and no example that fights the scene (QA 2026-11-02: a western example on a rainy night chase). */
 export const FRAME_DESC_PLACEHOLDER = "Optional: the look you want on top of the stage, e.g. light, weather, mood, film stock…";
@@ -572,11 +573,12 @@ export class Pipeline {
       this.set(9086, "switch", f.useTouch.checked);
     } } });
     // LoRA for the image model (FLUX 3 Klein / Krea 2): a character, product or house style.
-    f.lora = h("select", { on: { change: () => { this.set(9081, "lora", f.lora.value); this._loraNote(); } } });
-    f.loraWarn = h("small", { class: "status ss-lorawarn", role: "status" });
-    f.loraStrength = h("input", { type: "range", min: "0", max: "1.5", step: "0.05", value: "1",
-      on: { input: () => { this.set(9081, "lora_strength", +f.loraStrength.value); f.loraOut.textContent = (+f.loraStrength.value).toFixed(2); } } });
-    f.loraOut = h("span", { class: "status" }, "1.00");
+    // The LoRA stack: several add-ons at once, applied in order (saved as JSON in the frame node's `loras`; the old single
+    // lora + lora_strength pair loads as a one-row stack).
+    f.loras = createLoraStack({ h, min: 0, max: 1.5, fallback: 1, matchLabel: LORA_MATCH_LABEL, otherLabel: LORA_OTHER_LABEL,
+      groups: (cur) => stillLoraGroups(this.w(9081, "lora")?.options?.values || [], this._loraModel(), cur),
+      warn: (name) => stillLoraWarning(name, this._loraModel()),
+      onChange: (rows) => this._saveLoras(rows) });
     f.refsCard = h("div", { class: "card" });
     const num = (min, max, step, on) => h("input", { type: "number", min, max, step, style: "width:90px", on: { change: on } });
     f.steps = num("0", "100", "1", () => this._applySampling());
@@ -614,8 +616,7 @@ export class Pipeline {
               h("label", { class: "ss-chk status", title: "Each new frame is compared with your clay (SAM 3.1 against the stage's ID pass): object count, silhouettes, extra objects. A flagged frame is painted again with a new seed, at most twice per Generate." },
                 f.autoReroll = h("input", { type: "checkbox", checked: "" }),
                 h("span", {}, "Check each frame against the clay; re-roll extra or missing objects"))),
-            h("label", { class: "f", title: "LoRA: a small add-on model trained on your own pictures (a character, a product or a house style). Any LoRA in models/loras, one at a time: the ones made for this frame model come first." }, "Style or character add-on", f.lora, f.loraWarn),
-            h("label", { class: "f", title: "How strongly the LoRA add-on is applied" }, h("span", { class: "row" }, "Add-on strength", f.loraOut), f.loraStrength),
+            h("label", { class: "f", title: "LoRA: a small add-on model trained on your own pictures (a character, a product or a house style). Any LoRA in models/loras, several at once with ＋ Add LoRA, applied in order: the ones made for this frame model come first." }, "Style or character add-on", f.loras.el),
             h("div", { class: "row" }, h("span", { class: "status" }, "Variations"), f.countSeg),
             h("div", { class: "row" }, h("span", { class: "status" }, "Quality"), f.qualSeg),
             h("div", { class: "row" }, f.goBtn, f.allBtn)),
@@ -993,13 +994,12 @@ export class Pipeline {
       // Strict depth lock leaves Krea 2 Turbo on the frame node: the picker still reads FLUX 3 Klein
       f.model.value = usePicker ? ((isKreaTurbo(cur) ? klein : cur) || STILL_KREA) : STILL_KREA;
     }
-    const loraW = this.w(9081, "lora");
     this._fillLoras();
+    this.f.loras.set(this._readLoras());
     this._syncSampling();
     const negW = this.w(9081, "negative");
     f.neg.disabled = !negW;
     if (negW) f.neg.value = negW.value || "";
-    if (loraW) { f.lora.value = loraW.value || "None"; this._loraNote(); f.loraStrength.value = String(this.w(9081, "lora_strength")?.value ?? 1); f.loraOut.textContent = (+f.loraStrength.value).toFixed(2); }
     const dn = f.model.value === STILL_KREA ? this.w(9056, "denoise")?.value : this.w(9081, "stage_denoise")?.value;
     if (dn != null) f.follow.value = String(dn);
     this._sliderFor = f.model.value === STILL_KREA;
@@ -1055,33 +1055,35 @@ export class Pipeline {
     return this.w(9081, "model")?.value || this.f?.model?.value || null;
   }
 
-  /** ④'s add-on list, grouped for the model that paints the frame; refilled when the model (or the depth lock) changes. */
+  /** ④'s LoRA stack: the rows keep their place; the groups are rebuilt for the model that paints the frame (and when the
+   *  model or the depth lock changes). The stack is disabled without the slot, or on Krea 2 + depth (no LoRA in that graph). */
   _fillLoras() {
     const f = this.f, loraW = this.w(9081, "lora");
-    if (!f?.lora) return;
+    if (!f?.loras) return;
     const model = this._loraModel();
-    const vals = Array.isArray(loraW?.options?.values) ? loraW.options.values : ["None"];
-    const sig = `${model}|${vals.length}|${loraW?.value}`;
-    if (sig !== this._loraSig) {
-      this._loraSig = sig;
-      const g = stillLoraGroups(vals, model, loraW?.value);
-      const opt = (v) => new Option(String(v).replace(/\.safetensors$/, ""), v);
-      const groups = [];
-      if (g.match.length) groups.push(h("optgroup", { label: LORA_MATCH_LABEL }, ...g.match.map(opt)));
-      if (g.other.length) groups.push(h("optgroup", { label: LORA_OTHER_LABEL }, ...g.other.map(opt)));
-      f.lora.replaceChildren(new Option("None", "None"), ...groups);
-      f.lora.value = loraW?.value || "None";
-    }
-    f.lora.disabled = !loraW || !model;
-    this._loraNote();
+    const sig = `${model}|${(loraW?.options?.values || []).length}`;
+    f.loras.setDisabled(!loraW || !model, !model ? "Krea 2 + depth paints without an add-on: pick FLUX 3 Klein (Strict lock runs Krea 2 Turbo with it) to use one." : "");
+    if (sig !== this._loraSig) { this._loraSig = sig; f.loras.refresh(); }
   }
 
-  _loraNote() {
-    const f = this.f;
-    if (!f?.loraWarn) return;
-    const model = this._loraModel();
-    f.loraWarn.textContent = !model ? "Krea 2 + depth paints without an add-on: pick FLUX 3 Klein (Strict lock runs Krea 2 Turbo with it) to use one."
-      : stillLoraWarning(f.lora.value, model);
+  /** The saved stack: the frame node's `loras` JSON, else its old single lora + strength as one row. */
+  _readLoras() {
+    const w = this.w(9081, "loras");
+    let rows = [];
+    try { rows = normalizeStack(JSON.parse(String(w?.value || "[]"))); } catch { rows = []; }
+    return rows.length ? rows : stackFromLegacy(this.w(9081, "lora")?.value, this.w(9081, "lora_strength")?.value ?? 1);
+  }
+
+  _saveLoras(rows) {
+    const clean = normalizeStack(rows);
+    if (this.w(9081, "loras")) {
+      this.set(9081, "loras", JSON.stringify(clean));
+      this.set(9081, "lora", "None");   // the stack wins on the server; the old pair is cleared so nothing applies twice
+    } else {   // a ComfyUI that predates the stack: the first row through the old single pair
+      this.set(9081, "lora", clean[0]?.name || "None"); this.set(9081, "lora_strength", clean[0]?.strength ?? 1);
+    }
+    const n = this.node(9081);
+    if (n) (n.properties ||= {}).ssLoras = clean;
   }
 
   /** "Lock to the stage depth" (soundstage/look/frame_lock.py VERSION 3) for FLUX 3 Klein frames: Off, Light (a Krea 2
@@ -2181,7 +2183,7 @@ export class Pipeline {
     const sec = (title, nodes, open, skey) => { const s = left.section(title, nodes, { open, skey }); for (const n of nodes) mv.move(n, s.box); };
     sec("Prompt", [f.desc.parentElement, f.follow.parentElement], true, "prompt");
     sec("Cast in this shot", [f.refsCard], false, "cast");
-    sec("Style or character add-on", [f.lora.parentElement, f.loraStrength.parentElement], false, "lora");
+    sec("Style or character add-on", [f.loras.el.parentElement], false, "lora");
     // Style and Camera were long pickers squeezed into small scrolling boxes (QA round 02): each is now a button that
     // opens a full-height pop-over with a search box. Advanced (steps & CFG) stays a fold in the panel.
     const pickers = [];

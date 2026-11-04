@@ -102,7 +102,7 @@ See [docs/performance.md](docs/performance.md).
 
 Presets are a starting point, never a cage. Every setting stays open:
 
-- **⑤ Motion → Advanced (LTX):** steps for each stage, the stage-2 start, your own sigma schedule, sampler, CFG and seed, an extra LoRA and its strength, how literally to follow the clay (layout IC-LoRA, clay blur, frame reference), resolution, two-stage, frame rate, temporal x2, decode tiles and the codec. **Reset to preset** puts it back.
+- **⑤ Motion → Advanced (LTX):** steps for each stage, shift and scheduler, the stage-2 start, your own sigma schedule, sampler, CFG and seed, a stack of LoRAs (several at once, each with its own strength), how literally to follow the clay (layout IC-LoRA, clay blur, frame reference), resolution, two-stage, frame rate, temporal x2, decode tiles and the codec. **Reset to preset** puts it back.
 - **④ Frame:** steps, CFG, a negative prompt, and a style or character LoRA with its strength.
 - **Open in ComfyUI** on any take opens its exact node graph, every node and wire, to change anything else.
 
