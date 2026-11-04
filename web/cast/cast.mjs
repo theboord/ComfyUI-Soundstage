@@ -260,6 +260,25 @@ export class CastPanel {
     this._save(d);
   }
 
+  // ---- for ✦ Ask (web/agent/charbuild.mjs castHost): one card's saved fields, written and put back as one Undo step,
+  // and that one card's ✨ Generate (never generateAll).
+  cardSnapshot(key) { const x = this.data().items[key]; return x ? JSON.parse(JSON.stringify(x)) : null; }
+  setCard(key, patch) { this._set(key, patch); this._rerender(); }
+  restoreCard(key, snap) {
+    const d = this.data();
+    if (snap) d.items[key] = JSON.parse(JSON.stringify(snap)); else delete d.items[key];
+    this._save(d); this._rerender();
+  }
+  async generateOne(key) {
+    const it = this.items().find((x) => x.key === key);
+    if (!it) throw new Error("that card is gone");
+    if (!this.o.generate) throw new Error("this App can't generate pictures here");
+    if (this.busy.has(key)) throw new Error(`${it.name} is already generating`);
+    await this._generate(it);
+    return this.cardSnapshot(key);
+  }
+  _rerender() { try { if (this.el?.isConnected) this.render(); } catch { /* not drawn */ } }
+
   async _upload(it, file) {
     this.busy.add(it.key); this.render();
     try {

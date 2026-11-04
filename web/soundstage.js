@@ -3345,6 +3345,8 @@ function createStageWidget(node, inputName) {
       setScript: (s) => { script = s || null; persistScript(); refreshScriptUI(); },
       shots: () => { try { return pipeline.shots(); } catch { return []; } },
       book: () => node.ssBook,
+      // ② Cast for building a character (web/agent/charbuild.mjs castHost): one card's fields, one card's ✨ Generate
+      cast: () => castPanel,
     } });
 
   // Projects (web/project, docs/projects.md): the name + "Saved 12 s ago · Autosave on" pill in the top row, Save / Open /
