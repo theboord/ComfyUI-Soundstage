@@ -78,7 +78,7 @@ function makeHost() {
       hasStyle: (id) => STYLES.some((x) => x.id === id) },
     cut: { load: () => clone(cut.saved), save: (v) => { cut.saved = clone(v); }, add: () => {}, panel: () => null },
     shotsInOrder: () => [{ id: "wide", name: "Wide" }, { id: "tracking", name: "Tracking" }],
-    pipeline: { selectShot: (id) => renders.push(["select", id]), _render: async (step) => { renders.push(["render", step]); }, ltx: { setPreset: (q) => renders.push(["quality", q]) },
+    pipeline: { selectShot: (id) => renders.push(["select", id]), _render: async (step) => { renders.push(["render", step]); }, ltx: { setPreset: (q) => renders.push(["quality", q]), setHero: () => renders.push(["quality", "Advanced (hero)"]) },
       go: (s) => renders.push(["go", s]), ripple: { setMode: (m) => renders.push(["ripple", m]) } },
     wholeFrame: (p) => renders.push(["whole", p]),
     importVideo: () => renders.push(["import"]),
@@ -356,7 +356,7 @@ test("recipes: GPU steps ask first and never run on a no", async () => {
   const r3 = await runner.apply("hollywood_final", { confirmGpu: true });
   assert.equal(r3.ok, true);
   assert.deepEqual(host.renders.filter((x) => x[0] === "render").at(-1), ["render", 4]);
-  assert.ok(host.renders.some((x) => x[1] === "Hollywood"));
+  assert.ok(host.renders.some((x) => x[1] === "Advanced (hero)"), "the hero recipe: Advanced with the old Hollywood numbers");
   // No confirm hook at all = never queue.
   const { runner: r4, host: h4 } = await setup(SCENE, { confirm: undefined });
   delete r4.host.confirm;

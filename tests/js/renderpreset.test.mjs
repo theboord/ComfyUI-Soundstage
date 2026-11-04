@@ -9,10 +9,11 @@ const pipe = (preset) => ({ m: {}, ltx: { settings: () => ({ preset }) } });
 
 test("renderPreset reads the shot's LTX preset, not the retired m.quality", () => {
   assert.equal(renderPreset(pipe("Draft")), "Draft");
-  assert.equal(renderPreset(pipe("Hollywood")), "Hollywood");
+  assert.equal(renderPreset(pipe("Advanced")), "Advanced");
   assert.equal(renderPreset({ m: { quality: "Draft" } }), "Draft");     // an older pipeline still works
   assert.equal(renderPreset(null), "Final");
-  assert.equal(finalRung(renderPreset(pipe("Hollywood"))), "final_hq");
+  assert.equal(finalRung(renderPreset(pipe("Advanced"))), "final_hq");
+  assert.equal(finalRung("Hollywood"), "final_hq");   // an older take's recipe
   assert.equal(finalRung(renderPreset(pipe("Final"))), "final");
 });
 

@@ -28,7 +28,7 @@ Your first shot in about ten minutes on the built-in demo, then a whole three-sh
 - **✦ One-click's Loop, Reshoot, Open in ComfyUI and Send a move from your phone need a ComfyUI restart** after you update. Until then a card says *this server needs a restart*. No loop made so far is seamless.
 - **The Cut now plays takes in real time (2 Nov evening), but only at 24 fps, and *Edit in* from the timeline isn't in this build.** Its fast proxies need `ffmpeg` on the server and a ComfyUI restart after you update; until then the Cut plays the takes themselves. The speed-up was measured on a simulated laptop, not a real one.
 - **The 8 template cards have blank thumbnails** and look alike. Pick by name: **Soundstage_App**, not *Soundstage_App_Full*.
-- **Hollywood's time estimate still reads about 13 min**, the same as Final. The real render takes much longer. Run it during a break.
+- **An Advanced hero shot at 1408p takes much longer than its estimate** (about 15–17 min, not 13). Run it during a break.
 - **The Dialogue card can still say *No line*** after you type one in the pop-over. Open the pop-over again to check the line is there.
 - **The take checks and the realism judge only appear on real renders.** You'll see them once your first Final exists.
 - **If keys stop responding** (H, ?, P) or the Coach pill vanishes, reload the tab. Your stage is saved. In one test the Coach pill went after about 10 minutes.
@@ -262,13 +262,13 @@ Cole steps out into the rain and looks off at the wrecked crates. Then Cole turn
 ### E. Motion (step 5)
 
 1. Set **Follow** to **Layout** and **Adherence** to **Exact**. For each shot, click **Preview motion (draft)** first and approve the movement.
-2. For the hero shot only (*Wide crane*), choose **Hollywood** and click **Render final + sound**. Run it during a break. The other two get **Final** (about 13 min each). Skip *Chase cam*.
+2. For the hero shot only (*Wide crane*), choose **Advanced**, set **Output resolution** to 1440p (1408) and **H.264 CRF** to 12 (or run the **Hero final** preset), then click **Render final + sound**. Run it during a break. The other two get **Final** (about 13 min each). Skip *Chase cam*.
 3. Open **Sound & music** to describe rain, engine and siren. On shot 3, open **Dialogue & voice** if Cole says a line.
 
-> **Watch out.** With Hollywood picked, the button still estimates about 13 min. It takes much longer. The Dialogue card can also keep saying *No line* after you type one, so reopen the pop-over to check.
+> **Watch out.** At 1408p the button's estimate runs short. It takes much longer (15–17 min). The Dialogue card can also keep saying *No line* after you type one, so reopen the pop-over to check.
 
-<p align="center"><img src="media/qs_C21.webp" width="760" alt="⑤ Motion with Hollywood picked on one shot and the Sound & music pop-over open."></p>
-<p align="center"><em>⑤ Motion with Hollywood picked on one shot and the Sound & music pop-over open.</em></p>
+<p align="center"><img src="media/qs_C21.webp" width="760" alt="⑤ Motion with the hero quality picked on one shot and the Sound & music pop-over open."></p>
+<p align="center"><em>⑤ Motion with the hero quality picked on one shot and the Sound & music pop-over open (an older build: the third button now reads Advanced).</em></p>
 
 
 ### F. Review (step 6)
@@ -327,7 +327,7 @@ Cole steps out into the rain and looks off at the wrecked crates. Then Cole turn
 
 **Edit:** `J` `K` `L` Shuttle · `Space` Play (real time; Final / Draft / Look / Clay badge per clip) · `C` Circle a take (Takes)
 
-**Quality:** Frame Fast (~1 min) · Standard (~4 min) · High · Max · Motion Draft → Final (~13 min) → Hollywood (hero only) · Adherence Exact Follow my blocking
+**Quality:** Frame Fast (~1 min) · Standard (~4 min) · High · Max · Motion Draft → Final (~13 min) → Advanced (hero shots at 1408p, or faster drafts) · Adherence Exact Follow my blocking
 
 **New on 1-2 Nov:** **✦** on every take, ④ Frame candidate and the Review bar (effects, relight, angles, expand, Seamless loop, Reshoot, Open in ComfyUI, Send a move from your phone) · Physics › World: **Everything collides** / **Keep keyed** · Director: *check for collisions* · Real performance… › **Voice**: Keep my voice / Convert to … · Presets › Looks › **Racing Cinema**; Camera moves › **Bumper cam**, **Over the tyre**, **Arm car tracking**, **Long-lens pan** · Action › **Speedboat run**, **Sailing tack**, **Canoe on a calm lake**, **Whitewater raft**, **Diver swim** · Motorboat in Drive: `Space` / `Q` trim out / in · Menus: `↑` `↓` `Home` `End`, `Esc` · **2 Nov evening:** **✦ Ask** (`⌘K` / `Ctrl+K` or `/`; hold Ask or `` ` `` to talk; **Show me**, **Do it for me**) · **Activity** pill: the node your render is on, steps, time left, **Details**, **Cancel** · real-time playback in the Cut · ④ Frame: trash / **Clear all** (Undo 5 s); ③ Set: **④ Make the first frame →** · Drive takes over from keys; kept takes auto-corrected, **Undo** to raw · `.` **⌂ Back to the set** / `,` **↶ Last view** / **Lost?** chip · **Passes** on every Dailies take, the Ladder bar and Video → 3D: Alpha matte (Matte, Over, Rubylith, Edges), Pose, Talking, Depth; `1`-`4` tabs, `F` Flicker, `,` `.` step · All of it, with limits: [New on 1 and 2 November](TUTORIAL.md#new-on-1-and-2-november)
 

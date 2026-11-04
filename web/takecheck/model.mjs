@@ -8,7 +8,7 @@
 //   parseMp4Tags(bytes)         the metadata tags of an MP4 (the recipe travels in them)
 //   recipeFromTags(tags)        the Soundstage recipe in those tags (the soundstage tag, else rebuilt)
 //   realismChip(realism)        the realism judge's chip: "✓ real 9.5/10" or red "✗ AI slop: rear lights incoherent, f24–64"
-//   rerollOffer(res, offered)   whether a judged Hollywood take earns its one automatic re-roll offer
+//   rerollOffer(res, offered)   whether a judged hero-sized take (1408p and up) earns its one automatic re-roll offer
 
 export const MODELS_DOC_URL = "https://github.com/theboord/ComfyUI-Soundstage/blob/main/MODELS.md";
 
@@ -44,7 +44,7 @@ export function realismChip(r) {
     start: first?.frames?.length ? first.frames[0] : null, frame: true };
 }
 
-/** A Hollywood take the judge failed gets ONE automatic re-roll offer per shot: not again for the re-roll itself
+/** A hero-sized take (res.hollywood: 1408p and up) the judge failed gets ONE automatic re-roll offer per shot: not again for the re-roll itself
  *  (a second failure means the shot needs a fix, not more GPU), not for drafts, not for unjudged takes.
  *  offered: Set of shot keys already offered. */
 export function rerollOffer(res, shotKey, offered) {
@@ -116,9 +116,9 @@ export function estimateSeconds(timing, rung, frames = 121, count = 1) {
 }
 
 /** The final's rung key for ⑤ Motion's Quality picker (Draft / Final / Final HQ). */
-export const finalRung = (quality) => (/hq|hollywood/i.test(String(quality || "")) ? "final_hq" : "final");
+export const finalRung = (quality) => (/hq|hollywood|advanced/i.test(String(quality || "")) ? "final_hq" : "final");
 
-/** The active shot's ⑤ Motion preset ("Draft" | "Final" | "Hollywood"). The Draft/Final buttons (pipeline.m.quality) were
+/** The active shot's ⑤ Motion preset ("Draft" | "Final" | "Advanced"). The Draft/Final buttons (pipeline.m.quality) were
  * replaced by the LTX presets (pipeline.ltx); readers of the old field always saw undefined. */
 export function renderPreset(pipeline) {
   try { return pipeline?.ltx?.settings?.()?.preset || pipeline?.m?.quality || "Final"; } catch { return "Final"; }
