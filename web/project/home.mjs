@@ -21,10 +21,16 @@ import { ago, projectNameOf } from "./store.mjs";
  * Show the start screen on its own? Only for a blank Soundstage App: no project name in the workflow, the untouched
  * default stage, no script, no renders, not the try-it demo, and not already shown in this tab.
  */
-export function shouldShowHome({ workflow = null, brandNew = false, hasScript = false, renders = 0, tryit = false, shown = false } = {}) {
-  if (tryit || shown || !brandNew || hasScript || renders > 0) return false;
-  return !projectNameOf(workflow);
+export function shouldShowHome({ tryit = false, shown = false, launch = true } = {}) {
+  // v2 (Mike, 2026-11-04): the App always opens on the project screen, once per page load, unless the user turned it
+  // off ("Show this screen when Soundstage opens") or this is the try-it demo.
+  return !(tryit || shown || launch === false);
 }
+
+const LAUNCH_KEY = "ss.home.launch";
+/** The launch preference, on by default. localStorage can throw (private windows): then it stays on. */
+export function launchEnabled() { try { return localStorage.getItem(LAUNCH_KEY) !== "0"; } catch { return true; } }
+export function setLaunchEnabled(on) { try { localStorage.setItem(LAUNCH_KEY, on ? "1" : "0"); } catch { /* storage blocked */ } }
 
 /** Sort a copy: "recent" (newest save first) or "name" (A → Z, case-insensitive, numbers in order). */
 export function sortProjects(list, by = "recent") {
@@ -72,6 +78,8 @@ export function gridMove(i, key, cols, n) {
 
 const SORT_KEY = "ss_home_sort";
 const CSS = `
+.ss-home .launch{display:flex;gap:6px;align-items:center;font-size:12px;color:#b9b3bf;cursor:pointer;margin:0 0 8px}
+.ss-home .launch input{accent-color:#f2ff59}
 .ss-home { position:fixed; inset:0; z-index:10000; display:grid; grid-template-columns:260px 1fr; background:${T.bg};
   color:${T.text}; font-family:var(--ss-font, ui-sans-serif, system-ui, sans-serif); font-size:13px; }
 .ss-home button { font:inherit; color:inherit; cursor:pointer; }
@@ -128,7 +136,7 @@ const readSort = () => { try { return localStorage.getItem(SORT_KEY) === "name" 
 const writeSort = (v) => { try { localStorage.setItem(SORT_KEY, v); } catch { /* storage blocked */ } };
 
 /** Open the start screen. Returns {el, close, refresh}. Only one at a time. */
-export function openHome({ ctl, api, host = {}, onDemand = false, tryit = false, askName = null } = {}) {
+export function openHome({ ctl, api, host = {}, onDemand = false, tryit = false, askName = null, current = null } = {}) {
   if (!document.getElementById("ss-home-css")) document.head.append(Object.assign(document.createElement("style"), { id: "ss-home-css", textContent: CSS }));
   document.querySelector(".ss-home")?.remove();
   let list = [], sort = readSort(), q = "", sel = 0, closed = false;
@@ -148,7 +156,10 @@ export function openHome({ ctl, api, host = {}, onDemand = false, tryit = false,
     act("file-text", tryit ? "Load a script" : "Import a script", thenClose(() => host.onScript?.()),
       { title: "Bring in a screenplay (Fountain, Final Draft, PDF); in a blank project it goes right here" }),
     h("div", { class: "grow" }),
-    h("button", { type: "button", class: "skip", on: { click: close } }, onDemand ? "Back to the App (Esc)" : "Start with this blank stage"));
+    tryit ? null : h("label", { class: "launch", title: "When off, Soundstage opens straight into the current tab" },
+      h("input", { type: "checkbox", checked: launchEnabled(), on: { change: (e) => setLaunchEnabled(e.target.checked) } }), " Show this screen when Soundstage opens"),
+    h("button", { type: "button", class: "skip", on: { click: close } },
+      onDemand ? "Back to the App (Esc)" : current ? `Continue with "${current}" (Esc)` : "Start with this blank stage"));
 
   const search = h("input", { type: "search", placeholder: "Search projects", "aria-label": "Search projects",
     on: { input: (e) => { q = e.target.value; sel = 0; draw(); } } });
@@ -281,7 +292,7 @@ export function openHome({ ctl, api, host = {}, onDemand = false, tryit = false,
     if (e.key === "Escape") {
       if (document.querySelector(".ss-popmenu")) return;       // the menu closes first
       e.stopPropagation();
-      if (onDemand) close();
+      if (onDemand || current) close();
       return;
     }
     const inField = e.target?.closest?.("input, select, textarea");

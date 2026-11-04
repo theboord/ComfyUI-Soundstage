@@ -3,20 +3,36 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { shouldShowHome, sortProjects, filterProjects, thumbFallback, countsLine, gridMove } from "../../web/project/home.mjs";
+import { shouldShowHome, launchEnabled, setLaunchEnabled, sortProjects, filterProjects, thumbFallback, countsLine, gridMove } from "../../web/project/home.mjs";
+import { splashMs } from "../../web/project/splash.mjs";
 
 const BLANK = { nodes: [{ type: "SoundstageStage" }], extra: {} };
 
-test("when to show: only a blank, unnamed Soundstage App, once, never in the try-it demo", () => {
-  assert.equal(shouldShowHome({ workflow: BLANK, brandNew: true }), true);
-  assert.equal(shouldShowHome({ workflow: { ...BLANK, extra: { ss_project: { name: "My Film" } } }, brandNew: true }), false); // a restored named tab
-  assert.equal(shouldShowHome({ workflow: BLANK, brandNew: false }), false);                 // stage has content
-  assert.equal(shouldShowHome({ workflow: BLANK, brandNew: true, hasScript: true }), false);
-  assert.equal(shouldShowHome({ workflow: BLANK, brandNew: true, renders: 2 }), false);
-  assert.equal(shouldShowHome({ workflow: BLANK, brandNew: true, tryit: true }), false);
-  assert.equal(shouldShowHome({ workflow: BLANK, brandNew: true, shown: true }), false);     // already shown in this tab
-  assert.equal(shouldShowHome({ workflow: null, brandNew: true }), true);
-  assert.equal(shouldShowHome(), false);
+test("when to show: the App always opens on the project screen, once per page load, never in the try-it demo", () => {
+  assert.equal(shouldShowHome(), true);                                  // a new page load, any workflow (blank or a restored project)
+  assert.equal(shouldShowHome({ shown: true }), false);                  // already shown on this page load
+  assert.equal(shouldShowHome({ tryit: true }), false);                  // the demo has its own front door
+  assert.equal(shouldShowHome({ launch: false }), false);                // "Show this screen when Soundstage opens" is off
+  assert.equal(shouldShowHome({ launch: true }), true);
+});
+
+test("the launch preference defaults on and survives a blocked localStorage", () => {
+  const store = new Map();
+  globalThis.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) };
+  assert.equal(launchEnabled(), true);
+  setLaunchEnabled(false);
+  assert.equal(launchEnabled(), false);
+  setLaunchEnabled(true);
+  assert.equal(launchEnabled(), true);
+  globalThis.localStorage = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } };
+  assert.equal(launchEnabled(), true);
+  assert.doesNotThrow(() => setLaunchEnabled(false));
+  delete globalThis.localStorage;
+});
+
+test("the splash is a beat, shorter with reduced motion", () => {
+  assert.equal(splashMs(), 1600);
+  assert.equal(splashMs({ reduced: true }), 600);
 });
 
 const LIST = [
