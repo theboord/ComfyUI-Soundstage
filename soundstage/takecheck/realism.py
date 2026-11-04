@@ -421,7 +421,9 @@ def aggregate(observations: list[dict], n_frames: int | None = None) -> dict:
 
 
 def is_hollywood(info: dict | None, recipe: dict | None = None) -> bool:
-    """A Hollywood-quality take: the recipe says so, or the picture is Hollywood-sized (1408p and up)."""
+    """A hero-quality take, the ones the judge checks on its own: the picture is 1408p and up (an Advanced shot at that
+    resolution), or the recipe names the retired Hollywood preset (an older take). The key stays "hollywood" in the
+    take-check result for the App's readers."""
     q = ((recipe or {}).get("quality") or {})
     q = q.get("quality") or q.get("preset") if isinstance(q, dict) else q
     if isinstance(q, str) and q.lower().startswith("hollywood"):

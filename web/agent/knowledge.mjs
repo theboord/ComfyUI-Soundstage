@@ -114,7 +114,7 @@ export const PLAYBOOK = [
     fix: ["Wait for the first answer: later ones are quick while the model stays loaded.", "Pick an Ollama or API model in the Director's ⚙ for instant answers.", "Without a model Ask still runs its built-in checks and how-tos."] },
   { id: "lora_no_effect", symptom: "a LoRA has no effect, the style or character add-on is ignored", words: "lora no effect ignored style add-on character not working",
     cause: "The LoRA was made for another model family (ComfyUI then skips its keys), or its strength is low.",
-    fix: ["④ Frame → Style or character add-on: pick one under Matches this model; the Other LoRAs list may not work with this model.", "⑤ Motion → Advanced (LTX) → Extra LoRA: LTX LoRAs only.", "Check ComfyUI's log for \"lora key not loaded\"."], controls: ["Style or character add-on"] },
+    fix: ["④ Frame → Style or character add-on: ＋ Add LoRA rows, applied in order; pick under Matches this model, the Other LoRAs list may not work with this model; raise a row's strength.", "⑤ Motion → Advanced (LTX) → LoRAs: ＋ Add LoRA rows, LTX LoRAs only.", "Check ComfyUI's log for \"lora key not loaded\"."], controls: ["Style or character add-on"] },
   { id: "physics", symptom: "physics looks wrong: things float, explode, fall through the floor or the stunt car flips", words: "physics float fall through floor explode jitter crash car flips bake simulate",
     cause: "An unbaked or stale simulation, or a prop without collision.",
     fix: ["③ Set → Physics: bake again after moving things.", "Use a preset from the Presets window → Action (it sets the physics for you).", "Breakable makes crates and boxes come apart; turn it off if props shatter unexpectedly."], controls: ["Breakable"] },

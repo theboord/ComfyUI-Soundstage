@@ -21,7 +21,8 @@ from comfy_api.latest import IO, UI
 from . import ltx_settings as L
 from . import quality as Q
 
-QUALITIES = ["Draft", "Final HQ", "Final", "Hollywood"]   # appended, so saved workflows keep their values
+QUALITIES = ["Draft", "Final HQ", "Final", "Hollywood", "Advanced"]   # appended, so saved workflows keep their values;
+# "Final HQ" and "Hollywood" are retired tiers that ltx_settings maps (Final 18 + 12 steps; Advanced at 1408p, CRF 12)
 
 
 def settings_for(quality: str, advanced: str | None) -> dict:
@@ -83,8 +84,10 @@ class SoundstageQuality(IO.ComfyNode):
                                        "the advanced JSON; default Exact) now sets the guide blur and IC-LoRA strength."),
                 IO.Combo.Input("quality", options=QUALITIES, default="Final",
                                tooltip="Draft = 8 + 3 distilled steps (quick look, faces readable). Final = 12 + 6 "
-                                       "(clean motion and detail, the default). Final HQ = 18 + 12 for hero shots. "
-                                       "Final and Final HQ add physical-motion language for the cast."),
+                                       "(clean motion and detail, the default). Advanced = your own steps, shift, "
+                                       "scheduler, CFG, resolution… in the advanced JSON (starts from Final). Final HQ "
+                                       "and Hollywood are retired tiers kept for saved workflows. Final and up add "
+                                       "physical-motion language for the cast."),
                 IO.Image.Input("guide", tooltip="The stage clay frames that steer LTX (IC-LoRA guide)."),
                 IO.String.Input("motion_prompt", multiline=True, force_input=True),
                 IO.String.Input("scene_json", multiline=True, force_input=True, optional=True),
@@ -255,18 +258,31 @@ class SoundstageSaveVideo(IO.ComfyNode):
 
 
 def ltx_lora_problem(name: str, path: str) -> str | None:
-    """A sentence when the Extra LoRA's own header says it was made for another model than LTX (else None: it loads;
+    """A sentence when a stack LoRA's own header says it was made for another model than LTX (else None: it loads;
     a LoRA it can't place keys for would otherwise be skipped silently, "lora key not loaded" in the log only)."""
     from .router import lora_check as LC
     got = LC.family_of(LC.read_header(path))
     if got and got != "ltx":
-        return (f"The Extra LoRA {name!r} was made for {LC.FAMILY_LABEL.get(got, got)}, not LTX: it can't load into the "
-                "video model. Pick an LTX LoRA in ⑤ Motion > Advanced (LTX) > Extra LoRA, or None.")
+        return (f"The LoRA {name!r} was made for {LC.FAMILY_LABEL.get(got, got)}, not LTX: it can't load into the "
+                "video model. Remove it from the LoRA stack in ⑤ Motion > Advanced (LTX), or pick an LTX LoRA.")
     return None
 
 
+def ltx_lora_stack(settings_json: str, lora_name: str = "None", strength: float = 0.8) -> list[dict]:
+    """The rows to apply, in order: the shot's `loras` (an older shot's extra_lora is one row), else the node's own widget."""
+    try:
+        st = json.loads(settings_json) if settings_json else {}
+    except ValueError:
+        st = {}
+    rows = L.lora_rows(st["loras"] if "loras" in st else st.get("extra_lora"))
+    if not rows and "loras" not in st and "extra_lora" not in st:
+        rows = L.lora_rows([{"name": lora_name, "strength": strength}])
+    return rows
+
+
 class SoundstageLTXLoRA(IO.ComfyNode):
-    """An optional extra LoRA on the LTX model, set per shot from the App's Advanced (LTX) pop-over."""
+    """An optional LoRA stack on the LTX model, set per shot from the App's Advanced (LTX) pop-over. The Layout IC-LoRA
+    (Adherence) is loaded separately, in the model loader."""
 
     @classmethod
     def define_schema(cls) -> IO.Schema:
@@ -277,10 +293,11 @@ class SoundstageLTXLoRA(IO.ComfyNode):
             names = []
         return IO.Schema(
             node_id="SoundstageLTXLoRA",
-            display_name="Soundstage · Extra LTX LoRA",
+            display_name="Soundstage · Extra LTX LoRAs",
             category="Soundstage",
-            description="Apply one extra LoRA (style, character, detail) on the LTX model. The settings_json from the "
-                        "Quality node wins when it names one; None = the model passes through.",
+            description="Apply a stack of LoRAs (style, character, detail) on the LTX model, in order. The settings_json "
+                        "from the Quality node wins when it has a stack; otherwise lora_name / strength below; "
+                        "None = the model passes through.",
             inputs=[
                 IO.Model.Input("model"),
                 IO.Combo.Input("lora_name", options=["None", *names], default="None"),
@@ -292,25 +309,26 @@ class SoundstageLTXLoRA(IO.ComfyNode):
 
     @classmethod
     def execute(cls, model, lora_name="None", strength=0.8, settings_json="") -> IO.NodeOutput:
-        try:
-            extra = (json.loads(settings_json) if settings_json else {}).get("extra_lora") or {}
-        except ValueError:
-            extra = {}
-        name = extra.get("name") or lora_name
-        strength = float(extra.get("strength", strength))
-        if not name or name == "None" or strength == 0:
+        rows = ltx_lora_stack(settings_json, lora_name, strength)
+        if not rows:
             return IO.NodeOutput(model)
         import comfy.sd
         import comfy.utils
         import folder_paths
-        path = folder_paths.get_full_path("loras", name)
-        if not path:
-            raise ValueError(f"Extra LoRA not found on this server: {name}")
-        why = ltx_lora_problem(name, path)
-        if why:
-            raise ValueError(why)
-        lora = comfy.utils.load_torch_file(path, safe_load=True)
-        m, _ = comfy.sd.load_lora_for_models(model, None, lora, strength, 0)
+        # check every file first: a missing or wrong-family LoRA stops the render with a sentence before any is applied
+        paths = []
+        for r in rows:
+            path = folder_paths.get_full_path("loras", r["name"])
+            if not path:
+                raise ValueError(f"LoRA not found on this server: {r['name']}")
+            why = ltx_lora_problem(r["name"], path)
+            if why:
+                raise ValueError(why)
+            paths.append(path)
+        m = model
+        for r, path in zip(rows, paths):
+            lora = comfy.utils.load_torch_file(path, safe_load=True)
+            m, _ = comfy.sd.load_lora_for_models(m, None, lora, r["strength"], 0)
         return IO.NodeOutput(m)
 
 

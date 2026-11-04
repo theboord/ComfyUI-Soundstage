@@ -19,7 +19,7 @@ This guide is for anyone who has just cloned the repo. It covers where every pan
 3. [The seven steps, one by one](#3-the-seven-steps-one-by-one)
    - [① Script](#step-1-script) · [② Cast & Locations](#step-2-cast) · [③ Set](#step-3-set) · [④ Frame](#step-4-frame) · [⑤ Motion](#step-5-motion) · [⑥ Review](#step-6-review) · [⑦ Deliver](#step-7-deliver)
    - [Dailies and the lined script](#dailies-and-the-lined-script) ([ScriptSync](#scriptsync-lined-script)) · [The Look tab: re-render in any film look](#the-look-tab-re-render-in-any-film-look) · [The Stop button](#the-stop-button) · [Activity: what the GPU is doing](#activity)
-   - **New since the contest:** [Ask: the assistant, on every screen](#ask-the-assistant) · [The Director: chat, voice and MCP](#the-director-chat-voice-and-mcp) · [Presets](#presets-one-click-camera-moves-and-lighting) · [Quality: Draft, Final, Hollywood](#quality-draft-final-hollywood) · [Takes that check themselves](#takes-that-check-themselves) · [Timeline: transitions, sound, titles and render](#transitions-sound-titles-and-render)
+   - **New since the contest:** [Ask: the assistant, on every screen](#ask-the-assistant) · [The Director: chat, voice and MCP](#the-director-chat-voice-and-mcp) · [Presets](#presets-one-click-camera-moves-and-lighting) · [Quality: Draft, Final, Advanced](#quality-draft-final-advanced) · [Takes that check themselves](#takes-that-check-themselves) · [Timeline: transitions, sound, titles and render](#transitions-sound-titles-and-render)
 4. [The 3D stage in depth](#4-the-3d-stage-in-depth)
    - **New since the contest:** [Practical effects: explosions, fire, squibs](#practical-effects-explosions-fire-squibs) · [Live 3D: drag, climb, mount, carry](#live-3d-drag-climb-mount-carry) · [Drive mode](#drive-mode-control-anything-like-a-video-game-and-record-it) · [Stunts](#stunts-j-turn-donut-handbrake-180) · [The new sets](#the-new-sets) · [Interop: Blender, Unreal, Maya, Nuke](#interop-blender-unreal-maya-nuke) · [Phone camera and the phone viewfinder](#phone-camera)
 5. [Keyboard and mouse cheat sheet](#5-keyboard-and-mouse-cheat-sheet)
@@ -715,7 +715,8 @@ Each shot card in the row says where it stands: **no frame yet**, **painting…*
 | **Image model** | **FLUX 3 Klein · local · recommended**: steered by the stage picture and depth, and it takes the cast's reference pictures. **Krea 2 + depth · local · strict**: holds the stage's depth very tightly, but takes no references. Other installed image models are listed after them. |
 | **Prompt: describe the frame** | What's in the frame and how it should feel ("golden hour, dust, worn leather saddles…"). The Look tab adds camera, lens and style to it. This is the same text as the Look tab's **Describe the scene**. |
 | **Follow the clay** | How closely the frame sticks to the clay, from **strict** through **balanced (recommended)** to **free**. It works with both image models. |
-| **Style or character add-on** + **Add-on strength** | Add a LoRA to the image model, for a recurring character, a product or a house style. |
+| **Style or character add-on** | A stack of LoRAs on the image model, for a recurring character, a product or a house style. **＋ Add LoRA** adds a row (a LoRA, a strength slider, ✕ to remove); they apply in order. Every LoRA in `models/loras` is listed, the ones made for this model first, the rest marked *may not work with this model* with a warning, never blocked. A file whose header says it is for another model stops the frame with a message. An older single add-on opens as one row. |
+| **Advanced: steps, CFG, sampler, shift** | Steps, CFG, sampler, scheduler and sigma shift for FLUX 3 Klein or Krea 2. *auto* and 0 mean the model's tuned values. |
 | **Variations** | 1, 2 or 4 frames per click (default 4). |
 | **Quality** | **Fast**, **Standard**, **High**, **Max**: the number of steps. FLUX 3 Klein: 8, 20 (default), 28, 40. Krea 2: 6, 8 (default), 14, 20. CFG stays at 1: these models are distilled. |
 | **Generate frames** | Queue the variations for this shot. About 6 to 10 s a frame once the models are warm; a new shot also renders its clay passes first. Pressing it again adds more candidates. |
@@ -798,7 +799,7 @@ Keyboard: Cmd/Ctrl+Z / Shift+Cmd/Ctrl+Z undo and redo, Cmd/Ctrl+A select all, Cm
 | **Starts from your frame** | The frame this shot will animate. |
 | **Video model** | **LTX-2.5 Layout-to-Render (local, follows your clay; recommended)**. Other installed image-to-video models are listed after it, and **MiniMax H3** if you installed it (see below). |
 | **Adherence to your blocking** | How closely the video follows the clay: **Loose** (more invention, framing may drift), **Balanced** (close, with a little freedom for gait and limbs), **Exact** (as close as LTX goes; the default). |
-| **Quality** | **Draft**, **Final** (the default) or **Hollywood**. Saved per shot, so a shot reopens on its own preset. See [Quality](#quality-draft-final-hollywood) below. |
+| **Quality** | **Draft**, **Final** (the default) or **Advanced** (every knob yours). Saved per shot, so a shot reopens on its own preset. See [Quality](#quality-draft-final-advanced) below. |
 | **Advanced (LTX)** | Beside Quality: the full LTX controls on top of the preset (see below). |
 | **Sound (generated with the final)** | The sound effects ("hooves galloping on packed dirt, wind…"). Left empty, it is filled in from what's on the stage. |
 | **Music mood (optional)** | With **Music ideas** chips: tense western strings, pulsing synth chase, eerie horror drones, and more. |
@@ -810,22 +811,23 @@ Keyboard: Cmd/Ctrl+Z / Shift+Cmd/Ctrl+Z undo and redo, Cmd/Ctrl+A select all, Cm
 | **Final for every shot** | A final with sound for every shot that doesn't have one yet. |
 
 <a id="quality-draft-final-hollywood"></a>
+<a id="quality-draft-final-advanced"></a>
 
-**Quality: Draft, Final, Hollywood.** Every preset renders in two stages (a base pass, a x2 latent upscale, a refine pass) with the same seed.
+**Quality: Draft, Final, Advanced.** Draft and Final are fixed recipes; both render in two stages (a base pass, a x2 latent upscale, a refine pass) with the same seed. Advanced is yours.
 
 | Preset | Output | Steps | Time, 121 frames, 48 GB card | Use it for |
 |---|---|---|---|---|
 | **Draft** | 1984×1088 | 8 + 3 | about 6–7 min | A quick check: is the blocking right, does the car go the right way? |
 | **Final** (default) | 1984×1088 | 12 + 6 | about 8–9 min | Your keeper renders. |
-| **Hollywood** | 2624×1408 | 12 + 6 | about 15–17 min | Hero shots: real detail in skin, rain and panel lines, and fast motion stays coherent (a spinning car stays one car). |
+| **Advanced** | yours (Final's numbers to start) | yours | shown under the buttons | Faster drafts (fewer steps, a lower resolution) or hero shots (2624×1408, CRF 12: real detail in skin, rain and panel lines, and a spinning car stays one car, about 15–17 min). |
 
-Each button's tooltip shows its time. Renders write H.264 (CRF 18 / 14 / 12).
+Each button's tooltip shows its time. Renders write H.264 (CRF 18 / 14, or yours).
 
-1. Pick the shot in the strip, then click **Draft**, **Final** or **Hollywood** under **Quality**. The choice is kept with the shot.
-2. Optional: click **Advanced (LTX)** for resolution, two-stage on or off, frame rate and frame count, temporal x2, steps for each stage, the stage-2 start sigma, manual sigmas, sampler, CFG, seed, the layout IC-LoRA strength, one extra LoRA, decode tiles, and the codec: H.264 at a CRF, or a **ProRes 422 HQ** master beside an H.264 preview. **Reset to preset** clears your overrides.
+1. Pick the shot in the strip, then click **Draft**, **Final** or **Advanced** under **Quality**. The choice is kept with the shot.
+2. **Advanced** opens the settings, pre-filled from Final: resolution, two-stage on or off, frame rate and frame count, temporal x2, steps for each stage (down to 1; below 8 the distilled curve is thinned, untested on the GPU, for rough drafts), the **scheduler** (Distilled, the tuned curve; Linear; Linear-quadratic, LTX's paper schedule), the sigma **shift** (1 = as tuned; above 1 spends more steps on composition and motion, below 1 on detail), the stage-2 start sigma, manual sigmas, sampler, CFG, seed, the layout IC-LoRA strength, a stack of LoRAs, decode tiles, and the codec: H.264 at a CRF, or a **ProRes 422 HQ** master beside an H.264 preview. Changing any of these on a Draft or Final shot makes it Advanced with the rest carried over. **Reset to Draft / Final** goes back (the seed, Adherence and LoRAs stay).
 3. Press **Render final + sound**.
 
-Older saved App workflows keep their old graph: open the Soundstage App template again to get the Hollywood wiring. Details: [quality.md](quality.md).
+A shot saved on the old **Hollywood** preset opens as Advanced with its numbers (1408p, 12 + 6 steps, CRF 12). The **Hero final** preset recipe sets the same. Older saved App workflows keep their old graph: open the Soundstage App template again to get the current wiring. Details: [quality.md](quality.md).
 
 **Lip sync: type the line.** A line pasted over a mouth that never heard it doesn't sync. So when you type or pick a **Dialogue line**, Soundstage turns on **Let the sound/dialogue drive the video** for you. With **Who speaks the line** on **Made with the video** (the default), LTX-2.5 speaks the line in the shot and the status line says "Lip sync on: LTX speaks the line in the shot, voice and lips together." With **A saved voice**, a Chatterbox voice reads the line and that audio drives the final. You can still untick it on purpose.
 
@@ -1838,7 +1840,7 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 
 **Motion and sound**
 
-20. **Draft to check the motion, then Final.** A **Draft** (8 + 3 steps) tells you whether the blocking, the direction of travel and the camera are right. Quality starts on **Final**; switch a shot to Draft while you work it out, back to Final for the keeper, and keep **Hollywood** for hero shots.
+20. **Draft to check the motion, then Final.** A **Draft** (8 + 3 steps) tells you whether the blocking, the direction of travel and the camera are right. Quality starts on **Final**; switch a shot to Draft while you work it out, back to Final for the keeper, and keep **Advanced** (1408p, the Hero final recipe) for hero shots.
 21. **Type the dialogue line to get lip sync.** A line typed into **Dialogue line** turns on **Let the sound/dialogue drive the video**, so the mouth is animated *from* the words. A voice added afterwards never syncs.
 22. **Lower Motion freedom for precise action.** Car chases and stunts follow the clay more exactly near **exact**; dialogue and walking look more natural around the default **natural**.
 23. **Describe the sound you want.** **Sound (generated with the final)** is filled from the stage if you leave it empty, but "hooves on packed dirt, distant thunder" beats a guess.
@@ -1864,7 +1866,7 @@ In **Shot cam** every orbit, pan, dolly and fly move edits the camera key at the
 
 **"References need the updated Soundstage nodes (restart ComfyUI once)."** You updated the repo while ComfyUI was running. Restart ComfyUI.
 
-**The queue looks stalled.** It usually isn't. Progress moves one sampling step at a time, and on **Hollywood** a single step can take about 60 seconds, so the bar can sit still for a minute. The first render of a session also loads the models. Rough warm times: a frame 6 to 10 s, a Draft about 6 to 7 minutes, a Final 8 to 9, Hollywood 15 to 17 (121 frames on a 48 GB card), MiniMax H3 20 to 30 minutes (its first run also encodes the prompt on the CPU for several minutes). While **■ Stop (N)** is showing, the jobs are still there.
+**The queue looks stalled.** It usually isn't. Progress moves one sampling step at a time, and at 1408p (an Advanced hero shot) a single step can take about 60 seconds, so the bar can sit still for a minute. The first render of a session also loads the models. Rough warm times: a frame 6 to 10 s, a Draft about 6 to 7 minutes, a Final 8 to 9, an Advanced hero shot at 1408p 15 to 17 (121 frames on a 48 GB card), MiniMax H3 20 to 30 minutes (its first run also encodes the prompt on the CPU for several minutes). While **■ Stop (N)** is showing, the jobs are still there.
 
 **I pressed Stop and other work disappeared too.** Stop clears the whole ComfyUI queue, not only Soundstage's jobs. Queue them again.
 

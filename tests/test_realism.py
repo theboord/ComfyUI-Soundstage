@@ -132,7 +132,9 @@ def test_chip_texts():
 
 def test_is_hollywood():
     assert RJ.is_hollywood({"height": 1408}, None)
-    assert RJ.is_hollywood({"height": 544}, {"quality": {"quality": "Hollywood"}})
+    assert RJ.is_hollywood({"height": 544}, {"quality": {"quality": "Hollywood"}})   # an older take on the retired preset
+    assert not RJ.is_hollywood({"height": 1088}, {"quality": {"preset": "Advanced"}}), "Advanced at 1080p is not a hero take"
+    assert RJ.is_hollywood({"height": 1408}, {"quality": {"preset": "Advanced"}})
     assert not RJ.is_hollywood({"height": 704}, {"quality": {"quality": "Final"}})
     assert not RJ.is_hollywood(None, None)
 
