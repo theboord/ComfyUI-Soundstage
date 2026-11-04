@@ -9,7 +9,7 @@
 //   const next = mergeNotes(script, await importScriptFile(revisedFile));  // a new draft keeps notes and shot links
 //
 // Pure functions except importScriptFile/loadPdfJs. pdf.js loads from cdnjs only when a PDF is imported.
-import { breakdownScene, stageHint, introducedNames, mapIntroduced, actionText } from "./breakdown.mjs";
+import { breakdownScene, stageHint, introducedNames, mapIntroduced, actionText, applyBreakdownFixes } from "./breakdown.mjs";
 
 export const PDFJS_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
 export const PDFJS_WORKER_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -751,7 +751,7 @@ function deriveScenes(scenes) {
     for (const e of scene.elements) if (e.type === "character" && e.character && !characters.includes(e.character)) characters.push(e.character);
     scene.characters = characters;
     scene.outline = outlineFor(scene);
-    scene.breakdown = breakdownScene(scene, { known });
+    scene.breakdown = applyBreakdownFixes(breakdownScene(scene, { known }), scene.breakdown_fix);
     scene.stage_hint = stageHint(scene, { prevTime });
     prevTime = scene.stage_hint.time_of_day || prevTime;
   }
