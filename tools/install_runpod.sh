@@ -2,6 +2,8 @@
 # Install Soundstage, its node packs and the models the App needs into an existing ComfyUI.
 #   bash tools/install_runpod.sh /workspace/ComfyUI            # everything (~60 GB of models)
 #   SKIP_MODELS=1 bash tools/install_runpod.sh /workspace/ComfyUI
+#   SKIP_OLLAMA=1 ...                             # no ✦ Ask assistant (Ollama + Qwen3-30B-A3B, ~19 GB)
+#   SOUNDSTAGE_ASSISTANT_MODEL=qwen3:8b ...       # a smaller assistant pull (~5 GB)
 # Gated repos: accept the licenses on huggingface.co first, then `hf auth login` (or set HF_TOKEN).
 # Licenses: LTX-2 Community (free < $10M revenue), Krea 2 Community (commercial < $1M revenue). See MODELS.md.
 set -euo pipefail
@@ -22,6 +24,21 @@ mkdir -p custom_nodes
 echo "== workflow"
 mkdir -p user/default/workflows
 cp -n "$HERE/example_workflows/"Soundstage_*.json user/default/workflows/ 2>/dev/null || true
+
+echo "== ✦ Ask assistant: Ollama + ${SOUNDSTAGE_ASSISTANT_MODEL:-qwen3:30b-a3b} (Apache-2.0; Ollama MIT)"
+if [ "${SKIP_OLLAMA:-0}" = "1" ]; then
+  echo "   SKIP_OLLAMA=1: Ask uses the built-in Qwen3.5 4B"
+else
+  # Models on the network volume on RunPod (OLLAMA_MODELS=/workspace/ollama/models) so they survive pod restarts.
+  [ -d /workspace ] && export OLLAMA_MODELS="${OLLAMA_MODELS:-/workspace/ollama/models}"
+  if bash "$HERE/tools/start_ollama.sh"; then
+    if [ "${SKIP_MODELS:-0}" = "1" ]; then echo "   SKIP_MODELS=1: later run  ollama pull ${SOUNDSTAGE_ASSISTANT_MODEL:-qwen3:30b-a3b}"
+    else ollama pull "${SOUNDSTAGE_ASSISTANT_MODEL:-qwen3:30b-a3b}"; fi
+    echo "   relaunch on boot: bash $HERE/tools/start_ollama.sh   (Soundstage also starts an installed Ollama with ComfyUI)"
+  else
+    echo "   Ollama not available; Ask uses the built-in Qwen3.5 4B (rerun tools/start_ollama.sh later)"
+  fi
+fi
 
 [ "${SKIP_MODELS:-0}" = "1" ] && { echo "SKIP_MODELS=1: done (see MODELS.md for the files)"; exit 0; }
 

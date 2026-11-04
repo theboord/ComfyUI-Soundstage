@@ -31,7 +31,7 @@ const POST_MS = 8000;   // a Director route (prompt, plan) on the ComfyUI server
 
 export const BACKENDS = {
   qwen: "Local Qwen3.5 4B (offline, on the GPU queue)",
-  ollama: "Ollama on this computer",
+  ollama: "Ollama on this computer (Qwen3-30B-A3B)",
   rules: "Rules only (instant, no model)",
   api: "API model (opt-in)",
 };
@@ -107,8 +107,21 @@ export function drivePathKeys(start, c, { speed = "fast", frames = 97, fps = 24,
   return { hitFrame: hit, kmh: Math.round(v * 3.6), keys: [{ frame: 0, position: r3(p0) }, { frame: last, position: r3(p1) }] };
 }
 
-/** The Ollama model to use when none is picked: a text model (not vision, not embeddings), the largest first. */
-export function pickOllama(models) {
+/**
+ * ✦ Ask's brain (soundstage/assistant.py, the installer's Ollama step): Qwen3-30B-A3B through Ollama, placed by
+ * hardware on the server (GPU with >= 24 GB VRAM, else CPU/RAM so renders keep the GPU). The server proxies the chat
+ * (a pod's Ollama isn't reachable from the browser) and unloads the model before every render. Hooks for the Ask
+ * chat (ask.mjs / assistant.mjs) live here: `ASSISTANT.model` is the preferred Ollama model, `ASSISTANT.numPredict`
+ * the answer budget, `ASSISTANT.system` an optional extra system-prompt paragraph prepended to every model call.
+ */
+export const ASSISTANT = { model: "qwen3:30b-a3b", route: "/soundstage/assistant", numPredict: 400, system: "", statusMs: 30000 };
+
+/** The Ollama model to use when none is picked: the assistant model when installed, else a text model (not vision,
+ * not embeddings), the largest first. */
+export function pickOllama(models, prefer = ASSISTANT.model) {
+  const norm = (n) => String(n || "").replace(/:latest$/, "");
+  const hit = prefer && (models || []).find((m) => norm(m.name) === norm(prefer));
+  if (hit) return hit;
   const size = (m) => parseFloat(String(m.size || "").replace(/[^\d.]/g, "")) || 0;
   const text = (models || []).filter((m) => !/embed|vl\b|vl:|vision|llava/i.test(m.name));
   return [...(text.length ? text : models || [])].sort((a, b) => size(b) - size(a))[0] || null;
@@ -175,9 +188,46 @@ export class Director {
     } catch { return []; }
   }
 
+  /** The server's assistant decision (GET /soundstage/assistant/status), cached; null when the route is away. */
+  async assistantStatus(force = false) {
+    const fresh = this._ast && performance.now() - this._ast.t < ASSISTANT.statusMs;
+    if (!fresh || force) {
+      let v = null;
+      try {
+        const r = await withTimeout(this.api.fetchApi(`${ASSISTANT.route}/status`), 4000, "the server");
+        v = r.status === 200 ? await r.json() : null;
+        if (v && !v.backend) v = null;
+        if (v?.model) ASSISTANT.model = v.model;
+      } catch { v = null; }
+      this._ast = { t: performance.now(), v };
+    }
+    return this._ast.v;
+  }
+
+  /** Does this turn go through the server's Ollama proxy (the bundled assistant), not straight to an Ollama URL? */
+  async _viaServer() {
+    const st = await this.assistantStatus();
+    return st?.backend === "ollama" && (!this.ollama.model || this.ollama.model === st.model);
+  }
+
+  /** "auto": the bundled Ollama assistant when the server has it ready, else the built-in Qwen3.5 4B, else the rules. */
   async resolvedBackend() {
     if (this.backend !== "auto") return this.backend;
+    if ((await this.assistantStatus())?.backend === "ollama") return "ollama";
     return (await this.info()).available ? "qwen" : "rules";
+  }
+
+  /** One tiny request when the App opens so the first real answer is fast. onState("warming" | "ready" | "off", status). */
+  async warmUp(onState = () => {}) {
+    const st = await this.assistantStatus(true);
+    if (st?.backend !== "ollama") { onState("off", st); return st; }
+    onState("warming", st);
+    try {
+      const r = await this.api.fetchApi(`${ASSISTANT.route}/warmup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const j = await r.json();
+      onState(j.ok ? "ready" : "off", j);
+      return j;
+    } catch (e) { onState("off", { ...st, reason: e.message || String(e) }); return st; }
   }
 
   /** The App context the planner needs besides the scene: shots in strip order, script scenes, renders. */
@@ -227,7 +277,17 @@ export class Director {
   async _llmFetch(backend, p, { timeoutMs, signal }) {
     timeoutMs = Math.max(1, Math.round(timeoutMs));
     const sig = signal && AbortSignal.any ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout?.(timeoutMs);
-    const messages = [{ role: "system", content: p.system }, { role: "user", content: p.prompt }];
+    const system = ASSISTANT.system ? `${ASSISTANT.system}\n\n${p.system}` : p.system;
+    const messages = [{ role: "system", content: system }, { role: "user", content: p.prompt }];
+    if (backend === "ollama" && (await this._viaServer())) {
+      // The bundled assistant: the server adds the tier's placement (num_gpu) and reaches Ollama on its own machine.
+      const r = await this.api.fetchApi(`${ASSISTANT.route}/chat`, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages, format: "json", think: false, keep_alive: -1, options: { temperature: 0, num_predict: ASSISTANT.numPredict } }),
+        signal: sig });
+      const j = await r.json();
+      if (j.error) throw new Error(j.error);
+      return j.message?.content || "";
+    }
     if (backend === "ollama") {
       let model = this.ollama.model;
       if (!model) model = pickOllama(await this.ollamaModels())?.name;
