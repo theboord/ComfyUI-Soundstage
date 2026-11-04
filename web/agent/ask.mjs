@@ -21,6 +21,7 @@ import { withTimeout } from "./agent.mjs";
 import { Conversation, applyFixes, wantedTools, isVagueCheck } from "./assistant.mjs";
 import { castHost, FIELD_LABEL, PROFILE_FIELDS, cite } from "./charbuild.mjs";
 import { searchDocs } from "./knowledge.mjs";
+import { mountCopilot } from "./copilotui.mjs";
 
 /** The longest a free-form answer may take before Ask offers the nearest recipes instead (the chat's own limit is longer). */
 export const FREE_ANSWER_MS = 75000;   // the local model's first answer loads it onto the GPU (~40 s cold on a 32 GB card); warm answers take a few seconds
@@ -490,6 +491,9 @@ export function mountAsk({ root, dir, host = {}, isActive = () => true }) {
     // a how-to recipe with Show me beats a creative recipe's plain steps when the model is off
     hasRecipe: (text) => !!(contextRecipe(text, lastCtx) || matchHowto(text, lastCtx)),
   });
+  // ---- the co-pilot (web/agent/copilot.mjs, docs/assistant.md): a plan of real App actions you lock in, run as an
+  // observe-and-decide loop with a self-check and one Undo; "Do it for me" on a fix or a recipe opens that plan.
+  const cop = mountCopilot({ dir, host, llm: modelFor(dir.director), check: (n, a) => convo.run?.(n, a) || null, where: () => contextLine(lastCtx) });
   const noRecipeChips = (ctx) => [...teachNext(ctx, null).map((c) => ({ label: c.label, command: c.ask })), { label: "Take the tour", command: "how does this work?" }].slice(0, 4);
 
   // ---- building a character: the profile with its citations, the card write (before / after, Undo), the GPU question
@@ -541,7 +545,7 @@ export function mountAsk({ root, dir, host = {}, isActive = () => true }) {
       if (!r.automated) box.append(h("div", { class: "meta" }, "No one-click preset for this: these are the clicks."));
     }
     const acts = (r.actions || []).map((a) => h("button", { type: "button", class: "go", title: `I'll plan "${a.command}": you see the plan first, then Apply (one Undo puts it back)`,
-      on: { click: () => dir.send(a.command) } }, icon("wand-sparkles", 13), a.label));
+      on: { click: () => { const card = cop.doIt(r); if (card) dir.say("a how", card); else dir.send(a.command); } } }, icon("wand-sparkles", 13), a.label));
     if (acts.length) box.append(h("div", { class: "row" }, ...acts));
     if (r.did?.length) box.append(h("div", { class: "meta" }, `What I did: ${r.did.join("; ")}.`));
     return box;
@@ -613,6 +617,15 @@ export function mountAsk({ root, dir, host = {}, isActive = () => true }) {
   // a set change.
   async function answer(text, { signal = null } = {}) {
     const ctx = refreshCtx();
+    // The co-pilot first when it has a plan waiting, or the words map to actions it can run (a fix, a stunt, an SFX
+    // rig, coverage, "re-block this chase, add a crash, then cover it in three shots").
+    // A how-to question with Ask's own step-by-step recipe (Show me) keeps that card; its Do it for me still plans.
+    const howto = isQuestion(text) && !cop.copilot.pending && (contextRecipe(text, ctx) || matchHowto(text, ctx));
+    if (!howto && cop.claims(text)) {
+      const a = await cop.answer(text, { signal });
+      if (signal?.aborted) return null;
+      if (a && !a.fallback) return a;
+    }
     // Every question goes to the conversation (the model with all the tools, or the built-in checks, fixes and
     // recipes); a how-to recipe and the docs search are the fallback when nothing there answers.
     if (isStageOrder(text) && !convo.claims(text)) { convo.remember("user", text); convo.remember("assistant", `(planned on the set: ${text})`); return null; }
@@ -635,7 +648,7 @@ export function mountAsk({ root, dir, host = {}, isActive = () => true }) {
       chips: noRecipeChips(ctx) };
   }
   dir.setAnswer(answer);
-  dir.onNewChat?.(() => convo.reset());
+  dir.onNewChat?.(() => { convo.reset(); cop.copilot.reset(); });
   dir.setContext(() => uiForPlanner(refreshCtx()));
 
   // ---- open, the shortcut, hold to talk
@@ -691,5 +704,5 @@ export function mountAsk({ root, dir, host = {}, isActive = () => true }) {
     tour?.close(false);
     fab.remove(); ctxRow.remove();
   };
-  return { button, fab, open, ask, answer, showMe, conversation: convo, context: () => refreshCtx(), syncFab, destroy };
+  return { button, fab, open, ask, answer, showMe, conversation: convo, copilot: cop.copilot, context: () => refreshCtx(), syncFab, destroy };
 }
