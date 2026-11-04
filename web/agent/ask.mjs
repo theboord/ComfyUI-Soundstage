@@ -21,7 +21,7 @@ import { withTimeout } from "./agent.mjs";
 import { Conversation, applyFixes, wantedTools, isVagueCheck } from "./assistant.mjs";
 
 /** The longest a free-form answer may take before Ask offers the nearest recipes instead (the chat's own limit is longer). */
-export const FREE_ANSWER_MS = 15000;
+export const FREE_ANSWER_MS = 75000;   // the local model's first answer loads it onto the GPU (~40 s cold on a 32 GB card); warm answers take a few seconds
 
 /** The steps, in order (the step bar's ① to ⑦). */
 export const ASK_STEPS = [

@@ -26,7 +26,7 @@ const lsGet = (k, d = null) => { try { const v = localStorage.getItem(LS + k); r
 const lsSet = (k, v) => { try { localStorage.setItem(LS + k, JSON.stringify(v)); } catch { /* storage blocked */ } };
 
 /** How long the chat waits for any one answer before it says so (a question, a plan): never a silent hang. */
-export const ASK_TIMEOUT_MS = 20000;
+export const ASK_TIMEOUT_MS = 90000;   // a whole turn: room for the model's cold load (FREE_ANSWER_MS) plus the routes
 const POST_MS = 8000;   // a Director route (prompt, plan) on the ComfyUI server
 
 export const BACKENDS = {
