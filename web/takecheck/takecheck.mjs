@@ -10,9 +10,9 @@
 //   Step bar    a "Ready" / "Needs 2" chip on every step (what's missing, where it goes, MODELS.md).
 //   Run         "$0 · about 2 min on your GPU" under ④ Generate and ⑤ Draft / Final, from measured render times.
 //   Recipe      tc.maybeRestore(file): a Soundstage MP4 dropped on the stage restores its set and shot.
-//   Realism     Hollywood takes are judged by the VFX-supervisor pass (POST /soundstage/takecheck/realism): a local
+//   Realism     Hero-sized takes (1408p and up) are judged by the VFX-supervisor pass (POST /soundstage/takecheck/realism): a local
 //               vision model inspects cars, faces and hands; "✗ AI slop: rear lights incoherent, f24–64" is a red chip
-//               and a failed Hollywood take gets ONE automatic re-roll offer per shot. Any take: the Judge button.
+//               and a failed one gets ONE automatic re-roll offer per shot. Any take: the Judge button.
 // The pure parts (chips, scores, estimates, readiness, the MP4 tag reader) are in model.mjs.
 import { takeChips, blockingChip, realismChip, rerollOffer, fileOfUrl, annotated, estimateLabel, estimateSeconds, finalRung, renderPreset, readiness, readinessChip,
   readFileTags, recipeFromTags, loadRecipeScene, recipeLine, MODELS_DOC_URL } from "./model.mjs";
@@ -208,7 +208,7 @@ export function attachTakeChecks(ctx) {
       offered.add(sk);
       const d = (r.defects || []).map((x) => `• ${x.label}`).join("\n");
       const est = estimateLabel(estimateSeconds(timing, finalRung(renderPreset(pipeline)), frames()));
-      const pick = await choose("This Hollywood take looks generated", `The realism judge failed it (${r.score}/10):\n${d}\n\nRe-roll it once with a new seed? (${est})`, ["Re-roll once", "Keep it"]);
+      const pick = await choose("This hero-quality take looks generated", `The realism judge failed it (${r.score}/10):\n${d}\n\nRe-roll it once with a new seed? (${est})`, ["Re-roll once", "Keep it"]);
       if (pick === 0 && shotKey() === sk) reroll(4, { asked: true });   // re-rolls the active shot: still this one?
       else if (pick === 0) say("Re-roll skipped: you switched shots while it asked. Go back to that shot to re-roll it.");
     }

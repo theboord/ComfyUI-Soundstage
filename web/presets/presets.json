@@ -176,8 +176,8 @@
     { "id": "draft_all_shots", "tab": "recipe", "label": "Draft all shots", "words": ["draft everything", "render all drafts", "draft all"],
       "summary": "Queues a Draft of every shot in the scene (asks before it uses the GPU).",
       "apply": { "recipe": ["quality_draft", "render_all_draft"], "gpu": true } },
-    { "id": "hollywood_final", "tab": "recipe", "label": "Hollywood final", "words": ["hollywood quality", "final at max quality", "best quality final"],
-      "summary": "Sets ⑤ Motion to Hollywood quality and queues the final of the current shot (asks before it uses the GPU).",
+    { "id": "hollywood_final", "tab": "recipe", "label": "Hero final (1408p)", "words": ["hero final", "hollywood final", "hollywood quality", "final at max quality", "best quality final", "1408p final"],
+      "summary": "Sets ⑤ Motion to Advanced at 1408p (the old Hollywood numbers) and queues the final of the current shot (asks before it uses the GPU).",
       "apply": { "recipe": ["quality_hollywood", "render_final"], "gpu": true } }
   ]
 }

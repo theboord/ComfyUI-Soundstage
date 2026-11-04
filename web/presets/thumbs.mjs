@@ -407,7 +407,7 @@ function recipeThumb(c, p, t, w, h) {
     c.beginPath(); if (c.roundRect) c.roundRect(x, y, bw, 28, 6); else c.rect(x, y, bw, 28); c.fill(); c.stroke();
     c.fillStyle = i < on ? "#211927" : "rgba(240,239,237,.8)";
     c.font = "600 9px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
-    const lbl = { video_to_3d: "Video→3D", new_angle: "New angle", ripple_mode: "Ripple", whole_frame: "Whole frame", quality_draft: "Draft", quality_hollywood: "Hollywood", render_all_draft: "Queue all", render_final: "Queue final" }[s] || s;
+    const lbl = { video_to_3d: "Video→3D", new_angle: "New angle", ripple_mode: "Ripple", whole_frame: "Whole frame", quality_draft: "Draft", quality_hollywood: "Hero (1408p)", render_all_draft: "Queue all", render_final: "Queue final" }[s] || s;
     c.fillText(lbl, x + bw / 2, y + 14);
     if (i < n - 1) { c.fillStyle = "rgba(240,239,237,.5)"; c.fillText("›", x + bw + 5, y + 14); }
   });
