@@ -29,7 +29,8 @@ A settings dict (every key optional; missing keys come from the preset):
   decode           {"tile_size", "overlap", "temporal_size", "temporal_overlap"} for the tiled VAE decode
   codec            "h264" | "h264_10bit" | "prores_hq" (ProRes 422 HQ master + an H.264 preview)
   crf              H.264 quality (lower = better, 0 = lossless)
-  extra_lora       {"name": "...", "strength": 0.8} (None = off)
+  loras            the LoRA stack on the video model, applied in order: [{"name": "x.safetensors", "strength": 0.8}, ...].
+                   Not the Layout IC-LoRA (Adherence sets that). An older shot's single extra_lora loads as a one-row stack.
 """
 from __future__ import annotations
 
@@ -82,6 +83,28 @@ def adherence_knobs(s: dict, table: dict | None = None) -> dict:
     if s.get("reference") is not None:
         out["reference"] = float(min(1.0, max(0.0, float(s["reference"]))))
     return out
+
+
+def lora_rows(raw) -> list[dict]:
+    """A LoRA stack from any saved shape: a list of {"name", "strength"}, one such dict (the old extra_lora), or a bare
+    file name. Rows without a name, "None", or at strength 0 are dropped; strengths clamp to +-4; at most 8 rows."""
+    if isinstance(raw, str):
+        raw = [{"name": raw}] if raw and raw != "None" else []
+    elif isinstance(raw, dict):
+        raw = [raw]
+    out = []
+    for r in raw if isinstance(raw, list) else []:
+        name = r.get("name") if isinstance(r, dict) else r
+        if not name or name == "None" or not isinstance(name, str):
+            continue
+        try:
+            st = float(r.get("strength", 1.0)) if isinstance(r, dict) and r.get("strength") not in (None, "") else 1.0
+        except (TypeError, ValueError):
+            st = 1.0
+        st = max(-4.0, min(4.0, st))
+        if st != 0:
+            out.append({"name": name, "strength": st})
+    return out[:8]
 
 
 def reference_guides(prompt: dict) -> list[str]:
@@ -255,6 +278,12 @@ def resolve(settings: dict | str | None, presets: dict | None = None) -> dict:
         out["reference"] = float(min(1.0, max(0.0, float(out["reference"]))))
     if out.get("fps") is not None:
         out["fps"] = float(min(60.0, max(8.0, float(out["fps"]))))
+    rows = lora_rows(out["loras"] if "loras" in out else out.get("extra_lora"))
+    out.pop("extra_lora", None)
+    if rows:
+        out["loras"] = rows
+    else:
+        out.pop("loras", None)
     return out
 
 

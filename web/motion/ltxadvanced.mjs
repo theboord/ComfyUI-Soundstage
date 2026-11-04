@@ -9,7 +9,8 @@
 // Final" goes back. The retired Hollywood preset (1408p, CRF 12) loads as Advanced with its old values (LEGACY_PRESETS).
 //
 // Pure helpers (resolveSettings, stageSizes, estimateSeconds, compactSettings) have no DOM and are unit-tested.
-import { ltxLoraGroups } from "../pipeline/loras.mjs";
+import { ltxLoraGroups, ltxLoraWarning, normalizeStack } from "../pipeline/loras.mjs";
+import { createLoraStack } from "../pipeline/lorastack.mjs";
 
 export const PRESETS = {
   Draft: {
@@ -72,7 +73,7 @@ export const DECODES = [
   ["1024/256/128/48", "Large tiles (fastest, most memory)", { tile_size: 1024, overlap: 256, temporal_size: 128, temporal_overlap: 48 }],
 ];
 const KEYS = ["resolution", "two_stage", "steps_1", "steps_2", "s2_start", "sigmas_1", "sigmas_2", "sampler", "scheduler", "shift", "cfg", "seed",
-  "ic_lora", "fps", "temporal_x2", "decode", "codec", "crf", "extra_lora", "adherence", "guide_blur", "reference", "from"];
+  "ic_lora", "fps", "temporal_x2", "decode", "codec", "crf", "loras", "adherence", "guide_blur", "reference", "from"];
 /** The quality knobs: changing one of these on a Draft / Final shot makes it Advanced. The seed (the take), Adherence and
  *  its raw knobs (the blocking) and the LoRAs (add-ons) are their own controls and never move a shot off its preset. */
 export const QUALITY_KEYS = ["resolution", "two_stage", "steps_1", "steps_2", "s2_start", "sigmas_1", "sigmas_2", "sampler", "scheduler", "shift",
@@ -88,6 +89,9 @@ export function resolveSettings(saved) {
   const name = legacy ? "Advanced" : PRESET_NAMES.includes(s.preset) ? s.preset : DEFAULT_PRESET;
   const out = { ...structuredClone(PRESETS[name]), ...(legacy ? structuredClone(legacy) : {}), preset: name, label: PRESETS[name].label, tip: PRESETS[name].tip };
   for (const k of KEYS) if (s[k] !== undefined && s[k] !== null && s[k] !== "") out[k] = s[k];
+  // The LoRA stack. A shot saved before it had one extra_lora ({name, strength}): it loads as a one-row stack.
+  const stack = normalizeStack(s.loras !== undefined ? s.loras : s.extra_lora);
+  if (stack.length) out.loras = stack; else delete out.loras;
   out.resolution = Math.round(clamp(num(out.resolution, 1088), 256, 2176));
   out.two_stage = !!out.two_stage;
   out.steps_1 = Math.round(clamp(num(out.steps_1, 8), MIN_STEPS_1, 60));
@@ -185,8 +189,8 @@ export class LtxStore {
   /** A preset click starts clean from that preset; the seed is kept (it is the take, not the quality). Advanced starts
    *  from Final's values and remembers where it came from (the "Reset to …" button). */
   setPreset(sid, q) {
-    const saved = this.saved(sid), { seed, adherence, extra_lora } = saved;   // the take, the blocking and the add-ons are their own controls
-    const keep = { ...(seed != null ? { seed } : {}), ...(adherence ? { adherence } : {}), ...(extra_lora ? { extra_lora } : {}) };
+    const saved = this.saved(sid), { seed, adherence } = saved, loras = resolveSettings(saved).loras;   // the take, the blocking and the add-ons are their own controls
+    const keep = { ...(seed != null ? { seed } : {}), ...(adherence ? { adherence } : {}), ...(loras?.length ? { loras } : {}) };
     if (q === "Advanced") {
       const cur = resolveSettings(saved);
       return this.put(sid, { preset: "Advanced", from: cur.preset === "Advanced" ? cur.from : cur.preset, ...keep });
@@ -316,8 +320,9 @@ export class LtxAdvanced {
     f.ic = h("input", { type: "number", min: 0, max: 2, step: 0.05, placeholder: "auto", on: { change: () => this.patch({ ic_lora: f.ic.value === "" ? null : +f.ic.value }) } });
     f.blur = h("input", { type: "number", min: 0, max: 32, step: 1, placeholder: "auto", on: { change: () => this.patch({ guide_blur: f.blur.value === "" ? null : +f.blur.value }) } });
     f.ref = h("input", { type: "number", min: 0, max: 1, step: 0.05, placeholder: "auto", on: { change: () => this.patch({ reference: f.ref.value === "" ? null : +f.ref.value }) } });
-    f.lora = h("select", { on: { change: () => this.patch({ extra_lora: f.lora.value === "None" ? null : { name: f.lora.value, strength: +f.loraS.value || 0.8 } }) } });
-    f.loraS = n(-2, 2, 0.05, () => { const s = this.saved(); if (s.extra_lora) this.patch({ extra_lora: { ...s.extra_lora, strength: +f.loraS.value } }); });
+    f.loras = createLoraStack({ h, min: -2, max: 2, fallback: 0.8, matchLabel: "LTX LoRAs", otherLabel: "Other LoRAs (may not work with LTX)",
+      groups: (cur) => ltxLoraGroups(this._loraValues(), cur), warn: ltxLoraWarning,
+      onChange: (rows) => this.patch({ loras: rows.length ? rows : null }) });
     f.decode = sel(DECODES.map(([k, t]) => [k, t]), () => this.patch({ decode: DECODES.find(([k]) => k === f.decode.value)?.[2] }));
     f.codec = sel(CODECS, () => this.patch({ codec: f.codec.value }));
     f.crf = n(0, 51, 1, () => this.patch({ crf: +f.crf.value }));
@@ -344,31 +349,27 @@ export class LtxAdvanced {
       h("div", { class: "g" }, ...row("Layout IC-LoRA", f.ic, "How literally LTX follows the clay animation. Empty = from Adherence (Exact 1.0, Balanced 0.92, Loose 0.825). Above 1.1 tested no tighter."),
         ...row("Clay guide blur (px)", f.blur, "Softens the clay guide so LTX redraws limbs and gait. 0 = sharp. Empty = from Adherence (Exact 0, Balanced 6, Loose 10)."),
         ...row("Frame reference", f.ref, "How strongly your chosen frame steers the look. 1 also pulls the composition toward the frame (the opening can start off its marks); lower lets the clay win. Below 0.4 the render turns clay-grey. Empty = from Adherence (Exact 0.5).")),
-      h("h4", {}, "LoRAs"),
-      h("div", { class: "g" },
-        ...row("Extra LoRA", f.lora), ...row("Its strength", f.loraS)),
+      h("h4", {}, "LoRAs (your stack, applied in order)"),
+      h("div", { class: "note" }, "Style, character or detail add-ons on the video model. The Layout IC-LoRA above is separate: Adherence sets it."),
+      f.loras.el,
       h("h4", {}, "Decode and output"),
       h("div", { class: "g" }, ...row("VAE decode tiles", f.decode), ...row("Codec", f.codec), ...row("H.264 CRF", f.crf, "Lower = better and bigger. 14 is visually lossless for these renders; 18 was the old default.")),
       f.est);
   }
 
-  /** The Extra LoRA list: every LoRA the server has (node 9101's lora_name), LTX ones first; the shot's own pick stays
-   *  listed even when the file is gone (the render then says so). A workflow without the slot (the lean
-   *  Soundstage_App.json) says so instead of offering a list that can only say None. */
-  _loraOptions(current = null) {
+  /** Every LoRA the server has (node 9101's lora_name list). */
+  _loraValues() {
+    const w = this.pipe.w(9101, "lora_name");
+    return Array.isArray(w?.options?.values) ? w.options.values.filter((x) => typeof x === "string") : [];
+  }
+
+  /** A workflow without the slot (the lean Soundstage_App.json) says so instead of offering a list that can only say None. */
+  _loraOptions() {
     const f = this.f, w = this.pipe.w(9101, "lora_name");
-    const vals = Array.isArray(w?.options?.values) ? w.options.values.filter((x) => typeof x === "string") : [];
-    const sig = `${!!w}|${vals.length}|${current}`;
+    const sig = `${!!w}|${this._loraValues().length}`;
     if (sig === this._loraSig) return;
     this._loraSig = sig;
-    const g = ltxLoraGroups(vals, current);
-    const opt = (x) => h("option", { value: x }, x.replace(/\.safetensors$/, ""));
-    f.lora.replaceChildren(h("option", { value: "None" }, "None"),
-      ...(g.match.length ? [h("optgroup", { label: "LTX LoRAs" }, ...g.match.map(opt))] : []),
-      ...(g.other.length ? [h("optgroup", { label: "Other LoRAs (may not work with LTX)" }, ...g.other.map(opt))] : []));
-    f.lora.disabled = !w;
-    f.lora.title = w ? "One extra LoRA on the LTX model for this shot (style, character, detail): any LoRA in models/loras, LTX ones first. A LoRA made for another model is stopped with a message when its file says so."
-      : "This workflow has no Extra LoRA slot: open Soundstage_App_Full (the full App) to add one.";
+    f.loras.setDisabled(!w, w ? "" : "This workflow has no LoRA slot: open Soundstage_App_Full (the full App) to add LoRAs.");
   }
 
   refresh() {
@@ -391,8 +392,8 @@ export class LtxAdvanced {
     f.ref.value = s.reference == null ? "" : String(s.reference);
     const ak = adherenceKnobs(s);
     f.ic.placeholder = `auto (${ak.ic_lora})`; f.blur.placeholder = `auto (${ak.guide_blur})`; f.ref.placeholder = `auto (${ak.reference})`;
-    this._loraOptions(s.extra_lora?.name || null);
-    f.lora.value = s.extra_lora?.name || "None"; f.loraS.value = String(s.extra_lora?.strength ?? 0.8); f.loraS.disabled = !s.extra_lora;
+    this._loraOptions();
+    if (JSON.stringify(f.loras.get()) !== JSON.stringify(s.loras || [])) f.loras.set(s.loras || []);   // a shot switch or a migrated save
     const dk = DECODES.find(([, , v]) => JSON.stringify(v) === JSON.stringify(s.decode))?.[0];
     if (dk) f.decode.value = dk;
     f.codec.value = s.codec; f.crf.value = String(s.crf);
