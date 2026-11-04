@@ -333,6 +333,8 @@ It has four tabs. A tab with a green dot has something to show. A pass the App d
 
 **Where:** the **Activity** pill in the top row, left of **Book** and **✦ Ask**; it never folds into **⋯**. While your render runs it leads with the step: **Sampling: stage 1 · 8/12 · 2 queued · ~6 min**, with a thin progress bar under it. Click it for the panel: each job's stage in plain words (*Depth map*, *Pose (DWPose)*, *Decoding video (VAE)*…), sampler steps, **node 7 of 11 · 2 cached**, time so far and left, **Details** (every node with its time) and **Cancel**. A failure names its node: *Failed at Decoding video (VAE) (VAEDecodeTiled #16)*. The full guide: [Activity](#activity).
 
+**The timer and the chime:** while a job runs, a bar under the top row shows its name, a big `mm:ss` clock, the percent, `step 6 / 12`, the time left and the node; with no step info (a loader) it shows only the clock and a moving bar. When your job finishes you hear a soft rising chime (a gentler falling pair if it stopped or failed), the pill pulses once, and the tab title reads "✓ Done" if you are in another tab. Open the Activity panel, **Sound**, to turn it off, set the volume, play it only when the tab is in the background or only for jobs longer than N seconds (default 15), or press Test. Browsers keep audio locked until your first click or key press on the page.
+
 **Limit:** checked with simulated events, not a live render. Before the first finished run of a kind, time left is only the current sampler's rate, shown as **at least**.
 
 <a id="ask-on-every-step"></a>
