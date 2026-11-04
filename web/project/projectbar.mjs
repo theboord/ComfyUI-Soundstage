@@ -1,0 +1,346 @@
+// The project pill in the App's top row: the project's name, "Saved 12 s ago · Autosave on", and a menu with
+// Save / Save As / Open / Open recent / New / Restore autosave / Collect project / Open collected project.
+// The pure half (paths, names, rotation, the autosave clock, the pill text) is web/project/store.mjs. docs/projects.md
+//
+//   import { mountProjectBar } from "./project/projectbar.mjs";
+//   mountProjectBar({ app, api, row: tabs, before: guideBtn, host: { cutFiles, timeline, scriptFull, deliverView, say } });
+//
+// One controller per page (window.__ssProject): it watches whichever workflow is open, every few seconds, and only
+// autosaves a workflow that has a Soundstage stage in it. Each stage widget gets its own pill bound to it.
+import { openMenu } from "../ui/popover.mjs";
+import { icon } from "../ui/icons.mjs";
+import { ProjectStore, AutosaveClock, cleanName, untitledName, statusText, workflowSig, projectNameOf, stampWorkflow, ago } from "./store.mjs";
+
+const TICK_MS = 3_000;
+const AUTOSAVE_PREF = "ss_project_autosave";
+const CSS = `
+.ss-projpill { display:inline-flex; align-items:center; gap:6px; max-width:340px; margin-left:6px; white-space:nowrap; }
+.ss-projpill .nm { font-weight:650; overflow:hidden; text-overflow:ellipsis; max-width:150px; }
+.ss-projpill .st { opacity:.72; font-size:11.5px; overflow:hidden; text-overflow:ellipsis; }
+.ss-projpill[data-state="dirty"] .st, .ss-projpill[data-state="new"] .st { color:#f2c94c; opacity:.95; }
+.ss-projpill[data-state="error"] .st { color:#ff6b6b; opacity:1; }
+.ss-projcard .row { display:flex; gap:8px; flex-wrap:wrap; }
+`;
+
+const readPref = () => { try { return localStorage.getItem(AUTOSAVE_PREF) !== "0"; } catch { return true; } };
+const writePref = (on) => { try { localStorage.setItem(AUTOSAVE_PREF, on ? "1" : "0"); } catch { /* storage blocked */ } };
+
+async function askName(app, title, value = "") {
+  try {
+    const d = app?.extensionManager?.dialog;
+    if (d?.prompt) {
+      const v = await d.prompt({ title, message: "Project name", defaultValue: value });
+      return v == null ? null : cleanName(v);
+    }
+  } catch { /* fall through to the browser prompt */ }
+  const v = window.prompt(`${title}\nProject name:`, value);
+  return v == null ? null : cleanName(v);
+}
+
+async function confirmBox(app, title, message) {
+  try {
+    const d = app?.extensionManager?.dialog;
+    if (d?.confirm) return !!(await d.confirm({ title, message }));
+  } catch { /* fall through */ }
+  return window.confirm(`${title}\n\n${message}`);
+}
+
+/** The page-wide project controller. */
+export class ProjectController {
+  constructor({ app, api }) {
+    this.app = app;
+    this.api = api;
+    this.store = new ProjectStore({ api });
+    this.autosaveOn = readPref();
+    this.tabs = new Map();       // workflow tab key -> { name, savedAt, savedSig, autosavedAt, sig, clock, error }
+    this.pills = new Set();
+    this.hosts = new Set();
+    this.busy = false;
+    this._timer = setInterval(() => this.tick().catch(() => {}), TICK_MS);
+    window.addEventListener("beforeunload", (e) => {
+      const t = this._cur();
+      if (t && t.isSoundstage && t.sig && t.sig !== t.savedSig) {
+        this.autosaveNow().catch(() => {});     // best effort: the tab may close before it lands
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    });
+  }
+
+  _key() { return this.app.extensionManager?.workflow?.activeWorkflow?.path || "wf"; }
+  _cur() { return this.tabs.get(this._key()); }
+
+  serialize() {
+    try { return this.app.graph?.serialize?.() || null; } catch { return null; }
+  }
+
+  /** Look at the open workflow: note changes, autosave when due, refresh the pills. */
+  async tick() {
+    const wf = this.serialize();
+    const key = this._key();
+    let t = this.tabs.get(key);
+    if (!t) {
+      t = { name: projectNameOf(wf), savedAt: null, savedSig: null, autosavedAt: null, sig: null, clock: new AutosaveClock(), error: null };
+      if (t.name) { t.savedAt = wf?.extra?.ss_project?.saved_at || null; t.savedSig = t.savedAt ? workflowSig(wf) : null; }
+      this.tabs.set(key, t);
+    }
+    if (wf) {
+      const name = projectNameOf(wf);
+      if (name && name !== t.name) t.name = name;
+      const has = (ns) => (ns || []).some((n) => n?.type === "SoundstageStage");
+      t.isSoundstage = has(wf.nodes) || (wf.definitions?.subgraphs || []).some((g) => has(g.nodes));
+      const sig = workflowSig(wf);
+      const now = Date.now();
+      if (t.sig !== null && sig !== t.sig) t.clock.change(now);
+      t.sig = sig;
+      if (this.autosaveOn && t.isSoundstage && !this.busy && t.clock.due(now)) await this.autosaveNow(wf);
+    }
+    this.render();
+  }
+
+  /** Make sure the open workflow has a project name (an unnamed one becomes "Untitled <date>"). */
+  _ensureName(t) {
+    if (t.name) return t.name;
+    t.name = untitledName();
+    try { this.app.graph.extra = { ...(this.app.graph.extra || {}), ss_project: { name: t.name } }; } catch { /* */ }
+    return t.name;
+  }
+
+  async autosaveNow(wf = this.serialize()) {
+    const t = this._cur();
+    if (!t || !wf) return;
+    this.busy = true;
+    try {
+      await this.store.autosave(this._ensureName(t), wf);
+      t.autosavedAt = Date.now();
+      t.clock.wrote(t.autosavedAt);
+      t.error = null;
+    } catch (e) {
+      t.error = String(e?.message || e).slice(0, 60);
+    } finally { this.busy = false; this.render(); }
+  }
+
+  async save({ as = false } = {}) {
+    const wf = this.serialize();
+    if (!wf) return;
+    const t = this._cur() || (await this.tick(), this._cur());
+    let name = t.name;
+    if (as || !name || /^Untitled \d{4}-/.test(name)) {
+      name = await askName(this.app, as ? "Save project as" : "Save project", name && !/^Untitled /.test(name) ? name : "");
+      if (!name) return;
+      if (name !== t.name && (await this.store.manifest(name))
+        && !(await confirmBox(this.app, "Replace project?", `A project called "${name}" exists. Replace it?`))) return;
+    }
+    try {
+      const res = await this.store.save(name, wf, { manifest: this._summary() });
+      try { this.app.graph.extra = { ...(this.app.graph.extra || {}), ss_project: { name: res.name, saved_at: res.saved_at } }; } catch { /* */ }
+      t.name = res.name;
+      t.savedAt = res.saved_at;
+      t.savedSig = t.sig = workflowSig(wf);
+      t.error = null;
+      try { await this.app.extensionManager?.workflow?.syncWorkflows?.("workflows"); } catch { /* older frontend */ }
+      this.say(`Saved "${res.name}" (workflows/${res.name}.json).`);
+    } catch (e) {
+      t.error = String(e?.message || e).slice(0, 60);
+      this.say(`Could not save: ${t.error}`);
+    }
+    this.render();
+  }
+
+  _summary() {
+    for (const h of this.hosts) { try { return h.summary?.() || {}; } catch { /* */ } }
+    return {};
+  }
+
+  async load(wf, name) {
+    if (!wf) return;
+    await this.app.loadGraphData(wf, true, true, name ? `${name}` : null);
+    await this.tick();
+    const t = this._cur();
+    if (t && name) { t.name = name; }
+  }
+
+  async open(name) {
+    const wf = await this.store.open(name);
+    if (!wf) { this.say(`No saved project "${name}".`); return; }
+    await this.load(wf, name);
+    const t = this._cur();
+    if (t) { t.savedAt = wf.extra?.ss_project?.saved_at || Date.now(); t.savedSig = t.sig = workflowSig(this.serialize()); }
+    this.say(`Opened "${name}".`);
+    this.render();
+  }
+
+  async newProject() {
+    const name = await askName(this.app, "New project", "");
+    if (name === null) return;
+    let tpl = null;
+    try { const r = await this.api.fetchApi("/soundstage/project/template"); if (r.ok) tpl = await r.json(); } catch { /* */ }
+    if (!tpl) { this.say("Could not load the Soundstage_App template."); return; }
+    const n = name || untitledName();
+    await this.load(stampWorkflow(tpl, n, null), n);
+    if (name) await this.save();
+  }
+
+  async restore(file) {
+    const t = this._cur();
+    if (!t?.name) return;
+    const wf = await this.store.readAutosave(t.name, file);
+    if (!wf) { this.say("That autosave could not be read."); return; }
+    if (!(await confirmBox(this.app, "Restore autosave?", `Load the autosave from ${file.replace(/\.json$/, "")} into this tab? `
+      + "Your current state is autosaved first, so you can come back to it."))) return;
+    await this.autosaveNow();
+    const name = t.name;
+    await this.load(wf, name);
+    this.say(`Restored the autosave ${file.replace(/\.json$/, "")}. Save to keep it as the project.`);
+  }
+
+  // ------------------------------------------------------------------ Collect project (server: soundstage/project/routes.py)
+
+  async collect() {
+    const wf = this.serialize();
+    const t = this._cur();
+    if (!wf || !t) return;
+    const name = this._ensureName(t);
+    let extras = {};
+    for (const h of this.hosts) { try { extras = { ...extras, ...((await h.collectExtras?.()) || {}) }; } catch { /* */ } }
+    this.say(`Collecting "${name}": copying every file it uses into output/soundstage_projects/${name}/ …`);
+    try {
+      const r = await this.api.fetchApi("/soundstage/project/collect", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, workflow: wf, extras }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || r.status);
+      const miss = j.missing?.length ? ` ${j.missing.length} missing (listed in MISSING.txt).` : "";
+      this.say(`Collected "${j.name}": ${j.copied} files, ${(j.bytes / 1e6).toFixed(1)} MB.${miss} Downloading the zip…`);
+      const a = document.createElement("a");
+      a.href = this.api.apiURL(`/soundstage/project/collect/zip?name=${encodeURIComponent(j.name)}`);
+      a.download = `${j.name}.zip`;
+      document.body.append(a); a.click(); a.remove();
+      return j;
+    } catch (e) {
+      this.say(`Collect failed: ${e?.message || e}`);
+      return null;
+    }
+  }
+
+  async openCollected(name) {
+    try {
+      const r = await this.api.fetchApi("/soundstage/project/open_collected", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || r.status);
+      const n = cleanName(j.name) || name;
+      await this.load(stampWorkflow(j.workflow, n, null), n);
+      this.say(`Opened collected project "${n}", relinked to output/soundstage_projects/${j.folder}/. Save it to keep it as a project here.`);
+    } catch (e) { this.say(`Could not open it: ${e?.message || e}`); }
+  }
+
+  async uploadCollected() {
+    const inp = Object.assign(document.createElement("input"), { type: "file", accept: ".zip,application/zip" });
+    inp.addEventListener("change", async () => {
+      const f = inp.files?.[0];
+      if (!f) return;
+      const body = new FormData();
+      body.append("file", f);
+      this.say(`Uploading ${f.name}…`);
+      try {
+        const r = await this.api.fetchApi("/soundstage/project/upload_collected", { method: "POST", body });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || r.status);
+        await this.openCollected(j.name);
+      } catch (e) { this.say(`Could not open the zip: ${e?.message || e}`); }
+    });
+    inp.click();
+  }
+
+  // ------------------------------------------------------------------ the pill and its menu
+
+  say(m) { for (const h of this.hosts) { try { h.say?.(m); } catch { /* */ } } }
+
+  render() {
+    const t = this._cur();
+    for (const p of this.pills) {
+      if (!p.isConnected) { this.pills.delete(p); continue; }
+      const s = statusText({ savedAt: t?.savedAt, autosavedAt: t?.autosavedAt, dirty: !!(t && t.sig && t.sig !== t.savedSig),
+        autosaveOn: this.autosaveOn, error: t?.error });
+      p.dataset.state = s.state;
+      p.querySelector(".nm").textContent = t?.name || "Untitled";
+      p.querySelector(".st").textContent = s.text;
+      p.title = `Project: ${t?.name || "not named yet"}\n${s.text}\nClick for Save, Open, Restore autosave and Collect project.`;
+    }
+  }
+
+  async menu(anchor) {
+    const t = this._cur();
+    const [recent, autos, collected] = await Promise.all([
+      this.store.list().catch(() => []),
+      t?.name ? this.store.autosaves(t.name).catch(() => []) : [],
+      this.api.fetchApi("/soundstage/project/collected").then((r) => (r.ok ? r.json() : { projects: [] })).then((j) => j.projects || []).catch(() => []),
+    ]);
+    const sub = (items, a) => openMenu(items, a, { makeIcon: icon });
+    const items = [
+      { label: "Save", icon: "download", run: () => this.save(), title: "Write the project to workflows/<name>.json (same as Workflow → Save)" },
+      { label: "Save As…", icon: "copy", run: () => this.save({ as: true }) },
+      { label: "Open…", icon: "file-text", disabled: !recent.length, run: () => sub(recent.map((p) => ({ label: p.name, run: () => this.open(p.name) })), anchor) },
+      { label: "New project", icon: "plus", run: () => this.newProject(), title: "A clean Soundstage App in a new tab" },
+      "-",
+      { header: "Open recent" },
+      ...recent.slice(0, 6).map((p) => ({ label: p.name, run: () => this.open(p.name) })),
+      ...(recent.length ? [] : [{ label: "(no saved projects yet)", disabled: true }]),
+      "-",
+      { label: `Restore autosave… (${autos.length})`, icon: "rotate-ccw", disabled: !autos.length,
+        run: () => sub(autos.map((a) => ({ label: `${new Date(a.at).toLocaleString()} · ${ago(a.at)} ago`, run: () => this.restore(a.file) })), anchor) },
+      { label: this.autosaveOn ? "Autosave: on (turn off)" : "Autosave: off (turn on)", icon: "check",
+        run: () => { this.autosaveOn = !this.autosaveOn; writePref(this.autosaveOn); this.render(); } },
+      "-",
+      { label: "Collect project (zip)…", icon: "package-plus", run: () => this.collect(),
+        title: "Copy every file this project uses into one organised folder (scenes / shots / cast) and download it as a zip" },
+      { label: "Open collected project…", icon: "upload", run: () => sub([
+        ...collected.map((p) => ({ label: `${p.name} · ${p.size_mb} MB`, run: () => this.openCollected(p.name) })),
+        ...(collected.length ? ["-"] : []),
+        { label: "Upload a collected .zip…", run: () => this.uploadCollected() }], anchor) },
+    ];
+    sub(items, anchor);
+  }
+
+  mountPill(row, before) {
+    const p = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn ss-projpill" });
+    p.setAttribute("aria-haspopup", "menu");
+    p.append(icon("file-text", 14), Object.assign(document.createElement("span"), { className: "nm" }),
+      Object.assign(document.createElement("span"), { className: "st" }));
+    p.addEventListener("pointerdown", (e) => e.stopPropagation());
+    p.addEventListener("click", () => this.menu(p));
+    if (before && before.parentNode === row) row.insertBefore(p, before); else row.append(p);
+    this.pills.add(p);
+    this.render();
+    return p;
+  }
+}
+
+/** Mount the project pill for one stage widget (and a Collect card in ⑦ Deliver). Returns the page controller. */
+export function mountProjectBar({ app, api, row, before = null, host = {} }) {
+  if (!document.getElementById("ss-project-css")) {
+    const s = Object.assign(document.createElement("style"), { id: "ss-project-css", textContent: CSS });
+    document.head.append(s);
+  }
+  const ctl = (window.__ssProject ||= new ProjectController({ app, api }));
+  ctl.hosts.add(host);
+  ctl.mountPill(row, before);
+  if (host.deliverView) {
+    const card = document.createElement("div");
+    card.className = "card ss-deliver-card ss-projcard";
+    const st = document.createElement("strong");
+    st.append(icon("package-plus", 15), "Collect project");
+    const p = Object.assign(document.createElement("p"), { className: "lede",
+      textContent: "Copy every file this project uses into one folder, organised by scene, shot and character, with the cut and a project.json. Downloads as a zip; open it on another machine with Open collected project." });
+    const r = document.createElement("div");
+    r.className = "row";
+    const go = Object.assign(document.createElement("button"), { type: "button", className: "go", textContent: "Collect project (zip)" });
+    go.addEventListener("click", () => ctl.collect());
+    const ghost = Object.assign(document.createElement("button"), { type: "button", className: "ghost", textContent: "Open collected project…" });
+    ghost.addEventListener("click", () => ctl.menu(ghost));
+    r.append(go, ghost);
+    card.append(st, p, r);
+    host.deliverView.append(card);
+  }
+  return ctl;
+}
