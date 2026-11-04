@@ -19,6 +19,8 @@ import { icon } from "../ui/icons.mjs";
 import { Tour } from "../ui/firstrun.mjs";
 import { withTimeout } from "./agent.mjs";
 import { Conversation, applyFixes, wantedTools, isVagueCheck } from "./assistant.mjs";
+import { castHost, FIELD_LABEL, PROFILE_FIELDS, cite } from "./charbuild.mjs";
+import { searchDocs } from "./knowledge.mjs";
 
 /** The longest a free-form answer may take before Ask offers the nearest recipes instead (the chat's own limit is longer). */
 export const FREE_ANSWER_MS = 75000;   // the local model's first answer loads it onto the GPU (~40 s cold on a 32 GB card); warm answers take a few seconds
@@ -484,11 +486,71 @@ export function mountAsk({ root, dir, host = {}, isActive = () => true }) {
     shots: () => { try { return host.shots?.() || []; } catch { return []; } },
     where: () => contextLine(lastCtx),
     llm: modelFor(dir.director),
+    cast: () => { try { return castHost(host.cast?.()); } catch { return null; } },
+    // a how-to recipe with Show me beats a creative recipe's plain steps when the model is off
+    hasRecipe: (text) => !!(contextRecipe(text, lastCtx) || matchHowto(text, lastCtx)),
   });
   const noRecipeChips = (ctx) => [...teachNext(ctx, null).map((c) => ({ label: c.label, command: c.ask })), { label: "Take the tour", command: "how does this work?" }].slice(0, 4);
 
+  // ---- building a character: the profile with its citations, the card write (before / after, Undo), the GPU question
+  const cites = (cs) => (cs?.length ? h("span", { class: "meta" }, ` (${cs.map((c) => (c.line ? cite(c) : `sc ${c.scene}`)).join("; ")})`) : null);
+  function charCard(r) {
+    const box = h("div", { class: "tool" }, h("div", { class: "ttl" }, r.title), h("div", {}, r.said));
+    if (r.tool === "profile_character" && r.profile) {
+      box.append(h("div", { class: "meta" }, r.profile.sourceLabel === "draft from script cues" ? "Draft from script cues (no language model): every line below is the script's own words." : "Read by the language model; citations checked against the script."));
+      box.append(h("ul", {}, ...PROFILE_FIELDS.filter((k) => r.profile.fields[k]?.value).map((k) => h("li", {}, h("b", {}, `${FIELD_LABEL[k]}: `), r.profile.fields[k].value, cites(r.profile.fields[k].cites)))));
+      const g = r.gather;
+      const ev = [...(g.dialogue || []).map((x) => `"${x.text}"`), ...(g.described || []).map((x) => `${x.by}: "${x.text}"`)].slice(0, 6);
+      if (ev.length) box.append(h("details", {}, h("summary", {}, `Lines (${g.counts.dialogue + g.counts.described})`), h("ul", {}, ...[...g.dialogue, ...g.described].slice(0, 12).map((x) => h("li", {}, x.by ? `${x.by}: ` : "", x.text, cites([x]))))));
+      if (r.crosscheck?.length) box.append(h("div", { class: "why" }, "Check against the cast:"), h("ul", {}, ...r.crosscheck.map((c) => h("li", { class: "bad" }, c.why))));
+      if (r.noCard) box.append(h("div", { class: "why" }, r.noCard));
+    }
+    if (r.tool === "update_character" && r.after) {
+      const d = (x) => x?.description || "(empty)";
+      box.append(h("div", { class: "ttl" }, "What I did"), h("ul", {}, ...r.did.map((x) => h("li", { class: "ok" }, x))),
+        h("div", { class: "meta" }, `Before: ${d(r.before)}`), h("div", { class: "meta" }, `After: ${d(r.after)}`));
+      const undo = h("button", { type: "button" }, icon("undo-2", 13), "Undo");
+      undo.addEventListener("click", () => { dir.say("a", convo.undo(r.undo)); undo.disabled = true; });
+      box.append(h("div", { class: "row" }, undo));
+    } else if (r.did?.length) box.append(h("div", { class: "meta" }, `What I did: ${r.did.join("; ")}.`));
+    if (r.tool === "regenerate_character" && r.queued) {
+      r.queued.then((snap) => dir.say("a", snap?.url ? `${r.name}'s new sheet is on the ② Cast card.` : `${r.name}: the picture didn't come back (see the status line).`),
+        (e) => dir.say("a", `Couldn't generate ${r.name}: ${e?.message || e}`));
+    }
+    if (r.limits) box.append(h("div", { class: "meta" }, r.limits));
+    return box;
+  }
+  function confirmRow(c) {
+    const yes = h("button", { type: "button", class: "go" }, icon(c.kind === "regen" ? "sparkles" : "check", 13), c.kind === "regen" ? "Yes, regenerate (uses the GPU)" : "Yes, apply");
+    const no = h("button", { type: "button" }, "Not now");
+    const row = h("div", { class: "row" }, yes, no);
+    yes.addEventListener("click", () => { row.replaceChildren(); dir.send("yes"); });
+    no.addEventListener("click", () => { row.replaceChildren(); dir.send("not now"); });
+    return [h("div", {}, c.question), row];
+  }
+
+  // ---- what Ask knows about Soundstage: docs hits, a fix from the playbook, a creative recipe; "Do it for me" hands a
+  // command to the Director's planner (a plan first, Apply, Undo this), never runs it unseen.
+  function knowCard(r) {
+    const box = h("div", { class: "tool" }, h("div", { class: "ttl" }, r.title), h("div", {}, r.said));
+    if (r.tool === "search_docs") box.append(h("ul", {}, ...r.hits.map((x) => h("li", {}, h("b", {}, `${x.where}${x.control && x.kind !== "doc" ? ` → ${x.control}` : ""}${x.shortcut ? ` (${x.shortcut})` : ""}`), x.text ? `: ${x.text.slice(0, 260)}` : ""))));
+    if (r.tool === "troubleshoot") for (const e of r.entries) box.append(h("div", { class: "why" }, `If it's: ${e.symptom}`), h("ol", {}, ...e.fix.map((x) => h("li", {}, x))));
+    if (r.tool === "plan_recipe" && r.steps?.length) {
+      box.append(h("ol", {}, ...r.steps.map((x) => h("li", {}, x))));
+      if (r.craft) box.append(h("div", { class: "why" }, `Film craft: ${r.craft}`));
+      if (!r.automated) box.append(h("div", { class: "meta" }, "No one-click preset for this: these are the clicks."));
+    }
+    const acts = (r.actions || []).map((a) => h("button", { type: "button", class: "go", title: `I'll plan "${a.command}": you see the plan first, then Apply (one Undo puts it back)`,
+      on: { click: () => dir.send(a.command) } }, icon("wand-sparkles", 13), a.label));
+    if (acts.length) box.append(h("div", { class: "row" }, ...acts));
+    if (r.did?.length) box.append(h("div", { class: "meta" }, `What I did: ${r.did.join("; ")}.`));
+    return box;
+  }
+
   /** A check's card: what it found, what it did, the fixes behind an Apply (your OK), then Undo. */
   function resultCard(r) {
+    if (["search_docs", "troubleshoot", "plan_recipe"].includes(r.tool)) return knowCard(r);
+    if (["profile_character", "update_character", "regenerate_character", "gather_character"].includes(r.tool)) return charCard(r);
     const box = h("div", { class: "tool" }, h("div", { class: "ttl" }, r.title), h("div", {}, r.said));
     if (r.summary && r.scenes) {
       box.append(h("details", {}, h("summary", {}, `Scenes (${r.scenes.length})`), h("ol", {}, ...r.scenes.slice(0, 60).map((x) => h("li", {}, x.replace(/^\d+[a-z]?\.\s*/i, ""))))));
@@ -538,10 +600,11 @@ export function mountAsk({ root, dir, host = {}, isActive = () => true }) {
         nodes.push(h("div", { class: "meta" }, `What I did: added a note to the Director's Book${sc ? ` (scene ${sc.number})` : ""}: "${r.note.text}".`));
       } else nodes.push(h("div", { class: "why" }, "I couldn't add that note: the Director's Book isn't open in this App."));
     }
+    if (r.confirm) nodes.push(...confirmRow(r.confirm));
     if (r.applyAsked && r.results.every((x) => !x.fixes?.length)) nodes.push(h("div", { class: "why" }, "I only apply fixes from a check you've seen: run the check, then press Apply on its card."));
     if (r.by === "model") nodes.push(h("div", { class: "meta" }, "answered by the language model; the checks themselves are the App's own"));
     if (!nodes.length) nodes.push(h("div", {}, "I'm not sure what to do with that. Say what you'd like checked or changed."));
-    const chips = r.options || (r.question ? [] : chipsFor(ctx, null));
+    const chips = r.options || (r.question || r.confirm ? [] : chipsFor(ctx, null));
     return { cls: "how", nodes, chips, plan: r.plan || null };
   }
 
@@ -550,17 +613,23 @@ export function mountAsk({ root, dir, host = {}, isActive = () => true }) {
   // a set change.
   async function answer(text, { signal = null } = {}) {
     const ctx = refreshCtx();
-    const tasks = wantedTools(text).length || isVagueCheck(text);
-    if (isQuestion(text) && !tasks) {
-      const m = contextRecipe(text, ctx) ? { recipe: contextRecipe(text, ctx) } : matchHowto(text, ctx);
-      if (m) { convo.remember("user", text); convo.remember("assistant", m.recipe.title); return { cls: "how", nodes: answerCard(m.recipe, text, ctx), chips: chipsFor(ctx, m.recipe) }; }
-    }
-    if (isStageOrder(text)) { convo.remember("user", text); convo.remember("assistant", `(planned on the set: ${text})`); return null; }
-    const r = await convo.turn(text, { signal });
+    // Every question goes to the conversation (the model with all the tools, or the built-in checks, fixes and
+    // recipes); a how-to recipe and the docs search are the fallback when nothing there answers.
+    if (isStageOrder(text) && !convo.claims(text)) { convo.remember("user", text); convo.remember("assistant", `(planned on the set: ${text})`); return null; }
+    const q = isQuestion(text);
+    const r = await convo.turn(text, { signal, question: q });
     if (signal?.aborted) return null;
     if (r) return turnAnswer(r, text, ctx);
-    if (!isQuestion(text)) return null;   // an order the checks don't cover: the Director's planner
+    if (!q) return null;   // an order the checks don't cover: the Director's planner
+    const m = contextRecipe(text, ctx) ? { recipe: contextRecipe(text, ctx) } : matchHowto(text, ctx);
+    if (m) { convo.remember("assistant", m.recipe.title); return { cls: "how", nodes: answerCard(m.recipe, text, ctx), chips: chipsFor(ctx, m.recipe) }; }
     const why = convo.lastWhy || "";
+    let docs = null;
+    try { docs = await searchDocs(text, { minCover: 0.6 }); } catch { /* the pack didn't load */ }
+    if (docs?.hits?.length) {
+      convo.remember("assistant", docs.said);
+      return { cls: "how", nodes: [why ? h("div", { class: "meta" }, `${why[0].toUpperCase()}${why.slice(1)}, so here is what the docs say.`) : null, knowCard(docs)].filter(Boolean), chips: noRecipeChips(ctx) };
+    }
     return { cls: "how", nodes: [why ? h("div", { class: "meta" }, `${why[0].toUpperCase()}${why.slice(1)}.`) : null,
       h("div", {}, "I don't have a recipe for that one yet. Try one of these, or tell me what you want on the set and I'll plan it.")].filter(Boolean),
       chips: noRecipeChips(ctx) };
