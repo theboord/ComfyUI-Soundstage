@@ -1,30 +1,89 @@
 {
   "version": 1,
-  "about": "⑤ Motion render presets for LTX-2.5 Layout-to-Render. Read by soundstage/ltx_settings.py and web/motion/ltxadvanced.mjs. Measured in share/Milestone18_Hollywood/REPORT.txt.",
+  "about": "⑤ Motion render presets for LTX-2.5 Layout-to-Render: Draft · Final · Advanced. Read by soundstage/ltx_settings.py and web/motion/ltxadvanced.mjs. Draft and Final measured in share/Milestone18_Hollywood/REPORT.txt. Advanced starts from Final and exposes every knob (steps, shift, scheduler, sampler, CFG, seed, resolution, two-stage, frame rate, temporal x2, decode tiles, codec / CRF); editing any of them on Draft or Final makes the shot Advanced. shift 1 and scheduler \"distilled\" are the tuned curve, bit for bit.",
   "presets": {
     "Draft": {
       "label": "Draft",
       "tip": "A quick look: 8 + 3 steps, 1080p class. Faces readable, motion approximate.",
-      "resolution": 1088, "two_stage": true, "steps_1": 8, "steps_2": 3, "s2_start": 0.909375,
-      "sampler": "euler_ancestral", "cfg": 1.0, "temporal_x2": false,
-      "decode": { "tile_size": 512, "overlap": 64, "temporal_size": 128, "temporal_overlap": 32 },
-      "codec": "h264", "crf": 18
+      "resolution": 1088,
+      "two_stage": true,
+      "steps_1": 8,
+      "steps_2": 3,
+      "s2_start": 0.909375,
+      "sampler": "euler_ancestral",
+      "cfg": 1.0,
+      "temporal_x2": false,
+      "decode": {
+        "tile_size": 512,
+        "overlap": 64,
+        "temporal_size": 128,
+        "temporal_overlap": 32
+      },
+      "codec": "h264",
+      "crf": 18
     },
     "Final": {
       "label": "Final",
       "tip": "Clean motion and detail: 12 + 6 steps, 1080p class, high-bitrate H.264. The default.",
-      "resolution": 1088, "two_stage": true, "steps_1": 12, "steps_2": 6, "s2_start": 0.909375,
-      "sampler": "euler_ancestral", "cfg": 1.0, "temporal_x2": false,
-      "decode": { "tile_size": 512, "overlap": 64, "temporal_size": 128, "temporal_overlap": 32 },
-      "codec": "h264", "crf": 14
+      "resolution": 1088,
+      "two_stage": true,
+      "steps_1": 12,
+      "steps_2": 6,
+      "s2_start": 0.909375,
+      "sampler": "euler_ancestral",
+      "cfg": 1.0,
+      "temporal_x2": false,
+      "decode": {
+        "tile_size": 512,
+        "overlap": 64,
+        "temporal_size": 128,
+        "temporal_overlap": 32
+      },
+      "codec": "h264",
+      "crf": 14
     },
+    "Advanced": {
+      "label": "Advanced",
+      "tip": "Your own numbers: starts from Final (12 + 6 steps, 1080p class) and opens every setting: steps, shift, scheduler, sampler, CFG, seed, resolution, codec…",
+      "resolution": 1088,
+      "two_stage": true,
+      "steps_1": 12,
+      "steps_2": 6,
+      "s2_start": 0.909375,
+      "sampler": "euler_ancestral",
+      "cfg": 1.0,
+      "temporal_x2": false,
+      "decode": {
+        "tile_size": 512,
+        "overlap": 64,
+        "temporal_size": 128,
+        "temporal_overlap": 32
+      },
+      "codec": "h264",
+      "crf": 14
+    }
+  },
+  "legacy": {
+    "about": "Retired presets, kept so saved shots and workflows still load: each maps to Advanced pre-filled with its values.",
     "Hollywood": {
-      "label": "Hollywood (max)",
-      "tip": "The best this GPU does: 1408p (stage 1 at 704p, x2), 12 + 6 steps, near-lossless master. About 15 min a shot.",
-      "resolution": 1408, "two_stage": true, "steps_1": 12, "steps_2": 6, "s2_start": 0.909375,
-      "sampler": "euler_ancestral", "cfg": 1.0, "temporal_x2": false,
-      "decode": { "tile_size": 512, "overlap": 64, "temporal_size": 128, "temporal_overlap": 32 },
-      "codec": "h264", "crf": 12
+      "label": "Hollywood (retired)",
+      "tip": "The retired Hollywood preset (1408p, 12 + 6 steps, CRF 12): a shot saved on it opens as Advanced with these values.",
+      "resolution": 1408,
+      "two_stage": true,
+      "steps_1": 12,
+      "steps_2": 6,
+      "s2_start": 0.909375,
+      "sampler": "euler_ancestral",
+      "cfg": 1.0,
+      "temporal_x2": false,
+      "decode": {
+        "tile_size": 512,
+        "overlap": 64,
+        "temporal_size": 128,
+        "temporal_overlap": 32
+      },
+      "codec": "h264",
+      "crf": 12
     }
   },
   "adherence": {
@@ -32,16 +91,28 @@
     "default": "Exact",
     "levels": {
       "Loose": {
-        "label": "Loose", "tip": "More invention: a softened clay guide and a lighter Layout IC-LoRA. Natural motion, but positions and framing can drift (the old default).",
-        "motion_freedom": 0.5, "guide_blur": 10, "ic_lora": 0.825, "reference": 1.0
+        "label": "Loose",
+        "tip": "More invention: a softened clay guide and a lighter Layout IC-LoRA. Natural motion, but positions and framing can drift (the old default).",
+        "motion_freedom": 0.5,
+        "guide_blur": 10,
+        "ic_lora": 0.825,
+        "reference": 1.0
       },
       "Balanced": {
-        "label": "Balanced", "tip": "Close to the clay with a little freedom for gait and limbs.",
-        "motion_freedom": 0.25, "guide_blur": 6, "ic_lora": 0.92, "reference": 0.75
+        "label": "Balanced",
+        "tip": "Close to the clay with a little freedom for gait and limbs.",
+        "motion_freedom": 0.25,
+        "guide_blur": 6,
+        "ic_lora": 0.92,
+        "reference": 0.75
       },
       "Exact": {
-        "label": "Exact", "tip": "As close to the clay as LTX goes: a sharp clay guide, the full Layout IC-LoRA, and your frame as a lighter look reference so it can't pull the shot off its marks.",
-        "motion_freedom": 0.0, "guide_blur": 0, "ic_lora": 1.0, "reference": 0.5
+        "label": "Exact",
+        "tip": "As close to the clay as LTX goes: a sharp clay guide, the full Layout IC-LoRA, and your frame as a lighter look reference so it can't pull the shot off its marks.",
+        "motion_freedom": 0.0,
+        "guide_blur": 0,
+        "ic_lora": 1.0,
+        "reference": 0.5
       }
     }
   }

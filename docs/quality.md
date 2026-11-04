@@ -1,6 +1,6 @@
 # Quality: presets, Advanced (LTX), motion freedom
 
-## Presets: Draft · Final · Hollywood (Milestone 18)
+## Presets: Draft · Final · Advanced (Milestone 18, reworked 2026-11-04)
 
 ⑤ Motion's **Quality** buttons pick how the shot renders. The choice is saved **per shot** (Stage node property `ss_ltx`).
 New shots start on **Final**. Before Milestone 18 the buttons started on Draft and were not restored when a shot was
@@ -11,21 +11,36 @@ reopened, so nearly every "final" was really rendered at Draft sampling (every f
 |---|---|---|---|---|---|
 | Draft | 1984×1088 | 992×544 → latent x2 → refine | 8 + 3 | H.264 CRF 18 | about 6–7 min |
 | **Final** (default) | 1984×1088 | 992×544 → latent x2 → refine | 12 + 6 | H.264 CRF 14 | about 8–9 min |
-| **Hollywood (max)** | 2624×1408 | 1312×704 → latent x2 → refine | 12 + 6 | H.264 CRF 12 | about 15–17 min |
+| **Advanced** | yours | yours | yours | yours | shown under the buttons |
 
-Hollywood is the best recipe measured on this GPU with the installed models (share/Milestone18_Hollywood/REPORT.txt):
-the larger stage-1 canvas gives LTX more latent pixels for the car, the face and the background, so it keeps the
-subject coherent through fast motion (the J-turn car stayed one car instead of flipping front-to-back), and detail
-is genuinely sharper, not upscaled. Same distilled model, same seed in both stages.
+**Advanced** is the third button: it starts from Final's numbers and every knob is the user's. Editing a quality knob
+(resolution, two-stage, steps, stage-2 start, sigmas, sampler, scheduler, shift, CFG, frame rate, temporal x2, decode
+tiles, codec, CRF) on a Draft or Final shot turns it into Advanced with the rest of that preset carried over, so the
+picture only changes by what was edited; **Reset to Draft / Final** goes back. The seed (the take), Adherence and its
+raw knobs (the blocking) and the LoRA stack (add-ons) are their own controls and never move a shot off its preset.
 
-**Advanced (LTX)** (the button beside Quality; a pop-over in the canvas layout) exposes the normal LTX controls on
-top of the preset: output resolution, two-stage on/off, frame rate (the clay is retimed) and the frame count it gives,
-temporal x2 (LTX-2.5 temporal upscaler, twice the frames), steps for each stage, the stage-2 start sigma (0.909 or
-Lightricks' 0.85), manual sigma schedules, sampler, CFG, seed (the same seed drives both stages), the layout IC-LoRA
-strength (empty = from Motion freedom), one extra LoRA and its strength, the VAE decode tiles, and the codec
-(H.264 at a CRF, or a **ProRes 422 HQ** master `.mov` beside an H.264 preview). "Reset to preset" clears the overrides.
-STG and CFG rescale are not offered: they need the non-distilled LTX-2.5 dev transformer, which is not installed
-(MODELS.md lists it for approval).
+The retired **Hollywood** preset (1408p: stage 1 at 1312×704 → latent x2 → refine at 2624×1408, 12 + 6 steps, CRF 12,
+about 15–17 min) was the best recipe measured on this GPU (share/Milestone18_Hollywood/REPORT.txt): the larger stage-1
+canvas gives LTX more latent pixels for the car, the face and the background, so it keeps the subject coherent through
+fast motion. Its numbers live on in `ltx_presets.json` under `legacy`: a shot saved on it loads as Advanced with those
+values (both `ltx_settings.resolve` and `resolveSettings` map it; the Quality node's combo keeps the value for saved
+workflows), and the **Hero final** preset recipe sets the same (`LtxStore.setHero`).
+
+**Advanced (LTX)** (the pop-over the Advanced button opens; also the button beside Quality) holds: output resolution,
+two-stage on/off, frame rate (the clay is retimed) and the frame count it gives, temporal x2 (LTX-2.5 temporal
+upscaler, twice the frames), steps for each stage (stage 1 down to 1: below 8 the distilled curve's nine knots are
+thinned evenly, untested on the GPU, meant for rough drafts), the **scheduler** (`distilled`, Lightricks' tuned
+knots, what Draft and Final use bit for bit; `linear`, even steps, what LTXVScheduler starts from; `linear_quadratic`,
+LTX's paper schedule: tiny steps near 1.0, quadratic growth toward 0), the sigma **shift** (the same curve as
+ModelSamplingLTXV / LTXVScheduler's shift, s' = shift·s / (1 + (shift−1)·s); 1 = as tuned, above 1 keeps more steps at
+high noise for composition and motion, below 1 spends them on detail; stage 2 keeps its start sigma and shifts the
+steps below it), the stage-2 start sigma (0.909 or Lightricks' 0.85), manual sigma schedules (they override steps,
+scheduler and shift), sampler, CFG, seed (the same seed drives both stages), the layout IC-LoRA strength (empty =
+from Adherence), the LoRA stack, the VAE decode tiles, and the codec (H.264 at a CRF, or a **ProRes 422 HQ** master
+`.mov` beside an H.264 preview). The graph samples on `ManualSigmas` strings from the Quality node, so shift and the
+scheduler are applied to those strings in `ltx_settings.schedules` rather than through a scheduler node; the
+tooltips say so. STG and CFG rescale are not offered: they need the non-distilled LTX-2.5 dev transformer, which is
+not installed (MODELS.md lists it for approval).
 
 How it is wired: the App writes the shot's `{preset, ...overrides}` into the Quality node's `advanced` widget.
 `soundstage/ltx_settings.py` resolves it (presets from `web/motion/ltx_presets.json`, the same file the pop-over

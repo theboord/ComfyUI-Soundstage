@@ -47,7 +47,7 @@ const DEFAULT_RIG = { push_in: "dolly", pull_out: "dolly", dolly_zoom: "dolly", 
   long_lens_pan: "tripod", arm_car: "free" };
 const STEP_SAID = {
   video_to_3d: "rebuild the video as a 3D set", new_angle: "add a new angle", ripple_mode: "open Ripple edit",
-  whole_frame: "open Whole frame", quality_draft: "set Draft quality", quality_hollywood: "set Hollywood quality",
+  whole_frame: "open Whole frame", quality_draft: "set Draft quality", quality_hollywood: "set the hero quality (Advanced, 1408p)",
   render_all_draft: "queue drafts of every shot", render_final: "queue the final",
 };
 
@@ -603,7 +603,7 @@ export class PresetRunner {
         const shots = steps.includes("render_all_draft") ? (host.shotsInOrder?.() || this.scene().shots || []).length : 1;
         const msg = steps.includes("render_all_draft")
           ? `Draft all shots queues ${shots} draft render${shots === 1 ? "" : "s"} on the GPU (about 2-4 min each). Go ahead?`
-          : `Hollywood final renders ${this.shotInfo().label} at the highest quality on the GPU (slow: several minutes). Go ahead?`;
+          : `Hero final renders ${this.shotInfo().label} at 1408p (Advanced quality) on the GPU (slow: 15 min or more). Go ahead?`;
         ok = host.confirm ? await host.confirm(msg) : false;
       }
       if (!ok) return { ok: false, cancelled: true, label: p.label, id: p.id, said: `${p.label}: nothing queued (the GPU wasn't confirmed).` };
@@ -635,8 +635,10 @@ export class PresetRunner {
       } else if (s === "whole_frame") {
         try { host.wholeFrame?.(p.apply.prompt || ""); done.push("Whole frame has the wardrobe prompt: finish the sentence, press Whole frame, Keep, then Save to reference"); } catch { /* */ }
       } else if (s === "quality_draft" || s === "quality_hollywood") {
-        const q = s === "quality_draft" ? "Draft" : "Hollywood";
-        if (pipe?.ltx?.setPreset) { pipe.ltx.setPreset(q); done.push(`${q} quality`); } else done.push(`${q} quality (the quality presets aren't in this build; used the default)`);
+        // quality_hollywood: the retired Hollywood preset's numbers (1408p, 12 + 6 steps, CRF 12) as an Advanced shot
+        const q = s === "quality_draft" ? "Draft" : "Advanced";
+        if (s === "quality_hollywood" && pipe?.ltx?.setHero) { pipe.ltx.setHero(); done.push("Advanced quality (hero: 1408p)"); }
+        else if (pipe?.ltx?.setPreset) { pipe.ltx.setPreset(q); done.push(`${q} quality`); } else done.push(`${q} quality (the quality presets aren't in this build; used the default)`);
       } else if (s === "render_all_draft" || s === "render_final") {
         if (!pipe?._render) { done.push("renders need the ⑤ Motion step"); continue; }
         const ids = s === "render_all_draft" ? (host.shotsInOrder?.() || this.scene().shots || []).map((x) => x.id) : [this.shotInfo().id];

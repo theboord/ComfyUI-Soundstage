@@ -41,7 +41,7 @@ Leave the LTX API key field blank (the default): the prompt is then encoded loca
 
 The temporal upscaler (`ltx-2.5-latent-temporal-upscaler-x2-bf16-1.0.safetensors`, `latent_upscale_models/`, same repo) is used only when **Temporal x2** is on in ⑤ Motion › Advanced (LTX).
 
-### Not installed yet: what would lift the Hollywood preset further (download only with approval)
+### Not installed yet: what would lift the hero recipe (Advanced at 1408p) further (download only with approval)
 
 Measured in share/Milestone18_Hollywood/REPORT.txt. None of these are downloaded by Soundstage; each needs the owner's OK.
 

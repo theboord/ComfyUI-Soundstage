@@ -12,6 +12,7 @@ combo values are checked against a live /object_info snapshot in tests/test_rout
 p keys: stage, prompt, negative, sound, music, line, seed, width, height, frames, fps, first, last, control, refs (list),
 image, images, mask, params (the chosen option's nested widgets), weights {role: file|None}, variant.
 """
+import json
 import math
 
 from ..look.frame_lock import DEFAULT_DENOISE, INIT_DOWN, KREA_STEPS, depth_lock, stage_denoise
@@ -376,11 +377,56 @@ def runway_aleph2(g, m, p):
 
 # ---------------------------------------------------------------- local: images
 
+IMAGE_SAMPLERS = ("auto", "euler", "euler_ancestral", "res_multistep", "dpmpp_2m", "er_sde", "lcm")
+IMAGE_SCHEDULERS = ("auto", "simple", "normal", "beta", "sgm_uniform", "karras", "linear_quadratic")
+
+
+def lora_stack(loras_json, lora=None, strength=1.0) -> list[dict]:
+    """④ Frame's LoRA stack: the `loras` JSON ([{"name", "strength"}, …], applied in order), else the older single
+    lora / lora_strength as a one-row stack. Rows without a file name, "None", or at strength 0 are dropped."""
+    rows = loras_json
+    if isinstance(rows, str):
+        try:
+            rows = json.loads(rows) if rows.strip() else []
+        except ValueError:
+            rows = []
+    out = []
+    for r in rows if isinstance(rows, list) else []:
+        name = (r.get("name") if isinstance(r, dict) else r) if r else None
+        if not name or name == "None":
+            continue
+        try:
+            st = float(r.get("strength", 1.0)) if isinstance(r, dict) else 1.0
+        except (TypeError, ValueError):
+            st = 1.0
+        if st != 0:
+            out.append({"name": str(name), "strength": st})
+    if not out and lora and lora != "None" and float(strength or 0) != 0:
+        out.append({"name": str(lora), "strength": float(strength)})
+    return out
+
+
 def _with_lora(g, model, p):
-    """Apply the node's optional LoRA (character / product / style) to an image model."""
-    if p.get("lora"):
-        model = g.node("LoraLoaderModelOnly", model=model, lora_name=p["lora"],
-                       strength_model=float(p.get("lora_strength", 1.0))).out(0)
+    """Apply the node's LoRA stack (character / product / style add-ons) to an image model, in order."""
+    rows = p.get("loras")
+    if rows is None:
+        rows = lora_stack(None, p.get("lora"), p.get("lora_strength", 1.0))
+    for r in rows:
+        model = g.node("LoraLoaderModelOnly", model=model, lora_name=r["name"], strength_model=float(r["strength"])).out(0)
+    return model
+
+
+def _sampling(p, sampler, scheduler):
+    """The node's sampler / scheduler when set, else the model's tuned ones."""
+    s, sc = p.get("sampler"), p.get("scheduler")
+    return (s if s and s != "auto" else sampler), (sc if sc and sc != "auto" else scheduler)
+
+
+def _with_shift(g, model, p):
+    """The node's sigma shift (ModelSamplingAuraFlow) on a flow-matching image model; 0 = the model's default, untouched."""
+    sh = float(p.get("shift") or 0.0)
+    if sh > 0:
+        model = g.node("ModelSamplingAuraFlow", model=model, shift=sh).out(0)
     return model
 
 
@@ -431,6 +477,8 @@ def krea2(g, m, p):
     model, clip, vae = _loaders(g, w, "krea2")
     model = _with_lora(g, model, p)
     lock = depth_lock((p.get("params") or {}).get("depth_lock")) > 0 and p["stage"] == "edit_image"
+    if not lock:
+        model = _with_shift(g, model, p)
     if lock:
         if p.get("control") is None or not w.get("depth_lora"):
             raise RouterError(DEPTH_MISSING)
@@ -465,8 +513,9 @@ def krea2(g, m, p):
     # depth-locked: Krea 2 Turbo's own distilled schedule (the App's step count is Klein's when Strict swaps models)
     steps = KREA_STEPS if lock else (p.get("steps") or KREA_STEPS)
     cfg = 1.0 if lock else (p.get("cfg") or 1.0)
-    s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=steps, cfg=cfg, sampler_name="euler_ancestral",
-               scheduler="beta", positive=pos, negative=neg, latent_image=latent, denoise=denoise).out(0)
+    sampler, scheduler = ("euler_ancestral", "beta") if lock else _sampling(p, "euler_ancestral", "beta")
+    s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=steps, cfg=cfg, sampler_name=sampler,
+               scheduler=scheduler, positive=pos, negative=neg, latent_image=latent, denoise=denoise).out(0)
     return {"image": g.node("VAEDecode", samples=s, vae=vae).out(0)}
 
 
@@ -512,7 +561,7 @@ def ref_canvas(w: int, h: int, mp: float) -> tuple[int, int]:
 def flux3_klein(g, m, p):
     """Templates image_flux3_klein_distilled_t2i / _image_edit."""
     model, clip, vae = _loaders(g, p["weights"], "flux3")
-    model = _with_lora(g, model, p)
+    model = _with_shift(g, _with_lora(g, model, p), p)
     pos = g.node("CLIPTextEncode", text=p["prompt"], clip=clip).out(0)
     images = ([need(p, "image", "FLUX 3 Klein edit", "an image")] if p["stage"] == "edit_image" else [])
     images += list(p.get("refs") or [])
@@ -536,15 +585,17 @@ def flux3_klein(g, m, p):
             # (the reference sat on 1712x912) gave dark rounded borders and a porthole vignette (M27 frame 1)
             src = resize(g, src, *ref_canvas(p["width"], p["height"], mp))
             latent, denoise = g.node("VAEEncode", pixels=src, vae=vae).out(0), lock
+        sampler, scheduler = _sampling(p, "euler", "simple")
         s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or 16, cfg=p.get("cfg") or 1.0,
-                   sampler_name="euler", scheduler="simple", positive=r.out(0), negative=r.out(1), latent_image=latent,
+                   sampler_name=sampler, scheduler=scheduler, positive=r.out(0), negative=r.out(1), latent_image=latent,
                    denoise=denoise).out(0)
     else:
         neg = g.node("CLIPTextEncode", text=p.get("negative") or "", clip=clip).out(0)
         latent = g.node("EmptyFlux2LatentImage", width=snap(p["width"], 16), height=snap(p["height"], 16),
                         batch_size=1).out(0)
-        s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or 15, cfg=p.get("cfg") or 1.0, sampler_name="er_sde",
-                   scheduler="simple", positive=pos, negative=neg, latent_image=latent, denoise=1.0).out(0)
+        sampler, scheduler = _sampling(p, "er_sde", "simple")
+        s = g.node("KSampler", model=model, seed=int(p["seed"]), steps=p.get("steps") or 15, cfg=p.get("cfg") or 1.0, sampler_name=sampler,
+                   scheduler=scheduler, positive=pos, negative=neg, latent_image=latent, denoise=1.0).out(0)
     img = g.node("VAEDecode", samples=s, vae=vae).out(0)
     if (p["stage"] == "edit_image" and p.get("control") is not None
             and depth_lock((p.get("params") or {}).get("depth_lock")) > 0):

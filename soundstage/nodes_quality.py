@@ -21,7 +21,8 @@ from comfy_api.latest import IO, UI
 from . import ltx_settings as L
 from . import quality as Q
 
-QUALITIES = ["Draft", "Final HQ", "Final", "Hollywood"]   # appended, so saved workflows keep their values
+QUALITIES = ["Draft", "Final HQ", "Final", "Hollywood", "Advanced"]   # appended, so saved workflows keep their values;
+# "Final HQ" and "Hollywood" are retired tiers that ltx_settings maps (Final 18 + 12 steps; Advanced at 1408p, CRF 12)
 
 
 def settings_for(quality: str, advanced: str | None) -> dict:
@@ -83,8 +84,10 @@ class SoundstageQuality(IO.ComfyNode):
                                        "the advanced JSON; default Exact) now sets the guide blur and IC-LoRA strength."),
                 IO.Combo.Input("quality", options=QUALITIES, default="Final",
                                tooltip="Draft = 8 + 3 distilled steps (quick look, faces readable). Final = 12 + 6 "
-                                       "(clean motion and detail, the default). Final HQ = 18 + 12 for hero shots. "
-                                       "Final and Final HQ add physical-motion language for the cast."),
+                                       "(clean motion and detail, the default). Advanced = your own steps, shift, "
+                                       "scheduler, CFG, resolution… in the advanced JSON (starts from Final). Final HQ "
+                                       "and Hollywood are retired tiers kept for saved workflows. Final and up add "
+                                       "physical-motion language for the cast."),
                 IO.Image.Input("guide", tooltip="The stage clay frames that steer LTX (IC-LoRA guide)."),
                 IO.String.Input("motion_prompt", multiline=True, force_input=True),
                 IO.String.Input("scene_json", multiline=True, force_input=True, optional=True),
