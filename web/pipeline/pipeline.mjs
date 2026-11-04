@@ -11,25 +11,26 @@ import { LtxAdvanced, ADHERENCE, ADHERENCE_NAMES, adherenceKnobs } from "../moti
 import { castPool, shotSelection, pickRefs, refLines, refLabel, shotKind, refViewParams, REF_LIMIT } from "../cast/shotcast.mjs";
 import { downloadDCCKit } from "../stage/interop/exportdcc.mjs";
 import { FrameCheck, badgeOf, flagged, rank, depthTip, REROLLS, FRAMECHECK_CSS } from "./framecheck.mjs";
+import { stillLoraGroups, stillLoraWarning, LORA_MATCH_LABEL, LORA_OTHER_LABEL } from "./loras.mjs";
 
 /** ④'s look box placeholder: optional, and no example that fights the scene (QA 2026-11-02: a western example on a rainy night chase). */
 export const FRAME_DESC_PLACEHOLDER = "Optional: the look you want on top of the stage, e.g. light, weather, mood, film stock…";
 
 /**
- * ④ Frame's "Style or character add-on" list: only FLUX Klein LoRAs (a "klein" / "flux2" / "flux3" name or folder),
- * never a private or downloads folder. QA 2026-11-02: the list showed every LoRA on the pod, client-named LTX and SDXL
- * files included, which is both wrong for Klein and an NDA leak on a screen share. The one already chosen stays listed.
+ * ④ Frame's "Style or character add-on": any LoRA in models/loras, one at a time (QA 2026-11-04: people want their own
+ * LoRA, whatever it was trained for). The ones that match the frame model are listed first under "Matches this model",
+ * the rest under "Other LoRAs (may not work with this model)"; picking one of those shows a warning but doesn't block.
+ * The match is by name or folder (a "klein" / "flux2" / "flux3" LoRA for FLUX 3 Klein, a "krea" one for Krea 2); the
+ * server reads the file's own header and stops a frame whose LoRA was made for another family with a sentence
+ * (soundstage/router/lora_check.py). Private or downloads folders stay hidden (QA 2026-11-02: client-named files on a
+ * screen share), except the one already chosen.
  */
-export function stillLoras(vals, current = null) {
-  const PRIVATE = /(^|[\\/])(downloads?|private|nda|clients?)([\\/]|$)/i;
-  const KLEIN = /klein|flux[-_ .]?[23]\b|flux[-_ .]?[23][-_ .]/i;
-  const out = ["None"];
-  for (const v of vals || []) {
-    const s = String(v);
-    if (s === "None" || out.includes(s)) continue;
-    if (s === current || (KLEIN.test(s) && !PRIVATE.test(s))) out.push(s);
-  }
-  return out;
+export { loraFamily, frameModelFamily, stillLoraGroups, stillLoraWarning, LORA_MATCH_LABEL, LORA_OTHER_LABEL } from "./loras.mjs";
+
+/** Back-compat: the flat list (None first, matching ones, then the rest). */
+export function stillLoras(vals, current = null, modelKey = "FLUX 3 Klein") {
+  const g = stillLoraGroups(vals, modelKey, current);
+  return ["None", ...g.match, ...g.other];
 }
 
 /** Version of the still's start image (soundstage/look/look_start.py). Frames record it; older frames reproduce
@@ -176,6 +177,8 @@ const CSS = `
 .ss-stage .ss-time button.go.next.ss-setnext { border-radius:999px; padding:6px 14px; font-weight:600; cursor:pointer; white-space:nowrap; flex:none; margin-left:auto; }
 .ss-pipeview .clay { width:100%; border-radius:12px; display:block; }
 .ss-pipeview .status { font-size:12px; color:var(--ss-muted,#a9a3ad); min-height:16px; }
+.ss-pipeview .ss-lorawarn { display:block; margin-top:3px; min-height:0; color:var(--ss-warn, #ffcc66); white-space:normal; line-height:1.3; }
+.ss-pipeview .ss-lorawarn:empty { display:none; }
 .ss-pipeview video { width:100%; border-radius:12px; background:#000; }
 .ss-shotrow { display:flex; gap:8px; align-items:stretch; overflow-x:auto; padding:2px 2px 6px; }
 .ss-shotrow > .lbl { align-self:center; font-size:12px; color:var(--ss-muted,#a9a3ad); white-space:nowrap; }
@@ -566,7 +569,8 @@ export class Pipeline {
       this.set(9086, "switch", f.useTouch.checked);
     } } });
     // LoRA for the image model (FLUX 3 Klein / Krea 2): a character, product or house style.
-    f.lora = h("select", { on: { change: () => this.set(9081, "lora", f.lora.value) } });
+    f.lora = h("select", { on: { change: () => { this.set(9081, "lora", f.lora.value); this._loraNote(); } } });
+    f.loraWarn = h("small", { class: "status ss-lorawarn", role: "status" });
     f.loraStrength = h("input", { type: "range", min: "0", max: "1.5", step: "0.05", value: "1",
       on: { input: () => { this.set(9081, "lora_strength", +f.loraStrength.value); f.loraOut.textContent = (+f.loraStrength.value).toFixed(2); } } });
     f.loraOut = h("span", { class: "status" }, "1.00");
@@ -603,7 +607,7 @@ export class Pipeline {
               h("label", { class: "ss-chk status", title: "Each new frame is compared with your clay (SAM 3.1 against the stage's ID pass): object count, silhouettes, extra objects. A flagged frame is painted again with a new seed, at most twice per Generate." },
                 f.autoReroll = h("input", { type: "checkbox", checked: "" }),
                 h("span", {}, "Check each frame against the clay; re-roll extra or missing objects"))),
-            h("label", { class: "f", title: "LoRA: a small add-on model trained on your own pictures (a character, a product or a house style)" }, "Style or character add-on", f.lora),
+            h("label", { class: "f", title: "LoRA: a small add-on model trained on your own pictures (a character, a product or a house style). Any LoRA in models/loras, one at a time: the ones made for this frame model come first." }, "Style or character add-on", f.lora, f.loraWarn),
             h("label", { class: "f", title: "How strongly the LoRA add-on is applied" }, h("span", { class: "row" }, "Add-on strength", f.loraOut), f.loraStrength),
             h("div", { class: "row" }, h("span", { class: "status" }, "Variations"), f.countSeg),
             h("div", { class: "row" }, h("span", { class: "status" }, "Quality"), f.qualSeg),
@@ -963,16 +967,12 @@ export class Pipeline {
       f.model.value = usePicker ? ((isKreaTurbo(cur) ? klein : cur) || STILL_KREA) : STILL_KREA;
     }
     const loraW = this.w(9081, "lora");
-    if (loraW && !f.lora.options.length) {
-      const vals = loraW.options?.values || ["None"];
-      for (const v of stillLoras(Array.isArray(vals) ? vals : ["None"], loraW.value)) f.lora.append(new Option(v === "None" ? "None" : String(v).replace(/\.safetensors$/, ""), v));
-    }
-    f.lora.disabled = !loraW;
+    this._fillLoras();
     this._syncSampling();
     const negW = this.w(9081, "negative");
     f.neg.disabled = !negW;
     if (negW) f.neg.value = negW.value || "";
-    if (loraW) { f.lora.value = loraW.value || "None"; f.loraStrength.value = String(this.w(9081, "lora_strength")?.value ?? 1); f.loraOut.textContent = (+f.loraStrength.value).toFixed(2); }
+    if (loraW) { f.lora.value = loraW.value || "None"; this._loraNote(); f.loraStrength.value = String(this.w(9081, "lora_strength")?.value ?? 1); f.loraOut.textContent = (+f.loraStrength.value).toFixed(2); }
     const dn = f.model.value === STILL_KREA ? this.w(9056, "denoise")?.value : this.w(9081, "stage_denoise")?.value;
     if (dn != null) f.follow.value = String(dn);
     this._sliderFor = f.model.value === STILL_KREA;
@@ -1018,7 +1018,43 @@ export class Pipeline {
     // Krea 2: the img2img denoise of its depth-steered still; FLUX 3 Klein: stage_denoise, the Color pass as the start.
     this.set(krea ? 9056 : 9081, krea ? "denoise" : "stage_denoise", +f.follow.value);
     this._syncDepthLock();
+    this._fillLoras();
     queueMicrotask(() => { try { this._drawShotCast(); } catch { /* view not built */ } });
+  }
+
+  /** The image model the frame node paints with now (Strict lock: Krea 2 Turbo), or null for Krea 2 + depth (no add-on). */
+  _loraModel() {
+    if (this.f?.model?.value === STILL_KREA) return null;
+    return this.w(9081, "model")?.value || this.f?.model?.value || null;
+  }
+
+  /** ④'s add-on list, grouped for the model that paints the frame; refilled when the model (or the depth lock) changes. */
+  _fillLoras() {
+    const f = this.f, loraW = this.w(9081, "lora");
+    if (!f?.lora) return;
+    const model = this._loraModel();
+    const vals = Array.isArray(loraW?.options?.values) ? loraW.options.values : ["None"];
+    const sig = `${model}|${vals.length}|${loraW?.value}`;
+    if (sig !== this._loraSig) {
+      this._loraSig = sig;
+      const g = stillLoraGroups(vals, model, loraW?.value);
+      const opt = (v) => new Option(String(v).replace(/\.safetensors$/, ""), v);
+      const groups = [];
+      if (g.match.length) groups.push(h("optgroup", { label: LORA_MATCH_LABEL }, ...g.match.map(opt)));
+      if (g.other.length) groups.push(h("optgroup", { label: LORA_OTHER_LABEL }, ...g.other.map(opt)));
+      f.lora.replaceChildren(new Option("None", "None"), ...groups);
+      f.lora.value = loraW?.value || "None";
+    }
+    f.lora.disabled = !loraW || !model;
+    this._loraNote();
+  }
+
+  _loraNote() {
+    const f = this.f;
+    if (!f?.loraWarn) return;
+    const model = this._loraModel();
+    f.loraWarn.textContent = !model ? "Krea 2 + depth paints without an add-on: pick FLUX 3 Klein (Strict lock runs Krea 2 Turbo with it) to use one."
+      : stillLoraWarning(f.lora.value, model);
   }
 
   /** "Lock to the stage depth" (soundstage/look/frame_lock.py VERSION 3) for FLUX 3 Klein frames: Off, Light (a Krea 2

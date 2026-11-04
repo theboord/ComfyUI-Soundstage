@@ -6,6 +6,7 @@
 // stage-1 size, steps → sigmas, two-stage / one pass, temporal x2, CFG, seed, IC-LoRA, decode tiles, codec / CRF.
 //
 // Pure helpers (resolveSettings, stageSizes, estimateSeconds, compactSettings) have no DOM and are unit-tested.
+import { ltxLoraGroups } from "../pipeline/loras.mjs";
 
 export const PRESETS = {
   Draft: {
@@ -293,12 +294,23 @@ export class LtxAdvanced {
       f.est);
   }
 
-  _loraOptions() {
-    const f = this.f;
-    if (f.lora.options.length > 1) return;
-    const vals = this.pipe.w(9101, "lora_name")?.options?.values || [];
-    const list = (Array.isArray(vals) ? vals : []).filter((x) => typeof x === "string");
-    f.lora.replaceChildren(h("option", { value: "None" }, "None"), ...list.filter((x) => x !== "None").map((x) => h("option", { value: x }, x)));
+  /** The Extra LoRA list: every LoRA the server has (node 9101's lora_name), LTX ones first; the shot's own pick stays
+   *  listed even when the file is gone (the render then says so). A workflow without the slot (the lean
+   *  Soundstage_App.json) says so instead of offering a list that can only say None. */
+  _loraOptions(current = null) {
+    const f = this.f, w = this.pipe.w(9101, "lora_name");
+    const vals = Array.isArray(w?.options?.values) ? w.options.values.filter((x) => typeof x === "string") : [];
+    const sig = `${!!w}|${vals.length}|${current}`;
+    if (sig === this._loraSig) return;
+    this._loraSig = sig;
+    const g = ltxLoraGroups(vals, current);
+    const opt = (x) => h("option", { value: x }, x.replace(/\.safetensors$/, ""));
+    f.lora.replaceChildren(h("option", { value: "None" }, "None"),
+      ...(g.match.length ? [h("optgroup", { label: "LTX LoRAs" }, ...g.match.map(opt))] : []),
+      ...(g.other.length ? [h("optgroup", { label: "Other LoRAs (may not work with LTX)" }, ...g.other.map(opt))] : []));
+    f.lora.disabled = !w;
+    f.lora.title = w ? "One extra LoRA on the LTX model for this shot (style, character, detail): any LoRA in models/loras, LTX ones first. A LoRA made for another model is stopped with a message when its file says so."
+      : "This workflow has no Extra LoRA slot: open Soundstage_App_Full (the full App) to add one.";
   }
 
   refresh() {
@@ -321,7 +333,7 @@ export class LtxAdvanced {
     f.ref.value = s.reference == null ? "" : String(s.reference);
     const ak = adherenceKnobs(s);
     f.ic.placeholder = `auto (${ak.ic_lora})`; f.blur.placeholder = `auto (${ak.guide_blur})`; f.ref.placeholder = `auto (${ak.reference})`;
-    this._loraOptions();
+    this._loraOptions(s.extra_lora?.name || null);
     f.lora.value = s.extra_lora?.name || "None"; f.loraS.value = String(s.extra_lora?.strength ?? 0.8); f.loraS.disabled = !s.extra_lora;
     const dk = DECODES.find(([, , v]) => JSON.stringify(v) === JSON.stringify(s.decode))?.[0];
     if (dk) f.decode.value = dk;
