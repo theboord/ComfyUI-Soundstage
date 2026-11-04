@@ -29,6 +29,7 @@ import * as maker from "./assets3d/maker.mjs";
 import { applyTheme, spotlight } from "./ui/theme.mjs";
 import { icon } from "./ui/icons.mjs";
 import { openPopover, closePopover, isPopoverOpen } from "./ui/popover.mjs";
+import { floatPanel, resetPanelPositions, onFloatingMessage } from "./ui/floating.mjs";
 import { topRowFit } from "./ui/toprow.mjs";
 import { CheatSheet, isCheatSheetKey, withKeys } from "./ui/shortcuts.mjs";
 import { isStagePlayKey, stageUndoKey } from "./ui/spaceplay.mjs";
@@ -2292,6 +2293,7 @@ function createStageWidget(node, inputName) {
 
   const status = document.createElement("div");
   status.className = "ss-status";
+  onFloatingMessage((m) => { status.textContent = m; });   // floating panels: pop-up blocked, popped out
   const hint = document.createElement("div");
   hint.className = "ss-hint";
   hint.textContent = "Move the playhead, then frame the shot or drag objects: a ◆ key is set there automatically · Drag to orbit (all the way round) · Shift/middle-drag to pan · scroll to dolly · W A S D fly, Q/E down/up (Shift = fast) · 0 toggles Free view · drag an object to place it";
@@ -3679,6 +3681,7 @@ function createStageWidget(node, inputName) {
     inspTitle.append(icon("sliders-horizontal", 13), Object.assign(document.createElement("span"), { textContent: "Properties" }));
     const inspTog = btn("ss-hudp-tog", "");
     inspHead.append(inspTitle, inspTog);
+    floatPanel(insp, { key: "props", title: "Properties", handle: inspHead, chipBtn: false, popout: true });   // drag by the header (ui/floating.mjs)
     const setInsp = (c, user = false) => {
       insp.dataset.collapsed = String(c);
       inspTog.replaceChildren(icon(c ? "chevron-left" : "chevron-right", 15));
@@ -3714,6 +3717,7 @@ function createStageWidget(node, inputName) {
     lookHead.append(lookTitle, lookFull, lookClose);
     const lookBody = mk("div", "ss-hudp-body");
     lookPop.append(lookHead, lookBody);
+    floatPanel(lookPop, { key: "look", title: "Look", handle: lookHead });
     lookBtn.addEventListener("click", () => {
       if (!lookBody.firstChild && look.makeStyles) lookBody.append(look.makeStyles());
       if (isPopoverOpen(lookPop)) { closeLook(); return; }
@@ -3760,6 +3764,9 @@ function createStageWidget(node, inputName) {
     const toolsMenu = stopEv(mk("div", "ss-toppop ss-toolsmenu"));
     toolsMenu.hidden = true;
     const menuSep = mk("div", "sep");
+    // Every dragged, folded or popped-out panel back where the App puts it (ui/floating.mjs).
+    const resetPanelsBtn = btn("ss-btn ss-resetpanels", "Put every panel back where it started, unfolded", icon("grid-3x3", 14), "Reset panel positions");
+    resetPanelsBtn.addEventListener("click", () => { resetPanelPositions(); status.textContent = "Every panel is back where it started."; });
     // Both open in the pop-over layer (ui/popover.mjs): flipped and clamped to the window, Esc / outside click close them.
     const setPop = (pop, open, owner) => {
       if (!open) { if (isPopoverOpen(pop)) closePopover(pop); else pop.hidden = true; owner?.setAttribute("aria-expanded", "false"); return; }
@@ -3867,6 +3874,8 @@ function createStageWidget(node, inputName) {
         toolsMenu.append(menuSep);
         mv.move(syncBtn, toolsMenu, tabBtns.dailies.nextSibling);
         mv.move(layoutBtn, toolsMenu);
+        toolsMenu.append(resetPanelsBtn);
+        built.push(resetPanelsBtn);
         for (const k of STEP_TABS) mv.addClass(tabBtns[k], "ss-clgone");
         tabs.insertBefore(toolsBtn, keysBtn);
         tabs.insertBefore(moreBtn, expand);

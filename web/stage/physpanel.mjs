@@ -2,6 +2,7 @@
 // "Simulate & bake" (the whole scene's dynamic objects, baked into keys) and "Clear simulation". It floats over the
 // canvas beside the inspector (canvas layout) and never makes the page scroll.
 import { icon } from "../ui/icons.mjs";
+import { floatPanel } from "../ui/floating.mjs";
 // The live solver switch (Milestone 10): CPU (XPBD, physics.mjs) or GPU (AVBD on WebGPU, physics_avbd.mjs). Importing
 // it also registers the GPU backend with physengine.mjs and puts the "Physics: CPU / GPU" badge on the stage.
 import * as avbd from "./physics_avbd.mjs";
@@ -83,6 +84,7 @@ export class PhysicsPanel {
     this.btn.setAttribute("aria-expanded", "false");
     this.btn.addEventListener("click", () => this.toggle());
     this._build();
+    floatPanel(this.el, { key: "physics", title: "Physics", handle: ".ph-head" });   // drag, fold (ui/floating.mjs)
   }
 
   _build() {

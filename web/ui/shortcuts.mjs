@@ -47,6 +47,7 @@ export const SHORTCUTS = [
   { group: "Anywhere in the App", items: [
     { keys: ["?"], what: "Show or hide this list of shortcuts" },
     { keys: ["H"], alts: [["Tab"]], what: "Hide or show every panel, to see the whole canvas" },
+    { keys: ["Drag"], what: "A panel's header moves it (arrow keys too); — folds it to a chip; ⧉ pops it out to a second screen" },
     { keys: ["Mod", "Z"], what: "Undo" },
     { keys: ["Shift", "Mod", "Z"], what: "Redo" },
     { keys: ["Esc"], what: "Close a menu, a pop-over, the tour or the full window" },
