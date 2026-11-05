@@ -1,0 +1,87 @@
+# ✦ Ask skills: what the assistant has been taught
+
+This file is ✦ Ask's teaching notebook. Each skill is a lesson learned while testing: what people say, what they mean, what the assistant should do, and what it must not do. `node tools/build_knowledge.mjs` indexes it, so `search_docs` and the conversation can find a skill by the words in it. Add a skill whenever Ask gets something wrong, then rebuild.
+
+**Add a skill:** copy the template at the bottom, fill it in, run `node tools/build_knowledge.mjs`, commit both files. Raw misses go in [assistant/MISSES.md](../../assistant/MISSES.md) first; promote a miss to a skill once the right behaviour is clear.
+
+## Skill: A question is a question, even after a lead-in word
+**When:** "so how is Dana described", "okay, tell me about the tall stranger", "no, I just wanted you to describe him", "now describe scene 3".
+**Means:** The person wants an explanation, not a change on the set.
+**Do:** Answer in prose from the script, in the conversation. Skip any plan.
+**Don't:** Answer "I couldn't turn that into a change on the set." That is the set planner talking, and it only belongs to orders.
+**Source:** QA 2026-11-04 (Mike); fixed in `isQuestion` (web/agent/ask.mjs).
+
+## Skill: Describe or analyse a character from the script
+**When:** "who is Dana", "what is the tall stranger like", "describe Dana from the script", "what do you think his character is".
+**Means:** Read everything the script says about one person and tell me who they are.
+**Do:** `gather_character` (every scene, line, action and what others say about him, with scene and line citations), then `profile_character` (age, build, look, wardrobe, personality, role, arc). Say which lines the conclusions come from. If asked to change the card, ask first ("Apply this to his ② Cast card?"), then `update_character` (one Undo).
+**Don't:** Edit the card or regenerate his sheet when only asked to describe. Don't invent traits the script doesn't support; mark guesses as guesses.
+**Source:** Mike, 2026-11-04 ("the crucial step").
+
+## Skill: "Generate a new image / picture" means ④ Frame
+**When:** "generate a new image", "make me another picture of shot 2", "regenerate the frame", "give me a different still".
+**Means:** Paint first-frame candidates for a shot with the image model.
+**Do:** Plan "paint frames" for the shot in view (or the one named). It uses the GPU, so ask for confirmation first. Mention the count (variations) and that it takes seconds each once warm.
+**Don't:** Use "Generate all missing" or generate for every shot unless asked. Never queue GPU work without a confirm.
+**Source:** QA 2026-11-04; fixed in the planner (soundstage/agent/director.py).
+
+## Skill: The clay isn't locking into the final render
+**When:** "the claymation won't lock into the final", "it ignores my blocking", "the car goes the wrong way in the video", "the final doesn't match the clay".
+**Means:** The video model isn't following the staged layout.
+**Do, in this order:** (1) ⑤ Motion → Adherence → **Exact**. (2) ⑤ Advanced → Layout IC-LoRA strength near 1.0 (above 1.1 tested no tighter). (3) Clay guide blur low (Exact uses 0). (4) ④ Frame → raise **Follow the clay** so the first frame already matches. (5) Frame reference: lower it if the frame is dragging the composition. (6) Re-key the blocking so the motion is unambiguous. (7) Check "Follows your blocking %" in ⑥ Review; under about 80% means go back to step 1.
+**Don't:** Blame the prompt first. Don't suggest Hollywood (it's gone; Advanced replaces it).
+**Source:** the Ask troubleshooting playbook; Mike's testers.
+
+## Skill: Quality is Draft, Final or Advanced
+**When:** "make it higher quality", "faster draft", "more steps", "change the CFG / shift / sampler", "Hollywood".
+**Means:** Control the render quality and speed.
+**Do:** Draft is the fast look, Final is the default. **Advanced** opens every knob: steps for each stage, shift, scheduler, sampler, CFG, seed, resolution, two-stage, frame rate, decode tiles, codec. Editing any value moves the shot to Advanced; "Reset to Draft/Final" goes back. ④ Frame has steps, CFG, sampler/scheduler and shift for the image model. The models are distilled, so no step-reduction LoRA is needed.
+**Don't:** Offer a "Hollywood" preset. Old Hollywood shots open as Advanced with the old values (1408p, 12+6 steps).
+**Source:** Mike, 2026-11-04.
+
+## Skill: Adding LoRAs
+**When:** "add a LoRA", "use my character LoRA", "stack LoRAs", "LoRA has no effect".
+**Do:** ④ Frame → Style or character add-on, and ⑤ Advanced → LoRAs: **＋ Add LoRA** rows, each with a strength, applied in order. Ones that match the model are listed first. If it has no effect, check it matches the model (Klein vs Krea 2 vs LTX), raise the strength, and look for "lora key not loaded" in ComfyUI's log.
+**Don't:** Block a LoRA that may not match; warn instead.
+
+## Skill: Save, autosave, projects
+**When:** "how do I save", "I lost my scene", "new project", "move this project to another computer".
+**Do:** The project pill in the top row: Save, Save As, Open recent, New project, Restore autosave, Collect project. Autosave runs a few seconds after each change and keeps the last 20. Collect project builds an organised folder (scenes → shots → clay, frames, refs, takes, mattes, depth, camera, sound; plus cast, locations, script and the cut). The App opens on the project screen first.
+**Don't:** Tell people to rely on the browser remembering a tab.
+
+## Skill: One GPU job at a time, always confirm
+**When:** any request that renders, generates or queues work.
+**Do:** Say it uses the GPU, name the count, and wait for a yes. One shot or one card at a time. Mention the live timer shows percent, steps and time left, and that a soft chime plays when it's done.
+**Don't:** Use "…for every shot", "Generate all missing" or "Render missing shots" unless the person asks for exactly that.
+
+## Skill: Build a character, then offer the sheet
+**When:** "build the tall stranger", "make Dana's character card".
+**Do:** gather → profile → show it with citations → "Apply this to his ② Cast card?" → apply (one Undo) → "Regenerate his sheet? It uses the GPU." Cross-check against the rest of the cast for lookalikes.
+
+## Skill: Vague creative intent gets one good question
+**When:** "make it scarier", "make it feel tense", "a cooler shot".
+**Do:** Ask ONE sharp question with 2 to 4 options (tone, coverage, pacing) and a short film-grammar reason, grounded in what Soundstage can actually do (lens, camera move, light, sound, cut). Then propose a plan and wait for a yes.
+**Don't:** Guess a big change. Don't lecture.
+
+## Skill: A slow first answer is the model loading
+**When:** the first Ask after the App or pod starts takes 40 to 60 seconds.
+**Do:** Say so ("warming up the language model, once"). Later answers are quick. Stop works at any time.
+
+## Skill: Where the big features live (pointers)
+- **Phone viewfinder:** ③ Set → Phone camera, scan the QR; lens, iris, focus, record.
+- **Record yourself:** Real performance → ● Record (lip sync and acting), or Capture motion (pose).
+- **Character swap:** Recast on real footage; LTX union control by default, Openjutsu optional.
+- **ScriptSync and the Director's Book:** Tools ▾ → ScriptSync; Book in the top bar.
+- **Movable panels:** drag by the header, fold with —, Tools ▾ → Reset panel positions. Drive mode tucks the rest away.
+
+---
+
+## Template (copy this)
+```
+## Skill: <short name>
+**When:** <the words people actually say, 3 to 5 examples>
+**Means:** <what they want, in one line>
+**Do:** <the steps, the tool names, the exact panel and button>
+**Don't:** <the mistake to avoid>
+**Source:** <who found it, the date>
+```
