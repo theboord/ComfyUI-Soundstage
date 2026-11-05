@@ -5,6 +5,11 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-04
 
+**✦ Ask has a skills notebook, and a misses log to teach it from**
+- **Still wrong (read first):** a skill only helps when the question shares words with it (search is by keywords, not meaning), and a skill can't fix a behaviour that lives in code; those go in as fixes, then a skill records the lesson. There is no in-App "teach it" button yet; today you paste misses into the log by hand.
+- **What** ([docs/assistant/SKILLS.md](docs/assistant/SKILLS.md), [assistant/MISSES.md](assistant/MISSES.md)): SKILLS.md is a plain Markdown notebook of lessons (when people say X, they mean Y; do this; don't do that), seeded with what testing taught us: a question after a lead-in word is a question, "generate a new picture" means frames, describing a character is not editing it, the clay-not-locking fix, Draft/Final/Advanced, LoRAs, saving, one GPU job at a time. `node tools/build_knowledge.mjs` indexes it, so `search_docs` and the conversation find it. MISSES.md is the raw log of what Ask got wrong, not indexed.
+- **Tests:** the knowledge-pack freshness test ([tests/js/knowledge.test.mjs](tests/js/knowledge.test.mjs)) now covers the notebook.
+
 **✦ Ask: "so how is Chase described?" is a question, and "generate a new image" paints a frame**
 - **Still wrong (read first):** I only changed how the first words are read. A question that has no question word and no lead-in ("Chase's character in the script, go") can still be taken for an order. Image generation still asks you to confirm because it uses the GPU.
 - **What** ([web/agent/ask.mjs](web/agent/ask.mjs), [soundstage/agent/director.py](soundstage/agent/director.py)): a lead-in ("so", "okay", "no,", "now", "I just wanted you to…") no longer turns a question into an order, so it goes to the conversation instead of the set planner's "I couldn't turn that into a change on the set". "describe…", "summarise…" and "what do you think…" count as questions. In the planner, "generate / make / create / draw / regenerate a new image, picture or photo" now means frames, not only "frames / stills / variations".
