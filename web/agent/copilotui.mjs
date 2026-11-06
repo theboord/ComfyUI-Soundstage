@@ -104,7 +104,7 @@ export function mountCopilot({ dir, host = {}, llm = null, check = null, where =
     const nodes = [];
     if (r.why) nodes.push(h("div", { class: "meta" }, `${cap(r.why)}, so I used the built-in playbook.`));
     if (r.say) nodes.push(h("div", {}, r.say));
-    if (r.question && r.question !== r.say) nodes.push(h("div", {}, r.question));
+    if (r.question && !String(r.say || "").includes(r.question)) nodes.push(h("div", {}, r.question));
     nodes.push(...resultBits(r));
     if (r.plan) nodes.push(planCard(r.plan, r));
     if (r.undo) { const u = h("button", { type: "button" }, icon("undo-2", 13), "Undo"); u.addEventListener("click", () => { r.undo(); u.disabled = true; }); nodes.push(h("div", { class: "row" }, u)); }
