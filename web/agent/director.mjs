@@ -282,7 +282,7 @@ export class Director {
     if (backend === "ollama" && (await this._viaServer())) {
       // The bundled assistant: the server adds the tier's placement (num_gpu) and reaches Ollama on its own machine.
       const r = await this.api.fetchApi(`${ASSISTANT.route}/chat`, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages, format: "json", think: false, keep_alive: -1, options: { temperature: 0, num_predict: ASSISTANT.numPredict } }),
+        body: JSON.stringify({ messages, format: "json", think: false, keep_alive: -1, options: { temperature: 0, num_predict: p.numPredict || ASSISTANT.numPredict } }),
         signal: sig });
       const j = await r.json();
       if (j.error) throw new Error(j.error);
@@ -293,7 +293,7 @@ export class Director {
       if (!model) model = pickOllama(await this.ollamaModels())?.name;
       if (!model) throw new Error("no Ollama model found");
       const r = await fetch(`${this.ollama.url.replace(/\/$/, "")}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model, messages, stream: false, format: "json", think: false, options: { temperature: 0, num_predict: 400 } }),
+        body: JSON.stringify({ model, messages, stream: false, format: "json", think: false, options: { temperature: 0, num_predict: p.numPredict || ASSISTANT.numPredict } }),
         signal: sig });
       const j = await r.json();
       if (j.error) throw new Error(j.error);

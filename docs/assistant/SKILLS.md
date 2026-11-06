@@ -32,6 +32,38 @@ This file is ✦ Ask's teaching notebook. Each skill is a lesson learned while t
 **Don't:** Blame the prompt first. Don't suggest Hollywood (it's gone; Advanced replaces it).
 **Source:** the Ask troubleshooting playbook; Mike's testers.
 
+## Skill: Break a scene down like a director's book
+**When:** "break down scene 4", "break down each scene", "what's the tone of scene 7", "director's notes on scene 2", "go through the script scene by scene".
+**Means:** Prepare this scene the way a seasoned director does: what it is for, what each person wants and hides, where the turn is, what the audience should feel, and only then what the camera serves.
+**Do:** `break_down_scene`. From the script, never the model: location and time, who is in the scene (speaking or only in the action), the props in the breakdown. The director's reading, each cited by line: why the scene exists, the emotion from start to end, the tone in exact words, the turn, each character's want, secret and feeling, what the props mean, what the place adds, one staging idea with its reason. Two scenes in a turn, with a Next button; **Add to the Director's Book** files one.
+**Don't:** Invent events, backstory or dialogue; a reading must rest on a line. Don't present the reading as the script's own words. Don't name a real director as if quoting them.
+**Source:** Jon, 2026-11-06.
+
+## Skill: Answer story questions from the script's words
+**When:** "what happens in scene 6", "what does Jane want", "which scenes is Pat in", "and what's his relationship with Jane".
+**Means:** They want what the script says, not a guess.
+**Do:** Read the scene or everything about that person ("he" means the last person talked about), then answer. Say so when the script doesn't state it, and offer what it does show.
+**Don't:** Answer from the scene headings. Don't run a check nobody asked for. Don't end with "let's confirm".
+**Source:** QA 2026-11-06; fixed with `scriptEvidence` (web/agent/assistant.mjs).
+
+## Skill: Small talk and how-to questions are not set orders
+**When:** "hi", "thanks", "what can you do", "how do I add rain", "note for scene 3: the sign should flicker".
+**Do:** Greet back. Say what Ask can do. Give the how-to's steps with Show me. Put a note in the Director's Book.
+**Don't:** Offer a plan unless the person gave an order for the set in those words. "How do I add rain" is not "add rain".
+**Source:** QA 2026-11-06 ("hi" offered to bring in rain).
+
+## Skill: Never name a control or a value you haven't looked up
+**When:** a problem ("my final looks nothing like my blocking", "it's rendering really slow"), or "how do I save".
+**Do:** A known problem goes to the playbook (`troubleshoot`), a known move to its recipe, anything else to `search_docs`, and the answer names what those returned. For saving: the Project pill → Save.
+**Don't:** Invent a preset, a prop or a current value ("Follow the clay is at 0.85"). Ask can't read most settings' values: say which panel to look at.
+**Source:** QA 2026-11-06.
+
+## Skill: Change one thing on a card
+**When:** "change Pat's jacket to red on his card", "set Jane's hair to grey", "build the tall stranger" and then "yes".
+**Do:** Show the exact change and ask once ("Set PAT's ② Cast card to wardrobe: red jacket?"). The yes writes it, keeps the rest of the look, adds it to the description ✨ Generate paints from, and has one Undo. Then ask before regenerating (the GPU).
+**Don't:** Say "applied" without writing it, or say "wrote the card" when there was nothing to write.
+**Source:** QA 2026-11-06.
+
 ## Skill: Quality is Draft, Final or Advanced
 **When:** "make it higher quality", "faster draft", "more steps", "change the CFG / shift / sampler", "Hollywood".
 **Means:** Control the render quality and speed.
