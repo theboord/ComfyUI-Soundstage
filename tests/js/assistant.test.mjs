@@ -127,7 +127,6 @@ test("a scripted conversation with the model: tools run, history carries, unknow
   const s = script();
   const replies = [
     '{"reply":"I checked the cast and the props.","tools":[{"name":"check_cast","args":{}},{"name":"check_props","args":{}}]}',
-    '<think>scene 3 again</think>{"reply":"Same checks, scene 3.","tools":[{"name":"check_cast","args":{"scenes":[3]}}]}',
     '{"reply":"","question":"Which scene do you mean: the diner or the motel?","tools":[]}',
     '{"reply":"Making it rain.","tools":[{"name":"plan_stage","args":{"command":"make it rain"}}]}',
     '{"reply":"Done.","tools":[{"name":"render_oscar_speech","args":{}},{"name":"apply_fixes","args":{}}]}',
@@ -143,9 +142,10 @@ test("a scripted conversation with the model: tools run, history carries, unknow
   assert.match(seen[0].system, /Shots: Diner wide/);
   assert.match(seen[0].prompt, /You're on ① Script\.\nUser: check the characters and the props$/);
   const r2 = await c.turn("now the same for scene 3");
-  assert.match(seen[1].prompt, /Conversation so far:\nUser: check the characters and the props\nAssistant: I checked the cast and the props\. 3 possible duplicates/);
-  assert.equal(r2.results[0].tool, "check_cast");
+  assert.equal(seen.length, 1, "the same checks again need no model");
+  assert.deepEqual(r2.results.map((x) => x.tool), ["check_cast", "check_props"]);
   const r3 = await c.turn("fix the location");
+  assert.match(seen[1].prompt, /Conversation so far:\nUser: check the characters and the props\nAssistant: 3 possible duplicates/);
   assert.match(r3.question, /Which scene/);
   assert.equal(r3.results.length, 0);
   const r4 = await c.turn("make it rain");

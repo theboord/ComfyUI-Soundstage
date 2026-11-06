@@ -27,6 +27,15 @@ Each line: **control**: what it does.
 - **Ask**: Ask (Cmd/Ctrl+K): how to do anything, or have it done. Hold to talk.
 - **Ask the assistant**: Ask: how to do anything, or have it done for you (/ or Cmd/Ctrl+K; hold to talk)
 - **Light up this control on the screen**
+- **Location**
+- **Characters**
+- **Props in the breakdown**
+- **Why this scene**
+- **Emotion**
+- **Tone**
+- **The turn**
+- **The place**
+- **Staging idea**
 - **Cast check**
 - **Props check**
 - **Locations check**
@@ -77,6 +86,7 @@ Each line: **control**: what it does.
 - **Phone viewfinder**
 - **Record yourself**
 - **Plan**
+- **Director's breakdown**
 
 ## ① Script
 - **Last Light on Route 9**

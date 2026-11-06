@@ -20,11 +20,12 @@
 import { normalizeCharacter, hydrateScript, compactScript } from "../script/parse.mjs";
 export { applyBreakdownFixes } from "../script/breakdown.mjs";
 import { searchDocs, troubleshoot, planRecipe, SOUNDSTAGE_MAP } from "./knowledge.mjs";
+import { breakDownScenes, breakdownAsked } from "./scenebook.mjs";
 import { gatherCharacter, gatherText, draftProfile, parseProfile, PROFILE_SYSTEM, cardFields, crossCheck, resolveCharacter } from "./charbuild.mjs";
 
 export const CHAR_TOOLS = ["gather_character", "profile_character", "update_character", "regenerate_character"];
 export const KNOW_TOOLS = ["search_docs", "troubleshoot", "plan_recipe"];
-export const TOOL_NAMES = [...KNOW_TOOLS, "analyze_script", "check_cast", "check_props", "check_locations", "apply_fixes", "plan_stage", "show_me", "add_note", ...CHAR_TOOLS];
+export const TOOL_NAMES = [...KNOW_TOOLS, "analyze_script", "check_cast", "check_props", "check_locations", "apply_fixes", "plan_stage", "show_me", "add_note", "break_down_scene", ...CHAR_TOOLS];
 
 // ---------------------------------------------------------------- small helpers
 const uniq = (xs) => [...new Set(xs)];
@@ -330,8 +331,62 @@ export function projectSummary(script, { shots = [], max = 2400 } = {}) {
   return out.length > max ? `${out.slice(0, max - 1)}…` : out;
 }
 
+// ---------------------------------------------------------------- what the script says, for this one question
+const sceneText = (sc, max = 1200) => {
+  const out = [`Scene ${sc.number || sc.index + 1}: ${sc.heading}`];
+  for (const e of sc.elements || []) {
+    const t = String(e.text || "").replace(/\s+/g, " ").trim();
+    if (!t || e.type === "character") continue;
+    out.push(e.type === "dialogue" && e.character ? `${e.character}: ${t}` : t);
+  }
+  const s = out.join("\n");
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+};
+const PRONOUN = /\b(?:he|him|his|she|her|hers|they|them|their)\b/i;
+const STORYWIDE = /\b(?:about|story|plot|summary|summari[sz]e|happens?|ending|ends?|theme|tone|genre)\b/i;
+
+/** The characters a sentence names: whole names, one word of a name ("Jane"), a typo, or a description ("the burly man"). */
+export function namedCharacters(text, script) {
+  const t = String(text || "");
+  const found = [];
+  const add = (n) => { if (n && !found.includes(n)) found.push(n); };
+  for (const c of script?.characters || []) {
+    const words = nameWords(c.name).filter((w) => w.length >= 3);
+    if (words.some((w) => new RegExp(`(?<![A-Za-z])${esc(w)}(?:['’]s)?(?![A-Za-z])`, "i").test(t))) add(resolveCharacter(script, c.name)?.name || c.name);
+  }
+  if (!found.length) {
+    const stop = /^(?:what|whos|who|where|when|which|about|does|doesn|with|this|that|there|their|have|the|and|for|scene|script|movie|film|tell|describe|character|from|want|wants|like|make|look|looks|in|is|it|on|of|to|do|me|a|an)$/i;
+    for (const w of t.split(/[^A-Za-z'’-]+/).filter((x) => x.length >= 4 && !stop.test(x))) add(resolveCharacter(script, w)?.name);
+    const desc = t.match(/\b(?:the|that|this)\s+((?:[a-z-]+\s+){0,2}(?:man|woman|guy|girl|boy|kid|one|cook|waitress|driver|cop))\b/i);
+    if (desc) add(resolveCharacter(script, desc[1])?.name);
+  }
+  return found;
+}
+
+/**
+ * The words of the script this question is about, for the model: the scenes it names, everything about the characters it
+ * names ("he" means the last one talked about), or each scene's opening for a whole-story question. A summary of headings
+ * made the model invent plot (QA 2026-11-06). -> {text, subject} ("" when the question isn't about the script's content).
+ */
+export function scriptEvidence(question, script, { subject = null, max = 3000 } = {}) {
+  if (!script?.scenes?.length) return { text: "", subject: null };
+  const t = String(question || "");
+  const nums = [...t.matchAll(/\bscenes?\s+((?:\d+[a-z]?(?:\s*(?:,|and|&)\s*)?)+)/gi)].flatMap((m) => m[1].split(/\s*(?:,|and|&)\s*/)).map((x) => x.trim().toUpperCase()).filter(Boolean);
+  const chars = namedCharacters(t, script);
+  const who = chars.length ? chars : (PRONOUN.test(t) && subject ? [subject] : []);
+  const parts = [];
+  if (nums.length) for (const sc of script.scenes) if (nums.includes(String(sc.number || sc.index + 1).toUpperCase())) parts.push(sceneText(sc));
+  const each = Math.floor(max / Math.max(1, who.length));
+  for (const n of who) { const g = gatherCharacter(script, n); if (!g.none) parts.push(gatherText(g, each)); }
+  if (!parts.length && STORYWIDE.test(t)) {
+    parts.push(...script.scenes.map((sc) => { const a = (sc.elements || []).filter((e) => e.type === "action").map((e) => String(e.text || "").replace(/\s+/g, " ").trim()).join(" "); return `${sc.number || sc.index + 1}. ${sc.heading}: ${a.slice(0, Math.floor(max / script.scenes.length) - 40)}`; }));
+  }
+  const body = parts.join("\n\n");
+  return { text: body ? (body.length > max ? `${body.slice(0, max - 1)}…` : body) : "", subject: who[0] || subject };
+}
+
 export const ASSISTANT_SYSTEM = `You ARE the Soundstage assistant (✦ Ask), built into Soundstage, a film-making app in ComfyUI: you act on the user's project with the tools below, you are not a chatbot giving general advice. Steps: ① Script (screenplay, scene breakdown: cast, props, set dressing, wardrobe, vehicles), ② Cast & Locations (a card per character / location: description and a reference picture made by ✨ Generate), ③ Set (a 3D stage), ④ Frame (paint stills), ⑤ Motion (video), ⑥ Review, ⑦ Deliver.
-You are a collaborative director, DP and editor: when an intent is vague (tone, coverage, pacing) ask ONE sharp creative question; suggest film-grammar options with a short why; always ground suggestions in what Soundstage can actually do (the tools, presets and panels), name the exact step, panel and button, and be honest about limits.
+Think like a seasoned director: ask what a scene is for, what each person wants and hides, where the turn is and what the audience should feel, and only then what the camera, light and cut should do. You are a collaborative director, DP and editor: when an intent is vague (tone, coverage, pacing) ask ONE sharp creative question; suggest film-grammar options with a short why; always ground suggestions in what Soundstage can actually do (the tools, presets and panels), name the exact step, panel and button, and be honest about limits.
 ${SOUNDSTAGE_MAP}
 You talk with the user over several turns and do what they ask with these tools:
 - search_docs {query}: the Soundstage docs and every control, preset, setting, shortcut and server route; use it for any how / where / what-is question
@@ -343,14 +398,16 @@ You talk with the user over several turns and do what they ask with these tools:
 - check_locations {scenes?}: duplicate or overlapping locations
 - gather_character {name}: everything the script says about one character (scenes, lines, action, what others say, wardrobe, props), cited by scene and line. name can be loose: "the burly man", "Mara"
 - profile_character {name}: build that character: gathers, then a profile (age, build, look, hair, wardrobe, personality, role, arc, visual notes) with citations, and a lookalike / duplicate check against the cast. Use it for "build / profile / who is / what kind of character is X"
-- update_character {name, fields?}: write the profile into X's ② Cast card (one Undo). Only after the user said yes to "Apply to the cast card?"
+- update_character {name, fields?}: write the profile into X's ② Cast card (one Undo). Only after the user said yes to "Apply to the cast card?", or when the user orders a change to the card: then fields is {"look": {"wardrobe": "green bomber jacket"}} with only what changes (age, build, look, hair, wardrobe)
 - regenerate_character {name}: queue ✨ Generate for X's card only (uses the GPU). Only after the user said yes; never for everyone
+- break_down_scene {scenes}: a director's breakdown of those scenes: characters (wants, hides, feels), props and what they mean, the place, the emotion from start to end, the tone, the turn, a staging idea, cited by line
 - plan_stage {command}: change the 3D set (weather, cars, people, camera, lights, renders): a short order like "make it rain"
 - show_me {topic}: how to do something in the app, step by step
 - add_note {scene?, text}: a note in the Director's Book
 Fixes are never applied by you: the checks propose them and the user presses Apply. After a profile, ask "Apply to the cast card?"; after applying, offer "Regenerate the sheet? (uses the GPU)".
-Rules: call every tool the request needs (several is fine). Never say you checked or changed something unless you call its tool in this turn (writing a card and generating a picture included). If the request is unclear, ask one short question instead of guessing. If no tool can do it, say so and name the nearest thing you can do. "scenes" is a list of scene numbers.
-Reply with JSON only: {"reply": "one or two sentences to the user", "question": "a clarifying question, or empty", "tools": [{"name": "check_cast", "args": {}}]}`;
+Rules: call every tool the request needs, and no others: a question about the story needs no tools, answer it in "reply"; run a check only when the user asks for that check. Never say you checked or changed something unless you call its tool in this turn (writing a card and generating a picture included). If the request is unclear, ask one short question instead of guessing (in "question"); don't ask the user to confirm what they just said. If no tool can do it, say so and name the nearest thing you can do. "scenes" is a list of scene numbers.
+Facts about the story come ONLY from "What the script says" in the message: if the answer isn't there, say the script doesn't say. Never invent plot, a character's trait, or who is in a scene. Name only the buttons, presets and panels listed above or returned by search_docs; never invent a preset, a prop or a setting's current value.
+Reply with JSON only: {"reply": "one to three sentences to the user", "question": "a clarifying question, or empty", "tools": [{"name": "check_cast", "args": {}}]}`;
 
 /** Parse the model's JSON turn. -> {reply, question, tools: [{name, args}]} or null. */
 export function parseTurn(raw) {
@@ -362,7 +419,78 @@ export function parseTurn(raw) {
     const tools = (Array.isArray(j.tools) ? j.tools : []).map((t) => (typeof t === "string" ? { name: t, args: {} } : { name: String(t?.name || ""), args: t?.args && typeof t.args === "object" ? t.args : {} }))
       .filter((t) => t.name).slice(0, 6);
     return { reply: String(j.reply || j.answer || "").trim().slice(0, 600), question: String(j.question || "").trim().slice(0, 300), tools };
-  } catch { return s ? { reply: s.slice(0, 400), question: "", tools: [] } : null; }
+  } catch {
+    // Cut off by the answer budget: keep the sentence, never show the JSON.
+    const cut = s.match(/"(?:reply|answer)"\s*:\s*"((?:[^"\\]|\\.)*)/);
+    if (cut) return { reply: cut[1].replace(/\\"/g, '"').replace(/\\n/g, " ").trim().slice(0, 600), question: "", tools: [] };
+    return s ? { reply: s.slice(0, 400), question: "", tools: [] } : null;
+  }
+}
+
+/** The model picks tools; these words decide whether the user asked for them (a story question ran a props check). */
+const CHECKS = ["analyze_script", "check_cast", "check_props", "check_locations"];
+const SCRIPT_TROUBLE = /\b(?:wrong|issues?|problems?|mistakes?|errors?|duplicates?|dupes?|same (?:person|place)|real props?)\b/i;
+const CARD_EDIT = /\b(?:change|update|apply|write|set|edit|rewrite|replace|make|give|switch|put)\b/i;
+const CARD_WORD = /\b(?:card|sheet|wardrobe|look|jacket|coat|shirt|dress|hair|hat|shoes|costume|outfit|age|build)\b/i;
+export function toolAsked(name, text, { lastTools = [] } = {}) {
+  const t = String(text || "");
+  if (CHECKS.includes(name)) return CHECKY.test(t) || SCRIPT_TROUBLE.test(t) || WANTS.some(([n, rx]) => n === name && rx.test(t) && n !== "check_cast") || (!!sameAgain(t) && lastTools.includes(name));
+  if (name === "gather_character") return /\b(?:every|all|lines?|quotes?|says?|said|mentions?|gather)\b/i.test(t);
+  if (name === "profile_character") return /\b(?:build|profile|flesh|develop|work out|figure out)\b/i.test(t);
+  if (name === "update_character") return (YES.test(t)) || (CARD_EDIT.test(t) && CARD_WORD.test(t));
+  if (name === "break_down_scene") return !!breakdownAsked(t);
+  if (name === "regenerate_character") return /\b(?:regenerate|redo|new sheet|generate)\b/i.test(t);
+  // "hi" and "how do I add rain" both came back with a plan to bring in rain: a set change takes an order, in these words
+  if (name === "plan_stage") return !HOWQ.test(t) && STAGE_WORDS.test(t);
+  return true;
+}
+const HOWDO = /^\W*(?:(?:so|ok(?:ay)?|and|now|well|hey|um+|uh+|please|actually)\b[\s,.:;-]*)*(?:how (?:do|can|would|should|to)\b|where (?:do|can|is|are)\b|can i\b|could i\b)/i;
+const HOWQ = /^\W*(?:(?:so|ok(?:ay)?|and|now|well|hey|um+|uh+|please|actually)\b[\s,.:;-]*)*(?:how|where|why|what|which|when|who|can i|could i|is there|are there|do i|does|should i|i don'?t know|i'?m (?:lost|stuck|new))\b/i;
+
+/** The words of an order for the 3D set. */
+export const STAGE_WORDS = /\b(rain|snow|fog|night|day|dawn|dusk|sunset|car|truck|van|bike|boat|camera|lens|light|lights|lighting|shot|frames?|images?|pictures?|photos?|stills?|generate|regenerate|repaint|render|draft|final|put|add|move|place|drive|crash|turn|push|zoom|pan|tilt|orbit|weather|stunt|physics|approve|undo|play|cut|seat|mount|look at|walk|run)\b/i;
+
+/** Hello, thanks, "what can you do": a friendly fixed answer, not a model turn (it kept pitching scene 1 back). */
+const CAPABILITIES = "I read your script and answer questions about it, check the cast, props and locations for duplicates, build a character into their ② Cast card, change the 3D set from plain words (you see the plan and press Apply), paint frames and render when you confirm, and show you where any control is. What would you like to do?";
+export function smallTalk(text) {
+  const t = String(text || "").trim().replace(/[.!]+$/, "");
+  if (/^(?:hi|hello|hey|hiya|yo|good (?:morning|afternoon|evening))(?: there)?$/i.test(t)) return "Hi. Ask me anything about your script or the App, or tell me what you want on the set.";
+  if (/^(?:thanks?(?: you)?(?: so much)?|thx|ty|cheers|great|nice|cool|perfect|awesome)$/i.test(t)) return "You're welcome.";
+  if (/^(?:what can you do|what do you do|what are you|who are you|help)\??$/i.test(t)) return CAPABILITIES;
+  return null;
+}
+
+/** "change Frank's jacket to red": exactly what to write, read from the words (the model answered but sent no fields). */
+const GARMENT = "jacket|coat|shirt|dress|suit|hat|shoes|boots|tie|apron|hoodie|sweater|jeans|pants|trousers|uniform|costume|outfit|wardrobe";
+export function cardEdit(text, script) {
+  const t = String(text || "").trim().replace(/[.!?]+$/, "");
+  const m = t.match(new RegExp(String.raw`^(?:please\s+)?(?:change|make|set|turn|switch)\s+(.+?)['’]s\s+(${GARMENT}|hair)\s+(?:to|into|be)\s+(.+?)(?:\s+(?:on|in)\s+(?:his|her|their|the)\s+(?:② ?)?(?:cast\s+)?card)?$`, "i"));
+  if (!m) return null;
+  const who = resolveCharacter(script, m[1]);
+  if (!who) return null;
+  const part = m[2].toLowerCase(), value = m[3].trim();
+  const look = part === "hair" ? { hair: `${value} hair` } : { wardrobe: /^(?:wardrobe|outfit|costume)$/.test(part) ? value : `${value} ${part}` };
+  return { name: who.name, fields: { look } };
+}
+
+/** "note for scene 3: the sign should flicker" -> {text, scene}. A note goes in the Director's Book, nothing else. */
+export function noteOrder(text) {
+  const t = String(text || "").trim();
+  const m = t.match(/^(?:(?:please\s+)?(?:add|make|leave|write)\s+(?:a\s+)?)?note\s+(?:for|on|in)\s+scene\s+(\d+[a-z]?)\s*[:,-]?\s+(?:that\s+)?(.+)$/i)
+    || t.match(/^(?:please\s+)?(?:add|make|leave|write)\s+(?:a\s+)?note\s*[:,-]?\s+(?:that\s+)?()(.+)$/i);
+  return m && m[2] ? { text: m[2].trim().slice(0, 600), scene: m[1] || null } : null;
+}
+
+/** "make it scarier": a feeling, not an order. One question with options the planner can really run (never a guess). */
+const FEELING = /^(?:(?:can you|could you|please|let'?s|i want (?:to|it to)|i'?d like (?:to|it to))\s+)*(?:make|have|get)\s+(?:it|this|the (?:shot|scene))\s+(?:feel\s+|look\s+|be\s+|more\s+|a lot\s+|way\s+|much\s+)*((?:scar|creep|tens|moodi|sadd|funni|happi|cool|bett|intens|dramat|excit|epic|romantic|eeri|stress)\w*)\s*\W*$/i;
+export function vagueFeeling(text) {
+  const m = String(text || "").trim().match(FEELING);
+  if (!m) return null;
+  return { question: `"${m[1].toLowerCase()}" can come from the light, the camera or the cut. Which do you want to try first?`, options: [
+    { label: "Light: low-key, at night", command: "make it night" },
+    { label: "Camera: slow push-in (closes in on them)", command: "a slow push-in at 50 mm" },
+    { label: "Camera: handheld (unsettled)", command: "go handheld" },
+    { label: "The cut: how pacing does it", command: "how do I do a match cut?" }] };
 }
 
 // The built-in router, for when no language model answers: which checks a request asks for.
@@ -382,7 +510,7 @@ export function wantedTools(text) {
   if (!hits.length) return [];
   // "names" or "characters" alone in a stage order ("put Mara in the car") isn't a cast check: it needs a check word
   // or a script word with it.
-  if (!CHECKY.test(t) && !(/\b(duplicat\w*|dupes?|same person)\b/i.test(t))) return hits.filter((n) => n === "analyze_script" && /analy|summar|beats|coverage/i.test(t));
+  if (!CHECKY.test(t) && !(/\b(duplicat\w*|dupes?|same person|real props?)\b/i.test(t))) return hits.filter((n) => n === "analyze_script" && /analy|summar|beats|coverage/i.test(t));
   return hits;
 }
 /** A check-like request the router can't place ("check it", "make sure it's right"): ask, don't guess. */
@@ -396,9 +524,9 @@ export function sameAgain(text) {
   return nums.length ? { scenes: nums } : (/\b(same|again)\b/i.test(t) ? { scenes: null } : null);
 }
 
-export const ANSWER_SYSTEM = `You are the Soundstage assistant, a collaborative director, DP and editor. Answer the user from what was found in Soundstage below: name the exact step, panel and control, in order, briefly; add one film-craft tip if it helps. If what was found doesn't answer it, say so. Never claim you did something: you are only explaining. Plain text, at most 6 short lines.`;
+export const ANSWER_SYSTEM = `You are the Soundstage assistant, a collaborative director, DP and editor. Answer the user from what was found in Soundstage below: name the exact step, panel and control, in order, briefly; add one film-craft tip if it helps. If what was found doesn't answer it, say so. Never claim you did something: you are only explaining. Reply with JSON only: {"answer": "at most 6 short lines"}.`;
 /** A problem report ("having trouble", "doesn't", "won't", "is off") and a creative intent ("I want a gunshot wound"). */
-export const SYMPTOM = /\b(trouble|problem|issue|not working|doesn'?t|does not|won'?t|isn'?t|can'?t get|cannot get|fails?|broken|wrong|stuck|slow|off\b|drift\w*|ignor\w+|clips?|clipping|out of sync|no effect)/i;
+export const SYMPTOM = /\b(trouble|problem|issue|not working|nothing like|not matching|doesn'?t match|doesn'?t|does not|won'?t|isn'?t|can'?t get|cannot get|fails?|broken|wrong|stuck|slow|off\b|drift\w*|ignor\w+|clips?|clipping|out of sync|no effect)/i;
 export const INTENT = /\b(i want|i'd like|i would like|let'?s (?:do|add|have|make|shoot)|how (?:do|can|would) (?:i|we) (?:do|add|make|shoot|stage|film|get)|(?:add|do|stage|shoot|make|plan|need) (?:a|an|some|the)\b|give me a)/i;
 
 export const YES = /^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|please(?: do)?|do it|go ahead|go for it|apply(?: it)?|lock it in|sounds good|perfect|looks good|regenerate(?: it)?|y)\b/i;
@@ -409,9 +537,11 @@ export const NO = /^\s*(?:no|nope|not now|skip|cancel|later|don'?t|leave it|nah)
  * only when it is someone in the script (so "build the set" stays a set order). -> string or null
  */
 export function buildTarget(text, script) {
-  const t = String(text || "").trim().replace(/[.!?]+$/, "");
+  const t = String(text || "").trim().replace(/[.!?]+$/, "").replace(/^(?:(?:so|ok(?:ay)?|and|now|well|hey|no|yes|but|then|also)\b[\s,.:;-]*)+/i, "").replace(/\s+(?:from|in|according to) (?:the|my|this) (?:script|screenplay|movie|film)$/i, "");
   const m = t.match(/^(?:(?:can you|could you|please|let's|lets)\s+)*(?:build|profile|flesh out|develop|work out|figure out|create|make|cast)\s+(?:(?:a|the)\s+character\s+(?:of|for)\s+)?(.+?)(?:\s+(?:as a character|character|for me|from the script))?$/i)
-    || t.match(/^(?:who(?:'s| is)|what (?:kind|type|sort) of (?:character|person|guy|man|woman) is)\s+(.+?)$/i)
+    || t.match(/^(?:who(?:'s|s| is)|what (?:kind|type|sort) of (?:character|person|guy|man|woman) is|what about)\s+(.+?)$/i)
+    || t.match(/^(?:how is|how's)\s+(.+?)\s+described$/i)
+    || t.match(/^what(?:'s| is)\s+(.+?)\s+like$/i)
     || t.match(/^(?:tell me about|describe)\s+(.+?)(?:'s character)?$/i);
   if (!m || !script?.scenes?.length) return null;
   const who = resolveCharacter(script, m[1]);
@@ -432,7 +562,7 @@ export const CLARIFY = { question: "What should I check?", options: [
  */
 export class Conversation {
   constructor(host = {}) { this.host = host; this.reset(); }
-  reset() { this.history = []; this.lastTools = []; this.lastWhy = ""; this.pending = null; this.undos = []; this.profiles = {}; }
+  reset() { this.history = []; this.lastTools = []; this.lastWhy = ""; this.pending = null; this.undos = []; this.profiles = {}; this.subject = null; }
   /** Text the conversation itself answers, before recipes or the set planner: a yes / no to its own question, "build X". */
   claims(text) {
     if (this.pending && (YES.test(text) || NO.test(text))) return true;
@@ -457,37 +587,46 @@ export class Conversation {
   // ---- building a character (web/agent/charbuild.mjs)
   _castNames() { try { return (this.host.cast?.()?.items() || []).filter((x) => x.kind === "character").map((x) => x.name); } catch { return []; } }
 
-  async profile(name, { signal = null, useModel = true } = {}) {
+  async profile(name, { signal = null, useModel = true, offer = true } = {}) {
     const script = this.host.script?.();
     const g = gatherCharacter(script, name, { extra: this._castNames() });
     if (g.none) return { ...g, tool: "profile_character" };
+    this.subject = g.name;
     let profile = null, why = "";
     if (useModel && this.host.llm) {
-      try { profile = parseProfile(await this.host.llm(PROFILE_SYSTEM, gatherText(g), { signal }), g); if (!profile) why = "the model's profile didn't parse"; }
+      try { profile = parseProfile(await this.host.llm(PROFILE_SYSTEM, gatherText(g), { signal, numPredict: 900 }), g); if (!profile) why = "the model's profile came back empty or unreadable"; }
       catch (e) { if (e?.cancelled || signal?.aborted) throw e; why = e?.noModel ? String(e.message) : e?.timedOut ? "the language model didn't answer in time" : `the language model failed (${e?.message || e})`; }
     } else why = useModel ? this.host.noModelWhy?.() || "no language model is loaded" : "";
-    if (!profile) profile = draftProfile(g, script);
+    if (!profile) { profile = draftProfile(g, script); profile.why = why; }
     const card = cardFields(profile);
     const cross = crossCheck(script, g.name, card.description, this.host.cast?.()?.items() || []);
     this.profiles[g.name] = { profile, card };
+    // A plain "who is X" is answered, not turned into an offer to edit the card (build X asks).
     const hasCard = !!this.host.cast?.()?.find(g.name);
-    this.pending = hasCard ? { type: "update", name: g.name } : null;
+    this.pending = hasCard && offer ? { type: "update", name: g.name } : null;
     return { tool: "profile_character", title: `Character: ${g.name}`, said: `${g.said} Profile: ${profile.sourceLabel}.`, name: g.name, gather: g, profile, card,
       crosscheck: cross, findings: cross.map((c) => ({ kind: c.kind, why: c.why })), fixes: [],
       did: [...g.did, profile.source === "model" ? "the language model read that and wrote the profile (citations checked against the script)" : `wrote a draft from the script's own words${why ? ` (${why})` : ""}`,
         "compared the result with the cast (duplicate names, lookalike descriptions)"],
-      limits: g.limits, confirm: hasCard ? { kind: "update", name: g.name, question: `Apply this to ${g.name}'s ② Cast card?` } : null,
-      noCard: hasCard ? "" : `${g.name} has no ② Cast card in this App, so there is nothing to write it into yet.` };
+      limits: g.limits, confirm: hasCard && offer ? { kind: "update", name: g.name, question: `Apply this to ${g.name}'s ② Cast card?` } : null,
+      noCard: hasCard || !offer ? "" : `${g.name} has no ② Cast card in this App, so there is nothing to write it into yet.` };
   }
 
   /** Write the last profile (or fields) into the card. One Undo. -> result */
   update(name, fields = null) {
     const cast = this.host.cast?.();
     const who = this.profiles[name] ? name : resolveCharacter(this.host.script?.(), name, { extra: this._castNames() })?.name || name;
-    const f = { ...(this.profiles[who]?.card || {}), ...(fields && typeof fields === "object" ? fields : {}) };
+    const edit = fields && typeof fields === "object" ? fields : null;
+    const f = { ...(edit ? {} : this.profiles[who]?.card || {}), ...(edit || {}) };
     const base = { tool: "update_character", title: `② Cast: ${who}`, findings: [], fixes: [] };
     if (!cast) return { ...base, said: "② Cast isn't open in this App, so I couldn't write the card.", did: [] };
-    if (!f.description && !f.look) return { ...base, said: `I have no profile for ${who} yet: ask me to build them first.`, did: [] };
+    if (!f.description && !Object.keys(f.look || {}).length) return { ...base, said: `I have nothing to write on ${who}'s card yet, so I left it as it is. Say "build ${who}" to read the script first, or say the change, like "change ${who}'s jacket to red".`, did: [] };
+    if (edit?.look) {
+      // One change keeps the rest of the look, and reaches the description ✨ Generate paints from.
+      const now = cast.find?.(who) || {};
+      f.look = { ...(now.look || {}), ...edit.look };
+      if (!edit.description) f.description = [now.description, ...Object.values(edit.look)].filter(Boolean).join(", ");
+    }
     const res = cast.write(who, f);
     if (!res) return { ...base, said: `${who} has no ② Cast card, so nothing was written.`, did: [`looked for ${who}'s card in ② Cast`] };
     const entry = { key: res.key, before: res.before, name: who };
@@ -528,7 +667,7 @@ export class Conversation {
     if (!p) return null;
     if (NO.test(text)) { this.pending = null; out.reply = p.type === "update" ? `OK, ${p.name}'s card stays as it is.` : "OK, no regenerate."; return out; }
     if (!YES.test(text)) return null;
-    const r = p.type === "update" ? this.update(p.name) : this.regenerate(p.name);
+    const r = p.type === "update" ? this.update(p.name, p.fields || null) : this.regenerate(p.name);
     out.results.push(r);
     return out;
   }
@@ -561,7 +700,7 @@ export class Conversation {
     if (!ctx) return "";
     try {
       const raw = await this.host.llm(ANSWER_SYSTEM, `Found in Soundstage:\n${ctx}\n\nUser: ${text}`, { signal });
-      return String(raw || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim().slice(0, 900);
+      return parseTurn(raw)?.reply || "";
     } catch (e) { if (e?.cancelled || signal?.aborted) throw e; return ""; }
   }
 
@@ -578,11 +717,23 @@ export class Conversation {
     const quick = this._answerPending(text);
     if (quick) { this._after(quick); return quick; }
     this.pending = null;
+    // What needs no model's judgement goes straight to the right thing (each of these was misrouted in QA 2026-11-06).
+    const hello = smallTalk(text);
+    if (hello) { this.remember("assistant", hello); return { reply: hello, results: [], by: "built-in", why: "" }; }
+    const note = noteOrder(text);
+    if (note) { this.remember("assistant", `(noted: ${note.text})`); return { reply: "", results: [], note, by: "built-in", why: "" }; }
+    const feeling = vagueFeeling(text);
+    if (feeling) { this.remember("assistant", feeling.question); return { reply: "", results: [], by: "built-in", why: "", ...feeling }; }
+    const direct = useModel && this.host.llm ? await this._direct(text, { signal }) : null;
+    if (direct) { this._after(direct); return direct; }
     let plan = null, by = "built-in", why = "";
     if (useModel && this.host.llm) {
       try {
-        const raw = await this.host.llm(`${ASSISTANT_SYSTEM}\n\nThe project now:\n${projectSummary(this.host.script?.(), { shots: this.host.shots?.() || [] })}`,
-          this._prompt(text), { signal });
+        const script = this.host.script?.();
+        const ev = scriptEvidence(text, script, { subject: this.subject });
+        if (ev.subject) this.subject = ev.subject;
+        const raw = await this.host.llm(`${ASSISTANT_SYSTEM}\n\nThe project now:\n${projectSummary(script, { shots: this.host.shots?.() || [] })}`,
+          `${ev.text ? `What the script says:\n${ev.text}\n\n` : ""}${this._prompt(text)}`, { signal, numPredict: 600 });
         plan = parseTurn(raw);
         if (plan) by = "model";
         else why = "the model's answer was empty";
@@ -595,7 +746,16 @@ export class Conversation {
     const out = { reply: "", results: [], by, why };
     if (plan) {
       out.reply = plan.reply;
-      if (plan.question && !plan.tools.length) { out.question = plan.question; this.remember("assistant", plan.question); return out; }
+      plan.tools = plan.tools.filter((t) => toolAsked(t.name, text, { lastTools: this.lastTools }));
+      // "check the locations" means all of them: the model narrowed it to 5 of 10 scenes on its own
+      if (!/\bscenes?\b/i.test(text)) for (const t of plan.tools) if (CHECKS.includes(t.name)) delete t.args.scenes;
+      if (plan.question && !plan.tools.length) {
+        out.question = plan.question;
+        if (out.reply.includes(plan.question)) out.reply = out.reply.replace(plan.question, "").trim();   // said once
+        this.remember("assistant", plan.question); return out;
+      }
+      // a check the words clearly ask for runs even when the model only talked about it
+      for (const n of wantedTools(text)) if (!plan.tools.some((t) => t.name === n)) plan.tools.push({ name: n, args: {} });
       const unknown = [];
       const ran = [];
       for (const t of plan.tools) {
@@ -603,6 +763,11 @@ export class Conversation {
         if (t.name === "show_me") { out.recipe = String(t.args.topic || text); continue; }
         if (t.name === "add_note") { out.note = { text: String(t.args.text || "").slice(0, 600), scene: t.args.scene ?? null }; continue; }
         if (t.name === "apply_fixes") { out.applyAsked = true; continue; }   // only the user's button applies
+        if (t.name === "break_down_scene") {
+          const r = await breakDownScenes(this.host.script?.(), t.args.scenes?.length ? { numbers: t.args.scenes.map((x) => String(x).toUpperCase()) } : { all: true }, { llm: this.host.llm, signal });
+          out.results.push(r); ran.push(t.name); if (r.more) out.options = [{ label: `Next: ${r.more}`, command: r.more }];
+          continue;
+        }
         if (KNOW_TOOLS.includes(t.name)) { out.results.push(await this._know(t.name, t.args, text)); ran.push(t.name); continue; }
         const nm = String(t.args.name || t.args.character || "");
         if (t.name === "gather_character" || t.name === "profile_character") {
@@ -612,7 +777,14 @@ export class Conversation {
         if (t.name === "update_character" || t.name === "regenerate_character") {
           // the user's own yes is required; without it the tool becomes the question
           const who = resolveCharacter(this.host.script?.(), nm, { extra: this._castNames() })?.name || normalizeCharacter(nm);
-          if (!yes || t.name === "regenerate_character") { this.pending = { type: t.name === "update_character" ? "update" : "regen", name: who }; out.confirmOnly = { kind: this.pending.type, name: who, question: t.name === "update_character" ? `Apply this to ${who}'s ② Cast card?` : `Regenerate ${who}'s character sheet? It uses the GPU (one card only).` }; continue; }
+          // an order to change the card shows the change and asks once, whatever the words: nothing is written unseen
+          const change = t.name === "update_character" && t.args.fields && typeof t.args.fields === "object" ? t.args.fields : null;
+          if (!yes || change || t.name === "regenerate_character") {
+            const look = change?.look && typeof change.look === "object" ? Object.entries(change.look).map(([k, v]) => `${k}: ${v}`).join(", ") : "";
+            this.pending = { type: t.name === "update_character" ? "update" : "regen", name: who, fields: change };
+            out.confirmOnly = { kind: this.pending.type, name: who, fields: change, question: t.name !== "update_character" ? `Regenerate ${who}'s character sheet? It uses the GPU (one card only).` : look ? `Set ${who}'s ② Cast card to ${look}?` : `Apply this to ${who}'s ② Cast card?` };
+            continue;
+          }
           out.results.push(t.name === "update_character" ? this.update(who, t.args.fields) : this.regenerate(who)); ran.push(t.name); continue;
         }
         const r = TOOL_NAMES.includes(t.name) ? this.run(t.name, t.args) : null;
@@ -622,9 +794,15 @@ export class Conversation {
         const said = await this._answerFrom(text, out.results.filter((r) => KNOW_TOOLS.includes(r.tool)), signal);
         if (said) out.reply = said;
       }
+      // the model wrote its reply before the check ran: the card says what was found ("no duplicates" under "scene 4 has duplicates")
+      if (ran.some((n) => CHECKS.includes(n))) out.reply = "";
       if (ran.length) { this.lastTools = ran.filter((n) => !KNOW_TOOLS.includes(n) && !CHAR_TOOLS.includes(n)); }
-      if (unknown.length) out.cant = `I can't do ${unknown.join(", ")} yet. The nearest I can do: analyse the script, check the cast, props or locations, build a character into ② Cast, change the set, or add a Book note.`;
+      // A tool the model made up, on a request for pictures, is the planner's "paint frames": never "I can't" for that.
+      if (unknown.length && /\b(?:images?|pictures?|photos?|stills?|frames?)\b/i.test(text)) { out.plan = String(text).slice(0, 200); out.reply = ""; }
+      else if (unknown.length) out.cant = `I can't do ${unknown.join(", ")} yet. The nearest I can do: analyse the script, check the cast, props or locations, build a character into ② Cast, change the set, or add a Book note.`;
       if (!plan.tools.length && !out.reply) out.reply = "I'm not sure what to do with that.";
+    } else if (breakdownAsked(text)) {
+      Object.assign(out, await this._breakdown(breakdownAsked(text), signal, false), { why });
     } else {
       const r = this.builtIn(text) || (question || SYMPTOM.test(text) || INTENT.test(text) ? this.builtInKnow(text) : null);
       if (r?.clarify) { out.question = CLARIFY.question; out.options = CLARIFY.options; this.remember("assistant", CLARIFY.question); return out; }
@@ -640,10 +818,64 @@ export class Conversation {
     return out;
   }
 
+  async _breakdown(asked, signal, useModel = true) {
+    const r = await breakDownScenes(this.host.script?.(), asked, { llm: useModel ? this.host.llm || null : null, signal });
+    const out = { reply: "", results: [r], by: r.scenes.some((s) => s.read) ? "model" : "built-in", why: r.scenes.find((s) => s.why)?.why || "" };
+    if (r.more) out.options = [{ label: `Next: ${r.more}`, command: r.more }];
+    return out;
+  }
+
+  /**
+   * With a model: who-is and build questions go to the profile, known problems and creative recipes to the playbook,
+   * before the model can guess. It only words the answer from what was found. -> a turn, or null to ask the model.
+   */
+  async _direct(text, { signal = null } = {}) {
+    const script = this.host.script?.();
+    const asked = breakdownAsked(text);
+    if (asked) return this._breakdown(asked, signal);
+    const who = buildTarget(text, script);
+    if (who) {
+      const offer = /^\W*(?:(?:can you|could you|please|let'?s|lets)\s+)*(?:build|profile|flesh|develop|work out|figure out|create|make|cast)\b/i.test(text);
+      const r = await this.profile(who, { signal, offer });
+      return { reply: "", results: [r], by: r.profile?.source === "model" ? "model" : "built-in", why: "" };
+    }
+    if (wantedTools(text).length) return null;
+    // "the same for scene 4": the last checks again, there; only the words say which scene, so no model
+    const again = sameAgain(text);
+    if (again?.scenes && /\b(?:same|again)\b/i.test(text) && this.lastTools.some((n) => CHECKS.includes(n))) {
+      return { reply: "", results: this.lastTools.filter((n) => CHECKS.includes(n)).map((n) => this.run(n, { scenes: again.scenes })), by: "built-in", why: "" };
+    }
+    // "anything wrong with my script" is the script check, not the render troubleshooter
+    if (/\b(?:script|screenplay)\b/i.test(text) && SCRIPT_TROUBLE.test(text) && script?.scenes?.length) {
+      this.lastTools = ["analyze_script"];
+      return { reply: "", results: [this.run("analyze_script", {})], by: "built-in", why: "" };
+    }
+    // A how-to with Ask's own steps (real buttons, Show me) needs no model.
+    const edit = cardEdit(text, script);
+    if (edit) return { reply: "", results: [], by: "built-in", why: "", confirmOnly: { kind: "update", name: edit.name, fields: edit.fields, question: `Set ${edit.name}'s ② Cast card to ${Object.entries(edit.fields.look).map(([f, v]) => `${f}: ${v}`).join(", ")}?` } };
+    const onScript = !!scriptEvidence(text, script).text;
+    if (HOWDO.test(text) && !onScript) {
+      if (this.host.hasRecipe?.(text)) return { reply: "", results: [], recipe: text, by: "built-in", why: "" };
+      const pr = planRecipe(text);
+      if (pr.steps.length) return { reply: "", results: [pr], by: "built-in", why: "" };
+    }
+    // a report that also asks something ("the clay isn't followed, what's Stage-2 start?") needs the model to pick both
+    let k = /\?\s*$/.test(text) && !HOWDO.test(text) ? null : this.builtInKnow(text);
+    if (!k && HOWDO.test(text) && !onScript) {
+      const docs = await searchDocs(text, { minCover: 0.6 }).catch(() => null);
+      if (docs?.hits?.length) return { reply: await this._answerFrom(text, [docs], signal), results: [docs], by: "model", why: "" };
+    }
+    if (!k) return null;
+    const results = [];
+    for (const t of k.tools) results.push(await this._know(t.name, t.args, text));
+    const said = await this._answerFrom(text, results, signal);
+    return { reply: said, results, by: "model", why: "" };
+  }
+
   /** The question a turn ends on (the last result's confirm) and the history line. */
   _after(out) {
     const c = out.confirmOnly || [...out.results].reverse().find((x) => x.confirm)?.confirm || null;
-    if (c) { out.confirm = c; this.pending = { type: c.kind, name: c.name }; }
+    if (c) { out.confirm = c; this.pending = { type: c.kind, name: c.name, fields: c.fields || null }; }
     this.remember("assistant", [out.reply, ...out.results.map((x) => x.said), out.plan ? `(planned on the set: ${out.plan})` : "", c?.question || ""].filter(Boolean).join(" "));
   }
 

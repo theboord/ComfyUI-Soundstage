@@ -184,7 +184,7 @@ export const STEPS = {
   assemble: () => [["assemble_cut", {}, "Cut the scene together"]],
 };
 const LOCAL = [["reblock", /\b(re-?block|chase)\b/i], ["cover_n", /\bcover\w*\b.*\b(two|three|four|[234])\s+(?:shots?|setups?|angles?)\b/i], ["assemble", /\b(assemble|cut (?:it|the scene) together|rough cut)\b/i]];
-const SYMPTOMS = /\b(won'?t|doesn'?t|does not|isn'?t|not working|can'?t|drift\w*|clip\w*|stuck|slow|off\b|ignor\w*|wrong|broken|look alike|lookalike)\b/i;
+const SYMPTOMS = /\b(nothing like|not matching|won'?t|doesn'?t|does not|isn'?t|not working|can'?t|drift\w*|clip\w*|stuck|slow|off\b|ignor\w*|wrong|broken|look alike|lookalike)\b/i;
 const ACTION_WORDS = /\b(i want|i'?d like|add|give|put|make|re-?block|cover|rig|stage|cut|let'?s|do (?:a|an|the)|how (?:do|can) i)\b/i;
 
 /**
@@ -479,6 +479,12 @@ export class Copilot {
     this.pending = null;
     this.remember("user", text);
     let why = "";
+    // A known problem has a known fix: the playbook says it, the model can't invent a setting's value (QA 2026-11-06).
+    const known = route(text, { script });
+    if (known?.cards.some((c) => c.tool === "troubleshoot")) {
+      const out = await routed(this, known);
+      if (out) { this.remember("assistant", out.say); return out; }
+    }
     if (this.host.llm) {
       try {
         const results = [];

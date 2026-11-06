@@ -3,6 +3,19 @@
 Soundstage is updated continuously on `main`. Newest first. Times are US Pacific.
 Each entry links to the code; every milestone ships with tests.
 
+## 2026-11-06
+
+**✦ Ask tuned from real use, and a director's breakdown of each scene (task 2)**
+- **Still wrong (read first):** tested with one invented 10-scene script, on the CPU tier only (16 GB card), not a feature-length script and not the GPU tier. The director's reading is a local model's interpretation: its line citations are checked, its judgement isn't, and it can read a secret into a character that the scene only hints at. Two scenes per turn, so a long script takes many Next presses. "Put Jane in the booth" still plans "a jane": the set planner doesn't know the script's cast. See [assistant/MISSES.md](assistant/MISSES.md).
+- **Measured:** 36 asks with `qwen3:30b-a3b` in the App, re-run in rounds after the fixes. Before: invented plot, invented buttons and values, a plan to bring in rain on "hi". The list of each miss and its fix is in the misses log.
+- **What** ([web/agent/scenebook.mjs](web/agent/scenebook.mjs), [web/agent/assistant.mjs](web/agent/assistant.mjs), [web/agent/charbuild.mjs](web/agent/charbuild.mjs), [web/agent/copilot.mjs](web/agent/copilot.mjs), [web/agent/ask.mjs](web/agent/ask.mjs)):
+  - `break_down_scene`: character, prop, location, emotion, tone, the turn and a staging idea, script facts kept apart from the reading, one button to add it to the Director's Book.
+  - The model now gets the script's own words for the scene or person asked about.
+  - Tools run only when the words ask for them; known problems, recipes and docs answer before the model can guess.
+  - Who-is and build questions go straight to the profile. A paragraph about one person counts as about them, and a nickname given in it resolves ("the burly man ... Everyone calls him FRANK").
+  - A card change shows what it will write, and the yes writes it. Answers have more room and never show raw JSON.
+- **Tests:** [tests/js/scenebook.test.mjs](tests/js/scenebook.test.mjs), plus the existing Ask tests, three of them changed on purpose (the build goes straight to the profile, a known problem goes to the playbook first, a check's card replaces the model's reply).
+
 ## 2026-11-04
 
 **A Claude agent skill for Soundstage (`skills/soundstage-agent/`), kept fresh by the build**
