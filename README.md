@@ -6,7 +6,7 @@ https://github.com/user-attachments/assets/1c7d7bb2-db5d-472e-b025-3168c633c531
 
 
 <p align="center"><img src="docs/media/readme_v4/hero_jturn.gif" width="880" alt="A wipe between the 3D stage's clay and the Final render of the same J-turn: a red car on a wet night street, same blocking, same camera."></p>
-<p align="center"><sub>The wipe: the 3D stage's clay, then the Final render of the same J-turn. Same blocking, same camera. <a href="https://github.com/user-attachments/assets/161d858e-5137-4887-abc2-995dd2b83574">▶ The render with its sound </a> · <a href="https://github.com/user-attachments/assets/9a4114c4-b9a9-442c-820e-d55c4dc18bbd">▶ A 15 s hello from Mike on the lot </a></sub></p>
+<p align="center"><sub>The wipe: the 3D stage's clay, then the Final render of the same J-turn. Same blocking, same camera. <a href="https://github.com/user-attachments/assets/161d858e-5137-4887-abc2-995dd2b83574">▶ The render with its sound </a></sub></p>
 
 <p align="center">
 <a href="https://claude.ai/artifact/GwtC3yFZtGCsTsiPGbvnAq"><img src="docs/media/readme_v4/btn_try.png" width="260" alt="Try it in your browser (no install)"></a>
@@ -121,7 +121,6 @@ The video and image models here are distilled (few-step) versions, so speed is b
 
 <p align="center"><img src="docs/media/readme_v4/card_carpass.gif" width="880" alt="Night, rain, sound (Final render): a police car tears down a wet street at pursuit speed, lights strobing, from a still tripod camera."></p>
 <p align="center"><sub><b>Night, rain, sound.</b> A police car at about 72 km/h, lights strobing, rendered from the 3D blocking. Move the camera and the same take renders from a new angle.</sub></p>
-<p align="center"><sub><a href="https://github.com/user-attachments/assets/d3852eeb-ade7-48d1-81f0-64b16b13593f">▶ The police cars with their sound </a></sub></p>
 
 <p align="center"><img src="docs/media/readme_v4/card_cut.gif" width="880" alt="Cut and deliver: a real-time timeline with generated sound. Out to Avid, Premiere, Resolve and FCP; Blender and Unreal round trip."></p>
 
