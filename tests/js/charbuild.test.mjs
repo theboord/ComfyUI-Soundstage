@@ -114,7 +114,6 @@ test("a scripted conversation: build, profile with the model, apply, regenerate,
   const panel = fakePanel(s, { "character:jim": { description: "in their 50s, burly, big build, shaved head, tattooed, wearing leather vest" } });
   const calls = [];
   const replies = [
-    JSON.stringify({ reply: "Let me read everything about him.", tools: [{ name: "profile_character", args: { name: "the burly man" } }] }),
     JSON.stringify({ age: { value: "50s", cites: ["1:2"] }, build: { value: "burly", cites: ["1:2"] }, hair: { value: "shaved head", cites: ["1:2"] },
       wardrobe: { value: "leather vest", cites: ["1:2"] }, personality: { value: "gruff, grieving", cites: ["3:7"] }, role: { value: "the stranger with a secret", cites: [] },
       arc: { value: "silent threat to a father who lost his daughter", cites: ["3:7"] }, visual: { value: "burly man in his 50s, shaved head, tattooed forearms, leather vest", cites: ["1:2"] } }),
@@ -124,12 +123,12 @@ test("a scripted conversation: build, profile with the model, apply, regenerate,
   assert.equal(t1.by, "model");
   const prof = t1.results[0];
   assert.equal(prof.tool, "profile_character"); assert.equal(prof.profile.source, "model");
-  assert.match(calls[1].prompt, /\[1:2\] A BURLY MAN \(50s\)/, "the model read the gathered, cited evidence");
+  assert.match(calls[0].prompt, /\[1:2\] A BURLY MAN \(50s\)/, "the model read the gathered, cited evidence");
   assert.match(prof.profile.fields.arc.value, /daughter/);
   assert.ok(prof.crosscheck.some((x) => x.kind === "lookalike" && x.with === "Jim"), "Jim's card looks the same");
   assert.match(t1.confirm.question, /Apply this to BURLY MAN's ② Cast card\?/);
   const t2 = await c.turn("yes please");
-  assert.equal(calls.length, 2, "a yes to its own question needs no model round trip");
+  assert.equal(calls.length, 1, "build goes straight to the profile; a yes to its own question needs no model round trip");
   assert.match(panel.store().items["character:burly_man"].description, /tattooed forearms/);
   assert.match(t2.confirm.question, /Regenerate .* uses the GPU/);
   const t3 = await c.turn("yes");

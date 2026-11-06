@@ -90,7 +90,7 @@ test("the example questions become runnable plans (main's playbook and recipes -
 test("the five questions with a stubbed model: the model picks the tool, the App's playbook supplies runnable steps", async () => {
   const { llm } = stubLLM([{ call: { name: "troubleshoot", args: { symptom: "the claymation won't lock into the final render" } } }]);
   const r = await new Copilot({ ...fakeApp().host, llm }).turn("the claymation won't lock into the final render");
-  assert.equal(r.by, "model");
+  assert.equal(r.by, "built-in", "a known problem goes to the playbook first: the model can't invent a setting's value");
   assert.deepEqual(r.plan.steps[0].args, { adherence: "Exact" });
   const s2 = stubLLM([{ say: "A squib on Cole, sold by his reaction.", plan: [{ name: "select_shot", args: { shot: "3" } }, { name: "add_sfx_rig", args: { rig: "squib", on: "Cole" } }] }]);
   const r2 = await new Copilot({ ...fakeApp().host, llm: s2.llm }).turn("I want a gunshot wound on Cole in shot 3");
@@ -169,12 +169,12 @@ test("self-check catches a setting that didn't stick", async () => {
 
 test("invalid tool JSON: one re-ask, then the built-in router", async () => {
   const { llm, seen } = stubLLM(["I think you should set adherence", '{"call": {"name": "set_quality", "args": {"adherence": "max"}}}']);
-  const r = await new Copilot({ ...fakeApp().host, llm }).turn("the claymation won't lock into the final render");
+  const r = await new Copilot({ ...fakeApp().host, llm }).turn("I want a gunshot wound on Cole in shot 3");
   assert.equal(seen.length, 2, "asked once more, no more");
   assert.match(seen[1].prompt, /not valid: no JSON object/);
   assert.equal(r.by, "built-in");
   assert.match(r.why, /twice/);
-  assert.deepEqual(r.plan.steps[0].args, { adherence: "Exact" });
+  assert.equal(r.plan.steps[0].name, "select_shot");
   const ok = stubLLM(["oops", '{"say": "Exact adherence.", "plan": [{"name": "set_quality", "args": {"adherence": "Exact"}}]}']);
   const r2 = await new Copilot({ ...fakeApp().host, llm: ok.llm }).turn("fix it");
   assert.equal(r2.by, "model");
