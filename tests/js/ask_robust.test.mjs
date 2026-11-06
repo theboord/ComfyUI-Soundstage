@@ -304,7 +304,7 @@ test("Ask: an unknown question with a model that never answers still gets an ans
   d._llm = never;
   const ask = await import("../../web/agent/ask.mjs");
   assert.ok(ask.FREE_ANSWER_MS < ASK_TIMEOUT_MS, "the model gives up before the chat does");
-  const r = await m.dir.send("how do I juggle flaming torches?");
+  const r = await m.dir.send("how do I juggle oranges?");
   assert.ok(r.answer);
   assert.match(m.last().text, /didn't answer in time\.I don't have a recipe for that one yet/);
   m.done();

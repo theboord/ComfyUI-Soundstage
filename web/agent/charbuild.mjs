@@ -26,6 +26,13 @@ const FILLER = new Set(["THE", "A", "AN", "THAT", "THIS", "GUY", "PERSON", "CHAR
 /** The words of a request's name: "the tall stranger" -> ["BURLY", "MAN"]. */
 const queryWords = (q) => normalizeCharacter(q).replace(/['’]S\b/g, "").replace(/[^A-Z0-9 #'-]/g, " ").split(/\s+/).filter((w) => w && !FILLER.has(w));
 
+/** PTA for PAT: one pair of neighbouring letters swapped, the usual fast-typing slip. */
+const swappedLetters = (a, b) => {
+  if (a.length !== b.length) return false;
+  const d = [...a].flatMap((c, i) => (c === b[i] ? [] : [i]));
+  return d.length === 2 && d[1] === d[0] + 1 && a[d[0]] === b[d[1]] && a[d[1]] === b[d[0]];
+};
+
 /**
  * Who a request means: "the tall stranger", "TALL STRANGER", "Mara", "marra" (a typo), or a description the script gives where
  * it introduces them ("the tattooed one" -> whoever the action calls tattooed). extra: more names (the ② Cast cards).
@@ -40,21 +47,26 @@ export function resolveCharacter(script, query, { extra = [] } = {}) {
     let s = 0, how = "";
     if (nk === qk || normalizeCharacter(n) === qk) { s = 100; how = "name"; }
     else if (qw.every((w) => nw.includes(w)) || (nw.length && nw.every((w) => qw.includes(w)))) { s = 80; how = "part of the name"; }
-    else if (editDistance(nk, qk, 2) <= (Math.min(nk.length, qk.length) >= 7 ? 2 : 1) && Math.min(nk.length, qk.length) >= 4) { s = 60; how = "spelling"; }
+    else if ((editDistance(nk, qk, 2) <= (Math.min(nk.length, qk.length) >= 7 ? 2 : 1) || swappedLetters(nk, qk)) && Math.min(nk.length, qk.length) >= 4) { s = 60; how = "spelling"; }
     else {
       // a description: the request's words in an action sentence that names them in caps
       const re = new RegExp(`(?<![A-Za-z])${esc(n)}(?![A-Za-z])`);
       for (const sc of script?.scenes || []) for (const e of sc.elements || []) {
         if (e.type !== "action" || !re.test(e.text || "")) continue;
         for (const se of sentences(e.text)) if (re.test(se) && qw.every((w) => new RegExp(`\\b${esc(w)}\\b`, "i").test(se))) { s = 50; how = "description"; }
+        // "The tall stranger climbs out. ... Everyone calls him PAT.": the same paragraph, when it names nobody else
+        if (!s && qw.every((w) => new RegExp(`\\b${esc(w)}\\b`, "i").test(e.text)) && !names.some((x) => x !== n && new RegExp(`(?<![A-Za-z])${esc(x)}(?![A-Za-z])`).test(e.text))) { s = 40; how = "description"; }
       }
     }
     return { n, s, how };
   }).filter((x) => x.s).sort((a, b) => b.s - a.s);
   if (!scored.length) return null;
   const best = scored[0];
-  const aliases = uniq(checkCast(script || {}).findings.filter((f) => f.kind !== "age" && f.names.includes(best.n)).flatMap((f) => f.names).filter((x) => x !== best.n));
-  return { name: best.n, aliases, how: best.how, others: scored.slice(1, 4).filter((x) => x.s === best.s).map((x) => x.n) };
+  // JANE and JANE DOE are one person: the name is the fuller one check_cast keeps, the other is an alias
+  const same = checkCast(script || {}).findings.filter((f) => f.kind !== "age" && f.names.includes(best.n));
+  const full = same.find((f) => f.kind === "part" && f.into)?.into || best.n;
+  const aliases = uniq(same.flatMap((f) => f.names).filter((x) => x !== full));
+  return { name: full, aliases, how: best.how, others: scored.slice(1, 4).filter((x) => x.s === best.s).map((x) => x.n) };
 }
 
 /**
@@ -74,6 +86,9 @@ export function gatherCharacter(script, query, { cap = 10, extra = [] } = {}) {
   const caps = new RegExp(`(?<![A-Za-z])(?:${names.map(esc).join("|")})(?![A-Za-z])`);
   const prose = new RegExp(`(?<![A-Za-z])(?:${names.map((n) => esc(titleCase(n))).join("|")})(?![A-Za-z])`);
   const mentions = (t) => caps.test(t) || prose.test(t);
+  const others = (script.characters || []).map((c) => c.name).filter((n) => !names.includes(n))
+    .flatMap((n) => nameWords(n).filter((w) => w.length >= 3)).filter((w) => !names.some((n) => nameWords(n).includes(w)))
+    .map((w) => new RegExp(`(?<![A-Za-z])(?:${esc(w)}|${esc(titleCase(w))})(?![A-Za-z])`));
   const lists = { scenes: [], dialogue: [], action: [], described: [], wardrobe: [], props: [] };
   let intro = null;
   for (const sc of script.scenes) {
@@ -86,10 +101,14 @@ export function gatherCharacter(script, query, { cap = 10, extra = [] } = {}) {
       if (e.type === "dialogue" && names.includes(e.character)) { lists.dialogue.push({ scene: n, line, text: clip(text) }); seen = true; return; }
       if (e.type === "dialogue" && e.character && mentions(text)) { lists.described.push({ scene: n, line, by: e.character, text: clip(text) }); return; }
       if (e.type !== "action") return;
+      // A paragraph that names this person and nobody else is about them, sentence by sentence ("The tall stranger climbs
+      // out. He is six foot four. Everyone calls him PAT.").
+      const namesOther = (s) => others.some((x) => x.test(s));
+      const allMine = mentions(text) && !namesOther(text);
       let follow = false;   // the sentence after a mention, in the same paragraph, while it names nobody else
       for (const se of sentences(text)) {
-        const named = caps.test(se) || prose.test(se);
-        if (!named && !(follow && !/(?<![A-Za-z])[A-Z]{3,}(?:\s+[A-Z]{2,})*(?![A-Za-z])/.test(se))) { follow = false; continue; }
+        const named = allMine || caps.test(se) || prose.test(se);
+        if (!named && !(follow && !namesOther(se) && !/(?<![A-Za-z])[A-Z]{3,}(?:\s+[A-Z]{2,})*(?![A-Za-z])/.test(se))) { follow = false; continue; }
         follow = named || follow;
         seen = true;
         lists.action.push({ scene: n, line, text: clip(se) });

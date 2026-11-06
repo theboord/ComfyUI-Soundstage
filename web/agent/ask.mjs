@@ -18,9 +18,10 @@
 import { icon } from "../ui/icons.mjs";
 import { Tour } from "../ui/firstrun.mjs";
 import { withTimeout } from "./agent.mjs";
-import { Conversation, applyFixes, wantedTools, isVagueCheck } from "./assistant.mjs";
+import { Conversation, applyFixes, wantedTools, isVagueCheck, STAGE_WORDS } from "./assistant.mjs";
 import { castHost, FIELD_LABEL, PROFILE_FIELDS, cite } from "./charbuild.mjs";
 import { searchDocs } from "./knowledge.mjs";
+import { sceneNote } from "./scenebook.mjs";
 import { mountCopilot } from "./copilotui.mjs";
 
 /** The longest a free-form answer may take before Ask offers the nearest recipes instead (the chat's own limit is longer). */
@@ -178,7 +179,7 @@ export const HOWTO = [
       { text: "Approve the take you want; the cut uses approved takes first.", show: null },
     ],
     doIt: (_t, ctx) => `approve shot ${shotN(ctx)}`, next: ["deliver"] },
-  { id: "deliver", words: [/\b(?:export|deliver|cut|edit|assemble|timeline|nle|premiere|resolve|final video|download)\b/],
+  { id: "deliver", words: [/\b(?:export|deliver|(?<!match |jump |smash |j-|l-|j |l )cut|edit|assemble|timeline|nle|premiere|resolve|final video|download)\b/],
     title: "Cut it together and export",
     steps: [
       { text: "Go to ⑦ Deliver: the cut as one video, layers for VFX and an NLE export.", show: { step: "deliver", sel: "[data-step=deliver]" } },
@@ -385,13 +386,13 @@ export function parseAnswer(raw) {
  */
 export function modelFor(d, { ms: fixed = null } = {}) {
   const noModel = (why) => Object.assign(new Error(why), { noModel: true });
-  return async (system, prompt, { signal = null } = {}) => {
+  return async (system, prompt, { signal = null, numPredict = 0 } = {}) => {
     const ms = fixed ?? d.limits?.modelMs ?? FREE_ANSWER_MS;
     const be = await d.resolvedBackend();
     if (be !== "qwen" && be !== "ollama" && be !== "api") throw noModel("the language model isn't loaded (no local Qwen3.5 4B here, or the Director is set to the rules in ⚙)");
     if (be === "qwen" && await d._gpuBusy()) throw noModel("the GPU is busy rendering and the local model would wait behind it");
     const info = await d.info();
-    return withTimeout(d._llm(be, { system, prompt, max_length: 400, model: info.model }, { timeoutMs: ms, signal }), ms + 500, "the language model", signal);
+    return withTimeout(d._llm(be, { system, prompt, max_length: numPredict || 400, numPredict, model: info.model }, { timeoutMs: ms, signal }), ms + 500, "the language model", signal);
   };
 }
 
@@ -399,7 +400,7 @@ export function modelFor(d, { ms: fixed = null } = {}) {
 export function isStageOrder(text) {
   const t = String(text || "");
   if (isQuestion(t) || wantedTools(t).length || isVagueCheck(t)) return false;
-  return /\b(rain|snow|fog|night|day|dawn|dusk|sunset|car|truck|van|bike|boat|camera|lens|light|lights|lighting|shot|frames?|render|draft|final|put|add|move|place|drive|crash|turn|push|zoom|pan|tilt|orbit|weather|stunt|physics|approve|undo|play|cut|seat|mount|look at|walk|run)\b/i.test(t);
+  return STAGE_WORDS.test(t);
 }
 
 // ---------------------------------------------------------------- mount
@@ -509,7 +510,7 @@ export function mountAsk({ root, dir, host = {}, isActive = () => true }) {
   function charCard(r) {
     const box = h("div", { class: "tool" }, h("div", { class: "ttl" }, r.title), h("div", {}, r.said));
     if (r.tool === "profile_character" && r.profile) {
-      box.append(h("div", { class: "meta" }, r.profile.sourceLabel === "draft from script cues" ? "Draft from script cues (no language model): every line below is the script's own words." : "Read by the language model; citations checked against the script."));
+      box.append(h("div", { class: "meta" }, r.profile.sourceLabel === "draft from script cues" ? `Draft from script cues (${r.profile.why || "no language model"}): every line below is the script's own words.` : "Read by the language model; citations checked against the script."));
       box.append(h("ul", {}, ...PROFILE_FIELDS.filter((k) => r.profile.fields[k]?.value).map((k) => h("li", {}, h("b", {}, `${FIELD_LABEL[k]}: `), r.profile.fields[k].value, cites(r.profile.fields[k].cites)))));
       const g = r.gather;
       const ev = [...(g.dialogue || []).map((x) => `"${x.text}"`), ...(g.described || []).map((x) => `${x.by}: "${x.text}"`)].slice(0, 6);
@@ -559,8 +560,45 @@ export function mountAsk({ root, dir, host = {}, isActive = () => true }) {
     return box;
   }
 
+  // ---- a director's breakdown: the script's facts, then the reading with its line citations, then "add it to the Book"
+  const lines = (cs) => (cs?.length ? h("span", { class: "meta" }, ` (${cs.map((c) => `l ${c}`).join(", ")})`) : null);
+  function breakdownCard(r) {
+    const box = h("div", { class: "tool" }, h("div", { class: "ttl" }, r.title), h("div", {}, r.said));
+    for (const s of r.scenes) {
+      const f = s.facts, x = s.read;
+      const row = (label, ...v) => h("li", {}, h("b", {}, `${label}: `), ...v);
+      box.append(h("div", { class: "ttl" }, `Scene ${f.scene}: ${f.heading}`));
+      box.append(h("div", { class: "meta" }, "From the script:"), h("ul", {},
+        row("Location", `${f.location || f.heading}${f.time ? `, ${f.time.toLowerCase()}` : ""}`),
+        row("Characters", f.characters.join(", ") || "none named"),
+        row("Props in the breakdown", f.props.join(", ") || "none listed")));
+      if (x) {
+        const items = [];
+        if (x.purpose) items.push(row("Why this scene", x.purpose.text, lines(x.purpose.cites)));
+        if (x.emotion) items.push(row("Emotion", `${x.emotion.start} → ${x.emotion.end}`, lines(x.emotion.cites)));
+        if (x.tone) items.push(row("Tone", x.tone));
+        if (x.turn) items.push(row("The turn", x.turn.text, lines(x.turn.cites)));
+        for (const c of x.characters) items.push(row(c.name, [c.wants && `wants ${c.wants}`, c.hides && `hides ${c.hides}`, c.feels && `feels ${c.feels}`].filter(Boolean).join("; "), lines(c.cites)));
+        for (const p of x.props) if (p.means) items.push(row(p.item, p.means, lines(p.cites)));
+        if (x.place) items.push(row("The place", x.place.text, lines(x.place.cites)));
+        if (x.staging) items.push(row("Staging idea", x.staging.text, x.staging.why ? ` (${x.staging.why})` : ""));
+        box.append(h("div", { class: "meta" }, "A director's reading (the language model's interpretation; line citations checked against the scene):"), h("ul", {}, ...items));
+      } else box.append(h("div", { class: "why" }, `No emotion or tone reading: ${s.why || "the language model didn't answer"}.`));
+      const book = host.book?.();
+      if (book?.addNote) {
+        const add = h("button", { type: "button" }, icon("check", 13), "Add to the Director's Book");
+        add.addEventListener("click", () => { add.disabled = true; Promise.resolve(book.addNote(sceneNote(s), { sceneId: s.id || null, source: "ask" })).then(() => { add.textContent = "Added to the Director's Book"; }, (e) => { add.textContent = `Couldn't add it: ${e?.message || e}`; }); });
+        box.append(h("div", { class: "row" }, add));
+      }
+    }
+    if (r.did?.length) box.append(h("div", { class: "meta" }, `What I did: ${r.did.join("; ")}.`));
+    if (r.limits) box.append(h("div", { class: "meta" }, r.limits));
+    return box;
+  }
+
   /** A check's card: what it found, what it did, the fixes behind an Apply (your OK), then Undo. */
   function resultCard(r) {
+    if (r.tool === "break_down_scene") return breakdownCard(r);
     if (["search_docs", "troubleshoot", "plan_recipe"].includes(r.tool)) return knowCard(r);
     if (["profile_character", "update_character", "regenerate_character", "gather_character"].includes(r.tool)) return charCard(r);
     const box = h("div", { class: "tool" }, h("div", { class: "ttl" }, r.title), h("div", {}, r.said));
