@@ -30,6 +30,15 @@ Two agents work at the same time, so each has its own tasks, its own files, its 
 - `README.md` / `docs/TUTORIAL.md`: the OpenAI lane edits Install, Quality and everything outside Ask; the Claude lane edits Ask sections only.
 - **One open PR per agent at a time.** The human (Mike or Jon) merges, one PR at a time, running both test suites after each. Agents don't merge, push to `main`, delete branches or force-push.
 
+## One machine, one GPU owner (both agents, both lanes)
+Two agents can share Jon's machine, so they share its GPU, RAM and ComfyUI. Before any GPU job, model load or restart:
+1. **Take the lock.** Create `~/soundstage_gpu.lock` containing your name (Claude or GPT), the job, the start time. If the file already exists, do NOT start: wait, or ask Jon.
+2. **Release it** (delete the file) when the job ends, even if it failed.
+3. **Only the GPT lane runs renders** during tasks 1 and 9. The Claude lane tests Ask with canned replies (its tests do this), so it never needs the GPU.
+4. **Nobody restarts ComfyUI or Ollama** without the lock free and Jon's OK. A restart kills the other agent's job.
+5. **Ask's model stays off during renders.** Let it unload before a render starts; never run Ask tests while a render is running.
+6. **Separate ports.** A test copy runs on a different port from Jon's main install.
+
 ## Safety rules
 - **No secrets in the repo, ever:** no API keys, tokens, passwords, SSH keys, pod addresses or ports, notification topics, or personal paths. Keys live in the OS keychain; scripts read them from environment variables.
 - **No pods or paid GPU work without the human saying so in that session.** A pod costs money by the hour, and `stop` it when the work is done. Never print or log credential values.
