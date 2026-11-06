@@ -7,10 +7,28 @@ Usage is limited on purpose. Check it **before you start, and again after each p
 - **Claude: hard stop at 60%** of the weekly plan usage. At 60% finish the step you're on, commit, and stop.
 - **OpenAI/ChatGPT agent: hard stop at 80%** of its plan usage.
 - How to check: Claude Code `/usage` (or the plan-limits card in the app); ChatGPT/Codex usage page or `/status`.
-- When you stop, leave a short note in `assistant/HANDOFF_NOTES.md` (what's done, what's half-done, the exact next step, the branch name), push the branch, and tell the human. Don't start a new task "just to use up" the remaining percent.
+- When you stop, leave a short note in YOUR OWN file (`assistant/HANDOFF_CLAUDE.md` for Claude, `assistant/HANDOFF_GPT.md` for the OpenAI agent): what's done, what's half-done, the exact next step, the branch name, push the branch, and tell the human. Don't start a new task "just to use up" the remaining percent.
 - Never turn on pay-as-you-go / extra usage or buy credits unless the human says so in that session.
 - Cheapest model that can do the job: small edits, merges and doc work do not need the biggest model. Don't run broad exploratory sweeps; read only the files you need.
 - Don't spawn parallel agents or cloud sessions unless the human asks. One thing at a time.
+
+## Lanes: who owns what (so two agents never step on each other)
+Two agents work at the same time, so each has its own tasks, its own files, its own branch prefix and its own notes file. Stay in your lane. If you need a change in the other lane's files, don't make it: write it in your notes file as "needs the other agent: <what>" and tell the human.
+
+| | **Claude lane** (Ask) | **OpenAI-agent lane** (verify, install, new modules, polish) |
+|---|---|---|
+| **Tasks** | 2, 3, 4, 5 in `assistant/TASKS.md` | 1, 6, 7, 8 in `assistant/TASKS.md` |
+| **Branch prefix** | `claude/<topic>` | `gpt/<topic>` |
+| **Notes file** | `assistant/HANDOFF_CLAUDE.md` | `assistant/HANDOFF_GPT.md` |
+| **Owns these files** | `web/agent/**`, `soundstage/agent/**`, `docs/assistant/**`, `assistant/MISSES.md`, `skills/**`, new `soundstage/memory/**` | `tools/**` (installers), `web/motion/**`, `web/ui/**`, `web/stage/**`, `web/pipeline/**` (polish only), `soundstage/ltx_settings.py`, new `soundstage/splat/**`, README Install section |
+| **Never touches** | the OpenAI lane's files | the Claude lane's files |
+
+**Shared files, handled carefully**
+- `web/soundstage.js` is big and both lanes may need a hook in it: make the smallest possible edit (a one-line import or call into your own module), rebase just before opening your PR, and whoever opens a PR first goes first.
+- `CHANGELOG.md`: add your entry at the top; if there's a merge conflict, keep both entries.
+- `web/agent/knowledge_index.mjs` and `skills/soundstage-agent/references/*` are GENERATED: after any rebase or merge, never hand-merge them. Run `node tools/build_knowledge.mjs` and commit the result. Only the Claude lane edits the sources of that pack (`docs/assistant/**`, `web/agent/knowledge.mjs`); if the OpenAI lane changes a UI label or a doc, it still regenerates the pack as the last step.
+- `README.md` / `docs/TUTORIAL.md`: the OpenAI lane edits Install, Quality and everything outside Ask; the Claude lane edits Ask sections only.
+- **One open PR per agent at a time.** The human (Mike or Jon) merges, one PR at a time, running both test suites after each. Agents don't merge, push to `main`, delete branches or force-push.
 
 ## Safety rules
 - **No secrets in the repo, ever:** no API keys, tokens, passwords, SSH keys, pod addresses or ports, notification topics, or personal paths. Keys live in the OS keychain; scripts read them from environment variables.
