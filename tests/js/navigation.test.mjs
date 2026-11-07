@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   NAV_STYLES, NAV_ACTIONS, PRESETS, NAV_DEFAULTS, TAKEN_KEYS, loadNavSettings, saveNavSettings, resolveGesture, chordUpgrade,
-  altTurns, orbitAbout, panRate, pickPivot, easeShare, consume, tauFromSmooth, classifyWheel, flyDir, flyStep,
+  altTurns, orbitAbout, panRate, viewDepth, pickPivot, easeShare, consume, tauFromSmooth, classifyWheel, flyDir, flyStep,
   flySpeedFromWheel, walkSpeed, focusView, hintText, bindingConflicts, installNavigation,
 } from "../../web/stage/navigation.mjs";
 
@@ -92,6 +92,12 @@ test("orbitAbout clamps the tilt: the camera never flips over the pole", () => {
 test("panRate moves the point under the cursor with the cursor", () => {
   close(panRate(10, 90, 1000), 0.02);   // 2·10·tan45° over 1000 px
   assert.ok(panRate(0, 50, 500) > 0);
+});
+
+test("viewDepth: a pan uses the depth along the view, so a point near the frame edge keeps up with the cursor", () => {
+  close(viewDepth([0, 0, 0], [0, 0, -1], [0, 0, -10]), 10);
+  close(viewDepth([0, 0, 0], [0, 0, -1], [6, 0, -8]), 8);   // 10 m away but only 8 m deep
+  close(viewDepth([0, 0, 0], [0, 0, -1], [0, 0, 5]), 0.05); // behind the camera: the floor value, never negative
 });
 
 test("pickPivot: object, then floor (within 400 m), then target; the water tank skips the floor", () => {

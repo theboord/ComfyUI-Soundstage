@@ -145,6 +145,12 @@ export function orbitAbout(pos, tgt, pivot, dTheta, dPhi, minPhi = 0.01) {
 
 /** World units per screen pixel at a distance (so a pan moves the point under the cursor with the cursor). */
 export const panRate = (dist, fovDeg, viewportPx) => (2 * Math.max(dist, 0.05) * Math.tan((fovDeg * Math.PI) / 360)) / Math.max(1, viewportPx);
+/**
+ * How far in front of the camera a point is, along the view direction (not the straight-line distance): the depth a pan
+ * rate needs. A point off to the side of the frame is nearer in depth than in distance, so panning by its distance ran
+ * ~10% ahead of the cursor near the frame edge. fwd = the camera's unit view direction.
+ */
+export const viewDepth = (pos, fwd, point) => Math.max(0.05, dot(sub(point, pos), fwd));
 
 /**
  * The pivot an orbit turns about: the object under the cursor, else the floor under it (within maxFloor m; the water

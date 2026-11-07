@@ -17,7 +17,7 @@ import { PoseGizmo } from "./posegizmo.mjs";
 import { RotateTools, gizmoTurnToActor } from "./rotate.mjs";
 import { DriveMode, installDriveButton } from "./drive.mjs";
 import { installViewNav } from "./viewnav.mjs";
-import { installNavigation, orbitAbout, panRate } from "./navigation.mjs";
+import { installNavigation, orbitAbout, panRate, viewDepth } from "./navigation.mjs";
 import { buildSet, buildWater, buildWeather, buildTireSmoke, buildImpactFx } from "./environments.mjs";
 import { groundColor, groundReach, dressColor } from "./setlook.mjs";
 import { installSecondary } from "./secondary.mjs";
@@ -3029,7 +3029,8 @@ export class Stage {
       const right = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 0);
       const up = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 1);
       // With a pivot (the point under the cursor) that point follows the cursor; otherwise the old rate.
-      const k = pivot ? panRate(pos.distanceTo(new THREE.Vector3(...pivot)), cam.fov || 50, this.canvas.clientHeight || this.fh) : pos.distanceTo(tgt) * 0.0015;
+      const fwd = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 2).negate().normalize();
+      const k = pivot ? panRate(viewDepth(pos.toArray(), fwd.toArray(), pivot), cam.fov || 50, this.canvas.clientHeight || this.fh) : pos.distanceTo(tgt) * 0.0015;
       const move = right.multiplyScalar(-dx * k).add(up.multiplyScalar(dy * k));
       pos.add(move);
       tgt.add(move);
