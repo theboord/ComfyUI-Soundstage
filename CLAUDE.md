@@ -7,7 +7,7 @@ Usage is limited on purpose. Check it **before you start, and again after each p
 - **Claude: hard stop at 60%** of the weekly plan usage. At 60% finish the step you're on, commit, and stop.
 - **OpenAI/ChatGPT agent: hard stop at 80%** of its plan usage.
 - How to check: Claude Code `/usage` (or the plan-limits card in the app); ChatGPT/Codex usage page or `/status`.
-- When you stop, leave a short note in YOUR OWN file (`assistant/HANDOFF_CLAUDE.md` for Claude, `assistant/HANDOFF_GPT.md` for the OpenAI agent): what's done, what's half-done, the exact next step, the branch name, push the branch, and tell the human. Don't start a new task "just to use up" the remaining percent.
+- When you stop, leave a short note in YOUR OWN file (your private Claude handoff file for Claude, your private GPT handoff file for the OpenAI agent): what's done, what's half-done, the exact next step, the branch name, push the branch, and tell the human. Don't start a new task "just to use up" the remaining percent.
 - Never turn on pay-as-you-go / extra usage or buy credits unless the human says so in that session.
 - Cheapest model that can do the job: small edits, merges and doc work do not need the biggest model. Don't run broad exploratory sweeps; read only the files you need.
 - Don't spawn parallel agents or cloud sessions unless the human asks. One thing at a time.
@@ -17,10 +17,10 @@ Two agents work at the same time, so each has its own tasks, its own files, its 
 
 | | **Claude lane** (Ask) | **OpenAI-agent lane** (verify, install, new modules, polish) |
 |---|---|---|
-| **Tasks** | 2, 3, 4, 5 in `assistant/TASKS.md` | 1, 6, 7, 8 in `assistant/TASKS.md` |
+| **Tasks** | 2, 3, 4, 5 in the private task queue | 1, 6, 7, 8 in the private task queue |
 | **Branch prefix** | `claude/<topic>` | `gpt/<topic>` |
-| **Notes file** | `assistant/HANDOFF_CLAUDE.md` | `assistant/HANDOFF_GPT.md` |
-| **Owns these files** | `web/agent/**`, `soundstage/agent/**`, `docs/assistant/**`, `assistant/MISSES.md`, `skills/**`, new `soundstage/memory/**` | `tools/**` (installers), `web/motion/**`, `web/ui/**`, `web/stage/**`, `web/pipeline/**` (polish only), `soundstage/ltx_settings.py`, new `soundstage/splat/**`, README Install section |
+| **Notes file** | your private Claude handoff file | your private GPT handoff file |
+| **Owns these files** | `web/agent/**`, `soundstage/agent/**`, `docs/assistant/**`, the private misses log, `skills/**`, new `soundstage/memory/**` | `tools/**` (installers), `web/motion/**`, `web/ui/**`, `web/stage/**`, `web/pipeline/**` (polish only), `soundstage/ltx_settings.py`, new `soundstage/splat/**`, README Install section |
 | **Never touches** | the OpenAI lane's files | the Claude lane's files |
 
 **Shared files, handled carefully**
@@ -51,7 +51,7 @@ Two agents can share Jon's machine, so they share its GPU, RAM and ComfyUI. Befo
 - `web/`: the App (browser UI, 3D stage, Ask assistant, Cut). `soundstage/`: the ComfyUI node pack (Python). `tools/`: installers, the MCP server, builders.
 - Tests: `node --test tests/js/*.test.mjs` and `python3 -m pytest tests -q`. One JS test (`oneclick_sweep`, "stopped answering times out") is timing-flaky; if it's the only failure, run it alone.
 - After changing UI labels or docs: `node tools/build_knowledge.mjs` (rebuilds Ask's knowledge pack and the agent skill's references; a test fails when they're stale).
-- ✦ Ask's lessons live in `docs/assistant/SKILLS.md`; raw misses in `assistant/MISSES.md`. The agent skill for Claude Code is `skills/soundstage-agent/`.
+- ✦ Ask's lessons live in `docs/assistant/SKILLS.md`; raw misses in the private misses log. The agent skill for Claude Code is `skills/soundstage-agent/`.
 - Add a dated, timed `CHANGELOG.md` entry in the existing "flaws first" style.
 
 ## What to work on (priority order, from Mike)

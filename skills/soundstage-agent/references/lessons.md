@@ -4,7 +4,7 @@
 
 This file is ✦ Ask's teaching notebook. Each skill is a lesson learned while testing: what people say, what they mean, what the assistant should do, and what it must not do. `node tools/build_knowledge.mjs` indexes it, so `search_docs` and the conversation can find a skill by the words in it. Add a skill whenever Ask gets something wrong, then rebuild.
 
-**Add a skill:** copy the template at the bottom, fill it in, run `node tools/build_knowledge.mjs`, commit both files. Raw misses go in [assistant/MISSES.md](../../../assistant/MISSES.md) first; promote a miss to a skill once the right behaviour is clear.
+**Add a skill:** copy the template at the bottom, fill it in, run `node tools/build_knowledge.mjs`, commit both files. Raw misses go in [the private misses log](../../the private misses log) first; promote a miss to a skill once the right behaviour is clear.
 
 ## Skill: A question is a question, even after a lead-in word
 **When:** "so how is Dana described", "okay, tell me about the tall stranger", "no, I just wanted you to describe him", "now describe scene 3".
