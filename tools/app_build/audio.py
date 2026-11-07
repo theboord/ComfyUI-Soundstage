@@ -55,7 +55,7 @@ def apply(g):
     mux = g.add_node("CreateVideo", (x, y - 200),
                      inputs=[("images", "IMAGE"), ("audio", "AUDIO"), _w("fps", "FLOAT"), _w("bit_depth", "COMBO"),
                              _w("color_space", "COMBO"), _w("codec", "COMBO")],
-                     outputs=[("VIDEO", "VIDEO")], widgets=[24, "auto", "sRGB", "none"], title="Final + sound (mux)",
+                     outputs=[("VIDEO", "VIDEO")], widgets=[24], title="Final + sound (mux)",
                      size=(320, 160))
     g.link(FINAL_FRAMES, 0, mux, "images", "IMAGE")
     g.link(FINAL_FRAMES, 2, mux, "fps", "FLOAT")
