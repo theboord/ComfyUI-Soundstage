@@ -3,6 +3,22 @@
 Soundstage is updated continuously on `main`. Newest first. Times are US Pacific.
 Each entry links to the code; every milestone ships with tests.
 
+## 2026-11-07
+
+**Moving around the set: both buttons pan, hold right to fly, orbit about the cursor, double-click to glide there**
+- **Still wrong (read first):** checked by unit tests only. Nobody has tried it in a live App or a browser, so how the chord, flying, damping and the eased compass feel is unverified, and so is the hint line's placement (it isn't measured against the picture-in-picture monitor or the Top view inset, so it may sit over them). Trackpad detection is a guess: a smooth-scrolling mouse can be taken for a trackpad, and then scrolling orbits instead of zooming (Navigation… › Scrolling › Mouse wheel fixes it). Safari's pinch (`gesturechange`) is wired but untested. No pivot dot is drawn while orbiting. Right-drag used to orbit; it now looks around in place (fly), which is a change for anyone used to it.
+- **Why:** the orbit swung round a point you couldn't see after a zoom, both buttons together did nothing, WASD moved in key-repeat steps, the wheel's easing ran twice as fast at 120 Hz, and there was no double-click focus, fly mode or familiar Blender / Maya / Unreal bindings.
+- **What** ([web/stage/navigation.mjs](web/stage/navigation.mjs), hook lines in [web/stage/stage.mjs](web/stage/stage.mjs), [web/stage/viewnav.mjs](web/stage/viewnav.mjs), [web/stage/rotate.mjs](web/stage/rotate.mjs), [web/stage/camviz.mjs](web/stage/camviz.mjs), [web/soundstage.js](web/soundstage.js), [docs/navigation.md](docs/navigation.md)):
+  - A drag orbits about the object or floor under the cursor; a pan keeps the grabbed point under the pointer. Close in or inside a car it still looks around in place.
+  - Left and right together pan. A press on an object that hasn't started moving it becomes a pan, the object stays put, and it is never a click. Gizmo, live, light and pose drags ignore it.
+  - Hold right to fly: the mouse looks and W A S D Q E steer (D is fly right then, not Drive); the wheel sets the speed. A right click without a drag still selects and still opens the Identical? bar's Fix menu (the menu event is held back and replayed).
+  - W A S D Q E glide while held instead of stepping on key repeat; the shot key is written once when the motion stops.
+  - Double-click glides to what you clicked (Free view only; in the Camera view it only selects), and ↶ Last view returns from it. A key camera keeps its own click.
+  - The wheel's easing is the same at any frame rate; a pinch zooms; on a trackpad two fingers orbit (Shift pans).
+  - The compass eases to an axis (0.3 s), names each view on hover, and a drag on it orbits.
+  - Navigation… (on the viewport) and the ⚙ on the new hint line: Soundstage, Blender, Maya or Unreal style, damping, smoothness, invert Y, scrolling mode, fly speed, kept per browser. Reduced motion turns damping off. In Maya and Unreal styles Alt+drag orbits instead of turning an object.
+- **Tests:** [tests/js/navigation.test.mjs](tests/js/navigation.test.mjs) (styles, chord, orbit keeps the pivot on screen and never flips, pivot order, frame-rate independent easing, wheel classification, fly, focus, settings, the D-means-Drive rule, one key write per move, Drive left alone), [tests/js/viewnav.test.mjs](tests/js/viewnav.test.mjs) (a double-click focus is a jump).
+
 ## 2026-11-06
 
 **✦ Ask no longer loads its model when the App opens**

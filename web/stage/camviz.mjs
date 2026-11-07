@@ -204,6 +204,7 @@ export class CameraViz {
    *                         (default: jump the stage's playhead there)
    */
   constructor(stage, { showInShot = false, replaceHelper = true, keyCams = true, onKeyClick = null } = {}) {
+    stage.camViz = this;   // a double-click on a key camera stays its own (navigation.mjs checks _keyCamAt)
     this.stage = stage;
     this.showInShot = showInShot;
     this.visible = true;

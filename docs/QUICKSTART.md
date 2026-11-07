@@ -74,9 +74,9 @@ It usually loads in 2 to 20 s. The status line says what you got.
 
 Click through steps **1** to **7** on the top bar to see the whole pipeline, then come back to **3 Set**.
 
-Press `0` to switch between the shot camera and the free view. Start every orbit drag on empty sky or road, not on a car: a drag that starts on an object selects it and can move it. Then use `W` `A` `S` `D` to fly, and click **Top view** to see the blocking from above.
+Press `0` to switch between the shot camera and the free view. Start every orbit drag on empty sky or road, not on a car: a drag that starts on an object selects it and can move it. The view turns about whatever is under the cursor. Press **both mouse buttons together and drag** to pan (Shift+drag works too), hold the **right button** and use `W` `A` `S` `D` to fly, double-click something to glide to it, and click **Top view** to see the blocking from above. On a trackpad, two fingers orbit and a pinch zooms. **Navigation…** on the viewport switches to Blender, Maya or Unreal mouse controls and turns damping off or on. More in [Moving around the set](navigation.md).
 
-> **Watch out.** With a car selected, `D` means **Drive**, not fly right. Press `Esc` or click empty ground to deselect before you fly with WASD. If you land in Drive mode, `Esc` leaves it.
+> **Watch out.** With a car selected, `D` means **Drive**, not fly right (unless you hold the right button to fly). Press `Esc` or click empty ground to deselect before you fly with WASD. If you land in Drive mode, `Esc` leaves it.
 
 > **Lost?** Press `.` (or **⌂ Back to the set**, top left of the viewport) to see the whole set again, and `,` (**↶ Last view**) to step back to where you were. Click the viewport first so it has the keyboard. A **Lost? Back to the set** chip also appears when the camera is far off or inside a building.
 
@@ -317,7 +317,7 @@ Reed steps out into the rain and looks off at the wrecked crates. Then Reed turn
 
 **Anywhere:** `V` Presets · `/` or `⌘K` / `Ctrl+K` Ask (the assistant) · `?` Shortcuts sheet, or the keyboard icon · `H` / `Tab` Hide or show every panel · `⌘Z` / `⇧⌘Z` Undo / redo · `←` `→` Change scene (rebuilds the stage) · `Space` On ③ Set: Play / stop · `Esc` Closes the open panel, menu or pop-over first
 
-**Look around:** `0` Shot camera / free view · `.` Back to the set (⌂) · `,` Last view (↶) · Drag Orbit; Shift+drag pans, wheel dollies · `W` `A` `S` `D` Fly; `Q` / `E` down / up · Top view Inset from above, with Fit and ✕ · `F` Frame the selection · `Esc` Deselect before WASD (with a car selected, `D` = Drive)
+**Look around:** `0` Shot camera / free view · `.` Back to the set (⌂) · `,` Last view (↶) · Drag Orbit about the cursor; both buttons or Shift+drag pans, wheel zooms · Hold right + `W` `A` `S` `D` Fly; `Q` / `E` down / up · Double-click Glide to it · Top view Inset from above, with Fit and ✕ · `F` Frame the selection · `Esc` Deselect before WASD (with a car selected, `D` = Drive)
 
 **Move things:** `G` `R` `T` Move, rotate, scale · Shift Snap 15° · Alt+drag Turn · `⌘D` Duplicate · Add anything… + `Enter` Add a typed object. Then click the stage before F or G
 

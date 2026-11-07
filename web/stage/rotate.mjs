@@ -250,7 +250,7 @@ export class RotateTools {
       // mode it is hidden, and a car's tilt circle runs right over where the ring was (a tilt drag turned the car).
       const p = t && ringTakesPress(this.ring.visible, s.tc?.axis) && this._onRing(e);
       let kind = p ? "ring" : null;
-      if (!kind && e.altKey) {
+      if (!kind && e.altKey && (!s.nav || s.nav.altTurns())) {   // Maya / Unreal styles: Alt + drag orbits instead
         // Alt + drag on an object turns it (the shortcut sheet's "Alt + Drag"), from the press, not only mid-hold.
         const ray = s._pickRay(e);
         // A person is thin (a press between the legs misses the mesh): the selected object's on-screen box counts, as
