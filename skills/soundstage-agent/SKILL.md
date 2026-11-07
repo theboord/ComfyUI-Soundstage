@@ -39,7 +39,7 @@ Soundstage is a film set inside ComfyUI: you write or load a script, block each 
 - Repo docs: `README.md`, `docs/TUTORIAL.md`, `docs/QUICKSTART.md`, `docs/mcp.md`, `docs/assistant.md`.
 
 ## Keeping this skill fresh
-- Teach a new lesson by adding a skill to `docs/assistant/SKILLS.md` (raw misses go in `assistant/MISSES.md`).
+- Teach a new lesson by adding a skill to `docs/assistant/SKILLS.md` (raw misses go in the private misses log).
 - Regenerate with `node tools/build_knowledge.mjs`. It rewrites the in-App knowledge pack **and** `references/*`; a test fails if either is stale.
 - Edit this `SKILL.md` by hand for rules and workflow; never hand-edit `references/`.
 
