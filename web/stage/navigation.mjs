@@ -4,7 +4,8 @@
 //   Both buttons + drag      pan (also Shift+drag and the middle button)
 //   Hold right + W A S D Q E fly (mouse-look while held; the wheel changes fly speed)
 //   W A S D Q E              glide while held (no more key-repeat stutter)
-//   Double-click             glide to what you clicked (Free view only: it never rewrites a shot)
+//   Double-click             glide to what you clicked (Free view only: it never rewrites a shot); a set piece or the
+//                            floor moves the target there, keeping the view direction; never through a wall
 //   Two-finger scroll        orbit on a trackpad (Shift pans, pinch zooms)
 //   A style picker (Soundstage, Blender, Maya, Unreal) with damping, smoothness, invert Y, trackpad mode and fly speed,
 //   kept per browser (localStorage, every access in try/catch).
@@ -65,6 +66,8 @@ export const PRESETS = {
 };
 export const NAV_ACTIONS = ["orbit", "pan", "look", "dolly", "zoom", "fly", "focus", "frame", "frameAll", "snap"];
 /** Keys the App already uses: no style may bind them. */
+/** The modifier keys whose press or release lets go of the held fly keys (not Shift: that is the 4x speed). */
+const MOD_KEYS = ["Meta", "Alt", "AltGraph", "Control", "OS"];
 export const TAKEN_KEYS = ["G", "R", "T", "P", "K", "L", "I", "O", "V", "H", "Tab", "?", "Space", "0", ".", ",", "F", "W", "A", "S", "D", "Q", "E"];
 
 /**
@@ -188,22 +191,73 @@ export function consume(acc, dt, tau, damping = true) {
 /** Smoothness 0..1 -> time constant (s) for drag damping. */
 export const tauFromSmooth = (smooth) => 0.02 + clamp(smooth, 0, 1) * 0.1;
 
+/** Wheel events of one kind in a row before the kind changes (a known mouse never turns trackpad on one event). */
+export const WHEEL_SURE = 3;
 /**
- * Mouse wheel, trackpad scroll or pinch? mem = {kind, t} is the state of the current stream (sticky for 400 ms).
- * force = "mouse" | "trackpad" | "auto".
+ * One wheel event's evidence: +1 looks like a trackpad, -1 like a mouse wheel, 0 says nothing. Line / page mode is only
+ * ever a wheel (-WHEEL_SURE: sure at once). The legacy wheelDelta of the main axis decides when there is one (a notch is a
+ * multiple of 120); else fractional pixel deltas look like a trackpad. deltaX alone says nothing: Shift+wheel and tilt
+ * wheels scroll sideways too.
+ */
+export function wheelEvidence(e) {
+  if (e.deltaMode) return -WHEEL_SURE;
+  const dx = e.deltaX || 0, dy = e.deltaY || 0;
+  const legacy = Math.abs(dx) > Math.abs(dy) ? e.wheelDeltaX : e.wheelDeltaY;
+  if (Number.isFinite(legacy) && legacy !== 0) return legacy % 120 === 0 ? -1 : 1;
+  return dx !== Math.trunc(dx) || dy !== Math.trunc(dy) ? 1 : 0;
+}
+const fracDelta = (e) => { const dx = e.deltaX || 0, dy = e.deltaY || 0; return dx !== Math.trunc(dx) || dy !== Math.trunc(dy); };
+
+/**
+ * Mouse wheel, trackpad scroll or pinch? mem = {kind, score, t} is the device seen so far: the evidence adds up
+ * (-WHEEL_SURE..WHEEL_SURE) and the kind changes only once it is sure, so one odd event never flips it either way.
+ * Ctrl + wheel is a pinch only from a trackpad (or with fractional deltas); a mouse's Ctrl + wheel is the wheel.
+ * force = "mouse" | "trackpad" | "auto" (the ⚙ Scrolling setting).
  */
 export function classifyWheel(e, mem = {}, now = 0, force = "auto") {
-  if (e.ctrlKey) return "pinch";
-  if (force === "mouse" || force === "trackpad") return force;
-  let kind = "mouse";
-  if (e.deltaMode === 0) {
-    const frac = e.deltaY !== Math.trunc(e.deltaY);
-    const legacy = Number.isFinite(e.wheelDeltaY) && e.wheelDeltaY !== 0 && e.wheelDeltaY % 120 !== 0;
-    if (e.deltaX !== 0 || (frac && !Number.isFinite(e.wheelDeltaY)) || legacy) kind = "trackpad";
-  }
-  if (kind === "mouse" && mem.kind === "trackpad" && now - (mem.t || 0) < 400) kind = "trackpad";
-  mem.kind = kind; mem.t = now;
+  const ev = wheelEvidence(e);
+  mem.score = ev <= -WHEEL_SURE ? -WHEEL_SURE : clamp((mem.score || 0) + ev, -WHEEL_SURE, WHEEL_SURE);
+  if (!mem.kind) mem.kind = "mouse";
+  if (mem.score >= WHEEL_SURE) mem.kind = "trackpad";
+  else if (mem.score <= -WHEEL_SURE) mem.kind = "mouse";
+  mem.t = now;
+  const kind = force === "mouse" || force === "trackpad" ? force : mem.kind;
+  if (e.ctrlKey) return kind === "trackpad" || fracDelta(e) ? "pinch" : "mouse";
   return kind;
+}
+
+/**
+ * Where a ray enters an oriented box (a set collider {half, pos, quat}), as the distance along the unit dir; null for a
+ * miss or when the origin is inside the box (a camera in a building proxy is not stopped by its own walls).
+ */
+export function rayBoxT(origin, dir, half, pos, quat = [0, 0, 0, 1]) {
+  const inv = [-quat[0], -quat[1], -quat[2], quat[3]];
+  const rot = (v, q) => {   // v + 2w(q x v) + 2 q x (q x v)
+    const u = [q[0], q[1], q[2]], c1 = cross(u, v), c2 = cross(u, c1);
+    return add(add(v, mul(c1, 2 * q[3])), mul(c2, 2));
+  };
+  const o = rot(sub(origin, pos), inv), d = rot(dir, inv);
+  let t0 = -Infinity, t1 = Infinity;
+  for (let i = 0; i < 3; i++) {
+    if (Math.abs(d[i]) < 1e-12) { if (Math.abs(o[i]) > half[i]) return null; continue; }
+    let a = (-half[i] - o[i]) / d[i], b = (half[i] - o[i]) / d[i];
+    if (a > b) [a, b] = [b, a];
+    t0 = Math.max(t0, a); t1 = Math.min(t1, b);
+    if (t0 > t1) return null;
+  }
+  return t0 >= 0 ? t0 : null;
+}
+
+/**
+ * The view a double-click on a point gives when focusView's path is blocked (a wall behind you, or between): along the
+ * click ray toward the point, never past it, at most 12 m short of it (where you are when you are already within 12 m). The
+ * clicked point is the nearest surface on that ray, so this path never crosses one.
+ */
+export function focusAlongRay(pos, point, { min = 2, max = 12 } = {}) {
+  const v = sub(point, pos), d = len(v);
+  if (d < EPS) return { pos: [...pos], tgt: [...point] };
+  const keep = clamp(d, Math.min(min, d), max);
+  return { pos: add(point, mul(v, -keep / d)), tgt: [...point] };
 }
 
 /** Fly: the direction from the held keys in camera space [right, up, forward]; opposite keys cancel. */
@@ -294,7 +348,8 @@ export function installNavigation(stage) {
   const now = () => globalThis.performance?.now?.() ?? Date.now();
 
   let acc = null;              // {mode, look, pivot, dx, dy} still to apply (drag smoothing)
-  const held = new Set();      // fly keys held
+  const held = new Set();      // fly keys held (letters, for flyDir)
+  const heldCodes = new Map(); // the physical key (e.code) -> its letter: a keyup finds it even when Option changed e.key
   let vel = [0, 0, 0];         // fly velocity, camera space (m/s)
   let shift = false, tightKeys = false;
   let rafId = 0, last = 0, dirty = false;
@@ -309,7 +364,57 @@ export function installNavigation(stage) {
   // An Alt + right press is a dolly (Maya, Unreal) or a look, never fly mode: the wheel zooms and WASD walks as usual.
   const flying = () => rmb.down && !rmb.noFly && !off();
   /** Right is no longer held (Drive swallowed its release, or it came up off the canvas): fly mode ends. */
-  const rmbGone = () => { if (!rmb.down) return; rmb.down = false; rmb.menu = null; rmb.lastDragUp = now(); held.clear(); };
+  const rmbGone = () => { if (!rmb.down) return; rmb.down = false; rmb.menu = null; rmb.lastDragUp = now(); clearHeld(); };
+  function clearHeld() { held.clear(); heldCodes.clear(); }
+  const codeOf = (e, k) => e.code || `key:${k}`;
+  /** Is this node and every parent shown? (three.js raycasts hidden objects too) */
+  const shown = (o) => { for (let n = o; n; n = n.parent) if (n.visible === false) return false; return true; };
+  const actorIdOf = (o) => { for (let n = o; n; n = n.parent) if (n.userData?.actorId) return n.userData.actorId; return null; };
+  /**
+   * The nearest surface on the pick ray: an object (unless actors: false), the set's boxes (set colliders: buildings,
+   * kerbs, set pieces, an imported world's proxies) and the interior's walls and floors (the ones the dollhouse
+   * cutaway or the ceiling hide from this view don't count). pre = the stage's own actor raycast for this press (reused,
+   * not cast again). Returns {dist, point, id} or null.
+   */
+  function surfaceHit(rc, { actors = true, pre = null, hidden = null } = {}) {
+    const r = rc.ray;
+    const origin = [r.origin.x, r.origin.y, r.origin.z], dir = [r.direction.x, r.direction.y, r.direction.z];
+    let best = null;
+    const take = (d, point, id = null) => { if (d > 1e-4 && (!best || d < best.dist)) best = { dist: d, point, id }; };
+    if (actors) {
+      const hits = pre || rc.intersectObjects([...(stage.actorMeshes?.values() || [])].filter((g) => g.visible !== false), true);
+      const h = hits.find((x) => shown(x.object));
+      if (h) take(h.distance ?? len(sub([h.point.x, h.point.y, h.point.z], origin)), [h.point.x, h.point.y, h.point.z], actorIdOf(h.object));
+    }
+    for (const c of stage._setCollidersCached?.() || []) {
+      if (c.interior) continue;   // the interior's own meshes are cast below (the cutaway can hide them)
+      const t = rayBoxT(origin, dir, c.half, c.pos, c.quat);
+      if (t != null) take(t, add(origin, mul(dir, t)));
+    }
+    const ig = stage.interiorGroup;
+    if (ig?.children?.length) {
+      const hide = hidden || stage._cutawayHidden?.(r.origin) || new Set();
+      const h = rc.intersectObjects(ig.children.filter((m) => shown(m) && !hide.has(m)), false)[0];
+      if (h) take(h.distance, [h.point.x, h.point.y, h.point.z]);
+    }
+    return best;
+  }
+  /** Does the straight path a -> b cross a wall or a set box? (objects don't count: you glide past people) */
+  function blocked(rc, a, b, hidden) {
+    const v = sub(b, a), L = len(v);
+    if (L < 0.05) return false;
+    const d = mul(v, 1 / L);
+    Object.assign(rc.ray.origin, { x: a[0], y: a[1], z: a[2] }); Object.assign(rc.ray.direction, { x: d[0], y: d[1], z: d[2] });
+    const h = surfaceHit(rc, { actors: false, hidden });
+    return !!h && h.dist < L - 0.1;
+  }
+  /** The floor (y = 0) under the pick ray, or null. */
+  function floorHit(r) {
+    const origin = [r.origin.x, r.origin.y, r.origin.z], dir = [r.direction.x, r.direction.y, r.direction.z];
+    if (dir[1] >= -1e-4) return null;
+    const t = -origin[1] / dir[1];
+    return t > 0 ? { dist: t, point: add(origin, mul(dir, t)) } : null;
+  }
   /** Fly speed: inside a car or room (or close in) right-held flying uses the small tight step, not the set's m/s. */
   const flySpeedNow = (o) => (rmb.tight ? Math.min(settings.flySpeed, walkSpeed(len(sub(o.position, o.target)), true)) : settings.flySpeed);
   /** The shot camera moved while a press / drag held its write back: write it now (Camera view). */
@@ -323,26 +428,19 @@ export function installNavigation(stage) {
     hint: () => hintText(settings.style, /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || "")),
 
     /** A camera press: what this drag does, and the pivot an orbit turns about. */
-    begin(e) {
+    begin(e, actorHits = null) {
       const g = resolveGesture(settings.style, { button: e.button, shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey });
       acc = null;
       let pivot = null;
-      if ((g.mode === "orbit" && !g.look) || g.mode === "pan") pivot = nav.pivotAt(e);   // pan: that point follows the cursor
+      // pan: that point follows the cursor. actorHits = the stage's raycast for this press (not cast a second time).
+      if ((g.mode === "orbit" && !g.look) || g.mode === "pan") pivot = nav.pivotAt(e, true, actorHits);
       return { ...g, pivot };
     },
-    /** The point under the cursor an orbit turns about (object, floor, else the target). */
-    pivotAt(e, fallback = true) {
+    /** The point under the cursor an orbit turns about (the nearest object / set box / wall, the floor, else the target). */
+    pivotAt(e, fallback = true, actorHits = null) {
       const o = active();
       if (!o || !stage._pickRay) return null;
-      try {
-        const rc = stage._pickRay(e), r = rc.ray;
-        const hit = rc.intersectObjects([...(stage.actorMeshes?.values() || [])].filter((g) => g.visible), true).find((h) => h.object?.visible !== false);
-        const origin = [r.origin.x, r.origin.y, r.origin.z], dir = [r.direction.x, r.direction.y, r.direction.z];
-        let floor = null;
-        if (dir[1] < -1e-4) { const t = -origin[1] / dir[1]; if (t > 0) floor = add(origin, mul(dir, t)); }
-        return pickPivot({ mesh: hit ? [hit.point.x, hit.point.y, hit.point.z] : null, floor }, o.target, o.position,
-          { waterTank: stage.state?.environment?.set === "water_tank", fallback });
-      } catch { return null; }
+      try { return pivotFrom(stage._pickRay(e), o, fallback, actorHits)?.point || null; } catch { return null; }
     },
     /** pointermove with both buttons: the drag becomes a pan (a not-yet-started grab is dropped, nothing moves). */
     chord(drag, e) {
@@ -401,8 +499,13 @@ export function installNavigation(stage) {
     /** The wheel's zoom easing share for this frame (dt in s): ~40% at 60 fps, the same speed at any frame rate. */
     zoomK: (dt) => easeShare(dt, 0.033, settings.damping),
 
+    /** The last wheel event's kind ("mouse" | "trackpad" | "pinch"; null when the wheel was not classified). */
+    lastWheel: null,
+    /** Is this Ctrl + wheel a pinch (zoomed up 5x)? Only from a trackpad or with fractional deltas: a mouse's is the wheel. */
+    isPinch: (e) => !!e.ctrlKey && (nav.lastWheel ? nav.lastWheel === "pinch" : fracDelta(e)),
     /** Wheel: fly speed while flying, trackpad orbit / pan; false = the stage zooms as before. */
     wheel(e) {
+      nav.lastWheel = null;
       if (off() || e.__gesture) return false;
       if (flying()) {
         settings.flySpeed = flySpeedFromWheel(settings.flySpeed, e.deltaY);
@@ -410,7 +513,7 @@ export function installNavigation(stage) {
         stage.onInteract?.(`Fly speed ${settings.flySpeed.toFixed(2)} m/s`);
         return true;
       }
-      const kind = classifyWheel(e, wheelMem, now(), settings.trackpad);
+      const kind = nav.lastWheel = classifyWheel(e, wheelMem, now(), settings.trackpad);
       if (kind !== "trackpad" || e.altKey) return false;
       const k = e.deltaMode === 1 ? 16 : 1;
       const pan = e.shiftKey;
@@ -424,7 +527,7 @@ export function installNavigation(stage) {
 
     /** keydown: continuous WASD/QE (all styles) and the style's own keys. true = handled. */
     key(e) {
-      if (e.metaKey) nav.dropKeys();   // macOS sends no keyup for a key let go while ⌘ is down: it stayed held, flying on
+      if (e.metaKey || e.altKey || e.ctrlKey) nav.dropKeys();   // macOS sends no keyup for a key let go while ⌘ is down; ⌥ changes e.key
       if (off() || e.metaKey || e.ctrlKey && !(settings.style === "blender" && /^Numpad[137]$/.test(e.code))) return false;
       const k = (e.key || "").toLowerCase();
       if (settings.style === "maya" && e.shiftKey && k === "a") { e.preventDefault(); e.stopPropagation(); stage.viewNav?.backToSet(); return true; }
@@ -441,32 +544,48 @@ export function installNavigation(stage) {
       if (rmb.down) rmb.keys = true;
       shift = e.shiftKey;
       if (!held.size && !e.repeat) tightKeys = !!stage._tightNow?.();   // inside a car / close in: small steps (once per press, not per frame)
+      heldCodes.set(codeOf(e, k), k);   // by the physical key: its keyup is matched by e.code, whatever e.key says then
       held.add(k);
       loop();
       return true;
     },
     keyup(e) {
-      if (e.metaKey || e.key === "Meta") { nav.dropKeys(); return; }
+      if (e.metaKey || MOD_KEYS.includes(e.key)) { nav.dropKeys(); return; }
       const k = (e.key || "").toLowerCase();
       shift = e.shiftKey;
-      if (held.delete(k) || k === "shift") loop();
+      const code = codeOf(e, k);
+      if (heldCodes.has(code)) {
+        heldCodes.delete(code);
+        held.clear();
+        for (const v of heldCodes.values()) held.add(v);
+        loop();
+      } else if (k === "shift") loop();
     },
-    clearKeys() { held.clear(); },
+    clearKeys() { clearHeld(); },
     /** Let go of every held fly key (the motion eases out, and the shot key is written once it stops). */
-    dropKeys() { if (!held.size) return; held.clear(); loop(); },
+    dropKeys() { if (!held.size && !heldCodes.size) return; clearHeld(); loop(); },
 
     /** Double-click: glide to the object or point under the cursor (Free view only). */
     focusAt(e) {
       const o = active(); if (!o || !stage._pickRay) return false;
       if (!stage.freeView) { stage.onInteract?.("Double-click focuses in the Free view (press 0): it never moves the shot camera."); return false; }
       const rc = stage._pickRay(e);
-      const hit = rc.intersectObjects([...(stage.actorMeshes?.values() || [])].filter((g) => g.visible), true)[0];
-      const id = hit?.object?.userData?.actorId || hit?.object?.parent?.userData?.actorId || null;
       const ms = reduced ? 0 : 450;
-      if (id && stage._frameActor?.(id, ms)) return true;
-      const p = nav.pivotAt(e, false);   // the sky / empty space: no point, so nothing moves (it pulled a far camera to 12 m)
-      if (!p) return false;
-      const f = focusView(o.position, o.target, p);
+      const hidden = stage._cutawayHidden?.({ x: o.position[0], y: o.position[1], z: o.position[2] });
+      const hit = pivotFrom(rc, o, false, null, hidden);   // the sky / empty space: no point, nothing moves (it pulled a far camera to 12 m)
+      if (!hit) return false;
+      const p = hit.point;
+      // An object is framed whole; a set piece (a building, a wall, the location) is a place: the target moves to the
+      // clicked point and the view keeps its direction, like a click on the floor.
+      if (hit.id && !stage._isSetPiece?.(hit.id)) {
+        const fv = stage._frameView?.(hit.id);
+        if (!fv || (!blocked(rc, o.position, fv.pos, hidden) && !blocked(rc, fv.pos, fv.tgt, hidden))) {
+          if (stage._frameActor?.(hit.id, ms)) return true;
+        }
+      }
+      let f = focusView(o.position, o.target, p);
+      // Never through a wall: when the glide (or the new view of the point) crosses one, go along the click ray instead.
+      if (blocked(rc, o.position, f.pos, hidden) || blocked(rc, f.pos, p, hidden)) f = focusAlongRay(o.position, p);
       stage._flyTo(f.pos, f.tgt, ms || 1);
       return true;
     },
@@ -481,6 +600,15 @@ export function installNavigation(stage) {
     },
   };
 
+  /** The pivot hit {point, id}: the nearest surface, or the floor when that is nearer; null = nothing (fallback false). */
+  function pivotFrom(rc, o, fallback, actorHits = null, hidden = null) {
+    const s = surfaceHit(rc, { pre: actorHits, hidden }), fl = floorHit(rc.ray);
+    const useMesh = s && (!fl || s.dist <= fl.dist);
+    const p = pickPivot({ mesh: useMesh ? s.point : null, floor: fl && !useMesh ? fl.point : null }, o.target, o.position,
+      { waterTank: stage.state?.environment?.set === "water_tank", fallback });
+    if (!p) return null;
+    return { point: p, id: useMesh && p === s.point ? s.id : null };
+  }
   function loop() { if (!rafId) { last = now(); rafId = raf(tick); } }
   function tick() {
     rafId = 0;
@@ -488,7 +616,7 @@ export function installNavigation(stage) {
     // a long stall after a hidden tab can't jump far, since loop() restarts the clock.
     const t = now(), dt = Math.min(0.25, Math.max(0.001, (t - last) / 1000));
     last = t;
-    if (off()) { acc = null; held.clear(); vel = [0, 0, 0]; rmb.down = false; return; }
+    if (off()) { acc = null; clearHeld(); vel = [0, 0, 0]; rmb.down = false; return; }
     let busy = false;
     if (acc) {
       const [take, left] = consume(acc, dt, tauFromSmooth(settings.smooth), settings.damping);
@@ -537,7 +665,7 @@ export function installNavigation(stage) {
 
   // Right button: track the press (fly / click), and hold back the context menu until we know it was a click.
   on(cv, "pointerdown", (e) => {
-    if (off()) { rmb.down = false; held.clear(); return; }   // Drive owns the pointer (and swallows the release)
+    if (off()) { rmb.down = false; clearHeld(); return; }   // Drive owns the pointer (and swallows the release)
     press.x0 = e.clientX; press.y0 = e.clientY; press.moved = false;
     if (e.button === 2) Object.assign(rmb, { down: true, noFly: !!e.altKey, x0: e.clientX, y0: e.clientY, moved: false, keys: false, chord: false, menu: null, tight: !!stage._tightNow?.() });
     else { if (!((e.buttons ?? 0) & 2)) rmbGone(); rmb.chord = false; rmb.keys = false; }
@@ -555,7 +683,7 @@ export function installNavigation(stage) {
     rmb.down = false;
     const click = !rmb.moved && !rmb.keys && !rmb.chord;
     if (!click) rmb.lastDragUp = now();
-    held.clear();
+    clearHeld();
     const m = rmb.menu; rmb.menu = null;
     if (click && m && e.type === "pointerup") {
       // A right click (not a drag): give the 3D view's own right-click menu the event it would have had.
@@ -582,11 +710,16 @@ export function installNavigation(stage) {
     if ((stage._dragging && ((e.buttons & 3) === 3 || press.moved)) || now() - rmb.lastDragUp < 400) { e.preventDefault(); e.stopImmediatePropagation(); }   // Windows: after a right-drag
   }, { capture: true });
   on(cv, "keyup", (e) => nav.keyup(e));
-  // ⌘ pressed: the stage's own keydown returns early for ⌘Z / ⌘D, so this runs first (capture) to drop the held keys.
-  on(cv, "keydown", (e) => { if (e.metaKey || e.key === "Meta") nav.dropKeys(); }, { capture: true });
+  // A modifier pressed (⌘, ⌥, Ctrl): the stage's own keydown returns early for ⌘Z / ⌘D, so this runs first (capture) and
+  // lets go of the held keys. macOS sends no keyup for a key let go while ⌘ is down, and ⌥ changes the e.key a keyup
+  // carries (W -> ∑), so a held W could stick. Shift is left out on purpose: it is the 4x speed while flying.
+  on(cv, "keydown", (e) => { if (e.metaKey || e.altKey || e.ctrlKey || MOD_KEYS.includes(e.key)) nav.dropKeys(); }, { capture: true });
   on(globalThis.document, "visibilitychange", () => nav.dropKeys());
   on(globalThis, "blur", () => nav.dropKeys());
-  on(cv, "blur", () => { held.clear(); rmb.down = false; });
+  // The pointer left the window (the page's root, or a pointerout to nowhere): keyups can go to another app from here.
+  on(globalThis.document?.documentElement, "pointerleave", () => nav.dropKeys());
+  on(globalThis, "pointerout", (e) => { if (!e.relatedTarget) nav.dropKeys(); });
+  on(cv, "blur", () => { clearHeld(); rmb.down = false; });
   on(cv, "dblclick", (e) => {
     if (off() || stage.poser?.active || stage.tc?.dragging || stage.live?.drag) return;
     if (press.moved || now() - press.bad < 600) return;     // a drag then a click is not a double-click

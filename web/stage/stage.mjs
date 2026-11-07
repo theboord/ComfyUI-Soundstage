@@ -597,7 +597,7 @@ export class Stage {
         const half = [prm.width * Math.abs(sc.x) / 2, prm.height * Math.abs(sc.y) / 2, prm.depth * Math.abs(sc.z) / 2];
         if (Math.min(...half) <= 0) return;
         out.push({ id: `set_${out.length}`, shape: "box", half, center: [0, 0, 0], dynamic: false,
-          poses: [{ pos: [pos.x, pos.y, pos.z], quat: [quat.x, quat.y, quat.z, quat.w] }] });
+          poses: [{ pos: [pos.x, pos.y, pos.z], quat: [quat.x, quat.y, quat.z, quat.w] }], ...(grp === this.interiorGroup ? { interior: true } : {}) });
       });
     }
     for (const c of this.worldMount?.colliders() || []) out.push(c);   // an imported world's box proxies
@@ -607,7 +607,7 @@ export class Stage {
   /** _setColliders(), cached until the set is rebuilt (the live world asks for it on every drag). */
   _setCollidersCached() {
     const key = [this._setGroup?.uuid, this.interiorGroup?.uuid, this.root.children.filter((o) => o.userData.setPiece).map((o) => o.uuid).join(), this.worldMount?.sig || ""].join("|");
-    if (this._setColCache?.key !== key) this._setColCache = { key, list: this._setColliders().map((c) => ({ id: c.id, half: c.half, pos: c.poses[0].pos, quat: c.poses[0].quat })) };
+    if (this._setColCache?.key !== key) this._setColCache = { key, list: this._setColliders().map((c) => ({ id: c.id, half: c.half, pos: c.poses[0].pos, quat: c.poses[0].quat, ...(c.interior ? { interior: true } : {}) })) };
     return this._setColCache.list;
   }
 
@@ -2760,7 +2760,8 @@ export class Stage {
         this.canvas.setPointerCapture(e.pointerId);
         return;
       }
-      let hitId = ray.intersectObjects([...this.actorMeshes.values()], true)[0]?.object?.userData?.actorId || null;
+      const actorHits = ray.intersectObjects([...this.actorMeshes.values()], true);   // cast once: the orbit pivot reuses it
+      let hitId = actorHits[0]?.object?.userData?.actorId || null;
       // Far-away people are a few pixels wide: a click within ~12 px of an object's on-screen outline still grabs it.
       if (!hitId && !e.altKey) hitId = this._nearOnScreen(e, 12);
       // From inside a car (or any object the camera sits in), a drag is the camera's, never the car's: everything
@@ -2781,7 +2782,7 @@ export class Stage {
         // So nothing moves by accident while you look around.
         drag = { mode: e.shiftKey || e.button === 1 ? "pan" : "orbit", look: e.altKey, x: e.clientX, y: e.clientY,
           x0: e.clientX, y0: e.clientY, pickId: e.altKey ? null : hitId };
-        if (this.nav) Object.assign(drag, this.nav.begin(e));   // the navigation style's gesture + the pivot under the cursor
+        if (this.nav) Object.assign(drag, this.nav.begin(e, actorHits));   // the navigation style's gesture + the pivot under the cursor
       }
       try { this.canvas.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
       this.canvas.style.cursor = "grabbing";
@@ -2973,8 +2974,10 @@ export class Stage {
       if (this.live?.drag && this.live.wheel(e)) return;   // holding a prop: the wheel lifts / lowers it
       if (this.nav?.wheel(e)) return;   // fly speed while flying; a trackpad's two-finger scroll orbits (Shift pans)
       // Smooth zoom (Milestone 9): notches add up and are eased in over a few frames, toward what's under the cursor.
-      // A pinch (ctrl + wheel) sends small deltas: scaled up so it zooms at a hand's pace.
-      this._zoomAcc = (this._zoomAcc || 0) + THREE.MathUtils.clamp(e.deltaY * (e.deltaMode === 1 ? 33 : 1) * (e.ctrlKey ? 5 : 1), -300, 300);
+      // A pinch (ctrl + wheel from a trackpad) sends small deltas: scaled up so it zooms at a hand's pace. A mouse's
+      // Ctrl + wheel is an ordinary notch (5x made it jump).
+      const pinch = this.nav ? this.nav.isPinch(e) : !!e.ctrlKey && e.deltaY !== Math.trunc(e.deltaY);
+      this._zoomAcc = (this._zoomAcc || 0) + THREE.MathUtils.clamp(e.deltaY * (e.deltaMode === 1 ? 33 : 1) * (pinch ? 5 : 1), -300, 300);
       this._zoomEv = { clientX: e.clientX, clientY: e.clientY };
       if (!this._zoomRaf) this._zoomRaf = requestAnimationFrame(() => this._zoomStep());
     };
@@ -3111,21 +3114,49 @@ export class Stage {
     return ray.intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(n, tgt), new THREE.Vector3());
   }
 
+  /**
+   * The interior meshes the viewport hides from a camera at p {x, y, z}: the ceilings (from above, or in Free view) and
+   * the exterior walls between the camera and the rooms, like a dollhouse. Navigation rays skip them too (an orbit pivot
+   * or a double-click never lands on a wall you can't see).
+   */
+  _cutawayHidden(p) {
+    const out = new Set();
+    if (!this.interiorGroup || this.cutaway === false || !p) return out;
+    const bb = new THREE.Box3().setFromObject(this.interiorGroup);
+    for (const m of this.interiorGroup.children) {
+      let hide = false;
+      if (m.userData.ceiling) hide = this.freeView || p.y > (this.state.interior?.ceiling_m || 2.4);
+      else if (m.userData.wall) {
+        const w = m.userData.wall;
+        if (w.axis === "z") hide = (p.z < bb.min.z && w.at <= bb.min.z + 0.2) || (p.z > bb.max.z && w.at >= bb.max.z - 0.2);
+        else hide = (p.x < bb.min.x && w.at <= bb.min.x + 0.2) || (p.x > bb.max.x && w.at >= bb.max.x - 0.2);
+      }
+      if (hide) out.add(m);
+    }
+    return out;
+  }
+
   /** Is the active view close in or inside a car / building? (for the held-key speed) */
   _tightNow() {
     const o = this._activeOrbit();
     return !!o && this._tightCamera(new THREE.Vector3(...o.position), new THREE.Vector3(...o.target));
   }
 
-  /** Double-click focus: glide to frame one object (ms 0 = jump). False if it has nothing to frame. */
-  _frameActor(id, ms = 450) {
+  /** The view that frames one object {pos, tgt} (the view direction kept), or null if it has nothing to frame. */
+  _frameView(id) {
     const g = this.actorMeshes.get(id);
-    if (!g) return false;
+    if (!g) return null;
     const box = new THREE.Box3().setFromObject(g);
-    if (box.isEmpty()) return false;
+    if (box.isEmpty()) return null;
     const sph = box.getBoundingSphere(new THREE.Sphere());
     const c = this._activeOrbit(), cam = this._viewportCamera();
-    const f = frameSphere(c.position, c.target, sph.center.toArray(), sph.radius, THREE.MathUtils.degToRad(cam.fov), cam.aspect || this.fw / this.fh);
+    return frameSphere(c.position, c.target, sph.center.toArray(), sph.radius, THREE.MathUtils.degToRad(cam.fov), cam.aspect || this.fw / this.fh);
+  }
+
+  /** Double-click focus: glide to frame one object (ms 0 = jump). False if it has nothing to frame. */
+  _frameActor(id, ms = 450) {
+    const f = this._frameView(id);
+    if (!f) return false;
     this._flyTo(f.pos, f.tgt, ms || 1);
     return true;
   }
@@ -4764,20 +4795,7 @@ export class Stage {
     // Interiors: in the viewport (never in captures) hide the ceilings when looking from above or in Free view,
     // and cut away the exterior walls between the camera and the rooms, like a dollhouse.
     const cutaway = [];
-    if (this.interiorGroup && !forCapture && this.cutaway !== false) {
-      const bb = new THREE.Box3().setFromObject(this.interiorGroup);
-      const p = cam.position;
-      for (const m of this.interiorGroup.children) {
-        let hide = false;
-        if (m.userData.ceiling) hide = this.freeView || p.y > (this.state.interior?.ceiling_m || 2.4);
-        else if (m.userData.wall) {
-          const w = m.userData.wall;
-          if (w.axis === "z") hide = (p.z < bb.min.z && w.at <= bb.min.z + 0.2) || (p.z > bb.max.z && w.at >= bb.max.z - 0.2);
-          else hide = (p.x < bb.min.x && w.at <= bb.min.x + 0.2) || (p.x > bb.max.x && w.at >= bb.max.x - 0.2);
-        }
-        if (hide && m.visible) { m.visible = false; cutaway.push(m); }
-      }
-    }
+    if (!forCapture) for (const m of this._cutawayHidden(cam.position)) if (m.visible) { m.visible = false; cutaway.push(m); }
     // Depth sees through vehicle glass (like an open window), so the riders behind it keep their depth.
     if (mode === "depth") this.root.traverse((o) => { if (o.userData.glass && o.visible) { o.visible = false; cutaway.push(o); } });
     // Measurement aids are for the viewport only.

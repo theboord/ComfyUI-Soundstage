@@ -311,3 +311,246 @@ test("Maya: Alt + right drag is a dolly, not fly mode (the wheel zooms, W doesn'
   st.ev("pointerup", { button: 2, buttons: 0, altKey: true, ...EMPTY });
   done(st);
 });
+
+// ---- review round: held keys by e.code, set / interior geometry under the cursor, set-piece focus, one raycast, guards
+const near = (a, b, tol = 0.05) => Math.abs(a - b) <= tol;
+const WALL = { id: "w", half: [10, 3, 0.1], pos: [0, 3, 5], quat: [0, 0, 0, 1] };   // a wall across the view at z = 5
+
+test("macOS: hold W, press Option (e.key turns to ∑): the held key lets go, the camera stops", () => {
+  const st = makeStage();
+  st.key("w");
+  frames(3);
+  assert.ok(st.nav._held.has("w"));
+  st.key("Alt", { code: "AltLeft", altKey: true });
+  assert.equal(st.nav._held.size, 0, "Option pressed: dropped");
+  frames();
+  const z = st.free.position[2];
+  st.keyup("w", { key: "∑", code: "KeyW", altKey: true });   // the keyup macOS sends with Option down
+  frames(5);
+  assert.equal(st.free.position[2], z, "stopped");
+  done(st);
+});
+
+test("a keyup whose e.key changed (Option pressed elsewhere) still lets go of the key by e.code", () => {
+  const st = makeStage();
+  st.key("w");
+  st.key("d");
+  assert.deepEqual([...st.nav._held].sort(), ["d", "w"]);
+  st.nav.keyup({ key: "∑", code: "KeyW", altKey: false, shiftKey: false });
+  assert.deepEqual([...st.nav._held], ["d"], "W let go by its code; D still held");
+  st.keyup("d");
+  assert.equal(st.nav._held.size, 0);
+  done(st);
+});
+
+test("held keys drop on window blur, a hidden tab, the pointer leaving the window and Ctrl / ⌘", () => {
+  const st = makeStage();
+  const fire = (type, ev = {}) => { for (const l of [...win.ls]) if (l.type === type) l.fn(ev); };
+  for (const [what, act] of [["blur", () => fire("blur")], ["pointer out of the window", () => fire("pointerout", { relatedTarget: null })],
+    ["Control", () => st.key("Control", { code: "ControlLeft", ctrlKey: true })], ["Meta", () => st.key("Meta", { code: "MetaLeft", metaKey: true })]]) {
+    st.key("w");
+    assert.equal(st.nav._held.size, 1);
+    act();
+    assert.equal(st.nav._held.size, 0, what);
+  }
+  st.key("w");
+  fire("pointerout", { relatedTarget: {} });   // onto another element of the page: still held
+  assert.equal(st.nav._held.size, 1);
+  st.key("w", { shiftKey: true });
+  st.key("Shift", { code: "ShiftLeft", shiftKey: true });   // Shift is the 4x speed, not a let-go
+  assert.equal(st.nav._held.size, 1);
+  st.keyup("w");
+  done(st);
+});
+
+test("the orbit pivot lands on a set wall in front of the car (the nearest hit wins)", () => {
+  const st = makeStage();
+  assert.ok(near(st.nav.pivotAt(CAR)[2], 1, 0.1), "no wall: the car's front");
+  st._setCollidersCached = () => [WALL];
+  const p = st.nav.begin({ button: 0, ...CAR }).pivot;
+  assert.ok(near(p[2], 5.1), `on the wall's face (${p})`);
+  done(st);
+});
+
+test("an interior wall the dollhouse cutaway hides is looked through; with the cutaway off the pivot lands on it", () => {
+  const st = makeStage();
+  const ig = new THREE.Group();
+  for (const z of [5, -5]) {
+    const w = new THREE.Mesh(new THREE.BoxGeometry(4, 2.4, 0.1));
+    w.position.set(0, 1.2, z);
+    w.userData.wall = { axis: "z", at: z };
+    ig.add(w);
+  }
+  ig.updateMatrixWorld(true);
+  st.interiorGroup = ig;
+  st.state.interior = { ceiling_m: 2.4 };
+  assert.ok(near(st.nav.pivotAt(CAR)[2], 1, 0.1), "the near wall is cut away from out here: the car");
+  st.cutaway = false;
+  assert.ok(near(st.nav.pivotAt(CAR)[2], 5.05), "cutaway off: the wall");
+  done(st);
+});
+
+test("double-click inside a room never glides through the wall behind you", () => {
+  const st = makeStage();
+  st.actorMeshes.clear();
+  // A room: you stand at z = 2 looking down at the floor 1.4 m ahead, a wall 0.2 m behind you.
+  st._setCollidersCached = () => [{ id: "back", half: [5, 2, 0.1], pos: [0, 2, 2.3], quat: [0, 0, 0, 1] },
+    { id: "front", half: [5, 2, 0.1], pos: [0, 2, -3], quat: [0, 0, 0, 1] }];
+  st.free = { position: [0, 1, 2], target: [0, 0, 1] };
+  st._applyActive();
+  st.ev("dblclick", { button: 0, clientX: 400, clientY: 225 });
+  frames();
+  const z = st.free.position[2];
+  assert.ok(z < 2.2 && z > -2.9, `still inside the room (z ${z})`);
+  assert.ok(near(st.free.target[1], 0, 0.05), "the target is the clicked floor point");
+  // Without the wall behind, the same double-click keeps the view direction and backs off to 2 m (focusView).
+  const st2 = makeStage();
+  st2.actorMeshes.clear();
+  st2.free = { position: [0, 1, 2], target: [0, 0, 1] };
+  st2._applyActive();
+  st2.ev("dblclick", { button: 0, clientX: 400, clientY: 225 });
+  frames();
+  assert.ok(st2.free.position[2] > 2.2, "no wall: it backs off past where the wall was");
+  done(st); done(st2);
+});
+
+test("double-click on a set piece moves the target to the clicked point and keeps the view direction (no framing)", () => {
+  const st = makeStage();
+  st._isSetPiece = (id) => id === "car1";
+  const d0 = st.free.position.map((v, i) => v - st.free.target[i]);
+  st.ev("dblclick", { button: 0, ...CAR });
+  frames();
+  assert.deepEqual(st.log.framed, [], "not framed whole");
+  assert.ok(near(st.free.target[2], 1, 0.1) && Math.abs(st.free.target[0]) < 0.05, `target on the clicked face (${st.free.target})`);
+  const d1 = st.free.position.map((v, i) => v - st.free.target[i]);
+  const n = (v) => v.map((x) => x / Math.hypot(...v));
+  n(d0).forEach((v, i) => assert.ok(Math.abs(v - n(d1)[i]) < 1e-3, "same view direction"));
+  done(st);
+});
+
+test("Ctrl + wheel from a mouse zooms at 1x; a trackpad pinch (fractional) at 5x", () => {
+  const st = makeStage();
+  st._zoomAcc = 0;
+  st._onWheel({ deltaY: 40, deltaX: 0, deltaMode: 0, wheelDeltaY: -120, ctrlKey: true, ...EMPTY });
+  assert.equal(st._zoomAcc, 40, "mouse Ctrl + wheel: 1x");
+  frames();
+  st._zoomAcc = 0;
+  st._onWheel({ deltaY: 2.5, deltaX: 0, deltaMode: 0, ctrlKey: true, ...EMPTY });
+  assert.equal(st._zoomAcc, 12.5, "pinch: 5x");
+  frames();
+  done(st);
+});
+
+test("a press casts the actor ray once (the orbit pivot reuses the stage's hit)", () => {
+  const st = makeStage();
+  const ray = st._pickRay(EMPTY);
+  const orig = ray.intersectObjects.bind(ray);
+  let n = 0;
+  ray.intersectObjects = (objs, rec) => { if (objs.includes(st.actorMeshes.get("car1"))) n++; return orig(objs, rec); };
+  st.ev("pointerdown", { button: 0, buttons: 1, ...CAR });
+  st.ev("pointerup", { button: 0, buttons: 0, ...CAR });
+  assert.equal(n, 1);
+  done(st);
+});
+
+test("RotateTools: Alt + drag on the selected object turns it in Soundstage, and leaves the press to the camera in Maya", async () => {
+  const { RotateTools } = await import("../../web/stage/rotate.mjs");
+  for (const [style, turns] of [["soundstage", true], ["blender", true], ["maya", false], ["unreal", false]]) {
+    const st = makeStage({ selected: "car1" });
+    st.tc.disconnect();
+    st.nav.settings.style = style;
+    st._gizmoOn = true;
+    st.tc.object = st.actorMeshes.get("car1");
+    const rt = new RotateTools(st);
+    const p0 = [...st.free.position];
+    st.ev("pointerdown", { button: 0, buttons: 1, altKey: true, ...CAR });
+    assert.equal(rt.drag?.kind === "alt", turns, `${style}: ${turns ? "turns" : "orbits"}`);
+    if (!turns) {
+      st.ev("pointermove", { button: -1, buttons: 1, altKey: true, clientX: CAR.clientX + 60, clientY: CAR.clientY });
+      T += 200;
+      st.ev("pointerup", { button: 0, buttons: 0, altKey: true, clientX: CAR.clientX + 60, clientY: CAR.clientY });
+      assert.ok(Math.hypot(...st.free.position.map((v, i) => v - p0[i])) > 0.05, `${style}: the camera orbited`);
+    }
+    rt.drag = null;
+    rt.dispose();
+    done(st);
+  }
+});
+
+test("Maya / Unreal: Alt over a gizmo arrow pauses the gizmo and orbits; Soundstage leaves the arrow its press", () => {
+  for (const [style, orbits] of [["maya", true], ["unreal", true], ["soundstage", false]]) {
+    const st = makeStage({ selected: "car1" });
+    st.tc.disconnect();
+    st.tc.attach(st.actorMeshes.get("car1"));
+    st.tcHelper.visible = true;
+    st.tc.enabled = true;
+    st.tc.axis = "X";   // the cursor is over an arrow
+    st.nav.settings.style = style;
+    const p0 = [...st.free.position];
+    st.ev("pointerdown", { button: 0, buttons: 1, altKey: true, ...CAR });
+    assert.equal(st._tcPaused === true, orbits, `${style}: gizmo paused`);
+    assert.equal(st.tc.enabled, !orbits);
+    st.ev("pointermove", { button: -1, buttons: 1, altKey: true, clientX: CAR.clientX + 60, clientY: CAR.clientY });
+    T += 200;
+    st.ev("pointerup", { button: 0, buttons: 0, altKey: true, clientX: CAR.clientX + 60, clientY: CAR.clientY });
+    const moved = Math.hypot(...st.free.position.map((v, i) => v - p0[i])) > 0.05;
+    assert.equal(moved, orbits, `${style}: camera ${orbits ? "orbits" : "stays (the arrow has it)"}`);
+    assert.equal(st.tc.enabled, true, "the gizmo is back on after the release");
+    st.tc.detach();
+    done(st);
+  }
+});
+
+test("Camera view: a double-click writes no key and leaves the shot camera where it is", () => {
+  const st = makeStage({ freeView: false });
+  const msgs = [];
+  st.onInteract = (m) => msgs.push(m);
+  const p0 = [...st.shot.position], t0 = [...st.shot.target];
+  st.ev("dblclick", { button: 0, ...EMPTY });
+  st.ev("dblclick", { button: 0, ...CAR });
+  frames();
+  assert.equal(st.log.changes, 0, "no shot key");
+  assert.deepEqual(st.log.framed, []);
+  assert.deepEqual([st.shot.position, st.shot.target], [p0, t0]);
+  assert.ok(msgs.some((m) => /Free view/.test(m)), "it says why");
+  done(st);
+});
+
+test("a double-click on a key camera keeps its click: no focus", () => {
+  const st = makeStage();
+  st.camViz = { _keyCamAt: () => true };
+  const p0 = [...st.free.position];
+  st.ev("dblclick", { button: 0, ...CAR });
+  st.ev("dblclick", { button: 0, ...EMPTY });
+  frames();
+  assert.deepEqual(st.log.framed, []);
+  assert.deepEqual(st.free.position, p0);
+  done(st);
+});
+
+test("while driving, the wheel, WASD and a double-click do nothing to the view", () => {
+  const st = makeStage();
+  st.nav.settings.trackpad = "trackpad";
+  st.drive.on = true;
+  const p0 = [...st.free.position];
+  assert.equal(st.nav.wheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, ...EMPTY }), false, "no trackpad orbit");
+  assert.equal(st.nav.key({ key: "w", code: "KeyW", preventDefault() {}, stopPropagation() {} }), false, "W is Drive's");
+  assert.equal(st.nav._held.size, 0);
+  st.ev("dblclick", { button: 0, ...CAR });
+  frames();
+  assert.deepEqual(st.log.framed, []);
+  assert.deepEqual(st.free.position, p0);
+  st.drive.on = false;
+  done(st);
+});
+
+test("while the gizmo is dragging, both buttons don't turn the drag into a pan", () => {
+  const st = makeStage({ selected: "car1" });
+  const drag = { mode: "orbit", look: false, x0: 0, y0: 0 };
+  st.live.settle = () => true;   // the gizmo's dragging-changed handler settles a moved prop
+  st.tc.dragging = true;
+  assert.equal(st.nav.chord(drag, { buttons: 3, clientX: 10, clientY: 10 }), drag, "unchanged");
+  st.tc.dragging = false;
+  assert.equal(st.nav.chord(drag, { buttons: 3, clientX: 10, clientY: 10 }).mode, "pan", "without the gizmo: a pan");
+  done(st);
+});

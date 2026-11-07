@@ -1229,13 +1229,21 @@ The rule is simple: **a click selects, a drag on anything not selected moves the
 |---|---|
 | click an object or person | Select it. The inspector opens its **Object** tab. |
 | click empty space | Deselect. |
-| drag on empty space, or on something not selected | Orbit the view, all the way round (over and under too). Close in, or inside a car or a room, it turns into looking around in place. |
+| drag on empty space, or on something not selected | Orbit the view, all the way round (over and under too), about the point under the cursor: the nearest object, wall or set building, else the floor. Close in, or inside a car or a room, it turns into looking around in place. |
 | drag the selected object | Move it across the floor. It writes a position key at the playhead. |
 | drag the gizmo arrows / ring | Move along one axis, rotate, or scale (see below). |
-| Shift-drag or middle-drag | Pan. |
-| Option/Alt-drag | Look around in place, like a tripod head. |
-| scroll | Dolly in and out. Close to the target it flies through it. |
+| both buttons + drag, Shift-drag or middle-drag | Pan: the grabbed point stays under the cursor. Both buttons on the selected object pan too; it never moves. |
+| hold right + W A S D Q E | Fly: the mouse looks while right is held, the wheel sets the fly speed (shown as you change it). A right click without moving still opens the right-click menu. |
+| hold W A S D Q E (no button) | Glide forward / back, left / right, down / up while the key is held; Shift is four times faster. The keys let go by themselves when the window loses focus, the pointer leaves the window, or you press ⌘, Option/Alt or Ctrl. |
+| double-click | Free view only: glide to what you clicked. An object is framed whole; the floor, a wall or a set piece (a building, the rebuilt location) moves the target to that point and keeps the view direction. It never glides through a wall: when the way is blocked it moves along the click instead. In Camera view it does nothing (it never rewrites a shot), nor on a key camera, the sky, or while driving. |
+| Option/Alt-drag | Soundstage and Blender styles: on empty space look around in place, like a tripod head; on an object, turn it. Maya and Unreal styles: orbit (even starting on a gizmo arrow). |
+| scroll (mouse wheel) | Zoom toward the point under the cursor. Close to the target it flies through it. Ctrl + wheel on a mouse is the same zoom. |
+| two-finger scroll (trackpad) | Orbit; Shift + two fingers pans; pinch zooms. |
 | drag a glowing light handle | Move that light. |
+
+**Navigation styles.** The hint bar along the bottom of the viewport says what the buttons do and has a style picker: **Soundstage** (above), **Blender** (middle-drag orbits, Shift+middle pans, Ctrl+middle dollies, Numpad 1 / 3 / 7 snap the view, Numpad . frames the selection, Home frames the set), **Maya** (Alt+drag orbits, Alt+middle pans, Alt+right dollies, Shift+A frames the set) and **Unreal** (drag moves forward and turns, Alt+drag orbits, Alt+right dollies, middle pans). In every style both buttons pan, hold right + WASD flies, double-click focuses, F frames the selection, and click, grab and the gizmo work the same. **⚙** in the bar (or **Navigation…** on the viewport, when the hint is hidden) holds the style, **Damping** and **Smoothness** (easing; off with reduced motion), **Invert up / down**, **Scrolling** (**Auto-detect**, **Mouse wheel (scroll zooms)** or **Trackpad (scroll orbits)**), **Fly speed (m/s)** and **Show the hint**. They are kept per browser.
+
+Auto-detect waits for a few scroll events before it calls a device a trackpad (fractional pixel steps, no 120-step wheel notches), so one odd event never turns a mouse into a trackpad; the first two or three scrolls of a trackpad may zoom before it orbits. If it guesses wrong for your mouse or trackpad, set **Scrolling** by hand.
 
 Set pieces (a rebuilt location, walls, sidewalks, photo-built sets) never move from a drag, so you can orbit across them freely.
 
@@ -1674,15 +1682,17 @@ Keys only reach the 3D stage while the pointer is over it (or you clicked it), a
 | Key / gesture | What it does |
 |---|---|
 | click | Select (click empty space to deselect) |
-| drag empty space or anything unselected | Orbit (look around in place when close in or inside a car) |
+| drag empty space or anything unselected | Orbit about the point under the cursor (look around in place when close in or inside a car) |
 | drag the selected object | Move it (keys its position at the playhead) |
-| Shift-drag, middle-drag | Pan |
-| Option/Alt-drag | Look around in place (tripod head) |
-| scroll | Dolly in / out |
-| W / S | Fly forward / back |
-| A / D | Fly left / right (D with something drivable selected: Drive mode) |
-| Q / E | Fly down / up |
-| Shift + W A S D Q E | Fly four times faster |
+| both buttons + drag, Shift-drag, middle-drag | Pan |
+| hold right + W A S D Q E | Fly (mouse-look while held; the wheel sets the fly speed) |
+| double-click | Free view: glide to what you clicked (frames an object; on the floor, a wall or a set piece, moves the target there) |
+| Option/Alt-drag | Soundstage / Blender style: look around in place (tripod head), or turn the object under it. Maya / Unreal style: orbit |
+| scroll | Zoom toward the cursor (a trackpad's two-finger scroll orbits, Shift pans, pinch zooms) |
+| hold W / S | Glide forward / back while held |
+| hold A / D | Glide left / right (D with something drivable selected: Drive mode, unless right is held) |
+| hold Q / E | Glide down / up |
+| Shift + W A S D Q E | Four times faster |
 | 0 | Toggle Camera view / Free view |
 | F | Frame the selection (or everything, with nothing selected) |
 | P | Toggle Pose in 3D (select a person first) |

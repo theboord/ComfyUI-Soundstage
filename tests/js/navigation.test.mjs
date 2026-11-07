@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   NAV_STYLES, NAV_ACTIONS, PRESETS, NAV_DEFAULTS, TAKEN_KEYS, loadNavSettings, saveNavSettings, resolveGesture, chordUpgrade,
   altTurns, orbitAbout, panRate, viewDepth, pickPivot, easeShare, consume, tauFromSmooth, classifyWheel, flyDir, flyStep,
-  flySpeedFromWheel, walkSpeed, focusView, hintText, bindingConflicts, installNavigation, keyCombo, hintPlacement,
+  flySpeedFromWheel, walkSpeed, focusView, hintText, rayBoxT, focusAlongRay, bindingConflicts, installNavigation, keyCombo, hintPlacement,
 } from "../../web/stage/navigation.mjs";
 import { allCombos } from "../../web/ui/shortcuts.mjs";
 
@@ -164,16 +164,42 @@ test("consume is frame-rate independent and damping off takes it all at once", (
   assert.ok(tauFromSmooth(0) < tauFromSmooth(1));
 });
 
-test("classifyWheel tells a mouse wheel, a trackpad and a pinch apart", () => {
+test("classifyWheel tells a mouse wheel, a trackpad and a pinch apart (only once it is sure)", () => {
   assert.equal(classifyWheel({ deltaY: 100, deltaX: 0, deltaMode: 0, wheelDeltaY: -120 }, {}, 0), "mouse");
   const mem = {};
-  assert.equal(classifyWheel({ deltaY: 3.2, deltaX: 1.1, deltaMode: 0, wheelDeltaY: -9 }, mem, 0), "trackpad");
-  assert.equal(classifyWheel({ deltaY: 4, deltaX: 0, deltaMode: 0, wheelDeltaY: -120 }, mem, 100), "trackpad", "sticky in the stream");
-  assert.equal(classifyWheel({ deltaY: 4, deltaX: 0, deltaMode: 0, wheelDeltaY: -120 }, mem, 900), "mouse", "a new stream");
-  assert.equal(classifyWheel({ deltaY: 2, ctrlKey: true, deltaMode: 0 }, {}, 0), "pinch");
+  const tp = { deltaY: 3.2, deltaX: 1.1, deltaMode: 0, wheelDeltaY: -9 };
+  assert.equal(classifyWheel(tp, mem, 0), "mouse", "one trackpad-like event is not enough");
+  assert.equal(classifyWheel(tp, mem, 16), "mouse");
+  assert.equal(classifyWheel(tp, mem, 32), "trackpad", "three in a row: a trackpad");
+  assert.equal(classifyWheel({ deltaY: 40, deltaX: 0, deltaMode: 0, wheelDeltaY: -120 }, mem, 48), "trackpad", "a fast flick that reads as a notch doesn't flip it back");
+  assert.equal(classifyWheel(tp, mem, 900), "trackpad", "the device is remembered across gestures");
+  assert.equal(classifyWheel({ deltaY: 3, deltaX: 0, deltaMode: 1 }, mem, 950), "mouse", "line mode is only ever a wheel: sure at once");
+  assert.equal(classifyWheel({ deltaY: 2.4, ctrlKey: true, deltaMode: 0 }, {}, 0), "pinch", "fractional Ctrl + wheel: a pinch");
+  assert.equal(classifyWheel({ deltaY: 100, ctrlKey: true, deltaMode: 0, wheelDeltaY: -120 }, {}, 0), "mouse", "a mouse's Ctrl + wheel is the wheel");
+  const m2 = {};
+  for (let i = 0; i < 3; i++) classifyWheel({ deltaY: 2, deltaX: 0, deltaMode: 0, wheelDeltaY: -6 }, m2, i * 16);
+  assert.equal(classifyWheel({ deltaY: 2, ctrlKey: true, deltaMode: 0, wheelDeltaY: -6 }, m2, 64), "pinch", "Ctrl + wheel from a known trackpad");
   assert.equal(classifyWheel({ deltaY: 3, deltaX: 0, deltaMode: 1 }, {}, 0), "mouse");
   assert.equal(classifyWheel({ deltaY: 3.2, deltaX: 1, deltaMode: 0 }, {}, 0, "mouse"), "mouse");
   assert.equal(classifyWheel({ deltaY: 100, deltaX: 0, deltaMode: 0 }, {}, 0, "trackpad"), "trackpad");
+  assert.equal(classifyWheel({ deltaY: 100, ctrlKey: true, deltaMode: 0, wheelDeltaY: -120 }, {}, 0, "trackpad"), "pinch", "Scrolling: Trackpad");
+});
+
+test("Shift + wheel (Windows sends it as deltaX) and a tilt wheel stay a mouse", () => {
+  const mem = {};
+  for (let i = 0; i < 10; i++) assert.equal(classifyWheel({ deltaY: 0, deltaX: i % 2 ? 100 : -100, deltaMode: 0, wheelDeltaY: 0, wheelDeltaX: i % 2 ? -120 : 120, shiftKey: true }, mem, i * 30), "mouse");
+  const tilt = {};
+  for (let i = 0; i < 10; i++) assert.equal(classifyWheel({ deltaY: 0, deltaX: 40, deltaMode: 0 }, tilt, i * 30), "mouse", "integer sideways deltas say nothing");
+});
+
+test("a macOS smooth (accelerated) mouse wheel stays a mouse, even with an odd event in the stream", () => {
+  const mem = {};
+  const seq = [4.000244140625, 8.000488, 12.000732421875, 30.4, 61.2, 4.000244140625, 2.000122];
+  seq.forEach((d, i) => assert.equal(classifyWheel({ deltaY: d, deltaX: 0, deltaMode: 0, wheelDeltaY: -120 * Math.max(1, Math.round(d / 30)) }, mem, i * 20), "mouse", `event ${i}`));
+  // One odd event (a non-notch legacy delta) in the middle of a mouse stream: still a mouse.
+  assert.equal(classifyWheel({ deltaY: 4.5, deltaX: 0, deltaMode: 0, wheelDeltaY: -13 }, mem, 200), "mouse");
+  assert.equal(classifyWheel({ deltaY: 4.000244140625, deltaX: 0, deltaMode: 0, wheelDeltaY: -120 }, mem, 220), "mouse");
+  assert.equal(classifyWheel({ deltaY: 4.5, deltaX: 0, deltaMode: 0, wheelDeltaY: -13 }, mem, 240), "mouse");
 });
 
 test("fly: held keys give a continuous step that scales with dt; Shift x4; opposite keys cancel; speed clamps", () => {
@@ -290,7 +316,10 @@ test("the wheel while flying changes fly speed; a trackpad scroll orbits; a mous
   assert.ok(st.nav.settings.flySpeed > s0);
   st.nav._rmb.down = false;
   assert.equal(st.nav.wheel({ deltaY: 100, deltaX: 0, deltaMode: 0, wheelDeltaY: -120 }), false, "mouse: the stage zooms");
-  assert.equal(st.nav.wheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, wheelDeltaY: -7 }), true);
+  assert.equal(st.nav.wheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, wheelDeltaY: -7 }), false, "one trackpad-like event: not sure yet");
+  assert.equal(st.nav.wheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, wheelDeltaY: -7 }), false);
+  assert.equal(st.nav.wheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, wheelDeltaY: -7 }), false, "a known mouse needs more than the bare three");
+  assert.equal(st.nav.wheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, wheelDeltaY: -7 }), true, "sustained: a trackpad, it orbits");
   assert.equal(st.lastNav.mode, "orbit");
   assert.equal(st.nav.wheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, ctrlKey: true }), false, "pinch zooms");
 });
@@ -343,4 +372,22 @@ test("double-click focus only selects in Camera view (never rewrites the shot)",
   assert.equal(st.nav.focusAt({ clientX: 1, clientY: 1 }), false);
   assert.match(st.msgs[0], /Free view/);
   assert.equal(st.changes, 0);
+});
+
+test("rayBoxT: where a ray enters an oriented set box; a miss or an origin inside is null", () => {
+  const q90 = [0, Math.sin(Math.PI / 4), 0, Math.cos(Math.PI / 4)];   // 90° about Y
+  assert.ok(Math.abs(rayBoxT([0, 1, 10], [0, 0, -1], [2, 2, 0.1], [0, 1, 5]) - 4.9) < 1e-9);
+  assert.equal(rayBoxT([0, 1, 10], [0, 0, 1], [2, 2, 0.1], [0, 1, 5]), null, "behind the ray");
+  assert.equal(rayBoxT([5, 1, 10], [0, 0, -1], [2, 2, 0.1], [0, 1, 5]), null, "beside it");
+  assert.equal(rayBoxT([0, 1, 5], [0, 0, -1], [2, 2, 0.5], [0, 1, 5]), null, "inside");
+  // The same thin wall turned 90°: now 0.1 thick along x, 2 m along z.
+  assert.ok(Math.abs(rayBoxT([0, 1, 10], [0, 0, -1], [2, 2, 0.1], [0, 1, 5], q90) - 3) < 1e-9);
+  assert.equal(rayBoxT([0.5, 1, 10], [0, 0, -1], [2, 2, 0.1], [0, 1, 5], q90), null);
+});
+
+test("focusAlongRay: toward the point, never past it, 2..12 m short of it", () => {
+  assert.deepEqual(focusAlongRay([0, 0, 0], [0, 0, -30]).pos.map((v) => +v.toFixed(6) || 0), [0, 0, -18]);
+  assert.deepEqual(focusAlongRay([0, 0, 0], [0, 0, -5]).pos.map((v) => +v.toFixed(6) || 0), [0, 0, 0], "already 2..12 m away: the distance is kept");
+  assert.deepEqual(focusAlongRay([0, 0, 0], [0, 0, -1]).pos.map((v) => +v.toFixed(6) || 0), [0, 0, 0], "nearer than 2 m: stay put");
+  assert.deepEqual(focusAlongRay([0, 0, 0], [0, 0, -1]).tgt, [0, 0, -1]);
 });

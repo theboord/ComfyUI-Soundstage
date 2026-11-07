@@ -170,6 +170,7 @@ test("Windows: left released first in a both-buttons pan, then right: the contex
 test("Camera view: a trackpad orbit, then a quick click, still reports the shot-camera move", () => {
   cv.ls.length = 0; win.ls.length = 0;
   const st = makeStage({ freeView: false });
+  st.nav.settings.trackpad = "trackpad";   // ⚙ Scrolling: Trackpad (Auto needs a few events to be sure)
   assert.equal(st.nav.wheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, wheelDeltaY: -7 }), true, "trackpad scroll orbits");
   st.nav._tick();
   // The press lands before the loop settles.
