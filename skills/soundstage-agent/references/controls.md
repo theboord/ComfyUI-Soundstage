@@ -127,6 +127,16 @@ Each line: **control**: what it does.
 - **Close**
 - **One tenth the size**
 - **Ten times the size**
+- **Navigation style**: Navigation style: the mouse buttons you're used to
+- **Navigation settings**
+- **Hide this hint**: Hide this hint (Navigation… on the viewport brings it back)
+- **Ease drags, scrolls and flying in and out**
+- **Damping**
+- **Smoothness**
+- **Invert up / down**
+- **Scrolling**
+- **Fly speed (m/s)**
+- **Show the hint**
 - **Parts**
 - **Light over time**
 - **Lens channels**: Lens channels (keyable)
