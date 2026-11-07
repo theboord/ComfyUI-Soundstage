@@ -21,8 +21,17 @@ const CATALOG_URL = new URL("./catalog.json", import.meta.url);
  * runs first; ComfyUI listeners added before this module loads are the one thing it can't get ahead of.
  */
 export const openPanels = new Set();
+/** The panel on top. A panel whose dialog was removed some other way is dropped (and stopped), so keys can't stay
+ *  blocked behind a dialog nobody can see. */
+export function topPanel() {
+  for (const p of [...openPanels].reverse()) {
+    if (p.root && p.root.isConnected === false) { openPanels.delete(p); p.close?.(); continue; }
+    return p;
+  }
+  return null;
+}
 export function keyGuard(e) {
-  const p = [...openPanels].at(-1);
+  const p = topPanel();
   if (!p || e.__ssModelsSeen) return;
   e.__ssModelsSeen = true;
   e.stopImmediatePropagation?.();
@@ -107,6 +116,7 @@ class ModelsPanel {
 
   async open() {
     if (!document.getElementById("ss-models-css")) document.head.append(el("style", { id: "ss-models-css", textContent: CSS }));
+    for (const p of [...openPanels]) p.close();             // one panel at a time: stop the old one's poll and guard
     document.getElementById("ss-models")?.remove();
     this.root = el("div", { id: "ss-models" });
     this.root.setAttribute("role", "dialog");

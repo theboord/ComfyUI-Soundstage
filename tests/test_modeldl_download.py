@@ -86,16 +86,27 @@ def test_missing_size_garbage_body_fails_the_safetensors_check(tmp_path, monkeyp
     assert not (models / "vae" / "a.safetensors.part").exists()
 
 
-def test_catalog_size_must_be_within_one_percent(tmp_path, monkeypatch):
-    # 2 % off the catalog figure (well inside the old 5 MB slack): refused when nothing exact is known
-    items = [{"id": "a", "repo": "org/r", "path": "vae/a.safetensors", "folder": "vae", "size": int(len(DATA) * 1.02)}]
+def test_catalog_size_must_be_within_one_percent_or_the_rounding_slack(tmp_path, monkeypatch):
+    # nothing exact is known: within 1 % of the catalog figure, but never tighter than SIZE_SLACK (5 MB, half the
+    # catalog's 0.01 GB rounding)
+    gb = 1_000_000_000
+    assert M.size_within_pct(int(10 * gb * 1.009), 10 * gb) and not M.size_within_pct(int(10 * gb * 1.02), 10 * gb)
+    # ltx25-temporal-x2 / flux2-vae: 0.26 / 0.34 GB in the catalog, a genuine file up to 5 MB away still passes
+    assert M.size_within_pct(260_000_000 + 4_000_000, 260_000_000)
+    assert M.size_within_pct(260_000_000 - 4_000_000, 260_000_000)
+    assert M.size_within_pct(340_000_000 + 4_900_000, 340_000_000)
+    assert not M.size_within_pct(260_000_000 + 6_000_000, 260_000_000)
+    # a real download 6 MB away from the catalog figure is refused
+    items = [{"id": "a", "repo": "org/r", "path": "vae/a.safetensors", "folder": "vae", "size": len(DATA) + 6_000_000}]
     dl, hf, models = make(tmp_path, monkeypatch, items=items, etag=False)
     run(dl, ["a"])
     assert dl.failed[0]["code"] == "verify"
-    items[0]["size"] = int(len(DATA) * 1.009)
+    # and one 4 MB away (inside the rounding) is installed
+    items[0]["size"] = len(DATA) + 4_000_000
     dl, hf, models = make(tmp_path / "b", monkeypatch, items=items, etag=False)
     run(dl, ["a"])
-    assert dl.done == [{"id": "a", "verified": "size"}]
+    assert dl.done == [{"id": "a", "verified": "size"}] and dl.failed == []
+    assert (models / "vae" / "a.safetensors").read_bytes() == DATA
 
 
 def test_captive_portal_html_is_refused_and_nothing_is_written(tmp_path, monkeypatch):
@@ -131,7 +142,8 @@ def test_catalog_size_checked_when_no_header_gives_one(tmp_path, monkeypatch):
 
 def test_catalog_size_mismatch_without_sha_is_refused(tmp_path, monkeypatch):
     # the catalog's rounded size is far off (a truncated or wrong file): not installed, .part deleted
-    items = [{"id": "a", "repo": "org/r", "path": "vae/a.safetensors", "folder": "vae", "size": 2 * len(DATA)}]
+    items = [{"id": "a", "repo": "org/r", "path": "vae/a.safetensors", "folder": "vae",
+              "size": len(DATA) + 2 * M.SIZE_SLACK}]
     dl, hf, models = make(tmp_path, monkeypatch, items=items, etag=False, length=False)
     run(dl, ["a"])
     assert dl.failed[0]["code"] == "verify" and dl.done == []

@@ -59,7 +59,7 @@ CHUNK = 8 << 20
 ACCESS_TTL = 60.0
 MAX_HOPS = 5
 SIZE_SLACK = 5_000_000      # half of 0.01 GB: catalog sizes without a sha256 are rounded to 0.01 GB
-CATALOG_PCT = 0.01          # a download checked only against the catalog's figure must be within 1 % of it
+CATALOG_PCT = 0.01          # a download checked only against the catalog's figure: within 1 % (or SIZE_SLACK)
 MAX_ST_HEADER = 100 << 20   # a safetensors JSON header bigger than this is not a real one
 CACHEABLE = ("ok", "sign_in", "licence")   # access answers kept for ACCESS_TTL; errors are always asked again
 
@@ -306,8 +306,9 @@ def safetensors_ok(p: Path) -> bool:
 
 
 def size_within_pct(actual: int, approx: int, pct: float = CATALOG_PCT) -> bool:
-    """The download check against the catalog's figure when nothing exact is known: within pct (1 %)."""
-    return abs(actual - approx) <= approx * pct
+    """The download check against the catalog's figure when nothing exact is known: within pct (1 %), and never
+    tighter than SIZE_SLACK, since catalog sizes are rounded to 0.01 GB (off by up to 5 MB on any file)."""
+    return abs(actual - approx) <= max(approx * pct, SIZE_SLACK)
 
 
 def size_close(actual: int, approx: int) -> bool:
@@ -841,7 +842,7 @@ class Downloader:
         # Exact sizes only from sources we trust: Hugging Face's X-Linked-Size, or a catalog size filled with its
         # sha256. A response's own Content-Length is never a check (a portal page has one too).
         exact = hsize or (it.get("size") if it.get("sha256") else None)
-        approx = None if exact is not None else it.get("size")   # the catalog's figure: within 1 %
+        approx = None if exact is not None else it.get("size")   # the catalog's figure: within 1 % (at least 5 MB)
         self.current["total"] = exact or approx
 
         t.parent.mkdir(parents=True, exist_ok=True)
