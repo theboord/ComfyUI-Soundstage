@@ -15,7 +15,7 @@ export function peopleLookControls(stage, mkSelect) {
   const sync = (info) => {
     if (!info) return;
     face.sel.value = info.face === "faceless" ? "faceless" : "shown";
-    chk.checked = stage.toJSON().people_look === "blocking";
+    chk.checked = stage.state?.people_look === "blocking";
     const st = stage.avatarStatus?.(info.id);
     face.wrap.title = st?.installed && !st.shown && st.reason ? `${FACE_TIP} Shown as clay now: ${st.reason}.` : FACE_TIP;
   };

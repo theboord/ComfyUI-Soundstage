@@ -69,35 +69,52 @@ function synthSkeleton() {
   return { model, root, pelvis, thigh, names };
 }
 
-test("root motion: the root's X/Z are zeroed (Y bob kept), the loop's travel is measured, only rotations + root play", () => {
+test("root motion: only the loop's steady travel comes out; the sway within the stride and the bob stay; the loop closes", () => {
   const { names } = synthSkeleton();
-  const { clip, travel, dropped, missing } = C.prepareClip(synthWalk(), names);
-  assert.ok(Math.abs(travel - Math.hypot(2 * Math.sin(4) - 0, 120)) < 1e-4, `travel ${travel}`);
-  const root = clip.tracks.find((t) => t.name === "Bip01.position");
-  for (let i = 0; i < root.values.length / 3; i++) {
-    assert.equal(root.values[3 * i], 0); assert.equal(root.values[3 * i + 2], 0);
+  const src = synthWalk();
+  const { clip, travel, dropped, missing } = C.prepareClip(src, names);
+  assert.ok(Math.abs(travel - Math.hypot(2 * Math.sin(4), 120)) < 1e-4, `travel ${travel}`);
+  const root = clip.tracks.find((t) => t.name === "Bip01.position"), o = src.tracks[0];
+  const n = root.values.length / 3, X = (v, i) => v[3 * i], Z = (v, i) => v[3 * i + 2];
+  // residual = original minus the straight line first -> last key, minus a constant
+  const res = (v, i) => [X(v, i) - (X(o.values, n - 1) - X(o.values, 0)) * (o.times[i] / 1.2), Z(v, i) - (Z(o.values, n - 1) - Z(o.values, 0)) * (o.times[i] / 1.2)];
+  const off = [X(root.values, 0) - res(o.values, 0)[0], Z(root.values, 0) - res(o.values, 0)[1]];
+  for (let i = 0; i < n; i++) {
+    const r = res(o.values, i);
+    assert.ok(Math.abs(X(root.values, i) - r[0] - off[0]) < 1e-5 && Math.abs(Z(root.values, i) - r[1] - off[1]) < 1e-5, `key ${i}: the variation within the stride is kept`);
     assert.ok(Math.abs(root.values[3 * i + 1] - (90 + Math.sin(i * 2))) < 1e-5, "the bob stays");
   }
+  assert.ok(Math.abs(X(root.values, 0) - X(root.values, n - 1)) < 1e-5 && Math.abs(Z(root.values, 0) - Z(root.values, n - 1)) < 1e-5, "the loop closes");
+  let mx = 0, mz = 0; for (let i = 0; i < n; i++) { mx += X(root.values, i); mz += Z(root.values, i); }
+  assert.ok(Math.abs(mx / n) < 1e-5 && Math.abs(mz / n) < 1e-5, "centred under the holder");
+  assert.ok(Math.max(...Array.from({ length: n }, (_, i) => Math.abs(X(root.values, i)))) > 0.5, "the sideways sway is not zeroed");
   assert.deepEqual(clip.tracks.map((t) => t.name).sort(), ["Bip01.position", "Bip01.quaternion", "Bip01_L_Thigh.quaternion"]);
   assert.ok(dropped.includes("Bip01_Pelvis.position") && dropped.includes("Bip01_L_Thigh.scale") && dropped.includes("MotionExtractionHelper.position") && dropped.includes("Bip01_Footsteps.position"));
   assert.deepEqual(missing, []);
-  // the original clip is left alone
-  assert.equal(synthWalk().tracks[0].values[2], 0);
+  assert.equal(synthWalk().tracks[0].values[2], 0, "the original clip is left alone");
 });
 
-test("over a whole loop the pelvis keeps its X/Z under the holder (no double travel, no snap at the loop)", () => {
-  const sk = synthSkeleton();
-  const { clip } = C.prepareClip(synthWalk(), sk.names);
-  const mixer = new THREE.AnimationMixer(sk.model);
-  mixer.clipAction(clip).play();
-  const v = new THREE.Vector3();
-  for (let t = 0; t <= 1.2001; t += 0.05) {
-    mixer.setTime(t);
-    sk.model.updateMatrixWorld(true);
-    sk.pelvis.getWorldPosition(v);
-    assert.ok(Math.abs(v.x) < 1e-6 && Math.abs(v.z) < 1e-6, `t=${t.toFixed(2)} pelvis ${v.x}, ${v.z}`);
-    assert.ok(v.y > 88 && v.y < 92);
+test("planted foot: a point the clip holds still on the floor stays still under a holder moving at the loop's average speed", () => {
+  // A clip whose root surges (uneven speed within the stride) while a foot stays planted at world z = 40: the foot's
+  // world position = root + (40 - root_original), held by the leg. Zeroing the root slid it; the residual must not.
+  const times = [], pos = [];
+  for (let i = 0; i <= 24; i++) { const t = (i / 24) * 1.2; times.push(t); pos.push(1.5 * Math.sin(2 * Math.PI * t / 1.2), 90, 100 * t + 6 * Math.sin(2 * Math.PI * t / 1.2)); }
+  const src = new THREE.AnimationClip("w", 1.2, [new THREE.VectorKeyframeTrack("Bip01.position", times, pos)]);
+  const { clip, travel } = C.prepareClip(src, new Set(["Bip01"]));
+  const v = clip.tracks[0].values, slides = [];
+  let prev = null;
+  for (let i = 0; i <= 12; i++) {   // the first half of the loop, the foot planted
+    const holderZ = travel * (times[i] / 1.2);          // the holder moves at constant speed with the distance
+    const rootZ = holderZ + v[3 * i + 2];
+    const footZ = rootZ + (40 - pos[3 * i + 2]);        // the leg keeps the clip's root-to-foot offset
+    if (prev != null) slides.push(Math.abs(footZ - prev));
+    prev = footZ;
   }
+  assert.ok(Math.max(...slides) < 1e-4, `planted foot slid ${Math.max(...slides)} units a frame`);
+  // the old rule (root X/Z zeroed) slid the same foot by centimetres
+  let old = 0, p0 = null;
+  for (let i = 0; i <= 12; i++) { const f = travel * (times[i] / 1.2) + (40 - pos[3 * i + 2]); if (p0 != null) old = Math.max(old, Math.abs(f - p0)); p0 = f; }
+  assert.ok(old > 0.5);
 });
 
 test("every track binds to a bone; Bip02 tracks are renamed to Bip01, an unknown bone is reported", () => {
@@ -127,24 +144,54 @@ test("clip choice by speed: idle when still, walk, run, crossfaded, weights sum 
   }
 });
 
-test("clip time: idle by frame, walk/run by distance (one stride = one loop); the same frame is always the same pose", () => {
-  const clips = { idle: { duration: 10 }, walk: { duration: 1.2, stride: 1.2 }, run: { duration: 0.73, stride: 2.1 } };
-  const a = C.clipTimes({ frame: 30, fps: 24, dist: 0.6 }, clips);
+test("clip time: idle by frame, walk and run on ONE shared gait phase; the same frame is always the same pose", () => {
+  const clips = { idle: { duration: 10 }, walk: { duration: 1.2 }, run: { duration: 0.73 } };
+  const a = C.clipTimes({ frame: 30, fps: 24, phase: 0.5 }, clips);
   assert.ok(Math.abs(a.idle - 1.25) < 1e-9);
-  assert.ok(Math.abs(a.walk - 0.6) < 1e-9, "half a stride = half the loop");
-  const b = C.clipTimes({ frame: 30, fps: 24, dist: 0.6 + 1.2 * 3 }, clips);
+  assert.ok(Math.abs(a.walk - 0.6) < 1e-9 && Math.abs(a.run - 0.365) < 1e-9, "half the phase = half of each loop");
+  assert.ok(Math.abs(a.walk / 1.2 - a.run / 0.73) < 1e-12, "walk and run at the same point of the stride");
+  const b = C.clipTimes({ frame: 30, fps: 24, phase: 3.5 }, clips);
   assert.ok(Math.abs(b.walk - a.walk) < 1e-9, "whole strides later the legs are in the same place");
-  assert.deepEqual(C.clipTimes({ frame: 30, fps: 24, dist: 0.6 }, clips), a, "deterministic");
-  const s = C.clipTimes({ frame: 30, fps: 24, dist: 0.6, seed: 0.25 }, clips);
+  assert.deepEqual(C.clipTimes({ frame: 30, fps: 24, phase: 0.5 }, clips), a, "deterministic");
+  const s = C.clipTimes({ frame: 30, fps: 24, phase: 0.5, seed: 0.25 }, clips);
   assert.ok(s.idle !== a.idle && s.idle >= 0 && s.idle < 10);
-  for (const x of Object.values(C.clipTimes({ frame: 9999, fps: 24, dist: 987.65, seed: 0.9 }, clips))) assert.ok(x >= 0);
+  for (const x of Object.values(C.clipTimes({ frame: 9999, fps: 24, phase: 987.65, seed: 0.9 }, clips))) assert.ok(x >= 0);
   assert.equal(C.phaseSeed("actor_a"), C.phaseSeed("actor_a"));
   assert.notEqual(C.phaseSeed("actor_a"), C.phaseSeed("actor_b"));
 });
 
-test("hip height: the avatar is scaled so its hips sit where the clay's do (half the height)", () => {
-  assert.ok(Math.abs(C.hipScale(1.8, 90) * 90 - 0.9) < 1e-9);
-  assert.ok(Math.abs(C.hipScale(1.68, 92.3) * 92.3 - 0.84) < 1e-9);
+test("gait table: speed by frame, one phase that advances by distance over the blended stride (walk-run band in step)", () => {
+  const strides = { walk: 1.2, run: 2.1 };
+  assert.equal(C.blendStride({ walk: 1, run: 0 }, strides), 1.2);
+  assert.equal(C.blendStride({ walk: 0, run: 1 }, strides), 2.1);
+  assert.equal(C.blendStride({ walk: 0, run: 0, idle: 1 }, strides), 1.2);
+  const mid = C.blendStride(C.clipWeights(2.3), strides);
+  assert.ok(mid > 1.2 && mid < 2.1);
+  // constant 1.3 m/s walk: a stride of distance = one whole phase
+  const walk = Array.from({ length: 49 }, (_, f) => [0, (1.3 * f) / 24]);
+  const tw = C.gaitTable(walk, 24, strides);
+  assert.ok(Math.abs(tw.speed[24] - 1.3) < 1e-9);
+  assert.ok(Math.abs(tw.phase[48] - (1.3 * 2) / 1.2) < 1e-9);
+  // constant 2.3 m/s (inside the walk-run band): the phase rate is distance / blended stride, and walk and run times
+  // come from that one phase, so the two mixed poses are the same point of the stride
+  const band = Array.from({ length: 49 }, (_, f) => [0, (2.3 * f) / 24]);
+  const tb = C.gaitTable(band, 24, strides);
+  assert.ok(Math.abs((tb.phase[30] - tb.phase[29]) - (2.3 / 24) / mid) < 1e-9);
+  const t = C.clipTimes({ frame: 30, fps: 24, phase: tb.phase[30] }, { walk: { duration: 1.2 }, run: { duration: 0.73 } });
+  assert.ok(Math.abs(t.walk / 1.2 - t.run / 0.73) < 1e-12);
+  // speeding up never makes the phase jump back or leap: it is continuous and grows with distance
+  const accel = Array.from({ length: 97 }, (_, f) => [0, 0.5 * 0.08 * f * f / 24]);
+  const ta = C.gaitTable(accel, 24, strides);
+  for (let f = 1; f < 97; f++) assert.ok(ta.phase[f] >= ta.phase[f - 1] && ta.phase[f] - ta.phase[f - 1] < 0.2);
+  // standing still: speed 0, phase still
+  const still = C.gaitTable(Array.from({ length: 10 }, () => [1, 2]), 24, strides);
+  assert.ok(still.speed.every((x) => x === 0) && still.phase.every((x) => x === 0));
+  assert.deepEqual([...C.gaitTable(band, 24, strides).phase], [...tb.phase], "deterministic");
+});
+
+test("height: the avatar is scaled by its measured standing height, not by its hips", () => {
+  assert.ok(Math.abs(C.statureScale(1.8, 181.9) * 181.9 - 1.8) < 1e-9);
+  assert.ok(Math.abs(C.statureScale(1.68, 174.2) * 174.2 - 1.68) < 1e-9);
   assert.equal(C.clayHeight({ kind: "woman" }), 1.68);
   assert.equal(C.clayHeight({ kind: "man", height_m: 1.9 }), 1.9);
 });
@@ -184,6 +231,42 @@ test("the clay stays (for the whole shot) where the clips can't follow yet; Bloc
   assert.deepEqual([...users.carriers], ["p2"]);
   assert.match(C.clayReason(a, users), /holds a prop/);
   assert.match(C.clayReason({ id: "p2", kind: "woman" }, users), /carries/);
+});
+
+test("knocked over or moved by physics: the person stays clay for the whole shot (the clips stand upright)", () => {
+  const a = { id: "p1", kind: "man" };
+  assert.match(C.clayReason({ ...a, physics: { mode: "dynamic", baked: true } }, {}), /physics/);
+  assert.match(C.clayReason({ ...a, tilt: [0.7071, 0, 0, 0.7071] }, {}), /knocked over/);
+  assert.equal(C.clayReason({ ...a, physics: { mode: "dynamic" } }, {}), null, "set up for physics but not baked: still standing");
+  assert.equal(C.clayReason({ ...a, tilt: [0, 0] }, {}), null);
+});
+
+test("swimming: the same gate as the stage's own (swim off, carried) and over the whole shot", () => {
+  let called = 0;
+  const plan = (mode) => () => { called++; return mode ? { n: mode.length, mode } : null; };
+  assert.equal(C.swimsInShot({ id: "a", swim: "off" }, plan([0, 1, 1])), false, "swimming off: stays lifelike");
+  assert.equal(called, 0, "the plan isn't even built");
+  assert.equal(C.swimsInShot({ id: "a", carry_id: "b" }, plan([1])), false);
+  assert.equal(C.swimsInShot({ id: "a" }, plan(null)), false);
+  assert.equal(C.swimsInShot({ id: "a" }, plan([0, 0, 0])), false);
+  assert.equal(C.swimsInShot({ id: "a" }, plan(new Uint8Array([0, 0, 1]))), true, "swims later in the shot: clay from frame 0");
+});
+
+test("Drive: decided for the whole shot, never flipping while a take is driven, recorded and reviewed", () => {
+  const memo = {};
+  const drive = { on: false, pending: null, live: new Map(), involved: new Set(), owns(id) { return this.on && !this.pending && this.live.has(id); } };
+  assert.equal(C.drivenInShot(memo, "s1", "p1", drive), false);
+  drive.on = true; drive.live.set("p1", {});
+  assert.equal(C.drivenInShot(memo, "s1", "p1", drive), true);
+  drive.pending = { take: {} };   // reviewing the recorded take: owns() is false now, the body must not flip back
+  assert.equal(drive.owns("p1"), false);
+  assert.equal(C.drivenInShot(memo, "s1", "p1", drive), true);
+  drive.live.clear();
+  assert.equal(C.drivenInShot(memo, "s1", "p1", drive), true, "still the same shot");
+  assert.equal(C.drivenInShot(memo, "s1", "p2", drive), false, "someone Drive never had");
+  assert.equal(C.drivenInShot(memo, "s2", "p1", drive), false, "a new shot decides again");
+  drive.on = false;
+  assert.equal(C.drivenInShot(memo, "s2", "p1", drive), false);
 });
 
 // ---------------------------------------------------------------- render passes
@@ -235,7 +318,7 @@ test("real Rocketbox files: one detailed mesh, no stray light, every texture fou
   }
 });
 
-test("real Rocketbox avatar on a clay figure: faces +Z, hips at clay height, feet on the floor, root X/Z pinned, deterministic", { skip: !installed && "Rocketbox files not installed" }, async () => {
+test("real Rocketbox avatar on a clay figure: faces +Z, stands at its set height, feet on the floor, deterministic", { skip: !installed && "Rocketbox files not installed" }, async () => {
   const { parse } = await parseReal();
   const A = await import("../../web/stage/people/avatars.mjs");
   const { personKeypoints } = await import("../../web/stage/posepass.mjs");
@@ -247,10 +330,10 @@ test("real Rocketbox avatar on a clay figure: faces +Z, hips at clay height, fee
   const g = new THREE.Group(); g.position.set(3, 0, -2); g.rotation.y = 0.4; g.scale.setScalar(1);   // the clay group, anywhere
   const skin = A.instantiate(kit, a);
   g.add(skin.holder);
-  const scale = C.hipScale(1.8, kit.hipUnits);
-  const pose = (frame, dist, speed, yaw = 0) => {
-    A.placeHolder(g, skin.holder, { x: 1, y: 0, z: 2, yaw, scale });
-    A.drive(skin, { frame, fps: 24, speed, dist, scale, seed: 0 });
+  const scale = C.statureScale(1.8, kit.stature);
+  const pose = (frame, phase, speed, yaw = 0) => {
+    A.placeHolder(g, skin.holder, { x: 1, y: -kit.floor * scale, z: 2, yaw, scale });
+    A.drive(skin, { frame, fps: 24, speed, phase, seed: 0 });
     g.updateMatrixWorld(true);
     const P = (n) => skin.bones[n].getWorldPosition(new THREE.Vector3());
     return { root: P("Bip01"), nose: P("Bip01_MNose"), head: P("Bip01_Head"), lt: P("Bip01_L_Thigh"), rt: P("Bip01_R_Thigh"), lToe: P("Bip01_L_Toe0"), rToe: P("Bip01_R_Toe0") };
@@ -258,15 +341,14 @@ test("real Rocketbox avatar on a clay figure: faces +Z, hips at clay height, fee
   const p = pose(10, 0, 0);
   assert.ok(p.nose.z - p.head.z > 0.08, "facing +Z (nose in front of the head)");
   assert.ok(p.lt.x > p.rt.x, "left thigh on +X, like the clay");
-  assert.ok(Math.abs(p.root.y - 0.9) < 0.03, `hips at ${p.root.y.toFixed(3)} m`);
+  assert.ok(Math.abs(p.root.y - 0.89) < 0.03, `hips at ${p.root.y.toFixed(3)} m`);
   assert.ok(Math.abs(p.root.x - 1) < 0.02 && Math.abs(p.root.z - 2) < 0.02, "the avatar stands where the actor is, whatever the clay group's own transform");
   assert.ok(Math.min(p.lToe.y, p.rToe.y) > -0.03 && Math.min(p.lToe.y, p.rToe.y) < 0.05, "a foot on the floor");
   const r = pose(10, 0, 0, Math.PI / 2);
   assert.ok(r.nose.x - r.head.x > 0.08, "turned to heading +90° it faces +X");
-  // walking: the root never leaves the holder's X/Z over a whole loop of distance
-  const stride = kit.clips.walk.travel * scale;
+  // walking: the root stays near the holder (only the sway within a stride is left)
   for (let i = 0; i <= 24; i++) {
-    const w = pose(i, (stride * i) / 24, 1.3);
+    const w = pose(i, i / 24, 1.3);
     assert.ok(Math.hypot(w.root.x - 1, w.root.z - 2) < 0.06, `root drifted ${Math.hypot(w.root.x - 1, w.root.z - 2).toFixed(3)} m at ${i}/24`);
   }
   const s1 = pose(17, 1.234, 1.3), s2 = pose(40, 2.0, 2.9), s3 = pose(17, 1.234, 1.3);
@@ -302,4 +384,118 @@ test("showing the avatar hides only the clay meshes (joints stay) and gives them
   assert.equal(m1.visible, false); assert.equal(m2.visible, false); assert.equal(av.visible, true); assert.equal(joint.visible, true);
   A.setShown(skin, false);
   assert.equal(m1.visible, true); assert.equal(m2.visible, false); assert.equal(av.visible, false);
+});
+
+/** Both real kits, parsed once. */
+let _kits = null;
+async function realKits() {
+  if (_kits) return _kits;
+  const { parse } = await parseReal();
+  const A = await import("../../web/stage/people/avatars.mjs");
+  _kits = { A };
+  for (const [kind, spec] of Object.entries(C.ROCKETBOX)) {
+    const manager = new THREE.LoadingManager();
+    manager.setURLModifier((u) => C.tgaToPng(u, `${RB}tex/`));
+    const raw = Object.fromEntries(C.CLIP_KINDS.map((k) => [k, parse(`anim/${spec.clips[k]}.max.fbx`).animations[0]]));
+    _kits[kind] = { kit: A.buildKit(parse(`${spec.model}.fbx`, manager), raw), raw };
+  }
+  return _kits;
+}
+/** Walk an avatar along +Z at a steady speed; per frame: whole-body height, toe positions. */
+function walkAlong(A, kit, { height, speed, frames = 96 }) {
+  const scale = C.statureScale(height, kit.stature), strides = A.kitStrides(kit, scale);
+  const g = new THREE.Group(), skin = A.instantiate(kit, { id: "x" });
+  g.add(skin.holder);
+  const path = Array.from({ length: frames }, (_, f) => [0, (speed * f) / 24]);
+  const tab = C.gaitTable(path, 24, strides);
+  const box = new THREE.Box3(), out = [];
+  for (let f = 12; f < frames - 12; f++) {
+    A.placeHolder(g, skin.holder, { x: 0, y: -kit.floor * scale, z: path[f][1], yaw: 0, scale });
+    A.drive(skin, { frame: f, fps: 24, speed: tab.speed[f], phase: tab.phase[f], seed: 0 });
+    g.updateMatrixWorld(true);
+    box.makeEmpty(); box.expandByObject(skin.mesh, true);
+    const P = (n) => skin.bones[n].getWorldPosition(new THREE.Vector3());
+    out.push({ f, h: box.max.y - box.min.y, low: box.min.y, L: P("Bip01_L_Toe0"), R: P("Bip01_R_Toe0") });
+  }
+  return { out, scale, strides, skin, g, tab };
+}
+/** Planted-toe slide: the most a toe moves over the ground while it stays down (within 1.5 cm of its lowest). */
+function plantedDrift(out) {
+  let worst = 0;
+  for (const s of ["L", "R"]) {
+    const lo = Math.min(...out.map((o) => o[s].y));
+    let start = null;
+    for (const o of out) {
+      if (o[s].y < lo + 0.015) { start ||= o[s]; worst = Math.max(worst, Math.hypot(o[s].x - start.x, o[s].z - start.z)); } else start = null;
+    }
+  }
+  return worst;
+}
+
+test("real Rocketbox: standing height within 1 cm of the set height for the man and the woman, feet on the floor", { skip: !installed && "Rocketbox files not installed" }, async () => {
+  const K = await realKits();
+  for (const [kind, height] of [["man", 1.8], ["woman", 1.68], ["man", 1.92], ["woman", 1.55]]) {
+    const { out } = walkAlong(K.A, K[kind].kit, { height, speed: 0, frames: 48 });
+    for (const o of out) {
+      assert.ok(Math.abs(o.h - height) < 0.01, `${kind} set to ${height} m stands ${o.h.toFixed(3)} m at frame ${o.f}`);
+      assert.ok(Math.abs(o.low) < 0.012, `${kind} soles at ${o.low.toFixed(3)} m`);
+    }
+  }
+});
+
+test("real Rocketbox: planted feet barely slide at walk and run (the old zeroed root slid them 3-8 cm a stride)", { skip: !installed && "Rocketbox files not installed" }, async () => {
+  const K = await realKits();
+  // limits measured 2026-11-07 (cm): man walk 1.1 / run 1.5, woman walk 3.1 / run 3.6, versus 5.2 / 5.0 / 2.9 / 6.1 with
+  // the zeroed root. The woman's walk sits at the clip's own level (its toe rolls within the contact).
+  const limit = { man: { walk: 0.02, run: 0.025 }, woman: { walk: 0.04, run: 0.045 } };
+  for (const kind of ["man", "woman"]) {
+    const { kit } = K[kind];
+    const height = kind === "man" ? 1.8 : 1.68, scale = C.statureScale(height, kit.stature), st = K.A.kitStrides(kit, scale);
+    for (const gait of ["walk", "run"]) {
+      const speed = st[gait] / kit.clips[gait].clip.duration;   // the clip's own pace, pure walk or pure run
+      const d = plantedDrift(walkAlong(K.A, kit, { height, speed }).out);
+      assert.ok(d < limit[kind][gait], `${kind} ${gait} at ${speed.toFixed(2)} m/s: a planted toe slid ${(100 * d).toFixed(1)} cm`);
+    }
+    // idle: the weight shift stays in the hips, the feet stay put
+    assert.ok(plantedDrift(walkAlong(K.A, kit, { height, speed: 0 }).out) < 0.01, `${kind} idle feet slide`);
+  }
+});
+
+test("real Rocketbox: in the walk-run band the legs blend in step (feet apart mid-stride, not together)", { skip: !installed && "Rocketbox files not installed" }, async () => {
+  const K = await realKits();
+  const w = C.clipWeights(2.3);
+  assert.ok(w.walk > 0.2 && w.run > 0.2, "2.3 m/s really is a blend");
+  for (const kind of ["man", "woman"]) {
+    const { kit } = K[kind];
+    const scale = C.statureScale(kind === "man" ? 1.8 : 1.68, kit.stature), st = K.A.kitStrides(kit, scale);
+    const g = new THREE.Group(), skin = K.A.instantiate(kit, { id: "x" });
+    g.add(skin.holder);
+    K.A.placeHolder(g, skin.holder, { x: 0, y: 0, z: 0, yaw: 0, scale });
+    const apart = () => { g.updateMatrixWorld(true); return Math.abs(skin.bones.Bip01_L_Toe0.getWorldPosition(new THREE.Vector3()).z - skin.bones.Bip01_R_Toe0.getWorldPosition(new THREE.Vector3()).z); };
+    // the shared phase at a quarter and three quarters of the stride: one foot forward, one back, in BOTH clips
+    for (const phase of [0.25, 0.75]) {
+      K.A.drive(skin, { frame: 0, fps: 24, speed: 2.3, phase, seed: 0 });
+      assert.ok(apart() > 0.5, `${kind} phase ${phase}: feet ${(100 * apart()).toFixed(1)} cm apart`);
+    }
+    // what the old rule did (each clip on distance / its own stride): somewhere the mixed legs close together
+    let worst = 9;
+    for (let d = 0; d < 6; d += 0.05) {
+      for (const [k, act] of Object.entries(skin.actions)) { act.enabled = w[k] > 1e-4; act.setEffectiveWeight(w[k]); act.time = k === "idle" ? 0 : ((d / st[k]) % 1) * kit.clips[k].clip.duration; }
+      skin.mixer.update(0);
+      worst = Math.min(worst, apart());
+    }
+    assert.ok(worst < 0.1, "the out-of-phase blend this replaces really did close the legs");
+  }
+});
+
+test("drop-onto picking: a ray still hits a lifelike person's hidden clay (three's raycast ignores visibility); no load in flight, no wait", async () => {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1));
+  m.visible = false;   // the clay under a lifelike body
+  m.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster(new THREE.Vector3(0, 1, 5), new THREE.Vector3(0, 0, -1));
+  assert.equal(ray.intersectObjects([m], false).length > 0, true);
+  const A = await import("../../web/stage/people/avatars.mjs");
+  const t0 = Date.now();
+  await A.avatarsReady(5000);
+  assert.ok(Date.now() - t0 < 100, "captureSequence doesn't wait when nothing is loading");
 });

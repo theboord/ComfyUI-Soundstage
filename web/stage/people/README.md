@@ -20,13 +20,15 @@ Without the folder every person silently stays clay (one line in the browser con
 ## How it works
 
 - `avatars.mjs` loads each avatar once (FBXLoader; every `.tga` the FBX names is loaded as `tex/<same name>.png`, because three's FBXLoader has no TGA reader here), keeps only the most detailed mesh, swaps its Phong materials for the Standard material the rest of the set uses, and clones it per person.
-- The body plays its own Rocketbox clip: idle when still, walk, run, crossfaded by ground speed over about half a second. Walk and run advance with the distance travelled, so the feet don't skate; idle runs on the shot's frame clock. The pose depends only on the frame number, so renders are frame-exact.
-- The clips' ground travel (on the root bone `Bip01`) is removed, keeping the up-and-down bob, because the person already moves along their keyed path.
+- The body is scaled by its measured standing height (top of the head in the idle pose), so it stands as tall as the person is set to (the woman's hips sit higher than the clay's, so hip height can't be used).
+- The body plays its own Rocketbox clip: idle when still, walk, run, crossfaded by ground speed over about half a second. Walk and run share ONE gait phase that advances with the distance travelled over the stride of the clips as mixed, so a walk-run blend stays in step and the feet don't skate; idle runs on the shot's frame clock. The pose depends only on the frame number, so renders are frame-exact.
+- Only the steady ground travel of each clip (on the root bone `Bip01`) is removed: the straight line from its first key to its last. The sway and surge within a stride and the idle's weight shift stay, so a foot the clip plants stays planted.
+- A capture (sprite sheet) waits for bodies still loading, and a body that finishes loading during a capture goes on after it, so a capture is never part clay, part lifelike.
 - Depth, ID, Clay and Wire passes all draw the posed body. The Pose pass reads the lifelike body's real bones while it shows.
 
 ## When the clay shows instead
 
-M1 can't yet make the lifelike body follow everything the clay can do. A person stays clay for the whole shot (never a swap mid-shot) when they ride or sit on something, are carried, carry something or hold a prop, play a video mocap take, have Pose keys or gaze keys, swim, or are driven live. Hover the **Face** control to see why someone is clay.
+M1 can't yet make the lifelike body follow everything the clay can do. A person stays clay for the whole shot (never a swap mid-shot) when they ride or sit on something, are carried, carry something or hold a prop, play a video mocap take, have Pose keys or gaze keys, swim anywhere in the shot (unless swimming is off for them), are moved by physics (a baked fall) or were knocked over, or have been driven live in this shot. Hover the **Face** control to see why someone is clay.
 
 ## Controls (Appearance row, with a person selected)
 

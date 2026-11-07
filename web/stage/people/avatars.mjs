@@ -17,6 +17,7 @@ import * as C from "./avatarcore.mjs";
 export const ROCKETBOX_DIR = new URL("./rocketbox/", import.meta.url).href;
 const TEX_DIR = `${ROCKETBOX_DIR}tex/`;
 const kits = new Map();   // model name -> Promise<kit>; a failure is kept too, so a missing install isn't re-fetched
+const inflight = new Set();   // per-person upgrades still loading (captureSequence waits for them: no pop mid-capture)
 let warned = false;
 
 function fbx(url, manager) {
@@ -83,11 +84,28 @@ export function buildKit(model, clips, { texErrors = [] } = {}) {
   const hipUnits = root ? root.getWorldPosition(new THREE.Vector3()).y : 90;
   const prepared = {};
   for (const k of C.CLIP_KINDS) if (clips[k]) prepared[k] = C.prepareClip(clips[k], boneNames);
+  const { stature, floor } = measureStanding(model, prepared.idle?.clip);
   return {
-    template: model, meshName: keep.name, materials, faceless: { neutral, hidden }, clips: prepared, hipUnits,
+    template: model, meshName: keep.name, materials, faceless: { neutral, hidden }, clips: prepared, hipUnits, stature, floor,
     report: { meshes: list.map((m) => m.name), kept: keep.name, lightsRemoved: lights.length, missingMaps: C.missingColorMaps(materials),
       unbound: Object.fromEntries(C.CLIP_KINDS.map((k) => [k, prepared[k]?.missing || null])), texErrors },
   };
+}
+
+/** The avatar's standing height and the height of its soles (avatar units), measured on a throwaway clone posed at the
+ *  start of its idle clip (the pose it is seen in when still), over every skinned vertex. */
+function measureStanding(template, idle) {
+  const m = SkeletonUtils.clone(template);
+  if (idle) {
+    const mixer = new THREE.AnimationMixer(m);
+    mixer.clipAction(idle).play();
+    mixer.setTime(0);
+  }
+  m.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  m.traverse((o) => { if (o.isSkinnedMesh) box.expandByObject(o, true); });
+  if (box.isEmpty()) return { stature: 180, floor: 0 };
+  return { stature: box.max.y - box.min.y, floor: box.min.y };
 }
 
 /** One actor's avatar: a clone of the kit (shared geometry and textures), its mixer and its named bones. */
@@ -160,15 +178,12 @@ export function placeHolder(g, holder, { x, y, z, yaw, scale }) {
   _m.decompose(holder.position, holder.quaternion, holder.scale);
 }
 
-/** Pose the avatar for this frame: weights by speed, times by frame and distance (avatarcore.clipTimes). */
-export function drive(skin, { frame, fps, speed, dist, scale, seed }) {
+/** Pose the avatar for this frame: weights by speed, walk and run on one shared gait phase (avatarcore.gaitTable). */
+export function drive(skin, { frame, fps, speed, phase, seed }) {
   const w = C.clipWeights(speed);
   const meta = {};
-  for (const k of C.CLIP_KINDS) {
-    const c = skin.kit.clips[k];
-    if (c) meta[k] = { duration: c.clip.duration, stride: (c.travel || 100) * scale };
-  }
-  const t = C.clipTimes({ frame, fps, dist, seed }, meta);
+  for (const k of C.CLIP_KINDS) if (skin.kit.clips[k]) meta[k] = { duration: skin.kit.clips[k].clip.duration };
+  const t = C.clipTimes({ frame, fps, phase, seed }, meta);
   for (const [k, act] of Object.entries(skin.actions)) {
     act.enabled = w[k] > 1e-4;
     act.setEffectiveWeight(w[k]);
@@ -178,12 +193,22 @@ export function drive(skin, { frame, fps, speed, dist, scale, seed }) {
   skin.weights = w;
 }
 
+/** The strides (m per loop) of a kit's walk and run at this scale. */
+export const kitStrides = (kit, scale) => ({ walk: (kit.clips.walk?.travel || 120) * scale, run: (kit.clips.run?.travel || 210) * scale });
+
+/** Resolves when every lifelike body that started loading has been put on (or given up). captureSequence awaits it
+ *  so a capture never starts clay and turns lifelike partway. ms caps the wait (a stalled download keeps clay). */
+export function avatarsReady(ms = 8000) {
+  if (!inflight.size) return Promise.resolve();
+  return Promise.race([Promise.allSettled([...inflight]), new Promise((r) => setTimeout(r, ms))]);
+}
+
 /** stage._buildSet hook: give a person the lifelike body once its files load; clay stays on any failure. */
 export function upgradeHuman(stage, a, g) {
   const spec = C.avatarSpecFor(a);
   if (!spec || !g?.userData?.joints) return;
   if (typeof window === "undefined" || typeof window.document?.createElement !== "function") return;   // node tests: clay only
-  loadKit(spec).then((kit) => {
+  const attach = (kit) => {
     if (stage.actorMeshes.get(a.id) !== g || g.userData.humanSkin) return;
     if (kit.report.missingMaps.length && !kit._mapWarned) {
       kit._mapWarned = true;
@@ -195,11 +220,24 @@ export function upgradeHuman(stage, a, g) {
     applyFace(skin, a.face === "faceless");
     g.userData.humanSkin = skin;
     stage.setFrame(stage.frame);
+  };
+  const job = loadKit(spec).then((kit) => {
+    // Mid-capture (a frame-exact sprite sheet is being drawn): never swap the body under it. Put it on afterwards.
+    if (stage._capturing) (stage._afterCapture ||= []).push(() => attach(kit));
+    else attach(kit);
   }).catch((err) => {
     if (warned) return;
     warned = true;
     console.info("Soundstage: lifelike people not installed (web/stage/people/rocketbox), people stay clay:", err?.message || err);
-  });
+  }).finally(() => inflight.delete(job));
+  inflight.add(job);
+}
+
+/** The ground positions [x, z] of an actor for every frame 0..last (for the gait table). */
+function groundPath(stage, a, last) {
+  const out = new Array(last + 1);
+  for (let f = 0; f <= last; f++) { const p = stage._actorPosAt(a, f); out[f] = [p[0], p[2]]; }
+  return out;
 }
 
 /** stage.setFrame hook (after gaze, before held props): show and pose every lifelike person, or keep the clay. */
@@ -208,29 +246,32 @@ export function avatarsAt(stage) {
   let users = null;
   const fps = stage.state.shot?.fps || 24, last = stage._lastFrame(), f = stage.frame;
   const blocking = stage.state.people_look === "blocking";
+  const memo = (stage._avatarDriven ||= { shot: undefined, ids: new Set() });
   for (const a of actors) {
     const g = stage.actorMeshes.get(a.id), skin = g?.userData.humanSkin;
     if (!skin) continue;
     users ||= C.propUsers(actors);
     if (skin.faceless !== (a.face === "faceless")) applyFace(skin, a.face === "faceless");
+    const wet = !!(stage.water || stage.setFx?.underwater);
     const reason = C.clayReason(a, {
       blocking, holders: users.holders, carriers: users.carriers, gazeKeyed: gazeKeys(a).length > 0,
-      swims: !!(stage.water || stage.setFx?.underwater) && !!stage._swimPlan?.(a, g), driven: !!stage.drive?.owns?.(a.id),
+      swims: wet && C.swimsInShot(a, () => stage._swimPlan?.(a, g)),
+      driven: C.drivenInShot(memo, stage.state.active_shot, a.id, stage.drive),
     });
     skin.reason = reason;
     setShown(skin, !reason);
     if (reason) continue;
     const p = stage._actorPosAt(a, f), y = stage._heightAt(a, f), yaw = stage._headingAt(a, f);
-    // Speed over about half a second around this frame, so a start or stop at a key crossfades instead of snapping.
+    const scale = C.statureScale(C.clayHeight(a) * (a.scale || 1), skin.kit.stature);
+    // Speed and the shared gait phase for the whole shot, cached until the path, the length or the size changes.
     const keys = stage._actorKeys(a);
-    let speed = 0;
-    if (keys.length > 1) {
-      const f0 = Math.max(0, f - 6), f1 = Math.min(last, f + 6);
-      const q0 = stage._actorPosAt(a, f0), q1 = stage._actorPosAt(a, f1);
-      speed = f1 > f0 ? Math.hypot(q1[0] - q0[0], q1[2] - q0[2]) / ((f1 - f0) / fps) : 0;
+    const sig = `${last}|${fps}|${scale}|${JSON.stringify(keys)}`;
+    if (skin.gait?.sig !== sig) {
+      const path = keys.length > 1 ? groundPath(stage, a, last) : new Array(last + 1).fill([p[0], p[2]]);
+      skin.gait = { sig, ...C.gaitTable(path, fps, kitStrides(skin.kit, scale)) };
     }
-    const scale = C.hipScale(C.clayHeight(a), skin.kit.hipUnits) * (a.scale || 1);
-    placeHolder(g, skin.holder, { x: p[0], y, z: p[2], yaw, scale });
-    drive(skin, { frame: f, fps, speed, dist: g.userData.travel || 0, scale, seed: C.phaseSeed(a.id) });
+    const i = Math.max(0, Math.min(last, f));
+    placeHolder(g, skin.holder, { x: p[0], y: y - (skin.kit.floor || 0) * scale, z: p[2], yaw, scale });
+    drive(skin, { frame: f, fps, speed: skin.gait.speed[i] || 0, phase: skin.gait.phase[i] || 0, seed: C.phaseSeed(a.id) });
   }
 }

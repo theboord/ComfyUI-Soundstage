@@ -69,7 +69,10 @@ const HELPER = /Footsteps|Helper/i;
  * Make a Rocketbox clip safe to play on an avatar holder that already travels along the actor's path:
  *  - keep rotations only, plus the root's position (bone lengths stay the avatar's own; no scale tracks);
  *  - drop helper nodes and anything the avatar doesn't have; rename Bip02 -> Bip01;
- *  - root motion: zero the root's X and Z (keep Y, the bob), so the body doesn't travel twice or snap at the loop.
+ *  - root motion: take out only the steady travel of the loop (the straight line from the first key to the last,
+ *    spread evenly over time) and centre what is left. The sway and surge WITHIN a stride stay, so a foot the clip
+ *    plants stays planted while the holder moves at the loop's average speed, the loop closes (no snap), the body
+ *    doesn't travel twice, and an idle keeps its weight shift. Y (the bob) is untouched.
  * Returns {clip, travel (root ground distance over one loop, clip units), dropped: [track names], missing: []}.
  */
 export function prepareClip(clip, boneNames, { root = ROOT_BONE } = {}) {
@@ -82,15 +85,29 @@ export function prepareClip(clip, boneNames, { root = ROOT_BONE } = {}) {
     if (HELPER.test(node) || !bones.has(node) || prop === "scale" || (prop === "position" && node !== root)) { dropped.push(t.name); continue; }
     const c = t.clone();
     c.name = `${node}.${prop}`;
-    if (prop === "position") {
-      const v = c.values, n = v.length / 3;
-      travel = Math.hypot(v[3 * (n - 1)] - v[0], v[3 * (n - 1) + 2] - v[2]);
-      for (let i = 0; i < n; i++) { v[3 * i] = 0; v[3 * i + 2] = 0; }
-    }
+    if (prop === "position") travel = stripSteadyTravel(c.times, c.values);
     tracks.push(c);
   }
   const out = new THREE.AnimationClip(clip.name, clip.duration, tracks);
   return { clip: out, travel, dropped, missing: bindReport(out, bones).missing };
+}
+
+/** In place on a position track (times, xyz values): subtract the loop's linear X/Z travel and the mean of the rest.
+ *  Returns the ground travel over the loop. */
+export function stripSteadyTravel(times, v) {
+  const n = v.length / 3;
+  if (n < 1) return 0;
+  const t0 = times[0], span = Math.max(1e-9, times[n - 1] - t0);
+  const dx = v[3 * (n - 1)] - v[0], dz = v[3 * (n - 1) + 2] - v[2];
+  let mx = 0, mz = 0;
+  for (let i = 0; i < n; i++) {
+    const u = (times[i] - t0) / span;
+    v[3 * i] -= dx * u; v[3 * i + 2] -= dz * u;
+    mx += v[3 * i]; mz += v[3 * i + 2];
+  }
+  mx /= n; mz /= n;
+  for (let i = 0; i < n; i++) { v[3 * i] -= mx; v[3 * i + 2] -= mz; }
+  return Math.hypot(dx, dz);
 }
 
 /** Does every track of the clip find its bone? {bound: n, missing: [node names]}. */
@@ -123,26 +140,58 @@ export function phaseSeed(id) {
   return ((h >>> 0) % 10007) / 10007;
 }
 
+/** The stride (m per loop) of the moving clips at these weights: walk and run blended as they are mixed. */
+export function blendStride(w, strides) {
+  const ww = w.walk || 0, wr = w.run || 0;
+  if (ww + wr < 1e-9) return strides.walk || strides.run || 1;
+  return (ww * (strides.walk || strides.run) + wr * (strides.run || strides.walk)) / (ww + wr);
+}
+
 /**
- * Clip times (seconds) for this frame: idle runs on the clock of the shot (frame / fps), walk and run on the distance
- * travelled (one loop per `stride` metres), so feet don't skate whatever the speed. Pure: the same frame always gives
- * the same pose (renders are frame-exact). clips = {idle: {duration}, walk: {duration, stride}, run: {...}}.
+ * Speed and gait phase for every frame of the shot from the actor's ground positions (positions[f] = [x, z], f = 0..
+ * last). speed[f] (m/s) is taken over about half a second around f, so a start or stop at a key crossfades. phase[f]
+ * is ONE normalised gait phase shared by walk and run (the Rocketbox walk and run are phase-aligned: left foot back
+ * at 0.25 in both): it advances by the distance of each frame divided by the stride of the clips as they are mixed
+ * at that moment, so blended legs stay together in step and the feet don't skate at any speed.
+ * strides = {walk, run} in metres. Pure: the same positions always give the same table.
  */
-export function clipTimes({ frame, fps = 24, dist = 0, seed = 0 }, clips) {
+export function gaitTable(positions, fps, strides, { window = 6 } = {}) {
+  const n = positions.length, speed = new Float64Array(n), phase = new Float64Array(n);
+  for (let f = 0; f < n; f++) {
+    const f0 = Math.max(0, f - window), f1 = Math.min(n - 1, f + window);
+    const a = positions[f0], b = positions[f1];
+    speed[f] = f1 > f0 ? Math.hypot(b[0] - a[0], b[1] - a[1]) / ((f1 - f0) / fps) : 0;
+  }
+  for (let f = 1; f < n; f++) {
+    const a = positions[f - 1], b = positions[f];
+    const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const w = clipWeights(0.5 * (speed[f - 1] + speed[f]));
+    phase[f] = phase[f - 1] + d / Math.max(1e-6, blendStride(w, strides));
+  }
+  return { speed, phase };
+}
+
+/**
+ * Clip times (seconds) for this frame: idle runs on the clock of the shot (frame / fps); walk and run share one gait
+ * phase (gaitTable) so they blend in step. Pure: the same frame always gives the same pose (renders are frame-exact).
+ * clips = {idle: {duration}, walk: {duration}, run: {duration}}.
+ */
+export function clipTimes({ frame, fps = 24, phase = 0, seed = 0 }, clips) {
   const out = {};
+  const frac = (((phase + seed) % 1) + 1) % 1;
   for (const k of CLIP_KINDS) {
     const c = clips[k];
     if (!c) continue;
     const d = c.duration || 1;
-    if (k === "idle") out[k] = (((frame / fps) + seed * d) % d + d) % d;
-    else out[k] = ((((dist / Math.max(1e-6, c.stride)) + seed) % 1 + 1) % 1) * d;
+    out[k] = k === "idle" ? (((frame / fps) + seed * d) % d + d) % d : frac * d;
   }
   return out;
 }
 
-/** Scale (avatar units -> metres) so the avatar's hip height matches the clay figure's: humans.mjs puts the hips at
- *  0.9 * s with s = height / 1.8, i.e. half the height. */
-export const hipScale = (heightM, hipUnits) => (0.9 * (heightM / 1.8)) / Math.max(1e-6, hipUnits);
+/** Scale (avatar units -> metres) so the avatar stands as tall as the person is set to: heightM over the avatar's
+ *  measured standing height (top of the head in its idle pose, avatar units). Hip height is NOT used: the Rocketbox
+ *  woman's hips sit at 55 % of her height, not the clay's 50 %, which made her ~10 cm short. */
+export const statureScale = (heightM, statureUnits) => heightM / Math.max(1e-6, statureUnits);
 
 /** The clay figure's default height for a kind (humans.mjs buildHuman). */
 export const clayHeight = (a) => a?.height_m || (a?.kind === "child" ? 1.2 : a?.kind === "woman" || a?.appearance?.gender === "female" ? 1.68 : 1.8);
@@ -170,7 +219,9 @@ export function missingColorMaps(materials) {
  * Why this person shows as clay at this point instead of the avatar (null = the avatar shows). M1 plays the avatar's
  * own clips, so anything that poses the clay body in a way the clips can't follow keeps the clay for the whole shot
  * (never a pop mid-shot): riding or sitting, being carried, carrying or holding a prop, video mocap, Pose keys, gaze
- * keys, swimming, Drive mode. ctx = {blocking, holders: Set, carriers: Set, swims, gazeKeyed, driven}.
+ * keys, swimming, physics (a baked fall or a knocked-over lean: the clips stand upright), Drive mode.
+ * Every input must be a whole-shot fact, never "right now": ctx = {blocking, holders: Set, carriers: Set, swims,
+ * gazeKeyed, driven}, with swims from swimsInShot and driven from drivenInShot.
  */
 export function clayReason(a, ctx = {}) {
   if (ctx.blocking) return "Blocking look is on";
@@ -179,12 +230,35 @@ export function clayReason(a, ctx = {}) {
   if (a.carry_id) return "is carried";
   if (a.mocap) return "plays a video mocap take";
   if (a.pose_keys?.length) return "has Pose keys";
+  if (a.physics?.baked) return "is moved by physics";
+  if (Array.isArray(a.tilt) && a.tilt.length === 4) return "was knocked over";
   if (ctx.gazeKeyed) return "has gaze keys";
   if (ctx.holders?.has(a.id)) return "holds a prop";
   if (ctx.carriers?.has(a.id)) return "carries something";
   if (ctx.swims) return "swims";
   if (ctx.driven) return "is driven live";
   return null;
+}
+
+/** Does this person swim anywhere in the shot? The same gate as stage._swimAt (swimming off, carried) over the
+ *  whole-shot swim plan; plan is called only when the gate allows it. */
+export function swimsInShot(a, plan) {
+  if (!a || a.swim === "off" || a.carry_id) return false;
+  const p = plan();
+  if (!p?.mode) return !!p;
+  for (let i = 0; i < p.mode.length; i++) if (p.mode[i]) return true;
+  return false;
+}
+
+/**
+ * Driven live, decided for the whole shot: once Drive has had this person in a shot (driving, involved, or a recorded
+ * take under review), they stay clay until the shot changes or Drive is switched off, so the body never flips back and
+ * forth while the take is recorded and reviewed. memo = {shot, ids: Set} kept by the caller; drive = stage.drive.
+ */
+export function drivenInShot(memo, shot, id, drive) {
+  if (memo.shot !== shot || !drive?.on) { memo.shot = shot; memo.ids = new Set(); }
+  if (drive?.on && (drive.live?.has?.(id) || drive.involved?.has?.(id) || drive.owns?.(id))) memo.ids.add(id);
+  return memo.ids.has(id);
 }
 
 /** Ids of people holding a prop in any shot, and of people carrying something (from the scene's actors). */

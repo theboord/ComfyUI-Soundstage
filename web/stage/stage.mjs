@@ -47,7 +47,7 @@ import { installParts } from "./objparts.mjs";
 import * as VehicleParts from "./vehicleparts.mjs";
 import * as LightRig from "./lightrig.mjs";
 import { horse as HorseParts, prop as PropParts } from "./rigparts.mjs";
-import { upgradeHuman, avatarsAt } from "./people/avatars.mjs";   // lifelike people over the clay (people overhaul M1)
+import { upgradeHuman, avatarsAt, avatarsReady } from "./people/avatars.mjs";   // lifelike people over the clay (people overhaul M1)
 
 /**
  * Video → Stage: the set mesh is the first frame's depth, so the person in the shot is frozen into it. The clay actor
@@ -2878,7 +2878,11 @@ export class Stage {
         if (e?.clientX != null) {
           pick(e);
           const meshes = [];
-          for (const [id, g] of this.actorMeshes) if (id !== drag.id) g.traverse((o) => { if (o.isMesh && o.visible) meshes.push(o); });
+          // a lifelike person's clay is hidden but still stands where they do: it is their drop target (people/avatars.mjs)
+          for (const [id, g] of this.actorMeshes) if (id !== drag.id) {
+            const proxy = g.userData.humanSkin?.shown ? g.userData.humanSkin.clay : null;
+            g.traverse((o) => { if (o.isMesh && (o.visible || proxy?.includes(o))) meshes.push(o); });
+          }
           under = ray.intersectObjects(meshes, false)[0]?.object?.userData?.actorId || this._nearOnScreen(e, 8, drag.id);
         }
         try { this._dropInteract(drag.id, under); } catch (err) { console.warn("Soundstage interact", err); }
@@ -4835,6 +4839,7 @@ export class Stage {
     const prev = new THREE.Vector2();
     this.renderer.getSize(prev);
     const keepFrame = this.frame;
+    await avatarsReady();   // lifelike bodies still loading go on first, so no capture turns lifelike partway
     this._capturing = true;
     try {
       this.renderer.setSize(this.fw, this.fh, false);
@@ -4853,6 +4858,7 @@ export class Stage {
       }
     } finally {
       this._capturing = false;
+      for (const put of this._afterCapture?.splice(0) || []) { try { put(); } catch (err) { console.warn("Soundstage avatar", err); } }
       this.renderer.setSize(prev.x, prev.y, false);
       this.setFrame(keepFrame);
       if (this._resizePending) { this._resizePending = false; this.resize(); }
