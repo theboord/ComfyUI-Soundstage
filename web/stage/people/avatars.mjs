@@ -84,16 +84,19 @@ export function buildKit(model, clips, { texErrors = [] } = {}) {
   const hipUnits = root ? root.getWorldPosition(new THREE.Vector3()).y : 90;
   const prepared = {};
   for (const k of C.CLIP_KINDS) if (clips[k]) prepared[k] = C.prepareClip(clips[k], boneNames);
-  const { stature, floor } = measureStanding(model, prepared.idle?.clip);
+  const { stature, floor, idleBox } = measureStanding(model, prepared.idle?.clip);
   return {
-    template: model, meshName: keep.name, materials, faceless: { neutral, hidden }, clips: prepared, hipUnits, stature, floor,
+    template: model, meshName: keep.name, materials, faceless: { neutral, hidden }, clips: prepared, hipUnits, stature, floor, idleBox,
     report: { meshes: list.map((m) => m.name), kept: keep.name, lightsRemoved: lights.length, missingMaps: C.missingColorMaps(materials),
       unbound: Object.fromEntries(C.CLIP_KINDS.map((k) => [k, prepared[k]?.missing || null])), texErrors },
   };
 }
 
 /** The avatar's standing height and the height of its soles (avatar units), measured on a throwaway clone posed at the
- *  start of its idle clip (the pose it is seen in when still), over every skinned vertex. */
+ *  start of its idle clip (the pose it is seen in when still), over every skinned vertex. idleBox = the skinned mesh's
+ *  own box in that pose (mesh space): every clone keeps it as its fixed bounds, so Box3.setFromObject on a person
+ *  (picking, drop targets, framing, measure) sees a standing body (arms down), not the wide bind pose or a mid-stride
+ *  pose cached on first use. */
 function measureStanding(template, idle) {
   const m = SkeletonUtils.clone(template);
   if (idle) {
@@ -103,9 +106,14 @@ function measureStanding(template, idle) {
   }
   m.updateMatrixWorld(true);
   const box = new THREE.Box3();
-  m.traverse((o) => { if (o.isSkinnedMesh) box.expandByObject(o, true); });
-  if (box.isEmpty()) return { stature: 180, floor: 0 };
-  return { stature: box.max.y - box.min.y, floor: box.min.y };
+  let idleBox = null;
+  m.traverse((o) => {
+    if (!o.isSkinnedMesh) return;
+    box.expandByObject(o, true);
+    if (!idleBox) { o.computeBoundingBox(); idleBox = o.boundingBox?.isEmpty() ? null : o.boundingBox.clone(); }
+  });
+  if (box.isEmpty()) return { stature: 180, floor: 0, idleBox: null };
+  return { stature: box.max.y - box.min.y, floor: box.min.y, idleBox };
 }
 
 /** One actor's avatar: a clone of the kit (shared geometry and textures), its mixer and its named bones. */
@@ -124,6 +132,10 @@ export function instantiate(kit, a) {
     mesh ||= o;
     o.castShadow = true; o.receiveShadow = true;
     o.frustumCulled = false;      // skinned bounds don't follow the walk
+    if (o.isSkinnedMesh && kit.idleBox) {   // fixed standing bounds (measureStanding), never recomputed from a pose
+      o.boundingBox = kit.idleBox.clone();
+      o.boundingSphere = kit.idleBox.getBoundingSphere(new THREE.Sphere());
+    }
     o.raycast = () => {};         // picking hits the (hidden) clay, which is cheap and keeps every pick rule
     o.visible = false;            // shown by setShown once the actor is known to be eligible
   });
@@ -137,7 +149,7 @@ export function instantiate(kit, a) {
     act.setEffectiveWeight(0);
     actions[k] = act;
   }
-  return { holder, model, mesh, mixer, actions, bones, kit, shown: false, clay: [], clayVis: [], faceless: false, reason: null };
+  return { holder, model, mesh, mixer, actions, bones, kit, g: null, shown: false, clay: [], clayVis: [], faceless: false, reason: null };
 }
 
 /** Face shown or faceless (head keeps its shape, plain neutral material, no lashes or brows). */
@@ -152,7 +164,10 @@ export function applyFace(skin, faceless) {
 }
 
 /** Show the avatar (clay meshes hidden) or the clay (avatar hidden). Only on a change, and the clay comes back with
- *  exactly the visibility it had, so nothing else that hides clay parts is overridden. */
+ *  exactly the visibility it had, so nothing else that hides clay parts is overridden.
+ *  The holder is IN the clay group g only while it shows. While the person is clay it is taken out, because
+ *  Box3.setFromObject ignores visibility: a hidden, never-placed holder (centimetres at 1 unit = 1 m) inside g made a
+ *  clay person's bounds about 135 x 182 x 34 m and broke picking, drop targets, framing, measure and dragging. */
 export function setShown(skin, on) {
   on = !!on;
   if (on === skin.shown) return;
@@ -163,10 +178,12 @@ export function setShown(skin, on) {
     skin.clay.forEach((m, i) => { m.visible = skin.clayVis[i] ?? true; });
   }
   skin.holder.traverse((o) => { if (o.isMesh) o.visible = on; });
+  if (on) { if (skin.g && skin.holder.parent !== skin.g) skin.g.add(skin.holder); }
+  else skin.holder.removeFromParent();
   skin.shown = on;
 }
 
-/** Put the avatar on the stage: inside the clay group g (so it moves, hides and is removed with it), but posed in
+/** Put the avatar on the stage: inside the clay group g while shown (so it moves, hides and is removed with it), but posed in
  *  world space at the actor's ground position and heading only; the clay's walk lean, bank and bob are not copied
  *  (the clip has its own). */
 const _m = new THREE.Matrix4(), _w = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _y = new THREE.Vector3(0, 1, 0);
@@ -203,24 +220,29 @@ export function avatarsReady(ms = 8000) {
   return Promise.race([Promise.allSettled([...inflight]), new Promise((r) => setTimeout(r, ms))]);
 }
 
+/** Give the clay figure g of actor a its lifelike body from a loaded kit (exported for the node test). The holder is
+ *  not added to g here: setShown adds it when the person can show it (avatarsAt, run by setFrame). */
+export function attachKit(stage, a, g, kit) {
+  if (stage.actorMeshes.get(a.id) !== g || g.userData.humanSkin) return null;
+  if (kit.report?.missingMaps?.length && !kit._mapWarned) {
+    kit._mapWarned = true;
+    console.warn("Soundstage: avatar materials without a colour map", kit.meshName, kit.report.missingMaps);
+  }
+  const skin = instantiate(kit, a);
+  g.traverse((o) => { if (o.isMesh && !o.userData.avatar) skin.clay.push(o); });
+  skin.g = g;
+  applyFace(skin, a.face === "faceless");
+  g.userData.humanSkin = skin;
+  stage.setFrame(stage.frame);
+  return skin;
+}
+
 /** stage._buildSet hook: give a person the lifelike body once its files load; clay stays on any failure. */
 export function upgradeHuman(stage, a, g) {
   const spec = C.avatarSpecFor(a);
   if (!spec || !g?.userData?.joints) return;
   if (typeof window === "undefined" || typeof window.document?.createElement !== "function") return;   // node tests: clay only
-  const attach = (kit) => {
-    if (stage.actorMeshes.get(a.id) !== g || g.userData.humanSkin) return;
-    if (kit.report.missingMaps.length && !kit._mapWarned) {
-      kit._mapWarned = true;
-      console.warn("Soundstage: avatar materials without a colour map", kit.meshName, kit.report.missingMaps);
-    }
-    const skin = instantiate(kit, a);
-    g.traverse((o) => { if (o.isMesh && !o.userData.avatar) skin.clay.push(o); });
-    g.add(skin.holder);
-    applyFace(skin, a.face === "faceless");
-    g.userData.humanSkin = skin;
-    stage.setFrame(stage.frame);
-  };
+  const attach = (kit) => attachKit(stage, a, g, kit);
   const job = loadKit(spec).then((kit) => {
     // Mid-capture (a frame-exact sprite sheet is being drawn): never swap the body under it. Put it on afterwards.
     if (stage._capturing) (stage._afterCapture ||= []).push(() => attach(kit));

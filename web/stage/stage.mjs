@@ -47,7 +47,7 @@ import { installParts } from "./objparts.mjs";
 import * as VehicleParts from "./vehicleparts.mjs";
 import * as LightRig from "./lightrig.mjs";
 import { horse as HorseParts, prop as PropParts } from "./rigparts.mjs";
-import { upgradeHuman, avatarsAt, avatarsReady } from "./people/avatars.mjs";   // lifelike people over the clay (people overhaul M1)
+import { upgradeHuman, avatarsAt, avatarsReady, setShown as setAvatarShown } from "./people/avatars.mjs";   // lifelike people over the clay (people overhaul M1)
 
 /**
  * Video → Stage: the set mesh is the first frame's depth, so the person in the shot is frozen into it. The clay actor
@@ -542,8 +542,22 @@ export class Stage {
     return this.state.actors.filter((a) => a.kind === kind && this._physCanMove(a)).map((a) => a.id);
   }
 
+  /** Measure a person on its clay figure even while the lifelike body shows (people/avatars.mjs), so colliders,
+   *  physics and every bake are the same on a machine with or without the Rocketbox files. fn runs with the clay
+   *  meshes visible and the avatar taken out of g, then the shown state comes back exactly. */
+  _withClayShape(g, fn) {
+    const skin = g.userData.humanSkin;
+    if (!skin?.shown) return fn();
+    setAvatarShown(skin, false);
+    try { return fn(); } finally { setAvatarShown(skin, true); }
+  }
+
   /** An object's own local box: [half extents, centre relative to its origin], in its own (scaled) frame. */
   _localBox(g) {
+    return this._withClayShape(g, () => this._localBoxOf(g));
+  }
+
+  _localBoxOf(g) {
     const p = g.position.clone(), q = g.quaternion.clone(), vis = g.visible;
     g.visible = true;   // a broken prop hides its whole mesh while its pieces show (Milestone 24); measure the whole
     g.position.set(0, 0, 0);
@@ -551,7 +565,7 @@ export class Stage {
     g.updateMatrixWorld(true);
     const box = new THREE.Box3();
     g.traverseVisible((o) => {   // only what you see (a car's built stand-in hides under its real model)
-      if (!o.isMesh || !o.geometry?.attributes?.position || o.userData.noCollide || o.material?.transparent) return;
+      if (!o.isMesh || !o.geometry?.attributes?.position || o.userData.noCollide || o.userData.avatar || o.material?.transparent) return;
       if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
       box.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld));
     });
@@ -569,13 +583,17 @@ export class Stage {
    */
   _localHulls(g, box) {
     if (!box) return null;
+    return this._withClayShape(g, () => this._localHullsOf(g, box));
+  }
+
+  _localHullsOf(g, box) {
     const parts = [], key = [];
     const p = g.position.clone(), q = g.quaternion.clone(), vis = g.visible;
     g.visible = true; g.position.set(0, 0, 0); g.quaternion.identity(); g.updateMatrixWorld(true);
     const S = new THREE.Matrix4().makeScale(g.scale.x, g.scale.y, g.scale.z), inv = new THREE.Matrix4().copy(g.matrixWorld).invert();
     const v = new THREE.Vector3();
     g.traverseVisible((o) => {
-      if (!o.isMesh || !o.geometry?.attributes?.position || o.userData.noCollide || o.material?.transparent) return;
+      if (!o.isMesh || !o.geometry?.attributes?.position || o.userData.noCollide || o.userData.avatar || o.material?.transparent) return;
       const pos = o.geometry.attributes.position, step = Math.max(1, Math.floor(pos.count / 1500));
       const M = new THREE.Matrix4().multiplyMatrices(S, inv).multiply(o.matrixWorld);
       const pts = [];

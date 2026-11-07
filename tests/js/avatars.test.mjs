@@ -499,3 +499,108 @@ test("drop-onto picking: a ray still hits a lifelike person's hidden clay (three
   await A.avatarsReady(5000);
   assert.ok(Date.now() - t0 < 100, "captureSequence doesn't wait when nothing is loading");
 });
+
+// ---------------------------------------------------------------- bounds through attach and avatarsAt (review defects 1, 2)
+/** A stub kit in centimetres like Rocketbox: a skinned bind-pose body 135 x 182 x 34 (arms out), idle box 50 x 180 x 30. */
+function stubKit() {
+  const geo = new THREE.BoxGeometry(135, 182, 34); geo.translate(0, 91, 0);
+  const n = geo.attributes.position.count;
+  geo.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(new Array(4 * n).fill(0), 4));
+  geo.setAttribute("skinWeight", new THREE.Float32BufferAttribute(new Array(4 * n).fill(0).map((_, i) => (i % 4 ? 0 : 1)), 4));
+  const mat = new THREE.MeshStandardMaterial({ name: "x_body", map: new THREE.Texture() }); mat.userData.role = "body";
+  const mesh = new THREE.SkinnedMesh(geo, [mat]); mesh.name = "x_hipoly_81_bones";
+  const bone = new THREE.Bone(); bone.name = "Bip01";
+  const template = new THREE.Group(); template.add(mesh); mesh.add(bone); mesh.bind(new THREE.Skeleton([bone]));
+  return {
+    template, meshName: mesh.name, materials: [mat], clips: {}, stature: 180, floor: 0,
+    idleBox: new THREE.Box3(new THREE.Vector3(-25, 0, -15), new THREE.Vector3(25, 180, 15)),
+    faceless: { neutral: new THREE.MeshStandardMaterial(), hidden: new THREE.MeshBasicMaterial({ visible: false }) },
+    report: { missingMaps: [] },
+  };
+}
+
+async function clayStage() {
+  const A = await import("../../web/stage/people/avatars.mjs");
+  const { Stage } = await import("../../web/stage/stage.mjs");
+  const { buildObject } = await import("../../web/stage/library.mjs");
+  const st = Object.create(Stage.prototype);
+  const a = { id: "p1", kind: "man", height_m: 1.8, position: [2, 0, -1], keys: [{ frame: 0, position: [2, 0, -1] }] };
+  st.state = { shot: { frames: 49, fps: 24 }, actors: [a], shots: [{ id: "s" }], active_shot: "s", people_look: "blocking" };
+  st.actorMeshes = new Map();
+  st.frame = 0;
+  const g = buildObject("man", 1.8, (geom, color) => new THREE.Mesh(geom, new THREE.MeshBasicMaterial({ color })));
+  g.position.set(2, 0, -1);
+  st.actorMeshes.set(a.id, g);
+  st.setFrame = () => A.avatarsAt(st);
+  return { A, st, a, g };
+}
+const sizeOf = (o) => new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3());
+const near = (v, [x, y, z], tol, what) => assert.ok(Math.abs(v.x - x) < tol && Math.abs(v.y - y) < tol && Math.abs(v.z - z) < tol, `${what}: ${v.x.toFixed(2)} x ${v.y.toFixed(2)} x ${v.z.toFixed(2)}`);
+
+test("a person who stays clay keeps clay-sized bounds after the avatar is attached (no 135 x 182 x 34 m box)", async () => {
+  const { A, st, a, g } = await clayStage();
+  const clay = sizeOf(g);
+  near(clay, [0.5, 1.8, 0.3], 0.25, "clay alone");
+  const skin = A.attachKit(st, a, g, stubKit());
+  assert.ok(skin, "attached");
+  assert.equal(skin.reason, "Blocking look is on");
+  assert.equal(skin.shown, false);
+  assert.equal(skin.holder.parent, null, "the hidden holder is not inside the clay group");
+  near(sizeOf(g), [clay.x, clay.y, clay.z], 1e-6, "clay person after attach");
+  // other clay reasons from the first frame too: a Pose key
+  st.state.people_look = undefined; a.pose_keys = [{ frame: 0 }];
+  A.avatarsAt(st);
+  assert.equal(skin.shown, false);
+  near(sizeOf(g), [clay.x, clay.y, clay.z], 1e-6, "clay person with Pose keys");
+});
+
+test("shown avatar: bounds stay person-sized (standing box), and switching back to clay takes the holder out again", async () => {
+  const { A, st, a, g } = await clayStage();
+  st.state.people_look = undefined;
+  const skin = A.attachKit(st, a, g, stubKit());
+  assert.equal(skin.shown, true, `shown (reason ${skin.reason})`);
+  assert.equal(skin.holder.parent, g);
+  const s = sizeOf(g);
+  assert.ok(s.x < 0.8 && s.y < 2.0 && s.y > 1.6 && s.z < 0.6, `shown box ${s.x.toFixed(2)} x ${s.y.toFixed(2)} x ${s.z.toFixed(2)}`);
+  st.state.people_look = "blocking";
+  A.avatarsAt(st);
+  assert.equal(skin.shown, false);
+  assert.equal(skin.holder.parent, null);
+});
+
+test("_localBox and _localHulls measure the clay even while the avatar shows (a bake doesn't depend on the install)", async () => {
+  const { A, st, a } = await clayStage();
+  // A two-part clay stand-in (torso + legs) keeps the hull build quick; the full clay figure takes ~1 min to decompose.
+  const g = new THREE.Group(); g.userData.joints = {}; g.position.set(2, 0, -1);
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.8, 0.3), new THREE.MeshBasicMaterial()); torso.position.y = 1.3;
+  const legs = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, 0.2), new THREE.MeshBasicMaterial()); legs.position.y = 0.45;
+  g.add(torso, legs);
+  st.actorMeshes.set(a.id, g);
+  const before = st._localBox(g), hullsBefore = st._localHulls(g, before);
+  assert.ok(before && hullsBefore?.length, "the stand-in has a box and hulls");
+  near(new THREE.Vector3(...before.half).multiplyScalar(2), [0.5, 1.7, 0.3], 1e-6, "clay local box");
+  st.state.people_look = undefined;
+  const skin = A.attachKit(st, a, g, stubKit());
+  assert.equal(skin.shown, true);
+  g.userData.hullKey = undefined;   // force a fresh hull build
+  const after = st._localBox(g), hullsAfter = st._localHulls(g, after);
+  assert.deepEqual(after, before);
+  assert.deepEqual(hullsAfter, hullsBefore);
+  assert.equal(skin.shown, true, "shown state comes back");
+  assert.equal(skin.holder.parent, g);
+  assert.ok(skin.clay.every((m) => !m.visible), "clay hidden again");
+});
+
+test("real Rocketbox files: a shown avatar's bounds are a standing person (not the wide bind pose)", { skip: !installed && "Rocketbox files not installed (web/stage/people/rocketbox/)" }, async () => {
+  const k = await realKits();
+  for (const kind of Object.keys(C.ROCKETBOX)) {
+    const { kit } = k[kind];
+    assert.ok(kit.idleBox, `${kind}: idle box measured`);
+    const { st, a, g } = await clayStage();
+    a.kind = kind; st.state.people_look = undefined;
+    const skin = k.A.attachKit(st, a, g, kit);
+    assert.equal(skin.shown, true, `${kind} shown (reason ${skin.reason})`);
+    const s = sizeOf(skin.holder);
+    assert.ok(s.x < 0.9 && s.z < 0.9 && s.y > 1.5 && s.y < 2.0, `${kind} avatar box ${s.x.toFixed(2)} x ${s.y.toFixed(2)} x ${s.z.toFixed(2)}`);
+  }
+});
