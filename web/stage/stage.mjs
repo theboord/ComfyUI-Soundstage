@@ -47,6 +47,7 @@ import { installParts } from "./objparts.mjs";
 import * as VehicleParts from "./vehicleparts.mjs";
 import * as LightRig from "./lightrig.mjs";
 import { horse as HorseParts, prop as PropParts } from "./rigparts.mjs";
+import { keysHash } from "./people/avatarcore.mjs";   // a cheap signature of a person's keys (_jumpsInShot)
 import { upgradeHuman, avatarsAt, avatarsReady, setShown as setAvatarShown, AVATAR_WAIT_MS } from "./people/avatars.mjs";   // lifelike people over the clay (people overhaul M1)
 import { swapAvatarCutouts, idMaterial } from "./people/cutout.mjs";   // hair / lash cards keep their cut-out in Depth, Clay, Wire and ID
 import { DEPTH_SHADER, depthPassMaterial } from "./depthshader.mjs";   // the skinning Depth shader (also the underwater set's)
@@ -1788,10 +1789,19 @@ export class Stage {
    *  every frame)? The lifelike body stays clay for the whole shot then (people/avatarcore.mjs clayReason). */
   _jumpsInShot(a) {
     if (!PERSON_KINDS.has(a.kind)) return false;
+    // Called per person per frame (people/avatars.mjs avatarsAt): a cheap check first, so the JSON signature
+    // _heightAt builds runs only when something changed. The keys hash, the shot length and the set, and the
+    // obstacle list by identity (_obstacles replaces it only when the parked objects change; setFrame has already
+    // refreshed it this frame through _heightAt, before avatarsAt) and the number of objects (one added or removed).
+    const keys = this._actorKeys(a);
+    const cheap = `${keysHash(keys)}|${keys.length}|${this._lastFrame()}|${this.setFx?.id || ""}|${this.state.actors.length}`;
+    let c = this._yCache?.get(a);
+    if (c && c.jumpSig === cheap && c.jumpObs === this._obsCache && c.jumps !== undefined) return c.jumps;
     this._heightAt(a, 0);   // builds or refreshes the whole-shot height table
-    const c = this._yCache?.get(a);
+    c = this._yCache?.get(a);
     if (!c) return false;
     if (c.jumps === undefined) c.jumps = c.Y.some((y, f) => y - c.S[f] > 0.06);
+    c.jumpSig = cheap; c.jumpObs = this._obsCache;
     return c.jumps;
   }
 
@@ -4007,6 +4017,8 @@ export class Stage {
    * {ok: false, error}.
    */
   placeInFrame(id, where = {}) {
+    if (where == null) where = {};   // null as well as undefined: the defaults
+    if (typeof where !== "object") return { ok: false, error: `where must be an object {x, y?, distance_m?} (got '${where}')` };
     const a = this.state.actors.find((x) => x.id === id);
     if (!a) return { ok: false, error: `unknown object '${id}'` };
     const X = { left: 1 / 3, center: 0.5, centre: 0.5, middle: 0.5, right: 2 / 3 };
@@ -4051,6 +4063,12 @@ export class Stage {
       if (flat(groundAt(a1)) <= d) a0 = a1;
       else for (let i = 0; i < 80; i++) { const m = (a0 + a1) / 2; if (flat(groundAt(m)) < d) a0 = m; else a1 = m; }
       P = groundAt(a0);
+      // A steep or top-down camera sees ground all the way up the search range: the far end of it is as far as this
+      // camera's column reaches, so a distance past it can't be had (never report the edge of the range as success).
+      const got = flat(P);
+      if (Math.abs(got - d) > Math.max(0.01, 0.002 * d)) {
+        return { ok: false, error: `${+d.toFixed(3)} m is farther than this camera can put it at that x (at most ${+got.toFixed(2)} m, from the ground it sees)` };
+      }
     }
     const pos = [+P.x.toFixed(3), 0, +P.z.toFixed(3)];
     const keys = this._actorKeys(a);

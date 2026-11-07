@@ -318,8 +318,10 @@ export function missingColorMaps(materials) {
  * Every input must be a whole-shot fact, never "right now": ctx = {blocking, holders: Set, carriers: Set, swims,
  * gazeKeyed, driven, jumps}, with swims from swimsInShot, driven from drivenInShot and jumps from stage._jumpsInShot
  * (any airborne frame: the clips have no jump, so mid-air the avatar would walk; the clay tucks its knees instead).
- * The one exception is tipped: the clay group is tilted RIGHT NOW by something that hasn't been saved as a.tilt yet
- * (a live knock-over or a gizmo tilt being dragged); the upright clips can't follow it, so the clay shows meanwhile.
+ * The one exception is tipped: the person is knocked over RIGHT NOW in a live physics drag, not yet saved as a.tilt
+ * (avatars.mjs tippedNow: a flag live.mjs sets from the physics pose, never the group's rotation, which the gait leans
+ * into every turn and speed change); the upright clips can't follow it, so the clay shows meanwhile. A Rotate-gizmo
+ * tilt is saved as a.tilt while it is dragged, so "was knocked over" covers it.
  */
 export function clayReason(a, ctx = {}) {
   if (ctx.blocking) return "Blocking look is on";

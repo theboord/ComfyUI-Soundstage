@@ -78,6 +78,17 @@ export function swapAvatarCutouts(stage, ov) {
 }
 
 /**
+ * The material(s) a mesh takes in a pass that sets EVERY mesh to one material ov (the dust matte's black hold-out,
+ * secondary.mjs _renderDustMatte): ov for ordinary groups, a card group keeps its cut-out (passCutout: ov with the
+ * card's map alpha and alphaTest, cached per pair, so ov must be long-lived) and a hidden group (faceless lashes)
+ * stays hidden. An array stays an array (the geometry groups still index it).
+ */
+export function overrideMaterials(mats, ov) {
+  const one = (m) => (m && m.visible === false ? m : isCutout(m) ? passCutout(m, ov) || ov : ov);
+  return Array.isArray(mats) ? mats.map(one) : one(mats);
+}
+
+/**
  * The ID pass material(s) for a mesh whose own material is mats: one flat colour, but a card keeps its cut-out
  * (map alpha + alphaTest) and a hidden group (faceless lashes) stays hidden. Every returned material is new (the ID
  * pass disposes them after the render), except hidden ones, which are the mesh's own.

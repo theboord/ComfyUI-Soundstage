@@ -444,9 +444,35 @@ export function avatarsAt(stage) {
 export const physicsLift = (a) => (!a.physics?.baked && a.physics?.lift > 0 && (a.physics.mode === "dynamic" || a.physics.mode === "static") ? a.physics.lift : 0);
 
 const _up = new THREE.Vector3();
-/** Is the clay group tilted off upright right now (more than ~3°)? setFrame stands every clay person upright on its
- *  heading (plus a saved a.tilt, which clayReason handles), so a tilt here was put on by something live. */
-export function tippedNow(g) {
-  _up.set(0, 1, 0).applyQuaternion(g.quaternion);
-  return _up.y < 0.9986;
+/** Is quaternion q tilted off upright by more than ~3 degrees? */
+export const tiltedOffUp = (q) => _up.set(0, 1, 0).applyQuaternion(q).y < 0.9986;
+
+/**
+ * Is the clay group tipped over live right now (a knock-over in the live physics drag, not saved as a.tilt yet)?
+ * Read from the flag web/stage/live.mjs sets from the PHYSICS pose (markLiveTilt), never from the group's own
+ * rotation: Gait.applyHuman leans every keyed walker (up to 0.11 rad running, 0.14 on speed changes, 0.38 into turns)
+ * and that ordinary lean must not swap the body. A gizmo tilt is written to a.tilt as it is dragged (rotate.mjs
+ * gizmoTurnToActor), so clayReason's "was knocked over" covers that one.
+ */
+export const tippedNow = (g) => !!g?.userData?.liveTipped;
+
+/**
+ * live.mjs: the physics pose q was just put on person group g. Flag it tipped (or not) and, when that changes,
+ * re-run the avatar check at once (avatarsAt already ran in the frame's setFrame, before this pose was applied).
+ * Returns true when the flag changed.
+ */
+export function markLiveTilt(stage, g, q) {
+  if (!g?.userData?.humanSkin) return false;
+  const t = tiltedOffUp(q);
+  if (!!g.userData.liveTipped === t) return false;
+  g.userData.liveTipped = t;
+  const skin = g.userData.humanSkin;
+  if (t) { skin.reason = "is tipped over"; setShown(skin, false); }
+  else avatarsAt(stage);
+  return true;
+}
+
+/** live.mjs: the drag is over and its poses are written down (a.tilt or upright): drop every live tilt flag. */
+export function clearLiveTilts(stage) {
+  for (const g of stage.actorMeshes?.values() || []) if (g?.userData?.liveTipped) g.userData.liveTipped = false;
 }

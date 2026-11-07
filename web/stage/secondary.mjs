@@ -14,6 +14,7 @@ import * as PT from "./particles.mjs";
 import * as SB from "./softbody.mjs";
 import { samplePos, sampleQuat } from "./physics.mjs";
 import * as Gait from "./gait.mjs";
+import { overrideMaterials } from "./people/cutout.mjs";
 
 /** Library entries for the soft kinds (merged into the stage's LIBRARY by installSecondary). */
 export const SOFT_LIBRARY = Object.fromEntries(Object.entries(SB.SOFT_KINDS).map(([k, v]) => [k, {
@@ -437,11 +438,13 @@ export function installSecondary(Stage, deps) {
 
   /** The dust matte (Layer Pack): the dust's density white on black, held out by everything solid in front of it. */
   P._renderDustMatte = function (cam) {
-    const saved = [], black = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    // One long-lived black: the hair / lash cards' cut-out versions of it are cached per (card, black) pair.
+    const saved = [], black = (this._dustMatteBlack ||= new THREE.MeshBasicMaterial({ color: 0x000000 }));
     this.scene.traverse((o) => {
       if (o.userData.m28Dust) return;
       if (o.userData.glass || o.userData.splatOnly || o.isPoints || o.isLineSegments || o.isSprite) { saved.push([o, o.material, o.visible]); o.visible = false; return; }
-      if (o.isMesh) { saved.push([o, o.material, o.visible]); o.material = black; }
+      // Hair and lash cards hold the dust out by their cut-out, not as solid quads; faceless lashes stay hidden.
+      if (o.isMesh) { saved.push([o, o.material, o.visible]); o.material = overrideMaterials(o.material, black); }
     });
     const bg = this.scene.background, fog = this.scene.fog, ov = this.scene.overrideMaterial;
     this.scene.background = new THREE.Color(0x000000); this.scene.fog = null; this.scene.overrideMaterial = null;
@@ -451,7 +454,6 @@ export function installSecondary(Stage, deps) {
       this.secondary?.matte(false);
       for (const [o, m, v] of saved) { o.material = m; o.visible = v; }
       this.scene.background = bg; this.scene.fog = fog; this.scene.overrideMaterial = ov;
-      black.dispose();
     }
   };
 

@@ -11,6 +11,7 @@
 // shot itself is still made by Simulate & bake: this is an editing aid, nothing here runs at render time.
 import * as THREE from "../vendor/three.module.min.mjs";
 import { createWorld } from "./physengine.mjs";
+import { markLiveTilt, clearLiveTilts } from "./people/avatars.mjs";
 import { physicsOf } from "./physics.mjs";
 import { dragTarget, damp, axisLock, edgeSnap, snapGrid, yawTilt, liftBy, qyaw, qmul, qnorm, stepArc, stepDuration, massForSize, legIK } from "./manip.mjs";
 
@@ -381,6 +382,9 @@ export class LiveEdit {
       if (!g || !p) continue;
       g.position.set(...p.pos);
       g.quaternion.set(...p.quat);
+      // A lifelike person knocked over: setFrame (in _silentFrame above) posed the avatar on the upright group, so
+      // check again now that the physics tilt is on (the clay shows while it is tipped).
+      markLiveTilt(this.s, g, g.quaternion);
     }
     const gh = d && this.s.highlight?.ghost?.group;
     if (gh && !gh.visible && Math.hypot(d.g.position.x - d.start[0], d.g.position.z - d.start[2], d.g.position.y - d.start[1]) > 0.25) gh.visible = true;
@@ -778,6 +782,7 @@ export class LiveEdit {
     }
     const draggedMoved = d.moved || d.lift > 0;
     s._obsCache = null;
+    clearLiveTilts(s);   // written down now: a.tilt (stationary) or upright again; clayReason takes it from here
     this.internal = true;
     try { s.setFrame(s.frame); } finally { this.internal = false; }
     if (draggedMoved || changed.length) s.onChange(s.toJSON());

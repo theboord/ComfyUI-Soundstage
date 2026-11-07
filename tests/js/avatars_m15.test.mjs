@@ -291,13 +291,21 @@ test("the physics lift moves the avatar with the clay; a live tilt shows the cla
   delete a.physics;
   A.avatarsAt(st);
   assert.equal(skin.shown, true);
-  // a live knock-over: the clay group tilts 30 degrees, not saved as a.tilt yet
+  // a live knock-over (live.mjs puts the physics pose on the group and calls markLiveTilt): 30 degrees, not saved yet
   g.quaternion.setFromEuler(new THREE.Euler(0, 0, Math.PI / 6));
-  A.avatarsAt(st);
+  assert.equal(A.markLiveTilt(st, g, g.quaternion), true);
   assert.equal(skin.shown, false);
   assert.equal(skin.reason, "is tipped over");
-  g.quaternion.setFromEuler(new THREE.Euler(0, 1.2, 0));   // upright again on any heading
+  g.quaternion.identity(); A.avatarsAt(st);   // the next setFrame stands the group up: still tipped (the flag)
+  assert.equal(skin.shown, false);
+  // the group's own rotation alone (gait lean, a heading) never counts
+  g.userData.liveTipped = false;
+  g.quaternion.setFromEuler(new THREE.Euler(0.3, 1.2, -0.38));
   A.avatarsAt(st);
+  assert.equal(skin.shown, true);
+  // physics stands it up again: lifelike again at once
+  A.markLiveTilt(st, g, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI / 6)));
+  assert.equal(A.markLiveTilt(st, g, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 1.2, 0))), true);
   assert.equal(skin.shown, true);
 });
 
@@ -518,4 +526,187 @@ test("faceless face mask: the face (eyes, brows, nose, mouth, chin) is 1; the ha
   for (const [p, what] of [[[0, 168, 3], "the hairline"], [[0, 172, -3], "the scalp"], [[8, 158, -2], "an ear"], [[0, 141, -2], "the neck"], [[0, 160, -9], "the back of the head"]])
     assert.ok(m(...p) < 0.01, `${what}: ${m(...p)}`);
   assert.equal(C.faceMaskAt(V(0, 0, 0), L, L.clone()), 0, "no eye spacing: no mask");
+});
+
+// ================================================================ M1.5 review round 2
+import { Stage as _Stage, DEFAULT_SCENE as _DEFAULT_SCENE, liveKinds as _liveKinds } from "../../web/stage/stage.mjs";
+import { LiveEdit as _LiveEdit } from "../../web/stage/live.mjs";
+
+/** A real Stage without a renderer (as tests/js/live.drag.test.mjs): real _buildSet, setFrame, gait and live edits. */
+function headlessStage(actors, frames = 72) {
+  const st = Object.create(_Stage.prototype);
+  const changes = [];
+  Object.assign(st, {
+    state: { ..._DEFAULT_SCENE && structuredClone(_DEFAULT_SCENE), actors: structuredClone(actors), environment: { set: "studio" } },
+    view: "clay", key: "start", frame: 0, actorMeshes: new Map(), root: new THREE.Group(), scene: new THREE.Scene(),
+    camera: new THREE.PerspectiveCamera(40, 1.85, 0.1, 200),
+    render() {}, onChange: (s) => changes.push(s), onInteract() {}, onSelect() {}, _buildLights() {},
+  });
+  st.state.shot = { ...(st.state.shot || {}), frames, fps: 24 };
+  st.scene.add(st.root);
+  st._buildSet();
+  st._setGroup = undefined;
+  st.live = new _LiveEdit(st, _liveKinds());
+  st.setFrame(0);
+  return { st, changes };
+}
+const tiltDeg = (q) => THREE.MathUtils.radToDeg(Math.acos(Math.min(1, new THREE.Vector3(0, 1, 0).applyQuaternion(q).y)));
+
+test("round 2, 1: a keyed walker's gait lean (run, start, stop, sharp turn) never swaps the lifelike body mid-shot", async () => {
+  // start from rest, run 6 m in 20 frames (7.2 m/s), a hard 90 degree turn, slow down, stop and hold to the end
+  const walker = { id: "w1", name: "w1", kind: "man", height_m: 1.8, rotation_deg: 0, position: [-6, 0, 0],
+    keys: [{ frame: 0, position: [-6, 0, 0] }, { frame: 20, position: [0, 0, 0] }, { frame: 34, position: [0, 0, 3.5] }, { frame: 56, position: [0.3, 0, 5] }] };
+  const { st } = headlessStage([walker]);
+  const a = st.state.actors[0], g = st.actorMeshes.get("w1");
+  const skin = A.attachKit(st, a, g, stubKit());
+  assert.ok(skin, "attached");
+  await null;
+  let maxLean = 0;
+  const shown = [];
+  for (let f = 0; f <= st._lastFrame(); f++) {
+    st.setFrame(f);
+    maxLean = Math.max(maxLean, tiltDeg(st.actorMeshes.get("w1").quaternion));
+    shown.push(skin.shown);
+    if (!skin.shown) assert.fail(`frame ${f}: swapped to clay (${skin.reason})`);
+  }
+  assert.ok(maxLean > 5, `the gait really leaned the clay group (max ${maxLean.toFixed(1)} deg), so the test bites`);
+  assert.equal(new Set(shown).size, 1, "one look for the whole shot");
+  // the old geometric check would have flagged it
+  assert.equal(A.tippedNow(g), false);
+  assert.equal(A.tiltedOffUp(new THREE.Quaternion().setFromEuler(new THREE.Euler(0.11, 0, 0))), true, "a 6 deg lean IS off upright; the live flag, not the angle, decides");
+});
+
+test("round 2, 2: a live knock-over through live.mjs _tick shows the clay (after setFrame posed it upright); the saved tilt keeps it", async () => {
+  const { st, changes } = headlessStage([
+    { id: "p1", name: "p1", kind: "man", height_m: 1.8, rotation_deg: 0, position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] },
+    { id: "c1", name: "c1", kind: "crate", height_m: 0.8, rotation_deg: 0, position: [3, 0, 0], keys: [{ frame: 0, position: [3, 0, 0] }] },
+  ]);
+  const a = st.state.actors[0], g = st.actorMeshes.get("p1");
+  const skin = A.attachKit(st, a, g, stubKit());
+  await null;
+  st.setFrame(0);
+  assert.equal(skin.shown, true);
+  // The live world as live.mjs keeps it, with the person's body knocked 40 degrees over by physics.
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, THREE.MathUtils.degToRad(40)));
+  let pose = { pos: [0.2, 0.3, 0], quat: [q.x, q.y, q.z, q.w] };
+  const L = st.live;
+  L.world = { step() {}, getPose: (bid) => (bid === "p1#0" ? pose : { pos: [3, 0, 0], quat: [0, 0, 0, 1] }), dispose() {}, awakeCount: () => 0 };
+  L.bodies = new Map([["p1", ["p1#0"]]]);
+  L.meta = new Map([["p1", { pos: [0, 0, 0], quat: [0, 0, 0, 1], dynamic: true }]]);
+  L.drag = null; L.tail = null;
+  L._silentFrame();               // what a drag tick does first: setFrame poses the avatar on the upright group
+  assert.equal(skin.shown, true, "upright at setFrame");
+  L._tick(1 / 60);                // then the physics pose goes on the group
+  assert.equal(skin.shown, false, "clay while knocked over");
+  assert.equal(skin.reason, "is tipped over");
+  L._silentFrame();               // the next tick's setFrame stands the group up again: still clay (no flicker)
+  assert.equal(skin.shown, false);
+  // let go: _commit writes the tilt down (a stationary person keeps a.tilt) and the clay stays, now for the whole shot
+  L._commit({ id: "c1", a: st.state.actors[1], moved: true, carried: [] });
+  assert.equal(g.userData.liveTipped, false, "the live flag is dropped once written");
+  assert.ok(Array.isArray(a.tilt), "tilt saved");
+  assert.equal(skin.reason, "was knocked over");
+  assert.ok(changes.length >= 1);
+  // stood up again (Reset rotation): lifelike again
+  delete a.tilt;
+  st.setFrame(0);
+  assert.equal(skin.shown, true, `shown again (reason ${skin.reason})`);
+  // a physics pose that is upright never flags the person
+  pose = { pos: [0, 0, 0], quat: [0, Math.sin(0.6), 0, Math.cos(0.6)] };
+  L._tick(1 / 60);
+  assert.equal(skin.shown, true, "turned on the spot by physics: still lifelike");
+});
+
+test("round 2, 3: the dust matte keeps the card cut-out and hidden groups (secondary.mjs _renderDustMatte)", async () => {
+  const a = person("p1");
+  const st = bareStage([a]);
+  const g = clayOf(st, a);
+  const kit = stubKit();
+  const skin = A.attachKit(st, a, g, kit);
+  await null;
+  A.avatarsAt(st);
+  assert.equal(skin.shown, true);
+  const mesh = []; skin.holder.traverse((o) => { if (o.isSkinnedMesh) mesh.push(o); });
+  // faceless lashes: a hidden third group
+  mesh[0].material = [...mesh[0].material, kit.faceless.hidden];
+  const own = mesh[0].material;
+  st.scene = new THREE.Scene(); st.scene.add(g);
+  st.renderer = { render: () => {
+    const m = mesh[0].material;
+    seen = m;
+  } };
+  let seen = null;
+  assert.equal(typeof st._renderDustMatte, "function", "the stage has the dust matte (secondary.mjs on Stage.prototype)");
+  st._renderDustMatte(new THREE.PerspectiveCamera());
+  assert.ok(Array.isArray(seen) && seen.length === 3, "still an array for the geometry groups");
+  assert.equal(seen[0].color.getHex(), 0x000000, "body: the black hold-out");
+  assert.equal(seen[1].map, own[1].map, "hair card: keeps its map (alpha)");
+  assert.equal(seen[1].alphaTest, 0.5, "hair card: keeps its alphaTest");
+  assert.equal(seen[1].color.getHex(), 0x000000, "hair card: black, not the hair colour");
+  assert.equal(seen[2], kit.faceless.hidden, "faceless lashes stay hidden");
+  assert.equal(seen[2].visible, false);
+  assert.equal(mesh[0].material, own, "put back after the render");
+  // the plain helper: one mesh material, card or not
+  const black = new THREE.MeshBasicMaterial({ color: 0 });
+  assert.equal(CUT.overrideMaterials(new THREE.MeshStandardMaterial(), black), black);
+  assert.equal(CUT.overrideMaterials(own[1], black), CUT.passCutout(own[1], black), "cached per card and matte");
+});
+
+test("round 2, 4: placeInFrame refuses a distance a steep or top-down camera can't reach (no success at the range edge)", () => {
+  const st = apiStage();
+  const cam = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 200);
+  cam.position.set(0, 1.6, 0); cam.up.set(0, 0, -1); cam.lookAt(0, 0, 0); cam.updateMatrixWorld(true);   // straight down
+  st.camera = cam; st._syncShotCamera = () => {};
+  st.state.actors.push({ id: "p1", kind: "man", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] });
+  st._buildSet();
+  const before = structuredClone(st.state.actors[0]);
+  const r = st.placeInFrame("p1", { x: "center", distance_m: 10 });
+  assert.equal(r.ok, false, `refused: ${JSON.stringify(r)}`);
+  assert.match(r.error, /farther than this camera can put it/);
+  assert.deepEqual(st.state.actors[0], before, "nothing moved");
+  assert.equal(st.changes, 0, "no undo step");
+  // a reachable one still works on the same camera, at the distance asked
+  const ok = st.placeInFrame("p1", { x: "center", distance_m: 2 });
+  assert.equal(ok.ok, true, JSON.stringify(ok));
+  assert.ok(Math.abs(Math.hypot(ok.position[0], ok.position[2]) - 2) < 2e-3, JSON.stringify(ok));
+});
+
+test("round 2, 6: _jumpsInShot per frame skips the JSON signature when nothing changed, and still sees a change", () => {
+  const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
+  const crate = { id: "c1", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] };
+  const st = bareStage([walker, crate]);
+  clayOf(st, walker); clayOf(st, crate).updateMatrixWorld(true);
+  assert.equal(st._jumpsInShot(walker), true);
+  const real = JSON.stringify;
+  let calls = 0;
+  JSON.stringify = (...x) => { calls++; return real(...x); };
+  try {
+    for (let i = 0; i < 100; i++) st._jumpsInShot(walker);
+  } finally { JSON.stringify = real; }
+  assert.equal(calls, 0, "no JSON.stringify on the per-frame path");
+  // the crate moves out of the way (the obstacle list is rebuilt) and the path changes: both are seen
+  walker.keys[1].position = [3, 0, 4]; walker.keys[0].position = [-3, 0, 4];
+  assert.equal(st._jumpsInShot(walker), false, "a new path is seen (keys hash)");
+  walker.keys[1].position = [3, 0, 0]; walker.keys[0].position = [-3, 0, 0];
+  assert.equal(st._jumpsInShot(walker), true);
+  st.state.actors = [walker]; st.actorMeshes.delete("c1"); st._obstacles();
+  assert.equal(st._jumpsInShot(walker), false, "the crate gone is seen (obstacle list)");
+});
+
+test("round 2, 7: placeInFrame(id, null) uses the defaults; a non-object is an error (no throw); openPhysicsPanel records no undo step", () => {
+  const st = apiStage();
+  const cam = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 200);
+  cam.position.set(0, 1.6, 8); cam.lookAt(0, 1, 0); cam.updateMatrixWorld(true);
+  st.camera = cam; st._syncShotCamera = () => {};
+  st.state.actors.push({ id: "p1", kind: "man", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] });
+  st._buildSet();
+  const r = st.placeInFrame("p1", null);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.ok(Math.abs(Math.hypot(r.position[0], r.position[2] - 8) - 8) < 2e-3, "center, its present distance");
+  assert.equal(st.placeInFrame("p1", "left").ok, false);
+  const n = st.changes;
+  st.physicsPanel = { open() {}, show() {} };
+  st.selectedInfo = () => ({ id: st.selected });
+  assert.equal(st.openPhysicsPanel("p1").ok, true);
+  assert.equal(st.changes, n, "opening a panel is not a scene edit: no undo step");
 });
