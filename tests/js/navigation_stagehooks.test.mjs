@@ -256,6 +256,22 @@ test("Camera view: a flick hands the drag's leftover to the glide (not both movi
   done(st);
 });
 
+test("a drag that arrives as one jump doesn't glide on (only a real flick does)", () => {
+  const run = (moves) => {
+    const st = makeStage();
+    st.nav.settings.damping = true;
+    st.ev("pointerdown", { button: 0, buttons: 1, ...EMPTY });
+    for (let i = 1; i <= moves; i++) { T += 10; st.ev("pointermove", { button: -1, buttons: 1, clientX: EMPTY.clientX + (i * 40) / moves, clientY: EMPTY.clientY }); }
+    st.ev("pointerup", { button: 0, buttons: 0, clientX: EMPTY.clientX + 40, clientY: EMPTY.clientY });
+    const glides = !!st._glideRaf;
+    frames();
+    done(st);
+    return glides;
+  };
+  assert.equal(run(1), false, "one 40 px jump: no glide (it read as a fast flick and swung the view ~75°)");
+  assert.equal(run(4), true, "four quick moves then letting go: still a flick that glides on");
+});
+
 test("double-click: on the car it frames it; on the sky nothing moves", () => {
   const st = makeStage();
   st.free = { position: [0, 2, 40], target: [0, 1, 0] };

@@ -2832,6 +2832,7 @@ export class Stage {
       // Remember how fast it was going, for the glide after you let go (inertia).
       const now = performance.now(), dtm = Math.max(1, now - (drag.t || now - 16));
       drag.vx = (drag.vx || 0) * 0.5 + (dx / dtm) * 0.5; drag.vy = (drag.vy || 0) * 0.5 + (dy / dtm) * 0.5; drag.t = now;
+      drag.n = (drag.n || 0) + 1;   // move samples: a speed from one or two jumps is a guess, not a flick
       if (this.nav) this.nav.drag(drag, dx, dy); else this._navDrag(drag.mode, drag.look, dx, dy);
     });
 
@@ -2864,7 +2865,9 @@ export class Stage {
         if (id && !this._isSetPiece(id)) this.onInteract?.("Selected. Drag it (or its arrows) to move it; drag anywhere else to look around.");
         return;
       }
-      if ((drag.mode === "orbit" || drag.mode === "pan") && (this.nav?.settings.damping ?? true) && performance.now() - (drag.t || 0) < 70 && Math.hypot(drag.vx || 0, drag.vy || 0) > 0.15) {
+      // A flick glides on. A drag that arrived as one or two jumps (a remote desktop, a tablet driver, a scripted drag)
+      // has no real speed: the first sample assumed 16 ms, so a 40 px jump read as a fast flick and swung the view ~75°.
+      if ((drag.mode === "orbit" || drag.mode === "pan") && (this.nav?.settings.damping ?? true) && (drag.n || 0) >= 3 && performance.now() - (drag.t || 0) < 70 && Math.hypot(drag.vx || 0, drag.vy || 0) > 0.15) {
         const { mode, look, vx, pivot } = drag;
         // The glide takes over the drag's not-yet-eased delta (both moving the camera overshot the flick), in the same
         // up / down sense the drag used (Invert Y); it writes the shot key once when it stops.
