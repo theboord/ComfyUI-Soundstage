@@ -47,7 +47,9 @@ import { installParts } from "./objparts.mjs";
 import * as VehicleParts from "./vehicleparts.mjs";
 import * as LightRig from "./lightrig.mjs";
 import { horse as HorseParts, prop as PropParts } from "./rigparts.mjs";
-import { upgradeHuman, avatarsAt, avatarsReady, setShown as setAvatarShown } from "./people/avatars.mjs";   // lifelike people over the clay (people overhaul M1)
+import { upgradeHuman, avatarsAt, avatarsReady, setShown as setAvatarShown, AVATAR_WAIT_MS } from "./people/avatars.mjs";   // lifelike people over the clay (people overhaul M1)
+import { swapAvatarCutouts, idMaterial } from "./people/cutout.mjs";   // hair / lash cards keep their cut-out in Depth, Clay, Wire and ID
+import { DEPTH_SHADER, depthPassMaterial } from "./depthshader.mjs";   // the skinning Depth shader (also the underwater set's)
 
 /**
  * Video → Stage: the set mesh is the first frame's depth, so the person in the shot is frozen into it. The clay actor
@@ -246,25 +248,9 @@ function vfovFromFocal(focalMm, aspect) {
   return THREE.MathUtils.radToDeg(2 * Math.atan(sensorH / (2 * focalMm)));
 }
 
-// The Depth pass shader. It skins (three's skinning chunks, as outline.mjs does), so rigged bodies (the horse, the
-// lifelike people) draw in their pose instead of frozen in their bind pose; unskinned meshes compile without them.
-export const DEPTH_SHADER = {
-  vertex: `#include <common>
-    #include <skinning_pars_vertex>
-    varying float vViewZ;
-    void main(){
-      #include <skinbase_vertex>
-      #include <begin_vertex>
-      #include <skinning_vertex>
-      vec4 mv = modelViewMatrix * vec4(transformed,1.0); vViewZ = -mv.z; gl_Position = projectionMatrix * mv; }`,
-  fragment: `uniform float uNear; uniform float uFar; varying float vViewZ;
-    void main(){ float d = clamp((vViewZ - uNear)/(uFar - uNear), 0.0, 1.0); gl_FragColor = vec4(vec3(1.0 - d), 1.0); }`,
-};
-const depthMaterial = new THREE.ShaderMaterial({
-  uniforms: { uNear: { value: DEPTH_NEAR }, uFar: { value: DEPTH_FAR } },
-  vertexShader: DEPTH_SHADER.vertex,
-  fragmentShader: DEPTH_SHADER.fragment,
-});
+// The Depth pass shader (depthshader.mjs): it skins, so rigged bodies draw posed; re-exported for the tests.
+export { DEPTH_SHADER };
+const depthMaterial = depthPassMaterial(DEPTH_NEAR, DEPTH_FAR);
 
 let wheelRouterInstalled = false;
 /** One capture-phase listener for the whole page: wheel over a stage dollies that stage only. */
@@ -1419,7 +1405,8 @@ export class Stage {
    */
   setRig(type, amount, params) {
     const shot = this.activeShot?.();
-    if (!shot || !RIGS[type]) return;
+    if (!RIGS[type]) return { ok: false, error: `unknown rig '${type}'` };
+    if (!shot) return { ok: false, error: "no active shot" };
     const prev = shot.rig || {}, q = params || {};
     const a = Number(amount ?? prev.amount ?? 1);
     const seed = Number.isFinite(q.seed) ? Math.round(q.seed) : Number.isFinite(prev.seed) ? prev.seed
@@ -1432,6 +1419,7 @@ export class Stage {
     this._rigCache = null;
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
+    return { ok: true, rig: { ...rig } };
   }
 
   /** Camera shake on impact for the active shot: "off" | "light" | "heavy" | "earthquake". Returns the hits it keys off. */
@@ -1794,6 +1782,17 @@ export class Stage {
     }
     this._supCache = { set, obs, list };
     return list;
+  }
+
+  /** Does a person leave the ground anywhere in the shot (a hop up, a vault, a drop: the same test as _airborne, over
+   *  every frame)? The lifelike body stays clay for the whole shot then (people/avatarcore.mjs clayReason). */
+  _jumpsInShot(a) {
+    if (!PERSON_KINDS.has(a.kind)) return false;
+    this._heightAt(a, 0);   // builds or refreshes the whole-shot height table
+    const c = this._yCache?.get(a);
+    if (!c) return false;
+    if (c.jumps === undefined) c.jumps = c.Y.some((y, f) => y - c.S[f] > 0.06);
+    return c.jumps;
   }
 
   /** Is a person in the air (mid-jump) at this frame? */
@@ -3965,19 +3964,118 @@ export class Stage {
   }
 
   duplicateSelected() {
-    const a = this.state.actors.find((x) => x.id === this.selected);
+    const id = this.duplicate(this.selected);
+    if (!id) return null;
+    this.select(id);
+    return this.state.actors.find((x) => x.id === id)?.name ?? null;
+  }
+
+  /**
+   * Stage API for tools (web/stage/STAGE_API.md): a copy of object `id` beside it (offset along +X by its
+   * height x 0.8, at least 1 m), with its keys. Doesn't need or change the selection. One undo step. Returns the new id
+   * (null when there is no such object).
+   */
+  duplicate(id) {
+    const a = this.state.actors.find((x) => x.id === id);
     if (!a) return null;
     const c = clone(a);
-    c.id = `${a.kind || "obj"}_${Date.now().toString(36)}`;
+    const base = `${a.kind || "obj"}_${Date.now().toString(36)}`;
+    let nid = base;
+    for (let n = 2; this.state.actors.some((x) => x.id === nid); n++) nid = `${base}_${n}`;
+    c.id = nid;
     c.name = `${a.name} copy`;
+    delete c.by_shot;   // a shot's own blocking belongs to the original (its keys are copied below, offset)
     const off = Math.max(1, (a.height_m || 1) * 0.8);
-    c.keys = this._actorKeys(c).map((k) => ({ ...k, position: [k.position[0] + off, k.position[1], k.position[2]] }));
-    c.position = c.keys[0].position;
+    c.keys = this._actorKeys(a).map((k) => ({ ...clone(k), position: [k.position[0] + off, k.position[1], k.position[2]] }));
+    c.position = [...c.keys[0].position];
+    delete c.position_end;
     this.state.actors.push(c);
+    const keepSel = this.selected;
     this._buildSet();
-    this.select(c.id);
+    if (keepSel && this.actorMeshes.has(keepSel)) this.select(keepSel);
+    this.setFrame(this.frame);
     this.onChange(this.toJSON());
-    return c.name;
+    return nid;
+  }
+
+  /**
+   * Stage API for tools: put object `id`'s ground point at a place in the ACTIVE SHOT camera's frame, on the ground.
+   * where = {x: "left" | "center" | "right" | 0..1 (0 = the left edge; left / right = the thirds), y?: 0..1 (0 = top),
+   * distance_m?}. With distance_m it stands that far from the camera (measured along the ground); with y (and no
+   * distance) it goes where that screen point meets the ground; with neither it keeps its present distance. A one-key
+   * object moves as a whole; a keyed one gets a key at the playhead. One undo step. Returns {ok, position} or
+   * {ok: false, error}.
+   */
+  placeInFrame(id, where = {}) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a) return { ok: false, error: `unknown object '${id}'` };
+    const X = { left: 1 / 3, center: 0.5, centre: 0.5, middle: 0.5, right: 2 / 3 };
+    const u = typeof where.x === "string" ? X[where.x.toLowerCase()] : Number(where.x ?? 0.5);
+    if (!Number.isFinite(u) || u < 0 || u > 1) return { ok: false, error: `x must be left, center, right or 0..1 (got '${where.x}')` };
+    const hasY = where.y != null, hasD = where.distance_m != null;
+    if (hasY && !(Number(where.y) >= 0 && Number(where.y) <= 1)) return { ok: false, error: `y must be 0..1 (got '${where.y}')` };
+    if (hasD && !(Number(where.distance_m) > 0)) return { ok: false, error: `distance_m must be > 0 (got '${where.distance_m}')` };
+    this._syncShotCamera?.();
+    const cam = this.camera.clone();
+    cam.aspect = (this.fw || 16) / (this.fh || 9);
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld(true);
+    const C = cam.position;
+    const nx = 2 * u - 1;
+    const groundAt = (ny) => {   // where the ray through (nx, ny) meets the ground y = 0, or null
+      const d = new THREE.Vector3(nx, ny, 0.5).unproject(cam).sub(C);
+      if (d.y > -1e-6) return null;
+      const t = -C.y / d.y;
+      return t > 0 ? C.clone().addScaledVector(d, t) : null;
+    };
+    const flat = (p) => Math.hypot(p.x - C.x, p.z - C.z);
+    let P = null;
+    if (hasY && !hasD) {
+      P = groundAt(1 - 2 * Number(where.y));
+      if (!P) return { ok: false, error: "that point of the frame is above the horizon (it never meets the ground)" };
+    } else {
+      let d = Number(where.distance_m);
+      if (!hasD) { const cur = this._actorPosAt(a, this.frame); d = Math.hypot(cur[0] - C.x, cur[2] - C.z); }
+      // Down the screen column the ground hit comes nearer; search ny (from far below the frame up to the horizon)
+      // for the hit at that ground distance.
+      const LOW = -2, HIGH = 6;   // ny from half a frame under the bottom edge up past the top (off screen is allowed)
+      if (!groundAt(LOW)) return { ok: false, error: "the camera doesn't see the ground" };
+      let top = HIGH;              // the highest ny that still meets the ground (just under the horizon)
+      if (!groundAt(HIGH)) {
+        let lo = LOW, hi = HIGH;
+        for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (groundAt(m)) lo = m; else hi = m; }
+        top = lo;
+      }
+      if (flat(groundAt(LOW)) > d) return { ok: false, error: `${d} m is nearer than any ground the camera sees at that x` };
+      let a0 = LOW, a1 = top;      // the ground distance grows with ny up to the horizon
+      if (flat(groundAt(a1)) <= d) a0 = a1;
+      else for (let i = 0; i < 80; i++) { const m = (a0 + a1) / 2; if (flat(groundAt(m)) < d) a0 = m; else a1 = m; }
+      P = groundAt(a0);
+    }
+    const pos = [+P.x.toFixed(3), 0, +P.z.toFixed(3)];
+    const keys = this._actorKeys(a);
+    if (keys.length <= 1) for (const k of keys) k.position = [...pos];
+    else this._editActorKey(a).position = [...pos];
+    a.position = [...keys[0].position];
+    delete a.key_y;
+    this._yCache?.delete(a);
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    return { ok: true, position: pos };
+  }
+
+  /** Stage API for tools: open the Physics panel (physpanel.mjs), for object `id` when given (it is selected first).
+   *  The App hands the panel to the stage (stage.physicsPanel). Returns {ok, id} or {ok: false, error}. */
+  openPhysicsPanel(id) {
+    if (id != null) {
+      if (!this.state.actors.some((x) => x.id === id) || !this.actorMeshes.has(id)) return { ok: false, error: `unknown object '${id}'` };
+      this.select(id);
+    }
+    const panel = this.physicsPanel;
+    if (!panel?.open) return { ok: false, error: "the Physics panel is not available" };
+    try { panel.show?.(this.selectedInfo?.()); } catch { /* the panel shows itself on select */ }
+    panel.open();
+    return { ok: true, id: this.selected || null };
   }
 
   scaleSelected(factor) {
@@ -4691,7 +4789,7 @@ export class Stage {
         saved.push([o, o.material, o.visible]);
         const id = o.userData.actorId;
         if (id && colors[id]) {
-          o.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(...colors[id].map((v) => v / 255)) });
+          o.material = idMaterial(o.material, new THREE.Color(...colors[id].map((v) => v / 255)));   // cards keep their cut-out
         } else if (o.userData.lightId || o.isPoints || o.isLineSegments || o.userData.water) {
           o.visible = false;
         } else {
@@ -4705,7 +4803,11 @@ export class Stage {
     this.scene.overrideMaterial = null;
     if (this.camHelper) this.camHelper.visible = false;
     this.renderer.render(this.scene, cam);
-    for (const [o, m, v] of saved) { if (o.material !== m) o.material.dispose?.(); o.material = m; o.visible = v; }
+    for (const [o, m, v] of saved) {
+      if (o.material !== m) for (const x of [].concat(o.material)) if (x !== black && ![].concat(m).includes(x)) x.dispose?.();
+      o.material = m; o.visible = v;
+    }
+    black.dispose();
     this.scene.background = bg; this.scene.fog = fog; this.scene.overrideMaterial = ov;
   }
 
@@ -4804,7 +4906,9 @@ export class Stage {
     try { this.setFx?.pass?.(mode, { stage: this, cam, forCapture }); } catch (err) { console.warn("Soundstage set pass", err); }
     this.secondary?.lightFrom?.(this, cam);   // the dust is lit by the set's sun and sky, as seen from this camera
     this._inRender = true;
-    this.renderer.render(this.scene, cam);
+    // Hair and lash cards of the lifelike people keep their cut-out under the pass's override (people/cutout.mjs).
+    const putBackCards = swapAvatarCutouts(this, this.scene.overrideMaterial);
+    try { this.renderer.render(this.scene, cam); } finally { putBackCards(); }
     if (!forCapture && this.highlight) {
       try { this.highlight.render(this.renderer, cam, { hoverId: this._dragging ? null : this._hoverId, selectedId: this.selected }); }
       catch (err) { this.highlight.enabled = false; console.warn("Soundstage outline", err); }
@@ -4857,7 +4961,11 @@ export class Stage {
     const prev = new THREE.Vector2();
     this.renderer.getSize(prev);
     const keepFrame = this.frame;
-    await avatarsReady();   // lifelike bodies still loading go on first, so no capture turns lifelike partway
+    // Lifelike bodies still loading go on first, so no capture turns lifelike partway. The wait is stage.avatarWaitMs
+    // (default people/avatars.mjs AVATAR_WAIT_MS); past it the capture goes ahead and says who stayed clay.
+    const ready = await avatarsReady(this.avatarWaitMs ?? AVATAR_WAIT_MS);
+    this.lastCaptureNote = ready.timedOut ? ready.message : "";
+    if (ready.timedOut) { try { this.onInteract?.(ready.message); } catch { /* no UI */ } }
     this._capturing = true;
     try {
       this.renderer.setSize(this.fw, this.fh, false);

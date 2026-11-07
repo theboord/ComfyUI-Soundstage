@@ -18,6 +18,10 @@ test("every .tga the FBX asks for loads as the PNG of the same base name in tex/
   assert.equal(C.tgaToPng("a/b/c.tga?v=2", dir), `${dir}c.png`);
   assert.equal(C.tgaToPng("a/b/c.png", dir), "a/b/c.png");
   assert.equal(C.tgaToPng("a/b/tga.jpg", dir), "a/b/tga.jpg");
+  // the specular maps are never used, so never downloaded (review M1 defect 9)
+  assert.equal(C.tgaToPng("x/m002_body_specular.tga", dir), C.UNUSED_TEXTURE);
+  assert.equal(C.tgaToPng("x/F001_Head_Specular.TGA", dir), C.UNUSED_TEXTURE);
+  assert.match(C.UNUSED_TEXTURE, /^data:image\/png;base64,/);
 });
 
 test("a material that should show a texture but has no colour map is reported", () => {
@@ -196,6 +200,22 @@ test("height: the avatar is scaled by its measured standing height, not by its h
   assert.equal(C.clayHeight({ kind: "man", height_m: 1.9 }), 1.9);
 });
 
+test("height: the avatar's target is the clay's BUILT height, whatever the kind, gender and size (review M1 defect 6)", async () => {
+  const { buildObject } = await import("../../web/stage/library.mjs");
+  const cases = [{ kind: "man" }, { kind: "woman" }, { kind: "child" }, { kind: "man", appearance: { gender: "female" } },
+    { kind: "woman", appearance: { gender: "male" } }, { kind: "man", height_m: 1.62, appearance: { gender: "female", build: "heavy" } },
+    { kind: "woman", height_m: 1.93 }, { kind: "man", height_m: 2.05, appearance: { hair: "bald" } }];
+  for (const a of cases) {
+    // exactly what stage._buildSet builds for this actor
+    const g = buildObject(a.kind, a.height_m, (geom) => new THREE.Mesh(geom, new THREE.MeshBasicMaterial()), a.appearance);
+    const built = 1.8 * g.userData.joints.head.userData.absY / 1.585;   // the figure's own scale (posepass: 1 = 1.8 m)
+    assert.ok(Math.abs(C.clayHeight(a) - built) < 1e-6, `${JSON.stringify(a)}: target ${C.clayHeight(a)} m, clay built at ${built.toFixed(4)} m`);
+    const top = new THREE.Box3().setFromObject(g).max.y;
+    assert.ok(Math.abs(top - C.clayHeight(a)) < 0.04, `${JSON.stringify(a)}: clay top of head ${top.toFixed(3)} m`);
+  }
+  assert.equal(C.clayHeight({ kind: "man", appearance: { gender: "female" } }), 1.8, "the old rule said 1.68 for a man set to female: 12 cm short of his clay");
+});
+
 // ---------------------------------------------------------------- who gets an avatar, face option
 test("men and women get an avatar; children, animals and the clay-model flag stay clay", () => {
   assert.equal(C.avatarSpecFor({ kind: "man" }).model, "Male_Adult_01");
@@ -206,14 +226,45 @@ test("men and women get an avatar; children, animals and the clay-model flag sta
   assert.equal(C.avatarSpecFor({ kind: "man", simple_model: true }), null);
 });
 
-test("face option: faceless swaps the head for a plain material and hides lashes and brows; the body is kept", () => {
+test("face option: faceless swaps the head for a plain material and hides lashes and brows; the hair and body are kept", () => {
   assert.equal(C.materialRole("m002_head"), "head");
   assert.equal(C.materialRole("f001_opacity"), "opacity");
+  assert.equal(C.materialRole("f001_opacity_lashes"), "lashes");
   assert.equal(C.materialRole("m002_body"), "body");
-  for (const r of ["head", "opacity", "body"]) assert.equal(C.faceChoice(r, false), "keep");
+  for (const r of ["head", "opacity", "lashes", "body"]) assert.equal(C.faceChoice(r, false), "keep");
   assert.equal(C.faceChoice("head", true), "neutral");
-  assert.equal(C.faceChoice("opacity", true), "hide");
+  assert.equal(C.faceChoice("lashes", true), "hide");
+  assert.equal(C.faceChoice("opacity", true), "keep", "the hair cards stay");
   assert.equal(C.faceChoice("body", true), "keep");
+});
+
+test("lash / brow cards are told from hair by position (within 0.6 eye spacings of an eye, in front of the eyes)", () => {
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
+  const L = V(3, 160, 3), R = V(-3, 160, 3);
+  assert.equal(C.isFaceDetail(V(3.5, 160.5, 4.2), L, R), true, "a lash");
+  assert.equal(C.isFaceDetail(V(-3, 162.8, 4), L, R), true, "a brow");
+  assert.equal(C.isFaceDetail(V(3, 160, 1), L, R), false, "behind the eyes");
+  assert.equal(C.isFaceDetail(V(0, 172, 2), L, R), false, "a fringe well above");
+  assert.equal(C.isFaceDetail(V(8, 160, 3.5), L, R), false, "a sideburn");
+  // the split: triangles 1 and 3 (vertex 3 and 9) move to material 5, runs merge, other groups stay
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(new Array(15 * 3).fill(0), 3));
+  geo.addGroup(0, 3, 0); geo.addGroup(3, 12, 2);
+  const moved = C.splitGroups(geo, (mi) => mi === 2, 5, (i) => i === 6 || i === 9);
+  assert.equal(moved, 2);
+  assert.deepEqual(geo.groups.map((g) => [g.start, g.count, g.materialIndex]), [[0, 3, 0], [3, 3, 2], [6, 6, 5], [12, 3, 2]]);
+});
+
+test("keys signature: same keys same hash, any change a new one (no JSON.stringify per person per frame)", () => {
+  const k = [{ frame: 0, position: [1, 0, 2] }, { frame: 24, position: [3, 0, 2], ease: "in" }];
+  const h = C.keysHash(k);
+  assert.equal(C.keysHash(JSON.parse(JSON.stringify(k))), h);
+  for (const ch of [(x) => { x[1].position[0] = 3.0001; }, (x) => { x[1].frame = 25; }, (x) => { x[1].ease = "out"; }, (x) => { x.pop(); },
+    (x) => { x[0].speed = 2; }, (x) => { x[0].path = { curve: 1 }; }]) {
+    const c = JSON.parse(JSON.stringify(k)); ch(c);
+    assert.notEqual(C.keysHash(c), h);
+  }
+  assert.equal(typeof C.keysHash([]), "number");
 });
 
 test("the clay stays (for the whole shot) where the clips can't follow yet; Blocking look keeps everyone clay", () => {
@@ -305,8 +356,11 @@ test("real Rocketbox files: one detailed mesh, no stray light, every texture fou
     assert.equal(kit.report.meshes.length, 1);
     assert.match(kit.report.kept, /_hipoly_/);
     assert.deepEqual(kit.report.missingMaps, [], "every material has its colour map");
-    assert.deepEqual(kit.materials.map((m) => m.userData.role).sort(), ["body", "head", "opacity"]);
-    assert.ok(urls.length >= 6 && urls.every((u) => u.endsWith(".png") && existsSync(u)), `textures: ${urls.join(", ")}`);
+    const roles = kit.materials.map((m) => m.userData.role).sort();
+    assert.deepEqual(roles, spec === C.ROCKETBOX.woman ? ["body", "head", "lashes", "opacity"] : ["body", "head", "opacity"]);
+    const files = urls.filter((u) => u !== C.UNUSED_TEXTURE);
+    assert.ok(files.length >= 5 && files.every((u) => u.endsWith(".png") && existsSync(u)), `textures: ${files.join(", ")}`);
+    assert.ok(urls.length > files.length && files.every((u) => !/_specular/i.test(u)), "no specular map is fetched");
     for (const k of C.CLIP_KINDS) {
       assert.deepEqual(kit.report.unbound[k], [], `${spec.model} ${k}: every track finds its bone`);
       assert.ok(kit.clips[k].clip.tracks.length > 70);
@@ -362,11 +416,26 @@ test("real Rocketbox avatar on a clay figure: faces +Z, stands at its set height
   assert.ok(kp.body[13].distanceTo(skin.bones.Bip01_L_Foot.getWorldPosition(new THREE.Vector3())) < 1e-6, "ankle = the avatar's foot bone");
   assert.ok(kp.facing > 0.5, "looking toward a camera in front");
   assert.ok(kp.body[0].y > 1.55 && kp.body[0].y < 1.8, `nose at ${kp.body[0].y}`);
-  // faceless: plain head, lashes hidden, body untouched; back again
+  // faceless: plain head, lashes hidden, hair and body untouched; back again
   A.applyFace(skin, true);
   const roles = skin.mesh.material.map((m) => m.name);
-  assert.deepEqual(roles, kit.materials.map((m) => ({ head: "faceless_head", opacity: "faceless_hidden", body: m.name }[m.userData.role])));
-  assert.equal(skin.mesh.material.find((m) => m.name === "faceless_head").map, null);
+  assert.deepEqual(roles, kit.materials.map((m) => ({ head: "faceless_head", lashes: "faceless_hidden", opacity: m.name, body: m.name }[m.userData.role])));
+  // the faceless head keeps the head texture (Rocketbox paints most hair on the scalp) and paints only the face skin:
+  // a per-vertex face mask, 1 on the face (eyes, brows, nose, mouth), 0 on the scalp, ears and neck
+  const fh = skin.mesh.material.find((m) => m.name === "faceless_head");
+  assert.equal(fh.map, kit.materials.find((m) => m.userData.role === "head").map, "the head texture (and its painted hair) stays");
+  assert.equal(fh.userData.faceless, true);
+  const fm = skin.mesh.geometry.attributes.faceMask;
+  assert.ok(fm, "face mask attribute");
+  skin.mesh.updateMatrixWorld(true);
+  const at = (b, off) => { const w = skin.bones[b].getWorldPosition(new THREE.Vector3()).add(off); let best = 0, bd = 9; const v = new THREE.Vector3();
+    const hi = kit.materials.findIndex((m) => m.userData.role === "head");
+    for (const gr of skin.mesh.geometry.groups) if (gr.materialIndex === hi) for (let i = gr.start; i < gr.start + gr.count; i++) { skin.mesh.getVertexPosition(i, v).applyMatrix4(skin.mesh.matrixWorld); const d = v.distanceTo(w); if (d < bd) { bd = d; best = fm.getX(i); } }
+    return best; };
+  assert.ok(at("Bip01_MNose", new THREE.Vector3()) > 0.99, "the nose is face");
+  assert.ok(at("Bip01_Head", new THREE.Vector3(0, 0.12, 0)) < 0.01, "the crown (hair) is not");
+  assert.ok(at("Bip01_Neck", new THREE.Vector3(0, 0, -0.06)) < 0.01, "the back of the neck is not");
+  assert.ok(skin.mesh.material.some((m) => m.userData.role === "opacity" && m.visible && m.map), "the hair is kept");
   A.applyFace(skin, false);
   assert.deepEqual(skin.mesh.material, kit.materials);
 });
@@ -496,8 +565,9 @@ test("drop-onto picking: a ray still hits a lifelike person's hidden clay (three
   assert.equal(ray.intersectObjects([m], false).length > 0, true);
   const A = await import("../../web/stage/people/avatars.mjs");
   const t0 = Date.now();
-  await A.avatarsReady(5000);
+  const r = await A.avatarsReady(5000);
   assert.ok(Date.now() - t0 < 100, "captureSequence doesn't wait when nothing is loading");
+  assert.equal(r.ok, true);
 });
 
 // ---------------------------------------------------------------- bounds through attach and avatarsAt (review defects 1, 2)
@@ -542,6 +612,7 @@ test("a person who stays clay keeps clay-sized bounds after the avatar is attach
   const clay = sizeOf(g);
   near(clay, [0.5, 1.8, 0.3], 0.25, "clay alone");
   const skin = A.attachKit(st, a, g, stubKit());
+  await null;   // attach asks for one re-pose a microtask later (requestFrame)
   assert.ok(skin, "attached");
   assert.equal(skin.reason, "Blocking look is on");
   assert.equal(skin.shown, false);
@@ -558,6 +629,7 @@ test("shown avatar: bounds stay person-sized (standing box), and switching back 
   const { A, st, a, g } = await clayStage();
   st.state.people_look = undefined;
   const skin = A.attachKit(st, a, g, stubKit());
+  await null;
   assert.equal(skin.shown, true, `shown (reason ${skin.reason})`);
   assert.equal(skin.holder.parent, g);
   const s = sizeOf(g);
@@ -581,6 +653,7 @@ test("_localBox and _localHulls measure the clay even while the avatar shows (a 
   near(new THREE.Vector3(...before.half).multiplyScalar(2), [0.5, 1.7, 0.3], 1e-6, "clay local box");
   st.state.people_look = undefined;
   const skin = A.attachKit(st, a, g, stubKit());
+  await null;
   assert.equal(skin.shown, true);
   g.userData.hullKey = undefined;   // force a fresh hull build
   const after = st._localBox(g), hullsAfter = st._localHulls(g, after);
@@ -599,6 +672,7 @@ test("real Rocketbox files: a shown avatar's bounds are a standing person (not t
     const { st, a, g } = await clayStage();
     a.kind = kind; st.state.people_look = undefined;
     const skin = k.A.attachKit(st, a, g, kit);
+    await null;
     assert.equal(skin.shown, true, `${kind} shown (reason ${skin.reason})`);
     const s = sizeOf(skin.holder);
     assert.ok(s.x < 0.9 && s.z < 0.9 && s.y > 1.5 && s.y < 2.0, `${kind} avatar box ${s.x.toFixed(2)} x ${s.y.toFixed(2)} x ${s.z.toFixed(2)}`);

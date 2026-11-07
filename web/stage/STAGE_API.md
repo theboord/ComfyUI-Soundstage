@@ -1,0 +1,12 @@
+# Stage API for tools
+
+Methods on the 3D stage (`web/stage/stage.mjs`, the `Stage` instance the App keeps as `node.ssStage`) for tools that edit a scene without a mouse: ✦ Ask's actions, scripts, tests. Each one is an ordinary edit: it re-poses the stage and records one undo step (through `onChange`), like doing it by hand. None of them throws for a bad argument: they say what was wrong.
+
+| Call | Does | Returns |
+|---|---|---|
+| `stage.duplicate(id)` | A copy of object `id` (person, prop, vehicle) beside it: offset along +X by its height x 0.8 (at least 1 m), with all its keys (deep-copied, offset the same). Its own per-shot blocking (`by_shot`) is not copied. Does not need or change the selection. | the new id, or `null` when there is no object `id` |
+| `stage.placeInFrame(id, {x, y?, distance_m?})` | Puts the object's ground point at a place in the **active shot camera's** frame, on the ground (y = 0, `key_y` cleared). `x`: `"left"` or `"right"` (the thirds, 1/3 and 2/3 of the width), `"center"`, or a number 0..1 (0 = left edge). `distance_m`: how far from the camera, measured along the ground. `y` (0..1, 0 = top), used when there is no `distance_m`: where that screen point meets the ground. With neither, it keeps its present distance. A one-key object moves as a whole; a keyed (moving) one gets a key at the playhead. | `{ok: true, position: [x, 0, z]}` or `{ok: false, error}` (unknown id, bad `x` / `y` / `distance_m`, a point above the horizon, a distance nearer than the ground the camera sees) |
+| `stage.setRig(type, amount, params)` | Puts the active shot's camera on a rig (`free`, `tripod`, `dolly`, `chapman`, `slider`, `jib`, `steadicam`, `handheld`, `drone`, `drone_fpv`); `amount` 0..2, `params` `{seed, arm, pivot}` as before. | `{ok: true, rig}` (a copy of what was set), or `{ok: false, error: "unknown rig '<type>'"}` (nothing changes) |
+| `stage.openPhysicsPanel(id?)` | Selects object `id` when given, then opens the Physics panel (`physpanel.mjs` `open()`) for the selection. The App hands its panel to the stage as `stage.physicsPanel`. | `{ok: true, id}` (the selected id, or `null`), or `{ok: false, error}` (unknown id, no panel) |
+
+Tested in [tests/js/avatars_m15.test.mjs](../../tests/js/avatars_m15.test.mjs) ("Stage API for tools"): `placeInFrame` against a known camera (the projected point lands on the third at the asked distance, within 2 mm).

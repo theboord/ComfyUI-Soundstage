@@ -6,7 +6,7 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { Stage, DEFAULT_SCENE, ASPECTS, IMPORT_ACCEPT, formatOf, CAR_SHOTS } from "./stage/stage.mjs";
 import { quickSpec } from "./stage/interior.mjs";
-import { peopleLookControls } from "./stage/people/peopleui.mjs";
+import { peopleLookControls, blockingToggle } from "./stage/people/peopleui.mjs";
 import { LIBRARY, OBJECT_COLORS, SEATS } from "./stage/library.mjs";
 import { APPEARANCE_OPTIONS, DEFAULT_APPEARANCE, SKIN_TONES, MOUNTS } from "./stage/humans.mjs";
 import { SETS, WEATHER } from "./stage/environments.mjs";
@@ -994,6 +994,7 @@ function createStageWidget(node, inputName) {
     });
     views.append(b);
   }
+  const blockingView = blockingToggle(stage);   // scene-wide Blocking look beside the view modes (stage/people/peopleui.mjs)
   // Shot cam (what renders) vs Free view (fly the whole set; shot camera drawn as a frustum).
   const camMode = document.createElement("div");
   camMode.className = "ss-views";
@@ -1080,7 +1081,7 @@ function createStageWidget(node, inputName) {
   const syncRig = () => { const r = stage.rigInfo(); rigSel.value = r.type; rigAmt.value = r.amount; rigAmt.hidden = r.type === "free"; };
   syncRig();
   rigSel.addEventListener("change", syncRig);
-  bar.append(camMode, lens.wrap, lensPick.el, rigWrap, sunAz.wrap, sunEl.wrap, dome.el, views);
+  bar.append(camMode, lens.wrap, lensPick.el, rigWrap, sunAz.wrap, sunEl.wrap, dome.el, views, blockingView.el);
   // In the workspace these live in the inspector: lens and rig under Camera, the sun under Lighting.
   const lensRow = Object.assign(document.createElement("div"), { className: "ss-bar ss-lensrow" });
   const sunRow = Object.assign(document.createElement("div"), { className: "ss-bar ss-sunrow" });
@@ -1872,7 +1873,7 @@ function createStageWidget(node, inputName) {
     (v) => stage.setAppearance({ skin: v }));
   const cHair = colorInput("Hair", "hair_color"), cTop = colorInput("Top", "top_color"), cBottom = colorInput("Bottom", "bottom_color");
   const cMain = colorInput("Colour", "color");
-  const peopleLook = peopleLookControls(stage, mkSelect);   // Face shown / faceless, Blocking look (stage/people/peopleui.mjs)
+  const peopleLook = peopleLookControls(stage, mkSelect);   // Face shown / faceless (stage/people/peopleui.mjs)
   const rideSel = mkSelect("Ride / sit on", { "": { label: "—" } }, "", (v) => {
     const id = stage.selectedInfo()?.id;
     if (!id) return;
@@ -1966,7 +1967,7 @@ function createStageWidget(node, inputName) {
     syncAppearance(stage.selectedInfo());
     status.textContent = stage.frame > 0 ? `${info.name} hops on at frame ${stage.frame}. Give them a walk to the mount before that.` : `${info.name} rides from the start.`;
   });
-  const personCtl = [apBuild.wrap, apHair.wrap, cHair.wrap, apTop.wrap, cTop.wrap, apBottom.wrap, cBottom.wrap, apSkin.wrap, peopleLook.face.wrap, peopleLook.blocking, rideSel.wrap, seatSel.wrap, hopBtn];
+  const personCtl = [apBuild.wrap, apHair.wrap, cHair.wrap, apTop.wrap, cTop.wrap, apBottom.wrap, cBottom.wrap, apSkin.wrap, peopleLook.face.wrap, rideSel.wrap, seatSel.wrap, hopBtn];
   apRow.append(...personCtl, cMain.wrap, followSel.wrap, stuntSel.wrap, stuntKmh, stuntRoad.wrap, stuntMass, beamSel.wrap);
   // Pose Studio: every joint (fingers too), a gallery and keys, under the selected person's appearance controls.
   const poseHost = document.createElement("div");
@@ -1982,6 +1983,7 @@ function createStageWidget(node, inputName) {
   const physPanel = new PhysicsPanel({ stage, onStatus: (m) => { status.textContent = m; },
     onBaked: () => { try { tracks?.draw(); afterTimeChange(); } catch { /* timeline not built */ } } });
   sel.insertBefore(physPanel.btn, dup);
+  stage.physicsPanel = physPanel;   // stage.openPhysicsPanel(id) (the Stage API for tools)
   const isPerson = (k) => k === "man" || k === "woman" || k === "child";
   function syncAppearance(info) {
     apRow.hidden = !info || info.kind === "glb" || info.kind === "custom" || info.kind === "card";
@@ -2404,6 +2406,7 @@ function createStageWidget(node, inputName) {
 
   function syncControls() {
     const s = stage.toJSON();
+    try { blockingView.sync(); } catch { /* not built yet */ }
     try { syncVideoCta(); } catch { /* not built yet */ }
     const cam = stage._cameraAt(stage.frame || 0);
     lens.input.value = cam.focal_mm; lens.out.textContent = `${Math.round(cam.focal_mm)}mm`;
@@ -3586,7 +3589,7 @@ function createStageWidget(node, inputName) {
 
     // Viewport: a slim header (shot / free / top, display mode, the navigation hint), then the picture, fitted.
     hint.title = hint.textContent;
-    vphead.append(importHead, camMode, hint, views);
+    vphead.append(importHead, camMode, hint, views, blockingView.el);
     vpCell.append(view);
     cvArea.append(vpCell, ladderView, lookView, physPanel.el);
     center.append(vphead, cvArea);

@@ -16,7 +16,7 @@ import * as C from "./avatarcore.mjs";
 
 export const ROCKETBOX_DIR = new URL("./rocketbox/", import.meta.url).href;
 const TEX_DIR = `${ROCKETBOX_DIR}tex/`;
-const kits = new Map();   // model name -> Promise<kit>; a failure is kept too, so a missing install isn't re-fetched
+const kits = new Map();   // model name -> Promise<kit>; a failed load is dropped, so the next build tries again
 const inflight = new Set();   // per-person upgrades still loading (captureSequence waits for them: no pop mid-capture)
 let warned = false;
 
@@ -43,6 +43,8 @@ export function loadKit(spec) {
     return kit;
   })();
   kits.set(spec.model, p);
+  // Never cache a failure (a dropped connection, a half-copied install): the next _buildSet loads again.
+  p.catch(() => { if (kits.get(spec.model) === p) kits.delete(spec.model); });
   return p;
 }
 
@@ -50,7 +52,9 @@ export function loadKit(spec) {
  * Turn a parsed avatar FBX and its clips into a reusable kit (also used by the node fixture test):
  * the lights in the file removed, only the most detailed mesh kept, Phong turned into the Standard material the rest
  * of the set uses (same response to the sun; the specular maps are not used yet), lashes cut out by the PNG's alpha,
- * the clips prepared (rotations + root bob only), and checks recorded (kit.report).
+ * the clips prepared (rotations + root bob only), and checks recorded (kit.report). The lash / brow cards are split off
+ * the hair's opacity material into their own "<id>_opacity_lashes" material (avatarcore.isFaceDetail), so Faceless can
+ * hide them and keep the hair.
  */
 export function buildKit(model, clips, { texErrors = [] } = {}) {
   const lights = [];
@@ -72,9 +76,11 @@ export function buildKit(model, clips, { texErrors = [] } = {}) {
     m.specularMap?.dispose?.();
     return s;
   });
+  const lashes = splitLashes(model, keep, materials);
   keep.material = Array.isArray(keep.material) ? materials : materials[0];
-  const neutral = new THREE.MeshStandardMaterial({ name: "faceless_head", color: 0xcfc6ba, roughness: 0.85, metalness: 0 });
-  neutral.userData.plain = true;
+  const plain = new THREE.MeshStandardMaterial({ name: "faceless_head", color: 0xcfc6ba, roughness: 0.85, metalness: 0 });
+  plain.userData.plain = true;
+  const neutral = facelessHead(model, keep, materials) || plain;   // the face masked to skin, the painted hair kept
   const hidden = new THREE.MeshBasicMaterial({ name: "faceless_hidden", visible: false });
   hidden.userData.plain = true;
   const boneNames = new Set();
@@ -87,9 +93,81 @@ export function buildKit(model, clips, { texErrors = [] } = {}) {
   const { stature, floor, idleBox } = measureStanding(model, prepared.idle?.clip);
   return {
     template: model, meshName: keep.name, materials, faceless: { neutral, hidden }, clips: prepared, hipUnits, stature, floor, idleBox,
-    report: { meshes: list.map((m) => m.name), kept: keep.name, lightsRemoved: lights.length, missingMaps: C.missingColorMaps(materials),
+    report: { meshes: list.map((m) => m.name), kept: keep.name, lightsRemoved: lights.length, missingMaps: C.missingColorMaps(materials), lashTriangles: lashes,
       unbound: Object.fromEntries(C.CLIP_KINDS.map((k) => [k, prepared[k]?.missing || null])), texErrors },
   };
+}
+
+/** Move the lash / brow triangles of the opacity (card) material into a material of their own, a copy of the card
+ *  material named "<card>_lashes" (role "lashes"), appended to materials. Done in the bind pose on the template, so
+ *  every clone shares the split geometry. Returns the number of triangles moved (0: no copy is added). */
+function splitLashes(model, mesh, materials) {
+  const card = materials.findIndex((m) => m.userData.role === "opacity");
+  const L = model.getObjectByName("Bip01_LEye"), R = model.getObjectByName("Bip01_REye");
+  if (card < 0 || !L || !R || !Array.isArray(mesh.material) || !mesh.geometry.groups.length) return 0;
+  model.updateMatrixWorld(true);
+  const lE = L.getWorldPosition(new THREE.Vector3()), rE = R.getWorldPosition(new THREE.Vector3());
+  const idx = mesh.geometry.index, v = new THREE.Vector3(), c = new THREE.Vector3();
+  const vertex = (i) => (idx ? idx.getX(i) : i);
+  const lashIndex = materials.length;
+  const moved = C.splitGroups(mesh.geometry, (mi) => mi === card, lashIndex, (i) => {
+    c.set(0, 0, 0);
+    for (let j = 0; j < 3; j++) { mesh.getVertexPosition(vertex(i + j), v); c.add(v.applyMatrix4(mesh.matrixWorld)); }
+    return C.isFaceDetail(c.divideScalar(3), lE, rE);
+  });
+  if (moved) {
+    const lash = materials[card].clone();
+    lash.name = `${materials[card].name}_lashes`;
+    lash.userData = { role: "lashes" };
+    materials.push(lash);
+  }
+  return moved;
+}
+
+/**
+ * The Faceless head material: the head's own texture (so the hair Rocketbox paints on the scalp stays), with the face
+ * region (avatarcore.faceMaskAt, a per-vertex "faceMask" attribute computed once in the bind pose) painted one flat
+ * skin colour, sampled (blurred) from the avatar's own cheek. No brows, eyes, lips or eyeball detail; the head keeps
+ * its shape and the skin tone matches the neck and forehead. null when the eyes or the head map are missing (the
+ * plain mannequin material is used then).
+ */
+function facelessHead(model, mesh, materials) {
+  const hi = materials.findIndex((m) => m.userData.role === "head");
+  const L = model.getObjectByName("Bip01_LEye"), R = model.getObjectByName("Bip01_REye");
+  const head = materials[hi];
+  if (hi < 0 || !head?.map || !L || !R || !Array.isArray(mesh.material)) return null;
+  model.updateMatrixWorld(true);
+  const lE = L.getWorldPosition(new THREE.Vector3()), rE = R.getWorldPosition(new THREE.Vector3()), sp = lE.distanceTo(rE);
+  const geo = mesh.geometry, n = geo.attributes.position.count, uv = geo.attributes.uv, idx = geo.index;
+  if (!uv) return null;
+  const mask = new Float32Array(n), v = new THREE.Vector3();
+  // the cheek the skin colour is sampled from: under the left eye, a little out and forward
+  const cheek = lE.clone().add(new THREE.Vector3(0.15 * sp, -0.9 * sp, 0.1 * sp));
+  let best = Infinity, skinUv = null;
+  for (const g of geo.groups) {
+    if (g.materialIndex !== hi) continue;
+    for (let i = g.start; i < g.start + g.count; i++) {
+      const k = idx ? idx.getX(i) : i;
+      mesh.getVertexPosition(k, v).applyMatrix4(mesh.matrixWorld);
+      mask[k] = C.faceMaskAt(v, lE, rE);
+      const d = mask[k] > 0.99 ? v.distanceTo(cheek) : Infinity;
+      if (d < best) { best = d; skinUv = [uv.getX(k), uv.getY(k)]; }
+    }
+  }
+  if (!skinUv) return null;
+  geo.setAttribute("faceMask", new THREE.BufferAttribute(mask, 1));
+  const m = head.clone();
+  m.name = "faceless_head";
+  m.userData = { role: "head", faceless: true, skinUv };
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uSkinUv = { value: new THREE.Vector2(...skinUv) };
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute float faceMask;\nvarying float vFaceMask;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvFaceMask = faceMask;");
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying float vFaceMask;\nuniform vec2 uSkinUv;")
+      .replace("#include <map_fragment>", "#include <map_fragment>\n#ifdef USE_MAP\n\tdiffuseColor.rgb = mix( diffuseColor.rgb, texture2D( map, uSkinUv, 3.0 ).rgb, vFaceMask );\n#endif");
+  };
+  m.customProgramCacheKey = () => "ss-faceless-head";
+  return m;
 }
 
 /** The avatar's standing height and the height of its soles (avatar units), measured on a throwaway clone posed at the
@@ -152,7 +230,7 @@ export function instantiate(kit, a) {
   return { holder, model, mesh, mixer, actions, bones, kit, g: null, shown: false, clay: [], clayVis: [], faceless: false, reason: null };
 }
 
-/** Face shown or faceless (head keeps its shape, plain neutral material, no lashes or brows). */
+/** Face shown or faceless (head keeps its shape, plain neutral material, no lashes or brows; the hair stays). */
 export function applyFace(skin, faceless) {
   const k = skin.kit;
   const mats = k.materials.map((m) => {
@@ -213,11 +291,39 @@ export function drive(skin, { frame, fps, speed, phase, seed }) {
 /** The strides (m per loop) of a kit's walk and run at this scale. */
 export const kitStrides = (kit, scale) => ({ walk: (kit.clips.walk?.travel || 120) * scale, run: (kit.clips.run?.travel || 210) * scale });
 
-/** Resolves when every lifelike body that started loading has been put on (or given up). captureSequence awaits it
- *  so a capture never starts clay and turns lifelike partway. ms caps the wait (a stalled download keeps clay). */
-export function avatarsReady(ms = 8000) {
-  if (!inflight.size) return Promise.resolve();
-  return Promise.race([Promise.allSettled([...inflight]), new Promise((r) => setTimeout(r, ms))]);
+/** How long a capture waits for lifelike bodies still loading (ms). A first load over a slow link can take a while
+ *  (two ~10 MB FBX files and their textures). Per stage: stage.avatarWaitMs. */
+export const AVATAR_WAIT_MS = 60000;
+
+/** Resolves when every lifelike body that started loading has been put on (or given up): {ok, timedOut, pending,
+ *  waitedMs, message}. captureSequence awaits it so a capture never starts clay and turns lifelike partway. ms caps
+ *  the wait; on a timeout the message says so (the people still loading stay clay for this capture, then change). */
+export async function avatarsReady(ms = AVATAR_WAIT_MS) {
+  const t0 = Date.now();
+  if (!inflight.size) return { ok: true, timedOut: false, pending: 0, waitedMs: 0, message: "" };
+  let timer = null;
+  const done = await Promise.race([
+    Promise.allSettled([...inflight]).then(() => true),
+    new Promise((r) => { timer = setTimeout(() => r(false), ms); }),
+  ]);
+  clearTimeout(timer);
+  const pending = inflight.size, waitedMs = Date.now() - t0;
+  if (done) return { ok: true, timedOut: false, pending: 0, waitedMs, message: "" };
+  const message = `Lifelike people still loading after ${Math.round(ms / 1000)} s: ${pending} ${pending === 1 ? "person is" : "people are"} drawn as the clay figure in this capture. Capture again once they show.`;
+  console.warn("Soundstage:", message);
+  return { ok: false, timedOut: true, pending, waitedMs, message };
+}
+
+/** Pose everyone once, soon (one microtask later), unless a setFrame runs first: many people attaching in one go (a
+ *  scene of ten loading together) cost one setFrame, not ten. */
+export function requestFrame(stage) {
+  if (stage._avatarFramePending) return;
+  stage._avatarFramePending = true;
+  queueMicrotask(() => {
+    if (!stage._avatarFramePending) return;   // a setFrame already posed them (avatarsAt clears the flag)
+    stage._avatarFramePending = false;
+    stage.setFrame(stage.frame);
+  });
 }
 
 /** Give the clay figure g of actor a its lifelike body from a loaded kit (exported for the node test). The holder is
@@ -229,11 +335,32 @@ export function attachKit(stage, a, g, kit) {
     console.warn("Soundstage: avatar materials without a colour map", kit.meshName, kit.report.missingMaps);
   }
   const skin = instantiate(kit, a);
+  bindSkin(stage, skin, a, g);
+  requestFrame(stage);
+  return skin;
+}
+
+/** Put a skin (new or kept from the last build) on the clay group g: its clay meshes, its face, the stage's list. */
+function bindSkin(stage, skin, a, g) {
+  if (skin.shown) setShown(skin, false);
+  skin.holder.removeFromParent();
+  skin.clay = []; skin.clayVis = [];
   g.traverse((o) => { if (o.isMesh && !o.userData.avatar) skin.clay.push(o); });
   skin.g = g;
-  applyFace(skin, a.face === "faceless");
+  skin.reason = null;
+  if (skin.faceless !== (a.face === "faceless") || !skin._faced) { applyFace(skin, a.face === "faceless"); skin._faced = true; }
   g.userData.humanSkin = skin;
-  stage.setFrame(stage.frame);
+  (stage._avatarSkins ||= new Map()).set(a.id, skin);
+}
+
+/** Every _buildSet makes new clay groups. A person whose avatar model is unchanged keeps the skin it had (the clone,
+ *  its mixer, its gait table): no new clone, no extra setFrame (the build's own setFrame poses it). Returns the skin
+ *  or null (a new one has to be made). */
+export function reuseSkin(stage, a, g, spec) {
+  const skin = stage._avatarSkins?.get(a.id);
+  if (!skin || skin.kit?.spec?.model !== spec.model || stage.actorMeshes.get(a.id) !== g || g.userData.humanSkin) return null;
+  bindSkin(stage, skin, a, g);
+  requestFrame(stage);   // in case no setFrame follows this build (it normally does, and this then costs nothing)
   return skin;
 }
 
@@ -241,6 +368,7 @@ export function attachKit(stage, a, g, kit) {
 export function upgradeHuman(stage, a, g) {
   const spec = C.avatarSpecFor(a);
   if (!spec || !g?.userData?.joints) return;
+  if (reuseSkin(stage, a, g, spec)) return;
   if (typeof window === "undefined" || typeof window.document?.createElement !== "function") return;   // node tests: clay only
   const attach = (kit) => attachKit(stage, a, g, kit);
   const job = loadKit(spec).then((kit) => {
@@ -248,11 +376,19 @@ export function upgradeHuman(stage, a, g) {
     if (stage._capturing) (stage._afterCapture ||= []).push(() => attach(kit));
     else attach(kit);
   }).catch((err) => {
-    if (warned) return;
+    if (warned) return;   // a missing install is said once; the next build still tries again (loadKit caches no failure)
     warned = true;
     console.info("Soundstage: lifelike people not installed (web/stage/people/rocketbox), people stay clay:", err?.message || err);
-  }).finally(() => inflight.delete(job));
+  });
+  trackLoading(job);
+}
+
+/** Count a body still loading (avatarsReady waits for it) until it settles. Returns the promise. */
+export function trackLoading(job) {
   inflight.add(job);
+  const done = () => inflight.delete(job);
+  job.then(done, done);
+  return job;
 }
 
 /** The ground positions [x, z] of an actor for every frame 0..last (for the gait table). */
@@ -264,7 +400,10 @@ function groundPath(stage, a, last) {
 
 /** stage.setFrame hook (after gaze, before held props): show and pose every lifelike person, or keep the clay. */
 export function avatarsAt(stage) {
+  stage._avatarFramePending = false;   // posed now: a requested frame (requestFrame) isn't needed any more
   const actors = stage.state.actors || [];
+  const skins = stage._avatarSkins;
+  if (skins && skins.size > actors.length) for (const id of [...skins.keys()]) if (!actors.some((x) => x.id === id)) skins.delete(id);
   let users = null;
   const fps = stage.state.shot?.fps || 24, last = stage._lastFrame(), f = stage.frame;
   const blocking = stage.state.people_look === "blocking";
@@ -279,15 +418,18 @@ export function avatarsAt(stage) {
       blocking, holders: users.holders, carriers: users.carriers, gazeKeyed: gazeKeys(a).length > 0,
       swims: wet && C.swimsInShot(a, () => stage._swimPlan?.(a, g)),
       driven: C.drivenInShot(memo, stage.state.active_shot, a.id, stage.drive),
+      jumps: !!stage._jumpsInShot?.(a),
+      tipped: tippedNow(g),
     });
     skin.reason = reason;
     setShown(skin, !reason);
     if (reason) continue;
-    const p = stage._actorPosAt(a, f), y = stage._heightAt(a, f), yaw = stage._headingAt(a, f);
+    // The physics lift (stage.setFrame raises an unbaked dynamic / static object by a.physics.lift) is followed too.
+    const p = stage._actorPosAt(a, f), y = stage._heightAt(a, f) + physicsLift(a), yaw = stage._headingAt(a, f);
     const scale = C.statureScale(C.clayHeight(a) * (a.scale || 1), skin.kit.stature);
     // Speed and the shared gait phase for the whole shot, cached until the path, the length or the size changes.
     const keys = stage._actorKeys(a);
-    const sig = `${last}|${fps}|${scale}|${JSON.stringify(keys)}`;
+    const sig = `${last}|${fps}|${scale}|${C.keysHash(keys)}`;
     if (skin.gait?.sig !== sig) {
       const path = keys.length > 1 ? groundPath(stage, a, last) : new Array(last + 1).fill([p[0], p[2]]);
       skin.gait = { sig, ...C.gaitTable(path, fps, kitStrides(skin.kit, scale)) };
@@ -296,4 +438,15 @@ export function avatarsAt(stage) {
     placeHolder(g, skin.holder, { x: p[0], y: y - (skin.kit.floor || 0) * scale, z: p[2], yaw, scale });
     drive(skin, { frame: f, fps, speed: skin.gait.speed[i] || 0, phase: skin.gait.phase[i] || 0, seed: C.phaseSeed(a.id) });
   }
+}
+
+/** The lift stage.setFrame gives an unbaked dynamic / static object (stage.mjs: g.position.y += a.physics.lift). */
+export const physicsLift = (a) => (!a.physics?.baked && a.physics?.lift > 0 && (a.physics.mode === "dynamic" || a.physics.mode === "static") ? a.physics.lift : 0);
+
+const _up = new THREE.Vector3();
+/** Is the clay group tilted off upright right now (more than ~3°)? setFrame stands every clay person upright on its
+ *  heading (plus a saved a.tilt, which clayReason handles), so a tilt here was put on by something live. */
+export function tippedNow(g) {
+  _up.set(0, 1, 0).applyQuaternion(g.quaternion);
+  return _up.y < 0.9986;
 }

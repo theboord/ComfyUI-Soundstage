@@ -9,6 +9,7 @@
 // Deterministic: every moving part is a pure function of the frame (and the shot camera, for particles).
 import * as THREE from "../../vendor/three.module.min.mjs";
 import { mergeVertices } from "../../vendor/addons/BufferGeometryUtils.mjs";
+import { depthPassMaterial } from "../depthshader.mjs";
 import { rng, fbm, noise2, Batch, lightish, softPoints, wrap, memoSet } from "./common.mjs";
 import { CAUSTIC_U, patchCaustics, underSurfaceMaterial, refractedSun, currentAt, surgeAt, causticAt } from "../water.mjs";
 import { exhaleBubbles, bodyAt, poseAt } from "../swim.mjs";
@@ -30,13 +31,10 @@ export function seabedHeight(x, z) {
 function smooth(a, b, v) { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); }
 
 let depthMat = null;
-function underwaterDepth() {
-  if (!depthMat) depthMat = new THREE.ShaderMaterial({
-    uniforms: { uNear: { value: 1.0 }, uFar: { value: DEPTH_FAR } },
-    vertexShader: "varying float vViewZ; void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vViewZ = -mv.z; gl_Position = projectionMatrix * mv; }",
-    fragmentShader: "uniform float uNear; uniform float uFar; varying float vViewZ; void main(){ float d = clamp((vViewZ - uNear)/(uFar - uNear), 0.0, 1.0); gl_FragColor = vec4(vec3(1.0 - d), 1.0); }",
-  });
-  return depthMat;
+/** The set's own Depth material (near 1 m, far 22 m). It is the stage's skinning Depth shader (depthshader.mjs), so a
+ *  lifelike diver or swimmer draws posed, not in its bind pose. */
+export function underwaterDepth() {
+  return (depthMat ||= depthPassMaterial(1.0, DEPTH_FAR));
 }
 
 export function buildUnderwater(opts = {}) {

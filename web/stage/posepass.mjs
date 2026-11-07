@@ -57,7 +57,7 @@ export function personKeypoints(g, camPos) {
   // A lifelike person on show (people/avatars.mjs) plays its own clip, not the clay's walk: read its real bones, so
   // the Pose sheet matches the body in the Color and Depth passes.
   const skin = g.userData.humanSkin;
-  if (skin?.shown && skin.bones) { g.updateMatrixWorld(true); const kp = avatarKeypoints(skin.bones, camPos); if (kp) return kp; }
+  if (skin?.shown && skin.bones) { g.updateMatrixWorld(true); const kp = avatarKeypoints(skin.bones, camPos); if (kp) { kp.faceless = !!skin.faceless; return kp; } }
   const J = g.userData.joints || {};
   if (!J.l_shoulder || !J.r_shoulder || !J.head) return null;
   g.updateMatrixWorld(true);
@@ -195,10 +195,17 @@ export function hsvRgb(h) {
   return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
 }
 
-/** Keypoints in world space -> pixel people, hiding the face (and nose, eyes) when the head turns away from the camera. */
+/** Keypoints in world space -> pixel people, hiding the face (and nose, eyes) when the head turns away from the camera.
+ *  A faceless person (kp.faceless: actor.face === "faceless") has no face landmarks and no eye or ear points at all;
+ *  the nose (0) and neck (1) stay, so the body keeps its head. */
 export function toPixels(kp, cam, W, H) {
   const pr = (p) => project(p, cam, W, H);
   const body = kp.body.map(pr);
+  if (kp.faceless) {
+    body[14] = body[15] = body[16] = body[17] = null;
+    if (kp.facing < -0.05) body[0] = null;   // the back of the head, as below
+    return { body, hands: kp.hands.map((h) => (h ? h.map(pr) : null)), face: null };
+  }
   const away = kp.facing < -0.05;
   if (away) { body[0] = body[14] = body[15] = null; }
   if (!away && kp.facing < 0.35) {                               // profile: the far ear (and, nearly side-on, the far eye) drop out
@@ -221,7 +228,10 @@ export function stagePeople(stage, W, H) {
   for (const [, g] of stage.actorMeshes || []) {
     if (!g?.visible || !g.userData?.joints?.l_shoulder) continue;
     const kp = personKeypoints(g, cam.position);
-    if (kp) out.push(toPixels(kp, cam, W, H));
+    if (!kp) continue;
+    const a = (stage.state?.actors || []).find((x) => x.id === g.userData.actorId);
+    if (a?.face === "faceless") kp.faceless = true;   // clay or lifelike: the Face option holds for the Pose pass too
+    out.push(toPixels(kp, cam, W, H));
   }
   return out;
 }

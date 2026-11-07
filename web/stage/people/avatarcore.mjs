@@ -7,13 +7,15 @@
 //           of the head bone) and its left (Bip01_L_*) is +X, the same as the clay figure (humans.mjs);
 //   bones   "Bip01 ..." names come out of FBXLoader with spaces turned into underscores (Bip01_L_Thigh);
 //   meshes  each Export/*.fbx holds ONE skinned mesh, "<id>_hipoly_81_bones_opacity" (no separate LOD meshes), with
-//           three materials: <id>_body, <id>_head and <id>_opacity (lashes / brows, alpha in the PNG's alpha);
+//           three materials: <id>_body, <id>_head and <id>_opacity (hair cards, and the woman's lashes; alpha in the
+//           PNG's alpha; buildKit splits the lashes off: isFaceDetail);
 //   extras  each file carries an AmbientLight, removed on load;
 //   clips   the *.max.fbx clips put ground travel on the ROOT bone "Bip01" (position Z grows over the loop: walk
 //           121 cm / 1.2 s for the man, run 211 cm / 0.73 s); Bip01_Pelvis has no travel. They also animate helper
 //           nodes the avatar doesn't have (MotionExtractionHelper, ExposeTransformHelper) or doesn't need
 //           (Bip01_Footsteps), and repeat every bone's bind offset as a position track.
 import * as THREE from "../../vendor/three.module.min.mjs";
+import { LIBRARY } from "../library.mjs";
 
 /** Which Rocketbox avatar and clips each person kind gets. Children and everyone else stay clay for now. */
 export const ROCKETBOX = {
@@ -31,10 +33,16 @@ export function avatarSpecFor(a) {
   return null;
 }
 
+/** A 1 x 1 PNG, served from memory for the textures the avatar never uses (no request goes out). */
+export const UNUSED_TEXTURE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
 /** FBXLoader has no TGA reader in our vendored three (FBXLoader.mjs prints "TGA loader not found"): every *.tga the
- *  FBX asks for is loaded as the 1024 px PNG of the same base name from texDir instead. Other URLs pass through. */
+ *  FBX asks for is loaded as the 1024 px PNG of the same base name from texDir instead. The specular maps are not used
+ *  (buildKit makes Standard materials without them), so they are never downloaded: UNUSED_TEXTURE instead. Other URLs
+ *  pass through. */
 export function tgaToPng(url, texDir) {
   const m = /([^/\\?#]+)\.tga(?:[?#].*)?$/i.exec(String(url || ""));
+  if (m && /_specular$/i.test(m[1])) return UNUSED_TEXTURE;
   return m ? `${texDir}${m[1]}.png` : url;
 }
 
@@ -193,21 +201,108 @@ export function clipTimes({ frame, fps = 24, phase = 0, seed = 0 }, clips) {
  *  woman's hips sit at 55 % of her height, not the clay's 50 %, which made her ~10 cm short. */
 export const statureScale = (heightM, statureUnits) => heightM / Math.max(1e-6, statureUnits);
 
-/** The clay figure's default height for a kind (humans.mjs buildHuman). */
-export const clayHeight = (a) => a?.height_m || (a?.kind === "child" ? 1.2 : a?.kind === "woman" || a?.appearance?.gender === "female" ? 1.68 : 1.8);
+/** The height the clay figure is built at: exactly what stage._buildSet asks buildObject for (a.height_m, else the
+ *  kind's LIBRARY height; library.mjs buildObject: `height || spec?.height || 1`). It goes by the KIND only: a man set
+ *  to gender female is still built at the man's 1.80 m (he gets the woman's avatar, at the clay's height). */
+export const clayHeight = (a) => a?.height_m || LIBRARY[a?.kind]?.height || 1;
 
-/** A Rocketbox material's role by name: <id>_head, <id>_opacity (lashes and brows), else body. */
+/** A Rocketbox material's role by name: <id>_head, <id>_opacity (the hair cards), <id>_opacity_lashes (the lash and
+ *  brow cards buildKit splits off the opacity material: splitFaceDetail), else body. */
 export function materialRole(name) {
   const n = String(name || "");
   if (/_head$/i.test(n)) return "head";
+  if (/_opacity_lashes$/i.test(n)) return "lashes";
   if (/_opacity$/i.test(n)) return "opacity";
   return "body";
 }
 
-/** Face option: "keep" the material, "neutral" (plain mannequin skin, no face texture) or "hide" (lashes / brows). */
+/** Face option: "keep" the material, "neutral" (plain mannequin skin: no painted brows, eyes or lips) or "hide" (the
+ *  lash / brow cards). Faceless keeps the hair (the opacity cards) and the body. */
 export function faceChoice(role, faceless) {
   if (!faceless) return "keep";
-  return role === "head" ? "neutral" : role === "opacity" ? "hide" : "keep";
+  return role === "head" ? "neutral" : role === "lashes" ? "hide" : "keep";
+}
+
+/**
+ * Is a card triangle of the opacity material a lash or brow (face detail) rather than hair? Rocketbox keeps hair and
+ * lashes in ONE material and texture (f001: the lashes are a corner of the hair atlas; m002's atlas is all hair), and
+ * skinning doesn't tell them apart either (the woman's lower lashes ride Bip01_Head like her hair). Position does, in
+ * the bind pose: a lash or brow lies within 0.6 eye spacings of an eye bone and in front of the eyes. Measured on the
+ * real files (2026-11-07): the woman's 208 lash triangles are all within 0.37 spacings and the nearest hair is 3.3
+ * spacings away; the man's nearest hair is 0.83 spacings away (behind the eyes), so he has no lash cards to hide.
+ * centroid, lEye, rEye: world points (bind pose); forward: the face's forward axis (unit, +Z for Rocketbox).
+ */
+export function isFaceDetail(centroid, lEye, rEye, forward = new THREE.Vector3(0, 0, 1), { radius = 0.6 } = {}) {
+  const sp = lEye.distanceTo(rEye);
+  if (!(sp > 1e-6)) return false;
+  const near = Math.min(centroid.distanceTo(lEye), centroid.distanceTo(rEye)) / sp;
+  if (near >= radius) return false;
+  const mid = lEye.clone().add(rEye).multiplyScalar(0.5);
+  return centroid.clone().sub(mid).dot(forward) > 0;
+}
+
+/**
+ * How much of the face (0..1) a head vertex is, in the bind pose: a soft box in the face's own frame, in eye spacings
+ * (sp) from the point between the eyes: from under the chin (-2.3 sp) up to just above the brows (0.6 -> 0.95 sp, so
+ * the hairline and the painted hair above it stay), across to the outer cheeks (0.85 -> 1.15 sp, before the ears and
+ * temples), and only in front of the ears (deeper than -0.9 sp behind the eyes is not face). Faceless paints this
+ * region one flat skin colour (the brows, eyes, lips and the eyeballs go; the shape stays) and leaves the rest of the
+ * head texture, which is where Rocketbox paints most of the hair (the woman's scalp and ponytail roots are texture,
+ * not cards).
+ */
+export function faceMaskAt(p, lEye, rEye, forward = new THREE.Vector3(0, 0, 1)) {
+  const sp = lEye.distanceTo(rEye);
+  if (!(sp > 1e-6)) return 0;
+  const mid = lEye.clone().add(rEye).multiplyScalar(0.5);
+  const X = lEye.clone().sub(rEye).normalize(), Z = forward.clone().sub(X.clone().multiplyScalar(forward.dot(X))).normalize();
+  const Y = Z.clone().cross(X);
+  const d = p.clone().sub(mid);
+  const x = Math.abs(d.dot(X)) / sp, y = d.dot(Y) / sp, z = d.dot(Z) / sp;
+  const up = 1 - smooth(0.6, 0.95, y), down = smooth(-2.6, -2.3, y), side = 1 - smooth(0.85, 1.15, x), front = smooth(-1.1, -0.7, z);
+  return Math.max(0, Math.min(1, up * down * side * front));
+}
+
+/**
+ * Split a card material's groups so its face-detail triangles (isDetail(first vertex index of the triangle)) draw with
+ * material index lashIndex instead; the hair keeps its index. Rewrites geometry.groups in place (shared by every clone
+ * of the avatar). isCard(materialIndex) picks the groups to split. Returns the number of triangles moved.
+ */
+export function splitGroups(geometry, isCard, lashIndex, isDetail) {
+  const out = [];
+  let moved = 0;
+  for (const g of geometry.groups) {
+    if (!isCard(g.materialIndex)) { out.push({ ...g }); continue; }
+    let run = null;
+    for (let i = g.start; i < g.start + g.count; i += 3) {
+      const detail = isDetail(i);
+      const mi = detail ? lashIndex : g.materialIndex;
+      if (detail) moved++;
+      if (run && run.materialIndex === mi && run.start + run.count === i) run.count += 3;
+      else out.push((run = { start: i, count: 3, materialIndex: mi }));
+    }
+  }
+  geometry.clearGroups();
+  for (const g of out) geometry.addGroup(g.start, g.count, g.materialIndex);
+  return moved;
+}
+
+/** A cheap, allocation-free signature of a key list (every own field: numbers, strings, number arrays, nested
+ *  objects one level), so the per-frame gait cache check doesn't JSON.stringify every person's keys every frame. */
+export function keysHash(keys) {
+  let h = 2166136261 ^ (keys?.length || 0);
+  const f64 = keysHash._f || (keysHash._f = new Float64Array(1)), u32 = keysHash._u || (keysHash._u = new Uint32Array(f64.buffer));
+  const num = (x) => { f64[0] = x; h = Math.imul(h ^ u32[0], 16777619); h = Math.imul(h ^ u32[1], 16777619); };
+  const str = (t) => { for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 16777619); h = Math.imul(h ^ 31, 16777619); };
+  const val = (v, deep) => {
+    if (typeof v === "number") num(v);
+    else if (typeof v === "string") str(v);
+    else if (typeof v === "boolean") num(v ? 1 : 2);
+    else if (v == null) num(-7.25);
+    else if (Array.isArray(v)) { num(v.length); for (const x of v) val(x, deep); }
+    else if (typeof v === "object" && deep) for (const k in v) { str(k); val(v[k], false); }
+  };
+  for (const k of keys || []) for (const name in k) { str(name); val(k[name], true); }
+  return h >>> 0;
 }
 
 /** Materials meant to show a texture that have no colour map (names), so a silent texture failure gets caught. */
@@ -221,7 +316,10 @@ export function missingColorMaps(materials) {
  * (never a pop mid-shot): riding or sitting, being carried, carrying or holding a prop, video mocap, Pose keys, gaze
  * keys, swimming, physics (a baked fall or a knocked-over lean: the clips stand upright), Drive mode.
  * Every input must be a whole-shot fact, never "right now": ctx = {blocking, holders: Set, carriers: Set, swims,
- * gazeKeyed, driven}, with swims from swimsInShot and driven from drivenInShot.
+ * gazeKeyed, driven, jumps}, with swims from swimsInShot, driven from drivenInShot and jumps from stage._jumpsInShot
+ * (any airborne frame: the clips have no jump, so mid-air the avatar would walk; the clay tucks its knees instead).
+ * The one exception is tipped: the clay group is tilted RIGHT NOW by something that hasn't been saved as a.tilt yet
+ * (a live knock-over or a gizmo tilt being dragged); the upright clips can't follow it, so the clay shows meanwhile.
  */
 export function clayReason(a, ctx = {}) {
   if (ctx.blocking) return "Blocking look is on";
@@ -237,6 +335,8 @@ export function clayReason(a, ctx = {}) {
   if (ctx.carriers?.has(a.id)) return "carries something";
   if (ctx.swims) return "swims";
   if (ctx.driven) return "is driven live";
+  if (ctx.jumps) return "jumps or vaults in this shot";
+  if (ctx.tipped) return "is tipped over";
   return null;
 }
 
