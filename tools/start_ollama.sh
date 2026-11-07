@@ -9,7 +9,7 @@ set -euo pipefail
 
 if [ -z "${OLLAMA_MODELS:-}" ] && [ -d /workspace ]; then export OLLAMA_MODELS=/workspace/ollama/models; fi
 [ -n "${OLLAMA_MODELS:-}" ] && mkdir -p "$OLLAMA_MODELS"
-export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:--1}"
+export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-10m}"
 # The App's origins (ComfyUI on 8188/8189 locally, RunPod's proxy). Ask normally goes through the ComfyUI server.
 export OLLAMA_ORIGINS="${OLLAMA_ORIGINS:-http://127.0.0.1:8188,http://127.0.0.1:8189,http://localhost:8188,http://localhost:8189,https://*.proxy.runpod.net}"
 export OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"

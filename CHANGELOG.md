@@ -5,6 +5,12 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-06
 
+**✦ Ask no longer loads its model when the App opens**
+- **Still wrong (read first):** tested with a fake Ollama, not the real model, so how long the first answer takes now on the CPU tier is unmeasured. A slow machine could hit Ask's 90 s limit on a cold load; the load carries on and the next question is quick. The CPU tier still keeps the model in RAM during a render until the idle limit, because only the GPU tier unloads before one.
+- **Why:** opening the App sent a warm-up, and every request kept the model loaded forever, so one page view held 18 GB until someone unloaded it by hand. That broke the rule that Ask's model stays off during renders.
+- **What** ([soundstage/assistant.py](soundstage/assistant.py), [web/agent/director.mjs](web/agent/director.mjs), [web/agent/directorpanel.mjs](web/agent/directorpanel.mjs), [tools/start_ollama.sh](tools/start_ollama.sh)): the warm-up is gone and the model loads on the first question. It unloads after 10 idle minutes (`SOUNDSTAGE_ASSISTANT_KEEP_ALIVE` changes that), and the server sets this, so a tab left open from an older version can't pin the model. A question that has to load the model says so after 3 seconds. Expect a slow answer after a break.
+- **Tests:** [tests/test_assistant.py](tests/test_assistant.py) (a fake Ollama records every request: status only reads, the chat sends the limit), [tests/js/assistant_brain.test.mjs](tests/js/assistant_brain.test.mjs).
+
 **✦ Ask tuned from real use, and a director's breakdown of each scene (task 2)**
 - **Still wrong (read first):** tested with one invented 10-scene script, on the CPU tier only (16 GB card), not a feature-length script and not the GPU tier. The director's reading is a local model's interpretation: its line citations are checked, its judgement isn't, and it can read a secret into a character that the scene only hints at. Two scenes per turn, so a long script takes many Next presses. "Put Jane in the booth" still plans "a jane": the set planner doesn't know the script's cast. See [assistant/MISSES.md](assistant/MISSES.md).
 - **Measured:** 36 asks with `qwen3:30b-a3b` in the App, re-run in rounds after the fixes. Before: invented plot, invented buttons and values, a plan to bring in rain on "hi". The list of each miss and its fix is in the misses log.

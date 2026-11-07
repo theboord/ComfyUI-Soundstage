@@ -96,8 +96,8 @@ This file is ✦ Ask's teaching notebook. Each skill is a lesson learned while t
 **Don't:** Guess a big change. Don't lecture.
 
 ## Skill: A slow first answer is the model loading
-**When:** the first Ask after the App or pod starts takes 40 to 60 seconds.
-**Do:** Say so ("warming up the language model, once"). Later answers are quick. Stop works at any time.
+**When:** the first Ask after the App opens, or after about 10 idle minutes, takes 40 to 60 seconds.
+**Do:** Say so ("the language model is loading"). Answers are quick while it stays loaded, and it unloads by itself when idle so it never holds memory for nothing. Stop works at any time.
 
 ## Skill: Where the big features live (pointers)
 - **Phone viewfinder:** ③ Set → Phone camera, scan the QR; lens, iris, focus, record.

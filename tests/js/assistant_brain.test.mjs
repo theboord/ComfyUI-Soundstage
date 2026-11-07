@@ -4,6 +4,7 @@
 // pickOllama prefers the assistant model; the warm-up says warming up, then ready.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { Director, ASSISTANT, pickOllama } from "../../web/agent/director.mjs";
 
@@ -28,7 +29,6 @@ const routes = (status) => ({
   "/soundstage/director/prompt": () => ({ system: "S", prompt: "U", max_length: 100 }),
   "/soundstage/director/plan": (b) => ({ calls: [], notes: [], llm: b.llm_text }),
   "/soundstage/assistant/chat": (b) => ({ message: { content: '{"calls":[{"tool":"play"}]}' }, got: b }),
-  "/soundstage/assistant/warmup": () => ({ ok: true, ...status, loaded: true }),
 });
 
 test("auto: the bundled Ollama assistant when the server has it, through the server proxy", async () => {
@@ -45,7 +45,7 @@ test("auto: the bundled Ollama assistant when the server has it, through the ser
     const chat = api.seen.find((x) => x.path === "/soundstage/assistant/chat");
     assert.ok(chat, "went through the proxy");
     assert.equal(chat.body.format, "json");
-    assert.equal(chat.body.keep_alive, -1);
+    assert.equal(chat.body.keep_alive, undefined, "the server decides how long the model stays");
     assert.equal(chat.body.messages[0].content, "S");
     assert.ok(!api.seen.some((x) => x.path === "/prompt"), "nothing on the GPU queue");
   } finally { globalThis.fetch = f0; }
@@ -77,12 +77,23 @@ test("pickOllama prefers the assistant model, else the largest text model", () =
   assert.equal(pickOllama([{ name: "qwen3:8b:latest" }], "qwen3:8b").name, "qwen3:8b:latest");
 });
 
-test("warm-up: warming up, then ready; off when there's no assistant", async () => {
-  const states = [];
-  const d = new Director({ api: fakeApi(routes(READY)), stage, host: {} });
-  await d.warmUp((s, st) => states.push([s, st?.loaded]));
-  assert.deepEqual(states, [["warming", false], ["ready", true]]);
-  const off = [];
-  await new Director({ api: fakeApi(routes(null)), stage, host: {} }).warmUp((s) => off.push(s));
-  assert.deepEqual(off, ["off"]);
+test("coldStart: only when this turn would have to load the bundled assistant, and it posts nothing", async () => {
+  const coldApi = fakeApi(routes({ ...READY, loaded: false }));
+  assert.equal(await new Director({ api: coldApi, stage, host: {} }).coldStart(), true);
+  assert.deepEqual(coldApi.seen.filter((x) => x.method === "POST" || x.body), [], "asking must not load anything");
+  assert.equal(await new Director({ api: fakeApi(routes({ ...READY, loaded: true })), stage, host: {} }).coldStart(), false);
+  assert.equal(await new Director({ api: fakeApi(routes(null)), stage, host: {} }).coldStart(), false);
+  const rules = new Director({ api: fakeApi(routes({ ...READY, loaded: false })), stage, host: {} });
+  rules.backend = "rules";
+  assert.equal(await rules.coldStart(), false, "a backend picked in the settings loads no assistant");
+  const other = new Director({ api: fakeApi(routes({ ...READY, loaded: false })), stage, host: {} });
+  other.ollama = { url: "http://127.0.0.1:11434", model: "llama3:8b" };
+  assert.equal(await other.coldStart(), false, "another Ollama model is not the bundled assistant");
+});
+
+test("opening the App has no way to load the model: no warm-up call, and the browser never sets how long it stays", () => {
+  const read = (p) => readFileSync(new URL(`../../web/agent/${p}`, import.meta.url), "utf8");
+  for (const f of ["director.mjs", "directorpanel.mjs"]) {
+    assert.doesNotMatch(read(f), /warmup|warmUp|keep_alive/, f);
+  }
 });
