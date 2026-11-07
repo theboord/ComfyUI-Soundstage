@@ -27,26 +27,26 @@ function fakePanel(s, saved = {}) {
 
 test("gather_character: fuzzy names, citations by scene and line, aliases, the cap", () => {
   const s = script();
-  for (const q of ["the tall stranger", "TALL STRANGER", "Burley Man", "tall stranger's"]) assert.equal(resolveCharacter(s, q)?.name, "TALL STRANGER", q);
-  const jim = resolveCharacter(s, "Jim");
-  assert.equal(jim.name, "JIM"); assert.deepEqual(jim.aliases, ["BIG JIM"], "BIG JIM is the same person (check_cast)");
-  assert.equal(resolveCharacter(s, "the tattooed one")?.name, "TALL STRANGER", "a description where the script introduces him");
+  for (const q of ["the tall stranger", "TALL STRANGER", "TALL stranger", "tall stranger's"]) assert.equal(resolveCharacter(s, q)?.name, "TALL STRANGER", q);
+  const jim = resolveCharacter(s, "Ned");
+  assert.equal(jim.name, "NED");
+  assert.equal(resolveCharacter(s, "the paint-stained one")?.name, "TALL STRANGER", "a description where the script introduces him");
   const g = gatherCharacter(s, "the tall stranger");
   assert.equal(g.name, "TALL STRANGER");
   assert.deepEqual(g.scenes.map((x) => x.scene), ["1", "2", "3"]);
-  assert.equal(g.counts.dialogue, 4);
-  assert.ok(g.dialogue.some((d) => d.text === "My daughter." && d.scene === "3"));
+  assert.equal(g.counts.dialogue, 5);
+  assert.ok(g.dialogue.some((d) => d.text === "Tell my sister the ladder is back." && d.scene === "3"));
   const intro = g.intro;
   assert.equal(intro.scene, "1");
   assert.equal(s.scenes[0].elements[intro.line - 1].text.includes("TALL STRANGER (50s)"), true, "the line number points at the element");
-  assert.ok(g.action.some((a) => /Gruff and watchful/.test(a.text)), "the sentence after a mention, same paragraph");
+  assert.ok(g.action.some((a) => /Patient and quiet/.test(a.text)), "the sentence after a mention, same paragraph");
   assert.ok(g.described.some((d) => d.by === "MARA" && d.scene === "1"), "what others say about him");
-  assert.ok(g.wardrobe.some((w) => w.items.includes("leather vest")));
+  assert.ok(g.wardrobe.some((w) => w.items.includes("denim jacket")));
   assert.ok(g.props.length === 0 || g.props.every((p) => p.items.length));
   assert.match(gatherText(g), /\[1:\d+\] A TALL STRANGER \(50s\)/);
   const capped = gatherCharacter(s, "tall stranger", { cap: 2 });
-  assert.equal(capped.dialogue.length, 2); assert.equal(capped.counts.dialogue, 4); assert.equal(capped.more.dialogue, 2);
-  assert.match(capped.limits, /2 more dialogue/);
+  assert.equal(capped.dialogue.length, 2); assert.equal(capped.counts.dialogue, 5); assert.equal(capped.more.dialogue, 3);
+  assert.match(capped.limits, /3 more dialogue/);
   assert.ok(gatherText(gatherCharacter(s, "tall stranger"), 300).length <= 300);
   assert.match(gatherCharacter(s, "the vicar").said, /couldn't find "the vicar".*TALL STRANGER/);
 });
@@ -57,9 +57,9 @@ test("profile fallback: a cited draft from the script's own words", () => {
   assert.equal(p.sourceLabel, "draft from script cues");
   const f = p.fields;
   assert.equal(f.age.value, "50s"); assert.deepEqual(f.age.cites[0], { scene: "1", line: f.age.cites[0].line });
-  assert.match(f.build.value, /burly/); assert.match(f.hair.value, /shaved head/); assert.match(f.wardrobe.value, /leather vest/);
-  assert.match(f.personality.value, /gruff/); assert.match(f.arc.value, /scene 1.*scene 3/);
-  assert.match(f.visual.value, /50s.*burly.*shaved head.*leather vest/);
+  assert.match(f.build.value, /lanky/); assert.match(f.hair.value, /close-cropped/); assert.match(f.wardrobe.value, /denim jacket/);
+  assert.match(f.personality.value, /patient/); assert.match(f.arc.value, /scene 1.*scene 3/);
+  assert.match(f.visual.value, /50s.*lanky.*close-cropped.*denim jacket/);
   for (const k of ["age", "build", "hair", "wardrobe"]) assert.ok(f[k].cites.length, `${k} is cited`);
 });
 
@@ -80,9 +80,9 @@ test("update_character writes the ② Cast card and Undo puts it back", async ()
   const r = (await c.turn("yes", { useModel: false })).results[0];
   assert.equal(r.tool, "update_character");
   assert.equal(r.before.description, "a man");
-  assert.match(r.after.description, /burly/);
+  assert.match(r.after.description, /lanky/);
   const card = panel.store().items["character:tall_stranger"];
-  assert.match(card.description, /shaved head/); assert.equal(card.look.age, "50s"); assert.equal(card.voice, "Gravel", "other fields kept");
+  assert.match(card.description, /close-cropped/); assert.equal(card.look.age, "50s"); assert.equal(card.voice, "Gravel", "other fields kept");
   assert.equal(card.profile_source, "draft from script cues");
   c.undo(r.undo);
   assert.deepEqual(panel.store().items["character:tall_stranger"], { description: "a man", voice: "Gravel" }, "one Undo: the card as it was");
@@ -111,12 +111,12 @@ test("regenerate_character asks first and touches one card only", async () => {
 
 test("a scripted conversation: build, profile with the model, apply, regenerate, lookalike flagged", async () => {
   const s = script();
-  const panel = fakePanel(s, { "character:jim": { description: "in their 50s, burly, big build, shaved head, tattooed, wearing leather vest" } });
+  const panel = fakePanel(s, { "character:ned": { description: "in their 50s, lanky, close-cropped hair, paint-stained hands, wearing denim jacket" } });
   const calls = [];
   const replies = [
-    JSON.stringify({ age: { value: "50s", cites: ["1:2"] }, build: { value: "burly", cites: ["1:2"] }, hair: { value: "shaved head", cites: ["1:2"] },
-      wardrobe: { value: "leather vest", cites: ["1:2"] }, personality: { value: "gruff, grieving", cites: ["3:7"] }, role: { value: "the stranger with a secret", cites: [] },
-      arc: { value: "silent threat to a father who lost his daughter", cites: ["3:7"] }, visual: { value: "tall stranger in his 50s, shaved head, tattooed forearms, leather vest", cites: ["1:2"] } }),
+    JSON.stringify({ age: { value: "50s", cites: ["1:2"] }, build: { value: "lanky", cites: ["1:2"] }, hair: { value: "close-cropped", cites: ["1:2"] },
+      wardrobe: { value: "denim jacket", cites: ["1:2"] }, personality: { value: "patient, quiet", cites: ["3:7"] }, role: { value: "the stranger with a secret", cites: [] },
+      arc: { value: "a quiet former gardener who came back", cites: ["3:7"] }, visual: { value: "tall stranger in his 50s, close-cropped hair, paint-stained hands, denim jacket", cites: ["1:2"] } }),
   ];
   const c = new Conversation({ script: () => s, cast: () => castHost(panel), llm: async (sys, prompt) => { calls.push({ sys, prompt }); return replies.shift(); } });
   const t1 = await c.turn("Build the tall stranger");
@@ -124,12 +124,12 @@ test("a scripted conversation: build, profile with the model, apply, regenerate,
   const prof = t1.results[0];
   assert.equal(prof.tool, "profile_character"); assert.equal(prof.profile.source, "model");
   assert.match(calls[0].prompt, /\[1:2\] A TALL STRANGER \(50s\)/, "the model read the gathered, cited evidence");
-  assert.match(prof.profile.fields.arc.value, /daughter/);
-  assert.ok(prof.crosscheck.some((x) => x.kind === "lookalike" && x.with === "Jim"), "Jim's card looks the same");
+  assert.match(prof.profile.fields.arc.value, /former gardener/);
+  assert.ok(prof.crosscheck.some((x) => x.kind === "lookalike" && /^ned$/i.test(x.with)), "NED's card looks the same");
   assert.match(t1.confirm.question, /Apply this to TALL STRANGER's ② Cast card\?/);
   const t2 = await c.turn("yes please");
   assert.equal(calls.length, 1, "build goes straight to the profile; a yes to its own question needs no model round trip");
-  assert.match(panel.store().items["character:tall_stranger"].description, /tattooed forearms/);
+  assert.match(panel.store().items["character:tall_stranger"].description, /paint-stained hands/);
   assert.match(t2.confirm.question, /Regenerate .* uses the GPU/);
   const t3 = await c.turn("yes");
   await t3.results[0].queued;

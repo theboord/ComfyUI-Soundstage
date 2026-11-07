@@ -67,7 +67,7 @@ test("blocking: two face each other (opened to the lens), clear of what is there
 test("chips, labels and stepping", () => {
   const c = sceneChip(sc1);
   assert.deepEqual([c.number, c.where, c.time, c.initials.join("")], ["1", "EXT. Desert Outside Dry Creek", "dusk", "EM"]);
-  assert.equal(sceneChip(sc2).initials[0], "C");
+  assert.equal(sceneChip(sc2).initials[0], "R");
   assert.equal(setupLabel({ number: 3, int_ext: "INT", location: "DINER", time: "NIGHT" }, ["Mara", "Jake"]), "Set up scene 3 — INT. DINER — NIGHT (Mara, Jake)");
   const ids = DEMO_SCRIPT.scenes;
   assert.equal(stepScene(ids, "sc_1", 1), "sc_2");
