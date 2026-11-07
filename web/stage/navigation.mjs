@@ -228,7 +228,7 @@ export function hintText(style, mac = false) {
 }
 
 // ---------------------------------------------------------------- the controller
-const CSS = `.ss-navhint{position:absolute;z-index:5;transform:translateX(-50%);display:flex;align-items:center;gap:6px;max-width:92%;
+const CSS = `.ss-navhint{position:absolute;z-index:5;transform:translateX(-100%);display:flex;align-items:center;gap:6px;max-width:92%;
   font:500 11px/1.2 "Soundstage Grotesk",ui-sans-serif,system-ui,sans-serif;color:#e9e3f0;background:rgba(20,16,26,.62);
   border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 6px 4px 10px;pointer-events:auto;white-space:nowrap}
 .ss-navhint[hidden],.ss-navpanel[hidden]{display:none}
@@ -423,7 +423,9 @@ export function installNavigation(stage) {
   function loop() { if (!rafId) { last = now(); rafId = raf(tick); } }
   function tick() {
     rafId = 0;
-    const t = now(), dt = Math.min(0.05, Math.max(0.001, (t - last) / 1000));
+    // Up to 0.25 s a frame: a heavy set at 4-15 fps still flies at the set speed (0.05 s capped it to a crawl there);
+    // a long stall after a hidden tab can't jump far, since loop() restarts the clock.
+    const t = now(), dt = Math.min(0.25, Math.max(0.001, (t - last) / 1000));
     last = t;
     if (off()) { acc = null; held.clear(); vel = [0, 0, 0]; return; }
     let busy = false;
@@ -555,8 +557,11 @@ export function installNavigation(stage) {
     const fs = el("input", { type: "number", min: "0.25", max: "64", step: "0.25" });
     fs.style.width = "5em";
     const showHint = el("input", { type: "checkbox" });
+    // The style is in the panel too, so it can be changed with the hint hidden.
+    const style2 = el("select", { title: "The mouse buttons you're used to" }, NAV_STYLES.map((s) => el("option", { value: s, textContent: STYLE_NAMES[s] })));
+    style2.addEventListener("change", () => nav.set("style", style2.value));
     const panel = el("div", { className: "ss-navpanel", hidden: true }, [el("h4", { textContent: "Navigation" }),
-      ...row("Damping", damp), ...row("Smoothness", smooth), ...row("Invert up / down", inv), ...row("Scrolling", tp),
+      ...row("Style", style2), ...row("Damping", damp), ...row("Smoothness", smooth), ...row("Invert up / down", inv), ...row("Scrolling", tp),
       ...row("Fly speed (m/s)", fs), ...row("Show the hint", showHint)]);
     stop(panel);
     damp.addEventListener("change", () => nav.set("damping", damp.checked));
@@ -570,8 +575,8 @@ export function installNavigation(stage) {
     host.append(bar, panel);
     nav.openSettings = () => { panel.hidden = false; place(); };
     nav._render = () => {
-      text.textContent = nav.hint();
-      pick.value = settings.style;
+      text.textContent = text.title = nav.hint();   // the title shows the whole line when it is cut short
+      pick.value = settings.style; style2.value = settings.style;
       damp.checked = settings.damping; smooth.value = String(settings.smooth); inv.checked = settings.invertY;
       tp.value = settings.trackpad; fs.value = String(+settings.flySpeed.toFixed(2)); showHint.checked = !settings.hintDismissed;
       place();
@@ -580,7 +585,8 @@ export function installNavigation(stage) {
       const narrow = cv.offsetWidth < 560;
       const x = cv.offsetLeft + cv.offsetWidth / 2, bottom = cv.offsetTop + cv.offsetHeight;
       bar.hidden = settings.hintDismissed || off() || narrow || !cv.offsetHeight;
-      Object.assign(bar.style, { left: `${x}px`, top: `${bottom - 34}px` });
+      // Right-aligned: the shot-camera picture and the "Drop a video here" pill sit at the bottom left (they covered the hint).
+      Object.assign(bar.style, { left: `${cv.offsetLeft + cv.offsetWidth - 8}px`, top: `${bottom - 34}px`, maxWidth: `${Math.max(240, cv.offsetWidth - 250)}px` });
       Object.assign(panel.style, { left: `${x}px`, top: `${Math.max(cv.offsetTop + 8, bottom - 44 - (panel.offsetHeight || 190))}px` });
       if (off()) panel.hidden = true;
     }

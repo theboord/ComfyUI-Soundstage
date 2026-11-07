@@ -131,6 +131,8 @@ Each line: **control**: what it does.
 - **Navigation settings**
 - **Hide this hint**: Hide this hint (Navigation… on the viewport brings it back)
 - **Ease drags, scrolls and flying in and out**
+- **The mouse buttons you're used to**
+- **Style**
 - **Damping**
 - **Smoothness**
 - **Invert up / down**

@@ -2,7 +2,7 @@
 
 How the mouse, a trackpad and the keyboard move the camera around the 3D stage. The code is in [web/stage/navigation.mjs](../web/stage/navigation.mjs); the tests are in [tests/js/navigation.test.mjs](../tests/js/navigation.test.mjs).
 
-**Still wrong (read first):** these controls are checked by unit tests only. Nobody has tried them in a live App yet: how the chord, flying and damping feel, Safari's pinch, and trackpad detection on real hardware are all unverified. Trackpad detection is a guess: a mouse with smooth scrolling (some Logitech mice on a Mac) can be mistaken for a trackpad, and then scrolling orbits instead of zooming. If that happens, set **Navigation… › Scrolling** to *Mouse wheel*.
+**Still wrong (read first):** checked by unit tests and once in a live browser (the try-it build, Chrome, a mouse, 2026-11-07): orbit about the clicked point, zoom to the cursor, double-click focus, `F`, hold-right fly, both-buttons pan, each style, the compass, selection and gizmo drags all worked, with no console errors from navigation. The both-buttons chord, flying and the trackpad were driven by synthetic events there, not real hands: how they feel, Safari's pinch, and trackpad detection on real hardware are still unverified. That browser drew 3 to 16 frames a second, so flying covered about half the set speed (each frame counts at most 0.25 s). Trackpad detection is a guess: a mouse with smooth scrolling (some Logitech mice on a Mac) can be mistaken for a trackpad, and then scrolling orbits instead of zooming. If that happens, set **Navigation… › Scrolling** to *Mouse wheel*.
 
 ## The Soundstage style (the default)
 
@@ -28,7 +28,7 @@ How the mouse, a trackpad and the keyboard move the camera around the 3D stage. 
 
 ## Styles and settings
 
-**Navigation…** (top left of the viewport, next to ↶ Last view) and the ⚙ on the hint line at the bottom of the viewport open the settings. They are kept in this browser only.
+**Navigation…** (top left of the viewport, next to ↶ Last view) and the ⚙ on the hint line at the bottom right of the viewport open the settings, the style included (so it can be changed with the hint hidden). They are kept in this browser only.
 
 | Style | Orbit | Pan | Dolly | Fly | Frame |
 |---|---|---|---|---|---|
@@ -37,12 +37,13 @@ How the mouse, a trackpad and the keyboard move the camera around the 3D stage. 
 | Maya | Alt+drag (drag on empty space works too) | Alt+middle, both buttons | Alt+right-drag, wheel | Hold right + WASD | `F`; Shift+`A` = whole set |
 | Unreal | Alt+drag | Middle, both buttons | Alt+right-drag, wheel | Hold right + WASD, wheel = speed | `F`; a left drag on empty space moves forward and turns |
 
-- In Maya and Unreal, Alt+drag on an object orbits instead of turning it: turn it with the ring or `R`.
+- In Maya and Unreal, Alt+drag on an object orbits instead of turning it, even when it starts on a gizmo arrow: turn it with the ring or `R`.
 - In Blender, the numpad's `.` frames the selection; the main `.` still goes back to the set.
 - In every style: a click selects, a drag on the selected object moves it, and the gizmo, the ring, light handles, `F`, `0`, `.` and `,` work the same.
 
 | Setting | What it does |
 |---|---|
+| Style | Soundstage, Blender, Maya or Unreal (the same as the picker on the hint line). |
 | Damping | Eases drags, scrolls and flying in and out, and lets a flick glide on. Off: the view moves exactly with the mouse. Off by default when the system asks for reduced motion. |
 | Smoothness | How much easing (with damping on). |
 | Invert up / down | Flips the up/down direction of an orbit and of looking around. |

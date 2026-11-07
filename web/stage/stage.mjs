@@ -2724,8 +2724,12 @@ export class Stage {
     // on the selected object's own body is handed to the body; only the arrowheads (and presses off the body) stay the gizmo's.
     this.canvas.addEventListener("pointerdown", (e) => {
       if (this._tcPaused) { this.tc.enabled = true; this._tcPaused = false; }
-      if (e.button !== 0 || e.altKey || !this.tcHelper.visible || !this.tc.object) return;
+      if (e.button !== 0 || !this.tcHelper.visible || !this.tc.object) return;
+      // Maya / Unreal styles: Alt + drag orbits even when it starts on a gizmo arrow (it slid the object along it).
+      const altOrbits = e.altKey && this.nav && !this.nav.altTurns();
+      if (e.altKey && !altOrbits) return;
       pick(e);
+      if (altOrbits) { this.tc.axis = null; this.tc.enabled = false; this._tcPaused = true; return; }
       if (this._gizmoTakesPress(ndc, ray)) return;
       this.tc.axis = null;
       this.tc.enabled = false;   // its own pointerdown (next) ignores this press; back on at pointerup
