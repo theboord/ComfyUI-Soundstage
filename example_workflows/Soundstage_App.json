@@ -1356,10 +1356,7 @@
     "Node name for S&R": "CreateVideo"
    },
    "widgets_values": [
-    30,
-    "auto",
-    "sRGB",
-    "none"
+    30
    ],
    "widgets_values_named": {
     "fps": 30,
@@ -7694,9 +7691,7 @@
       },
       "widgets_values": [
        30,
-       8,
-       "sRGB",
-       "none"
+       8
       ],
       "widgets_values_named": {
        "fps": 30,
