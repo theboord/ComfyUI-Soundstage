@@ -113,8 +113,24 @@ def test_keep_alive_default_and_override(monkeypatch):
     assert A.keep_alive() == "30m"
     monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE", "600")
     assert A.keep_alive() == 600
-    monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE", "  ")
-    assert A.keep_alive() == "10m"
+    monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE", "1h30m")
+    assert A.keep_alive() == "1h30m"
+    for bad in ("  ", "10min", "1.5", "soon"):
+        monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE", bad)
+        assert A.keep_alive() == "10m", bad
+
+
+def test_autostart_doesnt_keep_the_model_forever(monkeypatch):
+    monkeypatch.delenv("OLLAMA_KEEP_ALIVE", raising=False)
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE", raising=False)
+    monkeypatch.delenv("SKIP_OLLAMA", raising=False)
+    monkeypatch.delenv("SOUNDSTAGE_OLLAMA_AUTOSTART", raising=False)
+    monkeypatch.setattr(A.shutil, "which", lambda name: "ollama")
+    monkeypatch.setattr(A, "probe", lambda model=None: {"reachable": False})
+    started = {}
+    monkeypatch.setattr(A.subprocess, "Popen", lambda cmd, env=None, **kw: started.update(env=env))
+    assert A.autostart() is True
+    assert started["env"]["OLLAMA_KEEP_ALIVE"] == "10m"
 
 
 def test_nothing_loads_the_model_but_a_question(monkeypatch):
@@ -187,5 +203,5 @@ def test_installer_has_the_ollama_step_and_opt_outs():
     assert "SOUNDSTAGE_ASSISTANT_MODEL:-qwen3:30b-a3b" in inst
     assert re.search(r"ollama pull \"\$\{SOUNDSTAGE_ASSISTANT_MODEL", inst)
     assert "https://ollama.com/install.sh" in start
-    assert "OLLAMA_KEEP_ALIVE" in start and "OLLAMA_ORIGINS" in start and "8189" in start
+    assert "OLLAMA_KEEP_ALIVE:-10m" in start and "OLLAMA_ORIGINS" in start and "8189" in start
     assert "/workspace/ollama/models" in inst and "/workspace/ollama/models" in start

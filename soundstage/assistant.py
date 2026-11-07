@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -207,11 +208,15 @@ def chat_options(st: dict, gpu_busy: bool = False) -> dict:
 
 def keep_alive():
     """How long Ollama keeps the model after an answer: a duration ("10m") or a number of seconds, as Ollama takes it."""
-    v = os.environ.get("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE", "").strip() or DEFAULT_KEEP_ALIVE
-    try:
+    v = os.environ.get("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE", "").strip()
+    if not v:
+        return DEFAULT_KEEP_ALIVE
+    if re.fullmatch(r"-?\d+", v):
         return int(v)
-    except ValueError:
+    if re.fullmatch(r"-?(\d+(\.\d+)?(ms|s|m|h))+", v):
         return v
+    log.warning("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE=%r isn't a duration like 10m or a number of seconds; using %s", v, DEFAULT_KEEP_ALIVE)
+    return DEFAULT_KEEP_ALIVE
 
 
 def unload(model: str | None = None, timeout: float = 3.0) -> bool:

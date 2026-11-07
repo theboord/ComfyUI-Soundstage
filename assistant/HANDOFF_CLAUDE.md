@@ -2,8 +2,8 @@
 Add an entry when you stop: done, half-done, exact next step, branch. No secrets or personal paths.
 
 ## 2026-11-06: Ask loads on demand, on `claude/ask-load-on-demand`
-- **Done:** no warm-up when the App opens; the model unloads after 10 idle minutes; a load note after 3 s.
-- **Half-done:** never run with the real model. The cold-load time on the CPU tier against the 90 s limit is the thing to measure.
+- **Done:** no warm-up when the App opens; the model unloads after 10 idle minutes; a cold turn gets 3 more minutes and a load note after 3 s.
+- **Half-done:** never run with the real model. The real cold-load time against the 4.5 minute limit is the thing to measure.
 - **Next:** wait for a human to set the merge order. Whether the CPU tier should also unload before a render is an open question.
 
 ## 2026-11-06: task 2 done, PR open on `claude/ask-tuning`
