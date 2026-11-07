@@ -1,6 +1,6 @@
 """Model downloader: get the App's model files from Hugging Face inside the App (docs/models.md).
 
-GET  /soundstage/models/status      -> {catalog_version, groups, licences, items:[...+state, have_bytes, wrong_size?],
+GET  /soundstage/models/status      -> {catalog_version, groups, licences, items:[...+state, have_bytes, wrong_size?, size_note?],
                                         installed_files, signed_in, user, token_source, free_bytes, busy, done, failed}
 POST /soundstage/models/access      {ids}                                  -> {results:{id:code}, messages:{id:str}}
 POST /soundstage/models/download    {ids, confirm:true, accepted_licences} -> {queued, skipped, refused:{id:reason}}
@@ -12,7 +12,8 @@ GET  /soundstage/models/tiers       -> {tiers}
 
 Rules this module keeps:
   * The browser only sends catalog ids. Paths and URLs come from catalog.json; every target is checked to stay
-    inside its ComfyUI models folder (no "..", no symlink out).
+    inside its ComfyUI models folder (no "..", no writing through a symlink out;
+    a symlinked model file the user put at the final name counts as present).
   * The Hugging Face token never leaves the server: no route returns it, it's never logged, error messages are
     fixed strings. It is sent only to the huggingface.co host, never to the CDN a download redirects to.
     Saved at user/soundstage/hf_token with mode 600.
@@ -184,15 +185,16 @@ def target(item: dict) -> Path:
         raise ValueError("path escapes the models folder")
     rr = root.resolve()
     t = (root / sub / name) if sub else (root / name)
-    # resolve the parent too: a symlinked subdir pointing out of the folder is refused
-    tr = t.parent.resolve() / t.name
-    if t.exists() or t.is_symlink():
-        tr = t.resolve()
+    # Only the write path is checked: the directory we write into (resolved, so a symlinked subdir pointing out of
+    # the folder is refused) and, in the job, the .part file. A file already at the final name may be a symlink the
+    # user made on purpose (models kept on a shared or network volume): it counts as present and is size-checked
+    # through the link, so it is not resolved here.
+    parent = t.parent.resolve()
     try:
-        tr.relative_to(rr)
+        parent.relative_to(rr)
     except ValueError:
         raise ValueError("path escapes the models folder") from None
-    return tr
+    return parent / t.name
 
 
 def part_path(t: Path) -> Path:
@@ -205,18 +207,62 @@ def size_close(actual: int, approx: int) -> bool:
     return abs(actual - approx) <= min(SIZE_SLACK, approx // 50)
 
 
-def size_matches(item: dict, actual: int) -> bool | None:
-    """True / False against the catalog size (exact once a sha256 is filled, else rounded); None if it has none."""
-    sz = item.get("size")
-    if sz is None:
+def verified_path() -> Path:
+    import folder_paths
+    return Path(folder_paths.get_user_directory()) / "soundstage" / "models_verified.json"
+
+
+def _verified_all() -> dict:
+    try:
+        d = json.loads(verified_path().read_text())
+        return d if isinstance(d, dict) else {}
+    except Exception:  # noqa: BLE001 - missing / unreadable: nothing recorded
+        return {}
+
+
+def _rel(item: dict) -> str:
+    sub = item.get("subdir", "") or ""
+    return f"{sub}/{item.get('saved_name', '')}" if sub else item.get("saved_name", "")
+
+
+def verified_size(item: dict) -> int | None:
+    """The exact size recorded when this App last downloaded and verified the file (None if it never did)."""
+    e = _verified_all().get(item.get("id", ""))
+    if not isinstance(e, dict) or e.get("folder") != item.get("folder") or e.get("name") != _rel(item):
         return None
-    return actual == sz if item.get("sha256") else size_close(actual, sz)
+    n = e.get("size")
+    return n if isinstance(n, int) and not isinstance(n, bool) and n > 0 else None
+
+
+def record_verified(item: dict, size: int, sha: str | None) -> None:
+    """Remember the exact size of a file that passed verification, so status can judge it exactly later."""
+    try:
+        p = verified_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        d = _verified_all()
+        d[item["id"]] = {"folder": item.get("folder"), "name": _rel(item), "size": int(size),
+                         **({"sha256": sha} if sha else {})}
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(json.dumps(d, indent=1, sort_keys=True))
+        os.replace(tmp, p)
+    except Exception:  # noqa: BLE001 - the file is in place either way; status falls back to the soft note
+        log.warning("soundstage models: could not record the verified size")
+
+
+def exact_size(item: dict) -> int | None:
+    """An exact size to judge an installed file by: a catalog size once its sha256 is filled (the fill step writes
+    lfs.size), else the size recorded when this App verified the download. The catalog's rounded GB figure is never
+    exact."""
+    if item.get("sha256") and isinstance(item.get("size"), int):
+        return item["size"]
+    return verified_size(item)
 
 
 def item_state(item: dict) -> dict:
     """installed / partial / missing (no hashing: status must be quick). other_build is worked out in the browser.
-    Installed needs the size to match the catalog (when it has one): a truncated or wrong file with the right name is
-    reported as missing/partial with wrong_size, so it can be downloaded again (the download replaces it)."""
+    A file at the target name (or a symlink to one) is installed unless an exact size is known and differs: then it
+    is reported with wrong_size so it can be downloaded again. The catalog's rounded GB figure only ever adds a soft
+    size_note, never wrong_size, so a good file is never re-downloaded because of a rounding error."""
     try:
         t = target(item)
     except ValueError:
@@ -224,11 +270,18 @@ def item_state(item: dict) -> dict:
     wrong = False
     if t.is_file():
         n = t.stat().st_size
-        if size_matches(item, n) is not False:
-            return {"state": "installed", "have_bytes": n}
+        exact = exact_size(item)
+        if exact is None or n == exact:
+            out = {"state": "installed", "have_bytes": n}
+            approx = item.get("size")
+            if exact is None and isinstance(approx, int) and not size_close(n, approx):
+                out["size_note"] = True
+            return out
         wrong = True
     p = part_path(t)
-    out = {"state": "partial", "have_bytes": p.stat().st_size} if p.is_file() else {"state": "missing", "have_bytes": 0}
+    # a symlinked .part is never trusted (the job deletes it rather than write through it)
+    out = ({"state": "partial", "have_bytes": p.stat().st_size} if p.is_file() and not p.is_symlink()
+           else {"state": "missing", "have_bytes": 0})
     if wrong:
         out["wrong_size"] = True
     return out
@@ -682,6 +735,7 @@ class Downloader:
         with open(part, "rb+") as f:
             os.fsync(f.fileno())
         os.replace(part, t)
+        record_verified(it, size, want_sha)
         if want_sha:
             return "sha256"
         return "size" if (exact is not None or approx is not None) else "none"

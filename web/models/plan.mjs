@@ -29,7 +29,8 @@ export const relName = (item) => (item.subdir ? `${item.subdir}/` : "") + item.s
  */
 export function stateFor(item, installedFiles = {}) {
   const s = item.state || "missing";
-  if (s === "installed") return { state: "installed" };
+  // size_note: the file differs from the catalog's rounded size estimate. Only a hint, never a reason to re-download.
+  if (s === "installed") return item.size_note ? { state: "installed", sizeNote: true } : { state: "installed" };
   if (s === "unknown") return { state: "unknown" };
   const list = (installedFiles || {})[item.folder] || [];
   const got = closestModel(relName(item), list);
@@ -45,7 +46,7 @@ export function stateFor(item, installedFiles = {}) {
 /** Chip text for a row state. */
 export function stateLabel(st) {
   switch (st.state) {
-    case "installed": return "Installed";
+    case "installed": return st.sizeNote ? "Installed (size differs from the estimate)" : "Installed";
     case "other_build": return `Using your build: ${st.label}`;
     case "partial": return st.pct == null ? "Partly downloaded" : `Partly downloaded ${st.pct}%`;
     case "unknown": return "Not checked (no server)";

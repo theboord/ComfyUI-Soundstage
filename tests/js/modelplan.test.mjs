@@ -161,6 +161,21 @@ test("a wrong-size file with the right name is labelled for download again", () 
   assert.equal(stateLabel(st), "Wrong size: download again");
 });
 
+test("an installed file off the rounded catalog size gets a soft note only, and is not pre-ticked", () => {
+  const s = status();
+  const it = { ...byId(s, "flux2-vae"), state: "installed", size_note: true };
+  const st = stateFor(it, { vae: ["flux2-vae.safetensors"] });
+  assert.equal(st.state, "installed");
+  assert.equal(stateLabel(st), "Installed (size differs from the estimate)");
+  assert.equal(stateLabel(stateFor({ ...it, size_note: false }, {})), "Installed");
+  const items = s.items.map((x) => (x.id === "flux2-vae" ? it : x));
+  const sel = defaultSelection({ ...s, items, installed_files: { vae: ["flux2-vae.safetensors"] } });
+  assert.ok(!sel.includes("flux2-vae"));
+  // the same row reported missing would be pre-ticked, so the check above is meaningful
+  const miss = s.items.map((x) => (x.id === "flux2-vae" ? { ...x, state: "missing" } : x));
+  assert.ok(defaultSelection({ ...s, items: miss, installed_files: {} }).includes("flux2-vae"));
+});
+
 test("jobNote: a fast failure (before any progress poll) is reported, and successes say to reload", () => {
   assert.equal(jobNote([], { done: [], failed: [] }), "");
   assert.match(jobNote(["a"], { done: [], failed: [{ id: "a", code: "disk" }] }), /1 file didn't download/);

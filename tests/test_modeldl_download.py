@@ -2,6 +2,7 @@
 import asyncio
 import collections
 import hashlib
+import os
 
 from modeldl_fake import TOKEN, FakeHF, mini_catalog, stub_folder_paths
 from soundstage import modeldl as M
@@ -97,14 +98,48 @@ def test_no_size_anywhere_is_reported_as_none(tmp_path, monkeypatch):
     assert dl.done == [{"id": "a", "verified": "none"}]
 
 
-def test_wrong_size_installed_file_is_not_skipped_and_gets_replaced(tmp_path, monkeypatch):
+def test_wrong_size_against_the_verified_size_is_not_skipped_and_gets_replaced(tmp_path, monkeypatch):
     items = [{"id": "a", "repo": "org/r", "path": "vae/a.safetensors", "folder": "vae", "size": len(DATA)}]
     dl, hf, models = make(tmp_path, monkeypatch, items=items)
-    (models / "vae" / "a.safetensors").write_bytes(DATA[:100])
+    run(dl, ["a"])                                   # a verified download records the exact size
+    out = models / "vae" / "a.safetensors"
+    out.write_bytes(DATA[:100])                       # later truncated
     st = M.item_state(dl.items["a"])
     assert st["state"] == "missing" and st.get("wrong_size")
     assert run(dl, ["a"]) == (["a"], [])
-    assert (models / "vae" / "a.safetensors").read_bytes() == DATA
+    assert out.read_bytes() == DATA
+
+
+def test_good_file_off_the_rounded_catalog_size_is_installed_and_never_requeued(tmp_path, monkeypatch):
+    # the catalog figure is rounded GB; the real file is more than 5 MB away from it
+    approx = len(DATA) + 6_000_000
+    items = [{"id": "a", "repo": "org/r", "path": "vae/a.safetensors", "folder": "vae", "size": approx}]
+    dl, hf, models = make(tmp_path, monkeypatch, items=items)
+    (models / "vae" / "a.safetensors").write_bytes(DATA)        # a correct file the user already has
+    st = M.item_state(dl.items["a"])
+    assert st["state"] == "installed" and st.get("size_note") and not st.get("wrong_size")
+    assert run(dl, ["a"]) == ([], ["a"]) and hf.calls == []
+    # and a file the App downloads itself (verified against X-Linked-Size) reads installed afterwards, exactly
+    (models / "vae" / "a.safetensors").unlink()
+    assert run(dl, ["a"]) == (["a"], [])
+    assert dl.done[-1]["id"] == "a" and dl.failed == []
+    st = M.item_state(dl.items["a"])
+    assert st == {"state": "installed", "have_bytes": len(DATA)}
+    n = len(hf.calls)
+    assert run(dl, ["a"]) == ([], ["a"]) and len(hf.calls) == n
+
+
+def test_part_symlink_out_of_the_folder_is_never_written_through(tmp_path, monkeypatch):
+    dl, hf, models = make(tmp_path, monkeypatch)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    victim = outside / "victim"
+    victim.write_bytes(b"keep me")
+    os.symlink(victim, models / "vae" / "a.safetensors.part")
+    run(dl, ["a"])
+    assert victim.read_bytes() == b"keep me"
+    out = models / "vae" / "a.safetensors"
+    assert out.read_bytes() == DATA and not out.is_symlink()
 
 
 def _seed_part(models, n):

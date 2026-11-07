@@ -80,11 +80,34 @@ def test_target_and_traversal(tmp_path, monkeypatch):
     os.symlink(outside, models / "loras" / "evil")
     with pytest.raises(ValueError):
         M.target({**lora, "subdir": "evil"})
-    # a symlinked file pointing out is refused as well
+    # a model file the user symlinked in from a shared volume is allowed: only the write path is checked
     (outside / "f.safetensors").write_bytes(b"x")
     os.symlink(outside / "f.safetensors", models / "vae" / "f.safetensors")
-    with pytest.raises(ValueError):
-        M.target({**it, "folder": "vae", "saved_name": "f.safetensors"})
+    linked = {**it, "folder": "vae", "saved_name": "f.safetensors", "size": None}
+    assert M.target(linked) == (models / "vae").resolve() / "f.safetensors"
+    st = M.item_state(linked)
+    assert st == {"state": "installed", "have_bytes": 1}       # size-checked through the link
+
+
+def test_symlinked_model_counts_as_installed_and_part_symlink_is_not_trusted(tmp_path, monkeypatch):
+    models = stub_folder_paths(monkeypatch, tmp_path)
+    it = next(i for i in CAT["items"] if i["id"] == "flux2-vae")
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    real = shared / "flux2-vae.safetensors"
+    with open(real, "wb") as f:
+        f.truncate(it["size"])
+    os.symlink(real, models / "vae" / "flux2-vae.safetensors")
+    assert M.item_state(it)["state"] == "installed"
+    # a dangling link is not a file: missing, so it can be fetched (the download replaces the link)
+    os.unlink(models / "vae" / "flux2-vae.safetensors")
+    os.symlink(shared / "gone.safetensors", models / "vae" / "flux2-vae.safetensors")
+    assert M.item_state(it)["state"] == "missing"
+    # a .part symlinked out of the folder is not reported as progress
+    os.unlink(models / "vae" / "flux2-vae.safetensors")
+    (shared / "p").write_bytes(b"abc")
+    os.symlink(shared / "p", models / "vae" / "flux2-vae.safetensors.part")
+    assert M.item_state(it) == {"state": "missing", "have_bytes": 0}
 
 
 def test_states(tmp_path, monkeypatch):
@@ -95,11 +118,11 @@ def test_states(tmp_path, monkeypatch):
     assert M.item_state(it) == {"state": "partial", "have_bytes": 3}
     full = models / "vae" / "flux2-vae.safetensors"
     full.write_bytes(b"abcd")
-    # a file with the right name but far from the catalog size is not "installed" (so it can be repaired)
-    assert M.item_state(it) == {"state": "partial", "have_bytes": 3, "wrong_size": True}
+    # the catalog size is a rounded estimate: a file far from it is still installed, with a soft note only
+    assert M.item_state(it) == {"state": "installed", "have_bytes": 4, "size_note": True}
     with open(full, "wb") as f:                      # sparse: within the rounded catalog size
         f.truncate(it["size"] + 1_000_000)
-    assert M.item_state(it)["state"] == "installed"
+    assert M.item_state(it) == {"state": "installed", "have_bytes": it["size"] + 1_000_000}
     assert M.item_state({**it, "size": None})["state"] == "installed"   # no size known: existence
     # once a sha256 is filled the size is exact and must match
     assert M.item_state({**it, "sha256": "0" * 64})["state"] == "partial"
@@ -152,3 +175,20 @@ def test_token_shape_is_checked(tmp_path, monkeypatch):
     for bad in ("", "short", "has space inside", "line\nbreak-injection-xx", 123):
         with pytest.raises(ValueError):
             M.save_token(bad)
+
+
+def test_exact_size_from_a_verified_download_is_used_and_must_match_the_row(tmp_path, monkeypatch):
+    models = stub_folder_paths(monkeypatch, tmp_path)
+    it = next(i for i in CAT["items"] if i["id"] == "flux2-vae")
+    full = models / "vae" / "flux2-vae.safetensors"
+    full.write_bytes(b"abcd")
+    M.record_verified(it, 4, None)
+    assert M.verified_size(it) == 4
+    assert M.item_state(it) == {"state": "installed", "have_bytes": 4}       # exact match: no note
+    full.write_bytes(b"abc")
+    assert M.item_state(it) == {"state": "missing", "have_bytes": 0, "wrong_size": True}
+    # a record for another file name (catalog changed) is ignored
+    assert M.verified_size({**it, "saved_name": "other.safetensors"}) is None
+    # an unreadable record is ignored, never fatal
+    M.verified_path().write_text("{not json")
+    assert M.verified_size(it) is None and M.item_state(it)["state"] == "installed"
