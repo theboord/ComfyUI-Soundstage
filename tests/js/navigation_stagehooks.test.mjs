@@ -528,29 +528,138 @@ test("a double-click on a key camera keeps its click: no focus", () => {
   done(st);
 });
 
-test("while driving, the wheel, WASD and a double-click do nothing to the view", () => {
+test("while driving, the stage's own wheel, WASD and double-click handlers leave the view alone", () => {
+  // The real Drive also swaps _onWheel and swallows letter keys in a window listener; this checks the stage's own
+  // handlers don't move the view even when they do see the event (a probe zoomed ~2 m before the guard).
   const st = makeStage();
-  st.nav.settings.trackpad = "trackpad";
   st.drive.on = true;
-  const p0 = [...st.free.position];
-  assert.equal(st.nav.wheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, ...EMPTY }), false, "no trackpad orbit");
-  assert.equal(st.nav.key({ key: "w", code: "KeyW", preventDefault() {}, stopPropagation() {} }), false, "W is Drive's");
+  const p0 = [...st.free.position], t0 = [...st.free.target];
+  st._zoomAcc = 0;
+  st._onWheel({ deltaY: 100, deltaX: 0, deltaMode: 0, wheelDeltaY: -120, ...CAR });   // a mouse notch
+  st._onWheel({ deltaY: 100, deltaX: 0, deltaMode: 0, wheelDeltaY: -120, ctrlKey: true, ...CAR });
+  st.nav.settings.trackpad = "trackpad";
+  st._onWheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, ...EMPTY });                       // a two-finger scroll
+  frames();
+  assert.equal(st._zoomAcc, 0, "no zoom queued");
+  for (const k of ["w", "a", "s", "d", "q", "e"]) { st.key(k); frames(5); st.keyup(k); }
+  frames();
   assert.equal(st.nav._held.size, 0);
   st.ev("dblclick", { button: 0, ...CAR });
+  st.ev("dblclick", { button: 0, ...EMPTY });
   frames();
   assert.deepEqual(st.log.framed, []);
-  assert.deepEqual(st.free.position, p0);
+  assert.deepEqual([st.free.position, st.free.target], [p0, t0], "the camera did not move");
   st.drive.on = false;
+  st.nav.settings.trackpad = "auto";
+  st._onWheel({ deltaY: 100, deltaX: 0, deltaMode: 0, wheelDeltaY: -120, ...CAR });
+  frames();
+  assert.ok(Math.hypot(...st.free.position.map((v, i) => v - p0[i])) > 0.05, "out of Drive the same wheel zooms (the check is real)");
   done(st);
 });
 
-test("while the gizmo is dragging, both buttons don't turn the drag into a pan", () => {
-  const st = makeStage({ selected: "car1" });
-  const drag = { mode: "orbit", look: false, x0: 0, y0: 0 };
-  st.live.settle = () => true;   // the gizmo's dragging-changed handler settles a moved prop
-  st.tc.dragging = true;
-  assert.equal(st.nav.chord(drag, { buttons: 3, clientX: 10, clientY: 10 }), drag, "unchanged");
-  st.tc.dragging = false;
-  assert.equal(st.nav.chord(drag, { buttons: 3, clientX: 10, clientY: 10 }).mode, "pan", "without the gizmo: a pan");
+test("while the gizmo is dragging, both buttons held on pointermove don't turn the drag into a pan", () => {
+  const run = (gizmo) => {
+    const st = makeStage({ selected: "car1" });
+    st.live.settle = () => true;   // the gizmo's dragging-changed handler settles a moved prop
+    const d0 = st.free.position.map((v, i) => v - st.free.target[i]);
+    st.ev("pointerdown", { button: 0, buttons: 1, ...EMPTY });
+    st.tc.dragging = gizmo;
+    for (let i = 1; i <= 4; i++) { T += 16; st.ev("pointermove", { button: -1, buttons: 3, clientX: EMPTY.clientX + i * 15, clientY: EMPTY.clientY }); }
+    T += 200;
+    st.tc.dragging = false;
+    st.ev("pointerup", { button: 0, buttons: 2, clientX: EMPTY.clientX + 60, clientY: EMPTY.clientY });
+    st.ev("pointerup", { button: 2, buttons: 0, clientX: EMPTY.clientX + 60, clientY: EMPTY.clientY });
+    frames();
+    const d1 = st.free.position.map((v, i) => v - st.free.target[i]);
+    const n = (v) => v.map((x) => x / Math.hypot(...v));
+    const turned = Math.hypot(...n(d0).map((v, i) => v - n(d1)[i])) > 1e-3;
+    const moved = Math.hypot(...st.free.position.map((v, i) => v - [0, 2, 10][i])) > 0.05;
+    done(st);
+    return { turned, moved };
+  };
+  const g = run(true), plain = run(false);
+  assert.ok(g.moved && g.turned, "gizmo dragging: the chord is ignored, the drag stays an orbit (the view turns)");
+  assert.ok(plain.moved && !plain.turned, "no gizmo: both buttons make it a pan (it translates, no turn)");
+});
+
+// ---- review round 2: distant double-click, the shared pick ray, hidden / moved set pieces
+test("double-click on an object ~80 m away frames it (the orbit pivot's distance cap is not the double-click's)", () => {
+  const st = makeStage();
+  const car = st.actorMeshes.get("car1");
+  car.position.set(0, 1, -70);
+  car.updateMatrixWorld(true);
+  st.free = { position: [0, 2, 10], target: [0, 1.9, 0] };   // orbit distance ~10 m: the pivot cap is 50 m
+  st._applyActive();
+  const t0 = [...st.free.target];
+  assert.deepEqual(st.nav.pivotAt(CAR), t0, "the orbit pivot still ignores a hit far beyond the target");
+  st.ev("dblclick", { button: 0, ...CAR });
+  assert.deepEqual(st.log.framed, ["car1"], "framed");
+  // A far set box (no object): the target glides to the clicked point.
+  const st2 = makeStage();
+  st2.actorMeshes.clear();
+  st2._setCollidersCached = () => [{ id: "far", half: [10, 5, 0.5], pos: [0, 5, -70], quat: [0, 0, 0, 1] }];
+  st2.free = { position: [0, 2, 10], target: [0, 1.9, 0] };
+  st2._applyActive();
+  st2.ev("dblclick", { button: 0, ...CAR });
+  frames();
+  assert.ok(near(st2.free.target[2], -69.5, 0.1), `target on the far wall (${st2.free.target})`);
+  done(st); done(st2);
+});
+
+test("the sightline checks of a double-click never change the stage's shared pick ray", () => {
+  const st = makeStage();
+  st.actorMeshes.clear();
+  st._setCollidersCached = () => [{ id: "back", half: [5, 2, 0.1], pos: [0, 2, 2.3], quat: [0, 0, 0, 1] },
+    { id: "front", half: [5, 2, 0.1], pos: [0, 2, -3], quat: [0, 0, 0, 1] }];
+  st.free = { position: [0, 1, 2], target: [0, 0, 1] };
+  st._applyActive();
+  const pickRay = st._pickRay;
+  let rc = null, o0 = null, d0 = null;
+  st._pickRay = (e) => { rc = pickRay(e); o0 = rc.ray.origin.clone(); d0 = rc.ray.direction.clone(); return rc; };
+  st.ev("dblclick", { button: 0, clientX: 400, clientY: 225 });
+  assert.ok(rc, "picked");
+  assert.ok(rc.ray.origin.equals(o0) && rc.ray.direction.equals(d0), "origin and direction as the pick left them");
+  frames();
+  done(st);
+});
+
+/** The stage's real set-collider cache over one set-piece wall at z = 5 (a box mesh on the root). */
+function wallStage() {
+  const st = makeStage();
+  delete st._setCollidersCached;   // the prototype's own, over st.root
+  st.root = new THREE.Group();
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(20, 6, 0.2));
+  wall.position.set(0, 3, 5);
+  wall.userData.setPiece = true;
+  st.root.add(wall);
+  return { st, wall };
+}
+
+test("a hidden set piece neither catches the orbit pivot nor stops a double-click", () => {
+  const { st, wall } = wallStage();
+  assert.ok(near(st.nav.pivotAt(CAR)[2], 5.1), "shown: on the wall");
+  st.ev("dblclick", { button: 0, ...CAR });
+  frames();
+  assert.deepEqual(st.log.framed, [], "the wall is in front of the car: not framed");
+  wall.visible = false;
+  assert.ok(near(st.nav.pivotAt(CAR)[2], 1, 0.1), "hidden: through to the car");
+  st.free = { position: [0, 2, 10], target: [0, 1, 0] };
+  st._applyActive();
+  st.ev("dblclick", { button: 0, ...CAR });
+  assert.deepEqual(st.log.framed, ["car1"], "hidden: the car is framed");
+  done(st);
+});
+
+test("moving a set piece refreshes the collider cache (the old place catches nothing)", () => {
+  const { st, wall } = wallStage();
+  assert.ok(near(st.nav.pivotAt(CAR)[2], 5.1), "on the wall");
+  const list0 = st._setCollidersCached();
+  assert.equal(st._setCollidersCached(), list0, "cached while nothing moves");
+  wall.position.z = -20;   // behind the car now
+  const list1 = st._setCollidersCached();
+  assert.notEqual(list1, list0);
+  assert.ok(near(list1[0].pos[2], -20, 1e-6), "the box is where the wall is");
+  assert.ok(near(st.nav.pivotAt(CAR)[2], 1, 0.1), "the pivot is the car, not the wall's old place");
+  assert.equal(Object.keys(list1[0]).includes("src"), false, "src is not enumerable (the physics world and presets copy these)");
   done(st);
 });

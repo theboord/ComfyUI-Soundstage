@@ -596,18 +596,30 @@ export class Stage {
         o.matrixWorld.decompose(pos, quat, sc);
         const half = [prm.width * Math.abs(sc.x) / 2, prm.height * Math.abs(sc.y) / 2, prm.depth * Math.abs(sc.z) / 2];
         if (Math.min(...half) <= 0) return;
-        out.push({ id: `set_${out.length}`, shape: "box", half, center: [0, 0, 0], dynamic: false,
-          poses: [{ pos: [pos.x, pos.y, pos.z], quat: [quat.x, quat.y, quat.z, quat.w] }], ...(grp === this.interiorGroup ? { interior: true } : {}) });
+        const c = { id: `set_${out.length}`, shape: "box", half, center: [0, 0, 0], dynamic: false,
+          poses: [{ pos: [pos.x, pos.y, pos.z], quat: [quat.x, quat.y, quat.z, quat.w] }], ...(grp === this.interiorGroup ? { interior: true } : {}) };
+        Object.defineProperty(c, "src", { value: o, enumerable: false });   // the mesh (navigation skips a hidden one)
+        out.push(c);
       });
     }
     for (const c of this.worldMount?.colliders() || []) out.push(c);   // an imported world's box proxies
     return out;
   }
 
-  /** _setColliders(), cached until the set is rebuilt (the live world asks for it on every drag). */
+  /**
+   * _setColliders(), cached until the set is rebuilt or one of its groups (a set piece, the interior) moves (the live world
+   * asks for it on every drag). Each entry's non-enumerable `src` is its mesh, so a hidden one can be skipped.
+   */
   _setCollidersCached() {
-    const key = [this._setGroup?.uuid, this.interiorGroup?.uuid, this.root.children.filter((o) => o.userData.setPiece).map((o) => o.uuid).join(), this.worldMount?.sig || ""].join("|");
-    if (this._setColCache?.key !== key) this._setColCache = { key, list: this._setColliders().map((c) => ({ id: c.id, half: c.half, pos: c.poses[0].pos, quat: c.poses[0].quat, ...(c.interior ? { interior: true } : {}) })) };
+    const xf = (g) => (g ? `${g.uuid}@${[...g.position.toArray(), ...g.quaternion.toArray(), ...g.scale.toArray()].map((v) => v.toFixed(4)).join(",")}` : "");
+    const key = [xf(this._setGroup), xf(this.interiorGroup), this.root.children.filter((o) => o.userData.setPiece).map(xf).join(), this.worldMount?.sig || ""].join("|");
+    if (this._setColCache?.key !== key) {
+      this._setColCache = { key, list: this._setColliders().map((c) => {
+        const e = { id: c.id, half: c.half, pos: c.poses[0].pos, quat: c.poses[0].quat, ...(c.interior ? { interior: true } : {}) };
+        if (c.src) Object.defineProperty(e, "src", { value: c.src, enumerable: false });
+        return e;
+      }) };
+    }
     return this._setColCache.list;
   }
 
@@ -2948,7 +2960,7 @@ export class Stage {
         this.drive.start(this.selected);
         return;
       }
-      if (!"wasdqe".includes(k) || e.metaKey || e.ctrlKey) return;
+      if (!"wasdqe".includes(k) || e.metaKey || e.ctrlKey || this.drive?.on) return;   // Drive's keys (its window listener has them)
       e.preventDefault();
       e.stopPropagation();
       const c = this._activeOrbit();
@@ -2971,6 +2983,7 @@ export class Stage {
     // events that happen over a stage straight to it. See installWheelRouter() below.
     this.canvas.__soundstage = this;
     this._onWheel = (e) => {
+      if (this.drive?.on) return;   // Drive swaps in its own wheel (drive.mjs); this one never moves the view under it
       if (this.live?.drag && this.live.wheel(e)) return;   // holding a prop: the wheel lifts / lowers it
       if (this.nav?.wheel(e)) return;   // fly speed while flying; a trackpad's two-finger scroll orbits (Shift pans)
       // Smooth zoom (Milestone 9): notches add up and are eased in over a few frames, toward what's under the cursor.

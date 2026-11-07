@@ -193,6 +193,14 @@ export const tauFromSmooth = (smooth) => 0.02 + clamp(smooth, 0, 1) * 0.1;
 
 /** Wheel events of one kind in a row before the kind changes (a known mouse never turns trackpad on one event). */
 export const WHEEL_SURE = 3;
+/** A pause (ms) between wheel events that starts a new gesture: the evidence so far decays to neutral. */
+export const WHEEL_IDLE = 600;
+/** A clear mouse notch: a legacy wheelDelta of a whole 120-step (Chrome / Safari / Edge give one for every notch). */
+const notch = (e) => {
+  const dx = e.deltaX || 0, dy = e.deltaY || 0;
+  const legacy = Math.abs(dx) > Math.abs(dy) ? e.wheelDeltaX : e.wheelDeltaY;
+  return Number.isFinite(legacy) && legacy !== 0 && legacy % 120 === 0;
+};
 /**
  * One wheel event's evidence: +1 looks like a trackpad, -1 like a mouse wheel, 0 says nothing. Line / page mode is only
  * ever a wheel (-WHEEL_SURE: sure at once). The legacy wheelDelta of the main axis decides when there is one (a notch is a
@@ -210,13 +218,21 @@ const fracDelta = (e) => { const dx = e.deltaX || 0, dy = e.deltaY || 0; return 
 
 /**
  * Mouse wheel, trackpad scroll or pinch? mem = {kind, score, t} is the device seen so far: the evidence adds up
- * (-WHEEL_SURE..WHEEL_SURE) and the kind changes only once it is sure, so one odd event never flips it either way.
+ * (-WHEEL_SURE..WHEEL_SURE) and the kind changes only once it is sure, so one odd trackpad-like event never flips a mouse.
+ * A pause of WHEEL_IDLE ms starts a new gesture with the evidence back at neutral (the kind is kept). Back to the mouse
+ * after a trackpad is quick: a clear notch (a 120-step legacy delta, or line mode) that starts a gesture switches at once,
+ * and two in a row switch mid-stream (one, a fast trackpad flick that reads as a notch, doesn't).
  * Ctrl + wheel is a pinch only from a trackpad (or with fractional deltas); a mouse's Ctrl + wheel is the wheel.
  * force = "mouse" | "trackpad" | "auto" (the ⚙ Scrolling setting).
  */
 export function classifyWheel(e, mem = {}, now = 0, force = "auto") {
   const ev = wheelEvidence(e);
-  mem.score = ev <= -WHEEL_SURE ? -WHEEL_SURE : clamp((mem.score || 0) + ev, -WHEEL_SURE, WHEEL_SURE);
+  const fresh = !Number.isFinite(mem.t) || now - mem.t > WHEEL_IDLE;
+  if (fresh) mem.score = 0;   // a new gesture: what the last one looked like is not evidence about this one
+  if (ev <= -WHEEL_SURE) mem.score = -WHEEL_SURE;
+  else if (notch(e)) mem.score = fresh ? -WHEEL_SURE : Math.min(0, mem.score || 0) - (WHEEL_SURE - 1);
+  else mem.score = clamp((mem.score || 0) + ev, -WHEEL_SURE, WHEEL_SURE);
+  mem.score = clamp(mem.score, -WHEEL_SURE, WHEEL_SURE);
   if (!mem.kind) mem.kind = "mouse";
   if (mem.score >= WHEEL_SURE) mem.kind = "trackpad";
   else if (mem.score <= -WHEEL_SURE) mem.kind = "mouse";
@@ -388,6 +404,7 @@ export function installNavigation(stage) {
     }
     for (const c of stage._setCollidersCached?.() || []) {
       if (c.interior) continue;   // the interior's own meshes are cast below (the cutaway can hide them)
+      if (c.src && !shown(c.src)) continue;   // a hidden set piece (or a hidden part of one) catches nothing
       const t = rayBoxT(origin, dir, c.half, c.pos, c.quat);
       if (t != null) take(t, add(origin, mul(dir, t)));
     }
@@ -399,13 +416,25 @@ export function installNavigation(stage) {
     }
     return best;
   }
-  /** Does the straight path a -> b cross a wall or a set box? (objects don't count: you glide past people) */
+  /**
+   * Does the straight path a -> b cross a wall or a set box? (objects don't count: you glide past people) It casts its own
+   * raycaster: the stage's shared pick ray (rc) is never changed.
+   */
+  let sightRc = null;
   function blocked(rc, a, b, hidden) {
     const v = sub(b, a), L = len(v);
     if (L < 0.05) return false;
     const d = mul(v, 1 / L);
-    Object.assign(rc.ray.origin, { x: a[0], y: a[1], z: a[2] }); Object.assign(rc.ray.direction, { x: d[0], y: d[1], z: d[2] });
-    const h = surfaceHit(rc, { actors: false, hidden });
+    if (!sightRc) {
+      // A three.js Raycaster of its own; anything else (a test's stand-in) gets a copy with a ray of its own.
+      sightRc = rc.ray?.origin?.isVector3 ? new rc.constructor()
+        : Object.assign(Object.create(Object.getPrototypeOf(rc)), rc, { ray: { origin: { x: 0, y: 0, z: 0 }, direction: { x: 0, y: 0, z: 1 } } });
+    }
+    if (sightRc !== rc && sightRc.layers && rc.layers) sightRc.layers.mask = rc.layers.mask;
+    if (rc.camera) sightRc.camera = rc.camera;
+    if (rc.params) sightRc.params = rc.params;
+    Object.assign(sightRc.ray.origin, { x: a[0], y: a[1], z: a[2] }); Object.assign(sightRc.ray.direction, { x: d[0], y: d[1], z: d[2] });
+    const h = surfaceHit(sightRc, { actors: false, hidden });
     return !!h && h.dist < L - 0.1;
   }
   /** The floor (y = 0) under the pick ray, or null. */
@@ -572,7 +601,9 @@ export function installNavigation(stage) {
       const rc = stage._pickRay(e);
       const ms = reduced ? 0 : 450;
       const hidden = stage._cutawayHidden?.({ x: o.position[0], y: o.position[1], z: o.position[2] });
-      const hit = pivotFrom(rc, o, false, null, hidden);   // the sky / empty space: no point, nothing moves (it pulled a far camera to 12 m)
+      // Any real surface, however far (the orbit pivot's distance cap is for orbiting, not for this); the sky / empty
+      // space is no point, so nothing moves (it pulled a far camera to 12 m).
+      const hit = pivotFrom(rc, o, false, null, hidden, { cap: false });
       if (!hit) return false;
       const p = hit.point;
       // An object is framed whole; a set piece (a building, a wall, the location) is a place: the target moves to the
@@ -600,10 +631,19 @@ export function installNavigation(stage) {
     },
   };
 
-  /** The pivot hit {point, id}: the nearest surface, or the floor when that is nearer; null = nothing (fallback false). */
-  function pivotFrom(rc, o, fallback, actorHits = null, hidden = null) {
+  /**
+   * The pivot hit {point, id}: the nearest surface, or the floor when that is nearer; null = nothing (fallback false).
+   * cap false (double-click): a surface counts at any distance, the floor within 400 m; the orbit pivot (cap true) drops
+   * what is far beyond the target (pickPivot).
+   */
+  function pivotFrom(rc, o, fallback, actorHits = null, hidden = null, { cap = true } = {}) {
     const s = surfaceHit(rc, { pre: actorHits, hidden }), fl = floorHit(rc.ray);
     const useMesh = s && (!fl || s.dist <= fl.dist);
+    if (!cap) {
+      if (useMesh) return { point: s.point, id: s.id };
+      const water = stage.state?.environment?.set === "water_tank";
+      return fl && !water && fl.dist <= 400 ? { point: fl.point, id: null } : null;
+    }
     const p = pickPivot({ mesh: useMesh ? s.point : null, floor: fl && !useMesh ? fl.point : null }, o.target, o.position,
       { waterTank: stage.state?.environment?.set === "water_tank", fallback });
     if (!p) return null;

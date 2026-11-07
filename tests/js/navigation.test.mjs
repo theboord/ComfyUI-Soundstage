@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   NAV_STYLES, NAV_ACTIONS, PRESETS, NAV_DEFAULTS, TAKEN_KEYS, loadNavSettings, saveNavSettings, resolveGesture, chordUpgrade,
-  altTurns, orbitAbout, panRate, viewDepth, pickPivot, easeShare, consume, tauFromSmooth, classifyWheel, flyDir, flyStep,
+  altTurns, orbitAbout, panRate, viewDepth, pickPivot, easeShare, consume, tauFromSmooth, classifyWheel, WHEEL_IDLE, flyDir, flyStep,
   flySpeedFromWheel, walkSpeed, focusView, hintText, rayBoxT, focusAlongRay, bindingConflicts, installNavigation, keyCombo, hintPlacement,
 } from "../../web/stage/navigation.mjs";
 import { allCombos } from "../../web/ui/shortcuts.mjs";
@@ -202,6 +202,47 @@ test("a macOS smooth (accelerated) mouse wheel stays a mouse, even with an odd e
   assert.equal(classifyWheel({ deltaY: 4.5, deltaX: 0, deltaMode: 0, wheelDeltaY: -13 }, mem, 240), "mouse");
 });
 
+test("trackpad, then a mouse: a clear notch switches back at once after a pause, within two notches mid-stream", () => {
+  const tp = { deltaY: 3.2, deltaX: 1.1, deltaMode: 0, wheelDeltaY: -9 };
+  const notch = { deltaY: 100, deltaX: 0, deltaMode: 0, wheelDeltaY: -120 };
+  const macNotch = { deltaY: 4.000244140625, deltaX: 0, deltaMode: 0, wheelDeltaY: -120 };
+  const asTrackpad = () => { const m = {}; for (let i = 0; i < 6; i++) classifyWheel(tp, m, i * 16); assert.equal(m.kind, "trackpad"); return m; };
+  // A pause, then the mouse: the first notch already zooms (it used to take 6 notches, the first 5 orbiting).
+  for (const n of [notch, macNotch]) {
+    const m = asTrackpad();
+    assert.equal(classifyWheel(n, m, 80 + WHEEL_IDLE + 1), "mouse", `first notch after a pause (deltaY ${n.deltaY})`);
+    assert.equal(classifyWheel(n, m, 80 + WHEEL_IDLE + 60), "mouse");
+  }
+  // Straight from the trackpad to the wheel (no pause): the second notch in a row switches.
+  const m = asTrackpad();
+  assert.equal(classifyWheel(notch, m, 96), "trackpad", "one notch mid-stream could be a fast flick");
+  assert.equal(classifyWheel(notch, m, 112), "mouse", "two in a row: the mouse");
+  // Line mode is a wheel at once, pause or not.
+  const m3 = asTrackpad();
+  assert.equal(classifyWheel({ deltaY: 3, deltaX: 0, deltaMode: 1 }, m3, 96), "mouse");
+});
+
+test("an idle gap decays the wheel evidence: a new gesture starts neutral (the kind is kept, one odd event never flips it)", () => {
+  const tp = { deltaY: 3.2, deltaX: 1.1, deltaMode: 0, wheelDeltaY: -9 };
+  const m = {};
+  classifyWheel(tp, m, 0); classifyWheel(tp, m, 16);
+  assert.equal(m.score, 2);
+  classifyWheel(tp, m, 16 + WHEEL_IDLE + 1);
+  assert.equal(m.score, 1, "two events from the last gesture don't count toward this one");
+  assert.equal(m.kind, "mouse");
+  // A known trackpad keeps its kind over a pause; its next gesture keeps orbiting.
+  const t = {};
+  for (let i = 0; i < 4; i++) classifyWheel(tp, t, i * 16);
+  assert.equal(classifyWheel(tp, t, 3000), "trackpad", "the device is remembered");
+  assert.equal(t.score, 1, "but the evidence starts again");
+  // A known mouse: after a pause one fractional event is not enough, three in a row are.
+  const mm = {};
+  classifyWheel({ deltaY: 100, deltaX: 0, deltaMode: 0, wheelDeltaY: -120 }, mm, 0);
+  assert.equal(classifyWheel(tp, mm, 5000), "mouse");
+  assert.equal(classifyWheel(tp, mm, 5016), "mouse");
+  assert.equal(classifyWheel(tp, mm, 5032), "trackpad");
+});
+
 test("fly: held keys give a continuous step that scales with dt; Shift x4; opposite keys cancel; speed clamps", () => {
   assert.deepEqual(flyDir(new Set(["w", "s"])), [0, 0, 0]);
   const w = new Set(["w"]);
@@ -319,6 +360,9 @@ test("the wheel while flying changes fly speed; a trackpad scroll orbits; a mous
   assert.equal(st.nav.wheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, wheelDeltaY: -7 }), false, "one trackpad-like event: not sure yet");
   assert.equal(st.nav.wheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, wheelDeltaY: -7 }), false);
   assert.equal(st.nav.wheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, wheelDeltaY: -7 }), false, "a known mouse needs more than the bare three");
+  // A notch that began a gesture is a sure mouse (-3), so with no pause in between the trackpad takes 6 events.
+  assert.equal(st.nav.wheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, wheelDeltaY: -7 }), false);
+  assert.equal(st.nav.wheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, wheelDeltaY: -7 }), false);
   assert.equal(st.nav.wheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, wheelDeltaY: -7 }), true, "sustained: a trackpad, it orbits");
   assert.equal(st.lastNav.mode, "orbit");
   assert.equal(st.nav.wheel({ deltaY: 2.5, deltaX: 4, deltaMode: 0, ctrlKey: true }), false, "pinch zooms");
