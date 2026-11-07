@@ -37,15 +37,23 @@ export function keyGuard(e) {
   e.stopImmediatePropagation?.();
   e.stopPropagation?.();
   if (e.key === "Escape") { e.preventDefault?.(); p.close(); return; }
+  const a = globalThis.document?.activeElement;
+  // Focus left behind the dialog (on the App button that opened it, say): its default action (Space or Enter
+  // clicking it) would work the App behind the modal. Swallow that and bring focus into the dialog instead.
+  if (a && a !== globalThis.document?.body && typeof p.root?.contains === "function" && !p.root.contains(a)) {
+    e.preventDefault?.();
+    focusables(p.box)[0]?.focus?.();
+    return;
+  }
   if (e.key === "Tab" && p.box?.querySelectorAll) {
-    const f = [...p.box.querySelectorAll("button:not([disabled]), input:not([disabled]), a[href]")];
-    const a = globalThis.document?.activeElement, i = f.indexOf(a);
+    const f = focusables(p.box), i = f.indexOf(a);
     if (f.length && (i === -1 || (e.shiftKey ? i === 0 : i === f.length - 1))) {
       e.preventDefault?.();
       (e.shiftKey ? f.at(-1) : f[0]).focus();
     }
   }
 }
+const focusables = (box) => (box?.querySelectorAll ? [...box.querySelectorAll("button:not([disabled]), input:not([disabled]), a[href]")] : []);
 export function installKeyGuard(target = globalThis.window) {
   if (!target?.addEventListener || target.__ssModelsGuard) return false;
   target.__ssModelsGuard = true;
@@ -129,6 +137,10 @@ class ModelsPanel {
     this.root.addEventListener("keydown", keyGuard, true);  // and at the dialog root, capture phase
     openPanels.add(this);
     document.body.append(this.root);
+    // Take focus off the App (the project-menu button that opened the panel keeps it otherwise); give it back on close.
+    this.back = document.activeElement;
+    this.box.tabIndex = -1;
+    this.box.focus?.({ preventScroll: true });
     this.box.append(el("div", { className: "body", textContent: "Loading…" }));
     await this.refresh(true);
   }
@@ -136,7 +148,10 @@ class ModelsPanel {
   close() {
     clearTimeout(this.timer);
     openPanels.delete(this);
+    const had = this.root?.isConnected && this.root.contains?.(document.activeElement);
     this.root?.remove();
+    if (had && this.back?.isConnected && this.back !== document.body) this.back.focus?.({ preventScroll: true });
+    this.back = null;
   }
 
   async refresh(first = false) {

@@ -69,3 +69,49 @@ test("a dialog removed some other way doesn't keep keys blocked", async () => {
   assert.deepEqual(appKeys, ["z"]);
   assert.equal(openPanels.size, 0, "the stale panel was dropped");
 });
+
+test("focus left on the App behind the dialog: Space / Enter don't click it, focus moves into the dialog", async () => {
+  appKeys.length = 0;
+  const appBtn = new FakeEl("button");
+  doc.body.append(appBtn);
+  let focused = null;
+  const first = new FakeEl("button");
+  first.focus = () => { focused = first; };
+  const panel = {
+    root: { isConnected: true, contains: (n) => n === first },
+    box: { querySelectorAll: () => [first] },
+    close() { openPanels.delete(this); },
+  };
+  openPanels.add(panel);
+  doc.activeElement = appBtn;                                   // the project-menu button that opened the panel
+  for (const k of [" ", "Enter"]) {
+    focused = null;
+    const e = key(k);
+    assert.equal(e.defaultPrevented, true, `${JSON.stringify(k)} would click the App button behind the modal`);
+    assert.equal(focused, first, "focus goes into the dialog");
+  }
+  doc.activeElement = first;                                    // inside the dialog: default actions still happen
+  assert.equal(key(" ").defaultPrevented, false);
+  assert.deepEqual(appKeys, []);
+  panel.close();
+  doc.activeElement = null;
+  appBtn.remove();
+});
+
+test("open takes focus off the App; close gives it back", async () => {
+  const appBtn = new FakeEl("button");
+  doc.body.append(appBtn);
+  let got = [];
+  appBtn.focus = () => got.push("app");
+  doc.activeElement = appBtn;
+  const p = openModels();
+  await settle();
+  assert.equal(p.back, appBtn);
+  assert.equal(p.box.tabIndex, -1);
+  p.root.contains = (n) => n === p.box;                         // fake DOM: focus sits on the dialog box
+  doc.activeElement = p.box;
+  p.close();
+  assert.deepEqual(got, ["app"]);
+  doc.activeElement = null;
+  appBtn.remove();
+});
