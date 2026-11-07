@@ -33,6 +33,9 @@ export function stateFor(item, installedFiles = {}) {
   if (s === "installed") return item.size_note ? { state: "installed", sizeNote: true } : { state: "installed" };
   if (s === "unknown") return { state: "unknown" };
   const list = (installedFiles || {})[item.folder] || [];
+  // ComfyUI lists every folder of this type (extra_model_paths.yaml adds more): the exact name anywhere is the model.
+  // Only an exact size known to differ (wrong_size, from the server) overrides that.
+  if (!item.wrong_size && list.includes(relName(item))) return { state: "installed" };
   const got = closestModel(relName(item), list);
   if (got && got !== relName(item)) return { state: "other_build", using: got, label: shortModelName(got) };
   const wrong = item.wrong_size ? { wrong: true } : {};
@@ -173,6 +176,7 @@ export function stepsFor(item, access, signedIn = false) {
     case "ok": return [];
     case "sign_in": return item.gated ? [...(signedIn ? [] : [token]), accept, { text: "Check again" }] : [token, { text: "Check again" }];
     case "licence": return [accept, { text: "Check again" }];
+    case "bad_token": return [{ text: "Your Hugging Face token was refused: replace it above" }, { text: "Check again" }];
     case "not_found": return [{ text: "Hugging Face can't find this file. It may have moved; see MODELS.md", href: repo }];
     default: return [{ text: "Couldn't reach Hugging Face. Check the connection and try again" }];
   }
@@ -199,6 +203,33 @@ export function offlineSteps(item) {
     .map((s) => (s.href === HF_TOKENS_URL ? { ...s, text: "Make a read token on Hugging Face (read access is enough)" } : s));
 }
 
+/** The try-it demo has no ComfyUI server: say so without asking one (a request there would log a 404). */
+export const noServer = (g = globalThis) => !!g?.__demo;
+
+const SOURCE = { saved: "the token saved on this computer", environment: "the HF_TOKEN set for ComfyUI", hf_cli: "your huggingface-cli login" };
+
+/**
+ * What the token box says. status: { signed_in, user, token_source, token_fallback }.
+ * Returns { line, canRemove, pasteButton, pasteNote, removeNote }. A pasted token is saved and always wins over
+ * HF_TOKEN and the huggingface-cli login; Remove token goes back to whichever of those is there.
+ */
+export function tokenNote(status = {}) {
+  const src = status.signed_in ? status.token_source : null;
+  const fb = status.token_fallback;
+  const fbName = fb && fb !== "saved" ? SOURCE[fb] : null;
+  if (src === "saved") {
+    return { line: `Hugging Face: signed in${status.user ? ` as ${status.user}` : ""} (using ${SOURCE.saved})`, canRemove: true,
+      pasteButton: "Replace token…", pasteNote: "The new token replaces the saved one.",
+      removeNote: fbName ? `Remove token goes back to ${fbName}.` : "" };
+  }
+  if (src === "environment" || src === "hf_cli") {
+    return { line: `Hugging Face: using ${SOURCE[src]}`, canRemove: false, pasteButton: "Use a different token…",
+      pasteNote: `Use my saved token: a token you save here is used instead of ${SOURCE[src]} (a saved token always wins). Remove token goes back to it.`,
+      removeNote: "" };
+  }
+  return { line: "Some models need a Hugging Face sign-in.", canRemove: false, pasteButton: null, pasteNote: "", removeNote: "" };
+}
+
 /** The banner over the offline list. */
 export const OFFLINE_TEXT = "The App's server isn't answering, so this is the list of model files and their licences only. "
   + "Checking what you have and downloading need the App running in ComfyUI.";
@@ -219,6 +250,8 @@ export function progressLine(cur, title = cur?.id) {
 export const FAIL_TEXT = {
   sign_in: "Sign in with your Hugging Face token",
   licence: "Accept the licence on Hugging Face, then try again",
+  bad_token: "Your Hugging Face token was refused: replace it above",
+  not_model: "Got a web page instead of the model file (a Wi-Fi sign-in page or a proxy?). Nothing was saved",
   not_found: "Hugging Face can't find this file",
   disk: "Not enough free disk space",
   verify: "The file didn't match and was deleted. Try again",

@@ -8,8 +8,9 @@ import { dirname, join } from "node:path";
 import {
   fmtBytes, relName, stateFor, stateLabel, groupItems, defaultSelection, selectionTotals, footerLine, licenceLine,
   licencesFor, canConfirm, idsForMissing, stepsFor, progressLine, HF_TOKENS_URL, offlineStatus, offlineSteps, OFFLINE_TEXT,
-  fetchableIds, jobNote,
+  fetchableIds, jobNote, noServer, tokenNote, FAIL_TEXT,
 } from "../../web/models/plan.mjs";
+import { keyGuard, installKeyGuard, openPanels } from "../../web/models/panel.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CAT = JSON.parse(readFileSync(join(ROOT, "web/models/catalog.json"), "utf8"));
@@ -191,4 +192,74 @@ test("panel: Cancel stops the current file only; a failed /status after the firs
   assert.ok(src.includes('call("/soundstage/models/cancel", { id: cur.id })'));
   assert.ok(!src.includes("all: true"));
   assert.match(src, /if \(!first && this\.status && !this\.status\.offline\)/);
+});
+
+test("a file with the exact name in any listed models folder is installed, even if the server's first folder lacks it", () => {
+  // installed_files merges every folder ComfyUI lists (extra_model_paths.yaml); the server row may say missing
+  const it = { ...byId(status(), "flux2-vae"), state: "missing" };
+  assert.deepEqual(stateFor(it, { vae: ["flux2-vae.safetensors"] }), { state: "installed" });
+  const lora = { ...byId(status(), "ltx25-layout-lora"), state: "missing" };
+  assert.equal(stateFor(lora, { loras: [relName(lora)] }).state, "installed");
+  // an exact size known to differ still wins
+  assert.equal(stateFor({ ...it, wrong_size: true }, { vae: ["flux2-vae.safetensors"] }).state, "missing");
+  const s = status({}, { vae: ["flux2-vae.safetensors"] });
+  assert.ok(!defaultSelection(s).includes("flux2-vae"));
+  assert.ok(!fetchableIds(s.items, ["flux2-vae"], s.installed_files).length);
+});
+
+test("a refused token says replace it, not 'can't find this file'", () => {
+  const it = byId(status(), "flux2-vae");
+  const steps = stepsFor(it, "bad_token", true);
+  assert.equal(steps[0].text, "Your Hugging Face token was refused: replace it above");
+  assert.ok(!steps.some((x) => /can't find/.test(x.text)));
+  assert.match(FAIL_TEXT.bad_token, /refused: replace it above/);
+  assert.match(FAIL_TEXT.not_model, /web page/);
+});
+
+test("token box: says which token is in use, a pasted one wins, Remove goes back to the fallback", () => {
+  const env = tokenNote({ signed_in: true, token_source: "environment", token_fallback: "environment" });
+  assert.match(env.line, /HF_TOKEN/);
+  assert.equal(env.canRemove, false);
+  assert.equal(env.pasteButton, "Use a different token…");
+  assert.match(env.pasteNote, /^Use my saved token: .*instead of the HF_TOKEN/);
+  const cli = tokenNote({ signed_in: true, token_source: "hf_cli", token_fallback: "hf_cli" });
+  assert.match(cli.line, /huggingface-cli/);
+  const saved = tokenNote({ signed_in: true, token_source: "saved", token_fallback: "environment", user: "jane-doe" });
+  assert.match(saved.line, /jane-doe/);
+  assert.ok(saved.canRemove && saved.pasteButton === "Replace token…");
+  assert.match(saved.removeNote, /goes back to the HF_TOKEN/);
+  assert.equal(tokenNote({ signed_in: true, token_source: "saved", token_fallback: null }).removeNote, "");
+  assert.equal(tokenNote({ signed_in: false }).pasteButton, null);
+});
+
+test("no server in the try-it demo is detected without a request", () => {
+  assert.equal(noServer({ __demo: { app: 1 } }), true);
+  assert.equal(noServer({}), false);
+  assert.equal(noServer(null), false);
+  const src = readFileSync(join(ROOT, "web/models/panel.mjs"), "utf8");
+  assert.match(src, /if \(first && noServer\(\)\) throw/);
+});
+
+test("while the panel is open no key reaches the App behind it; Esc closes it", () => {
+  const win = new EventTarget();
+  assert.equal(installKeyGuard(win), true);
+  assert.equal(installKeyGuard(win), false);           // once
+  const app = [];
+  win.addEventListener("keydown", (e) => app.push(e.key), true);   // the App's window capture listeners come later
+  const key = (k, o = {}) => { const e = new Event("keydown", { cancelable: true }); Object.assign(e, { key: k, ...o }); win.dispatchEvent(e); return e; };
+  const panel = { closed: false, close() { this.closed = true; openPanels.delete(this); } };
+  openPanels.add(panel);
+  key("Tab"); key("h"); key("H"); key("z", { metaKey: true }); key(" ");
+  assert.deepEqual(app, []);
+  assert.equal(panel.closed, false);
+  const esc = key("Escape");
+  assert.equal(panel.closed, true);
+  assert.equal(esc.defaultPrevented, true);
+  assert.deepEqual(app, []);
+  key("h");                                             // closed: keys reach the App again
+  assert.deepEqual(app, ["h"]);
+  // the dialog root gets the same guard in the capture phase
+  const src = readFileSync(join(ROOT, "web/models/panel.mjs"), "utf8");
+  assert.match(src, /this\.root\.addEventListener\("keydown", keyGuard, true\)/);
+  assert.ok(!/document\.addEventListener\("keydown"/.test(src));
 });

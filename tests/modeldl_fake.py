@@ -13,19 +13,36 @@ TOKEN = "hf_TESTtokenVALUE123456789"   # invented; asserted never to leak
 HF = "https://huggingface.co"
 
 
-def stub_folder_paths(monkeypatch, tmp_path):
-    """folder_paths with every allowed models folder under tmp/models and the user dir at tmp/user."""
+FOLDERS = ("diffusion_models", "text_encoders", "vae", "loras", "latent_upscale_models", "checkpoints",
+           "background_removal")
+
+
+def safetensors_bytes(payload: bytes, meta: str = "test") -> bytes:
+    """A minimal file shaped like safetensors: 8-byte little-endian header length, a JSON header, then the data."""
+    import json
+    import struct
+    h = json.dumps({"__metadata__": {"note": meta}}).encode()
+    return struct.pack("<Q", len(h)) + h + payload
+
+
+def stub_folder_paths(monkeypatch, tmp_path, extra=None):
+    """folder_paths with every allowed models folder under tmp/models and the user dir at tmp/user. extra: a second
+    models root (as extra_model_paths.yaml adds), listed after the first for every folder type."""
     fp = types.ModuleType("folder_paths")
     models = tmp_path / "models"
-    for f in ("diffusion_models", "text_encoders", "vae", "loras", "latent_upscale_models", "checkpoints",
-              "background_removal"):
-        (models / f).mkdir(parents=True, exist_ok=True)
-    fp.get_folder_paths = lambda f: [str(models / f)]
+    roots = [models] + ([Path(extra)] if extra else [])
+    for r in roots:
+        for f in FOLDERS:
+            (r / f).mkdir(parents=True, exist_ok=True)
+    fp.get_folder_paths = lambda f: [str(r / f) for r in roots]
 
     def names(f):
-        base = models / f
-        return sorted(str(p.relative_to(base)).replace("\\", "/") for p in base.rglob("*") if p.is_file()
-                      and not p.name.endswith(".part"))
+        out = set()
+        for r in roots:
+            base = r / f
+            out |= {str(p.relative_to(base)).replace("\\", "/") for p in base.rglob("*") if p.is_file()
+                    and not p.name.endswith((".part", ".part.meta"))}
+        return sorted(out)
     fp.get_filename_list = names
     (tmp_path / "user").mkdir(exist_ok=True)
     fp.get_user_directory = lambda: str(tmp_path / "user")
@@ -67,7 +84,9 @@ class FakeHF:
       range_mode: "206" (honour Range), "200" (ignore Range), "416" (refuse a Range once),
                   "badrange" (answer 206 from byte 0 whatever was asked, once);
       length: send Content-Length (and Content-Range on 206/416) on GET, as real servers do;
-      etag: send X-Linked-Etag / X-Linked-Size on HEAD; corrupt: serve different bytes on GET.
+      etag: send X-Linked-Etag / X-Linked-Size on HEAD; corrupt: serve different bytes on GET;
+      version: the GET ETag (a changed upstream gets a new one); If-Range with another value gets a 200 (whole file);
+      content_type: the GET Content-Type; portal: every GET answers 200 with an HTML sign-in page.
     """
 
     def __init__(self, files, **kw):
@@ -81,6 +100,10 @@ class FakeHF:
         self.length = kw.get("length", True)
         self.chunk_hook = kw.get("chunk_hook")
         self.whoami = kw.get("whoami", {TOKEN: "jane-doe"})
+        self.version = kw.get("version", "v1")
+        self.content_type = kw.get("content_type", "application/octet-stream")
+        self.portal = kw.get("portal", False)
+        self.short = kw.get("short")          # GET bodies stop after this many bytes (Content-Length stays whole)
         self.active = 0
         self.max_active = 0
         self._refused_once = False
@@ -120,16 +143,30 @@ class FakeHF:
         return self._serve(repo, path, headers)
 
     def _serve(self, repo, path, headers):
+        if self.portal:
+            page = b"<html><body>Sign in to the Wi-Fi</body></html>"
+            return FakeResp(200, {"Content-Type": "text/html; charset=utf-8", "Content-Length": str(len(page))}, body=page)
         data = self.files[(repo, path)]
         if self.corrupt:
             data = b"X" + data[1:]
         rng = headers.get("Range")
+        etag = '"%s"' % self.version
+        if rng and headers.get("If-Range") and headers["If-Range"] != etag:
+            rng = None                       # RFC 9110: a stale If-Range gets the whole, current file
         start = int(rng.split("=")[1].rstrip("-")) if rng else 0
         self.active += 1
         self.max_active = max(self.max_active, self.active)
         fake = self
 
         class R(FakeResp):
+            def __init__(self_inner, status, h=None, **kw):
+                h = dict(h or {})
+                h.setdefault("ETag", etag)
+                h.setdefault("Content-Type", fake.content_type)
+                if fake.short is not None and kw.get("body"):
+                    kw["body"] = kw["body"][:fake.short]
+                super().__init__(status, h, **kw)
+
             def close(self_inner):
                 if not self_inner.closed:
                     fake.active -= 1

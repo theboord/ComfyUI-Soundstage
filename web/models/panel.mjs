@@ -7,10 +7,43 @@
 import {
   fmtBytes, stateFor, stateLabel, groupItems, defaultSelection, selectionTotals, footerLine, licencesFor, canConfirm,
   idsForMissing, stepsFor, progressLine, FAIL_TEXT, HF_TOKENS_URL, offlineStatus, offlineSteps, OFFLINE_TEXT,
-  fetchableIds, jobNote,
+  fetchableIds, jobNote, noServer, tokenNote,
 } from "./plan.mjs";
 
 const CATALOG_URL = new URL("./catalog.json", import.meta.url);
+
+/**
+ * Keys while the panel is open. The panel is modal, so no key reaches the App or ComfyUI behind it (Tab / H hiding
+ * the App's panels, Cmd+Z undoing the stage, Space playing): the guard stops every keydown in the capture phase at
+ * the window, and again at the dialog root. Default actions still happen (typing in the token box, Tab moving focus,
+ * Enter on a button), and Tab wraps inside the dialog. Esc closes the panel.
+ * The window listener is added when this module loads, before the App adds its own window capture listeners, so it
+ * runs first; ComfyUI listeners added before this module loads are the one thing it can't get ahead of.
+ */
+export const openPanels = new Set();
+export function keyGuard(e) {
+  const p = [...openPanels].at(-1);
+  if (!p || e.__ssModelsSeen) return;
+  e.__ssModelsSeen = true;
+  e.stopImmediatePropagation?.();
+  e.stopPropagation?.();
+  if (e.key === "Escape") { e.preventDefault?.(); p.close(); return; }
+  if (e.key === "Tab" && p.box?.querySelectorAll) {
+    const f = [...p.box.querySelectorAll("button:not([disabled]), input:not([disabled]), a[href]")];
+    const a = globalThis.document?.activeElement, i = f.indexOf(a);
+    if (f.length && (i === -1 || (e.shiftKey ? i === 0 : i === f.length - 1))) {
+      e.preventDefault?.();
+      (e.shiftKey ? f.at(-1) : f[0]).focus();
+    }
+  }
+}
+export function installKeyGuard(target = globalThis.window) {
+  if (!target?.addEventListener || target.__ssModelsGuard) return false;
+  target.__ssModelsGuard = true;
+  target.addEventListener("keydown", keyGuard, true);
+  return true;
+}
+installKeyGuard();
 
 const CSS = `
 #ss-models{position:fixed;inset:0;z-index:100002;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)}
@@ -82,8 +115,9 @@ class ModelsPanel {
     this.box = el("div", { className: "box" });
     this.root.append(this.box);
     this.root.addEventListener("pointerdown", (e) => { if (e.target === this.root) this.close(); });
-    this.onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); this.close(); } };
-    document.addEventListener("keydown", this.onKey, true);
+    installKeyGuard();                                      // no-op once installed at load
+    this.root.addEventListener("keydown", keyGuard, true);  // and at the dialog root, capture phase
+    openPanels.add(this);
     document.body.append(this.root);
     this.box.append(el("div", { className: "body", textContent: "Loading…" }));
     await this.refresh(true);
@@ -91,12 +125,16 @@ class ModelsPanel {
 
   close() {
     clearTimeout(this.timer);
-    document.removeEventListener("keydown", this.onKey, true);
+    openPanels.delete(this);
     this.root?.remove();
   }
 
   async refresh(first = false) {
-    try { this.status = await call("/soundstage/models/status"); } catch (e) {
+    try {
+      // the try-it demo has no server: go straight to the read-only list (asking would log a 404 in the console)
+      if (first && noServer()) throw new Error("no server");
+      this.status = await call("/soundstage/models/status");
+    } catch (e) {
       if (!first && this.status && !this.status.offline) {
         // The server answered before: a failed refresh mid-download is a blip, not "no server". Keep the list and
         // the selection, say so, and keep polling (the download runs on the server either way).
@@ -160,13 +198,18 @@ class ModelsPanel {
         link(HF_TOKENS_URL, "make a read token ↗")));
       return box;
     }
+    const tn = tokenNote(s);
+    const refused = Object.values(this.access || {}).includes("bad_token")
+      || (this.prog?.failed || []).some((f) => f.code === "bad_token");
     if (s.signed_in) {
-      const who = s.token_source === "saved"
-        ? `Hugging Face: signed in${s.user ? ` as ${s.user}` : ""} (saved on this computer)`
-        : s.token_source === "environment" ? "Hugging Face: using the HF_TOKEN set for ComfyUI" : "Hugging Face: using your huggingface-cli login";
-      box.append(el("span", { textContent: who }));
-      if (s.token_source === "saved") box.append(el("button", { textContent: "Remove token", onclick: () => this.removeToken() }));
-      return box;
+      box.append(el("span", { textContent: tn.line }));
+      if (tn.canRemove) box.append(el("button", { textContent: "Remove token", onclick: () => this.removeToken() }));
+      if (tn.removeNote) box.append(el("span", { className: "muted", textContent: tn.removeNote }));
+      if (!this.showPaste && !refused) {
+        box.append(el("button", { textContent: tn.pasteButton, onclick: () => { this.showPaste = true; this.render(); this.tokenInput?.focus(); } }));
+        return box;
+      }
+      box.append(el("div", { className: "muted", style: "flex-basis:100%", textContent: tn.pasteNote }));
     }
     const inp = el("input", { placeholder: "Hugging Face token (hf_…)" });
     inp.type = "password";
@@ -177,10 +220,10 @@ class ModelsPanel {
     const msg = el("span", { className: "fail" });
     const save = el("button", { textContent: "Save", onclick: async () => {
       save.disabled = true;
-      try { await call("/soundstage/models/token", { token: inp.value }); inp.value = ""; this.access = {}; await this.refresh(); }
+      try { await call("/soundstage/models/token", { token: inp.value }); inp.value = ""; this.access = {}; this.showPaste = false; await this.refresh(); }
       catch (e) { msg.textContent = e.message; save.disabled = false; }
     } });
-    box.append(el("span", { textContent: "Some models need a Hugging Face sign-in." }), inp, save,
+    box.append(...(s.signed_in ? [] : [el("span", { textContent: tn.line })]), inp, save,
       el("span", { className: "muted" }, link(HF_TOKENS_URL, "Make a token"), " (read access is enough)"), msg);
     return box;
   }
@@ -267,7 +310,7 @@ class ModelsPanel {
       const res = await this.checkAccess(ids);
       if (!res) return;
       const ok = ids.filter((i) => res[i] === "ok");
-      if (ids.some((i) => res[i] === "sign_in")) this.tokenInput?.focus();
+      if (ids.some((i) => res[i] === "sign_in" || res[i] === "bad_token")) this.tokenInput?.focus();
       if (!ok.length) {
         this.note = "Nothing could start yet: follow the steps on the rows below, then Download again.";
         this.render();

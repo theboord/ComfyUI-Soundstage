@@ -170,6 +170,60 @@ def test_token_file_mode_and_lookup_order(tmp_path, monkeypatch):
     assert (cli / "token").read_text().strip() == "hf_cliTOKEN0000"   # the CLI file is never touched
 
 
+def test_token_folder_modes_and_exclusive_temp_file(tmp_path, monkeypatch):
+    stub_folder_paths(monkeypatch, tmp_path)
+    shared = tmp_path / "user" / "soundstage"
+    shared.mkdir(mode=0o755)
+    os.chmod(shared, 0o755)
+    (shared / "models_verified.json").write_text("{}")
+    opened = []
+    real_open = os.open
+
+    def spy(path, flags, mode=0o777, *a, **k):
+        opened.append((str(path), flags, mode))
+        return real_open(path, flags, mode, *a, **k)
+    monkeypatch.setattr(M.os, "open", spy)
+    M.save_token(TOKEN)
+    p = M.token_path()
+    assert p == shared / "hf" / "token"
+    assert stat.S_IMODE(p.stat().st_mode) == 0o600
+    assert stat.S_IMODE(p.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(shared.stat().st_mode) == 0o755          # the shared folder is never chmodded
+    tmp_opens = [o for o in opened if o[0].endswith(".tmp")]
+    assert len(tmp_opens) == 1
+    _path, flags, mode = tmp_opens[0]
+    assert flags & os.O_EXCL and flags & os.O_CREAT and mode == 0o600
+    assert sorted(x.name for x in p.parent.iterdir()) == ["token"]   # no temp file left behind
+    # saving again (a replacement token) uses a new unique temp name and keeps the modes
+    M.save_token("hf_secondTOKEN0000")
+    names = [o[0] for o in opened if o[0].endswith(".tmp")]
+    assert len(names) == 2 and names[0] != names[1]
+    assert stat.S_IMODE(p.stat().st_mode) == 0o600 and M.load_token() == ("hf_secondTOKEN0000", "saved")
+
+
+def test_token_from_the_old_location_is_read_and_moved_on_save(tmp_path, monkeypatch):
+    stub_folder_paths(monkeypatch, tmp_path)
+    old = M.legacy_token_path()
+    old.parent.mkdir(parents=True, exist_ok=True)
+    old.write_text(TOKEN)
+    assert M.load_token() == (TOKEN, "saved")
+    M.save_token("hf_newTOKEN00000")
+    assert not old.exists() and M.load_token() == ("hf_newTOKEN00000", "saved")
+    old.write_text(TOKEN)
+    assert M.remove_token() and not old.exists() and not M.token_path().exists()
+
+
+def test_saved_token_beats_env_and_cli_and_the_fallback_is_named(tmp_path, monkeypatch):
+    stub_folder_paths(monkeypatch, tmp_path)
+    cli = tmp_path / "home" / ".cache" / "huggingface"
+    cli.mkdir(parents=True)
+    (cli / "token").write_text("hf_cliTOKEN0000\n")
+    assert M.load_token(skip_saved=True) == ("hf_cliTOKEN0000", "hf_cli")
+    M.save_token(TOKEN)
+    assert M.load_token() == (TOKEN, "saved")
+    assert M.load_token(skip_saved=True) == ("hf_cliTOKEN0000", "hf_cli")
+
+
 def test_token_shape_is_checked(tmp_path, monkeypatch):
     stub_folder_paths(monkeypatch, tmp_path)
     for bad in ("", "short", "has space inside", "line\nbreak-injection-xx", 123):
