@@ -25,14 +25,14 @@ The Models panel downloads the model files the App needs from Hugging Face, so y
 3. The panel checks access on Hugging Face. Gated repos may give one of two answers:
    - *Sign in*: paste a token.
    - *Accept the licence*: open the repo page (linked) and accept the licence, then click **Check again**.
-4. Files download one at a time. The panel shows the speed and time left, and has a **Cancel** button. A cancelled or dropped download keeps its `.part` file, and the next attempt resumes it.
+4. Files download one at a time. The panel shows the speed and time left, and has a **Cancel** button that stops the current file only (the rest of the queue carries on). A cancelled or dropped download keeps its `.part` file, and the next attempt resumes it. A file that fails (not enough disk, sign-in needed) shows its reason on its row, also when the panel is reopened.
 5. When it finishes, **reload the workflow** so the loaders can see the new files. The panel never reloads on its own, so unsaved work is safe.
 
 ## Safety
 
 - **Only listed files.** The browser can only ask for files listed in `web/models/catalog.json`, and it does so by id. Paths and URLs come from the catalog, never from the page. Every file stays inside its ComfyUI models folder: `..` and symlinks that point outside the folder are refused.
 - **Your token stays on your computer.** It is saved at `user/soundstage/hf_token` with permissions 600. It is never sent back to the browser, never logged, and only ever sent to huggingface.co. When a download is redirected to the CDN, the token is not sent there. **Remove token** deletes the file.
-- **Verified before use.** Each file downloads to `<name>.part` and is checked before it is renamed into place. The size and sha256 are checked against Hugging Face's own values (`X-Linked-Size` / `X-Linked-Etag`), or against the catalog once it has pinned values. A file that doesn't match is deleted.
+- **Verified before use.** Each file downloads to `<name>.part` and is checked before it is renamed into place. The sha256 is checked when the catalog or Hugging Face (`X-Linked-Etag`) gives one. Without one, only the size is checked: exactly against `X-Linked-Size` or the download's own `Content-Length` / `Content-Range`, else against the catalog's rounded GB figure (within 5 MB). A file that doesn't match is deleted. If no size is known anywhere the file is kept unchecked and reported as `verified: "none"`. A file with the right name but the wrong size is shown as **Wrong size: download again**, not Installed. A resume appends only when the server's `Content-Range` starts where the `.part` ends (otherwise it starts over), and a `.part` that is already complete is checked and finished instead of downloaded again.
 - **Disk check.** A download only starts if there is room for the file plus 2 GB.
 
 ## HTTP routes

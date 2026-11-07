@@ -1,7 +1,7 @@
 """Model downloader: get the App's model files from Hugging Face inside the App (docs/models.md).
 
-GET  /soundstage/models/status      -> {catalog_version, groups, licences, items:[...+state, have_bytes], installed_files,
-                                        signed_in, user, token_source, free_bytes, busy}
+GET  /soundstage/models/status      -> {catalog_version, groups, licences, items:[...+state, have_bytes, wrong_size?],
+                                        installed_files, signed_in, user, token_source, free_bytes, busy, done, failed}
 POST /soundstage/models/access      {ids}                                  -> {results:{id:code}, messages:{id:str}}
 POST /soundstage/models/download    {ids, confirm:true, accepted_licences} -> {queued, skipped, refused:{id:reason}}
 GET  /soundstage/models/progress    -> {current, queue, done, failed}
@@ -16,7 +16,9 @@ Rules this module keeps:
   * The Hugging Face token never leaves the server: no route returns it, it's never logged, error messages are
     fixed strings. It is sent only to the huggingface.co host, never to the CDN a download redirects to.
     Saved at user/soundstage/hf_token with mode 600.
-  * One download at a time, into <name>.part, verified (size + sha256) and then renamed into place.
+  * One download at a time, into <name>.part, verified and then renamed into place: sha256 when the catalog or
+    Hugging Face's X-Linked-Etag gives one, else size (exact from Hugging Face or the response, else the catalog's
+    rounded figure within SIZE_SLACK). verified is "sha256", "size" or, only when no size is known anywhere, "none".
   * All network access goes through a Transport object, so the tests run against a fake one.
 """
 from __future__ import annotations
@@ -45,6 +47,7 @@ DISK_MARGIN = 2 * GIB
 CHUNK = 8 << 20
 ACCESS_TTL = 60.0
 MAX_HOPS = 5
+SIZE_SLACK = 5_000_000      # half of 0.01 GB: catalog sizes without a sha256 are rounded to 0.01 GB
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -196,20 +199,39 @@ def part_path(t: Path) -> Path:
     return t.with_name(t.name + ".part")
 
 
+def size_close(actual: int, approx: int) -> bool:
+    """A catalog size without a sha256 is the rounded GB figure (to 0.01 GB): accept within half that rounding,
+    and never more than 2 % (so a small test file can't pass a 2x size)."""
+    return abs(actual - approx) <= min(SIZE_SLACK, approx // 50)
+
+
+def size_matches(item: dict, actual: int) -> bool | None:
+    """True / False against the catalog size (exact once a sha256 is filled, else rounded); None if it has none."""
+    sz = item.get("size")
+    if sz is None:
+        return None
+    return actual == sz if item.get("sha256") else size_close(actual, sz)
+
+
 def item_state(item: dict) -> dict:
-    """installed / partial / missing (no hashing: status must be quick). other_build is worked out in the browser."""
+    """installed / partial / missing (no hashing: status must be quick). other_build is worked out in the browser.
+    Installed needs the size to match the catalog (when it has one): a truncated or wrong file with the right name is
+    reported as missing/partial with wrong_size, so it can be downloaded again (the download replaces it)."""
     try:
         t = target(item)
     except ValueError:
         return {"state": "missing", "have_bytes": 0}
+    wrong = False
     if t.is_file():
-        sz = item.get("size") if item.get("sha256") else None   # sizes are exact only once filled
-        if sz is None or t.stat().st_size == sz:
-            return {"state": "installed", "have_bytes": t.stat().st_size}
+        n = t.stat().st_size
+        if size_matches(item, n) is not False:
+            return {"state": "installed", "have_bytes": n}
+        wrong = True
     p = part_path(t)
-    if p.is_file():
-        return {"state": "partial", "have_bytes": p.stat().st_size}
-    return {"state": "missing", "have_bytes": 0}
+    out = {"state": "partial", "have_bytes": p.stat().st_size} if p.is_file() else {"state": "missing", "have_bytes": 0}
+    if wrong:
+        out["wrong_size"] = True
+    return out
 
 
 def installed_files() -> dict:
@@ -567,22 +589,26 @@ class Downloader:
             raise JobError(code)
         hsha, hsize = linked_meta(h)
         want_sha = it.get("sha256") or hsha
-        want_size = hsize or (it.get("size") if it.get("sha256") else None)
-        if want_size is None and h.get("content-length") and code == "ok" and not h.get("location"):
+        # exact sizes: Hugging Face's X-Linked-Size, a filled catalog size, a direct HEAD Content-Length.
+        exact = hsize or (it.get("size") if it.get("sha256") else None)
+        if exact is None and h.get("content-length") and not h.get("location"):
             try:
-                want_size = int(h["content-length"])
+                exact = int(h["content-length"]) or None
             except ValueError:
                 pass
-        self.current["total"] = want_size or it.get("size")
+        approx = None if exact is not None else it.get("size")   # the catalog's rounded figure
+        self.current["total"] = exact or approx
 
         t.parent.mkdir(parents=True, exist_ok=True)
         part = part_path(t)
+        if part.is_symlink():
+            part.unlink()
         have = part.stat().st_size if part.is_file() else 0
-        if want_size is not None and have > want_size:
+        if exact is not None and have > exact:
             part.unlink()
             have = 0
 
-        need = (want_size or it.get("size") or 0) - have + DISK_MARGIN
+        need = (exact or approx or 0) - have + DISK_MARGIN
         free = self.disk_usage(str(t.parent)).free
         if free < need:
             raise JobError("disk", f"Not enough free disk space: needs {need / GIB:.1f} GB, {free / GIB:.1f} GB free")
@@ -592,21 +618,44 @@ class Downloader:
             self.current["phase"] = "hashing"
             hasher = await asyncio.to_thread(_hash_file, part)
 
-        for _attempt in range(2):
+        # A .part that is already whole (a cancel after the last chunk, or a crash before the rename): finish it.
+        complete = exact is not None and have == exact
+        for _attempt in range(3):
+            if complete:
+                break
             extra = {"Range": f"bytes={have}-"} if have else None
             r = await self._get(resolve_url(it), tok, extra)
             try:
+                cr = _content_range(r.headers.get("content-range"))
                 if r.status == 416:
+                    total = cr[2] if cr else None
+                    if have and total is not None and total == have and (exact is None or exact == have):
+                        exact, complete = have, True        # the server says we already have every byte
+                        break
                     part.unlink(missing_ok=True)
                     have, hasher = 0, hashlib.sha256()
                     continue
                 if r.status == 206 and have:
+                    if not cr or cr[0] != have:
+                        # a range we didn't ask for: appending it would corrupt the file, so start over
+                        part.unlink(missing_ok=True)
+                        have, hasher = 0, hashlib.sha256()
+                        continue
                     mode = "ab"
+                    if exact is None and cr[2] is not None:
+                        exact = cr[2]
                 elif r.status == 200:
                     mode, have, hasher = "wb", 0, hashlib.sha256()
+                    if exact is None and r.headers.get("content-length"):
+                        try:
+                            exact = int(r.headers["content-length"]) or None
+                        except ValueError:
+                            pass
                 else:
                     c = classify(r.status, bool(it.get("gated")), bool(tok), r.headers.get("x-error-code"))
                     raise JobError(c if c != "ok" else "error")
+                if exact is not None:
+                    self.current["total"] = exact
                 await self._stream(r, part, mode, have, hasher, i)
             finally:
                 r.close()
@@ -621,7 +670,10 @@ class Downloader:
 
         self.current["phase"] = "verifying"
         size = part.stat().st_size
-        if want_size is not None and size != want_size:
+        if exact is not None and size != exact:
+            part.unlink(missing_ok=True)
+            raise JobError("verify")
+        if exact is None and approx is not None and not size_close(size, approx):
             part.unlink(missing_ok=True)
             raise JobError("verify")
         if want_sha and hasher.hexdigest() != want_sha:
@@ -630,7 +682,9 @@ class Downloader:
         with open(part, "rb+") as f:
             os.fsync(f.fileno())
         os.replace(part, t)
-        return "sha256" if want_sha else ("size" if want_size is not None else "none")
+        if want_sha:
+            return "sha256"
+        return "size" if (exact is not None or approx is not None) else "none"
 
     async def _get(self, url: str, tok: str | None, extra: dict | None):
         """GET following up to MAX_HOPS redirects by hand, so Authorization stays on the Hugging Face host."""
@@ -671,6 +725,15 @@ class Downloader:
                     break
             f.flush()
         del t0
+
+
+def _content_range(v) -> tuple[int | None, int | None, int | None] | None:
+    """'bytes 5-9/10' -> (5, 9, 10); 'bytes */10' -> (None, None, 10); anything else -> None."""
+    m = re.match(r"^\s*bytes\s+(?:(\d+)-(\d+)|\*)/(\d+|\*)\s*$", v or "")
+    if not m:
+        return None
+    a, b, tot = m.group(1), m.group(2), m.group(3)
+    return (int(a) if a else None, int(b) if b else None, int(tot) if tot != "*" else None)
 
 
 def _hash_file(p: Path):
@@ -724,7 +787,10 @@ def status() -> dict:
     return {"catalog_version": cat["schema"], "groups": cat["groups"], "licences": cat["licences"],
             "sets": cat.get("sets", {}), "items": items, "installed_files": installed_files(),
             "signed_in": src is not None, "user": _STATE.get("user") if src == "saved" else None,
-            "token_source": src, "free_bytes": _free_bytes(), "busy": dl.busy}
+            "token_source": src, "free_bytes": _free_bytes(), "busy": dl.busy,
+            # this session's finished and failed jobs, so a job that fails before the panel's first progress poll
+            # (a disk refusal, sign-in) and earlier failures on a reopened panel still show on their rows
+            "done": list(dl.done), "failed": list(dl.failed)}
 
 
 async def check_access(ids: list[str]) -> dict:

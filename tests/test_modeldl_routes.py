@@ -103,6 +103,8 @@ def test_status_progress_and_no_leaks(env, caplog):
                                                                 "accepted_licences": ["apache-2.0"]})
         await M.downloader().idle()
         _, pr = await call("get", "/soundstage/models/progress")
+        _, st2 = await call("get", "/soundstage/models/status")
+        assert st2["busy"] is False and st2["done"] == pr["done"] and st2["failed"] == []
         _, tiers = await call("get", "/soundstage/models/tiers")
         _, rm = await call("post", "/soundstage/models/token/remove")
         await call("post", "/soundstage/models/cancel", json={"all": True})
@@ -122,3 +124,19 @@ def test_status_progress_and_no_leaks(env, caplog):
         assert str(tmp_path) not in b         # no server paths
     assert TOKEN not in caplog.text
     assert (models / "vae" / "flux2-vae.safetensors").exists()
+
+
+def test_fast_failure_is_in_status(env):
+    # a job that fails before any progress poll (here: not enough disk) is still reported by /status
+    hf = FakeHF(_files())
+
+    async def go(c):
+        M.downloader().disk_usage = lambda p: __import__("collections").namedtuple("U", "total used free")(0, 0, 1)
+        await c.post("/soundstage/models/download", json={"ids": ["flux2-vae"], "confirm": True,
+                                                         "accepted_licences": ["apache-2.0"]})
+        await M.downloader().idle()
+        return await (await c.get("/soundstage/models/status")).json()
+
+    st = asyncio.run(_with_client(hf, go))
+    assert st["busy"] is False and st["failed"] and st["failed"][0]["id"] == "flux2-vae"
+    assert st["failed"][0]["code"] == "disk"

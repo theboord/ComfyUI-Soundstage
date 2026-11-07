@@ -93,10 +93,17 @@ def test_states(tmp_path, monkeypatch):
     assert M.item_state(it) == {"state": "missing", "have_bytes": 0}
     (models / "vae" / "flux2-vae.safetensors.part").write_bytes(b"abc")
     assert M.item_state(it) == {"state": "partial", "have_bytes": 3}
-    (models / "vae" / "flux2-vae.safetensors").write_bytes(b"abcd")
+    full = models / "vae" / "flux2-vae.safetensors"
+    full.write_bytes(b"abcd")
+    # a file with the right name but far from the catalog size is not "installed" (so it can be repaired)
+    assert M.item_state(it) == {"state": "partial", "have_bytes": 3, "wrong_size": True}
+    with open(full, "wb") as f:                      # sparse: within the rounded catalog size
+        f.truncate(it["size"] + 1_000_000)
     assert M.item_state(it)["state"] == "installed"
+    assert M.item_state({**it, "size": None})["state"] == "installed"   # no size known: existence
     # once a sha256 is filled the size is exact and must match
-    assert M.item_state({**it, "sha256": "0" * 64, "size": 99})["state"] == "partial"
+    assert M.item_state({**it, "sha256": "0" * 64})["state"] == "partial"
+    assert M.item_state({**it, "sha256": "0" * 64, "size": it["size"] + 1_000_000})["state"] == "installed"
     files = M.installed_files()
     assert files["vae"] == ["flux2-vae.safetensors"]
 

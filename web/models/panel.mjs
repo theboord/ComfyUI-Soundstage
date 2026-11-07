@@ -7,6 +7,7 @@
 import {
   fmtBytes, stateFor, stateLabel, groupItems, defaultSelection, selectionTotals, footerLine, licencesFor, canConfirm,
   idsForMissing, stepsFor, progressLine, FAIL_TEXT, HF_TOKENS_URL, offlineStatus, offlineSteps, OFFLINE_TEXT,
+  fetchableIds, jobNote,
 } from "./plan.mjs";
 
 const CATALOG_URL = new URL("./catalog.json", import.meta.url);
@@ -68,6 +69,7 @@ class ModelsPanel {
     this.status = null;
     this.timer = null;
     this.note = "";
+    this.queued = [];        // ids this panel queued, for the note once they stop running
   }
 
   async open() {
@@ -95,7 +97,16 @@ class ModelsPanel {
 
   async refresh(first = false) {
     try { this.status = await call("/soundstage/models/status"); } catch (e) {
-      // No server (the try-it demo, or ComfyUI is down): show the catalog read-only rather than a dead end.
+      if (!first && this.status && !this.status.offline) {
+        // The server answered before: a failed refresh mid-download is a blip, not "no server". Keep the list and
+        // the selection, say so, and keep polling (the download runs on the server either way).
+        this.note = "Lost contact with the App's server for a moment; trying again…";
+        this.render();
+        this.poll();
+        return;
+      }
+      if (!first) return;
+      // No server on the first load (the try-it demo, or ComfyUI is down): show the catalog read-only.
       try {
         const r = await fetch(CATALOG_URL);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -111,6 +122,13 @@ class ModelsPanel {
       const fromNotice = idsForMissing(this.missing, this.status.items).ids;
       this.sel = new Set(fromNotice.length ? fromNotice : defaultSelection(this.status));
     }
+    if (this.note.startsWith("Lost contact")) this.note = "";
+    if (!this.status.busy) {
+      // Jobs that finished or failed before any progress poll (or earlier this session) come with the status.
+      this.prog = { current: null, queue: [], done: this.status.done || [], failed: this.status.failed || [] };
+      this.doneCount = this.prog.done.length + this.prog.failed.length;
+      if (this.queued.length) { this.note = jobNote(this.queued, this.prog); this.queued = []; }
+    }
     this.render();
     if (this.status.busy) this.poll();
   }
@@ -124,7 +142,7 @@ class ModelsPanel {
     if (this.note) body.prepend(el("div", { className: "muted", textContent: this.note }));
     if (s.offline) body.prepend(el("div", { className: "offline", textContent: OFFLINE_TEXT }));
     this.progEl = el("div", { className: "prog" });
-    const t = selectionTotals(s.items, [...this.sel]);
+    const t = selectionTotals(s.items, fetchableIds(s.items, this.sel, s.installed_files));
     const freeV = Object.values(s.free_bytes || {}).filter((v) => v != null);
     const free = freeV.length ? `${fmtBytes(Math.max(...freeV))} free` : "";
     this.dlBtn = el("button", { className: "pri", textContent: s.offline ? "Download needs ComfyUI" : footerLine(t),
@@ -216,7 +234,12 @@ class ModelsPanel {
   }
 
   async checkAccess(ids, recheck = false) {
-    const r = await call("/soundstage/models/access", { ids, recheck });
+    let r;
+    try { r = await call("/soundstage/models/access", { ids, recheck }); } catch (e) {
+      this.note = `Couldn't check Hugging Face access: ${e.message}. Try again.`;
+      this.render();
+      return null;
+    }
     Object.assign(this.access, r.results);
     this.render();
     return r.results;
@@ -225,7 +248,7 @@ class ModelsPanel {
   /** One confirm for the whole selection: every licence listed, each ticked, then access check, then queue. */
   confirm() {
     const s = this.status;
-    const ids = [...this.sel].filter((i) => !["installed", "other_build"].includes(stateFor(s.items.find((x) => x.id === i) || {}, s.installed_files).state));
+    const ids = fetchableIds(s.items, this.sel, s.installed_files);   // the same ids the footer counted
     const lines = licencesFor(s.items, ids, s.licences);
     const ticked = new Set();
     const go = el("button", { className: "pri", textContent: footerLine(selectionTotals(s.items, ids)), disabled: true });
@@ -240,16 +263,22 @@ class ModelsPanel {
     const back = el("button", { textContent: "Back", onclick: () => this.render() });
     go.onclick = async () => {
       go.disabled = true;
-      const res = await this.checkAccess(ids).catch(() => ({}));
+      // checkAccess re-renders the list: on a failed check it shows the reason there instead of freezing here
+      const res = await this.checkAccess(ids);
+      if (!res) return;
       const ok = ids.filter((i) => res[i] === "ok");
       if (ids.some((i) => res[i] === "sign_in")) this.tokenInput?.focus();
-      if (ok.length) {
-        try {
-          const q = await call("/soundstage/models/download", { ids: ok, confirm: true, accepted_licences: [...ticked] });
-          this.note = q.queued.length ? `Downloading ${q.queued.length} file${q.queued.length === 1 ? "" : "s"}.` : "Nothing new to download.";
-        } catch (e) { this.note = `Couldn't start: ${e.message}`; }
-        await this.refresh();
+      if (!ok.length) {
+        this.note = "Nothing could start yet: follow the steps on the rows below, then Download again.";
+        this.render();
+        return;
       }
+      try {
+        const q = await call("/soundstage/models/download", { ids: ok, confirm: true, accepted_licences: [...ticked] });
+        this.queued = q.queued || [];
+        this.note = this.queued.length ? `Downloading ${this.queued.length} file${this.queued.length === 1 ? "" : "s"}.` : "Nothing new to download.";
+      } catch (e) { this.note = `Couldn't start: ${e.message}`; }
+      await this.refresh();
     };
     this.box.replaceChildren(
       el("header", {}, el("h2", { textContent: "Licences for these models" })),
@@ -262,14 +291,16 @@ class ModelsPanel {
     clearTimeout(this.timer);
     this.timer = setTimeout(async () => {
       if (!this.root?.isConnected) return;
-      try { this.prog = await call("/soundstage/models/progress"); } catch { this.prog = null; }
+      try { this.prog = await call("/soundstage/models/progress"); } catch {
+        await this.refresh();         // keeps the list; says "lost contact" and polls again
+        return;
+      }
       const before = this.doneCount ?? 0;
       const doneNow = (this.prog?.done || []).length + (this.prog?.failed || []).length;
       this.doneCount = doneNow;
       const busy = !!(this.prog?.current || this.prog?.queue?.length);
       if (doneNow !== before || !busy) {
-        if (!busy && (this.prog?.done || []).length) this.note = "Done. Reload the workflow so the loaders see the new files.";
-        await this.refresh();
+        await this.refresh();        // when nothing is running, refresh writes the done / failed note
       } else this.renderProgress();
       if (busy) this.poll();
     }, 1000);
@@ -281,8 +312,9 @@ class ModelsPanel {
     if (!cur) { this.progEl.replaceChildren(); return; }
     const it = this.status.items.find((x) => x.id === cur.id);
     const bar = el("progress", { max: cur.total || 1, value: cur.bytes || 0 });
-    const cancel = el("button", { textContent: "Cancel", title: "Stop; the part downloaded so far is kept and resumes next time",
-      onclick: () => call("/soundstage/models/cancel", { all: true }).catch(() => {}) });
+    // Cancel stops this file only (the rest of the queue carries on) and keeps its part file to resume later.
+    const cancel = el("button", { textContent: "Cancel", title: "Stop this file; the part downloaded so far is kept and resumes next time",
+      onclick: () => call("/soundstage/models/cancel", { id: cur.id }).catch(() => {}) });
     this.progEl.replaceChildren(el("div", { textContent: progressLine(cur, it?.title) }), bar, cancel);
   }
 }

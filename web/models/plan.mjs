@@ -34,11 +34,12 @@ export function stateFor(item, installedFiles = {}) {
   const list = (installedFiles || {})[item.folder] || [];
   const got = closestModel(relName(item), list);
   if (got && got !== relName(item)) return { state: "other_build", using: got, label: shortModelName(got) };
+  const wrong = item.wrong_size ? { wrong: true } : {};
   if (s === "partial") {
     const pct = item.size ? Math.min(99, Math.floor((100 * (item.have_bytes || 0)) / item.size)) : null;
-    return { state: "partial", pct };
+    return { state: "partial", pct, ...wrong };
   }
-  return { state: "missing" };
+  return { state: "missing", ...wrong };
 }
 
 /** Chip text for a row state. */
@@ -48,7 +49,7 @@ export function stateLabel(st) {
     case "other_build": return `Using your build: ${st.label}`;
     case "partial": return st.pct == null ? "Partly downloaded" : `Partly downloaded ${st.pct}%`;
     case "unknown": return "Not checked (no server)";
-    default: return "Missing";
+    default: return st.wrong ? "Wrong size: download again" : "Missing";
   }
 }
 
@@ -77,6 +78,32 @@ export function selectionTotals(items, selected) {
     else bytes += Math.max(0, it.size - (it.state === "partial" ? it.have_bytes || 0 : 0));
   }
   return { count, bytes, unknown };
+}
+
+/**
+ * The ticked ids the Download button and the confirm both use: everything ticked except what is already installed
+ * (or unchecked offline). A ticked "Using your build" row stays in: ticking it asks for the catalog's build too.
+ */
+export function fetchableIds(items, selected, installedFiles = {}) {
+  const by = new Map((items || []).map((it) => [it.id, it]));
+  return [...(selected || [])].filter((i) => by.has(i) && !["installed", "unknown"].includes(stateFor(by.get(i), installedFiles).state));
+}
+
+/**
+ * The panel's note once the queued files are no longer running: how many finished, how many failed (the failed
+ * rows carry their own red line). prog: { done:[{id}], failed:[{id}] }; queued: the ids this panel queued.
+ */
+export function jobNote(queued, prog) {
+  const q = new Set(queued || []);
+  if (!q.size) return "";
+  const last = (arr) => { const m = new Map(); for (const x of arr || []) if (q.has(x.id)) m.set(x.id, x); return m; };
+  const done = last(prog?.done), failed = last(prog?.failed);
+  for (const id of done.keys()) failed.delete(id);
+  const nd = done.size, nf = failed.size;
+  const parts = [];
+  if (nd) parts.push(`${nd} file${nd === 1 ? "" : "s"} downloaded. Reload the workflow so the loaders see the new files.`);
+  if (nf) parts.push(`${nf} file${nf === 1 ? "" : "s"} didn't download: see the red line on ${nf === 1 ? "its row" : "each row"}.`);
+  return parts.join(" ");
 }
 
 /** "Download 3 files · 6.53 GB" (+ " + 1 of unknown size"). */

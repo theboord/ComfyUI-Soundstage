@@ -67,10 +67,44 @@ def test_size_mismatch(tmp_path, monkeypatch):
 
 
 def test_size_only_when_no_sha_anywhere(tmp_path, monkeypatch):
+    # no sha256 in the catalog or from Hugging Face: the response's exact Content-Length is checked
     items = [{"id": "a", "repo": "org/r", "path": "vae/a.safetensors", "folder": "vae"}]
     dl, hf, models = make(tmp_path, monkeypatch, items=items, etag=False)
     run(dl, ["a"])
+    assert dl.done == [{"id": "a", "verified": "size"}]
+
+
+def test_catalog_size_checked_when_no_header_gives_one(tmp_path, monkeypatch):
+    items = [{"id": "a", "repo": "org/r", "path": "vae/a.safetensors", "folder": "vae", "size": len(DATA)}]
+    dl, hf, models = make(tmp_path, monkeypatch, items=items, etag=False, length=False)
+    run(dl, ["a"])
+    assert dl.done == [{"id": "a", "verified": "size"}]
+
+
+def test_catalog_size_mismatch_without_sha_is_refused(tmp_path, monkeypatch):
+    # the catalog's rounded size is far off (a truncated or wrong file): not installed, .part deleted
+    items = [{"id": "a", "repo": "org/r", "path": "vae/a.safetensors", "folder": "vae", "size": 2 * len(DATA)}]
+    dl, hf, models = make(tmp_path, monkeypatch, items=items, etag=False, length=False)
+    run(dl, ["a"])
+    assert dl.failed[0]["code"] == "verify" and dl.done == []
+    assert not (models / "vae" / "a.safetensors").exists()
+    assert not (models / "vae" / "a.safetensors.part").exists()
+
+
+def test_no_size_anywhere_is_reported_as_none(tmp_path, monkeypatch):
+    dl, hf, models = make(tmp_path, monkeypatch, etag=False, length=False)
+    run(dl, ["a"])
     assert dl.done == [{"id": "a", "verified": "none"}]
+
+
+def test_wrong_size_installed_file_is_not_skipped_and_gets_replaced(tmp_path, monkeypatch):
+    items = [{"id": "a", "repo": "org/r", "path": "vae/a.safetensors", "folder": "vae", "size": len(DATA)}]
+    dl, hf, models = make(tmp_path, monkeypatch, items=items)
+    (models / "vae" / "a.safetensors").write_bytes(DATA[:100])
+    st = M.item_state(dl.items["a"])
+    assert st["state"] == "missing" and st.get("wrong_size")
+    assert run(dl, ["a"]) == (["a"], [])
+    assert (models / "vae" / "a.safetensors").read_bytes() == DATA
 
 
 def _seed_part(models, n):
@@ -103,6 +137,37 @@ def test_resume_416_restarts(tmp_path, monkeypatch):
     gets = [c for c in hf.calls if c[0] == "GET"]
     assert gets[0][2].get("Range") and "Range" not in gets[1][2]
     assert (models / "vae" / "a.safetensors").read_bytes() == DATA
+
+
+def test_resume_wrong_content_range_restarts(tmp_path, monkeypatch):
+    # a 206 that starts somewhere other than the bytes we have must not be appended
+    dl, hf, models = make(tmp_path, monkeypatch, range_mode="badrange")
+    _seed_part(models, 5000)
+    run(dl, ["a"])
+    gets = [c for c in hf.calls if c[0] == "GET"]
+    assert gets[0][2].get("Range") == "bytes=5000-" and "Range" not in gets[1][2]
+    assert (models / "vae" / "a.safetensors").read_bytes() == DATA
+    assert dl.done[0]["verified"] == "sha256"
+
+
+def test_complete_part_is_finalised_without_downloading(tmp_path, monkeypatch):
+    dl, hf, models = make(tmp_path, monkeypatch)
+    _seed_part(models, len(DATA))
+    run(dl, ["a"])
+    assert not [c for c in hf.calls if c[0] == "GET"]
+    assert (models / "vae" / "a.safetensors").read_bytes() == DATA
+    assert dl.done == [{"id": "a", "verified": "sha256"}]
+
+
+def test_complete_part_finalised_on_416_when_size_unknown_up_front(tmp_path, monkeypatch):
+    # no X-Linked-Size on HEAD: the Range request gets 416 "bytes */N" with N == what we have -> keep it
+    dl, hf, models = make(tmp_path, monkeypatch, etag=False)
+    _seed_part(models, len(DATA))
+    run(dl, ["a"])
+    gets = [c for c in hf.calls if c[0] == "GET"]
+    assert len(gets) == 1 and gets[0][2].get("Range") == f"bytes={len(DATA)}-"
+    assert (models / "vae" / "a.safetensors").read_bytes() == DATA
+    assert dl.done == [{"id": "a", "verified": "size"}]
 
 
 def test_part_bigger_than_file_is_dropped(tmp_path, monkeypatch):

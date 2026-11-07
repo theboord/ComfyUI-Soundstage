@@ -64,7 +64,9 @@ class FakeHF:
     files: {(repo, path): bytes}. Options per instance:
       head_status / gated_repos / missing: shape the HEAD answer;
       redirect_cdn: GET on huggingface.co answers 302 to https://cdn.example/<path> (the CDN serves the bytes);
-      range_mode: "206" (honour Range), "200" (ignore Range), "416" (refuse a Range once);
+      range_mode: "206" (honour Range), "200" (ignore Range), "416" (refuse a Range once),
+                  "badrange" (answer 206 from byte 0 whatever was asked, once);
+      length: send Content-Length (and Content-Range on 206/416) on GET, as real servers do;
       etag: send X-Linked-Etag / X-Linked-Size on HEAD; corrupt: serve different bytes on GET.
     """
 
@@ -76,6 +78,7 @@ class FakeHF:
         self.range_mode = kw.get("range_mode", "206")
         self.etag = kw.get("etag", True)
         self.corrupt = kw.get("corrupt", False)
+        self.length = kw.get("length", True)
         self.chunk_hook = kw.get("chunk_hook")
         self.whoami = kw.get("whoami", {TOKEN: "jane-doe"})
         self.active = 0
@@ -131,12 +134,20 @@ class FakeHF:
                 if not self_inner.closed:
                     fake.active -= 1
                 super().close()
+        n = len(data)
+        if rng and start >= n:
+            return R(416, {"Content-Range": f"bytes */{n}"} if self.length else {})
         if rng and self.range_mode == "416" and not self._refused_once:
             self._refused_once = True
-            return R(416)
-        if rng and self.range_mode == "206":
-            return R(206, body=data[start:], chunk_hook=self.chunk_hook)
-        return R(200, body=data, chunk_hook=self.chunk_hook)
+            return R(416, {"Content-Range": f"bytes */{n}"} if self.length else {})
+        if rng and self.range_mode == "badrange" and not self._refused_once:
+            self._refused_once = True
+            return R(206, {"Content-Range": f"bytes 0-{n - 1}/{n}", "Content-Length": str(n)}, body=data,
+                     chunk_hook=self.chunk_hook)
+        if rng and self.range_mode in ("206", "416"):
+            h = {"Content-Range": f"bytes {start}-{n - 1}/{n}", "Content-Length": str(n - start)} if self.length else {}
+            return R(206, h, body=data[start:], chunk_hook=self.chunk_hook)
+        return R(200, {"Content-Length": str(n)} if self.length else {}, body=data, chunk_hook=self.chunk_hook)
 
 
 def mini_catalog(items, licences=None):

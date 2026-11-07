@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import {
   fmtBytes, relName, stateFor, stateLabel, groupItems, defaultSelection, selectionTotals, footerLine, licenceLine,
   licencesFor, canConfirm, idsForMissing, stepsFor, progressLine, HF_TOKENS_URL, offlineStatus, offlineSteps, OFFLINE_TEXT,
+  fetchableIds, jobNote,
 } from "../../web/models/plan.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -139,4 +140,40 @@ test("offline (no server): the catalog read-only, nothing ticked, gated rows sho
   assert.deepEqual(offlineSteps(byId(s, "sam31")), []);
   assert.match(OFFLINE_TEXT, /ComfyUI/);
   assert.equal(offlineStatus(null).items.length, 0);
+});
+
+test("fetchableIds: footer and confirm use the same ids; a ticked 'Using your build' row is kept, installed dropped", () => {
+  const s = status({ "flux2-vae": { state: "installed" } },
+    { diffusion_models: ["flux3-image-klein-fp8.safetensors"] });
+  assert.equal(stateFor(byId(s, "flux3-klein-int8"), s.installed_files).state, "other_build");
+  const ids = fetchableIds(s.items, ["flux3-klein-int8", "flux2-vae", "nope"], s.installed_files);
+  assert.deepEqual(ids, ["flux3-klein-int8"]);
+  // so the confirm dialog always has a licence to tick for what the footer counted
+  const lines = licencesFor(s.items, ids, s.licences);
+  assert.ok(lines.length > 0);
+  assert.equal(selectionTotals(s.items, ids).count, 1);
+  assert.deepEqual(fetchableIds(offlineStatus(CAT).items, ["flux2-vae"], {}), []);
+});
+
+test("a wrong-size file with the right name is labelled for download again", () => {
+  const st = stateFor({ ...byId(status(), "flux2-vae"), state: "missing", wrong_size: true }, { vae: ["flux2-vae.safetensors"] });
+  assert.equal(st.state, "missing");
+  assert.equal(stateLabel(st), "Wrong size: download again");
+});
+
+test("jobNote: a fast failure (before any progress poll) is reported, and successes say to reload", () => {
+  assert.equal(jobNote([], { done: [], failed: [] }), "");
+  assert.match(jobNote(["a"], { done: [], failed: [{ id: "a", code: "disk" }] }), /1 file didn't download/);
+  const n = jobNote(["a", "b", "c"], { done: [{ id: "a" }, { id: "b" }], failed: [{ id: "c" }, { id: "zz" }] });
+  assert.match(n, /2 files downloaded\. Reload the workflow/);
+  assert.match(n, /1 file didn't download/);
+  // a retry that succeeded is not reported as failed
+  assert.doesNotMatch(jobNote(["a"], { done: [{ id: "a" }], failed: [{ id: "a" }] }), /didn't/);
+});
+
+test("panel: Cancel stops the current file only; a failed /status after the first load doesn't go offline", () => {
+  const src = readFileSync(join(ROOT, "web/models/panel.mjs"), "utf8");
+  assert.ok(src.includes('call("/soundstage/models/cancel", { id: cur.id })'));
+  assert.ok(!src.includes("all: true"));
+  assert.match(src, /if \(!first && this\.status && !this\.status\.offline\)/);
 });
