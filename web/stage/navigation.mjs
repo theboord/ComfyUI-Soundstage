@@ -264,7 +264,13 @@ export function installNavigation(stage) {
 
   const off = () => !!stage.drive?.on;
   const active = () => stage._activeOrbit?.();
-  const flying = () => rmb.down;
+  const flying = () => rmb.down && !off();
+  /** Right is no longer held (Drive swallowed its release, or it came up off the canvas): fly mode ends. */
+  const rmbGone = () => { if (!rmb.down) return; rmb.down = false; rmb.menu = null; rmb.lastDragUp = now(); held.clear(); };
+  /** Fly speed: inside a car or room (or close in) right-held flying uses the small tight step, not the set's m/s. */
+  const flySpeedNow = (o) => (rmb.tight ? Math.min(settings.flySpeed, walkSpeed(len(sub(o.position, o.target)), true)) : settings.flySpeed);
+  /** The shot camera moved while a press / drag held its write back: write it now (Camera view). */
+  const settle = () => { if (!dirty) return; dirty = false; if (!stage.freeView) stage.onChange?.(stage.toJSON?.()); };
 
   const nav = {
     settings,
@@ -317,7 +323,11 @@ export function installNavigation(stage) {
       loop();
     },
     flush() { if (acc) { const a = acc; acc = null; nav.apply(a.mode, a.look, a.dx, a.dy, a.pivot); } },
-    halt() { acc = null; vel = [0, 0, 0]; },
+    halt() { acc = null; vel = [0, 0, 0]; settle(); },
+    /** A camera drag ended: report a shot-camera move the frame loop held back while the button was down. */
+    end() { if (!acc && !held.size && Math.hypot(...vel) <= 1e-3) settle(); },
+    /** The stage just wrote the shot key itself: nothing held back is left to write. */
+    wrote() { if (!acc && !held.size && Math.hypot(...vel) <= 1e-3) dirty = false; },
     apply(mode, look, dx, dy, pivot) {
       if (!dx && !dy) return;
       if (mode === "dolly") return nav.dolly(dy);
@@ -427,7 +437,7 @@ export function installNavigation(stage) {
     // a long stall after a hidden tab can't jump far, since loop() restarts the clock.
     const t = now(), dt = Math.min(0.25, Math.max(0.001, (t - last) / 1000));
     last = t;
-    if (off()) { acc = null; held.clear(); vel = [0, 0, 0]; return; }
+    if (off()) { acc = null; held.clear(); vel = [0, 0, 0]; rmb.down = false; return; }
     let busy = false;
     if (acc) {
       const [take, left] = consume(acc, dt, tauFromSmooth(settings.smooth), settings.damping);
@@ -439,7 +449,7 @@ export function installNavigation(stage) {
     }
     const o = active();
     if (o) {
-      const speed = flying() ? settings.flySpeed : walkSpeed(len(sub(o.position, o.target)), tightKeys);
+      const speed = flying() ? flySpeedNow(o) : walkSpeed(len(sub(o.position, o.target)), tightKeys);
       const want = flyStep(held, speed, 1, shift);
       const k = easeShare(dt, 0.15, settings.damping);
       vel = vel.map((v, i) => v + (want[i] - v) * k);
@@ -451,10 +461,7 @@ export function installNavigation(stage) {
       if (held.size) busy = true;
     }
     if (busy) { rafId = raf(tick); return; }
-    if (dirty && !stage._dragging) {
-      dirty = false;
-      if (!stage.freeView) stage.onChange?.(stage.toJSON?.());   // one shot-key write when the motion settles
-    }
+    if (!stage._dragging) settle();   // one shot-key write when the motion settles
   }
   function moveCam(o, local) {
     const fwd = norm(sub(o.target, o.position));
@@ -479,16 +486,20 @@ export function installNavigation(stage) {
 
   // Right button: track the press (fly / click), and hold back the context menu until we know it was a click.
   on(cv, "pointerdown", (e) => {
+    if (off()) { rmb.down = false; held.clear(); return; }   // Drive owns the pointer (and swallows the release)
     press.x0 = e.clientX; press.y0 = e.clientY; press.moved = false;
-    if (e.button === 2) Object.assign(rmb, { down: true, x0: e.clientX, y0: e.clientY, moved: false, keys: false, chord: false, menu: null });
-    else { rmb.chord = false; rmb.keys = false; }
+    if (e.button === 2) Object.assign(rmb, { down: true, x0: e.clientX, y0: e.clientY, moved: false, keys: false, chord: false, menu: null, tight: !!stage._tightNow?.() });
+    else { if (!((e.buttons ?? 0) & 2)) rmbGone(); rmb.chord = false; rmb.keys = false; }
   }, { capture: true });
   on(cv, "pointermove", (e) => {
+    if (rmb.down && e.buttons != null && !(e.buttons & 2)) rmbGone();   // right came up where we never saw it
     if (e.buttons && Math.hypot(e.clientX - press.x0, e.clientY - press.y0) >= 5) press.moved = true;
     if (rmb.down && Math.hypot(e.clientX - rmb.x0, e.clientY - rmb.y0) >= 5) rmb.moved = true;
   }, { capture: true });
   const up = (e) => {
     if (press.moved) press.bad = now();
+    // A both-buttons pan that began with left: right's release never set rmb.down, but Windows still fires the menu after it.
+    if (rmb.chord && !((e.buttons ?? 0) & 3)) rmb.lastDragUp = now();
     if (!rmb.down || (e.buttons & 2)) return;
     rmb.down = false;
     const click = !rmb.moved && !rmb.keys && !rmb.chord;
@@ -504,6 +515,15 @@ export function installNavigation(stage) {
   };
   on(cv, "pointerup", up);
   on(cv, "pointercancel", up);
+  // Fallback: right released off the canvas without pointer capture (the gizmo's early return), or while Drive's window
+  // capture listener swallows it. Registered before Drive's (at install), so it still sees the event first.
+  const winUp = (e) => {
+    if (!rmb.down || ((e.buttons ?? 0) & 2)) return;
+    if (e.target === cv && !off()) return;   // the canvas listener has it
+    rmbGone();
+  };
+  on(globalThis, "pointerup", winUp, { capture: true });
+  on(globalThis, "pointercancel", winUp, { capture: true });
   on(cv, "contextmenu", (e) => {
     if (e.__ssReplay) return;
     if (rmb.down) { e.preventDefault(); e.stopImmediatePropagation(); rmb.menu = { clientX: e.clientX, clientY: e.clientY }; return; }   // macOS: fires on press

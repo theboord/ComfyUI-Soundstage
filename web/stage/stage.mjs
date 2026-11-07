@@ -2857,6 +2857,7 @@ export class Stage {
         drag = null;
         this._dragging = false;
         this.canvas.style.cursor = "grab";
+        this.nav?.end();   // Camera view: a shot-camera move the frame loop held back during the press is still written
         this.select(id || null);
         if (id && !this._isSetPiece(id)) this.onInteract?.("Selected. Drag it (or its arrows) to move it; drag anywhere else to look around.");
         return;
@@ -2881,7 +2882,7 @@ export class Stage {
       }
       drag = null;
       this.canvas.style.cursor = "grab";
-      if (!this.freeView) this.onChange(this.toJSON());
+      if (!this.freeView) { this.onChange(this.toJSON()); this.nav?.wrote(); }
     };
     this.canvas.addEventListener("pointerup", end);
     this.canvas.addEventListener("pointercancel", end);
