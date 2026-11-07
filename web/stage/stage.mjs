@@ -47,6 +47,7 @@ import { installParts } from "./objparts.mjs";
 import * as VehicleParts from "./vehicleparts.mjs";
 import * as LightRig from "./lightrig.mjs";
 import { horse as HorseParts, prop as PropParts } from "./rigparts.mjs";
+import { upgradeHuman, avatarsAt } from "./people/avatars.mjs";   // lifelike people over the clay (people overhaul M1)
 
 /**
  * Video → Stage: the set mesh is the first frame's depth, so the person in the shot is frozen into it. The clay actor
@@ -245,12 +246,24 @@ function vfovFromFocal(focalMm, aspect) {
   return THREE.MathUtils.radToDeg(2 * Math.atan(sensorH / (2 * focalMm)));
 }
 
+// The Depth pass shader. It skins (three's skinning chunks, as outline.mjs does), so rigged bodies (the horse, the
+// lifelike people) draw in their pose instead of frozen in their bind pose; unskinned meshes compile without them.
+export const DEPTH_SHADER = {
+  vertex: `#include <common>
+    #include <skinning_pars_vertex>
+    varying float vViewZ;
+    void main(){
+      #include <skinbase_vertex>
+      #include <begin_vertex>
+      #include <skinning_vertex>
+      vec4 mv = modelViewMatrix * vec4(transformed,1.0); vViewZ = -mv.z; gl_Position = projectionMatrix * mv; }`,
+  fragment: `uniform float uNear; uniform float uFar; varying float vViewZ;
+    void main(){ float d = clamp((vViewZ - uNear)/(uFar - uNear), 0.0, 1.0); gl_FragColor = vec4(vec3(1.0 - d), 1.0); }`,
+};
 const depthMaterial = new THREE.ShaderMaterial({
   uniforms: { uNear: { value: DEPTH_NEAR }, uFar: { value: DEPTH_FAR } },
-  vertexShader: `varying float vViewZ;
-    void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vViewZ = -mv.z; gl_Position = projectionMatrix * mv; }`,
-  fragmentShader: `uniform float uNear; uniform float uFar; varying float vViewZ;
-    void main(){ float d = clamp((vViewZ - uNear)/(uFar - uNear), 0.0, 1.0); gl_FragColor = vec4(vec3(1.0 - d), 1.0); }`,
+  vertexShader: DEPTH_SHADER.vertex,
+  fragmentShader: DEPTH_SHADER.fragment,
 });
 
 let wheelRouterInstalled = false;
@@ -445,6 +458,7 @@ export class Stage {
       this.root.add(g);
       if (a.kind === "horse" && !a.simple_model) this._upgradeHorse(a, g);
       else if (LIBRARY[a.kind]?.model) this._upgradeVehicle(a, g, LIBRARY[a.kind]);
+      else if (PERSON_KINDS.has(a.kind)) upgradeHuman(this, a, g);   // people/avatars.mjs: clay stays if the files are absent
     }
     this._buildLights();
     // Selection ring (viewport only; hidden in captures).
@@ -1939,6 +1953,7 @@ export class Stage {
         }
       }
       const cycle = (dist / stride) * Math.PI * 2;
+      g.userData.travel = dist;   // the lifelike body's walk / run follow it (people/avatars.mjs)
       // Speed in m/s (pa and pb are two frames apart).
       const speed = moving ? (Math.hypot(vx, vz) / 2) * (this.state.shot?.fps || 24) : 0;
       g.userData.speed = speed;
@@ -2160,6 +2175,7 @@ export class Stage {
     // a swimmer's head is the stroke's (breathing to the side, a diver looking ahead): gaze keys still win
     applyGaze(this, new Set([...mocapIds, ...swimNow.filter((x) => !gazeKeys(x.a).length).map((x) => x.a.id)]));
     this._wakeAt(swimNow);
+    avatarsAt(this);   // lifelike people (people/avatars.mjs): shown and posed, or the clay where they can't follow yet
     this._heldPropsAt(this.frame);   // after every pose: a held prop follows the final hand
     this.drive?.post();   // Drive mode: getting out of a seat or down from a saddle
     if (this.weather) {
@@ -4013,6 +4029,30 @@ export class Stage {
     this.onChange(this.toJSON());
   }
 
+  /** Lifelike people: the selected person's face "shown" (default) or "faceless" (a plain mannequin head). Saved on
+   *  the actor (actor.face); the clay figure is faceless either way. */
+  setFace(mode) {
+    const a = this.state.actors.find((x) => x.id === this.selected);
+    if (!a || !PERSON_KINDS.has(a.kind)) return;
+    if (mode === "faceless") a.face = "faceless"; else delete a.face;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  /** Blocking look: every person shows as the clay figure (true) or as a lifelike person where one is installed.
+   *  Only the look changes: the clay rig runs the same either way. Saved with the scene (state.people_look). */
+  setBlockingLook(on) {
+    if (on) this.state.people_look = "blocking"; else delete this.state.people_look;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+  }
+
+  /** Is this person shown as a lifelike body? {installed, shown, reason (why it is clay), faceless}. */
+  avatarStatus(id) {
+    const skin = this.actorMeshes.get(id)?.userData.humanSkin;
+    return skin ? { installed: true, shown: skin.shown, reason: skin.reason, faceless: skin.faceless } : { installed: false, shown: false, reason: null, faceless: false };
+  }
+
   /** Change how a character or object looks (wardrobe, hair, colours…). */
   setAppearance(patch) {
     const a = this.state.actors.find((x) => x.id === this.selected);
@@ -4098,7 +4138,7 @@ export class Stage {
     const a = this.state.actors.find((x) => x.id === this.selected);
     return a ? { id: a.id, name: a.name, kind: a.kind, rotation_deg: a.rotation_deg || 0, height_m: a.height_m, scale: a.scale || 1,
       appearance: a.appearance || null, mount_id: a.mount_id || null, pose: a.pose || null, seat: a.seat ?? null,
-      beam: a.beam || "steady", stunt: a.stunt || null, stunt_sim: a.stunt_sim || null } : null;
+      beam: a.beam || "steady", stunt: a.stunt || null, stunt_sim: a.stunt_sim || null, face: a.face || "shown" } : null;
   }
 
   /**

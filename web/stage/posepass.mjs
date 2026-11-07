@@ -54,6 +54,10 @@ const world = (obj, local) => obj.localToWorld(local.clone());
 /** One clay person's keypoints in world space: {body: [18 Vector3|null], hands: [right21, left21], face: [68]|null,
  *  facing: dot of the face direction with the direction to the camera}. g = the figure (userData.joints). */
 export function personKeypoints(g, camPos) {
+  // A lifelike person on show (people/avatars.mjs) plays its own clip, not the clay's walk: read its real bones, so
+  // the Pose sheet matches the body in the Color and Depth passes.
+  const skin = g.userData.humanSkin;
+  if (skin?.shown && skin.bones) { g.updateMatrixWorld(true); const kp = avatarKeypoints(skin.bones, camPos); if (kp) return kp; }
   const J = g.userData.joints || {};
   if (!J.l_shoulder || !J.r_shoulder || !J.head) return null;
   g.updateMatrixWorld(true);
@@ -86,6 +90,51 @@ export function personKeypoints(g, camPos) {
   };
   const face = FACE_TEMPLATE.map(([x, y, z]) => head(x, y, z));
   return { body, hands: [hand("r"), hand("l")], face, facing };
+}
+
+/**
+ * The same keypoints read off a Rocketbox skeleton (bones = {name: Bone}, world matrices up to date): shoulders,
+ * elbows, wrists, hips, knees and ankles are the Bip01 bones; the face template and the eyes / ears sit in a head
+ * frame built from the two eye bones and the neck (scaled by the eye spacing); hands are the 15 finger bones plus a
+ * tip. null when a bone is missing.
+ */
+export function avatarKeypoints(bones, camPos) {
+  const B = (n) => bones[`Bip01_${n}`] ? bones[`Bip01_${n}`].getWorldPosition(v3()) : null;
+  const need = ["R_UpperArm", "L_UpperArm", "R_Forearm", "L_Forearm", "R_Hand", "L_Hand", "R_Thigh", "L_Thigh", "R_Calf", "L_Calf",
+    "R_Foot", "L_Foot", "REye", "LEye", "Neck"];
+  const P = Object.fromEntries(need.map((n) => [n, B(n)]));
+  if (need.some((n) => !P[n])) return null;
+  const X = P.LEye.clone().sub(P.REye), eyeD = X.length();
+  if (eyeD < 1e-6) return null;
+  X.normalize();
+  const mid = P.LEye.clone().add(P.REye).multiplyScalar(0.5);
+  const Z = X.clone().cross(mid.clone().sub(P.Neck)).normalize(), Y = Z.clone().cross(X);
+  const k = eyeD / 0.07;                                         // FACE_TEMPLATE's eyes are 7 cm apart
+  const origin = mid.clone().addScaledVector(Y, -0.012 * k).addScaledVector(Z, -0.08 * k);
+  const head = (x, y, z) => origin.clone().addScaledVector(X, x * k).addScaledVector(Y, y * k).addScaledVector(Z, z * k);
+  const body = new Array(18).fill(null);
+  body[2] = P.R_UpperArm; body[5] = P.L_UpperArm;
+  body[1] = body[2].clone().add(body[5]).multiplyScalar(0.5);
+  body[3] = P.R_Forearm; body[6] = P.L_Forearm;
+  body[4] = P.R_Hand; body[7] = P.L_Hand;
+  body[8] = P.R_Thigh; body[11] = P.L_Thigh;
+  body[9] = P.R_Calf; body[12] = P.L_Calf;
+  body[10] = P.R_Foot; body[13] = P.L_Foot;
+  body[0] = head(0, -0.012, 0.105);
+  body[14] = head(-0.035, 0.012, 0.09); body[15] = head(0.035, 0.012, 0.09);
+  body[16] = head(-0.093, 0.0, 0.0); body[17] = head(0.093, 0.0, 0.0);
+  const facing = camPos ? Z.dot(camPos.clone().sub(origin).normalize()) : 1;
+  const hand = (S) => {
+    const pts = [B(`${S}_Hand`)];
+    FINGERS.forEach((f, n) => {
+      const seg = [B(`${S}_Finger${n}`), B(`${S}_Finger${n}1`), B(`${S}_Finger${n}2`)];
+      if (seg.some((p) => !p)) { pts.push(null); return; }
+      pts.push(...seg, seg[2].clone().addScaledVector(seg[2].clone().sub(seg[1]).normalize(), TIP_LEN[f] * k));
+    });
+    return pts.every(Boolean) ? pts : null;
+  };
+  const face = FACE_TEMPLATE.map(([x, y, z]) => head(x, y, z));
+  return { body, hands: [hand("R"), hand("L")], face, facing };
 }
 
 /** World points -> pixels in a W x H frame through camera `cam` (null when behind the camera or far off frame). */

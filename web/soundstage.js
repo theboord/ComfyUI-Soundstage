@@ -6,6 +6,7 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { Stage, DEFAULT_SCENE, ASPECTS, IMPORT_ACCEPT, formatOf, CAR_SHOTS } from "./stage/stage.mjs";
 import { quickSpec } from "./stage/interior.mjs";
+import { peopleLookControls } from "./stage/people/peopleui.mjs";
 import { LIBRARY, OBJECT_COLORS, SEATS } from "./stage/library.mjs";
 import { APPEARANCE_OPTIONS, DEFAULT_APPEARANCE, SKIN_TONES, MOUNTS } from "./stage/humans.mjs";
 import { SETS, WEATHER } from "./stage/environments.mjs";
@@ -1871,6 +1872,7 @@ function createStageWidget(node, inputName) {
     (v) => stage.setAppearance({ skin: v }));
   const cHair = colorInput("Hair", "hair_color"), cTop = colorInput("Top", "top_color"), cBottom = colorInput("Bottom", "bottom_color");
   const cMain = colorInput("Colour", "color");
+  const peopleLook = peopleLookControls(stage, mkSelect);   // Face shown / faceless, Blocking look (stage/people/peopleui.mjs)
   const rideSel = mkSelect("Ride / sit on", { "": { label: "—" } }, "", (v) => {
     const id = stage.selectedInfo()?.id;
     if (!id) return;
@@ -1964,7 +1966,7 @@ function createStageWidget(node, inputName) {
     syncAppearance(stage.selectedInfo());
     status.textContent = stage.frame > 0 ? `${info.name} hops on at frame ${stage.frame}. Give them a walk to the mount before that.` : `${info.name} rides from the start.`;
   });
-  const personCtl = [apBuild.wrap, apHair.wrap, cHair.wrap, apTop.wrap, cTop.wrap, apBottom.wrap, cBottom.wrap, apSkin.wrap, rideSel.wrap, seatSel.wrap, hopBtn];
+  const personCtl = [apBuild.wrap, apHair.wrap, cHair.wrap, apTop.wrap, cTop.wrap, apBottom.wrap, cBottom.wrap, apSkin.wrap, peopleLook.face.wrap, peopleLook.blocking, rideSel.wrap, seatSel.wrap, hopBtn];
   apRow.append(...personCtl, cMain.wrap, followSel.wrap, stuntSel.wrap, stuntKmh, stuntRoad.wrap, stuntMass, beamSel.wrap);
   // Pose Studio: every joint (fingers too), a gallery and keys, under the selected person's appearance controls.
   const poseHost = document.createElement("div");
@@ -1992,6 +1994,7 @@ function createStageWidget(node, inputName) {
       apBuild.sel.value = ap.build; apHair.sel.value = ap.hair; apTop.sel.value = ap.top; apBottom.sel.value = ap.bottom;
       apSkin.sel.value = SKIN_TONES.includes(ap.skin) ? ap.skin : SKIN_TONES[2];
       cHair.inp.value = ap.hair_color; cTop.inp.value = ap.top_color; cBottom.inp.value = ap.bottom_color;
+      peopleLook.sync(info);
       const hosts = stage.toJSON().actors.filter((a) => a.id !== info.id && (MOUNTS[a.kind] || !isPerson(a.kind)));
       rideSel.sel.replaceChildren(new Option("—", ""), ...(info.mount_id ? [new Option("Get off / stand", "__off")] : []),
         ...hosts.map((a) => new Option(a.name, a.id)));
