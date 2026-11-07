@@ -2741,7 +2741,9 @@ export class Stage {
       this.canvas.focus({ preventScroll: true });
       if (this.live?.busy) this.live.finish();   // things still settling from the last drop: write them down first
       if (this._glideRaf) { cancelAnimationFrame(this._glideRaf); this._glideRaf = 0; if (!this.freeView) this.onChange(this.toJSON()); }
-      if (this._flyRaf) { cancelAnimationFrame(this._flyRaf); this._flyRaf = 0; }
+      // An eased jump (a compass / numpad snap, F, a double-click) cut short by this press: in Camera view the shot
+      // camera stops part-way, so that is what gets written (it was left moved but never saved).
+      if (this._flyRaf) { cancelAnimationFrame(this._flyRaf); this._flyRaf = 0; if (!this.freeView) this.onChange(this.toJSON()); }
       this.nav?.halt();
       if (!this._tcPaused && this.tcHelper.visible && (this.tc.axis || this.tc.dragging)) return; // the gizmo has this drag
       pick(e);
@@ -2863,10 +2865,14 @@ export class Stage {
         return;
       }
       if ((drag.mode === "orbit" || drag.mode === "pan") && (this.nav?.settings.damping ?? true) && performance.now() - (drag.t || 0) < 70 && Math.hypot(drag.vx || 0, drag.vy || 0) > 0.15) {
-        const { mode, look, vx, vy, pivot } = drag;
+        const { mode, look, vx, pivot } = drag;
+        // The glide takes over the drag's not-yet-eased delta (both moving the camera overshot the flick), in the same
+        // up / down sense the drag used (Invert Y); it writes the shot key once when it stops.
+        const vy = drag.mode === "orbit" && this.nav?.settings.invertY ? -drag.vy : drag.vy;
+        const left = this.nav?.takeLeft() || { dx: 0, dy: 0 };
         drag = null;
         this.canvas.style.cursor = "grab";
-        this._glide(mode, look, vx, vy, pivot);
+        this._glide(mode, look, vx + left.dx / 160, vy + left.dy / 160, pivot);
         return;
       }
       if (drag.mode === "actor") {
@@ -2882,7 +2888,12 @@ export class Stage {
       }
       drag = null;
       this.canvas.style.cursor = "grab";
-      if (!this.freeView) { this.onChange(this.toJSON()); this.nav?.wrote(); }
+      // Camera view: one shot-key write. A damped drag still easing in leaves it to the frame loop, which writes once the
+      // motion settles (writing here too saved it twice, the second time with the leftover applied).
+      if (!this.freeView) {
+        if (this.nav?.pending()) this.nav.end();
+        else { this.onChange(this.toJSON()); this.nav?.wrote(); }
+      }
     };
     this.canvas.addEventListener("pointerup", end);
     this.canvas.addEventListener("pointercancel", end);

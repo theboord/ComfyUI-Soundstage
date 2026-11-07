@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 import {
   NAV_STYLES, NAV_ACTIONS, PRESETS, NAV_DEFAULTS, TAKEN_KEYS, loadNavSettings, saveNavSettings, resolveGesture, chordUpgrade,
   altTurns, orbitAbout, panRate, viewDepth, pickPivot, easeShare, consume, tauFromSmooth, classifyWheel, flyDir, flyStep,
-  flySpeedFromWheel, walkSpeed, focusView, hintText, bindingConflicts, installNavigation,
+  flySpeedFromWheel, walkSpeed, focusView, hintText, bindingConflicts, installNavigation, keyCombo, hintPlacement,
 } from "../../web/stage/navigation.mjs";
+import { allCombos } from "../../web/ui/shortcuts.mjs";
 
 const close = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) <= eps, `${a} ≈ ${b}`);
 const closeV = (a, b, eps = 1e-6) => a.forEach((v, i) => close(v, b[i], eps));
@@ -24,8 +25,46 @@ test("every style binds every action and no style key collides with the App's ke
   for (const s of NAV_STYLES) {
     for (const a of NAV_ACTIONS) assert.ok(PRESETS[s][a], `${s} binds ${a}`);
     assert.deepEqual(bindingConflicts(s), [], s);
+    // Against the App's real shortcut list (web/ui/shortcuts.mjs), so a new App key that a style also binds fails here.
+    assert.deepEqual(bindingConflicts(s, [...TAKEN_KEYS, ...allCombos(false)]), [], `${s} vs SHORTCUTS`);
   }
   assert.deepEqual(bindingConflicts("blender", [...TAKEN_KEYS, "Home"]), ["Home"]);
+});
+
+test("bindingConflicts can fail: keys are compared as the combos they type, and only declared overrides pass", () => {
+  assert.equal(keyCombo("Numpad1"), "1");
+  assert.equal(keyCombo("Ctrl+Numpad7"), "Ctrl+7");
+  assert.equal(keyCombo("NumpadDecimal"), ".");
+  const real = allCombos(false);
+  assert.ok(real.includes("Shift+L") && real.includes("."), "the real list has the combos this test leans on");
+  assert.deepEqual(bindingConflicts({ keys: ["Shift+L", "Home"] }, real), ["Shift+L"], "a style binding the light bar's key is caught");
+  assert.deepEqual(bindingConflicts({ keys: ["Numpad1", "Numpad1"] }, real), ["Numpad1"], "a duplicate is caught");
+  // Blender's numpad "." types "." (Back to the set): allowed only because the style declares it.
+  assert.deepEqual(bindingConflicts({ ...PRESETS.blender, overrides: [] }, real), ["NumpadDecimal"]);
+  assert.deepEqual(bindingConflicts("blender", real), []);
+});
+
+test("pickPivot with no fallback: nothing under the cursor is no point (a double-click on the sky does nothing)", () => {
+  assert.equal(pickPivot({}, [0, 1, 0], [0, 2, 40], { fallback: false }), null);
+  assert.deepEqual(pickPivot({}, [0, 1, 0], [0, 2, 40]), [0, 1, 0], "an orbit still turns about the target");
+  assert.deepEqual(pickPivot({ floor: [3, 0, 4] }, [0, 1, 0], [0, 2, 40], { fallback: false }), [3, 0, 4]);
+});
+
+test("hintPlacement: clear of the shot-camera picture and the Top view inset, else above them", () => {
+  const view = { left: 0, top: 0, width: 1200, height: 700 };
+  const free = hintPlacement(view, []);
+  assert.deepEqual(free, { right: 1192, top: 666, maxWidth: 1184 });
+  const pip = { left: 10, top: 520, width: 300, height: 170 }, top = { left: 790, top: 400, width: 400, height: 290 };
+  const between = hintPlacement(view, [pip, top]);
+  assert.equal(between.top, 666, "stays on the bottom edge");
+  assert.ok(between.right <= top.left - 8, "right edge left of the Top view inset");
+  assert.ok(between.right - between.maxWidth >= pip.left + pip.width + 8, "left edge right of the picture");
+  // A narrow viewport: no room between them, so it sits just above the taller one.
+  const narrow = hintPlacement({ left: 0, top: 0, width: 760, height: 700 }, [pip, { left: 450, top: 400, width: 300, height: 290 }]);
+  assert.ok(narrow.top + 26 <= 400 - 8 + 1e-9, `above the inset (top ${narrow.top})`);
+  assert.ok(narrow.maxWidth >= 240);
+  // Hidden or zero-size panels are not obstacles.
+  assert.deepEqual(hintPlacement(view, [null, { left: 790, top: 400, width: 0, height: 0 }]), free);
 });
 
 test("resolveGesture: Soundstage default bindings", () => {
@@ -267,6 +306,36 @@ test("Blender style: numpad keys snap and frame; Maya: Shift+A frames all", () =
   st.nav.settings.style = "maya";
   assert.equal(st.nav.key(key("A", { shiftKey: true })), true);
   assert.deepEqual(seen, ["+z", "-y", "frame", "home", "home"]);
+});
+
+test("Alt + right drag (Maya / Unreal dolly) is not fly mode: the wheel zooms and D is still Drive", () => {
+  const st = stubStage({ selected: "car1" });
+  st.nav.settings.style = "maya";
+  st.nav._rmb.down = true; st.nav._rmb.noFly = true;   // what an Alt + right press sets (navigation_stage tests dispatch it)
+  assert.equal(st.nav.wheel({ deltaY: 100, deltaX: 0, deltaMode: 0, wheelDeltaY: -120 }), false, "the wheel zooms, not fly speed");
+  assert.equal(st.nav.key(key("d")), false, "D is Drive, not fly right");
+  st.nav.dispose();
+});
+
+test("macOS: hold W, press ⌘, let go of W (no keyup arrives): the held key is dropped and the camera stops", () => {
+  const st = stubStage({ freeView: false });
+  st.nav.settings.damping = false;
+  assert.equal(st.nav.key(key("w")), true);
+  st.nav._tick();
+  assert.ok(st.nav._held.has("w"));
+  // ⌘ goes down (Chrome on a Mac then sends no keyup for W, released while ⌘ is held).
+  st.nav.key({ key: "Meta", code: "MetaLeft", metaKey: true, preventDefault() {}, stopPropagation() {} });
+  assert.equal(st.nav._held.size, 0, "W no longer held");
+  st.nav._tick(); st.nav._tick();
+  const z = st.orbit.position[2];
+  st.nav._tick();
+  assert.equal(st.orbit.position[2], z, "the camera has stopped");
+  assert.equal(st.changes, 1, "the shot key written once when it stopped");
+  // A keyup with ⌘ still down clears too.
+  st.nav.key(key("s"));
+  st.nav.keyup({ key: "z", metaKey: true });
+  assert.equal(st.nav._held.size, 0);
+  st.nav.dispose();
 });
 
 test("double-click focus only selects in Camera view (never rewrites the shot)", () => {

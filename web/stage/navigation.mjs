@@ -54,7 +54,9 @@ export const PRESETS = {
     zoom: "Wheel, pinch", fly: "Hold RMB + WASD/QE", focus: "Double-click", frame: "F", frameAll: ".", snap: "Compass", keys: [] },
   blender: { orbit: "MMB drag, LMB on empty space", pan: "Shift+MMB, LMB+RMB", look: "Alt+LMB on empty space", dolly: "Ctrl+MMB drag",
     zoom: "Wheel, pinch", fly: "Hold RMB + WASD/QE", focus: "Double-click", frame: "F, Numpad .", frameAll: "Home",
-    snap: "Numpad 1 / 3 / 7 (Ctrl: opposite)", keys: ["NumpadDecimal", "Home", "Numpad1", "Numpad3", "Numpad7", "Ctrl+Numpad1", "Ctrl+Numpad3", "Ctrl+Numpad7"] },
+    snap: "Numpad 1 / 3 / 7 (Ctrl: opposite)", keys: ["NumpadDecimal", "Home", "Numpad1", "Numpad3", "Numpad7", "Ctrl+Numpad1", "Ctrl+Numpad3", "Ctrl+Numpad7"],
+    // Numpad "." types "." (Back to the set): in this style only the numpad's one frames the selection instead (viewnav.mjs).
+    overrides: ["."] },
   maya: { orbit: "Alt+LMB, LMB on empty space", pan: "Alt+MMB, LMB+RMB", look: "—", dolly: "Alt+RMB drag",
     zoom: "Wheel, pinch", fly: "Hold RMB + WASD/QE", focus: "Double-click", frame: "F", frameAll: "Shift+A", snap: "Compass", keys: ["Shift+A"] },
   unreal: { orbit: "Alt+LMB", pan: "MMB, LMB+RMB", look: "Hold RMB", dolly: "Alt+RMB drag",
@@ -65,15 +67,24 @@ export const NAV_ACTIONS = ["orbit", "pan", "look", "dolly", "zoom", "fly", "foc
 /** Keys the App already uses: no style may bind them. */
 export const TAKEN_KEYS = ["G", "R", "T", "P", "K", "L", "I", "O", "V", "H", "Tab", "?", "Space", "0", ".", ",", "F", "W", "A", "S", "D", "Q", "E"];
 
-/** A style's keys that collide with each other or with keys the App already uses. */
+/**
+ * The combo a style key types, written the way the shortcuts list writes it (comboText, PC labels): the numpad's digits
+ * and "." type the same e.key as the main row, so "Numpad1" is "1", "Ctrl+NumpadDecimal" is "Ctrl+.".
+ */
+export const keyCombo = (k) => String(k).replace(/Numpad(\d)$/, "$1").replace(/NumpadDecimal$/, ".");
+/**
+ * A style's keys that collide with each other or with keys the App already uses. taken = combos as the shortcuts list
+ * writes them (allCombos() in web/ui/shortcuts.mjs, plus TAKEN_KEYS). A style's `overrides` are collisions it means.
+ * style = a style name or a preset object.
+ */
 export function bindingConflicts(style, taken = TAKEN_KEYS) {
-  const keys = PRESETS[style]?.keys || [];
+  const p = typeof style === "string" ? PRESETS[style] : style;
   const out = [];
   const seen = new Set();
-  for (const k of keys) {
-    if (seen.has(k)) out.push(k);
-    seen.add(k);
-    if (taken.includes(k)) out.push(k);
+  for (const k of p?.keys || []) {
+    const c = keyCombo(k);
+    if (seen.has(c) || (taken.includes(c) && !(p.overrides || []).includes(c))) out.push(k);
+    seen.add(c);
   }
   return out;
 }
@@ -157,12 +168,12 @@ export const viewDepth = (pos, fwd, point) => Math.max(0.05, dot(sub(point, pos)
  * tank has no floor to stop on), else the target. A pivot much farther than the target (the horizon) is not used.
  * hits: {mesh: [x,y,z] | null, floor: [x,y,z] | null}; origin is the camera.
  */
-export function pickPivot({ mesh = null, floor = null } = {}, target, origin, { waterTank = false, maxFloor = 400 } = {}) {
+export function pickPivot({ mesh = null, floor = null } = {}, target, origin, { waterTank = false, maxFloor = 400, fallback = true } = {}) {
   const far = origin ? Math.max(50, 4 * len(sub(target, origin))) : Infinity;
   const ok = (p) => p && (!origin || len(sub(p, origin)) <= far);
   if (ok(mesh)) return mesh;
   if (!waterTank && floor && ok(floor) && (!origin || len(sub(floor, origin)) <= maxFloor)) return floor;
-  return target;
+  return fallback ? target : null;   // fallback false: nothing under the cursor (the sky) is no point at all
 }
 
 /** Frame-rate independent easing: the share of what's left to take this frame (dt in s). Damping off takes it all. */
@@ -233,6 +244,31 @@ export function hintText(style, mac = false) {
   }
 }
 
+/**
+ * Where the hint bar goes: along the viewport's bottom, between whatever already sits there (the shot-camera picture at
+ * the bottom left, the Top view inset at the bottom right), else lifted above them. Rects {left, top, width, height}
+ * are in the host's coordinates. Returns {right, top, maxWidth}: the bar is right-aligned at `right`.
+ */
+export function hintPlacement(view, obstacles = [], { h = 26, gap = 8, min = 240, inset = 34 } = {}) {
+  const cx = view.left + view.width / 2;
+  const obs = obstacles.filter((o) => o && o.width > 0 && o.height > 0 && o.left < view.left + view.width && o.left + o.width > view.left);
+  let top = view.top + view.height - inset;
+  let place = null;
+  for (let i = 0; i < 4; i++) {
+    let left = view.left + gap, right = view.left + view.width - gap;
+    const band = obs.filter((o) => o.top < top + h && o.top + o.height > top);
+    for (const o of band) {
+      if (o.left + o.width / 2 >= cx) right = Math.min(right, o.left - gap);
+      else left = Math.max(left, o.left + o.width + gap);
+    }
+    place = { right, top, maxWidth: Math.max(0, right - left) };
+    if (!band.length || right - left >= min) return place;
+    top = Math.min(...band.map((o) => o.top)) - h - gap;   // no room between them: sit just above the taller one
+    if (top < view.top) break;
+  }
+  return { right: view.left + view.width - gap, top: Math.max(view.top + gap, top), maxWidth: Math.max(min, view.width - 2 * gap) };
+}
+
 // ---------------------------------------------------------------- the controller
 const CSS = `.ss-navhint{position:absolute;z-index:5;transform:translateX(-100%);display:flex;align-items:center;gap:6px;max-width:92%;
   font:500 11px/1.2 "Soundstage Grotesk",ui-sans-serif,system-ui,sans-serif;color:#e9e3f0;background:rgba(20,16,26,.62);
@@ -262,7 +298,7 @@ export function installNavigation(stage) {
   let vel = [0, 0, 0];         // fly velocity, camera space (m/s)
   let shift = false, tightKeys = false;
   let rafId = 0, last = 0, dirty = false;
-  const rmb = { down: false, x0: 0, y0: 0, moved: false, keys: false, chord: false, menu: null, lastDragUp: 0 };
+  const rmb = { down: false, noFly: false, x0: 0, y0: 0, moved: false, keys: false, chord: false, menu: null, lastDragUp: 0 };
   const press = { moved: false, x0: 0, y0: 0, bad: 0 };
   const wheelMem = {};
   const listeners = [];
@@ -270,7 +306,8 @@ export function installNavigation(stage) {
 
   const off = () => !!stage.drive?.on;
   const active = () => stage._activeOrbit?.();
-  const flying = () => rmb.down && !off();
+  // An Alt + right press is a dolly (Maya, Unreal) or a look, never fly mode: the wheel zooms and WASD walks as usual.
+  const flying = () => rmb.down && !rmb.noFly && !off();
   /** Right is no longer held (Drive swallowed its release, or it came up off the canvas): fly mode ends. */
   const rmbGone = () => { if (!rmb.down) return; rmb.down = false; rmb.menu = null; rmb.lastDragUp = now(); held.clear(); };
   /** Fly speed: inside a car or room (or close in) right-held flying uses the small tight step, not the set's m/s. */
@@ -294,7 +331,7 @@ export function installNavigation(stage) {
       return { ...g, pivot };
     },
     /** The point under the cursor an orbit turns about (object, floor, else the target). */
-    pivotAt(e) {
+    pivotAt(e, fallback = true) {
       const o = active();
       if (!o || !stage._pickRay) return null;
       try {
@@ -304,7 +341,7 @@ export function installNavigation(stage) {
         let floor = null;
         if (dir[1] < -1e-4) { const t = -origin[1] / dir[1]; if (t > 0) floor = add(origin, mul(dir, t)); }
         return pickPivot({ mesh: hit ? [hit.point.x, hit.point.y, hit.point.z] : null, floor }, o.target, o.position,
-          { waterTank: stage.state?.environment?.set === "water_tank" });
+          { waterTank: stage.state?.environment?.set === "water_tank", fallback });
       } catch { return null; }
     },
     /** pointermove with both buttons: the drag becomes a pan (a not-yet-started grab is dropped, nothing moves). */
@@ -328,6 +365,10 @@ export function installNavigation(stage) {
       acc.dx += dx; acc.dy += dy;
       loop();
     },
+    /** Motion still being eased in after a release (the stage leaves the shot-key write to the frame loop then). */
+    pending: () => !!acc || held.size > 0 || Math.hypot(...vel) > 1e-3,
+    /** Hand the drag's not-yet-applied delta to a flick's glide (so the two don't both move the camera): {dx, dy}. */
+    takeLeft() { const a = acc; acc = null; return a ? { dx: a.dx, dy: a.dy } : { dx: 0, dy: 0 }; },
     flush() { if (acc) { const a = acc; acc = null; nav.apply(a.mode, a.look, a.dx, a.dy, a.pivot); } },
     halt() { acc = null; vel = [0, 0, 0]; settle(); },
     /** A camera drag ended: report a shot-camera move the frame loop held back while the button was down. */
@@ -383,6 +424,7 @@ export function installNavigation(stage) {
 
     /** keydown: continuous WASD/QE (all styles) and the style's own keys. true = handled. */
     key(e) {
+      if (e.metaKey) nav.dropKeys();   // macOS sends no keyup for a key let go while ⌘ is down: it stayed held, flying on
       if (off() || e.metaKey || e.ctrlKey && !(settings.style === "blender" && /^Numpad[137]$/.test(e.code))) return false;
       const k = (e.key || "").toLowerCase();
       if (settings.style === "maya" && e.shiftKey && k === "a") { e.preventDefault(); e.stopPropagation(); stage.viewNav?.backToSet(); return true; }
@@ -404,11 +446,14 @@ export function installNavigation(stage) {
       return true;
     },
     keyup(e) {
+      if (e.metaKey || e.key === "Meta") { nav.dropKeys(); return; }
       const k = (e.key || "").toLowerCase();
       shift = e.shiftKey;
       if (held.delete(k) || k === "shift") loop();
     },
     clearKeys() { held.clear(); },
+    /** Let go of every held fly key (the motion eases out, and the shot key is written once it stops). */
+    dropKeys() { if (!held.size) return; held.clear(); loop(); },
 
     /** Double-click: glide to the object or point under the cursor (Free view only). */
     focusAt(e) {
@@ -419,7 +464,7 @@ export function installNavigation(stage) {
       const id = hit?.object?.userData?.actorId || hit?.object?.parent?.userData?.actorId || null;
       const ms = reduced ? 0 : 450;
       if (id && stage._frameActor?.(id, ms)) return true;
-      const p = nav.pivotAt(e);
+      const p = nav.pivotAt(e, false);   // the sky / empty space: no point, so nothing moves (it pulled a far camera to 12 m)
       if (!p) return false;
       const f = focusView(o.position, o.target, p);
       stage._flyTo(f.pos, f.tgt, ms || 1);
@@ -494,7 +539,7 @@ export function installNavigation(stage) {
   on(cv, "pointerdown", (e) => {
     if (off()) { rmb.down = false; held.clear(); return; }   // Drive owns the pointer (and swallows the release)
     press.x0 = e.clientX; press.y0 = e.clientY; press.moved = false;
-    if (e.button === 2) Object.assign(rmb, { down: true, x0: e.clientX, y0: e.clientY, moved: false, keys: false, chord: false, menu: null, tight: !!stage._tightNow?.() });
+    if (e.button === 2) Object.assign(rmb, { down: true, noFly: !!e.altKey, x0: e.clientX, y0: e.clientY, moved: false, keys: false, chord: false, menu: null, tight: !!stage._tightNow?.() });
     else { if (!((e.buttons ?? 0) & 2)) rmbGone(); rmb.chord = false; rmb.keys = false; }
   }, { capture: true });
   on(cv, "pointermove", (e) => {
@@ -537,6 +582,10 @@ export function installNavigation(stage) {
     if ((stage._dragging && ((e.buttons & 3) === 3 || press.moved)) || now() - rmb.lastDragUp < 400) { e.preventDefault(); e.stopImmediatePropagation(); }   // Windows: after a right-drag
   }, { capture: true });
   on(cv, "keyup", (e) => nav.keyup(e));
+  // ⌘ pressed: the stage's own keydown returns early for ⌘Z / ⌘D, so this runs first (capture) to drop the held keys.
+  on(cv, "keydown", (e) => { if (e.metaKey || e.key === "Meta") nav.dropKeys(); }, { capture: true });
+  on(globalThis.document, "visibilitychange", () => nav.dropKeys());
+  on(globalThis, "blur", () => nav.dropKeys());
   on(cv, "blur", () => { held.clear(); rmb.down = false; });
   on(cv, "dblclick", (e) => {
     if (off() || stage.poser?.active || stage.tc?.dragging || stage.live?.drag) return;
@@ -611,8 +660,13 @@ export function installNavigation(stage) {
       const narrow = cv.offsetWidth < 560;
       const x = cv.offsetLeft + cv.offsetWidth / 2, bottom = cv.offsetTop + cv.offsetHeight;
       bar.hidden = settings.hintDismissed || off() || narrow || !cv.offsetHeight;
-      // Right-aligned: the shot-camera picture and the "Drop a video here" pill sit at the bottom left (they covered the hint).
-      Object.assign(bar.style, { left: `${cv.offsetLeft + cv.offsetWidth - 8}px`, top: `${bottom - 34}px`, maxWidth: `${Math.max(240, cv.offsetWidth - 250)}px` });
+      // Clear of what sits on the viewport's bottom edge: the shot-camera picture (bottom left) and the Top view inset
+      // (bottom right) are measured each time, since either can be shown, hidden or resized.
+      const hr = host.getBoundingClientRect?.() || { left: 0, top: 0 };
+      const rel = (n) => { if (!n || n.hidden || !n.offsetWidth) return null; const r = n.getBoundingClientRect(); return { left: r.left - hr.left, top: r.top - hr.top, width: r.width, height: r.height }; };
+      const obstacles = [...host.querySelectorAll?.(".ss-pip, .ss-top") || []].map(rel);
+      const at = hintPlacement({ left: cv.offsetLeft, top: cv.offsetTop, width: cv.offsetWidth, height: cv.offsetHeight }, obstacles);
+      Object.assign(bar.style, { left: `${at.right}px`, top: `${at.top}px`, maxWidth: `${at.maxWidth}px` });
       Object.assign(panel.style, { left: `${x}px`, top: `${Math.max(cv.offsetTop + 8, bottom - 44 - (panel.offsetHeight || 190))}px` });
       if (off()) panel.hidden = true;
     }
