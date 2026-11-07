@@ -217,17 +217,11 @@ export class Director {
     return (await this.info()).available ? "qwen" : "rules";
   }
 
-  /** One tiny request when the App opens so the first real answer is fast. onState("warming" | "ready" | "off", status). */
-  async warmUp(onState = () => {}) {
+  /** Would this turn have to load the bundled assistant first? Asks the server, which only reads what Ollama has loaded. */
+  async coldStart() {
     const st = await this.assistantStatus(true);
-    if (st?.backend !== "ollama") { onState("off", st); return st; }
-    onState("warming", st);
-    try {
-      const r = await this.api.fetchApi(`${ASSISTANT.route}/warmup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      const j = await r.json();
-      onState(j.ok ? "ready" : "off", j);
-      return j;
-    } catch (e) { onState("off", { ...st, reason: e.message || String(e) }); return st; }
+    if (st?.backend !== "ollama" || st.loaded) return false;
+    return (await this.resolvedBackend()) === "ollama" && (await this._viaServer());
   }
 
   /** The App context the planner needs besides the scene: shots in strip order, script scenes, renders. */
@@ -282,7 +276,7 @@ export class Director {
     if (backend === "ollama" && (await this._viaServer())) {
       // The bundled assistant: the server adds the tier's placement (num_gpu) and reaches Ollama on its own machine.
       const r = await this.api.fetchApi(`${ASSISTANT.route}/chat`, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages, format: "json", think: false, keep_alive: -1, options: { temperature: 0, num_predict: p.numPredict || ASSISTANT.numPredict } }),
+        body: JSON.stringify({ messages, format: "json", think: false, options: { temperature: 0, num_predict: p.numPredict || ASSISTANT.numPredict } }),
         signal: sig });
       const j = await r.json();
       if (j.error) throw new Error(j.error);
