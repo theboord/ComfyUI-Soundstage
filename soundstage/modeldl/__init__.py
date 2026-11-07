@@ -35,7 +35,8 @@ from urllib.parse import urljoin, urlparse
 
 log = logging.getLogger("soundstage.modeldl")
 
-CATALOG_PATH = Path(__file__).with_name("catalog.json")
+# One catalog for the server and the panel (the panel reads it too, to show the list when no server answers).
+CATALOG_PATH = Path(__file__).resolve().parents[2] / "web" / "models" / "catalog.json"
 HF_DEFAULT = "https://huggingface.co"
 ALLOWED_FOLDERS = {"diffusion_models", "text_encoders", "vae", "loras", "latent_upscale_models", "checkpoints",
                    "background_removal"}

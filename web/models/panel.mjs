@@ -6,8 +6,10 @@
 
 import {
   fmtBytes, stateFor, stateLabel, groupItems, defaultSelection, selectionTotals, footerLine, licencesFor, canConfirm,
-  idsForMissing, stepsFor, progressLine, FAIL_TEXT, HF_TOKENS_URL,
+  idsForMissing, stepsFor, progressLine, FAIL_TEXT, HF_TOKENS_URL, offlineStatus, offlineSteps, OFFLINE_TEXT,
 } from "./plan.mjs";
+
+const CATALOG_URL = new URL("./catalog.json", import.meta.url);
 
 const CSS = `
 #ss-models{position:fixed;inset:0;z-index:100002;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)}
@@ -35,6 +37,8 @@ font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
 #ss-models .steps{grid-column:2/4;color:#ffd7a8;font-size:12px}#ss-models .steps a,#ss-models a{color:#9cc8ff}
 #ss-models .prog{width:100%}#ss-models progress{width:100%}
 #ss-models .geo{color:#ff8b7a}#ss-models .muted{color:#b9b3c7}#ss-models .fail{color:#ffb4a8}
+#ss-models .offline{margin-bottom:10px;padding:8px 10px;border-radius:8px;background:#2a2633;color:#ffd7a8}
+#ss-models .chip.unknown{background:#2a2633;color:#b9b3c7}
 #ss-models .lic{margin:8px 0;display:flex;gap:8px;align-items:flex-start}
 @media (max-width:520px){#ss-models .row{grid-template-columns:auto 1fr}#ss-models .chips{grid-column:2;justify-content:flex-start}}
 `;
@@ -91,7 +95,16 @@ class ModelsPanel {
 
   async refresh(first = false) {
     try { this.status = await call("/soundstage/models/status"); } catch (e) {
-      this.box.replaceChildren(el("div", { className: "body fail", textContent: `Couldn't load the model list: ${e.message}` }));
+      // No server (the try-it demo, or ComfyUI is down): show the catalog read-only rather than a dead end.
+      try {
+        const r = await fetch(CATALOG_URL);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        this.status = offlineStatus(await r.json());
+        this.sel = new Set();
+        this.render();
+      } catch {
+        this.box.replaceChildren(el("div", { className: "body fail", textContent: `Couldn't load the model list: ${e.message}` }));
+      }
       return;
     }
     if (first) {
@@ -109,11 +122,13 @@ class ModelsPanel {
     head.lastChild.setAttribute("aria-label", "Close");
     const body = el("div", { className: "body" }, this.hfBox(), ...groupItems(s).map((g) => this.groupCard(g)));
     if (this.note) body.prepend(el("div", { className: "muted", textContent: this.note }));
+    if (s.offline) body.prepend(el("div", { className: "offline", textContent: OFFLINE_TEXT }));
     this.progEl = el("div", { className: "prog" });
     const t = selectionTotals(s.items, [...this.sel]);
     const freeV = Object.values(s.free_bytes || {}).filter((v) => v != null);
     const free = freeV.length ? `${fmtBytes(Math.max(...freeV))} free` : "";
-    this.dlBtn = el("button", { className: "pri", textContent: footerLine(t), disabled: !t.count || s.busy, onclick: () => this.confirm() });
+    this.dlBtn = el("button", { className: "pri", textContent: s.offline ? "Download needs ComfyUI" : footerLine(t),
+      disabled: s.offline || !t.count || s.busy, onclick: () => this.confirm() });
     const foot = el("footer", {}, this.progEl, this.dlBtn, el("span", { className: "muted", textContent: free }));
     this.box.replaceChildren(head, body, foot);
     this.renderProgress();
@@ -122,6 +137,11 @@ class ModelsPanel {
   hfBox() {
     const s = this.status;
     const box = el("div", { className: "hf" });
+    if (s.offline) {
+      box.append(el("span", { className: "muted" }, "Models marked 🔒 need a Hugging Face sign-in and licence acceptance: ",
+        link(HF_TOKENS_URL, "make a read token ↗")));
+      return box;
+    }
     if (s.signed_in) {
       const who = s.token_source === "saved"
         ? `Hugging Face: signed in${s.user ? ` as ${s.user}` : ""} (saved on this computer)`
@@ -158,7 +178,7 @@ class ModelsPanel {
     const fetchable = items.filter((it) => !["installed", "other_build"].includes(stateFor(it, files).state));
     const all = el("input", { type: "checkbox" });
     all.checked = fetchable.length > 0 && fetchable.every((it) => this.sel.has(it.id));
-    all.disabled = !fetchable.length;
+    all.disabled = !fetchable.length || !!this.status.offline;
     all.onchange = () => { for (const it of fetchable) all.checked ? this.sel.add(it.id) : this.sel.delete(it.id); this.render(); };
     const card = el("div", { className: "grp" },
       el("label", {}, all, group.title, el("small", { textContent: group.needed_for ? ` · for ${group.needed_for}` : "" })));
@@ -170,7 +190,7 @@ class ModelsPanel {
     const st = stateFor(it, this.status.installed_files);
     const cb = el("input", { type: "checkbox" });
     cb.checked = this.sel.has(it.id);
-    cb.disabled = st.state === "installed";
+    cb.disabled = st.state === "installed" || !!this.status.offline;
     cb.onchange = () => { cb.checked ? this.sel.add(it.id) : this.sel.delete(it.id); this.render(); };
     cb.setAttribute("aria-label", it.title);
     const name = el("label", {}, (it.gated ? "🔒 " : "") + it.title + (it.optional ? " (optional)" : ""),
@@ -180,7 +200,7 @@ class ModelsPanel {
     const chips = el("span", { className: "chips" }, el("span", { className: `chip ${st.state}`, textContent: stateLabel(st) }),
       el("span", { className: "chip", textContent: lic }));
     const row = el("div", { className: "row" }, cb, name, chips);
-    const steps = stepsFor(it, this.access[it.id] || "ok", this.status.signed_in);
+    const steps = this.status.offline ? offlineSteps(it) : stepsFor(it, this.access[it.id] || "ok", this.status.signed_in);
     if (steps.length) {
       const st2 = el("div", { className: "steps" });
       steps.forEach((s, n) => {

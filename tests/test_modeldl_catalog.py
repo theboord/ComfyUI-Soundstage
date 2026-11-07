@@ -9,7 +9,7 @@ import pytest
 from modeldl_fake import ROOT, TOKEN, stub_folder_paths, mini_catalog  # noqa: F401
 from soundstage import modeldl as M
 
-CAT = json.loads((ROOT / "soundstage" / "modeldl" / "catalog.json").read_text())
+CAT = json.loads((ROOT / "web" / "models" / "catalog.json").read_text())
 
 
 def test_shipped_catalog_validates():

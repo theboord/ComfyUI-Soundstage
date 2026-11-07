@@ -30,6 +30,7 @@ export const relName = (item) => (item.subdir ? `${item.subdir}/` : "") + item.s
 export function stateFor(item, installedFiles = {}) {
   const s = item.state || "missing";
   if (s === "installed") return { state: "installed" };
+  if (s === "unknown") return { state: "unknown" };
   const list = (installedFiles || {})[item.folder] || [];
   const got = closestModel(relName(item), list);
   if (got && got !== relName(item)) return { state: "other_build", using: got, label: shortModelName(got) };
@@ -46,6 +47,7 @@ export function stateLabel(st) {
     case "installed": return "Installed";
     case "other_build": return `Using your build: ${st.label}`;
     case "partial": return st.pct == null ? "Partly downloaded" : `Partly downloaded ${st.pct}%`;
+    case "unknown": return "Not checked (no server)";
     default: return "Missing";
   }
 }
@@ -147,6 +149,31 @@ export function stepsFor(item, access, signedIn = false) {
     default: return [{ text: "Couldn't reach Hugging Face. Check the connection and try again" }];
   }
 }
+
+/**
+ * The panel when no ComfyUI server answers (the try-it demo, or the server is down): the catalog itself
+ * (web/models/catalog.json), in the same shape as /soundstage/models/status, read-only. Nothing is checked or
+ * fetched: every row is "unknown", and `offline` tells the panel to drop the checkboxes, token box and Download.
+ */
+export function offlineStatus(catalog) {
+  const cat = catalog || {};
+  return {
+    offline: true, groups: cat.groups || [], licences: cat.licences || {}, sets: cat.sets || {},
+    items: (cat.items || []).map((it) => ({ ...it, state: "unknown", have_bytes: 0, repo_url: `${HF}/${it.repo}` })),
+    installed_files: {}, signed_in: false, user: null, token_source: null, free_bytes: {}, busy: false,
+  };
+}
+
+/** Offline, a gated row shows what it will need, without the "Check again" button (there's nothing to check with). */
+export function offlineSteps(item) {
+  if (!item.gated) return [];
+  return stepsFor(item, "sign_in", false).filter((s) => s.text !== "Check again")   // no token box offline: no "paste it above"
+    .map((s) => (s.href === HF_TOKENS_URL ? { ...s, text: "Make a read token on Hugging Face (read access is enough)" } : s));
+}
+
+/** The banner over the offline list. */
+export const OFFLINE_TEXT = "The App's server isn't answering, so this is the list of model files and their licences only. "
+  + "Checking what you have and downloading need the App running in ComfyUI.";
 
 /** The one-line progress text: "flux2-vae · 41% · 12.3 MB/s · 2 min left". */
 export function progressLine(cur, title = cur?.id) {

@@ -30,7 +30,7 @@ The Models panel downloads the model files the App needs from Hugging Face, so y
 
 ## Safety
 
-- **Only listed files.** The browser can only ask for files listed in `soundstage/modeldl/catalog.json`, and it does so by id. Paths and URLs come from the catalog, never from the page. Every file stays inside its ComfyUI models folder: `..` and symlinks that point outside the folder are refused.
+- **Only listed files.** The browser can only ask for files listed in `web/models/catalog.json`, and it does so by id. Paths and URLs come from the catalog, never from the page. Every file stays inside its ComfyUI models folder: `..` and symlinks that point outside the folder are refused.
 - **Your token stays on your computer.** It is saved at `user/soundstage/hf_token` with permissions 600. It is never sent back to the browser, never logged, and only ever sent to huggingface.co. When a download is redirected to the CDN, the token is not sent there. **Remove token** deletes the file.
 - **Verified before use.** Each file downloads to `<name>.part` and is checked before it is renamed into place. The size and sha256 are checked against Hugging Face's own values (`X-Linked-Size` / `X-Linked-Etag`), or against the catalog once it has pinned values. A file that doesn't match is deleted.
 - **Disk check.** A download only starts if there is room for the file plus 2 GB.

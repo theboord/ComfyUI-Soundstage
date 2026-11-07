@@ -7,11 +7,11 @@ import { dirname, join } from "node:path";
 
 import {
   fmtBytes, relName, stateFor, stateLabel, groupItems, defaultSelection, selectionTotals, footerLine, licenceLine,
-  licencesFor, canConfirm, idsForMissing, stepsFor, progressLine, HF_TOKENS_URL,
+  licencesFor, canConfirm, idsForMissing, stepsFor, progressLine, HF_TOKENS_URL, offlineStatus, offlineSteps, OFFLINE_TEXT,
 } from "../../web/models/plan.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const CAT = JSON.parse(readFileSync(join(ROOT, "soundstage/modeldl/catalog.json"), "utf8"));
+const CAT = JSON.parse(readFileSync(join(ROOT, "web/models/catalog.json"), "utf8"));
 const status = (over = {}, files = {}) => ({
   groups: CAT.groups, licences: CAT.licences, installed_files: files,
   items: CAT.items.map((it) => ({ ...it, state: "missing", have_bytes: 0, ...(over[it.id] || {}) })),
@@ -122,4 +122,21 @@ test("panel module only talks to its own routes and never writes the token into 
   assert.match(src, /type = "password"|type: "password"/);
   assert.match(src, /autocomplete/);
   assert.ok(!/localStorage|sessionStorage/.test(src), "the token must not go to browser storage");
+});
+
+test("offline (no server): the catalog read-only, nothing ticked, gated rows show the Hugging Face steps", () => {
+  const s = offlineStatus(CAT);
+  assert.equal(s.offline, true);
+  assert.equal(s.items.length, CAT.items.length);
+  assert.deepEqual(groupItems(s).map((g) => g.group.id), CAT.groups.map((g) => g.id));
+  for (const it of s.items) assert.deepEqual(stateFor(it, s.installed_files), { state: "unknown" });
+  assert.equal(stateLabel({ state: "unknown" }), "Not checked (no server)");
+  assert.deepEqual(defaultSelection(s), []);
+  const gated = byId(s, "flux3-klein-int8");
+  const steps = offlineSteps(gated);
+  assert.deepEqual(steps.map((x) => x.href), [HF_TOKENS_URL, `https://huggingface.co/${gated.repo}`]);
+  assert.ok(!steps.some((x) => x.text === "Check again" || /paste it above/.test(x.text)));
+  assert.deepEqual(offlineSteps(byId(s, "sam31")), []);
+  assert.match(OFFLINE_TEXT, /ComfyUI/);
+  assert.equal(offlineStatus(null).items.length, 0);
 });
