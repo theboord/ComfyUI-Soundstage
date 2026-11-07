@@ -395,8 +395,8 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     stopB.addEventListener("click", () => { if (turn === t) { stopTurn("stopped"); input.focus(); } });
     turn = t; busy = true; waitMsg = msg.querySelector(".t");
     // A slow first answer is the model loading. Wait a moment before saying so: answers that need no model are already done.
-    const cold = Promise.resolve().then(() => director.coldStart()).catch(() => false);
-    setTimeout(() => cold.then((c) => {
+    t.ready = Promise.resolve().then(() => director.prepareTurn?.()).catch(() => false);
+    setTimeout(() => t.ready.then((c) => {
       if (c && turn === t && waitMsg) { coldMsg = waitMsg; waitMsg.textContent = "Loading the language model. After a break this can take a minute…"; }
     }), COLD_NOTE_MS);
     return t;
@@ -429,6 +429,8 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     }
     const t = startTurn(text);
     const signal = t.ctrl.signal;
+    await t.ready;   // sets this turn's time limits
+    if (turn !== t) return null;
     let planText = text;
     // Ask (web/agent/ask.mjs): a question gets a step-by-step answer with Show me; nothing on the set changes.
     if (answerHook && source !== "mcp") {
