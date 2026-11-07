@@ -310,10 +310,12 @@ class ModelsPanel {
       const res = await this.checkAccess(ids);
       if (!res) return;
       const ok = ids.filter((i) => res[i] === "ok");
-      if (ids.some((i) => res[i] === "sign_in" || res[i] === "bad_token")) this.tokenInput?.focus();
+      // focus the token box after the last re-render (each render builds a new one)
+      const wantToken = ids.some((i) => res[i] === "sign_in" || res[i] === "bad_token");
       if (!ok.length) {
         this.note = "Nothing could start yet: follow the steps on the rows below, then Download again.";
         this.render();
+        if (wantToken) this.tokenInput?.focus();
         return;
       }
       try {
@@ -322,6 +324,7 @@ class ModelsPanel {
         this.note = this.queued.length ? `Downloading ${this.queued.length} file${this.queued.length === 1 ? "" : "s"}.` : "Nothing new to download.";
       } catch (e) { this.note = `Couldn't start: ${e.message}`; }
       await this.refresh();
+      if (wantToken) this.tokenInput?.focus();
     };
     this.box.replaceChildren(
       el("header", {}, el("h2", { textContent: "Licences for these models" })),
