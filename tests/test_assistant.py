@@ -106,6 +106,76 @@ def test_unload_failure_never_blocks_the_render(monkeypatch):
     assert A.unload() is False
 
 
+def test_keep_alive_default_and_override(monkeypatch):
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE", raising=False)
+    assert A.keep_alive() == "10m"
+    monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE", "30m")
+    assert A.keep_alive() == "30m"
+    monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE", "600")
+    assert A.keep_alive() == 600
+    monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE", "1h30m")
+    assert A.keep_alive() == "1h30m"
+    for bad in ("  ", "10min", "1.5", "soon"):
+        monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE", bad)
+        assert A.keep_alive() == "10m", bad
+
+
+def test_autostart_doesnt_keep_the_model_forever(monkeypatch):
+    monkeypatch.delenv("OLLAMA_KEEP_ALIVE", raising=False)
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE", raising=False)
+    monkeypatch.delenv("SKIP_OLLAMA", raising=False)
+    monkeypatch.delenv("SOUNDSTAGE_OLLAMA_AUTOSTART", raising=False)
+    monkeypatch.setattr(A.shutil, "which", lambda name: "ollama")
+    monkeypatch.setattr(A, "probe", lambda model=None: {"reachable": False})
+    started = {}
+    monkeypatch.setattr(A.subprocess, "Popen", lambda cmd, env=None, **kw: started.update(env=env))
+    assert A.autostart() is True
+    assert started["env"]["OLLAMA_KEEP_ALIVE"] == "10m"
+
+
+def test_nothing_loads_the_model_but_a_question(monkeypatch):
+    """A fake Ollama records every request: status only reads, a chat sends the idle limit, and no warm-up route exists."""
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE", raising=False)
+    monkeypatch.setattr(A, "hardware", lambda: {"vram_gb": 16.0, "ram_gb": 128.0, "gpu": "test"})
+    seen = []
+
+    async def fake(request):
+        body = await request.json() if request.can_read_body else None
+        seen.append((request.method, request.path, body))
+        if request.path == "/api/tags":
+            return web.json_response({"models": [{"name": "qwen3:30b-a3b"}]})
+        if request.path == "/api/ps":
+            return web.json_response({"models": []})
+        return web.json_response({"message": {"content": "{}"}})
+
+    async def go():
+        ollama = web.Application()
+        ollama.router.add_route("*", "/{tail:.*}", fake)
+        async with TestServer(ollama) as o:
+            monkeypatch.setattr(A, "ollama_url", lambda: str(o.make_url("")).rstrip("/"))
+            routes = web.RouteTableDef()
+            A.register(routes)
+            app = web.Application()
+            app.add_routes(routes)
+            async with TestClient(TestServer(app)) as c:
+                st = await (await c.get("/soundstage/assistant/status")).json()
+                gone = (await c.post("/soundstage/assistant/warmup", json={})).status
+                posts_before_chat = [s for s in seen if s[0] == "POST"]
+                # A tab left open from an older version still asks to keep the model forever.
+                chat = await c.post("/soundstage/assistant/chat", json={"messages": [], "keep_alive": -1})
+                return st, gone, posts_before_chat, chat.status
+    st, gone, posts_before_chat, chat = asyncio.run(go())
+    assert st["backend"] == "ollama" and st["loaded"] is False
+    assert gone in (404, 405)
+    assert posts_before_chat == []
+    assert chat == 200
+    posts = [s for s in seen if s[0] == "POST"]
+    assert [p[1] for p in posts] == ["/api/chat"]
+    assert posts[0][2]["keep_alive"] == "10m"
+
+
 def test_status_route(monkeypatch):
     from aiohttp import web
     from aiohttp.test_utils import TestClient, TestServer
@@ -133,5 +203,5 @@ def test_installer_has_the_ollama_step_and_opt_outs():
     assert "SOUNDSTAGE_ASSISTANT_MODEL:-qwen3:30b-a3b" in inst
     assert re.search(r"ollama pull \"\$\{SOUNDSTAGE_ASSISTANT_MODEL", inst)
     assert "https://ollama.com/install.sh" in start
-    assert "OLLAMA_KEEP_ALIVE" in start and "OLLAMA_ORIGINS" in start and "8189" in start
+    assert "OLLAMA_KEEP_ALIVE:-10m" in start and "OLLAMA_ORIGINS" in start and "8189" in start
     assert "/workspace/ollama/models" in inst and "/workspace/ollama/models" in start

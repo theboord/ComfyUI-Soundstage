@@ -26,7 +26,8 @@ const lsGet = (k, d = null) => { try { const v = localStorage.getItem(LS + k); r
 const lsSet = (k, v) => { try { localStorage.setItem(LS + k, JSON.stringify(v)); } catch { /* storage blocked */ } };
 
 /** How long the chat waits for any one answer before it says so (a question, a plan): never a silent hang. */
-export const ASK_TIMEOUT_MS = 90000;   // a whole turn: room for the model's cold load (FREE_ANSWER_MS) plus the routes
+export const ASK_TIMEOUT_MS = 90000;   // a whole turn when the model is loaded (FREE_ANSWER_MS for the model, plus the routes)
+export const COLD_LOAD_MS = 180000;   // added while the bundled assistant loads: a 19 GB read from a slow disk. Within the server's 300 s
 const POST_MS = 8000;   // a Director route (prompt, plan) on the ComfyUI server
 
 export const BACKENDS = {
@@ -198,7 +199,7 @@ export class Director {
         v = r.status === 200 ? await r.json() : null;
         if (v && !v.backend) v = null;
         if (v?.model) ASSISTANT.model = v.model;
-      } catch { v = null; }
+      } catch { v = this._ast?.v ?? null; }   // a slow read keeps what we knew: a null here would send this turn past the server
       this._ast = { t: performance.now(), v };
     }
     return this._ast.v;
@@ -207,7 +208,8 @@ export class Director {
   /** Does this turn go through the server's Ollama proxy (the bundled assistant), not straight to an Ollama URL? */
   async _viaServer() {
     const st = await this.assistantStatus();
-    return st?.backend === "ollama" && (!this.ollama.model || this.ollama.model === st.model);
+    const norm = (n) => String(n || "").replace(/:latest$/, "");
+    return st?.backend === "ollama" && (!this.ollama.model || norm(this.ollama.model) === norm(st.model));
   }
 
   /** "auto": the bundled Ollama assistant when the server has it ready, else the built-in Qwen3.5 4B, else the rules. */
@@ -217,17 +219,22 @@ export class Director {
     return (await this.info()).available ? "qwen" : "rules";
   }
 
-  /** One tiny request when the App opens so the first real answer is fast. onState("warming" | "ready" | "off", status). */
-  async warmUp(onState = () => {}) {
+  /** Would this turn have to load the bundled assistant first? Asks the server, which only reads what Ollama has loaded. */
+  async coldStart() {
     const st = await this.assistantStatus(true);
-    if (st?.backend !== "ollama") { onState("off", st); return st; }
-    onState("warming", st);
-    try {
-      const r = await this.api.fetchApi(`${ASSISTANT.route}/warmup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      const j = await r.json();
-      onState(j.ok ? "ready" : "off", j);
-      return j;
-    } catch (e) { onState("off", { ...st, reason: e.message || String(e) }); return st; }
+    if (st?.backend !== "ollama" || st.loaded) return false;
+    return (await this.resolvedBackend()) === "ollama" && (await this._viaServer());
+  }
+
+  /** Before a turn: give it room when the model has to load, and for a while after, because a retry can land mid-load. Resolves with
+   * whether the model is cold. The load carries on in Ollama even if a turn gives up, so the next question finds it further along. */
+  async prepareTurn() {
+    const base = (this._limits0 ||= { ...this.limits });
+    const cold = await this.coldStart().catch(() => false);
+    if (cold) this._coldUntil = performance.now() + COLD_LOAD_MS;
+    const extra = performance.now() < (this._coldUntil || 0) ? COLD_LOAD_MS : 0;
+    this.limits = { ...base, turnMs: base.turnMs + extra, modelMs: extra ? base.turnMs + extra - (ASK_TIMEOUT_MS - 75000) : base.modelMs };
+    return cold;
   }
 
   /** The App context the planner needs besides the scene: shots in strip order, script scenes, renders. */
@@ -282,7 +289,7 @@ export class Director {
     if (backend === "ollama" && (await this._viaServer())) {
       // The bundled assistant: the server adds the tier's placement (num_gpu) and reaches Ollama on its own machine.
       const r = await this.api.fetchApi(`${ASSISTANT.route}/chat`, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages, format: "json", think: false, keep_alive: -1, options: { temperature: 0, num_predict: p.numPredict || ASSISTANT.numPredict } }),
+        body: JSON.stringify({ messages, format: "json", think: false, options: { temperature: 0, num_predict: p.numPredict || ASSISTANT.numPredict } }),
         signal: sig });
       const j = await r.json();
       if (j.error) throw new Error(j.error);

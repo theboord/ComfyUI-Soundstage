@@ -89,6 +89,8 @@ The 32B text encoder is loaded on the CPU so it fits next to the video model on 
 - **Less VRAM, 20 GB RAM or more:** on the CPU (`num_gpu=0`), so the GPU stays free for renders. Answers are slower.
 - **Under ~20 GB RAM:** not run. Ask says so and uses the built-in Qwen3.5 4B below.
 
+Opening the App loads nothing. The model loads on the first question and unloads after 10 idle minutes (`SOUNDSTAGE_ASSISTANT_KEEP_ALIVE`, for example `30m`), so expect a slow answer after a break.
+
 Opt-outs: `SKIP_OLLAMA=1` (no Ollama; Ask uses the Qwen3.5 4B). Smaller pull: `SOUNDSTAGE_ASSISTANT_MODEL=qwen3:8b` (~5 GB; ~8 GB VRAM for the GPU tier, ~8 GB RAM for the CPU tier). Set it for ComfyUI too, or Soundstage finds an installed `qwen3:8b` itself.
 
 ## Optional

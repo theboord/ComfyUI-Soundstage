@@ -16,6 +16,8 @@ import { icon } from "../ui/icons.mjs";
 import { floatPanel } from "../ui/floating.mjs";
 import { statusOf, setTakeStatus, refreshBadges } from "../dailies/approval.mjs";
 
+const COLD_NOTE_MS = 3000;   // how long a turn runs before it says the model is loading
+
 const CSS = `
 .ss-dir { position:absolute; right:14px; bottom:64px; width:min(400px, calc(100% - 28px)); max-height:min(72%, 640px); z-index:80;
   display:flex; flex-direction:column; background:var(--ss-glass-strong, rgba(26,20,31,.94)); color:var(--ss-text, #f0efed);
@@ -247,17 +249,8 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   button.addEventListener("click", () => toggle());
   if (topBar) { if (before && before.parentNode === topBar) topBar.insertBefore(button, before); else topBar.append(button); }
 
-  // Warm-up (soundstage/assistant.py): one tiny request when the App opens, so the first real answer is fast. Shown
-  // quietly in the Ask button's tooltip and the panel header, never in the chat.
-  const title0 = button.title;
-  const warmNote = (text) => { button.title = text ? `✦ Ask: ${text}\n${title0}` : title0; button.dataset.warm = text || ""; if (text) beLbl.textContent = `✦ ${text}`; };
-  setTimeout(() => {
-    director.warmUp((state, st) => {
-      if (state === "warming") warmNote(`warming up ${st?.model || ""}…`.replace(" …", "…"));
-      else if (state === "ready") { warmNote(`ready (${st?.device === "cpu" ? "on the CPU" : "on the GPU"})`); setTimeout(() => { warmNote(""); try { syncSettings(); } catch { /* not built */ } }, 8000); }
-      else warmNote("");
-    }).catch(() => {});
-  }, 0);
+  // Read which model the server would use. This loads nothing: the model loads on the first question (soundstage/assistant.py).
+  setTimeout(() => { director.assistantStatus(true).catch(() => {}); }, 0);
 
   // ---------------------------------------------------------------- settings
   const fillBackends = async () => {
@@ -306,10 +299,10 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
   };
 
   function onEvent(ev) {
-    if (ev.type === "thinking" && waitMsg) waitMsg.textContent = `Thinking (${ev.backend === "qwen" ? "Qwen3.5 4B on the GPU queue" : ev.backend})…`;
+    if (ev.type === "thinking" && waitMsg && waitMsg !== coldMsg) waitMsg.textContent = `Thinking (${ev.backend === "qwen" ? "Qwen3.5 4B on the GPU queue" : ev.backend})…`;
     if (ev.type === "step" && stepMsg) stepMsg.textContent = ev.call.plan.replace(/^I'll /, "Now: ");
   }
-  let waitMsg = null, stepMsg = null;
+  let waitMsg = null, stepMsg = null, coldMsg = null;
 
   function planCard(p, { source = "panel" } = {}) {
     const items = p.calls.map((c) => h("li", {}, c.plan.replace(/^I'll /, "")));
@@ -401,6 +394,11 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     const t = { ctrl: new AbortController(), msg };
     stopB.addEventListener("click", () => { if (turn === t) { stopTurn("stopped"); input.focus(); } });
     turn = t; busy = true; waitMsg = msg.querySelector(".t");
+    // A slow first answer is the model loading. Wait a moment before saying so: answers that need no model are already done.
+    t.ready = Promise.resolve().then(() => director.prepareTurn?.()).catch(() => false);
+    setTimeout(() => t.ready.then((c) => {
+      if (c && turn === t && waitMsg) { coldMsg = waitMsg; waitMsg.textContent = "Loading the language model. After a break this can take a minute…"; }
+    }), COLD_NOTE_MS);
     return t;
   }
   function endTurn(t) {
@@ -431,6 +429,8 @@ export function mountDirector({ root, topBar = null, before = null, api, stage, 
     }
     const t = startTurn(text);
     const signal = t.ctrl.signal;
+    await t.ready;   // sets this turn's time limits
+    if (turn !== t) return null;
     let planText = text;
     // Ask (web/agent/ask.mjs): a question gets a step-by-step answer with Show me; nothing on the set changes.
     if (answerHook && source !== "mcp") {

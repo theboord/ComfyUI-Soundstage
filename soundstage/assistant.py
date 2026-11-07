@@ -10,10 +10,11 @@ Smaller pull (SOUNDSTAGE_ASSISTANT_MODEL=qwen3:8b) needs ~8 GB VRAM for the GPU 
 GET  /soundstage/assistant/status  -> {backend, model, device, num_gpu, loaded, reachable, has_model, reason, ...}
 POST /soundstage/assistant/chat    body: an Ollama /api/chat body; forwarded to Ollama with the tier's options (the
      browser can't reach 127.0.0.1:11434 on a pod, the ComfyUI server can)
-POST /soundstage/assistant/warmup  one tiny request so the first real answer is fast
 POST /soundstage/assistant/unload  free the GPU now (keep_alive: 0)
 
-An on-prompt handler unloads the model from VRAM before any render is queued (gpu tier only). On ComfyUI start, an
+Nothing loads the model until someone asks a question, and Ollama lets it go after SOUNDSTAGE_ASSISTANT_KEEP_ALIVE idle
+(default 10m), so opening the App costs no memory. An on-prompt handler unloads the model from VRAM before any render
+is queued (gpu tier only). On ComfyUI start, an
 installed but stopped Ollama is started (tools/start_ollama.sh does the same from a shell; SKIP_OLLAMA=1 opts out).
 """
 from __future__ import annotations
@@ -21,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -31,6 +33,7 @@ log = logging.getLogger("soundstage.assistant")
 
 DEFAULT_MODEL = "qwen3:30b-a3b"
 FALLBACKS = ("qwen3:8b",)
+DEFAULT_KEEP_ALIVE = "10m"   # how long an idle model stays in memory after an answer
 # (min VRAM GB for the gpu tier, min RAM GB for the cpu tier) by model size
 NEEDS = {"big": (24.0, 20.0), "small": (8.0, 8.0)}
 # Text-only model jobs (the built-in Qwen through TextGenerate): no reason to free the GPU for these.
@@ -203,6 +206,19 @@ def chat_options(st: dict, gpu_busy: bool = False) -> dict:
     return opts
 
 
+def keep_alive():
+    """How long Ollama keeps the model after an answer: a duration ("10m") or a number of seconds, as Ollama takes it."""
+    v = os.environ.get("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE", "").strip()
+    if not v:
+        return DEFAULT_KEEP_ALIVE
+    if re.fullmatch(r"-?\d+", v):
+        return int(v)
+    if re.fullmatch(r"-?(\d+(\.\d+)?(ms|s|m|h))+", v):
+        return v
+    log.warning("SOUNDSTAGE_ASSISTANT_KEEP_ALIVE=%r isn't a duration like 10m or a number of seconds; using %s", v, DEFAULT_KEEP_ALIVE)
+    return DEFAULT_KEEP_ALIVE
+
+
 def unload(model: str | None = None, timeout: float = 3.0) -> bool:
     """Free the model's VRAM now (Ollama: a request with keep_alive 0). Ollama reloads it on the next Ask turn."""
     try:
@@ -237,14 +253,14 @@ def on_prompt(json_data, st_fn=cached_status, unload_fn=unload, spawn=True):
 
 
 def autostart() -> bool:
-    """Start an installed Ollama that isn't running (keep-alive forever, the App's origins allowed)."""
+    """Start an installed Ollama that isn't running (the App's origins allowed, an idle model let go)."""
     if os.environ.get("SKIP_OLLAMA", "0") == "1" or os.environ.get("SOUNDSTAGE_OLLAMA_AUTOSTART", "1") == "0":
         return False
     exe = shutil.which("ollama")
     if not exe or probe()["reachable"]:
         return False
     env = dict(os.environ)
-    env.setdefault("OLLAMA_KEEP_ALIVE", "-1")
+    env.setdefault("OLLAMA_KEEP_ALIVE", str(keep_alive()))
     env.setdefault("OLLAMA_ORIGINS", "http://127.0.0.1:*,http://localhost:*,https://*.proxy.runpod.net")
     if "OLLAMA_MODELS" not in env and os.path.isdir("/workspace/ollama/models"):
         env["OLLAMA_MODELS"] = "/workspace/ollama/models"
@@ -304,26 +320,12 @@ def register(routes=None) -> bool:
         body["model"] = body.get("model") or st["model"]
         body["stream"] = False
         body["options"] = {**(body.get("options") or {}), **chat_options(st, await asyncio.to_thread(_gpu_busy))}
-        body.setdefault("keep_alive", -1)
+        body["keep_alive"] = keep_alive()   # the server decides: a tab left open from an older version can't pin the model
         try:
             code, j = await _forward("/api/chat", body, 300)
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": f"Ollama: {e}"}, status=502)
         return web.json_response(j, status=code)
-
-    @routes.post("/soundstage/assistant/warmup")
-    async def assistant_warmup(request):
-        st = await asyncio.to_thread(status)
-        _status_cache["v"], _status_cache["t"] = st, time.monotonic()
-        if st["backend"] != "ollama":
-            return web.json_response({"ok": False, **st})
-        t0 = time.perf_counter()
-        try:
-            await _forward("/api/generate", {"model": st["model"], "prompt": "hi", "stream": False, "keep_alive": -1,
-                                             "options": {"num_predict": 1, **chat_options(st, await asyncio.to_thread(_gpu_busy))}}, 300)
-        except Exception as e:  # noqa: BLE001
-            return web.json_response({"ok": False, "error": str(e), **st})
-        return web.json_response({"ok": True, "ms": round((time.perf_counter() - t0) * 1000), **st, "loaded": True})
 
     @routes.post("/soundstage/assistant/unload")
     async def assistant_unload(request):
