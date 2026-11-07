@@ -3,6 +3,14 @@
 Soundstage is updated continuously on `main`. Newest first. Times are US Pacific.
 Each entry links to the code; every milestone ships with tests.
 
+## 2026-11-07
+
+**Lifelike people on the 3D stage (people overhaul M1, private branch `private/people-m1`, 19:30)**
+- **Still wrong (read first):** only checked in a stand-alone browser page that loads the stage, not inside ComfyUI, and not on the Intel iMac or the pod, so speed with many people is unmeasured. A person shows as clay for the whole shot whenever the clips can't follow what the clay does: riding, sitting, being carried, carrying or holding a prop, video mocap, Pose keys, gaze keys, swimming, Drive mode. The lifelike body ignores the wardrobe colours and the Build / Hair / Top choices. Feet still slide a little (about 0.7 cm a frame when walking) and more when a run is keyed much faster than the clip. The asset files are not in the repo; without them everyone stays clay. In the Depth and Clay passes the lash cards draw solid (no alpha cut-out). Ask's knowledge pack doesn't know the new controls yet.
+- **Why:** the clay figure reads as a mannequin; the video model copies whatever body it's given.
+- **What** ([web/stage/people/avatars.mjs](web/stage/people/avatars.mjs), [web/stage/people/avatarcore.mjs](web/stage/people/avatarcore.mjs), [web/stage/people/peopleui.mjs](web/stage/people/peopleui.mjs), [web/stage/stage.mjs](web/stage/stage.mjs), [web/stage/posepass.mjs](web/stage/posepass.mjs), [web/soundstage.js](web/soundstage.js)): men and women get a Microsoft Rocketbox body (MIT) over the hidden clay, playing real mocap idle / walk / run picked by speed, locked to the distance walked, root motion removed, pose fixed by frame number. The Depth pass now skins, so the rigged horse draws posed in Depth too (checked in the browser: its Depth and ID silhouettes overlap 0.975). The Pose pass reads the lifelike body's bones. New in the Appearance row: **Face** (shown / faceless mannequin head, saved on the person) and **Blocking look** (everyone clay, saved with the scene). How to get the files: [web/stage/people/README.md](web/stage/people/README.md); notice in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- **Tests:** [tests/js/avatars.test.mjs](tests/js/avatars.test.mjs) (texture names, root motion, clip choice and timing, detail level, bone binding, face option, when the clay stays, the skinning Depth shader; plus the real files parsed in node when installed: facing +Z, hips at clay height, feet on the floor, every clip track bound, every texture found). In a browser: Depth vs ID silhouettes overlap 0.987, all 28 visible Pose points sit on the ID silhouette, Blocking look leaves the clay joints identical, no console errors.
+
 ## 2026-11-06
 
 **✦ Ask no longer loads its model when the App opens**

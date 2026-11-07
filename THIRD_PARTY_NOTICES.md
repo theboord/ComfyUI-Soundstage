@@ -12,6 +12,22 @@
 | Car, Police Car, Sports Car by Quaternius | `web/stage/models/*.glb` | CC0 1.0 (public domain), via [poly.pizza](https://poly.pizza/u/Quaternius) |
 | [three-avbd](https://github.com/sbobyn/three-avbd) 0.3.0 (GPU rigid bodies, Augmented Vertex Block Descent) by Steven Bobyn, which ports Chris Giles's avbd-demo3d | `web/vendor/three-avbd/` (built ES modules, renamed `.mjs`; the WebGPURenderer drawing path left out; modified: speculative contacts for fast and kinematic bodies in `avbd3d/gpu/wgsl-collision.mjs` and `wgsl-solve.mjs`, marked `[Soundstage patch]`) | MIT, see `web/vendor/three-avbd/LICENSE` and its `THIRD_PARTY_NOTICES.md` (avbd-demo3d: MIT, © 2025 Chris Giles) |
 
+## Assets fetched separately (not in the repository)
+
+| Component | Where | License |
+|---|---|---|
+| Microsoft Rocketbox avatars and animations (`Male_Adult_01`, `Female_Adult_01`, idle / walk / run / talk clips; textures converted to 1024 px PNG) from [microsoft/Microsoft-Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) at commit `0943055db6ec570bcef9f2c8b41c9e5467c808f9` | `web/stage/people/rocketbox/` (kept out of git; see `web/stage/people/README.md`) | MIT, Copyright (c) 2020 Microsoft. The full licence text sits next to the files as `LICENSE.md`. Only commits from 2020-11-17 on are MIT; earlier ones are not. |
+
+MIT License, Microsoft Rocketbox:
+
+> Copyright (c) 2020 Microsoft
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 ## Used at runtime, installed separately (not vendored)
 
 | Component | Why | License |
