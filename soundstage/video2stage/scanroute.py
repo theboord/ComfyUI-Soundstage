@@ -280,7 +280,12 @@ def people_boxes(breakdown: dict, size, times, duration: float, take=None, fps: 
 
 
 OPEN_FILL = 0.85   # a mask filling more of its box than this is no person's shape (a wall, the background): no padding
-CUT_MIN = 0.03     # a side is cut when the mask crosses it, and carries on past it, along this much of the side
+# A side is cut when the person crosses it and carries on past it (cut, below) along: on the left or right side, at
+# least OPEN_SIDE of the mask's own height (the box holds only her left or right half) or at most LIMB of it (an arm
+# spread past the box); on the top or bottom side, at least TORSO of the mask's own width (a box over her top half or
+# third: her waist runs out of it, however wide her spread arms make her) or at most LIMB of it (a raised arm). A
+# crossing in between, on the left or right, is a thing at her depth beside her (a crate she stands against): no cut.
+OPEN_SIDE, LIMB, TORSO = 0.8, 0.15, 0.25
 OPEN_WIDEN = 0.5   # an open side's padding also reaches this much of the box past its two neighbouring sides
 
 
@@ -296,8 +301,8 @@ def _open_box(m, r, w: int, h: int, src=None, zm: float | None = None, hers: boo
     person is cut by (the box covers only part of her: the top third, the left half), and widened there by OPEN_WIDEN
     of the box on the two neighbouring sides, clipped to the frame. A side is cut when the mask runs into it and the
     person carries on past it (the pixel just outside within rel of her depth `zm` in `src`; without `src`, the mask
-    at the side is the evidence) along at least CUT_MIN of that side: an arm spread at shoulder level, the legs below
-    a box over her top half. Only her (`hers`: the performer's entry or her joints' key while the take tracks her) or
+    at the side is the evidence) along a share of her own span there (OPEN_SIDE, LIMB, TORSO): an arm spread at
+    shoulder level, the legs below a box over her top half. Only her (`hers`: the performer's entry or her joints' key while the take tracks her) or
     a person-shaped mask (_person_shaped) opens anything: a bystander's loose mask that took the wall he leans on, or
     a hallucinated box over the background, fills its box and stays as it is. A box that holds the person touches her
     only at a hand, a foot or the head, with the set past it, so it stays as it is too."""
@@ -311,7 +316,10 @@ def _open_box(m, r, w: int, h: int, src=None, zm: float | None = None, hers: boo
     bw, bh = x1 - x0, y1 - y0
     kx, ky = max(2, bw // 50), max(2, bh // 50)               # "at the side": within 2% of the box (rounding)
 
-    def cut(at_side, outside, n):
+    rows, cols = np.flatnonzero(sub.any(1)), np.flatnonzero(sub.any(0))
+    span_r, span_c = rows[-1] - rows[0] + 1, cols[-1] - cols[0] + 1
+
+    def cut(at_side, outside, span, wide):
         if outside is None:
             return False
         if src is None or zm is None:
@@ -319,15 +327,20 @@ def _open_box(m, r, w: int, h: int, src=None, zm: float | None = None, hers: boo
         else:
             z = np.asarray(outside, np.float32)
             on = at_side & np.isfinite(z) & (np.abs(z - zm) < rel * zm)
-        return int(on.sum()) >= max(2, CUT_MIN * n)
+        n = int(on.sum())
+        if n < 2:
+            return False
+        return n >= wide * span or n <= LIMB * span
 
     S = None if src is None else np.asarray(src, np.float32)
     out = lambda sl: None if S is None else S[sl]               # noqa: E731
     g = [False] * 4
-    g[0] = x0 > 0 and cut(sub[:, :kx].any(1), out(np.s_[y0:y1, x0 - 1]) if S is not None else sub[:, 0], bh)
-    g[2] = x1 < w and cut(sub[:, -kx:].any(1), out(np.s_[y0:y1, x1]) if S is not None else sub[:, -1], bh)
-    g[1] = y0 > 0 and cut(sub[:ky].any(0), out(np.s_[y0 - 1, x0:x1]) if S is not None else sub[0], bw)
-    g[3] = y1 < h and cut(sub[-ky:].any(0), out(np.s_[y1, x0:x1]) if S is not None else sub[-1], bw)
+    g[0] = x0 > 0 and cut(sub[:, :kx].any(1), out(np.s_[y0:y1, x0 - 1]) if S is not None else sub[:, 0], span_r,
+                          OPEN_SIDE)
+    g[2] = x1 < w and cut(sub[:, -kx:].any(1), out(np.s_[y0:y1, x1]) if S is not None else sub[:, -1], span_r,
+                          OPEN_SIDE)
+    g[1] = y0 > 0 and cut(sub[:ky].any(0), out(np.s_[y0 - 1, x0:x1]) if S is not None else sub[0], span_c, TORSO)
+    g[3] = y1 < h and cut(sub[-ky:].any(0), out(np.s_[y1, x0:x1]) if S is not None else sub[-1], span_c, TORSO)
     ox0, oy0, ox1, oy1 = x0, y0, x1, y1
     if g[0] or g[2]:   # open left / right: to the frame edge there, and a little taller
         ox0, ox1 = (0 if g[0] else x0), (w if g[2] else x1)
