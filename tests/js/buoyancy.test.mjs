@@ -230,6 +230,11 @@ test("can't swim: struggles at the surface, then sinks slowly (0.1-0.3 m/s), lim
   assert.ok(hipsY(st, "c") < 0.5, `on the bottom at the end (hips ${hipsY(st, "c").toFixed(2)})`);
   assert.equal(plan.main[plan.n - 1], "limp_floor");
   for (let f = 0; f < plan.n; f += 6) { st.setFrame(f); assert.ok(g.userData.swimOn && !g.userData.gaitOn, `f${f}: no walking`); }
+  // nothing goes through the tank floor while it sinks and settles (was: the legs 0.39 m under, lowered in the upright
+  // limp pose; it showed in Depth and Pose too)
+  let lowest = Infinity;
+  for (let f = 0; f < plan.n; f += 2) { st.setFrame(f); g.updateMatrixWorld(true); lowest = Math.min(lowest, new THREE.Box3().setFromObject(g).min.y); }
+  assert.ok(lowest > -0.01, `the clay's lowest point stays on the floor (${lowest.toFixed(3)})`);
   // Sink slowly (unconscious): no struggle at all
   const st2 = tank([man("u", 0, { swim: "sink" })]);
   const p2 = st2._swimPlan(st2.state.actors[0], st2.actorMeshes.get("u"));

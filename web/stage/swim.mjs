@@ -604,7 +604,22 @@ function putPose(g, plan, f, pose, hipY, ctx) {
     }
   }
   set(J.spine, pose.spine); set(J.neck, pose.neck); set(J.head, pose.head);
+  if (Number.isFinite(ctx.floor) && B.hips[1] - ctx.floor < plan.height) keepAboveFloor(g, ctx.floor);
   return B;
+}
+
+/** A pool's / tank's floor: lift the posed clay so its lowest point is on it, never through it (a body settling on the
+ *  bottom, a plunge in a shallow pool). Measured on the clay's own meshes (never a lifelike body hidden inside it), from
+ *  the pose just set: a pure function of the frame, so scrubbing gives the same lift. */
+function keepAboveFloor(g, floor) {
+  g.updateMatrixWorld(true);
+  let lo = Infinity;
+  g.traverse((o) => {
+    if (!o.isMesh || !o.visible || o.userData.avatar || o.userData.noCollide || o.material?.transparent || !o.geometry?.attributes?.position) return;
+    const e = o.matrixWorld.elements, P = o.geometry.attributes.position;
+    for (let i = 0; i < P.count; i++) { const y = e[1] * P.getX(i) + e[5] * P.getY(i) + e[9] * P.getZ(i) + e[13]; if (y < lo) lo = y; }
+  });
+  if (lo < floor + 0.005) { g.position.y += floor + 0.005 - lo; g.updateMatrixWorld(true); }
 }
 function collectMats(g) {
   const set = new Set();

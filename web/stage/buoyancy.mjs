@@ -392,10 +392,10 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
       }
       const j = i - fs, y = sink.y[j];
       if (landed < 0 && y <= floorHips + 1e-6) landed = i;
-      // On the bottom: the pose tips over first (lying on the back), and only then do the hips go down, so the legs
-      // never go through the floor (the stage also keeps the clay's lowest point on the floor).
+      // On the bottom: the pose tips over onto the back (the swim plan cross-fades it over +-6 frames) while the hips go
+      // down with it; the stage keeps the clay's lowest point on the floor (swim.mjs), so the legs never go through.
       const lying = landed >= 0 && i >= landed + tip;
-      const lie = lying ? sstep(0, 1.5 * fps, i - landed - tip - 6) : 0;
+      const lie = landed >= 0 ? sstep(landed + tip - 6, landed + tip + 18, i) : 0;
       const slip = mode === "cant" && !under ? sstep(0, 2 * fps, j) : 1;   // the arms stop, the head goes under
       styles[fr] = lying ? "limp_floor" : slip < 0.5 && up < fs ? "struggle" : "limp";
       hipsY[fr] = y + (floor + 0.14 * k - y) * lie; hipsW[fr] = 1;

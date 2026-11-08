@@ -3717,7 +3717,7 @@ export class Stage {
         styles: track?.styles || null, hipsY: track?.hipsY || null, hipsW: track?.hipsW || null });
       plan.id = a.id;
       plan.swimMode = smode;
-      plan.ctx = { surface: reef ? fx.surface : pool, current: reef ? fx.currentAt : null, caustics: reef, floorAt: reef ? fx.floorAt : null };
+      plan.ctx = { surface: reef ? fx.surface : pool, current: reef ? fx.currentAt : null, caustics: reef, floorAt: reef ? fx.floorAt : null, floor: reef ? null : 0 };
     }
     this._swimCache.set(a, { sig, g, plan });
     return plan;
