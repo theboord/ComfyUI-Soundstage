@@ -130,14 +130,18 @@ When a chat command changes the set, the Book keeps a decision note on the scene
   one-word ids or names (`sh_2`, `mara`). A tool not in the list keeps no arguments.
 - **What is not kept:** the user's typed sentence (`command`), or any piece of it. Free-text arguments (`note`,
   `text`, `what`, `at`, `value`, a description) and names of more than one word are always dropped. A summary that
-  shares three words in a row with the sentence (two of them real words, not "to the") is dropped too. The sentence
-  is used only to skip undo and play and to check the summary.
+  shares three words in a row with the sentence (two of them real words, not "to the") is dropped too. So is a
+  joined value (`red_pickup_truck`, `gas-station-pumps`, `a.b:c`) that, split on its separators, repeats the
+  sentence or two real words in a row of it; if the kept values still line up into such a run, only numbers and
+  on/off values stay. The cost: an enum spelled out in the sentence (`low_angle` from "a low angle shot") is dropped
+  from that decision. The sentence is used only to skip undo and play and to check the summary and values.
 - **Older notes:** decision notes written before 2026-11-07 held the typed sentence. On load they are rewritten to
   the tools they changed (for example `Move; Lens`) and keep their id. Notes from the first 2026-11-07 version
   (`dv: 2`) are cut to the allowed arguments and their text is written again from the change. The new text reaches
   the server copy on the Book's next save.
 - **Link id:** `recordDecision({..., ref})` stores the chat turn's id as `ref`. `forgetDecision(ref)` removes every
-  decision note with that ref.
+  decision note with that ref. Use a ref of 8 characters or more, such as `${projectId}:${turnId}`: Forget finds
+  copies by their text first, so a short ref like `t1` also matches `shot1` and Forget then says `ok: false`.
 - **Forget:** `await book.forgetDecision(id)` removes the note from the open Book and the workflow
   (`node.properties.ss_book`), and saves the Book. It then calls `POST /soundstage/book/forget {ids, project: {id,
   name}}`. That call removes the note from every stored copy of that project on the server:
@@ -145,7 +149,9 @@ When a chat command changes the set, the Book keeps a decision note on the scene
   - the user's `workflows/*.json`
   - `projects/**`: manifests, the 20 autosaves and the trash
 
-  A file belongs to the project when it carries the same project id, or no id and the same project name. Another
+  A file belongs to the project when it carries the same project id, or no id and the same project name, or sits
+  anywhere inside `projects/<project name>/` (a library Rename moves an old project's autosaves, which still name the
+  old project). Another
   project's copy is left alone, even when it holds the same note id (a Duplicate) or the same ref, and is listed in
   `other_projects`. A file is rewritten only if its text holds the id. `ok` is `false`, with an `error` line, when a
   copy was not cleaned: a file over 64 MB (`skipped`), a file that names no project (`skipped`), or a file whose text

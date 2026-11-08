@@ -5,6 +5,30 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-07
 
+**Second review fixes: Forget after a library Rename, the spec's id rule, joined-token args (private branch `private/project-id`)**
+
+- **Still wrong (read first):** checked with Node and pytest only, not in the browser, the App or a live ComfyUI.
+  - **Id changes more often now:** a second tab opened before the first id'd Save, canvas undo past it, or a
+    restored pre-id autosave gets a fresh id when saved. Two tabs saving a new project at the same time keep
+    changing the id until one is closed. Memory keyed on an old id must be re-keyed after each Save.
+  - **Folder means project:** any file inside `projects/<name>/` is cleaned as that project's, even one left by an
+    older deleted project with the same name.
+  - **Lost enum values:** a joined enum the user spelled out (`low_angle` from "a low angle shot") is dropped from
+    that decision. Values with no separator (one word, such as `mara`) are still kept.
+  - **Short refs:** a ref under 8 characters (`t1`) also matches `shot1` and makes Forget answer `ok: false`.
+    Nothing enforces the length; callers must use `${projectId}:${turnId}`.
+- **Forget after Rename (`soundstage/book/store.py` `_folder_of`, `forget`):** a pre-id project Renamed in the
+  library kept autosaves naming the old name, so Forget listed them in `other_projects`, left the note on disk and
+  said `ok: true`. Now every file inside `projects/<project name>/` is in scope.
+- **Id rule as specified (`web/project/store.mjs` `save`):** the id is kept only when the saved workflow carries it.
+  The same-name exception (`_ownHistory`) let an unrelated pre-id workflow with the same name take the project's id;
+  it is removed.
+- **Joined-token args (`web/book/model.mjs` `tokenEchoes`, `scrubArgs(args, tool, command)`, `recordDecision`):**
+  `red_pickup_truck` / `gas-station-pumps` carried 3-word runs of the typed sentence into the Book. They are split on
+  separators and dropped when they repeat it; a last check keeps only numbers if values still line up into a run.
+- **Tests:** `tests/test_book.py` rename-then-forget on a pre-id project; `tests/js/project.test.mjs` foreign id-less
+  same-name graph gets a fresh id; `tests/js/book.test.mjs` no 3-word run through `_` / `-` / `.` / `:` joined values.
+
 **Review fixes: Forget scoped to one project, Book args allowlisted, project id stable and confirmed (private branch `private/project-id`, 20:36 by this machine's clock)**
 
 - **Still wrong (read first):** checked with Node and pytest only, not in the browser, the App or a live ComfyUI.
