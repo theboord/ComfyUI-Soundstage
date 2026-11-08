@@ -348,7 +348,7 @@ export function clayReason(a, ctx = {}) {
 /** Does this person swim anywhere in the shot? The same gate as stage._swimAt (swimming off, carried) over the
  *  whole-shot swim plan; plan is called only when the gate allows it. */
 export function swimsInShot(a, plan) {
-  if (!a || a.swim === "off" || a.carry_id) return false;
+  if (!a || a.carry_id) return false;   // swimming "off" is Can't swim now (buoyancy.mjs swimMode): still on a swim plan
   const p = plan();
   if (!p?.mode) return !!p;
   for (let i = 0; i < p.mode.length; i++) if (p.mode[i]) return true;

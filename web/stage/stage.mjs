@@ -9,6 +9,7 @@ import { applyGaze, setGazeKey, clearGaze, gazeKeys } from "./gaze.mjs";
 import * as Mocap from "./mocap.mjs";
 import * as Gait from "./gait.mjs";
 import * as Swim from "./swim.mjs";
+import * as Buoy from "./buoyancy.mjs";   // weight-based floating / sinking and the swimmers' water track
 import { CAUSTIC_U } from "./water.mjs";
 import { applyRig, RIGS } from "./camrig.mjs";
 import { materialOf, impactParticles, impactFlash, impactShakeAt, SHAKE_PRESETS, jitterPhysics, feelGravity, overcrankKeys } from "./impacts.mjs";
@@ -613,6 +614,7 @@ export class Stage {
     const p = physicsOf(a);
     if (!a.physics?.mode && (NO_COLLIDE.has(a.kind) || a.kind === "card" || a.mount_id || a.carry_id)) p.mode = "off";   // never collides
     return { id: a.id, name: a.name, kind: a.kind, ...p, material: materialOf(a), baked: !!a.physics?.baked, canMove: this._physCanMove(a),
+      density: a.physics?.density ?? null, buoyancy: this.buoyancyInfo(a.id), swim: this.swimInfo(a.id),
       world: worldRole(a), worldOn: this.state.physics?.world !== false, takeover: a.physics?.takeover || null, keepKeyed: !!a.physics?.keepKeyed,
       kindCount: this.state.actors.filter((x) => x.kind === a.kind && this._physCanMove(x)).length,
       dynamicCount: this.state.actors.filter((x) => x.physics?.mode === "dynamic" && this._physCanMove(x)).length };
@@ -758,7 +760,14 @@ export class Stage {
   simulatePhysics(opts = {}) {
     const t0 = performance.now();
     const last = this._lastFrame(), fps = this.state.shot?.fps || 24;
-    const dynamic = this.state.actors.filter((a) => a.physics?.mode === "dynamic" && this._physCanMove(a));
+    // In a pool or a tank the water moves things, not this rigid-body world (it has a floor and no water: a crate dropped
+    // into the tank fell to the tank floor at full gravity and broke there). Dynamic objects let go over the water are
+    // left on their keys, and the stage's buoyancy (_waterPhysics) drops them in, floats or sinks them every frame.
+    const wetAt = (a) => { const k = this._actorKeys(a), r = k.length > 1 ? k[k.length - 1] : k[0]; const p = r?.position || a.position || [0, 0, 0]; return this._inPool(p[0], p[2]); };
+    const allDyn = this.state.actors.filter((a) => a.physics?.mode === "dynamic" && this._physCanMove(a));
+    const inWater = allDyn.filter(wetAt);
+    for (const a of inWater) if (a.physics.baked) { a.keys = clone(a.physics.source?.keys || this._actorKeys(a)); a.physics.baked = false; delete a.physics.fracture; delete a.physics.dents; delete a.physics.bakedKeys; }
+    const dynamic = allDyn.filter((a) => !inWater.includes(a));
     // World collisions (world.mjs): cars, people, street lamps, benches and walls are bodies too. A keyed one keeps its
     // keys until its first real contact, then the physics takes over; a loose prop nobody set rests until touched.
     // Scene switch: physics.world (on unless false); per actor: physics.keepKeyed.
@@ -766,7 +775,7 @@ export class Stage {
     const worldActors = world ? this.state.actors.filter((a) => worldRole(a) && !a.mount_id && !a.carry_id && a.physics?.mode !== "off"
       && a.physics?.mode !== "dynamic" && !a.set_xform && this.actorMeshes.has(a.id)) : [];
     const worldIds = new Set(worldActors.map((a) => a.id));
-    const resting = world ? this.state.actors.filter((a) => !a.physics?.mode && !worldIds.has(a.id) && this._physCanMove(a) && this.actorMeshes.has(a.id)) : [];
+    const resting = world ? this.state.actors.filter((a) => !a.physics?.mode && !worldIds.has(a.id) && this._physCanMove(a) && this.actorMeshes.has(a.id) && !wetAt(a)) : [];
     const authored = (a) => (a.physics?.world ? a.physics.source?.keys : this._actorKeys(a)) || [];
     if (!world && this.state.actors.some((a) => a.physics?.world)) {   // switched off: what the world bake did goes back
       for (const a of this.state.actors) unbakeActor(a, { merge: true });
@@ -774,7 +783,10 @@ export class Stage {
       if (!dynamic.length) { this.setFrame(this.frame); this.onChange(this.toJSON()); return { ok: true, message: "Everything collides: off. Cars and people play their own keys again." }; }
     }
     const movers = worldActors.filter((a) => authored(a).length > 1 && authored(a).some((k) => Math.hypot(k.position[0] - authored(a)[0].position[0], k.position[2] - authored(a)[0].position[2]) > 0.01));
-    if (!dynamic.length && !movers.length && !opts.blasts?.length) return { ok: false, message: "Nothing is Dynamic yet: select a prop and set Physics to Dynamic (or key a car or a person to move)." };
+    if (!dynamic.length && !movers.length && !opts.blasts?.length) {
+      if (inWater.length) { this.setFrame(this.frame); this.onChange(this.toJSON()); return { ok: true, inWater: inWater.length, message: `${inWater.length} in the water: the water floats or sinks ${inWater.length === 1 ? "it" : "them"} by weight (no bake needed; scrub to see it).` }; }
+      return { ok: false, message: "Nothing is Dynamic yet: select a prop and set Physics to Dynamic (or key a car or a person to move)." };
+    }
     // Back to the authored keys (and the start height) before sampling; last bake's pieces and dents go. A key edited on
     // a baked object since is kept in its authored keys (world.mjs mergeEdits), so dragging re-bakes from the edit.
     for (const a of [...worldActors, ...resting]) unbakeActor(a, { merge: true });
@@ -948,7 +960,8 @@ export class Stage {
         ` and baked ${moving + Object.keys(took).length} into keys${restless.length ? `; still moving at the end: ${restless.slice(0, 3).join(", ")}` : "; everything comes to rest"}` +
         `${events.length ? `. ${events.length} hit${events.length === 1 ? "" : "s"} logged (dust, shake and sound key off them)` : ""}` +
         `${broken ? `; ${broken} broke into ${pieces} pieces` : ""}${dented ? `; ${dented} dented` : ""}.` +
-        `${marks.length ? ` ${marks.slice(0, 4).map((m) => m[0].toUpperCase() + m.slice(1)).join("; ")}.` : ""}`, broken, dented, pieces };
+        `${marks.length ? ` ${marks.slice(0, 4).map((m) => m[0].toUpperCase() + m.slice(1)).join("; ")}.` : ""}` +
+        `${inWater.length ? ` ${inWater.length} in the water: floated or sunk by weight, not baked.` : ""}`, broken, dented, pieces, inWater: inWater.length };
   }
 
   /** A broken prop's bake as the stage's fracture record (pieces with their own keys from the frame before the break). */
@@ -1981,6 +1994,65 @@ export class Stage {
     return y;
   }
 
+  /**
+   * The nearest walkable top a screen ray meets before `maxDist` (placeInFrame): a dock or any other set box, a parked
+   * prop low enough to stand on (_supportShapes), or a boat's deck as it is shown now. Side faces and undersides don't
+   * count. Returns {point: Vector3, id} or null. `selfId` (what is being placed) is never its own support.
+   */
+  _walkableRay(origin, dir, maxDist, selfId = null) {
+    if (!this.root) return null;
+    const d = dir.clone().normalize(), o = origin.toArray(), dv = d.toArray();
+    let best = null;
+    for (const sh of this._supportShapes()) {
+      if (sh.id === selfId) continue;
+      const own = this.actorMeshes.has(sh.id) ? this.state.actors.find((q) => q.id === sh.id) : null;
+      if (own && (LIBRARY[own.kind]?.boat || PERSON_KINDS.has(own.kind))) continue;   // a boat: its deck, below; never a person's head
+      // a prop in the water (a floating crate) moves with it: not a place to stand (as _standOnAt)
+      if (own && this._overWater((sh.min[0] + sh.max[0]) / 2, (sh.min[2] + sh.max[2]) / 2)) continue;
+      const hit = raycastShapes([sh], o, dv, maxDist);
+      if (hit && hit.normal[1] > 0.7 && (!best || hit.distance < best.t)) best = { t: hit.distance, point: new THREE.Vector3(...hit.point), id: sh.id, prop: !!own };
+    }
+    // a top with room to stand on: the deck 0.2 m around it is at about its height on at least two sides (not the cap
+    // of the raft's mast, 0.1 m across, 1.8 m over the logs)
+    const roomy = (hg, P) => {
+      let n = 0;
+      for (const [dx, dz] of [[0.2, 0], [-0.2, 0], [0, 0.2], [0, -0.2]]) { const y = this._deckUnder(hg, P.x + dx, P.z + dz, P.y + 0.3); if (y != null && Math.abs(y - P.y) < 0.15) n++; }
+      return n >= 2;
+    };
+    for (const b of this.state.actors) {
+      if (!LIBRARY[b.kind]?.boat || b.id === selfId || b.mount_id || b.carry_id) continue;
+      const hg = this.actorMeshes.get(b.id);
+      if (!hg) continue;
+      hg.updateMatrixWorld(true);
+      const rc = new THREE.Raycaster(origin.clone(), d, 0, best ? best.t : maxDist);
+      for (const h of rc.intersectObject(hg, true)) {
+        let shown = true;
+        for (let q = h.object; q && q !== hg.parent; q = q.parent) if (!q.visible) { shown = false; break; }
+        if (!shown || !h.object.isMesh || h.object.material?.transparent || !h.face) continue;
+        const n = h.face.normal.clone().transformDirection(h.object.matrixWorld);
+        if (n.y > 0.7 && (!best || h.distance < best.t) && roomy(hg, h.point)) best = { t: h.distance, point: h.point.clone(), id: b.id, boat: true };
+        break;   // the first thing the ray meets on this boat: its deck, or a side that hides it
+      }
+      if (best?.id === b.id) continue;
+      // no top met: the ray may have gone down a gap in the deck (between two logs of the raft). March it through the
+      // boat's box and stop where it reaches the deck under it (_deckUnder looks either side of a gap).
+      const box = new THREE.Box3().setFromObject(hg), ray = new THREE.Ray(origin.clone(), d), pin = ray.intersectBox(box, new THREE.Vector3());
+      if (!pin) continue;
+      const t0 = origin.distanceTo(pin), t1 = Math.min(best ? best.t : maxDist, t0 + 2 * box.getSize(new THREE.Vector3()).length());
+      const Q = new THREE.Vector3();
+      for (let t = t0; t <= t1; t += 0.04) {
+        ray.at(t, Q);
+        if (Q.y < box.min.y) break;
+        const y = this._deckUnder(hg, Q.x, Q.z, Q.y + 0.02);
+        if (y != null && Q.y - y < 0.06) {
+          const P = new THREE.Vector3(Q.x, y, Q.z);
+          if (roomy(hg, P)) { best = { t, point: P, id: b.id, boat: true }; break; }
+        }
+      }
+    }
+    return best;
+  }
+
   /** Set boxes and parked props as ray-castable shapes (cached with the set and the obstacles). */
   _supportShapes() {
     const set = this._setCollidersCached(), obs = this._obstacles();
@@ -1999,6 +2071,97 @@ export class Stage {
     }
     this._supCache = { set, obs, list };
     return list;
+  }
+
+  /** Signature of what a person can stand on over the water (_standOnAt): the set, the parked props, the boats' keys. */
+  _supportSig() {
+    if (!this.root) return "";   // (a bare stage without a scene: nothing to stand on)
+    this._obstacles();
+    const boats = this.state.actors.filter((b) => LIBRARY[b.kind]?.boat && !b.mount_id && !b.carry_id)
+      .map((b) => [b.id, b.kind, keysHash(this._actorKeys(b)), b.scale || 1, b.height_m || 0, b.rotation_deg || 0, this._seedKey(b)]);   // (its seed: its bob on the swell)
+    return `${this.state.environment?.set || ""}|${this._setCollidersCached().length}|${this._obsCache?.sig || ""}|${JSON.stringify(boats)}`;
+  }
+
+  /**
+   * The walkable surface under a person's keyed feet over the water at frame f (personTrack's support): a dock or any
+   * other box of the set, a parked prop that is not in the water, or a boat's deck where the boat floats at frame f
+   * (its own track, so the answer is a pure function of the keys and the frame). Looked for from 0.6 m above the feet
+   * down. null when there is nothing but the water's floor.
+   */
+  _standOnAt(x, z, fromY, f, reach = 0.6) {
+    if (!this.root) return null;
+    let best = null;
+    const top = fromY + reach, o = [x, top, z];
+    for (const sh of this._supportShapes()) {
+      if (x < sh.min[0] || x > sh.max[0] || z < sh.min[2] || z > sh.max[2] || sh.max[1] <= 0.05 || sh.min[1] > top) continue;
+      const a = this.actorMeshes.has(sh.id) ? this.state.actors.find((q) => q.id === sh.id) : null;
+      if (a && this._overWater((sh.min[0] + sh.max[0]) / 2, (sh.min[2] + sh.max[2]) / 2)) continue;   // the water moves it
+      const hit = raycastShapes([sh], o, [0, -1, 0], top + 50);
+      if (hit && hit.distance > 1e-4 && hit.normal[1] > 0.7 && hit.point[1] > (best ?? 0.05)) best = hit.point[1];
+    }
+    const d = this._deckAt(x, z, top, f);
+    if (d != null && d > (best ?? 0.05)) best = d;
+    return best;
+  }
+
+  /** The top of a boat's deck under (x, z) below height `top` at frame f, with each boat posed where its own float
+   *  track has it at f (watercraft.mjs _boatTrack; the group is put back afterwards). null if no boat is there. */
+  _deckAt(x, z, top, f) {
+    let best = null;
+    const level = this.water?.position.y ?? 0;
+    for (const b of this.state.actors) {
+      if (!LIBRARY[b.kind]?.boat || b.mount_id || b.carry_id) continue;
+      const hg = this.actorMeshes.get(b.id);
+      if (!hg) continue;
+      const bp = this._actorPosAt(b, f);
+      if (Math.hypot(x - bp[0], z - bp[2]) > 0.75 * (LIBRARY[b.kind].length || 8) * (b.scale || 1) + 1) continue;
+      const s = this._boatTrack && level >= 0.3 ? this._boatTrack(b, hg, level)?.[Math.max(0, f)] : null;
+      const P = hg.position.clone(), R = hg.rotation.clone();
+      hg.rotation.order = "YXZ";
+      hg.position.set(bp[0], s ? s.y : hg.position.y, bp[2]);
+      hg.rotation.set(s ? -s.pitch * DEG : 0, this._headingAt(b, f), s ? s.roll * DEG : 0, "YXZ");
+      hg.updateMatrixWorld(true);
+      const y = this._deckUnder(hg, x, z, top);
+      if (y != null && (best == null || y > best)) best = y;
+      hg.position.copy(P); hg.rotation.copy(R); hg.updateMatrixWorld(true);
+    }
+    return best;
+  }
+
+  /** The top of boat group hg's deck under (x, z) below `top`, as the group is posed now; null if none. A deck of logs
+   *  (the log raft) has gaps between them, so a point between two logs is on the deck too: when the straight-down ray
+   *  finds no top, four rays 0.12 m around it are tried (was: a person aimed between two logs was keyed at 0 under the
+   *  raft and pushed 2.8 m sideways at f0). */
+  _deckUnder(hg, x, z, top) {
+    const down = new THREE.Vector3(0, -1, 0), rc = new THREE.Raycaster(new THREE.Vector3(), down, 0, top + 5);
+    const at = (px, pz) => {
+      rc.ray.origin.set(px, top, pz);
+      for (const h of rc.intersectObject(hg, true)) {
+        const ob = h.object;
+        let shown = true;
+        for (let q = ob; q && q !== hg.parent; q = q.parent) if (!q.visible) { shown = false; break; }
+        if (!shown || !ob.isMesh || ob.material?.transparent || !h.face) continue;
+        const n = h.face.normal.clone().transformDirection(ob.matrixWorld);
+        if (n.y < 0) n.negate();   // the inside of an open hull, met from above (two-sided pass, below): its floor
+        return n.y > 0.7 ? h.point.y : null;
+      }
+      return null;
+    };
+    const look = () => {
+      const y0 = at(x, z);
+      if (y0 != null) return y0;
+      let best = null;
+      for (const [dx, dz] of [[0.12, 0], [-0.12, 0], [0, 0.12], [0, -0.12]]) { const y = at(x + dx, z + dz); if (y != null && (best == null || y > best)) best = y; }
+      return best;
+    };
+    const y = look();
+    if (y != null) return y;
+    // An open hull (a canoe: one-sided, its floor faces out and down) shows a ray from above nothing but its thwarts
+    // and seats: looked at again two-sided, its floor is met from inside (was: a person aimed at a canoe was keyed in
+    // the water 0.95 m off its side, the ray going down past a thwart and through the hull to the tank floor)
+    const mats = [];
+    hg.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material || [])) if (m && m.side !== THREE.DoubleSide) { mats.push([m, m.side]); m.side = THREE.DoubleSide; } });
+    try { return look(); } finally { for (const [m, sd] of mats) m.side = sd; }
   }
 
   /** Does a person leave the ground anywhere in the shot (a hop up, a vault, a drop: the same test as _airborne, over
@@ -2177,11 +2340,23 @@ export class Stage {
     // The set may have been rebuilt (new meshes): keep the gizmo on the selected object.
     if (this.tc && this.tc.object !== (this.poser?.target() ?? (this.selected ? this.actorMeshes.get(this.selected) : undefined))) this._attachGizmo();
     const swimNow = (this._swimNow = []);
-    for (const a of this.state.actors) {
-      const g = this.actorMeshes.get(a.id);
+    for (const a0 of this.state.actors) {
+      const g = this.actorMeshes.get(a0.id);
       if (!g) continue;
-      if (this.drive?.on && this.drive.pose(a, g)) continue;   // driven live (drive.mjs)
-      if (a.mount_id && !(a.mount_at > this.frame)) continue; // placed on its mount below (a timed mount walks free until mount_at)
+      if (this.drive?.on && this.drive.pose(a0, g)) continue;   // driven live (drive.mjs)
+      // placed on its mount below (a timed mount walks free until mount_at); a rider whose seat has gone under in the
+      // tank has let go and swims (_riderLetGo): posed here, off the mount, on the let-go's own path for the rest of the
+      // shot, swimming or not (was: once the swim ended, out of the water or where they could stand, they jumped back
+      // to their own keys: 6.98 m to the tank floor, 19.3 m to x -13.1, a 0.46 m pop in open water)
+      const lg = a0.mount_id && !(a0.mount_at > this.frame) ? this._letGoAt(a0) : null;
+      const a = lg ? lg.actor : a0;
+      if (a0.mount_id && !(a0.mount_at > this.frame) && !lg) {
+        if (g.userData.swimOn) Swim.unswim(g);   // dragged out of the water onto a boat: seated there, not left in the swim pose
+        // (and never the swim's roll and pitch: the rider pass sets only what its seat needs, so a frame shown after
+        // the let-go left the rider rolled -1.48 rad on the seat, lying on the dry floor; was scrub-order dependent)
+        g.rotation.order = "YXZ"; g.rotation.x = 0; g.rotation.z = 0;
+        continue;
+      }
       const keys = this._actorKeys(a);
       const p = this._actorPosAt(a, this.frame);
       g.position.set(p[0], this._heightAt(a, this.frame), p[2]);
@@ -2215,6 +2390,8 @@ export class Stage {
       if (sw) {
         Gait.release(g);
         sw.out = Swim.applySwim(g, sw.plan, this.frame, sw.ctx);
+        this._swimInWalls(g, a);   // (first: the entry eases from the walk or the seat to where the walls keep the swim)
+        if (sw.plan.entries) this._swimEntry(g, sw.plan, this.frame);   // walked in, or let go of a mount: no pop
         swimNow.push({ a, g, plan: sw.plan, ctx: sw.ctx, out: sw.out });
       } else if (g.userData.swimOn) Swim.unswim(g);
       if (sw) {
@@ -2233,8 +2410,9 @@ export class Stage {
         // Keyed people walk / jog / run with planted feet (gait.mjs); a jump or vault keeps the tuck below.
         const gp = rig === "biped" && !air && !a.mocap && g.userData.joints ? this._gaitPlan(a, g) : null;
         if (gp) {
-          const baseY = this._heightAt(a, this.frame);
-          Gait.applyHuman(g, gp, this.frame, { yaw: g.rotation.y, baseY, support: (x, z) => this._supportAt(x, z, baseY) });
+          // over the water on a dock or a deck (keyed at 0 by placeInFrame or a drag, too): the body stands on it
+          const onKeys = this._standOnKeys(a, g, this.frame), baseY = onKeys ?? this._heightAt(a, this.frame);
+          Gait.applyHuman(g, gp, this.frame, { yaw: g.rotation.y, baseY, support: (x, z) => Math.max(this._supportAt(x, z, baseY), onKeys ?? -Infinity) });
           if (!gp.speed[Math.min(gp.n - 1, this.frame)] || gp.speed[Math.min(gp.n - 1, this.frame)] < 0.15) this._bodyMotion(g, a, false, 0, 0);
         } else {
           Gait.release(g);
@@ -2244,13 +2422,12 @@ export class Stage {
             if (l.part === "knee") l.pivot.rotation.x = 1.1;
             if (l.part === "shoulder") l.pivot.rotation.x = -1.2;
           }
-          g.position.y = this._heightAt(a, this.frame) +
+          g.position.y = ((rig === "biped" ? this._standOnKeys(a, g, this.frame) : null) ?? this._heightAt(a, this.frame)) +
             (moving && !air && rig !== "vehicle" ? 0.014 * (a.height_m || 1.8) * Math.abs(Math.sin(cycle)) : 0);
           g.userData.gaitCycle = cycle;
           if (rig === "biped" && g.userData.joints && !air) this._bodyMotion(g, a, moving, speed, cycle);
         }
       }
-      if (this.water && !sw) this._waterPhysics(a, g);
       if (g.userData.flames) this._animateFire(g, a);
       if (g.userData.mixer) g.userData.mixer.setTime(this.frame / (this.state.shot?.fps || 24));
       if (g.userData.horseRig) this._driveHorse(g, a, speed, dist);
@@ -2277,7 +2454,11 @@ export class Stage {
         // Knocked over while editing (Milestone 9): the lean it came to rest with, on top of its heading.
         if (Array.isArray(a.tilt) && a.tilt.length === 4) { g.quaternion.multiply(_tiltQ.set(a.tilt[0], a.tilt[1], a.tilt[2], a.tilt[3])); g.userData.tilted = true; }
       }
-      this._partsApply(a, g);   // Parts (objparts.mjs): steering, suspension, doors, lamps, horse head and tail, pivots
+      // Water (buoyancy.mjs): after the bake and the start height, which are where it is let go into the water (a
+      // baked fall or a Physics "Height" above a tank is a drop height there, never a float in mid-air).
+      if (this.water && !sw && rig === "biped" && !a.mocap) this._swimExit(a, g);   // out of the water: eased into the walk
+      if (this.water && !sw) this._waterPhysics(a0, g);
+      this._partsApply(a0, g);   // Parts (objparts.mjs): steering, suspension, doors, lamps, horse head and tail, pivots
     }
     // Riders follow their mounts (man on a horse, driver in a car, someone on a bench).
     for (const a of this.state.actors) {
@@ -2285,6 +2466,7 @@ export class Stage {
       const g = this.actorMeshes.get(a.id), host = this.state.actors.find((x) => x.id === a.mount_id);
       const hg = host && this.actorMeshes.get(host.id);
       if (!g || !hg) continue;
+      if (this._letGoAt(a)) continue;   // let go of a mount gone under: swimming (the free pass posed them)
       if (this._boatRider?.(a, g, host, hg)) continue;   // aboard a boat: its motion, the seat's pose, the stroke
       const m = MOUNTS[host.kind] || { pose: "sit", seat: [0, (host.height_m || 1) * 0.6, 0] };
       let k = (host.scale || 1) * (m.scaleWithHeight ? (host.height_m || m.refHeight) / m.refHeight : 1);
@@ -2324,6 +2506,15 @@ export class Stage {
         const t = (this.frame - hopStart) / hopN;
         if (climb) { mountHorse(g, hg, seatPos, t, h, drop); continue; }
         const e = t * t * (3 - 2 * t);
+        if (g.userData.swimOn) {
+          // climbing out of the water (a timed mount onto a boat): upright at the swimmer's hips, then up and in. The
+          // swim pose (lying along the surface) is not carried into the hop, and nothing pops before the hop starts.
+          g.updateMatrixWorld(true);
+          const J = g.userData.joints, hw = J.l_hip.getWorldPosition(new THREE.Vector3()).add(J.r_hip.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
+          Swim.unswim(g);
+          g.rotation.order = "YXZ"; g.rotation.x = 0; g.rotation.z = 0;
+          g.position.set(hw.x, hw.y - J.l_hip.position.y * (g.scale.y || 1), hw.z);
+        }
         if (t < 0.5) applyPose(g, "stand", h);
         const from = g.position.clone(); // standing spot, set by the free-actor pass above
         g.position.lerpVectors(from, seatPos, e);
@@ -2334,7 +2525,7 @@ export class Stage {
       }
       g.position.copy(seatPos);
       g.rotation.order = "YXZ";
-      g.rotation.y = hg.rotation.y;
+      g.rotation.set(0, hg.rotation.y, 0, "YXZ");   // upright on the seat, whatever the frame shown before (a swim's roll)
       // On the rigged horse: sit on its moving back and ride its gait (post the trot, two-point at the gallop).
       const hgs = host.kind === "horse" && (a.pose || m.pose) === "ride" ? hg.userData.horseGait : null;
       if (hgs) {
@@ -2388,12 +2579,39 @@ export class Stage {
       const reach = 0.25 + Math.min(size.x, size.z) / 2;
       const fwd = new THREE.Vector3(Math.sin(cg.rotation.y), 0, Math.cos(cg.rotation.y));
       const hold = new THREE.Vector3(cg.position.x, cg.position.y + 0.62 * ch - size.y / 2, cg.position.z).addScaledVector(fwd, reach);
-      const rest = this._actorPosAt(o, this.frame);
-      og.position.set(rest[0] + (hold.x - rest[0]) * e, hold.y * e, rest[2] + (hold.z - rest[2]) * e);
-      og.rotation.y = cg.rotation.y * e + og.rotation.y * (1 - e);
+      if (cg.userData.swimOn && cg.userData.joints?.head && this._inPool(cg.position.x, cg.position.z)) {
+        // Swimming with it: pushed along in front of the head at the water, floating at its own waterline (something
+        // that sinks: held up with its top at the surface), not at a standing chest height over the swim's root (was:
+        // a crate 0.55 m over the surface the whole way across the tank)
+        const hd = cg.userData.joints.head.getWorldPosition(new THREE.Vector3()), yaw = cg.rotation.y;   // (YXZ: the swim's heading)
+        const fw = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), bb = this._buoyBody(o, og);
+        const rest = this._waterRestY(o, og, hd.x + fw.x * reach, hd.z + fw.z * reach), level = this.water.position.y;
+        hold.set(hd.x + fw.x * reach, Math.max(rest ?? -Infinity, level - 0.8 * size.y - (bb?.minY ?? -size.y / 2)), hd.z + fw.z * reach);
+        if (t >= 1) { og.position.copy(hold); og.rotation.y = yaw; continue; }   // (the swim poses the arms)
+      }
+      // Easing out of the water (_swimExit): from the swim's hold, in front of the eased body's head at the water, to
+      // the walk's, in front of the eased hips at the chest, with the body (was: the walk's hold off the root of a body
+      // still lying along the water: a carried woman 2.1 m in one frame at f75, a crate 1.8 m, up to 3.03 m in the air)
+      const ex = cg.userData.swimExit, easing = t >= 1 && ex?.frame === this.frame && cg.userData.joints?.head && this.water;
+      if (easing) {
+        const J = cg.userData.joints, hd = J.head.getWorldPosition(new THREE.Vector3()), yaw = cg.rotation.y;
+        const fw = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), bb = this._buoyBody(o, og), level = this.water.position.y;
+        const sx = hd.x + fw.x * reach, sz = hd.z + fw.z * reach, rest = this._overWater(sx, sz) ? this._waterRestY(o, og, sx, sz) : null;
+        const sy = Math.max(rest ?? -Infinity, level - 0.8 * size.y - (bb?.minY ?? -size.y / 2));
+        const hp = J.l_hip.getWorldPosition(new THREE.Vector3()).add(J.r_hip.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
+        const hipY = J.l_hip.position.y * (cg.scale?.y || 1);
+        const st = new THREE.Vector3(hp.x, hp.y - hipY + 0.62 * ch - size.y / 2, hp.z).addScaledVector(fwd, reach);
+        og.position.set(sx + (st.x - sx) * ex.w, sy + (st.y - sy) * ex.wy, sz + (st.z - sz) * ex.w);
+        og.rotation.y = yaw;
+      } else {
+        const rest = this._actorPosAt(o, this.frame);
+        og.position.set(rest[0] + (hold.x - rest[0]) * e, hold.y * e, rest[2] + (hold.z - rest[2]) * e);
+        og.rotation.y = cg.rotation.y * e + og.rotation.y * (1 - e);
+      }
       if (t >= 0.5) for (const l of cg.userData.limbs || []) {   // arms forward, elbows bent around the load
-        if (l.part === "shoulder") l.pivot.rotation.x = -1.15;
-        if (l.part === "elbow") l.pivot.rotation.x = -0.6;
+        const k = easing ? ex.w : 1;   // (out of the water: from the swim's arms)
+        if (l.part === "shoulder") l.pivot.rotation.x += (-1.15 - l.pivot.rotation.x) * k;
+        if (l.part === "elbow") l.pivot.rotation.x += (-0.6 - l.pivot.rotation.x) * k;
       }
     }
     // Pose Studio keys last: they override the walk cycle / seat pose for the joints they name.
@@ -3649,13 +3867,62 @@ export class Stage {
     const spot = ahead > 2 && ahead < 40
       ? new THREE.Vector3(...cam.position).addScaledVector(look, tFloor).setY(0).add(side.multiplyScalar(0.5))
       : pos.add(dir.multiplyScalar(spec.rig === "static" ? 14 : 7 + (k % 3) * 1.5)).add(side);
+    // The Water tank set, or a pool when the spot is over its water: the fan stays inside the walls (a rock fanned 4 m
+    // out landed on the dry floor beyond the tank's 7.8 m inner wall).
+    const look0 = new THREE.Vector3(...cam.position).addScaledVector(look, Number.isFinite(tFloor) ? tFloor : 0);
+    const tankSet = this.state.environment?.set === "water_tank" && this.water && this.water.position.y >= 0.3;   // the whole set is the tank
+    const inWater = tankSet || this._inPool(spot.x, spot.z) || (Number.isFinite(tFloor) && this._inPool(look0.x, look0.z));
+    if (inWater) {
+      const w = this.water, gp = w.geometry.parameters, inset = Math.min(0.8, gp.width / 4, gp.height / 4);
+      spot.x = Math.max(w.position.x - gp.width / 2 + inset, Math.min(w.position.x + gp.width / 2 - inset, spot.x));
+      spot.z = Math.max(w.position.z - gp.height / 2 + inset, Math.min(w.position.z + gp.height / 2 - inset, spot.z));
+    }
     const p = [+spot.x.toFixed(2), 0, +spot.z.toFixed(2)];
-    this.state.actors.push({ id, name: `${spec.label} ${n}`, kind, position: p, keys: [{ frame: 0, position: [...p] }],
-      height_m: spec.height, rotation_deg: 0, ...(paint ? { appearance: { color: paint } } : {}) });
+    // seed: its water variation stays the same when the same steps are taken again, and through a rename (_seedKey)
+    const added = { id, name: `${spec.label} ${n}`, seed: `${kind}|${spec.label} ${n}`, kind, position: p, keys: [{ frame: 0, position: [...p] }],
+      height_m: spec.height, rotation_deg: 0, ...(paint ? { appearance: { color: paint } } : {}) };
+    this.state.actors.push(added);
     this._buildSet();
+    if (inWater) this._keepInsideWater(added);
     this.select(id);
     this.onChange(this.toJSON());
     return `${spec.label} ${n}`;
+  }
+
+  /** Add object over a pool / the tank: move the new thing so its whole footprint (its own box at its heading, not just
+   *  its centre) is inside the water's edge, the tank's inner wall (a car added 0.8 m in reached 1.5 m through the
+   *  wall). Something wider than the water is centred on it. */
+  _keepInsideWater(a) {
+    const g = this.actorMeshes.get(a.id), w = this.water;
+    if (!g || !w) return;
+    const xz = this._insideWater(a, g, a.position[0], a.position[2], g.rotation.y || 0);
+    if (!xz) return;
+    const [x, z] = xz;
+    if (x === a.position[0] && z === a.position[2]) return;
+    a.position = [+x.toFixed(2), a.position[1], +z.toFixed(2)];
+    a.keys = [{ ...a.keys[0], position: [...a.position] }];
+    this._buildSet();
+  }
+
+  /** Where an object at (x, z) with heading yaw has to be for its whole footprint (its own box at that heading, cached
+   *  per kind and size) to be inside the water's edge, the tank's inner wall, with 5 cm to spare; something wider than
+   *  the water is centred on it. [x, z] (unchanged when it fits), or null without a box or water. Pure: the keyed
+   *  (x, z, yaw) in, the place out, so a render and a drag agree. */
+  _insideWater(a, g, x, z, yaw = 0) {
+    const w = this.water;
+    if (!w || !g) return null;
+    const fsig = `${a.kind}|${a.scale || 1}|${a.height_m || 0}|${g.children.length}`;
+    let box = g.userData._foot?.sig === fsig ? g.userData._foot.box : null;
+    if (!box) { box = this._localBox(g); if (!box) return null; g.userData._foot = { sig: fsig, box }; }
+    const gp = w.geometry.parameters, c = Math.cos(yaw), sn = Math.sin(yaw), m = 0.05;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const lx = box.center[0] + sx * box.half[0], lz = box.center[2] + sz * box.half[2];
+      const wx = c * lx + sn * lz, wz = -sn * lx + c * lz;   // rotated about y by the heading
+      x0 = Math.min(x0, wx); x1 = Math.max(x1, wx); z0 = Math.min(z0, wz); z1 = Math.max(z1, wz);
+    }
+    const fit = (v, lo, hi, e0, e1) => (hi - lo) - (e1 - e0) < 2 * m ? (lo + hi) / 2 - (e0 + e1) / 2 : Math.max(lo + m - e0, Math.min(hi - m - e1, v));
+    return [fit(x, w.position.x - gp.width / 2, w.position.x + gp.width / 2, x0, x1), fit(z, w.position.z - gp.height / 2, w.position.z + gp.height / 2, z0, z1)];
   }
 
   // ---------- the rigged horse (CC0, Quaternius) ----------
@@ -3705,49 +3972,706 @@ export class Stage {
    * water when still), or under it with swim set to an underwater style. Returns {plan, ctx} or null.
    */
   _swimAt(a, g) {
-    if (!PERSON_KINDS.has(a.kind) || a.carry_id || a.swim === "off" || (a.mount_id && !(a.mount_at > this.frame))) return null;
-    const plan = this._swimPlan(a, g);
+    if (!PERSON_KINDS.has(a.kind) || a.carry_id) return null;
+    let src = a;
+    if (a.mount_id && !(a.mount_at > this.frame)) {   // seated: only a rider who let go of a mount gone under swims
+      const lg = this._letGoAt(a);
+      if (!lg) return null;
+      src = lg.actor;
+    }
+    const plan = this._swimPlan(src, g);
     if (!plan || !plan.mode[Math.max(0, Math.min(plan.n - 1, this.frame))]) return null;
     Swim.ensureKit(g, { gear: plan.gear, height: (a.height_m || 1.8), kind: a.kind, appearance: a.appearance || {} });
     return { plan, ctx: plan.ctx };
   }
 
-  /** The swim plan of a person (cached until their keys, the set or the water change); null if they never swim. */
+  /** The swim plan of a person (cached until their keys, the set or the water change); null if they never swim.
+   *  In a pool, a tank or the sea, every frame over the water is a swim frame, whatever the keyed height: a person
+   *  keyed above the surface drops in (buoyancy.mjs personTrack), so nobody walks on the bottom or stands in mid-air.
+   *  Their Swim mode (a.swim, stage.setSwim) picks what they do there. */
   _swimPlan(a, g) {
     const fx = this.setFx, reef = !!fx?.underwater;
     const pool = !reef && this.water && this.water.position.y >= 0.3 ? this.water.position.y : null;
     if (!reef && pool == null) return null;
     const keys = this._actorKeys(a), last = this._lastFrame(), fps = this.state.shot?.fps || 24;
     const h = (a.height_m || 1.8) * (a.scale || 1);
+    const smode = Buoy.swimMode(a.swim);
     const wp = this.water ? [this.water.position.x, this.water.position.z, this.water.geometry.parameters.width, this.water.geometry.parameters.height] : null;
-    const sig = JSON.stringify([keys, last, fps, h, a.rotation_deg || 0, a.swim || null, a.gear || null, reef ? fx.id : pool, wp, a.kind]);
+    // What they can stand on over the water (a dock, a parked platform, a boat's deck) is part of the plan too.
+    const dry = reef ? "" : this._supportSig();
+    // the props that may float in the water (a swimmer keeps out of them: _keepOffHulls)
+    const floats = reef ? "" : JSON.stringify(this.state.actors.filter((b) => b.id !== a.id && !PERSON_KINDS.has(b.kind) && !LIBRARY[b.kind]?.boat)
+      .map((b) => [b.id, b.kind, keysHash(this._actorKeys(b)), b.scale || 1, b.height_m || 0, b.physics?.density ?? "", b.physics?.mass ?? "", b.swim ?? "", b.buoyancy || "", b.mount_id || "", b.carry_id || "", this._seedKey(b)]));
+    // (the seed key too: a rename of a person with no stored seed changes their variation, in the App as after a reload)
+    const sig = JSON.stringify([keys, last, fps, h, a.rotation_deg || 0, smode, a.gear || null, reef ? fx.id : pool, wp, a.kind, dry, this._seedKey(a), floats, a._wetFrom ?? null, a.physics?.density ?? null, a.physics?.mass ?? null]);
     this._swimCache = this._swimCache || new WeakMap();
     const c = this._swimCache.get(a);
     if (c && c.sig === sig && c.g === g) return c.plan;
-    const UNDER = ["flutter", "frog", "stroke", "hover"];
-    const pos = [], yaw = [], mode = [];
+    const UNDER = ["flutter", "frog", "stroke", "hover", "dive"];
+    const hipY = (g?.userData?.joints?.l_hip?.position.y || 0.53 * h / (g?.scale?.y || 1)) * (g?.scale?.y || 1);
+    const pos = [], yaw = [], mode = [], keyY = [], over = [], support = [], below = [], at0On = [];
+    const standH = (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1);
+    // Keyed under the surface at frame f (an underwater stroke holds its keyed depth): the head under, and off the
+    // floor (over 0.35 m: at the floor they are "placed in the water" and swim at the surface) - judged on the keys either
+    // side as well as the curve between them, so a curve sagging under 0.35 m between two keys at 0.6 m (after a
+    // dive-in from 4.5 m) doesn't surface them for a second and a half and drop them back (a 1.1 m pop at the hips).
+    const kSorted = keys.map((k) => [k.frame ?? 0, k.position?.[1] || 0]).sort((p, q) => p[0] - q[0]);
+    const kUnderAt = (f, y) => {
+      if (pool == null || y + h >= pool) return false;
+      if (y > 0.35) return true;
+      let lo = null, hi = null;
+      for (const k of kSorted) { if (k[0] <= f) lo = k; if (k[0] >= f && hi == null) hi = k; }
+      return !!lo && !!hi && lo[1] > 0.35 && hi[1] > 0.35;
+    };
+    const kUnder = [];
     let any = false, under = 0;
     for (let f = 0; f <= last; f++) {
-      const p = this._actorPosAt(a, f);
+      const p = this._actorPosAt(a, f), ky = p[1] || 0;   // the keyed height (a diver's hover below replaces p[1])
       let m = null;
       if (reef) {
         const bed = fx.floorAt ? fx.floorAt(p[0], p[2]) : 0;
         if ((p[1] || 0) - bed > 0.35) m = (p[1] || 0) + 0.95 * h / 1.8 >= fx.surface - 0.45 ? "surface" : "under";
-      } else if (this._overWater(p[0], p[2]) && (p[1] || 0) <= pool + 0.05) {
-        m = UNDER.includes(a.swim) && (p[1] || 0) > 0.35 && (p[1] || 0) + h < pool ? "under" : "surface";
+      } else if (this._overWater(p[0], p[2]) && !(f < a._wetFrom)) {   // (a rider who let go: in the water from then)
+        if (smode === "dive") {   // scuba, neutrally trimmed: hovers at its keyed depth (on the floor: mid-water)
+          const y = (p[1] || 0) > 0.35 ? Math.min(p[1], pool - hipY - 0.45) : Math.max(0.4, Math.min(pool - hipY - 0.45, pool * 0.35));
+          p[1] = y; m = "under";
+        } else m = UNDER.includes(smode) && kUnderAt(f, p[1] || 0) ? "under" : "surface";
       }
-      if (m) { any = true; if (m === "under") under++; }
+      if (m) { any = true; if (m === "under" && (reef || UNDER.includes(smode))) under++; }
       pos.push([p[0], p[1] || 0, p[2]]); yaw.push(this._headingAt(a, f)); mode.push(m);
+      keyY.push(ky); over.push(!reef && !!m); kUnder.push(!reef && pool != null && kUnderAt(f, ky));
+      // keyed up there: what is under the keyed feet; keyed at 0 (how placeInFrame and a live drag key a person: the
+      // feet follow the floor): anything walkable over the water there, a dock or a deck, from 3 m above the surface
+      let sup = null, bel = 0.05;
+      if (!reef && m) {
+        if (ky > 0.05) {
+          sup = this._standOnAt(p[0], p[2], ky, f);
+          // a boat's deck on a swell heaves up past the keyed feet (up to 0.9 m): still aboard, carried with it
+          const dk = this._deckAt(p[0], p[2], ky + 0.9, f);
+          if (dk != null && (sup == null || dk >= sup - 1e-6)) { sup = dk; bel = 0.9; }
+        } else if (!Buoy.canStand(pool, standH) && (f === 0 || at0On[f - 1])) {
+          // keyed at 0 where the water is too deep to stand in (an old scene, a hand-written key): placed on what is
+          // walkable there, a deck or a dock, from 3 m above the surface - only from the first frame on, and only while
+          // the path stays on it: swimming at 0 into a boat's footprint is not a climb aboard (a timed mount hops on)
+          sup = this._standOnAt(p[0], p[2], pool, f, 3);
+        }
+        // (keyed at 0 in water they can stand in, a dock overhead is not stood on: they wade under it. placeInFrame and a
+        // live drag key the height of a dock or a deck they are put on, so that is a keyed height, above)
+      }
+      at0On.push(!reef && !!m && ky <= 0.05 && sup != null);
+      support.push(sup); below.push(bel);
     }
-    let plan = null;
+    // swimming into a boat (keyed at 0 through its footprint, no timed mount): held in the water at its side
+    if (!reef && any) this._keepOffHulls(a, pos, mode, support, h);
+    let plan = null, stand = null;
     if (any) {
-      const gear = a.gear || (under > 0 ? "scuba" : "none");
-      plan = Swim.planSwim({ pos, yaw, mode, fps, height: h, style: a.swim || null, seed: Swim.seedOf(a.id), gear });
+      const gear = a.gear || (under > 0 || smode === "dive" ? "scuba" : "none");
+      const style = smode === "dive" ? "hover" : ["tread", "breaststroke", "freestyle", "flutter", "frog", "stroke", "hover"].includes(smode) ? smode : null;
+      let track = null;
+      // In a pool: standing on a dock or a deck, the drop in (timed by the keys), the kick up, and the modes that
+      // aren't a stroke (back float, can't swim, sink slowly). The underwater modes and dive get the drop in only.
+      if (!reef) {
+        track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(this._seedKey(a)), standHeight: standH, support, below, keyedUnder: kUnder,
+          ...this._personWeight(a, h) });   // (their mass or density: how fast a non-swimmer goes down)
+        // ground: water they can stand in (auto / can't swim), a dock or a deck under them, or a keyed hold before a
+        // jump: off the swim plan, on their keys (the gait walks them)
+        for (let f = 0; f <= last; f++) if (track.modes[f]) mode[f] = track.modes[f]; else if (track.ground[f]) mode[f] = null;
+        // the height they stand at on a deck or a dock, or are held at before a jump (the gait's floor there)
+        stand = track.supported.map((v, f) => (v ? track.standY[f] : track.held[f] ? keyY[f] : null));
+        if (!stand.some((v) => v != null)) stand = null;
+        if (!mode.some(Boolean)) { this._swimCache.set(a, { sig, g, plan: null, stand }); return null; }
+      }
+      // keys that leave the water for the dry floor (through the tank's wall): the swim goes on to the wall first,
+      // treading there (and over the frames just after it, which the style cross-fade reads: not a flutter at the keys'
+      // pace, which laid him flat again)
+      const outs = reef ? null : this._swimToWall(pos, mode, over, support, h, fps);
+      let styles = track?.styles || null;
+      if (outs) {
+        styles = styles ? styles.slice() : new Array(pos.length).fill(null);
+        for (const o of outs) for (let f = o.fx; f <= Math.min(pos.length - 1, o.until + 7); f++) if (!styles[f]) styles[f] = "tread";
+      }
+      const mk = () => Swim.planSwim({ pos, yaw, mode, fps, height: h, style, seed: Swim.seedOf(this._seedKey(a)), gear,
+        styles, hipsY: track?.hipsY || null, hipsW: track?.hipsW || null });
+      plan = mk();
+      if (outs) { this._swimToWallTrim(outs, plan, pos, mode, hipY, h); plan = mk(); }
+      // keys rising to the surface or going back under: the hips ease across, no pop (swim.mjs)
+      if (!reef) Swim.easeDepthHandoffs(plan, { hipY, surface: pool });
       plan.id = a.id;
-      plan.ctx = { surface: reef ? fx.surface : pool, current: reef ? fx.currentAt : null, caustics: reef, floorAt: reef ? fx.floorAt : null };
+      plan.swimMode = smode;
+      plan.ctx = { surface: reef ? fx.surface : pool, current: reef ? fx.currentAt : null, caustics: reef, floorAt: reef ? fx.floorAt : null, floor: reef ? null : 0 };
+      if (!reef) this._swimEntries(a, plan, pos, yaw, keyY, over, hipY);
     }
-    this._swimCache.set(a, { sig, g, plan });
+    this._swimCache.set(a, { sig, g, plan, stand });
     return plan;
+  }
+
+  /**
+   * Keys that leave the water for the dry floor (walked out through the tank's wall) don't end the swim there: the
+   * swimmer was still up to 1.75 m from the wall (held off it by _swimInWalls while lying along the surface) and the
+   * walk cycle ran in 2.5 m of water for a second (was: f75 to f99, walking out 0 to -12). The swim goes on, held at
+   * the water's edge where the keys left it (their path clamped inside the walls, the upright body's reach in), for up
+   * to a second: the swimmer comes upright and reaches the wall (_swimToWallTrim cuts it to the frame they get there).
+   * Keys that come back into the water before the ease out could finish (a quick in and out) keep them swimming at the
+   * wall the whole time: no ease out runs into the walk back in (was: 1.71 m at f42, 0.4 m a frame in and out).
+   * Changes pos and mode in place; returns [{fx, fr, H, until}] (until: the last frame held, so far) or null.
+   */
+  _swimToWall(pos, mode, over, support, h, fps) {
+    const w = this.water;
+    if (!w || w.position.y < 0.3) return null;
+    const gp = w.geometry.parameters, ins = 0.35 * h / 1.8 + 0.06, n = pos.length;
+    const x0 = w.position.x - gp.width / 2 + ins, x1 = w.position.x + gp.width / 2 - ins;
+    const z0 = w.position.z - gp.height / 2 + ins, z1 = w.position.z + gp.height / 2 - ins;
+    const H = Math.max(6, Math.round(1.0 * fps)), out = [];
+    for (let fx = 1; fx < n; fx++) {
+      if (!mode[fx - 1] || mode[fx] || over[fx] || support[fx] != null || this._overWater(pos[fx][0], pos[fx][2])) continue;
+      let fr = fx;
+      while (fr < n && !over[fr]) fr++;
+      // back in before a hold, a half-second ease out and the step down could fit: stay at the wall (_swimExits fits
+      // the ease out into the frames there are before the walk back in)
+      const whole = fr < n && fr - fx < H + 12 + 9;
+      const until = whole ? fr - 1 : Math.min(fr - 1, fx + H - 1), keys = pos.slice(fx, until + 1);
+      for (let f = fx; f <= until; f++) {
+        pos[f] = [THREE.MathUtils.clamp(pos[f][0], x0, x1), pos[f][1], THREE.MathUtils.clamp(pos[f][2], z0, z1)];
+        mode[f] = mode[fx - 1] === "under" ? "surface" : mode[fx - 1];
+      }
+      out.push({ fx, fr, whole, until, keys });
+      fx = Math.max(until, fr - 1);   // (the rest of this stretch out of the water is the walk's)
+    }
+    return out.length ? out : null;
+  }
+
+  /** Cut each hold at the wall (_swimToWall) to the frame the swimmer gets there: upright (within 25 degrees) with the
+   *  hips within 0.1 m of where the hold leaves them (as close as _swimInWalls lets the treading body come: the hips
+   *  ~0.65 m in from the inner wall, the hands at it), on the plan made with the whole hold
+   *  (deterministic: two plans of the same keys). Frames after it go back to the keys and the walk. */
+  _swimToWallTrim(outs, plan, pos, mode, hipY, h) {
+    const v = new THREE.Vector3(), up = new THREE.Vector3();
+    const hipsAt = (f) => {
+      const P = Swim.poseAt(plan, f), B = Swim.bodyAt(plan, f, P, { ...plan.ctx, hipY });
+      v.set(0, hipY, 0).applyQuaternion(B.q);
+      const fake = { position: new THREE.Vector3(B.hips[0] - v.x, B.hips[1] - v.y, B.hips[2] - v.z), quaternion: B.q.clone(), updateMatrixWorld() {} };
+      this._swimInWalls(fake, { height_m: h });
+      return { p: fake.position.add(v), up: up.set(0, 1, 0).applyQuaternion(B.q).y };
+    };
+    plan.ctx = plan.ctx || { surface: this.water.position.y, floor: 0 };
+    for (const o of outs) {
+      if (o.whole) continue;
+      const end = hipsAt(o.until).p.clone();
+      let f = o.fx;
+      for (; f < o.until; f++) { const r = hipsAt(f); if (r.up > Math.cos(25 * DEG) && Math.hypot(r.p.x - end.x, r.p.z - end.z) < 0.1) break; }
+      for (let k = f + 1; k <= o.until; k++) { pos[k] = o.keys[k - o.fx]; mode[k] = null; }
+      o.until = f;
+    }
+  }
+
+  /**
+   * Into the water from a pose that isn't a swim: walked in off the dry floor through the tank's wall (was: the feet
+   * from 0 to 1.93 m in one frame, f45 to f46), or let go of a mount gone under (_riderLetGo: from the seat). The root
+   * eases from where that pose had it (upright, at its heading) to the swim's own over n frames, enough to keep the step
+   * under ~6 cm a frame (6 to 72 frames). plan.entries = [{f, n, pos, q}], applied by _swimEntry; a pure function of
+   * the plan.
+   */
+  _swimEntries(a, plan, pos, yaw, keyY, over, hipY) {
+    const out = [], Yax = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3();
+    for (let f = 1; f < plan.n; f++) {
+      if (!plan.mode[f] || plan.mode[f - 1]) continue;
+      let from = null;
+      if (a._entryFrom && f === a._wetFrom) from = a._entryFrom;
+      else if (!over[f - 1]) from = { pos: [pos[f - 1][0], Math.max(0, keyY[f - 1] || 0), pos[f - 1][2]], yaw: yaw[f - 1] };
+      if (!from) continue;
+      const B = Swim.bodyAt(plan, f, Swim.poseAt(plan, f), { ...plan.ctx, hipY });
+      v.set(0, hipY, 0).applyQuaternion(B.q);
+      const d = Math.hypot(B.hips[0] - v.x - from.pos[0], B.hips[1] - v.y - from.pos[1], B.hips[2] - v.z - from.pos[2]);
+      if (d < 0.05) continue;
+      out.push({ f, n: Math.max(6, Math.min(72, Math.ceil(1.5 * d / 0.06))), pos: from.pos.slice(), q: new THREE.Quaternion().setFromAxisAngle(Yax, from.yaw).toArray(), pose: from.pose || "stand" });
+    }
+    if (out.length) plan.entries = out; else delete plan.entries;
+  }
+
+  /**
+   * Out of the water into a pose that isn't a swim, the walk in's ease the other way (_swimEntries): walked or ridden
+   * out of the tank through its wall (was: the hips 2.44 m in one frame, 1.55 on b1f6d51; 2.60 m walking in, out and in
+   * again), and a rider who let go of a mount where they can stand (_riderLetGo in open water: up off the seat, was a
+   * 0.46 m pop). From the swim's own last frame (its root at the walls, _swimInWalls, and its joints) or the seat, to
+   * the walk's pose over n frames, ~6 cm a frame (6 to 72). [{f, n, pos, q, joints: {name: quaternion}, shoes}], cached
+   * on the swim plan's own cache entry: a pure function of the keys.
+   */
+  _swimExits(a, g) {
+    if (!PERSON_KINDS.has(a.kind) || a.carry_id || a.mount_id || !g.userData.joints) return null;
+    const plan = this._swimPlan(a, g), ce = this._swimCache?.get(a);
+    if (!ce) return null;
+    if (ce._exits && ce._exits.g === g) return ce._exits.out;
+    const J = g.userData.joints, h = (a.height_m || 1.8) * (a.scale || 1), sc = g.scale?.y || 1;
+    const hipY = (J.l_hip?.position.y || 0.53 * h / sc) * sc, Yax = new THREE.Vector3(0, 1, 0), Xax = new THREE.Vector3(1, 0, 0), v = new THREE.Vector3();
+    const keys = this._actorKeys(a), out = [];
+    const target = (f) => { const p = this._actorPosAt(a, f); return [p[0], Math.max(0, p[1] || 0), p[2]]; };
+    // (eased about the hips: the from hips to the walk's, the heading the walk's own, the swim's tilt off it, so keys
+    // that turn back during the ease swing the legs round, never throw the body: a slerp of the whole orientation flipped
+    // over at a key reversal, 1.3 m in a frame)
+    const push = (f, hips, yaw, tilt, joints, shoes, wall = false) => {
+      const t = target(f), d = Math.hypot(hips[0] - t[0], hips[1] - t[1] - hipY, hips[2] - t[2]);
+      if (d < 0.05) return;
+      let n = Math.max(6, Math.min(72, Math.ceil(1.5 * d / 0.06)));
+      const e = { f, n, N: n, hips, yaw, tilt, joints, shoes };
+      if (wall) {
+        // Out over the tank's wall: the hips leave the wall at once and slow as they reach the walk (an ease out, not
+        // the slow start of a smoothstep that kept the walk cycle in the water for 20 frames), and come down to the
+        // walk's height over NV frames from the frame they leave the water (was: eased down with the rest over up to
+        // 72 frames: 0.79 m over the dry floor at f104, tipped 37 degrees, the head 2.11 m against 1.58 standing)
+        // (fitted in before the walk back into the water, if it comes back: the walk in starts from the walk's pose)
+        let fs = f + 1;
+        while (fs < plan.n && !plan.mode[fs]) fs++;
+        const avail = fs < plan.n ? fs - f : Infinity;
+        n = Math.max(6, Math.min(n, avail - 9));
+        e.n = e.N = n;
+        let NV = 8, fd = n;
+        for (let k = 0; k < n; k++) {
+          const wh = Swim.exitEaseH(k, n), q = target(f + k);
+          if (!this._overWater(hips[0] + (q[0] - hips[0]) * wh, hips[2] + (q[2] - hips[2]) * wh)) { fd = k; break; }
+        }
+        if (fd + NV + 1 > avail) NV = Math.max(2, avail - fd - 1);
+        Object.assign(e, { wall: true, fd, NV, N: Math.min(avail, Math.max(n, fd + NV + 1)) });
+      }
+      out.push(e);
+    };
+    const euler = (r) => new THREE.Quaternion().setFromEuler(new THREE.Euler(r[0], r[1], r[2], "XYZ")).toArray();
+    // let go where they can stand: up off the seat (the swim never runs)
+    const fe = a._wetFrom, ef = a._entryFrom;
+    if (ef && Number.isFinite(fe) && !plan?.mode[fe] && fe <= this._lastFrame()) {
+      const S = { hip: [-Math.PI / 2, 0, 0], knee: [Math.PI / 2, 0, 0], shoulder: [-0.35, 0, 0], elbow: [-0.9, 0, 0] }, joints = {};
+      for (const lr of ["l", "r"]) for (const part of Object.keys(S)) joints[`${lr}_${part}`] = euler(S[part]);
+      for (const jn of ["spine", "neck", "head"]) joints[jn] = [0, 0, 0, 1];
+      push(fe, [ef.pos[0], ef.pos[1] + hipY, ef.pos[2]], ef.yaw, [0, 0, 0, 1], joints, null);
+    }
+    // the swim's last frame before they leave the water
+    if (plan) for (let f = 1; f < plan.n && keys.length > 1; f++) {
+      if (!plan.mode[f - 1] || plan.mode[f]) continue;
+      const pf = target(f);   // (the keys: the swim's own path is held at the wall, _swimToWall)
+      if (this._overWater(pf[0], pf[2])) continue;   // (still in the water: a deck, a dock, standing: their own poses)
+      const P = Swim.poseAt(plan, f - 1), B = Swim.bodyAt(plan, f - 1, P, { ...plan.ctx, hipY });
+      v.set(0, hipY, 0).applyQuaternion(B.q);
+      const fake = { position: new THREE.Vector3(B.hips[0] - v.x, B.hips[1] - v.y, B.hips[2] - v.z), quaternion: B.q.clone(), updateMatrixWorld() {} };
+      this._swimInWalls(fake, a);
+      const joints = {}, shoes = {};
+      for (const lr of ["l", "r"]) {
+        const L = P.legs[lr], A = P.arms[lr];
+        joints[`${lr}_hip`] = euler(L.hip); joints[`${lr}_knee`] = euler([L.knee, 0, 0]);
+        joints[`${lr}_shoulder`] = euler(A.sh); joints[`${lr}_elbow`] = euler([A.el, 0, 0]);
+        shoes[lr] = new THREE.Quaternion().setFromAxisAngle(Xax, L.shoe).toArray();
+      }
+      joints.spine = euler(P.spine); joints.neck = euler(P.neck); joints.head = euler(P.head);
+      const yaw = plan.yaw[f - 1], tilt = new THREE.Quaternion().setFromAxisAngle(Yax, -yaw).multiply(B.q);
+      v.set(0, hipY, 0).applyQuaternion(B.q);
+      push(f, fake.position.clone().add(v).toArray(), yaw, tilt.toArray(), joints, shoes, true);
+    }
+    ce._exits = { g, out: out.length ? out : null };
+    return ce._exits.out;
+  }
+
+  /** The ease out of the water at this frame (_swimExits), after the walk posed them. */
+  _swimExit(a, g) {
+    const ex = this._swimExits(a, g);
+    if (!ex) return;
+    const J = g.userData.joints, qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), _Yax = new THREE.Vector3(0, 1, 0);
+    const h = (a.height_m || 1.8) * (a.scale || 1), hipY = (J.l_hip?.position.y || 0.53 * h / (g.scale?.y || 1)) * (g.scale?.y || 1);
+    for (const e of ex) {
+      if (this.frame < e.f || this.frame >= e.f + (e.N ?? e.n)) continue;
+      const k = this.frame - e.f, t = Math.min(1, (k + 1) / (e.n + 1)), w = k >= e.n ? 1 : t * t * (3 - 2 * t);
+      // (out over the wall: the hips across at once, then down to the walk's height once out of the water)
+      const wh = e.wall ? Swim.exitEaseH(k, e.n) : w, wy = e.wall ? Swim.exitEaseV(k, e.fd, e.NV) : w;
+      g.userData.swimExit = { frame: this.frame, w, wy };   // (what they carry eases from the swim's hold with them)
+      const yaw = this._headingAt(a, this.frame), qy = new THREE.Quaternion().setFromAxisAngle(_Yax, yaw);
+      const hv = new THREE.Vector3(0, hipY, 0).applyQuaternion(g.quaternion), hp = g.position.clone().add(hv);
+      const tiltNow = qy.clone().invert().multiply(g.quaternion);
+      g.quaternion.copy(qy).multiply(tiltNow.slerpQuaternions(qa.fromArray(e.tilt), tiltNow.clone(), w));
+      hp.set(e.hips[0] + (hp.x - e.hips[0]) * wh, e.hips[1] + (hp.y - e.hips[1]) * wy, e.hips[2] + (hp.z - e.hips[2]) * wh);
+      g.position.copy(hp).sub(hv.set(0, hipY, 0).applyQuaternion(g.quaternion));
+      for (const [jn, q] of Object.entries(e.joints)) if (J[jn]) J[jn].quaternion.slerpQuaternions(qa.fromArray(q), qb.copy(J[jn].quaternion), w);
+      if (e.shoes) for (const [lr, ft] of Object.entries(Mocap.feetOf(g) || {})) {
+        if (!ft?.shoe || !e.shoes[lr]) continue;
+        qa.fromArray(e.shoes[lr]);
+        const sp = ft.rest.clone().sub(ft.ankle).applyQuaternion(qa).add(ft.ankle);
+        ft.shoe.quaternion.slerpQuaternions(qa, qb.copy(ft.shoe.quaternion), w);
+        ft.shoe.position.lerpVectors(sp, ft.shoe.position.clone(), w);
+      }
+      g.updateMatrixWorld(true);   // (no floor lift: the seat's own pose had its feet at the car's floor, a 0.27 m pop)
+      // out over the wall onto the dry floor: the half-eased legs stand on it, not 9 cm through it
+      if (e.wall && k >= e.fd) Swim.keepAboveFloor(g, 0);
+    }
+  }
+
+  /** A swimmer's whole body inside the pool's or the tank's walls (was: lying along the surface at the wall the head
+   *  went 0.5 m through the 7.8 m inner wall, z 8.31): near a wall the body's envelope (from the feet along its long
+   *  axis to the reach of the hands overhead, 1.27 of the height, 0.35 m round it: steady through the stroke, where the
+   *  posed clay's own box jumps 0.28 m as the arms shoot forward) is moved back in, 2 cm to spare. From this frame's
+   *  root and orientation only, so the same on any play order. */
+  _swimInWalls(g, a) {
+    const w = this.water;
+    if (!w || w.position.y < 0.3 || this.setFx?.underwater) return;
+    const gp = w.geometry.parameters, lx = gp.width / 2, lz = gp.height / 2, cx = w.position.x, cz = w.position.z;
+    const h = (a.height_m || 1.8) * (a.scale || 1), p = g.position;
+    const ax = new THREE.Vector3(0, 1.27 * h, 0).applyQuaternion(g.quaternion), r = 0.35 * h / 1.8;
+    const box = { min: { x: Math.min(p.x, p.x + ax.x) - r, z: Math.min(p.z, p.z + ax.z) - r }, max: { x: Math.max(p.x, p.x + ax.x) + r, z: Math.max(p.z, p.z + ax.z) + r } };
+    const m = 0.02;
+    const push = (lo, hi, a0, a1) => (a1 - a0 > hi - lo - 2 * m ? 0 : a0 < lo + m ? lo + m - a0 : a1 > hi - m ? hi - m - a1 : 0);
+    const dx = push(cx - lx, cx + lx, box.min.x, box.max.x), dz = push(cz - lz, cz + lz, box.min.z, box.max.z);
+    if (dx || dz) { p.x += dx; p.z += dz; g.updateMatrixWorld(true); }
+  }
+
+  /** A swimmer's entry ease at this frame (plan.entries, _swimEntries), after the swim posed them. */
+  _swimEntry(g, plan, frame) {
+    for (const e of plan.entries || []) {
+      if (frame < e.f || frame >= e.f + e.n) continue;
+      const t = (frame - e.f + 1) / (e.n + 1), w = t * t * (3 - 2 * t);
+      g.position.set(e.pos[0] + (g.position.x - e.pos[0]) * w, e.pos[1] + (g.position.y - e.pos[1]) * w, e.pos[2] + (g.position.z - e.pos[2]) * w);
+      g.quaternion.slerpQuaternions(new THREE.Quaternion().fromArray(e.q), g.quaternion.clone(), w);
+      // the limbs too, from the pose they had (standing on the walk in, sitting on the mount) to the swim's
+      const J = g.userData.joints || {}, sit = e.pose === "sit";
+      const FROM = { hip: [sit ? -Math.PI / 2 : 0, 0, 0], knee: [sit ? Math.PI / 2 : 0, 0, 0], shoulder: [sit ? -0.35 : 0, 0, 0], elbow: [sit ? -0.9 : 0, 0, 0] };
+      for (const lr of ["l", "r"]) for (const part of ["hip", "knee", "shoulder", "elbow"]) {
+        const j = J[`${lr}_${part}`];
+        if (j) j.rotation.set(FROM[part][0] + (j.rotation.x - FROM[part][0]) * w, j.rotation.y * w, j.rotation.z * w);
+      }
+      for (const jn of ["spine", "neck", "head"]) if (J[jn]) J[jn].rotation.set(J[jn].rotation.x * w, J[jn].rotation.y * w, J[jn].rotation.z * w);
+      for (const ft of Object.values(Mocap.feetOf(g) || {})) {   // the shoes flat again (the swim points the toes)
+        if (!ft?.shoe) continue;
+        ft.shoe.quaternion.slerpQuaternions(new THREE.Quaternion(), ft.shoe.quaternion.clone(), w);
+        ft.shoe.position.lerpVectors(ft.rest, ft.shoe.position.clone(), w);
+      }
+      g.updateMatrixWorld(true);
+      if (Number.isFinite(plan.ctx?.floor)) Swim.keepAboveFloor(g, plan.ctx.floor);   // the eased body on the floor, not through it
+    }
+  }
+
+  /** The let-go of a rider at this frame (_riderLetGo), or null while they are still on their mount. */
+  _letGoAt(a) {
+    if (!a.mount_id || !this.water) return null;
+    const lg = this._riderLetGo(a);
+    return lg && this.frame >= lg.fe ? lg : null;
+  }
+
+  /**
+   * A person on a mount in the pool or the tank (a bicycle, a car, a horse, a bench; not a boat, whose riders are the
+   * watercraft's) whose seat goes under the surface lets go and swims, by their own Swim mode, for the rest of the shot
+   * (was: a man on a bicycle pedalled along the tank floor, head 0.8 m under; a driver sat in a flooded car all the way
+   * to the bottom). The seat counts as under when the seated head (the seat plus 0.42 of the height) is 5 cm under the
+   * surface, on the mount's own water track (_buoyTrack: floating, flooding, sinking) at the frame. The swim follows the
+   * mount's path from the seat (held where they let go before that): seated under from the start of the shot (placed in
+   * the tank on a bicycle) they are placed in the water, at the surface; let go later (a car going under) they kick up
+   * from the seat's depth, so nothing pops. {fe (the frame they let go), actor (the stand-in the swim plan reads:
+   * their own seed, swim mode and size on the seat's path, wet from fe)} or null. Cached on the mount's and the rider's
+   * settings: a pure function of the frame.
+   */
+  _riderLetGo(a) {
+    const pool = this.water && this.water.position.y >= 0.3 && !this.setFx?.underwater ? this.water.position.y : null;
+    if (pool == null || !a.mount_id || !PERSON_KINDS.has(a.kind)) return null;
+    const host = this.state.actors.find((x) => x.id === a.mount_id), hg = host && this.actorMeshes.get(host.id);
+    if (!hg || LIBRARY[host.kind]?.boat || LIBRARY[host.kind]?.flies || PERSON_KINDS.has(host.kind)) return null;
+    const last = this._lastFrame(), h = (a.height_m || 1.8) * (a.scale || 1);
+    const T = this._buoyTrack(host, hg);
+    const sig = [T?.sig ?? "", keysHash(this._actorKeys(host)), host.kind, host.scale || 1, host.height_m || 0, host.rotation_deg || 0, a.seat ?? 0, a.mount_at || 0,
+      h, last, pool, this._seedKey(a), a.swim ?? "", a.gear ?? "", a.physics?.density ?? "", a.physics?.mass ?? ""].join("|");
+    this._letGoCache ||= new WeakMap();
+    const c = this._letGoCache.get(a);
+    if (c && c.sig === sig) return c.out;
+    // the seat, as the rider pass puts it (MOUNTS / SEATS, scaled with the mount)
+    const m = MOUNTS[host.kind] || { pose: "sit", seat: [0, (host.height_m || 1) * 0.6, 0] };
+    let k = (host.scale || 1) * (m.scaleWithHeight ? (host.height_m || m.refHeight) / m.refHeight : 1), sp = m.seat;
+    const seats = SEATS[host.kind];
+    if (seats) { sp = seats[Math.max(0, Math.min(seats.length - 1, a.seat ?? 0))].pos; k = (host.scale || 1) * ((host.height_m || LIBRARY[host.kind]?.height || 1) / (LIBRARY[host.kind]?.height || 1)); }
+    const Yax = new THREE.Vector3(0, 1, 0);
+    const seatAt = (f) => {
+      const p = this._actorPosAt(host, f), yaw = this._headingAt(host, f), over = T ? !!T.over[f] : this._overWater(p[0], p[2]);
+      const xz = over ? this._insideWater(host, hg, p[0], p[2], yaw) : null;
+      const y = over && T ? T.tr.y[Math.min(T.tr.y.length - 1, f)] - T.minY : this._heightAt(host, f);
+      const o = new THREE.Vector3(sp[0] * k, 0, sp[2] * k).applyAxisAngle(Yax, yaw);
+      return { x: (xz ? xz[0] : p[0]) + o.x, z: (xz ? xz[1] : p[2]) + o.z, y: y + sp[1] * k, over, yaw };
+    };
+    const from = Math.max(0, Math.min(last, Math.ceil(a.mount_at || 0)));
+    let fe = -1, S = null;
+    for (let f = from; f <= last && fe < 0; f++) {
+      const q = seatAt(f);
+      if (q.over && this._inPool(q.x, q.z) && q.y + 0.42 * h < pool - 0.05) { fe = f; S = q; }
+    }
+    let out = null;
+    if (fe >= 0) {
+      // the feet's depth when they let go: placed (0) when they were under from the start, else from the seat down
+      const feet = fe === from ? 0 : Math.max(0.36, S.y - 0.3 * h);
+      const keys = [];
+      // (out of the water, a mount ridden out of it, the feet on the floor: walking on from where the swim ended)
+      for (let f = 0; f <= last; f++) { const q = f < fe ? S : seatAt(f); keys.push({ frame: f, position: [q.x, f > fe && !(q.over && this._inPool(q.x, q.z)) ? 0 : feet, q.z] }); }
+      const S0 = fe > from ? seatAt(fe - 1) : S;   // the seated root the frame before (the seat less the sitting drop)
+      const actor = { id: a.id, name: a.name, kind: a.kind, height_m: a.height_m, scale: a.scale, swim: a.swim, gear: a.gear, appearance: a.appearance,
+        physics: a.physics, rotation_deg: THREE.MathUtils.radToDeg(S.yaw), keys, _wetFrom: fe,
+        _entryFrom: fe > 0 ? { pos: [S0.x, S0.y - 0.95 * h / 1.8, S0.z], yaw: S0.yaw, pose: "sit" } : null };
+      if (a.seed != null) actor.seed = a.seed;
+      out = { fe, actor };
+    }
+    this._letGoCache.set(a, { sig, out });
+    return out;
+  }
+
+  /**
+   * Drive mode (drive.mjs _posePerson): a driven person in the pool or the tank swims live, posed by the same water
+   * track and swim plan a kept take plays back (_swimPlan: Buoy.personTrack, then Swim.planSwim), built from the live
+   * body's swim history (b.swimHist: its samples since it got into the water, at `fps`) and a short look-ahead at its
+   * velocity. Was: the driven person stood on the tank floor (personStep's ground) and walked there, head 1 m under, and
+   * the swim flag stayed on under the walk. Returns true when it posed them; false (and the swim pose undone) out of
+   * the water, on a deck or a dock (b.y over the floor), in water they can stand in, or on the reef set.
+   */
+  _liveSwim(a, g, b, fps = 30) {
+    const pool = this.water && this.water.position.y >= 0.3 && !this.setFx?.underwater ? this.water.position.y : null;
+    const off = () => { if (g.userData.swimOn) Swim.unswim(g); return false; };
+    if (pool == null || !b || !g.userData.joints || b.y > 0.05 || !this._inPool(b.x, b.z) || !PERSON_KINDS.has(a.kind)) return off();
+    const H = b.swimHist?.length ? b.swimHist : [{ p: [b.x, 0, b.z], yaw: b.yaw }];
+    const h = (a.height_m || 1.8) * (a.scale || 1), smode = Buoy.swimMode(a.swim);
+    const sig = `${H.length}|${H[H.length - 1].p[0]}|${H[H.length - 1].p[2]}|${H[0].p[0]}|${smode}|${h}|${this._seedKey(a)}|${a.physics?.density ?? ""}|${a.physics?.mass ?? ""}|${pool}`;
+    let L = b._liveSwimPlan;
+    if (!L || L.sig !== sig || L.g !== g) {
+      const hipY = (g.userData.joints.l_hip?.position.y || 0.53 * h / (g.scale?.y || 1)) * (g.scale?.y || 1);
+      const last = H[H.length - 1], prev = H[H.length - 2] || last;
+      const vx = last.p[0] - prev.p[0], vz = last.p[2] - prev.p[2];
+      const pos = H.map((s) => [s.p[0], 0, s.p[2]]), yaw = H.map((s) => s.yaw);
+      for (let i = 1; i <= 8; i++) { pos.push([last.p[0] + vx * i, 0, last.p[2] + vz * i]); yaw.push(last.yaw); }
+      const n = pos.length, dive = smode === "dive";
+      if (dive) { const y = Math.max(0.4, Math.min(pool - hipY - 0.45, pool * 0.35)); for (const p of pos) p[1] = y; }
+      const mode = new Array(n).fill(dive ? "under" : "surface");
+      const standH = (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1);
+      const track = Buoy.personTrack({ mode: smode, keyY: new Array(n).fill(0), over: new Array(n).fill(true), level: pool, floor: 0, fps, height: h, hipY,
+        seed: Swim.seedOf(this._seedKey(a)), standHeight: standH, ...this._personWeight(a, h) });
+      for (let f = 0; f < n; f++) if (track.modes[f]) mode[f] = track.modes[f]; else if (track.ground[f]) mode[f] = null;
+      let plan = null;
+      if (mode[H.length - 1]) {
+        const style = dive ? "hover" : ["tread", "breaststroke", "freestyle", "flutter", "frog", "stroke", "hover"].includes(smode) ? smode : null;
+        plan = Swim.planSwim({ pos, yaw, mode, fps, height: h, style, seed: Swim.seedOf(this._seedKey(a)), gear: a.gear || (dive ? "scuba" : "none"),
+          styles: track.styles, hipsY: track.hipsY, hipsW: track.hipsW });
+        Swim.easeDepthHandoffs(plan, { hipY, surface: pool });
+        plan.id = a.id; plan.swimMode = smode;
+        plan.ctx = { surface: pool, current: null, caustics: false, floorAt: null, floor: 0 };
+      }
+      L = b._liveSwimPlan = { sig, g, plan, at: H.length - 1 };
+    }
+    if (!L.plan) return off();   // water they can stand in: they wade on the bottom (the gait)
+    Gait.release(g);
+    Swim.ensureKit(g, { gear: L.plan.gear, height: h, kind: a.kind, appearance: a.appearance || {} });
+    Swim.applySwim(g, L.plan, L.at, L.plan.ctx);
+    return true;
+  }
+
+  /**
+   * A swimmer's path (pos[f], the frames swimming and not on a deck) kept out of every floating boat's hull (was:
+   * swimming at 0 into the speedboat ended up treading inside the hull, the head 3 cm over the deck). The footprint is
+   * the boat's own box at its heading where its keys have it at f, grown by a body length's reach (0.6 h: lying along
+   * the surface the head is ~0.9 m ahead of the keyed point). A path that runs into it stops at its side; while the keys
+   * are inside, or beyond it, the swimmer swims round the side (at most 1.5 m/s) to where the keys come out, then
+   * follows them again: no jump across the boat. Frames are taken in order (a pure function of the keys). A timed mount
+   * onto the boat is held at its side until the hop starts (the hop climbs out from there). Changes pos in place.
+   */
+  _keepOffHulls(a, pos, mode, support, h) {
+    const boats = [];
+    const level = this.water?.position.y ?? 0;
+    for (const b of this.state.actors) {
+      // a boat, or a prop floating in the water (a crate, a table, a ball): a swimmer keyed at it treaded inside it
+      const isBoat = !!LIBRARY[b.kind]?.boat;
+      if (b.mount_id || b.carry_id || b.id === a.id || PERSON_KINDS.has(b.kind) || LIBRARY[b.kind]?.flies) continue;
+      const hg = this.actorMeshes.get(b.id);
+      if (!hg) continue;
+      let active = null;
+      if (!isBoat) {
+        const T = this.water && level >= 0.3 ? this._buoyTrack(b, hg) : null;
+        if (!T || !T.over.some(Boolean)) continue;
+        // only while it is where a swimmer at the surface would meet it: not sunk under them, not still falling in
+        const tr = T.tr, bh = T.body.h || 0.5;
+        active = (f) => { const i = Math.max(0, Math.min(tr.y.length - 1, f)); return !!T.over[i] && tr.y[i] + bh > level - 0.9 && tr.y[i] < level + 0.3; };
+      }
+      // its footprint in its own frame: the box of the group with no heading, tilt or offset (cached on the group)
+      const k = `${b.kind}|${b.scale || 1}|${b.height_m || 0}|${hg.children.length}`;
+      if (hg.userData.footKey !== k) {
+        const P = hg.position.clone(), R = hg.rotation.clone();
+        hg.position.set(0, 0, 0); hg.rotation.set(0, 0, 0); hg.updateMatrixWorld(true);
+        const box = new THREE.Box3();
+        hg.traverse((o) => { if (o.isMesh && o.visible && !o.material?.transparent) box.expandByObject(o); });
+        hg.position.copy(P); hg.rotation.copy(R); hg.updateMatrixWorld(true);
+        hg.userData.footKey = k;
+        hg.userData.foot = box.isEmpty() ? null : { cx: (box.min.x + box.max.x) / 2, cz: (box.min.z + box.max.z) / 2, hx: (box.max.x - box.min.x) / 2, hz: (box.max.z - box.min.z) / 2 };
+      }
+      if (hg.userData.foot) boats.push({ b, hg, foot: hg.userData.foot, active });
+    }
+    if (!boats.length) return;
+    const fps = this.state.shot?.fps || 24, vmax = 2 / fps, reach = 0.6 * h;   // 2 m/s: a strong swimmer's sprint
+    const hop = a.mount_id && a.mount_at > 0 ? a.mount_at - HOP_FRAMES : Infinity, Yax = new THREE.Vector3(0, 1, 0);
+    // The water's edge (the tank's inner wall): a way round a boat that leaves the water is not a way round, and a boat
+    // pushing a swimmer pushes them along its side, never through the wall (was: z 9.80 with the water ending at 7.8).
+    const w = this.water, wg = w?.geometry?.parameters, EDGE = 0.3;
+    const wx0 = w ? w.position.x - wg.width / 2 + EDGE : -Infinity, wx1 = w ? w.position.x + wg.width / 2 - EDGE : Infinity;
+    const wz0 = w ? w.position.z - wg.height / 2 + EDGE : -Infinity, wz1 = w ? w.position.z + wg.height / 2 - EDGE : Infinity;
+    const inWater = (x, z) => x >= wx0 - 1e-9 && x <= wx1 + 1e-9 && z >= wz0 - 1e-9 && z <= wz1 + 1e-9;
+    const keyed = pos.map((p) => [p[0], p[2]]), moved = new Array(pos.length).fill(false);
+    for (const B of boats) {
+      const F = B.foot, HX = F.hx + reach, HZ = F.hz + reach, PER = 4 * (HX + HZ), E = 1e-6;
+      const inside = (p) => Math.abs(p[0]) < HX - E && Math.abs(p[1]) < HZ - E;
+      // where segment p -> q first enters the box (0..1), or null when it stays out (Liang-Barsky on the open box)
+      const enters = (p, q) => {
+        let t0 = 0, t1 = 1;
+        const d = [q[0] - p[0], q[1] - p[1]];
+        for (const [pk, dk, H] of [[p[0], d[0], HX - E], [p[1], d[1], HZ - E]]) {
+          for (const [num, den] of [[-H - pk, dk], [pk - H, -dk]]) {   // t * den >= num
+            if (Math.abs(den) < 1e-12) { if (num > 0) return null; continue; }
+            const t = num / den;
+            if (den > 0) t0 = Math.max(t0, t); else t1 = Math.min(t1, t);
+          }
+        }
+        return t1 - t0 > 1e-9 ? t0 : null;
+      };
+      // the side as a loop: s from 0 at (HX, -HZ), up the +x side, along +z, down -x, back along -z
+      const sOf = (p) => {
+        const x = THREE.MathUtils.clamp(p[0], -HX, HX), z = THREE.MathUtils.clamp(p[1], -HZ, HZ), dx = HX - Math.abs(x), dz = HZ - Math.abs(z);
+        if (dx <= dz) return x > 0 ? z + HZ : 2 * HZ + 2 * HX + (HZ - z);
+        return z > 0 ? 2 * HZ + (HX - x) : 4 * HZ + 2 * HX + (x + HX);
+      };
+      const atS = (s) => {
+        s = ((s % PER) + PER) % PER;
+        if (s < 2 * HZ) return [HX, s - HZ];
+        if ((s -= 2 * HZ) < 2 * HX) return [HX - s, HZ];
+        if ((s -= 2 * HX) < 2 * HZ) return [-HX, HZ - s];
+        return [s - 2 * HZ - HX, -HZ];
+      };
+      const corners = [0, 2 * HZ, 2 * HZ + 2 * HX, 4 * HZ + 2 * HX, PER];
+      // the boat where the water holds it (its footprint inside the wall, as _waterPhysics shows it)
+      const poseAt = (f) => {
+        const p = this._actorPosAt(B.b, f), yaw = this._headingAt(B.b, f);
+        const xz = this._insideWater(B.b, B.hg, p[0], p[2], yaw);
+        return { bp: xz ? [xz[0], p[1], xz[1]] : p, yaw };
+      };
+      const toWorld = (c, bp, yaw) => { const W = new THREE.Vector3(c[0] + F.cx, 0, c[1] + F.cz).applyAxisAngle(Yax, yaw); return [bp[0] + W.x, bp[2] + W.z]; };
+      // is the way along the side from s, dir (+1 / -1), len metres all in the water?
+      const wayIn = (s, dir, len, bp, yaw) => {
+        for (let k = 0, n = Math.max(1, Math.ceil(len / 0.1)); k <= n; k++) { const q = toWorld(atS(s + dir * len * k / n), bp, yaw); if (!inWater(q[0], q[1])) return false; }
+        return true;
+      };
+      const swims = (f) => !!mode[f] && support[f] == null && f < hop && (!B.active || B.active(f));
+      const poses = pos.map((_, f) => (swims(f) ? poseAt(f) : null));
+      // the keys in the boat's own frame at each frame
+      const Tl = pos.map((p, f) => {
+        if (!poses[f]) return null;
+        const { bp, yaw } = poses[f], L = new THREE.Vector3(p[0] - bp[0], 0, p[2] - bp[2]).applyAxisAngle(Yax, -yaw);
+        return [L.x - F.cx, L.z - F.cz];
+      });
+      // where the keys come out of the boat next (the first later frame they are clear of it), or -1 when they end in it
+      const outAt = new Array(pos.length).fill(-1);
+      for (let f = pos.length - 1, nx = -1; f >= 0; f--) { if (!Tl[f]) { nx = -1; continue; } if (!inside(Tl[f])) nx = f; outAt[f] = nx; }
+      let lastSw = -1;
+      for (let f = 0; f < pos.length; f++) if (Tl[f]) lastSw = f;
+      // the shortest way along the side from s to st that stays in the water (Infinity when both ways leave it)
+      const wayLen = (s, st, bp, yaw) => {
+        const fw = ((st - s) % PER + PER) % PER, bw = PER - fw;
+        let best = Infinity;
+        if (wayIn(s, 1, fw, bp, yaw)) best = fw;
+        if (bw < best && wayIn(s, -1, bw, bp, yaw)) best = bw;
+        return best;
+      };
+      // keys that stay inside the boat to the end: the point of its side nearest where they end up, a nearer side
+      // winning over going round (a key 0.5 m in from the far side is reached round the boat, one in the middle is not)
+      const endSide = (s, bp, yaw) => {
+        const E = Tl[lastSw], cands = [[HX, E[1]], [-HX, E[1]], [E[0], HZ], [E[0], -HZ]];
+        let best = null, bc = Infinity;
+        for (const c of cands) {
+          const sc = sOf(c), len = wayLen(s, sc, bp, yaw);
+          const cost = Math.hypot(c[0] - E[0], c[1] - E[1]) + 0.2 * len;
+          if (cost < bc - 1e-9) { bc = cost; best = sc; }
+        }
+        return best ?? s;
+      };
+      let cur = null, free = true;
+      for (let f = 0; f < pos.length; f++) {
+        if (!swims(f)) { cur = null; free = true; continue; }
+        const { bp, yaw } = poses[f];
+        const T = Tl[f];
+        if (!cur) {   // the first swimming frame: where the keys are, or on the nearest side when that is inside
+          cur = inside(T) ? atS(sOf(Math.abs(T[0]) / HX > Math.abs(T[1]) / HZ ? [Math.sign(T[0] || 1) * HX, T[1]] : [T[0], Math.sign(T[1] || 1) * HZ])) : T.slice();
+          free = !inside(T);
+        } else if (free) {
+          const t = enters(cur, T);
+          if (t == null) cur = T.slice();
+          else { cur = [cur[0] + (T[0] - cur[0]) * t, cur[1] + (T[1] - cur[1]) * t]; free = false; }
+        } else {
+          let budget = vmax;
+          for (let it = 0; it < 6 && budget > 1e-9; it++) {
+            const t = enters(cur, T);
+            if (t == null || t >= 1 - 1e-9) {   // clear: swim straight to where the keys are
+              const d = Math.hypot(T[0] - cur[0], T[1] - cur[1]);
+              if (d <= budget) { cur = T.slice(); free = !inside(T); break; }
+              cur = [cur[0] + (T[0] - cur[0]) * budget / d, cur[1] + (T[1] - cur[1]) * budget / d];
+              break;
+            }
+            if (t > 1e-9) {   // off the side and the way is blocked: to the side first
+              const q = [cur[0] + (T[0] - cur[0]) * t, cur[1] + (T[1] - cur[1]) * t], d = Math.hypot(q[0] - cur[0], q[1] - cur[1]);
+              if (d > budget) { cur = [cur[0] + (q[0] - cur[0]) * budget / d, cur[1] + (q[1] - cur[1]) * budget / d]; break; }
+              cur = q; budget -= d; continue;
+            }
+            // on the side: round it, the short way, toward the point of the side nearest the keys (corner by corner);
+            // keys inside the boat: toward where they come out of it, or (ending in it) the side nearest where they end
+            // (was: slid along the near side level with the keys, so keys ending 0.5 m in from the far side were never reached)
+            const s = sOf(cur), ex = inside(T) ? outAt[f] : f;
+            const st = ex >= 0 ? sOf(Tl[ex]) : endSide(s, bp, yaw);
+            const fw = ((st - s) % PER + PER) % PER, bw = PER - fw;
+            if (Math.min(fw, bw) < 1e-9) break;   // as near the keys as the side gets: held there
+            // the short way round unless it leaves the water (a boat against the wall: round its other end); neither: held
+            const okF = wayIn(s, 1, fw, bp, yaw), okB = wayIn(s, -1, bw, bp, yaw);
+            if (!okF && !okB) break;
+            const dir = okF && (!okB || fw <= bw) ? 1 : -1, togo = dir > 0 ? fw : bw;
+            let edge = Infinity;
+            for (const c of corners) { const dd = dir > 0 ? ((c - s) % PER + PER) % PER : ((s - c) % PER + PER) % PER; if (dd > 1e-4) edge = Math.min(edge, dd); }   // (a corner a hair away is the one they are at: no ping-pong)
+            const step = Math.min(budget, togo, edge);
+            cur = atS(s + dir * step); budget -= step;
+          }
+        }
+        if (!free) {
+          // held at the side where the side has gone out of the water (the boat moved up to the wall): along the side
+          // to the nearest point of it still in the water
+          let q = toWorld(cur, bp, yaw);
+          if (!inWater(q[0], q[1])) {
+            const s = sOf(cur);
+            for (let d = 0.05; d <= PER / 2; d += 0.05) {
+              const A = atS(s + d), Bk = atS(s - d), qa = toWorld(A, bp, yaw), qb = toWorld(Bk, bp, yaw);
+              if (inWater(qa[0], qa[1])) { cur = A; break; }
+              if (inWater(qb[0], qb[1])) { cur = Bk; break; }
+            }
+          }
+        }
+        const q = toWorld(cur, bp, yaw);
+        if (Math.abs(q[0] - pos[f][0]) > 1e-9 || Math.abs(q[1] - pos[f][2]) > 1e-9) moved[f] = true;
+        pos[f][0] = q[0]; pos[f][2] = q[1];
+      }
+    }
+    // Whatever the boats did, a swimmer they moved stays in the water (no further out than their own keys).
+    for (let f = 0; f < pos.length; f++) {
+      if (!moved[f]) continue;
+      const [kx, kz] = keyed[f];
+      pos[f][0] = Math.max(Math.min(wx0, kx), Math.min(Math.max(wx1, kx), pos[f][0]));
+      pos[f][2] = Math.max(Math.min(wz0, kz), Math.min(Math.max(wz1, kz), pos[f][2]));
+    }
+    // ...and never faster than a strong sprint (2 m/s, or their own keys' speed when that is faster): a way round that
+    // jumps to the other side of a boat pinning them in a corner, the first frame beside two boats closing in, a sunk
+    // car no longer in the way are swum to, not jumped to (was: 3.30 m in one frame at f143, 1.32 m from f0 to f1,
+    // 1.64 m back into a sunk car). In order, a pure function of the keys; between two points in the water it stays in.
+    for (let f = 1; f < pos.length; f++) {
+      if (!mode[f] || !mode[f - 1] || support[f] != null || support[f - 1] != null) continue;
+      const off = Math.abs(pos[f - 1][0] - keyed[f - 1][0]) > 1e-9 || Math.abs(pos[f - 1][2] - keyed[f - 1][1]) > 1e-9;
+      if (!moved[f] && !off) continue;
+      const cap = Math.max(vmax, Math.hypot(keyed[f][0] - keyed[f - 1][0], keyed[f][1] - keyed[f - 1][1]));
+      const dx = pos[f][0] - pos[f - 1][0], dz = pos[f][2] - pos[f - 1][2], d = Math.hypot(dx, dz);
+      if (d > cap) { pos[f][0] = pos[f - 1][0] + dx * cap / d; pos[f][2] = pos[f - 1][2] + dz * cap / d; moved[f] = true; }
+    }
+  }
+
+  /** Over the water but on their keys at frame f (personTrack: on a dock or a deck, or held before a timed jump): the
+   *  height they stand at there, which the gait's planted feet stand on; null otherwise. */
+  _standOnKeys(a, g, f) {
+    if (!PERSON_KINDS.has(a.kind) || !this.water) return null;
+    this._swimPlan(a, g);
+    const st = this._swimCache?.get(a)?.stand;
+    return st ? st[Math.max(0, Math.min(st.length - 1, Math.round(f)))] ?? null : null;
   }
 
   /** Foam on the water around surface swimmers (bow wave, kick, hand entries, the Kelvin wake): Clay and Color. */
@@ -3809,7 +4733,7 @@ export class Stage {
         Swim.applySwim(s.g, s.plan, this.frame, s.ctx);
         if (s.a.pose_keys?.length) applyJoints(s.g, this.poseAt(s.a, this.frame));
       }
-      out.push(...Swim.finWashEmitters(tips, fx.floorAt, { fps, seed: this.state.physics?.seed ?? 1, id: s.a.id }));
+      out.push(...Swim.finWashEmitters(tips, fx.floorAt, { fps, seed: this.state.physics?.seed ?? 1, id: this._seedKey(s.a) }));
     }
     return out;
   }
@@ -4369,16 +5293,36 @@ export class Stage {
     for (let n = 2; this.state.actors.some((x) => x.id === nid); n++) nid = `${base}_${n}`;
     c.id = nid;
     c.name = `${a.name} copy`;
+    // its own water variation (stored, so a reload keeps it): a copied seed made the copy sink, struggle and bob in
+    // step with the original, 0 m apart at every frame. From the original's own seed key and a copy number, never the
+    // clock (the id is `kind_<Date.now()>`: the copy's struggle changed with the time it was made)
+    const from = this._seedKey(a);
+    let n = 1;
+    while (this.state.actors.some((x) => x.seed === `${from}|copy ${n}`)) n++;
+    c.seed = `${from}|copy ${n}`;
     delete c.by_shot;   // a shot's own blocking belongs to the original; the copy gets the base keys (below, offset)
     const off = Math.max(1, (a.height_m || 1) * 0.8);
     // The BASE keys, never the active shot's by_shot keys: the copy then moves like the original in every shot
     // that has no blocking of its own.
-    c.keys = this._baseKeys(a).map((k) => ({ ...clone(k), position: [k.position[0] + off, k.position[1], k.position[2]] }));
+    const bk = this._baseKeys(a);
+    // In a pool or the tank the copy stays in the water, as Add object keeps a new one (was: a swimmer at x 6.8 copied
+    // to x 8.24, into the tank's wall): the other side of the original when +x leaves the water, then inside its edge
+    // with the same inset as Add. Only the keys that are in the water are kept inside: a path that leaves it leaves it
+    // too (was: every key pulled inside, so a copy of a man walking out of the tank, 0 to -12, ended at -7, swimming)
+    const w = this.water, k0 = bk[0]?.position || a.position || [0, 0, 0], wet = this._inPool(k0[0], k0[2]);
+    let dx = off;
+    const gp = w?.geometry?.parameters, inset = gp ? Math.min(0.8, gp.width / 4, gp.height / 4) : 0;
+    const inX = (x) => !wet || Math.abs(x - w.position.x) <= gp.width / 2 - inset;
+    if (wet && !inX(k0[0] + off) && inX(k0[0] - off)) dx = -off;
+    const keep = (p) => wet ? [Math.max(w.position.x - gp.width / 2 + inset, Math.min(w.position.x + gp.width / 2 - inset, p[0])), p[1],
+      Math.max(w.position.z - gp.height / 2 + inset, Math.min(w.position.z + gp.height / 2 - inset, p[2]))] : p;
+    c.keys = bk.map((k) => { const q = [k.position[0] + dx, k.position[1], k.position[2]]; return { ...clone(k), position: this._inPool(k.position[0], k.position[2]) ? keep(q) : q }; });
     c.position = [...c.keys[0].position];
     delete c.position_end;
     this.state.actors.push(c);
     const keepSel = this.selected;
     this._buildSet();
+    if (wet && c.keys.length === 1) this._keepInsideWater(c);   // its whole footprint inside the wall (a car, a crate)
     if (keepSel && this.actorMeshes.has(keepSel)) this.select(keepSel);
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
@@ -4430,6 +5374,10 @@ export class Stage {
         if (Math.abs(h2 - h) < 1e-4) break;
         h = h2;
       }
+      // ...unless the ray meets something walkable first: a dock, a deck, a riser (was: flat ground at the floor, so a
+      // person aimed at the lake's dock landed ~3 m past its end, standing in the water)
+      const top = this._walkableRay(C, d, P ? C.distanceTo(P) : 600, a.id);
+      if (top && (!P || top.point.y > this._floorUnder(top.point.x, top.point.z) + 0.05)) return Object.assign(top.point, { onTop: true, onProp: !!top.prop });
       return P;
     };
     let P = null;
@@ -4477,11 +5425,16 @@ export class Stage {
       good.sort((p, q) => Math.abs(p.ny) - Math.abs(q.ny));
       P = good[0].g;
     }
-    const floorY = this._floorUnder(P.x, P.z);
+    // the surface it is put on: the floor, or the top of a dock, a deck or a riser the ray met first
+    const floorY = Math.max(this._floorUnder(P.x, P.z), P.onTop ? P.y : 0);
     const person = PERSON_KINDS.has(a.kind);
-    // A person's feet follow the floor by themselves (_heightAt); a prop keeps a keyed height, so on a raised floor
-    // it is keyed at that floor (key_y) instead of being buried in it at 0.
-    const y = !person && (floorY > 0.002 || a.key_y) ? +floorY.toFixed(3) : 0;
+    // Only a dock or a boat's deck over the water keys a person at its top: there a key at 0 means "in the water" (wading
+    // under the dock, swimming beside the boat). Anywhere else a person's feet follow what they stand on by themselves
+    // (_heightAt: a parked car, a table, a crate, a riser), so they are keyed at 0 and the support follows the prop when it
+    // moves (was: keyed at the top of any prop under 1.75 m, left standing in mid-air when the prop was moved).
+    const raised = !!P.onTop && !P.onProp && person && this._overWater(P.x, P.z);
+    // A prop keeps a keyed height, so on a raised floor it is keyed at that floor (key_y) instead of being buried in it at 0.
+    const y = person ? (raised ? +floorY.toFixed(3) : 0) : floorY > 0.002 || a.key_y ? +floorY.toFixed(3) : 0;
     const pos = [+P.x.toFixed(3), y, +P.z.toFixed(3)];
     const keys = this._actorKeys(a);
     if (keys.length <= 1) for (const k of keys) k.position = [...pos];
@@ -4708,7 +5661,83 @@ export class Stage {
     const a = this.state.actors.find((x) => x.id === this.selected);
     return a ? { id: a.id, name: a.name, kind: a.kind, rotation_deg: a.rotation_deg || 0, height_m: a.height_m, scale: a.scale || 1,
       appearance: a.appearance || null, mount_id: a.mount_id || null, pose: a.pose || null, seat: a.seat ?? null,
-      beam: a.beam || "steady", stunt: a.stunt || null, stunt_sim: a.stunt_sim || null, face: a.face || "shown" } : null;
+      beam: a.beam || "steady", stunt: a.stunt || null, stunt_sim: a.stunt_sim || null, face: a.face || "shown", swim: Buoy.swimMode(a.swim) } : null;
+  }
+
+  /**
+   * Swim control (Stage API for tools and ✦ Ask; the person panel's Swim): what a person or an animal does in the water.
+   * mode: one of buoyancy.mjs SWIM_MODES ("auto", "tread", "breaststroke", "freestyle", "back", "dive", "flutter",
+   * "frog", "cant", "sink"), case-insensitive, with a few spoken words ("can't swim", "drowning", "unconscious",
+   * "float on back", "scuba"). One undo step. Returns {ok, id, swim} or {ok: false, error}.
+   */
+  setSwim(id, mode) {
+    const a = this.state.actors.find((x) => x.id === (id ?? this.selected));
+    if (!a) return { ok: false, error: id ? `no object "${id}"` : "select a person or an animal" };
+    if (!PERSON_KINDS.has(a.kind) && !["dog", "horse", "cat", "bird"].includes(a.kind)) return { ok: false, error: `${a.name || a.kind} doesn't swim (people and animals do)` };
+    const words = { "can't swim": "cant", "cannot swim": "cant", "not treading": "cant", drowning: "cant", "doesn't swim": "cant", off: "cant",
+      unconscious: "sink", "sink slowly": "sink", sinks: "sink", "float on back": "back", "back float": "back", float: "back", scuba: "dive", diver: "dive",
+      "tread water": "tread", treading: "tread", swim: "breaststroke" };
+    const v = String(mode ?? "").trim().toLowerCase();
+    const m = words[v] || v;
+    if (!Buoy.SWIM_MODES.some((x) => x[0] === m)) return { ok: false, error: `unknown swim mode "${mode}": ${Buoy.SWIM_MODES.map((x) => x[0]).join(", ")}` };
+    if (m === "auto") delete a.swim; else a.swim = m;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    return { ok: true, id: a.id, swim: m };
+  }
+
+  /** How an object floats: {density (kg/m3 now), source ("density" | "mass" | "kind" | "sinking"), floats, under (its
+   *  waterline, the fraction of its height under when floating; 1 = it sinks), terminal (m/s sinking + / rising -
+   *  when fully under), what (the kind's material words), override (the per-object density or null)}. null for people
+   *  on a swim plan (their Swim mode decides: swimInfo) and boats (their own physics). */
+  buoyancyInfo(id = this.selected) {
+    const a = this.state.actors.find((x) => x.id === id), g = a && this.actorMeshes.get(a.id);
+    if (!a || !g || LIBRARY[a.kind]?.boat || this._onSwimPlan(a)) return null;
+    const bb = this._buoyBody(a, g);
+    if (!bb) return null;
+    const b = bb.body, end = b.sinkRho || b.rho, under = Buoy.floatFraction(b, end);   // an animal set to Can't swim: where it ends up
+    return { density: Math.round(end), source: b.source, floats: under < 1, under: +under.toFixed(3), terminal: +Buoy.terminalSpeed(b, end).toFixed(2),
+      what: b.sinkRho ? `${b.what}: ${b.sinkAfter > 0 ? `paddles ~${b.sinkAfter.toFixed(1)} s, then ` : ""}sinks slowly` : b.what,
+      sinksAfter: b.sinkRho ? +b.sinkAfter.toFixed(2) : null, soaks: b.sat ? { to: b.sat, tau_s: b.tau } : null, override: a.physics?.density ?? null };
+  }
+
+  /** A person the water moves by their Swim mode (the clay's swim plan, buoyancy.mjs personTrack), not by a density:
+   *  every person but a video-mocap one. */
+  _onSwimPlan(a) {
+    return PERSON_KINDS.has(a.kind) && !a.mocap;
+  }
+
+  /** What a person on a swim plan does in this set's water, in words (the Physics panel shows it instead of the
+   *  Floats / sinks density): {swim (the mode), floats (stays up), stands (shallow enough to stand in), what}.
+   *  null when there is no pool / tank / sea or they are not a person on a swim plan. */
+  swimInfo(id = this.selected) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a || !this._onSwimPlan(a) || !this.water || this.water.position.y < 0.3 || this.setFx?.underwater) return null;
+    const m = Buoy.swimMode(a.swim), h = (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1);
+    const stands = Buoy.canStand(this.water.position.y, h) && (m === "auto" || m === "cant");
+    const t = Buoy.struggleSeconds(Swim.seedOf(this._seedKey(a))).toFixed(1);
+    const what = stands ? `stands in ${this.water.position.y.toFixed(1)} m of water (head out)`
+      : { cant: `can't swim: struggles ~${t} s at the surface, then sinks slowly (~0.2 m/s) and lies on the bottom`,
+        sink: "sinks slowly, limp, and lies on the bottom", back: "floats on the back at the surface", dive: "hovers at the keyed depth (scuba)",
+        flutter: "swims under water at the keyed depth", frog: "swims under water at the keyed depth", tread: "treads water, head out",
+        breaststroke: "swims at the surface", freestyle: "swims at the surface" }[m] || "swims at the surface (treads water when still)";
+    return { swim: m, floats: stands || !(m === "cant" || m === "sink"), stands, what };
+  }
+
+  /** The per-object "Floats / sinks" density (the Physics panel): kg/m3, a preset name (buoyancy.mjs DENSITY_PRESETS:
+   *  foam, wood, low, neutral, slow, stone, metal) or "auto" / null for the kind's own. One undo step. */
+  setDensity(id, value) {
+    const a = this.state.actors.find((x) => x.id === (id ?? this.selected));
+    if (!a) return { ok: false, error: "select an object" };
+    if (this._onSwimPlan(a)) return { ok: false, error: `${a.name || a.kind} floats or sinks by their Swim mode (setSwim: tread, can't swim, sink slowly...), not a density` };
+    const v = Buoy.densityValue(value);
+    if (v == null && !(value == null || value === "" || value === "auto")) return { ok: false, error: `not a density: "${value}" (kg/m3, or ${Buoy.DENSITY_PRESETS.map((p) => p[0]).join(", ")})` };
+    a.physics = { ...(a.physics || {}) };
+    if (v == null) delete a.physics.density; else a.physics.density = v;
+    if (!Object.keys(a.physics).length) delete a.physics;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    return { ok: true, id: a.id, density: v, info: this.buoyancyInfo(a.id) };
   }
 
   /**
@@ -4759,6 +5788,26 @@ export class Stage {
   }
 
   // ------------------------------------------------------------------ physics: water, fire
+  /**
+   * The key the water's per-object variation is seeded from (a can't-swim struggle's 2-3.5 s, the bob of a crate, a boat
+   * on the swell): the object's own `seed` when it has one (Add object stores it), else its kind and name, else its id.
+   * Not the id alone: Add object makes ids from the clock (`woman_<time>`), so the same scene built again on another
+   * page load got another struggle, another sink and another pose at f240 (y 0.31 / 0.16 / 0.09, lying vs upright), and
+   * floats 2 cm apart. A name is what the same steps give again ("Woman 1"); a seed stored at Add keeps it through a
+   * rename. Two objects with the same kind and name and no seed share their variation.
+   */
+  /** A person's weight for the water track (Buoy.personTrack's `rho`): the Physics panel's density, or its mass over
+   *  the body's own volume at their height (Buoy.personDensity); {} for the default body. */
+  _personWeight(a, h) {
+    const rho = Buoy.personDensity(h, { density: a.physics?.density, mass: a.physics?.mass });
+    return rho == null ? {} : { rho };
+  }
+
+  _seedKey(a) {
+    if (a?.seed != null && a.seed !== "") return String(a.seed);
+    return a?.name ? `${a.kind}|${a.name}` : String(a?.id ?? "");
+  }
+
   /** Is a world (x, z) over the water surface? */
   _overWater(x, z) {
     const w = this.water;
@@ -4767,13 +5816,19 @@ export class Stage {
     return Math.abs(x - cx) < geo.width / 2 && Math.abs(z - cz) < geo.height / 2;
   }
 
-  /** Does a person who doesn't swim (swim "off") float in the pool anywhere in the shot? _waterPhysics floats and bobs
-   *  their clay at the waterline, which the lifelike body can't follow, so they stay clay for the whole shot (people/
-   *  avatars.mjs avatarsAt: "floats in the water"). The same gates as _waterPhysics; cached on the keys. */
+  /** Is a world (x, z) over a pool's, a tank's or the sea's water (deep enough to float in: not the beach's wash, not
+   *  the reef set, which is all water)? The live drag and the bake hand anything there to the water. */
+  _inPool(x, z) {
+    return !!this.water && this.water.position.y >= 0.3 && !this.setFx?.underwater && this._overWater(x, z);
+  }
+
+  /** Kept for the lifelike body's gate (people/avatars.mjs "floats in the water"): a person in the pool who is not on a
+   *  swim plan (video mocap, no clay joints) floats on _waterPhysics. Swimming "off" is Can't swim now (a swim plan). */
   _floatsInShot(a) {
-    if (!PERSON_KINDS.has(a.kind) || a.swim !== "off" || a.mount_id || a.carry_id || !this.water) return false;
+    if (!PERSON_KINDS.has(a.kind) || a.mount_id || a.carry_id || !this.water || !a.mocap) return false;
     const level = this.water.position.y;
     if (level < 0.3) return false;                               // the beach's sea is a surface, not a pool
+    if (Buoy.canStand(level, (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1))) return false;   // shallow enough to stand in
     const keys = this._actorKeys(a), last = this._lastFrame(), w = this.water;
     const sig = `${keysHash(keys)}|${last}|${level}|${w.position.x},${w.position.z}|${w.geometry?.parameters?.width},${w.geometry?.parameters?.height}`;
     this._floatCache ||= new WeakMap();
@@ -4785,25 +5840,106 @@ export class Stage {
     return v;
   }
 
+  /** The Physics start height an unbaked dynamic / static object is raised by (setFrame). */
+  _liftOf(a) {
+    return !a.physics?.baked && a.physics?.lift > 0 && (a.physics.mode === "dynamic" || a.physics.mode === "static") ? a.physics.lift : 0;
+  }
+
+  /** An object's buoyant body (buoyancy.mjs bodyOf) from its own local box (the clay figure's, never a lifelike body
+   *  hidden inside it: measuring the posed group's world box sank a person further every time a frame was set).
+   *  Cached until its size or its density / mass settings change. {body, minY (its bottom under its origin)}. */
+  _buoyBody(a, g) {
+    const pm = a.physics?.mass, mass = pm != null && pm !== "" && Number.isFinite(+pm) ? +pm : null;
+    const sm = Buoy.swimMode(a.swim);
+    const sinking = !PERSON_KINDS.has(a.kind) && (sm === "cant" || sm === "sink") && a.swim != null;
+    const struggle = sinking && sm === "cant" ? Buoy.struggleSeconds(Swim.seedOf(this._seedKey(a))) : 0;
+    const sig = `${a.kind}|${a.scale || 1}|${a.height_m || 0}|${a.physics?.density ?? ""}|${mass ?? ""}|${sinking}|${struggle}|${a.buoyancy || ""}|${this._seedKey(a)}`;
+    const c = g.userData._buoy;
+    if (c?.sig === sig) return c;
+    const box = this._localBox(g);
+    if (!box) return null;
+    const size = box.half.map((x) => 2 * x);
+    // (the old per-object switch: buoyancy "sink" = a stone's density)
+    const density = a.physics?.density ?? (a.buoyancy === "sink" ? 2600 : null);
+    const body = Buoy.bodyOf(a.kind, size, { density, mass, sinking, struggle });
+    const out = { sig, body, minY: box.center[1] - box.half[1], box };
+    g.userData._buoy = out;
+    return out;
+  }
+
+  /** The whole-shot water track of an object (buoyancy.mjs floatTrack), cached on its keys, its body, the water and
+   *  the shot: every frame is a lookup, so scrubbing gives the same pose whatever was shown before. */
+  _buoyTrack(a, g) {
+    const bb = this._buoyBody(a, g);
+    if (!bb) return null;
+    const w = this.water, level = w.position.y, keys = this._actorKeys(a), last = this._lastFrame(), fps = this.state.shot?.fps || 24;
+    const lift = this._liftOf(a);
+    const sig = `${keysHash(keys)}|${keys.length}|${last}|${fps}|${level}|${w.position.x},${w.position.z},${w.geometry?.parameters?.width},${w.geometry?.parameters?.height}|${bb.sig}|${lift}|${!!a.physics?.baked}`;
+    this._buoyCache ||= new WeakMap();
+    const c = this._buoyCache.get(a);
+    if (c?.sig === sig) return c;
+    const keyY = [], over = [], fits = [];
+    for (let f = 0; f <= last; f++) {
+      const p = this._actorPosAt(a, f), ov = this._overWater(p[0], p[2]);
+      keyY.push(Math.max(0, (p[1] || 0) + lift + bb.minY)); over.push(ov);
+      const xz = ov ? this._insideWater(a, g, p[0], p[2], this._headingAt(a, f)) : null;
+      fits.push(!xz || (Math.abs(xz[0] - p[0]) < 1e-6 && Math.abs(xz[1] - p[2]) < 1e-6));
+    }
+    // Driven (or carried) in from outside: while its footprint is still crossing the wall it stays on its keys, and the
+    // water takes it from the first frame it is wholly inside (clamped from the frame the centre crossed, a car driven
+    // in jumped 2.7 m and stalled for 7 frames). Keyed through the wall from the start it is held inside as before.
+    for (let f = 1; f <= last; f++) {
+      if (!over[f] || over[f - 1]) continue;
+      let e = f;
+      while (e <= last && over[e] && !fits[e]) e++;
+      if (e <= last && over[e]) for (let i = f; i < e; i++) over[i] = false;
+      f = e;
+    }
+    // A key at the floor is "placed in the water"; the bottom of an object whose origin is its middle is above 0.
+    if (bb.minY > 0) for (let f = 0; f <= last; f++) if (keyY[f] <= bb.minY + 0.02 && !lift) keyY[f] = 0;
+    const tr = Buoy.floatTrack(bb.body, { level, floor: 0, fps, keyY, over });
+    const out = { sig, tr, body: bb.body, minY: bb.minY, box: bb.box, over };
+    this._buoyCache.set(a, out);
+    return out;
+  }
+
+  /** Where an object's origin rests in the water at (x, z) (live.mjs: a prop carried over the tank shows there):
+   *  floating at its waterline, or on the bottom. null when (x, z) isn't over a pool. */
+  _waterRestY(a, g, x, z) {
+    if (!a || !g || !this._inPool(x, z)) return null;
+    const bb = this._buoyBody(a, g);
+    return bb ? Buoy.restBottom(bb.body, this.water.position.y, 0) - bb.minY : null;
+  }
+
   /**
-   * Buoyancy, deterministic per frame. Something over the water that starts above the surface falls in (gravity),
-   * splashes, then either floats (dips with the impact, bobs and settles at its own waterline) or sinks (slows to a
-   * terminal speed and settles on the bottom). Something placed in the water starts already floating / on the bottom.
-   * People and animals tread water with their head above the surface.
+   * Buoyancy, deterministic per frame (buoyancy.mjs): weight against the water it displaces. Something over the water
+   * that starts above the surface falls in (gravity), splashes, plunges, then floats (bobs and settles at its real
+   * waterline: a ball high, a crate deeper, a car low and lower as it floods) or sinks at its terminal speed (a rock
+   * fast, a waterlogged box slowly) and settles on the bottom. Keyed under the surface it rises or sinks from there;
+   * keyed at the floor it is placed in the water (at its waterline, or on the bottom). Boats keep their hull physics.
    */
   _waterPhysics(a, g) {
     if (a.mount_id || a.carry_id || LIBRARY[a.kind]?.flies) return;
     const level = this.water.position.y;
     if (level < 0.3) return;                                    // the beach's sea is a surface, not a pool
+    // People: on a swim plan (the clay), or standing / wading where they can stand (personTrack ground). Only a
+    // video-mocap person in water too deep to stand in floats here.
+    if (PERSON_KINDS.has(a.kind) && (!a.mocap || Buoy.canStand(level, (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1)))) { g.userData.inWater = false; return; }
     const p = this._actorPosAt(a, this.frame);
     if (!this._overWater(p[0], p[2])) { g.userData.inWater = false; return; }
-    const fps = this.state.shot?.fps || 24, G = 9.8;
-    const box = new THREE.Box3().setFromObject(g), h = Math.max(0.05, box.max.y - box.min.y);
-    const kind = a.kind;
-    if (LIBRARY[kind]?.boat) {
+    const kind = a.kind, boat = !!LIBRARY[kind]?.boat;
+    // Still crossing the wall on a drive in (_buoyTrack): on its keys until it is wholly inside.
+    const T = boat ? null : this._buoyTrack(a, g), fNow = Math.max(0, Math.min(this._lastFrame(), this.frame));
+    if (T && !T.over[fNow]) { g.userData.inWater = false; return; }
+    // Keyed (or dragged and let go) with its centre over the water but its side through the tank wall: the water holds
+    // its whole footprint inside the wall (a car at x 7.5 side-on floated half outside the 7.8 m inner wall).
+    const xz = this._insideWater(a, g, p[0], p[2], g.rotation.y || 0);
+    if (xz) { p[0] = xz[0]; p[2] = xz[1]; g.position.x = p[0]; g.position.z = p[2]; }
+    const fps = this.state.shot?.fps || 24;
+    if (boat) {
       if (this._boatFloat?.(a, g, level)) return;   // the hull's own physics on the wave field (watercraft.mjs)
       // A boat sits at its waterline and rides the swell: heave, pitch and roll, the bow lifting with speed.
-      const t = this.frame / fps, seed2 = [...String(a.id)].reduce((n, ch) => n + ch.charCodeAt(0), 0);
+      const t = this.frame / fps, seed2 = [...String(this._seedKey(a))].reduce((n, ch) => n + ch.charCodeAt(0), 0);
       const draft = kind === "jetski" ? 0.3 : kind === "boat" ? 0.45 : 0.6;
       const sp = g.userData.speed || 0, plane = Math.min(1, sp / 8);
       g.position.y = level - draft + 0.06 * Math.sin(2 * Math.PI * t / 3.1 + seed2) + 0.12 * plane;
@@ -4813,55 +5949,62 @@ export class Stage {
       g.userData.inWater = true;
       return;
     }
-    const swimmer = PERSON_KINDS.has(kind) || ["dog", "horse", "cat", "bird"].includes(kind);
-    const SINK = ["rock", "car", "police_car", "sports_car", "hatchback", "truck", "motorcycle", "bicycle", "flashlight", "lamp", "wall", "pyramid", "cube", "fire"];
-    const sinks = !swimmer && (SINK.includes(kind) || a.buoyancy === "sink");
-    // Fraction of its height that sits under water when floating (wood ~0.5, a ball ~0.2, a bird ~0.3).
-    const sub = { crate: 0.55, sphere: 0.25, bird: 0.3, tree: 0.35, bush: 0.4, chair: 0.6, table: 0.6, bench: 0.6, cylinder: 0.5 }[kind] ?? 0.55;
-    const seed = [...String(a.id)].reduce((n, ch) => n + ch.charCodeAt(0), 0);
-    // When does it enter, and from how high? (first frame over the water; keyed height = drop height)
-    const keys = this._actorKeys(a);
-    let f0 = 0;
-    for (let f = 0; f <= this.frame; f++) { const q = this._actorPosAt(a, f); if (this._overWater(q[0], q[2])) { f0 = f; break; } }
-    const y0 = Math.max(0, this._actorPosAt(a, f0)[1] || 0);
-    const t = (this.frame - f0) / fps;
-    const yEq = swimmer ? level - (PERSON_KINDS.has(kind) ? 0.84 : 0.7) * h : sinks ? 0 : level - sub * h;
-    let y;
-    const dropping = y0 > level + 0.05;
-    const tHit = dropping ? Math.sqrt(2 * (y0 - level) / G) : 0;
-    if (dropping && t < tHit) {
-      y = y0 - 0.5 * G * t * t;                                  // falling toward the surface
-    } else {
-      const ti = t - tHit;                                      // time since it hit (or was placed in) the water
-      const vImp = dropping ? G * tHit : 0;
-      if (sinks) {
-        const vt = { rock: 1.4, flashlight: 0.9 }[kind] ?? 0.55;  // terminal speed in water (m/s)
-        const tau = 0.35;
-        const start = dropping ? level : Math.min(level, y0 || level);
-        const dist = vt * ti + (vImp - vt) * tau * (1 - Math.exp(-ti / tau));
-        y = Math.max(0, (dropping || y0 > 0 ? start : 0) - dist - (dropping ? 0 : 0));
-        if (!dropping && !(y0 > 0)) y = 0;                        // placed in the tank: already on the bottom
-      } else {
-        const w0 = 2 * Math.PI / 1.6, z = 0.28;                   // ~1.6 s bob, under-damped
-        const dip = dropping ? Math.min(0.9 * h + 0.4, vImp / w0) : 0;
-        const bob = 0.025 * Math.sin(2 * Math.PI * (this.frame / fps) / 2.4 + seed);
-        y = yEq - dip * Math.exp(-z * w0 * ti) * Math.sin(w0 * Math.sqrt(1 - z * z) * ti) + bob;
-        const wob = Math.exp(-0.6 * ti) * 0.15 + 0.03;          // a settling rock-and-roll, then a gentle sway
-        if (!swimmer) { g.rotation.x = wob * Math.sin(2.1 * ti + seed); g.rotation.z = wob * Math.cos(1.7 * ti + seed * 0.3); }
-      }
+    if (!T) return;
+    const { tr, body } = T, f = Math.max(0, Math.min(tr.y.length - 1, this.frame));
+    const seed = [...String(this._seedKey(a))].reduce((n, ch) => n + ch.charCodeAt(0), 0);
+    const s = tr.s[f], floating = s > 0 && s < 1;
+    // A floater rides the little ripples of the tank on top of its bob (a lookup on the frame: deterministic).
+    const ripple = floating ? 0.012 * Math.sin(2 * Math.PI * (this.frame / fps) / 2.4 + seed) : 0;
+    g.position.y = tr.y[f] - T.minY + ripple;
+    const t0 = tr.splash >= 0 ? tr.splash : Math.max(0, tr.entry);
+    const ti = Math.max(0, (this.frame - t0) / fps);
+    g.rotation.order = "YXZ";
+    if (body.car) {   // the engine end floods first: nose down as it fills, levelling out as it comes down on the bottom
+      const fl = Math.max(0, Math.min(1, (tr.rho[f] - body.rho) / Math.max(1, 1000 - body.rho)));
+      const up = Math.max(0, Math.min(1, tr.y[f] / Math.max(0.2, 0.6 * body.h))), lvl = up * up * (3 - 2 * up);
+      g.rotation.x = (0.35 * fl + 0.02 * Math.sin(1.3 * ti + seed)) * lvl;
+      g.rotation.z = 0.02 * Math.cos(0.9 * ti + seed) * lvl;
+    } else if (!PERSON_KINDS.has(kind) && !["dog", "horse", "cat", "bird"].includes(kind) && tr.entry >= 0 && f >= tr.entry) {
+      const wob = floating ? Math.exp(-0.6 * ti) * 0.15 + 0.03 : Math.exp(-1.2 * ti) * 0.12;   // settling, then a gentle sway
+      g.rotation.x = wob * Math.sin(2.1 * ti + seed); g.rotation.z = wob * Math.cos(1.7 * ti + seed * 0.3);
     }
-    g.position.y = y - (box.min.y - g.position.y);                // put the object's bottom at y
+    if (body.sinkRho && tr.entry >= 0 && f >= tr.entry) this._animalSinkPose(a, g, tr, body, f, fps, seed);
+    // Near the bottom its tilt (a sway, a car still nose down) would put a corner through the floor: the lowest corner
+    // of its own box (cached with its body: spinning wheels don't count) at this frame's tilt is lifted onto it (was: a
+    // flooded car's nose at -0.65, a rock landing 5 cm through). This frame only.
+    if (T.box && tr.entry >= 0 && f >= tr.entry && tr.y[f] < Math.max(0.3, body.h)) {
+      const { center: c, half: hb } = T.box, v = new THREE.Vector3();
+      let lo = Infinity;
+      for (let i = 0; i < 8; i++) {
+        v.set(c[0] + (i & 1 ? hb[0] : -hb[0]), c[1] + (i & 2 ? hb[1] : -hb[1]), c[2] + (i & 4 ? hb[2] : -hb[2])).applyQuaternion(g.quaternion);   // (the box is measured at its scale)
+        lo = Math.min(lo, g.position.y + v.y);
+      }
+      if (lo < 0) g.position.y -= lo;
+    }
+    // Tipped (a sway, a flooding car going nose down) its corners reach further out: near the wall, measure the posed
+    // object and move it back inside (from this frame's pose only: the same on any play order).
+    const w = this.water, gp = w.geometry.parameters, lx = gp.width / 2, lz = gp.height / 2;
+    const reachOut = g.userData._foot?.box ? Math.hypot(...g.userData._foot.box.half) + Math.hypot(g.userData._foot.box.center[0], g.userData._foot.box.center[2]) : 0;
+    if (reachOut && (lx - Math.abs(p[0] - w.position.x) < reachOut || lz - Math.abs(p[2] - w.position.z) < reachOut)) {
+      g.updateMatrixWorld(true);
+      const bx = new THREE.Box3().setFromObject(g), m = 0.05;
+      const push = (lo, hi, a0, a1) => (a1 - a0 > hi - lo - 2 * m ? 0 : a0 < lo + m ? lo + m - a0 : a1 > hi - m ? hi - m - a1 : 0);
+      const dx = push(w.position.x - lx, w.position.x + lx, bx.min.x, bx.max.x), dz = push(w.position.z - lz, w.position.z + lz, bx.min.z, bx.max.z);
+      if (dx || dz) { g.position.x += dx; g.position.z += dz; p[0] += dx; p[2] += dz; }
+    }
     g.userData.inWater = true;
+    g.userData.buoy = { s, rho: tr.rho[f], v: tr.v[f] };
     // Splash ring on entry: expands and fades over ~1.2 s.
+    const dropping = tr.splash >= 0;
     const ring = this._splash?.get(a.id);
     if (ring) {
-      const tr = (this.frame - f0) / fps - tHit;
-      ring.visible = dropping && tr >= 0 && tr < 1.2;
+      const tr2 = (this.frame - tr.splash) / fps;
+      ring.visible = dropping && tr2 >= 0 && tr2 < 1.2;
       if (ring.visible) {
         ring.position.set(p[0], level + 0.01, p[2]);
-        const r = 0.3 + 1.6 * tr;
+        const r = 0.3 + 1.6 * tr2;
         ring.scale.set(r, r, 1);
-        ring.material.opacity = 0.75 * (1 - tr / 1.2);
+        ring.material.opacity = 0.75 * (1 - tr2 / 1.2);
       }
     } else if (dropping) {
       const m = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 40), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
@@ -4871,6 +6014,27 @@ export class Stage {
       (this._splash = this._splash || new Map()).set(a.id, m);
       m.visible = false;
     }
+  }
+
+  /** An animal set to Can't swim / Sink slowly in the water (after _waterPhysics put it on its track): it paddles hard
+   *  with the head up for its struggle, goes limp and sinks nose down, then lies on its side on the bottom. Its legs
+   *  are posed here, so its walk cycle never runs under water or on the bottom. A pure function of the frame. */
+  _animalSinkPose(a, g, tr, body, f, fps, seed) {
+    const t0 = tr.splash >= 0 ? tr.splash : tr.entry, t = Math.max(0, (f - t0) / fps);
+    const sstep = (e0, e1, x) => { const u = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return u * u * (3 - 2 * u); };
+    const limp = sstep(body.sinkAfter, body.sinkAfter + 1.2, t);                    // the paddling stops
+    const lie = tr.landed >= 0 ? sstep(tr.landed, tr.landed + fps, f) : 0;          // over ~1 s on the bottom
+    const limbs = g.userData.limbs || [];
+    limbs.forEach((l, i) => {
+      const paddle = 0.75 * Math.sin(2 * Math.PI * 2.2 * t + (l.phase ?? i * Math.PI / 2));
+      const drift = 0.12 * Math.sin(2 * Math.PI * 0.2 * t + i);
+      if (l.pivot) l.pivot.rotation.x = (paddle * (1 - limp) + drift * limp) * (1 - lie) + 0.25 * lie;
+    });
+    g.rotation.order = "YXZ";
+    g.rotation.x = -0.22 * (1 - limp) + 0.25 * limp * (1 - lie);                    // head up paddling, nose down sinking
+    g.rotation.z = (Math.PI / 2 - 0.15) * lie * (seed % 2 ? 1 : -1);                // on its side on the bottom
+    g.userData.gaitOn = false;
+    if (lie > 0) Swim.keepAboveFloor(g, 0);
   }
 
   /** Flames flicker, the fire light breathes, embers rise, drift and fade: all a pure function of the frame. */

@@ -450,7 +450,7 @@ export function avatarsAt(stage) {
     const reason = C.clayReason(a, {
       blocking, holders: users.holders, carriers: users.carriers, gazeKeyed: gazeKeys(a).length > 0,
       swims: wet && C.swimsInShot(a, () => stage._swimPlan?.(a, g)),
-      floats: !!stage._floatsInShot?.(a),   // swimming off in a pool: the clay floats and bobs (stage._waterPhysics)
+      floats: !!stage._floatsInShot?.(a),   // a video mocap take in water too deep to stand in: the clay floats (stage._waterPhysics)
       driven: C.drivenInShot(memo, stage.state.active_shot, a.id, stage.drive),
       airborne: !!stage._airborneAt?.(a, f),   // this frame only: clay in the air, lifelike on the ground
       tipped: tippedNow(g),
@@ -459,7 +459,10 @@ export function avatarsAt(stage) {
     setShown(skin, !reason);
     if (reason) continue;
     // The physics lift (stage.setFrame raises an unbaked dynamic / static object by a.physics.lift) is followed too.
-    const p = stage._actorPosAt(a, f), y = stage._heightAt(a, f) + physicsLift(a), yaw = stage._headingAt(a, f);
+    // Over the water on a dock or a deck (or held before a timed jump): the height the clay stands at there
+    // (stage._standOnKeys, the same support lift the clay's gait gets), not the keys' own height under it.
+    const p = stage._actorPosAt(a, f), yaw = stage._headingAt(a, f);
+    const y = (stage._standOnKeys?.(a, g, f) ?? stage._heightAt(a, f)) + physicsLift(a);
     const scale = C.statureScale(C.clayHeight(a) * (a.scale || 1), skin.kit.stature);
     // Speed and the shared gait phase for the whole shot, cached until the path, the length or the size changes.
     const keys = stage._actorKeys(a);

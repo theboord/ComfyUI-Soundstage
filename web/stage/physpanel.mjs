@@ -7,6 +7,7 @@ import { floatPanel } from "../ui/floating.mjs";
 // it also registers the GPU backend with physengine.mjs and puts the "Physics: CPU / GPU" badge on the stage.
 import * as avbd from "./physics_avbd.mjs";
 import { MATERIALS } from "./impacts.mjs";
+import { DENSITY_PRESETS } from "./buoyancy.mjs";
 
 const CSS = `
 .ss-stage .ss-phys { display:flex; flex-direction:column; gap:8px; font-size:12px; }
@@ -153,6 +154,19 @@ export class PhysicsPanel {
     this.matSel.addEventListener("pointerdown", (e) => e.stopPropagation());
     this.matSel.addEventListener("change", () => this._set({ material: this.matSel.value }));
     this.matRow = el("label", "ph-mat", el("span", "", "Material"), this.matSel);
+    // Floats / sinks (buoyancy.mjs): its density against water's 1000 kg/m3. Auto = by kind (or by the Mass above).
+    this.densSel = document.createElement("select");
+    for (const [v, t] of DENSITY_PRESETS) this.densSel.append(new Option(t, v));
+    this.densSel.addEventListener("pointerdown", (e) => e.stopPropagation());
+    this.densSel.addEventListener("change", () => {
+      if (!this.id) return;
+      const r = this.stage.setDensity?.(this.id, this.densSel.value === "custom" ? this._customDensity : this.densSel.value);
+      if (r?.ok && r.info) this._msg(`${r.info.floats ? `Floats, ${Math.round(r.info.under * 100)}% under` : `Sinks (${Math.abs(r.info.terminal).toFixed(1)} m/s)`} at ${r.info.density} kg/m³.`);
+      this.sync();
+    });
+    this.densRow = el("label", "ph-mat", el("span", "", "Floats / sinks"), this.densSel);
+    this.densRow.title = "Density / Floats-Sinks: how it behaves in a pool or tank. Water is 1000 kg/m³: lighter floats (a ball high, a crate deeper), heavier sinks (a rock fast). Auto uses its kind (wood, stone, steel...) or the Mass you set; a cardboard box soaks through and sinks, a car floats and floods.";
+    this.densNote = el("div", "ph-note");
     this.matRow.title = "What it's made of: sets the dust, debris and sparks off its hits, their sound on A2 and the words the video prompt uses (cardboard crumples, wood splinters, metal dents)";
     // Impact FX off the baked hits, for the whole scene: dust puffs, debris chips, sparks + a light flash on metal.
     this.fxSeg = el("div", "ss-views");
@@ -192,7 +206,7 @@ export class PhysicsPanel {
     this.note = el("div", "ph-note");
     this.msg = el("div", "ph-msg");
     this.msg.setAttribute("aria-live", "polite");
-    this.el.append(head, this.seg, this.mass.r, this.bounce.r, this.friction.r, this.lift.r, this.matRow, this.all, el("div", "ph-acts", this.simBtn, this.clearBtn), this.fxRow, this.feelRow, this.worldRow, this.ocRow, this.eng, this.note, this.msg);
+    this.el.append(head, this.seg, this.mass.r, this.bounce.r, this.friction.r, this.lift.r, this.matRow, this.densRow, this.densNote, this.all, el("div", "ph-acts", this.simBtn, this.clearBtn), this.fxRow, this.feelRow, this.worldRow, this.ocRow, this.eng, this.note, this.msg);
   }
 
   /** Switch live physics to the GPU: bring WebGPU up, fall back to the CPU (and say why) if it can't run here. */
@@ -260,6 +274,22 @@ export class PhysicsPanel {
     set(this.friction, info.friction);
     set(this.lift, info.lift);
     if (info.material) this.matSel.value = info.material;
+    const bu = info.buoyancy;
+    this.densRow.hidden = !bu; this.densNote.hidden = !bu && !info.swim;
+    // a person: the water moves them by their Swim mode (person panel), not a density
+    if (!bu && info.swim) this.densNote.textContent = `In the water: ${info.swim.what} (set by Swim in the person panel).`;
+    if (bu) {
+      const pre = DENSITY_PRESETS.find((p) => p[2] != null && p[2] === bu.override);
+      let custom = this.densSel.querySelector('option[value="custom"]');
+      if (bu.override != null && !pre) {
+        if (!custom) { custom = new Option("", "custom"); this.densSel.append(custom); }
+        custom.textContent = `Custom (${Math.round(bu.override)})`; this._customDensity = bu.override;
+      } else custom?.remove();
+      this.densSel.value = bu.override == null ? "auto" : pre ? pre[0] : "custom";
+      const by = bu.source === "mass" ? "from its mass" : bu.source === "density" ? "set here" : bu.what;
+      this.densNote.textContent = `${bu.density} kg/m³ (${by}): ${bu.floats ? `floats, ${Math.round(bu.under * 100)}% under water` : `sinks at about ${Math.abs(bu.terminal).toFixed(1)} m/s`}` +
+        `${bu.soaks ? `; soaks toward ${bu.soaks.to} kg/m³ over ~${bu.soaks.tau_s} s` : ""}.`;
+    }
     this.matRow.setAttribute("aria-disabled", String(info.mode === "off"));
     const fx = this.stage.impactFxInfo?.();
     if (fx) for (const [k, b] of Object.entries(this.fxBtns)) b.setAttribute("aria-pressed", String(!!fx[k]));

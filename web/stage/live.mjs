@@ -51,6 +51,12 @@ export class LiveEdit {
     return k.every((x) => Math.hypot(x.position[0] - k[0].position[0], x.position[1] - k[0].position[1], x.position[2] - k[0].position[2]) < 1e-4);
   }
   _hasRiders(a) { return this.s.state.actors.some((x) => x.mount_id === a.id); }
+  /** Over a pool or tank's water (stage._inPool): the live world has a floor and no water, so nothing there is left to
+   *  its gravity: the stage's water (buoyancy.mjs) floats, sinks and swims it. */
+  _wet(x, z) { return !!this.s._inPool?.(x, z); }
+  /** How high a person dragged onto something can be put (m): 1.75 off the floor; over the water, 1.75 off its surface
+   *  (the lake's dock stands 1.81 m off the bed, 0.6 m out of the water: was refused, so the drag ran ~3 m past it). */
+  _climbMax(pt) { return 1.75 + (pt && this._wet(pt[0], pt[2]) ? this.s.water?.position.y ?? 0 : 0); }
   _height(a) {
     const L = this.K.LIBRARY[a.kind];
     return (a.height_m || L?.height || a.recipe?.size_m?.[1] || 1) * (a.scale || 1);
@@ -122,7 +128,7 @@ export class LiveEdit {
       if (!shapes.length) continue;
       // Tables and counters hold still under a prop being set on them or a person climbing up (they aren't shoved).
       const dynamic = held ? heldMode === "prop" : this.pushable(a) && !((heldMode === "prop" || heldMode === "person") && SURFACES.has(a.kind)) &&
-        !(heldMode === "person" && this._climbable(a));
+        !(heldMode === "person" && this._climbable(a)) && !this._wet(pos.x, pos.z);   // floating / sunk: the water holds it
       const type = held ? (heldMode === "kinematic" ? "kinematic" : "dynamic") : dynamic ? "dynamic" : "static";
       const p = physicsOf(a), feel = FEEL[a.kind] || {};
       const ids = [];
@@ -283,7 +289,13 @@ export class LiveEdit {
     // Let go of a person mid-stride: they stand (the walk / climb swing stops with the drag, not frozen mid-step).
     if (d.person) { d._speed = 0; d._climbW = 0; this._silentFrame(); }
     if (d.gizmoHidden && this.s.selected === d.id) this.s._gizmoOn = true;
-    if (d.mode === "prop" && d.settles) this.world.setKinematicTarget(d.id, null);   // let go: it falls and settles
+    const at = d.mode === "prop" && this.bodies.has(d.id) ? this.world.getPose(this.bodies.get(d.id)[0]) : null;
+    if (at && this._wet(at.pos[0], at.pos[2])) {
+      // Let go over the water: written down where it was let go (the key's height is the drop height, 0 = placed in the
+      // water); the stage's water drops it in and floats or sinks it, frame by frame (buoyancy.mjs).
+      d.wetAt = at;
+      for (const bid of this.bodies.get(d.id)) this.world.setBodyProps(bid, { type: "static" });
+    } else if (d.mode === "prop" && d.settles) this.world.setKinematicTarget(d.id, null);   // let go: it falls and settles
     else if (this.bodies.has(d.id)) for (const bid of this.bodies.get(d.id)) {
       if (d.person || d.mode === "prop") this.world.setBodyProps(bid, { type: "static" });
     }
@@ -344,17 +356,28 @@ export class LiveEdit {
       const bid = this.bodies.get(d.id)?.[0];
       const pose = d.mountHost ? null : bid && w.getPose(bid);
       if (pose && d.person) this._walkFacing(d, pose, dt);
+      // In the water a person swims (stage._swimPlan): the live world's floor must not pull them down to walk on the tank
+      // bottom (Mike, 2026-11-07: "they just went to the bottom and started walking"). Only x / z follow the drag;
+      // the key keeps its own height (0 = placed in the water, at the surface).
+      // On a dock or a deck over the water (the drag stood them on its top): out of the water, keyed at that top, which
+      // is what tells the swim plan they are on it rather than wading or swimming under it.
+      const onTop = d.person && !!d.support && d.surfY > 0.05;
+      const wet = d.person && pose && !onTop && this._wet(pose.pos[0], pose.pos[2]);
+      d.wet = !!wet;
+      if (onTop) d.wasOnTop = true;
       if (pose) {
         const k = this.s._editActorKey(d.a);
-        k.position = [+pose.pos[0].toFixed(3), d.person ? +Math.max(0, pose.pos[1]).toFixed(3) : 0, +pose.pos[2].toFixed(3)];
+        // (dragged off a dock into the water: placed in it, 0, not left keyed at the dock's height to drop from)
+        const ky = wet ? (d.wasOnTop ? 0 : k.position?.[1] ?? 0) : d.person ? +Math.max(0, pose.pos[1]).toFixed(3) : 0;
+        k.position = [+pose.pos[0].toFixed(3), ky, +pose.pos[2].toFixed(3)];
         if (d.mode === "kinematic" && d.rotX != null) d.a.rotation_deg = Math.round(THREE.MathUtils.radToDeg(d.yaw));
         if (d.person && d.rotX != null) d.a.rotation_deg = Math.round(THREE.MathUtils.radToDeg(d.yaw));
         this.s._yCache?.delete(d.a);
       }
       this._silentFrame();
       // The figure is where its body is (the stage's own hop-over-obstacles height is for walked paths, not a drag).
-      if (d.person && !d.mountHost && pose) d.g.position.y = Math.max(0, pose.pos[1]);
-      if (d.person && !d.mountHost) { this._walkPose(d, dt); this._stepPose(d, pose); }
+      if (d.person && !d.mountHost && pose && !wet) d.g.position.y = Math.max(0, pose.pos[1]);
+      if (d.person && !d.mountHost && !wet) { this._walkPose(d, dt); this._stepPose(d, pose); }
       if (d.carryBlend) {   // lifted from where it stood up into the hands, not snapped there
         const cb = d.carryBlend, cg = this.s.actorMeshes.get(cb.id);
         cb.t += dt;
@@ -380,6 +403,15 @@ export class LiveEdit {
       const g = this.s.actorMeshes.get(aid);
       const p = w.getPose(ids[0]);
       if (!g || !p) continue;
+      // A prop carried over the water (not lifted above the surface) shows where the water holds it, not on the tank floor.
+      const rest = this._wet(p.pos[0], p.pos[2]) ? this.s._waterRestY?.(this._actor(aid), g, p.pos[0], p.pos[2]) : null;
+      if (rest != null && p.pos[1] < rest + 0.05) {
+        // its whole footprint inside the tank wall, where the render will float it (stage._insideWater)
+        const yaw = yawTilt(p.quat).yawDeg * Math.PI / 180, xz = this.s._insideWater?.(this._actor(aid), g, p.pos[0], p.pos[2], yaw) || [p.pos[0], p.pos[2]];
+        g.position.set(xz[0], rest, xz[1]);
+        g.quaternion.set(...qyaw(yaw));
+        continue;
+      }
       g.position.set(...p.pos);
       g.quaternion.set(...p.quat);
       // A lifelike person knocked over: setFrame (in _silentFrame above) posed the avatar on the upright group, so
@@ -411,7 +443,7 @@ export class LiveEdit {
       // its top, if it is low enough, rather than shoving it.
       if (d.person && hit && hit.id !== "__ground" && hit.normal[1] <= 0.7) {
         const top = w.raycast([hit.point[0] + dir[0] * 0.2, 40, hit.point[2] + dir[2] * 0.2], [0, -1, 0], 80, { exclude });
-        if (top && top.id === hit.id && top.normal[1] > 0.7 && top.point[1] <= 1.75) hit = top;
+        if (top && top.id === hit.id && top.normal[1] > 0.7 && top.point[1] <= this._climbMax(top.point)) hit = top;
       }
       // A person doesn't stand on light things they could shove or pick up (a cardboard box): they walk into them.
       if (d.person && hit && hit.id !== "__ground" && this.meta.get(this._actorOfBody(hit.id))?.dynamic) hit = null;
@@ -442,7 +474,7 @@ export class LiveEdit {
         d._liftSeen = d.liftCur;
       }
       const grab = d.liftCur ? [d.grab[0], d.grab[1] + d.liftCur, d.grab[2]] : d.grab;
-      target = dragTarget(d.overPerson ? null : hit, grab, planeHit, d.person ? 1.75 : 1.8, support);
+      target = dragTarget(d.overPerson ? null : hit, grab, planeHit, d.person ? (hit ? this._climbMax(hit.point) : 1.75) : 1.8, support);
       if (!target) return;
       if (d.mods.shift) { const r = axisLock(d.start, target.pos, d.axis); d.axis = r.axis; target.pos = r.pos; }
       if (this.s.snap) { target.pos[0] = snapGrid(target.pos[0], 0.1); target.pos[2] = snapGrid(target.pos[2], 0.1); }
@@ -748,6 +780,8 @@ export class LiveEdit {
     this.finish();
     const a = this._actor(id);
     if (!a || !this.s._physCanMove(a) || a.physics?.baked || a.physics?.mode === "off" || this._hasRiders(a)) return false;
+    const kp = this.s._actorPosAt(a, this.s.frame);
+    if (this._wet(kp[0], kp[2])) return false;   // in the water: the water drops it from its keyed height (no floor-drop)
     this._build(id, "prop");
     if (!this.bodies.has(id)) return false;
     this.lastDrag = { id, a, mode: "prop", settles: true, person: false, moved: true, lift: 0, carried: [], guides: [] };
@@ -767,7 +801,7 @@ export class LiveEdit {
       if (!m || !a || !w) continue;
       if (aid === d.id && (d.person || d.mode === "kinematic")) continue;   // written as it went
       if (!m.dynamic && aid !== d.id) continue;
-      const p = w.getPose(ids[0]);
+      const p = aid === d.id && d.wetAt ? d.wetAt : w.getPose(ids[0]);
       const moved = Math.hypot(p.pos[0] - m.pos[0], p.pos[1] - m.pos[1], p.pos[2] - m.pos[2]) > MOVE_EPS ||
         1 - Math.abs(p.quat.reduce((acc, v, i) => acc + v * m.quat[i], 0)) > ROT_EPS;
       if (!moved) continue;
@@ -806,7 +840,10 @@ export class LiveEdit {
   _writePose(a, p, dragged) {
     const s = this.s;
     const lift = a.physics?.lift || 0;
-    const y = Math.max(0, p.pos[1] - (a.physics?.mode === "dynamic" || a.physics?.mode === "static" ? lift : 0));
+    let y = Math.max(0, p.pos[1] - (a.physics?.mode === "dynamic" || a.physics?.mode === "static" ? lift : 0));
+    // In the water: let go above the surface it drops in from there; anywhere below it, it is placed in the water (0:
+    // floating at its waterline, or on the bottom), never a key on the tank floor that erases the drop.
+    if (this._wet(p.pos[0], p.pos[2]) && !(p.pos[1] > (s.water?.position.y ?? 0) + 0.02)) y = 0;
     if (lift && a.physics) a.physics.lift = 0;
     const pos = [+p.pos[0].toFixed(3), +y.toFixed(3), +p.pos[2].toFixed(3)];
     const keys = s._actorKeys(a);

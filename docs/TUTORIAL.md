@@ -48,7 +48,7 @@ Everything below landed on `main` on 1 and 2 November 2026 ([CHANGELOG](../CHANG
 | [Film a move](#film-a-move-on-your-phone) | Needs the https address (run `tools/vcam_bridge.py`); a plain http page can't record. Uploads stop at 300 MB. |
 | [Racing Cinema](#racing-cinema-and-the-racing-camera-moves) | No frame or video has been rendered with it yet. **Long-lens pan** cannot hold a fast J-turn inside the 40 m depth guide (at 60 km/h 2 of 21 keys fall past it; the toast says so). |
 | [Boats](#boats) | No capsize, no swamping, no rock collisions (the raft passes through boulders). Canoe and rowboat turns are slow, and the log raft's pole barely steers. |
-| [Swimming](#swimming-and-water) | No swim-style picker: the style follows the speed. Renders look like CG animation, not photographed water. |
+| [Swimming](#swimming-and-water) | Swimmers show as clay (no lifelike swim clips); a non-swimmer struggles for seconds, not the real 20-60 s. Renders look like CG animation, not photographed water. |
 | [Drive mode](#drive-mode-what-changed) | The view can stay on the shot camera instead of following what you drive: press `V` to cycle it. |
 | [Voice conversion](#voice-conversion-in-real-performance) | On a voice Chatterbox did not make, Whisper misheard 39-51% of Ezra's words. Listen to every converted line. Clips over 20 s need a ComfyUI restart to convert in pieces. |
 | [1024-wide layout](#the-1024-wide-layout-and-the-menu) | Checked headless at 1024×640, not on a real 1024-pt iMac. At 1024 the picture is small. |
@@ -192,9 +192,10 @@ What's in the groups:
 1. In **Set & weather**, pick **Underwater reef**.
 2. Press `V` › **Action** › **Diver swim**, or key a person more than 0.35 m above the seabed.
 3. Press **Play**: they flutter-kick at a speed-matched cadence, with the regulator in the mouth and bursts of bubbles on each exhale. Caustics move on the sand in **Color**.
-4. In a **Water tank** or **Open water**, a person at the water's level swims at the surface: they tread water when still, swim breaststroke when slow and freestyle when faster.
+4. In a **Water tank** or **Open water**, a person in the water swims at the surface: they tread water when still, swim breaststroke when slow and freestyle when faster. Keyed above the surface, they drop in and come up.
+5. Pick what they do with **Swim** in the person's Appearance row: **Tread water**, a stroke, **Float on back**, **Dive / scuba**, or **Can't swim** (they struggle at the surface, then sink slowly to the bottom) and **Sink slowly**. In water shallow enough to stand in, Auto and Can't swim stand and wade instead. Props float or sink by weight: set **Physics › Floats / sinks** to make a crate sink or a rock float (for a person the Physics panel says what their Swim mode does instead) ([swim.md](swim.md#buoyancy-things-in-the-water-webstagebuoyancymjs)).
 
-**Limit:** no swim-style picker yet (the style follows the speed; [swim.md](swim.md) lists the scene fields). The fins read as thin lines from the side, small bubbles are 1-2 px at 960 px wide, and a low diver path goes straight through coral.
+**Limit:** a swimmer shows as clay (the lifelike body has no swim clips). The fins read as thin lines from the side, small bubbles are 1-2 px at 960 px wide, and a low diver path goes straight through coral.
 
 <a id="drive-mode-what-changed"></a>
 

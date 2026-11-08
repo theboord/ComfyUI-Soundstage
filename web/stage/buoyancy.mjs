@@ -1,0 +1,542 @@
+// Soundstage buoyancy: weight-based floating and sinking in a pool, a tank or the sea (the stage's _waterPhysics and
+// the swimmers' water track). Every object gets a density (kg/m3: the kind / material table below, overridden by the
+// Physics panel's mass, or by the per-object "Floats / sinks" density) and a volume from its bounds. The net vertical
+// force is (rho_water * V_submerged - m) g, with quadratic drag on the wetted part, added mass (the water it carries
+// along) and a little wave-radiation damping at the surface, so a float settles at its real waterline with an
+// under-damped bob and a heavy thing sinks at its terminal speed to the bottom.
+//
+// Determinism: a track is integrated once per actor per shot on fixed sub-steps from its keys (precomputed, cached on
+// the keys by the stage like _floatsInShot), and every frame is a lookup: scrubbing to a frame gives the same pose
+// whatever was shown before. Nothing reads the clock or Math.random; per-person variation is seeded from a stable key (stage._seedKey: a stored seed, or the kind and name; not the clock-made id).
+//
+// Numbers (fresh water 1000, people 985 inhaled / 1040-1045 exhaled, wood 150-700 and waterlogged toward 1000-1200,
+// rock 2650, steel 7850, limp body sinking 0.1-0.35 m/s, a car floating ~30-120 s then going down nose first) are from
+// the research notes in docs/swim.md (Siri 1961, Brozek 1963, USDA Wood Handbook, Hoerner drag, Giesbrecht &
+// McDonald 2010, Pia 1974). Film compression: waterlogging and car flooding run on tens of seconds, not hours or
+// minutes, and a non-swimmer struggles for seconds rather than the 20-60 s of a real drowning, so a shot shows it.
+
+export const RHO_WATER = 1000;
+export const G = 9.81;
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const hash01 = (s, k = 0) => { const x = Math.sin((s + 1) * 127.1 + k * 311.7) * 43758.5453; return x - Math.floor(x); };
+
+/** Submerged volume fraction of a shape whose bottom is s (0..1) of its height under water. */
+export const SHAPES = {
+  box: (s) => clamp(s, 0, 1),
+  sphere: (s) => { s = clamp(s, 0, 1); return s * s * (3 - 2 * s); },
+  // a log lying on its side (circular cross-section)
+  log: (s) => { s = clamp(s, 0, 1); const th = 2 * Math.acos(1 - 2 * s); return (th - Math.sin(th)) / (2 * Math.PI); },
+};
+
+/**
+ * Per kind: rho (kg/m3, the object as a whole: a crate is slats and air), fill (its solid volume over its bounding
+ * box), shape (how the submerged volume grows with depth), cd (drag coefficient), ca (added-mass coefficient), zeta
+ * (bob damping ratio at the surface), and for things that soak or flood, sat (the density it tends to) over tau s.
+ * what: the words the Physics panel shows.
+ */
+export const KIND_BUOYANCY = {
+  crate: { rho: 400, sat: 950, tau: 90, cd: 1.05, ca: 0.6, zeta: 0.15, what: "wooden crate (soaks slowly, still floats)" },
+  box: { rho: 180, sat: 1150, tau: 20, cd: 1.05, ca: 0.6, zeta: 0.15, what: "cardboard box (soaks through and sinks)" },
+  sphere: { rho: 110, fill: Math.PI / 6, shape: "sphere", cd: 0.47, ca: 0.5, zeta: 0.06, what: "inflated ball" },
+  rock: { rho: 2650, fill: 0.55, cd: 0.8, ca: 0.5, zeta: 0.1, what: "rock (granite)" },
+  cube: { rho: 2400, cd: 1.05, ca: 0.6, zeta: 0.1, what: "concrete block" },
+  pyramid: { rho: 2400, fill: 1 / 3, cd: 0.8, ca: 0.5, zeta: 0.1, what: "concrete" },
+  wall: { rho: 2400, cd: 1.1, ca: 0.6, zeta: 0.1, what: "concrete" },
+  fire: { rho: 2400, fill: 0.4, cd: 1, ca: 0.5, zeta: 0.1, what: "stone fire pit" },
+  flashlight: { rho: 1500, fill: 0.7, cd: 0.9, ca: 0.5, zeta: 0.1, what: "metal torch" },
+  lamp: { rho: 3000, fill: 0.08, cd: 1, ca: 0.6, zeta: 0.1, what: "metal lamp post" },
+  bicycle: { rho: 3000, fill: 0.04, cd: 1.1, ca: 0.6, zeta: 0.1, what: "steel bicycle" },
+  motorcycle: { rho: 2600, fill: 0.18, cd: 1, ca: 0.6, zeta: 0.1, what: "motorcycle (metal)" },
+  tv: { rho: 1600, fill: 0.8, cd: 1.05, ca: 0.6, zeta: 0.1, what: "television (glass, metal)" },
+  cone: { rho: 1350, fill: 0.15, cd: 0.9, ca: 0.5, zeta: 0.1, what: "PVC traffic cone" },
+  chair: { rho: 600, fill: 0.25, cd: 1.1, ca: 0.6, zeta: 0.18, what: "wooden chair" },
+  stool: { rho: 600, fill: 0.25, cd: 1.1, ca: 0.6, zeta: 0.18, what: "wooden stool" },
+  table: { rho: 650, fill: 0.25, cd: 1.15, ca: 0.6, zeta: 0.18, what: "wooden table" },
+  coffee_table: { rho: 650, fill: 0.3, cd: 1.15, ca: 0.6, zeta: 0.18, what: "wooden table" },
+  desk: { rho: 650, fill: 0.4, cd: 1.15, ca: 0.6, zeta: 0.18, what: "wooden desk" },
+  bench: { rho: 650, fill: 0.3, cd: 1.15, ca: 0.6, zeta: 0.18, what: "wooden bench" },
+  armchair: { rho: 300, sat: 1050, tau: 60, fill: 0.6, cd: 1.1, ca: 0.6, zeta: 0.2, what: "upholstered chair (soaks, then sinks)" },
+  cylinder: { rho: 700, fill: Math.PI / 4, cd: 1, ca: 0.8, zeta: 0.15, what: "wooden log" },
+  tree: { rho: 600, fill: 0.15, cd: 1.1, ca: 0.8, zeta: 0.2, what: "wood (a tree)" },
+  bush: { rho: 450, fill: 0.2, cd: 1.2, ca: 0.6, zeta: 0.25, what: "brush" },
+  houseplant: { rho: 1250, fill: 0.4, cd: 1, ca: 0.5, zeta: 0.1, what: "potted plant (soil)" },
+  // people off a swim plan (video mocap): air in the lungs, the face just out
+  man: { rho: 985, fill: 0.28, cd: 1, ca: 0.3, zeta: 0.3, what: "person (air in the lungs)" },
+  woman: { rho: 985, fill: 0.28, cd: 1, ca: 0.3, zeta: 0.3, what: "person (air in the lungs)" },
+  child: { rho: 985, fill: 0.28, cd: 1, ca: 0.3, zeta: 0.3, what: "person (air in the lungs)" },
+  // animals paddle with their head up: their own buoyancy plus the paddling holds them ~70% under
+  dog: { rho: 720, fill: 0.35, cd: 1, ca: 0.3, zeta: 0.3, what: "dog (paddling)" },
+  cat: { rho: 720, fill: 0.35, cd: 1, ca: 0.3, zeta: 0.3, what: "cat (paddling)" },
+  horse: { rho: 720, fill: 0.35, cd: 1, ca: 0.3, zeta: 0.3, what: "horse (swimming)" },
+  bird: { rho: 300, fill: 0.3, cd: 1, ca: 0.3, zeta: 0.3, what: "water bird" },
+};
+export const DEFAULT_BUOYANCY = { rho: 700, fill: 1, shape: "box", cd: 1.05, ca: 0.6, zeta: 0.15, what: "wood (default)" };
+/** Cars (sealed cabin air): float high at first, then flood (density toward sat over tau s) and go down nose first. */
+export const CAR_BUOYANCY = { fill: 0.6, sat: 2400, tau: 40, cd: 1.1, ca: 0.6, zeta: 0.25, what: "car (floats, then floods)" };
+export const CAR_KINDS = new Set(["car", "hatchback", "sports_car", "police_car", "truck", "suv", "van", "jeep", "bus", "taxi"]);
+const CAR_MASS = { car: 1450, hatchback: 1200, sports_car: 1500, police_car: 1900, truck: 2700, suv: 2100, van: 2200, jeep: 1900, bus: 12000, taxi: 1500 };
+
+/** Floats / sinks presets for the Physics panel (density kg/m3; "auto" = the kind's own). */
+export const DENSITY_PRESETS = [
+  ["auto", "Auto (by kind)", null],
+  ["foam", "Floats high (foam, 100)", 100],
+  ["wood", "Floats (wood, 500)", 500],
+  ["low", "Floats low (900)", 900],
+  ["neutral", "Neutral (1000)", 1000],
+  ["slow", "Sinks slowly (1100)", 1100],
+  ["stone", "Sinks (stone, 2600)", 2600],
+  ["metal", "Sinks fast (steel, 7850)", 7850],
+];
+
+/** A density from a number, a numeric string or a preset name; null for "auto" / junk. */
+export function densityValue(v) {
+  if (v == null || v === "" || v === "auto") return null;
+  const pre = DENSITY_PRESETS.find((p) => p[0] === v);
+  if (pre) return pre[2];
+  const n = +v;
+  return Number.isFinite(n) && n > 0 ? clamp(n, 20, 20000) : null;
+}
+
+/**
+ * The buoyant body of a prop / animal / vehicle: {rho (at entry), m, V, h, A (horizontal area for drag), shape, cd,
+ * ca, zeta, sat, tau, source ("density" | "mass" | "kind"), what}. size = [w, h, d] (m, its local box). opts.density
+ * (kg/m3, the per-object override) wins over opts.mass (kg, the Physics panel's mass), which wins over the kind table.
+ */
+export function bodyOf(kind, size, { density = null, mass = null, sinking = false, struggle = 0 } = {}) {
+  const car = CAR_KINDS.has(kind);
+  const spec = { ...DEFAULT_BUOYANCY, ...(car ? CAR_BUOYANCY : KIND_BUOYANCY[kind] || {}) };
+  const [w, h, d] = size.map((x) => Math.max(0.02, +x || 0));
+  const V = Math.max(1e-4, w * h * d * (spec.fill ?? 1));
+  let rho = spec.rho ?? 700, source = "kind";
+  if (car) rho = (CAR_MASS[kind] || 1500) / V;
+  const ov = densityValue(density);
+  if (ov != null) { rho = ov; source = "density"; }
+  else if (Number.isFinite(+mass) && mass !== null && mass !== "" && +mass > 0) { rho = clamp(+mass / V, 20, 20000); source = "mass"; }
+  // An animal set to Can't swim / Sink slowly: it floats (paddling, its own density) for `struggle` s from the moment it
+  // meets the water, then its density goes to sinkRho over ~1.5 s (the lungs fill) and it sinks slowly to the bottom.
+  const sink = sinking ? { sinkRho: Math.max(rho * 1.02, 1025), sinkAfter: Math.max(0, +struggle || 0) } : {};
+  if (sinking) source = "sinking";
+  const A = spec.shape === "sphere" ? Math.PI * (Math.min(w, d) / 2) ** 2 : w * d * Math.pow(spec.fill ?? 1, 2 / 3);
+  // A density override or a mass override is the object as it is now: no soaking on top (unless it was set to soak)
+  const soak = source === "kind" && spec.sat ? { sat: spec.sat, tau: spec.tau } : {};
+  return { kind, rho, m: rho * V, V, h, A, shape: spec.shape || "box", cd: spec.cd, ca: spec.ca, zeta: spec.zeta, ...soak, ...sink, source, what: spec.what, car };
+}
+
+/** Density after t s in the water (soaking / flooding: an exponential approach to sat; a sinking animal: its own
+ *  density for sinkAfter s, then up to sinkRho over 1.5 s). */
+export function densityAt(body, t) {
+  if (body.sinkRho) return body.rho + (body.sinkRho - body.rho) * sstep(body.sinkAfter, body.sinkAfter + 1.5, t);
+  if (!body.sat || !(t > 0)) return body.rho;
+  return body.sat - (body.sat - body.rho) * Math.exp(-t / body.tau);
+}
+
+/** Fraction of the height under water when floating at density rho (1 = it sinks). */
+export function floatFraction(body, rho = body.rho) {
+  const want = rho / RHO_WATER, f = SHAPES[body.shape] || SHAPES.box;
+  if (want >= 1) return 1;
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (f(mid) < want) lo = mid; else hi = mid; }
+  return (lo + hi) / 2;
+}
+
+/** Where its bottom rests when placed in the water: at its waterline if it floats, else on the floor. */
+export function restBottom(body, level, floor = 0, rho = body.rho) {
+  const s = floatFraction(body, rho);
+  return s >= 1 ? floor : Math.max(floor, level - s * body.h);
+}
+
+/** Terminal sinking (+) or rising (-) speed fully submerged, m/s (quadratic drag): sqrt(2 |dRho| V g / (rho_w Cd A)). */
+export function terminalSpeed(body, rho = body.rho) {
+  const dr = rho - RHO_WATER;
+  return Math.sign(dr) * Math.sqrt(2 * Math.abs(dr) * body.V * G / (RHO_WATER * body.cd * body.A));
+}
+
+/** One fixed sub-step of the vertical motion of a body with its bottom at y, speed v (up +), density rho. */
+function step(body, st, rho, level, floor, dt) {
+  const f = SHAPES[body.shape] || SHAPES.box;
+  const s = clamp((level - st.y) / body.h, 0, 1), fr = f(s), Vs = body.V * fr;
+  const m = rho * body.V, M = m + body.ca * RHO_WATER * Vs;
+  let F = (RHO_WATER * Vs - m) * G - 0.5 * RHO_WATER * body.cd * body.A * fr * st.v * Math.abs(st.v);
+  if (s > 0 && s < 1) {   // piercing the surface: the waves it makes take energy out (an under-damped bob)
+    const e = 0.02, awp = body.V * (f(Math.min(1, s + e)) - f(Math.max(0, s - e))) / ((Math.min(1, s + e) - Math.max(0, s - e)) * body.h);
+    F -= 2 * body.zeta * Math.sqrt(RHO_WATER * G * Math.max(1e-6, awp) * M) * st.v;
+  }
+  st.v += (F / M) * dt;
+  st.y += st.v * dt;
+  if (st.y < floor) { st.y = floor; if (st.v < 0) st.v = 0; }
+  // Entry: the water it pushes aside is set moving with it (the added mass grows as it goes in, von Karman's slamming
+  // load): momentum is shared, (m + Ma) v kept, so a light float is stopped near the surface (a ball barely goes
+  // under) and a dense rock hardly notices. For a light float the splash and spray carry off more than the added mass
+  // (slam up to 2.5x it, below ~500 kg/m3); anything denser than ~1200 just shares momentum with its added mass.
+  if (st.v < 0) {
+    const s2 = clamp((level - st.y) / body.h, 0, 1), Ma0 = body.ca * RHO_WATER * Vs, Ma1 = body.ca * RHO_WATER * body.V * f(s2);
+    const slam = 1 + 1.5 * clamp((1200 - rho) / 700, 0, 1);
+    if (Ma1 > Ma0) st.v *= (m + slam * Ma0) / (m + slam * Ma1);
+  }
+  return s;
+}
+
+export const SUBSTEPS = 12;
+
+/**
+ * The whole-shot vertical track of a body's bottom. keyY[f]: its keyed bottom height (with the Physics start height);
+ * over[f]: is it over the water at f. Out of the water it is on its keys. The first frame over the water it is let go:
+ * keyed above the surface it drops in (with the keyed vertical speed, e.g. off a baked fall); keyed under it it starts
+ * there and rises or sinks; keyed at the floor (0, the default placement) from the first frame of the shot it is placed
+ * in the water: floating at its waterline or on the bottom. Coming in from outside later (a car driven in) it goes on
+ * from its keyed height, so the entry is continuous: then it floats up or stays down. Returns {y, v, s (fraction of its height under), rho, entry (frame or -1), splash (the
+ * frame it hits the surface, or -1), speedIn (m/s down at the surface), landed (the first frame it is on the floor
+ * after entry, or -1)}.
+ */
+export function floatTrack(body, { level, floor = 0, fps = 24, keyY, over }) {
+  const n = keyY.length, dt = 1 / (fps * SUBSTEPS);
+  const y = new Array(n), v = new Array(n), S = new Array(n), R = new Array(n);
+  let free = false, entry = -1, splash = -1, speedIn = 0, tw = 0, landed = -1;
+  const st = { y: 0, v: 0 };
+  for (let f = 0; f < n; f++) {
+    if (!over[f]) {
+      free = false;
+      st.y = keyY[f]; st.v = f > 0 ? (keyY[f] - keyY[f - 1]) * fps : 0;
+      y[f] = st.y; v[f] = st.v; S[f] = 0; R[f] = body.rho;
+      continue;
+    }
+    if (!free) {
+      free = true; tw = 0;
+      if (entry < 0) entry = f;
+      const ky = keyY[f];
+      // placed in the water (keyed at the floor from the start of the shot); driven or carried in from outside at the
+      // floor (f > 0: the frame before was off the water) it goes on from where its keys have it, then rises or sinks
+      if (ky <= floor + 0.02 && f === 0) { st.y = restBottom(body, level, floor); st.v = 0; }
+      else { st.y = ky; st.v = f > 0 ? (keyY[f] - keyY[f - 1]) * fps : 0; }   // let go: the keyed (or baked) speed
+    } else {
+      for (let k = 0; k < SUBSTEPS; k++) {
+        const above = st.y > level;
+        const s = step(body, st, densityAt(body, tw), level, floor, dt);
+        if (s > 0) tw += dt;
+        if (above && st.y <= level && splash < 0) { splash = f; speedIn = -st.v; }
+      }
+    }
+    y[f] = st.y; v[f] = st.v; S[f] = clamp((level - st.y) / body.h, 0, 1); R[f] = densityAt(body, tw);
+    if (landed < 0 && st.y <= floor + 1e-6 && f > entry) landed = f;
+  }
+  return { y, v, s: S, rho: R, entry, splash, speedIn, landed };
+}
+
+// ------------------------------------------------------------------ people in the water
+/** Swim control per person (the person panel's Swim, stage.setSwim): what they do in the water. */
+export const SWIM_MODES = [
+  ["auto", "Auto (swims as keyed)"], ["tread", "Tread water"], ["breaststroke", "Swim: breaststroke"], ["freestyle", "Swim: freestyle"],
+  ["back", "Float on back"], ["dive", "Dive / scuba (neutral)"], ["flutter", "Underwater: flutter kick"], ["frog", "Underwater: frog kick"],
+  ["cant", "Can't swim / not treading"], ["sink", "Sink slowly (unconscious)"],
+];
+const MODE_IDS = new Set(SWIM_MODES.map((m) => m[0]).concat(["hover", "stroke"]));
+/** A person's swim mode from a.swim ("off", the old "doesn't swim", is Can't swim now: they don't float like a cork). */
+export function swimMode(v) {
+  if (v === "off") return "cant";
+  return MODE_IDS.has(v) ? v : "auto";
+}
+/** How long a non-swimmer (a person or an animal set to Can't swim) struggles at the surface: a seeded 2-3.5 s
+ *  (film-compressed; real: 20-60 s). */
+export const struggleSeconds = (seed) => 2 + 1.5 * hash01(seed, 3);
+
+/** The human body for the water: ~75 kg at 1.8 m, density 985 with air in the lungs, 1045 breathed out (Siri). */
+export function personBody(height = 1.8, build = 1) {
+  const k = height / 1.8, m = 75 * k * k * k * build;
+  // limp and splayed, clothes on: Cd x A ~ 0.9 m2 (a 0.1-0.3 m/s sink); upright treading area 0.08 m2 at the waterline
+  return { m, Vlung: m / 985, Vout: m / 1045, cdA: 0.9 * k * k, ca: 0.3 };
+}
+const PERSON_RHO = { inhaled: 985, exhaled: 1045 };
+const SINK_VMAX = 1.5;   // m/s: the fastest a sinking person goes down (sinkTrack)
+
+/**
+ * A person's own density in the water (kg/m3, breathed out) from the Physics panel, or null for the default (1045): a
+ * density override (a number, a numeric string or a preset name: densityValue) wins over a mass (kg), which is taken
+ * over the body's own volume at that height (the 75 kg at 1.8 m body is the default 1045; 100 kg is ~1390, 1e9 caps at
+ * 20000). Junk (0, negative, NaN, Infinity, words) is ignored. Pure.
+ */
+export function personDensity(height = 1.8, { density = null, mass = null } = {}) {
+  const ov = densityValue(density);
+  if (ov != null) return ov;
+  const m = mass === null || mass === "" ? NaN : +mass;
+  if (!Number.isFinite(m) || !(m > 0)) return null;
+  return clamp(m / personBody(height).Vout, 20, 20000);
+}
+
+/**
+ * A sinking person's hips height after the slip under: integrated from rest at y0 (hips), density easing from 985 to
+ * 1045 over `exhale` s (the air goes), quadratic drag (limp, splayed), added mass, the floor at floorHips. Pure: same
+ * numbers for the same arguments.
+ */
+export function sinkTrack({ y0, floorHips, fps = 24, n, height = 1.8, exhale = 2.5, rho0 = PERSON_RHO.inhaled, rho = null }) {
+  // rho: the person's own density breathed out (personDensity; null = 1045): the whole curve moves with it, the body's
+  // volume stays its size (a heavier person of that height is denser), so a heavy one sinks faster, a light one floats
+  const end = Number.isFinite(rho) && rho > 0 ? rho : PERSON_RHO.exhaled, shift = end - PERSON_RHO.exhaled;
+  const B = personBody(height), dt = 1 / (fps * SUBSTEPS), Vb = B.m / PERSON_RHO.exhaled;
+  const out = new Array(n), vel = new Array(n);
+  let y = y0, v = 0, t = 0;
+  for (let f = 0; f < n; f++) {
+    out[f] = y; vel[f] = v;
+    for (let k = 0; k < SUBSTEPS; k++) {
+      const r = Math.max(20, rho0 + shift + (end - rho0 - shift) * sstep(0, exhale, t));
+      const m = end * Vb, V = m / r, M = m + B.ca * B.m;   // its mass; its volume with the air still in the lungs
+      const F = (RHO_WATER * V - m) * G - 0.5 * RHO_WATER * B.cdA * v * Math.abs(v);
+      v += (F / M) * dt;
+      // never faster than a limp body can go down head-first (1.5 m/s): a person of 1e12 kg/m3 or 1e300 kg still sinks
+      // smoothly, ~6 cm a frame (was: the hips 0.71 m in one frame, the floor in four)
+      if (v < -SINK_VMAX) v = -SINK_VMAX;
+      y += v * dt; t += dt;
+      if (y < floorHips) { y = floorHips; v = 0; }
+      if (y > y0) { y = y0; if (v > 0) v = 0; }   // lighter than the water: held at the surface where they slipped under
+    }
+  }
+  return { y: out, v: vel };
+}
+
+/** Can a person this tall stand on the bottom here with the mouth out (the chin is at ~0.87 of the height)? */
+export function canStand(depth, height = 1.8) {
+  return depth <= 0.86 * height;
+}
+
+/**
+ * A feet-first drop into the water from a keyed height (feet at ky, vertical speed v0, up +): free fall to the
+ * surface, then the plunge: the water stops the body over a depth that grows with the speed it hit at (~0.35 m plus
+ * 0.75 of the drop height: a 2 m drop takes the feet ~1.9 m down), capped `clear` above the floor, decelerating
+ * evenly. Returns {feet[i] (feet height, i frames from the start, up to the bottom of the plunge), splash (index of the
+ * first frame at or under the surface, -1 if it never gets there in n frames), bottom (index of the deepest frame),
+ * vin (m/s down at the surface), depth (the plunge depth of the feet under the surface)}. Pure.
+ */
+export function plungeTrack({ ky, v0 = 0, level, floor = 0, fps = 24, n, height = 1.8, clear = 0.3 }) {
+  const k = height / 1.8, feet = [];
+  const disc = v0 * v0 + 2 * G * Math.max(0, ky - level);
+  const tS = (v0 + Math.sqrt(disc)) / G, vin = Math.max(0.5, Math.sqrt(disc));
+  const hEff = vin * vin / (2 * G);
+  const depth = Math.max(0.05, Math.min(0.35 * k + 0.75 * hEff, level - floor - clear));
+  const tD = Math.max(0.25, 2 * depth / vin);
+  let splash = -1, bottom = -1;
+  for (let i = 0; i < n; i++) {
+    const t = i / fps;
+    if (t < tS) { feet.push(ky + v0 * t - 0.5 * G * t * t); continue; }
+    if (splash < 0) splash = i;
+    const u = Math.min(t - tS, tD);
+    feet.push(level - (vin * u - vin * u * u / (2 * tD)));
+    if (t - tS >= tD) { bottom = i; break; }
+  }
+  if (bottom < 0) bottom = feet.length - 1;
+  return { feet, splash, bottom, vin, depth };
+}
+
+/**
+ * A person's water track for the swim plan (swim.mjs planSwim's styles / hipsY / hipsW): per frame the pose style that
+ * overrides the speed-based one (or null), the hips height it puts them at (world y) and how much of it (0..1), the
+ * swim mode ("surface" | "under" | null) and ground[f] (true: they stand / wade on the bottom there, off the swim
+ * plan: the water is shallow enough for them, see canStand). In = {mode (swimMode), keyY[f] (keyed feet height),
+ * over[f], level, floor, fps, height, hipY (hips over the feet standing), seed, standHeight (their real height for
+ * canStand: the kind's default when none is set)}. Each run of frames over the water starts fresh:
+ *   keyed above the surface they drop in feet first (plungeTrack: the plunge depth scales with the drop and stops
+ *     above the floor), held in the streamlined "fall" pose on the way down, then kick up ("kickup") to the surface:
+ *     never a standing or walking pose under water;
+ *   keyed fully under it (not on the floor) a swimmer kicks up to the surface (~0.6 m/s);
+ *   tread / auto / strokes: then as before, at the surface (the speed picks tread, breaststroke or freestyle);
+ *   back: floating on the back, legs down ~35 degrees, a slow breathing heave;
+ *   cant: the instinctive drowning response (upright, head back, mouth at the water, arms pressing down, no kick) for
+ *     a seeded 2-3.5 s from the moment they enter the water (a drop in: flailing back up from the plunge counts), then
+ *     they slip under and sink slowly and limp (~0.2-0.3 m/s), and settle on the bottom (no walking); keyed under the
+ *     surface they sink from there;
+ *   sink: no struggle, limp from the surface (or the bottom of the plunge) down.
+ * In water they can stand in (canStand), auto and cant stand / wade on the bottom (ground; after a drop in: the
+ * plunge, then "wade" standing on the bottom with the head out); the other modes swim as chosen.
+ * rho (optional, personDensity): their own density breathed out, from the Physics panel's mass or density: the sink
+ * (Can't swim, Sink slowly) is that much faster or slower, and lighter than the water they stay at the surface.
+ * Underwater modes (flutter, frog, stroke) and dive / hover: keyed above the surface they drop in too (flutter and
+ * frog then kick up to the surface like the others; a diver eases from the bottom of the plunge to the depth the stage
+ * holds them at); keyed in the water they are not tracked here (the stage keeps them at their keyed depth).
+ * support[f] (optional): the height of a walkable surface under the keyed feet besides the water's floor (a dock, a
+ * boat's deck, a platform), or null. Keyed on it (feet from `below[f]` m under it, default 5 cm, a boat's deck heaving
+ * up past keyed feet: the stage passes 0.9, to 1.5 m over it: a hop, a jump, a key a little high; keyed at the floor,
+ * 0, the way the app places and drags people: onto it), and it is above the water or shallow enough to stand on, they
+ * are off the water there: supported[f] and ground[f], standing at standY[f] = the support plus how far the keys are
+ * above their lowest point in that stretch (so a hop arcs over the dock, a deck's heave carries them up and down, and a
+ * key 0.2 m high stands on it). Over the water
+ * with nothing under them, the fall starts where the keyed path leaves its support (the first frame off it) or, keyed
+ * up there from the start of the shot, at the last frame before the keys start to go down (a hold, then a step off:
+ * held[f] and ground[f] until then); keys that never go down drop at once.
+ */
+export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, height = 1.8, hipY = 0.95, seed = 1, standHeight = height, support = null, below = null, keyedUnder = null, rho = null }) {
+  const n = keyY.length, k = height / 1.8;
+  const styles = new Array(n).fill(null), hipsY = new Array(n).fill(null), hipsW = new Array(n).fill(0), modes = new Array(n).fill(null);
+  const ground = new Array(n).fill(false), supported = new Array(n).fill(false), held = new Array(n).fill(false), standY = new Array(n).fill(null);
+  const diver = mode === "dive" || mode === "hover", keyedDepth = diver || mode === "flutter" || mode === "frog" || mode === "stroke";
+  // On a dock, a deck or anything else walkable under the feet: on their keys there, not in the water.
+  const wet = over.slice();
+  if (support) for (let f = 0; f < n; f++) {
+    const s = support[f];
+    if (!over[f] || s == null || !(s > floor + 0.05)) continue;
+    const d = keyY[f] <= floor + 0.05 ? 0 : keyY[f] - s;   // keyed at the floor (placed, dragged): onto what is there
+    if (d < -(below?.[f] ?? 0.05) || d > 1.5) continue;
+    if (s < level - 0.05 && !canStand(level - s, standHeight)) continue;   // a ledge too deep to stand on: they swim
+    supported[f] = true; ground[f] = true; wet[f] = false;
+  }
+  // Each stretch on a support: they stand on it, plus the keys' rise over their lowest point there (a hop, a jump).
+  for (let f = 0; f < n;) {
+    if (!supported[f]) { f++; continue; }
+    let e = f, base = Infinity;
+    for (; e < n && supported[e]; e++) if (keyY[e] > floor + 0.05) base = Math.min(base, keyY[e]);
+    for (let i = f; i < e; i++) standY[i] = support[i] + (keyY[i] > floor + 0.05 ? Math.max(0, keyY[i] - base) : 0);
+    f = e;
+  }
+  const treadHips = level - 0.52 * k, struggleHips = level - 0.6 * k, backHips = level - 0.16 * k;
+  const sinks = mode === "cant" || mode === "sink";
+  const shallow = canStand(level - floor, standHeight) && (mode === "auto" || mode === "cant");
+  const blend = Math.max(1, Math.round(0.8 * fps));
+  const modeOf = (feet) => feet + 0.9 * height < level ? "under" : "surface";
+  let f = 0;
+  while (f < n) {
+    if (!wet[f]) { f++; continue; }
+    let f0 = f;
+    while (f < n && wet[f]) f++;
+    if (keyY[f0] > level + 0.05 && f0 === 0) {
+      // Keyed up there from the start: they follow their keys until the path starts to go down (a timed jump), then
+      // fall from the last frame at the held height. After a support or the edge (f0 > 0) the fall starts at once.
+      let r = -1;
+      for (let i = f0 + 1; i < f && r < 0; i++) if (keyY[i] < keyY[i - 1] - 1e-3) r = i - 1;
+      if (r > f0) { for (let i = f0; i < r; i++) { held[i] = true; ground[i] = true; } f0 = r; }
+    }
+    const m = f - f0;
+    // stepped off a dock or a deck they were standing on (keyed at 0 on it, or a little low): the drop starts where
+    // they stood, not from the keys' height (which would put them straight on the bottom or at the surface)
+    const ky = f0 > 0 && supported[f0 - 1] && standY[f0 - 1] > keyY[f0] ? standY[f0 - 1] : keyY[f0];
+    // Before they are at the surface: pre[i] = feet height, preMode[i], preStyle[i], for i < up.
+    const pre = [], preMode = [], preStyle = [];
+    let up = 0, under = false, entered = 0;   // entered: the run-relative frame they meet the water
+    // An underwater stroke (flutter, frog, stroke) dropped in and then keyed under: the drop covers the fall and the
+    // plunge (and, keyed under only later, the kick up and the surface until then), then hands back to the keyed depth
+    // (kUnder: the run-relative frame the keys are first under the surface; -1 if they never are in this run).
+    let kUnder = -1;
+    // Keyed under for good, not the keys passing down through the depth on their way to the floor (keys at 0.3 m, just
+    // under the 0.35 m "on the floor" mark: they were picked up for a frame or two mid-fall, eased to, then dropped,
+    // a 0.9 m pop at the hips): under for at least the blend, or to the end of the run.
+    const isUnder = (j) => (keyedUnder ? !!keyedUnder[j] : keyY[j] > floor + 0.35 && keyY[j] + height < level);
+    if (keyedDepth && !diver && ky > level + 0.05) for (let i = 1; i < m && kUnder < 0; i++) {
+      if (!isUnder(f0 + i)) continue;
+      let q = i;
+      while (q < m && q - i < blend && isUnder(f0 + q)) q++;
+      if (q - i >= blend || q === m) kUnder = i;
+    }
+    if (ky > level + 0.05) {   // a drop: feet first through the surface, the plunge, then back up
+      const v0 = f0 > 0 ? (keyY[f0] - keyY[f0 - 1]) * fps : 0;   // the keyed (or baked) speed
+      const pl = plungeTrack({ ky, v0, level, floor, fps, n: m, height, clear: shallow ? 0.02 : 0.3 * k });
+      entered = Math.max(0, pl.splash);
+      for (let i = 0; i < pl.feet.length; i++) { pre.push(pl.feet[i]); preMode.push(modeOf(pl.feet[i])); preStyle.push("fall"); }
+      const fb = pl.feet[pl.feet.length - 1];
+      if (kUnder >= 0 && kUnder <= pre.length + blend) {
+        // keyed under by the bottom of the plunge: ease from there to the keyed depth (below), no kick up
+      } else if (shallow) {
+        // they land on their feet on the bottom and stand up out of the crouch, head out of the water
+        const rise = Math.round(0.5 * fps);
+        for (let i = 0; i < rise && pre.length < m; i++) { const e = sstep(0, 1, (i + 1) / rise); pre.push(fb + (floor - fb) * e); preMode.push("surface"); preStyle.push("wade"); }
+      } else if (mode !== "sink" && !diver) {
+        // swimmers kick up (~0.8 m/s); a non-swimmer flails back up on the air in the lungs (~0.4 m/s)
+        const target = (mode === "cant" ? struggleHips : treadHips) - hipY;
+        const speed = mode === "cant" ? 0.4 : 0.8, upN = Math.max(1, Math.round(Math.max(0.6, (target - fb) / speed) * fps));
+        for (let i = 1; i <= upN && pre.length < m; i++) {
+          const y = fb + (target - fb) * sstep(0, 1, i / upN);
+          pre.push(y); preMode.push(modeOf(y)); preStyle.push(mode === "cant" ? "struggle" : "kickup");
+        }
+      }
+      up = Math.min(m, pre.length);
+    } else if (keyedDepth) {   // an underwater mode keyed in the water: the stage keeps them at their keyed depth
+      continue;
+    } else if (shallow) {   // standing in water they can stand in: on the bottom, off the swim plan (the gait walks them)
+      for (let i = 0; i < m; i++) ground[f0 + i] = true;
+      continue;
+    } else if (ky > floor + 0.35 && ky + height < level && !sinks) {   // keyed under: kick up to the surface
+      const target = treadHips - hipY, upN = Math.max(1, Math.round((target - ky) / 0.6 * fps));
+      up = Math.min(m, upN);
+      for (let i = 0; i < up; i++) { pre.push(ky + (target - ky) * sstep(0, 1, i / upN)); preMode.push("under"); preStyle.push("kickup"); }
+    } else if (sinks && ky > floor + 0.02 && ky + height < level) under = true;   // can't swim, keyed under: sinks from there
+    for (let i = 0; i < up; i++) {
+      const fr = f0 + i;
+      styles[fr] = preStyle[i];
+      hipsY[fr] = pre[i] + hipY; hipsW[fr] = 1; modes[fr] = preMode[i];
+    }
+    const from = up > 0 ? pre[up - 1] + hipY : null;   // where the drop / rise left the hips
+    if (shallow) {   // after a drop into shallow water: standing on the bottom, the head out
+      for (let i = up; i < m; i++) { const fr = f0 + i; styles[fr] = "wade"; hipsY[fr] = floor + hipY; hipsW[fr] = 1; modes[fr] = "surface"; }
+      continue;
+    }
+    if (kUnder >= 0) {
+      // from the drop (or the surface) to the keyed underwater path: the hips ease to it, then the stage keeps the keyed
+      // depth (no track there), the same frames whatever the order
+      const k0 = Math.max(up, kUnder), y0 = from != null && kUnder <= up + blend ? from : treadHips;
+      for (let i = up; i < Math.min(k0, m); i++) {   // at the surface until the keys go under
+        const fr = f0 + i, e = from == null ? 1 : sstep(0, 1, (i - up) / blend);
+        if (kUnder <= up + blend) { modes[fr] = "under"; hipsY[fr] = from; hipsW[fr] = 1; continue; }   // keyed under in a moment: hold there
+        modes[fr] = "surface"; styles[fr] = "tread";
+        if (from != null && e < 1) { hipsY[fr] = from; hipsW[fr] = 1 - e; }
+      }
+      for (let i = k0; i < Math.min(m, k0 + blend); i++) {
+        const fr = f0 + i, e = sstep(0, 1, (i - k0) / blend);
+        modes[fr] = "under"; hipsY[fr] = y0; hipsW[fr] = 1 - e;
+      }
+      continue;
+    }
+    if (!sinks) {
+      for (let i = up; i < m; i++) {
+        const fr = f0 + i, t = i / fps, e = from == null ? 1 : sstep(0, 1, (i - up) / blend);
+        modes[fr] = diver ? "under" : "surface";
+        if (diver) {   // from the bottom of the plunge to the depth the stage holds the diver at
+          if (from != null && e < 1) { hipsY[fr] = from; hipsW[fr] = 1 - e; }
+        } else if (mode === "back") {
+          const yb = backHips + 0.012 * k * Math.sin(2 * Math.PI * 0.25 * t + seed);
+          styles[fr] = e < 0.5 ? "tread" : "backfloat"; hipsY[fr] = from == null ? yb : from + (yb - from) * e; hipsW[fr] = 1;
+        } else {
+          styles[fr] = mode === "tread" || (from != null && e < 0.5) ? "tread" : null;
+          if (from != null && e < 1) { hipsY[fr] = from; hipsW[fr] = 1 - e; }
+        }
+      }
+      continue;
+    }
+    // Can't swim / Sink slowly: the struggle, the slip under, the slow sink and the limp settle on the bottom.
+    // The struggle is timed from the moment they meet the water (a drop in flails back up inside it).
+    const tStruggle = mode === "cant" && !under ? struggleSeconds(seed) : 0;
+    const fs = Math.max(up, entered + Math.round(tStruggle * fps));
+    const floorHips = floor + hipY * 0.92;   // feet down, knees soft
+    const yEnd = from != null ? from : null;
+    const y0 = under ? ky + hipY : mode === "cant" ? (yEnd != null && up >= fs ? yEnd : struggleHips) : yEnd != null ? Math.min(yEnd, level - 0.55 * k) : level - 0.55 * k;
+    const sink = sinkTrack({ y0, floorHips, fps, n: Math.max(1, m - fs), height, exhale: mode === "cant" ? 1.5 : 3.5, rho0: mode === "cant" ? 1010 : 1000, rho });   // the struggle has emptied the lungs
+    // The tip onto the back starts as the feet near the bottom and is done just after they touch, ~1 s in all, the
+    // pose cross-fading from limp to lying the whole way (was: stood upright on the bottom ~0.7 s, then tipped in
+    // 0.5 s, still tipping when a 10 s shot ended): a slow sink to rest.
+    let landJ = -1;
+    for (let j = 0; j < sink.y.length; j++) if (sink.y[j] <= floorHips + 1e-6) { landJ = j; break; }
+    const iLand = landJ >= 0 ? fs + landJ : Infinity;
+    const tipA = iLand - Math.round(1.0 * fps), tipB = iLand + Math.round(0.1 * fps);
+    for (let i = up; i < m; i++) {
+      const fr = f0 + i, t = (i - up) / fps;
+      if (i < fs) {   // the struggle: the head bobs 3-10 cm at ~0.8 Hz with irregular dips under
+        const bob = 0.05 * k * Math.sin(2 * Math.PI * 0.8 * t + seed) - 0.07 * k * Math.pow(Math.max(0, Math.sin(2 * Math.PI * 0.31 * t + seed * 1.7)), 4);
+        const yIn = from != null && i - up < blend ? from + (struggleHips - from) * sstep(0, 1, (i - up) / blend) : struggleHips;
+        styles[fr] = "struggle"; hipsY[fr] = yIn + bob; hipsW[fr] = 1; modes[fr] = "surface";
+        continue;
+      }
+      const j = i - fs, y = sink.y[j];
+      // Near and on the bottom: the pose tips over onto the back (a weighted cross-fade, swim.mjs) while the hips go down
+      // with it; the stage keeps the clay's lowest point on the floor (swim.mjs), so the legs never go through.
+      const lie = landJ >= 0 ? sstep(tipA, tipB, i) : 0;   // (never reaching the bottom in the shot: no tip)
+      const slip = mode === "cant" && !under ? sstep(0, 2 * fps, j) : 1;   // the arms stop, the head goes under
+      const base = slip < 0.5 && up < fs ? "struggle" : "limp";
+      styles[fr] = lie <= 0 ? base : lie >= 1 ? "limp_floor" : { [base]: 1 - lie, limp_floor: lie };
+      hipsY[fr] = y + (floor + 0.14 * k - y) * lie; hipsW[fr] = 1;
+      modes[fr] = y + 0.75 * k > level ? "surface" : "under";
+    }
+    // The hips, the sink and the tip onto the back together, never down faster than SINK_VMAX (a very heavy person
+    // tips as they slip under: the two added up to 0.14 m a frame even with the sink itself capped). In order.
+    const cap = SINK_VMAX / fps;
+    for (let i = Math.max(up + 1, fs); i < m; i++) {
+      const fr = f0 + i;
+      if (hipsY[fr] != null && hipsY[fr - 1] != null && hipsY[fr] < hipsY[fr - 1] - cap) hipsY[fr] = hipsY[fr - 1] - cap;
+    }
+  }
+  return { styles, hipsY, hipsW, modes, ground, supported, held, standY };
+}
