@@ -9,14 +9,14 @@ export const REROLLS = 2;
 /** The badge for a check result: {text, tone: good | warn | bad | wait | none, title}. Mirrors framecheck.badge(). */
 export function badgeOf(res) {
   if (!res) return null;
-  if (res.pending) return { text: "Checking…", tone: "wait", title: "Comparing this frame with your clay (SAM 3.1)" };
+  if (res.pending) return { text: "Checking…", tone: "wait", title: "Comparing this frame with your blocking (SAM 3.1)" };
   if (res.error) return { text: "Check failed", tone: "none", title: String(res.error) };
   const pct = res.score == null ? "" : ` ${Math.round(100 * res.score)}%`;
   const why = res.why || "";
-  const counts = Object.entries(res.counts || {}).map(([k, c]) => `${k}: clay ${c.stage}, frame ${c.frame}`).join(" · ");
+  const counts = Object.entries(res.counts || {}).map(([k, c]) => `${k}: stage ${c.stage}, frame ${c.frame}`).join(" · ");
   const actors = (res.actors || []).map((a) => `${a.name} ${Math.round(100 * a.iou)}%`).join(", ");
   const title = [why, counts, actors && `Silhouette match: ${actors}`].filter(Boolean).join("\n");
-  if (res.verdict === "ok") return { text: `✓ Matches clay${pct}`, tone: "good", title };
+  if (res.verdict === "ok") return { text: `✓ Matches the blocking${pct}`, tone: "good", title };
   if (res.verdict === "loose") return { text: `≈ Loose${pct}`, tone: "warn", title };
   if (res.verdict === "flag") return { text: `⚠ ${why.split(";")[0] || "off the blocking"}`, tone: "bad", title };
   return { text: "–", tone: "none", title: why };

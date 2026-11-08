@@ -242,7 +242,7 @@ export class PosePanel {
       this.mcFile, this.mcAct,
       this._tool("sliders-horizontal", "Joints", "Move any joint, fingers included; every slider keys the pose at the playhead", () => this.focusSection("joints")));
     const hint = Object.assign(document.createElement("div"), { className: "note",
-      textContent: "Every slider keys the pose at the playhead. One key holds for the whole shot; add more at other frames and the pose eases between them (a head turn at 2 s). The video follows the clay pose." });
+      textContent: "Every slider keys the pose at the playhead. One key holds for the whole shot; add more at other frames and the pose eases between them (a head turn at 2 s). The video follows the stage pose." });
     this.el.append(head, lead, gallery, inter, mocap, hint);
     for (const grp of jointGroups()) {
       const d = document.createElement("details");

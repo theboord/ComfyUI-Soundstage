@@ -12,9 +12,9 @@ Regenerate this file and `soundstage/router/registry.json` with `python -m sound
 
 | Dropdown label | Kind | Licence | Notes |
 |---|---|---|---|
-| Krea 2 Turbo · local [<$1M] | local | Krea 2 Community License: commercial only if company revenue <$1M; moderation required | 8 steps cfg 1. control_image = stage depth steers the layout (Krea2 depth-control LoRA). Edit stage = the proven Soundstage look-still: img2img from the clay frame @0.85 + depth. Depth control needs the comfyui-krea2-controlnet pack. |
+| Krea 2 Turbo · local [<$1M] | local | Krea 2 Community License: commercial only if company revenue <$1M; moderation required | 8 steps cfg 1. control_image = stage depth steers the layout (Krea2 depth-control LoRA). Edit stage = the proven Soundstage look-still: img2img from the stage guide frame @0.85 + depth. Depth control needs the comfyui-krea2-controlnet pack. depth_lock (④ Frame "Lock to the stage depth"): start from the blurred Color pass at stage_denoise, held to the depth pass (no cast pictures). |
 | Z-Image Turbo · local | local | Apache 2.0 | Fastest commercial-safe previz model. 8 steps res_multistep. |
-| FLUX 3 Klein · local [<$5M] | local | FLUX Kommunity License: free non-commercial; commercial use of outputs OK if you+affiliates <$5M annual revenue | Edit = ReferenceMultiLatent (image + refs, 1 MP). Distilled template settings. |
+| FLUX 3 Klein · local [<$5M] | local | FLUX Kommunity License: free non-commercial; commercial use of outputs OK if you+affiliates <$5M annual revenue | Edit = ReferenceMultiLatent (image + refs, 1 MP). Distilled template settings. depth_lock (④ Frame "Lock to the stage depth"): a Krea 2 Turbo + depth-control LoRA pass on the Klein frame, held to the stage depth pass (optional krea_* weights). |
 | Nano Banana 2.1 · Google [API] | partner | Provider ToS via Comfy partner proxy (paid Comfy credits) |  |
 | Nano Banana 2 (Gemini 3.1 Flash Image) · Google [API] | partner | Provider ToS via Comfy partner proxy (paid Comfy credits) |  |
 | GPT Image 2.5 · OpenAI [API] | partner | Provider ToS via Comfy partner proxy (paid Comfy credits) |  |
@@ -30,8 +30,8 @@ Regenerate this file and `soundstage/router/registry.json` with `python -m sound
 
 | Dropdown label | Kind | Licence | Notes |
 |---|---|---|---|
-| Krea 2 Turbo · local [<$1M] | local | Krea 2 Community License: commercial only if company revenue <$1M; moderation required | 8 steps cfg 1. control_image = stage depth steers the layout (Krea2 depth-control LoRA). Edit stage = the proven Soundstage look-still: img2img from the clay frame @0.85 + depth. Depth control needs the comfyui-krea2-controlnet pack. |
-| FLUX 3 Klein · local [<$5M] | local | FLUX Kommunity License: free non-commercial; commercial use of outputs OK if you+affiliates <$5M annual revenue | Edit = ReferenceMultiLatent (image + refs, 1 MP). Distilled template settings. |
+| Krea 2 Turbo · local [<$1M] | local | Krea 2 Community License: commercial only if company revenue <$1M; moderation required | 8 steps cfg 1. control_image = stage depth steers the layout (Krea2 depth-control LoRA). Edit stage = the proven Soundstage look-still: img2img from the stage guide frame @0.85 + depth. Depth control needs the comfyui-krea2-controlnet pack. depth_lock (④ Frame "Lock to the stage depth"): start from the blurred Color pass at stage_denoise, held to the depth pass (no cast pictures). |
+| FLUX 3 Klein · local [<$5M] | local | FLUX Kommunity License: free non-commercial; commercial use of outputs OK if you+affiliates <$5M annual revenue | Edit = ReferenceMultiLatent (image + refs, 1 MP). Distilled template settings. depth_lock (④ Frame "Lock to the stage depth"): a Krea 2 Turbo + depth-control LoRA pass on the Klein frame, held to the stage depth pass (optional krea_* weights). |
 | Nano Banana 2.1 · Google [API] | partner | Provider ToS via Comfy partner proxy (paid Comfy credits) |  |
 | Nano Banana 2 (Gemini 3.1 Flash Image) · Google [API] | partner | Provider ToS via Comfy partner proxy (paid Comfy credits) |  |
 | GPT Image 2.5 · OpenAI [API] | partner | Provider ToS via Comfy partner proxy (paid Comfy credits) |  |
@@ -44,8 +44,8 @@ Regenerate this file and `soundstage/router/registry.json` with `python -m sound
 
 | Dropdown label | Kind | Licence | Notes |
 |---|---|---|---|
-| LTX-2.5 22B distilled · local [<$10M] | local | LTX-2.x Community License: free incl. commercial for entities <$10M annual revenue; paid above | Core engine (LTX bonus). auto = Layout-To-Render IC-LoRA when control_video (stage clay) is connected (needs the ComfyUI-LTXVideo pack + L2R LoRA), else the official two-stage i2v/t2v template with audio. first_frame = look still. |
-| MiniMax H3 · local [<$20M GEO] | local | MiniMax H3 Community License: EXCLUDES USA, EU, UK, South Korea; <$20M revenue elsewhere; must display 'MiniMax H3' in c | Optional second engine (LTX-2.5 stays the default). Video + its own sound in one pass; follows the clay blocking only loosely. first / last frame (either or both) -> fl2va (8-step turbo LoRA when installed). Reference images (ref_1..3 + ref_files, up to 9 pictures with the frames) and/or motion_ref = clay previz as <Video 1> -> ref2va, 20 steps, slow. Text encoder on CPU (32B). ≤362 frames, 17k+5 grid, trimmed back to the shot length. |
+| LTX-2.5 22B distilled · local [<$10M] | local | LTX-2.x Community License: free incl. commercial for entities <$10M annual revenue; paid above | Core engine (LTX bonus). auto = Layout-To-Render IC-LoRA when control_video (the stage guide) is connected (needs the ComfyUI-LTXVideo pack + L2R LoRA), else the official two-stage i2v/t2v template with audio. first_frame = look still. |
+| MiniMax H3 · local [<$20M GEO] | local | MiniMax H3 Community License: EXCLUDES USA, EU, UK, South Korea; <$20M revenue elsewhere; must display 'MiniMax H3' in c | Optional second engine (LTX-2.5 stays the default). Video + its own sound in one pass; follows the blocking only loosely. first / last frame (either or both) -> fl2va (8-step turbo LoRA when installed). Reference images (ref_1..3 + ref_files, up to 9 pictures with the frames) and/or motion_ref = "clay previz as <Video 1>" (the stage previz) -> ref2va, 20 steps, slow. Text encoder on CPU (32B). ≤362 frames, 17k+5 grid, trimmed back to the shot length. |
 | Wan Animate 2 distilled · local | local | Apache 2.0 | Motion transfer: ref_1 = character, control_video = driving pose/performance. 81-frame window. |
 | Kling 4.0 · Kling [API] | partner | Provider ToS via Comfy partner proxy (paid Comfy credits) | first/last frame → I2V; refs → Reference-to-Video; prompt only → T2V. |
 | Veo 3.1 · Google [API] | partner | Provider ToS via Comfy partner proxy (paid Comfy credits) |  |

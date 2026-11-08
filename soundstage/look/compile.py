@@ -241,7 +241,7 @@ LEGACY_STILL = {"kodak_200t": "Kodak Vision3 200T film stock, tungsten balance, 
 REAL_PEOPLE_NEG = "plastic skin, mannequin, doll-like faces, wax figure, CGI character, 3D render, video game character"
 
 # A look that asks for a drawn or rendered world keeps its people stylised too.
-_STYLISED = re.compile(r"\b(animat\w*|cartoon\w*|anime|manga|pixar|claymation|stop[- ]motion|cgi|3d render\w*|cel[- ]shad\w*|"
+_STYLISED = re.compile(r"\b(animat\w*|cartoon\w*|anime|manga|pixar|claymation|stop[- ]motion|cgi|3d render\w*|cel[- ]shad\w*|"  # clay-alias
                        r"illustrat\w*|painting|painted|comic\w*|video game|toon|puppet\w*|lego|low[- ]poly)\b", re.I)
 
 

@@ -805,7 +805,7 @@ class SoundstageAudioDrivenShot(IO.ComfyNode):
             category="Soundstage/Audio",
             search_aliases=["audio driven", "audio to video", "lip sync", "a2v", "sound sync", "ltx audio"],
             description="Render the shot with LTX-2.5 conditioned on the edited sound, so picture lands on the "
-                        "footsteps, hits and words. With control_video (stage clay) it is Layout-To-Render; "
+                        "footsteps, hits and words. With control_video (the stage guide) it is Layout-To-Render; "
                         "otherwise image/text-to-video. The supplied audio is the final soundtrack.",
             inputs=[
                 _media(IO.Audio, "audio", "The shot's sound (e.g. Fit Audio to Shot, or any AUDIO)."),
@@ -814,7 +814,7 @@ class SoundstageAudioDrivenShot(IO.ComfyNode):
                 IO.String.Input("shot_id", default="", optional=True, tooltip="Shot to pick from index.json."),
                 IO.String.Input("prompt", multiline=True, default=""),
                 IO.String.Input("negative", multiline=True, default="", optional=True, advanced=True),
-                _media(IO.Image, "control_video", "Stage clay pass → Layout-To-Render."),
+                _media(IO.Image, "control_video", "Stage guide pass → Layout-To-Render."),
                 _media(IO.Image, "first_frame", "Look still / start frame."),
                 IO.Int.Input("width", default=1920, min=256, max=4096, step=64),
                 IO.Int.Input("height", default=1088, min=256, max=4096, step=64),

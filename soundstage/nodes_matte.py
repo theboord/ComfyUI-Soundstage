@@ -56,7 +56,7 @@ class SoundstageActorMatte(IO.ComfyNode):
                 IO.String.Input("scene_json", force_input=True),
                 IO.String.Input("object", default="1", tooltip="Object name (e.g. 'Man'), id, 1-based index, or 'background'."),
                 IO.Image.Input("match_frames", optional=True, tooltip="Final frames: the matte is resized and retimed to these."),
-                IO.Int.Input("grow", default=6, min=0, max=64, tooltip="Pixels to expand the clay silhouette."),
+                IO.Int.Input("grow", default=6, min=0, max=64, tooltip="Pixels to expand the stage silhouette."),
                 IO.Int.Input("feather", default=4, min=0, max=64),
             ],
             outputs=[IO.Mask.Output(display_name="mask"), IO.String.Output(display_name="name")],

@@ -1,14 +1,16 @@
 // Soundstage preview ladder: compare one shot across stages on one picture.
-//   3-way (default): Clay (or Color / Wire / Frame) | Draft | Final, with two handles you drag on the picture.
+//   3-way (default): Stage (or Wire / Frame) | Draft | Final, with two handles you drag on the picture.
 //   A/B: any two stages as a wipe, side by side, or a fade.
 // Every layer is drawn the way the generators saw it: the stage render centre-cropped to the render's own aspect
 // (the same crop the router uses to fit a guide to the model's size), at the same moment of the shot. So the layers
 // line up while you drag; what moves between them is only what the model changed.
 
-export const RUNG_NAMES = ["Wire", "Clay", "Look", "Draft", "Final"];
-const STAGES = [["wire", "Wire"], ["clay", "Clay"], ["color", "Color"], ["look", "Frame"], ["draft", "Draft"], ["final", "Final"]];
+export const RUNG_NAMES = ["Wire", "Stage", "Look", "Draft", "Final"];
+// "color" is the stage layer, labelled "Stage" (the lifelike stage). The retired "clay" layer id reads as it (rungId).
+const STAGES = [["wire", "Wire"], ["color", "Stage"], ["look", "Frame"], ["draft", "Draft"], ["final", "Final"]];
+const rungId = (id) => (id === "clay" ? "color" : id);   // LEGACY_RUNG: an old caller / saved pick naming the clay layer
 const RUNG = { look: 2, draft: 3, final: 4 };
-const LIVE = new Set(["wire", "clay", "color"]);
+const LIVE = new Set(["wire", "color"]);
 const YELLOW = "#f2ff59";
 const FONT = "'Soundstage Grotesk', ui-sans-serif, system-ui, sans-serif";
 
@@ -26,7 +28,7 @@ export class LadderViewer {
     this.mode = "three";
     this.sources = { 2: null, 3: null, 4: null }; // Look image, Draft video, Final video
     // 3-way: left / middle / right. null = automatic (the best render that exists).
-    this.a = "clay"; this.m = null; this.b = null;
+    this.a = "color"; this.m = null; this.b = null;
     this.cuts = [1 / 3, 2 / 3];   // the two 3-way handles
     this.split = 0.5;             // the A/B handle (and the 3-way handle when only two layers exist)
     if (!document.getElementById("ss-ladder-css")) {
@@ -93,9 +95,10 @@ export class LadderViewer {
 
   /** 3-way layers, left to right: the chosen left stage, then the renders (or the stage's own colour pass). */
   _layers() {
-    const A = this.a && this._has(this.a) ? this.a : "clay";
+    this.a = rungId(this.a); this.b = rungId(this.b); this.m = rungId(this.m);
+    const A = this.a && this._has(this.a) ? this.a : "color";
     const pool = this._renders().filter((id) => id !== A);
-    const B = this.b && this._has(this.b) && this.b !== A ? this.b : pool[0] || (A === "color" ? "clay" : "color");
+    const B = this.b && this._has(this.b) && this.b !== A ? this.b : pool[0] || (A === "color" ? "wire" : "color");
     const M = this.m && this._has(this.m) && this.m !== A && this.m !== B ? this.m
       : this.m === "none" ? null : pool.filter((id) => id !== B && STAGES.findIndex((s) => s[0] === id) < STAGES.findIndex((s) => s[0] === B))[0] || null;
     return M ? [A, M, B] : [A, B];
@@ -128,7 +131,7 @@ export class LadderViewer {
     const parts = [];
     if (this.mode === "three") {
       const [A, M, B] = this._layers().length === 3 ? this._layers() : [this._layers()[0], null, this._layers()[1]];
-      parts.push(group("Left", ["clay", "color", "wire", "look"], A, (id) => (this.a = id)));
+      parts.push(group("Left", ["color", "wire", "look"], A, (id) => (this.a = id)));
       parts.push(group("Middle", ["look", "draft"], M, (id) => (this.m = this.m === id ? "none" : id)));
       parts.push(group("Right", ["draft", "final"], B, (id) => (this.b = id)));
     } else {
@@ -188,7 +191,7 @@ export class LadderViewer {
     // The old single slider. In 3-way the layers follow the renders on their own, so just refresh.
     this.fidelity = Math.min(RUNG_NAMES.length - 1, Math.max(0, f));
     if (this.mode !== "three") {
-      const ids = ["wire", "clay", "look", "draft", "final"];
+      const ids = ["wire", "color", "look", "draft", "final"];
       const lo = Math.floor(this.fidelity), hi = Math.min(4, lo + 1);
       this.a = ids[lo]; this.b = ids[hi]; this.split = 1 - (this.fidelity - lo || 0.5);
     }
@@ -301,7 +304,7 @@ export class LadderViewer {
       for (const x of px.slice(1, -1)) this._handle(x);
       return;
     }
-    const A = this.a, B = this.b && this._has(this.b) ? this.b : this._bestB();
+    const A = (this.a = rungId(this.a)), B = this.b && this._has(this.b) ? rungId(this.b) : this._bestB();
     if (this.mode === "side") {
       const w = W / 2, h = H / 2, y = H / 4;
       this._drawStage(A, ctx, 0, y, w, h);

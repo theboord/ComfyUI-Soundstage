@@ -291,7 +291,7 @@ horizontal fit, keyed every frame. Frame ${frameStart} is Soundstage frame 0.
   shot_cam.chan        Nuke / Maya .chan (tx ty tz rx ry rz vfov, rotate order ZXY)
   shot.json            fps, frame range, resolution, sensor, file names
 
-BLENDER (verified headless in Blender 4.3: camera framing matches the Soundstage clay frame)
+BLENDER (verified headless in Blender 4.3: camera framing matches the Soundstage stage frame)
   blender --python blender/build_blender.py
   or Scripting tab > Open > blender/build_blender.py > Run. Imports scene.glb, builds shot_cam from camera.json
   (sensor 36 mm, lens keyed), sets fps, frame range and resolution. Optional: put the Layer Pack plates next to the

@@ -51,17 +51,20 @@ class SoundstageStage(IO.ComfyNode):
             category="Soundstage",
             search_aliases=["stage", "blocking", "previz", "3d set", "film set"],
             description="Block the shot in 3D: actors, props, camera with a real lens, and the sun. "
-                        "Outputs the clay and depth passes from the shot camera plus the scene JSON.",
+                        "Outputs the stage guide and depth passes from the shot camera plus the scene JSON.",
             inputs=[
                 IO.String.Input("stage", default="", optional=True, socketless=True,
                                 extra_dict={"widgetType": STAGE_WIDGET}),
             ],
             outputs=[
-                IO.Image.Output(display_name="clay", tooltip="Clay render of every frame (the layout video). When the camera rides a "
+                # clay-alias: the slot names "clay" / "first_clay" stay until the guide switch (L3, alias contract)
+                IO.Image.Output(display_name="clay",  # clay-alias
+                                tooltip="The stage guide for every frame (the layout video). When the camera rides a "
                                                                       "car on an empty road, the static set is blurred (actors and vehicles "
                                                                       "stay sharp) so LTX doesn't read passing blocks as traffic."),
                 IO.Image.Output(display_name="depth", tooltip="Depth of every frame, near = white."),
-                IO.Image.Output(display_name="first_clay", tooltip="Frame 1 clay, for the look still."),
+                IO.Image.Output(display_name="first_clay",  # clay-alias
+                                tooltip="Frame 1 of the stage guide, for the look still."),
                 IO.Image.Output(display_name="first_depth", tooltip="Frame 1 depth, to steer the look still."),
                 IO.Float.Output(display_name="fps"),
                 IO.Int.Output(display_name="frames"),
@@ -69,7 +72,7 @@ class SoundstageStage(IO.ComfyNode):
                 IO.Image.Output(display_name="id_pass", tooltip="Each object in its own flat colour (for Actor Matte)."),
                 IO.Image.Output(display_name="color", tooltip="Real object colours (wardrobe, props) for every frame."),
                 IO.Image.Output(display_name="first_color",
-                                tooltip="Frame 1 in colour, the start for the look still: people's clay heads softened so "
+                                tooltip="Frame 1 in colour, the start for the look still: people's heads softened so "
                                         "the image model casts real faces in their place (pose, build and hair colour "
                                         "stay), and upscaled up to 1.75x when faces are small (wide shots)."),
             ],

@@ -482,7 +482,7 @@ def krea2(g, m, p):
     if lock:
         if p.get("control") is None or not w.get("depth_lora"):
             raise RouterError(DEPTH_MISSING)
-        src = need(p, "image", "Krea 2 edit", "an image (e.g. the stage clay frame)")
+        src = need(p, "image", "Krea 2 edit", "an image (e.g. the stage guide frame)")
         W, H = (snap(p["width"], 16), snap(p["height"], 16)) if p["width"] and p["height"] else (0, 0)
         start = blur_start(g, src, W, H)
         latent = g.node("VAEEncode", pixels=start, vae=vae).out(0)
@@ -496,7 +496,7 @@ def krea2(g, m, p):
     else:
         pos, neg = _text(g, clip, p["prompt"], p.get("negative"))
         if p["stage"] == "edit_image":
-            src = need(p, "image", "Krea 2 edit", "an image (e.g. the stage clay frame)")
+            src = need(p, "image", "Krea 2 edit", "an image (e.g. the stage guide frame)")
             if p["width"] and p["height"]:
                 src = resize(g, src, p["width"], p["height"])
             latent = g.node("VAEEncode", pixels=src, vae=vae).out(0)
@@ -679,7 +679,7 @@ def ltx25_l2r(g, m, p):
     """Official LTX-2.5 ICLoRA Layout-To-Render two-stage distilled, as wired in Soundstage_Shot_v2_ladder:
     stage clay video guides every frame, the look still (first_frame) rides along at frame_idx -1."""
     w = p["weights"]
-    control = need(p, "control", "LTX-2.5 Layout-to-Render", "a control_video (the stage clay pass)")
+    control = need(p, "control", "LTX-2.5 Layout-to-Render", "a control_video (the stage guide pass)")
     if not w.get("l2r_lora"):
         raise RouterError("Layout-to-Render needs the ComfyUI-LTXVideo nodes and "
                           "ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors in loras.")
@@ -793,7 +793,7 @@ def wan_animate2(g, m, p):
 
 H3_AREA = 1344 * 768        # H3's native 16:9 size; other aspects keep about this pixel count
 H3_MAX_FRAMES = 362         # ~15 s at 24 fps, the trained ceiling
-H3_CLAY_REF = "clay previz as <Video 1>"
+H3_CLAY_REF = "clay previz as <Video 1>"  # clay-alias
 
 
 def h3_length(frames):
@@ -884,14 +884,14 @@ def _h3_reference_prompt(text, sound, music, first, last, n_refs, clay_ref, dur)
         keep.append(f"<Subject {subj}>: attribute_transfer")
     if clay_ref:
         subj += 1
-        defs.append(f"<Subject {subj}> is the blocking in <Video 1>, an untextured grey clay previz: where each figure "
+        defs.append(f"<Subject {subj}> is the blocking in <Video 1>, an untextured grey clay previz: where each figure "  # clay-prompt
                     "stands and moves, the timing of every move and the camera's framing and motion. Only positions, "
-                    "paths, timing and camera come from it; its grey clay surfaces, flat lighting and simple shapes "
+                    "paths, timing and camera come from it; its grey clay surfaces, flat lighting and simple shapes "  # clay-prompt
                     "never appear.")
         keep.append(f"<Subject {subj}>: attribute_transfer")
     look = f"in the look of {world}" if world else "in a cinematic live-action look"
     summary = (f"[{' + '.join(tasks)}] A live-action shot {look}" +
-               (", staged and framed as the clay blocking of <Video 1>" if clay_ref else "") +
+               (", staged and framed as the clay blocking of <Video 1>" if clay_ref else "") +  # clay-prompt
                (", featuring the referenced subjects" if n_refs else "") + ".")
     body = " ".join([*anchors, text])
     return ("subject_definitions:\n" + "\n".join(defs) + "\n\n"
@@ -935,10 +935,10 @@ def minimax_h3_local(g, m, p):
             # first / last are frames of this shot: match its size; references keep their own framing
             kw[f"ref_images.ref_image_{i}"] = resize(g, pic, W, H) if i < len(pictures) - len(refs) else pic
         if clay_ref:
-            control = need(p, "control", "MiniMax H3 with the clay reference", "a control_video (the stage clay pass)")
+            control = need(p, "control", "MiniMax H3 with the stage reference", "a control_video (the stage guide pass)")
             if seconds(p) < 2.0:
                 raise RouterError("MiniMax H3 takes a reference video of 2 s or more; this shot is shorter. "
-                                  "Turn the clay reference off.")
+                                  "Turn the stage reference off.")
             kw["ref_videos.ref_video_0"] = resize(g, control, W, H)
         cond = g.node("MiniMaxH3ReferenceToVideo", **kw)
         sampler, scheduler, steps = "res_multistep", "simple", 20

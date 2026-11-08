@@ -353,7 +353,7 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
                 act.setdefault("source", {})["overlay"] = {k: round(v, 3) if isinstance(v, float) else v for k, v in fit.items()}
                 if abs(s_fit - 1) > 0.15:
                     notes.append(f"performer: the set's scale and SAM 3D Body's distance disagree by {abs(s_fit - 1) * 100:.0f}%;"
-                                 f" the clay is sized to the picture ({act['height_m']:.2f} m)")
+                                 f" the stage actor is sized to the picture ({act['height_m']:.2f} m)")
                 dropped = performer.drop_background_people(scene, aid)
                 if dropped:
                     notes.append(f"performer: left out {dropped} small background figure(s) the depth could not place")
@@ -454,7 +454,7 @@ def finish_scene(scene: dict, *, take, info, breakdown, depths, scales, poses, K
         ap = perf.setdefault("appearance", {})
         if ap.get("wardrobe") == "unknown":
             said = (perf.get("source") or {}).get("label") or "nothing"
-            notes.append(f"performer: the vision model named no garment ('{said}'); the clay keeps its default shape "
+            notes.append(f"performer: the vision model named no garment ('{said}'); the stage actor keeps its default shape "
                          "and colours from the read. Set the wardrobe in the inspector")
         # build: SAM 3D Body's shape when it has one, else the silhouette (the box's pixels at the body's depth)
         mask = build_mask(perf, take, depths, times, float(clip.get("fps") or 24.0),

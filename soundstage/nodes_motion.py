@@ -244,7 +244,7 @@ class SoundstagePoseFollow(IO.ComfyNode):
             display_name="Soundstage · Pose Follow (experimental)",
             category="Soundstage/Motion",
             search_aliases=["pose", "openpose", "dwpose", "union control", "body hands face"],
-            description="Animate the shot's frame with LTX-2.5 following a pose video: the stage's clay actors as "
+            description="Animate the shot's frame with LTX-2.5 following a pose video: the stage's actors as "
                         "OpenPose skeletons (body + hands + face), or DWPose read from real footage. Uses the LTX "
                         "union-control IC-LoRA (made for LTX 2.3; experimental on 2.5).",
             inputs=[

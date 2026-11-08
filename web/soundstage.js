@@ -438,7 +438,7 @@ function createStageWidget(node, inputName) {
     ["canvas", "Paint Studio", "wand-sparkles", "Paint, fill, remove and extend any picture", "Paint Studio (the Canvas): Generative Fill, remove, extend, layers and masks on any picture"],
     ["advisor", "Shot ideas", "compass", "Which angles this scene needs", "Shot ideas (the Advisor): the coverage a scene needs (angles and setups), added to the cut in one click"],
     ["look", "Look", "palette", "Film stock, lens, palette and grade", "Look: camera body, lens, film stock, palette and grade, compiled into the prompts"],
-    ["ladder", "Compare", "layers", "Clay, frame, draft and final side by side", "Compare (the Ladder): clay → frame → draft → final for a shot, with a wipe"],
+    ["ladder", "Compare", "layers", "Stage, frame, draft and final side by side", "Compare (the Ladder): stage → frame → draft → final for a shot, with a wipe"],
     ["dailies", "Takes", "film", "Every take, as a bin and a lined script", "Takes (Dailies): every setup's takes as an Avid-style bin and a lined script, with approvals"],
     ["cut", "Edit", "scissors", "The edit, its sound, export to Avid / Premiere / Resolve", "Edit (the Cut): the scene on a timeline with sound; export to Avid, Premiere, Resolve, FCP or OTIO"],
   ];
@@ -1343,7 +1343,7 @@ function createStageWidget(node, inputName) {
   // (.ply/.spz/.splat/.ksplat/.sog), and export the whole set as GLB.
   const fileIn = Object.assign(document.createElement("input"), { type: "file", accept: IMPORT_ACCEPT, hidden: true });
   const importBtn = Object.assign(document.createElement("button"), { type: "button", className: "ss-btn", textContent: "Import 3D…",
-    title: "Add your own 3D: GLB/glTF, FBX (Mixamo animations play on the timeline), OBJ, PLY, STL, or a Gaussian splat (.ply .spz .splat .ksplat .sog). Splats show in Color view; a clay stand-in drives the passes." });
+    title: "Add your own 3D: GLB/glTF, FBX (Mixamo animations play on the timeline), OBJ, PLY, STL, or a Gaussian splat (.ply .spz .splat .ksplat .sog). Splats show in Color view; a hidden stand-in shape drives the passes." });
   importBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
   importBtn.addEventListener("click", () => fileIn.click());
   fileIn.addEventListener("change", async () => {
@@ -1832,7 +1832,7 @@ function createStageWidget(node, inputName) {
           if (plate && stage.state.backdrop?.url === url) stage.state.backdrop.source = plate;
           if ((stage.toJSON().environment || {}).set !== "empty") { stage.setEnvironment({ set: "empty" }); syncEnv(); } // the photo is the world
           else stage.onChange?.(stage.toJSON());
-          say(`${plate ? sourceLine(plate) + ". " : ""}${f.name} is the backdrop plate: it shows in Color view and behind the clay while you block. Place actors in it; the depth/clay passes stay clean.`);
+          say(`${plate ? sourceLine(plate) + ". " : ""}${f.name} is the backdrop plate: it shows in Color view behind the set while you block. Place actors in it; the stage passes stay clean.`);
         } else {
           stage.addCard(name, url);
           say(`Added ${name} as a card. Drag to place, Turn to face the camera, Scale to size.`);
@@ -1841,7 +1841,7 @@ function createStageWidget(node, inputName) {
         say(`Cutting ${f.name} out of its background…`);
         const r = await maker.photoToCutout(f, { onStatus: say });
         stage.addCard(name, api.apiURL(r.url));
-        say(`Added ${name} as a cut-out card (${Math.round(r.seconds || 0)} s). Its silhouette drives the clay and depth passes.`);
+        say(`Added ${name} as a cut-out card (${Math.round(r.seconds || 0)} s). Its silhouette drives the stage and depth passes.`);
       } else if (kind === "splat") {
         say(`Making a splat from ${f.name}… (first run loads the models, ~2–3 min)`);
         const r = await maker.photoToSplat(f, { proxy: true, onStatus: say });

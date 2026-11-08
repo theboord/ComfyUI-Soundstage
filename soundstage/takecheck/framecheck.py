@@ -159,7 +159,7 @@ def score(stage: dict, detections: list[dict], names: dict | None = None) -> dic
     elif loose:
         verdict, why = "loose", "; ".join(f"{a['name']} {a['iou']:.2f}" for a in loose)
     else:
-        verdict, why = "ok", "every object on its clay silhouette"
+        verdict, why = "ok", "every object on its stage silhouette"
     counts = {}
     for s in judged.values():
         counts.setdefault(s["kind"], [0, 0])[0] += 1
@@ -180,7 +180,7 @@ def badge(res: dict | None) -> dict:
     v = res.get("verdict")
     pct = "" if res.get("score") is None else f" {round(100 * res['score'])}%"
     if v == "ok":
-        return {"text": f"✓ Matches clay{pct}", "tone": "good", "title": res.get("why", "")}
+        return {"text": f"✓ Matches the blocking{pct}", "tone": "good", "title": res.get("why", "")}
     if v == "loose":
         return {"text": f"≈ Loose{pct}", "tone": "warn", "title": res.get("why", "")}
     if v == "flag":

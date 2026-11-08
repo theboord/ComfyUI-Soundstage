@@ -87,7 +87,7 @@ WIRED = [
           optional_weights=[{"role": "depth_lora", "folder": "loras", "any": ["depth-control-lora.safetensors"],
                              "classes": ["Krea2ControlLoRALoader", "Krea2ControlImageEncode", "Krea2ControlApply"]}],
           notes="8 steps cfg 1. control_image = stage depth steers the layout (Krea2 depth-control LoRA). "
-                "Edit stage = the proven Soundstage look-still: img2img from the clay frame @0.85 + depth. "
+                "Edit stage = the proven Soundstage look-still: img2img from the stage guide frame @0.85 + depth. "
                 "Depth control needs the comfyui-krea2-controlnet pack. depth_lock (④ Frame \"Lock to the stage "
                 "depth\"): start from the blurred Color pass at stage_denoise, held to the depth pass (no cast pictures).",
           source_ids=["open.krea_2"]),
@@ -154,7 +154,7 @@ WIRED = [
           optional_weights=[{"role": "l2r_lora", "folder": "loras",
                              "any": ["ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors"],
                              "classes": ["LTXICLoRALoaderModelOnly", "LTXAddVideoICLoRAGuide"]}],
-          notes="Core engine (LTX bonus). auto = Layout-To-Render IC-LoRA when control_video (stage clay) is "
+          notes="Core engine (LTX bonus). auto = Layout-To-Render IC-LoRA when control_video (the stage guide) is "
                 "connected (needs the ComfyUI-LTXVideo pack + L2R LoRA), else the official two-stage i2v/t2v "
                 "template with audio. first_frame = look still.",
           source_ids=["open.ltx_2_5"]),
@@ -170,16 +170,16 @@ WIRED = [
             "any": ["minimax_h3_video_vae_fp16.safetensors", "minimax_h3_video_vae_int8_convrot.safetensors"]},
            {"role": "audio_vae", "folder": "vae", "any": ["minimax_h3_audio_vae_fp32.safetensors"]}],
           H3_LICENSE,
-          params={"motion_ref": {"options": ["off", "clay previz as <Video 1>"], "default": "off"}},
+          params={"motion_ref": {"options": ["off", "clay previz as <Video 1>"], "default": "off"}},  # clay-alias
           optional_weights=[
               {"role": "turbo_lora", "folder": "loras", "any": ["minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"]},
               {"role": "ref_unet", "folder": "diffusion_models",
                "any": ["minimax_h3_ref2va_pruned_int8_convrot.safetensors", "minimax_h3_ref2va_bf16.safetensors"],
                "classes": ["MiniMaxH3ReferenceToVideo"]}],
           notes="Optional second engine (LTX-2.5 stays the default). Video + its own sound in one pass; follows "
-                "the clay blocking only loosely. first / last frame (either or both) -> fl2va (8-step turbo LoRA "
+                "the blocking only loosely. first / last frame (either or both) -> fl2va (8-step turbo LoRA "
                 "when installed). Reference images (ref_1..3 + ref_files, up to 9 pictures with the frames) and/or "
-                "motion_ref = clay previz as <Video 1> -> ref2va, 20 steps, slow. Text encoder on CPU (32B). "
+                "motion_ref = \"clay previz as <Video 1>\" (the stage previz) -> ref2va, 20 steps, slow. Text encoder on CPU (32B). "  # clay-alias
                 "≤362 frames, 17k+5 grid, trimmed back to the shot length.",
           source_ids=["open.minimax_h3_local"]),
     local("open.wan_animate_2", "Wan Animate 2 distilled", "Alibaba Wan-AI", ["generate_video"], "wan_animate2",

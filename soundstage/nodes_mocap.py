@@ -87,7 +87,7 @@ class SoundstageMocap(IO.ComfyNode):
             display_name="Soundstage · Mocap to Stage",
             category="Soundstage",
             search_aliases=["mocap", "motion capture", "performance capture", "video to pose", "sam3d body to stage"],
-            description="Turns SAM 3D Body pose data from a video into a mocap clip the 3D stage plays on a clay actor "
+            description="Turns SAM 3D Body pose data from a video into a mocap clip the 3D stage plays on a stage actor "
                         "(body, hands, fingers and the path through the shot). Writes output/soundstage/mocap/<name>.json.",
             inputs=[
                 MHRPoseData.Input("mhr_pose_data"),

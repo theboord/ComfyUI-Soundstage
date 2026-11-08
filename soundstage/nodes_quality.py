@@ -76,7 +76,7 @@ class SoundstageQuality(IO.ComfyNode):
             node_id="SoundstageQuality",
             display_name="Soundstage · Quality (motion freedom)",
             category="Soundstage",
-            description="How literally LTX follows the clay previz, and Draft vs Final HQ sampling. 0 + Draft = the "
+            description="How literally LTX follows the stage previz, and Draft vs Final HQ sampling. 0 + Draft = the "
                         "exact previous behaviour.",
             inputs=[
                 IO.Float.Input("motion_freedom", default=0.0, min=0.0, max=1.0, step=0.05,
@@ -88,7 +88,7 @@ class SoundstageQuality(IO.ComfyNode):
                                        "scheduler, CFG, resolution… in the advanced JSON (starts from Final). Final HQ "
                                        "and Hollywood are retired tiers kept for saved workflows. Final and up add "
                                        "physical-motion language for the cast."),
-                IO.Image.Input("guide", tooltip="The stage clay frames that steer LTX (IC-LoRA guide)."),
+                IO.Image.Input("guide", tooltip="The stage guide frames that steer LTX (IC-LoRA guide)."),
                 IO.String.Input("motion_prompt", multiline=True, force_input=True),
                 IO.String.Input("scene_json", multiline=True, force_input=True, optional=True),
                 IO.String.Input("advanced", default="", multiline=True, optional=True,
@@ -96,7 +96,7 @@ class SoundstageQuality(IO.ComfyNode):
                                         "(resolution, steps, two-stage, temporal x2, CFG, seed, decode tiles, codec…). "
                                         "Empty = the quality preset."),
                 IO.Float.Input("fps", default=24.0, min=1.0, max=120.0, force_input=True, optional=True,
-                               tooltip="The shot's frame rate (the clay guide's)."),
+                               tooltip="The shot's frame rate (the stage guide's)."),
             ],
             outputs=[
                 IO.Image.Output("out_guide"),

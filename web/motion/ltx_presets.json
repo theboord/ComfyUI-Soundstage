@@ -87,12 +87,12 @@
     }
   },
   "adherence": {
-    "about": "⑤ Motion › Adherence: how tightly the render follows the clay blocking. Measured in share/Blocking_Adherence/REPORT.txt. Advanced (LTX) can override each raw value per shot.",
+    "about": "⑤ Motion › Adherence: how tightly the render follows the blocking. Measured in share/Blocking_Adherence/REPORT.txt. Advanced (LTX) can override each raw value per shot.",
     "default": "Exact",
     "levels": {
       "Loose": {
         "label": "Loose",
-        "tip": "More invention: a softened clay guide and a lighter Layout IC-LoRA. Natural motion, but positions and framing can drift (the old default).",
+        "tip": "More invention: a softened stage guide and a lighter Layout IC-LoRA. Natural motion, but positions and framing can drift (the old default).",
         "motion_freedom": 0.5,
         "guide_blur": 10,
         "ic_lora": 0.825,
@@ -100,7 +100,7 @@
       },
       "Balanced": {
         "label": "Balanced",
-        "tip": "Close to the clay with a little freedom for gait and limbs.",
+        "tip": "Close to the blocking with a little freedom for gait and limbs.",
         "motion_freedom": 0.25,
         "guide_blur": 6,
         "ic_lora": 0.92,
@@ -108,7 +108,7 @@
       },
       "Exact": {
         "label": "Exact",
-        "tip": "As close to the clay as LTX goes: a sharp clay guide, the full Layout IC-LoRA, and your frame as a lighter look reference so it can't pull the shot off its marks.",
+        "tip": "As close to the blocking as LTX goes: a sharp stage guide, the full Layout IC-LoRA, and your frame as a lighter look reference so it can't pull the shot off its marks.",
         "motion_freedom": 0.0,
         "guide_blur": 0,
         "ic_lora": 1.0,

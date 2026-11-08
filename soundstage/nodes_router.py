@@ -178,7 +178,7 @@ class SoundstageGenerateImage(_Router):
             inputs=[
                 IO.String.Input("prompt", multiline=True, default=""),
                 IO.String.Input("negative", multiline=True, default="", optional=True, advanced=True),
-                _media(IO.Image, "control_image", "Depth/clay control (local models that support it)."),
+                _media(IO.Image, "control_image", "Depth / stage guide control (local models that support it)."),
                 _media(IO.Image, "ref_1", "Reference image (style / identity) for models that take refs."),
                 _media(IO.Image, "ref_2", "Reference image."),
                 _media(IO.Image, "ref_3", "Reference image."),
@@ -208,10 +208,10 @@ class SoundstageEditImage(_Router):
             display_name="Soundstage · Edit Image / Keyframe (any model)",
             category="Soundstage/Models",
             search_aliases=["image edit", "img2img", "look still", "keyframe from control", "model picker"],
-            description="Edit an image or turn the stage clay frame into the look still (with stage depth as "
+            description="Edit an image or turn the stage guide frame into the look still (with stage depth as "
                         "control), with any installed edit model.",
             inputs=[
-                _media(IO.Image, "image", "Image to edit (e.g. the stage's first clay frame)."),
+                _media(IO.Image, "image", "Image to edit (e.g. the stage's first guide frame)."),
                 IO.String.Input("prompt", multiline=True, default=""),
                 IO.String.Input("negative", multiline=True, default="", optional=True, advanced=True),
                 _media(IO.Image, "control_image", "Depth control (Krea 2 depth LoRA)."),
@@ -240,8 +240,8 @@ class SoundstageEditImage(_Router):
                                advanced=True,
                                tooltip="FLUX 3 Klein with the stage depth on control_image (④ Frame): the frame starts from "
                                        "the Color pass (img2img) at this denoise, so it keeps the stage's objects, sizes "
-                                       "and places. Lower = closer to the clay. 1 = paint from noise with the pass as a "
-                                       "reference only, as frames picked before Nov 1 were. The App's Follow the clay sets it."),
+                                       "and places. Lower = closer to the blocking. 1 = paint from noise with the pass as a "
+                                       "reference only, as frames picked before Nov 1 were. The App's Follow the blocking sets it."),
                 IO.Float.Input("depth_lock", default=0.0, min=0.0, max=FL.DEPTH_LOCK_MAX, step=0.05, optional=True,
                                advanced=True,
                                tooltip="④ Frame \"Lock to the stage depth\" (control_image = the stage depth pass). "
@@ -289,7 +289,7 @@ class SoundstageGenerateVideo(_Router):
                 IO.String.Input("negative", multiline=True, default="", optional=True, advanced=True),
                 _media(IO.Image, "first_frame", "Start frame / look still."),
                 _media(IO.Image, "last_frame", "End frame (models with first+last frame)."),
-                _media(IO.Image, "control_video", "Control frames: stage clay pass (LTX layout→render) or a "
+                _media(IO.Image, "control_video", "Control frames: the stage guide pass (LTX layout→render) or a "
                                                   "driving performance (Wan Animate)."),
                 _media(IO.Image, "ref_1", "Reference image (character / element)."),
                 _media(IO.Image, "ref_2", "Reference image."),

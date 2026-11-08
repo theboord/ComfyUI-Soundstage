@@ -247,7 +247,7 @@ class SoundstagePerformance(IO.ComfyNode):
                                tooltip="Audio latent noise mask. 0 = frozen (mouths flap unsynced); 0.2-0.5 keeps the "
                                        "audio pathway open so lips follow the voice."),
                 IO.String.Input("layout", default="", optional=True, advanced=True,
-                                tooltip="Optional stage pass video (clay / depth) screened faintly under the skeleton."),
+                                tooltip="Optional stage pass video (stage guide / depth) screened faintly under the skeleton."),
                 IO.Float.Input("layout_mix", default=0.0, min=0.0, max=1.0, step=0.05, optional=True, advanced=True),
                 IO.Boolean.Input("keep_voice", default=True, tooltip="Put the actor's voice on the result."),
             ],

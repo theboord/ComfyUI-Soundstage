@@ -297,7 +297,7 @@ export class AdvisorPanel {
     try {
       this.stage.previewCamera({ position: k.position, target: k.target, focal_mm: k.focal_mm });
       const src = this.stage.renderFrameTo("clay", 0);
-      const c = el("canvas", { class: "ss-adv-thumb", "aria-label": `Clay preview of ${s.name}` });
+      const c = el("canvas", { class: "ss-adv-thumb", "aria-label": `Stage preview of ${s.name}` });
       c.width = 320;
       c.height = Math.max(1, Math.round(320 * src.height / src.width));
       c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);

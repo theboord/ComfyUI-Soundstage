@@ -56,7 +56,7 @@ export const CHANNELS = {
   door_rr: N("Doors", "Rear right door", 0, 70, 1, "°", 0, "Rear-right door, degrees open"),
   hood: N("Doors", "Hood", 0, 75, 1, "°", 0, "Hood (bonnet), degrees open"),
   trunk: N("Doors", "Trunk", 0, 80, 1, "°", 0, "Trunk, hatch or cargo doors, degrees open"),
-  headlights: E("Lights", "Headlights", "auto", "Off, dipped or full beam: the beams light the set and the lamps glow in the clay guide. Auto = lamps marked, no beams", { key: "L" }),
+  headlights: E("Lights", "Headlights", "auto", "Off, dipped or full beam: the beams light the set and the lamps glow in the stage guide. Auto = lamps marked, no beams", { key: "L" }),
   brake: E("Lights", "Brake lights", "auto", "Brake lights: on, off, or automatic while the car slows"),
   indicator: E("Lights", "Indicators", "off", "Turn signals or hazards, blinking at 1.5 Hz", { key: "I" }),
   lightbar: E("Lights", "Light bar", "off", "Police light bar: red and blue flashing, the same at every render", { key: "Shift+L" }),

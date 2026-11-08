@@ -40,6 +40,7 @@ ALLOW = {
     "web/ladder/ladder.mjs": ("LEGACY_RUNG",),
     "web/soundstage.js": ("LEGACY_RENDERS",),
     "docs/agent.md": ("| alias",),
+    "soundstage/project/collect.py": ("clay/",),   # the project folder clay/ -> stage/ lands with the Cut rung rename (plan §1.4)
 }
 # A line carrying one of these markers is allowed anywhere in scope:
 #   clay-alias   an old saved name / key / synonym kept working (plan §1.6 alias contract, §3a synonym table)

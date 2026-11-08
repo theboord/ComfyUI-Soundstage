@@ -202,7 +202,7 @@ export class PhysicsPanel {
     this.ocSel.addEventListener("change", () => { const r = this.stage.setPhysicsFeel?.({ overcrank: +this.ocSel.value }); this._msg(r?.message || `Overcrank ${this.ocSel.value}×: every keyed move plays ${this.ocSel.value}× slower.`); this.onBaked(); this.sync(); });
     this.ocRow = el("label", "ph-mat", el("span", "", "Overcrank"), this.ocSel);
     this.ocRow.title = "Slow motion like a high-speed camera: every keyed move (cars, people, throws) is stretched and the bake runs gravity to match, and the video prompt says 'slow motion'. Miniature rule: 24 × √(scale), 1/4 scale → 48 fps.";
-    this.fxRow.title = "Secondary elements off the baked hits, in the clay and the guide the video follows (never in Depth or the matte)";
+    this.fxRow.title = "Secondary elements off the baked hits, in the stage guide the video follows (never in Depth or the matte)";
     this.note = el("div", "ph-note");
     this.msg = el("div", "ph-msg");
     this.msg.setAttribute("aria-live", "polite");

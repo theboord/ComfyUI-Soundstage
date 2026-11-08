@@ -103,7 +103,7 @@ export const STAGES = [
   [/^(SaveAudio\w*)$/, "Saving audio", ""],
   [/^(SaveGLB|SplatToFile3D|SoundstageDA3Export)$/, "Saving 3D", ""],
   [/^(PreviewImage|PreviewAny|PreviewAudio)$/, "Preview", ""],
-  [/^SoundstageStage$/, "3D stage (clay passes)", ""],
+  [/^SoundstageStage$/, "3D stage (stage passes)", ""],
   [/^SoundstageLook$/, "Look", ""],
   [/^SoundstageEditImage$/, "Editing the image", ""],
   [/^(SoundstageGenerateImage|SoundstageCanvasImage)$/, "Generating the image", ""],

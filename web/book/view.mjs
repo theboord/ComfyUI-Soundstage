@@ -442,7 +442,7 @@ export class BookView {
       const pic = h("div", { class: "pic" });
       const url = ctl.framePic(r.id);
       if (url) pic.append(h("img", { src: url, alt: `${r.no} ${r.name}` }));
-      else if (!r.gone) ctl.clayFrame(sc.id, r.id).then((u) => { if (u && !pic.querySelector("img")) pic.prepend(h("img", { src: u, alt: `${r.no} ${r.name} (clay)` })); }).catch(() => {});
+      else if (!r.gone) ctl.clayFrame(sc.id, r.id).then((u) => { if (u && !pic.querySelector("img")) pic.prepend(h("img", { src: u, alt: `${r.no} ${r.name} (stage)` })); }).catch(() => {});
       if (!r.dropped) { const a = moveArrowSVG(r.move); if (a) pic.insertAdjacentHTML("beforeend", a); }
       const note = h("input", { class: "f", value: r.note || "", placeholder: "Note on this shot", "aria-label": `Note on shot ${r.no}` });
       note.addEventListener("change", () => ctl.setShotNote(sc.id, r.id, note.value.trim()));

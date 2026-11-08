@@ -76,7 +76,7 @@ export class ClayFrames {
       c.getContext("2d").drawImage(S.canvas, Math.max(0, (rw - W) / 2), Math.max(0, (rh - H) / 2), Math.min(W, rw), Math.min(H, rh), 0, 0, W, H);
       url = c.toDataURL("image/jpeg", 0.82);
       await new Promise((r) => setTimeout(r, 0));
-    } catch (e) { console.warn("[Soundstage] book clay frame", e); url = null; }
+    } catch (e) { console.warn("[Soundstage] book stage frame", e); url = null; }
     this.cache.set(key, url);
     if (this.cache.size > 160) this.cache.delete(this.cache.keys().next().value);
     return url;

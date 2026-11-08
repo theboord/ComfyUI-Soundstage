@@ -121,7 +121,7 @@ export function worldControls(stage, { api, status = null } = {}) {
         el("label", {}, grd, " Hide the stage floor")));
       const bits = [];
       if (!info.splat) bits.push(`${info.meshes} meshes → ${info.draws} draw calls`, `${info.tris >= 1e6 ? (info.tris / 1e6).toFixed(1) + " M" : Math.round(info.tris / 1000) + " k"} triangles`);
-      else bits.push("Gaussian splat: shows in Color view; clay, depth and physics see only the stage floor");
+      else bits.push("Gaussian splat: shows in Color view; the stage guide, depth and physics see only the stage floor");
       if (info.lods) bits.push(`${info.lods} far LODs`);
       if (info.shots?.length) bits.push(`cameras → shots: ${info.shots.join(", ")}`);
       if (info.animated) bits.push(`${info.animated} animated object${info.animated > 1 ? "s" : ""} play on the timeline`);

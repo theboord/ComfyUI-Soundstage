@@ -495,7 +495,7 @@ export function staleRender(ctx) {
   if (ctx.step > 1 && ctx.finalHash && ctx.sceneHash !== ctx.finalHash) {
     return [{ rule: "stale_render", key: `stale_render:${ctx.sceneHash}`, level: "tip", icon: "rotate-ccw",
       title: "Preview first?",
-      text: "You changed the stage since the last final render. Run step 1 (the clay preview) to check it before " +
+      text: "You changed the stage since the last final render. Run step 1 (the stage preview) to check it before " +
         "spending a full render.",
       actions: [{ label: "Go to step 1", kind: "set_step", payload: { step: 1 }, primary: true }] }];
   }
@@ -560,7 +560,7 @@ export const TOUR = [
       "in one sentence and let it build the set." },
   { icon: "diamond", title: "Set keys", text: "Move the playhead, then drag an actor or the camera: a ◆ key is set there " +
       "automatically. Two keys make a move." },
-  { icon: "play", title: "Run up the ladder", text: "Run renders step 1 (clay preview). NEXT climbs: look still, motion " +
+  { icon: "play", title: "Run up the ladder", text: "Run renders step 1 (stage preview). NEXT climbs: look still, motion " +
       "draft, final. Check each step before paying for the next." },
 ];
 

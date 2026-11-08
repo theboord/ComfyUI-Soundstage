@@ -7,8 +7,8 @@
 import { renderPreset } from "../takecheck/model.mjs";
 
 export const FOLLOW_MODES = [
-  ["layout", "Layout", "Follow the clay: positions, camera and timing from your 3D blocking (default)"],
-  ["pose", "Pose", "Experimental: an OpenPose skeleton of every clay actor (body, hands and face) drives LTX through the union-control IC-LoRA"],
+  ["layout", "Layout", "Follow the blocking: positions, camera and timing from your 3D stage (default)"],
+  ["pose", "Pose", "Experimental: an OpenPose skeleton of every stage actor (body, hands and face) drives LTX through the union-control IC-LoRA"],
   ["ripple", "Ripple edit", "Edit frame 1 of any clip in Paint Studio and Ripple carries the edit through the whole clip, keeping its motion and sound"],
 ];
 export const RIPPLE_STRENGTH = 1.35;
@@ -234,9 +234,9 @@ export class RippleControls {
       this.status);
     this.poseCanvas = h("canvas", { width: "320", height: "180", style: "width:100%;border-radius:8px;background:#000" });
     this.poseFromClip = h("input", { type: "checkbox" });
-    this.poseClipRow = h("label", { class: "row status", hidden: true }, this.poseFromClip, "Read the pose from the source clip (DWPose) instead of the clay");
+    this.poseClipRow = h("label", { class: "row status", hidden: true }, this.poseFromClip, "Read the pose from the source clip (DWPose) instead of the stage");
     this.poseBox = h("div", { class: "ss-ripple", hidden: true }, this.poseCanvas, this.poseClipRow,
-      h("div", { class: "status" }, "Body, hands and face of every clay person, from the shot camera. Preview / Render below use it."));
+      h("div", { class: "status" }, "Body, hands and face of every stage person, from the shot camera. Preview / Render below use it."));
     this.el = h("div", { class: "ss-follow" }, h("div", { class: "status" }, "Follow"), this.seg, this.note, this.rippleBox, this.poseBox);
     this.editHost = h("div", { class: "ss-edithost ss-ripple-edithost" });
     this.compare = h("div", { class: "ss-ripple-cmp", hidden: true });
@@ -263,9 +263,9 @@ export class RippleControls {
 
   _setNote() {
     this.note.textContent = this.mode === "pose"
-      ? "Experimental: your clay actors as OpenPose skeletons (body, hands, face) drive LTX through the union-control IC-LoRA (made for LTX 2.3). Uses Preview / Render below."
+      ? "Experimental: your stage actors as OpenPose skeletons (body, hands, face) drive LTX through the union-control IC-LoRA (made for LTX 2.3). Uses Preview / Render below."
       : this.mode === "ripple" ? "Change frame 1 of a clip, then Ripple carries the change through every frame: same motion, camera and sound."
-        : "LTX follows your clay animation: positions, camera and timing.";
+        : "LTX follows your stage animation: positions, camera and timing.";
   }
 
   /** Refill the clip list and the two thumbnails for the active shot. */
@@ -419,7 +419,7 @@ export class RippleControls {
       this.poseClipRow.hidden = !scene?.reference?.video;
       const others = nonPeople(scene);
       this.note.textContent = (people.length ? `Experimental: ${people.length} ${people.length > 1 ? "people" : "person"} as OpenPose skeletons (body, hands, face) drive LTX through the union-control IC-LoRA (made for LTX 2.3).`
-        : "No clay people on this shot: Pose follow needs people (or a source clip to read with DWPose).") +
+        : "No people on this shot's stage: Pose follow needs people (or a source clip to read with DWPose).") +
         (others.length ? ` Heads up: ${others.join(", ")} ${others.length > 1 ? "aren't" : "isn't"} in a pose map, so LTX may drop or duplicate ${others.length > 1 ? "them" : "it"}. Layout follows ${others.length > 1 ? "them" : "it"}.` : "");
     } catch (e) { this.note.textContent = `Pose preview failed: ${e.message}`; }
   }
@@ -441,7 +441,7 @@ export class RippleControls {
         const P = await import("../stage/posepass.mjs");
         say("Drawing the pose skeletons for every frame…");
         const r = await P.capturePoseSheet(stage, { onProgress: (f) => say(`Drawing the pose skeletons… ${Math.round(f * 100)}%`) });
-        if (!r.people) { say("No clay people on this shot to pose: add people, or read the pose from a source clip."); return; }
+        if (!r.people) { say("No people on this shot's stage to pose: add people, or read the pose from a source clip."); return; }
         const body = new FormData();
         const name = `pose_${sid}_${Date.now().toString(36)}.png`;
         body.append("image", new File([r.blob], name, { type: "image/png" }));

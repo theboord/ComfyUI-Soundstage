@@ -28,11 +28,11 @@ export const TOUR_STEPS = [
   { id: "block", title: "③ Set: block it",
     text: "Click a person or a car to select it: its bar has Move, Rotate and Scale, the yellow ring at its feet turns it, and dragging empty space looks around." },
   { id: "frame", title: "④ Frame",
-    text: "Press Generate frames to paint real-looking first frames from your 3D clay, then click the one you like." },
+    text: "Press Generate frames to paint real-looking first frames from your 3D stage, then click the one you like." },
   { id: "motion", title: "⑤ Motion",
     text: "Make a quick Draft first to check the movement, then render the Final with sound." },
   { id: "finish", title: "⑥ Review · ⑦ Deliver",
-    text: "Compare clay, frame, draft and final in Review, then export your video and VFX layers in Deliver." },
+    text: "Compare stage, frame, draft and final in Review, then export your video and VFX layers in Deliver." },
 ];
 
 /**

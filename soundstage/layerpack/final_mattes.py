@@ -91,7 +91,7 @@ def refine(entries: list[dict], objs: torch.Tensor, scene: dict, grow: int = 2, 
                 mt = torch.maximum(alpha * region, core)          # solid inside the track, BiRefNet's soft edge outside
             m = torch.where(lost[:, None, None], e["mask"].float(), mt)
             e["mask"] = m.half()
-            e["matte"] = f"SAM 3.1 track {k} (IoU {iou:.2f}" + (f", clay on {int(lost.sum())} frames)" if lost.any() else ")")
+            e["matte"] = f"SAM 3.1 track {k} (IoU {iou:.2f}" + (f", stage matte on {int(lost.sum())} frames)" if lost.any() else ")")
         elif alpha is not None:
             region = grow_feather((e["mask"].float() > 0.5).float(), 10, 6)
             others = torch.zeros(n, h, w)

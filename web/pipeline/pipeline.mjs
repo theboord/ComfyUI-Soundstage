@@ -68,10 +68,10 @@ export const withoutFrames = (list, gone) => { const g = new Set(gone); return (
 const STEPS = [
   { k: "script", n: 1, label: "Script", short: "Script", view: "script", hint: "Bring in your screenplay: scenes, breakdown, director's notes. Optional." },
   { k: "cast", n: 2, label: "Cast & Locations", short: "Cast", view: "cast", hint: "Characters, props and locations with reference pictures, so every shot matches." },
-  { k: "set", n: 3, label: "Set", short: "Set", view: "stage", hint: "Block the scene in 3D clay: cast, camera, timing." },
-  { k: "frame", n: 4, label: "Frame", short: "Frame", view: "frame", hint: "Paint the first frame from your clay with an image model." },
+  { k: "set", n: 3, label: "Set", short: "Set", view: "stage", hint: "Block the scene on the 3D stage: cast, camera, timing." },
+  { k: "frame", n: 4, label: "Frame", short: "Frame", view: "frame", hint: "Paint the first frame from your stage with an image model." },
   { k: "motion", n: 5, label: "Motion", short: "Motion", view: "motion", hint: "Animate it with LTX, following your blocking." },
-  { k: "review", n: 6, label: "Review", short: "Review", view: "ladder", hint: "Compare clay → frame → draft → final, side by side (the Ladder)." },
+  { k: "review", n: 6, label: "Review", short: "Review", view: "ladder", hint: "Compare stage → frame → draft → final, side by side (the Ladder)." },
   { k: "deliver", n: 7, label: "Deliver", short: "Deliver", view: "deliver", hint: "Layers for VFX, the cut as one video, NLE export." },
 ];
 const STILL_KREA = "__krea_depth__";
@@ -85,7 +85,7 @@ const DEPTH_TITLE = "Hold the frame to your stage's exact depth pass with Krea 2
   "keeps your cast pictures; silhouettes move only a little. It can add small far-off people (the check flags them).\n" +
   "Strict: Krea 2 paints the frame itself on the depth pass. Best when subjects stand apart from their surroundings in depth; " +
   "weak when a car sits on a road at its own depth. Cast pictures are not used.\n" +
-  "Tested on three shots (silhouette match with the clay, Off / Light / Strict): riders' horses 15% / 16% / 67%; " +
+  "Tested on three shots (silhouette match with the blocking, Off / Light / Strict): riders' horses 15% / 16% / 67%; " +
   "car chase hero car 82% / 86% / 20%; two-person street 93% / 79% / 71%. Light added far pedestrians on the street, " +
   "Strict a person in the foreground, so Off stays the default.\n" +
   "About 10-30 s more per frame. Frames you already picked keep the way they were painted.";
@@ -96,7 +96,7 @@ const VIDEO_L2R = "__ltx_l2r__";
 // Optional second engine: MiniMax H3 through the video picker (router key starts with this). LTX stays the default.
 const H3_KEY = "MiniMax H3 · local";
 const H3_LABEL = "MiniMax H3 (local, looser blocking, rich motion, own sound; ~20+ min)";
-const H3_CLAY_REF = "clay previz as <Video 1>";
+const H3_CLAY_REF = "clay previz as <Video 1>";   // clay-alias: the saved motion_ref value (alias contract, docs/agent.md)
 const isH3 = (v) => typeof v === "string" && v.startsWith(H3_KEY);
 const H3_MAX_REFS = 7;   // H3 takes 9 pictures: first + last frame + up to 7 references
 /**
@@ -508,9 +508,9 @@ export class Pipeline {
     try { sid = this.ctx.stage.activeShot().id; has = this._hasFrame(sid); } catch { /* stage not ready */ }
     const label = `${setNextLabel(has)} →`;
     if (b.textContent !== label) b.textContent = label;
-    b.title = has ? "Go to ④ Frame and paint new first frames for this shot from the clay and camera as they are now. "
+    b.title = has ? "Go to ④ Frame and paint new first frames for this shot from the stage and camera as they are now. "
       + "The frame you have stays in the list, so you can go back to it."
-      : "Go to ④ Frame and paint this shot's first frame from your clay and camera (the step's image model, no Paint Studio)";
+      : "Go to ④ Frame and paint this shot's first frame from your stage and camera (the step's image model, no Paint Studio)";
     b.dataset.shot = sid || "";
   }
 
@@ -538,7 +538,7 @@ export class Pipeline {
     const f = this.f;
     f.clay = h("canvas", { class: "clay" });
     f.model = h("select", { on: { change: () => { const sw = this.node(9082); if (sw) (sw.properties ||= {}).ssStillPicked = true; this._applyStillModel(); } } });
-    f.follow = h("input", { type: "range", min: "0.55", max: "1", step: "0.01", value: "0.85", "aria-label": "Follow the clay",
+    f.follow = h("input", { type: "range", min: "0.55", max: "1", step: "0.01", value: "0.85", "aria-label": "Follow the blocking",
       on: { input: () => { f.followOut.textContent = this._followLabel(); this._applyStillModel(); } } });
     f.followOut = h("span", { class: "status" });
     f.desc = h("textarea", { placeholder: FRAME_DESC_PLACEHOLDER,
@@ -603,8 +603,8 @@ export class Pipeline {
       feat("x", "Remove people, signs, rigs"), feat("maximize-2", "Extend 16:9 → 2.39, 9:16…"),
       feat("wand-sparkles", "Magic select (SAM 3.1)"), feat("users", "Put a cast member in"), feat("layers", "Layers, history, variations"));
     v.append(
-      h("h3", {}, "④ Frame: paint the first frame from your clay"),
-      h("p", { class: "lede" }, "Generate a few frames from your clay, pick one, fix it in Paint Studio (fill, remove, extend the canvas), then animate it. Every shot gets its own frame: pick a shot below."),
+      h("h3", {}, "④ Frame: paint the first frame from your stage"),
+      h("p", { class: "lede" }, "Generate a few frames from your stage, pick one, fix it in Paint Studio (fill, remove, extend the canvas), then animate it. Every shot gets its own frame: pick a shot below."),
       this._shotRow("frame"),
       f.studio = h("div", { class: "ss-studio" },
         h("div", { class: "ss-studio-side" },
@@ -612,14 +612,14 @@ export class Pipeline {
             h("label", { class: "f" }, "Image model", f.model),
             h("label", { class: "f" }, "Prompt: describe the frame (the Look tab adds camera, lens and style to it)", f.desc),
             // a div, not a label: it holds two labelled check boxes of its own (the canvas panel moves this whole block)
-            h("div", { class: "f" }, h("span", { class: "row" }, "Follow the clay", f.followOut), f.follow,
+            h("div", { class: "f" }, h("span", { class: "row" }, "Follow the blocking", f.followOut), f.follow,
               h("div", { class: "ss-chk ss-dlock status", title: DEPTH_TITLE },
                 h("span", {}, "Lock to the stage depth", f.depthNote = h("small", {})),
                 f.depthSeg = h("span", { class: "seg row" }, ...DEPTH_MODES.map(([k, label]) => h("button", { type: "button", "data-k": k,
                   "aria-pressed": String(k === "off"), on: { click: () => this._setDepthMode(k) } }, label)))),
-              h("label", { class: "ss-chk status", title: "Each new frame is compared with your clay (SAM 3.1 against the stage's ID pass): object count, silhouettes, extra objects. A flagged frame is painted again with a new seed, at most twice per Generate." },
+              h("label", { class: "ss-chk status", title: "Each new frame is compared with your blocking (SAM 3.1 against the stage's ID pass): object count, silhouettes, extra objects. A flagged frame is painted again with a new seed, at most twice per Generate." },
                 f.autoReroll = h("input", { type: "checkbox", checked: "" }),
-                h("span", {}, "Check each frame against the clay; re-roll extra or missing objects"))),
+                h("span", {}, "Check each frame against the blocking; re-roll extra or missing objects"))),
             h("label", { class: "f", title: "LoRA: a small add-on model trained on your own pictures (a character, a product or a house style). Any LoRA in models/loras, several at once with ＋ Add LoRA, applied in order: the ones made for this frame model come first." }, "Style or character add-on", f.loras.el),
             h("div", { class: "row" }, h("span", { class: "status" }, "Variations"), f.countSeg),
             h("div", { class: "row" }, h("span", { class: "status" }, "Quality"), f.qualSeg),
@@ -636,7 +636,7 @@ export class Pipeline {
             h("span", { class: "status" }, "One click sets film stock, lens, palette and grade (★ = suggested)."), f.styleHost = h("div")),
           h("details", { class: "card" }, h("summary", {}, "Camera"),
             h("span", { class: "status" }, "Body, lens, focal length and aperture. Same as the Look tab."), f.gearHost = h("div")),
-          h("div", { class: "card" }, f.clayCap = h("div", { class: "status" }, "Your clay, frame 1"), f.clay)),
+          h("div", { class: "card" }, f.clayCap = h("div", { class: "status" }, "Your stage, frame 1"), f.clay)),
         h("div", { class: "ss-studio-main" },
           f.status,
           f.hero = h("img", { alt: "The chosen frame for this shot", hidden: "",
@@ -832,7 +832,7 @@ export class Pipeline {
     const lim = h3 ? H3_MAX_REFS : REF_LIMIT;
     let note;
     if (!P.pool.length) note = "No cast yet: add characters, locations, wardrobe and props in ② Cast & Locations (or upload pictures there), then tick who is in each shot.";
-    else if (!used.length) note = keys.length ? "The cast ticked for this shot has no pictures yet: add one (or generate it in ② Cast & Locations)." : "Nobody is ticked for this shot: the frame is painted from the prompt and the clay alone.";
+    else if (!used.length) note = keys.length ? "The cast ticked for this shot has no pictures yet: add one (or generate it in ② Cast & Locations)." : "Nobody is ticked for this shot: the frame is painted from the prompt and the stage alone.";
     else note = where === "motion" && !h3
       ? `LTX animates this shot's first frame, so the cast comes in through the frame: ④ Frame paints it with ${names}. Ticks here change the next frames you generate (a chosen frame keeps the references it was painted with).`
       : `${h3 ? "H3 sees" : "Sent to the image model"}: ${used.map((it) => refLabel(it)).join(" · ")}.`;
@@ -957,7 +957,7 @@ export class Pipeline {
 
   _followLabel() {
     const d = +this.f.follow.value;
-    return d >= 0.95 ? "free: new details, looser layout" : d >= 0.8 ? "balanced (recommended)" : "strict: stays very close to the clay";
+    return d >= 0.95 ? "free: new details, looser layout" : d >= 0.8 ? "balanced (recommended)" : "strict: stays very close to the blocking";
   }
 
   _stillOptions() {
@@ -1023,7 +1023,7 @@ export class Pipeline {
     const sid = this.ctx.stage.activeShot().id;
     f.useTouch.checked = !!this.touched[sid];
     this.set(9086, "switch", f.useTouch.checked);
-    f.clayCap.textContent = `${this.ctx.stage.activeShot().name}: your clay, frame 1`;
+    f.clayCap.textContent = `${this.ctx.stage.activeShot().name}: your stage, frame 1`;
     this._drawCastRefs();
     this._drawShotRows();
     try {
@@ -1158,7 +1158,7 @@ export class Pipeline {
       for (let i = 0; i < f.count; i++) {
         const seed = base + i * 7919;
         this.set(seedNode, "seed", seed);
-        this._tick(f.status, `Queueing ${n > 1 ? `${shot.name} (${si + 1}/${n}), ` : ""}frame ${i + 1}/${f.count}${i === 0 ? ": capturing your clay passes for the whole shot first" : ""}…`);
+        this._tick(f.status, `Queueing ${n > 1 ? `${shot.name} (${si + 1}/${n}), ` : ""}frame ${i + 1}/${f.count}${i === 0 ? ": capturing your stage passes for the whole shot first" : ""}…`);
         this.ctx.setLookStart?.(true);
         this.ctx.setFrameLock?.(true);
         // the frame node's own model: Strict paints on Krea 2 Turbo, so the pick reproduces on it
@@ -1171,7 +1171,7 @@ export class Pipeline {
       if (allShots) await this.forEachShot((s, i) => one(s, i, n));
       else await one(this.ctx.stage.activeShot(), 0, 1);
       const total = f.count * n;
-      this._tick(f.status, `Rendering ${total} frame${total > 1 ? "s" : ""}${n > 1 ? ` for ${n} shots` : ""} on the GPU: the first can take 1–3 min while the model loads and the clay passes render, then about 6–10 s each`);
+      this._tick(f.status, `Rendering ${total} frame${total > 1 ? "s" : ""}${n > 1 ? ` for ${n} shots` : ""} on the GPU: the first can take 1–3 min while the model loads and the stage passes render, then about 6–10 s each`);
     } catch (e) {
       f.status.textContent = `Couldn't queue: ${e.message}`;
     } finally {
@@ -1228,7 +1228,7 @@ export class Pipeline {
         const b = badgeOf(res);
         const seed = Math.floor(Math.random() * 1e9);
         this.set(meta.seedNode, "seed", seed);
-        if (this.f?.status) this.f.status.textContent = `${b.text.replace(/^⚠ /, "Off the clay: ")}. Re-rolling it with a new seed (${this._rerolls[sid]} more re-roll${this._rerolls[sid] === 1 ? "" : "s"} allowed)…${meta.model === STILL_KREA ? "" : depthTip(res, meta.dlock || 0)}`;
+        if (this.f?.status) this.f.status.textContent = `${b.text.replace(/^⚠ /, "Off the blocking: ")}. Re-rolling it with a new seed (${this._rerolls[sid]} more re-roll${this._rerolls[sid] === 1 ? "" : "s"} allowed)…${meta.model === STILL_KREA ? "" : depthTip(res, meta.dlock || 0)}`;
         this.ctx.setLookStart?.(true);
         this.ctx.setFrameLock?.(meta.ls >= 2);
         this.queueAt(2, { ...meta, seed, reroll: true }).catch(() => { /* the status says why on the next queue */ });
@@ -1429,14 +1429,14 @@ export class Pipeline {
     m.engine = h("select", { on: { change: () => this._applyVideo() } });
     // Adherence: Loose · Balanced · Exact (default Exact), saved per shot with the LTX settings. It sets the clay guide
     // blur, the Layout IC-LoRA strength and how hard your frame steers (web/motion/ltxadvanced.mjs ADHERENCE).
-    m.freedom = h("span", { class: "seg row ss-adherence", role: "group", "aria-label": "Adherence to the clay blocking" },
+    m.freedom = h("span", { class: "seg row ss-adherence", role: "group", "aria-label": "Adherence to the blocking" },
       ...ADHERENCE_NAMES.map((k) => h("button", { type: "button", "data-adh": k, "aria-pressed": String(k === ADHERENCE.default),
         title: ADHERENCE.levels[k].tip, on: { click: () => this._setAdherence(k) } }, ADHERENCE.levels[k].label)));
     m.freeOut = h("span", { class: "status" });
     m.h3Ref = h("input", { type: "checkbox", on: { change: () => this._applyVideo() } });
     m.h3Box = h("div", { class: "status", hidden: "" },
-      "MiniMax H3 paints rich motion and its own sound in one pass, but follows your clay blocking only loosely, and a final takes about 20+ min. Drafts still preview with LTX. Your sound, music and line below go into H3's prompt.",
-      h("label", { class: "row", style: "margin-top:6px" }, m.h3Ref, "Use the clay as a motion reference (<Video 1>; slower, closer blocking)"),
+      "MiniMax H3 paints rich motion and its own sound in one pass, but follows your blocking only loosely, and a final takes about 20+ min. Drafts still preview with LTX. Your sound, music and line below go into H3's prompt.",
+      h("label", { class: "row", style: "margin-top:6px" }, m.h3Ref, "Use the stage previz as a motion reference (<Video 1>; slower, closer blocking)"),
       m.h3Last = h("div", { style: "margin-top:6px" }),
       h("div", { style: "margin-top:6px" }, `Reference images for this shot (character or prop sheets, up to ${H3_MAX_REFS}). H3 sees them as <Picture 2>, <Picture 3>…`),
       m.h3Refs = h("div", { class: "row", style: "flex-wrap:wrap;gap:6px;margin-top:4px" }),
@@ -1487,7 +1487,7 @@ export class Pipeline {
     this.ripple = new RippleControls(this);   // Follow: Layout · Pose · Ripple edit (web/motion/ripple.mjs)
     v.append(
       h("h3", {}, "⑤ Motion: animate it with LTX-2.5"),
-      h("p", { class: "lede" }, "LTX follows your clay animation (positions, camera, timing) and paints it in the style of your chosen frame. Pick a shot below, or render them all."),
+      h("p", { class: "lede" }, "LTX follows your stage animation (positions, camera, timing) and paints it in the style of your chosen frame. Pick a shot below, or render them all."),
       this._shotRow("motion"),
       h("div", { class: "two" },
         h("div", { class: "card" }, h("div", { class: "status" }, "Starts from your frame"), m.frame),
@@ -1528,7 +1528,7 @@ export class Pipeline {
 
   _freeLabel() {
     const a = adherenceKnobs(this.ltx.settings()).adherence;
-    return a === "Exact" ? "exact: on the clay's marks" : a === "Balanced" ? "balanced: close, a little freedom" : "loose: more invention, framing may drift";
+    return a === "Exact" ? "exact: on the blocking's marks" : a === "Balanced" ? "balanced: close, a little freedom" : "loose: more invention, framing may drift";
   }
 
   _setAdherence(k) {
@@ -1546,7 +1546,7 @@ export class Pipeline {
   _refreshMotion() {
     const m = this.m;
     if (!m.engine.options.length) {
-      m.engine.append(new Option("LTX-2.5 Layout-to-Render (local, follows your clay; recommended)", VIDEO_L2R));
+      m.engine.append(new Option("LTX-2.5 Layout-to-Render (local, follows your blocking; recommended)", VIDEO_L2R));
       const vals = this.w(9083, "model")?.options?.values || [];
       for (const val of (Array.isArray(vals) ? vals : [])) {
         const key = typeof val === "string" ? val : val?.key;
@@ -2215,7 +2215,7 @@ export class Pipeline {
       };
       this._frameSum();
     }
-    const right = panel("frame_r", "Paint Studio · clay", "right");
+    const right = panel("frame_r", "Paint Studio · stage", "right");
     mv.move(f.paintCard, right.body);
     const clayCard = f.clay.parentElement;
     mv.move(clayCard, right.body);

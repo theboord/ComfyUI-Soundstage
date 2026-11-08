@@ -117,11 +117,11 @@ class LayerPackAddAll(IO.ComfyNode):
                 IO.Image.Input("depth", optional=True,
                                tooltip="Stage depth pass (near = white): orders the layers far to near. "
                                        "Without it, stage order is used."),
-                IO.Int.Input("grow", default=6, min=0, max=64, tooltip="Pixels to expand each clay silhouette."),
+                IO.Int.Input("grow", default=6, min=0, max=64, tooltip="Pixels to expand each stage silhouette."),
                 IO.Int.Input("feather", default=4, min=0, max=64),
                 IO.Combo.Input("matte_source", options=MATTE_SOURCES, default=MATTE_SOURCES[0],
                                tooltip="Final frames = mattes that sit on the generated pixels (recommended). "
-                                       "Stage ID pass = the clay silhouettes (fast, but LTX moves edges)."),
+                                       "Stage ID pass = the stage silhouettes (fast, but LTX moves edges)."),
                 IO.Combo.Input("sam3_model", options=_sam3_ckpts(), advanced=True),
             ],
             outputs=[LayerPackType.Output(display_name="pack"), IO.String.Output(display_name="layers")],
@@ -177,8 +177,8 @@ class LayerPackAddAOV(IO.ComfyNode):
                 IO.Float.Input("near", default=1.0, min=0.0, max=10000.0, step=0.01, tooltip="Metres (stage: 1)."),
                 IO.Float.Input("far", default=40.0, min=0.01, max=100000.0, step=0.01, tooltip="Metres (stage: 40)."),
                 IO.Boolean.Input("conform_to_mattes", default=True, optional=True,
-                                 tooltip="Depth: reshape the stage (clay) depth so every actor's silhouette is its "
-                                         "final-frame matte, not the clay figure."),
+                                 tooltip="Depth: reshape the stage depth so every actor's silhouette is its "
+                                         "final-frame matte, not the stage figure."),
             ],
             outputs=[LayerPackType.Output(display_name="pack")],
         )

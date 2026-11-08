@@ -41,7 +41,7 @@ class CutExport(IO.ComfyNode):
             description="Write the Cut tab's edit to output/soundstage_cuts/<name>/ in each NLE's best format: AAF + "
                         "EDL + locators for Avid, FCP7 XML for Premiere, FCPXML + OTIO for Resolve, FCPXML for Final "
                         "Cut. Audio tracks go along as stems, and audio/<shot_id>_mix.wav is each shot's temp mix for "
-                        "LTX audio conditioning. Media = Final where rendered, else the Draft / Look / clay stand-in "
+                        "LTX audio conditioning. Media = Final where rendered, else the Draft / Look / stage stand-in "
                         "with a relink note.",
             is_output_node=True,
             inputs=[
