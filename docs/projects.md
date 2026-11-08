@@ -116,6 +116,17 @@ know which project a memory belongs to, so it must not move to a different proje
   the first Save, canvas undo back past the first Save, or a restored autosave from before it gets a fresh id when it
   is saved. Two tabs saving a brand-new project at the same time end up with different ids, and the id keeps
   changing between them until one tab is closed.
+- **Two saves at the same moment:** saves of one project from one page run one after the other. Across tabs there
+  is no lock, so after writing, Save reads `workflows/<name>.json` and `project.json` back and, while their ids
+  differ, sets `project.json` to the saved workflow's id (up to 6 tries). Save then reports `confirmed: true` only
+  when that id is the one this graph carries; otherwise the pill says the other tab's copy is the one on disk.
+  Still open: a save that settled just before the other tab's write landed says confirmed although the disk has
+  moved on. `projectId()` can then report a stale id until the next check (at most 15 s, or the next Save/Open). In
+  a 200-trial test with random delays this happened in 2-8 of 400 saves; the two files never disagreed at the end.
+- **Collected copy:** Open collected project drops the id the copy carries. On the machine it was collected from,
+  `projects/<name>/project.json` still holds that id, so the copy would confirm as the live project and a plain Save
+  would overwrite it. Its first Save asks for a name, asks before replacing an existing project of that name, and
+  writes a fresh id.
 - **Library:** Duplicate gives the copy a fresh id (in both files). Rename, Trash and Untrash keep it.
 - **Old projects:** a project saved before ids existed has none (`id: null` in the list) until its next Save.
   Opening, listing or autosaving it never writes one.
@@ -123,7 +134,9 @@ know which project a memory belongs to, so it must not move to a different proje
   - In the page: `window.__ssProject.projectId()` gives the open workflow's id only once it is confirmed against
     the saved `project.json` of the same name, else `null`. It is `null` when the project is not saved yet, is an old
     project not saved since, was renamed in the library while the tab stayed open, or is a collected or exported copy
-    whose `project.json` is not here. A Save, an Open, and a check every 15 s confirm it. It only reads.
+    whose `project.json` is not here, or was opened with Open collected project and not saved yet. A Save, an Open,
+    and a check every 15 s confirm it. It only reads. `window.__ssProject` is assigned once per page in
+    `mountProjectBar` (`web/project/projectbar.mjs`).
   - `await window.__ssProject.project()` reads `project.json` now: `{id, name, graph_id, manifest_id, confirmed}`.
   - `window.__ssProject.current()` gives `{id, name}` as the graph says, unconfirmed. Forget uses it to pick the
     project whose copies it cleans.
@@ -180,7 +193,8 @@ way film post works, and downloads it as a zip:
    `ComfyUI/output/soundstage_projects/` and pick it from the list.
 3. The workflow from `project.json` opens in a new tab. Every file reference is relinked to the copies in
    `output/soundstage_projects/<Project>/…`. Files that were missing keep their old reference.
-4. Save it to make it a project on that machine.
+4. Save it to make it a project on that machine. The first Save asks for a name and gives it a fresh project id
+   (the copy's own id is dropped on open), and asks before replacing a project of the same name.
 
 ### Server routes
 

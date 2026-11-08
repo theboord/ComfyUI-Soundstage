@@ -5,6 +5,39 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-07
 
+**Third review fixes, 21:30-22:30: collected-copy id collision, opaque refs, two-tab save race, Forget's other copies (private branch `private/project-id`)**
+
+- **Still wrong (read first):** checked with Node and pytest only, not in the browser, the App or a live ComfyUI.
+  - **Stale confirmed id:** two tabs saving one project at once now always leave `workflows/<name>.json` and
+    `project.json` with the same id, but a save that settled just before the other tab's write landed still says
+    `confirmed`. `projectId()` can then report an id the disk no longer holds until the next check (at most 15 s).
+    2-8 of 400 saves in the random-delay test.
+  - **Ask's summary:** it is rejected only when it repeats 3 words in a row of the typed sentence (or 4 characters
+    in CJK / Thai). A reworded summary can still carry private content into the Book.
+  - **Not ours to fix (Jon's lane, `web/agent/director.mjs`):** line 401 keeps `label: plan.command` (the typed
+    sentence) in the Director's undo / redo stacks; Director Undo does not call `forgetDecision`; line 407 passes no
+    `summary` and no `ref` to `recordDecision`, so no decision can be forgotten by its turn yet.
+  - **Collected copy loses its id:** an opened collected copy has no id until its first Save, which writes a fresh
+    one. Memory keyed to the original id does not follow the copy to another machine.
+  - **Not changed:** ComfyUI's queue history and render metadata still hold the Book as it was (docs/director.md).
+- **Collected copy overwrote the live project (`web/project/projectbar.mjs` `openCollected`, `save`):** the copy kept
+  the id it carried, so on the machine it came from `projectId()` confirmed it as the live project and a plain Save
+  replaced `workflows/<name>.json` with the copy relinked to `output/soundstage_projects/`. It now opens with no id,
+  and its first Save asks for a name and before replacing a project of that name.
+- **Refs are opaque (`web/book/model.mjs` `DECISION_REF_RE`, `decisionRef`, `recordDecision`):** any string was kept
+  as `ref` (80 characters), so a caller passing the typed sentence put it in the Book. Only `${projectId}:${turnId}`
+  is kept now, and not when the turn id spells out the sentence.
+- **Two-tab save race (`web/project/store.mjs` `save`, `_settle`):** in 21 of 200 trials the two files ended with
+  different ids. Saves in one page now run one at a time, and save() reads both files back and settles
+  `project.json` to the saved workflow's id. It returns `confirmed` and `disk_id`; the pill trusts only a confirmed id.
+- **Forget and other projects' copies (`soundstage/book/store.py` `forget`, `routes.py`, `web/book/book.mjs`
+  `scrubDecision(id, {everywhere})`):** a Duplicate or Save As copy of the same decision note was left on disk while
+  Forget said `ok: true`. It is now listed in `other_copies` and `ok` is false; `everywhere: true` removes it by note
+  id only. The project's own `workflows/<name>.json` is cleaned whatever id a save race left in it.
+- **Tests:** `tests/js/project.test.mjs` collected copy on the same machine (fails on 9da6f2b), 200-trial two-tab race
+  (fails on 9da6f2b), one-page saves in order; `tests/js/book.test.mjs` refs that echo the sentence are dropped;
+  `tests/test_book.py` other_copies, everywhere, own workflow with a raced id.
+
 **Second review fixes: Forget after a library Rename, the spec's id rule, joined-token args (private branch `private/project-id`)**
 
 - **Still wrong (read first):** checked with Node and pytest only, not in the browser, the App or a live ComfyUI.

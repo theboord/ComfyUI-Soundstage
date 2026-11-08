@@ -139,9 +139,10 @@ When a chat command changes the set, the Book keeps a decision note on the scene
   the tools they changed (for example `Move; Lens`) and keep their id. Notes from the first 2026-11-07 version
   (`dv: 2`) are cut to the allowed arguments and their text is written again from the change. The new text reaches
   the server copy on the Book's next save.
-- **Link id:** `recordDecision({..., ref})` stores the chat turn's id as `ref`. `forgetDecision(ref)` removes every
-  decision note with that ref. Use a ref of 8 characters or more, such as `${projectId}:${turnId}`: Forget finds
-  copies by their text first, so a short ref like `t1` also matches `shot1` and Forget then says `ok: false`.
+- **Link id:** `recordDecision({..., ref})` stores `ref` only when it is an opaque `${projectId}:${turnId}`
+  (`DECISION_REF_RE` in `web/book/model.mjs`: `p_` + 8 hex or empty, a colon, then 1-48 of `A-Z a-z 0-9 _ -`).
+  Anything else is dropped and the note has no ref: chat text, a sentence, or a turn id that spells out the typed
+  words (`make_it_rain`). `forgetDecision(ref)` removes every decision note with that ref.
 - **Forget:** `await book.forgetDecision(id)` removes the note from the open Book and the workflow
   (`node.properties.ss_book`), and saves the Book. It then calls `POST /soundstage/book/forget {ids, project: {id,
   name}}`. That call removes the note from every stored copy of that project on the server:
@@ -151,11 +152,14 @@ When a chat command changes the set, the Book keeps a decision note on the scene
 
   A file belongs to the project when it carries the same project id, or no id and the same project name, or sits
   anywhere inside `projects/<project name>/` (a library Rename moves an old project's autosaves, which still name the
-  old project). Another
-  project's copy is left alone, even when it holds the same note id (a Duplicate) or the same ref, and is listed in
-  `other_projects`. A file is rewritten only if its text holds the id. `ok` is `false`, with an `error` line, when a
-  copy was not cleaned: a file over 64 MB (`skipped`), a file that names no project (`skipped`), or a file whose text
-  still mentions the id, for example inside a string (`still_mentions`). Without a project only the open book is
+  old project), and so does `workflows/<project name>.json` whatever id it carries (two tabs saving at once can leave
+  it with another id). Another project's file is left alone and listed in `other_projects`. When it holds a copy of
+  the same decision (the same note id: a Duplicate, a Save As copy) it is also listed in `other_copies` and `ok` is
+  `false`. `book.scrubDecision(id, {everywhere: true})` (body `everywhere: true`) removes those copies too, by note id
+  only: another project's own decision that merely shares the ref is never touched. A file is rewritten only if its
+  text holds the id. `ok` is `false`, with an `error` line, when a copy was not cleaned: a file over 64 MB
+  (`skipped`), a file that names no project (`skipped`), a file whose text still mentions the id, for example inside
+  a string (`still_mentions`), or another project's copy (`other_copies`). Without a project only the open book is
   cleaned, and the answer says so.
 - **A note not in the open Book** (another tab's, or one already removed locally): `await book.scrubDecision(id)`
   cleans the server copies of the open project. `forgetDecision` refuses an id it cannot find in the open Book.
