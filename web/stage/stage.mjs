@@ -278,8 +278,51 @@ const _tiltQ = new THREE.Quaternion();
 /** The kind tables live editing needs (exported for the tests). */
 export const liveKinds = () => ({ PERSON_KINDS, RIDEABLE, SITTABLE, SEATS, NO_COLLIDE, CAR_BODIES, NEVER_CARRIED, LIBRARY, MOUNTS });
 
-/** _obstacles: how far a parked object's clay group may drift before the height tables are rebuilt. */
+/** _obstacles: the grid a parked object's clay group transform is put on (position m, quaternion component, scale). */
 const OBS_TOL = { pos: 0.05, rot: 0.01, scale: 0.01 };
+/** _obstacles / _heightAt: how many recent obstacle lists and height tables per person are kept (jitter on a cell edge). */
+const OBS_LRU = 8, HEIGHT_LRU = 4;
+
+/** _obstacles: a step farther than this between two looks at a group (any position component m, quaternion component,
+ *  relative scale) is an edit (a drag, a console move, a rescale), not per-frame motion: the grid is re-anchored there. */
+const OBS_JUMP = { pos: 0.25, rot: 0.05, scale: 0.1 };
+
+/** A parked clay group's transform on a grid anchored at the transform it was first seen at (or last moved to by an
+ *  edit): {key, at, cell}. Pure in the live transform once anchored, exact when the group sits at its anchor. */
+function obsCell(g, anchors) {
+  const P = g.position, Q = g.quaternion, S = g.scale;
+  let now = [P.x, P.y, P.z, Q.x, Q.y, Q.z, Q.w, S.x, S.y, S.z];
+  let e = anchors.get(g);
+  if (e) {
+    // q and -q are the same rotation: compare against the anchor's sign
+    if (e.at[3] * now[3] + e.at[4] * now[4] + e.at[5] * now[5] + e.at[6] * now[6] < 0) now = now.map((v, k) => (k >= 3 && k <= 6 ? -v : v));
+    const jump = now.some((v, k) => k < 3 ? Math.abs(v - e.last[k]) > OBS_JUMP.pos
+      : k < 7 ? Math.abs(v - e.last[k]) > OBS_JUMP.rot : Math.abs(v - e.last[k]) > OBS_JUMP.scale * Math.max(1e-6, Math.abs(e.last[k])));
+    if (jump) e = null;
+  }
+  if (!e) { e = { at: now, id: (anchors.n = (anchors.n || 0) + 1) }; anchors.set(g, e); }
+  e.last = now;
+  const tol = (k) => (k < 3 ? OBS_TOL.pos : k < 7 ? OBS_TOL.rot : OBS_TOL.scale * Math.max(1e-6, Math.abs(e.at[k])));
+  const cell = now.map((v, k) => Math.round((v - e.at[k]) / tol(k)) || 0);
+  return { key: `${e.id}:${cell.join(",")}`, at: e.at, cell, tol };
+}
+
+/** The group's world box with its transform put on its grid cell (restored after): a pure function of the cell. */
+function obsBoxAt(g, c) {
+  const P0 = g.position.clone(), Q0 = g.quaternion.clone(), S0 = g.scale.clone();
+  const v = c.at.map((x, k) => x + c.cell[k] * c.tol(k));
+  try {
+    g.position.set(v[0], v[1], v[2]);
+    const q = new THREE.Quaternion(v[3], v[4], v[5], v[6]);
+    if (q.lengthSq() < 1e-12) q.copy(Q0); else q.normalize();
+    g.quaternion.copy(q);
+    g.scale.set(v[7], v[8], v[9]);
+    g.updateMatrixWorld(true);
+    return new THREE.Box3().setFromObject(g);
+  } finally {
+    g.position.copy(P0); g.quaternion.copy(Q0); g.scale.copy(S0); g.updateMatrixWorld(true);
+  }
+}
 
 export class Stage {
   /** Current delivery size from the shot's aspect ratio. */
@@ -1741,50 +1784,43 @@ export class Stage {
       if (PERSON_KINDS.has(o.kind) || o.mount_id || o.carry_id || (o.keys?.length > 1 && o.keys.some((k) => Math.hypot(k.position[0] - o.keys[0].position[0], k.position[2] - o.keys[0].position[2]) > 0.05))) continue;
       const g = this.actorMeshes.get(o.id);
       if (!g) continue;
-      // The transform with hysteresis (5 cm, ~1 degree, 1 %): each group keeps the transform the tables were last
-      // built from and the signature carries a counter that moves on only when the live transform is farther than that
-      // from it. A drag or a console move refreshes the tables; small per-frame motion (physics jitter, a baked object
-      // settling) never does, wherever it sits (fixed-step rounding rebuilt every frame when jitter straddled a step).
+      // The transform on a grid (5 cm, ~1 degree, 1 %) anchored where the group was first seen, or where an edit last
+      // put it (a step past OBS_JUMP between two looks: a drag, a console move): the signature carries the grid cell and
+      // the box is built from the cell's own transform, not the live one. So once anchored the list (and every height
+      // table made from it) is a pure function of where the group is at this frame: the same after sequential play, a
+      // jump or a scrub (the earlier hysteresis counter kept whatever transform was last counted, so feet could differ
+      // by up to 5 cm with play history). A group at its anchor (a parked prop that doesn't move) is exact. Jitter and a
+      // small settle stay in a cell or two (both lists stay cached, OBS_LRU), so nothing rebuilds per frame.
+      // Limits: a group seen first at another frame (a rebuild there), or a step past OBS_JUMP (a seek across a big
+      // fall), re-anchors, so the boxes can differ by up to half a cell (2.5 cm) from another play history.
       // Something floating in a pool or a boat on the swell bobs every frame (_waterPhysics): its keys (above) already
       // say where it is, so its live transform is left out of the signature altogether.
-      if (g.userData?.inWater) parts.push(`${g.uuid}@water`);
-      else parts.push(`${g.uuid}@${this._obsEpoch(g)}`);
-      parked.push([o, g]);
+      if (g.userData?.inWater) { parts.push(`${g.uuid}@water`); parked.push([o, g, null]); }
+      else { const cell = obsCell(g, this._obsAnchors = this._obsAnchors || new WeakMap()); parts.push(`${g.uuid}@${cell.key}`); parked.push([o, g, cell]); }
     }
     const sig = parts.join("|");
     if (this._obsCache?.sig === sig) return this._obsCache.list;
+    // Lists recently built, by signature (kept on the cache object, so anything that clears _obsCache clears them too).
+    const lru = this._obsCache?.lru || new Map();
+    const hit = lru.get(sig);
+    if (hit) {
+      lru.delete(sig); lru.set(sig, hit);
+      this._obsCache = { sig, list: hit, lru };
+      return hit;
+    }
     const list = [];
-    for (const [o, g] of parked) {
-      g.updateMatrixWorld(true);
-      const box = new THREE.Box3().setFromObject(g);
+    for (const [o, g, cell] of parked) {
+      const box = cell ? obsBoxAt(g, cell) : (g.updateMatrixWorld(true), new THREE.Box3().setFromObject(g));
       if (!isFinite(box.max.y) || box.max.y < 0.15) continue;
       // rise: how far the top is above the floor it stands on (a crate on a 0.92 m station platform rises 0.8 m),
       // for the "too tall to climb" cut-off; top stays the world height people stand at.
       const rise = box.max.y - this._floorUnder((box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2);
       list.push({ id: o.id, kind: o.kind, box, top: box.max.y, rise });
     }
-    this._obsCache = { sig, list };
+    lru.set(sig, list);
+    while (lru.size > OBS_LRU) lru.delete(lru.keys().next().value);
+    this._obsCache = { sig, list, lru };
     return list;
-  }
-
-  /** _obstacles' transform hysteresis for one clay group: a counter that moves on only when the group has moved more
-   *  than OBS_TOL (position m, quaternion component, scale) from the transform it was last counted at. */
-  _obsEpoch(g) {
-    this._obsSeen = this._obsSeen || new WeakMap();
-    const P = g.position, Q = g.quaternion, S = g.scale;
-    const now = [P.x, P.y, P.z, Q.x, Q.y, Q.z, Q.w, S.x, S.y, S.z];
-    const tol = [OBS_TOL.pos, OBS_TOL.pos, OBS_TOL.pos, OBS_TOL.rot, OBS_TOL.rot, OBS_TOL.rot, OBS_TOL.rot, OBS_TOL.scale, OBS_TOL.scale, OBS_TOL.scale];
-    let e = this._obsSeen.get(g);
-    // q and -q are the same rotation: compare against the nearer sign
-    if (e) {
-      const dq = e.at[3] * now[3] + e.at[4] * now[4] + e.at[5] * now[5] + e.at[6] * now[6];
-      const sg = dq < 0 ? -1 : 1;
-      const moved = now.some((v, k) => Math.abs((k >= 3 && k <= 6 ? sg * v : v) - e.at[k]) > tol[k]);
-      if (!moved) return e.n;
-      e = { at: now, n: e.n + 1 };
-    } else e = { at: now, n: 0 };
-    this._obsSeen.set(g, e);
-    return e.n;
   }
 
   /** The ground under (x, z): the stage floor (0) or the set's own walkable floor (a station platform, the seabed). */
@@ -1811,6 +1847,15 @@ export class Stage {
     this._yCache = this._yCache || new WeakMap();
     let c = this._yCache.get(a);
     if (!c || c.sig !== sig) {
+      // Recent tables for this person (an obstacle flipping between two grid cells): reuse instead of rebuilding.
+      this._yAlt = this._yAlt || new WeakMap();
+      let alt = this._yAlt.get(a);
+      if (!alt) { alt = new Map(); this._yAlt.set(a, alt); }
+      if (c) { alt.delete(c.sig); alt.set(c.sig, c); while (alt.size > HEIGHT_LRU) alt.delete(alt.keys().next().value); }
+      const old = alt.get(sig);
+      if (old && old.obs === obs) { c = old; this._yCache.set(a, c); }
+    }
+    if (!c || c.sig !== sig) {
       const kk = 0.5 * 9.8 / (fps * fps), R = 0.18;
       const S = [];
       for (let f = 0; f <= last; f++) {
@@ -1827,7 +1872,7 @@ export class Stage {
         for (let q = 0; q <= last; q++) { const d = f - q; const v = S[q] - kk * d * d; if (v > y) y = v; }
         return +y.toFixed(3);
       });
-      c = { sig, Y, S };
+      c = { sig, Y, S, obs };
       this._yCache.set(a, c);
     }
     return c.Y[Math.max(0, Math.min(c.Y.length - 1, Math.round(frame)))] || 0;

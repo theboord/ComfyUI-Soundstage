@@ -155,7 +155,7 @@ test("openPhysicsPanel() with nothing selected is an error and opens nothing", (
 });
 
 // ---------------------------------------------------------------- 2: the obstacle signature
-test("obstacles: jitter sitting on a 5 cm / 1 % boundary doesn't rebuild either (hysteresis, not rounding); a slow creep past 5 cm does, once", () => {
+test("obstacles: jitter sitting on a grid-cell edge flips between two cached lists (no box or height-table rebuild per frame); a slow creep crosses a cell or two", () => {
   const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
   const crate = { id: "c1", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] };
   const st = bareStage([walker, crate]);
@@ -170,6 +170,7 @@ test("obstacles: jitter sitting on a 5 cm / 1 % boundary doesn't rebuild either 
     st._heightAt(walker, 0); st._obstacles();
     boxes = 0;
     let rebuilt = 0, last = st._obstacles();
+    const lists = new Set([last]), tables = new Set([st._yCache.get(walker)]);
     for (let f = 0; f < 48; f++) {
       cg.position.x = 0.025 + (f % 2 ? 0.001 : -0.001);
       cg.position.y = 0.025 + (f % 2 ? -0.001 : 0.001);
@@ -177,17 +178,21 @@ test("obstacles: jitter sitting on a 5 cm / 1 % boundary doesn't rebuild either 
       cg.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), 2 * Math.asin(0.005) + (f % 2 ? 1e-4 : -1e-4));   // q.y on 0.005
       cg.updateMatrixWorld(true);
       st.frame = f; st._heightAt(walker, f);
-      const l = st._obstacles(); if (l !== last) rebuilt++; last = l;
+      const l = st._obstacles(); lists.add(l); tables.add(st._yCache.get(walker)); last = l;
     }
-    assert.equal(rebuilt, 0, `rebuilds for boundary jitter: ${rebuilt} of 48`);
-    assert.equal(boxes, 0);
-    // a slow creep (1 mm a frame): one rebuild once it is past 5 cm from where the tables were built, not 48
+    // the grid is anchored where the crate was first seen (x 0.025, y 0, scale 1): y, scale and q.y jitter across a
+    // cell edge in opposite phases, so it flips between two cells (plus the one it was first seen in); every list and
+    // height table stays cached, so each is built once, not once a frame
+    assert.ok(lists.size <= 3, `obstacle lists for boundary jitter: ${lists.size}`);
+    assert.ok(tables.size <= 3, `height tables for boundary jitter: ${tables.size}`);
+    assert.ok(boxes <= 2, `boxes built over 48 frames of jitter: ${boxes}`);
+    // a slow creep (1 mm a frame, 8 cm): it crosses the cells it passes (2.5 cm and 7.5 cm from the anchor), not 80
     rebuilt = 0;
     for (let f = 0; f < 80; f++) {
       cg.position.x = 0.025 + 0.001 * f; cg.updateMatrixWorld(true);
       const l = st._obstacles(); if (l !== last) rebuilt++; last = l;
     }
-    assert.equal(rebuilt, 1, `rebuilds over an 8 cm creep: ${rebuilt}`);
+    assert.ok(rebuilt >= 1 && rebuilt <= 3, `rebuilds over an 8 cm creep: ${rebuilt}`);
     // q and -q are the same rotation: flipping the sign is not a move
     const q = cg.quaternion.clone(); cg.quaternion.set(-q.x, -q.y, -q.z, -q.w); cg.updateMatrixWorld(true);
     assert.equal(st._obstacles(), last, "a sign-flipped quaternion is the same transform");
@@ -240,6 +245,46 @@ test("obstacles: a bobbing pool prop, a settling or jittering prop don't rebuild
     }
     assert.ok(n > 0 && n <= 21, `rebuilds over a 1 m fall: ${n}`);
   } finally { THREE.Box3.prototype.setFromObject = orig; }
+});
+
+test("obstacles: feet over a settling, jittering prop are the same after sequential, shuffled and scrubbed evaluation (C3 order-independence gate)", () => {
+  // The prop's transform is a function of the frame (a 15 cm drop that settles, a decaying jitter and wobble), as the
+  // stage poses it in setFrame; each order starts from a fresh stage that first sees the prop at frame 0 (its build).
+  const settle = (f) => ({ y: 0.15 * Math.max(0, 1 - f / 10) ** 2 + 0.008 * Math.sin(f * 1.3) * Math.exp(-f / 20), ry: 0.01 * Math.sin(f) });
+  const fresh = () => {
+    const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
+    const crate = { id: "c1", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] };
+    const st = bareStage([walker, crate]);
+    clayOf(st, walker);
+    const cg = clayOf(st, crate);
+    const at = (f) => { const t = settle(f); cg.position.y = t.y; cg.rotation.y = t.ry; cg.updateMatrixWorld(true); st.frame = f; return st._heightAt(walker, f); };
+    at(0);
+    return at;
+  };
+  const a = fresh(), seq = []; for (let f = 0; f <= 48; f++) seq.push(a(f));
+  const b = fresh(), order = [...Array(49).keys()].sort((x, y) => ((x * 7919) % 49) - ((y * 7919) % 49)), shuf = new Array(49);
+  for (const f of order) shuf[f] = b(f);
+  const c = fresh(); let x = 20; const scrub = new Array(49);
+  for (let n = 0; n < 200; n++) { x = (x * 37 + 11) % 49; scrub[x] = c(x); }
+  assert.ok(seq.some((y) => y > 0.5), "the walker steps up onto the crate (the box matters)");
+  for (let f = 0; f <= 48; f++) {
+    assert.equal(shuf[f], seq[f], `frame ${f}: shuffled`);
+    if (scrub[f] !== undefined) assert.equal(scrub[f], seq[f], `frame ${f}: scrubbed`);
+  }
+  // the stated limit: a 1 m fall seen out of order steps past OBS_JUMP and re-anchors, so feet can differ, by at most
+  // half a grid cell (2.5 cm, plus the sub-millimetre rounding of the height table)
+  const fall = (f) => ({ y: Math.max(0, 1 - 0.5 * 9.8 * (f / 24) ** 2), ry: 0 });
+  const fresh2 = () => {
+    const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
+    const crate = { id: "c1", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] };
+    const st = bareStage([walker, crate]); clayOf(st, walker); const cg = clayOf(st, crate);
+    const at = (f) => { cg.position.y = fall(f).y; cg.updateMatrixWorld(true); st.frame = f; return st._heightAt(walker, f); };
+    at(0); return at;
+  };
+  const s2 = fresh2(), q2 = []; for (let f = 0; f <= 48; f++) q2.push(s2(f));
+  const r2 = fresh2(); let worst = 0;
+  for (const f of order) worst = Math.max(worst, Math.abs(r2(f) - q2[f]));
+  assert.ok(worst <= 0.0255, `a 1 m fall, shuffled: worst feet difference ${worst.toFixed(4)} m`);
 });
 
 // ---------------------------------------------------------------- 3: stale attaches
