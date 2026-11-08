@@ -119,9 +119,10 @@ test("setPose keeps the person's movement keys: sit then stand, sit then sit_flo
   assert.equal(JSON.stringify(st.state.actors[0].keys), keys, "standing up leaves the walk 0 to 8 m");
   assert.equal(st.state.actors[0].mount_id, undefined);
   assert.equal(st.setPose("w", "sit").ok, true);
-  assert.equal(st.setPose("w", "sit_floor").ok, true);
-  assert.equal(st.state.actors[0].pose, "sit_floor");
-  assert.equal(JSON.stringify(st.state.actors[0].keys), keys, "sit to sit_floor leaves the keys");
+  const r = st.setPose("w", "sit_floor");   // she walks 0 to 8 m: down on the floor would slide her along the path
+  assert.equal(r.ok, false); assert.match(r.error, /has movement keys/);
+  assert.equal(st.state.actors[0].mount_id, "c1", "the refusal changed nothing: still on the chair");
+  assert.equal(JSON.stringify(st.state.actors[0].keys), keys, "sit then a refused sit_floor leaves the keys");
   assert.equal(st.setPose("w", "stand").ok, true);
   assert.equal(JSON.stringify(st.state.actors[0].keys), keys);
   st.setFrame(8);
@@ -392,4 +393,35 @@ test("stageHook(null) and a throwing getter refuse instead of throwing; refusals
   assert.deepEqual(host.select(null), { ok: true, selected: null });
   assert.equal(host.restore('{"actors":[]}').ok, false);
   assert.equal(st.state.actors.length, 2);
+});
+
+test("sit_floor never slides along a keyed path: refused while the person moves (clay and lifelike sit spec)", () => {
+  // keyed walk x = 0 at frame 0 to x = 5 at frame 8 (the reviewer's probe: 0 -> 5 along the path)
+  const mover = { id: "m", name: "Jane Doe", kind: "woman", height_m: 1.7, position: [0, 0, 0],
+    keys: [{ frame: 0, position: [0, 0, 0] }, { frame: 8, position: [5, 0, 0] }] };
+  const st = sitStage([mover]);
+  const before = JSON.stringify(st.state), undo = st.undo;
+  const r = st.setPose("m", "sit_floor");
+  assert.equal(r.ok, false, "refused: the seated body would slide from x=0 to x=5");
+  assert.match(r.error, /has movement keys \(base\)/);
+  assert.equal(JSON.stringify(st.state), before, "nothing changed"); assert.equal(st.undo, undo);
+  // movement in one shot's own blocking (by_shot) refuses too
+  const st2 = sitStage([{ ...man("p", 0), by_shot: { s: { keys: [{ frame: 0, position: [0, 0, 0] }, { frame: 8, position: [0, 0, 3] }] } } }]);
+  assert.match(st2.setPose("p", "sit_floor").error, /movement keys \(s\)/);
+  // a hold (two keys at one spot) is not movement: she sits, and stays put at every frame
+  const st3 = sitStage([{ ...man("h", 2), keys: [{ frame: 0, position: [2, 0, 0] }, { frame: 8, position: [2, 0, 0] }] }]);
+  assert.equal(st3.setPose("h", "sit_floor").ok, true);
+  for (const f of [0, 4, 8]) { st3.setFrame(f); assert.deepEqual(st3._sitSpec(st3.state.actors[0]).seat, [2, 0, 0]); }
+  // movement keyed AFTER she sat (a scene saved that way / a later key edit): neither body sits sliding; the clay
+  // walks the path upright and the lifelike body gets no sit spec, until the keys hold still again
+  const a = st3.state.actors[0];
+  a.keys = [{ frame: 0, position: [2, 0, 0] }, { frame: 8, position: [7, 0, 0] }];
+  st3.setFrame(4);
+  assert.equal(st3._sitSpec(a), null, "the lifelike body (avatars.mjs reads _sitSpec) does not sit on a moving path");
+  const g = st3.actorMeshes.get("h");
+  assert.ok(g.position.y > -0.2, `the clay is not folded down while it moves (y ${g.position.y})`);
+  a.keys = [{ frame: 0, position: [7, 0, 0] }];
+  st3.setFrame(4);
+  assert.deepEqual(st3._sitSpec(a).seat, [7, 0, 0]);
+  assert.ok(Math.abs(g.position.y - -0.85) < 1e-6, "held still again: down on the floor");
 });

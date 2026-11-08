@@ -2302,7 +2302,9 @@ export class Stage {
       }
       // Sitting on the floor (setPose "sit_floor"): the clay folds down where it stands; the lifelike body follows
       // (people/avatars.mjs sitBody).
-      if (a.pose === "sit_floor" && !a.mount_id && rig === "biped" && g.userData.limbs) {
+      // Only while they hold still: a person with movement keys never sits sliding along the keyed path (setPose
+      // refuses sit_floor then; keys added afterwards make them stand on their path until the keys hold still again).
+      if (a.pose === "sit_floor" && !a.mount_id && rig === "biped" && g.userData.limbs && !this._keysMove(this._actorKeys(a))) {
         Gait.release(g);
         for (const jn of ["spine", "neck", "head"]) g.userData.joints?.[jn]?.rotation.set(0, 0, 0);
         g.position.y = this._heightAt(a, this.frame) - applyPose(g, "sit_floor", (a.height_m || 1.8) * (a.scale || 1));
@@ -4743,6 +4745,22 @@ export class Stage {
     return Math.max(MAX_SEAT_MIN_M, MAX_SEAT_FRAC * (a.height_m || 1.8) * (a.scale || 1));
   }
 
+  /** Do these position keys move (two keys at different spots)? A hold (every key at one spot) does not. */
+  _keysMove(keys) {
+    if (!Array.isArray(keys) || keys.length < 2) return false;
+    const p0 = keys[0]?.position || [];
+    return keys.some((k) => (k.position || []).some((v, c) => Math.abs(v - (p0[c] ?? 0)) > 1e-4));
+  }
+
+  /** Movement keys of a person in any shot (their own keys, or a shot's by_shot blocking), or null: the shot ids /
+   *  "base" that move. sit_floor is one pose for every shot, so a move in any of them would slide the sitter. */
+  _movesInAnyShot(a) {
+    const out = [];
+    if (this._keysMove(a.keys)) out.push("base");
+    for (const [sid, b] of Object.entries(a.by_shot || {})) if (this._keysMove(b?.keys)) out.push(sid);
+    return out.length ? out : null;
+  }
+
   /** Who else already sits on this seat (one person per seat with setPose), or null. */
   _seatTakenBy(host, a) {
     return this.state.actors.find((x) => x.id !== a.id && x.mount_id === host.id && PERSON_KINDS.has(x.kind)) || null;
@@ -4764,6 +4782,7 @@ export class Stage {
       return { pose: "sit", on: host.id, seat: [hg.position.x + w.x, hg.position.y + w.y, hg.position.z + w.z], yaw: hg.rotation.y };
     }
     if (a.pose === "sit_floor") {
+      if (this._keysMove(this._actorKeys(a))) return null;   // never a seated body sliding along a keyed path
       const p = this._actorPosAt(a, frame);
       return { pose: "sit_floor", seat: [p[0], this._heightAt(a, frame), p[2]], yaw: this._headingAt(a, frame) };
     }
@@ -4825,6 +4844,8 @@ export class Stage {
     }
     if (pose === "sit_floor") {
       if (!a.mount_id && a.pose === "sit_floor") return { ok: true, pose, changed: false };
+      const moves = this._movesInAnyShot(a);
+      if (moves) return { ok: false, error: `'${name(a)}' has movement keys (${moves.join(", ")}): sit_floor would slide them along the path; remove the movement keys first, or sit them on a seat` };
       if (a.mount_id) offSeat();   // off the seat, down on the floor on their own keyed path (beside the seat)
       a.pose = "sit_floor";
       commit();
