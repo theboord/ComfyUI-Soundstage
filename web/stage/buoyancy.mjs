@@ -366,13 +366,20 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
     // Before they are at the surface: pre[i] = feet height, preMode[i], preStyle[i], for i < up.
     const pre = [], preMode = [], preStyle = [];
     let up = 0, under = false, entered = 0;   // entered: the run-relative frame they meet the water
+    // An underwater stroke (flutter, frog, stroke) dropped in and then keyed under: the drop covers the fall and the
+    // plunge (and, keyed under only later, the kick up and the surface until then), then hands back to the keyed depth
+    // (kUnder: the run-relative frame the keys are first under the surface; -1 if they never are in this run).
+    let kUnder = -1;
+    if (keyedDepth && !diver && ky > level + 0.05) for (let i = 1; i < m && kUnder < 0; i++) { const y = keyY[f0 + i]; if (y > floor + 0.35 && y + height < level) kUnder = i; }
     if (ky > level + 0.05) {   // a drop: feet first through the surface, the plunge, then back up
       const v0 = f0 > 0 ? (keyY[f0] - keyY[f0 - 1]) * fps : 0;   // the keyed (or baked) speed
       const pl = plungeTrack({ ky, v0, level, floor, fps, n: m, height, clear: shallow ? 0.02 : 0.3 * k });
       entered = Math.max(0, pl.splash);
       for (let i = 0; i < pl.feet.length; i++) { pre.push(pl.feet[i]); preMode.push(modeOf(pl.feet[i])); preStyle.push("fall"); }
       const fb = pl.feet[pl.feet.length - 1];
-      if (shallow) {
+      if (kUnder >= 0 && kUnder <= pre.length + blend) {
+        // keyed under by the bottom of the plunge: ease from there to the keyed depth (below), no kick up
+      } else if (shallow) {
         // they land on their feet on the bottom and stand up out of the crouch, head out of the water
         const rise = Math.round(0.5 * fps);
         for (let i = 0; i < rise && pre.length < m; i++) { const e = sstep(0, 1, (i + 1) / rise); pre.push(fb + (floor - fb) * e); preMode.push("surface"); preStyle.push("wade"); }
@@ -404,6 +411,22 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
     const from = up > 0 ? pre[up - 1] + hipY : null;   // where the drop / rise left the hips
     if (shallow) {   // after a drop into shallow water: standing on the bottom, the head out
       for (let i = up; i < m; i++) { const fr = f0 + i; styles[fr] = "wade"; hipsY[fr] = floor + hipY; hipsW[fr] = 1; modes[fr] = "surface"; }
+      continue;
+    }
+    if (kUnder >= 0) {
+      // from the drop (or the surface) to the keyed underwater path: the hips ease to it, then the stage keeps the keyed
+      // depth (no track there), the same frames whatever the order
+      const k0 = Math.max(up, kUnder), y0 = from != null && kUnder <= up + blend ? from : treadHips;
+      for (let i = up; i < Math.min(k0, m); i++) {   // at the surface until the keys go under
+        const fr = f0 + i, e = from == null ? 1 : sstep(0, 1, (i - up) / blend);
+        if (kUnder <= up + blend) { modes[fr] = "under"; hipsY[fr] = from; hipsW[fr] = 1; continue; }   // keyed under in a moment: hold there
+        modes[fr] = "surface"; styles[fr] = "tread";
+        if (from != null && e < 1) { hipsY[fr] = from; hipsW[fr] = 1 - e; }
+      }
+      for (let i = k0; i < Math.min(m, k0 + blend); i++) {
+        const fr = f0 + i, e = sstep(0, 1, (i - k0) / blend);
+        modes[fr] = "under"; hipsY[fr] = y0; hipsW[fr] = 1 - e;
+      }
       continue;
     }
     if (!sinks) {

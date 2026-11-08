@@ -501,3 +501,31 @@ test("the person panel's Swim select drives stage.setSwim and shows the person's
   assert.equal(info.buoyancy.source, "kind");
   assert.ok(info.buoyancy.density > 300 && info.buoyancy.density < 500);
 });
+
+// ------------------------------------------------------------------ fourth pass (2026-11-07, the verifier's list)
+// A dive in that is keyed on down under the surface: keys [0: 4.5 m], [24: 0.6 m], [144: 0.6 m].
+const diveIn = (swim) => keyed("u", "man", [[0, [0, 4.5, 0]], [24, [0, 0.6, 0]], [144, [0, 0.6, 0]]], { swim });
+
+test("an underwater stroke dropped in and keyed on under holds its keyed depth (was: kicked up and swam at the surface from f48)", () => {
+  // b5d87d0 swam under at hips ~1.5 from f24; 8fc04ef plunged, kicked up and was at the surface (hips ~2.0) from f48.
+  for (const swim of ["flutter", "frog", "stroke"]) {
+    const st = tank([diveIn(swim)], { frames: 145 });
+    const plan = st._swimPlan(st.state.actors[0], st.actorMeshes.get("u"));
+    st.setFrame(0);
+    assert.ok(hipsY(st, "u") > 5 && plan.main[0] === "fall", `${swim}: starts in the fall from 4.5 m`);
+    for (let f = 36; f < 145; f += 4) {
+      st.setFrame(f);
+      const h = hipsY(st, "u");
+      assert.equal(plan.mode[f], "under", `${swim} f${f}: under water`);
+      assert.ok(Math.abs(h - (0.6 + 0.9)) < 0.15, `${swim} f${f}: at the keyed depth (hips ${h.toFixed(2)}, keyed 1.5)`);
+      assert.ok(headY(st, "u") < LEVEL - 0.1, `${swim} f${f}: the head under`);
+    }
+  }
+  // keyed under only at the end: the drop, the kick up, the surface, then the keyed depth from there
+  const st = tank([keyed("l", "man", [[0, [0, 4.5, 0]], [120, [0, 0.6, 0]]], { swim: "flutter" })], { frames: 145 });
+  const plan = st._swimPlan(st.state.actors[0], st.actorMeshes.get("l"));
+  assert.equal(plan.mode[90], "surface", "at the surface before the keys go under");
+  st.setFrame(140);
+  assert.equal(plan.mode[140], "under");
+  assert.ok(Math.abs(hipsY(st, "l") - 1.5) < 0.15, `then at the keyed depth (${hipsY(st, "l").toFixed(2)})`);
+});
