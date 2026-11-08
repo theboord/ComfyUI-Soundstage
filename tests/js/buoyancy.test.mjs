@@ -148,7 +148,13 @@ test("a float bobs under-damped to its real waterline after a drop; a rock keyed
   const eq = B.restBottom(crate, LEVEL, 0, tr.rho[n - 1]);   // (it has soaked a little in 10 s)
   const after = tr.y.slice(tr.splash);
   const lo = Math.min(...after);
-  assert.ok(lo < eq - 0.3, "plunges under its waterline");
+  assert.ok(lo < eq - 0.15, "plunges under its waterline");
+  assert.ok(lo + crate.h > LEVEL, `but its top stays out: the water it sets moving stops it (bottom ${(LEVEL - lo).toFixed(2)} m under; was 1.43, fully under)`);
+  // a light ball dropped from 2 m barely goes under (was: completely under at f24, its bottom ~1.1 m down)
+  const ball = B.bodyOf("sphere", [0.5, 0.5, 0.5]);
+  const tb = B.floatTrack(ball, { level: LEVEL, fps: 24, keyY: new Array(n).fill(4.5), over: new Array(n).fill(true) });
+  const blo = Math.min(...tb.y.slice(tb.splash));
+  assert.ok(LEVEL - blo < 0.35 && blo + ball.h > LEVEL + 0.1, `the ball's bottom only ${(LEVEL - blo).toFixed(2)} m under at the deepest`);
   let crossings = 0;
   for (let i = 1; i < after.length; i++) if ((after[i - 1] - eq) * (after[i] - eq) < 0) crossings++;
   assert.ok(crossings >= 3, `overshoots and comes back (${crossings} crossings): under-damped`);

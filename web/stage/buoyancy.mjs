@@ -165,6 +165,15 @@ function step(body, st, rho, level, floor, dt) {
   st.v += (F / M) * dt;
   st.y += st.v * dt;
   if (st.y < floor) { st.y = floor; if (st.v < 0) st.v = 0; }
+  // Entry: the water it pushes aside is set moving with it (the added mass grows as it goes in, von Karman's slamming
+  // load): momentum is shared, (m + Ma) v kept, so a light float is stopped near the surface (a ball barely goes
+  // under) and a dense rock hardly notices. For a light float the splash and spray carry off more than the added mass
+  // (slam up to 2.5x it, below ~500 kg/m3); anything denser than ~1200 just shares momentum with its added mass.
+  if (st.v < 0) {
+    const s2 = clamp((level - st.y) / body.h, 0, 1), Ma0 = body.ca * RHO_WATER * Vs, Ma1 = body.ca * RHO_WATER * body.V * f(s2);
+    const slam = 1 + 1.5 * clamp((1200 - rho) / 700, 0, 1);
+    if (Ma1 > Ma0) st.v *= (m + slam * Ma0) / (m + slam * Ma1);
+  }
   return s;
 }
 
