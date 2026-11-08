@@ -1436,7 +1436,8 @@ export class Stage {
    * host's own space (what the keys are written in; a rig runs there, so it stays on its mount).
    */
   _cameraAt(frame, { local = false } = {}) {
-    const keys = this._camKeysView();   // read-only: playing a shot never writes its camera keys
+    // read-only: playing a shot never writes its camera keys (a tool calling this on a plain {_camKeys} gets those)
+    const keys = this._camKeysView ? this._camKeysView() : this._camKeys();
     const shot = this.activeShot?.();
     let cam;
     if (curveVersion(shot) === CAM_CURVE) {
