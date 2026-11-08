@@ -455,16 +455,21 @@ export function avatarsAt(stage) {
     users ||= C.propUsers(actors);
     if (skin.faceless !== (a.face === "faceless")) applyFace(skin, a.face === "faceless");
     const wet = !!(stage.water || stage.setFx?.underwater);
-    const reason = C.clayReason(a, {
-      blocking, holders: users.holders, carriers: users.carriers, gazeKeyed: gazeKeys(a).length > 0,
+    const body = {
       swims: wet && C.swimsInShot(a, () => stage._swimPlan?.(a, g)),
       floats: !!stage._floatsInShot?.(a),   // a video mocap take in water too deep to stand in: the clay floats (stage._waterPhysics)
+      tipped: tippedNow(g),
+    };
+    const reason = C.clayReason(a, {
+      blocking, holders: users.holders, carriers: users.carriers, gazeKeyed: gazeKeys(a).length > 0, ...body,
       driven: C.drivenInShot(memo, stage.state.active_shot, a.id, stage.drive),
       airborne: !!stage._airborneAt?.(a, f),   // this frame only: clay in the air, lifelike on the ground
-      tipped: tippedNow(g),
     });
     skin.reason = reason;
     setShown(skin, !reason);
+    // The grounding gate is the feet, not the clay (C.feetUpReason): today a hidden body isn't posed at all, and once
+    // the clay is retired a person holding a prop, with gaze or Pose keys, on a mocap take ... is lifelike and stands.
+    skin.feetUp = C.feetUpReason(a, body);
     if (reason) continue;
     // The physics lift (stage.setFrame raises an unbaked dynamic / static object by a.physics.lift) is followed too.
     const p = stage._actorPosAt(a, f), y = stage._heightAt(a, f) + physicsLift(a), yaw = stage._headingAt(a, f);
@@ -509,6 +514,7 @@ const idOf = (o) => { if (!o || typeof o !== "object") return 0; let v = _ids.ge
 function footPlanFor(stage, a, g, skin, { last, fps, scale }) {
   const rig = skin.kit.feet;
   if (!rig || !skin.legs || stage.footGrounding === false) return null;   // footGrounding false: the clips alone (A/B checks)
+  if (skin.feetUp) return null;   // off their feet all shot (riding, seated, carried, swimming, knocked over): no plan
   const shapes = stage.root ? stage._supportShapes?.() : null;
   const sig = `${skin.gait.sig}|${stage.setFx?.id || ""}|${idOf(shapes)}|${idOf(stage._yCache?.get(a))}|${idOf(stage._swimCache?.get(a)?.stand)}|${physicsLift(a)}|${skin.kit.floors ? 1 : 0}`;
   if (skin.feet?.sig === sig) return skin.feet.plan;
@@ -520,9 +526,10 @@ function footPlanFor(stage, a, g, skin, { last, fps, scale }) {
     return Math.max(s, onKeys ?? -Infinity);
   };
   const lifted = physicsLift(a) > 0;
+  // per frame: the same gate (lifted by physics, in the air) marks the frames not grounded
   const plan = F.planFeet({
     n: last + 1, fps, heightM: C.clayHeight(a) * (a.scale || 1), rig, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, ground, baseY,
-    poseRaw: (f) => { poseRaw(stage, a, g, skin, f, { fps, scale, last }); return !(lifted || stage._airborneAt?.(a, f)); },
+    poseRaw: (f) => { poseRaw(stage, a, g, skin, f, { fps, scale, last }); return !C.feetUpReason(a, { lifted, airborne: !!stage._airborneAt?.(a, f) }); },
   });
   skin.feet = { sig, plan };
   return plan;

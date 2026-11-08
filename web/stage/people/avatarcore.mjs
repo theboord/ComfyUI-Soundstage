@@ -355,6 +355,28 @@ export function clayReason(a, ctx = {}) {
   return null;
 }
 
+/**
+ * Why this person's feet are NOT on the ground (null: they are, and footplant grounds them), whatever the body looks
+ * like. This is the grounding gate, kept apart from clayReason on purpose: clayReason says when the clay figure is
+ * shown instead of the lifelike body, and once the clay is retired (one motion driving the visible body and the logic
+ * rig) people holding or carrying props, with gaze or Pose keys, on a mocap take, driven live or in Blocking look are
+ * lifelike AND standing, so they are grounded. Only a body that is really off its feet is not: riding or seated
+ * (mount_id), carried, moved or lifted by physics, knocked over / tipped / lying, swimming or floating, in the air.
+ * ctx: {swims, floats, tipped, lifted, airborne} as for clayReason (airborne and lifted per frame).
+ */
+export function feetUpReason(a, ctx = {}) {
+  if (a.mount_id) return "rides or sits on something";
+  if (a.carry_id) return "is carried";
+  if (a.physics?.baked) return "is moved by physics";
+  if (ctx.lifted) return "is lifted by physics";
+  if (Array.isArray(a.tilt) && a.tilt.length === 4) return "was knocked over";
+  if (ctx.tipped) return "is tipped over";
+  if (ctx.swims) return "swims";
+  if (ctx.floats) return "floats in the water";
+  if (ctx.airborne) return "is in the air (a jump or vault)";
+  return null;
+}
+
 /** Does this person swim anywhere in the shot? The same gate as stage._swimAt (swimming off, carried) over the
  *  whole-shot swim plan; plan is called only when the gate allows it. */
 export function swimsInShot(a, plan) {
