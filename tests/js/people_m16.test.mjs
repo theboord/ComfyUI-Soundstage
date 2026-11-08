@@ -287,6 +287,36 @@ test("obstacles: feet over a settling, jittering prop are the same after sequent
   assert.ok(worst <= 0.0255, `a 1 m fall, shuffled: worst feet difference ${worst.toFixed(4)} m`);
 });
 
+test("obstacles: a parked prop whose keys spin it 360 deg or raise it 40 cm doesn't rebuild its box and the height tables every frame", () => {
+  // A turntable crate (heading keys, same spot) and a crate on a lift (key_y, rising 40 cm): posed as setFrame does.
+  const run = (crate, pose) => {
+    const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
+    const st = bareStage([walker, crate]);
+    clayOf(st, walker);
+    const cg = clayOf(st, crate);
+    let boxes = 0;
+    const orig = THREE.Box3.prototype.setFromObject;
+    THREE.Box3.prototype.setFromObject = function (...x) { boxes++; return orig.apply(this, x); };
+    try {
+      const lists = new Set(), tables = new Set();
+      for (let f = 0; f <= 48; f++) {
+        pose(st, cg, f); cg.updateMatrixWorld(true);
+        st.frame = f; st._heightAt(walker, f); st._jumpsInShot(walker);
+        lists.add(st._obstacles()); tables.add(st._yCache.get(walker));
+      }
+      return { boxes, lists: lists.size, tables: tables.size };
+    } finally { THREE.Box3.prototype.setFromObject = orig; }
+  };
+  const spin = { id: "c1", kind: "crate", position: [0, 0, 0],
+    keys: [0, 12, 24, 36, 48].map((frame, i) => ({ frame, position: [0, 0, 0], heading_deg: 90 * i })) };
+  const s = run(spin, (st, cg, f) => { cg.rotation.set(0, st._headingAt(spin, f), 0); });
+  assert.ok(s.boxes <= 2 && s.lists <= 2 && s.tables <= 2, `spinning 360 deg over 48 frames: ${JSON.stringify(s)}`);
+  const lift = { id: "c1", kind: "crate", key_y: true, position: [0, 0, 0],
+    keys: [{ frame: 0, position: [0, 0, 0] }, { frame: 48, position: [0, 0.4, 0] }] };
+  const r = run(lift, (st, cg, f) => { cg.position.y = st._heightAt(lift, f); });
+  assert.ok(r.boxes <= 2 && r.lists <= 2 && r.tables <= 2, `rising 40 cm over 48 frames: ${JSON.stringify(r)}`);
+});
+
 // ---------------------------------------------------------------- 3: stale attaches
 test("upgradeHuman: rebuilds and a model change while the kit loads give one clone per person, on the latest group", async () => {
   const people = Array.from({ length: 4 }, (_, i) => person(`p${i}`, i));

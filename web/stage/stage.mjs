@@ -287,6 +287,20 @@ const OBS_LRU = 8, HEIGHT_LRU = 4;
  *  relative scale) is an edit (a drag, a console move, a rescale), not per-frame motion: the grid is re-anchored there. */
 const OBS_JUMP = { pos: 0.25, rot: 0.05, scale: 0.1 };
 
+/** _obstacles: do an object's keys move it (so it is not a parked obstacle)? Travel over 5 cm on the ground, and also a
+ *  keyed turn (heading_deg, roll_deg, pitch_deg over 1 degree: a turntable) or a keyed rise (key_y, over 5 cm: a lift).
+ *  Those used to count as parked: every rotation step passed OBS_JUMP, so the grid re-anchored and the box and every
+ *  person's whole-shot height table were rebuilt every frame. Like a travelling prop, it is now not stood on. */
+function keyedMoving(o) {
+  const ks = o.keys;
+  if (!(ks?.length > 1)) return false;
+  const k0 = ks[0], p0 = k0.position || [0, 0, 0];
+  const spread = (get) => { const v = ks.map(get).filter(Number.isFinite); return v.length > 1 ? Math.max(...v) - Math.min(...v) : 0; };
+  return ks.some((k) => Math.hypot((k.position?.[0] ?? p0[0]) - p0[0], (k.position?.[2] ?? p0[2]) - p0[2]) > 0.05)
+    || (o.key_y && spread((k) => k.position?.[1] || 0) > 0.05)
+    || spread((k) => k.heading_deg) > 1 || spread((k) => k.roll_deg) > 1 || spread((k) => k.pitch_deg) > 1;
+}
+
 /** A parked clay group's transform on a grid anchored at the transform it was first seen at (or last moved to by an
  *  edit): {key, at, cell}. Pure in the live transform once anchored, exact when the group sits at its anchor. */
 function obsCell(g, anchors) {
@@ -1781,7 +1795,7 @@ export class Stage {
     const parked = [];
     for (const o of this.state.actors) {
       parts.push(`${o.id}:${o.kind}:${keysHash([{ k: o.keys?.length > 1 ? o.keys : null, p: o.keys?.[0]?.position || o.position, r: o.rotation_deg, s: o.scale, h: o.height_m, c: o.carry_id, m: o.mount_id, y: o.key_y, l: o.physics?.lift }])}`);
-      if (PERSON_KINDS.has(o.kind) || o.mount_id || o.carry_id || (o.keys?.length > 1 && o.keys.some((k) => Math.hypot(k.position[0] - o.keys[0].position[0], k.position[2] - o.keys[0].position[2]) > 0.05))) continue;
+      if (PERSON_KINDS.has(o.kind) || o.mount_id || o.carry_id || keyedMoving(o)) continue;
       const g = this.actorMeshes.get(o.id);
       if (!g) continue;
       // The transform on a grid (5 cm, ~1 degree, 1 %) anchored where the group was first seen, or where an edit last
