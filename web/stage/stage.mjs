@@ -7,6 +7,7 @@ import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompo
 import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS, SIT_POSES } from "./humans.mjs";
 import { applyGaze, setGazeKey, clearGaze, gazeKeys } from "./gaze.mjs";
 import * as Mocap from "./mocap.mjs";
+import { stagePeople, drawOpenPose } from "./posepass.mjs";
 import * as Gait from "./gait.mjs";
 import * as Swim from "./swim.mjs";
 import * as Buoy from "./buoyancy.mjs";   // weight-based floating / sinking and the swimmers' water track
@@ -58,8 +59,8 @@ import { swapAvatarCutouts, idMaterial } from "./people/cutout.mjs";   // hair /
 import { DEPTH_SHADER, depthPassMaterial } from "./depthshader.mjs";   // the skinning Depth shader (also the underwater set's)
 
 /**
- * Video → Stage: the set mesh is the first frame's depth, so the person in the shot is frozen into it. The clay actor
- * replaces them: drop the triangles that land inside their box in that frame at their distance. Mesh vertices are in
+ * Video → Stage: the set mesh is the first frame's depth, so the person in the shot is frozen into it. The stage's
+ * actor replaces them: drop the triangles that land inside their box in that frame at their distance. Mesh vertices are in
  * glTF camera axes (x right, y up, looking down -z) and depth units; cut = {box, K: [fx/w, fy/h, cx/w, cy/h], min_depth, max_depth}.
  */
 function cutPerformer(model, cut) {
@@ -638,6 +639,9 @@ export class Stage {
       this.root.add(g);
       if (a.kind === "horse") this._upgradeHorse(a, g);   // (the old simple_model "clay horse" choice is retired)
       else if (LIBRARY[a.kind]?.model) this._upgradeVehicle(a, g, LIBRARY[a.kind]);
+      // a car body with no model of its own (the "car" sedan): its built body is logic (seats, pivots, doors, colliders)
+      // and it shows as the marked stand-in, never the built look (Lifelike-only L1; a real sedan model is L7's)
+      else if (CAR_BODIES.has(a.kind)) setStandIn(g, true);
       else if (PERSON_KINDS.has(a.kind)) upgradeHuman(this, a, g);   // people/avatars.mjs: clay stays if the files are absent
     }
     this._buildLights();
@@ -4248,8 +4252,11 @@ export class Stage {
   /** Swap the built horse's look for the rigged CC0 horse: the built one stays (hidden) for its pivots and
    *  seat; the rigged one walks, trots and gallops with real skeletal cycles locked to distance travelled. */
   _upgradeHorse(a, g) {
+    // the marked stand-in while the model loads (the built horse is logic, never drawn: it showed on frames 0-1)
+    setStandIn(g, true, { loading: true });
     loadAsset(HORSE_GLB, "glb").then((asset) => {
       if (this.actorMeshes.get(a.id) !== g || g.userData.horseRig) return;
+      setStandIn(g, false);
       const model = SkeletonUtils.clone(asset.scene);
       const h = a.height_m || 1.6;
       const tint = a.appearance?.color ? new THREE.Color(a.appearance.color) : null;
@@ -5137,8 +5144,10 @@ export class Stage {
   /** Put a car model over the built sedan (kept hidden for its seats and pivots), sized bumper to bumper; the
    *  wheels are re-pivoted on their hubs so they roll with the distance driven. */
   _upgradeVehicle(a, g, spec) {
+    setStandIn(g, true, { loading: true });   // the marked stand-in while the model loads, never the built car
     loadAsset(new URL(`./models/${spec.model}`, import.meta.url).href, "glb").then((asset) => {
       if (this.actorMeshes.get(a.id) !== g || g.userData.vehicleBody) return;
+      setStandIn(g, false);
       const model = asset.scene.clone(true);
       model.updateMatrixWorld(true);
       const bb = new THREE.Box3().setFromObject(model);
@@ -6122,7 +6131,7 @@ export class Stage {
   }
 
   /** Lifelike people: the selected person's face "shown" (default) or "faceless" (a plain mannequin head). Saved on
-   *  the actor (actor.face); the clay figure is faceless either way. */
+   *  the actor (actor.face); the hidden logic rig has no face of its own (it is never drawn). */
   setFace(mode) {
     const a = this.state.actors.find((x) => x.id === this.selected);
     if (!a || !PERSON_KINDS.has(a.kind)) return;
@@ -6131,8 +6140,8 @@ export class Stage {
     this.onChange(this.toJSON());
   }
 
-  /** Blocking look: every person shows as the clay figure (true) or as a lifelike person where one is installed.
-   *  Only the look changes: the clay rig runs the same either way. Saved with the scene (state.people_look). */
+  /** Blocking look (a saved flag only since Lifelike-only L1: people are never shown as clay; the button is hidden and
+   *  L2 removes the flag). Saved with the scene (state.people_look); it changes nothing a viewer sees. */
   setBlockingLook(on) {
     if (on) this.state.people_look = "blocking"; else delete this.state.people_look;
     this.setFrame(this.frame);
@@ -7041,6 +7050,9 @@ export class Stage {
       this.tcHelper.visible = !forCapture && !!this._gizmoOn && mode !== "id";
       if (!forCapture) this.tc.camera = this._viewportCamera?.() || this.camera;
     }
+    // The Pose pass is a drawn skeleton (posepass.mjs), never a scene render: renderFrameTo("pose") draws it. Here it
+    // would have fallen to the else branch below, the clay override material (L1 review round 2).
+    if (mode === "pose") throw new Error("the Pose pass is drawn from the keypoints (renderFrameTo('pose'), posepass.mjs), not rendered as a view");
     if (mode === "id") return this._renderId(this.camera);
     if (mode === "dust") return this._renderDustMatte(this.camera);   // Milestone 28: the dust matte (Layer Pack)
     if (this.selRing) this.selRing.visible = !forCapture && !!this.actorMeshes.get(this.selected);
@@ -7239,8 +7251,14 @@ export class Stage {
       if (swap) this.state.active_shot = shot;
       this.renderer.setSize(this.fw, this.fh, false);
       this.setFrameSilent(frame);
-      this._renderMode(mode, true);
-      this._snap.getContext("2d").drawImage(this.canvas, 0, 0);
+      if (mode === "pose") {
+        // the OpenPose skeleton of the people (posepass.stagePeople: the logic rig, posed from the same motion as the visible body), on black
+        const ctx = this._snap.getContext("2d");
+        drawOpenPose(ctx, stagePeople(this, this.fw, this.fh), this.fw, this.fh);
+      } else {
+        this._renderMode(mode, true);
+        this._snap.getContext("2d").drawImage(this.canvas, 0, 0);
+      }
     } finally {
       if (swap) this.state.active_shot = keepShot;
       this.renderer.setSize(prev.x, prev.y, false);

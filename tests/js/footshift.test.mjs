@@ -23,7 +23,14 @@ test("real Rocketbox: the shift moves the logic rig AND the visible body (one ro
     const [sx, sz] = skin.shift || [0, 0];
     if (Math.hypot(sx, sz) < 1e-4) continue;
     shifted++;
-    assert.ok(Math.abs(g.position.x - p[0] - sx) < 1e-6 && Math.abs(g.position.z - p[2] - sz) < 1e-6, `f${f}: the rig moved by the shift`);
+    // the body moved by the shift, and the logic rig with it (its hips on the body's: avatars.mjs alignRig / fitRig
+    // put the rig on the visible body every clip frame since L1 review round 2, so its own place is the body's, not
+    // the keys' plus the shift)
+    const hp = skin.holder.getWorldPosition(new THREE.Vector3());
+    assert.ok(Math.abs(hp.x - p[0] - sx) < 1e-6 && Math.abs(hp.z - p[2] - sz) < 1e-6, `f${f}: the body moved by the shift`);
+    const J = g.userData.joints, B = skin.bones, W = (o) => o.getWorldPosition(new THREE.Vector3());
+    const clayHip = W(J.l_hip).add(W(J.r_hip)).multiplyScalar(0.5), bodyHip = W(B.Bip01_L_Thigh).add(W(B.Bip01_R_Thigh)).multiplyScalar(0.5);
+    assert.ok(clayHip.distanceTo(bodyHip) < 0.005, `f${f}: the rig's hips on the body's (${(clayHip.distanceTo(bodyHip) * 100).toFixed(1)} cm)`);
   }
   assert.ok(shifted > 5, `the kerb case shifts (${shifted} frames)`);
   // and it is undone before the next pose (the stage sets the rig's place itself)

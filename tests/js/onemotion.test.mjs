@@ -12,7 +12,7 @@ import * as R from "../../web/stage/people/retarget.mjs";
 import * as O from "../../web/stage/people/onemotion.mjs";
 import { standInMaterial } from "../../web/stage/people/standin.mjs";
 import { applyPose } from "../../web/stage/humans.mjs";
-import { personKeypoints } from "../../web/stage/posepass.mjs";
+import { personKeypoints, toPixels } from "../../web/stage/posepass.mjs";
 import { Stage, DEFAULT_SCENE } from "../../web/stage/stage.mjs";
 import { clearSetCache } from "../../web/stage/sets/common.mjs";
 import * as F from "../../web/stage/people/footplant.mjs";
@@ -156,61 +156,6 @@ test("real Rocketbox: body solve: on the clip's frames the logic rig follows the
   for (const [k, j] of Object.entries(g.userData.joints)) assert.ok(j.quaternion.angleTo(rest[k]) < 1e-9, `${k} put back`);
 });
 
-test("real Rocketbox: silhouette: the Pose keypoints lie inside the visible body (>= 0.95), walking, riding, jumping and seated", { skip: NOT_INSTALLED }, async () => {
-  const K = await realKits();
-  const cam = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
-  const N = 160;
-  const inside = (skin, g) => {
-    cam.updateMatrixWorld(true);
-    const mask = new Uint8Array(N * N), v = new THREE.Vector3();
-    skin.holder.updateMatrixWorld(true);
-    const m = skin.mesh, n = m.geometry.attributes.position.count;
-    for (let i = 0; i < n; i++) {
-      m.getVertexPosition(i, v).applyMatrix4(m.matrixWorld).project(cam);
-      const x = Math.round((v.x * 0.5 + 0.5) * (N - 1)), y = Math.round((0.5 - v.y * 0.5) * (N - 1));
-      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const X = x + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < N && Y < N) mask[Y * N + X] = 1; }
-    }
-    const kp = personKeypoints(g, cam.position);
-    let all = 0, hit = 0;
-    for (const p of kp.body) {
-      if (!p) continue;
-      const q = p.clone().project(cam), x = Math.round((q.x * 0.5 + 0.5) * (N - 1)), y = Math.round((0.5 - q.y * 0.5) * (N - 1));
-      all++; if (x >= 0 && y >= 0 && x < N && y < N && mask[y * N + x]) hit++;
-    }
-    return hit / all;
-  };
-  const look = (p) => { cam.position.set(p.x + 3.5, p.y + 1.2, p.z + 3.5); cam.lookAt(p.x, p.y + 0.9, p.z); };
-  // walking (the clip)
-  {
-    const a = walker("woman");
-    const st = bareStage([a]); const g = clayOf(st, a);
-    const skin = A.attachKit(st, a, g, K.woman); await null;
-    for (const f of [10, 50, 90]) { st.frame = f; A.avatarsAt(st); look(W(skin.holder)); const r = inside(skin, g); assert.ok(r >= 0.95, `walk f${f}: ${r.toFixed(2)}`); }
-  }
-  // riding (the rig) and seated (the seat)
-  for (const [pose, extra] of [["ride", { mount_id: "h" }], ["cycle", { mount_id: "h" }]]) {
-    const a = { id: "p", kind: "man", height_m: 1.8, position: [0, 0.6, 0], keys: [{ frame: 0, position: [0, 0.6, 0] }], ...extra };
-    const st = bareStage([a], { frames: 25 }); const g = clayOf(st, a);
-    const skin = A.attachKit(st, a, g, K.man); await null;
-    applyPose(g, pose, 1.8); st.frame = 4; A.avatarsAt(st);
-    look(W(skin.holder)); const r = inside(skin, g); assert.ok(r >= 0.95, `${pose}: ${r.toFixed(2)}`);
-  }
-  // a jump over a crate (the rig, then the handover back to the clip)
-  {
-    const a = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
-    const crate = { id: "c1", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] };
-    const st = headless([a, crate]); await withKit(st, K);
-    const skin = st.actorMeshes.get("p1").userData.humanSkin, g = st.actorMeshes.get("p1");
-    const air = [...Array(49).keys()].filter((f) => st._walkAirborneAt ? st._walkAirborneAt(a, f) : st._airborneAt(a, f));
-    assert.ok(air.length, "the walk hops the crate");
-    for (const f of [air[0] - 3, air[0], air[Math.floor(air.length / 2)], air.at(-1) + 1]) {
-      st.setFrame(f); look(W(skin.holder)); const r = inside(skin, g);
-      assert.equal(skin.shown, true);
-      assert.ok(r >= 0.95, `jump f${f} (rig ${skin.rigWeight.toFixed(2)}): ${r.toFixed(2)}`);
-    }
-  }
-});
-
 test("real Rocketbox: determinism: forward, reverse, shuffled scrubs and a fresh stage give identical frames (a jump, a baked tilt, Drive, a carry)", { skip: NOT_INSTALLED }, async () => {
   const K = await realKits();
   const scene = () => [
@@ -269,10 +214,15 @@ test("real Rocketbox: a held prop follows the VISIBLE hand; the gizmo's dots sit
   ], 41);
   await withKit(st, K);
   const g = st.actorMeshes.get("p1"), skin = g.userData.humanSkin;
-  for (const f of [5, 20, 35]) {
+  for (let f = 0; f <= 40; f++) {
     st.setFrame(f);
     const hand = W(skin.bones.Bip01_R_Hand), cup = W(st.actorMeshes.get("cup"));
-    assert.ok(hand.distanceTo(cup) < 0.15, `f${f}: the cup ${(hand.distanceTo(cup) * 100).toFixed(1)} cm from the visible hand`);
+    // review round 2: was within 15 cm of the hand bone on 3 frames; now every frame, in the grip (between the visible
+    // thumb and index knuckles, measured 2.0 cm at most) and within 10 cm of the hand bone (8.3 measured)
+    const grip = W(skin.bones.Bip01_R_Finger1).add(W(skin.bones.Bip01_R_Finger0)).multiplyScalar(0.5);
+    assert.ok(hand.distanceTo(cup) < 0.10, `f${f}: the cup ${(hand.distanceTo(cup) * 100).toFixed(1)} cm from the visible hand`);
+    assert.ok(grip.distanceTo(cup) < 0.03, `f${f}: the cup ${(grip.distanceTo(cup) * 100).toFixed(1)} cm from the visible grip`);
+    if (f % 15 !== 5) continue;
     for (const id of ["l_wrist", "r_elbow", "head", "l_knee", "r_index_1"]) {
       const p = A.boneWorld(st, "p1", id), b = W(skin.bones[R.boneFor(id)]);
       assert.ok(p.distanceTo(b) < 0.02, `${id}`);
@@ -479,5 +429,133 @@ test("real Rocketbox: determinism without history: Drive let go mid-shot, a swim
     for (const f of frames) { st.setFrame(f); fw[f] = frameHash(st); }
     for (const f of [...frames].reverse()) { st.setFrame(f); assert.equal(frameHash(st), fw[f], `swim reverse f${f}`); }
     for (const f of [0, 25, 40, 60]) assert.equal(await fresh(wet(), env, f), fw[f], `swim fresh f${f}`);
+  }
+});
+
+test("no clay through the Pose view: renderFrameTo('pose') draws the posepass skeleton, _renderMode('pose') throws; the clay wording is gone from the mocap recorder and the stage's face / video-cut notes", () => {
+  const st = headless([{ id: "m1", kind: "man", height_m: 1.8, position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] }], 25);
+  assert.throws(() => st._renderMode("pose", true), /Pose pass/, "never the clay override material");
+  const calls = [], ops = [];
+  const ctx = new Proxy({}, { get: (_, k) => (k === "canvas" ? null : typeof k === "string" && /^(fillStyle|globalAlpha|strokeStyle|lineWidth)$/.test(k) ? undefined : (...a) => ops.push(k)), set: () => true });
+  st._snap = { width: st.fw, height: st.fh, getContext: () => ctx };
+  st.renderer = { getSize: (v) => v.set(st.fw, st.fh), setSize() {} };
+  const real = st._renderMode;
+  st._renderMode = (m, ...r) => { calls.push(m); if (m === "pose") return real.call(st, m, ...r); };
+  st._syncShotCamera = () => false;
+  st.renderFrameTo("pose", 3);
+  assert.ok(!calls.includes("pose"), "no scene render for the Pose pass");
+  assert.ok(ops.includes("fillRect") && ops.includes("ellipse"), "the OpenPose skeleton drawn (black, then the limbs)");
+  // the words (review round 2: mocapcapture.mjs 'The clay actor copies it.', stage.mjs 'the clay figure is faceless')
+  const src = (f) => readFileSync(fileURLToPath(new URL(`../../web/stage/${f}`, import.meta.url)), "utf8");
+  assert.ok(!/clay/i.test(src("mocapcapture.mjs")), "mocapcapture.mjs says clay");
+  const stage = src("stage.mjs");
+  for (const re of [/clay (actor|figure) (copies|replaces|plays|is faceless)/i, /shows? as the clay/i, /The clay actor/]) assert.ok(!re.test(stage), `stage.mjs: ${re}`);
+});
+
+test("vehicles: the 'car' sedan (no model) is the marked stand-in on every frame; a horse or a modelled car is the stand-in while its model loads, never the built look", () => {
+  // review round 2: the car kind rendered as the broken built sedan on every frame; the horse showed its built look on
+  // frames 0-1 while the model loaded
+  const st = headless([
+    { id: "c", kind: "car", position: [0, 0, 0], keys: [kf(0, 0, 0, 0), kf(24, 6, 0, 0)] },
+    { id: "h", kind: "horse", height_m: 1.6, position: [0, 0, 4], keys: [kf(0, 0, 0, 4)] },
+    { id: "pc", kind: "police_car", position: [0, 0, -5], keys: [kf(0, 0, 0, -5)] },
+  ], 25);
+  for (const f of [0, 1, 12, 24]) {
+    st.setFrame(f);
+    for (const id of ["c", "h", "pc"]) {
+      const g = st.actorMeshes.get(id);
+      assert.equal(g.userData.standIn, true, `${id} f${f}: the marked stand-in`);
+      g.traverse((o) => {
+        if (!o.isMesh || !o.visible || o.userData.partProxy || o.parent?.userData?.partProxy || o.userData.glass) return;
+        let proxy = false; for (let p = o; p; p = p.parent) if (p.userData?.partProxy) proxy = true;
+        if (proxy) return;
+        assert.equal(o.material, standInMaterial(), `${id} f${f}: ${o.name || "a mesh"} drawn in its built look`);
+      });
+    }
+  }
+  assert.equal(st.actorMeshes.get("h").userData.peopleLoading, true, "the horse: marked as loading (its GLB load is still pending here)");
+});
+
+/** The Color silhouette of a person (every visible mesh of the group, its skinned triangles filled, no dilation) and
+ *  the share of keypoints (pixels) inside it. */
+function silhouette(g, cam, N) {
+  const mask = new Uint8Array(N * N), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  g.updateMatrixWorld(true);
+  const px = (v) => { v.project(cam); return [(v.x * 0.5 + 0.5) * N, (0.5 - v.y * 0.5) * N]; };
+  g.traverse((m) => {
+    if (!m.isMesh || !m.visible) return;
+    for (let p = m; p; p = p.parent) if (!p.visible) return;
+    const pos = m.geometry.attributes.position, idx = m.geometry.index, n = idx ? idx.count : pos.count;
+    const at = (i, v) => { const k = idx ? idx.getX(i) : i; return m.isSkinnedMesh ? m.getVertexPosition(k, v).applyMatrix4(m.matrixWorld) : v.fromBufferAttribute(pos, k).applyMatrix4(m.matrixWorld); };
+    for (let i = 0; i + 2 < n; i += 3) {
+      const A = px(at(i, a)), B = px(at(i + 1, b)), Cc = px(at(i + 2, c));
+      const x0 = Math.max(0, Math.floor(Math.min(A[0], B[0], Cc[0]))), x1 = Math.min(N - 1, Math.ceil(Math.max(A[0], B[0], Cc[0])));
+      const y0 = Math.max(0, Math.floor(Math.min(A[1], B[1], Cc[1]))), y1 = Math.min(N - 1, Math.ceil(Math.max(A[1], B[1], Cc[1])));
+      const d = (B[1] - Cc[1]) * (A[0] - Cc[0]) + (Cc[0] - B[0]) * (A[1] - Cc[1]);
+      if (Math.abs(d) < 1e-12) continue;
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        const X = x + 0.5, Y = y + 0.5;
+        const l1 = ((B[1] - Cc[1]) * (X - Cc[0]) + (Cc[0] - B[0]) * (Y - Cc[1])) / d, l2 = ((Cc[1] - A[1]) * (X - Cc[0]) + (A[0] - Cc[0]) * (Y - Cc[1])) / d;
+        if (l1 >= 0 && l2 >= 0 && l1 + l2 <= 1) mask[y * N + x] = 1;
+      }
+    }
+  });
+  const fn = (pts) => {
+    let all = 0, hit = 0;
+    fn.missed = [];
+    pts.forEach((p, i) => { if (!p) return; all++; const x = Math.floor(p[0]), y = Math.floor(p[1]); if (x >= 0 && y >= 0 && x < N && y < N && mask[y * N + x]) hit++; else fn.missed.push(i); });
+    return all ? hit / all : 1;
+  };
+  return fn;
+}
+
+test("real Rocketbox: silhouette against an independent source: the Pose pass AND the logic rig's own keypoints inside the Color silhouette (filled triangles, no dilation), walking, hopping, seated, riding, swimming, mocap, Drive, carried and carrying, and the stand-in", { skip: NOT_INSTALLED }, async () => {
+  // review round 2: the old check read keypoints off the visible bones against their own skin, 5x5 px dilated on a
+  // 160 px grid, and skipped swim, mocap, Drive, carry and stand-in frames
+  const K = await realKits();
+  const N = 256, cam = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+  const look = (p) => { cam.position.set(p.x + 3.2, p.y + 0.3, p.z + 3.2); cam.lookAt(p.x, p.y, p.z); cam.updateMatrixWorld(true); };   // (the pelvis in the middle: head to feet in frame)
+  const pixels = (kp) => (kp ? toPixels(kp, cam, N, N).body : []);
+  const cases = [
+    ["walking", [man("p", [-3, 0, 0], [3, 0, 0], 48)], 48, undefined, null, [6, 24, 40]],
+    ["a hop over a crate", [man("p", [-3, 0, 0], [3, 0, 0], 48), { id: "c1", kind: "crate", position: [0, 0, 0], keys: [kf(0, 0, 0, 0)] }], 48, undefined, null, null],
+    ["seated on a chair", [man("p", [-0.5, 0, 0], [-0.5, 0, 0], 0, { keys: [kf(0, -0.5, 0, 0)], mount_id: "ch" }), { id: "ch", kind: "chair", position: [0, 0, 0], keys: [kf(0, 0, 0, 0)] }], 24, undefined, null, [4, 20]],
+    ["riding a horse", [man("p", [0, 0, 0], [0, 0, 0], 0, { keys: [kf(0, 0, 0, 0)], mount_id: "h" }), { id: "h", kind: "horse", height_m: 1.6, position: [0, 0, 0], keys: [kf(0, 0, 0, 0), kf(24, 4, 0, 0)] }], 24, undefined, null, [4, 20]],
+    ["swimming in the tank", [man("p", [-3, 0, 0], [1, 0, 0], 48)], 48, { set: "water_tank", keepSet: true }, null, [10, 30, 46]],
+    ["a video mocap take", [man("p", [0, 0, 0], [0, 0, 0], 0, { keys: [kf(0, 0, 0, 0)], mocap: { data: mocapData(), start: 0, travel: false } })], 71, undefined, null, [10, 25, 55]],
+    ["driven live", [man("p", [-3, 0, 0], [3, 0, 0], 48)], 48, undefined, (st) => { st.drive = testDrive(["p"]); }, [8, 30]],
+    ["carrying a crate", [man("p", [-2, 0, 0], [2, 0, 0], 48), { id: "box", kind: "crate", scale: 0.4, position: [-1.6, 0, 0], keys: [kf(0, -1.6, 0, 0)], carry_id: "p", carry_at: 8 }], 48, undefined, null, [20, 40]],
+    ["carried by another", [man("q", [-2, 0, 0], [2, 0, 0], 48), { ...man("p", [-1.6, 0, 0], [-1.6, 0, 0], 0, { keys: [kf(0, -1.6, 0, 0)] }), kind: "woman", height_m: 1.68, carry_id: "q", carry_at: 8 }], 48, undefined, null, [20, 40]],
+  ];
+  for (const [what, actors, frames, env, prep, at] of cases) {
+    const st = headless(actors, frames + 1, env); await withKit(st, K);
+    prep?.(st);
+    const g = st.actorMeshes.get("p"), skin = g.userData.humanSkin, a = st.state.actors.find((x) => x.id === "p");
+    let list = at;
+    if (!list) { const air = [...Array(frames + 1).keys()].filter((f) => st._walkAirborneAt(a, f)); assert.ok(air.length, `${what}: in the air`); list = [air[0] - 2, air[0], air[Math.floor(air.length / 2)], air.at(-1), air.at(-1) + 2]; }
+    for (const f of list) {
+      st.setFrame(f);
+      assert.equal(skin.shown, true, `${what} f${f}: lifelike`);
+      look(W(skin.bones.Bip01_Pelvis));
+      const inside = silhouette(g, cam, N);
+      const pose = inside(pixels(personKeypoints(g, cam.position))), poseMissed = inside.missed;
+      g.userData.humanSkin = null;   // the logic rig's own joints (what held props, colliders and the gizmo's IK read)
+      const rig = inside(pixels(personKeypoints(g, cam.position)));
+      g.userData.humanSkin = skin;
+      if (process.env.SIL_DEBUG) console.log(what, f, skin.owner, pose.toFixed(2), JSON.stringify(poseMissed), rig.toFixed(2), JSON.stringify(inside.missed));
+      else {
+        assert.ok(pose >= 0.95, `${what} f${f} (${skin.owner}): the Pose pass ${pose.toFixed(2)} inside (missed keypoints ${poseMissed})`);
+        assert.ok(rig >= 0.95, `${what} f${f} (${skin.owner}): the logic rig ${rig.toFixed(2)} inside (missed keypoints ${inside.missed})`);
+      }
+    }
+  }
+  // the stand-in (no kit: a child): the Pose pass from the logic rig inside the stand-in's own silhouette
+  const st = headless([{ id: "k", kind: "child", height_m: 1.2, position: [-2, 0, 0], keys: [kf(0, -2, 0, 0), kf(24, 2, 0, 0)] }], 25);
+  for (const f of [3, 12, 21]) {
+    st.setFrame(f);
+    const g = st.actorMeshes.get("k");
+    assert.equal(g.userData.standIn, true);
+    look(W(g)); const r = silhouette(g, cam, N)(pixels(personKeypoints(g, cam.position)));
+    assert.ok(r >= 0.95, `stand-in f${f}: ${r.toFixed(2)} inside`);
   }
 });

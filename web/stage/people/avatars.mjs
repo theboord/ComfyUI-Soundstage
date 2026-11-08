@@ -578,14 +578,15 @@ export function avatarsAt(stage) {
       }
       blendCaptures(skin, g, caps, undo);
     }
-    if (mix.w.rig >= 1) continue;   // the rig is the source: the body follows it, nothing more
+    // the rig is the source: the body follows it; only the rig's joints are put on the body's (its proportions)
+    if (mix.w.rig >= 1) { fitRig(g, skin, undo); continue; }
     if (mix.own === "seat" && mix.w.seat >= 1) { solveRig(stage, skin, g, null, undo); continue; }
     // layers over the clip: gaze turns the head, Pose keys the joints they name, a carrier's arms hold the load
     const layer = O.layerJoints({ gazeKeyed: gazeKeys(a).length > 0, poseJoints: O.poseKeyJoints(a), carries: users.carriers.has(a.id) }, R.layerable);
     // the rig follows the body first (its layered joints left as the stage posed them), then the layered bones follow
     // those joints, which now hang off the solved parents (a Pose key is a turn relative to its parent)
     solveRig(stage, skin, g, layer, undo);
-    if (layer.size) R.retargetFromRig(skin, g, { only: layer });
+    if (layer.size) { R.retargetFromRig(skin, g, { only: layer }); fitRig(g, skin, undo); }   // (the layered bones moved: the rig's joints back on them)
   }
 }
 
@@ -741,10 +742,57 @@ export function undoAvatarWrites(stage) {
   R.undoRig(stage._rigUndo);
 }
 
-/** The logic rig follows the visible body (retarget.solveRigFromBody), joints in skip left as the stage posed them. */
+/** The logic rig follows the visible body (retarget.solveRigFromBody), joints in skip left as the stage posed them,
+ *  and the whole rig moved so its hips are on the body's (alignRig). */
 function solveRig(stage, skin, g, skip, undo) {
   if (!skin.kit._rtOff) ensureOffsets(skin);
   R.solveRigFromBody(skin, g, { skip, undo });
+  alignRig(g, skin, undo);
+  fitRig(g, skin, undo);
+}
+
+/** Clay joints set onto the visible bones (top-down, so a parent is placed before its child): the two bodies differ
+ *  in proportions (shoulders 7-12 cm apart, the limbs a few cm), and the rig's turns alone left its elbows, wrists and
+ *  knees up to ~11 cm off the body. Positions only (the turns are solveRigFromBody's); on the undo list. */
+const FIT = [["l_hip", "Bip01_L_Thigh"], ["r_hip", "Bip01_R_Thigh"], ["neck", "Bip01_Neck"], ["l_shoulder", "Bip01_L_UpperArm"], ["r_shoulder", "Bip01_R_UpperArm"],
+  ["head", "Bip01_Head"], ["l_knee", "Bip01_L_Calf"], ["r_knee", "Bip01_R_Calf"], ["l_elbow", "Bip01_L_Forearm"], ["r_elbow", "Bip01_R_Forearm"], ["l_wrist", "Bip01_L_Hand"], ["r_wrist", "Bip01_R_Hand"]];
+function fitRig(g, skin, undo) {
+  const J = g.userData.joints, B = skin.bones, w = new THREE.Vector3();
+  if (!J) return;
+  skin.holder.updateMatrixWorld(true);
+  for (const [jid, bn] of FIT) {
+    const j = J[jid], b = B?.[bn];
+    if (!j?.parent || !b) continue;
+    b.getWorldPosition(w);
+    j.parent.updateWorldMatrix(true, false);
+    const local = j.parent.worldToLocal(w.clone());
+    if (local.distanceToSquared(j.position) < 1e-12) continue;
+    undo.push([j, "position", j.position.clone()]);
+    j.position.copy(local);
+    j.updateMatrixWorld(true);
+  }
+}
+
+/**
+ * Move the logic rig (the clay group g) so its hip joints' midpoint is on the visible body's (the two thigh bones'),
+ * the body itself left where it is. The stage's own gait puts the clay's hips up to ~24 cm from the clip's (its planted
+ * feet lead or trail the keys; the clip stands on them), so the turns alone left every Pose keypoint, the gizmo's IK
+ * and the colliders that far off the body the camera sees (L1 review round 2: 33% of the logic rig's keypoints inside
+ * the walking body's silhouette at f6). On the undo list like every other write over the stage's pose.
+ */
+function alignRig(g, skin, undo) {
+  const J = g.userData.joints, B = skin.bones;
+  if (!J?.l_hip || !J?.r_hip || !B?.Bip01_L_Thigh || !B?.Bip01_R_Thigh) return;
+  g.updateMatrixWorld(true);
+  const clay = J.l_hip.getWorldPosition(new THREE.Vector3()).add(J.r_hip.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
+  const body = B.Bip01_L_Thigh.getWorldPosition(new THREE.Vector3()).add(B.Bip01_R_Thigh.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
+  const d = body.sub(clay);
+  if (d.lengthSq() < 1e-12) return;
+  const h = skin.holder, hp = h.getWorldPosition(new THREE.Vector3());
+  moveBody(g, h, d.x, d.y, d.z, undo);
+  // the body stays: the holder back to its world place inside the moved group
+  if (h.parent) { h.parent.updateWorldMatrix(true, false); h.position.copy(h.parent.worldToLocal(hp)); } else h.position.copy(hp);
+  h.updateMatrixWorld(true);
 }
 
 /** The kit's rest offsets (retarget.restOffsets), measured on the idle's first frame. Leaves the skin on that pose. */

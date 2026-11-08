@@ -1,6 +1,6 @@
 // Capture a performance for the stage: from a video file, or acted out live on the webcam. The clip goes to ComfyUI's
 // input folder and through SAM 3D Body (body, hands and fingers in 3D) into Soundstage · Mocap to Stage, which writes
-// the take the clay figure plays (web/stage/mocap.mjs).
+// the take the actor plays (web/stage/mocap.mjs).
 import { runGraph } from "../assets3d/maker.mjs";
 import { fetchSourceSpec, sourceLine } from "../ui/sourcespec.mjs";
 
@@ -88,7 +88,7 @@ export function recordTake({ seconds = 6 } = {}) {
     const wrap = Object.assign(document.createElement("div"), { className: "ss-mocap-rec" });
     wrap.innerHTML = `<div class="card" role="dialog" aria-label="Act it out">
       <h3>Act it out</h3>
-      <div class="sub">Stand back so the camera sees you head to toe. Press Record, wait for the countdown, then perform: open a door, run and jump, wave. The clay actor copies it.</div>
+      <div class="sub">Stand back so the camera sees you head to toe. Press Record, wait for the countdown, then perform: open a door, run and jump, wave. The actor on the stage copies it.</div>
       <div class="view"><video class="live mirror" autoplay muted playsinline></video><div class="count" hidden></div><div class="rec" hidden>0.0 s</div></div>
       <div class="row"><label>Length <select class="len">${[3, 4, 6, 8, 10, 15].map((s) => `<option value="${s}"${s === seconds ? " selected" : ""}>${s} s</option>`).join("")}</select></label>
         <span class="grow"></span><button class="cancel" type="button">Cancel</button><button class="retake" type="button" hidden>Retake</button>

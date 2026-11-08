@@ -164,7 +164,7 @@ function measure(R, a, g, h) {
   const clones = new Map();
   R.paint = [];
   for (const m of meshes) {
-    if (m.userData.glass || m.userData.lamp) continue;
+    if (m.userData.glass || m.userData.lamp || m.material?.userData?.standin) continue;   // (the marked stand-in is no paint)
     const name = m.material?.name || "";
     const isPaint = PAINT_RE.test(name) || (!name && mainHex != null && m.material?.color?.getHex() === mainHex);
     if (!isPaint || !m.material?.isMeshStandardMaterial) continue;
@@ -179,7 +179,7 @@ function measure(R, a, g, h) {
   // Procedural bodies have no named paint: the mesh a side ray hits is the body colour.
   if (!R.paint.length) {
     const s = sideAt(bb.min.y + 0.45 * H, 0, 1);
-    if (s?.m?.material?.isMeshStandardMaterial) {
+    if (s?.m?.material?.isMeshStandardMaterial && !s.m.material.userData?.standin) {
       const src = s.m.material, c = src.clone();
       c.userData.base = { color: c.color.clone(), roughness: c.roughness, metalness: c.metalness };
       R.paint.push(c);
