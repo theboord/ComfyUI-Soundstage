@@ -10,7 +10,8 @@
 //                                           camera curve (web/stage/camcurve.mjs): the Python agent writes no version
 //   projectHook(getCtl)  -> async () => {name, id}   the open project (host.project() for Ask): id "p_<8hex>" only when
 //                                           confirmed against its saved project.json, else null (window.__ssProject)
-//   cutPanelHook(cut, view) -> () => CutPanel | null   the live Cut panel object (host.cut.panel()), null unmounted
+//   cutPanelHook(cut, view) -> () => CutPanel | null   the live Cut panel object (host.cut.panel()), null unless the
+//                                           Cut view is mounted and shown
 //   exposureHook(stage)  -> {get(), set(stops), down(stops?), reset()}   the stage's "lights down" dimmer (host.lights)
 //   stageHook(stage)     -> {toJSON, select, setPose, snapshot, restore, undo}   host.stage for Ask: its edits plus a
 //                                           way to take them back (snapshot() before, restore(snap) after; undo())
@@ -133,30 +134,42 @@ const PROJECT_ID = /^p_[0-9a-f]{8}$/;
 /**
  * host.project() for Ask: the open project {name, id}. Reads project.json now through the page's project controller
  * (window.__ssProject.project(), web/project/projectbar.mjs), so id is the CONFIRMED id ("p_" + 8 hex) or null (not
- * saved yet, saved before ids existed, a copy, a renamed or reused name). Never throws: no controller, or a failed
- * read, falls back to the controller's sync answer (projectId() / current().name), else {name: null, id: null}.
+ * saved yet, saved before ids existed, a copy, a renamed or reused name). Never throws and always settles: no
+ * controller, or a failed read, falls back to the controller's sync answer (projectId() / current().name), else
+ * {name: null, id: null}; a read that has not answered within opts.timeoutMs (default PROJECT_TIMEOUT_MS, 3 s)
+ * resolves {name: current().name or null, id: null} (an id that was not confirmed is never given).
  */
-export function projectHook(getCtl = () => globalThis.__ssProject) {
+export const PROJECT_TIMEOUT_MS = 3000;
+export function projectHook(getCtl = () => globalThis.__ssProject, { timeoutMs = PROJECT_TIMEOUT_MS } = {}) {
   const clean = (name, id) => ({ name: typeof name === "string" && name ? name : null, id: typeof id === "string" && PROJECT_ID.test(id) ? id : null });
+  const nameOf = (c) => { try { return c.current?.()?.name ?? null; } catch { return null; } };
   return async () => {
     const c = getCtl?.();
     if (!c) return clean(null, null);
+    const TIMEOUT = Symbol("timeout");
+    let timer = null;
     try {
-      const r = await c.project();
-      return clean(r?.name ?? c.current?.()?.name, r?.confirmed ? r.id : null);
+      const r = await Promise.race([
+        Promise.resolve().then(() => c.project()),
+        new Promise((res) => { timer = setTimeout(() => res(TIMEOUT), Math.max(0, Number(timeoutMs) || 0)); }),
+      ]);
+      if (r === TIMEOUT) return clean(nameOf(c), null);
+      return clean(r?.name ?? nameOf(c), r?.confirmed ? r.id : null);
     } catch {
-      let name = null, id = null;
+      let id = null;
       try { id = c.projectId?.() ?? null; } catch { /* */ }
-      try { name = c.current?.()?.name ?? null; } catch { /* */ }
-      return clean(name, id);
+      return clean(nameOf(c), id);
+    } finally {
+      clearTimeout(timer);
     }
   };
 }
 
-/** host.cut.panel for Ask: the live CutPanel instance (call its own methods), or null when the Cut is not mounted
- * (its view is out of the page, e.g. the node was removed). */
+/** host.cut.panel for Ask: the live CutPanel instance (call its own methods) while the Cut is mounted AND shown (its
+ * view is in the page and not hidden: the ⑥ Cut tab is open), else null. The panel object exists from the start (the
+ * App builds it hidden), so a null means "the Cut isn't on screen": go to the Cut step first (host.goStep("cut")). */
 export function cutPanelHook(cut, view) {
-  return () => (cut && (!view || view.isConnected !== false) ? cut : null);
+  return () => (cut && (!view || (view.isConnected !== false && !view.hidden)) ? cut : null);
 }
 
 /** host.lights for Ask: the stage's scene dimmer (stage.setExposure, web/stage/STAGE_API.md). down(stops = 1) dims by
