@@ -299,3 +299,44 @@ test("confirmProjectId / projectId(): an id no saved project.json confirms is no
     assert.equal(ctl.current().id, saved.id, "current() still says what the graph carries (Forget's scope)");
   } finally { clearInterval(ctl._timer); }
 });
+
+test("open collected on the machine that still has the live project: no id is confirmed, and Save asks before replacing it", async () => {
+  globalThis.window ||= { addEventListener() {} };
+  const { ProjectController } = await import("../../web/project/projectbar.mjs");
+  const ufs = fakeApi();
+  const live = await new ProjectStore({ api: ufs }).save("Heist", WF());
+  const liveBody = ufs.files.get("workflows/Heist.json").body;
+  // the collected copy carries the live project's id and name, relinked to output/soundstage_projects/Heist/
+  const copy = JSON.parse(JSON.stringify(live.workflow));
+  copy.nodes[0].widgets_values = ['{"relinked":"output/soundstage_projects/Heist"}'];
+  ufs.fetchApi = async (path) => ({ ok: true, json: async () => (path.endsWith("open_collected") ? { name: "Heist", folder: "Heist", workflow: copy } : {}) });
+  const asked = [];
+  let replace = false;
+  const app = { graph: { ...WF(), extra: {} }, extensionManager: { dialog: {
+    prompt: async ({ title, defaultValue }) => { asked.push(title); return defaultValue; },
+    confirm: async ({ title }) => { asked.push(title); return replace; },
+  } } };
+  app.graph.serialize = () => { const { serialize, ...g } = app.graph; return JSON.parse(JSON.stringify(g)); };   // eslint-disable-line no-unused-vars
+  app.loadGraphData = async (wf) => { const ser = app.graph.serialize; app.graph = { ...JSON.parse(JSON.stringify(wf)), serialize: ser }; };
+  const ctl = new ProjectController({ app, api: ufs });
+  clearInterval(ctl._timer);
+  ctl.render = () => {}; ctl.say = () => {};
+  try {
+    await ctl.openCollected("Heist");
+    assert.equal(projectIdOf(app.graph.serialize()), null, "the copy drops the carried id");
+    await ctl.tick();
+    assert.equal(ctl.projectId(), null, "never confirmed as the live project");
+    assert.equal((await ctl.project()).confirmed, false);
+    await ctl.save();                                             // plain Save: asks a name, then to replace, declined
+    assert.deepEqual(asked, ["Save project", "Replace project?"]);
+    assert.equal(ufs.files.get("workflows/Heist.json").body, liveBody, "the live project is untouched");
+    assert.equal((await man(ufs, "Heist")).id, live.id);
+    replace = true;                                               // the user says yes: a replace with a fresh id
+    await ctl.save();
+    assert.notEqual((await man(ufs, "Heist")).id, live.id);
+    assert.equal(ctl.projectId(), (await man(ufs, "Heist")).id);
+    asked.length = 0;
+    await ctl.save();                                             // saved here now: an ordinary Save, no prompt
+    assert.deepEqual(asked, []);
+  } finally { clearInterval(ctl._timer); }
+});

@@ -152,16 +152,17 @@ export class ProjectController {
     if (!wf) return;
     const t = this._cur() || (await this.tick(), this._cur());
     let name = t.name;
-    if (as || !name || /^Untitled \d{4}-/.test(name)) {
+    if (as || t.collected || !name || /^Untitled \d{4}-/.test(name)) {
       name = await askName(this.app, as ? "Save project as" : "Save project", name && !/^Untitled /.test(name) ? name : "");
       if (!name) return;
-      if (name !== t.name && (await this.store.manifest(name))
+      if ((name !== t.name || t.collected) && (await this.store.manifest(name))
         && !(await confirmBox(this.app, "Replace project?", `A project called "${name}" exists. Replace it?`))) return;
     }
     try {
       const res = await this.store.save(name, wf, { manifest: this._summary() });
       try { this.app.graph.extra = { ...(this.app.graph.extra || {}), ss_project: { name: res.name, saved_at: res.saved_at, id: res.id } }; } catch { /* */ }
       t.name = res.name;
+      t.collected = false;
       t.confirmedId = res.id; t.confirmedName = res.name; t.checkKey = `${res.name}|${res.id}`; t.checkedAt = Date.now();
       t.savedAt = res.saved_at;
       t.savedSig = t.sig = workflowSig(wf);
@@ -185,6 +186,7 @@ export class ProjectController {
     await this.app.loadGraphData(wf, true, true, name ? `${name}` : null);
     await this.tick();
     const t = this._cur();
+    if (t) t.collected = false;          // openCollected sets it again after loading
     if (t && name) { t.name = name; }
   }
 
@@ -260,7 +262,13 @@ export class ProjectController {
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || r.status);
       const n = cleanName(j.name) || name;
-      await this.load(stampWorkflow(j.workflow, n, null), n);
+      // A collected copy never keeps the id it carries: on the machine it came from, projects/<n>/project.json still
+      // holds that id, so projectId() would confirm the copy as the live project and a plain Save would overwrite it
+      // with the copy (relinked to output/soundstage_projects/). No id here; its first Save asks for a name (and to
+      // replace an existing project of that name) and writes a fresh id.
+      await this.load(stampWorkflow(j.workflow, n, null, null), n);
+      const t = this._cur();
+      if (t) { t.collected = true; t.confirmedId = null; }
       this.say(`Opened collected project "${n}", relinked to output/soundstage_projects/${j.folder}/. Save it to keep it as a project here.`);
     } catch (e) { this.say(`Could not open it: ${e?.message || e}`); }
   }
