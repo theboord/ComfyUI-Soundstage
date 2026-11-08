@@ -127,7 +127,7 @@ function loadAsset(url, format) {
   p.catch(() => assetCache.delete(key));
   return p;
 }
-import { LIGHT_TYPES, TIME_PRESETS, solarPosition, hourForElevation, kelvinToColor, skyFor, describeLighting } from "./lighting.mjs";
+import { LIGHT_TYPES, TIME_PRESETS, solarPosition, hourForElevation, kelvinToColor, skyFor, describeLighting, EXPOSURE_MIN, EXPOSURE_MAX, exposureStopsOf } from "./lighting.mjs";
 
 /** Rigged CC0 horse (Quaternius, poly.pizza): Idle / Walk / Gallop skeletal cycles. */
 const HORSE_GLB = new URL("./models/horse.glb", import.meta.url).href;
@@ -173,7 +173,7 @@ function mountHorse(g, hg, seatPos, t, h, drop) {
 
 export const FRAME_W = 960;
 export const FRAME_H = 512;
-export const EXPOSURE_MIN = -6, EXPOSURE_MAX = 2;   // the scene dimmer's range in stops (setExposure)
+export { EXPOSURE_MIN, EXPOSURE_MAX, exposureStopsOf };   // the scene dimmer's range in stops (setExposure; lighting.mjs)
 // Captures are never dimmed to near-black: a Color capture (the picture Frame / Motion / Deliver read) is dimmed to at
 // most CAPTURE_EXPOSURE_MIN stops (a quarter of the light); the guide passes (clay, depth, wire, ID, dust) are not
 // dimmed at all. The prompt's lighting line carries the rest of "lights down" (lighting.mjs describeLighting).
@@ -248,6 +248,13 @@ export const DEFAULT_SCENE = {
 };
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
+
+/** lighting.exposure_stops clamped to EXPOSURE_MIN..EXPOSURE_MAX in place; a non-number (true, "1e3") or 0 removed. */
+function cleanExposure(L) {
+  if (!L || typeof L !== "object" || !("exposure_stops" in L)) return;
+  const v = exposureStopsOf(L.exposure_stops);
+  if (v === null || v === 0) delete L.exposure_stops; else L.exposure_stops = v;
+}
 
 /** Yield one task without setTimeout, which hidden tabs throttle to 1 s or more. */
 const yieldToBrowser = () => new Promise((resolve) => {
@@ -2633,8 +2640,7 @@ export class Stage {
 
   /** The scene dimmer in stops (state.lighting.exposure_stops, 0 = as lit). See setExposure. */
   exposure() {
-    const v = Number(this.state?.lighting?.exposure_stops);
-    return Number.isFinite(v) ? v : 0;
+    return exposureStopsOf(this.state?.lighting?.exposure_stops) ?? 0;   // clamped; true / "1e3" / NaN read as 0
   }
 
   /**
@@ -2642,11 +2648,12 @@ export class Stage {
    * 0 = as lit). It scales every light in the set (sun, sky fill, film lights, practicals, headlights, fire) and a
    * plain-colour sky by 2^stops when the Color view and captures render; emissive surfaces (neon, screens) keep their
    * glow, like real practicals. Stored as state.lighting.exposure_stops (saved with the scene); one undo step when it
-   * changes (through onChange). Numeric strings are taken ("-1.5"); anything else, or out of range, is refused and
-   * changes nothing. Returns {ok: true, stops, changed} or {ok: false, error}.
+   * changes (through onChange). Plain decimal strings are taken ("-1.5"); anything else ("1e3", true, NaN), or out of
+   * range, is refused and changes nothing. Returns {ok: true, stops, changed} or {ok: false, error}. A saved value out
+   * of range or not a number is clamped / dropped on load() (exposureStopsOf), and exposure() reads it clamped.
    */
   setExposure(stops) {
-    const n = typeof stops === "number" ? stops : typeof stops === "string" && stops.trim() !== "" ? Number(stops) : NaN;
+    const n = typeof stops === "number" ? stops : typeof stops === "string" && /^\s*[+-]?\d+(\.\d+)?\s*$/.test(stops) ? Number(stops) : NaN;
     if (!Number.isFinite(n)) return { ok: false, error: `stops must be a number (got '${stops}')` };
     if (n < EXPOSURE_MIN || n > EXPOSURE_MAX) return { ok: false, error: `stops must be between ${EXPOSURE_MIN} and ${EXPOSURE_MAX} (got ${n})` };
     const v = Math.round(n * 100) / 100;
@@ -5426,6 +5433,7 @@ export class Stage {
     if (this.viewCam) { this.viewCam.aspect = this.fw / this.fh; this.viewCam.updateProjectionMatrix(); }
     this._snap = null;
     if (!this.state.lighting) this.state.lighting = clone(DEFAULT_SCENE.lighting);
+    cleanExposure(this.state.lighting);   // the dimmer clamped to its range, a non-number dropped (agent ops come in here too)
     if (!this.state.environment) this.state.environment = { set: "plaza", weather: "none", density: 0.5, water_level: 2.5 };
     this._buildSet();
     this._applySun();

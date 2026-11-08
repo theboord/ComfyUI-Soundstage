@@ -18,6 +18,7 @@
 
 import { DEFAULT_PRESET } from "./motion/ltxadvanced.mjs";
 import { markNewShots } from "./stage/camcurve.mjs";
+import { EXPOSURE_MIN } from "./stage/lighting.mjs";
 
 /**
  * Wrap a SceneAgent's describe / edit so the shots they make go onto the smooth camera curve (cam_curve 2). describe
@@ -176,18 +177,23 @@ export function cutPanelHook(cut, view) {
 }
 
 /** host.lights for Ask: the stage's scene dimmer (stage.setExposure, web/stage/STAGE_API.md). down(stops = 1) dims by
- * that many more stops from where it is; reset() back to 0. Each change is one stage undo step; returns the stage's
- * result ({ok, stops} or {ok: false, error}). */
+ * that many more stops from where it is and STOPS at EXPOSURE_MIN (-6): -5.5 then down(1) gives -6, down at -6 is
+ * {ok: true, changed: false}; stops must be a finite number >= 0 or a plain decimal string ("1.5"): "", null, true,
+ * "1e3", NaN are refused (nothing changes). set(stops) is absolute and refuses out of range; reset() back to 0. Each
+ * change is one stage undo step; returns the stage's result ({ok, stops, changed} or {ok: false, error}). */
+const DECIMAL = /^\s*\d+(\.\d+)?\s*$/;
 export function exposureHook(stage) {
   const S = () => (typeof stage === "function" ? stage() : stage);
   const get = () => { try { return S()?.exposure?.() ?? 0; } catch { return 0; } };
   const set = (stops) => S()?.setExposure?.(stops) ?? { ok: false, error: "no stage" };
   return {
     get, set,
-    down: (stops = 1) => {
-      const n = Number(stops);
+    down: (...args) => {
+      const stops = args.length ? args[0] : 1;   // down() = one stop; down(undefined) too
+      const n = stops === undefined ? 1 : typeof stops === "number" ? stops : typeof stops === "string" && DECIMAL.test(stops) ? Number(stops) : NaN;
       if (!Number.isFinite(n) || n < 0) return { ok: false, error: `stops must be a number >= 0 (got '${stops}')` };
-      return set(get() - n);
+      if (!S()?.setExposure) return { ok: false, error: "no stage" };
+      return set(Math.max(EXPOSURE_MIN, Math.round((get() - n) * 100) / 100));
     },
     reset: () => set(0),
   };

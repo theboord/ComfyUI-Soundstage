@@ -3,6 +3,16 @@
 // "Magic hour" means the sun really sits a few degrees above the horizon for that place and date.
 import * as THREE from "../vendor/three.module.min.mjs";
 
+/** The scene dimmer's range in stops (stage.setExposure; saved as lighting.exposure_stops). */
+export const EXPOSURE_MIN = -6, EXPOSURE_MAX = 2;
+/** A saved lighting.exposure_stops as the stops the stage uses: a finite NUMBER, clamped to EXPOSURE_MIN..EXPOSURE_MAX
+ *  and rounded to 0.01; anything else (true, "1e3", "-2", NaN, null) is not a dimmer value: null. */
+export function exposureStopsOf(v) {
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  const c = Math.min(EXPOSURE_MAX, Math.max(EXPOSURE_MIN, v));
+  return Math.round(c * 100) / 100 || 0;
+}
+
 export const TIME_PRESETS = {
   dawn: { label: "Dawn", sunElevation: -3, side: "east" },
   golden_am: { label: "Golden hour AM", sunElevation: 6, side: "east" },
@@ -114,7 +124,7 @@ export function describeLighting(lighting, sun, cam) {
     parts.push(`${tone} ${t}${l.softness > 0.7 ? ", soft" : l.softness < 0.3 ? ", hard" : ""}`);
   }
   // The scene dimmer (stage.setExposure): "lights down" reads in the prompt as a low-key, dimmed room.
-  const ev = Number(lighting?.exposure_stops) || 0;
+  const ev = exposureStopsOf(lighting?.exposure_stops) ?? 0;   // a bad saved value (true, "1e3") says nothing
   if (ev <= -1) parts.push(ev <= -3 ? "lights down very low, dark low-key exposure" : "lights dimmed down, low-key exposure");
   else if (ev >= 1) parts.push("lights up bright, high-key exposure");
   // Five street lamps of one kind are one phrase, not "warm tungsten practical" five times over in the prompt.

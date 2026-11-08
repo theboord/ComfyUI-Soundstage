@@ -6,7 +6,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as THREE from "../../web/vendor/three.module.min.mjs";
-import { Stage, CAPTURE_EXPOSURE_MIN } from "../../web/stage/stage.mjs";
+import { Stage, CAPTURE_EXPOSURE_MIN, EXPOSURE_MIN, exposureStopsOf } from "../../web/stage/stage.mjs";
+import { applyOpsToScene } from "../../web/agent/agent.mjs";
 import { PipViewer } from "../../web/stage/camviz.mjs";
 import { stageHook } from "../../web/hosthooks.mjs";
 import { describeLighting } from "../../web/stage/lighting.mjs";
@@ -129,4 +130,50 @@ test("Ask can take back a lights change: host.stage.snapshot() / restore(snap)",
   assert.deepEqual(host.restore(snap), { ok: true, changed: true });
   assert.equal(st.exposure(), 0);
   assert.equal(st.undo.length, 2, "the change and the restore: two undo steps");
+});
+
+test("the dimmer is clamped to EXPOSURE_MIN..EXPOSURE_MAX on load, in exposure() and the render factor; non-numbers dropped", () => {
+  const st = litStage();
+  // a saved value out of range / not a number (an old file, a hand edit, an agent set_lighting op that loads through load())
+  for (const [saved, want] of [[-1e9, -6], [1e308, 2], [-6.5, -6], [true, 0], ["1e3", 0], ["-2", 0], [NaN, 0], [null, 0], [-1.234, -1.23]]) {
+    st.state.lighting = { mode: "time", hour: 20, exposure_stops: saved };
+    assert.equal(st.exposure(), want, `exposure() of ${String(saved)}`);
+    assert.ok(Math.abs(st._exposureFactor() - Math.pow(2, want)) < 1e-12, `factor of ${String(saved)}`);
+  }
+  assert.equal(exposureStopsOf(true), null); assert.equal(exposureStopsOf("1e3"), null); assert.equal(exposureStopsOf(-1e9), EXPOSURE_MIN);
+  // load() cleans the stored field (the stage reads only what it can use)
+  const ld = Object.create(Stage.prototype);
+  Object.assign(ld, { camera: new THREE.PerspectiveCamera(), _buildSet() {}, _applySun() {}, setKey() {} });
+  Object.defineProperty(ld, "fw", { value: 16 }); Object.defineProperty(ld, "fh", { value: 9 });
+  const scene = (v) => ({ camera: { position: [0, 1, 5], target: [0, 1, 0], focal_mm: 35 }, actors: [], lighting: { mode: "time", hour: 20, exposure_stops: v } });
+  ld.load(scene(-40)); assert.equal(ld.state.lighting.exposure_stops, -6);
+  ld.load(scene(9)); assert.equal(ld.state.lighting.exposure_stops, 2);
+  for (const bad of [true, "1e3", "-2", NaN, {}, 0]) { ld.load(scene(bad)); assert.equal("exposure_stops" in ld.state.lighting, false, String(bad)); }
+  // the agent's set_lighting op lands in the stage through load() (agent.mjs loadScene), so it is clamped the same way
+  ld.load(applyOpsToScene(scene(undefined), [{ op: "set_lighting", set: { exposure_stops: -1e12 } }]));
+  assert.equal(ld.state.lighting.exposure_stops, -6);
+  ld.load(applyOpsToScene(scene(undefined), [{ op: "set_lighting", set: { exposure_stops: "1e3" } }]));
+  assert.equal("exposure_stops" in ld.state.lighting, false);
+  // setExposure: exponent strings and booleans refused
+  for (const bad of ["1e3", "-1e0", true, false, "0x1", " "]) assert.equal(st.setExposure(bad).ok, false, String(bad));
+  assert.deepEqual(st.setExposure(" -1.5 ").stops, -1.5);
+});
+
+test("host.lights.down stops at the bound; down('') / down(null) / down(true) / down('1e3') refuse and change nothing", () => {
+  const st = litStage(), L = exposureHook(st);
+  assert.equal(L.set(-5.5).stops, -5.5);
+  assert.deepEqual(L.down(1), { ok: true, stops: -6, changed: true }, "-5.5 then down(1) gives -6");
+  assert.deepEqual(L.down(3), { ok: true, stops: -6, changed: false }, "at the bound: no step");
+  assert.deepEqual(L.down(Number.MAX_VALUE), { ok: true, stops: -6, changed: false });
+  const n = st.undo.length;
+  for (const bad of ["", null, true, "1e3", NaN, Infinity, -1, "x", {}, []]) {
+    const r = L.down(bad);
+    assert.equal(r.ok, false, `down(${JSON.stringify(bad)})`); assert.match(r.error, /stops must be a number/);
+  }
+  assert.equal(st.undo.length, n); assert.equal(st.exposure(), -6);
+  L.reset();
+  assert.equal(L.down().stops, -1, "down() is one stop");
+  assert.equal(L.down(undefined).stops, -2);
+  assert.equal(L.down("0.5").stops, -2.5);
+  assert.equal(exposureHook(null).down(1).ok, false, "no stage");
 });
