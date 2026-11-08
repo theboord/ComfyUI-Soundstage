@@ -558,8 +558,9 @@ export function applySwim(g, plan, f, ctx = {}) {
   const kit = g.userData.swimKit, fins = kit?.visible ? kit.userData.fins || [] : [];
   const bends = {};
   if (fins.length && ctx.flex !== false) {
+    // the probes skip the floor lift: it is measured on the kit, which is only set for this frame below
     const lag = 0.3, at = (q) => {
-      putPose(g, plan, q, poseAt(plan, q), hipY, ctx);
+      putPose(g, plan, q, poseAt(plan, q), hipY, { ...ctx, floor: null });
       g.updateMatrixWorld(true);
       return fins.map(({ blade }) => ({ tip: new THREE.Vector3(0, 0, blade.userData.L).applyMatrix4(blade.matrixWorld),
         n: new THREE.Vector3(0, 1, 0).transformDirection(blade.matrixWorld) }));
@@ -572,12 +573,15 @@ export function applySwim(g, plan, f, ctx = {}) {
   }
   const pose = poseAt(plan, f);
   for (const lr of ["l", "r"]) pose.legs[lr].bend = bends[lr] || 0;
-  const B = putPose(g, plan, f, pose, hipY, ctx);
+  const B = putPose(g, plan, f, pose, hipY, { ...ctx, floor: null });
   g.userData.gaitOn = false;
   g.userData.swimOn = true;
   g.userData.gaitCycle = plan.phase[fi] * TAU;
   if (ctx.kit !== false) updateKit(g, plan, fi, pose, ctx);
   floatHair(g, plan, fi, ctx);
+  // The floor lift last, on this frame's fins, straps, hose and hair (measured before them it saw the frame shown
+  // before: a scrub to f29 after f40 lifted the clay 7 mm more than one from f28). A pure function of the frame.
+  if (Number.isFinite(ctx.floor) && B.hips[1] - ctx.floor < plan.height) keepAboveFloor(g, ctx.floor);
   if (ctx.caustics) for (const m of g.userData._ssMats || collectMats(g)) patchCaustics(m);
   return { pose, body: B, style: plan.main[fi], speed: plan.speed[fi] };
 }

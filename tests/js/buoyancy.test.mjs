@@ -529,3 +529,36 @@ test("an underwater stroke dropped in and keyed on under holds its keyed depth (
   assert.equal(plan.mode[140], "under");
   assert.ok(Math.abs(hipsY(st, "l") - 1.5) < 0.15, `then at the keyed depth (${hipsY(st, "l").toFixed(2)})`);
 });
+
+test("scrubbing out of order gives the same pose: a dive in (flutter, frog, stroke, dive) and a can't-swim settle (was: f29 hips 1.5523 vs 1.5589; 5 cm on the bottom)", () => {
+  for (const swim of ["flutter", "frog", "stroke", "dive"]) {
+    const st = tank([diveIn(swim)], { frames: 145 });
+    const g = st.actorMeshes.get("u");
+    const snap = () => { g.updateMatrixWorld(true); return [...g.position.toArray(), ...g.quaternion.toArray(), hipsY(st, "u")]; };
+    const ref = [];
+    for (let f = 0; f < 145; f++) { st.setFrame(f); ref.push(snap()); }
+    let bad = 0, first = "";
+    for (const [mul, off] of [[37, 0], [97, 11], [61, 5]]) for (let i = 0; i < 145; i++) {
+      const f = (i * mul + off) % 145;
+      st.setFrame(f);
+      const s = snap();
+      if (s.some((x, j) => Math.abs(x - ref[f][j]) > 1e-9)) { bad++; first ||= `f${f}: hips ${ref[f][7].toFixed(4)} vs ${s[7].toFixed(4)}`; }
+    }
+    assert.equal(bad, 0, `${swim}: ${bad} of 435 out-of-order frames differ (${first})`);
+  }
+  // the floor lift was measured on the fins / hair of the frame shown before: a can't-swim woman settled on the bottom
+  // jumped up to 5 cm when scrubbed back (8fc04ef: 181 of 900 frames differ); Sink slowly the same
+  for (const swim of ["cant", "sink"]) {
+    const st = tank([{ ...keyed("w", "woman", [[0, [0, 4.5, 0]]], { swim }), height_m: 1.65 }], { frames: 300 });
+    const g = st.actorMeshes.get("w"), ref = [];
+    for (let f = 0; f < 300; f++) { st.setFrame(f); ref.push(g.position.y); }
+    let worst = 0, at = -1;
+    for (const [mul, off] of [[37, 0], [97, 11]]) for (let i = 0; i < 300; i++) {
+      const f = (i * mul + off) % 300;
+      st.setFrame(f);
+      const d = Math.abs(g.position.y - ref[f]);
+      if (d > worst) { worst = d; at = f; }
+    }
+    assert.ok(worst < 1e-9, `${swim}: f${at} is ${worst.toFixed(4)} m off when scrubbed to out of order`);
+  }
+});
