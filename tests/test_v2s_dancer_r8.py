@@ -73,3 +73,22 @@ def test_a_second_dancer_by_a_surface_is_still_a_body(monkeypatch, kind, off):
     cut = _cut(monkeypatch, d, uv, [_entry("woman dancing", box),
                                     _entry("man dancing", [box[0] + off, box[1], box[2] + off, box[3]])])
     assert np.isfinite(cut[his]).sum() <= 0.02 * his.sum()
+
+
+# ------------------------------------------------------------------------------------------------ 2 over-filtering
+from soundstage.video2stage import vlm  # noqa: E402
+from test_v2s_dancer_r3 import _person  # noqa: E402
+
+
+@pytest.mark.parametrize("real", ["outfit: orange sweater", "orange sweater with a pattern", "outfit", "-",
+                                  "brown corduroy trousers with a pattern", "orange knit sweater, just jeans"])
+def test_a_real_read_of_example_words_and_one_placeholder_word_is_kept(real):
+    assert not vlm.wardrobe_echo(real)                               # 0da4c57: all but the last were echoes
+    assert vlm.wardrobe_of({"wardrobe": real}) == real
+    assert vlm.parse_reply(_person(real))["objects"][0]["wardrobe"] == real
+
+
+@pytest.mark.parametrize("frag", ["people only", "every garment, colour, pattern, length", "colour, pattern and length",
+                                  "never just outfit", "<...>", "..."])
+def test_placeholder_fragments_are_still_echoes(frag):
+    assert vlm.wardrobe_echo(frag)

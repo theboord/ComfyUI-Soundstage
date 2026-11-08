@@ -436,27 +436,32 @@ PLACEHOLDER = re.compile(r"(?:people only )?every garment(?: with its color(?: p
                          r"(?: e g .*)?(?: never just outfit)?")
 
 
-# Placeholder fragments: a reply made only of the placeholder's own words (and the example's), with at least one
-# word only the placeholder uses, is the placeholder cut short or reworded ("people only", "every garment, colour,
-# pattern, length", "every garment with its colour, pattern and length e.g."). A reply with no letters or digits at
-# all ("<...>", "-") is one too. Any word outside these sets ("red", "hoodie") makes it a real read.
-_PH_MARKS = frozenset("people only every garment garments its color pattern patterns length lengths never just outfit "
-                      "placeholder e g eg example".split())
+# Placeholder fragments: a reply made only of the placeholder's own words (and the example's) that carries the
+# placeholder's own phrasing: one of its marks ("every", "garment", "people only", "e.g.", "never"), or, with none of
+# the example's words, two of its plainer words ("colour, pattern, length"). So "people only", "every garment, colour,
+# pattern, length", "every garment with its colour, pattern and length e.g." are fragments, while "outfit", "orange
+# sweater with a pattern" and "outfit: orange sweater" (the example's words and one plain placeholder word) are
+# real reads. A reply with no letters or digits is one only when it is a bracket or ellipsis ("<...>"), not "-".
+_PH_MARKS = frozenset("people only every garment garments never placeholder e g eg example".split())
+_PH_PLAIN = frozenset("its color pattern patterns length lengths just outfit".split())
 _PH_GLUE = frozenset("with and or of a an the for instance each".split())
-_PH_WORDS = _PH_MARKS | _PH_GLUE | frozenset(_flat(WARDROBE_EXAMPLE).split()) | {"pants", "cords", "knit", "cable"}
+_EX_WORDS = frozenset(_flat(WARDROBE_EXAMPLE).split()) | {"pants", "cords", "knit", "cable"}
+_PH_WORDS = _PH_MARKS | _PH_PLAIN | _PH_GLUE | _EX_WORDS
 
 
 def _placeholder_fragment(v) -> bool:
-    toks = _flat(v).split()
+    toks = set(_flat(v).split())
     if not toks:
-        return True
-    return set(toks) <= _PH_WORDS and bool(set(toks) & _PH_MARKS)
+        return bool(re.search(r"[<>\[\]{}]|\.\.|\u2026", str(v or "")))
+    if not toks <= _PH_WORDS:
+        return False
+    return bool(toks & _PH_MARKS) or (not toks & (_EX_WORDS - _PH_GLUE) and len(toks & _PH_PLAIN) >= 2)
 
 
 def wardrobe_echo(v) -> bool:
     """True only when a wardrobe reply is the prompt's own text: the placeholder, whole or cut short or reworded (case,
     brackets and punctuation ignored; only its own words and the example's, at least one of them the placeholder's),
-    a reply with no words at all ("<...>"), or the whole example: every one of its garments is in the reply, in any
+    a bracket or ellipsis with no words ("<...>", not "-"), or the whole example: every one of its garments is in the reply, in any
     order or wording (articles, hyphens, a 'label:', "e.g." or "(example)", 'pants' for 'trousers'), with or without
     more garments. One garment of the example alone, a bare list of garment names, or a phrase the schema uses inside a
     real read is clothing."""
