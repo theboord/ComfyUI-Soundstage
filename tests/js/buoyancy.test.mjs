@@ -138,7 +138,11 @@ test("weight decides: a rock sinks faster than a can't-swim person, who sinks sl
   st.setFrame(48);
   const sub = (id) => { const b = new THREE.Box3().setFromObject(st.actorMeshes.get(id)); return (LEVEL - b.min.y) / (b.max.y - b.min.y); };
   assert.ok(sub("b") < sub("c"), `ball ${sub("b").toFixed(2)} of its height under, crate ${sub("c").toFixed(2)}`);
+  // at their real waterlines (the old fixed-fraction float had the crate 0.58 under; its weight puts it at 0.40)
+  for (const [id, body] of [["b", ball], ["c", crate]]) assert.ok(Math.abs(sub(id) - B.floatFraction(body)) < 0.06, `${id}: ${sub(id).toFixed(2)} under vs ${B.floatFraction(body).toFixed(2)} from its weight`);
   assert.ok(new THREE.Box3().setFromObject(st.actorMeshes.get("r")).min.y < 0.05, "the rock is on the bottom by 2 s");
+  st.setFrame(24);   // ... and already by 1 s: it sinks at its terminal speed (the old drop was still 1.06 m up)
+  assert.ok(new THREE.Box3().setFromObject(st.actorMeshes.get("r")).min.y < 0.1, "the rock is on the bottom by 1 s");
 });
 
 test("a float bobs under-damped to its real waterline after a drop; a rock keyed under the surface sinks from there (no snap)", () => {
@@ -161,11 +165,13 @@ test("a float bobs under-damped to its real waterline after a drop; a rock keyed
   assert.ok(Math.abs(tr.y[n - 1] - eq) < 0.03, `settles at its waterline (${tr.y[n - 1].toFixed(3)} vs ${eq.toFixed(3)})`);
   const st = tank([prop("r", "rock", 2, { key_y: true })]);
   const ys = [0, 6, 12, 18].map((f) => yAt(st, "r", f));
-  assert.ok(ys[0] > 1.8, `frame 0 where it was keyed (${ys[0]})`);
+  assert.ok(Math.abs(ys[0] - 2) < 0.03, `frame 0 where it was keyed (${ys[0].toFixed(3)}; the old drop started at 2.07)`);
   assert.ok(ys[1] < ys[0] && ys[2] < ys[1] && ys[3] < ys[2], `and sinking from there: ${ys.map((y) => y.toFixed(2))}`);
+  assert.ok(yAt(st, "r", 24) < 0.15, `on the bottom by 1 s (${yAt(st, "r", 24).toFixed(2)})`);
   const st2 = tank([prop("c", "crate", 1, { key_y: true })]);
   const cy = [0, 12, 24].map((f) => yAt(st2, "c", f));
-  assert.ok(cy[1] > cy[0] && cy[2] > cy[0], `a crate keyed under the surface rises (${cy.map((y) => y.toFixed(2))})`);
+  assert.ok(Math.abs(cy[0] - 1) < 0.03, `a crate keyed 1 m up, under the surface, starts there (${cy[0].toFixed(3)}; was snapped to 2.03)`);
+  assert.ok(cy[1] > cy[0] + 0.2 && cy[2] > cy[1], `and rises (${cy.map((y) => y.toFixed(2))})`);
 });
 
 test("the mass / density override changes the outcome: a crate made heavy sinks, a rock made light floats", () => {
