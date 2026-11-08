@@ -105,6 +105,71 @@ test("real Rocketbox walking along the station platform's edge, keyed 2-4 cm eit
   }
 });
 
+/**
+ * The two shoes against each other over a shot: the closest any left shoe vertex gets to any right one (m), and the
+ * smallest side gap between the foot bones (across the way, `across` = 0 for x, 2 for z) on frames they pass each other.
+ */
+function shoeGap(out, across) {
+  const along = 2 - across;
+  let closest = Infinity, cAt = -1, side = Infinity, sAt = -1;
+  for (const r of out.rows) {
+    if (!r.shown || r.skip) continue;
+    const el = r.l.m.elements, er = r.r.m.elements;
+    if (Math.abs(el[12 + along] - er[12 + along]) < 0.15) { const d = Math.abs(el[12 + across] - er[12 + across]); if (d < side) { side = d; sAt = r.f; } }
+    if (Math.hypot(el[12] - er[12], el[13] - er[13], el[14] - er[14]) > 0.45) continue;
+    const L = r.l.P, R = r.r.P;
+    let m = Infinity;
+    for (let i = 0; i < L.length; i += 3) for (let j = 0; j < R.length; j += 3) {
+      const dx = L[i] - R[j], dy = L[i + 1] - R[j + 1], dz = L[i + 2] - R[j + 2], d = dx * dx + dy * dy + dz * dz;
+      if (d < m) m = d;
+    }
+    if (m < closest * closest) { closest = Math.sqrt(m); cAt = r.f; }
+  }
+  return { closest, cAt, side, sAt };
+}
+
+test("walking along a platform's edge, a 15 cm kerb and a 1 m dock's side: the shoes keep the gap they have on the flat (no tightrope walk)", { skip: NOT_INSTALLED }, async () => {
+  // df4288b moved the one planted shoe across a break up to 23 cm sideways (T.straddle), onto the other foot's line:
+  // the shoes came within 1.7-4.7 mm of each other and passed through each other, the foot bones' side gap 14 cm on the
+  // flat down to 0.03-1.2 cm. The whole body moves sideways now (plan.shift), so the clip's own gap is kept.
+  const fx = buildTrainStation().fx, kf = (frame, x, y, z) => ({ frame, position: [x, y, z] });
+  const kerb = [{ id: "kerb", half: [2, 0.075, 4], pos: [2, 0.075, 0], quat: [0, 0, 0, 1] }];
+  const dock = [{ id: "dock", half: [3, 0.5, 1.2], pos: [0, 0.5, 0], quat: [0, 0, 0, 1] }];
+  for (const kind of ["man", "woman"]) {
+    const flat = K.walker(kind, {}, [0, 0, -3], [0, 0, 3]);
+    const ref = shoeGap(K.measure(await K.setup(kind, flat), flat), 0);
+    const cases = [];
+    for (const x of [1.58, 1.6, 1.62, 1.64, 1.7]) cases.push([`station edge x ${x}`, [kf(0, x, 0, -3), kf(120, x, 0, 3)], { setFx: fx }, stationFloor, 0]);
+    for (const x of [-0.06, -0.03, 0.03]) cases.push([`15 cm kerb x ${x}`, [kf(0, x, 0, -2), kf(120, x, 0, 2)], { boxes: kerb }, K.boxGround(kerb), 0]);
+    cases.push(["1 m dock's side z 1.14", [kf(0, -2.5, 1, 1.14), kf(120, 2.5, 1, 1.14)], { boxes: dock }, K.boxGround(dock), 2]);
+    for (const [name, keys, opts, ground, across] of cases) {
+      const a = { id: "along", kind, height_m: K.heightOf(kind), position: keys[0].position, keys };
+      const out = K.measure(await K.setup(kind, a, opts), a, { ground }), g = shoeGap(out, across);
+      const tag = `${kind} along the ${name}: closest shoes ${cm(g.closest)} cm (f${g.cAt}), foot bones ${cm(g.side)} cm apart passing (f${g.sAt}); on the flat ${cm(ref.closest)} / ${cm(ref.side)}`;
+      assert.ok(g.closest >= 0.7 * ref.closest, `${tag}: the shoes come together`);
+      assert.ok(g.side >= 0.7 * ref.side, `${tag}: the feet on one line`);
+    }
+  }
+});
+
+test("walking along the low side of a 15 cm kerb (3-6 cm off its face) and beside a 20 cm box: no slide, no shoe in the kerb or the box", { skip: NOT_INSTALLED }, async () => {
+  // df4288b: the woman keyed 3-6 cm off the kerb's face slid 12.2-14.7 cm in a frame (0.10-0.12 on 854e956) with a shoe
+  // 0.5-0.7 cm into the kerb; beside a 20 cm box at x 1.04 a shoe went 0.8 cm into it (0 on 854e956)
+  const kf = (frame, x, z) => ({ frame, position: [x, 0, z] });
+  const kerb = [{ id: "kerb", half: [2, 0.075, 4], pos: [2, 0.075, 0], quat: [0, 0, 0, 1] }];
+  const box = [{ id: "box", half: [1, 0.1, 2], pos: [0, 0.1, 0], quat: [0, 0, 0, 1] }];
+  for (const kind of ["man", "woman"]) for (const [name, keys, boxes, n] of [
+    ["kerb x -0.03", [kf(0, -0.03, -2), kf(120, -0.03, 2)], kerb, 121], ["kerb x -0.06", [kf(0, -0.06, -2), kf(120, -0.06, 2)], kerb, 121],
+    ["20 cm box x 1.04", [kf(0, 1.04, -1.5), kf(96, 1.04, 1.5)], box, 97], ["20 cm box x 1.08", [kf(0, 1.08, -1.5), kf(96, 1.08, 1.5)], box, 97],
+  ]) {
+    const a = { id: "lb", kind, height_m: K.heightOf(kind), position: keys[0].position, keys };
+    const st = await K.setup(kind, a, { frames: n, boxes });
+    const out = K.measure(st, a, { ground: K.boxGround(boxes) }), d = inBoxes(out, boxes), tag = `${kind} beside the ${name}`;
+    assert.ok(d.deep < 0.002, `${tag}: a shoe ${cm(d.deep)} cm inside (${d.at})`);
+    check(K.physical(out), tag, { pen: -1, planted: 40 });
+  }
+});
+
 // ---------------------------------------------------------------- physical checks over every frame, not the plan's labels
 /** Assert the physical summary s against limits (all in metres / frames); tag names the case. */
 function check(s, tag, { pen = -0.01, slide = 0.01, drift = 0.015, hover = 0.02, float = 0, drop = 0.021, planted = 40, excluded = 0 } = {}) {

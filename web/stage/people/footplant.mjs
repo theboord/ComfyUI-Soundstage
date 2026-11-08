@@ -30,8 +30,9 @@
 // waits); the clearance counts only ground the leg could step onto and never folds the leg (T.minLeg), and a plant is
 // refused too high as well as too low; a sprint's 1-frame touch-down is kept and not lifted.
 // Fourth pass (2026-11-08): a top up to half the leg from the body's footing is planted (T.far, the walked step);
-// a planted shoe across a big break (a platform's edge) moves sideways onto the body's ground and the swing follows
-// (T.straddle, plan.dS); a foot at rest is kept clear of its footing laid along the ground's slope (plan.slope);
+// a foot down across a big break that runs along the way (a platform's edge, a kerb or a box beside the body) moves
+// the whole BODY sideways onto its own ground, the root bone with the legs, so the feet keep the clip's own gap (fifth
+// pass; the fourth moved the one shoe onto the other foot's line) (T.straddle, plan.shift); a foot at rest is kept clear of its footing laid along the ground's slope (plan.slope);
 // the shortest stance is a time (at 12 fps a 2-frame plant counts).
 // Everything is a pure function of the keys and the frame: the plan is built from the whole shot at once, and a
 // frame reads only the plan and the clip pose at that frame, so scrubbing in any order gives the same feet.
@@ -69,8 +70,9 @@ export const FOOT = {
   minLeg: 0.45,                  // of the leg's length: a target closer to the hip than this (the leg folded up) is refused
   stillSpeed: 0.15,              // m/s: a body slower than this stands on its own footing, not on a top beside it
   edge: 0.02,                    // the ground under one sole is off its plane by more than this: an edge or a step (the foot sits flat on the top)
-  straddle: 0.1, sideMax: 0.2,   // a planted shoe across a break this high from the body's footing (a platform's edge, a wall
-                                 // beside the body) is moved sideways, up to sideMax, onto the body's own ground
+  straddle: 0.1, sideMax: 0.2,   // a foot down across a break this high from the body's footing (a platform's edge, a kerb or a
+  sideLow: 0.08,                 // box beside the body; a swinging foot counts while its sole is under sideLow) moves the
+                                 // whole body sideways, up to sideMax, onto its own ground (plan.shift)
   dropOK: 0.02,                  // a planted frame the leg can reach only with the hips down more than this is not planted ...
   supportDrop: 0.06,             // ... unless it's the only foot down, up to this much (a short dip, not both feet in the air)
   maxDrop: 0.12,                 // the pelvis comes down at most this much
@@ -369,14 +371,15 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
   // either way (0 when they disagree in sign), at most 35 degrees, so a ledge or a platform beside the body is no slope
   // but a hill is. A foot at rest is kept clear of its own footing laid along this slope (groundFeet), not of a level
   // one: at the end of a shot up a 10 degree hill the front foot stood 4.7 cm into it
-  const slope = new Float64Array(2 * n), sd = 0.1 * k;
-  for (let f = 0; f < n; f++) {
-    if (skip[f]) continue;
-    const x = rootP[3 * f], z = rootP[3 * f + 2], g0 = ground(x, z, f);
-    const mm = (a, b) => (a * b <= 0 ? 0 : Math.sign(a) * Math.min(Math.abs(a), Math.abs(b), 0.7));
+  // (rootS: the body's place once it is shifted sideways off a break, below)
+  const slope = new Float64Array(2 * n), sd = 0.1 * k, rootS = Float64Array.from(rootP);
+  const mm = (a, b) => (a * b <= 0 ? 0 : Math.sign(a) * Math.min(Math.abs(a), Math.abs(b), 0.7));
+  const slopeAt = (f) => {
+    const x = rootS[3 * f], z = rootS[3 * f + 2], g0 = ground(x, z, f);
     slope[2 * f] = mm((ground(x + sd, z, f) - g0) / sd, (g0 - ground(x - sd, z, f)) / sd);
     slope[2 * f + 1] = mm((ground(x, z + sd, f) - g0) / sd, (g0 - ground(x, z - sd, f)) / sd);
-  }
+  };
+  for (let f = 0; f < n; f++) if (!skip[f]) slopeAt(f);
   // (at a run's speed the contact may move up to T.vFast of the body's speed: a sprint's foot rolls over its contact
   // at 2-4 m/s while the swing moves at twice the body's speed; it is down a frame or two, T.minStanceFast)
   const fast = Array.from(body, (s) => s >= T.runSpeed);
@@ -422,6 +425,96 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
     // twice the body's)
     for (let f = 0; f < n; f++) ct[f] = fast[f] && !skip[f] && R.hb[f] < T.hOut * k && v[f] < Math.max(T.vOut * k + vAdd[f], vFrac[f] * body[f]) ? 1 : 0;
   }
+  // The BODY's sideways shift (plan.shift, world x / z per frame). A foot in stance across a big break from the body's
+  // own footing (keyed 2 cm from a platform's edge one shoe hung over the drop or stood inside its face; along a kerb's
+  // low side the outer shoe stood on the top) moves the whole body sideways, across its heading, to the nearest place
+  // where every stance foot of that frame is on the body's ground (and 3 cm more), at most T.sideMax. The fourth pass
+  // moved the one shoe instead, up to 23 cm, onto the other foot's line: the shoes came within 2-5 mm of each other and
+  // passed through each other (a tightrope walk), and a kerb's low side slid 12-15 cm a frame. Moving the body keeps
+  // the clip's own gap between the feet, and the hips stay over them. Held over half a stride either side and eased in
+  // and out, so the body doesn't weave from step to step; groundFeet moves the root bone by it, so it works on whatever
+  // skeleton drives the visible body. Everything below plants and clears the feet of the shifted body.
+  const shift = new Float64Array(2 * n);
+  {
+    const need = new Float64Array(2 * n), has = new Uint8Array(n);
+    for (let f = 0; f < n; f++) {
+      // (a foot in stance, or swinging low: the clip's swing passes 5 cm inside its own plants, and beside a 20 cm box
+      // the swinging shoe went into the box's side)
+      const low = (lr) => stance[lr][f] || raw[lr].hb[f] < T.sideLow * k;
+      if (skip[f] || !(low("l") || low("r"))) continue;
+      const yaw = raw.yaw[f], lx = Math.cos(yaw), lz = -Math.sin(yaw), rx = rootP[3 * f], rz = rootP[3 * f + 2];
+      const by0 = baseY(f), gx = slope[2 * f], gz = slope[2 * f + 1];
+      const pts = [];
+      let worst = 0, wx = 0, wz = 0;
+      for (const lr of SIDES) {
+        if (!low(lr)) continue;
+        const K = rig[lr].sole.length, W = raw[lr].world;
+        for (let q = 0; q < K; q++) {
+          const i = 3 * (K * f + q), x = W[i], z = W[i + 2];
+          pts.push(x, z);
+          const d = Math.abs(ground(x, z, f) - (by0 + gx * (x - rx) + gz * (z - rz)));
+          if (d > worst) { worst = d; wx = raw[lr].pos[3 * f]; wz = raw[lr].pos[3 * f + 2]; }
+        }
+      }
+      if (worst <= T.straddle * k) continue;
+      // only a break that runs along the body's way (an edge or a kerb beside it): the points off the footing are
+      // still off it a quarter metre ahead and behind. A riser across the way (a step up onto a 40 cm crate) is
+      // stepped onto, not walked round: shifting the body there put it beside the crate
+      {
+        const fx = Math.sin(yaw) * 0.25 * k, fz = Math.cos(yaw) * 0.25 * k, plane = (x, z) => by0 + gx * (x - rx) + gz * (z - rz);
+        let off = 0, along = 0;
+        for (let i = 0; i < pts.length; i += 2) {
+          const x = pts[i], z = pts[i + 1];
+          if (Math.abs(ground(x, z, f) - plane(x, z)) <= T.straddle * k) continue;
+          off++;
+          if (Math.abs(ground(x + fx, z + fz, f) - plane(x + fx, z + fz)) > T.straddle * k && Math.abs(ground(x - fx, z - fz, f) - plane(x - fx, z - fz)) > T.straddle * k) along++;
+        }
+        if (2 * along < off) continue;
+      }
+      // (the plane moves with the body: the slope term is the same either way)
+      const dev = (sx, sz) => { let m = 0; for (let i = 0; i < pts.length; i += 2) { const x = pts[i] + sx, z = pts[i + 1] + sz; m = Math.max(m, Math.abs(ground(x, z, f) - (by0 + gx * (x - sx - rx) + gz * (z - sz - rz)))); } return m; };
+      const toward = Math.sign(lx * (rx - wx) + lz * (rz - wz)) || 1;
+      search: for (let d = 0.02 * k; d <= T.sideMax * k + 1e-9; d += 0.02 * k) for (const sg of [toward, -toward]) {
+        if (dev(sg * d * lx, sg * d * lz) <= 2.5 * T.edge * k) {
+          const e = Math.min(T.sideMax * k, d + 0.03 * k);
+          need[2 * f] = sg * e * lx; need[2 * f + 1] = sg * e * lz; has[f] = 1;
+          break search;
+        }
+      }
+    }
+    // held (the biggest within half a stride and the ease either way), then eased (a moving average), so the frames
+    // that need it get it in full
+    const Ra = Math.max(1, Math.round(0.25 * fps)), Rh = Math.max(1, Math.round(0.45 * fps)) + Ra;
+    const held = new Float64Array(2 * n);
+    for (let f = 0; f < n; f++) {
+      let best = 0;
+      for (let g = Math.max(0, f - Rh); g <= Math.min(n - 1, f + Rh); g++) {
+        if (!has[g]) continue;
+        const m = Math.hypot(need[2 * g], need[2 * g + 1]);
+        if (m > best) { best = m; held[2 * f] = need[2 * g]; held[2 * f + 1] = need[2 * g + 1]; }
+      }
+    }
+    for (let f = 0; f < n; f++) {
+      if (skip[f]) continue;
+      let sx = 0, sz = 0, c = 0;
+      for (let g = Math.max(0, f - Ra); g <= Math.min(n - 1, f + Ra); g++) { sx += skip[g] ? 0 : held[2 * g]; sz += skip[g] ? 0 : held[2 * g + 1]; c++; }
+      shift[2 * f] = sx / c; shift[2 * f + 1] = sz / c;
+    }
+    // the clip's feet, hips and body as the shifted body poses them
+    for (let f = 0; f < n; f++) {
+      const sx = shift[2 * f], sz = shift[2 * f + 1];
+      if (!sx && !sz) continue;
+      rootS[3 * f] += sx; rootS[3 * f + 2] += sz;
+      for (const lr of SIDES) {
+        const R = raw[lr], K = rig[lr].sole.length;
+        R.pos[3 * f] += sx; R.pos[3 * f + 2] += sz; R.hip[3 * f] += sx; R.hip[3 * f + 2] += sz;
+        for (let q = 0; q < K; q++) { const i = 3 * (K * f + q); R.world[i] += sx; R.world[i + 2] += sz; }
+        R.gy[f] = ground(R.pos[3 * f], R.pos[3 * f + 2], f);
+      }
+    }
+    // the slope at the shifted body's footing
+    for (let f = 0; f < n; f++) if (!skip[f] && (shift[2 * f] || shift[2 * f + 1])) slopeAt(f);
+  }
   // a step lasts T.stepTime, quicker in a fast turn (the body turning T.stepTwist while one foot is up): a 360 in 1 s
   // steps in 4 frames instead of 7, so the planted foot never twists far before the other comes down
   const base = Math.max(4, Math.round(T.stepTime * fps)), yawRate = new Float64Array(n);
@@ -432,13 +525,12 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
   const stepFrames = (f) => Math.max(T.stepMin, Math.min(base, Math.round(T.stepTwist / Math.max(1e-6, yawRate[f]))));
   const { segs, steps } = scheduleSteps(stance, drift, stepFrames);
   const ramp = Math.max(1, Math.round(T.ramp * fps));
-  const plan = { n, k, fps, state: {}, w: {}, pos: {}, quat: {}, gy: {}, dY: {}, near: {}, liftK: {}, segs, steps, skip, ground, base: raw.l.base, contact, slope, rootXZ: rootP };
+  const plan = { n, k, fps, state: {}, w: {}, pos: {}, quat: {}, gy: {}, dY: {}, near: {}, liftK: {}, segs, steps, skip, ground, base: raw.l.base, contact, slope, rootXZ: rootS, shift };
   const out = {};
   for (const lr of SIDES) {
     const R = raw[lr], side = rig[lr], K = side.sole.length;
     const st = new Uint8Array(n), w = new Float32Array(n), P = new Float64Array(3 * n), Q = new Float64Array(4 * n), needs = new Float64Array(n), G = new Float64Array(n).fill(NaN);
-    const SX = new Float64Array(n), SZ = new Float64Array(n);
-    out[lr] = { st, w, P, Q, needs, G, SX, SZ };
+    out[lr] = { st, w, P, Q, needs, G };
     // planted frames: each segment's anchor pose, aligned to the ground's slope, lowered onto it frame by frame
     for (const s of segs[lr]) {
       const a = s.anchor;
@@ -446,25 +538,6 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
       const sc = R.scale[a];
       _m0.compose(_v1, _q0, _v2.setScalar(sc));
       const loc = (q) => _v0.fromArray(R.loc, 3 * (K * a + q)).applyMatrix4(_m0).clone();
-      // A shoe across a big break from the body's own footing (laid along the ground's slope at the body): keyed 2 cm
-      // from a platform's edge one shoe hung over the drop or stood inside the platform's face. It moves sideways
-      // (across the body's heading, toward the body first), 2 cm at a time up to T.sideMax, to the first place with
-      // the whole sole on the body's ground; none found: as it was (a stair's riser runs across the heading).
-      let shX = 0, shZ = 0;
-      {
-        const yaw = raw.yaw[a], lx = Math.cos(yaw), lz = -Math.sin(yaw), rx = rootP[3 * a], rz = rootP[3 * a + 2];
-        const by0 = baseY(a), gx = slope[2 * a], gz = slope[2 * a + 1];
-        const P0 = []; for (let q = 0; q < K; q++) P0.push(loc(q));
-        const dev = (sx, sz) => { let m = 0; for (const p of P0) { const x = p.x + sx, z = p.z + sz; m = Math.max(m, Math.abs(ground(x, z, a) - (by0 + gx * (x - rx) + gz * (z - rz)))); } return m; };
-        if (!skip[a] && dev(0, 0) > T.straddle * k) {
-          const toward = Math.sign(lx * (rx - R.pos[3 * a]) + lz * (rz - R.pos[3 * a + 2])) || 1;
-          search: for (let d = 0.02; d <= T.sideMax * k + 1e-9; d += 0.02) for (const sg of [toward, -toward]) {
-            // (and 3 cm more, so the roll of the stance and the swing to it stay clear of the edge too)
-            if (dev(sg * d * lx, sg * d * lz) <= 2.5 * T.edge * k) { const e = Math.min(T.sideMax * k, d + 0.03 * k); shX = sg * e * lx; shZ = sg * e * lz; break search; }
-          }
-        }
-        if (shX || shZ) { _v1.x += shX; _v1.z += shZ; _m0.compose(_v1, _q0, _v2.setScalar(sc)); }
-      }
       // the ground plane under the anchored foot, from three sole points found along the foot's OWN axes (heel = least
       // forward, toe = most forward, the side = furthest across): rig fwd / up, never the bone's local Z (on the
       // Rocketbox skeleton forward is local +Y, and picking by local Z put all three on the forefoot)
@@ -513,8 +586,7 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
           const fw = side.fwd.clone().applyQuaternion(q), axis = new THREE.Vector3().crossVectors(nrm, fw);
           if (axis.lengthSq() > 1e-9) q.premultiply(_q1.setFromAxisAngle(axis.normalize(), heel));
         }
-        qf[f - s.from] = q; pf[f - s.from] = new THREE.Vector3().fromArray(R.pos, 3 * f); pf[f - s.from].x += shX; pf[f - s.from].z += shZ;
-        out[lr].SX[f] = shX; out[lr].SZ[f] = shZ;
+        qf[f - s.from] = q; pf[f - s.from] = new THREE.Vector3().fromArray(R.pos, 3 * f);
       }
       const vtx = (f, q, out) => { _m1.compose(pf[f - s.from], qf[f - s.from], _v2.setScalar(R.scale[f])); return out.fromArray(R.loc, 3 * (K * f + q)).applyMatrix4(_m1); };
       // the contact patch of frame g and how far it moved from frame h's pose to g's (same points)
@@ -625,7 +697,6 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
       ys[f - from] = y; gs[f - from] = gy;
     }
     for (let f = from; f < to; f++) {
-      out[lr].SX[f] = out[lr].SX[src]; out[lr].SZ[f] = out[lr].SZ[src];
       st[f] = 1; w[f] = 1; G[f] = gs[f - from]; P.copyWithin(3 * f, 3 * src, 3 * src + 3); P[3 * f + 1] = ys[f - from]; Q.copyWithin(4 * f, 4 * src, 4 * src + 4);
     }
     return true;
@@ -782,9 +853,6 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
     // bone vertically; between plants it goes smoothly from the last plant's to the next one's (a foot swings from
     // one step of a stair to the next, from a hollow to a bump), faded out next to a jump (the clip's own legs there)
     const dY = new Float64Array(n), near = new Float64Array(3 * n).fill(NaN), liftK = new Float32Array(n), topG = new Float64Array(n).fill(NaN);
-    // the sideways shift of the plants (T.straddle), the same way: the swing between two shifted plants goes along the
-    // shifted line, not through the platform's face
-    const dS = new Float64Array(2 * n), { SX, SZ } = out[lr];
     // the ground under each plant (the swing between two plants may clear up to the higher of them)
     const pg = (f) => (Number.isFinite(out[lr].G[f]) ? out[lr].G[f] : ground(P[3 * f], P[3 * f + 2], f));
     {
@@ -793,7 +861,7 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
       for (let f = n - 1, nx = -1; f >= 0; f--) { if (skip[f]) nx = -1; else if (st[f] === 1) nx = f; nextPlanted[f] = nx; }
       for (let f = 0; f < n; f++) {
         if (skip[f]) { prev = -1; continue; }
-        if (st[f] === 1) { prev = f; dY[f] = P[3 * f + 1] - R.pos[3 * f + 1]; dS[2 * f] = SX[f]; dS[2 * f + 1] = SZ[f]; continue; }
+        if (st[f] === 1) { prev = f; dY[f] = P[3 * f + 1] - R.pos[3 * f + 1]; continue; }
         const nx = nextPlanted[f];
         const dp = prev >= 0 ? P[3 * prev + 1] - R.pos[3 * prev + 1] : null, dn = nx >= 0 ? P[3 * nx + 1] - R.pos[3 * nx + 1] : null;
         let d = dp === null ? (dn ?? 0) : dn === null ? dp : dp + (dn - dp) * smooth01((f - prev) / (nx - prev));
@@ -801,10 +869,6 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
         for (let q = 1; q <= ramp + 1; q++) if ((f - q >= 0 && skip[f - q]) || (f + q < n && skip[f + q])) { ds = q; break; }
         if (ds !== Infinity) d *= (ds - 1) / (ramp + 1);
         dY[f] = d;
-        {
-          const t = prev >= 0 && nx >= 0 ? smooth01((f - prev) / (nx - prev)) : 0, A = prev >= 0 ? prev : nx, B = nx >= 0 ? nx : prev;
-          if (A >= 0) for (const c of [0, 1]) { const va = (c ? SZ : SX)[A], vb = (c ? SZ : SX)[B]; dS[2 * f + c] = (va + (vb - va) * t) * (ds !== Infinity ? (ds - 1) / (ramp + 1) : 1); }
-        }
         // the plant this foot comes from or goes to, the nearer in time (the swing clearance grows with the distance)
         const c = prev < 0 ? nx : nx < 0 ? prev : (f - prev <= nx - f ? prev : nx);
         if (c >= 0) near.set(P.subarray(3 * c, 3 * c + 3), 3 * f);
@@ -817,14 +881,14 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
     // the blends, weighted down where the leg can't reach (the target with the clip's foot moved by dY)
     for (let f = 0; f < n; f++) {
       if (st[f] !== 3) continue;
-      const cx = R.pos[3 * f] + dS[2 * f], cy = R.pos[3 * f + 1] + dY[f], cz = R.pos[3 * f + 2] + dS[2 * f + 1];
+      const cx = R.pos[3 * f], cy = R.pos[3 * f + 1] + dY[f], cz = R.pos[3 * f + 2];
       const at = (t) => needDrop(f, cx + (P[3 * f] - cx) * t, cy + (P[3 * f + 1] - cy) * t, cz + (P[3 * f + 2] - cz) * t);
       if (at(w[f]) <= T.dropOK * k) continue;
       let lo = 0, hi = w[f];
       for (let it = 0; it < 10; it++) { const m = 0.5 * (lo + hi); if (at(m) <= T.dropOK * k) lo = m; else hi = m; }
       w[f] = lo;
     }
-    plan.dY[lr] = dY; (plan.dS ||= {})[lr] = dS; plan.near[lr] = near; plan.liftK[lr] = liftK; (plan.topG ||= {})[lr] = topG;
+    plan.dY[lr] = dY; plan.near[lr] = near; plan.liftK[lr] = liftK; (plan.topG ||= {})[lr] = topG;
     plan.state[lr] = st; plan.w[lr] = w; plan.pos[lr] = P; plan.quat[lr] = Q; plan.gy[lr] = R.gy;
   }
   return plan;
@@ -907,14 +971,22 @@ export function groundFeet({ plan, rig, mesh, bones, holder, frame, saved = null
   const f = Math.max(0, Math.min(plan.n - 1, Math.round(frame)));
   if (plan.skip[f]) return { drop: 0, feet: { l: 0, r: 0 }, miss: { l: 0, r: 0 } };
   holder.updateMatrixWorld(true);
+  // the body's sideways shift off a break (planFeet, plan.shift): the root bone moves, the clip's legs with it
+  const sx = plan.shift?.[2 * f] || 0, sz = plan.shift?.[2 * f + 1] || 0;
+  if ((sx || sz) && bones.root?.parent) {
+    const wp = bones.root.getWorldPosition(new THREE.Vector3());
+    wp.x += sx; wp.z += sz;
+    bones.root.position.copy(bones.root.parent.worldToLocal(wp));
+    bones.root.updateMatrixWorld(true);
+  }
   const tgt = {}, fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(new THREE.Quaternion()));
   let drop = 0;
   for (const lr of SIDES) {
-    const w = plan.w[lr][f], dy = plan.dY?.[lr]?.[f] || 0, dsx = plan.dS?.[lr]?.[2 * f] || 0, dsz = plan.dS?.[lr]?.[2 * f + 1] || 0;
-    if (!(w > 0) && Math.abs(dy) < 1e-5 && Math.abs(dsx) + Math.abs(dsz) < 1e-5) continue;
+    const w = plan.w[lr][f], dy = plan.dY?.[lr]?.[f] || 0;
+    if (!(w > 0) && Math.abs(dy) < 1e-5) continue;
     const B = bones[lr];
     const pos = B.foot.getWorldPosition(new THREE.Vector3());
-    pos.y += dy; pos.x += dsx; pos.z += dsz;
+    pos.y += dy;
     const quat = B.foot.getWorldQuaternion(new THREE.Quaternion());
     if (w > 0) { pos.lerp(_v0.fromArray(plan.pos[lr], 3 * f), w); quat.slerp(_q0.fromArray(plan.quat[lr], 4 * f), w); }
     tgt[lr] = { pos, quat, w };
