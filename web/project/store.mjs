@@ -15,8 +15,11 @@
 // kept ONLY when the workflow being saved carries that same id. Every other save gets a fresh one: Save As to a new
 // name, a workflow carrying another id, a workflow with no id at all (even one that names this project: an unrelated
 // pre-id graph with the same name must not take this project's id), a workflow saved over a leftover projects/<name>/
-// folder, a project saved before ids existed (it gets one on its next save). Known cost: a second tab opened before
-// the first id'd save, canvas undo past it, or a restored pre-id autosave, when saved, gets a fresh id too.
+// folder, a project saved before ids existed (it gets one on its next save). One exception: a graph carrying an id
+// THIS store (this page) wrote for the project, same `created`, adopts the id another tab's save put in project.json,
+// so two tabs saving in turn settle on one id after one change instead of a new id per save. Known cost: a second tab
+// opened before the first id'd save, canvas undo past it, or a restored pre-id autosave, when saved from a page that
+// never saved it, gets a fresh id once.
 // Loading never writes an id. Duplicate gives the copy a fresh id, rename and trash keep it (soundstage/project/library.py).
 
 export const FORMAT = "soundstage-project";
@@ -200,7 +203,13 @@ export class ProjectStore {
       throw e;
     }
     const carried = isCopy ? null : projectIdOf(workflow);
-    const id = oldId && carried === oldId ? oldId : newProjectId();
+    const mine = this._mine?.get(n);
+    // Kept: the graph carries the manifest's id. Adopted: the graph carries an id THIS store wrote for this project
+    // (same created stamp) and another tab's save has since put its own id in project.json; taking that id ends the
+    // two-tab ping-pong where every save minted a new one (review finding 2). Else fresh.
+    const id = oldId && carried === oldId ? oldId
+      : oldId && carried && mine?.ids.has(carried) && old.created != null && mine.created === old.created ? oldId
+        : newProjectId();
     const created = isCopy ? at : (old.created || at);   // a copy replacing a project starts a new one
     const wf = stampWorkflow(workflow, n, at, id);
     await this._put(ProjectStore.workflowPath(n), wf);
@@ -210,6 +219,11 @@ export class ProjectStore {
       created: created, saved_at: at, saves: (old.saves || 0) + 1,
     });
     const disk = await this._settle(n);
+    this._mine ||= new Map();
+    const rec = this._mine.get(n) || { ids: new Set(), created: null };
+    if (rec.created !== created) { rec.ids = new Set(); rec.created = created; }
+    rec.ids.add(id);
+    this._mine.set(n, rec);
     return { name: n, id, path: ProjectStore.workflowPath(n), saved_at: at, workflow: wf, confirmed: disk === id, disk_id: disk };
   }
 

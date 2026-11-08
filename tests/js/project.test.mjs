@@ -462,3 +462,31 @@ test("the pill: a ComfyUI Duplicate tab of a project is a copy: no id, Save asks
     assert.equal(ctl._isCopy(), true, "a dragged-in Alpha.json export opens as a temporary workflow");
   } finally { clearInterval(ctl._timer); }
 });
+
+// ------------------------------------------------------------------ two tabs, alternating saves (review finding 2)
+test("two tabs (two pages) saving one project in turn settle on one id instead of a new id per save", async () => {
+  const api = fakeApi();
+  let now = 5_000;
+  // an old pre-id project open in two pages
+  await api.storeUserData("workflows/Old.json", { nodes: [], extra: { ss_project: { name: "Old" } } });
+  await api.storeUserData("projects/Old/project.json", { format: "soundstage-project", v: 1, name: "Old" });
+  const t1 = new ProjectStore({ api, now: () => (now += 10) }), t2 = new ProjectStore({ api, now: () => (now += 10) });
+  let g1 = await t1.open("Old"), g2 = await t2.open("Old");
+  const ids = [];
+  for (let i = 0; i < 4; i++) {
+    let r = await t1.save("Old", g1); g1 = r.workflow; ids.push(r.id); assert.ok(r.confirmed);
+    r = await t2.save("Old", g2); g2 = r.workflow; ids.push(r.id); assert.ok(r.confirmed);
+  }
+  // t1 mints A, t2 (a graph with no id) mints B, then t1 adopts B: from then on one id
+  assert.equal(new Set(ids).size, 2, `ids: ${ids.join(" ")}`);
+  assert.ok(ids.slice(1).every((x) => x === ids[1]));
+  assert.equal((await man(api, "Old")).id, ids[1]);
+  // a different page's graph carrying an id it never wrote is not adopted (the spec rule still holds)
+  const t3 = new ProjectStore({ api });
+  const foreign = stampWorkflow(WF(), "Old", 1, "p_12345678");
+  assert.notEqual((await t3.save("Old", foreign)).id, ids[1]);
+  // a project replaced after a Trash (new created stamp) is not adopted into either
+  api.files.delete("projects/Old/project.json");
+  const fresh = await new ProjectStore({ api }).save("Old", WF());
+  assert.notEqual((await t1.save("Old", g1)).id, fresh.id, "t1's old id belongs to the trashed project");
+});
