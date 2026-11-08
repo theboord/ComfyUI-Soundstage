@@ -99,7 +99,7 @@ def test_profile_and_three_quarter_and_front():
     assert ("screen-left" in p_left) != ("screen-left" in p_right), "the two profiles face opposite ways"
     assert "in three-quarter view, turned toward the camera" in compile_look({}, _one(130))["still_prompt"]
     assert "in three-quarter view from behind" in compile_look({}, _one(60))["still_prompt"]
-    assert "a woman in the centre of frame, facing the camera" in compile_look({}, _one(180))["still_prompt"]
+    assert "exactly one woman, full figure, standing in the centre, mid-distance, facing the camera" in compile_look({}, _one(180))["still_prompt"]
 
 
 def test_a_mocap_clay_faces_the_way_its_world_track_turns_it_at_frame_0():

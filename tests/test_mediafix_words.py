@@ -147,11 +147,15 @@ def test_each_rider_keeps_their_own_hat_or_hair():
     sc2 = _west()
     sc2["actors"][0]["appearance"] = {"hair": "hat", "hair_color": "#6b4a2a"}
     w2 = I.people_identity(sc2, {"description": ""})
-    assert w2.startswith("The man wears a hat, his short hair under the hat; the woman is bareheaded")
-    # One person on their own has nobody to blend with.
+    # (no description: each wears the lifelike avatar's own clothes, C22c; the hat is added to them)
+    assert w2.startswith("The man wears a white polo shirt with thin brown stripes, khaki shorts and grey sneakers, "
+                         "with a hat, his short hair under the hat; the woman wears a pink button-up shirt")
+    assert "bareheaded" in w2
+    # One person on their own has nobody to blend with, but still says what they wear (C22c).
     sc3 = _west()
     sc3["actors"] = [a for a in sc3["actors"] if a["id"] != "rider_b"]
-    assert I.people_identity(sc3, WEST_LOOK) == ""
+    assert I.people_identity(sc3, WEST_LOOK) == ("The man wears a dark canvas jacket, jeans and a cowboy hat, fully clothed, "
+                                                 "from the first frame to the last.")
 
 
 def test_wardrobe_parsing_stops_at_the_next_person_and_the_verb():

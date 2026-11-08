@@ -5,6 +5,40 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-08
 
+**Look compiler: each person said once, facing the way the body faces, always clothed (C22c GPU findings; private branch `private/lifelike`, 17:30 by this machine's clock)**
+
+- **Still wrong or not done (read first; nothing here was rendered, no GPU):**
+  1. **Not re-rendered yet.** The fix follows C22c's ablations (with the group phrase gone, there was one person on 8 of 8 renders). The new prompt itself has not been through Krea 2. Before/after prompts for the re-render are in the scratchpad note `look_fix_note.md`.
+  2. **The avatar clothing is hard-coded** from the two Rocketbox textures (`AVATAR_WEAR`, look/identity.py):
+     - woman: pink button-up shirt, blue jeans;
+     - man: white striped polo, khaki shorts.
+     The stage does not tint the avatars with the Appearance colours, so a top or colour picked there has no effect on a man or a woman, and the prompt ignores it too. If the avatars change, this table must change with them.
+  3. **The body-facing port (`body_yaw`, a port of `stage._headingAt`) covers people on foot only.** Animals and vehicles still face their direction of travel (the old `_heading`). It reads the actor's base keys, not a shot's own `by_shot` keys; no look-compiler function reads those yet.
+  4. **Some frames keep the old group phrase:** a frame picked before Milestone 5 (`look_start: false`), and seats in a car the camera rides in. Both now add each person's clothes ("the woman wearing …, fully clothed").
+  5. **The description de-duplication is literal.** It drops only comma pieces that are a bare count plus a person noun ("one woman") or that repeat the people phrase word for word. Other wording that names the person again stays.
+- **Fixes** ([soundstage/look/scene.py](soundstage/look/scene.py), [soundstage/look/identity.py](soundstage/look/identity.py), [soundstage/look/compile.py](soundstage/look/compile.py)):
+  - **One people statement.** The still prompt now says: "exactly one woman, full figure, small in frame, standing at the right third, mid-distance, facing the camera, wearing …, fully clothed". With two or more: "exactly two people: a man, …; a woman, …".
+    - It replaces the group phrase that named her twice, in the plural ("full figures"), and painted a second woman on 2 of 2 seeds.
+    - It is kept whole through the comma de-duplication.
+    - A description's own people line ("one woman, full figure, …") is dropped from the description; the room stays.
+    - The "exactly one person in frame" count line is kept: C22c's ablation F2 kept it and showed one person.
+  - **Facing comes from the body at the frame being painted.** `cast` and `frame_facts` now face a person the way the stage turns the body (540°/s, turning ahead of setting off). A woman who holds, then walks screen-left, reads "facing the camera" at frame 0, not "in profile, facing screen-left".
+  - **Clothes on everyone.** Which clothes, in this order:
+    1. the look description's;
+    2. the lifelike avatar's own;
+    3. the stand-in's Appearance (top and bottom with colour names, from the kind's defaults);
+    4. "fully clothed" alone when nothing is known.
+    - "fully clothed" always closes the clothes words.
+    - Swimmers wear a wetsuit.
+    - The motion prompt says it too, also for one person on their own.
+  - Animals' "full figures" is now singular for one ("full figure").
+- **Tests:**
+  - New: [tests/test_look_people_once.py](tests/test_look_people_once.py), 5 tests (one person, two people, a walker facing the camera at f0, avatar and description clothes, stand-in and no-data clothes). All 5 fail on the parent de75122.
+  - Updated for the new wording: test_frame1_visibility, test_seated_riders, test_mediafix_words (a single rider now gets a clothes sentence).
+- **Runs:**
+  - Python: 2183 passed, 25 skipped.
+  - JS (no JS changed): 1895 tests, 1891 passed, 1 skipped. The other 2 failed in the full run and passed alone: footplant "real Rocketbox: a key edit rebuilds the plan fast" (a timing test) and oneclick_sweep "stopped answering" (the listed flake).
+
 **Colour thumbnails and canvas speed: every UI thumbnail shows the Color render, thumbnails and captures render offscreen, and the App idles (private branch `private/lifelike`, 10:25 by this machine's clock)**
 
 - **Still wrong or not done (read first; measured in headless Chrome with SwiftShader on the try-it build, not on the iMac, a phone, a real GPU or in ComfyUI):**

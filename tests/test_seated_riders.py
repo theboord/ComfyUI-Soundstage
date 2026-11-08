@@ -148,7 +148,7 @@ def _riders(mount_at=None):
 def test_a_mounted_rider_is_one_figure_on_horseback():
     r = compile_look({}, _riders())
     assert r["frame1"]["people"] == 1
-    assert "a man on horseback in the centre of frame" in r["still_prompt"] and "exactly one person in frame" in r["still_prompt"]
+    assert "exactly one man on horseback, very small in frame, in the centre" in r["still_prompt"] and "exactly one person in frame" in r["still_prompt"]
     assert "a horse " not in r["still_prompt"]                     # the horse is in the rider's phrase, not a second subject
     assert "A man on horseback rides in the centre of frame" in r["motion_prompt"]
     assert "gallops away from the camera" in r["motion_prompt"] and "A horse" not in r["motion_prompt"]

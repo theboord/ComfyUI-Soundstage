@@ -420,6 +420,59 @@ def _heading(a: dict, frames: int) -> tuple:
     return (math.sin(r), 0.0, math.cos(r)) if "rotation_deg" in a else (0.0, 0.0, 0.0)
 
 
+def _stage_pos_at(keys: list[dict], frame: float) -> tuple:
+    """stage._actorPosAt for a person: Stage._sample(keys, frame, "position", ease=false) - Catmull-Rom through the
+    keys with clamped end neighbours, and a hold (two keys at one spot) standing still."""
+    if len(keys) == 1 or frame <= keys[0]["frame"]:
+        return keys[0]["position"]
+    n = len(keys) - 1
+    if frame >= keys[n]["frame"]:
+        return keys[n]["position"]
+    i = 0
+    while keys[i + 1]["frame"] < frame:
+        i += 1
+    u = (frame - keys[i]["frame"]) / max(1e-6, keys[i + 1]["frame"] - keys[i]["frame"])
+    a, b = keys[i]["position"], keys[i + 1]["position"]
+    if all(abs(x - y) < 1e-4 for x, y in zip(a, b)):
+        return a
+    p0, p1, p2, p3 = (keys[max(0, min(n, k))]["position"] for k in (i - 1, i, i + 1, i + 2))
+    u2, u3 = u * u, u * u * u
+    return tuple(0.5 * (2 * p1[k] + (-p0[k] + p2[k]) * u + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * u2
+                        + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * u3) for k in range(3))
+
+
+def body_yaw(a: dict, frame: int, last: int, fps: float = 24) -> float:
+    """The way a person's BODY faces at `frame` (radians, forward = (sin, 0, cos)), as stage._headingAt turns it:
+    travel direction while really moving (over 0.25 m/s), else the last travel, else the Turn (rotation_deg) before it
+    ever moves; rate-limited at 540 deg/s, turning ahead of setting off (a backward pass) and with inertia after.
+
+    The walking direction alone is not the body: C22c (2026-11-08) a woman who walks screen-left from frame 12 stood
+    square to the lens at frame 0, the still prompt said "in profile, facing screen-left", and Krea painted a second
+    woman in profile beside the frontal one."""
+    keys = _keys(a, last)
+    rest = math.radians(float(a.get("rotation_deg") or 0))
+    step_max = math.radians(540) / max(1.0, float(fps))
+    wrap = lambda x: math.atan2(math.sin(x), math.cos(x))   # noqa: E731
+    toward = lambda f, t: f + max(-step_max, min(step_max, wrap(t - f)))   # noqa: E731
+    desired, last_move = [], None
+    for f in range(last + 1):
+        p0, p1 = _stage_pos_at(keys, f - 1), _stage_pos_at(keys, f + 1)
+        vx, vz = p1[0] - p0[0], p1[2] - p0[2]
+        if len(keys) > 1 and math.hypot(vx, vz) * fps / 2 > 0.25:
+            last_move = math.atan2(vx, vz)
+        desired.append(rest if last_move is None else last_move)
+    if not desired:
+        return rest
+    back = [0.0] * (last + 1)
+    back[last] = desired[last]
+    for f in range(last - 1, -1, -1):
+        back[f] = toward(back[f + 1], desired[f])
+    out = back[0]
+    for f in range(1, max(0, min(last, int(round(frame)))) + 1):
+        out = toward(out, back[f])
+    return out
+
+
 def definite(noun: str) -> str:
     """'a man' -> 'the man'."""
     for art in ("a ", "an "):
@@ -444,13 +497,75 @@ def _group_nouns(nouns: list[str]) -> str:
     return _join_and(nouns)
 
 
-def _distance_words(screen_h: float, person: bool = True) -> str:
-    """How big the figures read in frame. Without it, image models tend to add a foreground subject."""
+def _distance_words(screen_h: float, person: bool = True, plural: bool = True) -> str:
+    """How big the figures read in frame. Without it, image models tend to add a foreground subject. (Animals and
+    vehicles use this in the still; people get person_still_phrase, which says it once per person.)"""
     if screen_h < 0.18:
         return "small in the distance"
     if screen_h < 0.5:
-        return ("full figures" if person else "seen whole") + " in the middle distance, empty ground in the foreground"
+        return (("full figures" if plural else "full figure") if person else "seen whole") + \
+            " in the middle distance, empty ground in the foreground"
     return ""
+
+
+# ---- people in the still, each said once (C22c, 2026-11-08) ------------------------------------------------------
+# The old group phrase ("a woman right of frame, full figures in the middle distance, empty ground in the
+# foreground, in profile, facing screen-left") named the one woman a second time, in the plural, with a facing her
+# body did not have; Krea 2 + depth painted a second woman on 2 of 2 seeds and dropping any one piece did not help.
+# Now each person is one clause: count, figure size, place in thirds, distance, the way the body faces, and clothes.
+_FIGURE = {"EWS": "full figure", "WS": "full figure", "FS": "full figure", "COWBOY": "seen from the knees up",
+           "MS": "seen from the waist up", "MCU": "seen from the chest up", "CU": "head and shoulders",
+           "ECU": "face filling the frame"}
+_NUM_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+
+
+def thirds_words(sx: float) -> str:
+    if sx < -0.55:
+        return "at the left edge of frame"
+    if sx < -0.2:
+        return "at the left third"
+    if sx <= 0.2:
+        return "in the centre"
+    if sx <= 0.55:
+        return "at the right third"
+    return "at the right edge of frame"
+
+
+def _person_clause(e: dict, cam: dict, wear: str) -> str:
+    """'a woman, full figure, small in frame, standing at the right third, mid-distance, facing the camera,
+    wearing a pink button-up shirt and blue jeans, fully clothed'."""
+    box = (e.get("layout") or {}).get("box")
+    sx, h = (((box[0] + box[2]) - 1.0), box[3] - box[1]) if box else (e["sx"], e["screen_h"])
+    bits = [e["noun"]]
+    if not e.get("seated"):
+        bits.append(_FIGURE.get(e.get("size"), ""))
+    bits.append("very small in frame" if h < 0.18 else "small in frame" if h < 0.5 else "")
+    verb = "" if e.get("riding") else "seated" if e.get("seated") else "standing"
+    bits.append(f"{verb} {thirds_words(sx)}".strip())
+    z = e.get("z") or 0
+    bits.append("in the distance" if h < 0.18 or z > 18 else "close to the camera" if z < 2.5 else "mid-distance")
+    facing = _facing_words(e["heading"], cam)
+    if e.get("riding") and "back" in facing and "horseback" in e["noun"]:
+        facing += ", the horse's tail toward us"
+    bits += [facing, wear]
+    return ", ".join(b for b in bits if b)
+
+
+def person_still_phrase(entries: list[dict], cam: dict, wear_of) -> str:
+    """Everyone on foot / seated / riding in the still, ONE statement: 'exactly one woman, full figure, ...' or
+    'exactly two people: a man, ...; a woman, ...'. wear_of(entry) -> 'wearing ..., fully clothed'."""
+    if not entries:
+        return ""
+    entries = sorted(entries, key=lambda e: e["sx"])
+    clauses = [_person_clause(e, cam, wear_of(e)) for e in entries]
+    if len(entries) == 1:
+        c = clauses[0]
+        for art in ("a ", "an ", "one "):
+            if c.startswith(art):
+                return "exactly one " + c[len(art):]
+        return "exactly one person: " + c
+    n = len(entries)
+    return f"exactly {_NUM_WORDS.get(n, n)} people: " + "; ".join(clauses)
 
 
 def _join_and(items: list[str]) -> str:
@@ -825,8 +940,10 @@ def mocap_yaw0(a: dict) -> float | None:
     return math.radians(float(a["rotation_deg"])) if "rotation_deg" in a else None
 
 
-def cast(scene: dict) -> list[dict]:
-    frames, _ = frame_range(scene)
+def cast(scene: dict, frame: int = 0) -> list[dict]:
+    """Everyone with a rig. `heading` is the way each faces at `frame` (the frame being painted): a person on foot
+    faces the way the stage turns the body (body_yaw), not the way they will walk."""
+    frames, fps = frame_range(scene)
     last = frames - 1
     out = []
     for a in scene.get("actors") or []:
@@ -843,6 +960,9 @@ def cast(scene: dict) -> list[dict]:
             heading = (math.sin(y), 0.0, math.cos(y))
         elif clay is not None:   # a captured performance: the clay's own facing at frame 0, not its drift
             heading = (math.sin(clay), 0.0, math.cos(clay))
+        elif rig == "biped":
+            y = body_yaw(a, frame, last, fps)
+            heading = (math.sin(y), 0.0, math.cos(y))
         reversing = False
         if rig == "vehicle" and ST.is_stunt(a):    # the nose, not the travel: a stunt car may lead with its tail
             y = ST.stunt_yaw(a, 0, last, _pos_at)
@@ -875,7 +995,7 @@ def frame_facts(scene: dict, cam: dict, frame: int) -> dict:
     last = frame_range(scene)[0] - 1
     ride = ride_host(scene)
     people, others, occupied = [], [], set()
-    for c in cast(scene):
+    for c in cast(scene, frame):
         if ride is not None and c["id"] == ride.get("id"):
             continue                                   # the camera is in / on it: vehicle_camera() says where
         pos, host = world_pos(scene, c["actor"], frame, last)
@@ -965,7 +1085,7 @@ def groups(entries: list[dict], cam: dict) -> list[dict]:
         if lay:   # frame 1 measured on the ID pass (look/frame_lock.py): where it really is and how big
             where, far, dist = lay
         else:
-            where, far, dist = screen_words(sx), h < 0.18, _distance_words(h, all(e.get("rig") == "biped" for e in g))
+            where, far, dist = screen_words(sx), h < 0.18, _distance_words(h, all(e.get("rig") == "biped" for e in g), len(g) > 1)
         out.append({"nouns": _group_nouns([e["noun"] for e in g]), "plural": len(g) > 1, "where": where,
                     "far": far, "distance": dist,
                     "facing": facing,

@@ -168,9 +168,91 @@ def _wardrobe(description: str, noun: str) -> str:
     return m.group(1).strip(" ,") if m else ""
 
 
+# ---- what each person wears (C22c, 2026-11-08) ---------------------------------------------------------------------
+# No clothing reached the still prompt, so Krea 2 painted the stage's woman (a pink shirt and jeans on the stage) with a
+# bare, skin-toned torso. Every person now says what they wear, and a person is never described without clothes.
+# The lifelike people are Microsoft Rocketbox avatars wearing their own textures (web/stage/people/avatarcore.mjs
+# ROCKETBOX; the appearance colours do not reach them): what tex/f001_body_color and tex/m002_body_color show.
+AVATAR_WEAR = {"woman": "a pink button-up shirt with rolled-up sleeves, blue jeans and dark shoes",
+               "man": "a white polo shirt with thin brown stripes, khaki shorts and grey sneakers"}
+# The stand-in (children, or anyone without a lifelike body) wears the appearance: web/stage/humans.mjs.
+DEFAULT_APPEARANCE = {
+    "man": {"top": "jacket", "top_color": "#3b342f", "bottom": "jeans", "bottom_color": "#2e3b55"},
+    "woman": {"top": "sweater", "top_color": "#d9cbb8", "bottom": "jeans", "bottom_color": "#3a4d6e"},
+    "child": {"top": "tshirt", "top_color": "#d9534f", "bottom": "shorts", "bottom_color": "#38536b"},
+}
+TOP_WORDS = {"tshirt": "T-shirt", "shirt": "shirt", "sweater": "sweater", "hoodie": "hoodie", "jacket": "jacket",
+             "suit": "suit", "coat": "coat", "dress": "dress", "uniform": "uniform", "tank": "tank top"}
+BOTTOM_WORDS = {"jeans": "jeans", "trousers": "trousers", "shorts": "shorts", "skirt": "skirt"}
+CLOTHED = "fully clothed"
+SWIM_WEAR = "wearing a dark full-length wetsuit"
+
+
+def avatar_kind(a: dict) -> str | None:
+    """avatarcore.avatarSpecFor: the Rocketbox body a person shows as ('woman' / 'man'), or None (the stand-in)."""
+    kind = a.get("kind")
+    if kind == "woman" or (kind == "man" and (a.get("appearance") or {}).get("gender") == "female"):
+        return "woman"
+    return "man" if kind == "man" else None
+
+
+def _colour(h) -> str:
+    return color_name(h) if isinstance(h, str) and is_hex(h) else ""
+
+
+def appearance_wear(a: dict) -> str:
+    """'a coral T-shirt and steel blue shorts' from the person's appearance (kind defaults filling gaps), '' if none."""
+    ap = {**DEFAULT_APPEARANCE.get(a.get("kind") or "", {}), **{k: v for k, v in (a.get("appearance") or {}).items() if v}}
+    top, bottom = TOP_WORDS.get(ap.get("top") or ""), BOTTOM_WORDS.get(ap.get("bottom") or "")
+    if not top and not bottom:
+        return ""
+    parts = []
+    if top:
+        parts.append(" ".join(w for w in (_colour(ap.get("top_color")), top) if w))
+    if bottom and ap.get("top") != "dress":
+        parts.append(" ".join(w for w in (_colour(ap.get("bottom_color")), bottom) if w))
+    text = _join_and_plain(parts)
+    return re.sub(r"\ba (?=[aeiou])", "an ", "a " + text) if top else text
+
+
+def _join_and_plain(items: list[str]) -> str:
+    return " and ".join(i for i in items if i)
+
+
+def wardrobe(scene: dict, a: dict, look: dict | None = None) -> str:
+    """What this person wears, always with clothes: the look's description first (the director's words), else the
+    lifelike avatar's own clothes, else the stand-in's appearance; 'fully clothed' closes it, and stands alone when
+    nothing is known. A swimmer wears a wetsuit (look/swim.py names any dive kit). '' only for a non-person."""
+    from . import swim as SW
+    if S.classify(a)[1] != "biped":
+        return ""
+    if any(x["actor"] is a for x in SW.swimmers(scene)):
+        return SWIM_WEAR
+    kind = a.get("kind") or ""
+    base = _PERSON_NOUN.get(kind, kind.replace("_", " "))
+    own = (a.get("description") or "").strip()
+    if own and (_wardrobe(own, base) or re.search(r"\b(wearing|dressed in|in an? [\w-]+ (?:shirt|dress|coat|"
+                                                    r"jacket|suit|top|sweater|uniform))", own, re.I)):
+        return CLOTHED                                       # the person's own noun already says what they wear
+    wear = known_wear(a, look)
+    return f"wearing {wear}, {CLOTHED}" if wear else CLOTHED
+
+
+def known_wear(a: dict, look: dict | None = None) -> str:
+    """The clothes text alone ('a pink button-up shirt ..., blue jeans and dark shoes'), '' when unknown."""
+    kind = a.get("kind") or ""
+    wear = _wardrobe((look or {}).get("description") or "", _PERSON_NOUN.get(kind, kind.replace("_", " ")))
+    if not wear:
+        ak = avatar_kind(a)
+        wear = AVATAR_WEAR[ak] if ak else appearance_wear(a)
+    return wear
+
+
 def person_anchors(scene: dict, look: dict | None, ids: set | None = None) -> list[dict]:
     """[{id, noun, kind, wear, headwear, hair}] for the people in `ids` (all when None) whose kind is a person."""
+    from . import swim as SW
     desc = (look or {}).get("description") or ""
+    swim_ids = {x["actor"].get("id") for x in SW.swimmers(scene)}
     out = []
     for a in scene.get("actors") or []:
         if ids is not None and a.get("id") not in ids:
@@ -183,7 +265,8 @@ def person_anchors(scene: dict, look: dict | None, ids: set | None = None) -> li
         ap = a.get("appearance") or {}
         style, col = _DEFAULT_HAIR.get(kind, ("short", "#3a2a20"))
         style, col = ap.get("hair") or style, ap.get("hair_color") or col
-        wear = _wardrobe(desc, base)
+        wear = _wardrobe(desc, base) or (SWIM_WEAR.replace("wearing ", "") if a.get("id") in swim_ids
+                                         else known_wear(a))   # the description's, else what the body wears (C22c)
         hw = HEADWEAR.search(wear)
         headwear = hw.group(1).lower() if hw else ({"cap": "a cap", "hat": "a hat"}.get(style, "") and style)
         hair = "" if style in ("cap", "hat") else _with_colour(HAIR.get(style, ""), _hair_colour(col))
@@ -198,8 +281,12 @@ def people_identity(scene: dict, look: dict | None, ids: set | None = None) -> s
     """'The man wears a dark canvas jacket, jeans and a cowboy hat, his short dark hair under the hat; the woman
     wears a white shirt and jeans, bareheaded, her long brown hair loose. Each rider keeps their own hat, hair and
     clothes from the first frame to the last, and the two never swap or blend.' Only with two or more people: one
-    person on their own has nobody to blend with."""
+    person on their own has nobody to blend with, but still says what they wear (C22c: never undressed)."""
     ps = person_anchors(scene, look, ids)
+    if len(ps) == 1:
+        p = ps[0]
+        what = f"wears {p['wear']}, {CLOTHED}," if p["wear"] else f"is {CLOTHED}"
+        return f"{p['noun'][:1].upper()}{p['noun'][1:]} {what} from the first frame to the last."
     if len(ps) < 2:
         return ""
     parts = []
@@ -209,7 +296,8 @@ def people_identity(scene: dict, look: dict | None, ids: set | None = None) -> s
         bits = [f"wears {p['wear']}" if p["wear"] else ""]
         if p["headwear"]:
             if p["headwear"] not in (p["wear"] or "").lower():
-                bits.append(f"wears {_article_hw(p['headwear'])}")
+                hw = _article_hw(p["headwear"])
+                bits = [f"{bits[0]}, with {hw}" if bits[0] else f"wears {hw}"]
             if p["hair"]:
                 bits.append(f"{pron} {p['hair']} under the {p['headwear'].split()[-1]}")
         else:

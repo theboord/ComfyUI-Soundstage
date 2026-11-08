@@ -18,7 +18,7 @@ from ..cine.prompts import SIZE_STILL, _cap, _join
 from . import scene as S
 from .colors import palette_phrase, palette_words
 from .gaze import frame1_looks, head_beats
-from .identity import body_words, motion_identity, people_identity, plain_word, still_identity
+from .identity import body_words, motion_identity, people_identity, plain_word, still_identity, wardrobe
 from .impacts import impact_beats
 from .sfx import sfx_beats, sfx_still_words, without_rigs
 from .objstate import motion_beats, still_words
@@ -270,6 +270,31 @@ def _only_blocking(n_people: int, n_vehicles: int) -> str:
     return ", ".join(bits)
 
 
+_PEOPLE_SLOT = "\x00people\x00"
+_COUNTED_PERSON = re.compile(r"^(?:a|an|one|two|three|exactly (?:one|two|three))\s+(?:woman|man|child|person|people|"
+                             r"women|men|children)$", re.I)
+
+
+def _drop_repeated_people(desc: str, people_words: str) -> str:
+    """The description's own people line ("one woman, full figure, small in frame, standing at the right third,
+    mid-distance") repeats what the people phrase now says from the stage: C22c's F0 prompt named the woman twice and
+    Krea 2 painted two. Comma pieces that are a bare count + person noun, or that the people phrase says word for word,
+    leave the description; everything else (the room, the light, a person's clothes) stays."""
+    said = {p.strip().lower() for p in re.split(r"[,;:]", people_words)}
+    parts = re.split(r"(,\s*|\.\s+|\.$)", desc or "")
+    pieces, seps = parts[0::2], parts[1::2] + [""]
+    out: list[list[str]] = []                      # [piece, separator after it]
+    for piece, sep in zip(pieces, seps):
+        bare = piece.strip()
+        if bare and (bare.lower() in said or _COUNTED_PERSON.match(bare)):
+            if "." in sep and out:
+                out[-1][1] = sep                     # the sentence still ends where it did
+            continue
+        out.append([piece, sep])
+    text = "".join(p + s for p, s in out).strip()
+    return re.sub(r",\s*$", "", text)
+
+
 def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     f1 = S.frame1_facts(scene)
     c = parts["chosen"]
@@ -277,7 +302,22 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     genre_layer = "subgenre" if "subgenre" in c else "genre"   # a subgenre already says its genre
     if "movement" in c and genre_layer in c:
         style.append(c[genre_layer]["still"])
-    people = S.group_phrase(f1["people"], f1["camera"])
+    legacy = scene.get("look_start") is False
+    # People: each one said ONCE - count, size, place, distance, the body's facing at frame 0, and clothes (C22c,
+    # 2026-11-08: the old group phrase named the one woman twice, in the plural, facing the way she would walk, and
+    # Krea 2 painted a second woman; no clothes were named and the woman came out bare-chested). A frame picked before
+    # Milestone 5 keeps the words it was painted with, plus the clothes; so do the seats of a car the camera rides in.
+    by_id = {a.get("id"): a for a in scene.get("actors") or []}
+    wear_of = lambda e: wardrobe(scene, by_id.get(e["id"]) or e["actor"], look)   # noqa: E731
+    one_phrase = not legacy and S.ride_host(scene) is None
+    if one_phrase:
+        # kept whole through _dedupe: two people both "full figure, mid-distance" each keep their own words
+        people_words = S.person_still_phrase(f1["people"], f1["camera"], wear_of)
+        people = [_PEOPLE_SLOT] if people_words else []
+    else:
+        people = S.group_phrase(f1["people"], f1["camera"])
+        dressed = [f"{S.definite(e['noun'])} {wear_of(e)}" for e in sorted(f1["people"], key=lambda e: e["sx"])]
+        people += ["; ".join(dressed)] if dressed else []
     others = S.group_phrase(f1["others"], f1["camera"])   # animals/vehicles need facing too (a horse from behind is ambiguous)
     grps = S.groups(f1["others"], f1["camera"])
     away = [g for g in grps if "facing away" in (g["facing"] or "")]
@@ -301,11 +341,12 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     loc = f1["location"]
     # a set whose place already says underwater (the reef) keeps its words; a camera under the tank's surface says it
     place = loc["place"] if f1["underwater"] and "underwater" in (loc["place"] or "") else "underwater" if f1["underwater"] else loc["place"]
-    legacy = scene.get("look_start") is False
     # crates and boxes in plain words: Klein letters "shipping crates" with gibberish stencils (look/identity.py)
     props = [f"{p['word'] if legacy else plain_word(p['word'], p.get('kind'))} {p['where']}" for p in f1["props"][:3]]
     seen = {e["id"] for e in f1["people"] + f1["others"]}   # in the shot camera's frame at frame 0, not hidden
     desc = frame1_safe(look.get("description", ""), absent_words(scene, f1))
+    if one_phrase and people:
+        desc = _drop_repeated_people(desc, people_words)
     vcam = S.vehicle_camera(scene)
     lock = S.traffic_lock(scene, seen)
     shot = vcam["still"] if vcam else SIZE_STILL[f1["size"]] + ("" if who else " of the location")
@@ -331,6 +372,7 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
         "" if legacy else still_identity(scene, {e["id"] for e in f1["people"] + f1["others"]}),   # which car is which
         "" if legacy else body_words(scene, {e["id"] for e in f1["others"]}).rstrip("."),   # what the car is; a blank plate
         lock["still"] if lock else "",
+        # The count line stays: C22c's ablation F2 (count kept, group phrase gone) painted one person on both seeds.
         _still_count(n) if count else "",
         REAL_PEOPLE if n and real else "",
         _only_blocking(n, sum(1 for e in f1["others"] if e.get("rig") == "vehicle")) if count and not lock else
@@ -358,7 +400,10 @@ def compile_still(look: dict, scene: dict, parts: dict) -> tuple[str, str]:
     negative = _join([FRAME1_NEGATIVE + (", people, person, figure" if no_people else "") if n <= 3 else "extra people",
                       BLUR_SAFE_NEGATIVE if _ASKS_BLUR.search(prompt) else BASE_NEGATIVE, REAL_PEOPLE_NEG if n and real else "", facing_neg, NOTHING_EXTRA_NEG, vcam["negative"] if vcam else "", lock["negative"] if lock else "",
                       SW.negative_words(scene, seen), *parts["negatives"], look.get("negative", "")])
-    return _dedupe(prompt), _dedupe(negative)
+    still = _dedupe(prompt)
+    if one_phrase and people:
+        still = still.replace(_PEOPLE_SLOT, people_words)
+    return still, _dedupe(negative)
 
 
 def _dedupe(text: str) -> str:
