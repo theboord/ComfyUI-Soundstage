@@ -487,7 +487,10 @@ def real_wardrobe(v) -> str:
 
 def better_wardrobe(cur, new) -> str:
     """Which of two reads of one person's clothes to keep: never an echo or placeholder over a real read; a read that
-    names a garment over one that names none; else the fuller (longer) one, the current one on a tie."""
+    names a garment over a vague one (it names only an outfit, clothes, a costume: wardrobe.VAGUE, and no garment
+    the parser knows); else the fuller (longer) one, the current one on a tie. A longer read the parser cannot place
+    ("black leotard and fishnet tights") is not vague, so a shorter "jeans" does not beat it (the clay then gets no
+    garment from it: wardrobe "unknown")."""
     a, b = real_wardrobe(cur), real_wardrobe(new)
     if not b:
         return a
@@ -495,9 +498,15 @@ def better_wardrobe(cur, new) -> str:
         return b
     from . import wardrobe as W
     ga, gb = bool(W.parse(a)), bool(W.parse(b))
-    if ga != gb:
+    if ga != gb and _vague(b if ga else a):
         return a if ga else b
     return b if len(b) > len(a) else a
+
+
+def _vague(v) -> bool:
+    """A clothes read that says only 'outfit', 'clothes', 'costume' and the like (wardrobe.VAGUE)."""
+    from . import wardrobe as W
+    return bool(set(re.findall(r"[a-z]+", str(v or "").lower())) & set(W.VAGUE))
 
 
 def _echo(v) -> bool:

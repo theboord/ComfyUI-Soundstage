@@ -118,3 +118,26 @@ def test_a_reworded_example_is_an_echo(echo):
                                   "orange cable-knit sweaters"])
 def test_one_garment_of_the_example_or_a_real_list_is_still_clothing(real):
     assert not vlm.wardrobe_echo(real)
+
+
+# ------------------------------------------------------------------------------------------------ 4 better_wardrobe
+LEOTARD = "black leotard and fishnet tights with silver sequins"
+
+
+@pytest.mark.parametrize("longer", [LEOTARD, "denim overalls over a striped tee shirt", "red jumpsuit",
+                                    "navy tracksuit with white stripes", "black bodysuit"])
+def test_a_shorter_parsed_read_does_not_beat_a_longer_real_read_the_parser_cannot_place(longer):
+    assert vlm.better_wardrobe("jeans", longer) == longer          # 2a26229: 'jeans'
+    assert vlm.better_wardrobe(longer, "jeans") == longer
+    first = {"setting": "", "time": "", "camera": {}, "objects": [_obj("jeans")], "set": []}
+    assert vlm.merge_reads(first, {"objects": [_obj(longer)]})["objects"][0]["wardrobe"] == longer
+
+
+def test_a_garment_still_beats_a_longer_vague_read():
+    assert vlm.better_wardrobe("red hoodie", "a bright colourful outfit for dancing in the street") == "red hoodie"
+    assert vlm.better_wardrobe("a bright colourful costume for the show", "jeans") == "jeans"
+
+
+def _obj(wardrobe, bbox=(430, 180, 570, 900)):
+    return {"label": "woman dancing", "kind": "person", "color": "#e0b030", "bbox": list(bbox), "facing": "",
+            "moving": True, "wardrobe": wardrobe}
