@@ -134,16 +134,33 @@ When a chat command changes the set, the Book keeps a decision note on the scene
   joined value (`red_pickup_truck`, `gas-station-pumps`, `a.b:c`) that, split on its separators, repeats the
   sentence or two real words in a row of it; if the kept values still line up into such a run, only numbers and
   on/off values stay. The cost: an enum spelled out in the sentence (`low_angle` from "a low angle shot") is dropped
-  from that decision. The sentence is used only to skip undo and play and to check the summary and values.
+  from that decision. The sentence is used only to skip undo and play and to check the summary and values. The
+  summary and the ref are also checked with the spaces taken out (NFKC, lowercase, soft hyphens and joiners removed,
+  letters and digits only): `Done: makeitpourwithrain` or a ref `:makeItPourWithRain` is dropped too.
 - **Older notes:** decision notes written before 2026-11-07 held the typed sentence. On load they are rewritten to
   the tools they changed (for example `Move; Lens`) and keep their id. Notes from the first 2026-11-07 version
   (`dv: 2`) are cut to the allowed arguments and their text is written again from the change. The new text reaches
   the server copy on the Book's next save.
+- **Older notes on the server (known limit):** that rewrite happens only in the open Book, on load. Every other
+  stored copy saved before it (`projects/<P>/autosave/*.json`, `projects/.trash/*/workflow.json`, another project's
+  `workflows/<P>.json`, a book in the books folder) keeps the typed sentence until it is forgotten or migrated.
+  `await book.legacyDecisions()` (`POST /soundstage/book/legacy`) lists them machine-wide:
+  `{ok, decisions: [{id, ref?, project_id?, project?, files}], files}`. Each can be forgotten by id or ref. `await
+  book.legacyDecisions({apply: true})` (`{apply: true}`) rewrites them all in place to the tools and number / on-off
+  arguments only (no string survives, a stricter cut than the load rewrite), `dv: 3`, `migrated: true`, keeping
+  the id and an opaque ref (a non-opaque old ref is dropped). It runs only when called: nothing runs it on startup.
+- **Notes Ask adds (`book.addNote(text, {source: "ask", ref})`):** the note keeps `text` as given, so Ask must pass
+  a short summary it wrote, never the user's typed sentence (needs Ask's side, `web/agent/`). `ref` is kept only
+  when it is an opaque `${projectId}:${turnId}` that does not spell the text. `forgetDecision(id or ref)` and the
+  server scrub remove `source: "ask"` notes as they remove decisions; `POST /soundstage/book/note` takes `ref` too.
+  Notes Ask added before 2026-11-07 have no ref: forget them by note id (their raw text stays in older stored copies
+  until then; `legacyDecisions` does not list them, as they are not decisions).
 - **Link id:** `recordDecision({..., ref})` stores `ref` only when it is an opaque `${projectId}:${turnId}`
   (`DECISION_REF_RE` in `web/book/model.mjs`: `p_` + 8 hex or empty, a colon, then 1-48 of `A-Z a-z 0-9 _ -`).
   Anything else is dropped and the note has no ref: chat text, a sentence, or a turn id that spells out the typed
   words (`make_it_rain`). `forgetDecision(ref)` removes every decision note with that ref.
-- **Forget:** `await book.forgetDecision(id)` removes the note from the open Book and the workflow
+- **Forget:** `await book.forgetDecision(id)` (a decision, source `chat`, or a note Ask added, source `ask`; never
+  the director's own notes or Pitch's) removes the note from the open Book and the workflow
   (`node.properties.ss_book`), and saves the Book. It then calls `POST /soundstage/book/forget {ids, project: {id,
   name}}`. That call removes the note from every stored copy of that project on the server:
   - the books folder (`user/default/soundstage/books/*.json`, and leftover `*.json.tmp`)

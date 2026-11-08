@@ -5,6 +5,43 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-07
 
+**Fifth (final) review fixes, 2026-11-07 late: adopt across content, closed-tab state, Ask's notes, legacy copies, squashed refs (private branch `private/project-id`)**
+
+- **Still wrong (read first, known limits; not chased further):** checked with Node and pytest only, not in the browser,
+  the App or a live ComfyUI.
+  - **Ask's notes still store what Ask passes:** `book.addNote(text, {source: "ask", ref})` keeps `text` as given. Ask
+    (`web/agent/assistant.mjs` `add_note` -> `ask.mjs`) passes the user's typed words and no ref today; that is Jon's
+    Claude's lane. Until it passes a ref (or a summary), those notes can be forgotten only by note id.
+  - **Legacy decision copies are migrated only on request:** `POST /soundstage/book/legacy {apply: true}` rewrites them;
+    nothing runs it on startup. Until then autosaves, trash and other copies keep the typed sentence. Ask's pre-ref notes
+    are not decisions and are not listed.
+  - **Tab state per workflow object** is untested against a live ComfyUI frontend (whether it keeps one object per open
+    tab across its own Save).
+  - **A direct `store.save` of a graph naming no project, without `replace`,** keeps `created` (the pill always passes
+    `replace` after "Replace project?").
+  - Unchanged: two tabs change the id once; Forget's `ok: true` is server-side files only (not ComfyUI's queue history,
+    render metadata, other tabs, browser storage or a downloaded zip).
+- **A tab could adopt an id minted for other content (`web/project/store.mjs` `_save`, `web/project/projectbar.mjs` `save`):**
+  page B's Save As `Q` under the name `P` + Replace kept `P`'s `created`, so page A, saving `P` with its old id, adopted
+  `Q`'s id. A fresh id over a copy, another id, another project's name or a confirmed Replace now resets `created`
+  (always to a new value, even in the same millisecond), and the pill passes `replace: true` after Replace.
+- **A closed tab's bound state carried over (`web/project/projectbar.mjs` `tick`, `_cur`, `_isCopy`, `_prune`, `load`):**
+  tab state was keyed by path and never pruned, so a dragged-in older `<name>.json` at a closed project tab's path
+  saved over the project with no prompt. State now belongs to one workflow object; closed tabs are dropped; `open()`
+  re-checks the id once bound (it was unconfirmed for up to 15 s).
+- **Ask's notes could never be forgotten (`web/book/book.mjs` `addNote`, `forgetDecision`; `soundstage/book/store.py`
+  `FORGETTABLE`, `clean_ref`, `_strip`; `soundstage/book/routes.py` note):** `addNote` takes an opaque `ref`;
+  `forgetDecision` and the server scrub remove `source: "ask"` notes by ref or id.
+- **Legacy decision notes kept the typed sentence server-side (`soundstage/book/store.py` `legacy_decisions`,
+  `routes.py` `/soundstage/book/legacy`, `book.legacyDecisions()`):** listed machine-wide with ids, refs and files;
+  `apply` rewrites them in place to tools + number args.
+- **Refs and summaries passed the check with the spaces removed (`web/book/model.mjs` `squash`, `squashEchoes`,
+  `decisionRef`, `recordDecision`):** `:makeitpourwithrain` / `:makeItPourWithRain` / a soft-hyphenated piece are
+  rejected; matching now also removes soft hyphens and joiners.
+- Tests: `tests/js/project.test.mjs` (Save As + Replace, store and pill; bind, close, temporary tab at the same path),
+  `tests/js/hosthooks.test.mjs` (Ask note by ref, legacy route), `tests/js/book.test.mjs` (squashed refs and
+  summaries), `tests/test_book.py` (Ask notes in every copy, `clean_ref`, note route ref, legacy list + migrate).
+
 **Fourth review fixes, 23:00-23:59: ComfyUI copies, collected-copy Forget, two-tab id ping-pong, capped decisions (private branch `private/project-id`)**
 
 - **Still wrong (read first):** checked with Node and pytest only, not in the browser, the App or a live ComfyUI.

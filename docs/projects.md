@@ -122,6 +122,11 @@ know which project a memory belongs to, so it must not move to a different proje
   made a new id. It is still a change: memory keyed to the first id must re-key after a Save
   (`await __ssProject.project()`). A page that is reloaded forgets what it saved, so a stale graph saved from a
   reloaded page gets a fresh id once. A project replaced after Trash has a new `created` and is never adopted into.
+  Nor is a project replaced with other content: a save that makes a fresh id over a copy, a graph carrying another
+  id, a graph named for another project, or a confirmed "Replace project?" (Save As `Q` under the name `P`; the pill
+  passes `replace: true`) resets `created`, so a tab still holding `P`'s old id gets a fresh id of its own instead of
+  the one made for `Q`. Known limit: a direct `store.save` of a graph that names no project and is passed without
+  `replace` keeps `created`, as a pre-id tab of the same project would.
 - **Two saves at the same moment:** saves of one project from one page run one after the other. Across tabs there
   is no lock, so after writing, Save reads `workflows/<name>.json` and `project.json` back and, while their ids
   differ, sets `project.json` to the saved workflow's id (up to 6 tries). Save then reports `confirmed: true` only
@@ -157,6 +162,11 @@ know which project a memory belongs to, so it must not move to a different proje
     project whose copies it cleans.
   - From `web/project/store.mjs`: `projectIdOf(workflow)` (the graph's id, unconfirmed), `await
     store.confirmProjectId(workflow)`, or `await store.projectId(name)`, which reads `project.json`.
+- **Tab state:** the pill keeps a tab's state (bound project, confirmed id) per ComfyUI workflow object, not per path.
+  A project tab opened from the pill and closed, then an older exported `<name>.json` dragged in at the same path,
+  is a copy again (it inherits nothing); the state of tabs ComfyUI no longer lists in `openWorkflows` is dropped.
+  Not checked against a live ComfyUI frontend: if it swapped the workflow object of an open tab (for example on its
+  own Save), that tab would lose its bound state and be judged by its path again.
 - **Not told apart:** a copy is told apart only by the path ComfyUI opened it from. A file copied outside ComfyUI over
   `workflows/<name>.json` itself is the project.
   - On the server: `GET /soundstage/project/list`, where each project has an `id` (`null` for an old project).
