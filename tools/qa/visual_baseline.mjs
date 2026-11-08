@@ -175,7 +175,7 @@ async function captureSize([w, h], port) {
     console.log(`  ${tag} SETUP FAILED: ${String(e.message || e).slice(0, 160)}`);
   } finally {
     res.console = b.logs.filter((l) => /^(EXC|ERR)/.test(l) && !noise(l));
-    b.close();
+    await b.close();
   }
   return res;
 }

@@ -252,7 +252,7 @@ export async function runOnce(opts) {
     return { raw, summary };
   } finally {
     gpu.stop();
-    b.close();
+    await b.close();
     await srv.close();
   }
 }

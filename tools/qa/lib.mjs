@@ -4,8 +4,8 @@
 // Safety: a guard runs before any page code and answers every non-GET to /prompt, /queue, /interrupt, /free,
 // /settings, /userdata, /upload/ and /soundstage/ locally (no GPU renders, no queue changes, nothing written to
 // the server or to Mike's ComfyUI settings). Each run uses a throwaway Chrome profile.
-import { spawn } from "node:child_process";
-import { writeFileSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { writeFileSync, readFileSync, mkdtempSync } from "node:fs";
+import { spawnBrowser, stopBrowser, guardExit } from "./browser_proc.mjs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,7 +33,7 @@ export const STILL_CSS = "*,*::before,*::after{animation-duration:0s!important;a
 
 /** Start a hidden Chrome at w x h. opts: port, firstRun (keep the Guide tour unseen), localFiles (serve these web/ files from the repo),
  *  angle: "swiftshader" (default, what the baselines use) or "metal" (real GPU: use it for demo-scene flows; SS_ANGLE=metal sets it). */
-export async function launch({ port = 9770, w = 1440, h = 900, firstRun = false, localFiles = [], angle = process.env.SS_ANGLE || "swiftshader", headless = true, mute = true, extraFlags = [] } = {}) {
+export async function launch({ port = 9770, w = 1440, h = 900, firstRun = false, localFiles = [], angle = process.env.SS_ANGLE || "swiftshader", headless = true, mute = true, extraFlags = [], chrome: exe = CHROME, startMs = 20000 } = {}) {
   // headless: false opens a real window (place it with extraFlags such as --window-position); extraFlags go on Chrome's command line.
   // mute: false drops --mute-audio (a muted Chrome's WebAudio clock may not advance, so audio-clock measurements need it off).
   let W = w, H = h;
@@ -42,10 +42,14 @@ export async function launch({ port = 9770, w = 1440, h = 900, firstRun = false,
     ...(angle === "swiftshader" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : [`--use-angle=${angle}`, "--enable-gpu", "--ignore-gpu-blocklist"]), "--no-first-run", "--no-default-browser-check", ...(mute ? ["--mute-audio"] : []),
     "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows",
     "--force-color-profile=srgb", "--font-render-hinting=none", ...extraFlags, `--user-data-dir=${prof}`, "about:blank"];
-  const chrome = spawn(CHROME, flags, { stdio: "ignore" });
+  // Chrome runs in its own process group: close() stops it and every helper, then deletes the profile. Killing only
+  // the main process let helpers write into the profile after the rm (ssqa-* folders kept coming back). Ctrl-C,
+  // SIGTERM and process.exit() do the same (guardExit). A Chrome that never answers is stopped and deleted too.
+  const chrome = spawnBrowser(exe, flags, { stdio: "ignore" });
+  const release = guardExit(() => chrome, prof);
   let list;
-  for (let i = 0; i < 80 && !list; i++) { try { list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json(); } catch { await sleep(250); } }
-  if (!list) { chrome.kill(); throw new Error(`Chrome did not start on port ${port}`); }
+  for (const t0 = Date.now(); !list && Date.now() - t0 < startMs;) { try { list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json(); } catch { await sleep(250); } }
+  if (!list) { release(); await stopBrowser(chrome, prof); throw new Error(`Chrome did not start on port ${port}`); }
   const page = list.find((t) => t.type === "page");
   const ws = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((r) => ws.addEventListener("open", r));
@@ -126,8 +130,10 @@ export async function launch({ port = 9770, w = 1440, h = 900, firstRun = false,
     return buf;
   }
   async function resize(w2, h2) { W = w2; H = h2; await send("Emulation.setDeviceMetricsOverride", { width: w2, height: h2, deviceScaleFactor: 1, mobile: false }); await ev("window.dispatchEvent(new Event('resize')); return 1"); }
-  const close = () => { try { ws.close(); } catch {} chrome.kill(); try { rmSync(prof, { recursive: true, force: true }); } catch {} };
-  return { send, ev, rect, byText, click, clickEl, clickText, drag, key, move, shot, resize, close, logs, handlers, get W() { return W; }, get H() { return H; } };
+  // close() returns a promise (await it before process.exit; if a caller exits first, guardExit still cleans up).
+  let closing = null;
+  const close = () => closing ||= (async () => { try { ws.close(); } catch {} release(); await stopBrowser(chrome, prof); })();
+  return { send, ev, rect, byText, click, clickEl, clickText, drag, key, move, shot, resize, close, logs, handlers, profile: prof, pid: chrome.pid, get W() { return W; }, get H() { return H; } };
 }
 
 /** The pod's queue without its payloads: {running, pending, items: [{prompt_id, state, position, client_id, label}]},

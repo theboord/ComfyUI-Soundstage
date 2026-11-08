@@ -339,7 +339,7 @@ try {
   report.failures.push(`crashed: ${e.message}`);
   console.log("CRASH", e.stack, b.logs.slice(-10));
 } finally {
-  b.close();
+  await b.close();
   srv.close();
   try { rmSync(media, { recursive: true, force: true }); } catch { /* the synthetic clips are temp files */ }
 }

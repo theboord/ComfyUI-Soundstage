@@ -77,6 +77,6 @@ try {
   } else check(false, `right-click had no Remove for the selection (${sel})`);
   const errs = b.logs.filter((l) => /^(EXC|ERR)/.test(l) && !/favicon|WebGL|GPU stall|503/.test(l));
   check(!errs.length, `no console errors (${errs.slice(0, 3).join(" | ")})`);
-} catch (e) { fails.push(e.message); console.log("EXC", e.message); } finally { b.close(); }
+} catch (e) { fails.push(e.message); console.log("EXC", e.message); } finally { await b.close(); }
 console.log(fails.length ? `FAILED ${fails.length}` : "ALL OK");
 process.exit(fails.length ? 1 : 0);

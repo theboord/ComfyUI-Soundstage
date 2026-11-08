@@ -239,7 +239,7 @@ async function checkSize([w, h], port) {
   } catch (e) {
     res.errors.push(String(e.stack || e.message || e).slice(0, 400));
     log(tag, "ERROR", String(e.message || e).slice(0, 200));
-  } finally { b.close(); }
+  } finally { await b.close(); }
   return res;
 }
 

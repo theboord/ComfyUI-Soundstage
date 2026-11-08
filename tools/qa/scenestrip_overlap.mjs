@@ -82,7 +82,7 @@ try {
     report.push({ size: `${w}x${h}`, ok, ...r });
     console.log(`${w}x${h}`, ok ? "PASS" : "FAIL", `${r.tiles || 0} tiles`, r.setup ? "setup shown" : "no setup button", (r.bad || []).join("; ") || r.error || "");
   }
-} finally { b.close(); }
+} finally { await b.close(); }
 writeFileSync(join(OUT, "report.json"), JSON.stringify(report, null, 1));
 console.log("report:", join(OUT, "report.json"));
 process.exit(fail ? 1 : 0);

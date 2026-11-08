@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -82,32 +82,41 @@ test("readiness: server needs + the graph's loaders, per step", () => {
   assert.equal(readinessChip(r.deliver).text, "Ready*");
 });
 
+let tcDir = "";
 const FFMPEG = (() => { try { execFileSync("ffmpeg", ["-version"], { stdio: "ignore" }); return true; } catch { return false; } })();
 
 test("the recipe travels in the MP4: written by ffmpeg, read back by the App", { skip: !FFMPEG && "ffmpeg not installed" }, async () => {
-  const dir = mkdtempSync(join(tmpdir(), "ss-tc-"));
-  const out = join(dir, "take.mp4");
-  const scene = { version: 2, camera: { position: [0, 1, -5], target: [0, 1, 0], focal_mm: 35 }, active_shot: "s1",
-    shots: [{ id: "s1", name: "Chase cam" }], actors: [{ id: "car", kind: "sports_car" }] };
-  const rec = { v: 1, app: "Soundstage", scene, rung: "final", shot: { id: "s1", name: "Chase cam" }, seeds: { video: 42 } };
-  execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=64x36:d=0.5", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-    "-metadata", `soundstage=${JSON.stringify(rec)}`, "-metadata", `prompt={"1":{"class_type":"KSampler","inputs":{}}}`,
-    "-movflags", "use_metadata_tags+faststart", out]);
-  const bytes = readFileSync(out);
-  const tags = parseMp4Tags(bytes);
-  assert.ok("soundstage" in tags && "prompt" in tags);
-  const back = recipeFromTags(tags);
-  assert.deepEqual(back.scene, scene);
-  assert.equal(back.source, "soundstage tag");
-  assert.equal(recipeLine(back), "Final · Chase cam · 1 on the stage · seed 42");
-  // From a dropped File/Blob: only the moov box is read.
-  const viaFile = await readFileTags(new Blob([bytes]));
-  assert.equal(viaFile.soundstage, tags.soundstage);
-  // moov at the end (no faststart) is found too.
-  const late = join(dir, "late.mp4");
-  execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=64x36:d=0.5", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-    "-metadata", `soundstage=${JSON.stringify(rec)}`, "-movflags", "use_metadata_tags", late]);
-  assert.deepEqual(recipeFromTags(await readFileTags(new Blob([readFileSync(late)]))).seeds, { video: 42 });
+  // The temp folder is removed in finally (one ss-tc-* folder was left behind per run).
+  const dir = (tcDir = mkdtempSync(join(tmpdir(), "ss-tc-")));
+  try {
+    const out = join(dir, "take.mp4");
+    const scene = { version: 2, camera: { position: [0, 1, -5], target: [0, 1, 0], focal_mm: 35 }, active_shot: "s1",
+      shots: [{ id: "s1", name: "Chase cam" }], actors: [{ id: "car", kind: "sports_car" }] };
+    const rec = { v: 1, app: "Soundstage", scene, rung: "final", shot: { id: "s1", name: "Chase cam" }, seeds: { video: 42 } };
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=64x36:d=0.5", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+      "-metadata", `soundstage=${JSON.stringify(rec)}`, "-metadata", `prompt={"1":{"class_type":"KSampler","inputs":{}}}`,
+      "-movflags", "use_metadata_tags+faststart", out]);
+    const bytes = readFileSync(out);
+    const tags = parseMp4Tags(bytes);
+    assert.ok("soundstage" in tags && "prompt" in tags);
+    const back = recipeFromTags(tags);
+    assert.deepEqual(back.scene, scene);
+    assert.equal(back.source, "soundstage tag");
+    assert.equal(recipeLine(back), "Final · Chase cam · 1 on the stage · seed 42");
+    // From a dropped File/Blob: only the moov box is read.
+    const viaFile = await readFileTags(new Blob([bytes]));
+    assert.equal(viaFile.soundstage, tags.soundstage);
+    // moov at the end (no faststart) is found too.
+    const late = join(dir, "late.mp4");
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=64x36:d=0.5", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+      "-metadata", `soundstage=${JSON.stringify(rec)}`, "-movflags", "use_metadata_tags", late]);
+    assert.deepEqual(recipeFromTags(await readFileTags(new Blob([readFileSync(late)]))).seeds, { video: 42 });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the recipe test removes its ss-tc-* temp folder", { skip: !FFMPEG && "ffmpeg not installed" }, () => {
+  assert.ok(tcDir.includes("ss-tc-"), tcDir);
+  assert.equal(existsSync(tcDir), false, `left behind: ${tcDir}`);
 });
 
 test("older takes: the recipe is rebuilt from ComfyUI's prompt tag", () => {

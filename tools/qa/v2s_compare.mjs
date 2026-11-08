@@ -68,7 +68,7 @@ try {
       if (R.errors.length || R.console.length) fail(tag, "page errors", [...R.errors, ...R.console]);
     } catch (e) {
       fail(tag, `crashed: ${e.message}`, b.logs.slice(-10));
-    } finally { b.close(); }
+    } finally { await b.close(); }
   }
 } finally { srv.close(); }
 writeFileSync(join(out, `report_${clip}.json`), JSON.stringify(report, null, 1));

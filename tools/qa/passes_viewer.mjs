@@ -235,7 +235,7 @@ try {
   fails.push(`crashed: ${e.stack || e}`);
   console.log("FAIL crashed", e);
 } finally {
-  b.close();
+  await b.close();
 }
 console.log(fails.length ? `\n${fails.length} FAILED:\n  ${fails.join("\n  ")}` : "\nall passed");
 process.exit(fails.length ? 1 : 0);
