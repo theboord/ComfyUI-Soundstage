@@ -100,6 +100,7 @@ export function statusText({ savedAt = null, autosavedAt = null, dirty = false, 
 }
 
 export const PROJECT_ID_RE = /^p_[0-9a-f]{8}$/;
+const SAVE_SETTLE_TRIES = 6;
 
 /** A fresh project id: "p_" + 8 lowercase hex (the first 8 hex digits of a random UUID). */
 export function newProjectId() {
@@ -165,11 +166,27 @@ export class ProjectStore {
 
   /**
    * Save the project: the workflow (as Workflow → Save would) and its manifest. Returns {name, id, path, saved_at,
-   * workflow}. The id: the manifest's old id only when the workflow carries that same id, else a fresh one (see the top).
+   * workflow, confirmed, disk_id}. The id: the manifest's old id only when the workflow carries that same id, else a
+   * fresh one (see the top). `id` is the id this graph was stamped with; `disk_id` the id workflows/<name>.json and
+   * project.json both hold once the save settles; `confirmed` is id === disk_id. Not confirmed: another tab saved the
+   * same project at the same moment and its workflow landed last (this graph is not what is on disk).
+   *
+   * Two saves of one project in this page run one after the other. Across tabs there is no lock (ComfyUI's userdata
+   * API has none), so after writing, save() reads both files back and, while their ids differ, rewrites project.json to
+   * the id the saved workflow file holds (the workflow is what Open loads), up to SAVE_SETTLE_TRIES times.
    */
-  async save(name, workflow, { manifest = {} } = {}) {
+  save(name, workflow, opts = {}) {
     const n = cleanName(name);
-    if (!n) throw new Error("give the project a name");
+    if (!n) return Promise.reject(new Error("give the project a name"));
+    this._saving ||= new Map();
+    const prev = this._saving.get(n) || Promise.resolve();
+    const run = prev.catch(() => {}).then(() => this._save(n, workflow, opts));
+    this._saving.set(n, run);
+    run.finally(() => { if (this._saving.get(n) === run) this._saving.delete(n); }).catch(() => {});
+    return run;
+  }
+
+  async _save(n, workflow, { manifest = {} } = {}) {
     const at = this.now();
     const old = (await this._get(ProjectStore.manifestPath(n))) || {};
     const oldId = typeof old.id === "string" && PROJECT_ID_RE.test(old.id) ? old.id : null;
@@ -181,7 +198,21 @@ export class ProjectStore {
       ...rest, format: FORMAT, v: VERSION, id, name: n, workflow: ProjectStore.workflowPath(n),
       created: old.created || at, saved_at: at, saves: (old.saves || 0) + 1,
     });
-    return { name: n, id, path: ProjectStore.workflowPath(n), saved_at: at, workflow: wf };
+    const disk = await this._settle(n);
+    return { name: n, id, path: ProjectStore.workflowPath(n), saved_at: at, workflow: wf, confirmed: disk === id, disk_id: disk };
+  }
+
+  /** Read workflows/<n>.json and project.json back; while their ids differ, set project.json's id to the workflow
+   *  file's. Returns the id both hold, or null when they still differ after SAVE_SETTLE_TRIES (then nothing confirms). */
+  async _settle(n) {
+    for (let i = 0; i < SAVE_SETTLE_TRIES; i++) {
+      const [w, m] = await Promise.all([this._get(ProjectStore.workflowPath(n)), this._get(ProjectStore.manifestPath(n))]);
+      const wid = projectIdOf(w), mid = typeof m?.id === "string" && PROJECT_ID_RE.test(m.id) ? m.id : null;
+      if (wid && wid === mid) return wid;
+      if (!wid || !m) return null;
+      await this._put(ProjectStore.manifestPath(n), { ...m, id: wid });
+    }
+    return null;
   }
 
   /** A saved project's id (from its project.json), or null (no such project, or saved before ids existed). */

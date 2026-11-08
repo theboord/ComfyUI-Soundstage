@@ -163,12 +163,15 @@ export class ProjectController {
       try { this.app.graph.extra = { ...(this.app.graph.extra || {}), ss_project: { name: res.name, saved_at: res.saved_at, id: res.id } }; } catch { /* */ }
       t.name = res.name;
       t.collected = false;
-      t.confirmedId = res.id; t.confirmedName = res.name; t.checkKey = `${res.name}|${res.id}`; t.checkedAt = Date.now();
+      // only an id project.json was read back holding (store.save settles both files); another tab's save landing
+      // last leaves this graph unconfirmed until the next check
+      t.confirmedId = res.confirmed === false ? null : res.id; t.confirmedName = res.name; t.checkKey = `${res.name}|${res.id}`; t.checkedAt = Date.now();
       t.savedAt = res.saved_at;
       t.savedSig = t.sig = workflowSig(wf);
       t.error = null;
       try { await this.app.extensionManager?.workflow?.syncWorkflows?.("workflows"); } catch { /* older frontend */ }
-      this.say(`Saved "${res.name}" (workflows/${res.name}.json).`);
+      this.say(res.confirmed === false ? `Saved "${res.name}", but another tab saved it at the same moment and its copy is the one on disk. Reopen the project to see it.`
+        : `Saved "${res.name}" (workflows/${res.name}.json).`);
     } catch (e) {
       t.error = String(e?.message || e).slice(0, 60);
       this.say(`Could not save: ${t.error}`);

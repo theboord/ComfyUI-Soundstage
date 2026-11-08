@@ -340,3 +340,50 @@ test("open collected on the machine that still has the live project: no id is co
     assert.deepEqual(asked, []);
   } finally { clearInterval(ctl._timer); }
 });
+
+/** fakeApi with a random delay before each read and write lands (two tabs racing over ComfyUI's userdata API). */
+function slowApi(rand) {
+  const api = fakeApi();
+  const wait = () => new Promise((r) => setTimeout(r, Math.floor(rand() * 4)));
+  const { storeUserData, getUserData } = api;
+  api.storeUserData = async (...a) => { await wait(); return storeUserData(...a); };
+  api.getUserData = async (...a) => { await wait(); return getUserData(...a); };
+  return api;
+}
+
+test("two tabs saving one project at once: workflows/X.json and project.json end with the same id, and only that id is confirmed", async () => {
+  let seed = 7;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  let unconfirmed = 0, stale = 0;
+  for (let trial = 0; trial < 200; trial++) {
+    const api = slowApi(rand);
+    const first = await new ProjectStore({ api }).save("X", WF());
+    const tabA = new ProjectStore({ api }), tabB = new ProjectStore({ api });
+    // A re-saves the project's own graph, B a graph with no id (a second tab opened before the first id'd save)
+    const [a, b] = await Promise.all([tabA.save("X", first.workflow), tabB.save("X", WF())]);
+    const wid = projectIdOf(await wfOn(api, "X")), mid = (await man(api, "X")).id;
+    assert.equal(wid, mid, `trial ${trial}: the two files agree`);
+    assert.ok([a.id, b.id].includes(wid), `trial ${trial}: the id on disk is one of the two saves'`);
+    for (const r of [a, b]) {
+      if (r.confirmed) assert.equal(r.disk_id, r.id);
+      // known window: a save that settled before the other tab's write landed says confirmed although the disk has
+      // moved on since; the controller's 15 s check (project()) drops it. Counted, not hidden.
+      if (r.confirmed && r.id !== wid) stale++;
+      if (!r.confirmed) unconfirmed++;
+    }
+    assert.equal((await new ProjectStore({ api }).confirmProjectId(wid === a.id ? a.workflow : b.workflow)).confirmed, true);
+  }
+  assert.ok(unconfirmed + stale > 0, "the race really happened in some trials");
+  console.log(`# two-tab race: ${unconfirmed} saves told unconfirmed, ${stale} confirmed then overtaken, of 400`);
+});
+
+test("two saves from one page are run one after the other", async () => {
+  const api = slowApi(Math.random);
+  const store = new ProjectStore({ api });
+  const r1 = await store.save("Y", WF());
+  const [a, b] = await Promise.all([store.save("Y", r1.workflow), store.save("Y", r1.workflow)]);
+  assert.equal(a.id, r1.id);
+  assert.equal(b.id, r1.id);
+  assert.ok(a.confirmed && b.confirmed);
+  assert.equal((await man(api, "Y")).saves, 3);
+});
