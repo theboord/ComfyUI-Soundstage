@@ -630,7 +630,7 @@ function createStageWidget(node, inputName) {
     getProject: () => ({ ...buildCutProject(), ...loadCut() }),
     renderPreviewFrame: (shotId, frame) => {
       // Render that setup's camera without switching the stage UI to it.
-      return stage.renderFrameTo("clay", frame, { shot: shotId });
+      return stage.renderFrameTo("color", frame, { shot: shotId });
     },
     onChange: (project) => {
       const was = JSON.stringify(node.properties?.ss_cut ?? null);
@@ -691,7 +691,7 @@ function createStageWidget(node, inputName) {
     onEditShot: (id, where, ctx) => editShot(id, where, ctx),
     onEditClip: (index, anchor) => editLink?.fromStrip(index, anchor),   // Edit in… (web/cut/editlink_app.mjs)
     getSceneName: (id) => { const n = sceneNumOfShot(id); return n ? `SC${n}` : null; },
-    renderPreviewFrame: (id, f) => stage.renderFrameTo("clay", f, { shot: id }),
+    renderPreviewFrame: (id, f) => stage.renderFrameTo("color", f, { shot: id }),
   });
 
   // "Edit original" from a clip (Dynamic Link style): open the step that made it, for that shot. Renders are kept
@@ -2622,7 +2622,7 @@ function createStageWidget(node, inputName) {
     setLookStart: (on) => { node.ssLookStart = !!on; },
     setFrameLock: (on) => { node.ssFrameLock = !!on; },
     setBatch: (on) => { batchDepth = Math.max(0, batchDepth + (on ? 1 : -1)); batchRendering = batchDepth > 0; },
-    renderPreviewFrame: (id, f) => stage.renderFrameTo("clay", f, { shot: id }),
+    renderPreviewFrame: (id, f) => stage.renderFrameTo("color", f, { shot: id }),
     loadChosen: () => {
       try { return node.properties?.ss_chosen || JSON.parse(localStorage.getItem(`${lsKey()}:chosen`) || "{}"); } catch { return {}; }
     },
@@ -2681,7 +2681,7 @@ function createStageWidget(node, inputName) {
   // scene_id, and agent-made shot ids are scene-scoped, so renders / chosen frames / clips never cross scenes.
   // Nothing here shows until a script is loaded: no script = the App as before (only the Script tab is new).
   node.ssAgent = agent;
-  const renderClay = (id, f = 0) => stage.renderFrameTo("clay", f, { shot: id });
+  const renderStageFrame = (id, f = 0) => stage.renderFrameTo("color", f, { shot: id });
   const nudgeTracker = () => { try { app.extensionManager?.workflow?.activeWorkflow?.changeTracker?.checkState?.(); } catch { /* older frontend */ } };
   const liveShots = () => stage.state?.shots || [];
   const sceneById = (id) => (id && script?.scenes?.find((x) => x.id === id)) || null;
@@ -2713,7 +2713,7 @@ function createStageWidget(node, inputName) {
   function getShots() {
     if (!script) return [];
     return listShots(sceneStages, liveKey, untouchedFresh() ? [] : liveShots()).map((x) => ({
-      ...x, thumb: picOf(x.id) || (x.live ? () => renderClay(x.id, 0) : undefined) }));
+      ...x, thumb: picOf(x.id) || (x.live ? () => renderStageFrame(x.id, 0) : undefined) }));
   }
 
   // Persist: node.properties.ss_script = {script (compact; text left out when big), ref, live_scene, active_scene,
@@ -3480,7 +3480,7 @@ function createStageWidget(node, inputName) {
     // An untouched scene's Master shows too (it becomes a shot when touched), so every scene shows what it has.
     getShots: () => {
       const live = () => liveShots().map((sh) => ({ id: sh.id, name: sh.name || sh.id, live: true, scene_id: sceneById(liveKey) ? liveKey : null,
-        thumb: picOf(sh.id) || (() => renderClay(sh.id, 0)) }));
+        thumb: picOf(sh.id) || (() => renderStageFrame(sh.id, 0)) }));
       if (!script) return live();
       const all = getShots();
       return untouchedFresh() ? [...all, ...live()] : all;

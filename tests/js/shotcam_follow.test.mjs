@@ -21,6 +21,8 @@ const SHOTS = [
 ];
 const WHO = { sc_1__1G: "mara", sc_1__1H: "ezra", sc_1__1P: "ezra" };
 
+globalThis.ImageData ||= class { constructor(w, h) { this.width = w; this.height = h; this.data = new Uint8ClampedArray(w * h * 4); } };
+
 function headless() {
   const st = Object.create(Stage.prototype);
   const renders = [];
@@ -29,8 +31,9 @@ function headless() {
     view: "clay", key: "start", frame: 0, actorMeshes: new Map(), root: new THREE.Group(), scene: new THREE.Scene(),
     camera: new THREE.PerspectiveCamera(40, 1280 / 692, 0.1, 200), viewCam: new THREE.PerspectiveCamera(50, 1280 / 692, 0.05, 600),
     freeView: false, free: null, onSelect() {}, onInteract() {}, onChange() {},
-    renderer: { getSize: (v) => v.set(864, 467), setSize() {} }, canvas: {},
-    _snap: { width: 1280, height: 692, getContext: () => ({ drawImage() {} }) },
+    // thumbnails render offscreen (web/stage/offscreen.mjs): a render target, a read-back, never setSize
+    renderer: { getSize: (v) => v.set(864, 467), setSize() {}, getRenderTarget: () => null, setRenderTarget() {}, readRenderTargetPixels() {}, getContext: () => null }, canvas: {},
+    _snap: { width: 1280, height: 692, getContext: () => ({ drawImage() {}, putImageData() {} }) },
   });
   // What each render looked through: the thumbnail's own setup for a capture, the active shot for the viewport.
   st._renderMode = function (mode, forCapture = false) {

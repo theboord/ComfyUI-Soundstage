@@ -47,13 +47,13 @@ function serve() {
   return new Promise((ok) => srv.listen(0, "127.0.0.1", () => ok(srv)));
 }
 
-export async function runShaders({ browser = null, timeoutMs = 60000 } = {}) {
+export async function runShaders({ browser = null, timeoutMs = 60000, page = "shaders.html" } = {}) {
   const exe = findBrowser(browser);
   if (!exe) return { skipped: "no headless Chromium or Chrome found on this machine (nothing is installed by this check)" };
   const srv = await serve();
   // A fresh profile folder per run, deleted when the browser is done (one ss-shaders-<pid> was left behind per run).
   const profile = mkdtempSync(join(tmpdir(), "ss-shaders-"));
-  const url = `http://127.0.0.1:${srv.address().port}/tests/browser/shaders.html`;
+  const url = `http://127.0.0.1:${srv.address().port}/tests/browser/${page}`;
   const args = ["--headless", "--no-first-run", "--no-default-browser-check", "--disable-gpu-sandbox", "--use-angle=swiftshader",
     "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", `--user-data-dir=${profile}`,
     "--virtual-time-budget=20000", "--dump-dom", url];
@@ -95,7 +95,8 @@ export async function runShaders({ browser = null, timeoutMs = 60000 } = {}) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const i = process.argv.indexOf("--browser");
-  const r = await runShaders({ browser: i > 0 ? process.argv[i + 1] : null });
+  const j = process.argv.indexOf("--page");
+  const r = await runShaders({ browser: i > 0 ? process.argv[i + 1] : null, page: j > 0 ? process.argv[j + 1] : "shaders.html" });
   console.log(JSON.stringify(r, null, 2));
   process.exit(r.skipped ? 2 : r.ok ? 0 : 1);
 }

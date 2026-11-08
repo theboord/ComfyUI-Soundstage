@@ -1,6 +1,6 @@
-// Clay frames for the Director's Book storyboard strip (Milestone 23). Any scene's stage (also the ones waiting off
+// Stage frames (the Color look) for the Director's Book storyboard strip (Milestone 23). Any scene's stage (also the ones waiting off
 // the live stage) is loaded into a hidden scratch Stage (its own small WebGL canvas, the same trick as the Presets'
-// previews in web/presets/livethumbs.mjs), and each shot is rendered in clay at its first frame. The user's stage, its
+// previews in web/presets/livethumbs.mjs), and each shot is rendered in Color at its first frame. The user's stage, its
 // history and its undo are never touched. Frames are cached by scene + shot signature as JPEG data URLs.
 //
 //   const clay = new ClayFrames({ stage });          // stage: the user's Stage (only its constructor is used)
@@ -42,7 +42,7 @@ export class ClayFrames {
 
   cached(scene, shotId) { return this.cache.get(sig(scene, shotId)) || null; }
 
-  /** The clay frame of one shot of a scene (serialised: one render at a time). */
+  /** The stage (Color) frame of one shot of a scene (serialised: one render at a time). */
   frame(scene, shotId, frame = 0) {
     const key = sig(scene, shotId);
     if (this.cache.has(key)) return Promise.resolve(this.cache.get(key));
@@ -61,7 +61,7 @@ export class ClayFrames {
         S._muteRecord = true;
         try { S.load(JSON.parse(JSON.stringify(scene))); } finally { S._muteRecord = false; }
         this.loaded = sceneKey;
-        S.view = "clay";
+        S.view = "color";   // the Book shows the lifelike look (Lifelike-only colour thumbnails)
       }
       S.state.active_shot = shotId;
       S._rigCache = null;
@@ -70,7 +70,7 @@ export class ClayFrames {
       if (rh < H) { rh = H; rw = Math.round(H * ar); }
       S.renderer.setSize(rw, rh, false);
       S.setFrameSilent(frame);
-      S._renderMode("clay", true);
+      S._renderMode("color", true);
       const c = this.doc.createElement("canvas");
       c.width = W; c.height = H;
       c.getContext("2d").drawImage(S.canvas, Math.max(0, (rw - W) / 2), Math.max(0, (rh - H) / 2), Math.min(W, rw), Math.min(H, rh), 0, 0, W, H);

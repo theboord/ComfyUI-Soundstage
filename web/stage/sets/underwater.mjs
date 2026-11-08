@@ -376,7 +376,7 @@ function makeUnderwater(opts) {
     pass(mode, { stage, cam }) {
       if (!stage?.scene || !cam || cam.position.y >= SURFACE) return;
       // bubbles are drawn at their true size: pixels per metre at 1 m for this camera and canvas
-      const H = stage.renderer?.domElement?.height || 512;
+      const H = stage.drawSize?.()[1] || stage.renderer?.domElement?.height || 512;   // the capture target while one renders (offscreen.mjs)
       bubbles.material.uniforms.uScale.value = (H / 2) / Math.tan(((cam.fov || 40) * Math.PI / 180) / 2);
       if (mode === "clay") { stage.scene.fog = _fog.clay; stage.scene.background = _bg.clay; }
       else if (mode === "color") { stage.scene.fog = _fog.color; stage.scene.background = _bg.color; CAUSTIC_U.uCauK.value = 0.85; }

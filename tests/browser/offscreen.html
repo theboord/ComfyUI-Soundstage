@@ -1,0 +1,82 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Soundstage offscreen capture check</title></head>
+<body>
+<!-- Offscreen captures (web/stage/offscreen.mjs) must match the old canvas path pixel for pixel: a real Stage, a scene with
+     people, a car, snow (size-attenuated points) and a backdrop-free plaza, rendered for each pass two ways:
+       old: renderer.setSize(fw, fh) on the visible canvas, _renderMode(mode, true), copy the canvas (what capture,
+            captureSequence and renderFrameTo did before);
+       new: stage._renderOffscreen(mode) (the reused capture target, read back).
+     Reported per pass: the share of pixels that differ, the largest channel difference and the PSNR. Also counts the
+     visible canvas's resizes during renderFrameTo / capture (must be 0). Run by tests/browser/run_shaders.mjs
+     (runShaders({ page: "offscreen.html" })); the result is written to the result block as JSON. -->
+<div id="box" style="width:640px"></div>
+<pre id="result">pending</pre>
+<script type="module">
+import * as THREE from "../../web/vendor/three.module.min.mjs";
+import { Stage, DEFAULT_SCENE } from "../../web/stage/stage.mjs";
+
+const out = { ok: false, errors: [], passes: {} };
+const done = () => { document.getElementById("result").textContent = JSON.stringify(out); };
+window.addEventListener("error", (e) => { out.errors.push(String(e.message)); });
+try {
+  const st = new Stage(document.getElementById("box"), () => {});
+  st.avatarWaitMs = 0;
+  const sc = JSON.parse(JSON.stringify(DEFAULT_SCENE));
+  sc.environment = { ...sc.environment, weather: "snow", density: 0.6 };
+  sc.actors.push({ id: "car_1", name: "Car", kind: "car", position: [3, 0, -2] });
+  st.load(sc);
+  await new Promise((r) => setTimeout(r, 300));
+  const fw = st.fw, fh = st.fh;
+  const oldPass = (mode) => {
+    const prev = st.renderer.getSize(new THREE.Vector2());
+    st.renderer.setSize(fw, fh, false);
+    st._renderMode(mode, true);
+    const c = document.createElement("canvas"); c.width = fw; c.height = fh;
+    const g = c.getContext("2d"); g.drawImage(st.canvas, 0, 0);
+    const d = g.getImageData(0, 0, fw, fh).data;
+    st.renderer.setSize(prev.x, prev.y, false);
+    return d;
+  };
+  const newPass = (mode) => new Uint8ClampedArray(st._renderOffscreen(mode, fw, fh).data);
+  // The Stage node's four capture passes (soundstage.js serializeValue: clay, depth, id, color; "clay" is the AI guide
+  // until L3) are gated. Wire is a viewport-only view and not deterministic even canvas against canvas (overlapping
+  // wireframe lines under MSAA in SwiftShader): reported, with its own canvas-vs-canvas noise beside it, not gated.
+  for (const mode of ["clay", "clay_oldold", "color", "depth", "id", "wire", "wire_oldold"]) {
+    st.setFrameSilent(12);
+    const m = mode.replace("_oldold", "");
+    // Clay and Wire draw the snow points with their override material, which writes no gl_PointSize (undefined size:
+    // canvas-vs-canvas noise of 5-70 % here). Those two are compared on the same scene with the snow hidden.
+    const wx = st.weather;
+    if ((m === "clay" || m === "wire") && wx) { wx.object.visible = false; st.weather = null; }
+    const a = oldPass(m), b = mode.endsWith("_oldold") ? oldPass(m) : newPass(m);
+    st.weather = wx;
+    let diff = 0, maxd = 0, se = 0;
+    for (let i = 0; i < a.length; i += 4) {
+      let px = 0;
+      for (let k = 0; k < 3; k++) { const e = Math.abs(a[i + k] - b[i + k]); if (e) px = 1; if (e > maxd) maxd = e; se += e * e; }
+      diff += px;
+    }
+    const mse = se / (a.length * 0.75);
+    out.passes[mode] = { diffShare: +(diff / (a.length / 4)).toFixed(5), maxDiff: maxd, psnr: mse ? +(10 * Math.log10(255 * 255 / mse)).toFixed(1) : Infinity,
+      nonBlack: (() => { let n = 0; for (let i = 0; i < b.length; i += 4) if (b[i] + b[i + 1] + b[i + 2] > 30) n++; return n; })() };
+  }
+  // The visible canvas is never resized by a thumbnail or a capture.
+  const desc = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, "width");
+  let resizes = 0;
+  const cv = st.canvas;
+  Object.defineProperty(cv, "width", { get() { return desc.get.call(this); }, set(v) { resizes++; desc.set.call(this, v); }, configurable: true });
+  st.renderFrameTo("color", 3);
+  st.renderFrameTo("depth", 5);
+  await st.capture("color");
+  out.visibleResizes = resizes;
+  out.canvas = [cv.width, cv.height];
+  out.frame = [fw, fh];
+  out.samples = st._capSamples;
+  out.captureTargets = st.stats?.captureTargets;
+  out.ok = !out.errors.length && resizes === 0 && ["clay", "color", "depth", "id", "wire"].every((k) => out.passes[k].psnr >= 45 && out.passes[k].maxDiff <= 2 && out.passes[k].nonBlack > 0);
+} catch (e) { out.errors.push(String(e?.stack || e)); }
+done();
+</script>
+</body>
+</html>

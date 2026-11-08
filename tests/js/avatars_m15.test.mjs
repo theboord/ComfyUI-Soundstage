@@ -816,8 +816,10 @@ test("round 2, 7: placeInFrame(id, null) uses the defaults; a non-object is an e
 function captureStage(onRender) {
   const st = Object.create(Stage.prototype);
   Object.defineProperties(st, { fw: { value: 64 }, fh: { value: 36 } }); st.frame = 7;
-  st.renderer = { getSize: (v) => v.set(64, 36), setSize() {} };
+  // captures render offscreen (web/stage/offscreen.mjs): a render target and a read-back, never setSize
+  st.renderer = { getSize: (v) => v.set(64, 36), setSize() {}, getRenderTarget: () => null, setRenderTarget() {}, readRenderTargetPixels() {}, getContext: () => null };
   st.canvas = {};
+  globalThis.ImageData ||= class { constructor(w, h) { this.width = w; this.height = h; this.data = new Uint8ClampedArray(w * h * 4); } };
   st._renderMode = (mode, forCapture) => { if (forCapture) onRender(mode); };
   st.render = () => {};
   st.poses = 0;
@@ -828,7 +830,7 @@ function captureStage(onRender) {
 }
 async function withOffscreen(fn) {
   const had = globalThis.OffscreenCanvas;
-  globalThis.OffscreenCanvas = class { getContext() { return { canvas: { convertToBlob: true }, drawImage() {} }; } convertToBlob() { return Promise.resolve("png"); } };
+  globalThis.OffscreenCanvas = class { getContext() { return { canvas: { convertToBlob: true }, drawImage() {}, putImageData() {} }; } convertToBlob() { return Promise.resolve("png"); } };
   try { return await fn(); } finally { if (had) globalThis.OffscreenCanvas = had; else delete globalThis.OffscreenCanvas; }
 }
 

@@ -6,7 +6,8 @@
 //
 // Left: New project · Open project… · Open collected project… · Try the demo scene · Import a script.
 // Main: recent projects (GET /soundstage/project/list), newest first, search and Recent / Name sort; each card has a
-// picture (chosen first frame → look frame → final / draft poster → clay → a coloured initial), the name, "2 h ago",
+// picture (chosen first frame → look frame → final / draft poster → stage previz → a coloured initial card;
+// never a clay frame: Lifelike-only plan §1.4), the name, "2 h ago",
 // scenes · shots · takes, an "autosave newer" badge, and a ⋯ menu (Open, Duplicate, Rename, Collect, Restore autosave…,
 // Delete = move to projects/.trash/, confirmed on the card itself). Keys: arrows between cards, Enter opens, ⌘/Ctrl+N
 // new, Esc closes when it was opened on demand. In the try-it demo (no server) only the demo and the script show.

@@ -59,7 +59,11 @@ def test_thumbnail_tiers_and_fallback(env):
     by = {p["name"]: p for p in L.list_projects(user, roots)}
     # chosen frame is missing on disk -> no look -> the final render, as a video poster
     assert by["Alpha"]["thumb_kind"] == "video" and "final_00002_.mp4" in by["Alpha"]["thumb"]
-    assert by["Gamma"]["thumb_kind"] == "image" and "clay_00001_.png" in by["Gamma"]["thumb"]   # clay fallback
+    assert by["Gamma"]["thumb"] is None   # only an old clay still (clay_00001_.png): never a poster (Lifelike-only §1.4), the neutral card
+    assert L.pick_thumb({"ss_renders": {"a": {"clay": "soundstage/frame_00001_.png [output]"}}}, lambda r: True) is None
+    assert L.pick_thumb({"ss_renders": {"a": {"previz": "soundstage/clay/S01_010_00001_.jpg [output]"}}}, lambda r: True) is None
+    assert L.pick_thumb({"ss_renders": {"a": {"clay": "soundstage/clay_00001_.png [output]", "previz": "soundstage/previz_00001_.mp4 [output]"}}},
+                        lambda r: True)["ref"]["filename"] == "previz_00001_.mp4"   # the stage previz (Color) instead
     assert by["beta"]["thumb"] is None                                                          # nothing: the App draws an initial
     props = {"ss_chosen": {"a": "soundstage/look_00003_.png [output]"},
              "ss_renders": {"a": {"final": "soundstage/final_00002_.mp4 [output]"}}}

@@ -1,6 +1,6 @@
 // node --test tests/js/presets_live.test.mjs
 // Milestone 17 polish: card previews rendered from the real stage (web/presets/livethumbs.mjs). A scratch copy of the
-// scene gets each preset applied and renders clay frames (loops for camera moves and stunts, stills for lights and
+// scene gets each preset applied and renders Color frames (loops for camera moves and stunts, stills for lights and
 // looks); the user's stage is never touched; previews are cached per scene; hover previews borrow the scratch copy.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -137,7 +137,7 @@ test("camera cards: a loop of the move's real keys on a scratch copy; the user's
   assert.equal(e.sprite.width, THUMB_W * LOOP_FRAMES);
   assert.equal(e.sprite.height, THUMB_H);
   const S = scratches[0];
-  const renders = S.renders.filter((r) => r.forCapture && r.mode === "clay");
+  const renders = S.renders.filter((r) => r.forCapture && r.mode === "color");
   assert.equal(renders.length, 2 * LOOP_FRAMES, "ten frames per move");
   assert.deepEqual(renders.slice(0, LOOP_FRAMES).map((r) => r.frame), sampleFrames(96));
   // The rendered camera keys are the move's (not the shot's own one key), and differ between moves.

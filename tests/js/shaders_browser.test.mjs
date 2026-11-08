@@ -130,3 +130,19 @@ for (const sig of ["SIGTERM", "SIGINT"]) {
     }
   });
 }
+
+test("offscreen captures match the old canvas path in real WebGL (clay / color / depth / id / wire within 1 level, PSNR >= 45) and never resize the visible canvas", { skip: browser ? false : "no headless Chromium / Chrome on this machine (run tests/browser/run_shaders.mjs --page offscreen.html where one is)", timeout: 120000 }, async () => {
+  // Jon's canvas-speed report: renderFrameTo / capture / captureSequence resized the visible canvas (1.5-2 s of long
+  // tasks). They now render into a reused WebGLRenderTarget (web/stage/offscreen.mjs); the Stage node's passes must not change.
+  const r = await runShaders({ page: "offscreen.html", timeoutMs: 100000 });
+  assert.ok(!r.error, r.error);
+  assert.deepEqual(r.errors, [], "no exceptions");
+  for (const k of ["clay", "color", "depth", "id", "wire"]) {
+    const p = r.passes[k];
+    assert.ok(p.nonBlack > 0, `${k}: something drawn`);
+    assert.ok(p.maxDiff <= 2, `${k}: largest channel difference ${p.maxDiff}`);
+    assert.ok(p.psnr === null || p.psnr >= 45, `${k}: PSNR ${p.psnr}`);
+  }
+  assert.equal(r.visibleResizes, 0, "renderFrameTo and capture leave the visible canvas's size alone");
+  assert.equal(r.captureTargets, 1, "one capture target, reused");
+});

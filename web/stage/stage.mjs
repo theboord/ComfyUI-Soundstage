@@ -26,6 +26,7 @@ import { installSecondary } from "./secondary.mjs";
 import { installWatercraft } from "./watercraft.mjs";
 import { installSfx } from "./sfxstage.mjs";
 import { buildCard, loadBackdrop, coverFit } from "./cards.mjs";
+import { installOffscreen } from "./offscreen.mjs";
 import { buildInterior, fixtureActors, interiorCamera, normalizeSpec, toStage } from "./interior.mjs";
 import { GLTFLoader } from "../vendor/addons/GLTFLoader.mjs";
 import { GLTFExporter } from "../vendor/addons/GLTFExporter.mjs";
@@ -5406,9 +5407,10 @@ export class Stage {
   }
 
   /** Spark sorts splats in a worker; give it a few renders (with yields) to catch up with the camera. */
-  async _settleSplats(mode, n, waitMs = 0) {
+  async _settleSplats(mode, n, waitMs = 0, offscreen = false) {
     for (let i = 0; i < n; i++) {
-      this._renderMode(mode, true);
+      if (offscreen) this._withOffscreen(this.fw, this.fh, () => this._renderMode(mode, true));   // a capture: never on the visible canvas
+      else this._renderMode(mode, true);
       await (waitMs ? new Promise((r) => setTimeout(r, waitMs)) : yieldToBrowser());
     }
   }
@@ -7186,7 +7188,7 @@ export class Stage {
       const underwater = this._isUnderwater(vc);
       const sky = skyBackground(this.skyPhase, this.state.lighting);
       this.scene.background = new THREE.Color(underwater ? 0x1f4256 : env.set === "studio" ? 0xd8d8d8 : sky);
-      if (plate) { coverFit(this._backdropTex, this.renderer.domElement.width / this.renderer.domElement.height); this.scene.background = this._backdropTex; }
+      if (plate) { coverFit(this._backdropTex, this.drawSize()[0] / this.drawSize()[1]); this.scene.background = this._backdropTex; }
       this.scene.overrideMaterial = null;
     } else {
       const env = this.state.environment || {};
@@ -7194,7 +7196,7 @@ export class Stage {
       const underwater = this._isUnderwater(vc);
       this.scene.background = new THREE.Color(underwater ? 0x2f4a5c : env.set === "studio" ? 0x8e9298 : 0x2b2f36);
       // While blocking, show the plate behind the clay so actors can be placed in it; captures stay clean.
-      if (plate && !forCapture) { coverFit(this._backdropTex, this.renderer.domElement.width / this.renderer.domElement.height); this.scene.background = this._backdropTex; }
+      if (plate && !forCapture) { coverFit(this._backdropTex, this.drawSize()[0] / this.drawSize()[1]); this.scene.background = this._backdropTex; }
       this.scene.overrideMaterial = this.clayMat;
     }
     const cam = forCapture ? this.camera : this._viewportCamera?.() || this.camera;
@@ -7276,15 +7278,20 @@ export class Stage {
   async capture(mode) {
     const ready = await this._awaitAvatars();
     if (ready.waited) this.setFrameSilent(this.frame);   // pose the bodies that just went on
-    const prev = new THREE.Vector2();
-    this.renderer.getSize(prev);
-    this.renderer.setSize(this.fw, this.fh, false);
-    this._renderMode(mode, true);
-    const blob = await new OffscreenCanvas(this.fw, this.fh).getContext("2d").canvas.convertToBlob
-      ? await (async () => { const oc = new OffscreenCanvas(this.fw, this.fh); oc.getContext("2d").drawImage(this.canvas, 0, 0); return oc.convertToBlob({ type: "image/png" }); })()
-      : await new Promise((res) => this.canvas.toBlob(res, "image/png"));
-    this.renderer.setSize(prev.x, prev.y, false);
-    this.render();
+    // Offscreen (offscreen.mjs): the visible canvas is never resized for a capture.
+    const img = this._renderOffscreen(mode, this.fw, this.fh);
+    let blob;
+    if (typeof OffscreenCanvas === "function" && OffscreenCanvas.prototype.convertToBlob) {
+      const oc = new OffscreenCanvas(this.fw, this.fh);
+      oc.getContext("2d").putImageData(img, 0, 0);
+      blob = await oc.convertToBlob({ type: "image/png" });
+    } else {
+      const c = document.createElement("canvas");
+      c.width = this.fw; c.height = this.fh;
+      c.getContext("2d").putImageData(img, 0, 0);
+      blob = await new Promise((res) => c.toBlob(res, "image/png"));
+    }
+    if (ready.waited) this.render();   // the viewport shows the bodies that just went on
     return blob;
   }
 
@@ -7301,23 +7308,20 @@ export class Stage {
     // (a hidden tab defers HTMLCanvasElement.toBlob callbacks indefinitely).
     const sheet = new OffscreenCanvas(cols * this.fw, rows * this.fh);
     const ctx = sheet.getContext("2d");
-    const prev = new THREE.Vector2();
-    this.renderer.getSize(prev);
     const keepFrame = this.frame;
     // Lifelike bodies still loading go on first, so no capture turns lifelike partway. The wait is stage.avatarWaitMs
     // (default people/avatars.mjs AVATAR_WAIT_MS); past it the capture goes ahead and says who stayed clay.
     await this._awaitAvatars();
     this._capturing = true;
     try {
-      this.renderer.setSize(this.fw, this.fh, false);
+      // Offscreen (offscreen.mjs): every frame renders into the reused capture target at the delivery size; the
+      // visible canvas keeps the viewport's size and picture throughout.
       const splats = mode === "color" && this._hasSplats();
-      if (splats) await this._settleSplats(mode, 24, 25); // first load + sort for this view (worker time, not just yields)
+      if (splats) await this._settleSplats(mode, 24, 25, true); // first load + sort for this view (worker time, not just yields)
       for (let f = 0; f < frames; f++) {
         this.setFrameSilent(f);
-        if (this.canvas.width !== this.fw || this.canvas.height !== this.fh) this.renderer.setSize(this.fw, this.fh, false);
-        if (splats) await this._settleSplats(mode, 3); // re-sort for this frame's camera
-        this._renderMode(mode, true);
-        ctx.drawImage(this.canvas, (f % cols) * this.fw, Math.floor(f / cols) * this.fh);
+        if (splats) await this._settleSplats(mode, 3, 0, true); // re-sort for this frame's camera
+        ctx.putImageData(this._renderOffscreen(mode, this.fw, this.fh), (f % cols) * this.fw, Math.floor(f / cols) * this.fh);
         if (onProgress && f % 8 === 0) {
           onProgress(f / frames);
           await yieldToBrowser(); // let the UI breathe (not throttled in background tabs)
@@ -7326,7 +7330,6 @@ export class Stage {
     } finally {
       this._capturing = false;
       for (const put of this._afterCapture?.splice(0) || []) { try { put(); } catch (err) { console.warn("Soundstage avatar", err); } }
-      this.renderer.setSize(prev.x, prev.y, false);
       this.setFrame(keepFrame);
       if (this._resizePending) { this._resizePending = false; this.resize(); }
     }
@@ -7342,34 +7345,33 @@ export class Stage {
    * active shot is put back BEFORE the viewport is restored, so the shot camera never stays on that other setup.
    */
   renderFrameTo(mode, frame, { shot } = {}) {
+    // Thumbnails and previews show the lifelike look: the retired "clay" name (an older caller, cut/strip.mjs) draws
+    // Color (Lifelike-only colour thumbnails). Capture passes for the AI (captureSequence) do not come through here.
+    mode = viewMode(mode);
     if (!this._snap) this._snap = document.createElement("canvas");
     // Follow the shot's aspect: a snapshot canvas kept at the first aspect crops every later render.
     if (this._snap.width !== this.fw || this._snap.height !== this.fh) { this._snap.width = this.fw; this._snap.height = this.fh; }
-    const prev = new THREE.Vector2();
-    this.renderer.getSize(prev);
     const keep = this.frame, keepShot = this.state.active_shot;
     const swap = shot != null && shot !== keepShot && this._shots().some((x) => x.id === shot);
     try {
       if (swap) this.state.active_shot = shot;
-      this.renderer.setSize(this.fw, this.fh, false);
       this.setFrameSilent(frame);
       if (mode === "pose") {
         // the OpenPose skeleton of the people (posepass.stagePeople: the logic rig, posed from the same motion as the visible body), on black
         const ctx = this._snap.getContext("2d");
         drawOpenPose(ctx, stagePeople(this, this.fw, this.fh), this.fw, this.fh);
       } else {
-        this._renderMode(mode, true);
-        this._snap.getContext("2d").drawImage(this.canvas, 0, 0);
+        // Offscreen (offscreen.mjs): rendered into the reused capture target, so the visible canvas is never resized
+        // and keeps its picture (preserveDrawingBuffer): no viewport re-render after a thumbnail.
+        this._snap.getContext("2d").putImageData(this._renderOffscreen(mode, this.fw, this.fh), 0, 0);
       }
     } finally {
       if (swap) this.state.active_shot = keepShot;
-      this.renderer.setSize(prev.x, prev.y, false);
       this.setFrameSilent(keep);
-      this._renderMode(this.view);
     }
     // A caller that flipped active_shot itself puts it back only after this returns: redraw the viewport once it has
-    // (a no-op when the shot camera is already on the active shot).
-    if (!swap) queueMicrotask(() => { if (this._syncShotCamera()) this.render(); });
+    // (a no-op when the shot camera is already on the active shot). With {shot}, the active shot never left.
+    queueMicrotask(() => { if (this._syncShotCamera()) this.render(); });
     return this._snap;
   }
 
@@ -7398,4 +7400,5 @@ installParts(Stage, { vehicle: VehicleParts, light: LightRig, horse: HorseParts,
 // Secondary simulations and soft bodies (Milestone 28): see secondary.mjs.
 installSecondary(Stage, { LIBRARY, NO_COLLIDE, PERSON_KINDS, CAR_BODIES });
 installWatercraft(Stage, { LIBRARY, PERSON_KINDS });
+installOffscreen(Stage, THREE);   // thumbnails and captures render offscreen, never resizing the visible canvas (offscreen.mjs)
 installSfx(Stage, { LIBRARY, NO_COLLIDE, PERSON_KINDS });   // practical effects: explosions, fire, squibs, blood packs (sfxstage.mjs)   // boats float on the wave field, wakes, spray, paddlers (watercraft.mjs)

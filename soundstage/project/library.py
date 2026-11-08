@@ -71,22 +71,30 @@ IMG = (".png", ".jpg", ".jpeg", ".webp")
 VID = (".mp4", ".webm", ".mov")
 
 
+def _clay_still(ref: dict) -> bool:
+    """An old project's clay frame (a clay_* file, or one in a clay/ folder): kept on disk as history, never a poster."""
+    sub = str(ref.get("subfolder") or "").replace("\\", "/").lower().split("/")
+    return str(ref.get("filename") or "").lower().startswith("clay") or "clay" in sub
+
+
 def pick_thumb(props: dict, exists) -> dict | None:
     """The card's picture: the latest chosen first frame, else a look frame, else a final / draft render (shown as a
-    video poster), else a clay frame. exists(ref) says whether the file is on disk. Returns {ref, kind} or None."""
+    video poster), else a stage previz (made from the Color look). Never a clay frame (Lifelike-only plan section 1.4:
+    old projects' clay stills stay on disk as history, never as a poster); with none of these the App draws its
+    neutral card. exists(ref) says whether the file is on disk. Returns {ref, kind} or None."""
     renders = props.get("ss_renders") if isinstance(props.get("ss_renders"), dict) else {}
     tiers = [
         [r for _, r in C.walk_refs(props.get("ss_chosen") or {})],
         [r for sid in renders for p, r in C.walk_refs(renders[sid]) if p and p[0] == "look"],
         [r for sid in renders for p, r in C.walk_refs(renders[sid]) if p and p[0] in ("final_sound", "final_audio", "final")],
         [r for sid in renders for p, r in C.walk_refs(renders[sid]) if p and p[0] == "draft"],
-        [r for sid in renders for p, r in C.walk_refs(renders[sid]) if p and p[0] in ("previz", "clay")],
+        [r for sid in renders for p, r in C.walk_refs(renders[sid]) if p and p[0] == "previz"],
     ]
     for tier in tiers:
         # ComfyUI's counters make later files sort later: the newest is the last name in the tier.
         for r in sorted(tier, key=lambda r: (r["subfolder"], r["filename"]), reverse=True):
             low = r["filename"].lower()
-            if not low.endswith(IMG + VID) or not exists(r):
+            if not low.endswith(IMG + VID) or _clay_still(r) or not exists(r):
                 continue
             return {"ref": r, "kind": "video" if low.endswith(VID) else "image"}
     return None

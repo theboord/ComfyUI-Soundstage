@@ -290,13 +290,13 @@ export class AdvisorPanel {
     return card;
   }
 
-  /** Clay frame through this shot's first camera key, rendered by the stage even while its viewport is hidden. */
+  /** Color (lifelike) frame through this shot's first camera key, rendered by the stage even while its viewport is hidden. */
   _thumb(s) {
     if (!this.stage?.renderFrameTo || !this.stage?.previewCamera) return null;
     const k = s.camera_keys[0];
     try {
       this.stage.previewCamera({ position: k.position, target: k.target, focal_mm: k.focal_mm });
-      const src = this.stage.renderFrameTo("clay", 0);
+      const src = this.stage.renderFrameTo("color", 0);
       const c = el("canvas", { class: "ss-adv-thumb", "aria-label": `Stage preview of ${s.name}` });
       c.width = 320;
       c.height = Math.max(1, Math.round(320 * src.height / src.width));

@@ -1027,7 +1027,7 @@ export class Pipeline {
     this._drawCastRefs();
     this._drawShotRows();
     try {
-      const c = this.ctx.stage.renderFrameTo("clay", 0);
+      const c = this.ctx.stage.renderFrameTo("color", 0);
       f.clay.width = c.width; f.clay.height = c.height;
       f.clay.getContext("2d").drawImage(c, 0, 0);
       if (this._cvClay) { this._cvClay.width = c.width; this._cvClay.height = c.height; this._cvClay.getContext("2d").drawImage(c, 0, 0); }
@@ -2121,7 +2121,7 @@ export class Pipeline {
     pair.clay.hidden = hasVid || !!url;
     if (!hasVid && !url) {
       try {
-        const c = this.ctx.stage.renderFrameTo("clay", 0);
+        const c = this.ctx.stage.renderFrameTo("color", 0);
         pair.clay.width = c.width; pair.clay.height = c.height;
         pair.clay.getContext("2d").drawImage(c, 0, 0);
       } catch { pair.clay.hidden = true; /* stage not ready */ }

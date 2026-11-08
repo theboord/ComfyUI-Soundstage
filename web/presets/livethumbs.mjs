@@ -1,6 +1,6 @@
 // Presets (Milestone 17): card previews rendered from the real stage. A hidden scratch Stage (its own small WebGL
 // canvas, never the user's) loads a copy of the current scene, applies a preset to it with its own PresetRunner and
-// renders clay frames: a camera move or a stunt becomes a short loop, a lighting setup or a look a still. The user's
+// renders Color (lifelike) frames: a camera move or a stunt becomes a short loop, a lighting setup or a look a still. The user's
 // stage, its history and its undo are never touched. Results are cached per scene signature, so reopening the panel,
 // or undoing back to a scene seen before, shows them at once.
 // Never blocking the user's stage: work runs one step per animation frame, right after the frame is drawn, inside a
@@ -167,7 +167,7 @@ export class LiveThumbs {
     S._muteRecord = true;
     try {
       S.load(JSON.parse(JSON.stringify(this.base)));
-      S.view = "clay";
+      S.view = "color";   // previews show the lifelike look (Lifelike-only colour thumbnails)
       if (S.freeView) S.freeView = false;
     } finally { S._muteRecord = false; }
     this.baseStr = JSON.stringify(S.state);
@@ -187,12 +187,8 @@ export class LiveThumbs {
     if (!S?.renderer?.compileAsync || this._compiledFor === this.baseStr) return;
     this._compiledFor = this.baseStr;
     const t = now();
-    // Previews draw in clay (one override material): compile() ignores scene.overrideMaterial, so put the clay material
-    // on every mesh for the compile, which builds exactly the clay programs (skinned, instanced, ...) the frames use.
-    const swapped = [];
-    if (S.clayMat) S.scene.traverse((o) => { if (o.isMesh && o.material && o.material !== S.clayMat) { swapped.push([o, o.material]); o.material = S.clayMat; } });
+    // Previews draw in Color (each mesh's own material), so the scene's own programs are the ones to build.
     try { await S.renderer.compileAsync(S.scene, S.camera); } catch { /* the first frame compiles what's left */ }
-    finally { for (const [o, m] of swapped) o.material = m; }
     this.stats.compileMs = Math.round(now() - t);
   }
 
@@ -236,8 +232,8 @@ export class LiveThumbs {
     return r || { ok: false };
   }
 
-  /** Render the scratch stage at frame f into (ctx, dx, dy, w, h), cover-fit, in clay. */
-  _renderInto(ctx, f, dx, dy, w, h, { mode = "clay", forCapture = true } = {}) {
+  /** Render the scratch stage at frame f into (ctx, dx, dy, w, h), cover-fit, in Color. */
+  _renderInto(ctx, f, dx, dy, w, h, { mode = "color", forCapture = true } = {}) {
     const S = this.scratch;
     const ar = (S.fw || 16) / (S.fh || 9);
     let rw = w, rh = Math.round(w / ar);
@@ -274,12 +270,12 @@ export class LiveThumbs {
     this._loop().catch((e) => { console.warn("[Soundstage] preset previews", e); }).finally(() => { this.running = false; });
   }
 
-  /** True once the scratch stage is built, holds the current scene and its clay shaders are compiled. */
+  /** True once the scratch stage is built, holds the current scene and its shaders are compiled. */
   get ready() { return !!this.scratch && this.dirty !== "load" && !!this.baseStr && this._compiledFor === this.baseStr; }
 
   /**
    * Pre-warm while the App sits idle (before the panel is ever opened): build the scratch stage, load the scene,
-   * compile its clay shaders, each step in its own idle period (requestIdleCallback, waiting for a deadline with room).
+   * compile its shaders, each step in its own idle period (requestIdleCallback, waiting for a deadline with room).
    * The shader compile is asynchronous (compileAsync / KHR_parallel_shader_compile). Safe to call more than once.
    */
   async warm({ idle = idleSlot } = {}) {
@@ -423,7 +419,7 @@ export class LiveThumbs {
       const frames = kind === "action" ? sampleFrames(last, HOVER_FRAMES) : [Math.min(live.frame || 0, last)];
       // Look through the same camera the user is looking through (the shot camera, or Free view).
       const free = !!(live.freeView && live.viewCam && S.viewCam);
-      const mode = ["clay", "color", "wire", "depth"].includes(live.view) ? live.view : "clay";
+      const mode = ["color", "wire", "depth"].includes(live.view) ? live.view : "color";   // a retired "clay" view shows Color
       for (const f of frames) {
         if (this._hover !== hv || this.stopped) return false;
         const c = this._newCanvas(w, h), ctx = c.getContext("2d");
