@@ -57,13 +57,24 @@ export async function runShaders({ browser = null, timeoutMs = 60000 } = {}) {
   const args = ["--headless", "--no-first-run", "--no-default-browser-check", "--disable-gpu-sandbox", "--use-angle=swiftshader",
     "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", `--user-data-dir=${profile}`,
     "--virtual-time-budget=20000", "--dump-dom", url];
+  // The browser runs in its own process group (detached), so a timeout can stop it and every helper it started (GPU,
+  // renderer, crashpad) at once. Killing only the main process left helpers that wrote into the profile after it was
+  // deleted, and the folder came back (ss-shaders-o9iXU1).
+  let child = null;
+  const killGroup = () => { if (!child?.pid) return; try { process.kill(-child.pid, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch {} } };
   try {
     const dom = await new Promise((ok, fail) => {
-      const p = spawn(exe, args, { stdio: ["ignore", "pipe", "pipe"] });
-      let o = "", e = "";
-      const t = setTimeout(() => { p.kill("SIGKILL"); fail(new Error(`browser timed out: ${e.slice(-500)}`)); }, timeoutMs);
+      const p = (child = spawn(exe, args, { stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" }));
+      let o = "", e = "", timedOut = false;
+      const t = setTimeout(() => {
+        timedOut = true;
+        killGroup();
+        // wait for the browser to be gone (its pipes closed) before the profile is deleted; give up after 5 s
+        const g = setTimeout(() => fail(new Error(`browser timed out (and did not exit): ${e.slice(-500)}`)), 5000);
+        p.once("close", () => { clearTimeout(g); fail(new Error(`browser timed out: ${e.slice(-500)}`)); });
+      }, timeoutMs);
       p.stdout.on("data", (d) => (o += d)); p.stderr.on("data", (d) => (e += d));
-      p.on("close", () => { clearTimeout(t); ok({ o, e }); });
+      p.on("close", () => { if (timedOut) return; clearTimeout(t); ok({ o, e }); });
       p.on("error", (err) => { clearTimeout(t); fail(err); });
     });
     const m = dom.o.match(/<pre id="result">([\s\S]*?)<\/pre>/);
@@ -72,7 +83,9 @@ export async function runShaders({ browser = null, timeoutMs = 60000 } = {}) {
     return { browser: exe, ...JSON.parse(text) };
   } finally {
     srv.close();
-    // after a timeout the killed browser can still be closing files: retry for a moment
+    // a helper the browser left running after a normal exit would also write into the profile: stop the group first
+    killGroup();
+    // the killed processes can still be closing files: retry for a moment
     try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch {}
   }
 }
