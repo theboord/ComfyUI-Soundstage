@@ -145,9 +145,9 @@ test("real Rocketbox walking to a stop and going again, and a U-turn: a foot at 
     let low = 0, at = -1;
     for (const r of out.rows) { const h = Math.min(r.l.h, r.r.h); if (h > low) { low = h; at = r.f; } }
     assert.ok(low < 0.005, `${kind} ${name}: the lower foot ${cm(low)} cm up at f${at}`);
-    // FLAW (measured 2026-11-07): the woman's last step into the stop waits planted for the other foot with a 5 cm
-    // single-support hip dip (T.supportDrop) for 3 frames instead of floating
-    check(s, `${kind} ${name}`, { drop: 0.051 });
+    // (854e956: the woman's last step into the stop waited planted for the other foot with a 5 cm single-support hip
+    // dip; 1.3 cm since the body's footing follows the ground exactly)
+    check(s, `${kind} ${name}`, { drop: 0.03 });
   }
 });
 
@@ -198,8 +198,9 @@ test("real Rocketbox over a 15 cm kerb, up a flight of stairs and on uneven grou
     a = K.walker(kind, {}, [-1, 0, 0], [4, 0, 0]);
     st = await K.setup(kind, a, { setFx: { id: "hill", floorAt: hill } });
     // FLAW (measured 2026-11-08): the trailing foot down the slope dips the hips 5.5-6 cm (T.supportDrop), the clip's
-    // stride is a flat-ground one; the woman still has 2 frames with no foot within 5 mm
-    check(K.physical(K.measure(st, a, { ground: hill })), `${kind} 20 degree hill`, { drop: 0.061, float: 2 });
+    // stride is a flat-ground one (854e956: the woman also had 2 frames with no foot within 5 mm; 0 since the body
+    // follows the slope exactly)
+    check(K.physical(K.measure(st, a, { ground: hill })), `${kind} 20 degree hill`, { drop: 0.061 });
     // short-wavelength rough ground (bumps 6 cm high every ~1.2 m)
     const rough = (x, z) => 0.04 + 0.03 * Math.sin(5.1 * x) * Math.cos(4.3 * z + 0.4);
     a = K.walker(kind, {}, [-3, 0, 0.3], [3, 0, 0.3]);
