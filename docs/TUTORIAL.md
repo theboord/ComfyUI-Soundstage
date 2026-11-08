@@ -1451,7 +1451,7 @@ One pose key holds for the whole shot. Add another at a later frame and the pose
 
 - **Click a body part or dot** and a rotate ring appears on that joint: turn it on any axis. Fingers too.
 - **Drag a yellow dot** to move a hand or foot: the arm or leg follows (IK). Elbows bend back and knees forward, the way real joints do, and the reach stops at the limb's length.
-- Option/Alt-drag still looks around while posing.
+- Option/Alt-drag moves the camera while posing, never a joint: in the Soundstage and Blender styles it looks around in place, and in the Maya and Unreal styles it orbits.
 - **P** or **Esc** ends pose mode; so does clicking empty space. Selecting another person keeps you posing.
 
 Everything you turn is a pose key at the playhead, the same keys the sliders write.

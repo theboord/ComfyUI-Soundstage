@@ -442,13 +442,19 @@ test("Ctrl + wheel from a mouse zooms at 1x; a trackpad pinch (fractional) at 5x
 });
 
 test("a press casts the actor ray once (the orbit pivot reuses the stage's hit)", () => {
-  const st = makeStage();
+  // A car that can't be grabbed: the press is the camera's, so nav.begin runs and finds the pivot on the car.
+  const st = makeStage({ grabbable: false });
   const ray = st._pickRay(EMPTY);
   const orig = ray.intersectObjects.bind(ray);
   let n = 0;
   ray.intersectObjects = (objs, rec) => { if (objs.includes(st.actorMeshes.get("car1"))) n++; return orig(objs, rec); };
+  const begin = st.nav.begin.bind(st.nav);
+  let began = 0, pivot = null;
+  st.nav.begin = (e, hits) => { began++; const r = begin(e, hits); pivot = r?.pivot ?? null; return r; };
   st.ev("pointerdown", { button: 0, buttons: 1, ...CAR });
   st.ev("pointerup", { button: 0, buttons: 0, ...CAR });
+  assert.equal(began, 1, "the press went to the camera (nav.begin), not a grab");
+  assert.ok(pivot && Math.abs(pivot[2] - 1) < 1e-3, `the pivot landed on the car's front face (${pivot})`);
   assert.equal(n, 1);
   done(st);
 });

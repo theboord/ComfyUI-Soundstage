@@ -136,20 +136,28 @@ test("a lost right release is noticed on the next pointer event without the righ
 
 test("inside a car, holding right flies at the tight step, not the set's fly speed", () => {
   cv.ls.length = 0; win.ls.length = 0;
-  const st = makeStage({ _tightNow: () => true, orbit: { position: [0, 1.2, 0.5], target: [0, 1.2, -1] } });
-  st.nav.settings.damping = false;
-  st.nav.settings.flySpeed = 16;
-  ptr("pointerdown", 2, 2);
-  st.nav.key(keyEv("w"));
-  const z0 = st.orbit.position[2];
-  st.nav._tick();   // dt is clamped at ≥ 1 ms on the first frame
-  const t0 = performance.now(); while (performance.now() - t0 < 20) { /* let ~20 ms pass */ }
-  const z1 = st.orbit.position[2];
-  st.nav._tick();
-  const step = Math.abs(st.orbit.position[2] - z1);
-  assert.ok(st.orbit.position[2] < z0, "it moves forward");
-  assert.ok(step < 0.1, `tight step (${step.toFixed(4)} m in ~20 ms); 16 m/s would be ~0.32 m`);
-  st.nav.dispose();
+  // An injected clock (navigation reads performance.now() on every call): exactly 20 ms between the two frames,
+  // however busy the machine is. A wall-clock busy-wait overshot under full-suite load and failed the step bound.
+  let clock = 1000;
+  Object.defineProperty(performance, "now", { value: () => clock, configurable: true, writable: true });
+  try {
+    const st = makeStage({ _tightNow: () => true, orbit: { position: [0, 1.2, 0.5], target: [0, 1.2, -1] } });
+    st.nav.settings.damping = false;
+    st.nav.settings.flySpeed = 16;
+    ptr("pointerdown", 2, 2);
+    st.nav.key(keyEv("w"));
+    const z0 = st.orbit.position[2];
+    st.nav._tick();   // dt is clamped at ≥ 1 ms on the first frame
+    clock += 20;
+    const z1 = st.orbit.position[2];
+    st.nav._tick();
+    const step = Math.abs(st.orbit.position[2] - z1);
+    assert.ok(st.orbit.position[2] < z0, "it moves forward");
+    assert.ok(step > 0 && step < 0.1, `tight step (${step.toFixed(4)} m in 20 ms); 16 m/s would be 0.32 m`);
+    st.nav.dispose();
+  } finally {
+    delete performance.now;   // back to the real clock (the prototype's)
+  }
 });
 
 test("Windows: left released first in a both-buttons pan, then right: the context menu that follows is suppressed", () => {
