@@ -29,6 +29,10 @@
 // Third pass (2026-11-08): walking, one foot is always down (steps wait for the other foot, land early, or the other
 // waits); the clearance counts only ground the leg could step onto and never folds the leg (T.minLeg), and a plant is
 // refused too high as well as too low; a sprint's 1-frame touch-down is kept and not lifted.
+// Fourth pass (2026-11-08): a top up to half the leg from the body's footing is planted (T.far, the walked step);
+// a planted shoe across a big break (a platform's edge) moves sideways onto the body's ground and the swing follows
+// (T.straddle, plan.dS); a foot at rest is kept clear of its footing laid along the ground's slope (plan.slope);
+// the shortest stance is a time (at 12 fps a 2-frame plant counts).
 // Everything is a pure function of the keys and the frame: the plan is built from the whole shot at once, and a
 // frame reads only the plan and the clip pose at that frame, so scrubbing in any order gives the same feet.
 // Nothing here reads the clay figure: it works on whatever skeleton drives the visible body.
