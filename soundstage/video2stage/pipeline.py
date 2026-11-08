@@ -413,7 +413,7 @@ def finish_scene(scene: dict, *, take, info, breakdown, depths, scales, poses, K
         try:
             st = scanroute.apply(scene, depths=depths, scales=scales, poses=poses, K=K, files=files, skies=skies,
                                  breakdown=breakdown, times=times, duration=float(clip.get("duration") or 1.0),
-                                 notes=notes, tag=f"v2s_{tag}")
+                                 notes=notes, tag=f"v2s_{tag}", take=take, fps=float(clip.get("fps") or 24.0))
         except Exception as exc:  # noqa: BLE001 - the old builder's set still stands
             st, fallback = None, f"the scan path failed ({exc})"
         if st is not None and not st.get("scan"):
@@ -478,16 +478,7 @@ def build_mask(actor: dict, take, depths, times, fps: float, duration: float):
     i = min(i, len(depths) - 1)
     d = np.asarray(depths[i], np.float32)
     h, w = d.shape
-    uv = box = None
-    if k is not None and take.get("focal_px") and take.get("body"):
-        uv = performer.sam_2d(take, k, (w, h))
-        ok = np.isfinite(uv).all(axis=1)
-        if ok.sum() >= 4:
-            (jx0, jy0), (jx1, jy1) = uv[ok].min(0), uv[ok].max(0)
-            H = jy1 - jy0
-            box = [jx0 - 0.12 * H, jy0 - 0.1 * H, jx1 + 0.12 * H, jy1 + 0.05 * H]   # head top and heels beyond the joints
-        else:
-            uv = None
+    uv, box = scanroute.joint_box(take, k, (w, h))   # head top and heels beyond the joints
     if box is None:
         src = actor.get("source") or {}
         t = (float(times[i]) / max(duration, 1e-6)) if times else 0.0

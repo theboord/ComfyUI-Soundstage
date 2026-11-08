@@ -64,27 +64,68 @@ def _box_at(o: dict, t: float):
     return a or b
 
 
-def people_masks(breakdown: dict, depths, times, duration: float) -> dict:
-    """{person_i: {sample_i: rle}} from the read's person boxes (interpolated start -> end) and each sample's depth: the
-    route has no segmentation, so the person is the box's pixels near the body's depth (wardrobe.person_mask_from_depth)."""
+def take_frame_at(take, t: float, fps: float) -> int | None:
+    """The take frame nearest stage time t (s), or None when t is more than ~1.5 frames outside the take (SAM 3D Body
+    tracks from when it finds the person, so the take can start after the first sample)."""
+    if not take or not take.get("body"):
+        return None
+    n = int(take.get("frames") or len(take.get("body") or []))
+    src = take.get("source_frames") or list(range(n))
+    if not src:
+        return None
+    tt = np.asarray(src, float) / max(float(fps), 1e-6)
+    k = int(np.argmin(np.abs(tt - float(t))))
+    return k if abs(tt[k] - float(t)) <= 1.5 / max(float(fps), 1e-6) else None
+
+
+def joint_box(take, k, size):
+    """(uv, box) of the take's 2D joints at take frame k on a `size` (w, h) grid: the joints in pixels and the box
+    they span, grown for the head top, heels and clothes. (None, None) without a usable take frame."""
+    from . import performer
+    if k is None or not take or not take.get("focal_px") or not take.get("body"):
+        return None, None
+    uv = performer.sam_2d(take, k, size)
+    ok = np.isfinite(uv).all(axis=1)
+    if ok.sum() < 4:
+        return None, None
+    (jx0, jy0), (jx1, jy1) = uv[ok].min(0), uv[ok].max(0)
+    H = jy1 - jy0
+    return uv, [jx0 - 0.12 * H, jy0 - 0.1 * H, jx1 + 0.12 * H, jy1 + 0.05 * H]
+
+
+def people_masks(breakdown: dict, depths, times, duration: float, take=None, fps: float = 24.0) -> dict:
+    """{person_i: {sample_i: rle}} from the read's person boxes (interpolated start -> end) and each sample's depth.
+    The performer (the person whose box holds the take's joints at that sample): wardrobe.body_mask, banded by the
+    joints and the body's own depth per row, so a slab half a metre behind her is not her and stays in the scan.
+    Everyone else, and the performer outside the take: the loose box-and-depth stand-in
+    (wardrobe.person_mask_from_depth, rel 0.35)."""
     from . import backdrop as BD
     from . import wardrobe as W
+    people = [(j, o) for j, o in enumerate(breakdown.get("objects") or []) if o.get("kind") == "person"]
     out: dict = {}
-    for j, o in enumerate(breakdown.get("objects") or []):
-        if o.get("kind") != "person":
-            continue
-        per = {}
-        for i, d in enumerate(depths):
-            bb = _box_at(o, min(1.0, max(0.0, times[i] / max(duration, 1e-6))) if times else 0.0)
+    for i, d in enumerate(depths):
+        d = np.asarray(d, np.float32)
+        h, w = d.shape
+        t = float(times[i]) if times else 0.0
+        boxes = {j: _box_at(o, min(1.0, max(0.0, t / max(duration, 1e-6))) if times else 0.0) for j, o in people}
+        uv, jbox = joint_box(take, take_frame_at(take, t, fps), (w, h)) if take and times else (None, None)
+        perf = None
+        if jbox is not None:   # the take's person: the box that holds the joints' centre, the nearest centre first
+            cx, cy = (jbox[0] + jbox[2]) / 2, (jbox[1] + jbox[3]) / 2
+            inside = [(abs((bb[0] + bb[2]) / 2000 * w - cx) + abs((bb[1] + bb[3]) / 2000 * h - cy), j)
+                      for j, bb in boxes.items() if bb and bb[0] / 1000 * w <= cx <= bb[2] / 1000 * w
+                      and bb[1] / 1000 * h <= cy <= bb[3] / 1000 * h]
+            perf = min(inside)[1] if inside else None
+        for j, bb in boxes.items():
             if not bb:
                 continue
-            x0, y0, x1, y1 = (v / 1000 for v in bb)
-            gx, gy = 0.15 * (x1 - x0), 0.05 * (y1 - y0)
-            m = W.person_mask_from_depth(d, [x0 - gx, y0 - gy, x1 + gx, y1 + gy], rel=0.35)
+            m = W.body_mask(d, jbox, uv) if j == perf else None
+            if m is None or not m.any():
+                x0, y0, x1, y1 = (v / 1000 for v in bb)
+                gx, gy = 0.15 * (x1 - x0), 0.05 * (y1 - y0)
+                m = W.person_mask_from_depth(d, [x0 - gx, y0 - gy, x1 + gx, y1 + gy], rel=0.35)
             if m is not None and m.any():
-                per[i] = BD.rle_encode(m)
-        if per:
-            out[f"p{j}"] = per
+                out.setdefault(f"p{j}", {})[i] = BD.rle_encode(m)
     return out
 
 
@@ -114,7 +155,7 @@ FLAT_DRESSING = ("plaza", "sidewalk", "grass", "road")
 
 
 def apply(scene: dict, *, depths, scales, poses, K, files, skies, breakdown, times, duration, notes: list,
-          tag: str = "scan", out: dict | None = None, use_planes: bool = True) -> dict:
+          tag: str = "scan", out: dict | None = None, use_planes: bool = True, take=None, fps: float = 24.0) -> dict:
     """The scan path on a built scene (convert.assemble_legacy's output), in place:
     1. structure planes (planes.fit) as set pieces; the old flat dressing they replace goes;
     2. the fused set scan (backdrop.build) replaces the frame-0 relief;
@@ -128,7 +169,7 @@ def apply(scene: dict, *, depths, scales, poses, K, files, skies, breakdown, tim
     xf = scene["video2stage"]["xform"]
     A, b = np.asarray(xf["A"], float), np.asarray(xf["b"], float)
     stats: dict = {"planes": 0, "dropped": [], "worded": [], "scan": False}
-    masks = people_masks(breakdown, depths, times, duration)
+    masks = people_masks(breakdown, depths, times, duration, take=take, fps=fps)
     if use_planes:
         try:
             pctx = planes_ctx(depths=depths, scales=scales, poses=poses, K=K, A=A, b=b, files=files, skies=skies,
