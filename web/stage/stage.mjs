@@ -2279,6 +2279,9 @@ export class Stage {
       // tank has let go and swims (_riderLetGo): posed here, off the mount
       if (a.mount_id && !(a.mount_at > this.frame) && !this._letGoAt(a)) {
         if (g.userData.swimOn) Swim.unswim(g);   // dragged out of the water onto a boat: seated there, not left in the swim pose
+        // (and never the swim's roll and pitch: the rider pass sets only what its seat needs, so a frame shown after
+        // the let-go left the rider rolled -1.48 rad on the seat, lying on the dry floor; was scrub-order dependent)
+        g.rotation.order = "YXZ"; g.rotation.x = 0; g.rotation.z = 0;
         continue;
       }
       const keys = this._actorKeys(a);
@@ -2448,7 +2451,7 @@ export class Stage {
       }
       g.position.copy(seatPos);
       g.rotation.order = "YXZ";
-      g.rotation.y = hg.rotation.y;
+      g.rotation.set(0, hg.rotation.y, 0, "YXZ");   // upright on the seat, whatever the frame shown before (a swim's roll)
       // On the rigged horse: sit on its moving back and ride its gait (post the trot, two-point at the gallop).
       const hgs = host.kind === "horse" && (a.pose || m.pose) === "ride" ? hg.userData.horseGait : null;
       if (hgs) {
