@@ -343,7 +343,7 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
   if (support) for (let f = 0; f < n; f++) {
     const s = support[f];
     if (!over[f] || s == null || !(s > floor + 0.05)) continue;
-    const d = keyY[f] - s;
+    const d = keyY[f] <= floor + 0.05 ? 0 : keyY[f] - s;   // keyed at the floor (placed, dragged): onto what is there
     if (d < -0.05 || d > 0.15) continue;
     if (s < level - 0.05 && !canStand(level - s, standHeight)) continue;   // a ledge too deep to stand on: they swim
     supported[f] = true; ground[f] = true; wet[f] = false;

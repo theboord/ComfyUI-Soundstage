@@ -2187,7 +2187,10 @@ export class Stage {
       const g = this.actorMeshes.get(a.id);
       if (!g) continue;
       if (this.drive?.on && this.drive.pose(a, g)) continue;   // driven live (drive.mjs)
-      if (a.mount_id && !(a.mount_at > this.frame)) continue; // placed on its mount below (a timed mount walks free until mount_at)
+      if (a.mount_id && !(a.mount_at > this.frame)) {   // placed on its mount below (a timed mount walks free until mount_at)
+        if (g.userData.swimOn) Swim.unswim(g);   // dragged out of the water onto a boat: seated there, not left in the swim pose
+        continue;
+      }
       const keys = this._actorKeys(a);
       const p = this._actorPosAt(a, this.frame);
       g.position.set(p[0], this._heightAt(a, this.frame), p[2]);
@@ -2239,7 +2242,8 @@ export class Stage {
         // Keyed people walk / jog / run with planted feet (gait.mjs); a jump or vault keeps the tuck below.
         const gp = rig === "biped" && !air && !a.mocap && g.userData.joints ? this._gaitPlan(a, g) : null;
         if (gp) {
-          const baseY = this._heightAt(a, this.frame), onKeys = this._standOnKeys(a, g, this.frame);
+          // over the water on a dock or a deck (keyed at 0 by placeInFrame or a drag, too): the body stands on it
+          const onKeys = this._standOnKeys(a, g, this.frame), baseY = Math.max(this._heightAt(a, this.frame), onKeys ?? -Infinity);
           Gait.applyHuman(g, gp, this.frame, { yaw: g.rotation.y, baseY, support: (x, z) => Math.max(this._supportAt(x, z, baseY), onKeys ?? -Infinity) });
           if (!gp.speed[Math.min(gp.n - 1, this.frame)] || gp.speed[Math.min(gp.n - 1, this.frame)] < 0.15) this._bodyMotion(g, a, false, 0, 0);
         } else {
@@ -2250,7 +2254,7 @@ export class Stage {
             if (l.part === "knee") l.pivot.rotation.x = 1.1;
             if (l.part === "shoulder") l.pivot.rotation.x = -1.2;
           }
-          g.position.y = this._heightAt(a, this.frame) +
+          g.position.y = Math.max(this._heightAt(a, this.frame), rig === "biped" ? this._standOnKeys(a, g, this.frame) ?? -Infinity : -Infinity) +
             (moving && !air && rig !== "vehicle" ? 0.014 * (a.height_m || 1.8) * Math.abs(Math.sin(cycle)) : 0);
           g.userData.gaitCycle = cycle;
           if (rig === "biped" && g.userData.joints && !air) this._bodyMotion(g, a, moving, speed, cycle);
@@ -3805,7 +3809,9 @@ export class Stage {
       if (m) { any = true; if (m === "under" && (reef || UNDER.includes(smode))) under++; }
       pos.push([p[0], p[1] || 0, p[2]]); yaw.push(this._headingAt(a, f)); mode.push(m);
       keyY.push(ky); over.push(!reef && !!m);
-      support.push(!reef && m && ky > 0.05 ? this._standOnAt(p[0], p[2], ky, f) : null);
+      // keyed up there: what is under the keyed feet; keyed at 0 (how placeInFrame and a live drag key a person: the
+      // feet follow the floor): anything walkable over the water there, a dock or a deck, from 3 m above the surface
+      support.push(!reef && m ? (ky > 0.05 ? this._standOnAt(p[0], p[2], ky, f) : this._standOnAt(p[0], p[2], pool, f, 3)) : null);
     }
     let plan = null, stand = null;
     if (any) {
