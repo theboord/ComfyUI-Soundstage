@@ -197,13 +197,15 @@ export class ProjectController {
     } finally { this.busy = false; this.render(); }
   }
 
-  async save({ as = false } = {}) {
+  /** Save the open project. `replace`: the caller already asked "Replace project?" and its user said yes (New project
+   *  under an existing name): the save starts a new project there (fresh id, new `created`; store._save). */
+  async save({ as = false, replace = false } = {}) {
     const wf = this.serialize();
     if (!wf) return;
     const t = this._cur() || (await this.tick(), this._cur());
     let name = t.name;
     const copy = this._isCopy(t, wf);
-    let replaced = false;
+    let replaced = !!replace;
     if (as || copy || !name || /^Untitled \d{4}-/.test(name)) {
       name = await askName(this.app, as ? "Save project as" : "Save project", name && !/^Untitled /.test(name) ? name : "");
       if (!name) return;
@@ -267,9 +269,17 @@ export class ProjectController {
     let tpl = null;
     try { const r = await this.api.fetchApi("/soundstage/project/template"); if (r.ok) tpl = await r.json(); } catch { /* */ }
     if (!tpl) { this.say("Could not load the Soundstage_App template."); return; }
+    // A name already in use (a project.json or a workflows/<name>.json) is replaced only after asking: the template's
+    // first save would otherwise overwrite that project without a word and, saved as a plain (not forked) save, keep
+    // its `created`, so another tab still holding the old project would adopt the id minted for the template.
+    let replace = false;
+    if (name && ((await this.store.manifest(name)) || (await this.store.open(name)))) {
+      if (!(await confirmBox(this.app, "Replace project?", `A project called "${name}" exists. Replace it with a new, empty project?`))) return;
+      replace = true;
+    }
     const n = name || untitledName();
     await this.load(stampWorkflow(tpl, n, null, null), n);   // no id: the first save writes one
-    if (name) await this.save();
+    if (name) await this.save({ replace });
   }
 
   /** Restore one autosave of the open project, or of `project` (the start screen's card menu). */

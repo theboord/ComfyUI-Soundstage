@@ -583,3 +583,50 @@ test("the pill: a project tab opened from the pill, closed, then an older Alpha.
     assert.equal((await man(ufs, "Alpha")).id, live.id, "and keeps its id");
   }
 });
+
+// ------------------------------------------------------------------ round 6, fix 1: New project under an existing name
+test("the pill: New project with an existing project's name asks 'Replace project?'; No leaves it, Yes forks it (page A never adopts the template's id)", async () => {
+  globalThis.window ||= { addEventListener() {} };
+  const { ProjectController } = await import("../../web/project/projectbar.mjs");
+  const ufs = fakeApi();
+  const tpl = WF(); tpl.nodes[0].widgets_values = ['{"graph":"template"}'];
+  const mk = (graph, path, { answer = "P", yes = true, asked = [] } = {}) => {
+    const wfs = { activeWorkflow: { path, isTemporary: false } };
+    const app = { graph: { ...graph }, extensionManager: { workflow: wfs, dialog: {
+      prompt: async ({ title }) => { asked.push(title); return answer; }, confirm: async ({ title }) => { asked.push(title); return yes; } } } };
+    app.graph.serialize = () => { const { serialize, ...g } = app.graph; return JSON.parse(JSON.stringify(g)); };   // eslint-disable-line no-unused-vars
+    app.loadGraphData = async (g, _a, _b, n) => {
+      wfs.activeWorkflow = { path: `workflows/${n}.json`, isTemporary: true };
+      const ser = app.graph.serialize; app.graph = { ...JSON.parse(JSON.stringify(g)), serialize: ser };
+    };
+    const api = { ...ufs, fetchApi: async (u) => (u === "/soundstage/project/template" ? { ok: true, json: async () => JSON.parse(JSON.stringify(tpl)) } : { ok: false }) };
+    const ctl = new ProjectController({ app, api });
+    clearInterval(ctl._timer); ctl.render = () => {}; ctl.say = () => {};
+    return ctl;
+  };
+  const p0 = await new ProjectStore({ api: ufs }).save("P", WF());
+  const A = mk(JSON.parse(ufs.files.get("workflows/P.json").body), "workflows/P.json");
+  await A.tick(); await A.save();
+  const x = (await man(ufs, "P")).id, created0 = (await man(ufs, "P")).created, body0 = ufs.files.get("workflows/P.json").body;
+  assert.equal(x, p0.id);
+
+  // page B: New project "P", Replace declined -> nothing written
+  const askedNo = [];
+  const Bno = mk({ nodes: [], links: [], extra: {} }, "workflows/Unsaved.json", { yes: false, asked: askedNo });
+  await Bno.newProject();
+  assert.deepEqual(askedNo, ["New project", "Replace project?"]);
+  assert.equal(ufs.files.get("workflows/P.json").body, body0, "declined: P is untouched");
+  assert.equal((await man(ufs, "P")).id, x);
+
+  // page B: New project "P", Replace confirmed -> the template replaces P with a fresh id and a new `created`
+  const askedYes = [];
+  const B = mk({ nodes: [], links: [], extra: {} }, "workflows/Unsaved.json", { asked: askedYes });
+  await B.newProject();
+  assert.deepEqual(askedYes, ["New project", "Replace project?"]);
+  const m = await man(ufs, "P");
+  assert.notEqual(m.id, x);
+  assert.notEqual(m.created, created0, "a replace is a fork: created moves");
+  assert.equal(JSON.parse(ufs.files.get("workflows/P.json").body).nodes[0].widgets_values[0], '{"graph":"template"}');
+  await A.save();                                                     // page A still holds the old P graph carrying x
+  assert.notEqual((await man(ufs, "P")).id, m.id, "A's old P graph never takes the id made for the template");
+});
