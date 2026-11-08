@@ -471,10 +471,12 @@ export function avatarsAt(stage) {
     const scale = C.statureScale(C.clayHeight(a) * (a.scale || 1), skin.kit.stature);
     // Speed and the shared gait phase for the whole shot, cached until the path, the length or the size changes.
     const keys = stage._actorKeys(a);
-    const sig = `${last}|${fps}|${scale}|${C.keysHash(keys)}`;
+    const sig = `${last}|${fps}|${scale}|${C.keysHash(keys)}|${a.rotation_deg || 0}`;
     if (skin.gait?.sig !== sig) {
       const path = keys.length > 1 ? groundPath(stage, a, last) : new Array(last + 1).fill([p[0], p[2]]);
-      skin.gait = { sig, ...C.gaitTable(path, fps, kitStrides(skin.kit, scale)) };
+      // the headings too: walking backwards (heading keys facing away from the travel) plays the walk backwards
+      const headings = keys.length > 1 ? Array.from({ length: last + 1 }, (_, i) => stage._headingAt(a, i)) : null;
+      skin.gait = { sig, ...C.gaitTable(path, fps, kitStrides(skin.kit, scale), { headings }) };
     }
     const plan = footPlanFor(stage, a, g, skin, { last, fps, scale });
     poseRaw(stage, a, g, skin, f, { fps, scale, last });

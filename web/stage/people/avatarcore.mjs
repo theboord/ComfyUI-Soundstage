@@ -162,8 +162,13 @@ export function blendStride(w, strides) {
  * at 0.25 in both): it advances by the distance of each frame divided by the stride of the clips as they are mixed
  * at that moment, so blended legs stay together in step and the feet don't skate at any speed.
  * strides = {walk, run} in metres. Pure: the same positions always give the same table.
+ * In the idle <-> walk band the stride is also divided by the walk + run weight (at least 0.2): blended with the idle,
+ * the walk's foot travels only that share of its stride under the body, and played at the plain rate its stance foot
+ * crept forward (5 cm/s at 0.5 m/s), so a planted foot fell out of the leg's reach and the hips dipped 7-12 cm.
+ * headings[f] (radians, optional): where the body faces; a frame moving against it (backwards, more than ~107
+ * degrees off) runs the phase backwards, so the clip walks backwards and the feet plant instead of skating.
  */
-export function gaitTable(positions, fps, strides, { window = 6 } = {}) {
+export function gaitTable(positions, fps, strides, { window = 6, headings = null } = {}) {
   const n = positions.length, speed = new Float64Array(n), phase = new Float64Array(n);
   for (let f = 0; f < n; f++) {
     const f0 = Math.max(0, f - window), f1 = Math.min(n - 1, f + window);
@@ -174,7 +179,12 @@ export function gaitTable(positions, fps, strides, { window = 6 } = {}) {
     const a = positions[f - 1], b = positions[f];
     const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
     const w = clipWeights(0.5 * (speed[f - 1] + speed[f]));
-    phase[f] = phase[f - 1] + d / Math.max(1e-6, blendStride(w, strides));
+    let dir = 1;
+    if (headings && d > 1e-9) {
+      const h = headings[f];
+      if (Number.isFinite(h) && ((b[0] - a[0]) * Math.sin(h) + (b[1] - a[1]) * Math.cos(h)) / d < -0.3) dir = -1;
+    }
+    phase[f] = phase[f - 1] + dir * d / Math.max(1e-6, blendStride(w, strides) * Math.max(0.2, (w.walk || 0) + (w.run || 0)));
   }
   return { speed, phase };
 }
