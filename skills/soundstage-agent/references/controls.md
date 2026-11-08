@@ -211,9 +211,9 @@ Each line: **control**: what it does.
 - **Final**: Clean motion and detail: 12 + 6 steps, 1080p class, high-bitrate H.264. The default.
 - **Advanced**: Your own numbers: starts from Final (12 + 6 steps, 1080p class) and opens every setting: steps, shift, scheduler, sampler, CFG, seed, resolution, codec…
 - **Hollywood (retired)**: The retired Hollywood preset (1408p, 12 + 6 steps, CRF 12): a shot saved on it opens as Advanced with these values.
-- **Loose**: More invention: a softened clay guide and a lighter Layout IC-LoRA. Natural motion, but positions and framing can drift (the old default).
-- **Balanced**: Close to the clay with a little freedom for gait and limbs.
-- **Exact**: As close to the clay as LTX goes: a sharp clay guide, the full Layout IC-LoRA, and your frame as a lighter look reference so it can't pull the shot off its marks.
+- **Loose**: More invention: a softened stage guide and a lighter Layout IC-LoRA. Natural motion, but positions and framing can drift (the old default).
+- **Balanced**: Close to the blocking with a little freedom for gait and limbs.
+- **Exact**: As close to the blocking as LTX goes: a sharp stage guide, the full Layout IC-LoRA, and your frame as a lighter look reference so it can't pull the shot off its marks.
 - **A new random seed**: A new random seed: a different take with the same settings
 - **Reset to preset**: Back to the preset this shot started from; the seed, Adherence and LoRAs stay
 - **Output resolution**
@@ -232,7 +232,7 @@ Each line: **control**: what it does.
 - **CFG**
 - **Seed**
 - **Layout IC-LoRA**
-- **Clay guide blur (px)**
+- **Stage guide blur (px)**
 - **Frame reference**
 - **VAE decode tiles**
 - **Codec**
@@ -243,7 +243,7 @@ Each line: **control**: what it does.
 - **Upload a clip…**: Use a clip from your computer
 - **Open frame 1 of this clip in Paint Studio**: Open frame 1 of this clip in Paint Studio: swap the person, change wardrobe or background, relight. Then “Save to reference”
 - **Carry your frame-1 edit through the whole clip with LTX Ripple**: Carry your frame-1 edit through the whole clip with LTX Ripple (keeps the clip's motion, camera and sound)
-- **No clay people on this shot to pose**: No clay people on this shot to pose: add people, or read the pose from a source clip.
+- **No people on this shot's stage to pose**: No people on this shot's stage to pose: add people, or read the pose from a source clip.
 - **Before / after**
 
 ## ⑥ Review → Dailies
@@ -335,26 +335,26 @@ Each line: **control**: what it does.
 - **Close**
 
 ## App steps (④ Frame / ⑤ Motion / ⑥ Review)
-- **Comparing this frame with your clay**: Comparing this frame with your clay (SAM 3.1)
+- **Comparing this frame with your blocking**: Comparing this frame with your blocking (SAM 3.1)
 - **None**
 - **Remove this LoRA**
 - **Soundstage steps**
 - **Stop**: Stop: cancel the queued renders and interrupt the one running now
-- **Follow the clay**
+- **Follow the blocking**
 - **Variations**: Variations: how many frames one Generate makes
 - **Steps for the image model**: Steps for the image model: more = finer detail, slower. CFG stays 1 (these models are distilled)
 - **Clear all**: Clear all: take every frame off this shot's list (the files stay on disk). Undo for 5 s.
 - **Delete the chosen frame?**
 - **Paint, mask or regenerate parts of your chosen frame; come back with “Use my ed…**: Paint, mask or regenerate parts of your chosen frame; come back with “Use my edited frame”
 - **Open your chosen frame in Paint Studio**: Open your chosen frame in Paint Studio: Generative Fill, Remove, Extend the canvas, layers and masks
-- **Each new frame is compared with your clay**: Each new frame is compared with your clay (SAM 3.1 against the stage's ID pass): object count, silhouettes, extra objects. A flagged frame is painted again with a new seed, at mos…
+- **Each new frame is compared with your blocking**: Each new frame is compared with your blocking (SAM 3.1 against the stage's ID pass): object count, silhouettes, extra objects. A flagged frame is painted again with a new seed, at…
 - **Style or character add-on**: LoRA: a small add-on model trained on your own pictures (a character, a product or a house style). Any LoRA in models/loras, several at once with ＋ Add LoRA, applied in order: the…
 - **Sampler**: auto = the model's tuned sampler (Klein euler, Krea 2 euler_ancestral)
 - **Scheduler**: auto = the model's tuned scheduler (Klein simple, Krea 2 beta)
 - **Shift**: Sigma shift (ModelSamplingAuraFlow) on the flow-matching image model. 0 = the model's default, untouched. Not on the Krea 2 + depth path.
 - **Thumbnail size**
 - **Dismiss**
-- **Adherence to the clay blocking**
+- **Adherence to the blocking**
 - **Remove**
 - **Advanced**: Advanced (LTX)
 
@@ -560,7 +560,7 @@ Each line: **control**: what it does.
 - **Duplicate**: Duplicate (Cmd/Ctrl+D)
 - **Gizmo**: Gizmo: G move · R rotate · T scale
 - **Re-analyse only this object in the source clip**: Re-analyse only this object in the source clip (SAM 3.1) and rebuild it alone; it keeps its place. Undo puts the old one back
-- **Add your own 3D**: Add your own 3D: GLB/glTF, FBX (Mixamo animations play on the timeline), OBJ, PLY, STL, or a Gaussian splat (.ply .spz .splat .ksplat .sog). Splats show in Color view; a clay stan…
+- **Add your own 3D**: Add your own 3D: GLB/glTF, FBX (Mixamo animations play on the timeline), OBJ, PLY, STL, or a Gaussian splat (.ply .spz .splat .ksplat .sog). Splats show in Color view; a hidden st…
 - **Download the whole set as a**: Download the whole set as a .glb (Blender, Unreal, Unity, C4D…)
 - **Fix this object**: Re-analyse only this object in the clip and rebuild it alone
 - **Add a missed object**: Click it on the source frame
