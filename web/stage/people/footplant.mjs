@@ -309,6 +309,9 @@ export const rampWeight = (d, ramp) => (d <= 0 ? 1 : d > ramp ? 0 : smooth01(1 -
  */
 export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder = null, poseRaw, ground, baseY = () => 0, T = FOOT }) {
   if (!rig || !mesh || !n) return null;
+  // the shortest stance is a time (T.minStance frames at 24 fps): at 12 fps a 2-frame plant is as long, and dropping it
+  // left a run up a 20 degree hill with no foot down for 6 frames (half a second)
+  if (fps !== 24) T = { ...T, minStance: Math.max(T.minStanceFast ?? 1, Math.round(T.minStance * fps / 24)) };
   const k = Math.max(0.4, Math.min(1.6, heightM / 1.8));
   const raw = {}, skip = new Array(n).fill(false);
   for (const lr of SIDES) {
@@ -355,6 +358,18 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
   for (let f = 0; f < n; f++) {
     const a = Math.max(0, f - 3), b = Math.min(n - 1, f + 3);
     body[f] = b > a ? Math.hypot(rootP[3 * b] - rootP[3 * a], rootP[3 * b + 2] - rootP[3 * a + 2]) * fps / (b - a) : 0;
+  }
+  // the slope of the ground at the body's footing (per frame, x and z): the smaller of the one-sided differences 10 cm
+  // either way (0 when they disagree in sign), at most 35 degrees, so a ledge or a platform beside the body is no slope
+  // but a hill is. A foot at rest is kept clear of its own footing laid along this slope (groundFeet), not of a level
+  // one: at the end of a shot up a 10 degree hill the front foot stood 4.7 cm into it
+  const slope = new Float64Array(2 * n), sd = 0.1 * k;
+  for (let f = 0; f < n; f++) {
+    if (skip[f]) continue;
+    const x = rootP[3 * f], z = rootP[3 * f + 2], g0 = ground(x, z, f);
+    const mm = (a, b) => (a * b <= 0 ? 0 : Math.sign(a) * Math.min(Math.abs(a), Math.abs(b), 0.7));
+    slope[2 * f] = mm((ground(x + sd, z, f) - g0) / sd, (g0 - ground(x - sd, z, f)) / sd);
+    slope[2 * f + 1] = mm((ground(x, z + sd, f) - g0) / sd, (g0 - ground(x, z - sd, f)) / sd);
   }
   // (at a run's speed the contact may move up to T.vFast of the body's speed: a sprint's foot rolls over its contact
   // at 2-4 m/s while the swing moves at twice the body's speed; it is down a frame or two, T.minStanceFast)
@@ -411,7 +426,7 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
   const stepFrames = (f) => Math.max(T.stepMin, Math.min(base, Math.round(T.stepTwist / Math.max(1e-6, yawRate[f]))));
   const { segs, steps } = scheduleSteps(stance, drift, stepFrames);
   const ramp = Math.max(1, Math.round(T.ramp * fps));
-  const plan = { n, k, fps, state: {}, w: {}, pos: {}, quat: {}, gy: {}, dY: {}, near: {}, liftK: {}, segs, steps, skip, ground, base: raw.l.base, contact };
+  const plan = { n, k, fps, state: {}, w: {}, pos: {}, quat: {}, gy: {}, dY: {}, near: {}, liftK: {}, segs, steps, skip, ground, base: raw.l.base, contact, slope, rootXZ: rootP };
   const out = {};
   for (const lr of SIDES) {
     const R = raw[lr], side = rig[lr], K = side.sole.length;
@@ -899,11 +914,15 @@ export function groundFeet({ plan, rig, mesh, bones, holder, frame, saved = null
     // Only ground the leg could step onto counts: none over the body's own footing for a foot at rest, up to T.far for
     // one swinging (a kerb, a stair's nosing) or up to the higher of the plants it swings between; a foot standing
     // beside a platform or a ledge is not pushed up onto its top. And the push never folds the leg closer to the hip than T.minLeg of its length.
+    // (the footing laid along the slope of the ground at the body: on a hill the ground under a foot at rest is above
+    // or below the body's own footing and that is no top beside it)
     const lk = plan.liftK?.[lr]?.[f] ?? 1, base = plan.base?.[f];
     const tg = plan.topG?.[lr]?.[f];
-    const top = Number.isFinite(base) ? Math.max(base + T.far * plan.k * smooth01(lk / 0.25), Number.isFinite(tg) ? tg + T.edge * plan.k : -Infinity) : Infinity;
+    const gx = plan.slope?.[2 * f] || 0, gz = plan.slope?.[2 * f + 1] || 0, rx = plan.rootXZ?.[3 * f] ?? 0, rz = plan.rootXZ?.[3 * f + 2] ?? 0;
+    const up0 = T.far * plan.k * smooth01(lk / 0.25), tgTop = Number.isFinite(tg) ? tg + T.edge * plan.k : -Infinity;
     let under = 0;
     for (let i = 0; i < p.length; i += 3) {
+      const top = Number.isFinite(base) ? Math.max(base + gx * (p[i] - rx) + gz * (p[i + 2] - rz) + up0, tgTop) : Infinity;
       const gy = Math.min(top, ground ? ground(p[i], p[i + 2], f) : plan.gy[lr][f]);
       under = Math.max(under, gy + margin - p[i + 1]);
     }
