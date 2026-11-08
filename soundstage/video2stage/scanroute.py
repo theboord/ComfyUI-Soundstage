@@ -175,16 +175,56 @@ def people_masks(breakdown: dict, depths, times, duration: float, take=None, fps
     return out
 
 
-def without_people(depth, masks: dict | None, i: int = 0) -> np.ndarray:
+def people_boxes(breakdown: dict, size, times, duration: float, take=None, fps: float = 24.0, i: int = 0) -> dict:
+    """{person_i: [x0, y0, x1, y1]} in pixels of a `size` (w, h) grid at sample i: each person box (interpolated
+    start -> end) grown by the loose mask's margin, and for the performer while the take tracks her also her joint
+    box. The keys match people_masks. without_people uses them so pixels a mask missed still count as the person."""
+    w, h = size
+    t = float(times[i]) if times else 0.0
+    people = [(j, o) for j, o in enumerate((breakdown or {}).get("objects") or []) if o.get("kind") == "person"]
+    boxes = {j: _box_at(o, min(1.0, max(0.0, t / max(duration, 1e-6))) if times else 0.0) for j, o in people}
+    uv, jbox = joint_box(take, take_frame_at(take, t, fps), (w, h)) if take and times else (None, None)
+    out = {}
+    for j, bb in boxes.items():
+        if not bb:
+            continue
+        x0, y0, x1, y1 = bb[0] / 1000 * w, bb[1] / 1000 * h, bb[2] / 1000 * w, bb[3] / 1000 * h
+        gx, gy = 0.15 * (x1 - x0), 0.05 * (y1 - y0)
+        r = [x0 - gx, y0 - gy, x1 + gx, y1 + gy]
+        if jbox is not None and _over_performer(bb, jbox, w, h):
+            r = [min(r[0], jbox[0]), min(r[1], jbox[1]), max(r[2], jbox[2]), max(r[3], jbox[3])]
+        out[f"p{j}"] = r
+    return out
+
+
+def without_people(depth, masks: dict | None, i: int = 0, boxes: dict | None = None, rel: float = 0.1) -> np.ndarray:
     """A copy of sample i's depth with every person's pixels (people_masks) set to NaN: the block triage then judges a
     block against the set behind her, not against the performer standing in front of it (a block where she stands
-    would otherwise read as 'the scan already shows it' and be dropped)."""
+    would otherwise read as 'the scan already shows it' and be dropped).
+    With `boxes` (people_boxes) a mask that missed part of the person is padded: inside that person's box, every pixel
+    within `rel` of the median depth under the mask goes too, so her leftover unmasked pixels at her own depth are
+    not read as the scan showing a block where she stands. Known limit: a set piece within `rel` of her depth inside
+    her box is not seen by the triage either (the block there is kept and worded, not dropped)."""
     from . import backdrop as BD
-    d = np.array(depth, np.float32, copy=True)
-    for per in (masks or {}).values():
+    src = np.asarray(depth, np.float32)
+    d = np.array(src, copy=True)
+    h, w = d.shape
+    for key, per in (masks or {}).items():
         m = BD.rle_decode(per.get(i), d.shape) if isinstance(per, dict) and i in per else None
-        if m is not None and m.shape == d.shape:
-            d[m] = np.nan
+        if m is None or m.shape != d.shape:
+            continue
+        d[m] = np.nan
+        r = (boxes or {}).get(key)
+        z = src[m]
+        z = z[np.isfinite(z) & (z > 0)]
+        if r is None or not z.size:
+            continue
+        zm = float(np.median(z))
+        x0, y0 = max(0, int(np.floor(r[0]))), max(0, int(np.floor(r[1])))
+        x1, y1 = min(w, int(np.ceil(r[2]))), min(h, int(np.ceil(r[3])))
+        if x1 > x0 and y1 > y0:
+            sub = d[y0:y1, x0:x1]
+            sub[np.abs(src[y0:y1, x0:x1] - zm) < rel * zm] = np.nan
     return d
 
 
@@ -261,8 +301,9 @@ def apply(scene: dict, *, depths, scales, poses, K, files, skies, breakdown, tim
     except Exception as exc:  # noqa: BLE001
         notes.append(f"set: the set scan failed ({exc}); kept the frame-0 relief")
     mpu = float(np.linalg.norm(A[0]))
-    depth0 = without_people(np.asarray(depths[0], np.float32) * float(scales[0]) * mpu, masks, 0)
-    h, w = depth0.shape
+    h, w = np.asarray(depths[0]).shape
+    depth0 = without_people(np.asarray(depths[0], np.float32) * float(scales[0]) * mpu, masks, 0,
+                            boxes=people_boxes(breakdown, (w, h), times, duration, take=take, fps=fps))
     tri = SW.triage_blocks(scene["actors"], poses[0], A, b, K, (w, h), depth0)
     stats.update(dropped=tri["dropped"], worded=tri["worded"])
     if tri["dropped"]:

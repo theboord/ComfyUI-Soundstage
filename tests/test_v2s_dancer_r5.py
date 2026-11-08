@@ -44,3 +44,46 @@ def test_a_second_dancer_beside_her_does_not_get_her_body_mask(monkeypatch, off,
     cut = scanroute.without_people(d, masks, 0)
     assert np.isnan(cut[195, 200])                                   # her torso is out of the scan
     assert np.isfinite(cut[his]).sum() <= 0.02 * his.sum()           # and so is he
+
+
+# ------------------------------------------------------------------------------------------------ 2 partial her mask
+from soundstage.video2stage import backdrop as BD  # noqa: E402
+from test_v2s_dancer import LEVEL_A, LEVEL_B, LEVEL_K, POSE0, _block  # noqa: E402
+from test_v2s_dancer_r3 import _stage_with_her  # noqa: E402
+
+
+def _partial_mask(monkeypatch, d, frac):
+    m = np.zeros(d.shape, bool)
+    m[200:420, 250:250 + int(frac * 140)] = True      # the mask takes only part of her columns (250-390)
+    monkeypatch.setattr(scanroute, "people_masks", lambda *a, **k: {"p0": {0: BD.rle_encode(m)}})
+
+
+def _scene():
+    return {"video2stage": {"xform": {"A": LEVEL_A.tolist(), "b": LEVEL_B.tolist()}},
+            "actors": [_block("Crate", [0.0, 0, 5.0], 1.0), _block("Wall", [8.0, 0, 30.0], 4.0)]}
+
+
+@pytest.mark.parametrize("frac", [0.6, 0.7])
+def test_her_leftover_pixels_do_not_drop_the_crate_where_she_stands_on_the_scan_path(monkeypatch, frac):
+    d, bd = _stage_with_her()
+    _partial_mask(monkeypatch, d, frac)
+    monkeypatch.setattr(BD, "ctx_from_legacy", lambda **kw: {})
+    monkeypatch.setattr(BD, "build", lambda scene, ctx: {"notes": [], "actors": [{"id": "v2s_scan", "scan": True}]})
+    notes = []
+    st = scanroute.apply(_scene(), depths=[d], scales=[1.0], poses=[POSE0], K=LEVEL_K, files=["f0.png"], skies=None,
+                         breakdown=bd, times=[0.0], duration=1.0, notes=notes, use_planes=False)
+    assert st["worded"] == ["Crate"], notes
+    assert st["dropped"] == ["Wall"]                 # what the scan really shows behind her still goes
+
+
+@pytest.mark.parametrize("frac", [0.6, 0.7])
+def test_her_leftover_pixels_do_not_drop_the_crate_where_she_stands_on_the_old_block_route(monkeypatch, frac):
+    d, bd = _stage_with_her()
+    _partial_mask(monkeypatch, d, frac)
+    scene = _scene()
+    notes = []
+    pipeline.finish_scene(scene, take=None, info={}, breakdown=bd, depths=[d], scales=[1.0], poses=[POSE0],
+                          K=LEVEL_K, files=["f0.png"], skies=None, times=[0.0], clip={"duration": 1.0, "fps": 24.0},
+                          scan_on=False, has_relief=True, wardrobe_ref=False, tag="t", sub="s", notes=notes)
+    sp = scene["video2stage"]["set_path"]
+    assert sp["worded"] == ["Crate"] and sp["dropped"] == ["Wall"], notes
