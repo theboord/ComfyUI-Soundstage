@@ -305,6 +305,22 @@ export function planSwim({ pos, yaw, mode, fps = 24, height = 1.8, style = null,
   return out;
 }
 
+/** The ease out of the water over the tank's wall (stage _swimExits), frame k of n: the hips' way across, fast at
+ *  first and slowing into the walk (1 - (1 - t)^2), 1 from frame n on. */
+export function exitEaseH(k, n) {
+  if (k >= n) return 1;
+  const t = (k + 1) / (n + 1);
+  return 1 - (1 - t) * (1 - t);
+}
+
+/** ... and their way down to the walk's height: none until frame fd (the hips out of the water), then a smoothstep
+ *  over nv frames. */
+export function exitEaseV(k, fd, nv) {
+  if (k < fd) return 0;
+  const t = Math.min(1, (k - fd + 1) / (nv + 1));
+  return t * t * (3 - 2 * t);
+}
+
 /**
  * Ease the hips, the body's tilt and the pose across a change between swimming under at the keyed depth and swimming at
  * the surface (keys rising to the surface, or going back under): the hips start where they were on the side they leave

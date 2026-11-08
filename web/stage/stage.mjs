@@ -4118,9 +4118,25 @@ export class Stage {
     // (eased about the hips: the from hips to the walk's, the heading the walk's own, the swim's tilt off it, so keys
     // that turn back during the ease swing the legs round, never throw the body: a slerp of the whole orientation flipped
     // over at a key reversal, 1.3 m in a frame)
-    const push = (f, hips, yaw, tilt, joints, shoes) => {
+    const push = (f, hips, yaw, tilt, joints, shoes, wall = false) => {
       const t = target(f), d = Math.hypot(hips[0] - t[0], hips[1] - t[1] - hipY, hips[2] - t[2]);
-      if (d >= 0.05) out.push({ f, n: Math.max(6, Math.min(72, Math.ceil(1.5 * d / 0.06))), hips, yaw, tilt, joints, shoes });
+      if (d < 0.05) return;
+      let n = Math.max(6, Math.min(72, Math.ceil(1.5 * d / 0.06)));
+      const e = { f, n, N: n, hips, yaw, tilt, joints, shoes };
+      if (wall) {
+        // Out over the tank's wall: the hips leave the wall at once and slow as they reach the walk (an ease out, not
+        // the slow start of a smoothstep that kept the walk cycle in the water for 20 frames), and come down to the
+        // walk's height over NV frames from the frame they leave the water (was: eased down with the rest over up to
+        // 72 frames: 0.79 m over the dry floor at f104, tipped 37 degrees, the head 2.11 m against 1.58 standing)
+        const NV = 8;
+        let fd = n;
+        for (let k = 0; k < n; k++) {
+          const wh = Swim.exitEaseH(k, n), q = target(f + k);
+          if (!this._overWater(hips[0] + (q[0] - hips[0]) * wh, hips[2] + (q[2] - hips[2]) * wh)) { fd = k; break; }
+        }
+        Object.assign(e, { wall: true, fd, NV, N: Math.max(n, fd + NV + 1) });
+      }
+      out.push(e);
     };
     const euler = (r) => new THREE.Quaternion().setFromEuler(new THREE.Euler(r[0], r[1], r[2], "XYZ")).toArray();
     // let go where they can stand: up off the seat (the swim never runs)
@@ -4150,7 +4166,7 @@ export class Stage {
       joints.spine = euler(P.spine); joints.neck = euler(P.neck); joints.head = euler(P.head);
       const yaw = plan.yaw[f - 1], tilt = new THREE.Quaternion().setFromAxisAngle(Yax, -yaw).multiply(B.q);
       v.set(0, hipY, 0).applyQuaternion(B.q);
-      push(f, fake.position.clone().add(v).toArray(), yaw, tilt.toArray(), joints, shoes);
+      push(f, fake.position.clone().add(v).toArray(), yaw, tilt.toArray(), joints, shoes, true);
     }
     ce._exits = { g, out: out.length ? out : null };
     return ce._exits.out;
@@ -4163,13 +4179,15 @@ export class Stage {
     const J = g.userData.joints, qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), _Yax = new THREE.Vector3(0, 1, 0);
     const h = (a.height_m || 1.8) * (a.scale || 1), hipY = (J.l_hip?.position.y || 0.53 * h / (g.scale?.y || 1)) * (g.scale?.y || 1);
     for (const e of ex) {
-      if (this.frame < e.f || this.frame >= e.f + e.n) continue;
-      const t = (this.frame - e.f + 1) / (e.n + 1), w = t * t * (3 - 2 * t);
+      if (this.frame < e.f || this.frame >= e.f + (e.N ?? e.n)) continue;
+      const k = this.frame - e.f, t = Math.min(1, (k + 1) / (e.n + 1)), w = k >= e.n ? 1 : t * t * (3 - 2 * t);
+      // (out over the wall: the hips across at once, then down to the walk's height once out of the water)
+      const wh = e.wall ? Swim.exitEaseH(k, e.n) : w, wy = e.wall ? Swim.exitEaseV(k, e.fd, e.NV) : w;
       const yaw = this._headingAt(a, this.frame), qy = new THREE.Quaternion().setFromAxisAngle(_Yax, yaw);
       const hv = new THREE.Vector3(0, hipY, 0).applyQuaternion(g.quaternion), hp = g.position.clone().add(hv);
       const tiltNow = qy.clone().invert().multiply(g.quaternion);
       g.quaternion.copy(qy).multiply(tiltNow.slerpQuaternions(qa.fromArray(e.tilt), tiltNow.clone(), w));
-      hp.set(e.hips[0] + (hp.x - e.hips[0]) * w, e.hips[1] + (hp.y - e.hips[1]) * w, e.hips[2] + (hp.z - e.hips[2]) * w);
+      hp.set(e.hips[0] + (hp.x - e.hips[0]) * wh, e.hips[1] + (hp.y - e.hips[1]) * wy, e.hips[2] + (hp.z - e.hips[2]) * wh);
       g.position.copy(hp).sub(hv.set(0, hipY, 0).applyQuaternion(g.quaternion));
       for (const [jn, q] of Object.entries(e.joints)) if (J[jn]) J[jn].quaternion.slerpQuaternions(qa.fromArray(q), qb.copy(J[jn].quaternion), w);
       if (e.shoes) for (const [lr, ft] of Object.entries(Mocap.feetOf(g) || {})) {
@@ -4180,6 +4198,8 @@ export class Stage {
         ft.shoe.position.lerpVectors(sp, ft.shoe.position.clone(), w);
       }
       g.updateMatrixWorld(true);   // (no floor lift: the seat's own pose had its feet at the car's floor, a 0.27 m pop)
+      // out over the wall onto the dry floor: the half-eased legs stand on it, not 9 cm through it
+      if (e.wall && k >= e.fd) Swim.keepAboveFloor(g, 0);
     }
   }
 
