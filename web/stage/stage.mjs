@@ -3826,7 +3826,8 @@ export class Stage {
     if (c && c.sig === sig && c.g === g) return c.plan;
     const UNDER = ["flutter", "frog", "stroke", "hover", "dive"];
     const hipY = (g?.userData?.joints?.l_hip?.position.y || 0.53 * h / (g?.scale?.y || 1)) * (g?.scale?.y || 1);
-    const pos = [], yaw = [], mode = [], keyY = [], over = [], support = [], below = [];
+    const pos = [], yaw = [], mode = [], keyY = [], over = [], support = [], below = [], at0On = [];
+    const standH = (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1);
     let any = false, under = 0;
     for (let f = 0; f <= last; f++) {
       const p = this._actorPosAt(a, f), ky = p[1] || 0;   // the keyed height (a diver's hover below replaces p[1])
@@ -3852,8 +3853,16 @@ export class Stage {
           // a boat's deck on a swell heaves up past the keyed feet (up to 0.9 m): still aboard, carried with it
           const dk = this._deckAt(p[0], p[2], ky + 0.9, f);
           if (dk != null && (sup == null || dk >= sup - 1e-6)) { sup = dk; bel = 0.9; }
-        } else sup = this._standOnAt(p[0], p[2], pool, f, 3);
+        } else if (!Buoy.canStand(pool, standH) && (f === 0 || at0On[f - 1])) {
+          // keyed at 0 where the water is too deep to stand in (an old scene, a hand-written key): placed on what is
+          // walkable there, a deck or a dock, from 3 m above the surface - only from the first frame on, and only while
+          // the path stays on it: swimming at 0 into a boat's footprint is not a climb aboard (a timed mount hops on)
+          sup = this._standOnAt(p[0], p[2], pool, f, 3);
+        }
+        // (keyed at 0 in water they can stand in, a dock overhead is not stood on: they wade under it. placeInFrame and a
+        // live drag key the height of a dock or a deck they are put on, so that is a keyed height, above)
       }
+      at0On.push(!reef && !!m && ky <= 0.05 && sup != null);
       support.push(sup); below.push(bel);
     }
     let plan = null, stand = null;
@@ -3864,7 +3873,7 @@ export class Stage {
       // In a pool: standing on a dock or a deck, the drop in (timed by the keys), the kick up, and the modes that
       // aren't a stroke (back float, can't swim, sink slowly). The underwater modes and dive get the drop in only.
       if (!reef) {
-        track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(a.id), standHeight: (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1), support, below });
+        track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(a.id), standHeight: standH, support, below });
         // ground: water they can stand in (auto / can't swim), a dock or a deck under them, or a keyed hold before a
         // jump: off the swim plan, on their keys (the gait walks them)
         for (let f = 0; f <= last; f++) if (track.modes[f]) mode[f] = track.modes[f]; else if (track.ground[f]) mode[f] = null;

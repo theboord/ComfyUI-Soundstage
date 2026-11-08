@@ -713,3 +713,35 @@ test("placeInFrame and a live drag hit the dock's top: a person aimed at the dec
   const k2 = st.state.actors[0].keys[0].position;
   assert.ok(k2[1] === 0 && k2[0] > -2, `off the dock: keyed at 0 in the water (${k2})`);
 });
+
+// Fifth pass: 2895a92 read a person keyed at 0 over the water as standing on whatever was above them (from 3 m over
+// the surface). Walking at 0 along the lake's dock and off its end, the feet went 1.81, 1.81, 0 on f58-60 (8fc04ef: worst
+// step 0.16 m); someone placed under the dock at 0, wading, was put on top of it. Keyed at 0 where they can stand is
+// the lake bed (placeInFrame and a drag key the dock's own height when they put someone on it).
+const stepsOf = (st, id, n) => { const lo = []; for (let f = 0; f < n; f++) { st.setFrame(f); lo.push(lowest(st.actorMeshes.get(id))); } let w = 0, at = 0; for (let f = 1; f < n; f++) { const d = Math.abs(lo[f] - lo[f - 1]); if (d > w) { w = d; at = f; } } return { lo, worst: w, at }; };
+test("walking on and off the lake's dock: keyed at 0 they wade under it, keyed on it they step off and drop in, no 1.8 m jump (was: feet 1.81 -> 0 in one frame)", () => {
+  const DOCK = 1.81, at0 = (id, keys) => ({ id, name: id, kind: "man", height_m: 1.8, position: keys[0][1], keys: keys.map(([frame, position]) => ({ frame, position })), rotation_deg: 0 });
+  const lake = { set: "lake", keepSet: true };
+  for (const [what, keys] of [["along the dock and off its end", [[0, [-6, 0, -20]], [96, [-6, 0, -3]]]], ["sideways across it", [[0, [-10, 0, -16]], [96, [-2, 0, -16]]]]]) {
+    const st = tank([at0("p", keys)], lake), s = stepsOf(st, "p", 121);
+    assert.ok(s.worst < 0.25, `${what} at 0: no jump (worst feet step ${s.worst.toFixed(2)} m at f${s.at})`);
+    assert.ok(Math.max(...s.lo) < 0.5, `${what} at 0: wading on the lake bed, never lifted onto the dock (highest ${Math.max(...s.lo).toFixed(2)})`);
+    for (const f of [0, 60, 120]) { st.setFrame(f); assert.ok(st.actorMeshes.get("p").userData.gaitOn, `${what} f${f}: walking (wading)`); }
+    const ref = s.lo.slice(), back = stepsOf(st, "p", 121).lo;
+    for (const f of [90, 3, 58, 60, 59, 17]) { st.setFrame(f); assert.ok(Math.abs(lowest(st.actorMeshes.get("p")) - ref[f]) < 1e-9, `${what} f${f}: the same scrubbed`); }
+    assert.deepEqual(back, ref);
+  }
+  // placed under the dock at 0 (wading): stays in the water under it
+  const st = tank([at0("u", [[0, [-6, 0, -14]]])], lake);
+  for (const f of [0, 60]) { st.setFrame(f); const y = lowest(st.actorMeshes.get("u")); assert.ok(y < 0.3, `under the dock f${f}: on the lake bed (lowest ${y.toFixed(2)}), not moved on top of it`); }
+  // keyed on the dock (as placeInFrame now keys it) walking off the end: feet first off the end, a continuous drop
+  const st2 = tank([keyed("o", "man", [[0, [-6, DOCK, -12]], [48, [-6, DOCK, -4]]])], lake), s2 = stepsOf(st2, "o", 121);
+  assert.ok(Math.abs(s2.lo[0] - DOCK) < 0.08, "on the dock at the start");
+  assert.ok(s2.worst < 0.3, `walked off the end: no pop (worst feet step ${s2.worst.toFixed(2)} at f${s2.at})`);
+  assert.ok(Math.min(...s2.lo.slice(60)) < 0.4, "and ends in the water");
+  // keyed at 0 on the speedboat's deck in the deep tank, walking off its side: they drop from the deck, never from 0
+  // (straight to treading at the surface)
+  const boat = { id: "b", name: "b", kind: "speedboat", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }], rotation_deg: 0 };
+  const st3 = tank([boat, at0("d", [[0, [-0.45, 0, -0.8]], [48, [4, 0, -0.8]]])]), s3 = stepsOf(st3, "d", 121);
+  for (let f = 21; f < 121; f++) assert.ok(Math.abs(s3.lo[f] - s3.lo[f - 1]) < 0.3, `off the deck f${f}: falls, no pop (${s3.lo[f - 1].toFixed(2)} -> ${s3.lo[f].toFixed(2)})`);
+});

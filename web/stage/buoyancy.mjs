@@ -377,7 +377,10 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
       for (let i = f0 + 1; i < f && r < 0; i++) if (keyY[i] < keyY[i - 1] - 1e-3) r = i - 1;
       if (r > f0) { for (let i = f0; i < r; i++) { held[i] = true; ground[i] = true; } f0 = r; }
     }
-    const m = f - f0, ky = keyY[f0];
+    const m = f - f0;
+    // stepped off a dock or a deck they were standing on (keyed at 0 on it, or a little low): the drop starts where
+    // they stood, not from the keys' height (which would put them straight on the bottom or at the surface)
+    const ky = f0 > 0 && supported[f0 - 1] && standY[f0 - 1] > keyY[f0] ? standY[f0 - 1] : keyY[f0];
     // Before they are at the surface: pre[i] = feet height, preMode[i], preStyle[i], for i < up.
     const pre = [], preMode = [], preStyle = [];
     let up = 0, under = false, entered = 0;   // entered: the run-relative frame they meet the water
