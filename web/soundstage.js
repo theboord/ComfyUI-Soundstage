@@ -1046,13 +1046,20 @@ function createStageWidget(node, inputName) {
     }
     gizmoDots = dots;
   };
-  gizmo.addEventListener("pointerdown", (e) => {
-    e.stopPropagation();
-    const r = gizmo.getBoundingClientRect();
-    const x = ((e.clientX - r.left) / r.width) * 168, y = ((e.clientY - r.top) / r.height) * 168;
-    const hit = [...gizmoDots].reverse().find((d) => Math.hypot(d.x - x, d.y - y) < 18);
-    if (hit) stage.snapView(hit.axis);
+  // Click an axis to turn to it (eased); drag the compass to orbit (stage.nav); hover names the view.
+  const AXIS_TIPS = { "+x": "Right", "-x": "Left", "+y": "Top", "-y": "Bottom", "+z": "Front", "-z": "Back" };
+  const dotAt = (e) => { const r = gizmo.getBoundingClientRect(), x = ((e.clientX - r.left) / r.width) * 168, y = ((e.clientY - r.top) / r.height) * 168; return [...gizmoDots].reverse().find((d) => Math.hypot(d.x - x, d.y - y) < 18); };
+  let gzDrag = null;
+  gizmo.addEventListener("pointerdown", (e) => { e.stopPropagation(); gzDrag = { x: e.clientX, y: e.clientY, moved: false }; try { gizmo.setPointerCapture(e.pointerId); } catch { /* */ } });
+  gizmo.addEventListener("pointermove", (e) => {
+    if (!gzDrag) { const d = dotAt(e); gizmo.title = d ? `${AXIS_TIPS[d.axis]} view (click)` : "Drag to orbit · click an axis for that view"; gizmo.style.cursor = d ? "pointer" : "grab"; return; }
+    const dx = e.clientX - gzDrag.x, dy = e.clientY - gzDrag.y;
+    if (!gzDrag.moved && Math.hypot(dx, dy) < 3) return;
+    gzDrag.moved = true; gzDrag.x = e.clientX; gzDrag.y = e.clientY;
+    stage.nav?.compassDrag(dx, dy);
   });
+  gizmo.addEventListener("pointerup", (e) => { const g = gzDrag; gzDrag = null; if (!g) return; if (g.moved) { if (!stage.freeView) stage.onChange(stage.toJSON()); return; } const hit = dotAt(e); if (hit) stage.snapView(hit.axis); });
+  gizmo.addEventListener("pointercancel", () => { gzDrag = null; });
   stage.render();
 
   const lensPick = lensCards((mm) => { stage.setFocal(mm); lens.input.value = mm; lens.out.textContent = `${mm}mm`; lensPick.set(mm); });

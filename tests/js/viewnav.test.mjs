@@ -62,3 +62,20 @@ test("installed on a stage: Back to the set flies the free view home (shot camer
   st.drive = { on: true };
   assert.equal(nav.lost(), null, "while driving the drive camera is in charge");
 });
+
+test("a double-click focus (navigation.mjs) is a jump: Last view returns to the view before it", async () => {
+  const { installNavigation } = await import("../../web/stage/navigation.mjs");
+  const st = {
+    freeView: true, free: { position: [9, 3, 9], target: [0, 1, 0] }, actorMeshes: new Map(), camera: { fov: 50, aspect: 1.6 }, state: { environment: {} },
+    _setCollidersCached: () => street, _viewportCamera() { return this.camera; }, _activeOrbit() { return this.free; },
+    setFreeView(on) { this.freeView = on; }, _applyActive() {}, _flyTo(p, t) { this.free = { position: p, target: t }; },
+    // A ray straight down onto the floor at (2, 0, 2), no objects hit.
+    _pickRay: () => ({ ray: { origin: { x: 2, y: 5, z: 2 }, direction: { x: 0, y: -1, z: 0 } }, intersectObjects: () => [] }),
+  };
+  installNavigation(st);
+  const nav = installViewNav(st);
+  assert.equal(st.nav.focusAt({ clientX: 0, clientY: 0 }), true);
+  assert.deepEqual(st.free.target, [2, 0, 2], "glided to the floor point");
+  assert.deepEqual(nav.lastView().position, [9, 3, 9], "↶ back to where it was");
+  st.nav.dispose();
+});

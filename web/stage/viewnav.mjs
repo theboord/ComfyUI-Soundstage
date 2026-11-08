@@ -127,6 +127,11 @@ export function installViewNav(stage) {
     const f = stage[m];
     if (typeof f === "function") stage[m] = function (...args) { nav.mark0(); return f.apply(this, args); };
   }
+  // A double-click focus (navigation.mjs) is a jump too.
+  if (typeof stage.nav?.focusAt === "function") {
+    const f = stage.nav.focusAt;
+    stage.nav.focusAt = (...args) => { nav.mark0(); return f.apply(stage.nav, args); };
+  }
   if (typeof document === "undefined" || !stage.canvas) return nav;
   if (!document.getElementById("ss-viewnav-css")) document.head.append(Object.assign(document.createElement("style"), { id: "ss-viewnav-css", textContent: CSS }));
   const host = stage.canvas.parentElement;
@@ -141,6 +146,7 @@ export function installViewNav(stage) {
   };
   mk("⌂ Back to the set", "Back to the set: frame the whole set from the front (.)", () => nav.backToSet());
   const backBtn = mk("↶ Last view", "Last view: step back through the views you were at (,)", () => nav.lastView());
+  if (stage.nav?.openSettings) mk("Navigation…", "How the mouse, trackpad and keys move you round the set: style, damping, fly speed", () => stage.nav.openSettings());
   const chip = Object.assign(document.createElement("button"), { type: "button", className: "ss-lostchip", textContent: "Lost? Back to the set", title: "The camera is far from the set or inside it: frame the whole set (.)" });
   chip.hidden = true;
   chip.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -155,7 +161,8 @@ export function installViewNav(stage) {
   };
   stage.canvas.addEventListener("keydown", (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey || stage.drive?.on) return;
-    if (e.key === ".") { e.preventDefault(); nav.backToSet(); }
+    // In the Blender style the numpad's "." frames the selection (navigation.mjs), so only the main "." goes home there.
+    if (e.key === "." && !(e.code === "NumpadDecimal" && stage.nav?.settings?.style === "blender")) { e.preventDefault(); nav.backToSet(); }
     else if (e.key === ",") { e.preventDefault(); nav.lastView(); }
   });
   const id = setInterval(() => {
