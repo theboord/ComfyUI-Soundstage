@@ -916,7 +916,7 @@ test("crossings close together chain: keys zig-zagging 0.6 <-> 2.4 m every 8 fra
 // boat's footprint (before the branch: popped onto the deck at f43), but nothing kept them out of the hull either:
 // swimming at 0 into the speedboat they ended up treading inside it, overlapping the hull, the head ~3 cm over the
 // 2.616 m deck. They are held at its side now, and swim round it when the keys go through.
-test("swimming at 0 into the speedboat stops at its side, out of the hull, and swims round it when the keys go through (was: treading inside the hull)", () => {
+test("swimming at 0 into the speedboat stops at its side, out of the hull, swims round it when the keys go through and arrives where they end (was: treading inside the hull; never reached keys just past it)", () => {
   const boat = { id: "b", name: "b", kind: "speedboat", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }], rotation_deg: 0 };
   const at0 = (id, keys) => ({ id, name: id, kind: "man", height_m: 1.8, position: keys[0][1], keys: keys.map(([frame, position]) => ({ frame, position })), rotation_deg: 0 });
   // how far the clay is inside the boat's own box (its frame, from the keel to the top), sampled over its vertices
@@ -938,11 +938,17 @@ test("swimming at 0 into the speedboat stops at its side, out of the hull, and s
     });
     return pen;
   };
-  for (const [what, keys] of [["into its side", [[0, [4, 0, -1]], [60, [0, 0, -1]]]], ["through it and out", [[0, [5, 0, 0]], [100, [-5, 0, 0.5]]]], ["into its bow", [[0, [0, 0, 7]], [60, [0, 0, 0]]]]]) {
-    const st = tank([boat, at0("s", keys)]), g = st.actorMeshes.get("s");
+  // Seventh pass: keys ending just past the boat (x -1.8 / -2.2, inside its keep-off box) were never reached: the swimmer
+  // slid along the near side and stayed at x 2.51, 4.31 m off at f120; ending at -2.6 / -3.5 they went round at 1.5 m/s
+  // and were still ~7 m off at the bow corner at f120. They go round to where the keys come out, or to the side nearest
+  // where they end, at 2 m/s, and arrive (`arrive`: the frame by which they are within 0.6 m of the last key).
+  const runs = [["into its side", [[0, [4, 0, -1]], [60, [0, 0, -1]]]], ["through it and out", [[0, [5, 0, 0]], [100, [-5, 0, 0.5]]]], ["into its bow", [[0, [0, 0, 7]], [60, [0, 0, 0]]]]];
+  for (const e of [-1.8, -2.2, -2.6, -3.5]) runs.push([`to x ${e}, just past it`, [[0, [5, 0, 0]], [60, [e, 0, 0]]], 210]);
+  for (const [what, keys, arrive] of runs) {
+    const n = arrive ? 241 : 121, st = tank([boat, at0("s", keys)], { frames: n }), g = st.actorMeshes.get("s");
     const xs = [], zs = [];
     let worst = 0, wf = 0, step = 0, sf = 0;
-    for (let f = 0; f < 121; f++) {
+    for (let f = 0; f < n; f++) {
       st.setFrame(f);
       assert.ok(g.userData.swimOn, `${what} f${f}: in the water, swimming (not on the deck)`);
       const p = inHull(st);
@@ -954,6 +960,10 @@ test("swimming at 0 into the speedboat stops at its side, out of the hull, and s
     assert.ok(worst < 0.25, `${what}: never in the hull (deepest ${worst.toFixed(2)} m at f${wf})`);
     assert.ok(step < 0.2, `${what}: no jump (worst ${step.toFixed(2)} m a frame at f${sf})`);
     for (const f of [63, 30, 100, 45]) { st.setFrame(f); assert.ok(Math.abs(g.position.x - xs[f]) < 1e-9 && Math.abs(g.position.z - zs[f]) < 1e-9, `${what} f${f}: the same scrubbed`); }
+    if (arrive) {
+      const end = keys[keys.length - 1][1];
+      for (let f = arrive; f < n; f++) { const d = Math.hypot(xs[f] - end[0], zs[f] - end[2]); assert.ok(d < 0.6, `${what} f${f}: arrived round the boat (${d.toFixed(2)} m from the keys, at ${xs[f].toFixed(2)}, ${zs[f].toFixed(2)})`); }
+    }
   }
 });
 

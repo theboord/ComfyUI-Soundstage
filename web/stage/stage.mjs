@@ -3950,7 +3950,7 @@ export class Stage {
       if (hg.userData.foot) boats.push({ b, hg, foot: hg.userData.foot });
     }
     if (!boats.length) return;
-    const fps = this.state.shot?.fps || 24, vmax = 1.5 / fps, reach = 0.6 * h;
+    const fps = this.state.shot?.fps || 24, vmax = 2 / fps, reach = 0.6 * h;   // 2 m/s: a strong swimmer's sprint
     const hop = a.mount_id && a.mount_at > 0 ? a.mount_at - HOP_FRAMES : Infinity, Yax = new THREE.Vector3(0, 1, 0);
     // The water's edge (the tank's inner wall): a way round a boat that leaves the water is not a way round, and a boat
     // pushing a swimmer pushes them along its side, never through the wall (was: z 9.80 with the water ending at 7.8).
@@ -4001,12 +4001,44 @@ export class Stage {
         for (let k = 0, n = Math.max(1, Math.ceil(len / 0.1)); k <= n; k++) { const q = toWorld(atS(s + dir * len * k / n), bp, yaw); if (!inWater(q[0], q[1])) return false; }
         return true;
       };
+      const swims = (f) => !!mode[f] && support[f] == null && f < hop;
+      const poses = pos.map((_, f) => (swims(f) ? poseAt(f) : null));
+      // the keys in the boat's own frame at each frame
+      const Tl = pos.map((p, f) => {
+        if (!poses[f]) return null;
+        const { bp, yaw } = poses[f], L = new THREE.Vector3(p[0] - bp[0], 0, p[2] - bp[2]).applyAxisAngle(Yax, -yaw);
+        return [L.x - F.cx, L.z - F.cz];
+      });
+      // where the keys come out of the boat next (the first later frame they are clear of it), or -1 when they end in it
+      const outAt = new Array(pos.length).fill(-1);
+      for (let f = pos.length - 1, nx = -1; f >= 0; f--) { if (!Tl[f]) { nx = -1; continue; } if (!inside(Tl[f])) nx = f; outAt[f] = nx; }
+      let lastSw = -1;
+      for (let f = 0; f < pos.length; f++) if (Tl[f]) lastSw = f;
+      // the shortest way along the side from s to st that stays in the water (Infinity when both ways leave it)
+      const wayLen = (s, st, bp, yaw) => {
+        const fw = ((st - s) % PER + PER) % PER, bw = PER - fw;
+        let best = Infinity;
+        if (wayIn(s, 1, fw, bp, yaw)) best = fw;
+        if (bw < best && wayIn(s, -1, bw, bp, yaw)) best = bw;
+        return best;
+      };
+      // keys that stay inside the boat to the end: the point of its side nearest where they end up, a nearer side
+      // winning over going round (a key 0.5 m in from the far side is reached round the boat, one in the middle is not)
+      const endSide = (s, bp, yaw) => {
+        const E = Tl[lastSw], cands = [[HX, E[1]], [-HX, E[1]], [E[0], HZ], [E[0], -HZ]];
+        let best = null, bc = Infinity;
+        for (const c of cands) {
+          const sc = sOf(c), len = wayLen(s, sc, bp, yaw);
+          const cost = Math.hypot(c[0] - E[0], c[1] - E[1]) + 0.2 * len;
+          if (cost < bc - 1e-9) { bc = cost; best = sc; }
+        }
+        return best ?? s;
+      };
       let cur = null, free = true;
       for (let f = 0; f < pos.length; f++) {
-        if (!mode[f] || support[f] != null || f >= hop) { cur = null; free = true; continue; }
-        const { bp, yaw } = poseAt(f);
-        const L = new THREE.Vector3(pos[f][0] - bp[0], 0, pos[f][2] - bp[2]).applyAxisAngle(Yax, -yaw);
-        const T = [L.x - F.cx, L.z - F.cz];
+        if (!swims(f)) { cur = null; free = true; continue; }
+        const { bp, yaw } = poses[f];
+        const T = Tl[f];
         if (!cur) {   // the first swimming frame: where the keys are, or on the nearest side when that is inside
           cur = inside(T) ? atS(sOf(Math.abs(T[0]) / HX > Math.abs(T[1]) / HZ ? [Math.sign(T[0] || 1) * HX, T[1]] : [T[0], Math.sign(T[1] || 1) * HZ])) : T.slice();
           free = !inside(T);
@@ -4029,10 +4061,11 @@ export class Stage {
               if (d > budget) { cur = [cur[0] + (q[0] - cur[0]) * budget / d, cur[1] + (q[1] - cur[1]) * budget / d]; break; }
               cur = q; budget -= d; continue;
             }
-            // on the side: round it, the short way, toward the point of the side nearest the keys (corner by corner)
-            // (keys inside the boat: slide along the side they are on, level with the keys, never round to another side)
-            const s = sOf(cur), onX = Math.abs(Math.abs(cur[0]) - HX) <= Math.abs(Math.abs(cur[1]) - HZ);
-            const st = inside(T) ? sOf(onX ? [Math.sign(cur[0]) * HX, T[1]] : [T[0], Math.sign(cur[1]) * HZ]) : sOf(T);
+            // on the side: round it, the short way, toward the point of the side nearest the keys (corner by corner);
+            // keys inside the boat: toward where they come out of it, or (ending in it) the side nearest where they end
+            // (was: slid along the near side level with the keys, so keys ending 0.5 m in from the far side were never reached)
+            const s = sOf(cur), ex = inside(T) ? outAt[f] : f;
+            const st = ex >= 0 ? sOf(Tl[ex]) : endSide(s, bp, yaw);
             const fw = ((st - s) % PER + PER) % PER, bw = PER - fw;
             if (Math.min(fw, bw) < 1e-9) break;   // as near the keys as the side gets: held there
             // the short way round unless it leaves the water (a boat against the wall: round its other end); neither: held
@@ -4040,7 +4073,7 @@ export class Stage {
             if (!okF && !okB) break;
             const dir = okF && (!okB || fw <= bw) ? 1 : -1, togo = dir > 0 ? fw : bw;
             let edge = Infinity;
-            for (const c of corners) { const dd = dir > 0 ? ((c - s) % PER + PER) % PER : ((s - c) % PER + PER) % PER; if (dd > 1e-9) edge = Math.min(edge, dd); }
+            for (const c of corners) { const dd = dir > 0 ? ((c - s) % PER + PER) % PER : ((s - c) % PER + PER) % PER; if (dd > 1e-4) edge = Math.min(edge, dd); }   // (a corner a hair away is the one they are at: no ping-pong)
             const step = Math.min(budget, togo, edge);
             cur = atS(s + dir * step); budget -= step;
           }
