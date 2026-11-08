@@ -796,3 +796,46 @@ test("a timed mount onto the speedboat from the water: swims until the hop, then
   assert.ok(!g.userData.swimOn && lowest(g) < deck + 0.1, `aboard after the mount, not hovering over the deck (feet ${lowest(g).toFixed(2)}, deck ${deck?.toFixed(2)})`);
   for (const f of [55, 52, 30, 58]) { st.setFrame(f); assert.ok(Math.abs(lowest(g) - low[f]) < 1e-9, `f${f}: the same scrubbed`); }
 });
+
+// Fifth pass: on the dock or a deck the lifelike body stood its skeleton at the keys' own height (avatars.mjs used
+// _heightAt): keyed at 0 on the speedboat's deck its feet were at 0.00 with the clay on the 2.6 m deck; keyed 0.2 m over
+// the dock it stood 0.2 m in the air. It now gets the same support lift as the clay (stage._standOnKeys).
+import * as Avatars from "../../web/stage/people/avatars.mjs";
+function stubKit() {
+  const geo = new THREE.BoxGeometry(50, 180, 30); geo.translate(0, 90, 0);
+  const n = geo.attributes.position.count;
+  geo.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(new Array(4 * n).fill(0), 4));
+  geo.setAttribute("skinWeight", new THREE.Float32BufferAttribute(new Array(4 * n).fill(0).map((_, i) => (i % 4 ? 0 : 1)), 4));
+  geo.clearGroups(); geo.addGroup(0, 24, 0); geo.addGroup(24, 12, 1);
+  const body = new THREE.MeshStandardMaterial({ name: "x_body", map: new THREE.Texture() }); body.userData.role = "body";
+  const hair = new THREE.MeshStandardMaterial({ name: "x_opacity", map: new THREE.Texture(), alphaTest: 0.5, side: THREE.DoubleSide }); hair.userData.role = "opacity";
+  const mesh = new THREE.SkinnedMesh(geo, [body, hair]); mesh.name = "x_hipoly_81_bones";
+  const bone = new THREE.Bone(); bone.name = "Bip01";
+  const template = new THREE.Group(); template.add(mesh); mesh.add(bone); mesh.bind(new THREE.Skeleton([bone]));
+  return { template, meshName: mesh.name, materials: [body, hair], clips: {}, stature: 180, floor: 0, spec: { model: "Male_Adult_01" },
+    idleBox: new THREE.Box3(new THREE.Vector3(-25, 0, -15), new THREE.Vector3(25, 180, 15)),
+    faceless: { neutral: new THREE.MeshStandardMaterial(), hidden: new THREE.MeshBasicMaterial({ visible: false }) }, report: { missingMaps: [] } };
+}
+test("the lifelike body on the dock or a deck stands where the clay stands (was: its skeleton at the keys' height, under the deck)", async () => {
+  const DOCK = 1.81;
+  const boat = { id: "b", name: "b", kind: "speedboat", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }], rotation_deg: 0 };
+  const at0 = (id, keys) => ({ id, name: id, kind: "man", height_m: 1.8, position: keys[0][1], keys: keys.map(([frame, position]) => ({ frame, position })), rotation_deg: 0 });
+  for (const [what, actors, opts, id, top] of [
+    ["keyed 0.2 m over the dock", [keyed("a", "man", [[0, [-6.5, DOCK + 0.2, -14]]])], { set: "lake", keepSet: true }, "a", DOCK],
+    ["keyed on the dock, walking along it", [keyed("w", "man", [[0, [-6, DOCK, -20]], [96, [-6, DOCK, -12]]])], { set: "lake", keepSet: true }, "w", DOCK],
+    ["keyed at 0 on the speedboat's deck", [boat, at0("e", [[0, [-0.45, 0, -0.8]]])], {}, "e", null],
+  ]) {
+    const st = tank(actors, opts);
+    const a = st.state.actors.find((x) => x.id === id), g = st.actorMeshes.get(id);
+    const skin = Avatars.attachKit(st, a, g, stubKit());
+    await null;
+    for (const f of [0, 30, 60]) {
+      st.setFrame(f);
+      assert.ok(skin.shown, `${what} f${f}: the lifelike body shows (${skin.reason})`);
+      skin.holder.updateMatrixWorld(true);
+      const feet = skin.holder.getWorldPosition(new THREE.Vector3()).y, want = top ?? st._deckAt(g.position.x, g.position.z, 6, f);
+      assert.ok(Math.abs(feet - want) < 0.06, `${what} f${f}: the lifelike feet on it (${feet.toFixed(2)}, surface ${want.toFixed(2)})`);
+      assert.ok(Math.abs(feet - g.position.y) < 0.06, `${what} f${f}: where the clay stands (${feet.toFixed(2)} vs ${g.position.y.toFixed(2)})`);
+    }
+  }
+});
