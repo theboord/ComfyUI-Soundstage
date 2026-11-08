@@ -155,12 +155,15 @@ def footprint_points(a: dict, n: int = 7) -> list[np.ndarray]:
     return pts
 
 
-def triage_blocks(actors: list, pose0, A, b, K, size, scan_depth_m, covered: float = 0.35, shown: float = 0.6) -> dict:
+def triage_blocks(actors: list, pose0, A, b, K, size, scan_depth_m, covered: float = 0.35, shown: float = 0.6,
+                  min_finite: float = 0.25) -> dict:
     """The clay dressing against the set scan, through the first camera, judged over each block's whole extent
     (footprint_points), not its centre. For each set piece (not the scan, not the performer):
     - no point in view -> kept, marked in_view False (it is never named: the camera never sees it);
-    - in view, and at `shown` (60 %) or more of its in-view points the scan's depth is within `covered` of the block's
-      -> dropped (the scan already shows it there);
+    - in view, and at `shown` (60 %) or more of its in-view points WITH a finite scan depth the scan's depth is within
+      `covered` of the block's -> dropped (the scan already shows it there). The NaN pixels (the performer, masked out
+      by scanroute.without_people) are not counted; when fewer than `min_finite` (25 %) of its in-view points are
+      finite the scan cannot judge it and it is kept;
     - otherwise in view in front of (or beyond) the scan -> kept, in_view True, given its kind word (prompt_word), which
       the motion prompt names with where it stands (look/compile.py set_pieces_sentence) and the Look text names.
     scan_depth_m: the scan's first-frame depth in metres on the `size` grid (None: nothing dropped).
@@ -184,13 +187,14 @@ def triage_blocks(actors: list, pose0, A, b, K, size, scan_depth_m, covered: flo
             res["off_view"].append(name)
             keep.append(a)
             continue
-        hits = 0
+        hits = finite = 0
         if scan_depth_m is not None:
             for u, v, dist in seen:
                 zz = float(scan_depth_m[int(v), int(u)])
-                if math.isfinite(zz) and zz > 0 and abs(zz - dist) <= covered * dist:
-                    hits += 1
-        if scan_depth_m is not None and hits >= shown * len(seen):
+                if math.isfinite(zz) and zz > 0:
+                    finite += 1
+                    hits += abs(zz - dist) <= covered * dist
+        if finite and finite >= min_finite * len(seen) and hits >= shown * finite:
             res["dropped"].append(name)
             continue
         a["in_view"] = True

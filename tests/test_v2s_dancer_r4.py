@@ -70,3 +70,56 @@ def test_every_entry_over_the_performer_keeps_the_slab_behind_her(monkeypatch, d
     cut = scanroute.without_people(d, masks, 0)
     assert np.isnan(cut[195, 150])                                  # her torso is out of the scan
     assert np.isfinite(cut[300, 60]) and np.isfinite(cut[200, 250])  # the slab 0.5 m behind her stays in it
+
+
+# ------------------------------------------------------------------------------------------------ 3 triage, finite only
+from soundstage.video2stage import backdrop as BD  # noqa: E402
+from soundstage.video2stage import scenewords  # noqa: E402
+from test_v2s_dancer import LEVEL_A, LEVEL_B, LEVEL_K, POSE0, _block  # noqa: E402
+from test_v2s_dancer_r3 import _stage_with_her  # noqa: E402
+
+BESIDE = [-0.7, 0, 5.0]    # a crate beside her at her depth: about half its footprint inside her box (u 338-453)
+
+
+def _stage_with_a_crate_beside_her():
+    d, bd = _stage_with_her()
+    d[300:410, 390:456] = 5.0      # the crate's face the scan shows, right of her box, at about her depth
+    return d, bd
+
+
+def _xform_scene(*blocks):
+    return {"video2stage": {"xform": {"A": LEVEL_A.tolist(), "b": LEVEL_B.tolist()}}, "actors": list(blocks)}
+
+
+def test_the_triage_judges_over_finite_points_and_keeps_a_block_with_too_few():
+    d, _ = _stage_with_a_crate_beside_her()
+    half = d.copy()
+    half[200:420, 250:412] = np.nan                      # her pixels (and her mask's margin) are out of the scan
+    tri = scenewords.triage_blocks([_block("Crate", BESIDE, 1.0)], POSE0, LEVEL_A, LEVEL_B, LEVEL_K, (640, 480), half)
+    assert tri["dropped"] == ["Crate"]
+    allnan = np.full_like(d, np.nan)
+    tri = scenewords.triage_blocks([_block("Crate", BESIDE, 1.0)], POSE0, LEVEL_A, LEVEL_B, LEVEL_K, (640, 480), allnan)
+    assert tri["dropped"] == [] and tri["worded"] == ["Crate"]
+
+
+def test_a_crate_beside_her_that_the_scan_shows_is_dropped_on_the_scan_path(monkeypatch):
+    d, bd = _stage_with_a_crate_beside_her()
+    monkeypatch.setattr(BD, "ctx_from_legacy", lambda **kw: {})
+    monkeypatch.setattr(BD, "build", lambda scene, ctx: {"notes": [], "actors": [{"id": "v2s_scan", "scan": True}]})
+    scene = _xform_scene(_block("Crate", [0.0, 0, 5.0], 1.0), _block("Crate beside", BESIDE, 1.0))
+    notes = []
+    st = scanroute.apply(scene, depths=[d], scales=[1.0], poses=[POSE0], K=LEVEL_K, files=["f0.png"], skies=None,
+                         breakdown=bd, times=[0.0], duration=1.0, notes=notes, use_planes=False)
+    assert st["dropped"] == ["Crate beside"], notes      # the scan shows it: no clay block stacked on it
+    assert st["worded"] == ["Crate"]                     # the crate where she stands is still kept
+
+
+def test_a_crate_beside_her_that_the_scan_shows_is_dropped_on_the_old_block_route():
+    d, bd = _stage_with_a_crate_beside_her()
+    scene = _xform_scene(_block("Crate", [0.0, 0, 5.0], 1.0), _block("Crate beside", BESIDE, 1.0))
+    notes = []
+    pipeline.finish_scene(scene, take=None, info={}, breakdown=bd, depths=[d], scales=[1.0], poses=[POSE0],
+                          K=LEVEL_K, files=["f0.png"], skies=None, times=[0.0], clip={"duration": 1.0, "fps": 24.0},
+                          scan_on=False, has_relief=True, wardrobe_ref=False, tag="t", sub="s", notes=notes)
+    sp = scene["video2stage"]["set_path"]
+    assert sp["dropped"] == ["Crate beside"] and sp["worded"] == ["Crate"], notes
