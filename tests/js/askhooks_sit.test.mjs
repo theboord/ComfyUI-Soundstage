@@ -143,9 +143,9 @@ test("setPose seats: one person per seat, real seats ahead of a table / cube / r
   st = sitStage([man("p1", 0), prop("big", "cube", 0.5, 3), { ...prop("giant", "chair", -0.5, 0.9), scale: 4 }, prop("ok", "cube", 3, 1)]);
   const before = JSON.stringify(st.state), u0 = st.undo;
   r = st.setPose("p1", "sit", { on: "big" });
-  assert.equal(r.ok, false); assert.match(r.error, /too high to sit on \(seat 3\.00 m, at most 1\.08 m/);
+  assert.equal(r.ok, false); assert.match(r.error, /too high to sit on \(seat 3\.00 m above the floor, at most 1\.08 m/);
   r = st.setPose("p1", "sit", { on: "giant" });
-  assert.equal(r.ok, false); assert.match(r.error, /too high to sit on \(seat 1\.88 m/);
+  assert.equal(r.ok, false); assert.match(r.error, /too high to sit on \(seat 1\.88 m above the floor/);
   r = st.setPose("p1", "sit");
   assert.equal(r.ok, false); assert.match(r.error, /nothing to sit on within 1\.5 m .*none free and low enough/);
   assert.equal(JSON.stringify(st.state), before); assert.equal(st.undo, u0);
@@ -238,4 +238,70 @@ test("real Rocketbox: the lifelike man sits on the chair (hips on the seat, thig
   assert.equal(st.setPose("p1", "stand").ok, true);
   A.avatarsAt(st);
   assert.ok(W(B.Bip01_L_Thigh).y > 0.8, "standing hips back up");
+});
+
+// ---------------------------------------------------------------- seats measured from the floor; seats that move
+const stacked = (id, x, y) => ({ ...prop(id, "chair", x, 0.9), key_y: true, position: [x, y, 0], keys: [{ frame: 0, position: [x, y, 0] }] });
+
+test("seat height is measured from the floor (world Y): a chair stacked on cubes 1 m up is too high for a 1.8 m person", () => {
+  const st = sitStage([man("p1", 0), prop("cu", "cube", 0.8, 1), stacked("hi", 0.8, 1)]);
+  assert.ok(Math.abs(st._seatHeight(st.state.actors[2]) - 0.47) < 1e-9, "0.47 m above its own base");
+  assert.ok(Math.abs(st._seatHeightFromFloor(st.state.actors[2]) - 1.47) < 1e-9, "1.47 m above the floor");
+  const before = JSON.stringify(st.state), u0 = st.undo;
+  const r = st.setPose("p1", "sit", { on: "hi" });
+  assert.equal(r.ok, false); assert.match(r.error, /'chair' is too high to sit on \(seat 1\.47 m above the floor, at most 1\.08 m for 'Jon Doe'\)/);
+  assert.equal(st.setPose("p1", "sit").on, "cu", "the nearest pick skips the stacked chair too (the 1 m cube is fine)");
+  st.setPose("p1", "stand");
+  // on the floor the same chair is fine; a set floor under it counts as the floor
+  const low = sitStage([man("p1", 0), stacked("c", 0.8, 0)]);
+  assert.equal(low.setPose("p1", "sit").on, "c");
+  const plat = sitStage([man("p1", 0), stacked("c", 0.8, 1.2)]);
+  plat.setFx = { floorAt: () => 1.2 };   // a station platform 1.2 m up: the chair stands on it
+  assert.ok(Math.abs(plat._seatHeightFromFloor(plat.state.actors[1]) - 0.47) < 1e-9);
+  assert.equal(JSON.stringify(st.state.actors[2]), JSON.stringify(JSON.parse(before).actors[2]));
+  assert.ok(st.undo >= u0);
+});
+
+test("_canSitOn refuses a carried seat (carry_id): named and nearest, nothing changes", () => {
+  const st = sitStage([man("p1", 0), man("p2", 3), { ...prop("c1", "chair", 0.8, 0.9), carry_id: "p2", carry_at: 8 }]);
+  const before = JSON.stringify(st.state), u0 = st.undo;
+  assert.equal(st._canSitOn(st.state.actors[2], true, st.state.actors[0]), false);
+  let r = st.setPose("p1", "sit", { on: "c1" });
+  assert.equal(r.ok, false); assert.match(r.error, /can't sit on 'chair' is being carried by 'Jon Doe'/);
+  r = st.setPose("p1", "sit");
+  assert.equal(r.ok, false); assert.match(r.error, /nothing to sit on/);
+  assert.equal(JSON.stringify(st.state), before); assert.equal(st.undo, u0);
+  // the same chair put down is a seat again (the refusal is about the carry, not the chair)
+  delete st.state.actors[2].carry_id; delete st.state.actors[2].carry_at;
+  assert.equal(st.setPose("p1", "sit").on, "c1");
+});
+
+test("_canSitOn refuses a seat that is mounted / riding (mount_id) on something", () => {
+  const st = sitStage([man("p1", 0), prop("truck", "pickup", 5, 1.8), { ...prop("c1", "chair", 0.8, 0.9), mount_id: "truck" }]);
+  const before = JSON.stringify(st.state);
+  const r = st.setPose("p1", "sit", { on: "c1" });
+  assert.equal(r.ok, false); assert.match(r.error, /'chair' is mounted on 'pickup' \(it moves with it\)/);
+  assert.equal(st.setPose("p1", "sit").ok, false);
+  assert.equal(JSON.stringify(st.state), before);
+});
+
+test("_canSitOn refuses a seat on the sitter themself (a cycle), directly or through a chain", () => {
+  let st = sitStage([man("p1", 0), { ...prop("c1", "chair", 0.8, 0.9), carry_id: "p1", carry_at: 8 }]);
+  let r = st.setPose("p1", "sit", { on: "c1" });
+  assert.equal(r.ok, false); assert.match(r.error, /'chair' is on 'Jon Doe' \(a seat can't ride on the person sitting on it\)/);
+  st = sitStage([man("p1", 0), { ...prop("cu", "cube", 2, 0.4), carry_id: "p1" }, { ...prop("c1", "chair", 0.8, 0.9), mount_id: "cu" }]);
+  r = st.setPose("p1", "sit", { on: "c1" });
+  assert.equal(r.ok, false); assert.match(r.error, /'chair' is on 'Jon Doe'/);
+  assert.equal(st.state.actors[0].mount_id, undefined);
+  assert.equal(st.setPose("p1", "sit", { on: "p1" }).ok, false, "not on themself");
+});
+
+test("a seat in use is not picked up from under the sitter; a seat that starts moving stops being a seat for the body", () => {
+  const st = sitStage([man("p1", 0), man("p2", 0.9), prop("c1", "chair", 0.8, 0.5)]);
+  assert.equal(st.setPose("p1", "sit", { on: "c1" }).ok, true);
+  assert.equal(st._dropProp(st.state.actors[2], "p2"), null, "no pick-up while p1 sits on it");
+  assert.equal(st.state.actors[2].carry_id, undefined);
+  st.state.actors[2].carry_id = "p2";   // carried by some other path (a recorded take): the lifelike body stops sitting on it
+  assert.equal(st._sitSpec(st.state.actors[0]), null);
+  for (let f = 0; f <= 8; f++) { st.setFrame(f); assert.ok(st.actorMeshes.get("p1").position.y > -1.2, `frame ${f}`); }
 });

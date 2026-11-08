@@ -2153,6 +2153,8 @@ export class Stage {
       return msg;
     }
     if (size.y > 1.0 || Math.max(size.x, size.z) > 1.6) return null;   // too big to carry
+    // A seat someone sits on is not picked up from under them (they would hang a frame behind it in the air).
+    if (this.state.actors.some((x) => x.mount_id === o.id && PERSON_KINDS.has(x.kind))) return null;
     const p = [(box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2];
     let best = null;
     const under = underId && this.state.actors.find((x) => x.id === underId && PERSON_KINDS.has(x.kind) && !x.mount_id);
@@ -4656,10 +4658,27 @@ export class Stage {
 
   /** Can a person sit on this object with setPose("sit")? Chairs, benches, sofas, armchairs, and the other
    *  non-vehicle seats in MOUNTS (rock, table, cube); a custom (imported or recipe) static prop only when named. */
-  _canSitOn(host, named = false) {
+  _canSitOn(host, named = false, sitter = null) {
     if (!host || PERSON_KINDS.has(host.kind) || SEATS[host.kind] || RIDEABLE.has(host.kind)) return false;
+    if (this._seatMoving(host, sitter)) return false;   // carried, mounted / riding, or on the sitter: never a seat
     if (SITTABLE.has(host.kind) || (MOUNTS[host.kind]?.pose === "sit" && LIBRARY[host.kind]?.rig === "static")) return true;
     return named && host.kind === "custom" && (host.recipe?.rig || "static") === "static";
+  }
+
+  /** Why this object can't be a seat because it moves with someone (or null): it is carried (carry_id: it rides in a
+   *  carrier's hands, placed after the sitters, so a sitter would lag a frame behind and float), it is mounted / riding
+   *  on something (mount_id), or it is (through a chain of mounts / carries) on the sitter themself (a cycle). */
+  _seatMoving(host, sitter = null) {
+    const by = (id) => this.state.actors.find((x) => x.id === id);
+    const nm = (o) => o?.name || o?.id;
+    const seen = new Set();
+    for (let o = host; o && (o.mount_id || o.carry_id) && !seen.has(o.id); o = by(o.mount_id || o.carry_id)) {
+      seen.add(o.id);
+      if (sitter && (o.mount_id === sitter.id || o.carry_id === sitter.id)) return `'${nm(host)}' is on '${nm(sitter)}' (a seat can't ride on the person sitting on it)`;
+    }
+    if (host.carry_id) return `'${nm(host)}' is being carried by '${nm(by(host.carry_id)) || host.carry_id}'`;
+    if (host.mount_id) return `'${nm(host)}' is mounted on '${nm(by(host.mount_id)) || host.mount_id}' (it moves with it)`;
+    return null;
   }
 
   /** The seat top's height above the prop's base (metres): MOUNTS seat height scaled with the prop (_seatScale). */
@@ -4668,7 +4687,17 @@ export class Stage {
     return m.seat[1] * (MOUNTS[host.kind] ? this._seatScale(host) : 1);
   }
 
-  /** The highest seat this person can take with setPose (metres above the prop's base). */
+  /** The seat top's height above the FLOOR (world Y, metres) at this frame: the prop's own height in the world (a chair
+   *  stacked on cubes 1 m up stands at y 1) plus its seat height, less the floor under it (the set's walkable floor,
+   *  else 0). This, not the height above the prop's base, is what the max-seat-height check reads. */
+  _seatHeightFromFloor(host, frame = this.frame) {
+    const p = this._actorPosAt(host, frame);
+    const floorAt = this.setFx?.floorAt;
+    const floor = floorAt ? Math.max(0, Number(floorAt(p[0], p[2])) || 0) : 0;
+    return Math.max(0, this._heightAt(host, frame) + this._seatHeight(host) - floor);
+  }
+
+  /** The highest seat this person can take with setPose (metres above the floor). */
   _maxSeatHeight(a) {
     return Math.max(MAX_SEAT_MIN_M, MAX_SEAT_FRAC * (a.height_m || 1.8) * (a.scale || 1));
   }
@@ -4688,7 +4717,7 @@ export class Stage {
     if (a.mount_id) {
       if (a.mount_at > frame) return null;   // still walking up / hopping on
       const host = this.state.actors.find((x) => x.id === a.mount_id), hg = host && this.actorMeshes.get(host.id);
-      if (!hg || !this._canSitOn(host, true) || (a.pose && a.pose !== "sit")) return null;
+      if (!hg || !this._canSitOn(host, true, a) || (a.pose && a.pose !== "sit")) return null;
       const m = MOUNTS[host.kind] || { seat: [0, (host.height_m || 1) * 0.6, 0] }, k = this._seatScale(host);
       const w = new THREE.Vector3(m.seat[0] * k, m.seat[1] * k, m.seat[2] * k).applyAxisAngle(new THREE.Vector3(0, 1, 0), hg.rotation.y);
       return { pose: "sit", on: host.id, seat: [hg.position.x + w.x, hg.position.y + w.y, hg.position.z + w.z], yaw: hg.rotation.y };
@@ -4729,16 +4758,18 @@ export class Stage {
       if (opts?.on != null) {
         host = this.state.actors.find((x) => x.id === opts.on);
         if (!host) return { ok: false, error: `no object '${opts.on}'` };
-        if (!this._canSitOn(host, true)) return { ok: false, error: `can't sit on '${name(host)}' (a chair, bench, sofa, armchair, rock, table, cube or a static prop)` };
+        const moving = host.id === a.id ? null : this._seatMoving(host, a);
+        if (moving) return { ok: false, error: `can't sit on ${moving}` };
+        if (host.id === a.id || !this._canSitOn(host, true, a)) return { ok: false, error: `can't sit on '${name(host)}' (a chair, bench, sofa, armchair, rock, table, cube or a static prop)` };
         const by = this._seatTakenBy(host, a);
         if (by) return { ok: false, error: `'${name(host)}' is taken by '${name(by)}'` };
-        const h = this._seatHeight(host);
-        if (h > maxH) return { ok: false, error: `'${name(host)}' is too high to sit on (seat ${h.toFixed(2)} m, at most ${maxH.toFixed(2)} m for '${name(a)}')` };
+        const h = this._seatHeightFromFloor(host);
+        if (h > maxH) return { ok: false, error: `'${name(host)}' is too high to sit on (seat ${h.toFixed(2)} m above the floor, at most ${maxH.toFixed(2)} m for '${name(a)}')` };
       } else {
         const p = this._actorPosAt(a, this.frame);
         let best = null;
         for (const o of this.state.actors) {
-          if (o.id === a.id || !this._canSitOn(o) || this._seatTakenBy(o, a) || this._seatHeight(o) > maxH) continue;
+          if (o.id === a.id || !this._canSitOn(o, false, a) || this._seatTakenBy(o, a) || this._seatHeightFromFloor(o) > maxH) continue;
           const q = this._actorPosAt(o, this.frame), d = Math.hypot(q[0] - p[0], q[2] - p[2]);
           if (d > 1.5) continue;
           const rank = REAL_SEATS.has(o.kind) ? 0 : 1;   // a chair 1.2 m away beats a table 0.5 m away
