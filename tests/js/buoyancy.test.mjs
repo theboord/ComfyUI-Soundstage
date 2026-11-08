@@ -885,3 +885,29 @@ test("placed on a parked car, table or crate on dry land: keyed at 0, standing o
   const r2 = st2.placeInFrame("q", { x: "center", y: 0.5 });
   assert.ok(r2.ok && r2.position[1] > 2, `on the speedboat's deck in the tank: keyed at the deck (${r2.position})`);
 });
+
+// Sixth pass: two crossings close together. Keys switching 0.6 m <-> 2.4 m every 8 frames (flutter) lifted the swimmer
+// out of the water: each handoff eased from that side's own hips, not from where the last ease had got to (a 0.32 m
+// step), and the hips followed the rising keys up past the surface (3.01 m, the head 3.68 m, over a 2.5 m surface
+// around f23). Swimming at 0 from the surface down to a 0.8 m key with no dive-in (0.8 m is still "at the surface" for
+// a 1.8 m man, so the keys cross 0.35 m and back) stepped 0.22-0.25 m at the second crossing.
+test("crossings close together chain: keys zig-zagging 0.6 <-> 2.4 m every 8 frames, and a swim at 0 down to a 0.8 m key, never lift out of the water or step", () => {
+  const zig = []; for (let f = 0, y = 0.6; f <= 144; f += 8, y = y === 0.6 ? 2.4 : 0.6) zig.push([f, [0, y, 0]]);
+  const at0 = (id, keys, extra) => ({ id, name: id, kind: "man", height_m: 1.8, position: keys[0][1], keys: keys.map(([frame, position]) => ({ frame, position })), rotation_deg: 0, ...extra });
+  const runs = [["zig-zag 0.6 <-> 2.4 m", () => keyed("u", "man", zig, { swim: "flutter" }), 145]];
+  for (const swim of ["flutter", "frog", "stroke"]) {
+    runs.push([`${swim}: at 0, then down to 0.8 m`, () => at0("u", [[0, [0, 0, 0]], [48, [0, 0, 0]], [72, [0, 0.8, 0]]], { swim }), 121]);
+    runs.push([`${swim}: at 0 across, then down to 0.8 m`, () => at0("u", [[0, [-4, 0, 0]], [48, [0, 0, 0]], [96, [3, 0.8, 0]]], { swim }), 121]);
+  }
+  for (const [what, make, n] of runs) {
+    const st = tank([make()], { frames: n });
+    const h = [], hd = [];
+    for (let f = 0; f < n; f++) { st.setFrame(f); h.push(hipsY(st, "u")); hd.push(headY(st, "u")); }
+    let worst = 0, at = 0;
+    for (let f = 1; f < n; f++) { const d = Math.abs(h[f] - h[f - 1]); if (d > worst) { worst = d; at = f; } }
+    assert.ok(worst < 0.12, `${what}: worst hip step ${worst.toFixed(3)} m at f${at}`);
+    assert.ok(Math.max(...h) < LEVEL, `${what}: the hips never above the surface (highest ${Math.max(...h).toFixed(2)})`);
+    assert.ok(Math.max(...hd) < LEVEL + 0.3, `${what}: the head never lifted out of the water (highest ${Math.max(...hd).toFixed(2)})`);
+    for (const f of [23, 3, 57, 68, 99, 11]) { st.setFrame(f); assert.ok(Math.abs(hipsY(st, "u") - h[f]) < 1e-9, `${what} f${f}: the same scrubbed`); }
+  }
+});

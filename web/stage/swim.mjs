@@ -302,7 +302,10 @@ export function planSwim({ pos, yaw, mode, fps = 24, height = 1.8, style = null,
  * the surface (keys rising to the surface, or going back under): the hips start where they were on the side they leave
  * and ease to the other over `blend` frames, and the style weights (tread upright, a level kick) and the "under" share
  * of the pose (the climb pitch, the trim) cross-fade over the same frames (was: a 0.6 m pop at the hips, then a 0.7 rad
- * tilt and a 0.44 m head drop in one frame). Frames the water track already places (hipsW > 0) are left alone. A pure function of the plan (the same whatever order the frames are drawn in).
+ * tilt and a 0.44 m head drop in one frame). Handoffs closer together than `blend` chain: each eases from where the last
+ * one had got to (was: from that side's own hips, a 0.32 m step), following the keys at most 2.4 m/s, and the eased hips
+ * are capped at the surface (keys zig-zagging 0.6 <-> 2.4 m lifted them to 3.0 m over a 2.5 m surface). Frames the
+ * water track already places (hipsW > 0) are left alone. A pure function of the plan (the same whatever order the frames are drawn in).
  * Returns the plan (plan.underW: the eased under share per frame, 0..1).
  */
 export function easeDepthHandoffs(plan, { hipY, surface, blend = Math.max(1, Math.round(0.8 * (plan.fps || 24))) }) {
@@ -310,14 +313,16 @@ export function easeDepthHandoffs(plan, { hipY, surface, blend = Math.max(1, Mat
   const own = plan.hipsW ? plan.hipsW.slice() : new Array(n).fill(0);
   const surfaceHips = (f) => lerp(surface - 0.12 * k, surface - 0.52 * k, plan.weights[f].tread || 0);
   const sideHips = (f) => (mode[f] === "surface" ? surfaceHips(f) : plan.pos[f][1] + hipY);
+  const vMax = 2.4 / (plan.fps || 24);
   let Y = null, W = null, any = false;
   for (let f = 1; f < n; f++) {
     const was = mode[f - 1], now = mode[f];
     if (!was || !now || was === now || own[f] > 0) continue;
     if (!Y) { Y = plan.hipsY ? plan.hipsY.slice() : new Array(n).fill(null); W = own.slice(); }
     any = true;
-    // where the hips really were at f - 1: that side's own hips, or the water track's ease still finishing there
-    const at = own[f - 1] > 0 && plan.hipsY?.[f - 1] != null ? lerp(sideHips(f - 1), plan.hipsY[f - 1], own[f - 1]) : sideHips(f - 1);
+    // where the hips really were at f - 1: that side's own hips, or an ease still running there (the water track's, or
+    // the last handoff's: they chain)
+    const at = W[f - 1] > 0 && Y[f - 1] != null ? lerp(sideHips(f - 1), Y[f - 1], W[f - 1]) : sideHips(f - 1);
     const w0 = { ...plan.weights[f - 1] };
     for (let i = 0; i < blend; i++) {
       const fr = f + i;
@@ -331,8 +336,11 @@ export function easeDepthHandoffs(plan, { hipY, surface, blend = Math.max(1, Mat
       }
       plan.weights[fr] = mix;
       plan.main[fr] = Object.entries(mix).sort((p, q) => q[1] - p[1])[0][0];
-      // left the surface: held where they were; left the keyed depth: still following the keys from there
-      Y[fr] = was === "surface" ? at : at + plan.pos[fr][1] - plan.pos[f - 1][1];
+      // left the surface: held where they were; left the keyed depth: still following the keys from there. Capped at
+      // their own hips at the surface for that pose (level: the back awash; treading: the chin at the water)
+      // (following keys that leap 1.8 m in 8 frames: at most 2.4 m/s, a strong kick, not a 0.29 m step a frame)
+      const prev = i === 0 ? at : Y[fr - 1], dk = i === 0 ? 0 : plan.pos[fr][1] - plan.pos[fr - 1][1];
+      Y[fr] = Math.min(surfaceHips(fr), was === "surface" ? at : prev + clamp(dk, -vMax, vMax));
       W[fr] = w;
     }
   }
