@@ -1986,7 +1986,7 @@ export class Stage {
     if (!this.root) return "";   // (a bare stage without a scene: nothing to stand on)
     this._obstacles();
     const boats = this.state.actors.filter((b) => LIBRARY[b.kind]?.boat && !b.mount_id && !b.carry_id)
-      .map((b) => [b.id, b.kind, keysHash(this._actorKeys(b)), b.scale || 1, b.height_m || 0, b.rotation_deg || 0]);
+      .map((b) => [b.id, b.kind, keysHash(this._actorKeys(b)), b.scale || 1, b.height_m || 0, b.rotation_deg || 0, this._seedKey(b)]);   // (its seed: its bob on the swell)
     return `${this.state.environment?.set || ""}|${this._setCollidersCached().length}|${this._obsCache?.sig || ""}|${JSON.stringify(boats)}`;
   }
 
@@ -3832,7 +3832,8 @@ export class Stage {
     const wp = this.water ? [this.water.position.x, this.water.position.z, this.water.geometry.parameters.width, this.water.geometry.parameters.height] : null;
     // What they can stand on over the water (a dock, a parked platform, a boat's deck) is part of the plan too.
     const dry = reef ? "" : this._supportSig();
-    const sig = JSON.stringify([keys, last, fps, h, a.rotation_deg || 0, smode, a.gear || null, reef ? fx.id : pool, wp, a.kind, dry]);
+    // (the seed key too: a rename of a person with no stored seed changes their variation, in the App as after a reload)
+    const sig = JSON.stringify([keys, last, fps, h, a.rotation_deg || 0, smode, a.gear || null, reef ? fx.id : pool, wp, a.kind, dry, this._seedKey(a)]);
     this._swimCache = this._swimCache || new WeakMap();
     const c = this._swimCache.get(a);
     if (c && c.sig === sig && c.g === g) return c.plan;
@@ -5266,7 +5267,7 @@ export class Stage {
     const sm = Buoy.swimMode(a.swim);
     const sinking = !PERSON_KINDS.has(a.kind) && (sm === "cant" || sm === "sink") && a.swim != null;
     const struggle = sinking && sm === "cant" ? Buoy.struggleSeconds(Swim.seedOf(this._seedKey(a))) : 0;
-    const sig = `${a.kind}|${a.scale || 1}|${a.height_m || 0}|${a.physics?.density ?? ""}|${mass ?? ""}|${sinking}|${struggle}|${a.buoyancy || ""}`;
+    const sig = `${a.kind}|${a.scale || 1}|${a.height_m || 0}|${a.physics?.density ?? ""}|${mass ?? ""}|${sinking}|${struggle}|${a.buoyancy || ""}|${this._seedKey(a)}`;
     const c = g.userData._buoy;
     if (c?.sig === sig) return c;
     const box = this._localBox(g);

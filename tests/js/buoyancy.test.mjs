@@ -1027,3 +1027,25 @@ test("going round a boat near the tank wall, or pushed by one, the swimmer stays
     assert.ok(far <= EDGE, `${what}: never past the water's edge (farthest ${far.toFixed(2)} m at f${ff}, the water ends at ${EDGE})`);
   }
 });
+
+// Seventh pass: the swim plan's cache and the float's body cache were keyed without the seed key, so renaming a person
+// (or a crate) with no stored seed kept the old motion in the App while a reload or a bake of the same JSON gave another
+// (a can't-swim woman renamed: f240 y 0.009 in the session vs 0.090 after reload). Every scene saved before the sixth
+// pass has no seed. Both caches carry the seed key now: renamed in the App, they move as the reloaded scene does.
+test("a rename moves the same in the App as after a reload (was: the App kept the old motion, the reload gave another)", () => {
+  const woman = (name) => ({ id: "w", name, kind: "woman", height_m: 1.65, position: [2, 4.5, 0], keys: [{ frame: 0, position: [2, 4.5, 0] }], rotation_deg: 0, swim: "cant", key_y: true });
+  const crate = (name) => ({ id: "c", name, kind: "crate", position: [-3, 2, -3], keys: [{ frame: 0, position: [-3, 2, -3] }], rotation_deg: 0, key_y: true });
+  const F = [60, 120, 160, 200, 240];
+  const sample = (st) => F.map((f) => { st.setFrame(f); return [st.actorMeshes.get("w").position.toArray(), st.actorMeshes.get("w").quaternion.toArray(), st.actorMeshes.get("c").position.y]; });
+  for (const nm of ["Jane Doe", "Woman 2", "Diver"]) {
+    const st = tank([woman("Woman 1"), crate("Crate 1")], { frames: 241 });
+    sample(st);   // shown under the old names first (the caches filled)
+    st.state.actors[0].name = nm; st.state.actors[1].name = `${nm} crate`;
+    const session = sample(st), reload = sample(tank([woman(nm), crate(`${nm} crate`)], { frames: 241 }));
+    F.forEach((f, i) => {
+      assert.ok(session[i][0].every((v, k) => Math.abs(v - reload[i][0][k]) < 1e-9) && session[i][1].every((v, k) => Math.abs(v - reload[i][1][k]) < 1e-9),
+        `renamed '${nm}' f${f}: the App (y ${session[i][0][1].toFixed(3)}) as after a reload (y ${reload[i][0][1].toFixed(3)})`);
+      assert.ok(Math.abs(session[i][2] - reload[i][2]) < 1e-9, `renamed crate f${f}: the same float`);
+    });
+  }
+});
