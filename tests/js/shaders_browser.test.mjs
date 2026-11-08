@@ -97,11 +97,12 @@ for (const sig of ["SIGTERM", "SIGINT"]) {
     const { spawn } = await import("node:child_process");
     const { pathToFileURL, fileURLToPath } = await import("node:url");
     const box = mkdtempSync(join(tmpdir(), "ss-fakebrowser-"));
-    let dir = "", pid = 0;
+    let dir = "", pid = 0, hpid = 0;
     const alive = (p) => { try { process.kill(p, 0); return true; } catch { return false; } };
     try {
-      const log = join(box, "dir.txt"), pidf = join(box, "pid.txt"), exe = join(box, "fake-chrome"), runner = join(box, "run.mjs");
-      writeFileSync(exe, `#!/bin/sh\necho $$ > "${pidf}.tmp"; mv "${pidf}.tmp" "${pidf}"\nfor a; do case "$a" in --user-data-dir=*) d="\${a#--user-data-dir=}"; mkdir -p "$d/Default"; printf %s "$d" > "${log}";; esac; done\nsleep 30\n`);
+      // The stand-in forks a helper (as Chrome forks GPU / renderer processes) and records its pid before its own.
+      const log = join(box, "dir.txt"), pidf = join(box, "pid.txt"), hpidf = join(box, "helper.txt"), exe = join(box, "fake-chrome"), runner = join(box, "run.mjs");
+      writeFileSync(exe, `#!/bin/sh\nfor a; do case "$a" in --user-data-dir=*) d="\${a#--user-data-dir=}"; mkdir -p "$d/Default"; printf %s "$d" > "${log}";; esac; done\n( sleep 20; mkdir -p "$d/Default"; echo late > "$d/Default/Late" ) </dev/null >/dev/null 2>&1 &\necho $! > "${hpidf}"\necho $$ > "${pidf}.tmp"; mv "${pidf}.tmp" "${pidf}"\nsleep 30\n`);
       chmodSync(exe, 0o755);
       const harness = pathToFileURL(fileURLToPath(new URL("../browser/run_shaders.mjs", import.meta.url))).href;
       writeFileSync(runner, `import { runShaders } from ${JSON.stringify(harness)};\nawait runShaders({ browser: ${JSON.stringify(exe)}, timeoutMs: 25000 });\n`);
@@ -114,11 +115,15 @@ for (const sig of ["SIGTERM", "SIGINT"]) {
       node.kill(sig);
       const end = await gone;
       assert.equal(end.signal, sig, `the run still ends by ${sig} (${JSON.stringify(end)})`);
-      for (let i = 0; i < 20 && alive(pid); i++) await new Promise((ok) => setTimeout(ok, 100));
+      hpid = Number(readFileSync(hpidf, "utf8"));
+      for (let i = 0; i < 20 && (alive(pid) || alive(hpid)); i++) await new Promise((ok) => setTimeout(ok, 100));
       assert.equal(alive(pid), false, "the stand-in browser was stopped");
+      // the helper too: killing only the main pid (child.kill) passed this test before (review)
+      assert.equal(alive(hpid), false, "the stand-in's helper process was stopped with it (the whole process group)");
       assert.equal(existsSync(dir), false, `the profile folder is deleted: ${dir}`);
     } finally {
       if (pid) { try { process.kill(-pid, "SIGKILL"); } catch {} }
+      if (hpid) { try { process.kill(hpid, "SIGKILL"); } catch {} }
       rmSync(box, { recursive: true, force: true });
       if (dir.includes("ss-shaders-")) rmSync(dir, { recursive: true, force: true });
     }

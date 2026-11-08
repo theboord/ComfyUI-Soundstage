@@ -77,8 +77,11 @@ await launch({ port: 1, chrome: ${JSON.stringify(f.exe)}, startMs: 25000 });
       c.node.kill(sig);
       const end = await c.exit;
       assert.equal(end.signal, sig, `the run still ends by ${sig}`);
-      for (let i = 0; i < 20 && alive(pid); i++) await sleep(100);
+      const hpid = Number(readFileSync(f.hpidf, "utf8"));
+      for (let i = 0; i < 20 && (alive(pid) || alive(hpid)); i++) await sleep(100);
       assert.equal(alive(pid), false, "the stand-in browser was stopped");
+      // the helper too: killing only the main pid (child.kill) passed this test before (review)
+      assert.equal(alive(hpid), false, "the stand-in's helper process was stopped with it (the whole process group)");
       assert.equal(existsSync(dir), false, `the profile folder is deleted: ${dir}`);
     } finally { cleanup(box, f); }
   });
