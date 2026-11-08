@@ -92,3 +92,29 @@ def test_a_real_read_of_example_words_and_one_placeholder_word_is_kept(real):
                                   "never just outfit", "<...>", "..."])
 def test_placeholder_fragments_are_still_echoes(frag):
     assert vlm.wardrobe_echo(frag)
+
+
+# ------------------------------------------------------------------------------------------------ 3 true echoes
+EX = "orange cable-knit sweater"
+
+
+@pytest.mark.parametrize("echo", ["an orange cableknit sweater, brown corduroy trousers",
+                                  "orange cable-knit sweaters, brown corduroy trousers",
+                                  "an orange cable-knit sweater, brown corduroy trouser",
+                                  f"{EX} + brown corduroy trousers", f"{EX} / brown corduroy trousers",
+                                  f"i.e. an {EX}, brown corduroy trousers", f"such as an {EX}, brown corduroy trousers",
+                                  f"like an {EX}, brown corduroy trousers",
+                                  f"people only: every garment with its colour, pattern and length, such as an {EX}"],
+                         ids=["no hyphen", "plural", "singular trouser", "plus", "slash", "i.e.", "such as", "like",
+                              "placeholder, such as"])
+def test_a_reworded_example_is_an_echo(echo):
+    assert vlm.wardrobe_echo(echo)
+    assert vlm.wardrobe_of({"wardrobe": echo}) == ""
+    assert vlm.parse_reply(_person(echo))["objects"][0]["wardrobe"] == ""
+
+
+@pytest.mark.parametrize("real", ["brown corduroy trousers", "orange sweater / brown trousers",
+                                  "red hoodie + blue jeans", "looks like a red hoodie, jeans",
+                                  "orange cable-knit sweaters"])
+def test_one_garment_of_the_example_or_a_real_list_is_still_clothing(real):
+    assert not vlm.wardrobe_echo(real)

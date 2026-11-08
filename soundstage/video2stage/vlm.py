@@ -393,12 +393,12 @@ def inventory_prompt(model: str, images: list[str], max_length: int = 1400) -> d
 
 
 def _pieces(v) -> list[str]:
-    """A reply's garment pieces for the echo test: split on , ; 'and' 'with'; a leading 'label:' and the articles
+    """A reply's garment pieces for the echo test: split on , ; + / & 'and' 'with'; a leading 'label:' and the articles
     stripped; hyphens as spaces; lower case, no punctuation, single spaces."""
     s = re.sub(r"^\s*[a-z ]{1,20}:\s*", "", str(v or "").lower())
-    s = re.sub(r"[^a-z0-9,; ]", " ", s.replace("-", " "))
+    s = re.sub(r"[^a-z0-9,;+/& ]", " ", s.replace("-", " "))
     out = []
-    for p in re.split(r"[,;]|\band\b|\bwith\b", s):
+    for p in re.split(r"[,;+/&]|\band\b|\bwith\b", s):
         p = re.sub(r"\b(?:an?|the)\b", " ", p)
         p = " ".join(p.split())
         if p:
@@ -407,19 +407,25 @@ def _pieces(v) -> list[str]:
 
 
 # The echo test's normalising: asides a copy carries ("e.g.", "(example)") and the words a copy swaps in.
-_ASIDE = re.compile(r"\b(?:e g|eg|for example|for instance|example)\b")
+_ASIDE = re.compile(r"\b(?:e g|eg|i e|ie|for example|for instance|example|such as|like)\b")
 _SWAPS = (("pants", "trousers"), ("slacks", "trousers"), ("jumper", "sweater"), ("cords", "corduroy trousers"),
-          ("cord", "corduroy"))
+          ("cord", "corduroy"), ("cableknit", "cable knit"), ("cabled", "cable"))
+
+
+def _singular(w: str) -> str:
+    """One word without its plural s ("sweaters", "trousers" -> "sweater", "trouser"), for the echo test only."""
+    return w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith("ss") else w
 
 
 def _garments(v) -> set[str]:
-    """The reply's garment pieces (_pieces), each without asides and with the swapped words put back."""
+    """The reply's garment pieces (_pieces), each without asides ("e.g.", "i.e.", "such as", "like"), with the
+    swapped words put back ("pants", "cableknit") and every word singular ("sweaters", "trouser" alike)."""
     out = set()
     for p in _pieces(v):
         p = _ASIDE.sub(" ", p)
         for a, b in _SWAPS:
             p = re.sub(rf"\b{a}\b", b, p)
-        p = " ".join(p.split())
+        p = " ".join(_singular(w) for w in p.split())
         if p:
             out.add(p)
     return out
@@ -430,10 +436,10 @@ def _flat(v) -> str:
 
 
 EXAMPLE_PIECES = frozenset(_garments(WARDROBE_EXAMPLE))
-# The wardrobe placeholder of both prompts, normalised (or cut short): optional "people only:", then "e.g." and any
-# example (an older prompt's too), optional "never just outfit".
+# The wardrobe placeholder of both prompts, normalised (or cut short): optional "people only:", then "e.g." (or
+# "i.e.", "such as", "like") and any example (an older prompt's too), optional "never just outfit".
 PLACEHOLDER = re.compile(r"(?:people only )?every garment(?: with its color(?: pattern(?: and length)?)?)?"
-                         r"(?: e g .*)?(?: never just outfit)?")
+                         r"(?: (?:e g|i e|such as|like) .*)?(?: never just outfit)?")
 
 
 # Placeholder fragments: a reply made only of the placeholder's own words (and the example's) that carries the
@@ -461,8 +467,9 @@ def _placeholder_fragment(v) -> bool:
 def wardrobe_echo(v) -> bool:
     """True only when a wardrobe reply is the prompt's own text: the placeholder, whole or cut short or reworded (case,
     brackets and punctuation ignored; only its own words and the example's, at least one of them the placeholder's),
-    a bracket or ellipsis with no words ("<...>", not "-"), or the whole example: every one of its garments is in the reply, in any
-    order or wording (articles, hyphens, a 'label:', "e.g." or "(example)", 'pants' for 'trousers'), with or without
+    a bracket or ellipsis with no words ("<...>", not "-"), or the whole example: every one of its garments is in
+    the reply, in any order or wording (articles, hyphens or none, plurals, a 'label:', "e.g.", "i.e.", "such as",
+    "like" or "(example)", ' + ' or ' / ' between them, 'pants' for 'trousers'), with or without
     more garments. One garment of the example alone, a bare list of garment names, or a phrase the schema uses inside a
     real read is clothing."""
     if not str(v or "").strip():
