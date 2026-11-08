@@ -6,12 +6,15 @@ POST /soundstage/book/draft   {script, scene_id, llm_text}  -> {sections, ground
 POST /soundstage/book/spine   {script, llm_text}            -> {spine, statement, grounding}
 POST /soundstage/book/place   {script, notes, llm_text?}    -> {placements, backend}
 GET  /soundstage/book                                       -> the stored book (404 if none)
-POST /soundstage/book/save    {book}                        -> {ok, path}
+POST /soundstage/book/save    {book, project?: {id, name}}  -> {ok, path}; project is kept as book._project
 GET  /soundstage/book/context?scene=sc_1                    -> book_context() of the stored book
 POST /soundstage/book/note    {text, scene_id?, category?, source?, script?} -> {note}; the open App merges it
-POST /soundstage/book/forget  {id} or {ids} -> {ok, removed, files, still_mentions, errors}: removes those chat decision
-                              notes (by note id or ref) from every stored copy (books folder, the user's workflows/ and
-                              projects/: saved workflows, manifests, autosaves, trash). book.forgetDecision calls it.
+POST /soundstage/book/forget  {id} or {ids}, project: {id, name} -> {ok, removed, files, still_mentions, skipped,
+                              other_projects, errors, error?}: removes those chat decision notes (by note id or ref) from
+                              every stored copy OF THAT PROJECT (books folder, the user's workflows/ and projects/: saved
+                              workflows, manifests, autosaves, trash, *.json.tmp). Other projects' copies (a Duplicate)
+                              are listed in other_projects, not changed. ok is false when any copy was skipped or still
+                              mentions the id (store.forget). book.forgetDecision / scrubDecision call it.
 """
 from __future__ import annotations
 
@@ -103,7 +106,7 @@ def register(routes=None, send=None) -> bool:
         b = await _body(request)
         if not isinstance(b.get("book"), dict):
             return web.json_response({"error": "send {book}"}, status=400)
-        return web.json_response({"ok": True, "path": ST.save(b["book"])})
+        return web.json_response({"ok": True, "path": ST.save(b["book"], project=b.get("project") if isinstance(b.get("project"), dict) else None)})
 
     @routes.get("/soundstage/book/context")
     async def context(request):
@@ -144,8 +147,9 @@ def register(routes=None, send=None) -> bool:
         except Exception:  # noqa: BLE001 - no ComfyUI user folder: the books folder only
             pass
         import asyncio
-        res = await asyncio.to_thread(ST.forget, ids, roots)
-        return web.json_response({"ok": not res["errors"], **res}, status=200 if not res["errors"] else 500)
+        project = b.get("project") if isinstance(b.get("project"), dict) else None
+        res = await asyncio.to_thread(ST.forget, ids, roots, project)
+        return web.json_response(res, status=200 if not res["errors"] else 500)
 
     _REGISTERED = True
     return True

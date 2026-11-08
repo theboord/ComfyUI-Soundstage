@@ -422,7 +422,9 @@ export function pageFor(book, script, sc, stage, look = null, opts = {}) {
 // --------------------------------------------------------------------------------------------- notes
 
 let _nid = 0;
-const noteId = () => `n_${now().toString(36)}_${(++_nid).toString(36)}`;
+// Time + counter + 4 random hex: two tabs (or two projects) writing a note in the same millisecond still differ.
+const rand4 = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0");
+const noteId = () => `n_${now().toString(36)}_${(++_nid).toString(36)}${rand4()}`;
 
 /** File placements from the server (/soundstage/book/place) into the book. Each keeps its raw text, why and confidence. */
 export function addPlacements(book, placements, { source = "shorthand" } = {}) {

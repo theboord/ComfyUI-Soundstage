@@ -13,7 +13,7 @@
 //   await book.fileNotes("sc2 — keep Mara's face in shadow till she sees the badge")
 //
 // host: { getScript(), liveScene(), sceneStage(id), look(), setLook(patch), renders(sid), chosenPic(sid), cutIds(),
-//         order(), props(), save(), status(msg), openScene(id) }
+//         order(), props(), save(), status(msg), openScene(id), project() -> {id, name} (default: window.__ssProject.current()) }
 import { normalizeBook, emptyBook, pageFor, setField, setBookField, mergeDraft, mergeSpine, addPlacements, moveNote, removeNote,
   splitShorthand, getBookContext, recordDecision, addRevision, toggleDropped, rememberShots, scenePage, toMarkdown, notesForScene, notesOnLine } from "./model.mjs";
 import { floorPlanSVG } from "./floorplan.mjs";
@@ -70,7 +70,7 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
     clearTimeout(saveT); saveT = null;
     try {
       const r = api?.fetchApi?.("/soundstage/book/save", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ book: { ...book, script: compactScript(script()) } }) });
+        body: JSON.stringify({ book: { ...book, script: compactScript(script()) }, ...(projectRef() ? { project: projectRef() } : {}) }) });
       r?.catch?.(() => {});
       return r || null;
     } catch { return null; }
@@ -85,11 +85,21 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
     const bad = (res && res.ok === false) || status >= 400 || j?.ok === false || j?.error;
     return { j, error: bad ? `${what}: ${j?.error || (j?.errors?.length ? j.errors[0] : `HTTP ${status}`)}` : null };
   }
-  /** POST /soundstage/book/forget: every stored copy of these decision notes goes. -> {copies} or {error}. */
+  /** The open project {id, name} (host.project(), else window.__ssProject.current()): Forget cleans only its copies. */
+  function projectRef() {
+    try {
+      const p = H.project ? H.project() : globalThis.__ssProject?.current?.();
+      if (!p || !(p.id || p.name)) return null;
+      return { ...(p.id ? { id: String(p.id) } : {}), ...(p.name ? { name: String(p.name) } : {}) };
+    } catch { return null; }
+  }
+  /** POST /soundstage/book/forget: every stored copy of these decision notes in THIS project goes (another project's
+   *  copy, e.g. a Duplicate's, stays). -> {copies} or {error} (the server's ok:false, with what was not cleaned). */
   async function scrub(ids) {
     if (!ids.length) return { error: "no id" };
+    const project = projectRef();
     try {
-      const r = api?.fetchApi?.("/soundstage/book/forget", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
+      const r = api?.fetchApi?.("/soundstage/book/forget", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids, ...(project ? { project } : {}) }) });
       if (!r) return { error: "no server" };
       const { j, error } = await readAnswer(await r, "the server could not clean them");
       return error ? { error } : { copies: Number(j?.removed) || 0 };

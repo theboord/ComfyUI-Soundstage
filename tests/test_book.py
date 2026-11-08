@@ -324,8 +324,8 @@ def test_forget_removes_every_stored_copy(tmp_path):
         # a director's note with that id is never removed (only chat decisions)
         (user / "workflows" / "Odd.json").write_text(json.dumps({"notes": [{"id": "n_gone", "source": "director", "text": "mine"}]}))
 
-        res = ST.forget(["n_gone", "turn_9"], [user / "workflows", user / "projects"])
-        assert not res["errors"]
+        res = ST.forget(["n_gone", "turn_9"], [user / "workflows", user / "projects"], {"id": "p_0a1b2c3d", "name": "Film"})
+        assert not res["errors"] and not res["ok"]                      # Odd.json names no project: reported, not ok
         everything = [p for p in tmp_path.rglob("*.json")]
         for p in everything:
             t = p.read_text()
@@ -340,9 +340,10 @@ def test_forget_removes_every_stored_copy(tmp_path):
         assert untouched.stat().st_mtime_ns == before                     # files that don't mention the id: not rewritten
         assert json.loads((user / "workflows" / "Odd.json").read_text())["notes"][0]["id"] == "n_gone"
         assert res["removed"] == 1 + 2 + 3 * 2 * 2 + 2                   # book, Film (2 copies), 3 autosaves x 2 x 2, trash x 2
-        assert str(user / "workflows" / "Odd.json") in res["still_mentions"]
+        assert [x["path"] for x in res["skipped"]] == [str(user / "workflows" / "Odd.json")]
+        assert "Odd.json" in res["error"]
         assert not list(tmp_path.rglob("*.tmp"))
-        assert ST.forget([], [user]) == {"removed": 0, "files": [], "still_mentions": [], "errors": []}
+        assert ST.forget([], [user]) == {"ok": True, "removed": 0, "files": [], "still_mentions": [], "skipped": [], "other_projects": [], "errors": []}
     finally:
         ST._OVERRIDE = None
 
@@ -364,10 +365,80 @@ def test_forget_route(tmp_path):
         async with TestClient(TestServer(app)) as c:
             assert (await c.post("/soundstage/book/forget", json={})).status == 400
             j = await (await c.post("/soundstage/book/forget", json={"id": "n_a"})).json()
-            assert j["ok"] and j["removed"] == 1
+            assert not j["ok"] and j["removed"] == 1                      # no project: the open book only, and it says so
+            assert "no project given" in j["error"]
+            ST.save({"v": 1, "notes": [_dec("n_a"), _dec("n_b")]}, project={"id": "p_0a1b2c3d", "name": "Film"})
+            j = await (await c.post("/soundstage/book/forget", json={"id": "n_a", "project": {"id": "p_0a1b2c3d", "name": "Film"}})).json()
+            assert j["ok"] and j["removed"] == 1, j
             assert [n["id"] for n in ST.load()["notes"]] == ["n_b"]
     try:
         asyncio.run(go())
     finally:
         ST._OVERRIDE = None
         R._REGISTERED = False
+
+
+def _wf_of(pid, name, notes):
+    wf = _wf_with_book(notes)
+    wf["extra"]["ss_project"] = {"name": name, **({"id": pid} if pid else {})}
+    return wf
+
+
+def test_forget_is_scoped_to_the_forgetting_project(tmp_path):
+    """Two projects share a ref (and a Duplicate shares the note id): only the target project loses it."""
+    from soundstage.project import library as L
+    books, user = tmp_path / "books", tmp_path / "user"
+    ST._OVERRIDE = str(books)
+    try:
+        (user / "workflows").mkdir(parents=True)
+        (user / "projects" / "A").mkdir(parents=True)
+        (user / "projects" / "A" / "project.json").write_text(json.dumps({"format": "soundstage-project", "id": "p_aaaaaaaa", "name": "A"}))
+        (user / "workflows" / "A.json").write_text(json.dumps(_wf_of("p_aaaaaaaa", "A", [_dec("n_1", ref="t1")])))
+        (user / "workflows" / "B.json").write_text(json.dumps(_wf_of("p_bbbbbbbb", "B", [_dec("n_9", ref="t1")])))
+        L.duplicate(user, "A", "A copy")                               # same note id n_1, fresh project id
+        dup = json.loads((user / "workflows" / "A copy.json").read_text())
+        assert dup["extra"]["ss_project"]["id"] != "p_aaaaaaaa"
+        (user / "projects" / "A" / "autosave").mkdir()
+        (user / "projects" / "A" / "autosave" / "20261101-120000-000.json").write_text(
+            json.dumps({"name": "A", "workflow": _wf_of(None, "A", [_dec("n_1")])}))   # pre-id autosave of A: by name
+        ST.save({"v": 1, "notes": [_dec("n_9", ref="t1")]}, project={"id": "p_bbbbbbbb", "name": "B"})  # B's open book
+
+        res = ST.forget(["t1", "n_1"], [user / "workflows", user / "projects"], {"id": "p_aaaaaaaa", "name": "A"})
+        assert res["ok"], res
+        assert res["removed"] == 2 + 2                                 # A.json (2 copies), its autosave (2 copies)
+        a = json.loads((user / "workflows" / "A.json").read_text())
+        assert a["nodes"][0]["properties"]["ss_book"]["notes"] == []
+        b = json.loads((user / "workflows" / "B.json").read_text())
+        assert [n["id"] for n in b["nodes"][0]["properties"]["ss_book"]["notes"]] == ["n_9"], "B shares the ref: kept"
+        d = json.loads((user / "workflows" / "A copy.json").read_text())
+        assert [n["id"] for n in d["nodes"][0]["properties"]["ss_book"]["notes"]] == ["n_1"], "the duplicate keeps its copy"
+        assert [n["id"] for n in ST.load()["notes"]] == ["n_9"], "B's server book kept"
+        assert set(res["other_projects"]) == {str(user / "workflows" / "B.json"), str(user / "workflows" / "A copy.json"),
+                                              str(books / "current.json")}
+    finally:
+        ST._OVERRIDE = None
+
+
+def test_forget_reports_skipped_big_files_tmp_leftovers_and_string_mentions(tmp_path, monkeypatch):
+    books, user = tmp_path / "books", tmp_path / "user"
+    ST._OVERRIDE = str(books)
+    try:
+        (user / "workflows").mkdir(parents=True)
+        P = {"id": "p_aaaaaaaa", "name": "A"}
+        ST.save({"v": 1, "notes": [_dec("n_1")]}, project=P)
+        (books / "current.json.tmp").write_text(json.dumps({"v": 1, "_project": P, "notes": [_dec("n_1")]}))   # a died save
+        big = user / "workflows" / "Big.json"
+        big.write_text(json.dumps(_wf_of("p_aaaaaaaa", "A", [_dec("n_1")])) + " " * 2048)
+        wf = _wf_of("p_aaaaaaaa", "A", [_dec("n_1")])
+        wf["extra"]["memo"] = "forgot n_1 earlier"                        # the id inside a string
+        (user / "workflows" / "A.json").write_text(json.dumps(wf))
+        monkeypatch.setattr(ST, "MAX_SCRUB_BYTES", 1500)
+        res = ST.forget(["n_1"], [user / "workflows"], P)
+        assert not res["ok"]
+        assert '"n_1"' not in (books / "current.json.tmp").read_text(), "the .tmp leftover was cleaned too"
+        assert str(books / "current.json.tmp") in res["files"]
+        assert [s["path"] for s in res["skipped"]] == [str(big)] and "MB" in res["skipped"][0]["why"]
+        assert res["still_mentions"] == [str(user / "workflows" / "A.json")]
+        assert "Big.json" in res["error"] and "still mentions" in res["error"]
+    finally:
+        ST._OVERRIDE = None

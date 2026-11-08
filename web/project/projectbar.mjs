@@ -76,6 +76,9 @@ export class ProjectController {
    * window.__ssProject.projectId(); docs/projects.md "Project id".
    */
   projectId() { return projectIdOf(this.serialize()); }
+
+  /** {id, name} of the open workflow as it says (extra.ss_project): which project's stored copies Forget cleans. */
+  current() { const wf = this.serialize(); return { id: projectIdOf(wf), name: projectNameOf(wf) || this._cur()?.name || null }; }
   _cur() { return this.tabs.get(this._key()); }
 
   serialize() {

@@ -285,3 +285,28 @@ test("book.forgetDecision: by ref, every copy server-side; a failed clean-up say
     assert.deepEqual(await book.scrubDecision(b.id), { ok: true, copies: 2 });
   } finally { book.dispose(); }
 });
+
+test("book Forget names its project (host.project()); a server ok:false (a copy left) is not ok", async () => {
+  const posts = [];
+  let forgetAnswer = () => ({ ok: true, status: 200, json: async () => ({ ok: true, removed: 1 }) });
+  const api = { fetchApi: async (path, init) => {
+    if (init?.method === "POST") posts.push([path, JSON.parse(init.body)]);
+    return path === "/soundstage/book/forget" ? forgetAnswer() : { status: 200, json: async () => ({ ok: true }) };
+  }, addEventListener() {} };
+  const props = {};
+  const script = { title: "Test", scenes: [{ id: "sc_1", number: 1, heading: "INT. ROOM - DAY", elements: [], characters: [] }], characters: [] };
+  const book = mountBook({ api, stage: null, host: { getScript: () => script, liveScene: () => "sc_1", props: () => props,
+    project: () => ({ id: "p_aaaaaaaa", name: "Film" }) } });
+  try {
+    const a = book.recordDecision({ command: "rain", calls: [{ tool: "weather", args: { weather: "rain" } }], results: [{ ok: true }] });
+    posts.length = 0;
+    assert.deepEqual(await book.forgetDecision(a.id), { ok: true, copies: 1 });
+    assert.deepEqual(posts[0][1].project, { id: "p_aaaaaaaa", name: "Film" }, "the book save says whose book it is");
+    assert.deepEqual(posts[1][1].project, { id: "p_aaaaaaaa", name: "Film" }, "Forget cleans only this project's copies");
+    forgetAnswer = () => ({ ok: true, status: 200, json: async () => ({ ok: false, removed: 2, error: "1 stored copy not cleaned: Big.json (over 64 MB, not read)",
+      skipped: [{ path: "Big.json", why: "over 64 MB, not read" }], still_mentions: [], errors: [] }) });
+    const r = await book.scrubDecision(a.id);
+    assert.equal(r.ok, false);
+    assert.match(r.error, /Big\.json/);
+  } finally { book.dispose(); }
+});
