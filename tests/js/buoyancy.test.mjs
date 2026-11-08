@@ -911,3 +911,48 @@ test("crossings close together chain: keys zig-zagging 0.6 <-> 2.4 m every 8 fra
     for (const f of [23, 3, 57, 68, 99, 11]) { st.setFrame(f); assert.ok(Math.abs(hipsY(st, "u") - h[f]) < 1e-9, `${what} f${f}: the same scrubbed`); }
   }
 });
+
+// Sixth pass: part 5's timed-mount fix stopped a swimmer keyed at 0 from climbing aboard whenever the path reached a
+// boat's footprint (before the branch: popped onto the deck at f43), but nothing kept them out of the hull either:
+// swimming at 0 into the speedboat they ended up treading inside it, overlapping the hull, the head ~3 cm over the
+// 2.616 m deck. They are held at its side now, and swim round it when the keys go through.
+test("swimming at 0 into the speedboat stops at its side, out of the hull, and swims round it when the keys go through (was: treading inside the hull)", () => {
+  const boat = { id: "b", name: "b", kind: "speedboat", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }], rotation_deg: 0 };
+  const at0 = (id, keys) => ({ id, name: id, kind: "man", height_m: 1.8, position: keys[0][1], keys: keys.map(([frame, position]) => ({ frame, position })), rotation_deg: 0 });
+  // how far the clay is inside the boat's own box (its frame, from the keel to the top), sampled over its vertices
+  const inHull = (st) => {
+    const g = st.actorMeshes.get("s"), bg = st.actorMeshes.get("b");
+    g.updateMatrixWorld(true); bg.updateMatrixWorld(true);
+    const inv = bg.matrixWorld.clone().invert(), box = new THREE.Box3();
+    bg.traverse((o) => { if (o.isMesh && o.visible && !o.material?.transparent) box.union(new THREE.Box3().setFromObject(o).applyMatrix4(inv)); });
+    let pen = 0;
+    const v = new THREE.Vector3();
+    g.traverse((o) => {
+      if (!o.isMesh || !o.visible || o.material?.transparent) return;
+      const P = o.geometry.attributes.position;
+      for (let i = 0; i < P.count; i += 3) {
+        v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld).applyMatrix4(inv);
+        const d = Math.max(box.min.x - v.x, v.x - box.max.x, box.min.y - v.y, v.y - box.max.y, box.min.z - v.z, v.z - box.max.z);
+        if (d < 0) pen = Math.max(pen, -d);
+      }
+    });
+    return pen;
+  };
+  for (const [what, keys] of [["into its side", [[0, [4, 0, -1]], [60, [0, 0, -1]]]], ["through it and out", [[0, [5, 0, 0]], [100, [-5, 0, 0.5]]]], ["into its bow", [[0, [0, 0, 7]], [60, [0, 0, 0]]]]]) {
+    const st = tank([boat, at0("s", keys)]), g = st.actorMeshes.get("s");
+    const xs = [], zs = [];
+    let worst = 0, wf = 0, step = 0, sf = 0;
+    for (let f = 0; f < 121; f++) {
+      st.setFrame(f);
+      assert.ok(g.userData.swimOn, `${what} f${f}: in the water, swimming (not on the deck)`);
+      const p = inHull(st);
+      if (p > worst) { worst = p; wf = f; }
+      xs.push(g.position.x); zs.push(g.position.z);
+      if (f > 6) { const d = Math.hypot(xs[f] - xs[f - 1], zs[f] - zs[f - 1]); if (d > step) { step = d; sf = f; } }
+    }
+    // (a reaching hand can touch the side: the box is the hull's outer bounds)
+    assert.ok(worst < 0.25, `${what}: never in the hull (deepest ${worst.toFixed(2)} m at f${wf})`);
+    assert.ok(step < 0.2, `${what}: no jump (worst ${step.toFixed(2)} m a frame at f${sf})`);
+    for (const f of [63, 30, 100, 45]) { st.setFrame(f); assert.ok(Math.abs(g.position.x - xs[f]) < 1e-9 && Math.abs(g.position.z - zs[f]) < 1e-9, `${what} f${f}: the same scrubbed`); }
+  }
+});

@@ -3889,6 +3889,8 @@ export class Stage {
       at0On.push(!reef && !!m && ky <= 0.05 && sup != null);
       support.push(sup); below.push(bel);
     }
+    // swimming into a boat (keyed at 0 through its footprint, no timed mount): held in the water at its side
+    if (!reef && any) this._keepOffHulls(a, pos, mode, support, h);
     let plan = null, stand = null;
     if (any) {
       const gear = a.gear || (under > 0 || smode === "dive" ? "scuba" : "none");
@@ -3916,6 +3918,114 @@ export class Stage {
     }
     this._swimCache.set(a, { sig, g, plan, stand });
     return plan;
+  }
+
+  /**
+   * A swimmer's path (pos[f], the frames swimming and not on a deck) kept out of every floating boat's hull (was:
+   * swimming at 0 into the speedboat ended up treading inside the hull, the head 3 cm over the deck). The footprint is
+   * the boat's own box at its heading where its keys have it at f, grown by a body length's reach (0.6 h: lying along
+   * the surface the head is ~0.9 m ahead of the keyed point). A path that runs into it stops at its side; while the keys
+   * are inside, or beyond it, the swimmer swims round the side (at most 1.5 m/s) to where the keys come out, then
+   * follows them again: no jump across the boat. Frames are taken in order (a pure function of the keys). A timed mount
+   * onto the boat is held at its side until the hop starts (the hop climbs out from there). Changes pos in place.
+   */
+  _keepOffHulls(a, pos, mode, support, h) {
+    const boats = [];
+    for (const b of this.state.actors) {
+      if (!LIBRARY[b.kind]?.boat || b.mount_id || b.carry_id || b.id === a.id) continue;
+      const hg = this.actorMeshes.get(b.id);
+      if (!hg) continue;
+      // its footprint in its own frame: the box of the group with no heading, tilt or offset (cached on the group)
+      const k = `${b.kind}|${b.scale || 1}|${b.height_m || 0}|${hg.children.length}`;
+      if (hg.userData.footKey !== k) {
+        const P = hg.position.clone(), R = hg.rotation.clone();
+        hg.position.set(0, 0, 0); hg.rotation.set(0, 0, 0); hg.updateMatrixWorld(true);
+        const box = new THREE.Box3();
+        hg.traverse((o) => { if (o.isMesh && o.visible && !o.material?.transparent) box.expandByObject(o); });
+        hg.position.copy(P); hg.rotation.copy(R); hg.updateMatrixWorld(true);
+        hg.userData.footKey = k;
+        hg.userData.foot = box.isEmpty() ? null : { cx: (box.min.x + box.max.x) / 2, cz: (box.min.z + box.max.z) / 2, hx: (box.max.x - box.min.x) / 2, hz: (box.max.z - box.min.z) / 2 };
+      }
+      if (hg.userData.foot) boats.push({ b, foot: hg.userData.foot });
+    }
+    if (!boats.length) return;
+    const fps = this.state.shot?.fps || 24, vmax = 1.5 / fps, reach = 0.6 * h;
+    const hop = a.mount_id && a.mount_at > 0 ? a.mount_at - HOP_FRAMES : Infinity, Yax = new THREE.Vector3(0, 1, 0);
+    for (const B of boats) {
+      const F = B.foot, HX = F.hx + reach, HZ = F.hz + reach, PER = 4 * (HX + HZ), E = 1e-6;
+      const inside = (p) => Math.abs(p[0]) < HX - E && Math.abs(p[1]) < HZ - E;
+      // where segment p -> q first enters the box (0..1), or null when it stays out (Liang-Barsky on the open box)
+      const enters = (p, q) => {
+        let t0 = 0, t1 = 1;
+        const d = [q[0] - p[0], q[1] - p[1]];
+        for (const [pk, dk, H] of [[p[0], d[0], HX - E], [p[1], d[1], HZ - E]]) {
+          for (const [num, den] of [[-H - pk, dk], [pk - H, -dk]]) {   // t * den >= num
+            if (Math.abs(den) < 1e-12) { if (num > 0) return null; continue; }
+            const t = num / den;
+            if (den > 0) t0 = Math.max(t0, t); else t1 = Math.min(t1, t);
+          }
+        }
+        return t1 - t0 > 1e-9 ? t0 : null;
+      };
+      // the side as a loop: s from 0 at (HX, -HZ), up the +x side, along +z, down -x, back along -z
+      const sOf = (p) => {
+        const x = THREE.MathUtils.clamp(p[0], -HX, HX), z = THREE.MathUtils.clamp(p[1], -HZ, HZ), dx = HX - Math.abs(x), dz = HZ - Math.abs(z);
+        if (dx <= dz) return x > 0 ? z + HZ : 2 * HZ + 2 * HX + (HZ - z);
+        return z > 0 ? 2 * HZ + (HX - x) : 4 * HZ + 2 * HX + (x + HX);
+      };
+      const atS = (s) => {
+        s = ((s % PER) + PER) % PER;
+        if (s < 2 * HZ) return [HX, s - HZ];
+        if ((s -= 2 * HZ) < 2 * HX) return [HX - s, HZ];
+        if ((s -= 2 * HX) < 2 * HZ) return [-HX, HZ - s];
+        return [s - 2 * HZ - HX, -HZ];
+      };
+      const corners = [0, 2 * HZ, 2 * HZ + 2 * HX, 4 * HZ + 2 * HX, PER];
+      let cur = null, free = true;
+      for (let f = 0; f < pos.length; f++) {
+        if (!mode[f] || support[f] != null || f >= hop) { cur = null; free = true; continue; }
+        const bp = this._actorPosAt(B.b, f), yaw = this._headingAt(B.b, f);
+        const L = new THREE.Vector3(pos[f][0] - bp[0], 0, pos[f][2] - bp[2]).applyAxisAngle(Yax, -yaw);
+        const T = [L.x - F.cx, L.z - F.cz];
+        if (!cur) {   // the first swimming frame: where the keys are, or on the nearest side when that is inside
+          cur = inside(T) ? atS(sOf(Math.abs(T[0]) / HX > Math.abs(T[1]) / HZ ? [Math.sign(T[0] || 1) * HX, T[1]] : [T[0], Math.sign(T[1] || 1) * HZ])) : T.slice();
+          free = !inside(T);
+        } else if (free) {
+          const t = enters(cur, T);
+          if (t == null) cur = T.slice();
+          else { cur = [cur[0] + (T[0] - cur[0]) * t, cur[1] + (T[1] - cur[1]) * t]; free = false; }
+        } else {
+          let budget = vmax;
+          for (let it = 0; it < 6 && budget > 1e-9; it++) {
+            const t = enters(cur, T);
+            if (t == null || t >= 1 - 1e-9) {   // clear: swim straight to where the keys are
+              const d = Math.hypot(T[0] - cur[0], T[1] - cur[1]);
+              if (d <= budget) { cur = T.slice(); free = !inside(T); break; }
+              cur = [cur[0] + (T[0] - cur[0]) * budget / d, cur[1] + (T[1] - cur[1]) * budget / d];
+              break;
+            }
+            if (t > 1e-9) {   // off the side and the way is blocked: to the side first
+              const q = [cur[0] + (T[0] - cur[0]) * t, cur[1] + (T[1] - cur[1]) * t], d = Math.hypot(q[0] - cur[0], q[1] - cur[1]);
+              if (d > budget) { cur = [cur[0] + (q[0] - cur[0]) * budget / d, cur[1] + (q[1] - cur[1]) * budget / d]; break; }
+              cur = q; budget -= d; continue;
+            }
+            // on the side: round it, the short way, toward the point of the side nearest the keys (corner by corner)
+            // (keys inside the boat: slide along the side they are on, level with the keys, never round to another side)
+            const s = sOf(cur), onX = Math.abs(Math.abs(cur[0]) - HX) <= Math.abs(Math.abs(cur[1]) - HZ);
+            const st = inside(T) ? sOf(onX ? [Math.sign(cur[0]) * HX, T[1]] : [T[0], Math.sign(cur[1]) * HZ]) : sOf(T);
+            const fw = ((st - s) % PER + PER) % PER, bw = PER - fw;
+            if (Math.min(fw, bw) < 1e-9) break;   // as near the keys as the side gets: held there
+            const dir = fw <= bw ? 1 : -1, togo = Math.min(fw, bw);
+            let edge = Infinity;
+            for (const c of corners) { const dd = dir > 0 ? ((c - s) % PER + PER) % PER : ((s - c) % PER + PER) % PER; if (dd > 1e-9) edge = Math.min(edge, dd); }
+            const step = Math.min(budget, togo, edge);
+            cur = atS(s + dir * step); budget -= step;
+          }
+        }
+        const W = new THREE.Vector3(cur[0] + F.cx, 0, cur[1] + F.cz).applyAxisAngle(Yax, yaw);
+        pos[f][0] = bp[0] + W.x; pos[f][2] = bp[2] + W.z;
+      }
+    }
   }
 
   /** Over the water but on their keys at frame f (personTrack: on a dock or a deck, or held before a timed jump): the
