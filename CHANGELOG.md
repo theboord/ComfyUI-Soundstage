@@ -5,6 +5,35 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-07
 
+**Fourth review fixes, 23:00-23:59: ComfyUI copies, collected-copy Forget, two-tab id ping-pong, capped decisions (private branch `private/project-id`)**
+
+- **Still wrong (read first):** checked with Node and pytest only, not in the browser, the App or a live ComfyUI.
+  - **Copy detection rests on ComfyUI's tab path:** a tab is a copy when `activeWorkflow.path` is not
+    `workflows/<name>.json` or the workflow is temporary. That was not checked against a live ComfyUI frontend
+    (how it names a dragged-in file, or whether a project opened from the pill comes up temporary). A host with no
+    workflow store treats nothing as a copy. A file copied outside ComfyUI over `workflows/<name>.json` is still the
+    project.
+  - **Two tabs still change the id once:** the second tab's first save mints a new id, the first tab then adopts
+    it. A reloaded page forgets what it saved, so a stale graph saved from it gets a fresh id once more.
+  - **Forget's `ok: true` is server-side files only:** other open tabs, canvas undo, browser storage, ComfyUI's
+    queue history (`extra_pnginfo`), render metadata and a downloaded collected zip still hold what they held.
+  - **A capped decision with nothing left on the server** answers `ok: false` ("no stored copy"), the same as a
+    made-up id.
+- **ComfyUI copies replaced the project (`web/project/projectbar.mjs` `_isCopy`, `_autoName`, `save`; `web/project/store.mjs`
+  `save`, `confirmProjectId`):** a Duplicate / Save As / dragged-in copy kept the original's name and id, confirmed as
+  it, and a plain Save overwrote `workflows/<name>.json`; its autosaves pushed the original's out. Now a copy has no
+  confirmed id, its Save asks for a name and before replacing, it gets a fresh id, and it autosaves to
+  `projects/<name> (copy)/`.
+- **Forget missed collected copies (`soundstage/book/store.py` `forget`, `soundstage/book/routes.py`):** it now also
+  cleans `output/soundstage_projects/<P>/script/directors_book.json` and that folder's `project.json` (`book`,
+  `workflow`); another project's collected copy is reported in `other_copies`.
+- **Two tabs made a new id on every save (`web/project/store.mjs` `_save`):** a graph carrying an id its own page
+  saved for the project (same `created`) adopts the id in `project.json`; 8 alternating saves now give 2 ids, not 8.
+- **Forget of a capped decision did nothing (`web/book/book.mjs` `forgetDecision`):** a note dropped by the
+  40-decision cap (or forgotten in another tab) still runs the server scrub: `{ok, in_book: false, copies}`.
+- Tests: `tests/js/project.test.mjs` (copy at another path, the pill's Duplicate tab, alternating two-tab saves),
+  `tests/js/hosthooks.test.mjs` (41+ decisions), `tests/test_book.py` (collected copies).
+
 **Third review fixes, 21:30-22:30: collected-copy id collision, opaque refs, two-tab save race, Forget's other copies (private branch `private/project-id`)**
 
 - **Still wrong (read first):** checked with Node and pytest only, not in the browser, the App or a live ComfyUI.

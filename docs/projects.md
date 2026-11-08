@@ -114,8 +114,14 @@ know which project a memory belongs to, so it must not move to a different proje
   workflow with the same name never takes your id), or a workflow saved under a name whose `projects/<name>/`
   folder was left behind after its workflow was deleted from ComfyUI's sidebar. The cost: a second tab opened before
   the first Save, canvas undo back past the first Save, or a restored autosave from before it gets a fresh id when it
-  is saved. Two tabs saving a brand-new project at the same time end up with different ids, and the id keeps
-  changing between them until one tab is closed.
+  is saved.
+- **Two tabs saving in turn:** one exception to the rule above. A graph carrying an id that this same page saved for
+  the project (same `created` stamp in `project.json`) takes the id another tab's save has since put in
+  `project.json`. So when two tabs (pages) save one project in turn, the id changes once (the second tab's first
+  save) and then stays: tested with 8 alternating saves, 2 ids in all, the last 7 the same. Before this, every save
+  made a new id. It is still a change: memory keyed to the first id must re-key after a Save
+  (`await __ssProject.project()`). A page that is reloaded forgets what it saved, so a stale graph saved from a
+  reloaded page gets a fresh id once. A project replaced after Trash has a new `created` and is never adopted into.
 - **Two saves at the same moment:** saves of one project from one page run one after the other. Across tabs there
   is no lock, so after writing, Save reads `workflows/<name>.json` and `project.json` back and, while their ids
   differ, sets `project.json` to the saved workflow's id (up to 6 tries). Save then reports `confirmed: true` only
@@ -127,6 +133,15 @@ know which project a memory belongs to, so it must not move to a different proje
   `projects/<name>/project.json` still holds that id, so the copy would confirm as the live project and a plain Save
   would overwrite it. Its first Save asks for a name, asks before replacing an existing project of that name, and
   writes a fresh id.
+- **ComfyUI's own copies:** a workflow open from any path other than `workflows/<name>.json` (ComfyUI's Workflow →
+  Duplicate or Save As, an exported `.json` dragged in, a render dragged in), or a temporary never-saved workflow, is
+  a copy, even though it carries the project's name and id in `extra.ss_project`. It is treated like a collected
+  copy: `projectId()` is `null` (`project()` answers `confirmed: false, copy: true`, `current()` adds `copy: true`),
+  its first Save asks for a name and asks before replacing a project of that name, and it gets a fresh id. Its
+  autosaves go to `projects/<name> (copy)/autosave/` with no id, so they never push the project's own autosaves out.
+  Once saved from the pill, that tab is the project and later Saves are ordinary. `store.save(name, wf, {from: path})`
+  and `store.confirmProjectId(wf, {path})` apply the same rule outside the pill; `store.save` refuses (error code
+  `exists`) to overwrite an existing project from a copy unless `replace: true` is passed.
 - **Library:** Duplicate gives the copy a fresh id (in both files). Rename, Trash and Untrash keep it.
 - **Old projects:** a project saved before ids existed has none (`id: null` in the list) until its next Save.
   Opening, listing or autosaving it never writes one.
@@ -142,8 +157,8 @@ know which project a memory belongs to, so it must not move to a different proje
     project whose copies it cleans.
   - From `web/project/store.mjs`: `projectIdOf(workflow)` (the graph's id, unconfirmed), `await
     store.confirmProjectId(workflow)`, or `await store.projectId(name)`, which reads `project.json`.
-- **Not told apart:** a copy made with ComfyUI's own Save As or Duplicate, and a render dragged back in, carry the
-  source project's name and id, so they confirm as that project.
+- **Not told apart:** a copy is told apart only by the path ComfyUI opened it from. A file copied outside ComfyUI over
+  `workflows/<name>.json` itself is the project.
   - On the server: `GET /soundstage/project/list`, where each project has an `id` (`null` for an old project).
 
 ## Autosave

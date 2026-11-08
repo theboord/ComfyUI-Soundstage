@@ -149,6 +149,9 @@ When a chat command changes the set, the Book keeps a decision note on the scene
   - the books folder (`user/default/soundstage/books/*.json`, and leftover `*.json.tmp`)
   - the user's `workflows/*.json`
   - `projects/**`: manifests, the 20 autosaves and the trash
+  - `output/soundstage_projects/<P>/`: collected copies (`script/directors_book.json`, and `project.json`'s `book`
+    and `workflow`). A collected folder is the project's when its name is the project's folder name or its
+    `project.json` names the project; another collected folder holding the same note is in `other_copies`.
 
   A file belongs to the project when it carries the same project id, or no id and the same project name, or sits
   anywhere inside `projects/<project name>/` (a library Rename moves an old project's autosaves, which still name the
@@ -161,8 +164,13 @@ When a chat command changes the set, the Book keeps a decision note on the scene
   (`skipped`), a file that names no project (`skipped`), a file whose text still mentions the id, for example inside
   a string (`still_mentions`), or another project's copy (`other_copies`). Without a project only the open book is
   cleaned, and the answer says so.
-- **A note not in the open Book** (another tab's, or one already removed locally): `await book.scrubDecision(id)`
-  cleans the server copies of the open project. `forgetDecision` refuses an id it cannot find in the open Book.
+- **A note not in the open Book** (dropped by the 40-decision cap, another tab's, or one already removed locally):
+  `forgetDecision(id)` still runs the server scrub. It answers `{ok: true, in_book: false, copies}` when stored
+  copies were removed, and `{ok: false, in_book: false, copies: 0, error}` when nothing was left to remove (or the
+  scrub failed). `await book.scrubDecision(id)` does the same scrub without looking at the Book.
+- **What `ok: true` covers:** only the server-side files listed above. Not other open tabs, ComfyUI canvas undo,
+  browser storage, ComfyUI's queue history (`extra_pnginfo`), metadata inside rendered files, or a collected zip
+  already downloaded.
 - **Written back:** a second tab with the same project open, or ComfyUI's canvas undo to a step before the Forget,
   still holds the note. Its next Save or autosave writes it back to the server. Forget again after closing it.
 
@@ -173,7 +181,7 @@ When a chat command changes the set, the Book keeps a decision note on the scene
 - **Rendered files:** PNG and video metadata embed the workflow as it was when they were rendered.
 - **The browser:** the frontend keeps the open workflow and its in-tab undo steps in browser storage. The Director's
   own Undo list holds the typed command in memory until the page reloads.
-- **Collected projects** (`output/soundstage_projects/`) and any zip already downloaded.
+- **A collected zip already downloaded** (the folder in `output/soundstage_projects/` is cleaned, the zip is not).
 
 From 2026-11-07 a decision note no longer holds the typed sentence, so these copies hold only the short summary and
 the change.
