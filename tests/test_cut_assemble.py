@@ -56,3 +56,70 @@ def test_plan_normalises():
 def test_empty_cut_rejected(tmp_path):
     with pytest.raises(ValueError):
         A.assemble([], str(tmp_path / "x.mp4"))
+
+
+# ---------------------------------------------------------------- gaps (black + silence, frame-accurate at NTSC rates)
+
+from fractions import Fraction  # noqa: E402
+
+
+def test_rational_fps():
+    assert A.rational_fps(23.976) == Fraction(24000, 1001)
+    assert A.rational_fps(29.97) == Fraction(30000, 1001)
+    assert A.rational_fps(59.94) == Fraction(60000, 1001)
+    assert A.rational_fps(24) == 24 and A.rational_fps("30000/1001") == Fraction(30000, 1001)
+    assert A.rate_str(A.rational_fps(23.976)) == "24000/1001" and A.rate_str(A.rational_fps(25)) == "25"
+
+
+@pytest.mark.parametrize("fps", [24, 23.976, 29.97])
+def test_timeline_with_gaps(fps):
+    items = A.plan([{"shot_id": "a", "path": None, "in": 0, "out": 48}, {"gap": True, "frames": 13},
+                    {"shot_id": "b", "path": None, "in": 10, "out": 41}, {"gap": True, "frames": 0},
+                    {"gap": True, "frames": 7}], fps)
+    assert [it["kind"] for it in items] == ["slate", "gap", "slate", "gap"]   # the zero-length gap is dropped
+    tl = A.timeline(items, fps)
+    rate = A.rational_fps(fps)
+    assert tl[-1]["end_frame"] == 48 + 13 + 31 + 7                            # total = clips + gaps
+    assert tl[2]["start_frame"] == 61                                          # the clip after the gap starts after it
+    assert tl[2]["start_sample"] == round(Fraction(61) * 48000 / rate)         # its audio offset, in whole samples
+    assert sum(t["samples"] for t in tl) == tl[-1]["end_sample"] == round(Fraction(99) * 48000 / rate)  # no drift
+    assert all(tl[i]["end_sample"] == tl[i + 1]["start_sample"] for i in range(len(tl) - 1))
+
+
+def _clip_at(path, frames, rate, color, audio):
+    d = f"{float(Fraction(frames) / rate):.6f}"
+    cmd = ["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", f"color=c={color}:s=320x176:r={A.rate_str(rate)}:d={d}"]
+    if audio:
+        cmd += ["-f", "lavfi", "-i", f"sine=frequency=440:duration={d}", "-c:a", "aac", "-shortest"]
+    cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", str(path)]
+    subprocess.run(cmd, check=True)
+    return str(path)
+
+
+@pytest.mark.parametrize("fps", [23.976, 29.97])
+def test_assemble_with_gap_ntsc(tmp_path, fps):
+    rate = A.rational_fps(fps)
+    a = _clip_at(tmp_path / "a.mp4", 48, rate, "red", True)
+    b = _clip_at(tmp_path / "b.mp4", 48, rate, "blue", True)
+    clips = [{"shot_id": "s1", "path": a, "in": 0, "out": 36}, {"gap": True, "frames": 24},
+             {"shot_id": "s2", "path": b, "in": 0, "out": 36}]
+    out = tmp_path / "cut.mp4"
+    res = A.assemble(clips, str(out), fps=fps)
+    assert res["frames"] == 96 and res["gaps"] == 1 and res["missing"] == []
+    n = int(subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries",
+                            "stream=nb_read_frames", "-of", "csv=p=0", str(out)], capture_output=True, text=True, check=True).stdout.strip())
+    assert n == 96
+    # the silence sits exactly where the gap is: after 36 frames, for 24 frames (audio after the gap is in sync)
+    log = subprocess.run(["ffmpeg", "-v", "info", "-i", str(out), "-af", "silencedetect=n=-50dB:d=0.2", "-f", "null", "-"],
+                         capture_output=True, text=True).stderr
+    import re
+    starts = [float(x) for x in re.findall(r"silence_start: ([\d.]+)", log)]
+    ends = [float(x) for x in re.findall(r"silence_end: ([\d.]+)", log)]
+    assert len(starts) == 1 and len(ends) == 1
+    assert abs(starts[0] - float(36 / rate)) < 0.03
+    assert abs(ends[0] - float(60 / rate)) < 0.03
+
+
+def test_only_gaps_rejected(tmp_path):
+    with pytest.raises(ValueError):
+        A.assemble([{"gap": True, "frames": 10}], str(tmp_path / "x.mp4"))
