@@ -2264,7 +2264,9 @@ export class Stage {
       const g = this.actorMeshes.get(a.id);
       if (!g) continue;
       if (this.drive?.on && this.drive.pose(a, g)) continue;   // driven live (drive.mjs)
-      if (a.mount_id && !(a.mount_at > this.frame)) {   // placed on its mount below (a timed mount walks free until mount_at)
+      // placed on its mount below (a timed mount walks free until mount_at); a rider whose seat has gone under in the
+      // tank has let go and swims (_riderLetGo): posed here, off the mount
+      if (a.mount_id && !(a.mount_at > this.frame) && !this._letGoAt(a)) {
         if (g.userData.swimOn) Swim.unswim(g);   // dragged out of the water onto a boat: seated there, not left in the swim pose
         continue;
       }
@@ -2301,6 +2303,7 @@ export class Stage {
       if (sw) {
         Gait.release(g);
         sw.out = Swim.applySwim(g, sw.plan, this.frame, sw.ctx);
+        if (sw.plan.entries) this._swimEntry(g, sw.plan, this.frame);   // walked in, or let go of a mount: no pop
         swimNow.push({ a, g, plan: sw.plan, ctx: sw.ctx, out: sw.out });
       } else if (g.userData.swimOn) Swim.unswim(g);
       if (sw) {
@@ -2374,6 +2377,7 @@ export class Stage {
       const g = this.actorMeshes.get(a.id), host = this.state.actors.find((x) => x.id === a.mount_id);
       const hg = host && this.actorMeshes.get(host.id);
       if (!g || !hg) continue;
+      if (this._letGoAt(a)) continue;   // let go of a mount gone under: swimming (the free pass posed them)
       if (this._boatRider?.(a, g, host, hg)) continue;   // aboard a boat: its motion, the seat's pose, the stroke
       const m = MOUNTS[host.kind] || { pose: "sit", seat: [0, (host.height_m || 1) * 0.6, 0] };
       let k = (host.scale || 1) * (m.scaleWithHeight ? (host.height_m || m.refHeight) / m.refHeight : 1);
@@ -3852,8 +3856,14 @@ export class Stage {
    * water when still), or under it with swim set to an underwater style. Returns {plan, ctx} or null.
    */
   _swimAt(a, g) {
-    if (!PERSON_KINDS.has(a.kind) || a.carry_id || (a.mount_id && !(a.mount_at > this.frame))) return null;
-    const plan = this._swimPlan(a, g);
+    if (!PERSON_KINDS.has(a.kind) || a.carry_id) return null;
+    let src = a;
+    if (a.mount_id && !(a.mount_at > this.frame)) {   // seated: only a rider who let go of a mount gone under swims
+      const lg = this._letGoAt(a);
+      if (!lg) return null;
+      src = lg.actor;
+    }
+    const plan = this._swimPlan(src, g);
     if (!plan || !plan.mode[Math.max(0, Math.min(plan.n - 1, this.frame))]) return null;
     Swim.ensureKit(g, { gear: plan.gear, height: (a.height_m || 1.8), kind: a.kind, appearance: a.appearance || {} });
     return { plan, ctx: plan.ctx };
@@ -3877,7 +3887,7 @@ export class Stage {
     const floats = reef ? "" : JSON.stringify(this.state.actors.filter((b) => b.id !== a.id && !PERSON_KINDS.has(b.kind) && !LIBRARY[b.kind]?.boat)
       .map((b) => [b.id, b.kind, keysHash(this._actorKeys(b)), b.scale || 1, b.height_m || 0, b.physics?.density ?? "", b.physics?.mass ?? "", b.swim ?? "", b.buoyancy || "", b.mount_id || "", b.carry_id || "", this._seedKey(b)]));
     // (the seed key too: a rename of a person with no stored seed changes their variation, in the App as after a reload)
-    const sig = JSON.stringify([keys, last, fps, h, a.rotation_deg || 0, smode, a.gear || null, reef ? fx.id : pool, wp, a.kind, dry, this._seedKey(a), floats]);
+    const sig = JSON.stringify([keys, last, fps, h, a.rotation_deg || 0, smode, a.gear || null, reef ? fx.id : pool, wp, a.kind, dry, this._seedKey(a), floats, a._wetFrom ?? null]);
     this._swimCache = this._swimCache || new WeakMap();
     const c = this._swimCache.get(a);
     if (c && c.sig === sig && c.g === g) return c.plan;
@@ -3905,7 +3915,7 @@ export class Stage {
       if (reef) {
         const bed = fx.floorAt ? fx.floorAt(p[0], p[2]) : 0;
         if ((p[1] || 0) - bed > 0.35) m = (p[1] || 0) + 0.95 * h / 1.8 >= fx.surface - 0.45 ? "surface" : "under";
-      } else if (this._overWater(p[0], p[2])) {
+      } else if (this._overWater(p[0], p[2]) && !(f < a._wetFrom)) {   // (a rider who let go: in the water from then)
         if (smode === "dive") {   // scuba, neutrally trimmed: hovers at its keyed depth (on the floor: mid-water)
           const y = (p[1] || 0) > 0.35 ? Math.min(p[1], pool - hipY - 0.45) : Math.max(0.4, Math.min(pool - hipY - 0.45, pool * 0.35));
           p[1] = y; m = "under";
@@ -3961,9 +3971,113 @@ export class Stage {
       plan.id = a.id;
       plan.swimMode = smode;
       plan.ctx = { surface: reef ? fx.surface : pool, current: reef ? fx.currentAt : null, caustics: reef, floorAt: reef ? fx.floorAt : null, floor: reef ? null : 0 };
+      if (!reef) this._swimEntries(a, plan, pos, yaw, keyY, over, hipY);
     }
     this._swimCache.set(a, { sig, g, plan, stand });
     return plan;
+  }
+
+  /**
+   * Into the water from a pose that isn't a swim: walked in off the dry floor through the tank's wall (was: the feet
+   * from 0 to 1.93 m in one frame, f45 to f46), or let go of a mount gone under (_riderLetGo: from the seat). The root
+   * eases from where that pose had it (upright, at its heading) to the swim's own over n frames, enough to keep the step
+   * under ~6 cm a frame (6 to 72 frames). plan.entries = [{f, n, pos, q}], applied by _swimEntry; a pure function of
+   * the plan.
+   */
+  _swimEntries(a, plan, pos, yaw, keyY, over, hipY) {
+    const out = [], Yax = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3();
+    for (let f = 1; f < plan.n; f++) {
+      if (!plan.mode[f] || plan.mode[f - 1]) continue;
+      let from = null;
+      if (a._entryFrom && f === a._wetFrom) from = a._entryFrom;
+      else if (!over[f - 1]) from = { pos: [pos[f - 1][0], Math.max(0, keyY[f - 1] || 0), pos[f - 1][2]], yaw: yaw[f - 1] };
+      if (!from) continue;
+      const B = Swim.bodyAt(plan, f, Swim.poseAt(plan, f), { ...plan.ctx, hipY });
+      v.set(0, hipY, 0).applyQuaternion(B.q);
+      const d = Math.hypot(B.hips[0] - v.x - from.pos[0], B.hips[1] - v.y - from.pos[1], B.hips[2] - v.z - from.pos[2]);
+      if (d < 0.05) continue;
+      out.push({ f, n: Math.max(6, Math.min(72, Math.ceil(1.5 * d / 0.06))), pos: from.pos.slice(), q: new THREE.Quaternion().setFromAxisAngle(Yax, from.yaw).toArray() });
+    }
+    if (out.length) plan.entries = out; else delete plan.entries;
+  }
+
+  /** A swimmer's entry ease at this frame (plan.entries, _swimEntries), after the swim posed them. */
+  _swimEntry(g, plan, frame) {
+    for (const e of plan.entries || []) {
+      if (frame < e.f || frame >= e.f + e.n) continue;
+      const t = (frame - e.f + 1) / (e.n + 1), w = t * t * (3 - 2 * t);
+      g.position.set(e.pos[0] + (g.position.x - e.pos[0]) * w, e.pos[1] + (g.position.y - e.pos[1]) * w, e.pos[2] + (g.position.z - e.pos[2]) * w);
+      g.quaternion.slerpQuaternions(new THREE.Quaternion().fromArray(e.q), g.quaternion.clone(), w);
+      g.updateMatrixWorld(true);
+      if (Number.isFinite(plan.ctx?.floor)) Swim.keepAboveFloor(g, plan.ctx.floor);   // the eased body on the floor, not through it
+    }
+  }
+
+  /** The let-go of a rider at this frame (_riderLetGo), or null while they are still on their mount. */
+  _letGoAt(a) {
+    if (!a.mount_id || !this.water) return null;
+    const lg = this._riderLetGo(a);
+    return lg && this.frame >= lg.fe ? lg : null;
+  }
+
+  /**
+   * A person on a mount in the pool or the tank (a bicycle, a car, a horse, a bench; not a boat, whose riders are the
+   * watercraft's) whose seat goes under the surface lets go and swims, by their own Swim mode, for the rest of the shot
+   * (was: a man on a bicycle pedalled along the tank floor, head 0.8 m under; a driver sat in a flooded car all the way
+   * to the bottom). The seat counts as under when the seated head (the seat plus 0.42 of the height) is 5 cm under the
+   * surface, on the mount's own water track (_buoyTrack: floating, flooding, sinking) at the frame. The swim follows the
+   * mount's path from the seat (held where they let go before that): seated under from the start of the shot (placed in
+   * the tank on a bicycle) they are placed in the water, at the surface; let go later (a car going under) they kick up
+   * from the seat's depth, so nothing pops. {fe (the frame they let go), actor (the stand-in the swim plan reads:
+   * their own seed, swim mode and size on the seat's path, wet from fe)} or null. Cached on the mount's and the rider's
+   * settings: a pure function of the frame.
+   */
+  _riderLetGo(a) {
+    const pool = this.water && this.water.position.y >= 0.3 && !this.setFx?.underwater ? this.water.position.y : null;
+    if (pool == null || !a.mount_id || !PERSON_KINDS.has(a.kind)) return null;
+    const host = this.state.actors.find((x) => x.id === a.mount_id), hg = host && this.actorMeshes.get(host.id);
+    if (!hg || LIBRARY[host.kind]?.boat || LIBRARY[host.kind]?.flies || PERSON_KINDS.has(host.kind)) return null;
+    const last = this._lastFrame(), h = (a.height_m || 1.8) * (a.scale || 1);
+    const T = this._buoyTrack(host, hg);
+    const sig = [T?.sig ?? "", keysHash(this._actorKeys(host)), host.kind, host.scale || 1, host.height_m || 0, host.rotation_deg || 0, a.seat ?? 0, a.mount_at || 0,
+      h, last, pool, this._seedKey(a), a.swim ?? "", a.gear ?? "", a.physics?.density ?? "", a.physics?.mass ?? ""].join("|");
+    this._letGoCache ||= new WeakMap();
+    const c = this._letGoCache.get(a);
+    if (c && c.sig === sig) return c.out;
+    // the seat, as the rider pass puts it (MOUNTS / SEATS, scaled with the mount)
+    const m = MOUNTS[host.kind] || { pose: "sit", seat: [0, (host.height_m || 1) * 0.6, 0] };
+    let k = (host.scale || 1) * (m.scaleWithHeight ? (host.height_m || m.refHeight) / m.refHeight : 1), sp = m.seat;
+    const seats = SEATS[host.kind];
+    if (seats) { sp = seats[Math.max(0, Math.min(seats.length - 1, a.seat ?? 0))].pos; k = (host.scale || 1) * ((host.height_m || LIBRARY[host.kind]?.height || 1) / (LIBRARY[host.kind]?.height || 1)); }
+    const Yax = new THREE.Vector3(0, 1, 0);
+    const seatAt = (f) => {
+      const p = this._actorPosAt(host, f), yaw = this._headingAt(host, f), over = T ? !!T.over[f] : this._overWater(p[0], p[2]);
+      const xz = over ? this._insideWater(host, hg, p[0], p[2], yaw) : null;
+      const y = over && T ? T.tr.y[Math.min(T.tr.y.length - 1, f)] - T.minY : this._heightAt(host, f);
+      const o = new THREE.Vector3(sp[0] * k, 0, sp[2] * k).applyAxisAngle(Yax, yaw);
+      return { x: (xz ? xz[0] : p[0]) + o.x, z: (xz ? xz[1] : p[2]) + o.z, y: y + sp[1] * k, over, yaw };
+    };
+    const from = Math.max(0, Math.min(last, Math.ceil(a.mount_at || 0)));
+    let fe = -1, S = null;
+    for (let f = from; f <= last && fe < 0; f++) {
+      const q = seatAt(f);
+      if (q.over && this._inPool(q.x, q.z) && q.y + 0.42 * h < pool - 0.05) { fe = f; S = q; }
+    }
+    let out = null;
+    if (fe >= 0) {
+      // the feet's depth when they let go: placed (0) when they were under from the start, else from the seat down
+      const feet = fe === from ? 0 : Math.max(0.36, S.y - 0.3 * h);
+      const keys = [];
+      for (let f = 0; f <= last; f++) { const q = f < fe ? S : seatAt(f); keys.push({ frame: f, position: [q.x, feet, q.z] }); }
+      const S0 = fe > from ? seatAt(fe - 1) : S;   // the seated root the frame before (the seat less the sitting drop)
+      const actor = { id: a.id, name: a.name, kind: a.kind, height_m: a.height_m, scale: a.scale, swim: a.swim, gear: a.gear, appearance: a.appearance,
+        physics: a.physics, rotation_deg: THREE.MathUtils.radToDeg(S.yaw), keys, _wetFrom: fe,
+        _entryFrom: fe > 0 ? { pos: [S0.x, S0.y - 0.95 * h / 1.8, S0.z], yaw: S0.yaw } : null };
+      if (a.seed != null) actor.seed = a.seed;
+      out = { fe, actor };
+    }
+    this._letGoCache.set(a, { sig, out });
+    return out;
   }
 
   /**

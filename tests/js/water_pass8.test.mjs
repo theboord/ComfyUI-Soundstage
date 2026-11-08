@@ -18,6 +18,7 @@ globalThis.requestAnimationFrame ||= () => 0;
 globalThis.cancelAnimationFrame ||= () => {};
 globalThis.addEventListener ||= () => {};
 globalThis.removeEventListener ||= () => {};
+globalThis.ProgressEvent ??= class extends Event {};   // the rigged horse's model loads in the background
 
 const LEVEL = 2.5;   // the Water tank's level (environments.mjs)
 function tank(actors, { frames = 121, keepSet = false } = {}) {
@@ -72,5 +73,42 @@ test("Drive mode in the tank: the driven person swims at the surface live, never
     if (!st._inPool(p.x, p.z)) continue;
     assert.ok(g.userData.swimOn && !g.userData.gaitOn, `kept f${f}: swimming, not walking`);
     assert.ok(headY(st, "m") > LEVEL - 0.25, `kept f${f}: the head at the water (${headY(st, "m").toFixed(2)})`);
+  }
+});
+
+// ------------------------------------------------------------------ 2. A mounted rider in the tank
+// Before: a man on a bicycle in the tank pedalled along the tank floor with his head at 1.66 (the surface at 2.5), and a
+// driver stayed in the seat of a flooded car all the way to the bottom (head 1.06): the swim and the water code both
+// skipped anyone mounted. Now a rider whose seat goes under lets go and swims (his own Swim mode), from where he was;
+// a rider held above the water (a swimming horse) stays on.
+test("a rider whose mount goes under in the tank lets go and swims; a horse that swims keeps its rider", () => {
+  const ride = (kind, keys, frames) => tank([keyed("h", kind, keys, { key_y: false }), { ...man("r", 0, { x: keys[0][1][0] }), mount_id: "h" }], { frames });
+  {   // the bicycle, placed in the tank and ridden across it
+    const st = ride("bicycle", [[0, [-4, 0, 0]], [96, [4, 0, 0]]], 97), g = st.actorMeshes.get("r");
+    for (let f = 0; f <= 96; f += 4) {
+      st.setFrame(f);
+      assert.ok(g.userData.swimOn, `bike f${f}: the rider swims`);
+      assert.ok(headY(st, "r") > LEVEL - 0.25, `bike f${f}: the rider's head at the water (${headY(st, "r").toFixed(2)})`);
+    }
+  }
+  {   // a car floating, flooding and sinking where it was put: the driver lets go as the seat goes under, and kicks up
+    const st = ride("car", [[0, [0, 0, 0]], [96, [0, 0, 0]]], 1441), g = st.actorMeshes.get("r");
+    st.setFrame(0);
+    assert.ok(!g.userData.swimOn, "f0: in the driver's seat while the car floats");
+    let fe = -1;
+    for (let f = 0; f <= 1440 && fe < 0; f++) { st.setFrame(f); if (g.userData.swimOn) fe = f; }
+    assert.ok(fe > 0, `the driver lets go once the car is under (f${fe})`);
+    let prev = null, maxStep = 0;
+    for (let f = fe - 5; f <= fe + 90; f++) { st.setFrame(f); const p = g.position.clone(); if (prev) maxStep = Math.max(maxStep, p.distanceTo(prev)); prev = p; }
+    assert.ok(maxStep < 0.12, `no pop from the seat into the swim (biggest step ${maxStep.toFixed(3)} m a frame around f${fe})`);
+    st.setFrame(1440);
+    assert.ok(g.userData.swimOn && headY(st, "r") > LEVEL - 0.25, `f1440: swimming at the surface (head ${headY(st, "r").toFixed(2)}), not sat in the sunk car`);
+    // a pure function of the frame
+    st.setFrame(900); const a = headY(st, "r"); st.setFrame(200); st.setFrame(900);
+    assert.ok(Math.abs(headY(st, "r") - a) < 1e-9, "the same pose at f900 whatever was shown before");
+  }
+  {   // a horse swims and holds its rider out of the water: he stays on
+    const st = ride("horse", [[0, [-4, 0, 0]], [96, [4, 0, 0]]], 97), g = st.actorMeshes.get("r");
+    for (const f of [0, 48, 96]) { st.setFrame(f); assert.ok(!g.userData.swimOn && headY(st, "r") > LEVEL, `horse f${f}: still riding, head out`); }
   }
 });
