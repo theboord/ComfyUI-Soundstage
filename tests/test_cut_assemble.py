@@ -123,3 +123,116 @@ def test_assemble_with_gap_ntsc(tmp_path, fps):
 def test_only_gaps_rejected(tmp_path):
     with pytest.raises(ValueError):
         A.assemble([{"gap": True, "frames": 10}], str(tmp_path / "x.mp4"))
+
+
+# ---------------------------------------------------------------- caps, timeout, bad rates (final round; invented data)
+
+def test_unbounded_gap_refused_before_ffmpeg(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(A.subprocess, "run", lambda *a, **k: calls.append(a) or (_ for _ in ()).throw(AssertionError("ffmpeg ran")))
+    with pytest.raises(ValueError, match="longer than 10 minutes"):
+        A.plan([{"shot_id": "a", "path": None, "in": 0, "out": 24}, {"gap": True, "in": 0, "out": 1e12}], 24)
+    with pytest.raises(ValueError, match="longer than 10 minutes"):
+        A.assemble([{"shot_id": "a", "path": None, "in": 0, "out": 24}, {"gap": True, "frames": 1e12}], str(tmp_path / "x.mp4"), fps=24)
+    assert calls == [] and not (tmp_path / "x.mp4").exists()
+    # the cap is exactly 10 minutes at the cut's exact rate
+    assert A.max_gap_frames(A.rational_fps(24)) == 14400
+    assert A.max_gap_frames(A.rational_fps(23.976)) == 14385
+    assert A.plan([{"gap": True, "frames": 14385}], 23.976)[0]["frames"] == 14385
+    with pytest.raises(ValueError):
+        A.plan([{"gap": True, "frames": 14386}], 23.976)
+
+
+def test_total_output_capped():
+    # a clip's out of 1e12 is a slate of 1e12 frames otherwise
+    with pytest.raises(ValueError, match="hours"):
+        A.plan([{"shot_id": "a", "path": None, "in": 0, "out": 1e12}], 24)
+    many = [{"gap": True, "frames": 14400} for _ in range(25)] + [{"shot_id": "a", "path": None, "in": 0, "out": 24}]
+    with pytest.raises(ValueError, match="4-hour limit"):
+        A.plan(many, 24)   # 25 x 10 min of gaps: each under the cap, together over 4 hours
+    with pytest.raises(ValueError, match="isn't a number"):
+        A.plan([{"shot_id": "a", "path": None, "in": 0, "out": float("inf")}], 24)
+
+
+def test_gap_with_null_or_negative_frames_refused():
+    for g in ({"gap": True, "frames": None}, {"gap": True}, {"gap": True, "in": 5}, {"gap": True, "frames": "abc"},
+              {"gap": True, "frames": float("nan")}):
+        with pytest.raises(ValueError, match="gap 1 in the cut has"):
+            A.plan([g, {"shot_id": "a", "path": None, "in": 0, "out": 24}], 24)
+    with pytest.raises(ValueError, match="negative length"):
+        A.plan([{"gap": True, "frames": -12}], 24)
+    with pytest.raises(ValueError, match="negative length"):
+        A.plan([{"gap": True, "in": 30, "out": 10}], 24)
+    # out - in when frames is absent; a zero-length gap is still no gap
+    assert A.plan([{"gap": True, "in": 10, "out": 22}], 24)[0]["frames"] == 12
+    assert A.plan([{"gap": True, "frames": 0}], 24) == []
+
+
+@pytest.mark.parametrize("bad", [0, -24, "24/0", "0/1", "-24/1", "abc", "abc/1", float("nan"), float("inf"), True, 5000])
+def test_bad_fps_is_a_clean_error(bad):
+    with pytest.raises(ValueError, match="isn't a usable rate"):
+        A.rational_fps(bad)
+    with pytest.raises(ValueError, match="isn't a usable rate"):
+        A.plan([{"shot_id": "a", "path": None, "in": 0, "out": 24}], bad)
+    assert A.rational_fps(None) == 24
+
+
+def test_ffmpeg_timeout_stops_and_cleans_up(tmp_path):
+    out = tmp_path / "slow.mp4"
+    with pytest.raises(RuntimeError, match="took longer than"):
+        A.assemble([{"shot_id": "a", "name": "Wide", "path": None, "in": 0, "out": 2400}], str(out), fps=24,
+                   width=1920, height=1080, timeout=0.05)
+    assert not out.exists()
+    assert A.ffmpeg_timeout(0) == A.TIMEOUT_FLOOR_S and A.ffmpeg_timeout(1e9) == A.TIMEOUT_CEILING_S
+
+
+def test_assemble_passes_a_timeout(tmp_path, monkeypatch):
+    seen = {}
+    real = A.subprocess.run
+
+    def spy(cmd, *a, **k):
+        if "-filter_complex" in cmd:
+            seen["timeout"] = k.get("timeout")
+        return real(cmd, *a, **k)
+    monkeypatch.setattr(A.subprocess, "run", spy)
+    A.assemble([{"shot_id": "a", "path": None, "in": 0, "out": 12}], str(tmp_path / "t.mp4"), fps=24, width=64, height=36)
+    assert seen["timeout"] == A.ffmpeg_timeout(0.5)
+
+
+def test_route_refuses_bad_fps_and_bad_gaps(tmp_path, monkeypatch):
+    import asyncio
+    import types
+    aiohttp = pytest.importorskip("aiohttp")
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    fp = types.ModuleType("folder_paths")
+    for k in ("get_output_directory", "get_input_directory", "get_temp_directory"):
+        setattr(fp, k, lambda: str(tmp_path))
+    monkeypatch.setitem(sys.modules, "folder_paths", fp)
+    ran = []
+    real = A.subprocess.run
+    monkeypatch.setattr(A.subprocess, "run", lambda cmd, *a, **k: ran.append(cmd) if "-filter_complex" in cmd else real(cmd, *a, **k))
+    routes = web.RouteTableDef()
+    A.register(routes)
+    app = web.Application()
+    app.add_routes(routes)
+    shot = {"shot_id": "a", "in": 0, "out": 24, "file": None}
+
+    async def go():
+        async with TestClient(TestServer(app)) as c:
+            out = []
+            for body in ({"fps": 0, "clips": [shot]}, {"fps": "24/0", "clips": [shot]}, {"fps": -24, "clips": [shot]},
+                         {"fps": 24, "clips": [shot, {"gap": True, "frames": None}]},
+                         {"fps": 24, "clips": [shot, {"gap": True}]},
+                         {"fps": 24, "clips": [shot, {"gap": True, "frames": -3}]},
+                         {"fps": 24, "clips": [shot, {"gap": True, "in": 0, "out": 1e12}]}):
+                r = await c.post("/soundstage/cut/render_video", json=body)
+                out.append((r.status, (await r.json()).get("error", "")))
+            return out
+    res = asyncio.run(go())
+    assert all(s == 400 for s, _ in res)
+    assert all("isn't a usable rate" in e for _, e in res[:3])
+    assert "no length" in res[3][1] and "no length" in res[4][1] and "negative" in res[5][1]
+    assert "longer than 10 minutes" in res[6][1]
+    assert not any("Fraction" in e or "division" in e for _, e in res)
+    assert ran == []

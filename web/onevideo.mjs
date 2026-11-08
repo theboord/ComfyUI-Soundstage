@@ -53,6 +53,16 @@ export function gapFrames(e, { fps } = {}) {
 /** A gap measures cleanly: a whole number of frames, >= 0 (0 = no gap at all, skipped). */
 const measurable = (f) => Number.isInteger(f) && f >= 0;
 
+/** The longest gap the join accepts: 10 minutes. Mirrors MAX_GAP_SECONDS in soundstage/cut/assemble.py, which refuses
+ *  a longer one too (a gap like {in: 0, out: 1e12} would otherwise ask ffmpeg for hours of black and fill the disk). */
+export const MAX_GAP_SECONDS = 600;
+/** The cap in frames at the cut's exact rate (24 when the rate is unusable, the server's default). */
+export function maxGapFrames(fps) {
+  const r = exactFps(fps) || [24, 1];
+  return Math.floor((MAX_GAP_SECONDS * r[0]) / r[1]);
+}
+const tooLong = (f, fps) => measurable(f) && f > maxGapFrames(fps);
+
 const isGap = (e) => e && typeof e === "object" && (e.kind === "gap" || e.type === "gap" || e.gap === true);
 
 /** Tracks with at least one clip in them: an array of clips, or {clips|events|items: [...]}. */
@@ -70,6 +80,14 @@ function countPictureTracks(raw) {
 }
 
 const badGapReason = (n) => ({ code: "bad_gap", count: n, text: `${n} ${plural(n, "gap", "gaps")} with no length it can read` });
+const longGapReason = (n) => ({ code: "long_gap", count: n,
+  text: n === 1 ? `a gap longer than ${MAX_GAP_SECONDS / 60} minutes` : `${n} gaps longer than ${MAX_GAP_SECONDS / 60} minutes` });
+
+/** Gap entries of the raw cut longer than MAX_GAP_SECONDS at the cut's rate. */
+export function longGaps(raw, { fps } = {}) {
+  const cut = Array.isArray(raw) ? raw : Array.isArray(raw?.cut) ? raw.cut : [];
+  return cut.filter((e) => e && typeof e === "object" && isGap(e) && tooLong(gapFrames(e, { fps }), fps)).length;
+}
 
 /** Gap entries of the raw cut the App can't measure (gapFrames NaN, negative or fractional). */
 export function unmeasurableGaps(raw, { fps } = {}) {
@@ -81,13 +99,14 @@ export function unmeasurableGaps(raw, { fps } = {}) {
 export function localOneVideoSupport(raw, { fps } = {}) {
   const cut = Array.isArray(raw) ? raw : Array.isArray(raw?.cut) ? raw.cut : [];
   const reasons = [];
-  let gaps = 0, badGaps = 0, detached = 0, noShot = 0;
+  let gaps = 0, badGaps = 0, long = 0, detached = 0, noShot = 0;
   const kinds = new Map();
   for (const e of cut) {
     if (e == null || typeof e !== "object") continue;   // a null slot was always skipped; keep that
     if (isGap(e)) {
       const f = gapFrames(e, { fps });
       if (!measurable(f)) badGaps += 1;
+      else if (tooLong(f, fps)) long += 1;
       else if (f >= 1) gaps += 1;                          // a zero-length gap is no gap at all
       continue;
     }
@@ -98,6 +117,7 @@ export function localOneVideoSupport(raw, { fps } = {}) {
   const tracks = countPictureTracks(raw);
   if (gaps) reasons.push({ code: GAP_CODE, count: gaps, text: `gaps (${gaps})` });
   if (badGaps) reasons.push(badGapReason(badGaps));
+  if (long) reasons.push(longGapReason(long));
   if (tracks) reasons.push({ code: "upper_video", count: tracks, text: tracks === 1 ? "an upper picture track" : `${tracks} upper picture tracks` });
   if (detached) reasons.push({ code: "audio_detached", count: detached, text: `detached audio on ${detached} ${plural(detached, "clip", "clips")}` });
   for (const [k, n] of kinds) reasons.push({ code: "unknown_kind", count: n, text: `${n} ${plural(n, "clip", "clips")} of a kind it doesn't know ("${k.slice(0, 24)}")` });
@@ -129,7 +149,7 @@ const listing = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(
 /**
  * Decide on the raw cut. hook: the Cut's oneVideoSupport when it exports one (a throw or a malformed answer falls
  * back to the local rules). Whatever the rule set answers, the App measures every gap itself (gapFrames at opts.fps):
- * a gap it can't measure is a refusal, never dropped. Returns {ok, gapsOnly, reasons, source: "cut"|"local", message};
+ * a gap it can't measure, or one longer than MAX_GAP_SECONDS, is a refusal, never dropped or joined. Returns {ok, gapsOnly, reasons, source: "cut"|"local", message};
  * message is "" when the join can go ahead (ok, or gaps only).
  */
 export function checkOneVideo(raw, hook = null, { fps } = {}) {
@@ -140,6 +160,8 @@ export function checkOneVideo(raw, hook = null, { fps } = {}) {
   if (!res) res = localOneVideoSupport(raw, { fps });
   const bad = unmeasurableGaps(raw, { fps });
   if (bad && !res.reasons.some((r) => r.code === "bad_gap")) res = { ok: false, reasons: [...res.reasons, badGapReason(bad)] };
+  const long = longGaps(raw, { fps });
+  if (long && !res.reasons.some((r) => r.code === "long_gap")) res = { ok: false, reasons: [...res.reasons, longGapReason(long)] };
   const gapsOnly = !res.ok && res.reasons.length > 0 && res.reasons.every((r) => r.code === GAP_CODE);
   const message = res.ok || gapsOnly ? ""
     : `This cut has ${listing(res.reasons.map((r) => r.text))}; one-video export can't include ${res.reasons.length === 1 ? "it" : "them"} yet.`;
@@ -168,6 +190,7 @@ export function oneVideoClips(raw, { shotFile, shotName = (id) => id, fps } = {}
     if (isGap(e)) {
       const f = gapFrames(e, { fps });
       if (!measurable(f)) throw new Error("This cut has a gap with no length it can read; one-video export can't include it yet.");
+      if (tooLong(f, fps)) throw new Error(`This cut has ${longGapReason(1).text}; one-video export can't include it yet.`);
       if (f >= 1) out.push({ gap: true, frames: f, in: 0, out: f });
       continue;
     }

@@ -51,22 +51,81 @@ def probe(path: str) -> dict:
 
 AUDIO_RATE = 48000
 _NTSC = (24, 30, 48, 60, 120)
+MAX_FPS = 1000
+
+# Hard caps, so a malformed cut can't ask ffmpeg for hours of black and silence (a gap like {in: 0, out: 1e12} would
+# never finish and would fill the output disk). MAX_GAP_SECONDS mirrors web/onevideo.mjs, which refuses first.
+MAX_GAP_SECONDS = 600            # one gap: 10 minutes
+MAX_OUTPUT_SECONDS = 4 * 3600    # the whole joined video: 4 hours
+# ffmpeg gets a timeout too: a fixed floor plus a multiple of the output's length, never more than the ceiling.
+TIMEOUT_FLOOR_S = 300
+TIMEOUT_PER_OUTPUT_S = 8
+TIMEOUT_CEILING_S = 6 * 3600
+
+
+def _bad_fps(fps) -> ValueError:
+    return ValueError(f"the cut's frame rate ({str(fps)[:20]}) isn't a usable rate: it must be a positive number of "
+                      "frames per second, like 24, 23.976 or 30000/1001")
 
 
 def rational_fps(fps) -> Fraction:
-    """The cut's frame rate as an exact fraction: 23.976 -> 24000/1001, 29.97 -> 30000/1001, 24 -> 24."""
+    """The cut's frame rate as an exact fraction: 23.976 -> 24000/1001, 29.97 -> 30000/1001, 24 -> 24. None -> 24.
+    Anything else that isn't a positive, finite rate up to MAX_FPS (0, -24, '24/0', 'abc', nan, True) is a ValueError
+    in plain words, never a ZeroDivisionError or an ffmpeg failure."""
+    if fps is None:
+        return Fraction(24)
+    if isinstance(fps, bool):
+        raise _bad_fps(fps)
     if isinstance(fps, Fraction):
-        return fps
-    if isinstance(fps, str) and "/" in fps:
+        rate = fps
+    elif isinstance(fps, str) and "/" in fps:
         a, _, b = fps.partition("/")
-        return Fraction(int(a), int(b))
-    f = float(fps or 24)
-    if f <= 0:
-        raise ValueError("fps must be positive")
-    for n in _NTSC:
-        if abs(f - n * 1000 / 1001) < 0.006:
-            return Fraction(n * 1000, 1001)
-    return Fraction(f).limit_denominator(1001)
+        try:
+            num, den = int(a), int(b)
+        except ValueError:
+            raise _bad_fps(fps) from None
+        if den <= 0 or num <= 0:
+            raise _bad_fps(fps)
+        rate = Fraction(num, den)
+    else:
+        try:
+            f = float(fps)
+        except (TypeError, ValueError):
+            raise _bad_fps(fps) from None
+        if not (f > 0) or f == float("inf"):
+            raise _bad_fps(fps)
+        rate = None
+        for n in _NTSC:
+            if abs(f - n * 1000 / 1001) < 0.006:
+                rate = Fraction(n * 1000, 1001)
+                break
+        if rate is None:
+            rate = Fraction(f).limit_denominator(1001)
+    if rate <= 0 or rate > MAX_FPS:
+        raise _bad_fps(fps)
+    return rate
+
+
+def max_gap_frames(rate: Fraction) -> int:
+    """The longest gap in frames at this rate (floor of MAX_GAP_SECONDS x rate); web/onevideo.mjs maxGapFrames."""
+    return int(MAX_GAP_SECONDS * rate)
+
+
+def _whole(v, what: str) -> int:
+    """A frame number from the request, as an int; a ValueError in plain words for null / text / nan / inf."""
+    if v is None or isinstance(v, bool):
+        raise ValueError(f"{what} has no length")
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        raise ValueError(f"{what} has a length that isn't a number") from None
+    if f != f or f in (float("inf"), float("-inf")):
+        raise ValueError(f"{what} has a length that isn't a number")
+    return int(round(f))
+
+
+def ffmpeg_timeout(seconds: float) -> float:
+    return float(min(TIMEOUT_CEILING_S, TIMEOUT_FLOOR_S + TIMEOUT_PER_OUTPUT_S * max(0.0, seconds)))
 
 
 def rate_str(rate: Fraction) -> str:
@@ -88,24 +147,47 @@ def timeline(items: list[dict], fps) -> list[dict]:
 
 
 def plan(clips: list[dict], fps) -> list[dict]:
-    """Normalise cut entries: integer in < out, durations in seconds, kind video|image|slate|gap."""
+    """Normalise cut entries: integer in < out, durations in seconds, kind video|image|slate|gap.
+
+    A gap's length is `frames`, else out - in when both are given; a gap with neither, a null / negative / non-number
+    length, or one longer than MAX_GAP_SECONDS is a ValueError (refused, never dropped); a zero-length gap is no gap.
+    The whole cut longer than MAX_OUTPUT_SECONDS is refused too."""
     rate = rational_fps(fps)
+    cap = max_gap_frames(rate)
     out = []
-    for c in clips:
+    for i, c in enumerate(clips):
         if c.get("gap"):
-            n = int(round(float(c.get("frames", c.get("out", 0) - c.get("in", 0)) or 0)))
-            if n < 1:
+            what = f"gap {i + 1} in the cut"
+            if "frames" in c:
+                n = _whole(c.get("frames"), what)
+            elif c.get("in") is not None and c.get("out") is not None:
+                n = _whole(c.get("out"), what) - _whole(c.get("in"), what)
+            else:
+                raise ValueError(f"{what} has no length")
+            if n < 0:
+                raise ValueError(f"{what} has a negative length ({n} frames)")
+            if n > cap:
+                raise ValueError(f"{what} is longer than {MAX_GAP_SECONDS // 60} minutes ({n} frames); "
+                                 "one-video export can't include it")
+            if n == 0:
                 continue   # a zero-length gap is no gap
             out.append({**c, "in": 0, "out": n, "frames": n, "seconds": float(n / rate), "kind": "gap", "path": None})
             continue
-        a = max(0, int(round(float(c.get("in", 0)))))
-        b = max(a + 1, int(round(float(c.get("out", a + 1)))))
+        what = f"clip {i + 1} ({c.get('name') or c.get('shot_id') or 'shot'})"
+        a = max(0, _whole(c.get("in", 0), what))
+        b = max(a + 1, _whole(c.get("out", a + 1), what))
         path = c.get("path")
         kind = "slate"
         if path and os.path.isfile(path):
             kind = "image" if path.lower().endswith(IMAGE_EXT) else "video"
         out.append({**c, "in": a, "out": b, "frames": b - a, "seconds": float((b - a) / rate), "kind": kind,
                     "path": path if kind != "slate" else None})
+        if b - a > MAX_OUTPUT_SECONDS * rate:
+            raise ValueError(f"{what} is longer than {MAX_OUTPUT_SECONDS // 3600} hours; one-video export can't include it")
+    total = sum(it["frames"] for it in out)
+    if total > MAX_OUTPUT_SECONDS * rate:
+        raise ValueError(f"the joined cut would run {float(total / rate) / 3600:.1f} hours, longer than the "
+                         f"{MAX_OUTPUT_SECONDS // 3600}-hour limit for one video")
     return out
 
 
@@ -190,7 +272,7 @@ def build_command(items: list[dict], out_path: str, fps, width: int, height: int
 
 
 def assemble(clips: list[dict], out_path: str, fps=24.0, width: int | None = None,
-             height: int | None = None) -> dict:
+             height: int | None = None, timeout: float | None = None) -> dict:
     """clips: [{path|None, in, out, shot_id?, name?}] in cut order. Returns a summary."""
     if not clips:
         raise ValueError("the cut is empty")
@@ -213,15 +295,29 @@ def assemble(clips: list[dict], out_path: str, fps=24.0, width: int | None = Non
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     t0 = time.perf_counter()
     cmd = build_command(items, out_path, rate, width, height)
-    run = subprocess.run(cmd, capture_output=True, text=True)
-    if run.returncode != 0:
-        raise RuntimeError(f"ffmpeg failed: {run.stderr.strip()[-600:]}")
     frames = sum(it["frames"] for it in items)
+    limit = ffmpeg_timeout(float(frames / rate)) if timeout is None else float(timeout)
+    try:
+        run = subprocess.run(cmd, capture_output=True, text=True, timeout=limit)
+    except subprocess.TimeoutExpired:
+        # subprocess.run has already killed ffmpeg; don't leave a half-written file behind
+        _remove(out_path)
+        raise RuntimeError(f"ffmpeg took longer than {limit:.0f} s joining the cut and was stopped; nothing was saved") from None
+    if run.returncode != 0:
+        _remove(out_path)
+        raise RuntimeError(f"ffmpeg failed: {run.stderr.strip()[-600:]}")
     return {"path": out_path, "frames": frames, "seconds": round(float(frames / rate), 3), "width": width, "height": height,
             "gaps": sum(1 for it in items if it["kind"] == "gap"),
             "missing": [it.get("shot_id") for it in items if it["kind"] == "slate"],
             "sources": {str(it.get("shot_id")): it["kind"] for it in items if it["kind"] != "gap"},
             "encode_s": round(time.perf_counter() - t0, 2)}
+
+
+def _remove(path: str) -> None:
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 # ---------------------------------------------------------------------------------------------------- route
@@ -260,8 +356,8 @@ def register(routes=None) -> bool:
     async def render_video(request):
         try:
             body = await request.json()
-            fps = rational_fps(body.get("fps") or 24)
-            clips = [{"gap": True, "frames": c.get("frames", (c.get("out") or 0) - (c.get("in") or 0))} if c.get("gap") else
+            fps = rational_fps(body.get("fps"))   # None -> 24; 0 / negative / x/0 -> a plain-words 400
+            clips = [{"gap": True, **{k: c[k] for k in ("frames", "in", "out") if k in c}} if c.get("gap") else
                      {"shot_id": c.get("shot_id"), "name": c.get("name"), "in": c.get("in", 0), "out": c.get("out", 1),
                       "path": _resolve(c.get("file"))} for c in body.get("clips") or [] if isinstance(c, dict)]
             import folder_paths

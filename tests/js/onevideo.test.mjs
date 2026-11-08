@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { checkOneVideo, localOneVideoSupport, oneVideoClips, findHook, gapFrames, leftOut, exactFps } from "../../web/onevideo.mjs";
+import { checkOneVideo, localOneVideoSupport, oneVideoClips, findHook, gapFrames, leftOut, exactFps, maxGapFrames, longGaps, MAX_GAP_SECONDS } from "../../web/onevideo.mjs";
 
 const today = { cut: [{ shot_id: "s1", in: 0, out: 48 }, { shot_id: "s2", in: 12, out: 36, take: { url: "/view?filename=t.mp4&type=output", rung: "final" } }] };
 
@@ -156,4 +156,29 @@ test("Render missing shots runs the one-video guard on the raw cut before queuei
   assert.match(body.slice(g), /^oneVideoGuard\(loadCut\(\), cutFps\(\)\);\n\s*if \(guard\.message\) \{ const m = `\$\{guard\.message\} Nothing was queued\.`; cutOut\.textContent = m; status\.textContent = m; return; \}/);
   assert.ok(g < body.indexOf("savedRenders()") && g < body.indexOf("flattenCut()"));
   assert.match(src, /const oneVideoGuard = \(raw, fps\) => checkOneVideo\(raw, findOneVideoHook\(CutModule, CutTimeline\), \{ fps \}\);/);
+});
+
+test("a gap longer than 10 minutes is refused, whatever the hook says (no disk-filling join)", () => {
+  assert.equal(MAX_GAP_SECONDS, 600);
+  assert.equal(maxGapFrames(24), 14400);
+  assert.equal(maxGapFrames(23.976), 14385);                                  // floor(600 * 24000 / 1001)
+  assert.equal(maxGapFrames(29.97), 17982);
+  assert.equal(maxGapFrames(null), 14400);                                    // unusable rate: the server's 24
+  const huge = { cut: [today.cut[0], { kind: "gap", in: 0, out: 1e12 }] };
+  const r = checkOneVideo(huge, null, { fps: 24 });
+  assert.equal(r.gapsOnly, false);
+  assert.equal(r.message, "This cut has a gap longer than 10 minutes; one-video export can't include it yet.");
+  const okHook = () => ({ ok: true, reasons: [] });
+  assert.equal(checkOneVideo(huge, okHook, { fps: 24 }).message, r.message);
+  const gapsHook = () => ({ ok: false, reasons: [{ code: "gaps", count: 1, text: "gaps (1)" }] });
+  assert.equal(checkOneVideo(huge, gapsHook, { fps: 24 }).gapsOnly, false);
+  assert.throws(() => oneVideoClips(huge, { fps: 24 }), /a gap longer than 10 minutes/);
+  // seconds read at the rate: 601 s refused, exactly 10 minutes joined
+  assert.equal(longGaps({ cut: [{ kind: "gap", duration: 601 }] }, { fps: 24 }), 1);
+  const edge = { cut: [today.cut[0], { kind: "gap", in: 0, out: 14400 }] };
+  assert.equal(checkOneVideo(edge, null, { fps: 24 }).gapsOnly, true);
+  assert.equal(checkOneVideo({ cut: [today.cut[0], { kind: "gap", in: 0, out: 14401 }] }, null, { fps: 24 }).gapsOnly, false);
+  // two long gaps plus a normal one
+  const two = localOneVideoSupport({ cut: [{ kind: "gap", frames: 20000 }, { kind: "gap", frames: 1e9 }, { kind: "gap", frames: 6 }] }, { fps: 24 });
+  assert.deepEqual(two.reasons.map((x) => x.text), ["gaps (1)", "2 gaps longer than 10 minutes"]);
 });
