@@ -3995,8 +3995,19 @@ export class Stage {
         if (!stand.some((v) => v != null)) stand = null;
         if (!mode.some(Boolean)) { this._swimCache.set(a, { sig, g, plan: null, stand }); return null; }
       }
-      plan = Swim.planSwim({ pos, yaw, mode, fps, height: h, style, seed: Swim.seedOf(this._seedKey(a)), gear,
-        styles: track?.styles || null, hipsY: track?.hipsY || null, hipsW: track?.hipsW || null });
+      // keys that leave the water for the dry floor (through the tank's wall): the swim goes on to the wall first,
+      // treading there (and over the frames just after it, which the style cross-fade reads: not a flutter at the keys'
+      // pace, which laid him flat again)
+      const outs = reef ? null : this._swimToWall(pos, mode, over, support, h, fps);
+      let styles = track?.styles || null;
+      if (outs) {
+        styles = styles ? styles.slice() : new Array(pos.length).fill(null);
+        for (const o of outs) for (let f = o.fx; f <= Math.min(pos.length - 1, o.until + 7); f++) if (!styles[f]) styles[f] = "tread";
+      }
+      const mk = () => Swim.planSwim({ pos, yaw, mode, fps, height: h, style, seed: Swim.seedOf(this._seedKey(a)), gear,
+        styles, hipsY: track?.hipsY || null, hipsW: track?.hipsW || null });
+      plan = mk();
+      if (outs) { this._swimToWallTrim(outs, plan, pos, mode, hipY, h); plan = mk(); }
       // keys rising to the surface or going back under: the hips ease across, no pop (swim.mjs)
       if (!reef) Swim.easeDepthHandoffs(plan, { hipY, surface: pool });
       plan.id = a.id;
@@ -4006,6 +4017,61 @@ export class Stage {
     }
     this._swimCache.set(a, { sig, g, plan, stand });
     return plan;
+  }
+
+  /**
+   * Keys that leave the water for the dry floor (walked out through the tank's wall) don't end the swim there: the
+   * swimmer was still up to 1.75 m from the wall (held off it by _swimInWalls while lying along the surface) and the
+   * walk cycle ran in 2.5 m of water for a second (was: f75 to f99, walking out 0 to -12). The swim goes on, held at
+   * the water's edge where the keys left it (their path clamped inside the walls, the upright body's reach in), for up
+   * to a second: the swimmer comes upright and reaches the wall (_swimToWallTrim cuts it to the frame they get there).
+   * Changes pos and mode in place; returns [{fx, fr, H, until}] (until: the last frame held, so far) or null.
+   */
+  _swimToWall(pos, mode, over, support, h, fps) {
+    const w = this.water;
+    if (!w || w.position.y < 0.3) return null;
+    const gp = w.geometry.parameters, ins = 0.35 * h / 1.8 + 0.06, n = pos.length;
+    const x0 = w.position.x - gp.width / 2 + ins, x1 = w.position.x + gp.width / 2 - ins;
+    const z0 = w.position.z - gp.height / 2 + ins, z1 = w.position.z + gp.height / 2 - ins;
+    const H = Math.max(6, Math.round(1.0 * fps)), out = [];
+    for (let fx = 1; fx < n; fx++) {
+      if (!mode[fx - 1] || mode[fx] || over[fx] || support[fx] != null || this._overWater(pos[fx][0], pos[fx][2])) continue;
+      let fr = fx;
+      while (fr < n && !over[fr]) fr++;
+      const whole = false;
+      const until = whole ? fr - 1 : Math.min(fr - 1, fx + H - 1), keys = pos.slice(fx, until + 1);
+      for (let f = fx; f <= until; f++) {
+        pos[f] = [THREE.MathUtils.clamp(pos[f][0], x0, x1), pos[f][1], THREE.MathUtils.clamp(pos[f][2], z0, z1)];
+        mode[f] = mode[fx - 1] === "under" ? "surface" : mode[fx - 1];
+      }
+      out.push({ fx, fr, whole, until, keys });
+      fx = Math.max(until, fr - 1);   // (the rest of this stretch out of the water is the walk's)
+    }
+    return out.length ? out : null;
+  }
+
+  /** Cut each hold at the wall (_swimToWall) to the frame the swimmer gets there: upright (within 25 degrees) with the
+   *  hips within 0.1 m of where the hold leaves them (as close as _swimInWalls lets the treading body come: the hips
+   *  ~0.65 m in from the inner wall, the hands at it), on the plan made with the whole hold
+   *  (deterministic: two plans of the same keys). Frames after it go back to the keys and the walk. */
+  _swimToWallTrim(outs, plan, pos, mode, hipY, h) {
+    const v = new THREE.Vector3(), up = new THREE.Vector3();
+    const hipsAt = (f) => {
+      const P = Swim.poseAt(plan, f), B = Swim.bodyAt(plan, f, P, { ...plan.ctx, hipY });
+      v.set(0, hipY, 0).applyQuaternion(B.q);
+      const fake = { position: new THREE.Vector3(B.hips[0] - v.x, B.hips[1] - v.y, B.hips[2] - v.z), quaternion: B.q.clone(), updateMatrixWorld() {} };
+      this._swimInWalls(fake, { height_m: h });
+      return { p: fake.position.add(v), up: up.set(0, 1, 0).applyQuaternion(B.q).y };
+    };
+    plan.ctx = plan.ctx || { surface: this.water.position.y, floor: 0 };
+    for (const o of outs) {
+      if (o.whole) continue;
+      const end = hipsAt(o.until).p.clone();
+      let f = o.fx;
+      for (; f < o.until; f++) { const r = hipsAt(f); if (r.up > Math.cos(25 * DEG) && Math.hypot(r.p.x - end.x, r.p.z - end.z) < 0.1) break; }
+      for (let k = f + 1; k <= o.until; k++) { pos[k] = o.keys[k - o.fx]; mode[k] = null; }
+      o.until = f;
+    }
   }
 
   /**
@@ -4068,7 +4134,7 @@ export class Stage {
     // the swim's last frame before they leave the water
     if (plan) for (let f = 1; f < plan.n && keys.length > 1; f++) {
       if (!plan.mode[f - 1] || plan.mode[f]) continue;
-      const pf = plan.pos[f] || target(f);
+      const pf = target(f);   // (the keys: the swim's own path is held at the wall, _swimToWall)
       if (this._overWater(pf[0], pf[2])) continue;   // (still in the water: a deck, a dock, standing: their own poses)
       const P = Swim.poseAt(plan, f - 1), B = Swim.bodyAt(plan, f - 1, P, { ...plan.ctx, hipY });
       v.set(0, hipY, 0).applyQuaternion(B.q);
