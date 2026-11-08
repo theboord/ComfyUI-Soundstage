@@ -247,6 +247,7 @@ export function personBody(height = 1.8, build = 1) {
   return { m, Vlung: m / 985, Vout: m / 1045, cdA: 0.9 * k * k, ca: 0.3 };
 }
 const PERSON_RHO = { inhaled: 985, exhaled: 1045 };
+const SINK_VMAX = 1.5;   // m/s: the fastest a sinking person goes down (sinkTrack)
 
 /**
  * A person's own density in the water (kg/m3, breathed out) from the Physics panel, or null for the default (1045): a
@@ -280,7 +281,11 @@ export function sinkTrack({ y0, floorHips, fps = 24, n, height = 1.8, exhale = 2
       const r = Math.max(20, rho0 + shift + (end - rho0 - shift) * sstep(0, exhale, t));
       const m = end * Vb, V = m / r, M = m + B.ca * B.m;   // its mass; its volume with the air still in the lungs
       const F = (RHO_WATER * V - m) * G - 0.5 * RHO_WATER * B.cdA * v * Math.abs(v);
-      v += (F / M) * dt; y += v * dt; t += dt;
+      v += (F / M) * dt;
+      // never faster than a limp body can go down head-first (1.5 m/s): a person of 1e12 kg/m3 or 1e300 kg still sinks
+      // smoothly, ~6 cm a frame (was: the hips 0.71 m in one frame, the floor in four)
+      if (v < -SINK_VMAX) v = -SINK_VMAX;
+      y += v * dt; t += dt;
       if (y < floorHips) { y = floorHips; v = 0; }
       if (y > y0) { y = y0; if (v > 0) v = 0; }   // lighter than the water: held at the surface where they slipped under
     }
@@ -524,6 +529,13 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
       styles[fr] = lie <= 0 ? base : lie >= 1 ? "limp_floor" : { [base]: 1 - lie, limp_floor: lie };
       hipsY[fr] = y + (floor + 0.14 * k - y) * lie; hipsW[fr] = 1;
       modes[fr] = y + 0.75 * k > level ? "surface" : "under";
+    }
+    // The hips, the sink and the tip onto the back together, never down faster than SINK_VMAX (a very heavy person
+    // tips as they slip under: the two added up to 0.14 m a frame even with the sink itself capped). In order.
+    const cap = SINK_VMAX / fps;
+    for (let i = Math.max(up + 1, fs); i < m; i++) {
+      const fr = f0 + i;
+      if (hipsY[fr] != null && hipsY[fr - 1] != null && hipsY[fr] < hipsY[fr - 1] - cap) hipsY[fr] = hipsY[fr - 1] - cap;
     }
   }
   return { styles, hipsY, hipsW, modes, ground, supported, held, standY };

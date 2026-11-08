@@ -153,3 +153,29 @@ test("Duplicate of a path that leaves the water leaves it too; the keys in the w
   const id2 = s2.duplicate("w"), c2 = s2.state.actors.find((x) => x.id === id2);
   for (const q of c2.keys) assert.ok(s2._inPool(q.position[0], q.position[2]) && Math.abs(q.position[0]) <= 7.0 + 1e-9, `a swimmer's copy keyed in the water (${q.position})`);
 });
+
+// ------------------------------------------------------------------ 8. A very heavy person sinks smoothly (regression)
+// At 7eafe37 a Can't-swim man of density 1e12 or mass 1e300 (or 1e9) dropped through the water in a few frames: the
+// hips 0.65 m in one frame, the head 0.67 m at f73. The sink, and the tip onto the back with it, are capped at 1.5 m/s.
+test("a very heavy person still sinks smoothly: capped per frame, and still faster than the default", () => {
+  const run = (physics, swim) => {
+    const st = tank([{ ...man("x", 0, { swim }), ...(physics ? { physics } : {}) }], { frames: 241 }), g = st.actorMeshes.get("x");
+    let ph = null, pd = null, hip = 0, head = 0, land = -1;
+    for (let f = 0; f <= 240; f++) {
+      st.setFrame(f);
+      const p = hipW(st, "x"), h = wp(g.userData.joints.head);
+      if (ph) { hip = Math.max(hip, p.distanceTo(ph)); head = Math.max(head, h.distanceTo(pd)); }
+      ph = p; pd = h;
+      if (land < 0 && f > 0 && g.position.y < 0.15) land = f;
+    }
+    return { hip, head, land };
+  };
+  for (const swim of ["cant", "sink"]) {
+    const base = run(null, swim);
+    for (const physics of [{ density: 1e12 }, { mass: 1e300 }, { mass: 1e9 }]) {
+      const r = run(physics, swim);
+      assert.ok(r.hip < 0.08 && r.head < 0.13, `${swim} ${JSON.stringify(physics)}: no drop in a few frames (hips ${r.hip.toFixed(3)}, head ${r.head.toFixed(3)} m a frame at most)`);
+      assert.ok(r.land > 0 && r.land < base.land - 12, `${swim} ${JSON.stringify(physics)}: still on the bottom well before the default (f${r.land} vs f${base.land})`);
+    }
+  }
+});
