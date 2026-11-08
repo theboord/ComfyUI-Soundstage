@@ -15,7 +15,8 @@ import { exposureHook } from "../../web/hosthooks.mjs";
 
 function litStage() {
   const st = Object.create(Stage.prototype);
-  st.state = { shot: { frames: 9, fps: 24 }, actors: [], shots: [{ id: "s" }], active_shot: "s", lighting: { mode: "time", hour: 20 } };
+  st.state = { shot: { frames: 9, fps: 24 }, actors: [], shots: [{ id: "s" }], active_shot: "s", lighting: { mode: "time", hour: 20 },
+    camera: { position: [0, 1.6, 6], target: [0, 1, 0], focal_mm: 35 } };
   st.frame = 0; st.setFrame = () => {};
   st.undo = []; st.onChange = (j) => st.undo.push(j);
   st.scene = new THREE.Scene();

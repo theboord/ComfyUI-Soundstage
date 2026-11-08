@@ -204,16 +204,26 @@ export function exposureHook(stage) {
  * them back. snapshot() -> string (the whole scene) before an edit; restore(snap) puts that scene back as ONE new undo
  * step (so the person can still Undo Ask's restore), {ok, changed} or {ok: false, error}; undo() is the stage's own
  * Undo (the LAST step, whoever made it; {ok: false} when there is nothing to undo). Prefer snapshot / restore: a
- * stage undo() takes back the person's own edit if they made one after Ask's.
+ * stage undo() takes back the person's own edit if they made one after Ask's. With no stage (stageHook(null), or a
+ * getter that returns null / throws) nothing throws: toJSON() / snapshot() -> null, select / setPose / restore ->
+ * {ok: false, error: "no stage"}, undo() -> {ok: false}. select(id) -> {ok: true, selected} | {ok: false, error}.
  */
 export function stageHook(stage) {
-  const S = () => (typeof stage === "function" ? stage() : stage);
+  const S = () => { try { return typeof stage === "function" ? stage() : stage; } catch { return null; } };
+  const NO = { ok: false, error: "no stage" };
+  const has = (fn) => { const st = S(); return st && typeof st[fn] === "function" ? st : null; };
   return {
-    toJSON: () => S().toJSON(),
-    select: (id) => S().select(id),
-    setPose: (id, pose, opts) => S().setPose(id, pose, opts),
-    snapshot: () => S().snapshot(),
-    restore: (snap) => S()?.restoreSnapshot?.(snap) ?? { ok: false, error: "no stage" },
-    undo: () => ({ ok: !!S()?.undo?.() }),
+    toJSON: () => has("toJSON")?.toJSON() ?? null,                       // null when there is no stage
+    select: (id) => {   // select(null) clears; an id that is not on the set is refused (the selection stays)
+      const st = has("select");
+      if (!st) return NO;
+      if (id != null && !(st.actorMeshes?.has?.(id) ?? st.state?.actors?.some?.((a) => a.id === id))) return { ok: false, error: `no object '${id}'` };
+      st.select(id ?? null);
+      return { ok: true, selected: st.selected ?? null };
+    },
+    setPose: (id, pose, opts) => has("setPose")?.setPose(id, pose, opts) ?? NO,
+    snapshot: () => has("snapshot")?.snapshot() ?? null,                 // null when there is no stage (restore(null) refuses)
+    restore: (snap) => has("restoreSnapshot")?.restoreSnapshot(snap) ?? NO,
+    undo: () => ({ ok: !!has("undo")?.undo() }),
   };
 }

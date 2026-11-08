@@ -249,6 +249,46 @@ export const DEFAULT_SCENE = {
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
+const SNAPSHOT_VERSION = 1;
+const isVec3 = (v) => Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === "number" && Number.isFinite(x));
+const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+/** The script scenes a stage's shots belong to (shot.scene_id), sorted. */
+function sceneIdsOf(st) {
+  return [...new Set((Array.isArray(st?.shots) ? st.shots : []).map((x) => x?.scene_id).filter((x) => typeof x === "string" && x))].sort();
+}
+/** Why a scene from a snapshot can't be put on the stage (a short reason), or null when it is a complete scene. */
+function validSnapshotScene(st) {
+  if (!isObj(st)) return "no scene in it";
+  if (!Array.isArray(st.actors)) return "no actors list";
+  const ids = new Set();
+  for (const a of st.actors) {
+    if (!isObj(a) || typeof a.id !== "string" || !a.id) return "an object without an id";
+    if (ids.has(a.id)) return `two objects with id '${a.id}'`;
+    ids.add(a.id);
+    if (a.kind != null && typeof a.kind !== "string") return `object '${a.id}' has a bad kind`;
+    if (a.position != null && !isVec3(a.position)) return `object '${a.id}' has a bad position`;
+    if (a.keys != null && (!Array.isArray(a.keys) || !a.keys.every((k) => isObj(k) && Number.isFinite(k.frame) && isVec3(k.position)))) return `object '${a.id}' has bad keys`;
+  }
+  if (st.props != null && !Array.isArray(st.props)) return "bad props list";
+  if (!isObj(st.camera) || !isVec3(st.camera.position) || !isVec3(st.camera.target)) return "no camera (position and target)";
+  if (!isObj(st.shot) || !(Number.isFinite(st.shot.frames) && st.shot.frames >= 1) || !(Number.isFinite(st.shot.fps) && st.shot.fps > 0)) return "no shot timing (frames, fps)";
+  if (st.shots != null) {
+    if (!Array.isArray(st.shots) || !st.shots.length) return "bad shots list";
+    const sids = new Set();
+    for (const sh of st.shots) {
+      if (!isObj(sh) || typeof sh.id !== "string" || !sh.id) return "a shot without an id";
+      if (sids.has(sh.id)) return `two shots with id '${sh.id}'`;
+      sids.add(sh.id);
+      if (sh.camera_keys != null && (!Array.isArray(sh.camera_keys) || !sh.camera_keys.every((k) => isObj(k) && Number.isFinite(k.frame) && isVec3(k.position) && isVec3(k.target)))) return `shot '${sh.id}' has bad camera keys`;
+    }
+    if (st.active_shot != null && !sids.has(st.active_shot)) return `active shot '${st.active_shot}' is not one of its shots`;
+  }
+  if (st.lighting != null && !isObj(st.lighting)) return "bad lighting";
+  if (st.lighting?.lights != null && !Array.isArray(st.lighting.lights)) return "bad lights list";
+  if (st.environment != null && !isObj(st.environment)) return "bad environment";
+  return null;
+}
+
 /** lighting.exposure_stops clamped to EXPOSURE_MIN..EXPOSURE_MAX in place; a non-number (true, "1e3") or 0 removed. */
 function cleanExposure(L) {
   if (!L || typeof L !== "object" || !("exposure_stops" in L)) return;
@@ -4399,6 +4439,7 @@ export class Stage {
 
   /** Start the undo history at the current scene (a freshly opened workflow or preset: Undo never goes past it). */
   resetHistory() {
+    this._sceneEpoch = (this._sceneEpoch || 0) + 1;   // another scene / workflow: older snapshots no longer restore
     this._hist = [JSON.stringify(this.state)];
     this._redo = [];
     this._lastRec = 0;
@@ -4795,30 +4836,51 @@ export class Stage {
     return { ok: true, pose, changed: false };
   }
 
-  /** A copy of the whole scene (a string) for a tool to put back later with restoreSnapshot (Ask's own Undo). */
+  /** A copy of the whole scene (a string) for a tool to put back later with restoreSnapshot (Ask's own Undo). It is
+   *  stamped with the scene that is open now (the stage's scene epoch, which resetHistory moves on whenever another
+   *  scene or workflow is opened, and the shots' scene ids), so it can't be put back over a different scene. */
   snapshot() {
-    return JSON.stringify(this.state);
+    return JSON.stringify({ soundstage_snapshot: SNAPSHOT_VERSION, epoch: this._sceneEpoch || 0, scene_ids: sceneIdsOf(this.state), scene: this.state });
   }
 
   /**
    * Put back a scene from snapshot() (a stage API for tools; web/stage/STAGE_API.md). It is an edit like any other:
-   * one undo step, so the person can Undo the restore. Returns {ok: true, changed} or {ok: false, error} (nothing
-   * changed) for anything that is not a snapshot string of a scene.
+   * one undo step, so the person can Undo the restore. The snapshot is checked whole BEFORE anything is touched: it
+   * must be a string from snapshot(), taken in the scene that is open now (same scene epoch and scene ids), and its
+   * scene must be complete (validSnapshotScene: actors, camera, shot timing, shots and their camera keys, active shot).
+   * Returns {ok: true, changed} or {ok: false, error}; a refusal changes nothing (state, undo, meshes).
    */
   restoreSnapshot(snap) {
     if (typeof snap !== "string") return { ok: false, error: "snapshot must be the string stage.snapshot() returned" };
-    let st;
-    try { st = JSON.parse(snap); } catch { return { ok: false, error: "not a snapshot (bad JSON)" }; }
-    if (!st || typeof st !== "object" || Array.isArray(st) || !Array.isArray(st.actors)) return { ok: false, error: "not a snapshot (no scene in it)" };
-    if (snap === JSON.stringify(this.state)) return { ok: true, changed: false };
-    this.live?.finish?.();
-    this.state = st;
-    this._rebake?.cancel?.();
-    this._bakeSig = inputSig(this.state.actors);
-    if (this.camera && this.fw) this.camera.aspect = this.fw / this.fh;
-    this._buildSet();
-    this._applySun?.();
-    this.setFrame(this.frame);
+    let env;
+    try { env = JSON.parse(snap); } catch { return { ok: false, error: "not a snapshot (bad JSON)" }; }
+    if (!env || typeof env !== "object" || Array.isArray(env) || env.soundstage_snapshot !== SNAPSHOT_VERSION || !("scene" in env)) {
+      return { ok: false, error: "not a snapshot (pass the string stage.snapshot() returned)" };
+    }
+    if (env.epoch !== (this._sceneEpoch || 0)) return { ok: false, error: "snapshot is from another scene (a different scene or workflow was opened since): not restored" };
+    const st = env.scene;
+    const bad = validSnapshotScene(st);
+    if (bad) return { ok: false, error: `not a snapshot (${bad})` };
+    const now = sceneIdsOf(this.state), was = sceneIdsOf(st);
+    if (now.length && was.length && !was.some((x) => now.includes(x))) return { ok: false, error: `snapshot is from another scene (${was.join(", ")}, the open one is ${now.join(", ")}): not restored` };
+    if (JSON.stringify(st) === JSON.stringify(this.state)) return { ok: true, changed: false };
+    cleanExposure(st.lighting);
+    const prev = this.state;
+    try {
+      this.live?.finish?.();
+      this.state = st;
+      this._rebake?.cancel?.();
+      this._bakeSig = inputSig(this.state.actors);
+      if (this.camera && this.fw) this.camera.aspect = this.fw / this.fh;
+      this._buildSet();
+      this._applySun?.();
+      this.setFrame(this.frame);
+    } catch (e) {   // a scene the set could not be built from: put the open one back, nothing recorded
+      this.state = prev;
+      this._bakeSig = inputSig(this.state.actors);
+      try { this._buildSet(); this._applySun?.(); this.setFrame(this.frame); } catch { /* as it was */ }
+      return { ok: false, error: `snapshot could not be restored (${e?.message || e}): nothing changed` };
+    }
     this.onChange(this.toJSON());
     this.onShots?.();
     this.onSelect?.(this.selectedInfo?.());

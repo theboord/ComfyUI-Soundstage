@@ -15,7 +15,8 @@ import { stageHook } from "../../web/hosthooks.mjs";
 
 function sitStage(actors) {
   const st = Object.create(Stage.prototype);
-  st.state = { shot: { frames: 9, fps: 24 }, shots: [{ id: "s", camera_keys: [{ frame: 0, position: [0, 1.6, 6], target: [0, 1, 0], focal_mm: 35 }] }], active_shot: "s", actors };
+  st.state = { shot: { frames: 9, fps: 24 }, camera: { position: [0, 1.6, 6], target: [0, 1, 0], focal_mm: 35 },
+    shots: [{ id: "s", camera_keys: [{ frame: 0, position: [0, 1.6, 6], target: [0, 1, 0], focal_mm: 35 }] }], active_shot: "s", actors };
   st.actorMeshes = new Map(); st.frame = 0; st.camera = new THREE.PerspectiveCamera();
   Object.defineProperty(st, "fw", { value: 1280 }); Object.defineProperty(st, "fh", { value: 720 });
   st.render = () => {}; st.undo = 0; st.onChange = () => { st.undo++; }; st.scene = new THREE.Scene(); st.root = new THREE.Group();
@@ -157,14 +158,14 @@ test("Ask can take back a setPose: snapshot() before, restoreSnapshot() after (o
   const snap = st.snapshot(), u0 = st.undo;
   st.setPose("w", "sit");
   assert.deepEqual(st.restoreSnapshot(snap), { ok: true, changed: true });
-  assert.equal(JSON.stringify(st.state), snap);
+  assert.equal(JSON.stringify(st.state), JSON.stringify(JSON.parse(snap).scene));
   assert.equal(st.undo, u0 + 2, "the restore is one more undo step (the person can Undo it)");
   assert.deepEqual(st.restoreSnapshot(snap), { ok: true, changed: false });
   for (const bad of [null, 3, "{", "[]", "{\"x\":1}"]) {
     const r = st.restoreSnapshot(bad);
     assert.equal(r.ok, false, String(bad)); assert.match(r.error, /snapshot/);
   }
-  assert.equal(JSON.stringify(st.state), snap);
+  assert.equal(JSON.stringify(st.state), JSON.stringify(JSON.parse(snap).scene));
 });
 
 test("Ask's host.stage (stageHook): setPose, snapshot / restore and undo on the real stage", () => {
@@ -304,4 +305,91 @@ test("a seat in use is not picked up from under the sitter; a seat that starts m
   st.state.actors[2].carry_id = "p2";   // carried by some other path (a recorded take): the lifelike body stops sitting on it
   assert.equal(st._sitSpec(st.state.actors[0]), null);
   for (let f = 0; f <= 8; f++) { st.setFrame(f); assert.ok(st.actorMeshes.get("p1").position.y > -1.2, `frame ${f}`); }
+});
+
+// ---------------------------------------------------------------- restore validates the whole snapshot first
+test("restoreSnapshot refuses an incomplete or foreign snapshot and changes nothing; later setFrame still works", () => {
+  const st = sitStage([walker("w"), prop("c1", "chair", 1.2, 0.9)]);
+  st.resetHistory();
+  const snap = st.snapshot(), env = JSON.parse(snap);
+  st.setPose("w", "sit");
+  const before = JSON.stringify(st.state), u0 = st.undo, meshes = [...st.actorMeshes.keys()].join();
+  const wrap = (scene, extra = {}) => JSON.stringify({ ...env, ...extra, scene });
+  const sc = env.scene;
+  const bads = [
+    '{"actors":[]}',                                                     // the old raw form, no shots / camera: was a wipe
+    JSON.stringify(sc),                                                  // a bare scene without the snapshot stamp
+    wrap({ actors: [] }),                                                // stamped but empty
+    wrap({ ...sc, camera: undefined }), wrap({ ...sc, camera: { position: [0, 1, "x"], target: [0, 0, 0] } }),
+    wrap({ ...sc, shot: undefined }), wrap({ ...sc, shot: { frames: 0, fps: 24 } }), wrap({ ...sc, shot: { frames: 9, fps: NaN } }),
+    wrap({ ...sc, shots: [] }), wrap({ ...sc, shots: "s" }), wrap({ ...sc, shots: [{ id: "s" }, { id: "s" }] }),
+    wrap({ ...sc, shots: [{ id: "s", camera_keys: [{ frame: 0, position: [0, 1, 2] }] }] }),   // a key without a target
+    wrap({ ...sc, active_shot: "nope" }),
+    wrap({ ...sc, actors: [{ id: "w" }, { id: "w" }] }), wrap({ ...sc, actors: [{ name: "no id" }] }), wrap({ ...sc, actors: [null] }),
+    wrap({ ...sc, actors: [{ id: "w", position: [0, 0] }] }), wrap({ ...sc, lighting: [] }),
+    wrap(sc, { epoch: env.epoch + 7 }),                                  // taken in a scene opened before / after this one
+    wrap(sc, { soundstage_snapshot: 2 }),
+  ];
+  for (const bad of bads) {
+    const r = st.restoreSnapshot(bad);
+    assert.equal(r.ok, false, bad.slice(0, 120)); assert.match(r.error, /snapshot/);
+    assert.equal(JSON.stringify(st.state), before, `state untouched: ${bad.slice(0, 80)}`);
+    assert.equal(st.undo, u0, "no undo step");
+    assert.equal([...st.actorMeshes.keys()].join(), meshes, "the set was not rebuilt");
+  }
+  for (let f = 0; f <= 8; f++) st.setFrame(f);   // was: TypeError after restore('{"actors":[]}')
+  assert.equal(st.restoreSnapshot(snap).ok, true, "the real snapshot still restores");
+});
+
+test("restoreSnapshot refuses a snapshot from another scene (resetHistory opened one since, or other shot scene ids)", () => {
+  const st = sitStage([walker("w"), prop("c1", "chair", 1.2, 0.9)]);
+  st.state.shots[0].scene_id = "sc_1";
+  st.resetHistory();
+  const snap = st.snapshot();
+  st.setPose("w", "sit");
+  st.resetHistory();   // the App opened another scene / workflow
+  const before = JSON.stringify(st.state);
+  let r = st.restoreSnapshot(snap);
+  assert.equal(r.ok, false); assert.match(r.error, /another scene/);
+  assert.equal(JSON.stringify(st.state), before);
+  // same epoch, but the shots belong to another script scene
+  const env = JSON.parse(st.snapshot());
+  env.scene.shots = [{ ...env.scene.shots[0], scene_id: "sc_2" }];
+  r = st.restoreSnapshot(JSON.stringify(env));
+  assert.equal(r.ok, false); assert.match(r.error, /another scene \(sc_2, the open one is sc_1\)/);
+  assert.equal(JSON.stringify(st.state), before);
+});
+
+test("restoreSnapshot: a scene the set can't be built from is rolled back, nothing recorded", () => {
+  const st = sitStage([walker("w"), prop("c1", "chair", 1.2, 0.9)]);
+  const snap = st.snapshot();
+  st.setPose("w", "sit");
+  const before = JSON.stringify(st.state), u0 = st.undo, build = st._buildSet;
+  let calls = 0;
+  st._buildSet = () => { if (calls++ === 0) throw new Error("bad mesh"); build(); };
+  const r = st.restoreSnapshot(snap);
+  assert.equal(r.ok, false); assert.match(r.error, /could not be restored .*nothing changed/);
+  assert.equal(JSON.stringify(st.state), before); assert.equal(st.undo, u0);
+  st._buildSet = build;
+  st.setFrame(3);
+});
+
+test("stageHook(null) and a throwing getter refuse instead of throwing; refusals change nothing", () => {
+  for (const h of [stageHook(null), stageHook(undefined), stageHook(() => null), stageHook(() => { throw new Error("gone"); }), stageHook({})]) {
+    assert.equal(h.toJSON(), null);
+    assert.deepEqual(h.select("w"), { ok: false, error: "no stage" });
+    assert.deepEqual(h.setPose("w", "sit"), { ok: false, error: "no stage" });
+    assert.equal(h.snapshot(), null);
+    assert.deepEqual(h.restore(h.snapshot()), { ok: false, error: "no stage" });
+    assert.deepEqual(h.undo(), { ok: false });
+  }
+  const st = sitStage([walker("w"), prop("c1", "chair", 1.2, 0.9)]);
+  st._attachGizmo = () => {};   // headless: no transform gizmo
+  const host = stageHook(st);
+  assert.deepEqual(host.select("w"), { ok: true, selected: "w" });
+  assert.deepEqual(host.select("ghost"), { ok: false, error: "no object 'ghost'" });
+  assert.equal(st.selected, "w", "a refused select keeps the selection");
+  assert.deepEqual(host.select(null), { ok: true, selected: null });
+  assert.equal(host.restore('{"actors":[]}').ok, false);
+  assert.equal(st.state.actors.length, 2);
 });
