@@ -30,15 +30,15 @@ from test_v2s_dancer_r3 import _person  # noqa: E402
                                     "orange cable knit sweater, brown corduroy trousers",
                                     "Wardrobe: an orange cable-knit sweater, brown corduroy trousers",
                                     "an orange cable-knit sweater with brown corduroy trousers",
-                                    "brown corduroy trousers, an orange cable-knit sweater",
-                                    "crop top, hoodie and jacket"])
+                                    "brown corduroy trousers, an orange cable-knit sweater"])
 def test_a_reworded_copy_of_the_example_is_an_echo(copied):
     assert vlm.wardrobe_of({"wardrobe": copied}) == ""
     assert vlm.parse_reply(_person(copied))["objects"][0]["wardrobe"] == ""
 
 
 @pytest.mark.parametrize("real", ["white shirt and blue jeans", "shirt, jeans", "black dress",
-                                  "orange cable-knit sweater, black jeans", "hoodie and jacket"])
+                                  "orange cable-knit sweater, black jeans", "hoodie and jacket",
+                                  "crop top, hoodie and jacket"])
 def test_a_real_read_with_example_words_is_kept(real):
     assert vlm.wardrobe_of({"wardrobe": real}) == real
 

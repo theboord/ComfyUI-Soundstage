@@ -16,7 +16,7 @@ MODELS = ["qwen3.5_4b_bf16.safetensors"]
 INVENTORY_MODELS = ["qwen3vl_8b_fp8_scaled.safetensors", "qwen3vl_4b_fp8_scaled.safetensors", "qwen3.5_4b_bf16.safetensors"]
 
 # The wardrobe example in both prompts. It must never match the test clip's real outfit (a plaid shirt and jeans), or a
-# model that copies the example would look like a correct read; a reply that copies it is an echo (ECHOES).
+# model that copies the example would look like a correct read; a reply that copies it is an echo (wardrobe_echo).
 WARDROBE_EXAMPLE = "an orange cable-knit sweater, brown corduroy trousers"
 SYSTEM = (
     "You break one frame of a film shot down into a 3D previz layout. Reply with JSON only, no prose:\n"
@@ -339,14 +339,9 @@ INVENTORY_FRAMES = 6
 # Echoes of the instructions (the model copying the schema instead of answering): such a value is rejected.
 ECHOES = ("a few words", "short description", "one noun", "placeholder", "colour + material", "color + material",
           "3-8 words", "2-4 word", "what you see", "people only", "every garment", "<", ">")
-# The wardrobe example and the garment list of the prompts, copied back instead of read. The reply is split into
-# garment pieces (on , ; 'and' 'with', a leading 'label:' and articles stripped, hyphens and spaces normalised) and
-# is an echo when EVERY piece is one of a group's own garments (and it has at least that group's minimum pieces):
-# "grey cable-knit sweater, black jeans" is a real read, "brown corduroy trousers and an orange cable knit sweater"
-# is the example reworded. Known limits: a person really wearing exactly "an orange cable-knit sweater" alone reads
-# as an echo and is wardrobe unknown; so does a bare three-or-more list of the prompt's garment names with no colour.
-EXAMPLE_ECHOES = (WARDROBE_EXAMPLE, *WARDROBE_EXAMPLE.split(","),
-                  "shirt, crop top, hoodie, jacket, shorts, jeans, skirt, dress", "crop top, hoodie, jacket")
+# The wardrobe example, copied back instead of read (wardrobe_echo): only the whole example is an echo, never one of
+# its garments alone ("brown corduroy trousers" is a real read) and never a bare list of the prompt's garment names.
+EXAMPLE_ECHOES = (WARDROBE_EXAMPLE,)
 PEOPLE_KINDS = {"person", "man", "woman", "child", "boy", "girl", "people", "dancer", "lady", "guy", "kid"}
 
 
@@ -358,7 +353,7 @@ def wardrobe_of(o: dict) -> str:
             v = ", ".join(str(x) for x in v if x)
         if isinstance(v, dict):
             v = ", ".join(f"{x}" for x in v.values() if x)
-        if v and not _echo(v):
+        if v and not wardrobe_echo(v):
             return " ".join(str(v).split())[:160]
     return ""
 SURFACES = {"floor", "wall", "walls", "ceiling", "road", "street", "sidewalk", "pavement", "kerb", "curb", "building",
@@ -411,20 +406,54 @@ def _pieces(v) -> list[str]:
     return out
 
 
-# (garments, minimum pieces): the example's own garments (one is already a copy, colour and all) and the prompt's
-# bare garment list (three or more of its names; "shirt and jeans" alone can be a real read).
-EXAMPLE_GROUPS = ((frozenset(_pieces(WARDROBE_EXAMPLE)), 1),
-                  (frozenset(_pieces("shirt, crop top, hoodie, jacket, shorts, jeans, skirt, dress")), 3))
+# The echo test's normalising: asides a copy carries ("e.g.", "(example)") and the words a copy swaps in.
+_ASIDE = re.compile(r"\b(?:e g|eg|for example|for instance|example)\b")
+_SWAPS = (("pants", "trousers"), ("slacks", "trousers"), ("jumper", "sweater"), ("cords", "corduroy trousers"),
+          ("cord", "corduroy"))
+
+
+def _garments(v) -> set[str]:
+    """The reply's garment pieces (_pieces), each without asides and with the swapped words put back."""
+    out = set()
+    for p in _pieces(v):
+        p = _ASIDE.sub(" ", p)
+        for a, b in _SWAPS:
+            p = re.sub(rf"\b{a}\b", b, p)
+        p = " ".join(p.split())
+        if p:
+            out.add(p)
+    return out
+
+
+def _flat(v) -> str:
+    return " ".join(re.sub(r"[^a-z0-9]", " ", str(v or "").lower().replace("colour", "color")).split())
+
+
+EXAMPLE_PIECES = frozenset(_garments(WARDROBE_EXAMPLE))
+# The wardrobe placeholder of both prompts, normalised (or cut short): optional "people only:", then "e.g." and any
+# example (an older prompt's too), optional "never just outfit".
+PLACEHOLDER = re.compile(r"(?:people only )?every garment(?: with its color(?: pattern(?: and length)?)?)?"
+                         r"(?: e g .*)?(?: never just outfit)?")
+
+
+def wardrobe_echo(v) -> bool:
+    """True only when a wardrobe reply is the prompt's own text: the exact placeholder (case, brackets and punctuation
+    ignored), or the whole example: every one of its garments is in the reply, in any order or wording (articles,
+    hyphens, a 'label:', "e.g." or "(example)", 'pants' for 'trousers'), with or without more garments. One garment of
+    the example alone, a bare list of garment names, or a phrase the schema uses inside a real read is clothing."""
+    if not str(v or "").strip():
+        return False
+    if PLACEHOLDER.fullmatch(_flat(v)):
+        return True
+    return EXAMPLE_PIECES <= _garments(v)
 
 
 def _echo(v) -> bool:
+    """A label, name or kind that copies the schema (ECHOES, as substrings) or the wardrobe placeholder or example."""
     s = str(v or "").strip().lower()
     if not s:
         return False
-    if any(e in s for e in ECHOES):
-        return True
-    ps = _pieces(s)
-    return bool(ps) and any(len(ps) >= n and all(p in g for p in ps) for g, n in EXAMPLE_GROUPS)
+    return any(e in s for e in ECHOES) or wardrobe_echo(s)
 
 
 def _clean(v, n: int = 60) -> str:

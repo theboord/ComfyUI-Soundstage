@@ -41,8 +41,6 @@ def test_real_clothing_that_shares_a_phrase_with_the_example_is_kept(real):
 
 
 @pytest.mark.parametrize("copied", [vlm.WARDROBE_EXAMPLE, "Orange cable-knit sweater, brown corduroy trousers.",
-                                    "orange cable-knit sweater", "  An ORANGE cable-knit sweater ",
-                                    "brown corduroy trousers", "crop top, hoodie, jacket",
                                     "<people only: every garment with its colour>"])
 def test_a_true_echo_is_still_dropped(copied):
     assert vlm.wardrobe_of({"wardrobe": copied}) == ""
