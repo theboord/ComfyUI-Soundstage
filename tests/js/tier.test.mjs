@@ -52,10 +52,15 @@ test("real Rocketbox: on the phone tier the third person is the marked stand-in 
     assert.equal(st.actorMeshes.get("p2").userData.humanSkin.shown, true);
     const g3 = st.actorMeshes.get("p3");
     assert.equal(g3.userData.humanSkin.shown, false); assert.equal(g3.userData.standIn, true, "marked stand-in, never clay");
+    // review round 2: the status said 'lifelike' for the capped person
+    assert.equal(st.avatarStatus("p3").shownAs, "standin");
+    assert.equal(st.avatarStatus("p3").owner, "standin");
+    assert.equal(st.avatarStatus("p1").shownAs, "lifelike");
   }
   st.tier = "T1"; A.avatarsAt(st);
   assert.equal(st.actorMeshes.get("p3").userData.humanSkin.shown, true);
   assert.equal(st.actorMeshes.get("p3").userData.standIn, false);
+  assert.equal(st.avatarStatus("p3").shownAs, "lifelike");
 });
 
 test("real Rocketbox: the local kit measured against the tier budgets (what the installer's decimation and downscale must reach)", { skip: NOT_INSTALLED }, async () => {

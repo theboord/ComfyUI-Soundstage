@@ -2765,7 +2765,15 @@ export class Stage {
           g.rotation.order = "YXZ"; g.rotation.x = 0; g.rotation.z = 0;
           g.position.set(hw.x, hw.y - J.l_hip.position.y * (g.scale.y || 1), hw.z);
         }
-        if (t < 0.5) applyPose(g, "stand", h);
+        // standing to seated over the middle of the hop, joint by joint (was: the seat pose all at once at t = 0.5, a
+        // 59 cm/frame^2 jolt of the lifelike body's hands, which is posed from this rig on the hop's frames)
+        {
+          const J = Object.values(g.userData.joints || {});
+          const sitQ = J.map((j) => j.quaternion.clone());
+          applyPose(g, "stand", h);
+          const u = Math.max(0, Math.min(1, (t - 0.25) / 0.5)), k = u * u * (3 - 2 * u);
+          if (k > 0) J.forEach((j, i) => j.quaternion.slerp(sitQ[i], k));
+        }
         const from = g.position.clone(); // standing spot, set by the free-actor pass above
         g.position.lerpVectors(from, seatPos, e);
         g.position.y += Math.sin(Math.PI * t) * 0.35 * h / 1.8;
@@ -5952,6 +5960,22 @@ export class Stage {
   }
 
   /**
+   * Where a person with a mount (mount_id) is at frame f in getting on it: "walk" (a timed mount_at: still on foot,
+   * walking up), "hop" (the hop or the horse climb before mount_at: Gait.MOUNT_FRAMES on a horse ridden, HOP_FRAMES
+   * elsewhere, as the rider pass in setFrame) or "on" (seated / riding). null without a mount. Pure: the scene only.
+   * One motion (people/onemotion.mjs) gives the walk up to the clip and only the hop and seat frames to the rig / seat.
+   */
+  _mountPhaseAt(a, f = this.frame) {
+    if (!a?.mount_id) return null;
+    if (!(a.mount_at > 0)) return "on";
+    const host = this.state.actors.find((x) => x.id === a.mount_id);
+    const m = host && (MOUNTS[host.kind] || { pose: "sit" });
+    const climb = host?.kind === "horse" && (a.pose || m?.pose) === "ride";
+    const hopStart = a.mount_at - (climb ? Gait.MOUNT_FRAMES : HOP_FRAMES);
+    return f < hopStart ? "walk" : f < a.mount_at ? "hop" : "on";
+  }
+
+  /**
    * Sit or stand a person (a stage API for tools; web/stage/STAGE_API.md). pose: "sit" (on a chair, bench, sofa...:
    * opts.on = its id, else the nearest free one within 1.5 m of where they are at the playhead, real seats (chair,
    * bench, sofa, armchair) ahead of a table / cube / rock; one person per seat; a seat higher than _maxSeatHeight is
@@ -6128,8 +6152,10 @@ export class Stage {
   avatarStatus(id) {
     const skin = this.actorMeshes.get(id)?.userData.humanSkin;
     // (never clay: a person without a body is the marked stand-in; owner = what drives the body this frame)
-    if (skin) return { installed: true, shown: skin.shown, reason: skin.reason, faceless: skin.faceless, shownAs: skin.faceless ? "faceless" : "lifelike", owner: skin.owner || "clip", ownerReason: skin.ownerReason || null };
     const g = this.actorMeshes.get(id);
+    // over the tier's lifelike cap (avatarsAt): the marked stand-in on every frame, whatever body is loaded
+    if (skin && !skin.shown && g?.userData.standIn) return { installed: true, shown: false, reason: skin.reason, faceless: skin.faceless, shownAs: "standin", owner: "standin", ownerReason: skin.reason || null };
+    if (skin) return { installed: true, shown: skin.shown, reason: skin.reason, faceless: skin.faceless, shownAs: skin.faceless ? "faceless" : "lifelike", owner: skin.owner || "clip", ownerReason: skin.ownerReason || null };
     return { installed: false, shown: false, reason: null, faceless: false, shownAs: g?.userData.standIn ? "standin" : null, loading: !!g?.userData.peopleLoading };
   }
 

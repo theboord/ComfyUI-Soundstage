@@ -5,58 +5,94 @@
 //   rig   the clay rig's pose (a ride, a carry, a mocap take, a swim stroke, a jump, a fall, Drive): the visible body is
 //         retargeted from it (retarget.retargetFromRig). The body never swaps to clay: it is the same lifelike body.
 //   seat  seated on a chair / bench / sofa or the floor: the idle with the legs folded onto the seat (avatars.sitBody).
-// The handover between clip and rig is an explicit per-frame weight (rigWeight), never a mixer fade: a 6-frame ease
-// that ENDS on the change frame, so the incoming owner is at full weight there (a jump's first airborne frame is the
-// rig's tuck, never the walk). At the shot's start there is no fade.
+// The handover between clip / seat and rig is an explicit per-frame weight (ownerMix), never a mixer fade: a 6-frame
+// ease INSIDE the rig's frames at each end, so neither owner's pose jumps into the body. At the shot's start no fade.
 
 export const FADE_FRAMES = 6;
 
+/** A tilt (a.tilt, a quaternion on top of the heading) this far off upright knocks a person over (degrees): the rig
+ *  owns the body. Under it (a stray gizmo nudge, a lean) the clip keeps the body, tilted with the rig. */
+export const KNOCK_DEG = 30;
+/** How far a.tilt turns the body's up axis off vertical (degrees; 0 without a tilt). */
+export function tiltDeg(a) {
+  const t = a?.tilt;
+  if (!Array.isArray(t) || t.length !== 4) return 0;
+  const [x, y, z, w] = t.map(Number), n = Math.hypot(x, y, z, w) || 1;
+  const upY = 1 - 2 * ((x / n) ** 2 + (z / n) ** 2);
+  return (Math.acos(Math.max(-1, Math.min(1, upY))) * 180) / Math.PI;
+}
+/** Knocked over: tilted KNOCK_DEG or more (not just any saved tilt). */
+export const knockedOver = (a) => tiltDeg(a) >= KNOCK_DEG;
+
 /**
- * Why the rig owns this person for the whole shot (null: it does not). Whole-shot facts only (the scene's data).
- * ctx: {sits, driven}.
+ * Why the rig owns this person for the WHOLE shot (null: it does not). Whole-shot facts only (the scene's data and the
+ * live Drive state at this moment, never a memo of earlier frames). ctx: {driven}. A mount is per frame (ownerAt): the
+ * walk up to a chair or a horse is the clip's.
  */
 export function rigShotReason(a, ctx = {}) {
-  if (a.mount_id && !ctx.sits) return "rides or sits on something";
   if (a.carry_id) return "is carried";
   if (a.mocap) return "plays a video mocap take";
   if (a.physics?.baked) return "is moved by physics";
-  if (Array.isArray(a.tilt) && a.tilt.length === 4) return "was knocked over";
+  if (knockedOver(a)) return "was knocked over";
   if (ctx.driven) return "is driven live";
   return null;
 }
 
 /**
- * Why the rig owns this person at frame f (null: the clip, or the seat). frameCtx(f) -> {airborne, swims, floats}.
- * shot: rigShotReason's result for the shot.
+ * Who owns frame f and why: {own: "clip" | "rig" | "seat", reason}. shot: rigShotReason's result; fr: the frame's
+ * facts {mount: "walk" | "hop" | "on" | null (stage._mountPhaseAt), sits, swims, floats, airborne}.
  */
+export function ownerAt(shot, fr = {}) {
+  if (shot) return { own: "rig", reason: shot };
+  if (fr.sits) return { own: "seat", reason: "sits" };
+  if (fr.mount === "hop") return { own: "rig", reason: "gets on a mount" };
+  if (fr.mount === "on") return { own: "rig", reason: "rides or sits on something" };
+  if (fr.swims) return { own: "rig", reason: "swims" };
+  if (fr.floats) return { own: "rig", reason: "floats in the water" };
+  if (fr.airborne) return { own: "rig", reason: "is in the air (a jump or vault)" };
+  return { own: "clip", reason: null };
+}
+
+/** (old name) Why the rig owns frame f, or null. */
 export function rigReasonAt(shot, fr) {
-  if (shot) return shot;
-  if (fr?.swims) return "swims";
-  if (fr?.floats) return "floats in the water";
-  if (fr?.airborne) return "is in the air (a jump or vault)";
-  return null;
+  const o = ownerAt(shot, fr);
+  return o.own === "rig" ? o.reason : null;
 }
 
 const smooth = (t) => { const x = Math.max(0, Math.min(1, t)); return x * x * (3 - 2 * x); };
+const ramp = (d, fade) => (d >= fade ? 1 : smooth((d + 1) / (fade + 1)));
 
 /**
- * The rig's weight at frame f (0 = the clip, 1 = the rig), from owner(i) -> boolean (the rig owns frame i) for the
- * frames f - FADE_FRAMES .. f + FADE_FRAMES (clamped). Pure: only those frames are read. The fade ends on the change
- * frame; a segment shorter than the fade keeps its own first frame at full weight and eases out over the rest.
+ * The per-frame mix of motion sources at frame f: {own, w: {clip, rig, seat}, prev, next, prevAt, nextAt}, from
+ * kind(i) -> "clip" | "rig" | "seat" for the frames f - fade .. f + fade (clamped to 0 .. last). Pure: only those frames
+ * are read, so any scrub order gives the same mix.
+ * The handover happens INSIDE the rig's frames: the rig's own pose is continuous within its frames but jumps where
+ * the stage changes how it poses the logic rig (a jump's tuck on its first airborne frame, a hop onto a chair, a swim's
+ * first stroke), so blending toward the rig before it owns the frame copied that jump into the body (a hand 76 cm in one
+ * frame at a crate hop). The clip and the seat can be posed on any frame, so the rig's segment eases in from its
+ * neighbour over its first `fade` frames and out to the next over its last (both ends of a short segment at once, the
+ * weights a smooth function of the distance to each end: no step, whatever the segment's length). Clip and seat
+ * segments never fade (a clip-to-seat change with no rig between is not made by the stage).
  */
+export function ownerMix(f, kind, last, fade = FADE_FRAMES) {
+  const own = kind(f);
+  const w = { clip: 0, rig: 0, seat: 0 };
+  if (own !== "rig" || !(fade > 0)) { w[own] = 1; return { own, w, prev: null, next: null, prevAt: -1, nextAt: -1 }; }
+  let prev = null, next = null, prevAt = -1, nextAt = -1, d0 = fade, d1 = fade;
+  for (let j = 1; j <= fade && f - j >= 0; j++) { const k = kind(f - j); if (k !== "rig") { prev = k; prevAt = f - j; d0 = j - 1; break; } }
+  for (let j = 1; j <= fade && f + j <= last; j++) { const k = kind(f + j); if (k !== "rig") { next = k; nextAt = f + j; d1 = j - 1; break; } }
+  // the rig's weight: the product of the two ends' eases; the rest to the neighbours in proportion to their own
+  const ea = prev ? ramp(d0, fade) : 1, eb = next ? ramp(d1, fade) : 1, r = ea * eb, sum = (1 - ea) + (1 - eb);
+  const wp = sum > 0 ? ((1 - ea) / sum) * (1 - r) : 0, wn = sum > 0 ? (1 - r) - wp : 0;
+  w.rig = r;
+  if (prev) w[prev] += wp;
+  if (next) w[next] += wn;
+  return { own, w, prev, next, prevAt, nextAt };
+}
+
+/** (old API, kept for callers) The rig's weight at frame f from owner(i) -> boolean (the rig owns frame i). */
 export function rigWeight(f, owner, last, fade = FADE_FRAMES) {
-  const here = owner(f) ? 1 : 0;
-  for (let k = 1; k <= fade && f + k <= last; k++) {
-    const next = owner(f + k) ? 1 : 0;
-    if (next === here) continue;
-    // A short segment (a hop of 4 airborne frames): its own change frame stays at full weight, so the ease toward the
-    // next change is squeezed into the frames after it (span), never begun before the segment did.
-    let span = fade;
-    for (let j = 1; j <= fade && f - j >= 0; j++) if ((owner(f - j) ? 1 : 0) !== here) { span = Math.min(fade, k + j - 2); break; }
-    if (k > span) return here;
-    return here + (next - here) * smooth((span - k + 1) / (span + 1));
-  }
-  return here;
+  return ownerMix(f, (i) => (owner(i) ? "rig" : "clip"), last, fade).w.rig;
 }
 
 /**

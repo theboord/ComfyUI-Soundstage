@@ -100,8 +100,11 @@ test("Ask's host.stage.setPose is the stage's", () => {
 });
 
 test("a person sitting on a chair or the floor is not sent back to the clay", () => {
-  assert.equal(O.rigShotReason({ mount_id: "c1" }, { sits: true }), null);
-  assert.match(O.rigShotReason({ mount_id: "h1" }, {}), /rides or sits/, "a horse / bike / car rider: the rig owns the (lifelike) body");
+  // (L1 round 2: a mount is per frame, ownerAt; the whole-shot rule no longer covers it)
+  assert.equal(O.rigShotReason({ mount_id: "c1" }, {}), null);
+  assert.equal(O.ownerAt(null, { mount: "on", sits: true }).own, "seat", "seated on a chair: the seat owns it");
+  assert.match(O.ownerAt(null, { mount: "on" }).reason, /rides or sits/, "a horse / bike / car rider: the rig owns the (lifelike) body");
+  assert.equal(O.ownerAt(null, { mount: "walk" }).own, "clip", "the walk up to a timed mount is the clip's");
   assert.equal(O.rigShotReason({ pose: "sit_floor" }, {}), null);
   const st = sitStage([man("p1", 0), prop("h", "horse", 2, 1.6)]);
   st.mount("p1", "h");

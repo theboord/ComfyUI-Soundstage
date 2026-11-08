@@ -582,21 +582,25 @@ test("walking and then swimming in one shot: the walk is grounded (the swim gate
   }
 });
 
-test("grounding gate: feet on the ground whatever owns the body (props, gaze, Pose keys, mocap, driven, Blocking are grounded; riding, carried, swimming, lying, lifted, airborne are not)", async () => {
+test("grounding gate: whose feet the clip's foot plan grounds (props, gaze, Pose keys, a small tilt, the walk up to a timed mount) and who is off their feet (riding, carried, swimming, lying, lifted, airborne)", async () => {
   const C = await import("../../web/stage/people/avatarcore.mjs");
+  const O = await import("../../web/stage/people/onemotion.mjs");
   assert.equal(typeof C.feetUpReason, "function");
   const p = { id: "p", kind: "man" };
-  for (const [a, ctx] of [[p, {}], [{ ...p, mocap: { take: "t" } }, {}], [{ ...p, pose_keys: [{ frame: 0 }] }, {}], [{ ...p, simple_model: true }, {}]]) {
+  // L1 review round 2: this gate is the CLIP's foot plan only. A mocap take or a driven person is rig-owned for the
+  // whole shot (onemotion.rigShotReason), so the foot plan never sees them: their visible soles are grounded on the
+  // rig's frames by avatars.mjs groundRig (tested in onemotion.test.mjs "the visible feet are grounded on the rig's
+  // frames too"), not by this gate returning null (the old test passed on that alone)
+  assert.ok(O.rigShotReason({ ...p, mocap: { take: "t" } }, {}), "mocap: the rig owns the body");
+  assert.ok(O.rigShotReason(p, { driven: true }), "driven: the rig owns the body");
+  const tilt1 = [Math.sin(Math.PI / 360), 0, 0, Math.cos(Math.PI / 360)];
+  for (const [a, ctx] of [[p, {}], [{ ...p, pose_keys: [{ frame: 0 }] }, {}], [{ ...p, tilt: tilt1 }, {}], [{ ...p, mount_id: "ch", mount_at: 40 }, {}]]) {
     assert.equal(C.feetUpReason(a, ctx), null, JSON.stringify(a));
+    assert.equal(O.rigShotReason(a, {}), null, `${JSON.stringify(a)}: the clip owns it`);
   }
-  // the clay is retired (L1): holding a prop, gaze keys and Blocking look are lifelike AND grounded (the clip owns
-  // the body, gaze is a layer over it); clayReason is gone
   assert.equal(C.clayReason, undefined);
-  const O = await import("../../web/stage/people/onemotion.mjs");
-  assert.equal(O.rigShotReason(p, {}), null);
-  assert.ok(C.feetUpReason(p, {}) === null, "holds a prop / gaze / Blocking: grounded by the gate");
   assert.ok(C.feetUpReason(p, { sits: true }), "seated: feet up");
-  for (const [a, ctx] of [[{ ...p, mount_id: "horse" }, {}], [{ ...p, carry_id: "q" }, {}], [{ ...p, physics: { baked: true } }, {}], [{ ...p, tilt: [0, 0, 0.7, 0.7] }, {}],
+  for (const [a, ctx] of [[{ ...p, mount_id: "horse" }, {}], [{ ...p, mount_id: "ch", mount_at: 40 }, { mounted: true }], [{ ...p, carry_id: "q" }, {}], [{ ...p, physics: { baked: true } }, {}], [{ ...p, tilt: [0, 0, 0.7, 0.7] }, {}],
     [p, { lifted: true }], [p, { airborne: true }], [p, { swims: true }], [p, { floats: true }], [p, { tipped: true }]]) {
     assert.ok(C.feetUpReason(a, ctx), `${JSON.stringify(a)} ${JSON.stringify(ctx)} is off their feet`);
   }

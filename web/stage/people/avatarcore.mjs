@@ -16,6 +16,7 @@
 //           (Bip01_Footsteps), and repeat every bone's bind offset as a position track.
 import * as THREE from "../../vendor/three.module.min.mjs";
 import { LIBRARY } from "../library.mjs";
+import { knockedOver } from "./onemotion.mjs";
 
 /** The person kinds (stage.mjs PERSON_KINDS): every one is lifelike or a marked stand-in, never clay. */
 export const PERSON_KINDS = new Set(["man", "woman", "child"]);
@@ -331,14 +332,17 @@ export function missingColorMaps(materials) {
  * onemotion.mjs), people holding or carrying props, with gaze or Pose keys, on a mocap take or driven live are lifelike
  * AND standing, so they are grounded. Only a body that is really off its feet is not: riding or seated
  * (mount_id), carried, moved or lifted by physics, knocked over / tipped / lying, swimming or floating, in the air.
- * ctx: {swims, floats, tipped, lifted, airborne, sits} (airborne, lifted and swims per frame).
+ * ctx: {swims, floats, tipped, lifted, airborne, sits, mounted} (all but tipped per frame). A timed mount (mount_at)
+ * walks up on its feet: only its hop and seat frames are off them (ctx.mounted, from stage._mountPhaseAt). A tilt
+ * counts only when it knocks the person over (onemotion.knockedOver: a stray 1-degree gizmo nudge does not).
  */
 export function feetUpReason(a, ctx = {}) {
-  if (a.mount_id) return "rides or sits on something";
+  if (a.mount_id && !(a.mount_at > 0)) return "rides or sits on something";
+  if (ctx.mounted) return "rides or sits on something";
   if (a.carry_id) return "is carried";
   if (a.physics?.baked) return "is moved by physics";
   if (ctx.lifted) return "is lifted by physics";
-  if (Array.isArray(a.tilt) && a.tilt.length === 4) return "was knocked over";
+  if (knockedOver(a)) return "was knocked over";
   if (ctx.tipped) return "is tipped over";
   if (ctx.swims) return "swims";
   if (ctx.floats) return "floats in the water";
@@ -367,14 +371,12 @@ export function swimsAt(a, f, plan) {
 }
 
 /**
- * Driven live, decided for the whole shot: once Drive has had this person in a shot (driving, involved, or a recorded
- * take under review), the rig owns their body (onemotion.mjs) until the shot changes or Drive is switched off, so the
- * owner never flips back and forth while the take is recorded and reviewed. memo = {shot, ids: Set} kept by the caller; drive = stage.drive.
+ * Driven live right now: Drive is on and has this person (driving, or a mount / carry it is setting live). Read from
+ * the live Drive state only, never a memo of earlier frames or shots, so the same frame gives the same owner whatever
+ * was shown before and on a fresh stage (a memo kept a person rig-owned after Drive let go). drive = stage.drive.
  */
-export function drivenInShot(memo, shot, id, drive) {
-  if (memo.shot !== shot || !drive?.on) { memo.shot = shot; memo.ids = new Set(); }
-  if (drive?.on && (drive.live?.has?.(id) || drive.involved?.has?.(id) || drive.owns?.(id))) memo.ids.add(id);
-  return memo.ids.has(id);
+export function drivenNow(drive, id) {
+  return !!(drive?.on && (drive.live?.has?.(id) || drive.involved?.has?.(id) || drive.owns?.(id)));
 }
 
 /** Ids of people holding a prop in any shot, and of people carrying something (from the scene's actors). */

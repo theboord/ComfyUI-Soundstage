@@ -253,7 +253,7 @@ test("the underwater set's own Depth material skins too (the stage's shader, nea
 });
 
 // ---------------------------------------------------------------- 3: jumps
-test("a person who hops onto a crate or vaults stays lifelike: the rig owns the airborne frames (eased in over the 6 before), the clip the ground", async () => {
+test("a person who hops onto a crate or vaults stays lifelike: the rig owns the airborne frames (eased in and out inside them), the clip the ground", async () => {
   const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
   const crate = { id: "c1", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] };
   const st = bareStage([walker, crate]);
@@ -270,10 +270,11 @@ test("a person who hops onto a crate or vaults stays lifelike: the rig owns the 
     const up = air.includes(f);
     assert.equal(skin.shown, true, `frame ${f}: lifelike, never clay`);
     assert.equal(skin.reason, null);
-    // take-off frames: the rig at full weight (the plan: a jump's first airborne frame is never the walk clip); every
-    // airborne frame has some rig in it (it eases out over the 6 frames that END on the landing frame)
-    if (up) { sawRig++; assert.ok(skin.rigWeight > 0, `frame ${f}: rig weight ${skin.rigWeight}`); if (!air.includes(f - 1)) assert.equal(skin.rigWeight, 1, `frame ${f}: take-off`); assert.equal(skin.ownerReason, "is in the air (a jump or vault)"); }
-    else if (!air.some((x) => x > f && x - f <= 6)) { sawClip++; assert.equal(skin.rigWeight, 0, `frame ${f}: the clip on the ground`); }
+    // every airborne frame has some rig in it, eased in and out INSIDE the airborne frames (L1 round 2: the rig's own
+    // pose jumps on its first frame, so the handover never blends toward it before it owns the frame); every ground
+    // frame is the clip at full weight
+    if (up) { sawRig++; assert.ok(skin.rigWeight > 0, `frame ${f}: rig weight ${skin.rigWeight}`); if (!air.includes(f - 1)) assert.ok(skin.rigWeight < 0.1, `frame ${f}: take-off, eased in`); assert.equal(skin.ownerReason, "is in the air (a jump or vault)"); }
+    else { sawClip++; assert.equal(skin.rigWeight, 0, `frame ${f}: the clip on the ground`); }
   }
   assert.ok(sawRig && sawClip);
   // the ground frames either side of the crate are lifelike: before the take-off and after the landing

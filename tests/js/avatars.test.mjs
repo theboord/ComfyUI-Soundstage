@@ -273,8 +273,11 @@ test("one motion: the rig owns the body where the clips can't follow (never the 
   const a = { id: "p1", kind: "man" };
   assert.equal(O.rigShotReason(a, {}), null);
   assert.equal(O.rigShotReason(a, { blocking: true }), null, "Blocking no longer changes people");
-  assert.ok(O.rigShotReason({ ...a, mount_id: "h" }, {}));
-  assert.equal(O.rigShotReason({ ...a, mount_id: "c" }, { sits: true }), null, "seated: the seat owns it");
+  assert.equal(O.rigShotReason({ ...a, mount_id: "h" }, {}), null, "a mount is per frame (ownerAt), not the whole shot");
+  assert.equal(O.ownerAt(null, { mount: "hop" }).own, "rig");
+  assert.equal(O.ownerAt(null, { mount: "on" }).own, "rig");
+  assert.equal(O.ownerAt(null, { mount: "on", sits: true }).own, "seat", "seated: the seat owns it");
+  assert.equal(O.ownerAt(null, { mount: "walk" }).own, "clip", "walking up to a timed mount: the clip");
   assert.ok(O.rigShotReason({ ...a, mocap: { take: "t" } }, {}));
   assert.ok(O.rigShotReason({ ...a, carry_id: "p9" }, {}));
   assert.ok(O.rigShotReason(a, { driven: true }));
@@ -295,21 +298,41 @@ test("knocked over or moved by physics: the rig owns the body for the whole shot
   const a = { id: "p1", kind: "man" };
   assert.match(O.rigShotReason({ ...a, physics: { mode: "dynamic", baked: true } }, {}), /physics/);
   assert.match(O.rigShotReason({ ...a, tilt: [0.7071, 0, 0, 0.7071] }, {}), /knocked over/);
+  // a small tilt (a stray gizmo nudge, a lean under onemotion.KNOCK_DEG) keeps the walk on the clip
+  const deg = (d) => [Math.sin((d * Math.PI) / 360), 0, 0, Math.cos((d * Math.PI) / 360)];
+  assert.equal(O.rigShotReason({ ...a, tilt: deg(1) }, {}), null, "1 degree: not knocked over");
+  assert.equal(O.rigShotReason({ ...a, tilt: deg(O.KNOCK_DEG - 1) }, {}), null);
+  assert.match(O.rigShotReason({ ...a, tilt: deg(O.KNOCK_DEG + 1) }, {}), /knocked over/);
+  assert.ok(Math.abs(O.tiltDeg({ tilt: deg(12) }) - 12) < 1e-9);
+  assert.equal(O.tiltDeg({ tilt: [0, Math.sin(0.6), 0, Math.cos(0.6)] }), 0, "a turn about the vertical is no tilt");
+  assert.equal(C.feetUpReason({ ...a, tilt: deg(1) }, {}), null, "and the feet stay grounded");
   assert.equal(O.rigShotReason({ ...a, physics: { mode: "dynamic" } }, {}), null, "set up for physics but not baked: still standing");
   assert.equal(O.rigShotReason({ ...a, tilt: [0, 0] }, {}), null);
 });
 
-test("the handover is an explicit per-frame weight: a 6-frame ease that ENDS on the change frame, none at the shot start", () => {
-  const owner = (i) => i >= 20 && i < 30;   // the rig owns 20..29
-  const w = Array.from({ length: 40 }, (_, f) => O.rigWeight(f, owner, 39));
-  assert.equal(w[13], 0); assert.equal(w[20], 1, "the incoming owner is at full weight on the change frame");
-  assert.ok(w[14] > 0 && w[14] < w[17] && w[17] < w[19] && w[19] < 1, "eases in over the 6 frames before");
-  assert.ok(w[23] === 1 && w[24] < 1 && w[29] < w[24] && w[29] > 0, "the rig eases out over the 6 frames before the clip's frame");
-  assert.equal(w[30], 0, "the clip back at full weight on its frame");
-  assert.equal(O.rigWeight(0, () => true, 39), 1, "the rig from frame 0: no fade at the shot start");
-  // pure: the same frame gives the same weight in any order
-  const shuffled = [...w.keys()].sort(() => 0.5 - Math.random());
-  for (const f of shuffled) assert.equal(O.rigWeight(f, owner, 39), w[f]);
+test("the handover is an explicit per-frame weight INSIDE the rig's frames, smooth at both ends, none at the shot start", () => {
+  const air = (i) => (i >= 20 && i < 30 ? "rig" : "clip");   // the rig owns 20..29
+  const w = Array.from({ length: 40 }, (_, f) => O.ownerMix(f, air, 39).w);
+  for (let f = 0; f < 40; f++) assert.ok(Math.abs(w[f].clip + w[f].rig + w[f].seat - 1) < 1e-12, `f${f}: weights sum to 1`);
+  for (const f of [13, 19, 30, 31]) assert.equal(w[f].rig, 0, `f${f}: the clip's frame is the clip's (no blend toward a rig pose that jumps on its first frame)`);
+  assert.ok(w[20].rig > 0 && w[20].rig < 0.1, "the first rig frame: eased in from the clip");
+  assert.ok(w[20].rig < w[22].rig && w[22].rig < w[24].rig, "rises");
+  assert.ok(w[29].rig > 0 && w[29].rig < 0.1, "the last rig frame: eased out to the clip");
+  for (let f = 1; f < 40; f++) assert.ok(Math.abs(w[f].rig - w[f - 1].rig) < 0.25, `f${f}: no weight step (${w[f - 1].rig.toFixed(2)} -> ${w[f].rig.toFixed(2)})`);
+  assert.equal(O.ownerMix(0, () => "rig", 39).w.rig, 1, "the rig from frame 0: no fade at the shot start");
+  // review round 2: two airborne runs one frame apart (was 0.06 / 0 / 1.00) and a two-frame hop (was 1 then 0.5)
+  const runs = new Set([12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 24]), two = new Set([10, 11]);
+  for (const own of [(i) => (runs.has(i) ? "rig" : "clip"), (i) => (two.has(i) ? "rig" : "clip")])
+    for (let f = 1; f < 40; f++) assert.ok(Math.abs(O.ownerMix(f, own, 39).w.rig - O.ownerMix(f - 1, own, 39).w.rig) < 0.25, `f${f}: no weight step`);
+  // a hop onto a chair: rig between the clip and the seat, blended toward both
+  const chair = (i) => (i < 20 ? "clip" : i < 30 ? "rig" : "seat");
+  const m = O.ownerMix(27, chair, 39);
+  assert.ok(m.w.seat > 0 && m.w.clip === 0 && m.next === "seat" && m.nextAt === 30);
+  assert.equal(O.ownerMix(30, chair, 39).w.seat, 1);
+  // pure: the same frame gives the same weights in any order
+  const shuffled = [...w.keys()].sort((x, y) => ((x * 7919) % 40) - ((y * 7919) % 40));
+  for (const f of shuffled) assert.deepEqual(O.ownerMix(f, air, 39).w, w[f]);
+  assert.equal(O.rigWeight(25, (i) => air(i) === "rig", 39), w[25].rig, "the old API agrees");
 });
 
 test("swimming: the same gate as the stage's own (swim off, carried) and over the whole shot", () => {
@@ -325,21 +348,20 @@ test("swimming: the same gate as the stage's own (swim off, carried) and over th
   assert.equal(C.swimsInShot({ id: "a" }, plan(new Uint8Array([0, 0, 1]))), true, "swims later in the shot: clay from frame 0");
 });
 
-test("Drive: decided for the whole shot, never flipping while a take is driven, recorded and reviewed", () => {
-  const memo = {};
+test("Drive: read from the live Drive state only (no memo of earlier frames or shots): the same answer on a fresh stage", () => {
   const drive = { on: false, pending: null, live: new Map(), involved: new Set(), owns(id) { return this.on && !this.pending && this.live.has(id); } };
-  assert.equal(C.drivenInShot(memo, "s1", "p1", drive), false);
+  assert.equal(C.drivenNow(drive, "p1"), false);
   drive.on = true; drive.live.set("p1", {});
-  assert.equal(C.drivenInShot(memo, "s1", "p1", drive), true);
-  drive.pending = { take: {} };   // reviewing the recorded take: owns() is false now, the body must not flip back
-  assert.equal(drive.owns("p1"), false);
-  assert.equal(C.drivenInShot(memo, "s1", "p1", drive), true);
+  assert.equal(C.drivenNow(drive, "p1"), true);
+  drive.pending = { take: {} };   // reviewing the recorded take: owns() is false, but the person is still in Drive's live set
+  assert.equal(C.drivenNow(drive, "p1"), true);
   drive.live.clear();
-  assert.equal(C.drivenInShot(memo, "s1", "p1", drive), true, "still the same shot");
-  assert.equal(C.drivenInShot(memo, "s1", "p2", drive), false, "someone Drive never had");
-  assert.equal(C.drivenInShot(memo, "s2", "p1", drive), false, "a new shot decides again");
+  assert.equal(C.drivenNow(drive, "p1"), false, "Drive let go: the clip again, whatever was shown before (was: kept rig-owned by a memo)");
+  drive.involved.add("p2");
+  assert.equal(C.drivenNow(drive, "p2"), true, "a mount / carry Drive is setting live");
   drive.on = false;
-  assert.equal(C.drivenInShot(memo, "s2", "p1", drive), false);
+  assert.equal(C.drivenNow(drive, "p2"), false);
+  assert.equal(C.drivenInShot, undefined, "the memo is gone");
 });
 
 // ---------------------------------------------------------------- render passes
