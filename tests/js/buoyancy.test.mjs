@@ -183,6 +183,26 @@ test("a timed jump: keys held 4.5 m up until f48, then a step off: the fall star
   assert.ok(!still.held.some(Boolean) && still.styles[0] === "fall");
 });
 
+test("flutter, frog and dive keyed above the surface drop in too (was: treading / hovering in the water from f0)", () => {
+  for (const swim of ["flutter", "frog", "dive"]) {
+    const st = tank([keyed("u", "man", [[0, [0, 4.5, 0]]], { swim })], { frames: 145 });
+    const plan = st._swimPlan(st.state.actors[0], st.actorMeshes.get("u"));
+    st.setFrame(0);
+    assert.ok(hipsY(st, "u") > 5, `${swim}: starts up there (hips ${hipsY(st, "u").toFixed(2)})`);
+    assert.equal(plan.main[0], "fall", `${swim}: in the fall pose`);
+    let lo = Infinity;
+    for (let f = 0; f < 145; f += 3) { st.setFrame(f); lo = Math.min(lo, hipsY(st, "u")); }
+    assert.ok(lo < LEVEL - 0.5, `${swim}: goes under (${lo.toFixed(2)})`);
+    st.setFrame(144);
+    if (swim === "dive") assert.equal(plan.mode[144], "under", "the diver stays under, at the depth the stage holds them");
+    else assert.ok(headY(st, "u") > LEVEL, `${swim}: back up with the head out`);
+  }
+  // keyed in the water they keep their keyed depth as before
+  const st = tank([man("k", 0.5, { swim: "flutter", key_y: true })]);
+  const plan = st._swimPlan(st.state.actors[0], st.actorMeshes.get("k"));
+  assert.ok(plan.mode.every((m) => m === "under"), "flutter keyed 0.5 m up swims under water all shot");
+});
+
 // ------------------------------------------------------------------ the physics
 test("weight decides: a rock sinks faster than a can't-swim person, who sinks slower; a soaking crate still floats; a ball floats higher than a crate", () => {
   const rock = B.bodyOf("rock", [0.5, 0.4, 0.5]), crate = B.bodyOf("crate", [0.8, 0.8, 0.8]), ball = B.bodyOf("sphere", [0.5, 0.5, 0.5]);

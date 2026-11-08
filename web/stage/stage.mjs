@@ -3799,8 +3799,8 @@ export class Stage {
       const style = smode === "dive" ? "hover" : ["tread", "breaststroke", "freestyle", "flutter", "frog", "stroke", "hover"].includes(smode) ? smode : null;
       let track = null;
       // In a pool: standing on a dock or a deck, the drop in (timed by the keys), the kick up, and the modes that
-      // aren't a stroke (back float, can't swim, sink slowly).
-      if (!reef && !(UNDER.includes(smode))) {
+      // aren't a stroke (back float, can't swim, sink slowly). The underwater modes and dive get the drop in only.
+      if (!reef) {
         track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(a.id), standHeight: (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1), support });
         // ground: water they can stand in (auto / can't swim), a dock or a deck under them, or a keyed hold before a
         // jump: off the swim plan, on their keys (the gait walks them)

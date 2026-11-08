@@ -320,7 +320,9 @@ export function plungeTrack({ ky, v0 = 0, level, floor = 0, fps = 24, n, height 
  *   sink: no struggle, limp from the surface (or the bottom of the plunge) down.
  * In water they can stand in (canStand), auto and cant stand / wade on the bottom (ground; after a drop in: the
  * plunge, then "wade" standing on the bottom with the head out); the other modes swim as chosen.
- * dive and the underwater strokes are not tracked here (the stage keeps them at their keyed depth).
+ * Underwater modes (flutter, frog, stroke) and dive / hover: keyed above the surface they drop in too (flutter and
+ * frog then kick up to the surface like the others; a diver eases from the bottom of the plunge to the depth the stage
+ * holds them at); keyed in the water they are not tracked here (the stage keeps them at their keyed depth).
  * support[f] (optional): the height of a walkable surface under the keyed feet besides the water's floor (a dock, a
  * boat's deck, a platform), or null. Keyed standing on it (feet within -5..+15 cm of it, and it is above the water or
  * shallow enough to stand on) they are on their keys there, off the water: supported[f] and ground[f]. Over the water
@@ -332,6 +334,7 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
   const n = keyY.length, k = height / 1.8;
   const styles = new Array(n).fill(null), hipsY = new Array(n).fill(null), hipsW = new Array(n).fill(0), modes = new Array(n).fill(null);
   const ground = new Array(n).fill(false), supported = new Array(n).fill(false), held = new Array(n).fill(false);
+  const diver = mode === "dive" || mode === "hover", keyedDepth = diver || mode === "flutter" || mode === "frog" || mode === "stroke";
   // On a dock, a deck or anything else walkable under the feet: on their keys there, not in the water.
   const wet = over.slice();
   if (support) for (let f = 0; f < n; f++) {
@@ -373,7 +376,7 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
         // they land on their feet on the bottom and stand up out of the crouch, head out of the water
         const rise = Math.round(0.5 * fps);
         for (let i = 0; i < rise && pre.length < m; i++) { const e = sstep(0, 1, (i + 1) / rise); pre.push(fb + (floor - fb) * e); preMode.push("surface"); preStyle.push("wade"); }
-      } else if (mode !== "sink") {
+      } else if (mode !== "sink" && !diver) {
         // swimmers kick up (~0.8 m/s); a non-swimmer flails back up on the air in the lungs (~0.4 m/s)
         const target = (mode === "cant" ? struggleHips : treadHips) - hipY;
         const speed = mode === "cant" ? 0.4 : 0.8, upN = Math.max(1, Math.round(Math.max(0.6, (target - fb) / speed) * fps));
@@ -383,6 +386,8 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
         }
       }
       up = Math.min(m, pre.length);
+    } else if (keyedDepth) {   // an underwater mode keyed in the water: the stage keeps them at their keyed depth
+      continue;
     } else if (shallow) {   // standing in water they can stand in: on the bottom, off the swim plan (the gait walks them)
       for (let i = 0; i < m; i++) ground[f0 + i] = true;
       continue;
@@ -404,8 +409,10 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
     if (!sinks) {
       for (let i = up; i < m; i++) {
         const fr = f0 + i, t = i / fps, e = from == null ? 1 : sstep(0, 1, (i - up) / blend);
-        modes[fr] = "surface";
-        if (mode === "back") {
+        modes[fr] = diver ? "under" : "surface";
+        if (diver) {   // from the bottom of the plunge to the depth the stage holds the diver at
+          if (from != null && e < 1) { hipsY[fr] = from; hipsW[fr] = 1 - e; }
+        } else if (mode === "back") {
           const yb = backHips + 0.012 * k * Math.sin(2 * Math.PI * 0.25 * t + seed);
           styles[fr] = e < 0.5 ? "tread" : "backfloat"; hipsY[fr] = from == null ? yb : from + (yb - from) * e; hipsW[fr] = 1;
         } else {
