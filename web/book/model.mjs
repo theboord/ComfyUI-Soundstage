@@ -536,7 +536,21 @@ export function getBookContext(book, script, sceneId = null) {
 export const DECISION_V = 3;   // 3: args cut to DECISION_ARGS (2 kept any short string that was not most of the sentence)
 
 const toolLabel = (t) => { const s = String(t || "change").replace(/_/g, " ").trim(); return s ? s[0].toUpperCase() + s.slice(1) : "Change"; };
-const norm = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+// Unicode-aware: NFKC, lowercase, every letter / number / mark kept (Cyrillic, Greek, Devanagari, CJK...), the rest a space.
+const norm = (s) => String(s ?? "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}\p{M}]+/gu, " ").trim();
+// Scripts written without spaces between words: there a "word run" is the whole clause, so they are matched by
+// character n-grams (NGRAM characters in a row) instead.
+const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}\p{Script=Tibetan}]/u;
+const NGRAM = 4;
+/** The NGRAM-character runs of normalized `c` (spaces dropped) that hold at least one unspaced-script character. */
+function grams(c) {
+  const chars = [...c.replace(/ /g, "")], out = [];
+  for (let i = 0; i + NGRAM <= chars.length; i++) {
+    const g = chars.slice(i, i + NGRAM);
+    if (g.some((ch) => UNSPACED.test(ch))) out.push(g.join(""));
+  }
+  return out;
+}
 
 const GLUE = new Set("a an the to of in on at and or for with his her its it is be then by from up into this that me my you your please".split(" "));
 /** True when `s` is (or holds) the typed sentence, or shares a run of 3 words with it that has 2 or more real words in
@@ -544,7 +558,11 @@ const GLUE = new Set("a an the to of in on at and or for with his her its it is 
 function echoes(s, command) {
   const a = norm(s), c = norm(command);
   if (!a || !c) return false;
-  if (a.includes(c) && c.split(" ").length >= 2) return true;
+  if (a.includes(c) && (c.split(" ").length >= 2 || (UNSPACED.test(c) && [...c].length >= NGRAM))) return true;
+  if (UNSPACED.test(c)) {   // CJK / Thai...: any NGRAM characters in a row of the sentence (spaces ignored)
+    const flat = a.replace(/ /g, "");
+    if (grams(c).some((g) => flat.includes(g))) return true;
+  }
   const cw = c.split(" "), aw = ` ${a} `;
   for (let i = 0; i + 3 <= cw.length; i++) {
     const run = cw.slice(i, i + 3);
@@ -576,15 +594,18 @@ export const DECISION_ARGS = {
   add_sfx_rig: { on: T, at: N }, select_object: { name: T }, update_character: { name: T }, update_location: { name: T },
   update_prop: { name: T }, profile_character: { name: T }, profile_location: { name: T }, profile_prop: { name: T },
 };
-const TOKEN = /^[A-Za-z0-9][A-Za-z0-9_.:#+-]{0,31}$/;
+const TOKEN = /^[\p{L}\p{N}][\p{L}\p{N}\p{M}_.:#+-]{0,31}$/u;   // any script: a Cyrillic or Japanese one-word name is a token too
 /** Does a joined token (red_pickup_truck, gas-station-pumps, a.b:c) carry a phrase of the typed sentence? Yes when,
  *  split on its separators, it echoes the sentence (a 3-word run) or two of its parts in a row that are real words
  *  (3+ letters, not glue, not a number: sh_2 is an id) also stand next to each other in the sentence ("red_pickup" from "the red pickup truck"). A token with
  *  no separator is one word and passes (a one-word name from the sentence is kept). */
-const word = (w) => w.length >= 3 && !/^\d+$/.test(w) && !GLUE.has(w);   // a real word, not glue or an id part (sh, 2)
+const word = (w) => ([...w].length >= 3 || UNSPACED.test(w)) && !/^\d+$/.test(w) && !GLUE.has(w);   // a real word, not glue or an id part (sh, 2)
 function tokenEchoes(v, command) {
   const parts = norm(v).split(" ").filter(Boolean);
-  if (parts.length < 2 || !command) return false;
+  if (!command) return false;
+  // An unspaced-script token has no separators to split on: it echoes when it shares NGRAM characters with the sentence.
+  if (UNSPACED.test(parts.join("")) && echoes(parts.join(""), command)) return true;
+  if (parts.length < 2) return false;
   if (echoes(parts.join(" "), command)) return true;
   const c = ` ${norm(command)} `;
   for (let i = 0; i + 1 < parts.length; i++) {

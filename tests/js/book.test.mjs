@@ -310,3 +310,28 @@ test("v2 decision notes (any short string arg kept) are cut to the allowlist on 
   assert.equal(b.notes[0].ref, "t_1");
   assert.equal(b.notes[0].dv, M.DECISION_V);
 });
+
+test("recordDecision: a Cyrillic or Japanese typed sentence never lands in the Book (Unicode-aware echo check)", () => {
+  const strip = (s) => String(s).normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}\p{M}]+/gu, "");
+  const cases = [
+    { command: "Пусть Мара тихо плачет у окна", partial: "Мара тихо плачет", token: "тихо_плачет" },
+    { command: "マラが窓辺で静かに泣く", partial: "窓辺で静かに泣く", token: "窓辺で静かに" },
+  ];
+  for (const { command, partial, token } of cases) {
+    for (const summary of [command, partial, `Решено: ${partial}`]) {
+      const b = M.emptyBook(script());
+      const n = M.recordDecision(b, { command, summary, calls: [{ tool: "direct", args: { who: token, note: command } }, { tool: "remove", args: { target: token } }], results: [{ ok: true }, { ok: true }] });
+      const stored = JSON.stringify(b.notes);
+      assert.ok(!stored.includes(command), `raw sentence stored: ${n.text}`);
+      assert.ok(!strip(n.text).includes(strip(partial)), `partial quote stored: ${n.text}`);
+      assert.ok(!stored.includes(token), `echoing token kept: ${stored}`);
+    }
+    // a one-word name in the same script is still a token (kept), and a clean summary is kept
+    const b = M.emptyBook(script());
+    const who = command.startsWith("П") ? "Мара" : "マラ";
+    const n = M.recordDecision(b, { command, summary: "Direct", calls: [{ tool: "direct", args: { who } }] });
+    assert.deepEqual(n.change, [{ tool: "direct", args: { who } }]);
+  }
+  assert.deepEqual(M.scrubArgs({ target: "窓辺で静かに" }, "remove", "マラが窓辺で静かに泣く"), {});
+  assert.deepEqual(M.scrubArgs({ target: "тихо_плачет" }, "remove", "Пусть Мара тихо плачет у окна"), {});
+});
