@@ -95,8 +95,8 @@ def joint_box(take, k, size):
 
 def _over_performer(bb, jbox, w: int, h: int, share: float = 0.6) -> bool:
     """A person box (0-1000) is the performer's when it holds the joint box's centre, or when at least `share` of the
-    person box lies inside the joint box: a near-duplicate entry for her. Known limit: a bystander standing right
-    behind her, whose box is mostly inside hers, gets her body mask, so his own pixels stay in the scan."""
+    person box lies inside the joint box: a candidate entry for her. people_masks then keeps only the best match and
+    the duplicates that hold no body of their own at her depth (_another_body)."""
     x0, y0, x1, y1 = bb[0] / 1000 * w, bb[1] / 1000 * h, bb[2] / 1000 * w, bb[3] / 1000 * h
     cx, cy = (jbox[0] + jbox[2]) / 2, (jbox[1] + jbox[3]) / 2
     if x0 <= cx <= x1 and y0 <= cy <= y1:
@@ -107,12 +107,38 @@ def _over_performer(bb, jbox, w: int, h: int, share: float = 0.6) -> bool:
     return iw * ih >= share * a
 
 
+def _iou_px(bb, jbox, w: int, h: int) -> float:
+    """Intersection over union of a person box (0-1000) and the joint box (pixels)."""
+    x0, y0, x1, y1 = bb[0] / 1000 * w, bb[1] / 1000 * h, bb[2] / 1000 * w, bb[3] / 1000 * h
+    iw = max(0.0, min(x1, jbox[2]) - max(x0, jbox[0]))
+    ih = max(0.0, min(y1, jbox[3]) - max(y0, jbox[1]))
+    u = (x1 - x0) * (y1 - y0) + (jbox[2] - jbox[0]) * (jbox[3] - jbox[1]) - iw * ih
+    return iw * ih / max(u, 1e-6)
+
+
+def _another_body(d, bb, body, w: int, h: int, rel: float = 0.07, share: float = 0.25) -> bool:
+    """True when a person box (0-1000) over the performer holds, outside her body mask, a body of its own at her
+    depth: at least `share` of her body's pixel count lies there within rel of her median depth. A duplicate entry
+    for her holds only her and the set behind her; a second dancer beside her holds himself. Known limit: a person
+    standing well behind or in front of her reads as a duplicate and gets her body mask."""
+    zb = float(np.median(d[body]))
+    x0, x1 = max(0, int(bb[0] / 1000 * w)), min(w, int(np.ceil(bb[2] / 1000 * w)))
+    y0, y1 = max(0, int(bb[1] / 1000 * h)), min(h, int(np.ceil(bb[3] / 1000 * h)))
+    sub, own = d[y0:y1, x0:x1], ~body[y0:y1, x0:x1]
+    near = own & np.isfinite(sub) & (np.abs(sub - zb) < rel * zb)
+    return int(near.sum()) >= share * int(body.sum())
+
+
 def people_masks(breakdown: dict, depths, times, duration: float, take=None, fps: float = 24.0) -> dict:
     """{person_i: {sample_i: rle}} from the read's person boxes (interpolated start -> end) and each sample's depth.
     The performer (every person box that holds the take's joints' centre at that sample, or lies mostly inside her
     joint box: legacy_breakdown lists her once per inventory frame, and a read can give 'woman dancing' plus
     'dancer'): wardrobe.body_mask, banded by the joints and the body's own depth per row, so a slab half a metre
     behind her is not her and stays in the scan.
+    Only the entry that best matches her joint box (largest overlap with it) is surely her; another entry over her is
+    a duplicate of her only when its box, outside her body mask, holds no body of its own at her depth
+    (_another_body): a second dancer beside her, whose box covers her joints' centre, keeps the loose mask minus her
+    body mask, so his own pixels leave the scan too.
     Everyone else, and the performer outside the take: the loose box-and-depth stand-in
     (wardrobe.person_mask_from_depth, rel 0.35)."""
     from . import backdrop as BD
@@ -126,9 +152,14 @@ def people_masks(breakdown: dict, depths, times, duration: float, take=None, fps
         boxes = {j: _box_at(o, min(1.0, max(0.0, t / max(duration, 1e-6))) if times else 0.0) for j, o in people}
         uv, jbox = joint_box(take, take_frame_at(take, t, fps), (w, h)) if take and times else (None, None)
         perf: set = set()
-        if jbox is not None:   # the take's person: EVERY box over her (one read can list her more than once)
-            perf = {j for j, bb in boxes.items() if bb and _over_performer(bb, jbox, w, h)}
+        if jbox is not None:   # the take's person: the best match, plus any duplicate entry for her
+            over = [j for j, bb in boxes.items() if bb and _over_performer(bb, jbox, w, h)]
+            if over:
+                best = max(over, key=lambda j: _iou_px(boxes[j], jbox, w, h))
+                perf = {best}
         body = W.body_mask(d, jbox, uv) if perf else None
+        if body is not None and body.any():
+            perf |= {j for j in over if j not in perf and not _another_body(d, boxes[j], body, w, h)}
         for j, bb in boxes.items():
             if not bb:
                 continue
@@ -137,6 +168,8 @@ def people_masks(breakdown: dict, depths, times, duration: float, take=None, fps
                 x0, y0, x1, y1 = (v / 1000 for v in bb)
                 gx, gy = 0.15 * (x1 - x0), 0.05 * (y1 - y0)
                 m = W.person_mask_from_depth(d, [x0 - gx, y0 - gy, x1 + gx, y1 + gy], rel=0.35)
+                if m is not None and body is not None and j in over:
+                    m = m & ~body   # a second person over her: his pixels, not hers
             if m is not None and m.any():
                 out.setdefault(f"p{j}", {})[i] = BD.rle_encode(m)
     return out
