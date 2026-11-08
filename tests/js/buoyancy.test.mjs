@@ -393,6 +393,18 @@ test("water they can stand in: a 1.8 m man set to Can't swim stands in the 1.2 m
       }
     }
   }
+  // walking through it (was on 86ef579: on a swim plan, breaststroking at the surface): swimming off, the walk on
+  const st = tank([man("m", 0, { x: -3, z: 5 }), man("n", 0, { x: 3, z: 5, swim: "cant" })], { set: "lake", frames: 121 });
+  for (const a of st.state.actors) a.keys = [{ frame: 0, position: [a.keys[0].position[0], 0, 5] }, { frame: 120, position: [a.keys[0].position[0] + 4, 0, 5] }];
+  st.setFrame(0);
+  for (let f = 6; f < 121; f += 12) {
+    st.setFrame(f);
+    for (const id of ["m", "n"]) {
+      const g = st.actorMeshes.get(id);
+      assert.ok(!g.userData.swimOn && g.userData.gaitOn, `lake f${f} ${id}: walking (wading), not swimming`);
+      assert.ok(headY(st, id) > st.water.position.y + 0.05, `lake f${f} ${id}: head out`);
+    }
+  }
   // a 1.65 m woman can't stand in 1.5 m: Can't swim still struggles and sinks there
   assert.equal(B.canStand(1.5, 1.65), false);
   assert.equal(B.personTrack({ mode: "cant", keyY: new Array(48).fill(0), over: new Array(48).fill(true), level: 1.5, height: 1.65, hipY: 0.87 }).styles[12], "struggle");
