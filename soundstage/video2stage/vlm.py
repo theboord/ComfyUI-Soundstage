@@ -282,8 +282,8 @@ def merge_reads(first: dict, last: dict | None) -> dict:
         if bi is not None:
             used.add(bi)
             o["bbox_end"] = ends[bi]["bbox"]
-            if len(ends[bi].get("wardrobe") or "") > len(o.get("wardrobe") or ""):   # the fuller read of the clothes
-                o["wardrobe"] = ends[bi]["wardrobe"]
+            # the better read of the clothes: never an echo / placeholder over a real read (better_wardrobe)
+            o["wardrobe"] = better_wardrobe(o.get("wardrobe"), ends[bi].get("wardrobe"))
             o["moving"] = o["moving"] or ends[bi]["moving"]
             if _area(ends[bi]["bbox"]) > _area(o["bbox"]):   # seen closer at the end: trust that read of what it is
                 o["kind"] = ends[bi]["kind"]
@@ -436,16 +436,56 @@ PLACEHOLDER = re.compile(r"(?:people only )?every garment(?: with its color(?: p
                          r"(?: e g .*)?(?: never just outfit)?")
 
 
+# Placeholder fragments: a reply made only of the placeholder's own words (and the example's), with at least one
+# word only the placeholder uses, is the placeholder cut short or reworded ("people only", "every garment, colour,
+# pattern, length", "every garment with its colour, pattern and length e.g."). A reply with no letters or digits at
+# all ("<...>", "-") is one too. Any word outside these sets ("red", "hoodie") makes it a real read.
+_PH_MARKS = frozenset("people only every garment garments its color pattern patterns length lengths never just outfit "
+                      "placeholder e g eg example".split())
+_PH_GLUE = frozenset("with and or of a an the for instance each".split())
+_PH_WORDS = _PH_MARKS | _PH_GLUE | frozenset(_flat(WARDROBE_EXAMPLE).split()) | {"pants", "cords", "knit", "cable"}
+
+
+def _placeholder_fragment(v) -> bool:
+    toks = _flat(v).split()
+    if not toks:
+        return True
+    return set(toks) <= _PH_WORDS and bool(set(toks) & _PH_MARKS)
+
+
 def wardrobe_echo(v) -> bool:
-    """True only when a wardrobe reply is the prompt's own text: the exact placeholder (case, brackets and punctuation
-    ignored), or the whole example: every one of its garments is in the reply, in any order or wording (articles,
-    hyphens, a 'label:', "e.g." or "(example)", 'pants' for 'trousers'), with or without more garments. One garment of
-    the example alone, a bare list of garment names, or a phrase the schema uses inside a real read is clothing."""
+    """True only when a wardrobe reply is the prompt's own text: the placeholder, whole or cut short or reworded (case,
+    brackets and punctuation ignored; only its own words and the example's, at least one of them the placeholder's),
+    a reply with no words at all ("<...>"), or the whole example: every one of its garments is in the reply, in any
+    order or wording (articles, hyphens, a 'label:', "e.g." or "(example)", 'pants' for 'trousers'), with or without
+    more garments. One garment of the example alone, a bare list of garment names, or a phrase the schema uses inside a
+    real read is clothing."""
     if not str(v or "").strip():
         return False
-    if PLACEHOLDER.fullmatch(_flat(v)):
+    if PLACEHOLDER.fullmatch(_flat(v)) or _placeholder_fragment(v):
         return True
     return EXAMPLE_PIECES <= _garments(v)
+
+
+def real_wardrobe(v) -> str:
+    """The wardrobe words when they are a real read, else '' (empty, an echo, the placeholder or a fragment of it)."""
+    s = " ".join(str(v or "").split())
+    return "" if not s or wardrobe_echo(s) else s
+
+
+def better_wardrobe(cur, new) -> str:
+    """Which of two reads of one person's clothes to keep: never an echo or placeholder over a real read; a read that
+    names a garment over one that names none; else the fuller (longer) one, the current one on a tie."""
+    a, b = real_wardrobe(cur), real_wardrobe(new)
+    if not b:
+        return a
+    if not a:
+        return b
+    from . import wardrobe as W
+    ga, gb = bool(W.parse(a)), bool(W.parse(b))
+    if ga != gb:
+        return a if ga else b
+    return b if len(b) > len(a) else a
 
 
 def _echo(v) -> bool:
@@ -627,14 +667,14 @@ def enrich_breakdown(bd: dict, inv: dict) -> dict:
         out["camera_end"] = {}
         return out
     out = dict(bd, objects=[dict(o) for o in bd.get("objects") or []])
-    ppl = [it for it in inv.get("items") or [] if it.get("bbox") and it.get("wardrobe")]
+    ppl = [it for it in inv.get("items") or [] if it.get("bbox") and real_wardrobe(it.get("wardrobe"))]
     for o in out["objects"]:
         if o.get("kind") != "person":
             continue
         bb = o.get("bbox_start") or o.get("bbox")
         best = max(ppl, key=lambda it: _iou(bb, it["bbox"]), default=None) if bb else None
-        if best is not None and _iou(bb, best["bbox"]) > 0.2 and len(best["wardrobe"]) > len(o.get("wardrobe") or ""):
-            o["wardrobe"] = best["wardrobe"]
+        if best is not None and _iou(bb, best["bbox"]) > 0.2:
+            o["wardrobe"] = better_wardrobe(o.get("wardrobe"), best["wardrobe"])
     if not out.get("time") and inv.get("time"):
         out["time"] = inv["time"]
     return out
