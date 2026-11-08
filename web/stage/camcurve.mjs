@@ -17,8 +17,9 @@
 // Version 2, per field (position, target: per component; focal: in log space, so a 24 -> 48 -> 96 mm zoom feels even):
 //   - cubic Hermite through every key at its frame, tangents from the key TIMES (the three-point derivative weighted by
 //     the two segment lengths): velocity is continuous across every key, whatever the spacing;
-//   - an overshoot limiter (Fritsch-Carlson): a component that turns back at a key stops there, and one that keeps
-//     going is held to 3x its slower side, so the path never swings past a key and back;
+//   - an overshoot limiter (see tangents): a component that turns back at a key stops there and its neighbours are
+//     held to 3x that segment's slope, so no axis swings past a key where it turns back, whatever the key spacing;
+//     an axis level between two keys may bulge past them by at most the arc the turn implies (an orbit's arc);
 //   - zero-velocity tangents at hold boundaries (two keys with the same value): the hold is truly still and the move
 //     out of it starts from rest, never bowing backwards first;
 //   - easing only at the shot's first and last keys (zero tangents there): interior keys never stall;
@@ -47,6 +48,7 @@ const sameVal = (a, b) => a.every((x, k) => Math.abs(x - b[k]) < 1e-4);
 export function tangents(t, v) {
   const n = v.length - 1, D = v[0].length;
   const m = v.map(() => new Array(D).fill(0));
+  const turn = v.map(() => 0);   // the angle between the two chords at each key (radians; 0 at the ends and holds)
   for (let i = 1; i < n; i++) {
     if (sameVal(v[i - 1], v[i]) || sameVal(v[i], v[i + 1])) continue;   // a hold boundary: from / to rest
     const h0 = Math.max(1e-6, t[i] - t[i - 1]), h1 = Math.max(1e-6, t[i + 1] - t[i]);
@@ -61,6 +63,7 @@ export function tangents(t, v) {
     const n0 = Math.hypot(...d0), n1 = Math.hypot(...d1);
     const cos = n0 > 1e-12 && n1 > 1e-12 ? d0.reduce((s, x, c) => s + x * d1[c], 0) / (n0 * n1) : -1;
     const w = Math.max(0, Math.min(1, cos / 0.5));
+    turn[i] = Math.acos(Math.max(-1, Math.min(1, cos)));
     const axis = mc.map((x, c) => {
       if (d0[c] * d1[c] <= 0) return 0;
       const lim = 3 * Math.min(Math.abs(d0[c]), Math.abs(d1[c]));
@@ -74,7 +77,43 @@ export function tangents(t, v) {
       const s = nm > 1e-12 ? Math.min(nm, lim) / Math.hypot(...mc) : 0;
       vec = mc.map((x) => x * s);
     }
-    for (let c = 0; c < D; c++) m[i][c] = w * vec[c] + (1 - w) * axis[c];
+    // An axis that strictly turns back at this key (its secant changes sign) stops here whatever the turn: the vector
+    // limit kept the time-weighted derivative's component, which is not zero when the two sides take different times,
+    // so an uneven-spaced gentle turn swung past its key on that axis (a 50 deg turn at 12 / 36 frames: 16 cm). With
+    // even spacing that component is already zero, so evenly keyed turns and orbits are unchanged. An axis flat on one
+    // side (an orbit's z between two keys at the same height) keeps its tangent: that hump is the arc, not a swing.
+    const eps = 1e-9 * (n0 + n1);   // a side flat to rounding (sin 72 vs sin 108) is flat, not a turn-back
+    const back = (c) => Math.abs(d0[c]) > eps && Math.abs(d1[c]) > eps && d0[c] * d1[c] < 0;
+    for (let c = 0; c < D; c++) m[i][c] = back(c) ? 0 : w * vec[c] + (1 - w) * axis[c];
+  }
+  // Per segment and axis (Fritsch-Carlson with one end at rest): next to a key where the axis stops (a turn-back, a
+  // hold, the shot's ends), the other end's tangent is held to 3x the segment's own slope on that axis, or the
+  // segment swings past the stopping key (the vector limit bounds the tangent's length, not each axis).
+  for (let i = 0; i < n; i++) {
+    const h = Math.max(1e-6, t[i + 1] - t[i]);
+    for (let c = 0; c < D; c++) {
+      const d = (v[i + 1][c] - v[i][c]) / h;
+      if (Math.abs(d) < 1e-9) {
+        // Flat on this axis (both keys at the same height, say): any tangent here bulges the segment past both keys.
+        // On an orbit that bulge is the arc (z between keys at 72 and 108 deg), so it is kept, but held to the
+        // sagitta of an arc over the chord that turns as much as its sharper key (chord / 2 x tan(turn / 4)): an L
+        // move (up a diagonal, then level) bulged 37 cm past its level keys, now about 20 cm, the arc it implies.
+        const L = Math.hypot(...v[i + 1].map((x, k) => x - v[i][k]));
+        const B = (L / 2) * Math.tan(Math.min(Math.PI / 2, Math.max(turn[i], turn[i + 1])) / 4);
+        let hump = 0;
+        for (let s = 1; s < 32; s++) {
+          const u = s / 32, u2 = u * u, u3 = u2 * u;
+          hump = Math.max(hump, Math.abs(h * (m[i][c] * (u3 - 2 * u2 + u) + m[i + 1][c] * (u3 - u2))));
+        }
+        if (hump > B + 1e-9) { const k = B / hump; m[i][c] *= k; m[i + 1][c] *= k; }
+        continue;
+      }
+      for (const [a, b] of [[i, i + 1], [i + 1, i]]) {
+        if (m[b][c] !== 0) continue;
+        if (m[a][c] * d < 0) m[a][c] = 0;
+        else if (Math.abs(m[a][c]) > 3 * Math.abs(d)) m[a][c] = 3 * d;
+      }
+    }
   }
   return m;
 }

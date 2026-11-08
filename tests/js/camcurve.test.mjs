@@ -402,3 +402,54 @@ test("an orbit keyed every 36 deg round a 5 m circle keeps its speed through the
     { frame: 30, position: [4, 1.6, 1], target: [0, 1, 5], focal_mm: 35 }];
   for (let f = 0; f <= 30; f++) { const p = CC.cameraCurveAt(corner, f).position; assert.ok(p[0] <= 4 + 1e-9 && p[2] >= -1e-9, `corner, frame ${f}: ${p}`); }
 });
+
+// Uneven key spacing on a gentle turn: the axis that reverses at the key (z here) used to swing past it, since the
+// vector limiter (turns up to 60 deg, blended to 90) kept the time-weighted derivative's z, which is not zero when
+// the two sides take different times (cb57dad: a 50 deg turn at 12 / 36 frames peaked 16 cm past the key, 6 / 42: 23 cm).
+const pastKey = (keys, axis = 2) => {
+  // the farthest any frame goes past the bracketing keys on an axis, segment by segment (metres)
+  let worst = 0;
+  for (let s = 0; s + 1 < keys.length; s++) {
+    const a = keys[s].position[axis], b = keys[s + 1].position[axis], lo = Math.min(a, b), hi = Math.max(a, b);
+    for (let f = keys[s].frame; f <= keys[s + 1].frame; f += 0.25) {
+      const v = CC.cameraCurveAt(keys, f).position[axis];
+      worst = Math.max(worst, v - hi, lo - v);
+    }
+  }
+  return worst;
+};
+const turnKeys = (deg, h0, h1, L = 2) => {
+  const a = ((deg / 2) * Math.PI) / 180, p1 = [L * Math.cos(a), 1.6, L * Math.sin(a)];
+  return [{ frame: 0, position: [0, 1.6, 0], target: [0, 1, 5], focal_mm: 35 }, { frame: h0, position: p1, target: [0, 1, 5], focal_mm: 35 },
+    { frame: h0 + h1, position: [p1[0] + L * Math.cos(a), 1.6, p1[2] - L * Math.sin(a)], target: [0, 1, 5], focal_mm: 35 }];
+};
+
+test("a gentle turn with uneven key spacing (30 / 50 / 70 deg, 12 / 36 and 6 / 42 frames) never swings past its key on the axis that turns back (<= 1 mm)", () => {
+  for (const deg of [30, 50, 70]) for (const [h0, h1] of [[12, 36], [6, 42], [36, 12], [24, 24]]) {
+    const k = turnKeys(deg, h0, h1);
+    const w = pastKey(k);
+    assert.ok(w <= 0.001, `${deg} deg turn, ${h0} / ${h1} frames: ${(w * 100).toFixed(1)} cm past the key`);
+    assert.ok(pastKey(k, 0) <= 0.001, `${deg} deg turn, ${h0} / ${h1}: x stays between its keys`);
+  }
+});
+
+test("a shallow zigzag with uneven spacing never swings past a key on the zigzag axis (<= 1 mm), whatever the spacing", () => {
+  for (const gaps of [[12, 36, 12, 36], [6, 42, 6, 42], [36, 6, 42, 12]]) {
+    let f = 0;
+    const keys = [0, ...gaps].map((g, i) => { f += g; return { frame: f, position: [2 * i, 1.6, i % 2 ? 0.4 : 0], target: [0, 1, 5], focal_mm: 35 }; });
+    const w = pastKey(keys);
+    assert.ok(w <= 0.001, `zigzag ${gaps.join("/")}: ${(w * 100).toFixed(1)} cm past a key`);
+    assert.ok(pastKey(keys, 0) <= 0.001, `zigzag ${gaps.join("/")}: x stays between its keys`);
+  }
+});
+
+test("an L move (a diagonal, then level) bulges past its level keys by no more than the arc it implies (cb57dad: 37 cm)", () => {
+  for (const [h0, h1] of [[12, 36], [6, 42], [24, 24], [36, 12]]) {
+    const L = [{ frame: 0, position: [0, 1.6, 0], target: [0, 1, 5], focal_mm: 35 }, { frame: h0, position: [1, 1.6, 1], target: [0, 1, 5], focal_mm: 35 },
+      { frame: h0 + h1, position: [3, 1.6, 1], target: [0, 1, 5], focal_mm: 35 }];
+    const w = pastKey(L);
+    // the level chord is 2 m and the key turns 45 deg: an arc's sagitta is 1 m x tan(11.25 deg) = 0.199 m
+    assert.ok(w <= 0.2, `L move ${h0} / ${h1}: ${(w * 100).toFixed(1)} cm past the level keys`);
+    assert.ok(pastKey(L, 0) <= 0.001, `L move ${h0} / ${h1}: x stays between its keys`);
+  }
+});
