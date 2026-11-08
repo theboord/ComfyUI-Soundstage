@@ -58,6 +58,8 @@ export const FOOT = {
   pivot: 0.5, pivotRate: 0.07,   // a planted foot turns this share of the body's turn (on its ball), at most this (rad) a frame
   heelFrom: 0.02, heelPerRad: 2.5, heelMax: 0.3, // a planted foot turned this far (rad) from its anchor lifts its heel (rad / rad, at most)
   far: 0.3,                      // a stance whose ground is this far from the body's height is not planted
+  minLeg: 0.45,                  // of the leg's length: a target closer to the hip than this (the leg folded up) is refused
+  stillSpeed: 0.15,              // m/s: a body slower than this stands on its own footing, not on a top beside it
   edge: 0.02,                    // the ground under one sole is off its plane by more than this: an edge or a step (the foot sits flat on the top)
   dropOK: 0.02,                  // a planted frame the leg can reach only with the hips down more than this is not planted ...
   supportDrop: 0.06,             // ... unless it's the only foot down, up to this much (a short dip, not both feet in the air)
@@ -395,7 +397,7 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
   const stepFrames = (f) => Math.max(T.stepMin, Math.min(base, Math.round(T.stepTwist / Math.max(1e-6, yawRate[f]))));
   const { segs, steps } = scheduleSteps(stance, drift, stepFrames);
   const ramp = Math.max(1, Math.round(T.ramp * fps));
-  const plan = { n, k, fps, state: {}, w: {}, pos: {}, quat: {}, gy: {}, dY: {}, near: {}, liftK: {}, segs, steps, skip, ground };
+  const plan = { n, k, fps, state: {}, w: {}, pos: {}, quat: {}, gy: {}, dY: {}, near: {}, liftK: {}, segs, steps, skip, ground, base: raw.l.base };
   const out = {};
   for (const lr of SIDES) {
     const R = raw[lr], side = rig[lr], K = side.sole.length;
@@ -480,22 +482,35 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
         pA.x += off[2 * i]; pA.z += off[2 * i + 1];
         // lowered until the sole point nearest the ground UNDER IT touches (the ground under each point, so nothing
         // goes in at an edge, a step or a bump)
-        let gap = Infinity, lowY = Infinity;
-        for (let q = 0; q < K; q++) {
-          vtx(f, q, _v0);
-          gap = Math.min(gap, _v0.y - ground(_v0.x, _v0.z, f));
-          lowY = Math.min(lowY, _v0.y);
+        const settle = (gnd) => {
+          let gap = Infinity, lowY = Infinity;
+          for (let q = 0; q < K; q++) {
+            vtx(f, q, _v0);
+            gap = Math.min(gap, _v0.y - gnd(_v0.x, _v0.z));
+            lowY = Math.min(lowY, _v0.y);
+          }
+          return Number.isFinite(gap) ? { y: pA.y - gap, ground: lowY - gap } : null;
+        };
+        const hx = R.hip[3 * f], hy = R.hip[3 * f + 1], hz = R.hip[3 * f + 2], L = R.leg[f] * T.reach, by = baseY(f);
+        // the reach guard, both ways: the hips this frame (as the clip poses them) must reach the target with at most
+        // T.supportDrop of pelvis drop (too low), and the leg must not fold up under them to get there (too high: a
+        // body keyed beside a platform or a ledge had its feet put up on the top, above its own hips)
+        const reachable = (y) => {
+          const dh = Math.hypot(pA.x - hx, pA.z - hz);
+          const need = dh >= L ? Infinity : hy - y - Math.sqrt(L * L - dh * dh);
+          return need <= T.supportDrop * k && Math.hypot(dh, hy - y) >= T.minLeg * R.leg[f] ? need : null;
+        };
+        // a body standing still stands on its own footing: a sole over a higher top beside it (toes over a ledge, heels
+        // against a platform wall) doesn't lift the foot onto it
+        const still = body[f] < T.stillSpeed;
+        let at = settle((x, z) => ground(x, z, f)), need = at ? reachable(at.y) : null;
+        if (at && (need === null || (still && at.ground > by + T.edge * k))) {
+          at = settle((x, z) => Math.min(ground(x, z, f), by)); need = at ? reachable(at.y) : null;
         }
-        if (!Number.isFinite(gap)) continue;
-        const y = pA.y - gap;
-        // the reach guard: the hips this frame (as the clip poses them) must reach the target with at most
-        // T.dropOK of pelvis drop, else the frame is not planted (the foot stays with the clip)
-        const hx = R.hip[3 * f], hy = R.hip[3 * f + 1], hz = R.hip[3 * f + 2], L = R.leg[f] * T.reach;
-        const dh = Math.hypot(pA.x - hx, pA.z - hz);
-        const need = dh >= L ? Infinity : hy - y - Math.sqrt(L * L - dh * dh);
-        if (!(need <= T.supportDrop * k)) continue;
+        if (!at || need === null) continue;
+        const y = at.y;
         // a planted sole far above or below the body's own footing (a foot over a drop, a box beside) is not planted
-        if (Math.abs(lowY - gap - baseY(f)) > T.far * k) continue;
+        if (Math.abs(at.ground - by) > T.far * k) continue;
         // more pelvis drop than T.dropOK: only a candidate, planted below if it's the only foot the clip has down
         st[f] = need > T.dropOK * k ? 4 : 1; w[f] = st[f] === 1 ? 1 : 0; needs[f] = need;
         P[3 * f] = pA.x; P[3 * f + 1] = y; P[3 * f + 2] = pA.z;
@@ -849,10 +864,21 @@ export function groundFeet({ plan, rig, mesh, bones, holder, frame, saved = null
     let margin = 0;
     const nr = plan.near?.[lr];
     if (nr && Number.isFinite(nr[3 * f])) margin = (plan.liftK?.[lr]?.[f] ?? 1) * Math.min(T.liftMax * plan.k, T.liftPerM * Math.hypot(fp.x - nr[3 * f], fp.z - nr[3 * f + 2]));
+    // Only ground the leg could step onto counts: none over the body's own footing for a foot at rest, up to T.far for
+    // one swinging (a kerb, a stair's nosing); a foot standing beside a platform or a ledge is not pushed
+    // up onto its top. And the push never folds the leg closer to the hip than T.minLeg of its length.
+    const lk = plan.liftK?.[lr]?.[f] ?? 1, base = plan.base?.[f];
+    const top = Number.isFinite(base) ? base + T.far * plan.k * smooth01(lk / 0.25) : Infinity;
     let under = 0;
     for (let i = 0; i < p.length; i += 3) {
-      const gy = ground ? ground(p[i], p[i + 2], f) : plan.gy[lr][f];
+      const gy = Math.min(top, ground ? ground(p[i], p[i + 2], f) : plan.gy[lr][f]);
       under = Math.max(under, gy + margin - p[i + 1]);
+    }
+    if (under > 1e-4) {
+      const H = B.thigh.getWorldPosition(_v3), L = H.distanceTo(B.calf.getWorldPosition(_v1)) + _v1.distanceTo(fp), m = T.minLeg * L;
+      const dh = Math.hypot(fp.x - H.x, fp.z - H.z);
+      const capY = dh >= m ? Infinity : H.y - Math.sqrt(m * m - dh * dh);
+      under = Math.min(under, Math.max(0, capY - fp.y));
     }
     if (under > 1e-4) {
       const q = B.foot.getWorldQuaternion(new THREE.Quaternion());

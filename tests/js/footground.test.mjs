@@ -27,10 +27,51 @@ test("real Rocketbox on the station set: standing at the platform edge, facing t
   }
 });
 
+// standing just off a raised top: the feet stay on the ground the body stands on, never folded up onto the top
+/** Per shot: the highest a foot bone gets over the body's own footing, the furthest a knee gets ahead of its hip. */
+function folded(out, st, a) {
+  let up = 0, upAt = -1, knee = 0;
+  for (const r of out.rows) {
+    if (!r) continue;
+    const base = st._walkHeightAt ? st._walkHeightAt(a, r.f) : st._heightAt(a, r.f);
+    for (const lr of ["l", "r"]) {
+      const c = r[lr], y = c.m.elements[13] - base;
+      if (y > up) { up = y; upAt = r.f; }
+      knee = Math.max(knee, Math.hypot(c.knee.x - c.hip.x, c.knee.z - c.hip.z));
+    }
+  }
+  return { up, upAt, knee };
+}
+test("real Rocketbox just off the station platform's edge and a 20 / 40 cm ledge: the feet stay on the body's own ground, not folded up onto the top", { skip: NOT_INSTALLED }, async () => {
+  // 3abc644: at x 1.60 (the edge at 1.62) the feet were put up on the platform at y 1.02 m, above the 0.88 m hips; a
+  // 40 cm ledge with the body 2-15 cm back had the feet 40 cm up and the knees 30 cm forward; 20 cm, a deep squat on top
+  const station = buildTrainStation().fx;
+  const cases = [];
+  for (const kind of ["man", "woman"]) for (const heading of [-90, 90]) {
+    for (const x of [1.55, 1.58, 1.6, 1.61]) cases.push({ kind, heading, x, tag: `station x ${x}`, opts: { setFx: station }, ground: stationFloor });
+    for (const h of [0.2, 0.4]) for (const back of [0.02, 0.08, 0.15]) {
+      const boxes = [{ id: "ledge", half: [1, h / 2, 1], pos: [1, h / 2, 0], quat: [0, 0, 0, 1] }];
+      cases.push({ kind, heading, x: -back, tag: `${h * 100} cm ledge ${back * 100} cm back`, opts: { boxes }, ground: K.boxGround(boxes) });
+    }
+  }
+  for (const c of cases) {
+    const a = { id: "off", kind: c.kind, height_m: K.heightOf(c.kind), position: [c.x, 0, 0], rotation_deg: c.heading, keys: [{ frame: 0, position: [c.x, 0, 0] }] };
+    const st = await K.setup(c.kind, a, { frames: 49, ...c.opts });
+    const out = K.measure(st, a, { ground: c.ground }), s = K.physical(out), f = folded(out, st, a);
+    const tag = `${c.kind} heading ${c.heading} ${c.tag}: ${K.fmt(s)}, foot up ${cm(f.up)} cm (f${f.upAt}), knee ahead ${cm(f.knee)} cm`;
+    assert.ok(f.up < 0.12, `${tag}: a foot folded up off the body's ground`);
+    assert.ok(f.knee < 0.12, `${tag}: a knee pushed forward`);
+    assert.ok(s.drop < 0.02, `${tag}: the hips dropped`);
+    assert.ok(Math.min(s.planted.l, s.planted.r) >= 40, `${tag}: planted, both feet`);
+    // FLAW (by the keys): toes or heels over the top go into its side (the body is keyed closer to it than the shoe)
+  }
+});
+
 // ---------------------------------------------------------------- physical checks over every frame, not the plan's labels
 /** Assert the physical summary s against limits (all in metres / frames); tag names the case. */
-function check(s, tag, { pen = -0.01, slide = 0.01, drift = 0.015, hover = 0.02, float = 0, drop = 0.021, planted = 40 } = {}) {
+function check(s, tag, { pen = -0.01, slide = 0.01, drift = 0.015, hover = 0.02, float = 0, drop = 0.021, planted = 40, excluded = 0 } = {}) {
   const t = `${tag}: ${K.fmt(s)}`;
+  assert.ok(s.excluded <= excluded, `${t}: ${s.excluded} frames hidden or skipped (${s.excludedAt.slice(0, 12).join(",")})`);
   assert.ok(s.pen > pen, `${t}: a shoe ${cm(-s.pen)} cm into the ground`);
   assert.ok(s.slide <= slide, `${t}: a touching sole slid ${cm(s.slide)} cm in a frame`);
   assert.ok(s.drift <= drift, `${t}: a touching sole crept ${cm(s.drift)} cm`);

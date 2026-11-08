@@ -116,7 +116,9 @@ export function measure(st, a, { order = null, ground = () => 0 } = {}) {
       const state = plan?.state?.[lr]?.[f] ?? -1;
       let miss = 0;
       if (state === 1) { bone.getWorldPosition(fb); miss = fb.distanceTo(new THREE.Vector3().fromArray(plan.pos[lr], 3 * f)); }
-      row[lr] = { h: lo, state, miss, P, H, m: bone.matrixWorld.clone() };
+      const S = lr === "l" ? "L" : "R";
+      const hip = skin.bones[`Bip01_${S}_Thigh`].getWorldPosition(new THREE.Vector3()), knee = skin.bones[`Bip01_${S}_Calf`].getWorldPosition(new THREE.Vector3());
+      row[lr] = { h: lo, state, miss, P, H, m: bone.matrixWorld.clone(), hip, knee };
     }
     rows[f] = row;
   }
@@ -133,11 +135,15 @@ export function measure(st, a, { order = null, ground = () => 0 } = {}) {
  *   float   frames where neither foot touches the ground (within `touch`)
  *   drop    the most the pelvis comes down (m); miss: the most a planted foot bone misses its target (m)
  *   planted per foot, frames the plan labels planted
+ *   excluded frames left out of the measures above (the body hidden, or the plan skipping them): counted, not ignored
  */
 export function physical(out, { touch = 0.005, low = 0.03, slow = 0.25, fps = 24, from = 0, to = Infinity } = {}) {
   const { rows } = out;
-  const s = { pen: Infinity, slide: 0, slideAt: "", drift: 0, driftAt: "", hover: 0, hoverAt: "", float: 0, floatAt: [], drop: 0, miss: 0, planted: { l: 0, r: 0 } };
+  const s = { pen: Infinity, slide: 0, slideAt: "", drift: 0, driftAt: "", hover: 0, hoverAt: "", float: 0, floatAt: [], drop: 0, miss: 0, planted: { l: 0, r: 0 }, excluded: 0, excludedAt: [] };
   const live = (r) => r && r.shown && !r.skip && r.f >= from && r.f <= to;
+  // no frame is silently left out: a frame the body is hidden on (the clay shown instead) or the plan skips (in the
+  // air, lifted) is counted, so a swap to clay mid-walk or a step-up taken as a jump shows up as a failure
+  for (const r of rows) if (r && r.f >= from && r.f <= to && !live(r)) { s.excluded++; s.excludedAt.push(r.f); }
   // drift: a vertex that keeps touching the ground frame after frame moves at most this far from where it touched down
   for (const lr of ["l", "r"]) {
     const start = new Map();
@@ -183,4 +189,4 @@ export function physical(out, { touch = 0.005, low = 0.03, slow = 0.25, fps = 24
 }
 
 export const cm = (m) => (100 * m).toFixed(2);
-export const fmt = (s) => `pen ${cm(s.pen)} cm, slide ${cm(s.slide)} cm/frame (${s.slideAt}), drift ${cm(s.drift)} cm (${s.driftAt}), hover ${cm(s.hover)} cm (${s.hoverAt}), float ${s.float} frames, drop ${cm(s.drop)} cm, miss ${cm(s.miss)} cm, planted l ${s.planted.l} r ${s.planted.r}`;
+export const fmt = (s) => `pen ${cm(s.pen)} cm, slide ${cm(s.slide)} cm/frame (${s.slideAt}), drift ${cm(s.drift)} cm (${s.driftAt}), hover ${cm(s.hover)} cm (${s.hoverAt}), float ${s.float} frames, drop ${cm(s.drop)} cm, miss ${cm(s.miss)} cm, planted l ${s.planted.l} r ${s.planted.r}, excluded ${s.excluded}${s.excluded ? ` (${s.excludedAt.slice(0, 10).join(",")})` : ""}`;
