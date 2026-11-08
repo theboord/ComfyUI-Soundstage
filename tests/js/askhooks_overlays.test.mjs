@@ -84,5 +84,8 @@ test("the saved scene (toJSON) still carries the flat camera_keys mirror of the 
   assert.equal(st.state.camera_keys, undefined, "toJSON writes nothing on the live state");
   st.state.shots[1].camera_keys = [{ frame: 0, position: [5, 1.6, 5], target: [0, 1, 0], focal_mm: 85 }];   // a preset swaps the array
   assert.equal(st.toJSON().camera_keys[0].focal_mm, 85);
-  assert.equal(stageWith([{ id: "k" }], "k").toJSON().camera_keys, undefined, "a keyless shot gets no mirror");
+  // a keyless shot: the one key it films from (the scene camera at frame 0, as _camKeysView plays it), never a stale field
+  const k = stageWith([{ id: "k" }], "k");
+  assert.deepEqual(k.toJSON().camera_keys, k._camKeysView(), "a keyless shot's mirror is the camera it films from");
+  assert.equal(k.state.shots[0].camera_keys, undefined, "and no key is stored on the shot");
 });

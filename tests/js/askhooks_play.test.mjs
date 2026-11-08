@@ -61,3 +61,34 @@ test("keyInfo (the key strip drawn while scrubbing) is read-only too; editing st
   st._camKeys();   // the edit path
   assert.equal(st.state.shots[0].camera_keys.length, 1);
 });
+
+test("saved scene: after setActiveShot('b') and a play, the flat camera_keys is shot b's (the shot on screen), never shot A's", () => {
+  // Shot A keyed; shot b has no keys yet; the live flat field still holds A's keys (an older save / the legacy mirror).
+  const A = [{ frame: 0, position: [9, 2, 9], target: [0, 1, 0], focal_mm: 24 }, { frame: 48, position: [-9, 2, 9], target: [0, 1, 0], focal_mm: 24 }];
+  const st = playStage([{ id: "a", camera_keys: JSON.parse(JSON.stringify(A)) }, { id: "b" }], "a");
+  st.state.camera_keys = JSON.parse(JSON.stringify(A));
+  st.setActiveShot("b");
+  play(st);
+  const saved = st.toJSON();
+  assert.notDeepEqual(saved.camera_keys, A, "shot A's keys are not saved as the flat field while b is on screen");
+  assert.deepEqual(saved.camera_keys, [{ frame: 0, position: [0, 1.6, 6], target: [0, 1, 0], focal_mm: 35 }], "b films from the scene camera");
+  assert.deepEqual(saved.camera_keys, st._camKeysView(), "the flat field is exactly what the stage plays for the shot on screen");
+  assert.ok(Math.abs(st.camera.position.x - 0) < 1e-6 && Math.abs(st.camera.position.z - 6) < 1e-6, "on screen: b's camera");
+  assert.deepEqual(st.state.camera_keys, A, "the live state is still not written (Play read-only)");
+  // b gets keys: the saved flat field follows them; back to A: A's
+  st.state.shots[1].camera_keys = [{ frame: 0, position: [3, 1.6, 4], target: [0, 1, 0], focal_mm: 50 }];
+  assert.equal(st.toJSON().camera_keys[0].focal_mm, 50);
+  st.setActiveShot("a"); play(st);
+  assert.deepEqual(st.toJSON().camera_keys, A);
+});
+
+test("the look compiler's reader (the Look panel gets stage.toJSON()) sees the shot on screen, not a stale flat field", () => {
+  const A = [{ frame: 0, position: [9, 2, 9], target: [0, 1, 0], focal_mm: 24 }];
+  const st = playStage([{ id: "a", camera_keys: A }, { id: "b", camera_keys: [{ frame: 0, position: [1, 1.5, 3], target: [0, 1, 0], focal_mm: 85 }] }], "b");
+  st.state.camera_keys = A;
+  play(st);
+  // soundstage/look/scene.py camera_keys(scene) reads scene["camera_keys"] first: the saved copy must be shot b's
+  const j = st.toJSON();
+  assert.equal(j.camera_keys[0].focal_mm, 85);
+  assert.equal(j.camera_keys.length, 1);
+});

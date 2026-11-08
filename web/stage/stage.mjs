@@ -5445,10 +5445,12 @@ export class Stage {
 
   toJSON() {
     const out = clone(this.state);
-    // The flat camera_keys field mirrors the active shot's keys in the saved copy (older readers such as the look
-    // compiler read it); the live state is not written here, so Play stays read-only.
-    const sh = Array.isArray(out.shots) ? (out.shots.find((x) => x.id === out.active_shot) || out.shots[0]) : null;
-    if (sh?.camera_keys?.length) out.camera_keys = clone(sh.camera_keys);
+    // The flat camera_keys field mirrors the shot ON SCREEN in the saved copy (older readers such as the look compiler
+    // read it): the active shot's own keys, or for a shot with no keys yet the one key it films from (the scene camera
+    // at frame 0, what _camKeysView plays), never another shot's keys left in the live flat field. The live state is
+    // not written here, so Play stays read-only.
+    const sh = Array.isArray(out.shots) && out.shots.length ? (out.shots.find((x) => x.id === out.active_shot) || out.shots[0]) : null;
+    if (sh) out.camera_keys = sh.camera_keys?.length ? clone(sh.camera_keys) : [{ frame: 0, ...clone(out.camera || DEFAULT_SCENE.camera) }];
     return out;
   }
 
