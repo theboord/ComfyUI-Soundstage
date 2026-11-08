@@ -155,7 +155,7 @@ test("a boat or a sinking car never throws a swimmer: bounded per frame, the who
       st.setFrame(f);
       if (!g.userData.swimOn) { prev = null; last = null; continue; }
       // the swim path (where the water moves him: the plan's own positions) and the posed hips
-      const plan = st._swimCache.get(st._letGoAt(a)?.actor || a).plan, q = plan.pos[f];
+      const plan = st._swimCache.get(st._letGoAt?.(a)?.actor || a).plan, q = plan.pos[f];
       if (last) { const d = Math.hypot(q[0] - last[0], q[2] - last[2]); if (d > path) { path = d; pat = f; } }
       last = q;
       const p = wp(g.userData.joints.l_hip);

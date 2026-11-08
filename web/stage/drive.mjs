@@ -1949,6 +1949,10 @@ export class DriveMode {
     if (!b) return;
     const g = this.s.actorMeshes.get(b.id);
     const pos = g ? { x: g.position.x, y: b.kind === "prop" ? g.position.y : b.y || 0, z: g.position.z, yaw: g.rotation.y, kind: b.kind, speed: b.speed } : b;
+    // swimming: the camera follows the swimmer at the water (the body, b.y, is on the tank floor under them; the posed
+    // root is the feet, trailing), from the hips (was: the follow cam under the water, looking up at the feet)
+    const hip = b.kind === "person" && g?.userData.swimOn ? g.userData.joints?.l_hip : null;
+    if (hip) { const hp = hip.getWorldPosition(new THREE.Vector3()); Object.assign(pos, { x: b.x, y: hp.y - 0.9, z: b.z, yaw: b.yaw }); }
     this._camUpdate(pos, dt, inp.look, inp.lookPx);
   }
 
@@ -1986,7 +1990,8 @@ export class DriveMode {
     return {
       name: this._name(a), kind: b?.kind || null, speed, kmh: Math.abs(speed) * 3.6,
       gear: b?.kind === "car" ? b.car.gearLabel : null,
-      gait: b && (b.kind === "person" || b.kind === "horse") ? (b.air ? "jump" : b.climb ? "climb" : gaitFor(b.kind, speed, b.height)) : null,
+      gait: b && (b.kind === "person" || b.kind === "horse") ? (b.air ? "jump" : b.climb ? "climb"
+        : b.kind === "person" && this.s.actorMeshes.get(b.id)?.userData.swimOn ? "swim" : gaitFor(b.kind, speed, b.height)) : null,
       slip: b?.kind === "car" ? Math.round(Math.abs(b.car.beta)) : null,
       rec: R ? { phase: R.phase, count: Math.ceil(R.left || 0), frame: Math.floor(R.f), fps: this.fps } : null,
       pending: this.pending ? { summary: this.pending.summary, start: this.pending.take.start, end: this.pending.take.end } : null,
