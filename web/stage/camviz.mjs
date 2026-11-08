@@ -667,7 +667,8 @@ export class PipViewer {
     r.setViewport(m, m, pw, ph);
     const auto = r.autoClear;
     r.autoClear = true;
-    r.render(st.scene, st.camera);
+    // The shot camera's picture is dimmed like the main view ("lights down", stage.setExposure).
+    if (st._withExposure) st._withExposure(() => r.render(st.scene, st.camera)); else r.render(st.scene, st.camera);
     r.autoClear = auto;
     r.setScissorTest(false);
     r.setViewport(0, 0, L.bw, L.bh);

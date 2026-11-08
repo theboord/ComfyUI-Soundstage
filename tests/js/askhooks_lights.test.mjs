@@ -6,7 +6,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as THREE from "../../web/vendor/three.module.min.mjs";
-import { Stage } from "../../web/stage/stage.mjs";
+import { Stage, CAPTURE_EXPOSURE_MIN } from "../../web/stage/stage.mjs";
+import { PipViewer } from "../../web/stage/camviz.mjs";
+import { stageHook } from "../../web/hosthooks.mjs";
 import { describeLighting } from "../../web/stage/lighting.mjs";
 import { exposureHook } from "../../web/hosthooks.mjs";
 
@@ -63,7 +65,7 @@ test("the prompt says the lights are down; the render path uses the dimmer", () 
   assert.match(describeLighting({ exposure_stops: -1.5 }, sun), /lights dimmed down/);
   assert.match(describeLighting({ exposure_stops: -4 }, sun), /lights down very low/);
   const src = readFileSync(new URL("../../web/stage/stage.mjs", import.meta.url), "utf8");
-  assert.match(src, /this\._withExposure\(\(\) => this\.renderer\.render\(this\.scene, cam\)\)/);
+  assert.match(src, /this\._withExposure\(\(\) => this\.renderer\.render\(this\.scene, cam\), \{ mode, forCapture \}\)/);
 });
 
 test("host.lights: get / set / down / reset through the stage, refusals passed back", () => {
@@ -80,4 +82,51 @@ test("host.lights: get / set / down / reset through the stage, refusals passed b
   const app = readFileSync(new URL("../../web/soundstage.js", import.meta.url), "utf8");
   const a = app.indexOf("node.ssAsk = mountAsk(");
   assert.match(app.slice(a, app.indexOf("mountProjectBar(", a)), /lights: exposureHook\(stage\)/);
+});
+
+test("captures are never dimmed to near-black: guide passes not at all, Color at most CAPTURE_EXPOSURE_MIN stops", () => {
+  const st = litStage();
+  st.view = "clay";
+  st.setExposure(-6);
+  assert.equal(CAPTURE_EXPOSURE_MIN, -2);
+  assert.equal(st._exposureFactor(), 1 / 64, "the viewport (here in clay view) shows the full -6 stops");
+  assert.equal(st._exposureFactor({ mode: "color" }), 1 / 64);
+  for (const mode of ["clay", "depth", "wire", "id", "dust"]) assert.equal(st._exposureFactor({ mode, forCapture: true }), 1, `${mode} capture`);
+  assert.equal(st._exposureFactor({ mode: "color", forCapture: true }), 1 / 4, "a Color capture: a quarter of the light, not 1/64");
+  let seen;
+  st._withExposure(() => { seen = st.lamp.intensity; }, { mode: "clay", forCapture: true });
+  assert.equal(seen, 8, "the clay guide for Frame / Motion is lit as set");
+  st._withExposure(() => { seen = st.lamp.intensity; }, { mode: "color", forCapture: true });
+  assert.equal(seen, 2);
+  st.setExposure(-1);
+  assert.equal(st._exposureFactor({ mode: "color", forCapture: true }), 1 / 2, "above the floor: the capture matches the viewport");
+});
+
+test("the shot-camera picture-in-picture (PipViewer) is dimmed like the main view", () => {
+  const st = litStage();
+  st.view = "color"; st.freeView = true;
+  Object.defineProperty(st, "fw", { value: 1280 }); Object.defineProperty(st, "fh", { value: 720 });
+  st.camera = new THREE.PerspectiveCamera();
+  const seen = [];
+  st.renderer = { autoClear: true, setScissorTest() {}, setScissor() {}, setViewport() {},
+    render: (scene) => { seen.push([st.lamp.intensity, +scene.background.r.toFixed(4)]); } };
+  const pip = Object.create(PipViewer.prototype);
+  Object.assign(pip, { stage: st, enabled: true, widthFrac: 0.3, el: { style: {}, hidden: true }, container: null,
+    _layout: () => ({ bw: 1280, bh: 720, s: 1, left: 0, top: 0 }) });
+  try { pip._draw(); } catch { /* DOM chrome after the render; the render is what is checked */ }
+  st.setExposure(-2);
+  try { pip._draw(); } catch { /* as above */ }
+  assert.deepEqual(seen, [[8, 0.4], [2, 0.1]], "full light at 0, a quarter at -2 stops");
+  assert.equal(st.lamp.intensity, 8, "put back after");
+});
+
+test("Ask can take back a lights change: host.stage.snapshot() / restore(snap)", () => {
+  const st = litStage();
+  st.actorMeshes = new Map(); st._buildSet = () => {}; st._applySun = () => {}; st.onSelect = null;
+  const host = stageHook(st), L = exposureHook(st);
+  const snap = host.snapshot();
+  assert.equal(L.down(3).stops, -3);
+  assert.deepEqual(host.restore(snap), { ok: true, changed: true });
+  assert.equal(st.exposure(), 0);
+  assert.equal(st.undo.length, 2, "the change and the restore: two undo steps");
 });

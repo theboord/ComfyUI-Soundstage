@@ -174,6 +174,10 @@ function mountHorse(g, hg, seatPos, t, h, drop) {
 export const FRAME_W = 960;
 export const FRAME_H = 512;
 export const EXPOSURE_MIN = -6, EXPOSURE_MAX = 2;   // the scene dimmer's range in stops (setExposure)
+// Captures are never dimmed to near-black: a Color capture (the picture Frame / Motion / Deliver read) is dimmed to at
+// most CAPTURE_EXPOSURE_MIN stops (a quarter of the light); the guide passes (clay, depth, wire, ID, dust) are not
+// dimmed at all. The prompt's lighting line carries the rest of "lights down" (lighting.mjs describeLighting).
+export const CAPTURE_EXPOSURE_MIN = -2;
 /** Delivery frame sizes: every side a multiple of 64 (LTX Layout-To-Render requirement). */
 export const ASPECTS = {
   "1.85": { label: "1.85:1 (flat)", size: [960, 512] },
@@ -2654,9 +2658,24 @@ export class Stage {
     return { ok: true, stops: v, changed: true };
   }
 
-  /** Run a render with the scene dimmer applied (every light and a plain-colour background scaled, then put back). */
-  _withExposure(fn) {
-    const k = Math.pow(2, this.exposure());
+  /**
+   * The dimmer's light factor for a render: 2^stops in the viewport (any view mode, the shot-camera picture-in-picture
+   * too); in a capture, Color only and never below CAPTURE_EXPOSURE_MIN stops; the guide passes of a capture
+   * (clay, depth, wire...) are not dimmed.
+   */
+  _exposureFactor({ mode = this.view, forCapture = false } = {}) {
+    let stops = this.exposure();
+    if (forCapture) {
+      if (mode !== "color") return 1;
+      stops = Math.max(stops, CAPTURE_EXPOSURE_MIN);
+    }
+    return Math.pow(2, stops);
+  }
+
+  /** Run a render with the scene dimmer applied (every light and a plain-colour background scaled, then put back).
+   *  opts {mode, forCapture}: see _exposureFactor (the default is the viewport's). */
+  _withExposure(fn, opts = {}) {
+    const k = this._exposureFactor(opts);
     if (k === 1 || !this.scene) return fn();
     const lights = [];
     this.scene.traverse((o) => { if (o.isLight) { lights.push([o, o.intensity]); o.intensity *= k; } });
@@ -5562,7 +5581,7 @@ export class Stage {
     this._inRender = true;
     // Hair and lash cards of the lifelike people keep their cut-out under the pass's override (people/cutout.mjs).
     const putBackCards = swapAvatarCutouts(this, this.scene.overrideMaterial);
-    try { this._withExposure(() => this.renderer.render(this.scene, cam)); } finally { putBackCards(); }   // the scene dimmer
+    try { this._withExposure(() => this.renderer.render(this.scene, cam), { mode, forCapture }); } finally { putBackCards(); }   // the scene dimmer
     if (!forCapture && this.highlight) {
       try { this.highlight.render(this.renderer, cam, { hoverId: this._dragging ? null : this._hoverId, selectedId: this.selected }); }
       catch (err) { this.highlight.enabled = false; console.warn("Soundstage outline", err); }
