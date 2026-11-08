@@ -583,3 +583,75 @@ def test_forget_cleans_collected_copies_in_output_soundstage_projects(tmp_path):
         assert res["ok"] and res["removed"] == 1, res
     finally:
         ST._OVERRIDE = None
+
+
+# ------------------------------------------------------------------------- round 5: Ask's notes, legacy decisions, refs
+
+TYPED_ASK = "remember that the diner sign flickers when Jane Doe walks in"
+
+
+def _ask(i, ref=None, text=TYPED_ASK):
+    n = {"id": i, "text": text, "source": "ask", "by": "ask", "scope": "scene", "scene_id": "sc_1", "why": "written by ask"}
+    if ref:
+        n["ref"] = ref
+    return n
+
+
+def test_forget_removes_asks_notes_by_ref_and_id_never_pitch_or_director(tmp_path):
+    books, user = tmp_path / "books", tmp_path / "user"
+    ST._OVERRIDE = str(books)
+    try:
+        P = {"id": "p_0a1b2c3d", "name": "Film"}
+        pitch = {"id": "n_p", "text": "Pitch: open on the sign", "source": "pitch"}
+        mine = {"id": "n_d", "text": "keep the lamp off", "source": "director"}
+        ST.save({"v": 1, "notes": [_ask("n_a1", ref="p_0a1b2c3d:turn_5"), pitch, mine, _ask("n_a2")]}, project=P)
+        auto = user / "projects" / "Film" / "autosave"
+        auto.mkdir(parents=True)
+        (user / "workflows").mkdir(parents=True)
+        (user / "workflows" / "Film.json").write_text(json.dumps(_wf_with_book([_ask("n_a1", ref="p_0a1b2c3d:turn_5"), _ask("n_a2")])))
+        (auto / "20261101-120000-000.json").write_text(json.dumps({"name": "Film", "workflow": _wf_with_book([_ask("n_a1", ref="p_0a1b2c3d:turn_5")])}))
+        trash = user / "projects" / ".trash" / "Film 20261102-101010"
+        trash.mkdir(parents=True)
+        (trash / "workflow.json").write_text(json.dumps(_wf_with_book([_ask("n_a2")])))
+        res = ST.forget(["p_0a1b2c3d:turn_5"], [user / "workflows", user / "projects"], P)       # by ref
+        assert res["ok"], res
+        res = ST.forget(["n_a2"], [user / "workflows", user / "projects"], P)                    # by id
+        assert res["ok"], res
+        for p in tmp_path.rglob("*.json"):
+            assert TYPED_ASK not in p.read_text(), p                   # no copy of Ask's raw note text is left
+        assert [n["id"] for n in ST.load()["notes"]] == ["n_p", "n_d"]  # Pitch's and the director's notes stay
+    finally:
+        ST._OVERRIDE = None
+
+
+def test_clean_ref_rejects_the_text_squashed():
+    t = "make it pour with rain"
+    assert ST.clean_ref("p_0a1b2c3d:turn_42", t) == "p_0a1b2c3d:turn_42"
+    for bad in [":makeitpourwithrain", ":makeItPourWithRain", ":pour-with-rain", "p_0a1b2c3d:pourwithrain", "make it pour", "x:y", None, 42]:
+        assert ST.clean_ref(bad, t) is None, bad
+    assert ST.clean_ref(":pourwithrain", "make it pour­with rain") is None     # soft hyphen inside the text
+
+
+def test_note_route_keeps_only_an_opaque_ref(tmp_path):
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from soundstage.book import routes as R
+    ST._OVERRIDE = str(tmp_path)
+    R._REGISTERED = False
+    rt = web.RouteTableDef()
+    R.register(rt, send=lambda ev, d: None)
+    app = web.Application()
+    app.add_routes(rt)
+
+    async def go():
+        async with TestClient(TestServer(app)) as c:
+            j = await (await c.post("/soundstage/book/note", json={"text": "Sign flickers on entry", "source": "ask", "ref": "p_0a1b2c3d:t_9"})).json()
+            assert j["note"]["ref"] == "p_0a1b2c3d:t_9" and j["note"]["source"] == "ask"
+            j = await (await c.post("/soundstage/book/note", json={"text": "Sign flickers on entry", "source": "ask", "ref": ":signflickersonentry"})).json()
+            assert "ref" not in j["note"]
+    try:
+        asyncio.run(go())
+    finally:
+        ST._OVERRIDE = None
+        R._REGISTERED = False

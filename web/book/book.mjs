@@ -15,7 +15,7 @@
 // host: { getScript(), liveScene(), sceneStage(id), look(), setLook(patch), renders(sid), chosenPic(sid), cutIds(),
 //         order(), props(), save(), status(msg), openScene(id), project() -> {id, name} (default: window.__ssProject.current()) }
 import { normalizeBook, emptyBook, pageFor, setField, setBookField, mergeDraft, mergeSpine, addPlacements, moveNote, removeNote,
-  splitShorthand, getBookContext, recordDecision, addRevision, toggleDropped, rememberShots, scenePage, toMarkdown, notesForScene, notesOnLine } from "./model.mjs";
+  splitShorthand, getBookContext, recordDecision, decisionRef, FORGETTABLE_SOURCES, addRevision, toggleDropped, rememberShots, scenePage, toMarkdown, notesForScene, notesOnLine } from "./model.mjs";
 import { floorPlanSVG } from "./floorplan.mjs";
 import { printHTML } from "./print.mjs";
 import { ClayFrames } from "./clay.mjs";
@@ -308,7 +308,8 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
      *  server at once (no 1.2 s wait), WAITING for that save, then remove every older stored copy on the server
      *  (POST /soundstage/book/forget: the books folder and the user's saved workflows, project manifests, autosaves and
      *  trash). `id` is the note's id or the `ref` it was recorded with (every decision note with that ref goes). Only
-     *  decision notes (source "chat"): the director's own notes are never removed this way.
+     *  decision notes (source "chat") and notes Ask added (source "ask", by note id or by the `ref` addNote kept): the
+     *  director's own notes, Pitch's and the rules' are never removed this way.
      *  Resolves {ok: true, copies} (copies: how many older stored copies were removed) once the server has answered both;
      *  A note NOT in the open Book (dropped by the 40-decision cap, forgotten in another tab): the server scrub still runs
      *  -> {ok: true, in_book: false, copies} when it removed stored copies, {ok: false, in_book: false, copies: 0, error:
@@ -332,7 +333,7 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
         return sc.copies ? { ok: true, in_book: false, copies: sc.copies }
           : { ok: false, in_book: false, copies: 0, error: `no note '${key}' in the book, and no stored copy on the server` };
       }
-      if (hits.some(([x]) => x.source !== "chat")) return { ok: false, error: `note '${key}' is not a decision from the chat` };
+      if (hits.some(([x]) => !FORGETTABLE_SOURCES.has(x.source))) return { ok: false, error: `note '${key}' is not a decision from the chat or a note Ask added` };
       const refresh = () => { if (view.open) view.render(); try { H.onNotes?.(); } catch { /* */ } };
       for (const [x] of hits) removeNote(book, x.id);
       persist({ server: false });
@@ -359,11 +360,18 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
      *  {everywhere: true} also removes copies of the SAME decision note (same note id) kept by another project (a
      *  Duplicate, a Save As copy): the server's ok:false names them in other_copies until then. */
     scrubDecision: async (id, { everywhere = false } = {}) => { const sc = await scrub([String(id ?? "")].filter(Boolean), { everywhere }); return sc.error ? { ok: false, error: sc.error } : { ok: true, copies: sc.copies }; },
-    /** A note from anyone (Pitch, a script): placed like shorthand unless a scene is given. */
-    addNote: async (text, { sceneId = null, category = null, line = null, source = "pitch" } = {}) => {
-      if (sceneId) { const [n] = addPlacements(book, [{ text, scope: "scene", scene_id: sceneId, line, category: category || "blocking", confidence: 1, why: `written by ${source}`, by: source }], { source }); changed(); return n; }
-      const [n] = await fileNotes(text, { useModel: false });
-      if (n) n.source = source;
+    /** A note from anyone (Pitch, a script, Ask): placed like shorthand unless a scene is given. `ref` (optional): an
+     *  opaque `${projectId}:${turnId}` (DECISION_REF_RE, never words of the note) kept on the note, so
+     *  forgetDecision(ref) and the server scrub find it; a ref of any other shape is dropped. A note from Ask (source
+     *  "ask") can be forgotten by its id or that ref. The text is stored as given: Ask should pass a short summary it
+     *  wrote, never the user's typed sentence (docs/director.md "Forget"). */
+    addNote: async (text, { sceneId = null, category = null, line = null, source = "pitch", ref = null } = {}) => {
+      const r = decisionRef(ref, text);
+      let n;
+      if (sceneId) [n] = addPlacements(book, [{ text, scope: "scene", scene_id: sceneId, line, category: category || "blocking", confidence: 1, why: `written by ${source}`, by: source }], { source });
+      else { [n] = await fileNotes(text, { useModel: false }); if (n) n.source = source; }
+      if (n && r) n.ref = r;
+      if (n) changed();
       return n;
     },
     notesFor: (sceneId) => notesForScene(book, script(), sceneId),

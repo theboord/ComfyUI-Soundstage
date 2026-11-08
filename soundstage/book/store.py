@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
+import unicodedata
 import uuid
 
 _OVERRIDE: str | None = None     # tests point this at a temp dir
@@ -65,15 +67,41 @@ def add_note(note: dict, name: str = "current") -> dict:
 # ------------------------------------------------------------------------------------------------ forget a decision
 
 MAX_SCRUB_BYTES = 64 * 1024 * 1024
+# Note sources Forget removes (web/book/model.mjs FORGETTABLE_SOURCES): "chat" (the Director / Ask decisions,
+# recordDecision) and "ask" (notes Ask added through book.addNote(text, {source: "ask", ref})). Never the director's
+# own notes, Pitch's or the rules'.
+FORGETTABLE = ("chat", "ask")
+DECISION_REF_RE = re.compile(r"^(?:p_[0-9a-f]{8})?:[A-Za-z0-9_-]{1,48}$")
+_INVISIBLE = re.compile("[\u00ad\u034f\u180e\u200b-\u200d\u2060\ufeff]")
+
+
+def _squash(s) -> str:
+    """NFKC, invisible characters removed, lowercase, letters and digits only (web/book/model.mjs squash)."""
+    t = _INVISIBLE.sub("", unicodedata.normalize("NFKC", str(s or ""))).lower()
+    return "".join(c for c in t if c.isalnum())
+
+
+def clean_ref(ref, text: str = "") -> str | None:
+    """A note's ref as the server keeps it, or None: the opaque `${projectId}:${turnId}` shape only, and never a turn id
+    that spells out the note's text (squashed, 8+ letters)."""
+    r = str(ref).strip() if isinstance(ref, str) else ""
+    if not DECISION_REF_RE.match(r):
+        return None
+    turn = _squash(r.split(":", 1)[1])
+    t = _squash(text)
+    if t and len(turn) >= 8 and (turn in t or t in turn):
+        return None
+    return r
 
 
 def _strip(obj, ids: set) -> int:
-    """Remove chat decision notes whose id (or ref) is in ids from every "notes" list inside obj. Returns how many."""
+    """Remove chat decision notes and Ask's notes (FORGETTABLE) whose id (or ref) is in ids from every "notes" list
+    inside obj. Returns how many."""
     n = 0
     if isinstance(obj, dict):
         notes = obj.get("notes")
         if isinstance(notes, list):
-            keep = [x for x in notes if not (isinstance(x, dict) and x.get("source") == "chat"
+            keep = [x for x in notes if not (isinstance(x, dict) and x.get("source") in FORGETTABLE
                                              and (x.get("id") in ids or (x.get("ref") is not None and x.get("ref") in ids)))]
             if len(keep) != len(notes):
                 n += len(notes) - len(keep)
@@ -159,12 +187,12 @@ def _own_workflow(root: str, p: str, pfolder: str | None) -> bool:
 
 
 def _chat_notes(obj):
-    """Every chat decision note (a dict with source "chat") in any "notes" list inside obj."""
+    """Every forgettable note (a dict with source "chat" or "ask") in any "notes" list inside obj."""
     if isinstance(obj, dict):
         notes = obj.get("notes")
         if isinstance(notes, list):
             for x in notes:
-                if isinstance(x, dict) and x.get("source") == "chat":
+                if isinstance(x, dict) and x.get("source") in FORGETTABLE:
                     yield x
         for k, v in obj.items():
             if k != "notes":
@@ -315,3 +343,4 @@ def forget(ids, roots, project=None, everywhere=False) -> dict:
             [*out["errors"], *[f"{s['path']} ({s['why']})" for s in out["skipped"]], *[f"{q} (still mentions it)" for q in out["still_mentions"]],
              *[f"{q} (another project's copy of this decision; forget with everywhere to remove it)" for q in out["other_copies"]]])[:600]
     return out
+

@@ -339,3 +339,38 @@ test("book.forgetDecision on a decision the 40-entry cap dropped from the open B
     assert.match(r.error, /no note .* and no stored copy/);
   } finally { book.dispose(); }
 });
+
+// ---------------------------------------------------------------- round 5, finding 3: Ask's addNote notes can be forgotten
+test("book.addNote(text, {source: 'ask', ref}): kept with its ref; forgetDecision(ref) removes it here and server-side", async () => {
+  const posts = [];
+  const api = { fetchApi: async (path, init) => {
+    if (init?.method === "POST") posts.push([path, JSON.parse(init.body)]);
+    return path === "/soundstage/book/forget" ? { ok: true, status: 200, json: async () => ({ ok: true, removed: 3 }) }
+      : path === "/soundstage/book/legacy" ? { ok: true, status: 200, json: async () => ({ ok: true, decisions: [{ id: "n_old", files: ["x"] }], files: ["x"] }) }
+        : { status: 200, json: async () => ({ ok: true }) };
+  }, addEventListener() {} };
+  const props = {};
+  const script = { title: "Test", scenes: [{ id: "sc_1", number: 1, heading: "INT. ROOM - DAY", elements: [], characters: [] }], characters: [] };
+  const book = mountBook({ api, stage: null, host: { getScript: () => script, liveScene: () => "sc_1", props: () => props,
+    project: () => ({ id: "p_aaaaaaaa", name: "Film" }) } });
+  const TYPED = "remember the diner sign flickers when Jane Doe walks in";
+  try {
+    const n = await book.addNote(TYPED, { sceneId: "sc_1", source: "ask", ref: "p_aaaaaaaa:turn_7" });
+    assert.equal(n.ref, "p_aaaaaaaa:turn_7");
+    assert.ok(props.ss_book.notes.some((x) => x.id === n.id && x.ref === "p_aaaaaaaa:turn_7"), "saved with its ref");
+    posts.length = 0;
+    assert.deepEqual(await book.forgetDecision("p_aaaaaaaa:turn_7"), { ok: true, copies: 3 });
+    assert.equal(JSON.stringify(props.ss_book).includes(TYPED), false, "gone from the workflow copy");
+    assert.equal(JSON.stringify(book.book).includes(TYPED), false, "and from the open Book");
+    assert.deepEqual(posts.map((p) => p[0]), ["/soundstage/book/save", "/soundstage/book/forget"]);
+    assert.deepEqual(posts[1][1].ids.sort(), [n.id, "p_aaaaaaaa:turn_7"].sort());
+    // by id works too; a ref spelled from the note's words is dropped
+    const m = await book.addNote("Sign flickers on entry", { sceneId: "sc_1", source: "ask", ref: ":signflickersonentry" });
+    assert.equal(m.ref, undefined);
+    assert.equal((await book.forgetDecision(m.id)).ok, true);
+    // Pitch's and the director's notes are still never removed
+    const d = await book.addNote("keep the lamp off", { sceneId: "sc_1", source: "director", ref: "p_aaaaaaaa:turn_8" });
+    assert.match((await book.forgetDecision("p_aaaaaaaa:turn_8")).error, /not a decision/);
+    assert.ok(book.book.notes.some((x) => x.id === d.id));
+  } finally { book.dispose(); }
+});

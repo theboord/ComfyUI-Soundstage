@@ -8,7 +8,8 @@ POST /soundstage/book/place   {script, notes, llm_text?}    -> {placements, back
 GET  /soundstage/book                                       -> the stored book (404 if none)
 POST /soundstage/book/save    {book, project?: {id, name}}  -> {ok, path}; project is kept as book._project
 GET  /soundstage/book/context?scene=sc_1                    -> book_context() of the stored book
-POST /soundstage/book/note    {text, scene_id?, category?, source?, script?} -> {note}; the open App merges it
+POST /soundstage/book/note    {text, scene_id?, category?, source?, script?, ref?} -> {note}; the open App merges it;
+                              ref (an opaque `${projectId}:${turnId}`, else dropped) lets Forget find the note
 POST /soundstage/book/forget  {id} or {ids}, project: {id, name} -> {ok, removed, files, still_mentions, skipped,
                               other_projects, errors, error?}: removes those chat decision notes (by note id or ref) from
                               every stored copy OF THAT PROJECT (books folder, the user's workflows/ and projects/: saved
@@ -17,7 +18,8 @@ POST /soundstage/book/forget  {id} or {ids}, project: {id, name} -> {ok, removed
                               only these server-side files: not other open tabs, canvas undo, browser storage, ComfyUI's
                               queue history (extra_pnginfo) or metadata inside rendered files. Other projects' copies (a Duplicate)
                               are listed in other_projects, not changed. ok is false when any copy was skipped or still
-                              mentions the id (store.forget). book.forgetDecision / scrubDecision call it.
+                              mentions the id (store.forget). book.forgetDecision / scrubDecision call it. Removes
+                              source "chat" decisions and source "ask" notes (Ask's addNote), never the director's own.
 """
 from __future__ import annotations
 
@@ -123,6 +125,9 @@ def register(routes=None, send=None) -> bool:
         if not t:
             return web.json_response({"error": "send {text}"}, status=400)
         n = {"text": t, "source": str(b.get("source") or "chat"), "by": str(b.get("source") or "chat")}
+        ref = ST.clean_ref(b.get("ref"), t)       # opaque `${projectId}:${turnId}` only, so Forget can find the note
+        if ref:
+            n["ref"] = ref
         script = _script(b)
         if b.get("scene_id"):
             n.update(scope="scene", scene_id=str(b["scene_id"]), category=str(b.get("category") or "blocking"),
