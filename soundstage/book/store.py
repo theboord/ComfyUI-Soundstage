@@ -222,11 +222,16 @@ def forget(ids, roots, project=None, everywhere=False) -> dict:
     two-tab race left it stamped with a different id) is listed in other_copies too and makes ok False: a copy remains.
     With everywhere=True those copies are removed as well, keyed by the decision's note id (never by ref: a chat turn
     id can be shared by an unrelated decision of another project, which is left alone). The decision ids are the ids
-    given that are some chat note's own id, plus the ids of the notes this project's files matched by ref.
+    given that are some chat note's own id, plus the ids of the notes this project's files matched by ref, plus the
+    ids of notes anywhere whose ref names this project ("<project id>:<turn>"): so a second pass (the everywhere retry
+    after this project's own copy is already gone) still finds the copies. A ref with no project prefix that matches
+    only another project's note, with nothing removed here, makes ok False (ref_elsewhere / ref_elsewhere_ids): it may
+    be a copy, so ok True is never returned while it remains; forget its note id with everywhere to remove it.
 
     Returns {ok, removed, files: [paths changed], still_mentions: [paths whose text still holds an id after cleaning,
     e.g. inside a string], skipped: [{path, why}]: files that mention an id but were not cleaned (too big, or not tied
-    to any project), other_projects: [paths], other_copies: [paths still holding a copy of the decision], errors}.
+    to any project), other_projects: [paths], other_copies: [paths still holding a copy of the decision],
+    decision_ids: [the note ids of the decision found], ref_elsewhere / ref_elsewhere_ids, errors}.
     ok is False when skipped, still_mentions, other_copies or errors is non-empty: then not every copy is gone, and
     the caller must say so."""
     ids = {str(i) for i in (ids or []) if isinstance(i, str) and i.strip()}
@@ -308,6 +313,23 @@ def forget(ids, roots, project=None, everywhere=False) -> dict:
         for x in _chat_notes(data):
             if x.get("ref") is not None and x.get("ref") in ids and isinstance(x.get("id"), str):
                 dec.add(x["id"])
+    # A ref that names THIS project ("<pid>:<turn>", web/book/model.mjs DECISION_REF_RE) is this project's chat turn,
+    # whichever file holds it: a Duplicate / Save As copy keeps the ref with the note. Its notes in other projects'
+    # files are copies of this decision, even when this project's own copy is already gone (a second Forget, the
+    # everywhere retry the first one's error asks for: review round 6, fix 3). A ref with no project prefix, or
+    # another project's, may be an unrelated decision that only shares a turn id: never matched by ref there.
+    own_refs = {i for i in ids if pid and i.startswith(pid + ":")}
+    ref_elsewhere = {}                                     # path -> (data, note ids matched only by an unguarded ref)
+    for p, data in others:
+        for x in _chat_notes(data):
+            r, nid = x.get("ref"), x.get("id")
+            if r is None or r not in ids or not isinstance(nid, str):
+                continue
+            if r in own_refs:
+                dec.add(nid)
+            elif nid not in dec:
+                ref_elsewhere.setdefault(p, (data, set()))[1].add(nid)
+    out["decision_ids"] = sorted(dec)
 
     def rewrite(p, data, keys):
         k = _strip(data, keys)
@@ -336,12 +358,21 @@ def forget(ids, roots, project=None, everywhere=False) -> dict:
                 out["other_copies"].append(p)
         except (OSError, ValueError) as e:
             out["errors"].append(f"{p}: {e}")
-    out["ok"] = not (out["errors"] or out["skipped"] or out["still_mentions"] or out["other_copies"])
+    # Matched only by an unguarded ref in another project (no note of it removed here): maybe this decision's copy,
+    # maybe another project's own decision sharing the turn id. Never ok with nothing removed while such a note
+    # remains: the caller passes the note ids (ref_elsewhere_ids) to decide.
+    left = {} if out["removed"] else {
+        p: {x.get("id") for x in _chat_notes(data) if x.get("id") in v} for p, (data, v) in ref_elsewhere.items()}
+    left = {p: v for p, v in left.items() if v}
+    out["ref_elsewhere"] = sorted(left)
+    out["ref_elsewhere_ids"] = sorted({i for v in left.values() for i in v})
+    out["ok"] = not (out["errors"] or out["skipped"] or out["still_mentions"] or out["other_copies"] or out["ref_elsewhere"])
     if not out["ok"]:
-        n = len(out["errors"]) + len(out["skipped"]) + len(out["still_mentions"]) + len(out["other_copies"])
+        n = len(out["errors"]) + len(out["skipped"]) + len(out["still_mentions"]) + len(out["other_copies"]) + len(out["ref_elsewhere"])
         out["error"] = f"{n} stored cop{'y' if n == 1 else 'ies'} not cleaned: " + "; ".join(
             [*out["errors"], *[f"{s['path']} ({s['why']})" for s in out["skipped"]], *[f"{q} (still mentions it)" for q in out["still_mentions"]],
-             *[f"{q} (another project's copy of this decision; forget with everywhere to remove it)" for q in out["other_copies"]]])[:600]
+             *[f"{q} (another project's copy of this decision; forget with everywhere to remove it)" for q in out["other_copies"]],
+             *[f"{q} (another project's note with this ref and no project in it, nothing removed here; forget its note id with everywhere if it is this decision)" for q in out["ref_elsewhere"]]])[:600]
     return out
 
 

@@ -95,14 +95,22 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
   }
   /** POST /soundstage/book/forget: every stored copy of these decision notes in THIS project goes (another project's
    *  copy, e.g. a Duplicate's, stays). -> {copies} or {error} (the server's ok:false, with what was not cleaned). */
+  // The decision note ids a scrub that was not ok named (the server's decision_ids), per id / ref asked: a retry
+  // (scrubDecision(ref, {everywhere: true})) sends them too, because the first pass already removed this project's
+  // copy, so the server can no longer find the note ids by that ref (review round 6, fix 3).
+  const scrubIds = new Map();
   async function scrub(ids, { everywhere = false } = {}) {
     if (!ids.length) return { error: "no id" };
     const project = projectRef();
+    const send = [...new Set([...ids, ...ids.flatMap((i) => scrubIds.get(i) || [])])];
     try {
-      const r = api?.fetchApi?.("/soundstage/book/forget", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids, ...(project ? { project } : {}), ...(everywhere ? { everywhere: true } : {}) }) });
+      const r = api?.fetchApi?.("/soundstage/book/forget", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: send, ...(project ? { project } : {}), ...(everywhere ? { everywhere: true } : {}) }) });
       if (!r) return { error: "no server" };
       const { j, error } = await readAnswer(await r, "the server could not clean them");
-      return error ? { error } : { copies: Number(j?.removed) || 0 };
+      const dec = Array.isArray(j?.decision_ids) ? j.decision_ids.filter((x) => typeof x === "string") : [];
+      if (error) { if (dec.length) for (const i of ids) scrubIds.set(i, [...new Set([...(scrubIds.get(i) || []), ...dec])]); return { error }; }
+      for (const i of ids) scrubIds.delete(i);
+      return { copies: Number(j?.removed) || 0 };
     } catch (e) { return { error: String(e?.message || e) }; }
   }
 

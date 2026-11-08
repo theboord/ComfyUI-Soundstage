@@ -419,3 +419,32 @@ test("book.addNote multi-line Ask text with no sceneId: Forget by ref or by id l
     assert.ok(pitch.every((x) => x.source === "pitch" && x.ref === "p_aaaaaaaa:turn_32"));
   } finally { book.dispose(); }
 });
+
+// ---------------------------------------------------------------- round 6, fix 3: the everywhere retry carries the note ids
+test("book.scrubDecision(ref, {everywhere}) after a not-ok Forget sends the decision note ids the server named", async () => {
+  const posts = [];
+  let answer = null;
+  const api = { fetchApi: async (path, init) => {
+    if (init?.method === "POST") posts.push([path, JSON.parse(init.body)]);
+    return path === "/soundstage/book/forget" ? answer() : { status: 200, json: async () => ({ ok: true }) };
+  }, addEventListener() {} };
+  const props = {};
+  const script = { title: "Test", scenes: [{ id: "sc_1", number: 1, heading: "INT. ROOM - DAY", elements: [], characters: [] }], characters: [] };
+  const book = mountBook({ api, stage: null, host: { getScript: () => script, liveScene: () => "sc_1", props: () => props,
+    project: () => ({ id: "p_0a1b2c3d", name: "Film" }) } });
+  try {
+    const ref = ":turn_9";
+    answer = () => ({ ok: true, status: 200, json: async () => ({ ok: false, removed: 1, decision_ids: ["n_d2"], other_copies: ["Film 3.json"],
+      error: "1 stored copy not cleaned: Film 3.json (another project's copy of this decision; forget with everywhere to remove it)" }) });
+    const first = await book.scrubDecision(ref);
+    assert.equal(first.ok, false);
+    assert.match(first.error, /Film 3\.json/);
+    answer = () => ({ ok: true, status: 200, json: async () => ({ ok: true, removed: 2, decision_ids: ["n_d2"] }) });
+    assert.deepEqual(await book.scrubDecision(ref, { everywhere: true }), { ok: true, copies: 2 });
+    const last = posts.at(-1)[1];
+    assert.deepEqual(last.ids.sort(), [ref, "n_d2"].sort(), "the retry names the note id, not only the ref");
+    assert.equal(last.everywhere, true);
+    await book.scrubDecision(ref);
+    assert.deepEqual(posts.at(-1)[1].ids, [ref], "remembered only until a scrub of it is ok");
+  } finally { book.dispose(); }
+});

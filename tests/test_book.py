@@ -711,3 +711,66 @@ def test_legacy_decisions_listed_then_migrated_in_every_server_copy(tmp_path):
         assert not list(tmp_path.rglob("*.tmp"))
     finally:
         ST._OVERRIDE = None
+
+
+# ---------------------------------------------------------------- round 6, fix 3: the everywhere retry after a first pass
+TYPED_P5 = "please make the rain much heavier outside the diner window"
+
+
+def _typed_dec(i, ref):
+    n = _dec(i, ref=ref)
+    n["text"] = TYPED_P5                    # a pre-v3 decision that still holds the typed sentence
+    return n
+
+
+def test_forget_everywhere_retry_after_a_first_pass_removes_the_duplicates_copy(tmp_path):
+    """Forget by ref in Film: ok False, other_copies names Film 3.json (a Duplicate, fresh id). The everywhere retry the
+    error asks for, with the same ref, must remove Film 3's copy: never ok True with removed 0 while the sentence stays."""
+    books, user = tmp_path / "books", tmp_path / "user"
+    ST._OVERRIDE = str(books)
+    ref = "p_0a1b2c3d:turn_9"
+    try:
+        (user / "workflows").mkdir(parents=True)
+        film, film3 = user / "workflows" / "Film.json", user / "workflows" / "Film 3.json"
+        film.write_text(json.dumps(_wf_of("p_0a1b2c3d", "Film", [_typed_dec("n_d1", ref)])))
+        film3.write_text(json.dumps(_wf_of("p_99999999", "Film 3", [_typed_dec("n_d1", ref)])))
+        proj = {"id": "p_0a1b2c3d", "name": "Film"}
+        first = ST.forget([ref], [user / "workflows"], proj)
+        assert not first["ok"] and first["other_copies"] == [str(film3)], first
+        assert first["decision_ids"] == ["n_d1"]
+        assert TYPED_P5 not in film.read_text()
+        # a second plain pass: this project's copy is gone, the duplicate is still found through the ref's project id
+        again = ST.forget([ref], [user / "workflows"], proj)
+        assert not again["ok"] and again["other_copies"] == [str(film3)], again
+        retry = ST.forget([ref], [user / "workflows"], proj, everywhere=True)
+        assert TYPED_P5 not in film3.read_text(), retry
+        assert retry["ok"] and retry["removed"] >= 1 and retry["other_copies"] == [], retry
+    finally:
+        ST._OVERRIDE = None
+
+
+def test_forget_unprefixed_ref_only_in_another_project_is_never_ok_with_nothing_removed(tmp_path):
+    """A ref with no project id (saved before the project had one) is not matched by ref in another project's files
+    (it may be an unrelated decision). With this project's copy already gone, the retry removes nothing and must say
+    ok False and name the note ids; forgetting those ids with everywhere removes the copy."""
+    books, user = tmp_path / "books", tmp_path / "user"
+    ST._OVERRIDE = str(books)
+    ref = ":turn_9"
+    try:
+        (user / "workflows").mkdir(parents=True)
+        film, film3 = user / "workflows" / "Film.json", user / "workflows" / "Film 3.json"
+        film.write_text(json.dumps(_wf_of("p_0a1b2c3d", "Film", [_typed_dec("n_d2", ref)])))
+        film3.write_text(json.dumps(_wf_of("p_99999999", "Film 3", [_typed_dec("n_d2", ref)])))
+        proj = {"id": "p_0a1b2c3d", "name": "Film"}
+        first = ST.forget([ref], [user / "workflows"], proj)
+        assert not first["ok"] and first["other_copies"] == [str(film3)] and first["decision_ids"] == ["n_d2"], first
+        retry = ST.forget([ref], [user / "workflows"], proj, everywhere=True)
+        assert not retry["ok"] and retry["removed"] == 0, retry
+        assert retry["ref_elsewhere"] == [str(film3)] and retry["ref_elsewhere_ids"] == ["n_d2"], retry
+        assert "Film 3.json" in retry["error"]
+        assert TYPED_P5 in film3.read_text()
+        done = ST.forget([ref, *first["decision_ids"]], [user / "workflows"], proj, everywhere=True)
+        assert done["ok"] and done["removed"] >= 1, done
+        assert TYPED_P5 not in film3.read_text()
+    finally:
+        ST._OVERRIDE = None
