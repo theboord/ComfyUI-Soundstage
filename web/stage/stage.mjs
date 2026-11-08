@@ -1930,8 +1930,8 @@ export class Stage {
    * clay's height table (_heightAt) takes every rise as a ballistic hop: the body starts up in a gravity curve before
    * a 20-40 cm step, up to 19 cm over the floor, and those frames count as in the air. A person walking up a step
    * steps up: here a break in the ground (a rise or a drop over 2.5 cm within 2 cm of travel, STEP_JUMP / STEP_PROBE)
-   * of at most half the person's leg (WALK_STEP_LEG) is taken as a step (averaged over the last quarter second), only
-   * bigger ones are jumps (the gravity arcs, as _heightAt); a slope or a ramp, at any speed and frame rate, is
+   * of at most half the person's leg (WALK_STEP_LEG) is taken as a step (averaged over the last quarter second or
+   * STEP_SPAN of travel), each break on its own (a flight of stairs is never summed into one), only bigger ones are jumps (the gravity arcs, as _heightAt); a slope or a ramp, at any speed and frame rate, is
    * followed exactly. The footing
    * also counts the set's own boxes the way the feet do (_supportAt: a stair, a kerb, a landing within reach), which
    * _heightAt leaves out: keyed flat over set-box stairs, the feet went 75 cm into the landing.

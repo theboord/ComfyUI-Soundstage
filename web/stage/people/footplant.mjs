@@ -34,6 +34,11 @@
 // the whole BODY sideways onto its own ground, the root bone with the legs, so the feet keep the clip's own gap (fifth
 // pass; the fourth moved the one shoe onto the other foot's line) (T.straddle, plan.shift); a foot at rest is kept clear of its footing laid along the ground's slope (plan.slope);
 // the shortest stance is a time (at 12 fps a 2-frame plant counts).
+// Fifth pass (2026-11-08): the sideways move is the whole body's (plan.shift, the root bone), not one shoe's; a walking
+// blend the leg can't reach dips the hips like a support frame; the pinned contact is the sole nearest the ground under
+// it (not the lowest point: a toe out over a box's edge); a walking stance lasts through toe-off on level ground
+// (T.toeOff). All of it reads only the skeleton that drives the visible body and the plan: once one motion drives the
+// avatar and the hidden logic rig, it applies as is.
 // Everything is a pure function of the keys and the frame: the plan is built from the whole shot at once, and a
 // frame reads only the plan and the clip pose at that frame, so scrubbing in any order gives the same feet.
 // Nothing here reads the clay figure: it works on whatever skeleton drives the visible body.
