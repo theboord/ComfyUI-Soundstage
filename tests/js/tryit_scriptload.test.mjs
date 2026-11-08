@@ -186,8 +186,15 @@ test("api.js: Run asks the shell for an example first, then replays it", async (
   const out = [];
   const onExec = (e) => out.push(e.detail);
   api.addEventListener("executed", onExec);
-  await api.queuePrompt();
-  await new Promise((res) => setTimeout(res, 900));
+  // Wait for the replay's own end (execution_success), not a fixed 900 ms: its rungs end ~730 ms after Run, so a
+  // loaded machine that stalled the test process for ~200 ms failed it (intermittent, on main too). 10 s cap.
+  const { prompt_id } = await api.queuePrompt();
+  await new Promise((res) => {
+    const cap = setTimeout(done, 10_000);
+    function done() { clearTimeout(cap); api.removeEventListener("execution_success", onDone); res(); }
+    function onDone(e) { if (e.detail?.prompt_id === prompt_id) done(); }
+    api.addEventListener("execution_success", onDone);
+  });
   api.removeEventListener("executed", onExec);
   assert.deepEqual(asked, ["sc_1__shot_1"]);
   const files = out.map((x) => x?.output?.images?.[0]?.filename);
