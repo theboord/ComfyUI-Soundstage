@@ -94,11 +94,22 @@ def _colour_of(before: list[str], garment: str) -> str | None:
     return None
 
 
+# How far out a top is worn: a read with two tops keeps the outermost on the clay ("a white tee under a navy blazer" is
+# the blazer), and the one under it is kept as `under` (a dress under a jacket also becomes the clay's skirt).
+LAYER = {"tank": 0, "tshirt": 0, "shirt": 0, "dress": 0, "sweater": 1, "hoodie": 1, "uniform": 1, "jacket": 2,
+         "suit": 2, "coat": 3}
+# "a hoodie tied around the waist" / "jacket tied at the hips": carried, not worn over the top
+TIED = ("tied", "waist", "hips", "around", "slung")
+
+
 def parse(text: str) -> dict:
     """'short-sleeve yellow plaid shirt, light jeans' -> {top: shirt, top_color, top_pattern: plaid, sleeves: short,
-    bottom: jeans, bottom_color}. Colour / pattern words up to three before a garment belong to it. {} for no garment."""
+    bottom: jeans, bottom_color}. Colour / pattern words up to three before a garment belong to it. {} for no garment.
+    Layers: 'light blue denim jacket over a black dress' -> top jacket (its colour), under dress, and the dress shows
+    below the jacket as the clay's skirt in the dress's colour (when no bottom was named)."""
     words = re.findall(r"[a-z]+(?:-[a-z]+)*", _norm(text))
     ap: dict = {}
+    tops: list[dict] = []
     last = -1          # the previous garment: colour words never reach back past it
     vague_col = None   # "yellow plaid outfit": the colour / pattern of the whole look
     for i, w in enumerate(words):
@@ -112,7 +123,7 @@ def parse(text: str) -> dict:
                     break
             last = i
             continue
-        if w in TOPS and "top" not in ap:
+        if w in TOPS:
             slot, garment = "top", TOPS[w]
         elif w in BOTTOMS and "bottom" not in ap:
             slot, garment = "bottom", BOTTOMS[w]
@@ -120,28 +131,51 @@ def parse(text: str) -> dict:
             continue
         if slot == "top" and garment == "tshirt" and w == "top" and i and words[i - 1] in ("tank", "crop"):
             garment = "tank"
-        ap[slot] = garment
         before = words[max(last + 1, i - 4):i]
         last = i
+        g: dict = {"top" if slot == "top" else "bottom": garment}
         c = _colour_of(before, garment)
         if c:
-            ap[f"{slot}_color"] = c
+            g[f"{slot}_color"] = c
         pat = next((p for p in PATTERNS if any(b.startswith(p) for b in before)), None) or \
             ("plaid" if w == "flannel" or "flannel" in before else None)
         if pat:
-            ap[f"{slot}_pattern"] = "plaid" if pat in ("tartan", "checked", "checkered", "gingham") else pat
-        if slot == "top":
-            if "sleeveless" in before:
-                ap["sleeves"] = "none"
-            elif any(b in ("short-sleeve", "short-sleeved") for b in before) or \
-                    ("short" in before and any(b.startswith("sleeve") for b in before)):
-                ap["sleeves"] = "short"
-            if w in ("croptop",) or "cropped" in before:
-                ap["length"] = "cropped"
+            g[f"{slot}_pattern"] = "plaid" if pat in ("tartan", "checked", "checkered", "gingham") else pat
+        if slot == "bottom":
+            ap.update(g)
+            continue
+        if "sleeveless" in before:
+            g["sleeves"] = "none"
+        elif any(b in ("short-sleeve", "short-sleeved") for b in before) or \
+                ("short" in before and any(b.startswith("sleeve") for b in before)):
+            g["sleeves"] = "short"
+        if w in ("croptop",) or "cropped" in before:
+            g["length"] = "cropped"
+        g["tied"] = bool(tops) and any(x in TIED for x in words[i + 1:i + 4])
+        tops.append(g)
+    worn = [g for g in tops if not g["tied"]] or tops[:1]
+    if worn:
+        outer = max(worn, key=lambda g: LAYER.get(g["top"], 0))   # max keeps the first of equal layers
+        ap.update({k: v for k, v in outer.items() if k != "tied"})
+        inner = next((g for g in worn if g is not outer and g["top"] == "dress"), None) or \
+            next((g for g in worn if g is not outer and LAYER.get(g["top"], 0) < LAYER.get(outer["top"], 0)), None)
+        if inner is not None:
+            ap["under"] = inner["top"]
+            if inner.get("top_color"):
+                ap["under_color"] = inner["top_color"]
+            if inner["top"] == "dress" and "bottom" not in ap:   # the dress shows below the outer layer
+                ap["bottom"] = "skirt"
+                for k in ("color", "pattern"):
+                    if inner.get(f"top_{k}"):
+                        ap[f"bottom_{k}"] = inner[f"top_{k}"]
     if vague_col and "top" in ap and "top_color" not in ap:
         ap["top_color"] = vague_col
-    if "dress" in (ap.get("top"),) and not said_dress(text):
-        ap.pop("top")   # never a dress the model did not say
+    if not said_dress(text):   # never a dress the model did not say
+        if ap.get("top") == "dress":
+            ap.pop("top")
+        if ap.get("under") == "dress":
+            ap.pop("under")
+            ap.pop("under_color", None)
     return ap
 
 
@@ -195,7 +229,7 @@ def words(ap: dict, raw: str = "") -> str:
     parts = []
     for slot in ("top", "bottom"):
         g = ap.get(slot)
-        if not g:
+        if not g or (slot == "bottom" and ap.get("under") == "dress" and g == "skirt"):
             continue
         noun = {"tshirt": "T-shirt", "tank": "crop top" if ap.get("length") == "cropped" else "tank top"}.get(g, g)
         bits = []
@@ -211,6 +245,10 @@ def words(ap: dict, raw: str = "") -> str:
         parts.append(" ".join(bits + [noun]))
     if not parts:
         return ""
+    if ap.get("under") == "dress" and ap.get("top") and ap["top"] != "dress":
+        col = names.get(ap.get("under_color"))
+        art = lambda p: ("an " if p[0] in "aeiou" else "a ") + p   # noqa: E731
+        return f"{art(parts[0])} over {art(((col + ' ') if col else '') + 'dress')}"
     return " and ".join((("an " if p[0] in "aeiou" else "a ") + p) if not p.endswith(("jeans", "trousers", "shorts")) else p
                         for p in parts)
 

@@ -116,3 +116,31 @@ def test_a_block_where_she_stands_is_not_dropped_on_the_old_block_route():
                           scan_on=False, has_relief=True, wardrobe_ref=False, tag="t", sub="s", notes=notes)
     assert [a["name"] for a in scene["actors"]] == ["Crate"], notes
     assert scene["video2stage"]["set_path"]["dropped"] == [] and scene["video2stage"]["set_path"]["worded"] == ["Crate"]
+
+
+# ------------------------------------------------------------------------------------------------ 4 layered wardrobe
+@pytest.mark.parametrize("text", ["light blue denim jacket over a black dress", "a black dress with a denim jacket",
+                                  "Top: denim jacket; black dress"])
+def test_a_jacket_over_a_dress_keeps_both(text):
+    ap = W.parse(text)
+    assert ap["top"] == "jacket" and ap["top_color"] == W.COLORS["denim"]
+    assert ap["under"] == "dress" and ap["under_color"] == W.COLORS["black"]
+    assert ap["bottom"] == "skirt" and ap["bottom_color"] == W.COLORS["black"]   # the dress below the jacket
+    assert W.words(ap) == "a denim jacket over a black dress"
+    full = W.appearance("woman dancing", text)
+    assert full["top"] == "jacket" and full["under"] == "dress" and "wardrobe" not in full
+
+
+def test_layers_keep_the_outer_top_and_a_named_bottom():
+    ap = W.parse("a white tee under a navy blazer, chinos")
+    assert (ap["top"], ap["under"], ap["bottom"]) == ("jacket", "tshirt", "trousers")
+    assert ap["top_color"] == W.COLORS["navy"] and ap["under_color"] == W.COLORS["white"]
+    ap = W.parse("grey coat over a red dress and black leggings")
+    assert (ap["top"], ap["under"], ap["bottom"], ap["bottom_color"]) == ("coat", "dress", "trousers", W.COLORS["black"])
+    # a hoodie tied around the waist is carried, not worn over the crop top
+    ap = W.parse("white crop top, grey hoodie tied around the waist, denim shorts")
+    assert (ap["top"], ap["bottom"], ap.get("under")) == ("tank", "shorts", None)
+    # one top: nothing changes, and a dress shirt is still never a dress
+    assert "under" not in W.parse("short-sleeve yellow plaid shirt, light jeans")
+    ap = W.parse("navy blazer over a white dress shirt")
+    assert ap["top"] == "jacket" and ap["under"] == "shirt" and "skirt" not in json.dumps(ap)
