@@ -176,7 +176,7 @@ test("book.forgetDecision(id): the decision note goes and the book is saved to t
     assert.ok(book.book.notes.some((x) => x.id === n.id));
     posts.length = 0;
     const s0 = saves;
-    assert.deepEqual(book.forgetDecision(n.id), { ok: true });
+    assert.deepEqual(await book.forgetDecision(n.id), { ok: true });
     assert.equal(book.book.notes.some((x) => x.id === n.id), false, "removed");
     assert.equal(props.ss_book.notes.some((x) => x.id === n.id), false, "the workflow copy too");
     assert.ok(saves > s0, "the workflow is saved");
@@ -187,14 +187,60 @@ test("book.forgetDecision(id): the decision note goes and the book is saved to t
     await new Promise((r) => setTimeout(r, 1300));
     assert.equal(posts.length, 1, "no second, late save of the old book");
     // twice, or a made-up id: not ok, nothing saved
-    assert.equal(book.forgetDecision(n.id).ok, false);
-    assert.match(book.forgetDecision("nope").error, /no note 'nope'/);
+    assert.equal((await book.forgetDecision(n.id)).ok, false);
+    assert.match((await book.forgetDecision("nope")).error, /no note 'nope'/);
     // the director's own notes are never removed this way
     await book.addNote("keep the lamp off until she enters", { sceneId: "sc_1", source: "director" });
     const mine = book.book.notes.at(-1);
-    const r = book.forgetDecision(mine.id);
+    const r = await book.forgetDecision(mine.id);
     assert.equal(r.ok, false);
     assert.match(r.error, /not a decision/);
     assert.ok(book.book.notes.some((x) => x.id === mine.id));
+  } finally { book.dispose(); }
+});
+
+test("book.forgetDecision(id) waits for the server save: {ok} only after the POST answers; a failed save is {ok:false} and the note comes back", async () => {
+  let answer = null;          // how the next POST ends: () => response, or throws
+  let release = null;         // the POST waits for this
+  const api = { fetchApi: (path, init) => (init?.method === "POST"
+    ? new Promise((res, rej) => { release = () => { try { res(answer()); } catch (e) { rej(e); } }; })
+    : Promise.resolve({ status: 200, json: async () => ({}) })), addEventListener() {} };
+  const props = {};
+  const script = { title: "Test", scenes: [{ id: "sc_1", number: 1, heading: "INT. ROOM - DAY", elements: [], characters: [] }], characters: [] };
+  const book = mountBook({ api, stage: null, host: { getScript: () => script, liveScene: () => "sc_1", props: () => props } });
+  const has = (id) => book.book.notes.some((x) => x.id === id);
+  try {
+    // 1. success: not settled until the server answers
+    const a = book.recordDecision({ command: "make it rain", calls: [{ tool: "weather", args: { kind: "rain" } }], results: [{ ok: true }] });
+    let settled = null;
+    const p = book.forgetDecision(a.id).then((r) => { settled = r; return r; });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(settled, null, "still waiting for the POST");
+    assert.equal(has(a.id), false, "gone locally while it saves");
+    answer = () => ({ ok: true, status: 200, json: async () => ({ ok: true, path: "x" }) });
+    release();
+    assert.deepEqual(await p, { ok: true });
+    // 2. the server answers 500: not ok, the error says so, the note is back (book and server agree)
+    const b = book.recordDecision({ command: "add fog", calls: [{ tool: "weather", args: { kind: "fog" } }], results: [{ ok: true }] });
+    const at = book.book.notes.findIndex((x) => x.id === b.id);
+    const q = book.forgetDecision(b.id);
+    await new Promise((r) => setTimeout(r, 0));
+    answer = () => ({ ok: false, status: 500, json: async () => ({ error: "disk full" }) });
+    release();
+    const rb = await q;
+    assert.equal(rb.ok, false);
+    assert.match(rb.error, /disk full/);
+    assert.ok(has(b.id), "the note is put back");
+    assert.equal(book.book.notes.findIndex((x) => x.id === b.id), at, "in its old place");
+    assert.ok(props.ss_book.notes.some((x) => x.id === b.id), "the workflow copy has it again");
+    // 3. the network fails (fetch rejects): not ok, never thrown, note back
+    const q2 = book.forgetDecision(b.id);
+    await new Promise((r) => setTimeout(r, 0));
+    answer = () => { throw new Error("connection refused"); };
+    release();
+    const rc = await q2;
+    assert.equal(rc.ok, false);
+    assert.match(rc.error, /connection refused/);
+    assert.ok(has(b.id));
   } finally { book.dispose(); }
 });
