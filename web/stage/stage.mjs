@@ -293,6 +293,8 @@ const STEP_PROBE = 0.02;
  *  more than 2.5 cm from one FRAME to the next, so any slope walked fast enough (20 degrees at 1.6 m/s, 10 at 3.4) was
  *  taken as a run of steps and the body lagged 8-23 cm behind it, and the answer changed with the frame rate. */
 const STEP_JUMP = 0.025;
+/** _walkHeightAt: the set's floor is also looked at this far (m) either way (a body keyed exactly on an edge). */
+const EDGE_EPS = 0.002;
 /** _walkHeightAt: at most this many looks between two frames (a 50 cm step between two frames is still found). */
 const STEP_PROBES_MAX = 48;
 /** _obstacles / _heightAt: how many recent obstacle lists and height tables per person are kept (jitter on a cell edge). */
@@ -1954,8 +1956,11 @@ export class Stage {
     const n = c.S.length, fps = this.state.shot?.fps || 24, kk = 0.5 * 9.8 / (fps * fps), win = Math.max(1, Math.round(0.25 * fps));
     const floor = this.setFx?.floorAt || null, obs = c.obs || [], R = 0.18;
     // the footing at (x, z) for a body keyed at y0, as c.S (_heightAt) and the set's boxes looked for from `from`
+    // (the set's floor looked at 2 mm either way too: keyed exactly on a platform's edge, x 1.62, the interpolated key
+    // was 1e-15 off it every other frame and the body fell 92 cm off the platform and back)
+    const floorE = (x, z) => (floor ? Math.max(floor(x, z) || 0, floor(x + EDGE_EPS, z) || 0, floor(x - EDGE_EPS, z) || 0, floor(x, z + EDGE_EPS) || 0, floor(x, z - EDGE_EPS) || 0) : 0);
     const footing = (x, z, y0, from) => {
-      let s = Math.max(0, y0, (floor && floor(x, z)) || 0);
+      let s = Math.max(0, y0, floorE(x, z));
       for (const o of obs) {
         if (o.rise > 1.7) continue;
         if (x > o.box.min.x - R && x < o.box.max.x + R && z > o.box.min.z - R && z < o.box.max.z + R) s = Math.max(s, o.top);
@@ -1966,7 +1971,8 @@ export class Stage {
     for (let f = 0; f < n; f++) {
       const p = this._actorPosAt(a, f);
       // looked for from the footing a frame before too (a flight of stairs is climbed one tread at a time)
-      S[f] = shapes ? Math.max(c.S[f], this._supportAt(p[0], p[2], Math.max(c.S[f], f ? S[f - 1] : 0), 0.6, shapes)) : c.S[f];
+      const s0 = Math.max(c.S[f], floorE(p[0], p[2]));
+      S[f] = shapes ? Math.max(s0, this._supportAt(p[0], p[2], Math.max(s0, f ? S[f - 1] : 0), 0.6, shapes)) : s0;
       Y0[f] = Math.max(0, p[1] || 0);   // the keyed height itself is followed as keyed (a body keyed up a stair's line)
       PX[f] = p[0]; PZ[f] = p[2];
     }

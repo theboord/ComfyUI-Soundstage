@@ -67,6 +67,44 @@ test("real Rocketbox just off the station platform's edge and a 20 / 40 cm ledge
   }
 });
 
+test("real Rocketbox walking along the station platform's edge, keyed 2-4 cm either side of it and exactly on it: no shoe in the platform's face, none over the drop, no slide", { skip: NOT_INSTALLED }, async () => {
+  // 854e956: keyed 2-4 cm off the edge (x 1.58-1.60, at rail level) one shoe was 9.5-13 cm inside the platform's face;
+  // 2 cm in from it (x 1.64) the outer shoe hung over the drop, 38 frames with no foot down; exactly on it (x 1.62)
+  // the interpolated key was 1e-15 off the platform every other frame and the body fell off and back (17-27 cm/frame
+  // slides, 20 frames in the air). Now a planted shoe across the break moves sideways onto the body's own ground
+  // (T.straddle, T.sideMax) and the swing follows it; the body's footing looks 2 mm either way.
+  const fx = buildTrainStation().fx, E = STATION.edgeA, top = STATION.platformTop;
+  for (const kind of ["man", "woman"]) for (const x of [1.58, 1.6, 1.62, 1.64]) {
+    const a = { id: "edge_walk", kind, height_m: K.heightOf(kind), position: [x, 0, -3], keys: [{ frame: 0, position: [x, 0, -3] }, { frame: 120, position: [x, 0, 3] }] };
+    const st = await K.setup(kind, a, { setFx: fx });
+    const out = K.measure(st, a, { ground: stationFloor });
+    const tag = `${kind} along the edge at x ${x}`;
+    let face = 0, faceAt = "", slide = 0, slideAt = "", float = 0, excluded = 0;
+    for (const r of out.rows) {
+      if (!r.shown || r.skip) { excluded++; continue; }
+      let down = false;
+      for (const lr of ["l", "r"]) {
+        const c = r[lr], p = out.rows[r.f - 1]?.[lr];
+        for (let q = 0; q < c.H.length; q++) {
+          const X = c.P[3 * q], Y = c.P[3 * q + 1];
+          // inside the platform: past its face and under its top
+          if (X > E && Y < top) { const d = Math.min(X - E, top - Y); if (d > face) { face = d; faceAt = `${lr} f${r.f}`; } }
+          // touching from above (not inside the face) on two frames in a row
+          if (c.H[q] >= -0.002 && c.H[q] < 0.005) {
+            down = true;
+            if (p && p.H[q] >= -0.002 && p.H[q] < 0.005) { const d = Math.hypot(X - p.P[3 * q], c.P[3 * q + 2] - p.P[3 * q + 2]); if (d > slide) { slide = d; slideAt = `${lr} f${r.f}`; } }
+          }
+        }
+      }
+      if (!down) float++;
+    }
+    assert.equal(excluded, 0, `${tag}: frames hidden or skipped (the body fell off the edge)`);
+    assert.ok(face < 0.01, `${tag}: a shoe ${cm(face)} cm inside the platform's face (${faceAt})`);
+    assert.equal(float, 0, `${tag}: frames with no foot on the ground`);
+    assert.ok(slide < 0.01, `${tag}: a touching sole slid ${cm(slide)} cm in a frame (${slideAt})`);
+  }
+});
+
 // ---------------------------------------------------------------- physical checks over every frame, not the plan's labels
 /** Assert the physical summary s against limits (all in metres / frames); tag names the case. */
 function check(s, tag, { pen = -0.01, slide = 0.01, drift = 0.015, hover = 0.02, float = 0, drop = 0.021, planted = 40, excluded = 0 } = {}) {
