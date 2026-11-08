@@ -247,59 +247,117 @@ export function sinkTrack({ y0, floorHips, fps = 24, n, height = 1.8, exhale = 2
   return { y: out, v: vel };
 }
 
+/** Can a person this tall stand on the bottom here with the mouth out (the chin is at ~0.87 of the height)? */
+export function canStand(depth, height = 1.8) {
+  return depth <= 0.86 * height;
+}
+
+/**
+ * A feet-first drop into the water from a keyed height (feet at ky, vertical speed v0, up +): free fall to the
+ * surface, then the plunge: the water stops the body over a depth that grows with the speed it hit at (~0.35 m plus
+ * 0.75 of the drop height: a 2 m drop takes the feet ~1.9 m down), capped `clear` above the floor, decelerating
+ * evenly. Returns {feet[i] (feet height, i frames from the start, up to the bottom of the plunge), splash (index of the
+ * first frame at or under the surface, -1 if it never gets there in n frames), bottom (index of the deepest frame),
+ * vin (m/s down at the surface), depth (the plunge depth of the feet under the surface)}. Pure.
+ */
+export function plungeTrack({ ky, v0 = 0, level, floor = 0, fps = 24, n, height = 1.8, clear = 0.3 }) {
+  const k = height / 1.8, feet = [];
+  const disc = v0 * v0 + 2 * G * Math.max(0, ky - level);
+  const tS = (v0 + Math.sqrt(disc)) / G, vin = Math.max(0.5, Math.sqrt(disc));
+  const hEff = vin * vin / (2 * G);
+  const depth = Math.max(0.05, Math.min(0.35 * k + 0.75 * hEff, level - floor - clear));
+  const tD = Math.max(0.25, 2 * depth / vin);
+  let splash = -1, bottom = -1;
+  for (let i = 0; i < n; i++) {
+    const t = i / fps;
+    if (t < tS) { feet.push(ky + v0 * t - 0.5 * G * t * t); continue; }
+    if (splash < 0) splash = i;
+    const u = Math.min(t - tS, tD);
+    feet.push(level - (vin * u - vin * u * u / (2 * tD)));
+    if (t - tS >= tD) { bottom = i; break; }
+  }
+  if (bottom < 0) bottom = feet.length - 1;
+  return { feet, splash, bottom, vin, depth };
+}
+
 /**
  * A person's water track for the swim plan (swim.mjs planSwim's styles / hipsY / hipsW): per frame the pose style that
- * overrides the speed-based one (or null), the hips height it puts them at (world y) and how much of it (0..1), and the
- * swim mode ("surface" | "under" | null). In = {mode (swimMode), keyY[f] (keyed feet height), over[f], level, floor,
- * fps, height, hipY (hips over the feet standing), seed}. Each run of frames over the water starts fresh:
- *   keyed above the surface they drop in feet first (gravity, the surface's drag, a plunge) and come back up;
+ * overrides the speed-based one (or null), the hips height it puts them at (world y) and how much of it (0..1), the
+ * swim mode ("surface" | "under" | null) and ground[f] (true: they stand / wade on the bottom there, off the swim
+ * plan: the water is shallow enough for them, see canStand). In = {mode (swimMode), keyY[f] (keyed feet height),
+ * over[f], level, floor, fps, height, hipY (hips over the feet standing), seed}. Each run of frames over the water
+ * starts fresh:
+ *   keyed above the surface they drop in feet first (plungeTrack: the plunge depth scales with the drop and stops
+ *     above the floor), held in the streamlined "fall" pose on the way down, then kick up ("kickup") to the surface:
+ *     never a standing or walking pose under water;
  *   keyed fully under it (not on the floor) a swimmer kicks up to the surface (~0.6 m/s);
  *   tread / auto / strokes: then as before, at the surface (the speed picks tread, breaststroke or freestyle);
  *   back: floating on the back, legs down ~35 degrees, a slow breathing heave;
- *   cant: the instinctive drowning response at the surface (upright, head back, mouth at the water, arms pressing
- *     down, no kick) for a seeded 2-3.5 s, then they slip under and sink slowly and limp (~0.2-0.3 m/s), and settle
- *     on the bottom (no walking); keyed under the surface they sink from there;
- *   sink: no struggle, limp from the surface down.
+ *   cant: the instinctive drowning response (upright, head back, mouth at the water, arms pressing down, no kick) for
+ *     a seeded 2-3.5 s from the moment they enter the water (a drop in: flailing back up from the plunge counts), then
+ *     they slip under and sink slowly and limp (~0.2-0.3 m/s), and settle on the bottom (no walking); keyed under the
+ *     surface they sink from there;
+ *   sink: no struggle, limp from the surface (or the bottom of the plunge) down.
+ * In water they can stand in (canStand), auto and cant stand / wade on the bottom (ground; after a drop in: the
+ * plunge, then "wade" standing on the bottom with the head out); the other modes swim as chosen.
  * dive and the underwater strokes are not tracked here (the stage keeps them at their keyed depth).
  */
 export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, height = 1.8, hipY = 0.95, seed = 1 }) {
   const n = keyY.length, k = height / 1.8;
   const styles = new Array(n).fill(null), hipsY = new Array(n).fill(null), hipsW = new Array(n).fill(0), modes = new Array(n).fill(null);
+  const ground = new Array(n).fill(false);
   const treadHips = level - 0.52 * k, struggleHips = level - 0.6 * k, backHips = level - 0.16 * k;
   const sinks = mode === "cant" || mode === "sink";
+  const shallow = canStand(level - floor, height) && (mode === "auto" || mode === "cant");
   const blend = Math.max(1, Math.round(0.8 * fps));
+  const modeOf = (feet) => feet + 0.9 * height < level ? "under" : "surface";
   let f = 0;
   while (f < n) {
     if (!over[f]) { f++; continue; }
     const f0 = f;
     while (f < n && over[f]) f++;
     const m = f - f0, ky = keyY[f0];
-    // Before they are at the surface: pre[i] = feet height, preMode[i], for i < up.
+    // Before they are at the surface: pre[i] = feet height, preMode[i], preStyle[i], for i < up.
     const pre = [], preMode = [], preStyle = [];
-    let up = 0, under = false;
-    if (ky > level + 0.05) {   // a drop: a person-sized body (985 kg/m3, feet first) through the surface
-      const M = 75 * k * k * k;
-      const body = { rho: 985, V: M / 985, m: M, h: height, A: 0.12 * k * k, shape: "box", cd: 0.9, ca: 0.3, zeta: 0.3 };
-      const tr = floatTrack(body, { level, floor, fps, keyY: new Array(m).fill(ky), over: new Array(m).fill(true) });
-      const eqHips = restBottom(body, level, floor) + hipY;
-      let rising = false;
-      up = m;
-      for (let i = 0; i < m; i++) {
-        if (tr.splash >= 0 && i > tr.splash && tr.v[i] > 0) rising = true;
-        if ((rising && tr.y[i] + hipY >= eqHips - 0.25) || (tr.splash >= 0 && i - tr.splash > 2.5 * fps)) { up = i; break; }
-        pre.push(tr.y[i]); preMode.push(tr.y[i] > level ? "surface" : "under"); preStyle.push(tr.y[i] > level ? "fall" : "tread");
+    let up = 0, under = false, entered = 0;   // entered: the run-relative frame they meet the water
+    if (ky > level + 0.05) {   // a drop: feet first through the surface, the plunge, then back up
+      const v0 = f0 > 0 ? (keyY[f0] - keyY[f0 - 1]) * fps : 0;   // the keyed (or baked) speed
+      const pl = plungeTrack({ ky, v0, level, floor, fps, n: m, height, clear: shallow ? 0.02 : 0.3 * k });
+      entered = Math.max(0, pl.splash);
+      for (let i = 0; i < pl.feet.length; i++) { pre.push(pl.feet[i]); preMode.push(modeOf(pl.feet[i])); preStyle.push("fall"); }
+      const fb = pl.feet[pl.feet.length - 1];
+      if (shallow) {
+        // they land on their feet on the bottom and stand up out of the crouch, head out of the water
+        const rise = Math.round(0.5 * fps);
+        for (let i = 0; i < rise && pre.length < m; i++) { const e = sstep(0, 1, (i + 1) / rise); pre.push(fb + (floor - fb) * e); preMode.push("surface"); preStyle.push("wade"); }
+      } else if (mode !== "sink") {
+        // swimmers kick up (~0.8 m/s); a non-swimmer flails back up on the air in the lungs (~0.4 m/s)
+        const target = (mode === "cant" ? struggleHips : treadHips) - hipY;
+        const speed = mode === "cant" ? 0.4 : 0.8, upN = Math.max(1, Math.round(Math.max(0.6, (target - fb) / speed) * fps));
+        for (let i = 1; i <= upN && pre.length < m; i++) {
+          const y = fb + (target - fb) * sstep(0, 1, i / upN);
+          pre.push(y); preMode.push(modeOf(y)); preStyle.push(mode === "cant" ? "struggle" : "kickup");
+        }
       }
+      up = Math.min(m, pre.length);
+    } else if (shallow) {   // standing in water they can stand in: on the bottom, off the swim plan (the gait walks them)
+      for (let i = 0; i < m; i++) ground[f0 + i] = true;
+      continue;
     } else if (ky > floor + 0.35 && ky + height < level && !sinks) {   // keyed under: kick up to the surface
       const target = treadHips - hipY, upN = Math.max(1, Math.round((target - ky) / 0.6 * fps));
       up = Math.min(m, upN);
-      for (let i = 0; i < up; i++) { pre.push(ky + (target - ky) * sstep(0, 1, i / upN)); preMode.push("under"); preStyle.push("tread"); }
+      for (let i = 0; i < up; i++) { pre.push(ky + (target - ky) * sstep(0, 1, i / upN)); preMode.push("under"); preStyle.push("kickup"); }
     } else if (sinks && ky > floor + 0.02 && ky + height < level) under = true;   // can't swim, keyed under: sinks from there
-    for (let i = 0; i < Math.min(up, m); i++) {
+    for (let i = 0; i < up; i++) {
       const fr = f0 + i;
-      styles[fr] = mode === "back" && preMode[i] === "under" ? "tread" : preStyle[i];
+      styles[fr] = preStyle[i];
       hipsY[fr] = pre[i] + hipY; hipsW[fr] = 1; modes[fr] = preMode[i];
     }
     const from = up > 0 ? pre[up - 1] + hipY : null;   // where the drop / rise left the hips
+    if (shallow) {   // after a drop into shallow water: standing on the bottom, the head out
+      for (let i = up; i < m; i++) { const fr = f0 + i; styles[fr] = "wade"; hipsY[fr] = floor + hipY; hipsW[fr] = 1; modes[fr] = "surface"; }
+      continue;
+    }
     if (!sinks) {
       for (let i = up; i < m; i++) {
         const fr = f0 + i, t = i / fps, e = from == null ? 1 : sstep(0, 1, (i - up) / blend);
@@ -315,11 +373,14 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
       continue;
     }
     // Can't swim / Sink slowly: the struggle, the slip under, the slow sink and the limp settle on the bottom.
+    // The struggle is timed from the moment they meet the water (a drop in flails back up inside it).
     const tStruggle = mode === "cant" && !under ? 2 + 1.5 * hash01(seed, 3) : 0;   // seconds (film-compressed; real: 20-60 s)
-    const fs = up + Math.round(tStruggle * fps);
+    const fs = Math.max(up, entered + Math.round(tStruggle * fps));
     const floorHips = floor + hipY * 0.92;   // feet down, knees soft
-    const y0 = under ? ky + hipY : mode === "cant" ? struggleHips : from != null ? Math.min(from, level - 0.55 * k) : level - 0.55 * k;
-    const sink = sinkTrack({ y0, floorHips, fps, n: Math.max(1, m - fs), height, exhale: mode === "cant" ? 2.5 : 3.5, rho0: mode === "cant" ? 985 : 1000 });
+    const yEnd = from != null ? from : null;
+    const y0 = under ? ky + hipY : mode === "cant" ? (yEnd != null && up >= fs ? yEnd : struggleHips) : yEnd != null ? Math.min(yEnd, level - 0.55 * k) : level - 0.55 * k;
+    const sink = sinkTrack({ y0, floorHips, fps, n: Math.max(1, m - fs), height, exhale: mode === "cant" ? 1.5 : 3.5, rho0: mode === "cant" ? 1010 : 1000 });   // the struggle has emptied the lungs
+    const tip = Math.round(0.5 * fps);   // touched down: crumples onto the back before the hips go down
     let landed = -1;
     for (let i = up; i < m; i++) {
       const fr = f0 + i, t = (i - up) / fps;
@@ -331,12 +392,15 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
       }
       const j = i - fs, y = sink.y[j];
       if (landed < 0 && y <= floorHips + 1e-6) landed = i;
-      const lie = landed >= 0 ? sstep(0, 1.5 * fps, i - landed) : 0;   // settles over ~1.5 s, then lies on the bottom
+      // On the bottom: the pose tips over first (lying on the back), and only then do the hips go down, so the legs
+      // never go through the floor (the stage also keeps the clay's lowest point on the floor).
+      const lying = landed >= 0 && i >= landed + tip;
+      const lie = lying ? sstep(0, 1.5 * fps, i - landed - tip - 6) : 0;
       const slip = mode === "cant" && !under ? sstep(0, 2 * fps, j) : 1;   // the arms stop, the head goes under
-      styles[fr] = lie > 0.5 ? "limp_floor" : slip < 0.5 ? "struggle" : "limp";
+      styles[fr] = lying ? "limp_floor" : slip < 0.5 && up < fs ? "struggle" : "limp";
       hipsY[fr] = y + (floor + 0.14 * k - y) * lie; hipsW[fr] = 1;
       modes[fr] = y + 0.75 * k > level ? "surface" : "under";
     }
   }
-  return { styles, hipsY, hipsW, modes };
+  return { styles, hipsY, hipsW, modes, ground };
 }

@@ -45,7 +45,7 @@ export const seedOf = (id) => [...String(id || "s")].reduce((n, ch) => (n * 31 +
 export const WATER = Object.freeze({ rho: 1025, g: 9.81, patm: 101325 });
 export const STYLES = ["flutter", "frog", "hover", "freestyle", "breaststroke", "tread"];
 /** Poses the water track sets per frame (buoyancy.mjs personTrack): never picked by speed. */
-export const TRACK_STYLES = ["struggle", "limp", "limp_floor", "backfloat", "fall"];
+export const TRACK_STYLES = ["struggle", "limp", "limp_floor", "backfloat", "fall", "kickup", "wade"];
 const UNDER = new Set(["flutter", "frog", "hover"]);
 /** Strouhal number of a finned human kick (fish and dolphins cruise at 0.2-0.4; a diver's fins are less efficient). */
 export const STROUHAL = 0.6;
@@ -98,6 +98,8 @@ export function swimGait(style, v, height = 1.8) {
   if (style === "limp" || style === "limp_floor") return { style, freq: 0.15, tip: 0, hip: 0, knee: 0 };
   if (style === "backfloat") return { style, freq: 0.25, tip: 0.02 * k, hip: 0.05, knee: 0.1 };
   if (style === "fall") return { style, freq: 0.5, tip: 0, hip: 0, knee: 0 };
+  if (style === "kickup") return { style, freq: 0.9, tip: 0.35 * k, hip: 0.4, knee: 1.2 };   // swimming up from a plunge
+  if (style === "wade") return { style, freq: 0.2, tip: 0, hip: 0, knee: 0 };
   return { style: "tread", freq: 0.75, tip: 0.2 * k, hip: 0.25, knee: 1.4 };
 }
 
@@ -468,6 +470,29 @@ function stylePose(style, ph, v, h, t, plan) {
     for (const lr of ["l", "r"]) {
       P.arms[lr].sh = [-2.6, 0, -side[lr] * 0.35]; P.arms[lr].el = -0.3;
       P.legs[lr].hip = [0, 0, -side[lr] * 0.03]; P.legs[lr].knee = 0.1; P.legs[lr].shoe = 0.9;
+    }
+  } else if (style === "kickup") {
+    // Swimming straight up out of a plunge: near upright, head back to look at the light, both arms sweeping down from
+    // overhead to the thighs (a vertical breaststroke pull) and a whip kick on the pull: a swim pose, never standing.
+    const u = frac(ph), pull = sstep(0.05, 0.5, u), rec = sstep(0.6, 0.95, u);
+    P.pitch = 0.18;
+    for (const lr of ["l", "r"]) {
+      const sx = -2.8 + 2.4 * pull - 2.4 * rec * pull;
+      P.arms[lr].sh = [sx, 0, -side[lr] * (0.35 + 0.5 * Math.sin(Math.PI * pull))];
+      P.arms[lr].el = -(0.2 + 0.9 * rec);
+      const draw = sstep(0.6, 0.9, u) + (u < 0.1 ? 1 - sstep(0, 0.1, u) : 0), whip = Math.sin(Math.PI * clamp((u - 0.1) / 0.3, 0, 1));
+      P.legs[lr].hip = [-0.35 * draw, 0, -side[lr] * (0.1 + 0.3 * whip)];
+      P.legs[lr].knee = 0.1 + 1.3 * draw;
+      P.legs[lr].shoe = 0.9 - 0.5 * draw;
+    }
+    P.neck = [-0.35, 0, 0]; P.head = [-0.3, 0, 0];
+  } else if (style === "wade") {
+    // Standing on the bottom in water they can stand in (after a drop into the shallows): upright, the arms out on
+    // the water for balance, a slow sway.
+    P.pitch = 0.02 * Math.sin(TAU * ph);
+    for (const lr of ["l", "r"]) {
+      P.arms[lr].sh = [-0.35, 0, -side[lr] * (0.55 + 0.05 * Math.sin(TAU * ph + (lr === "r" ? 1 : 0)))]; P.arms[lr].el = -0.35;
+      P.legs[lr].hip = [-0.04, 0, -side[lr] * 0.05]; P.legs[lr].knee = 0.08; P.legs[lr].shoe = 0;
     }
   } else if (style === "tread") {
     // Upright, eggbeater legs (alternating circular kicks), hands sculling flat at the water.

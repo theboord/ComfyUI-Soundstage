@@ -79,6 +79,46 @@ test("a crate dragged and let go over the tank floats where it was let go (not o
   assert.equal(st2.state.actors[0].keys[0].position[1], 4.5, "the drop height is kept");
 });
 
+test("the browser repro: a man (Tread water) and a woman (Can't swim) keyed 2 m over the Water tank never stand or walk on the floor", () => {
+  // Before: both plunged to the tank floor (feet y 0.04 at f48), stood there upright in the tread pose from ~f36 to f76
+  // and surfaced only around f84-92.
+  const woman = (id, y, extra) => ({ ...man(id, y, extra), kind: "woman", height_m: 1.65 });
+  const st = tank([man("m", 4.5, { x: -2, swim: "tread", key_y: true }), woman("w", 4.5, { x: 2, swim: "cant", key_y: true })], { frames: 145 });
+  for (const id of ["m", "w"]) {
+    const a = st.state.actors.find((x) => x.id === id), g = st.actorMeshes.get(id), plan = st._swimPlan(a, g);
+    let lowest = Infinity, under = 0;
+    for (let f = 0; f < 145; f++) {
+      st.setFrame(f); g.updateMatrixWorld(true);
+      const lo = new THREE.Box3().setFromObject(g).min.y;
+      lowest = Math.min(lowest, lo);
+      assert.ok(g.userData.swimOn && !g.userData.gaitOn, `${id} f${f}: swimming, not walking`);
+      if (plan.mode[f] === "under") {
+        under++;
+        assert.ok(["fall", "kickup", "struggle", "limp"].includes(plan.main[f]), `${id} f${f}: under water in a swim pose (${plan.main[f]}), not standing`);
+      }
+    }
+    assert.ok(under > 3, `${id} goes under (${under} frames)`);
+    assert.ok(lowest > 0.3, `${id} stops well above the tank floor (lowest point ${lowest.toFixed(2)})`);
+  }
+  // the plunge depth scales with the drop
+  const d1 = B.plungeTrack({ ky: LEVEL + 1, level: LEVEL, n: 96 }), d2 = B.plungeTrack({ ky: LEVEL + 2, level: LEVEL, n: 96 }), d5 = B.plungeTrack({ ky: LEVEL + 5, level: LEVEL, n: 96 });
+  assert.ok(d1.depth < d2.depth && d2.depth <= d5.depth, `deeper from higher (${d1.depth.toFixed(2)}, ${d2.depth.toFixed(2)}, ${d5.depth.toFixed(2)})`);
+  assert.ok(LEVEL - d5.depth >= 0.3 - 1e-9, "and never closer than 30 cm to the floor");
+});
+
+test("can't swim in a short shot: the struggle starts at water entry, so the struggle and the slow sink both fit in 6 s", () => {
+  const woman = { ...man("w", 4.5, { swim: "cant", key_y: true }), kind: "woman", height_m: 1.65 };
+  const st = tank([woman], { frames: 145 });
+  const plan = st._swimPlan(st.state.actors[0], st.actorMeshes.get("w"));
+  const firstStruggle = plan.main.indexOf("struggle"), lastStruggle = plan.main.lastIndexOf("struggle");
+  assert.ok(firstStruggle > 0 && firstStruggle < 48, `flails from the plunge (f${firstStruggle})`);
+  assert.ok(lastStruggle < 120, `stops struggling by 5 s (f${lastStruggle})`);
+  st.setFrame(lastStruggle); const h0 = hipsY(st, "w");
+  st.setFrame(144); const h1 = hipsY(st, "w");
+  assert.ok(h0 - h1 > 0.2, `then sinks inside the shot (hips ${h0.toFixed(2)} -> ${h1.toFixed(2)})`);
+  assert.ok(headY(st, "w") < LEVEL, "the head is under by the end");
+});
+
 // ------------------------------------------------------------------ the physics
 test("weight decides: a rock sinks faster than a can't-swim person, who sinks slower; a soaking crate still floats; a ball floats higher than a crate", () => {
   const rock = B.bodyOf("rock", [0.5, 0.4, 0.5]), crate = B.bodyOf("crate", [0.8, 0.8, 0.8]), ball = B.bodyOf("sphere", [0.5, 0.5, 0.5]);
