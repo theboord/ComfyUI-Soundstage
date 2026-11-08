@@ -537,7 +537,29 @@ export const DECISION_V = 3;   // 3: args cut to DECISION_ARGS (2 kept any short
 
 const toolLabel = (t) => { const s = String(t || "change").replace(/_/g, " ").trim(); return s ? s[0].toUpperCase() + s.slice(1) : "Change"; };
 // Unicode-aware: NFKC, lowercase, every letter / number / mark kept (Cyrillic, Greek, Devanagari, CJK...), the rest a space.
-const norm = (s) => String(s ?? "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}\p{M}]+/gu, " ").trim();
+// Invisible characters that can sit inside a word without showing: soft hyphen, combining grapheme joiner, zero-width
+// space / non-joiner / joiner, word joiner, BOM. Removed before matching, so "pour\u00ADing" is one word, "pouring".
+const INVISIBLE = /[\u00AD\u034F\u180E\u200B-\u200D\u2060\uFEFF]/gu;
+const norm = (s) => String(s ?? "").normalize("NFKC").replace(INVISIBLE, "").toLowerCase().replace(/[^\p{L}\p{N}\p{M}]+/gu, " ").trim();
+/** `s` squashed for an unspaced match: NFKC, invisible characters removed, lowercase, only letters and digits left
+ *  ("Make-It Pour_with rain" -> "makeitpourwithrain"). */
+const squash = (s) => String(s ?? "").normalize("NFKC").replace(INVISIBLE, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+const SQUASH_MIN = 6;   // a squashed run shorter than this is too short to say it quotes the sentence
+/** True when squashed `s` holds the squashed typed sentence, or a squashed 3-word run of it that has 2 or more real
+ *  words ("pourwithrain" from "make it pour with rain"): the same echo test with the spaces taken out. */
+function squashEchoes(s, command) {
+  const a = squash(s), c = squash(command);
+  if (!a || !c) return false;
+  if (c.length >= SQUASH_MIN && a.includes(c)) return true;
+  const cw = norm(command).split(" ").filter(Boolean);
+  for (let i = 0; i + 3 <= cw.length; i++) {
+    const run = cw.slice(i, i + 3);
+    if (run.filter((w) => !GLUE.has(w)).length < 2) continue;
+    const r = squash(run.join(""));
+    if (r.length >= SQUASH_MIN && a.includes(r)) return true;
+  }
+  return false;
+}
 // Scripts written without spaces between words: there a "word run" is the whole clause, so they are matched by
 // character n-grams (NGRAM characters in a row) instead.
 const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}\p{Script=Tibetan}]/u;
@@ -663,16 +685,24 @@ const TOOL_CAT = { lens: "camera", camera_move: "camera", shot: "camera", select
 
 /** The shape of a decision's `ref`: an opaque `${projectId}:${turnId}` (projectId p_<8 hex>, or empty while the project
  *  has none yet; turnId 1-48 of [A-Za-z0-9_-], no spaces). Never chat text. */
+/** Note sources Forget may remove: "chat" (recordDecision's decisions) and "ask" (notes Ask added through
+ *  book.addNote(text, {source: "ask", ref})). The director's own notes and Pitch's never. */
+export const FORGETTABLE_SOURCES = new Set(["chat", "ask"]);
+
 export const DECISION_REF_RE = /^(?:p_[0-9a-f]{8})?:[A-Za-z0-9_-]{1,48}$/;
 
 /** `ref` as recordDecision keeps it, or null: only the opaque shape (DECISION_REF_RE), and never one whose turn id
- *  repeats the typed sentence (a joined phrase like make_it_pour_with_rain, or the sentence itself). */
+ *  repeats the typed sentence (a joined phrase like make_it_pour_with_rain, the sentence itself, or the sentence with
+ *  its spaces taken out: makeitpourwithrain, makeItPourWithRain, or a 3-word run of it: pourWithRain; compared after
+ *  NFKC, lowercase, soft hyphens / joiners removed, only letters and digits kept). */
 export function decisionRef(ref, command = "") {
   const r = ref == null ? "" : String(ref).trim();
   if (!DECISION_REF_RE.test(r)) return null;
   const turn = r.slice(r.indexOf(":") + 1);
   const c = String(command || "").trim();
-  if (c && (tokenEchoes(turn, c) || echoes(turn.replace(/[_-]+/g, " "), c))) return null;
+  // ...or is a squashed piece of it 8+ letters long (pourwithrain from "pour\u00ADwith rain"); an opaque id never is
+  const piece = squash(turn).length >= 8 && squash(c).includes(squash(turn));
+  if (c && (tokenEchoes(turn, c) || echoes(turn.replace(/[_-]+/g, " "), c) || squashEchoes(turn, c) || piece)) return null;
   return r;
 }
 
@@ -699,11 +729,11 @@ export function recordDecision(book, { command, calls = [], results = [], sceneI
   // Last guard: values that are each clean can still line up into a phrase of the sentence ("victim red_pickup, into
   // ..."). Then keep only the numbers / booleans and say it with the tool names.
   const spoken = (ch) => ch.map(({ tool, args }) => [tool, ...Object.entries(args || {}).flat()].join(" ")).join(" ");
-  if (typed && (echoes(spoken(change), typed) || echoes(decisionSummary(change), typed))) {
+  if (typed && (echoes(spoken(change), typed) || echoes(decisionSummary(change), typed) || squashEchoes(spoken(change), typed))) {
     change = change.map(({ tool, args }) => ({ tool, args: Object.fromEntries(Object.entries(args).filter(([, v]) => typeof v === "number" || typeof v === "boolean")) }));
   }
   const said = String(summary || "").replace(/\s+/g, " ").trim();
-  const text = said && !echoes(said, typed) ? short(said, 160) : decisionSummary(change);
+  const text = said && !echoes(said, typed) && !squashEchoes(said, typed) ? short(said, 160) : decisionSummary(change);
   const n = { id: noteId(), text, change, dv: DECISION_V, scope: sceneId ? "scene" : "global", scene_id: sceneId, line: null, character: null, category: cat,
     categories: [cat], confidence: 1, why: `decided in the Director chat (${tools.join(", ")})`, by: source, source: "chat", at: now() };
   const r = decisionRef(ref, typed);

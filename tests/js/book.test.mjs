@@ -353,3 +353,30 @@ test("decision ref: only an opaque projectId:turnId is kept, never the typed sen
   assert.equal(M.decisionRef("p_0a1b2c3d:t_1"), "p_0a1b2c3d:t_1");
   assert.equal(M.decisionRef(null), null);
 });
+
+// ------------------------------------------------------------------ round 5, finding 5: refs / summaries squashed
+test("decisionRef rejects the typed sentence with its spaces taken out (NFKC, case, soft hyphens, joiners)", () => {
+  const c = "make it pour with rain";
+  for (const r of [":makeitpourwithrain", ":makeItPourWithRain", ":MAKE-IT-POUR-WITH-RAIN", "p_0a1b2c3d:pourWithRain", "p_0a1b2c3d:itpourwith"]) {
+    assert.equal(M.decisionRef(r, c), null, r);
+  }
+  assert.equal(M.decisionRef(":pourwithrain", "make it pour­with rain"), null, "soft hyphen in the sentence");
+  assert.equal(M.decisionRef(":pourwithrain", "make it pour͏with rain"), null, "combining grapheme joiner");
+  assert.equal(M.decisionRef(":makeitpour", "ｍａｋｅ ｉｔ ｐｏｕｒ"), null, "fullwidth (NFKC)");
+  for (const ok of ["p_0a1b2c3d:turn_42", ":t_9f3a2b1c", "p_0a1b2c3d:42"]) assert.equal(M.decisionRef(ok, c), ok);
+});
+
+test("recordDecision: a summary that is the sentence squashed is not stored; Book text never holds the typed words", () => {
+  const typed = "make it pour with rain outside";
+  for (const summary of ["Done: makeitpourwithrain", "MakeItPourWithRain", "pour­with­rain now", "make it pour with rain outside"]) {
+    const b = M.emptyBook(DEMO_SCRIPT);
+    const n = M.recordDecision(b, { command: typed, summary, calls: [{ tool: "weather", args: { weather: "rain" } }], results: [{ ok: true }] });
+    assert.equal(n.text, "Weather: rain", summary);
+    const all = JSON.stringify(b);
+    assert.equal(all.includes(typed), false);
+    assert.equal(all.toLowerCase().replace(/[^a-z]/g, "").includes("pourwithrain"), false, summary);
+  }
+  const b = M.emptyBook(DEMO_SCRIPT);
+  assert.equal(M.recordDecision(b, { command: typed, summary: "Rain on for the exterior", calls: [{ tool: "weather", args: { weather: "rain" } }] }).text,
+    "Rain on for the exterior", "a summary in Ask's own words stays");
+});
