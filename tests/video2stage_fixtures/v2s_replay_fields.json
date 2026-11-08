@@ -1,0 +1,58 @@
+{
+ "about": "Made by tests/test_v2s_dancer.py replay_fields() from fixtures, not a GPU run. Overlay for the try-it replay's recorded Video -> 3D result (its 'driver' actor stands in for the performer).",
+ "lighting": {
+  "mode": "time",
+  "hour": 12.5,
+  "day_of_year": 300,
+  "latitude": 34.05,
+  "north_deg": 0,
+  "overcast": true,
+  "preset": "overcast",
+  "lights": [],
+  "sky_color": {
+   "hex": "#777b7f",
+   "preset": "overcast"
+  }
+ },
+ "video2stage": {
+  "weather": {
+   "sky": "overcast",
+   "time": "morning",
+   "preset": "overcast",
+   "sample_rgb": [
+    119,
+    123,
+    127
+   ],
+   "stage_rgb": [
+    119,
+    123,
+    127
+   ],
+   "tinted": true,
+   "delta_e": 0.0
+  },
+  "look_hint": "A woman in short-sleeve yellow plaid shirt, light-wash jeans, white sneakers, full body, on location. Soft overcast daylight under a grey sky, real photograph, shot on a cinema camera."
+ },
+ "actors": {
+  "driver": {
+   "kind": "woman",
+   "appearance": {
+    "top": "shirt",
+    "top_color": "#e3b622",
+    "top_pattern": "plaid",
+    "sleeves": "short",
+    "bottom": "jeans",
+    "bottom_color": "#8aa0c0",
+    "girth": 1.042,
+    "build": "athletic"
+   },
+   "source": {
+    "label": "woman in yellow plaid outfit",
+    "wardrobe": "short-sleeve yellow plaid shirt, light-wash jeans, white sneakers"
+   },
+   "wardrobe_ref": "soundstage/v2s_fixture/wardrobe_ref.png"
+  }
+ },
+ "girth_source": "the person's silhouette"
+}

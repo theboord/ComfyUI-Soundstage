@@ -77,6 +77,19 @@ export function skyFor(elevation, overcast = false) {
   return { phase: "daylight", sunK: 5600, sun: 2.6, sky: 0.95, skyK: 7000, ground: 0x3a3a3a, shadowSoft: 0.15 };
 }
 
+/** The background colour behind the set per sky phase (Color mode). */
+export const SKY_COLORS = { night: 0x0b1020, "blue hour": 0x26324d, "dawn/dusk": 0x4a3a44, "magic hour": 0xd9a46a,
+  "golden hour": 0xc9b89a, overcast: 0xb9bec4, daylight: 0x9cc3e6 };
+
+/** The sky behind the set: a measured sky colour (lighting.sky_color = { hex, preset }, written by Video -> 3D from the
+ *  source clip's own sky) while the lighting preset it was measured for is still set, else the phase's fixed colour. */
+export function skyBackground(phase, lighting) {
+  const t = lighting && lighting.sky_color;
+  if (t && typeof t.hex === "string" && /^#[0-9a-f]{6}$/i.test(t.hex) && t.preset && t.preset === lighting.preset)
+    return parseInt(t.hex.slice(1), 16);
+  return SKY_COLORS[phase] ?? SKY_COLORS.daylight;
+}
+
 /** Clock text for an hour value, e.g. 18.4 -> "18:24". */
 export function clock(hour) {
   const h = Math.floor(hour), m = Math.round((hour - h) * 60);

@@ -87,3 +87,17 @@ test("Frame prompt for a clip rebuilt with Video → Stage", async () => {
   assert.match(p, /^A person in yellow plaid shirt, full body, on location: sidewalk, tree\./);
   assert.equal(suggestFromVideo({ actors: [{ kind: "man" }] }), "");   // not from a clip: leave the prompt alone
 });
+
+test("Frame prompt uses the rebuild's own look hint (wardrobe, set kind words, measured sky) when it wrote one", async () => {
+  const { suggestFromVideo } = await import("../../web/pipeline/pipeline.mjs");
+  const hint = "A woman in a short-sleeve yellow plaid shirt and light jeans, full body, on location: rocks, trees. Soft overcast daylight under a grey sky, real photograph, shot on a cinema camera.";
+  const p = suggestFromVideo({ video2stage: { look_hint: hint }, actors: [{ kind: "woman", mocap: {}, source: { label: "woman in yellow plaid outfit" } }] });
+  assert.equal(p, hint);
+  assert.doesNotMatch(p, /dress/);
+});
+
+test("Rebuild options: the wardrobe reference is opt-in", async () => {
+  const { WARDROBE_REF_CONSENT } = await import("../../web/ui/videoimport.mjs");
+  assert.match(WARDROBE_REF_CONSENT, /face blurred/);
+  assert.match(WARDROBE_REF_CONSENT, /right to use/);
+});

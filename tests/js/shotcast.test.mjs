@@ -84,3 +84,14 @@ test("castList files wardrobe as its own kind", () => {
   assert.match(refPrompt({ kind: "prop", name: "Van", hint: "vehicle" }), /^Vehicle reference sheet of Van:/);
   assert.match(refPrompt({ kind: "prop", name: "Lamp", hint: "lamp" }), /^Product reference photo of Lamp/);
 });
+
+test("Video → 3D's opt-in wardrobe reference joins the shot's pool as wardrobe, only when it was made", () => {
+  const actors = [{ id: "performer", name: "Performer", kind: "woman", wardrobe_ref: "soundstage/v2s_x/wardrobe_ref.png" },
+    { id: "b", name: "B", kind: "man" }];
+  const pool = castPool([], actors, {}, (f) => `/view/${f}`);
+  const w = pool.find((it) => it.key === "wardrobe:performer");
+  assert.ok(w && w.kind === "wardrobe" && w.src === "stage" && /face blurred/.test(w.name));
+  assert.equal(pool.filter((it) => it.kind === "wardrobe").length, 1);
+  assert.ok(defaultShotCast(pool, { actors }).includes("wardrobe:performer"));
+  assert.equal(castPool([], [{ id: "c", kind: "woman" }], {}).length, 0);
+});

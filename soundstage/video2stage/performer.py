@@ -6,6 +6,7 @@ the take on a clay actor along that path (web/stage/mocap.mjs, mocap.world), so 
 from __future__ import annotations
 
 import math
+import re
 
 import numpy as np
 
@@ -235,38 +236,18 @@ def fit_scale(take: dict, placed: dict, poses, times, A, b, K, size, clip_fps: f
     return float(np.clip(1.0 / max(1e-6, e["size_ratio"]), 0.5, 2.0))
 
 
-COLORS = {"black": "#1d1d1f", "white": "#ecebe7", "grey": "#8a8a8a", "gray": "#8a8a8a", "red": "#b3302b", "blue": "#2e4f8a",
-          "navy": "#1f2b4a", "green": "#3f6b3a", "olive": "#6b6b3a", "yellow": "#e3b622", "orange": "#e07a24", "tiger": "#e07a24",
-          "brown": "#6b4a32", "tan": "#b89470", "beige": "#d8c8a8", "pink": "#e39ab0", "purple": "#6a4a8a", "denim": "#3a4d6e",
-          "khaki": "#a89a6a", "gold": "#c9a227", "silver": "#b8b8bc", "plaid": None, "striped": None}
-TOPS = {"t-shirt": "tshirt", "tshirt": "tshirt", "tee": "tshirt", "shirt": "shirt", "blouse": "shirt", "jacket": "jacket",
-        "hoodie": "hoodie", "sweater": "sweater", "jumper": "sweater", "coat": "coat", "dress": "dress", "tank": "tank",
-        "suit": "suit", "uniform": "uniform", "vest": "tank", "top": "tshirt"}
-BOTTOMS = {"jeans": "jeans", "trousers": "trousers", "pants": "trousers", "leggings": "trousers", "shorts": "shorts",
-           "skirt": "skirt", "joggers": "trousers", "sweatpants": "trousers"}
+from .wardrobe import BOTTOMS, COLORS, TOPS  # noqa: E402,F401 - the garment words (kept importable from here)
 
 
-def appearance_from_label(label: str, color: str | None = None) -> tuple[str, dict]:
-    """'person in yellow plaid shirt and tiger-striped leggings' -> (kind, clay wardrobe). Words before a garment colour it."""
-    import re
-    words = re.findall(r"[a-z]+(?:-[a-z]+)?", (label or "").lower())
+def appearance_from_label(label: str, color: str | None = None, wardrobe: str | None = None) -> tuple[str, dict]:
+    """'person in yellow plaid shirt and tiger-striped leggings' -> (kind, clay wardrobe). The model's own wardrobe
+    words come first (wardrobe.appearance); a read naming no garment is marked wardrobe: 'unknown'."""
+    from . import wardrobe as W
+    words = set(re.findall(r"[a-z]+", f"{label or ''} {wardrobe or ''}".lower()))
     kind = C.person_kind(label or "")
-    if kind == "man" and any(w in words for w in ("dress", "skirt", "leggings", "blouse", "she", "her")):
+    if kind == "man" and words & {"dress", "skirt", "leggings", "blouse", "she", "her", "bralette", "camisole"}:
         kind = "woman"
-    ap: dict = {}
-    for i, w in enumerate(words):
-        garment, slot = (TOPS.get(w), "top") if w in TOPS else ((BOTTOMS.get(w), "bottom") if w in BOTTOMS else (None, None))
-        if not garment or slot in ap:
-            continue
-        ap[slot] = garment
-        for prev in reversed(words[max(0, i - 3):i]):
-            c = COLORS.get(prev.split("-")[0])
-            if c:
-                ap[f"{slot}_color"] = c
-                break
-    if "top" in ap and "top_color" not in ap and color:
-        ap["top_color"] = color
-    return kind, ap
+    return kind, W.appearance(label, wardrobe, color)
 
 
 def attach(scene: dict, take_file: str, take: dict, placed: dict, name: str = "Performer") -> str:
@@ -283,10 +264,12 @@ def attach(scene: dict, take_file: str, take: dict, placed: dict, name: str = "P
     a["rotation_deg"] = placed["yaw"][0]
     label = (a.get("source") or {}).get("label") or a.get("label") or a.get("name") or ""
     a["name"] = short_name(label) or name   # "Person in yellow plaid shirt and tiger-s" (cut at 40) reads badly
-    if label:
-        kind, ap = appearance_from_label(label, (a.get("appearance") or {}).get("color") or a.get("color"))
+    wear = (a.get("source") or {}).get("wardrobe") or ""
+    if label or wear:
+        kind, ap = appearance_from_label(label, (a.get("appearance") or {}).get("color") or a.get("color"), wear)
         a["kind"] = kind
-        a["appearance"] = {**(a.get("appearance") or {}), **ap}
+        old = {k: v for k, v in (a.get("appearance") or {}).items() if k != "wardrobe"}
+        a["appearance"] = {**old, **ap}
     a["mocap"] = {"file": take_file, "name": take_file.rsplit("/", 1)[-1].split("_2")[0], "start": placed["start_frame"],
                   "travel": True, "speed": 1, "loop": False, "world": {"path": placed["path"], "yaw": placed["yaw"]}}
     return a["id"]

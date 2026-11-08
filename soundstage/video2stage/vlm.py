@@ -15,18 +15,23 @@ MODELS = ["qwen3.5_4b_bf16.safetensors"]
 # The inventory read: Qwen3-VL 8B first (it grounds boxes on the 0-1000 grid natively); the 4B stays the fallback.
 INVENTORY_MODELS = ["qwen3vl_8b_fp8_scaled.safetensors", "qwen3vl_4b_fp8_scaled.safetensors", "qwen3.5_4b_bf16.safetensors"]
 
+# The wardrobe example in both prompts. It must never match the test clip's real outfit (a plaid shirt and jeans), or a
+# model that copies the example would look like a correct read; a reply that copies it is an echo (wardrobe_echo).
+WARDROBE_EXAMPLE = "an orange cable-knit sweater, brown corduroy trousers"
 SYSTEM = (
     "You break one frame of a film shot down into a 3D previz layout. Reply with JSON only, no prose:\n"
     '{"setting":"a few words","time":"dawn|morning|midday|afternoon|golden hour|dusk|night|overcast",'
     '"camera":{"height_m":number,"type":"ground|handheld|vehicle|drone|crane"},'
     '"objects":[{"label":"short description","kind":"person|car|pickup|suv|van|truck|bus|motorcycle|bicycle|'
     'horse|dog|boat|other","color":"#rrggbb","bbox":[x0,y0,x1,y1],'
-    '"facing":"toward camera|away from camera|left|right","moving":true}],'
+    '"facing":"toward camera|away from camera|left|right","moving":true,'
+    '"wardrobe":"<people only: every garment with its colour, pattern and length, e.g. ' + WARDROBE_EXAMPLE + '>"}],'
     '"set":[{"type":"road|ocean|lake|river|beach|cliff|hill|mountain|shrubs|trees|rocks|building|wall|'
     'guardrail|grass|sidewalk|plaza|bench|table|chair|lamp","side":"left|right|ahead|centre|all","distance":"near|mid|far",'
     '"lanes":0,"bbox":[x0,y0,x1,y1]}]}\n'
     "bbox is on a 0-1000 grid over the whole image. List every vehicle, person and animal separately "
-    "(at most 12). side is as seen from the camera. Describe people by clothing and colour only, never identity."
+    "(at most 12). side is as seen from the camera. Describe people by clothing and colour only, never identity: "
+    "name each garment (shirt, crop top, hoodie, jacket, shorts, jeans, skirt, dress ...), never just 'outfit'."
 )
 PROMPT_FIRST = "This is the FIRST frame of the shot. Break it down."
 PROMPT_LAST = "This is the LAST frame of the same shot. Break it down."
@@ -219,7 +224,8 @@ def parse_reply(text: str) -> dict:
         bb = _bbox(o.get("bbox") or o.get("bbox_px") or o.get("box"))
         if bb is None:
             continue
-        label = str(o.get("label") or o.get("name") or o.get("kind") or "object")[:60]
+        label = str(o.get("label") or o.get("name") or o.get("kind") or "object")
+        label = (str(o.get("kind") or "object") if _echo(label) else label)[:90]
         kind = resolve_kind(o.get("kind"), label)
         if kind == "other":
             st = SET_SYNONYMS.get(label.lower(), label.lower())
@@ -228,7 +234,8 @@ def parse_reply(text: str) -> dict:
         mv = o.get("moving")
         objects.append({"label": label, "kind": kind, "color": _color(o.get("color")), "bbox": bb,
                         "facing": _facing(o.get("facing")),
-                        "moving": mv if isinstance(mv, bool) else str(mv).lower() in ("true", "yes", "1")})
+                        "moving": mv if isinstance(mv, bool) else str(mv).lower() in ("true", "yes", "1"),
+                        "wardrobe": wardrobe_of(o) if kind == "person" else ""})
     sets = []
     for s in obj.get("set") or obj.get("set_pieces") or []:
         if isinstance(s, str):
@@ -249,8 +256,8 @@ def parse_reply(text: str) -> dict:
         dist = str(s.get("distance") or "mid").lower()
         sets.append({"type": t, "side": _side(s.get("side")), "distance": dist if dist in ("near", "mid", "far") else "mid",
                      "lanes": min(max(lanes, 0), 10), "bbox": _bbox(s.get("bbox"))})
-    return {"setting": str(obj.get("setting") or "")[:120], "time": str(obj.get("time") or "").lower()[:30],
-            "camera": {"height_m": h, "type": str(cam.get("type") or "").lower()[:20]},
+    return {"setting": _clean(obj.get("setting"), 120), "time": _clean(obj.get("time"), 30).lower(),
+            "camera": {"height_m": h, "type": _clean(cam.get("type"), 20).lower()},
             "objects": objects[:16], "set": sets[:20]}
 
 
@@ -275,6 +282,8 @@ def merge_reads(first: dict, last: dict | None) -> dict:
         if bi is not None:
             used.add(bi)
             o["bbox_end"] = ends[bi]["bbox"]
+            # the better read of the clothes: never an echo / placeholder over a real read (better_wardrobe)
+            o["wardrobe"] = better_wardrobe(o.get("wardrobe"), ends[bi].get("wardrobe"))
             o["moving"] = o["moving"] or ends[bi]["moving"]
             if _area(ends[bi]["bbox"]) > _area(o["bbox"]):   # seen closer at the end: trust that read of what it is
                 o["kind"] = ends[bi]["kind"]
@@ -323,12 +332,30 @@ INVENTORY_SYSTEM = (
     '"material":"<...>","color":"#rrggbb"}]}\n'
     "Every <...> is a placeholder: write what YOU see, never the placeholder. boxes are [x0,y0,x1,y1] on a 0-1000 "
     "grid over the whole image, one box per object, at most 10 boxes per kind. kind is one plain English noun. "
-    "Describe people by clothing only, never identity.")
+    "Describe people by clothing only, never identity. For a person, add \"wardrobe\": every garment with its colour, "
+    "pattern and length (e.g. " + WARDROBE_EXAMPLE + "), never just 'outfit'.")
 INVENTORY_PROMPT = "Inventory this frame."
 INVENTORY_FRAMES = 6
 # Echoes of the instructions (the model copying the schema instead of answering): such a value is rejected.
 ECHOES = ("a few words", "short description", "one noun", "placeholder", "colour + material", "color + material",
-          "3-8 words", "2-4 word", "what you see", "<", ">")
+          "3-8 words", "2-4 word", "what you see", "people only", "every garment", "<", ">")
+# The wardrobe example, copied back instead of read (wardrobe_echo): only the whole example is an echo, never one of
+# its garments alone ("brown corduroy trousers" is a real read) and never a bare list of the prompt's garment names.
+EXAMPLE_ECHOES = (WARDROBE_EXAMPLE,)
+PEOPLE_KINDS = {"person", "man", "woman", "child", "boy", "girl", "people", "dancer", "lady", "guy", "kid"}
+
+
+def wardrobe_of(o: dict) -> str:
+    """A person's wardrobe words from one read ('' when the model gave none or echoed the schema)."""
+    for k in ("wardrobe", "clothing", "clothes", "outfit", "wearing"):
+        v = o.get(k)
+        if isinstance(v, list):
+            v = ", ".join(str(x) for x in v if x)
+        if isinstance(v, dict):
+            v = ", ".join(f"{x}" for x in v.values() if x)
+        if v and not wardrobe_echo(v):
+            return " ".join(str(v).split())[:160]
+    return ""
 SURFACES = {"floor", "wall", "walls", "ceiling", "road", "street", "sidewalk", "pavement", "kerb", "curb", "building",
             "buildings", "facade", "grass", "lawn", "ground", "terrain", "water", "sea", "ocean", "lake", "river", "sky",
             "dirt", "sand", "beach", "asphalt", "plaza", "crosswalk", "mountain", "mountains", "hill", "hills"}
@@ -365,9 +392,137 @@ def inventory_prompt(model: str, images: list[str], max_length: int = 1400) -> d
     return g
 
 
+def _pieces(v) -> list[str]:
+    """A reply's garment pieces for the echo test: split on , ; + / & 'and' 'with'; a leading 'label:' and the articles
+    stripped; hyphens as spaces; lower case, no punctuation, single spaces."""
+    s = re.sub(r"^\s*[a-z ]{1,20}:\s*", "", str(v or "").lower())
+    s = re.sub(r"[^a-z0-9,;+/& ]", " ", s.replace("-", " "))
+    out = []
+    for p in re.split(r"[,;+/&]|\band\b|\bwith\b", s):
+        p = re.sub(r"\b(?:an?|the)\b", " ", p)
+        p = " ".join(p.split())
+        if p:
+            out.append(p)
+    return out
+
+
+# The echo test's normalising: asides a copy carries ("e.g.", "(example)") and the words a copy swaps in.
+_ASIDE = re.compile(r"\b(?:e g|eg|i e|ie|for example|for instance|example|such as|like)\b")
+_SWAPS = (("pants", "trousers"), ("slacks", "trousers"), ("jumper", "sweater"),
+          (r"corduroys(?! trousers?\b)", "corduroy trousers"), ("corduroys", "corduroy"), ("cords", "corduroy trousers"),
+          ("cord", "corduroy"), ("cableknit", "cable knit"), ("cabled", "cable"))
+
+
+def _singular(w: str) -> str:
+    """One word without its plural s ("sweaters", "trousers" -> "sweater", "trouser"), for the echo test only."""
+    return w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith("ss") else w
+
+
+# A leading "she wears", "he is wearing", "wearing", "dressed in" before a garment piece (the echo test only).
+_WEARS = re.compile(r"^(?:(?:she|he|they|the person|person|dancer|the dancer)\s+(?:is\s+|are\s+)?)?"
+                    r"(?:wears|wear|wearing|dressed in|in)\s+")
+
+
+def _garments(v) -> set[str]:
+    """The reply's garment pieces (_pieces), each without asides ("e.g.", "i.e.", "such as", "like") or a leading
+    "she wears" / "wearing", with the swapped words put back ("pants", "cableknit", "corduroys") and every word
+    singular ("sweaters", "trouser" alike)."""
+    out = set()
+    for p in _pieces(v):
+        p = _WEARS.sub("", _ASIDE.sub(" ", p).strip())
+        for a, b in _SWAPS:
+            p = re.sub(rf"\b{a}\b", b, p)
+        p = " ".join(_singular(w) for w in p.split())
+        if p:
+            out.add(p)
+    return out
+
+
+def _flat(v) -> str:
+    return " ".join(re.sub(r"[^a-z0-9]", " ", str(v or "").lower().replace("colour", "color")).split())
+
+
+EXAMPLE_PIECES = frozenset(_garments(WARDROBE_EXAMPLE))
+# The wardrobe placeholder of both prompts, normalised (or cut short): optional "people only:", then "e.g." (or
+# "i.e.", "such as", "like") and any example (an older prompt's too), optional "never just outfit".
+PLACEHOLDER = re.compile(r"(?:people only )?every garment(?: with its color(?: pattern(?: and length)?)?)?"
+                         r"(?: (?:e g|i e|such as|like) .*)?(?: never just outfit)?")
+
+
+# Placeholder fragments: a reply made only of the placeholder's own words (and the example's) that carries the
+# placeholder's own phrasing: one of its marks ("every", "garment", "people only", "e.g.", "never"), or, with none of
+# the example's words, two of its plainer words ("colour, pattern, length"). So "people only", "every garment, colour,
+# pattern, length", "every garment with its colour, pattern and length e.g." are fragments, while "outfit", "orange
+# sweater with a pattern" and "outfit: orange sweater" (the example's words and one plain placeholder word) are
+# real reads. A reply with no letters or digits is one only when it is a bracket or ellipsis ("<...>"), not "-".
+_PH_MARKS = frozenset("people only every garment garments never placeholder e g eg example".split())
+_PH_PLAIN = frozenset("its color pattern patterns length lengths just outfit".split())
+_PH_GLUE = frozenset("with and or of a an the for instance each".split())
+_EX_WORDS = frozenset(_flat(WARDROBE_EXAMPLE).split()) | {"pants", "cords", "knit", "cable"}
+_PH_WORDS = _PH_MARKS | _PH_PLAIN | _PH_GLUE | _EX_WORDS
+
+
+def _placeholder_fragment(v) -> bool:
+    toks = set(_flat(v).split())
+    if not toks:
+        return bool(re.search(r"[<>\[\]{}]|\.\.|\u2026", str(v or "")))
+    if not toks <= _PH_WORDS:
+        return False
+    return bool(toks & _PH_MARKS) or (not toks & (_EX_WORDS - _PH_GLUE) and len(toks & _PH_PLAIN) >= 2)
+
+
+def wardrobe_echo(v) -> bool:
+    """True only when a wardrobe reply is the prompt's own text: the placeholder, whole or cut short or reworded (case,
+    brackets and punctuation ignored; only its own words and the example's, at least one of them the placeholder's),
+    a bracket or ellipsis with no words ("<...>", not "-"), or the whole example: every one of its garments is in
+    the reply, in any order or wording (articles, hyphens or none, plurals, a 'label:', "e.g.", "i.e.", "such as",
+    "like" or "(example)", a leading "she wears" or "wearing", ' + ' or ' / ' between them, 'pants' for 'trousers',
+    'corduroys' for 'corduroy trousers'), with or without
+    more garments. One garment of the example alone, a bare list of garment names, or a phrase the schema uses inside a
+    real read is clothing."""
+    if not str(v or "").strip():
+        return False
+    if PLACEHOLDER.fullmatch(_flat(v)) or _placeholder_fragment(v):
+        return True
+    return EXAMPLE_PIECES <= _garments(v)
+
+
+def real_wardrobe(v) -> str:
+    """The wardrobe words when they are a real read, else '' (empty, an echo, the placeholder or a fragment of it)."""
+    s = " ".join(str(v or "").split())
+    return "" if not s or wardrobe_echo(s) else s
+
+
+def better_wardrobe(cur, new) -> str:
+    """Which of two reads of one person's clothes to keep: never an echo or placeholder over a real read; a read that
+    names a garment over a vague one (it names only an outfit, clothes, a costume: wardrobe.VAGUE, and no garment
+    the parser knows); else the fuller (longer) one, the current one on a tie. A longer read the parser cannot place
+    ("black leotard and fishnet tights") is not vague, so a shorter "jeans" does not beat it (the clay then gets no
+    garment from it: wardrobe "unknown")."""
+    a, b = real_wardrobe(cur), real_wardrobe(new)
+    if not b:
+        return a
+    if not a:
+        return b
+    from . import wardrobe as W
+    ga, gb = bool(W.parse(a)), bool(W.parse(b))
+    if ga != gb and _vague(b if ga else a):
+        return a if ga else b
+    return b if len(b) > len(a) else a
+
+
+def _vague(v) -> bool:
+    """A clothes read that says only 'outfit', 'clothes', 'costume' and the like (wardrobe.VAGUE)."""
+    from . import wardrobe as W
+    return bool(set(re.findall(r"[a-z]+", str(v or "").lower())) & set(W.VAGUE))
+
+
 def _echo(v) -> bool:
+    """A label, name or kind that copies the schema (ECHOES, as substrings) or the wardrobe placeholder or example."""
     s = str(v or "").strip().lower()
-    return bool(s) and any(e in s for e in ECHOES)
+    if not s:
+        return False
+    return any(e in s for e in ECHOES) or wardrobe_echo(s)
 
 
 def _clean(v, n: int = 60) -> str:
@@ -422,6 +577,8 @@ def parse_inventory(text: str, frame: int = 0) -> dict:
         base = {"name": name or kind, "kind": kind, "material": _clean(t.get("material"), 20).lower(),
                 "color": _color(t.get("color")), "moving": mv if isinstance(mv, bool) else str(mv).lower() in ("true", "yes", "1"),
                 "frame": int(frame)}
+        if kind in PEOPLE_KINDS or resolve_kind(kind, name) == "person":
+            base["wardrobe"] = wardrobe_of(t)
         boxes = t.get("boxes") or ([t.get("bbox")] if t.get("bbox") else [])
         kept = []
         for bx in boxes if isinstance(boxes, list) else []:
@@ -523,9 +680,33 @@ def legacy_breakdown(inv: dict) -> dict:
             continue
         objs.append({"label": it["name"], "kind": resolve_kind(it["kind"], it["name"]), "color": it.get("color"),
                      "bbox": it["bbox"], "facing": "", "moving": bool(it.get("moving")),
-                     "bbox_start": it["bbox"], "bbox_end": None})
+                     "bbox_start": it["bbox"], "bbox_end": None, "wardrobe": it.get("wardrobe") or ""})
     return {"setting": inv.get("setting", ""), "time": inv.get("time", ""), "camera": inv.get("camera") or {},
             "objects": objs, "set": sets}
+
+
+def enrich_breakdown(bd: dict, inv: dict) -> dict:
+    """The route's breakdown (4B, first + last frame) with what the 8B inventory read better: each person's wardrobe
+    (the inventory person whose box overlaps most), the time when the breakdown has none, and the whole layout when the
+    breakdown is empty (no 4B model)."""
+    if not inv or not (inv.get("items") or inv.get("surfaces")):
+        return bd
+    if not (bd.get("objects") or bd.get("set")):
+        out = legacy_breakdown(inv)
+        out["camera_end"] = {}
+        return out
+    out = dict(bd, objects=[dict(o) for o in bd.get("objects") or []])
+    ppl = [it for it in inv.get("items") or [] if it.get("bbox") and real_wardrobe(it.get("wardrobe"))]
+    for o in out["objects"]:
+        if o.get("kind") != "person":
+            continue
+        bb = o.get("bbox_start") or o.get("bbox")
+        best = max(ppl, key=lambda it: _iou(bb, it["bbox"]), default=None) if bb else None
+        if best is not None and _iou(bb, best["bbox"]) > 0.2:
+            o["wardrobe"] = better_wardrobe(o.get("wardrobe"), best["wardrobe"])
+    if not out.get("time") and inv.get("time"):
+        out["time"] = inv["time"]
+    return out
 
 
 # ---------------------------------------------------------------------------------------------- pipeline hooks (ctx)

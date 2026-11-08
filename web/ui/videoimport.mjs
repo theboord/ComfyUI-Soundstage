@@ -52,6 +52,7 @@ const CSS = `
 .ss-vi-modal .adv label { display:flex; flex-direction:column; gap:3px; font-size:11px; color:#a9a3ad; min-width:0; }
 .ss-vi-modal .adv label.wide { grid-column:1 / -1; }
 .ss-vi-modal .adv label.chk { flex-direction:row; align-items:center; gap:6px; grid-column:span 3; }
+.ss-vi-modal .adv p.consent { grid-column:1 / -1; margin:-2px 0 2px 24px; font-size:11px; line-height:1.35; color:#c9c3cd; }
 .ss-vi-modal .adv input[type=number], .ss-vi-modal .adv input[type=text] { font:inherit; font-size:12px; color:#f0efed; background:#120e16; border:1px solid rgba(255,255,255,.16); border-radius:7px; padding:5px 7px; min-width:0; }
 .ss-vi-modal .btns { display:flex; gap:8px; flex:0 0 auto; }
 .ss-vi-modal button.go { background:#F2FF59; color:#1a1420; border:1px solid #F2FF59; border-radius:999px; padding:7px 16px; cursor:pointer; font:700 13px/1 "Soundstage Grotesk", system-ui, sans-serif; }
@@ -104,6 +105,9 @@ const CSS = `
 .ss-stage button.ss-vi-cta:hover:not(:disabled) { background:rgba(46,40,24,.92) !important; border-color:#F2FF59 !important; }
 .ss-stage button.ss-vi-cta[data-big=true] { padding:16px 20px !important; border-radius:16px !important; }
 `;
+
+/** The opt-in wardrobe reference's consent line (soundstage/video2stage/wardrobe.py CONSENT says the same). */
+export const WARDROBE_REF_CONSENT = "Sends a crop of the person from the clip, with the face blurred, to the Frame still so it copies their build and clothes. Only for footage you have the right to use; the face is never sent.";
 
 export function ensureCss() {
   if (document.getElementById("ss-vi-css")) return;
@@ -228,7 +232,7 @@ export function chooseVideoUse(file, { person = null, selected = false, cast = 0
     opts3.append(stageOpt, capOpt, ripOpt);
     // ---- Rebuild options (one screen)
     const st = { quality: "standard", trim: [0, secs || 0], people: "all", point: null, mode: cast ? "add" : "replace",
-      vlm: true, backdrop: true, focal_mm: "", sensor_mm: "", camera_height_m: "", objects: "" };
+      vlm: true, backdrop: true, wardrobe_ref: false, focal_mm: "", sensor_mm: "", camera_height_m: "", objects: "" };
     const panel = Object.assign(document.createElement("div"), { className: "rb" });
     const seg = (label, items, key, onPick) => {
       const row = Object.assign(document.createElement("div"), { className: "rrow" });
@@ -313,8 +317,18 @@ export function chooseVideoUse(file, { person = null, selected = false, cast = 0
     const vb = Object.assign(document.createElement("input"), { type: "checkbox", checked: true });
     vb.addEventListener("change", () => { st.vlm = vb.checked; });
     vl.append(vb, "Name things with the vision model");
+    const wrl = document.createElement("label");
+    wrl.className = "chk";
+    wrl.title = WARDROBE_REF_CONSENT;
+    const wr = Object.assign(document.createElement("input"), { type: "checkbox", checked: false });
+    wr.addEventListener("change", () => { st.wardrobe_ref = wr.checked; });
+    wrl.append(wr, "Wardrobe reference for the Frame still (face blurred; only footage you may use)");
+    // The consent words on screen, not only in a hover tooltip (touch screens never show a tooltip).
+    const wrc = Object.assign(document.createElement("p"), { className: "consent", textContent: WARDROBE_REF_CONSENT });
+    wrc.dataset.consent = "wardrobe_ref";
+    wr.setAttribute("aria-describedby", (wrc.id = "ss-vi-wardrobe-consent"));
     grid.append(num("focal_mm", "Focal mm", "auto", "1"), num("sensor_mm", "Sensor width mm", "36", "0.1"),
-      num("camera_height_m", "Camera height m", "auto"), objs, bdl, vl);
+      num("camera_height_m", "Camera height m", "auto"), objs, bdl, vl, wrl, wrc);
     adv.append(sum, grid);
     panel.append(qRow, strip, tLab, pRow, mRow, adv);
     const sync = () => { for (const r of [qRow, pRow, mRow]) r.sync(); };
@@ -337,6 +351,7 @@ export function chooseVideoUse(file, { person = null, selected = false, cast = 0
       for (const k of ["focal_mm", "sensor_mm", "camera_height_m"]) if (st[k] !== "" && Number(st[k]) > 0) lens[k] = Number(st[k]);
       const options = { quality: q.key, samples: q.samples, people: st.people === "point" ? { point: st.point } : "all", mode: st.mode,
         vlm: st.vlm, backdrop: st.backdrop, lens };
+      if (st.wardrobe_ref) options.wardrobe_ref = true;
       if (secs && (st.trim[0] > 0.01 || st.trim[1] < secs - 0.01)) options.trim = st.trim;
       if (st.objects.trim()) options.objects = st.objects.trim();
       done({ use: "stage", options });

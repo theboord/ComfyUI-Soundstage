@@ -1,7 +1,9 @@
 """HTTP routes for Video → Stage. register() is idempotent.
 
 POST /soundstage/video2stage          {video: <input-folder file>, samples?: 8-24, vlm?: bool, backdrop?: bool,
-                                       original?: camera RAW name the video is a proxy of}
+                                       original?: camera RAW name the video is a proxy of, scan?: bool (the set-scan
+                                       path; default on when Qwen3-VL is installed), wardrobe_ref?: bool (opt-in
+                                       face-blurred wardrobe crop for the Frame still)}
                                       -> {job}
 GET  /soundstage/video2stage/job?id=  -> {state: queued|running|done|error|cancelled, step, progress, result?, error?}
 POST /soundstage/video2stage/cancel   {id} -> {state}: stops the rebuild and takes its own queued GPU prompt off
@@ -79,10 +81,8 @@ def register(routes=None) -> bool:
             else:
                 kw = regen_kwargs(body) if kind == "regenerate" else {}
                 lock = kw.pop("lock_flags", None)
-                job["result"] = await pipeline.run(
-                    base, str(body.get("video") or ""), samples=min(max(int(body.get("samples") or 16), 8), 24),
-                    use_vlm=bool(body.get("vlm", True)), backdrop=bool(body.get("backdrop", True)), progress=progress,
-                    original=str(body.get("original") or ""), **kw)
+                job["result"] = await pipeline.run(base, str(body.get("video") or ""), progress=progress,
+                                                   **pipeline.run_kwargs(body), **kw)
                 if lock is not None:
                     job["result"]["lock"] = lock
             job["state"] = "done"

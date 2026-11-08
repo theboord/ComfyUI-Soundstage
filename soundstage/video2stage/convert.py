@@ -250,6 +250,10 @@ def place_objects(objs, cams, A, b, K, size, frames_last, depths=None, scales=No
         else:
             a["rotation_deg"] = facing_rotation(o.get("facing"), start, cam0, A, cams[0])
         a["source"] = {"label": o["label"], "bbox_start": o.get("bbox_start"), "bbox_end": o.get("bbox_end")}
+        if kind in C.PEOPLE:
+            from . import wardrobe as W
+            a["source"]["wardrobe"] = o.get("wardrobe") or ""
+            a["appearance"] = W.appearance(o["label"], o.get("wardrobe"), o.get("color"))
         a["_bbox"] = o.get("bbox_start") or o.get("bbox_end")
         a["_boxes"] = [o.get("bbox_start"), o.get("bbox_end")]   # first and last frame: compare boxes from one frame
         out.append(a)
@@ -510,8 +514,10 @@ def build_set(breakdown, movers, cam_path, notes, seed: int = 7):
                                   "size": [round(sz, 2), round(sz * 0.65, 2), round(sz * 0.9, 2)], "rot": [0, 0, 0],
                                   "color": COLOURS["shrub" if t == "shrubs" else "rock"]})
                 c = origin + (lat_dir * (half + max(base, 8.0)) if v is not None else f0 * (base + 25))
-                out.append(_custom(ids, t.capitalize() + name_side, parts, rot if v is not None else heading(left),
-                                   c, [120, 2.2, 9]))
+                piece = _custom(ids, t.capitalize() + name_side, parts, rot if v is not None else heading(left),
+                                c, [120, 2.2, 9])
+                piece["_set_bbox"] = s.get("bbox")   # boxed: placed from the box + depth (place_set_bboxes)
+                out.append(piece)
             elif t == "wall" and v is None:
                 along = [float((np.array(a["position"]) - cam0) @ f0) for a in movers] or [base]
                 c = cam0 * np.array([1, 0, 1]) + f0 * (max(along) + 2.5)
@@ -570,21 +576,53 @@ def build_set(breakdown, movers, cam_path, notes, seed: int = 7):
 
 
 def place_set_bboxes(actors, pose0, A, b, K, size, depth0=None, scale0=1.0):
-    """Set pieces the model boxed (benches, lamps, buildings, trees): put the first one where the box says."""
+    """Set pieces the model boxed (benches, lamps, buildings, trees, rocks): put the first of each where the box says.
+    The box's foot ray meets the floor; where the depth inside the box disagrees with that by more than half either
+    way (a wrong camera tilt puts a far tree 6 m away; a kerb hides a near rock's foot), the depth decides."""
     w, h = size
     done = set()
+    o = A @ T.camera_center(pose0) + b
     for a in actors:
         bb = a.pop("_set_bbox", None)
-        if not bb or a["kind"] in done:
+        key = a["kind"] if a["kind"] != "custom" else re.sub(r"\s*\((left|right)\)$", "", a.get("name") or "")
+        if not bb or key in done:
             continue
         x0, y0, x1, y1 = bbox_px(bb, w, h)
+        mid = ((x0 + x1) / 2, (y0 + y1) / 2)
         p, _ = ground_point(pose0, A, b, K, ((x0 + x1) / 2, y1 - 0.02 * (y1 - y0)), depth0, scale0, max_dist=150,
-                            check_uv=((x0 + x1) / 2, (y0 + y1) / 2))
+                            check_uv=mid)
+        alt = _depth_point(pose0, A, b, K, ((x0 + x1) / 2, y0 + 0.75 * (y1 - y0)), depth0, scale0) \
+            if depth0 is not None else None
+        if alt is not None:
+            da = math.hypot(alt[0] - o[0], alt[2] - o[2])
+            dh = None if p is None else math.hypot(p[0] - o[0], p[2] - o[2])
+            if dh is None or not (0.67 <= dh / max(da, 1e-6) <= 1.5):
+                p = alt
+                a["placed_by"] = "depth"
         if p is not None:
             a["position"] = [round(float(p[0]), 2), 0.0, round(float(p[2]), 2)]
             a["keys"] = [{"frame": 0, "position": list(a["position"])}]
             a["_bbox"] = bb
-            done.add(a["kind"])
+            if a["kind"] == "custom" and (a.get("recipe") or {}).get("parts") and depth0 is not None:
+                # A boxed rock pile / shrub row is as wide as its box at that distance, not a 120 m strip.
+                dist = math.hypot(p[0] - o[0], p[2] - o[2])
+                width = max(1.5, (x1 - x0) / K[0, 0] * dist)
+                _squeeze_parts(a, width)
+            done.add(key)
+
+
+def _squeeze_parts(a: dict, width_m: float) -> None:
+    parts = a["recipe"]["parts"]
+    xs = [abs(pt["pos"][0]) + pt["size"][0] / 2 for pt in parts]
+    half = max(xs) if xs else 0
+    if half <= width_m / 2 or half <= 0:
+        return
+    k = (width_m / 2) / half
+    for pt in parts:
+        pt["pos"][0] = round(pt["pos"][0] * k, 2)
+        pt["pos"][2] = round(pt["pos"][2] * min(1.0, k * 4), 2)
+    if a["recipe"].get("size_m"):
+        a["recipe"]["size_m"][0] = round(width_m, 2)
 
 
 # ---------------------------------------------------------------------------------------------- scale
@@ -648,7 +686,8 @@ def assemble(ctx: dict | None = None, **legacy) -> dict:
 
 
 def assemble_legacy(*, poses, scales, times, K, size, depths, ground, breakdown, clip, reference, notes, backdrop=None,
-                    skies=None, repin: bool = True, mpu: float | None = None, seed: int = 7) -> dict:
+                    skies=None, repin: bool = True, mpu: float | None = None, seed: int = 7,
+                    sky_sample: dict | None = None) -> dict:
     """Everything -> a validated stage scene (see docs/video2stage.md). mpu: a known scale (metres per depth unit,
     e.g. from the performer SAM 3D Body measured) instead of the camera-height / people guess."""
     w, h = size
@@ -717,7 +756,9 @@ def assemble_legacy(*, poses, scales, times, K, size, depths, ground, breakdown,
         for k in ("_vehicle", "_bbox", "_boxes", "_set_bbox"):
             a.pop(k, None)
 
-    preset = time_preset(breakdown.get("time", ""))
+    from . import weather as WX
+    preset, wx, wnotes = WX.preset_for(breakdown.get("time", ""), sky_sample, time_preset)
+    notes += wnotes
     lighting = B.lighting_for({"time": preset})
     scene = {"version": 2, "shot": {"frames": frames, "fps": FPS},
              "environment": {"set": "empty", "weather": "none", "density": 0.5, "water_level": 2.5},
@@ -726,6 +767,7 @@ def assemble_legacy(*, poses, scales, times, K, size, depths, ground, breakdown,
              "active_shot": "shot_1"}
     scene, vnotes = validate_scene(scene, place=False)
     notes += vnotes
+    _carry_sky(scene, sky_sample, wx, preset)
     scene["shot"]["aspect"] = aspect_key(w / h)   # validate_scene keeps frames/fps only
     scene["reference"] = reference
     scene["video2stage"] = {"metres_per_unit": round(mpu, 5), "ground": None if ground is None else
@@ -733,10 +775,34 @@ def assemble_legacy(*, poses, scales, times, K, size, depths, ground, breakdown,
                             "camera_keys_raw": raw_keys, "drift_correction": corrections, "setting": breakdown.get("setting", ""),
                             "camera_type": (breakdown.get("camera") or {}).get("type", ""),
                             # cam0 -> stage (after recentring): the performer is placed through the same transform
-                            "xform": {"A": np.round(A, 6).tolist(), "b": np.round(b, 5).tolist()}}
+                            "xform": {"A": np.round(A, 6).tolist(), "b": np.round(b, 5).tolist()},
+                            "weather": _weather_rec(breakdown.get("time", ""), wx, preset, sky_sample)}
     if backdrop:
         scene["actors"].append(backdrop_actor(backdrop, A, b))
     return scene
+
+
+def _carry_sky(scene: dict, sample: dict | None, wx: str, preset: str) -> None:
+    """The measured sky colour into scene.lighting.sky_color (after validate_scene, which keeps only its own lighting
+    keys). The stage paints it while the preset is unchanged; a scene re-validated elsewhere loses it and falls back to
+    the preset's fixed colour."""
+    from . import weather as WX
+    tint = WX.sky_tint(sample, wx, preset)
+    if tint and isinstance(scene.get("lighting"), dict):
+        scene["lighting"]["sky_color"] = tint
+
+
+def _weather_rec(time_text: str, wx: str, preset: str, sample: dict | None) -> dict:
+    """scene.video2stage.weather: the measured sky kept apart from the model's time of day. stage_rgb is the colour the
+    stage paints (the measured one when it is carried, else the preset's)."""
+    from . import weather as WX
+    rec = {"sky": wx, "time": time_text or "", "preset": preset}
+    if sample:
+        tint = WX.sky_tint(sample, wx, preset)
+        painted = WX.painted_sky_rgb({"preset": preset, "sky_color": tint})
+        rec.update(sample_rgb=sample["rgb"], stage_rgb=painted, tinted=bool(tint),
+                   delta_e=round(WX.delta_e(sample["rgb"], painted), 1))
+    return rec
 
 
 ASPECTS = {"1.85": 1.85, "16:9": 16 / 9, "2.39": 2.39, "9:16": 9 / 16, "1:1": 1.0, "4:3": 4 / 3, "3:4": 0.75}
@@ -1178,7 +1244,15 @@ def assemble_ctx(ctx: dict) -> dict:
     for it in inventory:
         it["name"] = nm.get(it["id"], it["name"])
     inv = ctx.get("vlm_inventory") or {}
-    preset = time_preset(inv.get("time", ""))
+    from . import weather as WX
+    sample = ctx.get("sky_sample")
+    if sample is None:
+        try:
+            sample = WX.sample_from_ctx(ctx)
+        except Exception:  # noqa: BLE001 - the old word map still lights the set
+            sample = None
+    preset, wx, wnotes = WX.preset_for(inv.get("time", ""), sample, time_preset)
+    notes += wnotes
     lighting = B.lighting_for({"time": preset})
     scene = {"version": 2, "shot": {"frames": frames, "fps": FPS},
              "environment": {"set": "empty", "weather": "none", "density": 0.5, "water_level": 2.5},
@@ -1187,6 +1261,7 @@ def assemble_ctx(ctx: dict) -> dict:
              "active_shot": "shot_1"}
     scene, vnotes = validate_scene(scene, place=False)
     notes += vnotes
+    _carry_sky(scene, sample, wx, preset)
     w, h = clip.get("w") or clip["pw"], clip.get("h") or clip["ph"]
     key = aspect_key(w / h)
     scene["shot"]["aspect"] = key
@@ -1206,6 +1281,7 @@ def assemble_ctx(ctx: dict) -> dict:
         "inventory": inventory, "structure": [{k: p[k] for k in ("kind", "name", "centre", "size", "yaw_deg", "colour")}
                                               for p in st["planes"]],
         "unexplained_share": round(float(un.get("share", 0.0)), 4),
-        "missing": miss, "camera_type": (inv.get("camera") or {}).get("type", "")}
+        "missing": miss, "camera_type": (inv.get("camera") or {}).get("type", ""),
+        "weather": _weather_rec(inv.get("time", ""), wx, preset, sample)}
     ctx["inventory"] = inventory
     return scene

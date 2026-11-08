@@ -45,6 +45,32 @@ def load(tag: str, out_dir: str | None = None) -> dict:
     return bootstrap(tag, out_dir)
 
 
+def content_hash(path: str, chunk: int = 1 << 20, picks: int = 16) -> str:
+    """A content hash of a clip that does not read all of it: its size, the first and last MiB and `picks` MiB spread
+    between (sha1). The same clip copied or renamed hashes the same; a different clip with the same name does not."""
+    import hashlib
+    size = os.path.getsize(path)
+    h = hashlib.sha1(str(size).encode())
+    with open(path, "rb") as f:
+        if size <= chunk * (picks + 2):
+            h.update(f.read())
+        else:
+            for k in range(picks + 2):
+                f.seek(int(round(k * (size - chunk) / (picks + 1))))
+                h.update(f.read(chunk))
+    return h.hexdigest()
+
+
+def matches(rec: dict, path: str, sha: str | None) -> bool:
+    """Was this record made from that clip? By content hash, else by the same real path. Never by the name alone: two
+    different clips called clip.mp4 are not the same shot (older records without either are not matched)."""
+    if not isinstance(rec, dict):
+        return False
+    if sha and rec.get("source_sha"):
+        return rec["source_sha"] == sha
+    return bool(rec.get("source_path")) and os.path.realpath(str(rec["source_path"])) == os.path.realpath(str(path))
+
+
 def save(tag: str, rec: dict, out_dir: str | None = None) -> str:
     p = record_path(tag, out_dir)
     os.makedirs(os.path.dirname(p), exist_ok=True)

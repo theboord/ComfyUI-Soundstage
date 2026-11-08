@@ -105,6 +105,10 @@ const H3_MAX_REFS = 7;   // H3 takes 9 pictures: first + last frame + up to 7 re
  */
 export function suggestFromVideo(scene) {
   if (!scene?.video2stage && !scene?.reference?.video) return "";
+  // The rebuild's own words when it wrote them: the wardrobe the vision model read, the set by its kind words and the
+  // measured sky (soundstage/video2stage/scenewords.py look_hint).
+  const hint = String(scene?.video2stage?.look_hint || "").trim();
+  if (hint) return hint;
   const actors = scene.actors || [];
   const who = actors.find((a) => a.mocap) || actors.find((a) => ["man", "woman", "child"].includes(a.kind));
   const label = String(who?.source?.label || who?.label || "").trim();

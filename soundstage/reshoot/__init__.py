@@ -169,6 +169,141 @@ def recipe_prompt(path: str) -> str:
     return max(texts, key=len)[:1200] if texts else ""
 
 
+READ_PREFIX = "rs_read_"     # output/soundstage_v2s/rs_read_<sha16>.json: Reshoot's own inventory read of a stock clip
+
+
+def _out_dir(out_dir: str | None) -> str | None:
+    if out_dir is not None:
+        return out_dir
+    try:
+        import folder_paths
+        return folder_paths.get_output_directory()
+    except Exception:  # noqa: BLE001 - outside ComfyUI
+        return None
+
+
+def stock_scene_words(path: str, out_dir: str | None = None, sha: str | None = None) -> str:
+    """Scene words for a clip with no recipe prompt (a stock clip), from a vision read of THAT clip: its Video → 3D
+    rebuild (its look hint, else words from its read) or Reshoot's own inventory read of it (stock_inventory_words).
+    A record is matched by the clip's content hash, else its real path, never by the file name alone
+    (video2stage.stages.matches); the newest match wins. '' when nothing has read this clip."""
+    import glob
+
+    from ..video2stage import scenewords as SW
+    from ..video2stage import stages as ST
+    out_dir = _out_dir(out_dir)
+    if not out_dir:
+        return ""
+    if sha is None:
+        try:
+            sha = ST.content_hash(path)
+        except OSError:
+            sha = None
+    best, t_best = "", -1.0
+    for f in glob.glob(os.path.join(out_dir, ST.SUBDIR, "v2s_*_stages.json")) + \
+            glob.glob(os.path.join(out_dir, ST.SUBDIR, f"{READ_PREFIX}*.json")):
+        try:
+            with open(f) as fh:
+                rec = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if not ST.matches(rec, path, sha):
+            continue
+        words = str(rec.get("scene_words") or "") or SW.from_read((rec.get("breakdown") or {}).get("read")) or \
+            SW.from_read(rec.get("inventory"))
+        t = os.path.getmtime(f)
+        if words and t > t_best:
+            best, t_best = words, t
+    return best[:1200]
+
+
+def scene_text(prompt: str, path: str, notes: list | None = None, out_dir: str | None = None) -> str:
+    """The scene words for the render: the user's prompt, else the take's own recipe prompt, else (a stock clip) the
+    words a vision read of the same clip gave. '' when there is none yet (scene_words then reads the clip)."""
+    if prompt and prompt.strip():
+        return prompt
+    rp = recipe_prompt(path)
+    if rp:
+        return rp
+    sw = stock_scene_words(path, out_dir)
+    if sw and notes is not None:
+        notes.append("no recipe prompt in the clip (stock footage): the scene words come from a vision read of it")
+    return sw
+
+
+def inventory_model(list_files) -> str | None:
+    from ..video2stage import vlm
+    try:
+        names = set(list_files("text_encoders") or [])
+    except Exception:  # noqa: BLE001
+        return None
+    return next((m for m in vlm.INVENTORY_MODELS if m in names), None)
+
+
+async def stock_inventory_words(base_url: str, rgb: np.ndarray, path: str, *, model: str, in_dir: str, sub: str,
+                                tag: str, out_dir: str | None = None, run_graph=None, sha: str | None = None,
+                                notes: list | None = None) -> str:
+    """A stock clip nothing has read yet: the Qwen3-VL inventory (vlm.inventory_prompt, one queued job) over 6 of the
+    plate's frames, turned into scene words (scenewords.from_read) and kept in output/soundstage_v2s/rs_read_*.json by
+    the clip's content hash, so the next Reshoot of it needs no GPU for this. '' when the read gives nothing."""
+    from ..video2stage import queue as Q
+    from ..video2stage import scenewords as SW
+    from ..video2stage import stages as ST
+    from ..video2stage import vlm
+    rg = run_graph or Q.run_graph
+    fr = vlm.inventory_frames(len(rgb))
+    names = []
+    for i in fr:
+        name = f"{tag}_inv_{i:03d}.png"
+        await asyncio.to_thread(write_png, rgb[i], os.path.join(in_dir, name))
+        names.append(f"{sub}/{name}")
+    out, _ = await rg(base_url, vlm.inventory_prompt(model, names), "inventory", timeout_s=1800)
+    reads = []
+    for k, f in enumerate(fr):
+        try:
+            r = vlm.parse_inventory(Q.text_of(out, f"r{k}"), f)
+        except (ValueError, KeyError, TypeError):
+            continue
+        if not vlm.needs_retry(r):
+            reads.append(r)
+    if not reads:
+        return ""
+    inv = vlm.merge_inventory(reads)
+    words = SW.from_read(inv)[:1200]
+    od = _out_dir(out_dir)
+    if words and od:
+        if sha is None:
+            sha = await asyncio.to_thread(ST.content_hash, path)
+        p = os.path.join(od, ST.SUBDIR, f"{READ_PREFIX}{sha[:16]}.json")
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as fh:
+            json.dump({"source_sha": sha, "source_path": os.path.realpath(path), "model": model, "inventory": inv,
+                       "scene_words": words}, fh)
+    return words
+
+
+async def scene_words(base_url: str, prompt: str, path: str, rgb: np.ndarray, *, notes: list, list_files, in_dir: str,
+                      sub: str, tag: str, out_dir: str | None = None, run_graph=None) -> str:
+    """scene_text, and for a stock clip that nothing has read: the inventory read now (when Qwen3-VL is installed)."""
+    text = await asyncio.to_thread(scene_text, prompt, path, notes, out_dir)
+    if text:
+        return text
+    model = inventory_model(list_files)
+    if not model:
+        notes.append("no recipe prompt in the clip, no vision read of it and no Qwen3-VL to read it: the render has "
+                     "only the camera words")
+        return ""
+    try:
+        words = await stock_inventory_words(base_url, rgb, path, model=model, in_dir=in_dir, sub=sub, tag=tag,
+                                            out_dir=out_dir, run_graph=run_graph, notes=notes)
+    except Exception as exc:  # noqa: BLE001 - the render still runs on the camera words
+        notes.append(f"no recipe prompt in the clip; the vision read of it failed ({exc}): only the camera words")
+        return ""
+    notes.append(f"no recipe prompt in the clip (stock footage): {model.split('_fp8')[0]} read it for the scene words"
+                 if words else "no recipe prompt in the clip and the vision read named nothing: only the camera words")
+    return words
+
+
 def move_tag(move: dict) -> str:
     return hashlib.sha1(json.dumps(move, sort_keys=True).encode()).hexdigest()[:6]
 
@@ -259,7 +394,8 @@ async def run(base_url: str, source: str, move: dict, *, quality: str = "Draft",
     if keep_sound and not has_audio(plate_path):
         keep_sound = False
         notes.append("the take has no sound track: rendered silent")
-    text = G.reshoot_prompt(f"the camera {words}", prompt or recipe_prompt(real))
+    text = G.reshoot_prompt(f"the camera {words}", await scene_words(
+        base_url, prompt, real, rgb, notes=notes, list_files=lf, in_dir=in_dir, sub=SUB, tag=tag))
     say("Rendering the new angle (LTX-2.5 union control)", 0.35)
     graph = G.render_prompt(weights, plate=plate_ref, guide=res["guide"], first=res["first"], width=dw, height=dh,
                             prompt=text, seed=seed, quality=quality, keep_sound=keep_sound)
