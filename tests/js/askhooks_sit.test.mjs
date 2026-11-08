@@ -425,3 +425,23 @@ test("sit_floor never slides along a keyed path: refused while the person moves 
   assert.deepEqual(st3._sitSpec(a).seat, [7, 0, 0]);
   assert.ok(Math.abs(g.position.y - -0.85) < 1e-6, "held still again: down on the floor");
 });
+
+test("sit_floor on someone already saved as sit_floor but with movement keys is refused, not 'already so'", () => {
+  // an older save / a later key edit: pose "sit_floor" kept, keys walk x = 0 -> 5, so the body stands on the path;
+  // setPose must not report {ok: true, changed: false} (sitting) while they walk upright
+  const walker = { ...man("w", 0), pose: "sit_floor", keys: [{ frame: 0, position: [0, 0, 0] }, { frame: 8, position: [5, 0, 0] }] };
+  const st = sitStage([walker]);
+  const before = JSON.stringify(st.state), undo = st.undo;
+  const r = st.setPose("w", "sit_floor");
+  assert.equal(r.ok, false, `refused, not success (${JSON.stringify(r)})`);
+  assert.match(r.error, /has movement keys \(base\)/);
+  assert.equal(JSON.stringify(st.state), before, "nothing changed"); assert.equal(st.undo, undo);
+  // one shot's own moving blocking refuses too
+  const st2 = sitStage([{ ...man("p", 0), pose: "sit_floor", by_shot: { s: { keys: [{ frame: 0, position: [0, 0, 0] }, { frame: 8, position: [0, 0, 3] }] } } }]);
+  assert.match(st2.setPose("p", "sit_floor").error, /movement keys \(s\)/);
+  // held still: truly already on the floor, no change, no undo step
+  const st3 = sitStage([{ ...man("h", 2), pose: "sit_floor" }]);
+  const u3 = st3.undo;
+  assert.deepEqual(st3.setPose("h", "sit_floor"), { ok: true, pose: "sit_floor", changed: false });
+  assert.equal(st3.undo, u3);
+});

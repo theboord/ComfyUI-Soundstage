@@ -218,7 +218,18 @@ CTX_CEILING = 131072        # the hard top of every num_ctx sent to Ollama: the 
 # whenever num_ctx changes, so a value sized to every prompt (4096 / 8192 / 12288 ...) reloaded a big local model on
 # almost every request. A short chat and a ~3,500-token planner both get 8192; bigger prompts step by doubling.
 CTX_SIZES = (8192, 16384, 32768, 65536, 131072)
-_ctx_sent: dict = {}        # (Ollama URL, model) -> the largest num_ctx sent to it by the chat route (never lowered)
+_ctx_sent: dict = {}        # (Ollama URL, model) -> the largest num_ctx Ollama ACCEPTED from the chat route (a 2xx
+                            # reply; remember_ctx), never lowered: a failed forward (502 / Ollama 500) is not kept
+
+
+def remember_ctx(model, n) -> None:
+    """Record that Ollama accepted num_ctx n for model on this Ollama URL (the chat route calls it after a 2xx reply
+    only), so later requests reuse it (num_ctx_for). Never lowers the stored value; clamped to CTX_CEILING."""
+    n = _pos_int(n)
+    if not model or not n:
+        return
+    key = (ollama_url(), str(model))
+    _ctx_sent[key] = max(_ctx_sent.get(key, 0), min(CTX_CEILING, n))
 
 
 def _snap_ctx(n: int) -> int:
@@ -303,8 +314,8 @@ def num_ctx_for(messages, reply=None, asked=None, tools=None, model=None) -> int
     short chat and a ~3,500-token planner alike), at most max_ctx(), never below server_ctx() (Ollama's 4096 or
     OLLAMA_CONTEXT_LENGTH). The request's own num_ctx (an int, float or plain decimal string) is a floor, snapped up
     to CTX_SIZES too, even above max_ctx(), but never above CTX_CEILING (1e12 -> 131072; NaN, inf, "1e3", booleans
-    are ignored). With a model (the chat route passes it), the largest value already sent to that model on this
-    Ollama URL is reused, so a short chat after a planner call sends the same num_ctx and Ollama does not reload the
+    are ignored). With a model (the chat route passes it), the largest value Ollama already accepted for that model
+    on this Ollama URL (remember_ctx, after a 2xx reply; nothing is stored here) is reused, so a short chat after a planner call sends the same num_ctx and Ollama does not reload the
     model. A prompt bigger than max_ctx() is still capped (Ollama then drops the oldest part). The result is always
     a whole number in [4096, CTX_CEILING]."""
     r = _pos_int(reply)
@@ -317,7 +328,6 @@ def num_ctx_for(messages, reply=None, asked=None, tools=None, model=None) -> int
     if model:
         key = (ollama_url(), str(model))
         out = min(CTX_CEILING, max(out, _ctx_sent.get(key, 0)))
-        _ctx_sent[key] = out
     return out
 
 
@@ -493,7 +503,9 @@ def register(routes=None) -> bool:
         try:
             code, j = await _forward("/api/chat", body, 300)
         except Exception as e:  # noqa: BLE001
-            return web.json_response({"error": f"Ollama: {e}"}, status=502)
+            return web.json_response({"error": f"Ollama: {e}"}, status=502)   # nothing remembered: not sent
+        if 200 <= code < 300:   # only a size Ollama accepted is kept for later chats (a failed big one is not)
+            remember_ctx(body["model"], body["options"].get("num_ctx"))
         return web.json_response(j, status=code)
 
     @routes.post("/soundstage/assistant/unload")

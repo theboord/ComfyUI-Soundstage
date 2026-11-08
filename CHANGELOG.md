@@ -10,9 +10,10 @@ Each entry links to the code; every milestone ships with tests.
 - **Still wrong (read first, known limits):** checked with Node and pytest only (invented test data), not in the
   browser, the App, a render or a live ComfyUI / Ollama; that Ollama now keeps the model loaded across mixed short
   and planner requests is reasoned from Ollama's reload-on-num_ctx-change behaviour, not measured.
-  - **num_ctx only grows within a ComfyUI run:** the largest value sent to a model (one big prompt, or a caller's own
-    `num_ctx: 100000` -> 131072) is reused for every later request to it until `unload()` or a restart, so the model
-    can keep a bigger KV cache than a short chat needs. The fixed sizes also round a caller's own value UP (12000 ->
+  - **num_ctx only grows within a ComfyUI run:** the largest value Ollama accepted for a model (one big prompt that
+    got a 2xx reply, or a caller's own `num_ctx: 100000` -> 131072 that succeeded) is reused for every later request
+    to it until `unload()` or a restart, so the model can keep a bigger KV cache than a short chat needs. A big
+    request that failed (Ollama 500, or the route's 502) is not kept. The fixed sizes also round a caller's own value UP (12000 ->
     16384, 20000 -> 32768): more memory than asked, never less. Short chats now get 8192 (was 4096). An
     `OLLAMA_CONTEXT_LENGTH` set only in the shell that started Ollama (not ComfyUI's) is still not seen, so the floor
     can be below the server's own and the first request at a new size still reloads once. The memory is per
@@ -53,6 +54,15 @@ Each entry links to the code; every milestone ships with tests.
   largest value already sent to that model on that Ollama URL (forgotten on unload), and it is never below
   `OLLAMA_CONTEXT_LENGTH` or above the max / `CTX_CEILING`. Test in `tests/test_assistant.py` (consecutive short and
   long prompts in one size send one value; fails on 80ab105); older num_ctx tests updated to the sizes.
+- **sit_floor reported "already so" for a walker (`web/stage/stage.mjs` `setPose`):** someone saved as `sit_floor`
+  whose keys move (an older save, a later key edit) walks the path upright, but `setPose(id, 'sit_floor')` returned
+  `{ok: true, changed: false}` before the movement check ran. The movement-keys refusal now comes first; `changed:
+  false` only for a floor sitter who holds still. Test in `tests/js/askhooks_sit.test.mjs` (fails on 949f052).
+- **A failed big request kept its num_ctx (`soundstage/assistant.py` `num_ctx_for`, `remember_ctx`, the chat
+  route):** `num_ctx_for(..., model=...)` stored the size before the request was forwarded, so a big request that
+  Ollama refused (500, out of memory) or that never reached it (502) still made every later short chat send the big
+  num_ctx. `num_ctx_for` only reads now; the route calls `remember_ctx` after a 2xx reply. Test in
+  `tests/test_assistant.py` (a failed big request, then a short chat sends 8192; fails on 949f052).
 - Docs: `web/stage/STAGE_API.md` (setPose refusal, Play / open read-only, num_ctx sizes) and the coordination
   handoff note match.
 

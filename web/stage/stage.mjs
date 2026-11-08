@@ -4847,9 +4847,11 @@ export class Stage {
       return { ok: true, pose, on: host.id, changed: true };
     }
     if (pose === "sit_floor") {
-      if (!a.mount_id && a.pose === "sit_floor") return { ok: true, pose, changed: false };
+      // The movement check comes first: a floor sitter saved with movement keys walks the path upright, so
+      // "already sitting on the floor" would be a false success.
       const moves = this._movesInAnyShot(a);
       if (moves) return { ok: false, error: `'${name(a)}' has movement keys (${moves.join(", ")}): sit_floor would slide them along the path; remove the movement keys first, or sit them on a seat` };
+      if (!a.mount_id && a.pose === "sit_floor") return { ok: true, pose, changed: false };
       if (a.mount_id) offSeat();   // off the seat, down on the floor on their own keyed path (beside the seat)
       a.pose = "sit_floor";
       commit();

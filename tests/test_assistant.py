@@ -374,7 +374,10 @@ def test_num_ctx_is_stable_so_ollama_does_not_reload_the_model(monkeypatch):
     planner = [{"role": "system", "content": "x" * (3500 * 4)}, {"role": "user", "content": "add a chair"}]   # ~3,500 tokens
     mid = [{"role": "user", "content": "z" * (5000 * 4)}]                                                      # ~5,700 tokens
     big = [{"role": "user", "content": "w" * (9000 * 4)}]                                                      # ~10,300 tokens
-    ctx = lambda m, model=None: A.chat_options({"device": "gpu"}, messages=m, model=model)["num_ctx"]
+    def ctx(m, model=None):   # one request; with a model, Ollama replied 2xx (the route then calls remember_ctx)
+        n = A.chat_options({"device": "gpu"}, messages=m, model=model)["num_ctx"]
+        A.remember_ctx(model, n)
+        return n
     # same size: consecutive short, long, short, long prompts send one value (no model given: sizes only)
     assert [ctx(m) for m in (short, planner, mid, short, planner, mid)] == [8192] * 6
     # the old per-prompt rounding gave 4096 / 8192 / 12288 for these: three reloads
@@ -402,3 +405,60 @@ def test_num_ctx_is_stable_so_ollama_does_not_reload_the_model(monkeypatch):
     seen = {ctx([{"role": "user", "content": "q" * (n * 1000)}]) for n in range(1, 200, 3)}
     assert seen <= set(A.CTX_SIZES) | {A.max_ctx()}, seen
     A.forget_ctx()
+
+
+def test_a_failed_big_request_does_not_keep_its_num_ctx(monkeypatch):
+    """Fix: num_ctx_for(..., model=...) stored the size before the request was forwarded, so a big request that failed
+    (Ollama 500, or unreachable -> 502) still made every later short chat send the big num_ctx. Only a size Ollama
+    accepted (a 2xx reply) is reused now."""
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", raising=False)
+    monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH", raising=False)
+    monkeypatch.setattr(A, "hardware", lambda: {"vram_gb": 16.0, "ram_gb": 128.0, "gpu": "test"})
+    A._status_cache["v"] = None
+    A.forget_ctx()
+    seen = []
+
+    async def fake(request):
+        body = await request.json() if request.can_read_body else None
+        if request.path == "/api/tags":
+            return web.json_response({"models": [{"name": "qwen3:30b-a3b"}]})
+        if request.path == "/api/ps":
+            return web.json_response({"models": []})
+        seen.append(body["options"]["num_ctx"])
+        if body["options"]["num_ctx"] > 8192:   # the big one fails (out of memory)
+            return web.json_response({"error": "model requires more system memory"}, status=500)
+        return web.json_response({"message": {"content": "{}"}})
+
+    short = [{"role": "user", "content": "hi"}]
+    big = [{"role": "user", "content": "w" * (9000 * 4)}]   # ~10,300 tokens -> 16384
+
+    async def go():
+        ollama = web.Application()
+        ollama.router.add_route("*", "/{tail:.*}", fake)
+        async with TestServer(ollama) as o:
+            url = str(o.make_url("")).rstrip("/")
+            monkeypatch.setattr(A, "ollama_url", lambda: url)
+            routes = web.RouteTableDef()
+            A.register(routes)
+            app = web.Application()
+            app.add_routes(routes)
+            async with TestClient(TestServer(app)) as c:
+                out = []
+                for m in (big, short, big, short):
+                    r = await c.post("/soundstage/assistant/chat", json={"model": "qwen3:30b-a3b", "messages": m})
+                    out.append(r.status)
+                # unreachable Ollama (the route answers 502): nothing is kept either
+                monkeypatch.setattr(A, "ollama_url", lambda: "http://127.0.0.1:9")
+                r = await c.post("/soundstage/assistant/chat", json={"model": "qwen3:30b-a3b", "messages": big})
+                out.append(r.status)
+                monkeypatch.setattr(A, "ollama_url", lambda: url)
+                r = await c.post("/soundstage/assistant/chat", json={"model": "qwen3:30b-a3b", "messages": short})
+                out.append(r.status)
+                return out
+    assert asyncio.run(go()) == [500, 200, 500, 200, 502, 200]
+    assert seen == [16384, 8192, 16384, 8192, 8192], "a short chat after a failed big request is not kept at the big size"
+    assert A._ctx_sent == {(A.ollama_url(), "qwen3:30b-a3b"): 8192}
+    A.forget_ctx()
+    A._status_cache["v"] = None
