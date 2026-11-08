@@ -235,3 +235,20 @@ test("a duplicate's seed doesn't depend on the clock: the same copy, the same wa
   assert.equal(seeds.size, 1, `one seed whatever the clock (${[...seeds].join(", ")})`);
   assert.equal(apart.size, 1, "the same motion whatever the clock");
 });
+
+// ------------------------------------------------------------------ 8. Carrying something while swimming
+// Before: a swimmer carrying a crate across the tank held it 0.55 m over the surface (y 3.05) the whole way: the carry
+// put it at a standing person's chest height over the swim's root. In the water it is held at the water, in front.
+test("a swimmer carrying a crate holds it at the water in front of them, never in the air over it", () => {
+  const st = tank([keyed("m", "man", [[0, [-4, 0, 0]], [96, [4, 0, 0]]], { key_y: false }), { ...prop("c", "crate", 0, { x: -4 }), carry_id: "m", carry_at: 0 }], { frames: 97 });
+  const c = st.actorMeshes.get("c");
+  for (const f of [0, 24, 48, 72, 96]) {
+    st.setFrame(f);
+    c.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(c), hd = wp(st.actorMeshes.get("m").userData.joints.head);
+    assert.ok(st.actorMeshes.get("m").userData.swimOn, `f${f}: the carrier swims`);
+    assert.ok(box.min.y < LEVEL - 0.05 && box.max.y > LEVEL - 0.05, `f${f}: the crate in the water at the surface (y ${box.min.y.toFixed(2)} to ${box.max.y.toFixed(2)})`);
+    const cc = box.getCenter(new THREE.Vector3());
+    assert.ok(Math.hypot(cc.x - hd.x, cc.z - hd.z) < 1.2, `f${f}: in front of the swimmer, within reach (${Math.hypot(cc.x - hd.x, cc.z - hd.z).toFixed(2)} m from the head)`);
+  }
+});

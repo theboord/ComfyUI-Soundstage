@@ -2491,6 +2491,16 @@ export class Stage {
       const reach = 0.25 + Math.min(size.x, size.z) / 2;
       const fwd = new THREE.Vector3(Math.sin(cg.rotation.y), 0, Math.cos(cg.rotation.y));
       const hold = new THREE.Vector3(cg.position.x, cg.position.y + 0.62 * ch - size.y / 2, cg.position.z).addScaledVector(fwd, reach);
+      if (cg.userData.swimOn && cg.userData.joints?.head && this._inPool(cg.position.x, cg.position.z)) {
+        // Swimming with it: pushed along in front of the head at the water, floating at its own waterline (something
+        // that sinks: held up with its top at the surface), not at a standing chest height over the swim's root (was:
+        // a crate 0.55 m over the surface the whole way across the tank)
+        const hd = cg.userData.joints.head.getWorldPosition(new THREE.Vector3()), yaw = cg.rotation.y;   // (YXZ: the swim's heading)
+        const fw = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), bb = this._buoyBody(o, og);
+        const rest = this._waterRestY(o, og, hd.x + fw.x * reach, hd.z + fw.z * reach), level = this.water.position.y;
+        hold.set(hd.x + fw.x * reach, Math.max(rest ?? -Infinity, level - 0.8 * size.y - (bb?.minY ?? -size.y / 2)), hd.z + fw.z * reach);
+        if (t >= 1) { og.position.copy(hold); og.rotation.y = yaw; continue; }   // (the swim poses the arms)
+      }
       const rest = this._actorPosAt(o, this.frame);
       og.position.set(rest[0] + (hold.x - rest[0]) * e, hold.y * e, rest[2] + (hold.z - rest[2]) * e);
       og.rotation.y = cg.rotation.y * e + og.rotation.y * (1 - e);
