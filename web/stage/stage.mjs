@@ -2073,15 +2073,26 @@ export class Stage {
         for (let q = ob; q && q !== hg.parent; q = q.parent) if (!q.visible) { shown = false; break; }
         if (!shown || !ob.isMesh || ob.material?.transparent || !h.face) continue;
         const n = h.face.normal.clone().transformDirection(ob.matrixWorld);
+        if (n.y < 0) n.negate();   // the inside of an open hull, met from above (two-sided pass, below): its floor
         return n.y > 0.7 ? h.point.y : null;
       }
       return null;
     };
-    const y0 = at(x, z);
-    if (y0 != null) return y0;
-    let best = null;
-    for (const [dx, dz] of [[0.12, 0], [-0.12, 0], [0, 0.12], [0, -0.12]]) { const y = at(x + dx, z + dz); if (y != null && (best == null || y > best)) best = y; }
-    return best;
+    const look = () => {
+      const y0 = at(x, z);
+      if (y0 != null) return y0;
+      let best = null;
+      for (const [dx, dz] of [[0.12, 0], [-0.12, 0], [0, 0.12], [0, -0.12]]) { const y = at(x + dx, z + dz); if (y != null && (best == null || y > best)) best = y; }
+      return best;
+    };
+    const y = look();
+    if (y != null) return y;
+    // An open hull (a canoe: one-sided, its floor faces out and down) shows a ray from above nothing but its thwarts
+    // and seats: looked at again two-sided, its floor is met from inside (was: a person aimed at a canoe was keyed in
+    // the water 0.95 m off its side, the ray going down past a thwart and through the hull to the tank floor)
+    const mats = [];
+    hg.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material || [])) if (m && m.side !== THREE.DoubleSide) { mats.push([m, m.side]); m.side = THREE.DoubleSide; } });
+    try { return look(); } finally { for (const [m, sd] of mats) m.side = sd; }
   }
 
   /** Does a person leave the ground anywhere in the shot (a hop up, a vault, a drop: the same test as _airborne, over

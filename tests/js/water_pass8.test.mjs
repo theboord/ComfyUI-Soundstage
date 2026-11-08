@@ -252,3 +252,19 @@ test("a swimmer carrying a crate holds it at the water in front of them, never i
     assert.ok(Math.hypot(cc.x - hd.x, cc.z - hd.z) < 1.2, `f${f}: in front of the swimmer, within reach (${Math.hypot(cc.x - hd.x, cc.z - hd.z).toFixed(2)} m from the head)`);
   }
 });
+
+// ------------------------------------------------------------------ 9. Placing a person in a canoe
+// Before: a person placed aimed at a canoe was keyed in the water 0.95 m off its side (z -1.05, the canoe at -2) while
+// every other boat put them on deck: the canoe's open hull is one-sided, so a ray from above met only its thwarts.
+test("a person placed aimed at a canoe stands in it, as on every other boat", () => {
+  for (const kind of ["canoe", "kayak", "dinghy"]) for (const tx of [-3, -3.3]) {
+    const st = tank([prop("t", kind, 0, { x: -3, z: -2 }), man("s", 0, { x: 4, z: 4 })], { keepSet: true, frames: 121 });
+    st._shotCameraAt = () => ({ position: [tx, 12, -6], target: [tx, 2.3, -2], focal_mm: 35 });
+    const r = st.placeInFrame("s", { x: "center", y: 0.5 });
+    assert.ok(r.ok, `${kind}: placed`);
+    st.setFrame(30);
+    const g = st.actorMeshes.get("s");
+    assert.ok(!g.userData.swimOn, `${kind} aimed at x ${tx}: standing, not swimming (keyed at ${r.position})`);
+    assert.ok(r.position[1] > 2 && Math.abs(r.position[2] + 2) < 0.6, `${kind} aimed at x ${tx}: keyed in the boat (${r.position})`);
+  }
+});
