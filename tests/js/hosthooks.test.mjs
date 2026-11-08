@@ -379,3 +379,43 @@ test("book.addNote(text, {source: 'ask', ref}): kept with its ref; forgetDecisio
     assert.deepEqual(posts.at(-1), ["/soundstage/book/legacy", { apply: true }]);
   } finally { book.dispose(); }
 });
+
+// ---------------------------------------------------------------- round 6, fix 2: a multi-line Ask note with no scene
+test("book.addNote multi-line Ask text with no sceneId: Forget by ref or by id leaves no line of it in the Book or the workflow", async () => {
+  const posts = [];
+  const api = { fetchApi: async (path, init) => {
+    const body = init?.body ? JSON.parse(init.body) : null;
+    if (init?.method === "POST") posts.push([path, body]);
+    if (path === "/soundstage/book/place") {
+      return { ok: true, status: 200, json: async () => ({ backend: "rules", placements: body.notes.map((t) => ({ text: t, scope: "unsorted", category: "blocking" })) }) };
+    }
+    return path === "/soundstage/book/forget" ? { ok: true, status: 200, json: async () => ({ ok: true, removed: 1 }) } : { status: 200, json: async () => ({ ok: true }) };
+  }, addEventListener() {} };
+  const props = {};
+  const script = { title: "Test", scenes: [{ id: "sc_1", number: 1, heading: "INT. ROOM - DAY", elements: [], characters: [] }], characters: [] };
+  const book = mountBook({ api, stage: null, host: { getScript: () => script, liveScene: () => "sc_1", props: () => props,
+    project: () => ({ id: "p_aaaaaaaa", name: "Film" }) } });
+  const LINES = ["Diner sign flickers on entry", "Rain on the window all night", "John Doe keeps his hat on"];
+  const leftover = (o) => LINES.filter((l) => JSON.stringify(o).includes(l));
+  try {
+    for (const how of ["ref", "id"]) {
+      const ref = how === "ref" ? "p_aaaaaaaa:turn_31" : null;
+      const n = await book.addNote(LINES.join("\n"), { source: "ask", ref });
+      const mine = book.book.notes.filter((x) => LINES.some((l) => x.text.includes(l)));
+      assert.equal(mine.length, 1, `${how}: one note holds every line`);
+      assert.equal(mine[0].source, "ask");
+      if (ref) assert.equal(mine[0].ref, ref);
+      assert.deepEqual(leftover(book.book), LINES, "every line was filed");
+      const r = await book.forgetDecision(ref || n.id);
+      assert.equal(r.ok, true, `${how}: ${JSON.stringify(r)}`);
+      assert.deepEqual(leftover(book.book), [], `${how}: no line left in the open Book`);
+      assert.deepEqual(leftover(props.ss_book), [], `${how}: none in the workflow's ss_book`);
+      assert.deepEqual(leftover(posts.filter(([p]) => p === "/soundstage/book/save").at(-1)[1].book), [], `${how}: none in the server save`);
+    }
+    // Pitch's multi-line note: every filed line carries the source and ref (not 'shorthand' with no ref)
+    await book.addNote("Pitch line one here\nPitch line two here", { source: "pitch", ref: "p_aaaaaaaa:turn_32" });
+    const pitch = book.book.notes.filter((x) => /Pitch line/.test(x.text));
+    assert.equal(pitch.length, 2);
+    assert.ok(pitch.every((x) => x.source === "pitch" && x.ref === "p_aaaaaaaa:turn_32"));
+  } finally { book.dispose(); }
+});

@@ -363,13 +363,25 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
     /** A note from anyone (Pitch, a script, Ask): placed like shorthand unless a scene is given. `ref` (optional): an
      *  opaque `${projectId}:${turnId}` (DECISION_REF_RE, never words of the note) kept on the note, so
      *  forgetDecision(ref) and the server scrub find it; a ref of any other shape is dropped. A note from Ask (source
-     *  "ask") can be forgotten by its id or that ref. The text is stored as given: Ask should pass a short summary it
+     *  "ask") can be forgotten by its id or that ref; with no sceneId a multi-line Ask note stays one note (every line in
+     *  it), and every note filed from a multi-line Pitch / director text carries the source and ref. The text is stored as given: Ask should pass a short summary it
      *  wrote, never the user's typed sentence (docs/director.md "Forget"). */
     addNote: async (text, { sceneId = null, category = null, line = null, source = "pitch", ref = null } = {}) => {
       const r = decisionRef(ref, text);
       let n;
       if (sceneId) [n] = addPlacements(book, [{ text, scope: "scene", scene_id: sceneId, line, category: category || "blocking", confidence: 1, why: `written by ${source}`, by: source }], { source });
-      else { [n] = await fileNotes(text, { useModel: false }); if (n) n.source = source; }
+      else {
+        // fileNotes files one note per line. Every one of them is this caller's (source, ref), and a note Ask added
+        // (FORGETTABLE_SOURCES) is kept as ONE note holding every line, so forgetDecision by its id or its ref removes
+        // all of it; before, lines 2+ stayed as plain shorthand with no ref and survived Forget (review round 6, fix 2).
+        const added = await fileNotes(text, { useModel: false });
+        for (const x of added) { x.source = source; if (r) x.ref = r; }
+        [n] = added;
+        if (n && FORGETTABLE_SOURCES.has(source) && added.length > 1) {
+          n.text = added.map((x) => x.text).join("\n");
+          for (const x of added.slice(1)) removeNote(book, x.id);
+        }
+      }
       if (n && r) n.ref = r;
       if (n) changed();
       return n;
