@@ -22,10 +22,13 @@ const keyed = () => ({ id: "b", camera_keys: [{ frame: 0, position: [0, 1.6, 5],
 
 test("playing a keyed shot leaves camera_keys (and the scene) byte-identical", () => {
   const st = playStage([{ id: "a", camera_keys: [{ frame: 0, position: [1, 2, 3], target: [0, 0, 0], focal_mm: 28 }] }, keyed()], "b");
-  const keys = JSON.stringify(st.state.shots[1].camera_keys), all = JSON.stringify(st.state);
+  const keys = JSON.stringify(st.state.shots[1].camera_keys);
+  st.state.camera_keys = st.state.shots[1].camera_keys;   // the flat mirror of the active shot, as the App keeps it
+  const all = JSON.stringify(st.state);
   play(st);
   assert.equal(JSON.stringify(st.state.shots[1].camera_keys), keys);
-  assert.equal(JSON.stringify(st.state), all, "nothing else in the scene is written either (flat camera_keys included)");
+  assert.equal(JSON.stringify(st.state.shots[0].camera_keys), JSON.stringify([{ frame: 0, position: [1, 2, 3], target: [0, 0, 0], focal_mm: 28 }]));
+  assert.equal(JSON.stringify(st.state), all, "nothing else in the scene is written either");
   assert.ok(Math.abs(st.camera.position.x - 2) < 1e-6, "the camera did move along the keys");
 });
 
@@ -35,6 +38,15 @@ test("playing a shot with no camera keys (on a handheld rig) creates none", () =
   play(st);
   assert.equal(st.state.shots[0].camera_keys, undefined, "no key was stored on the shot");
   assert.equal(JSON.stringify(st.state), all);
+});
+
+test("the flat camera_keys mirror still follows the active shot's own array (older readers, presets that swap the array)", () => {
+  const st = playStage([keyed()], "b");
+  const fresh = [{ frame: 0, position: [5, 1.6, 5], target: [0, 1, 0], focal_mm: 85 }];
+  st.state.shots[0].camera_keys = fresh;   // a preset hands the shot a new array
+  st.setFrame(3);
+  assert.equal(st.state.camera_keys, fresh, "the same array, not a copy");
+  assert.equal(JSON.stringify(st.state.shots[0].camera_keys), JSON.stringify([{ frame: 0, position: [5, 1.6, 5], target: [0, 1, 0], focal_mm: 85 }]));
 });
 
 test("keyInfo (the key strip drawn while scrubbing) is read-only too; editing still stores the first key", () => {

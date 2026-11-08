@@ -25,10 +25,11 @@ Each entry links to the code; every milestone ships with tests.
     `local` compares the URL's host name with loopback and this machine's own name only (no DNS): a LAN address of
     this same machine reads as `false`.
 - **Playing a shot wrote its camera keys (`web/stage/stage.mjs` `_camKeys` via `_cameraAt` / `_rigCameraAt` /
-  `keyInfo`):** a shot with no keys got one stored on its first played frame, and every played frame re-pointed the
-  flat `camera_keys` field at the active shot. Playback, scrubbing and the key strip now read through `_camKeysView()`
-  (never writes); edits still create the first key; the flat field follows the shot on `setActiveShot`
-  (`tests/js/askhooks_play.test.mjs`: the real `setFrame` over every frame leaves the scene byte-identical).
+  `keyInfo`):** a shot with no keys got one stored on its first played frame. Playback, scrubbing and the key strip now
+  read through `_camKeysView()` (never creates or edits a key); edits still create the first key. The flat
+  `camera_keys` field still mirrors the active shot's own array (the look compiler reads it; a first try that froze
+  it broke `tests/test_racing_cinema_edges.py`) (`tests/js/askhooks_play.test.mjs`: the real `setFrame` over every
+  frame leaves every shot's keys byte-identical).
 - **`stage.setPose(id, "sit" | "sit_floor" | "stand", {on})`:** sit on the nearest seat within 1.5 m or a named one
   (seat height from the prop: chair 0.47 m, sofa 0.54, armchair 0.44, new `MOUNTS` entries), on the floor, or stand;
   one undo step, refusals change nothing. A person sitting on a chair / bench / sofa or on the floor is no longer sent

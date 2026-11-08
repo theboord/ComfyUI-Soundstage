@@ -1346,13 +1346,18 @@ export class Stage {
   }
 
   /**
-   * Camera keys of the active shot, READ-ONLY: what playback, scrubbing and display read. Never writes the shot (a shot
-   * without keys gets a fallback key that is not stored) nor the flat state.camera_keys field, so Play leaves
-   * shot.camera_keys byte-identical. Edits use _camKeys(), which creates and stores the first key.
+   * Camera keys of the active shot, READ-ONLY: what playback, scrubbing and display read. Never writes the shot: a shot
+   * without keys gets a fallback key that is not stored, so Play leaves shot.camera_keys byte-identical. Edits use
+   * _camKeys(), which creates and stores the first key. The flat state.camera_keys mirror (a reference to the active
+   * shot's own array, read by older readers such as soundstage/look/scene.py) still follows the active shot, as
+   * before: a preset that hands the shot a new keys array relies on it.
    */
   _camKeysView() {
     const shot = this.activeShot?.();
-    if (shot?.camera_keys?.length) return shot.camera_keys;
+    if (shot?.camera_keys?.length) {
+      if (this.state && this.state.camera_keys !== shot.camera_keys) this.state.camera_keys = shot.camera_keys;
+      return shot.camera_keys;
+    }
     return [{ frame: 0, ...clone(this._cameraAt0Legacy()) }];
   }
 

@@ -16,7 +16,7 @@ Tested in [tests/js/avatars_m15.test.mjs](../../tests/js/avatars_m15.test.mjs) (
 
 More in [tests/js/people_m16.test.mjs](../../tests/js/people_m16.test.mjs): near distances under a top-down and a steep camera, numeric strings and refused booleans / arrays, riding or carried objects refused, a raised platform floor (the point lands on the third at the platform's height; `key_y` kept for another shot's raised keys), and `openPhysicsPanel()` with nothing selected.
 
-**Play is read-only.** Playing a shot (the App's Play button: `stage.setFrame(f)` every tick), scrubbing and the key strip (`keyInfo()`) never write `shot.camera_keys` or the flat `camera_keys` field: they read the keys through `_camKeysView()`, and a shot with no keys yet plays from the scene's camera without a key being stored. Editing (`_camKeys()`: a key at the playhead, a rig, a preset) still creates the first key. Tested in [tests/js/askhooks_play.test.mjs](../../tests/js/askhooks_play.test.mjs).
+**Play is read-only.** Playing a shot (the App's Play button: `stage.setFrame(f)` every tick), scrubbing and the key strip (`keyInfo()`) never write `shot.camera_keys`: they read the keys through `_camKeysView()`, and a shot with no keys yet plays from the scene's camera without a key being stored. The flat `camera_keys` field stays a mirror of the active shot's own array (the same array, never a copy; older readers such as `soundstage/look/scene.py` read it), as before. Editing (`_camKeys()`: a key at the playhead, a rig, a preset) still creates the first key. Tested in [tests/js/askhooks_play.test.mjs](../../tests/js/askhooks_play.test.mjs).
 
 ## Ask's host hooks (web/soundstage.js `mountAsk` host, helpers in web/hosthooks.mjs)
 
