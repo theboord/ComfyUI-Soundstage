@@ -116,17 +116,57 @@ def _iou_px(bb, jbox, w: int, h: int) -> float:
     return iw * ih / max(u, 1e-6)
 
 
-def _another_body(d, bb, body, w: int, h: int, rel: float = 0.07, share: float = 0.25) -> bool:
+def _another_body(d, bb, body, w: int, h: int, rel: float = 0.07, share: float = 0.25, side: float = 0.35) -> bool:
     """True when a person box (0-1000) over the performer holds, outside her body mask, a body of its own at her
-    depth: at least `share` of her body's pixel count lies there within rel of her median depth. A duplicate entry
-    for her holds only her and the set behind her; a second dancer beside her holds himself. Known limit: a person
-    standing well behind or in front of her reads as a duplicate and gets her body mask."""
+    depth: at least `share` of her body's pixel count lies there within rel of her median depth, not counting a
+    surface. A surface (a slab, a wall, the ground) is a connected piece of those pixels that runs out of the box
+    through its left or right side along at least `side` of the box's height; a person's own box holds him, so
+    he leaves it at most at a hand or a foot. Only each crossing row's run in from that side, over those pixels with
+    no depth step between neighbours, is the surface, so a second dancer standing in front of a slab at her depth
+    (joined to it) still counts. A duplicate entry for her holds only her and the set behind her (a slab within 7% of her depth too); a second
+    dancer beside her holds himself. Known limit: a person standing well behind or in front of her inside her box
+    reads as a duplicate and gets her body mask."""
     zb = float(np.median(d[body]))
     x0, x1 = max(0, int(bb[0] / 1000 * w)), min(w, int(np.ceil(bb[2] / 1000 * w)))
     y0, y1 = max(0, int(bb[1] / 1000 * h)), min(h, int(np.ceil(bb[3] / 1000 * h)))
-    sub, own = d[y0:y1, x0:x1], ~body[y0:y1, x0:x1]
-    near = own & np.isfinite(sub) & (np.abs(sub - zb) < rel * zb)
-    return int(near.sum()) >= share * int(body.sum())
+    if x1 <= x0 or y1 <= y0:
+        return False
+    need = share * int(body.sum())
+    # the box grown by one pixel each side (inside the frame), so a piece that leaves through a side shows it
+    gx0, gx1 = max(0, x0 - 1), min(w, x1 + 1)
+    sub = d[y0:y1, gx0:gx1]
+    near = ~body[y0:y1, gx0:gx1] & np.isfinite(sub) & (np.abs(sub - zb) < rel * zb)
+    li, ri = x0 - gx0, x1 - 1 - gx0                         # the box's own first and last column in `near`
+    inner = np.zeros_like(near)
+    inner[:, li:ri + 1] = True
+    if int((near & inner).sum()) < need:
+        return False
+    try:
+        import cv2
+        n, lab = cv2.connectedComponents(near.astype(np.uint8), connectivity=4)
+    except ImportError:   # without OpenCV every near pixel is one piece
+        n, lab = 2, near.astype(np.int32)
+    tall = side * (y1 - y0)
+    surface = np.zeros(n, bool)
+    runs = np.zeros_like(near)
+    for out_c, in_c, step in ((li - 1, li, 1), (ri + 1, ri, -1)):
+        if out_c < 0 or out_c >= near.shape[1]:             # the box is at the frame edge on that side: no evidence
+            continue
+        both = (lab[:, out_c] == lab[:, in_c]) & near[:, in_c] & near[:, out_c]
+        surface |= np.bincount(lab[both, in_c], minlength=n) >= tall
+        # each crossing row's run in from that side over near pixels with no depth step between neighbours (> 2% of
+        # her depth): the surface itself, not a body standing in front of it
+        cols = slice(in_c, None) if step > 0 else slice(in_c, None, -1)
+        nr, sd = near[:, cols], sub[:, cols]
+        smooth = np.ones_like(nr)
+        smooth[:, 1:] = np.abs(np.diff(sd, axis=1)) < 0.02 * zb
+        run = np.cumprod(nr & smooth, axis=1).astype(bool) & both[:, None]
+        if step > 0:
+            runs[:, in_c:] |= run
+        else:
+            runs[:, in_c::-1] |= run
+    surface[0] = False
+    return int((near & inner & ~(surface[lab] & runs)).sum()) >= need
 
 
 def people_masks(breakdown: dict, depths, times, duration: float, take=None, fps: float = 24.0) -> dict:

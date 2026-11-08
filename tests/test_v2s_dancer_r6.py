@@ -47,3 +47,54 @@ def test_the_whole_example_or_the_placeholder_is_an_echo(copied):
     assert vlm.wardrobe_of({"wardrobe": copied}) == ""
     assert vlm.parse_reply(_person(copied))["objects"][0]["wardrobe"] == ""
     assert vlm.wardrobe_echo(copied)
+
+
+# ------------------------------------------------------------------------------------------------ 1 slab, not a body
+from soundstage.video2stage import pipeline, scanroute  # noqa: E402
+from test_v2s_dancer import _dancer_depth, _silhouette  # noqa: E402
+from test_v2s_dancer_r5 import _entry  # noqa: E402
+
+TAKE = {"frames": 1, "source_frames": [0], "focal_px": 500.0, "body": [[0]]}
+
+
+def _her_at(z, gap):
+    """Her (the _silhouette shape) z metres away, a slab `gap` metres behind her from her chest down, 400 x 400."""
+    d, uv, box, hgt = _dancer_depth(70, w=400)
+    slab = d == 4.5
+    d = d / 4.0 * z
+    d[slab] = z + gap
+    return d, uv, box, slab
+
+
+def _cut(monkeypatch, d, uv, entries):
+    monkeypatch.setattr(pipeline.performer, "sam_2d", lambda t, k, size: uv)
+    masks = scanroute.people_masks({"objects": entries}, [d], [0.0], 1.0, take=TAKE, fps=24.0)
+    return scanroute.without_people(d, masks, 0)
+
+
+@pytest.mark.parametrize("z, gap", [(8.0, 0.5), (4.0, 0.25)])      # the slab within 7% of her depth
+@pytest.mark.parametrize("grow", [(5, 5), (40, 5)])                 # a duplicate box 5 px larger, or 40 px wider
+def test_a_slab_within_7_percent_of_her_depth_is_not_a_second_body(monkeypatch, z, gap, grow):
+    pytest.importorskip("cv2")
+    d, uv, box, slab = _her_at(z, gap)
+    one = _cut(monkeypatch, d, uv, [_entry("woman dancing", box)])
+    gx, gy = grow
+    dup = [box[0] - gx, box[1] - gy, box[2] + gx, box[3] + gy]
+    two = _cut(monkeypatch, d, uv, [_entry("woman dancing", box), _entry("dancer", dup)])
+    assert np.isnan(two[195, 200])                                    # her torso is out of the scan
+    assert np.isnan(two[slab]).sum() <= np.isnan(one[slab]).sum()     # the duplicate cuts no more of the slab
+    assert np.isnan(two[slab]).sum() <= 0.1 * slab.sum()              # (round 5: 56,006 and 79,006 of 82,506)
+    assert not scanroute._another_body(d, _entry("d", dup)["bbox_start"], np.isnan(one) & ~slab, 400, 400)
+
+
+@pytest.mark.parametrize("z, gap", [(4.0, 0.5), (8.0, 0.5)])      # the slab well behind, or within 7% of her
+@pytest.mark.parametrize("off", [70, -70, 45])
+def test_a_second_dancer_beside_her_is_still_a_body_with_a_slab_behind_them(monkeypatch, z, gap, off):
+    pytest.importorskip("cv2")
+    d, uv, box, slab = _her_at(z, gap)
+    her, _ = _silhouette(70, 400, 400)
+    his = np.roll(her, off, axis=1) & ~her
+    d[his] = z + 0.05 * np.random.default_rng(5).random(int(his.sum()))   # he joins the slab when it is near her
+    cut = _cut(monkeypatch, d, uv, [_entry("woman dancing", box),
+                                    _entry("man dancing", [box[0] + off, box[1], box[2] + off, box[3]])])
+    assert np.isfinite(cut[his]).sum() <= 0.02 * his.sum()           # he leaves the scan with her
