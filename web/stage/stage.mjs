@@ -1348,16 +1348,14 @@ export class Stage {
   /**
    * Camera keys of the active shot, READ-ONLY: what playback, scrubbing and display read. Never writes the shot: a shot
    * without keys gets a fallback key that is not stored, so Play leaves shot.camera_keys byte-identical. Edits use
-   * _camKeys(), which creates and stores the first key. The flat state.camera_keys mirror (a reference to the active
-   * shot's own array, read by older readers such as soundstage/look/scene.py) still follows the active shot, as
-   * before: a preset that hands the shot a new keys array relies on it.
+   * _camKeys(), which creates and stores the first key. It never writes the flat state.camera_keys field either: the
+   * live state is untouched by Play. Older readers of that flat field (soundstage/look/scene.py) read the saved scene,
+   * and toJSON() writes the active shot's keys into the copy's flat field, so a preset that hands the shot a new keys
+   * array is still seen there.
    */
   _camKeysView() {
     const shot = this.activeShot?.();
-    if (shot?.camera_keys?.length) {
-      if (this.state && this.state.camera_keys !== shot.camera_keys) this.state.camera_keys = shot.camera_keys;
-      return shot.camera_keys;
-    }
+    if (shot?.camera_keys?.length) return shot.camera_keys;
     return [{ frame: 0, ...clone(this._cameraAt0Legacy()) }];
   }
 
@@ -5359,7 +5357,12 @@ export class Stage {
   }
 
   toJSON() {
-    return clone(this.state);
+    const out = clone(this.state);
+    // The flat camera_keys field mirrors the active shot's keys in the saved copy (older readers such as the look
+    // compiler read it); the live state is not written here, so Play stays read-only.
+    const sh = Array.isArray(out.shots) ? (out.shots.find((x) => x.id === out.active_shot) || out.shots[0]) : null;
+    if (sh?.camera_keys?.length) out.camera_keys = clone(sh.camera_keys);
+    return out;
   }
 
   resize() {
