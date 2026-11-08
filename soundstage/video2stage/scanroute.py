@@ -93,10 +93,26 @@ def joint_box(take, k, size):
     return uv, [jx0 - 0.12 * H, jy0 - 0.1 * H, jx1 + 0.12 * H, jy1 + 0.05 * H]
 
 
+def _over_performer(bb, jbox, w: int, h: int, share: float = 0.6) -> bool:
+    """A person box (0-1000) is the performer's when it holds the joint box's centre, or when at least `share` of the
+    person box lies inside the joint box: a near-duplicate entry for her. Known limit: a bystander standing right
+    behind her, whose box is mostly inside hers, gets her body mask, so his own pixels stay in the scan."""
+    x0, y0, x1, y1 = bb[0] / 1000 * w, bb[1] / 1000 * h, bb[2] / 1000 * w, bb[3] / 1000 * h
+    cx, cy = (jbox[0] + jbox[2]) / 2, (jbox[1] + jbox[3]) / 2
+    if x0 <= cx <= x1 and y0 <= cy <= y1:
+        return True
+    iw = max(0.0, min(x1, jbox[2]) - max(x0, jbox[0]))
+    ih = max(0.0, min(y1, jbox[3]) - max(y0, jbox[1]))
+    a = max(1e-6, (x1 - x0) * (y1 - y0))
+    return iw * ih >= share * a
+
+
 def people_masks(breakdown: dict, depths, times, duration: float, take=None, fps: float = 24.0) -> dict:
     """{person_i: {sample_i: rle}} from the read's person boxes (interpolated start -> end) and each sample's depth.
-    The performer (the person whose box holds the take's joints at that sample): wardrobe.body_mask, banded by the
-    joints and the body's own depth per row, so a slab half a metre behind her is not her and stays in the scan.
+    The performer (every person box that holds the take's joints' centre at that sample, or lies mostly inside her
+    joint box: legacy_breakdown lists her once per inventory frame, and a read can give 'woman dancing' plus
+    'dancer'): wardrobe.body_mask, banded by the joints and the body's own depth per row, so a slab half a metre
+    behind her is not her and stays in the scan.
     Everyone else, and the performer outside the take: the loose box-and-depth stand-in
     (wardrobe.person_mask_from_depth, rel 0.35)."""
     from . import backdrop as BD
@@ -109,17 +125,14 @@ def people_masks(breakdown: dict, depths, times, duration: float, take=None, fps
         t = float(times[i]) if times else 0.0
         boxes = {j: _box_at(o, min(1.0, max(0.0, t / max(duration, 1e-6))) if times else 0.0) for j, o in people}
         uv, jbox = joint_box(take, take_frame_at(take, t, fps), (w, h)) if take and times else (None, None)
-        perf = None
-        if jbox is not None:   # the take's person: the box that holds the joints' centre, the nearest centre first
-            cx, cy = (jbox[0] + jbox[2]) / 2, (jbox[1] + jbox[3]) / 2
-            inside = [(abs((bb[0] + bb[2]) / 2000 * w - cx) + abs((bb[1] + bb[3]) / 2000 * h - cy), j)
-                      for j, bb in boxes.items() if bb and bb[0] / 1000 * w <= cx <= bb[2] / 1000 * w
-                      and bb[1] / 1000 * h <= cy <= bb[3] / 1000 * h]
-            perf = min(inside)[1] if inside else None
+        perf: set = set()
+        if jbox is not None:   # the take's person: EVERY box over her (one read can list her more than once)
+            perf = {j for j, bb in boxes.items() if bb and _over_performer(bb, jbox, w, h)}
+        body = W.body_mask(d, jbox, uv) if perf else None
         for j, bb in boxes.items():
             if not bb:
                 continue
-            m = W.body_mask(d, jbox, uv) if j == perf else None
+            m = body if j in perf else None
             if m is None or not m.any():
                 x0, y0, x1, y1 = (v / 1000 for v in bb)
                 gx, gy = 0.15 * (x1 - x0), 0.05 * (y1 - y0)

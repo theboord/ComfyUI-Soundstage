@@ -41,3 +41,32 @@ def test_a_reworded_copy_of_the_example_is_an_echo(copied):
                                   "orange cable-knit sweater, black jeans", "hoodie and jacket"])
 def test_a_real_read_with_example_words_is_kept(real):
     assert vlm.wardrobe_of({"wardrobe": real}) == real
+
+
+# ------------------------------------------------------------------------------------------------ 2 duplicate people
+from soundstage.video2stage import pipeline, scanroute  # noqa: E402
+from test_v2s_dancer import _dancer_depth  # noqa: E402
+
+TAKE = {"frames": 1, "source_frames": [0], "focal_px": 500.0, "body": [[0]]}
+
+
+def _entry(label, box, h=400, w=300):
+    bb = [box[0] / w * 1000, box[1] / h * 1000, box[2] / w * 1000, box[3] / h * 1000]
+    return {"kind": "person", "label": label, "bbox_start": bb, "bbox_end": bb}
+
+
+@pytest.mark.parametrize("dup", ["same", "right_half"])
+def test_every_entry_over_the_performer_keeps_the_slab_behind_her(monkeypatch, dup):
+    pytest.importorskip("cv2")
+    d, uv, box, hgt = _dancer_depth(70)
+    monkeypatch.setattr(pipeline.performer, "sam_2d", lambda t, k, size: uv)
+    cx = (box[0] + box[2]) / 2
+    # 'same': legacy_breakdown's one person per inventory frame, never merged; 'right_half': a near-duplicate box
+    # ('dancer' beside 'woman dancing') that does not hold the joints' centre but lies mostly inside her joint box
+    box2 = list(box) if dup == "same" else [cx + 2, box[1], box[2] + 0.05 * hgt, box[3]]
+    bd = {"objects": [_entry("woman dancing", box), _entry("dancer", box2)]}
+    masks = scanroute.people_masks(bd, [d], [0.0], 1.0, take=TAKE, fps=24.0)
+    assert set(masks) == {"p0", "p1"}
+    cut = scanroute.without_people(d, masks, 0)
+    assert np.isnan(cut[195, 150])                                  # her torso is out of the scan
+    assert np.isfinite(cut[300, 60]) and np.isfinite(cut[200, 250])  # the slab 0.5 m behind her stays in it
