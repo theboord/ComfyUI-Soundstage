@@ -48,6 +48,7 @@ test("host.cut.panel(): the very CutPanel object while the Cut is mounted and sh
 test("the App builds the Cut view hidden and shows it only on the Cut step (what panel() keys on)", () => {
   assert.match(SRC, /cutView\.hidden = true;/);
   assert.match(SRC, /cutView\.hidden = k !== "cut";/);
+  assert.match(askHost(), /show: \(\) => showView\("cut"\)/, "host.cut.show() opens the Cut, so panel() then returns it");
 });
 
 test("host.project() always settles: a read that hangs resolves {name, id: null} after the timeout", async () => {

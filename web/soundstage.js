@@ -3379,7 +3379,7 @@ function createStageWidget(node, inputName) {
       // shot length. Each change is undone by the co-pilot's one Undo for its plan.
       stage: stageHook(stage),                // {toJSON, select, setPose, snapshot, restore, undo} (web/hosthooks.mjs)
       quality: qualityHost,
-      cut: { setTransition: (edit, type) => cut.setTransition(edit, type), undo: () => cut.undo(), panel: cutPanelHook(cut, cutView) },
+      cut: { setTransition: (edit, type) => cut.setTransition(edit, type), undo: () => cut.undo(), panel: cutPanelHook(cut, cutView), show: () => showView("cut") },
       project: projectHook(),                 // async () => {name, id}: the open project (id confirmed, else null)
       lights: exposureHook(stage),            // "lights down": {get(), set(stops), down(stops), reset()}, stage undo
       shotLength: (secs) => {
