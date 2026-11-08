@@ -62,7 +62,7 @@ import { REGEN_LABEL, chooseLocks, regenBody, mergeLocked, stagesLine, fixBody, 
 import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
 import "./models/panel.mjs";   // Models… panel (sets globalThis.__ssOpenModels / __ssModelsNotice)
 import { mountDirector } from "./agent/directorpanel.mjs";
-import { cutSigOf, qualityHook, smoothAgentShots } from "./hosthooks.mjs";   // host.cutSig and host.quality for the Director and Ask
+import { cutSigOf, qualityHook, smoothAgentShots, projectHook } from "./hosthooks.mjs";   // host.cutSig and host.quality for the Director and Ask
 import { mountAsk } from "./agent/ask.mjs";
 import { mountBook } from "./book/book.mjs";
 import { mountPresets } from "./ui/presets.mjs";
@@ -3380,6 +3380,7 @@ function createStageWidget(node, inputName) {
       stage: { toJSON: () => stage.toJSON(), select: (id) => stage.select(id) },
       quality: qualityHost,
       cut: { setTransition: (edit, type) => cut.setTransition(edit, type), undo: () => cut.undo() },
+      project: projectHook(),                 // async () => {name, id}: the open project (id confirmed, else null)
       shotLength: (secs) => {
         const s = stage.toJSON(), was = Math.round(s.shot.frames / s.shot.fps);
         dur.input.value = String(secs); dur.input.dispatchEvent(new Event("input"));
