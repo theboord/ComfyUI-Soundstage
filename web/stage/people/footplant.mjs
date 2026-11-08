@@ -78,6 +78,7 @@ export const FOOT = {
   edge: 0.02,                    // the ground under one sole is off its plane by more than this: an edge or a step (the foot sits flat on the top)
   straddle: 0.1, sideMax: 0.2,   // a foot down across a break this high from the body's footing (a platform's edge, a kerb or a
   sideLow: 0.08,                 // box beside the body; a swinging foot counts while its sole is under sideLow) moves the
+  shoeSide: 0.06,                // the shoe's upper past its sole points, for the shift's re-check against a wall (an alley)
                                  // whole body sideways, up to sideMax, onto its own ground (plan.shift)
   dropOK: 0.02,                  // a planted frame the leg can reach only with the hips down more than this is not planted ...
   supportDrop: 0.06,             // ... unless it's the only foot down, up to this much (a short dip, not both feet in the air)
@@ -321,7 +322,7 @@ export const rampWeight = (d, ramp) => (d <= 0 ? 1 : d > ramp ? 0 : smooth01(1 -
  * Returns {n, state: {l: Uint8Array, r}, w: {l: Float32Array, r}, pos: {l: Float64Array(3n)}, quat: {l: Float64Array(4n)},
  * gy: {l: Float64Array(n)}, segs, steps} or null (no rig). state: 0 free, 1 planted, 2 stepping, 3 blending in / out.
  */
-export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder = null, poseRaw, ground, baseY = () => 0, T = FOOT }) {
+export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder = null, poseRaw, ground, baseY = () => 0, blocked = null, T = FOOT }) {
   if (!rig || !mesh || !n) return null;
   // the shortest stance is a time (T.minStance frames at 24 fps): at 12 fps a 2-frame plant is as long, and dropping it
   // left a run up a 20 degree hill with no foot down for 6 frames (half a second)
@@ -479,6 +480,14 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
         }
       }
       if (worst <= T.straddle * k) continue;
+      // not on a flight of stairs, straight or oblique: the body itself climbs or descends there (its footing changes
+      // by more than half a straddle within ~0.5 s either way), and a riser met at an angle passes the along-the-way
+      // test below on one side; shifting the body there put it beside the steps (a climb at ~15 degrees to the risers:
+      // up to 61 frames shifted by 18 cm)
+      {
+        const Rb = Math.max(1, Math.round(0.5 * fps));
+        if (Math.abs(baseY(Math.min(n - 1, f + Rb)) - baseY(Math.max(0, f - Rb))) > 0.5 * T.straddle * k) continue;
+      }
       // only a break that runs along the body's way (an edge or a kerb beside it): the points off the footing are
       // still off it a quarter metre ahead and behind. A riser across the way (a step up onto a 40 cm crate) is
       // stepped onto, not walked round: shifting the body there put it beside the crate
@@ -521,6 +530,48 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
       let sx = 0, sz = 0, c = 0;
       for (let g = Math.max(0, f - Ra); g <= Math.min(n - 1, f + Ra); g++) { sx += skip[g] ? 0 : held[2 * g]; sz += skip[g] ? 0 : held[2 * g + 1]; c++; }
       shift[2 * f] = sx / c; shift[2 * f + 1] = sz / c;
+    }
+    // Faded out before (and in after) the frames off the feet (a swim, a seat, a lift, the air): the shared root
+    // motion is back at 0 on the last grounded frame, so the rig's own pose takes over from an unshifted body.
+    {
+      let lastSkip = -Infinity;
+      const dPrev = new Float64Array(n);
+      for (let f = 0; f < n; f++) { if (skip[f]) lastSkip = f; dPrev[f] = f - lastSkip; }
+      let nextSkip = Infinity;
+      for (let f = n - 1; f >= 0; f--) {
+        if (skip[f]) { nextSkip = f; continue; }
+        const d = Math.min(dPrev[f], nextSkip - f);
+        if (Number.isFinite(d)) { const e = Math.max(0, Math.min(1, (d - 1) / Ra)); shift[2 * f] *= e; shift[2 * f + 1] *= e; }
+      }
+    }
+    // Checked again, frame by frame, against what is under BOTH feet once shifted (an alley: a kerb on one side and a
+    // wall on the other; the shift off the kerb must not put the far shoe into the wall): any sole point that lands on
+    // ground higher than the body's footing by a straddle, where it was not before, halves the shift (three times,
+    // then none).
+    for (let f = 0; f < n; f++) {
+      let sx = shift[2 * f], sz = shift[2 * f + 1];
+      if (!sx && !sz) continue;
+      const by0 = baseY(f), gx = slope[2 * f], gz = slope[2 * f + 1], rx = rootP[3 * f], rz = rootP[3 * f + 2];
+      const plane = (x, z) => by0 + gx * (x - rx) + gz * (z - rz);
+      // (the sole points are inside the shoe's outline: the upper is wider, so the test reaches T.shoeSide past them
+      // the way the body moves)
+      const hits = (dx, dz) => {
+        const m = Math.hypot(dx, dz), ex = m > 1e-9 ? (dx / m) * T.shoeSide * k : 0, ez = m > 1e-9 ? (dz / m) * T.shoeSide * k : 0;
+        for (const lr of SIDES) {
+          const K = rig[lr].sole.length, Wd = raw[lr].world;
+          for (let q = 0; q < K; q++) {
+            const i = 3 * (K * f + q), x = Wd[i] + ex, z = Wd[i + 2] + ez;
+            const before = ground(x, z, f) - plane(x, z), after = ground(x + dx, z + dz, f) - plane(x + dx, z + dz);
+            if (after > T.straddle * k && after > before + 1e-4) return true;
+            // a wall (too high to stand on, so ground() never sees it): blocked(x, z, f) from the caller
+            if (blocked && blocked(x + dx, z + dz, f) && !blocked(x, z, f)) return true;
+          }
+        }
+        return false;
+      };
+      let tries = 0;
+      while ((sx || sz) && hits(sx, sz)) { if (++tries > 3) { sx = 0; sz = 0; break; } sx *= 0.5; sz *= 0.5; }
+      shift[2 * f] = sx; shift[2 * f + 1] = sz;
     }
     // the clip's feet, hips and body as the shifted body poses them
     for (let f = 0; f < n; f++) {

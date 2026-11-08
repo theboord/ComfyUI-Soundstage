@@ -732,7 +732,7 @@ function footPlanFor(stage, a, g, skin, { last, fps, scale }) {
   if (C.feetUpReason(a, { tipped: tippedNow(g), floats: !!stage._floatsInShot?.(a) })) return null;
   const shapes = stage.root ? stage._supportShapes?.() : null;
   const swim = swimPlanOf(stage, a, g);
-  const sig = `${skin.gait.sig}|${stage.setFx?.id || ""}|${idOf(shapes)}|${idOf(stage._yCache?.get(a))}|${idOf(stage._swimCache?.get(a)?.stand)}|${idOf(swim)}|${physicsLift(a)}|${skin.kit.floors ? 1 : 0}`;
+  const sig = `${skin.gait.sig}|${stage.setFx?.id || ""}|${idOf(shapes)}|${idOf(stage._yCache?.get(a))}|${idOf(stage._swimCache?.get(a)?.stand)}|${idOf(swim)}|${physicsLift(a)}|${skin.kit.floors ? 1 : 0}|${a.pose || ""}|${a.mount_id || ""}|${a.mount_at ?? ""}`;
   if (skin.feet?.sig === sig) return skin.feet.plan;
   // A live drag (a key, the gizmo, a person dragged) changes the plan on every pointer move. A 5 s shot rebuilds in
   // ~20 ms, a 30 s one in ~115 ms: past LIVE_PLAN_FRAMES the feet keep the clip's own pose while the drag lasts and
@@ -763,10 +763,19 @@ function footPlanFor(stage, a, g, skin, { last, fps, scale }) {
     return Math.max(s, OK[i]);
   };
   const lifted = physicsLift(a) > 0;
+  // a wall or anything too tall to step onto, at foot height (the shift's re-check, footplant planFeet)
+  const tall = 0.6 * C.clayHeight(a) * (a.scale || 1) / 1.8;
+  const blocked = shapes ? (x, z, f) => {
+    const by = BY[fi(f)];
+    for (const sh of shapes) if (x >= sh.min[0] && x <= sh.max[0] && z >= sh.min[2] && z <= sh.max[2] && sh.min[1] < by + 0.3 && sh.max[1] > by + tall) return true;
+    return false;
+  } : null;
   // per frame: the same gate (lifted by physics, in the air) marks the frames not grounded
   const plan = F.planFeet({
-    n: last + 1, fps, heightM: C.clayHeight(a) * (a.scale || 1), rig, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, ground, baseY,
-    poseRaw: (f) => { poseRaw(stage, a, g, skin, f, { fps, scale, last }); return !C.feetUpReason(a, { lifted, airborne: !!AIR[fi(f)], swims: C.swimsAt(a, f, () => swim) }); },
+    n: last + 1, fps, heightM: C.clayHeight(a) * (a.scale || 1), rig, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, ground, baseY, blocked,
+    // (seated frames too: a person who walks to a chair and sits, stage._sitSpec per frame; the body shift fades out
+    // before them, footplant planFeet)
+    poseRaw: (f) => { poseRaw(stage, a, g, skin, f, { fps, scale, last }); return !C.feetUpReason(a, { lifted, airborne: !!AIR[fi(f)], swims: C.swimsAt(a, f, () => swim), sits: !!stage._sitSpec?.(a, fi(f)) }); },
   });
   skin.feet = { sig, plan };
   return plan;
