@@ -134,6 +134,10 @@ know which project a memory belongs to, so it must not move to a different proje
   Still open: a save that settled just before the other tab's write landed says confirmed although the disk has
   moved on. `projectId()` can then report a stale id until the next check (at most 15 s, or the next Save/Open). In
   a 200-trial test with random delays this happened in 2-8 of 400 saves; the two files never disagreed at the end.
+- **Known limit, two pages creating the same new name at once:** New project checks whether the name is taken and
+  then saves (`projectbar.newProject`, then `store._save`). With no lock between the check and the write, two pages
+  creating the same new project name at the same moment can both pass the check, and the two-saves settling above can
+  then leave both sharing one id. Not fixed; create a new project from one page at a time.
 - **New project under an existing name:** New project with the name of a saved project asks "Replace project?"
   first. No writes nothing; Yes saves the template with `replace: true`, so it gets a fresh id and a new `created`
   and a tab still holding the old project never adopts the template's id.

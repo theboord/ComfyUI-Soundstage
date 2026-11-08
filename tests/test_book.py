@@ -774,3 +774,29 @@ def test_forget_unprefixed_ref_only_in_another_project_is_never_ok_with_nothing_
         assert TYPED_P5 not in film3.read_text()
     finally:
         ST._OVERRIDE = None
+
+
+def test_collected_same_name_foreign_id_is_scoped_out(tmp_path):
+    """A collected folder named like this project but whose project.json carries another project's id (e.g. collected
+    on another machine) is another project's copy: the ids decide, the folder name is only a fallback when an id is
+    missing, so forgetting a shared turn ref here never deletes that unrelated project's note."""
+    books, user, col = tmp_path / "books", tmp_path / "user", tmp_path / "output" / "soundstage_projects"
+    ST._OVERRIDE = str(books)
+    try:
+        (user / "workflows").mkdir(parents=True)
+        (user / "workflows" / "P.json").write_text(json.dumps(_wf_of("p_11111111", "P", [_dec("n_mine", ref=":turn_3")])))
+        f = col / "P"
+        (f / "script").mkdir(parents=True)
+        (f / "project.json").write_text(json.dumps({"format": "soundstage-project", "id": "p_22222222", "name": "P",
+                                                    "workflow": _wf_of("p_22222222", "P", [_dec("n_theirs", ref=":turn_3")])}))
+        (f / "script" / "directors_book.json").write_text(json.dumps({"notes": [_dec("n_theirs", ref=":turn_3")]}))
+        res = ST.forget([":turn_3"], [user / "workflows", user / "projects", col], {"id": "p_11111111", "name": "P"})
+        assert "n_theirs" in (f / "script" / "directors_book.json").read_text(), res
+        assert "n_theirs" in (f / "project.json").read_text(), res
+        assert "n_mine" not in (user / "workflows" / "P.json").read_text(), res
+        # the same folder with no id in its manifest falls back to the folder name: it is this project's copy
+        (f / "project.json").write_text(json.dumps({"format": "soundstage-project", "name": "P"}))
+        res2 = ST.forget(["n_theirs"], [user / "workflows", user / "projects", col], {"id": "p_11111111", "name": "P"})
+        assert "n_theirs" not in (f / "script" / "directors_book.json").read_text(), res2
+    finally:
+        ST._OVERRIDE = None

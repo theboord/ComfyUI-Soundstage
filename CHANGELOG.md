@@ -5,6 +5,20 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-07
 
+**Close-out, 2026-11-07: a collected copy is judged by id first (private branch `private/project-id`)**
+
+- **Still wrong (read first, known limits):** checked with Node and pytest only, not in the browser, the App or a live
+  ComfyUI.
+  - **Two pages creating the same NEW project name at the same moment can end up sharing one id:** New project checks
+    the name and then saves (`web/project/projectbar.mjs` `newProject`, `store._save`) with no lock between, so both
+    pages can pass the check. Not fixed (`docs/projects.md`).
+- **Forget could delete an unrelated project's note from a collected copy (`soundstage/book/store.py` `forget`,
+  `collected_scope`):** a collected folder (`output/soundstage_projects/<name>/`) with this project's folder name was
+  taken as in scope before its `project.json` id was read, so a same-named copy of a different project (other id)
+  lost its note to a shared turn ref. The ids now decide whenever both sides carry one; the folder name or the
+  manifest's name decides only when an id is missing (`tests/test_book.py`
+  `test_collected_same_name_foreign_id_is_scoped_out`, fails on ead9677).
+
 **Sixth review fixes, 2026-11-07 night: New project over an existing name, multi-line Ask notes, the Forget everywhere retry (private branch `private/project-id`)**
 
 - **Still wrong (read first, known limits):** checked with Node and pytest only, not in the browser, the App or a live

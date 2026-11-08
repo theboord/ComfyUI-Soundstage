@@ -255,17 +255,26 @@ def forget(ids, roots, project=None, everywhere=False) -> dict:
 
     def collected_scope(root, folder):
         """A collected copy (output/soundstage_projects/<folder>/): its script/directors_book.json names no project,
-        so the whole folder is judged once: the forgetting project's folder name, or its project.json (the collected
-        manifest, whose "workflow" carries extra.ss_project) naming this project. Else another project's copy."""
+        so the whole folder is judged once, by its project.json (the collected manifest, whose "workflow" carries
+        extra.ss_project): when both it and the forgetting project carry an id, the ids decide (a same-named folder of
+        another project, e.g. one collected from another machine, is out of scope); only when an id is missing does
+        the folder name or the manifest's name decide. Else another project's copy."""
         if folder in cscope:
             return cscope[folder]
-        sc = bool(pfolder) and folder == pfolder
-        if not sc:
-            try:
-                with open(os.path.join(root, folder, "project.json"), encoding="utf-8") as f:
-                    sc = bool(_in_scope(*_ident(json.load(f)), pid, pname))
-            except (OSError, ValueError):
-                sc = False
+        fid = fname = None
+        try:
+            with open(os.path.join(root, folder, "project.json"), encoding="utf-8") as f:
+                man = json.load(f)
+            fid, fname = _ident(man)
+            if fid is None and isinstance(man, dict) and isinstance(man.get("workflow"), dict):
+                wid, wname = _ident(man["workflow"])
+                fid, fname = wid, fname or wname
+        except (OSError, ValueError):
+            pass
+        if pid and fid:
+            sc = fid == pid
+        else:
+            sc = (bool(pfolder) and folder == pfolder) or bool(_in_scope(fid, fname, pid, pname))
         cscope[folder] = sc
         return sc
 
