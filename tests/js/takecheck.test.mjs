@@ -82,12 +82,12 @@ test("readiness: server needs + the graph's loaders, per step", () => {
   assert.equal(readinessChip(r.deliver).text, "Ready*");
 });
 
-let tcDir = "";
 const FFMPEG = (() => { try { execFileSync("ffmpeg", ["-version"], { stdio: "ignore" }); return true; } catch { return false; } })();
 
-test("the recipe travels in the MP4: written by ffmpeg, read back by the App", { skip: !FFMPEG && "ffmpeg not installed" }, async () => {
-  // The temp folder is removed in finally (one ss-tc-* folder was left behind per run).
-  const dir = (tcDir = mkdtempSync(join(tmpdir(), "ss-tc-")));
+// Writes two tiny MP4s with the recipe tag into a fresh ss-tc-* folder, checks the App reads it back, removes the
+// folder in finally (one ss-tc-* folder was left behind per run) and returns the folder's path.
+async function recipeRoundTrip() {
+  const dir = mkdtempSync(join(tmpdir(), "ss-tc-"));
   try {
     const out = join(dir, "take.mp4");
     const scene = { version: 2, camera: { position: [0, 1, -5], target: [0, 1, 0], focal_mm: 35 }, active_shot: "s1",
@@ -112,11 +112,18 @@ test("the recipe travels in the MP4: written by ffmpeg, read back by the App", {
       "-metadata", `soundstage=${JSON.stringify(rec)}`, "-movflags", "use_metadata_tags", late]);
     assert.deepEqual(recipeFromTags(await readFileTags(new Blob([readFileSync(late)]))).seeds, { video: 42 });
   } finally { rmSync(dir, { recursive: true, force: true }); }
+  return dir;
+}
+
+test("the recipe travels in the MP4: written by ffmpeg, read back by the App", { skip: !FFMPEG && "ffmpeg not installed" }, async () => {
+  await recipeRoundTrip();
 });
 
-test("the recipe test removes its ss-tc-* temp folder", { skip: !FFMPEG && "ffmpeg not installed" }, () => {
-  assert.ok(tcDir.includes("ss-tc-"), tcDir);
-  assert.equal(existsSync(tcDir), false, `left behind: ${tcDir}`);
+test("the recipe test removes its ss-tc-* temp folder", { skip: !FFMPEG && "ffmpeg not installed" }, async () => {
+  // Self-contained (review: it read a folder name left by the test above and failed when run alone).
+  const dir = await recipeRoundTrip();
+  assert.ok(dir.includes("ss-tc-"), dir);
+  assert.equal(existsSync(dir), false, `left behind: ${dir}`);
 });
 
 test("older takes: the recipe is rebuilt from ComfyUI's prompt tag", () => {
