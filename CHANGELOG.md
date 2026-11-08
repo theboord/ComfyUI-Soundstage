@@ -5,6 +5,12 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-08
 
+**Integration: `private/dancer-v2s`, `private/buoyancy`, `private/feet` and `private/ask-hooks` (with `private/project-id`) merged onto `private/stage-next` (private branch `private/lifelike`, 03:51 by this machine's clock)**
+
+- **Still wrong (read first):** checked with Node and Python tests only, on a loaded machine; not seen in the browser or the App, no GPU. **Not tested by any test:** a lifelike person who is seated (`setPose` sit / sit_floor) AND on a dock or deck over the water, or seated in the water: the seated branch places the body from `_sitSpec` alone. The combined avatar code (feet's foot grounding + ask-hooks' seated body + buoyancy's dock / deck height) was put together by hand at merge time; each branch's own tests pass on it, but no new test covers the combination.
+- **How the code conflicts were resolved** (details in each merge commit): `tests/js/tryit_scriptload.test.mjs` kept stage-next's replay wait (both branches fixed the same 900 ms flake); `web/stage/stage.mjs` kept stage-next's obstacle cache sizes, feet's walk-step constants, the union of both lighting imports, and ask-hooks' sit_floor clay pose without its old `_waterPhysics` call (buoyancy moved that call to the later pass); `web/stage/people/avatars.mjs`: the lifelike body's height takes `_standOnKeys` (dock / deck) first, then feet's `_walkHeightAt`; a seated person skips the foot plan; `feetUpReason` now also counts sitting. CHANGELOG: every entry of every branch kept, filed under its date. Knowledge pack regenerated after each merge.
+- **Tests:** JS (`node --test tests/js/*.test.mjs`, after the last merge): 1839 tests, 1835 passed, 2 failed, 1 skipped, 1 todo (the `tryit_edges` TODO). The 2 failures are the listed flakes (`footplant` "real Rocketbox: a key edit rebuilds the plan fast" timing, `oneclick_sweep`); both pass alone, 2 / 2 runs. Python (`python3 -m pytest tests -q`): 2172 passed, 25 skipped.
+
 **Last pass: a QA close() test that passed on the old code; what stays open (private branch `private/stage-next`, 00:20 by this machine's clock). No more rounds after this one.**
 
 - **Still wrong (read first):** checked with Node and Python tests only, with stand-in browsers, not with a real Chrome, the App or ComfyUI. **Known limits, left open:**
