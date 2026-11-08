@@ -5,6 +5,37 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-08
 
+**Cut shell, final round, 2026-11-08 02:06 (private branch `private/ask-hooks`, not pushed): the App measures every gap itself; only a structured "gaps" reason unlocks the gap path; Render missing shots refuses before queueing**
+
+- **Still wrong (read first, known limits):** Node and pytest only; not run in the browser, the App or a live
+  ComfyUI, and GPT's Cut code (gaps, upper tracks, `audio_detached`, `oneVideoSupport`) is still not on this machine,
+  so the gap shape `{kind: "gap", in, out}` is the agreed contract, not something seen.
+  - **Gap length is strict now:** `out - in` first; `frames` only when it is an integer; `duration` only when `in` and
+    `out` are both missing, read as seconds x the cut's exact fps (23.976 = 24000/1001). `length` is no longer read, and
+    a gap with only `in` or only `out` is refused. A cut that joined yesterday with `{kind: "gap", duration: 12}`
+    meaning 12 frames is refused today (it was read as frames; now it is 12 seconds, or refused without a rate).
+  - **A hook's plain-text reasons always refuse**, even "gaps (3)": a Cut that answers with strings instead of
+    `{code: "gaps"}` gets no gap path.
+  - **The fps the gaps are measured at** is the stage's `shot.fps` (the rate already sent to the join), not a rate on
+    the cut itself; if the Cut gains its own rate the two could disagree.
+  - **Render missing shots refuses the whole batch** when the join would refuse, so shots that could be rendered on
+    their own aren't (render them one by one in ⑤ Motion). The guard is also re-run by the join at the end, so a cut
+    edited during the batch is still checked.
+  - A gap whose `out - in` is fractional is rounded to the nearest frame, as before.
+- **Every gap measured by the App** ([web/onevideo.mjs](web/onevideo.mjs) `gapFrames`, `unmeasurableGaps`,
+  `checkOneVideo`): whatever `oneVideoSupport` (the Cut's or the local one) answers, a gap the App can't measure turns
+  the answer into a refusal ("This cut has 1 gap with no length it can read; one-video export can't include it yet.")
+  and `oneVideoClips` throws rather than dropping it, so the join never comes out shorter than the cut.
+- **Only `{code: "gaps"}` (or `"gap"`) marks a cut gaps-only** (`normalizeAnswer`); any other code or plain text is a
+  refusal, even "upper track gap overlaps".
+- **Render missing shots** ([web/soundstage.js](web/soundstage.js) `renderMissing`): runs the same guard on the raw
+  cut before queueing any Final ("... Nothing was queued."), so no GPU time is spent on a cut the join will refuse.
+- **Minor:** `audio_detached` counts only when truthy (0 / false / "" / null are not detached); the sentence says
+  "it" whenever there is a single reason.
+- Tests: [tests/js/onevideo.test.mjs](tests/js/onevideo.test.mjs) (a stub hook answering ok for `{kind: "gap", dur: 12}`,
+  `{in: 0, out: 36, duration: 1.5}` -> 36, NTSC seconds -> frames, the hook reason "upper track gap overlaps", the
+  Render missing shots guard before `app.queuePrompt`).
+
 **Cut shell for the new Cut, 2026-11-08 01:49 (private branch `private/ask-hooks`, not pushed): Cut → one video refuses what it can't honour and joins gaps frame-accurately; Collect walks the Cut**
 
 - **Still wrong (read first, known limits):** checked with Node, pytest and a local ffmpeg on invented clips only, not
@@ -17,7 +48,7 @@ Each entry links to the code; every milestone ships with tests.
   - **Still left out, as before, not refused:** transitions, opacity keys, titles, graphics, subtitles and the cut's
     sound tracks never were in the one-video join; it now names them on the result line ("left out: …, the Cut's
     Render has them") instead of refusing, so cuts that joined yesterday still join.
-  - **Gaps:** black and silent only; a gap's length is `frames` / `length` / `duration`, else `out - in`. A cut of only
+  - **Gaps:** black and silent only; a gap's length is `out - in` (superseded at 02:06, see above). A cut of only
     gaps is refused by the server. Video and stills are now trimmed by whole frames (was a duration in seconds), so a
     clip can come out a frame different from before at odd lengths (the old seconds rounding).
   - **Collect:** "raw path" means a media-file string with a slash, drive letter, `~`, `file:` or `http(s)`; a bare
