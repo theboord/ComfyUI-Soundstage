@@ -285,8 +285,8 @@ export function plungeTrack({ ky, v0 = 0, level, floor = 0, fps = 24, n, height 
  * overrides the speed-based one (or null), the hips height it puts them at (world y) and how much of it (0..1), the
  * swim mode ("surface" | "under" | null) and ground[f] (true: they stand / wade on the bottom there, off the swim
  * plan: the water is shallow enough for them, see canStand). In = {mode (swimMode), keyY[f] (keyed feet height),
- * over[f], level, floor, fps, height, hipY (hips over the feet standing), seed}. Each run of frames over the water
- * starts fresh:
+ * over[f], level, floor, fps, height, hipY (hips over the feet standing), seed, standHeight (their real height for
+ * canStand: the kind's default when none is set)}. Each run of frames over the water starts fresh:
  *   keyed above the surface they drop in feet first (plungeTrack: the plunge depth scales with the drop and stops
  *     above the floor), held in the streamlined "fall" pose on the way down, then kick up ("kickup") to the surface:
  *     never a standing or walking pose under water;
@@ -302,13 +302,13 @@ export function plungeTrack({ ky, v0 = 0, level, floor = 0, fps = 24, n, height 
  * plunge, then "wade" standing on the bottom with the head out); the other modes swim as chosen.
  * dive and the underwater strokes are not tracked here (the stage keeps them at their keyed depth).
  */
-export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, height = 1.8, hipY = 0.95, seed = 1 }) {
+export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, height = 1.8, hipY = 0.95, seed = 1, standHeight = height }) {
   const n = keyY.length, k = height / 1.8;
   const styles = new Array(n).fill(null), hipsY = new Array(n).fill(null), hipsW = new Array(n).fill(0), modes = new Array(n).fill(null);
   const ground = new Array(n).fill(false);
   const treadHips = level - 0.52 * k, struggleHips = level - 0.6 * k, backHips = level - 0.16 * k;
   const sinks = mode === "cant" || mode === "sink";
-  const shallow = canStand(level - floor, height) && (mode === "auto" || mode === "cant");
+  const shallow = canStand(level - floor, standHeight) && (mode === "auto" || mode === "cant");
   const blend = Math.max(1, Math.round(0.8 * fps));
   const modeOf = (feet) => feet + 0.9 * height < level ? "under" : "surface";
   let f = 0;

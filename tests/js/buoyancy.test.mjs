@@ -256,6 +256,26 @@ test("a person keyed above the surface drops in, goes under and comes up swimmin
   assert.equal(st._swimPlan(st.state.actors[0], st.actorMeshes.get("d")) != null, true, "on a swim plan: the lifelike body falls back to clay ('swims')");
 });
 
+test("water they can stand in: a 1.8 m man set to Can't swim stands in the 1.2 m lake and the 1.5 m open water (was: drowned, body at -0.47)", () => {
+  for (const set of ["lake", "open_water"]) {
+    clearSetCache();
+    const st = tank([man("c", 0, { swim: "cant" }), man("a", 0, { x: 3 })], { frames: 24 * 8 });
+    st.state.environment = { set }; st._buildSet(); st.setFrame(0);
+    const level = st.water.position.y;
+    assert.ok(B.canStand(level, 1.8), `${set}: ${level} m is standing depth for 1.8 m`);
+    for (let f = 0; f < 24 * 8; f += 8) {
+      st.setFrame(f);
+      for (const id of ["c", "a"]) {
+        assert.ok(headY(st, id) > level + 0.05, `${set} f${f} ${id}: head out (${headY(st, id).toFixed(2)})`);
+        assert.ok(hipsY(st, id) > 0.7, `${set} f${f} ${id}: standing on the bottom (hips ${hipsY(st, id).toFixed(2)})`);
+      }
+    }
+  }
+  // a 1.65 m woman can't stand in 1.5 m: Can't swim still struggles and sinks there
+  assert.equal(B.canStand(1.5, 1.65), false);
+  assert.equal(B.personTrack({ mode: "cant", keyY: new Array(48).fill(0), over: new Array(48).fill(true), level: 1.5, height: 1.65, hipY: 0.87 }).styles[12], "struggle");
+});
+
 // ------------------------------------------------------------------ the other paths that skipped the water
 test("Simulate & bake leaves things in the tank to the water; the Physics start height is a drop height, not a float in the air", () => {
   const st = tank([prop("c", "crate", 0, { x: -3, physics: { mode: "dynamic", lift: 4.5 } }), prop("b", "sphere", 0, { x: 3, physics: { mode: "dynamic", lift: 4.5 } })]);

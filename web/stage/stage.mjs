@@ -3710,8 +3710,9 @@ export class Stage {
       let track = null;
       // In a pool: the drop in, the kick up, and the modes that aren't a stroke (back float, can't swim, sink slowly).
       if (!reef && !(UNDER.includes(smode))) {
-        track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(a.id) });
-        for (let f = 0; f <= last; f++) if (track.modes[f]) mode[f] = track.modes[f];
+        track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(a.id), standHeight: (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1) });
+        // water they can stand in (auto / can't swim): on the bottom, off the swim plan, the gait walks them (wading)
+        for (let f = 0; f <= last; f++) if (track.modes[f]) mode[f] = track.modes[f]; else if (track.ground[f]) mode[f] = null;
       }
       plan = Swim.planSwim({ pos, yaw, mode, fps, height: h, style, seed: Swim.seedOf(a.id), gear,
         styles: track?.styles || null, hipsY: track?.hipsY || null, hipsW: track?.hipsW || null });
@@ -4803,6 +4804,7 @@ export class Stage {
     if (!PERSON_KINDS.has(a.kind) || a.mount_id || a.carry_id || !this.water || !a.mocap) return false;
     const level = this.water.position.y;
     if (level < 0.3) return false;                               // the beach's sea is a surface, not a pool
+    if (Buoy.canStand(level, (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1))) return false;   // shallow enough to stand in
     const keys = this._actorKeys(a), last = this._lastFrame(), w = this.water;
     const sig = `${keysHash(keys)}|${last}|${level}|${w.position.x},${w.position.z}|${w.geometry?.parameters?.width},${w.geometry?.parameters?.height}`;
     this._floatCache ||= new WeakMap();
@@ -4882,6 +4884,9 @@ export class Stage {
     if (a.mount_id || a.carry_id || LIBRARY[a.kind]?.flies) return;
     const level = this.water.position.y;
     if (level < 0.3) return;                                    // the beach's sea is a surface, not a pool
+    // People: on a swim plan (the clay), or standing / wading where they can stand (personTrack ground). Only a
+    // video-mocap person in water too deep to stand in floats here.
+    if (PERSON_KINDS.has(a.kind) && (!a.mocap || Buoy.canStand(level, (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1)))) { g.userData.inWater = false; return; }
     const p = this._actorPosAt(a, this.frame);
     if (!this._overWater(p[0], p[2])) { g.userData.inWater = false; return; }
     const fps = this.state.shot?.fps || 24;

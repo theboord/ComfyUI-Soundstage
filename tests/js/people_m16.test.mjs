@@ -400,10 +400,13 @@ test("swimming off (can't swim) in a pool: the person stays clay for the shot ('
   const g = clayOf(st, a);
   const skin = A.attachKit(st, a, g, stubKit());
   await null;
-  st.water = { position: new THREE.Vector3(0, 1.2, 0), geometry: { parameters: { width: 4, height: 4 } } };
-  st.frame = 0; A.avatarsAt(st);   // still on dry ground at frame 0, but the shot ends in the pool
+  st.water = { position: new THREE.Vector3(0, 2.5, 0), geometry: { parameters: { width: 4, height: 4 } } };
+  st.frame = 0; A.avatarsAt(st);   // still on dry ground at frame 0, but the shot ends in the (2.5 m deep) pool
   assert.equal(skin.shown, false);
   assert.equal(skin.reason, "swims");
+  st.water.position.y = 1.2;   // a 1.8 m man can stand in 1.2 m: he wades, the lifelike body shows
+  A.avatarsAt(st);
+  assert.equal(skin.shown, true);
   st.water.position.y = 0.1;   // the beach's sea surface: no floating
   A.avatarsAt(st);
   assert.equal(skin.shown, true);
