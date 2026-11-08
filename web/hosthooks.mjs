@@ -12,6 +12,8 @@
 //                                           confirmed against its saved project.json, else null (window.__ssProject)
 //   cutPanelHook(cut, view) -> () => CutPanel | null   the live Cut panel object (host.cut.panel()), null unmounted
 //   exposureHook(stage)  -> {get(), set(stops), down(stops?), reset()}   the stage's "lights down" dimmer (host.lights)
+//   stageHook(stage)     -> {toJSON, select, setPose, snapshot, restore, undo}   host.stage for Ask: its edits plus a
+//                                           way to take them back (snapshot() before, restore(snap) after; undo())
 
 import { DEFAULT_PRESET } from "./motion/ltxadvanced.mjs";
 import { markNewShots } from "./stage/camcurve.mjs";
@@ -172,5 +174,24 @@ export function exposureHook(stage) {
       return set(get() - n);
     },
     reset: () => set(0),
+  };
+}
+
+/**
+ * host.stage for Ask: the set edits Ask may make (select, setPose; lights go through host.lights) and how Ask takes
+ * them back. snapshot() -> string (the whole scene) before an edit; restore(snap) puts that scene back as ONE new undo
+ * step (so the person can still Undo Ask's restore), {ok, changed} or {ok: false, error}; undo() is the stage's own
+ * Undo (the LAST step, whoever made it; {ok: false} when there is nothing to undo). Prefer snapshot / restore: a
+ * stage undo() takes back the person's own edit if they made one after Ask's.
+ */
+export function stageHook(stage) {
+  const S = () => (typeof stage === "function" ? stage() : stage);
+  return {
+    toJSON: () => S().toJSON(),
+    select: (id) => S().select(id),
+    setPose: (id, pose, opts) => S().setPose(id, pose, opts),
+    snapshot: () => S().snapshot(),
+    restore: (snap) => S()?.restoreSnapshot?.(snap) ?? { ok: false, error: "no stage" },
+    undo: () => ({ ok: !!S()?.undo?.() }),
   };
 }

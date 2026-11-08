@@ -11,18 +11,26 @@ import { Stage } from "../../web/stage/stage.mjs";
 import { buildObject } from "../../web/stage/library.mjs";
 import * as C from "../../web/stage/people/avatarcore.mjs";
 import * as A from "../../web/stage/people/avatars.mjs";
+import { stageHook } from "../../web/hosthooks.mjs";
 
 function sitStage(actors) {
   const st = Object.create(Stage.prototype);
   st.state = { shot: { frames: 9, fps: 24 }, shots: [{ id: "s", camera_keys: [{ frame: 0, position: [0, 1.6, 6], target: [0, 1, 0], focal_mm: 35 }] }], active_shot: "s", actors };
   st.actorMeshes = new Map(); st.frame = 0; st.camera = new THREE.PerspectiveCamera();
   Object.defineProperty(st, "fw", { value: 1280 }); Object.defineProperty(st, "fh", { value: 720 });
-  st.render = () => {}; st.undo = 0; st.onChange = () => { st.undo++; }; st.scene = new THREE.Scene();
-  for (const a of actors) {
-    const g = buildObject(a.kind, a.height_m, (geom, color) => new THREE.Mesh(geom, new THREE.MeshBasicMaterial({ color })), a.appearance);
-    g.position.set(...a.position); g.rotation.y = THREE.MathUtils.degToRad(a.rotation_deg || 0); g.userData.actorId = a.id;
-    st.scene.add(g); st.actorMeshes.set(a.id, g);
-  }
+  st.render = () => {}; st.undo = 0; st.onChange = () => { st.undo++; }; st.scene = new THREE.Scene(); st.root = new THREE.Group();
+  // The set's meshes, rebuilt the way the App's _buildSet does after a restore / undo (headless: just the objects).
+  st._buildSet = () => {
+    for (const g of st.actorMeshes.values()) st.scene.remove(g);
+    st.actorMeshes = new Map();
+    for (const a of st.state.actors) {
+      const g = buildObject(a.kind, a.height_m, (geom, color) => new THREE.Mesh(geom, new THREE.MeshBasicMaterial({ color })), a.appearance);
+      g.position.set(...a.position); g.rotation.y = THREE.MathUtils.degToRad(a.rotation_deg || 0); g.userData.actorId = a.id;
+      st.scene.add(g); st.actorMeshes.set(a.id, g);
+    }
+  };
+  st._applySun = () => {};
+  st._buildSet();
   st.setFrame(0); st.setFrame(0);
   return st;
 }
@@ -85,7 +93,8 @@ test("setPose refusals change nothing", () => {
 test("Ask's host.stage.setPose is the stage's", () => {
   const app = readFileSync(new URL("../../web/soundstage.js", import.meta.url), "utf8");
   const a = app.indexOf("node.ssAsk = mountAsk(");
-  assert.match(app.slice(a, app.indexOf("mountProjectBar(", a)), /setPose: \(id, pose, opts\) => stage\.setPose\(id, pose, opts\)/);
+  const host = app.slice(a, app.indexOf("mountProjectBar(", a));
+  assert.match(host, /stage: stageHook\(stage\)/);
 });
 
 test("a person sitting on a chair or the floor is not sent back to the clay", () => {
@@ -95,6 +104,87 @@ test("a person sitting on a chair or the floor is not sent back to the clay", ()
   const st = sitStage([man("p1", 0), prop("h", "horse", 2, 1.6)]);
   st.mount("p1", "h");
   assert.equal(st._sitSpec(st.state.actors[0]), null, "riding is not sitting");
+});
+
+const walker = (id) => ({ id, name: "Jane Doe", kind: "woman", height_m: 1.7, position: [0, 0, 0],
+  keys: [{ frame: 0, position: [0, 0, 0] }, { frame: 4, position: [4, 0, 0] }, { frame: 8, position: [8, 0, 0] }] });
+
+test("setPose keeps the person's movement keys: sit then stand, sit then sit_floor then stand", () => {
+  const st = sitStage([walker("w"), prop("c1", "chair", 1.2, 0.9)]);
+  const keys = JSON.stringify(st.state.actors[0].keys);
+  assert.equal(st.setPose("w", "sit").on, "c1");
+  assert.equal(JSON.stringify(st.state.actors[0].keys), keys, "sitting leaves the keys");
+  assert.equal(st.setPose("w", "stand").changed, true);
+  assert.equal(JSON.stringify(st.state.actors[0].keys), keys, "standing up leaves the walk 0 to 8 m");
+  assert.equal(st.state.actors[0].mount_id, undefined);
+  assert.equal(st.setPose("w", "sit").ok, true);
+  assert.equal(st.setPose("w", "sit_floor").ok, true);
+  assert.equal(st.state.actors[0].pose, "sit_floor");
+  assert.equal(JSON.stringify(st.state.actors[0].keys), keys, "sit to sit_floor leaves the keys");
+  assert.equal(st.setPose("w", "stand").ok, true);
+  assert.equal(JSON.stringify(st.state.actors[0].keys), keys);
+  st.setFrame(8);
+  assert.ok(Math.abs(st.actorMeshes.get("w").position.x - 8) < 1e-6, "she walks her path again");
+});
+
+test("setPose seats: one person per seat, real seats ahead of a table / cube / rock, too-high seats refused", () => {
+  // occupancy
+  let st = sitStage([man("p1", 0), man("p2", 0.3), prop("c1", "chair", 0.8, 0.9), prop("c2", "chair", -1.0, 0.9)]);
+  assert.equal(st.setPose("p1", "sit", { on: "c1" }).on, "c1");
+  let r = st.setPose("p2", "sit", { on: "c1" });
+  assert.equal(r.ok, false); assert.match(r.error, /'chair' is taken by 'Jon Doe'/);
+  assert.equal(st.setPose("p2", "sit").on, "c2", "the nearest FREE chair");
+  // ranking: a chair 1.2 m away beats a table 0.4 m, a cube 0.5 m and a rock 0.6 m away
+  st = sitStage([man("p1", 0), prop("t", "table", 0.4, 0.75), prop("cu", "cube", 0, 1, 0.5), prop("r", "rock", -0.6, 0.8), prop("c1", "chair", 0, 0.9, -1.2)]);
+  assert.equal(st.setPose("p1", "sit").on, "c1");
+  st = sitStage([man("p1", 0), prop("t", "table", 0.4, 0.75), prop("cu", "cube", 0, 1, 0.9)]);
+  assert.equal(st.setPose("p1", "sit").on, "t", "with no real seat near, the nearest perch");
+  // too high: a 3 m cube (seat 3 m), a chair at scale 4 (seat 1.88 m); a 1 m cube (seat 1 m) is fine for an adult
+  st = sitStage([man("p1", 0), prop("big", "cube", 0.5, 3), { ...prop("giant", "chair", -0.5, 0.9), scale: 4 }, prop("ok", "cube", 3, 1)]);
+  const before = JSON.stringify(st.state), u0 = st.undo;
+  r = st.setPose("p1", "sit", { on: "big" });
+  assert.equal(r.ok, false); assert.match(r.error, /too high to sit on \(seat 3\.00 m, at most 1\.08 m/);
+  r = st.setPose("p1", "sit", { on: "giant" });
+  assert.equal(r.ok, false); assert.match(r.error, /too high to sit on \(seat 1\.88 m/);
+  r = st.setPose("p1", "sit");
+  assert.equal(r.ok, false); assert.match(r.error, /nothing to sit on within 1\.5 m .*none free and low enough/);
+  assert.equal(JSON.stringify(st.state), before); assert.equal(st.undo, u0);
+  assert.equal(st.setPose("p1", "sit", { on: "ok" }).ok, true);
+});
+
+test("Ask can take back a setPose: snapshot() before, restoreSnapshot() after (one undo step), bad snapshots refused", () => {
+  const st = sitStage([walker("w"), prop("c1", "chair", 1.2, 0.9)]);
+  const snap = st.snapshot(), u0 = st.undo;
+  st.setPose("w", "sit");
+  assert.deepEqual(st.restoreSnapshot(snap), { ok: true, changed: true });
+  assert.equal(JSON.stringify(st.state), snap);
+  assert.equal(st.undo, u0 + 2, "the restore is one more undo step (the person can Undo it)");
+  assert.deepEqual(st.restoreSnapshot(snap), { ok: true, changed: false });
+  for (const bad of [null, 3, "{", "[]", "{\"x\":1}"]) {
+    const r = st.restoreSnapshot(bad);
+    assert.equal(r.ok, false, String(bad)); assert.match(r.error, /snapshot/);
+  }
+  assert.equal(JSON.stringify(st.state), snap);
+});
+
+test("Ask's host.stage (stageHook): setPose, snapshot / restore and undo on the real stage", () => {
+  const st = sitStage([walker("w"), prop("c1", "chair", 1.2, 0.9)]);
+  delete st.undo;   // the harness counts onChange in st.undo; here the stage's own Undo runs
+  st.resetHistory();
+  st.onChange = () => { st._record(); };   // the App's onChange records the undo step
+  globalThis.window ??= {};
+  const host = stageHook(st);
+  const snap = host.snapshot();
+  assert.equal(host.setPose("w", "sit").on, "c1");
+  assert.equal(st.state.actors[0].mount_id, "c1");
+  assert.deepEqual(host.restore(snap), { ok: true, changed: true });
+  assert.equal(st.state.actors[0].mount_id, undefined, "Ask took its sit back");
+  assert.deepEqual(host.undo(), { ok: true }, "the person can Undo Ask's restore");
+  assert.equal(st.state.actors[0].mount_id, "c1");
+  assert.deepEqual(host.undo(), { ok: true });
+  assert.equal(st.state.actors[0].mount_id, undefined);
+  assert.deepEqual(host.undo(), { ok: false }, "nothing left to undo");
+  assert.equal(host.restore(42).ok, false);
 });
 
 // ---------------------------------------------------------------- the real lifelike bodies

@@ -209,7 +209,12 @@ export const CAR_SHOTS = {
 };
 const LIFT_FRAMES = 8;
 const RIDEABLE = new Set(["horse", "bicycle", "motorcycle"]);
-const SITTABLE = new Set(["chair", "bench", "sofa", "armchair", "couch", "stool"]);
+const SITTABLE = new Set(["chair", "bench", "sofa", "armchair"]);
+// setPose("sit") picks these real seats ahead of the other things a person can perch on (a table, cube, rock, a prop).
+const REAL_SEATS = SITTABLE;
+// The highest seat a person can sit on with setPose (metres above the prop's base): 0.6 x their height, at least 0.8 m
+// (an adult 1.8 m: 1.08 m, so a 1 m cube is fine and a 3 m cube or a chair scaled x4, seat 1.88 m, is refused).
+const MAX_SEAT_FRAC = 0.6, MAX_SEAT_MIN_M = 0.8;
 const NEVER_CARRIED = new Set(["horse", "cow", "car", "police_car", "sports_car", "hatchback", "truck", "bus", "bicycle", "motorcycle", "tree", "house", "building", "wall",
   "fridge", "wardrobe", "kitchen_counter", "bath", "bookshelf", "bed", "single_bed", "sofa", "door", "lamp_post", "post"]);
 // Physics: kinds that never collide (foliage, rugs, fire, lights) and cars that collide as a body plus a cabin.
@@ -4623,12 +4628,28 @@ export class Stage {
     return (host.scale || 1) * (ref && host.height_m > 0 ? host.height_m / ref : 1);
   }
 
-  /** Can a person sit on this object with setPose("sit")? Chairs, benches, sofas, armchairs, stools, and the other
+  /** Can a person sit on this object with setPose("sit")? Chairs, benches, sofas, armchairs, and the other
    *  non-vehicle seats in MOUNTS (rock, table, cube); a custom (imported or recipe) static prop only when named. */
   _canSitOn(host, named = false) {
     if (!host || PERSON_KINDS.has(host.kind) || SEATS[host.kind] || RIDEABLE.has(host.kind)) return false;
     if (SITTABLE.has(host.kind) || (MOUNTS[host.kind]?.pose === "sit" && LIBRARY[host.kind]?.rig === "static")) return true;
     return named && host.kind === "custom" && (host.recipe?.rig || "static") === "static";
+  }
+
+  /** The seat top's height above the prop's base (metres): MOUNTS seat height scaled with the prop (_seatScale). */
+  _seatHeight(host) {
+    const m = MOUNTS[host.kind] || { seat: [0, (host.height_m || 1) * 0.6, 0] };
+    return m.seat[1] * (MOUNTS[host.kind] ? this._seatScale(host) : 1);
+  }
+
+  /** The highest seat this person can take with setPose (metres above the prop's base). */
+  _maxSeatHeight(a) {
+    return Math.max(MAX_SEAT_MIN_M, MAX_SEAT_FRAC * (a.height_m || 1.8) * (a.scale || 1));
+  }
+
+  /** Who else already sits on this seat (one person per seat with setPose), or null. */
+  _seatTakenBy(host, a) {
+    return this.state.actors.find((x) => x.id !== a.id && x.mount_id === host.id && PERSON_KINDS.has(x.kind)) || null;
   }
 
   /**
@@ -4655,9 +4676,12 @@ export class Stage {
 
   /**
    * Sit or stand a person (a stage API for tools; web/stage/STAGE_API.md). pose: "sit" (on a chair, bench, sofa...:
-   * opts.on = its id, else the nearest one within 1.5 m of where they are at the playhead; the seat height comes from
-   * the prop), "sit_floor" (down on the floor where they are) or "stand" (up again: off the seat, or up from the
-   * floor). One undo step when something changes. Returns {ok: true, pose, on?, changed} or {ok: false, error}.
+   * opts.on = its id, else the nearest free one within 1.5 m of where they are at the playhead, real seats (chair,
+   * bench, sofa, armchair) ahead of a table / cube / rock; one person per seat; a seat higher than _maxSeatHeight is
+   * refused; the seat height comes from the prop), "sit_floor" (down on the floor where they are) or "stand" (up
+   * again: off the seat, or up from the floor). The person's own movement keys (a.keys, by_shot) are never touched:
+   * standing up puts them back on their keyed path. One undo step when something changes. Returns
+   * {ok: true, pose, on?, changed} or {ok: false, error}.
    */
   setPose(id, pose, opts = {}) {
     const a = this.state.actors.find((x) => x.id === id);
@@ -4667,21 +4691,35 @@ export class Stage {
     if (opts != null && (typeof opts !== "object" || Array.isArray(opts))) return { ok: false, error: "opts must be an object like {on}" };
     if (a.carry_id) return { ok: false, error: `'${a.name || id}' is being carried` };
     const name = (o) => o.name || o.id;
+    const commit = () => { this.setFrame(this.frame); this.onChange(this.toJSON()); };
+    const offSeat = () => {   // off the seat, keys kept (the mount never moved them); the clay stands up
+      delete a.mount_id; delete a.mount_at; delete a.seat;
+      const g = this.actorMeshes.get(a.id);
+      if (g) try { applyPose(g, "stand"); } catch { /* a body with no clay rig */ }
+    };
     if (pose === "sit") {
       let host = null;
+      const maxH = this._maxSeatHeight(a);
       if (opts?.on != null) {
         host = this.state.actors.find((x) => x.id === opts.on);
         if (!host) return { ok: false, error: `no object '${opts.on}'` };
-        if (!this._canSitOn(host, true)) return { ok: false, error: `can't sit on '${name(host)}' (a chair, bench, sofa, armchair, stool, rock, table or a static prop)` };
+        if (!this._canSitOn(host, true)) return { ok: false, error: `can't sit on '${name(host)}' (a chair, bench, sofa, armchair, rock, table, cube or a static prop)` };
+        const by = this._seatTakenBy(host, a);
+        if (by) return { ok: false, error: `'${name(host)}' is taken by '${name(by)}'` };
+        const h = this._seatHeight(host);
+        if (h > maxH) return { ok: false, error: `'${name(host)}' is too high to sit on (seat ${h.toFixed(2)} m, at most ${maxH.toFixed(2)} m for '${name(a)}')` };
       } else {
         const p = this._actorPosAt(a, this.frame);
-        let best = Infinity;
+        let best = null;
         for (const o of this.state.actors) {
-          if (o.id === a.id || !this._canSitOn(o)) continue;
+          if (o.id === a.id || !this._canSitOn(o) || this._seatTakenBy(o, a) || this._seatHeight(o) > maxH) continue;
           const q = this._actorPosAt(o, this.frame), d = Math.hypot(q[0] - p[0], q[2] - p[2]);
-          if (d < best && d <= 1.5) { best = d; host = o; }
+          if (d > 1.5) continue;
+          const rank = REAL_SEATS.has(o.kind) ? 0 : 1;   // a chair 1.2 m away beats a table 0.5 m away
+          if (!best || rank < best.rank || (rank === best.rank && d < best.d)) best = { o, d, rank };
         }
-        if (!host) return { ok: false, error: `nothing to sit on within 1.5 m of '${name(a)}': pass {on: id}, or use 'sit_floor'` };
+        host = best?.o || null;
+        if (!host) return { ok: false, error: `nothing to sit on within 1.5 m of '${name(a)}' (none free and low enough): pass {on: id}, or use 'sit_floor'` };
       }
       if (a.mount_id === host.id && (a.pose || "sit") === "sit" && !a.mount_at) return { ok: true, pose, on: host.id, changed: false };
       this.mount(a.id, host.id, "sit");
@@ -4689,23 +4727,45 @@ export class Stage {
     }
     if (pose === "sit_floor") {
       if (!a.mount_id && a.pose === "sit_floor") return { ok: true, pose, changed: false };
-      if (a.mount_id) {   // off the seat first, down to the floor beside it (in front of it)
-        const g = this.actorMeshes.get(a.id), host = this.state.actors.find((x) => x.id === a.mount_id);
-        const hg = host && this.actorMeshes.get(host.id), yaw = hg ? hg.rotation.y : 0;
-        const at = g ? [g.position.x + 0.6 * Math.sin(yaw), 0, g.position.z + 0.6 * Math.cos(yaw)] : [...this._actorPosAt(a, this.frame)];
-        delete a.mount_id; delete a.mount_at; delete a.seat;
-        a.keys = [{ frame: 0, position: [+at[0].toFixed(2), 0, +at[2].toFixed(2)] }];
-        a.rotation_deg = Math.round((yaw * 180) / Math.PI);
-      }
+      if (a.mount_id) offSeat();   // off the seat, down on the floor on their own keyed path (beside the seat)
       a.pose = "sit_floor";
-      this.setFrame(this.frame);
-      this.onChange(this.toJSON());
+      commit();
       return { ok: true, pose, changed: true };
     }
     // stand
-    if (a.mount_id) { this.unmount(a.id); return { ok: true, pose, changed: true }; }
-    if (a.pose === "sit_floor") { delete a.pose; this.setFrame(this.frame); this.onChange(this.toJSON()); return { ok: true, pose, changed: true }; }
+    if (a.mount_id) { offSeat(); delete a.pose; commit(); return { ok: true, pose, changed: true }; }
+    if (a.pose === "sit_floor") { delete a.pose; commit(); return { ok: true, pose, changed: true }; }
     return { ok: true, pose, changed: false };
+  }
+
+  /** A copy of the whole scene (a string) for a tool to put back later with restoreSnapshot (Ask's own Undo). */
+  snapshot() {
+    return JSON.stringify(this.state);
+  }
+
+  /**
+   * Put back a scene from snapshot() (a stage API for tools; web/stage/STAGE_API.md). It is an edit like any other:
+   * one undo step, so the person can Undo the restore. Returns {ok: true, changed} or {ok: false, error} (nothing
+   * changed) for anything that is not a snapshot string of a scene.
+   */
+  restoreSnapshot(snap) {
+    if (typeof snap !== "string") return { ok: false, error: "snapshot must be the string stage.snapshot() returned" };
+    let st;
+    try { st = JSON.parse(snap); } catch { return { ok: false, error: "not a snapshot (bad JSON)" }; }
+    if (!st || typeof st !== "object" || Array.isArray(st) || !Array.isArray(st.actors)) return { ok: false, error: "not a snapshot (no scene in it)" };
+    if (snap === JSON.stringify(this.state)) return { ok: true, changed: false };
+    this.live?.finish?.();
+    this.state = st;
+    this._rebake?.cancel?.();
+    this._bakeSig = inputSig(this.state.actors);
+    if (this.camera && this.fw) this.camera.aspect = this.fw / this.fh;
+    this._buildSet();
+    this._applySun?.();
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    this.onShots?.();
+    this.onSelect?.(this.selectedInfo?.());
+    return { ok: true, changed: true };
   }
 
   /** Put the selected character (or `riderId`) on another object: horse, bike, car, bench… */

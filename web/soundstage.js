@@ -62,7 +62,7 @@ import { REGEN_LABEL, chooseLocks, regenBody, mergeLocked, stagesLine, fixBody, 
 import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
 import "./models/panel.mjs";   // Models… panel (sets globalThis.__ssOpenModels / __ssModelsNotice)
 import { mountDirector } from "./agent/directorpanel.mjs";
-import { cutSigOf, qualityHook, smoothAgentShots, projectHook, cutPanelHook, exposureHook } from "./hosthooks.mjs";   // host.cutSig and host.quality for the Director and Ask
+import { cutSigOf, qualityHook, smoothAgentShots, projectHook, cutPanelHook, exposureHook, stageHook } from "./hosthooks.mjs";   // host.cutSig and host.quality for the Director and Ask
 import { mountAsk } from "./agent/ask.mjs";
 import { mountBook } from "./book/book.mjs";
 import { mountPresets } from "./ui/presets.mjs";
@@ -3377,7 +3377,7 @@ function createStageWidget(node, inputName) {
       cast: () => castPanel,
       // The co-pilot's hands (web/agent/copilot.mjs, docs/assistant.md): the set, ⑤ Motion's quality, the Cut and the
       // shot length. Each change is undone by the co-pilot's one Undo for its plan.
-      stage: { toJSON: () => stage.toJSON(), select: (id) => stage.select(id), setPose: (id, pose, opts) => stage.setPose(id, pose, opts) },
+      stage: stageHook(stage),                // {toJSON, select, setPose, snapshot, restore, undo} (web/hosthooks.mjs)
       quality: qualityHost,
       cut: { setTransition: (edit, type) => cut.setTransition(edit, type), undo: () => cut.undo(), panel: cutPanelHook(cut, cutView) },
       project: projectHook(),                 // async () => {name, id}: the open project (id confirmed, else null)
