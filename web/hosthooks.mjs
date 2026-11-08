@@ -143,6 +143,9 @@ export const PROJECT_TIMEOUT_MS = 3000;
 export function projectHook(getCtl = () => globalThis.__ssProject, { timeoutMs = PROJECT_TIMEOUT_MS } = {}) {
   const clean = (name, id) => ({ name: typeof name === "string" && name ? name : null, id: typeof id === "string" && PROJECT_ID.test(id) ? id : null });
   const nameOf = (c) => { try { return c.current?.()?.name ?? null; } catch { return null; } };
+  // A timeoutMs that is not a finite number >= 0 ("soon", NaN, null, {}) is the 3 s default, never 0 ms.
+  const t = typeof timeoutMs === "number" ? timeoutMs : typeof timeoutMs === "string" && timeoutMs.trim() !== "" ? Number(timeoutMs) : NaN;
+  const waitMs = Number.isFinite(t) && t >= 0 ? t : PROJECT_TIMEOUT_MS;
   return async () => {
     const c = getCtl?.();
     if (!c) return clean(null, null);
@@ -151,7 +154,7 @@ export function projectHook(getCtl = () => globalThis.__ssProject, { timeoutMs =
     try {
       const r = await Promise.race([
         Promise.resolve().then(() => c.project()),
-        new Promise((res) => { timer = setTimeout(() => res(TIMEOUT), Math.max(0, Number(timeoutMs) || 0)); }),
+        new Promise((res) => { timer = setTimeout(() => res(TIMEOUT), waitMs); }),
       ]);
       if (r === TIMEOUT) return clean(nameOf(c), null);
       return clean(r?.name ?? nameOf(c), r?.confirmed ? r.id : null);
@@ -167,7 +170,7 @@ export function projectHook(getCtl = () => globalThis.__ssProject, { timeoutMs =
 
 /** host.cut.panel for Ask: the live CutPanel instance (call its own methods) while the Cut is mounted AND shown (its
  * view is in the page and not hidden: the ⑥ Cut tab is open), else null. The panel object exists from the start (the
- * App builds it hidden), so a null means "the Cut isn't on screen": go to the Cut step first (host.goStep("cut")). */
+ * App builds it hidden), so a null means "the Cut isn't on screen": open the Cut view first (host.cut.show()). */
 export function cutPanelHook(cut, view) {
   return () => (cut && (!view || (view.isConnected !== false && !view.hidden)) ? cut : null);
 }

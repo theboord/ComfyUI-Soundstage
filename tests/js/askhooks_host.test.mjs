@@ -63,3 +63,17 @@ test("host.project() always settles: a read that hangs resolves {name, id: null}
   const hangNoName = { project: () => new Promise(() => {}), current: () => { throw new Error("x"); } };
   assert.deepEqual(await projectHook(() => hangNoName, { timeoutMs: 10 })(), { name: null, id: null });
 });
+
+test("host.project(): a non-numeric timeoutMs is the 3 s default, not 0 ms (a quick answer is still used)", async () => {
+  const quick = { project: () => new Promise((r) => setTimeout(() => r({ id: "p_0a0b0c0d", name: "Jane Doe Short", confirmed: true }), 30)) };
+  for (const t of ["soon", NaN, null, {}, [], true, -5, Infinity, ""]) {
+    assert.deepEqual(await projectHook(() => quick, { timeoutMs: t })(), { name: "Jane Doe Short", id: "p_0a0b0c0d" }, String(t));
+  }
+  assert.deepEqual(await projectHook(() => quick, { timeoutMs: "500" })(), { name: "Jane Doe Short", id: "p_0a0b0c0d" }, "a numeric string is taken");
+});
+
+test("cutPanelHook's doc points at host.cut.show(), not a pipeline step", () => {
+  const src = readFileSync(new URL("../../web/hosthooks.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /goStep\("cut"\)/);
+  assert.match(src, /host\.cut\.show\(\)/);
+});
