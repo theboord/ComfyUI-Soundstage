@@ -76,6 +76,7 @@ export const FOOT = {
   stillSpeed: 0.15,              // m/s: a body slower than this stands on its own footing, not on a top beside it
   toeOff: 0.015,                 // a walking stance goes on up to 2 frames while the sole is this close to the footing (toe-off)
   edge: 0.02,                    // the ground under one sole is off its plane by more than this: an edge or a step (the foot sits flat on the top)
+  riserDev: 0.02,                // the ground under the body's path this far off a straight line: stairs, not a slope (the shift's stairs gate)
   straddle: 0.1, sideMax: 0.2,   // a foot down across a break this high from the body's footing (a platform's edge, a kerb or a
   sideLow: 0.08,                 // box beside the body; a swinging foot counts while its sole is under sideLow) moves the
   shoeSide: 0.06,                // the shoe's upper past its sole points, for the shift's re-check against a wall (an alley)
@@ -458,6 +459,17 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
   // and out, so the body doesn't weave from step to step; groundFeet moves the root bone by it, so it works on whatever
   // skeleton drives the visible body. Everything below plants and clears the feet of the shifted body.
   const shift = new Float64Array(2 * n);
+  /** Is the ground under the body's own path over frames f0..f1 stepped (risers), not a straight slope? The ground
+   *  under the root at each frame against the line through the two ends, by distance travelled. */
+  const stepped = (f0, f1) => {
+    let tot = 0;
+    const d = [0];
+    for (let g = f0 + 1; g <= f1; g++) { tot += Math.hypot(rootP[3 * g] - rootP[3 * (g - 1)], rootP[3 * g + 2] - rootP[3 * (g - 1) + 2]); d.push(tot); }
+    if (tot < 0.05 * k) return false;
+    const G = (g) => ground(rootP[3 * g], rootP[3 * g + 2], g), y0 = G(f0), y1 = G(f1);
+    for (let g = f0 + 1; g < f1; g++) if (Math.abs(G(g) - (y0 + ((y1 - y0) * d[g - f0]) / tot)) > T.riserDev * k) return true;
+    return false;
+  };
   {
     const need = new Float64Array(2 * n), has = new Uint8Array(n);
     for (let f = 0; f < n; f++) {
@@ -481,12 +493,15 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
       }
       if (worst <= T.straddle * k) continue;
       // not on a flight of stairs, straight or oblique: the body itself climbs or descends there (its footing changes
-      // by more than half a straddle within ~0.5 s either way), and a riser met at an angle passes the along-the-way
-      // test below on one side; shifting the body there put it beside the steps (a climb at ~15 degrees to the risers:
-      // up to 61 frames shifted by 18 cm)
+      // by more than half a straddle within ~0.5 s either way) AND the ground along its own way is stepped (off the
+      // straight line through the ends of that stretch by more than T.riserDev: risers, not a slope), and a riser met at
+      // an angle passes the along-the-way test below on one side; shifting the body there put it beside the steps (a
+      // climb at ~15 degrees to the risers: up to 61 frames shifted by 18 cm). A sloping street is a straight line
+      // under the body: its kerb still shifts (the footing-only gate dropped the shift on 16 of 27 frames of a 15 cm
+      // kerb on a 6% grade, and the woman's shoe stood across the kerb's edge on 19 of 20 stance frames).
       {
-        const Rb = Math.max(1, Math.round(0.5 * fps));
-        if (Math.abs(baseY(Math.min(n - 1, f + Rb)) - baseY(Math.max(0, f - Rb))) > 0.5 * T.straddle * k) continue;
+        const Rb = Math.max(1, Math.round(0.5 * fps)), f0 = Math.max(0, f - Rb), f1 = Math.min(n - 1, f + Rb);
+        if (Math.abs(baseY(f1) - baseY(f0)) > 0.5 * T.straddle * k && stepped(f0, f1)) continue;
       }
       // only a break that runs along the body's way (an edge or a kerb beside it): the points off the footing are
       // still off it a quarter metre ahead and behind. A riser across the way (a step up onto a 40 cm crate) is
@@ -548,8 +563,9 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
     // wall on the other; the shift off the kerb must not put the far shoe into the wall): any sole point that lands on
     // ground higher than the body's footing by a straddle, where it was not before, halves the shift (three times,
     // then none).
+    const frac = new Float64Array(n).fill(1);
     for (let f = 0; f < n; f++) {
-      let sx = shift[2 * f], sz = shift[2 * f + 1];
+      const sx = shift[2 * f], sz = shift[2 * f + 1];
       if (!sx && !sz) continue;
       const by0 = baseY(f), gx = slope[2 * f], gz = slope[2 * f + 1], rx = rootP[3 * f], rz = rootP[3 * f + 2];
       const plane = (x, z) => by0 + gx * (x - rx) + gz * (z - rz);
@@ -569,9 +585,23 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
         }
         return false;
       };
-      let tries = 0;
-      while ((sx || sz) && hits(sx, sz)) { if (++tries > 3) { sx = 0; sz = 0; break; } sx *= 0.5; sz *= 0.5; }
-      shift[2 * f] = sx; shift[2 * f + 1] = sz;
+      let tries = 0, fr = 1;
+      while (fr > 0 && hits(sx * fr, sz * fr)) { if (++tries > 3) { fr = 0; break; } fr *= 0.5; }
+      frac[f] = fr;
+    }
+    // A cut holds over the ease either way and is eased itself (the least fraction within Ra, then averaged over Ra):
+    // never more than the frame's own fraction, never a step (the halving applied frame by frame moved the body
+    // sideways 1.3 cm in one frame and back the next)
+    {
+      const ero = new Float64Array(n);
+      for (let f = 0; f < n; f++) { let m = 1; for (let g = Math.max(0, f - Ra); g <= Math.min(n - 1, f + Ra); g++) m = Math.min(m, frac[g]); ero[f] = m; }
+      for (let f = 0; f < n; f++) {
+        if (!shift[2 * f] && !shift[2 * f + 1]) continue;
+        let a = 0, c = 0;
+        for (let g = Math.max(0, f - Ra); g <= Math.min(n - 1, f + Ra); g++) { a += ero[g]; c++; }
+        const e = a / c;
+        shift[2 * f] *= e; shift[2 * f + 1] *= e;
+      }
     }
     // the clip's feet, hips and body as the shifted body poses them
     for (let f = 0; f < n; f++) {

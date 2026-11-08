@@ -91,3 +91,46 @@ test("real Rocketbox: stairs met at a steep angle (a climb ~11-16 degrees off th
     }
   }
 });
+
+test("real Rocketbox: a kerb on a sloping street (15 cm, a 6% grade) still shifts the body; a slope is not stairs, and the shift never steps", { skip: K.NOT_INSTALLED }, async () => {
+  // review round 2 (measured on 0ce517f): the footing-only stairs gate dropped the shift on 16 of 27 frames and the
+  // woman's shoe stood across the kerb's edge on 19 of 20 stance frames (the parent of part 3: 0); and the per-frame
+  // halving of the shift's wall re-check made 1.3 cm/frame sideways steps
+  const floorAt = (x, z) => 0.06 * (z + 4) + (x > 0 ? 0.15 : 0);
+  for (const kind of ["man", "woman"]) {
+    const a = { id: "sk", kind, height_m: K.heightOf(kind), position: [-0.03, 0, -2], keys: [kf(0, -0.03, 0, -2), kf(120, -0.03, 0, 2)] };
+    const st = await K.setup(kind, a, { setFx: { id: "slope", floorAt } });
+    const out = K.measure(st, a, { ground: (x, z) => Math.max(0, floorAt(x, z)) });
+    const plan = out.skin.feet.plan, sh = (f) => Math.hypot(plan.shift[2 * f], plan.shift[2 * f + 1]);
+    let shifted = 0, straddle = 0, step = 0;
+    for (let f = 0; f < plan.n; f++) {
+      if (sh(f) > 1e-4) shifted++;
+      if (f) step = Math.max(step, Math.abs(sh(f) - sh(f - 1)));
+      for (const lr of ["l", "r"]) {
+        const r = out.rows[f][lr];
+        if (r.state !== 1 && r.h > 0.01) continue;   // a foot down
+        let lo = 0, hi = 0;
+        for (let i = 0; i < r.P.length; i += 3) { if (r.P[i] > 0.005) hi++; else if (r.P[i] < -0.005) lo++; }
+        if (lo && hi) straddle++;
+      }
+    }
+    assert.ok(shifted >= 0.9 * plan.n, `${kind}: shifted on ${shifted} of ${plan.n} frames`);
+    assert.equal(straddle, 0, `${kind}: a planted shoe across the kerb's edge on ${straddle} foot-frames`);
+    assert.ok(step < 0.005, `${kind}: the shift moves ${(step * 100).toFixed(2)} cm in one frame`);
+    const s = K.physical(out);
+    assert.ok(s.pen > -0.01, `${kind}: a shoe ${(s.pen * 100).toFixed(1)} cm into the street or the kerb`);
+  }
+});
+
+test("real Rocketbox: the alley's wall re-check eases its cut (no sideways step of the body over 0.5 cm a frame)", { skip: K.NOT_INSTALLED }, async () => {
+  const wall = { id: "wall", half: [0.05, 1.5, 4], pos: [-0.27, 1.5, 0], quat: [0, 0, 0, 1] };
+  for (const kind of ["man", "woman"]) {
+    const a = { id: "al", kind, height_m: K.heightOf(kind), position: [-0.03, 0, -2], keys: [kf(0, -0.03, 0, -2), kf(120, -0.03, 0, 2)] };
+    const st = await K.setup(kind, a, { boxes: [...kerb, wall] });
+    st.frame = 0; st.setFrame(0);
+    const plan = st.actorMeshes.get(a.id).userData.humanSkin.feet.plan;
+    let step = 0, at = -1;
+    for (let f = 1; f < plan.n; f++) { const d = Math.hypot(plan.shift[2 * f] - plan.shift[2 * f - 2], plan.shift[2 * f + 1] - plan.shift[2 * f - 1]); if (d > step) { step = d; at = f; } }
+    assert.ok(step < 0.005, `${kind}: the body steps ${(step * 100).toFixed(2)} cm sideways at f${at}`);
+  }
+});
