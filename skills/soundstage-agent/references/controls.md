@@ -441,6 +441,9 @@ Each line: **control**: what it does.
 - **Extra negative**
 - **Remove swatch**
 
+## models/panel
+- **Close**
+
 ## One-click tools
 - **One-click**
 - **Search one-clicks**

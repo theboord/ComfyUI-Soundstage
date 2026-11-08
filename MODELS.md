@@ -6,6 +6,10 @@ The Soundstage App (`example_workflows/Soundstage_App.json`) needs the models be
 
 **Other builds are fine.** If you already have a model as a different build (bf16, fp8, int8-convrot) or in a subfolder (`loras/ltx2.5/…`), keep it: when a Soundstage workflow loads, each model loader that names a file you don't have is pointed at your build of the same model, and a small notice says so ("Using ltx-2.5-…int8-convrot (you don't have the bf16 file)"). If you have no build of it at all, the notice names the missing file and links here.
 
+## Get models from the App
+
+Open the project menu (the project pill at the top) → **Models…**, or click **Get these models…** on the missing-model notice. The panel lists every file below with its size, licence and whether you have it, already have another build of it, or have part of it. Tick what you want and click **Download**. You confirm each licence once, then the files download one at a time into the right `models/` folder, resume after a dropped connection, and are checked before they're moved into place: against the sha256 Hugging Face reports when it sends one, otherwise by size and a safetensors header check (the catalog has no sha256 values yet). Gated repos need a Hugging Face read token (pasted in the panel and kept only on your computer) and the licence accepted on the repo page; the panel links both. Reload the workflow afterwards. Details: [docs/models.md](docs/models.md).
+
 Rung 1 (Stage) needs no models at all. Rung 2 (Look still) needs the Krea 2 group. Rungs 3–4 (Draft, Final) need the LTX-2.5 group. Rung 5 (Layers) needs SAM 3.1 and BiRefNet (below) to cut mattes from the final frames; without them it falls back to the stage's own mattes.
 
 ## First frame, cast sheets and Paint Studio: FLUX 3 Klein (default)
