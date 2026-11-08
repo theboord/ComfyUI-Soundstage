@@ -136,6 +136,40 @@ test("walking out of the tank through its wall: no jump at the water's edge, and
   }
 });
 
+// ------------------------------------------------------------------ 9. Out of the water: no walk in deep water, no hanging over the dry floor
+// At 36c3648 the swim ended when the keys left the water (f75), the hips still at x -6.05, 1.75 m in from the inner
+// wall (x -7.8) in 2.5 m of water, and the walk cycle ran there to f99; then he hung over the dry floor tipped forward,
+// the lowest point 0.79 m up at f104 and 0.16 m at f120 (17 frames over 0.1 m). The bike rider who let go the same. The
+// swim goes on to the wall now, and the hips come down to the walk's within a few frames once out over the floor.
+test("out of the tank: the walk cycle never runs with the hips in deep water, and on the dry floor the feet are on it", () => {
+  const W = 7.8;   // the tank's inner wall (its water is 15.6 m square, the wall 0.4 m thick)
+  const check = (st, id, N, name) => {
+    const g = st.actorMeshes.get(id);
+    let swam = false, out = false, deep = 0, deepAt = -1, high = 0, highMax = 0, highAt = -1;
+    for (let f = 0; f < N; f++) {
+      st.setFrame(f);
+      const p = hipW(st, id), inside = Math.min(W - Math.abs(p.x), W - Math.abs(p.z));
+      if (g.userData.swimOn) { swam = true; continue; }
+      if (!swam) continue;   // (before the swim: walking in, or still on the seat)
+      if (g.userData.gaitOn && inside > deep) { deep = inside; deepAt = f; }
+      if (inside < -0.6) {   // the hips 0.2 m past the wall's outer face: over the dry floor
+        out = true;
+        const lo = lowest(g);
+        if (lo > 0.1) { high++; if (lo > highMax) { highMax = lo; highAt = f; } }
+      }
+    }
+    assert.ok(swam && out, `${name}: swims, then gets out onto the dry floor`);
+    // (the treading body reaches the wall with its hands: the hips ~0.6 m in from it, _swimInWalls)
+    assert.ok(deep < 0.7, `${name}: the walk cycle never runs with the hips in deep water (they were ${deep.toFixed(2)} m in from the wall at f${deepAt})`);
+    assert.ok(high <= 4 && highMax < 0.6, `${name}: on the dry floor the feet are on it, bar the step down (${high} frames over 0.1 m, ${highMax.toFixed(2)} m at f${highAt})`);
+  };
+  for (const [name, keys, N] of [["out", [[0, [0, 0, 0]], [120, [-12, 0, 0]]], 121], ["in, out and in", [[0, [-12, 0, 0]], [80, [0, 0, 0]], [160, [-12, 0, 0]], [240, [0, 0, 0]]], 241]]) {
+    check(tank([keyed("m", "man", keys, { key_y: false })], { frames: N, keepSet: true }), "m", N, name);
+  }
+  check(ride("bicycle", [[0, [0, 0, 0]], [120, [-12, 0, 0]]], 241), "r", 241, "the bike's rider, ridden out");
+  check(ride("bicycle", [[0, [-13.1, 0, 0]], [120, [0, 0, 0]], [240, [-13.1, 0, 0]]], 313), "r", 313, "the bike's rider, ridden in and out");
+});
+
 // ------------------------------------------------------------------ 6. Duplicate a path that leaves the water (regression)
 // At 7eafe37 Duplicate pulled every key of the copy inside the tank's wall: a copy of a man walking out of the tank
 // (0 to -12) got its last key at -7 and stayed swimming in the tank. Only the keys in the water are kept inside.
