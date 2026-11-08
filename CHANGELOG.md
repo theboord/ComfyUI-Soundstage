@@ -5,6 +5,57 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-07
 
+**Project id for Ask's memory; the Director's Book keeps decisions, not chat text (private branch `private/project-id`, 20:15 by this machine's clock)**
+
+- **Still wrong (read first):** checked with Node and pytest only, not in the browser, the App or a live ComfyUI. The
+  `/soundstage/book/forget` route's user folder comes from ComfyUI's user manager, which no test runs. Without
+  ComfyUI it scrubs only the books folder. Forget does not reach these copies:
+  - ComfyUI's queue history (every queued prompt carries the workflow, Book included, until restart or a clear)
+  - PNG / video metadata of renders made while the note existed
+  - the frontend's browser-stored workflow and its in-tab undo
+  - the Director's in-memory Undo list (`web/agent/director.mjs` keeps `plan.command` as the label, not changed here: Jon's lane)
+  - collected projects
+
+  Decision notes saved before today held the typed sentence. They are rewritten on load, so a server copy changes
+  only on the Book's next save, and an old autosave keeps it until it rotates out or Forget is used on that note.
+  An assistant note posted to `POST /soundstage/book/note` (default source "chat") still stores the text it was
+  sent. An old project has no id until its next Save, so `projectId()` is `null` for it until then. A project
+  re-opened from a collected copy keeps the id it was collected with. The Director's own call site still passes
+  only `command` (no `summary` / `ref`), so its notes read like `Weather: rain`, not prose.
+- **Project id (`web/project/store.mjs` `newProjectId`, `projectIdOf`, `ProjectStore.save` / `projectId`; `web/project/projectbar.mjs` `ProjectController.projectId`; `soundstage/project/library.py`):**
+  `p_` + 8 lowercase hex, in `project.json` (`id`) and `extra.ss_project.id`.
+  - **Save:** keeps the manifest's id only when the workflow carries the same id. Otherwise the save gets a fresh
+    id: Save As, an old project, a leftover `projects/<name>/` folder after the workflow was deleted from the
+    sidebar, another project's workflow saved over it. A manifest field can't override it.
+  - **Pill:** the pill now carries the id through Save and naming, where it used to rewrite `ss_project` with the
+    name only.
+  - **Library:** duplicate writes a fresh id into both files. Rename, trash and untrash keep it.
+  - **List:** `GET /soundstage/project/list` returns `id` (`null` for old projects).
+  - **Load:** nothing writes an id on open, list or autosave.
+  - Docs: `docs/projects.md` "Project id".
+- **Decisions (`web/book/model.mjs` `recordDecision`, `scrubArgs`, `decisionSummary`, `normalizeBook`):**
+  - **Text:** the note's text is Ask's `summary`, or the change in words. It is never the typed `command`; a summary
+    or argument that repeats the command is dropped.
+  - **Fields:** `change: [{tool, args}]` keeps only short argument values. The optional `ref` is the chat turn id.
+  - **Older notes:** recordDecision's own older notes are rewritten to their tool list on load. Assistant-posted
+    notes are left alone.
+- **Forget (`web/book/book.mjs` `forgetDecision`, `scrubDecision`; `soundstage/book/store.py` `forget`; `POST /soundstage/book/forget`):**
+  - **Match:** `forgetDecision` matches a note id or a `ref`.
+  - **Order:** it saves the Book as before, then removes the notes from every stored copy: the books folder, and
+    the user's `workflows/` and `projects/` (manifests, autosaves, trash).
+  - **Answers:** `{ok: true, copies}`, or `{ok: false, removed: true, error}` when the clean-up failed (the book
+    save already landed; `scrubDecision` retries).
+  - **Scope:** only chat decisions are removed, and only files that mention the id are rewritten.
+  - Docs: `docs/director.md` "Decisions in the Director's Book", `docs/agent.md`.
+- **Tests:**
+  - New tests: `tests/js/project.test.mjs` (id kept / fresh, old-project migration, leftover folder, controller getter),
+    `tests/test_project_library.py` (duplicate fresh, rename / trash keep, listing writes nothing),
+    `tests/js/book.test.mjs` (no typed sentence anywhere in the book or context, legacy rewrite),
+    `tests/js/hosthooks.test.mjs` (Forget by ref, failed clean-up), `tests/test_book.py` (scrub across workflows,
+    subgraphs, autosaves, trash; route).
+  - JS (`node --test tests/js/*.test.mjs`): 1626 tests, 1616 passed, 0 failed, 9 skipped, 1 todo (the try-it re-publish TODO).
+  - Python (`python3 -m pytest tests -q`): 1812 passed, 25 skipped.
+
 **Fifth review fixes: phase-offset orbits slowed at keys again, keyed roll / pitch dropped parked props from collision (private branch `private/stage-next`, 19:50 by this machine's clock)**
 
 - **Still wrong (read first):** checked with Node tests and scratch probes only, not in the browser, the App or ComfyUI. The fourth-review entry's "evenly spaced turns and orbits are unchanged" was false (corrected below). With this fix a turning-back axis may now swing past its key, by as much as the circle through that key and its two neighbours does, capped at that chord's sagitta (chord / 2 x tan(turn / 4)) plus 1 mm + 0.3 % of the chord; 0bf0b7b held every such axis to the key. So an asymmetric zigzag with uneven times still dips past a key: a probe (keys z 0 / 0.3 / 0.25 / 0.9 / 0 at x 0 / 1 / 3 / 3.5 / 6, 6/42/6/42 frames) goes 24.7 cm below its 0.25 m key (0bf0b7b: 0; cb57dad: 56.6 cm). Symmetric turns and zigzags (the tested ones) stay within 1 mm. Next to the shot's first or last key an axis the arc really peaks on inside the segment keeps its tangent, so an orbit's last segment may pass its end key's value on that axis by the arc's own peak. **Orbits keyed 72 to 90 degrees apart are still not improved** (four keys every 90 degrees: 1.69x, 58 cm inside the circle; every 72: 1.31x, 38 cm). The C3 old-vs-new difference at frame 30 that the old-shot key test needs is now 4.5 cm (was 8.8): its threshold went from 5 to 3 cm. Moving shots saved on curve 2 play a little differently through keys where an axis turns back. Not checked: whether a car's obstacle box follows its body child's keyed roll as it plays (the box is rebuilt only when the group's grid cell changes, and the roll moves the child, not the group).
