@@ -577,19 +577,36 @@ export const DECISION_ARGS = {
   update_prop: { name: T }, profile_character: { name: T }, profile_location: { name: T }, profile_prop: { name: T },
 };
 const TOKEN = /^[A-Za-z0-9][A-Za-z0-9_.:#+-]{0,31}$/;
-const tok = (v) => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && TOKEN.test(v.trim()) ? v.trim() : undefined);
+/** Does a joined token (red_pickup_truck, gas-station-pumps, a.b:c) carry a phrase of the typed sentence? Yes when,
+ *  split on its separators, it echoes the sentence (a 3-word run) or two of its parts in a row that are real words
+ *  (3+ letters, not glue, not a number: sh_2 is an id) also stand next to each other in the sentence ("red_pickup" from "the red pickup truck"). A token with
+ *  no separator is one word and passes (a one-word name from the sentence is kept). */
+const word = (w) => w.length >= 3 && !/^\d+$/.test(w) && !GLUE.has(w);   // a real word, not glue or an id part (sh, 2)
+function tokenEchoes(v, command) {
+  const parts = norm(v).split(" ").filter(Boolean);
+  if (parts.length < 2 || !command) return false;
+  if (echoes(parts.join(" "), command)) return true;
+  const c = ` ${norm(command)} `;
+  for (let i = 0; i + 1 < parts.length; i++) {
+    if (word(parts[i]) && word(parts[i + 1]) && c.includes(` ${parts[i]} ${parts[i + 1]} `)) return true;
+  }
+  return false;
+}
+const tok = (v, command = "") => (typeof v === "number" && Number.isFinite(v) ? v
+  : typeof v === "string" && TOKEN.test(v.trim()) && !tokenEchoes(v.trim(), command) ? v.trim() : undefined);
 
-/** A call's arguments cut down to the decision itself: only DECISION_ARGS[tool]'s keys, numbers and single tokens. */
-export function scrubArgs(args, tool = "") {
+/** A call's arguments cut down to the decision itself: only DECISION_ARGS[tool]'s keys, numbers and single tokens.
+ *  With `command` (the typed sentence), a joined token that carries a phrase of it is dropped too (tokenEchoes). */
+export function scrubArgs(args, tool = "", command = "") {
   const allow = DECISION_ARGS[String(tool)] || {};
   const out = {};
   for (const [k, v] of Object.entries(args && typeof args === "object" ? args : {})) {
     const kind = Object.prototype.hasOwnProperty.call(allow, k) ? allow[k] : null;
     if (kind === N) { if ((typeof v === "number" && Number.isFinite(v)) || typeof v === "boolean") out[k] = v; }
     else if (kind === T) {
-      if (Array.isArray(v)) { const xs = v.slice(0, 8).map(tok); if (xs.length && xs.every((x) => x !== undefined)) out[k] = xs; }
+      if (Array.isArray(v)) { const xs = v.slice(0, 8).map((x) => tok(x, command)); if (xs.length && xs.every((x) => x !== undefined)) out[k] = xs; }
       else if (typeof v === "boolean") out[k] = v;
-      else { const x = tok(v); if (x !== undefined) out[k] = x; }
+      else { const x = tok(v, command); if (x !== undefined) out[k] = x; }
     }
   }
   return out;
@@ -640,7 +657,13 @@ export function recordDecision(book, { command, calls = [], results = [], sceneI
   const tools = ok.map((c) => c.tool);
   if (!tools.length) return null;
   const cat = TOOL_CAT[tools.find((t) => TOOL_CAT[t])] || "blocking";
-  const change = ok.map((c) => ({ tool: String(c.tool), args: scrubArgs(c.args, c.tool) }));
+  let change = ok.map((c) => ({ tool: String(c.tool), args: scrubArgs(c.args, c.tool, typed) }));
+  // Last guard: values that are each clean can still line up into a phrase of the sentence ("victim red_pickup, into
+  // ..."). Then keep only the numbers / booleans and say it with the tool names.
+  const spoken = (ch) => ch.map(({ tool, args }) => [tool, ...Object.entries(args || {}).flat()].join(" ")).join(" ");
+  if (typed && (echoes(spoken(change), typed) || echoes(decisionSummary(change), typed))) {
+    change = change.map(({ tool, args }) => ({ tool, args: Object.fromEntries(Object.entries(args).filter(([, v]) => typeof v === "number" || typeof v === "boolean")) }));
+  }
   const said = String(summary || "").replace(/\s+/g, " ").trim();
   const text = said && !echoes(said, typed) ? short(said, 160) : decisionSummary(change);
   const n = { id: noteId(), text, change, dv: DECISION_V, scope: sceneId ? "scene" : "global", scene_id: sceneId, line: null, character: null, category: cat,

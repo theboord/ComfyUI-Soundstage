@@ -279,6 +279,28 @@ test("decisions keep no fragment of the typed sentence: parser clauses, a split 
   assert.deepEqual(quotes(M.getBookContext(b, script(), "sc_1")), []);
 });
 
+test("decisions keep no 3-word run of the typed sentence through underscore-, hyphen- or dot-joined token args", () => {
+  const typed = "make Jane Doe ram the red pickup truck into the gas station and send the rusty old tractor through the barn door";
+  const b = M.emptyBook(script());
+  const n = M.recordDecision(b, { command: typed, sceneId: "sc_1", calls: [
+    { tool: "ram", args: { target: "jane_doe_pickup", victim: "red_pickup_truck", into: "gas-station-pumps" } },
+    { tool: "stunt", args: { target: "red_pickup_truck", stunt: "flip" } },
+    { tool: "select_object", args: { name: "the_red_pickup_truck" } },
+    { tool: "drive", args: { target: "rusty.old.tractor", through: "barn:door", speed: "fast" } },
+    { tool: "move", args: { target: ["sh_2", "red-pickup"], amount: 3 } },
+  ], results: Array(5).fill({ ok: true }) });
+  assert.deepEqual(quotes(n, typed), [], `no three typed words in a row anywhere in the note: ${JSON.stringify(n)}`);
+  assert.deepEqual(quotes(b, typed), []);
+  // what is not a phrase of the sentence stays: one-word values, ids, enums the sentence does not spell out
+  assert.equal(n.change[1].args.stunt, "flip");
+  assert.equal(n.change[3].args.speed, "fast");
+  assert.equal(n.change[4].args.amount, 3);
+  assert.deepEqual(M.scrubArgs({ target: "red_pickup_truck" }, "stunt", typed), {});
+  assert.deepEqual(M.scrubArgs({ target: "gas-station" }, "stunt", typed), {}, "two real words in a row from the sentence");
+  assert.deepEqual(M.scrubArgs({ target: "sh_2", stunt: "dolly_in" }, "stunt", "dolly in on sh 2"), { target: "sh_2", stunt: "dolly_in" }, "glue words and ids pass");
+  assert.deepEqual(M.scrubArgs({ target: "red_pickup_truck" }, "stunt"), { target: "red_pickup_truck" }, "without the sentence there is nothing to compare");
+});
+
 test("v2 decision notes (any short string arg kept) are cut to the allowlist on load", () => {
   const v2 = { id: "n_v2", text: "Mara will mutter under his breath", change: [{ tool: "direct", args: { who: "mara", note: "mutter under his breath" } }],
     dv: 2, source: "chat", by: "chat", why: "decided in the Director chat (direct)", scope: "scene", scene_id: "sc_1", ref: "t_1" };
