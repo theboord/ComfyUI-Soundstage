@@ -107,3 +107,31 @@ test("a rider who let go carries on from the swim: out of the tank beside the mo
     assert.ok(headY(st, "r") > 1.5 && !st.actorMeshes.get("r").userData.swimOn, `f480: standing, head out of the 1.5 m water (${headY(st, "r").toFixed(2)})`);
   }
 });
+
+// ------------------------------------------------------------------ 7. Walking out through the tank wall (regression)
+// At 7eafe37 walking out of the tank through its wall popped the hips 2.44 m in one frame (1.55 on b1f6d51), and 2.54 m
+// walking in, out and in again: walking in had an ease, walking out none. Out now eases from the swim into the walk
+// the same way, about the hips (keys turning back during it swing the legs round).
+test("walking out of the tank through its wall: no jump at the water's edge, and the same on any scrub order", () => {
+  for (const [name, keys, N] of [["out", [[0, [0, 0, 0]], [120, [-12, 0, 0]]], 121], ["in, out and in", [[0, [-12, 0, 0]], [80, [0, 0, 0]], [160, [-12, 0, 0]], [240, [0, 0, 0]]], 241]]) {
+    const st = tank([keyed("m", "man", keys, { key_y: false })], { frames: N, keepSet: true }), g = st.actorMeshes.get("m");
+    let prev = null, mx = 0, at = -1, swam = false, dry = false;
+    for (let f = 0; f < N; f++) {
+      st.setFrame(f);
+      if (g.userData.swimOn) swam = true; else if (swam) dry = true;
+      const p = hipW(st, "m");
+      if (prev) { const d = p.distanceTo(prev); if (d > mx) { mx = d; at = f; } }
+      prev = p;
+    }
+    assert.ok(swam && dry, `${name}: swims, then walks out`);
+    assert.ok(mx < 0.3, `${name}: the hips never jump (biggest step ${mx.toFixed(3)} m at f${at}; he walks 0.1 to 0.15 m a frame)`);
+    const f0 = Math.min(N - 1, at + 3); st.setFrame(f0); const want = poseOf(st, "m");
+    st.setFrame(N - 1); st.setFrame(0); st.setFrame(f0);
+    assert.ok(maxDiff(poseOf(st, "m"), want) < 1e-6, `${name}: f${f0} the same after a scrub`);
+  }
+  {
+    const st = tank([keyed("m", "man", [[0, [0, 0, 0]], [120, [-12, 0, 0]]], { key_y: false })], { frames: 121, keepSet: true });
+    st.setFrame(120);
+    assert.ok(headY(st, "m") > 1.5 && !st.actorMeshes.get("m").userData.swimOn, `out of the water he stands and walks (head ${headY(st, "m").toFixed(2)})`);
+  }
+});

@@ -4049,9 +4049,12 @@ export class Stage {
     const hipY = (J.l_hip?.position.y || 0.53 * h / sc) * sc, Yax = new THREE.Vector3(0, 1, 0), Xax = new THREE.Vector3(1, 0, 0), v = new THREE.Vector3();
     const keys = this._actorKeys(a), out = [];
     const target = (f) => { const p = this._actorPosAt(a, f); return [p[0], Math.max(0, p[1] || 0), p[2]]; };
-    const push = (f, pos, q, joints, shoes) => {
-      const t = target(f), d = Math.hypot(pos[0] - t[0], pos[1] - t[1], pos[2] - t[2]);
-      if (d >= 0.05) out.push({ f, n: Math.max(6, Math.min(72, Math.ceil(1.5 * d / 0.06))), pos, q, joints, shoes });
+    // (eased about the hips: the from hips to the walk's, the heading the walk's own, the swim's tilt off it, so keys
+    // that turn back during the ease swing the legs round, never throw the body: a slerp of the whole orientation flipped
+    // over at a key reversal, 1.3 m in a frame)
+    const push = (f, hips, yaw, tilt, joints, shoes) => {
+      const t = target(f), d = Math.hypot(hips[0] - t[0], hips[1] - t[1] - hipY, hips[2] - t[2]);
+      if (d >= 0.05) out.push({ f, n: Math.max(6, Math.min(72, Math.ceil(1.5 * d / 0.06))), hips, yaw, tilt, joints, shoes });
     };
     const euler = (r) => new THREE.Quaternion().setFromEuler(new THREE.Euler(r[0], r[1], r[2], "XYZ")).toArray();
     // let go where they can stand: up off the seat (the swim never runs)
@@ -4060,7 +4063,7 @@ export class Stage {
       const S = { hip: [-Math.PI / 2, 0, 0], knee: [Math.PI / 2, 0, 0], shoulder: [-0.35, 0, 0], elbow: [-0.9, 0, 0] }, joints = {};
       for (const lr of ["l", "r"]) for (const part of Object.keys(S)) joints[`${lr}_${part}`] = euler(S[part]);
       for (const jn of ["spine", "neck", "head"]) joints[jn] = [0, 0, 0, 1];
-      push(fe, ef.pos.slice(), new THREE.Quaternion().setFromAxisAngle(Yax, ef.yaw).toArray(), joints, null);
+      push(fe, [ef.pos[0], ef.pos[1] + hipY, ef.pos[2]], ef.yaw, [0, 0, 0, 1], joints, null);
     }
     // the swim's last frame before they leave the water
     if (plan) for (let f = 1; f < plan.n && keys.length > 1; f++) {
@@ -4079,7 +4082,9 @@ export class Stage {
         shoes[lr] = new THREE.Quaternion().setFromAxisAngle(Xax, L.shoe).toArray();
       }
       joints.spine = euler(P.spine); joints.neck = euler(P.neck); joints.head = euler(P.head);
-      push(f, fake.position.toArray(), fake.quaternion.toArray(), joints, shoes);
+      const yaw = plan.yaw[f - 1], tilt = new THREE.Quaternion().setFromAxisAngle(Yax, -yaw).multiply(B.q);
+      v.set(0, hipY, 0).applyQuaternion(B.q);
+      push(f, fake.position.clone().add(v).toArray(), yaw, tilt.toArray(), joints, shoes);
     }
     ce._exits = { g, out: out.length ? out : null };
     return ce._exits.out;
@@ -4089,12 +4094,17 @@ export class Stage {
   _swimExit(a, g) {
     const ex = this._swimExits(a, g);
     if (!ex) return;
-    const J = g.userData.joints, qa = new THREE.Quaternion(), qb = new THREE.Quaternion();
+    const J = g.userData.joints, qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), _Yax = new THREE.Vector3(0, 1, 0);
+    const h = (a.height_m || 1.8) * (a.scale || 1), hipY = (J.l_hip?.position.y || 0.53 * h / (g.scale?.y || 1)) * (g.scale?.y || 1);
     for (const e of ex) {
       if (this.frame < e.f || this.frame >= e.f + e.n) continue;
       const t = (this.frame - e.f + 1) / (e.n + 1), w = t * t * (3 - 2 * t);
-      g.position.set(e.pos[0] + (g.position.x - e.pos[0]) * w, e.pos[1] + (g.position.y - e.pos[1]) * w, e.pos[2] + (g.position.z - e.pos[2]) * w);
-      g.quaternion.slerpQuaternions(qa.fromArray(e.q), qb.copy(g.quaternion), w);
+      const yaw = this._headingAt(a, this.frame), qy = new THREE.Quaternion().setFromAxisAngle(_Yax, yaw);
+      const hv = new THREE.Vector3(0, hipY, 0).applyQuaternion(g.quaternion), hp = g.position.clone().add(hv);
+      const tiltNow = qy.clone().invert().multiply(g.quaternion);
+      g.quaternion.copy(qy).multiply(tiltNow.slerpQuaternions(qa.fromArray(e.tilt), tiltNow.clone(), w));
+      hp.set(e.hips[0] + (hp.x - e.hips[0]) * w, e.hips[1] + (hp.y - e.hips[1]) * w, e.hips[2] + (hp.z - e.hips[2]) * w);
+      g.position.copy(hp).sub(hv.set(0, hipY, 0).applyQuaternion(g.quaternion));
       for (const [jn, q] of Object.entries(e.joints)) if (J[jn]) J[jn].quaternion.slerpQuaternions(qa.fromArray(q), qb.copy(J[jn].quaternion), w);
       if (e.shoes) for (const [lr, ft] of Object.entries(Mocap.feetOf(g) || {})) {
         if (!ft?.shoe || !e.shoes[lr]) continue;
