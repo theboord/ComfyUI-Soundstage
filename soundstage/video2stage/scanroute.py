@@ -93,9 +93,27 @@ def joint_box(take, k, size):
     pts = ends[np.isfinite(ends).all(axis=1)]                 # the joints and the crown, fingertips and toes
     (jx0, jy0), (jx1, jy1) = uv[ok].min(0), uv[ok].max(0)
     (ex0, ey0), (ex1, ey1) = pts.min(0), pts.max(0)
+    jy1 = max(jy1, _soles_y(uv))   # her knees or ankles untracked: the box still reaches her soles
+    ey1 = max(ey1, jy1)
     H = jy1 - jy0
     return uv, [min(jx0 - 0.12 * H, ex0 - 0.04 * H), min(jy0 - 0.1 * H, ey0 - 0.04 * H),
                 max(jx1 + 0.12 * H, ex1 + 0.04 * H), max(jy1 + 0.05 * H, ey1 + 0.04 * H)]
+
+
+def _soles_y(uv) -> float:
+    """Where her soles are (pixel row) when the take misses her lower joints, from her body's proportions: below the
+    tracked ankles nothing is added; with knees but no ankles the shins are about 1.1 thighs; with hips only, the legs
+    are about 1.6 of the neck-to-hip trunk (shoulders for the neck). -inf when nothing tells."""
+    f = lambda js: [uv[j][1] for j in js if j < len(uv) and np.all(np.isfinite(uv[j]))]   # noqa: E731
+    ank, kne, hip = f((10, 13)), f((9, 12)), f((8, 11))
+    top = f((1,)) or f((2, 5))
+    if ank:
+        return max(ank)
+    if kne and hip:
+        return max(kne) + 1.1 * (max(kne) - float(np.mean(hip)))
+    if hip and top:
+        return float(np.mean(hip)) + 1.6 * (float(np.mean(hip)) - float(np.mean(top)))
+    return float("-inf")
 
 
 def _over_performer(bb, jbox, w: int, h: int, share: float = 0.6) -> bool:
@@ -220,7 +238,7 @@ def people_masks(breakdown: dict, depths, times, duration: float, take=None, fps
             if m is None or not m.any():
                 x0, y0, x1, y1 = (v / 1000 for v in bb)
                 gx, gy = 0.15 * (x1 - x0), 0.05 * (y1 - y0)
-                m = W.person_mask_from_depth(d, [x0 - gx, y0 - gy, x1 + gx, y1 + gy], rel=0.35)
+                m = W.person_mask_from_depth(d, [x0 - gx, y0 - gy, x1 + gx, y1 + gy], rel=0.35, front=True)
                 if m is not None and body is not None and j in over:
                     m = m & ~body   # a second person over her: his pixels, not hers
             if m is not None and m.any():

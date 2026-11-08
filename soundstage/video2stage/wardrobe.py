@@ -329,9 +329,11 @@ def nearest_build(girth: float) -> str:
     return min(BUILDS, key=lambda k: abs(BUILDS[k] - girth))
 
 
-def person_mask_from_depth(depth: np.ndarray, box, rel: float = 0.25) -> np.ndarray | None:
+def person_mask_from_depth(depth: np.ndarray, box, rel: float = 0.25, front: bool = False) -> np.ndarray | None:
     """The person inside a normalised box [x0, y0, x1, y1] (0-1) of a depth map: pixels within rel of the median
-    depth of the box's centre strip (the body), a stand-in for a segmentation mask on the old route."""
+    depth of the box's centre strip (the body), a stand-in for a segmentation mask on the old route. With `front`
+    the body is the strip's front-most depth that holds at least FRONT_SHARE of it (a person stands in front of the
+    set), so a box over the left half of her, whose centre strip is mostly the wall past her side, still finds her."""
     d = np.asarray(depth, np.float32)
     h, w = d.shape
     x0, y0, x1, y1 = (int(round(v * s)) for v, s in zip(box, (w, h, w, h)))
@@ -346,9 +348,15 @@ def person_mask_from_depth(depth: np.ndarray, box, rel: float = 0.25) -> np.ndar
     if not core.size:
         return None
     z = float(np.median(core))
+    if front:
+        zf = float(np.percentile(core, 100 * FRONT_SHARE))
+        z = float(np.median(core[core <= zf * 1.1]))
     m = np.zeros((h, w), bool)
     m[y0:y1, x0:x1] = np.isfinite(sub) & (np.abs(sub - z) < rel * z)
     return m
+
+
+FRONT_SHARE = 0.15
 
 
 # The take's 2D joints (COCO-18, as SAM 3D Body's take stores them: 0 nose, 1 neck, 2-4 right arm, 5-7 left arm,

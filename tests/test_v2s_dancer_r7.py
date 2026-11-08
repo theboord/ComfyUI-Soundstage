@@ -4,6 +4,10 @@
   enrich_breakdown
 4 her own pixels leave the scan in every probe pose at 4 m (arms down, arms spread, a pointed-toe kick, joints a few
   pixels off): wider at the shoulders, neck, head and feet, and virtual toe points past the ankles
+2 only her (the take's entry or joints) or a person-shaped mask cut by its box opens the triage padding: a bystander
+  on the back wall and a box over the background pad only their own box
+5 a box over part of her (top half or third, left half, arms spread) and a take without knees or ankles keep the
+  crate where she stands
 Run:  python -m pytest tests/test_v2s_dancer_r7.py -q
 """
 import os
@@ -218,3 +222,43 @@ def test_a_hallucinated_box_over_the_background_does_not_open_while_the_take_tra
     outside[y0:y1, x0:x1] = False
     outside[150:440, 200:440] = False                               # round her
     assert np.isnan(cut[outside]).sum() == 0                        # nothing past the hallucinated box goes
+
+
+def _with_spread_arms(d):
+    d[215:235, 150:490] = 5.0                                       # her arms spread at shoulder level
+    return d
+
+
+@pytest.mark.parametrize("box, arms", [([150, 200, 490, 310], True), ([250, 200, 390, 273], False),
+                                       ([150, 200, 320, 420], True), ([250, 200, 320, 420], True),
+                                       ([250, 200, 390, 273], True)],
+                         ids=["top half, arms spread", "top third", "left half with the arm, arms spread",
+                              "left half, arms spread", "top third, arms spread"])
+def test_without_a_take_a_box_over_part_of_her_keeps_the_crate(monkeypatch, box, arms):
+    pytest.importorskip("cv2")
+    d, _ = _stage_with_her()
+    if arms:
+        _with_spread_arms(d)
+    her = d == 5.0
+    st, notes = _scan_path(monkeypatch, d, _read(box), None)
+    assert st["worded"] == ["Crate"], notes
+    assert st["dropped"] == ["Wall"], notes
+    bd = _read(box)
+    cut = scanroute.without_people(d, scanroute.people_masks(bd, [d], [0.0], 1.0), 0,
+                                   boxes=scanroute.people_boxes(bd, (640, 480), [0.0], 1.0))
+    assert np.isfinite(cut[her]).sum() == 0                         # all of her leaves, past the box too
+    assert np.isnan(cut[~her]).sum() == 0                           # and nothing of the wall
+
+
+@pytest.mark.parametrize("boxes", [([250, 200, 390, 420],), ()], ids=["her entry", "no entry"])
+def test_a_take_without_knees_and_ankles_keeps_the_crate(monkeypatch, boxes):
+    pytest.importorskip("cv2")
+    d, _ = _stage_with_her()
+    uv = _her_joints()
+    uv[[9, 10, 12, 13]] = np.nan                                    # her knees and ankles untracked
+    monkeypatch.setattr(pipeline.performer, "sam_2d", lambda t, k, size: uv)
+    _, jb = scanroute.joint_box(TAKE, 0, (640, 480))
+    assert jb[3] >= 415                                              # 8f04bf1: the box stopped at her hips
+    st, notes = _scan_path(monkeypatch, d, _read(*boxes), TAKE)
+    assert st["worded"] == ["Crate"], notes
+    assert st["dropped"] == ["Wall"], notes
