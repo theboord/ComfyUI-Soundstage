@@ -268,3 +268,19 @@ test("a person placed aimed at a canoe stands in it, as on every other boat", ()
     assert.ok(r.position[1] > 2 && Math.abs(r.position[2] + 2) < 0.6, `${kind} aimed at x ${tx}: keyed in the boat (${r.position})`);
   }
 });
+
+// ------------------------------------------------------------------ 10. Duplicate near the tank wall
+// Before: Duplicate put the copy 0.8 x its height along +x whatever was there: a swimmer at x 6.8 was copied to x 8.24,
+// outside the tank (inside the concrete of its wall), a crate at 7.0 to 8.0. The copy stays in the water, as Add does.
+test("Duplicate near the tank wall keeps the copy in the water, beside the original", () => {
+  for (const a of [man("w", 0, { x: 6.8 }), prop("w", "crate", 0, { x: 7.0 }), man("w", 0, { x: -7.2, z: 7.4 })]) {
+    const st = tank([a], { frames: 49, keepSet: true });
+    const id = st.duplicate("w"), c = st.state.actors.find((x) => x.id === id), k = c.keys[0].position, k0 = a.keys[0].position;
+    assert.ok(Math.abs(k[0]) <= 7.0 + 1e-9 && Math.abs(k[2]) <= 7.8, `${a.kind} at ${k0}: the copy keyed in the water (${k})`);
+    assert.ok(Math.hypot(k[0] - k0[0], k[2] - k0[2]) >= 0.99, `${a.kind}: beside the original, not on it (${k})`);
+    st.setFrame(24);
+    const g = st.actorMeshes.get(id);
+    if (a.kind === "man") assert.ok(g.userData.swimOn && headY(st, id) > LEVEL - 0.25, `${a.kind}: the copy swims`);
+    else { g.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(g); assert.ok(b.max.x <= 7.8 + 0.01 && b.min.x >= -7.8 - 0.01, `crate copy inside the walls (${b.min.x.toFixed(2)}..${b.max.x.toFixed(2)})`); }
+  }
+});

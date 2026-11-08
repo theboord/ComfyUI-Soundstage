@@ -5014,12 +5014,24 @@ export class Stage {
     const off = Math.max(1, (a.height_m || 1) * 0.8);
     // The BASE keys, never the active shot's by_shot keys: the copy then moves like the original in every shot
     // that has no blocking of its own.
-    c.keys = this._baseKeys(a).map((k) => ({ ...clone(k), position: [k.position[0] + off, k.position[1], k.position[2]] }));
+    const bk = this._baseKeys(a);
+    // In a pool or the tank the copy stays in the water, as Add object keeps a new one (was: a swimmer at x 6.8 copied
+    // to x 8.24, into the tank's wall): the other side of the original when +x leaves the water, then inside its edge
+    // with the same inset as Add. Every key is kept inside, so a keyed path stays in the water too.
+    const w = this.water, k0 = bk[0]?.position || a.position || [0, 0, 0], wet = this._inPool(k0[0], k0[2]);
+    let dx = off;
+    const gp = w?.geometry?.parameters, inset = gp ? Math.min(0.8, gp.width / 4, gp.height / 4) : 0;
+    const inX = (x) => !wet || Math.abs(x - w.position.x) <= gp.width / 2 - inset;
+    if (wet && !inX(k0[0] + off) && inX(k0[0] - off)) dx = -off;
+    const keep = (p) => wet ? [Math.max(w.position.x - gp.width / 2 + inset, Math.min(w.position.x + gp.width / 2 - inset, p[0])), p[1],
+      Math.max(w.position.z - gp.height / 2 + inset, Math.min(w.position.z + gp.height / 2 - inset, p[2]))] : p;
+    c.keys = bk.map((k) => ({ ...clone(k), position: keep([k.position[0] + dx, k.position[1], k.position[2]]) }));
     c.position = [...c.keys[0].position];
     delete c.position_end;
     this.state.actors.push(c);
     const keepSel = this.selected;
     this._buildSet();
+    if (wet && c.keys.length === 1) this._keepInsideWater(c);   // its whole footprint inside the wall (a car, a crate)
     if (keepSel && this.actorMeshes.has(keepSel)) this.select(keepSel);
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
