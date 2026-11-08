@@ -142,14 +142,22 @@ test("every script that imports tools/qa/lib.mjs and calls launch() waits for cl
 });
 
 // A stand-in Chrome that answers DevTools just enough for launch() to finish (GET /json/list and a WebSocket that
-// replies {id, result: {}} to every command). Node, no packages; written as an executable script.
-function fakeCdpChrome(box) {
-  const log = join(box, "dir.txt"), exe = join(box, "fake-cdp-chrome");
+// replies {id, result: {}} to every command). Node, no packages; written as an executable script. With late > 0 it
+// also starts a helper process (same process group, like Chrome's GPU / renderer helpers) that writes into the
+// profile `late` s after start, then keeps running (so a helper that close() missed is still alive), and reports its
+// pid in helper.txt.
+function fakeCdpChrome(box, late = 0) {
+  const log = join(box, "dir.txt"), hpidf = join(box, "helper.txt"), exe = join(box, "fake-cdp-chrome");
   writeFileSync(exe, `#!${process.execPath}
 const http = require("node:http"), crypto = require("node:crypto"), fs = require("node:fs");
 let port = 0, dir = "";
 for (const a of process.argv.slice(2)) { if (a.startsWith("--remote-debugging-port=")) port = +a.split("=")[1]; if (a.startsWith("--user-data-dir=")) dir = a.slice(16); }
-fs.mkdirSync(dir + "/Default", { recursive: true }); fs.writeFileSync(dir + "/Default/Cookies", "x"); fs.writeFileSync(${JSON.stringify(log)}, dir);
+fs.mkdirSync(dir + "/Default", { recursive: true }); fs.writeFileSync(dir + "/Default/Cookies", "x");
+if (${late} > 0) {
+  const h = require("node:child_process").spawn("/bin/sh", ["-c", 'sleep ${late}; mkdir -p "$1/Default"; echo late > "$1/Default/Late"; sleep 30', "helper", dir], { stdio: "ignore" });
+  fs.writeFileSync(${JSON.stringify(hpidf)}, String(h.pid));
+}
+fs.writeFileSync(${JSON.stringify(log)}, dir);
 const srv = http.createServer((q, r) => { r.setHeader("content-type", "application/json"); r.end(JSON.stringify([{ type: "page", webSocketDebuggerUrl: "ws://127.0.0.1:" + port + "/devtools/page/1" }])); });
 srv.on("upgrade", (q, s) => {
   const acc = crypto.createHash("sha1").update(q.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
@@ -175,7 +183,7 @@ srv.on("upgrade", (q, s) => {
 srv.listen(port, "127.0.0.1");
 `);
   chmodSync(exe, 0o755);
-  return { exe, log };
+  return { exe, log, hpidf };
 }
 
 test("launch(): close() without await followed by process.exit() still deletes the ssqa-* profile (the exit guard stays armed until it is gone)", { timeout: 30000 }, async () => {
@@ -198,6 +206,38 @@ process.exit(0);
     assert.ok(dir.includes("ssqa-"), dir);
     assert.equal(existsSync(dir), false, `the profile folder is deleted although close() was not awaited: ${dir}`);
   } finally { if (dir.includes("ssqa-")) rmSync(dir, { recursive: true, force: true }); rmSync(box, { recursive: true, force: true }); }
+});
+
+test("launch(): await close() stops the browser's helpers before deleting the profile, so a late write can't bring it back", { timeout: 30000 }, async () => {
+  // Review: with the old close() (chrome.kill() on the main pid, delete the profile at once, then release()) every
+  // other test here still passed; its helpers lived on and wrote into the deleted profile (ssqa-* came back).
+  const box = mkdtempSync(join(tmpdir(), "ss-fakebrowser-"));
+  const LATE = 4;
+  const f = fakeCdpChrome(box, LATE);
+  let dir = "", hpid = 0;
+  try {
+    const port = 9800 + Math.floor(Math.random() * 500);
+    const c = await runChild(box, `import { launch } from ${JSON.stringify(LIB)};
+const b = await launch({ port: ${port}, chrome: ${JSON.stringify(f.exe)}, startMs: 10000 });
+console.log("UP " + b.profile);
+await b.close();
+console.log("CLOSED");
+`);
+    const t0 = Date.now();
+    const end = await c.exit;
+    assert.match(c.out(), /UP .*ssqa-[\s\S]*CLOSED/, `launch() and close() finished against the stand-in: ${c.out()} ${JSON.stringify(end)}`);
+    dir = readFileSync(f.log, "utf8");
+    assert.ok(dir.includes("ssqa-"), dir);
+    hpid = Number(readFileSync(f.hpidf, "utf8"));
+    assert.ok(hpid > 0, "the stand-in started its helper");
+    await sleep(Math.max(0, LATE * 1000 + 1500 - (Date.now() - t0)));   // past the helper's late write
+    assert.equal(alive(hpid), false, "the stand-in's helper was stopped by close() (the whole process group)");
+    assert.equal(existsSync(dir), false, `the profile folder is deleted and stays deleted after the late write: ${dir}`);
+  } finally {
+    if (hpid) { try { process.kill(hpid, "SIGKILL"); } catch {} }
+    if (dir.includes("ssqa-")) rmSync(dir, { recursive: true, force: true });
+    rmSync(box, { recursive: true, force: true });
+  }
 });
 
 test("the close() scan itself: an un-awaited close is caught, an awaited one (also close?.()) is not", () => {
