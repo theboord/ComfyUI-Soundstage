@@ -440,6 +440,35 @@ test("stairs run up at 2.5 m/s and run down at 3 m/s keyed in a straight line: n
   }
 });
 
+test("over a sharp 30 degree ridge and walking down off a 40 cm box: no pop in the body's height, no slide", { skip: NOT_INSTALLED }, async () => {
+  // df4288b followed the ground exactly, so over the ridge's apex the body's climb turned into a drop within a frame
+  // (5.8 cm/frame^2; 854e956 2.3, but it cut 9 cm under the apex) and the woman's trailing sole jumped 2.9 cm to the
+  // clip's foot when the plant ended out of reach (854e956 0.5). Walking down off a 40 cm box (planted since T.far 0.5),
+  // the toe out over the drop was pinned as the "contact" while the sole on the edge slid 1.67 cm (854e956 0.49).
+  const kf = (frame, x, y = 0) => ({ frame, position: [x, y, 0] });
+  const ridge = (x) => Math.max(0, 1 - Math.abs(x) * Math.tan(30 * Math.PI / 180));
+  for (const kind of ["man", "woman"]) {
+    const a = { id: "rg", kind, height_m: K.heightOf(kind), position: [-2.5, 0, 0], keys: [kf(0, -2.5), kf(120, 2.5)] };
+    const st = await K.setup(kind, a, { setFx: { id: "ridge", floorAt: ridge } });
+    let bob = 0, at = -1, off = 0;
+    for (let f = 1; f < 120; f++) {
+      const d2 = st._walkHeightAt(a, f + 1) - 2 * st._walkHeightAt(a, f) + st._walkHeightAt(a, f - 1);
+      if (Math.abs(d2) > bob) { bob = Math.abs(d2); at = f; }
+      off = Math.max(off, Math.abs(st._walkHeightAt(a, f) - ridge(st._actorPosAt(a, f)[0])));
+    }
+    assert.ok(bob < 0.03, `${kind} over the ridge: the body's height pops ${cm(bob)} cm/frame^2 (f${at})`);
+    assert.ok(off < 0.025, `${kind} over the ridge: the body ${cm(off)} cm off the ground under it`);
+    // FLAW (measured 2026-11-08): the trailing leg on each 30 degree side dips the hips up to 6 cm (T.supportDrop), the
+    // man's sole slides 1.04 cm in one frame, and the woman has 6 frames at the apex with no foot down (854e956: 14):
+    // her next foot lands 11 cm under the apex, out of the leg's reach until the body comes down the far side
+    check(K.physical(K.measure(st, a, { ground: ridge })), `${kind} over the ridge`, { drop: 0.061, slide: kind === "man" ? 0.011 : 0.01, drift: 0.02, hover: 0.02, float: kind === "woman" ? 6 : 0 });
+    const boxes = [{ id: "top", half: [2, 0.2, 2], pos: [-1, 0.2, 0], quat: [0, 0, 0, 1] }];
+    const b = { id: "sd0", kind, height_m: K.heightOf(kind), position: [-2.5, 0, 0], keys: [kf(0, -2.5), kf(120, 3)] };
+    const sb = await K.setup(kind, b, { boxes });
+    check(K.physical(K.measure(sb, b, { ground: K.boxGround(boxes) })), `${kind} down off a 40 cm box`);
+  }
+});
+
 test("set-box stairs keyed flat (the body not keyed up them): the body climbs with the feet, nothing sinks into a tread", { skip: NOT_INSTALLED }, async () => {
   // 3abc644: the body height (_heightAt) ignores set boxes while the feet stand on them: keyed flat over the stairs
   // the feet went 75 cm into the landing and slid 21 cm a frame

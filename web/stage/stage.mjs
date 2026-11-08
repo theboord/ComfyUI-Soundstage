@@ -297,6 +297,8 @@ const STEP_JUMP = 0.025;
 const EDGE_EPS = 0.002;
 /** _walkHeightAt: a walked step is spread over at most this much travel (m, for a 1.8 m person) ... */
 const STEP_SPAN = 0.5;
+/** _walkHeightAt: the smooth part of the footing is eased over this much travel either way (m, for a 1.8 m person). */
+const RIDGE_EASE = 0.12;
 /** _walkHeightAt: at most this many looks between two frames (a 50 cm step between two frames is still found). */
 const STEP_PROBES_MAX = 48;
 /** _obstacles / _heightAt: how many recent obstacle lists and height tables per person are kept (jitter on a cell edge). */
@@ -2017,6 +2019,20 @@ export class Stage {
       for (let g = q; g <= Math.min(n - 1, q + win); g++) lo1 = Math.min(lo1, B[g] + Y0[g]);
       if (e - lo0 > walkStep || e - lo1 > walkStep) big.push(q);
     }
+    // The smooth part of the footing (the breaks taken out) eased over RIDGE_EASE x height / 1.8 of travel either way
+    // (a triangle, at most a quarter second): followed exactly, a sharp 30 degree ridge turned the body's climb into a
+    // drop within one frame (5.8 cm/frame^2 at 1 m/s, a pop); the body now rounds it 2 cm low. A plain slope is
+    // untouched, a slope's foot or crest is rounded by under a centimetre.
+    const U = new Float64Array(n), Us = new Float64Array(n), L = new Float64Array(n), ease = RIDGE_EASE * tall / 1.8;
+    for (let f = 0; f < n; f++) { U[f] = S[f] - J[f] - B[f]; L[f] = f ? L[f - 1] + Math.hypot(PX[f] - PX[f - 1], PZ[f] - PZ[f - 1]) : 0; }
+    for (let f = 0; f < n; f++) {
+      let sw = 0, su = 0;
+      for (let g = Math.max(0, f - win); g <= Math.min(n - 1, f + win); g++) {
+        const w = 1 - Math.abs(L[g] - L[f]) / ease;
+        if (w > 0) { sw += w; su += w * U[g]; }
+      }
+      Us[f] = sw > 0 ? su / sw : U[f];
+    }
     const W = new Float64Array(n), air = new Uint8Array(n), span = STEP_SPAN * tall / 1.8;
     for (let f = 0; f < n; f++) {
       let yb = -Infinity;
@@ -2034,7 +2050,7 @@ export class Stage {
         if (gone >= span) break;
       }
       m /= cnt;
-      W[f] = +Math.max(S[f] - m, yb).toFixed(4);
+      W[f] = +Math.max(Us[f] + B[f] + J[f] - m, yb).toFixed(4);
       air[f] = yb - S[f] > 0.06 ? 1 : 0;
     }
     c.walk = { shapes, walkStep, W, air, S };

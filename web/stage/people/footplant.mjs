@@ -590,13 +590,16 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
       }
       const vtx = (f, q, out) => { _m1.compose(pf[f - s.from], qf[f - s.from], _v2.setScalar(R.scale[f])); return out.fromArray(R.loc, 3 * (K * f + q)).applyMatrix4(_m1); };
       // the contact patch of frame g and how far it moved from frame h's pose to g's (same points)
+      // (the patch is the points nearest the ground UNDER each of them, not the lowest: rolling off a box's edge onto the
+      // toe, the toe out over the drop was lowest and was pinned while the sole on the edge slid 1.7 cm in a frame)
+      const gapOf = new Float64Array(K);
       const moved = (g, h) => {
         let lo = Infinity;
-        for (let q = 0; q < K; q++) lo = Math.min(lo, vtx(g, q, _v0).dot(nrm));
+        for (let q = 0; q < K; q++) { const v = vtx(g, q, _v0); gapOf[q] = (v.y - ground(v.x, v.z, g)) * nrm.y; lo = Math.min(lo, gapOf[q]); }
         let cx = 0, cz = 0, c = 0;
         for (let q = 0; q < K; q++) {
           const vg = vtx(g, q, _v0);
-          if (vg.dot(nrm) > lo + 0.003 * k) continue;
+          if (gapOf[q] > lo + 0.003 * k) continue;
           const vh = vtx(h, q, _v3);
           cx += vg.x - vh.x; cz += vg.z - vh.z; c++;
         }
@@ -883,9 +886,14 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
       if (st[f] !== 3) continue;
       const cx = R.pos[3 * f], cy = R.pos[3 * f + 1] + dY[f], cz = R.pos[3 * f + 2];
       const at = (t) => needDrop(f, cx + (P[3 * f] - cx) * t, cy + (P[3 * f + 1] - cy) * t, cz + (P[3 * f + 2] - cz) * t);
-      if (at(w[f]) <= T.dropOK * k) continue;
+      // (walking with the other foot not planted, this is the only foot near the ground: the hips may dip as for a support
+      // frame, T.supportDrop. Weighted to 0 instead, over a 30 degree ridge the woman's touching sole jumped 2.9 cm to
+      // the clip's own foot in one frame)
+      // (walking: a run's flight has no foot down by design)
+      const lim = (out[lr === "l" ? "r" : "l"].st[f] === 1 || body[f] >= T.walkMax ? T.dropOK : T.supportDrop) * k;
+      if (at(w[f]) <= lim) continue;
       let lo = 0, hi = w[f];
-      for (let it = 0; it < 10; it++) { const m = 0.5 * (lo + hi); if (at(m) <= T.dropOK * k) lo = m; else hi = m; }
+      for (let it = 0; it < 10; it++) { const m = 0.5 * (lo + hi); if (at(m) <= lim) lo = m; else hi = m; }
       w[f] = lo;
     }
     plan.dY[lr] = dY; plan.near[lr] = near; plan.liftK[lr] = liftK; (plan.topG ||= {})[lr] = topG;
