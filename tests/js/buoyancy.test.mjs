@@ -229,3 +229,25 @@ test("Add object in the tank keeps new things inside its walls", () => {
   for (const k of ["man", "woman", "crate", "rock", "sphere", "rock", "sphere"]) st.addObject(k);
   for (const a of st.state.actors) assert.ok(st._inPool(a.position[0], a.position[2]), `${a.name} at ${a.position} is in the water`);
 });
+
+test("the person panel's Swim select drives stage.setSwim and shows the person's mode; the Physics info carries the density", async () => {
+  const { swimControl } = await import("../../web/stage/people/peopleui.mjs");
+  const calls = [];
+  const mk = (label, opts, value, onPick) => ({ wrap: { title: "" }, sel: { value, opts, pick: onPick }, label });
+  const st = { setSwim: (id, v) => calls.push([id, v]) };
+  const c = swimControl(st, mk, B.SWIM_MODES);
+  assert.deepEqual(Object.keys(c.swim.sel.opts), B.SWIM_MODES.map((m) => m[0]));
+  assert.match(c.swim.wrap.title, /Can't swim/);
+  c.swim.sel.pick("cant");
+  assert.deepEqual(calls, [[null, "cant"]]);
+  c.sync({ swim: "back" });
+  assert.equal(c.swim.sel.value, "back");
+  const s = tank([man("p", 0, { swim: "off" }), prop("c", "crate")]);
+  s.select = (id) => { s.selected = id; };
+  s.selected = "p";
+  assert.equal(s.selectedInfo().swim, "cant", "the old swim off reads as Can't swim");
+  const info = s.physicsInfo("c");
+  assert.equal(info.buoyancy.floats, true);
+  assert.equal(info.buoyancy.source, "kind");
+  assert.ok(info.buoyancy.density > 300 && info.buoyancy.density < 500);
+});
