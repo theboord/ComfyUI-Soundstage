@@ -1298,6 +1298,8 @@ export class Stage {
   setActiveShot(id) {
     if (!this._shots().some((x) => x.id === id)) return;
     this.state.active_shot = id;
+    const sh = this.activeShot();   // the flat field follows the chosen shot here (an edit), never during playback
+    if (sh?.camera_keys?.length) this.state.camera_keys = sh.camera_keys;
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
     this.onShots?.();
@@ -1340,6 +1342,17 @@ export class Stage {
     if (!shot.camera_keys?.length) shot.camera_keys = [{ frame: 0, ...clone(this._cameraAt0Legacy()) }];
     this.state.camera_keys = shot.camera_keys; // keep the flat field for older readers
     return shot.camera_keys;
+  }
+
+  /**
+   * Camera keys of the active shot, READ-ONLY: what playback, scrubbing and display read. Never writes the shot (a shot
+   * without keys gets a fallback key that is not stored) nor the flat state.camera_keys field, so Play leaves
+   * shot.camera_keys byte-identical. Edits use _camKeys(), which creates and stores the first key.
+   */
+  _camKeysView() {
+    const shot = this.activeShot?.();
+    if (shot?.camera_keys?.length) return shot.camera_keys;
+    return [{ frame: 0, ...clone(this._cameraAt0Legacy()) }];
   }
 
   _cameraAt0Legacy() {
@@ -1422,7 +1435,7 @@ export class Stage {
    * host's own space (what the keys are written in; a rig runs there, so it stays on its mount).
    */
   _cameraAt(frame, { local = false } = {}) {
-    const keys = this._camKeys();
+    const keys = this._camKeysView();   // read-only: playing a shot never writes its camera keys
     const shot = this.activeShot?.();
     let cam;
     if (curveVersion(shot) === CAM_CURVE) {
@@ -1489,7 +1502,7 @@ export class Stage {
     if (!rig?.type || rig.type === "free" || rig.amount === 0) return this._cameraAt(frame);   // amount 0 = the keys exactly
     const last = this._lastFrame(), fps = this.state.shot?.fps || 24;
     const host = this._followActor?.();
-    const keys = this._camKeys();
+    const keys = this._camKeysView();
     const sig = JSON.stringify([shot.id, keys, shot.cam_curve || 1, shot.cam_speed || "", shot.lens_keys || null, shot.parts || null, shot.sensor || null, rig, last, fps,
       shot.camera_follow || "", host ? [host.keys, host.position, host.rotation_deg || 0, host.kind, host.drive || "",
         host.physics?.baked || false, host.stunt_sim || null] : null]);
@@ -2497,7 +2510,7 @@ export class Stage {
   /** Key frames for the timeline: camera, and the selected object if any. */
   keyInfo() {
     const a = this.state.actors.find((x) => x.id === this.selected);
-    return { camera: this._camKeys().map((k) => k.frame), object: a ? this._actorKeys(a).map((k) => k.frame) : [],
+    return { camera: this._camKeysView().map((k) => k.frame), object: a ? this._actorKeys(a).map((k) => k.frame) : [],
       objectName: a?.name || null, last: this._lastFrame() };
   }
 
