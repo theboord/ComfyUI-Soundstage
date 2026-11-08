@@ -1,5 +1,6 @@
 """Collect project (soundstage/project): folder layout, MISSING.txt, path safety, relink on re-open. docs/projects.md"""
 import json
+import re
 import sys
 import types
 import zipfile
@@ -132,12 +133,13 @@ def test_path_safety(tmp_path):
         assert C.inside(base, bad) is None, bad
     assert C.clean_name("../../etc") == "etc" and C.clean_name("a/b\\c") == "a b c" and C.clean_name("..") == ""
     assert C.clean_name("CON") == "CON_"
-    # a reference that climbs out of output/ is reported missing, never read
+    # a reference that climbs out of output/ is never read: reported as unsupported (not cut down to output/passwd.mp4)
     wf = {"nodes": [{"type": "SoundstageStage", "properties": {"ss_renders": {"sh": {"draft": {
         "filename": "passwd.mp4", "subfolder": "../../../etc", "type": "output"}}}}, "widgets_values": []}]}
     (tmp_path / "out").mkdir()
+    (tmp_path / "out" / "passwd.mp4").write_bytes(b"unrelated")
     res = C.write_collect(C.plan_collect(wf, "Evil/../../x"), {"output": str(tmp_path / "out")}, tmp_path / "out" / C.ROOT_NAME)
-    assert res["copied"] == 0 and res["missing"]
+    assert res["copied"] == 0 and [u["name"] for u in res["unsupported"]] == ["passwd.mp4"]
     assert (tmp_path / "out" / C.ROOT_NAME / res["name"]).is_dir() and "/" not in res["name"]
 
 
@@ -277,10 +279,71 @@ def test_collect_cut_refs_stay_in_approved_roots(tmp_path):
     plan = C.plan_collect(wf, "Evil Cut")
     assert all(c["src"]["type"] in ("output", "input", "temp") for c in plan["copies"])
     res = C.write_collect(plan, {"output": str(tmp_path / "out")}, tmp_path / "out" / C.ROOT_NAME)
-    assert res["copied"] == 0 and any("passwd.mp4" in m for m in res["missing"])
+    assert res["copied"] == 0
+    assert [(u["name"], u["where"]) for u in res["unsupported"]] == [("passwd.mp4", "ss_cut.cut[0].take.url")]
 
 
 def test_collect_without_a_cut_reports_nothing_unsupported(tmp_path):
     res, d = _collect(tmp_path)
     assert res["unsupported"] == []
     assert "raw path" not in (d / "MISSING.txt").read_text()
+
+
+# ---------------------------------------------------------------- final round: refs that point outside ComfyUI, raw-path report
+
+def test_collect_never_cuts_an_absolute_ref_down_to_its_basename(tmp_path):
+    out = tmp_path / "out"
+    (out / "soundstage").mkdir(parents=True)
+    (out / "passwd.mp4").write_bytes(b"UNRELATED")            # what HEAD quietly copied into cut/media/
+    (out / "clip.mov").write_bytes(b"UNRELATED")
+    (out / "soundstage" / "good_00001_.mp4").write_bytes(b"good")
+    cut = {"cut": [{"kind": "gap", "in": 0, "out": 12}],
+           "audio": [{"file": {"filename": "/etc/passwd.mp4", "type": "output"}},
+                     {"file": {"filename": "clip.mov", "subfolder": "C:\\Media", "type": "output"}},
+                     {"file": {"filename": "clip.mov", "subfolder": "a\\b", "type": "output"}},
+                     {"file": {"filename": "D:/x/clip.mov", "type": "output"}},
+                     {"file": "/abs/clip.mov [output]"},
+                     {"file": "/view?filename=clip.mov&subfolder=..%2Fsecret&type=output"},
+                     {"file": {"filename": "soundstage/good_00001_.mp4", "type": "output"}}]}
+    wf = {"nodes": [{"type": "SoundstageStage", "properties": {"ss_cut": cut, "ss_look": {"ref": {
+        "filename": "../../outside.png", "type": "input"}}}, "widgets_values": []}]}
+    plan = C.plan_collect(wf, "Abs Film")
+    srcs = [C.ref_key(c["src"]) for c in plan["copies"]]
+    assert srcs == ["output:soundstage/good_00001_.mp4"]       # a relative path in filename folds into subfolder
+    raws = [(u["name"], u["where"]) for u in plan["unsupported"]]
+    assert ("passwd.mp4", "ss_cut.audio[0].file") in raws
+    assert sum(1 for n, _ in raws if n == "clip.mov") == 5      # five different raw paths, five entries
+    assert ("outside.png", "ss_look.ref") in raws
+    res = C.write_collect(plan, {"output": str(out), "input": str(tmp_path / "in")}, out / C.ROOT_NAME)
+    d = out / C.ROOT_NAME / "Abs Film"
+    assert res["copied"] == 1 and not (d / "cut" / "media").exists()
+    assert not any(p.read_bytes() == b"UNRELATED" for p in d.rglob("*") if p.is_file())
+    assert "passwd.mp4\t(ss_cut.audio[0].file)" in (d / "MISSING.txt").read_text()
+
+
+def test_raw_path_report_dedupes_by_full_path_across_sources(tmp_path):
+    live = {"cut": [{"shot_id": "sh_a", "in": 0, "out": 10, "take": {"url": "/A/clip.mov"}},
+                    {"shot_id": "sh_a", "in": 0, "out": 10, "take": {"url": "/B/clip.mov"}},
+                    {"shot_id": "sh_a", "in": 0, "out": 10, "take": {"url": "/A/clip.mov"}}]}
+    wf = _fixture_workflow()
+    wf["nodes"][0]["properties"]["ss_cut"] = live
+    timeline = json.loads(json.dumps(live))                   # the App's timeline carries the same live cut
+    timeline["audio"] = [{"file": "/C/clip.mov"}]
+    plan = C.plan_collect(wf, "Dup Film", extras={"timeline": timeline})
+    got = [(u["name"], u["where"]) for u in plan["unsupported"]]
+    assert got == [("clip.mov", "ss_cut.cut[0].take.url"), ("clip.mov", "ss_cut.cut[1].take.url"),
+                   ("clip.mov", "timeline.audio[0].file")]     # /A, /B once each (first 'where' kept), /C from the timeline
+
+
+def test_missing_txt_where_label_has_no_newlines(tmp_path):
+    roots = _roots(tmp_path)
+    wf = _fixture_workflow()
+    wf["nodes"][0]["properties"]["ss_cut"] = {"tracks": {"evil\nINJECTED LINE\r\x1b[31m": [{"file": "/Users/x/fx\u2028.wav"}]}}
+    plan = C.plan_collect(wf, "Ctl Film")
+    assert plan["unsupported"] and all(not re.search(r"[\x00-\x1f\x7f\u2028]", u["where"] + u["name"]) for u in plan["unsupported"])
+    # a plan made elsewhere is sanitised when MISSING.txt is written, too
+    plan["unsupported"].append({"name": "a\nb.wav", "where": "x\ny"})
+    C.write_collect(plan, roots, tmp_path / "output" / C.ROOT_NAME)
+    lines = (tmp_path / "output" / C.ROOT_NAME / "Ctl Film" / "MISSING.txt").read_text().splitlines()
+    assert not any(line.startswith(("INJECTED", "b.wav", "y)")) for line in lines)
+    assert "a b.wav\t(x y)" in lines
