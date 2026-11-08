@@ -2,6 +2,7 @@
 
 1 the set-piece limit names the shapes the review found cut (gable, dome or arch, stepped block, shallower gable with a
   wider box), not the T-sign that is not cut, and says the neck test was not added
+2 the wardrobe limit lists the echoes still kept as clothing and round 6's example-plus-a-garment read dropped as ''
 Run:  python -m pytest tests/test_v2s_changelog_r9.py -q
 """
 import os
@@ -34,3 +35,9 @@ def test_the_set_piece_limit_names_the_shapes_that_fail(limits):
                   "neck test", "was not added", "same as on a5a7a37"]:
         assert words in limits, words
 
+
+def test_the_wardrobe_limit_lists_the_echoes_still_kept_and_the_dropped_read(limits):
+    for words in ["she's wearing an orange cable-knit sweater and brown corduroys", "'she s'", "`_WEARS`",
+                  "commonest", "the woman wears", "woman wearing", "a pair of brown corduroy trousers",
+                  "brown corduroys, orange cable-knit sweater, red beanie", "reads as ''", "Round 6's behaviour"]:
+        assert words in limits, words
