@@ -171,3 +171,16 @@ test("a boat or a sinking car never throws a swimmer: bounded per frame, the who
     assert.equal(out, 0, `${name}: the body inside the walls (${out} frames through)`);
   }
 });
+
+// ------------------------------------------------------------------ 5. Sunk things on the tank floor
+// Before: a flooded car went through the tank floor once it sank (lowest point -0.58 to -0.65 m, nose down 0.33 rad on
+// the bottom), its driver's root at -0.43; a rock or a cube landing wobbled 4-5 cm through it.
+test("a car that floods and sinks rests on the tank floor, not through it; nothing that sinks goes through the floor", () => {
+  for (const [kind, y, frames, step] of [["car", 0, 2400, 6], ["car", 4, 2400, 6], ["rock", 4.5, 241, 1], ["cube", 4.5, 241, 1], ["tv", 3, 241, 1]]) {
+    const st = tank([prop("x", kind, y, { key_y: true, x: 2 })], { frames }), g = st.actorMeshes.get("x");
+    let lo = Infinity, at = -1;
+    for (let f = 0; f < frames; f += step) { st.setFrame(f); const l = lowest(g); if (l < lo) { lo = l; at = f; } }
+    assert.ok(lo > -0.01, `${kind} keyed at ${y}: never through the floor (lowest ${lo.toFixed(3)} at f${at})`);
+    if (kind === "car") { st.setFrame(frames - 1); assert.ok(lowest(g) < 0.05 && Math.abs(g.rotation.x) < 0.05, `${kind}: resting level on the bottom (lowest ${lowest(g).toFixed(3)}, pitch ${g.rotation.x.toFixed(2)})`); }
+  }
+});

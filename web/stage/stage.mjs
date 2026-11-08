@@ -5534,7 +5534,7 @@ export class Stage {
     // (the old per-object switch: buoyancy "sink" = a stone's density)
     const density = a.physics?.density ?? (a.buoyancy === "sink" ? 2600 : null);
     const body = Buoy.bodyOf(a.kind, size, { density, mass, sinking, struggle });
-    const out = { sig, body, minY: box.center[1] - box.half[1] };
+    const out = { sig, body, minY: box.center[1] - box.half[1], box };
     g.userData._buoy = out;
     return out;
   }
@@ -5570,7 +5570,7 @@ export class Stage {
     // A key at the floor is "placed in the water"; the bottom of an object whose origin is its middle is above 0.
     if (bb.minY > 0) for (let f = 0; f <= last; f++) if (keyY[f] <= bb.minY + 0.02 && !lift) keyY[f] = 0;
     const tr = Buoy.floatTrack(bb.body, { level, floor: 0, fps, keyY, over });
-    const out = { sig, tr, body: bb.body, minY: bb.minY, over };
+    const out = { sig, tr, body: bb.body, minY: bb.minY, box: bb.box, over };
     this._buoyCache.set(a, out);
     return out;
   }
@@ -5631,15 +5631,28 @@ export class Stage {
     const t0 = tr.splash >= 0 ? tr.splash : Math.max(0, tr.entry);
     const ti = Math.max(0, (this.frame - t0) / fps);
     g.rotation.order = "YXZ";
-    if (body.car) {   // the engine end floods first: nose down as it fills
+    if (body.car) {   // the engine end floods first: nose down as it fills, levelling out as it comes down on the bottom
       const fl = Math.max(0, Math.min(1, (tr.rho[f] - body.rho) / Math.max(1, 1000 - body.rho)));
-      g.rotation.x = 0.35 * fl + 0.02 * Math.sin(1.3 * ti + seed);
-      g.rotation.z = 0.02 * Math.cos(0.9 * ti + seed);
+      const up = Math.max(0, Math.min(1, tr.y[f] / Math.max(0.2, 0.6 * body.h))), lvl = up * up * (3 - 2 * up);
+      g.rotation.x = (0.35 * fl + 0.02 * Math.sin(1.3 * ti + seed)) * lvl;
+      g.rotation.z = 0.02 * Math.cos(0.9 * ti + seed) * lvl;
     } else if (!PERSON_KINDS.has(kind) && !["dog", "horse", "cat", "bird"].includes(kind) && tr.entry >= 0 && f >= tr.entry) {
       const wob = floating ? Math.exp(-0.6 * ti) * 0.15 + 0.03 : Math.exp(-1.2 * ti) * 0.12;   // settling, then a gentle sway
       g.rotation.x = wob * Math.sin(2.1 * ti + seed); g.rotation.z = wob * Math.cos(1.7 * ti + seed * 0.3);
     }
     if (body.sinkRho && tr.entry >= 0 && f >= tr.entry) this._animalSinkPose(a, g, tr, body, f, fps, seed);
+    // Near the bottom its tilt (a sway, a car still nose down) would put a corner through the floor: the lowest corner
+    // of its own box (cached with its body: spinning wheels don't count) at this frame's tilt is lifted onto it (was: a
+    // flooded car's nose at -0.65, a rock landing 5 cm through). This frame only.
+    if (T.box && tr.entry >= 0 && f >= tr.entry && tr.y[f] < Math.max(0.3, body.h)) {
+      const { center: c, half: hb } = T.box, v = new THREE.Vector3();
+      let lo = Infinity;
+      for (let i = 0; i < 8; i++) {
+        v.set(c[0] + (i & 1 ? hb[0] : -hb[0]), c[1] + (i & 2 ? hb[1] : -hb[1]), c[2] + (i & 4 ? hb[2] : -hb[2])).applyQuaternion(g.quaternion);   // (the box is measured at its scale)
+        lo = Math.min(lo, g.position.y + v.y);
+      }
+      if (lo < 0) g.position.y -= lo;
+    }
     // Tipped (a sway, a flooding car going nose down) its corners reach further out: near the wall, measure the posed
     // object and move it back inside (from this frame's pose only: the same on any play order).
     const w = this.water, gp = w.geometry.parameters, lx = gp.width / 2, lz = gp.height / 2;
