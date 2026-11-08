@@ -379,6 +379,8 @@ export function installNavigation(stage) {
 
   const off = () => !!stage.drive?.on;
   const active = () => stage._activeOrbit?.();
+  // Read-only (hit tests, refusals): never writes a shot-camera key. Falls back for stand-in stages without it.
+  const peek = () => (stage._peekOrbit ? stage._peekOrbit() : active());
   // An Alt + right press is a dolly (Maya, Unreal) or a look, never fly mode: the wheel zooms and WASD walks as usual.
   const flying = () => rmb.down && !rmb.noFly && !off();
   /** Right is no longer held (Drive swallowed its release, or it came up off the canvas): fly mode ends. */
@@ -469,7 +471,7 @@ export function installNavigation(stage) {
     },
     /** The point under the cursor an orbit turns about (the nearest object / set box / wall, the floor, else the target). */
     pivotAt(e, fallback = true, actorHits = null) {
-      const o = active();
+      const o = peek();
       if (!o || !stage._pickRay) return null;
       try { return pivotFrom(stage._pickRay(e), o, fallback, actorHits)?.point || null; } catch { return null; }
     },
@@ -598,7 +600,7 @@ export function installNavigation(stage) {
 
     /** Double-click: glide to the object or point under the cursor (Free view only). */
     focusAt(e) {
-      const o = active(); if (!o || !stage._pickRay) return false;
+      const o = peek(); if (!o || !stage._pickRay) return false;
       if (!stage.freeView) { stage.onInteract?.("Double-click focuses in the Free view (press 0): it never moves the shot camera."); return false; }
       const rc = stage._pickRay(e);
       const ms = reduced ? 0 : 450;

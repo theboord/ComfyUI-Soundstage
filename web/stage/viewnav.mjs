@@ -83,7 +83,8 @@ export function installViewNav(stage) {
   const hist = new ViewHistory(10);
   const view = () => {
     if (stage.drive?.on || stage._preview) return null;
-    const o = stage._activeOrbit?.();
+    // Only the free view is read (never _activeOrbit in the shot view: that writes a camera key at the playhead, every poll).
+    const o = stage.freeView ? (stage._peekOrbit?.() ?? stage._activeOrbit?.()) : null;
     return stage.freeView && o ? { free: true, position: [...o.position], target: [...o.target] } : { free: false };
   };
   const boxes = () => (stage._setCollidersCached?.() || []).filter((c) => c.half && c.pos);

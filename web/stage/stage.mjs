@@ -2730,6 +2730,14 @@ export class Stage {
     return this.freeView ? this.free : this._editCamera();
   }
 
+  /** Read-only view of the same orbit: the free viewport, or the shot camera at the playhead. Unlike _activeOrbit it never
+   *  writes a camera key, so polls, hit tests and refusals don't key the shot (or move an old shot onto the smooth curve). */
+  _peekOrbit() {
+    if (this.freeView) return this.free;
+    const c = this._cameraAt(this.frame);
+    return { position: [...c.position], target: [...c.target], focal_mm: c.focal_mm };
+  }
+
   /** Camera the viewport looks through (captures always use the shot camera). */
   _viewportCamera() {
     this._syncShotCamera();
@@ -3288,7 +3296,7 @@ export class Stage {
 
   /** Is the active view close in or inside a car / building? (for the held-key speed) */
   _tightNow() {
-    const o = this._activeOrbit();
+    const o = this._peekOrbit();
     return !!o && this._tightCamera(new THREE.Vector3(...o.position), new THREE.Vector3(...o.target));
   }
 

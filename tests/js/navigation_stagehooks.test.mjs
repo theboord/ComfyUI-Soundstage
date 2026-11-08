@@ -107,6 +107,7 @@ function makeStage({ freeView = true, selected = null, grabbable = true } = {}) 
   st.free = { position: [0, 2, 10], target: [0, 1, 0] };
   st.shot = { position: [0, 2, 10], target: [0, 1, 0] };
   st._activeOrbit = function () { return this.freeView ? this.free : this.shot; };
+  st._peekOrbit = st._activeOrbit;   // the read-only twin (stage.mjs): this stand-in's shot camera has no keys to write
   st._viewportCamera = function () { return this.freeView ? this.viewCam : this.camera; };
   st._applyActive = function () {
     const o = this._activeOrbit(), cam = this._viewportCamera();
