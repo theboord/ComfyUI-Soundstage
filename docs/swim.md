@@ -15,8 +15,50 @@ People in water swim with the physics that sets how a real body moves there. Div
 The stage decides this per frame, from the actor's keys.
 
 - **On the reef**, a person whose keyed origin is more than 0.35 m above the seabed swims. If their hips are within 0.45 m of the surface (10 m), they swim at the surface.
-- **In a tank or open water**, a person over the water and at or below its level swims at the surface. With `swim` set to an underwater style and keyed below the surface, they dive.
-- `swim: "off"` keeps the old behaviour: walking on the reef, floating upright in a tank.
+- **In a tank, a pool or open water**, a person over the water swims on every frame there, whatever their keyed height: keyed at the floor (0) they are placed in the water at the surface; keyed above the surface they drop in feet first, go under and come back up; keyed fully under it they kick up to the surface. Nobody walks on the bottom or stands in mid-air. With `swim` set to an underwater style or `dive` and keyed below the surface, they dive.
+- `swim: "off"` (the old "doesn't swim") now means **Can't swim** (`cant`): it used to float them upright like a cork.
+
+### Swim control (the person panel's **Swim**, `stage.setSwim`)
+
+| Mode | What they do | Numbers |
+|---|---|---|
+| `auto` | Swims as keyed: treads water when still, breaststroke when slow, freestyle when faster | as below |
+| `tread` | Treads water, head and shoulders out (eggbeater legs, sculling hands) | hips 0.52 m under at 1.8 m |
+| `breaststroke`, `freestyle` | That stroke at the surface | |
+| `back` | Floats on the back: face up, legs sinking ~35 degrees, arms out sculling, a slow breathing heave | hips 0.16 m under, ±1.2 cm at 0.25 Hz |
+| `dive` | Scuba, neutrally trimmed: hovers at the keyed depth (mid-water when keyed on the floor) | |
+| `flutter`, `frog` | Underwater kicks at the keyed depth | |
+| `cant` | **Can't swim / not treading**: the instinctive drowning response at the surface (upright, head back, mouth at the water, arms pressing down at the sides, no kick, no wave), then they slip under (~2 s, the arms stop), sink slowly and limp, and settle on the bottom on their back | struggle 2-3.5 s (seeded per person; real drownings take 20-60 s, compressed for a shot); sinking ~0.25 m/s |
+| `sink` | **Sink slowly** (unconscious): limp from the surface down, no struggle | ~0.25 m/s |
+
+The sink is integrated, not drawn: a 75 kg body (scaled by height cubed) whose density eases from 985 kg/m3 (air in the lungs) to 1045 (breathed out) over 2.5 s, against water's 1000, with quadratic drag of a limp, splayed, clothed body (Cd·A ≈ 0.9 m²) and 30 % added mass. Its terminal speed is about 0.26 m/s, inside the 0.1-0.35 m/s of the research for a limp body. Not modelled: lungs compressing with depth (Boyle), clothes ballooning, the slow refloat of a drowned body.
+
+**Lifelike people:** a person on a swim plan (every mode, in any water) shows the documented **clay fallback** for the whole shot (reason "swims", people/avatarcore.mjs): the lifelike body's clips have no swimming, struggling or sinking, so it does not follow the body in the water.
+
+## Buoyancy: things in the water ([web/stage/buoyancy.mjs](../web/stage/buoyancy.mjs))
+
+Everything else in a pool or tank floats or sinks by weight. Each object has a **density** and a **volume** from its own bounds (times a fill factor: a chair is mostly air). The density comes from, in order: its **Floats / sinks** setting in the Physics panel (`physics.density`, `stage.setDensity`), its **Mass** in the Physics panel (mass / volume), or its kind:
+
+| Kind | kg/m3 | In the water |
+|---|---|---|
+| Ball (sphere) | 110 | floats high (about a fifth under) |
+| Cardboard box | 180, soaks to 1150 over ~20 s | floats, soaks through and sinks |
+| Wooden crate | 400, soaks to 950 over ~90 s | floats about 40 % under, sits lower as it soaks |
+| Chair, table, bench, log | 600-700 | floats |
+| Upholstered armchair | 300, soaks to 1050 over ~60 s | floats, then sinks |
+| Cone (PVC), potted plant, TV | 1250-1600 | sinks slowly |
+| Concrete block, rock | 2400-2650 | sinks fast (a 0.5 m rock at about 4 m/s) |
+| Lamp post, bicycle, motorcycle | 2600-3000 | sinks |
+| Car | its mass over 60 % of its box (~200), floods toward 2400 over ~40 s | floats low, tips nose down and settles lower as it floods |
+| Boats | their own hull physics (watercraft.mjs), unchanged | |
+
+The vertical force is (ρ_water · V_submerged − m) g, minus quadratic drag on the wetted part (½ ρ Cd A v|v|), with the water it carries along as added mass (Ca ρ V_submerged), and a little wave-making damping while it pierces the surface (a damping ratio of 0.06 for a ball to 0.3 for a person or an animal). So a float dropped in plunges under its waterline, overshoots and bobs, under-damped, to its real waterline (the fraction under is its density over the water's, for its shape); a heavy thing slows to its terminal speed and settles on the bottom. A thing keyed under the surface rises or sinks from there; keyed at the floor it is placed in the water (at its waterline, or on the bottom).
+
+**Deterministic:** the whole shot is integrated once per object on fixed sub-steps (12 a frame) from its keys, cached on its keys, body, the water and the shot; every frame is a lookup, so scrubbing to a frame gives the same pose in any order (tested). The Physics start height and a baked fall are where it is let go into the water.
+
+**What hands things to the water:** the live drag (a person dragged in the tank keeps swimming; a prop carried over it shows at its waterline and is keyed where you let go: 0 = placed in the water, above the surface = a drop height), the gizmo's settle (leaves a prop over the water alone), **Simulate & bake** (dynamic objects let go over the water are not baked: the water floats or sinks them; the message says how many), and **Add object** on the Water tank set (stays inside the walls).
+
+Film compression (flaws first): soaking and car flooding run on tens of seconds, not the hours (wood) or 30-120 s (a car) of real life, and a non-swimmer struggles for seconds, not 20-60 s, so a short shot shows it. The densities and speeds come from standard tables and the literature below, recalled, not re-checked for this release: Siri 1961 and Brozek 1963 (body density), the USDA Wood Handbook (wood, waterlogging), Hoerner (drag), Newman (added mass), Pia 1974 and Vittone & Pia 2006 (the instinctive drowning response), Giesbrecht & McDonald 2010 (cars in water).
 
 Actor fields, all optional:
 
