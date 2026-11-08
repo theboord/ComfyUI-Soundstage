@@ -283,6 +283,8 @@ export const liveKinds = () => ({ PERSON_KINDS, RIDEABLE, SITTABLE, SEATS, NO_CO
 const OBS_TOL = { pos: 0.05, rot: 0.01, scale: 0.01 };
 /** _walkHeightAt: a rise or drop of the footing up to this (m) is walked as a step, a bigger one is a jump. */
 const WALK_STEP = 0.45;
+/** _walkHeightAt: a change of the footing over this (m) from one frame to the next is a step (smaller: a ramp). */
+const STEP_JUMP = 0.025;
 /** _obstacles / _heightAt: how many recent obstacle lists and height tables per person are kept (jitter on a cell edge). */
 const OBS_LRU = 8, HEIGHT_LRU = 4;
 
@@ -1911,8 +1913,8 @@ export class Stage {
    * A lifelike person's body height at a frame (people/avatars.mjs places the body and grounds its feet on it). The
    * clay's height table (_heightAt) takes every rise as a ballistic hop: the body starts up in a gravity curve before
    * a 20-40 cm step, up to 19 cm over the floor, and those frames count as in the air. A person walking up a step
-   * steps up: here a rise or a drop of at most WALK_STEP is taken over the stride after it (the body's own footing,
-   * averaged over a quarter second behind), only bigger ones are jumps (the gravity arcs, as _heightAt). The footing
+   * steps up: here a rise or a drop of at most WALK_STEP is taken as a step (the body's own footing, averaged over a
+   * quarter second around the frame), only bigger ones are jumps (the gravity arcs, as _heightAt). The footing
    * also counts the set's own boxes the way the feet do (_supportAt: a stair, a kerb, a landing within reach), which
    * _heightAt leaves out: keyed flat over set-box stairs, the feet went 75 cm into the landing.
    */
@@ -1951,15 +1953,24 @@ export class Stage {
       for (let g = q; g <= Math.min(n - 1, q + win); g++) lo1 = Math.min(lo1, S[g]);
       if (S[q] - lo0 > WALK_STEP || S[q] - lo1 > WALK_STEP) big.push(q);
     }
+    // the footing's steps, summed: every change of more than STEP_JUMP from one frame to the next, up to WALK_STEP
+    // (over the keyed height: a body keyed up a stair's line follows its keys)
+    const J = new Float64Array(n);
+    for (let f = 1; f < n; f++) {
+      const d = (S[f] - Y0[f]) - (S[f - 1] - Y0[f - 1]);
+      J[f] = J[f - 1] + (Math.abs(d) > STEP_JUMP && Math.abs(d) <= WALK_STEP ? d : 0);
+    }
     const W = new Float64Array(n), air = new Uint8Array(n);
     for (let f = 0; f < n; f++) {
       let yb = -Infinity;
       for (const q of big) { const d = f - q, v = S[q] - kk * d * d; if (v > yb) yb = v; }
-      // a walked step: the footing's small changes over the last quarter second, averaged (a big one counts as none)
-      // over the keyed height (what the ground under the body adds to it)
-      let m = 0, k = 0;
-      for (let g = Math.max(0, f - win); g <= f; g++) { const d = (S[f] - Y0[f]) - (S[g] - Y0[g]); m += Math.abs(d) <= WALK_STEP ? d : 0; k++; }
-      W[f] = +Math.max(S[f] - m / k, yb).toFixed(4);
+      // a walked step: the footing's steps (what it changes by more than STEP_JUMP from one frame to the next, a jump
+      // counting as none) averaged over the last quarter second; its smooth part (a ramp, a slope) and the keyed
+      // height are followed exactly (a plain average left the body 2 cm low on the station ramp)
+      let m = 0;
+      for (let g = Math.max(0, f - win); g <= f; g++) m += J[f] - J[g];
+      m /= Math.min(f, win) + 1;
+      W[f] = +Math.max(S[f] - m, yb).toFixed(4);
       air[f] = yb - S[f] > 0.06 ? 1 : 0;
     }
     c.walk = { shapes, W, air, S };
