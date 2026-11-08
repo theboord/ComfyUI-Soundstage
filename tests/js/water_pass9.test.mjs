@@ -135,3 +135,21 @@ test("walking out of the tank through its wall: no jump at the water's edge, and
     assert.ok(headY(st, "m") > 1.5 && !st.actorMeshes.get("m").userData.swimOn, `out of the water he stands and walks (head ${headY(st, "m").toFixed(2)})`);
   }
 });
+
+// ------------------------------------------------------------------ 6. Duplicate a path that leaves the water (regression)
+// At 7eafe37 Duplicate pulled every key of the copy inside the tank's wall: a copy of a man walking out of the tank
+// (0 to -12) got its last key at -7 and stayed swimming in the tank. Only the keys in the water are kept inside.
+test("Duplicate of a path that leaves the water leaves it too; the keys in the water stay inside", () => {
+  const st = tank([keyed("m", "man", [[0, [0, 0, 0]], [120, [-12, 0, 0]]], { key_y: false })], { frames: 121, keepSet: true });
+  const id = st.duplicate("m"), c = st.state.actors.find((x) => x.id === id), k = c.keys.map((q) => q.position);
+  assert.equal(k.length, 2);
+  assert.ok(Math.abs(k[0][0] - 1.44) < 1e-9 && st._inPool(k[0][0], k[0][2]), `the first key beside the original, in the water (${k[0]})`);
+  assert.ok(Math.abs(k[1][0] + 10.56) < 1e-9, `the last key out of the tank as the original's is (${k[1]})`);
+  st.setFrame(120);
+  const g = st.actorMeshes.get(id);
+  assert.ok(!g.userData.swimOn && headY(st, id) > 1.5, `the copy walks out of the water too (x ${g.position.x.toFixed(2)}, head ${headY(st, id).toFixed(2)})`);
+  // and a swimmer's path near the wall still stays in the water
+  const s2 = tank([keyed("w", "man", [[0, [6.6, 0, 0]], [120, [6.8, 0, 3]]], { key_y: false })], { frames: 121, keepSet: true });
+  const id2 = s2.duplicate("w"), c2 = s2.state.actors.find((x) => x.id === id2);
+  for (const q of c2.keys) assert.ok(s2._inPool(q.position[0], q.position[2]) && Math.abs(q.position[0]) <= 7.0 + 1e-9, `a swimmer's copy keyed in the water (${q.position})`);
+});

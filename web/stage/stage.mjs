@@ -5124,7 +5124,8 @@ export class Stage {
     const bk = this._baseKeys(a);
     // In a pool or the tank the copy stays in the water, as Add object keeps a new one (was: a swimmer at x 6.8 copied
     // to x 8.24, into the tank's wall): the other side of the original when +x leaves the water, then inside its edge
-    // with the same inset as Add. Every key is kept inside, so a keyed path stays in the water too.
+    // with the same inset as Add. Only the keys that are in the water are kept inside: a path that leaves it leaves it
+    // too (was: every key pulled inside, so a copy of a man walking out of the tank, 0 to -12, ended at -7, swimming)
     const w = this.water, k0 = bk[0]?.position || a.position || [0, 0, 0], wet = this._inPool(k0[0], k0[2]);
     let dx = off;
     const gp = w?.geometry?.parameters, inset = gp ? Math.min(0.8, gp.width / 4, gp.height / 4) : 0;
@@ -5132,7 +5133,7 @@ export class Stage {
     if (wet && !inX(k0[0] + off) && inX(k0[0] - off)) dx = -off;
     const keep = (p) => wet ? [Math.max(w.position.x - gp.width / 2 + inset, Math.min(w.position.x + gp.width / 2 - inset, p[0])), p[1],
       Math.max(w.position.z - gp.height / 2 + inset, Math.min(w.position.z + gp.height / 2 - inset, p[2]))] : p;
-    c.keys = bk.map((k) => ({ ...clone(k), position: keep([k.position[0] + dx, k.position[1], k.position[2]]) }));
+    c.keys = bk.map((k) => { const q = [k.position[0] + dx, k.position[1], k.position[2]]; return { ...clone(k), position: this._inPool(k.position[0], k.position[2]) ? keep(q) : q }; });
     c.position = [...c.keys[0].position];
     delete c.position_end;
     this.state.actors.push(c);
