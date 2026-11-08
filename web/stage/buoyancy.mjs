@@ -249,22 +249,40 @@ export function personBody(height = 1.8, build = 1) {
 const PERSON_RHO = { inhaled: 985, exhaled: 1045 };
 
 /**
+ * A person's own density in the water (kg/m3, breathed out) from the Physics panel, or null for the default (1045): a
+ * density override (a number, a numeric string or a preset name: densityValue) wins over a mass (kg), which is taken
+ * over the body's own volume at that height (the 75 kg at 1.8 m body is the default 1045; 100 kg is ~1390, 1e9 caps at
+ * 20000). Junk (0, negative, NaN, Infinity, words) is ignored. Pure.
+ */
+export function personDensity(height = 1.8, { density = null, mass = null } = {}) {
+  const ov = densityValue(density);
+  if (ov != null) return ov;
+  const m = mass === null || mass === "" ? NaN : +mass;
+  if (!Number.isFinite(m) || !(m > 0)) return null;
+  return clamp(m / personBody(height).Vout, 20, 20000);
+}
+
+/**
  * A sinking person's hips height after the slip under: integrated from rest at y0 (hips), density easing from 985 to
  * 1045 over `exhale` s (the air goes), quadratic drag (limp, splayed), added mass, the floor at floorHips. Pure: same
  * numbers for the same arguments.
  */
-export function sinkTrack({ y0, floorHips, fps = 24, n, height = 1.8, exhale = 2.5, rho0 = PERSON_RHO.inhaled }) {
-  const B = personBody(height), dt = 1 / (fps * SUBSTEPS);
+export function sinkTrack({ y0, floorHips, fps = 24, n, height = 1.8, exhale = 2.5, rho0 = PERSON_RHO.inhaled, rho = null }) {
+  // rho: the person's own density breathed out (personDensity; null = 1045): the whole curve moves with it, the body's
+  // volume stays its size (a heavier person of that height is denser), so a heavy one sinks faster, a light one floats
+  const end = Number.isFinite(rho) && rho > 0 ? rho : PERSON_RHO.exhaled, shift = end - PERSON_RHO.exhaled;
+  const B = personBody(height), dt = 1 / (fps * SUBSTEPS), Vb = B.m / PERSON_RHO.exhaled;
   const out = new Array(n), vel = new Array(n);
   let y = y0, v = 0, t = 0;
   for (let f = 0; f < n; f++) {
     out[f] = y; vel[f] = v;
     for (let k = 0; k < SUBSTEPS; k++) {
-      const rho = rho0 + (PERSON_RHO.exhaled - rho0) * sstep(0, exhale, t);
-      const V = B.m / rho, M = B.m + B.ca * B.m;
-      const F = (RHO_WATER * V - B.m) * G - 0.5 * RHO_WATER * B.cdA * v * Math.abs(v);
+      const r = Math.max(20, rho0 + shift + (end - rho0 - shift) * sstep(0, exhale, t));
+      const m = end * Vb, V = m / r, M = m + B.ca * B.m;   // its mass; its volume with the air still in the lungs
+      const F = (RHO_WATER * V - m) * G - 0.5 * RHO_WATER * B.cdA * v * Math.abs(v);
       v += (F / M) * dt; y += v * dt; t += dt;
       if (y < floorHips) { y = floorHips; v = 0; }
+      if (y > y0) { y = y0; if (v > 0) v = 0; }   // lighter than the water: held at the surface where they slipped under
     }
   }
   return { y: out, v: vel };
@@ -323,6 +341,8 @@ export function plungeTrack({ ky, v0 = 0, level, floor = 0, fps = 24, n, height 
  *   sink: no struggle, limp from the surface (or the bottom of the plunge) down.
  * In water they can stand in (canStand), auto and cant stand / wade on the bottom (ground; after a drop in: the
  * plunge, then "wade" standing on the bottom with the head out); the other modes swim as chosen.
+ * rho (optional, personDensity): their own density breathed out, from the Physics panel's mass or density: the sink
+ * (Can't swim, Sink slowly) is that much faster or slower, and lighter than the water they stay at the surface.
  * Underwater modes (flutter, frog, stroke) and dive / hover: keyed above the surface they drop in too (flutter and
  * frog then kick up to the surface like the others; a diver eases from the bottom of the plunge to the depth the stage
  * holds them at); keyed in the water they are not tracked here (the stage keeps them at their keyed depth).
@@ -337,7 +357,7 @@ export function plungeTrack({ ky, v0 = 0, level, floor = 0, fps = 24, n, height 
  * up there from the start of the shot, at the last frame before the keys start to go down (a hold, then a step off:
  * held[f] and ground[f] until then); keys that never go down drop at once.
  */
-export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, height = 1.8, hipY = 0.95, seed = 1, standHeight = height, support = null, below = null, keyedUnder = null }) {
+export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, height = 1.8, hipY = 0.95, seed = 1, standHeight = height, support = null, below = null, keyedUnder = null, rho = null }) {
   const n = keyY.length, k = height / 1.8;
   const styles = new Array(n).fill(null), hipsY = new Array(n).fill(null), hipsW = new Array(n).fill(0), modes = new Array(n).fill(null);
   const ground = new Array(n).fill(false), supported = new Array(n).fill(false), held = new Array(n).fill(false), standY = new Array(n).fill(null);
@@ -479,7 +499,7 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
     const floorHips = floor + hipY * 0.92;   // feet down, knees soft
     const yEnd = from != null ? from : null;
     const y0 = under ? ky + hipY : mode === "cant" ? (yEnd != null && up >= fs ? yEnd : struggleHips) : yEnd != null ? Math.min(yEnd, level - 0.55 * k) : level - 0.55 * k;
-    const sink = sinkTrack({ y0, floorHips, fps, n: Math.max(1, m - fs), height, exhale: mode === "cant" ? 1.5 : 3.5, rho0: mode === "cant" ? 1010 : 1000 });   // the struggle has emptied the lungs
+    const sink = sinkTrack({ y0, floorHips, fps, n: Math.max(1, m - fs), height, exhale: mode === "cant" ? 1.5 : 3.5, rho0: mode === "cant" ? 1010 : 1000, rho });   // the struggle has emptied the lungs
     // The tip onto the back starts as the feet near the bottom and is done just after they touch, ~1 s in all, the
     // pose cross-fading from limp to lying the whole way (was: stood upright on the bottom ~0.7 s, then tipped in
     // 0.5 s, still tipping when a 10 s shot ended): a slow sink to rest.

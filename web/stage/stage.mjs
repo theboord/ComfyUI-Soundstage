@@ -3887,7 +3887,7 @@ export class Stage {
     const floats = reef ? "" : JSON.stringify(this.state.actors.filter((b) => b.id !== a.id && !PERSON_KINDS.has(b.kind) && !LIBRARY[b.kind]?.boat)
       .map((b) => [b.id, b.kind, keysHash(this._actorKeys(b)), b.scale || 1, b.height_m || 0, b.physics?.density ?? "", b.physics?.mass ?? "", b.swim ?? "", b.buoyancy || "", b.mount_id || "", b.carry_id || "", this._seedKey(b)]));
     // (the seed key too: a rename of a person with no stored seed changes their variation, in the App as after a reload)
-    const sig = JSON.stringify([keys, last, fps, h, a.rotation_deg || 0, smode, a.gear || null, reef ? fx.id : pool, wp, a.kind, dry, this._seedKey(a), floats, a._wetFrom ?? null]);
+    const sig = JSON.stringify([keys, last, fps, h, a.rotation_deg || 0, smode, a.gear || null, reef ? fx.id : pool, wp, a.kind, dry, this._seedKey(a), floats, a._wetFrom ?? null, a.physics?.density ?? null, a.physics?.mass ?? null]);
     this._swimCache = this._swimCache || new WeakMap();
     const c = this._swimCache.get(a);
     if (c && c.sig === sig && c.g === g) return c.plan;
@@ -3955,7 +3955,8 @@ export class Stage {
       // In a pool: standing on a dock or a deck, the drop in (timed by the keys), the kick up, and the modes that
       // aren't a stroke (back float, can't swim, sink slowly). The underwater modes and dive get the drop in only.
       if (!reef) {
-        track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(this._seedKey(a)), standHeight: standH, support, below, keyedUnder: kUnder });
+        track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(this._seedKey(a)), standHeight: standH, support, below, keyedUnder: kUnder,
+          ...this._personWeight(a, h) });   // (their mass or density: how fast a non-swimmer goes down)
         // ground: water they can stand in (auto / can't swim), a dock or a deck under them, or a keyed hold before a
         // jump: off the swim plan, on their keys (the gait walks them)
         for (let f = 0; f <= last; f++) if (track.modes[f]) mode[f] = track.modes[f]; else if (track.ground[f]) mode[f] = null;
@@ -5436,8 +5437,12 @@ export class Stage {
    * floats 2 cm apart. A name is what the same steps give again ("Woman 1"); a seed stored at Add keeps it through a
    * rename. Two objects with the same kind and name and no seed share their variation.
    */
-  /** A person's weight for the water track (Buoy.personTrack's extra arguments). */
-  _personWeight(a, h) { return {}; }
+  /** A person's weight for the water track (Buoy.personTrack's `rho`): the Physics panel's density, or its mass over
+   *  the body's own volume at their height (Buoy.personDensity); {} for the default body. */
+  _personWeight(a, h) {
+    const rho = Buoy.personDensity(h, { density: a.physics?.density, mass: a.physics?.mass });
+    return rho == null ? {} : { rho };
+  }
 
   _seedKey(a) {
     if (a?.seed != null && a.seed !== "") return String(a.seed);

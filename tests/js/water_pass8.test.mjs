@@ -112,3 +112,27 @@ test("a rider whose mount goes under in the tank lets go and swims; a horse that
     for (const f of [0, 48, 96]) { st.setFrame(f); assert.ok(!g.userData.swimOn && headY(st, "r") > LEVEL, `horse f${f}: still riding, head out`); }
   }
 });
+
+// ------------------------------------------------------------------ 3. A person's weight
+// Before: a Can't-swim man with mass 1e-6 or 1e9 kg, or any density, sank at exactly the same rate (the person's water
+// track never read the Physics panel). Mass (over the body's own volume) or density now sets how fast he goes down.
+test("a person's mass or density changes how fast they sink: heavier sinks faster, lighter slower or not at all", () => {
+  const run = (physics) => {
+    const st = tank([{ ...man("x", 4.5, { key_y: true, swim: "cant" }), ...(physics ? { physics } : {}) }], { frames: 241 });
+    const g = st.actorMeshes.get("x"), ys = [];
+    for (let f = 0; f <= 240; f++) { st.setFrame(f); ys.push(g.position.y); }
+    return ys;
+  };
+  const base = run(null), light = run({ mass: 1e-6 }), heavy = run({ mass: 1e9 }), stone = run({ density: 2600 }), floaty = run({ density: 900 });
+  const landed = (ys) => ys.findIndex((y, f) => f > 30 && y < 0.15);
+  assert.ok(landed(base) > 0, `the default man reaches the bottom in the shot (f${landed(base)})`);
+  assert.ok(landed(heavy) > 0 && landed(heavy) < landed(base) - 12, `1e9 kg sinks faster (bottom at f${landed(heavy)} vs f${landed(base)})`);
+  assert.ok(landed(stone) > 0 && landed(stone) < landed(base) - 12, `density 2600 sinks faster (bottom at f${landed(stone)} vs f${landed(base)})`);
+  assert.equal(landed(light), -1, "1e-6 kg never sinks to the bottom");
+  assert.ok(Math.min(...floaty.slice(150)) > 1.0, `density 900 floats (lowest root after f150 ${Math.min(...floaty.slice(150)).toFixed(2)})`);
+  // a typical mass is the default; junk is ignored
+  for (const physics of [{ mass: 75 }, { mass: 0 }, { mass: -50 }, { mass: "abc" }, { mass: Infinity }, { density: NaN }, { density: 0 }]) {
+    const ys = run(physics);
+    assert.ok(ys.every((y, f) => Math.abs(y - base[f]) < 0.02), `${JSON.stringify(physics)}: the default sink`);
+  }
+});
