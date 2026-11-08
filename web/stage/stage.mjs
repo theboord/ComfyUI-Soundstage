@@ -280,8 +280,10 @@ export const liveKinds = () => ({ PERSON_KINDS, RIDEABLE, SITTABLE, SEATS, NO_CO
 
 /** _obstacles: the grid a parked object's clay group transform is put on (position m, quaternion component, scale). */
 const OBS_TOL = { pos: 0.05, rot: 0.01, scale: 0.01 };
-/** _obstacles: how many recent obstacle lists are kept (jitter on a cell edge, a parked prop's few keyed cells). */
+/** _obstacles: the fewest recent obstacle lists kept (jitter on a cell edge, a parked prop's few keyed cells). */
 const OBS_LRU = 8;
+/** _obstacles / _heightAt: the most lists (and height tables per person) kept, however many props are parked. */
+const OBS_LRU_MAX = 64;
 
 /** _obstacles: a step farther than this between two looks at a group (any position component m, quaternion component,
  *  relative scale) is an edit (a drag, a console move, a rescale), not per-frame motion: the grid is re-anchored there. */
@@ -295,6 +297,11 @@ const KEYED_CELL_CHANGES = 4;
  *  over the shot; with 4 kept (the old value) each loop pass rebuilt the O(frames^2) table 5 times. As many as the
  *  obstacle lists kept (a table is reused only with its own list, so more would never hit). */
 const HEIGHT_LRU = Math.max(OBS_LRU, KEYED_CELL_CHANGES + 1);
+
+/** How many lists / height tables to keep with `n` props parked: each may change cell KEYED_CELL_CHANGES times at its
+ *  own frames, so the combined list has up to KEYED_CELL_CHANGES * n + 1 states over the shot (two props rising at
+ *  different frames: 9; three turns one after another: 13). Capped at OBS_LRU_MAX (16 such props). */
+const obsKeep = (n) => Math.min(OBS_LRU_MAX, Math.max(HEIGHT_LRU, KEYED_CELL_CHANGES * n + 1));
 
 /** _obstacles: do an object's keys move it (so it is not a parked obstacle)? Travel over 5 cm on the ground; and, for a
  *  keyed turn of the group (heading_deg; roll_deg / pitch_deg turn only a car's body child, not the group), a keyed rise (key_y) or baked physics keys (quat and height: a
@@ -1880,7 +1887,7 @@ export class Stage {
     const hit = lru.get(sig);
     if (hit) {
       lru.delete(sig); lru.set(sig, hit);
-      this._obsCache = { sig, list: hit, lru };
+      this._obsCache = { sig, list: hit, lru, keep: obsKeep(parked.length) };
       return hit;
     }
     const list = [];
@@ -1893,8 +1900,9 @@ export class Stage {
       list.push({ id: o.id, kind: o.kind, box, top: box.max.y, rise });
     }
     lru.set(sig, list);
-    while (lru.size > OBS_LRU) lru.delete(lru.keys().next().value);
-    this._obsCache = { sig, list, lru };
+    const keep = obsKeep(parked.length);
+    while (lru.size > keep) lru.delete(lru.keys().next().value);
+    this._obsCache = { sig, list, lru, keep };
     return list;
   }
 
@@ -1926,7 +1934,7 @@ export class Stage {
       this._yAlt = this._yAlt || new WeakMap();
       let alt = this._yAlt.get(a);
       if (!alt) { alt = new Map(); this._yAlt.set(a, alt); }
-      if (c) { alt.delete(c.sig); alt.set(c.sig, c); while (alt.size > HEIGHT_LRU) alt.delete(alt.keys().next().value); }
+      if (c) { alt.delete(c.sig); alt.set(c.sig, c); while (alt.size > (this._obsCache?.keep || HEIGHT_LRU)) alt.delete(alt.keys().next().value); }
       const old = alt.get(sig);
       if (old && old.obs === obs) { c = old; this._yCache.set(a, c); }
     }

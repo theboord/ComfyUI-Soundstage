@@ -606,3 +606,44 @@ test("obstacles: on loop playback a parked prop that changes grid cell up to the
   const r = run(lifts, (st, p, g, f) => { g.position.y = st._heightAt(p, f); });
   assert.equal(r.second + r.third, 0, `two props each rising 20 cm, loop passes 2 and 3 rebuild nothing: ${JSON.stringify(r)}`);
 });
+
+test("obstacles: on loop playback several parked props changing cell at different frames cost no new height tables or boxes on passes 2 and 3", () => {
+  // Seventh review: the case above only held when the props changed cell at the same frames. Staggered, the combined
+  // obstacle list has up to 4N+1 states (N parked props), past OBS_LRU (8) and HEIGHT_LRU (8): two props rising 20 cm
+  // at frames 0-20 and 24-44 rebuilt 9 tables and 18 boxes every pass; three 4.4 deg turns one after another, 13 and 39.
+  const run = (props, pose) => {
+    const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
+    const st = bareStage([walker, ...props]);
+    clayOf(st, walker);
+    const gs = props.map((p) => clayOf(st, p));
+    let boxes = 0;
+    const orig = THREE.Box3.prototype.setFromObject;
+    THREE.Box3.prototype.setFromObject = function (...x) { boxes++; return orig.apply(this, x); };
+    const passes = [], perPassBoxes = [];
+    try {
+      for (let pass = 0; pass < 3; pass++) {
+        const seen = new Set(), b0 = boxes;
+        for (let f = 0; f <= 48; f++) {
+          props.forEach((p, i) => { pose(st, p, gs[i], f); gs[i].updateMatrixWorld(true); });
+          st.frame = f; st._heightAt(walker, f);
+          seen.add(st._yCache.get(walker));
+        }
+        passes.push(seen); perPassBoxes.push(boxes - b0);
+      }
+    } finally { THREE.Box3.prototype.setFromObject = orig; }
+    const fresh = (n) => [...passes[n]].filter((t) => !passes.slice(0, n).some((s) => s.has(t))).length;
+    return { first: passes[0].size, second: fresh(1), third: fresh(2), boxes: perPassBoxes, parked: st._obstacles().length };
+  };
+  const lift = (id, x, f0, f1) => ({ id, kind: "crate", key_y: true, position: [x, 0, 0],
+    keys: [{ frame: 0, position: [x, 0, 0] }, ...(f0 ? [{ frame: f0, position: [x, 0, 0] }] : []), { frame: f1, position: [x, 0.2, 0] }, ...(f1 < 48 ? [{ frame: 48, position: [x, 0.2, 0] }] : [])] });
+  const r = run([lift("c1", -1.5, 0, 20), lift("c2", 1.5, 24, 44)], (st, p, g, f) => { g.position.y = st._heightAt(p, f); });
+  assert.ok(r.parked === 2 && r.first >= 9, `two staggered 20 cm rises: both parked, ${r.first} list states: ${JSON.stringify(r)}`);
+  assert.equal(r.second + r.third, 0, `two staggered 20 cm rises, passes 2 and 3 build no new height tables: ${JSON.stringify(r)}`);
+  assert.deepEqual(r.boxes.slice(1), [0, 0], `two staggered 20 cm rises, passes 2 and 3 build no boxes: ${JSON.stringify(r)}`);
+  const turn = (id, x, f0, f1) => ({ id, kind: "crate", position: [x, 0, 0],
+    keys: [{ frame: 0, position: [x, 0, 0], heading_deg: 0 }, ...(f0 ? [{ frame: f0, position: [x, 0, 0], heading_deg: 0 }] : []), { frame: f1, position: [x, 0, 0], heading_deg: 4.4 }, ...(f1 < 48 ? [{ frame: 48, position: [x, 0, 0], heading_deg: 4.4 }] : [])] });
+  const t = run([turn("c1", -2, 0, 16), turn("c2", 0, 16, 32), turn("c3", 2, 32, 48)], (st, p, g, f) => { g.rotation.set(0, st._headingAt(p, f), 0); });
+  assert.ok(t.parked === 3 && t.first >= 13, `three 4.4 deg turns one after another: all parked, ${t.first} list states: ${JSON.stringify(t)}`);
+  assert.equal(t.second + t.third, 0, `three sequential turns, passes 2 and 3 build no new height tables: ${JSON.stringify(t)}`);
+  assert.deepEqual(t.boxes.slice(1), [0, 0], `three sequential turns, passes 2 and 3 build no boxes: ${JSON.stringify(t)}`);
+});
