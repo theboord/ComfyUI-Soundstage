@@ -15,6 +15,9 @@ MODELS = ["qwen3.5_4b_bf16.safetensors"]
 # The inventory read: Qwen3-VL 8B first (it grounds boxes on the 0-1000 grid natively); the 4B stays the fallback.
 INVENTORY_MODELS = ["qwen3vl_8b_fp8_scaled.safetensors", "qwen3vl_4b_fp8_scaled.safetensors", "qwen3.5_4b_bf16.safetensors"]
 
+# The wardrobe example in both prompts. It must never match the test clip's real outfit (a plaid shirt and jeans), or a
+# model that copies the example would look like a correct read; a reply that copies it is an echo (ECHOES).
+WARDROBE_EXAMPLE = "an orange cable-knit sweater, brown corduroy trousers"
 SYSTEM = (
     "You break one frame of a film shot down into a 3D previz layout. Reply with JSON only, no prose:\n"
     '{"setting":"a few words","time":"dawn|morning|midday|afternoon|golden hour|dusk|night|overcast",'
@@ -22,7 +25,7 @@ SYSTEM = (
     '"objects":[{"label":"short description","kind":"person|car|pickup|suv|van|truck|bus|motorcycle|bicycle|'
     'horse|dog|boat|other","color":"#rrggbb","bbox":[x0,y0,x1,y1],'
     '"facing":"toward camera|away from camera|left|right","moving":true,'
-    '"wardrobe":"<people only: every garment with its colour, pattern and length, e.g. shirt, jeans, skirt>"}],'
+    '"wardrobe":"<people only: every garment with its colour, pattern and length, e.g. ' + WARDROBE_EXAMPLE + '>"}],'
     '"set":[{"type":"road|ocean|lake|river|beach|cliff|hill|mountain|shrubs|trees|rocks|building|wall|'
     'guardrail|grass|sidewalk|plaza|bench|table|chair|lamp","side":"left|right|ahead|centre|all","distance":"near|mid|far",'
     '"lanes":0,"bbox":[x0,y0,x1,y1]}]}\n'
@@ -330,12 +333,14 @@ INVENTORY_SYSTEM = (
     "Every <...> is a placeholder: write what YOU see, never the placeholder. boxes are [x0,y0,x1,y1] on a 0-1000 "
     "grid over the whole image, one box per object, at most 10 boxes per kind. kind is one plain English noun. "
     "Describe people by clothing only, never identity. For a person, add \"wardrobe\": every garment with its colour, "
-    "pattern and length (e.g. a short-sleeve plaid shirt, light jeans), never just 'outfit'.")
+    "pattern and length (e.g. " + WARDROBE_EXAMPLE + "), never just 'outfit'.")
 INVENTORY_PROMPT = "Inventory this frame."
 INVENTORY_FRAMES = 6
 # Echoes of the instructions (the model copying the schema instead of answering): such a value is rejected.
 ECHOES = ("a few words", "short description", "one noun", "placeholder", "colour + material", "color + material",
-          "3-8 words", "2-4 word", "what you see", "people only", "every garment", "<", ">")
+          "3-8 words", "2-4 word", "what you see", "people only", "every garment", "<", ">",
+          # the wardrobe example and the garment list of the prompts, copied back instead of read
+          WARDROBE_EXAMPLE, "cable-knit sweater", "corduroy trousers", "crop top, hoodie, jacket")
 PEOPLE_KINDS = {"person", "man", "woman", "child", "boy", "girl", "people", "dancer", "lady", "guy", "kid"}
 
 

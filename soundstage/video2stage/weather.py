@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
-# The stage's background colour per sky phase (web/stage/stage.mjs, the `sky` map in the render loop) and the phase
+# The stage's background colour per sky phase (web/stage/lighting.mjs SKY_COLORS) and the phase
 # each time preset lands in (web/stage/lighting.mjs skyFor: overcast first, then by sun elevation). Kept in step with
 # the JS by tests/test_v2s_dancer.py.
 STAGE_SKY = {"night": 0x0b1020, "blue hour": 0x26324d, "dawn/dusk": 0x4a3a44, "magic hour": 0xd9a46a,
@@ -18,6 +18,8 @@ STAGE_SKY = {"night": 0x0b1020, "blue hour": 0x26324d, "dawn/dusk": 0x4a3a44, "m
 PRESET_PHASE = {"overcast": "overcast", "midday": "daylight", "golden_am": "magic hour", "magic_hour": "magic hour",
                 "dawn": "blue hour", "blue_hour": "blue hour", "night": "night"}
 WARM = ("golden_am", "magic_hour")
+CLIPPED = 248          # every channel at or above this: a clipped (blown-out) sky pixel
+EXPOSED = 240          # every channel below this: a sky pixel that still carries its colour
 
 
 def srgb_to_lab(rgb) -> np.ndarray:
@@ -75,25 +77,48 @@ def sky_sample(images, skies=None, top_share: float = 0.12) -> dict | None:
     P = np.concatenate(px)
     rgb = np.median(P, 0)
     lab = srgb_to_lab(rgb)
-    return {"rgb": [int(round(v)) for v in rgb], "lab": [round(float(v), 2) for v in lab],
-            "chroma": round(float(np.hypot(lab[1], lab[2])), 2), "lightness": round(float(lab[0]), 2), "pixels": int(len(P))}
+    out = {"rgb": [int(round(v)) for v in rgb], "lab": [round(float(v), 2) for v in lab],
+           "chroma": round(float(np.hypot(lab[1], lab[2])), 2), "lightness": round(float(lab[0]), 2), "pixels": int(len(P))}
+    # A blown-out sky: the clipped pixels say nothing about the weather (white is white, clear or grey). What is left
+    # unclipped (the sky's fringe near the horizon or the trees) is what the classifier reads instead.
+    clipped = P[:, :3].min(1) >= CLIPPED
+    out["clipped"] = round(float(clipped.mean()), 3)
+    rest = P[P[:, :3].max(1) < EXPOSED][:, :3]   # the sky's fringe that is really exposed (near-white says nothing either)
+    if out["clipped"] >= 0.5 and len(rest) >= max(50, 0.03 * len(P)):
+        rl = srgb_to_lab(np.median(rest, 0))
+        out["rest"] = {"rgb": [int(round(v)) for v in np.median(rest, 0)], "lab": [round(float(v), 2) for v in rl],
+                       "chroma": round(float(np.hypot(rl[1], rl[2])), 2), "pixels": int(len(rest))}
+    return out
+
+
+def _classify_lab(L: float, a: float, b: float, C: float) -> str:
+    # Saturation, not brightness, says grey: chroma relative to lightness, so a dim grey sky (L 40, C 4) is as grey as
+    # a bright one (L 76, C 3). A blue sky keeps a strong -b at any brightness; a warm one +b or +a.
+    sat = C / max(L, 1.0)
+    if L < 25:
+        return "dark"
+    if b < -12 and b < -abs(a) and sat >= 0.15:
+        return "clear"
+    if (b > 14 or a > 10) and sat >= 0.15:
+        return "warm"
+    if C < 12 and sat < 0.25:
+        return "overcast"
+    return "unknown"
 
 
 def classify(sample: dict | None) -> str:
-    """'overcast' | 'clear' | 'warm' | 'dark' | 'unknown' from a sky sample."""
+    """'overcast' | 'clear' | 'warm' | 'dark' | 'blown out' | 'unknown' from a sky sample. A sky that is mostly clipped
+    white is read from its unclipped fringe; with no fringe it is 'blown out' (not overcast: a clipped clear sky is
+    white too)."""
     if not sample:
         return "unknown"
+    if sample.get("clipped", 0) >= 0.5:
+        r = sample.get("rest")
+        if not r:
+            return "blown out"
+        return _classify_lab(*r["lab"], r["chroma"])
     L, a, b = sample["lab"]
-    C = sample["chroma"]
-    if L < 25:
-        return "dark"
-    if C < 12 and L >= 50:
-        return "overcast"
-    if b < -12 and b < -abs(a):
-        return "clear"
-    if b > 14 or a > 10:
-        return "warm"
-    return "unknown"
+    return _classify_lab(L, a, b, sample["chroma"])
 
 
 def preset_for(time_text: str, sample: dict | None, time_preset) -> tuple[str, str, list[str]]:
@@ -109,7 +134,9 @@ def preset_for(time_text: str, sample: dict | None, time_preset) -> tuple[str, s
     if weather == "clear" and by_time in WARM:
         notes.append(f"sky: a clear blue sky, not a golden one; '{time_text}' lit as Midday")
         return "midday", weather, notes
-    if weather == "unknown" and by_time in WARM and sample is not None:
+    if weather == "blown out":
+        notes.append("sky: blown out (clipped white), the weather can't be read from it; lit from the time words")
+    if weather in ("unknown", "blown out") and by_time in WARM and sample is not None:
         notes.append(f"sky: a neutral sky does not read as golden hour; '{time_text}' lit as Midday")
         return "midday", weather, notes
     if weather == "warm" and by_time in ("midday", "overcast"):
@@ -119,8 +146,31 @@ def preset_for(time_text: str, sample: dict | None, time_preset) -> tuple[str, s
 
 
 def stage_sky_rgb(preset: str) -> list[int]:
-    """The colour the stage paints behind a set lit with `preset`."""
+    """The colour the stage paints behind a set lit with `preset` when no measured sky colour is carried."""
     return hex_rgb(STAGE_SKY[PRESET_PHASE.get(preset, "daylight")])
+
+
+# A measured sky colour is carried into the rebuild (scene.lighting.sky_color) when the read agrees with the preset's
+# sky: an overcast read under the Overcast preset, a clear one under Midday, and so on. The stage paints it instead of
+# the preset's fixed colour while the preset is unchanged (web/stage/lighting.mjs skyBackground).
+TINT_FOR = {"overcast": ("overcast",), "clear": ("midday",), "warm": WARM, "dark": ("night", "blue_hour", "dawn")}
+
+
+def sky_tint(sample: dict | None, weather: str, preset: str) -> dict | None:
+    """{hex, preset} to carry into scene.lighting.sky_color, or None (no sample, a blown-out or unreadable sky, or a
+    preset the read does not agree with)."""
+    if not sample or preset not in TINT_FOR.get(weather, ()):
+        return None
+    r, g, b = (sample.get("rest") or sample)["rgb"] if weather != "blown out" else sample["rgb"]
+    return {"hex": "#%02x%02x%02x" % (int(r), int(g), int(b)), "preset": preset}
+
+
+def painted_sky_rgb(lighting: dict) -> list[int]:
+    """What the stage paints behind the set for this lighting (mirrors lighting.mjs skyBackground)."""
+    t = (lighting or {}).get("sky_color") or {}
+    if t.get("hex") and t.get("preset") and t.get("preset") == (lighting or {}).get("preset"):
+        return hex_rgb(t["hex"])
+    return stage_sky_rgb((lighting or {}).get("preset") or "midday")
 
 
 def sample_from_ctx(ctx: dict, k: int = 6) -> dict | None:

@@ -767,6 +767,7 @@ def assemble_legacy(*, poses, scales, times, K, size, depths, ground, breakdown,
              "active_shot": "shot_1"}
     scene, vnotes = validate_scene(scene, place=False)
     notes += vnotes
+    _carry_sky(scene, sky_sample, wx, preset)
     scene["shot"]["aspect"] = aspect_key(w / h)   # validate_scene keeps frames/fps only
     scene["reference"] = reference
     scene["video2stage"] = {"metres_per_unit": round(mpu, 5), "ground": None if ground is None else
@@ -781,13 +782,26 @@ def assemble_legacy(*, poses, scales, times, K, size, depths, ground, breakdown,
     return scene
 
 
+def _carry_sky(scene: dict, sample: dict | None, wx: str, preset: str) -> None:
+    """The measured sky colour into scene.lighting.sky_color (after validate_scene, which keeps only its own lighting
+    keys). The stage paints it while the preset is unchanged; a scene re-validated elsewhere loses it and falls back to
+    the preset's fixed colour."""
+    from . import weather as WX
+    tint = WX.sky_tint(sample, wx, preset)
+    if tint and isinstance(scene.get("lighting"), dict):
+        scene["lighting"]["sky_color"] = tint
+
+
 def _weather_rec(time_text: str, wx: str, preset: str, sample: dict | None) -> dict:
-    """scene.video2stage.weather: the measured sky kept apart from the model's time of day."""
+    """scene.video2stage.weather: the measured sky kept apart from the model's time of day. stage_rgb is the colour the
+    stage paints (the measured one when it is carried, else the preset's)."""
     from . import weather as WX
     rec = {"sky": wx, "time": time_text or "", "preset": preset}
     if sample:
-        rec.update(sample_rgb=sample["rgb"], stage_rgb=WX.stage_sky_rgb(preset),
-                   delta_e=round(WX.delta_e(sample["rgb"], WX.stage_sky_rgb(preset)), 1))
+        tint = WX.sky_tint(sample, wx, preset)
+        painted = WX.painted_sky_rgb({"preset": preset, "sky_color": tint})
+        rec.update(sample_rgb=sample["rgb"], stage_rgb=painted, tinted=bool(tint),
+                   delta_e=round(WX.delta_e(sample["rgb"], painted), 1))
     return rec
 
 
@@ -1247,6 +1261,7 @@ def assemble_ctx(ctx: dict) -> dict:
              "active_shot": "shot_1"}
     scene, vnotes = validate_scene(scene, place=False)
     notes += vnotes
+    _carry_sky(scene, sample, wx, preset)
     w, h = clip.get("w") or clip["pw"], clip.get("h") or clip["ph"]
     key = aspect_key(w / h)
     scene["shot"]["aspect"] = key

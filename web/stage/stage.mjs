@@ -126,7 +126,7 @@ function loadAsset(url, format) {
   p.catch(() => assetCache.delete(key));
   return p;
 }
-import { LIGHT_TYPES, TIME_PRESETS, solarPosition, hourForElevation, kelvinToColor, skyFor, describeLighting } from "./lighting.mjs";
+import { LIGHT_TYPES, TIME_PRESETS, solarPosition, hourForElevation, kelvinToColor, skyFor, skyBackground, describeLighting } from "./lighting.mjs";
 
 /** Rigged CC0 horse (Quaternius, poly.pizza): Idle / Walk / Gallop skeletal cycles. */
 const HORSE_GLB = new URL("./models/horse.glb", import.meta.url).href;
@@ -5019,8 +5019,7 @@ export class Stage {
       const env = this.state.environment || {};
       const vc = forCapture ? this.camera : this._viewportCamera?.() || this.camera;
       const underwater = this._isUnderwater(vc);
-      const sky = { night: 0x0b1020, "blue hour": 0x26324d, "dawn/dusk": 0x4a3a44, "magic hour": 0xd9a46a,
-        "golden hour": 0xc9b89a, overcast: 0xb9bec4, daylight: 0x9cc3e6 }[this.skyPhase] ?? 0x9cc3e6;
+      const sky = skyBackground(this.skyPhase, this.state.lighting);
       this.scene.background = new THREE.Color(underwater ? 0x1f4256 : env.set === "studio" ? 0xd8d8d8 : sky);
       if (plate) { coverFit(this._backdropTex, this.renderer.domElement.width / this.renderer.domElement.height); this.scene.background = this._backdropTex; }
       this.scene.overrideMaterial = null;

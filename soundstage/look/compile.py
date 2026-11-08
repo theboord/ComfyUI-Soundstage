@@ -506,6 +506,17 @@ def _in_shot_ids(scene: dict, f1: dict) -> set:
     return ids
 
 
+def set_pieces_sentence(f1: dict, limit: int = 5) -> str:
+    """The Video -> 3D set blocks in frame, each by its kind word and where it stands ("Rocks stand on the left edge of
+    frame and a box in the centre of frame."). LTX sees each clay block in the depth guide; without a word for it, it
+    paints whatever it likes there (pillars, on the street-dance clip)."""
+    items = [q for q in f1.get("props") or [] if q.get("set_word")][:limit]
+    if not items:
+        return ""
+    bits = [f"{q['word']} {q['where']}" for q in items]
+    return _cap("In the set: " + S._join_and(bits)) + "."
+
+
 def compile_motion(look: dict, scene: dict, parts: dict) -> str:
     f1 = S.frame1_facts(scene)
     mf = S.motion_facts(scene)
@@ -552,6 +563,7 @@ def compile_motion(look: dict, scene: dict, parts: dict) -> str:
         _cap(light) + "." if light else "",
         blocking_s,
         set_s,
+        set_pieces_sentence(f1),
         _cap(desc) + "." if desc else "",
         _cap("; ".join(brief_parts(look))) + "." if brief_parts(look) else "",
         _marks_sentence(mf, {e["id"] for e in f1["people"] + f1["others"]}

@@ -86,6 +86,38 @@ def test_both_vision_prompts_ask_for_wardrobe_and_echoes_are_filtered():
     assert lb["objects"][0]["wardrobe"] == woman["wardrobe"]
 
 
+def test_a_reply_that_only_copies_the_prompt_example_is_rejected_and_marked_unknown():
+    # The examples must not be this clip's outfit (a plaid shirt and jeans): a copied example would pass as a read.
+    ex = vlm.WARDROBE_EXAMPLE
+    for word in ("plaid", "shirt", "jeans", "skirt", "dress"):
+        assert word not in ex
+    assert "shirt, jeans, skirt" not in vlm.SYSTEM and "plaid shirt, light jeans" not in vlm.INVENTORY_SYSTEM
+    assert ex in vlm.SYSTEM and ex in vlm.INVENTORY_SYSTEM and ex in vlm.ECHOES
+    # the 4B breakdown: a person whose wardrobe is the example, word for word or without its article
+    for copied in (ex, "orange cable-knit sweater, brown corduroy trousers", "Orange cable-knit sweater"):
+        reply = json.dumps({"setting": "street", "time": "day", "camera": {"height_m": 1.5, "type": "handheld"},
+                            "objects": [{"label": "woman dancing", "kind": "person", "color": "#e0b030",
+                                         "bbox": [430, 180, 570, 900], "wardrobe": copied}], "set": []})
+        o = vlm.parse_reply(reply)["objects"][0]
+        assert o["wardrobe"] == "", copied
+        ap = W.appearance(o["label"], o["wardrobe"], o.get("color"))
+        assert ap.get("wardrobe") == "unknown" and "top" not in ap and "bottom" not in ap
+        assert "sweater" not in json.dumps(ap) and "trousers" not in json.dumps(ap)
+    # the 8B inventory: the same copy on a person is dropped, and the person is marked wardrobe unknown downstream
+    inv_reply = json.dumps({"setting": "street", "interior": False, "time": "day",
+                            "camera": {"height_m": 1.5, "type": "handheld"},
+                            "things": [{"kind": "woman", "count": 1, "name": "woman dancing", "material": "fabric",
+                                        "color": "#e0b030", "moving": True, "wardrobe": ex,
+                                        "boxes": [[430, 180, 570, 900]]}], "surfaces": []})
+    inv = vlm.merge_inventory([vlm.parse_inventory(inv_reply, 0)])
+    woman = next(it for it in inv["items"] if it["kind"] == "woman")
+    assert not woman.get("wardrobe")
+    o = vlm.legacy_breakdown(inv)["objects"][0]
+    assert W.appearance(o["label"], o.get("wardrobe"), o.get("color")).get("wardrobe") == "unknown"
+    # a real read of the clip's outfit still passes the filter
+    assert vlm.wardrobe_of({"wardrobe": "short-sleeve yellow plaid shirt, light jeans"}).startswith("short-sleeve")
+
+
 def test_wardrobe_reaches_the_actor_and_the_look_text():
     bd = vlm.merge_reads(vlm.parse_reply(_fix("dancer_first.txt")), vlm.parse_reply(_fix("dancer_last.txt")))
     K = np.array([[500.0, 0, 320], [0, 500.0, 240], [0, 0, 1]])
@@ -127,10 +159,60 @@ def test_grey_sky_is_overcast_whatever_the_hour_and_matches_the_rebuild():
     preset, wx, notes = WX.preset_for("morning", s, convert.time_preset)
     assert preset == "overcast" and wx == "overcast" and notes          # not the golden 6 deg "morning" sun
     assert convert.time_preset("morning") == "golden_am"                 # what it used to be
-    assert WX.delta_e(s["rgb"], WX.stage_sky_rgb(preset)) < 10
     assert WX.delta_e(s["rgb"], WX.stage_sky_rgb("golden_am")) > 10      # the orange sky of the old build
     rec = convert._weather_rec("morning", wx, preset, s)
     assert rec["time"] == "morning" and rec["sky"] == "overcast" and rec["delta_e"] < 10   # kept apart
+
+
+def test_a_dim_grey_sky_is_overcast_not_unknown_and_morning_stays_soft():
+    # RGB (90, 95, 100): lightness ~40, so the old "lightness >= 50" rule called it unknown and morning became midday.
+    for rgb in ([90, 95, 100], [70, 72, 76], [120, 124, 128]):
+        s = WX.sky_sample(*_frames(rgb))
+        assert s["lightness"] < 55 or rgb == [120, 124, 128]
+        assert WX.classify(s) == "overcast", rgb
+        assert WX.preset_for("morning", s, convert.time_preset)[0] == "overcast", rgb
+    # a dim but blue sky is still clear, a dim warm one warm: saturation, not brightness, says grey
+    assert WX.classify(WX.sky_sample(*_frames([40, 70, 120]))) == "clear"
+    assert WX.classify(WX.sky_sample(*_frames([150, 95, 50]))) == "warm"
+
+
+def test_a_blown_out_white_sky_is_not_called_overcast():
+    # a clipped white sky says nothing about the weather on its own
+    s = WX.sky_sample(*_frames([254, 254, 255]))
+    assert s["clipped"] > 0.9 and WX.classify(s) == "blown out"
+    preset, wx, notes = WX.preset_for("midday", s, convert.time_preset)
+    assert preset == "midday" and wx == "blown out" and any("blown out" in n for n in notes)
+    assert WX.sky_tint(s, wx, preset) is None                           # nothing measured to carry
+    # clipped near the sun, blue in the rest: read from the unclipped fringe -> clear
+    imgs, masks = _frames([254, 254, 255])
+    for im in imgs:
+        im[35:50] = [105, 155, 225]
+    s = WX.sky_sample(imgs, masks)
+    assert s["clipped"] >= 0.5 and WX.classify(s) == "clear"
+    # clipped with a grey fringe -> overcast
+    imgs, masks = _frames([254, 254, 255])
+    for im in imgs:
+        im[35:50] = [170, 174, 178]
+    assert WX.classify(WX.sky_sample(imgs, masks)) == "overcast"
+
+
+def test_the_measured_sky_colour_is_carried_into_the_rebuild_for_a_non_preset_grey():
+    from soundstage.agent import build as B
+    s = WX.sky_sample(*_frames([120, 124, 128]))                         # a mid grey, far from the preset's (185,190,196)
+    preset, wx, _ = WX.preset_for("morning", s, convert.time_preset)
+    assert preset == "overcast"
+    assert WX.delta_e(s["rgb"], WX.stage_sky_rgb(preset)) > 20          # the fixed preset colour alone is way off
+    scene = {"lighting": B.lighting_for({"time": preset})}
+    convert._carry_sky(scene, s, wx, preset)
+    L = scene["lighting"]
+    assert L["sky_color"]["preset"] == "overcast" and L["sky_color"]["hex"] == "#%02x%02x%02x" % tuple(s["rgb"])
+    assert WX.delta_e(s["rgb"], WX.painted_sky_rgb(L)) < 10             # what the stage paints matches the source
+    rec = convert._weather_rec("morning", wx, preset, s)
+    assert rec["tinted"] and rec["delta_e"] < 10 and rec["stage_rgb"] == s["rgb"]
+    # changing the preset in the App drops the tint (the stage only paints it for the preset it was measured for)
+    assert WX.painted_sky_rgb(dict(L, preset="midday")) == WX.stage_sky_rgb("midday")
+    # a sky the read doesn't agree with is not carried (a clear read under Overcast, a blown-out sky)
+    assert WX.sky_tint(WX.sky_sample(*_frames([110, 160, 225])), "clear", "overcast") is None
 
 
 def test_blue_sky_morning_is_not_golden_and_no_sky_keeps_the_words():
@@ -144,12 +226,14 @@ def test_blue_sky_morning_is_not_golden_and_no_sky_keeps_the_words():
 
 
 def test_stage_sky_colours_match_the_stage():
-    with open(os.path.join(ROOT, "web", "stage", "stage.mjs")) as f:
+    with open(os.path.join(ROOT, "web", "stage", "lighting.mjs")) as f:
         js = f.read()
-    m = re.search(r"const sky = \{([^}]*)\}\[this\.skyPhase\]", js)
+    m = re.search(r"export const SKY_COLORS = \{([^}]*)\}", js)
     assert m, "the stage's sky colour map moved"
     pairs = dict((k.strip('" '), int(v, 16)) for k, v in re.findall(r'"?([a-z /]+)"?:\s*0x([0-9a-f]{6})', m.group(1)))
     assert pairs == WX.STAGE_SKY
+    with open(os.path.join(ROOT, "web", "stage", "stage.mjs")) as f:
+        assert "skyBackground(this.skyPhase, this.state.lighting)" in f.read()
 
 
 # ------------------------------------------------------------------------------------------------ 3 reshoot words
@@ -188,19 +272,61 @@ def test_blocks_in_front_of_the_scan_get_kind_words_and_covered_ones_go():
     actors = [_block("Rocks (left)", [1.0, 0, 5.0], 0.8),                # in front of the scan: kept, worded
               _block("Tree", [-1.0, 0, 20.0], 6.0, kind="tree"),        # where the scan already shows it: dropped
               _block("Box", [0.5, 0, 9.0], 2.5),                         # an odd tall block: named by its own name
-              _block("Building facade", [0, 0, -30.0], 9.0),             # behind the camera: off view, kept
+              _block("Building facade", [0, 0, -30.0], 9.0),             # behind the camera: off view, kept, unnamed
               {"id": "v2s_scan_points", "name": "Set scan points", "kind": "glb", "scan": True},
               {"id": "ground", "name": "Ground", "kind": "custom", "set_piece": True, "structure": True,
                "position": [0, 0, 10]}]
     res = scenewords.triage_blocks(actors, POSE0, LEVEL_A, LEVEL_B, LEVEL_K, (640, 480), scan)
     names = [a["name"] for a in actors]
     assert res["dropped"] == ["Tree"] and "Tree" not in names and "Ground" in names
-    assert set(res["worded"]) == {"Rocks (left)", "Box"} and "Building facade" in names
+    assert set(res["worded"]) == {"Rocks (left)", "Box"} and res["off_view"] == ["Building facade"]
     words = {a["name"]: a.get("prompt_word") for a in actors}
     assert words["Rocks (left)"] == "rocks" and words["Box"] == "box"
     hint = scenewords.look_hint({"actors": [{"kind": "woman", "mocap": {}, "source": {"label": "woman dancing"}}] + actors})
-    assert "rocks" in hint and "box" in hint and not re.search(r"pillar|column", hint)
-    assert "set scan" not in hint.lower()
+    assert "rocks" in hint and "box" in hint and "set scan" not in hint.lower()
+    assert "building" not in hint                                      # the camera never sees it: not named (it was)
+
+
+def test_a_long_strip_whose_centre_is_off_screen_is_still_worded():
+    # A 120 m shrub strip 8 m ahead, its centre 40 m off to the side: the old centre test called it off camera and kept
+    # it with no word, so LTX saw a long clay block in the depth guide and named it whatever it liked.
+    scan = np.full((480, 640), 30.0, np.float32)
+    strip = _block("Shrubs (left)", [40.0, 0, 8.0], 1.2, recipe={"size_m": [120, 1.2, 2], "parts": []})
+    actors = [strip]
+    res = scenewords.triage_blocks(actors, POSE0, LEVEL_A, LEVEL_B, LEVEL_K, (640, 480), scan)
+    assert res["worded"] == ["Shrubs (left)"] and strip["prompt_word"] == "shrubs" and strip["in_view"] is True
+    # the old rule, for the record: the centre alone projects off screen
+    assert scenewords._project(POSE0, LEVEL_A, LEVEL_B, LEVEL_K, [40.0, 0.6, 8.0])[0] < 0
+    # and a long strip the scan shows over most of its in-view length is dropped, not judged by one centre pixel
+    far = _block("Trees (left)", [40.0, 0, 30.0], 6.0, recipe={"size_m": [120, 6.0, 2], "parts": []})
+    res2 = scenewords.triage_blocks([far], POSE0, LEVEL_A, LEVEL_B, LEVEL_K, (640, 480), scan)
+    assert res2["dropped"] == ["Trees (left)"]
+
+
+def test_the_kind_words_reach_the_motion_prompt():
+    from soundstage.look.compile import compile_look
+    from soundstage.agent import build as B
+    lighting = B.lighting_for({"time": "overcast"})
+    rocks = _block("Rocks (left)", [1.5, 0, 6.0], 0.8, recipe={"rig": "static", "size_m": [2.0, 0.8, 1.5], "parts": []})
+    box = _block("Box", [-1.0, 0, 9.0], 2.5, recipe={"rig": "static", "size_m": [1.0, 2.5, 1.0], "parts": []})
+    hidden = _block("Building facade", [0, 0, -30.0], 9.0, recipe={"rig": "static", "size_m": [20, 9, 2], "parts": []})
+    scene = {"version": 2, "shot": {"frames": 97, "fps": 24}, "environment": {"set": "empty", "weather": "none"},
+             "lighting": lighting, "sun": {"azimuth_deg": 180, "elevation_deg": 40},
+             "actors": [{"id": "dancer", "name": "Dancer", "kind": "woman", "position": [0, 0, 4.0],
+                         "keys": [{"frame": 0, "position": [0, 0, 4.0]}], "height_m": 1.66, "rotation_deg": 180},
+                        rocks, box, hidden],
+             "props": [], "shots": [{"id": "shot_1", "name": "Source camera", "camera_keys": [
+                 {"frame": 0, "position": [0, 1.6, 0], "target": [0, 1.3, 6], "focal_mm": 28}]}], "active_shot": "shot_1"}
+    before = compile_look(None, json.loads(json.dumps(scene)))["motion_prompt"]
+    assert "In the set" not in before                                  # no kind words yet: nothing names the blocks
+    scan = np.full((480, 640), 40.0, np.float32)
+    scenewords.triage_blocks(scene["actors"], POSE0, LEVEL_A, LEVEL_B, LEVEL_K, (640, 480), scan)
+    motion = compile_look(None, scene)["motion_prompt"]
+    m = re.search(r"In the set: ([^.]*)\.", motion)
+    assert m, motion
+    assert "rocks" in m.group(1) and "box" in m.group(1) and "of frame" in m.group(1)
+    assert "building" not in m.group(1).lower()                       # off view: never named
+    assert not re.search(r"\b(pillar|column)s?\b", motion)
 
 
 # ------------------------------------------------------------------------------------------------ 5 camera tilt
@@ -215,8 +341,11 @@ def _cut_sky_shot():
         sky[: int(60 + 140 * x / 420), x] = 1
     depth[sky > 0.5] = 1000.0
     foot_tree = int(round(240 + 500 * 1.6 / 35))
-    depth[100:foot_tree, 460:540] = 35.0
-    depth[330:400, 100:200] = 5.0
+    # The tree's depth as mono depth reads far things: compressed (35 m reads ~30 m) and noisy, not the true 35 m. Its
+    # place comes from its box foot on the floor plane; the depth only overrules a foot ray that is far off.
+    rng = np.random.default_rng(5)
+    depth[100:foot_tree, 460:540] = (30.0 + rng.normal(0, 1.5, (foot_tree - 100, 80))).astype(np.float32)
+    depth[330:400, 100:200] = (5.4 + rng.normal(0, 0.4, (70, 100))).astype(np.float32)
     return depth, sky, foot_tree
 
 
@@ -238,8 +367,15 @@ def test_a_cut_off_sky_edge_does_not_tilt_the_camera():
     convert.place_set_bboxes([tree, rocks], POSE0, A, b, LEVEL_K, (640, 480), depth, 1.0)
     dist = lambda a: float(np.hypot(a["position"][0], a["position"][2]))  # noqa: E731 - the camera stands at x = z = 0
     assert dist(tree) > 20 and dist(rocks) < 8
+    assert tree.get("placed_by") != "depth"                             # the floor plane placed it, not the depth
+    assert 33 < dist(tree) < 50                                         # the foot ray (true 35 m), beyond mono depth
     assert rocks["position"][0] > 0                                     # on the camera's left (+X is screen-left)
     assert max(abs(p["pos"][0]) for p in rocks["recipe"]["parts"]) < 3  # a pile as wide as its box, not a 120 m strip
+    # the old read (tilt to the cut-off sky edge) on the same box puts the tree much nearer: the test can tell them apart
+    A_old, b_old = track.world_frame(track.ground_from_horizon(v_h, LEVEL_K, 1.6), 1.0)
+    old = {"kind": "tree", "_set_bbox": list(tree["_bbox"]), "position": [0, 0, 0]}
+    convert.place_set_bboxes([old], POSE0, A_old, b_old, LEVEL_K, (640, 480), None, 1.0)
+    assert dist(old) < 12
 
 
 def test_a_clean_horizon_is_still_trusted():
@@ -249,6 +385,44 @@ def test_a_clean_horizon_is_still_trusted():
     depth, _, _ = _cut_sky_shot()
     g, note = track.camera_ground(depth, sky, LEVEL_K, track.valid_mask(depth, sky))
     assert note.startswith("ground: camera tilt from the horizon")
+
+
+def _flattened_floor(h=480, w=640, row=200, true_tilt=4.6):
+    """A camera tilted down `true_tilt` degrees (its horizon at `row`) over flat ground, depth as mono depth reads it:
+    compressed with distance (z ** 0.7), which levels a plane fitted to it."""
+    th = np.radians(true_tilt)
+    v = np.arange(h, dtype=np.float64)[:, None] * np.ones((1, w))
+    ang = th + np.arctan2(v - 240, 500.0)                               # each row's ray below the horizon
+    z = np.where(ang > 0.003, 1.6 / np.tan(np.maximum(ang, 1e-6)) * np.cos(np.arctan2(v - 240, 500.0)), 400.0)
+    return (np.minimum(z, 400.0) ** 0.7).astype(np.float32)
+
+
+def test_a_clean_partial_horizon_beside_a_building_still_sets_the_tilt():
+    # The old guard distrusted any ragged sky edge, so a building on one side sent the tilt to the depth-fitted floor,
+    # which mono depth's compression flattens. The low straight stretch of sky edge is a real horizon: keep it.
+    h, w, row = 480, 640, 200
+    true_tilt = float(np.degrees(np.arctan2(240 - row, 500.0)))
+    depth = _flattened_floor(row=row, true_tilt=true_tilt)
+    for building in ("roof below the top", "fills the top"):
+        sky = np.zeros((h, w), np.float32)
+        if building == "roof below the top":
+            sky[:row, 300:] = 1                                          # a clean horizon over the right half
+            sky[:60, :300] = 1                                           # sky above a building's roof on the left
+        else:
+            sky[:row, 400:] = 1                                          # the building fills the left 5/8 to the top
+        depth[sky > 0.5] = 1000.0
+        ok, why = track.horizon_trusted(sky)
+        assert ok and "straight horizon" in why, building
+        g, note = track.camera_ground(depth, sky, LEVEL_K, track.valid_mask(depth, sky))
+        assert note.startswith("ground: camera tilt from the horizon (row 200"), (building, note)
+        n = np.asarray(g[0])
+        assert abs(np.degrees(np.arctan2(-n[2], -n[1])) - true_tilt) < 0.5, building
+    # the depth-fitted floor on this mono depth is the flattened one the horizon guards against
+    fitted = track.fit_ground(depth, LEVEL_K, track.valid_mask(depth, sky))
+    nf = np.asarray(fitted[0])
+    assert abs(np.degrees(np.arctan2(-nf[2], -nf[1])) - true_tilt) > 1.5
+    # a slope rising across the sky (no straight low stretch) is still not a horizon
+    assert not track.horizon_trusted(_cut_sky_shot()[1])[0]
 
 
 # ------------------------------------------------------------------------------------------------ 6 wardrobe reference
@@ -271,6 +445,53 @@ def test_reference_crop_blurs_the_face_and_keeps_the_clothes():
     fb = W.face_box_from_joints(uv, body)
     assert fb[0] < 150 < fb[2] and fb[1] < 80 < fb[3]
     assert "face" in W.CONSENT and "right to use" in W.CONSENT
+
+
+def test_the_wardrobe_reference_blurs_the_face_of_the_same_frame_when_the_take_starts_late(tmp_path, monkeypatch):
+    # The take starts at 1.0 s (SAM 3D Body found the person late); the samples are at 0, 1 and 2 s. The face box comes
+    # from the take's first frame, so the picture must be the 1.0 s sample, not files[0] (where the face is elsewhere).
+    cv2 = pytest.importorskip("cv2")
+    rng = np.random.default_rng(9)
+    times = [0.0, 1.0, 2.0]
+    files = []
+    for i in range(3):
+        im = rng.integers(0, 255, (400, 300, 3)).astype(np.uint8)
+        f = str(tmp_path / f"f_{i:02d}.png")
+        cv2.imwrite(f, im[..., ::-1])
+        files.append(f)
+    take = {"frames": 25, "source_frames": list(range(24, 49)), "focal_px": 900.0, "body": [[[0, 0, 0]] * 18] * 25}
+    assert pipeline.ref_frame_pair(take, times, 24.0) == (1, 0)
+    assert pipeline.ref_frame_pair(dict(take, source_frames=list(range(0, 25))), times, 24.0) == (0, 0)
+    assert pipeline.ref_frame_pair(dict(take, source_frames=list(range(40, 65))), times, 24.0) == (2, 8)
+    asked = []
+
+    def sam_2d(t, k, size):                                              # the joints of take frame k (pixels here)
+        asked.append(k)
+        uv = np.full((18, 2), np.nan)
+        uv[0], uv[1] = [200, 90], [200, 120]                             # nose, neck: the head at (200, 90) at 1.0 s
+        uv[8], uv[11], uv[10], uv[13] = [185, 220], [215, 220], [185, 360], [215, 360]   # hips, ankles
+        return uv
+    monkeypatch.setattr(pipeline.performer, "sam_2d", sam_2d)
+    actor = {"source": {"bbox_start": [100, 100, 450, 950], "bbox_end": [500, 100, 850, 950]}}
+    name = pipeline.write_wardrobe_ref(actor, take, files, "soundstage/v2s_t", (300, 400), times=times, fps=24.0,
+                                       duration=2.0)
+    assert name == "soundstage/v2s_t/wardrobe_ref.png" and asked == [0]
+    crop = cv2.imread(str(tmp_path / "wardrobe_ref.png"))[..., ::-1]
+    src1 = cv2.imread(files[1])[..., ::-1]
+    # the crop is cut from the 1.0 s sample (its clothes are that frame's pixels) ...
+    jx0, jy0, jx1 = 185 - 0.2 * 30, 90 - 1.6 * 0.12 * 270, 215 + 0.2 * 30
+    X0, Y0 = int(max(0, jx0 - 0.08 * (jx1 - jx0))), int(max(0, jy0 - 0.08 * (360 + 0.12 * 270 - jy0)))
+    np.testing.assert_array_equal(crop[260 - Y0:300 - Y0, 190 - X0:210 - X0], src1[260:300, 190:210])
+    # ... and that frame's face is gone
+    face = crop[85 - Y0:100 - Y0, 192 - X0:208 - X0].astype(float)
+    assert face.std() < 0.35 * src1[85:100, 192:208].astype(float).std()
+
+
+def test_the_wardrobe_consent_is_on_screen_not_only_a_tooltip():
+    with open(os.path.join(ROOT, "web", "ui", "videoimport.mjs")) as f:
+        js = f.read()
+    assert 'className: "consent", textContent: WARDROBE_REF_CONSENT' in js and "wrc" in js.split("grid.append(")[-1]
+    assert "p.consent" in js
 
 
 def test_the_cast_pool_offers_the_wardrobe_reference_only_when_made():
@@ -319,6 +540,93 @@ def test_route_runs_the_inventory_and_the_scan_with_fixtures(fake_server, monkey
     calls.clear()
     r = asyncio.run(pipeline.run("http://x", "clip.mp4", scan=False))
     assert "inventory" not in seen["queued"] and not calls and r["scene"]["video2stage"]["set_path"]["path"] == "blocks"
+
+
+@pytest.fixture
+def scan_server(fake_server, monkeypatch):
+    """fake_server with real arrays: a 96 x 128 floor-and-wall depth with its sky, real sample PNGs, a moving camera
+    and a block-built scene, so the route runs the REAL scanroute.apply (planes.fit + backdrop.build) on them."""
+    cv2 = pytest.importorskip("cv2")
+    seen, out = fake_server
+    h, w = 96, 128
+    K = np.array([[100.0, 0, 64], [0, 100.0, 48], [0, 0, 1]])
+    v = np.arange(h, dtype=np.float64)[:, None] * np.ones((1, w))
+    depth = np.where(v > 50, 100 * 1.6 / np.maximum(v - 48, 1e-6), 60.0).astype(np.float32)
+    sky = (v < 30).astype(np.float32)
+    monkeypatch.setattr(pipeline.vlm, "inventory_model", lambda: "qwen3vl_8b_fp8_scaled.safetensors")
+
+    def extract(path, d, times):
+        os.makedirs(d, exist_ok=True)
+        fs = []
+        for i in range(len(times)):
+            im = np.full((h, w, 3), 120, np.uint8)
+            im[:30] = [190, 192, 196]
+            f = os.path.join(d, f"f_{i:02d}.png")
+            cv2.imwrite(f, im)
+            fs.append(f)
+        return fs
+    monkeypatch.setattr(pipeline.frames, "extract", extract)
+    real = pipeline.queue.run_graph
+
+    async def run_graph(base, g, what, timeout_s=900.0, on_wait=None):
+        if what == "depth":
+            seen["queued"].append(what)
+            d = out / "soundstage_v2s"
+            d.mkdir(exist_ok=True)
+            p = d / f"v2s_{g['x1']['inputs']['name'].split('_', 1)[1]}.npz"
+            n = 16
+            np.savez(p, depth=np.repeat(depth[None], n, 0), sky=np.repeat(sky[None], n, 0),
+                     intrinsics=np.repeat(K[None].astype(np.float32), n, 0))
+            return {"x1": {"text": [str(p)]}}, {"total_ms": 1}
+        if what == "inventory":
+            seen["queued"].append(what)
+            k = len([x for x in g if x.startswith("r")])
+            return {f"r{i}": {"text": [_fix("dancer_inventory.txt")]} for i in range(k)}, {"total_ms": 1}
+        return await real(base, g, what, timeout_s, on_wait)
+    monkeypatch.setattr(pipeline.queue, "run_graph", run_graph)
+
+    def solve(packet, files, seed=0):
+        poses = [np.hstack([np.eye(3), np.array([[0.0], [0.0], [-0.05 * i]])]) for i in range(len(files))]
+        return poses, np.ones(len(files)), K, (np.array([0.0, -1.0, 0.0]), 1.6, 1.0), [], packet["depth"]
+    monkeypatch.setattr(pipeline, "solve", solve)
+    A, b = track.world_frame((np.array([0.0, -1.0, 0.0]), 1.6, 1.0), 1.0)
+
+    def assemble(**kw):   # the old block builder's set: a plaza block and a rock pile
+        return {"actors": [_block("Plaza", [0, 0, 8], 0.03), _block("Rocks (left)", [1.0, 0, 4.0], 0.8)],
+                "shots": [{"camera_keys": [{"position": [0, 1.6, 0]}]}], "camera_keys": [], "shot": {"frames": 120},
+                "video2stage": {"metres_per_unit": 1.0, "xform": {"A": A.tolist(), "b": b.tolist()}}}
+    monkeypatch.setattr(pipeline.convert, "assemble", assemble)
+    return seen, out
+
+
+def test_route_runs_the_real_scan_path_and_falls_back_to_the_blocks_when_the_scan_fails(scan_server, monkeypatch):
+    seen, out = scan_server
+    r = asyncio.run(pipeline.run("http://x", "clip.mp4"))
+    sp = r["scene"]["video2stage"]["set_path"]
+    names = [a.get("name") for a in r["scene"]["actors"]]
+    assert sp["path"] == "scan" and sp["scan"] is True and sp["planes"] >= 1, r["notes"]
+    assert any(a.get("scan") for a in r["scene"]["actors"]) and "Plaza" not in names   # scan in, flat block out
+    assert "inventory" in seen["queued"]
+    # the set scan fails inside backdrop.build: the route really falls back to the old builder's set, and says so
+    from soundstage.video2stage import backdrop as BD
+
+    def boom(scene, ctx, **kw):
+        raise RuntimeError("no splat")
+    monkeypatch.setattr(BD, "build", boom)
+    r2 = asyncio.run(pipeline.run("http://x", "clip.mp4"))
+    sp2 = r2["scene"]["video2stage"]["set_path"]
+    names2 = [a.get("name") for a in r2["scene"]["actors"]]
+    assert sp2["path"] == "blocks" and "did not build" in sp2["fallback"], sp2
+    assert not any(a.get("scan") or a.get("structure") for a in r2["scene"]["actors"])   # no half-applied scan path
+    assert "Plaza" in names2 and "Rocks (left)" in names2                 # the old builder's blocks, as they were
+    assert any("fell back to the old block builder" in n for n in r2["notes"])
+    assert any("the set scan failed (no splat)" in n for n in r2["notes"])
+    # a crash anywhere in the scan path falls back the same way
+    monkeypatch.setattr(pipeline.scanroute, "apply", lambda scene, **kw: (_ for _ in ()).throw(ValueError("bad planes")))
+    r3 = asyncio.run(pipeline.run("http://x", "clip.mp4"))
+    sp3 = r3["scene"]["video2stage"]["set_path"]
+    assert sp3["path"] == "blocks" and "bad planes" in sp3["fallback"]
+    assert [a.get("name") for a in r3["scene"]["actors"]] == names2
 
 
 def test_scan_apply_fits_the_ground_and_fuses_a_scan(tmp_path):
@@ -393,3 +701,41 @@ def test_person_mask_from_depth():
     d[40:190, 60:100] = 4.0                                              # the person, 4 m away
     m = W.person_mask_from_depth(d, [0.25, 0.15, 0.75, 0.98])
     assert m[100, 80] and not m[100, 50] and m.sum() == 150 * 40
+
+
+# ------------------------------------------------------------------------------------------------ the browser fixture
+REPLAY_FIELDS = os.path.join(FIX, "v2s_replay_fields.json")
+
+
+def replay_fields() -> dict:
+    """The fields this change adds to a Video -> 3D result, made by the real code from fixtures (a mid-grey sky, the
+    dancer's inventory read, a silhouette): the sky reading and its measured colour, the wardrobe words, the clay's
+    girth and the wardrobe reference. The try-it replay's recorded run is older than these fields; the browser check
+    overlays this on it (and tests/js/v2s_replay_fields.test.mjs feeds it to the App's own functions)."""
+    from soundstage.agent import build as B
+    s = WX.sky_sample(*_frames([120, 124, 128]))
+    preset, wx, _ = WX.preset_for("morning", s, convert.time_preset)
+    scene = {"lighting": B.lighting_for({"time": preset})}
+    convert._carry_sky(scene, s, wx, preset)
+    inv = vlm.merge_inventory([vlm.parse_inventory(_fix("dancer_inventory.txt"), 0)])
+    woman = next(it for it in inv["items"] if it["kind"] == "woman")
+    ap = W.appearance(woman["name"], woman["wardrobe"], woman.get("color"))
+    g, src = W.girth_from(None, _silhouette(70)[0], female=True)
+    ap.update(girth=round(g, 3), build=W.nearest_build(g))
+    performer_ = {"id": "driver", "kind": "woman", "mocap": {}, "appearance": ap,
+                  "source": {"label": woman["name"], "wardrobe": woman["wardrobe"]},
+                  "wardrobe_ref": "soundstage/v2s_fixture/wardrobe_ref.png"}
+    hint = scenewords.look_hint({"actors": [performer_], "video2stage": {"weather": {"sky": wx}}})
+    return {"about": "Made by tests/test_v2s_dancer.py replay_fields() from fixtures, not a GPU run. Overlay for the "
+                     "try-it replay's recorded Video -> 3D result (its 'driver' actor stands in for the performer).",
+            "lighting": scene["lighting"],
+            "video2stage": {"weather": convert._weather_rec("morning", wx, preset, s), "look_hint": hint},
+            "actors": {"driver": {k: performer_[k] for k in ("kind", "appearance", "source", "wardrobe_ref")}},
+            "girth_source": src}
+
+
+def test_the_replay_fixture_is_what_the_code_makes():
+    with open(REPLAY_FIELDS) as f:
+        assert json.load(f) == json.loads(json.dumps(replay_fields())), \
+            "regenerate: python3 -c 'import sys; sys.path[:0]=[\"tests\",\".\"]; import json, test_v2s_dancer as t; " \
+            "open(t.REPLAY_FIELDS, \"w\").write(json.dumps(t.replay_fields(), indent=1) + \"\\n\")'"

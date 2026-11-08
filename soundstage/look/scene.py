@@ -478,10 +478,16 @@ def _props(scene: dict) -> list[dict]:
         out.append({"id": pid, "kind": kind, "word": word, "position": _v(p.get("position")), "size": size,
                     "door": bool(p.get("door"))})
     for a in scene.get("actors") or []:
+        if a.get("in_view") is False or a.get("scan"):
+            continue   # Video -> 3D: a block the camera never sees, or the set scan itself (not a thing to name)
         noun, rig, h = classify(a)
         if rig == "static":
-            out.append({"id": a.get("id"), "kind": a.get("kind"), "word": noun, "position": _pos_at(a, 0),
-                        "size": (1.0, h, 1.0), "door": False})
+            # A Video -> 3D set block in front of the scan carries its kind word (video2stage/scenewords.triage_blocks):
+            # the motion prompt names it by that ("rocks", "a box"), never by the clay's block shape.
+            pw = str(a.get("prompt_word") or "").strip()
+            size = tuple((a.get("recipe") or {}).get("size_m") or (1.0, h, 1.0)) if pw else (1.0, h, 1.0)
+            out.append({"id": a.get("id"), "kind": a.get("kind"), "word": pw or noun, "position": _pos_at(a, 0),
+                        "size": _v(size), "door": False, "set_word": bool(pw)})
     return out
 
 
@@ -916,6 +922,8 @@ def frame_facts(scene: dict, cam: dict, frame: int) -> dict:
         if not v:
             continue
         twin = next((q for q in props if q["word"] == pr["word"]), None)
+        if twin and pr.get("set_word"):
+            continue   # "rocks" twice is still "rocks"
         if twin:  # two planters -> "a pair of planters" once, not two near-identical phrases
             twin["count"] += 1
             twin["where"] = "framing the space"

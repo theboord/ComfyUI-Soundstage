@@ -65,8 +65,8 @@ def set_words(scene: dict, limit: int = 6) -> list[str]:
         if a.get("procedural") or "(off-camera)" in str(a.get("name") or ""):
             continue   # never in the picture
         nm = str(a.get("name") or a.get("kind") or "")
-        if SKIP.match(nm):
-            continue
+        if SKIP.match(nm) or a.get("in_view") is False:
+            continue   # the scan pieces, the terrain, and blocks the triage found the camera never sees
         w = a.get("prompt_word") if a.get("prompt_word") is not None else kind_word(nm)
         if w and w not in out:
             out.append(w)
@@ -136,36 +136,66 @@ def _project(pose, A, b, K, p_stage):
     return float(uv[0]), float(uv[1]), float(xc[2] * np.linalg.norm(A[0]))
 
 
-def triage_blocks(actors: list, pose0, A, b, K, size, scan_depth_m, covered: float = 0.35) -> dict:
-    """The clay dressing against the set scan, through the first camera. For each set piece (not the scan, not the
-    performer): off-camera -> kept; in view where the scan's depth at its centre is within `covered` of the block's
-    distance -> dropped (the scan already shows it); in view in front of the scan -> kept and given its kind word
-    (prompt_word). scan_depth_m: the scan's first-frame depth in metres on the `size` grid (None: nothing dropped).
-    Returns {dropped: [names], worded: [names]}; the actor list is edited in place."""
+def footprint_points(a: dict, n: int = 7) -> list[np.ndarray]:
+    """Stage points over a block's whole extent (its recipe size_m turned by rotation_deg, three heights, plus each recipe
+    part), so a long strip is judged by all of it, not by its centre (convert.outside_view uses the same frame)."""
+    p = np.array(a.get("position") or [0, 0, 0], float)
+    size = (a.get("recipe") or {}).get("size_m") or [1.0, float(a.get("height_m") or 1.0), 1.0]
+    r = math.radians(float(a.get("rotation_deg") or 0))
+    ax, az = np.array([math.cos(r), 0, -math.sin(r)]), np.array([math.sin(r), 0, math.cos(r)])
+    hgt = min(float(size[1] or a.get("height_m") or 1.0), 6.0)
+    pts = []
+    for fx in np.linspace(-0.5, 0.5, n):
+        for fz in np.linspace(-0.5, 0.5, 3):
+            for fy in (0.1, 0.5, 0.9):
+                pts.append(p + ax * fx * float(size[0]) + az * fz * float(size[2]) + np.array([0, fy * hgt, 0]))
+    for part in (a.get("recipe") or {}).get("parts") or []:
+        q = np.array(part.get("pos") or [0, 0, 0], float)
+        pts.append(p + ax * q[0] + az * q[2] + np.array([0, q[1], 0]))
+    return pts
+
+
+def triage_blocks(actors: list, pose0, A, b, K, size, scan_depth_m, covered: float = 0.35, shown: float = 0.6) -> dict:
+    """The clay dressing against the set scan, through the first camera, judged over each block's whole extent
+    (footprint_points), not its centre. For each set piece (not the scan, not the performer):
+    - no point in view -> kept, marked in_view False (it is never named: the camera never sees it);
+    - in view, and at `shown` (60 %) or more of its in-view points the scan's depth is within `covered` of the block's
+      -> dropped (the scan already shows it there);
+    - otherwise in view in front of (or beyond) the scan -> kept, in_view True, given its kind word (prompt_word), which
+      the motion prompt names with where it stands (look/compile.py set_pieces_sentence) and the Look text names.
+    scan_depth_m: the scan's first-frame depth in metres on the `size` grid (None: nothing dropped).
+    Returns {dropped: [names], worded: [names], off_view: [names]}; the actor list is edited in place."""
     w, h = size
     pose0 = np.asarray(pose0, float)
-    res = {"dropped": [], "worded": []}
+    res = {"dropped": [], "worded": [], "off_view": []}
     keep = []
     for a in actors:
         if not a.get("set_piece") or a.get("scan") or a.get("structure") or a.get("kind") == "glb":
             keep.append(a)
             continue
-        pos = a.get("position") or [0, 0, 0]
-        hgt = float(a.get("height_m") or 1.0)
-        pr = _project(pose0, A, b, K, [pos[0], min(hgt * 0.5, 3.0), pos[2]])
-        if pr is None or not (0 <= pr[0] < w and 0 <= pr[1] < h):
+        seen = []
+        for q in footprint_points(a):
+            pr = _project(pose0, A, b, K, q)
+            if pr is not None and 0 <= pr[0] < w and 0 <= pr[1] < h:
+                seen.append(pr)
+        name = a.get("name") or a.get("kind")
+        if not seen:
+            a["in_view"] = False
+            res["off_view"].append(name)
             keep.append(a)
             continue
-        u, v, dist = pr
-        z = None
+        hits = 0
         if scan_depth_m is not None:
-            zz = float(scan_depth_m[int(v), int(u)])
-            z = zz if math.isfinite(zz) and zz > 0 else None
-        if z is not None and abs(z - dist) <= covered * dist:
-            res["dropped"].append(a.get("name") or a.get("kind"))
+            for u, v, dist in seen:
+                zz = float(scan_depth_m[int(v), int(u)])
+                if math.isfinite(zz) and zz > 0 and abs(zz - dist) <= covered * dist:
+                    hits += 1
+        if scan_depth_m is not None and hits >= shown * len(seen):
+            res["dropped"].append(name)
             continue
-        a["prompt_word"] = kind_word(a.get("name") or a.get("kind"))
-        res["worded"].append(a.get("name") or a.get("kind"))
+        a["in_view"] = True
+        a["prompt_word"] = kind_word(name)
+        res["worded"].append(name)
         keep.append(a)
     actors[:] = keep
     return res

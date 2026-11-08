@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import os
 import re
@@ -394,13 +395,31 @@ def finish_scene(scene: dict, *, take, info, breakdown, depths, scales, poses, K
     from . import scenewords as SW
     from . import wardrobe as W
     v2s = scene.setdefault("video2stage", {})
+    fallback = None
     if scan_on and v2s.get("xform") and depths:
-        st = scanroute.apply(scene, depths=depths, scales=scales, poses=poses, K=K, files=files, skies=skies,
-                             breakdown=breakdown, times=times, duration=float(clip.get("duration") or 1.0), notes=notes,
-                             tag=f"v2s_{tag}")
-        v2s["set_path"] = {"path": "scan", **{k: st[k] for k in ("planes", "scan", "dropped", "worded")}}
-    else:
-        v2s["set_path"] = {"path": "blocks"}
+        # The scan path edits the set in place (structure planes in, flat dressing out, the relief swapped for the scan,
+        # covered blocks dropped). Without a fused scan none of that stands: the set goes back to the old block
+        # builder's, exactly as it was, and the record says so.
+        before = copy.deepcopy(scene.get("actors") or [])
+        before_v2s = {k: copy.deepcopy(v2s[k]) for k in ("backdrop", "sky") if k in v2s}
+        try:
+            st = scanroute.apply(scene, depths=depths, scales=scales, poses=poses, K=K, files=files, skies=skies,
+                                 breakdown=breakdown, times=times, duration=float(clip.get("duration") or 1.0),
+                                 notes=notes, tag=f"v2s_{tag}")
+        except Exception as exc:  # noqa: BLE001 - the old builder's set still stands
+            st, fallback = None, f"the scan path failed ({exc})"
+        if st is not None and not st.get("scan"):
+            fallback = "the set scan did not build"
+        if fallback is None:
+            v2s["set_path"] = {"path": "scan", **{k: st[k] for k in ("planes", "scan", "dropped", "worded")}}
+        else:
+            scene["actors"] = before
+            for k in ("backdrop", "sky"):
+                v2s.pop(k, None)
+            v2s.update(before_v2s)
+            notes.append(f"set: {fallback}; fell back to the old block builder's set")
+    if not (scan_on and v2s.get("xform") and depths) or fallback is not None:
+        v2s["set_path"] = {"path": "blocks", **({"fallback": fallback} if fallback else {})}
         if has_relief and v2s.get("xform") and depths:
             A, b = np.asarray(v2s["xform"]["A"], float), np.asarray(v2s["xform"]["b"], float)
             d0 = np.asarray(depths[0], np.float32) * float(scales[0]) * float(np.linalg.norm(A[0]))
@@ -427,7 +446,9 @@ def finish_scene(scene: dict, *, take, info, breakdown, depths, scales, poses, K
             notes.append(f"performer: build from {src} (girth x{girth:.2f}, '{ap['build']}')")
         if wardrobe_ref:
             try:
-                ref = write_wardrobe_ref(perf, take, files, sub, depths[0].shape[::-1] if depths else None)
+                ref = write_wardrobe_ref(perf, take, files, sub, depths[0].shape[::-1] if depths else None,
+                                         times=times, fps=float(clip.get("fps") or 24.0),
+                                         duration=float(clip.get("duration") or 1.0))
                 if ref:
                     perf["wardrobe_ref"] = ref
                     notes.append("performer: wardrobe reference saved (face blurred) for the Frame still")
@@ -436,26 +457,55 @@ def finish_scene(scene: dict, *, take, info, breakdown, depths, scales, poses, K
     v2s["look_hint"] = SW.look_hint(scene)
 
 
-def write_wardrobe_ref(actor: dict, take, files, sub: str, size) -> str | None:
-    """The face-blurred crop of the performer from the first sample frame, saved in the input folder next to the
-    samples. Returns its input-relative name, or None without a box."""
+def ref_frame_pair(take, times, fps: float) -> tuple[int, int | None]:
+    """(sample index, take frame) for the wardrobe reference: ONE moment for both the picture and the face box. The
+    take may start after the first sample (SAM 3D Body tracks from when the person is found); its frame 0 is then not
+    files[0], and blurring frame 0's face on files[0] could miss the real face. The sample nearest the take's first
+    frame, and the take frame nearest that sample's time. (0, None) without a take or sample times."""
+    if not take or not times:
+        return 0, None
+    n = int(take.get("frames") or len(take.get("body") or []))
+    src = take.get("source_frames") or list(range(n))
+    if not src:
+        return 0, None
+    t_take = np.asarray(src, float) / max(fps, 1e-6)
+    i = int(np.argmin(np.abs(np.asarray(times, float) - t_take[0])))
+    k = int(np.argmin(np.abs(t_take - float(times[i]))))
+    return i, k
+
+
+def write_wardrobe_ref(actor: dict, take, files, sub: str, size, times=None, fps: float = 24.0,
+                       duration: float = 1.0) -> str | None:
+    """The face-blurred crop of the performer from one sample frame, saved in the input folder next to the samples.
+    The picture, the person's box and the face box all come from the same moment (ref_frame_pair). Returns its
+    input-relative name, or None without a box."""
     import cv2
 
     from . import wardrobe as W
-    bb = (actor.get("source") or {}).get("bbox_start")
-    if not bb or not files:
+    src = actor.get("source") or {}
+    if not (src.get("bbox_start") or src.get("bbox_end")) or not files:
         return None
-    img = weather.load_rgb(files[0])
+    i, k = ref_frame_pair(take, times, fps)
+    i = min(i, len(files) - 1)
+    img = weather.load_rgb(files[i])
     if img is None:
         return None
     H, Wd = img.shape[:2]
+    t = (float(times[i]) / max(duration, 1e-6)) if times else 0.0
+    bb = scanroute._box_at(src, min(1.0, max(0.0, t)))           # the read's box, at that sample's time
     box = [bb[0] / 1000 * Wd, bb[1] / 1000 * H, bb[2] / 1000 * Wd, bb[3] / 1000 * H]
     face = None
-    if take and take.get("focal_px") and take.get("body") and size:
-        uv = performer.sam_2d(take, 0, size) * np.array([Wd / size[0], H / size[1]])
+    if k is not None and take.get("focal_px") and take.get("body") and size:
+        uv = performer.sam_2d(take, k, size) * np.array([Wd / size[0], H / size[1]])
+        ok = np.isfinite(uv).all(axis=1)
+        if ok.sum() >= 4:   # the person as SAM saw them at that moment: the box from the joints, grown for the clothes
+            jx0, jy0 = uv[ok].min(0)
+            jx1, jy1 = uv[ok].max(0)
+            gx, gy = 0.2 * (jx1 - jx0), 0.12 * (jy1 - jy0)
+            box = [max(0.0, jx0 - gx), max(0.0, jy0 - 1.6 * gy), min(Wd, jx1 + gx), min(H, jy1 + gy)]
         face = W.face_box_from_joints(uv, box)
     crop = W.reference_crop(img, box, face if face is not None else W.face_box_from_joints(None, box))
     name = "wardrobe_ref.png"
-    out = os.path.join(os.path.dirname(files[0]), name)
+    out = os.path.join(os.path.dirname(files[i]), name)
     cv2.imwrite(out, crop[..., ::-1])
     return f"{sub}/{name}"
