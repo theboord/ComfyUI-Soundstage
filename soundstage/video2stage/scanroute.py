@@ -169,6 +169,9 @@ def _another_body(d, bb, body, w: int, h: int, rel: float = 0.07, share: float =
     return int((near & inner & ~(surface[lab] & runs)).sum()) >= need
 
 
+TAKE_KEY = "take"   # people_masks / people_boxes: the performer from the take's joints when no person entry is over her
+
+
 def people_masks(breakdown: dict, depths, times, duration: float, take=None, fps: float = 24.0) -> dict:
     """{person_i: {sample_i: rle}} from the read's person boxes (interpolated start -> end) and each sample's depth.
     The performer (every person box that holds the take's joints' centre at that sample, or lies mostly inside her
@@ -179,6 +182,8 @@ def people_masks(breakdown: dict, depths, times, duration: float, take=None, fps
     a duplicate of her only when its box, outside her body mask, holds no body of its own at her depth
     (_another_body): a second dancer beside her, whose box covers her joints' centre, keeps the loose mask minus her
     body mask, so his own pixels leave the scan too.
+    While the take tracks her and no entry is over her (the read has no person entry, or its box is misplaced), her
+    body mask still comes from the joints, under its own key (TAKE_KEY).
     Everyone else, and the performer outside the take: the loose box-and-depth stand-in
     (wardrobe.person_mask_from_depth, rel 0.35)."""
     from . import backdrop as BD
@@ -192,14 +197,17 @@ def people_masks(breakdown: dict, depths, times, duration: float, take=None, fps
         boxes = {j: _box_at(o, min(1.0, max(0.0, t / max(duration, 1e-6))) if times else 0.0) for j, o in people}
         uv, jbox = joint_box(take, take_frame_at(take, t, fps), (w, h)) if take and times else (None, None)
         perf: set = set()
+        over: list = []
         if jbox is not None:   # the take's person: the best match, plus any duplicate entry for her
             over = [j for j, bb in boxes.items() if bb and _over_performer(bb, jbox, w, h)]
             if over:
                 best = max(over, key=lambda j: _iou_px(boxes[j], jbox, w, h))
                 perf = {best}
-        body = W.body_mask(d, jbox, uv) if perf else None
+        body = W.body_mask(d, jbox, uv) if jbox is not None else None
         if body is not None and body.any():
             perf |= {j for j in over if j not in perf and not _another_body(d, boxes[j], body, w, h)}
+            if not over:   # the take tracks her but no entry is over her (none, or a misplaced box): her own key
+                out.setdefault(TAKE_KEY, {})[i] = BD.rle_encode(body)
         for j, bb in boxes.items():
             if not bb:
                 continue
@@ -218,13 +226,15 @@ def people_masks(breakdown: dict, depths, times, duration: float, take=None, fps
 def people_boxes(breakdown: dict, size, times, duration: float, take=None, fps: float = 24.0, i: int = 0) -> dict:
     """{person_i: [x0, y0, x1, y1]} in pixels of a `size` (w, h) grid at sample i: each person box (interpolated
     start -> end) grown by the loose mask's margin, and for the performer while the take tracks her also her joint
-    box. The keys match people_masks. without_people uses them so pixels a mask missed still count as the person."""
+    box; with no entry over her, her joint box alone (TAKE_KEY). The keys match people_masks. without_people uses them
+    so pixels a mask missed still count as the person."""
     w, h = size
     t = float(times[i]) if times else 0.0
     people = [(j, o) for j, o in enumerate((breakdown or {}).get("objects") or []) if o.get("kind") == "person"]
     boxes = {j: _box_at(o, min(1.0, max(0.0, t / max(duration, 1e-6))) if times else 0.0) for j, o in people}
     uv, jbox = joint_box(take, take_frame_at(take, t, fps), (w, h)) if take and times else (None, None)
     out = {}
+    hers = False
     for j, bb in boxes.items():
         if not bb:
             continue
@@ -233,8 +243,42 @@ def people_boxes(breakdown: dict, size, times, duration: float, take=None, fps: 
         r = [x0 - gx, y0 - gy, x1 + gx, y1 + gy]
         if jbox is not None and _over_performer(bb, jbox, w, h):
             r = [min(r[0], jbox[0]), min(r[1], jbox[1]), max(r[2], jbox[2]), max(r[3], jbox[3])]
+            hers = True
         out[f"p{j}"] = r
+    if jbox is not None and not hers:   # no entry over her: her joint box, under people_masks' own key for her
+        out[TAKE_KEY] = list(jbox)
     return out
+
+
+OPEN_SIDE = 0.8   # a box side the person's mask runs into along this much of the mask's own span is open
+
+
+def _open_box(m, r, w: int, h: int):
+    """The padding region of a person box r (pixels) for mask m: the box, grown by one box size past each side the
+    mask runs into along at least OPEN_SIDE of the mask's own span there (the box covers only part of her: the top
+    or the left half), clipped to the frame. A box that holds the person touches her only at a hand, a foot or the
+    head, so it stays as it is."""
+    x0, y0 = max(0, int(np.floor(r[0]))), max(0, int(np.floor(r[1])))
+    x1, y1 = min(w, int(np.ceil(r[2]))), min(h, int(np.ceil(r[3])))
+    if x1 <= x0 or y1 <= y0:
+        return x0, y0, x1, y1
+    sub = m[y0:y1, x0:x1]
+    rows, cols = np.flatnonzero(sub.any(1)), np.flatnonzero(sub.any(0))
+    if not rows.size:
+        return x0, y0, x1, y1
+    span_r, span_c = rows[-1] - rows[0] + 1, cols[-1] - cols[0] + 1
+    bw, bh = x1 - x0, y1 - y0
+    kx, ky = max(2, bw // 50), max(2, bh // 50)               # "at the side": within 2% of the box (rounding)
+    g = [0, 0, 0, 0]
+    if x0 > 0 and sub[:, :kx].any(1).sum() >= OPEN_SIDE * span_r:
+        g[0] = bw
+    if x1 < w and sub[:, -kx:].any(1).sum() >= OPEN_SIDE * span_r:
+        g[2] = bw
+    if y0 > 0 and sub[:ky].any(0).sum() >= OPEN_SIDE * span_c:
+        g[1] = bh
+    if y1 < h and sub[-ky:].any(0).sum() >= OPEN_SIDE * span_c:
+        g[3] = bh
+    return max(0, x0 - g[0]), max(0, y0 - g[1]), min(w, x1 + g[2]), min(h, y1 + g[3])
 
 
 def without_people(depth, masks: dict | None, i: int = 0, boxes: dict | None = None, rel: float = 0.1) -> np.ndarray:
@@ -244,7 +288,11 @@ def without_people(depth, masks: dict | None, i: int = 0, boxes: dict | None = N
     With `boxes` (people_boxes) a mask that missed part of the person is padded: inside that person's box, every pixel
     within `rel` of the median depth under the mask goes too, so her leftover unmasked pixels at her own depth are
     not read as the scan showing a block where she stands. Known limit: a set piece within `rel` of her depth inside
-    her box is not seen by the triage either (the block there is kept and worded, not dropped)."""
+    her box is not seen by the triage either (the block there is kept and worded, not dropped).
+    A box that covers only part of the person (the mask runs out of it along most of a side: _open_box) is no limit
+    to the padding: it reaches one box size past that side. Known limit: so does ground at her depth that the loose
+    mask took along the box's whole bottom side, so a block on it within `rel` of her depth just below her box is
+    kept and worded, not dropped."""
     from . import backdrop as BD
     src = np.asarray(depth, np.float32)
     d = np.array(src, copy=True)
@@ -260,8 +308,7 @@ def without_people(depth, masks: dict | None, i: int = 0, boxes: dict | None = N
         if r is None or not z.size:
             continue
         zm = float(np.median(z))
-        x0, y0 = max(0, int(np.floor(r[0]))), max(0, int(np.floor(r[1])))
-        x1, y1 = min(w, int(np.ceil(r[2]))), min(h, int(np.ceil(r[3])))
+        x0, y0, x1, y1 = _open_box(m, r, w, h)
         if x1 > x0 and y1 > y0:
             sub = d[y0:y1, x0:x1]
             sub[np.abs(src[y0:y1, x0:x1] - zm) < rel * zm] = np.nan

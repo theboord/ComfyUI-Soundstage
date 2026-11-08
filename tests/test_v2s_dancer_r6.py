@@ -120,3 +120,79 @@ def test_the_build_mask_keeps_her_arms_but_not_the_hip_width():
     g, src = W.girth_from(None, m, female=True)   # and the hip width still reads the hips alone
     g0, _ = W.girth_from(None, m & ~np.isin(np.arange(400), list(range(140, 160)) + list(range(240, 260)))[None, :])
     assert src == "the person's silhouette" and g == g0
+
+
+# ------------------------------------------------------------------------------------------------ 3 her region
+from soundstage.video2stage import backdrop as BD  # noqa: E402
+from test_v2s_dancer import LEVEL_K, POSE0  # noqa: E402
+from test_v2s_dancer_r3 import _stage_with_her  # noqa: E402
+from test_v2s_dancer_r5 import _scene  # noqa: E402
+
+
+def _her_joints(cx=320, top=200, bot=420):
+    """COCO-18 joints (pixels) of the performer standing in _stage_with_her's rectangle (columns 250-390)."""
+    hgt = bot - top
+    y = lambda f: bot - 10 - f * (hgt - 25)                      # noqa: E731 - nose near the top, ankles near the soles
+    uv = np.full((18, 2), np.nan)
+    uv[0], uv[1] = (cx, y(1.0)), (cx, y(0.85))
+    uv[2], uv[5] = (cx - 50, y(0.82)), (cx + 50, y(0.82))
+    uv[3], uv[6] = (cx - 58, y(0.66)), (cx + 58, y(0.66))
+    uv[4], uv[7] = (cx - 58, y(0.48)), (cx + 58, y(0.48))
+    uv[8], uv[11] = (cx - 30, y(0.52)), (cx + 30, y(0.52))
+    uv[9], uv[12] = (cx - 30, y(0.27)), (cx + 30, y(0.27))
+    uv[10], uv[13] = (cx - 30, y(0.0)), (cx + 30, y(0.0))
+    return uv
+
+
+def _read(*boxes, h=480, w=640):
+    return {"objects": [{"kind": "person", "label": "woman dancing",
+                         "bbox_start": [b[0] / w * 1000, b[1] / h * 1000, b[2] / w * 1000, b[3] / h * 1000],
+                         "bbox_end": [b[0] / w * 1000, b[1] / h * 1000, b[2] / w * 1000, b[3] / h * 1000]}
+                        for b in boxes]}
+
+
+def _scan_path(monkeypatch, d, bd, take):
+    monkeypatch.setattr(BD, "ctx_from_legacy", lambda **kw: {})
+    monkeypatch.setattr(BD, "build", lambda scene, ctx: {"notes": [], "actors": [{"id": "v2s_scan", "scan": True}]})
+    notes = []
+    st = scanroute.apply(_scene(), depths=[d], scales=[1.0], poses=[POSE0], K=LEVEL_K, files=["f0.png"], skies=None,
+                         breakdown=bd, times=[0.0], duration=1.0, notes=notes, use_planes=False, take=take, fps=24.0)
+    return st, notes
+
+
+@pytest.mark.parametrize("boxes", [(), ([0, 0, 100, 100],), ([500, 40, 620, 300],)],
+                         ids=["no person entry", "box in the corner", "box beside her"])
+def test_the_take_alone_gives_her_region_and_keeps_the_crate_where_she_stands(monkeypatch, boxes):
+    pytest.importorskip("cv2")
+    d, _ = _stage_with_her()
+    uv = _her_joints()
+    monkeypatch.setattr(pipeline.performer, "sam_2d", lambda t, k, size: uv)
+    bd = _read(*boxes)
+    st, notes = _scan_path(monkeypatch, d, bd, TAKE)
+    assert st["worded"] == ["Crate"], notes
+    assert st["dropped"] == ["Wall"]                                    # what the scan shows behind her still goes
+    masks = scanroute.people_masks(bd, [d], [0.0], 1.0, take=TAKE, fps=24.0)
+    assert BD.rle_decode(masks[scanroute.TAKE_KEY][0], d.shape)[300, 320]   # her joints' mask, under her own key
+
+
+@pytest.mark.parametrize("half", [[250, 200, 390, 310], [250, 200, 320, 420]], ids=["top half", "left half"])
+def test_without_a_take_a_box_over_half_of_her_keeps_the_crate_where_she_stands(monkeypatch, half):
+    d, _ = _stage_with_her()
+    st, notes = _scan_path(monkeypatch, d, _read(half), None)
+    assert st["worded"] == ["Crate"], notes
+    assert st["dropped"] == ["Wall"]
+    scene = _scene()
+    notes = []
+    pipeline.finish_scene(scene, take=None, info={}, breakdown=_read(half), depths=[d], scales=[1.0], poses=[POSE0],
+                          K=LEVEL_K, files=["f0.png"], skies=None, times=[0.0], clip={"duration": 1.0, "fps": 24.0},
+                          scan_on=False, has_relief=True, wardrobe_ref=False, tag="t", sub="s", notes=notes)
+    sp = scene["video2stage"]["set_path"]
+    assert sp["worded"] == ["Crate"] and sp["dropped"] == ["Wall"], notes
+
+
+def test_a_box_that_holds_her_does_not_open_the_padding():
+    d, _ = _stage_with_her()
+    m = np.zeros(d.shape, bool)
+    m[200:420, 250:390] = True
+    assert scanroute._open_box(m, [229, 189, 411, 431], 640, 480) == (229, 189, 411, 431)
+    assert scanroute._open_box(m, [229, 194, 411, 310], 640, 480) == (229, 194, 411, 426)   # the top half: down
