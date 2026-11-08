@@ -1,7 +1,8 @@
 """Video → 3D street-dance fixes, review round 3 (invented data only, no GPU):
 
 1 the wardrobe echo filter is a whole-reply match: real reads that share a garment phrase with the prompt's example
-  ("grey cable-knit sweater") survive; only the example itself is an echo
+  ("grey cable-knit sweater"), one of its garments alone or a bare garment list survive; only the whole example
+  (reworded, "e.g." / "(example)", 'pants', an extra garment) or the placeholder is an echo
 2 the route's people masks use the take's joints (wardrobe.body_mask): a slab 0.5 m behind her is not her
 3 the block triage does not count the performer as the scan: a block where she stands is not dropped as covered
 4 a layered read keeps the outer layer and the dress under it
@@ -32,16 +33,23 @@ def _person(wardrobe):
 # ------------------------------------------------------------------------------------------------ 1 echo filter
 @pytest.mark.parametrize("real", ["grey cable-knit sweater, black jeans", "navy corduroy trousers and a white tee",
                                   "a green cable-knit sweater", "black corduroy trousers",
-                                  "crop top, hoodie and jacket tied at the waist, denim shorts"])
+                                  "crop top, hoodie and jacket tied at the waist, denim shorts",
+                                  # one garment of the example alone, and a bare garment list, are real reads
+                                  # (round 3 held them as echoes; round 6 review)
+                                  "brown corduroy trousers", "orange cable-knit sweater",
+                                  "  An ORANGE cable-knit sweater ", "crop top, hoodie, jacket"])
 def test_real_clothing_that_shares_a_phrase_with_the_example_is_kept(real):
-    assert vlm.wardrobe_of({"wardrobe": real}) == real
+    assert vlm.wardrobe_of({"wardrobe": real}) == " ".join(real.split())
     o = vlm.parse_reply(_person(real))["objects"][0]
-    assert o["wardrobe"] == real
+    assert o["wardrobe"] == " ".join(real.split())
     assert W.appearance(o["label"], o["wardrobe"]).get("wardrobe") != "unknown"
 
 
 @pytest.mark.parametrize("copied", [vlm.WARDROBE_EXAMPLE, "Orange cable-knit sweater, brown corduroy trousers.",
-                                    "<people only: every garment with its colour>"])
+                                    "<people only: every garment with its colour>",
+                                    "e.g. an orange cable-knit sweater, brown corduroy trousers",
+                                    vlm.WARDROBE_EXAMPLE + " (example)", "an orange cable-knit sweater, brown corduroy pants",
+                                    vlm.WARDROBE_EXAMPLE + ", white sneakers"])
 def test_a_true_echo_is_still_dropped(copied):
     assert vlm.wardrobe_of({"wardrobe": copied}) == ""
     assert vlm.parse_reply(_person(copied))["objects"][0]["wardrobe"] == ""
