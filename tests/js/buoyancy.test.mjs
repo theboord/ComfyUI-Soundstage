@@ -1049,3 +1049,17 @@ test("a rename moves the same in the App as after a reload (was: the App kept th
     });
   }
 });
+
+// Seventh pass: Duplicate copied `seed`, so a can't-swim 'Woman 1' and 'Woman 1 copy' struggled and sank in step (0 m
+// apart at every frame). A copy gets a seed of its own, stored with it, so it also moves the same after a reload.
+test("a duplicate gets its own water variation, kept through a reload (was: the copy moved exactly in step with the original)", () => {
+  const woman = { id: "w", name: "Woman 1", seed: "woman|Woman 1", kind: "woman", height_m: 1.65, position: [-2, 4.5, 0], keys: [{ frame: 0, position: [-2, 4.5, 0] }], rotation_deg: 0, swim: "cant", key_y: true };
+  const st = tank([woman], { frames: 241 });
+  const id = st.duplicate("w"), c = st.state.actors.find((x) => x.id === id);
+  assert.ok(c.seed && c.seed !== woman.seed, `the copy has its own seed (${c.seed})`);
+  const dy = [];
+  for (let f = 0; f < 241; f += 4) { st.setFrame(f); dy.push(Math.abs(st.actorMeshes.get("w").position.y - st.actorMeshes.get(id).position.y)); }
+  assert.ok(Math.max(...dy) > 0.05, `the copy doesn't sink in step (most apart ${Math.max(...dy).toFixed(3)} m)`);
+  const again = tank(structuredClone(st.state.actors), { frames: 241 });
+  for (const f of [100, 180, 240]) { st.setFrame(f); again.setFrame(f); assert.ok(Math.abs(st.actorMeshes.get(id).position.y - again.actorMeshes.get(id).position.y) < 1e-9, `f${f}: the copy the same after a reload`); }
+});
