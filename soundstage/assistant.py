@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -181,7 +182,10 @@ def status(hw: dict | None = None, probed: dict | None = None, model: str | None
     tier = choose_tier(hw.get("vram_gb", 0), hw.get("ram_gb", 0), model)
     out = {"model": model, "url": ollama_url(), **hw, **probed, **tier,
            "skipped": os.environ.get("SKIP_OLLAMA", "0") == "1"}
-    out["local"] = is_local_url(out["url"])   # the Ask model server is on this machine (loopback / own name)
+    # local: the model server's URL is loopback or this machine's own name. It does NOT prove the model runs here: an
+    # SSH tunnel (localhost:11434 forwarded to a pod) reads local too. url_kind tells the URL cases apart.
+    out["url_kind"] = url_kind(out["url"])
+    out["local"] = out["url_kind"] != "remote"
     if tier["device"] == "none":
         out["backend"] = "qwen"
     elif not probed.get("reachable"):
@@ -204,53 +208,100 @@ OLLAMA_DEFAULT_CTX = 4096   # Ollama's own default context: never asked below it
 CTX_STEP = 4096             # num_ctx is rounded up to a multiple of this (8192 for a ~3,500-token planner prompt)
 CHARS_PER_TOKEN = 3.5       # a deliberately low estimate (English runs ~4), so the prompt is never under-counted
 REPLY_TOKENS = 2048         # room kept for the answer when the request sets no num_predict
+IMAGE_TOKENS = 1536         # per image in a message (a vision model's tiles; never counted from the base64 length)
+
+
+def _pos_int(v) -> int | None:
+    """A positive whole number from an int, a float or a numeric string ("8192", 8192.0, "8192.5" -> 8193); else None.
+    Booleans are not numbers here."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, str):
+        try:
+            v = float(v.strip())
+        except ValueError:
+            return None
+    if isinstance(v, (int, float)) and math.isfinite(v) and v > 0:
+        return int(math.ceil(v))
+    return None
+
+
+def server_ctx() -> int:
+    """The context the Ollama server already gives every request: OLLAMA_CONTEXT_LENGTH as seen by THIS process (the
+    one that starts Ollama through autostart; an Ollama started elsewhere with its own setting is not visible), else
+    Ollama's default 4096. num_ctx is never set below it."""
+    return max(OLLAMA_DEFAULT_CTX, _pos_int(os.environ.get("OLLAMA_CONTEXT_LENGTH", "")) or 0)
 
 
 def max_ctx() -> int:
-    """The largest num_ctx ✦ Ask asks for (SOUNDSTAGE_ASSISTANT_MAX_CTX, default 32768; never below 4096)."""
-    try:
-        v = int(os.environ.get("SOUNDSTAGE_ASSISTANT_MAX_CTX", "32768"))
-    except ValueError:
-        v = 32768
-    return max(OLLAMA_DEFAULT_CTX, v)
+    """The largest num_ctx ✦ Ask asks for on its own (SOUNDSTAGE_ASSISTANT_MAX_CTX, default 32768; never below
+    server_ctx()). A request that asks for more itself still gets what it asked."""
+    v = _pos_int(os.environ.get("SOUNDSTAGE_ASSISTANT_MAX_CTX", "32768"))
+    return max(server_ctx(), v if v is not None else 32768)
 
 
-def prompt_tokens(messages) -> int:
-    """Rough token count of a chat request's messages (content + tool calls), from its length in characters."""
-    n = 0
+def prompt_tokens(messages, tools=None) -> int:
+    """Rough token count of a chat request: its messages (content, tool calls, IMAGE_TOKENS per image) and its tool
+    list (the JSON schemas Ollama puts into the prompt), from the length in characters."""
+    n, images = 0, 0
     for m in messages or []:
         if isinstance(m, dict):
             c = m.get("content")
             n += len(c if isinstance(c, str) else json.dumps(c or "")) + 8   # + the role / turn markers
             if m.get("tool_calls"):
                 n += len(json.dumps(m["tool_calls"]))
+            imgs = m.get("images")
+            if isinstance(imgs, list):
+                images += len(imgs)
         else:
             n += len(str(m))
-    return int(n / CHARS_PER_TOKEN) + 1
+    if tools:
+        try:
+            n += len(json.dumps(tools))
+        except (TypeError, ValueError):
+            n += len(str(tools))
+    return int(n / CHARS_PER_TOKEN) + 1 + images * IMAGE_TOKENS
 
 
-def num_ctx_for(messages, reply: int | None = None, asked: int | None = None) -> int:
-    """num_ctx sized to the prompt: prompt + reply room, rounded up to 4096s, at least Ollama's 4096 (and at least
-    what the request asked), at most max_ctx(). A prompt bigger than max_ctx() is still capped (Ollama then drops
-    the oldest part)."""
-    need = prompt_tokens(messages) + (reply if isinstance(reply, int) and reply > 0 else REPLY_TOKENS)
-    if isinstance(asked, int) and asked > 0:
-        need = max(need, asked)
+def num_ctx_for(messages, reply=None, asked=None, tools=None) -> int:
+    """num_ctx sized to the prompt (messages + tools + images) plus reply room, rounded up to 4096s, at least
+    server_ctx() (Ollama's 4096 or OLLAMA_CONTEXT_LENGTH), at most max_ctx(). The request's own num_ctx (an int,
+    float or numeric string) is never cut: it is a floor, even above max_ctx(). A prompt bigger than max_ctx() is
+    still capped (Ollama then drops the oldest part)."""
+    r = _pos_int(reply)
+    need = prompt_tokens(messages, tools) + (r or REPLY_TOKENS)
     need = -(-need // CTX_STEP) * CTX_STEP
-    return max(OLLAMA_DEFAULT_CTX, min(max_ctx(), need))
+    out = max(server_ctx(), min(max_ctx(), need))
+    a = _pos_int(asked)
+    return max(out, a) if a else out
 
 
-def chat_options(st: dict, gpu_busy: bool = False, messages=None, options: dict | None = None) -> dict:
+def chat_options(st: dict, gpu_busy: bool = False, messages=None, options: dict | None = None, tools=None) -> dict:
     """Ollama options for this tier: CPU tier (or a GPU tier while a render runs) keeps every layer off the GPU.
-    With the request's messages, num_ctx is sized to them (num_ctx_for); options = the request's own options
-    (its num_predict and num_ctx are honoured, within the bound)."""
+    With the request's messages, num_ctx is sized to them and its tools (num_ctx_for); options = the request's own
+    options (its num_predict and num_ctx are honoured: its num_ctx is never lowered)."""
     opts = {}
     if st.get("device") == "cpu" or (st.get("device") == "gpu" and gpu_busy):
         opts["num_gpu"] = 0
     if messages is not None:
         o = options or {}
-        opts["num_ctx"] = num_ctx_for(messages, reply=o.get("num_predict"), asked=o.get("num_ctx"))
+        opts["num_ctx"] = num_ctx_for(messages, reply=o.get("num_predict"), asked=o.get("num_ctx"), tools=tools)
     return opts
+
+
+def url_kind(url: str | None = None) -> str:
+    """"loopback" (127.x, ::1, localhost, 0.0.0.0: a server on this machine OR a tunnel to another one, which this
+    cannot tell apart), "this_host" (this machine's own host name) or "remote" (any other host)."""
+    if not is_local_url(url):
+        return "remote"
+    from urllib.parse import urlsplit
+    try:
+        host = (urlsplit(url or ollama_url()).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return "remote"
+    if host in ("localhost", "0.0.0.0", "::1", "::") or host.endswith(".localhost") or re.fullmatch(r"127(\.\d{1,3}){3}", host):
+        return "loopback"
+    return "this_host"
 
 
 def is_local_url(url: str | None = None) -> bool:
@@ -388,7 +439,8 @@ def register(routes=None) -> bool:
         body["stream"] = False
         asked = body.get("options") if isinstance(body.get("options"), dict) else {}
         body["options"] = {**asked, **chat_options(st, await asyncio.to_thread(_gpu_busy),
-                                                   messages=body.get("messages") or [], options=asked)}
+                                                   messages=body.get("messages") or [], options=asked,
+                                                   tools=body.get("tools"))}
         body["keep_alive"] = keep_alive()   # the server decides: a tab left open from an older version can't pin the model
         try:
             code, j = await _forward("/api/chat", body, 300)

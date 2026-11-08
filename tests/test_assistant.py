@@ -238,7 +238,93 @@ def test_num_ctx_is_sized_to_the_prompt_within_bounds(monkeypatch):
     assert A.chat_options({"device": "gpu"}, messages=huge)["num_ctx"] == 4096
     monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX")
     # the request's own num_ctx / num_predict count; the GPU decision is unchanged
-    assert A.chat_options({"device": "gpu"}, messages=[], options={"num_ctx": 12000})["num_ctx"] == 12288
+    assert A.chat_options({"device": "gpu"}, messages=[], options={"num_ctx": 12000})["num_ctx"] == 12000   # passed through
     assert A.chat_options({"device": "gpu"}, messages=[], options={"num_predict": 7000})["num_ctx"] == 8192
     assert A.chat_options({"device": "cpu"}, messages=planner)["num_gpu"] == 0
     assert "num_ctx" not in A.chat_options({"device": "gpu"})   # no messages: as before
+
+
+def test_num_ctx_counts_tools_and_images_and_never_cuts_what_the_caller_asked(monkeypatch):
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", raising=False)
+    monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH", raising=False)
+    short = [{"role": "user", "content": "add a lamp"}]
+    tools = [{"type": "function", "function": {"name": f"tool_{i}", "description": "d" * 400,
+              "parameters": {"type": "object", "properties": {"x": {"type": "string", "description": "e" * 200}}}}}
+             for i in range(60)]   # ~60 x 700 chars = ~12,000 tokens of schemas
+    assert A.chat_options({"device": "gpu"}, messages=short)["num_ctx"] == 4096
+    with_tools = A.chat_options({"device": "gpu"}, messages=short, tools=tools)["num_ctx"]
+    assert with_tools >= A.prompt_tokens(short, tools) + A.REPLY_TOKENS and with_tools >= 16384, with_tools
+    pics = [{"role": "user", "content": "match this frame", "images": ["aGVsbG8="] * 4}]
+    assert A.prompt_tokens(pics) >= 4 * A.IMAGE_TOKENS
+    assert A.chat_options({"device": "gpu"}, messages=pics)["num_ctx"] >= 4 * A.IMAGE_TOKENS + A.REPLY_TOKENS
+    # the caller's num_ctx: numeric strings and floats pass through, never lowered, not capped at max_ctx()
+    for asked, want in [("12000", 12000), (12000.0, 12000), ("9000.5", 9001), (65536, 65536), ("65536", 65536)]:
+        assert A.chat_options({"device": "gpu"}, messages=short, options={"num_ctx": asked})["num_ctx"] == want, asked
+    for junk in ["lots", True, -5, 0, None, float("nan")]:
+        assert A.chat_options({"device": "gpu"}, messages=short, options={"num_ctx": junk})["num_ctx"] == 4096, junk
+    assert A.chat_options({"device": "gpu"}, messages=short, options={"num_predict": "7000"})["num_ctx"] == 8192
+    # never below the server's own OLLAMA_CONTEXT_LENGTH (as this process sees it)
+    monkeypatch.setenv("OLLAMA_CONTEXT_LENGTH", "16384")
+    assert A.chat_options({"device": "gpu"}, messages=short)["num_ctx"] == 16384
+    monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", "8192")
+    assert A.chat_options({"device": "gpu"}, messages=[{"role": "user", "content": "y" * 1_000_000}])["num_ctx"] == 16384, \
+        "a max below the server's context is raised to it"
+
+
+def test_local_means_a_loopback_url_and_url_kind_tells_the_cases_apart(monkeypatch):
+    hw = {"vram_gb": 16, "ram_gb": 64, "gpu": "RTX 4080"}
+    monkeypatch.setattr(A.socket, "gethostname", lambda: "Studio-Mac.local")
+    for url, kind in [("http://127.0.0.1:11434", "loopback"), ("http://localhost:11434", "loopback"),
+                      ("http://studio-mac.local:11434", "this_host"), ("http://10.0.0.7:11434", "remote")]:
+        monkeypatch.setenv("SOUNDSTAGE_OLLAMA_URL", url)
+        st = A.status(hw, READY)
+        assert (st["url_kind"], st["local"]) == (kind, kind != "remote"), url
+    # an SSH tunnel to a pod is a loopback URL: local is True, url_kind says only "loopback" (it cannot see the tunnel)
+    monkeypatch.setenv("SOUNDSTAGE_OLLAMA_URL", "http://127.0.0.1:11435")
+    assert A.status(hw, READY)["url_kind"] == "loopback"
+
+
+def test_chat_route_sizes_num_ctx_from_the_request_messages_tools_and_options(monkeypatch):
+    """The /soundstage/assistant/chat route (assistant.py register) passes the request's messages, tools and options
+    to chat_options: what reaches Ollama carries the sized num_ctx and the caller's own options."""
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", raising=False)
+    monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH", raising=False)
+    monkeypatch.setattr(A, "hardware", lambda: {"vram_gb": 16.0, "ram_gb": 128.0, "gpu": "test"})
+    A._status_cache["v"] = None
+    seen = []
+
+    async def fake(request):
+        body = await request.json() if request.can_read_body else None
+        seen.append((request.path, body))
+        if request.path == "/api/tags":
+            return web.json_response({"models": [{"name": "qwen3:30b-a3b"}]})
+        if request.path == "/api/ps":
+            return web.json_response({"models": []})
+        return web.json_response({"message": {"content": "{}"}})
+
+    tools = [{"type": "function", "function": {"name": f"t{i}", "description": "d" * 700}} for i in range(60)]
+
+    async def go():
+        ollama = web.Application()
+        ollama.router.add_route("*", "/{tail:.*}", fake)
+        async with TestServer(ollama) as o:
+            monkeypatch.setattr(A, "ollama_url", lambda: str(o.make_url("")).rstrip("/"))
+            routes = web.RouteTableDef()
+            A.register(routes)
+            app = web.Application()
+            app.add_routes(routes)
+            async with TestClient(TestServer(app)) as c:
+                msgs = [{"role": "user", "content": "add a chair"}]
+                a = await c.post("/soundstage/assistant/chat", json={"messages": msgs, "tools": tools})
+                b = await c.post("/soundstage/assistant/chat", json={"messages": msgs, "options": {"num_ctx": "20000", "temperature": 0.2}})
+                d = await c.post("/soundstage/assistant/chat", json={"messages": msgs})
+                return a.status, b.status, d.status
+    assert asyncio.run(go()) == (200, 200, 200)
+    chats = [b for p, b in seen if p == "/api/chat"]
+    assert len(chats) == 3
+    assert chats[0]["options"]["num_ctx"] >= 16384 and chats[0]["tools"] == tools, "the tool list was counted"
+    assert chats[1]["options"]["num_ctx"] == 20000 and chats[1]["options"]["temperature"] == 0.2
+    assert chats[2]["options"]["num_ctx"] == 4096
+    A._status_cache["v"] = None
