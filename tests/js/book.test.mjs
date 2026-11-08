@@ -209,9 +209,9 @@ test("recordDecision stores the structured change and a short summary, never the
   assert.equal(hasTyped(b), false, "nowhere in the book, not even in the args");
   assert.equal(hasTyped(M.getBookContext(b, script(), "sc_1")), false, "nor in what the Director reads back");
   // an assistant-written summary is used...
-  const s1 = M.recordDecision(b, { command: TYPED, summary: "Mara crosses to the window; 50mm on shot 2.", calls: [{ tool: "lens", args: { mm: 50 } }], results: [{ ok: true }], ref: "turn_7" });
+  const s1 = M.recordDecision(b, { command: TYPED, summary: "Mara crosses to the window; 50mm on shot 2.", calls: [{ tool: "lens", args: { mm: 50 } }], results: [{ ok: true }], ref: "p_0a1b2c3d:turn_7" });
   assert.equal(s1.text, "Mara crosses to the window; 50mm on shot 2.");
-  assert.equal(s1.ref, "turn_7");
+  assert.equal(s1.ref, "p_0a1b2c3d:turn_7");
   // ...unless it just repeats the typed sentence (or most of it)
   const s2 = M.recordDecision(b, { command: TYPED, summary: `User said: ${TYPED}`, calls: [{ tool: "lens", args: { mm: 50 } }], results: [{ ok: true }] });
   assert.equal(s2.text, "Lens: 50");
@@ -334,4 +334,22 @@ test("recordDecision: a Cyrillic or Japanese typed sentence never lands in the B
   }
   assert.deepEqual(M.scrubArgs({ target: "窓辺で静かに" }, "remove", "マラが窓辺で静かに泣く"), {});
   assert.deepEqual(M.scrubArgs({ target: "тихо_плачет" }, "remove", "Пусть Мара тихо плачет у окна"), {});
+});
+
+test("decision ref: only an opaque projectId:turnId is kept, never the typed sentence or chat text", () => {
+  const b = M.emptyBook(script());
+  const TYPED = "make Mara walk slowly to the window and then use a 50mm";
+  const rec = (ref) => M.recordDecision(b, { command: TYPED, calls: [{ tool: "lens", args: { mm: 50 } }], results: [{ ok: true }], ref });
+  assert.equal(rec("p_0a1b2c3d:t_19").ref, "p_0a1b2c3d:t_19");
+  assert.equal(rec(":t_20").ref, ":t_20", "a project with no id yet: an empty project part");
+  for (const bad of [TYPED, TYPED.slice(0, 80), `p_0a1b2c3d:${TYPED}`, "p_0a1b2c3d:make_Mara_walk_slowly", "p_0a1b2c3d:walk-slowly-to-the-window",
+    "turn_7", "p_XYZ:t_1", "p_0a1b2c3d:", "p_0a1b2c3d:a b", "p_0a1b2c3d:" + "x".repeat(49)]) {
+    const n = rec(bad);
+    assert.equal("ref" in n, false, `ref ${JSON.stringify(bad)} dropped`);
+  }
+  const text = JSON.stringify(b);
+  assert.equal(text.includes(TYPED), false);
+  assert.equal(/walk.slowly/i.test(text), false, "no fragment of the sentence through ref");
+  assert.equal(M.decisionRef("p_0a1b2c3d:t_1"), "p_0a1b2c3d:t_1");
+  assert.equal(M.decisionRef(null), null);
 });

@@ -661,6 +661,21 @@ const TOOL_CAT = { lens: "camera", camera_move: "camera", shot: "camera", select
   light: "lighting", weather: "lighting", direct: "performance", move: "blocking", place: "blocking", add: "blocking", mount: "blocking",
   dismount: "blocking", sound: "sound", music: "sound", line: "sound", look: "lighting", style: "lighting" };
 
+/** The shape of a decision's `ref`: an opaque `${projectId}:${turnId}` (projectId p_<8 hex>, or empty while the project
+ *  has none yet; turnId 1-48 of [A-Za-z0-9_-], no spaces). Never chat text. */
+export const DECISION_REF_RE = /^(?:p_[0-9a-f]{8})?:[A-Za-z0-9_-]{1,48}$/;
+
+/** `ref` as recordDecision keeps it, or null: only the opaque shape (DECISION_REF_RE), and never one whose turn id
+ *  repeats the typed sentence (a joined phrase like make_it_pour_with_rain, or the sentence itself). */
+export function decisionRef(ref, command = "") {
+  const r = ref == null ? "" : String(ref).trim();
+  if (!DECISION_REF_RE.test(r)) return null;
+  const turn = r.slice(r.indexOf(":") + 1);
+  const c = String(command || "").trim();
+  if (c && (tokenEchoes(turn, c) || echoes(turn.replace(/[_-]+/g, " "), c))) return null;
+  return r;
+}
+
 /**
  * The assistant writes back a decision made in chat as a note on the scene ("Decided earlier: ..." in every later
  * context). Only real changes: an undo, play or render isn't a decision. Returns the note, or null.
@@ -669,7 +684,9 @@ const TOOL_CAT = { lens: "camera", camera_move: "camera", shot: "camera", select
  * the structured change in words (decisionSummary); `change` is [{tool, args}] with only the allowlisted argument
  * keys (DECISION_ARGS: numbers, enums, one-token ids / names; free text such as a `note` never). `command`, the user's
  * typed sentence, is read only to skip undo / play and to reject a summary that quotes it (any 3 words in a row) and
- * is not stored. `ref` (optional): the chat turn's id, so forgetDecision(ref) finds the note.
+ * is not stored. `ref` (optional): an opaque `${projectId}:${turnId}` so forgetDecision(ref) finds the note; anything
+ * else (chat text, a sentence, a turn id that spells out the typed words) is dropped and the note gets no ref
+ * (decisionRef).
  */
 export function recordDecision(book, { command, calls = [], results = [], sceneId = null, source = "chat", summary = "", ref = null } = {}) {
   const typed = String(command || "").trim();
@@ -689,7 +706,8 @@ export function recordDecision(book, { command, calls = [], results = [], sceneI
   const text = said && !echoes(said, typed) ? short(said, 160) : decisionSummary(change);
   const n = { id: noteId(), text, change, dv: DECISION_V, scope: sceneId ? "scene" : "global", scene_id: sceneId, line: null, character: null, category: cat,
     categories: [cat], confidence: 1, why: `decided in the Director chat (${tools.join(", ")})`, by: source, source: "chat", at: now() };
-  if (ref != null && String(ref).trim()) n.ref = String(ref).trim().slice(0, 80);
+  const r = decisionRef(ref, typed);
+  if (r) n.ref = r;
   book.notes.push(n);
   // Keep the chat's trail short: the 40 newest decisions.
   const chat = book.notes.filter((x) => x.source === "chat");

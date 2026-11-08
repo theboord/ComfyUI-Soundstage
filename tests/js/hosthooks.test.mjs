@@ -263,16 +263,16 @@ test("book.forgetDecision: by ref, every copy server-side; a failed clean-up say
   const book = mountBook({ api, stage: null, host: { getScript: () => script, liveScene: () => "sc_1", props: () => props } });
   const TYPED = "could you make it pour with rain outside the window please";
   try {
-    const a = book.recordDecision({ command: TYPED, ref: "turn_42", calls: [{ tool: "weather", args: { weather: "rain" } }, { tool: "light", args: { type: "key" } }], results: [{ ok: true }, { ok: true }] });
+    const a = book.recordDecision({ command: TYPED, ref: "p_0a1b2c3d:turn_42", calls: [{ tool: "weather", args: { weather: "rain" } }, { tool: "light", args: { type: "key" } }], results: [{ ok: true }, { ok: true }] });
     assert.equal(a.text, "Weather: rain; Light: key");
     assert.equal(JSON.stringify(props.ss_book).includes(TYPED), false, "the workflow copy never had the typed sentence");
     await new Promise((r) => setTimeout(r, 1300));                 // the debounced server save
     assert.equal(posts.some(([, b]) => JSON.stringify(b).includes(TYPED)), false, "nor did anything sent to the server");
     posts.length = 0;
-    assert.deepEqual(await book.forgetDecision("turn_42"), { ok: true, copies: 5 });
+    assert.deepEqual(await book.forgetDecision("p_0a1b2c3d:turn_42"), { ok: true, copies: 5 });
     assert.equal(book.book.notes.some((x) => x.id === a.id), false);
     assert.deepEqual(posts.map((p) => p[0]), ["/soundstage/book/save", "/soundstage/book/forget"]);
-    assert.deepEqual(posts[1][1].ids.sort(), [a.id, "turn_42"].sort());
+    assert.deepEqual(posts[1][1].ids.sort(), [a.id, "p_0a1b2c3d:turn_42"].sort());
     // the clean-up fails (an older server without the route): the note stays gone, the answer says so
     const b = book.recordDecision({ command: "add fog", calls: [{ tool: "weather", args: { kind: "fog" } }], results: [{ ok: true }] });
     forgetAnswer = () => ({ ok: false, status: 404, json: async () => { throw new Error("not json"); } });
