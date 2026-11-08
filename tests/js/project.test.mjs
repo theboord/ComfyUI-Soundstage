@@ -387,3 +387,78 @@ test("two saves from one page are run one after the other", async () => {
   assert.ok(a.confirmed && b.confirmed);
   assert.equal((await man(api, "Y")).saves, 3);
 });
+
+// ------------------------------------------------------------------ copies made with ComfyUI's own tools (review finding 1)
+test("a copy opened from another path (ComfyUI Duplicate / Save As, a dragged-in .json or render) never confirms or silently replaces the project", async () => {
+  const api = fakeApi();
+  const store = new ProjectStore({ api });
+  const a = await store.save("Alpha", WF());
+  const aliveBody = api.files.get("workflows/Alpha.json").body;
+  // ComfyUI's Workflow → Duplicate / Save As copies the file verbatim: same extra.ss_project name and id
+  const copy = JSON.parse(aliveBody);
+  copy.nodes = [{ id: 99, type: "SoundstageStage", widgets_values: ['{"different":true}'] }];
+  const c = await store.confirmProjectId(copy, { path: "workflows/Alpha copy.json" });
+  assert.equal(c.confirmed, false, "a copy at another path is not the project");
+  assert.equal(c.id, null);
+  assert.equal(c.copy, true);
+  assert.equal((await store.confirmProjectId(copy, { path: "workflows/Alpha.json" })).confirmed, true, "the project's own path still confirms");
+  await assert.rejects(store.save("Alpha", copy, { from: "workflows/Alpha copy.json" }), (e) => e.code === "exists");
+  assert.equal(api.files.get("workflows/Alpha.json").body, aliveBody, "the project is untouched");
+  const r = await store.save("Alpha", copy, { from: "workflows/Alpha copy.json", replace: true });
+  assert.notEqual(r.id, a.id, "a copy that replaces the project gets a fresh id");
+  // a copy saved under a new name is simply a new project
+  const n = await store.save("Alpha 2", copy, { from: "workflows/Alpha copy.json" });
+  assert.ok(PROJECT_ID_RE.test(n.id) && n.id !== a.id && n.confirmed);
+});
+
+test("the pill: a ComfyUI Duplicate tab of a project is a copy: no id, Save asks a name and to replace, autosaves go to '<name> (copy)'", async () => {
+  globalThis.window ||= { addEventListener() {} };
+  const { ProjectController } = await import("../../web/project/projectbar.mjs");
+  const ufs = fakeApi();
+  const live = await new ProjectStore({ api: ufs }).save("Alpha", WF());
+  for (let k = 0; k < 3; k++) await new ProjectStore({ api: ufs, now: () => 1_700_000_000_000 + k * 1000 }).autosave("Alpha", live.workflow);
+  const liveBody = ufs.files.get("workflows/Alpha.json").body;
+  const ownAutos = [...ufs.files.keys()].filter((p) => p.startsWith("projects/Alpha/autosave/")).sort();
+  const active = { path: "workflows/Alpha copy.json", isTemporary: false };
+  const asked = [];
+  let replace = false;
+  const copy = JSON.parse(liveBody);
+  copy.nodes[0].widgets_values = ['{"edited":"in the copy"}'];
+  const app = { graph: { ...copy }, extensionManager: { workflow: { activeWorkflow: active }, dialog: {
+    prompt: async ({ title, defaultValue }) => { asked.push(title); return defaultValue; },
+    confirm: async ({ title }) => { asked.push(title); return replace; },
+  } } };
+  app.graph.serialize = () => { const { serialize, ...g } = app.graph; return JSON.parse(JSON.stringify(g)); };   // eslint-disable-line no-unused-vars
+  const ctl = new ProjectController({ app, api: ufs });
+  clearInterval(ctl._timer);
+  ctl.render = () => {}; ctl.say = () => {};
+  try {
+    await ctl.tick();
+    assert.equal(ctl.projectId(), null, "the copy is never confirmed as Alpha");
+    assert.equal((await ctl.project()).confirmed, false);
+    assert.equal(ctl.current().copy, true);
+    for (let k = 0; k < 25; k++) await ctl.autosaveNow();         // more than AUTOSAVE_KEEP
+    assert.deepEqual([...ufs.files.keys()].filter((p) => p.startsWith("projects/Alpha/autosave/")).sort(), ownAutos,
+      "the copy's autosaves never push the project's own out");
+    assert.ok([...ufs.files.keys()].some((p) => p.startsWith("projects/Alpha (copy)/autosave/")));
+    const auto = JSON.parse([...ufs.files.entries()].find(([p]) => p.startsWith("projects/Alpha (copy)/autosave/"))[1].body);
+    assert.equal(projectIdOf(auto.workflow), null, "a copy's autosave carries no id");
+    await ctl.save();                                               // plain Save: asks, declined
+    assert.deepEqual(asked, ["Save project", "Replace project?"]);
+    assert.equal(ufs.files.get("workflows/Alpha.json").body, liveBody, "Alpha is untouched");
+    replace = true;
+    await ctl.save();
+    const id2 = (await man(ufs, "Alpha")).id;
+    assert.notEqual(id2, live.id, "replaced with a fresh id");
+    assert.equal(ctl.projectId(), id2, "this tab is the project now");
+    asked.length = 0;
+    await ctl.save();                                               // bound: an ordinary Save from now on
+    assert.deepEqual(asked, []);
+    // the project's own tab (path workflows/Alpha.json) is not a copy; a temporary (dragged-in) one at that path is
+    active.path = "workflows/Alpha.json";
+    await ctl.tick();                                               // a new tab key: not bound by this controller
+    assert.equal(ctl._isCopy(), false);
+    active.isTemporary = true;
+    assert.equal(ctl._isCopy(), true, "a dragged-in Alpha.json export opens as a temporary workflow");
+  } finally { clearInterval(ctl._timer); }
+});

@@ -71,10 +71,34 @@ export class ProjectController {
   _key() { return this.app.extensionManager?.workflow?.activeWorkflow?.path || "wf"; }
 
   /**
+   * Is the open workflow a COPY of its project rather than the project itself? A copy made with ComfyUI's own
+   * Duplicate or Save As, an exported .json or a render dragged in keeps extra.ss_project (the original's name and
+   * id), but it is open from another path than workflows/<name>.json (or is a temporary, never-saved workflow). A copy
+   * is treated like an opened collected project: no id is confirmed, its first Save asks for a name and asks before
+   * replacing, and it gets a fresh id. A tab this controller opened or saved as the project (t.boundName) is not a
+   * copy, whatever path ComfyUI gave it. Unknown host (no workflow store): never a copy.
+   */
+  _isCopy(t = this._cur(), wf = this.serialize()) {
+    if (t?.collected) return true;
+    const w = this.app.extensionManager?.workflow?.activeWorkflow;
+    const name = projectNameOf(wf);
+    if (!w || !name || (t && t.boundName === name)) return false;
+    return String(w.path || "") !== ProjectStore.workflowPath(name) || w.isTemporary === true;
+  }
+
+  /** The project name autosaves of the open tab go under: a copy's go under "<name> (copy)", so they never push the
+   *  project's own autosaves out of projects/<name>/autosave/. */
+  _autoName(t = this._cur(), wf = this.serialize()) {
+    const n = t?.name;
+    return n && this._isCopy(t, wf) ? cleanName(`${n} (copy)`) : n;
+  }
+
+  /**
    * The open workflow's project id ("p_" + 8 hex), or null. Only an id CONFIRMED against the saved project.json of the
    * same name (store.confirmProjectId): a Save, an Open, or the check tick() repeats every 15 s / on a name or id
    * change. null: not saved yet, saved before ids existed (its next Save writes one; opening never does), or the graph
-   * carries an id its project.json does not (renamed in the library, a collected / exported copy, a reused name).
+   * carries an id its project.json does not (renamed in the library, a collected / exported copy, a reused name), or
+   * the tab is a copy (_isCopy: ComfyUI's Duplicate / Save As, a dragged-in .json or render).
    * Sync and read-only. For a fresh answer: await window.__ssProject.project(). docs/projects.md "Project id".
    */
   projectId() {
@@ -85,14 +109,17 @@ export class ProjectController {
   /** Read project.json now: {id (confirmed or null), name, graph_id, manifest_id, confirmed}; refreshes projectId(). */
   async project() {
     const wf = this.serialize();
-    const r = await this.store.confirmProjectId(wf);
+    const r = await this.store.confirmProjectId(wf, { copy: this._isCopy(this._cur(), wf) });
     const t = this._cur();
     if (t) { t.confirmedId = r.confirmed ? r.id : null; t.confirmedName = r.name; t.checkKey = `${r.name}|${r.graph_id}`; t.checkedAt = Date.now(); }
     return r;
   }
 
   /** {id, name} of the open workflow as it says (extra.ss_project, unconfirmed): which project's copies Forget cleans. */
-  current() { const wf = this.serialize(); return { id: projectIdOf(wf), name: projectNameOf(wf) || this._cur()?.name || null }; }
+  current() {
+    const wf = this.serialize();
+    return { id: projectIdOf(wf), name: projectNameOf(wf) || this._cur()?.name || null, ...(this._isCopy(this._cur(), wf) ? { copy: true } : {}) };
+  }
   _cur() { return this.tabs.get(this._key()); }
 
   serialize() {
@@ -138,7 +165,9 @@ export class ProjectController {
     if (!t || !wf) return;
     this.busy = true;
     try {
-      await this.store.autosave(this._ensureName(t), wf);
+      this._ensureName(t);
+      const copy = this._isCopy(t, wf);
+      await this.store.autosave(copy ? this._autoName(t, wf) : t.name, copy ? stampWorkflow(wf, t.name, null, null) : wf);
       t.autosavedAt = Date.now();
       t.clock.wrote(t.autosavedAt);
       t.error = null;
@@ -152,17 +181,19 @@ export class ProjectController {
     if (!wf) return;
     const t = this._cur() || (await this.tick(), this._cur());
     let name = t.name;
-    if (as || t.collected || !name || /^Untitled \d{4}-/.test(name)) {
+    const copy = this._isCopy(t, wf);
+    if (as || copy || !name || /^Untitled \d{4}-/.test(name)) {
       name = await askName(this.app, as ? "Save project as" : "Save project", name && !/^Untitled /.test(name) ? name : "");
       if (!name) return;
-      if ((name !== t.name || t.collected) && (await this.store.manifest(name))
+      if ((name !== t.name || copy) && ((await this.store.manifest(name)) || (copy && (await this.store.open(name))))
         && !(await confirmBox(this.app, "Replace project?", `A project called "${name}" exists. Replace it?`))) return;
     }
     try {
-      const res = await this.store.save(name, wf, { manifest: this._summary() });
+      const res = await this.store.save(name, wf, { manifest: this._summary(), ...(copy ? { copy: true, replace: true } : {}) });
       try { this.app.graph.extra = { ...(this.app.graph.extra || {}), ss_project: { name: res.name, saved_at: res.saved_at, id: res.id } }; } catch { /* */ }
       t.name = res.name;
       t.collected = false;
+      t.boundName = res.name;          // this tab is the project now, whatever path ComfyUI keeps for it
       // only an id project.json was read back holding (store.save settles both files); another tab's save landing
       // last leaves this graph unconfirmed until the next check
       t.confirmedId = res.confirmed === false ? null : res.id; t.confirmedName = res.name; t.checkKey = `${res.name}|${res.id}`; t.checkedAt = Date.now();
@@ -190,7 +221,7 @@ export class ProjectController {
     await this.tick();
     const t = this._cur();
     if (t) t.collected = false;          // openCollected sets it again after loading
-    if (t && name) { t.name = name; }
+    if (t && name) { t.name = name; t.boundName = name; }   // opened here as that project (openCollected unbinds it)
   }
 
   async open(name) {
@@ -218,7 +249,7 @@ export class ProjectController {
   async restore(file, project = null) {
     const t = this._cur();
     if (!project && !t?.name) return;
-    const pname = project || t.name;
+    const pname = project || this._autoName(t);
     const wf = await this.store.readAutosave(pname, file);
     if (!wf) { this.say("That autosave could not be read."); return; }
     if (!(await confirmBox(this.app, "Restore autosave?", `Load the autosave from ${file.replace(/\.json$/, "")} into this tab? `
@@ -271,7 +302,7 @@ export class ProjectController {
       // replace an existing project of that name) and writes a fresh id.
       await this.load(stampWorkflow(j.workflow, n, null, null), n);
       const t = this._cur();
-      if (t) { t.collected = true; t.confirmedId = null; }
+      if (t) { t.collected = true; t.confirmedId = null; t.boundName = null; }
       this.say(`Opened collected project "${n}", relinked to output/soundstage_projects/${j.folder}/. Save it to keep it as a project here.`);
     } catch (e) { this.say(`Could not open it: ${e?.message || e}`); }
   }
@@ -315,7 +346,7 @@ export class ProjectController {
     const t = this._cur();
     const [recent, autos, collected] = await Promise.all([
       this.store.list().catch(() => []),
-      t?.name ? this.store.autosaves(t.name).catch(() => []) : [],
+      t?.name ? this.store.autosaves(this._autoName(t)).catch(() => []) : [],
       this.api.fetchApi("/soundstage/project/collected").then((r) => (r.ok ? r.json() : { projects: [] })).then((j) => j.projects || []).catch(() => []),
     ]);
     const sub = (items, a) => openMenu(items, a, { makeIcon: icon });

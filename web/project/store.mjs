@@ -186,17 +186,28 @@ export class ProjectStore {
     return run;
   }
 
-  async _save(n, workflow, { manifest = {} } = {}) {
+  async _save(n, workflow, { manifest = {}, from = undefined, copy = undefined, replace = false } = {}) {
     const at = this.now();
     const old = (await this._get(ProjectStore.manifestPath(n))) || {};
     const oldId = typeof old.id === "string" && PROJECT_ID_RE.test(old.id) ? old.id : null;
-    const id = oldId && projectIdOf(workflow) === oldId ? oldId : newProjectId();
+    // A copy (ComfyUI's Duplicate / Save As, an exported .json or a render dragged in: open from any path but
+    // workflows/<n>.json) carries the original's name and id. It never keeps that id, and it never replaces a saved
+    // project unless the caller says replace (the pill asks first).
+    const isCopy = copy ?? (from != null && String(from) !== ProjectStore.workflowPath(n));
+    if (isCopy && !replace && (Object.keys(old).length || (await this._get(ProjectStore.workflowPath(n))))) {
+      const e = new Error(`a project called "${n}" exists; this workflow is a copy (${from ?? "not opened from workflows/" + n + ".json"}), pass replace to overwrite it`);
+      e.code = "exists";
+      throw e;
+    }
+    const carried = isCopy ? null : projectIdOf(workflow);
+    const id = oldId && carried === oldId ? oldId : newProjectId();
+    const created = isCopy ? at : (old.created || at);   // a copy replacing a project starts a new one
     const wf = stampWorkflow(workflow, n, at, id);
     await this._put(ProjectStore.workflowPath(n), wf);
     const { id: _ignored, ...rest } = manifest || {};   // eslint-disable-line no-unused-vars
     await this._put(ProjectStore.manifestPath(n), {
       ...rest, format: FORMAT, v: VERSION, id, name: n, workflow: ProjectStore.workflowPath(n),
-      created: old.created || at, saved_at: at, saves: (old.saves || 0) + 1,
+      created: created, saved_at: at, saves: (old.saves || 0) + 1,
     });
     const disk = await this._settle(n);
     return { name: n, id, path: ProjectStore.workflowPath(n), saved_at: at, workflow: wf, confirmed: disk === id, disk_id: disk };
@@ -227,12 +238,13 @@ export class ProjectStore {
    * no project.json under that name (renamed in the library, a collected / exported / dragged-in copy from elsewhere),
    * or project.json holds another id (the name was reused, the copy forked). One small read (project.json).
    */
-  async confirmProjectId(workflow) {
+  async confirmProjectId(workflow, { path = undefined, copy = undefined } = {}) {
     const name = projectNameOf(workflow);
     const graphId = projectIdOf(workflow);
     const manifestId = name ? await this.projectId(name) : null;
-    const confirmed = !!graphId && graphId === manifestId;
-    return { id: confirmed ? graphId : null, name, graph_id: graphId, manifest_id: manifestId, confirmed };
+    const isCopy = copy ?? (path != null && !!name && String(path) !== ProjectStore.workflowPath(name));
+    const confirmed = !isCopy && !!graphId && graphId === manifestId;
+    return { id: confirmed ? graphId : null, name, graph_id: graphId, manifest_id: manifestId, confirmed, ...(isCopy ? { copy: true } : {}) };
   }
 
   /** The saved workflow of a project, or null. */
