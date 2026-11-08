@@ -6,7 +6,7 @@
 // exit 2 with {"skipped": "..."} when no browser is found.
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, mkdtempSync, rmSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { join, extname, resolve, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -51,9 +51,11 @@ export async function runShaders({ browser = null, timeoutMs = 60000 } = {}) {
   const exe = findBrowser(browser);
   if (!exe) return { skipped: "no headless Chromium or Chrome found on this machine (nothing is installed by this check)" };
   const srv = await serve();
+  // A fresh profile folder per run, deleted when the browser is done (one ss-shaders-<pid> was left behind per run).
+  const profile = mkdtempSync(join(tmpdir(), "ss-shaders-"));
   const url = `http://127.0.0.1:${srv.address().port}/tests/browser/shaders.html`;
   const args = ["--headless", "--no-first-run", "--no-default-browser-check", "--disable-gpu-sandbox", "--use-angle=swiftshader",
-    "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", `--user-data-dir=${join(tmpdir(), `ss-shaders-${process.pid}`)}`,
+    "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", `--user-data-dir=${profile}`,
     "--virtual-time-budget=20000", "--dump-dom", url];
   try {
     const dom = await new Promise((ok, fail) => {
@@ -68,7 +70,11 @@ export async function runShaders({ browser = null, timeoutMs = 60000 } = {}) {
     const text = m ? m[1].replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") : null;
     if (!text || text === "pending") return { browser: exe, error: `no result from the page (stderr tail: ${dom.e.slice(-800)})` };
     return { browser: exe, ...JSON.parse(text) };
-  } finally { srv.close(); }
+  } finally {
+    srv.close();
+    // after a timeout the killed browser can still be closing files: retry for a moment
+    try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch {}
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

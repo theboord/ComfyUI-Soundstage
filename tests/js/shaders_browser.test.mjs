@@ -25,3 +25,21 @@ test("Depth and outline shaders compile and render in WebGL: a posed skinned mes
   assert.ok(o.ringPx > 40, `an outline ring outside the silhouette (${o.ringPx} px)`);
   assert.ok(o.ringNearSilhouette >= 0.95, `the ring hugs the posed silhouette (${o.ringNearSilhouette} within 4 px)`);
 });
+
+test("runShaders deletes the browser's --user-data-dir afterwards (it left one ss-shaders-<pid> folder per run in the temp dir)", { timeout: 30000 }, async () => {
+  // A stand-in browser (a shell script, no Chrome needed) fills its profile folder like Chrome does and prints no result.
+  const { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const box = mkdtempSync(join(tmpdir(), "ss-fakebrowser-"));
+  try {
+    const log = join(box, "dir.txt"), exe = join(box, "fake-chrome");
+    writeFileSync(exe, `#!/bin/sh\nfor a; do case "$a" in --user-data-dir=*) d="\${a#--user-data-dir=}"; mkdir -p "$d/Default"; echo x > "$d/Default/Cookies"; printf %s "$d" > "${log}";; esac; done\n`);
+    chmodSync(exe, 0o755);
+    const r = await runShaders({ browser: exe, timeoutMs: 20000 });
+    assert.ok(r.error, "the stand-in prints no result");
+    const dir = readFileSync(log, "utf8");
+    assert.ok(dir.includes("ss-shaders-"), `the profile folder was ${dir}`);
+    assert.equal(existsSync(dir), false, `the profile folder is deleted after the run: ${dir}`);
+  } finally { rmSync(box, { recursive: true, force: true }); }
+});
