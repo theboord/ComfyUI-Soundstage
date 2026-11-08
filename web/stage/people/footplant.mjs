@@ -546,13 +546,13 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
   };
   // an arc of foot lr from its plant at frame a to the one at frame b (frames a+1 .. b-1), lifted by `lift` in the middle;
   // mark false only checks the leg reaches it all the way
-  const arcOf = (lr, a, b, lift, mark) => {
+  const arcOf = (lr, a, b, lift, mark, lim = T.dropOK) => {
     const { st, w, P, Q } = out[lr];
     for (let f = a + 1; f < b; f++) {
       const t = smooth01((f - a) / (b - a));
       _v1.fromArray(P, 3 * a).lerp(_v0.fromArray(P, 3 * b), t);
       _v1.y += lift * Math.sin(Math.PI * (f - a) / (b - a));
-      if (!mark) { if (needDropOf(lr, f, _v1.x, _v1.y, _v1.z) > T.dropOK * k) return false; continue; }
+      if (!mark) { if (needDropOf(lr, f, _v1.x, _v1.y, _v1.z) > lim * k) return false; continue; }
       _q0.fromArray(Q, 4 * a).slerp(_q1.fromArray(Q, 4 * b), t);
       st[f] = 2; w[f] = 1;
       P.set([_v1.x, _v1.y, _v1.z], 3 * f); Q.set([_q0.x, _q0.y, _q0.z, _q0.w], 4 * f);
@@ -669,7 +669,7 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
   // else a support dip).
   const offBoth = (f) => !skip[f] && out.l.st[f] !== 1 && out.r.st[f] !== 1 && body[f] < T.walkMax;
   const arcLift = (lr, x, y) => { const P = out[lr].P; return T.stepLift * k * Math.min(1, Math.hypot(P[3 * y] - P[3 * x], P[3 * y + 2] - P[3 * x + 2]) / (0.15 * k)); };
-  const stepOf = (lr, x, y) => { const L = arcLift(lr, x, y); if (!arcOf(lr, x, y, L, false)) return false; arcOf(lr, x, y, L, true); return true; };
+  const stepOf = (lr, x, y, lim) => { const L = arcLift(lr, x, y); if (!arcOf(lr, x, y, L, false, lim)) return false; arcOf(lr, x, y, L, true); return true; };
   for (let c = 0; c < n; c++) {
     if (!offBoth(c)) continue;
     let d = c; while (d < n && offBoth(d)) d++;
@@ -689,8 +689,8 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
     const tryOpt = (o, lim) => {
       const O = out[o.lr], S = [O.st.slice(), O.w.slice(), O.P.slice(), O.Q.slice(), O.G.slice()];
       let ok;
-      if (o.kind === "late") ok = holdOf(o.lr, o.p, o.p + 1, d, lim) && stepOf(o.lr, d - 1, o.q);
-      else ok = holdOf(o.lr, o.q, c, o.q, lim) && stepOf(o.lr, o.p, c);
+      if (o.kind === "late") ok = holdOf(o.lr, o.p, o.p + 1, d, lim) && stepOf(o.lr, d - 1, o.q, lim);
+      else ok = holdOf(o.lr, o.q, c, o.q, lim) && stepOf(o.lr, o.p, c, lim);
       if (!ok) { O.st.set(S[0]); O.w.set(S[1]); O.P.set(S[2]); O.Q.set(S[3]); O.G.set(S[4]); }
       return ok;
     };

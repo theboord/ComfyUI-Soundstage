@@ -254,7 +254,8 @@ test("real Rocketbox: a key edit rebuilds the plan fast; a long shot waits for t
   };
   const short = await edit(121);
   console.log(`key edit: ${short.ms.toFixed(1)} ms for a 5 s shot`);
-  assert.ok(short.ms < 60, `a key edit costs ${short.ms.toFixed(0)} ms for 5 s`);
+  // (~20 ms alone, measured 2026-11-08; the bound leaves room for the suite running files in parallel)
+  assert.ok(short.ms < 150, `a key edit costs ${short.ms.toFixed(0)} ms for 5 s`);
   // 30 s: during a drag the feet keep the clip's pose (no rebuild), the plan comes back when the drag ends
   const long = await edit(721);
   console.log(`key edit: ${long.ms.toFixed(1)} ms for a 30 s shot`);

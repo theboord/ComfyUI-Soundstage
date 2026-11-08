@@ -151,9 +151,22 @@ test("real Rocketbox over a 15 cm kerb, up a flight of stairs and on uneven grou
     for (let f = 0; f <= 120; f += 8) { const x = -2 + 5 * f / 120; keys.push({ frame: f, position: [x, Math.max(0, Math.min(0.75, 0.5 * x + 0.075)), 0] }); }
     a = { id: "stairs", kind, height_m: K.heightOf(kind), position: [-2, 0, 0], keys };
     st = await K.setup(kind, a, { boxes: stairs });
-    // FLAW (measured 2026-11-07, depends on the gait phase): up to 8 frames at the step-ups with no foot within 5 mm
-    // of a tread, a single-support hip dip up to 5 cm (T.supportDrop) instead of floating, a 1.04 cm slide at the foot
-    check(K.physical(K.measure(st, a, { ground: K.boxGround(stairs) })), `${kind} stairs`, { float: 10, drop: 0.061, slide: 0.015 });
+    // 3abc644: up to 8 frames at the step-ups with no foot within 5 mm of a tread, 1.04-1.49 cm slides
+    // FLAW (measured 2026-11-08): a single-support hip dip up to 4-5 cm (T.supportDrop) at the step-ups; the man's
+    // sole slides 1.04 cm in one frame at the foot of the stairs
+    check(K.physical(K.measure(st, a, { ground: K.boxGround(stairs) })), `${kind} stairs`, { drop: 0.061, slide: 0.011 });
+    // a 20 degree hill: 3abc644 floated 5-15 frames and slid 2.35 cm in a frame
+    const hill = (x) => Math.max(0, Math.tan(20 * Math.PI / 180) * x);
+    a = K.walker(kind, {}, [-1, 0, 0], [4, 0, 0]);
+    st = await K.setup(kind, a, { setFx: { id: "hill", floorAt: hill } });
+    // FLAW (measured 2026-11-08): the trailing foot down the slope dips the hips 5.5-6 cm (T.supportDrop), the clip's
+    // stride is a flat-ground one; the woman still has 2 frames with no foot within 5 mm
+    check(K.physical(K.measure(st, a, { ground: hill })), `${kind} 20 degree hill`, { drop: 0.061, float: 2 });
+    // short-wavelength rough ground (bumps 6 cm high every ~1.2 m)
+    const rough = (x, z) => 0.04 + 0.03 * Math.sin(5.1 * x) * Math.cos(4.3 * z + 0.4);
+    a = K.walker(kind, {}, [-3, 0, 0.3], [3, 0, 0.3]);
+    st = await K.setup(kind, a, { setFx: { id: "rough", floorAt: rough } });
+    check(K.physical(K.measure(st, a, { ground: rough })), `${kind} rough`);
     // e56d6bc: 3-4 frames floating over the bumps and 1.4-11 cm slides
     a = K.walker(kind, {}, [-3, 0, 0.3], [3, 0, 0.3]);
     st = await K.setup(kind, a, { setFx: { id: "bumps", floorAt: bumps } });
