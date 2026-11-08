@@ -387,9 +387,10 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
         hover.last = last;
         hover.cam = (f) => {
           if (!live) return null;
-          const keep = live.camera_keys;
+          // the hover preview puts the shot's own keys back and never touches the flat state.camera_keys field
+          const had = Object.prototype.hasOwnProperty.call(live, "camera_keys"), keep = live.camera_keys;
           live.camera_keys = plan.keys;
-          try { return stage._cameraAt(f); } finally { live.camera_keys = keep; if (stage.state) stage.state.camera_keys = keep; }
+          try { return stage._cameraAt(f); } finally { if (had) live.camera_keys = keep; else delete live.camera_keys; }
         };
       }
     }

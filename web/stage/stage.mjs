@@ -1341,7 +1341,13 @@ export class Stage {
   /** Shots share actors, set, lighting and timing; each has its own camera keys. */
   _shots() {
     if (!this.state.shots?.length) {
-      this.state.shots = [{ id: "shot_1", name: "Master", setup: "master", camera_keys: this._legacyCamKeys() }];
+      // An older scene with no shots: one Master. Opening it writes no keys: the shot takes the scene's own keys (the
+      // flat field's array, shared) or its start / end move; a still camera gets no key (it plays the scene camera,
+      // _camKeysView) and the flat camera_keys field is not created.
+      const shot = { id: "shot_1", name: "Master", setup: "master" };
+      const legacy = this._legacyCamKeys();
+      if (legacy.length > 1 || this.state.camera_keys?.length) shot.camera_keys = legacy;
+      this.state.shots = [shot];
       this.state.active_shot = "shot_1";
     }
     return this.state.shots;
@@ -1354,9 +1360,7 @@ export class Stage {
 
   setActiveShot(id) {
     if (!this._shots().some((x) => x.id === id)) return;
-    this.state.active_shot = id;
-    const sh = this.activeShot();   // the flat field follows the chosen shot here (an edit), never during playback
-    if (sh?.camera_keys?.length) this.state.camera_keys = sh.camera_keys;
+    this.state.active_shot = id;   // viewing another shot writes no keys (toJSON's flat camera_keys follows it)
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
     this.onShots?.();
@@ -1419,14 +1423,14 @@ export class Stage {
     return this.state.camera || DEFAULT_SCENE.camera;
   }
 
-  /** Camera keys [{frame, position, target, focal_mm}], migrated from the old start/end pair. */
+  /** Camera keys [{frame, position, target, focal_mm}]: the flat field's own array, else built (not stored) from the
+   *  old start/end pair. Reading writes nothing. */
   _legacyCamKeys() {
-    if (!this.state.camera_keys?.length) {
-      const a = this.state.camera, b = this.state.camera_end;
-      this.state.camera_keys = [{ frame: 0, ...clone(a) }];
-      if (b && JSON.stringify(b) !== JSON.stringify(a)) this.state.camera_keys.push({ frame: this._lastFrame(), ...clone(b) });
-    }
-    return this.state.camera_keys;
+    if (this.state.camera_keys?.length) return this.state.camera_keys;
+    const a = this.state.camera || DEFAULT_SCENE.camera, b = this.state.camera_end;
+    const keys = [{ frame: 0, ...clone(a) }];
+    if (b && JSON.stringify(b) !== JSON.stringify(a)) keys.push({ frame: this._lastFrame(), ...clone(b) });
+    return keys;
   }
 
   /** Object position keys [{frame, position}], migrated from position / position_end. */
@@ -2515,7 +2519,7 @@ export class Stage {
 
   /** Jump to the first ("start") or last ("end") camera key. Kept for the Start/End buttons. */
   setKey(key) {
-    const keys = this._camKeys();
+    const keys = this._camKeysView();   // read-only: jumping (First / Last, opening a scene) never stores a key
     this.key = key;
     this.setFrame(key === "end" ? keys[keys.length - 1].frame : keys[0].frame);
   }
