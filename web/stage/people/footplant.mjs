@@ -5,19 +5,27 @@
 //
 // How it works (people/avatars.mjs avatarsAt calls it after the clips are posed):
 //   1. footRig(model, mesh), once per avatar in the bind pose: per foot the thigh / calf / foot / toe bones, a few
-//      dozen SOLE vertices (the lowest of each patch of the shoe; real skinned vertices, so the shoe's own thickness
-//      counts, not the bones: the toe bone sits 1.5-7 mm above the sole) and the sole's up axis in the foot bone.
+//      dozen SOLE points (the lowest vertex of each patch of the shoe, plus the shoe's lowest point toward every way
+//      the foot tips, out to the toe cap and the heel's back; real skinned vertices, so the shoe's own thickness
+//      counts, not the bones: the toe bone sits 1.5-7 mm above the sole) and the sole's up / forward axes in the foot
+//      bone (on the Rocketbox Biped forward is the bone's local +Y, up its local -X).
 //   2. clipFloors(...), once per avatar: each clip's own standing sole height (the median of the lowest sole over the
 //      loop), so the body offset follows the clip that plays (walk and run sat up to 2 cm off the idle's floor).
-//   3. planFeet(...), once per person per shot (cached like the gait table): the clip is played frame by frame and
-//      each foot's stance is found from its sole height over the ground under it and its speed (hysteresis, blips
-//      dropped). Each stance is locked to one spot: the foot's pose at mid-stance, turned so the sole lies on the
-//      ground's slope, lowered so its lowest sole vertex touches. A long stance whose foot would twist or drift (a
-//      turn on the spot, a slow shuffle) is broken into real steps: one foot at a time lifts and moves to where the
-//      body will be. Ramps of a few frames blend in and out of every plant (no pop at heel strike or toe off).
+//   3. planFeet(...), once per person per shot (cached like the gait table): the clip is played frame by frame and a
+//      foot is in stance while its sole is near the body's OWN footing and its contact (the slowest sole point near
+//      the lowest, the body's turn and climb taken out) is slow; the limits widen with the body's speed, so runs plant.
+//      Each planted frame keeps the clip's own roll (heel strike to toe off) laid on the ground's slope, with the
+//      touching patch pinned from the stance's middle outward, lowered until the sole point nearest the ground under
+//      it touches (edges and steps: the foot level on the highest ground under it). A frame the leg can't reach with
+//      at most 2 cm of pelvis drop (6 cm when it is the only foot down) or far from the body's footing is not planted.
+//      A long stance whose foot would twist or drift (a turn on the spot) is broken into real steps, one foot at a
+//      time, quicker in a fast turn, the planted foot turning on its ball with the heel up. A foot dragged along the
+//      floor between two plants is a lifted step. Ramps blend in and out of every plant (shorter at a run), and
+//      between plants the foot moves up or down by the ground (dY), so it follows the terrain from plant to plant.
 //   4. groundFeet(skin, plan, f), per frame: the pelvis comes down when a planted foot is out of the leg's reach,
-//      then two-bone IK (thigh, calf; the knee stays on the side the clip bends it to) puts each foot on its target
-//      and turns it flat on the ground; a swinging foot is kept above the ground.
+//      then two-bone IK (thigh, calf; the knee stays on the side the clip bends it to) puts each foot on its target;
+//      a foot not planted is kept clear of the ground under every sole point (plan.ground: stairs, kerbs, bumps), the
+//      more so the further it moves from its plant, so a sole only ever touches where it plants.
 // Everything is a pure function of the keys and the frame: the plan is built from the whole shot at once, and a
 // frame reads only the plan and the clip pose at that frame, so scrubbing in any order gives the same feet.
 // Nothing here reads the clay figure: it works on whatever skeleton drives the visible body.
