@@ -11,6 +11,9 @@ import * as CC from "../../web/stage/camcurve.mjs";
 import * as R from "../../web/coach/rules.mjs";
 import { stageCameraAt, reduceKeys } from "../../web/movefit/stabilize.mjs";
 import { playAt } from "../../web/stage/takefix.mjs";
+import { takeToKeys } from "../../web/vcam/vfcore.mjs";
+import { smoothAgentShots } from "../../web/hosthooks.mjs";
+import { readFileSync } from "node:fs";
 
 function headless(scene) {
   const st = Object.create(Stage.prototype);
@@ -63,7 +66,8 @@ test("C3 2: every key is hit at its own frame (within 0.001), and a hold ramps t
   for (const k of st.activeShot().camera_keys) {
     assert.ok(len(sub(P(k.frame), k.position)) < 1e-3, `position at frame ${k.frame}`);
     assert.ok(len(sub(st._cameraAt(k.frame).target, k.target)) < 1e-3);
-    assert.ok(Math.abs(st._cameraAt(k.frame).focal_mm - k.focal_mm) < 1e-9);
+    assert.equal(st._cameraAt(k.frame).focal_mm, k.focal_mm, `focal at key ${k.frame}: exactly the key's own value`);
+    assert.deepEqual(CC.cameraCurveAt(st.activeShot().camera_keys, k.frame).position, k.position, `position at key ${k.frame}: exact`);
   }
   // a hold between frames 30 and 50: still inside, from rest into it and out of it, never bowing back
   const hold = [{ frame: 0, position: [0, 1.6, 0], target: [0, 1, 5], focal_mm: 35 }, { frame: 30, position: [3, 1.6, 0], target: [3, 1, 5], focal_mm: 35 },
@@ -126,7 +130,7 @@ test("old shots keep the old curve until re-keyed; new setups follow the shot th
   const keys = st.activeShot().camera_keys;
   assert.equal(st.cameraCurve(), "legacy");
   for (const f of [0, 7, 30, 55, 96]) assert.deepEqual(st._cameraAt(f).position, Stage._sample(keys, f, "position"), `old curve exactly, frame ${f}`);
-  // setCameraKeys (a copy, a fitted take) keeps the shot's curve
+  // setCameraKeys with this shot's own keys again (a copy) keeps the old curve
   st.setCameraKeys(keysC3());
   assert.equal(st.cameraCurve(), "legacy");
   // a new setup from a legacy shot is legacy (the Cut's duplicate copies its keys onto it: it must move the same)
@@ -163,9 +167,9 @@ test("parity on a new-curve shot: the Coach's camera and track, the key fitter's
       const a = st._cameraAt(f), b = R.cameraAt(shot, f);
       for (const k of ["position", "target"]) assert.ok(a[k].every((v, i) => Math.abs(v - b[k][i]) < 1e-12), `coach ${k} f${f}`);
       assert.ok(Math.abs(a.focal_mm - b.focal_mm) < 1e-12);
-      if (!extra.cam_speed) {
-        const c = stageCameraAt(shot.camera_keys, f, 2);
-        assert.ok(a.position.every((v, i) => Math.abs(v - c.position[i]) < 1e-12), `stabilize f${f}`);
+      {
+        const c = stageCameraAt(shot.camera_keys, f, 2, shot.cam_speed);
+        assert.ok(a.position.every((v, i) => Math.abs(v - c.position[i]) < 1e-12), `stabilize f${f} ${shot.cam_speed || ""}`);
       }
     }
     const live = st.cameraTrack(), mine = R.cameraTrack({ scene: st.toJSON() }, shot);
@@ -204,6 +208,94 @@ test("the key fitter (stabilize.reduceKeys) fits keys to the curve they will pla
     const w = CC.linearWeights(t, f).reduce((s, [k, wt]) => s + wt * vals[k][0], 0);
     assert.ok(Math.abs(w - CC.cameraCurveAt(ks, f).position[0]) < 1e-9, `frame ${f}`);
   }
+});
+
+test("setCameraKeys: a new move goes onto the smooth curve; a copy of an old-curve shot stays on the old one; explicit curve / camSpeed", () => {
+  const st = headless(scene());
+  assert.equal(st.cameraCurve(), "legacy");
+  const src = structuredClone(st.activeShot().camera_keys);
+  // a preset / Advisor / take: new keys -> smooth
+  const move = keysC3().map((k) => ({ ...k, position: [k.position[0] + 1, k.position[1], k.position[2]] }));
+  assert.equal(st.setCameraKeys(move).curve, 2);
+  assert.equal(st.cameraCurve(), "smooth");
+  // the Cut's "copy of the current camera": a new setup handed an old-curve shot's keys keeps the old curve
+  const st2 = headless(scene());
+  st2.addShot("single");
+  assert.equal(st2.setCameraKeys(structuredClone(src)).curve, 1);
+  assert.equal(st2.cameraCurve(), "legacy", "the copy moves exactly like its source");
+  for (const f of [0, 7, 30, 55, 96]) assert.deepEqual(st2._cameraAt(f).position, Stage._sample(src, f, "position"));
+  // explicit: a Discard puts the old curve back with the old keys
+  assert.equal(st.setCameraKeys(src, { curve: 1 }).curve, 1);
+  assert.equal(st.cameraCurve(), "legacy");
+  // camSpeed: a take turns even speed off (null); "even" turns it on; left out it is kept
+  st.setCameraCurve("even");
+  st.setCameraKeys(move);
+  assert.equal(st.cameraCurve(), "even", "a preset move keeps the shot's even speed");
+  assert.equal(st.setCameraKeys(move, { camSpeed: null }).cam_speed, null);
+  assert.equal(st.cameraCurve(), "smooth");
+  st.setCameraKeys(move, { camSpeed: "even" });
+  assert.equal(st.cameraCurve(), "even");
+  assert.equal(st.setCameraKeys([]).ok, false);
+});
+
+test("stageCameraAt plays even speed like the stage; a phone take on an even-speed shot keeps its own timing", () => {
+  // parity: the key fitter's copy of the stage camera on an even-speed shot
+  const st = headless(scene({ cam_curve: 2, cam_speed: "even" }));
+  const keys = st.activeShot().camera_keys;
+  for (const f of [0, 3, 12, 30, 48, 61, 90, 96]) {
+    const a = st._cameraAt(f), b = stageCameraAt(keys, f, 2, "even");
+    assert.ok(a.position.every((v, i) => Math.abs(v - b.position[i]) < 1e-12), `even f${f}`);
+    assert.ok(Math.abs(a.focal_mm - b.focal_mm) < 1e-12);
+  }
+  // a viewfinder take with its own timing: slow first half (1 m), fast second half (5 m)
+  const samples = [];
+  for (let i = 0; i <= 240; i++) {
+    const t = i / 60, z = t < 2 ? 0.5 * t : 1 + 2.5 * (t - 2);
+    samples.push({ t, position: [0, 1.6, 6 - z], quaternion: [0, 0, 0, 1], focal_mm: 35 });
+  }
+  const take = { samples, settings: { space: "set", startFrame: 0, fps: 24, lastFrame: 96, stabilize: false, horizonLock: true } };
+  const { keys: tk, frames } = takeToKeys(take, { curve: CC.CAM_CURVE });
+  const worst = (speed) => Math.max(...frames.map((fr) => len(sub(stageCameraAt(tk, fr.frame, 2, speed).position, fr.position))));
+  // what the App now does: the take goes on timed (even speed off)
+  const r = st.setCameraKeys(tk, { curve: CC.CAM_CURVE, camSpeed: null });
+  assert.equal(r.cam_speed, null);
+  assert.equal(st.cameraCurve(), "smooth");
+  const onStage = Math.max(...frames.map((fr) => len(sub(st._cameraAt(fr.frame).position, fr.position))));
+  // within the fitter's own along-path slip (a third of a frame's travel: 10 cm a frame in the fast half)
+  assert.ok(onStage < 0.05, `the stage plays the take on time: worst ${onStage.toFixed(4)} m`);
+  assert.ok(Math.abs(onStage - worst(null)) < 1e-9, "the stage and stageCameraAt agree");
+  assert.ok(worst("even") > 0.5, `left on even speed the take would be re-timed: worst ${worst("even").toFixed(3)} m off`);
+  // the App's take paths ask for exactly that (desktop take, phone viewfinder on the desktop and on the phone)
+  const src = (p) => readFileSync(new URL(`../../web/${p}`, import.meta.url), "utf8");
+  assert.match(src("soundstage.js"), /stage\.setCameraKeys\(res\.keys, \{ curve: CAM_CURVE, camSpeed: null \}\)/);
+  assert.match(src("vcam/desk.mjs"), /takeToKeys\(take, \{ curve: CAM_CURVE \}\)[\s\S]*stage\.setCameraKeys\(keys, \{ curve: CAM_CURVE, camSpeed: null \}\)/);
+  assert.match(src("vcam/desk.mjs"), /setCameraKeys\(applied\.prev\.keys, \{ curve: applied\.prev\.curve \?\? 1, camSpeed: applied\.prev\.speed \?\? null \}\)/, "Discard restores curve and speed");
+  assert.match(src("vcam/viewfinder.mjs"), /sh\.cam_curve = 2; delete sh\.cam_speed;/);
+});
+
+test("the scene agent's new shots play the smooth curve; shots already on the stage keep theirs (smoothAgentShots on a real stage)", async () => {
+  const st = headless(scene());
+  const old = st.activeShot().id;
+  const built = { ...scene(), shots: [{ id: "a1", name: "Wide", setup: "wide", camera_keys: keysC3() }, { id: "a2", name: "Single", setup: "single", camera_keys: keysC3() }], active_shot: "a1" };
+  const agent = {
+    async describe() { const res = { scene: structuredClone(built) }; st.state = structuredClone(res.scene); return res; },
+    async edit() {
+      const op = { op: "add_shot", shot: { id: "a3", name: "Insert", setup: "insert", camera_keys: keysC3() } };
+      st.state.shots.push(structuredClone(op.shot));
+      return { ops: [op] };
+    },
+  };
+  smoothAgentShots(agent, st);
+  // an edit on an old scene: the shot it adds is smooth, the old shot is untouched
+  const r0 = await agent.edit("add an insert");
+  assert.equal(st.state.shots.find((x) => x.id === old).cam_curve, undefined, "the saved shot keeps the old curve");
+  assert.equal(st.state.shots.find((x) => x.id === "a3").cam_curve, 2);
+  assert.equal(r0.ops[0].shot.cam_curve, 2, "the redo copy too");
+  // a build: every shot in it is new
+  const res = await agent.describe("two people at a cafe");
+  assert.deepEqual(st.state.shots.map((x) => x.cam_curve), [2, 2]);
+  assert.deepEqual(res.scene.shots.map((x) => x.cam_curve), [2, 2], "the agent's redo scene too");
+  assert.equal(smoothAgentShots(agent, st), agent, "wrapping twice is a no-op");
 });
 
 test("report: peak screen speed of a fixed grid through the camera, old curve vs new (logged; the new one has no spike at keys)", () => {

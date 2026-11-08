@@ -5,8 +5,14 @@
 // Version 1 (the old curve, kept for shots saved before this change): uniform Catmull-Rom per segment, so a key's
 // tangent ignores how long each side takes (a key between a 12-frame and a 36-frame segment jumps speed about 3x),
 // easing that halves the speed at the first and last interior keys, and the focal length smoothstepped per segment
-// (its zoom rate drops to zero at every key). A shot plays version 2 when shot.cam_curve === 2 (new shots, and any
-// shot whose camera is re-keyed on the stage); everything else stays on version 1, so saved shots don't move.
+// (its zoom rate drops to zero at every key). A shot plays version 2 when shot.cam_curve === 2; a shot with no
+// cam_curve plays version 1, so shots saved before this change don't move. What gets version 2:
+//   - a new node's and a fresh scene's Master, new car shots, the scene agent's new shots (soundstage.js
+//     markNewShots after a build or an edit that adds shots; the Python agent itself writes no version);
+//   - any new move handed to Stage.setCameraKeys (presets, Advisor setups, phone / VCam takes, rig snaps, Cut setups
+//     framed from a preset), except a COPY of a shot still on version 1 (the Cut's copy / duplicate setup);
+//   - a shot whose camera is re-keyed on the stage (a key added, moved by orbiting the shot camera, or deleted).
+// A new setup from the stage's own "+ setup" copies the curve of the shot it starts from.
 //
 // Version 2, per field (position, target: per component; focal: in log space, so a 24 -> 48 -> 96 mm zoom feels even):
 //   - cubic Hermite through every key at its frame, tangents from the key TIMES (the three-point derivative weighted by
@@ -19,12 +25,20 @@
 //   - optional even speed (shot.cam_speed === "even"): the same path re-timed by arc length so it travels at one speed
 //     between a short ease-in and ease-out (interior key times and holds are then ignored, by choice).
 
-export const CAM_CURVE = 2;                    // the version new shots and re-keyed shots carry (shot.cam_curve)
+export const CAM_CURVE = 2;                    // the version new and re-keyed shots carry (shot.cam_curve; see above)
 export const EVEN_RAMP = 0.2;                  // even speed: ease-in / ease-out, as a share of the move each end
 export const ARC_DIVISIONS = 2048;             // even speed: samples of the path for its arc length
 
 /** The curve version a shot plays: 2 when marked, else 1 (the old curve). */
 export const curveVersion = (shot) => (shot && shot.cam_curve === CAM_CURVE ? CAM_CURVE : 1);
+
+/** New shots (ids not in `known`) without a curve version go onto the smooth curve: a scene the scene agent just built,
+ *  shots its edits added. Shots already known (saved before version 2) are left alone. Mutates; returns how many. */
+export function markNewShots(scene, known = new Set()) {
+  let n = 0;
+  for (const sh of scene?.shots || []) if (sh && !known.has(sh.id) && sh.cam_curve == null) { sh.cam_curve = CAM_CURVE; n++; }
+  return n;
+}
 
 const sameVal = (a, b) => a.every((x, k) => Math.abs(x - b[k]) < 1e-4);
 
@@ -53,6 +67,7 @@ function segment(t, frame) {
   if (frame >= t[n]) return { i: n, j: n, u: 0 };
   let lo = 0, hi = n;
   while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (t[mid] < frame) lo = mid; else hi = mid; }
+  if (t[hi] === frame) return { i: hi, j: hi + 1, u: 0 };   // exactly on an interior key: its own segment, at its start
   return { i: lo, j: lo + 1, u: (frame - t[lo]) / Math.max(1e-6, t[lo + 1] - t[lo]) };
 }
 

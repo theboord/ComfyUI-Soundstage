@@ -288,16 +288,23 @@ take, so that the playback hugs the path. The reducer picks the smallest evenly 
 because uniform Catmull-Rom kinks when neighbouring segments differ in length. It then splits only the
 segments that still stick out. A shot on the smooth camera curve (`cam_curve: 2`, see below) is fitted with that
 curve's own linear part (`camcurve.mjs` `linearWeights`) and its error measured on the real curve, so the keys play
-back on the curve the shot uses (`reduceKeys({curve})`; the App passes the active shot's `cam_curve`).
+back on the curve the shot uses (`reduceKeys({curve})`). A take is a new move, so the App fits it for version 2 and
+puts it on the shot with `stage.setCameraKeys(keys, {curve: 2, camSpeed: null})`: played timed, because even speed would
+re-time the take by arc length (no key set can keep a take's timing under it). Discard puts the shot's keys, curve and
+speed back. `stageCameraAt(keys, frame, curve, speed)` mirrors the stage, even speed included.
 
 **The smooth camera curve.** Shots carry a curve version. Version 2 (`web/stage/camcurve.mjs`) plays camera keys as a
 cubic Hermite curve whose tangents come from the key times, so speed carries straight through a key however unevenly
 the keys are spaced; an overshoot limiter keeps it from swinging past a key; a hold (two keys with the same value)
 starts and ends at rest; only the first and last keys ease; the focal length moves in log space, so a zoom keeps its
 rate through a key. `cam_speed: "even"` re-times the path by arc length to one even speed between a short ease-in and
-ease-out (interior key times and holds are then ignored). New setups follow the shot they start from, and any shot
-whose camera is re-keyed on the stage moves to version 2; shots saved before it keep the old uniform Catmull-Rom
-until then, so opening an old project moves no camera. `stage.setCameraCurve("smooth" | "even" | "legacy")` sets it.
+ease-out (interior key times and holds are then ignored). A shot with no `cam_curve` plays the old uniform
+Catmull-Rom, so opening an old project moves no camera. Version 2 goes on: a new node's and a fresh scene's Master,
+new car shots and the scene agent's new shots (a build, or an edit that adds a shot); any new move handed to
+`stage.setCameraKeys` (presets, Advisor setups, phone / VCam takes, rig snaps, Cut setups framed from a preset), except
+a copy of a shot still on the old curve (the Cut's copy / duplicate setup, so the copy moves like its source); and any
+shot whose camera is re-keyed on the stage. The stage's own "+ setup" follows the shot it starts from.
+`stage.setCameraCurve("smooth" | "even" | "legacy")` sets it.
 Actor paths keep their curve.
 
 Measured on synthetic takes (25 seeds; tremor, sensor noise, footstep bob, overshoot bumps), strength 1:

@@ -416,9 +416,11 @@ async function stopRecording() {
   const { fps, frames } = shotInfo();
   const take = { name: `take ${S.takes}`, device: DEVICE, mode: "viewfinder", samples,
     settings: { space: "set", startFrame: 0, fps, lastFrame: frames - 1, stabilize: S.stab, horizonLock: S.level } };
-  const { keys, lensKeys, info } = takeToKeys(take, { curve: shot().cam_curve });   // fitted to the curve the shot plays
+  // A take is a new move with its own timing: fitted to the smooth curve (2) and played timed (even speed off, it would
+  // re-time the take by arc length), as the desktop applies it (vcam/desk.mjs). Discard puts curve and speed back.
+  const { keys, lensKeys, info } = takeToKeys(take, { curve: 2 });
   const prev = { keys: JSON.parse(JSON.stringify(shot().camera_keys || [])), rig: JSON.parse(JSON.stringify(shot().rig || null)),
-    lens: JSON.parse(JSON.stringify(shot().lens_keys || null)) };
+    lens: JSON.parse(JSON.stringify(shot().lens_keys || null)), curve: shot().cam_curve, speed: shot().cam_speed };
   S.review = { id: null, name: `Take ${S.takes}`, keys, lensKeys, info, prev, t0: performance.now(), frames: info.frames };
   applyKeys(keys, lensKeys);
   $("rvName").textContent = `Take ${S.takes}`;
@@ -438,6 +440,7 @@ function applyKeys(keys, lensKeys) {
   const sh = shot();
   sh.camera_keys = JSON.parse(JSON.stringify(keys));
   sh.lens_keys = JSON.parse(JSON.stringify(lensKeys || []));
+  sh.cam_curve = 2; delete sh.cam_speed;
   if (sh.rig && sh.rig.type && sh.rig.type !== "free") sh.rig = { ...sh.rig, type: "free" };
   stage.state.camera_keys = sh.camera_keys;
   stage._rigCache = null;
@@ -454,6 +457,8 @@ function discardTake(toast = true) {
   const sh = shot();
   sh.camera_keys = S.review.prev.keys; if (S.review.prev.rig) sh.rig = S.review.prev.rig; else delete sh.rig;
   if (S.review.prev.lens) sh.lens_keys = S.review.prev.lens; else delete sh.lens_keys;
+  if (S.review.prev.curve === 2) sh.cam_curve = 2; else delete sh.cam_curve;
+  if (S.review.prev.speed) sh.cam_speed = S.review.prev.speed; else delete sh.cam_speed;
   stage.state.camera_keys = sh.camera_keys; stage._rigCache = null;
   send(vfState("discard", { id: S.review.id || "" }));
   if (toast) say(`${S.review.name} discarded`);

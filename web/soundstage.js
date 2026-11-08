@@ -5,6 +5,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { Stage, DEFAULT_SCENE, ASPECTS, IMPORT_ACCEPT, formatOf, CAR_SHOTS } from "./stage/stage.mjs";
+import { CAM_CURVE } from "./stage/camcurve.mjs";
 import { quickSpec } from "./stage/interior.mjs";
 import { peopleLookControls, blockingToggle } from "./stage/people/peopleui.mjs";
 import { LIBRARY, OBJECT_COLORS, SEATS } from "./stage/library.mjs";
@@ -61,7 +62,7 @@ import { REGEN_LABEL, chooseLocks, regenBody, mergeLocked, stagesLine, fixBody, 
 import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
 import "./models/panel.mjs";   // Models… panel (sets globalThis.__ssOpenModels / __ssModelsNotice)
 import { mountDirector } from "./agent/directorpanel.mjs";
-import { cutSigOf, qualityHook } from "./hosthooks.mjs";   // host.cutSig and host.quality for the Director and Ask
+import { cutSigOf, qualityHook, smoothAgentShots } from "./hosthooks.mjs";   // host.cutSig and host.quality for the Director and Ask
 import { mountAsk } from "./agent/ask.mjs";
 import { mountBook } from "./book/book.mjs";
 import { mountPresets } from "./ui/presets.mjs";
@@ -365,6 +366,7 @@ function createStageWidget(node, inputName) {
     rewindLadder(s);
   });
   node.ssStage = stage; // handle for the scene agent, scripts and tests
+  stage._markCameraCurve(stage.activeShot());   // a new node's Master plays the smooth curve (a loaded workflow replaces it)
   // Script import (web/script): the Script in memory and one stage per script scene. Declared up here because the cut,
   // the strip and the stage callbacks below read them before the Script tab is built. See "Script" further down.
   let script = null;            // the full Script (parse.mjs), or null: then the App is exactly as without scripts
@@ -2242,15 +2244,18 @@ function createStageWidget(node, inputName) {
   const useTake = async (rigKeys) => {
     const id = takeSel.sel.value;
     if (!id && !rigKeys) return;
-    if (rigKeys) { stage.setCameraKeys(rigKeys); status.textContent = `Snapped to ${lastRig?.kind || "rig move"}.`; afterTimeChange(); return; }
+    if (rigKeys) { stage.setCameraKeys(rigKeys, { curve: CAM_CURVE, camSpeed: null }); status.textContent = `Snapped to ${lastRig?.kind || "rig move"}.`; afterTimeChange(); return; }
     const take = await fetchTake(api, id);
-    const res = takeToCamera(take, { anchor: anchorFromCamera(stage._cameraAt(0)), fps: stage.toJSON().shot.fps, curve: stage.activeShot()?.cam_curve,
+    // A take is a new move with its own timing: fitted to the smooth curve, played timed (an even-speed shot would
+    // re-time it by arc length, so even speed goes off for it).
+    const wasEven = stage.activeShot()?.cam_speed === "even";
+    const res = takeToCamera(take, { anchor: anchorFromCamera(stage._cameraAt(0)), fps: stage.toJSON().shot.fps, curve: CAM_CURVE,
       overrides: { strength: +strength.input.value } });
-    stage.setCameraKeys(res.keys);
+    stage.setCameraKeys(res.keys, { curve: CAM_CURVE, camSpeed: null });
     lastRig = res.rig;
     snapBtn.hidden = !res.rig;
     if (res.rig) snapBtn.textContent = `Snap to ${res.rig.kind}?`;
-    status.textContent = `Camera now follows take ${id}, stabilized ${Math.round(+strength.input.value * 100)}% (${res.keys.length} keys).`;
+    status.textContent = `Camera now follows take ${id}, stabilized ${Math.round(+strength.input.value * 100)}% (${res.keys.length} keys)${wasEven ? "; even speed is off so the take keeps its timing" : ""}.`;
     afterTimeChange();
   };
   applyTake.addEventListener("click", () => useTake());
@@ -2278,6 +2283,7 @@ function createStageWidget(node, inputName) {
   // Scene agent: describe a whole scene in words, then tweak it by chat ("move the camera lower").
   const agent = new SceneAgent({ api, stage, onStatus: (m) => (status.textContent = m),
     onLoad: () => { try { syncEnv(); syncLight(); syncShots(); } catch { /* rows not built yet */ } } });
+  smoothAgentShots(agent, stage);   // the shots it builds or adds play the smooth camera curve (camcurve.mjs)
   const agentRow = document.createElement("div");
   agentRow.className = "ss-bar ss-add";
   const describeInput = Object.assign(document.createElement("input"), { type: "text",
@@ -2750,7 +2756,7 @@ function createStageWidget(node, inputName) {
     const st = JSON.parse(JSON.stringify(DEFAULT_SCENE));
     st.shot = { ...(st.shot || {}), aspect: stage.toJSON().shot?.aspect || st.shot?.aspect };
     stage.load(st);
-    stage.activeShot();                       // the stage makes its default Master camera
+    stage._markCameraCurve(stage.activeShot());   // the stage makes its default Master camera, on the smooth curve
     const j = stage.toJSON();
     scopeShots(j, key, { taken: idTaken, all: true });
     loadScene(stage, j);

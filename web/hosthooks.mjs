@@ -6,8 +6,41 @@
 //   qualityHook(pipeline) -> {get(), set(values), clear(keys)}   ⑤ Motion's quality settings (host.quality), changing
 //                                           the same state the Motion panel uses (the shot's LtxStore entry, the
 //                                           Adherence buttons, the Follow the clay slider) and refreshing it
+//   smoothAgentShots(agent, stage)          the scene agent's new shots (a build, an edit's add_shot) play the smooth
+//                                           camera curve (web/stage/camcurve.mjs): the Python agent writes no version
 
 import { DEFAULT_PRESET } from "./motion/ltxadvanced.mjs";
+import { markNewShots } from "./stage/camcurve.mjs";
+
+/**
+ * Wrap a SceneAgent's describe / edit so the shots they make go onto the smooth camera curve (cam_curve 2). describe
+ * builds a whole new scene: every shot in it is new. edit: only shots whose ids were not on the stage before (an
+ * add_shot op); shots already there keep their curve. The agent's redo copies (describe's scene, edit's add_shot ops)
+ * are marked too, so a redo plays the same. Undo puts back what was there, curve included. Returns the agent.
+ */
+export function smoothAgentShots(agent, stage) {
+  if (!agent || !stage || agent._smoothShots) return agent;
+  agent._smoothShots = true;
+  const wrap = (name) => {
+    const fn = typeof agent[name] === "function" ? agent[name].bind(agent) : null;
+    if (!fn) return;
+    agent[name] = async (...args) => {
+      const known = name === "describe" ? new Set() : new Set((stage.state?.shots || []).map((x) => x.id));
+      const res = await fn(...args);
+      if (markNewShots(stage.state, known)) {
+        stage._rigCache = null;
+        stage.setFrame?.(stage.frame);
+        stage.onChange?.(stage.toJSON());
+      }
+      if (name === "describe" && res?.scene) markNewShots(res.scene);
+      for (const op of res?.ops || []) if (op?.op === "add_shot" && op.shot && !known.has(op.shot.id)) markNewShots({ shots: [op.shot] });
+      return res;
+    };
+  };
+  wrap("describe");
+  wrap("edit");
+  return agent;
+}
 
 /** The parts of a Cut project its own Undo snapshots (web/cut/cut.mjs _snapshot): the editable state. */
 const CUT_KEYS = ["cut", "audio", "audio_tracks", "titles", "subtitles", "fade_out", "burn_subtitles", "graphics"];

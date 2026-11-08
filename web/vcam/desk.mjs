@@ -14,6 +14,7 @@
 import { qrSvg } from "./qr.mjs";
 import { openPopover } from "../ui/popover.mjs";
 import { takeToKeys, viewfinderUrl, isLoopback, VF_EVENT, fmtStop, fmtFocus } from "./vfcore.mjs";
+import { CAM_CURVE } from "../stage/camcurve.mjs";
 import { withClipCode } from "./film.mjs";
 import { clipCode } from "../oneclick/handoff.mjs";
 
@@ -110,7 +111,7 @@ export function attachViewfinder({ api, stage, host, seek = null, play = null, s
           if (applied.prev.rig) stage.setRig(applied.prev.rig.type, applied.prev.rig.amount);
           else stage.setRig("free");
           if (stage.setLensKeys) stage.setLensKeys(applied.prev.lens); else delete stage.activeShot().lens_keys;
-          stage.setCameraKeys(applied.prev.keys);
+          stage.setCameraKeys(applied.prev.keys, { curve: applied.prev.curve ?? 1, camSpeed: applied.prev.speed ?? null });
           say("Discarded the phone take: the shot has its previous camera back.");
         }
         applied = null;
@@ -126,14 +127,16 @@ export function attachViewfinder({ api, stage, host, seek = null, play = null, s
     let take;
     try { const r = await api.fetchApi(`/soundstage/vcam/take?id=${encodeURIComponent(m.id)}`); take = await r.json(); } catch { return; }
     if (!take?.samples?.length) return;
-    const { keys, lensKeys, info } = takeToKeys(take, { curve: stage.activeShot()?.cam_curve });   // fitted to the shot's curve
+    // A take is a new move with its own timing: fitted to the smooth curve and played timed (even speed off: it would
+    // re-time the take by arc length). Discard puts the shot's curve and speed back with its keys.
+    const { keys, lensKeys, info } = takeToKeys(take, { curve: CAM_CURVE });
     if (keys.length < 2) return;
     const sh = stage.activeShot();
-    applied = { id: m.id, prev: { keys: clone(sh.camera_keys), rig: clone(sh.rig), lens: clone(sh.lens_keys) } };
+    applied = { id: m.id, prev: { keys: clone(sh.camera_keys), rig: clone(sh.rig), lens: clone(sh.lens_keys), curve: sh.cam_curve === CAM_CURVE ? CAM_CURVE : 1, speed: sh.cam_speed || null } };
     stage.previewCamera(null);
     if (sh.rig?.type && sh.rig.type !== "free") stage.setRig("free");
     if (stage.setLensKeys) stage.setLensKeys(lensKeys); else sh.lens_keys = lensKeys;
-    stage.setCameraKeys(keys);
+    stage.setCameraKeys(keys, { curve: CAM_CURVE, camSpeed: null });
     recording = false;
     say(`Phone ${take.name || "take"}: ${(info.frames || 0).toLocaleString("en-US")} frames → ${keys.length} camera keys + ${lensKeys.length} lens keys (focus, iris) on ${sh.name || "the shot"}, ${info.seconds} s. Playing it back.`);
     postSync({ take: { id: m.id, status: "applied", keys: keys.length, lensKeys: lensKeys.length, shot: sh.name || "" } });

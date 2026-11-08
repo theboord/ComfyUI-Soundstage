@@ -332,9 +332,10 @@ function sampleField(keys, frame, field, ease = true) {
 }
 
 /** The stage's camera at `frame` given camera keys (same maths as Stage._cameraAt). curve: the shot's cam_curve
- *  (2 = the smooth curve, web/stage/camcurve.mjs; anything else = the old Catmull-Rom curve below). */
-export function stageCameraAt(keys, frame, curve = 1) {
-  if (curve === CAM_CURVE) return cameraCurveAt(keys, frame);
+ *  (2 = the smooth curve, web/stage/camcurve.mjs; anything else = the old Catmull-Rom curve below). speed: the shot's
+ *  cam_speed ("even" re-times the curve-2 path by arc length, as the stage plays it; the old curve has no even speed). */
+export function stageCameraAt(keys, frame, curve = 1, speed = null) {
+  if (curve === CAM_CURVE) return cameraCurveAt(keys, frame, { even: speed === "even" });
   const { i, j, u } = segment(keys, frame);
   const fa = keys[i].focal_mm, fb = keys[j].focal_mm;
   return {
@@ -395,6 +396,9 @@ function solveDense(M, B) {
  *   - across the path: `tolerance` metres (target: scaled by focus distance, i.e. an angle),
  *   - along the path: `tolerance` + `slip` of that frame's travel (a third of a frame early/late
  *     is invisible, while 1 cm is less than a frame of travel in a fast move).
+ * The fit is for timed playback (the take's own timing). Even speed (cam_speed "even") re-times the path by arc
+ * length whatever the keys' times are, so no key set can keep a take's timing under it: the App plays a fitted take
+ * timed (Stage.setCameraKeys camSpeed null turns even speed off for it).
  */
 export function reduceKeys(frames, { tolerance = 0.015, maxKeys = 96, focusDistance = 5, minSpacing = 3, slip = 0.35, curve = 1 } = {}) {
   curve = curve === CAM_CURVE ? CAM_CURVE : 1;

@@ -66,7 +66,8 @@ const section = (start, end) => { const a = SRC.indexOf(start); return SRC.slice
 
 // ---------------------------------------------------------------- the wiring in web/soundstage.js
 test("soundstage.js hands the Director host cutSig and quality, and Ask the same quality hook", () => {
-  assert.match(SRC, /import \{ cutSigOf, qualityHook \} from "\.\/hosthooks\.mjs"/);
+  assert.match(SRC, /import \{ cutSigOf, qualityHook, smoothAgentShots \} from "\.\/hosthooks\.mjs"/);
+  assert.match(SRC, /const agent = new SceneAgent\([\s\S]{0,300}?\}\);\n  smoothAgentShots\(agent, stage\);/, "the scene agent's shots go onto the smooth curve");
   assert.match(SRC, /const qualityHost = qualityHook\(\(\) => pipeline\);/);
   const dir = section("node.ssDirector = mountDirector(", "node.ssAsk = mountAsk(");
   assert.match(dir, /cutSig: cutSigOf\(cut\)/, "the Director host gets the Cut's signature function");

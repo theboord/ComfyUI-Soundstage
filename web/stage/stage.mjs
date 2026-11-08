@@ -2798,14 +2798,35 @@ export class Stage {
     this.render();
   }
 
-  /** Replace the active shot's camera keys (e.g. a stabilized virtual-camera take). */
-  setCameraKeys(keys) {
-    if (!keys?.length) return;
-    // Keeps the shot's curve version: keys handed in were fitted (or copied) for the curve the shot plays now.
-    this.activeShot().camera_keys = keys.map((k) => ({ frame: k.frame, position: [...k.position], target: [...k.target],
+  /**
+   * Replace the active shot's camera keys (a preset move, a stabilized phone take, a rig snap, a Cut setup).
+   * A new set of keys is a new move, so the shot plays the smooth curve (version 2, camcurve.mjs) from now on; only a
+   * COPY of a shot still on the old curve (the Cut's "copy of the current camera" / duplicate setup hand the source's
+   * keys over unchanged) keeps the old curve, so the copy moves exactly like its source.
+   * opts.curve (1 or 2) sets the version outright (a Discard putting the previous camera back); opts.camSpeed sets
+   * the speed on curve 2: "even", or null for timed playback (a take carries its own timing, which even speed would
+   * re-time away). Left out, the shot's speed setting is kept. Returns {ok, curve, cam_speed}.
+   */
+  setCameraKeys(keys, { curve, camSpeed } = {}) {
+    if (!keys?.length) return { ok: false, error: "no keys" };
+    const shot = this.activeShot();
+    const same = (a, b) => a?.length === b.length && a.every((k, i) => k.frame === b[i].frame && String(k.position) === String(b[i].position)
+      && String(k.target) === String(b[i].target) && (k.focal_mm ?? null) === (b[i].focal_mm ?? null));
+    if (curve !== 1 && curve !== CAM_CURVE) {
+      const src = (this.state.shots || []).find((x) => curveVersion(x) !== CAM_CURVE && same(x.camera_keys, keys));
+      curve = src ? 1 : CAM_CURVE;
+    }
+    if (curve === CAM_CURVE) {
+      shot.cam_curve = CAM_CURVE;
+      if (camSpeed === "even") shot.cam_speed = "even";
+      else if (camSpeed === null || camSpeed === "" || camSpeed === "smooth") delete shot.cam_speed;
+    } else { delete shot.cam_curve; delete shot.cam_speed; }
+    shot.camera_keys = keys.map((k) => ({ frame: k.frame, position: [...k.position], target: [...k.target],
       focal_mm: k.focal_mm ?? this._cameraAt(this.frame).focal_mm }));
+    this._rigCache = null;
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
+    return { ok: true, curve, cam_speed: shot.cam_speed || null };
   }
 
   /** The active shot's lens keys [{frame, focus_m, t_stop, roll?}] (a phone viewfinder take), or null to clear them. */
