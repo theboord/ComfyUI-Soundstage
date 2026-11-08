@@ -575,3 +575,34 @@ test("obstacles: a prop keyed to jitter 4.5 cm every 2 frames (no heading, quat 
     assert.ok(boxes <= 6 && tables.size <= 6, `jittering 4.5 cm every 2 frames over 48 frames: boxes ${boxes}, height tables ${tables.size}`);
   } finally { THREE.Box3.prototype.setFromObject = orig; }
 });
+
+test("obstacles: on loop playback a parked prop that changes grid cell up to the parked limit costs no new height tables on the second and third pass", () => {
+  // Review Finding B: a prop can change cell KEYED_CELL_CHANGES (4) times and still be parked, so up to 5 cell states;
+  // HEIGHT_LRU was 4, so each loop pass rebuilt the walker's O(frames^2) height table 5 times (15 over 3 passes).
+  const run = (props, pose) => {
+    const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
+    const st = bareStage([walker, ...props]);
+    clayOf(st, walker);
+    const gs = props.map((p) => clayOf(st, p));
+    const passes = [];
+    for (let pass = 0; pass < 3; pass++) {
+      const seen = new Set();
+      for (let f = 0; f <= 48; f++) {
+        props.forEach((p, i) => { pose(st, p, gs[i], f); gs[i].updateMatrixWorld(true); });
+        st.frame = f; st._heightAt(walker, f);
+        seen.add(st._yCache.get(walker));
+      }
+      passes.push(seen);
+    }
+    const fresh = (n) => [...passes[n]].filter((t) => !passes.slice(0, n).some((s) => s.has(t))).length;
+    return { first: passes[0].size, second: fresh(1), third: fresh(2), parked: st._obstacles().length };
+  };
+  const turn = { id: "c1", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0], heading_deg: 0 }, { frame: 48, position: [0, 0, 0], heading_deg: 4.4 }] };
+  const t = run([turn], (st, p, g, f) => { g.rotation.set(0, st._headingAt(p, f), 0); });
+  assert.ok(t.parked === 1 && t.first >= 5, `a 4.4 deg keyed turn: still parked, with ${t.first} cell states: ${JSON.stringify(t)}`);
+  assert.equal(t.second + t.third, 0, `a 4.4 deg keyed turn, loop passes 2 and 3 rebuild nothing: ${JSON.stringify(t)}`);
+  const lifts = ["c1", "c2"].map((id, i) => ({ id, kind: "crate", key_y: true, position: [i ? 1.5 : -1.5, 0, 0],
+    keys: [{ frame: 0, position: [i ? 1.5 : -1.5, 0, 0] }, { frame: 48, position: [i ? 1.5 : -1.5, 0.2, 0] }] }));
+  const r = run(lifts, (st, p, g, f) => { g.position.y = st._heightAt(p, f); });
+  assert.equal(r.second + r.third, 0, `two props each rising 20 cm, loop passes 2 and 3 rebuild nothing: ${JSON.stringify(r)}`);
+});

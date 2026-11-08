@@ -280,8 +280,8 @@ export const liveKinds = () => ({ PERSON_KINDS, RIDEABLE, SITTABLE, SEATS, NO_CO
 
 /** _obstacles: the grid a parked object's clay group transform is put on (position m, quaternion component, scale). */
 const OBS_TOL = { pos: 0.05, rot: 0.01, scale: 0.01 };
-/** _obstacles / _heightAt: how many recent obstacle lists and height tables per person are kept (jitter on a cell edge). */
-const OBS_LRU = 8, HEIGHT_LRU = 4;
+/** _obstacles: how many recent obstacle lists are kept (jitter on a cell edge, a parked prop's few keyed cells). */
+const OBS_LRU = 8;
 
 /** _obstacles: a step farther than this between two looks at a group (any position component m, quaternion component,
  *  relative scale) is an edit (a drag, a console move, a rescale), not per-frame motion: the grid is re-anchored there. */
@@ -290,6 +290,11 @@ const OBS_JUMP = { pos: 0.25, rot: 0.05, scale: 0.1 };
 /** _obstacles: how many times a keyed prop may change grid cell over the shot (box, list and every person's height
  *  table rebuilt each time) and still count as parked, an obstacle people stand on and walk round. */
 const KEYED_CELL_CHANGES = 4;
+
+/** _heightAt: how many recent height tables per person are kept. A parked prop can be in KEYED_CELL_CHANGES + 1 cells
+ *  over the shot; with 4 kept (the old value) each loop pass rebuilt the O(frames^2) table 5 times. As many as the
+ *  obstacle lists kept (a table is reused only with its own list, so more would never hit). */
+const HEIGHT_LRU = Math.max(OBS_LRU, KEYED_CELL_CHANGES + 1);
 
 /** _obstacles: do an object's keys move it (so it is not a parked obstacle)? Travel over 5 cm on the ground; and, for a
  *  keyed turn of the group (heading_deg; roll_deg / pitch_deg turn only a car's body child, not the group), a keyed rise (key_y) or baked physics keys (quat and height: a
