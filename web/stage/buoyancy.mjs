@@ -321,11 +321,24 @@ export function plungeTrack({ ky, v0 = 0, level, floor = 0, fps = 24, n, height 
  * In water they can stand in (canStand), auto and cant stand / wade on the bottom (ground; after a drop in: the
  * plunge, then "wade" standing on the bottom with the head out); the other modes swim as chosen.
  * dive and the underwater strokes are not tracked here (the stage keeps them at their keyed depth).
+ * support[f] (optional): the height of a walkable surface under the keyed feet besides the water's floor (a dock, a
+ * boat's deck, a platform), or null. Keyed standing on it (feet within -5..+15 cm of it, and it is above the water or
+ * shallow enough to stand on) they are on their keys there, off the water: supported[f] and ground[f]. Stepping off it they drop in from there.
  */
-export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, height = 1.8, hipY = 0.95, seed = 1, standHeight = height }) {
+export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, height = 1.8, hipY = 0.95, seed = 1, standHeight = height, support = null }) {
   const n = keyY.length, k = height / 1.8;
   const styles = new Array(n).fill(null), hipsY = new Array(n).fill(null), hipsW = new Array(n).fill(0), modes = new Array(n).fill(null);
-  const ground = new Array(n).fill(false);
+  const ground = new Array(n).fill(false), supported = new Array(n).fill(false);
+  // On a dock, a deck or anything else walkable under the feet: on their keys there, not in the water.
+  const wet = over.slice();
+  if (support) for (let f = 0; f < n; f++) {
+    const s = support[f];
+    if (!over[f] || s == null || !(s > floor + 0.05)) continue;
+    const d = keyY[f] - s;
+    if (d < -0.05 || d > 0.15) continue;
+    if (s < level - 0.05 && !canStand(level - s, standHeight)) continue;   // a ledge too deep to stand on: they swim
+    supported[f] = true; ground[f] = true; wet[f] = false;
+  }
   const treadHips = level - 0.52 * k, struggleHips = level - 0.6 * k, backHips = level - 0.16 * k;
   const sinks = mode === "cant" || mode === "sink";
   const shallow = canStand(level - floor, standHeight) && (mode === "auto" || mode === "cant");
@@ -333,9 +346,9 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
   const modeOf = (feet) => feet + 0.9 * height < level ? "under" : "surface";
   let f = 0;
   while (f < n) {
-    if (!over[f]) { f++; continue; }
+    if (!wet[f]) { f++; continue; }
     const f0 = f;
-    while (f < n && over[f]) f++;
+    while (f < n && wet[f]) f++;
     const m = f - f0, ky = keyY[f0];
     // Before they are at the surface: pre[i] = feet height, preMode[i], preStyle[i], for i < up.
     const pre = [], preMode = [], preStyle = [];
@@ -422,5 +435,5 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
       modes[fr] = y + 0.75 * k > level ? "surface" : "under";
     }
   }
-  return { styles, hipsY, hipsW, modes, ground };
+  return { styles, hipsY, hipsW, modes, ground, supported };
 }

@@ -1945,6 +1945,68 @@ export class Stage {
     return list;
   }
 
+  /** Signature of what a person can stand on over the water (_standOnAt): the set, the parked props, the boats' keys. */
+  _supportSig() {
+    if (!this.root) return "";   // (a bare stage without a scene: nothing to stand on)
+    this._obstacles();
+    const boats = this.state.actors.filter((b) => LIBRARY[b.kind]?.boat && !b.mount_id && !b.carry_id)
+      .map((b) => [b.id, b.kind, keysHash(this._actorKeys(b)), b.scale || 1, b.height_m || 0, b.rotation_deg || 0]);
+    return `${this.state.environment?.set || ""}|${this._setCollidersCached().length}|${this._obsCache?.sig || ""}|${JSON.stringify(boats)}`;
+  }
+
+  /**
+   * The walkable surface under a person's keyed feet over the water at frame f (personTrack's support): a dock or any
+   * other box of the set, a parked prop that is not in the water, or a boat's deck where the boat floats at frame f
+   * (its own track, so the answer is a pure function of the keys and the frame). Looked for from 0.6 m above the feet
+   * down. null when there is nothing but the water's floor.
+   */
+  _standOnAt(x, z, fromY, f, reach = 0.6) {
+    if (!this.root) return null;
+    let best = null;
+    const top = fromY + reach, o = [x, top, z];
+    for (const sh of this._supportShapes()) {
+      if (x < sh.min[0] || x > sh.max[0] || z < sh.min[2] || z > sh.max[2] || sh.max[1] <= 0.05 || sh.min[1] > top) continue;
+      const a = this.actorMeshes.has(sh.id) ? this.state.actors.find((q) => q.id === sh.id) : null;
+      if (a && this._overWater((sh.min[0] + sh.max[0]) / 2, (sh.min[2] + sh.max[2]) / 2)) continue;   // the water moves it
+      const hit = raycastShapes([sh], o, [0, -1, 0], top + 50);
+      if (hit && hit.distance > 1e-4 && hit.normal[1] > 0.7 && hit.point[1] > (best ?? 0.05)) best = hit.point[1];
+    }
+    const d = this._deckAt(x, z, top, f);
+    if (d != null && d > (best ?? 0.05)) best = d;
+    return best;
+  }
+
+  /** The top of a boat's deck under (x, z) below height `top` at frame f, with each boat posed where its own float
+   *  track has it at f (watercraft.mjs _boatTrack; the group is put back afterwards). null if no boat is there. */
+  _deckAt(x, z, top, f) {
+    let best = null;
+    const level = this.water?.position.y ?? 0;
+    for (const b of this.state.actors) {
+      if (!LIBRARY[b.kind]?.boat || b.mount_id || b.carry_id) continue;
+      const hg = this.actorMeshes.get(b.id);
+      if (!hg) continue;
+      const bp = this._actorPosAt(b, f);
+      if (Math.hypot(x - bp[0], z - bp[2]) > 0.75 * (LIBRARY[b.kind].length || 8) * (b.scale || 1) + 1) continue;
+      const s = this._boatTrack && level >= 0.3 ? this._boatTrack(b, hg, level)?.[Math.max(0, f)] : null;
+      const P = hg.position.clone(), R = hg.rotation.clone();
+      hg.rotation.order = "YXZ";
+      hg.position.set(bp[0], s ? s.y : hg.position.y, bp[2]);
+      hg.rotation.set(s ? -s.pitch * DEG : 0, this._headingAt(b, f), s ? s.roll * DEG : 0, "YXZ");
+      hg.updateMatrixWorld(true);
+      const rc = new THREE.Raycaster(new THREE.Vector3(x, top, z), new THREE.Vector3(0, -1, 0), 0, top + 5);
+      for (const h of rc.intersectObject(hg, true)) {
+        const ob = h.object;
+        let shown = true;
+        for (let q = ob; q && q !== hg.parent; q = q.parent) if (!q.visible) { shown = false; break; }
+        if (!shown || !ob.isMesh || ob.material?.transparent || !h.face) continue;
+        const n = h.face.normal.clone().transformDirection(ob.matrixWorld);
+        if (n.y > 0.7) { if (best == null || h.point.y > best) best = h.point.y; break; }
+      }
+      hg.position.copy(P); hg.rotation.copy(R); hg.updateMatrixWorld(true);
+    }
+    return best;
+  }
+
   /** Does a person leave the ground anywhere in the shot (a hop up, a vault, a drop: the same test as _airborne, over
    *  every frame)? Also brings the height table up to date cheaply (see _airborneAt). */
   _jumpsInShot(a) {
@@ -2177,8 +2239,8 @@ export class Stage {
         // Keyed people walk / jog / run with planted feet (gait.mjs); a jump or vault keeps the tuck below.
         const gp = rig === "biped" && !air && !a.mocap && g.userData.joints ? this._gaitPlan(a, g) : null;
         if (gp) {
-          const baseY = this._heightAt(a, this.frame);
-          Gait.applyHuman(g, gp, this.frame, { yaw: g.rotation.y, baseY, support: (x, z) => this._supportAt(x, z, baseY) });
+          const baseY = this._heightAt(a, this.frame), onKeys = this._standOnKeys(a, g, this.frame);
+          Gait.applyHuman(g, gp, this.frame, { yaw: g.rotation.y, baseY, support: (x, z) => Math.max(this._supportAt(x, z, baseY), onKeys ?? -Infinity) });
           if (!gp.speed[Math.min(gp.n - 1, this.frame)] || gp.speed[Math.min(gp.n - 1, this.frame)] < 0.15) this._bodyMotion(g, a, false, 0, 0);
         } else {
           Gait.release(g);
@@ -3704,16 +3766,18 @@ export class Stage {
     const h = (a.height_m || 1.8) * (a.scale || 1);
     const smode = Buoy.swimMode(a.swim);
     const wp = this.water ? [this.water.position.x, this.water.position.z, this.water.geometry.parameters.width, this.water.geometry.parameters.height] : null;
-    const sig = JSON.stringify([keys, last, fps, h, a.rotation_deg || 0, smode, a.gear || null, reef ? fx.id : pool, wp, a.kind]);
+    // What they can stand on over the water (a dock, a parked platform, a boat's deck) is part of the plan too.
+    const dry = reef ? "" : this._supportSig();
+    const sig = JSON.stringify([keys, last, fps, h, a.rotation_deg || 0, smode, a.gear || null, reef ? fx.id : pool, wp, a.kind, dry]);
     this._swimCache = this._swimCache || new WeakMap();
     const c = this._swimCache.get(a);
     if (c && c.sig === sig && c.g === g) return c.plan;
     const UNDER = ["flutter", "frog", "stroke", "hover", "dive"];
     const hipY = (g?.userData?.joints?.l_hip?.position.y || 0.53 * h / (g?.scale?.y || 1)) * (g?.scale?.y || 1);
-    const pos = [], yaw = [], mode = [], keyY = [], over = [];
+    const pos = [], yaw = [], mode = [], keyY = [], over = [], support = [];
     let any = false, under = 0;
     for (let f = 0; f <= last; f++) {
-      const p = this._actorPosAt(a, f);
+      const p = this._actorPosAt(a, f), ky = p[1] || 0;   // the keyed height (a diver's hover below replaces p[1])
       let m = null;
       if (reef) {
         const bed = fx.floorAt ? fx.floorAt(p[0], p[2]) : 0;
@@ -3726,18 +3790,25 @@ export class Stage {
       }
       if (m) { any = true; if (m === "under" && (reef || UNDER.includes(smode))) under++; }
       pos.push([p[0], p[1] || 0, p[2]]); yaw.push(this._headingAt(a, f)); mode.push(m);
-      keyY.push(p[1] || 0); over.push(!reef && !!m);
+      keyY.push(ky); over.push(!reef && !!m);
+      support.push(!reef && m && ky > 0.05 ? this._standOnAt(p[0], p[2], ky, f) : null);
     }
-    let plan = null;
+    let plan = null, stand = null;
     if (any) {
       const gear = a.gear || (under > 0 || smode === "dive" ? "scuba" : "none");
       const style = smode === "dive" ? "hover" : ["tread", "breaststroke", "freestyle", "flutter", "frog", "stroke", "hover"].includes(smode) ? smode : null;
       let track = null;
-      // In a pool: the drop in, the kick up, and the modes that aren't a stroke (back float, can't swim, sink slowly).
+      // In a pool: standing on a dock or a deck, the drop in, the kick up, and the modes that
+      // aren't a stroke (back float, can't swim, sink slowly).
       if (!reef && !(UNDER.includes(smode))) {
-        track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(a.id), standHeight: (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1) });
-        // water they can stand in (auto / can't swim): on the bottom, off the swim plan, the gait walks them (wading)
+        track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(a.id), standHeight: (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1), support });
+        // ground: water they can stand in (auto / can't swim), or a dock or a deck under them: off the swim plan, on
+        // their keys (the gait walks them)
         for (let f = 0; f <= last; f++) if (track.modes[f]) mode[f] = track.modes[f]; else if (track.ground[f]) mode[f] = null;
+        // the height they stand at on a deck or a dock (the gait's floor there)
+        stand = track.supported.map((v, f) => (v ? support[f] : null));
+        if (!stand.some((v) => v != null)) stand = null;
+        if (!mode.some(Boolean)) { this._swimCache.set(a, { sig, g, plan: null, stand }); return null; }
       }
       plan = Swim.planSwim({ pos, yaw, mode, fps, height: h, style, seed: Swim.seedOf(a.id), gear,
         styles: track?.styles || null, hipsY: track?.hipsY || null, hipsW: track?.hipsW || null });
@@ -3745,8 +3816,17 @@ export class Stage {
       plan.swimMode = smode;
       plan.ctx = { surface: reef ? fx.surface : pool, current: reef ? fx.currentAt : null, caustics: reef, floorAt: reef ? fx.floorAt : null, floor: reef ? null : 0 };
     }
-    this._swimCache.set(a, { sig, g, plan });
+    this._swimCache.set(a, { sig, g, plan, stand });
     return plan;
+  }
+
+  /** Over the water but on their keys at frame f (personTrack: on a dock or a deck): the
+   *  height they stand at there, which the gait's planted feet stand on; null otherwise. */
+  _standOnKeys(a, g, f) {
+    if (!PERSON_KINDS.has(a.kind) || !this.water) return null;
+    this._swimPlan(a, g);
+    const st = this._swimCache?.get(a)?.stand;
+    return st ? st[Math.max(0, Math.min(st.length - 1, Math.round(f)))] ?? null : null;
   }
 
   /** Foam on the water around surface swimmers (bow wave, kick, hand entries, the Kelvin wake): Clay and Color. */

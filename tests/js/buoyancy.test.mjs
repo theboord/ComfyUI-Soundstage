@@ -17,14 +17,14 @@ const realFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => { const url = typeof input === "string" ? input : input.url; if (url.startsWith("file:")) return new Response(readFileSync(fileURLToPath(url)), { status: 200 }); return realFetch(input, init); };
 
 const LEVEL = 2.5;   // the Water tank's level (environments.mjs)
-function tank(actors, { frames = 121 } = {}) {
+function tank(actors, { frames = 121, set = "water_tank", keepSet = false } = {}) {
   clearSetCache();
   const st = Object.create(Stage.prototype);
   const changes = [];
-  Object.assign(st, { state: { ...structuredClone(DEFAULT_SCENE), shot: { frames, fps: 24 }, actors: structuredClone(actors), environment: { set: "water_tank" } },
+  Object.assign(st, { state: { ...structuredClone(DEFAULT_SCENE), shot: { frames, fps: 24 }, actors: structuredClone(actors), environment: { set } },
     view: "clay", key: "start", frame: 0, actorMeshes: new Map(), root: new THREE.Group(), scene: new THREE.Scene(),
     camera: new THREE.PerspectiveCamera(40, 1.85, 0.1, 200), render() {}, onChange: (s) => changes.push(s), onInteract() {}, onSelect() {}, _buildLights() {} });
-  st.scene.add(st.root); st._buildSet(); st._setGroup = undefined; st.live = new LiveEdit(st, liveKinds()); st.setFrame(0);
+  st.scene.add(st.root); st._buildSet(); if (!keepSet) st._setGroup = undefined; st.live = new LiveEdit(st, liveKinds()); st.setFrame(0);
   st.changes = changes;
   return st;
 }
@@ -117,6 +117,44 @@ test("can't swim in a short shot: the struggle starts at water entry, so the str
   st.setFrame(144); const h1 = hipsY(st, "w");
   assert.ok(h0 - h1 > 0.2, `then sinks inside the shot (hips ${h0.toFixed(2)} -> ${h1.toFixed(2)})`);
   assert.ok(headY(st, "w") < LEVEL, "the head is under by the end");
+});
+
+// Third pass (2026-11-07): "when I placed a person in a water tank, they just went to the bottom and started walking".
+// Reproduced on main: a man keyed 4.5 m over the tank with a hold then a step walked on the tank floor (hips 0.81, the
+// walk cycle), and on this branch a man on the lake's dock fell in at f0 and waded on the bottom (hips 0.96).
+const keyed = (id, kind, keys, extra = {}) => ({ id, name: id, kind, height_m: kind === "man" ? 1.8 : undefined, position: keys[0][1], keys: keys.map(([frame, position]) => ({ frame, position })), rotation_deg: 0, key_y: true, ...extra });
+const feetY = (st, id, f) => { st.setFrame(f); return lowest(st.actorMeshes.get(id)); };
+const lowest = (g) => { g.updateMatrixWorld(true); return new THREE.Box3().setFromObject(g).min.y; };
+
+test("a person on the lake's dock stands on the dock (was: fell in at f0 and waded on the bottom); one on a speedboat's deck in the tank stays on the deck", () => {
+  const DOCK = 1.81;   // the deck of the dock (environments.mjs lake: level 1.2 + 0.55, 12 cm thick)
+  const st = tank([keyed("s", "man", [[0, [-6, DOCK, -16]]]), keyed("w", "man", [[0, [-6.5, DOCK, -21]], [120, [-5.5, DOCK, -10]]])], { set: "lake", keepSet: true });
+  assert.ok(st._overWater(-6, -16), "the dock is over the lake's water");
+  for (const id of ["s", "w"]) for (let f = 0; f < 121; f += 6) {
+    st.setFrame(f);
+    const g = st.actorMeshes.get(id), y = lowest(g);
+    assert.ok(!g.userData.swimOn, `${id} f${f}: not in the water`);
+    assert.ok(Math.abs(y - DOCK) < 0.08, `${id} f${f}: the feet on the dock (lowest point ${y.toFixed(2)})`);
+    assert.ok(hipsY(st, id) > DOCK + 0.7, `${id} f${f}: standing up on it (hips ${hipsY(st, id).toFixed(2)})`);
+  }
+  st.setFrame(60);
+  assert.ok(st.actorMeshes.get("w").userData.gaitOn, "the one keyed along the dock walks it");
+  // the speedboat floating in the tank: keyed at its deck (cockpit sole), with and without a walk along it
+  const boat = { id: "b", name: "b", kind: "speedboat", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }], rotation_deg: 0 };
+  const probe = tank([boat]);
+  const deck = probe._deckAt(0, -1, 6, 0);
+  assert.ok(deck > LEVEL && deck < LEVEL + 0.6, `a deck just above the water (${deck})`);
+  const st2 = tank([boat, keyed("d", "man", [[0, [0, deck, -1]]]), keyed("e", "man", [[0, [-0.45, deck, -0.8]], [120, [0.45, deck, -0.8]]])]);
+  for (const id of ["d", "e"]) for (let f = 0; f < 121; f += 6) {
+    const y = feetY(st2, id, f), g = st2.actorMeshes.get(id), d = st2._deckAt(g.position.x, g.position.z, 6, f);
+    assert.ok(!g.userData.swimOn, `${id} f${f}: not in the water`);
+    assert.ok(Math.abs(y - deck) < 0.08 && Math.abs(d - deck) < 0.06, `${id} f${f}: the feet on the deck (lowest point ${y.toFixed(2)}, deck ${d?.toFixed(2)})`);
+  }
+  // off the end of the dock: they step off and drop in (there the dock is no longer under them)
+  const st3 = tank([keyed("o", "man", [[0, [-6, DOCK, -11]], [24, [-6, DOCK, -7]]])], { set: "lake", keepSet: true, frames: 72 });
+  assert.ok(Math.abs(feetY(st3, "o", 0) - DOCK) < 0.08, "on the dock at the start");
+  st3.setFrame(60);
+  assert.ok(st3.actorMeshes.get("o").userData.swimOn, "in the water after walking off its end");
 });
 
 // ------------------------------------------------------------------ the physics
