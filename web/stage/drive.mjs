@@ -33,6 +33,7 @@
 // bike and prop steps, the projectile, take -> keys), so the tests drive it without a browser.
 import * as THREE from "../vendor/three.module.min.mjs";
 import * as Gait from "./gait.mjs";
+import { unswim } from "./swim.mjs";
 import { LiveCar, carParams } from "./vehsim.mjs";
 import { LiveBoat, isBoatKind, hullOf } from "./boatsim.mjs";
 import { applyPose, MOUNTS } from "./humans.mjs";
@@ -213,6 +214,12 @@ export function personSpeed(mag, sprint = false, height = 1.8) {
   return v * k;
 }
 
+/** A swimmer's speed (m/s) from stick deflection: full = a steady 1.2 m/s crawl, + run = 2 m/s (a strong sprint). */
+export function swimSpeed(mag, sprint = false, height = 1.8) {
+  if (!(mag > 0.05)) return 0;
+  return Math.min(1, mag) * (sprint ? 2 : 1.2) * Math.min(1, Math.sqrt(height / 1.8));
+}
+
 /** A horse's target speed: a quarter stick walks, half trots, full canters, + gallop (sprint) gallops. */
 export function horseSpeed(mag, sprint = false, height = 1.6) {
   if (!(mag > 0.05)) return 0;
@@ -287,7 +294,10 @@ export function personStep(b, inp, env, dt) {
     return b;
   }
   const mag = Math.min(1, inp.mag ?? Math.hypot(...inp.move));
-  const target = personSpeed(mag, inp.sprint > 0.5, h);
+  // In a pool or the tank (env.swim: deep water, off any deck) they swim: a swimmer's pace (1.2 m/s, 2 m/s flat out),
+  // no jumping off the water (was: a 6 m/s run along the tank floor, the head 1 m under)
+  const wet = !b.air && !!env.swim?.(b.x, b.z, b.y);
+  const target = wet ? swimSpeed(mag, inp.sprint > 0.5, h) : personSpeed(mag, inp.sprint > 0.5, h);
   let want = b.yaw;
   if (mag > 0.05) { const [dx, dz] = moveDir(inp.move[0], inp.move[1], env.camYaw ?? 0); want = Math.atan2(dx, dz); }
   if (inp.aim > 0.5 && Number.isFinite(env.camYaw)) want = env.camYaw;   // aiming: face where the camera looks
@@ -298,7 +308,7 @@ export function personStep(b, inp, env, dt) {
   const tv = target * (0.3 + 0.7 * align);
   if (!b.air) b.speed += clamp(tv - b.speed, -11 * dt, 6.5 * dt);
   // Jump (or climb onto a box right in front).
-  if (!b.air && inp.jumpPressed) {
+  if (!b.air && !wet && inp.jumpPressed) {
     const cl = env.climb?.(b);
     if (cl) { b.climb = { t: 0, dur: 0.45 + 0.25 * cl.rise, from: [b.x, b.y, b.z], to: cl.to }; b.speed = 0; return b; }
     b.vy = Math.sqrt(2 * G * JUMP_H); b.air = true;
@@ -992,6 +1002,7 @@ export class DriveMode {
     return {
       camYaw: this.cam.mode === "shot" ? this._shotYaw() : this.cam.yaw,
       ground: b.kind === "prop" ? propGround : (x, z, y) => this.s._supportAt ? this.s._supportAt(x, z, Math.max(0, y)) : 0,
+      swim: (x, z, y) => !(y > 0.05) && !!this.s._inPool?.(x, z),   // deep water, not on a deck or a dock: swimming
       collide: (x, z, feet, head, r) => collideCircle(x, z, r, list, { feet, head, step: b.kind === "person" ? STEP_UP : 0.25 }),
       climb: (p) => {
         const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);
@@ -1082,6 +1093,7 @@ export class DriveMode {
   _posePerson(a, g, b) {
     if (a.mount_id && a.mount_at > this.s.frame) { Gait.release(g); applyPose(g, "stand", b.height); return; }   // climbing in: the stage's arc
     if (b.air || b.climb) {
+      unswim(g);
       Gait.release(g);
       applyPose(g, "stand", b.height);
       for (const l of g.userData.limbs || []) {
@@ -1092,6 +1104,9 @@ export class DriveMode {
       return;
     }
     if (!g.userData.joints) return;
+    // In the pool or the tank: swimming live, the same swim the kept take plays (stage._liveSwim); out of it the swim
+    // pose is undone before the walk (was: the swim flag left on under the walk cycle)
+    if (this.s._liveSwim?.(a, g, b, SIM_HZ / 2)) return;
     const rest = Gait.humanFootRest(g);
     if (rest) for (const r of rest) { r.x *= g.scale.x; r.z *= g.scale.z; }
     const lp = this._livePlan(b, "human", rest);
@@ -1348,6 +1363,12 @@ export class DriveMode {
         if (lb.kind !== "person" && lb.kind !== "horse" && lb.kind !== "animal") continue;
         lb.hist.push({ p: [lb.x, 0, lb.z], yaw: lb.yaw });
         if (lb.hist.length > 75) lb.hist.shift();
+        // the live swim's own history: every sample since they got into the water (a can't-swim struggle is timed
+        // from there), reset when they leave it; a minute at most
+        if (lb.kind === "person") {
+          if (!(lb.y > 0.05) && this.s._inPool?.(lb.x, lb.z)) { (lb.swimHist ||= []).push({ p: [lb.x, 0, lb.z], yaw: lb.yaw }); if (lb.swimHist.length > 60 * SIM_HZ / 2) lb.swimHist.shift(); }
+          else lb.swimHist = null;
+        }
       }
     }
   }

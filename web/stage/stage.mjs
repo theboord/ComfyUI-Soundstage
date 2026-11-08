@@ -3967,6 +3967,53 @@ export class Stage {
   }
 
   /**
+   * Drive mode (drive.mjs _posePerson): a driven person in the pool or the tank swims live, posed by the same water
+   * track and swim plan a kept take plays back (_swimPlan: Buoy.personTrack, then Swim.planSwim), built from the live
+   * body's swim history (b.swimHist: its samples since it got into the water, at `fps`) and a short look-ahead at its
+   * velocity. Was: the driven person stood on the tank floor (personStep's ground) and walked there, head 1 m under, and
+   * the swim flag stayed on under the walk. Returns true when it posed them; false (and the swim pose undone) out of
+   * the water, on a deck or a dock (b.y over the floor), in water they can stand in, or on the reef set.
+   */
+  _liveSwim(a, g, b, fps = 30) {
+    const pool = this.water && this.water.position.y >= 0.3 && !this.setFx?.underwater ? this.water.position.y : null;
+    const off = () => { if (g.userData.swimOn) Swim.unswim(g); return false; };
+    if (pool == null || !b || !g.userData.joints || b.y > 0.05 || !this._inPool(b.x, b.z) || !PERSON_KINDS.has(a.kind)) return off();
+    const H = b.swimHist?.length ? b.swimHist : [{ p: [b.x, 0, b.z], yaw: b.yaw }];
+    const h = (a.height_m || 1.8) * (a.scale || 1), smode = Buoy.swimMode(a.swim);
+    const sig = `${H.length}|${H[H.length - 1].p[0]}|${H[H.length - 1].p[2]}|${H[0].p[0]}|${smode}|${h}|${this._seedKey(a)}|${a.physics?.density ?? ""}|${a.physics?.mass ?? ""}|${pool}`;
+    let L = b._liveSwimPlan;
+    if (!L || L.sig !== sig || L.g !== g) {
+      const hipY = (g.userData.joints.l_hip?.position.y || 0.53 * h / (g.scale?.y || 1)) * (g.scale?.y || 1);
+      const last = H[H.length - 1], prev = H[H.length - 2] || last;
+      const vx = last.p[0] - prev.p[0], vz = last.p[2] - prev.p[2];
+      const pos = H.map((s) => [s.p[0], 0, s.p[2]]), yaw = H.map((s) => s.yaw);
+      for (let i = 1; i <= 8; i++) { pos.push([last.p[0] + vx * i, 0, last.p[2] + vz * i]); yaw.push(last.yaw); }
+      const n = pos.length, dive = smode === "dive";
+      if (dive) { const y = Math.max(0.4, Math.min(pool - hipY - 0.45, pool * 0.35)); for (const p of pos) p[1] = y; }
+      const mode = new Array(n).fill(dive ? "under" : "surface");
+      const standH = (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1);
+      const track = Buoy.personTrack({ mode: smode, keyY: new Array(n).fill(0), over: new Array(n).fill(true), level: pool, floor: 0, fps, height: h, hipY,
+        seed: Swim.seedOf(this._seedKey(a)), standHeight: standH, ...this._personWeight(a, h) });
+      for (let f = 0; f < n; f++) if (track.modes[f]) mode[f] = track.modes[f]; else if (track.ground[f]) mode[f] = null;
+      let plan = null;
+      if (mode[H.length - 1]) {
+        const style = dive ? "hover" : ["tread", "breaststroke", "freestyle", "flutter", "frog", "stroke", "hover"].includes(smode) ? smode : null;
+        plan = Swim.planSwim({ pos, yaw, mode, fps, height: h, style, seed: Swim.seedOf(this._seedKey(a)), gear: a.gear || (dive ? "scuba" : "none"),
+          styles: track.styles, hipsY: track.hipsY, hipsW: track.hipsW });
+        Swim.easeDepthHandoffs(plan, { hipY, surface: pool });
+        plan.id = a.id; plan.swimMode = smode;
+        plan.ctx = { surface: pool, current: null, caustics: false, floorAt: null, floor: 0 };
+      }
+      L = b._liveSwimPlan = { sig, g, plan, at: H.length - 1 };
+    }
+    if (!L.plan) return off();   // water they can stand in: they wade on the bottom (the gait)
+    Gait.release(g);
+    Swim.ensureKit(g, { gear: L.plan.gear, height: h, kind: a.kind, appearance: a.appearance || {} });
+    Swim.applySwim(g, L.plan, L.at, L.plan.ctx);
+    return true;
+  }
+
+  /**
    * A swimmer's path (pos[f], the frames swimming and not on a deck) kept out of every floating boat's hull (was:
    * swimming at 0 into the speedboat ended up treading inside the hull, the head 3 cm over the deck). The footprint is
    * the boat's own box at its heading where its keys have it at f, grown by a body length's reach (0.6 h: lying along
@@ -5275,6 +5322,9 @@ export class Stage {
    * floats 2 cm apart. A name is what the same steps give again ("Woman 1"); a seed stored at Add keeps it through a
    * rename. Two objects with the same kind and name and no seed share their variation.
    */
+  /** A person's weight for the water track (Buoy.personTrack's extra arguments). */
+  _personWeight(a, h) { return {}; }
+
   _seedKey(a) {
     if (a?.seed != null && a.seed !== "") return String(a.seed);
     return a?.name ? `${a.kind}|${a.name}` : String(a?.id ?? "");
