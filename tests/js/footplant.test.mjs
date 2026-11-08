@@ -160,7 +160,7 @@ test("real Rocketbox: a platform, a ramp and a deck: soles on the surface under 
       assert.ok(s.frames > 25, `${kind} ${c.name} ${lr}: ${s.frames} planted frames`);
       assert.ok(s.worstH < 0.01, `${kind} ${c.name} ${lr}: a planted sole ${(100 * s.worstH).toFixed(2)} cm off the surface`);
       // (a touching vertex followed over the whole shot: up to 1.1 cm on the 6.8 degree ramp, measured 2026-11-07)
-      assert.ok(s.worstSlide <= (c.name === "ramp" ? 0.015 : 0.01), `${kind} ${c.name} ${lr}: slid ${(100 * s.worstSlide).toFixed(2)} cm`);
+      assert.ok(s.worstSlide <= 0.01, `${kind} ${c.name} ${lr}: slid ${(100 * s.worstSlide).toFixed(2)} cm`);
     }
     if (c.name === "ramp") {
       // heel and toe both on the ramp: the planted foot is pitched up the slope, on top of the clip's own roll (a
@@ -184,7 +184,7 @@ test("real Rocketbox: a platform, a ramp and a deck: soles on the surface under 
     for (const lr of ["l", "r"]) {
       const s = stanceStats(st, out, lr);
       // (1.13 cm on frame 1: the walker turns from facing +Z to +X on the spot at 540 deg/s before setting off)
-      assert.ok(s.frames > 25 && s.worstH < 0.01 && s.worstSlide <= 0.015, `${kind} dock ${lr}: ${s.frames} planted, ${(100 * s.worstH).toFixed(2)} cm off, slid ${(100 * s.worstSlide).toFixed(2)} cm`);
+      assert.ok(s.frames > 25 && s.worstH < 0.01 && s.worstSlide <= 0.012, `${kind} dock ${lr}: ${s.frames} planted, ${(100 * s.worstH).toFixed(2)} cm off, slid ${(100 * s.worstSlide).toFixed(2)} cm`);
     }
   }
 });
@@ -241,6 +241,34 @@ test("real Rocketbox: deterministic: the same frame gives the same feet in any s
   assert.ok(build < 1500 && per < 15, `build ${build.toFixed(0)} ms, ${per.toFixed(1)} ms a frame`);
 });
 
+test("real Rocketbox: a key edit rebuilds the plan fast; a long shot waits for the end of a live drag", { skip: NOT_INSTALLED }, async () => {
+  // 3abc644: 36-57 ms per person per key edit for a 5 s shot, 224-274 ms for 30 s (a live drag hitched). Most of it
+  // was the height table looked up (with its JSON signature) for the ground under every sole point of every frame.
+  const edit = async (frames) => {
+    const a = K.walker("woman", {}, [-3, 0, 0], [3, 0, 0], frames - 1);
+    const st = await K.setup("woman", a, { frames });
+    st.frame = 0; A.avatarsAt(st);
+    const ts = [];
+    for (let i = 0; i < 3; i++) { a.keys[1].position = [3 + 0.01 * (i + 1), 0, 0]; const t0 = performance.now(); st.frame = 60; A.avatarsAt(st); ts.push(performance.now() - t0); }
+    return { st, a, ms: ts.sort((x, y) => x - y)[1] };
+  };
+  const short = await edit(121);
+  console.log(`key edit: ${short.ms.toFixed(1)} ms for a 5 s shot`);
+  assert.ok(short.ms < 60, `a key edit costs ${short.ms.toFixed(0)} ms for 5 s`);
+  // 30 s: during a drag the feet keep the clip's pose (no rebuild), the plan comes back when the drag ends
+  const long = await edit(721);
+  console.log(`key edit: ${long.ms.toFixed(1)} ms for a 30 s shot`);
+  const { st, a } = long, skin = st.actorMeshes.get(a.id).userData.humanSkin;
+  st._dragging = true;
+  a.keys[1].position = [3.5, 0, 0];
+  const t0 = performance.now(); st.frame = 60; A.avatarsAt(st); const during = performance.now() - t0;
+  assert.ok(during < 30 && skin.footOut === null, `during a drag: ${during.toFixed(0)} ms, grounded ${!!skin.footOut}`);
+  st._dragging = false;
+  clearTimeout(st._footAfterDrag); st._footAfterDrag = 0;
+  st.frame = 60; A.avatarsAt(st);
+  assert.ok(skin.footOut && skin.feet?.plan, "the plan is rebuilt after the drag");
+});
+
 test("real Rocketbox: turning on the spot takes steps (one foot at a time) instead of swivelling over sliding feet", { skip: NOT_INSTALLED }, async () => {
   for (const kind of ["man", "woman"]) {
     // 360 degrees in 5 s, standing at the origin (heading keys, as a stunt / turn key writes them)
@@ -253,8 +281,9 @@ test("real Rocketbox: turning on the spot takes steps (one foot at a time) inste
     for (let f = 0; f <= 120; f++) assert.ok(!(plan.state.l[f] === 2 && plan.state.r[f] === 2), `${kind} f${f}: both feet off the ground`);
     for (const lr of ["l", "r"]) {
       const s = stanceStats(st, out, lr);
-      // turning on the ball the forefoot's edge sweeps a little (1.06 cm over a stance, measured); per frame under 1 cm
-      assert.ok(s.worstH < 0.01 && s.worstSlide <= 0.015 && s.p.slide <= 0.01, `${kind} ${lr}: planted ${(100 * s.worstH).toFixed(2)} cm off, slid ${(100 * s.worstSlide).toFixed(2)} cm, ${(100 * s.p.slide).toFixed(2)} cm in a frame`);
+      // turning on the ball the forefoot's edge sweeps a little (1.06-1.24 cm over a stance, measured 2026-11-08); per
+      // frame under 1 cm
+      assert.ok(s.worstH < 0.01 && s.worstSlide <= 0.013 && s.p.slide <= 0.01, `${kind} ${lr}: planted ${(100 * s.worstH).toFixed(2)} cm off, slid ${(100 * s.worstSlide).toFixed(2)} cm, ${(100 * s.p.slide).toFixed(2)} cm in a frame`);
     }
   }
 });

@@ -551,22 +551,43 @@ function footPlanFor(stage, a, g, skin, { last, fps, scale }) {
   const swim = swimPlanOf(stage, a, g);
   const sig = `${skin.gait.sig}|${stage.setFx?.id || ""}|${idOf(shapes)}|${idOf(stage._yCache?.get(a))}|${idOf(stage._swimCache?.get(a)?.stand)}|${idOf(swim)}|${physicsLift(a)}|${skin.kit.floors ? 1 : 0}`;
   if (skin.feet?.sig === sig) return skin.feet.plan;
-  const baseY = (f) => bodyY(stage, a, f);
+  // A live drag (a key, the gizmo, a person dragged) changes the plan on every pointer move. A 5 s shot rebuilds in
+  // ~20 ms, a 30 s one in ~115 ms: past LIVE_PLAN_FRAMES the feet keep the clip's own pose while the drag lasts and
+  // the plan is rebuilt on the first frame after it (same result as any other rebuild: the plan is a pure function
+  // of the keys).
+  const dragging = () => !!(stage._dragging || stage._gizmoDragging || stage.live?.drag);
+  if (last + 1 > LIVE_PLAN_FRAMES && dragging()) {
+    if (!stage._footAfterDrag && typeof setTimeout === "function") {
+      const poll = () => { if (dragging()) { stage._footAfterDrag = setTimeout(poll, 120); return; } stage._footAfterDrag = 0; stage.setFrame(stage.frame); };
+      stage._footAfterDrag = setTimeout(poll, 120);
+    }
+    return null;
+  }
+  // per frame once (the plan asks for the ground under every sole point of every frame: a height-table lookup with its
+  // signature each time made a 5 s plan cost ~100 ms)
+  const n = last + 1, BY = new Float64Array(n), OK = new Float64Array(n);
+  const AIR = new Uint8Array(n);
+  for (let f = 0; f < n; f++) { BY[f] = bodyY(stage, a, f); OK[f] = stage._standOnKeys?.(a, g, f) ?? -Infinity; AIR[f] = airAt(stage, a, f) ? 1 : 0; }
+  const fi = (f) => Math.max(0, Math.min(n - 1, Math.round(f)));
+  const baseY = (f) => BY[fi(f)];
+  const floorAt = stage.setFx?.floorAt;
   const ground = (x, z, f) => {
-    const by = baseY(f);
-    const onKeys = stage._standOnKeys?.(a, g, f);
-    const s = shapes ? stage._supportAt(x, z, by) : Math.max(0, stage.setFx?.floorAt?.(x, z) || 0);
-    return Math.max(s, onKeys ?? -Infinity);
+    const i = fi(f);
+    const s = shapes ? stage._supportAt(x, z, BY[i], 0.6, shapes) : Math.max(0, floorAt?.(x, z) || 0);
+    return Math.max(s, OK[i]);
   };
   const lifted = physicsLift(a) > 0;
   // per frame: the same gate (lifted by physics, in the air) marks the frames not grounded
   const plan = F.planFeet({
     n: last + 1, fps, heightM: C.clayHeight(a) * (a.scale || 1), rig, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, ground, baseY,
-    poseRaw: (f) => { poseRaw(stage, a, g, skin, f, { fps, scale, last }); return !C.feetUpReason(a, { lifted, airborne: airAt(stage, a, f), swims: C.swimsAt(a, f, () => swim) }); },
+    poseRaw: (f) => { poseRaw(stage, a, g, skin, f, { fps, scale, last }); return !C.feetUpReason(a, { lifted, airborne: !!AIR[fi(f)], swims: C.swimsAt(a, f, () => swim) }); },
   });
   skin.feet = { sig, plan };
   return plan;
 }
+
+/** footPlanFor: longer shots than this (frames) don't rebuild their foot plan during a live drag. */
+const LIVE_PLAN_FRAMES = 240;
 
 /** The lift stage.setFrame gives an unbaked dynamic / static object (stage.mjs: g.position.y += a.physics.lift). */
 export const physicsLift = (a) => (!a.physics?.baked && a.physics?.lift > 0 && (a.physics.mode === "dynamic" || a.physics.mode === "static") ? a.physics.lift : 0);

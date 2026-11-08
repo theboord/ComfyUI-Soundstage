@@ -1942,7 +1942,7 @@ export class Stage {
     for (let f = 0; f < n; f++) {
       const p = this._actorPosAt(a, f);
       // looked for from the footing a frame before too (a flight of stairs is climbed one tread at a time)
-      S[f] = shapes ? Math.max(c.S[f], this._supportAt(p[0], p[2], Math.max(c.S[f], f ? S[f - 1] : 0))) : c.S[f];
+      S[f] = shapes ? Math.max(c.S[f], this._supportAt(p[0], p[2], Math.max(c.S[f], f ? S[f - 1] : 0), 0.6, shapes)) : c.S[f];
       Y0[f] = Math.max(0, p[1] || 0);   // the keyed height itself is followed as keyed (a body keyed up a stair's line)
     }
     // jumps: a rise or a drop of more than WALK_STEP within a quarter second; their gravity arcs, as _heightAt
@@ -1982,12 +1982,11 @@ export class Stage {
    * surfaces a person stands on when dragged live: the stage floor or the set's own floor (platforms, the seabed), and
    * the up-facing tops of the set's boxes and of parked props (a kerb, a step, a stage riser), found by a ray cast
    * straight down from `reach` metres above the actor's own footing (fromY) - so a low step counts, a table they pass
-   * beside does not, and nothing overhead does.
+   * beside does not, and nothing overhead does. shapes: _supportShapes(), passed in by a caller asking many times.
    */
-  _supportAt(x, z, fromY = 0, reach = 0.6) {
+  _supportAt(x, z, fromY = 0, reach = 0.6, shapes = this._supportShapes()) {
     const floor = this.setFx?.floorAt;
     let y = Math.max(0, floor ? floor(x, z) || 0 : 0);
-    const shapes = this._supportShapes();
     const top = fromY + reach, o = [x, top, z];
     for (const sh of shapes) {
       if (x < sh.min[0] || x > sh.max[0] || z < sh.min[2] || z > sh.max[2] || sh.max[1] <= y) continue;
