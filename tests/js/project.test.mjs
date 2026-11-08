@@ -236,3 +236,33 @@ test("ProjectController.projectId(): the open workflow's id, kept through Save; 
     assert.equal(ctl.projectId(), id, "naming / autosave stamping does not drop it");
   } finally { clearInterval(ctl._timer); }
 });
+
+test("project id stays through the project's own history: two tabs, undo past the first save, a pre-save autosave", async () => {
+  const api = fakeApi();
+  const store = new ProjectStore({ api });
+  // an old project (no id), open in two tabs
+  const old = { ...WF(), extra: { ss_project: { name: "Old", saved_at: 5 } } };
+  await api.storeUserData("workflows/Old.json", old);
+  await api.storeUserData("projects/Old/project.json", { format: "soundstage-project", v: 1, name: "Old", created: 1, saved_at: 5, saves: 3 });
+  await store.autosave("Old", old);                                       // a pre-save autosave (no id)
+  const [pre] = await store.autosaves("Old");
+  const tabA = await store.open("Old"), tabB = await store.open("Old");
+  const a1 = await store.save("Old", tabA);                               // tab A: the first save mints the id
+  const b1 = await store.save("Old", tabB);                               // tab B still holds the graph without it
+  assert.equal(b1.id, a1.id, "the second tab keeps the id");
+  const a2 = await store.save("Old", a1.workflow);                         // and the tabs keep alternating
+  const b2 = await store.save("Old", tabB);
+  assert.equal(a2.id, a1.id); assert.equal(b2.id, a1.id);
+  // canvas undo back to the graph from before the first save
+  assert.equal((await store.save("Old", old)).id, a1.id, "undo past the first save keeps it");
+  // restore the pre-save autosave, then save
+  assert.equal((await store.save("Old", await store.readAutosave("Old", pre.file))).id, a1.id, "a restored pre-save autosave keeps it");
+  assert.equal((await man(api, "Old")).id, a1.id);
+  // but not: an unnamed graph, another project's graph without an id, a foreign id, or a leftover folder
+  assert.notEqual((await store.save("Old", WF())).id, a1.id, "an unnamed graph saved over it (Replace project?) is a new project");
+  const keep = (await man(api, "Old")).id;
+  assert.notEqual((await store.save("Old", { ...WF(), extra: { ss_project: { name: "Elsewhere" } } })).id, keep);
+  const k2 = (await man(api, "Old")).id;
+  await api.deleteUserData("workflows/Old.json");                          // leftover folder
+  assert.notEqual((await store.save("Old", { ...WF(), extra: { ss_project: { name: "Old" } } })).id, k2, "workflow deleted: fresh id");
+});
