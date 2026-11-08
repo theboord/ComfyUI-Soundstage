@@ -193,7 +193,7 @@ What's in the groups:
 2. Press `V` › **Action** › **Diver swim**, or key a person more than 0.35 m above the seabed.
 3. Press **Play**: they flutter-kick at a speed-matched cadence, with the regulator in the mouth and bursts of bubbles on each exhale. Caustics move on the sand in **Color**.
 4. In a **Water tank** or **Open water**, a person in the water swims at the surface: they tread water when still, swim breaststroke when slow and freestyle when faster. Keyed above the surface, they drop in and come up.
-5. Pick what they do with **Swim** in the person's Appearance row: **Tread water**, a stroke, **Float on back**, **Dive / scuba**, or **Can't swim** (they struggle at the surface, then sink slowly to the bottom) and **Sink slowly**. Props float or sink by weight: set **Physics › Floats / sinks** to make a crate sink or a rock float ([swim.md](swim.md#buoyancy-things-in-the-water-webstagebuoyancymjs)).
+5. Pick what they do with **Swim** in the person's Appearance row: **Tread water**, a stroke, **Float on back**, **Dive / scuba**, or **Can't swim** (they struggle at the surface, then sink slowly to the bottom) and **Sink slowly**. In water shallow enough to stand in, Auto and Can't swim stand and wade instead. Props float or sink by weight: set **Physics › Floats / sinks** to make a crate sink or a rock float (for a person the Physics panel says what their Swim mode does instead) ([swim.md](swim.md#buoyancy-things-in-the-water-webstagebuoyancymjs)).
 
 **Limit:** a swimmer shows as clay (the lifelike body has no swim clips). The fins read as thin lines from the side, small bubbles are 1-2 px at 960 px wide, and a low diver path goes straight through coral.
 

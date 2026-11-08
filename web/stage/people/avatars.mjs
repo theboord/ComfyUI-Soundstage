@@ -450,7 +450,7 @@ export function avatarsAt(stage) {
     const reason = C.clayReason(a, {
       blocking, holders: users.holders, carriers: users.carriers, gazeKeyed: gazeKeys(a).length > 0,
       swims: wet && C.swimsInShot(a, () => stage._swimPlan?.(a, g)),
-      floats: !!stage._floatsInShot?.(a),   // swimming off in a pool: the clay floats and bobs (stage._waterPhysics)
+      floats: !!stage._floatsInShot?.(a),   // a video mocap take in water too deep to stand in: the clay floats (stage._waterPhysics)
       driven: C.drivenInShot(memo, stage.state.active_shot, a.id, stage.drive),
       airborne: !!stage._airborneAt?.(a, f),   // this frame only: clay in the air, lifelike on the ground
       tipped: tippedNow(g),
