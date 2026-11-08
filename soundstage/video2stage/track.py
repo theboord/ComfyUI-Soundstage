@@ -268,6 +268,46 @@ def horizon_row(sky: np.ndarray, min_cols: float = 0.15):
     return float(np.percentile(v, 80))
 
 
+def horizon_trusted(sky: np.ndarray, min_cols: float = 0.5, max_spread: float = 0.06) -> tuple[bool, str]:
+    """Is the sky's lower edge a real horizon? Only when the sky reaches the top of most columns AND its bottom edge
+    is nearly one line. Trees, a slope or a building cutting the sky leave it short or ragged: that edge is where the
+    scenery stops, not the horizon, and tilting the camera to it put a far tree 6 m away on the street-dance clip.
+    Returns (trusted, why)."""
+    s = np.asarray(sky) >= 0.5
+    h, w = s.shape
+    top = s[0]
+    if top.mean() < min_cols:
+        return False, f"the sky reaches the top of only {100 * top.mean():.0f}% of the picture"
+    first = np.argmax(~s, axis=0).astype(float)
+    first[~top | s.all(axis=0)] = np.nan
+    v = first[np.isfinite(first)]
+    if len(v) < min_cols * w:
+        return False, "too few columns show where the sky ends"
+    spread = float(np.percentile(v, 90) - np.percentile(v, 10)) / h
+    if spread > max_spread:
+        return False, f"the sky's lower edge is ragged ({100 * spread:.0f}% of the height): scenery, not the horizon"
+    return True, ""
+
+
+def camera_ground(depth: np.ndarray, sky: np.ndarray | None, K: np.ndarray, mask: np.ndarray, seed: int = 0):
+    """The floor plane for the camera's tilt and height: the horizon when the sky shows a clean one (depth-free, so
+    it does not inherit mono depth's compression), else the depth-fitted ground plane. Returns (ground, note)."""
+    fitted = fit_ground(depth, K, mask, seed=seed)
+    v_h = None if sky is None else horizon_row(sky)
+    if v_h is None:
+        return fitted, None
+    ok, why = horizon_trusted(sky)
+    tilt = math.degrees(math.atan2(K[1, 2] - v_h, K[1, 1]))
+    if ok or fitted is None:
+        g = ground_from_horizon(v_h, K, fitted[1] if fitted else 1.0)
+        extra = "" if ok else f" (no floor to fit; {why})"
+        return g, f"ground: camera tilt from the horizon (row {v_h:.0f}, {tilt:.1f} deg down){extra}"
+    n = np.asarray(fitted[0], float)
+    tilt_f = math.degrees(math.atan2(-n[2], -n[1]))
+    return fitted, (f"ground: the sky edge is not the horizon ({why}); camera tilt from the depth-fitted floor "
+                    f"({tilt_f:.1f} deg down, not the sky edge's {tilt:.1f})")
+
+
 def ground_from_horizon(v_h: float, K: np.ndarray, height_units: float):
     """Floor plane (n, d) for a camera whose horizon sits at row v_h (no roll): depth-free, so it does not inherit
     mono depth's non-linear compression (DA3 mono flattens far ground, which levels a depth-fitted plane)."""

@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import math
 import os
 import re
 import time
 
 import numpy as np
 
-from . import convert, frames, graphs, performer, queue, stages, track, vlm
+from . import convert, frames, graphs, performer, queue, scanroute, stages, track, vlm, weather
 
 
 def _input_dir() -> str:
@@ -81,11 +80,11 @@ def solve(npz: dict, frame_files: list[str], seed: int = 0):
         notes += tn
         notes.append("camera: tracked from mono depth (PnP chain)")
     mask0 = track.valid_mask(depth[0], None if sky is None else sky[0])
-    ground = track.fit_ground(depth[0], K, mask0, seed=seed)
-    v_h = None if sky is None else track.horizon_row(sky[0])
-    if v_h is not None:   # the horizon gives the camera's tilt more truly than mono depth does
-        ground = track.ground_from_horizon(v_h, K, ground[1] if ground else 1.0)
-        notes.append(f"ground: camera tilt from the horizon (row {v_h:.0f}, {math.degrees(math.atan2(K[1, 2] - v_h, K[1, 1])):.1f} deg down)")
+    # A clean horizon gives the camera's tilt more truly than mono depth does; a sky edge cut off by trees, a slope or
+    # a wall does not, and then the depth-fitted floor decides (track.camera_ground).
+    ground, gnote = track.camera_ground(depth[0], None if sky is None else sky[0], K, mask0, seed=seed)
+    if gnote:
+        notes.append(gnote)
     if ground is None:
         notes.append("ground: no floor plane found in the first frame; assumed a level camera")
     return poses, scales, K, ground, notes, depth
@@ -95,13 +94,18 @@ def run_kwargs(body: dict) -> dict:
     """Route body -> run() keyword arguments (the route and tools/v2s_bench/devrun.py share this)."""
     body = dict(body or {})
     kw = {"samples": min(max(int(body.get("samples") or 16), 8), 24), "use_vlm": bool(body.get("vlm", True)),
-          "backdrop": bool(body.get("backdrop", True)), "original": str(body.get("original") or "")}
+          "backdrop": bool(body.get("backdrop", True)), "original": str(body.get("original") or ""),
+          # opt-in: a face-blurred crop of the person as the Frame still's wardrobe reference (wardrobe.CONSENT)
+          "wardrobe_ref": bool(body.get("wardrobe_ref", False)),
+          # the set-scan path: None = on when Qwen3-VL is installed (scanroute.choose); false = the old block builder
+          "scan": None if body.get("scan") is None else bool(body.get("scan"))}
     return kw
 
 
 async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = True, backdrop: bool = True,
               progress=None, mocap: bool = True, original: str = "", mpu_known: float | None = None,
-              seed: int = 0, reuse: set | None = None, tag: str | None = None) -> dict:
+              seed: int = 0, reuse: set | None = None, tag: str | None = None, wardrobe_ref: bool = False,
+              scan: bool | None = None) -> dict:
     """The whole rebuild. seed 0 = the first, deterministic build; ↻ Regenerate passes a new seed (the camera solve's
     RANSAC, the vision model's sampling, the set dressing) and `reuse` = the stages to take from the last run's record
     (stages.py) instead of running them again."""
@@ -186,6 +190,23 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
         except Exception as exc:  # noqa: BLE001 - still deliver the camera move
             notes.append(f"vision model failed ({exc}); camera move only")
     ran["breakdown"] = "reused" if "breakdown" in reuse else "ran"
+    # The set-scan path (scanroute): the Qwen3-VL inventory reads the wardrobe and the set better than the 4B breakdown.
+    inv_model = vlm.inventory_model() if use_vlm else None
+    scan_on, scan_note = scanroute.choose(scan, backdrop, inv_model)
+    notes.append(scan_note)
+    inventory = rec.get("inventory") if "breakdown" in reuse else None
+    if scan_on and not inventory:
+        say("Listing everything in the frame (Qwen3-VL)", 0.25)
+        try:
+            g_inv, fr_inv = scanroute.inventory_prompt(inv_model, names)
+            io, it = await queue.run_graph(base_url, g_inv, "inventory", timeout_s=1800)
+            timings["inventory_ms"] = it.get("exec_ms", it["total_ms"])
+            inventory = scanroute.collect_inventory(io, fr_inv)
+            rec["inventory"] = inventory
+        except Exception as exc:  # noqa: BLE001 - the breakdown alone still builds the set
+            notes.append(f"set: the Qwen3-VL inventory failed ({exc}); the set uses the breakdown only")
+    if inventory:
+        breakdown = vlm.enrich_breakdown(breakdown, inventory)
 
     # The performer is captured BEFORE the camera is solved: SAM 3D Body's focal (fitted to the person) becomes the
     # shot's one lens, so the camera, the set and the clay all share it (performer.shared_K).
@@ -246,6 +267,15 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
                  "width": clip["width"], "height": clip["height"], "sample_times": times,
                  "samples": [view(f) for f in files], "footage_node": "SoundstageFootage", "source": source}
     notes0 = list(notes)
+    # The sky, measured: a grey sky is overcast whatever hour the model guessed (weather.py).
+    sky_sample = None
+    try:
+        idx = sorted({int(round(i * (len(files) - 1) / 5)) for i in range(6)}) if len(files) > 1 else [0]
+        skies_all = packet.get("sky")
+        sky_sample = weather.sky_sample([weather.load_rgb(files[i]) for i in idx],
+                                        None if skies_all is None else [skies_all[i] for i in idx])
+    except Exception as exc:  # noqa: BLE001 - the time words still light the set
+        notes0.append(f"sky: could not sample the source sky ({exc})")
 
     def build(mpu=None):
         nn = list(notes0)
@@ -253,6 +283,7 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
                               ground=ground, breakdown=breakdown, clip=clip, reference=reference, notes=nn,
                               skies=None if packet.get("sky") is None else list(packet["sky"].astype(np.float32)),
                               repin=any(n.startswith("depth: straightened") for n in nn), mpu=mpu, seed=set_seed,
+                              sky_sample=sky_sample,
                               backdrop={"url": "/view?filename={}&subfolder={}&type={}".format(
                                   glb["filename"], glb.get("subfolder", ""), glb.get("type", "output"))} if glb else None)
         lens_k = float(K_da3[0, 0] / K[0, 0])
@@ -331,6 +362,14 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
                 notes.append("performer: captured, but the feet could not be placed in the set (no picture positions)")
         except Exception as exc:  # noqa: BLE001 - the set and camera still stand without the performer
             notes.append(f"performer: motion capture failed ({exc})")
+    try:
+        finish_scene(scene, take=take, info=info, breakdown=breakdown, depths=list(packet["depth"]), scales=scales,
+                     poses=poses, K=K, files=files, skies=None if packet.get("sky") is None else list(packet["sky"]),
+                     times=times, clip=clip, scan_on=scan_on, has_relief=bool(glb), wardrobe_ref=wardrobe_ref, tag=tag,
+                     sub=sub, notes=notes)
+        rec["scene_words"] = (scene.get("video2stage") or {}).get("look_hint") or ""
+    except Exception as exc:  # noqa: BLE001 - the scene as built still stands
+        notes.append(f"set: finishing the rebuild failed ({exc})")
     timings["total_ms"] = round((time.perf_counter() - t0) * 1000)
     try:
         stages.save(tag, rec)
@@ -346,3 +385,77 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
                         "camera_keys": len((scene.get("shots") or [{}])[0].get("camera_keys") or scene["camera_keys"]),
                         "performer": next((a["name"] for a in scene["actors"] if a.get("mocap")), None),
                         "frames": scene["shot"]["frames"], "depth_model": model, "vision_model": vmodel}}
+
+
+def finish_scene(scene: dict, *, take, info, breakdown, depths, scales, poses, K, files, skies, times, clip,
+                 scan_on: bool, has_relief: bool, wardrobe_ref: bool, tag: str, sub: str, notes: list) -> None:
+    """After the set and the performer stand: the set-scan path (or, on the old route, the block triage against the
+    frame-0 relief), the performer's build and opt-in wardrobe reference, and the Look text the App pre-fills."""
+    from . import scenewords as SW
+    from . import wardrobe as W
+    v2s = scene.setdefault("video2stage", {})
+    if scan_on and v2s.get("xform") and depths:
+        st = scanroute.apply(scene, depths=depths, scales=scales, poses=poses, K=K, files=files, skies=skies,
+                             breakdown=breakdown, times=times, duration=float(clip.get("duration") or 1.0), notes=notes,
+                             tag=f"v2s_{tag}")
+        v2s["set_path"] = {"path": "scan", **{k: st[k] for k in ("planes", "scan", "dropped", "worded")}}
+    else:
+        v2s["set_path"] = {"path": "blocks"}
+        if has_relief and v2s.get("xform") and depths:
+            A, b = np.asarray(v2s["xform"]["A"], float), np.asarray(v2s["xform"]["b"], float)
+            d0 = np.asarray(depths[0], np.float32) * float(scales[0]) * float(np.linalg.norm(A[0]))
+            tri = SW.triage_blocks(scene["actors"], poses[0], A, b, K, d0.shape[::-1], d0)
+            v2s["set_path"].update(dropped=tri["dropped"], worded=tri["worded"])
+            if tri["dropped"]:
+                notes.append(f"set: dropped {len(tri['dropped'])} block(s) the set relief already shows")
+    perf = next((a for a in scene.get("actors") or [] if a.get("mocap")), None)
+    if perf is not None:
+        ap = perf.setdefault("appearance", {})
+        if ap.get("wardrobe") == "unknown":
+            said = (perf.get("source") or {}).get("label") or "nothing"
+            notes.append(f"performer: the vision model named no garment ('{said}'); the clay keeps its default shape "
+                         "and colours from the read. Set the wardrobe in the inspector")
+        # build: SAM 3D Body's shape when it has one, else the silhouette (the box's pixels at the body's depth)
+        mask = None
+        cut = performer.cutout(take, 1.0) if take else None
+        if cut and depths:
+            mask = W.person_mask_from_depth(depths[0], cut["box"])
+        girth, src = W.girth_from(take, mask, female=perf.get("kind") == "woman")
+        if girth:
+            ap["girth"] = round(girth, 3)
+            ap["build"] = W.nearest_build(girth)
+            notes.append(f"performer: build from {src} (girth x{girth:.2f}, '{ap['build']}')")
+        if wardrobe_ref:
+            try:
+                ref = write_wardrobe_ref(perf, take, files, sub, depths[0].shape[::-1] if depths else None)
+                if ref:
+                    perf["wardrobe_ref"] = ref
+                    notes.append("performer: wardrobe reference saved (face blurred) for the Frame still")
+            except Exception as exc:  # noqa: BLE001
+                notes.append(f"performer: the wardrobe reference could not be made ({exc})")
+    v2s["look_hint"] = SW.look_hint(scene)
+
+
+def write_wardrobe_ref(actor: dict, take, files, sub: str, size) -> str | None:
+    """The face-blurred crop of the performer from the first sample frame, saved in the input folder next to the
+    samples. Returns its input-relative name, or None without a box."""
+    import cv2
+
+    from . import wardrobe as W
+    bb = (actor.get("source") or {}).get("bbox_start")
+    if not bb or not files:
+        return None
+    img = weather.load_rgb(files[0])
+    if img is None:
+        return None
+    H, Wd = img.shape[:2]
+    box = [bb[0] / 1000 * Wd, bb[1] / 1000 * H, bb[2] / 1000 * Wd, bb[3] / 1000 * H]
+    face = None
+    if take and take.get("focal_px") and take.get("body") and size:
+        uv = performer.sam_2d(take, 0, size) * np.array([Wd / size[0], H / size[1]])
+        face = W.face_box_from_joints(uv, box)
+    crop = W.reference_crop(img, box, face if face is not None else W.face_box_from_joints(None, box))
+    name = "wardrobe_ref.png"
+    out = os.path.join(os.path.dirname(files[0]), name)
+    cv2.imwrite(out, crop[..., ::-1])
+    return f"{sub}/{name}"

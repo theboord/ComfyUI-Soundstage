@@ -169,6 +169,53 @@ def recipe_prompt(path: str) -> str:
     return max(texts, key=len)[:1200] if texts else ""
 
 
+def stock_scene_words(path: str, out_dir: str | None = None) -> str:
+    """Scene words for a clip with no recipe prompt (a stock clip): from the Video → 3D rebuild of the same file, when
+    there is one (its look hint, else words built from its vision read). '' when the clip was never rebuilt."""
+    import glob
+
+    from ..video2stage import scenewords as SW
+    from ..video2stage import stages as ST
+    try:
+        if out_dir is None:
+            import folder_paths
+            out_dir = folder_paths.get_output_directory()
+    except Exception:  # noqa: BLE001 - outside ComfyUI
+        return ""
+    name = os.path.basename(str(path or "")).lower()
+    best, t_best = "", -1.0
+    for f in glob.glob(os.path.join(out_dir, ST.SUBDIR, "v2s_*_stages.json")):
+        try:
+            with open(f) as fh:
+                rec = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(rec, dict) or os.path.basename(str(rec.get("video") or "")).lower() != name:
+            continue
+        words = str(rec.get("scene_words") or "") or SW.from_read((rec.get("breakdown") or {}).get("read")) or \
+            SW.from_read(rec.get("inventory"))
+        t = os.path.getmtime(f)
+        if words and t > t_best:
+            best, t_best = words, t
+    return best[:1200]
+
+
+def scene_text(prompt: str, path: str, notes: list | None = None, out_dir: str | None = None) -> str:
+    """The scene words for the render: the user's prompt, else the take's own recipe prompt, else (a stock clip) the
+    words its Video → 3D rebuild read from it."""
+    if prompt and prompt.strip():
+        return prompt
+    rp = recipe_prompt(path)
+    if rp:
+        return rp
+    sw = stock_scene_words(path, out_dir)
+    if sw and notes is not None:
+        notes.append("no recipe prompt in the clip (stock footage): the scene words come from its Video → 3D read")
+    elif notes is not None:
+        notes.append("no recipe prompt in the clip and no Video → 3D read of it: the render has only the camera words")
+    return sw
+
+
 def move_tag(move: dict) -> str:
     return hashlib.sha1(json.dumps(move, sort_keys=True).encode()).hexdigest()[:6]
 
@@ -259,7 +306,7 @@ async def run(base_url: str, source: str, move: dict, *, quality: str = "Draft",
     if keep_sound and not has_audio(plate_path):
         keep_sound = False
         notes.append("the take has no sound track: rendered silent")
-    text = G.reshoot_prompt(f"the camera {words}", prompt or recipe_prompt(real))
+    text = G.reshoot_prompt(f"the camera {words}", scene_text(prompt, real, notes))
     say("Rendering the new angle (LTX-2.5 union control)", 0.35)
     graph = G.render_prompt(weights, plate=plate_ref, guide=res["guide"], first=res["first"], width=dw, height=dh,
                             prompt=text, seed=seed, quality=quality, keep_sound=keep_sound)

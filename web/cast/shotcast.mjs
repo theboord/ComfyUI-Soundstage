@@ -48,6 +48,12 @@ export function castPool(items, actors = [], refs = {}, urlOf = () => "") {
     if (pool.some((it) => it.ref === file || matchesActor(it, a) && it.ref)) continue;
     pool.push({ key: `actor:${a.id}`, kind: PEOPLE.has(a.kind) ? "character" : "prop", name: a.name || a.kind, ref: file, url: urlOf(file), src: "stage" });
   }
+  // Video → 3D's opt-in wardrobe reference: a face-blurred crop of the person from the clip (actor.wardrobe_ref).
+  for (const a of actors || []) {
+    const file = a?.wardrobe_ref;
+    if (!file || pool.some((it) => it.ref === file)) continue;
+    pool.push({ key: `wardrobe:${a.id}`, kind: "wardrobe", name: `${a.name || a.kind} wardrobe (face blurred)`, ref: file, url: urlOf(file), src: "stage" });
+  }
   if (refs?.location && !pool.some((it) => it.ref === refs.location))
     pool.push({ key: "ref:location", kind: "location", name: "Location reference", ref: refs.location, url: urlOf(refs.location), src: "stage" });
   if (refs?.style) pool.push({ key: "ref:style", kind: "style", name: "Style / look", ref: refs.style, url: urlOf(refs.style), src: "stage" });

@@ -21,12 +21,14 @@ SYSTEM = (
     '"camera":{"height_m":number,"type":"ground|handheld|vehicle|drone|crane"},'
     '"objects":[{"label":"short description","kind":"person|car|pickup|suv|van|truck|bus|motorcycle|bicycle|'
     'horse|dog|boat|other","color":"#rrggbb","bbox":[x0,y0,x1,y1],'
-    '"facing":"toward camera|away from camera|left|right","moving":true}],'
+    '"facing":"toward camera|away from camera|left|right","moving":true,'
+    '"wardrobe":"<people only: every garment with its colour, pattern and length, e.g. shirt, jeans, skirt>"}],'
     '"set":[{"type":"road|ocean|lake|river|beach|cliff|hill|mountain|shrubs|trees|rocks|building|wall|'
     'guardrail|grass|sidewalk|plaza|bench|table|chair|lamp","side":"left|right|ahead|centre|all","distance":"near|mid|far",'
     '"lanes":0,"bbox":[x0,y0,x1,y1]}]}\n'
     "bbox is on a 0-1000 grid over the whole image. List every vehicle, person and animal separately "
-    "(at most 12). side is as seen from the camera. Describe people by clothing and colour only, never identity."
+    "(at most 12). side is as seen from the camera. Describe people by clothing and colour only, never identity: "
+    "name each garment (shirt, crop top, hoodie, jacket, shorts, jeans, skirt, dress ...), never just 'outfit'."
 )
 PROMPT_FIRST = "This is the FIRST frame of the shot. Break it down."
 PROMPT_LAST = "This is the LAST frame of the same shot. Break it down."
@@ -219,7 +221,8 @@ def parse_reply(text: str) -> dict:
         bb = _bbox(o.get("bbox") or o.get("bbox_px") or o.get("box"))
         if bb is None:
             continue
-        label = str(o.get("label") or o.get("name") or o.get("kind") or "object")[:60]
+        label = str(o.get("label") or o.get("name") or o.get("kind") or "object")
+        label = (str(o.get("kind") or "object") if _echo(label) else label)[:90]
         kind = resolve_kind(o.get("kind"), label)
         if kind == "other":
             st = SET_SYNONYMS.get(label.lower(), label.lower())
@@ -228,7 +231,8 @@ def parse_reply(text: str) -> dict:
         mv = o.get("moving")
         objects.append({"label": label, "kind": kind, "color": _color(o.get("color")), "bbox": bb,
                         "facing": _facing(o.get("facing")),
-                        "moving": mv if isinstance(mv, bool) else str(mv).lower() in ("true", "yes", "1")})
+                        "moving": mv if isinstance(mv, bool) else str(mv).lower() in ("true", "yes", "1"),
+                        "wardrobe": wardrobe_of(o) if kind == "person" else ""})
     sets = []
     for s in obj.get("set") or obj.get("set_pieces") or []:
         if isinstance(s, str):
@@ -249,8 +253,8 @@ def parse_reply(text: str) -> dict:
         dist = str(s.get("distance") or "mid").lower()
         sets.append({"type": t, "side": _side(s.get("side")), "distance": dist if dist in ("near", "mid", "far") else "mid",
                      "lanes": min(max(lanes, 0), 10), "bbox": _bbox(s.get("bbox"))})
-    return {"setting": str(obj.get("setting") or "")[:120], "time": str(obj.get("time") or "").lower()[:30],
-            "camera": {"height_m": h, "type": str(cam.get("type") or "").lower()[:20]},
+    return {"setting": _clean(obj.get("setting"), 120), "time": _clean(obj.get("time"), 30).lower(),
+            "camera": {"height_m": h, "type": _clean(cam.get("type"), 20).lower()},
             "objects": objects[:16], "set": sets[:20]}
 
 
@@ -275,6 +279,8 @@ def merge_reads(first: dict, last: dict | None) -> dict:
         if bi is not None:
             used.add(bi)
             o["bbox_end"] = ends[bi]["bbox"]
+            if len(ends[bi].get("wardrobe") or "") > len(o.get("wardrobe") or ""):   # the fuller read of the clothes
+                o["wardrobe"] = ends[bi]["wardrobe"]
             o["moving"] = o["moving"] or ends[bi]["moving"]
             if _area(ends[bi]["bbox"]) > _area(o["bbox"]):   # seen closer at the end: trust that read of what it is
                 o["kind"] = ends[bi]["kind"]
@@ -323,12 +329,27 @@ INVENTORY_SYSTEM = (
     '"material":"<...>","color":"#rrggbb"}]}\n'
     "Every <...> is a placeholder: write what YOU see, never the placeholder. boxes are [x0,y0,x1,y1] on a 0-1000 "
     "grid over the whole image, one box per object, at most 10 boxes per kind. kind is one plain English noun. "
-    "Describe people by clothing only, never identity.")
+    "Describe people by clothing only, never identity. For a person, add \"wardrobe\": every garment with its colour, "
+    "pattern and length (e.g. a short-sleeve plaid shirt, light jeans), never just 'outfit'.")
 INVENTORY_PROMPT = "Inventory this frame."
 INVENTORY_FRAMES = 6
 # Echoes of the instructions (the model copying the schema instead of answering): such a value is rejected.
 ECHOES = ("a few words", "short description", "one noun", "placeholder", "colour + material", "color + material",
-          "3-8 words", "2-4 word", "what you see", "<", ">")
+          "3-8 words", "2-4 word", "what you see", "people only", "every garment", "<", ">")
+PEOPLE_KINDS = {"person", "man", "woman", "child", "boy", "girl", "people", "dancer", "lady", "guy", "kid"}
+
+
+def wardrobe_of(o: dict) -> str:
+    """A person's wardrobe words from one read ('' when the model gave none or echoed the schema)."""
+    for k in ("wardrobe", "clothing", "clothes", "outfit", "wearing"):
+        v = o.get(k)
+        if isinstance(v, list):
+            v = ", ".join(str(x) for x in v if x)
+        if isinstance(v, dict):
+            v = ", ".join(f"{x}" for x in v.values() if x)
+        if v and not _echo(v):
+            return " ".join(str(v).split())[:160]
+    return ""
 SURFACES = {"floor", "wall", "walls", "ceiling", "road", "street", "sidewalk", "pavement", "kerb", "curb", "building",
             "buildings", "facade", "grass", "lawn", "ground", "terrain", "water", "sea", "ocean", "lake", "river", "sky",
             "dirt", "sand", "beach", "asphalt", "plaza", "crosswalk", "mountain", "mountains", "hill", "hills"}
@@ -422,6 +443,8 @@ def parse_inventory(text: str, frame: int = 0) -> dict:
         base = {"name": name or kind, "kind": kind, "material": _clean(t.get("material"), 20).lower(),
                 "color": _color(t.get("color")), "moving": mv if isinstance(mv, bool) else str(mv).lower() in ("true", "yes", "1"),
                 "frame": int(frame)}
+        if kind in PEOPLE_KINDS or resolve_kind(kind, name) == "person":
+            base["wardrobe"] = wardrobe_of(t)
         boxes = t.get("boxes") or ([t.get("bbox")] if t.get("bbox") else [])
         kept = []
         for bx in boxes if isinstance(boxes, list) else []:
@@ -523,9 +546,33 @@ def legacy_breakdown(inv: dict) -> dict:
             continue
         objs.append({"label": it["name"], "kind": resolve_kind(it["kind"], it["name"]), "color": it.get("color"),
                      "bbox": it["bbox"], "facing": "", "moving": bool(it.get("moving")),
-                     "bbox_start": it["bbox"], "bbox_end": None})
+                     "bbox_start": it["bbox"], "bbox_end": None, "wardrobe": it.get("wardrobe") or ""})
     return {"setting": inv.get("setting", ""), "time": inv.get("time", ""), "camera": inv.get("camera") or {},
             "objects": objs, "set": sets}
+
+
+def enrich_breakdown(bd: dict, inv: dict) -> dict:
+    """The route's breakdown (4B, first + last frame) with what the 8B inventory read better: each person's wardrobe
+    (the inventory person whose box overlaps most), the time when the breakdown has none, and the whole layout when the
+    breakdown is empty (no 4B model)."""
+    if not inv or not (inv.get("items") or inv.get("surfaces")):
+        return bd
+    if not (bd.get("objects") or bd.get("set")):
+        out = legacy_breakdown(inv)
+        out["camera_end"] = {}
+        return out
+    out = dict(bd, objects=[dict(o) for o in bd.get("objects") or []])
+    ppl = [it for it in inv.get("items") or [] if it.get("bbox") and it.get("wardrobe")]
+    for o in out["objects"]:
+        if o.get("kind") != "person":
+            continue
+        bb = o.get("bbox_start") or o.get("bbox")
+        best = max(ppl, key=lambda it: _iou(bb, it["bbox"]), default=None) if bb else None
+        if best is not None and _iou(bb, best["bbox"]) > 0.2 and len(best["wardrobe"]) > len(o.get("wardrobe") or ""):
+            o["wardrobe"] = best["wardrobe"]
+    if not out.get("time") and inv.get("time"):
+        out["time"] = inv["time"]
+    return out
 
 
 # ---------------------------------------------------------------------------------------------- pipeline hooks (ctx)

@@ -233,7 +233,8 @@ export function buildHuman(kind, heightM, appearance, mesh) {
   const ap = { ...(DEFAULT_APPEARANCE[kind] || DEFAULT_APPEARANCE.man), ...(appearance || {}) };
   const female = kind === "woman" || ap.gender === "female";
   const s = (heightM || (kind === "child" ? 1.2 : female ? 1.68 : 1.8)) / 1.8;
-  const bw = { slim: 0.9, average: 1, athletic: 1.08, heavy: 1.28 }[ap.build] || 1;
+  // girth: a measured width scale (Video → 3D: SAM 3D Body's shape or the person's silhouette) wins over the build word.
+  const bw = (+ap.girth > 0.5 && +ap.girth < 2 ? +ap.girth : 0) || { slim: 0.9, average: 1, athletic: 1.08, heavy: 1.28 }[ap.build] || 1;
   const g = new THREE.Group();
   g.userData.limbs = [];
   const add = (parent, geom, color, x, y, z, sx = 1, sy = 1, sz = 1) => {

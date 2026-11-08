@@ -1,0 +1,9 @@
+```json
+{"setting":"concrete slab below a grassy slope","interior":false,"time":"overcast","camera":{"height_m":1.4,"type":"handheld"},
+ "things":[{"kind":"woman","count":1,"name":"woman in yellow plaid outfit","material":"fabric","color":"#e0b030","moving":true,
+            "wardrobe":"short-sleeve yellow plaid shirt, light-wash jeans, white sneakers","boxes":[[432,178,571,902]]},
+           {"kind":"tree","count":3,"name":"green leafy tree","material":"leaf","color":"#4a6b3a","moving":false,"boxes":[[610,0,800,560],[800,20,1000,540]]},
+           {"kind":"rock","count":2,"name":"grey rock","material":"stone","color":"#8a8478","moving":false,"boxes":[[60,620,300,760]]}],
+ "surfaces":[{"kind":"ground","material":"concrete","color":"#9a968e"},{"kind":"grass","material":"leaf","color":"#6f8a4a"},
+             {"kind":"sky","material":"other","color":"#c4c8cc"}]}
+```
