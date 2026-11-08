@@ -155,6 +155,45 @@ test("openPhysicsPanel() with nothing selected is an error and opens nothing", (
 });
 
 // ---------------------------------------------------------------- 2: the obstacle signature
+test("obstacles: jitter sitting on a 5 cm / 1 % boundary doesn't rebuild either (hysteresis, not rounding); a slow creep past 5 cm does, once", () => {
+  const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
+  const crate = { id: "c1", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] };
+  const st = bareStage([walker, crate]);
+  clayOf(st, walker);
+  const cg = clayOf(st, crate);
+  let boxes = 0;
+  const orig = THREE.Box3.prototype.setFromObject;
+  THREE.Box3.prototype.setFromObject = function (...x) { boxes++; return orig.apply(this, x); };
+  try {
+    // the reviewer's probe: x = 0.025 m (a rounding step boundary at 5 cm), +/- 1 mm every frame
+    cg.position.set(0.025, 0, 0); cg.updateMatrixWorld(true);
+    st._heightAt(walker, 0); st._obstacles();
+    boxes = 0;
+    let rebuilt = 0, last = st._obstacles();
+    for (let f = 0; f < 48; f++) {
+      cg.position.x = 0.025 + (f % 2 ? 0.001 : -0.001);
+      cg.position.y = 0.025 + (f % 2 ? -0.001 : 0.001);
+      cg.scale.setScalar(1.005 + (f % 2 ? 0.0002 : -0.0002));                 // 1 % step boundary at 1.005
+      cg.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), 2 * Math.asin(0.005) + (f % 2 ? 1e-4 : -1e-4));   // q.y on 0.005
+      cg.updateMatrixWorld(true);
+      st.frame = f; st._heightAt(walker, f);
+      const l = st._obstacles(); if (l !== last) rebuilt++; last = l;
+    }
+    assert.equal(rebuilt, 0, `rebuilds for boundary jitter: ${rebuilt} of 48`);
+    assert.equal(boxes, 0);
+    // a slow creep (1 mm a frame): one rebuild once it is past 5 cm from where the tables were built, not 48
+    rebuilt = 0;
+    for (let f = 0; f < 80; f++) {
+      cg.position.x = 0.025 + 0.001 * f; cg.updateMatrixWorld(true);
+      const l = st._obstacles(); if (l !== last) rebuilt++; last = l;
+    }
+    assert.equal(rebuilt, 1, `rebuilds over an 8 cm creep: ${rebuilt}`);
+    // q and -q are the same rotation: flipping the sign is not a move
+    const q = cg.quaternion.clone(); cg.quaternion.set(-q.x, -q.y, -q.z, -q.w); cg.updateMatrixWorld(true);
+    assert.equal(st._obstacles(), last, "a sign-flipped quaternion is the same transform");
+  } finally { THREE.Box3.prototype.setFromObject = orig; }
+});
+
 test("obstacles: a bobbing pool prop, a settling or jittering prop don't rebuild the height tables every frame; a real move does", () => {
   const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
   const crate = { id: "c1", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] };

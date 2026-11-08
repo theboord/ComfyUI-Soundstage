@@ -278,6 +278,9 @@ const _tiltQ = new THREE.Quaternion();
 /** The kind tables live editing needs (exported for the tests). */
 export const liveKinds = () => ({ PERSON_KINDS, RIDEABLE, SITTABLE, SEATS, NO_COLLIDE, CAR_BODIES, NEVER_CARRIED, LIBRARY, MOUNTS });
 
+/** _obstacles: how far a parked object's clay group may drift before the height tables are rebuilt. */
+const OBS_TOL = { pos: 0.05, rot: 0.01, scale: 0.01 };
+
 export class Stage {
   /** Current delivery size from the shot's aspect ratio. */
   get fw() {
@@ -1738,15 +1741,14 @@ export class Stage {
       if (PERSON_KINDS.has(o.kind) || o.mount_id || o.carry_id || (o.keys?.length > 1 && o.keys.some((k) => Math.hypot(k.position[0] - o.keys[0].position[0], k.position[2] - o.keys[0].position[2]) > 0.05))) continue;
       const g = this.actorMeshes.get(o.id);
       if (!g) continue;
-      // Coarse, quantised transform (5 cm, ~1 degree, 1 %): a drag or a console move still refreshes the tables, but
-      // small per-frame motion (a baked object settling, physics jitter) does not rebuild every person's table each
-      // frame. Something floating in a pool or a boat on the swell bobs every frame (_waterPhysics): its keys (above)
-      // already say where it is, so its live transform is left out of the signature altogether.
+      // The transform with hysteresis (5 cm, ~1 degree, 1 %): each group keeps the transform the tables were last
+      // built from and the signature carries a counter that moves on only when the live transform is farther than that
+      // from it. A drag or a console move refreshes the tables; small per-frame motion (physics jitter, a baked object
+      // settling) never does, wherever it sits (fixed-step rounding rebuilt every frame when jitter straddled a step).
+      // Something floating in a pool or a boat on the swell bobs every frame (_waterPhysics): its keys (above) already
+      // say where it is, so its live transform is left out of the signature altogether.
       if (g.userData?.inWater) parts.push(`${g.uuid}@water`);
-      else {
-        const P = g.position, Q = g.quaternion, S = g.scale, q = (v, st) => Math.round(v / st);
-        parts.push(`${g.uuid}@${q(P.x, 0.05)},${q(P.y, 0.05)},${q(P.z, 0.05)}/${q(Q.x, 0.01)},${q(Q.y, 0.01)},${q(Q.z, 0.01)},${q(Q.w, 0.01)}/${q(S.x, 0.01)},${q(S.y, 0.01)},${q(S.z, 0.01)}`);
-      }
+      else parts.push(`${g.uuid}@${this._obsEpoch(g)}`);
       parked.push([o, g]);
     }
     const sig = parts.join("|");
@@ -1763,6 +1765,26 @@ export class Stage {
     }
     this._obsCache = { sig, list };
     return list;
+  }
+
+  /** _obstacles' transform hysteresis for one clay group: a counter that moves on only when the group has moved more
+   *  than OBS_TOL (position m, quaternion component, scale) from the transform it was last counted at. */
+  _obsEpoch(g) {
+    this._obsSeen = this._obsSeen || new WeakMap();
+    const P = g.position, Q = g.quaternion, S = g.scale;
+    const now = [P.x, P.y, P.z, Q.x, Q.y, Q.z, Q.w, S.x, S.y, S.z];
+    const tol = [OBS_TOL.pos, OBS_TOL.pos, OBS_TOL.pos, OBS_TOL.rot, OBS_TOL.rot, OBS_TOL.rot, OBS_TOL.rot, OBS_TOL.scale, OBS_TOL.scale, OBS_TOL.scale];
+    let e = this._obsSeen.get(g);
+    // q and -q are the same rotation: compare against the nearer sign
+    if (e) {
+      const dq = e.at[3] * now[3] + e.at[4] * now[4] + e.at[5] * now[5] + e.at[6] * now[6];
+      const sg = dq < 0 ? -1 : 1;
+      const moved = now.some((v, k) => Math.abs((k >= 3 && k <= 6 ? sg * v : v) - e.at[k]) > tol[k]);
+      if (!moved) return e.n;
+      e = { at: now, n: e.n + 1 };
+    } else e = { at: now, n: 0 };
+    this._obsSeen.set(g, e);
+    return e.n;
   }
 
   /** The ground under (x, z): the stage floor (0) or the set's own walkable floor (a station platform, the seabed). */
