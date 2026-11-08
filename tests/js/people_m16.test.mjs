@@ -392,7 +392,9 @@ test("a person deleted and another added in one build: the old skin is dropped (
 });
 
 // ---------------------------------------------------------------- 4: floating in a pool with swimming off
-test("swimming off in a pool: the clay floats at the waterline, so the person stays clay for the shot ('floats in the water')", async () => {
+// 2026-11-07 (buoyancy): swimming "off" is Can't swim now: on a swim plan (they struggle, then sink slowly), so the clay
+// shows for the whole shot with the reason "swims"; "floats in the water" is left for a video-mocap person in the pool.
+test("swimming off (can't swim) in a pool: the person stays clay for the shot ('swims')", async () => {
   const a = person("p1", 0, { swim: "off", keys: [{ frame: 0, position: [-6, 0, 0] }, { frame: 48, position: [0, 0, 0] }] });
   const st = bareStage([a]);
   const g = clayOf(st, a);
@@ -401,7 +403,7 @@ test("swimming off in a pool: the clay floats at the waterline, so the person st
   st.water = { position: new THREE.Vector3(0, 1.2, 0), geometry: { parameters: { width: 4, height: 4 } } };
   st.frame = 0; A.avatarsAt(st);   // still on dry ground at frame 0, but the shot ends in the pool
   assert.equal(skin.shown, false);
-  assert.equal(skin.reason, "floats in the water");
+  assert.equal(skin.reason, "swims");
   st.water.position.y = 0.1;   // the beach's sea surface: no floating
   A.avatarsAt(st);
   assert.equal(skin.shown, true);

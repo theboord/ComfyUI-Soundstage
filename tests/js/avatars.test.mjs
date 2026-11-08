@@ -295,8 +295,10 @@ test("knocked over or moved by physics: the person stays clay for the whole shot
 test("swimming: the same gate as the stage's own (swim off, carried) and over the whole shot", () => {
   let called = 0;
   const plan = (mode) => () => { called++; return mode ? { n: mode.length, mode } : null; };
-  assert.equal(C.swimsInShot({ id: "a", swim: "off" }, plan([0, 1, 1])), false, "swimming off: stays lifelike");
-  assert.equal(called, 0, "the plan isn't even built");
+  // 2026-11-07 (buoyancy): swimming "off" is Can't swim now, which is still a swim plan (they struggle and sink), so clay
+  assert.equal(C.swimsInShot({ id: "a", swim: "off" }, plan([0, 1, 1])), true, "swimming off = can't swim: on the swim plan, clay");
+  assert.equal(called, 1, "so its plan is read");
+  called = 0;
   assert.equal(C.swimsInShot({ id: "a", carry_id: "b" }, plan([1])), false);
   assert.equal(C.swimsInShot({ id: "a" }, plan(null)), false);
   assert.equal(C.swimsInShot({ id: "a" }, plan([0, 0, 0])), false);

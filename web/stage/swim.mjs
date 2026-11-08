@@ -44,6 +44,8 @@ export const seedOf = (id) => [...String(id || "s")].reduce((n, ch) => (n * 31 +
 
 export const WATER = Object.freeze({ rho: 1025, g: 9.81, patm: 101325 });
 export const STYLES = ["flutter", "frog", "hover", "freestyle", "breaststroke", "tread"];
+/** Poses the water track sets per frame (buoyancy.mjs personTrack): never picked by speed. */
+export const TRACK_STYLES = ["struggle", "limp", "limp_floor", "backfloat", "fall"];
 const UNDER = new Set(["flutter", "frog", "hover"]);
 /** Strouhal number of a finned human kick (fish and dolphins cruise at 0.2-0.4; a diver's fins are less efficient). */
 export const STROUHAL = 0.6;
@@ -92,6 +94,10 @@ export function swimGait(style, v, height = 1.8) {
   if (style === "frog") return { style, freq: clamp(0.22 + 0.42 * u, 0.28, 0.55), tip: 0.5 * k, hip: 0.45, knee: 1.25 };
   if (style === "freestyle") return { style, freq: clamp(0.36 + 0.3 * u, 0.5, 0.92), tip: 0.3 * k, hip: 0.16, knee: 0.35 };
   if (style === "breaststroke") return { style, freq: clamp(0.42 + 0.3 * u, 0.5, 0.95), tip: 0.4 * k, hip: 0.6, knee: 2.0 };
+  if (style === "struggle") return { style, freq: 0.8, tip: 0.05 * k, hip: 0.1, knee: 0.3 };   // the arms' press, ~0.8 Hz
+  if (style === "limp" || style === "limp_floor") return { style, freq: 0.15, tip: 0, hip: 0, knee: 0 };
+  if (style === "backfloat") return { style, freq: 0.25, tip: 0.02 * k, hip: 0.05, knee: 0.1 };
+  if (style === "fall") return { style, freq: 0.5, tip: 0, hip: 0, knee: 0 };
   return { style: "tread", freq: 0.75, tip: 0.2 * k, hip: 0.25, knee: 1.4 };
 }
 
@@ -233,7 +239,7 @@ export function exhaleBubbles(seed, t, emitAt, { surface = 10, perBreath = 64, m
  * "under" | "surface" | null (not swimming that frame). Returns per frame the speed, style weights, the cycle phase
  * (integrated, so the cadence changes smoothly with speed), the surge offset along the heading, climb and turn rates.
  */
-export function planSwim({ pos, yaw, mode, fps = 24, height = 1.8, style = null, seed = 1, gear = "scuba" }) {
+export function planSwim({ pos, yaw, mode, fps = 24, height = 1.8, style = null, seed = 1, gear = "scuba", styles = null, hipsY = null, hipsW = null }) {
   const n = pos.length, last = n - 1;
   const P = (f) => pos[clamp(f, 0, last)];
   const raw = [], vy = [];
@@ -246,9 +252,28 @@ export function planSwim({ pos, yaw, mode, fps = 24, height = 1.8, style = null,
   const speed = smooth(raw), climbV = smooth(vy);
   const yawRate = yaw.map((_, f) => wrapPi(yaw[Math.min(last, f + 1)] - yaw[Math.max(0, f - 1)]) * fps / Math.max(1, Math.min(last, f + 1) - Math.max(0, f - 1)));
   const weights = [], freq = [], phase = [0], surge = [], main = [];
+  // The water track's own poses (buoyancy.mjs: a drop, a struggle, a limp sink, a back float) override the speed's,
+  // cross-faded over +-6 frames so a change of pose never pops. Plans without them are unchanged.
+  const track = styles && styles.some(Boolean);
+  const raw0 = [];
   for (let f = 0; f < n; f++) {
     const m = mode[f] || "under";
-    const sw = styleWeights(m, speed[f], style === "stroke" ? "flutter" : style);
+    const sw = styles?.[f] ? { weights: { [styles[f]]: 1 }, main: styles[f] } : styleWeights(m, speed[f], style === "stroke" ? "flutter" : style);
+    raw0.push(sw);
+  }
+  for (let f = 0; f < n; f++) {
+    let sw = raw0[f];
+    if (track) {
+      const acc = {};
+      let c = 0;
+      for (let j = -6; j <= 6; j++) {
+        const q = raw0[clamp(f + j, 0, last)];
+        for (const [k, w] of Object.entries(q.weights)) acc[k] = (acc[k] || 0) + w;
+        c++;
+      }
+      for (const k of Object.keys(acc)) acc[k] /= c;
+      sw = { weights: acc, main: Object.entries(acc).sort((p, q) => q[1] - p[1])[0][0] };
+    }
     weights.push(sw.weights); main.push(sw.main);
     let fr = 0;
     for (const [k, w] of Object.entries(sw.weights)) fr += w * swimGait(k, speed[f], height).freq;
@@ -260,7 +285,10 @@ export function planSwim({ pos, yaw, mode, fps = 24, height = 1.8, style = null,
     for (const [k, w] of Object.entries(weights[f])) s += w * sampleLoop(surgeProfile(k, speed[f], height).disp, phase[f]);
     surge.push(s);
   }
-  return { n, fps, height, seed, style, gear, pos, yaw, mode: mode.slice(), speed, climbV, yawRate, weights, main, freq, phase, surge };
+  const out = { n, fps, height, seed, style, gear, pos, yaw, mode: mode.slice(), speed, climbV, yawRate, weights, main, freq, phase, surge };
+  if (track) out.styles = styles.slice();
+  if (hipsY && hipsW && hipsW.some((w) => w > 0)) { out.hipsY = hipsY.slice(); out.hipsW = hipsW.slice(); }
+  return out;
 }
 
 /**
@@ -297,7 +325,7 @@ export function poseAt(plan, f) {
   }
   // Climb / dive: pitched along the vertical velocity. Turns: banked (a diver leans into a turn like a glider).
   const under = (plan.mode[fi] || "under") === "under";
-  if (under) {
+  if (under && !plan.styles?.[fi]) {
     out.pitch -= clamp(Math.atan2(plan.climbV[fi], Math.max(0.25, v)), -0.6, 0.6);
     const by = buoyancyAt(t, plan.seed, h);
     out.pitch += by.pitch; out.heave += by.dy;
@@ -392,6 +420,55 @@ function stylePose(style, ph, v, h, t, plan) {
     const up = Math.sin(Math.PI * clamp((u - 0.08) / 0.34, 0, 1));   // head and shoulders rise to breathe on the pull
     P.pitch = Math.PI / 2 - 0.1 - 0.3 * up;
     P.neck = [-0.25 - 0.3 * up, 0, 0]; P.head = [-0.15 - 0.2 * up, 0, 0];
+  } else if (style === "struggle") {
+    // The instinctive drowning response (Pia 1974): upright, head tilted back, mouth at the water; the arms press down
+    // at the sides like climbing a ladder, no kick, no wave for help, no headway.
+    P.pitch = 0.06;
+    for (const lr of ["l", "r"]) {
+      const q = TAU * (ph + (lr === "r" ? 0.5 : 0));
+      P.arms[lr].sh = [-0.35 - 0.45 * Math.sin(q), 0, -side[lr] * (1.25 + 0.3 * Math.sin(q))];
+      P.arms[lr].el = -0.5 - 0.35 * Math.max(0, Math.sin(q));
+      P.legs[lr].hip = [-0.22 + 0.06 * Math.sin(q + 1), 0, -side[lr] * 0.08];
+      P.legs[lr].knee = 0.45 + 0.12 * Math.sin(q + 1);
+      P.legs[lr].shoe = 0.4;
+    }
+    P.neck = [-0.35, 0, 0]; P.head = [-0.3, 0, 0];
+  } else if (style === "limp") {
+    // Gone under: limp and near vertical, the arms drifting up and out, knees soft, head bowed.
+    P.pitch = 0.12;
+    for (const lr of ["l", "r"]) {
+      P.arms[lr].sh = [-0.9 + 0.05 * Math.sin(TAU * ph + (lr === "r" ? 1 : 0)), 0, -side[lr] * 0.55];
+      P.arms[lr].el = -0.45;
+      P.legs[lr].hip = [-0.3, 0, -side[lr] * 0.1];
+      P.legs[lr].knee = 0.55;
+      P.legs[lr].shoe = 0.5;
+    }
+    P.neck = [0.35, 0, 0]; P.head = [0.25, 0, 0];
+  } else if (style === "limp_floor") {
+    // On the bottom: settled on the back, arms out, knees soft (no walking under water).
+    P.pitch = -1.45;
+    for (const lr of ["l", "r"]) {
+      P.arms[lr].sh = [-0.4, 0, -side[lr] * 0.9]; P.arms[lr].el = -0.6;
+      P.legs[lr].hip = [-0.35, 0, -side[lr] * 0.12]; P.legs[lr].knee = 0.6; P.legs[lr].shoe = 0.4;
+    }
+    P.neck = [-0.1, 0, 0]; P.head = [0.1, 0, 0];
+  } else if (style === "backfloat") {
+    // Floating on the back: face up, the legs sinking ~35 degrees (the chest floats, the hips are heavier), arms out
+    // sculling gently.
+    P.pitch = -(Math.PI / 2 - 0.6);
+    for (const lr of ["l", "r"]) {
+      const sc = Math.sin(TAU * ph + (lr === "r" ? Math.PI : 0));
+      P.arms[lr].sh = [-0.2, side[lr] * 0.15 * sc, -side[lr] * 1.3]; P.arms[lr].el = -0.2 - 0.1 * sc;
+      P.legs[lr].hip = [0.05, 0, -side[lr] * 0.15]; P.legs[lr].knee = 0.15; P.legs[lr].shoe = 0.6;
+    }
+    P.neck = [-0.2, 0, 0]; P.head = [-0.35, 0, 0];
+  } else if (style === "fall") {
+    // Dropping in feet first: straight legs, toes pointed, arms up.
+    P.pitch = 0;
+    for (const lr of ["l", "r"]) {
+      P.arms[lr].sh = [-2.6, 0, -side[lr] * 0.35]; P.arms[lr].el = -0.3;
+      P.legs[lr].hip = [0, 0, -side[lr] * 0.03]; P.legs[lr].knee = 0.1; P.legs[lr].shoe = 0.9;
+    }
   } else if (style === "tread") {
     // Upright, eggbeater legs (alternating circular kicks), hands sculling flat at the water.
     P.pitch = 0.2;
@@ -434,6 +511,14 @@ export function bodyAt(plan, f, pose, ctx) {
     const yLevel = ctx.surface - 0.12 * k, yTread = ctx.surface - 0.52 * k;
     hips = [p[0] + fwd[0] * s, lerp(yLevel, yTread, tread) + pose.heave, p[2] + fwd[1] * s];
   } else hips = [p[0] + fwd[0] * s, p[1] + hipY + pose.heave, p[2] + fwd[1] * s];
+  // The water track (buoyancy.mjs): a drop in, a kick up, a struggle, a slow sink, a back float puts the hips there.
+  if (plan.hipsW) {
+    const w = lerp(plan.hipsW[f0], plan.hipsW[f1], u);
+    if (w > 0) {
+      const a = plan.hipsY[f0] ?? plan.hipsY[f1], b = plan.hipsY[f1] ?? a;
+      if (a != null) hips[1] = lerp(hips[1], lerp(a, b, u), w);
+    }
+  }
   return { hips, q };
 }
 
