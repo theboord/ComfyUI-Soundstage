@@ -4716,9 +4716,10 @@ export class Stage {
     if (!a || !g || LIBRARY[a.kind]?.boat) return null;
     const bb = this._buoyBody(a, g);
     if (!bb) return null;
-    const b = bb.body, under = Buoy.floatFraction(b);
-    return { density: Math.round(b.rho), source: b.source, floats: under < 1, under: +under.toFixed(3), terminal: +Buoy.terminalSpeed(b).toFixed(2),
-      what: b.what, soaks: b.sat ? { to: b.sat, tau_s: b.tau } : null, override: a.physics?.density ?? null };
+    const b = bb.body, end = b.sinkRho || b.rho, under = Buoy.floatFraction(b, end);   // an animal set to Can't swim: where it ends up
+    return { density: Math.round(end), source: b.source, floats: under < 1, under: +under.toFixed(3), terminal: +Buoy.terminalSpeed(b, end).toFixed(2),
+      what: b.sinkRho ? `${b.what}: ${b.sinkAfter > 0 ? `paddles ~${b.sinkAfter.toFixed(1)} s, then ` : ""}sinks slowly` : b.what,
+      sinksAfter: b.sinkRho ? +b.sinkAfter.toFixed(2) : null, soaks: b.sat ? { to: b.sat, tau_s: b.tau } : null, override: a.physics?.density ?? null };
   }
 
   /** The per-object "Floats / sinks" density (the Physics panel): kg/m3, a preset name (buoyancy.mjs DENSITY_PRESETS:
@@ -4826,8 +4827,10 @@ export class Stage {
    *  Cached until its size or its density / mass settings change. {body, minY (its bottom under its origin)}. */
   _buoyBody(a, g) {
     const pm = a.physics?.mass, mass = pm != null && pm !== "" && Number.isFinite(+pm) ? +pm : null;
-    const sinking = !PERSON_KINDS.has(a.kind) && (Buoy.swimMode(a.swim) === "cant" || Buoy.swimMode(a.swim) === "sink") && a.swim != null;
-    const sig = `${a.kind}|${a.scale || 1}|${a.height_m || 0}|${a.physics?.density ?? ""}|${mass ?? ""}|${sinking}|${a.buoyancy || ""}`;
+    const sm = Buoy.swimMode(a.swim);
+    const sinking = !PERSON_KINDS.has(a.kind) && (sm === "cant" || sm === "sink") && a.swim != null;
+    const struggle = sinking && sm === "cant" ? Buoy.struggleSeconds(Swim.seedOf(a.id)) : 0;
+    const sig = `${a.kind}|${a.scale || 1}|${a.height_m || 0}|${a.physics?.density ?? ""}|${mass ?? ""}|${sinking}|${struggle}|${a.buoyancy || ""}`;
     const c = g.userData._buoy;
     if (c?.sig === sig) return c;
     const box = this._localBox(g);
@@ -4835,7 +4838,7 @@ export class Stage {
     const size = box.half.map((x) => 2 * x);
     // (the old per-object switch: buoyancy "sink" = a stone's density)
     const density = a.physics?.density ?? (a.buoyancy === "sink" ? 2600 : null);
-    const body = Buoy.bodyOf(a.kind, size, { density, mass, sinking });
+    const body = Buoy.bodyOf(a.kind, size, { density, mass, sinking, struggle });
     const out = { sig, body, minY: box.center[1] - box.half[1] };
     g.userData._buoy = out;
     return out;
@@ -4923,6 +4926,7 @@ export class Stage {
       const wob = floating ? Math.exp(-0.6 * ti) * 0.15 + 0.03 : Math.exp(-1.2 * ti) * 0.12;   // settling, then a gentle sway
       g.rotation.x = wob * Math.sin(2.1 * ti + seed); g.rotation.z = wob * Math.cos(1.7 * ti + seed * 0.3);
     }
+    if (body.sinkRho && tr.entry >= 0 && f >= tr.entry) this._animalSinkPose(a, g, tr, body, f, fps, seed);
     g.userData.inWater = true;
     g.userData.buoy = { s, rho: tr.rho[f], v: tr.v[f] };
     // Splash ring on entry: expands and fades over ~1.2 s.
@@ -4945,6 +4949,27 @@ export class Stage {
       (this._splash = this._splash || new Map()).set(a.id, m);
       m.visible = false;
     }
+  }
+
+  /** An animal set to Can't swim / Sink slowly in the water (after _waterPhysics put it on its track): it paddles hard
+   *  with the head up for its struggle, goes limp and sinks nose down, then lies on its side on the bottom. Its legs
+   *  are posed here, so its walk cycle never runs under water or on the bottom. A pure function of the frame. */
+  _animalSinkPose(a, g, tr, body, f, fps, seed) {
+    const t0 = tr.splash >= 0 ? tr.splash : tr.entry, t = Math.max(0, (f - t0) / fps);
+    const sstep = (e0, e1, x) => { const u = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return u * u * (3 - 2 * u); };
+    const limp = sstep(body.sinkAfter, body.sinkAfter + 1.2, t);                    // the paddling stops
+    const lie = tr.landed >= 0 ? sstep(tr.landed, tr.landed + fps, f) : 0;          // over ~1 s on the bottom
+    const limbs = g.userData.limbs || [];
+    limbs.forEach((l, i) => {
+      const paddle = 0.75 * Math.sin(2 * Math.PI * 2.2 * t + (l.phase ?? i * Math.PI / 2));
+      const drift = 0.12 * Math.sin(2 * Math.PI * 0.2 * t + i);
+      if (l.pivot) l.pivot.rotation.x = (paddle * (1 - limp) + drift * limp) * (1 - lie) + 0.25 * lie;
+    });
+    g.rotation.order = "YXZ";
+    g.rotation.x = -0.22 * (1 - limp) + 0.25 * limp * (1 - lie);                    // head up paddling, nose down sinking
+    g.rotation.z = (Math.PI / 2 - 0.15) * lie * (seed % 2 ? 1 : -1);                // on its side on the bottom
+    g.userData.gaitOn = false;
+    if (lie > 0) Swim.keepAboveFloor(g, 0);
   }
 
   /** Flames flicker, the fire light breathes, embers rise, drift and fade: all a pure function of the frame. */

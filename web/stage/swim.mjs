@@ -611,7 +611,7 @@ function putPose(g, plan, f, pose, hipY, ctx) {
 /** A pool's / tank's floor: lift the posed clay so its lowest point is on it, never through it (a body settling on the
  *  bottom, a plunge in a shallow pool). Measured on the clay's own meshes (never a lifelike body hidden inside it), from
  *  the pose just set: a pure function of the frame, so scrubbing gives the same lift. */
-function keepAboveFloor(g, floor) {
+export function keepAboveFloor(g, floor) {
   g.updateMatrixWorld(true);
   let lo = Infinity;
   g.traverse((o) => {

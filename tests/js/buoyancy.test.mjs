@@ -276,6 +276,27 @@ test("water they can stand in: a 1.8 m man set to Can't swim stands in the 1.2 m
   assert.equal(B.personTrack({ mode: "cant", keyY: new Array(48).fill(0), over: new Array(48).fill(true), level: 1.5, height: 1.65, hipY: 0.87 }).styles[12], "struggle");
 });
 
+test("an animal set to Can't swim paddles at the surface, then sinks slowly and lies on the bottom; Sink slowly sinks from the surface; no walk cycle under water", () => {
+  // Before: on the tank floor from frame 0 (dog y -0.05 every frame), its walk cycle running along the bottom.
+  const dog = (id, swim, x) => ({ id, name: id, kind: "dog", position: [x, 0, 0], keys: [{ frame: 0, position: [x, 0, 0] }, { frame: 287, position: [x + 3, 0, 0] }], rotation_deg: 0, swim });
+  const N = 24 * 12, st = tank([dog("c", "cant", -3), dog("s", "sink", 3)], { frames: N });
+  const ys = (id) => { const out = []; for (let f = 0; f < N; f++) out.push(yAt(st, id, f)); return out; };
+  const yc = ys("c"), ysk = ys("s");
+  assert.ok(yc[0] > 1.5 && ysk[0] > 1.5, `both start in the water at the surface (${yc[0].toFixed(2)}, ${ysk[0].toFixed(2)})`);
+  assert.ok(yc[36] > 1.5, `can't swim: still at the surface paddling at 1.5 s (${yc[36].toFixed(2)})`);
+  assert.ok(ysk[72] < ysk[0] - 0.3, `sink slowly: going down from the start (${ysk[0].toFixed(2)} -> ${ysk[72].toFixed(2)})`);
+  let vmax = 0;
+  for (let f = 12; f < N; f += 12) vmax = Math.max(vmax, (yc[f - 12] - yc[f]) * 2);
+  assert.ok(vmax > 0.1 && vmax < 0.8, `sinks slowly (fastest ${vmax.toFixed(2)} m/s; a rock does ${B.terminalSpeed(B.bodyOf("rock", [0.5, 0.4, 0.5])).toFixed(1)})`);
+  const g = st.actorMeshes.get("c"), legs = () => g.userData.limbs.map((l) => l.pivot.rotation.x);
+  st.setFrame(12); const l12 = legs(); st.setFrame(18); const l18 = legs();
+  assert.ok(l12.some((x, i) => Math.abs(x - l18[i]) > 0.2), "paddling hard during the struggle");
+  st.setFrame(N - 12); const la = legs(), za = g.rotation.z; st.setFrame(N - 1); const lb = legs();
+  assert.ok(g.position.y < 0.3 && Math.abs(za) > 1, `lying on its side on the bottom at the end (y ${g.position.y.toFixed(2)}, roll ${za.toFixed(2)})`);
+  assert.ok(la.every((x, i) => Math.abs(x - lb[i]) < 0.02), "its legs are still: no walk cycle along the bottom though it is keyed moving");
+  assert.equal(st.buoyancyInfo("c").floats, false, "the Physics info says it ends up sinking");
+});
+
 // ------------------------------------------------------------------ the other paths that skipped the water
 test("Simulate & bake leaves things in the tank to the water; the Physics start height is a drop height, not a float in the air", () => {
   const st = tank([prop("c", "crate", 0, { x: -3, physics: { mode: "dynamic", lift: 4.5 } }), prop("b", "sphere", 0, { x: 3, physics: { mode: "dynamic", lift: 4.5 } })]);

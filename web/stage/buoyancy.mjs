@@ -103,7 +103,7 @@ export function densityValue(v) {
  * ca, zeta, sat, tau, source ("density" | "mass" | "kind"), what}. size = [w, h, d] (m, its local box). opts.density
  * (kg/m3, the per-object override) wins over opts.mass (kg, the Physics panel's mass), which wins over the kind table.
  */
-export function bodyOf(kind, size, { density = null, mass = null, sinking = false } = {}) {
+export function bodyOf(kind, size, { density = null, mass = null, sinking = false, struggle = 0 } = {}) {
   const car = CAR_KINDS.has(kind);
   const spec = { ...DEFAULT_BUOYANCY, ...(car ? CAR_BUOYANCY : KIND_BUOYANCY[kind] || {}) };
   const [w, h, d] = size.map((x) => Math.max(0.02, +x || 0));
@@ -113,15 +113,20 @@ export function bodyOf(kind, size, { density = null, mass = null, sinking = fals
   const ov = densityValue(density);
   if (ov != null) { rho = ov; source = "density"; }
   else if (Number.isFinite(+mass) && mass !== null && mass !== "" && +mass > 0) { rho = clamp(+mass / V, 20, 20000); source = "mass"; }
-  if (sinking) { rho = Math.max(rho, 1045); source = "sinking"; }   // an animal set to Can't swim / Sink slowly
+  // An animal set to Can't swim / Sink slowly: it floats (paddling, its own density) for `struggle` s from the moment it
+  // meets the water, then its density goes to sinkRho over ~1.5 s (the lungs fill) and it sinks slowly to the bottom.
+  const sink = sinking ? { sinkRho: Math.max(rho * 1.02, 1025), sinkAfter: Math.max(0, +struggle || 0) } : {};
+  if (sinking) source = "sinking";
   const A = spec.shape === "sphere" ? Math.PI * (Math.min(w, d) / 2) ** 2 : w * d * Math.pow(spec.fill ?? 1, 2 / 3);
   // A density override or a mass override is the object as it is now: no soaking on top (unless it was set to soak)
   const soak = source === "kind" && spec.sat ? { sat: spec.sat, tau: spec.tau } : {};
-  return { kind, rho, m: rho * V, V, h, A, shape: spec.shape || "box", cd: spec.cd, ca: spec.ca, zeta: spec.zeta, ...soak, source, what: spec.what, car };
+  return { kind, rho, m: rho * V, V, h, A, shape: spec.shape || "box", cd: spec.cd, ca: spec.ca, zeta: spec.zeta, ...soak, ...sink, source, what: spec.what, car };
 }
 
-/** Density after t s in the water (soaking / flooding: an exponential approach to sat). */
+/** Density after t s in the water (soaking / flooding: an exponential approach to sat; a sinking animal: its own
+ *  density for sinkAfter s, then up to sinkRho over 1.5 s). */
 export function densityAt(body, t) {
+  if (body.sinkRho) return body.rho + (body.sinkRho - body.rho) * sstep(body.sinkAfter, body.sinkAfter + 1.5, t);
   if (!body.sat || !(t > 0)) return body.rho;
   return body.sat - (body.sat - body.rho) * Math.exp(-t / body.tau);
 }
@@ -171,12 +176,13 @@ export const SUBSTEPS = 12;
  * keyed above the surface it drops in (with the keyed vertical speed, e.g. off a baked fall); keyed under it it starts
  * there and rises or sinks; keyed at the floor (0, the default placement) it is placed in the water: floating at its
  * waterline or on the bottom. Returns {y, v, s (fraction of its height under), rho, entry (frame or -1), splash (the
- * frame it hits the surface, or -1), speedIn (m/s down at the surface)}.
+ * frame it hits the surface, or -1), speedIn (m/s down at the surface), landed (the first frame it is on the floor
+ * after entry, or -1)}.
  */
 export function floatTrack(body, { level, floor = 0, fps = 24, keyY, over }) {
   const n = keyY.length, dt = 1 / (fps * SUBSTEPS);
   const y = new Array(n), v = new Array(n), S = new Array(n), R = new Array(n);
-  let free = false, entry = -1, splash = -1, speedIn = 0, tw = 0;
+  let free = false, entry = -1, splash = -1, speedIn = 0, tw = 0, landed = -1;
   const st = { y: 0, v: 0 };
   for (let f = 0; f < n; f++) {
     if (!over[f]) {
@@ -200,8 +206,9 @@ export function floatTrack(body, { level, floor = 0, fps = 24, keyY, over }) {
       }
     }
     y[f] = st.y; v[f] = st.v; S[f] = clamp((level - st.y) / body.h, 0, 1); R[f] = densityAt(body, tw);
+    if (landed < 0 && st.y <= floor + 1e-6 && f > entry) landed = f;
   }
-  return { y, v, s: S, rho: R, entry, splash, speedIn };
+  return { y, v, s: S, rho: R, entry, splash, speedIn, landed };
 }
 
 // ------------------------------------------------------------------ people in the water
@@ -217,6 +224,10 @@ export function swimMode(v) {
   if (v === "off") return "cant";
   return MODE_IDS.has(v) ? v : "auto";
 }
+/** How long a non-swimmer (a person or an animal set to Can't swim) struggles at the surface: a seeded 2-3.5 s
+ *  (film-compressed; real: 20-60 s). */
+export const struggleSeconds = (seed) => 2 + 1.5 * hash01(seed, 3);
+
 /** The human body for the water: ~75 kg at 1.8 m, density 985 with air in the lungs, 1045 breathed out (Siri). */
 export function personBody(height = 1.8, build = 1) {
   const k = height / 1.8, m = 75 * k * k * k * build;
@@ -374,7 +385,7 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
     }
     // Can't swim / Sink slowly: the struggle, the slip under, the slow sink and the limp settle on the bottom.
     // The struggle is timed from the moment they meet the water (a drop in flails back up inside it).
-    const tStruggle = mode === "cant" && !under ? 2 + 1.5 * hash01(seed, 3) : 0;   // seconds (film-compressed; real: 20-60 s)
+    const tStruggle = mode === "cant" && !under ? struggleSeconds(seed) : 0;
     const fs = Math.max(up, entered + Math.round(tStruggle * fps));
     const floorHips = floor + hipY * 0.92;   // feet down, knees soft
     const yEnd = from != null ? from : null;
