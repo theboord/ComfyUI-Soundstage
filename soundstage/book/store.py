@@ -130,12 +130,23 @@ def _in_scope(fid, fname, pid, pname) -> bool | None:
     return bool(pname) and fname == pname
 
 
+def _folder_of(root: str, p: str) -> str | None:
+    """The projects/<name>/ folder a file sits in, when root is the user's projects/ folder; else None. The trash
+    (projects/.trash/) is not a project folder."""
+    if os.path.basename(os.path.normpath(root)) != "projects":
+        return None
+    rel = os.path.relpath(p, root).split(os.sep)
+    return rel[0] if len(rel) > 1 and not rel[0].startswith(".") else None
+
+
 def forget(ids, roots, project=None) -> dict:
     """Remove chat decision notes (by note id or ref) from every stored copy OF ONE PROJECT: project = {id, name} (the
     project the Forget came from). Scanned: the books folder (current.json, any other book, and leftover *.json.tmp)
     and each folder in roots (the user's workflows/ and projects/: saved workflows, manifests, autosaves, the trash,
     *.json.tmp leftovers). A file counts as the project's when it carries the same project id, or no id and the same
-    project name (saved before ids existed); a server book with no _project is the open book and counts too. Files of
+    project name (saved before ids existed); any file inside projects/<project name>/ counts too, whatever it carries
+    (a library Rename moves a pre-id project's autosaves without restamping them, so they still name the old project);
+    a server book with no _project is the open book and counts too. Files of
     another project (a Duplicate, a Save As copy) are left alone and listed in other_projects. Only files whose text
     mentions an id are parsed; changed files are rewritten atomically.
     Returns {ok, removed, files: [paths changed], still_mentions: [the project's paths whose text still holds an id,
@@ -151,6 +162,11 @@ def forget(ids, roots, project=None) -> dict:
     pname = project.get("name").strip() if isinstance(project.get("name"), str) and project.get("name").strip() else None
     if not pid and not pname:
         out["skipped"].append({"path": "*", "why": "no project given: only the open book (books/current.json) was cleaned"})
+    try:
+        from soundstage.project.collect import clean_name
+        pfolder = clean_name(pname) if pname else None   # the folder name the project library gives that name
+    except ImportError:
+        pfolder = pname
     seen = set()
     bdir = os.path.realpath(books_dir())
     for root in [books_dir(), *[str(r) for r in roots or [] if r]]:
@@ -172,6 +188,8 @@ def forget(ids, roots, project=None) -> dict:
                     continue
                 data = json.loads(text)
                 scope = _in_scope(*_ident(data), pid, pname)
+                if pfolder and _folder_of(root, p) == pfolder:
+                    scope = True                      # inside this project's own folder (e.g. autosaves kept through a Rename)
                 if scope is None and in_books and os.path.basename(p).split(".")[0] == "current":
                     scope = True                      # the open book, saved before books carried their project
                 if scope is None and not pid and not pname:

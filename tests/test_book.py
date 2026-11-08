@@ -442,3 +442,44 @@ def test_forget_reports_skipped_big_files_tmp_leftovers_and_string_mentions(tmp_
         assert "Big.json" in res["error"] and "still mentions" in res["error"]
     finally:
         ST._OVERRIDE = None
+
+
+def test_forget_after_rename_of_a_pre_id_project_clears_its_moved_autosaves(tmp_path):
+    """A project saved before ids existed is Renamed in the library: its autosaves move to projects/<new>/ still naming
+    the old project and no id. Forget from the renamed project (now with an id) must clean them, and ok is only true
+    when no copy is left."""
+    from soundstage.project import library as L
+    books, user = tmp_path / "books", tmp_path / "user"
+    ST._OVERRIDE = str(books)
+    try:
+        (user / "workflows").mkdir(parents=True)
+        (user / "projects" / "Alpha" / "autosave").mkdir(parents=True)
+        (user / "workflows" / "Alpha.json").write_text(json.dumps(_wf_of(None, "Alpha", [_dec("n_secret1")])))
+        (user / "projects" / "Alpha" / "project.json").write_text(json.dumps(
+            {"format": "soundstage-project", "v": 1, "name": "Alpha", "created": 1, "saved_at": 2, "saves": 1}))
+        (user / "projects" / "Alpha" / "autosave" / "20261101-100000-000.json").write_text(json.dumps(
+            {"format": "soundstage-project-autosave", "v": 1, "name": "Alpha", "saved_at": 3,
+             "workflow": _wf_of(None, "Alpha", [_dec("n_secret1")])}))
+        assert L.rename(user, "Alpha", "Beta") == "Beta"
+        man = json.loads((user / "projects" / "Beta" / "project.json").read_text())
+        man["id"] = "p_aaaa1111"                                      # the next Save writes the id
+        (user / "projects" / "Beta" / "project.json").write_text(json.dumps(man))
+        (user / "workflows" / "Beta.json").write_text(json.dumps(_wf_of("p_aaaa1111", "Beta", [])))
+        res = ST.forget(["n_secret1"], [user / "workflows", user / "projects"], {"id": "p_aaaa1111", "name": "Beta"})
+        left = [p for p in user.rglob("*.json") if "n_secret1" in p.read_text()]
+        assert left == [], left
+        assert res["ok"] and res["removed"] == 2, res                  # the autosave's two book copies
+        assert res["other_projects"] == []
+
+        # ok stays false while a copy remains: an autosave too big to read
+        auto = user / "projects" / "Beta" / "autosave" / "20261102-100000-000.json"
+        auto.write_text(json.dumps({"name": "Alpha", "workflow": _wf_of(None, "Alpha", [_dec("n_secret2")])}) + " " * 4096)
+        old_max = ST.MAX_SCRUB_BYTES
+        ST.MAX_SCRUB_BYTES = 2048
+        try:
+            res = ST.forget(["n_secret2"], [user / "workflows", user / "projects"], {"id": "p_aaaa1111", "name": "Beta"})
+        finally:
+            ST.MAX_SCRUB_BYTES = old_max
+        assert "n_secret2" in auto.read_text() and not res["ok"]
+    finally:
+        ST._OVERRIDE = None
