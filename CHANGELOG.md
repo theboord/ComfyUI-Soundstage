@@ -5,6 +5,58 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-08
 
+**Ask hooks, last fixes, 2026-11-08 (private branch `private/ask-hooks`, not pushed): restore checks the whole snapshot, num_ctx has a ceiling, the dimmer is clamped, the saved flat camera keys follow the shot on screen, seats measured from the floor and never on something that moves**
+
+- **Still wrong (read first, known limits):** checked with Node and pytest only (invented test data), not in the
+  browser, the App, a render or a live ComfyUI / Ollama.
+  - **The agent's `set_lighting` op itself is not clamped** (`web/agent/agent.mjs` is the Ask lane's, not edited
+    here): its scene is clamped when it reaches the stage through `load()` (`loadScene`), but `applyOpsToScene`'s
+    own output, before it is loaded, can still carry `exposure_stops: 1e12` or `"1e3"`.
+  - **Snapshots from before this change no longer restore:** `snapshot()` now returns a stamped string
+    (`{soundstage_snapshot: 1, epoch, scene_ids, scene}`); a bare scene (the old form) is refused. "The scene open
+    now" means the stage's scene epoch (moved on by every `resetHistory()`: opening a workflow, another script scene,
+    a Try-it preset) plus the shots' `scene_id`s; an App path that swaps scenes without `resetHistory()` would not be
+    seen.
+  - **A seat picked up by another path is not stopped:** only the stage's drop-on-a-person pick-up (`_dropProp`)
+    refuses an occupied seat; live.mjs / drive.mjs / objparts.mjs carries are not guarded. A sitter on a seat that
+    becomes carried keeps the old mount placement (a frame behind) for the clay; the lifelike body stops sitting.
+  - **"Floor" for seat height is the set's walkable floor (`setFx.floorAt`) else 0:** a prop sunk below a raised
+    floor reads lower than it looks; there is still no lower seat limit.
+  - **`CTX_CEILING` is fixed at 131072:** a model with a bigger window cannot be asked for more through Ask.
+  - **A keyless shot's saved flat `camera_keys` is now one key** (`[{frame: 0, ...camera}]`, what the stage plays),
+    where it used to be absent or another shot's: an older reader that used `camera` + `camera_end` for such a shot
+    now sees a still camera, as the stage films it.
+- **`restore('{"actors":[]}')` wiped the scene (`web/stage/stage.mjs:4853` `restoreSnapshot`, `:260`
+  `validSnapshotScene`, `:4842` `snapshot`, `:4442` `resetHistory`):** only `actors` was checked, so a bare scene
+  replaced everything and the next `setFrame` threw. The whole snapshot is now checked before anything is touched:
+  the stamp, the scene epoch and shot scene ids (another scene is refused), actors (unique ids, valid positions /
+  keys), camera, shot timing, shots and camera keys, active shot, lighting. A set that can't be built from it is
+  rolled back. `stageHook(null)` (`web/hosthooks.mjs:211`) threw on toJSON / select / setPose / snapshot; it refuses
+  now (`null` / `{ok: false, error: "no stage"}`), and `select` refuses an unknown id. Tests in
+  `tests/js/askhooks_sit.test.mjs`.
+- **num_ctx had no top (`soundstage/assistant.py:214` `CTX_CEILING`, `:220` `_pos_int`, `:291`):** a caller's
+  `num_ctx: 1e12` or `OLLAMA_CONTEXT_LENGTH=1e308` went to Ollama as-is, and `"1e3"` was read as 1000. Every value is
+  clamped to 131072; NaN / Infinity / exponent strings / booleans are ignored. Test in `tests/test_assistant.py`.
+- **The dimmer was not clamped on load (`web/stage/lighting.mjs:10` `exposureStopsOf`, `web/stage/stage.mjs:293`
+  `cleanExposure`, `:5529` in `load()`, `:2684` `exposure()`):** a saved `exposure_stops: -1e9` (or an agent
+  `set_lighting` op) went straight into the render factor, and `true` read as +1 stop. Now clamped to -6..+2, a
+  non-number dropped, in load, `exposure()`, `_exposureFactor` and the prompt line; `setExposure` refuses `"1e3"`.
+  `host.lights.down` (`web/hosthooks.mjs:185`) stops at -6 (-5.5 then `down(1)` gives -6) and refuses `''` / `null`
+  / `true` (they gave `ok: true`). Tests in `tests/js/askhooks_lights.test.mjs`.
+- **The saved flat `camera_keys` kept shot A's keys (`web/stage/stage.mjs:5546` `toJSON`):** after
+  `setActiveShot('b')` (a keyless shot) and a play, the saved scene, and so the Look panel and the look compiler,
+  still had A's keys. It now always carries the shot on screen (`tests/js/askhooks_play.test.mjs`; fails on e7f1637).
+- **Seat height was measured from the prop's base (`web/stage/stage.mjs:4734` `_seatHeightFromFloor`):** a chair
+  stacked on cubes 1 m up passed for a 1.8 m person. It is measured from the floor now (seat 1.47 m: refused).
+- **A carried / riding seat could be sat on (`web/stage/stage.mjs:4702` `_canSitOn`, `:4712` `_seatMoving`, `:2196`
+  `_dropProp`):** the sitter was placed before the carry moved the seat (a frame behind, in the air). Carried
+  (`carry_id`), mounted / riding (`mount_id`) seats and a seat on the sitter (a cycle) are refused; an occupied seat
+  is not picked up from under its sitter. Tests in `tests/js/askhooks_sit.test.mjs` (mutation-checked: removing the
+  carried refusal fails them).
+- **`projectHook` with a non-numeric `timeoutMs` gave up at once (`web/hosthooks.mjs:149`):** `"soon"` / `null` was
+  0 ms; it is the 3 s default now. The `cutPanelHook` comment pointed at `host.goStep("cut")`; it says
+  `host.cut.show()` (`:174`). Tests in `tests/js/askhooks_host.test.mjs`.
+
 **Ask hooks, final review round, 2026-11-08 00:30: Play read-only in the App's overlays, pose keeps the keys, seat rules, Ask can take back a pose or lights change, the dimmer in the PiP and captures, num_ctx counts tools, project() always settles, cut.panel() only when shown (private branch `private/ask-hooks`)**
 
 - **Still wrong (read first, known limits):** checked with Node and pytest only, not looked at in the browser, the App,
