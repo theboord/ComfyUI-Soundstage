@@ -157,6 +157,32 @@ test("a person on the lake's dock stands on the dock (was: fell in at f0 and wad
   assert.ok(st3.actorMeshes.get("o").userData.swimOn, "in the water after walking off its end");
 });
 
+test("a timed jump: keys held 4.5 m up until f48, then a step off: the fall starts at f48, not f0, the same in any order", () => {
+  const keys = [[0, [-5, 4.5, 0]], [48, [-5, 4.5, 0]], [60, [-4, 2.6, 0]]];
+  const st = tank([keyed("j", "man", keys)], { frames: 145 });
+  const a = st.state.actors[0], g = st.actorMeshes.get("j");
+  const h = [];
+  for (let f = 0; f < 145; f++) { st.setFrame(f); h.push(hipsY(st, "j")); }
+  for (let f = 0; f < 48; f++) {
+    assert.ok(h[f] > 4.5 + 0.7, `f${f}: held up there on the keys (hips ${h[f].toFixed(2)}), not on the tank floor`);
+  }
+  const plan = st._swimPlan(a, g), fall = plan.mode.findIndex(Boolean);
+  assert.ok(fall >= 48 && plan.main[fall] === "fall", `the fall begins at or after f48 (f${fall}, ${plan.main[fall]})`);
+  assert.ok(h[fall + 12] < h[47] - 0.5, `and they are falling half a second later (hips ${h[47].toFixed(2)} -> ${h[fall + 12].toFixed(2)})`);
+  assert.ok(Math.min(...h.slice(48)) < LEVEL, "and they go in");
+  st.setFrame(144);
+  assert.ok(g.userData.swimOn && headY(st, "j") > LEVEL, "and come up swimming");
+  for (const f of [100, 20, 70, 50, 0]) { st.setFrame(f); assert.ok(Math.abs(hipsY(st, "j") - h[f]) < 1e-6, `f${f}: the same pose scrubbed back`); }
+  // personTrack itself: held until the keys go down, then the drop from there
+  const n = 96, ky = Array.from({ length: n }, (_, f) => (f <= 48 ? 4.5 : Math.max(2.6, 4.5 - (f - 48) * 0.16)));
+  const tr = B.personTrack({ mode: "auto", keyY: ky, over: new Array(n).fill(true), level: LEVEL, hipY: 0.95 });
+  assert.ok(tr.held.slice(0, 48).every(Boolean) && !tr.held[48], "held to f47, falling from f48");
+  assert.equal(tr.styles[48], "fall");
+  // keys that never go down still drop at once (nothing holds them up there)
+  const still = B.personTrack({ mode: "auto", keyY: new Array(n).fill(4.5), over: new Array(n).fill(true), level: LEVEL, hipY: 0.95 });
+  assert.ok(!still.held.some(Boolean) && still.styles[0] === "fall");
+});
+
 // ------------------------------------------------------------------ the physics
 test("weight decides: a rock sinks faster than a can't-swim person, who sinks slower; a soaking crate still floats; a ball floats higher than a crate", () => {
   const rock = B.bodyOf("rock", [0.5, 0.4, 0.5]), crate = B.bodyOf("crate", [0.8, 0.8, 0.8]), ball = B.bodyOf("sphere", [0.5, 0.5, 0.5]);

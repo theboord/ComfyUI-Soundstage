@@ -3798,15 +3798,15 @@ export class Stage {
       const gear = a.gear || (under > 0 || smode === "dive" ? "scuba" : "none");
       const style = smode === "dive" ? "hover" : ["tread", "breaststroke", "freestyle", "flutter", "frog", "stroke", "hover"].includes(smode) ? smode : null;
       let track = null;
-      // In a pool: standing on a dock or a deck, the drop in, the kick up, and the modes that
+      // In a pool: standing on a dock or a deck, the drop in (timed by the keys), the kick up, and the modes that
       // aren't a stroke (back float, can't swim, sink slowly).
       if (!reef && !(UNDER.includes(smode))) {
         track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(a.id), standHeight: (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1), support });
-        // ground: water they can stand in (auto / can't swim), or a dock or a deck under them: off the swim plan, on
-        // their keys (the gait walks them)
+        // ground: water they can stand in (auto / can't swim), a dock or a deck under them, or a keyed hold before a
+        // jump: off the swim plan, on their keys (the gait walks them)
         for (let f = 0; f <= last; f++) if (track.modes[f]) mode[f] = track.modes[f]; else if (track.ground[f]) mode[f] = null;
-        // the height they stand at on a deck or a dock (the gait's floor there)
-        stand = track.supported.map((v, f) => (v ? support[f] : null));
+        // the height they stand at on a deck or a dock, or are held at before a jump (the gait's floor there)
+        stand = track.supported.map((v, f) => (v ? support[f] : track.held[f] ? keyY[f] : null));
         if (!stand.some((v) => v != null)) stand = null;
         if (!mode.some(Boolean)) { this._swimCache.set(a, { sig, g, plan: null, stand }); return null; }
       }
@@ -3820,7 +3820,7 @@ export class Stage {
     return plan;
   }
 
-  /** Over the water but on their keys at frame f (personTrack: on a dock or a deck): the
+  /** Over the water but on their keys at frame f (personTrack: on a dock or a deck, or held before a timed jump): the
    *  height they stand at there, which the gait's planted feet stand on; null otherwise. */
   _standOnKeys(a, g, f) {
     if (!PERSON_KINDS.has(a.kind) || !this.water) return null;

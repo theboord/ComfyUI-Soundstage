@@ -323,12 +323,15 @@ export function plungeTrack({ ky, v0 = 0, level, floor = 0, fps = 24, n, height 
  * dive and the underwater strokes are not tracked here (the stage keeps them at their keyed depth).
  * support[f] (optional): the height of a walkable surface under the keyed feet besides the water's floor (a dock, a
  * boat's deck, a platform), or null. Keyed standing on it (feet within -5..+15 cm of it, and it is above the water or
- * shallow enough to stand on) they are on their keys there, off the water: supported[f] and ground[f]. Stepping off it they drop in from there.
+ * shallow enough to stand on) they are on their keys there, off the water: supported[f] and ground[f]. Over the water
+ * with nothing under them, the fall starts where the keyed path leaves its support (the first frame off it) or, keyed
+ * up there from the start of the shot, at the last frame before the keys start to go down (a hold, then a step off:
+ * held[f] and ground[f] until then); keys that never go down drop at once.
  */
 export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, height = 1.8, hipY = 0.95, seed = 1, standHeight = height, support = null }) {
   const n = keyY.length, k = height / 1.8;
   const styles = new Array(n).fill(null), hipsY = new Array(n).fill(null), hipsW = new Array(n).fill(0), modes = new Array(n).fill(null);
-  const ground = new Array(n).fill(false), supported = new Array(n).fill(false);
+  const ground = new Array(n).fill(false), supported = new Array(n).fill(false), held = new Array(n).fill(false);
   // On a dock, a deck or anything else walkable under the feet: on their keys there, not in the water.
   const wet = over.slice();
   if (support) for (let f = 0; f < n; f++) {
@@ -347,8 +350,15 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
   let f = 0;
   while (f < n) {
     if (!wet[f]) { f++; continue; }
-    const f0 = f;
+    let f0 = f;
     while (f < n && wet[f]) f++;
+    if (keyY[f0] > level + 0.05 && f0 === 0) {
+      // Keyed up there from the start: they follow their keys until the path starts to go down (a timed jump), then
+      // fall from the last frame at the held height. After a support or the edge (f0 > 0) the fall starts at once.
+      let r = -1;
+      for (let i = f0 + 1; i < f && r < 0; i++) if (keyY[i] < keyY[i - 1] - 1e-3) r = i - 1;
+      if (r > f0) { for (let i = f0; i < r; i++) { held[i] = true; ground[i] = true; } f0 = r; }
+    }
     const m = f - f0, ky = keyY[f0];
     // Before they are at the surface: pre[i] = feet height, preMode[i], preStyle[i], for i < up.
     const pre = [], preMode = [], preStyle = [];
@@ -435,5 +445,5 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
       modes[fr] = y + 0.75 * k > level ? "surface" : "under";
     }
   }
-  return { styles, hipsY, hipsW, modes, ground, supported };
+  return { styles, hipsY, hipsW, modes, ground, supported, held };
 }
