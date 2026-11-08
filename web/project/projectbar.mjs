@@ -71,13 +71,27 @@ export class ProjectController {
   _key() { return this.app.extensionManager?.workflow?.activeWorkflow?.path || "wf"; }
 
   /**
-   * The open workflow's project id ("p_" + 8 hex, extra.ss_project.id), or null: not a saved project yet, or a
-   * project saved before ids existed (it gets one on its next Save; opening it never writes one). Read-only.
-   * window.__ssProject.projectId(); docs/projects.md "Project id".
+   * The open workflow's project id ("p_" + 8 hex), or null. Only an id CONFIRMED against the saved project.json of the
+   * same name (store.confirmProjectId): a Save, an Open, or the check tick() repeats every 15 s / on a name or id
+   * change. null: not saved yet, saved before ids existed (its next Save writes one; opening never does), or the graph
+   * carries an id its project.json does not (renamed in the library, a collected / exported copy, a reused name).
+   * Sync and read-only. For a fresh answer: await window.__ssProject.project(). docs/projects.md "Project id".
    */
-  projectId() { return projectIdOf(this.serialize()); }
+  projectId() {
+    const wf = this.serialize(), t = this._cur(), id = projectIdOf(wf);
+    return id && t?.confirmedId === id && t.confirmedName === projectNameOf(wf) ? id : null;
+  }
 
-  /** {id, name} of the open workflow as it says (extra.ss_project): which project's stored copies Forget cleans. */
+  /** Read project.json now: {id (confirmed or null), name, graph_id, manifest_id, confirmed}; refreshes projectId(). */
+  async project() {
+    const wf = this.serialize();
+    const r = await this.store.confirmProjectId(wf);
+    const t = this._cur();
+    if (t) { t.confirmedId = r.confirmed ? r.id : null; t.confirmedName = r.name; t.checkKey = `${r.name}|${r.graph_id}`; t.checkedAt = Date.now(); }
+    return r;
+  }
+
+  /** {id, name} of the open workflow as it says (extra.ss_project, unconfirmed): which project's copies Forget cleans. */
   current() { const wf = this.serialize(); return { id: projectIdOf(wf), name: projectNameOf(wf) || this._cur()?.name || null }; }
   _cur() { return this.tabs.get(this._key()); }
 
@@ -105,6 +119,8 @@ export class ProjectController {
       if (t.sig !== null && sig !== t.sig) t.clock.change(now);
       t.sig = sig;
       if (this.autosaveOn && t.isSoundstage && !this.busy && t.clock.due(now)) await this.autosaveNow(wf);
+      // keep projectId()'s confirmation current: on a name / id change, and every 15 s (a rename in the library)
+      if (t.checkKey !== `${name}|${projectIdOf(wf)}` || now - (t.checkedAt || 0) > 15_000) { try { await this.project(); } catch { /* next tick */ } }
     }
     this.render();
   }
@@ -146,6 +162,7 @@ export class ProjectController {
       const res = await this.store.save(name, wf, { manifest: this._summary() });
       try { this.app.graph.extra = { ...(this.app.graph.extra || {}), ss_project: { name: res.name, saved_at: res.saved_at, id: res.id } }; } catch { /* */ }
       t.name = res.name;
+      t.confirmedId = res.id; t.confirmedName = res.name; t.checkKey = `${res.name}|${res.id}`; t.checkedAt = Date.now();
       t.savedAt = res.saved_at;
       t.savedSig = t.sig = workflowSig(wf);
       t.error = null;

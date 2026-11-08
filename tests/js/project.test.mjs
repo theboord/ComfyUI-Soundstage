@@ -266,3 +266,39 @@ test("project id stays through the project's own history: two tabs, undo past th
   await api.deleteUserData("workflows/Old.json");                          // leftover folder
   assert.notEqual((await store.save("Old", { ...WF(), extra: { ss_project: { name: "Old" } } })).id, k2, "workflow deleted: fresh id");
 });
+
+test("confirmProjectId / projectId(): an id no saved project.json confirms is not reported", async () => {
+  const api = fakeApi();
+  const store = new ProjectStore({ api });
+  const r = await store.save("Film", WF());
+  assert.deepEqual(await store.confirmProjectId(r.workflow), { id: r.id, name: "Film", graph_id: r.id, manifest_id: r.id, confirmed: true });
+  // an exported / collected copy opened where its project.json is not, or a tab left open after a library rename
+  const moved = stampWorkflow(r.workflow, "Gone", 1);
+  assert.deepEqual(await store.confirmProjectId(moved), { id: null, name: "Gone", graph_id: r.id, manifest_id: null, confirmed: false });
+  // the name was reused by another project (another id in its project.json)
+  await api.storeUserData("projects/Film/project.json", { format: "soundstage-project", v: 1, id: "p_99999999", name: "Film" });
+  assert.equal((await store.confirmProjectId(r.workflow)).confirmed, false);
+  assert.equal((await store.confirmProjectId(WF())).id, null);
+
+  // the controller: projectId() is null until confirmed, and drops back to null when project.json stops agreeing
+  globalThis.window ||= { addEventListener() {} };
+  const { ProjectController } = await import("../../web/project/projectbar.mjs");
+  const ufs = fakeApi();
+  const saved = await new ProjectStore({ api: ufs }).save("Live", WF());
+  const app = { graph: JSON.parse(JSON.stringify(saved.workflow)), extensionManager: {} };
+  app.graph.serialize = () => { const { serialize, ...g } = app.graph; return JSON.parse(JSON.stringify(g)); };   // eslint-disable-line no-unused-vars
+  const ctl = new ProjectController({ app, api: ufs });
+  clearInterval(ctl._timer);
+  ctl.render = () => {}; ctl.say = () => {};
+  try {
+    assert.equal(ctl.projectId(), null, "a dragged-in / opened graph: not confirmed before the check");
+    await ctl.tick();
+    assert.equal(ctl.projectId(), saved.id, "confirmed against projects/Live/project.json");
+    assert.deepEqual(ctl.current(), { id: saved.id, name: "Live" });
+    // renamed in the library while this tab stayed open: project.json moved away
+    ufs.files.delete("projects/Live/project.json");
+    assert.equal((await ctl.project()).confirmed, false);
+    assert.equal(ctl.projectId(), null);
+    assert.equal(ctl.current().id, saved.id, "current() still says what the graph carries (Forget's scope)");
+  } finally { clearInterval(ctl._timer); }
+});

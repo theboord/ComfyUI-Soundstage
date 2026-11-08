@@ -203,6 +203,20 @@ export class ProjectStore {
     return typeof m?.id === "string" && PROJECT_ID_RE.test(m.id) ? m.id : null;
   }
 
+  /**
+   * Is the id a workflow carries (extra.ss_project.id) the one its project's saved project.json holds? Returns
+   * {id, name, graph_id, manifest_id, confirmed}: id is graph_id when confirmed, else null. Not confirmed: no id yet,
+   * no project.json under that name (renamed in the library, a collected / exported / dragged-in copy from elsewhere),
+   * or project.json holds another id (the name was reused, the copy forked). One small read (project.json).
+   */
+  async confirmProjectId(workflow) {
+    const name = projectNameOf(workflow);
+    const graphId = projectIdOf(workflow);
+    const manifestId = name ? await this.projectId(name) : null;
+    const confirmed = !!graphId && graphId === manifestId;
+    return { id: confirmed ? graphId : null, name, graph_id: graphId, manifest_id: manifestId, confirmed };
+  }
+
   /** The saved workflow of a project, or null. */
   async open(name) {
     const n = cleanName(name);
