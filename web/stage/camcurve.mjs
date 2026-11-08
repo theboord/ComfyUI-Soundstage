@@ -50,13 +50,31 @@ export function tangents(t, v) {
   for (let i = 1; i < n; i++) {
     if (sameVal(v[i - 1], v[i]) || sameVal(v[i], v[i + 1])) continue;   // a hold boundary: from / to rest
     const h0 = Math.max(1e-6, t[i] - t[i - 1]), h1 = Math.max(1e-6, t[i + 1] - t[i]);
-    for (let c = 0; c < D; c++) {
-      const d0 = (v[i][c] - v[i - 1][c]) / h0, d1 = (v[i + 1][c] - v[i][c]) / h1;
-      if (d0 * d1 <= 0) continue;                                       // turns back here (or is flat on one side): stop
-      const mc = (d0 * h1 + d1 * h0) / (h0 + h1);                       // the derivative from the key times
-      const lim = 3 * Math.min(Math.abs(d0), Math.abs(d1));            // no overshoot (Fritsch-Carlson)
-      m[i][c] = Math.abs(mc) > lim ? Math.sign(mc) * lim : mc;
+    const d0 = v[i].map((x, c) => (x - v[i - 1][c]) / h0), d1 = v[i + 1].map((x, c) => (x - v[i][c]) / h1);
+    const mc = d0.map((x, c) => (x * h1 + d1[c] * h0) / (h0 + h1));    // the derivative from the key times
+    // Per axis (Fritsch-Carlson): an axis that turns back here (or is flat on one side) stops, one that keeps going is
+    // held to 3x its slower side. Right where the PATH turns back (out and back, a sharp corner); on a gently curving
+    // path it zeroed an axis at its extremum (an orbit's z where the neighbouring keys share a value), so the camera
+    // slowed at those keys. So the limit follows the path's turn: up to 60 degrees between the two chords, the whole
+    // tangent is limited as a vector (3x the slower side's speed) and lengthened from chord to arc (theta / sin theta,
+    // exact for keys evenly spaced on a circle); past 90 degrees, per axis; blended in between.
+    const n0 = Math.hypot(...d0), n1 = Math.hypot(...d1);
+    const cos = n0 > 1e-12 && n1 > 1e-12 ? d0.reduce((s, x, c) => s + x * d1[c], 0) / (n0 * n1) : -1;
+    const w = Math.max(0, Math.min(1, cos / 0.5));
+    const axis = mc.map((x, c) => {
+      if (d0[c] * d1[c] <= 0) return 0;
+      const lim = 3 * Math.min(Math.abs(d0[c]), Math.abs(d1[c]));
+      return Math.abs(x) > lim ? Math.sign(x) * lim : x;
+    });
+    let vec = mc;
+    if (w > 0) {
+      const th = Math.acos(Math.max(-1, Math.min(1, cos)));
+      const arc = th > 1e-6 ? th / Math.sin(th) : 1;
+      const nm = Math.hypot(...mc) * arc, lim = 3 * Math.min(n0, n1);
+      const s = nm > 1e-12 ? Math.min(nm, lim) / Math.hypot(...mc) : 0;
+      vec = mc.map((x) => x * s);
     }
+    for (let c = 0; c < D; c++) m[i][c] = w * vec[c] + (1 - w) * axis[c];
   }
   return m;
 }

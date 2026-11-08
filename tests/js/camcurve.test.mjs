@@ -379,3 +379,26 @@ test("even speed on a mixed dolly and pan: the combined camera + target measure 
   const seq = []; for (let f = 0; f <= 90; f++) seq.push(JSON.stringify(at(f)));
   for (const f of [77, 3, 45, 90, 0, 12, 61]) assert.equal(JSON.stringify(at(f)), seq[f]);
 });
+
+test("an orbit keyed every 36 deg round a 5 m circle keeps its speed through the interior keys (max / min <= 1.05); out-and-back still never swings past its key", () => {
+  // the reviewer's probe: the per-axis limiter zeroed an axis whose neighbouring keys share a value (z at 72 and 108
+  // deg), so the camera slowed about 16 % at those keys
+  const R = 5, step = 24;
+  const orbit = Array.from({ length: 11 }, (_, i) => {
+    const a = (i * 36 * Math.PI) / 180;
+    return { frame: i * step, position: [R * Math.cos(a), 1.6, R * Math.sin(a)], target: [0, 1.2, 0], focal_mm: 35 };
+  });
+  const P = (f) => CC.cameraCurveAt(orbit, f).position;
+  const sp = []; for (let f = step; f < 9 * step; f++) sp.push(len(sub(P(f + 1), P(f))));
+  const r = Math.max(...sp) / Math.min(...sp);
+  assert.ok(r <= 1.05, `orbit speed max / min across interior keys ${r.toFixed(4)} (${Math.min(...sp).toFixed(4)} .. ${Math.max(...sp).toFixed(4)} m/frame)`);
+  for (let f = step; f <= 9 * step; f++) assert.ok(Math.abs(len([P(f)[0], P(f)[2]]) - R) < 0.02, `stays on the circle at ${f} (between the interior keys; the ends ease in from rest)`);
+  // out and back with uneven times (12 frames out, 36 back): the turn-around key is the farthest point
+  const ob = [{ frame: 0, position: [0, 1.6, 0], target: [0, 1, 5], focal_mm: 35 }, { frame: 12, position: [3, 1.6, 0.2], target: [0, 1, 5], focal_mm: 35 },
+    { frame: 48, position: [0, 1.6, 0.4], target: [0, 1, 5], focal_mm: 35 }];
+  for (let f = 0; f <= 48; f++) assert.ok(CC.cameraCurveAt(ob, f).position[0] <= 3 + 1e-9, `no swing past the turn-around key (frame ${f})`);
+  // a sharp corner (90 deg turn): neither axis swings past the corner key
+  const corner = [{ frame: 0, position: [0, 1.6, 0], target: [0, 1, 5], focal_mm: 35 }, { frame: 24, position: [4, 1.6, 0], target: [0, 1, 5], focal_mm: 35 },
+    { frame: 30, position: [4, 1.6, 1], target: [0, 1, 5], focal_mm: 35 }];
+  for (let f = 0; f <= 30; f++) { const p = CC.cameraCurveAt(corner, f).position; assert.ok(p[0] <= 4 + 1e-9 && p[2] >= -1e-9, `corner, frame ${f}: ${p}`); }
+});
