@@ -4,6 +4,8 @@
   enrich_breakdown
 4 her own pixels leave the scan in every probe pose at 4 m (arms down, arms spread, a pointed-toe kick, joints a few
   pixels off): wider at the shoulders, neck, head and feet, and virtual toe points past the ankles
+3 a second body is judged by a person's shape in her head band (her body mask's top rows), not by side crossings: a
+  ledge, a noisy slab, the ground at her feet and a box reaching both frame edges are no second body
 2 only her (the take's entry or joints) or a person-shaped mask cut by its box opens the triage padding: a bystander
   on the back wall and a box over the background pad only their own box
 5 a box over part of her (top half or third, left half, arms spread) and a take without knees or ankles keep the
@@ -262,3 +264,80 @@ def test_a_take_without_knees_and_ankles_keeps_the_crate(monkeypatch, boxes):
     st, notes = _scan_path(monkeypatch, d, _read(*boxes), TAKE)
     assert st["worded"] == ["Crate"], notes
     assert st["dropped"] == ["Wall"], notes
+
+
+# ------------------------------------------------------------------------------------------------ 3 a second body
+from test_v2s_dancer_r5 import _entry  # noqa: E402
+from test_v2s_dancer_r6 import _cut, _her_at  # noqa: E402
+
+
+def _dup_cut(monkeypatch, d, uv, box, dup):
+    one = _cut(monkeypatch, d, uv, [_entry("woman dancing", box)])
+    two = _cut(monkeypatch, d, uv, [_entry("woman dancing", box), _entry("dancer", dup)])
+    return one, two
+
+
+def _wider(box, g=40):
+    return [box[0] - g, box[1] - 5, box[2] + g, box[3] + 5]
+
+
+def test_a_ledge_inside_the_duplicate_box_is_not_a_second_body(monkeypatch):
+    pytest.importorskip("cv2")
+    d, uv, box, slab = _her_at(8.0, 32.0)                           # the slab pushed back to the far background
+    her = d < 9
+    ledge = np.zeros(d.shape, bool)
+    ledge[240:300, int(box[0]) - 35:int(box[2]) + 35] = True       # a bench at 8.5 m, inside the 40 px wider box
+    ledge &= ~her
+    d[ledge] = 8.5
+    one, two = _dup_cut(monkeypatch, d, uv, box, _wider(box))
+    assert np.isnan(two[195, 200])
+    assert np.isnan(two[ledge]).sum() <= np.isnan(one[ledge]).sum()   # 8f04bf1: all of it
+
+
+@pytest.mark.parametrize("noise", [0.0075, 0.01])
+def test_a_noisy_slab_is_not_a_second_body(monkeypatch, noise):
+    pytest.importorskip("cv2")
+    d, uv, box, slab = _her_at(8.0, 0.5)
+    rng = np.random.default_rng(11)
+    d[slab] = 8.5 * (1 + noise * rng.standard_normal(int(slab.sum())))   # per-pixel depth noise (sigma)
+    one, two = _dup_cut(monkeypatch, d, uv, box, _wider(box))
+    assert np.isnan(two[195, 200])
+    assert np.isnan(two[slab]).sum() <= np.isnan(one[slab]).sum()     # 8f04bf1: 79,006 of 82,506
+    assert np.isnan(two[slab]).sum() <= 0.1 * slab.sum()
+
+
+def test_the_ground_at_her_feet_within_7_percent_is_not_a_second_body(monkeypatch):
+    pytest.importorskip("cv2")
+    d, uv, box, slab = _her_at(8.0, 32.0)
+    her = d < 9
+    ground = np.zeros(d.shape, bool)
+    ground[int(box[3] - 0.23 * (box[3] - box[1])):, :] = True      # crossing about 23% of the box's height
+    ground &= ~her
+    d[ground] = 8.3
+    one, two = _dup_cut(monkeypatch, d, uv, box, _wider(box))
+    assert np.isnan(two[195, 200])
+    assert np.isnan(two[ground]).sum() <= np.isnan(one[ground]).sum()  # 8f04bf1: 33,578 of 34,978
+
+
+def test_a_duplicate_that_reaches_both_frame_edges_is_not_a_second_body(monkeypatch):
+    pytest.importorskip("cv2")
+    d, uv, box, slab = _her_at(8.0, 0.5)
+    one, two = _dup_cut(monkeypatch, d, uv, box, [0, box[1] - 5, 400, box[3] + 5])   # a tight shot
+    assert np.isnan(two[195, 200])
+    assert np.isnan(two[slab]).sum() <= np.isnan(one[slab]).sum()     # 8f04bf1: all 47,506 (one entry 7,610)
+
+
+@pytest.mark.parametrize("off", [45, 70, -70])
+def test_a_second_dancer_in_her_head_band_is_still_a_body(monkeypatch, off):
+    pytest.importorskip("cv2")
+    from test_v2s_dancer import _silhouette
+    d, uv, box, slab = _her_at(8.0, 0.5)
+    her, _ = _silhouette(70, 400, 400)
+    his = np.roll(her, off, axis=1) & ~her
+    d[his] = 8.0 + 0.05 * np.random.default_rng(5).random(int(his.sum()))
+    rng = np.random.default_rng(2)                                  # and the slab behind them noisy
+    s = slab & ~his
+    d[s] = 8.5 * (1 + 0.01 * rng.standard_normal(int(s.sum())))
+    cut = _cut(monkeypatch, d, uv, [_entry("woman dancing", box),
+                                    _entry("man dancing", [box[0] + off, box[1], box[2] + off, box[3]])])
+    assert np.isfinite(cut[his]).sum() <= 0.02 * his.sum()

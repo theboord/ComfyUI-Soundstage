@@ -139,57 +139,50 @@ def _iou_px(bb, jbox, w: int, h: int) -> float:
     return iw * ih / max(u, 1e-6)
 
 
-def _another_body(d, bb, body, w: int, h: int, rel: float = 0.07, share: float = 0.25, side: float = 0.35) -> bool:
-    """True when a person box (0-1000) over the performer holds, outside her body mask, a body of its own at her
-    depth: at least `share` of her body's pixel count lies there within rel of her median depth, not counting a
-    surface. A surface (a slab, a wall, the ground) is a connected piece of those pixels that runs out of the box
-    through its left or right side along at least `side` of the box's height; a person's own box holds him, so
-    he leaves it at most at a hand or a foot. Only each crossing row's run in from that side, over those pixels with
-    no depth step between neighbours, is the surface, so a second dancer standing in front of a slab at her depth
-    (joined to it) still counts. A duplicate entry for her holds only her and the set behind her (a slab within 7% of her depth too); a second
-    dancer beside her holds himself. Known limit: a person standing well behind or in front of her inside her box
-    reads as a duplicate and gets her body mask."""
+HEAD_BAND = (-0.1, 0.3)   # the rows a second person's head and shoulders fill: her crown row + these shares of her height
+SIDE_RUN = 0.5            # a piece of the head band that runs along a box or frame side this much of the band is a surface
+
+
+def _another_body(d, bb, body, w: int, h: int, rel: float = 0.07, share: float = 0.15) -> bool:
+    """True when a person box (0-1000) over the performer holds, outside her body mask, a person of its own at her
+    depth. It is judged on a person's shape, from her own body mask (her joints' silhouette): someone at her depth is
+    about her size in the picture and stands on the same floor, so his head and shoulders fill the rows of hers (her
+    crown row + HEAD_BAND of her height). Inside the box, in those rows only, the pixels within rel of her median depth
+    and outside her body are cut into connected pieces; a piece that runs along the box's left or right side, or the
+    frame's edge, over at least SIDE_RUN of the band is a surface (a wall, a slab, the set, cut by the box or the
+    frame), and the rest are his. It is a second body when they hold at least `share` of her own pixels in those
+    rows. A ledge or bench inside the box, a slab from her chest down (however noisy its depth), the ground at her
+    feet and a box that reaches both frame edges hold nothing in her head band, so a duplicate entry for her keeps her
+    body mask. Known limits: a second person much shorter than her, crouching or lying down, or standing well behind
+    or in front of her, reads as no second body (the entry gets her body mask and his pixels stay in the scan); a
+    second person whose head band piece is joined to a wall within rel of her depth reads as that wall."""
+    rows = np.flatnonzero(body.any(1))
+    if not rows.size:
+        return False
     zb = float(np.median(d[body]))
+    top, Hb = int(rows[0]), int(rows[-1] - rows[0] + 1)
     x0, x1 = max(0, int(bb[0] / 1000 * w)), min(w, int(np.ceil(bb[2] / 1000 * w)))
     y0, y1 = max(0, int(bb[1] / 1000 * h)), min(h, int(np.ceil(bb[3] / 1000 * h)))
-    if x1 <= x0 or y1 <= y0:
+    r0, r1 = max(y0, top + int(HEAD_BAND[0] * Hb)), min(y1, top + int(np.ceil(HEAD_BAND[1] * Hb)))
+    if x1 <= x0 or r1 <= r0:
         return False
-    need = share * int(body.sum())
-    # the box grown by one pixel each side (inside the frame), so a piece that leaves through a side shows it
-    gx0, gx1 = max(0, x0 - 1), min(w, x1 + 1)
-    sub = d[y0:y1, gx0:gx1]
-    near = ~body[y0:y1, gx0:gx1] & np.isfinite(sub) & (np.abs(sub - zb) < rel * zb)
-    li, ri = x0 - gx0, x1 - 1 - gx0                         # the box's own first and last column in `near`
-    inner = np.zeros_like(near)
-    inner[:, li:ri + 1] = True
-    if int((near & inner).sum()) < need:
+    sub = d[r0:r1, x0:x1]
+    hers = body[r0:r1, x0:x1]
+    need = share * max(1, int(body[r0:r1].sum()))
+    near = ~hers & np.isfinite(sub) & (np.abs(sub - zb) < rel * zb)
+    if int(near.sum()) < need:
         return False
     try:
         import cv2
         n, lab = cv2.connectedComponents(near.astype(np.uint8), connectivity=4)
     except ImportError:   # without OpenCV every near pixel is one piece
         n, lab = 2, near.astype(np.int32)
-    tall = side * (y1 - y0)
+    band = r1 - r0
     surface = np.zeros(n, bool)
-    runs = np.zeros_like(near)
-    for out_c, in_c, step in ((li - 1, li, 1), (ri + 1, ri, -1)):
-        if out_c < 0 or out_c >= near.shape[1]:             # the box is at the frame edge on that side: no evidence
-            continue
-        both = (lab[:, out_c] == lab[:, in_c]) & near[:, in_c] & near[:, out_c]
-        surface |= np.bincount(lab[both, in_c], minlength=n) >= tall
-        # each crossing row's run in from that side over near pixels with no depth step between neighbours (> 2% of
-        # her depth): the surface itself, not a body standing in front of it
-        cols = slice(in_c, None) if step > 0 else slice(in_c, None, -1)
-        nr, sd = near[:, cols], sub[:, cols]
-        smooth = np.ones_like(nr)
-        smooth[:, 1:] = np.abs(np.diff(sd, axis=1)) < 0.02 * zb
-        run = np.cumprod(nr & smooth, axis=1).astype(bool) & both[:, None]
-        if step > 0:
-            runs[:, in_c:] |= run
-        else:
-            runs[:, in_c::-1] |= run
+    for c in (0, near.shape[1] - 1):   # the box's own left and right columns (the frame edge when it reaches it)
+        surface |= np.bincount(lab[near[:, c], c], minlength=n) >= SIDE_RUN * band
     surface[0] = False
-    return int((near & inner & ~(surface[lab] & runs)).sum()) >= need
+    return int((near & ~surface[lab]).sum()) >= need
 
 
 TAKE_KEY = "take"   # people_masks / people_boxes: the performer from the take's joints when no person entry is over her
