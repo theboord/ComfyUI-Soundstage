@@ -295,6 +295,8 @@ const STEP_PROBE = 0.02;
 const STEP_JUMP = 0.025;
 /** _walkHeightAt: the set's floor is also looked at this far (m) either way (a body keyed exactly on an edge). */
 const EDGE_EPS = 0.002;
+/** _walkHeightAt: a walked step is spread over at most this much travel (m, for a 1.8 m person) ... */
+const STEP_SPAN = 0.5;
 /** _walkHeightAt: at most this many looks between two frames (a 50 cm step between two frames is still found). */
 const STEP_PROBES_MAX = 48;
 /** _obstacles / _heightAt: how many recent obstacle lists and height tables per person are kept (jitter on a cell edge). */
@@ -1979,28 +1981,34 @@ export class Stage {
     // The footing's breaks (steps), from the ground itself: where the footing (over the keyed height) changes from one
     // frame to the next by more than STEP_JUMP, the path between the two is looked at every STEP_PROBE and only the
     // changes over STEP_JUMP between two looks are breaks; the rest is a slope, followed exactly. Standing still, the
-    // whole change is a break (a crate pushed under the feet). J sums the walked breaks (up to walkStep), B all of them.
-    const J = new Float64Array(n), B = new Float64Array(n);
+    // whole change is a break (a crate pushed under the feet). Looks that break one after the other the same way are ONE
+    // break (a bank steeper than 51 degrees is one rise, not many). Each break is judged on its own: up to walkStep it
+    // is walked (J sums those), bigger it is a jump (B sums those). A flight of stairs is many walked breaks, each a
+    // riser: their SUM within a quarter second used to be the jump test, so two 17 cm risers (34 cm) were a jump for
+    // anyone 1.3 m or shorter (the library child: 3 frames hidden, the body 16 cm over the treads) and stairs run up at
+    // 2.5 m/s or down at 3 m/s hid 6-11 frames.
+    const walkAdd = new Float64Array(n), jumpAdd = new Float64Array(n);
+    let run = 0, runAt = -1;
+    const flush = () => { if (run) { (Math.abs(run) <= walkStep ? walkAdd : jumpAdd)[runAt] += run; } run = 0; };
     for (let f = 1; f < n; f++) {
       const d = (S[f] - Y0[f]) - (S[f - 1] - Y0[f - 1]);
-      let all = 0, walk = 0;
-      if (Math.abs(d) > STEP_JUMP) {
-        const dx = PX[f] - PX[f - 1], dz = PZ[f] - PZ[f - 1];
-        const m = Math.max(1, Math.min(STEP_PROBES_MAX, Math.ceil(Math.hypot(dx, dz) / STEP_PROBE)));
-        let prev = S[f - 1] - Y0[f - 1], prevS = S[f - 1];
-        for (let i = 1; i <= m; i++) {
-          const t = i / m, y0 = Y0[f - 1] + t * (Y0[f] - Y0[f - 1]);
-          const s = i === m ? S[f] : footing(PX[f - 1] + t * dx, PZ[f - 1] + t * dz, y0, prevS);
-          const e = (s - y0) - prev;
-          if (Math.abs(e) > STEP_JUMP) { all += e; if (Math.abs(e) <= walkStep) walk += e; }
-          prev = s - y0; prevS = s;
-        }
+      if (!(Math.abs(d) > STEP_JUMP)) { flush(); continue; }
+      const dx = PX[f] - PX[f - 1], dz = PZ[f] - PZ[f - 1];
+      const m = Math.max(1, Math.min(STEP_PROBES_MAX, Math.ceil(Math.hypot(dx, dz) / STEP_PROBE)));
+      let prev = S[f - 1] - Y0[f - 1], prevS = S[f - 1];
+      for (let i = 1; i <= m; i++) {
+        const t = i / m, y0 = Y0[f - 1] + t * (Y0[f] - Y0[f - 1]);
+        const s = i === m ? S[f] : footing(PX[f - 1] + t * dx, PZ[f - 1] + t * dz, y0, prevS);
+        const e = (s - y0) - prev;
+        if (Math.abs(e) > STEP_JUMP) { if (run && Math.sign(e) !== Math.sign(run)) flush(); run += e; runAt = f; } else flush();
+        prev = s - y0; prevS = s;
       }
-      J[f] = J[f - 1] + walk;
-      B[f] = B[f - 1] + all;
     }
-    // jumps: the breaks plus the keyed height rising or dropping more than walkStep within a quarter second (a slope
-    // walked fast is no jump: 4 m/s up 20 degrees was one, 21 frames hidden); their gravity arcs, as _heightAt
+    flush();
+    const J = new Float64Array(n), B = new Float64Array(n);
+    for (let f = 1; f < n; f++) { J[f] = J[f - 1] + walkAdd[f]; B[f] = B[f - 1] + jumpAdd[f]; }
+    // jumps: a break over walkStep, or the keyed height rising or dropping more than walkStep within a quarter second
+    // (a slope walked fast is no jump: 4 m/s up 20 degrees was one, 21 frames hidden); their gravity arcs, as _heightAt
     const big = [];
     for (let q = 0; q < n; q++) {
       const e = B[q] + Y0[q];
@@ -2009,16 +2017,23 @@ export class Stage {
       for (let g = q; g <= Math.min(n - 1, q + win); g++) lo1 = Math.min(lo1, B[g] + Y0[g]);
       if (e - lo0 > walkStep || e - lo1 > walkStep) big.push(q);
     }
-    const W = new Float64Array(n), air = new Uint8Array(n);
+    const W = new Float64Array(n), air = new Uint8Array(n), span = STEP_SPAN * tall / 1.8;
     for (let f = 0; f < n; f++) {
       let yb = -Infinity;
       for (const q of big) { const d = f - q, v = S[q] - kk * d * d; if (v > yb) yb = v; }
       // a walked step: the footing's breaks (a jump counting as none) averaged over the last quarter second; its smooth
       // part (a ramp, a slope) and the keyed height are followed exactly (a plain average left the body 2 cm low on the
       // station ramp)
-      let m = 0;
-      for (let g = Math.max(0, f - win); g <= f; g++) m += J[f] - J[g];
-      m /= Math.min(f, win) + 1;
+      // (over the last quarter second or the last STEP_SPAN x height / 1.8 of travel, whichever is shorter: run up
+      // stairs at 2.5 m/s a quarter second is 62 cm, the body lagged 15 cm under the tread and a swinging shoe went
+      // 2.9 cm into the next riser)
+      let m = 0, cnt = 0, gone = 0;
+      for (let g = f; g >= Math.max(0, f - win); g--) {
+        m += J[f] - J[g]; cnt++;
+        if (g > 0) gone += Math.hypot(PX[g] - PX[g - 1], PZ[g] - PZ[g - 1]);
+        if (gone >= span) break;
+      }
+      m /= cnt;
       W[f] = +Math.max(S[f] - m, yb).toFixed(4);
       air[f] = yb - S[f] > 0.06 ? 1 : 0;
     }

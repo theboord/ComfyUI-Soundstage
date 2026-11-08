@@ -303,6 +303,77 @@ test("people of 1.1 / 1.4 / 1.8 m walking at a 20 / 40 cm set box: the step limi
   }
 });
 
+/** Five steps of `rise` x 30 cm and a landing (set boxes), 3 m wide. */
+const flight = (rise) => {
+  const s = [];
+  for (let i = 0; i < 5; i++) s.push({ id: `s${i}`, half: [0.15, rise / 2 * (i + 1), 1.5], pos: [0.3 * i + 0.15, rise / 2 * (i + 1), 0], quat: [0, 0, 0, 1] });
+  s.push({ id: "landing", half: [1.5, rise * 2.5, 1.5], pos: [3.0, rise * 2.5, 0], quat: [0, 0, 0, 1] });
+  return s;
+};
+/** The deepest any shoe vertex goes inside one of the boxes (m), over the frames the body is on its feet. */
+const inBoxes = (out, boxes) => {
+  let deep = 0, at = "";
+  for (const r of out.rows) if (r.shown && !r.skip) for (const lr of ["l", "r"]) {
+    const c = r[lr];
+    for (let q = 0; q < c.H.length; q++) for (const b of boxes) {
+      const d = Math.min(b.half[0] - Math.abs(c.P[3 * q] - b.pos[0]), b.half[1] - Math.abs(c.P[3 * q + 1] - b.pos[1]), b.half[2] - Math.abs(c.P[3 * q + 2] - b.pos[2]));
+      if (d > deep) { deep = d; at = `${lr} f${r.f}`; }
+    }
+  }
+  return { deep, at };
+};
+
+test("stairs of 17 / 30 cm for people of 1.1 / 1.2 / 1.3 m (and the library child): walked, never a jump; the body on the treads", { skip: NOT_INSTALLED }, async () => {
+  // df4288b added up every break within a quarter second and compared the SUM to the leg-scaled step limit: two 17 cm
+  // risers (34 cm) went over 0.25 x height for anyone 1.3 m or shorter, frames 57-59 hidden (a jump) and the body
+  // 16.15 cm over the treads. Each riser is its own walked break now.
+  const boxes = flight(0.17), ground = K.boxGround(boxes);
+  const kf = (frame, x) => ({ frame, position: [x, 0, 0] });
+  for (const [kind, h] of [["man", 1.1], ["woman", 1.2], ["man", 1.3], ["child", null]]) {
+    const a = { id: "kid", kind, ...(h ? { height_m: h } : {}), position: [-2, 0, 0], keys: [kf(0, -2), kf(120, 3.2)] };
+    const tag = `${kind} ${h ?? "library"} m on 17 cm stairs`;
+    const st = kind === "child" ? K.bareStage([a], { boxes }) : await K.setup(kind, a, { boxes });
+    if (kind === "child") K.clayOf(st, a);
+    let over = 0, at = -1;
+    for (let f = 0; f <= 120; f++) {
+      assert.ok(!st._walkAirborneAt(a, f), `${tag} f${f}: stairs taken as a jump`);
+      const p = st._actorPosAt(a, f), e = st._walkHeightAt(a, f) - ground(p[0], p[2]);
+      if (e > over) { over = e; at = f; }
+    }
+    assert.ok(over < 0.01, `${tag}: the body ${cm(over)} cm over the tread under it (f${at})`);
+    assert.ok(Math.abs(st._walkHeightAt(a, 120) - 0.85) < 0.01, `${tag}: on the landing at the end`);
+    if (kind === "child") continue;   // (no lifelike kit for the child: its body height only)
+    const out = K.measure(st, a, { ground }), d = inBoxes(out, boxes);
+    assert.ok(d.deep < 0.01, `${tag}: a shoe ${cm(d.deep)} cm inside a step (${d.at})`);
+    // (a 1.1 m person's 17 cm riser is 31% of the leg: the hips dip up to 6 cm stepping up, T.supportDrop)
+    check(K.physical(out), tag, { pen: -1, drop: 0.061, slide: 0.011, planted: 30 });
+  }
+});
+
+test("stairs run up at 2.5 m/s and run down at 3 m/s keyed in a straight line: no frame hidden, no shoe in a step", { skip: NOT_INSTALLED }, async () => {
+  // df4288b: the woman running up 15 cm stairs at 2.5 m/s had 11 frames hidden (6 on 854e956) and running down keyed
+  // from the landing in a straight line 7 (f19-25; 0 on 854e956): three risers in a quarter second summed over the step
+  // limit. Walked breaks one by one now, and a step is spread over at most 50 cm of travel (a quarter second at 2.5 m/s
+  // is 62 cm: the body lagged 15 cm under the tread and a swinging shoe went 2.9 cm into the next riser).
+  const boxes = flight(0.15), ground = K.boxGround(boxes);
+  const kf = (frame, x, y = 0) => ({ frame, position: [x, y, 0] });
+  for (const kind of ["man", "woman"]) for (const [name, keys] of [["up 2.5 m/s", [kf(0, -1.5), kf(48, 3.5)]], ["down 3 m/s", [kf(0, 3.5, 0.75), kf(40, -1.5)]]]) {
+    const a = { id: "run_stairs", kind, height_m: K.heightOf(kind), position: keys[0].position, keys };
+    const n = keys[1].frame + 1, tag = `${kind} stairs ${name}`;
+    const st = await K.setup(kind, a, { frames: n, boxes });
+    for (let f = 0; f < n; f++) assert.ok(!st._walkAirborneAt(a, f), `${tag} f${f}: stairs taken as a jump`);
+    const out = K.measure(st, a, { ground }), d = inBoxes(out, boxes);
+    assert.ok(d.deep < 0.01, `${tag}: a shoe ${cm(d.deep)} cm inside a step (${d.at})`);
+    // a run: its flight phases float (no float limit), each short
+    let run = 0, fl = 0;
+    for (const r of out.rows) { if (Math.min(r.l.h, r.r.h) > 0.01) fl = Math.max(fl, ++run); else run = 0; }
+    assert.ok(fl <= 7, `${tag}: ${fl} frames in a row with no foot within 1 cm`);
+    // FLAW (measured 2026-11-08, the same on 854e956): running down, the woman's planted sole slides 2.8 cm in one frame
+    // (f21, the run's roll over a tread's nosing)
+    check(K.physical(out), tag, { float: n, hover: 0.03, slide: name.startsWith("down") ? 0.03 : 0.02, drift: 0.03, drop: 0.061, planted: 6 });
+  }
+});
+
 test("set-box stairs keyed flat (the body not keyed up them): the body climbs with the feet, nothing sinks into a tread", { skip: NOT_INSTALLED }, async () => {
   // 3abc644: the body height (_heightAt) ignores set boxes while the feet stand on them: keyed flat over the stairs
   // the feet went 75 cm into the landing and slid 21 cm a frame
