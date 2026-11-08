@@ -86,3 +86,41 @@ test("no harness in this checkout names a browser profile folder by process id (
   for (const d of ["tests", "tools"]) walk(join(root, d));
   assert.deepEqual(hits, [], `pid-named profile folders in ${hits.join(", ")}`);
 });
+
+for (const sig of ["SIGTERM", "SIGINT"]) {
+  test(`runShaders stopped by ${sig} (Ctrl-C) still stops the browser's process group and deletes the profile (a SIGTERM'd run left ss-shaders-WrZGjD and its Chrome running)`, { timeout: 30000 }, async () => {
+    // Final review: a signal skips `finally`, so the detached stand-in browser kept running and its profile stayed.
+    // A child Node runs the harness with a stand-in that records its pid and profile, then hangs; we signal the child.
+    const { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const { spawn } = await import("node:child_process");
+    const { pathToFileURL, fileURLToPath } = await import("node:url");
+    const box = mkdtempSync(join(tmpdir(), "ss-fakebrowser-"));
+    let dir = "", pid = 0;
+    const alive = (p) => { try { process.kill(p, 0); return true; } catch { return false; } };
+    try {
+      const log = join(box, "dir.txt"), pidf = join(box, "pid.txt"), exe = join(box, "fake-chrome"), runner = join(box, "run.mjs");
+      writeFileSync(exe, `#!/bin/sh\necho $$ > "${pidf}.tmp"; mv "${pidf}.tmp" "${pidf}"\nfor a; do case "$a" in --user-data-dir=*) d="\${a#--user-data-dir=}"; mkdir -p "$d/Default"; printf %s "$d" > "${log}";; esac; done\nsleep 30\n`);
+      chmodSync(exe, 0o755);
+      const harness = pathToFileURL(fileURLToPath(new URL("../browser/run_shaders.mjs", import.meta.url))).href;
+      writeFileSync(runner, `import { runShaders } from ${JSON.stringify(harness)};\nawait runShaders({ browser: ${JSON.stringify(exe)}, timeoutMs: 25000 });\n`);
+      const node = spawn(process.execPath, [runner], { stdio: "ignore" });
+      const gone = new Promise((ok) => node.once("exit", (code, signal) => ok({ code, signal })));
+      for (let i = 0; i < 100 && !(existsSync(log) && existsSync(pidf)); i++) await new Promise((ok) => setTimeout(ok, 100));
+      dir = readFileSync(log, "utf8"); pid = Number(readFileSync(pidf, "utf8"));
+      assert.ok(dir.includes("ss-shaders-") && existsSync(dir), `the profile folder was made: ${dir}`);
+      assert.ok(alive(pid), "the stand-in browser is running");
+      node.kill(sig);
+      const end = await gone;
+      assert.equal(end.signal, sig, `the run still ends by ${sig} (${JSON.stringify(end)})`);
+      for (let i = 0; i < 20 && alive(pid); i++) await new Promise((ok) => setTimeout(ok, 100));
+      assert.equal(alive(pid), false, "the stand-in browser was stopped");
+      assert.equal(existsSync(dir), false, `the profile folder is deleted: ${dir}`);
+    } finally {
+      if (pid) { try { process.kill(-pid, "SIGKILL"); } catch {} }
+      rmSync(box, { recursive: true, force: true });
+      if (dir.includes("ss-shaders-")) rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}

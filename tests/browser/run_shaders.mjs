@@ -6,8 +6,8 @@
 // exit 2 with {"skipped": "..."} when no browser is found.
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
-import { existsSync, readdirSync, mkdtempSync, rmSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { existsSync, readdirSync, mkdtempSync } from "node:fs";
+import { spawnBrowser, killGroup, removeProfile, guardExit } from "../../tools/qa/browser_proc.mjs";
 import { join, extname, resolve, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -60,15 +60,17 @@ export async function runShaders({ browser = null, timeoutMs = 60000 } = {}) {
   // The browser runs in its own process group (detached), so a timeout can stop it and every helper it started (GPU,
   // renderer, crashpad) at once. Killing only the main process left helpers that wrote into the profile after it was
   // deleted, and the folder came back (ss-shaders-o9iXU1).
+  // Ctrl-C / SIGTERM skip `finally`: guardExit stops the group and deletes the profile first (a SIGTERM'd run left
+  // ss-shaders-WrZGjD behind with its detached Chrome still running).
   let child = null;
-  const killGroup = () => { if (!child?.pid) return; try { process.kill(-child.pid, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch {} } };
+  const release = guardExit(() => child, profile);
   try {
     const dom = await new Promise((ok, fail) => {
-      const p = (child = spawn(exe, args, { stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" }));
+      const p = (child = spawnBrowser(exe, args, { stdio: ["ignore", "pipe", "pipe"] }));
       let o = "", e = "", timedOut = false;
       const t = setTimeout(() => {
         timedOut = true;
-        killGroup();
+        killGroup(p);
         // wait for the browser to be gone (its pipes closed) before the profile is deleted; give up after 5 s
         const g = setTimeout(() => fail(new Error(`browser timed out (and did not exit): ${e.slice(-500)}`)), 5000);
         p.once("close", () => { clearTimeout(g); fail(new Error(`browser timed out: ${e.slice(-500)}`)); });
@@ -82,11 +84,12 @@ export async function runShaders({ browser = null, timeoutMs = 60000 } = {}) {
     if (!text || text === "pending") return { browser: exe, error: `no result from the page (stderr tail: ${dom.e.slice(-800)})` };
     return { browser: exe, ...JSON.parse(text) };
   } finally {
+    release();
     srv.close();
     // a helper the browser left running after a normal exit would also write into the profile: stop the group first
-    killGroup();
+    killGroup(child);
     // the killed processes can still be closing files: retry for a moment
-    try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch {}
+    removeProfile(profile);
   }
 }
 
