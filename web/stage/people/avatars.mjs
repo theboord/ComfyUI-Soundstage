@@ -19,6 +19,9 @@ const TEX_DIR = `${ROCKETBOX_DIR}tex/`;
 const kits = new Map();   // model name -> Promise<kit>; a failed load is dropped, so the next build tries again
 const inflight = new Set();   // per-person upgrades still loading (captureSequence waits for them: no pop mid-capture)
 let warned = false;
+let kitRetryMs = 15000;   // a failed avatar load is shared by the builds of the next 15 s, then tried again
+/** How long a failed avatar load is remembered before the next build tries again (ms; 0 = try again every build). */
+export function setKitRetryMs(ms) { kitRetryMs = Math.max(0, Number(ms) || 0); }
 
 function fbx(url, manager) {
   return new FBXLoader(manager).loadAsync(url);
@@ -43,8 +46,14 @@ export function loadKit(spec) {
     return kit;
   })();
   kits.set(spec.model, p);
-  // Never cache a failure (a dropped connection, a half-copied install): the next _buildSet loads again.
-  p.catch(() => { if (kits.get(spec.model) === p) kits.delete(spec.model); });
+  // Never cache a failure for long (a dropped connection, a half-copied install): a build KIT_RETRY_MS after a failure
+  // loads again, but the builds of a quick run of edits share the failure instead of re-requesting the four FBX files
+  // on every edit.
+  p.catch(() => {
+    if (kits.get(spec.model) !== p) return;
+    if (!(kitRetryMs > 0)) { kits.delete(spec.model); return; }
+    setTimeout(() => { if (kits.get(spec.model) === p) kits.delete(spec.model); }, kitRetryMs);
+  });
   return p;
 }
 
@@ -330,6 +339,9 @@ export function requestFrame(stage) {
  *  not added to g here: setShown adds it when the person can show it (avatarsAt, run by setFrame). */
 export function attachKit(stage, a, g, kit) {
   if (stage.actorMeshes.get(a.id) !== g || g.userData.humanSkin) return null;
+  // Still the same person wanting this model (no project load, no man-to-woman change while it loaded)?
+  const cur = (stage.state?.actors || []).find((x) => x.id === a.id);
+  if (!cur || (kit.spec?.model && C.avatarSpecFor(cur)?.model !== kit.spec.model)) return null;
   if (kit.report?.missingMaps?.length && !kit._mapWarned) {
     kit._mapWarned = true;
     console.warn("Soundstage: avatar materials without a colour map", kit.meshName, kit.report.missingMaps);
@@ -369,9 +381,18 @@ export function upgradeHuman(stage, a, g) {
   const spec = C.avatarSpecFor(a);
   if (!spec || !g?.userData?.joints) return;
   if (reuseSkin(stage, a, g, spec)) return;
-  if (typeof window === "undefined" || typeof window.document?.createElement !== "function") return;   // node tests: clay only
-  const attach = (kit) => attachKit(stage, a, g, kit);
-  const job = loadKit(spec).then((kit) => {
+  const load = stage._loadKit || loadKit;   // stage._loadKit: a test's stand-in loader
+  if (load === loadKit && (typeof window === "undefined" || typeof window.document?.createElement !== "function")) return;   // node tests: clay only
+  // One wanted attach per person: a rebuild (or a model change) while the kit loads replaces the ticket, so only the
+  // latest build's group gets a clone (N rebuilds during a first load: still one clone per person, never N).
+  const ticket = { g, model: spec.model };
+  (stage._avatarWant ||= new Map()).set(a.id, ticket);
+  const attach = (kit) => {
+    if (stage._avatarWant?.get(a.id) !== ticket) return null;   // a later build asked again: this one is stale
+    stage._avatarWant.delete(a.id);
+    return attachKit(stage, a, g, kit);
+  };
+  const job = Promise.resolve(load(spec)).then((kit) => {
     // Mid-capture (a frame-exact sprite sheet is being drawn): never swap the body under it. Put it on afterwards.
     if (stage._capturing) (stage._afterCapture ||= []).push(() => attach(kit));
     else attach(kit);
@@ -382,6 +403,9 @@ export function upgradeHuman(stage, a, g) {
   });
   trackLoading(job);
 }
+
+/** How many lifelike bodies are still loading (a capture says it is waiting for them before it waits). */
+export const loadingCount = () => inflight.size;
 
 /** Count a body still loading (avatarsReady waits for it) until it settles. Returns the promise. */
 export function trackLoading(job) {
@@ -403,7 +427,16 @@ export function avatarsAt(stage) {
   stage._avatarFramePending = false;   // posed now: a requested frame (requestFrame) isn't needed any more
   const actors = stage.state.actors || [];
   const skins = stage._avatarSkins;
-  if (skins && skins.size > actors.length) for (const id of [...skins.keys()]) if (!actors.some((x) => x.id === id)) skins.delete(id);
+  // Drop skins no person uses any more: deleted (even with one added in the same build), turned into a non-person,
+  // or left on an old clay group (a rebuild that gave this person a different model). Clones share the kit's
+  // geometry and textures, so dropping one frees its clone, mixer and gait table.
+  if (skins?.size) for (const [id, skin] of skins) {
+    if (stage.actorMeshes.get(id)?.userData?.humanSkin === skin) continue;
+    if (skin.shown) setShown(skin, false);
+    skin.holder?.removeFromParent();
+    skin.mixer?.stopAllAction?.();
+    skins.delete(id);
+  }
   let users = null;
   const fps = stage.state.shot?.fps || 24, last = stage._lastFrame(), f = stage.frame;
   const blocking = stage.state.people_look === "blocking";
@@ -417,6 +450,7 @@ export function avatarsAt(stage) {
     const reason = C.clayReason(a, {
       blocking, holders: users.holders, carriers: users.carriers, gazeKeyed: gazeKeys(a).length > 0,
       swims: wet && C.swimsInShot(a, () => stage._swimPlan?.(a, g)),
+      floats: !!stage._floatsInShot?.(a),   // swimming off in a pool: the clay floats and bobs (stage._waterPhysics)
       driven: C.drivenInShot(memo, stage.state.active_shot, a.id, stage.drive),
       airborne: !!stage._airborneAt?.(a, f),   // this frame only: clay in the air, lifelike on the ground
       tipped: tippedNow(g),
@@ -468,7 +502,17 @@ export function markLiveTilt(stage, g, q) {
   g.userData.liveTipped = t;
   const skin = g.userData.humanSkin;
   if (t) { skin.reason = "is tipped over"; setShown(skin, false); }
-  else avatarsAt(stage);
+  else {
+    avatarsAt(stage);
+    // avatarsAt stands the body at the KEY position; the live physics has the clay group somewhere else right now
+    // (the drag in progress), so for this tick the body stands where the clay is (the next setFrame agrees again).
+    const a = (stage.state?.actors || []).find((x) => x.id === g.userData.actorId);
+    if (a && skin.shown) {
+      const scale = C.statureScale(C.clayHeight(a) * (a.scale || 1), skin.kit.stature);
+      const w = g.getWorldPosition(new THREE.Vector3());
+      placeHolder(g, skin.holder, { x: w.x, y: w.y - (skin.kit.floor || 0) * scale, z: w.z, yaw: new THREE.Euler().setFromQuaternion(q, "YXZ").y, scale });
+    }
+  }
   return true;
 }
 

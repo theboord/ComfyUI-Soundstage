@@ -338,6 +338,7 @@ export function clayReason(a, ctx = {}) {
   if (ctx.holders?.has(a.id)) return "holds a prop";
   if (ctx.carriers?.has(a.id)) return "carries something";
   if (ctx.swims) return "swims";
+  if (ctx.floats) return "floats in the water";
   if (ctx.driven) return "is driven live";
   if (ctx.airborne) return "is in the air (a jump or vault)";
   if (ctx.tipped) return "is tipped over";

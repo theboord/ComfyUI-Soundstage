@@ -49,7 +49,7 @@ import * as VehicleParts from "./vehicleparts.mjs";
 import * as LightRig from "./lightrig.mjs";
 import { horse as HorseParts, prop as PropParts } from "./rigparts.mjs";
 import { keysHash } from "./people/avatarcore.mjs";   // a cheap signature of a person's keys (_jumpsInShot)
-import { upgradeHuman, avatarsAt, avatarsReady, setShown as setAvatarShown, AVATAR_WAIT_MS } from "./people/avatars.mjs";   // lifelike people over the clay (people overhaul M1)
+import { upgradeHuman, avatarsAt, avatarsReady, loadingCount, setShown as setAvatarShown, AVATAR_WAIT_MS } from "./people/avatars.mjs";   // lifelike people over the clay (people overhaul M1)
 import { swapAvatarCutouts, idMaterial } from "./people/cutout.mjs";   // hair / lash cards keep their cut-out in Depth, Clay, Wire and ID
 import { DEPTH_SHADER, depthPassMaterial } from "./depthshader.mjs";   // the skinning Depth shader (also the underwater set's)
 
@@ -1725,8 +1725,15 @@ export class Stage {
       if (PERSON_KINDS.has(o.kind) || o.mount_id || o.carry_id || (o.keys?.length > 1 && o.keys.some((k) => Math.hypot(k.position[0] - o.keys[0].position[0], k.position[2] - o.keys[0].position[2]) > 0.05))) continue;
       const g = this.actorMeshes.get(o.id);
       if (!g) continue;
-      const P = g.position, Q = g.quaternion, S = g.scale;
-      parts.push(`${g.uuid}@${P.x},${P.y},${P.z}/${Q.x},${Q.y},${Q.z},${Q.w}/${S.x},${S.y},${S.z}`);
+      // Coarse, quantised transform (5 cm, ~1 degree, 1 %): a drag or a console move still refreshes the tables, but
+      // small per-frame motion (a baked object settling, physics jitter) does not rebuild every person's table each
+      // frame. Something floating in a pool or a boat on the swell bobs every frame (_waterPhysics): its keys (above)
+      // already say where it is, so its live transform is left out of the signature altogether.
+      if (g.userData?.inWater) parts.push(`${g.uuid}@water`);
+      else {
+        const P = g.position, Q = g.quaternion, S = g.scale, q = (v, st) => Math.round(v / st);
+        parts.push(`${g.uuid}@${q(P.x, 0.05)},${q(P.y, 0.05)},${q(P.z, 0.05)}/${q(Q.x, 0.01)},${q(Q.y, 0.01)},${q(Q.z, 0.01)},${q(Q.w, 0.01)}/${q(S.x, 0.01)},${q(S.y, 0.01)},${q(S.z, 0.01)}`);
+      }
       parked.push([o, g]);
     }
     const sig = parts.join("|");
@@ -4165,58 +4172,102 @@ export class Stage {
     if (typeof where !== "object") return { ok: false, error: `where must be an object {x, y?, distance_m?} (got '${where}')` };
     const a = this.state.actors.find((x) => x.id === id);
     if (!a) return { ok: false, error: `unknown object '${id}'` };
+    // Riding or carried: its position comes from what holds it, so a key of its own would never show.
+    if (a.mount_id || a.carry_id) {
+      const host = a.mount_id || a.carry_id;
+      return { ok: false, error: `'${id}' is ${a.mount_id ? "riding" : "carried by"} '${host}': place '${host}' instead` };
+    }
+    // x / y: a name, a number or a numeric string ("0.3"); a boolean, an array or an empty string is not a place.
+    const num = (v) => (typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN);
     const X = { left: 1 / 3, center: 0.5, centre: 0.5, middle: 0.5, right: 2 / 3 };
-    const u = typeof where.x === "string" ? X[where.x.toLowerCase()] : Number(where.x ?? 0.5);
+    const u = where.x == null ? 0.5 : typeof where.x === "string" && X[where.x.trim().toLowerCase()] !== undefined ? X[where.x.trim().toLowerCase()] : num(where.x);
     if (!Number.isFinite(u) || u < 0 || u > 1) return { ok: false, error: `x must be left, center, right or 0..1 (got '${where.x}')` };
     const hasY = where.y != null, hasD = where.distance_m != null;
-    if (hasY && !(Number(where.y) >= 0 && Number(where.y) <= 1)) return { ok: false, error: `y must be 0..1 (got '${where.y}')` };
-    if (hasD && !(Number(where.distance_m) > 0)) return { ok: false, error: `distance_m must be > 0 (got '${where.distance_m}')` };
+    const vy = num(where.y), vd = num(where.distance_m);
+    if (hasY && !(vy >= 0 && vy <= 1)) return { ok: false, error: `y must be 0..1 (got '${where.y}')` };
+    if (hasD && !(vd > 0)) return { ok: false, error: `distance_m must be > 0 (got '${where.distance_m}')` };
     const cam = this._activeShotCamera();   // the shot's camera, not a live preview (virtual camera) on screen
     const C = cam.position;
     const nx = 2 * u - 1;
-    const groundAt = (ny) => {   // where the ray through (nx, ny) meets the ground y = 0, or null
+    const flat = (p) => Math.hypot(p.x - C.x, p.z - C.z);
+    // Where the ray through (nx, ny) meets the walkable ground: the stage floor or the set's own floor (a station
+    // platform), found by meeting the plane at the floor height under the last hit until it settles.
+    const groundAt = (ny) => {
       const d = new THREE.Vector3(nx, ny, 0.5).unproject(cam).sub(C);
       if (d.y > -1e-6) return null;
-      const t = -C.y / d.y;
-      return t > 0 ? C.clone().addScaledVector(d, t) : null;
+      let h = 0, P = null;
+      for (let i = 0; i < 4; i++) {
+        const t = (h - C.y) / d.y;
+        if (!(t > 0)) return P;
+        P = C.clone().addScaledVector(d, t);
+        const h2 = this._floorUnder(P.x, P.z);
+        if (Math.abs(h2 - h) < 1e-4) break;
+        h = h2;
+      }
+      return P;
     };
-    const flat = (p) => Math.hypot(p.x - C.x, p.z - C.z);
     let P = null;
     if (hasY && !hasD) {
-      P = groundAt(1 - 2 * Number(where.y));
+      P = groundAt(1 - 2 * vy);
       if (!P) return { ok: false, error: "that point of the frame is above the horizon (it never meets the ground)" };
     } else {
-      let d = Number(where.distance_m);
+      let d = vd;
       if (!hasD) { const cur = this._actorPosAt(a, this.frame); d = Math.hypot(cur[0] - C.x, cur[2] - C.z); }
-      // Down the screen column the ground hit comes nearer; search ny (from far below the frame up to the horizon)
-      // for the hit at that ground distance.
-      const LOW = -2, HIGH = 6;   // ny from half a frame under the bottom edge up past the top (off screen is allowed)
-      if (!groundAt(LOW)) return { ok: false, error: "the camera doesn't see the ground" };
-      let top = HIGH;              // the highest ny that still meets the ground (just under the horizon)
-      if (!groundAt(HIGH)) {
-        let lo = LOW, hi = HIGH;
-        for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (groundAt(m)) lo = m; else hi = m; }
-        top = lo;
+      // Search the screen column (ny from half a frame under the bottom edge to past the top; off screen is allowed)
+      // for every place the ground hit is d away. Ground distance is NOT monotonic up the column: under a steep or
+      // top-down camera the column passes under the camera, so distance falls to ~0 then grows again. Sample the
+      // whole column, bisect each crossing, and keep the crossing nearest the frame's centre line (on screen first).
+      const LOW = -2, HIGH = 6, N = 400;
+      const S = [];
+      for (let i = 0; i <= N; i++) {
+        const ny = LOW + (HIGH - LOW) * i / N, g = groundAt(ny);
+        S.push({ ny, g, f: g ? flat(g) - d : null });
       }
-      if (flat(groundAt(LOW)) > d) return { ok: false, error: `${d} m is nearer than any ground the camera sees at that x` };
-      let a0 = LOW, a1 = top;      // the ground distance grows with ny up to the horizon
-      if (flat(groundAt(a1)) <= d) a0 = a1;
-      else for (let i = 0; i < 80; i++) { const m = (a0 + a1) / 2; if (flat(groundAt(m)) < d) a0 = m; else a1 = m; }
-      P = groundAt(a0);
-      // A steep or top-down camera sees ground all the way up the search range: the far end of it is as far as this
-      // camera's column reaches, so a distance past it can't be had (never report the edge of the range as success).
-      const got = flat(P);
-      if (Math.abs(got - d) > Math.max(0.01, 0.002 * d)) {
-        return { ok: false, error: `${+d.toFixed(3)} m is farther than this camera can put it at that x (at most ${+got.toFixed(2)} m, from the ground it sees)` };
+      const seen = S.filter((s) => s.g);
+      if (!seen.length) return { ok: false, error: "the camera doesn't see the ground" };
+      const roots = [];
+      for (let i = 0; i < N; i++) {
+        const A = S[i], B = S[i + 1];
+        if (A.f == null || B.f == null) continue;
+        if (A.f === 0) { roots.push(A.ny); continue; }
+        if (Math.sign(A.f) === Math.sign(B.f)) continue;
+        let lo = A.ny, hi = B.ny, flo = A.f;
+        for (let k = 0; k < 60; k++) {
+          const m = (lo + hi) / 2, gm = groundAt(m);
+          if (!gm) { hi = m; continue; }
+          const fm = flat(gm) - d;
+          if (Math.sign(fm) === Math.sign(flo)) { lo = m; flo = fm; } else hi = m;
+        }
+        roots.push((lo + hi) / 2);
       }
+      const last = S[N];
+      if (last.f === 0) roots.push(last.ny);
+      const good = roots.map((ny) => ({ ny, g: groundAt(ny) })).filter((r) => r.g && Math.abs(flat(r.g) - d) <= Math.max(0.01, 0.002 * d));
+      if (!good.length) {
+        const ds = seen.map((s) => s.f + d), lo = Math.min(...ds), hi = Math.max(...ds);
+        if (d < lo) return { ok: false, error: `${+d.toFixed(3)} m is nearer than any ground the camera sees at that x (at least ${+lo.toFixed(2)} m)` };
+        return { ok: false, error: `${+d.toFixed(3)} m is farther than this camera can put it at that x (at most ${+hi.toFixed(2)} m, from the ground it sees)` };
+      }
+      good.sort((p, q) => Math.abs(p.ny) - Math.abs(q.ny));
+      P = good[0].g;
     }
-    const pos = [+P.x.toFixed(3), 0, +P.z.toFixed(3)];
+    const floorY = this._floorUnder(P.x, P.z);
+    const person = PERSON_KINDS.has(a.kind);
+    // A person's feet follow the floor by themselves (_heightAt); a prop keeps a keyed height, so on a raised floor
+    // it is keyed at that floor (key_y) instead of being buried in it at 0.
+    const y = !person && (floorY > 0.002 || a.key_y) ? +floorY.toFixed(3) : 0;
+    const pos = [+P.x.toFixed(3), y, +P.z.toFixed(3)];
     const keys = this._actorKeys(a);
     if (keys.length <= 1) for (const k of keys) k.position = [...pos];
     else this._editActorKey(a).position = [...pos];
     // a.position mirrors the base keys; a shot's own blocking (by_shot) was edited instead, so it stays.
     if (keys === a.keys) a.position = [...keys[0].position];
-    delete a.key_y;
+    if (!person && floorY > 0.002) a.key_y = true;
+    // key_y belongs to the object (every shot's keys): drop it only when no key anywhere is raised any more.
+    else if (a.key_y) {
+      const all = [...(a.keys || []), ...Object.values(a.by_shot || {}).flatMap((b) => b?.keys || [])];
+      if (!all.some((k) => (k.position?.[1] || 0) > 0.002)) delete a.key_y;
+    }
     this._yCache?.delete(a);
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
@@ -4239,6 +4290,7 @@ export class Stage {
   /** Stage API for tools: open the Physics panel (physpanel.mjs), for object `id` when given (it is selected first).
    *  The App hands the panel to the stage (stage.physicsPanel). Returns {ok, id} or {ok: false, error}. */
   openPhysicsPanel(id) {
+    if (id == null && !this.selected) return { ok: false, error: "select something" };
     if (id != null) {
       if (!this.state.actors.some((x) => x.id === id) || !this.actorMeshes.has(id)) return { ok: false, error: `unknown object '${id}'` };
       this.select(id);
@@ -4487,6 +4539,24 @@ export class Stage {
     if (!w) return false;
     const geo = w.geometry.parameters, cx = w.position.x, cz = w.position.z;
     return Math.abs(x - cx) < geo.width / 2 && Math.abs(z - cz) < geo.height / 2;
+  }
+
+  /** Does a person who doesn't swim (swim "off") float in the pool anywhere in the shot? _waterPhysics floats and bobs
+   *  their clay at the waterline, which the lifelike body can't follow, so they stay clay for the whole shot (people/
+   *  avatars.mjs avatarsAt: "floats in the water"). The same gates as _waterPhysics; cached on the keys. */
+  _floatsInShot(a) {
+    if (!PERSON_KINDS.has(a.kind) || a.swim !== "off" || a.mount_id || a.carry_id || !this.water) return false;
+    const level = this.water.position.y;
+    if (level < 0.3) return false;                               // the beach's sea is a surface, not a pool
+    const keys = this._actorKeys(a), last = this._lastFrame(), w = this.water;
+    const sig = `${keysHash(keys)}|${last}|${level}|${w.position.x},${w.position.z}|${w.geometry?.parameters?.width},${w.geometry?.parameters?.height}`;
+    this._floatCache ||= new WeakMap();
+    const c = this._floatCache.get(a);
+    if (c?.sig === sig) return c.v;
+    let v = false;
+    for (let f = 0; f <= last && !v; f++) { const p = this._actorPosAt(a, f); v = this._overWater(p[0], p[2]); }
+    this._floatCache.set(a, { sig, v });
+    return v;
   }
 
   /**
@@ -5096,6 +5166,12 @@ export class Stage {
    * (lastCaptureNote and the status line). Returns avatarsReady's {ok, timedOut, pending, waitedMs, message}.
    */
   async _awaitAvatars() {
+    // Say so before the wait (it can last up to the full wait on a first download), not only when it times out.
+    const n = loadingCount();
+    if (n) {
+      this.lastCaptureNote = `Waiting for ${n} lifelike ${n === 1 ? "person" : "people"} to load before capturing (up to ${Math.round((this.avatarWaitMs ?? AVATAR_WAIT_MS) / 1000)} s)...`;
+      try { this.onInteract?.(this.lastCaptureNote); } catch { /* no UI */ }
+    }
     const ready = await avatarsReady(this.avatarWaitMs ?? AVATAR_WAIT_MS);
     this.lastCaptureNote = ready.timedOut ? ready.message : "";
     if (ready.timedOut) { try { this.onInteract?.(ready.message); } catch { /* no UI */ } }

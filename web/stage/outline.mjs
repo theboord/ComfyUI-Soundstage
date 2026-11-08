@@ -12,7 +12,13 @@ const HULL_VS = `
 #include <common>
 #include <skinning_pars_vertex>
 uniform float uPx; uniform vec2 uRes;
+#ifdef CUT
+uniform mat3 uUvT; varying vec2 vUv;
+#endif
 void main() {
+  #ifdef CUT
+  vUv = (uUvT * vec3(uv, 1.0)).xy;
+  #endif
   #include <skinbase_vertex>
   #include <beginnormal_vertex>
   #include <skinnormal_vertex>
@@ -27,13 +33,53 @@ void main() {
 const MASK_VS = `
 #include <common>
 #include <skinning_pars_vertex>
+#ifdef CUT
+uniform mat3 uUvT; varying vec2 vUv;
+#endif
 void main() {
+  #ifdef CUT
+  vUv = (uUvT * vec3(uv, 1.0)).xy;
+  #endif
   #include <skinbase_vertex>
   #include <begin_vertex>
   #include <skinning_vertex>
   gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
 }`;
-const FLAT_FS = `uniform vec3 uColor; uniform float uOpacity; void main() { gl_FragColor = vec4(uColor, uOpacity); }`;
+const FLAT_FS = `uniform vec3 uColor; uniform float uOpacity;
+#ifdef CUT
+uniform sampler2D uMap; uniform float uAlphaTest; varying vec2 vUv;
+#endif
+void main() {
+  #ifdef CUT
+  if (texture2D(uMap, vUv).a < uAlphaTest) discard;
+  #endif
+  gl_FragColor = vec4(uColor, uOpacity);
+}`;
+
+const HIDDEN = new THREE.MeshBasicMaterial({ visible: false });
+const _cutVariants = new WeakMap();   // base outline material -> Map(card material -> its cut-out variant)
+/** The outline material for one source material: a card (hair, lashes: map alpha + alphaTest) keeps its cut-out
+ *  shape, a hidden one (faceless lashes) stays hidden, anything else draws solid. Shares the base's uniforms. */
+function outlineFor(src, base) {
+  if (!src || src.visible === false) return HIDDEN;
+  if (!(src.alphaTest > 0 && src.map)) return base;
+  let m = _cutVariants.get(base);
+  if (!m) _cutVariants.set(base, (m = new Map()));
+  let v = m.get(src);
+  if (!v) {
+    src.map.updateMatrix?.();
+    v = base.clone();
+    v.uniforms = { ...base.uniforms, uMap: { value: src.map }, uAlphaTest: { value: src.alphaTest }, uUvT: { value: src.map.matrix.clone() } };
+    v.defines = { ...(base.defines || {}), CUT: "" };
+    v.userData.cutFrom = src;
+    m.set(src, v);
+  }
+  return v;
+}
+/** Outline material(s) for a mesh: one per geometry group when the mesh has a material array. */
+export function outlineMaterials(o, base) {
+  return Array.isArray(o.material) ? o.material.map((x) => outlineFor(x, base)) : outlineFor(o.material, base);
+}
 
 function hullMat(color, opacity, px, ref) {
   return new THREE.ShaderMaterial({
@@ -63,11 +109,14 @@ function proxiesOf(group, mat, frozen = false) {
     if (!o.isMesh || !o.geometry?.attributes?.position || o.userData.noOutline) return;
     if (o.material?.transparent && o.material.opacity < 0.2) return;   // glass, beams
     let p;
+    // Lifelike people: hair and lash cards keep their cut-out shape, faceless's hidden lashes stay hidden (geometry
+    // groups and alpha followed); every other mesh draws solid, as before.
+    const m = o.userData.avatar ? outlineMaterials(o, mat) : mat;
     if (o.isSkinnedMesh && o.skeleton) {
-      p = new THREE.SkinnedMesh(o.geometry, mat);
+      p = new THREE.SkinnedMesh(o.geometry, m);
       p.bind(o.skeleton, o.bindMatrix);
       p.bindMode = o.bindMode;
-    } else p = new THREE.Mesh(o.geometry, mat);
+    } else p = new THREE.Mesh(o.geometry, m);
     p.matrixAutoUpdate = false;
     p.matrixWorldAutoUpdate = false;
     p.frustumCulled = false;
@@ -108,7 +157,15 @@ export class Highlighter {
     this.scene.add(mask.group, hull.group);
     return (this[slot] = { id, src: g, mask, hull, n: this._count(g) });
   }
-  _count(g) { let n = 0; g?.traverseVisible((o) => { if (o.isMesh) n++; }); return n; }
+  _count(g) {   // a key of what the proxies copy: the visible meshes and, for avatars, their materials (Faceless)
+    let n = 0, k = "";
+    g?.traverseVisible((o) => {
+      if (!o.isMesh) return;
+      n++;
+      if (o.userData.avatar) k += `|${o.id}:${(Array.isArray(o.material) ? o.material : [o.material]).map((x) => x?.id).join(",")}`;
+    });
+    return `${n}${k}`;
+  }
 
   /** Leave a faint copy where `id` is now (null removes it). */
   setGhost(id) {

@@ -436,14 +436,27 @@ test("captures wait for loading bodies, with a clear message on a timeout; a fai
   const r = await waiting;
   assert.equal(r.ok, true);
   assert.equal(A.AVATAR_WAIT_MS >= 30000, true, "the default wait is long enough for a first download");
-  // a load that fails is not remembered
+  // a load that fails is remembered only briefly: the builds of a quick run of edits share it (no re-request of the
+  // four FBX files on every edit), and a build after the retry time loads again
+  A.setKitRetryMs(40);
   const spec = { model: "No_Such_Avatar", clips: { idle: "x", walk: "y", run: "z" } };
   const p1 = A.loadKit(spec);
   await assert.rejects(p1);
   await null;
+  assert.equal(A.loadKit(spec), p1, "within the retry time: the same failure, no new request");
+  await new Promise((r) => setTimeout(r, 60));
   const p2 = A.loadKit(spec);
-  assert.notEqual(p2, p1, "a new attempt, not the cached failure");
+  assert.notEqual(p2, p1, "a new attempt after the retry time, not the cached failure");
   await assert.rejects(p2);
+  A.setKitRetryMs(0);
+  await new Promise((r) => setTimeout(r, 60));   // p2's 40 ms memory runs out
+  const p3 = A.loadKit(spec);
+  await assert.rejects(p3);
+  await null;
+  const p4 = A.loadKit(spec);
+  assert.notEqual(p4, p3, "retry time 0: every build tries again");
+  await assert.rejects(p4);
+  A.setKitRetryMs(15000);
 });
 
 // ---------------------------------------------------------------- 9: skins kept across rebuilds, one re-pose
@@ -818,7 +831,7 @@ test("round 3, 4: a single still (stage.capture) waits for bodies still loading,
     assert.deepEqual(seen, [["color", true]], "rendered once, after the body loaded");
     assert.ok(st.poses >= 1, "the new bodies are posed before the render");
     assert.equal(st.lastCaptureNote, "");
-    assert.deepEqual(st.notes, []);
+    assert.deepEqual(st.notes, ["Waiting for 1 lifelike person to load before capturing (up to 60 s)..."], "it says it is waiting before the wait");
     // nothing loading: no wait, no extra pose
     const st2 = captureStage(() => {});
     await st2.capture("depth");
@@ -830,7 +843,9 @@ test("round 3, 4: a single still (stage.capture) waits for bodies still loading,
     st3.avatarWaitMs = 20;
     await st3.capture("color");
     assert.match(st3.lastCaptureNote, /still loading after 0 s: 1 person is drawn as the clay figure/);
-    assert.deepEqual(st3.notes, [st3.lastCaptureNote]);
+    assert.equal(st3.notes.length, 2);
+    assert.match(st3.notes[0], /^Waiting for 1 lifelike person/);
+    assert.equal(st3.notes[1], st3.lastCaptureNote);
     release();
     await A.avatarsReady(1000);
   });

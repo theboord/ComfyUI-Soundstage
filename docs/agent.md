@@ -52,7 +52,7 @@ The local model (Qwen3.5-4B via core `TextGenerate`, the same graph as the objec
 
 ### Stage API used (public only)
 
-The agent uses `stage.toJSON()`, `stage.load(scene)`, `stage.frame`, `stage.setFrame(f)`, `stage.selected`, `stage.select(id)`, `stage.onChange(scene)` and `stage.onShots?.()`.
+The agent uses `stage.toJSON()`, `stage.load(scene)`, `stage.frame`, `stage.setFrame(f)`, `stage.selected`, `stage.select(id)`, `stage.onChange(scene)` and `stage.onShots?.()`. Edits that tools can call directly on the stage (`duplicate`, `placeInFrame`, `setRig`, `openPhysicsPanel`), with what each returns, are listed in [web/stage/STAGE_API.md](../web/stage/STAGE_API.md).
 
 `applyOps` takes `toJSON()`, applies the ops to that copy, then calls `load()`. It restores the playhead and selection, then fires `onShots` and `onChange`. Nothing private is touched. Scenes include `camera`, `camera_end` and `camera_keys` because `load()` requires `camera`.
 
