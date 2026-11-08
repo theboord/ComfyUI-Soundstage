@@ -7,7 +7,7 @@ import { api } from "../../scripts/api.js";
 import { Stage, DEFAULT_SCENE, ASPECTS, IMPORT_ACCEPT, formatOf, CAR_SHOTS } from "./stage/stage.mjs";
 import { CAM_CURVE } from "./stage/camcurve.mjs";
 import { quickSpec } from "./stage/interior.mjs";
-import { peopleLookControls, blockingToggle, swimControl } from "./stage/people/peopleui.mjs";
+import { peopleLookControls, sceneViewControls, swimControl } from "./stage/people/peopleui.mjs";
 import { SWIM_MODES } from "./stage/buoyancy.mjs";
 import { LIBRARY, OBJECT_COLORS, SEATS } from "./stage/library.mjs";
 import { APPEARANCE_OPTIONS, DEFAULT_APPEARANCE, SKIN_TONES, MOUNTS } from "./stage/humans.mjs";
@@ -1003,11 +1003,11 @@ function createStageWidget(node, inputName) {
 
   const views = document.createElement("div");
   views.className = "ss-views ss-dispviews";
-  for (const [mode, label, tip] of [["wire", "Wire", "Wire: the models' wireframe"], ["clay", "Clay", "Clay: grey models, as the first pass renders them"],
-    ["color", "Color", "Color: materials, sky and light"], ["depth", "Depth", "Depth: the depth pass (near is light)"]]) {
+  for (const [mode, label, tip] of [["wire", "Wire", "Wire: the models' wireframe"],
+    ["color", "Color", "Color: the lifelike look (materials, sky and light)"], ["depth", "Depth", "Depth: the depth pass (near is light)"]]) {
     const b = Object.assign(document.createElement("button"), { type: "button", textContent: label, title: tip });
     b.setAttribute("aria-label", label);   // icon-only in a narrow window (data-xs): the tooltip keeps the words
-    b.setAttribute("aria-pressed", String(mode === "clay"));
+    b.setAttribute("aria-pressed", String(mode === stage.view));   // Color: the stage opens on the lifelike look
     b.addEventListener("pointerdown", (e) => e.stopPropagation());
     b.addEventListener("click", () => {
       views.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
@@ -1015,7 +1015,7 @@ function createStageWidget(node, inputName) {
     });
     views.append(b);
   }
-  const blockingView = blockingToggle(stage);   // scene-wide Blocking look beside the view modes (stage/people/peopleui.mjs)
+  const blockingView = sceneViewControls(stage);   // the device tier picker beside the view modes (stage/people/peopleui.mjs)
   // Shot cam (what renders) vs Free view (fly the whole set; shot camera drawn as a frustum).
   const camMode = document.createElement("div");
   camMode.className = "ss-views";
@@ -4216,7 +4216,7 @@ const BUTTON_ICONS = {
   "⤢ Expand": "maximize-2", "↶": "undo-2", "↷": "redo-2",
   "Build scene": "sparkles", "Add": "plus", "Import 3D…": "upload", "Export GLB": "download", "Play": "play",
   "Delete": "trash-2", "Duplicate": "copy", "Delete setup": "trash-2", "Auto 3-point": "lightbulb",
-  "Wire": "grid-3x3", "Clay": "box", "Color": "palette", "Depth": "layers",
+  "Wire": "grid-3x3", "Color": "palette", "Depth": "layers",
   "Shot cam": "camera", "Camera view": "camera", "Free view": "move-3d", "Wipe": "sliders-horizontal", "Fade": "eye",
 };
 const PRIMARY = new Set(["Build scene"]);

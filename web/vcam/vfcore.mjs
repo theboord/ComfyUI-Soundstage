@@ -398,7 +398,7 @@ export function takeToKeys(take, opts = {}) {
 export const VF_EVENT = "soundstage.vcam";   // what the desktop listens to (api.addEventListener)
 
 /** Phone -> server: the live viewfinder camera (set space), ~30 Hz. */
-export function vfMessage(cam, { frame = 0, recording = false, t = 0, view = "clay" } = {}) {
+export function vfMessage(cam, { frame = 0, recording = false, t = 0, view = "color" } = {}) {
   const r = (v, d = 4) => +(+v).toFixed(d);
   return { type: "vf", t: r(t, 3), frame: r(frame, 2), recording: !!recording, view,
     cam: { position: cam.position.map((v) => r(v)), target: cam.target.map((v) => r(v)), focal_mm: r(cam.focal_mm, 2),

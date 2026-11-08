@@ -1,12 +1,10 @@
 // Lifelike people (people overhaul M1): the look controls.
 //   Face (per person, saved on the actor): in the selected person's Appearance row, next to build, hair and wardrobe.
 //     Shown, or faceless: a plain mannequin face (no painted brows, eyes or lips, no lashes), the hair kept.
-//   Blocking (the whole scene, saved with it as state.people_look): a toggle beside the view modes (Wire / Clay /
-//     Color / Depth), because it changes how the whole stage looks, not one person.
+//   Device tier (this browser): beside the view modes (Wire / Color / Depth), because it changes the whole stage.
 // mkSelect is the App's own select builder (web/soundstage.js).
 export const FACE_TIP = "Lifelike people: show the face, or faceless (a plain mannequin face with no brows, eyes, lips or lashes; the hair stays).";
 export const SWIM_TIP = "Swim: what this person does in a pool, a tank or the sea. Tread water (head up), swim a stroke, float on the back, dive with scuba (neutral, hovers), or Can't swim: they struggle at the surface for a few seconds, then sink slowly and settle on the bottom (Sink slowly: unconscious, no struggle). Auto swims as keyed. Ask can set it too (stage.setSwim).";
-export const BLOCKING_TIP = "Blocking look: retired. People always show lifelike (or as the marked stand-in when the people kit is not installed).";
 export const TIER_TIP = "Device tier: how much the stage asks of this machine. Auto picks one from the GPU (Phone, Low, Standard); Low shows up to 6 lifelike people per shot and Phone 2, the rest as marked stand-ins. Saved for this browser only.";
 
 /** The Face tooltip for a person right now: a stand-in says why (avatarStatus is recomputed by every setFrame, so
@@ -22,7 +20,7 @@ export function peopleLookControls(stage, mkSelect) {
   face.wrap.title = FACE_TIP;
   let id = null;
   const refreshTip = () => { face.wrap.title = faceTip(stage, id); };
-  // The reason can change without the selection changing (a key added, Drive, a jump, the blocking toggle): re-read
+  // The reason can change without the selection changing (a key added, Drive, a jump, the tier): re-read
   // it whenever the pointer or focus comes to the control, as well as on every sync.
   face.wrap.addEventListener("pointerenter", refreshTip);
   face.wrap.addEventListener("focusin", refreshTip);
@@ -43,25 +41,18 @@ export function swimControl(stage, mkSelect, modes) {
   return { swim: sel, sync };
 }
 
-/** The scene-level Blocking toggle, styled like the view-mode buttons (a .ss-views group of one pressed button).
- *  Retired with the clay look (Lifelike-only L1): the button is hidden (it no longer changes people; L2 removes it and
- *  its words), and the group now holds the device tier picker (tierPicker). */
-export function blockingToggle(stage) {
+/** The scene-level control group beside the view modes (a .ss-views group): the device tier picker (tierPicker).
+ *  It held the Blocking toggle until Lifelike-only L2 retired it with the clay look (a saved people_look is dropped on
+ *  load, scenemigrate.mjs). */
+export function sceneViewControls(stage) {
   const el = document.createElement("div");
-  el.className = "ss-views ss-blockview";
+  el.className = "ss-views ss-tierview";
   el.style.marginLeft = "4px";
-  const b = Object.assign(document.createElement("button"), { type: "button", textContent: "Blocking", title: BLOCKING_TIP });
-  b.hidden = true;
-  b.setAttribute("aria-label", "Blocking look");
-  b.setAttribute("aria-pressed", "false");
-  b.addEventListener("pointerdown", (e) => e.stopPropagation());
-  b.addEventListener("click", () => { stage.setBlockingLook(stage.state?.people_look !== "blocking"); sync(); });
-  el.append(b);
   const tier = tierPicker(stage);
   if (tier) el.append(tier.el);
-  const sync = () => { b.setAttribute("aria-pressed", String(stage.state?.people_look === "blocking")); tier?.sync(); };
+  const sync = () => { tier?.sync(); };
   sync();
-  return { el, button: b, sync, tier };
+  return { el, sync, tier };
 }
 
 /** The device tier picker (web/stage/tier.mjs): Auto (the probe's pick, named) or a tier; saved per browser. */

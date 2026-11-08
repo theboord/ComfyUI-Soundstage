@@ -3,7 +3,7 @@
 //
 // The desktop App publishes its scene (POST /soundstage/vcam/scene) and playhead (/sync); the server pushes both down this
 // page's WebSocket. The page builds the same Stage (web/stage/stage.mjs) from that scene, so the picture is the App's own
-// Clay / Color view with its lighting, rendered locally: no video stream, no network in the picture's latency.
+// The Color (lifelike) view with its lighting, rendered locally: no video stream, no network in the picture's latency.
 // Up the same socket go the live camera ({type:"vf"}, ~30 Hz) and events ({type:"vfstate"}); a recorded take is POSTed to
 // /soundstage/vcam/take and the desktop turns it into camera keys on the current shot (web/vcam/desk.mjs).
 
@@ -34,7 +34,7 @@ const MASKS = [null, "2.39", "1.85", "16:9"];
 // ---------------------------------------------------------------- state
 const S = {
   focal: 35, focalT: 35, focus: 3, focusT: 3, stop: 2.8, stopT: 2.8,
-  view: "clay", viewByUser: false,
+  view: "color", viewByUser: false,   // the lifelike look (the Clay view is retired: Lifelike-only L2)
   gyroOn: false, gyroQ: null, gyroAt: 0, phoneRoll: 0,
   level: store.get("level", true), stab: store.get("stab", false), grid: store.get("grid", true), mask: store.get("mask", null), dofOn: store.get("dof", true),
   stick: [0, 0], rise: 0, rocker: 0, rockerHeld: 0,
@@ -98,18 +98,16 @@ function loadScene(scene, rev) {
   const first = !S.haveScene;
   S.haveScene = true;
   S.sceneRev = rev || S.sceneRev + 1;
-  if (!S.viewByUser && scene) setView(stage.view || "clay", false);
+  if (!S.viewByUser && scene) setView("color", false);
   if (first) { stage.setFrameSilent(Math.floor(S.frame)); const cam = stage._shotCameraAt(Math.floor(S.frame)); setLensFrom(cam); rig.recenter(cam); }
   $("shotname").textContent = shot().name || "Shot";
   updateReadouts();
 }
 
 function setView(v, byUser = true) {
-  S.view = v === "color" ? "color" : "clay";
+  S.view = "color";   // one view: the lifelike look. A desktop or an old message asking for "clay" (retired) gets Color.
   if (byUser) S.viewByUser = true;
   stage.setView(S.view);
-  $("vClay").setAttribute("aria-pressed", String(S.view === "clay"));
-  $("vColor").setAttribute("aria-pressed", String(S.view === "color"));
 }
 
 // ---------------------------------------------------------------- network
@@ -134,7 +132,7 @@ function setConn(kind, text) { $("conn").className = "pill glass " + (kind === "
 
 function onSync(m) {
   if (Number.isFinite(+m.frame)) S.sync = { frame: +m.frame, playing: !!m.playing, at: performance.now(), fps: m.fps || shotInfo().fps };
-  if (m.view && !S.viewByUser && m.view !== S.view && (m.view === "clay" || m.view === "color")) setView(m.view, false);
+  if (m.view && !S.viewByUser && m.view !== S.view && (m.view === "clay" || m.view === "color")) setView(m.view, false);   // clay-alias
   if (m.take && S.review && m.take.id === S.review.id) {
     S.review.desk = m.take;
     $("rvDesk").textContent = m.take.status === "applied" ? `✓ on the desktop · ${m.take.keys} keys on ${m.take.shot || "the shot"}` : m.take.status;
@@ -308,8 +306,6 @@ $("gyroBtn").addEventListener("click", () => {
   say(S.gyroOn ? "Motion on: point the phone to aim" : "Motion off: drag the picture to aim");
 });
 $("recenter").addEventListener("click", () => recenter());
-$("vClay").addEventListener("click", () => setView("clay"));
-$("vColor").addEventListener("click", () => setView("color"));
 $("maskBtn").addEventListener("click", () => {
   const i = (MASKS.indexOf(S.mask) + 1) % MASKS.length;
   S.mask = MASKS[i]; store.set("mask", S.mask);

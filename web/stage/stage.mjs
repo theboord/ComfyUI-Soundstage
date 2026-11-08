@@ -57,6 +57,7 @@ import { probeTier, pickTier, deviceInfo, savedPick, savePick } from "./tier.mjs
 import { upgradeHuman, avatarsAt, avatarsReady, loadingCount, trackLoading, setShown as setAvatarShown, AVATAR_WAIT_MS, undoAvatarWrites } from "./people/avatars.mjs";   // lifelike people over the hidden logic rig (one motion, Lifelike-only L1)
 import { swapAvatarCutouts, idMaterial } from "./people/cutout.mjs";   // hair / lash cards keep their cut-out in Depth, Clay, Wire and ID
 import { DEPTH_SHADER, depthPassMaterial } from "./depthshader.mjs";   // the skinning Depth shader (also the underwater set's)
+import { migrateScene, viewMode } from "./scenemigrate.mjs";   // Lifelike-only L2: retired saved fields and the Clay view
 
 /**
  * Video → Stage: the set mesh is the first frame's depth, so the person in the shot is frozen into it. The stage's
@@ -540,7 +541,7 @@ export class Stage {
     const userChange = onChange || (() => {});
     this.onChange = (st) => { if (!this._muteRecord) { this._record(); this._worldPoke(); } userChange(st); };
     this.state = clone(DEFAULT_SCENE);
-    this.view = "clay";
+    this.view = "color";   // the viewport opens on the lifelike look (the Clay view is retired: Lifelike-only L2)
     this.key = "start";
     this.frame = 0;
 
@@ -6248,14 +6249,6 @@ export class Stage {
     this.onChange(this.toJSON());
   }
 
-  /** Blocking look (a saved flag only since Lifelike-only L1: people are never shown as clay; the button is hidden and
-   *  L2 removes the flag). Saved with the scene (state.people_look); it changes nothing a viewer sees. */
-  setBlockingLook(on) {
-    if (on) this.state.people_look = "blocking"; else delete this.state.people_look;
-    this.setFrame(this.frame);
-    this.onChange(this.toJSON());
-  }
-
   /** The device tier: "auto" (the probe's) or TP / T0 / T1 / Hero. Saved for this browser only (tier.mjs). */
   setTier(pick) {
     this.tierPick = ["TP", "T0", "T1", "Hero"].includes(pick) ? pick : "auto";
@@ -7061,6 +7054,7 @@ export class Stage {
 
 
   setView(mode) {
+    mode = viewMode(mode);   // the retired Clay view (saved UI, a phone, an old caller) shows Color (scenemigrate.mjs)
     this.view = mode;
     if (mode === "color" && this._hasSplats()) this._kickSplats();
     this.render();
@@ -7068,7 +7062,7 @@ export class Stage {
 
   load(scene) {
     if (!scene || typeof scene !== "object" || !scene.camera) return;
-    this.state = clone(scene);
+    this.state = migrateScene(clone(scene));   // old saved fields (people_look: "blocking") read as today's (scenemigrate.mjs)
     this._rebake?.cancel();
     this._bakeSig = inputSig(this.state.actors || []);   // a loaded scene carries its own bake (see the Director's _patch)
     if (!this.state.shot) this.state.shot = { frames: 97, fps: 24 };

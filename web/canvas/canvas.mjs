@@ -370,7 +370,7 @@ export class CanvasPanel {
     const layers = [];
     for (const m of data.layers) {
       const layer = this._makeLayer(m.kind, m.name, { id: m.id, visible: m.visible !== false, opacity: m.opacity ?? 1,
-        locked: !!m.locked, stageMode: m.stageMode });
+        locked: !!m.locked, stageMode: m.stageMode });   // a saved stageMode "clay" (retired) shows Color: _makeLayer maps it (Lifelike-only L2)
       layer.file = m.file || null; layer.rev = m.rev || 0;
       if (m.file && (m.kind === "paint" || m.kind === "gen" || m.kind === "mask")) {
         try {
@@ -430,7 +430,7 @@ export class CanvasPanel {
   _makeLayer(kind, name, extra = {}) {
     return { id: extra.id || uid(), name, kind, visible: extra.visible ?? true, opacity: extra.opacity ?? 1,
       locked: extra.locked ?? (kind === "stage" || kind === "backdrop"), canvas: newCanvas(this.EW, this.EH),
-      stageMode: kind === "stage" ? (extra.stageMode || "color") : undefined, thumbDirty: true };
+      stageMode: kind === "stage" ? (extra.stageMode && extra.stageMode !== "clay" ? extra.stageMode : "color")   /* LEGACY_STAGE_MODE */ : undefined, thumbDirty: true };
   }
 
   _initLayers() {
@@ -914,10 +914,7 @@ export class CanvasPanel {
         onclick: (e) => { e.stopPropagation(); this._record(l.locked ? "Unlock" : "Lock", () => { l.locked = !l.locked; }); } }, icon(l.locked ? "lock" : "lock-open", 14));
       const row = el("div", { class: "ss-cv-layer", role: "option", "aria-selected": String(l.id === this.activeId), onclick: () => { this.activeId = l.id; this._renderLayers(); this._renderOptions(); this.render(); } },
         eye, thumb, el("div", { style: "min-width:0" }, name, el("div", { class: "ss-cv-kind" }, { backdrop: "plate", stage: `stage · ${l.stageMode}`, paint: "paint", gen: "generated", mask: "fill mask" }[l.kind] || l.kind)), lock);
-      if (l.kind === "stage") {
-        row.title = "Click the kind label to switch colour / clay";
-        row.querySelector(".ss-cv-kind").addEventListener("click", (e) => { e.stopPropagation(); l.stageMode = l.stageMode === "color" ? "clay" : "color"; this.refreshStage(); });
-      }
+      if (l.kind === "stage") row.title = "The stage layer: the lifelike stage at the playhead, from the shot camera";
       rows.push(row);
     }
     this.layerList.replaceChildren(...rows);
