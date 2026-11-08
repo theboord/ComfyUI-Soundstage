@@ -195,6 +195,18 @@ test("real Rocketbox walking 0.3 / 0.5 / 1.2 m/s on flat ground: no sole slides 
   }
 });
 
+test("toe-off: a 2.1 m man walking, and a 2.1 m man over a 15 cm kerb: no touching sole slides 6 mm in a frame (the toe is still down on the first frame after a plant)", { skip: NOT_INSTALLED }, async () => {
+  // df4288b: 1.01 cm (walking) and 0.82 cm (kerb): the stance ended on the first frame the toe moved fast and that frame
+  // blended out with the toe still touching. A walking stance now goes on up to 2 frames while the sole is down
+  // (T.toeOff) on level ground, the touching patch pinned: 0.37 / 0.42 cm
+  const kerb = [{ id: "kerb", half: [3, 0.075, 3], pos: [3, 0.075, 0], quat: [0, 0, 0, 1] }];
+  for (const [name, opts, ground] of [["walking", {}, () => 0], ["over a 15 cm kerb", { boxes: kerb }, K.boxGround(kerb)]]) {
+    const a = { id: "p_man", kind: "man", height_m: 2.1, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 120, position: [3, 0, 0] }] };
+    const st = await K.setup("man", a, opts);
+    check(K.physical(K.measure(st, a, { ground })), `2.1 m man ${name}`, { slide: 0.006 });
+  }
+});
+
 test("real Rocketbox walking to a stop and going again, and a U-turn: a foot at rest is planted, never held up; one foot always down", { skip: NOT_INSTALLED }, async () => {
   // 3abc644: the swing clearance lifted BOTH feet 3.0 cm (liftMax) in the idle <-> walk crossfade, 4-8 frames with no
   // foot down at the stop and at the restart; on e56d6bc this was 0 frames
@@ -508,6 +520,10 @@ test("the station ramp: stationFloor is the ramp the set draws, and a person wal
   // LOWEST shoe vertex minus the ramp under THAT vertex. On a slope the lowest vertex is not the one touching (late in
   // a stance the heel is up and the ball touches higher up the ramp, 7-14 cm ahead: 8-16 mm higher at 6.6 degrees).
   // The gap that floats is the nearest vertex to the ground under it, and that is 0 on every planted frame.
+  // Re-recorded in the browser on the fifth pass (the try-it build of this branch, the real station set, every frame
+  // through setFrame) with the recorder fixed to measure every shoe vertex against the ground under THAT vertex: the
+  // planted shoes are 0.0 mm off the ramp on every planted frame (man and woman), while the old lowest-vertex number
+  // on the same recording still reads 21.0 mm (man) and 15.9 mm (woman). The bar below holds the planted gap to 2 mm.
   for (const [kind, id, x, z0, z1] of [["man", "man_mw7l5swo", 4.0, -78.2, -69.6], ["woman", "woman_mw7l5t1y", 5.3, -78.8, -70.2]]) {
     const a = { id, kind, position: [x, 0, z0], keys: [{ frame: 0, position: [x, 0, z0] }, { frame: 119, position: [x, 0, z1] }] };
     const st = await K.setup(kind, a, { frames: 120, setFx: set.fx });

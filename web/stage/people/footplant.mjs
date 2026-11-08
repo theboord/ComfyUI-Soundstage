@@ -69,6 +69,7 @@ export const FOOT = {
   far: 0.5,                      // a stance whose ground is this far from the body's height is not planted (over the walked step, half the leg)
   minLeg: 0.45,                  // of the leg's length: a target closer to the hip than this (the leg folded up) is refused
   stillSpeed: 0.15,              // m/s: a body slower than this stands on its own footing, not on a top beside it
+  toeOff: 0.015,                 // a walking stance goes on up to 2 frames while the sole is this close to the footing (toe-off)
   edge: 0.02,                    // the ground under one sole is off its plane by more than this: an edge or a step (the foot sits flat on the top)
   straddle: 0.1, sideMax: 0.2,   // a foot down across a break this high from the body's footing (a platform's edge, a kerb or a
   sideLow: 0.08,                 // box beside the body; a swinging foot counts while its sole is under sideLow) moves the
@@ -415,6 +416,22 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
     // stance from the sole over the body's own footing, not over the ground under it: the clip's own contact. On a
     // step, a kerb or a bump the ground under the foot is off the footing, and that ground decides where it plants.
     stance[lr] = detectStance(R.hb, v, skip, k, T, { vAdd, fast });
+    // toe-off: a walking stance goes on while the clip's sole is still on the ground (within T.toeOff), its speed
+    // limit or not: it ended on the first frame the toe moved fast, and that frame was a blend out with the toe still
+    // touching, sliding 1-1.7 cm (the 2.1 m man, the foot of the stairs, a box's edge). Planted, the touching patch is
+    // pinned (the clip's roll onto the toe is kept)
+    // (a real walk on even ground only (not off a step's edge), and never into the next stance: at 0.3 m/s the idle <-> walk blend shuffles, and joining two
+    // stances across it slid a sole 15 cm)
+    const level = (f) => {   // no break in the ground under the sole (a step's or a box's edge)
+      const K = rig[lr].sole.length, W = R.world;
+      let lo = Infinity, hi = -Infinity;
+      for (let q = 0; q < K; q++) { const g = ground(W[3 * (K * f + q)], W[3 * (K * f + q) + 2], f); lo = Math.min(lo, g); hi = Math.max(hi, g); }
+      return hi - lo < T.edge * k;
+    };
+    for (const [, j] of runsOf(stance[lr])) {
+      let nx = j; while (nx < n && !stance[lr][nx]) nx++;
+      for (let f = j; f < Math.min(nx - 3, j + 2) && !skip[f] && !fast[f] && body[f] > 0.6 && R.hb[f] < T.toeOff * k && level(f); f++) stance[lr][f] = true;
+    }
     // (a stance on ground far from the body's own height, a foot over a platform's edge, is refused frame by frame
     // below, with the planted sole's real height, and so is a target the leg can't reach)
     drift[lr] = d;
