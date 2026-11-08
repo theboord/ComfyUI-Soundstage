@@ -220,7 +220,8 @@ export class ProjectStore {
     // saved without replace (a direct caller), keeps `created`.
     const forked = !kept && !adopted && !!oldId
       && (isCopy || replace || (carried && carried !== oldId) || (projectNameOf(workflow) != null && projectNameOf(workflow) !== n));
-    const created = isCopy || forked ? at : (old.created || at);
+    // (a new `created` must differ from the old one even inside the same millisecond, or the reset would not reset)
+    const created = isCopy || forked ? (Number(old.created) >= at ? Number(old.created) + 1 : at) : (old.created || at);
     const wf = stampWorkflow(workflow, n, at, id);
     await this._put(ProjectStore.workflowPath(n), wf);
     const { id: _ignored, ...rest } = manifest || {};   // eslint-disable-line no-unused-vars
