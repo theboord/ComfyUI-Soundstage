@@ -128,6 +128,9 @@ export function normalizeBook(b, script = null) {
   if (!out.scenes || typeof out.scenes !== "object") out.scenes = {};
   if (!out.edited || typeof out.edited !== "object") out.edited = {};
   if (!out.title && script?.title) out.title = script.title;
+  // Decision notes written before 2026-11-07 kept the typed chat sentence as their text: replace it with the tools
+  // they changed (from `why`), so no copy of the raw chat survives a load + save. docs/director.md "Decisions".
+  if (out.notes.some(isLegacyDecision)) out.notes = out.notes.map((n) => (isLegacyDecision(n) ? legacyDecision(n) : n));
   return out;
 }
 
@@ -528,6 +531,49 @@ export function getBookContext(book, script, sceneId = null) {
     prompt: { style: style.slice(0, 3), constraints: constraints.slice(0, 4) }, text };
 }
 
+export const DECISION_V = 2;
+
+const toolLabel = (t) => { const s = String(t || "change").replace(/_/g, " ").trim(); return s ? s[0].toUpperCase() + s.slice(1) : "Change"; };
+const norm = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/** True when `s` is (or holds) the typed sentence, or a big piece of it. */
+function echoes(s, command) {
+  const a = norm(s), c = norm(command);
+  if (!a || !c) return false;
+  return a.includes(c) || (c.includes(a) && a.length >= Math.max(12, c.length * 0.5));
+}
+
+/** A call's arguments without anything that copies the typed sentence: short primitives only (strings <= 60 chars). */
+export function scrubArgs(args, command = "") {
+  const out = {};
+  for (const [k, v] of Object.entries(args && typeof args === "object" ? args : {})) {
+    if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
+    else if (typeof v === "boolean") out[k] = v;
+    else if (typeof v === "string" && v.trim() && v.length <= 60 && !echoes(v, command)) out[k] = v.trim();
+  }
+  return out;
+}
+
+/** "Weather: rain; Lens: 50, shot sh_2": the structured change in a few words (never the typed sentence). */
+export function decisionSummary(change = []) {
+  const parts = change.map(({ tool, args }) => {
+    const vals = Object.entries(args || {});
+    if (!vals.length) return toolLabel(tool);
+    return `${toolLabel(tool)}: ${vals.length === 1 ? String(vals[0][1]) : vals.map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(", ")}`;
+  });
+  return short(parts.join("; "), 160);
+}
+
+// Only recordDecision's own old notes (why "decided in the Director chat (...)"): a note an assistant posted through
+// POST /soundstage/book/note (source "chat" too) holds the assistant's words, not the user's, and keeps its text.
+const isLegacyDecision = (n) => n?.source === "chat" && n.dv !== DECISION_V && /^decided in the Director chat\b/.test(String(n.why || ""));
+
+function legacyDecision(n) {
+  const tools = (/\(([^)]*)\)\s*$/.exec(String(n.why || ""))?.[1] || "").split(",").map((t) => t.trim()).filter(Boolean);
+  const change = tools.map((tool) => ({ tool, args: {} }));
+  return { ...n, text: change.length ? decisionSummary(change) : "Changed in the chat", change, dv: DECISION_V };
+}
+
 const TOOL_CAT = { lens: "camera", camera_move: "camera", shot: "camera", select_shot: "camera", rig: "camera", time: "lighting",
   light: "lighting", weather: "lighting", direct: "performance", move: "blocking", place: "blocking", add: "blocking", mount: "blocking",
   dismount: "blocking", sound: "sound", music: "sound", line: "sound", look: "lighting", style: "lighting" };
@@ -535,15 +581,25 @@ const TOOL_CAT = { lens: "camera", camera_move: "camera", shot: "camera", select
 /**
  * The assistant writes back a decision made in chat as a note on the scene ("Decided earlier: ..." in every later
  * context). Only real changes: an undo, play or render isn't a decision. Returns the note, or null.
+ *
+ * The note keeps the decision, never the chat: `text` is `summary` (a short line the assistant wrote) or, without one,
+ * the structured change in words (decisionSummary); `change` is [{tool, args}] with only short argument values
+ * (scrubArgs). `command`, the user's typed sentence, is read only to skip undo / play and is not stored: a summary or
+ * argument that repeats it is dropped. `ref` (optional): the chat turn's id, so forgetDecision(ref) finds the note.
  */
-export function recordDecision(book, { command, calls = [], results = [], sceneId = null, source = "chat" } = {}) {
-  const text = String(command || "").trim();
-  if (!text || /^(undo|redo|play|stop|yes|no)\b/i.test(text)) return null;
-  const tools = (calls || []).map((c) => c.tool).filter((t, i) => (results[i]?.ok ?? true) && !["undo", "play", "frames", "render"].includes(t));
+export function recordDecision(book, { command, calls = [], results = [], sceneId = null, source = "chat", summary = "", ref = null } = {}) {
+  const typed = String(command || "").trim();
+  if (/^(undo|redo|play|stop|yes|no)\b/i.test(typed)) return null;
+  const ok = (calls || []).filter((c, i) => c && (results[i]?.ok ?? true) && !["undo", "play", "frames", "render"].includes(c.tool));
+  const tools = ok.map((c) => c.tool);
   if (!tools.length) return null;
   const cat = TOOL_CAT[tools.find((t) => TOOL_CAT[t])] || "blocking";
-  const n = { id: noteId(), text, scope: sceneId ? "scene" : "global", scene_id: sceneId, line: null, character: null, category: cat,
+  const change = ok.map((c) => ({ tool: String(c.tool), args: scrubArgs(c.args, typed) }));
+  const said = String(summary || "").replace(/\s+/g, " ").trim();
+  const text = said && !echoes(said, typed) ? short(said, 160) : decisionSummary(change);
+  const n = { id: noteId(), text, change, dv: DECISION_V, scope: sceneId ? "scene" : "global", scene_id: sceneId, line: null, character: null, category: cat,
     categories: [cat], confidence: 1, why: `decided in the Director chat (${tools.join(", ")})`, by: source, source: "chat", at: now() };
+  if (ref != null && String(ref).trim()) n.ref = String(ref).trim().slice(0, 80);
   book.notes.push(n);
   // Keep the chat's trail short: the 40 newest decisions.
   const chat = book.notes.filter((x) => x.source === "chat");

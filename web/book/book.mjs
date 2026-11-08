@@ -8,7 +8,8 @@
 //   book.open("sc_2");                     // the book at scene 2
 //   book.context()                         // getBookContext for the live scene: what the Director / Pitch read
 //   book.recordDecision({ command, calls, results })   // the Director writes back what was decided in chat
-//   await book.forgetDecision(note.id)     // ...and takes it back (Undo): removed, saved to the server -> {ok} or {ok:false, error}
+//   await book.forgetDecision(note.id)     // ...and takes it back (Undo / Forget): removed from the book and from every
+//                                          // stored copy on the server -> {ok, copies} or {ok:false, error[, removed]}
 //   await book.fileNotes("sc2 — keep Mara's face in shadow till she sees the badge")
 //
 // host: { getScript(), liveScene(), sceneStage(id), look(), setLook(patch), renders(sid), chosenPic(sid), cutIds(),
@@ -75,6 +76,25 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
     } catch { return null; }
   }
   const changed = () => { persist(); if (view.open) view.render(); try { H.onNotes?.(); } catch { /* */ } };
+
+  /** A fetch answer read once: {j: its JSON body or null, error: null on success, else "<what>: <server error or HTTP status>"}. */
+  async function readAnswer(res, what) {
+    let j = null;
+    try { j = await res?.json?.(); } catch { /* no body */ }
+    const status = res?.status ?? 200;
+    const bad = (res && res.ok === false) || status >= 400 || j?.ok === false || j?.error;
+    return { j, error: bad ? `${what}: ${j?.error || (j?.errors?.length ? j.errors[0] : `HTTP ${status}`)}` : null };
+  }
+  /** POST /soundstage/book/forget: every stored copy of these decision notes goes. -> {copies} or {error}. */
+  async function scrub(ids) {
+    if (!ids.length) return { error: "no id" };
+    try {
+      const r = api?.fetchApi?.("/soundstage/book/forget", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
+      if (!r) return { error: "no server" };
+      const { j, error } = await readAnswer(await r, "the server could not clean them");
+      return error ? { error } : { copies: Number(j?.removed) || 0 };
+    } catch (e) { return { error: String(e?.message || e) }; }
+  }
 
   /** The live scene's Imagery & Tone + positive Pitfalls into the Look (the still and motion prompts read them). */
   function syncLook() {
@@ -275,39 +295,44 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
     /** The Director writes back what was decided in chat. */
     recordDecision: (d = {}) => { const n = recordDecision(book, { sceneId: H.liveScene(), ...d }); if (n) changed(); return n; },
     /** Undo of a decision the Director / Ask wrote back (recordDecision): remove that note and save the book to the
-     *  server at once (no 1.2 s wait), WAITING for that save. Only decision notes (source "chat"): the director's own
-     *  notes are never removed this way. Resolves {ok: true} once the server has the book without the note, or
-     *  {ok: false, error} (no such note, not a decision, no server, or the save failed: the note is then put back, so
-     *  the book and the server still agree). Async: callers await it. */
+     *  server at once (no 1.2 s wait), WAITING for that save, then remove every older stored copy on the server
+     *  (POST /soundstage/book/forget: the books folder and the user's saved workflows, project manifests, autosaves and
+     *  trash). `id` is the note's id or the `ref` it was recorded with (every decision note with that ref goes). Only
+     *  decision notes (source "chat"): the director's own notes are never removed this way.
+     *  Resolves {ok: true, copies} (copies: how many older stored copies were removed) once the server has answered both;
+     *  {ok: false, error} when there is no such note, it is not a decision, or the book save failed (the note is then put
+     *  back, so the book and the server still agree); or {ok: false, removed: true, error} when the book was saved
+     *  without it but the older copies could not be cleaned (call scrubDecision(id) to try that part again).
+     *  Not covered: ComfyUI's own queue history and files rendered while the note existed (docs/director.md). Async. */
     forgetDecision: async (id) => {
-      const i = book.notes.findIndex((x) => x.id === id);
-      const n = book.notes[i];
-      if (!n) return { ok: false, error: `no note '${id}' in the book` };
-      if (n.source !== "chat") return { ok: false, error: `note '${id}' is not a decision from the chat` };
+      const key = String(id ?? "");
+      const hits = book.notes.map((x, i) => [x, i]).filter(([x]) => x.id === key || (x.ref != null && x.ref === key));
+      if (!hits.length) return { ok: false, error: `no note '${key}' in the book` };
+      if (hits.some(([x]) => x.source !== "chat")) return { ok: false, error: `note '${key}' is not a decision from the chat` };
       const refresh = () => { if (view.open) view.render(); try { H.onNotes?.(); } catch { /* */ } };
-      removeNote(book, id);
+      for (const [x] of hits) removeNote(book, x.id);
       persist({ server: false });
       refresh();
       let error = null;
       try {
         const r = saveToServer();
         if (!r) error = "the book could not be saved: no server";
-        else {
-          const res = await r;
-          let j = null;
-          try { j = await res?.json?.(); } catch { /* no body */ }
-          const status = res?.status ?? 200;
-          if ((res && res.ok === false) || status >= 400 || j?.ok === false || j?.error) error = `the book could not be saved: ${j?.error || `HTTP ${status}`}`;
-        }
+        else error = (await readAnswer(await r, "the book could not be saved")).error;
       } catch (e) { error = `the book could not be saved: ${e?.message || e}`; }
       if (error) {
-        if (!book.notes.some((x) => x.id === id)) book.notes.splice(Math.min(i, book.notes.length), 0, n);   // put it back
+        for (const [x, i] of hits) if (!book.notes.some((y) => y.id === x.id)) book.notes.splice(Math.min(i, book.notes.length), 0, x);   // put it back
         persist({ server: false });
         refresh();
         return { ok: false, error };
       }
-      return { ok: true };
+      const ids = [...new Set([key, ...hits.map(([x]) => x.id), ...hits.map(([x]) => x.ref).filter((x) => x != null)])];
+      const sc = await scrub(ids);
+      return sc.error ? { ok: false, removed: true, error: `removed from the book, but older stored copies could not be cleaned: ${sc.error}` }
+        : { ok: true, copies: sc.copies };
     },
+    /** Remove decision notes (by id or ref) from every stored copy on the server, without touching the open book.
+     *  -> {ok: true, copies} or {ok: false, error}. forgetDecision calls it; call it again when that reported removed. */
+    scrubDecision: async (id) => { const sc = await scrub([String(id ?? "")].filter(Boolean)); return sc.error ? { ok: false, error: sc.error } : { ok: true, copies: sc.copies }; },
     /** A note from anyone (Pitch, a script): placed like shorthand unless a scene is given. */
     addNote: async (text, { sceneId = null, category = null, line = null, source = "pitch" } = {}) => {
       if (sceneId) { const [n] = addPlacements(book, [{ text, scope: "scene", scene_id: sceneId, line, category: category || "blocking", confidence: 1, why: `written by ${source}`, by: source }], { source }); changed(); return n; }

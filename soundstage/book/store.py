@@ -56,3 +56,81 @@ def add_note(note: dict, name: str = "current") -> dict:
     book["notes"] = book["notes"][-400:]
     save(book, name)
     return n
+
+
+# ------------------------------------------------------------------------------------------------ forget a decision
+
+MAX_SCRUB_BYTES = 64 * 1024 * 1024
+
+
+def _strip(obj, ids: set) -> int:
+    """Remove chat decision notes whose id (or ref) is in ids from every "notes" list inside obj. Returns how many."""
+    n = 0
+    if isinstance(obj, dict):
+        notes = obj.get("notes")
+        if isinstance(notes, list):
+            keep = [x for x in notes if not (isinstance(x, dict) and x.get("source") == "chat"
+                                             and (x.get("id") in ids or (x.get("ref") is not None and x.get("ref") in ids)))]
+            if len(keep) != len(notes):
+                n += len(notes) - len(keep)
+                obj["notes"] = keep
+        for k, v in obj.items():
+            if k != "notes":
+                n += _strip(v, ids)
+    elif isinstance(obj, list):
+        for v in obj:
+            n += _strip(v, ids)
+    return n
+
+
+def _json_files(root: str):
+    for d, dirs, files in os.walk(root):
+        dirs[:] = [x for x in dirs if not os.path.islink(os.path.join(d, x))]
+        for f in files:
+            if f.endswith(".json"):
+                p = os.path.join(d, f)
+                if not os.path.islink(p):
+                    yield p
+
+
+def forget(ids, roots) -> dict:
+    """Remove chat decision notes (by note id or ref) from every stored copy: the books folder (current.json and any
+    other book) and each folder in roots (the user's workflows/ and projects/: saved workflows, manifests, autosaves,
+    the trash). Only files whose text mentions an id are parsed; changed files are rewritten atomically.
+    Returns {removed, files: [paths changed], still_mentions: [paths whose text still holds an id, e.g. inside a
+    string], errors: [...]}."""
+    ids = {str(i) for i in (ids or []) if isinstance(i, str) and i.strip()}
+    out = {"removed": 0, "files": [], "still_mentions": [], "errors": []}
+    if not ids:
+        return out
+    seen = set()
+    for root in [books_dir(), *[str(r) for r in roots or [] if r]]:
+        if not os.path.isdir(root):
+            continue
+        for p in _json_files(root):
+            rp = os.path.realpath(p)
+            if rp in seen:
+                continue
+            seen.add(rp)
+            try:
+                if os.path.getsize(p) > MAX_SCRUB_BYTES:
+                    continue
+                with open(p, encoding="utf-8") as f:
+                    text = f.read()
+                if not any(i in text for i in ids):
+                    continue
+                data = json.loads(text)
+                k = _strip(data, ids)
+                if k:
+                    tmp = p + ".forget.tmp"
+                    with open(tmp, "w", encoding="utf-8") as f:
+                        json.dump(data, f, ensure_ascii=False)
+                    os.replace(tmp, p)
+                    out["removed"] += k
+                    out["files"].append(p)
+                    text = json.dumps(data, ensure_ascii=False)
+                if any(i in text for i in ids):
+                    out["still_mentions"].append(p)
+            except (OSError, ValueError) as e:
+                out["errors"].append(f"{p}: {e}")
+    return out

@@ -128,13 +128,14 @@ test("getBookContext: spine, core, rules, scene notes and decisions, compact for
   M.setField(b, "sc_2", "core", "Escape, not victory.");
   M.addPlacements(b, [{ text: "no handheld anywhere", scope: "global", category: "camera", confidence: 0.6 },
     { text: "chase: low & fast, no music till the crash", scope: "scene", scene_id: "sc_2", line: 1, category: "camera", confidence: 0.85 }]);
-  M.recordDecision(b, { command: "make it rain harder", calls: [{ tool: "weather" }], results: [{ ok: true }], sceneId: "sc_2" });
+  M.recordDecision(b, { command: "make it rain harder", calls: [{ tool: "weather", args: { kind: "heavy rain" } }], results: [{ ok: true }], sceneId: "sc_2" });
   const ctx = M.getBookContext(b, s, "sc_2");
   assert.match(ctx.text, /^Spine: A woman takes back/);
   assert.match(ctx.text, /This scene's core: Escape, not victory\./);
   assert.match(ctx.text, /Rule: no handheld anywhere/);
   assert.match(ctx.text, /Note \[camera\]: chase: low & fast/);
-  assert.match(ctx.text, /Decided earlier: make it rain harder/);
+  assert.match(ctx.text, /Decided earlier: Weather: heavy rain/);
+  assert.doesNotMatch(ctx.text, /make it rain harder/, "the typed sentence is not kept");
   assert.ok(ctx.text.length <= 900);
   assert.equal(M.getBookContext(b, s, "sc_3").notes.length, 0);
 });
@@ -191,4 +192,48 @@ test("print binder and Markdown: cover, contents, a sheet set per scene, sources
   assert.match(md, /\| 2A \| Wide crane \| 28 mm/);
   assert.match(md, /## About this book/);
   assert.ok(!/undefined|\[object/.test(md + html));
+});
+
+// ---------------------------------------------------------------- decisions keep the change, not the chat
+const TYPED = "please make Mara walk slowly to the window and then use a 50mm lens on shot two";
+const hasTyped = (b) => JSON.stringify(b).toLowerCase().includes(TYPED.toLowerCase());
+
+test("recordDecision stores the structured change and a short summary, never the raw typed sentence", () => {
+  const b = M.emptyBook(script());
+  const n = M.recordDecision(b, { command: TYPED, sceneId: "sc_1",
+    calls: [{ tool: "move", args: { who: "mara", to: "window", speed: 0.6, note: TYPED } }, { tool: "lens", args: { mm: 50, shot: "sh_2" } }],
+    results: [{ ok: true }, { ok: true }] });
+  assert.equal(n.text, "Move: who mara, to window, speed 0.6; Lens: mm 50, shot sh_2");
+  assert.deepEqual(n.change, [{ tool: "move", args: { who: "mara", to: "window", speed: 0.6 } }, { tool: "lens", args: { mm: 50, shot: "sh_2" } }]);
+  assert.equal(n.dv, M.DECISION_V);
+  assert.equal(hasTyped(b), false, "nowhere in the book, not even in the args");
+  assert.equal(hasTyped(M.getBookContext(b, script(), "sc_1")), false, "nor in what the Director reads back");
+  // an assistant-written summary is used...
+  const s1 = M.recordDecision(b, { command: TYPED, summary: "Mara crosses to the window; 50mm on shot 2.", calls: [{ tool: "lens", args: { mm: 50 } }], results: [{ ok: true }], ref: "turn_7" });
+  assert.equal(s1.text, "Mara crosses to the window; 50mm on shot 2.");
+  assert.equal(s1.ref, "turn_7");
+  // ...unless it just repeats the typed sentence (or most of it)
+  const s2 = M.recordDecision(b, { command: TYPED, summary: `User said: ${TYPED}`, calls: [{ tool: "lens", args: { mm: 50 } }], results: [{ ok: true }] });
+  assert.equal(s2.text, "Lens: 50");
+  const s3 = M.recordDecision(b, { command: TYPED, summary: "make Mara walk slowly to the window and then use a 50mm", calls: [{ tool: "lens" }], results: [{ ok: true }] });
+  assert.equal(s3.text, "Lens");
+  assert.equal(hasTyped(b), false);
+  // a failed call is not part of the decision
+  const f = M.recordDecision(b, { command: TYPED, calls: [{ tool: "lens", args: { mm: 35 } }, { tool: "light", args: { preset: "dusk" } }], results: [{ ok: false }, { ok: true }] });
+  assert.deepEqual(f.change.map((c) => c.tool), ["light"]);
+});
+
+test("old decision notes holding the typed sentence are rewritten on load (only recordDecision's own)", () => {
+  const legacy = { id: "n_old", text: TYPED, scope: "scene", scene_id: "sc_1", category: "blocking", source: "chat", by: "chat",
+    why: "decided in the Director chat (move, lens)", at: 1 };
+  const posted = { id: "n_pitch", text: "Ezra never looks Reed in the eye", source: "chat", by: "chat", why: "written by the assistant for this scene", scope: "scene", scene_id: "sc_1" };
+  const mine = { id: "n_mine", text: "keep the lamp off", source: "director", scope: "scene", scene_id: "sc_1" };
+  const stored = { notes: [legacy, posted, mine] };
+  const b = M.normalizeBook(stored, script());
+  assert.equal(b.notes[0].text, "Move; Lens");
+  assert.equal(b.notes[0].id, "n_old", "same id, so Forget still finds it");
+  assert.equal(b.notes[1].text, posted.text, "an assistant-posted note keeps its words");
+  assert.equal(b.notes[2].text, "keep the lamp off");
+  assert.equal(hasTyped(b), false);
+  assert.equal(stored.notes[0].text, TYPED, "the input object is not mutated");
 });

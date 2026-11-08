@@ -177,16 +177,18 @@ test("book.forgetDecision(id): the decision note goes and the book is saved to t
     assert.ok(book.book.notes.some((x) => x.id === n.id));
     posts.length = 0;
     const s0 = saves;
-    assert.deepEqual(await book.forgetDecision(n.id), { ok: true });
+    assert.deepEqual(await book.forgetDecision(n.id), { ok: true, copies: 0 });
     assert.equal(book.book.notes.some((x) => x.id === n.id), false, "removed");
     assert.equal(props.ss_book.notes.some((x) => x.id === n.id), false, "the workflow copy too");
     assert.ok(saves > s0, "the workflow is saved");
-    assert.equal(posts.length, 1, "saved to the server now, not after the 1.2 s debounce");
+    assert.equal(posts.length, 2, "saved to the server now, not after the 1.2 s debounce, then the older copies cleaned");
     assert.equal(posts[0][0], "/soundstage/book/save");
     assert.equal(posts[0][1].book.notes.some((x) => x.id === n.id), false, "the server copy has no note");
+    assert.equal(posts[1][0], "/soundstage/book/forget");
+    assert.deepEqual(posts[1][1].ids, [n.id]);
     assert.ok(notes > 0, "the Script panel's notes refresh");
     await new Promise((r) => setTimeout(r, 1300));
-    assert.equal(posts.length, 1, "no second, late save of the old book");
+    assert.equal(posts.length, 2, "no second, late save of the old book");
     // twice, or a made-up id: not ok, nothing saved
     assert.equal((await book.forgetDecision(n.id)).ok, false);
     assert.match((await book.forgetDecision("nope")).error, /no note 'nope'/);
@@ -218,9 +220,12 @@ test("book.forgetDecision(id) waits for the server save: {ok} only after the POS
     await new Promise((r) => setTimeout(r, 20));
     assert.equal(settled, null, "still waiting for the POST");
     assert.equal(has(a.id), false, "gone locally while it saves");
-    answer = () => ({ ok: true, status: 200, json: async () => ({ ok: true, path: "x" }) });
+    answer = () => ({ ok: true, status: 200, json: async () => ({ ok: true, path: "x", removed: 3 }) });
     release();
-    assert.deepEqual(await p, { ok: true });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(settled, null, "still waiting for the server to clean the older copies");
+    release();                                    // the /forget POST
+    assert.deepEqual(await p, { ok: true, copies: 3 });
     // 2. the server answers 500: not ok, the error says so, the note is back (book and server agree)
     const b = book.recordDecision({ command: "add fog", calls: [{ tool: "weather", args: { kind: "fog" } }], results: [{ ok: true }] });
     const at = book.book.notes.findIndex((x) => x.id === b.id);
@@ -243,5 +248,40 @@ test("book.forgetDecision(id) waits for the server save: {ok} only after the POS
     assert.equal(rc.ok, false);
     assert.match(rc.error, /connection refused/);
     assert.ok(has(b.id));
+  } finally { book.dispose(); }
+});
+
+test("book.forgetDecision: by ref, every copy server-side; a failed clean-up says removed and scrubDecision retries", async () => {
+  const posts = [];
+  let forgetAnswer = () => ({ ok: true, status: 200, json: async () => ({ ok: true, removed: 5 }) });
+  const api = { fetchApi: async (path, init) => {
+    if (init?.method === "POST") posts.push([path, JSON.parse(init.body)]);
+    return path === "/soundstage/book/forget" ? forgetAnswer() : { status: 200, json: async () => ({ ok: true }) };
+  }, addEventListener() {} };
+  const props = {};
+  const script = { title: "Test", scenes: [{ id: "sc_1", number: 1, heading: "INT. ROOM - DAY", elements: [], characters: [] }], characters: [] };
+  const book = mountBook({ api, stage: null, host: { getScript: () => script, liveScene: () => "sc_1", props: () => props } });
+  const TYPED = "could you make it pour with rain outside the window please";
+  try {
+    const a = book.recordDecision({ command: TYPED, ref: "turn_42", calls: [{ tool: "weather", args: { kind: "rain" } }, { tool: "light", args: { preset: "dusk" } }], results: [{ ok: true }, { ok: true }] });
+    assert.equal(a.text, "Weather: rain; Light: dusk");
+    assert.equal(JSON.stringify(props.ss_book).includes(TYPED), false, "the workflow copy never had the typed sentence");
+    await new Promise((r) => setTimeout(r, 1300));                 // the debounced server save
+    assert.equal(posts.some(([, b]) => JSON.stringify(b).includes(TYPED)), false, "nor did anything sent to the server");
+    posts.length = 0;
+    assert.deepEqual(await book.forgetDecision("turn_42"), { ok: true, copies: 5 });
+    assert.equal(book.book.notes.some((x) => x.id === a.id), false);
+    assert.deepEqual(posts.map((p) => p[0]), ["/soundstage/book/save", "/soundstage/book/forget"]);
+    assert.deepEqual(posts[1][1].ids.sort(), [a.id, "turn_42"].sort());
+    // the clean-up fails (an older server without the route): the note stays gone, the answer says so
+    const b = book.recordDecision({ command: "add fog", calls: [{ tool: "weather", args: { kind: "fog" } }], results: [{ ok: true }] });
+    forgetAnswer = () => ({ ok: false, status: 404, json: async () => { throw new Error("not json"); } });
+    const r = await book.forgetDecision(b.id);
+    assert.equal(r.ok, false);
+    assert.equal(r.removed, true);
+    assert.match(r.error, /older stored copies could not be cleaned: .*HTTP 404/);
+    assert.equal(book.book.notes.some((x) => x.id === b.id), false, "not put back: the book and the server agree");
+    forgetAnswer = () => ({ ok: true, status: 200, json: async () => ({ ok: true, removed: 2 }) });
+    assert.deepEqual(await book.scrubDecision(b.id), { ok: true, copies: 2 });
   } finally { book.dispose(); }
 });

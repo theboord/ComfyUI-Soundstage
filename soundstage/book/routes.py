@@ -9,6 +9,9 @@ GET  /soundstage/book                                       -> the stored book (
 POST /soundstage/book/save    {book}                        -> {ok, path}
 GET  /soundstage/book/context?scene=sc_1                    -> book_context() of the stored book
 POST /soundstage/book/note    {text, scene_id?, category?, source?, script?} -> {note}; the open App merges it
+POST /soundstage/book/forget  {id} or {ids} -> {ok, removed, files, still_mentions, errors}: removes those chat decision
+                              notes (by note id or ref) from every stored copy (books folder, the user's workflows/ and
+                              projects/: saved workflows, manifests, autosaves, trash). book.forgetDecision calls it.
 """
 from __future__ import annotations
 
@@ -126,6 +129,23 @@ def register(routes=None, send=None) -> bool:
         stored = ST.add_note(n)
         send(EVENT, {"type": "note", "note": stored})
         return web.json_response({"note": stored})
+
+    @routes.post("/soundstage/book/forget")
+    async def forget(request):
+        b = await _body(request)
+        ids = [i for i in (b.get("ids") or [b.get("id")]) if isinstance(i, str) and i.strip()]
+        if not ids:
+            return web.json_response({"error": "send {id} or {ids}"}, status=400)
+        roots = []
+        try:
+            from ..project.routes import user_root
+            u = user_root(request)
+            roots = [u / "workflows", u / "projects"]
+        except Exception:  # noqa: BLE001 - no ComfyUI user folder: the books folder only
+            pass
+        import asyncio
+        res = await asyncio.to_thread(ST.forget, ids, roots)
+        return web.json_response({"ok": not res["errors"], **res}, status=200 if not res["errors"] else 500)
 
     _REGISTERED = True
     return True

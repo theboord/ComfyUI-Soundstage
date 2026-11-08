@@ -118,3 +118,41 @@ and runs… camera follows low and handheld." The mic stays on; you don't press 
 ## MCP
 
 The same tools are an MCP server for Claude Desktop / Code: see [mcp.md](mcp.md).
+
+## Decisions in the Director's Book
+
+When a chat command changes the set, the Book keeps a decision note on the scene (`book.recordDecision`, in
+`web/book/model.mjs`). Later commands read it back as "Decided earlier: ...".
+
+- **What is kept:** the decision, not the chat. The note's `text` is a short summary the assistant wrote (`summary`),
+  or, without one, the change in words, such as `Weather: rain; Lens: mm 50, shot sh_2`. `change` holds the calls as
+  `[{tool, args}]`, keeping only short argument values (numbers, true/false, text up to 60 characters).
+- **What is not kept:** the user's typed sentence (`command`). It is used only to skip undo and play. A summary or an
+  argument that repeats it, or most of it, is dropped.
+- **Older notes:** decision notes written before 2026-11-07 held the typed sentence. On load they are rewritten to
+  the tools they changed (for example `Move; Lens`) and keep their id. The new text reaches the server copy on the
+  Book's next save.
+- **Link id:** `recordDecision({..., ref})` stores the chat turn's id as `ref`. `forgetDecision(ref)` removes every
+  decision note with that ref.
+- **Forget:** `await book.forgetDecision(id)` removes the note from the open Book and the workflow
+  (`node.properties.ss_book`), and saves the Book. It then calls `POST /soundstage/book/forget {ids}`. That call
+  removes the note from every stored copy on the server:
+  - the books folder (`user/default/soundstage/books/*.json`)
+  - the user's `workflows/*.json`
+  - `projects/**`: manifests, the 20 autosaves and the trash
+
+  A file is rewritten only if its text holds the id. The answer lists the files changed and any file whose text
+  still mentions the id, for example inside a string.
+
+**Copies that Forget does not reach** (Soundstage does not change ComfyUI itself):
+
+- **ComfyUI's queue history:** each queued prompt keeps the whole workflow in `extra_pnginfo`, Book included. It
+  lives in the server's memory until ComfyUI restarts or its queue history is cleared.
+- **Rendered files:** PNG and video metadata embed the workflow as it was when they were rendered.
+- **The browser:** the frontend keeps the open workflow and its in-tab undo steps in browser storage. The Director's
+  own Undo list holds the typed command in memory until the page reloads.
+- **Collected projects** (`output/soundstage_projects/`) and any zip already downloaded.
+
+From 2026-11-07 a decision note no longer holds the typed sentence, so these copies hold only the short summary and
+the change.
+

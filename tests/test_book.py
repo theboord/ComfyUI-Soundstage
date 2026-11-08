@@ -285,3 +285,89 @@ def test_whole_film_wording_stays_global_whatever_the_model_says():
 def test_spine_that_invents_a_theft_is_flagged():
     out = DR.parse_spine('{"spine":"A woman steals a car to get her father\'s key.","statement":"x"}', SCRIPT)
     assert any("steal" in f["why"] for f in out["grounding"]["flags"])
+
+
+# ------------------------------------------------------------------------------------------- forget a decision everywhere
+
+def _dec(i, ref=None):
+    n = {"id": i, "text": "Weather: rain", "source": "chat", "by": "chat", "scope": "scene", "scene_id": "sc_1",
+         "change": [{"tool": "weather", "args": {"kind": "rain"}}], "dv": 2}
+    if ref:
+        n["ref"] = ref
+    return n
+
+
+def _wf_with_book(notes):
+    return {"nodes": [{"id": 1, "type": "SoundstageStage", "properties": {"ss_book": {"v": 1, "notes": notes}}}],
+            "definitions": {"subgraphs": [{"nodes": [{"id": 2, "properties": {"ss_book": {"notes": list(notes)}}}]}]},
+            "extra": {"ss_project": {"name": "Film", "id": "p_0a1b2c3d"}}}
+
+
+def test_forget_removes_every_stored_copy(tmp_path):
+    books, user = tmp_path / "books", tmp_path / "user"
+    ST._OVERRIDE = str(books)
+    try:
+        mine = {"id": "n_mine", "text": "keep the lamp off", "source": "director"}
+        ST.save({"v": 1, "notes": [_dec("n_gone"), mine, _dec("n_keep")]})
+        (user / "workflows").mkdir(parents=True)
+        auto = user / "projects" / "Film" / "autosave"
+        auto.mkdir(parents=True)
+        trash = user / "projects" / ".trash" / "Old 20261101-101010"
+        (trash / "autosave").mkdir(parents=True)
+        (user / "workflows" / "Film.json").write_text(json.dumps(_wf_with_book([_dec("n_gone"), mine])))
+        for k in range(3):
+            (auto / f"2026110{k}-120000-000.json").write_text(json.dumps({"name": "Film", "workflow": _wf_with_book([_dec("n_gone"), _dec("n_ref", ref="turn_9")])}))
+        (trash / "workflow.json").write_text(json.dumps(_wf_with_book([_dec("n_gone")])))
+        untouched = user / "workflows" / "Other.json"
+        untouched.write_text(json.dumps(_wf_with_book([_dec("n_keep")])))
+        before = untouched.stat().st_mtime_ns
+        # a director's note with that id is never removed (only chat decisions)
+        (user / "workflows" / "Odd.json").write_text(json.dumps({"notes": [{"id": "n_gone", "source": "director", "text": "mine"}]}))
+
+        res = ST.forget(["n_gone", "turn_9"], [user / "workflows", user / "projects"])
+        assert not res["errors"]
+        everything = [p for p in tmp_path.rglob("*.json")]
+        for p in everything:
+            t = p.read_text()
+            assert '"n_ref"' not in t, p                       # found by its ref
+            if p.name != "Odd.json":
+                assert '"n_gone"' not in t, p
+        assert ST.load()["notes"] == [mine, _dec("n_keep")]
+        wf = json.loads((user / "workflows" / "Film.json").read_text())
+        assert wf["nodes"][0]["properties"]["ss_book"]["notes"] == [mine]
+        assert wf["definitions"]["subgraphs"][0]["nodes"][0]["properties"]["ss_book"]["notes"] == [mine]
+        assert wf["extra"]["ss_project"]["id"] == "p_0a1b2c3d"           # the rest of the file is left alone
+        assert untouched.stat().st_mtime_ns == before                     # files that don't mention the id: not rewritten
+        assert json.loads((user / "workflows" / "Odd.json").read_text())["notes"][0]["id"] == "n_gone"
+        assert res["removed"] == 1 + 2 + 3 * 2 * 2 + 2                   # book, Film (2 copies), 3 autosaves x 2 x 2, trash x 2
+        assert str(user / "workflows" / "Odd.json") in res["still_mentions"]
+        assert not list(tmp_path.rglob("*.tmp"))
+        assert ST.forget([], [user]) == {"removed": 0, "files": [], "still_mentions": [], "errors": []}
+    finally:
+        ST._OVERRIDE = None
+
+
+def test_forget_route(tmp_path):
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from soundstage.book import routes as R
+    ST._OVERRIDE = str(tmp_path)
+    R._REGISTERED = False
+    rt = web.RouteTableDef()
+    R.register(rt, send=lambda ev, d: None)
+    app = web.Application()
+    app.add_routes(rt)
+    ST.save({"v": 1, "notes": [_dec("n_a"), _dec("n_b")]})
+
+    async def go():
+        async with TestClient(TestServer(app)) as c:
+            assert (await c.post("/soundstage/book/forget", json={})).status == 400
+            j = await (await c.post("/soundstage/book/forget", json={"id": "n_a"})).json()
+            assert j["ok"] and j["removed"] == 1
+            assert [n["id"] for n in ST.load()["notes"]] == ["n_b"]
+    try:
+        asyncio.run(go())
+    finally:
+        ST._OVERRIDE = None
+        R._REGISTERED = False
