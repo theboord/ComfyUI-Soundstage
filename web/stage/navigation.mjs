@@ -222,7 +222,8 @@ const fracDelta = (e) => { const dx = e.deltaX || 0, dy = e.deltaY || 0; return 
  * A pause of WHEEL_IDLE ms starts a new gesture with the evidence back at neutral (the kind is kept). Back to the mouse
  * after a trackpad is quick: a clear notch (a 120-step legacy delta, or line mode) that starts a gesture switches at once,
  * and two in a row switch mid-stream (one, a fast trackpad flick that reads as a notch, doesn't).
- * Ctrl + wheel is a pinch only from a trackpad (or with fractional deltas); a mouse's Ctrl + wheel is the wheel.
+ * Ctrl + wheel is a pinch only from a trackpad (or with fractional deltas that aren't a notch); a mouse's Ctrl + wheel is
+ * the wheel, at browser zoom or display scaling too (fractional deltas, wheelDelta still a 120-step).
  * force = "mouse" | "trackpad" | "auto" (the ⚙ Scrolling setting).
  */
 export function classifyWheel(e, mem = {}, now = 0, force = "auto") {
@@ -238,7 +239,8 @@ export function classifyWheel(e, mem = {}, now = 0, force = "auto") {
   else if (mem.score <= -WHEEL_SURE) mem.kind = "mouse";
   mem.t = now;
   const kind = force === "mouse" || force === "trackpad" ? force : mem.kind;
-  if (e.ctrlKey) return kind === "trackpad" || fracDelta(e) ? "pinch" : "mouse";
+  // A notch is a mouse's even with fractional deltas (browser zoom or display scaling divides them; wheelDelta stays 120).
+  if (e.ctrlKey) return kind === "trackpad" || (fracDelta(e) && !notch(e)) ? "pinch" : "mouse";
   return kind;
 }
 

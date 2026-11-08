@@ -176,6 +176,8 @@ test("classifyWheel tells a mouse wheel, a trackpad and a pinch apart (only once
   assert.equal(classifyWheel({ deltaY: 3, deltaX: 0, deltaMode: 1 }, mem, 950), "mouse", "line mode is only ever a wheel: sure at once");
   assert.equal(classifyWheel({ deltaY: 2.4, ctrlKey: true, deltaMode: 0 }, {}, 0), "pinch", "fractional Ctrl + wheel: a pinch");
   assert.equal(classifyWheel({ deltaY: 100, ctrlKey: true, deltaMode: 0, wheelDeltaY: -120 }, {}, 0), "mouse", "a mouse's Ctrl + wheel is the wheel");
+  assert.equal(classifyWheel({ deltaY: 90.909, ctrlKey: true, deltaMode: 0, wheelDeltaY: -120 }, {}, 0), "mouse", "at 110% browser zoom too (fractional deltas, a 120-step notch)");
+  assert.equal(classifyWheel({ deltaY: -36.4583, ctrlKey: true, deltaMode: 0, wheelDeltaY: 120 }, { kind: "mouse", score: -3, t: 0 }, 50), "mouse", "mid-stream too");
   const m2 = {};
   for (let i = 0; i < 3; i++) classifyWheel({ deltaY: 2, deltaX: 0, deltaMode: 0, wheelDeltaY: -6 }, m2, i * 16);
   assert.equal(classifyWheel({ deltaY: 2, ctrlKey: true, deltaMode: 0, wheelDeltaY: -6 }, m2, 64), "pinch", "Ctrl + wheel from a known trackpad");
