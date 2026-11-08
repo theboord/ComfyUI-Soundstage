@@ -260,12 +260,18 @@ test("real Rocketbox: a key edit rebuilds the plan fast; a long shot waits for t
   const long = await edit(721);
   console.log(`key edit: ${long.ms.toFixed(1)} ms for a 30 s shot`);
   const { st, a } = long, skin = st.actorMeshes.get(a.id).userData.humanSkin;
-  st._dragging = true;
-  a.keys[1].position = [3.5, 0, 0];
-  const t0 = performance.now(); st.frame = 60; A.avatarsAt(st); const during = performance.now() - t0;
+  // (the drag is always ended, even when an assert throws: a drag left on keeps footPlanFor's after-drag poll
+  // rescheduling itself every 120 ms, and the test process never exits; that is a hang, not a failure)
+  let during;
+  try {
+    st._dragging = true;
+    a.keys[1].position = [3.5, 0, 0];
+    const t0 = performance.now(); st.frame = 60; A.avatarsAt(st); during = performance.now() - t0;
+  } finally {
+    st._dragging = false;
+    clearTimeout(st._footAfterDrag); st._footAfterDrag = 0;
+  }
   assert.ok(during < 30 && skin.footOut === null, `during a drag: ${during.toFixed(0)} ms, grounded ${!!skin.footOut}`);
-  st._dragging = false;
-  clearTimeout(st._footAfterDrag); st._footAfterDrag = 0;
   st.frame = 60; A.avatarsAt(st);
   assert.ok(skin.footOut && skin.feet?.plan, "the plan is rebuilt after the drag");
 });

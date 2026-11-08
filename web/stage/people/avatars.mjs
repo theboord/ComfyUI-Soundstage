@@ -558,8 +558,11 @@ function footPlanFor(stage, a, g, skin, { last, fps, scale }) {
   const dragging = () => !!(stage._dragging || stage._gizmoDragging || stage.live?.drag);
   if (last + 1 > LIVE_PLAN_FRAMES && dragging()) {
     if (!stage._footAfterDrag && typeof setTimeout === "function") {
-      const poll = () => { if (dragging()) { stage._footAfterDrag = setTimeout(poll, 120); return; } stage._footAfterDrag = 0; stage.setFrame(stage.frame); };
-      stage._footAfterDrag = setTimeout(poll, 120);
+      // (unref where there is one, Node: a drag a test leaves on must not keep the process alive; in a browser the
+      // timer is a number and this is a no-op)
+      const later = () => { const t = setTimeout(poll, 120); t?.unref?.(); return t; };
+      const poll = () => { if (dragging()) { stage._footAfterDrag = later(); return; } stage._footAfterDrag = 0; stage.setFrame(stage.frame); };
+      stage._footAfterDrag = later();
     }
     return null;
   }
