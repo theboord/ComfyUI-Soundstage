@@ -3,6 +3,57 @@
 Soundstage is updated continuously on `main`. Newest first. Times are US Pacific.
 Each entry links to the code; every milestone ships with tests.
 
+## 2026-11-08
+
+**Ask hooks, final review round, 2026-11-08 00:30: Play read-only in the App's overlays, pose keeps the keys, seat rules, Ask can take back a pose or lights change, the dimmer in the PiP and captures, num_ctx counts tools, project() always settles, cut.panel() only when shown (private branch `private/ask-hooks`)**
+
+- **Still wrong (read first, known limits):** checked with Node and pytest only, not looked at in the browser, the App,
+  a render or a live ComfyUI / Ollama.
+  - **`local` cannot see an SSH tunnel:** `status()` `local: true` means the model server's URL is loopback (or this
+    machine's name), not that the model or the data stays here; a `localhost:11434` tunnel to a pod reads `local:
+    true`. The new `url_kind` (`loopback` / `this_host` / `remote`) splits the URL cases but a tunnel still reads
+    `loopback`.
+  - **`OLLAMA_CONTEXT_LENGTH` is read from the ComfyUI process's environment:** it is what autostart hands Ollama; an
+    Ollama started elsewhere with its own setting is not visible, and num_ctx is still estimated from characters
+    (tools and messages / 3.5) plus a flat 1536 tokens per image, not the model's tokenizer.
+  - **One person per seat:** a sofa or bench seats one person through `setPose` (its seat is one point); a second is
+    refused, not placed beside the first. Seat height is capped at max(0.8 m, 0.6 x height): there is no lower limit.
+  - **Standing up follows the keys:** `setPose` never changes a person's movement keys, so after "stand" they are
+    where their keys say, which can be inside the chair they left when a key is there (the old 1.2 m step-off is gone).
+    A keyed person sitting on the floor still slides along their keys seated.
+  - **Ask's restore puts back the whole scene:** `host.stage.restore(snap)` also takes back any edit the person made
+    between Ask's snapshot and its restore; `host.stage.undo()` is the stage's last step, whoever made it.
+  - **A dimmed Color capture is brighter than the viewport below -2 stops:** captures stop at `CAPTURE_EXPOSURE_MIN`
+    (-2) so Frame / Motion never get a near-black picture, and guide passes (clay, depth, wire, ID, dust) are not
+    dimmed; the prompt's lighting line carries the rest.
+  - **`host.cut.panel()` is null while another step is open:** the Cut must be on screen; `host.cut.show()` (new)
+    opens it first.
+- **Play still wrote camera keys in the App (`web/stage/camviz.mjs` `shotPathSig`, `_rebuildPath`, `TopView._keys`,
+  `web/stage/tracks.mjs` `_rows`, `web/stage/objparts.mjs` `_camKeyFrames`):** the viewport overlays called the
+  key-creating `_camKeys()` on every render, so a keyless shot gained a stored key on its first render. They read
+  `_camKeysView()` now; TopView insert / drag and a Tracks drag of the fallback key still store it (an edit).
+  `_camKeysView()` no longer re-points the flat `state.camera_keys` either; `toJSON()` writes the active shot's keys
+  into the saved copy's flat field for older readers (`tests/js/askhooks_overlays.test.mjs`; the rewritten
+  `askhooks_play.test.mjs` cases fail on e3774ad, as every overlays case does).
+- **`setPose` overwrote movement keys (`web/stage/stage.mjs` `setPose`):** stand (through `unmount`) and sit to
+  sit_floor replaced a walk 0 to 8 m with one key. The keys are never touched now. Seats: one person per seat
+  (`'<seat>' is taken by '<name>'`), chairs / benches / sofas / armchairs picked ahead of a nearer table / cube / rock,
+  seats above max(0.8 m, 0.6 x height) refused (a 3 m cube, a chair at scale 4). `SITTABLE` drops `couch` and
+  `stool`, which are not library kinds (`couch` was already an alias of `sofa`) (`tests/js/askhooks_sit.test.mjs`).
+- **Ask could not undo a pose or lights change:** `stage.snapshot()` / `stage.restoreSnapshot(snap)` (one undo step)
+  and Ask's `host.stage = stageHook(stage)` `{toJSON, select, setPose, snapshot, restore, undo}`
+  (`web/hosthooks.mjs`, `web/soundstage.js`); the handoff no longer claims Ask gets "the same Undo as any set edit".
+- **Lights down missed the shot-camera picture-in-picture (`camviz.mjs` `PipViewer._draw`)** and could take captures
+  to near-black: the PiP renders through `_withExposure`; captures follow `_exposureFactor` (above)
+  (`tests/js/askhooks_lights.test.mjs`).
+- **num_ctx (`soundstage/assistant.py` `num_ctx_for`, chat route):** counts the request's `tools` and images; the
+  caller's own `num_ctx` (int, float or numeric string) passes through, never lowered or capped; never below
+  `OLLAMA_CONTEXT_LENGTH`; the chat route passes `tools` (route test in `tests/test_assistant.py`).
+- **`host.project()` never settled when `__ssProject.project()` hung:** it resolves `{name, id: null}` after 3 s
+  (`PROJECT_TIMEOUT_MS`). **`host.cut.panel()` returned the hidden panel:** null unless the Cut view is shown;
+  `host.cut.show()` opens it (`tests/js/askhooks_host.test.mjs`).
+- Every signature, return shape and refusal: `web/stage/STAGE_API.md`.
+
 ## 2026-11-07
 
 **Ask hooks, 2026-11-07 evening: project id, Cut panel, sit / sit on the floor, lights down, read-only Play, local + num_ctx for the model server (private branch `private/ask-hooks`)**
@@ -13,7 +64,7 @@ Each entry links to the code; every milestone ships with tests.
     shortest-arc turns; the test checks hips on the seat, thighs level, shins down, toes forward and hands on the lap,
     but a twist in a knee or a hand clipping a thigh would only show on screen. Sitting on the floor is knees-up only
     (no cross-legged), and a keyed (moving) person sitting on the floor slides along their keys seated.
-  - **Only chairs, benches, sofas, armchairs, stools, rocks, tables, cubes (and a named static custom prop) can be sat
+  - **Only chairs, benches, sofas, armchairs, rocks, tables, cubes (and a named static custom prop) can be sat
     on with `setPose`;** car seats, horses, bikes and boats keep their own mounts, and those riders stay clay as
     before. A custom prop's seat is guessed at 0.6 x its height. A seat now also scales with the prop's `height_m`
     against the library height (a resized chair has a higher seat; scenes at the library size are unchanged).
