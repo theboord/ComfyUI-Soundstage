@@ -647,3 +647,45 @@ test("obstacles: on loop playback several parked props changing cell at differen
   assert.equal(t.second + t.third, 0, `three sequential turns, passes 2 and 3 build no new height tables: ${JSON.stringify(t)}`);
   assert.deepEqual(t.boxes.slice(1), [0, 0], `three sequential turns, passes 2 and 3 build no boxes: ${JSON.stringify(t)}`);
 });
+
+test("obstacles KNOWN LIMIT: a parked prop with a one-frame keyed snap rebuilds 2 boxes and 2 height tables on every loop pass", () => {
+  // Eighth review, documented not fixed (CHANGELOG 2026-11-07, eighth review): the snap crosses OBS_JUMP at the snap and
+  // again at the loop wrap, and obsCell gives each re-anchor a new id (anchors.n++), so the cached signature never
+  // matches again. The old code does the same (not a regression). This test pins today's cost so a change is noticed:
+  // when it is fixed, passes 2 and 3 should build 0 boxes and 0 new tables, and this test should say so.
+  const run = (prop, pose) => {
+    const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
+    const st = bareStage([walker, prop]);
+    clayOf(st, walker);
+    const g = clayOf(st, prop);
+    let boxes = 0;
+    const orig = THREE.Box3.prototype.setFromObject;
+    THREE.Box3.prototype.setFromObject = function (...x) { boxes++; return orig.apply(this, x); };
+    const passes = [], perPassBoxes = [];
+    try {
+      for (let pass = 0; pass < 3; pass++) {
+        const seen = new Set(), b0 = boxes;
+        for (let f = 0; f <= 48; f++) {
+          pose(st, prop, g, f); g.updateMatrixWorld(true);
+          st.frame = f; st._heightAt(walker, f);
+          seen.add(st._yCache.get(walker));
+        }
+        passes.push(seen); perPassBoxes.push(boxes - b0);
+      }
+    } finally { THREE.Box3.prototype.setFromObject = orig; }
+    const fresh = (n) => [...passes[n]].filter((t) => !passes.slice(0, n).some((s) => s.has(t))).length;
+    return { boxes: perPassBoxes, tables: [passes[0].size, fresh(1), fresh(2)], parked: st._obstacles().length };
+  };
+  const snapTurn = { id: "c1", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0], heading_deg: 0 },
+    { frame: 23, position: [0, 0, 0], heading_deg: 0 }, { frame: 24, position: [0, 0, 0], heading_deg: 90 }, { frame: 48, position: [0, 0, 0], heading_deg: 90 }] };
+  const t = run(snapTurn, (st, p, g, f) => { g.rotation.set(0, st._headingAt(p, f), 0); });
+  assert.equal(t.parked, 1, `a 0 -> 90 deg snap between frames 23 and 24 stays parked: ${JSON.stringify(t)}`);
+  assert.deepEqual(t.boxes.slice(1), [2, 2], `known limit: the heading snap rebuilds 2 boxes on passes 2 and 3: ${JSON.stringify(t)}`);
+  assert.deepEqual(t.tables.slice(1), [2, 2], `known limit: and 2 new height tables on passes 2 and 3: ${JSON.stringify(t)}`);
+  const snapLift = { id: "c1", kind: "crate", key_y: true, position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] },
+    { frame: 23, position: [0, 0, 0] }, { frame: 24, position: [0, 0.3, 0] }, { frame: 48, position: [0, 0.3, 0] }] };
+  const y = run(snapLift, (st, p, g, f) => { g.position.y = st._heightAt(p, f); });
+  assert.equal(y.parked, 1, `a 0.3 m key_y step between frames 23 and 24 stays parked: ${JSON.stringify(y)}`);
+  assert.deepEqual(y.boxes.slice(1), [2, 2], `known limit: the key_y step rebuilds 2 boxes on passes 2 and 3: ${JSON.stringify(y)}`);
+  assert.deepEqual(y.tables.slice(1), [2, 2], `known limit: and 2 new height tables on passes 2 and 3: ${JSON.stringify(y)}`);
+});
