@@ -205,3 +205,40 @@ def test_installer_has_the_ollama_step_and_opt_outs():
     assert "https://ollama.com/install.sh" in start
     assert "OLLAMA_KEEP_ALIVE:-10m" in start and "OLLAMA_ORIGINS" in start and "8189" in start
     assert "/workspace/ollama/models" in inst and "/workspace/ollama/models" in start
+
+
+# ---------------------------------------------------------------- Ask hooks: status()['local'] and num_ctx sizing
+def test_status_says_whether_the_model_server_is_on_this_machine(monkeypatch):
+    hw = {"vram_gb": 16, "ram_gb": 64, "gpu": "RTX 4080"}
+    for url, local in [("127.0.0.1:11434", True), ("http://localhost:11434", True), ("http://[::1]:11434", True),
+                       ("0.0.0.0:11434", True), ("http://127.0.0.5:9000", True),
+                       ("https://abc123-11434.proxy.example.net", False), ("http://10.0.0.7:11434", False),
+                       ("http://ask-box.example.org:11434", False)]:
+        monkeypatch.setenv("SOUNDSTAGE_OLLAMA_URL", url)
+        st = A.status(hw, READY)
+        assert st["local"] is local, (url, st["url"])
+    monkeypatch.setattr(A.socket, "gethostname", lambda: "Studio-Mac.local")
+    assert A.is_local_url("http://studio-mac.local:11434") is True
+    assert A.is_local_url("http://studio-mac:11434") is True
+    assert A.is_local_url("http://other-mac.local:11434") is False
+    assert A.is_local_url("not a url") is False
+
+
+def test_num_ctx_is_sized_to_the_prompt_within_bounds(monkeypatch):
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", raising=False)
+    planner = [{"role": "system", "content": "x" * (3500 * 4)}, {"role": "user", "content": "add a chair"}]   # ~3,500 tokens
+    o = A.chat_options({"device": "gpu"}, messages=planner)
+    assert o["num_ctx"] >= 8192 and o["num_ctx"] % 4096 == 0, o
+    assert A.chat_options({"device": "gpu"}, messages=[{"role": "user", "content": "hi"}])["num_ctx"] == 4096   # never below Ollama's
+    huge = [{"role": "user", "content": "y" * 1_000_000}]
+    assert A.chat_options({"device": "gpu"}, messages=huge)["num_ctx"] == 32768                                 # bounded
+    monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", "16384")
+    assert A.chat_options({"device": "gpu"}, messages=huge)["num_ctx"] == 16384
+    monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", "100")                                                  # a bad max: still 4096
+    assert A.chat_options({"device": "gpu"}, messages=huge)["num_ctx"] == 4096
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX")
+    # the request's own num_ctx / num_predict count; the GPU decision is unchanged
+    assert A.chat_options({"device": "gpu"}, messages=[], options={"num_ctx": 12000})["num_ctx"] == 12288
+    assert A.chat_options({"device": "gpu"}, messages=[], options={"num_predict": 7000})["num_ctx"] == 8192
+    assert A.chat_options({"device": "cpu"}, messages=planner)["num_gpu"] == 0
+    assert "num_ctx" not in A.chat_options({"device": "gpu"})   # no messages: as before

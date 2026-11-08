@@ -24,6 +24,7 @@ import logging
 import os
 import re
 import shutil
+import socket
 import subprocess
 import threading
 import time
@@ -180,6 +181,7 @@ def status(hw: dict | None = None, probed: dict | None = None, model: str | None
     tier = choose_tier(hw.get("vram_gb", 0), hw.get("ram_gb", 0), model)
     out = {"model": model, "url": ollama_url(), **hw, **probed, **tier,
            "skipped": os.environ.get("SKIP_OLLAMA", "0") == "1"}
+    out["local"] = is_local_url(out["url"])   # the Ask model server is on this machine (loopback / own name)
     if tier["device"] == "none":
         out["backend"] = "qwen"
     elif not probed.get("reachable"):
@@ -198,12 +200,77 @@ def cached_status(max_age: float = 20.0) -> dict:
     return _status_cache["v"]
 
 
-def chat_options(st: dict, gpu_busy: bool = False) -> dict:
-    """Ollama options for this tier: CPU tier (or a GPU tier while a render runs) keeps every layer off the GPU."""
+OLLAMA_DEFAULT_CTX = 4096   # Ollama's own default context: never asked below it
+CTX_STEP = 4096             # num_ctx is rounded up to a multiple of this (8192 for a ~3,500-token planner prompt)
+CHARS_PER_TOKEN = 3.5       # a deliberately low estimate (English runs ~4), so the prompt is never under-counted
+REPLY_TOKENS = 2048         # room kept for the answer when the request sets no num_predict
+
+
+def max_ctx() -> int:
+    """The largest num_ctx ✦ Ask asks for (SOUNDSTAGE_ASSISTANT_MAX_CTX, default 32768; never below 4096)."""
+    try:
+        v = int(os.environ.get("SOUNDSTAGE_ASSISTANT_MAX_CTX", "32768"))
+    except ValueError:
+        v = 32768
+    return max(OLLAMA_DEFAULT_CTX, v)
+
+
+def prompt_tokens(messages) -> int:
+    """Rough token count of a chat request's messages (content + tool calls), from its length in characters."""
+    n = 0
+    for m in messages or []:
+        if isinstance(m, dict):
+            c = m.get("content")
+            n += len(c if isinstance(c, str) else json.dumps(c or "")) + 8   # + the role / turn markers
+            if m.get("tool_calls"):
+                n += len(json.dumps(m["tool_calls"]))
+        else:
+            n += len(str(m))
+    return int(n / CHARS_PER_TOKEN) + 1
+
+
+def num_ctx_for(messages, reply: int | None = None, asked: int | None = None) -> int:
+    """num_ctx sized to the prompt: prompt + reply room, rounded up to 4096s, at least Ollama's 4096 (and at least
+    what the request asked), at most max_ctx(). A prompt bigger than max_ctx() is still capped (Ollama then drops
+    the oldest part)."""
+    need = prompt_tokens(messages) + (reply if isinstance(reply, int) and reply > 0 else REPLY_TOKENS)
+    if isinstance(asked, int) and asked > 0:
+        need = max(need, asked)
+    need = -(-need // CTX_STEP) * CTX_STEP
+    return max(OLLAMA_DEFAULT_CTX, min(max_ctx(), need))
+
+
+def chat_options(st: dict, gpu_busy: bool = False, messages=None, options: dict | None = None) -> dict:
+    """Ollama options for this tier: CPU tier (or a GPU tier while a render runs) keeps every layer off the GPU.
+    With the request's messages, num_ctx is sized to them (num_ctx_for); options = the request's own options
+    (its num_predict and num_ctx are honoured, within the bound)."""
     opts = {}
     if st.get("device") == "cpu" or (st.get("device") == "gpu" and gpu_busy):
         opts["num_gpu"] = 0
+    if messages is not None:
+        o = options or {}
+        opts["num_ctx"] = num_ctx_for(messages, reply=o.get("num_predict"), asked=o.get("num_ctx"))
     return opts
+
+
+def is_local_url(url: str | None = None) -> bool:
+    """True when the Ask model server is on this machine: a loopback address (127.x, ::1, localhost, 0.0.0.0, which
+    ollama_url() maps to 127.0.0.1) or this machine's own host name. False for any other host (a remote URL, a pod).
+    No DNS lookup: a name is compared, never resolved."""
+    from urllib.parse import urlsplit
+    try:
+        host = (urlsplit(url or ollama_url()).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    if not host:
+        return False
+    if host in ("localhost", "0.0.0.0", "::1", "::") or host.endswith(".localhost") or re.fullmatch(r"127(\.\d{1,3}){3}", host):
+        return True
+    try:
+        me = socket.gethostname().lower().rstrip(".")
+    except OSError:
+        return False
+    return bool(me) and host in (me, me.split(".")[0], me.split(".")[0] + ".local")
 
 
 def keep_alive():
@@ -319,7 +386,9 @@ def register(routes=None) -> bool:
         st = await asyncio.to_thread(cached_status)
         body["model"] = body.get("model") or st["model"]
         body["stream"] = False
-        body["options"] = {**(body.get("options") or {}), **chat_options(st, await asyncio.to_thread(_gpu_busy))}
+        asked = body.get("options") if isinstance(body.get("options"), dict) else {}
+        body["options"] = {**asked, **chat_options(st, await asyncio.to_thread(_gpu_busy),
+                                                   messages=body.get("messages") or [], options=asked)}
         body["keep_alive"] = keep_alive()   # the server decides: a tab left open from an older version can't pin the model
         try:
             code, j = await _forward("/api/chat", body, 300)
