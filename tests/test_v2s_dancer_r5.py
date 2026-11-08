@@ -87,3 +87,31 @@ def test_her_leftover_pixels_do_not_drop_the_crate_where_she_stands_on_the_old_b
                           scan_on=False, has_relief=True, wardrobe_ref=False, tag="t", sub="s", notes=notes)
     sp = scene["video2stage"]["set_path"]
     assert sp["worded"] == ["Crate"] and sp["dropped"] == ["Wall"], notes
+
+
+# ------------------------------------------------------------------------------------------------ 3 multi-word tied
+BLACK, WHITE = W.COLORS["black"], W.COLORS["white"]
+
+
+@pytest.mark.parametrize("text, worn", [
+    ("flannel shirt tied around her waist, black tank top, jeans", ("tank", BLACK)),
+    ("white tee, plaid button-down shirt tied around the waist", ("tshirt", WHITE)),
+    ("plaid button-down shirt tied around the waist, white tee", ("tshirt", WHITE)),
+    ("black tank, red tank top tied around her waist", ("tank", BLACK)),
+    ("red tank top tied around her waist, black tank", ("tank", BLACK)),
+    ("grey flannel shirt knotted at her hips over a white tee, black jeans", ("tshirt", WHITE)),
+])
+def test_a_tie_phrase_applies_to_the_whole_multi_word_garment(text, worn):
+    ap = W.parse(text)
+    assert (ap["top"], ap.get("top_color")) == worn
+    assert ap.get("under") is None                    # the tied garment is carried, not a layer under the top
+
+
+def test_the_tank_top_is_kept_when_a_flannel_shirt_is_tied_first():
+    ap = W.parse("flannel shirt tied around her waist, black tank top, jeans")
+    assert W.words(ap) == "a black tank top and jeans"
+
+
+def test_a_worn_multi_word_garment_keeps_its_pattern():
+    ap = W.parse("flannel shirt, jeans")
+    assert (ap["top"], ap["top_pattern"], ap["bottom"]) == ("shirt", "plaid", "jeans")

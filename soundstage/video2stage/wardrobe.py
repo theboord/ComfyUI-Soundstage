@@ -99,7 +99,8 @@ def _colour_of(before: list[str], garment: str) -> str | None:
 LAYER = {"tank": 0, "tshirt": 0, "shirt": 0, "dress": 0, "sweater": 1, "hoodie": 1, "uniform": 1, "jacket": 2,
          "suit": 2, "coat": 3}
 # "a hoodie tied around the waist" / "jacket knotted at her hips": carried, not worn over the top. Only this phrase,
-# right after that garment (before the next garment or barrier), marks it: "hoodie with tied drawstrings" and "jacket
+# right after that garment phrase (a multi-word one such as "flannel shirt" is one garment; before the next garment or
+# barrier), marks it: "hoodie with tied drawstrings" and "jacket
 # draped around her shoulders" are worn.
 TIED = re.compile(r"\b(?:tied|knotted|slung)\s+(?:a?round|at|on)\s+(?:the\s+|her\s+|his\s+|their\s+)?(?:waist|hips?)\b")
 # Bottom words the clay folds into another garment: the Look words keep the model's own noun
@@ -127,6 +128,8 @@ def parse(text: str) -> dict:
                     break
             last = i
             continue
+        if w in TOPS and i + 1 < len(words) and words[i + 1] in TOPS:
+            continue   # "flannel shirt", "button-down shirt": one garment phrase, its last word is the garment
         if w in TOPS:
             slot, garment = "top", TOPS[w]
         elif w in BOTTOMS and "bottom" not in ap:
