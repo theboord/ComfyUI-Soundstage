@@ -268,6 +268,30 @@ test("the station ramp: stationFloor is the ramp the set draws, and a person wal
     const st = await K.setup(kind, a, { setFx: set.fx });
     check(K.physical(K.measure(st, a, { ground: stationFloor })), `${kind} up the ramp`, { float: 3, hover: 0.02 });
   }
+  // The browser re-record of 854e956 (two people up the ramp onto the platform at 1.73 m/s, these ids and keys) read
+  // planted feet up to 17.2 mm (man f53) and 16.6 mm (woman f118) over the ramp. Played here the foot bones land
+  // within 0.1 mm of the recorded ones, and so do those numbers, but they are the recorder's measure, not a gap: the
+  // LOWEST shoe vertex minus the ramp under THAT vertex. On a slope the lowest vertex is not the one touching (late in
+  // a stance the heel is up and the ball touches higher up the ramp, 7-14 cm ahead: 8-16 mm higher at 6.6 degrees).
+  // The gap that floats is the nearest vertex to the ground under it, and that is 0 on every planted frame.
+  for (const [kind, id, x, z0, z1] of [["man", "man_mw7l5swo", 4.0, -78.2, -69.6], ["woman", "woman_mw7l5t1y", 5.3, -78.8, -70.2]]) {
+    const a = { id, kind, position: [x, 0, z0], keys: [{ frame: 0, position: [x, 0, z0] }, { frame: 119, position: [x, 0, z1] }] };
+    const st = await K.setup(kind, a, { frames: 120, setFx: set.fx });
+    const out = K.measure(st, a, { ground: stationFloor });
+    let gap = 0, lowest = 0, at = "";
+    for (const r of out.rows) for (const lr of ["l", "r"]) if (r[lr].state === 1) {
+      const c = r[lr];
+      let lo = Infinity, li = 0;
+      for (let k = 0; k < c.H.length; k++) if (c.P[3 * k + 1] < lo) { lo = c.P[3 * k + 1]; li = k; }
+      if (Math.abs(c.h) > Math.abs(gap)) { gap = c.h; at = `${lr} f${r.f}`; }
+      lowest = Math.max(lowest, c.H[li]);
+    }
+    assert.ok(Math.abs(gap) < 0.002, `${kind} recorded ramp walk: a planted shoe ${cm(gap)} cm off the ramp (${at})`);
+    // the recorder's number is still there (it is the heel-up roll on a slope), and is no bigger than the shoe's reach
+    // up the slope
+    assert.ok(lowest < 0.025, `${kind} recorded ramp walk: the lowest shoe vertex ${cm(lowest)} cm over the ramp under it`);
+    check(K.physical(out), `${kind} recorded ramp walk`, { float: 3 });
+  }
 });
 
 test("real Rocketbox turning on the spot fast (360 in 1 s and in 2 s) steps; a planted sole slides at most 1 cm in a frame; walking backwards plants", { skip: NOT_INSTALLED }, async () => {
