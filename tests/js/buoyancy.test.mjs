@@ -839,3 +839,39 @@ test("the lifelike body on the dock or a deck stands where the clay stands (was:
     }
   }
 });
+
+// Sixth pass (2026-11-07): part 4's placeInFrame keyed a person at the top of ANY parked prop under 1.75 m it met (a car
+// 1.561 m, a table 0.78 m, a crate 0.8 m) on dry land, and the key stayed up there when the prop was moved: standing in
+// mid-air. A crate floating in the lake was a "top" too: keyed at 1.737 m, then they fell off it into the water. Only a
+// dock or a boat's deck over the water keys the top now; on dry land they are keyed at 0 and _heightAt stands them on it.
+test("placed on a parked car, table or crate on dry land: keyed at 0, standing on it, and on the ground once it is moved (was: keyed at its top, left in mid-air)", () => {
+  const at0 = (id, keys) => ({ id, name: id, kind: "man", height_m: 1.8, position: keys[0][1], keys: keys.map(([frame, position]) => ({ frame, position })), rotation_deg: 0 });
+  const park = (id, kind) => ({ id, name: id, kind, position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }], rotation_deg: 0 });
+  for (const kind of ["car", "table", "crate"]) {
+    const st = tank([park("t", kind), at0("p", [[0, [5, 0, 5]]])], { set: "plaza", keepSet: true });
+    st._shotCameraAt = () => ({ position: [0, 12, -2], target: [0, 0, 0], focal_mm: 35 });
+    const top = st._obstacles().find((o) => o.id === "t").top;
+    const r = st.placeInFrame("p", { x: "center", y: 0.5 });
+    assert.ok(r.ok && r.position[1] === 0, `${kind}: keyed at 0, not at its top ${top.toFixed(2)} (${r.position})`);
+    st.setFrame(10);
+    const g = st.actorMeshes.get("p");
+    assert.ok(Math.abs(lowest(g) - top) < 0.08, `${kind}: standing on it (lowest ${lowest(g).toFixed(2)}, top ${top.toFixed(2)})`);
+    const t = st.state.actors[0]; t.keys[0].position = [10, 0, 10]; t.position = [10, 0, 10];
+    st.setFrame(11); st.setFrame(10);
+    assert.ok(Math.abs(lowest(g)) < 0.08, `${kind} moved away: on the ground, not in mid-air (lowest ${lowest(g).toFixed(2)})`);
+  }
+  // a crate floating in the lake is not a place to stand: never keyed at its top to fall off it
+  const st = tank([{ id: "c", name: "c", kind: "crate", position: [-12, 0, -5], keys: [{ frame: 0, position: [-12, 0, -5] }], rotation_deg: 0 }, at0("p", [[0, [0, 0, 0]]])], { set: "lake", keepSet: true });
+  st._shotCameraAt = () => ({ position: [-12, 8, -10], target: [-12, 1.74, -5], focal_mm: 35 });
+  const r = st.placeInFrame("p", { x: "center", y: 0.5 });
+  assert.ok(r.ok && r.position[1] === 0, `the floating crate: keyed at 0 (${r.position})`);
+  const lo = [];
+  for (let f = 0; f < 61; f++) { st.setFrame(f); lo.push(lowest(st.actorMeshes.get("p"))); }
+  for (let f = 1; f < 61; f++) assert.ok(Math.abs(lo[f] - lo[f - 1]) < 0.12, `f${f}: no fall off the crate (${lo[f - 1].toFixed(2)} -> ${lo[f].toFixed(2)})`);
+  // the dock over the water still keys its top (tested above); the speedboat's deck in the tank too
+  const boat = { id: "b", name: "b", kind: "speedboat", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }], rotation_deg: 0 };
+  const st2 = tank([boat, at0("q", [[0, [4, 0, 4]]])], { keepSet: true });
+  st2._shotCameraAt = () => ({ position: [0, 14, -3], target: [0, 0, -0.8], focal_mm: 35 });
+  const r2 = st2.placeInFrame("q", { x: "center", y: 0.5 });
+  assert.ok(r2.ok && r2.position[1] > 2, `on the speedboat's deck in the tank: keyed at the deck (${r2.position})`);
+});

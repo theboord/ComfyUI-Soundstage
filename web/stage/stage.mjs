@@ -1938,8 +1938,10 @@ export class Stage {
       if (sh.id === selfId) continue;
       const own = this.actorMeshes.has(sh.id) ? this.state.actors.find((q) => q.id === sh.id) : null;
       if (own && (LIBRARY[own.kind]?.boat || PERSON_KINDS.has(own.kind))) continue;   // a boat: its deck, below; never a person's head
+      // a prop in the water (a floating crate) moves with it: not a place to stand (as _standOnAt)
+      if (own && this._overWater((sh.min[0] + sh.max[0]) / 2, (sh.min[2] + sh.max[2]) / 2)) continue;
       const hit = raycastShapes([sh], o, dv, maxDist);
-      if (hit && hit.normal[1] > 0.7 && (!best || hit.distance < best.t)) best = { t: hit.distance, point: new THREE.Vector3(...hit.point), id: sh.id };
+      if (hit && hit.normal[1] > 0.7 && (!best || hit.distance < best.t)) best = { t: hit.distance, point: new THREE.Vector3(...hit.point), id: sh.id, prop: !!own };
     }
     for (const b of this.state.actors) {
       if (!LIBRARY[b.kind]?.boat || b.id === selfId || b.mount_id || b.carry_id) continue;
@@ -1952,7 +1954,7 @@ export class Stage {
         for (let q = h.object; q && q !== hg.parent; q = q.parent) if (!q.visible) { shown = false; break; }
         if (!shown || !h.object.isMesh || h.object.material?.transparent || !h.face) continue;
         const n = h.face.normal.clone().transformDirection(h.object.matrixWorld);
-        if (n.y > 0.7 && (!best || h.distance < best.t)) best = { t: h.distance, point: h.point.clone(), id: b.id };
+        if (n.y > 0.7 && (!best || h.distance < best.t)) best = { t: h.distance, point: h.point.clone(), id: b.id, boat: true };
         break;   // the first thing the ray meets on this boat: its deck, or a side that hides it
       }
     }
@@ -4608,7 +4610,7 @@ export class Stage {
       // ...unless the ray meets something walkable first: a dock, a deck, a riser (was: flat ground at the floor, so a
       // person aimed at the lake's dock landed ~3 m past its end, standing in the water)
       const top = this._walkableRay(C, d, P ? C.distanceTo(P) : 600, a.id);
-      if (top && (!P || top.point.y > this._floorUnder(top.point.x, top.point.z) + 0.05)) return Object.assign(top.point, { onTop: true });
+      if (top && (!P || top.point.y > this._floorUnder(top.point.x, top.point.z) + 0.05)) return Object.assign(top.point, { onTop: true, onProp: !!top.prop });
       return P;
     };
     let P = null;
@@ -4659,10 +4661,12 @@ export class Stage {
     // the surface it is put on: the floor, or the top of a dock, a deck or a riser the ray met first
     const floorY = Math.max(this._floorUnder(P.x, P.z), P.onTop ? P.y : 0);
     const person = PERSON_KINDS.has(a.kind);
-    const raised = !!P.onTop;
-    // A person's feet follow the floor by themselves (_heightAt), so they are keyed at 0 on it; put on a dock, a deck or
-    // a riser they are keyed at its top (over the water that is what says "on the dock", not wading under it). A prop
-    // keeps a keyed height, so on a raised floor it is keyed at that floor (key_y) instead of being buried in it at 0.
+    // Only a dock or a boat's deck over the water keys a person at its top: there a key at 0 means "in the water" (wading
+    // under the dock, swimming beside the boat). Anywhere else a person's feet follow what they stand on by themselves
+    // (_heightAt: a parked car, a table, a crate, a riser), so they are keyed at 0 and the support follows the prop when it
+    // moves (was: keyed at the top of any prop under 1.75 m, left standing in mid-air when the prop was moved).
+    const raised = !!P.onTop && !P.onProp && person && this._overWater(P.x, P.z);
+    // A prop keeps a keyed height, so on a raised floor it is keyed at that floor (key_y) instead of being buried in it at 0.
     const y = person ? (raised ? +floorY.toFixed(3) : 0) : floorY > 0.002 || a.key_y ? +floorY.toFixed(3) : 0;
     const pos = [+P.x.toFixed(3), y, +P.z.toFixed(3)];
     const keys = this._actorKeys(a);
