@@ -531,6 +531,7 @@ const PIP_CSS = `
 .ss-pip { position:absolute; z-index:4; border:1px solid ${TOKENS.lineStrong}; border-radius:10px; overflow:hidden;
   box-shadow:0 6px 24px rgba(0,0,0,.45); pointer-events:none; }
 .ss-pip[hidden] { display:none !important; }
+[data-ss-pip="1"] > .ss-vi-cta:not([data-big=true]) { bottom:var(--ss-pip-clear, 10px) !important; }
 .ss-pip .ss-pip-tag { position:absolute; top:6px; left:8px; font:600 10px/1 "Soundstage Grotesk", ui-sans-serif, system-ui, sans-serif;
   letter-spacing:.08em; text-transform:uppercase; color:${TOKENS.accentInk}; background:${TOKENS.accent}; padding:3px 6px; border-radius:999px; }
 .ss-pip .ss-pip-bar { position:absolute; left:0; right:0; bottom:0; display:flex; align-items:center; gap:6px; padding:14px 6px 5px;
@@ -645,7 +646,11 @@ export class PipViewer {
   _draw() {
     const st = this.stage;
     const show = this.enabled && !!st.freeView;
-    if (!show) { if (!this.el.hidden) { this.el.hidden = true; this.pause(); } return; }
+    if (!show) {
+      if (!this.el.hidden) { this.el.hidden = true; this.pause(); }
+      if (this.container?.dataset) delete this.container.dataset.ssPip;
+      return;
+    }
     const L = this._layout();
     if (!L) return;
     const r = st.renderer;
@@ -673,6 +678,15 @@ export class PipViewer {
       width: `${pw * L.s}px`, height: `${ph * L.s}px`,
     });
     this.el.hidden = false;
+    // Tell the bottom-left chrome (the small "Drop a video here → 3D" pill) how much room the PiP takes, so it sits
+    // above the PiP instead of covering its scrub bar (PIP_CSS: [data-ss-pip="1"] > .ss-vi-cta).
+    const c = this.container;
+    if (c?.style && c.dataset) {
+      const pipTop = L.top + (L.bh - m - ph) * L.s;
+      const clear = Math.max(10, Math.round((c.clientHeight || 0) - pipTop + 8));
+      c.style.setProperty("--ss-pip-clear", `${clear}px`);
+      c.dataset.ssPip = "1";
+    }
     const last = st._lastFrame(), fps = st.state.shot?.fps || 24;
     this.scrub.max = String(last);
     if (document.activeElement !== this.scrub) this.scrub.value = String(st.frame);
