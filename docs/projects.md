@@ -108,13 +108,14 @@ Each saved project has an id, `p_` and 8 lowercase hex digits (for example `p_3f
 know which project a memory belongs to, so it must not move to a different project by accident.
 
 - **Where:** `projects/<name>/project.json` (`id`) and the workflow's `extra.ss_project.id`. Save writes both.
-- **When it is kept:** Save keeps the project's id when the workflow being saved carries that same id. It also keeps
-  it when the workflow carries no id but is the project's own earlier state: it names the same project, and
-  `workflows/<name>.json` still holds the id. That covers a second tab opened before the first Save, canvas undo back
-  past the first Save, and a restored autosave from before it. Any other save gets a fresh id: Save As to a new name,
-  a project saved before ids existed, a workflow that carries another id or names another project, or a workflow
-  saved under a name whose `projects/<name>/` folder was left behind after its workflow was deleted from ComfyUI's
-  sidebar.
+- **When it is kept:** Save keeps the project's id only when the workflow being saved carries that same id. Any
+  other save gets a fresh id: Save As to a new name, a project saved before ids existed, a workflow that carries
+  another id, a workflow with no id at all (even one that names this project, so someone else's old pre-id
+  workflow with the same name never takes your id), or a workflow saved under a name whose `projects/<name>/`
+  folder was left behind after its workflow was deleted from ComfyUI's sidebar. The cost: a second tab opened before
+  the first Save, canvas undo back past the first Save, or a restored autosave from before it gets a fresh id when it
+  is saved. Two tabs saving a brand-new project at the same time end up with different ids, and the id keeps
+  changing between them until one tab is closed.
 - **Library:** Duplicate gives the copy a fresh id (in both files). Rename, Trash and Untrash keep it.
 - **Old projects:** a project saved before ids existed has none (`id: null` in the list) until its next Save.
   Opening, listing or autosaving it never writes one.

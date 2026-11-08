@@ -12,10 +12,11 @@
 //
 // Project id ("p_" + 8 lowercase hex, e.g. p_3fa85f64): a stable id for memory keyed to one project (Ask's memory).
 // Written on purpose by save() into both project.json (id) and the workflow (extra.ss_project.id). An existing id is
-// kept when the workflow being saved carries that same id, or carries none but is this project's own earlier state
-// (same project name, and workflows/<name>.json still holds that id: a second tab, canvas undo past the first save, a
-// restored pre-save autosave; _ownHistory). Any other save (Save As to a new name, a workflow carrying another id, a
-// workflow saved over a leftover projects/<name>/ folder, a project saved before ids existed) gets a fresh one.
+// kept ONLY when the workflow being saved carries that same id. Every other save gets a fresh one: Save As to a new
+// name, a workflow carrying another id, a workflow with no id at all (even one that names this project: an unrelated
+// pre-id graph with the same name must not take this project's id), a workflow saved over a leftover projects/<name>/
+// folder, a project saved before ids existed (it gets one on its next save). Known cost: a second tab opened before
+// the first id'd save, canvas undo past it, or a restored pre-id autosave, when saved, gets a fresh id too.
 // Loading never writes an id. Duplicate gives the copy a fresh id, rename and trash keep it (soundstage/project/library.py).
 
 export const FORMAT = "soundstage-project";
@@ -164,7 +165,7 @@ export class ProjectStore {
 
   /**
    * Save the project: the workflow (as Workflow → Save would) and its manifest. Returns {name, id, path, saved_at,
-   * workflow}. The id: the manifest's old id when the workflow carries the same one, else a fresh one (see the top).
+   * workflow}. The id: the manifest's old id only when the workflow carries that same id, else a fresh one (see the top).
    */
   async save(name, workflow, { manifest = {} } = {}) {
     const n = cleanName(name);
@@ -172,7 +173,7 @@ export class ProjectStore {
     const at = this.now();
     const old = (await this._get(ProjectStore.manifestPath(n))) || {};
     const oldId = typeof old.id === "string" && PROJECT_ID_RE.test(old.id) ? old.id : null;
-    const id = oldId && (await this._ownHistory(n, workflow, oldId)) ? oldId : newProjectId();
+    const id = oldId && projectIdOf(workflow) === oldId ? oldId : newProjectId();
     const wf = stampWorkflow(workflow, n, at, id);
     await this._put(ProjectStore.workflowPath(n), wf);
     const { id: _ignored, ...rest } = manifest || {};   // eslint-disable-line no-unused-vars
@@ -181,20 +182,6 @@ export class ProjectStore {
       created: old.created || at, saved_at: at, saves: (old.saves || 0) + 1,
     });
     return { name: n, id, path: ProjectStore.workflowPath(n), saved_at: at, workflow: wf };
-  }
-
-  /**
-   * Does `workflow` belong to the project saved as `name` with id `oldId`? Yes when it carries that id. Also yes when it
-   * carries NO id but names this project (extra.ss_project.name === name) while workflows/<name>.json still exists
-   * and carries oldId: the project's own history from before its first id'd save (a second tab opened before that
-   * save, canvas undo back past it, a restored pre-save autosave). No for a foreign id, an unnamed / other-named graph,
-   * or a leftover projects/<name>/ folder whose workflow was deleted.
-   */
-  async _ownHistory(name, workflow, oldId) {
-    const has = projectIdOf(workflow);
-    if (has) return has === oldId;
-    if (projectNameOf(workflow) !== name) return false;
-    return projectIdOf(await this._get(ProjectStore.workflowPath(name))) === oldId;
   }
 
   /** A saved project's id (from its project.json), or null (no such project, or saved before ids existed). */
