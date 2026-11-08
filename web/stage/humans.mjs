@@ -456,6 +456,12 @@ export function applyPose(g, pose, heightM = 1.8) {
       if (l.part === "knee") l.pivot.rotation.x = 1.45;
       if (l.part === "shoulder") l.pivot.rotation.x = -1.0;
       if (l.part === "elbow") l.pivot.rotation.x = -0.3;
+    } else if (pose === "sit_floor") {
+      // Sitting on the floor, knees up: thighs forward and up, shins down to the feet flat on the floor, hands on knees.
+      if (l.part === "hip") { l.pivot.rotation.x = -2.15; l.pivot.rotation.z = l.side * 0.12; }
+      if (l.part === "knee") l.pivot.rotation.x = 2.2;
+      if (l.part === "shoulder") l.pivot.rotation.x = -0.9;
+      if (l.part === "elbow") l.pivot.rotation.x = -0.4;
     } else if (pose === "cycle") {
       if (l.part === "hip") l.pivot.rotation.x = -1.2;
       if (l.part === "knee") l.pivot.rotation.x = 1.5;
@@ -465,8 +471,14 @@ export function applyPose(g, pose, heightM = 1.8) {
   }
   // Seated pelvis height above the feet origin when standing is ~0.92 m; the thigh/shin fold drops it.
   // The figure's pelvis sits ~0.95 m above its feet origin; seated, that's the drop to the seat.
-  return pose === "stand" ? 0 : 0.95 * s;
+  // On the floor the pelvis rests ~0.10 m above it (the seat is the floor).
+  return pose === "stand" ? 0 : pose === "sit_floor" ? FLOOR_SIT_DROP * s : 0.95 * s;
 }
+
+/** How far a floor-sitting figure's feet origin is below the floor, at 1.8 m (pelvis 0.10 m up instead of 0.95). */
+export const FLOOR_SIT_DROP = 0.85;
+/** The poses stage.setPose takes. */
+export const SIT_POSES = ["sit", "sit_floor", "stand"];
 
 /** Poses a seated figure can hold (the Seat menu, boats and vehicles). */
 export const SEAT_POSES = ["sit", "paddle", "kayak", "row", "ride", "cycle", "stand"];
@@ -481,6 +493,8 @@ export const MOUNTS = {
   chair: { pose: "sit", seat: [0, 0.47, 0] },
   bench: { pose: "sit", seat: [0, 0.47, 0.05] },
   table: { pose: "sit", seat: [0, 0.77, 0] },
+  sofa: { pose: "sit", seat: [0, 0.54, 0.06] },       // the cushion tops (library.mjs sofa boxes)
+  armchair: { pose: "sit", seat: [0, 0.44, 0.04] },
   rock: { pose: "sit", seat: [0, 0.6, 0] },
   cube: { pose: "sit", seat: [0, 1.0, 0], scaleWithHeight: true, refHeight: 1 },
 };

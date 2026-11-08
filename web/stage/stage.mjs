@@ -4,7 +4,7 @@
 // wheel = dolly (proportional, flies through the target), drag an actor = move it on the floor.
 import * as THREE from "../vendor/three.module.min.mjs";
 import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompound, makeGlass, paintColorOf, withoutPaint } from "./library.mjs";
-import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS } from "./humans.mjs";
+import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS, SIT_POSES } from "./humans.mjs";
 import { applyGaze, setGazeKey, clearGaze, gazeKeys } from "./gaze.mjs";
 import * as Mocap from "./mocap.mjs";
 import * as Gait from "./gait.mjs";
@@ -2239,6 +2239,13 @@ export class Stage {
           if (rig === "biped" && g.userData.joints && !air) this._bodyMotion(g, a, moving, speed, cycle);
         }
       }
+      // Sitting on the floor (setPose "sit_floor"): the clay folds down where it stands; the lifelike body follows
+      // (people/avatars.mjs sitBody).
+      if (a.pose === "sit_floor" && !a.mount_id && rig === "biped" && g.userData.limbs) {
+        Gait.release(g);
+        for (const jn of ["spine", "neck", "head"]) g.userData.joints?.[jn]?.rotation.set(0, 0, 0);
+        g.position.y = this._heightAt(a, this.frame) - applyPose(g, "sit_floor", (a.height_m || 1.8) * (a.scale || 1));
+      }
       if (this.water && !sw) this._waterPhysics(a, g);
       if (g.userData.flames) this._animateFire(g, a);
       if (g.userData.mixer) g.userData.mixer.setTime(this.frame / (this.state.shot?.fps || 24));
@@ -2276,7 +2283,7 @@ export class Stage {
       if (!g || !hg) continue;
       if (this._boatRider?.(a, g, host, hg)) continue;   // aboard a boat: its motion, the seat's pose, the stroke
       const m = MOUNTS[host.kind] || { pose: "sit", seat: [0, (host.height_m || 1) * 0.6, 0] };
-      let k = (host.scale || 1) * (m.scaleWithHeight ? (host.height_m || m.refHeight) / m.refHeight : 1);
+      let k = this._seatScale(host);
       let sp = m.seat;
       const seats = SEATS[host.kind];
       if (seats) {   // vehicles: the rider's chosen seat (driver by default)
@@ -4602,6 +4609,100 @@ export class Stage {
     this.select(id);
     this.onChange(this.toJSON());
     return label;
+  }
+
+  /** How a mount's seat (humans.mjs MOUNTS, in metres at the library size) scales with this prop: its scale, and its
+   *  height against the library's (a 1.2 m tall chair has a higher seat); a horse by its own refHeight rule. */
+  _seatScale(host) {
+    const m = MOUNTS[host.kind];
+    if (m?.scaleWithHeight) return (host.scale || 1) * ((host.height_m || m.refHeight) / m.refHeight);
+    const ref = m ? LIBRARY[host.kind]?.height : null;
+    return (host.scale || 1) * (ref && host.height_m > 0 ? host.height_m / ref : 1);
+  }
+
+  /** Can a person sit on this object with setPose("sit")? Chairs, benches, sofas, armchairs, stools, and the other
+   *  non-vehicle seats in MOUNTS (rock, table, cube); a custom (imported or recipe) static prop only when named. */
+  _canSitOn(host, named = false) {
+    if (!host || PERSON_KINDS.has(host.kind) || SEATS[host.kind] || RIDEABLE.has(host.kind)) return false;
+    if (SITTABLE.has(host.kind) || (MOUNTS[host.kind]?.pose === "sit" && LIBRARY[host.kind]?.rig === "static")) return true;
+    return named && host.kind === "custom" && (host.recipe?.rig || "static") === "static";
+  }
+
+  /**
+   * Where and how a person sits at this frame, or null: {pose: "sit", on, seat: [x, y, z] (the seat top, world),
+   * yaw} on a chair / bench / sofa they are mounted on (after any timed mount_at), or {pose: "sit_floor", seat: [x,
+   * floor y, z], yaw} on the floor. Read by the lifelike body (people/avatars.mjs) so it follows the clay's seat.
+   */
+  _sitSpec(a, frame = this.frame) {
+    if (!a || !PERSON_KINDS.has(a.kind)) return null;
+    if (a.mount_id) {
+      if (a.mount_at > frame) return null;   // still walking up / hopping on
+      const host = this.state.actors.find((x) => x.id === a.mount_id), hg = host && this.actorMeshes.get(host.id);
+      if (!hg || !this._canSitOn(host, true) || (a.pose && a.pose !== "sit")) return null;
+      const m = MOUNTS[host.kind] || { seat: [0, (host.height_m || 1) * 0.6, 0] }, k = this._seatScale(host);
+      const w = new THREE.Vector3(m.seat[0] * k, m.seat[1] * k, m.seat[2] * k).applyAxisAngle(new THREE.Vector3(0, 1, 0), hg.rotation.y);
+      return { pose: "sit", on: host.id, seat: [hg.position.x + w.x, hg.position.y + w.y, hg.position.z + w.z], yaw: hg.rotation.y };
+    }
+    if (a.pose === "sit_floor") {
+      const p = this._actorPosAt(a, frame);
+      return { pose: "sit_floor", seat: [p[0], this._heightAt(a, frame), p[2]], yaw: this._headingAt(a, frame) };
+    }
+    return null;
+  }
+
+  /**
+   * Sit or stand a person (a stage API for tools; web/stage/STAGE_API.md). pose: "sit" (on a chair, bench, sofa...:
+   * opts.on = its id, else the nearest one within 1.5 m of where they are at the playhead; the seat height comes from
+   * the prop), "sit_floor" (down on the floor where they are) or "stand" (up again: off the seat, or up from the
+   * floor). One undo step when something changes. Returns {ok: true, pose, on?, changed} or {ok: false, error}.
+   */
+  setPose(id, pose, opts = {}) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a) return { ok: false, error: `no object '${id}'` };
+    if (!PERSON_KINDS.has(a.kind)) return { ok: false, error: `'${a.name || id}' is not a person` };
+    if (typeof pose !== "string" || !SIT_POSES.includes(pose)) return { ok: false, error: `unknown pose '${pose}' (sit, sit_floor or stand)` };
+    if (opts != null && (typeof opts !== "object" || Array.isArray(opts))) return { ok: false, error: "opts must be an object like {on}" };
+    if (a.carry_id) return { ok: false, error: `'${a.name || id}' is being carried` };
+    const name = (o) => o.name || o.id;
+    if (pose === "sit") {
+      let host = null;
+      if (opts?.on != null) {
+        host = this.state.actors.find((x) => x.id === opts.on);
+        if (!host) return { ok: false, error: `no object '${opts.on}'` };
+        if (!this._canSitOn(host, true)) return { ok: false, error: `can't sit on '${name(host)}' (a chair, bench, sofa, armchair, stool, rock, table or a static prop)` };
+      } else {
+        const p = this._actorPosAt(a, this.frame);
+        let best = Infinity;
+        for (const o of this.state.actors) {
+          if (o.id === a.id || !this._canSitOn(o)) continue;
+          const q = this._actorPosAt(o, this.frame), d = Math.hypot(q[0] - p[0], q[2] - p[2]);
+          if (d < best && d <= 1.5) { best = d; host = o; }
+        }
+        if (!host) return { ok: false, error: `nothing to sit on within 1.5 m of '${name(a)}': pass {on: id}, or use 'sit_floor'` };
+      }
+      if (a.mount_id === host.id && (a.pose || "sit") === "sit" && !a.mount_at) return { ok: true, pose, on: host.id, changed: false };
+      this.mount(a.id, host.id, "sit");
+      return { ok: true, pose, on: host.id, changed: true };
+    }
+    if (pose === "sit_floor") {
+      if (!a.mount_id && a.pose === "sit_floor") return { ok: true, pose, changed: false };
+      if (a.mount_id) {   // off the seat first, down to the floor beside it (in front of it)
+        const g = this.actorMeshes.get(a.id), host = this.state.actors.find((x) => x.id === a.mount_id);
+        const hg = host && this.actorMeshes.get(host.id), yaw = hg ? hg.rotation.y : 0;
+        const at = g ? [g.position.x + 0.6 * Math.sin(yaw), 0, g.position.z + 0.6 * Math.cos(yaw)] : [...this._actorPosAt(a, this.frame)];
+        delete a.mount_id; delete a.mount_at; delete a.seat;
+        a.keys = [{ frame: 0, position: [+at[0].toFixed(2), 0, +at[2].toFixed(2)] }];
+        a.rotation_deg = Math.round((yaw * 180) / Math.PI);
+      }
+      a.pose = "sit_floor";
+      this.setFrame(this.frame);
+      this.onChange(this.toJSON());
+      return { ok: true, pose, changed: true };
+    }
+    // stand
+    if (a.mount_id) { this.unmount(a.id); return { ok: true, pose, changed: true }; }
+    if (a.pose === "sit_floor") { delete a.pose; this.setFrame(this.frame); this.onChange(this.toJSON()); return { ok: true, pose, changed: true }; }
+    return { ok: true, pose, changed: false };
   }
 
   /** Put the selected character (or `riderId`) on another object: horse, bike, car, bench… */

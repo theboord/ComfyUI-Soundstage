@@ -3377,7 +3377,7 @@ function createStageWidget(node, inputName) {
       cast: () => castPanel,
       // The co-pilot's hands (web/agent/copilot.mjs, docs/assistant.md): the set, ⑤ Motion's quality, the Cut and the
       // shot length. Each change is undone by the co-pilot's one Undo for its plan.
-      stage: { toJSON: () => stage.toJSON(), select: (id) => stage.select(id) },
+      stage: { toJSON: () => stage.toJSON(), select: (id) => stage.select(id), setPose: (id, pose, opts) => stage.setPose(id, pose, opts) },
       quality: qualityHost,
       cut: { setTransition: (edit, type) => cut.setTransition(edit, type), undo: () => cut.undo(), panel: cutPanelHook(cut, cutView) },
       project: projectHook(),                 // async () => {name, id}: the open project (id confirmed, else null)
