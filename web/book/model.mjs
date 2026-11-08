@@ -533,25 +533,64 @@ export function getBookContext(book, script, sceneId = null) {
     prompt: { style: style.slice(0, 3), constraints: constraints.slice(0, 4) }, text };
 }
 
-export const DECISION_V = 2;
+export const DECISION_V = 3;   // 3: args cut to DECISION_ARGS (2 kept any short string that was not most of the sentence)
 
 const toolLabel = (t) => { const s = String(t || "change").replace(/_/g, " ").trim(); return s ? s[0].toUpperCase() + s.slice(1) : "Change"; };
 const norm = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
-/** True when `s` is (or holds) the typed sentence, or a big piece of it. */
+const GLUE = new Set("a an the to of in on at and or for with his her its it is be then by from up into this that me my you your please".split(" "));
+/** True when `s` is (or holds) the typed sentence, or shares a run of 3 words with it that has 2 or more real words in
+ *  it (a clause, a partial quote: "under his breath" is one, "to the window" is not). */
 function echoes(s, command) {
   const a = norm(s), c = norm(command);
   if (!a || !c) return false;
-  return a.includes(c) || (c.includes(a) && a.length >= Math.max(12, c.length * 0.5));
+  if (a.includes(c) && c.split(" ").length >= 2) return true;
+  const cw = c.split(" "), aw = ` ${a} `;
+  for (let i = 0; i + 3 <= cw.length; i++) {
+    const run = cw.slice(i, i + 3);
+    if (run.filter((w) => !GLUE.has(w)).length >= 2 && aw.includes(` ${run.join(" ")} `)) return true;
+  }
+  return false;
 }
 
-/** A call's arguments without anything that copies the typed sentence: short primitives only (strings <= 60 chars). */
-export function scrubArgs(args, command = "") {
+// What a decision may keep of a call's arguments: per tool, the keys whose values are numbers, enums or references
+// to things on the set (ids / names), never free text. Kinds: "num" (a finite number or boolean), "tok" (one short
+// token: an enum value, an id like sh_2, a one-word name; a list of up to 8 of them). Every other key is dropped,
+// whatever its value: note, text, what, at, description, command, value, setup words, a multi-word name... Unknown
+// tools keep nothing (the decision is then just the tool). Schemas: soundstage/agent/director.py TOOLS, parts.py TOOL,
+// web/agent/copilot.mjs TOOLS.
+const N = "num", T = "tok";
+const GRADE = { warmth: N, contrast: N, saturation: N, grain: N, exposure: N, tint: N, vignette: N, sharpness: N };
+export const DECISION_ARGS = {
+  add: { near: T }, stack: { near: T, count: N }, move: { target: T, near: T, dir: T, amount: N }, remove: { target: T },
+  turn: { target: T, face: T, deg: N }, scale: { target: T, factor: N }, time: { preset: T }, weather: { weather: T },
+  set: { set: T }, light: { type: T, on: T }, add_shot: { on: T, over: T }, reframe: { move: T },
+  mount: { target: T, on: T }, dismount: { target: T }, select_shot: { shot: T }, lens: { mm: N }, camera_move: { move: T, speed: T },
+  rig: { type: T }, camera_on: { target: T, view: T }, stunt: { target: T, stunt: T }, drive: { target: T, through: T, speed: T },
+  physics: { target: T, mode: T }, ram: { target: T, victim: T, into: T }, reroute: { target: T, around: T },
+  keep_keyed: { target: T, on: T }, gaze: { who: T, time: N }, direct: { who: T }, grade: GRADE, scene: { scene: T },
+  approve: { shot: T, status: T }, part: { part: T, target: T, at: N },
+  // Ask (web/agent/copilot.mjs)
+  camera: { lens_mm: N, move: T, speed: T, rig: T }, shot_length: { seconds: N }, set_stunt: { stunt: T },
+  set_quality: { adherence: T, ic_lora: N, follow_clay: N, preset: T }, add_transition: { edit: N, type: T },
+  add_sfx_rig: { on: T, at: N }, select_object: { name: T }, update_character: { name: T }, update_location: { name: T },
+  update_prop: { name: T }, profile_character: { name: T }, profile_location: { name: T }, profile_prop: { name: T },
+};
+const TOKEN = /^[A-Za-z0-9][A-Za-z0-9_.:#+-]{0,31}$/;
+const tok = (v) => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && TOKEN.test(v.trim()) ? v.trim() : undefined);
+
+/** A call's arguments cut down to the decision itself: only DECISION_ARGS[tool]'s keys, numbers and single tokens. */
+export function scrubArgs(args, tool = "") {
+  const allow = DECISION_ARGS[String(tool)] || {};
   const out = {};
   for (const [k, v] of Object.entries(args && typeof args === "object" ? args : {})) {
-    if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
-    else if (typeof v === "boolean") out[k] = v;
-    else if (typeof v === "string" && v.trim() && v.length <= 60 && !echoes(v, command)) out[k] = v.trim();
+    const kind = Object.prototype.hasOwnProperty.call(allow, k) ? allow[k] : null;
+    if (kind === N) { if ((typeof v === "number" && Number.isFinite(v)) || typeof v === "boolean") out[k] = v; }
+    else if (kind === T) {
+      if (Array.isArray(v)) { const xs = v.slice(0, 8).map(tok); if (xs.length && xs.every((x) => x !== undefined)) out[k] = xs; }
+      else if (typeof v === "boolean") out[k] = v;
+      else { const x = tok(v); if (x !== undefined) out[k] = x; }
+    }
   }
   return out;
 }
@@ -561,7 +600,8 @@ export function decisionSummary(change = []) {
   const parts = change.map(({ tool, args }) => {
     const vals = Object.entries(args || {});
     if (!vals.length) return toolLabel(tool);
-    return `${toolLabel(tool)}: ${vals.length === 1 ? String(vals[0][1]) : vals.map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(", ")}`;
+    const val = (v) => (Array.isArray(v) ? v.join(" + ") : String(v));
+    return `${toolLabel(tool)}: ${vals.length === 1 ? val(vals[0][1]) : vals.map(([k, v]) => `${k.replace(/_/g, " ")} ${val(v)}`).join(", ")}`;
   });
   return short(parts.join("; "), 160);
 }
@@ -571,8 +611,11 @@ export function decisionSummary(change = []) {
 const isLegacyDecision = (n) => n?.source === "chat" && n.dv !== DECISION_V && /^decided in the Director chat\b/.test(String(n.why || ""));
 
 function legacyDecision(n) {
-  const tools = (/\(([^)]*)\)\s*$/.exec(String(n.why || ""))?.[1] || "").split(",").map((t) => t.trim()).filter(Boolean);
-  const change = tools.map((tool) => ({ tool, args: {} }));
+  // v2 notes kept [{tool, args}] with any short string arg and Ask's summary, which could quote the chat: keep the
+  // tools, cut the args to DECISION_ARGS, and say it again in words from the change. v1 notes: the tools in "why".
+  const change = Array.isArray(n.change) && n.change.length
+    ? n.change.filter((c) => c && c.tool).map((c) => ({ tool: String(c.tool), args: scrubArgs(c.args, c.tool) }))
+    : (/\(([^)]*)\)\s*$/.exec(String(n.why || ""))?.[1] || "").split(",").map((t) => t.trim()).filter(Boolean).map((tool) => ({ tool, args: {} }));
   return { ...n, text: change.length ? decisionSummary(change) : "Changed in the chat", change, dv: DECISION_V };
 }
 
@@ -585,9 +628,10 @@ const TOOL_CAT = { lens: "camera", camera_move: "camera", shot: "camera", select
  * context). Only real changes: an undo, play or render isn't a decision. Returns the note, or null.
  *
  * The note keeps the decision, never the chat: `text` is `summary` (a short line the assistant wrote) or, without one,
- * the structured change in words (decisionSummary); `change` is [{tool, args}] with only short argument values
- * (scrubArgs). `command`, the user's typed sentence, is read only to skip undo / play and is not stored: a summary or
- * argument that repeats it is dropped. `ref` (optional): the chat turn's id, so forgetDecision(ref) finds the note.
+ * the structured change in words (decisionSummary); `change` is [{tool, args}] with only the allowlisted argument
+ * keys (DECISION_ARGS: numbers, enums, one-token ids / names; free text such as a `note` never). `command`, the user's
+ * typed sentence, is read only to skip undo / play and to reject a summary that quotes it (any 3 words in a row) and
+ * is not stored. `ref` (optional): the chat turn's id, so forgetDecision(ref) finds the note.
  */
 export function recordDecision(book, { command, calls = [], results = [], sceneId = null, source = "chat", summary = "", ref = null } = {}) {
   const typed = String(command || "").trim();
@@ -596,7 +640,7 @@ export function recordDecision(book, { command, calls = [], results = [], sceneI
   const tools = ok.map((c) => c.tool);
   if (!tools.length) return null;
   const cat = TOOL_CAT[tools.find((t) => TOOL_CAT[t])] || "blocking";
-  const change = ok.map((c) => ({ tool: String(c.tool), args: scrubArgs(c.args, typed) }));
+  const change = ok.map((c) => ({ tool: String(c.tool), args: scrubArgs(c.args, c.tool) }));
   const said = String(summary || "").replace(/\s+/g, " ").trim();
   const text = said && !echoes(said, typed) ? short(said, 160) : decisionSummary(change);
   const n = { id: noteId(), text, change, dv: DECISION_V, scope: sceneId ? "scene" : "global", scene_id: sceneId, line: null, character: null, category: cat,

@@ -263,8 +263,8 @@ test("book.forgetDecision: by ref, every copy server-side; a failed clean-up say
   const book = mountBook({ api, stage: null, host: { getScript: () => script, liveScene: () => "sc_1", props: () => props } });
   const TYPED = "could you make it pour with rain outside the window please";
   try {
-    const a = book.recordDecision({ command: TYPED, ref: "turn_42", calls: [{ tool: "weather", args: { kind: "rain" } }, { tool: "light", args: { preset: "dusk" } }], results: [{ ok: true }, { ok: true }] });
-    assert.equal(a.text, "Weather: rain; Light: dusk");
+    const a = book.recordDecision({ command: TYPED, ref: "turn_42", calls: [{ tool: "weather", args: { weather: "rain" } }, { tool: "light", args: { type: "key" } }], results: [{ ok: true }, { ok: true }] });
+    assert.equal(a.text, "Weather: rain; Light: key");
     assert.equal(JSON.stringify(props.ss_book).includes(TYPED), false, "the workflow copy never had the typed sentence");
     await new Promise((r) => setTimeout(r, 1300));                 // the debounced server save
     assert.equal(posts.some(([, b]) => JSON.stringify(b).includes(TYPED)), false, "nor did anything sent to the server");
