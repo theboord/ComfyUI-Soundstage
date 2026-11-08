@@ -547,3 +547,31 @@ test("live untip: the body stands where the live clay group is for that tick, no
   const w = skin.holder.getWorldPosition(new THREE.Vector3());
   assert.ok(w.distanceTo(new THREE.Vector3(2, 0, 1.5)) < 1e-6, `body at the live clay: ${w.toArray()}`);
 });
+
+test("obstacles: a prop keyed to jitter 4.5 cm every 2 frames (no heading, quat or key_y keys) doesn't rebuild every frame: the heading taken from its path counts", () => {
+  // Review Finding A (52e1b4d): keyedMoving returned early (travel under 5 cm, no heading / quat keys), so it never
+  // saw the heading _headingAt takes from the path (over 0.25 m/s, it faces its travel); setFrame swung the group
+  // 15 deg a frame, every step crossed OBS_JUMP.rot and re-anchored the grid: 49 box rebuilds in 48 frames.
+  const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
+  const crate = { id: "c1", kind: "crate", position: [0, 0, 0],
+    keys: [...Array(25).keys()].map((i) => ({ frame: 2 * i, position: [i % 2 ? 0.045 : 0, 0, 0] })) };
+  const st = bareStage([walker, crate]);
+  clayOf(st, walker);
+  const cg = clayOf(st, crate);
+  let boxes = 0;
+  const orig = THREE.Box3.prototype.setFromObject;
+  THREE.Box3.prototype.setFromObject = function (...x) { boxes++; return orig.apply(this, x); };
+  try {
+    const tables = new Set();
+    let swing = 0, prev = null;
+    for (let f = 0; f <= 48; f++) {
+      const p = st._actorPosAt(crate, f), h = st._headingAt(crate, f);
+      if (prev !== null) swing = Math.max(swing, Math.abs(h - prev)); prev = h;
+      cg.position.set(p[0], 0, p[2]); cg.rotation.set(0, h, 0); cg.updateMatrixWorld(true);   // as setFrame poses it
+      st.frame = f; st._heightAt(walker, f); st._jumpsInShot(walker);
+      tables.add(st._yCache.get(walker));
+    }
+    assert.ok(swing > 0.1, `the path heading swings the group (${(swing * 180 / Math.PI).toFixed(1)} deg a frame): the case under test`);
+    assert.ok(boxes <= 6 && tables.size <= 6, `jittering 4.5 cm every 2 frames over 48 frames: boxes ${boxes}, height tables ${tables.size}`);
+  } finally { THREE.Box3.prototype.setFromObject = orig; }
+});

@@ -300,6 +300,16 @@ const KEYED_CELL_CHANGES = 4;
  *  6 cm raise (1 cell) stays an obstacle (cb57dad used 1 deg / 5 cm of total keyed spread, so those lost collision:
  *  feet over the crate 0.80 m -> 0, and it never read baked quat keys, so a tumble rebuilt every frame).
  *  `pose(f)` gives the keyed transform at frame f as [x, y, z, qx, qy, qz, qw]. */
+/** keyedMoving: does the posed group turn at all (more than one rotation grid step from frame 0 at some frame)? */
+function posedTurns(frames, pose) {
+  const r0 = pose(0);
+  for (let f = 1; f <= frames; f++) {
+    const r = pose(f), s = r0[3] * r[3] + r0[4] * r[4] + r0[5] * r[5] + r0[6] * r[6] < 0 ? -1 : 1;
+    for (let k = 3; k < 7; k++) if (Math.abs(s * r[k] - r0[k]) > OBS_TOL.rot) return true;
+  }
+  return false;
+}
+
 function keyedMoving(o, frames, pose) {
   const ks = o.keys;
   if (!(ks?.length > 1)) return false;
@@ -308,7 +318,10 @@ function keyedMoving(o, frames, pose) {
   // roll_deg / pitch_deg don't count: setFrame turns only a car's body child with them, never the clay group
   const turns = ks.some((k) => Array.isArray(k.quat) || Number.isFinite(k.heading_deg));
   const rises = (o.key_y || o.physics?.baked) && ks.some((k) => Math.abs((k.position?.[1] ?? p0[1] ?? 0) - (p0[1] ?? 0)) > 1e-4);
-  if (!turns && !rises) return false;
+  // No heading or quat keys can still turn the group: under 5 cm of travel, keys 2 frames apart are over 0.25 m/s, so
+  // _headingAt faces the direction of travel and swings the group (15 deg a frame for a 4.5 cm zigzag every 2 frames,
+  // a re-anchor and box rebuild every frame). pose() carries that heading: a turn of the posed group counts.
+  if (!turns && !rises && !posedTurns(frames, pose)) return false;
   let at = null, last = null, key = null, changes = 0;
   for (let f = 0; f <= frames; f++) {
     let now = pose(f);
