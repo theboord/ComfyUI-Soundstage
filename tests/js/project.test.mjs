@@ -490,3 +490,54 @@ test("two tabs (two pages) saving one project in turn settle on one id instead o
   const fresh = await new ProjectStore({ api }).save("Old", WF());
   assert.notEqual((await t1.save("Old", g1)).id, fresh.id, "t1's old id belongs to the trashed project");
 });
+
+// ------------------------------------------------------------------ round 5, finding 1: adopt never crosses content
+test("Save As Q under the name P + Replace: a tab still holding P's old id never adopts the id minted for Q", async () => {
+  for (const variant of ["Q saved before (carries its own id)", "Q never saved (no name, no id), replace", "Q named P, no id, replace"]) {
+    const api = fakeApi();
+    let now = 10_000;
+    const pageA = new ProjectStore({ api, now: () => (now += 10) }), pageB = new ProjectStore({ api, now: () => (now += 10) });
+    const a = await pageA.save("P", WF());                                   // page A: P, id X
+    const createdP = (await man(api, "P")).created;
+    const q = WF(); q.nodes[0].widgets_values = ['{"graph":"Q"}'];
+    const qwf = variant.startsWith("Q saved") ? stampWorkflow(q, "Q", 1, "p_0a0b0c0d")
+      : variant.startsWith("Q never") ? q : stampWorkflow(q, "P", 1, null);
+    // page B: Save As P, Replace (the pill passes replace whenever "Replace project?" was confirmed; the first variant
+    // is also caught without it, by the other id / other name it carries)
+    const b = await pageB.save("P", qwf, variant.startsWith("Q saved") ? {} : { replace: true });
+    assert.notEqual(b.id, a.id, variant);
+    assert.notEqual((await man(api, "P")).created, createdP, `${variant}: other content starts a new project (created reset)`);
+    const again = await pageA.save("P", a.workflow);                          // page A saves its P graph carrying X
+    assert.notEqual(again.id, b.id, `${variant}: A's P graph must not take Q's id`);
+    assert.notEqual(again.id, a.id, `${variant}: and X is not kept either (project.json held another id)`);
+  }
+});
+
+test("the pill: page B Save As Q under P and confirms Replace; page A's next Save of P does not take Q's id", async () => {
+  globalThis.window ||= { addEventListener() {} };
+  const { ProjectController } = await import("../../web/project/projectbar.mjs");
+  const ufs = fakeApi();
+  const mk = (graph, path, answer) => {
+    const app = { graph: { ...graph }, extensionManager: { workflow: { activeWorkflow: { path, isTemporary: false } }, dialog: {
+      prompt: async () => answer, confirm: async () => true } } };
+    app.graph.serialize = () => { const { serialize, ...g } = app.graph; return JSON.parse(JSON.stringify(g)); };   // eslint-disable-line no-unused-vars
+    const ctl = new ProjectController({ app, api: ufs });
+    clearInterval(ctl._timer); ctl.render = () => {}; ctl.say = () => {};
+    return ctl;
+  };
+  const p0 = await new ProjectStore({ api: ufs }).save("P", WF());
+  const q = WF(); q.nodes[0].widgets_values = ['{"graph":"Q"}'];
+  const q0 = await new ProjectStore({ api: ufs }).save("Q", q);
+  const A = mk(JSON.parse(ufs.files.get("workflows/P.json").body), "workflows/P.json", "P");
+  const B = mk(q0.workflow, "workflows/Q.json", "P");
+  await A.tick(); await B.tick();
+  await A.save();
+  const x = (await man(ufs, "P")).id;
+  assert.equal(x, p0.id);
+  await B.save({ as: true });                                         // Save As "P", Replace: yes
+  const f = (await man(ufs, "P")).id;
+  assert.notEqual(f, x);
+  assert.equal(JSON.parse(ufs.files.get("workflows/P.json").body).nodes[0].widgets_values[0], '{"graph":"Q"}');
+  await A.save();                                                     // page A still holds P's graph carrying X
+  assert.notEqual((await man(ufs, "P")).id, f, "A's P graph must not be filed under the id minted for Q");
+});

@@ -182,14 +182,17 @@ export class ProjectController {
     const t = this._cur() || (await this.tick(), this._cur());
     let name = t.name;
     const copy = this._isCopy(t, wf);
+    let replaced = false;
     if (as || copy || !name || /^Untitled \d{4}-/.test(name)) {
       name = await askName(this.app, as ? "Save project as" : "Save project", name && !/^Untitled /.test(name) ? name : "");
       if (!name) return;
-      if ((name !== t.name || copy) && ((await this.store.manifest(name)) || (copy && (await this.store.open(name))))
-        && !(await confirmBox(this.app, "Replace project?", `A project called "${name}" exists. Replace it?`))) return;
+      if ((name !== t.name || copy) && ((await this.store.manifest(name)) || (copy && (await this.store.open(name))))) {
+        if (!(await confirmBox(this.app, "Replace project?", `A project called "${name}" exists. Replace it?`))) return;
+        replaced = true;     // other content replaces that project: a fresh id and a new `created` (store._save)
+      }
     }
     try {
-      const res = await this.store.save(name, wf, { manifest: this._summary(), ...(copy ? { copy: true, replace: true } : {}) });
+      const res = await this.store.save(name, wf, { manifest: this._summary(), ...(copy || replaced ? { replace: true } : {}), ...(copy ? { copy: true } : {}) });
       try { this.app.graph.extra = { ...(this.app.graph.extra || {}), ss_project: { name: res.name, saved_at: res.saved_at, id: res.id } }; } catch { /* */ }
       t.name = res.name;
       t.collected = false;

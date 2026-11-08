@@ -17,7 +17,9 @@
 // pre-id graph with the same name must not take this project's id), a workflow saved over a leftover projects/<name>/
 // folder, a project saved before ids existed (it gets one on its next save). One exception: a graph carrying an id
 // THIS store (this page) wrote for the project, same `created`, adopts the id another tab's save put in project.json,
-// so two tabs saving in turn settle on one id after one change instead of a new id per save. Known cost: a second tab
+// so two tabs saving in turn settle on one id after one change instead of a new id per save. A save that mints a fresh
+// id over a project with other content (a copy, another id, another name, an explicit replace) resets `created`, so
+// that adopt can never hand a tab an id minted for different content. Known cost: a second tab
 // opened before the first id'd save, canvas undo past it, or a restored pre-id autosave, when saved from a page that
 // never saved it, gets a fresh id once.
 // Loading never writes an id. Duplicate gives the copy a fresh id, rename and trash keep it (soundstage/project/library.py).
@@ -207,10 +209,18 @@ export class ProjectStore {
     // Kept: the graph carries the manifest's id. Adopted: the graph carries an id THIS store wrote for this project
     // (same created stamp) and another tab's save has since put its own id in project.json; taking that id ends the
     // two-tab ping-pong where every save minted a new one (review finding 2). Else fresh.
-    const id = oldId && carried === oldId ? oldId
-      : oldId && carried && mine?.ids.has(carried) && old.created != null && mine.created === old.created ? oldId
-        : newProjectId();
-    const created = isCopy ? at : (old.created || at);   // a copy replacing a project starts a new one
+    const kept = !!oldId && carried === oldId;
+    const adopted = !kept && !!oldId && !!carried && !!mine?.ids.has(carried) && old.created != null && mine.created === old.created;
+    const id = kept || adopted ? oldId : newProjectId();
+    // A save that mints a fresh id over an existing id'd project with OTHER content starts a new project: a copy, a
+    // graph carrying another id, a graph named for another project (Save As "Q" under the name P), or an explicit
+    // replace (the pill passes it whenever its user confirmed "Replace project?"). Its `created` is reset, so no other tab's adopt record (keyed by `created`)
+    // can match it: a tab still holding P's old id never adopts the id minted for Q (review round 5, finding 1).
+    // An id-less graph that names this very project (a tab opened before the first id'd save), or names none and is
+    // saved without replace (a direct caller), keeps `created`.
+    const forked = !kept && !adopted && !!oldId
+      && (isCopy || replace || (carried && carried !== oldId) || (projectNameOf(workflow) != null && projectNameOf(workflow) !== n));
+    const created = isCopy || forked ? at : (old.created || at);
     const wf = stampWorkflow(workflow, n, at, id);
     await this._put(ProjectStore.workflowPath(n), wf);
     const { id: _ignored, ...rest } = manifest || {};   // eslint-disable-line no-unused-vars
