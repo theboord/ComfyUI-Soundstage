@@ -14,7 +14,9 @@ in as each track lands. Read **Limits** before trusting a result.
 **On `main` today** the App side below is live, but `POST /soundstage/video2stage` still runs the earlier pipeline:
 it reads only the sample count (clamped to 8-24), the vision-model switch and the set-scan switch, ignores trim, the
 people pick and the lens, and has no cancel or runs route. The set behind the rebuild is the Depth Anything 3 relief;
-the fused set scan (`backdrop.py`) and the LAYOUT stages are built and tested but not yet called by the route.
+since 2026-11-07 the route calls the fused set scan (`backdrop.py`), the structure planes (`planes.py`) and the
+Qwen3-VL inventory when Qwen3-VL is installed (the `scan` option, see **Street-dance fixes**); SAM 3.1 segmentation and
+the rest of LAYOUT are still not called by it.
 
 ## In the App
 Every entry point uses the same wording, **Video → 3D set**, and opens the same one-screen chooser:
@@ -168,7 +170,37 @@ GET  /soundstage/video2stage/runs -> {runs: [{secs, samples, total_s}]} (optiona
 
 Notes can be strings or `{text, level: red|amber|info, fix?: {action: lock_camera|retry_quality, label}}`.
 
+## Street-dance fixes (2026-11-07)
+Found on a stock street-dance test clip (a woman in a short plaid shirt, overcast sky, concrete slab and slope, trees).
+All of it is tested on the CPU with recorded-style replies and synthetic frames; none of it has run on a GPU yet.
+
+| What was wrong | What the route does now | Code |
+|---|---|---|
+| The vision prompts had no clothing field; "woman in yellow plaid outfit" gave the clay its default top and jeans, and the 8B read's clothing was thrown away. | Both prompts ask for `wardrobe` (every garment, colour, pattern, length). It survives `parse_reply`, `merge_reads`, `parse_inventory` and `legacy_breakdown`, and becomes `actor.appearance` in the clay's garment words (shirt, flannel / plaid shirt, crop top, tank, hoodie, jacket, coat, shorts, jeans, skirt, dress...). "dress" is written only when the model said dress. A read naming no garment is `appearance.wardrobe: "unknown"` (and a note), never a silent default. Echoed schema text (`<people only: ...>`, "a few words") is dropped. | `vlm.py`, `wardrobe.py`, `performer.py`, `convert.place_objects` |
+| "Morning" forced the golden 6° sun; the overcast sky came out orange. | The source frames' sky (DA3's sky mask, else the top of the frame) is sampled: a grey, unsaturated sky is **overcast** whatever the hour; a blue one is not golden hour. The weather is kept apart from the time words in `scene.video2stage.weather` `{sky, time, preset, sample_rgb, stage_rgb, delta_e}`. | `weather.py`, `convert.assemble_legacy` / `assemble_ctx` |
+| Reshoot of a stock clip had no scene words (`recipe_prompt` is empty). | It takes the words its Video → 3D rebuild wrote (`scene_words` in the stage record), else words built from that rebuild's vision read. | `reshoot/__init__.py` `scene_text`, `stock_scene_words` |
+| Clay blocks in front of the scan with no word for them became pillars in LTX. | Each set block in the first camera's view is checked against the scan's depth: a block the scan already shows there is dropped; one in front of it gets its kind word (`prompt_word`), and the Look text names it. | `scenewords.triage_blocks` |
+| The camera tilt came from a sky edge cut off by the slope and trees (3.8° down), putting a far tree about 6 m away. | The sky edge counts as the horizon only when the sky reaches the top of most columns and its edge is nearly one line; otherwise the depth-fitted floor sets the tilt. Boxed trees, rocks and buildings are placed from their box and the depth inside it when the floor ray disagrees by more than half; a boxed rock pile is as wide as its box. | `track.horizon_trusted`, `track.camera_ground`, `convert.place_set_bboxes` |
+| The Frame still was made from text only. | Opt-in (**Advanced → Wardrobe reference**, off by default): a crop of the person from the first sample, **face blurred**, saved as `actor.wardrobe_ref`; ④ Cast in this shot offers it as a wardrobe reference. Only for footage you have the right to use; the face is never sent. | `wardrobe.reference_crop`, `pipeline.write_wardrobe_ref`, `web/cast/shotcast.mjs` |
+| The route never called the set scan, planes or inventory. | `scan` option (default: on when Qwen3-VL 8B or 4B is installed and the set scan is wanted; `scan: false` turns it off). The inventory runs over 6 samples and fills the breakdown's wardrobe; the scan replaces the frame-0 relief; structure planes replace the old flat dressing they cover. Any failure falls back to the old block builder. `scene.video2stage.set_path` says which ran. | `scanroute.py`, `pipeline.run` / `finish_scene` |
+| The clay had a stock slim build. | SAM 3D Body's shape when the take has one (`body_shape`); otherwise a girth scale from the person's silhouette (the box's pixels at the body's depth). `appearance.girth` (the clay's width scale, `humans.mjs`) and the nearest `build`. | `wardrobe.girth_from`, `web/stage/humans.mjs` |
+
+The Look text the App pre-fills for a rebuilt clip is `scene.video2stage.look_hint` (who and what they wear, the set
+by its kind words, the light the sky was measured as), else the old words.
+
+**Still unverified (needs a GPU run on the clip):**
+- whether Qwen3.5 4B and Qwen3-VL 8B fill the new `wardrobe` field, or still answer "outfit";
+- whether SAM 3D Body returns body-shape data at all (the `body_shape` reading is written to a guessed shape);
+- whether the depth-fitted floor gives the true tilt on this clip (mono depth flattens far ground);
+- the scan path end to end on the route (`planes.fit` and `backdrop.build` on the old solve's arrays ran only on
+  synthetic depth), and whether the person masks made from the box + depth keep her out of the scan;
+- whether naming the blocks stops LTX inventing pillars (a vision read of a short draft is the test);
+- whether the face-blurred wardrobe reference keeps the hem above the knee in the Klein still;
+- the stage keeping `appearance.girth` and `wardrobe_ref` through save / load (they ride in the actor JSON).
+
 ## Tests
+- `tests/test_v2s_dancer.py`: the street-dance fixes above, one test group per fix (fixtures
+  `tests/video2stage_fixtures/dancer_*.txt` are invented, generic replies).
 - `tests/test_v2s_backdrop.py`: a synthetic room (floor, ceiling, three walls) rendered to exact depth and colour from
   four cameras. It checks:
   - points land on the true planes;
