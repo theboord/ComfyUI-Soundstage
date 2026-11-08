@@ -275,7 +275,9 @@ export class PhysicsPanel {
     set(this.lift, info.lift);
     if (info.material) this.matSel.value = info.material;
     const bu = info.buoyancy;
-    this.densRow.hidden = !bu; this.densNote.hidden = !bu;
+    this.densRow.hidden = !bu; this.densNote.hidden = !bu && !info.swim;
+    // a person: the water moves them by their Swim mode (person panel), not a density
+    if (!bu && info.swim) this.densNote.textContent = `In the water: ${info.swim.what} (set by Swim in the person panel).`;
     if (bu) {
       const pre = DENSITY_PRESETS.find((p) => p[2] != null && p[2] === bu.override);
       let custom = this.densSel.querySelector('option[value="custom"]');

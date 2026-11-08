@@ -568,7 +568,7 @@ export class Stage {
     const p = physicsOf(a);
     if (!a.physics?.mode && (NO_COLLIDE.has(a.kind) || a.kind === "card" || a.mount_id || a.carry_id)) p.mode = "off";   // never collides
     return { id: a.id, name: a.name, kind: a.kind, ...p, material: materialOf(a), baked: !!a.physics?.baked, canMove: this._physCanMove(a),
-      density: a.physics?.density ?? null, buoyancy: this.buoyancyInfo(a.id),
+      density: a.physics?.density ?? null, buoyancy: this.buoyancyInfo(a.id), swim: this.swimInfo(a.id),
       world: worldRole(a), worldOn: this.state.physics?.world !== false, takeover: a.physics?.takeover || null, keepKeyed: !!a.physics?.keepKeyed,
       kindCount: this.state.actors.filter((x) => x.kind === a.kind && this._physCanMove(x)).length,
       dynamicCount: this.state.actors.filter((x) => x.physics?.mode === "dynamic" && this._physCanMove(x)).length };
@@ -4710,10 +4710,10 @@ export class Stage {
   /** How an object floats: {density (kg/m3 now), source ("density" | "mass" | "kind" | "sinking"), floats, under (its
    *  waterline, the fraction of its height under when floating; 1 = it sinks), terminal (m/s sinking + / rising -
    *  when fully under), what (the kind's material words), override (the per-object density or null)}. null for people
-   *  on a swim plan and boats (their own physics). */
+   *  on a swim plan (their Swim mode decides: swimInfo) and boats (their own physics). */
   buoyancyInfo(id = this.selected) {
     const a = this.state.actors.find((x) => x.id === id), g = a && this.actorMeshes.get(a.id);
-    if (!a || !g || LIBRARY[a.kind]?.boat) return null;
+    if (!a || !g || LIBRARY[a.kind]?.boat || this._onSwimPlan(a)) return null;
     const bb = this._buoyBody(a, g);
     if (!bb) return null;
     const b = bb.body, end = b.sinkRho || b.rho, under = Buoy.floatFraction(b, end);   // an animal set to Can't swim: where it ends up
@@ -4722,11 +4722,35 @@ export class Stage {
       sinksAfter: b.sinkRho ? +b.sinkAfter.toFixed(2) : null, soaks: b.sat ? { to: b.sat, tau_s: b.tau } : null, override: a.physics?.density ?? null };
   }
 
+  /** A person the water moves by their Swim mode (the clay's swim plan, buoyancy.mjs personTrack), not by a density:
+   *  every person but a video-mocap one. */
+  _onSwimPlan(a) {
+    return PERSON_KINDS.has(a.kind) && !a.mocap;
+  }
+
+  /** What a person on a swim plan does in this set's water, in words (the Physics panel shows it instead of the
+   *  Floats / sinks density): {swim (the mode), floats (stays up), stands (shallow enough to stand in), what}.
+   *  null when there is no pool / tank / sea or they are not a person on a swim plan. */
+  swimInfo(id = this.selected) {
+    const a = this.state.actors.find((x) => x.id === id);
+    if (!a || !this._onSwimPlan(a) || !this.water || this.water.position.y < 0.3 || this.setFx?.underwater) return null;
+    const m = Buoy.swimMode(a.swim), h = (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1);
+    const stands = Buoy.canStand(this.water.position.y, h) && (m === "auto" || m === "cant");
+    const t = Buoy.struggleSeconds(Swim.seedOf(a.id)).toFixed(1);
+    const what = stands ? `stands in ${this.water.position.y.toFixed(1)} m of water (head out)`
+      : { cant: `can't swim: struggles ~${t} s at the surface, then sinks slowly (~0.2 m/s) and lies on the bottom`,
+        sink: "sinks slowly, limp, and lies on the bottom", back: "floats on the back at the surface", dive: "hovers at the keyed depth (scuba)",
+        flutter: "swims under water at the keyed depth", frog: "swims under water at the keyed depth", tread: "treads water, head out",
+        breaststroke: "swims at the surface", freestyle: "swims at the surface" }[m] || "swims at the surface (treads water when still)";
+    return { swim: m, floats: stands || !(m === "cant" || m === "sink"), stands, what };
+  }
+
   /** The per-object "Floats / sinks" density (the Physics panel): kg/m3, a preset name (buoyancy.mjs DENSITY_PRESETS:
    *  foam, wood, low, neutral, slow, stone, metal) or "auto" / null for the kind's own. One undo step. */
   setDensity(id, value) {
     const a = this.state.actors.find((x) => x.id === (id ?? this.selected));
     if (!a) return { ok: false, error: "select an object" };
+    if (this._onSwimPlan(a)) return { ok: false, error: `${a.name || a.kind} floats or sinks by their Swim mode (setSwim: tread, can't swim, sink slowly...), not a density` };
     const v = Buoy.densityValue(value);
     if (v == null && !(value == null || value === "" || value === "auto")) return { ok: false, error: `not a density: "${value}" (kg/m3, or ${Buoy.DENSITY_PRESETS.map((p) => p[0]).join(", ")})` };
     a.physics = { ...(a.physics || {}) };

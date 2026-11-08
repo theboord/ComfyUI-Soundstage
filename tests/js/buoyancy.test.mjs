@@ -297,6 +297,22 @@ test("an animal set to Can't swim paddles at the surface, then sinks slowly and 
   assert.equal(st.buoyancyInfo("c").floats, false, "the Physics info says it ends up sinking");
 });
 
+test("the Floats / sinks info matches what a person does: no density for a person on a swim plan, their Swim mode in words", () => {
+  // Before: buoyancyInfo said 'floats, 99% under' for a Can't-swim person who sinks; setDensity(person, 'metal') said ok,
+  // 'sinks 13 m/s', and did nothing (they kept struggling at the surface).
+  const st = tank([man("c", 0, { swim: "cant" }), man("t", 0, { x: 3, swim: "tread" }), prop("k", "crate", 0, { x: -3 })]);
+  assert.equal(st.buoyancyInfo("c"), null);
+  const r = st.setDensity("c", "metal");
+  assert.equal(r.ok, false); assert.match(r.error, /Swim/);
+  assert.equal(st.state.actors[0].physics?.density, undefined, "nothing stored");
+  const pc = st.physicsInfo("c"), pt = st.physicsInfo("t");
+  assert.equal(pc.buoyancy, null);
+  assert.equal(pc.swim.floats, false); assert.match(pc.swim.what, /sinks slowly/);
+  assert.equal(pt.swim.floats, true); assert.match(pt.swim.what, /treads water/);
+  assert.equal(st.physicsInfo("k").swim, null, "a prop keeps its density info");
+  assert.equal(st.physicsInfo("k").buoyancy.floats, true);
+});
+
 // ------------------------------------------------------------------ the other paths that skipped the water
 test("Simulate & bake leaves things in the tank to the water; the Physics start height is a drop height, not a float in the air", () => {
   const st = tank([prop("c", "crate", 0, { x: -3, physics: { mode: "dynamic", lift: 4.5 } }), prop("b", "sphere", 0, { x: 3, physics: { mode: "dynamic", lift: 4.5 } })]);
