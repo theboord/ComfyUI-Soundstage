@@ -47,7 +47,8 @@ test("runShaders deletes the browser's --user-data-dir afterwards (it left one s
 test("runShaders on timeout stops the whole browser (its helper processes too) before deleting the profile: a helper writing late left ss-shaders-<x> behind", { timeout: 30000 }, async () => {
   // Seventh review: on timeout only the main process was killed and rmSync ran at once; a child still running wrote
   // into the profile afterwards and the folder came back (ss-shaders-o9iXU1). The stand-in browser forks a helper that
-  // writes into the profile 3 s after it starts, then hangs so the 2 s timeout fires.
+  // writes into the profile 6 s after it starts, then hangs so the 5 s timeout fires. (It was 3 s / 2 s: under full-suite
+  // load the stand-in sometimes had not run its first line within 2 s, so it never wrote its profile name: ENOENT.)
   const { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync } = await import("node:fs");
   const { join } = await import("node:path");
   const { tmpdir } = await import("node:os");
@@ -55,13 +56,13 @@ test("runShaders on timeout stops the whole browser (its helper processes too) b
   let dir = "";
   try {
     const log = join(box, "dir.txt"), exe = join(box, "fake-chrome");
-    writeFileSync(exe, `#!/bin/sh\nfor a; do case "$a" in --user-data-dir=*) d="\${a#--user-data-dir=}"; mkdir -p "$d/Default"; printf %s "$d" > "${log}";; esac; done\n( sleep 3; mkdir -p "$d/Default"; echo late > "$d/Default/Late" ) </dev/null >/dev/null 2>&1 &\nsleep 20\n`);
+    writeFileSync(exe, `#!/bin/sh\nfor a; do case "$a" in --user-data-dir=*) d="\${a#--user-data-dir=}"; mkdir -p "$d/Default"; printf %s "$d" > "${log}";; esac; done\n( sleep 6; mkdir -p "$d/Default"; echo late > "$d/Default/Late" ) </dev/null >/dev/null 2>&1 &\nsleep 20\n`);
     chmodSync(exe, 0o755);
-    const r = await runShaders({ browser: exe, timeoutMs: 2000 }).catch((e) => ({ error: String(e) }));
+    const r = await runShaders({ browser: exe, timeoutMs: 5000 }).catch((e) => ({ error: String(e) }));
     assert.match(String(r.error), /timed out/, `the stand-in hangs: ${r.error}`);
     dir = readFileSync(log, "utf8");
     assert.ok(dir.includes("ss-shaders-"), `the profile folder was ${dir}`);
-    await new Promise((ok) => setTimeout(ok, 3000));   // past the helper's late write
+    await new Promise((ok) => setTimeout(ok, 3000));   // past the helper's late write (6 s after start; we are past 5 s)
     assert.equal(existsSync(dir), false, `the profile folder stays deleted after the helper's late write: ${dir}`);
   } finally { rmSync(box, { recursive: true, force: true }); if (dir.includes("ss-shaders-")) rmSync(dir, { recursive: true, force: true }); }
 });
