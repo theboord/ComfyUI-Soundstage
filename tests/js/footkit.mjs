@@ -127,15 +127,33 @@ export function measure(st, a, { order = null, ground = () => 0 } = {}) {
  * Physical summary of a measured shot, over the frames the body is on its feet (shown, not skipped):
  *   pen     the deepest any shoe vertex goes under the ground (m, negative = under)
  *   slide   the most a shoe vertex TOUCHING the ground (within `touch`) on two frames in a row moves sideways (m/frame)
- *   hover   the highest the lowest shoe vertex sits over the ground on a frame the foot is low and slow (m)
+ *   drift   the most a shoe vertex moves sideways from where it touched down while it keeps touching (m)
+ *   hover   the highest the lowest shoe vertex sits over the ground on a frame the foot is low (under `low`) and the
+ *           foot bone moves slower than `slow` (m/s): a foot at rest that should be on the ground (m)
  *   float   frames where neither foot touches the ground (within `touch`)
  *   drop    the most the pelvis comes down (m); miss: the most a planted foot bone misses its target (m)
  *   planted per foot, frames the plan labels planted
  */
 export function physical(out, { touch = 0.005, low = 0.03, slow = 0.25, fps = 24, from = 0, to = Infinity } = {}) {
   const { rows } = out;
-  const s = { pen: Infinity, slide: 0, slideAt: "", hover: 0, hoverAt: "", float: 0, floatAt: [], drop: 0, miss: 0, planted: { l: 0, r: 0 } };
+  const s = { pen: Infinity, slide: 0, slideAt: "", drift: 0, driftAt: "", hover: 0, hoverAt: "", float: 0, floatAt: [], drop: 0, miss: 0, planted: { l: 0, r: 0 } };
   const live = (r) => r && r.shown && !r.skip && r.f >= from && r.f <= to;
+  // drift: a vertex that keeps touching the ground frame after frame moves at most this far from where it touched down
+  for (const lr of ["l", "r"]) {
+    const start = new Map();
+    for (let f = 0; f < rows.length; f++) {
+      const r = rows[f];
+      if (!live(r)) { start.clear(); continue; }
+      const c = r[lr];
+      for (let k = 0; k < c.H.length; k++) {
+        if (!(c.H[k] < touch)) { start.delete(k); continue; }
+        const p0 = start.get(k);
+        if (!p0) { start.set(k, [c.P[3 * k], c.P[3 * k + 2]]); continue; }
+        const d = Math.hypot(c.P[3 * k] - p0[0], c.P[3 * k + 2] - p0[1]);
+        if (d > s.drift) { s.drift = d; s.driftAt = `${lr} f${f}`; }
+      }
+    }
+  }
   for (let f = 0; f < rows.length; f++) {
     const r = rows[f];
     if (!live(r)) continue;
@@ -150,13 +168,14 @@ export function physical(out, { touch = 0.005, low = 0.03, slow = 0.25, fps = 24
       const p = rows[f - 1];
       if (!live(p)) continue;
       const q = p[lr];
-      let lowestSpeed = Infinity;
       for (let k = 0; k < c.H.length; k++) {
         const d = Math.hypot(c.P[3 * k] - q.P[3 * k], c.P[3 * k + 2] - q.P[3 * k + 2]);
         if (c.H[k] < touch && q.H[k] < touch && d > s.slide) { s.slide = d; s.slideAt = `${lr} f${f}`; }
-        if (c.H[k] < c.h + 0.003) lowestSpeed = Math.min(lowestSpeed, d * fps);
       }
-      if (c.h < low && lowestSpeed < slow && c.h > s.hover) { s.hover = c.h; s.hoverAt = `${lr} f${f}`; }
+      // low and slow: the foot bone hardly moving (a foot at rest, not a toe pivoting at toe-off) close to the ground
+      const e = c.m.elements, e0 = q.m.elements;
+      const footSpeed = Math.hypot(e[12] - e0[12], e[13] - e0[13], e[14] - e0[14]) * fps;
+      if (c.h < low && footSpeed < slow && c.h > s.hover) { s.hover = c.h; s.hoverAt = `${lr} f${f}`; }
     }
     if (!touching) { s.float++; s.floatAt.push(f); }
   }
@@ -164,4 +183,4 @@ export function physical(out, { touch = 0.005, low = 0.03, slow = 0.25, fps = 24
 }
 
 export const cm = (m) => (100 * m).toFixed(2);
-export const fmt = (s) => `pen ${cm(s.pen)} cm, slide ${cm(s.slide)} cm/frame (${s.slideAt}), hover ${cm(s.hover)} cm (${s.hoverAt}), float ${s.float} frames, drop ${cm(s.drop)} cm, miss ${cm(s.miss)} cm, planted l ${s.planted.l} r ${s.planted.r}`;
+export const fmt = (s) => `pen ${cm(s.pen)} cm, slide ${cm(s.slide)} cm/frame (${s.slideAt}), drift ${cm(s.drift)} cm (${s.driftAt}), hover ${cm(s.hover)} cm (${s.hoverAt}), float ${s.float} frames, drop ${cm(s.drop)} cm, miss ${cm(s.miss)} cm, planted l ${s.planted.l} r ${s.planted.r}`;

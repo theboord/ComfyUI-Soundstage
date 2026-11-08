@@ -480,7 +480,7 @@ export function avatarsAt(stage) {
     }
     const plan = footPlanFor(stage, a, g, skin, { last, fps, scale });
     poseRaw(stage, a, g, skin, f, { fps, scale, last });
-    if (plan) skin.footOut = F.groundFeet({ plan, rig: skin.kit.feet, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, frame: f, saved: (skin.ikSaved ||= []) });
+    skin.footOut = plan ? F.groundFeet({ plan, rig: skin.kit.feet, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, frame: f, saved: (skin.ikSaved ||= []) }) : null;
   }
 }
 
@@ -521,7 +521,7 @@ function footPlanFor(stage, a, g, skin, { last, fps, scale }) {
   };
   const lifted = physicsLift(a) > 0;
   const plan = F.planFeet({
-    n: last + 1, fps, heightM: C.clayHeight(a) * (a.scale || 1), rig, mesh: skin.mesh, bones: skin.legs, ground, baseY,
+    n: last + 1, fps, heightM: C.clayHeight(a) * (a.scale || 1), rig, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, ground, baseY,
     poseRaw: (f) => { poseRaw(stage, a, g, skin, f, { fps, scale, last }); return !(lifted || stage._airborneAt?.(a, f)); },
   });
   skin.feet = { sig, plan };
