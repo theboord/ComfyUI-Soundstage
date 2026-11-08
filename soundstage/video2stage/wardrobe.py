@@ -361,16 +361,22 @@ CORE = 0.02                           # pixels this close to a bone are surely t
 
 # Virtual joints past the ends COCO-18 stops at, so the band reaches the crown and the fingertips: the head top
 # (the neck -> nose line carried on 0.7 of its length past the nose) and each hand (elbow -> wrist, 0.4 past the wrist).
-HEAD_TOP, HAND_R, HAND_L = 18, 19, 20
-END_BONES = ((0, HEAD_TOP),), ((4, HAND_R), (7, HAND_L))
+# Each toe: the knee -> ankle line carried on 0.6 of its length past the ankle (a pointed-toe kick).
+HEAD_TOP, HAND_R, HAND_L, TOE_R, TOE_L = 18, 19, 20, 21, 22
+END_BONES = ((0, HEAD_TOP), (10, TOE_R), (13, TOE_L)), ((4, HAND_R), (7, HAND_L))
+# Round reaches (joint, share of the height) the bones' bands miss: the shoulders and the neck (the trapezius and the
+# deltoids stand off the shoulder line), the head round the nose, and each foot round its ankle (a flat foot points
+# sideways, off the shin line). They widen the band only; the core (and so the per-row body depth) stays on the bones.
+DISCS = ((1, 0.11), (2, 0.11), (5, 0.11), (0, 0.10), (10, 0.15), (13, 0.15))
 PIECE = 0.02       # a separate piece of the depth band is the body's when the core reaches it this much (of the most)
 
 
 def _with_ends(uv):
-    """uv (COCO-18) plus the virtual head-top and hand points (NaN where their joints are missing)."""
-    out = np.full((21, 2), np.nan)
+    """uv (COCO-18) plus the virtual head-top, hand and toe points (NaN where their joints are missing)."""
+    out = np.full((23, 2), np.nan)
     out[:min(18, len(uv))] = uv[:18]
-    for k, (a, b, f) in ((HEAD_TOP, (0, 1, 0.7)), (HAND_R, (4, 3, 0.4)), (HAND_L, (7, 6, 0.4))):
+    for k, (a, b, f) in ((HEAD_TOP, (0, 1, 0.7)), (HAND_R, (4, 3, 0.4)), (HAND_L, (7, 6, 0.4)),
+                         (TOE_R, (10, 9, 0.6)), (TOE_L, (13, 12, 0.6))):
         if np.all(np.isfinite(out[a])) and np.all(np.isfinite(out[b])):
             out[k] = out[a] + f * (out[a] - out[b])
     return out
@@ -392,8 +398,8 @@ def body_mask(depth: np.ndarray, box_px, uv=None, rel: float = 0.07) -> np.ndarr
     """The person's silhouette for the build, tighter than person_mask_from_depth: inside the box (pixels), within a
     band around the take's own 2D joints (uv, pixels of this depth map) when it has them, and within rel of the BODY's
     depth on that row (not the box's median), then only the connected pieces the body's core reaches (the torso, and an
-    arm or hand a gap away from it). The band reaches the crown and the fingertips (virtual points past the nose and
-    the wrists). A concrete slab or a
+    arm or hand a gap away from it). The band reaches the crown, the fingertips and the toes (virtual points past the
+    nose, the wrists and the ankles), and is wider round the shoulders, neck, head and feet (DISCS). A concrete slab or a
     slope half a metre behind the hips is no longer counted as hip. Known limit: a background within ~rel of the body
     (a wall she leans on) and inside the band still joins."""
     d = np.asarray(depth, np.float32)
@@ -409,26 +415,55 @@ def body_mask(depth: np.ndarray, box_px, uv=None, rel: float = 0.07) -> np.ndarr
     uv = None if uv is None else np.asarray(uv, float)
     hips = uv is not None and any(i < len(uv) and np.all(np.isfinite(uv[i])) for i in (8, 11))
     if hips and np.isfinite(uv).all(axis=1).sum() >= 6:
-        H = float(y1 - y0)
+        okj = np.isfinite(uv[:18]).all(axis=1)
+        span = float(np.ptp(uv[:18][okj, 1])) if okj.sum() >= 2 else 0.0
+        H = 1.15 * span if span > 0 else float(y1 - y0)   # her height as the joints give it (the old joint box)
         ends = _with_ends(uv)
-        dt, da = _bone_dist(X, Y, ends, TRUNK_BONES + END_BONES[0]), _bone_dist(X, Y, ends, ARM_BONES + END_BONES[1])
+        dt, da = _bone_dist(X, Y, ends, TRUNK_BONES + END_BONES[0][:1]), _bone_dist(X, Y, ends, ARM_BONES + END_BONES[1])
+        dtoe = _bone_dist(X, Y, ends, END_BONES[0][1:])   # band only: a toe line off a flat foot lies on the ground
         band = (dt < BAND_TRUNK * H) | (da < BAND_ARM * H)
+        extra = dtoe < BAND_TRUNK * H
+        for j, r in DISCS:
+            if j < len(uv) and np.all(np.isfinite(uv[j])):
+                extra |= np.hypot(X - uv[j][0], Y - uv[j][1]) < r * H
+        ank = [uv[j][1] for j in (10, 13) if j < len(uv) and np.all(np.isfinite(uv[j]))]
+        if ank:   # below her soles (the lower ankle + 0.05 of her height) only the tight tolerance: the floor is there
+            below = Y > max(ank) + 0.05 * H / 1.15
+            extra |= band & below
+            band &= ~below
+        extra &= ~band          # the toe lines' and the discs' own reach: half the depth tolerance (tight)
         core = (dt < CORE * H) | (da < 0.6 * CORE * H)
     else:
         band = np.ones_like(ok)
         core = np.zeros_like(ok)
+        extra = np.zeros_like(ok)
         bw = x1 - x0
         core[: (y1 - y0) * 3 // 4, bw * 2 // 5: max(bw * 3 // 5, bw * 2 // 5 + 1)] = True
     core &= ok
     if not core.any():
         return None
-    # the body's depth on each row: the median of its core pixels there, filled from the nearest row that has some
+    # the body's depth on each row: the median of its core pixels there, filled from the nearest row that has some.
+    # Core pixels far off the whole body's depth (a bone end past the crown or a toe tip runs onto the background)
+    # are not the body and do not set a row's depth.
+    zall = float(np.median(sub[core]))
+    near = core & (np.abs(sub - zall) < 0.25 * zall)
+    core = near if near.any() else core
+    # On a row the core shares with what is behind her (an ankle's core over the slab below the foot) the body is the
+    # front-most core there: only the core pixels within rel of the row's nearest tenth count. A row whose body depth
+    # still lies more than 1.5 rel behind the whole body's has no body of its own and takes its neighbour's.
     zr = np.full(sub.shape[0], np.nan)
     for r in np.flatnonzero(core.any(1)):
-        zr[r] = float(np.median(sub[r][core[r]]))
+        zc = sub[r][core[r]]
+        zf = float(np.percentile(zc, 10))
+        z = float(np.median(zc[zc <= zf * (1 + rel)]))
+        if z <= zall * (1 + 1.5 * rel):
+            zr[r] = z
     have = np.flatnonzero(np.isfinite(zr))
+    if not have.size:
+        return None
     zr = zr[have[np.abs(np.arange(len(zr))[:, None] - have[None]).argmin(1)]]
-    m = band & ok & (np.abs(sub - zr[:, None]) < rel * zr[:, None])
+    dz = np.abs(sub - zr[:, None])
+    m = ok & ((band & (dz < rel * zr[:, None])) | (extra & (dz < 0.5 * rel * zr[:, None])))
     try:
         import cv2
         n, lab = cv2.connectedComponents(m.astype(np.uint8), connectivity=4)

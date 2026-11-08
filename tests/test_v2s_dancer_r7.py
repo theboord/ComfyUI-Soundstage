@@ -2,6 +2,8 @@
 
 1 a cut-short or reworded wardrobe placeholder is an echo, and never replaces a real read in merge_reads or
   enrich_breakdown
+4 her own pixels leave the scan in every probe pose at 4 m (arms down, arms spread, a pointed-toe kick, joints a few
+  pixels off): wider at the shoulders, neck, head and feet, and virtual toe points past the ankles
 Run:  python -m pytest tests/test_v2s_dancer_r7.py -q
 """
 import os
@@ -71,3 +73,93 @@ def test_an_inventory_placeholder_never_replaces_a_real_breakdown_read(frag):
     assert vlm.enrich_breakdown(bd, inv)["objects"][0]["wardrobe"] == "red hoodie, blue jeans"
     inv["items"][0]["wardrobe"] = "red zip-up hoodie with white drawstrings, light blue jeans"
     assert vlm.enrich_breakdown(bd, inv)["objects"][0]["wardrobe"].startswith("red zip-up")
+
+
+# ------------------------------------------------------------------------------------------------ 4 probe poses
+from soundstage.video2stage import pipeline, scanroute  # noqa: E402
+from soundstage.video2stage import wardrobe as W  # noqa: E402
+
+TAKE = {"frames": 1, "source_frames": [0], "focal_px": 500.0, "body": [[0]]}
+
+
+def _pose(kind, cx=200, bot=380, H=340):
+    """COCO-18 joints (pixels) of an invented performer, H px tall, soles at `bot`: arms down, arms spread at
+    shoulder level, or a side kick with the toe pointed along the shin."""
+    y = lambda f: bot - f * H                                     # noqa: E731
+    J = {0: (cx, y(.93)), 1: (cx, y(.82)), 2: (cx - 30, y(.81)), 5: (cx + 30, y(.81)),
+         8: (cx - 16, y(.52)), 11: (cx + 16, y(.52)), 9: (cx - 18, y(.28)), 10: (cx - 18, y(.04))}
+    if kind == "spread":
+        J.update({3: (cx - 85, y(.81)), 4: (cx - 140, y(.81)), 6: (cx + 85, y(.81)), 7: (cx + 140, y(.81))})
+    else:
+        J.update({3: (cx - 38, y(.64)), 4: (cx - 40, y(.47)), 6: (cx + 38, y(.64)), 7: (cx + 40, y(.47))})
+    if kind == "kick":
+        J.update({12: (cx + 70, y(.36)), 13: (cx + 135, y(.22))})
+    else:
+        J.update({12: (cx + 18, y(.28)), 13: (cx + 18, y(.04))})
+    return J
+
+
+def _render(J, kind, H=340, size=400):
+    """Her silhouette drawn round the joints: a torso, broad shoulders (deltoids and trapezius), neck, head, limbs,
+    hands past the wrists and feet past the ankles (sideways when standing, along the shin when the toe is pointed)."""
+    import cv2
+    m = np.zeros((size, size), np.uint8)
+    P = lambda k: tuple(int(round(v)) for v in J[k])             # noqa: E731
+    th = lambda f: max(1, int(round(f * H)))                     # noqa: E731
+    cv2.fillConvexPoly(m, np.array([P(2), P(5), P(11), P(8)]), 1)
+    for k in (2, 5):
+        cv2.circle(m, P(k), th(.05), 1, -1)
+    cv2.line(m, P(1), P(2), 1, th(.08))
+    cv2.line(m, P(1), P(5), 1, th(.08))
+    cv2.line(m, P(0), P(1), 1, th(.07))
+    cv2.ellipse(m, (P(0)[0], P(0)[1] - th(.02)), (th(.045), th(.065)), 0, 0, 360, 1, -1)
+    for a, b, t in ((2, 3, .045), (3, 4, .035), (5, 6, .045), (6, 7, .035), (8, 9, .07), (9, 10, .05),
+                    (11, 12, .07), (12, 13, .05)):
+        cv2.line(m, P(a), P(b), 1, th(t))
+    for e, wj in ((3, 4), (6, 7)):
+        a, b = np.array(J[e], float), np.array(J[wj], float)
+        cv2.line(m, P(wj), tuple(int(v) for v in b + 0.45 * (b - a)), 1, th(.03))
+    for k, kn in ((10, 9), (13, 12)):
+        a, b = np.array(J[kn], float), np.array(J[k], float)
+        tip = b + 0.55 * (b - a) if (kind == "kick" and k == 13) else b + np.array([(-1 if k == 10 else 1) * .12 * H,
+                                                                                     .03 * H])
+        cv2.line(m, P(k), tuple(int(v) for v in tip), 1, th(.035))
+    return m.astype(bool)
+
+
+def _pose_scene(kind, off=0.0, z=4.0, gap=0.5):
+    J = _pose(kind)
+    her = _render(J, kind)
+    d = np.full(her.shape, 40.0, np.float32)
+    d[150:, :] = z + gap                                           # a slab behind her from the chest down
+    d[her] = z + 0.05 * np.random.default_rng(3).random(int(her.sum()))
+    uv = np.full((18, 2), np.nan)
+    for k, v in J.items():
+        uv[k] = v
+    if off:                                                        # the joints a few pixels off
+        uv[:14] += np.random.default_rng(7).uniform(-off, off, (14, 2))
+    return d, uv, her
+
+
+@pytest.mark.parametrize("kind, off", [("down", 0), ("spread", 0), ("kick", 0), ("kick", 4), ("spread", 4)],
+                         ids=["arms down", "arms spread", "pointed-toe kick", "kick, joints 4 px off",
+                              "spread, joints 4 px off"])
+def test_every_probe_pose_at_4_m_leaves_the_scan_whole(monkeypatch, kind, off):
+    pytest.importorskip("cv2")
+    d, uv, her = _pose_scene(kind, off)
+    monkeypatch.setattr(pipeline.performer, "sam_2d", lambda t, k, size: uv)
+    ok = np.isfinite(uv).all(1)
+    (x0, y0), (x1, y1) = uv[ok].min(0) * 2.5, uv[ok].max(0) * 2.5  # the read's box: her joints, no margin
+    e = {"kind": "person", "label": "woman dancing", "bbox_start": [x0, y0, x1, y1], "bbox_end": [x0, y0, x1, y1]}
+    cut = scanroute.without_people(d, scanroute.people_masks({"objects": [e]}, [d], [0.0], 1.0, take=TAKE), 0)
+    slab = d == 4.5
+    assert np.isfinite(cut[her]).sum() == 0                        # her shoulders, neck, crown, hands and feet too
+    assert np.isnan(cut[slab]).sum() == 0                          # the slab behind her stays in the scan
+    assert np.isfinite(cut[~her & ~slab]).all()                    # and so does the far background round her head
+
+
+def test_the_joint_box_reaches_her_pointed_toe(monkeypatch):
+    d, uv, her = _pose_scene("kick")
+    monkeypatch.setattr(pipeline.performer, "sam_2d", lambda t, k, size: uv)
+    _, jb = scanroute.joint_box(TAKE, 0, (400, 400))
+    assert jb[2] >= np.flatnonzero(her.any(0))[-1] + 1             # the toe past the ankle is inside her box

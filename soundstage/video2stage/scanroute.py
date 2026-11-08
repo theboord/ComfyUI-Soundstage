@@ -88,9 +88,14 @@ def joint_box(take, k, size):
     ok = np.isfinite(uv).all(axis=1)
     if ok.sum() < 4:
         return None, None
+    from . import wardrobe as W
+    ends = W._with_ends(uv)
+    pts = ends[np.isfinite(ends).all(axis=1)]                 # the joints and the crown, fingertips and toes
     (jx0, jy0), (jx1, jy1) = uv[ok].min(0), uv[ok].max(0)
     H = jy1 - jy0
-    return uv, [jx0 - 0.12 * H, jy0 - 0.1 * H, jx1 + 0.12 * H, jy1 + 0.05 * H]
+    (ex0, ey0), (ex1, ey1) = pts.min(0), pts.max(0)
+    return uv, [min(jx0 - 0.12 * H, ex0 - 0.04 * H), min(jy0 - 0.1 * H, ey0 - 0.04 * H),
+                max(jx1 + 0.12 * H, ex1 + 0.04 * H), max(jy1 + 0.05 * H, ey1 + 0.04 * H)]
 
 
 def _over_performer(bb, jbox, w: int, h: int, share: float = 0.6) -> bool:
