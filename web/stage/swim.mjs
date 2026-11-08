@@ -253,7 +253,11 @@ export function planSwim({ pos, yaw, mode, fps = 24, height = 1.8, style = null,
   const smooth = (arr, r = 3) => arr.map((_, f) => { let s = 0, c = 0; for (let j = -r; j <= r; j++) if (f + j >= 0 && f + j < n) { s += arr[f + j]; c++; } return s / c; });
   const speed = smooth(raw), climbV = smooth(vy);
   const yawRate = yaw.map((_, f) => wrapPi(yaw[Math.min(last, f + 1)] - yaw[Math.max(0, f - 1)]) * fps / Math.max(1, Math.min(last, f + 1) - Math.max(0, f - 1)));
-  const weights = [], freq = [], phase = [0], surge = [], main = [];
+  // Each person's own stroke (the seed: their _seedKey): where in the cycle they are at the first frame and a cadence
+  // 8% either side, in every mode (was: every treader, floater and swimmer moved in lockstep, 0.0000 apart, even two
+  // different people; only Can't swim's struggle time was per person). In cycles and per second: the same at any fps.
+  const sn = seedNumber(seed), ph0 = hash01(sn, 5.3), cad = 0.92 + 0.16 * hash01(sn, 9.7);
+  const weights = [], freq = [], phase = [ph0], surge = [], main = [];
   // The water track's own poses (buoyancy.mjs: a drop, a struggle, a limp sink, a back float) override the speed's.
   // Every change of style is cross-faded over +-6 frames so it never pops: a pose of the track, and a swimmer coming to
   // a stop at the end of their keys (breaststroke -> tread in two frames, a 0.59 rad tilt).
@@ -283,6 +287,7 @@ export function planSwim({ pos, yaw, mode, fps = 24, height = 1.8, style = null,
     weights.push(sw.weights); main.push(sw.main);
     let fr = 0;
     for (const [k, w] of Object.entries(sw.weights)) fr += w * swimGait(k, speed[f], height).freq;
+    fr *= cad;
     freq.push(fr);
     if (f > 0) phase.push(phase[f - 1] + (freq[f - 1] + fr) / 2 / fps);
   }

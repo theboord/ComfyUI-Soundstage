@@ -184,3 +184,28 @@ test("a car that floods and sinks rests on the tank floor, not through it; nothi
     if (kind === "car") { st.setFrame(frames - 1); assert.ok(lowest(g) < 0.05 && Math.abs(g.rotation.x) < 0.05, `${kind}: resting level on the bottom (lowest ${lowest(g).toFixed(3)}, pitch ${g.rotation.x.toFixed(2)})`); }
   }
 });
+
+// ------------------------------------------------------------------ 6. Everyone in the water moves in step
+// Before: with Tread water, Float on back or the default mode, a duplicate and even two different people (one with a
+// stored seed of its own) trod in perfect lockstep, 0.0000 apart: the per-person seed reached only Can't swim.
+test("every swim mode varies per person: duplicates and different people never tread, float or swim in lockstep", () => {
+  const woman = (swim) => ({ id: "w", name: "Woman 1", kind: "woman", height_m: 1.65, position: [-2, 0, 0], keys: [{ frame: 0, position: [-2, 0, 0] }], rotation_deg: 0, ...(swim ? { swim } : {}) });
+  const apart = (st, a, b) => {
+    let dh = 0, dl = 0;
+    for (let f = 0; f < 241; f += 3) {
+      st.setFrame(f);
+      dh = Math.max(dh, Math.abs(headY(st, a) - headY(st, b)));
+      const L1 = st.actorMeshes.get(a).userData.limbs, L2 = st.actorMeshes.get(b).userData.limbs;
+      for (let i = 0; i < L1.length; i++) dl = Math.max(dl, Math.abs(L1[i].pivot.rotation.x - L2[i].pivot.rotation.x));
+    }
+    return { dh, dl };
+  };
+  for (const swim of ["tread", "back", "breaststroke", undefined]) {
+    const st = tank([woman(swim)], { frames: 241 });
+    const id = st.duplicate("w"), { dh, dl } = apart(st, "w", id);
+    assert.ok(dh > 0.01 && dl > 0.05, `swim=${swim}: the copy is not in step (head ${dh.toFixed(4)} m, limbs ${dl.toFixed(4)} rad apart)`);
+  }
+  const st = tank([man("a", 0, { x: -2 }), man("b", 0, { x: 2 }), { ...man("c", 0, { z: 3 }), seed: "zzz" }], { frames: 241 });
+  st.state.actors[0].name = "Man 1"; st.state.actors[1].name = "Man 2"; st.state.actors[2].name = "Bob";
+  for (const [x, y] of [["a", "b"], ["a", "c"]]) { const { dh, dl } = apart(st, x, y); assert.ok(dh > 0.01 && dl > 0.05, `${x} vs ${y}: not in step (head ${dh.toFixed(4)}, limbs ${dl.toFixed(4)})`); }
+});
