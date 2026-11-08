@@ -153,6 +153,8 @@ When a chat command changes the set, the Book keeps a decision note on the scene
   a short summary it wrote, never the user's typed sentence (needs Ask's side, `web/agent/`). `ref` is kept only
   when it is an opaque `${projectId}:${turnId}` that does not spell the text. `forgetDecision(id or ref)` and the
   server scrub remove `source: "ask"` notes as they remove decisions; `POST /soundstage/book/note` takes `ref` too.
+  With no `sceneId`, a multi-line Ask note is kept as one note holding every line (the source and ref on it), so
+  Forget by its id or ref leaves no line behind; before, lines 2+ were filed as plain shorthand with no ref.
   Notes Ask added before 2026-11-07 have no ref: forget them by note id (their raw text stays in older stored copies
   until then; `legacyDecisions` does not list them, as they are not decisions).
 - **Link id:** `recordDecision({..., ref})` stores `ref` only when it is an opaque `${projectId}:${turnId}`
@@ -175,11 +177,16 @@ When a chat command changes the set, the Book keeps a decision note on the scene
   old project), and so does `workflows/<project name>.json` whatever id it carries (two tabs saving at once can leave
   it with another id). Another project's file is left alone and listed in `other_projects`. When it holds a copy of
   the same decision (the same note id: a Duplicate, a Save As copy) it is also listed in `other_copies` and `ok` is
-  `false`. `book.scrubDecision(id, {everywhere: true})` (body `everywhere: true`) removes those copies too, by note id
-  only: another project's own decision that merely shares the ref is never touched. A file is rewritten only if its
+  `false`. `book.scrubDecision(id, {everywhere: true})` (body `everywhere: true`) removes those copies too, by note id,
+  or by a ref that names this project (`p_<id>:<turn>`: a Duplicate keeps the ref with the note, so a retry finds the
+  copy even after this project's own copy is gone). Another project's own decision that merely shares a ref with no
+  project in it (`:<turn>`) is never touched; when only such a note matches and nothing was removed, `ok` is `false`
+  and `ref_elsewhere_ids` names the note ids (forget them with `everywhere` if they are this decision). Every answer
+  carries `decision_ids` (the note ids found), and `scrubDecision` resends the ids a not-ok answer named on its retry. A file is rewritten only if its
   text holds the id. `ok` is `false`, with an `error` line, when a copy was not cleaned: a file over 64 MB
   (`skipped`), a file that names no project (`skipped`), a file whose text still mentions the id, for example inside
-  a string (`still_mentions`), or another project's copy (`other_copies`). Without a project only the open book is
+  a string (`still_mentions`), another project's copy (`other_copies`), or a ref match only in another project with
+  nothing removed (`ref_elsewhere`). Without a project only the open book is
   cleaned, and the answer says so.
 - **A note not in the open Book** (dropped by the 40-decision cap, another tab's, or one already removed locally):
   `forgetDecision(id)` still runs the server scrub. It answers `{ok: true, in_book: false, copies}` when stored

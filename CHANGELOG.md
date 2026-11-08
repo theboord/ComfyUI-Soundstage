@@ -5,6 +5,35 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-07
 
+**Sixth review fixes, 2026-11-07 night: New project over an existing name, multi-line Ask notes, the Forget everywhere retry (private branch `private/project-id`)**
+
+- **Still wrong (read first, known limits):** checked with Node and pytest only, not in the browser, the App or a live
+  ComfyUI; the original probe files (adv5probe) were not in this worktree, so each repro was rewritten as a test from
+  its description.
+  - **An Ask ref with no project id (`:<turn>`, saved before the project had an id)** is never matched by ref in another
+    project's files. When only such a note matches and nothing was removed, Forget is `ok: false` with
+    `ref_elsewhere_ids`; the caller must forget those note ids with `everywhere` itself.
+  - **A multi-line Ask note filed with no scene is one note** placed where its first line was placed (the other lines'
+    placement is dropped). Pitch's and the director's multi-line notes still file one note per line.
+  - **New project's "Replace project?" is asked after the template loads from the server** (a failed template load
+    still asks nothing and writes nothing).
+  - Unchanged: Ask still passes the typed words to `addNote` (Jon's Claude's lane); ComfyUI queue history and render
+    metadata keep copies Forget cannot reach.
+- **New project overwrote a saved project of the same name without asking (`web/project/projectbar.mjs` `newProject`,
+  `save({replace})`):** and, saved as a plain save, kept its `created`, so another tab's next Save adopted the id made
+  for the template. It now asks "Replace project?" (No: nothing written) and saves with `replace: true`
+  (`tests/js/project.test.mjs`, fails on 4dd3424).
+- **Lines 2+ of a multi-line Ask note survived Forget (`web/book/book.mjs` `addNote`):** with no `sceneId` only the
+  first filed line got `source: "ask"` and the ref. Every filed line now carries the source and ref, and an Ask note is
+  kept as one note, so Forget by id or ref leaves no line in the Book or the workflow's `ss_book`
+  (`tests/js/hosthooks.test.mjs`).
+- **The Forget everywhere retry said ok with nothing removed (`soundstage/book/store.py` `forget`, `web/book/book.mjs`
+  `scrub`):** after the first pass removed this project's copy, a retry by ref found no note ids, removed 0 and said
+  `ok: true` while the Duplicate (`Film 3.json`) kept the typed sentence. A ref naming this project
+  (`p_<id>:<turn>`) now finds its notes in other projects' copies on any pass; answers carry `decision_ids`, which
+  `scrubDecision` resends on its retry; a ref match only in another project with nothing removed is `ok: false`
+  (`ref_elsewhere`) (`tests/test_book.py`, `tests/js/hosthooks.test.mjs`).
+
 **Fifth (final) review fixes, 2026-11-07 late: adopt across content, closed-tab state, Ask's notes, legacy copies, squashed refs (private branch `private/project-id`)**
 
 - **Still wrong (read first, known limits; not chased further):** checked with Node and pytest only, not in the browser,
