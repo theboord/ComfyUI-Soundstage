@@ -75,8 +75,8 @@ Server (`soundstage/project/library.py`), all in the requesting user's folder (`
 `/userdata` resolves it):
 
 ```
-GET  /soundstage/project/list        -> {"projects": [{name, saved_at, counts{scenes,shots,takes}, thumb, thumb_kind,
-                                         autosaves, autosave_at, autosave_newer}]} newest first
+GET  /soundstage/project/list        -> {"projects": [{name, id, saved_at, counts{scenes,shots,takes}, thumb, thumb_kind,
+                                         autosaves, autosave_at, autosave_newer}]} newest first (id: see Project id)
 POST /soundstage/project/duplicate   {name, to}   workflow + manifest, not the autosaves
 POST /soundstage/project/rename      {name, to}   folder, autosaves and workflow; the stamp inside is updated
 POST /soundstage/project/trash       {name}       -> projects/.trash/<name> <stamp>/
@@ -93,7 +93,7 @@ All in ComfyUI's per-user folder (`ComfyUI/user/<user>/`), never in `output/`:
 
 ```
 workflows/<name>.json                    the project: a normal ComfyUI workflow, opens anywhere
-projects/<name>/project.json             {format, v, name, workflow, created, saved_at, saves, title, scenes, shots}
+projects/<name>/project.json             {format, v, id, name, workflow, created, saved_at, saves, title, scenes, shots}
 projects/<name>/autosave/<stamp>.json    {name, saved_at, workflow}, newest 20 kept
 soundstage/scripts/<hash>.json           a long script's full text (unchanged, as before)
 ```
@@ -101,6 +101,26 @@ soundstage/scripts/<hash>.json           a long script's full text (unchanged, a
 The workflow carries its project name in `extra.ss_project`, so a project opened through Workflow → Open still
 autosaves into its own folder. Workflows saved before this change have no `ss_project` and open as before. They are
 autosaved as `Untitled <date> <time>` once you change something.
+
+## Project id
+
+Each saved project has an id, `p_` and 8 lowercase hex digits (for example `p_3fa85f64`). Ask's memory uses it to
+know which project a memory belongs to, so it must not move to a different project by accident.
+
+- **Where:** `projects/<name>/project.json` (`id`) and the workflow's `extra.ss_project.id`. Save writes both.
+- **When it is kept:** Save keeps the project's id only when the workflow being saved carries that same id. Any other
+  save gets a fresh id: Save As to a new name, a project saved before ids existed, a workflow saved over another
+  project, or a workflow saved under a name whose `projects/<name>/` folder was left behind after its workflow was
+  deleted from ComfyUI's sidebar.
+- **Library:** Duplicate gives the copy a fresh id (in both files). Rename, Trash and Untrash keep it.
+- **Old projects:** a project saved before ids existed has none (`id: null` in the list) until its next Save.
+  Opening, listing or autosaving it never writes one.
+- **Reading it:**
+  - In the page: `window.__ssProject.projectId()` gives the open workflow's id, or `null` (not saved yet, or an old
+    project not saved since). It only reads.
+  - From `web/project/store.mjs`: `projectIdOf(workflow)`, or `await store.projectId(name)`, which reads
+    `project.json`.
+  - On the server: `GET /soundstage/project/list`, where each project has an `id` (`null` for an old project).
 
 ## Autosave
 

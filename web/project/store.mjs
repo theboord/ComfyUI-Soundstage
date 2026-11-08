@@ -5,10 +5,16 @@
 //
 // Where things go (ComfyUI's per-user userdata folder, user/<user>/, the same API Workflow → Save uses):
 //   workflows/<name>.json                       the project itself: a normal ComfyUI workflow (opens anywhere)
-//   projects/<name>/project.json                small manifest {format, v, name, workflow, created, saved_at, saves}
+//   projects/<name>/project.json                small manifest {format, v, id, name, workflow, created, saved_at, saves}
 //   projects/<name>/autosave/<stamp>.json       {format, v, name, saved_at, workflow: <the whole graph>}, last KEEP kept
 // The project's name rides in the workflow too (extra.ss_project), so a project re-opened through Workflow → Open still
 // knows which project folder its autosaves belong to. Nothing here writes into ComfyUI's output/ folder.
+//
+// Project id ("p_" + 8 lowercase hex, e.g. p_3fa85f64): a stable id for memory keyed to one project (Ask's memory).
+// Written on purpose by save() into both project.json (id) and the workflow (extra.ss_project.id). An existing id is
+// kept only when the workflow being saved carries that same id; any other save (Save As to a new name, a workflow
+// saved over a leftover projects/<name>/ folder, a project saved before ids existed) gets a fresh one. Loading never
+// writes an id. Duplicate gives the copy a fresh id, rename and trash keep it (soundstage/project/library.py).
 
 export const FORMAT = "soundstage-project";
 export const VERSION = 1;
@@ -90,10 +96,32 @@ export function statusText({ savedAt = null, autosavedAt = null, dirty = false, 
   return { text: `Saved ${ago(savedAt, now)} ago · ${tail}`, state: "saved" };
 }
 
-/** The workflow, stamped with its project name (extra.ss_project). A copy; the input is left alone. */
-export function stampWorkflow(wf, name, savedAt) {
+export const PROJECT_ID_RE = /^p_[0-9a-f]{8}$/;
+
+/** A fresh project id: "p_" + 8 lowercase hex (the first 8 hex digits of a random UUID). */
+export function newProjectId() {
+  const c = globalThis.crypto;
+  if (c?.randomUUID) {
+    try { return `p_${c.randomUUID().replace(/-/g, "").slice(0, 8).toLowerCase()}`; } catch { /* insecure context */ }
+  }
+  const b = new Uint8Array(4);
+  if (c?.getRandomValues) c.getRandomValues(b); else for (let i = 0; i < 4; i++) b[i] = Math.floor(Math.random() * 256);
+  return `p_${[...b].map((x) => x.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** The project id a workflow carries (extra.ss_project.id), or null when it has none or a malformed one. */
+export function projectIdOf(wf) {
+  const id = wf?.extra?.ss_project?.id;
+  return typeof id === "string" && PROJECT_ID_RE.test(id) ? id : null;
+}
+
+/**
+ * The workflow, stamped with its project name (extra.ss_project). A copy; the input is left alone. `id` defaults to
+ * the id the workflow already carries (so autosaves keep it); pass null to stamp none.
+ */
+export function stampWorkflow(wf, name, savedAt, id = projectIdOf(wf)) {
   const out = { ...(wf || {}) };
-  out.extra = { ...(out.extra || {}), ss_project: { name, saved_at: savedAt } };
+  out.extra = { ...(out.extra || {}), ss_project: { name, saved_at: savedAt, ...(id ? { id } : {}) } };
   return out;
 }
 
@@ -132,19 +160,31 @@ export class ProjectStore {
     try { return (await this.api.listUserDataFullInfo(dir)) || []; } catch { return []; }
   }
 
-  /** Save the project: the workflow (as Workflow → Save would) and its manifest. Returns {name, path, saved_at}. */
+  /**
+   * Save the project: the workflow (as Workflow → Save would) and its manifest. Returns {name, id, path, saved_at,
+   * workflow}. The id: the manifest's old id when the workflow carries the same one, else a fresh one (see the top).
+   */
   async save(name, workflow, { manifest = {} } = {}) {
     const n = cleanName(name);
     if (!n) throw new Error("give the project a name");
     const at = this.now();
-    const wf = stampWorkflow(workflow, n, at);
-    await this._put(ProjectStore.workflowPath(n), wf);
     const old = (await this._get(ProjectStore.manifestPath(n))) || {};
+    const oldId = typeof old.id === "string" && PROJECT_ID_RE.test(old.id) ? old.id : null;
+    const id = oldId && projectIdOf(workflow) === oldId ? oldId : newProjectId();
+    const wf = stampWorkflow(workflow, n, at, id);
+    await this._put(ProjectStore.workflowPath(n), wf);
+    const { id: _ignored, ...rest } = manifest || {};   // eslint-disable-line no-unused-vars
     await this._put(ProjectStore.manifestPath(n), {
-      ...manifest, format: FORMAT, v: VERSION, name: n, workflow: ProjectStore.workflowPath(n),
+      ...rest, format: FORMAT, v: VERSION, id, name: n, workflow: ProjectStore.workflowPath(n),
       created: old.created || at, saved_at: at, saves: (old.saves || 0) + 1,
     });
-    return { name: n, path: ProjectStore.workflowPath(n), saved_at: at, workflow: wf };
+    return { name: n, id, path: ProjectStore.workflowPath(n), saved_at: at, workflow: wf };
+  }
+
+  /** A saved project's id (from its project.json), or null (no such project, or saved before ids existed). */
+  async projectId(name) {
+    const m = await this.manifest(name);
+    return typeof m?.id === "string" && PROJECT_ID_RE.test(m.id) ? m.id : null;
   }
 
   /** The saved workflow of a project, or null. */

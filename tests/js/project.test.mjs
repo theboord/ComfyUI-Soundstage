@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 
 import {
   ProjectStore, AutosaveClock, cleanName, untitledName, autosaveStamp, stampDate, statusText, workflowSig, projectNameOf, ago,
+  projectIdOf, newProjectId, stampWorkflow, PROJECT_ID_RE,
 } from "../../web/project/store.mjs";
 
 /** ComfyUI's userdata API (scripts/api.js) over a Map: storeUserData / getUserData / listUserDataFullInfo / deleteUserData. */
@@ -131,4 +132,107 @@ test("status pill text", () => {
   assert.equal(statusText({ savedAt: 1, dirty: true, autosaveOn: false, now }).state, "dirty");
   assert.equal(statusText({ error: "disk full", now }).state, "error");
   assert.equal(ago(0, 3 * 3600_000), "3 h");
+});
+
+// ---------------------------------------------------------------- project id (Ask's memory keys on it)
+const man = async (api, n) => JSON.parse(api.files.get(`projects/${n}/project.json`).body);
+const wfOn = async (api, n) => JSON.parse(api.files.get(`workflows/${n}.json`).body);
+
+test("project id: p_ + 8 hex, written into project.json and extra.ss_project.id; kept when the workflow carries it", async () => {
+  const api = fakeApi();
+  const store = new ProjectStore({ api });
+  const r1 = await store.save("Film", WF());
+  assert.match(r1.id, /^p_[0-9a-f]{8}$/);
+  assert.equal((await man(api, "Film")).id, r1.id);
+  assert.equal(projectIdOf(await wfOn(api, "Film")), r1.id);
+  assert.equal(await store.projectId("Film"), r1.id);
+  // re-save the saved workflow (it carries the id): same id
+  const r2 = await store.save("Film", r1.workflow);
+  assert.equal(r2.id, r1.id);
+  // autosave keeps the id in the stamped workflow
+  await store.autosave("Film", r2.workflow);
+  const [a] = await store.autosaves("Film");
+  assert.equal(projectIdOf(await store.readAutosave("Film", a.file)), r1.id);
+  // a manifest field can't smuggle in an id
+  const r3 = await store.save("Film", r2.workflow, { manifest: { id: "p_deadbeef", title: "x" } });
+  assert.equal(r3.id, r1.id);
+  assert.equal((await man(api, "Film")).title, "x");
+  // Save As to a new name: a new project, a fresh id
+  const r4 = await store.save("Film B", r3.workflow);
+  assert.notEqual(r4.id, r1.id);
+  assert.equal(await store.projectId("Film"), r1.id, "the original keeps its own");
+  assert.equal(await store.projectId("nope"), null);
+});
+
+test("project id: an old project (no id) gets one on its next save, never on open / list / autosave", async () => {
+  const api = fakeApi();
+  const store = new ProjectStore({ api });
+  // a project saved before ids existed
+  const old = { ...WF(), extra: { ss_project: { name: "Old", saved_at: 5 } } };
+  await api.storeUserData("workflows/Old.json", old);
+  await api.storeUserData("projects/Old/project.json", { format: "soundstage-project", v: 1, name: "Old", created: 1, saved_at: 5, saves: 3 });
+  const opened = await store.open("Old");
+  assert.equal(projectIdOf(opened), null);
+  await store.list();
+  await store.autosave("Old", opened);
+  assert.equal("id" in (await man(api, "Old")), false, "open / list / autosave write no id");
+  assert.equal(projectIdOf(await wfOn(api, "Old")), null);
+  const [a] = await store.autosaves("Old");
+  assert.equal(projectIdOf(await store.readAutosave("Old", a.file)), null);
+  const r = await store.save("Old", opened);
+  assert.match(r.id, PROJECT_ID_RE);
+  assert.equal((await man(api, "Old")).id, r.id);
+  assert.equal((await man(api, "Old")).created, 1, "the rest of the manifest history stays");
+  assert.equal((await man(api, "Old")).saves, 4);
+});
+
+test("project id: a leftover projects/<name>/ folder (workflow deleted from the sidebar) does not hand its id to a new workflow", async () => {
+  const api = fakeApi();
+  const store = new ProjectStore({ api });
+  const r1 = await store.save("Reused", WF());
+  await api.deleteUserData("workflows/Reused.json");            // deleted from ComfyUI's sidebar; the folder stays
+  const fresh = WF();                                            // a different workflow, saved under the same name
+  const r2 = await store.save("Reused", fresh);
+  assert.notEqual(r2.id, r1.id);
+  assert.equal((await man(api, "Reused")).id, r2.id);
+  // a workflow carrying ANOTHER project's id saved over this one: also fresh
+  const other = await store.save("Other", WF());
+  const r3 = await store.save("Reused", other.workflow);
+  assert.notEqual(r3.id, other.id);
+  assert.notEqual(r3.id, r2.id);
+});
+
+test("project id helpers: shape, malformed ids ignored, stampWorkflow keeps or drops the id", () => {
+  const ids = new Set(Array.from({ length: 300 }, () => newProjectId()));
+  assert.equal(ids.size, 300);
+  for (const i of ids) assert.match(i, /^p_[0-9a-f]{8}$/);
+  assert.equal(projectIdOf({ extra: { ss_project: { id: "p_XYZ" } } }), null);
+  assert.equal(projectIdOf(null), null);
+  const w = { extra: { ss_project: { name: "A", id: "p_0a1b2c3d" } } };
+  assert.equal(projectIdOf(stampWorkflow(w, "A", 1)), "p_0a1b2c3d");
+  assert.equal(projectIdOf(stampWorkflow(w, "A", 1, null)), null);
+  assert.equal(workflowSig(stampWorkflow(w, "A", 1)), workflowSig(stampWorkflow(w, "A", 2, "p_11111111")), "an id is not a change");
+});
+
+test("ProjectController.projectId(): the open workflow's id, kept through Save; null before the first save", async () => {
+  globalThis.window ||= { addEventListener() {} };
+  const { ProjectController } = await import("../../web/project/projectbar.mjs");
+  const ufs = fakeApi();
+  const app = { graph: { ...WF(), extra: { ss_project: { name: "Live" } } }, extensionManager: {} };
+  app.graph.serialize = () => { const { serialize, ...g } = app.graph; return JSON.parse(JSON.stringify(g)); };   // eslint-disable-line no-unused-vars
+  const ctl = new ProjectController({ app, api: ufs });
+  clearInterval(ctl._timer);
+  ctl.render = () => {}; ctl.say = () => {};
+  try {
+    assert.equal(ctl.projectId(), null, "never saved: no id, and opening wrote none");
+    await ctl.tick();
+    await ctl.save();
+    const id = ctl.projectId();
+    assert.match(id, PROJECT_ID_RE);
+    assert.equal((await man(ufs, "Live")).id, id);
+    await ctl.save();
+    assert.equal(ctl.projectId(), id, "the graph keeps the id, so the next save keeps it");
+    ctl._ensureName(ctl._cur());
+    assert.equal(ctl.projectId(), id, "naming / autosave stamping does not drop it");
+  } finally { clearInterval(ctl._timer); }
 });

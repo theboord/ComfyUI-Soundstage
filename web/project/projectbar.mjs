@@ -10,7 +10,7 @@
 import { openMenu } from "../ui/popover.mjs";
 import { icon } from "../ui/icons.mjs";
 import { openHome } from "./home.mjs";
-import { ProjectStore, AutosaveClock, cleanName, untitledName, statusText, workflowSig, projectNameOf, stampWorkflow, ago } from "./store.mjs";
+import { ProjectStore, AutosaveClock, cleanName, untitledName, statusText, workflowSig, projectNameOf, projectIdOf, stampWorkflow, ago } from "./store.mjs";
 
 const TICK_MS = 3_000;
 const AUTOSAVE_PREF = "ss_project_autosave";
@@ -69,6 +69,13 @@ export class ProjectController {
   }
 
   _key() { return this.app.extensionManager?.workflow?.activeWorkflow?.path || "wf"; }
+
+  /**
+   * The open workflow's project id ("p_" + 8 hex, extra.ss_project.id), or null: not a saved project yet, or a
+   * project saved before ids existed (it gets one on its next Save; opening it never writes one). Read-only.
+   * window.__ssProject.projectId(); docs/projects.md "Project id".
+   */
+  projectId() { return projectIdOf(this.serialize()); }
   _cur() { return this.tabs.get(this._key()); }
 
   serialize() {
@@ -103,7 +110,7 @@ export class ProjectController {
   _ensureName(t) {
     if (t.name) return t.name;
     t.name = untitledName();
-    try { this.app.graph.extra = { ...(this.app.graph.extra || {}), ss_project: { name: t.name } }; } catch { /* */ }
+    try { const ex = this.app.graph.extra || {}; this.app.graph.extra = { ...ex, ss_project: { ...(ex.ss_project || {}), name: t.name } }; } catch { /* */ }
     return t.name;
   }
 
@@ -134,7 +141,7 @@ export class ProjectController {
     }
     try {
       const res = await this.store.save(name, wf, { manifest: this._summary() });
-      try { this.app.graph.extra = { ...(this.app.graph.extra || {}), ss_project: { name: res.name, saved_at: res.saved_at } }; } catch { /* */ }
+      try { this.app.graph.extra = { ...(this.app.graph.extra || {}), ss_project: { name: res.name, saved_at: res.saved_at, id: res.id } }; } catch { /* */ }
       t.name = res.name;
       t.savedAt = res.saved_at;
       t.savedSig = t.sig = workflowSig(wf);
@@ -178,7 +185,7 @@ export class ProjectController {
     try { const r = await this.api.fetchApi("/soundstage/project/template"); if (r.ok) tpl = await r.json(); } catch { /* */ }
     if (!tpl) { this.say("Could not load the Soundstage_App template."); return; }
     const n = name || untitledName();
-    await this.load(stampWorkflow(tpl, n, null), n);
+    await this.load(stampWorkflow(tpl, n, null, null), n);   // no id: the first save writes one
     if (name) await this.save();
   }
 

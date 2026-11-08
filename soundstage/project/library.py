@@ -6,6 +6,9 @@ Reads ComfyUI's per-user folder (user/<user>/), the same files the project pill 
     projects/<name>/project.json          its manifest
     projects/<name>/autosave/<stamp>.json its autosaves
 Delete never deletes: it moves projects/<name>/ and workflows/<name>.json to projects/.trash/<name> <stamp>/.
+Project id ("p_" + 8 lowercase hex, in project.json "id" and the workflow's extra.ss_project.id; written by the pill's
+Save, web/project/store.mjs): duplicate gives the copy a fresh id, rename / trash / untrash keep it, listing reads it
+(None for a project saved before ids existed). Nothing here gives an old project an id: its next Save does.
 Thumbnails are /view URLs of files that exist in ComfyUI's output / input / temp folders.
 """
 from __future__ import annotations
@@ -15,12 +18,25 @@ import os
 import re
 import shutil
 import time
+import uuid
 from pathlib import Path
 from urllib.parse import urlencode
 
 from . import collect as C
 
 TRASH = ".trash"
+PROJECT_ID = re.compile(r"^p_[0-9a-f]{8}$")
+
+
+def new_project_id() -> str:
+    """A fresh project id: "p_" + the first 8 hex digits of a random UUID (same shape as store.mjs newProjectId)."""
+    return f"p_{uuid.uuid4().hex[:8]}"
+
+
+def project_id(man) -> str | None:
+    """The id in a manifest dict, or None when it has none or a malformed one."""
+    i = man.get("id") if isinstance(man, dict) else None
+    return i if isinstance(i, str) and PROJECT_ID.match(i) else None
 _STAMP = re.compile(r"^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})(?:-(\d{3}))?\.json$")
 
 
@@ -100,7 +116,8 @@ def _exists_in(roots: dict):
 # ------------------------------------------------------------------------------------------------ listing
 
 def list_projects(user_root: Path, roots: dict) -> list[dict]:
-    """Every saved project, newest first: [{name, saved_at (ms), counts, thumb, kind, autosave_newer, autosave_at}]."""
+    """Every saved project, newest first: [{name, id, saved_at (ms), counts, thumb, kind, autosave_newer, autosave_at}].
+    id is the manifest's project id, or None for a project saved before ids existed (its next Save writes one)."""
     base = Path(user_root) / "projects"
     out = []
     if not base.is_dir():
@@ -117,7 +134,7 @@ def list_projects(user_root: Path, roots: dict) -> list[dict]:
         auto_at = _ms(autos[0]) if autos else None
         th = pick_thumb(C.project_state(wf)["props"], exists) if wf else None
         out.append({
-            "name": d.name, "saved_at": int(saved), "counts": counts(wf) if wf else {"scenes": 0, "shots": 0, "takes": 0},
+            "name": d.name, "id": project_id(man), "saved_at": int(saved), "counts": counts(wf) if wf else {"scenes": 0, "shots": 0, "takes": 0},
             "thumb": view_url(th["ref"]) if th else None, "thumb_kind": th["kind"] if th else None,
             "autosaves": len(autos), "autosave_at": auto_at,
             "autosave_newer": bool(auto_at and auto_at > int(saved) + 1000),
@@ -128,11 +145,13 @@ def list_projects(user_root: Path, roots: dict) -> list[dict]:
 
 # ------------------------------------------------------------------------------------------------ duplicate / rename / trash
 
-def _restamp(wf_path: Path, name: str) -> None:
+def _restamp(wf_path: Path, name: str, **extra) -> None:
     wf = _read_json(wf_path)
     if isinstance(wf, dict):
-        wf.setdefault("extra", {})
-        wf["extra"]["ss_project"] = {**(wf["extra"].get("ss_project") or {}), "name": name}
+        if not isinstance(wf.get("extra"), dict):
+            wf["extra"] = {}
+        old = wf["extra"].get("ss_project")
+        wf["extra"]["ss_project"] = {**(old if isinstance(old, dict) else {}), "name": name, **extra}
         wf_path.write_text(json.dumps(wf), encoding="utf-8")
 
 
@@ -143,7 +162,8 @@ def _remanifest(d: Path, name: str, **extra) -> None:
 
 
 def duplicate(user_root: Path, name: str, to: str) -> str:
-    """Copy a project's workflow and manifest (not its autosaves) to a new name. Returns the new name."""
+    """Copy a project's workflow and manifest (not its autosaves) to a new name, with a fresh project id in both.
+    Returns the new name."""
     src, dst = project_paths(user_root, name), project_paths(user_root, C.clean_name(to))
     if not src or not dst or not src[0].is_dir():
         raise FileNotFoundError("no such project")
@@ -153,16 +173,17 @@ def duplicate(user_root: Path, name: str, to: str) -> str:
     dst[0].mkdir(parents=True)
     if (src[0] / "project.json").is_file():
         shutil.copy2(src[0] / "project.json", dst[0] / "project.json")
-    _remanifest(dst[0], new, created=int(time.time() * 1000), saves=0)
+    pid = new_project_id()
+    _remanifest(dst[0], new, created=int(time.time() * 1000), saves=0, id=pid)
     if src[1].is_file():
         dst[1].parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src[1], dst[1])
-        _restamp(dst[1], new)
+        _restamp(dst[1], new, id=pid)
     return new
 
 
 def rename(user_root: Path, name: str, to: str) -> str:
-    """Move a project (folder, autosaves and workflow) to a new name. Returns the new name."""
+    """Move a project (folder, autosaves and workflow) to a new name; its project id stays. Returns the new name."""
     src, dst = project_paths(user_root, name), project_paths(user_root, C.clean_name(to))
     if not src or not dst or not src[0].is_dir():
         raise FileNotFoundError("no such project")

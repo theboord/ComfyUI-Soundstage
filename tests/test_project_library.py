@@ -104,3 +104,64 @@ def test_path_safety(env, tmp_path):
     assert L.rename(user, "Gamma", "../../outside") == "outside"
     assert (user / "projects" / "outside").is_dir() and not (tmp_path / "outside").exists()
     assert L.project_paths(user, "../x") is None
+
+
+# ------------------------------------------------------------------------------------------------ project id
+
+def _man(user, name):
+    return json.loads((user / "projects" / name / "project.json").read_text())
+
+
+def _wfj(user, name):
+    return json.loads((user / "workflows" / f"{name}.json").read_text())
+
+
+def _give_id(user, name, pid):
+    m = _man(user, name)
+    m["id"] = pid
+    (user / "projects" / name / "project.json").write_text(json.dumps(m))
+    w = _wfj(user, name)
+    w["extra"]["ss_project"]["id"] = pid
+    (user / "workflows" / f"{name}.json").write_text(json.dumps(w))
+
+
+def test_project_id_listed_old_projects_have_none_and_listing_never_writes_one(env):
+    user, roots = env
+    _give_id(user, "Alpha", "p_0a1b2c3d")
+    before = (user / "projects" / "beta" / "project.json").read_text()
+    by = {p["name"]: p for p in L.list_projects(user, roots)}
+    assert by["Alpha"]["id"] == "p_0a1b2c3d"
+    assert by["beta"]["id"] is None                                   # saved before ids existed
+    assert (user / "projects" / "beta" / "project.json").read_text() == before   # never written on load / list
+    assert "id" not in _wfj(user, "beta")["extra"]["ss_project"]
+    # a malformed id is not an id
+    m = _man(user, "Gamma"); m["id"] = "P_NOTHEX!"; (user / "projects" / "Gamma" / "project.json").write_text(json.dumps(m))
+    assert {p["name"]: p for p in L.list_projects(user, roots)}["Gamma"]["id"] is None
+
+
+def test_duplicate_gets_a_fresh_id_rename_and_trash_keep_it(env):
+    user, roots = env
+    _give_id(user, "Alpha", "p_0a1b2c3d")
+    L.duplicate(user, "Alpha", "Alpha copy")
+    new = _man(user, "Alpha copy")["id"]
+    assert L.PROJECT_ID.match(new) and new != "p_0a1b2c3d"
+    assert _wfj(user, "Alpha copy")["extra"]["ss_project"]["id"] == new     # both files carry the copy's id
+    assert _man(user, "Alpha")["id"] == "p_0a1b2c3d"                         # the original keeps its own
+    # a project saved before ids existed: its duplicate still gets one
+    L.duplicate(user, "beta", "beta copy")
+    assert L.PROJECT_ID.match(_man(user, "beta copy")["id"])
+    # rename keeps it, in both files
+    L.rename(user, "Alpha", "Alpha 2")
+    assert _man(user, "Alpha 2")["id"] == "p_0a1b2c3d"
+    assert _wfj(user, "Alpha 2")["extra"]["ss_project"]["id"] == "p_0a1b2c3d"
+    # trash and untrash keep it
+    t = L.trash(user, "Alpha 2")
+    assert json.loads((user / "projects" / ".trash" / t / "project.json").read_text())["id"] == "p_0a1b2c3d"
+    assert L.untrash(user, t) == "Alpha 2"
+    assert _man(user, "Alpha 2")["id"] == "p_0a1b2c3d"
+    assert _wfj(user, "Alpha 2")["extra"]["ss_project"]["id"] == "p_0a1b2c3d"
+
+
+def test_new_project_id_shape():
+    ids = {L.new_project_id() for _ in range(200)}
+    assert len(ids) == 200 and all(L.PROJECT_ID.match(i) for i in ids)

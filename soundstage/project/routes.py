@@ -9,7 +9,7 @@ POST /soundstage/project/upload_collected (multipart "file": a collected-project
 GET  /soundstage/project/template         -> example_workflows/Soundstage_App.json (the New project template)
 
 The start screen (web/project/home.mjs, soundstage/project/library.py), all in the requesting user's folder:
-GET  /soundstage/project/list             -> {"projects": [{name, saved_at, counts, thumb, thumb_kind, autosave_newer...}]}
+GET  /soundstage/project/list             -> {"projects": [{name, id, saved_at, counts, thumb, thumb_kind, autosave_newer...}]}
 POST /soundstage/project/duplicate        {name, to} -> {name}
 POST /soundstage/project/rename           {name, to} -> {name}
 POST /soundstage/project/trash            {name} -> {trash}   (moves to projects/.trash/, never deletes)
