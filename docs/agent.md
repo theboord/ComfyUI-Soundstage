@@ -193,6 +193,21 @@ SOUNDSTAGE_AGENT_OUT=/tmp/scene.json python3 -m soundstage.agent.live build "rai
 python3 -m soundstage.agent.live edit /tmp/scene.json "add a second detective by the window"
 ```
 
+## Old names that still work (alias contract)
+
+The grey blocking look is retired (Lifelike-only plan). Old saved scenes, layers, phone messages and agent calls keep working: each old name is read as the new one. Removal is the release after L20 ships (L20 owns the removal note). Rows marked L3 land with the guide switch.
+
+| alias | new name | added | removed |
+|---|---|---|---|
+| scene `people_look: "blocking"` (the Blocking toggle) | dropped on load: people show lifelike (`web/stage/scenemigrate.mjs`) | L2 | after L20 | <!-- clay-alias -->
+| view `"clay"` (`stage.setView`, a phone's `view:'clay'`) | `"color"` (one console note per session) | L2 | after L20 | <!-- clay-alias -->
+| Paint Studio stage layer `stageMode: "clay"` | `"color"` | L2 | after L20 | <!-- clay-alias -->
+| Ladder layer id `"clay"` | `"color"` (labelled Stage) | L2 | after L20 | <!-- clay-alias -->
+| H3 `motion_ref` value `"clay previz as <Video 1>"` | the stage previz reference (value kept) | L2 | after L20 | <!-- clay-alias -->
+| `follow_clay` | `follow_blocking` (UI label already "Follow the blocking") | L3 | after L20 | <!-- clay-alias -->
+| Stage node slot 0 `clay`, slot `first_clay` | `guide`, `first_guide_raw` | L3 | after L20 | <!-- clay-alias -->
+| Cut rung `clay`, project folder `clay/`, Performance underlay `clay` | `stage`, `stage/`, `stage` | L3 | after L20 | <!-- clay-alias -->
+
 ## Limitations
 
 - **The stage has no vertical placement.** Everything stands on y=0, so nothing sits on a table (a desk lamp becomes a practical light), swimmers stand on the tank floor, and there is no seated pose.

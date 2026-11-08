@@ -29,7 +29,7 @@ test("search_docs finds the right section for sample questions", async () => {
 });
 
 test("search_docs finds controls that exist only in the code", async () => {
-  for (const [q, where] of [["Stage-2 start", /Advanced \(LTX\)/], ["Clay guide blur", /Advanced \(LTX\)/], ["Breakable", /Physics/], ["Walk AR", /Virtual camera/]]) {
+  for (const [q, where] of [["Stage-2 start", /Advanced \(LTX\)/], ["Stage guide blur", /Advanced \(LTX\)/], ["Breakable", /Physics/], ["Walk AR", /Virtual camera/]]) {
     const top = (await searchDocs(q)).hits[0];
     assert.equal(top.kind, "control", q);
     assert.match(top.where, where, q);
@@ -53,7 +53,13 @@ test("troubleshoot: the clay-lock symptom gets Adherence Exact and the Layout IC
 test("the playbook and recipes name controls and presets that exist", async () => {
   const presets = JSON.parse(readFileSync(new URL("../../web/presets/presets.json", import.meta.url), "utf8")).presets.map((p) => p.id);
   for (const r of RECIPES) if (r.preset) assert.ok(presets.includes(r.preset), `${r.id}: preset ${r.preset}`);
-  for (const p of PLAYBOOK) for (const c of p.controls || []) assert.ok((await searchDocs(c)).hits.some((h) => h.kind !== "doc" && h.control.includes(c)), `${p.id}: ${c}`);
+  // Lifelike-only L2 renamed these UI labels; the playbook (web/agent/knowledge.mjs, the Ask lane) switches to the new
+  // names in its own commit (the label table). Until then a playbook control under its old name must exist under the new.
+  const RENAMED = { "Clay guide blur (px)": "Stage guide blur (px)", "Follow the clay": "Follow the blocking" };
+  for (const p of PLAYBOOK) for (const c0 of p.controls || []) {
+    const c = RENAMED[c0] || c0;
+    assert.ok((await searchDocs(c)).hits.some((h) => h.kind !== "doc" && h.control.includes(c)), `${p.id}: ${c}`);
+  }
 });
 
 test("plan_recipe: a gunshot wound is the squib rig, with Do it for me", () => {

@@ -259,7 +259,7 @@ test("stage names: the mapping table for common Soundstage graph nodes, with the
   assert.equal(n("CheckpointLoaderSimple"), "Loading model");
   assert.equal(n("SaveVideo"), "Saving MP4");
   assert.equal(n("SAM3Segment"), "Masking (SAM 3)");
-  assert.equal(n("SoundstageStage"), "3D stage (clay passes)");
+  assert.equal(n("SoundstageStage"), "3D stage (stage passes)");
   assert.equal(n("SoundstageMysteryNode"), "SoundstageMysteryNode");
   // A title counts only when someone set it: not the class_type, not the node's default display name.
   assert.equal(customTitle("KSampler", "KSampler"), null);
