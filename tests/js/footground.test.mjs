@@ -235,6 +235,35 @@ test("real Rocketbox walking up onto a 20 / 30 / 40 cm step (parked crates): a w
   }
 });
 
+test("people of 1.1 / 1.4 / 1.8 m walking at a 20 / 40 cm set box: the step limit is half the leg (a child jumps up 40 cm), no shoe inside the box, no slide on top", { skip: NOT_INSTALLED }, async () => {
+  // 854e956: WALK_STEP was a fixed 45 cm, and a planted top more than 30 cm x (height / 1.8) from the body's footing
+  // was refused (T.far): a 1.1-1.4 m person on the 40 cm box put a shoe 9.5-17 cm into it, on a 20 cm kerb 6.7 cm in
+  // with 5.1 cm/frame slide; the 1.8 m man on the 40 cm box slid 8.35 cm a frame on top (3abc644: all 0)
+  for (const kind of ["man", "woman"]) for (const h of [1.1, 1.4, 1.8]) for (const bh of [0.2, 0.4]) {
+    const b = { id: "box", half: [3, bh / 2, 2], pos: [3, bh / 2, 0], quat: [0, 0, 0, 1] };
+    const inside = (x, y, z) => Math.min(b.half[0] - Math.abs(x - b.pos[0]), b.half[1] - Math.abs(y - b.pos[1]), b.half[2] - Math.abs(z - b.pos[2]));
+    const a = { id: "box_walk", kind, height_m: h, position: [-2, 0, 0], keys: [{ frame: 0, position: [-2, 0, 0] }, { frame: 120, position: [3, 0, 0] }] };
+    const st = await K.setup(kind, a, { boxes: [b] });
+    const tag = `${kind} ${h} m at a ${bh * 100} cm box`;
+    let air = 0;
+    for (let f = 0; f <= 120; f++) air += st._walkAirborneAt(a, f) ? 1 : 0;
+    // walked when it is at most half the leg (a quarter of the height), else jumped
+    assert.equal(air > 0, bh > 0.25 * h, `${tag}: ${air ? "jumped" : "walked"}`);
+    const out = K.measure(st, a, { ground: K.boxGround([b]) });
+    let deep = 0, at = "";
+    for (const r of out.rows) if (r.shown && !r.skip) for (const lr of ["l", "r"]) {
+      const c = r[lr];
+      for (let q = 0; q < c.H.length; q++) { const d = inside(c.P[3 * q], c.P[3 * q + 1], c.P[3 * q + 2]); if (d > deep) { deep = d; at = `${lr} f${r.f}`; } }
+    }
+    assert.ok(deep < 0.01, `${tag}: a shoe ${cm(deep)} cm inside the box (${at})`);
+    // FLAW (measured 2026-11-08): the jump's frames are the clip's own legs (excluded here), and a 1.1 m person's hips dip
+    // up to 6 cm stepping onto the 20 cm box
+    // (physical's pen is the depth under the top, so a toe 5 mm into the face reads 20 cm: the box's own depth above
+    // is the measure here)
+    check(K.physical(out), tag, { pen: -1, excluded: air ? 40 : 0, drop: 0.061, slide: 0.011, planted: 30 });
+  }
+});
+
 test("set-box stairs keyed flat (the body not keyed up them): the body climbs with the feet, nothing sinks into a tread", { skip: NOT_INSTALLED }, async () => {
   // 3abc644: the body height (_heightAt) ignores set boxes while the feet stand on them: keyed flat over the stairs
   // the feet went 75 cm into the landing and slid 21 cm a frame

@@ -61,7 +61,7 @@ export const FOOT = {
   stepMin: 4, stepTwist: 0.6,    // frames, rad: the quickest step; how far the body may turn during one
   pivot: 0.5, pivotRate: 0.07,   // a planted foot turns this share of the body's turn (on its ball), at most this (rad) a frame
   heelFrom: 0.02, heelPerRad: 2.5, heelMax: 0.3, // a planted foot turned this far (rad) from its anchor lifts its heel (rad / rad, at most)
-  far: 0.3,                      // a stance whose ground is this far from the body's height is not planted
+  far: 0.5,                      // a stance whose ground is this far from the body's height is not planted (over the walked step, half the leg)
   minLeg: 0.45,                  // of the leg's length: a target closer to the hip than this (the leg folded up) is refused
   stillSpeed: 0.15,              // m/s: a body slower than this stands on its own footing, not on a top beside it
   edge: 0.02,                    // the ground under one sole is off its plane by more than this: an edge or a step (the foot sits flat on the top)
