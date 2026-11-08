@@ -129,9 +129,10 @@ test("published: every file a Replayed badge names is in the live demo (no badge
 
 const stale = SCENE_FILES.filter((f) => PUBLISHED[`r/scenes/${f}`] !== createHash("sha256").update(readFileSync(join(TRYIT, "scenes", f))).digest("hex"));
 test("published: the live demo serves the scenes as they are in the repo (the gate checked these bytes)", {
-  // aliens.json was fixed in f66f50b (the runner cleared the squad car) after the last publish (9ccc980): the live
-  // demo still serves 81cc81b's aliens.json, whose draft render goes ahead only after an auto-bake knocks runner_b
-  // down. Needs a re-publish (tools/tryit/README.md), not a code change; this stays a TODO until then.
+  // Scenes changed in the repo after the last publish (first aliens.json, f66f50b; now chase, drycreek, fire and
+  // western) make the live demo stale. Needs a re-publish (tools/tryit/README.md), not a code change; this stays a
+  // TODO until then. node --test counts it as todo (fail 0, exit 0) but still prints it, with its AssertionError, under
+  // "failing tests" at the end of a run: that listing is not a failure.
   todo: stale.length ? `re-publish the try-it demo: ${stale.join(", ")} changed since the last publish` : false,
 }, () => {
   assert.deepEqual(stale, []);
