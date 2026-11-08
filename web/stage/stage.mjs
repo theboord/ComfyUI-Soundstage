@@ -1262,6 +1262,12 @@ export class Stage {
     // across setups (the key tossed in 1D, landing in 1L, snatched in 1N) is keyed at each setup's own beat.
     const own = a.by_shot?.[this.state.active_shot]?.keys;
     if (own?.length) return own;
+    return this._baseKeys(a);
+  }
+
+  /** The object's own keys, shared by every shot without its own blocking (by_shot), migrated from position /
+   *  position_end. */
+  _baseKeys(a) {
     if (!a.keys?.length) {
       a.keys = [{ frame: 0, position: [...a.position] }];
       if (a.position_end && JSON.stringify(a.position_end) !== JSON.stringify(a.position)) {
@@ -1406,7 +1412,11 @@ export class Stage {
    */
   setRig(type, amount, params) {
     const shot = this.activeShot?.();
-    if (!RIGS[type]) return { ok: false, error: `unknown rig '${type}'` };
+    // Own names only: a plain-object lookup would let "toString" / "constructor" through as a rig.
+    if (typeof type !== "string" || !Object.hasOwn(RIGS, type)) return { ok: false, error: `unknown rig '${type}'` };
+    if (params != null && (typeof params !== "object" || Array.isArray(params))) {
+      return { ok: false, error: `params must be an object like {arm, pivot, seed} (got '${params}')` };
+    }
     if (!shot) return { ok: false, error: "no active shot" };
     const prev = shot.rig || {}, q = params || {};
     const a = Number(amount ?? prev.amount ?? 1);
@@ -1691,19 +1701,40 @@ export class Stage {
 
   /** Static things a person can stand on / must clear: world boxes of parked, non-person actors. */
   _obstacles() {
-    const sig = JSON.stringify(this.state.actors.map((o) => [o.id, o.kind, o.keys?.length > 1 ? "moving" : o.keys?.[0]?.position || o.position, o.rotation_deg, o.scale, o.height_m, o.carry_id, o.mount_id]));
-    if (this._obsCache?.sig === sig) return this._obsCache.list;
-    const list = [];
+    // The signature (no JSON: it runs per person per frame) covers what the boxes are made from: each object's fields
+    // and, for the parked ones, the clay group's own transform and identity (a console edit or a drag that moves the
+    // group, a rebuild that makes a new one), and the set (its floor gives each box its height above the ground).
+    const parts = [this.setFx?.id || ""];
+    const parked = [];
     for (const o of this.state.actors) {
+      parts.push(`${o.id}:${o.kind}:${keysHash([{ k: o.keys?.length > 1 ? o.keys : null, p: o.keys?.[0]?.position || o.position, r: o.rotation_deg, s: o.scale, h: o.height_m, c: o.carry_id, m: o.mount_id, y: o.key_y, l: o.physics?.lift }])}`);
       if (PERSON_KINDS.has(o.kind) || o.mount_id || o.carry_id || (o.keys?.length > 1 && o.keys.some((k) => Math.hypot(k.position[0] - o.keys[0].position[0], k.position[2] - o.keys[0].position[2]) > 0.05))) continue;
       const g = this.actorMeshes.get(o.id);
       if (!g) continue;
+      const P = g.position, Q = g.quaternion, S = g.scale;
+      parts.push(`${g.uuid}@${P.x},${P.y},${P.z}/${Q.x},${Q.y},${Q.z},${Q.w}/${S.x},${S.y},${S.z}`);
+      parked.push([o, g]);
+    }
+    const sig = parts.join("|");
+    if (this._obsCache?.sig === sig) return this._obsCache.list;
+    const list = [];
+    for (const [o, g] of parked) {
+      g.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(g);
       if (!isFinite(box.max.y) || box.max.y < 0.15) continue;
-      list.push({ id: o.id, kind: o.kind, box, top: box.max.y });
+      // rise: how far the top is above the floor it stands on (a crate on a 0.92 m station platform rises 0.8 m),
+      // for the "too tall to climb" cut-off; top stays the world height people stand at.
+      const rise = box.max.y - this._floorUnder((box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2);
+      list.push({ id: o.id, kind: o.kind, box, top: box.max.y, rise });
     }
     this._obsCache = { sig, list };
     return list;
+  }
+
+  /** The ground under (x, z): the stage floor (0) or the set's own walkable floor (a station platform, the seabed). */
+  _floorUnder(x, z) {
+    const floor = this.setFx?.floorAt;
+    return Math.max(0, (floor && floor(x, z)) || 0);
   }
 
   /**
@@ -1719,17 +1750,18 @@ export class Stage {
     const obs = this._obstacles();
     const last = this._lastFrame();
     const floor = this.setFx?.floorAt || null;   // a set's walkable surface: station platforms, the seabed
-    const sig = JSON.stringify([keys, last, this._obsCache?.sig, this.setFx?.id || null]);
+    const fps = this.state.shot?.fps || 24;   // gravity per frame depends on it
+    const sig = JSON.stringify([keys, last, fps, this._obsCache?.sig, this.setFx?.id || null]);
     this._yCache = this._yCache || new WeakMap();
     let c = this._yCache.get(a);
     if (!c || c.sig !== sig) {
-      const fps = this.state.shot?.fps || 24, kk = 0.5 * 9.8 / (fps * fps), R = 0.18;
+      const kk = 0.5 * 9.8 / (fps * fps), R = 0.18;
       const S = [];
       for (let f = 0; f <= last; f++) {
         const p = this._actorPosAt(a, f);
         let s = Math.max(0, p[1] || 0, floor ? floor(p[0], p[2]) : 0);
         for (const o of obs) {
-          if (o.top > 1.7) continue;                         // walls and cars aren't climbed by walking into them
+          if (o.rise > 1.7) continue;                        // walls and cars aren't climbed by walking into them (height above the local floor)
           if (p[0] > o.box.min.x - R && p[0] < o.box.max.x + R && p[2] > o.box.min.z - R && p[2] < o.box.max.z + R) s = Math.max(s, o.top);
         }
         S.push(s);
@@ -1777,7 +1809,7 @@ export class Stage {
         min: c.pos.map((p, k) => p - ext[k]), max: c.pos.map((p, k) => p + ext[k]) });
     }
     for (const o of obs) {
-      if (o.top > 1.75) continue;                              // walls and cars aren't stood on
+      if (o.rise > 1.75) continue;                             // walls and cars aren't stood on (height above the local floor)
       const b = o.box, c = b.getCenter(new THREE.Vector3()), sz = b.getSize(new THREE.Vector3());
       list.push({ id: o.id, shape: "box", pos: c.toArray(), rot: [0, 0, 0, 1], size: sz.toArray(), min: b.min.toArray(), max: b.max.toArray() });
     }
@@ -1786,7 +1818,7 @@ export class Stage {
   }
 
   /** Does a person leave the ground anywhere in the shot (a hop up, a vault, a drop: the same test as _airborne, over
-   *  every frame)? The lifelike body stays clay for the whole shot then (people/avatarcore.mjs clayReason). */
+   *  every frame)? Also brings the height table up to date cheaply (see _airborneAt). */
   _jumpsInShot(a) {
     if (!PERSON_KINDS.has(a.kind)) return false;
     // Called per person per frame (people/avatars.mjs avatarsAt): a cheap check first, so the JSON signature
@@ -1794,7 +1826,8 @@ export class Stage {
     // obstacle list by identity (_obstacles replaces it only when the parked objects change; setFrame has already
     // refreshed it this frame through _heightAt, before avatarsAt) and the number of objects (one added or removed).
     const keys = this._actorKeys(a);
-    const cheap = `${keysHash(keys)}|${keys.length}|${this._lastFrame()}|${this.setFx?.id || ""}|${this.state.actors.length}`;
+    this._obstacles();   // refreshes the obstacle list when a parked object moved or changed (no JSON, see there)
+    const cheap = `${keysHash(keys)}|${keys.length}|${this._lastFrame()}|${this.state.shot?.fps || 24}|${this.setFx?.id || ""}|${this.state.actors.length}`;
     let c = this._yCache?.get(a);
     if (c && c.jumpSig === cheap && c.jumpObs === this._obsCache && c.jumps !== undefined) return c.jumps;
     this._heightAt(a, 0);   // builds or refreshes the whole-shot height table
@@ -1805,7 +1838,13 @@ export class Stage {
     return c.jumps;
   }
 
-  /** Is a person in the air (mid-jump) at this frame? */
+  /** Is a person in the air at this frame, from an up-to-date height table (the lifelike body shows clay for exactly
+   *  these frames: people/avatarcore.mjs clayReason "is in the air"). */
+  _airborneAt(a, frame) {
+    return this._jumpsInShot(a) && this._airborne(a, frame);
+  }
+
+  /** Is a person in the air (mid-jump) at this frame? (reads the height table as it is) */
   _airborne(a, frame) {
     const c = this._yCache?.get(a);
     if (!c) return false;
@@ -1894,7 +1933,7 @@ export class Stage {
     } else if (SITTABLE.has(o.kind)) {
       this.mount(a.id, o.id, "sit", at);
       msg = `${name(a)} sits on ${name(o)}.`;
-    } else if (box.max.y <= 1.7) {
+    } else if (box.max.y - this._floorUnder((box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2) <= 1.7) {   // measured from the floor it stands on
       const key = this._editActorKey(a);
       key.position = [key.position[0], +box.max.y.toFixed(2), key.position[2]];
       this._yCache?.delete(a);
@@ -3994,9 +4033,11 @@ export class Stage {
     for (let n = 2; this.state.actors.some((x) => x.id === nid); n++) nid = `${base}_${n}`;
     c.id = nid;
     c.name = `${a.name} copy`;
-    delete c.by_shot;   // a shot's own blocking belongs to the original (its keys are copied below, offset)
+    delete c.by_shot;   // a shot's own blocking belongs to the original; the copy gets the base keys (below, offset)
     const off = Math.max(1, (a.height_m || 1) * 0.8);
-    c.keys = this._actorKeys(a).map((k) => ({ ...clone(k), position: [k.position[0] + off, k.position[1], k.position[2]] }));
+    // The BASE keys, never the active shot's by_shot keys: the copy then moves like the original in every shot
+    // that has no blocking of its own.
+    c.keys = this._baseKeys(a).map((k) => ({ ...clone(k), position: [k.position[0] + off, k.position[1], k.position[2]] }));
     c.position = [...c.keys[0].position];
     delete c.position_end;
     this.state.actors.push(c);
@@ -4027,11 +4068,7 @@ export class Stage {
     const hasY = where.y != null, hasD = where.distance_m != null;
     if (hasY && !(Number(where.y) >= 0 && Number(where.y) <= 1)) return { ok: false, error: `y must be 0..1 (got '${where.y}')` };
     if (hasD && !(Number(where.distance_m) > 0)) return { ok: false, error: `distance_m must be > 0 (got '${where.distance_m}')` };
-    this._syncShotCamera?.();
-    const cam = this.camera.clone();
-    cam.aspect = (this.fw || 16) / (this.fh || 9);
-    cam.updateProjectionMatrix();
-    cam.updateMatrixWorld(true);
+    const cam = this._activeShotCamera();   // the shot's camera, not a live preview (virtual camera) on screen
     const C = cam.position;
     const nx = 2 * u - 1;
     const groundAt = (ny) => {   // where the ray through (nx, ny) meets the ground y = 0, or null
@@ -4074,12 +4111,26 @@ export class Stage {
     const keys = this._actorKeys(a);
     if (keys.length <= 1) for (const k of keys) k.position = [...pos];
     else this._editActorKey(a).position = [...pos];
-    a.position = [...keys[0].position];
+    // a.position mirrors the base keys; a shot's own blocking (by_shot) was edited instead, so it stays.
+    if (keys === a.keys) a.position = [...keys[0].position];
     delete a.key_y;
     this._yCache?.delete(a);
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
     return { ok: true, position: pos };
+  }
+
+  /** A camera posed as the ACTIVE SHOT's camera at the playhead (keys, rig, lens), at the delivery aspect. Unlike
+   *  this.camera it never shows a live preview (previewCamera: the virtual camera) or another shot's setup. */
+  _activeShotCamera() {
+    const c = this._shotCameraAt(this.frame || 0), aspect = (this.fw || 16) / (this.fh || 9);
+    const cam = new THREE.PerspectiveCamera(vfovFromFocal(c.focal_mm, aspect), aspect, 0.05, 2000);
+    cam.position.set(...c.position);
+    cam.lookAt(new THREE.Vector3(...c.target));
+    if (c.roll) cam.rotateZ(c.roll);
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld(true);
+    return cam;
   }
 
   /** Stage API for tools: open the Physics panel (physpanel.mjs), for object `id` when given (it is selected first).
@@ -4949,8 +5000,22 @@ export class Stage {
     this._renderMode(this.view);
   }
 
-  /** Render one pass at the delivery frame size and return it as a PNG Blob. */
+  /**
+   * Wait for lifelike bodies still loading (up to stage.avatarWaitMs, default people/avatars.mjs AVATAR_WAIT_MS), so a
+   * capture never grabs clay that is about to turn lifelike. Past the wait it goes ahead and says who stayed clay
+   * (lastCaptureNote and the status line). Returns avatarsReady's {ok, timedOut, pending, waitedMs, message}.
+   */
+  async _awaitAvatars() {
+    const ready = await avatarsReady(this.avatarWaitMs ?? AVATAR_WAIT_MS);
+    this.lastCaptureNote = ready.timedOut ? ready.message : "";
+    if (ready.timedOut) { try { this.onInteract?.(ready.message); } catch { /* no UI */ } }
+    return ready;
+  }
+
+  /** Render one pass at the delivery frame size and return it as a PNG Blob. Waits for loading bodies first. */
   async capture(mode) {
+    const ready = await this._awaitAvatars();
+    if (ready.waited) this.setFrameSilent(this.frame);   // pose the bodies that just went on
     const prev = new THREE.Vector2();
     this.renderer.getSize(prev);
     this.renderer.setSize(this.fw, this.fh, false);
@@ -4981,9 +5046,7 @@ export class Stage {
     const keepFrame = this.frame;
     // Lifelike bodies still loading go on first, so no capture turns lifelike partway. The wait is stage.avatarWaitMs
     // (default people/avatars.mjs AVATAR_WAIT_MS); past it the capture goes ahead and says who stayed clay.
-    const ready = await avatarsReady(this.avatarWaitMs ?? AVATAR_WAIT_MS);
-    this.lastCaptureNote = ready.timedOut ? ready.message : "";
-    if (ready.timedOut) { try { this.onInteract?.(ready.message); } catch { /* no UI */ } }
+    await this._awaitAvatars();
     this._capturing = true;
     try {
       this.renderer.setSize(this.fw, this.fh, false);

@@ -315,10 +315,12 @@ export function missingColorMaps(materials) {
  * own clips, so anything that poses the clay body in a way the clips can't follow keeps the clay for the whole shot
  * (never a pop mid-shot): riding or sitting, being carried, carrying or holding a prop, video mocap, Pose keys, gaze
  * keys, swimming, physics (a baked fall or a knocked-over lean: the clips stand upright), Drive mode.
- * Every input must be a whole-shot fact, never "right now": ctx = {blocking, holders: Set, carriers: Set, swims,
- * gazeKeyed, driven, jumps}, with swims from swimsInShot, driven from drivenInShot and jumps from stage._jumpsInShot
- * (any airborne frame: the clips have no jump, so mid-air the avatar would walk; the clay tucks its knees instead).
- * The one exception is tipped: the person is knocked over RIGHT NOW in a live physics drag, not yet saved as a.tilt
+ * Every input but two must be a whole-shot fact, never "right now": ctx = {blocking, holders: Set, carriers: Set,
+ * swims, gazeKeyed, driven, airborne, tipped}, with swims from swimsInShot and driven from drivenInShot.
+ * airborne is per frame: the person is in the air at THIS frame (stage._airborneAt: a hop up, a vault, a drop off an
+ * edge, the same ballistic test the clay's knee tuck uses). The clips have no jump, so mid-air the avatar would walk;
+ * the clay shows for the airborne frames only and the lifelike body is back on the ground before and after.
+ * The other exception is tipped: the person is knocked over RIGHT NOW in a live physics drag, not yet saved as a.tilt
  * (avatars.mjs tippedNow: a flag live.mjs sets from the physics pose, never the group's rotation, which the gait leans
  * into every turn and speed change); the upright clips can't follow it, so the clay shows meanwhile. A Rotate-gizmo
  * tilt is saved as a.tilt while it is dragged, so "was knocked over" covers it.
@@ -337,7 +339,7 @@ export function clayReason(a, ctx = {}) {
   if (ctx.carriers?.has(a.id)) return "carries something";
   if (ctx.swims) return "swims";
   if (ctx.driven) return "is driven live";
-  if (ctx.jumps) return "jumps or vaults in this shot";
+  if (ctx.airborne) return "is in the air (a jump or vault)";
   if (ctx.tipped) return "is tipped over";
   return null;
 }

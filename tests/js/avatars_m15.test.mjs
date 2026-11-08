@@ -250,25 +250,99 @@ test("the underwater set's own Depth material skins too (the stage's shader, nea
 });
 
 // ---------------------------------------------------------------- 3: jumps
-test("a person who hops onto a crate or vaults is clay for the whole shot (the clips have no jump)", async () => {
+test("a person who hops onto a crate or vaults is clay only while in the air, lifelike on the ground before and after", async () => {
   const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
   const crate = { id: "c1", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] };
   const st = bareStage([walker, crate]);
   const g = clayOf(st, walker);
   const cg = clayOf(st, crate); cg.updateMatrixWorld(true);
   assert.equal(st._jumpsInShot(walker), true, "walks over the crate: up and down in arcs");
-  assert.ok([...Array(49).keys()].some((f) => st._airborne(walker, f)) && !st._airborne(walker, 0), "airborne only for some frames");
+  const air = [...Array(49).keys()].filter((f) => st._airborne(walker, f));
+  assert.ok(air.length > 0 && air.length < 40 && !air.includes(0) && !air.includes(48), `airborne only for some frames: ${air}`);
   const skin = A.attachKit(st, walker, g, stubKit());
   await null;
-  assert.equal(skin.shown, false);
-  assert.match(skin.reason, /jumps or vaults/);
-  for (const f of [0, 24, 48]) { st.frame = f; A.avatarsAt(st); assert.equal(skin.shown, false, `still clay at frame ${f}: no pop`); }
-  // without the crate: a plain walk shows the avatar
+  let sawClay = 0, sawLife = 0;
+  for (let f = 0; f <= 48; f++) {
+    st.frame = f; A.avatarsAt(st);
+    const up = air.includes(f);
+    assert.equal(skin.shown, !up, `frame ${f}: ${up ? "clay in the air" : "lifelike on the ground"} (reason ${skin.reason})`);
+    if (up) { sawClay++; assert.equal(skin.reason, "is in the air (a jump or vault)"); } else { sawLife++; assert.equal(skin.reason, null); }
+  }
+  assert.ok(sawClay && sawLife);
+  // the ground frames either side of the crate are lifelike: before the take-off and after the landing
+  assert.ok(!air.includes(Math.min(...air) - 1) && !air.includes(Math.max(...air) + 1));
+  // without the crate: a plain walk shows the avatar on every frame
   st.state.actors = [walker]; st.actorMeshes.delete("c1");
   assert.equal(st._jumpsInShot(walker), false);
-  A.avatarsAt(st);
-  assert.equal(skin.shown, true, `shown (reason ${skin.reason})`);
-  assert.equal(C.clayReason(walker, { jumps: true }), "jumps or vaults in this shot");
+  for (const f of [0, 20, 24, 30, 48]) { st.frame = f; A.avatarsAt(st); assert.equal(skin.shown, true, `frame ${f} (reason ${skin.reason})`); }
+  assert.equal(C.clayReason(walker, { airborne: true }), "is in the air (a jump or vault)");
+  assert.equal(C.clayReason(walker, { jumps: true }), null, "no whole-shot jump rule any more");
+});
+
+test("raised floors: a 0.8 m crate on a 0.92 m station platform is climbed (the cut-off is measured from the local floor)", () => {
+  const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0.92, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
+  const crate = { id: "c1", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] };
+  const st = bareStage([walker, crate]);
+  st.setFx = { id: "platform", floorAt: () => 0.92 };
+  const noSet = []; st._setCollidersCached = () => noSet;   // no set boxes of its own here
+  clayOf(st, walker);
+  const cg = clayOf(st, crate);
+  const h0 = new THREE.Box3().setFromObject(cg).max.y;
+  cg.scale.setScalar(0.8 / h0); cg.position.y = 0.92;   // a 0.8 m crate standing on the platform: top at 1.72 m
+  cg.updateMatrixWorld(true);
+  const top = new THREE.Box3().setFromObject(cg).max.y;
+  assert.ok(Math.abs(top - 1.72) < 1e-6, `top ${top}`);
+  const o = st._obstacles().find((x) => x.id === "c1");
+  assert.ok(Math.abs(o.rise - 0.8) < 1e-6, `rise above the platform: ${o.rise}`);
+  assert.ok(Math.abs(st._heightAt(walker, 24) - 1.72) < 1e-3, `stands on the crate top mid-way: ${st._heightAt(walker, 24)}`);
+  assert.equal(st._jumpsInShot(walker), true, "hops up and down");
+  assert.ok(st._supportShapes().some((sh) => sh.id === "c1"), "stood on (foot support)");
+  assert.ok(Math.abs(st._supportAt(0, 0, 1.6) - 1.72) < 1e-3, "the foot ray finds the crate top (from the hop's height)");
+  // the same crate 2 m tall above the platform is a wall: walked into, not climbed
+  cg.scale.multiplyScalar(2 / 0.8); cg.updateMatrixWorld(true);
+  assert.ok(st._obstacles().find((x) => x.id === "c1").rise > 1.75);
+  assert.ok(Math.abs(st._heightAt(walker, 24) - 0.92) < 1e-3, "stays on the platform floor");
+  assert.equal(st._jumpsInShot(walker), false);
+  assert.ok(!st._supportShapes().some((sh) => sh.id === "c1"));
+  // and on the plain stage floor the 0.8 m crate still is climbed
+  cg.scale.multiplyScalar(0.8 / 2); cg.position.y = 0; st.setFx = null; walker.position[1] = 0; cg.updateMatrixWorld(true);
+  assert.ok(Math.abs(st._heightAt(walker, 24) - 0.8) < 1e-3, `${st._heightAt(walker, 24)}`);
+});
+
+test("the height and jump tables follow the shot's fps and any obstacle move or edit (no hand-clearing of caches)", () => {
+  const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
+  const crate = { id: "c1", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] };
+  const st = bareStage([walker, crate]);
+  clayOf(st, walker);
+  const cg = clayOf(st, crate); cg.updateMatrixWorld(true);
+  const airCount = () => [...Array(49).keys()].filter((f) => st._airborneAt(walker, f)).length;
+  const table = () => [...Array(49).keys()].map((f) => st._heightAt(walker, f));
+  const at24 = airCount(), y24 = table();
+  assert.ok(at24 > 0);
+  // fps: gravity per frame changes, so the arcs do (60 fps: more frames in the air for the same metres per frame...)
+  st.state.shot.fps = 60;
+  const y60 = table();
+  assert.notDeepEqual(y60, y24, "_heightAt sees the fps change");
+  assert.notEqual(airCount(), at24, "the cheap _jumpsInShot / _airborneAt signature sees it too");
+  st.state.shot.fps = 24;
+  assert.deepEqual(table(), y24);
+  assert.equal(airCount(), at24);
+  // moving the crate's group (a console edit or a drag) out of the path: both tables see it, nothing cleared by hand
+  cg.position.z = 5; cg.updateMatrixWorld(true);
+  assert.equal(airCount(), 0, "the jump table sees the moved crate");
+  assert.ok(table().every((y) => y === 0), "the height table sees it");
+  cg.position.z = 0; cg.updateMatrixWorld(true);
+  assert.equal(airCount(), at24);
+  // editing the crate's keys (moved in the scene data) and rebuilding its group there
+  crate.keys[0].position = [0, 0, 6]; crate.position = [0, 0, 6];
+  st.actorMeshes.delete("c1"); clayOf(st, crate).updateMatrixWorld(true);
+  assert.equal(airCount(), 0);
+  // editing its size (a smaller crate is a lower hop)
+  crate.keys[0].position = [0, 0, 0]; crate.position = [0, 0, 0];
+  st.actorMeshes.delete("c1"); const c2 = clayOf(st, crate); c2.updateMatrixWorld(true);
+  const full = Math.max(...table());
+  c2.scale.setScalar(0.5); c2.updateMatrixWorld(true);
+  assert.ok(Math.max(...table()) < full - 0.1, "a scaled crate gives a lower stand-on height");
 });
 
 // ---------------------------------------------------------------- 7: lift and live tilt
@@ -422,6 +496,12 @@ function apiStage() {
   return st;
 }
 
+/** Key the shot camera of a Stage at (position -> target), 28 mm; returns the camera placeInFrame really uses. */
+function shotCam(st, position, target, focal_mm = 28) {
+  st._shotCameraAt = () => ({ position, target, focal_mm });
+  return st._activeShotCamera();
+}
+
 test("stage.duplicate(id): a new id, the copy beside it with its keys, the selection untouched, one undo step", () => {
   const st = apiStage();
   st.state.actors.push({ id: "box1", kind: "crate", name: "Crate", height_m: 0.6, position: [1, 0, 2], keys: [{ frame: 0, position: [1, 0, 2] }, { frame: 24, position: [2, 0, 2] }] });
@@ -442,12 +522,10 @@ test("stage.duplicate(id): a new id, the copy beside it with its keys, the selec
 
 test("stage.placeInFrame: the ground point lands at left / center / right thirds or 0..1, at the distance asked, on the ground", () => {
   const st = apiStage();
-  const cam = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 200);
-  cam.position.set(0, 1.6, 8); cam.lookAt(0, 1, 0); cam.updateMatrixWorld(true);
-  st.camera = cam; st._syncShotCamera = () => {};
+  const cam = shotCam(st, [0, 1.6, 8], [0, 1, 0]);
   st.state.actors.push({ id: "p1", kind: "man", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0.4, 0] }], key_y: true });
   st._buildSet();
-  const screen = (p) => { const c = cam.clone(); c.aspect = st.fw / st.fh; c.updateProjectionMatrix(); const v = new THREE.Vector3(...p).project(c); return [(v.x + 1) / 2, (1 - v.y) / 2]; };
+  const screen = (p) => { const v = new THREE.Vector3(...p).project(cam); return [(v.x + 1) / 2, (1 - v.y) / 2]; };
   const flat = (p) => Math.hypot(p[0] - cam.position.x, p[2] - cam.position.z);
   let r = st.placeInFrame("p1", { x: "left", distance_m: 5 });
   assert.equal(r.ok, true);
@@ -512,8 +590,8 @@ test("the Face tooltip is recomputed from the stage each time (never a stale rea
   assert.match(faceTip(stage, "p1"), /Shown as clay now: has Pose keys\./);
   st = { installed: true, shown: true, reason: null, faceless: false };
   assert.equal(faceTip(stage, "p1"), FACE_TIP);
-  st = { installed: true, shown: false, reason: "jumps or vaults in this shot" };
-  assert.match(faceTip(stage, "p1"), /jumps or vaults/);
+  st = { installed: true, shown: false, reason: "is in the air (a jump or vault)" };
+  assert.match(faceTip(stage, "p1"), /in the air/);
   assert.match(FACE_TIP, /hair stays/);
 });
 
@@ -654,9 +732,7 @@ test("round 2, 3: the dust matte keeps the card cut-out and hidden groups (secon
 
 test("round 2, 4: placeInFrame refuses a distance a steep or top-down camera can't reach (no success at the range edge)", () => {
   const st = apiStage();
-  const cam = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 200);
-  cam.position.set(0, 1.6, 0); cam.up.set(0, 0, -1); cam.lookAt(0, 0, 0); cam.updateMatrixWorld(true);   // straight down
-  st.camera = cam; st._syncShotCamera = () => {};
+  shotCam(st, [0, 1.6, 0], [0, 0, -0.001]);   // straight down
   st.state.actors.push({ id: "p1", kind: "man", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] });
   st._buildSet();
   const before = structuredClone(st.state.actors[0]);
@@ -695,9 +771,7 @@ test("round 2, 6: _jumpsInShot per frame skips the JSON signature when nothing c
 
 test("round 2, 7: placeInFrame(id, null) uses the defaults; a non-object is an error (no throw); openPhysicsPanel records no undo step", () => {
   const st = apiStage();
-  const cam = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 200);
-  cam.position.set(0, 1.6, 8); cam.lookAt(0, 1, 0); cam.updateMatrixWorld(true);
-  st.camera = cam; st._syncShotCamera = () => {};
+  const cam = shotCam(st, [0, 1.6, 8], [0, 1, 0]);
   st.state.actors.push({ id: "p1", kind: "man", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] });
   st._buildSet();
   const r = st.placeInFrame("p1", null);
@@ -709,4 +783,132 @@ test("round 2, 7: placeInFrame(id, null) uses the defaults; a non-object is an e
   st.selectedInfo = () => ({ id: st.selected });
   assert.equal(st.openPhysicsPanel("p1").ok, true);
   assert.equal(st.changes, n, "opening a panel is not a scene edit: no undo step");
+});
+
+// ---------------------------------------------------------------- round 3
+/** stage.capture(mode) on a Stage with no GL: records what each render saw, returns the fake PNG. */
+function captureStage(onRender) {
+  const st = Object.create(Stage.prototype);
+  Object.defineProperties(st, { fw: { value: 64 }, fh: { value: 36 } }); st.frame = 7;
+  st.renderer = { getSize: (v) => v.set(64, 36), setSize() {} };
+  st.canvas = {};
+  st._renderMode = (mode, forCapture) => { if (forCapture) onRender(mode); };
+  st.render = () => {};
+  st.poses = 0;
+  st.setFrame = () => { st.poses++; };
+  st.notes = [];
+  st.onInteract = (m) => st.notes.push(m);
+  return st;
+}
+async function withOffscreen(fn) {
+  const had = globalThis.OffscreenCanvas;
+  globalThis.OffscreenCanvas = class { getContext() { return { canvas: { convertToBlob: true }, drawImage() {} }; } convertToBlob() { return Promise.resolve("png"); } };
+  try { return await fn(); } finally { if (had) globalThis.OffscreenCanvas = had; else delete globalThis.OffscreenCanvas; }
+}
+
+test("round 3, 4: a single still (stage.capture) waits for bodies still loading, re-poses them, and says so on a timeout", async () => {
+  await withOffscreen(async () => {
+    // a body that finishes loading 30 ms in: the still is taken after it went on, never of the clay
+    let loaded = false;
+    A.trackLoading(new Promise((r) => setTimeout(() => { loaded = true; r(); }, 30)));
+    const seen = [];
+    const st = captureStage((mode) => seen.push([mode, loaded]));
+    const blob = await st.capture("color");
+    assert.equal(blob, "png");
+    assert.deepEqual(seen, [["color", true]], "rendered once, after the body loaded");
+    assert.ok(st.poses >= 1, "the new bodies are posed before the render");
+    assert.equal(st.lastCaptureNote, "");
+    assert.deepEqual(st.notes, []);
+    // nothing loading: no wait, no extra pose
+    const st2 = captureStage(() => {});
+    await st2.capture("depth");
+    assert.equal(st2.poses, 0);
+    // still loading past stage.avatarWaitMs: the still goes ahead, with the message on the status line
+    let release;
+    A.trackLoading(new Promise((r) => { release = r; }));
+    const st3 = captureStage(() => {});
+    st3.avatarWaitMs = 20;
+    await st3.capture("color");
+    assert.match(st3.lastCaptureNote, /still loading after 0 s: 1 person is drawn as the clay figure/);
+    assert.deepEqual(st3.notes, [st3.lastCaptureNote]);
+    release();
+    await A.avatarsReady(1000);
+  });
+});
+
+test("round 3, 5: setRig never throws: non-object params and inherited names are errors and change nothing", () => {
+  const st = apiStage();
+  st._rigCache = null;
+  assert.equal(st.setRig("tripod", 1).ok, true);
+  const before = structuredClone(st.state.shots[0].rig);
+  const n = st.changes;
+  for (const bad of ["x", 3, true, ["arm", 5]]) {
+    let r;
+    assert.doesNotThrow(() => { r = st.setRig("jib", 1, bad); }, `params ${JSON.stringify(bad)}`);
+    assert.equal(r.ok, false);
+    assert.match(r.error, /params must be an object/);
+  }
+  for (const name of ["toString", "constructor", "hasOwnProperty", "__proto__", "valueOf"]) {
+    assert.deepEqual(st.setRig(name, 1), { ok: false, error: `unknown rig '${name}'` });
+  }
+  assert.deepEqual(st.setRig(undefined, 1), { ok: false, error: "unknown rig 'undefined'" });
+  assert.deepEqual(st.state.shots[0].rig, before, "the shot's rig is left as it was");
+  assert.equal(st.changes, n, "no undo step from a refused call");
+  // null / undefined params still mean "no options"
+  assert.equal(st.setRig("jib", 1, null).ok, true);
+  assert.equal(st.setRig("jib", 1, { arm: 6 }).rig.arm, 6);
+});
+
+test("round 3, 6: duplicate copies the BASE keys, so the copy moves like the original in every shot", () => {
+  const st = apiStage();
+  st.state.shots = [{ id: "A" }, { id: "B" }];
+  st.state.active_shot = "B";
+  st.state.actors.push({ id: "p1", kind: "man", name: "Ada", height_m: 1.7, position: [0, 0, 0],
+    keys: [{ frame: 0, position: [0, 0, 0] }, { frame: 48, position: [4, 0, 0] }],
+    by_shot: { B: { keys: [{ frame: 0, position: [9, 0, 9] }, { frame: 10, position: [9, 0, 12] }] } } });
+  st._buildSet();
+  const id = st.duplicate("p1");
+  const c = st.state.actors.find((x) => x.id === id);
+  const off = 1.7 * 0.8;
+  assert.deepEqual(c.keys.map((k) => k.frame), [0, 48], "the base keys' frames, not shot B's");
+  assert.deepEqual(c.keys.map((k) => k.position.map((v) => +v.toFixed(6))), [[off, 0, 0], [4 + off, 0, 0]].map((p) => p.map((v) => +v.toFixed(6))));
+  assert.deepEqual(c.position.map((v) => +v.toFixed(6)), [+off.toFixed(6), 0, 0]);
+  assert.equal(c.by_shot, undefined);
+  // in shot A (no blocking of its own) the copy walks the original's path, offset
+  st.state.active_shot = "A";
+  const orig = st._actorKeys(st.state.actors[0]), copy = st._actorKeys(c);
+  orig.forEach((k, i) => { assert.equal(copy[i].frame, k.frame); assert.ok(Math.abs(copy[i].position[0] - k.position[0] - off) < 1e-9); });
+  // the original's keys are untouched
+  assert.deepEqual(st.state.actors[0].keys.map((k) => k.position), [[0, 0, 0], [4, 0, 0]]);
+  assert.deepEqual(st.state.actors[0].by_shot.B.keys[0].position, [9, 0, 9]);
+});
+
+test("round 3, 7: placeInFrame uses the active shot's camera, not a live preview, and leaves the base position of per-shot blocking alone", () => {
+  const st = apiStage();
+  const shotC = { position: [0, 1.6, 8], target: [0, 1, 0], focal_mm: 28 };
+  st._shotCameraAt = () => shotC;
+  // the virtual-camera preview is on screen, looking somewhere else entirely, and this.camera shows it
+  st._preview = { position: [20, 3, -20], target: [25, 0, -30], focal_mm: 50 };
+  st.camera = new THREE.PerspectiveCamera(30, 16 / 9, 0.1, 200);
+  st.camera.position.set(20, 3, -20); st.camera.lookAt(25, 0, -30); st.camera.updateMatrixWorld(true);
+  st._syncShotCamera = () => false;   // as the real one does while _preview is set
+  st.state.actors.push({ id: "p1", kind: "man", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] });
+  st._buildSet();
+  const r = st.placeInFrame("p1", { x: "left", distance_m: 5 });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const cam = st._activeShotCamera();
+  assert.deepEqual(cam.position.toArray(), shotC.position);
+  const v = new THREE.Vector3(...r.position).project(cam);
+  assert.ok(Math.abs((v.x + 1) / 2 - 1 / 3) < 2e-3, `left third of the SHOT camera: ${(v.x + 1) / 2}`);
+  assert.ok(Math.abs(Math.hypot(r.position[0], r.position[2] - 8) - 5) < 2e-3, "5 m from the shot camera");
+  // per-shot blocking: the by_shot key is edited, a.position (the base keys' mirror) and a.keys stay
+  st.state.actors.push({ id: "p2", kind: "man", position: [1, 0, 1], keys: [{ frame: 0, position: [1, 0, 1] }, { frame: 48, position: [2, 0, 1] }],
+    by_shot: { s: { keys: [{ frame: 0, position: [-1, 0, -1] }] } } });
+  st._buildSet();
+  const r2 = st.placeInFrame("p2", { x: "right", distance_m: 6 });
+  assert.equal(r2.ok, true);
+  const p2 = st.state.actors[1];
+  assert.deepEqual(p2.by_shot.s.keys[0].position, r2.position, "the shot's own key moved");
+  assert.deepEqual(p2.position, [1, 0, 1], "base position untouched");
+  assert.deepEqual(p2.keys.map((k) => k.position), [[1, 0, 1], [2, 0, 1]], "base keys untouched");
 });

@@ -296,11 +296,11 @@ export const kitStrides = (kit, scale) => ({ walk: (kit.clips.walk?.travel || 12
 export const AVATAR_WAIT_MS = 60000;
 
 /** Resolves when every lifelike body that started loading has been put on (or given up): {ok, timedOut, pending,
- *  waitedMs, message}. captureSequence awaits it so a capture never starts clay and turns lifelike partway. ms caps
+ *  waitedMs, waited (something was loading), message}. captureSequence awaits it so a capture never starts clay and turns lifelike partway. ms caps
  *  the wait; on a timeout the message says so (the people still loading stay clay for this capture, then change). */
 export async function avatarsReady(ms = AVATAR_WAIT_MS) {
   const t0 = Date.now();
-  if (!inflight.size) return { ok: true, timedOut: false, pending: 0, waitedMs: 0, message: "" };
+  if (!inflight.size) return { ok: true, timedOut: false, pending: 0, waitedMs: 0, waited: false, message: "" };
   let timer = null;
   const done = await Promise.race([
     Promise.allSettled([...inflight]).then(() => true),
@@ -308,10 +308,10 @@ export async function avatarsReady(ms = AVATAR_WAIT_MS) {
   ]);
   clearTimeout(timer);
   const pending = inflight.size, waitedMs = Date.now() - t0;
-  if (done) return { ok: true, timedOut: false, pending: 0, waitedMs, message: "" };
+  if (done) return { ok: true, timedOut: false, pending: 0, waitedMs, waited: true, message: "" };
   const message = `Lifelike people still loading after ${Math.round(ms / 1000)} s: ${pending} ${pending === 1 ? "person is" : "people are"} drawn as the clay figure in this capture. Capture again once they show.`;
   console.warn("Soundstage:", message);
-  return { ok: false, timedOut: true, pending, waitedMs, message };
+  return { ok: false, timedOut: true, pending, waitedMs, waited: true, message };
 }
 
 /** Pose everyone once, soon (one microtask later), unless a setFrame runs first: many people attaching in one go (a
@@ -418,7 +418,7 @@ export function avatarsAt(stage) {
       blocking, holders: users.holders, carriers: users.carriers, gazeKeyed: gazeKeys(a).length > 0,
       swims: wet && C.swimsInShot(a, () => stage._swimPlan?.(a, g)),
       driven: C.drivenInShot(memo, stage.state.active_shot, a.id, stage.drive),
-      jumps: !!stage._jumpsInShot?.(a),
+      airborne: !!stage._airborneAt?.(a, f),   // this frame only: clay in the air, lifelike on the ground
       tipped: tippedNow(g),
     });
     skin.reason = reason;
