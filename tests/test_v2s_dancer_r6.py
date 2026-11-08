@@ -98,3 +98,25 @@ def test_a_second_dancer_beside_her_is_still_a_body_with_a_slab_behind_them(monk
     cut = _cut(monkeypatch, d, uv, [_entry("woman dancing", box),
                                     _entry("man dancing", [box[0] + off, box[1], box[2] + off, box[3]])])
     assert np.isfinite(cut[his]).sum() <= 0.02 * his.sum()           # he leaves the scan with her
+
+
+# ------------------------------------------------------------------------------------------------ 2 her arms and head
+@pytest.mark.parametrize("z, gap", [(4.0, 0.5), (6.0, 0.5)])
+def test_her_arms_and_head_top_leave_the_scan_with_her_body_mask(monkeypatch, z, gap):
+    pytest.importorskip("cv2")
+    d, uv, box, slab = _her_at(z, gap)
+    her, _ = _silhouette(70, 400, 400)            # her arms hang a few pixels away from her torso
+    cut = _cut(monkeypatch, d, uv, [_entry("woman dancing", box)])
+    assert np.isfinite(cut[her]).sum() == 0       # round 5: 4,098 of her head and arm pixels stayed in the scan
+    assert np.isnan(cut[slab]).sum() == 0         # the slab behind her stays in it
+    assert np.isnan(cut[20, 180]) and np.isnan(cut[230, 150]) and np.isnan(cut[230, 250])   # crown, both hands
+
+
+def test_the_build_mask_keeps_her_arms_but_not_the_hip_width():
+    pytest.importorskip("cv2")
+    d, uv, box, slab = _her_at(4.0, 0.5)
+    m = W.body_mask(d, box, uv)
+    assert m[150, 150] and m[150, 250]            # both arms are in her silhouette
+    g, src = W.girth_from(None, m, female=True)   # and the hip width still reads the hips alone
+    g0, _ = W.girth_from(None, m & ~np.isin(np.arange(400), list(range(140, 160)) + list(range(240, 260)))[None, :])
+    assert src == "the person's silhouette" and g == g0

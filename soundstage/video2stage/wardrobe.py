@@ -359,6 +359,23 @@ BAND_TRUNK, BAND_ARM = 0.075, 0.045   # how far from a bone the body can reach, 
 CORE = 0.02                           # pixels this close to a bone are surely the body (its depth per row)
 
 
+# Virtual joints past the ends COCO-18 stops at, so the band reaches the crown and the fingertips: the head top
+# (the neck -> nose line carried on 0.7 of its length past the nose) and each hand (elbow -> wrist, 0.4 past the wrist).
+HEAD_TOP, HAND_R, HAND_L = 18, 19, 20
+END_BONES = ((0, HEAD_TOP),), ((4, HAND_R), (7, HAND_L))
+PIECE = 0.02       # a separate piece of the depth band is the body's when the core reaches it this much (of the most)
+
+
+def _with_ends(uv):
+    """uv (COCO-18) plus the virtual head-top and hand points (NaN where their joints are missing)."""
+    out = np.full((21, 2), np.nan)
+    out[:min(18, len(uv))] = uv[:18]
+    for k, (a, b, f) in ((HEAD_TOP, (0, 1, 0.7)), (HAND_R, (4, 3, 0.4)), (HAND_L, (7, 6, 0.4))):
+        if np.all(np.isfinite(out[a])) and np.all(np.isfinite(out[b])):
+            out[k] = out[a] + f * (out[a] - out[b])
+    return out
+
+
 def _bone_dist(X, Y, uv, bones):
     out = np.full(X.shape, np.inf)
     for a, b in bones:
@@ -374,7 +391,9 @@ def _bone_dist(X, Y, uv, bones):
 def body_mask(depth: np.ndarray, box_px, uv=None, rel: float = 0.07) -> np.ndarray | None:
     """The person's silhouette for the build, tighter than person_mask_from_depth: inside the box (pixels), within a
     band around the take's own 2D joints (uv, pixels of this depth map) when it has them, and within rel of the BODY's
-    depth on that row (not the box's median), then only the connected piece that holds the body. A concrete slab or a
+    depth on that row (not the box's median), then only the connected pieces the body's core reaches (the torso, and an
+    arm or hand a gap away from it). The band reaches the crown and the fingertips (virtual points past the nose and
+    the wrists). A concrete slab or a
     slope half a metre behind the hips is no longer counted as hip. Known limit: a background within ~rel of the body
     (a wall she leans on) and inside the band still joins."""
     d = np.asarray(depth, np.float32)
@@ -391,7 +410,8 @@ def body_mask(depth: np.ndarray, box_px, uv=None, rel: float = 0.07) -> np.ndarr
     hips = uv is not None and any(i < len(uv) and np.all(np.isfinite(uv[i])) for i in (8, 11))
     if hips and np.isfinite(uv).all(axis=1).sum() >= 6:
         H = float(y1 - y0)
-        dt, da = _bone_dist(X, Y, uv, TRUNK_BONES), _bone_dist(X, Y, uv, ARM_BONES)
+        ends = _with_ends(uv)
+        dt, da = _bone_dist(X, Y, ends, TRUNK_BONES + END_BONES[0]), _bone_dist(X, Y, ends, ARM_BONES + END_BONES[1])
         band = (dt < BAND_TRUNK * H) | (da < BAND_ARM * H)
         core = (dt < CORE * H) | (da < 0.6 * CORE * H)
     else:
@@ -412,10 +432,12 @@ def body_mask(depth: np.ndarray, box_px, uv=None, rel: float = 0.07) -> np.ndarr
     try:
         import cv2
         n, lab = cv2.connectedComponents(m.astype(np.uint8), connectivity=4)
-        if n > 2:
+        if n > 2:   # every piece the body's core reaches (an arm a gap from the torso is its own piece)
             hits = np.bincount(lab[m & core], minlength=n)
             hits[0] = 0
-            m = lab == int(hits.argmax())
+            keep = hits >= max(1, PIECE * int(hits.max()))
+            keep[0] = False
+            m = keep[lab]
     except ImportError:   # without OpenCV the band and the depth test alone decide
         pass
     out = np.zeros((h, w), bool)
