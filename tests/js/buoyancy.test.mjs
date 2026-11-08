@@ -336,6 +336,20 @@ test("Add object in the tank keeps new things inside its walls", () => {
   st.select = (id) => { st.selected = id; };   // (no gizmo in a headless stage)
   for (const k of ["man", "woman", "crate", "rock", "sphere", "rock", "sphere"]) st.addObject(k);
   for (const a of st.state.actors) assert.ok(st._inPool(a.position[0], a.position[2]), `${a.name} at ${a.position} is in the water`);
+  // big things: the whole footprint inside the inner wall, not just the centre (was: a car to z -9.33, a speedboat to
+  // -8.29, against the wall at +-7.8)
+  const big = ["car", "speedboat", "truck", "bus", "car", "speedboat"];
+  for (const k of big) st.addObject(k);
+  const gp = st.water.geometry.parameters, X = gp.width / 2, Z = gp.height / 2;
+  st.setFrame(0);
+  for (const a of st.state.actors.slice(-big.length)) {
+    const g = st.actorMeshes.get(a.id), b = st._localBox(g), yaw = g.rotation.y;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const lx = b.center[0] + sx * b.half[0], lz = b.center[2] + sz * b.half[2];
+      const wx = a.position[0] + Math.cos(yaw) * lx + Math.sin(yaw) * lz, wz = a.position[2] - Math.sin(yaw) * lx + Math.cos(yaw) * lz;
+      assert.ok(Math.abs(wx - st.water.position.x) <= X + 1e-6 && Math.abs(wz - st.water.position.z) <= Z + 1e-6, `${a.name}: corner (${wx.toFixed(2)}, ${wz.toFixed(2)}) inside +-${X.toFixed(2)} x +-${Z.toFixed(2)}`);
+    }
+  }
 });
 
 test("the person panel's Swim select drives stage.setSwim and shows the person's mode; the Physics info carries the density", async () => {

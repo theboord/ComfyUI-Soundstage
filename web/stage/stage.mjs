@@ -3599,18 +3599,43 @@ export class Stage {
     // out landed on the dry floor beyond the tank's 7.8 m inner wall).
     const look0 = new THREE.Vector3(...cam.position).addScaledVector(look, Number.isFinite(tFloor) ? tFloor : 0);
     const tankSet = this.state.environment?.set === "water_tank" && this.water && this.water.position.y >= 0.3;   // the whole set is the tank
-    if (tankSet || this._inPool(spot.x, spot.z) || (Number.isFinite(tFloor) && this._inPool(look0.x, look0.z))) {
+    const inWater = tankSet || this._inPool(spot.x, spot.z) || (Number.isFinite(tFloor) && this._inPool(look0.x, look0.z));
+    if (inWater) {
       const w = this.water, gp = w.geometry.parameters, inset = Math.min(0.8, gp.width / 4, gp.height / 4);
       spot.x = Math.max(w.position.x - gp.width / 2 + inset, Math.min(w.position.x + gp.width / 2 - inset, spot.x));
       spot.z = Math.max(w.position.z - gp.height / 2 + inset, Math.min(w.position.z + gp.height / 2 - inset, spot.z));
     }
     const p = [+spot.x.toFixed(2), 0, +spot.z.toFixed(2)];
-    this.state.actors.push({ id, name: `${spec.label} ${n}`, kind, position: p, keys: [{ frame: 0, position: [...p] }],
-      height_m: spec.height, rotation_deg: 0, ...(paint ? { appearance: { color: paint } } : {}) });
+    const added = { id, name: `${spec.label} ${n}`, kind, position: p, keys: [{ frame: 0, position: [...p] }],
+      height_m: spec.height, rotation_deg: 0, ...(paint ? { appearance: { color: paint } } : {}) };
+    this.state.actors.push(added);
     this._buildSet();
+    if (inWater) this._keepInsideWater(added);
     this.select(id);
     this.onChange(this.toJSON());
     return `${spec.label} ${n}`;
+  }
+
+  /** Add object over a pool / the tank: move the new thing so its whole footprint (its own box at its heading, not just
+   *  its centre) is inside the water's edge, the tank's inner wall (a car added 0.8 m in reached 1.5 m through the
+   *  wall). Something wider than the water is centred on it. */
+  _keepInsideWater(a) {
+    const g = this.actorMeshes.get(a.id), box = g && this._localBox(g), w = this.water;
+    if (!box || !w) return;
+    const gp = w.geometry.parameters, yaw = g.rotation.y || 0, c = Math.cos(yaw), sn = Math.sin(yaw), m = 0.05;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const lx = box.center[0] + sx * box.half[0], lz = box.center[2] + sz * box.half[2];
+      const wx = c * lx + sn * lz, wz = -sn * lx + c * lz;   // rotated about y by the heading
+      x0 = Math.min(x0, wx); x1 = Math.max(x1, wx); z0 = Math.min(z0, wz); z1 = Math.max(z1, wz);
+    }
+    const fit = (v, lo, hi, e0, e1) => (hi - lo) - (e1 - e0) < 2 * m ? (lo + hi) / 2 - (e0 + e1) / 2 : Math.max(lo + m - e0, Math.min(hi - m - e1, v));
+    const x = fit(a.position[0], w.position.x - gp.width / 2, w.position.x + gp.width / 2, x0, x1);
+    const z = fit(a.position[2], w.position.z - gp.height / 2, w.position.z + gp.height / 2, z0, z1);
+    if (x === a.position[0] && z === a.position[2]) return;
+    a.position = [+x.toFixed(2), a.position[1], +z.toFixed(2)];
+    a.keys = [{ ...a.keys[0], position: [...a.position] }];
+    this._buildSet();
   }
 
   // ---------- the rigged horse (CC0, Quaternius) ----------
