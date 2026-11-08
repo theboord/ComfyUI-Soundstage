@@ -205,7 +205,7 @@ def cached_status(max_age: float = 20.0) -> dict:
 
 
 OLLAMA_DEFAULT_CTX = 4096   # Ollama's own default context: never asked below it
-CTX_STEP = 4096             # num_ctx is rounded up to a multiple of this (8192 for a ~3,500-token planner prompt)
+CTX_STEP = 4096             # kept for older readers; num_ctx is now snapped up to one of CTX_SIZES
 CHARS_PER_TOKEN = 3.5       # a deliberately low estimate (English runs ~4), so the prompt is never under-counted
 REPLY_TOKENS = 2048         # room kept for the answer when the request sets no num_predict
 IMAGE_TOKENS = 1536         # per image in a message (a vision model's tiles; never counted from the base64 length)
@@ -214,6 +214,27 @@ IMAGE_TOKENS = 1536         # per image in a message (a vision model's tiles; ne
 CTX_CEILING = 131072        # the hard top of every num_ctx sent to Ollama: the caller's own, OLLAMA_CONTEXT_LENGTH
                             # and SOUNDSTAGE_ASSISTANT_MAX_CTX are all clamped to it (128K tokens, the largest window
                             # of the models Ask runs; a bigger value only makes Ollama reserve memory it cannot fill)
+# The only sizes ✦ Ask sends (before the server's own OLLAMA_CONTEXT_LENGTH floor and the max): Ollama reloads the model
+# whenever num_ctx changes, so a value sized to every prompt (4096 / 8192 / 12288 ...) reloaded a big local model on
+# almost every request. A short chat and a ~3,500-token planner both get 8192; bigger prompts step by doubling.
+CTX_SIZES = (8192, 16384, 32768, 65536, 131072)
+_ctx_sent: dict = {}        # (Ollama URL, model) -> the largest num_ctx sent to it by the chat route (never lowered)
+
+
+def _snap_ctx(n: int) -> int:
+    """The smallest of CTX_SIZES that holds n tokens (CTX_CEILING above the largest)."""
+    return next((c for c in CTX_SIZES if c >= n), CTX_CEILING)
+
+
+def forget_ctx(model: str | None = None) -> None:
+    """Forget the num_ctx sent to a model (all models with None): after an unload the next load may be smaller."""
+    if model is None:
+        _ctx_sent.clear()
+    else:
+        for k in [k for k in _ctx_sent if k[1] == model]:
+            _ctx_sent.pop(k, None)
+
+
 _NUM_STR = re.compile(r"^\s*\d+(\.\d+)?\s*$")   # "8192", "8192.5": plain decimals only ("1e3", "inf", "0x10" refused)
 
 
@@ -277,21 +298,31 @@ def prompt_tokens(messages, tools=None) -> int:
     return int(n / CHARS_PER_TOKEN) + 1 + images * IMAGE_TOKENS
 
 
-def num_ctx_for(messages, reply=None, asked=None, tools=None) -> int:
-    """num_ctx sized to the prompt (messages + tools + images) plus reply room, rounded up to 4096s, at least
-    server_ctx() (Ollama's 4096 or OLLAMA_CONTEXT_LENGTH), at most max_ctx(). The request's own num_ctx (an int,
-    float or plain decimal string) is a floor, even above max_ctx(), but never above CTX_CEILING (1e12 -> 131072;
-    NaN, inf, "1e3", booleans are ignored). A prompt bigger than max_ctx() is still capped (Ollama then drops the
-    oldest part). The result is always a whole number in [4096, CTX_CEILING]."""
+def num_ctx_for(messages, reply=None, asked=None, tools=None, model=None) -> int:
+    """num_ctx for the prompt (messages + tools + images) plus reply room, snapped UP to one of CTX_SIZES (8192 for a
+    short chat and a ~3,500-token planner alike), at most max_ctx(), never below server_ctx() (Ollama's 4096 or
+    OLLAMA_CONTEXT_LENGTH). The request's own num_ctx (an int, float or plain decimal string) is a floor, snapped up
+    to CTX_SIZES too, even above max_ctx(), but never above CTX_CEILING (1e12 -> 131072; NaN, inf, "1e3", booleans
+    are ignored). With a model (the chat route passes it), the largest value already sent to that model on this
+    Ollama URL is reused, so a short chat after a planner call sends the same num_ctx and Ollama does not reload the
+    model. A prompt bigger than max_ctx() is still capped (Ollama then drops the oldest part). The result is always
+    a whole number in [4096, CTX_CEILING]."""
     r = _pos_int(reply)
-    need = prompt_tokens(messages, tools) + (r or REPLY_TOKENS)
-    need = -(-need // CTX_STEP) * CTX_STEP
+    need = _snap_ctx(prompt_tokens(messages, tools) + (r or REPLY_TOKENS))
     out = max(server_ctx(), min(max_ctx(), need))
     a = _pos_int(asked)
-    return min(CTX_CEILING, max(out, a) if a else out)
+    if a:
+        out = max(out, _snap_ctx(a))
+    out = min(CTX_CEILING, out)
+    if model:
+        key = (ollama_url(), str(model))
+        out = min(CTX_CEILING, max(out, _ctx_sent.get(key, 0)))
+        _ctx_sent[key] = out
+    return out
 
 
-def chat_options(st: dict, gpu_busy: bool = False, messages=None, options: dict | None = None, tools=None) -> dict:
+def chat_options(st: dict, gpu_busy: bool = False, messages=None, options: dict | None = None, tools=None,
+                 model=None) -> dict:
     """Ollama options for this tier: CPU tier (or a GPU tier while a render runs) keeps every layer off the GPU.
     With the request's messages, num_ctx is sized to them and its tools (num_ctx_for); options = the request's own
     options (its num_predict and num_ctx are honoured: its num_ctx is never lowered)."""
@@ -300,7 +331,7 @@ def chat_options(st: dict, gpu_busy: bool = False, messages=None, options: dict 
         opts["num_gpu"] = 0
     if messages is not None:
         o = options or {}
-        opts["num_ctx"] = num_ctx_for(messages, reply=o.get("num_predict"), asked=o.get("num_ctx"), tools=tools)
+        opts["num_ctx"] = num_ctx_for(messages, reply=o.get("num_predict"), asked=o.get("num_ctx"), tools=tools, model=model)
     return opts
 
 
@@ -355,7 +386,9 @@ def keep_alive():
 def unload(model: str | None = None, timeout: float = 3.0) -> bool:
     """Free the model's VRAM now (Ollama: a request with keep_alive 0). Ollama reloads it on the next Ask turn."""
     try:
-        _http("POST", "/api/generate", {"model": model or model_name(), "keep_alive": 0}, timeout=timeout)
+        name = model or model_name()
+        _http("POST", "/api/generate", {"model": name, "keep_alive": 0}, timeout=timeout)
+        forget_ctx(name)   # it is out of memory now: its next load may take a smaller num_ctx
         return True
     except Exception:  # noqa: BLE001 - Ollama away: nothing to free
         return False
@@ -455,7 +488,7 @@ def register(routes=None) -> bool:
         asked = body.get("options") if isinstance(body.get("options"), dict) else {}
         body["options"] = {**asked, **chat_options(st, await asyncio.to_thread(_gpu_busy),
                                                    messages=body.get("messages") or [], options=asked,
-                                                   tools=body.get("tools"))}
+                                                   tools=body.get("tools"), model=body["model"])}
         body["keep_alive"] = keep_alive()   # the server decides: a tab left open from an older version can't pin the model
         try:
             code, j = await _forward("/api/chat", body, 300)

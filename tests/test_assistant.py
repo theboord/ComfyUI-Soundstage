@@ -228,17 +228,18 @@ def test_num_ctx_is_sized_to_the_prompt_within_bounds(monkeypatch):
     monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", raising=False)
     planner = [{"role": "system", "content": "x" * (3500 * 4)}, {"role": "user", "content": "add a chair"}]   # ~3,500 tokens
     o = A.chat_options({"device": "gpu"}, messages=planner)
-    assert o["num_ctx"] >= 8192 and o["num_ctx"] % 4096 == 0, o
-    assert A.chat_options({"device": "gpu"}, messages=[{"role": "user", "content": "hi"}])["num_ctx"] == 4096   # never below Ollama's
+    assert o["num_ctx"] == 8192 and o["num_ctx"] in A.CTX_SIZES, o
+    assert A.chat_options({"device": "gpu"}, messages=[{"role": "user", "content": "hi"}])["num_ctx"] == 8192   # the same size as the planner
     huge = [{"role": "user", "content": "y" * 1_000_000}]
     assert A.chat_options({"device": "gpu"}, messages=huge)["num_ctx"] == 32768                                 # bounded
     monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", "16384")
     assert A.chat_options({"device": "gpu"}, messages=huge)["num_ctx"] == 16384
     monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", "100")                                                  # a bad max: still 4096
     assert A.chat_options({"device": "gpu"}, messages=huge)["num_ctx"] == 4096
+    assert A.chat_options({"device": "gpu"}, messages=[{"role": "user", "content": "hi"}])["num_ctx"] == 4096   # never below Ollama's
     monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX")
     # the request's own num_ctx / num_predict count; the GPU decision is unchanged
-    assert A.chat_options({"device": "gpu"}, messages=[], options={"num_ctx": 12000})["num_ctx"] == 12000   # passed through
+    assert A.chat_options({"device": "gpu"}, messages=[], options={"num_ctx": 12000})["num_ctx"] == 16384   # snapped up, never lowered
     assert A.chat_options({"device": "gpu"}, messages=[], options={"num_predict": 7000})["num_ctx"] == 8192
     assert A.chat_options({"device": "cpu"}, messages=planner)["num_gpu"] == 0
     assert "num_ctx" not in A.chat_options({"device": "gpu"})   # no messages: as before
@@ -251,17 +252,17 @@ def test_num_ctx_counts_tools_and_images_and_never_cuts_what_the_caller_asked(mo
     tools = [{"type": "function", "function": {"name": f"tool_{i}", "description": "d" * 400,
               "parameters": {"type": "object", "properties": {"x": {"type": "string", "description": "e" * 200}}}}}
              for i in range(60)]   # ~60 x 700 chars = ~12,000 tokens of schemas
-    assert A.chat_options({"device": "gpu"}, messages=short)["num_ctx"] == 4096
+    assert A.chat_options({"device": "gpu"}, messages=short)["num_ctx"] == 8192
     with_tools = A.chat_options({"device": "gpu"}, messages=short, tools=tools)["num_ctx"]
     assert with_tools >= A.prompt_tokens(short, tools) + A.REPLY_TOKENS and with_tools >= 16384, with_tools
     pics = [{"role": "user", "content": "match this frame", "images": ["aGVsbG8="] * 4}]
     assert A.prompt_tokens(pics) >= 4 * A.IMAGE_TOKENS
     assert A.chat_options({"device": "gpu"}, messages=pics)["num_ctx"] >= 4 * A.IMAGE_TOKENS + A.REPLY_TOKENS
-    # the caller's num_ctx: plain decimal strings and floats pass through, never lowered, not capped at max_ctx() (only at CTX_CEILING)
-    for asked, want in [("12000", 12000), (12000.0, 12000), ("9000.5", 9001), (65536, 65536), ("65536", 65536)]:
+    # the caller's num_ctx: plain decimal strings and floats count, snapped UP to CTX_SIZES (never lowered), not capped at max_ctx() (only at CTX_CEILING)
+    for asked, want in [("12000", 16384), (12000.0, 16384), ("9000.5", 16384), ("8192", 8192), (65536, 65536), ("65536", 65536), (70000, 131072)]:
         assert A.chat_options({"device": "gpu"}, messages=short, options={"num_ctx": asked})["num_ctx"] == want, asked
     for junk in ["lots", True, -5, 0, None, float("nan")]:
-        assert A.chat_options({"device": "gpu"}, messages=short, options={"num_ctx": junk})["num_ctx"] == 4096, junk
+        assert A.chat_options({"device": "gpu"}, messages=short, options={"num_ctx": junk})["num_ctx"] == 8192, junk
     assert A.chat_options({"device": "gpu"}, messages=short, options={"num_predict": "7000"})["num_ctx"] == 8192
     # never below the server's own OLLAMA_CONTEXT_LENGTH (as this process sees it)
     monkeypatch.setenv("OLLAMA_CONTEXT_LENGTH", "16384")
@@ -293,6 +294,7 @@ def test_chat_route_sizes_num_ctx_from_the_request_messages_tools_and_options(mo
     monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH", raising=False)
     monkeypatch.setattr(A, "hardware", lambda: {"vram_gb": 16.0, "ram_gb": 128.0, "gpu": "test"})
     A._status_cache["v"] = None
+    A.forget_ctx()
     seen = []
 
     async def fake(request):
@@ -325,8 +327,9 @@ def test_chat_route_sizes_num_ctx_from_the_request_messages_tools_and_options(mo
     chats = [b for p, b in seen if p == "/api/chat"]
     assert len(chats) == 3
     assert chats[0]["options"]["num_ctx"] >= 16384 and chats[0]["tools"] == tools, "the tool list was counted"
-    assert chats[1]["options"]["num_ctx"] == 20000 and chats[1]["options"]["temperature"] == 0.2
-    assert chats[2]["options"]["num_ctx"] == 4096
+    assert chats[0]["options"]["num_ctx"] in A.CTX_SIZES
+    assert chats[1]["options"]["num_ctx"] == 32768 and chats[1]["options"]["temperature"] == 0.2, "20000 snapped up"
+    assert chats[2]["options"]["num_ctx"] == 32768, "a short chat after: the model's size is reused (no reload)"
     A._status_cache["v"] = None
 
 
@@ -341,10 +344,10 @@ def test_num_ctx_is_bounded_by_the_ceiling_whatever_the_caller_or_environment_sa
     for huge in [1e12, 1e308, 10 ** 400, "1000000000000", "999999999999999999999999", 131073]:
         assert ctx(num_ctx=huge) == A.CTX_CEILING, huge
     for refused in ["1e3", "1e12", "inf", "-inf", "nan", float("inf"), float("-inf"), "0x2000", " ", ""]:
-        assert ctx(num_ctx=refused) == 4096, refused
+        assert ctx(num_ctx=refused) == 8192, refused
     assert ctx(num_ctx=131072) == 131072 and ctx(num_ctx="65536") == 65536
     assert ctx(num_predict=1e308) <= A.CTX_CEILING
-    for env, want in [("1e12", 4096), ("1000000000000", A.CTX_CEILING), ("inf", 4096), ("nan", 4096), ("16384", 16384)]:
+    for env, want in [("1e12", 4096), ("1000000000000", A.CTX_CEILING), ("inf", 4096), ("nan", 4096), ("16384", 16384)]:   # server_ctx() itself
         monkeypatch.setenv("OLLAMA_CONTEXT_LENGTH", env)
         assert A.server_ctx() == want, env
         n = ctx()
@@ -356,3 +359,46 @@ def test_num_ctx_is_bounded_by_the_ceiling_whatever_the_caller_or_environment_sa
     assert A.max_ctx() == 32768, "an exponent string max falls back to the default"
     monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", "99999999")
     assert A.max_ctx() == A.CTX_CEILING
+
+
+def test_num_ctx_is_stable_so_ollama_does_not_reload_the_model(monkeypatch):
+    """Fix: the chat route sent a num_ctx sized to each prompt (4096 / 8192 / 12288 ...), and Ollama reloads the model
+    whenever num_ctx changes, so mixing short chats with planner calls reloaded a big local model on every request.
+    Now: a small set of fixed sizes (CTX_SIZES), the largest already sent to the model reused, never below the
+    server's own OLLAMA_CONTEXT_LENGTH."""
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", raising=False)
+    monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH", raising=False)
+    monkeypatch.setattr(A, "ollama_url", lambda: "http://127.0.0.1:11434")
+    A.forget_ctx()
+    short = [{"role": "user", "content": "hi"}]
+    planner = [{"role": "system", "content": "x" * (3500 * 4)}, {"role": "user", "content": "add a chair"}]   # ~3,500 tokens
+    mid = [{"role": "user", "content": "z" * (5000 * 4)}]                                                      # ~5,700 tokens
+    big = [{"role": "user", "content": "w" * (9000 * 4)}]                                                      # ~10,300 tokens
+    ctx = lambda m, model=None: A.chat_options({"device": "gpu"}, messages=m, model=model)["num_ctx"]
+    # same size: consecutive short, long, short, long prompts send one value (no model given: sizes only)
+    assert [ctx(m) for m in (short, planner, mid, short, planner, mid)] == [8192] * 6
+    # the old per-prompt rounding gave 4096 / 8192 / 12288 for these: three reloads
+    assert len({ctx(m) for m in (short, planner, mid)}) == 1
+    # a bigger prompt steps up a size; for the same model, later short chats keep that size (no reload back down)
+    assert [ctx(m, "qwen3:30b-a3b") for m in (short, planner, big, short, planner)] == [8192, 8192, 16384, 16384, 16384]
+    # another model (or another Ollama URL) has its own size
+    assert ctx(short, "llama3.2:3b") == 8192
+    monkeypatch.setattr(A, "ollama_url", lambda: "http://127.0.0.1:11435")
+    assert ctx(short, "qwen3:30b-a3b") == 8192
+    monkeypatch.setattr(A, "ollama_url", lambda: "http://127.0.0.1:11434")
+    # an unload forgets it (the model is out of memory, its next load may be smaller)
+    monkeypatch.setattr(A, "_http", lambda *a, **k: {})
+    assert A.unload("qwen3:30b-a3b") is True
+    assert ctx(short, "qwen3:30b-a3b") == 8192
+    # never below the server's own OLLAMA_CONTEXT_LENGTH, which is then the one value for every small prompt
+    monkeypatch.setenv("OLLAMA_CONTEXT_LENGTH", "12000")
+    A.forget_ctx()
+    assert [ctx(m, "m") for m in (short, planner, mid, short)] == [12000] * 4
+    monkeypatch.setenv("OLLAMA_CONTEXT_LENGTH", "65536")
+    assert ctx(short, "m") == 65536 and ctx(big, "m") == 65536
+    # every value sent is one of the sizes, the server's own context or the max (a handful of values, not one per prompt)
+    monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH")
+    A.forget_ctx()
+    seen = {ctx([{"role": "user", "content": "q" * (n * 1000)}]) for n in range(1, 200, 3)}
+    assert seen <= set(A.CTX_SIZES) | {A.max_ctx()}, seen
+    A.forget_ctx()
