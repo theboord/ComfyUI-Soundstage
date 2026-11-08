@@ -51,6 +51,27 @@ test("real Rocketbox walking 0.3 / 0.5 / 1.2 m/s on flat ground: no sole slides 
   }
 });
 
+test("real Rocketbox walking to a stop and going again, and a U-turn: a foot at rest is planted, never held up; one foot always down", { skip: NOT_INSTALLED }, async () => {
+  // 3abc644: the swing clearance lifted BOTH feet 3.0 cm (liftMax) in the idle <-> walk crossfade, 4-8 frames with no
+  // foot down at the stop and at the restart; on e56d6bc this was 0 frames
+  const kf = (frame, x) => ({ frame, position: [x, 0, 0] });
+  for (const kind of ["man", "woman"]) for (const [name, keys] of [
+    ["stop-go", [kf(0, -3), kf(48, 0), kf(72, 0), kf(120, 3)]],
+    ["U-turn", [kf(0, -2), kf(66, 1.2), kf(120, -1.2)]],
+  ]) {
+    const a = { id: "sg", kind, height_m: K.heightOf(kind), position: keys[0].position, keys };
+    const st = await K.setup(kind, a);
+    const out = K.measure(st, a), s = K.physical(out);
+    // the lower foot is down on every frame (not 3 cm up), and nothing floats
+    let low = 0, at = -1;
+    for (const r of out.rows) { const h = Math.min(r.l.h, r.r.h); if (h > low) { low = h; at = r.f; } }
+    assert.ok(low < 0.005, `${kind} ${name}: the lower foot ${cm(low)} cm up at f${at}`);
+    // FLAW (measured 2026-11-07): the woman's last step into the stop waits planted for the other foot with a 5 cm
+    // single-support hip dip (T.supportDrop) for 3 frames instead of floating
+    check(s, `${kind} ${name}`, { drop: 0.051 });
+  }
+});
+
 test("real Rocketbox running 3 / 4 / 6 m/s: running feet are planted too (contact speed, not the ankle's), soles don't slide", { skip: NOT_INSTALLED }, async () => {
   // e56d6bc: 0 planted frames for one foot at 3 m/s and none at all at 4-6 m/s
   for (const kind of ["man", "woman"]) for (const [v, planted] of [[3, 30], [4, 20], [6, 20]]) {

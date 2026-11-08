@@ -46,6 +46,7 @@ export const FOOT = {
   vIn: 0.3, vOut: 0.45,          // foot bone speed (m/s) to start / keep a stance
   minStance: 3, maxGap: 1,       // frames: shorter stances are dropped, shorter lifts are closed
   minStanceFast: 2, runSpeed: 2.6, // ... but a stance of 2 frames is kept at this body speed (m/s) and up
+  walkMax: 2.0,                  // m/s: under this body speed one foot is always down (no flight phase)
   vRun: 0.15,                    // the contact speed limits widen by this per m/s of body speed (a run's roll)
   ramp: 0.125,                   // s: blend into / out of a plant
   liftPerM: 1.5, liftMax: 0.03,  // a moving foot not planted clears the ground by this much per m it is from its plant (at most
@@ -512,35 +513,60 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
     const otherBetter = B.st[f] === 4 && B.needs[f] < A.needs[f];
     if (!otherDown && !otherBetter) { A.st[f] = 1; A.w[f] = 1; } else { A.st[f] = 0; A.w[f] = 0; }
   }
+  // how far the hips must come down at frame f for leg lr to reach a foot bone at (x, y, z) (Infinity: never)
+  const needDropOf = (lr, f, x, y, z) => {
+    const R = raw[lr], L = R.leg[f] * T.reach, dh = Math.hypot(x - R.hip[3 * f], z - R.hip[3 * f + 2]);
+    return dh >= L ? Infinity : R.hip[3 * f + 1] - y - Math.sqrt(L * L - dh * dh);
+  };
+  // an arc of foot lr from its plant at frame a to the one at frame b (frames a+1 .. b-1), lifted by `lift` in the middle;
+  // mark false only checks the leg reaches it all the way
+  const arcOf = (lr, a, b, lift, mark) => {
+    const { st, w, P, Q } = out[lr];
+    for (let f = a + 1; f < b; f++) {
+      const t = smooth01((f - a) / (b - a));
+      _v1.fromArray(P, 3 * a).lerp(_v0.fromArray(P, 3 * b), t);
+      _v1.y += lift * Math.sin(Math.PI * (f - a) / (b - a));
+      if (!mark) { if (needDropOf(lr, f, _v1.x, _v1.y, _v1.z) > T.dropOK * k) return false; continue; }
+      _q0.fromArray(Q, 4 * a).slerp(_q1.fromArray(Q, 4 * b), t);
+      st[f] = 2; w[f] = 1;
+      P.set([_v1.x, _v1.y, _v1.z], 3 * f); Q.set([_q0.x, _q0.y, _q0.z, _q0.w], 4 * f);
+    }
+    return true;
+  };
+  // foot lr held planted at frame src's target over frames [from, to) (a step that waits for the other foot, or lands
+  // early); false (nothing changed) when the leg can't reach it on one of them
+  const holdOf = (lr, src, from, to, lim = T.supportDrop) => {
+    const { st, w, P, Q } = out[lr], R = raw[lr], K = rig[lr].sole.length, ys = new Float64Array(Math.max(0, to - from));
+    _q0.fromArray(Q, 4 * src);
+    for (let f = from; f < to; f++) {
+      // the held foot keeps its turn and place; the clip's own toe bend of frame f settles it onto the ground (the
+      // lowest sole point touching), so a toe that bends up doesn't lift the held foot off the floor
+      _m1.compose(_v1.fromArray(P, 3 * src), _q0, _v2.setScalar(R.scale[f]));
+      let gap = Infinity;
+      for (let q = 0; q < K; q++) { _v0.fromArray(R.loc, 3 * (K * f + q)).applyMatrix4(_m1); gap = Math.min(gap, _v0.y - ground(_v0.x, _v0.z, f)); }
+      const y = P[3 * src + 1] - (Number.isFinite(gap) ? gap : 0);
+      // it is the only foot down meanwhile: the hips may dip as for a support frame
+      if (skip[f] || needDropOf(lr, f, P[3 * src], y, P[3 * src + 2]) > lim * k) return false;
+      ys[f - from] = y;
+    }
+    for (let f = from; f < to; f++) {
+      st[f] = 1; w[f] = 1; P.copyWithin(3 * f, 3 * src, 3 * src + 3); P[3 * f + 1] = ys[f - from]; Q.copyWithin(4 * f, 4 * src, 4 * src + 4);
+    }
+    return true;
+  };
+  const shuffles = [];
   for (const lr of SIDES) {
-    const R = raw[lr], { st, w, P, Q } = out[lr];
+    const R = raw[lr], { st, w } = out[lr];
     // planted runs the guard cut shorter than a stance are dropped
     for (const [i, j] of runsOf(st)) {
       if (j - i >= T.minStance || (j - i >= T.minStanceFast && fast[i] && fast[j - 1])) continue;
       for (let f = i; f < j; f++) { st[f] = 0; w[f] = 0; }
     }
-    // how far the hips must come down at frame f for this leg to reach a foot bone at (x, y, z) (Infinity: never)
-    const needDrop = (f, x, y, z) => {
-      const L = R.leg[f] * T.reach, dh = Math.hypot(x - R.hip[3 * f], z - R.hip[3 * f + 2]);
-      return dh >= L ? Infinity : R.hip[3 * f + 1] - y - Math.sqrt(L * L - dh * dh);
-    };
-    const arc = (a, b, lift, mark) => {
-      for (let f = a + 1; f < b; f++) {
-        const t = smooth01((f - a) / (b - a));
-        _v1.fromArray(P, 3 * a).lerp(_v0.fromArray(P, 3 * b), t);
-        _v1.y += lift * Math.sin(Math.PI * (f - a) / (b - a));
-        if (!mark) { if (needDrop(f, _v1.x, _v1.y, _v1.z) > T.dropOK * k) return false; continue; }
-        _q0.fromArray(Q, 4 * a).slerp(_q1.fromArray(Q, 4 * b), t);
-        st[f] = 2; w[f] = 1;
-        P.set([_v1.x, _v1.y, _v1.z], 3 * f); Q.set([_q0.x, _q0.y, _q0.z, _q0.w], 4 * f);
-      }
-      return true;
-    };
     // turn steps: from one anchor to the next, lifted on an arc
     for (const s of steps[lr]) {
       const a = s.from - 1, b = s.to;
       if (a < 0 || b >= n || st[a] !== 1 || st[b] !== 1) continue;
-      arc(a, b, T.stepLift * k, true);
+      arcOf(lr, a, b, T.stepLift * k, true);
     }
     // a shuffle: the clip's foot moves from one plant to the next without lifting (a slow walk's idle <-> walk blend
     // drags it along the floor). Blending across that gap slid a touching sole up to 24 cm in a frame; it is a real
@@ -551,10 +577,103 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
       let lifted = false, blocked = false;
       for (let f = a; f <= b; f++) { if (skip[f] || st[f] === 2) blocked = true; if (f > a && f < b && R.hb[f] > T.stepLift * k) lifted = true; }
       if (blocked || lifted) continue;
-      const dist = Math.hypot(P[3 * b] - P[3 * a], P[3 * b + 2] - P[3 * a + 2]);
-      const lift = T.stepLift * k * Math.min(1, dist / (0.15 * k));
-      if (arc(a, b, lift, false)) arc(a, b, lift, true);
+      shuffles.push({ lr, a, b });
     }
+  }
+  // Both feet together, in time order: a shuffle step is taken only while the other foot is planted (a walk coming to
+  // a stop drags BOTH feet in the clip's crossfade; stepping them at once left the body with no foot down for 4-8
+  // frames). A step the other foot overlaps lands early and waits planted, or waits planted and steps later, whichever
+  // leaves the longer step; neither fits: the clip's own drag (blended).
+  shuffles.sort((x, y) => x.a - y.a || (x.lr < y.lr ? -1 : 1));
+  for (const { lr, a, b } of shuffles) {
+    const o = lr === "l" ? "r" : "l", O = out[lr], { st, P } = O, so = out[o].st;
+    if (st[a] !== 1 || st[b] !== 1) continue;
+    // the other foot's time off the ground inside this step: from c to d (d: it is planted again, looked for past b)
+    let c = -1;
+    for (let f = a + 1; f < b; f++) if (so[f] !== 1) { c = f; break; }
+    const dist = (x, y) => Math.hypot(P[3 * y] - P[3 * x], P[3 * y + 2] - P[3 * x + 2]);
+    const lift = (x, y) => T.stepLift * k * Math.min(1, dist(x, y) / (0.15 * k));
+    const step = (x, y) => { const L = lift(x, y); if (!arcOf(lr, x, y, L, false)) return false; arcOf(lr, x, y, L, true); return true; };
+    // (a run has its flight phase: both feet off is right there, the step is taken as it comes)
+    if (c < 0 || body[a] >= T.walkMax) { step(a, b); continue; }
+    let d = c;
+    while (d < n && so[d] !== 1) d++;
+    // a step of this length takes at least this many frames (the foot at most ~7 cm a frame, 1.7 m/s on average)
+    const len = Math.max(3, Math.ceil(dist(a, b) / (0.07 * k)));
+    const snap = () => [st.slice(), O.w.slice(), P.slice(), O.Q.slice()];
+    const back = (S) => { st.set(S[0]); O.w.set(S[1]); P.set(S[2]); O.Q.set(S[3]); };
+    const ownPlanted = (x, y) => { for (let f = x; f <= y; f++) if (f < 0 || f >= n || skip[f] || st[f] !== 1) return false; return true; };
+    const otherPlanted = (x, y) => { for (let f = x; f <= y; f++) if (f < 0 || f >= n || so[f] !== 1) return false; return true; };
+    // late: planted at a's target until the other foot is down again (d), then the step, landing at b2 in the next
+    // plant (a walk coming to a stop: the last step waits for the other foot)
+    const late = (lim) => {
+      const s0 = d - 1, b2 = Math.max(b, s0 + len);
+      if (s0 <= a || !ownPlanted(b, b2) || !otherPlanted(d, b2)) return false;
+      const S = snap();
+      if (holdOf(lr, a, a + 1, s0 + 1, lim) && step(s0, b2)) return true;
+      back(S); return false;
+    };
+    // early: the step leaves the plant before (a2) and lands before the other foot lifts (c), then waits planted at
+    // b's target (a walk starting from standing: the first step goes before the other foot leaves)
+    const early = (lim) => {
+      const e = c, a2 = Math.min(a, e - len);
+      if (!ownPlanted(a2, a) || !otherPlanted(a2, e - 1)) return false;
+      const S = snap();
+      P.copyWithin(3 * e, 3 * b, 3 * b + 3); O.Q.copyWithin(4 * e, 4 * b, 4 * b + 4); st[e] = 1; O.w[e] = 1;
+      if (holdOf(lr, b, e, b, lim) && step(a2, e)) return true;
+      back(S); return false;
+    };
+    // neither: the other foot waits planted where it was (c - 1) until this step is down, then goes (a walk starting
+    // from standing: the clip's crossfade lifts both feet at once)
+    const wait = (lim) => {
+      const So = [so.slice(), out[o].w.slice(), out[o].P.slice(), out[o].Q.slice()];
+      if (holdOf(o, c - 1, c, b + 1, lim) && step(a, b)) return true;
+      so.set(So[0]); out[o].w.set(So[1]); out[o].P.set(So[2]); out[o].Q.set(So[3]); return false;
+    };
+    for (const lim of [T.dropOK, T.supportDrop]) if (late(lim) || early(lim) || wait(lim)) break;
+  }
+  // Walking (not a run's flight): no frame with both feet off the ground. Whatever is left of one (two real steps the
+  // clip's crossfade takes at once, at a start, a stop or a turn) is closed by holding one foot planted: the foot that
+  // left last stays where it was until the other is down and then steps to its next plant, or the foot that lands
+  // first steps there early and waits, whichever changes the fewest frames the leg can reach (the hips level first,
+  // else a support dip).
+  const offBoth = (f) => !skip[f] && out.l.st[f] !== 1 && out.r.st[f] !== 1 && body[f] < T.walkMax;
+  const arcLift = (lr, x, y) => { const P = out[lr].P; return T.stepLift * k * Math.min(1, Math.hypot(P[3 * y] - P[3 * x], P[3 * y + 2] - P[3 * x + 2]) / (0.15 * k)); };
+  const stepOf = (lr, x, y) => { const L = arcLift(lr, x, y); if (!arcOf(lr, x, y, L, false)) return false; arcOf(lr, x, y, L, true); return true; };
+  for (let c = 0; c < n; c++) {
+    if (!offBoth(c)) continue;
+    let d = c; while (d < n && offBoth(d)) d++;
+    const opts = [];
+    for (const lr of SIDES) {
+      const st = out[lr].st;
+      let p = c - 1; while (p >= 0 && st[p] !== 1 && !skip[p]) p--;
+      let q = d; while (q < n && st[q] !== 1 && !skip[q]) q++;
+      const hasP = p >= 0 && st[p] === 1, hasQ = q < n && st[q] === 1;
+      if (!hasP || !hasQ) continue;   // the shot starts or ends mid-stride: nothing to hold from
+      // late: held at p's target over (p, d), then a step d-1 -> q
+      if (q - (d - 1) >= 2) opts.push({ lr, kind: "late", p, q, cost: q - p - 1 });
+      // early: a step p -> c onto q's target, then held there over [c, q)
+      if (c - p >= 2) opts.push({ lr, kind: "early", p, q, cost: q - p - 1 + (q - c) / n });
+    }
+    opts.sort((x, y) => x.cost - y.cost);
+    const tryOpt = (o, lim) => {
+      const O = out[o.lr], S = [O.st.slice(), O.w.slice(), O.P.slice(), O.Q.slice()];
+      let ok;
+      if (o.kind === "late") ok = holdOf(o.lr, o.p, o.p + 1, d, lim) && stepOf(o.lr, d - 1, o.q);
+      else ok = holdOf(o.lr, o.q, c, o.q, lim) && stepOf(o.lr, o.p, c);
+      if (!ok) { O.st.set(S[0]); O.w.set(S[1]); O.P.set(S[2]); O.Q.set(S[3]); }
+      return ok;
+    };
+    let done = false;
+    for (const lim of [T.dropOK, T.supportDrop]) {
+      for (const o of opts) if (tryOpt(o, lim)) { done = true; break; }
+      if (done) break;
+    }
+    c = d;
+  }
+  for (const lr of SIDES) {
+    const R = raw[lr], { st, w, P, Q } = out[lr];
+    const needDrop = (f, x, y, z) => needDropOf(lr, f, x, y, z);
     // blend in before a plant and out after it, toward the nearest planted frame; shorter ramps at a run's speed
     // (the hips cover 15 cm a frame), and a blend the leg can't reach is weighted down until it can
     for (let f = 0; f < n; f++) {
