@@ -26,6 +26,9 @@
 //      then two-bone IK (thigh, calf; the knee stays on the side the clip bends it to) puts each foot on its target;
 //      a foot not planted is kept clear of the ground under every sole point (plan.ground: stairs, kerbs, bumps), the
 //      more so the further it moves from its plant, so a sole only ever touches where it plants.
+// Third pass (2026-11-08): walking, one foot is always down (steps wait for the other foot, land early, or the other
+// waits); the clearance counts only ground the leg could step onto and never folds the leg (T.minLeg), and a plant is
+// refused too high as well as too low; a sprint's 1-frame touch-down is kept and not lifted.
 // Everything is a pure function of the keys and the frame: the plan is built from the whole shot at once, and a
 // frame reads only the plan and the clip pose at that frame, so scrubbing in any order gives the same feet.
 // Nothing here reads the clay figure: it works on whatever skeleton drives the visible body.
