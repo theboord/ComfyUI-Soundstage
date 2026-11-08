@@ -156,3 +156,25 @@ test("Stage's first frame: renderer.compileAsync first, then ONE render for ever
   assert.match(ctor, /this\._firstRender\(\)/);
   for (const f of ["presets/livethumbs.mjs", "book/clay.mjs"]) assert.match(SRC(f), /firstRender: false/, `${f} scratch stage draws a first frame it never shows`);
 });
+
+test("static JSON is fetched once per page: lighting_setups.json (3 fetches per load) and style_presets.json (2) go through fetchJSON", async () => {
+  const { fetchJSON, clearJSONCache, stats } = await import("../../web/look/jsoncache.mjs");
+  clearJSONCache();
+  const f0 = globalThis.fetch;
+  let n = 0, fail = true;
+  globalThis.fetch = async () => { n++; if (fail) { fail = false; return { ok: false, status: 503 }; } return { ok: true, json: async () => ({ setups: [{ id: "a" }] }) }; };
+  try {
+    await assert.rejects(fetchJSON("http://x/look/lighting_setups.json"), /503/);
+    const [a, b, c] = await Promise.all([1, 2, 3].map(() => fetchJSON("http://x/look/lighting_setups.json")));
+    assert.equal(n, 2, "a failure is retried once; then three callers share one request");
+    a.setups.push({ id: "mine" });
+    assert.deepEqual(b.setups, [{ id: "a" }], "each caller gets its own copy");
+    assert.notEqual(b, c);
+    assert.equal(stats.fetches, 2);
+  } finally { globalThis.fetch = f0; clearJSONCache(); }
+  for (const f of ["soundstage.js", "ui/presets.mjs", "oneclick/light.mjs", "look/look.mjs"]) {
+    const s = SRC(f);
+    assert.ok(!/fetch\(new URL\("[^"]*(lighting_setups|style_presets)\.json"/.test(s) && !/fetch\(url, \{ cache/.test(s), `${f} fetches the JSON itself`);
+    assert.match(s, /fetchJSON\(/, `${f} uses fetchJSON`);
+  }
+});

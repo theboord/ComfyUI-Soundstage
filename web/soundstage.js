@@ -24,6 +24,7 @@ import { attachEditLink, flattenClip } from "./cut/editlink_app.mjs";
 import { makeAudioGenerator, makeAudioUploader } from "./cut/gen.mjs";
 import { ShotStrip, readSaved } from "./cut/strip.mjs";
 import { CanvasPanel } from "./canvas/canvas.mjs";
+import { fetchJSON } from "./look/jsoncache.mjs";
 import { CameraViz, PipViewer, TopView } from "./stage/camviz.mjs";
 import { TrackSheet } from "./stage/tracks.mjs";
 import { Pipeline } from "./pipeline/pipeline.mjs";
@@ -2182,8 +2183,7 @@ function createStageWidget(node, inputName) {
     status.textContent = `${s.label}: ${n} lights placed around the subject (${s.ratio || ""} ratio). ${s.summary || ""}`;
   });
   let lightSetups = [];
-  fetch(new URL("./look/lighting_setups.json", import.meta.url), { cache: "no-cache" })
-    .then((r) => (r.ok ? r.json() : null)).then((d) => {
+  fetchJSON(new URL("./look/lighting_setups.json", import.meta.url)).catch(() => null).then((d) => {   // one fetch per page (jsoncache.mjs)
       lightSetups = (d && (d.setups || d)) || [];
       if (!Array.isArray(lightSetups)) lightSetups = [];
       setupSel.sel.replaceChildren(new Option("—", ""), ...lightSetups.map((s) => {

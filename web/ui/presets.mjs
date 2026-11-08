@@ -21,6 +21,7 @@ import { loadCatalog, searchPresets, userPresetFrom, parseUserPresets, userPrese
 import { PresetRunner, RUNNERS, installDirectorTool } from "../presets/runner.mjs";
 import { drawThumb } from "../presets/thumbs.mjs";
 import { LiveThumbs, liveKind, THUMB_W, THUMB_H } from "../presets/livethumbs.mjs";
+import { fetchJSON } from "../look/jsoncache.mjs";
 
 export const PRESETS_KEY = "V";
 const USER_FILE = "soundstage/presets.json";
@@ -222,7 +223,7 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
       catalog = await loadCatalog();
       runner.catalog = catalog;
     } catch (e) { console.warn("[Soundstage] presets catalog", e); }
-    try { setups = (await (await fetch(new URL("../look/lighting_setups.json", import.meta.url))).json()).setups || []; runner.setups = setups; } catch { /* */ }
+    try { setups = (await fetchJSON(new URL("../look/lighting_setups.json", import.meta.url))).setups || []; runner.setups = setups; } catch { /* */ }   // one fetch per page
     try { palettes = (await import("../look/vocab.mjs")).VOCAB.palettes || []; } catch { /* */ }
     runner.user = await loadUserPresets(api);
     registerDirectorTool();

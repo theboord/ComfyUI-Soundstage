@@ -10,6 +10,7 @@
 // The preview is compiled on the server (POST /soundstage/look/compile, soundstage/look/routes.py) by the same
 // code the SoundstageLook node runs, so what you see is exactly what the node outputs. Self-contained: imports
 // only ./vocab.mjs, injects its own CSS, no ComfyUI imports (pass fetchApi to respect ComfyUI's base path).
+import { fetchJSON } from "./jsoncache.mjs";
 import { VOCAB } from "./vocab.mjs";
 import { bodyIcon, lensIcon, fovIcon, irisIcon, injectGearCss } from "../ui/cinegear.mjs";
 
@@ -465,9 +466,7 @@ export class LookPanel {
 
   async _loadStyles() {
     try {
-      const res = await fetch(new URL("./style_presets.json", import.meta.url), { cache: "no-cache" });
-      if (!res.ok) throw new Error(res.status);
-      const data = await res.json();
+      const data = await fetchJSON(new URL("./style_presets.json", import.meta.url));   // one fetch per page (jsoncache.mjs)
       this.styles = Array.isArray(data) ? data : data.styles || [];
     } catch { this.styles = []; }
     for (const host of this._styleHosts || []) this._fillStyles(host);

@@ -3,19 +3,14 @@
 // shadows, contrast ratio). On a ④ Frame candidate of the open shot, an experimental box adds a Krea 2 repaint locked
 // to the stage's exact depth pass (Krea2 depth-control LoRA), so nothing moves while the light changes. A clip: the
 // relit frame 1, then LTX Ripple carries it through the clip with colour matching off (the relight stays).
+import { fetchJSON } from "../look/jsoncache.mjs";
 import { registerOneClick, runStillEdit, runEditThenRipple, stagePass, stageReason, pickModel, editSize, withSize, stillEditPrompt,
   editInputs, out, KLEIN, KREA, ONECLICK_ENV } from "./oneclick.mjs";
 import { KEEP } from "./effects.mjs";
 
 async function loadSetups() {
   const url = new URL("../look/lighting_setups.json", import.meta.url);
-  try {
-    if (url.protocol === "file:") {
-      const fs = await import("node:fs");
-      return JSON.parse(fs.readFileSync(url, "utf8")).setups || [];
-    }
-    return (await (await fetch(url, { cache: "no-cache" })).json()).setups || [];
-  } catch { return []; }
+  try { return (await fetchJSON(url)).setups || []; } catch { return []; }   // one fetch per page (jsoncache.mjs; file: URLs read directly)
 }
 export const SETUPS = await loadSetups();
 
