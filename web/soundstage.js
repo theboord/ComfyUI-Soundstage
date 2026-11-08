@@ -796,6 +796,9 @@ function createStageWidget(node, inputName) {
     flattenCut();
   }
   async function renderMissing() {
+    // The batch ends in the one-video join: refuse a cut the join can't take BEFORE any Final is queued (no GPU time).
+    const guard = oneVideoGuard(loadCut(), cutFps());
+    if (guard.message) { const m = `${guard.message} Nothing was queued.`; cutOut.textContent = m; status.textContent = m; return; }
     const saved = savedRenders();
     const todo = [...new Set(cutEntries().map((e) => e.shot_id))].filter((id) => !/final/.test(Object.keys(saved[id] || {}).join(" ")));
     if (!todo.length) { flattenCut(); return; }

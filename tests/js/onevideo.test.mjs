@@ -146,3 +146,14 @@ test("soundstage.js checks the raw cut before flattening; cutEntries keeps its s
   assert.match(src, /const cutEntries = \(\) => \(loadCut\(\)\.cut \|\| \[\]\)\.filter\(\(e\) => e && e\.shot_id\);/);
   assert.match(body, /catch \(err\) \{ cutOut\.textContent = err\.message; status\.textContent = err\.message; return; \}/);   // unmeasurable gap
 });
+
+test("Render missing shots runs the one-video guard on the raw cut before queueing any Final", () => {
+  const src = readFileSync(new URL("../../web/soundstage.js", import.meta.url), "utf8");
+  const a = src.indexOf("async function renderMissing()");
+  const body = src.slice(a, src.indexOf("app.queuePrompt(", a));
+  const g = body.indexOf("oneVideoGuard(loadCut(), cutFps())");
+  assert.ok(g > 0, "guard called");
+  assert.match(body.slice(g), /^oneVideoGuard\(loadCut\(\), cutFps\(\)\);\n\s*if \(guard\.message\) \{ const m = `\$\{guard\.message\} Nothing was queued\.`; cutOut\.textContent = m; status\.textContent = m; return; \}/);
+  assert.ok(g < body.indexOf("savedRenders()") && g < body.indexOf("flattenCut()"));
+  assert.match(src, /const oneVideoGuard = \(raw, fps\) => checkOneVideo\(raw, findOneVideoHook\(CutModule, CutTimeline\), \{ fps \}\);/);
+});
