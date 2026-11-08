@@ -92,7 +92,7 @@ Other files read as checks:
 - **Soundstage:** the try-it build of this branch (`tools/tryit/build_tryit.py --web web`), served on 127.0.0.1 and
   driven in headless Chrome (Metal) through `tools/qa/lib.mjs`, with CDP ports 9671–9686. Nothing was uploaded: files
   load as blob URLs through `WorldMount.importWorld`, and the kit comes from `exportForDCC`.
-  - `ss_import.mjs` imports a file and writes the readout, materials, camera keys, clay and colour frames, and a
+  - `ss_import.mjs` imports a file and writes the readout, materials, camera keys, stage-guide and colour frames, and a
     white-on-black silhouette of the world through the imported shot.
   - `ss_kit.mjs` exports a demo scene's DCC kit and renders Soundstage's silhouettes.
 - **Blender** (`Blender -b --factory-startup`):

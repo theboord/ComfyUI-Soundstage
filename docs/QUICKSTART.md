@@ -18,8 +18,8 @@ Your first shot in about ten minutes on the built-in demo, then a whole three-sh
 ## Rough edges we know about
 
 - **Crate crash needs commit 0d69037 (2 Nov) or later.** Older builds start the crates on the floor and throw them hundreds of metres. Update the node pack and reload the browser tab. Space-to-play on ③ Set, ⌘Z from anywhere in the workspace and Esc for the Physics panel need the same evening's update ("③ Set: Space plays the shot…" in the CHANGELOG).
-- **Look doesn't change the clay viewport.** It changes the stock, lens, palette and grade that go into the render. Only the framing changes on screen.
-- **Gaze is subtle on the clay figures**: a few degrees of head turn. The render shows it better.
+- **Look doesn't change the stage viewport.** It changes the stock, lens, palette and grade that go into the render. Only the framing changes on screen.
+- **Gaze is subtle on the stage**: a few degrees of head turn. The render shows it better.
 - **After *Add anything…* + Enter, the cursor stays in the text box.** Click the stage or the new object before you press F or G, or the letters go into the box.
 - **The Tools ▾ button renames itself** to the tool you opened (*Takes ▾*, *Edit ▾*). It is the same button, next to the Undo arrows.
 - **The status line can go stale.** After an Undo it can still describe the last bake. Trust the stage, not the old message.
@@ -114,7 +114,7 @@ Click **Look** above the viewport and choose a genre. **Film Noir**, or one of t
 
 The **Coach** pill at the top right offers one-click fixes, such as *Move it out* when the camera sits inside the set. Check the frame yourself, because a tip can be wrong.
 
-> **Watch out.** The clay viewport doesn't change colour. The look goes into the render: stock, lens, palette and grade.
+> **Watch out.** The stage viewport doesn't change its grade. The look goes into the render: stock, lens, palette and grade.
 
 <p align="center"><img src="media/qs_C07.webp" width="760" alt="Left: Look palette with Film Noir picked. Right: the Coach pill open with a one-click fix."></p>
 <p align="center"><em>Left: Look palette with Film Noir picked. Right: the Coach pill open with a one-click fix.</em></p>
@@ -127,14 +127,14 @@ Do **not** click *…for every shot*. It queues a GPU batch.
 
 While it paints, the **Activity** pill in the top row (left of **✦ Ask**) says what the GPU is doing, for example **Sampling · 8/12 · ~1 min** (with a thin bar filling under it). Click it to see each node as it runs, how long so far and about how long is left, and **Cancel**. Tick **Node types** under **Details** for the raw ComfyUI node names. See [Activity](TUTORIAL.md#activity).
 
-<p align="center"><img src="media/qs_C08.webp" width="760" alt="④ Frame: prompt, Follow the clay, Lock to the stage depth, Variations 1, Quality Fast, Generate frames. '…for every shot' is a batch."></p>
-<p align="center"><em>④ Frame: prompt, Follow the clay, Lock to the stage depth, Variations 1, Quality Fast, Generate frames. '…for every shot' is a batch.</em></p>
+<p align="center"><img src="media/qs_C08.webp" width="760" alt="④ Frame: prompt, Follow the blocking, Lock to the stage depth, Variations 1, Quality Fast, Generate frames. '…for every shot' is a batch."></p>
+<p align="center"><em>④ Frame: prompt, Follow the blocking, Lock to the stage depth, Variations 1, Quality Fast, Generate frames. '…for every shot' is a batch.</em></p>
 
 ### 8. Pick a frame and animate it
 
 Click the frame you like best, then click **5 Animate this frame →**. A frame you don't want: its trash takes it off the list (**Undo** for 5 s; the chosen frame asks first). **✕ Reject** in the round badge keeps it on record instead.
 
-After you change the clay or the camera, **④ Remake the first frame →** on ③ Set's time bar paints new frames from the edited set and keeps the old one in the list.
+After you change the stage or the camera, **④ Remake the first frame →** on ③ Set's time bar paints new frames from the edited set and keeps the old one in the list.
 
 ### 9. Get a moving shot
 
@@ -149,14 +149,14 @@ Quality starts on **Final**. Switch it to **Draft**, then click **Preview motion
 
 ### 10. Watch it against the layout
 
-Click **6 Review**. It opens with three rungs, **Left**, **Middle** and **Right**, in **3-way**. Put **Clay** on the left rung and your **Draft** on the right, choose **Wipe** and drag the yellow handle. *Frame*, *Draft* and *Final* stay greyed out (*not rendered yet*) until those renders exist.
+Click **6 Review**. It opens with three rungs, **Left**, **Middle** and **Right**, in **3-way**. Put **Stage** on the left rung and your **Draft** on the right, choose **Wipe** and drag the yellow handle. *Frame*, *Draft* and *Final* stay greyed out (*not rendered yet*) until those renders exist.
 
 That's a directed, rendered shot. Your Draft now has a **✦ One-click** button on the Review bar: Nightfall, Rain, a relight or a new angle (Reshoot), each asking first with its GPU time. See [✦ One-click](TUTORIAL.md#one-click-effects-relight-angles-expand).
 
 If you ever land on the narrow panel (a stray Esc, or **Done**), click **Open the full workspace**.
 
-<p align="center"><img src="media/qs_C10.gif" width="760" alt="⑥ Review: Clay on the left rung, the render on the right, Wipe, drag the yellow handle."></p>
-<p align="center"><em>⑥ Review: Clay on the left rung, the render on the right, Wipe, drag the yellow handle.</em></p>
+<p align="center"><img src="media/qs_C10.gif" width="760" alt="⑥ Review: Stage on the left rung, the render on the right, Wipe, drag the yellow handle."></p>
+<p align="center"><em>⑥ Review: Stage on the left rung, the render on the right, Wipe, drag the yellow handle.</em></p>
 
 <p align="center"><img src="media/qs_C11.webp" width="760" alt="A stray Esc drops you to the narrow App panel. Open the full workspace brings you back."></p>
 <p align="center"><em>A stray Esc drops you to the narrow App panel. Open the full workspace brings you back.</em></p>
@@ -227,7 +227,7 @@ Reed steps out into the rain and looks off at the wrecked crates. Then Reed turn
 13. **The eyes.** Scroll the inspector to **Parts › Eyes, hands, in hand** (it's far down; at 1440 px it sits about 1000 px below the top). With the playhead early, pick **At Crate 1** (any crate) in **Eyes**: picking keys the gaze at the playhead, there's no separate Key button. Move the playhead later and pick **Into the lens**.
 14. **Play each shot.** Click **Play** or press `Space` (not while typing in a box). Playback starts from the top of the shot.
 
-> **Watch out.** Drive the **police car**, not the red sports car. The cop's keyed path runs straight through a sports car you start from a standstill, and with **Everything collides** on, the bake in step 8 crashes the two cars for real. If that's not your story, turn **Everything collides** off in the Physics panel's **World** row: the scene re-bakes, the crates still crash and the two cars pass through each other. Or press **Clear simulation**, ask the Director (`/`) to *reroute the police car around the red car*, then **Simulate & bake** again (the swerve can take it past the crates too). **Keep keyed** on the police car alone doesn't stop it: it still hits the red car and pushes it ahead. Change shots only with the switcher's **▾**: ◀ ▶ change the scene and rebuild the stage. On the clay figures the gaze change is small.
+> **Watch out.** Drive the **police car**, not the red sports car. The cop's keyed path runs straight through a sports car you start from a standstill, and with **Everything collides** on, the bake in step 8 crashes the two cars for real. If that's not your story, turn **Everything collides** off in the Physics panel's **World** row: the scene re-bakes, the crates still crash and the two cars pass through each other. Or press **Clear simulation**, ask the Director (`/`) to *reroute the police car around the red car*, then **Simulate & bake** again (the swerve can take it past the crates too). **Keep keyed** on the police car alone doesn't stop it: it still hits the red car and pushes it ahead. Change shots only with the switcher's **▾**: ◀ ▶ change the scene and rebuild the stage. On the stage the gaze change is small.
 
 <p align="center"><img src="media/qs_C14.webp" width="760" alt="Color draw mode, Properties › Set: Rain and Night (moonlight). The demo already has all three set. Sped up."></p>
 <p align="center"><em>Color draw mode, Properties › Set: Rain and Night (moonlight). The demo already has all three set. Sped up.</em></p>
@@ -252,12 +252,12 @@ Reed steps out into the rain and looks off at the wrecked crates. Then Reed turn
 
 ### D. Frame (step 4)
 
-1. For each of your three shots (*Wide crane*, *Tracking, front 3/4*, *Single A*), write a one-line prompt; the box starts empty. Keep **Follow the clay** high and set **Lock to the stage depth** to **Light**. Use **Strict** on the crash shot so the crates stay where you put them.
+1. For each of your three shots (*Wide crane*, *Tracking, front 3/4*, *Single A*), write a one-line prompt; the box starts empty. Keep **Follow the blocking** high and set **Lock to the stage depth** to **Light**. Use **Strict** on the crash shot so the crates stay where you put them.
 2. Generate **2 variations** at **Standard** (about 4 min each), one shot at a time. Never *…for every shot*.
 3. Pick the best frame and click **5 Animate this frame →**. If Paint Studio opened, close it with **Cancel (×)**.
 
-<p align="center"><img src="media/qs_C08.webp" width="760" alt="④ Frame: prompt, Follow the clay, Lock to the stage depth, Variations 1, Quality Fast, Generate frames. '…for every shot' is a batch."></p>
-<p align="center"><em>④ Frame: prompt, Follow the clay, Lock to the stage depth, Variations 1, Quality Fast, Generate frames. '…for every shot' is a batch.</em></p>
+<p align="center"><img src="media/qs_C08.webp" width="760" alt="④ Frame: prompt, Follow the blocking, Lock to the stage depth, Variations 1, Quality Fast, Generate frames. '…for every shot' is a batch."></p>
+<p align="center"><em>④ Frame: prompt, Follow the blocking, Lock to the stage depth, Variations 1, Quality Fast, Generate frames. '…for every shot' is a batch.</em></p>
 
 ### E. Motion (step 5)
 
@@ -273,7 +273,7 @@ Reed steps out into the rain and looks off at the wrecked crates. Then Reed turn
 
 ### F. Review (step 6)
 
-1. In **6 Review**, compare **Clay** with **Final** on the rungs using **Wipe** or **3-way**.
+1. In **6 Review**, compare **Stage** with **Final** on the rungs using **Wipe** or **3-way**.
 2. Real takes show the take checks: *Follows your blocking %* and the AI-slop realism judge. Treat them as a second opinion. Judge the car physics yourself, like a VFX supervisor.
 3. Open **Tools ▾ → Takes** and press `C` to circle the keepers. Then click the **ScriptSync** tab inside Takes to see your takes lined against the page. (Once a tool is open, the Tools button shows its name, such as *Takes ▾*.)
 
@@ -284,7 +284,7 @@ Reed steps out into the rain and looks off at the wrecked crates. Then Reed turn
 
 ### G. Edit (step 7)
 
-> **New (2 Nov evening).** Press **Space** and the cut plays in real time. Each clip's badge (**Final**, **Draft**, **Look**, **Clay**) says what is playing; **Clay** stands in while a take loads. 24 fps only; *Edit in* from the timeline is not in this build. See [Real-time playback](TUTORIAL.md#real-time-playback-in-the-cut).
+> **New (2 Nov evening).** Press **Space** and the cut plays in real time. Each clip's badge (**Final**, **Draft**, **Look**, **Clay**) says what is playing; **Clay** stands in while a take loads. 24 fps only; *Edit in* from the timeline is not in this build. See [Real-time playback](TUTORIAL.md#real-time-playback-in-the-cut). <!-- clay-pending: the Cut's Clay badge, renamed with web/cut -->
 
 1. Click **7 Deliver → Open the editor** and click **Assemble scene**. It rebuilds the cut from the ScriptSync lining and replaces what's on the timeline.
 2. Check what it laid down. With no dialogue in the scene it can put the Wide under all the action (3 clips of *Wide crane*). If your crash and Single A are missing, click them in the editor's **Shots** row: a click splices the shot in at the playhead (⇧-click overwrites). Delete extra clips with **Ripple delete**.
@@ -325,7 +325,7 @@ Reed steps out into the rain and looks off at the wrecked crates. Then Reed turn
 
 **Car:** `D` Drive; `W` `A` `S` `D`, Shift, Space, E · `R` Record / stop · `Enter` / `Backspace` Keep / discard the take · `V` (driving) Camera: chase, shot, orbit · `Esc` Leave Drive · `L` / `Shift`+`L` Headlights / light bar · `I` / `O` Indicators / doors · `K` Key every part
 
-**Edit:** `J` `K` `L` Shuttle · `Space` Play (real time; Final / Draft / Look / Clay badge per clip) · `C` Circle a take (Takes)
+**Edit:** `J` `K` `L` Shuttle · `Space` Play (real time; Final / Draft / Look / Clay badge per clip) · `C` Circle a take (Takes) <!-- clay-pending: the Cut's Clay badge, renamed with web/cut -->
 
 **Quality:** Frame Fast (~1 min) · Standard (~4 min) · High · Max · Motion Draft → Final (~13 min) → Advanced (hero shots at 1408p, or faster drafts) · Adherence Exact Follow my blocking
 
@@ -338,7 +338,7 @@ Reed steps out into the rain and looks off at the wrecked crates. Then Reed turn
 - **Top bar:** Steps 1-7, scene switcher on ③-⑤ (◀ ▶ = scene, ▾ = shots), Undo / Redo, Presets, Tools ▾, Activity (what the GPU is doing, node by node), Book, ✦ Ask, Guide, Done. Below 1400 px some are icons (hover for the name); in a narrow window the least used fold into **⋯** (✦ Ask and Activity never do)
 - **Left dock:** Build with AI, Add object, Person, Interact, Capture motion, Video → 3D, Photo → 3D, Camera, Set & weather, Lighting, Phone camera
 - **Right inspector:** Everything for what you selected: Object, Camera, Set, Light, AI. Long: scroll for Lens & rig, Parts and Eyes
-- **Above the viewport:** Camera view, Free view, Top view, Show cameras, Look, Coach; Wire / Clay / Color / Depth
+- **Above the viewport:** Camera view, Free view, Top view, Show cameras, Look, Coach; Wire / Color / Depth
 - **Bottom:** ⏮, Key, Play, Length, Tracks ▴ (shot strip, + Shot)
 
 **Never click (for now):** ComfyUI's white Run, Build this scene on the stage (demo), Generate all missing, …for every shot, Draft every shot, Final for every shot, Render missing shots, Classic layout. Esc with nothing open, or **Done**, drops you to the narrow panel: click **Open the full workspace**. Reload the tab if keys stop responding.

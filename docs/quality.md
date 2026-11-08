@@ -7,7 +7,7 @@ New shots start on **Final**. Before Milestone 18 the buttons started on Draft a
 reopened, so nearly every "final" was really rendered at Draft sampling (every final from 2026-10-30/31 carries
 `quality: "Draft"` in its metadata).
 
-| Preset | Output (from the 960×512 clay) | Stage 1 → stage 2 | Steps | Codec | Time, 121 frames, RTX 6000 Ada |
+| Preset | Output (from the 960×512 stage guide) | Stage 1 → stage 2 | Steps | Codec | Time, 121 frames, RTX 6000 Ada |
 |---|---|---|---|---|---|
 | Draft | 1984×1088 | 992×544 → latent x2 → refine | 8 + 3 | H.264 CRF 18 | about 6–7 min |
 | **Final** (default) | 1984×1088 | 992×544 → latent x2 → refine | 12 + 6 | H.264 CRF 14 | about 8–9 min |
@@ -27,7 +27,7 @@ values (both `ltx_settings.resolve` and `resolveSettings` map it; the Quality no
 workflows), and the **Hero final** preset recipe sets the same (`LtxStore.setHero`).
 
 **Advanced (LTX)** (the pop-over the Advanced button opens; also the button beside Quality) holds: output resolution,
-two-stage on/off, frame rate (the clay is retimed) and the frame count it gives, temporal x2 (LTX-2.5 temporal
+two-stage on/off, frame rate (the stage is retimed) and the frame count it gives, temporal x2 (LTX-2.5 temporal
 upscaler, twice the frames), steps for each stage (stage 1 down to 1: below 8 the distilled curve's nine knots are
 thinned evenly, untested on the GPU, meant for rough drafts), the **scheduler** (`distilled`, Lightricks' tuned
 knots, what Draft and Final use bit for bit; `linear`, even steps, what LTXVScheduler starts from; `linear_quadratic`,
@@ -60,11 +60,11 @@ sigma shift beside steps and CFG.
 
 ## Motion freedom and the older tiers
 
-LTX-2.5 Layout-to-Render follows the clay previz through an IC-LoRA guide. At full strength it copies everything, including stiff previz physics: a horse that slides instead of galloping, or a rider glued to the saddle. Two App controls trade layout fidelity for natural motion and quality:
+LTX-2.5 Layout-to-Render follows the stage previz through an IC-LoRA guide. At full strength it copies everything, including stiff previz physics: a horse that slides instead of galloping, or a rider glued to the saddle. Two App controls trade layout fidelity for natural motion and quality:
 
 - **Motion freedom** (0–1).
   - At 0 the blocking is followed exactly, as before.
-  - Higher values loosen and soften the clay guide. LTX keeps the composition, camera path and blocking (the low spatial frequencies) but redraws gait, limbs and weight (the high ones).
+  - Higher values loosen and soften the stage guide. LTX keeps the composition, camera path and blocking (the low spatial frequencies) but redraws gait, limbs and weight (the high ones).
 - **Quality: Draft | Final HQ.**
   - Draft is today's sampling.
   - HQ uses denser sampling plus physical-motion language for the cast in the prompt.
@@ -74,7 +74,7 @@ LTX-2.5 Layout-to-Render follows the clay previz through an IC-LoRA guide. At fu
 | Path | What it is |
 |---|---|
 | `soundstage/quality.py` | `knobs(freedom, hq)` → the engine values; `motion_prompt(scene)` → subject-aware physical-motion text |
-| `soundstage/nodes_quality.py` | `SoundstageQuality` node. Inputs: freedom, quality, clay guide, Look motion prompt, scene JSON. Outputs: softened guide, guide strengths, sigmas, prompt |
+| `soundstage/nodes_quality.py` | `SoundstageQuality` node. Inputs: freedom, quality, stage guide, Look motion prompt, scene JSON. Outputs: softened guide, guide strengths, sigmas, prompt |
 | `tools/app_build/quality.py` | App part: wires the node in and promotes four inner widgets to subgraph inputs |
 | `tests/test_quality.py` | 0 + Draft == today's App; monotonic loosening; HQ schedules; prompt; wiring |
 
@@ -85,16 +85,16 @@ LTX-2.5 Layout-to-Render follows the clay previz through an IC-LoRA guide. At fu
 | | f = 0 (today) | f = 0.4 | f = 0.7 | f = 1 |
 |---|---|---|---|---|
 | IC-LoRA guide strength, stage 1 and stage 2 | 1.0 | 1.0 | 1.0 | 1.0 |
-| Gaussian blur on the clay guide (px at 960×544) | 0 (tensor passed through) | 8 | 12 | 16 |
+| Gaussian blur on the stage guide (px at 960×544) | 0 (tensor passed through) | 8 | 12 | 16 |
 | IC-LoRA model strength (Load Models "lora strength") | 1.0 | 0.86 | 0.76 | 0.65 |
 
 **The guide strength must stay at 1.0.** This was tested live on the horse scene on 2026-10-28:
-- With the first mapping (f = 0.4, guide strength 0.8 / 0.72), LTX rendered the grey clay mannequins themselves. Below 1, `LTXAddVideoICLoRAGuide` blends the guide tokens into the generation instead of treating them as a reference.
+- With the first mapping (f = 0.4, guide strength 0.8 / 0.72), LTX rendered the grey mannequins themselves. Below 1, `LTXAddVideoICLoRAGuide` blends the guide tokens into the generation instead of treating them as a reference.
 - A blurred guide at strength 1.0 (5 px) stayed fully photoreal, with the same composition and camera.
 
-- IC-LoRA strength 0.75 (no blur) also stayed photoreal with the same camera, and it changed the *performance*: the riders walked naturally to the horses instead of copying the clay rig's stiff run.
+- IC-LoRA strength 0.75 (no blur) also stayed photoreal with the same camera, and it changed the *performance*: the riders walked naturally to the horses instead of copying the stage rig's stiff run.
 
-So freedom now softens the guide content and lowers the LoRA strength a little. The blur removes the clay's limb and silhouette detail (what LTX copies too literally) but keeps where things are and where the camera looks.
+So freedom now softens the guide content and lowers the LoRA strength a little. The blur removes the stage's limb and silhouette detail (what LTX copies too literally) but keeps where things are and where the camera looks.
 
 HQ sampling: the same distilled sigma curve with midpoints inserted where the schedule takes its big jumps. Stage 1 runs 11 steps instead of 8; stage 2 runs 6 instead of 3. The sampler stays euler_ancestral.
 

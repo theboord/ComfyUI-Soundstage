@@ -17,15 +17,15 @@ The masks come from upstream: SAM 3 tracks seeded by the stage's actor boxes, th
 
 ### Add All Actors: mattes from the final frames (default)
 
-The stage's ID pass is the clay's silhouette, and LTX moves hair, limbs, dust and edges, so clay mattes never sat cleanly on the generated pixels. `matte_source` now defaults to **final frames (SAM 3.1 + BiRefNet edges)**:
+The stage's ID pass is the stage's silhouette, and LTX moves hair, limbs, dust and edges, so stage mattes never sat cleanly on the generated pixels. `matte_source` now defaults to **final frames (SAM 3.1 + BiRefNet edges)**:
 
 1. **SAM 3.1 video tracking on the final frames.** There is one pass per kind on stage: "person", "horse", "dog", "car" and so on. A combined multi-prompt conditioning only tracked the first kind that matched.
-2. **Each actor takes the track that overlaps its clay silhouette best.** Assignment is greedy, one-to-one, by IoU over the shot. The clay says *who*, SAM says *where*.
+2. **Each actor takes the track that overlaps its stage silhouette best.** Assignment is greedy, one-to-one, by IoU over the shot. The stage says *who*, SAM says *where*.
 3. **The soft edge comes from ComfyUI core's Remove Background (BiRefNet, MIT).** Inside the track, eroded 3 px, the matte is solid. Around it, BiRefNet's alpha within a grown region gives hair and dust edges.
-4. **Frames where SAM loses an actor fall back to the clay.** An actor with no track gets BiRefNet's alpha inside its grown clay silhouette, minus every tracked actor (so a rider never takes its horse). Props SAM can't name keep the clay matte.
+4. **Frames where SAM loses an actor fall back to the stage.** An actor with no track gets BiRefNet's alpha inside its grown stage silhouette, minus every tracked actor (so a rider never takes its horse). Props SAM can't name keep the stage matte.
 5. **The background is the inverse of all layers.**
 
-The node's text output says which source each layer used (for example `SAM 3.1 track 0 (IoU 0.63)`). Cost on the RTX 6000 Ada for 97 frames at 1984×1088: about 21 s per SAM pass, plus about 30 s of BiRefNet. If anything fails, the pack falls back to the clay mattes and says so. Choose **stage ID pass** for the old, fast behaviour. Code: `soundstage/layerpack/final_mattes.py`; tests: `tests/test_final_mattes.py` (torch, run on the pod).
+The node's text output says which source each layer used (for example `SAM 3.1 track 0 (IoU 0.63)`). Cost on the RTX 6000 Ada for 97 frames at 1984×1088: about 21 s per SAM pass, plus about 30 s of BiRefNet. If anything fails, the pack falls back to the stage mattes and says so. Choose **stage ID pass** for the old, fast behaviour. Code: `soundstage/layerpack/final_mattes.py`; tests: `tests/test_final_mattes.py` (torch, run on the pod).
 
 A typical graph:
 

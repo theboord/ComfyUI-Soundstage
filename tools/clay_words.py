@@ -27,7 +27,7 @@ WORD = re.compile(r"clay", re.I)
 # L20 (web/tryit, web/script, web/performance, web/passes, web/oneclick, web/presets, the root README).
 SCOPE = ("web/pipeline/", "web/motion/", "web/coach/", "web/advisor/", "web/book/", "web/canvas/", "web/stage/",
          "web/ladder/", "web/soundstage.js", "web/ui/", "soundstage/", "docs/")
-PENDING = ("web/cut/", "soundstage/cut/", "web/agent/", "soundstage/agent/", "soundstage/memory/", "docs/assistant/", "skills/")
+PENDING = ("web/cut/", "soundstage/cut/", "docs/cut.md", "web/agent/", "soundstage/agent/", "soundstage/memory/", "docs/assistant/", "skills/")
 # History: kept as written (plan §3a: decisions.md and the CHANGELOG stay as history).
 HISTORY = ("docs/decisions.md", "CHANGELOG.md")
 # Not shipped to users: vendored code, local assets, test fixtures, research and the retired-look test references.
@@ -40,12 +40,14 @@ ALLOW = {
     "web/ladder/ladder.mjs": ("LEGACY_RUNG",),
     "web/soundstage.js": ("LEGACY_RENDERS",),
     "docs/agent.md": ("| alias",),
-    "soundstage/project/collect.py": ("clay/",),   # the project folder clay/ -> stage/ lands with the Cut rung rename (plan §1.4)
+    "soundstage/project/collect.py": ("clay/",),
+    "docs/projects.md": ("clay/ frames/",),   # the shot folder list: clay/ -> stage/ lands with the Cut rung rename   # the project folder clay/ -> stage/ lands with the Cut rung rename (plan §1.4)
 }
 # A line carrying one of these markers is allowed anywhere in scope:
 #   clay-alias   an old saved name / key / synonym kept working (plan §1.6 alias contract, §3a synonym table)
 #   clay-prompt  text sent to a model (a prompt premise): changes with the guide switch (L3, plan §1.3h), not here
-MARKERS = ("clay-alias", "clay-prompt")
+#   clay-pending a line about a pending lane's UI (the Cut's Clay rung / badge, web/cut) or media re-shot in L20
+MARKERS = ("clay-alias", "clay-prompt", "clay-pending")
 
 
 def _js_strings(src: str):

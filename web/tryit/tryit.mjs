@@ -71,7 +71,7 @@ function seg(el, items, onPick) {
   return { mark };
 }
 
-const viewSeg = seg($("views"), [["wire", "Wire"], ["clay", "Clay"], ["color", "Color"], ["depth", "Depth"]], (m) => stage.setView(m));
+const viewSeg = seg($("views"), [["wire", "Wire"], ["color", "Color"], ["depth", "Depth"]], (m) => stage.setView(m));
 const camSeg = seg($("camMode"), [["shot", "Shot cam"], ["free", "Free view"]], (m) => {
   stage.setFreeView(m === "free");
   status(m === "free" ? "Free view: look around freely; the shots don't change. Lost? Tap Shot cam to jump back to the shot." : "Shot cam: what the selected shot films. Dragging here re-aims the shot at the playhead.");
@@ -224,7 +224,7 @@ function loadPreset(p) {
   stage.resetHistory();              // Undo never jumps back to a previous preset
   stage.select(null);
   stage.setView(p.view);
-  viewSeg.mark(p.view);
+  viewSeg.mark(stage.view);   // a preset saved with the retired Clay view shows Color (stage.setView maps it)
   $("lightLike").value = "";
   renderShots();
   syncSun();

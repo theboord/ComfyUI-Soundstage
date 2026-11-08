@@ -148,7 +148,7 @@ real. Waveforms and spectrograms are not a QC. Without a classifier the node say
 ```
 audio / Cut mixdown WAV ─► Fit to shot (8k+1 frames @ fps) ─► VAEEncodeAudio (LTX audio VAE)
    ─► noise mask = audio_mask ─┐
-stage clay ─► L2R IC guide ─────┼─► LTXVConcatAVLatent ─► sample (8 distilled steps, 960×544)
+stage guide ─► L2R IC guide ─────┼─► LTXVConcatAVLatent ─► sample (8 distilled steps, 960×544)
 look still ─► guide @ -1 ───────┘      └─► crop guides ─► x2 upsample ─► re-guide ─► concat same audio ─► 3 steps
                                                                          └─► decode ─► CreateVideo(+ supplied audio)
 ```
@@ -163,7 +163,7 @@ Settings:
   the model's re-decoded audio.
 - **ref_tokens**: also attach the audio as reference tokens (`LTXVSetAudioRefTokens`), as in Mike's graph.
 - Without `control_video` it is LTX image/text-to-video with the same audio conditioning (DualCFG 1/1).
-- Prompt: describe the action that makes the sound ("their footsteps", "she says…"), not "clay/3D".
+- Prompt: describe the action that makes the sound ("their footsteps", "she says…"), not "grey 3D blocking".
 - Frames snap down to 8k+1; size to multiples of 64.
 
 Feeding it from the Cut: `SoundstageCutExport` writes `…/audio/<shot_id>_mix.wav` + `audio/index.json`.
@@ -180,14 +180,14 @@ Set `mix_path` to that index.json (or the WAV) and `shot_id`; or wire `Soundstag
 - **Rung 4 · Final + sound**: CreateVideo(final frames 9066 + fps + mix) → Gate rung 4 → SaveVideo. The
   silent "Rung 4 · Final" is untouched; rungs 1-3 never run any of this (the gates are lazy).
 - **Audio drives the video** (`SoundstageWhen`, default off; off = never runs) → `SoundstageAudioDrivenShot`
-  (stage clay, look still, motion prompt, the mix, audio_mask 0.3) → Gate rung 4 → "Rung 4 · Final · audio-driven".
+  (stage guide, look still, motion prompt, the mix, audio_mask 0.3) → Gate rung 4 → "Rung 4 · Final · audio-driven".
 - Seeds are fixed so the ladder's cache reuses the sound between Runs.
 - Blank fields: every pre-existing node keeps its id, widgets and inputs (A/B against a build without
   this part); the only id that moves is the Layer Pack folder preview added later by outputs.py. The
   added nodes are in the API prompt but inert when blank.
 - Tested at rung 4 on :8189 (Chatterbox line + LTX footsteps): whole App run 493 s; Final + sound is
   frame-identical to the silent final, 4.041 s 48 kHz stereo track, Whisper hears the line. (That render
-  predates the stage.mjs App-mode capture fix, so its clay/depth conditioning was undersized from frame ~4;
+  predates the stage.mjs App-mode capture fix, so its stage guide / depth conditioning was undersized from frame ~4;
   the audio results are unaffected.)
 
 ## Integrator: wiring and Cut-tab buttons
@@ -210,7 +210,7 @@ Set `mix_path` to that index.json (or the WAV) and `shot_id`; or wire `Soundstag
    for the panel's play button. Optionally chain `SoundstageAudioQC` (clip_json in, clip_json with
    `meta.qc` out) and show a red badge when `meta.qc.pass` is false.
 3. "Render with this sound": after `SoundstageCutExport`, run `SoundstageAudioDrivenShot` with
-   `mix_path = <folder>/audio/index.json`, `shot_id`, the stage clay as `control_video`, the look still as
+   `mix_path = <folder>/audio/index.json`, `shot_id`, the stage guide as `control_video`, the look still as
    `first_frame`; `audio_mask` 0.3 when the shot has dialogue, else 0.0.
 
 Example workflows: `example_workflows/Soundstage_AudioDriven_Walkin.json` (SFX ×2 + QC → mix → L2R shot)
@@ -246,10 +246,10 @@ Audio-driven renders (97 frames @ 24 fps, two-stage distilled):
 
 Is sync visible?
 - **Door: yes.** With the mix, the right glass door swings open around frames 60-68, on the door SFX at frame 66.
-  The silent control (same prompt "the door swings open", seed, clay) keeps the door shut. The sound is
+  The silent control (same prompt "the door swings open", seed, stage guide) keeps the door shut. The sound is
   what triggers the event. The whole render diverges from the silent one over time (mean |Δ| 1 → 18/255),
   so the audio steers the shot, not just one event.
-- **Footsteps: not shown.** In Layout-To-Render the stage clay drives the legs. The stage gait is
+- **Footsteps: not shown.** In Layout-To-Render the stage guide drives the legs. The stage gait is
   procedural (stride 0.78 × height over the path: ~6-7 leg swings/s on this 18.5 m / 4 s path), and LTX
   turns it into a normal walk. I could not measure heel strikes against the 2 steps/s audio from the
   frames. To lock steps exactly: time the SFX to the stage's foot contacts, or generate the steps from
@@ -258,7 +258,7 @@ Is sync visible?
   speech level per frame: mask 0.0 r = −0.05 (the mouth flaps through the silent tail too); mask 0.3 r =
   0.48 at lag 0; example workflow (real nodes) r = 0.37 at lag 0, 0.51 with the mouth 3 frames
   (125 ms) ahead of the audio. With 0.3 the mouth shuts when the line ends. This confirms the
-  frozen-mouth fix: the audio-latent noise mask, not room tone. The character is a clay puppet, so no
+  frozen-mouth fix: the audio-latent noise mask, not room tone. The character is a stage-guide figure, so no
   AI human face, and the voice is Chatterbox's built-in one, not a real person.
 
 DX additions (character voice, TTS picker, voice change), live on :8189 and offline on the pod:

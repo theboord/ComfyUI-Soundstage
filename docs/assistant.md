@@ -8,7 +8,7 @@ It uses whatever language model the Director has (⚙ in the chat). With no mode
 
 | You say | The plan | |
 |---|---|---|
-| "the claymation won't lock into the final render" | Adherence Exact → Layout IC-LoRA 1.0 → Follow the clay 0.95, each read back after it's set | automated |
+| "the stagemation won't lock into the final render" | Adherence Exact → Layout IC-LoRA 1.0 → Follow the blocking 0.95, each read back after it's set | automated |
 | "I want a gunshot wound on Reed in shot 3" | select shot 3 → select Reed → the Squib hit rig; the check confirms the rig and its cue | automated (move the rig or change the cue on its card) |
 | "re-block this chase, add a crash, then cover it in three shots" | the Director's planner re-blocks the chase → Crate crash → Impact shake → wide, medium, close setups | automated |
 | explosion, sparks, fire, glass, J-turn / donut / handbrake, a fall, a camera move, dialogue coverage, montage, ripple, a dissolve, a slow render (Draft), a camera inside the set | the matching preset, rig or setting | automated |
@@ -23,7 +23,7 @@ It uses whatever language model the Director has (⚙ in the chat). With no mode
 - **Act** (only inside a plan you approved):
   - Cast: `profile_*`, `update_*`, `regenerate_*` for characters, locations and props (one card; regenerate needs the approved plan or a yes).
   - Stage: `stage_order` (anything in words, through the Director's planner), `select_shot`, `select_object`, `add_shot`, `apply_preset` (by name or id), `set_stunt`, `add_sfx_rig` (squib, explosion, sparks, glass, fire, smoke), `camera` (lens, move, rig), `shot_length`.
-  - Quality: `set_quality` (Adherence, Layout IC-LoRA strength, Follow the clay, Draft / Final / Hollywood).
+  - Quality: `set_quality` (Adherence, Layout IC-LoRA strength, Follow the blocking, Draft / Final / Hollywood).
   - Edit: `assemble_cut`, `add_transition`. J/L cuts have no command in the Cut yet, so they are click-steps.
 - **Plan**: `troubleshoot` and `plan_recipe` (main's), returning their runnable steps.
 

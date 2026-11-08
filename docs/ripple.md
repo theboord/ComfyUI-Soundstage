@@ -4,8 +4,8 @@
 
 | Follow | What drives LTX-2.5 | Status |
 |---|---|---|
-| **Layout** (default) | the clay video, through the Layout-to-Render IC-LoRA (unchanged) | shipped |
-| **Pose** | an OpenPose skeleton of every clay person (body, hands, face), or DWPose read from the source clip, through the union-control IC-LoRA | **experimental** |
+| **Layout** (default) | the stage guide video, through the Layout-to-Render IC-LoRA (unchanged) | shipped |
+| **Pose** | an OpenPose skeleton of every stage person (body, hands, face), or DWPose read from the source clip, through the union-control IC-LoRA | **experimental** |
 | **Ripple edit** | any clip plus your edited frame 1, through the LTX Ripple IC-LoRA | shipped |
 
 Files: `soundstage/nodes_motion.py` (nodes), `soundstage/motion/graphs.py` (expansions), `soundstage/motion/timing.py`,
@@ -59,10 +59,10 @@ What holds and what doesn't:
 
 ## Pose follow (experimental)
 
-`web/stage/posepass.mjs` draws every clay person from the shot camera the way DWPose draws, on black:
+`web/stage/posepass.mjs` draws every stage person from the shot camera the way DWPose draws, on black:
 - 18 body points, from the rig joints;
 - 21 points per hand, from the finger joints;
-- 68 face points, from a face template on the clay head;
+- 68 face points, from a face template on the stage head;
 - the face is hidden when the head turns away, and the far ear and eye drop out in profile.
 
 It works for mocap takes, posing in 3D, walk cycles and seated riders. The frames go up as one sprite sheet.

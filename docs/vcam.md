@@ -17,7 +17,7 @@ device page (/soundstage/vcam) --WebSocket ~30 Hz--> soundstage/vcam.py --send_s
 ## Phone viewfinder (the phone is the camera you look through)
 
 **Phone viewfinder** in the stage's *Phone camera* row shows a QR code. Scan it, hold the phone sideways, tap **Start**:
-the phone shows the live stage through the shot camera, full screen, in the App's Clay or Color look with the same lights.
+the phone shows the live stage through the shot camera, full screen, in the App's Color (lifelike) look with the same lights.
 It is not a video stream. The phone builds the same `Stage` (web/stage/stage.mjs) from the scene the desktop publishes
 and renders it locally, so aiming has no network lag. The desktop keeps showing everything, and the shot camera there
 follows the phone.
@@ -42,7 +42,7 @@ phone --POST /soundstage/vcam/take (the recorded take, set space)--> desktop: ca
 | **IRIS** chip | T1.4 … T22 in thirds, with a live depth-of-field preview (thin-lens circle of confusion, one gather pass: web/vcam/dof.mjs) and the DoF near/far readout |
 | **●** | a 3-beat count-in, then records from the top of the shot in step with the action (the desktop plays along). Stops by itself at the shot's end, or tap ■. |
 | after a take | it plays back on the phone and on the desktop. **Keep**, **Discard** (the shot gets its previous camera back) or **● Again** |
-| **CLAY / COLOR**, **▦ Grid**, **Frame** | the view, rule-of-thirds and extra frame lines (2.39 / 1.85 / 16:9). The area outside the shot's own frame is dimmed surround. The level bar turns green within 1°. |
+| **▦ Grid**, **Frame** | rule-of-thirds and extra frame lines (2.39 / 1.85 / 16:9). The area outside the shot's own frame is dimmed surround. The level bar turns green within 1°. |
 | **Level**, **Stabilize**, **DoF**, **Motion** | horizon lock (on by default), gimbal-strength smoothing of the take, the DoF preview, gyro on/off |
 
 **What a take writes.** The take is recorded at the screen rate in set space and saved like any VCam take

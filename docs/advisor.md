@@ -94,7 +94,7 @@ Any failure falls back to the rules recipe, and `notes[0]` says why. Failures in
   - a Max shots field;
   - **Suggest shots** (or Cmd/Ctrl+Enter).
 - Each result card shows:
-  - a clay thumbnail through that camera, from `stage.previewCamera` + `renderFrameTo("clay", 0)`, so it works while the stage viewport is hidden;
+  - a stage thumbnail through that camera, from `stage.previewCamera` + `renderFrameTo("clay", 0)` (the stage guide; a pass name kept until L3) <!-- clay-alias -->, so it works while the stage viewport is hidden;
   - the one-line summary, the purpose, the why (click to expand) and KB-ref chips;
   - a tick box to include or skip the shot.
 - **Add as setups** calls `stage.addShot(setup)` for each ticked shot, renames it, stores `shot.advisor = {why, kb_refs, prompts, …}`, then calls `stage.setCameraKeys(keys)`.

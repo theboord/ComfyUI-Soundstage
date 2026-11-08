@@ -4,7 +4,7 @@ Turn a photo into something the stage can load. Everything runs through the Comf
 
 | Function | Use it for | Pipeline | Output |
 |---|---|---|---|
-| `photoToSplat(photo, opts)` | a hero object or character as a Gaussian splat (looks photoreal) | [bg removal] → TripoSplat → `SplatToFile3D` | `.ply` splat (`{proxy:true}` adds a clay `.glb`) |
+| `photoToSplat(photo, opts)` | a hero object or character as a Gaussian splat (looks photoreal) | [bg removal] → TripoSplat → `SplatToFile3D` | `.ply` splat (`{proxy:true}` adds a stand-in `.glb`) |
 | `photoToMesh(photo, {kind:"object"})` | a solid object you can light and shadow | TripoSplat → `SplatToMesh` (res 256) → `DecimateMesh` (100k faces) | `.glb`, vertex-coloured, no normals (the stage computes them) |
 | `photoToMesh(photo, {kind:"set"})` | a location photo as the set, with the camera that took it | Depth Anything 3 mono → `DA3GeometryToMesh` (textured) | `.glb` plus FOV and camera |
 | `photoToCutout(photo)` | 2.5D "cards" (a person or tree standing in the set) | bg removal → `JoinImageWithAlpha` | RGBA `.png` |
@@ -62,7 +62,7 @@ uploadImage(photo) → "soundstage/<name>"
 
 ### Splat ↔ mesh
 
-- **Splat → mesh:** `photoToSplat(…, {proxy:true})` runs core `SplatToMesh` → `DecimateMesh` (midpoint, `proxyFaces` = 40k) in the same job. It returns a ~0.9 MB clay GLB of the splat, for Clay, Depth, shadows and collision.
+- **Splat → mesh:** `photoToSplat(…, {proxy:true})` runs core `SplatToMesh` → `DecimateMesh` (midpoint, `proxyFaces` = 40k) in the same job. It returns a ~0.9 MB stand-in GLB of the splat, for the stage guide, Depth, shadows and collision.
 - **Splat file → mesh:** a standalone `splatToMesh(file)` was not built. Core has no loader from a `.ply` file to `SPLAT`, so it isn't trivial.
 - **Mesh → splat:** no core node; not built.
 

@@ -55,7 +55,7 @@ original."*
 - **Sequence settings match the source.** A cut with imported footage takes the first source's size, and its
   exact rate when the speed is the same (24 → 23.976 is a conform). Set `match_source: false` on the project to
   keep the stage size. The OTIO timeline metadata records it as `delivery`.
-- **Imported shots link the camera original.** A shot with a source and no generated video yet (clay or Look), or
+- **Imported shots link the camera original.** A shot with a source and no generated video yet (stage or Look), or
   one marked `use: "original"`, is exported as the camera original. It keeps its own reel, its own source
   timecode (start TC + in, counted at its own rate), and its own size, rate and colour. FCPXML gives it a separate
   `<format>`, and Premiere XML a file with its own `<rate>`, `<timecode>` and `<reel>`. Plate stand-ins get a

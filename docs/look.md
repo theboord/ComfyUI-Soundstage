@@ -200,20 +200,20 @@ KB refs: movement.korean_thriller   notes: -
 
 ## Real people, not plastic figures (Milestone 5)
 
-FLUX 3 Klein edits the stage's frame 1, so it copies what it is handed. The clay figures have blank faces (no eyes, no mouth) and helmet hair, and in a wide shot a head is only 25-35 px of a 960 x 512 frame. Klein kept those figures and only re-textured them: doll-like riders. Two changes fix it without touching the blocking:
+FLUX 3 Klein edits the stage's frame 1, so it copies what it is handed. The stage figures have blank faces (no eyes, no mouth) and helmet hair, and in a wide shot a head is only 25-35 px of a 960 x 512 frame. Klein kept those figures and only re-textured them: doll-like riders. Two changes fix it without touching the blocking:
 
 - **The start image** (`soundstage/look/look_start.py`, applied to the stage node's `first_color`):
-  - **Clay heads softened.** Each person's head is found in the ID pass (top of the silhouette down to the shoulders) and blurred, feathered at the edge. Pose, placement, build, wardrobe and hair colour stay, and the model casts a real face there.
+  - **Stage heads softened.** Each person's head is found in the ID pass (top of the silhouette down to the shoulders) and blurred, feathered at the edge. Pose, placement, build, wardrobe and hair colour stay, and the model casts a real face there.
   - **Upscaled when faces are small.** If the largest head in frame is under 64 px, frame 1 is upscaled (at most 1.75x, so 960 x 512 becomes 1680 x 896, about 1.5 MP) and the still is made at that size. Close shots stay at stage size. Making the windshield shot at 1 MP pulled the camera back and shrank the people, so close shots are not upscaled.
   - Only library people (man, woman, child) are touched. Horses, cars, props and custom objects pass through unchanged. With no ID pass, or no people in frame, nothing changes.
   - Frames picked before this change still reproduce exactly. The App records `ls` with each new frame. For an older pick it sends `look_start: false` in the stage value, and the node then passes the plain colour pass.
-- **The still prompt** (`compile.py`): when people are in frame it adds `REAL_PEOPLE` ("real actors, natural skin texture, real hair and fabric with creases, candid unposed body language, natural expressions") after the head count. It also adds `REAL_PEOPLE_NEG` (plastic skin, mannequin, doll-like faces, CGI character, 3D render) to the negative. A look whose description or brief asks for animation, claymation, anime, painting and the like gets neither. Kodak 200T now says "natural skin tones" (it used to say "smooth skin").
+- **The still prompt** (`compile.py`): when people are in frame it adds `REAL_PEOPLE` ("real actors, natural skin texture, real hair and fabric with creases, candid unposed body language, natural expressions") after the head count. It also adds `REAL_PEOPLE_NEG` (plastic skin, mannequin, doll-like faces, CGI character, 3D render) to the negative. A look whose description or brief asks for animation, claymation, anime, <!-- clay-alias: a look word users type --> painting and the like gets neither. Kodak 200T now says "natural skin tones" (it used to say "smooth skin").
 - **Tried and dropped:**
   - Blurring the whole person kept fewer wardrobe details and was no better than softening the head alone.
   - Softening the whole frame made the still look less real.
   - An edit-instruction lead-in ("Turn this rough 3D previz render into a real photograph...", or a neutral "Make this a real photograph...") looked the same as the plain realism words over 3 seeds.
   - A larger output with a stage-size reference made the faces best of all, but the riders moved and turned on some seeds.
-  - The Follow-the-clay slider only drives Krea 2's img2img denoise (node 9056). Klein starts from noise (ReferenceMultiLatent, denoise 1), so the slider does nothing for Klein.
+  - The Follow-the-blocking slider only drives Krea 2's img2img denoise (node 9056). Klein starts from noise (ReferenceMultiLatent, denoise 1), so the slider does nothing for Klein.
 
 Evidence and side-by-sides: share/Milestone5_Realism.
 
@@ -225,11 +225,11 @@ LTX Draft added passing cars late in the windshield shot. Two changes, tested to
   - At CFG 1 the negative prompt does nothing. The positive prompt's "nothing pulls alongside or overtakes" and "no other vehicles" named the very things they ruled out.
   - Riding along, the motion prompt now says "The car has the street to itself: an empty road, bare curbs and empty sidewalks from the first frame to the last; only buildings, trees and lamp posts slide past."
   - It closes with "The frame holds only the car and the two people inside it, start to end."
-- **A quiet guide background** (`look_start.quiet_background`, applied to the stage node's `clay` output):
-  - When the camera rides a car on an otherwise empty road, the static set in the clay layout video is blurred (sigma 16 px at 960 wide).
+- **A quiet guide background** (`look_start.quiet_background`, applied to the stage node's `clay` output, the stage guide): <!-- clay-alias: slot name -->
+  - When the camera rides a car on an otherwise empty road, the static set in the stage layout video is blurred (sigma 16 px at 960 wide).
   - Every actor and vehicle in the ID pass stays sharp.
   - The camera move and the light and shade of the street still slide past, but there are no hard-edged dark blocks for LTX to turn into a truck or a passing car.
-  - `first_clay` and every other shot are unchanged.
+  - `first_clay` and every other shot are unchanged. <!-- clay-alias: slot name -->
 - **Result:**
   - Before, cars or a truck-like block filled the right edge from about frame 40 to the end on both seeds.
   - After, the last 2.5 seconds (frames 56-120) were clean on both seeds.
@@ -237,7 +237,7 @@ LTX Draft added passing cars late in the windshield shot. Two changes, tested to
 - **Tried and not enough on its own:**
   - Positive wording alone left the truck-like block and the late cars.
   - Blurring or flattening the guide background alone removed the block, but cars still came in at frames 40-60 and 110-120.
-  - Lowering the IC-LoRA guide strength was not tried: below 1.0 LTX renders the clay itself (docs/quality.md).
+  - Lowering the IC-LoRA guide strength was not tried: below 1.0 LTX renders the stage itself (docs/quality.md).
 
 ## Clean street for ride-along shots (Milestone 7, tested, not adopted)
 

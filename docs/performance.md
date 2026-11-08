@@ -16,7 +16,7 @@ Files:
 1. **Bring in the actor.** You have three options:
    - **● Record** uses your webcam and microphone (3-2-1 countdown, up to 10 s).
    - On a phone, film the actor and use **Import a clip…**. Frame them chest-up for dialogue, or head to toe for action.
-   - Tick **Also drive the clay body** to run SAM 3D Body as well, as the existing Motion capture does.
+   - Tick **Also drive the stage body** to run SAM 3D Body as well, as the existing Motion capture does.
 2. **Consent.** Tick the box and name the performer. The capture is refused without both, the same rule as
    [Character voices](audio.md#character-voices-and-consent). The asset stores who performed, the consent statement
    and the date, and a render refuses an asset that has no consent record. Only use your own performance or one you
@@ -99,7 +99,7 @@ Why the mask matters: Mike's OG-audio graph feeds the audio latent frozen (noise
 frozen audio made mouths flap with no relation to the speech (r = −0.05), while a 0.3 mask gave r = 0.37–0.48 and the
 mouth shut when the line ended. The node keeps this as an advanced setting, `audio_mask`.
 
-Also advanced: `layout`, a stage pass video (clay or depth) screened faintly under the skeleton (`layout_mix`). It is
+Also advanced: `layout`, a stage pass video (stage guide or depth) screened faintly under the skeleton (`layout_mix`). It is
 off by default and **untested**. The union LoRA was trained on one control at a time.
 
 ### Models on the pod
@@ -167,6 +167,6 @@ Expressions landed on the same frames: the O-mouth "wow", the brow lift, the smi
 capture 4 min, Draft 9 min, Hollywood 14 min.
 
 Not yet tested on GPU:
-- fitting the actor onto a clay character elsewhere in the frame (unit-tested only);
+- fitting the actor onto a stage character elsewhere in the frame (unit-tested only);
 - `layout_mix`;
 - a long dialogue take from a real actor.

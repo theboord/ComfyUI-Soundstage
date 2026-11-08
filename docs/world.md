@@ -44,7 +44,7 @@ degenerate input), [tests/test_world_director.py](../tests/test_world_director.p
   the overlap, and still stop each other going further in. The consequence check reports the overlap after the bake.
 - **Crush.** A car absorbs `E = ½ μ v²` (μ: the pair's reduced mass), shared with the other side by stiffness; its crush depth
   is `sqrt(2 E_car / k)`. That is about 0.46 m for a 1.45 t car into a rigid wall at 43 km/h. The crush is stored as a dent
-  on the car (`physics.dents`), which the clay shows.
+  on the car (`physics.dents`), which the stage shows.
 - **Flips.** Nothing is scripted: a car rolls when the physics rolls it. Sliding sideways into a kerb, it trips above the
   critical sliding velocity `v_c = sqrt(2 g (d − h) I_edge / (m h²))` (about 9 m/s for a sedan into a 15 cm kerb) and not
   below. On flat ground a T-bone shoves a car sideways but its tyres can't roll it (0.85 g of grip is under its stability

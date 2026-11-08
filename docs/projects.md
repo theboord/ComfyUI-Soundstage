@@ -54,7 +54,7 @@ Like Avid's project window, Resolve's Project Manager or Premiere's Home screen.
 Each card shows:
 
 - the picture: the latest chosen first frame, else a look frame, else the final or draft render (as a video poster),
-  else a clay frame, else the project's initial on a colour picked from its name;
+  else a stage frame, else the project's initial on a colour picked from its name;
 - the name, "Saved 2 h ago" and scenes · shots · takes;
 - an **Autosave newer** badge when the newest autosave is later than the last Save.
 
@@ -211,7 +211,7 @@ way film post works, and downloads it as a zip:
 - Files are copied, never moved, and named `<shot>_<kind>_<take>.<ext>` (for example `S01_010_draft_01.mp4`).
 - Scenes are `S01`, `S02`… from the script's scene numbers. Shots are `S01_010`, `S01_020`… in shooting order. Shots with
   no scene go under `S00`.
-- What gets mapped: every file reference in `ss_renders` (clay, look, draft, final, final with sound), `ss_chosen`
+- What gets mapped: every file reference in `ss_renders` (the stage previz, look, draft, final, final with sound), `ss_chosen`
   (the chosen frame), `ss_ltx` and `ss_shot_cast` (per-shot audio and reference inputs), `ss_cast` (cast and location
   references), and any other `ss_*` property or set model that names a file.
 - The Cut too: the live cut (`ss_cut`), the Script's archived scene Cuts and scene stages (`ss_script`) and the App's

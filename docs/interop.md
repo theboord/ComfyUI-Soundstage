@@ -153,7 +153,7 @@ all line up. Evidence: `share/Milestone12_Interop/`.
 1.85 M triangles and a 67 MB GLB. It was imported in the App in headless Chrome on the Mac's GPU (ANGLE Metal,
 Radeon Pro Vega 56, 1420 × 757 viewport):
 
-| | draw calls | frame time (Color, street / aerial) | Clay |
+| | draw calls | frame time (Color, street / aerial) | Stage guide pass |
 |---|---|---|---|
 | merged (default) | 84 (from 4,201 meshes, 6 far LODs) | 2.8 / 2.7 ms | 2.1 / 2.0 ms |
 | not merged | 4,196 | 21.5 / 28.8 ms | 21.1 / 28.1 ms |
