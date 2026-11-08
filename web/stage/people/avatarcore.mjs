@@ -386,6 +386,9 @@ export function propUsers(actors) {
     const holds = [o.hold, ...Object.values(o.by_shot || {}).map((s) => s?.hold)].filter(Array.isArray).flat();
     for (const h of holds) if (h?.actor) holders.add(h.actor);
     if (o.carry_id) carriers.add(o.carry_id);
+    // a recorded Drive carry (drive.applyTake: the load's baked keys, who held it when): Drive.post() poses the
+    // carrier's arms round it, so they are a layer over the clip like a live carrier's (was: the clip's swing kept)
+    for (const s of o.carry_spans || []) if (s?.by) carriers.add(s.by);
   }
   return { holders, carriers };
 }

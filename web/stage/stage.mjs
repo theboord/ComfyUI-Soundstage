@@ -3,7 +3,7 @@
 // Drag empty space = orbit (look around in place when close in or inside a car; Alt+drag anywhere), Shift+drag = pan,
 // wheel = dolly (proportional, flies through the target), drag an actor = move it on the floor.
 import * as THREE from "../vendor/three.module.min.mjs";
-import { LIBRARY, SEATS, buildObject, buildFromRecipe, resolveKind, resolveCompound, makeGlass, paintColorOf, withoutPaint } from "./library.mjs";
+import { LIBRARY, SEATS, CABIN_FLOOR, buildObject, buildFromRecipe, resolveKind, resolveCompound, makeGlass, paintColorOf, withoutPaint } from "./library.mjs";
 import { applyPose, MOUNTS, applyJoints, mirrorPose, POSE_PRESETS, SIT_POSES } from "./humans.mjs";
 import { applyGaze, setGazeKey, clearGaze, gazeKeys } from "./gaze.mjs";
 import * as Mocap from "./mocap.mjs";
@@ -478,6 +478,39 @@ function obsBoxAt(g, c) {
     return new THREE.Box3().setFromObject(g);
   } finally {
     g.position.copy(P0); g.quaternion.copy(Q0); g.scale.copy(S0); g.updateMatrixWorld(true);
+  }
+}
+
+/**
+ * A seated clay figure ("sit": thighs level, shins straight down) with its hips d metres over a floor its shins would
+ * go through: each thigh lifted 0.2 rad and the shin swung forward until the lowest corner of the shoe is on that floor
+ * (a bisection on the knee: the corner rises as the shin swings forward). Measured in the figure's own frame (the
+ * group's world place and turn play no part: any frame order gives the same legs), so any size works.
+ */
+const _ff = { inv: new THREE.Matrix4(), m: new THREE.Matrix4(), v: new THREE.Vector3() };
+function feetOnFloor(g, d) {
+  const J = g.userData.joints, sy = g.scale?.y || 1, lift = 0.2;
+  g.updateMatrixWorld(true);
+  _ff.inv.copy(g.matrixWorld).invert();
+  for (const lr of ["l", "r"]) {
+    const hip = J?.[`${lr}_hip`], knee = J?.[`${lr}_knee`];
+    const shoe = knee?.children.find((c) => c.isMesh && c.geometry?.type === "BoxGeometry");
+    if (!hip || !knee || !shoe || hip.parent !== g) continue;
+    const P = shoe.geometry.parameters, want = hip.position.y - d / sy;
+    const low = () => {   // the shoe's lowest corner, in the group's frame
+      hip.updateMatrixWorld(true);
+      _ff.m.multiplyMatrices(_ff.inv, shoe.matrixWorld);
+      let y = Infinity;
+      for (const x of [-1, 1]) for (const yy of [-1, 1]) for (const z of [-1, 1]) y = Math.min(y, _ff.v.set(x * P.width / 2, yy * P.height / 2, z * P.depth / 2).applyMatrix4(_ff.m).y);
+      return y;
+    };
+    if (!(low() < want)) continue;   // the feet reach the floor already (or hang over it)
+    hip.rotation.x = -Math.PI / 2 - lift;
+    let lo = 0, hi = Math.PI / 2 + lift;   // knee bend: lo = the shin along the thigh (highest), hi = straight down
+    knee.rotation.x = hi;
+    if (!(low() < want)) continue;
+    for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; knee.rotation.x = mid; if (low() < want) hi = mid; else lo = mid; }
+    knee.rotation.x = lo;
   }
 }
 
@@ -2772,6 +2805,9 @@ export class Stage {
           if (l.part === "shoulder") { l.pivot.rotation.x = -1.05; l.pivot.rotation.z = -l.side * 0.12; }
           if (l.part === "elbow") l.pivot.rotation.x = -0.55;
         }
+      // In a vehicle seat the feet rest on the cabin floor (L1 review round 4: the chair's shins straight down put the
+      // soles 2-3 cm under the street, through any real car's floor): the thighs a little up, the shins forward.
+      if (seats && CABIN_FLOOR[host.kind] != null && (a.pose || m.pose) === "sit") feetOnFloor(g, seat.y - 0.05 * h / 1.8 - CABIN_FLOOR[host.kind] * k);
       const seatPos = new THREE.Vector3(hg.position.x + seat.x, hg.position.y + seat.y - drop, hg.position.z + seat.z);
       if (a.mount_at > 0 && this.frame < a.mount_at) {
         // Hop on: arc from where they stand up into the saddle, turning to face the mount's way.
@@ -2927,9 +2963,12 @@ export class Stage {
     // a swimmer's head is the stroke's (breathing to the side, a diver looking ahead): gaze keys still win
     applyGaze(this, new Set([...mocapIds, ...swimNow.filter((x) => !gazeKeys(x.a).length).map((x) => x.a.id)]));
     this._wakeAt(swimNow);
-    avatarsAt(this);   // lifelike people (people/avatars.mjs): shown and posed, or the clay where they can't follow yet
+    // Drive mode: getting out of a seat or down from a saddle, a recorded carry's arms. On the logic rig BEFORE the
+    // lifelike body is posed from it (one motion; L1 review round 4: run after avatarsAt it stood the rig up while the
+    // visible body stayed seated, soles 85 cm up over a horse's 'off' frames, and the visible arms kept swinging)
+    this.drive?.post();
+    avatarsAt(this);   // lifelike people (people/avatars.mjs): shown and posed from the one motion (never clay)
     this._heldPropsAt(this.frame);   // after every pose: a held prop follows the final hand
-    this.drive?.post();   // Drive mode: getting out of a seat or down from a saddle
     if (this.weather) {
       const cam = this._cameraAt(this.frame);
       this.weather.update(this.frame, { x: cam.target[0], z: cam.target[2] }, this);
@@ -5999,6 +6038,15 @@ export class Stage {
    * elsewhere, as the rider pass in setFrame) or "on" (seated / riding). null without a mount. Pure: the scene only.
    * One motion (people/onemotion.mjs) gives the walk up to the clip and only the hop and seat frames to the rig / seat.
    */
+  /** The world height of the cabin floor under a person seated in a vehicle at frame f (library CABIN_FLOOR, the
+   *  seat's frame and scale), or null when they are not in one. Pure: the mount (spans or fields) and the host's keys. */
+  _cabinFloorY(a, f = this.frame) {
+    const mt = this._mountAt(a, f), host = mt && this.state.actors.find((x) => x.id === mt.id);
+    if (!host || !SEATS[host.kind] || CABIN_FLOOR[host.kind] == null || (mt.pose || "sit") !== "sit") return null;
+    const ref = LIBRARY[host.kind]?.height || 1, k = (host.scale || 1) * ((host.height_m || ref) / ref);
+    return (this._actorPosAt(host, f)?.[1] || 0) + CABIN_FLOOR[host.kind] * k;
+  }
+
   _mountPhaseAt(a, f = this.frame) {
     const mt = this._mountAt(a, f);
     if (!mt) return null;

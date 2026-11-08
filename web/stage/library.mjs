@@ -337,6 +337,9 @@ export const SEATS = {
     { name: "Right seat", pos: [-0.25, 0.49, -0.04] },
   ],
 };SEATS.police_car = SEATS.sports_car = SEATS.hatchback = SEATS.car;
+/** The cabin floor under a vehicle's seats (local metres, the SEATS frame and scale): a seated rider's feet rest on it,
+ *  never through it to the street (the built sedan's tub floor is 0.36 m up; the modelled cars share its seats). */
+export const CABIN_FLOOR = { car: 0.36, police_car: 0.36, sports_car: 0.36, hatchback: 0.36, truck: 0.95 };
 
 
 export function buildObject(kind, height, mesh, appearance = null) {

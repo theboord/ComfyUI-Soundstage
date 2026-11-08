@@ -566,7 +566,9 @@ export function avatarsAt(stage) {
     // (a horse climb: its foot leaves the ground for the stirrup within two frames, and the match to the clay's shoe,
     // faded out over 5-25 cm of the shoe's height, put a 24 cm/frame^2 jolt into the pelvis; there the body is only
     // lifted out of the ground, which goes to nothing as the sole rises)
-    const liftOnly = groundsRig && here.reason === "gets on a mount" && climbsHorse(stage, a);
+    // (into a vehicle seat: the stage swings the clay's shins forward onto the cabin floor over the hop, its shoes up
+    // 36 cm in a few frames, and the match faded out with them: the visible pelvis 12.5 cm/frame^2; lifted out only)
+    const liftOnly = groundsRig && here.reason === "gets on a mount" && (climbsHorse(stage, a) || stage._cabinFloorY?.(a, f) != null);
     // off the feet (knocked over, physics, tipped live): the whole body kept out of the ground (groundBody)
     const liesRig = tipped || LYING_RIG.has(here.reason);
     // (a hop's frames ease into the seat of the first seated frame after them, or out of the last one before)
@@ -621,6 +623,7 @@ function evalSource(k, stage, a, g, skin, { fps, scale, last, f }, undo, { groun
   if (k === "rig") {
     poseFromRig(stage, a, g, skin, f, { fps, scale });
     const dy = groundsRig ? groundRig(stage, a, g, skin, f, undo, liftOnly) : liesRig ? groundBody(stage, a, g, skin, f, undo) : 0;
+    cabinFeet(stage, a, g, skin, f, undo);
     return new THREE.Vector3(0, dy, 0);
   }
   if (k === "seat") {
@@ -764,6 +767,44 @@ function seatedFeetDown(stage, a, g, skin, f, sit) {
     aimBone(ca, fo, up.clone().negate().addScaledVector(fwd, 0.12));
   }
   skin.holder.updateMatrixWorld(true);
+}
+
+/**
+ * Seated in a vehicle (stage._cabinFloorY: its cabin floor under the seat): the stage rests the clay's shoes on that
+ * floor (feetOnFloor), but the visible legs are longer than the clay's, so retargeted they went 8 cm through it (and,
+ * before the stage's own fix, 2-3 cm under the street). Each visible foot still under the floor is lifted onto it
+ * (two-bone IK), at full weight while the clay's shoe is within 2 cm of the floor and not at all 12 cm away (getting
+ * in or out: the shoe moves to the street and back smoothly); then the logic rig's hips and knees are solved from the
+ * visible legs, so the Pose / Depth legs are the visible ones. On the undo list.
+ */
+function cabinFeet(stage, a, g, skin, f, undo) {
+  const floor = stage._cabinFloorY?.(a, f);
+  const rig = skin.kit.feet, boxes = clayFeet(g);
+  if (floor == null || !rig || !skin.legs || !boxes || !skin.mesh) return;
+  g.updateMatrixWorld(true);
+  let clay = Infinity;
+  for (const m of boxes) { _gb.setFromObject(m, true); clay = Math.min(clay, _gb.min.y); }
+  const w = 1 - smooth01((Math.abs(clay - floor) - 0.02) / 0.10);
+  if (!(w > 0)) return;
+  skin.holder.updateMatrixWorld(true);
+  const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(skin.holder.getWorldQuaternion(new THREE.Quaternion()));
+  let moved = false;
+  for (const lr of ["l", "r"]) {
+    const p = F.solePoints(skin.mesh, rig[lr]);
+    let lo = Infinity;
+    for (let i = 1; i < p.length; i += 3) lo = Math.min(lo, p[i]);
+    const under = (floor - lo) * w;
+    if (!(under > 1e-4) || !Number.isFinite(under)) continue;
+    const B = skin.legs[lr];
+    B.foot.updateWorldMatrix(true, false);
+    F.twoBoneIK(B.thigh, B.calf, B.foot, B.foot.getWorldPosition(new THREE.Vector3()).addScaledVector(UPV, under), B.foot.getWorldQuaternion(new THREE.Quaternion()), fwd);
+    skin.holder.updateMatrixWorld(true);
+    moved = true;
+  }
+  if (!moved || !skin.kit._rtOff) return;
+  const legs = new Set(["l_hip", "r_hip", "l_knee", "r_knee"]);
+  R.solveRigFromBody(skin, g, { skip: new Set(Object.keys(g.userData.joints || {}).filter((j) => !legs.has(j))), undo });
+  g.updateMatrixWorld(true);
 }
 
 /** The body and the logic rig moved up or down so the lowest visible sole is on the ground. Returns the move (m). */

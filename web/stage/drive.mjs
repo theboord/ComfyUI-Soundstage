@@ -1174,7 +1174,18 @@ export class DriveMode {
       }
       if (t == null || !stand) continue;
       const e = sstep(t), h = (a.height_m || 1.8) * (a.scale || 1);
-      if (t > 0.35) { Gait.release(g); applyPose(g, "stand", h); for (const l of g.userData.limbs || []) if (l.part === "knee") l.pivot.rotation.x = 0.5 * (1 - e); }
+      // seated / riding to standing, joint by joint over the middle of the way out (was: the stand pose all at once at
+      // t = 0.35; with the lifelike body now posed from this rig, that put 55 cm/frame^2 into its hands at a car's door
+      // and 33 at a horse's side)
+      const u = sstep((t - 0.1) / 0.6);
+      if (u > 0) {
+        const J = Object.values(g.userData.joints || {});
+        const seatQ = J.map((j) => j.quaternion.clone());
+        Gait.release(g);
+        applyPose(g, "stand", h);
+        for (const l of g.userData.limbs || []) if (l.part === "knee") l.pivot.rotation.x = 0.5 * (1 - e);
+        if (u < 1) J.forEach((j, i) => j.quaternion.slerpQuaternions(seatQ[i], j.quaternion.clone(), u));
+      }
       const from = g.position.clone();
       g.position.set(lerp(from.x, stand.x, e), lerp(from.y, stand.y, e) + Math.sin(Math.PI * t) * (host.kind === "horse" ? 0.25 : 0.12) * h / 1.8, lerp(from.z, stand.z, e));
       g.rotation.x *= 1 - e; g.rotation.z *= 1 - e;
