@@ -129,6 +129,19 @@ def people_masks(breakdown: dict, depths, times, duration: float, take=None, fps
     return out
 
 
+def without_people(depth, masks: dict | None, i: int = 0) -> np.ndarray:
+    """A copy of sample i's depth with every person's pixels (people_masks) set to NaN: the block triage then judges a
+    block against the set behind her, not against the performer standing in front of it (a block where she stands
+    would otherwise read as 'the scan already shows it' and be dropped)."""
+    from . import backdrop as BD
+    d = np.array(depth, np.float32, copy=True)
+    for per in (masks or {}).values():
+        m = BD.rle_decode(per.get(i), d.shape) if isinstance(per, dict) and i in per else None
+        if m is not None and m.shape == d.shape:
+            d[m] = np.nan
+    return d
+
+
 def planes_ctx(*, depths, scales, poses, K, A, b, files, skies, masks) -> dict:
     """The legacy solve in the context's stage-world convention (metres, Y up): world-from-camera 4x4 per sample and
     metric depth, so planes.fit can run on it."""
@@ -202,7 +215,7 @@ def apply(scene: dict, *, depths, scales, poses, K, files, skies, breakdown, tim
     except Exception as exc:  # noqa: BLE001
         notes.append(f"set: the set scan failed ({exc}); kept the frame-0 relief")
     mpu = float(np.linalg.norm(A[0]))
-    depth0 = np.asarray(depths[0], np.float32) * float(scales[0]) * mpu
+    depth0 = without_people(np.asarray(depths[0], np.float32) * float(scales[0]) * mpu, masks, 0)
     h, w = depth0.shape
     tri = SW.triage_blocks(scene["actors"], poses[0], A, b, K, (w, h), depth0)
     stats.update(dropped=tri["dropped"], worded=tri["worded"])

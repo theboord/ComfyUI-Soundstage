@@ -436,6 +436,12 @@ def finish_scene(scene: dict, *, take, info, breakdown, depths, scales, poses, K
         if has_relief and v2s.get("xform") and depths:
             A, b = np.asarray(v2s["xform"]["A"], float), np.asarray(v2s["xform"]["b"], float)
             d0 = np.asarray(depths[0], np.float32) * float(scales[0]) * float(np.linalg.norm(A[0]))
+            try:   # the performer is not the relief: a block where she stands is judged against the set behind her
+                d0 = scanroute.without_people(d0, scanroute.people_masks(
+                    breakdown or {}, depths[:1], times[:1] if times else times, float(clip.get("duration") or 1.0),
+                    take=take, fps=float(clip.get("fps") or 24.0)), 0)
+            except Exception as exc:  # noqa: BLE001 - the unmasked relief still triages
+                notes.append(f"set: could not mask the people out of the block triage ({exc})")
             tri = SW.triage_blocks(scene["actors"], poses[0], A, b, K, d0.shape[::-1], d0)
             v2s["set_path"].update(dropped=tri["dropped"], worded=tri["worded"])
             if tri["dropped"]:
