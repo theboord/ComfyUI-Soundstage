@@ -5,6 +5,57 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-08
 
+**Ask hooks, close-out, 2026-11-08 01:20 (private branch `private/ask-hooks`, not pushed): sit_floor never slides, opening / playing / scrubbing a scene writes no camera keys, num_ctx stays put so Ollama stops reloading the model**
+
+- **Still wrong (read first, known limits):** checked with Node and pytest only (invented test data), not in the
+  browser, the App, a render or a live ComfyUI / Ollama; that Ollama now keeps the model loaded across mixed short
+  and planner requests is reasoned from Ollama's reload-on-num_ctx-change behaviour, not measured.
+  - **num_ctx only grows within a ComfyUI run:** the largest value sent to a model (one big prompt, or a caller's own
+    `num_ctx: 100000` -> 131072) is reused for every later request to it until `unload()` or a restart, so the model
+    can keep a bigger KV cache than a short chat needs. The fixed sizes also round a caller's own value UP (12000 ->
+    16384, 20000 -> 32768): more memory than asked, never less. Short chats now get 8192 (was 4096). An
+    `OLLAMA_CONTEXT_LENGTH` set only in the shell that started Ollama (not ComfyUI's) is still not seen, so the floor
+    can be below the server's own and the first request at a new size still reloads once. The memory is per
+    process, not shared with other Ask callers (`soundstage/cine/llm.py` keeps its own options).
+  - **sit_floor is refused for anyone with movement keys** (the "refuse" fix, not "pin where they sat"): to sit a
+    walker down on the floor, take their movement keys out first. Movement keyed after they sat (an older save, a
+    later key edit) makes both bodies stand on the path (the pose is kept) until the keys hold still again; there is
+    no "sit at frame N" yet. The check is per shot for the body (`_actorKeys`), any shot for the refusal.
+  - **An older scene with no `shots` whose camera moves (`camera` + `camera_end`)** still gets that move stored as the
+    Master's two keys when it is opened (that is the scene's own move, not a new key); the flat field is not created.
+  - **Other writers of the live flat `state.camera_keys` remain** and are edits, not playback: the phone viewfinder
+    (`web/vcam/viewfinder.mjs:445`, `:462`), the Director's new-group camera (`web/soundstage.js:3078`), every
+    `_camKeys()` key edit. `setActiveShot` no longer re-points it (viewing a shot is not an edit; `toJSON()` mirrors
+    the shot on screen into the saved copy as before).
+- **sit_floor slid along the keyed path (`web/stage/stage.mjs:2311`, `:4753` `_keysMove`, `:4761`
+  `_movesInAnyShot`, `_sitSpec`, `setPose`):** `setPose(id, 'sit_floor')` on a person keyed x = 0 -> 5 returned ok
+  and the seated clay and lifelike body slid along the path. It is refused now while the person has movement keys
+  (base `keys` or any shot's `by_shot`; a hold at one spot is fine): `'<name>' has movement keys (<base / shot
+  ids>): sit_floor would slide them ...`, nothing changed; a floor sitter whose keys start moving later is not
+  folded down (clay) and gets no sit spec (lifelike). Tests in `tests/js/askhooks_sit.test.mjs` (the new one fails
+  on 80ab105; one older case that expected sit_floor to succeed for a walker now expects the refusal).
+- **Play / scrub / First-Last / opening a scene wrote camera keys (`web/stage/stage.mjs:2521` `setKey`, `:1342`
+  `_shots`, `_legacyCamKeys`, `:1361` `setActiveShot`; `web/ui/presets.mjs:391` hover preview):** `setKey('start'|
+  'end')` went through `_camKeys()`, so First / Last re-pointed the flat field and `load()` (which jumps with
+  `setKey('start')`) stored a key on a keyless active shot and wrote the flat field just from opening the scene.
+  `setKey` reads `_camKeysView()` now; `_shots()` migrates a shot-less scene without creating the flat field or a
+  still-camera key; `setActiveShot` leaves the flat field; the preset hover puts the shot's own keys back (deleting
+  the field if it had none) and no longer writes the flat field. Only an explicit key edit stores keys.
+  `tests/js/askhooks_play.test.mjs` now builds the stage through `load()` with a chair sitter and a floor sitter,
+  watches every assignment to the flat field, and checks flat + per-shot keys and the whole scene byte-identical
+  after play, scrub and First / Last on a keyed, another keyed and a keyless shot; plus opening a keyless shot and
+  a shot-less older scene (3 new tests, all fail on 80ab105).
+- **num_ctx changed from request to request (`soundstage/assistant.py:220` `CTX_SIZES`, `:224` `_snap_ctx`, `:229`
+  `forget_ctx`, `:301` `num_ctx_for`, the chat route, `:391` `unload`):** sized to each prompt in 4096 steps
+  (4096 / 8192 / 12288 ...), and Ollama reloads the model whenever num_ctx changes, so mixing short chats with
+  planner calls could reload a large local model on every request. num_ctx is now snapped up to a few fixed sizes
+  (8192, 16384, 32768, 65536, 131072: a short chat and a ~3,500-token planner both 8192), the chat route reuses the
+  largest value already sent to that model on that Ollama URL (forgotten on unload), and it is never below
+  `OLLAMA_CONTEXT_LENGTH` or above the max / `CTX_CEILING`. Test in `tests/test_assistant.py` (consecutive short and
+  long prompts in one size send one value; fails on 80ab105); older num_ctx tests updated to the sizes.
+- Docs: `web/stage/STAGE_API.md` (setPose refusal, Play / open read-only, num_ctx sizes) and the coordination
+  handoff note match.
+
 **Ask hooks, last fixes, 2026-11-08 (private branch `private/ask-hooks`, not pushed): restore checks the whole snapshot, num_ctx has a ceiling, the dimmer is clamped, the saved flat camera keys follow the shot on screen, seats measured from the floor and never on something that moves**
 
 - **Still wrong (read first, known limits):** checked with Node and pytest only (invented test data), not in the
