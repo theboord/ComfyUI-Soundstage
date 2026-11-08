@@ -313,7 +313,10 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
      *  {ok: false, error} when there is no such note, it is not a decision, or the book save failed (the note is then put
      *  back, so the book and the server still agree); or {ok: false, removed: true, error} when the book was saved
      *  without it but the older copies could not be cleaned (call scrubDecision(id) to try that part again).
-     *  Not covered: ComfyUI's own queue history and files rendered while the note existed (docs/director.md). Async. */
+     *  ok:true covers ONLY server-side files (books/, workflows/, projects/ incl. autosaves and trash, and collected copies in
+     *  output/soundstage_projects/<P>/: script/directors_book.json and project.json "book"). It does NOT cover other open
+     *  tabs, ComfyUI canvas undo, browser storage, ComfyUI's queue history (extra_pnginfo) or metadata inside rendered
+     *  PNG / video files, nor a collected .zip already downloaded (docs/director.md). Async. */
     forgetDecision: async (id) => {
       const key = String(id ?? "");
       const hits = book.notes.map((x, i) => [x, i]).filter(([x]) => x.id === key || (x.ref != null && x.ref === key));

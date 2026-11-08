@@ -12,7 +12,10 @@ POST /soundstage/book/note    {text, scene_id?, category?, source?, script?} -> 
 POST /soundstage/book/forget  {id} or {ids}, project: {id, name} -> {ok, removed, files, still_mentions, skipped,
                               other_projects, errors, error?}: removes those chat decision notes (by note id or ref) from
                               every stored copy OF THAT PROJECT (books folder, the user's workflows/ and projects/: saved
-                              workflows, manifests, autosaves, trash, *.json.tmp). Other projects' copies (a Duplicate)
+                              workflows, manifests, autosaves, trash, *.json.tmp; output/soundstage_projects/<P>/:
+                              collected copies, script/directors_book.json and project.json "book"). ok:true covers
+                              only these server-side files: not other open tabs, canvas undo, browser storage, ComfyUI's
+                              queue history (extra_pnginfo) or metadata inside rendered files. Other projects' copies (a Duplicate)
                               are listed in other_projects, not changed. ok is false when any copy was skipped or still
                               mentions the id (store.forget). book.forgetDecision / scrubDecision call it.
 """
@@ -145,6 +148,11 @@ def register(routes=None, send=None) -> bool:
             u = user_root(request)
             roots = [u / "workflows", u / "projects"]
         except Exception:  # noqa: BLE001 - no ComfyUI user folder: the books folder only
+            pass
+        try:
+            from ..project.routes import projects_root
+            roots.append(projects_root())             # output/soundstage_projects/: collected copies of the book
+        except Exception:  # noqa: BLE001 - no ComfyUI output folder
             pass
         import asyncio
         project = b.get("project") if isinstance(b.get("project"), dict) else None

@@ -139,6 +139,17 @@ def _folder_of(root: str, p: str) -> str | None:
     return rel[0] if len(rel) > 1 and not rel[0].startswith(".") else None
 
 
+COLLECTED_ROOT = "soundstage_projects"      # output/soundstage_projects/ (soundstage/project/collect.py ROOT_NAME)
+
+
+def _collected_folder_of(root: str, p: str) -> str | None:
+    """The output/soundstage_projects/<name>/ folder a file sits in, when root is that collected-projects folder."""
+    if os.path.basename(os.path.normpath(root)) != COLLECTED_ROOT:
+        return None
+    rel = os.path.relpath(p, root).split(os.sep)
+    return rel[0] if len(rel) > 1 and not rel[0].startswith(".") else None
+
+
 def _own_workflow(root: str, p: str, pfolder: str | None) -> bool:
     """Is p the project's own saved workflow, workflows/<name>.json (ProjectStore.workflowPath)? That file is the
     project's whatever id it carries: two tabs saving at once can leave it with another id than project.json."""
@@ -167,7 +178,11 @@ def forget(ids, roots, project=None, everywhere=False) -> dict:
     """Remove chat decision notes (by note id or ref) from every stored copy OF ONE PROJECT: project = {id, name} (the
     project the Forget came from). Scanned: the books folder (current.json, any other book, and leftover *.json.tmp)
     and each folder in roots (the user's workflows/ and projects/: saved workflows, manifests, autosaves, the trash,
-    *.json.tmp leftovers). A file counts as the project's when it carries the same project id, or no id and the same
+    *.json.tmp leftovers; and output/soundstage_projects/: collected copies, whose script/directors_book.json and
+    project.json "book" / "workflow" hold the book: a collected folder is this project's when its name is the
+    project's folder name or its project.json names this project, else another project's copy). ok True covers only
+    these server-side files, never other open tabs, canvas undo, browser storage, ComfyUI's queue history
+    (extra_pnginfo) or metadata inside rendered files. A file counts as the project's when it carries the same project id, or no id and the same
     project name (saved before ids existed); any file inside projects/<project name>/ counts too, whatever it carries
     (a library Rename moves a pre-id project's autosaves without restamping them, so they still name the old project),
     and so does the project's own saved workflow, workflows/<project name>.json, whatever id it carries (a two-tab save
@@ -203,6 +218,24 @@ def forget(ids, roots, project=None, everywhere=False) -> dict:
     seen = set()
     bdir = os.path.realpath(books_dir())
     mine, others = [], []                                  # (path, data) of parsed files, by scope
+    cscope: dict = {}                                      # collected folder -> is it this project's (from its project.json)
+
+    def collected_scope(root, folder):
+        """A collected copy (output/soundstage_projects/<folder>/): its script/directors_book.json names no project,
+        so the whole folder is judged once: the forgetting project's folder name, or its project.json (the collected
+        manifest, whose "workflow" carries extra.ss_project) naming this project. Else another project's copy."""
+        if folder in cscope:
+            return cscope[folder]
+        sc = bool(pfolder) and folder == pfolder
+        if not sc:
+            try:
+                with open(os.path.join(root, folder, "project.json"), encoding="utf-8") as f:
+                    sc = bool(_in_scope(*_ident(json.load(f)), pid, pname))
+            except (OSError, ValueError):
+                sc = False
+        cscope[folder] = sc
+        return sc
+
     for root in [books_dir(), *[str(r) for r in roots or [] if r]]:
         if not os.path.isdir(root):
             continue
@@ -224,6 +257,9 @@ def forget(ids, roots, project=None, everywhere=False) -> dict:
                 scope = _in_scope(*_ident(data), pid, pname)
                 if pfolder and (_folder_of(root, p) == pfolder or _own_workflow(root, p, pfolder)):
                     scope = True                      # inside this project's own folder (e.g. autosaves kept through a Rename)
+                cf = _collected_folder_of(root, p)
+                if cf is not None and (pid or pname):
+                    scope = collected_scope(root, cf)  # a collected copy: script/directors_book.json, project.json "book"
                 if scope is None and in_books and os.path.basename(p).split(".")[0] == "current":
                     scope = True                      # the open book, saved before books carried their project
                 if scope is None and not pid and not pname:

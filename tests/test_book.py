@@ -546,3 +546,40 @@ def test_forget_everywhere_removes_another_projects_copy_by_note_id_only(tmp_pat
         assert "n_c8" in (user / "workflows" / "C.json").read_text()
     finally:
         ST._OVERRIDE = None
+
+
+def test_forget_cleans_collected_copies_in_output_soundstage_projects(tmp_path):
+    """Collect project writes the book twice into output/soundstage_projects/<P>/: script/directors_book.json and the
+    collected project.json's "book" (and its "workflow"). Forget removes both; another project's collected copy of
+    the same decision is reported in other_copies (ok False) until everywhere=True."""
+    books, user, col = tmp_path / "books", tmp_path / "user", tmp_path / "output" / "soundstage_projects"
+    ST._OVERRIDE = str(books)
+    try:
+        (user / "workflows").mkdir(parents=True)
+        (user / "workflows" / "Film.json").write_text(json.dumps(_wf_of("p_0a1b2c3d", "Film", [_dec("n_c1", ref="t5")])))
+        for folder, pid in (("Film", "p_0a1b2c3d"), ("Other", "p_99999999")):
+            (col / folder / "script").mkdir(parents=True)
+            book = {"v": 1, "notes": [_dec("n_c1", ref="t5"), {"id": "n_d", "text": "lamp off", "source": "director"}]}
+            (col / folder / "script" / "directors_book.json").write_text(json.dumps(book))
+            (col / folder / "project.json").write_text(json.dumps({"format": "soundstage-collected-project", "v": 1, "name": folder,
+                                                                   "book": book, "workflow": _wf_of(pid, folder, book["notes"])}))
+        roots = [user / "workflows", user / "projects", col]
+        res = ST.forget(["t5"], roots, {"id": "p_0a1b2c3d", "name": "Film"})
+        for p in (col / "Film" / "script" / "directors_book.json", col / "Film" / "project.json", user / "workflows" / "Film.json"):
+            assert "n_c1" not in p.read_text(), p
+        assert "n_d" in (col / "Film" / "script" / "directors_book.json").read_text(), "the director's own note stays"
+        assert not res["skipped"], res
+        assert not res["ok"] and sorted(res["other_copies"]) == sorted(
+            [str(col / "Other" / "project.json"), str(col / "Other" / "script" / "directors_book.json")]), res
+        res = ST.forget(["n_c1"], roots, {"id": "p_0a1b2c3d", "name": "Film"}, everywhere=True)
+        assert res["ok"], res
+        assert "n_c1" not in (col / "Other" / "script" / "directors_book.json").read_text()
+        # a collected folder under another name whose project.json names this project is this project's
+        (col / "Film 2" / "script").mkdir(parents=True)
+        (col / "Film 2" / "script" / "directors_book.json").write_text(json.dumps({"v": 1, "notes": [_dec("n_c2")]}))
+        (col / "Film 2" / "project.json").write_text(json.dumps({"format": "soundstage-collected-project", "name": "Film 2",
+                                                                 "workflow": _wf_of("p_0a1b2c3d", "Film", [])}))
+        res = ST.forget(["n_c2"], roots, {"id": "p_0a1b2c3d", "name": "Film"})
+        assert res["ok"] and res["removed"] == 1, res
+    finally:
+        ST._OVERRIDE = None
