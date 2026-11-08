@@ -297,8 +297,9 @@ speed back. `stageCameraAt(keys, frame, curve, speed)` mirrors the stage, even s
 cubic Hermite curve whose tangents come from the key times, so speed carries straight through a key however unevenly
 the keys are spaced; an overshoot limiter keeps it from swinging past a key; a hold (two keys with the same value)
 starts and ends at rest; only the first and last keys ease; the focal length moves in log space, so a zoom keeps its
-rate through a key. `cam_speed: "even"` re-times the path by arc length to one even speed between a short ease-in and
-ease-out (interior key times and holds are then ignored). A shot with no `cam_curve` plays the old uniform
+rate through a key. `cam_speed: "even"` re-times the path by arc length (the camera's travel and its target's travel
+combined, so a pan with a small dolly is even too) to one even speed between a short ease-in and ease-out (interior
+key times and holds are then ignored; focus and iris keys stay on frame time). A shot with no `cam_curve` plays the old uniform
 Catmull-Rom, so opening an old project moves no camera. Version 2 goes on: a new node's and a fresh scene's Master,
 new car shots and the scene agent's new shots (a build, or an edit that adds a shot); any new move handed to
 `stage.setCameraKeys` (presets, Advisor setups, phone / VCam takes, rig snaps, Cut setups framed from a preset), except

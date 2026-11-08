@@ -22,8 +22,9 @@
 //   - zero-velocity tangents at hold boundaries (two keys with the same value): the hold is truly still and the move
 //     out of it starts from rest, never bowing backwards first;
 //   - easing only at the shot's first and last keys (zero tangents there): interior keys never stall;
-//   - optional even speed (shot.cam_speed === "even"): the same path re-timed by arc length so it travels at one speed
-//     between a short ease-in and ease-out (interior key times and holds are then ignored, by choice).
+//   - optional even speed (shot.cam_speed === "even"): the same path re-timed by arc length (the camera's and its
+//     target's travel combined) so it travels at one speed between a short ease-in and ease-out (interior key times
+//     and holds are then ignored, by choice; lens_keys focus / iris stay on frame time).
 
 export const CAM_CURVE = 2;                    // the version new and re-keyed shots carry (shot.cam_curve; see above)
 export const EVEN_RAMP = 0.2;                  // even speed: ease-in / ease-out, as a share of the move each end
@@ -133,19 +134,21 @@ export function evenProgress(x, a = EVEN_RAMP) {
   return vmax * (a / 2 + (X - a));
 }
 
-/** Arc-length table of the path (position, or the target for a camera that only pans), for even speed. */
+/** Arc-length table for even speed. The measure combines the camera's own travel and its target's (ds = hypot(dpos,
+ *  dtarget), metres of each): a dolly, a pan, a pan with a small dolly and a tracking move all come out at one speed
+ *  in whichever dominates (timing by position alone, falling back to the target only when the camera stood perfectly
+ *  still, left a pan with a 1 cm dolly 4.8x uneven). A move where both travel a lot but at different rates evens the
+ *  combination, so each alone can still vary a little. Focal-only moves have no length: they play on frame time. */
 function evenTable(c, divisions) {
   if (c.even?.divisions === divisions) return c.even;
   const t0 = c.position.t[0], t1 = c.position.t[c.position.t.length - 1];
   const N = Math.max(16, divisions | 0);
-  const still = c.position.v.every((p) => sameVal(p, c.position.v[0]));
-  const fld = still ? c.target : c.position;
   const T = new Float64Array(N + 1), L = new Float64Array(N + 1);
-  let prev = hermiteAt(fld, t0), acc = 0;
+  let pp = hermiteAt(c.position, t0), pt = hermiteAt(c.target, t0), acc = 0;
   for (let s = 0; s <= N; s++) {
-    const tt = t0 + (t1 - t0) * s / N, p = hermiteAt(fld, tt);
-    if (s) acc += Math.hypot(...p.map((x, k) => x - prev[k]));
-    T[s] = tt; L[s] = acc; prev = p;
+    const tt = t0 + (t1 - t0) * s / N, p = hermiteAt(c.position, tt), q = hermiteAt(c.target, tt);
+    if (s) acc += Math.hypot(Math.hypot(...p.map((x, k) => x - pp[k])), Math.hypot(...q.map((x, k) => x - pt[k])));
+    T[s] = tt; L[s] = acc; pp = p; pt = q;
   }
   c.even = { divisions, T, L, total: acc, t0, t1 };
   return c.even;

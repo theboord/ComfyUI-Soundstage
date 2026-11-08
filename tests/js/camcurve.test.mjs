@@ -352,3 +352,30 @@ test("an old shot keyed, orbited or zoomed at the playhead keeps what was on scr
   st.setKeyHere();
   near(st._cameraAt(48), shown, "an existing key");
 });
+
+test("even speed on a mixed dolly and pan: the combined camera + target measure is within 1.05 mid-shot, and so is the pan", () => {
+  // the reviewer's probe: a big pan with a small, unevenly timed dolly (1 cm in the first 20 frames, 49 cm in the next 70)
+  const dp = [{ frame: 0, position: [0, 0, 0], target: [-5, 0, 5], focal_mm: 35 }, { frame: 20, position: [0.01, 0, 0], target: [0, 0, 5], focal_mm: 35 },
+    { frame: 90, position: [0.5, 0, 0], target: [5, 0, 5], focal_mm: 35 }];
+  const at = (f) => CC.cameraCurveAt(dp, f, { even: true, arcLengthDivisions: 8192 });
+  const lo = Math.ceil(90 * CC.EVEN_RAMP) + 1, hi = Math.floor(90 * (1 - CC.EVEN_RAMP)) - 1;
+  const comb = [], pan = [];
+  for (let f = lo; f < hi; f++) {
+    const a = at(f), b = at(f + 1);
+    const dpos = len(sub(b.position, a.position)), dt = len(sub(b.target, a.target));
+    comb.push(Math.hypot(dpos, dt)); pan.push(dt);
+  }
+  const r = (xs) => Math.max(...xs) / Math.min(...xs);
+  assert.ok(r(comb) <= 1.05, `combined max/min ${r(comb).toFixed(4)}`);
+  assert.ok(r(pan) <= 1.05, `target (pan) max/min ${r(pan).toFixed(4)} (was 4.8 timed by position alone)`);
+  // a dolly and a pan both large and differently timed: the combination is even (each alone may not be)
+  const both = [{ frame: 0, position: [0, 1.6, -6], target: [-3, 1, 0], focal_mm: 35 }, { frame: 30, position: [3, 1.6, -6], target: [-2, 1, 0], focal_mm: 35 },
+    { frame: 90, position: [4, 1.6, -6], target: [4, 1, 0], focal_mm: 35 }];
+  const B = (f) => CC.cameraCurveAt(both, f, { even: true, arcLengthDivisions: 8192 });
+  const cb = []; for (let f = lo; f < hi; f++) { const a = B(f), b = B(f + 1); cb.push(Math.hypot(len(sub(b.position, a.position)), len(sub(b.target, a.target)))); }
+  assert.ok(r(cb) <= 1.05, `large dolly + pan, combined max/min ${r(cb).toFixed(4)}`);
+  // still exact at both ends and pure: the same frame however it is reached
+  assert.ok(len(sub(at(0).position, dp[0].position)) < 1e-9 && len(sub(at(90).target, dp[2].target)) < 1e-9);
+  const seq = []; for (let f = 0; f <= 90; f++) seq.push(JSON.stringify(at(f)));
+  for (const f of [77, 3, 45, 90, 0, 12, 61]) assert.equal(JSON.stringify(at(f)), seq[f]);
+});
