@@ -16,6 +16,9 @@ import { LadderViewer, RUNG_NAMES } from "./ladder/ladder.mjs";
 import { LookPanel } from "./look/look.mjs";
 import { SceneAgent, loadScene } from "./agent/agent.mjs";
 import { CutPanel, savedFields } from "./cut/cut.mjs";
+import * as CutModule from "./cut/cut.mjs";   // oneVideoSupport, when the Cut exports it (web/onevideo.mjs)
+import * as CutTimeline from "./cut/timeline.mjs";
+import { checkOneVideo, findHook as findOneVideoHook, oneVideoClips, leftOut as oneVideoLeftOut } from "./onevideo.mjs";
 import { attachEditLink, flattenClip } from "./cut/editlink_app.mjs";
 import { makeAudioGenerator, makeAudioUploader } from "./cut/gen.mjs";
 import { ShotStrip, readSaved } from "./cut/strip.mjs";
@@ -733,13 +736,19 @@ function createStageWidget(node, inputName) {
   const shotName = (id) => (stage.toJSON().shots || []).find((s) => s.id === id)?.name || id;
 
   async function flattenCut() {
-    const entries = cutEntries();
-    if (!entries.length) { cutOut.textContent = "The cut is empty: add shots to the strip first."; return; }
+    // Decide on the RAW saved cut (gaps, upper picture tracks, detached audio...) before flattening: refuse in plain
+    // words and change nothing when the join can't honour it; a cut whose only extra is gaps joins with black + silence.
+    const raw = loadCut();
+    const support = checkOneVideo(raw, findOneVideoHook(CutModule, CutTimeline));
+    if (support.message) { cutOut.textContent = support.message; status.textContent = support.message; return; }
     const saved = savedRenders();
     // a clip pinned to a take (Edit from the timeline) joins its pinned file
-    const clips = entries.map((e) => ({ shot_id: e.shot_id, name: shotName(e.shot_id), in: e.in, out: e.out, ...flattenClip(e, saved[e.shot_id] || {}, BEST) }));
+    const clips = oneVideoClips(raw, { shotName, shotFile: (e) => flattenClip(e, saved[e.shot_id] || {}, BEST) });
+    if (!clips.some((c) => !c.gap)) { cutOut.textContent = "The cut is empty: add shots to the strip first."; return; }
+    const gapCount = clips.filter((c) => c.gap).length, skipped = oneVideoLeftOut(raw);
     oneBtn.disabled = true;
-    cutOut.textContent = `Joining ${clips.length} clips…`;
+    const shotClips = clips.length - gapCount;
+    cutOut.textContent = `Joining ${shotClips} clips${gapCount ? ` and ${gapCount} gap${gapCount === 1 ? "" : "s"} (black, silent)` : ""}…`;
     try {
       const sc = stage.toJSON();
       const res = await api.fetchApi("/soundstage/cut/render_video", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -747,7 +756,7 @@ function createStageWidget(node, inputName) {
       const j = await res.json().catch(() => ({ error: `server answered ${res.status}` }));
       if (!res.ok || j.error) throw new Error(j.error || `server answered ${res.status}`);
       const url = viewURL(j);
-      const notFinal = clips.filter((c) => !/^final/.test(c.kind || "")).length;
+      const notFinal = clips.filter((c) => !c.gap && !/^final/.test(c.kind || "")).length;
       cutOut.textContent = "";
       const a = (label, extra) => Object.assign(document.createElement("a"), { href: url, textContent: label, ...extra });
       const watch = a("", { target: "_blank", rel: "noopener" });
@@ -755,8 +764,9 @@ function createStageWidget(node, inputName) {
       watch.append(icon("play", 13), "Watch");
       dl.append(icon("download", 13), "Download");
       for (const x of [watch, dl]) { x.style.cssText = "color:var(--ss-accent, #F2FF59);display:inline-flex;gap:4px;align-items:center;margin-right:8px"; x.addEventListener("pointerdown", (e) => e.stopPropagation()); }
-      cutOut.append(watch, dl, document.createTextNode(`${j.seconds}s · ${clips.length} clips` +
-        (notFinal ? ` · ${notFinal} not Final yet (${j.missing?.length || 0} black slate${(j.missing?.length || 0) === 1 ? "" : "s"})` : "")));
+      cutOut.append(watch, dl, document.createTextNode(`${j.seconds}s · ${shotClips} clips` + (gapCount ? ` · ${gapCount} gap${gapCount === 1 ? "" : "s"}` : "") +
+        (notFinal ? ` · ${notFinal} not Final yet (${j.missing?.length || 0} black slate${(j.missing?.length || 0) === 1 ? "" : "s"})` : "") +
+        (skipped.length ? ` · left out: ${skipped.join(", ")} (the Cut's Render has them)` : "")));
       status.textContent = `The cut is one video now: ${j.filename}.`;
     } catch (err) {
       cutOut.textContent = `Couldn't join the cut: ${err.message}`;
