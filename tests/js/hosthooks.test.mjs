@@ -372,5 +372,10 @@ test("book.addNote(text, {source: 'ask', ref}): kept with its ref; forgetDecisio
     const d = await book.addNote("keep the lamp off", { sceneId: "sc_1", source: "director", ref: "p_aaaaaaaa:turn_8" });
     assert.match((await book.forgetDecision("p_aaaaaaaa:turn_8")).error, /not a decision/);
     assert.ok(book.book.notes.some((x) => x.id === d.id));
+    // the legacy listing reaches the server
+    assert.deepEqual((await book.legacyDecisions()).decisions, [{ id: "n_old", files: ["x"] }]);
+    assert.deepEqual(posts.at(-1), ["/soundstage/book/legacy", {}]);
+    await book.legacyDecisions({ apply: true });
+    assert.deepEqual(posts.at(-1), ["/soundstage/book/legacy", { apply: true }]);
   } finally { book.dispose(); }
 });

@@ -20,6 +20,10 @@ POST /soundstage/book/forget  {id} or {ids}, project: {id, name} -> {ok, removed
                               are listed in other_projects, not changed. ok is false when any copy was skipped or still
                               mentions the id (store.forget). book.forgetDecision / scrubDecision call it. Removes
                               source "chat" decisions and source "ask" notes (Ask's addNote), never the director's own.
+POST /soundstage/book/legacy  {apply?} -> {ok, decisions: [{id, ref?, project_id?, project?, files}], files, rewritten,
+                              skipped, errors}: decision notes saved before v3 (may hold the typed sentence) in every
+                              stored copy, machine-wide. apply: rewrite them in place to tools + number args only
+                              (ids and refs kept). book.legacyDecisions() calls it.
 """
 from __future__ import annotations
 
@@ -162,6 +166,25 @@ def register(routes=None, send=None) -> bool:
         import asyncio
         project = b.get("project") if isinstance(b.get("project"), dict) else None
         res = await asyncio.to_thread(ST.forget, ids, roots, project, bool(b.get("everywhere")))
+        return web.json_response(res, status=200 if not res["errors"] else 500)
+
+    @routes.post("/soundstage/book/legacy")
+    async def legacy(request):
+        b = await _body(request)
+        roots = []
+        try:
+            from ..project.routes import user_root
+            u = user_root(request)
+            roots = [u / "workflows", u / "projects"]
+        except Exception:  # noqa: BLE001 - no ComfyUI user folder: the books folder only
+            pass
+        try:
+            from ..project.routes import projects_root
+            roots.append(projects_root())
+        except Exception:  # noqa: BLE001 - no ComfyUI output folder
+            pass
+        import asyncio
+        res = await asyncio.to_thread(ST.legacy_decisions, roots, bool(b.get("apply")))
         return web.json_response(res, status=200 if not res["errors"] else 500)
 
     _REGISTERED = True

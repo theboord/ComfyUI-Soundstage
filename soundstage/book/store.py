@@ -344,3 +344,130 @@ def forget(ids, roots, project=None, everywhere=False) -> dict:
              *[f"{q} (another project's copy of this decision; forget with everywhere to remove it)" for q in out["other_copies"]]])[:600]
     return out
 
+
+# ------------------------------------------------------------------------------------- legacy decision notes (pre-v3)
+
+DECISION_V = 3                       # web/book/model.mjs DECISION_V
+_LEGACY_WHY = "decided in the Director chat"
+
+
+def _is_legacy(n) -> bool:
+    """recordDecision's own notes saved before v3 (web/book/model.mjs isLegacyDecision): their text can be the user's
+    typed sentence (v1) or a summary that quoted it, and v2 kept short string args."""
+    return (isinstance(n, dict) and n.get("source") == "chat" and n.get("dv") != DECISION_V
+            and str(n.get("why") or "").startswith(_LEGACY_WHY))
+
+
+def _legacy_rewrite(n: dict) -> dict:
+    """The note with no chat words left: its tools, only number / boolean args, the text said again from those (a
+    stricter cut than the App's normalizeBook, which keeps allowlisted one-word tokens: here no string survives)."""
+    ch = n.get("change")
+    if isinstance(ch, list) and ch:
+        change = [{"tool": str(c["tool"])[:40], "args": {str(k)[:40]: v for k, v in (c.get("args") or {}).items()
+                                                        if isinstance(v, bool) or (isinstance(v, (int, float)) and v == v and abs(v) != float("inf"))}}
+                  for c in ch if isinstance(c, dict) and c.get("tool")]
+    else:
+        m = re.search(r"\(([^)]*)\)\s*$", str(n.get("why") or ""))
+        change = [{"tool": t.strip()[:40], "args": {}} for t in (m.group(1).split(",") if m else []) if t.strip()]
+
+    def label(t):
+        t = t.replace("_", " ").strip()
+        return (t[:1].upper() + t[1:]) if t else "Change"
+    parts = []
+    for c in change:
+        a = c["args"]
+        if not a:
+            parts.append(label(c["tool"]))
+        elif len(a) == 1:
+            parts.append(f"{label(c['tool'])}: {next(iter(a.values()))}")
+        else:
+            parts.append(f"{label(c['tool'])}: " + ", ".join(f"{k.replace('_', ' ')} {v}" for k, v in a.items()))
+    text = "; ".join(parts)[:160] or "Changed in the chat"
+    tools = ", ".join(c["tool"] for c in change)
+    keep = {k: v for k, v in n.items() if k != "ref"}
+    if isinstance(n.get("ref"), str) and DECISION_REF_RE.match(n["ref"].strip()):
+        keep["ref"] = n["ref"].strip()            # an opaque ref stays; an old one that was chat text goes
+    return {**keep, "text": text, "change": change, "dv": DECISION_V, "migrated": True,
+            "why": f"{_LEGACY_WHY} ({tools})" if tools else _LEGACY_WHY}
+
+
+def _legacy_walk(obj, fn):
+    """Call fn(notes_list, index, note) for every legacy decision note in any "notes" list inside obj."""
+    if isinstance(obj, dict):
+        notes = obj.get("notes")
+        if isinstance(notes, list):
+            for i, x in enumerate(notes):
+                if _is_legacy(x):
+                    fn(notes, i, x)
+        for k, v in obj.items():
+            if k != "notes":
+                _legacy_walk(v, fn)
+    elif isinstance(obj, list):
+        for v in obj:
+            _legacy_walk(v, fn)
+
+
+def legacy_decisions(roots, apply: bool = False) -> dict:
+    """Decision notes saved before v3 (the typed sentence may be in their text or args) in every stored copy: the books
+    folder and each folder in roots (the user's workflows/ and projects/ incl. autosaves and the trash, collected copies
+    in output/soundstage_projects/). normalizeBook rewrites such notes only in the open Book, on load; the copies here
+    keep the old text until this runs with apply=True or each is forgotten (forget()).
+
+    apply=False lists them: {ok, decisions: [{id, ref?, project_id?, project?, files: [paths]}], files: [paths]}.
+    apply=True rewrites each in place (atomically) to its tools and number / boolean args only, text said from those,
+    dv 3, migrated: true; ids and opaque refs are kept, so Forget still finds them (a pre-v3 ref that is not the
+    opaque shape, i.e. could be chat text, is dropped: forget such a note by its id): {ok, rewritten, files, decisions, errors}.
+    Machine-wide (every project's files): it removes words, never a note. Files over MAX_SCRUB_BYTES are reported in
+    skipped and not changed (ok False)."""
+    out = {"ok": True, "decisions": [], "files": [], "rewritten": 0, "skipped": [], "errors": []}
+    found: dict = {}
+    seen = set()
+    for root in [books_dir(), *[str(r) for r in roots or [] if r]]:
+        if not os.path.isdir(root):
+            continue
+        for p in _json_files(root):
+            rp = os.path.realpath(p)
+            if rp in seen:
+                continue
+            seen.add(rp)
+            try:
+                if os.path.getsize(p) > MAX_SCRUB_BYTES:
+                    with open(p, "rb") as f:          # cheap peek: only report big files that may hold one
+                        if _LEGACY_WHY.encode() in f.read():
+                            out["skipped"].append({"path": p, "why": f"over {MAX_SCRUB_BYTES // (1024 * 1024)} MB, not read"})
+                    continue
+                with open(p, encoding="utf-8") as f:
+                    text = f.read()
+                if _LEGACY_WHY not in text:
+                    continue
+                data = json.loads(text)
+                pid, pname = _ident(data)
+                hits = []
+
+                def hit(notes, i, x):
+                    hits.append(x)
+                    if apply:
+                        notes[i] = _legacy_rewrite(x)
+                _legacy_walk(data, hit)
+                if not hits:
+                    continue
+                out["files"].append(p)
+                for x in hits:
+                    key = str(x.get("id") or "")
+                    d = found.setdefault(key, {"id": key, **({"ref": x["ref"]} if isinstance(x.get("ref"), str) else {}),
+                                               **({"project_id": pid} if pid else {}), **({"project": pname} if pname else {}), "files": []})
+                    if p not in d["files"]:
+                        d["files"].append(p)
+                if apply:
+                    tmp = p + ".legacy.tmp"
+                    with open(tmp, "w", encoding="utf-8") as f:
+                        json.dump(data, f, ensure_ascii=False)
+                    os.replace(tmp, p)
+                    out["rewritten"] += len(hits)
+            except (OSError, ValueError) as e:
+                out["errors"].append(f"{p}: {e}")
+    out["decisions"] = list(found.values())
+    out["ok"] = not (out["errors"] or out["skipped"])
+    if not out["ok"]:
+        out["error"] = "; ".join([*out["errors"], *[f"{s['path']} ({s['why']})" for s in out["skipped"]]])[:600]
+    return out

@@ -655,3 +655,59 @@ def test_note_route_keeps_only_an_opaque_ref(tmp_path):
     finally:
         ST._OVERRIDE = None
         R._REGISTERED = False
+
+
+TYPED_OLD = "could you make it pour with rain outside the diner please"
+
+
+def _legacy(i, v, ref=None):
+    if v == 1:
+        n = {"id": i, "text": TYPED_OLD, "source": "chat", "by": "chat", "why": "decided in the Director chat (weather, lens)"}
+    else:
+        n = {"id": i, "text": f"Okay: {TYPED_OLD}", "source": "chat", "by": "chat", "dv": 2, "why": "decided in the Director chat (weather, lens)",
+             "change": [{"tool": "weather", "args": {"weather": "pour with rain outside", "kind": "rain"}}, {"tool": "lens", "args": {"mm": 50}}]}
+    if ref:
+        n["ref"] = ref
+    return n
+
+
+def test_legacy_decisions_listed_then_migrated_in_every_server_copy(tmp_path):
+    books, user = tmp_path / "books", tmp_path / "user"
+    ST._OVERRIDE = str(books)
+    try:
+        ST.save({"v": 1, "notes": [_legacy("n_l1", 1), _dec("n_new"), {"id": "n_d", "text": TYPED_OLD, "source": "director"}]})
+        auto = user / "projects" / "Film" / "autosave"
+        auto.mkdir(parents=True)
+        (user / "workflows").mkdir(parents=True)
+        (user / "workflows" / "Film.json").write_text(json.dumps(_wf_with_book([_legacy("n_l2", 2, ref="p_0a1b2c3d:turn_3")])))
+        (auto / "20261101-120000-000.json").write_text(json.dumps({"name": "Film", "workflow": _wf_with_book([_legacy("n_l2", 2, ref="p_0a1b2c3d:turn_3")])}))
+        trash = user / "projects" / ".trash" / "Old 20261102-101010"
+        trash.mkdir(parents=True)
+        (trash / "workflow.json").write_text(json.dumps(_wf_with_book([_legacy("n_l3", 2, ref=TYPED_OLD)])))
+        roots = [user / "workflows", user / "projects"]
+        lst = ST.legacy_decisions(roots)
+        assert lst["ok"] and lst["rewritten"] == 0
+        by = {d["id"]: d for d in lst["decisions"]}
+        assert set(by) == {"n_l1", "n_l2", "n_l3"}
+        assert by["n_l2"]["ref"] == "p_0a1b2c3d:turn_3" and len(by["n_l2"]["files"]) == 2 and by["n_l2"]["project_id"] == "p_0a1b2c3d"
+        assert TYPED_OLD in (user / "workflows" / "Film.json").read_text()      # listing changes nothing
+        res = ST.legacy_decisions(roots, apply=True)
+        assert res["ok"] and res["rewritten"] == 1 + 2 * 2 + 1 * 2, res     # book, Film + autosave (2 copies each), trash (2)
+        for p in [books / "current.json", user / "workflows" / "Film.json", auto / "20261101-120000-000.json", trash / "workflow.json"]:
+            t = p.read_text()
+            assert "pour with rain" not in t.replace(f'"text": "{TYPED_OLD}", "source": "director"', ""), p
+        wf = json.loads((user / "workflows" / "Film.json").read_text())
+        n = wf["nodes"][0]["properties"]["ss_book"]["notes"][0]
+        assert n["text"] == "Weather: rain; Lens: 50" or n["text"] == "Weather; Lens: 50", n["text"]
+        assert n["change"] == [{"tool": "weather", "args": {}}, {"tool": "lens", "args": {"mm": 50}}]
+        assert n["dv"] == 3 and n["migrated"] and n["ref"] == "p_0a1b2c3d:turn_3" and n["id"] == "n_l2"
+        b = ST.load()["notes"]
+        assert b[0]["text"] == "Weather; Lens" and b[0]["change"] == [{"tool": "weather", "args": {}}, {"tool": "lens", "args": {}}]
+        assert b[2]["text"] == TYPED_OLD                                      # the director's own note is theirs
+        t3 = json.loads((trash / "workflow.json").read_text())["nodes"][0]["properties"]["ss_book"]["notes"][0]
+        assert "ref" not in t3                                                  # an old ref that was chat text goes
+        assert ST.legacy_decisions(roots)["decisions"] == []                    # once: nothing left to migrate
+        assert ST.forget(["p_0a1b2c3d:turn_3"], roots, {"id": "p_0a1b2c3d", "name": "Film"})["ok"]   # still forgettable by ref
+        assert not list(tmp_path.rglob("*.tmp"))
+    finally:
+        ST._OVERRIDE = None

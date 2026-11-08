@@ -374,6 +374,20 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
       if (n) changed();
       return n;
     },
+    /** Decision notes saved before decisions dropped the typed sentence, still stored that way on the server (normalizeBook
+     *  rewrites them only in the open Book, on load; older stored copies keep the old text). POST /soundstage/book/legacy
+     *  -> {ok, decisions: [{id, ref?, project_id?, project?, files}], files} ({apply: true}: rewrite them in place, every
+     *  project's files, to tools + number args only, ids and refs kept -> {ok, rewritten, files, decisions}). Forget any
+     *  of them by id or ref with forgetDecision. {ok: false, error} on failure. */
+    legacyDecisions: async ({ apply = false } = {}) => {
+      try {
+        const r = api?.fetchApi?.("/soundstage/book/legacy", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(apply ? { apply: true } : {}) });
+        if (!r) return { ok: false, error: "no server" };
+        const { j, error } = await readAnswer(await r, "the server could not list them");
+        return error ? { ok: false, error } : { ok: true, ...j };
+      } catch (e) { return { ok: false, error: String(e?.message || e) }; }
+    },
     notesFor: (sceneId) => notesForScene(book, script(), sceneId),
     notesOnLine: (sceneId, line) => notesOnLine(book, sceneId, line),
     draft, fileNotes, exportPDF, exportMarkdown, buildPrint,
