@@ -130,9 +130,11 @@ export async function launch({ port = 9770, w = 1440, h = 900, firstRun = false,
     return buf;
   }
   async function resize(w2, h2) { W = w2; H = h2; await send("Emulation.setDeviceMetricsOverride", { width: w2, height: h2, deviceScaleFactor: 1, mobile: false }); await ev("window.dispatchEvent(new Event('resize')); return 1"); }
-  // close() returns a promise (await it before process.exit; if a caller exits first, guardExit still cleans up).
+  // close() returns a promise (await it before process.exit). The exit guard is released only after the profile is
+  // gone, so a caller that does `b.close(); process.exit()` still has it deleted by the exit handler (review: releasing
+  // it first left the whole ssqa-* profile on every such run).
   let closing = null;
-  const close = () => closing ||= (async () => { try { ws.close(); } catch {} release(); await stopBrowser(chrome, prof); })();
+  const close = () => closing ||= (async () => { try { ws.close(); } catch {} try { await stopBrowser(chrome, prof); } finally { release(); } })();
   return { send, ev, rect, byText, click, clickEl, clickText, drag, key, move, shot, resize, close, logs, handlers, profile: prof, pid: chrome.pid, get W() { return W; }, get H() { return H; } };
 }
 

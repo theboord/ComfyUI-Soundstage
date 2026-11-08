@@ -292,7 +292,7 @@ try {
   check(/"open":true,"wide":false/.test(heroPhone), `first screen fits a phone (${heroPhone})`);
 } finally {
   writeFileSync(join(DIR, "report.json"), JSON.stringify({ fails, report }, null, 1));
-  b.close();
+  await b.close();
 }
 console.log(fails.length ? `\n${fails.length} FAILED:\n- ${fails.join("\n- ")}` : "\nall clear");
 process.exit(fails.length ? 1 : 0);

@@ -179,5 +179,5 @@ try {
   }
 } finally {
   console.log(b.logs.filter((l) => !/favicon/.test(l)).join("\n"));
-  b.close();
+  await b.close();
 }

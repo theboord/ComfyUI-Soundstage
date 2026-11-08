@@ -98,14 +98,111 @@ test("stopBrowser (what close() runs): stops the whole group before deleting, so
   } finally { rmSync(prof, { recursive: true, force: true }); cleanup(box, f); }
 });
 
-test("tools/qa drivers wait for close() (the profile is deleted after the browser is gone, before the process exits)", () => {
-  const dir = fileURLToPath(new URL("../../tools/qa/", import.meta.url));
+// Every script anywhere in tools/ or tests/ that imports tools/qa/lib.mjs and starts a browser with launch() must
+// await its close(). Review: the first version of this test listed 9 files in tools/qa/ only, and verify_tour,
+// test_tryit, ss_kit, drive and make_scenes called `b.close(); process.exit()` and left their ssqa-* profile.
+export function launchImporters(root) {
+  const out = [];
+  const walk = (d) => {
+    for (const n of readdirSync(d, { withFileTypes: true })) {
+      if (["node_modules", ".git", "vendor", "people"].includes(n.name)) continue;
+      const p = join(d, n.name);
+      if (n.isDirectory()) walk(p);
+      else if (/\.m?js$/.test(n.name) && !/(^|\/)tools\/qa\/(lib|browser_proc)\.mjs$/.test(p) && !p.endsWith("qa_browser_cleanup.test.mjs")) {
+        const s = readFileSync(p, "utf8");
+        if (/["'](?:\.\/|(?:\.\.\/)+(?:qa\/)?|(?:\.\.\/)+tools\/qa\/)lib\.mjs["']/.test(s) && /\blaunch\(/.test(s)) out.push({ path: p.slice(root.length + 1), src: s });
+      }
+    }
+  };
+  for (const d of ["tools", "tests"]) walk(join(root, d));
+  return out;
+}
+
+export function unawaitedCloses(src) {
+  const vars = [...src.matchAll(/\b(?:const|let|var)\s+(\w+)\s*=\s*await\s+launch\(/g)].map((m) => m[1]);
   const bad = [];
-  for (const n of ["editlink_click", "playback_bench", "scenestrip_overlap", "passes_viewer", "toprow_check", "v2s_compare", "popover_sweep", "v2sfix_click", "visual_baseline"]) {
-    const s = readFileSync(join(dir, n + ".mjs"), "utf8");
-    if (/\bb\.close\(\)/.test(s.replace(/await b\.close\(\)/g, ""))) bad.push(n);
+  for (const v of new Set(vars)) {
+    const re = new RegExp(`(await\\s+)?\\b${v}\\.close(?:\\?\\.)?\\(\\)`, "g");
+    for (const m of src.matchAll(re)) if (!m[1]) bad.push(`${v}.close() at line ${src.slice(0, m.index).split("\n").length}`);
   }
+  return bad;
+}
+
+test("every script that imports tools/qa/lib.mjs and calls launch() waits for close() (the profile is deleted before the process exits)", () => {
+  const root = fileURLToPath(new URL("../../", import.meta.url)).replace(/\/$/, "");
+  const files = launchImporters(root);
+  // the scan finds the drivers outside tools/qa/ too (a scan that matched nothing would pass)
+  for (const p of ["tools/tryit/verify_tour.mjs", "tools/tryit/test_tryit.mjs", "tools/interop/realscenes/ss_kit.mjs", "tools/v2s_bench/harness/drive.mjs", "tools/qa/visual_baseline.mjs"])
+    assert.ok(files.some((f) => f.path === p), `the scan finds ${p} (found ${files.map((f) => f.path).join(", ")})`);
+  const bad = files.flatMap((f) => unawaitedCloses(f.src).map((b) => `${f.path}: ${b}`));
   assert.deepEqual(bad, []);
+});
+
+// A stand-in Chrome that answers DevTools just enough for launch() to finish (GET /json/list and a WebSocket that
+// replies {id, result: {}} to every command). Node, no packages; written as an executable script.
+function fakeCdpChrome(box) {
+  const log = join(box, "dir.txt"), exe = join(box, "fake-cdp-chrome");
+  writeFileSync(exe, `#!${process.execPath}
+const http = require("node:http"), crypto = require("node:crypto"), fs = require("node:fs");
+let port = 0, dir = "";
+for (const a of process.argv.slice(2)) { if (a.startsWith("--remote-debugging-port=")) port = +a.split("=")[1]; if (a.startsWith("--user-data-dir=")) dir = a.slice(16); }
+fs.mkdirSync(dir + "/Default", { recursive: true }); fs.writeFileSync(dir + "/Default/Cookies", "x"); fs.writeFileSync(${JSON.stringify(log)}, dir);
+const srv = http.createServer((q, r) => { r.setHeader("content-type", "application/json"); r.end(JSON.stringify([{ type: "page", webSocketDebuggerUrl: "ws://127.0.0.1:" + port + "/devtools/page/1" }])); });
+srv.on("upgrade", (q, s) => {
+  const acc = crypto.createHash("sha1").update(q.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
+  s.write("HTTP/1.1 101 Switching Protocols\\r\\nUpgrade: websocket\\r\\nConnection: Upgrade\\r\\nSec-WebSocket-Accept: " + acc + "\\r\\n\\r\\n");
+  let buf = Buffer.alloc(0);
+  s.on("data", (d) => {
+    buf = Buffer.concat([buf, d]);
+    for (;;) {
+      if (buf.length < 2) return;
+      let len = buf[1] & 127, off = 2;
+      if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); off = 4; } else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); off = 10; }
+      if (buf.length < off + 4 + len) return;
+      const mask = buf.subarray(off, off + 4), body = Buffer.from(buf.subarray(off + 4, off + 4 + len)), op = buf[0] & 15;
+      buf = buf.subarray(off + 4 + len);
+      for (let i = 0; i < body.length; i++) body[i] ^= mask[i & 3];
+      if (op !== 1) continue;
+      const out = Buffer.from(JSON.stringify({ id: JSON.parse(body).id, result: {} }));
+      s.write(Buffer.concat([Buffer.from(out.length < 126 ? [0x81, out.length] : [0x81, 126, out.length >> 8, out.length & 255]), out]));
+    }
+  });
+  s.on("error", () => {});
+});
+srv.listen(port, "127.0.0.1");
+`);
+  chmodSync(exe, 0o755);
+  return { exe, log };
+}
+
+test("launch(): close() without await followed by process.exit() still deletes the ssqa-* profile (the exit guard stays armed until it is gone)", { timeout: 30000 }, async () => {
+  // Review of the close() rework: close() released the exit guard at once and deleted the profile only after an
+  // await, so `b.close(); process.exit()` left the whole profile on every run.
+  const box = mkdtempSync(join(tmpdir(), "ss-fakebrowser-"));
+  const f = fakeCdpChrome(box);
+  let dir = "";
+  try {
+    const port = 9300 + Math.floor(Math.random() * 500);
+    const c = await runChild(box, `import { launch } from ${JSON.stringify(LIB)};
+const b = await launch({ port: ${port}, chrome: ${JSON.stringify(f.exe)}, startMs: 10000 });
+console.log("UP " + b.profile);
+b.close();
+process.exit(0);
+`);
+    const end = await c.exit;
+    assert.match(c.out(), /UP .*ssqa-/, `launch() finished against the stand-in: ${c.out()} ${JSON.stringify(end)}`);
+    dir = readFileSync(f.log, "utf8");
+    assert.ok(dir.includes("ssqa-"), dir);
+    assert.equal(existsSync(dir), false, `the profile folder is deleted although close() was not awaited: ${dir}`);
+  } finally { if (dir.includes("ssqa-")) rmSync(dir, { recursive: true, force: true }); rmSync(box, { recursive: true, force: true }); }
+});
+
+test("the close() scan itself: an un-awaited close is caught, an awaited one (also close?.()) is not", () => {
+  assert.deepEqual(unawaitedCloses("const b = await launch({});\ntry {} finally { b.close(); }\nprocess.exit(0);"), ["b.close() at line 2"]);
+  assert.deepEqual(unawaitedCloses("const b = await launch({});\n} finally { await b.close(); }"), []);
+  assert.deepEqual(unawaitedCloses("const b = await launch({});\n} finally { await b.close?.(); }"), []);
+  assert.deepEqual(unawaitedCloses("const br = await launch({});\nbr.close?.();"), ["br.close() at line 2"]);
+  assert.deepEqual(unawaitedCloses("const b = await launch({});\nsrv.close();\nws.close();"), []);
 });
 
 test("every test file that makes a temp folder with mkdtempSync also removes one (takecheck left one ss-tc-* per run)", () => {

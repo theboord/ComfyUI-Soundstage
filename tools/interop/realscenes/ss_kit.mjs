@@ -47,5 +47,5 @@ try {
   }
   const errs = b.logs.filter((l) => /^(EXC|ERR)/.test(l) && !/favicon|WebGL|GPU stall/i.test(l));
   if (errs.length) console.log("console errors:", errs.slice(0, 5));
-} finally { b.close(); }
+} finally { await b.close(); }
 process.exit(0);

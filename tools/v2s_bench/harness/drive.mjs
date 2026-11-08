@@ -41,7 +41,7 @@ try {
     b.logs.length = 0;
   }
 } finally {
-  b.close();
+  await b.close();
   srv.close();
 }
 process.exit(failed ? 1 : 0);

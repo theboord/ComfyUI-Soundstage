@@ -104,6 +104,6 @@ try {
     }
   }
 } catch (e) { fails.push("crashed: " + e.message); console.log("FAIL crashed", e); }
-finally { writeFileSync(join(DIR, "report.json"), JSON.stringify({ size: `${W}x${H}`, fails, rows }, null, 1)); b.close(); }
+finally { writeFileSync(join(DIR, "report.json"), JSON.stringify({ size: `${W}x${H}`, fails, rows }, null, 1)); await b.close(); }
 console.log(fails.length ? `\n${fails.length} FAILED:\n- ${fails.join("\n- ")}` : "\nall clear");
 process.exit(fails.length ? 1 : 0);
