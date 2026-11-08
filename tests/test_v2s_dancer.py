@@ -92,7 +92,7 @@ def test_a_reply_that_only_copies_the_prompt_example_is_rejected_and_marked_unkn
     for word in ("plaid", "shirt", "jeans", "skirt", "dress"):
         assert word not in ex
     assert "shirt, jeans, skirt" not in vlm.SYSTEM and "plaid shirt, light jeans" not in vlm.INVENTORY_SYSTEM
-    assert ex in vlm.SYSTEM and ex in vlm.INVENTORY_SYSTEM and ex in vlm.ECHOES
+    assert ex in vlm.SYSTEM and ex in vlm.INVENTORY_SYSTEM and ex in vlm.EXAMPLE_ECHOES and vlm._echo(ex)
     # the 4B breakdown: a person whose wardrobe is the example, word for word or without its article
     for copied in (ex, "orange cable-knit sweater, brown corduroy trousers", "Orange cable-knit sweater"):
         reply = json.dumps({"setting": "street", "time": "day", "camera": {"height_m": 1.5, "type": "handheld"},

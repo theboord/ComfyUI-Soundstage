@@ -338,9 +338,13 @@ INVENTORY_PROMPT = "Inventory this frame."
 INVENTORY_FRAMES = 6
 # Echoes of the instructions (the model copying the schema instead of answering): such a value is rejected.
 ECHOES = ("a few words", "short description", "one noun", "placeholder", "colour + material", "color + material",
-          "3-8 words", "2-4 word", "what you see", "people only", "every garment", "<", ">",
-          # the wardrobe example and the garment list of the prompts, copied back instead of read
-          WARDROBE_EXAMPLE, "cable-knit sweater", "corduroy trousers", "crop top, hoodie, jacket")
+          "3-8 words", "2-4 word", "what you see", "people only", "every garment", "<", ">")
+# The wardrobe example and the garment list of the prompts, copied back instead of read. These are WHOLE-reply
+# matches (after case, articles and punctuation), never substrings: "grey cable-knit sweater, black jeans" is a real
+# read, only the example itself (or one of its own garments, colour and all) is an echo. Known limit: a person really
+# wearing exactly "an orange cable-knit sweater" alone reads as an echo and is wardrobe unknown.
+EXAMPLE_ECHOES = (WARDROBE_EXAMPLE, *WARDROBE_EXAMPLE.split(","),
+                  "shirt, crop top, hoodie, jacket, shorts, jeans, skirt, dress", "crop top, hoodie, jacket")
 PEOPLE_KINDS = {"person", "man", "woman", "child", "boy", "girl", "people", "dancer", "lady", "guy", "kid"}
 
 
@@ -391,9 +395,19 @@ def inventory_prompt(model: str, images: list[str], max_length: int = 1400) -> d
     return g
 
 
+def _whole(v) -> str:
+    """A reply for the whole-match echo test: lower case, no leading article, no punctuation, single spaces."""
+    s = re.sub(r"[^a-z0-9,\- ]", " ", str(v or "").lower())
+    s = re.sub(r"\s*,\s*", ", ", " ".join(s.split())).strip(" ,.-")
+    return re.sub(r"^(?:an?|the)\s+", "", s)
+
+
+EXAMPLE_WHOLE = {_whole(e) for e in EXAMPLE_ECHOES}
+
+
 def _echo(v) -> bool:
     s = str(v or "").strip().lower()
-    return bool(s) and any(e in s for e in ECHOES)
+    return bool(s) and (any(e in s for e in ECHOES) or _whole(s) in EXAMPLE_WHOLE)
 
 
 def _clean(v, n: int = 60) -> str:
