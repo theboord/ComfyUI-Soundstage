@@ -148,7 +148,7 @@ def register(routes=None, send=None) -> bool:
             pass
         import asyncio
         project = b.get("project") if isinstance(b.get("project"), dict) else None
-        res = await asyncio.to_thread(ST.forget, ids, roots, project)
+        res = await asyncio.to_thread(ST.forget, ids, roots, project, bool(b.get("everywhere")))
         return web.json_response(res, status=200 if not res["errors"] else 500)
 
     _REGISTERED = True

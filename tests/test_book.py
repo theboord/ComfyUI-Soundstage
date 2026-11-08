@@ -343,7 +343,7 @@ def test_forget_removes_every_stored_copy(tmp_path):
         assert [x["path"] for x in res["skipped"]] == [str(user / "workflows" / "Odd.json")]
         assert "Odd.json" in res["error"]
         assert not list(tmp_path.rglob("*.tmp"))
-        assert ST.forget([], [user]) == {"ok": True, "removed": 0, "files": [], "still_mentions": [], "skipped": [], "other_projects": [], "errors": []}
+        assert ST.forget([], [user]) == {"ok": True, "removed": 0, "files": [], "still_mentions": [], "skipped": [], "other_projects": [], "other_copies": [], "errors": []}
     finally:
         ST._OVERRIDE = None
 
@@ -404,7 +404,10 @@ def test_forget_is_scoped_to_the_forgetting_project(tmp_path):
         ST.save({"v": 1, "notes": [_dec("n_9", ref="t1")]}, project={"id": "p_bbbbbbbb", "name": "B"})  # B's open book
 
         res = ST.forget(["t1", "n_1"], [user / "workflows", user / "projects"], {"id": "p_aaaaaaaa", "name": "A"})
-        assert res["ok"], res
+        # the Duplicate still holds the same decision (note n_1): ok is False and says where; B only shares the ref
+        assert not res["ok"], res
+        assert res["other_copies"] == [str(user / "workflows" / "A copy.json")]
+        assert "A copy.json" in res["error"] and "another project" in res["error"] and "B.json" not in res["error"]
         assert res["removed"] == 2 + 2                                 # A.json (2 copies), its autosave (2 copies)
         a = json.loads((user / "workflows" / "A.json").read_text())
         assert a["nodes"][0]["properties"]["ss_book"]["notes"] == []
@@ -481,5 +484,65 @@ def test_forget_after_rename_of_a_pre_id_project_clears_its_moved_autosaves(tmp_
         finally:
             ST.MAX_SCRUB_BYTES = old_max
         assert "n_secret2" in auto.read_text() and not res["ok"]
+    finally:
+        ST._OVERRIDE = None
+
+
+def test_forget_cleans_the_projects_own_workflow_when_a_two_tab_save_left_another_id_in_it(tmp_path):
+    """project.json says p_11111111, workflows/A.json says p_22222222 (two tabs saved at once). Forget from
+    {p_11111111, A} must clean workflows/A.json, not list it as another project's and say ok."""
+    books, user = tmp_path / "books", tmp_path / "user"
+    ST._OVERRIDE = str(books)
+    try:
+        (user / "workflows").mkdir(parents=True)
+        (user / "projects" / "A").mkdir(parents=True)
+        (user / "projects" / "A" / "project.json").write_text(json.dumps({"format": "soundstage-project", "id": "p_11111111", "name": "A"}))
+        (user / "workflows" / "A.json").write_text(json.dumps(_wf_of("p_22222222", "A", [_dec("n_x1")])))
+        res = ST.forget(["n_x1"], [user / "workflows", user / "projects"], {"id": "p_11111111", "name": "A"})
+        assert "n_x1" not in (user / "workflows" / "A.json").read_text()
+        assert res["ok"] and res["removed"] == 2 and res["other_projects"] == [], res
+    finally:
+        ST._OVERRIDE = None
+
+
+def test_forget_is_not_ok_while_another_project_keeps_a_copy(tmp_path):
+    """A Save As copy under another name and id holds the same decision note: Forget leaves it (scoped) but ok is
+    False and other_copies names it; a ref shared with another project's own note is not a copy."""
+    books, user = tmp_path / "books", tmp_path / "user"
+    ST._OVERRIDE = str(books)
+    try:
+        (user / "workflows").mkdir(parents=True)
+        (user / "workflows" / "A.json").write_text(json.dumps(_wf_of("p_aaaaaaaa", "A", [_dec("n_k1", ref="t7")])))
+        (user / "workflows" / "Other.json").write_text(json.dumps(_wf_of("p_cccccccc", "Other", [_dec("n_k1", ref="t7")])))
+        (user / "workflows" / "C.json").write_text(json.dumps(_wf_of("p_dddddddd", "C", [_dec("n_c9", ref="t7")])))
+        res = ST.forget(["t7"], [user / "workflows"], {"id": "p_aaaaaaaa", "name": "A"})
+        assert "n_k1" not in (user / "workflows" / "A.json").read_text()
+        assert not res["ok"] and res["other_copies"] == [str(user / "workflows" / "Other.json")], res
+        assert "Other.json" in res["error"] and "C.json" not in res["error"]
+        assert "n_c9" in (user / "workflows" / "C.json").read_text(), "C's own decision is never touched"
+        # only C shares the ref: nothing of A's decision is left anywhere, so ok
+        (user / "workflows" / "Other.json").unlink()
+        (user / "workflows" / "A.json").write_text(json.dumps(_wf_of("p_aaaaaaaa", "A", [_dec("n_k2", ref="t7")])))
+        res = ST.forget(["t7"], [user / "workflows"], {"id": "p_aaaaaaaa", "name": "A"})
+        assert res["ok"] and res["other_copies"] == [] and res["other_projects"] == [str(user / "workflows" / "C.json")], res
+    finally:
+        ST._OVERRIDE = None
+
+
+def test_forget_everywhere_removes_another_projects_copy_by_note_id_only(tmp_path):
+    """everywhere=True takes the same decision note (same note id) out of a Save As copy, but leaves another project's
+    own decision that only shares the chat turn ref."""
+    books, user = tmp_path / "books", tmp_path / "user"
+    ST._OVERRIDE = str(books)
+    try:
+        (user / "workflows").mkdir(parents=True)
+        (user / "workflows" / "A.json").write_text(json.dumps(_wf_of("p_aaaaaaaa", "A", [_dec("n_e1", ref="t8")])))
+        (user / "workflows" / "Copy.json").write_text(json.dumps(_wf_of("p_cccccccc", "Copy", [_dec("n_e1", ref="t8")])))
+        (user / "workflows" / "C.json").write_text(json.dumps(_wf_of("p_dddddddd", "C", [_dec("n_c8", ref="t8")])))
+        res = ST.forget(["t8"], [user / "workflows"], {"id": "p_aaaaaaaa", "name": "A"}, everywhere=True)
+        assert res["ok"] and res["other_copies"] == [], res
+        assert "n_e1" not in (user / "workflows" / "A.json").read_text()
+        assert "n_e1" not in (user / "workflows" / "Copy.json").read_text()
+        assert "n_c8" in (user / "workflows" / "C.json").read_text()
     finally:
         ST._OVERRIDE = None

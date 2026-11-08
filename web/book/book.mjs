@@ -95,11 +95,11 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
   }
   /** POST /soundstage/book/forget: every stored copy of these decision notes in THIS project goes (another project's
    *  copy, e.g. a Duplicate's, stays). -> {copies} or {error} (the server's ok:false, with what was not cleaned). */
-  async function scrub(ids) {
+  async function scrub(ids, { everywhere = false } = {}) {
     if (!ids.length) return { error: "no id" };
     const project = projectRef();
     try {
-      const r = api?.fetchApi?.("/soundstage/book/forget", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids, ...(project ? { project } : {}) }) });
+      const r = api?.fetchApi?.("/soundstage/book/forget", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids, ...(project ? { project } : {}), ...(everywhere ? { everywhere: true } : {}) }) });
       if (!r) return { error: "no server" };
       const { j, error } = await readAnswer(await r, "the server could not clean them");
       return error ? { error } : { copies: Number(j?.removed) || 0 };
@@ -341,8 +341,10 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
         : { ok: true, copies: sc.copies };
     },
     /** Remove decision notes (by id or ref) from every stored copy on the server, without touching the open book.
-     *  -> {ok: true, copies} or {ok: false, error}. forgetDecision calls it; call it again when that reported removed. */
-    scrubDecision: async (id) => { const sc = await scrub([String(id ?? "")].filter(Boolean)); return sc.error ? { ok: false, error: sc.error } : { ok: true, copies: sc.copies }; },
+     *  -> {ok: true, copies} or {ok: false, error}. forgetDecision calls it; call it again when that reported removed.
+     *  {everywhere: true} also removes copies of the SAME decision note (same note id) kept by another project (a
+     *  Duplicate, a Save As copy): the server's ok:false names them in other_copies until then. */
+    scrubDecision: async (id, { everywhere = false } = {}) => { const sc = await scrub([String(id ?? "")].filter(Boolean), { everywhere }); return sc.error ? { ok: false, error: sc.error } : { ok: true, copies: sc.copies }; },
     /** A note from anyone (Pitch, a script): placed like shorthand unless a scene is given. */
     addNote: async (text, { sceneId = null, category = null, line = null, source = "pitch" } = {}) => {
       if (sceneId) { const [n] = addPlacements(book, [{ text, scope: "scene", scene_id: sceneId, line, category: category || "blocking", confidence: 1, why: `written by ${source}`, by: source }], { source }); changed(); return n; }

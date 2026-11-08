@@ -139,22 +139,55 @@ def _folder_of(root: str, p: str) -> str | None:
     return rel[0] if len(rel) > 1 and not rel[0].startswith(".") else None
 
 
-def forget(ids, roots, project=None) -> dict:
+def _own_workflow(root: str, p: str, pfolder: str | None) -> bool:
+    """Is p the project's own saved workflow, workflows/<name>.json (ProjectStore.workflowPath)? That file is the
+    project's whatever id it carries: two tabs saving at once can leave it with another id than project.json."""
+    if not pfolder or os.path.basename(os.path.normpath(root)) != "workflows":
+        return False
+    return os.path.relpath(p, root) in (pfolder + ".json", pfolder + ".json.tmp")
+
+
+def _chat_notes(obj):
+    """Every chat decision note (a dict with source "chat") in any "notes" list inside obj."""
+    if isinstance(obj, dict):
+        notes = obj.get("notes")
+        if isinstance(notes, list):
+            for x in notes:
+                if isinstance(x, dict) and x.get("source") == "chat":
+                    yield x
+        for k, v in obj.items():
+            if k != "notes":
+                yield from _chat_notes(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _chat_notes(v)
+
+
+def forget(ids, roots, project=None, everywhere=False) -> dict:
     """Remove chat decision notes (by note id or ref) from every stored copy OF ONE PROJECT: project = {id, name} (the
     project the Forget came from). Scanned: the books folder (current.json, any other book, and leftover *.json.tmp)
     and each folder in roots (the user's workflows/ and projects/: saved workflows, manifests, autosaves, the trash,
     *.json.tmp leftovers). A file counts as the project's when it carries the same project id, or no id and the same
     project name (saved before ids existed); any file inside projects/<project name>/ counts too, whatever it carries
-    (a library Rename moves a pre-id project's autosaves without restamping them, so they still name the old project);
-    a server book with no _project is the open book and counts too. Files of
-    another project (a Duplicate, a Save As copy) are left alone and listed in other_projects. Only files whose text
-    mentions an id are parsed; changed files are rewritten atomically.
-    Returns {ok, removed, files: [paths changed], still_mentions: [the project's paths whose text still holds an id,
+    (a library Rename moves a pre-id project's autosaves without restamping them, so they still name the old project),
+    and so does the project's own saved workflow, workflows/<project name>.json, whatever id it carries (a two-tab save
+    race can leave it holding another id than project.json); a server book with no _project is the open book and counts too. Only files whose text mentions an id are parsed;
+    changed files are rewritten atomically.
+
+    Files of another project that mention an id are listed in other_projects. A copy of THE SAME decision there (a note
+    whose own id is one of the decision ids: a Duplicate or Save As copy, or the project's own workflow file when a
+    two-tab race left it stamped with a different id) is listed in other_copies too and makes ok False: a copy remains.
+    With everywhere=True those copies are removed as well, keyed by the decision's note id (never by ref: a chat turn
+    id can be shared by an unrelated decision of another project, which is left alone). The decision ids are the ids
+    given that are some chat note's own id, plus the ids of the notes this project's files matched by ref.
+
+    Returns {ok, removed, files: [paths changed], still_mentions: [paths whose text still holds an id after cleaning,
     e.g. inside a string], skipped: [{path, why}]: files that mention an id but were not cleaned (too big, or not tied
-    to any project), other_projects: [paths], errors: [...]}. ok is False when skipped, still_mentions or errors is
-    non-empty: then not every copy is gone, and the caller must say so."""
+    to any project), other_projects: [paths], other_copies: [paths still holding a copy of the decision], errors}.
+    ok is False when skipped, still_mentions, other_copies or errors is non-empty: then not every copy is gone, and
+    the caller must say so."""
     ids = {str(i) for i in (ids or []) if isinstance(i, str) and i.strip()}
-    out = {"ok": True, "removed": 0, "files": [], "still_mentions": [], "skipped": [], "other_projects": [], "errors": []}
+    out = {"ok": True, "removed": 0, "files": [], "still_mentions": [], "skipped": [], "other_projects": [], "other_copies": [], "errors": []}
     if not ids:
         return out
     project = project if isinstance(project, dict) else {}
@@ -169,6 +202,7 @@ def forget(ids, roots, project=None) -> dict:
         pfolder = pname
     seen = set()
     bdir = os.path.realpath(books_dir())
+    mine, others = [], []                                  # (path, data) of parsed files, by scope
     for root in [books_dir(), *[str(r) for r in roots or [] if r]]:
         if not os.path.isdir(root):
             continue
@@ -188,7 +222,7 @@ def forget(ids, roots, project=None) -> dict:
                     continue
                 data = json.loads(text)
                 scope = _in_scope(*_ident(data), pid, pname)
-                if pfolder and _folder_of(root, p) == pfolder:
+                if pfolder and (_folder_of(root, p) == pfolder or _own_workflow(root, p, pfolder)):
                     scope = True                      # inside this project's own folder (e.g. autosaves kept through a Rename)
                 if scope is None and in_books and os.path.basename(p).split(".")[0] == "current":
                     scope = True                      # the open book, saved before books carried their project
@@ -197,25 +231,51 @@ def forget(ids, roots, project=None) -> dict:
                 if scope is None:
                     out["skipped"].append({"path": p, "why": "mentions the id but names no project, so it was not changed"})
                     continue
-                if not scope:
-                    out["other_projects"].append(p)
-                    continue
-                k = _strip(data, ids)
-                if k:
-                    tmp = p + ".forget.tmp"
-                    with open(tmp, "w", encoding="utf-8") as f:
-                        json.dump(data, f, ensure_ascii=False)
-                    os.replace(tmp, p)
-                    out["removed"] += k
-                    out["files"].append(p)
-                    text = json.dumps(data, ensure_ascii=False)
-                if any(i in text for i in ids):
-                    out["still_mentions"].append(p)
+                (mine if scope else others).append((p, data))
             except (OSError, ValueError) as e:
                 out["errors"].append(f"{p}: {e}")
-    out["ok"] = not (out["errors"] or out["skipped"] or out["still_mentions"])
+    # The decision ids: given ids that are a chat note's own id anywhere, and the ids of this project's notes hit by ref.
+    dec = set()
+    for p, data in [*mine, *others]:
+        for x in _chat_notes(data):
+            if x.get("id") in ids:
+                dec.add(x.get("id"))
+    for p, data in mine:
+        for x in _chat_notes(data):
+            if x.get("ref") is not None and x.get("ref") in ids and isinstance(x.get("id"), str):
+                dec.add(x["id"])
+
+    def rewrite(p, data, keys):
+        k = _strip(data, keys)
+        if k:
+            tmp = p + ".forget.tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+            os.replace(tmp, p)
+            out["removed"] += k
+            out["files"].append(p)
+        return k
+
+    for p, data in mine:
+        try:
+            rewrite(p, data, ids)
+            if any(i in json.dumps(data, ensure_ascii=False) for i in ids | dec):
+                out["still_mentions"].append(p)
+        except (OSError, ValueError) as e:
+            out["errors"].append(f"{p}: {e}")
+    for p, data in others:
+        out["other_projects"].append(p)
+        try:
+            if everywhere and dec:
+                rewrite(p, data, dec)
+            if any(x.get("id") in dec for x in _chat_notes(data)):
+                out["other_copies"].append(p)
+        except (OSError, ValueError) as e:
+            out["errors"].append(f"{p}: {e}")
+    out["ok"] = not (out["errors"] or out["skipped"] or out["still_mentions"] or out["other_copies"])
     if not out["ok"]:
-        n = len(out["errors"]) + len(out["skipped"]) + len(out["still_mentions"])
+        n = len(out["errors"]) + len(out["skipped"]) + len(out["still_mentions"]) + len(out["other_copies"])
         out["error"] = f"{n} stored cop{'y' if n == 1 else 'ies'} not cleaned: " + "; ".join(
-            [*out["errors"], *[f"{s['path']} ({s['why']})" for s in out["skipped"]], *[f"{q} (still mentions it)" for q in out["still_mentions"]]])[:600]
+            [*out["errors"], *[f"{s['path']} ({s['why']})" for s in out["skipped"]], *[f"{q} (still mentions it)" for q in out["still_mentions"]],
+             *[f"{q} (another project's copy of this decision; forget with everywhere to remove it)" for q in out["other_copies"]]])[:600]
     return out
