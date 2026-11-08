@@ -13,6 +13,9 @@ import { FBXLoader } from "../../vendor/addons/FBXLoader.mjs";
 import * as SkeletonUtils from "../../vendor/addons/SkeletonUtils.mjs";
 import { gazeKeys } from "../gaze.mjs";
 import * as C from "./avatarcore.mjs";
+import * as F from "./footplant.mjs";
+
+F.setCloner((o) => SkeletonUtils.clone(o));
 
 export const ROCKETBOX_DIR = new URL("./rocketbox/", import.meta.url).href;
 const TEX_DIR = `${ROCKETBOX_DIR}tex/`;
@@ -100,8 +103,12 @@ export function buildKit(model, clips, { texErrors = [] } = {}) {
   const prepared = {};
   for (const k of C.CLIP_KINDS) if (clips[k]) prepared[k] = C.prepareClip(clips[k], boneNames);
   const { stature, floor, idleBox } = measureStanding(model, prepared.idle?.clip);
+  // Foot grounding (footplant.mjs): the leg bones and sole vertices, found once in the bind pose, and each clip's own
+  // standing sole height (the body offset follows the clip that plays, not only the idle's first frame).
+  const feet = F.footRig(model, keep);
+  const floors = F.clipFloors(model, prepared, feet);
   return {
-    template: model, meshName: keep.name, materials, faceless: { neutral, hidden }, clips: prepared, hipUnits, stature, floor, idleBox,
+    template: model, meshName: keep.name, materials, faceless: { neutral, hidden }, clips: prepared, hipUnits, stature, floor, idleBox, feet, floors,
     report: { meshes: list.map((m) => m.name), kept: keep.name, lightsRemoved: lights.length, missingMaps: C.missingColorMaps(materials), lashTriangles: lashes,
       unbound: Object.fromEntries(C.CLIP_KINDS.map((k) => [k, prepared[k]?.missing || null])), texErrors },
   };
@@ -236,7 +243,7 @@ export function instantiate(kit, a) {
     act.setEffectiveWeight(0);
     actions[k] = act;
   }
-  return { holder, model, mesh, mixer, actions, bones, kit, g: null, shown: false, clay: [], clayVis: [], faceless: false, reason: null };
+  return { holder, model, mesh, mixer, actions, bones, legs: F.legBones(bones, kit.feet), kit, g: null, shown: false, clay: [], clayVis: [], faceless: false, reason: null };
 }
 
 /** Face shown or faceless (head keeps its shape, plain neutral material, no lashes or brows; the hair stays). */
@@ -284,6 +291,7 @@ export function placeHolder(g, holder, { x, y, z, yaw, scale }) {
 
 /** Pose the avatar for this frame: weights by speed, walk and run on one shared gait phase (avatarcore.gaitTable). */
 export function drive(skin, { frame, fps, speed, phase, seed }) {
+  F.restoreClipPose(skin.ikSaved);   // the clip's own legs back before the mixer writes (it skips unchanged values)
   const w = C.clipWeights(speed);
   const meta = {};
   for (const k of C.CLIP_KINDS) if (skin.kit.clips[k]) meta[k] = { duration: skin.kit.clips[k].clip.duration };
@@ -468,10 +476,54 @@ export function avatarsAt(stage) {
       const path = keys.length > 1 ? groundPath(stage, a, last) : new Array(last + 1).fill([p[0], p[2]]);
       skin.gait = { sig, ...C.gaitTable(path, fps, kitStrides(skin.kit, scale)) };
     }
-    const i = Math.max(0, Math.min(last, f));
-    placeHolder(g, skin.holder, { x: p[0], y: y - (skin.kit.floor || 0) * scale, z: p[2], yaw, scale });
-    drive(skin, { frame: f, fps, speed: skin.gait.speed[i] || 0, phase: skin.gait.phase[i] || 0, seed: C.phaseSeed(a.id) });
+    const plan = footPlanFor(stage, a, g, skin, { last, fps, scale });
+    poseRaw(stage, a, g, skin, f, { fps, scale, last });
+    if (plan) skin.footOut = F.groundFeet({ plan, rig: skin.kit.feet, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, frame: f, saved: (skin.ikSaved ||= []) });
   }
+}
+
+/** Place and pose the avatar on its clip alone at frame f (no grounding): the actor's ground position and heading,
+ *  lowered by the playing clips' own floor (footplant.floorFor), on the shared gait phase. */
+function poseRaw(stage, a, g, skin, f, { fps, scale, last }) {
+  const i = Math.max(0, Math.min(last, f));
+  const p = stage._actorPosAt(a, f), y = stage._heightAt(a, f) + physicsLift(a), yaw = stage._headingAt(a, f);
+  const speed = skin.gait.speed[i] || 0;
+  placeHolder(g, skin.holder, { x: p[0], y: y - F.floorFor(skin.kit, C.clipWeights(speed)) * scale, z: p[2], yaw, scale });
+  drive(skin, { frame: f, fps, speed, phase: skin.gait.phase[i] || 0, seed: C.phaseSeed(a.id) });
+  skin.holder.updateMatrixWorld(true);   // the bones' world matrices for this pose (the foot plan reads them)
+}
+
+const _ids = new WeakMap();
+let _nextId = 1;
+/** A small stable id per object (for cache signatures); 0 for none. */
+const idOf = (o) => { if (!o || typeof o !== "object") return 0; let v = _ids.get(o); if (!v) { v = _nextId++; _ids.set(o, v); } return v; };
+
+/**
+ * The person's foot plan for this shot (footplant.planFeet), built once from every frame and cached on the skin until
+ * the gait (keys, length, fps, size), what they stand on (the set, the parked props, a dock or deck's height table),
+ * their jumps or the physics lift change. null when the avatar has no foot rig. Building it poses the clip at every
+ * frame; avatarsAt poses the frame shown afterwards.
+ */
+function footPlanFor(stage, a, g, skin, { last, fps, scale }) {
+  const rig = skin.kit.feet;
+  if (!rig || !skin.legs || stage.footGrounding === false) return null;   // footGrounding false: the clips alone (A/B checks)
+  const shapes = stage.root ? stage._supportShapes?.() : null;
+  const sig = `${skin.gait.sig}|${stage.setFx?.id || ""}|${idOf(shapes)}|${idOf(stage._yCache?.get(a))}|${idOf(stage._swimCache?.get(a)?.stand)}|${physicsLift(a)}|${skin.kit.floors ? 1 : 0}`;
+  if (skin.feet?.sig === sig) return skin.feet.plan;
+  const baseY = (f) => stage._heightAt(a, f);
+  const ground = (x, z, f) => {
+    const by = baseY(f);
+    const onKeys = stage._standOnKeys?.(a, g, f);
+    const s = shapes ? stage._supportAt(x, z, by) : Math.max(0, stage.setFx?.floorAt?.(x, z) || 0);
+    return Math.max(s, onKeys ?? -Infinity);
+  };
+  const lifted = physicsLift(a) > 0;
+  const plan = F.planFeet({
+    n: last + 1, fps, heightM: C.clayHeight(a) * (a.scale || 1), rig, mesh: skin.mesh, bones: skin.legs, ground, baseY,
+    poseRaw: (f) => { poseRaw(stage, a, g, skin, f, { fps, scale, last }); return !(lifted || stage._airborneAt?.(a, f)); },
+  });
+  skin.feet = { sig, plan };
+  return plan;
 }
 
 /** The lift stage.setFrame gives an unbaked dynamic / static object (stage.mjs: g.position.y += a.physics.lift). */
@@ -510,7 +562,7 @@ export function markLiveTilt(stage, g, q) {
     if (a && skin.shown) {
       const scale = C.statureScale(C.clayHeight(a) * (a.scale || 1), skin.kit.stature);
       const w = g.getWorldPosition(new THREE.Vector3());
-      placeHolder(g, skin.holder, { x: w.x, y: w.y - (skin.kit.floor || 0) * scale, z: w.z, yaw: new THREE.Euler().setFromQuaternion(q, "YXZ").y, scale });
+      placeHolder(g, skin.holder, { x: w.x, y: w.y - F.floorFor(skin.kit, skin.weights) * scale, z: w.z, yaw: new THREE.Euler().setFromQuaternion(q, "YXZ").y, scale });
     }
   }
   return true;
