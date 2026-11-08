@@ -138,6 +138,51 @@ def walk_refs(obj, path: tuple = ()):
             yield from walk_refs(v, path + (i,))
 
 
+_MEDIA_EXT = re.compile(r"\.(mp4|mov|webm|mkv|m4v|avi|png|jpe?g|webp|exr|tiff?|gif|wav|mp3|m4a|aac|flac|ogg|opus|glb|gltf|fbx|obj)$", re.I)
+_AUDIO_EXT = (".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus")
+_RAWISH = re.compile(r"^(?:file:|https?://|~|/|\\\\|[A-Za-z]:[\\/])|[\\/]")
+
+
+def raw_path_name(v) -> str | None:
+    """The file name of a string that names a media file by a raw path or a remote / file: URL (not a ComfyUI ref, so
+    Collect can't copy it from output / input / temp), else None. '/Users/x/clip.mov' -> 'clip.mov'."""
+    if not isinstance(v, str) or len(v) > 1024 or "\n" in v or parse_ref(v):
+        return None
+    t = v.strip().split("?", 1)[0].split("#", 1)[0]
+    if not _MEDIA_EXT.search(t) or not _RAWISH.search(t):
+        return None
+    return re.split(r"[\\/]", t)[-1] or None
+
+
+def walk_cut(obj, path: tuple = (), shot_id=None, rung=None):
+    """Like walk_refs, for the Cut: yield (path, ref | None, raw name | None, shot_id, rung) with the nearest enclosing
+    shot_id and take rung, for every file reference AND every raw path the Cut names."""
+    r = parse_ref(obj)
+    if r:
+        yield path, r, None, shot_id, rung
+        return
+    if isinstance(obj, dict):
+        sid = obj.get("shot_id") if isinstance(obj.get("shot_id"), str) else shot_id
+        rg = obj.get("rung") if isinstance(obj.get("rung"), str) else rung
+        for k, v in obj.items():
+            yield from walk_cut(v, path + (str(k),), sid, rg)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            yield from walk_cut(v, path + (i,), shot_id, rung)
+    else:
+        n = raw_path_name(obj)
+        if n:
+            yield path, None, n, shot_id, rung
+
+
+def path_label(path: tuple) -> str:
+    """('ss_cut', 'cut', 2, 'take', 'url') -> 'ss_cut.cut[2].take.url'."""
+    out = ""
+    for p in path:
+        out += f"[{p}]" if isinstance(p, int) else (f".{p}" if out else str(p))
+    return out
+
+
 def _maybe_json(v):
     if isinstance(v, str) and v[:1] in "{[":
         try:
@@ -343,6 +388,37 @@ def plan_collect(workflow: dict, name: str, *, extras: dict | None = None, layer
                     entry["files"].append(dest)
         (loc_list if is_loc else cast_list).append(entry)
 
+    # The Cut: the live cut (ss_cut), the Script's archived scene Cuts and scene stages (ss_script), and the App's
+    # timeline (extras.timeline: pinned takes, upper picture clips, independent audio). Same add(): a file already
+    # collected for a shot keeps its place; only output / input / temp refs are copied. Raw paths and remote URLs the
+    # Cut names can't be collected: they are reported by file name (unsupported).
+    unsupported: list[dict] = []
+    seen_raw: set[tuple] = set()
+    cut_sources = [("ss_cut", props.get("ss_cut")), ("ss_script", props.get("ss_script")), ("timeline", extras.get("timeline"))]
+    for label, val in cut_sources:
+        if not isinstance(val, (dict, list)):
+            continue
+        for path, ref, raw, sid, rung in walk_cut(val, (label,)):
+            if raw:
+                if (raw, label) not in seen_raw:
+                    seen_raw.add((raw, label))
+                    unsupported.append({"name": raw, "where": path_label(path)})
+                continue
+            fn = ref["filename"].lower()
+            sh = shot_by_id.get(sid) if sid else None
+            if fn.endswith((".glb", ".gltf", ".fbx", ".obj")):
+                add(ref, "locations/set", slug(os.path.splitext(ref["filename"])[0], 40))
+            elif sh:
+                folder = KIND_FOLDER.get(str(rung or "").lower()) or _folder_for(path)
+                kind = slug(str(rung).lower(), 20) if rung and KIND_FOLDER.get(str(rung).lower()) else folder.split("/")[-1]
+                dest = add(ref, f"scenes/{sh['scene']}/shots/{sh['code']}/{folder}", f"{sh['code']}_{kind}")
+                take = {"kind": kind, "file": dest, "source": ref_key(ref), "chosen": ref_key(ref) in chosen_keys}
+                if not any(t["source"] == take["source"] for t in shot_out[sh["id"]]["takes"]):
+                    shot_out[sh["id"]]["takes"].append(take)
+            else:
+                audio = fn.endswith(_AUDIO_EXT) or any(isinstance(p, str) and re.search(r"audio|sound|music|voice", p, re.I) for p in path)
+                add(ref, "cut/audio" if audio else "cut/media", slug(os.path.splitext(ref["filename"])[0], 40))
+
     # Anything else on the node that names a file (stage set GLBs, look refs...) goes to refs/ at the top.
     for prop, val in props.items():
         if prop in ("ss_renders", "ss_chosen", "ss_ltx", "ss_shot_cast", "ss_approvals", "ss_cast", "ss_cut", "ss_script"):
@@ -389,9 +465,11 @@ def plan_collect(workflow: dict, name: str, *, extras: dict | None = None, layer
         "cut": {"timeline": "cut/timeline.json" if "cut/timeline.json" in texts else None,
                 "exports": sorted(k for k in texts if k.startswith("cut/") and k != "cut/timeline.json")},
         "relink": relink,
+        "unsupported": unsupported,
         "workflow": workflow,
     }
-    return {"name": name, "copies": copies, "texts": texts, "layerpacks": lp_plan, "voices": voice_plan, "project": project}
+    return {"name": name, "copies": copies, "texts": texts, "layerpacks": lp_plan, "voices": voice_plan, "project": project,
+            "unsupported": unsupported}
 
 
 # ------------------------------------------------------------------------------------------------ writing
@@ -492,11 +570,18 @@ def write_collect(plan: dict, roots: dict, dest_root: Path, *, user_dir: Path | 
         title = f"{name}"
         (tmp / "README.txt").write_text(README.format(name=title, rule="=" * (len(title) + 35),
                                                       when=time.strftime("%Y-%m-%d %H:%M")), encoding="utf-8")
-        if missing:
-            (tmp / "MISSING.txt").write_text(
-                "These files are named by the project but were not found when it was collected.\n"
-                "The rest of the project was collected; re-render these or copy them in by hand.\n\n"
-                + "\n".join(missing) + "\n", encoding="utf-8")
+        unsupported = list(plan.get("unsupported") or [])
+        if missing or unsupported:
+            body = ""
+            if missing:
+                body += ("These files are named by the project but were not found when it was collected.\n"
+                         "The rest of the project was collected; re-render these or copy them in by hand.\n\n"
+                         + "\n".join(missing) + "\n")
+            if unsupported:
+                body += (("\n" if body else "") + "The Cut names these files by a raw path or a web address, not a ComfyUI file, so\n"
+                         "Collect could not copy them (it only reads ComfyUI's output / input / temp folders). Copy them in by hand:\n\n"
+                         + "\n".join(f"{u['name']}\t({u['where']})" for u in unsupported) + "\n")
+            (tmp / "MISSING.txt").write_text(body, encoding="utf-8")
         if out.exists():
             old = out.with_name(f".{name}.old")
             if old.exists():
@@ -509,7 +594,8 @@ def write_collect(plan: dict, roots: dict, dest_root: Path, *, user_dir: Path | 
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
-    return {"folder": str(out), "name": name, "copied": copied, "missing": missing, "bytes": nbytes}
+    return {"folder": str(out), "name": name, "copied": copied, "missing": missing, "bytes": nbytes,
+            "unsupported": unsupported}
 
 
 def build_zip(folder: Path) -> Path:

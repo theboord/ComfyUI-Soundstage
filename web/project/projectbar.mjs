@@ -313,7 +313,8 @@ export class ProjectController {
         body: JSON.stringify({ name, workflow: wf, extras }) });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || r.status);
-      const miss = j.missing?.length ? ` ${j.missing.length} missing (listed in MISSING.txt).` : "";
+      const miss = (j.missing?.length ? ` ${j.missing.length} missing (listed in MISSING.txt).` : "") +
+        (j.unsupported?.length ? ` Not collected (named by a raw path or web address): ${j.unsupported.slice(0, 3).map((u) => u.name).join(", ")}${j.unsupported.length > 3 ? ` and ${j.unsupported.length - 3} more` : ""}; listed in MISSING.txt.` : "");
       this.say(`Collected "${j.name}": ${j.copied} files, ${(j.bytes / 1e6).toFixed(1)} MB.${miss} Downloading the zip…`);
       const a = document.createElement("a");
       a.href = this.api.apiURL(`/soundstage/project/collect/zip?name=${encodeURIComponent(j.name)}`);

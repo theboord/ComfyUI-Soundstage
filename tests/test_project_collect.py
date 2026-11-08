@@ -194,3 +194,93 @@ def test_routes_helpers(tmp_path, monkeypatch):
     with pytest.raises(FileNotFoundError):
         R.open_collected("../../etc")
     assert R.TEMPLATE.is_file()
+
+
+# ---------------------------------------------------------------- the Cut: ss_cut, ss_script, extras.timeline (invented)
+
+def _cut_workflow():
+    wf = _fixture_workflow()
+    props = wf["nodes"][0]["properties"]
+    props["ss_cut"] = {"cut": [
+        {"shot_id": "sh_a", "in": 0, "out": 24},
+        {"kind": "gap", "in": 24, "out": 36},
+        {"shot_id": "sh_b", "in": 0, "out": 30, "audio_detached": True,
+         "take": {"url": "/view?filename=pin_00004_.mp4&subfolder=soundstage&type=output", "rung": "final", "version": 2}},
+        {"shot_id": "sh_a", "in": 30, "out": 40, "take": {"url": "/view?filename=draft_00007_.mp4&subfolder=soundstage&type=output", "rung": "draft"}},
+    ], "audio": [{"id": "m1", "file": "soundstage/music/theme_00001_.wav [output]", "start": 0},
+                 {"id": "m2", "file": "/Users/someone/Desktop/temp_score.wav"}],
+        "video_tracks": [{"clips": [{"shot_id": "sh_c", "in": 0, "out": 12, "start": 40,
+                                     "take": {"url": "/view?filename=draft_00009_.mp4&subfolder=soundstage&type=output", "rung": "draft"}}]}]}
+    props["ss_script"]["scene_cuts"] = {"sc_2": {"cut": [{"shot_id": "sh_c", "in": 0, "out": 10,
+                                                          "take": {"url": "https://example.com/takes/car.mp4", "rung": "final"}}]}}
+    props["ss_script"]["scene_stages"]["sc_2"]["objects"] = [{"kind": "set", "model": "soundstage/sets/road.glb [output]"}]
+    return wf
+
+
+def _cut_roots(tmp_path):
+    roots = _roots(tmp_path)
+    out = tmp_path / "output" / "soundstage"
+    (out / "music").mkdir()
+    (out / "music" / "theme_00001_.wav").write_bytes(b"RIFFtheme")
+    (out / "pin_00004_.mp4").write_bytes(b"pin")
+    (out / "upper_00001_.mp4").write_bytes(b"upper")
+    (out / "sets").mkdir()
+    (out / "sets" / "road.glb").write_bytes(b"glb")
+    (tmp_path / "input" / "vo_take.wav").write_bytes(b"RIFFvo")
+    return roots
+
+
+def test_collect_walks_the_cut(tmp_path):
+    roots = _cut_roots(tmp_path)
+    timeline = {"cut": [{"shot_id": "sh_b", "in": 0, "out": 30,
+                         "take": {"url": "/view?filename=pin_00004_.mp4&subfolder=soundstage&type=output", "rung": "final"}}],
+                "video": [{"shot_id": "sh_a", "file": {"filename": "upper_00001_.mp4", "subfolder": "soundstage", "type": "output"}}],
+                "audio": [{"id": "vo", "file": "vo_take.wav [input]"}, {"id": "x", "file": "file:///Volumes/Drive/fx_hit.wav"}],
+                "archived_cuts": [{"name": "v1", "cut": [{"shot_id": "sh_a", "take": {"url": "C:\\Media\\old_take.mov", "rung": "draft"}}]}]}
+    plan = C.plan_collect(_cut_workflow(), "Cut Film", extras={"timeline": timeline})
+    dests = {c["dest"] for c in plan["copies"]}
+    keys = [C.ref_key(c["src"]) for c in plan["copies"]]
+    assert len(keys) == len(set(keys))                                   # dedup: one copy per source file
+    # a pinned take goes with its shot, in its rung's folder; one a shot already had keeps its first place
+    assert "scenes/S01/shots/S01_020/takes/final/S01_020_final_01.mp4" in dests
+    assert sum(1 for k in keys if k.endswith("draft_00007_.mp4")) == 1
+    assert "scenes/S01/shots/S01_010/takes/draft/S01_010_draft_01.mp4" in dests
+    # upper picture clip (timeline.video) with its shot; independent audio in cut/audio; scene-stage set GLB
+    assert any(d.startswith("scenes/S01/shots/S01_010/") and C.ref_key(c["src"]).endswith("upper_00001_.mp4")
+               for c in plan["copies"] for d in [c["dest"]])
+    assert "cut/audio/theme_00001_01.wav" in dests and "cut/audio/vo_take_01.wav" in dests
+    assert "locations/set/road_01.glb" in dests
+    b = next(s for s in plan["project"]["shots"] if s["id"] == "sh_b")
+    assert any(t["kind"] == "final" and t["file"].endswith("S01_020_final_01.mp4") for t in b["takes"])
+    # raw paths / web addresses: reported by file name, never copied
+    names = sorted(u["name"] for u in plan["unsupported"])
+    assert names == ["car.mp4", "fx_hit.wav", "old_take.mov", "temp_score.wav"]
+    where = {u["name"]: u["where"] for u in plan["unsupported"]}
+    assert where["temp_score.wav"] == "ss_cut.audio[1].file" and where["car.mp4"].startswith("ss_script.scene_cuts.sc_2")
+    assert not any("Users" in str(u) or "Volumes" in str(u) for u in plan["unsupported"])   # names only, no paths
+
+    res = C.write_collect(plan, roots, tmp_path / "output" / C.ROOT_NAME)
+    d = tmp_path / "output" / C.ROOT_NAME / "Cut Film"
+    assert (d / "cut" / "audio" / "theme_00001_01.wav").read_bytes() == b"RIFFtheme"
+    assert (d / "scenes" / "S01" / "shots" / "S01_020" / "takes" / "final" / "S01_020_final_01.mp4").read_bytes() == b"pin"
+    assert sorted(u["name"] for u in res["unsupported"]) == names
+    miss = (d / "MISSING.txt").read_text()
+    assert "temp_score.wav\t(ss_cut.audio[1].file)" in miss and "/Users/someone" not in miss
+    assert json.loads((d / "project.json").read_text())["unsupported"] == plan["unsupported"]
+
+
+def test_collect_cut_refs_stay_in_approved_roots(tmp_path):
+    wf = {"nodes": [{"type": "SoundstageStage", "properties": {"ss_cut": {"cut": [{"shot_id": "sh", "take": {
+        "url": "/view?filename=passwd.mp4&subfolder=../../../etc&type=output", "rung": "final"}}],
+        "audio": [{"file": {"filename": "x.wav", "subfolder": "", "type": "secret"}}]}}, "widgets_values": []}]}
+    (tmp_path / "out").mkdir()
+    plan = C.plan_collect(wf, "Evil Cut")
+    assert all(c["src"]["type"] in ("output", "input", "temp") for c in plan["copies"])
+    res = C.write_collect(plan, {"output": str(tmp_path / "out")}, tmp_path / "out" / C.ROOT_NAME)
+    assert res["copied"] == 0 and any("passwd.mp4" in m for m in res["missing"])
+
+
+def test_collect_without_a_cut_reports_nothing_unsupported(tmp_path):
+    res, d = _collect(tmp_path)
+    assert res["unsupported"] == []
+    assert "raw path" not in (d / "MISSING.txt").read_text()
