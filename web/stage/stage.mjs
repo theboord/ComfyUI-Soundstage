@@ -2336,15 +2336,18 @@ export class Stage {
   /** Camera key at the playhead, created on first edit (auto-key, like Blender). */
   _editCamera() {
     const keys = this._camKeys();
-    this._markCameraCurve();   // re-keying a shot's camera moves it onto the smooth curve (camcurve.mjs)
     let k = keys.find((x) => x.frame === this.frame);
     if (!k) {
+      // Read the camera under the curve the shot plays NOW (what is on screen), then switch curves: an old shot's new
+      // key, first orbit drag or wheel zoom keeps the shown position and focal (switching first wrote the new curve's
+      // value at the playhead, so the camera jumped as the key went in).
       k = { frame: this.frame, ...clone(this._cameraAt(this.frame)) };
       const host = this._followActor();
       if (host) { const inv = this._actorFrameInverse(host, this.frame); k.position = inv(k.position); k.target = inv(k.target); }
       keys.push(k);
       keys.sort((a, b) => a.frame - b.frame);
     }
+    this._markCameraCurve();   // re-keying a shot's camera moves it onto the smooth curve (camcurve.mjs)
     return k;
   }
 

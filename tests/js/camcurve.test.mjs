@@ -317,3 +317,38 @@ test("report: peak screen speed of a fixed grid through the camera, old curve vs
   console.log(`  screen speed (px/frame at 1920x1080): old curve peak ${before.peak}, frame-to-frame change ${before.worstChange}; new curve peak ${after.peak}, change ${after.worstChange}`);
   assert.ok(after.worstChange < before.worstChange, "the biggest frame-to-frame change in screen speed is smaller on the new curve");
 });
+
+test("an old shot keyed, orbited or zoomed at the playhead keeps what was on screen (the key reads the old curve, then the shot switches)", () => {
+  // C3's keys at frame 30 (between keys 12 and 48): shown z -7.325 / focal 38.50 on the old curve; writing the new
+  // curve's value instead put z -7.475 / focal 37.95 in the key, a jump as the key went in.
+  // (a drag writes positions to the millimetre, so it is held to 1 mm; the rest are exact)
+  const near = (a, b, msg, tol = 1e-6) => assert.ok(len(sub(a.position, b.position)) < tol && len(sub(a.target, b.target)) < tol && Math.abs(a.focal_mm - b.focal_mm) < 1e-6,
+    `${msg}: shown ${JSON.stringify(b)} became ${JSON.stringify(a)}`);
+  const cases = {
+    "set key here": (st) => st.setKeyHere(),
+    "first orbit drag (what the drag edits)": (st) => { st._activeOrbit(); },
+    "orbit drag by zero pixels": (st) => st._navDrag("orbit", false, 0, 0),
+    "wheel zoom / focal edit (the lens key)": (st) => { const k = st._editCamera(); k.focal_mm = +k.focal_mm; },
+  };
+  for (const [name, act] of Object.entries(cases)) {
+    const { st } = camSampler({});
+    assert.equal(st.activeShot().cam_curve, undefined, "an old shot");
+    st.frame = 30; st.setFrame(30);
+    const shown = structuredClone(st._cameraAt(30));
+    // the old and the new curve really differ here (so this test can see the jump)
+    assert.ok(len(sub(CC.cameraCurveAt(keysC3(), 30).position, shown.position)) > 0.05);
+    act(st);
+    assert.equal(st.activeShot().cam_curve, CC.CAM_CURVE, `${name}: re-keyed, now on the smooth curve`);
+    const k = st.activeShot().camera_keys.find((x) => x.frame === 30);
+    assert.ok(k, `${name}: a key at the playhead`);
+    const tol = name.includes("zero pixels") ? 1e-3 : 1e-6;
+    near(k, shown, `${name}: the key`, tol);
+    near(st._cameraAt(30), shown, `${name}: the camera at the playhead`, tol);
+  }
+  // a key already at the playhead is the same on both curves: editing it changes nothing either
+  const { st } = camSampler({});
+  st.frame = 48; st.setFrame(48);
+  const shown = structuredClone(st._cameraAt(48));
+  st.setKeyHere();
+  near(st._cameraAt(48), shown, "an existing key");
+});
