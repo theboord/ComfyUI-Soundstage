@@ -210,9 +210,10 @@ test("real Rocketbox walking to a stop and going again, and a U-turn: a foot at 
     let low = 0, at = -1;
     for (const r of out.rows) { const h = Math.min(r.l.h, r.r.h); if (h > low) { low = h; at = r.f; } }
     assert.ok(low < 0.005, `${kind} ${name}: the lower foot ${cm(low)} cm up at f${at}`);
-    // (854e956: the woman's last step into the stop waited planted for the other foot with a 5 cm single-support hip
-    // dip; 1.3 cm since the body's footing follows the ground exactly)
-    check(s, `${kind} ${name}`, { drop: 0.03 });
+    // A guard on behaviour older than the fourth and fifth passes, not a fix of theirs: the hip dip here is 1.28-1.71 cm
+    // (man / woman, stop-go / U-turn) on 854e956, df4288b and now alike. (d4694f2 said 5 cm on 854e956 -> 1.3 cm; the
+    // 5 cm was a note carried over from before 854e956 and was never measured on it.) Held at 2 cm.
+    check(s, `${kind} ${name}`, { drop: 0.02 });
   }
 });
 
