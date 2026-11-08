@@ -573,8 +573,10 @@ export function avatarsAt(stage) {
       }
       // layers over the clip: gaze turns the head, Pose keys the joints they name, a carrier's arms hold the load
       const layer = O.layerJoints({ gazeKeyed: gazeKeys(a).length > 0, poseJoints: O.poseKeyJoints(a), carries: users.carriers.has(a.id) }, R.layerable);
-      if (layer.size) R.retargetFromRig(skin, g, { only: layer });
+      // the rig follows the body first (its layered joints left as the stage posed them), then the layered bones follow
+      // those joints, which now hang off the solved parents (a Pose key is a turn relative to its parent)
       solveRig(stage, skin, g, layer, undo);
+      if (layer.size) R.retargetFromRig(skin, g, { only: layer });
     }
   }
 }

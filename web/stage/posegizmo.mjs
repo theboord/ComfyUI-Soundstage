@@ -2,9 +2,13 @@
 // elbows, wrists, every finger knuckle, hips, knees), or drag the yellow dot on a hand or foot and the arm / leg follows
 // (two-bone IK: the elbow / knee bends on its hinge, toward where it already points). Everything is written as pose
 // keys at the playhead in the same plain-word degrees the Pose panel's sliders use, so sliders, gallery and 3D agree.
+// One motion (Lifelike-only L1): the dots, the IK handles and the rotate ring sit on the VISIBLE body's bones
+// (avatars.boneWorld) when a lifelike person shows; the edit is still written to the logic rig's joint as a Pose key
+// (the stored data does not change), and the visible body follows that joint (the Pose-key layer).
 import * as THREE from "../vendor/three.module.min.mjs";
 import { jointDegrees } from "./humans.mjs";
 import { hingeFrame } from "./mocap.mjs";
+import { boneWorld } from "./people/avatars.mjs";
 
 const PEOPLE = new Set(["man", "woman", "child"]);
 const IK = [   // effector handle -> chain (root, hinge, end), hinge sign (+1 elbow folds forward, -1 knee folds back)
@@ -29,6 +33,31 @@ export class PoseGizmo {
     this._jointGeo = new THREE.SphereGeometry(0.022, 12, 8);
     this._ikGeo = new THREE.SphereGeometry(0.045, 16, 10);
     this._jointMat = jointMat; this._ikMat = ikMat;
+    // the rotate ring's handle on a lifelike body: at the visible bone, turned like the logic joint (fromGizmo
+    // writes its turn back to that joint)
+    this.proxy = new THREE.Object3D();
+    this.proxy.name = "pose_gizmo_proxy";
+    this.group.add(this.proxy);
+  }
+
+  /** Does the selected person show a lifelike body (the dots go on its bones)? */
+  _lifelike(p) { return !!p?.g?.userData?.humanSkin?.shown; }
+
+  /** Where a joint's dot goes: the visible bone (boneWorld), else the logic joint. */
+  _dotAt(p, id, out) {
+    return boneWorld(this.stage, p.a.id, id, out) || p.J[id].getWorldPosition(out);
+  }
+
+  /** Put the ring's handle on the visible bone with the logic joint's world turn. */
+  _syncProxy(p) {
+    const j = this.joint && p?.J[this.joint];
+    if (!j) return;
+    this.group.updateWorldMatrix(true, false);
+    const w = this._dotAt(p, this.joint, new THREE.Vector3());
+    this.proxy.position.copy(this.group.worldToLocal(w));
+    const gq = this.group.getWorldQuaternion(new THREE.Quaternion()).invert();
+    this.proxy.quaternion.copy(gq.multiply(j.getWorldQuaternion(new THREE.Quaternion())));
+    this.proxy.updateMatrixWorld(true);
   }
 
   person() {
@@ -51,7 +80,9 @@ export class PoseGizmo {
   /** The object the transform gizmo should hold (a joint), or undefined when pose mode is not driving it. */
   target() {
     if (!this.active || !this.joint) return undefined;
-    return this.person()?.J[this.joint];
+    const p = this.person();
+    if (!p) return undefined;
+    return this._lifelike(p) ? this.proxy : p.J[this.joint];
   }
 
   /** Keep the dots on the joints (after every setFrame). */
@@ -67,7 +98,7 @@ export class PoseGizmo {
       want.add(id);
       let m = this.dots.get(id);
       if (!m) { m = new THREE.Mesh(this._jointGeo, this._jointMat.clone()); m.userData.poseJoint = id; m.renderOrder = 998; this.group.add(m); this.dots.set(id, m); }
-      j.getWorldPosition(m.position);
+      this._dotAt(p, id, m.position);
       m.scale.setScalar(/_(thumb|index|middle|ring|pinky)_/.test(id) ? 0.45 * s : s);
       m.material.color.set(id === this.joint ? 0xf2ff59 : 0xffffff);
     }
@@ -75,10 +106,19 @@ export class PoseGizmo {
       want.add(c.id);
       let m = this.dots.get(c.id);
       if (!m) { m = new THREE.Mesh(this._ikGeo, this._ikMat); m.userData.poseIk = c.id; m.renderOrder = 999; this.group.add(m); this.dots.set(c.id, m); }
-      m.position.copy(this._endPoint(p, c));
+      m.position.copy(this._handleAt(p, c));
       m.scale.setScalar(s);
     }
     for (const [id, m] of this.dots) if (!want.has(id)) { this.group.remove(m); this.dots.delete(id); }
+    if (!this.stage.tc?.dragging) this._syncProxy(p);
+  }
+
+  /** Where an IK handle shows: the visible hand / foot on a lifelike body, else the logic chain's end. */
+  _handleAt(p, c) {
+    const skin = this._lifelike(p) ? p.g.userData.humanSkin : null;
+    const b = skin?.bones?.[c.id === "l_hand" ? "Bip01_L_Hand" : c.id === "r_hand" ? "Bip01_R_Hand" : c.id === "l_foot" ? "Bip01_L_Foot" : "Bip01_R_Foot"];
+    if (b) { b.updateWorldMatrix(true, false); return b.getWorldPosition(new THREE.Vector3()); }
+    return this._endPoint(p, c);
   }
 
   _endPoint(p, c) {
@@ -112,15 +152,21 @@ export class PoseGizmo {
 
   /** The rotate ring moved the joint: store it as degrees at the playhead (the sliders follow). */
   fromGizmo() {
-    const p = this.person(), j = this.target();
-    if (!p || !j) return;
+    const p = this.person(), t = this.target();
+    if (!p || !t) return;
+    const j = p.J[this.joint];
+    if (t === this.proxy) {   // the ring turned the handle on the visible bone: the same world turn onto the logic joint
+      this.proxy.updateMatrixWorld(true);
+      j.parent.updateWorldMatrix(true, false);
+      j.quaternion.copy(j.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(this.proxy.getWorldQuaternion(new THREE.Quaternion())));
+    }
     this.stage._poseKeyHere(p.a).joints[this.joint] = jointDegrees(j).map((v) => Math.round(v * 10) / 10);
     this.stage.setFrame(this.stage.frame);
   }
 
   _startIk(p, id, ray) {
     const c = IK.find((x) => x.id === id);
-    const end = this._endPoint(p, c);
+    const end = this._handleAt(p, c);
     const n = this.stage._viewportCamera().getWorldDirection(new THREE.Vector3()).negate();
     this.ik = { c, plane: new THREE.Plane().setFromNormalAndCoplanarPoint(n, end) };
     this.joint = null;

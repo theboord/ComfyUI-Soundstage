@@ -277,3 +277,34 @@ test("real Rocketbox: a held prop follows the VISIBLE hand; the gizmo's dots sit
     }
   }
 });
+
+test("real Rocketbox: the Pose gizmo: dots, IK handles and the rotate ring on the visible bones; a ring turn is written to the logic joint and the body follows", { skip: NOT_INSTALLED }, async () => {
+  const { PoseGizmo } = await import("../../web/stage/posegizmo.mjs");
+  const K = await realKits();
+  const st = headless([{ id: "p1", kind: "man", height_m: 1.8, position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] }], 25);
+  st.gizmoScene = new THREE.Scene();
+  st._attachGizmo = () => {}; st.tc = { dragging: false };
+  await withKit(st, K);
+  st.selected = "p1";
+  st.setFrame(4);
+  const pg = new PoseGizmo(st);
+  assert.equal(pg.setActive(true), true);
+  const g = st.actorMeshes.get("p1"), skin = g.userData.humanSkin;
+  for (const [id, dot] of pg.dots) {
+    const bn = R.boneFor(id) || { l_hand: "Bip01_L_Hand", r_hand: "Bip01_R_Hand", l_foot: "Bip01_L_Foot", r_foot: "Bip01_R_Foot" }[id];
+    if (!bn || !skin.bones[bn]) continue;
+    assert.ok(dot.position.distanceTo(W(skin.bones[bn])) < 0.02, `${id}: ${(dot.position.distanceTo(W(skin.bones[bn])) * 100).toFixed(1)} cm off its bone`);
+  }
+  pg.pickJoint("l_elbow");
+  const t = pg.target();
+  assert.equal(t, pg.proxy, "the ring holds the handle on the visible elbow");
+  assert.ok(t.position.distanceTo(W(skin.bones.Bip01_L_Forearm)) < 0.02);
+  const before = W(skin.bones.Bip01_L_Hand);
+  t.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.8));
+  pg.fromGizmo();
+  const a = st.state.actors[0];
+  assert.ok(a.pose_keys?.[0]?.joints?.l_elbow, "written as a Pose key on the logic joint");
+  st.setFrame(4);
+  assert.ok(W(skin.bones.Bip01_L_Hand).distanceTo(before) > 0.05, "the visible forearm follows the edit");
+  assert.ok(limbAngle(skin, g) < 1, "logic rig and body agree after the edit");
+});

@@ -51,6 +51,7 @@ import * as LightRig from "./lightrig.mjs";
 import { horse as HorseParts, prop as PropParts } from "./rigparts.mjs";
 import { cameraCurveAt, curveVersion, CAM_CURVE } from "./camcurve.mjs";   // the smooth camera curve (version 2)
 import { keysHash } from "./people/avatarcore.mjs";   // a cheap signature of a person's keys (_jumpsInShot)
+import { setStandIn } from "./people/standin.mjs";
 import { upgradeHuman, avatarsAt, avatarsReady, loadingCount, setShown as setAvatarShown, AVATAR_WAIT_MS, undoAvatarWrites } from "./people/avatars.mjs";   // lifelike people over the hidden logic rig (one motion, Lifelike-only L1)
 import { swapAvatarCutouts, idMaterial } from "./people/cutout.mjs";   // hair / lash cards keep their cut-out in Depth, Clay, Wire and ID
 import { DEPTH_SHADER, depthPassMaterial } from "./depthshader.mjs";   // the skinning Depth shader (also the underwater set's)
@@ -4246,7 +4247,9 @@ export class Stage {
         o.frustumCulled = false;                                   // skinned bounds don't follow the gallop
         if (tint && /^Main/.test(o.material?.name || "")) { o.material = o.material.clone(); o.material.color.lerp(tint, 0.85); }
       });
-      for (const ch of g.children) ch.visible = false;
+      // the built horse is hidden logic from here on (gait, saddle, colliders read it; it is never drawn)
+      for (const ch of g.children) { ch.visible = false; ch.traverse((o) => { if (o.isMesh) o.userData.role = "logic"; }); }
+      model.traverse((o) => { if (o.isMesh) o.userData.role = "look"; });
       const holder = new THREE.Group();
       holder.add(model);
       g.add(holder);
@@ -4268,7 +4271,11 @@ export class Stage {
       g.updateMatrixWorld(true);
       Gait.rigHorse(g, model, g.userData.horseRig);
       this.setFrame(this.frame);
-    }).catch((err) => console.warn("Soundstage: rigged horse failed, keeping the built one", err));
+    }).catch((err) => {
+      // never the clay look: the built horse shows as the marked stand-in (people/standin.mjs) until the GLB loads
+      if (this.actorMeshes.get(a.id) === g) setStandIn(g, true);
+      console.warn("Soundstage: rigged horse failed, showing the marked stand-in", err);
+    });
   }
 
   /**
@@ -5153,7 +5160,11 @@ export class Stage {
         if (lamp) { o.material = o.material.clone(); o.material.emissive = new THREE.Color(lamp[0]); o.material.emissiveIntensity = lamp[1]; o.userData.lamp = o.material.name; return; }
         if (tint && /^(Blue|White|Red|Body|Main)/.test(o.material?.name || "")) { o.material = o.material.clone(); o.material.color.copy(tint); }
       });
-      for (const ch of g.children) ch.visible = spec.cabin !== false && !!ch.userData.cabin;   // seats, dash, wheel show through the glass
+      for (const ch of g.children) {   // seats, dash, wheel show through the glass; the rest of the built car is hidden logic
+        ch.visible = spec.cabin !== false && !!ch.userData.cabin;
+        if (!ch.visible) ch.traverse((o) => { if (o.isMesh) o.userData.role = "logic"; });
+      }
+      model.traverse((o) => { if (o.isMesh) o.userData.role = "look"; });
       // A soft cabin light from the dash onto the front seats (the roof shades the cabin), so the people seated
       // behind the glass read in Clay and Color, even at night. Short range, no shadow: it stays inside the car.
       const seat = g.userData.seats?.[0]?.pos;
@@ -5179,7 +5190,10 @@ export class Stage {
       g.userData.vehicleBody = body;
       g.userData.wheelRig = wheels;
       this.setFrame(this.frame);
-    }).catch((err) => console.warn("Soundstage: car model failed, keeping the built one", err));
+    }).catch((err) => {
+      if (this.actorMeshes.get(a.id) === g) setStandIn(g, true);   // never the clay look: the marked stand-in
+      console.warn("Soundstage: car model failed, showing the marked stand-in", err);
+    });
   }
 
   // ---------- imported models (GLB / glTF) ----------
