@@ -5,6 +5,48 @@ Each entry links to the code; every milestone ships with tests.
 
 ## 2026-11-08
 
+**Cut shell, fixes, 2026-11-08 02:30 (private branch `private/ask-hooks`, not pushed): a gap can no longer fill the disk; Collect never copies the wrong file; the raw-path report counts each path once**
+
+- **Still wrong (read first, known limits):** Node and pytest only; not run in the browser, the App or a live
+  ComfyUI, and GPT's Cut code is still not on this machine.
+  - **The caps are fixed numbers, not settings:** one gap at most 10 minutes (App and server), the joined video at
+    most 4 hours (server only; the App doesn't add up clip lengths, so a 5-hour cut is refused by the server, after
+    the click, with "... longer than the 4-hour limit"). A real 10-minute-plus black hold has to be split.
+  - **The ffmpeg timeout is a guess** (300 s + 8x the output length, at most 6 h): a very slow machine joining a long
+    cut could be stopped early ("ffmpeg took longer than ... and was stopped; nothing was saved"). Timing was not
+    measured on the Mac Pro or a pod.
+  - **A backslash in a ref is read by platform:** unsupported on macOS / Linux (where it's a plain character), a
+    folder separator on Windows (where ComfyUI writes subfolders that way). A project collected on a Mac from a
+    Windows machine's refs (`soundstage\takes`) lists those as unsupported instead of copying them.
+  - **Unsupported refs are listed by file name only** (as before, no paths in the report), so two different
+    `clip.mov` entries look alike apart from their 'where'.
+  - The App's fps is still `shot.fps || 24`, so an fps of 0 on the stage becomes 24 before the server sees it; the
+    server's new fps check guards other callers.
+- **Gap length capped, both sides** ([web/onevideo.mjs](web/onevideo.mjs) `MAX_GAP_SECONDS`, `maxGapFrames`,
+  `longGaps`, `checkOneVideo`, `oneVideoClips`): a gap longer than 10 minutes at the cut's exact rate (14385 frames at
+  23.976) is refused, whatever `oneVideoSupport` answered ("This cut has a gap longer than 10 minutes; one-video
+  export can't include it yet."). Before, `{kind: "gap", in: 0, out: 1e12}` passed as gaps-only and asked ffmpeg for
+  about 4.2e10 s of black. The server ([soundstage/cut/assemble.py](soundstage/cut/assemble.py) `plan`, `assemble`)
+  refuses the same gap, any clip or whole cut over 4 hours, and runs ffmpeg with a timeout; a stopped or failed
+  ffmpeg leaves no half-written file.
+- **Server input checks:** a gap whose `frames` is null, missing (with no `in`/`out`), not a number or negative is
+  refused instead of dropped; an fps of 0, negative, `24/0`, text, nan, inf or over 1000 is a plain-words 400 instead
+  of a ZeroDivisionError or an ffmpeg failure (0 used to become 24 silently).
+- **Collect never cuts a ref down to its basename** ([soundstage/project/collect.py](soundstage/project/collect.py)
+  `parse_ref`, `unsafe_ref_path`, `walk_unsafe_refs`): `{"filename": "/etc/passwd.mp4", "type": "output"}` used to copy
+  an unrelated `output/passwd.mp4` into `cut/media/`. A filename / subfolder with an absolute path, a drive letter, a
+  `..` part or a backslash is now listed in the unsupported raw paths (anywhere on the node, not only in the Cut); a
+  relative path in `filename` folds into `subfolder`.
+- **The raw-path report** dedupes by the whole raw path across `ss_cut`, `ss_script` and `extras.timeline`:
+  `/A/clip.mov` and `/B/clip.mov` both appear, and the live cut seen in both `ss_cut` and the timeline is listed once
+  (first 'where' kept), so "and N more" in the Collect message is right. Newlines and control characters in a name or
+  'where' become a space, in `project.json` and `MISSING.txt`.
+- Tests: [tests/js/onevideo.test.mjs](tests/js/onevideo.test.mjs) (1e12 gap, the 10-minute edge at 24 and 23.976, a
+  hook answering ok), [tests/test_cut_assemble.py](tests/test_cut_assemble.py) (caps, null / negative gaps, bad rates,
+  the timeout stopping ffmpeg and cleaning up, the route answering 400 without running ffmpeg),
+  [tests/test_project_collect.py](tests/test_project_collect.py) (absolute / drive / backslash / `..` refs with a decoy
+  `output/passwd.mp4`, dedupe across sources, a 'where' with a newline). All fail on e196608.
+
 **Cut shell, final round, 2026-11-08 02:06 (private branch `private/ask-hooks`, not pushed): the App measures every gap itself; only a structured "gaps" reason unlocks the gap path; Render missing shots refuses before queueing**
 
 - **Still wrong (read first, known limits):** Node and pytest only; not run in the browser, the App or a live

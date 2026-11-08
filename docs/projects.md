@@ -220,7 +220,11 @@ way film post works, and downloads it as a zip:
   for a shot is copied once.
 - Only ComfyUI files are copied (output / input / temp). A file the Cut names by a raw path (`/Users/…/x.wav`,
   `C:\…`, `file://…`) or a web address is not copied: it is listed by file name in `MISSING.txt`, in `project.json`
-  (`unsupported`) and in the Collect message.
+  (`unsupported`) and in the Collect message. So is a ComfyUI-style ref anywhere in the project whose `filename` or
+  `subfolder` points outside ComfyUI's folders (an absolute path, a drive letter, a `..` part, or a backslash on
+  macOS / Linux): it is never cut down to its file name and read from `output/` (that would be some other file). Each
+  raw path is listed once, by its whole path (two `clip.mov` in different folders are two lines), at the first place
+  it was found; newlines and control characters in those lines become spaces.
 - The shot's newest Layer Pack (`output/soundstage_layerpacks/<shot>_<stamp>/`) is copied to `layerpack/` when one
   exists. It is matched on the shot's id, name or code.
 - Missing files go into `MISSING.txt`. They are not an error, and the rest is collected.
