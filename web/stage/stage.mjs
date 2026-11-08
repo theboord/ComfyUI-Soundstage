@@ -2520,12 +2520,29 @@ export class Stage {
         hold.set(hd.x + fw.x * reach, Math.max(rest ?? -Infinity, level - 0.8 * size.y - (bb?.minY ?? -size.y / 2)), hd.z + fw.z * reach);
         if (t >= 1) { og.position.copy(hold); og.rotation.y = yaw; continue; }   // (the swim poses the arms)
       }
-      const rest = this._actorPosAt(o, this.frame);
-      og.position.set(rest[0] + (hold.x - rest[0]) * e, hold.y * e, rest[2] + (hold.z - rest[2]) * e);
-      og.rotation.y = cg.rotation.y * e + og.rotation.y * (1 - e);
+      // Easing out of the water (_swimExit): from the swim's hold, in front of the eased body's head at the water, to
+      // the walk's, in front of the eased hips at the chest, with the body (was: the walk's hold off the root of a body
+      // still lying along the water: a carried woman 2.1 m in one frame at f75, a crate 1.8 m, up to 3.03 m in the air)
+      const ex = cg.userData.swimExit, easing = t >= 1 && ex?.frame === this.frame && cg.userData.joints?.head && this.water;
+      if (easing) {
+        const J = cg.userData.joints, hd = J.head.getWorldPosition(new THREE.Vector3()), yaw = cg.rotation.y;
+        const fw = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), bb = this._buoyBody(o, og), level = this.water.position.y;
+        const sx = hd.x + fw.x * reach, sz = hd.z + fw.z * reach, rest = this._overWater(sx, sz) ? this._waterRestY(o, og, sx, sz) : null;
+        const sy = Math.max(rest ?? -Infinity, level - 0.8 * size.y - (bb?.minY ?? -size.y / 2));
+        const hp = J.l_hip.getWorldPosition(new THREE.Vector3()).add(J.r_hip.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
+        const hipY = J.l_hip.position.y * (cg.scale?.y || 1);
+        const st = new THREE.Vector3(hp.x, hp.y - hipY + 0.62 * ch - size.y / 2, hp.z).addScaledVector(fwd, reach);
+        og.position.set(sx + (st.x - sx) * ex.w, sy + (st.y - sy) * ex.wy, sz + (st.z - sz) * ex.w);
+        og.rotation.y = yaw;
+      } else {
+        const rest = this._actorPosAt(o, this.frame);
+        og.position.set(rest[0] + (hold.x - rest[0]) * e, hold.y * e, rest[2] + (hold.z - rest[2]) * e);
+        og.rotation.y = cg.rotation.y * e + og.rotation.y * (1 - e);
+      }
       if (t >= 0.5) for (const l of cg.userData.limbs || []) {   // arms forward, elbows bent around the load
-        if (l.part === "shoulder") l.pivot.rotation.x = -1.15;
-        if (l.part === "elbow") l.pivot.rotation.x = -0.6;
+        const k = easing ? ex.w : 1;   // (out of the water: from the swim's arms)
+        if (l.part === "shoulder") l.pivot.rotation.x += (-1.15 - l.pivot.rotation.x) * k;
+        if (l.part === "elbow") l.pivot.rotation.x += (-0.6 - l.pivot.rotation.x) * k;
       }
     }
     // Pose Studio keys last: they override the walk cycle / seat pose for the joints they name.
@@ -4193,6 +4210,7 @@ export class Stage {
       const k = this.frame - e.f, t = Math.min(1, (k + 1) / (e.n + 1)), w = k >= e.n ? 1 : t * t * (3 - 2 * t);
       // (out over the wall: the hips across at once, then down to the walk's height once out of the water)
       const wh = e.wall ? Swim.exitEaseH(k, e.n) : w, wy = e.wall ? Swim.exitEaseV(k, e.fd, e.NV) : w;
+      g.userData.swimExit = { frame: this.frame, w, wy };   // (what they carry eases from the swim's hold with them)
       const yaw = this._headingAt(a, this.frame), qy = new THREE.Quaternion().setFromAxisAngle(_Yax, yaw);
       const hv = new THREE.Vector3(0, hipY, 0).applyQuaternion(g.quaternion), hp = g.position.clone().add(hv);
       const tiltNow = qy.clone().invert().multiply(g.quaternion);

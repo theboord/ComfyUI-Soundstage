@@ -237,3 +237,31 @@ test("in and out of the tank fast (0.4 m a frame): no drop where the ease out me
     assert.ok(maxDiff(poseOf(st, "m"), want) < 1e-6, "f42 the same after a scrub");
   }
 });
+
+// ------------------------------------------------------------------ 11. Carried out of the water
+// At 36c3648 what a man carried out of the tank followed the walk's hold off the root of a body still lying along the
+// water: a carried woman jumped 2.1 m at f75, a crate 1.8 m (to 3.03 m in the air). It eases now from the swim's hold
+// (in front of the head at the water) to the walk's (in front of the eased hips) with the body. Checked from the last
+// ten swimming frames on: earlier in the swim, the freestyle's head swings the hold ~1.1 m sideways in a frame (f56,
+// also on 36c3648; not part of this fix).
+test("carried out of the tank, a person or a crate eases out of the water with the carrier", () => {
+  for (const load of [{ ...man("c", 0), kind: "woman", height_m: 1.65 }, prop("c", "crate", 0)]) {
+    const st = tank([keyed("m", "man", [[0, [0, 0, 0]], [120, [-12, 0, 0]]], { key_y: false }), { ...load, carry_id: "m", carry_at: 0 }], { frames: 121, keepSet: true });
+    const g = st.actorMeshes.get("m"), c = st.actorMeshes.get("c");
+    let lastSwim = -1;
+    for (let f = 0; f < 121; f++) { st.setFrame(f); if (g.userData.swimOn) lastSwim = f; }
+    assert.ok(lastSwim > 60 && lastSwim < 110, `the carrier swims, then walks out (last swim frame f${lastSwim})`);
+    let prev = null, d = 0, at = -1, top = 0, hand = 0;
+    for (let f = lastSwim - 10; f < 121; f++) {
+      st.setFrame(f); c.updateMatrixWorld(true);
+      const p = c.position.clone();
+      if (prev && p.distanceTo(prev) > d) { d = p.distanceTo(prev); at = f; }
+      if (prev && f === lastSwim + 1) hand = p.distanceTo(prev);
+      top = Math.max(top, p.y); prev = p;
+    }
+    // (at the handover from the swim's hold to the walk's: 0.26 m for the crate, 0.315 for the woman, at 354308c)
+    assert.ok(hand < 0.15, `${load.kind}: no step where the swim's hold hands over (${hand.toFixed(3)} m at f${lastSwim + 1})`);
+    assert.ok(d < 0.4, `${load.kind}: no jump leaving the water (biggest step ${d.toFixed(3)} m at f${at}; the carrier walks 0.1 to 0.2 m a frame)`);
+    assert.ok(top < 2.6, `${load.kind}: never thrown up into the air (highest ${top.toFixed(2)} m)`);
+  }
+});
