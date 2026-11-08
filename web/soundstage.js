@@ -61,6 +61,7 @@ import { REGEN_LABEL, chooseLocks, regenBody, mergeLocked, stagesLine, fixBody, 
 import { guardModels, showModelNotice, allNodes } from "./ui/modelguard.mjs";
 import "./models/panel.mjs";   // Models… panel (sets globalThis.__ssOpenModels / __ssModelsNotice)
 import { mountDirector } from "./agent/directorpanel.mjs";
+import { cutSigOf, qualityHook } from "./hosthooks.mjs";   // host.cutSig and host.quality for the Director and Ask
 import { mountAsk } from "./agent/ask.mjs";
 import { mountBook } from "./book/book.mjs";
 import { mountPresets } from "./ui/presets.mjs";
@@ -3320,6 +3321,7 @@ function createStageWidget(node, inputName) {
 
   // Director's assistant (Milestone 15, web/agent/directorpanel.mjs): talk to the set ("/" or the top bar); it shows a
   // plan, Apply runs it through these same panels, and every turn can be undone. MCP clients drive it too.
+  const qualityHost = qualityHook(() => pipeline);   // ⑤ Motion's quality settings: {get(), set(values), clear(keys)}
   node.ssDirector = mountDirector({ root: el, topBar: tabs, before: guideBtn, api, stage,
     isActive: () => el.isConnected && !!el.getClientRects().length && !el.dataset.tour && !appKeysHeld()
       && (el.contains(document.activeElement) || el.matches(":hover") || el.classList.contains("ss-full")),
@@ -3329,6 +3331,7 @@ function createStageWidget(node, inputName) {
       pipeline, script: node.ssScript, sceneAgent: agent, shotsInOrder: () => pipeline.shots(), book: node.ssBook,
       renders: (sid) => rendersFor(sid), chosen: (sid) => pipeline.chosen?.[sid],
       cut: { entries: () => cutEntries(), add: (ids) => strip.appendShots(ids), flatten: () => flattenCut() },
+      cutSig: cutSigOf(cut), quality: qualityHost,   // the Cut's current signature (undo what Ask added), ⑤ Motion
       snapshot: () => JSON.parse(JSON.stringify({ look: look.toJSON(), approvals: node.properties?.ss_approvals || {}, cut: loadCut() })),
       restore: (x) => {
         if (!x) return;
@@ -3369,21 +3372,7 @@ function createStageWidget(node, inputName) {
       // The co-pilot's hands (web/agent/copilot.mjs, docs/assistant.md): the set, ⑤ Motion's quality, the Cut and the
       // shot length. Each change is undone by the co-pilot's one Undo for its plan.
       stage: { toJSON: () => stage.toJSON(), select: (id) => stage.select(id) },
-      quality: {
-        get: () => {
-          try {
-            const ltx = pipeline.ltx, saved = ltx?.saved?.() || {}, set = ltx?.settings?.() || {};
-            return { adherence: saved.adherence || set.adherence || "Exact", ic_lora: set.ic_lora ?? null, preset: saved.preset || null,
-              follow_clay: pipeline.f?.follow ? +pipeline.f.follow.value : null };
-          } catch { return {}; }
-        },
-        set: (p) => {
-          if (p.adherence) pipeline._setAdherence?.(p.adherence);
-          if (p.preset) pipeline.ltx?.setPreset?.(p.preset);
-          if (p.ic_lora != null) pipeline.ltx?.patch?.({ ic_lora: p.ic_lora });
-          if (p.follow_clay != null && pipeline.f?.follow) { pipeline.f.follow.value = String(p.follow_clay); pipeline.f.follow.dispatchEvent(new Event("input")); }
-        },
-      },
+      quality: qualityHost,
       cut: { setTransition: (edit, type) => cut.setTransition(edit, type), undo: () => cut.undo() },
       shotLength: (secs) => {
         const s = stage.toJSON(), was = Math.round(s.shot.frames / s.shot.fps);

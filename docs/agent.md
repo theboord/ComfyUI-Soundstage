@@ -49,6 +49,7 @@ The local model (Qwen3.5-4B via core `TextGenerate`, the same graph as the objec
    - Controls refreshed only by `syncEnv()` (Set, Weather) need this hook, or need `syncEnv()` added to the Stage onChange callback.
 
    Options: `useModel: false` gives rules only (instant, no GPU). `designProps: false` keeps placeholder boxes. `modelTimeoutMs` (default 60 s) sets when to give up on the model and use the rules. `agent.history` holds the chat transcript.
+4. **Director / Ask host hooks** (`web/soundstage.js`, built in `web/hosthooks.mjs`): the Director's host gets `cutSig` (a function returning the Cut's current signature: it changes with every Cut edit and comes back on the Cut's own Undo, so a tool can check the transition it added is still the last edit before undoing it) and `quality` (`{get(), set(values), clear(keys)}` for ⑤ Motion's Adherence, Layout IC-LoRA strength, Follow the clay and Draft / Final; `set` and `clear` change the same per-shot settings and slider the Motion panel uses, refresh it, and return `get()`). Ask gets the same `quality` object. The Director's Book has `book.forgetDecision(id)`: it removes a decision note the chat wrote back (`recordDecision`, source "chat"; the director's own notes are refused) and saves the book to the server at once, returning `{ok}` or `{ok: false, error}`.
 
 ### Stage API used (public only)
 

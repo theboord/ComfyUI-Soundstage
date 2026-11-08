@@ -8,6 +8,7 @@
 //   book.open("sc_2");                     // the book at scene 2
 //   book.context()                         // getBookContext for the live scene: what the Director / Pitch read
 //   book.recordDecision({ command, calls, results })   // the Director writes back what was decided in chat
+//   book.forgetDecision(note.id)           // ...and takes it back (Undo): removed and saved to the server -> {ok}
 //   await book.fileNotes("sc2 — keep Mara's face in shadow till she sees the badge")
 //
 // host: { getScript(), liveScene(), sceneStage(id), look(), setLook(patch), renders(sid), chosenPic(sid), cutIds(),
@@ -61,10 +62,17 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
     syncLook();
     if (!server) return;
     clearTimeout(saveT);
-    saveT = setTimeout(() => {
-      api?.fetchApi?.("/soundstage/book/save", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ book: { ...book, script: compactScript(script()) } }) }).catch(() => {});
-    }, 1200);
+    saveT = setTimeout(saveToServer, 1200);
+  }
+  /** POST the book to ComfyUI's user data now (persist debounces this by 1.2 s). Returns the request, or null. */
+  function saveToServer() {
+    clearTimeout(saveT); saveT = null;
+    try {
+      const r = api?.fetchApi?.("/soundstage/book/save", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ book: { ...book, script: compactScript(script()) } }) });
+      r?.catch?.(() => {});
+      return r || null;
+    } catch { return null; }
   }
   const changed = () => { persist(); if (view.open) view.render(); try { H.onNotes?.(); } catch { /* */ } };
 
@@ -266,6 +274,20 @@ export function mountBook({ topBar = null, before = null, api, stage, host = {} 
     context: (sceneId = null) => getBookContext(book, script(), sceneId ?? H.liveScene()),
     /** The Director writes back what was decided in chat. */
     recordDecision: (d = {}) => { const n = recordDecision(book, { sceneId: H.liveScene(), ...d }); if (n) changed(); return n; },
+    /** Undo of a decision the Director / Ask wrote back (recordDecision): remove that note and save the book to the
+     *  server at once (no 1.2 s wait), so the note is gone there too. Only decision notes (source "chat"): the
+     *  director's own notes are never removed this way. Returns {ok: true} or {ok: false, error}. */
+    forgetDecision: (id) => {
+      const n = book.notes.find((x) => x.id === id);
+      if (!n) return { ok: false, error: `no note '${id}' in the book` };
+      if (n.source !== "chat") return { ok: false, error: `note '${id}' is not a decision from the chat` };
+      removeNote(book, id);
+      persist({ server: false });
+      saveToServer();
+      if (view.open) view.render();
+      try { H.onNotes?.(); } catch { /* */ }
+      return { ok: true };
+    },
     /** A note from anyone (Pitch, a script): placed like shorthand unless a scene is given. */
     addNote: async (text, { sceneId = null, category = null, line = null, source = "pitch" } = {}) => {
       if (sceneId) { const [n] = addPlacements(book, [{ text, scope: "scene", scene_id: sceneId, line, category: category || "blocking", confidence: 1, why: `written by ${source}`, by: source }], { source }); changed(); return n; }
