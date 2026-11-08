@@ -65,3 +65,24 @@ test("runShaders on timeout stops the whole browser (its helper processes too) b
     assert.equal(existsSync(dir), false, `the profile folder stays deleted after the helper's late write: ${dir}`);
   } finally { rmSync(box, { recursive: true, force: true }); if (dir.includes("ss-shaders-")) rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("no harness in this checkout names a browser profile folder by process id (the old ss-shaders-<pid> harness leaked one folder per run)", async () => {
+  // Eighth review: the leftover folders kept growing after the harness fix because other checkouts and exported old
+  // trees still run the old harness. This guards this checkout: every profile folder must come from mkdtemp.
+  const { readdirSync, readFileSync, statSync } = await import("node:fs");
+  const { join, dirname } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const pidDir = new RegExp("ss-[a-z]+-\\$\\{process" + "\\.pid\\}");
+  const hits = [];
+  const walk = (d) => {
+    for (const n of readdirSync(d)) {
+      if (n === "node_modules" || n === ".git" || n === "vendor" || n === "people") continue;
+      const p = join(d, n), s = statSync(p);
+      if (s.isDirectory()) walk(p);
+      else if (/\.(m?js|py|sh)$/.test(n) && s.size < 2e6 && pidDir.test(readFileSync(p, "utf8"))) hits.push(p.slice(root.length + 1));
+    }
+  };
+  for (const d of ["tests", "tools"]) walk(join(root, d));
+  assert.deepEqual(hits, [], `pid-named profile folders in ${hits.join(", ")}`);
+});
