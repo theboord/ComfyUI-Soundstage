@@ -176,7 +176,10 @@ test("api.js: Build this scene says where the scene agent runs and that the scen
   assert.match(other.error, /This demo replays renders made earlier\.$/, "the other notes keep their ending");
 });
 
-test("api.js: Run asks the shell for an example first, then replays it", async () => {
+// Wait for the replay's own end (execution_success for this prompt), not a fixed time: the replay ends ~1.1 s in
+// (api.js replay(): rungs at 250 / 700 ms, success 100 ms after); the old fixed 900 ms wait left ~170 ms of slack
+// and failed under full-suite load. stallMs stalls the event loop once when the replay is queued, as a busy machine does.
+async function runAndReplay({ stallMs = 0 } = {}) {
   const r = scenes.romance.props.ss_renders.silhouette;
   demo.scene = { renders: {}, candidates: {} };
   demo.getShot = () => "sc_1__shot_1";
@@ -185,12 +188,28 @@ test("api.js: Run asks the shell for an example first, then replays it", async (
   demo.resolveShot = async (shot) => { asked.push(shot); demo.scene.renders[shot] = structuredClone(r); };
   const out = [];
   const onExec = (e) => out.push(e.detail);
+  let done, id = null, cap;
+  const finished = new Promise((res) => (done = res));
+  const onDone = (e) => { if (e.detail?.prompt_id === id) done(); };
   api.addEventListener("executed", onExec);
-  await api.queuePrompt();
-  await new Promise((res) => setTimeout(res, 900));
-  api.removeEventListener("executed", onExec);
+  api.addEventListener("execution_success", onDone);
+  try {
+    ({ prompt_id: id } = await api.queuePrompt());
+    // the stall runs on the next tick, after this wait has started and before the replay's 30 ms timer fires
+    if (stallMs) setTimeout(() => { const t = Date.now(); while (Date.now() - t < stallMs); }, 0);
+    const capped = await Promise.race([finished.then(() => false), new Promise((res) => (cap = setTimeout(() => res(true), 15000)))]);
+    assert.equal(capped, false, "the replay finished (execution_success) within 15 s");
+  } finally {
+    clearTimeout(cap);
+    api.removeEventListener("executed", onExec);
+    api.removeEventListener("execution_success", onDone);
+    demo.resolveShot = null;
+  }
   assert.deepEqual(asked, ["sc_1__shot_1"]);
   const files = out.map((x) => x?.output?.images?.[0]?.filename);
   assert.ok(files.includes(r.look.filename || r.look), `the example's look replays (${files.join(", ")})`);
-  demo.resolveShot = null;
-});
+}
+
+test("api.js: Run asks the shell for an example first, then replays it", () => runAndReplay());
+
+test("api.js: the replay is still seen when the machine is busy (a 250 ms stall as the replay is queued; a fixed 900 ms wait missed it)", () => runAndReplay({ stallMs: 250 }));
