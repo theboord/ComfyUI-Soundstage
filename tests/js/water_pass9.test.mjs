@@ -71,3 +71,39 @@ test("a rider ridden into the tank: any frame gives the same pose whatever was s
     }
   }
 });
+
+// ------------------------------------------------------------------ 2. A rider who let go, after the swim (regression)
+// At 7eafe37: once a let-go rider's swim ended they jumped back to their own keys: a bicycle ridden out of the tank
+// threw its rider 6.98 m back to (0, 0, 0), lying on the tank floor; ridden in and out again, 19.3 m to x -13.1; a car
+// settling on the bottom of open water (1.5 m: he can stand) popped its driver 0.46 m (0.005 on b1f6d51). The free
+// pass now carries on from the swim: on the let-go's own path, eased out of the swim or up off the seat.
+test("a rider who let go carries on from the swim: out of the tank beside the mount, and standing up in shallow water", () => {
+  const steps = (st, N) => {
+    let prev = null, mx = 0, at = -1;
+    for (let f = 0; f < N; f++) { st.setFrame(f); const p = hipW(st, "r"); if (prev) { const d = p.distanceTo(prev); if (d > mx) { mx = d; at = f; } } prev = p; }
+    return { mx, at };
+  };
+  for (const [name, keys, N, cap] of [["out", [[0, [0, 0, 0]], [120, [-12, 0, 0]]], 193, 0.25], ["in and out", [[0, [-13.1, 0, 0]], [120, [0, 0, 0]], [240, [-13.1, 0, 0]]], 313, 0.35]]) {
+    const st = ride("bicycle", keys, N);
+    let swam = false;
+    for (let f = 0; f < N; f += 6) { st.setFrame(f); swam ||= st.actorMeshes.get("r").userData.swimOn; }
+    assert.ok(swam, `bike ${name}: the rider let go and swam`);
+    const { mx, at } = steps(st, N);
+    assert.ok(mx < cap, `bike ${name}: the rider never jumps (biggest hip step ${mx.toFixed(3)} m at f${at}; the bike's own pace is under ${cap})`);
+    st.setFrame(N - 1);
+    const g = st.actorMeshes.get("r"), b = st.actorMeshes.get("h");
+    assert.ok(!g.userData.swimOn && Math.hypot(g.position.x - b.position.x, g.position.z - b.position.z) < 1.5, `bike ${name}: out of the water beside the bike (${g.position.x.toFixed(2)} vs ${b.position.x.toFixed(2)})`);
+    assert.ok(headY(st, "r") > 1.4, `bike ${name}: standing on the dry floor, not lying on it (head ${headY(st, "r").toFixed(2)})`);
+  }
+  {   // open water, 1.5 m deep: the driver of a car settling on the bottom stands up off the seat
+    clearSetCache();
+    const st = tank([keyed("h", "car", [[0, [0, 0, 0]], [96, [0, 0, 0]]], { key_y: false }), { ...man("r", 0), mount_id: "h" }], { frames: 481, keepSet: true });
+    st.state.environment = { set: "open_water" }; st._buildSet(); st.setFrame(0);
+    const lg = st._riderLetGo(st.state.actors[1]);
+    assert.ok(lg && lg.fe > 0, `he lets go once the seat is under (f${lg?.fe})`);
+    const { mx, at } = steps(st, 481);
+    assert.ok(mx < 0.05, `no pop standing up off the seat (biggest hip step ${mx.toFixed(3)} m at f${at})`);
+    st.setFrame(480);
+    assert.ok(headY(st, "r") > 1.5 && !st.actorMeshes.get("r").userData.swimOn, `f480: standing, head out of the 1.5 m water (${headY(st, "r").toFixed(2)})`);
+  }
+});

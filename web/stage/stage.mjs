@@ -2271,13 +2271,17 @@ export class Stage {
     // The set may have been rebuilt (new meshes): keep the gizmo on the selected object.
     if (this.tc && this.tc.object !== (this.poser?.target() ?? (this.selected ? this.actorMeshes.get(this.selected) : undefined))) this._attachGizmo();
     const swimNow = (this._swimNow = []);
-    for (const a of this.state.actors) {
-      const g = this.actorMeshes.get(a.id);
+    for (const a0 of this.state.actors) {
+      const g = this.actorMeshes.get(a0.id);
       if (!g) continue;
-      if (this.drive?.on && this.drive.pose(a, g)) continue;   // driven live (drive.mjs)
+      if (this.drive?.on && this.drive.pose(a0, g)) continue;   // driven live (drive.mjs)
       // placed on its mount below (a timed mount walks free until mount_at); a rider whose seat has gone under in the
-      // tank has let go and swims (_riderLetGo): posed here, off the mount
-      if (a.mount_id && !(a.mount_at > this.frame) && !this._letGoAt(a)) {
+      // tank has let go and swims (_riderLetGo): posed here, off the mount, on the let-go's own path for the rest of the
+      // shot, swimming or not (was: once the swim ended, out of the water or where they could stand, they jumped back
+      // to their own keys: 6.98 m to the tank floor, 19.3 m to x -13.1, a 0.46 m pop in open water)
+      const lg = a0.mount_id && !(a0.mount_at > this.frame) ? this._letGoAt(a0) : null;
+      const a = lg ? lg.actor : a0;
+      if (a0.mount_id && !(a0.mount_at > this.frame) && !lg) {
         if (g.userData.swimOn) Swim.unswim(g);   // dragged out of the water onto a boat: seated there, not left in the swim pose
         // (and never the swim's roll and pitch: the rider pass sets only what its seat needs, so a frame shown after
         // the let-go left the rider rolled -1.48 rad on the seat, lying on the dry floor; was scrub-order dependent)
@@ -2383,8 +2387,9 @@ export class Stage {
       }
       // Water (buoyancy.mjs): after the bake and the start height, which are where it is let go into the water (a
       // baked fall or a Physics "Height" above a tank is a drop height there, never a float in mid-air).
-      if (this.water && !sw) this._waterPhysics(a, g);
-      this._partsApply(a, g);   // Parts (objparts.mjs): steering, suspension, doors, lamps, horse head and tail, pivots
+      if (this.water && !sw && rig === "biped" && !a.mocap) this._swimExit(a, g);   // out of the water: eased into the walk
+      if (this.water && !sw) this._waterPhysics(a0, g);
+      this._partsApply(a0, g);   // Parts (objparts.mjs): steering, suspension, doors, lamps, horse head and tail, pivots
     }
     // Riders follow their mounts (man on a horse, driver in a car, someone on a bench).
     for (const a of this.state.actors) {
@@ -4027,6 +4032,81 @@ export class Stage {
     if (out.length) plan.entries = out; else delete plan.entries;
   }
 
+  /**
+   * Out of the water into a pose that isn't a swim, the walk in's ease the other way (_swimEntries): walked or ridden
+   * out of the tank through its wall (was: the hips 2.44 m in one frame, 1.55 on b1f6d51; 2.60 m walking in, out and in
+   * again), and a rider who let go of a mount where they can stand (_riderLetGo in open water: up off the seat, was a
+   * 0.46 m pop). From the swim's own last frame (its root at the walls, _swimInWalls, and its joints) or the seat, to
+   * the walk's pose over n frames, ~6 cm a frame (6 to 72). [{f, n, pos, q, joints: {name: quaternion}, shoes}], cached
+   * on the swim plan's own cache entry: a pure function of the keys.
+   */
+  _swimExits(a, g) {
+    if (!PERSON_KINDS.has(a.kind) || a.carry_id || a.mount_id || !g.userData.joints) return null;
+    const plan = this._swimPlan(a, g), ce = this._swimCache?.get(a);
+    if (!ce) return null;
+    if (ce._exits && ce._exits.g === g) return ce._exits.out;
+    const J = g.userData.joints, h = (a.height_m || 1.8) * (a.scale || 1), sc = g.scale?.y || 1;
+    const hipY = (J.l_hip?.position.y || 0.53 * h / sc) * sc, Yax = new THREE.Vector3(0, 1, 0), Xax = new THREE.Vector3(1, 0, 0), v = new THREE.Vector3();
+    const keys = this._actorKeys(a), out = [];
+    const target = (f) => { const p = this._actorPosAt(a, f); return [p[0], Math.max(0, p[1] || 0), p[2]]; };
+    const push = (f, pos, q, joints, shoes) => {
+      const t = target(f), d = Math.hypot(pos[0] - t[0], pos[1] - t[1], pos[2] - t[2]);
+      if (d >= 0.05) out.push({ f, n: Math.max(6, Math.min(72, Math.ceil(1.5 * d / 0.06))), pos, q, joints, shoes });
+    };
+    const euler = (r) => new THREE.Quaternion().setFromEuler(new THREE.Euler(r[0], r[1], r[2], "XYZ")).toArray();
+    // let go where they can stand: up off the seat (the swim never runs)
+    const fe = a._wetFrom, ef = a._entryFrom;
+    if (ef && Number.isFinite(fe) && !plan?.mode[fe] && fe <= this._lastFrame()) {
+      const S = { hip: [-Math.PI / 2, 0, 0], knee: [Math.PI / 2, 0, 0], shoulder: [-0.35, 0, 0], elbow: [-0.9, 0, 0] }, joints = {};
+      for (const lr of ["l", "r"]) for (const part of Object.keys(S)) joints[`${lr}_${part}`] = euler(S[part]);
+      for (const jn of ["spine", "neck", "head"]) joints[jn] = [0, 0, 0, 1];
+      push(fe, ef.pos.slice(), new THREE.Quaternion().setFromAxisAngle(Yax, ef.yaw).toArray(), joints, null);
+    }
+    // the swim's last frame before they leave the water
+    if (plan) for (let f = 1; f < plan.n && keys.length > 1; f++) {
+      if (!plan.mode[f - 1] || plan.mode[f]) continue;
+      const pf = plan.pos[f] || target(f);
+      if (this._overWater(pf[0], pf[2])) continue;   // (still in the water: a deck, a dock, standing: their own poses)
+      const P = Swim.poseAt(plan, f - 1), B = Swim.bodyAt(plan, f - 1, P, { ...plan.ctx, hipY });
+      v.set(0, hipY, 0).applyQuaternion(B.q);
+      const fake = { position: new THREE.Vector3(B.hips[0] - v.x, B.hips[1] - v.y, B.hips[2] - v.z), quaternion: B.q.clone(), updateMatrixWorld() {} };
+      this._swimInWalls(fake, a);
+      const joints = {}, shoes = {};
+      for (const lr of ["l", "r"]) {
+        const L = P.legs[lr], A = P.arms[lr];
+        joints[`${lr}_hip`] = euler(L.hip); joints[`${lr}_knee`] = euler([L.knee, 0, 0]);
+        joints[`${lr}_shoulder`] = euler(A.sh); joints[`${lr}_elbow`] = euler([A.el, 0, 0]);
+        shoes[lr] = new THREE.Quaternion().setFromAxisAngle(Xax, L.shoe).toArray();
+      }
+      joints.spine = euler(P.spine); joints.neck = euler(P.neck); joints.head = euler(P.head);
+      push(f, fake.position.toArray(), fake.quaternion.toArray(), joints, shoes);
+    }
+    ce._exits = { g, out: out.length ? out : null };
+    return ce._exits.out;
+  }
+
+  /** The ease out of the water at this frame (_swimExits), after the walk posed them. */
+  _swimExit(a, g) {
+    const ex = this._swimExits(a, g);
+    if (!ex) return;
+    const J = g.userData.joints, qa = new THREE.Quaternion(), qb = new THREE.Quaternion();
+    for (const e of ex) {
+      if (this.frame < e.f || this.frame >= e.f + e.n) continue;
+      const t = (this.frame - e.f + 1) / (e.n + 1), w = t * t * (3 - 2 * t);
+      g.position.set(e.pos[0] + (g.position.x - e.pos[0]) * w, e.pos[1] + (g.position.y - e.pos[1]) * w, e.pos[2] + (g.position.z - e.pos[2]) * w);
+      g.quaternion.slerpQuaternions(qa.fromArray(e.q), qb.copy(g.quaternion), w);
+      for (const [jn, q] of Object.entries(e.joints)) if (J[jn]) J[jn].quaternion.slerpQuaternions(qa.fromArray(q), qb.copy(J[jn].quaternion), w);
+      if (e.shoes) for (const [lr, ft] of Object.entries(Mocap.feetOf(g) || {})) {
+        if (!ft?.shoe || !e.shoes[lr]) continue;
+        qa.fromArray(e.shoes[lr]);
+        const sp = ft.rest.clone().sub(ft.ankle).applyQuaternion(qa).add(ft.ankle);
+        ft.shoe.quaternion.slerpQuaternions(qa, qb.copy(ft.shoe.quaternion), w);
+        ft.shoe.position.lerpVectors(sp, ft.shoe.position.clone(), w);
+      }
+      g.updateMatrixWorld(true);   // (no floor lift: the seat's own pose had its feet at the car's floor, a 0.27 m pop)
+    }
+  }
+
   /** A swimmer's whole body inside the pool's or the tank's walls (was: lying along the surface at the wall the head
    *  went 0.5 m through the 7.8 m inner wall, z 8.31): near a wall the body's envelope (from the feet along its long
    *  axis to the reach of the hands overhead, 1.27 of the height, 0.35 m round it: steady through the stroke, where the
@@ -4125,7 +4205,8 @@ export class Stage {
       // the feet's depth when they let go: placed (0) when they were under from the start, else from the seat down
       const feet = fe === from ? 0 : Math.max(0.36, S.y - 0.3 * h);
       const keys = [];
-      for (let f = 0; f <= last; f++) { const q = f < fe ? S : seatAt(f); keys.push({ frame: f, position: [q.x, feet, q.z] }); }
+      // (out of the water, a mount ridden out of it, the feet on the floor: walking on from where the swim ended)
+      for (let f = 0; f <= last; f++) { const q = f < fe ? S : seatAt(f); keys.push({ frame: f, position: [q.x, f > fe && !(q.over && this._inPool(q.x, q.z)) ? 0 : feet, q.z] }); }
       const S0 = fe > from ? seatAt(fe - 1) : S;   // the seated root the frame before (the seat less the sitting drop)
       const actor = { id: a.id, name: a.name, kind: a.kind, height_m: a.height_m, scale: a.scale, swim: a.swim, gear: a.gear, appearance: a.appearance,
         physics: a.physics, rotation_deg: THREE.MathUtils.radToDeg(S.yaw), keys, _wetFrom: fe,
