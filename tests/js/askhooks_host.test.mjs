@@ -6,7 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { projectHook } from "../../web/hosthooks.mjs";
+import { projectHook, cutPanelHook } from "../../web/hosthooks.mjs";
 
 const SRC = readFileSync(new URL("../../web/soundstage.js", import.meta.url), "utf8");
 const askHost = () => { const a = SRC.indexOf("node.ssAsk = mountAsk("); return SRC.slice(a, SRC.indexOf("mountProjectBar(", a)); };
@@ -14,6 +14,7 @@ const askHost = () => { const a = SRC.indexOf("node.ssAsk = mountAsk("); return 
 test("Ask's host gets project, cut.panel (the App's CutPanel and its view)", () => {
   const ask = askHost();
   assert.match(ask, /project: projectHook\(\)/);
+  assert.match(ask, /panel: cutPanelHook\(cut, cutView\)/);
   assert.match(SRC, /const cut = new CutPanel\(cutView,/);
 });
 
@@ -29,4 +30,13 @@ test("host.project(): the confirmed id from window.__ssProject.project(), else n
   globalThis.__ssProject = ctl({ id: "p_deadbeef", name: "Global", confirmed: true });
   try { assert.deepEqual(await projectHook()(), { name: "Global", id: "p_deadbeef" }, "defaults to window.__ssProject"); }
   finally { delete globalThis.__ssProject; }
+});
+
+test("host.cut.panel(): the very CutPanel object while mounted, null when not", () => {
+  const cut = { seek() {}, fps: 24 }, view = { isConnected: true };
+  const panel = cutPanelHook(cut, view);
+  assert.equal(panel(), cut, "the live instance, not a copy");
+  view.isConnected = false;
+  assert.equal(panel(), null);
+  assert.equal(cutPanelHook(null, { isConnected: true })(), null);
 });

@@ -10,6 +10,7 @@
 //                                           camera curve (web/stage/camcurve.mjs): the Python agent writes no version
 //   projectHook(getCtl)  -> async () => {name, id}   the open project (host.project() for Ask): id "p_<8hex>" only when
 //                                           confirmed against its saved project.json, else null (window.__ssProject)
+//   cutPanelHook(cut, view) -> () => CutPanel | null   the live Cut panel object (host.cut.panel()), null unmounted
 
 import { DEFAULT_PRESET } from "./motion/ltxadvanced.mjs";
 import { markNewShots } from "./stage/camcurve.mjs";
@@ -147,4 +148,10 @@ export function projectHook(getCtl = () => globalThis.__ssProject) {
       return clean(name, id);
     }
   };
+}
+
+/** host.cut.panel for Ask: the live CutPanel instance (call its own methods), or null when the Cut is not mounted
+ * (its view is out of the page, e.g. the node was removed). */
+export function cutPanelHook(cut, view) {
+  return () => (cut && (!view || view.isConnected !== false) ? cut : null);
 }
