@@ -292,7 +292,7 @@ const OBS_JUMP = { pos: 0.25, rot: 0.05, scale: 0.1 };
 const KEYED_CELL_CHANGES = 4;
 
 /** _obstacles: do an object's keys move it (so it is not a parked obstacle)? Travel over 5 cm on the ground; and, for a
- *  keyed turn (heading_deg, roll_deg, pitch_deg), a keyed rise (key_y) or baked physics keys (quat and height: a
+ *  keyed turn of the group (heading_deg; roll_deg / pitch_deg turn only a car's body child, not the group), a keyed rise (key_y) or baked physics keys (quat and height: a
  *  tumble, a drop), the grid the parked boxes sit on decides: the keyed transform is played frame by frame onto it
  *  (obsCell's anchors, OBS_JUMP re-anchors, OBS_TOL cells) and the prop is moving when it would rebuild more than
  *  KEYED_CELL_CHANGES times. So a turntable (7.5 deg a frame, a re-anchor every frame), a 40 cm lift (8 cells), an
@@ -305,7 +305,8 @@ function keyedMoving(o, frames, pose) {
   if (!(ks?.length > 1)) return false;
   const k0 = ks[0], p0 = k0.position || [0, 0, 0];
   if (ks.some((k) => Math.hypot((k.position?.[0] ?? p0[0]) - p0[0], (k.position?.[2] ?? p0[2]) - p0[2]) > 0.05)) return true;
-  const turns = ks.some((k) => Array.isArray(k.quat) || Number.isFinite(k.heading_deg) || Number.isFinite(k.roll_deg) || Number.isFinite(k.pitch_deg));
+  // roll_deg / pitch_deg don't count: setFrame turns only a car's body child with them, never the clay group
+  const turns = ks.some((k) => Array.isArray(k.quat) || Number.isFinite(k.heading_deg));
   const rises = (o.key_y || o.physics?.baked) && ks.some((k) => Math.abs((k.position?.[1] ?? p0[1] ?? 0) - (p0[1] ?? 0)) > 1e-4);
   if (!turns && !rises) return false;
   let at = null, last = null, key = null, changes = 0;
@@ -1806,20 +1807,22 @@ export class Stage {
     return kind === "none" ? "none" : STUNTS[kind].label;
   }
 
-  /** keyedMoving for an actor, its keyed transform played as setFrame poses it (baked keys: samplePos /
-   *  sampleQuat, as setFrame; otherwise path, keyed height, heading and the body's keyed roll / pitch). Cached on the object's signature. */
+  /** keyedMoving for an actor, its keyed transform played as setFrame poses the clay GROUP that _obstacles reads (baked
+   *  keys: samplePos / sampleQuat, as setFrame; otherwise path, keyed height and heading). Keyed roll / pitch are left
+   *  out: setFrame turns only a car's body child with them (and nothing at all on other props), so the group never
+   *  moves and a parked car keyed through a 10 deg roll, or a crate through a 15 deg pitch, is still an obstacle
+   *  (0bf0b7b posed them, counted the prop as moving and dropped it: the walker went through, feet 0 m, was 1.56 m).
+   *  Cached on the object's signature. */
   _keyedMoving(o, sig) {
     if (!(o.keys?.length > 1)) return false;
     const last = this._lastFrame(), full = `${sig}|${last}|${this.state.shot?.fps || 24}|${!!o.physics?.baked}`;
     const cache = (this._kmCache ||= new WeakMap()), hit = cache.get(o);
     if (hit?.sig === full) return hit.moving;
-    const keys = this._actorKeys(o), e = new THREE.Euler(0, 0, 0, "YXZ"), q = new THREE.Quaternion();
+    const keys = this._actorKeys(o);
     const pose = (f) => {
       if (o.physics?.baked) { const p = samplePos(keys, f), r = sampleQuat(keys, f) || [0, 0, 0, 1]; return [...p, ...r]; }
-      const p = this._actorPosAt(o, f);
-      e.set((channelAt(keys, f, (k) => k.pitch_deg) || 0) * DEG, this._headingAt(o, f), (channelAt(keys, f, (k) => k.roll_deg) || 0) * DEG);
-      q.setFromEuler(e);
-      return [p[0], this._heightAt(o, f), p[2], q.x, q.y, q.z, q.w];
+      const p = this._actorPosAt(o, f), h = this._headingAt(o, f) / 2;
+      return [p[0], this._heightAt(o, f), p[2], 0, Math.sin(h), 0, Math.cos(h)];   // the group's rotation.y = heading
     };
     const moving = keyedMoving(o, last, pose);
     cache.set(o, { sig: full, moving });

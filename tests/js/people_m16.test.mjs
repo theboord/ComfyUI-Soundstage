@@ -343,6 +343,26 @@ test("obstacles: a prop keyed with a small nudge (a 3 deg turn, a 6 cm raise) is
   assert.ok(r.boxes <= 6, `and its box is rebuilt only as it crosses a grid cell: ${r.boxes}`);
 });
 
+test("obstacles: a parked car keyed with roll 0 -> 10 deg and a crate keyed with pitch 0 -> 15 deg stay obstacles: the walker still climbs them (0bf0b7b: feet 0)", () => {
+  // keyedMoving posed the prop with roll_deg / pitch_deg, but setFrame applies those only to a car's body child (and
+  // not at all to other props): the group _obstacles reads never moves, yet the prop counted as moving and was dropped.
+  const run = (prop) => {
+    const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
+    const st = bareStage([walker, prop]);
+    clayOf(st, walker);
+    const g = clayOf(st, prop); g.updateMatrixWorld(true);   // as setFrame leaves it: the group's own transform is unkeyed
+    let top = 0;
+    for (let f = 0; f <= 48; f++) { st.frame = f; top = Math.max(top, st._heightAt(walker, f)); }
+    return { top };
+  };
+  const car = { id: "c1", kind: "car", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0], roll_deg: 0 }, { frame: 48, position: [0, 0, 0], roll_deg: 10 }] };
+  const c = run(car);
+  assert.ok(c.top > 0.5, `a parked car keyed with a 10 deg roll: the walker's feet reach ${c.top.toFixed(2)} m`);
+  const crate = { id: "c2", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0], pitch_deg: 0 }, { frame: 48, position: [0, 0, 0], pitch_deg: 15 }] };
+  const k = run(crate);
+  assert.ok(k.top > 0.5, `a crate keyed with a 15 deg pitch: the walker's feet reach ${k.top.toFixed(2)} m`);
+});
+
 test("obstacles: a prop on baked physics keys (quat and height, no key_y or heading keys) tumbling in place or dropping 1 m with a 90 deg tip doesn't rebuild every frame", () => {
   // cb57dad: these still counted as parked; every rotation step passed OBS_JUMP, so the box, the list and the
   // walker's height table were rebuilt every frame (tumble: 49 over 48 frames, drop and tip: 25).
