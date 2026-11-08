@@ -173,6 +173,7 @@ function mountHorse(g, hg, seatPos, t, h, drop) {
 
 export const FRAME_W = 960;
 export const FRAME_H = 512;
+export const EXPOSURE_MIN = -6, EXPOSURE_MAX = 2;   // the scene dimmer's range in stops (setExposure)
 /** Delivery frame sizes: every side a multiple of 64 (LTX Layout-To-Render requirement). */
 export const ASPECTS = {
   "1.85": { label: "1.85:1 (flat)", size: [960, 512] },
@@ -2608,6 +2609,47 @@ export class Stage {
     const L = this.state.lighting || {};
     const hour = p.sunElevation === null ? 12.5 : hourForElevation(p.sunElevation, p.side, L.day_of_year ?? 300, L.latitude ?? 34.05);
     this.setTimeOfDay(hour, { preset: key, overcast: !!p.overcast });
+  }
+
+  /** The scene dimmer in stops (state.lighting.exposure_stops, 0 = as lit). See setExposure. */
+  exposure() {
+    const v = Number(this.state?.lighting?.exposure_stops);
+    return Number.isFinite(v) ? v : 0;
+  }
+
+  /**
+   * "Lights down": a scene dimmer in photographic stops, EXPOSURE_MIN..EXPOSURE_MAX (-6..+2; -1 = half the light,
+   * 0 = as lit). It scales every light in the set (sun, sky fill, film lights, practicals, headlights, fire) and a
+   * plain-colour sky by 2^stops when the Color view and captures render; emissive surfaces (neon, screens) keep their
+   * glow, like real practicals. Stored as state.lighting.exposure_stops (saved with the scene); one undo step when it
+   * changes (through onChange). Numeric strings are taken ("-1.5"); anything else, or out of range, is refused and
+   * changes nothing. Returns {ok: true, stops, changed} or {ok: false, error}.
+   */
+  setExposure(stops) {
+    const n = typeof stops === "number" ? stops : typeof stops === "string" && stops.trim() !== "" ? Number(stops) : NaN;
+    if (!Number.isFinite(n)) return { ok: false, error: `stops must be a number (got '${stops}')` };
+    if (n < EXPOSURE_MIN || n > EXPOSURE_MAX) return { ok: false, error: `stops must be between ${EXPOSURE_MIN} and ${EXPOSURE_MAX} (got ${n})` };
+    const v = Math.round(n * 100) / 100;
+    if (v === this.exposure()) return { ok: true, stops: v, changed: false };
+    const L = (this.state.lighting ||= clone(DEFAULT_SCENE.lighting));
+    if (v === 0) delete L.exposure_stops; else L.exposure_stops = v;
+    this.setFrame(this.frame);
+    this.onChange(this.toJSON());
+    return { ok: true, stops: v, changed: true };
+  }
+
+  /** Run a render with the scene dimmer applied (every light and a plain-colour background scaled, then put back). */
+  _withExposure(fn) {
+    const k = Math.pow(2, this.exposure());
+    if (k === 1 || !this.scene) return fn();
+    const lights = [];
+    this.scene.traverse((o) => { if (o.isLight) { lights.push([o, o.intensity]); o.intensity *= k; } });
+    const bg = this.scene.background, dim = bg?.isColor ? bg.clone().multiplyScalar(k) : null;
+    if (dim) this.scene.background = dim;
+    try { return fn(); } finally {
+      for (const [o, i] of lights) o.intensity = i;
+      if (dim && this.scene.background === dim) this.scene.background = bg;
+    }
   }
 
   setNorth(deg) {
@@ -5350,7 +5392,7 @@ export class Stage {
     this._inRender = true;
     // Hair and lash cards of the lifelike people keep their cut-out under the pass's override (people/cutout.mjs).
     const putBackCards = swapAvatarCutouts(this, this.scene.overrideMaterial);
-    try { this.renderer.render(this.scene, cam); } finally { putBackCards(); }
+    try { this._withExposure(() => this.renderer.render(this.scene, cam)); } finally { putBackCards(); }   // the scene dimmer
     if (!forCapture && this.highlight) {
       try { this.highlight.render(this.renderer, cam, { hoverId: this._dragging ? null : this._hoverId, selectedId: this.selected }); }
       catch (err) { this.highlight.enabled = false; console.warn("Soundstage outline", err); }

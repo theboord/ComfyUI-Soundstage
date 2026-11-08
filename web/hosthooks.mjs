@@ -11,6 +11,7 @@
 //   projectHook(getCtl)  -> async () => {name, id}   the open project (host.project() for Ask): id "p_<8hex>" only when
 //                                           confirmed against its saved project.json, else null (window.__ssProject)
 //   cutPanelHook(cut, view) -> () => CutPanel | null   the live Cut panel object (host.cut.panel()), null unmounted
+//   exposureHook(stage)  -> {get(), set(stops), down(stops?), reset()}   the stage's "lights down" dimmer (host.lights)
 
 import { DEFAULT_PRESET } from "./motion/ltxadvanced.mjs";
 import { markNewShots } from "./stage/camcurve.mjs";
@@ -154,4 +155,22 @@ export function projectHook(getCtl = () => globalThis.__ssProject) {
  * (its view is out of the page, e.g. the node was removed). */
 export function cutPanelHook(cut, view) {
   return () => (cut && (!view || view.isConnected !== false) ? cut : null);
+}
+
+/** host.lights for Ask: the stage's scene dimmer (stage.setExposure, web/stage/STAGE_API.md). down(stops = 1) dims by
+ * that many more stops from where it is; reset() back to 0. Each change is one stage undo step; returns the stage's
+ * result ({ok, stops} or {ok: false, error}). */
+export function exposureHook(stage) {
+  const S = () => (typeof stage === "function" ? stage() : stage);
+  const get = () => { try { return S()?.exposure?.() ?? 0; } catch { return 0; } };
+  const set = (stops) => S()?.setExposure?.(stops) ?? { ok: false, error: "no stage" };
+  return {
+    get, set,
+    down: (stops = 1) => {
+      const n = Number(stops);
+      if (!Number.isFinite(n) || n < 0) return { ok: false, error: `stops must be a number >= 0 (got '${stops}')` };
+      return set(get() - n);
+    },
+    reset: () => set(0),
+  };
 }

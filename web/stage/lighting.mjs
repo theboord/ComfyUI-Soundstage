@@ -113,6 +113,10 @@ export function describeLighting(lighting, sun, cam) {
     const tone = l.kelvin < 3300 ? "warm tungsten" : l.kelvin > 9000 ? "cool blue" : l.kelvin > 6000 ? "cool" : "neutral";
     parts.push(`${tone} ${t}${l.softness > 0.7 ? ", soft" : l.softness < 0.3 ? ", hard" : ""}`);
   }
+  // The scene dimmer (stage.setExposure): "lights down" reads in the prompt as a low-key, dimmed room.
+  const ev = Number(lighting?.exposure_stops) || 0;
+  if (ev <= -1) parts.push(ev <= -3 ? "lights down very low, dark low-key exposure" : "lights dimmed down, low-key exposure");
+  else if (ev >= 1) parts.push("lights up bright, high-key exposure");
   // Five street lamps of one kind are one phrase, not "warm tungsten practical" five times over in the prompt.
   return [...new Set(parts)].join(", ");
 }
