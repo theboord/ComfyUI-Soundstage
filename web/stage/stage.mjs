@@ -1943,6 +1943,13 @@ export class Stage {
       const hit = raycastShapes([sh], o, dv, maxDist);
       if (hit && hit.normal[1] > 0.7 && (!best || hit.distance < best.t)) best = { t: hit.distance, point: new THREE.Vector3(...hit.point), id: sh.id, prop: !!own };
     }
+    // a top with room to stand on: the deck 0.2 m around it is at about its height on at least two sides (not the cap
+    // of the raft's mast, 0.1 m across, 1.8 m over the logs)
+    const roomy = (hg, P) => {
+      let n = 0;
+      for (const [dx, dz] of [[0.2, 0], [-0.2, 0], [0, 0.2], [0, -0.2]]) { const y = this._deckUnder(hg, P.x + dx, P.z + dz, P.y + 0.3); if (y != null && Math.abs(y - P.y) < 0.15) n++; }
+      return n >= 2;
+    };
     for (const b of this.state.actors) {
       if (!LIBRARY[b.kind]?.boat || b.id === selfId || b.mount_id || b.carry_id) continue;
       const hg = this.actorMeshes.get(b.id);
@@ -1954,8 +1961,24 @@ export class Stage {
         for (let q = h.object; q && q !== hg.parent; q = q.parent) if (!q.visible) { shown = false; break; }
         if (!shown || !h.object.isMesh || h.object.material?.transparent || !h.face) continue;
         const n = h.face.normal.clone().transformDirection(h.object.matrixWorld);
-        if (n.y > 0.7 && (!best || h.distance < best.t)) best = { t: h.distance, point: h.point.clone(), id: b.id, boat: true };
+        if (n.y > 0.7 && (!best || h.distance < best.t) && roomy(hg, h.point)) best = { t: h.distance, point: h.point.clone(), id: b.id, boat: true };
         break;   // the first thing the ray meets on this boat: its deck, or a side that hides it
+      }
+      if (best?.id === b.id) continue;
+      // no top met: the ray may have gone down a gap in the deck (between two logs of the raft). March it through the
+      // boat's box and stop where it reaches the deck under it (_deckUnder looks either side of a gap).
+      const box = new THREE.Box3().setFromObject(hg), ray = new THREE.Ray(origin.clone(), d), pin = ray.intersectBox(box, new THREE.Vector3());
+      if (!pin) continue;
+      const t0 = origin.distanceTo(pin), t1 = Math.min(best ? best.t : maxDist, t0 + 2 * box.getSize(new THREE.Vector3()).length());
+      const Q = new THREE.Vector3();
+      for (let t = t0; t <= t1; t += 0.04) {
+        ray.at(t, Q);
+        if (Q.y < box.min.y) break;
+        const y = this._deckUnder(hg, Q.x, Q.z, Q.y + 0.02);
+        if (y != null && Q.y - y < 0.06) {
+          const P = new THREE.Vector3(Q.x, y, Q.z);
+          if (roomy(hg, P)) { best = { t, point: P, id: b.id, boat: true }; break; }
+        }
       }
     }
     return best;
@@ -2029,17 +2052,35 @@ export class Stage {
       hg.position.set(bp[0], s ? s.y : hg.position.y, bp[2]);
       hg.rotation.set(s ? -s.pitch * DEG : 0, this._headingAt(b, f), s ? s.roll * DEG : 0, "YXZ");
       hg.updateMatrixWorld(true);
-      const rc = new THREE.Raycaster(new THREE.Vector3(x, top, z), new THREE.Vector3(0, -1, 0), 0, top + 5);
+      const y = this._deckUnder(hg, x, z, top);
+      if (y != null && (best == null || y > best)) best = y;
+      hg.position.copy(P); hg.rotation.copy(R); hg.updateMatrixWorld(true);
+    }
+    return best;
+  }
+
+  /** The top of boat group hg's deck under (x, z) below `top`, as the group is posed now; null if none. A deck of logs
+   *  (the log raft) has gaps between them, so a point between two logs is on the deck too: when the straight-down ray
+   *  finds no top, four rays 0.12 m around it are tried (was: a person aimed between two logs was keyed at 0 under the
+   *  raft and pushed 2.8 m sideways at f0). */
+  _deckUnder(hg, x, z, top) {
+    const down = new THREE.Vector3(0, -1, 0), rc = new THREE.Raycaster(new THREE.Vector3(), down, 0, top + 5);
+    const at = (px, pz) => {
+      rc.ray.origin.set(px, top, pz);
       for (const h of rc.intersectObject(hg, true)) {
         const ob = h.object;
         let shown = true;
         for (let q = ob; q && q !== hg.parent; q = q.parent) if (!q.visible) { shown = false; break; }
         if (!shown || !ob.isMesh || ob.material?.transparent || !h.face) continue;
         const n = h.face.normal.clone().transformDirection(ob.matrixWorld);
-        if (n.y > 0.7) { if (best == null || h.point.y > best) best = h.point.y; break; }
+        return n.y > 0.7 ? h.point.y : null;
       }
-      hg.position.copy(P); hg.rotation.copy(R); hg.updateMatrixWorld(true);
-    }
+      return null;
+    };
+    const y0 = at(x, z);
+    if (y0 != null) return y0;
+    let best = null;
+    for (const [dx, dz] of [[0.12, 0], [-0.12, 0], [0, 0.12], [0, -0.12]]) { const y = at(x + dx, z + dz); if (y != null && (best == null || y > best)) best = y; }
     return best;
   }
 
@@ -3832,8 +3873,11 @@ export class Stage {
     const wp = this.water ? [this.water.position.x, this.water.position.z, this.water.geometry.parameters.width, this.water.geometry.parameters.height] : null;
     // What they can stand on over the water (a dock, a parked platform, a boat's deck) is part of the plan too.
     const dry = reef ? "" : this._supportSig();
+    // the props that may float in the water (a swimmer keeps out of them: _keepOffHulls)
+    const floats = reef ? "" : JSON.stringify(this.state.actors.filter((b) => b.id !== a.id && !PERSON_KINDS.has(b.kind) && !LIBRARY[b.kind]?.boat)
+      .map((b) => [b.id, b.kind, keysHash(this._actorKeys(b)), b.scale || 1, b.height_m || 0, b.physics?.density ?? "", b.physics?.mass ?? "", b.swim ?? "", b.buoyancy || "", b.mount_id || "", b.carry_id || "", this._seedKey(b)]));
     // (the seed key too: a rename of a person with no stored seed changes their variation, in the App as after a reload)
-    const sig = JSON.stringify([keys, last, fps, h, a.rotation_deg || 0, smode, a.gear || null, reef ? fx.id : pool, wp, a.kind, dry, this._seedKey(a)]);
+    const sig = JSON.stringify([keys, last, fps, h, a.rotation_deg || 0, smode, a.gear || null, reef ? fx.id : pool, wp, a.kind, dry, this._seedKey(a), floats]);
     this._swimCache = this._swimCache || new WeakMap();
     const c = this._swimCache.get(a);
     if (c && c.sig === sig && c.g === g) return c.plan;
@@ -3933,10 +3977,21 @@ export class Stage {
    */
   _keepOffHulls(a, pos, mode, support, h) {
     const boats = [];
+    const level = this.water?.position.y ?? 0;
     for (const b of this.state.actors) {
-      if (!LIBRARY[b.kind]?.boat || b.mount_id || b.carry_id || b.id === a.id) continue;
+      // a boat, or a prop floating in the water (a crate, a table, a ball): a swimmer keyed at it treaded inside it
+      const isBoat = !!LIBRARY[b.kind]?.boat;
+      if (b.mount_id || b.carry_id || b.id === a.id || PERSON_KINDS.has(b.kind) || LIBRARY[b.kind]?.flies) continue;
       const hg = this.actorMeshes.get(b.id);
       if (!hg) continue;
+      let active = null;
+      if (!isBoat) {
+        const T = this.water && level >= 0.3 ? this._buoyTrack(b, hg) : null;
+        if (!T || !T.over.some(Boolean)) continue;
+        // only while it is where a swimmer at the surface would meet it: not sunk under them, not still falling in
+        const tr = T.tr, bh = T.body.h || 0.5;
+        active = (f) => { const i = Math.max(0, Math.min(tr.y.length - 1, f)); return !!T.over[i] && tr.y[i] + bh > level - 0.9 && tr.y[i] < level + 0.3; };
+      }
       // its footprint in its own frame: the box of the group with no heading, tilt or offset (cached on the group)
       const k = `${b.kind}|${b.scale || 1}|${b.height_m || 0}|${hg.children.length}`;
       if (hg.userData.footKey !== k) {
@@ -3948,7 +4003,7 @@ export class Stage {
         hg.userData.footKey = k;
         hg.userData.foot = box.isEmpty() ? null : { cx: (box.min.x + box.max.x) / 2, cz: (box.min.z + box.max.z) / 2, hx: (box.max.x - box.min.x) / 2, hz: (box.max.z - box.min.z) / 2 };
       }
-      if (hg.userData.foot) boats.push({ b, hg, foot: hg.userData.foot });
+      if (hg.userData.foot) boats.push({ b, hg, foot: hg.userData.foot, active });
     }
     if (!boats.length) return;
     const fps = this.state.shot?.fps || 24, vmax = 2 / fps, reach = 0.6 * h;   // 2 m/s: a strong swimmer's sprint
@@ -4002,7 +4057,7 @@ export class Stage {
         for (let k = 0, n = Math.max(1, Math.ceil(len / 0.1)); k <= n; k++) { const q = toWorld(atS(s + dir * len * k / n), bp, yaw); if (!inWater(q[0], q[1])) return false; }
         return true;
       };
-      const swims = (f) => !!mode[f] && support[f] == null && f < hop;
+      const swims = (f) => !!mode[f] && support[f] == null && f < hop && (!B.active || B.active(f));
       const poses = pos.map((_, f) => (swims(f) ? poseAt(f) : null));
       // the keys in the boat's own frame at each frame
       const Tl = pos.map((p, f) => {

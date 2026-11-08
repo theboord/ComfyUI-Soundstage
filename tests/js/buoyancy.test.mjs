@@ -1063,3 +1063,58 @@ test("a duplicate gets its own water variation, kept through a reload (was: the 
   const again = tank(structuredClone(st.state.actors), { frames: 241 });
   for (const f of [100, 180, 240]) { st.setFrame(f); again.setFrame(f); assert.ok(Math.abs(st.actorMeshes.get(id).position.y - again.actorMeshes.get(id).position.y) < 1e-9, `f${f}: the copy the same after a reload`); }
 });
+
+// Seventh pass: the keep-off covered boats only, so a swimmer keyed (or placed) at a floating table or crate in the tank
+// trod inside it (the prop at ~2.0-2.18, the swimmer's lowest point 1.09-1.16, the head ~2.65). And a person aimed at the
+// log raft between two of its logs was keyed at 0 under it (the ray went down the gap) and pushed 2.8 m sideways at f0.
+test("a swimmer keeps out of a floating table or crate; a person placed on the log raft is keyed on its deck, even aimed between two logs", () => {
+  const at0 = (id, keys) => ({ id, name: id, kind: "man", height_m: 1.8, position: keys[0][1], keys: keys.map(([frame, position]) => ({ frame, position })), rotation_deg: 0 });
+  const thing = (kind) => ({ id: "t", name: "t", kind, position: [-3, 0, -2], keys: [{ frame: 0, position: [-3, 0, -2] }], rotation_deg: 0 });
+  // how far the swimmer's clay is inside the prop's own box (its frame), sampled over its vertices
+  const pen = (st) => {
+    const g = st.actorMeshes.get("s"), bg = st.actorMeshes.get("t");
+    g.updateMatrixWorld(true); bg.updateMatrixWorld(true);
+    const inv = bg.matrixWorld.clone().invert(), box = new THREE.Box3();
+    bg.traverse((o) => { if (o.isMesh && o.visible && !o.material?.transparent) box.union(new THREE.Box3().setFromObject(o).applyMatrix4(inv)); });
+    let deep = 0;
+    const v = new THREE.Vector3();
+    g.traverse((o) => {
+      if (!o.isMesh || !o.visible || o.material?.transparent) return;
+      const P = o.geometry.attributes.position;
+      for (let i = 0; i < P.count; i += 3) {
+        v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld).applyMatrix4(inv);
+        const d = Math.max(box.min.x - v.x, v.x - box.max.x, box.min.y - v.y, v.y - box.max.y, box.min.z - v.z, v.z - box.max.z);
+        if (d < 0) deep = Math.max(deep, -d);
+      }
+    });
+    return deep;
+  };
+  for (const kind of ["table", "crate"]) for (const keys of [[[0, [-3, 0, -2]]], [[0, [3, 0, -2]], [60, [-3, 0, -2]]]]) {
+    const what = `${kind}, keyed ${keys.length > 1 ? "swimming to it" : "at it"}`;
+    const st = tank([thing(kind), at0("s", keys)]), g = st.actorMeshes.get("s");
+    let worst = 0, wf = 0, step = 0, sf = 0, px = null;
+    for (let f = 0; f < 121; f++) {
+      st.setFrame(f);
+      assert.ok(g.userData.swimOn, `${what} f${f}: swimming`);
+      const p = pen(st);
+      if (p > worst) { worst = p; wf = f; }
+      if (px && f > 6) { const d = Math.hypot(g.position.x - px[0], g.position.z - px[1]); if (d > step) { step = d; sf = f; } }
+      px = [g.position.x, g.position.z];
+    }
+    assert.ok(worst < 0.25, `${what}: never inside it (deepest ${worst.toFixed(2)} m at f${wf})`);
+    assert.ok(step < 0.2, `${what}: no jump (worst ${step.toFixed(2)} m a frame at f${sf})`);
+  }
+  // the log raft: aimed between two logs (x -3.0), at a log (-3.15), past the mast (-3.6): on the deck, standing there
+  for (const x of [-3.0, -3.15, -3.6]) {
+    const st = tank([thing("log_raft"), at0("s", [[0, [4, 0, 4]]])], { keepSet: true });
+    st._shotCameraAt = () => ({ position: [x, 12, -6], target: [x, 2.3, -2], focal_mm: 35 });
+    const r = st.placeInFrame("s", { x: "center", y: 0.5 });
+    assert.ok(r.ok && r.position[1] > 2.5 && r.position[1] < 2.9, `raft, aimed at x ${x}: keyed on its deck (${r.position})`);
+    const g = st.actorMeshes.get("s");
+    for (const f of [0, 1, 30, 120]) {
+      st.setFrame(f);
+      assert.ok(!g.userData.swimOn && Math.hypot(g.position.x - r.position[0], g.position.z - r.position[2]) < 0.1 && Math.abs(lowest(g) - r.position[1]) < 0.1,
+        `raft, aimed at x ${x} f${f}: standing on the deck where placed (at ${g.position.toArray().map((v) => v.toFixed(2))}, lowest ${lowest(g).toFixed(2)})`);
+    }
+  }
+});
