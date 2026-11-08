@@ -145,26 +145,45 @@ SHOULDER_STEP = 0.2       # ...and its shoulders stand out past its head by at l
 HEAD_JOIN = 0.015         # pieces this share of her height apart are one piece (her mask's margin cuts his neck)
 
 
-def _head_and_shoulders(piece, Hb: int) -> bool:
-    """True when a piece of the head band (a bool mask, the band's rows) is shaped like a person's head and
-    shoulders: tall enough (HEAD_ROWS of her height Hb), and on at least one side its edge in the lower rows stands
-    out past its edge in the top rows (the head) by SHOULDER_STEP of the head's width (at least 3 px). A wall, a
-    slab, a pillar, a panel or a railing post at her depth keeps the same edges all the way down the band (cut only
-    by her, which moves an edge inward, never out), so it is no head and shoulders."""
+def _head_and_shoulders(piece, Hb: int, hers=None) -> bool:
+    """True when a piece of the head band (a bool mask, the band's rows inside the person box) is shaped like a
+    person's head and shoulders, not like a set piece's outline: tall enough (HEAD_ROWS of her height Hb); its top
+    rows (the head) have real edges on both sides, neither one the box's (or frame's) side, which only cuts a wall or
+    a roof; and the shoulders stand out past the head on BOTH sides, a side counting when its edge in the lower rows
+    stands out past the head's by SHOULDER_STEP of the head's width (at least 3 px) without being the box's side
+    (a wall running on to the box edge is no shoulder), or when that edge runs along her own body mask `hers` (her
+    body hides his shoulder there). One widening edge is not enough: a roofline rising to one side, a wall taller on
+    one side, a sign stepping out from a post all widen on one side only. Without `hers` no side counts as hidden."""
     rows = np.flatnonzero(piece.any(1))
     if rows.size < max(3, HEAD_ROWS * Hb):
         return False
     sub = piece[rows]
+    W_ = sub.shape[1]
     left = np.argmax(sub, axis=1)
-    right = sub.shape[1] - 1 - np.argmax(sub[:, ::-1], axis=1)
+    right = W_ - 1 - np.argmax(sub[:, ::-1], axis=1)
     n = rows.size
     k = max(3, n // 4)                                       # the top quarter: the head
     lo = max(k, int(0.4 * n))                                # below 40% of the piece: the shoulders
+    if (left[:k] <= 0).any() or (right[:k] >= W_ - 1).any():   # the box or frame side cuts it: a wall, a roof
+        return False
     tl, tr = float(np.median(left[:k])), float(np.median(right[:k]))
     head = tr - tl + 1
     ll, lr = float(np.percentile(left[lo:], 20)), float(np.percentile(right[lo:], 80))
-    step = max(tl - ll, lr - tr)
-    return step >= max(3.0, SHOULDER_STEP * head)
+    need = max(3.0, SHOULDER_STEP * head)
+    out_l = tl - ll >= need and ll > 0
+    out_r = lr - tr >= need and lr < W_ - 1
+
+    def hidden(edge, step):
+        if hers is None:
+            return False
+        hb = np.asarray(hers, bool)[rows[lo:]]
+        hit = 0
+        for i, e in enumerate(edge[lo:]):
+            a, b = (max(0, e - 3), e) if step < 0 else (e + 1, min(W_, e + 4))
+            hit += bool(hb[i, a:b].any())
+        return hit >= 0.5 * max(1, n - lo)
+
+    return bool((out_l and (out_r or hidden(right, 1))) or (out_r and (out_l or hidden(left, -1))))
 
 
 def _another_body(d, bb, body, w: int, h: int, rel: float = 0.07, share: float = 0.15) -> bool:
@@ -174,15 +193,17 @@ def _another_body(d, bb, body, w: int, h: int, rel: float = 0.07, share: float =
     crown row + HEAD_BAND of her height). Inside the box, in those rows only, the pixels within rel of her median depth
     and outside her body are cut into connected pieces (pieces under HEAD_JOIN of her height apart joined, so her grown mask
     does not part his head from his shoulders); only a piece shaped like a head and shoulders
-    (_head_and_shoulders: shoulders standing out past the head) is his, and it is a second body when those pieces
+    (_head_and_shoulders: inside the box, shoulders standing out past the head on both sides, or on one side with
+    her body along the other) is his, and it is a second body when those pieces
     hold at least `share` of her own pixels in those rows. Everything else at her depth there is a surface, whether
     or not it touches the box's sides: a wall or slab from her shoulders down, a pillar beside her, railing posts, a
     panel rising above her head, a ledge or bench, the ground at her feet, a box that reaches both frame edges, so a
     duplicate entry for her keeps her body mask. Known limits: a second person much shorter than her, crouching or
     lying down, or standing well behind or in front of her, reads as no second body (the entry gets her body mask and
     his pixels stay in the scan); so does one whose shoulders she hides on both sides, or whose head-band piece is
-    joined to a wall or slab within rel of her depth; a set piece at her depth with a step out on its side (a sign on
-    a post) reads as a second body."""
+    joined to a wall or slab within rel of her depth, or whose shoulders reach the box's side; a set piece at her
+    depth inside the box, clear of its sides, that widens on both sides below a narrower top (a T-shaped sign on a
+    post), or widens on one side while her body runs along its other side, reads as a second body."""
     rows = np.flatnonzero(body.any(1))
     if not rows.size:
         return False
@@ -210,7 +231,7 @@ def _another_body(d, bb, body, w: int, h: int, rel: float = 0.07, share: float =
     sizes = np.bincount(lab[near], minlength=n)
     his = 0
     for c in np.flatnonzero(sizes):
-        if c and _head_and_shoulders(lab == c, Hb):
+        if c and _head_and_shoulders(lab == c, Hb, hers):
             his += int(sizes[c])
     return his >= need
 
