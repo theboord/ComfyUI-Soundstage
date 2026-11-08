@@ -284,3 +284,25 @@ test("Duplicate near the tank wall keeps the copy in the water, beside the origi
     else { g.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(g); assert.ok(b.max.x <= 7.8 + 0.01 && b.min.x >= -7.8 - 0.01, `crate copy inside the walls (${b.min.x.toFixed(2)}..${b.max.x.toFixed(2)})`); }
   }
 });
+
+// ------------------------------------------------------------------ 11. Walking into the tank through its wall
+// Before: at the water's edge the feet jumped from 0 to 1.93 m in one frame (f45 to f46) and the root 0.77 m back.
+// The body now eases from the walk into the swim.
+test("walking into the tank through its wall: no jump at the water's edge", () => {
+  const st = tank([keyed("m", "man", [[0, [-12, 0, 0]], [120, [0, 0, 0]]], { key_y: false })], { frames: 121, keepSet: true });
+  const g = st.actorMeshes.get("m");
+  let prev = null, maxFeet = 0, maxRoot = 0, at = -1, swam = false;
+  for (let f = 30; f <= 120; f++) {
+    st.setFrame(f);
+    const lo = lowest(g), p = g.position.clone();
+    if (g.userData.swimOn) swam = true;
+    // (the feet around the edge only: further in, the breaststroke's own kick moves them ~0.2 m a frame)
+    if (prev) { const df = Math.abs(lo - prev.lo), dr = p.distanceTo(prev.p); if (f <= 75 && df > maxFeet) { maxFeet = df; at = f; } maxRoot = Math.max(maxRoot, dr); }
+    prev = { lo, p };
+  }
+  assert.ok(swam, "he swims once in the water");
+  assert.ok(maxFeet < 0.15, `the feet never jump at the edge (biggest change ${maxFeet.toFixed(3)} m at f${at})`);
+  assert.ok(maxRoot < 0.2, `the body never jumps (biggest step ${maxRoot.toFixed(3)} m; he walks in at 2.4 m/s, 0.1 m a frame)`);
+  st.setFrame(120);
+  assert.ok(headY(st, "m") > LEVEL - 0.25, "at the surface by the end of the walk in");
+});

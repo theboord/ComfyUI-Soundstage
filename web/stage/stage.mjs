@@ -2314,8 +2314,8 @@ export class Stage {
       if (sw) {
         Gait.release(g);
         sw.out = Swim.applySwim(g, sw.plan, this.frame, sw.ctx);
+        this._swimInWalls(g, a);   // (first: the entry eases from the walk or the seat to where the walls keep the swim)
         if (sw.plan.entries) this._swimEntry(g, sw.plan, this.frame);   // walked in, or let go of a mount: no pop
-        this._swimInWalls(g, a);
         swimNow.push({ a, g, plan: sw.plan, ctx: sw.ctx, out: sw.out });
       } else if (g.userData.swimOn) Swim.unswim(g);
       if (sw) {
@@ -4019,7 +4019,7 @@ export class Stage {
       v.set(0, hipY, 0).applyQuaternion(B.q);
       const d = Math.hypot(B.hips[0] - v.x - from.pos[0], B.hips[1] - v.y - from.pos[1], B.hips[2] - v.z - from.pos[2]);
       if (d < 0.05) continue;
-      out.push({ f, n: Math.max(6, Math.min(72, Math.ceil(1.5 * d / 0.06))), pos: from.pos.slice(), q: new THREE.Quaternion().setFromAxisAngle(Yax, from.yaw).toArray() });
+      out.push({ f, n: Math.max(6, Math.min(72, Math.ceil(1.5 * d / 0.06))), pos: from.pos.slice(), q: new THREE.Quaternion().setFromAxisAngle(Yax, from.yaw).toArray(), pose: from.pose || "stand" });
     }
     if (out.length) plan.entries = out; else delete plan.entries;
   }
@@ -4049,6 +4049,19 @@ export class Stage {
       const t = (frame - e.f + 1) / (e.n + 1), w = t * t * (3 - 2 * t);
       g.position.set(e.pos[0] + (g.position.x - e.pos[0]) * w, e.pos[1] + (g.position.y - e.pos[1]) * w, e.pos[2] + (g.position.z - e.pos[2]) * w);
       g.quaternion.slerpQuaternions(new THREE.Quaternion().fromArray(e.q), g.quaternion.clone(), w);
+      // the limbs too, from the pose they had (standing on the walk in, sitting on the mount) to the swim's
+      const J = g.userData.joints || {}, sit = e.pose === "sit";
+      const FROM = { hip: [sit ? -Math.PI / 2 : 0, 0, 0], knee: [sit ? Math.PI / 2 : 0, 0, 0], shoulder: [sit ? -0.35 : 0, 0, 0], elbow: [sit ? -0.9 : 0, 0, 0] };
+      for (const lr of ["l", "r"]) for (const part of ["hip", "knee", "shoulder", "elbow"]) {
+        const j = J[`${lr}_${part}`];
+        if (j) j.rotation.set(FROM[part][0] + (j.rotation.x - FROM[part][0]) * w, j.rotation.y * w, j.rotation.z * w);
+      }
+      for (const jn of ["spine", "neck", "head"]) if (J[jn]) J[jn].rotation.set(J[jn].rotation.x * w, J[jn].rotation.y * w, J[jn].rotation.z * w);
+      for (const ft of Object.values(Mocap.feetOf(g) || {})) {   // the shoes flat again (the swim points the toes)
+        if (!ft?.shoe) continue;
+        ft.shoe.quaternion.slerpQuaternions(new THREE.Quaternion(), ft.shoe.quaternion.clone(), w);
+        ft.shoe.position.lerpVectors(ft.rest, ft.shoe.position.clone(), w);
+      }
       g.updateMatrixWorld(true);
       if (Number.isFinite(plan.ctx?.floor)) Swim.keepAboveFloor(g, plan.ctx.floor);   // the eased body on the floor, not through it
     }
@@ -4113,7 +4126,7 @@ export class Stage {
       const S0 = fe > from ? seatAt(fe - 1) : S;   // the seated root the frame before (the seat less the sitting drop)
       const actor = { id: a.id, name: a.name, kind: a.kind, height_m: a.height_m, scale: a.scale, swim: a.swim, gear: a.gear, appearance: a.appearance,
         physics: a.physics, rotation_deg: THREE.MathUtils.radToDeg(S.yaw), keys, _wetFrom: fe,
-        _entryFrom: fe > 0 ? { pos: [S0.x, S0.y - 0.95 * h / 1.8, S0.z], yaw: S0.yaw } : null };
+        _entryFrom: fe > 0 ? { pos: [S0.x, S0.y - 0.95 * h / 1.8, S0.z], yaw: S0.yaw, pose: "sit" } : null };
       if (a.seed != null) actor.seed = a.seed;
       out = { fe, actor };
     }
