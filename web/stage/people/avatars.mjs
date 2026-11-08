@@ -403,7 +403,7 @@ export async function avatarsReady(ms = AVATAR_WAIT_MS) {
   clearTimeout(timer);
   const pending = inflight.size, waitedMs = Date.now() - t0;
   if (done) return { ok: true, timedOut: false, pending: 0, waitedMs, waited: true, message: "" };
-  const message = `People still loading after ${Math.round(ms / 1000)} s: ${pending} ${pending === 1 ? "person is" : "people are"} drawn as the marked stand-in in this capture. Press Run again once they show.`;
+  const message = `People or models still loading after ${Math.round(ms / 1000)} s: ${pending} ${pending === 1 ? "is" : "are"} drawn as the marked stand-in in this capture. Press Run again once they show.`;
   console.warn("Soundstage:", message);
   return { ok: false, timedOut: true, pending, waitedMs, waited: true, message };
 }
@@ -495,7 +495,8 @@ export function upgradeHuman(stage, a, g) {
 /** How many lifelike bodies are still loading (a capture says it is waiting for them before it waits). */
 export const loadingCount = () => inflight.size;
 
-/** Count a body still loading (avatarsReady waits for it) until it settles. Returns the promise. */
+/** Count a body (or a horse / vehicle model, stage._upgradeHorse / _upgradeVehicle) still loading until it settles:
+ *  avatarsReady waits for it. Returns the promise. */
 export function trackLoading(job) {
   inflight.add(job);
   const done = () => inflight.delete(job);
@@ -546,7 +547,8 @@ export function avatarsAt(stage) {
     const tipped = tippedNow(g);
     // whole-shot facts (the scene and the live Drive state now, no memo), then each frame's own
     const shot = O.rigShotReason(a, { driven: C.drivenNow(stage.drive, a.id) });
-    const factsAt = (i) => ({ mount: stage._mountPhaseAt?.(a, i) ?? null, sits: !!stage._sitSpec?.(a, i), swims: wet && swimsNow(stage, a, g, i), floats, airborne: airAt(stage, a, i) });
+    const physFrom = O.physicsFrom(a);
+    const factsAt = (i) => ({ physics: i >= physFrom, mount: stage._mountPhaseAt?.(a, i) ?? null, sits: !!stage._sitSpec?.(a, i), swims: wet && swimsNow(stage, a, g, i), exits: wet && exitsNow(stage, a, g, i), floats, airborne: airAt(stage, a, i) });
     const kind = (i) => O.ownerAt(shot, factsAt(i)).own;
     const fr = factsAt(f);
     // a live knock-over (the physics drag): the rig at once (not a recorded take, so no ease)
@@ -555,28 +557,36 @@ export function avatarsAt(stage) {
     skin.reason = null;   // never clay: the body below is always the lifelike one
     setShown(skin, true);
     // The grounding gate is the feet, not the look (C.feetUpReason), per frame.
-    skin.feetUp = C.feetUpReason(a, { tipped, floats, sits: fr.sits, swims: fr.swims, airborne: fr.airborne, mounted: !!fr.mount && fr.mount !== "walk" });
+    skin.feetUp = C.feetUpReason(a, { physics: fr.physics, tipped, floats, sits: fr.sits, swims: fr.swims, airborne: fr.airborne, mounted: !!fr.mount && fr.mount !== "walk" });
     const { scale } = ensureGait(stage, a, skin, { last, fps, f });
     skin.owner = mix.own; skin.ownerReason = here.reason; skin.rigWeight = mix.w.rig; skin.mix = { ...mix.w };
     const ctx = { fps, scale, last, f };
     // the rig's frames on the feet (Drive, a mocap take, a hop, getting on): the visible soles grounded too (groundRig)
     const groundsRig = !tipped && GROUNDED_RIG.has(here.reason);
+    // (a horse climb: its foot leaves the ground for the stirrup within two frames, and the match to the clay's shoe,
+    // faded out over 5-25 cm of the shoe's height, put a 24 cm/frame^2 jolt into the pelvis; there the body is only
+    // lifted out of the ground, which goes to nothing as the sole rises)
+    const liftOnly = groundsRig && here.reason === "gets on a mount" && climbsHorse(stage, a);
+    // off the feet (knocked over, physics, tipped live): the whole body kept out of the ground (groundBody)
+    const liesRig = tipped || LYING_RIG.has(here.reason);
     // (a hop's frames ease into the seat of the first seated frame after them, or out of the last one before)
     const seatSpec = () => stage._sitSpec?.(a, mix.own === "seat" ? f : mix.prev === "seat" ? mix.prevAt : mix.nextAt) || null;
     const srcs = ["rig", "seat", "clip"].filter((k) => mix.w[k] > 1e-9);
     if (srcs.length === 1) {   // one owner at full weight: posed straight in place
-      evalSource(srcs[0], stage, a, g, skin, ctx, undo, { groundsRig, seatSpec });
+      evalSource(srcs[0], stage, a, g, skin, ctx, undo, { groundsRig, liftOnly, liesRig, seatSpec });
     } else {
       // a handover frame: each source posed on its own (its moves of the logic rig undone), then blended
       const caps = [];
       for (const k of srcs) {
         const local = [];
-        const off = evalSource(k, stage, a, g, skin, ctx, local, { groundsRig, seatSpec });
+        const off = evalSource(k, stage, a, g, skin, ctx, local, { groundsRig, liftOnly, liesRig, seatSpec });
         caps.push({ w: mix.w[k], cap: capture(skin, off) });
         R.undoRig(local);
         g.updateMatrixWorld(true);
       }
       blendCaptures(skin, g, caps, undo);
+      // (a fall's first frames: the walking clip blended into the tipping rig went 2.6 cm into the floor) lifted out
+      if (liesRig) groundBody(stage, a, g, skin, f, undo, true);
     }
     // the rig is the source: the body follows it; only the rig's joints are put on the body's (its proportions)
     if (mix.w.rig >= 1) { fitRig(g, skin, undo); continue; }
@@ -590,17 +600,27 @@ export function avatarsAt(stage) {
   }
 }
 
+/** Does this person climb onto a horse they ride (a timed mount_at: Gait.mountMotion)? A whole-shot fact. */
+function climbsHorse(stage, a) {
+  if (!(a.mount_at > 0) || !a.mount_id) return false;
+  const host = stage.state?.actors?.find((x) => x.id === a.mount_id);
+  return host?.kind === "horse" && (a.pose || "ride") === "ride";
+}
+
+/** The rig's reasons with the body off its feet on the ground (lying, tipped, tumbling): kept out of it (groundBody). */
+const LYING_RIG = new Set(["was knocked over", "is moved by physics", "is tipped over"]);
+
 /** The rig's reasons with the feet on the ground (or about to be): its visible soles are grounded (groundRig). */
-const GROUNDED_RIG = new Set(["is driven live", "plays a video mocap take", "is in the air (a jump or vault)", "gets on a mount"]);
+const GROUNDED_RIG = new Set(["is driven live", "plays a video mocap take", "is in the air (a jump or vault)", "gets on a mount", "gets off a mount", "climbs out of the water"]);
 
 /**
  * Pose the body from one motion source at this frame. Returns the logic rig's offset this source moved it by (world
  * x / y / z: the clip's sideways shift, the rig's grounding lift), already applied (and on undo).
  */
-function evalSource(k, stage, a, g, skin, { fps, scale, last, f }, undo, { groundsRig, seatSpec }) {
+function evalSource(k, stage, a, g, skin, { fps, scale, last, f }, undo, { groundsRig, liftOnly = false, liesRig, seatSpec }) {
   if (k === "rig") {
     poseFromRig(stage, a, g, skin, f, { fps, scale });
-    const dy = groundsRig ? groundRig(stage, a, g, skin, f, undo) : 0;
+    const dy = groundsRig ? groundRig(stage, a, g, skin, f, undo, liftOnly) : liesRig ? groundBody(stage, a, g, skin, f, undo) : 0;
     return new THREE.Vector3(0, dy, 0);
   }
   if (k === "seat") {
@@ -610,10 +630,14 @@ function evalSource(k, stage, a, g, skin, { fps, scale, last, f }, undo, { groun
     placeHolder(g, skin.holder, { x: sit.seat[0], y: sit.seat[1] - F.floorFor(skin.kit, C.clipWeights(0)) * scale, z: sit.seat[2], yaw: sit.yaw, scale });
     drive(skin, { frame: f, fps, speed: 0, phase: 0, seed: C.phaseSeed(a.id) });
     sitBody(skin, sit, C.clayHeight(a) * (a.scale || 1));
+    if (sit.pose === "sit") seatedFeetDown(stage, a, g, skin, f, sit);
     return new THREE.Vector3();
   }
   poseFromClip(stage, a, g, skin, f, { fps, scale, last, undo });
-  return new THREE.Vector3(skin.shift?.[0] || 0, 0, skin.shift?.[1] || 0);
+  // a lean the clip keeps (under onemotion.KNOCK_DEG) tips the planted sole off the ground the foot plan put it on (a
+  // 29-degree walker's lowest sole up to 15 cm up): the body and the rig moved down (or up) onto it
+  const dy = O.tiltDeg(a) > 3 && !O.knockedOver(a) ? soleOnGround(stage, a, g, skin, f, undo) : 0;
+  return new THREE.Vector3(skin.shift?.[0] || 0, dy, skin.shift?.[1] || 0);
 }
 
 const _cq = new THREE.Quaternion(), _cv = new THREE.Vector3();
@@ -682,7 +706,7 @@ const smooth01 = (t) => { const x = Math.max(0, Math.min(1, t)); return x * x * 
  * saddle: the rig's own height), smoothly between; a foot still under the ground is lifted out of it (two-bone IK).
  * Returns the vertical move (m).
  */
-function groundRig(stage, a, g, skin, f, undo) {
+function groundRig(stage, a, g, skin, f, undo, liftOnly = false) {
   const rig = skin.kit.feet, boxes = clayFeet(g);
   if (!rig || !skin.legs || !boxes) return 0;
   const ground = groundFn(stage, a, g, f);
@@ -701,7 +725,7 @@ function groundRig(stage, a, g, skin, f, undo) {
   const k = C.clayHeight(a) * (a.scale || 1) / 1.8;
   const c = 1 - smooth01((clayLow - 0.05 * k) / (0.20 * k));
   if (!(c > 0) || !Number.isFinite(visLow) || !Number.isFinite(clayLow)) return 0;
-  const dy = (Math.max(0, clayLow) - visLow) * c;
+  const dy = liftOnly ? Math.max(0, -visLow) : (Math.max(0, clayLow) - visLow) * c;
   if (Math.abs(dy) > 1e-7) moveBody(g, skin.holder, 0, dy, 0, undo);
   const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(skin.holder.getWorldQuaternion(new THREE.Quaternion()));
   for (const lr of ["l", "r"]) {
@@ -712,6 +736,78 @@ function groundRig(stage, a, g, skin, f, undo) {
     F.twoBoneIK(B.thigh, B.calf, B.foot, B.foot.getWorldPosition(new THREE.Vector3()).addScaledVector(UPV, under), B.foot.getWorldQuaternion(new THREE.Quaternion()), fwd);
   }
   skin.holder.updateMatrixWorld(true);
+  return dy;
+}
+
+/** Seated on a chair: sitBody hangs the shins straight down from level thighs, so on a seat lower than the shins the
+ *  soles hovered 4-5 cm. Each thigh is tipped down just enough for its sole to reach the ground under it (its knee as
+ *  much lower as the sole was up, at most 8 cm; sitBody's own 5% droop folded in), the shin straight down again: the
+ *  hips stay on the seat. Never lifted (on the ground already), and a high seat's feet (over 8 cm up) are left hanging
+ *  lower by those 8 cm. */
+function seatedFeetDown(stage, a, g, skin, f, sit) {
+  const rig = skin.kit.feet, B = skin.bones || {};
+  if (!rig || !skin.mesh) return;
+  const ground = groundFn(stage, a, g, f), fwd = new THREE.Vector3(Math.sin(sit.yaw), 0, Math.cos(sit.yaw)), up = new THREE.Vector3(0, 1, 0);
+  for (const lr of ["L", "R"]) {
+    const th = B[`Bip01_${lr}_Thigh`], ca = B[`Bip01_${lr}_Calf`], fo = B[`Bip01_${lr}_Foot`];
+    if (!th || !ca || !fo) continue;
+    skin.holder.updateMatrixWorld(true);
+    const p = F.solePoints(skin.mesh, rig[lr === "L" ? "l" : "r"]);
+    let lo = Infinity;
+    for (let i = 0; i < p.length; i += 3) lo = Math.min(lo, p[i + 1] - ground(p[i], p[i + 2]));
+    if (!(lo > 1e-3) || !Number.isFinite(lo)) continue;
+    const lt = boneLen(th, ca);
+    th.updateWorldMatrix(true, true); ca.updateWorldMatrix(true, true);
+    const kneeDrop = th.getWorldPosition(_a).y - ca.getWorldPosition(_b).y;   // (the droop sitBody gave it)
+    const want = Math.min(lt * 0.99, kneeDrop + Math.min(0.08, lo));
+    aimBone(th, ca, fwd.clone().multiplyScalar(Math.sqrt(Math.max(0, lt * lt - want * want))).addScaledVector(up, -want));
+    aimBone(ca, fo, up.clone().negate().addScaledVector(fwd, 0.12));
+  }
+  skin.holder.updateMatrixWorld(true);
+}
+
+/** The body and the logic rig moved up or down so the lowest visible sole is on the ground. Returns the move (m). */
+function soleOnGround(stage, a, g, skin, f, undo) {
+  const rig = skin.kit.feet;
+  if (!rig || !skin.mesh) return 0;
+  const ground = groundFn(stage, a, g, f);
+  skin.holder.updateMatrixWorld(true);
+  let lo = Infinity;
+  for (const lr of ["l", "r"]) { const p = F.solePoints(skin.mesh, rig[lr]); for (let i = 0; i < p.length; i += 3) lo = Math.min(lo, p[i + 1] - ground(p[i], p[i + 2])); }
+  if (!Number.isFinite(lo) || Math.abs(lo) < 1e-7) return 0;
+  moveBody(g, skin.holder, 0, -lo, 0, undo);
+  return -lo;
+}
+
+const _gv = new THREE.Vector3();
+/**
+ * The rig owns a body off its feet (knocked over, moved by physics, tipped live): the retargeted body's own shape (its
+ * shoulders, hips and head are not the clay's boxes) lay 19-26 cm into the floor knocked over and 33 cm at a 45-degree
+ * walking tilt. Here the body and the logic rig move up or down together so the body's lowest skinned point is as high
+ * over the ground as the clay's lowest mesh: matched both ways while the clay touches the ground (within 5 cm), only
+ * lifted out when the clay is off it (a tumble in the air is the rig's own height). Every 2nd vertex is read (a fixed
+ * sample: the same on any frame order). Returns the vertical move (m).
+ */
+function groundBody(stage, a, g, skin, f, undo, liftOnly = false) {
+  const ground = groundFn(stage, a, g, f);
+  g.updateMatrixWorld(true);
+  let clayLow = Infinity;
+  const walk = (o) => {
+    if (o.userData?.avatar) return;
+    if (o.isMesh && o.geometry?.attributes?.position) { _gb.setFromObject(o, true); _gb.getCenter(_gc); clayLow = Math.min(clayLow, _gb.min.y - ground(_gc.x, _gc.z)); }
+    for (const c of o.children) walk(c);
+  };
+  walk(g);
+  const m = skin.mesh;
+  if (!m?.isSkinnedMesh || !Number.isFinite(clayLow)) return 0;
+  skin.holder.updateMatrixWorld(true);
+  const n = m.geometry.attributes.position.count;
+  let visLow = Infinity;
+  for (let i = 0; i < n; i += 2) { m.getVertexPosition(i, _gv).applyMatrix4(m.matrixWorld); visLow = Math.min(visLow, _gv.y - ground(_gv.x, _gv.z)); }
+  if (!Number.isFinite(visLow)) return 0;
+  const want = Math.max(0, clayLow);
+  const dy = clayLow < 0.05 && !liftOnly ? want - visLow : Math.max(0, -visLow);
+  if (Math.abs(dy) > 1e-7) moveBody(g, skin.holder, 0, dy, 0, undo);
   return dy;
 }
 
@@ -866,6 +962,15 @@ function ensureGait(stage, a, skin, { last, fps, f }) {
 const swimPlanOf = (stage, a, g) => ((stage.water || stage.setFx?.underwater) ? stage._swimPlan?.(a, g) || null : null);
 /** Does this person swim at frame f (C.swimsAt on the swim plan)? */
 const swimsNow = (stage, a, g, f) => C.swimsAt(a, f, () => swimPlanOf(stage, a, g));
+/** Is frame f inside the stage's climb out of the water (stage._swimExits: from the swim's last frame over the tank's
+ *  wall to the walk, e.f .. e.f + N - 1)? A pure function of the keys (the exits are cached on the swim plan). */
+export const exitsNow = (stage, a, g, f) => {
+  if (!stage._swimExits || !swimPlanOf(stage, a, g)) return false;
+  const ex = stage._swimExits(a, g);
+  if (!ex) return false;
+  for (const e of ex) if (f >= e.f && f < e.f + (e.N ?? e.n)) return true;
+  return false;
+};
 
 /**
  * The foot plan of a person with a lifelike body for this shot, built whether or not the body shows right now (the
@@ -916,10 +1021,12 @@ function footPlanFor(stage, a, g, skin, { last, fps, scale }) {
   if (!rig || !skin.legs || stage.footGrounding === false) return null;   // footGrounding false: the clips alone (A/B checks)
   // off their feet all shot (riding, seated, carried, knocked over, floating): no plan. Swimming and the air are per
   // frame (the plan skips those frames), so a person who walks and then swims is grounded on the walk.
-  if (C.feetUpReason(a, { tipped: tippedNow(g), floats: !!stage._floatsInShot?.(a) }) || O.rigShotReason(a, { driven: C.drivenNow(stage.drive, a.id) })) return null;
+  // (a recorded take's mount spans: Drive.pre() wrote this frame's mount into a.mount_id; whole-shot facts never read it)
+  const aw = a.mount_spans?.length && stage._mountAt ? { ...a, mount_id: undefined, mount_at: undefined } : a;
+  if (C.feetUpReason(aw, { tipped: tippedNow(g), floats: !!stage._floatsInShot?.(a) }) || O.rigShotReason(a, { driven: C.drivenNow(stage.drive, a.id) })) return null;
   const shapes = stage.root ? stage._supportShapes?.() : null;
   const swim = swimPlanOf(stage, a, g);
-  const sig = `${skin.gait.sig}|${stage.setFx?.id || ""}|${idOf(shapes)}|${idOf(stage._yCache?.get(a))}|${idOf(stage._swimCache?.get(a)?.stand)}|${idOf(swim)}|${physicsLift(a)}|${skin.kit.floors ? 1 : 0}|${a.pose || ""}|${a.mount_id || ""}|${a.mount_at ?? ""}|${smallTilt(a)?.join(",") || ""}`;
+  const sig = `${skin.gait.sig}|${stage.setFx?.id || ""}|${idOf(shapes)}|${idOf(stage._yCache?.get(a))}|${idOf(stage._swimCache?.get(a)?.stand)}|${idOf(swim)}|${physicsLift(a)}|${skin.kit.floors ? 1 : 0}|${stage._mountSig ? stage._mountSig(a) : `${a.pose || ""}|${a.mount_id || ""}|${a.mount_at ?? ""}`}|${smallTilt(a)?.join(",") || ""}`;
   if (skin.feet?.sig === sig) return skin.feet.plan;
   // A live drag (a key, the gizmo, a person dragged) changes the plan on every pointer move. A 5 s shot rebuilds in
   // ~20 ms, a 30 s one in ~115 ms: past LIVE_PLAN_FRAMES the feet keep the clip's own pose while the drag lasts and
@@ -949,7 +1056,7 @@ function footPlanFor(stage, a, g, skin, { last, fps, scale }) {
     const s = shapes ? stage._supportAt(x, z, BY[i], 0.6, shapes) : Math.max(0, floorAt?.(x, z) || 0);
     return Math.max(s, OK[i]);
   };
-  const lifted = physicsLift(a) > 0;
+  const lifted = physicsLift(a) > 0, physFrom = O.physicsFrom(a);
   // a wall or anything too tall to step onto, at foot height (the shift's re-check, footplant planFeet)
   const tall = 0.6 * C.clayHeight(a) * (a.scale || 1) / 1.8;
   const blocked = shapes ? (x, z, f) => {
@@ -962,11 +1069,15 @@ function footPlanFor(stage, a, g, skin, { last, fps, scale }) {
     n: last + 1, fps, heightM: C.clayHeight(a) * (a.scale || 1), rig, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, ground, baseY, blocked,
     // (seated frames too: a person who walks to a chair and sits, stage._sitSpec per frame; the body shift fades out
     // before them, footplant planFeet)
-    poseRaw: (f) => { poseRaw(stage, a, g, skin, f, { fps, scale, last }); return !C.feetUpReason(a, { lifted, airborne: !!AIR[fi(f)], swims: C.swimsAt(a, f, () => swim), sits: !!stage._sitSpec?.(a, fi(f)), mounted: !!a.mount_id && stage._mountPhaseAt?.(a, fi(f)) !== "walk" }); },
+    poseRaw: (f) => { poseRaw(stage, a, g, skin, f, { fps, scale, last }); return !C.feetUpReason(aw, { physics: fi(f) >= physFrom, lifted, airborne: !!AIR[fi(f)], swims: C.swimsAt(a, f, () => swim), sits: !!stage._sitSpec?.(a, fi(f)), mounted: mountedAt(stage, a, fi(f)) }); },
   });
   skin.feet = { sig, plan };
   return plan;
 }
+
+/** Off the feet for a mount at frame f (hopping on, seated, riding, getting off), from stage._mountPhaseAt (a recorded
+ *  span read for that frame, never this frame's a.mount_id). */
+const mountedAt = (stage, a, f) => { const ph = stage._mountPhaseAt ? stage._mountPhaseAt(a, f) : a.mount_id ? "on" : null; return ph != null && ph !== "walk"; };
 
 /** footPlanFor: longer shots than this (frames) don't rebuild their foot plan during a live drag. */
 const LIVE_PLAN_FRAMES = 240;

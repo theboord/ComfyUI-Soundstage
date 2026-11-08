@@ -156,7 +156,7 @@ test("real Rocketbox: body solve: on the clip's frames the logic rig follows the
   for (const [k, j] of Object.entries(g.userData.joints)) assert.ok(j.quaternion.angleTo(rest[k]) < 1e-9, `${k} put back`);
 });
 
-test("real Rocketbox: determinism: forward, reverse, shuffled scrubs and a fresh stage give identical frames (a jump, a baked tilt, Drive, a carry)", { skip: NOT_INSTALLED }, async () => {
+test("real Rocketbox: determinism: forward, reverse, shuffled scrubs and a fresh stage give identical frames (a jump, a baked tilt, Drive, a carry, a carried person)", { skip: NOT_INSTALLED }, async () => {
   const K = await realKits();
   const scene = () => [
     { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 40, position: [3, 0, 0] }] },
@@ -164,6 +164,10 @@ test("real Rocketbox: determinism: forward, reverse, shuffled scrubs and a fresh
     { id: "p2", kind: "woman", height_m: 1.68, position: [0, 0, 3], keys: [{ frame: 0, position: [0, 0, 3] }], tilt: [0.3827, 0, 0, 0.9239] },
     { id: "p3", kind: "man", height_m: 1.8, position: [2, 0, 3], keys: [{ frame: 0, position: [2, 0, 3] }, { frame: 40, position: [4, 0, 5] }], face: "faceless" },
     { id: "box", kind: "crate", position: [2.4, 0, 3], keys: [{ frame: 0, position: [2.4, 0, 3] }], carry_id: "p3", carry_at: 10 },
+    // review round 3: a carried PERSON (the carry pass sized the hold from a box that took in the lifelike holder where
+    // the frame shown before left it: 0.2-3.5 mm with the scrub order, 146 mismatched hashes over 72 frames)
+    { id: "q", kind: "man", height_m: 1.8, position: [-2, 0, -4], keys: [{ frame: 0, position: [-2, 0, -4] }, { frame: 40, position: [2, 0, -4] }] },
+    { id: "pc", kind: "woman", height_m: 1.68, position: [-1.6, 0, -4], keys: [{ frame: 0, position: [-1.6, 0, -4] }], carry_id: "q", carry_at: 8 },
   ];
   const frames = [...Array(41).keys()];
   const run = async (order, drive = false) => {
@@ -332,30 +336,56 @@ test("real Rocketbox: the visible feet are grounded on the rig's frames too (Dri
   }
 });
 
-/** Per-frame acceleration (second difference, m/frame^2) of the visible pelvis, hands, feet and head over frames, and of
- *  the logic rig's own hips (what the stage poses: a horse climb is fast by itself). */
-function motion(st, ids, frames) {
+/** The clay's shoe boxes (what its feet are), world centres. */
+const clayShoes = (g) => ["l", "r"].map((lr) => { const m = g.userData.joints[`${lr}_knee`].children.find((c) => c.isMesh && c.geometry?.type === "BoxGeometry"); return m ? W(m) : W(g.userData.joints[`${lr}_knee`]); });
+/**
+ * Per-frame acceleration (second difference, m/frame^2) of the visible pelvis, hands, feet and head over frames, and
+ * the same of the STAGE'S OWN pose (the logic rig as setFrame posed it, before the avatar wrote over it: undoAvatarWrites):
+ * hips, wrists, shoes and head. Review round 3: the old baseline read the logic rig after setFrame, but fitRig puts its
+ * hips and wrists on the visible bones, so the cap grew with the very pop it was meant to catch. A change frame: the
+ * owner, its weight or its reason changes (a hop turning into riding is one, though both are the rig's).
+ */
+function motion(st, id, frames) {
   const rows = [];
-  const g = st.actorMeshes.get(ids), skin = g.userData.humanSkin, B = skin.bones, J = g.userData.joints;
+  const g = st.actorMeshes.get(id), skin = g.userData.humanSkin, B = skin.bones, J = g.userData.joints;
   for (const f of frames) {
     st.setFrame(f);
-    rows.push({ f, own: skin.owner, w: skin.rigWeight, pel: W(B.Bip01_Pelvis), j: [W(B.Bip01_L_Hand), W(B.Bip01_R_Hand), W(B.Bip01_L_Foot), W(B.Bip01_R_Foot), W(B.Bip01_Head)], rig: W(J.l_hip).add(W(J.r_hip)).multiplyScalar(0.5) });
+    const r = { f, own: skin.owner, why: skin.ownerReason, w: skin.rigWeight, pel: W(B.Bip01_Pelvis), j: [W(B.Bip01_L_Hand), W(B.Bip01_R_Hand), W(B.Bip01_L_Foot), W(B.Bip01_R_Foot), W(B.Bip01_Head)] };
+    A.undoAvatarWrites(st);   // (the next setFrame starts with the same undo: nothing else changes)
+    g.updateMatrixWorld(true);
+    r.rig = W(J.l_hip).add(W(J.r_hip)).multiplyScalar(0.5);
+    r.rj = [W(J.l_wrist), W(J.r_wrist), ...clayShoes(g), W(J.head)];
+    rows.push(r);
   }
   const acc = (a, b, c) => c.clone().sub(b).sub(b.clone().sub(a)).length();
   const out = [];
   for (let i = 1; i < rows.length - 1; i++) {
     const [a, b, c] = [rows[i - 1], rows[i], rows[i + 1]];
-    out.push({ f: b.f, own: b.own, changes: a.own !== b.own || b.own !== c.own || Math.abs(c.w - a.w) > 1e-9, pel: acc(a.pel, b.pel, c.pel), joint: Math.max(...b.j.map((p, k) => acc(a.j[k], p, c.j[k]))), rig: acc(a.rig, b.rig, c.rig) });
+    const changes = a.own !== b.own || b.own !== c.own || a.why !== b.why || b.why !== c.why || Math.abs(c.w - a.w) > 1e-9;
+    out.push({ f: b.f, own: b.own, why: b.why, changes, pel: acc(a.pel, b.pel, c.pel), joint: Math.max(...b.j.map((p, k) => acc(a.j[k], p, c.j[k]))),
+      rig: acc(a.rig, b.rig, c.rig), rigj: Math.max(...b.rj.map((p, k) => acc(a.rj[k], p, c.rj[k]))), pelP: b.pel, rigP: b.rig });
   }
   return out;
 }
+/** The caps at a change frame: pelvis 12 cm/frame^2, hands / feet / head 30, or 1.25x what the stage's own pose does
+ *  there (its hips for the pelvis, its wrists / shoes / head for the joints). */
+function checkPops(what, rows) {
+  let changes = 0;
+  for (const r of rows) {
+    if (!r.changes) continue;
+    changes++;
+    const pCap = Math.max(0.12, 1.25 * r.rig), jCap = Math.max(0.30, 1.25 * r.rigj);
+    assert.ok(r.pel <= pCap, `${what} f${r.f} (${r.own}, ${r.why}): pelvis ${(r.pel * 100).toFixed(1)} cm/frame^2 (cap ${(pCap * 100).toFixed(1)})`);
+    assert.ok(r.joint <= jCap, `${what} f${r.f} (${r.own}, ${r.why}): a hand / foot / head ${(r.joint * 100).toFixed(1)} cm/frame^2 (cap ${(jCap * 100).toFixed(1)})`);
+  }
+  assert.ok(changes > 0, `${what}: the owner changes in the shot`);
+}
 
-test("real Rocketbox: no pop at any ownership change (a hop, a swim entry, a mount, a seat): the body's per-frame acceleration stays capped", { skip: NOT_INSTALLED }, async () => {
+test("real Rocketbox: no pop at any ownership change (a hop, a swim entry, a mount, a seat, a bike and a car hop): the body's per-frame acceleration stays capped against the stage's own pose", { skip: NOT_INSTALLED }, async () => {
   // review round 2 (measured on 0ce517f, per-frame movement): crate hop hand 76.4 cm at f12; dock to water hand 96.7
-  // at f13, pelvis 21.5 at f11; chair walk-up pelvis 54.4 at f20; horse mount_at pelvis 85.1 at f8. Capped here as an
-  // acceleration (a pop is a jump in the per-frame movement; steady travel is not): pelvis 12 cm/frame^2, hands, feet
-  // and head 30, or 1.25x what the logic rig's own hips do in the same frames where the stage itself moves that fast
-  // (the horse climb: 24 cm/frame^2 at the leg-over).
+  // at f13, pelvis 21.5 at f11; chair walk-up pelvis 54.4 at f20; horse mount_at pelvis 85.1 at f8. Review round 3:
+  // the baseline is the stage's own pose (see motion), and the hop turning into riding is a change frame: the bike and
+  // the car's landing in the seat was 21.9 / 17.3 cm/frame^2 (the hop's arc came down into the seat at full speed).
   const K = await realKits();
   const D = 1.81;
   const cases = [
@@ -364,20 +394,132 @@ test("real Rocketbox: no pop at any ownership change (a hop, a swim entry, a mou
     ["off the dock into the lake", [man("p", [-6, D, -12], [-6, D, -4], 48, { key_y: true })], 96, { set: "lake", keepSet: true }],
     ["walks to a chair and sits (mount_at)", [man("p", [-3, 0, 0], [-0.6, 0, 0], 40, { mount_id: "ch", mount_at: 54 }), { id: "ch", kind: "chair", position: [0, 0, 0], keys: [kf(0, 0, 0, 0)] }], 70, { set: "studio" }],
     ["walks to a horse and gets on (mount_at)", [man("p", [-3, 0, 1], [-0.8, 0, 1], 30, { mount_id: "h", mount_at: 60 }), { id: "h", kind: "horse", height_m: 1.6, position: [0, 0, 0], keys: [kf(0, 0, 0, 0)] }], 80, { set: "studio" }],
+    ["walks to a bike and gets on (mount_at)", [man("p", [3, 0, 0], [1.2, 0, 0], 30, { mount_id: "v", mount_at: 50 }), { id: "v", kind: "bike", position: [0, 0, 0], keys: [kf(0, 0, 0, 0)] }], 70, { set: "studio" }],
+    ["walks to a car and gets in (mount_at)", [man("p", [3, 0, 0], [1.2, 0, 0], 30, { mount_id: "v", mount_at: 50 }), { id: "v", kind: "sports_car", position: [0, 0, 0], keys: [kf(0, 0, 0, 0)] }], 70, { set: "studio" }],
   ];
   for (const [what, actors, frames, env] of cases) {
     const st = headless(actors, frames + 1, env); await withKit(st, K);
-    const rows = motion(st, "p", [...Array(frames + 1).keys()]);
-    let changes = 0;
-    for (const r of rows) {
-      if (!r.changes) continue;
-      changes++;
-      const pCap = Math.max(0.12, 1.25 * r.rig), jCap = Math.max(0.30, 1.25 * r.rig);
-      assert.ok(r.pel <= pCap, `${what} f${r.f} (${r.own}): pelvis ${(r.pel * 100).toFixed(1)} cm/frame^2 (cap ${(pCap * 100).toFixed(1)})`);
-      assert.ok(r.joint <= jCap, `${what} f${r.f} (${r.own}): a hand / foot / head ${(r.joint * 100).toFixed(1)} cm/frame^2 (cap ${(jCap * 100).toFixed(1)})`);
-    }
-    assert.ok(changes > 0, `${what}: the owner changes in the shot`);
+    checkPops(what, motion(st, "p", [...Array(frames + 1).keys()]));
   }
+});
+
+test("real Rocketbox: out of the tank over its wall: the rig keeps the body through the stage's climb out, then an eased handover; no pop, no slide through the wall", { skip: NOT_INSTALLED }, async () => {
+  // review round 3 (measured on b4f20c4): the swim plan ended at f101 and the clip took the body at the walk's keys
+  // while the stage's own climb out (_swimExits) still ran: over f94-101 the body slid 2.8 m forward and dropped 1.3 m
+  // through the 4 m wall at x 7.8-8.2 (0.56 m in one frame), the pelvis 18.6 cm/frame^2. The corrected pop test fails
+  // there on b4f20c4 (pelvis 19.4 cm/frame^2 at f95 against a 12 cm cap).
+  const K = await realKits();
+  const N = 181;
+  const st = headless([man("p", [-12, 0, 0], [12, 0, 0], 120)], N, { set: "water_tank", keepSet: true }); await withKit(st, K);
+  const a = st.state.actors[0], g = st.actorMeshes.get("p");
+  const ex = st._swimExits(a, g);
+  assert.ok(ex?.length, "the keys walk out over the wall (the stage eases them out)");
+  const e = ex[0], end = e.f + (e.N ?? e.n);
+  const rows = motion(st, "p", [...Array(N).keys()]);
+  checkPops("across the tank", rows);
+  for (const r of rows) {
+    if (r.f >= e.f && r.f < end) {
+      assert.equal(r.own, "rig", `f${r.f}: the rig keeps the body through the climb out (${r.why})`);
+      // the body is where the stage's climbing rig is, not ahead at the walk's keys
+      assert.ok(Math.hypot(r.pelP.x - r.rigP.x, r.pelP.z - r.rigP.z) < 0.15, `f${r.f}: the pelvis ${(Math.hypot(r.pelP.x - r.rigP.x, r.pelP.z - r.rigP.z) * 100).toFixed(1)} cm off the climbing rig`);
+    }
+  }
+  // through the wall (x 7.8-8.2): never more than 0.25 m a frame across, never down more than 0.25 m a frame (the
+  // stage's own step down starts at the water's edge, inside the wall: the keys walk through a 4 m wall, a known limit)
+  for (let i = 1; i < rows.length; i++) {
+    const p0 = rows[i - 1].pelP, p1 = rows[i].pelP;
+    if (Math.max(p0.x, p1.x) < 7.6 || Math.min(p0.x, p1.x) > 8.4) continue;
+    assert.ok(Math.abs(p1.x - p0.x) < 0.25, `f${rows[i].f}: the pelvis ${(Math.abs(p1.x - p0.x) * 100).toFixed(0)} cm across the wall in one frame`);
+    assert.ok(p0.y - p1.y < 0.25, `f${rows[i].f}: the pelvis down ${((p0.y - p1.y) * 100).toFixed(0)} cm in one frame at the wall`);
+  }
+  // the handover after the climb out: eased (some frame with a rig weight strictly between 0 and 1), then the clip
+  st.setFrame(end - 3); const w = g.userData.humanSkin.rigWeight;
+  assert.ok(w > 0 && w < 1, `the handover eased (rig weight ${w} at f${end - 3})`);
+  st.setFrame(end + 2); assert.equal(g.userData.humanSkin.owner, "clip");
+});
+
+test("real Rocketbox: a recorded Drive take with mount spans (into a sports car at 31, out at 60, an exit walk): the mount phase read from the spans for any frame, eased ownership, capped acceleration, identical in any scrub order and on a fresh stage", { skip: NOT_INSTALLED }, async () => {
+  // review round 3 (measured on b4f20c4): DriveMode.pre() writes this frame's mount into a.mount_id / mount_at, so the
+  // handover read the wrong mount for the neighbouring frames: full rig on f73, full clip on f74 (feet 74-86 cm/frame^2,
+  // a hand 61-70); the foot plan's key changed each frame; and a person's walk bank (rotation.z, set only on frames it
+  // walks) was kept from the frame shown before over a vault (frames 4-15 differed with the scrub order).
+  const { DriveMode } = await import("../../web/stage/drive.mjs");
+  const K = await realKits();
+  const N = 111, frames = [...Array(N).keys()];
+  const scene = () => [
+    { ...man("p", [4, 0, 0], [1.3, 0, 0], 21), keys: [kf(0, 4, 0, 0), kf(21, 1.3, 0, 0), kf(59, 1.4, 0, 0.4), kf(74, 1.4, 0, 0.4), kf(80, 1.55, 0, 0.4), kf(86, 1.9, 0, 0.4), kf(110, 3.8, 0, 0.4)],
+      mount_spans: [{ host: "car", seat: 0, pose: null, from: 31, to: 60 }] },
+    { id: "car", kind: "sports_car", position: [0, 0, 0], keys: [kf(0, 0, 0, 0)] },
+  ];
+  const make = async () => { const st = headless(scene(), N); st.drive = new DriveMode(st); await withKit(st, K); return st; };
+  const st = await make();
+  const a = st.state.actors[0];
+  assert.deepEqual([10, 25, 40, 65, 80].map((f) => st._mountPhaseAt(a, f)), [null, "hop", "on", "off", null], "the phase from the spans, whatever frame is shown");
+  st.setFrame(40);
+  assert.deepEqual([25, 65, 80].map((f) => st._mountPhaseAt(a, f)), ["hop", "off", null], "... also while Drive.pre() has this frame's mount in a.mount_id");
+  const rows = motion(st, "p", frames);
+  checkPops("the recorded car take", rows);
+  const eased = rows.filter((r) => r.f >= 60 && r.f < 80 && r.changes && r.own === "rig");
+  assert.ok(eased.length >= 4, `the way out eased over several frames (${eased.map((r) => r.f)})`);
+  const hashes = async (order) => { const s = await make(); const out = {}; for (const f of order) { s.setFrame(f); out[f] = frameHash(s); } return out; };
+  const fw = await hashes(frames), rv = await hashes([...frames].reverse()), sh = await hashes([...frames].sort((x, y) => ((x * 7919) % N) - ((y * 7919) % N)));
+  for (const f of frames) { assert.equal(rv[f], fw[f], `reverse f${f}`); assert.equal(sh[f], fw[f], `shuffled f${f}`); }
+  for (const f of [8, 25, 45, 66, 73, 74, 90]) assert.equal((await hashes([f]))[f], fw[f], `fresh stage f${f}`);
+});
+
+test("real Rocketbox: off the feet on the rig's frames the body stays out of the ground (lying, knocked over walking, physics after its takeover); before the takeover the clip walks grounded; a lean the clip keeps and a chair keep the soles down", { skip: NOT_INSTALLED }, async () => {
+  // review round 3 (measured on b4f20c4): knocked over the body lay 19-26 cm into the floor, a 45-degree walking tilt
+  // 33 cm; physics.baked made the whole shot the rig's (the walk before the hit hovered 1-14 cm); a 29-degree tilt on the
+  // clip hovered up to 10.9 cm; seated on a chair the soles hovered 4-5 cm
+  const K = await realKits();
+  const low = (skin) => { const m = skin.mesh, v = new THREE.Vector3(); skin.holder.updateMatrixWorld(true); let lo = Infinity; for (let i = 0; i < m.geometry.attributes.position.count; i += 3) { m.getVertexPosition(i, v).applyMatrix4(m.matrixWorld); lo = Math.min(lo, v.y); } return lo; };
+  const sole = (skin) => { let lo = Infinity; for (const lr of ["l", "r"]) { const p = F.solePoints(skin.mesh, skin.kit.feet[lr]); for (let i = 1; i < p.length; i += 3) lo = Math.min(lo, p[i]); } return lo; };
+  const q = (ax, deg) => { const h = (deg * Math.PI) / 360; return [ax[0] * Math.sin(h), ax[1] * Math.sin(h), ax[2] * Math.sin(h), Math.cos(h)]; };
+  const yaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  const physKeys = Array.from({ length: 48 }, (_, f) => {
+    const t = Math.min(1, Math.max(0, (f - 30) / 10)), qq = yaw.clone().premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -t * Math.PI / 2));
+    return { frame: f, position: [-3 + Math.min(f, 30) * 0.06 + Math.max(0, f - 30) * 0.02, 0, 0], quat: qq.toArray().map((v) => +v.toFixed(5)) };
+  });
+  const cases = [
+    ["lying (a 90-degree tilt)", man("p", [0, 0, 0], [0, 0, 0], 0, { keys: [kf(0, 0, 0, 0)], tilt: q([0, 0, 1], 90) }), () => "rig", "body"],
+    ["knocked over 45 degrees, walking", man("p", [-3, 0, 0], [3, 0, 0], 47, { tilt: q([1, 0, 0], 45) }), () => "rig", "body"],
+    ["physics takes over at f30", man("p", [-3, 0, 0], [3, 0, 0], 47, { keys: physKeys, physics: { baked: true, mode: "dynamic", takeover: { frame: 30 } } }), (f) => (f < 30 ? "clip" : "rig"), "takeover"],
+    ["a 29-degree lean on the clip, walking", man("p", [-3, 0, 0], [3, 0, 0], 47, { tilt: q([1, 0, 0], 29) }), () => "clip", "sole"],
+  ];
+  for (const [what, actor, owner, kind] of cases) {
+    const st = headless([actor], 48); await withKit(st, K);
+    const skin = st.actorMeshes.get("p").userData.humanSkin;
+    for (let f = 0; f <= 47; f++) {
+      st.setFrame(f);
+      assert.equal(skin.owner, owner(f), `${what} f${f}: owned by the ${owner(f)} (${skin.ownerReason})`);
+      const lo = low(skin), so = sole(skin);
+      assert.ok(lo > -0.02, `${what} f${f}: the body ${(lo * 100).toFixed(1)} cm into the floor`);
+      if (kind === "body") assert.ok(lo < 0.03, `${what} f${f}: lying ${(lo * 100).toFixed(1)} cm over the floor`);
+      if (kind === "sole" || (kind === "takeover" && f < 30)) assert.ok(so > -0.01 && so < 0.035, `${what} f${f}: the lowest sole ${(so * 100).toFixed(1)} cm`);
+    }
+  }
+  // seated on a chair: the soles on the floor
+  const st = headless([man("p", [-0.5, 0, 0], [-0.5, 0, 0], 0, { keys: [kf(0, -0.5, 0, 0)], mount_id: "ch" }), { id: "ch", kind: "chair", position: [0, 0, 0], keys: [kf(0, 0, 0, 0)] }], 25); await withKit(st, K);
+  const skin = st.actorMeshes.get("p").userData.humanSkin;
+  for (const f of [3, 12, 20]) {
+    st.setFrame(f);
+    assert.equal(skin.owner, "seat");
+    for (const lr of ["l", "r"]) { const p = F.solePoints(skin.mesh, skin.kit.feet[lr]); let lo = Infinity; for (let i = 1; i < p.length; i += 3) lo = Math.min(lo, p[i]); assert.ok(lo > -0.01 && lo < 0.01, `seated f${f} ${lr}: the sole ${(lo * 100).toFixed(1)} cm over the floor`); }
+  }
+});
+
+test("a horse's and a car's model load are waited for by a capture (avatarsReady), like a lifelike body: no delivered frame shows them half-loaded", async () => {
+  // review round 3: clip (c) showed the horse untextured on frames 0-1; the wait covered people only
+  const hadWin = "window" in globalThis, win = globalThis.window;
+  globalThis.window = { document: { createElement: () => ({}) } };   // (counted in a browser only: modelLoad)
+  let st;
+  try { st = headless([{ id: "h", kind: "horse", height_m: 1.6, position: [0, 0, 4], keys: [kf(0, 0, 0, 4)] }, { id: "pc", kind: "police_car", position: [0, 0, -5], keys: [kf(0, 0, 0, -5)] }], 25); }
+  finally { if (hadWin) globalThis.window = win; else delete globalThis.window; }
+  assert.ok(A.loadingCount() >= 2, `the horse and the car counted as loading (${A.loadingCount()})`);
+  const r = await A.avatarsReady(20000);
+  assert.equal(r.ok, true); assert.equal(r.waited, true);
+  assert.equal(A.loadingCount(), 0);
+  for (const id of ["h", "pc"]) assert.equal(st.actorMeshes.get(id).userData.standIn, true, `${id}: the marked stand-in once the load failed (node), never its built look`);
 });
 
 test("real Rocketbox: determinism without history: Drive let go mid-shot, a swim, timed mounts, a shot change and a live tilt give the fresh stage's frames", { skip: NOT_INSTALLED }, async () => {

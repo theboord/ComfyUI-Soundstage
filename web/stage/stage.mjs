@@ -17,7 +17,7 @@ import { materialOf, impactParticles, impactFlash, impactShakeAt, SHAKE_PRESETS,
 import { STUNTS, hasHeadingKeys, headingTrack, channelAt, driveAt, isStunt, unwrapDeg, vehicleDynamics, smokeParticles, stuntKeys, stuntParams, stuntRun } from "./stunts.mjs";
 import { PoseGizmo } from "./posegizmo.mjs";
 import { RotateTools, gizmoTurnToActor } from "./rotate.mjs";
-import { DriveMode, installDriveButton } from "./drive.mjs";
+import { DriveMode, installDriveButton, hopFrames as driveHopFrames, exitFrames as driveExitFrames } from "./drive.mjs";
 import { installViewNav } from "./viewnav.mjs";
 import { installNavigation, orbitAbout, panRate, viewDepth } from "./navigation.mjs";
 import { buildSet, buildWater, buildWeather, buildTireSmoke, buildImpactFx } from "./environments.mjs";
@@ -54,7 +54,7 @@ import { cameraCurveAt, curveVersion, CAM_CURVE } from "./camcurve.mjs";   // th
 import { keysHash } from "./people/avatarcore.mjs";   // a cheap signature of a person's keys (_jumpsInShot)
 import { setStandIn } from "./people/standin.mjs";
 import { probeTier, pickTier, deviceInfo, savedPick, savePick } from "./tier.mjs";
-import { upgradeHuman, avatarsAt, avatarsReady, loadingCount, setShown as setAvatarShown, AVATAR_WAIT_MS, undoAvatarWrites } from "./people/avatars.mjs";   // lifelike people over the hidden logic rig (one motion, Lifelike-only L1)
+import { upgradeHuman, avatarsAt, avatarsReady, loadingCount, trackLoading, setShown as setAvatarShown, AVATAR_WAIT_MS, undoAvatarWrites } from "./people/avatars.mjs";   // lifelike people over the hidden logic rig (one motion, Lifelike-only L1)
 import { swapAvatarCutouts, idMaterial } from "./people/cutout.mjs";   // hair / lash cards keep their cut-out in Depth, Clay, Wire and ID
 import { DEPTH_SHADER, depthPassMaterial } from "./depthshader.mjs";   // the skinning Depth shader (also the underwater set's)
 
@@ -96,6 +96,13 @@ const loadSpark = () => (sparkModule ??= import("../vendor/spark.module.min.mjs"
 async function plyIsSplat(url) {
   const head = new TextDecoder().decode(await (await fetch(url, { headers: { Range: "bytes=0-4095" } })).arrayBuffer());
   return /property \w+ (f_dc_0|scale_0|opacity)\b/.test(head.split("end_header")[0]);
+}
+
+/** A horse's or a vehicle's model load, counted with the lifelike bodies still loading (people/avatars.mjs
+ *  trackLoading) so a capture waits for it, in a browser (node tests have no loader that settles: never counted there,
+ *  as upgradeHuman). Returns the promise. */
+function modelLoad(job) {
+  return typeof window !== "undefined" && typeof window.document?.createElement === "function" ? trackLoading(job) : job;
 }
 
 // Imported models are loaded once per URL and cloned per use. Resolves {scene, animations} or {splat: true}.
@@ -152,6 +159,15 @@ function beamLevel(mode, f) {
 
 /** Frames a timed mount takes to hop from standing into the saddle. */
 const HOP_FRAMES = 10;
+/** The world box of a group's own meshes, leaving out a lifelike body's holder (userData.avatar) inside it: the clay
+ *  logic rig's pose this frame, whatever the body was posed to on the frame shown before. */
+function logicBox(g) {
+  const box = new THREE.Box3();
+  g.updateMatrixWorld(true);
+  const walk = (o) => { if (o.userData?.avatar) return; if (o.isMesh) box.expandByObject(o); for (const c of o.children) walk(c); };
+  walk(g);
+  return box;
+}
 const _wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 /** Climbing onto a horse at t (0..1): from the standing spot up into the near stirrup, over the croup, down into the
  *  seat, limbs from Gait.mountMotion. seatPos is the seated origin; drop the ride pose's seat drop. */
@@ -1983,7 +1999,7 @@ export class Stage {
     const parts = [this.setFx?.id || ""];
     const parked = [];
     for (const o of this.state.actors) {
-      parts.push(`${o.id}:${o.kind}:${keysHash([{ k: o.keys?.length > 1 ? o.keys : null, p: o.keys?.[0]?.position || o.position, r: o.rotation_deg, s: o.scale, h: o.height_m, c: o.carry_id, m: o.mount_id, y: o.key_y, l: o.physics?.lift }])}`);
+      parts.push(`${o.id}:${o.kind}:${keysHash([{ k: o.keys?.length > 1 ? o.keys : null, p: o.keys?.[0]?.position || o.position, r: o.rotation_deg, s: o.scale, h: o.height_m, c: o.carry_id, m: o.mount_spans?.length ? this._mountSig(o) : o.mount_id, y: o.key_y, l: o.physics?.lift }])}`);
       if (PERSON_KINDS.has(o.kind) || o.mount_id || o.carry_id || this._keyedMoving(o, parts[parts.length - 1])) continue;
       const g = this.actorMeshes.get(o.id);
       if (!g) continue;
@@ -2626,7 +2642,9 @@ export class Stage {
       g.userData.speed = speed;
       g.rotation.order = "YXZ";
       g.rotation.x = 0;
-      if (g.userData.tilted) { g.rotation.z = 0; g.userData.tilted = false; }
+      // (a person's bank is set again every frame it walks: a frame that sets none, a vault over a car's bonnet, kept
+      // the last frame shown's, 0.06 rad after showing f20 against -0.01 fresh: a scrub-order dependence)
+      if (g.userData.tilted || PERSON_KINDS.has(a.kind)) { g.rotation.z = 0; g.userData.tilted = false; }
       // Swimmers (swim.mjs): divers off the seabed and people in a pool or the sea swim instead of walking.
       const sw = rig === "biped" && !a.mocap && g.userData.joints ? this._swimAt(a, g) : null;
       if (sw) {
@@ -2780,7 +2798,9 @@ export class Stage {
         }
         const from = g.position.clone(); // standing spot, set by the free-actor pass above
         g.position.lerpVectors(from, seatPos, e);
-        g.position.y += Math.sin(Math.PI * t) * 0.35 * h / 1.8;
+        // (the arc's square: it lands in the seat with no downward speed left; sin(pi t) itself came down 11-13 cm a
+        // frame into the seat and stopped there, a 12-22 cm/frame^2 jerk of the body at mount_at on a bike or a car)
+        g.position.y += Math.sin(Math.PI * t) ** 2 * 0.35 * h / 1.8;
         const dy = Math.atan2(Math.sin(hg.rotation.y - g.rotation.y), Math.cos(hg.rotation.y - g.rotation.y));
         g.rotation.y += dy * e;
         continue;
@@ -2837,7 +2857,9 @@ export class Stage {
       const e = t * t * (3 - 2 * t);
       const ch = (c.height_m || 1.8) * (c.scale || 1);
       og.updateMatrixWorld(true);
-      const size = new THREE.Box3().setFromObject(og).getSize(new THREE.Vector3());
+      // (the logic rig's own box: a lifelike body's holder inside og is still where the frame shown before put it, so a
+      // carried woman's hold moved 0.2-3.5 mm with the scrub order)
+      const size = logicBox(og).getSize(new THREE.Vector3());
       const reach = 0.25 + Math.min(size.x, size.z) / 2;
       const fwd = new THREE.Vector3(Math.sin(cg.rotation.y), 0, Math.cos(cg.rotation.y));
       const hold = new THREE.Vector3(cg.position.x, cg.position.y + 0.62 * ch - size.y / 2, cg.position.z).addScaledVector(fwd, reach);
@@ -4254,7 +4276,9 @@ export class Stage {
   _upgradeHorse(a, g) {
     // the marked stand-in while the model loads (the built horse is logic, never drawn: it showed on frames 0-1)
     setStandIn(g, true, { loading: true });
-    loadAsset(HORSE_GLB, "glb").then((asset) => {
+    // (counted with the people still loading: a capture waits for the horse too, so no delivered frame shows it
+    // half-loaded; clip (c) of the L1 review showed it untextured on frames 0-1)
+    modelLoad(loadAsset(HORSE_GLB, "glb").then((asset) => {
       if (this.actorMeshes.get(a.id) !== g || g.userData.horseRig) return;
       setStandIn(g, false);
       const model = SkeletonUtils.clone(asset.scene);
@@ -4295,7 +4319,7 @@ export class Stage {
       // never the clay look: the built horse shows as the marked stand-in (people/standin.mjs) until the GLB loads
       if (this.actorMeshes.get(a.id) === g) setStandIn(g, true);
       console.warn("Soundstage: rigged horse failed, showing the marked stand-in", err);
-    });
+    }));
   }
 
   /**
@@ -5145,7 +5169,7 @@ export class Stage {
    *  wheels are re-pivoted on their hubs so they roll with the distance driven. */
   _upgradeVehicle(a, g, spec) {
     setStandIn(g, true, { loading: true });   // the marked stand-in while the model loads, never the built car
-    loadAsset(new URL(`./models/${spec.model}`, import.meta.url).href, "glb").then((asset) => {
+    modelLoad(loadAsset(new URL(`./models/${spec.model}`, import.meta.url).href, "glb").then((asset) => {   // (a capture waits for it)
       if (this.actorMeshes.get(a.id) !== g || g.userData.vehicleBody) return;
       setStandIn(g, false);
       const model = asset.scene.clone(true);
@@ -5215,7 +5239,7 @@ export class Stage {
     }).catch((err) => {
       if (this.actorMeshes.get(a.id) === g) setStandIn(g, true);   // never the clay look: the marked stand-in
       console.warn("Soundstage: car model failed, showing the marked stand-in", err);
-    });
+    }));
   }
 
   // ---------- imported models (GLB / glTF) ----------
@@ -5952,10 +5976,11 @@ export class Stage {
    */
   _sitSpec(a, frame = this.frame) {
     if (!a || !PERSON_KINDS.has(a.kind)) return null;
-    if (a.mount_id) {
-      if (a.mount_at > frame) return null;   // still walking up / hopping on
-      const host = this.state.actors.find((x) => x.id === a.mount_id), hg = host && this.actorMeshes.get(host.id);
-      if (!hg || !this._canSitOn(host, true, a) || (a.pose && a.pose !== "sit")) return null;
+    const mt = this._mountAt(a, frame);
+    if (mt) {
+      if (mt.at > frame || frame >= mt.to) return null;   // still walking up / hopping on, or getting off (a recorded span)
+      const host = this.state.actors.find((x) => x.id === mt.id), hg = host && this.actorMeshes.get(host.id);
+      if (!hg || !this._canSitOn(host, true, a) || (mt.pose && mt.pose !== "sit")) return null;
       const m = MOUNTS[host.kind] || { seat: [0, (host.height_m || 1) * 0.6, 0] }, k = this._seatScale(host);
       const w = new THREE.Vector3(m.seat[0] * k, m.seat[1] * k, m.seat[2] * k).applyAxisAngle(new THREE.Vector3(0, 1, 0), hg.rotation.y);
       return { pose: "sit", on: host.id, seat: [hg.position.x + w.x, hg.position.y + w.y, hg.position.z + w.z], yaw: hg.rotation.y };
@@ -5975,13 +6000,48 @@ export class Stage {
    * One motion (people/onemotion.mjs) gives the walk up to the clip and only the hop and seat frames to the rig / seat.
    */
   _mountPhaseAt(a, f = this.frame) {
-    if (!a?.mount_id) return null;
-    if (!(a.mount_at > 0)) return "on";
-    const host = this.state.actors.find((x) => x.id === a.mount_id);
+    const mt = this._mountAt(a, f);
+    if (!mt) return null;
+    if (f >= mt.to) return "off";   // a recorded span's getting out / down (Drive.post eases them to their feet)
+    if (!(mt.at > 0)) return "on";
+    const host = this.state.actors.find((x) => x.id === mt.id);
     const m = host && (MOUNTS[host.kind] || { pose: "sit" });
-    const climb = host?.kind === "horse" && (a.pose || m?.pose) === "ride";
-    const hopStart = a.mount_at - (climb ? Gait.MOUNT_FRAMES : HOP_FRAMES);
-    return f < hopStart ? "walk" : f < a.mount_at ? "hop" : "on";
+    const climb = host?.kind === "horse" && (mt.pose || m?.pose) === "ride";
+    const hopStart = mt.at - (climb ? Gait.MOUNT_FRAMES : HOP_FRAMES);
+    return f < hopStart ? "walk" : f < mt.at ? "hop" : "on";
+  }
+
+  /**
+   * The mount a person has at frame f: {id (the host), at (mount_at, or undefined), pose, seat, to (the frame they
+   * start getting off: Infinity for a plain mount)}, or null. A recorded Drive take keeps its mounts as a.mount_spans,
+   * which Drive.pre() writes into a.mount_id / mount_at for the CURRENT frame only; reading those fields for another
+   * frame (one motion's handover looks at the neighbouring frames, the foot plan at every frame) gave the current
+   * frame's mount to all of them (a recorded car exit: full rig on f73, full clip on f74, no ease). So the spans are
+   * read here for any frame, with Drive.pre()'s own window (from - hop .. to + exit). A person Drive is setting live
+   * (drive.involved) keeps the fields. Pure: the scene only.
+   */
+  _mountAt(a, f = this.frame) {
+    if (!a) return null;
+    const d = this.drive;
+    if (a.mount_spans?.length && d && !d.involved?.has(a.id)) {
+      for (const sp of a.mount_spans) {
+        const host = this.state.actors.find((x) => x.id === sp.host);
+        if (!host) continue;
+        const ex = driveExitFrames(host.kind);
+        if (f >= sp.from - driveHopFrames(host.kind, sp.pose) && f < sp.to + ex) {
+          return { id: sp.host, at: sp.from > 0 && !sp.noHop ? sp.from : undefined, pose: sp.pose || undefined, seat: sp.seat ?? undefined, to: sp.to, ex };
+        }
+      }
+      return null;
+    }
+    if (!a.mount_id) return null;
+    return { id: a.mount_id, at: a.mount_at, pose: a.pose, seat: a.seat, to: Infinity };
+  }
+
+  /** A whole-shot key of a person's mounts (the foot plan's cache key): the recorded spans, else the fields. */
+  _mountSig(a) {
+    if (a?.mount_spans?.length && this.drive && !this.drive.involved?.has(a.id)) return `spans:${JSON.stringify(a.mount_spans)}`;
+    return `${a?.mount_id || ""}|${a?.mount_at ?? ""}|${a?.pose || ""}`;
   }
 
   /**
@@ -7161,7 +7221,7 @@ export class Stage {
     // Say so before the wait (it can last up to the full wait on a first download), not only when it times out.
     const n = loadingCount();
     if (n) {
-      this.lastCaptureNote = `Waiting for ${n} lifelike ${n === 1 ? "person" : "people"} to load before capturing (up to ${Math.round((this.avatarWaitMs ?? AVATAR_WAIT_MS) / 1000)} s)...`;
+      this.lastCaptureNote = `Waiting for ${n} lifelike ${n === 1 ? "person or model" : "people and models"} to load before capturing (up to ${Math.round((this.avatarWaitMs ?? AVATAR_WAIT_MS) / 1000)} s)...`;
       try { this.onInteract?.(this.lastCaptureNote); } catch { /* no UI */ }
     }
     const ready = await avatarsReady(this.avatarWaitMs ?? AVATAR_WAIT_MS);

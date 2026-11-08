@@ -16,7 +16,7 @@
 //           (Bip01_Footsteps), and repeat every bone's bind offset as a position track.
 import * as THREE from "../../vendor/three.module.min.mjs";
 import { LIBRARY } from "../library.mjs";
-import { knockedOver } from "./onemotion.mjs";
+import { knockedOver, physicsFrom } from "./onemotion.mjs";
 
 /** The person kinds (stage.mjs PERSON_KINDS): every one is lifelike or a marked stand-in, never clay. */
 export const PERSON_KINDS = new Set(["man", "woman", "child"]);
@@ -340,7 +340,7 @@ export function feetUpReason(a, ctx = {}) {
   if (a.mount_id && !(a.mount_at > 0)) return "rides or sits on something";
   if (ctx.mounted) return "rides or sits on something";
   if (a.carry_id) return "is carried";
-  if (a.physics?.baked) return "is moved by physics";
+  if (physicsFrom(a) === 0 || ctx.physics) return "is moved by physics";   // (a takeover part-way: the frames after it, ctx.physics)
   if (ctx.lifted) return "is lifted by physics";
   if (knockedOver(a)) return "was knocked over";
   if (ctx.tipped) return "is tipped over";

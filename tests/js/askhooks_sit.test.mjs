@@ -225,7 +225,9 @@ test("real Rocketbox: the lifelike man sits on the chair (hips on the seat, thig
   const hip = hipL.clone().add(W(B.Bip01_R_Thigh)).multiplyScalar(0.5);
   assert.ok(Math.abs(hip.y - (0.47 + 0.10)) < 0.01, `hips just above the 0.47 m seat: ${hip.y.toFixed(3)}`);
   assert.ok(Math.abs(hip.z - 0) < 0.05 && Math.abs(hip.x - (1 - 0.06)) < 0.05, `over the seat: ${hip.x.toFixed(2)}, ${hip.z.toFixed(2)}`);
-  assert.ok(kneeL.x - hipL.x > 0.3 && Math.abs(kneeL.y - hipL.y) < 0.06, "thigh level, forward (the chair's way)");
+  // (L1 review round 3: the thigh tips down until the sole is on the floor, the knee 6.9 cm under the hip joint on this
+  // 0.47 m chair; was 6 cm, with the soles 4-5 cm over the floor)
+  assert.ok(kneeL.x - hipL.x > 0.3 && Math.abs(kneeL.y - hipL.y) < 0.09, `thigh level, forward (the chair's way): ${(kneeL.y - hipL.y).toFixed(3)}`);
   assert.ok(kneeL.y - ankleL.y > 0.3 && Math.abs(ankleL.x - kneeL.x) < 0.12, "shin down");
   assert.ok(ankleL.y > -0.02 && ankleL.y < 0.2, `feet near the floor: ${ankleL.y.toFixed(3)}`);
   const toe = B.Bip01_L_Toe0 && W(B.Bip01_L_Toe0);

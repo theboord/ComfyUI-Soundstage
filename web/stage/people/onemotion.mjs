@@ -24,6 +24,14 @@ export function tiltDeg(a) {
 /** Knocked over: tilted KNOCK_DEG or more (not just any saved tilt). */
 export const knockedOver = (a) => tiltDeg(a) >= KNOCK_DEG;
 
+/** The frame physics takes a baked person over from (a.physics.takeover.frame: the authored keys play before it, the
+ *  physics after), 0 for a person physics moves all shot, Infinity for one not baked. */
+export function physicsFrom(a) {
+  if (!a?.physics?.baked) return Infinity;
+  const t = Number(a.physics.takeover?.frame);
+  return Number.isFinite(t) && t > 0 ? t : 0;
+}
+
 /**
  * Why the rig owns this person for the WHOLE shot (null: it does not). Whole-shot facts only (the scene's data and the
  * live Drive state at this moment, never a memo of earlier frames). ctx: {driven}. A mount is per frame (ownerAt): the
@@ -32,7 +40,7 @@ export const knockedOver = (a) => tiltDeg(a) >= KNOCK_DEG;
 export function rigShotReason(a, ctx = {}) {
   if (a.carry_id) return "is carried";
   if (a.mocap) return "plays a video mocap take";
-  if (a.physics?.baked) return "is moved by physics";
+  if (physicsFrom(a) === 0) return "is moved by physics";   // (a takeover part-way: per frame, ownerAt fr.physics)
   if (knockedOver(a)) return "was knocked over";
   if (ctx.driven) return "is driven live";
   return null;
@@ -40,14 +48,20 @@ export function rigShotReason(a, ctx = {}) {
 
 /**
  * Who owns frame f and why: {own: "clip" | "rig" | "seat", reason}. shot: rigShotReason's result; fr: the frame's
- * facts {mount: "walk" | "hop" | "on" | null (stage._mountPhaseAt), sits, swims, floats, airborne}.
+ * facts {mount: "walk" | "hop" | "on" | "off" | null (stage._mountPhaseAt; "off": a recorded span's getting out), physics (past a baked takeover's frame, physicsFrom), sits, swims, exits (in the stage's climb out of
+ * the water, stage._swimExits), floats, airborne}.
  */
 export function ownerAt(shot, fr = {}) {
   if (shot) return { own: "rig", reason: shot };
+  if (fr.physics) return { own: "rig", reason: "is moved by physics" };
   if (fr.sits) return { own: "seat", reason: "sits" };
   if (fr.mount === "hop") return { own: "rig", reason: "gets on a mount" };
   if (fr.mount === "on") return { own: "rig", reason: "rides or sits on something" };
+  if (fr.mount === "off") return { own: "rig", reason: "gets off a mount" };
   if (fr.swims) return { own: "rig", reason: "swims" };
+  // the stage's own climb out over the tank's wall (stage._swimExits) runs on after the swim plan ends: the rig keeps the
+  // body until it finishes (was: the clip took it at the walk's keys, 2.8 m ahead of the climbing rig)
+  if (fr.exits) return { own: "rig", reason: "climbs out of the water" };
   if (fr.floats) return { own: "rig", reason: "floats in the water" };
   if (fr.airborne) return { own: "rig", reason: "is in the air (a jump or vault)" };
   return { own: "clip", reason: null };

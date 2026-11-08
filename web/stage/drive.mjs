@@ -1159,7 +1159,7 @@ export class DriveMode {
       // Into a car seat: the stage's hop arcs up over the sill; through an open door it's a duck in, kept low.
       if (SEATS[host.kind] && a.mount_at > f && a.pose !== "ride") {
         const t = clamp((f - (a.mount_at - HOP_FRAMES)) / HOP_FRAMES, 0, 1), h = (a.height_m || 1.8) * (a.scale || 1);
-        g.position.y -= Math.sin(Math.PI * t) * (0.35 - 0.05) * h / 1.8;
+        g.position.y -= Math.sin(Math.PI * t) ** 2 * (0.35 - 0.05) * h / 1.8;   // (the stage's hop arc, squared: no landing jerk)
       }
       let t = null, stand = null;
       const lx = this.exiting?.id === a.id ? this.exiting : null;

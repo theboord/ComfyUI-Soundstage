@@ -440,7 +440,7 @@ test("captures wait for loading bodies, with a clear message on a timeout; a fai
   const t = await A.avatarsReady(60);
   assert.equal(t.timedOut, true);
   assert.equal(t.pending, 1);
-  assert.match(t.message, /still loading after 0 s: 1 person is drawn as the marked stand-in/);
+  assert.match(t.message, /still loading after 0 s: 1 is drawn as the marked stand-in/);   // (L1 round 3: people or models)
   const waiting = A.avatarsReady(5000);
   release();
   const r = await waiting;
@@ -844,7 +844,7 @@ test("round 3, 4: a single still (stage.capture) waits for bodies still loading,
     assert.deepEqual(seen, [["color", true]], "rendered once, after the body loaded");
     assert.ok(st.poses >= 1, "the new bodies are posed before the render");
     assert.equal(st.lastCaptureNote, "");
-    assert.deepEqual(st.notes, ["Waiting for 1 lifelike person to load before capturing (up to 60 s)..."], "it says it is waiting before the wait");
+    assert.deepEqual(st.notes, ["Waiting for 1 lifelike person or model to load before capturing (up to 60 s)..."], "it says it is waiting before the wait");
     // nothing loading: no wait, no extra pose
     const st2 = captureStage(() => {});
     await st2.capture("depth");
@@ -855,7 +855,7 @@ test("round 3, 4: a single still (stage.capture) waits for bodies still loading,
     const st3 = captureStage(() => {});
     st3.avatarWaitMs = 20;
     await st3.capture("color");
-    assert.match(st3.lastCaptureNote, /still loading after 0 s: 1 person is drawn as the marked stand-in/);
+    assert.match(st3.lastCaptureNote, /still loading after 0 s: 1 is drawn as the marked stand-in/);   // (round 3 of L1: "People or models", the horse and vehicle loads are counted too)
     assert.equal(st3.notes.length, 2);
     assert.match(st3.notes[0], /^Waiting for 1 lifelike person/);
     assert.equal(st3.notes[1], st3.lastCaptureNote);
