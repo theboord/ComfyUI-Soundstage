@@ -578,7 +578,7 @@ test("a car driven into the tank moves continuously through the wall (was: jumpe
   for (const f of [25, 90, 3, 60, 30]) { st.setFrame(f); assert.ok(Math.abs(g.position.x - xs[f]) < 1e-9 && Math.abs(g.position.y - ys[f]) < 1e-9, `f${f}: the same scrubbed back`); }
 });
 
-test("a person placed or dragged onto the dock or a boat the way the app does it (keyed at 0) is on it (was: on the lake bed, head through the dock; swimming in the hull)", () => {
+test("a person placed or dragged onto the dock or a boat the way the app does it is on it (was: on the lake bed, head through the dock; swimming in the hull)", () => {
   const DOCK = 1.81, ray = (x, z) => ({ ray: new THREE.Ray(new THREE.Vector3(x, 30, z), new THREE.Vector3(0, -1, 0)) });
   const at0 = (id, keys) => ({ id, name: id, kind: "man", height_m: 1.8, position: keys[0][1], keys: keys.map(([frame, position]) => ({ frame, position })), rotation_deg: 0 });
   const onDock = (st, id, what) => {
@@ -590,14 +590,14 @@ test("a person placed or dragged onto the dock or a boat the way the app does it
       assert.ok(hipsY(st, id) > DOCK + 0.7, `${what} f${f}: standing up on it (hips ${hipsY(st, id).toFixed(2)})`);
     }
   };
-  // placeInFrame: the shot camera looks down at the dock; a person is keyed at 0 there (the feet follow the floor)
+  // placeInFrame: the shot camera looks down at the dock; the person is keyed at the dock's top (the ray meets it)
   const st = tank([at0("p", [[0, [0, 0, -30]]])], { set: "lake", keepSet: true });
   st._shotCameraAt = () => ({ position: [-6, 14, -18], target: [-6, 0, -16], focal_mm: 28 });
   const r = st.placeInFrame("p", { x: "center", y: 0.5 });
-  assert.ok(r.ok && r.position[1] === 0 && Math.abs(r.position[0] + 6) < 0.3 && Math.abs(r.position[2] + 16) < 0.5, `placed on the dock's footprint at 0 (${r.position})`);
+  assert.ok(r.ok && Math.abs(r.position[1] - DOCK) < 0.01 && Math.abs(r.position[0] + 6) < 0.3 && Math.abs(r.position[2] + 16) < 0.5, `placed on the dock, keyed at its top (${r.position})`);
   onDock(st, "p", "placed");
-  // a live drag along the dock: the key keeps 0, and they stay up on it while dragged and after
-  const st2 = tank([at0("d", [[0, [-6, 0, -20]]])], { set: "lake", keepSet: true });
+  // a live drag along the dock: keyed at the dock's top, and they stay up on it while dragged and after
+  const st2 = tank([at0("d", [[0, [-6, DOCK, -20]]])], { set: "lake", keepSet: true });
   const g2 = st2.actorMeshes.get("d");
   assert.ok(st2.live.begin("d", { clientX: 0, clientY: 0 }, ray(-6, -20)));
   for (let i = 1; i <= 40; i++) {
@@ -606,7 +606,7 @@ test("a person placed or dragged onto the dock or a boat the way the app does it
   }
   st2.live.end(); for (let i = 0; i < 60 && st2.live.settling; i++) st2.live._tick(1 / 60); st2.live.finish();
   const k = st2.state.actors[0].keys[0].position;
-  assert.ok(k[1] === 0 && k[2] > -18, `keyed along the dock at 0 (${k})`);
+  assert.ok(Math.abs(k[1] - DOCK) < 0.01 && k[2] > -18, `keyed along the dock at its top (${k})`);
   onDock(st2, "d", "dragged");
   // the speedboat in the tank: keyed at 0 on its deck (as placeInFrame keys a person) stands on the deck
   const boat = { id: "b", name: "b", kind: "speedboat", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }], rotation_deg: 0 };
@@ -667,4 +667,49 @@ test("a hop on the dock, a key a little high, and a speedboat deck on a swell ke
     assert.equal(wet, 0, `keyed at ${k.toFixed(2)}: never in the sea (${wet} of 241 frames)`);
     assert.ok(worst < 0.1, `keyed at ${k.toFixed(2)}: the feet ride the deck (worst ${worst.toFixed(2)} m off it)`);
   }
+});
+
+// Fifth pass (2026-11-07): the App could not put a person on the dock. placeInFrame and a live drag met the screen ray
+// with flat ground at y 0 (and a drag refused the 1.81 m dock top as too high to climb), so a person aimed at the deck
+// with the camera looking along the dock landed ~3 m past its end in 1.2 m of water; from overhead ~2.5 m off.
+test("placeInFrame and a live drag hit the dock's top: a person aimed at the deck lands where aimed, on it (was: ~3 m past its end, in the water)", () => {
+  const DOCK = 1.81, at0 = (id, keys) => ({ id, name: id, kind: "man", height_m: 1.8, position: keys[0][1], keys: keys.map(([frame, position]) => ({ frame, position })), rotation_deg: 0 });
+  for (const cam of [{ position: [-6, 3.2, -26], target: [-6, 1.8, -16], focal_mm: 35 }, { position: [-6, 14, -18], target: [-6, 0, -16], focal_mm: 28 }, { position: [-3, 9, -12], target: [-6, 1.8, -17], focal_mm: 30 }]) {
+    const st = tank([at0("p", [[0, [0, 0, -30]]])], { set: "lake", keepSet: true });
+    st._shotCameraAt = () => cam;
+    const r = st.placeInFrame("p", { x: "center", y: 0.5 });
+    // where the centre ray meets the dock's top (y 1.81)
+    const c = new THREE.Vector3(...cam.position), d = new THREE.Vector3(...cam.target).sub(c).normalize(), aim = c.clone().addScaledVector(d, (DOCK - c.y) / d.y);
+    assert.ok(r.ok && Math.hypot(r.position[0] - aim.x, r.position[2] - aim.z) < 0.05, `${cam.position}: lands where aimed (${r.position} vs ${aim.toArray().map((v) => v.toFixed(2))})`);
+    assert.ok(Math.abs(r.position[1] - DOCK) < 0.01, `${cam.position}: keyed at the dock's top (${r.position[1]})`);
+    for (const f of [0, 60]) {
+      st.setFrame(f);
+      const g = st.actorMeshes.get("p");
+      assert.ok(!g.userData.swimOn && Math.abs(lowest(g) - DOCK) < 0.08, `${cam.position} f${f}: standing on the dock (lowest ${lowest(g).toFixed(2)})`);
+    }
+  }
+  // aimed past the dock's end: in the water there, as before
+  const st0 = tank([at0("q", [[0, [0, 0, -30]]])], { set: "lake", keepSet: true });
+  st0._shotCameraAt = () => ({ position: [-6, 3.2, -8], target: [-6, 0, -2], focal_mm: 35 });
+  const r0 = st0.placeInFrame("q", { x: "center", y: 0.5 });
+  assert.ok(r0.ok && r0.position[1] === 0 && r0.position[2] > -9, `past the dock: keyed at 0 in the water (${r0.position})`);
+  // a real drag from the water beside the dock onto it: they climb up onto it and are keyed at its top
+  const ray = (x, z) => ({ ray: new THREE.Ray(new THREE.Vector3(x, 30, z), new THREE.Vector3(0, -1, 0)) });
+  const st = tank([at0("d", [[0, [-9, 0, -16]]])], { set: "lake", keepSet: true });
+  const g = st.actorMeshes.get("d");
+  assert.ok(st.live.begin("d", { clientX: 0, clientY: 0 }, ray(-9, -16)));
+  for (let i = 1; i <= 70; i++) { st.live.move({ clientX: i, clientY: 0 }, ray(-9 + Math.min(i, 40) * 0.1, -16)); st.live._tick(1 / 60); }
+  assert.ok(Math.abs(lowest(g) - DOCK) < 0.08, `up on the dock at the end of the drag (lowest ${lowest(g).toFixed(2)})`);
+  st.live.end(); for (let i = 0; i < 60 && st.live.settling; i++) st.live._tick(1 / 60); st.live.finish();
+  const k = st.state.actors[0].keys[0].position;
+  assert.ok(Math.abs(k[1] - DOCK) < 0.01 && Math.abs(k[0] + 5) < 0.2, `keyed on the dock at its top (${k})`);
+  st.setFrame(30);
+  assert.ok(!g.userData.swimOn && Math.abs(lowest(g) - DOCK) < 0.08, `stands on it after (lowest ${lowest(g).toFixed(2)})`);
+  // and dragged back off it into the water: placed in the water (0), not keyed at the dock's height to drop from
+  st.setFrame(0);
+  assert.ok(st.live.begin("d", { clientX: 0, clientY: 0 }, ray(-5, -16)));
+  for (let i = 1; i <= 70; i++) { st.live.move({ clientX: i, clientY: 0 }, ray(-5 + Math.min(i, 40) * 0.1, -16)); st.live._tick(1 / 60); }
+  st.live.end(); for (let i = 0; i < 60 && st.live.settling; i++) st.live._tick(1 / 60); st.live.finish();
+  const k2 = st.state.actors[0].keys[0].position;
+  assert.ok(k2[1] === 0 && k2[0] > -2, `off the dock: keyed at 0 in the water (${k2})`);
 });

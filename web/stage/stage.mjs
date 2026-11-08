@@ -1925,6 +1925,40 @@ export class Stage {
     return y;
   }
 
+  /**
+   * The nearest walkable top a screen ray meets before `maxDist` (placeInFrame): a dock or any other set box, a parked
+   * prop low enough to stand on (_supportShapes), or a boat's deck as it is shown now. Side faces and undersides don't
+   * count. Returns {point: Vector3, id} or null. `selfId` (what is being placed) is never its own support.
+   */
+  _walkableRay(origin, dir, maxDist, selfId = null) {
+    if (!this.root) return null;
+    const d = dir.clone().normalize(), o = origin.toArray(), dv = d.toArray();
+    let best = null;
+    for (const sh of this._supportShapes()) {
+      if (sh.id === selfId) continue;
+      const own = this.actorMeshes.has(sh.id) ? this.state.actors.find((q) => q.id === sh.id) : null;
+      if (own && (LIBRARY[own.kind]?.boat || PERSON_KINDS.has(own.kind))) continue;   // a boat: its deck, below; never a person's head
+      const hit = raycastShapes([sh], o, dv, maxDist);
+      if (hit && hit.normal[1] > 0.7 && (!best || hit.distance < best.t)) best = { t: hit.distance, point: new THREE.Vector3(...hit.point), id: sh.id };
+    }
+    for (const b of this.state.actors) {
+      if (!LIBRARY[b.kind]?.boat || b.id === selfId || b.mount_id || b.carry_id) continue;
+      const hg = this.actorMeshes.get(b.id);
+      if (!hg) continue;
+      hg.updateMatrixWorld(true);
+      const rc = new THREE.Raycaster(origin.clone(), d, 0, best ? best.t : maxDist);
+      for (const h of rc.intersectObject(hg, true)) {
+        let shown = true;
+        for (let q = h.object; q && q !== hg.parent; q = q.parent) if (!q.visible) { shown = false; break; }
+        if (!shown || !h.object.isMesh || h.object.material?.transparent || !h.face) continue;
+        const n = h.face.normal.clone().transformDirection(h.object.matrixWorld);
+        if (n.y > 0.7 && (!best || h.distance < best.t)) best = { t: h.distance, point: h.point.clone(), id: b.id };
+        break;   // the first thing the ray meets on this boat: its deck, or a side that hides it
+      }
+    }
+    return best;
+  }
+
   /** Set boxes and parked props as ray-castable shapes (cached with the set and the obstacles). */
   _supportShapes() {
     const set = this._setCollidersCached(), obs = this._obstacles();
@@ -4538,6 +4572,10 @@ export class Stage {
         if (Math.abs(h2 - h) < 1e-4) break;
         h = h2;
       }
+      // ...unless the ray meets something walkable first: a dock, a deck, a riser (was: flat ground at the floor, so a
+      // person aimed at the lake's dock landed ~3 m past its end, standing in the water)
+      const top = this._walkableRay(C, d, P ? C.distanceTo(P) : 600, a.id);
+      if (top && (!P || top.point.y > this._floorUnder(top.point.x, top.point.z) + 0.05)) return Object.assign(top.point, { onTop: true });
       return P;
     };
     let P = null;
@@ -4585,11 +4623,14 @@ export class Stage {
       good.sort((p, q) => Math.abs(p.ny) - Math.abs(q.ny));
       P = good[0].g;
     }
-    const floorY = this._floorUnder(P.x, P.z);
+    // the surface it is put on: the floor, or the top of a dock, a deck or a riser the ray met first
+    const floorY = Math.max(this._floorUnder(P.x, P.z), P.onTop ? P.y : 0);
     const person = PERSON_KINDS.has(a.kind);
-    // A person's feet follow the floor by themselves (_heightAt); a prop keeps a keyed height, so on a raised floor
-    // it is keyed at that floor (key_y) instead of being buried in it at 0.
-    const y = !person && (floorY > 0.002 || a.key_y) ? +floorY.toFixed(3) : 0;
+    const raised = !!P.onTop;
+    // A person's feet follow the floor by themselves (_heightAt), so they are keyed at 0 on it; put on a dock, a deck or
+    // a riser they are keyed at its top (over the water that is what says "on the dock", not wading under it). A prop
+    // keeps a keyed height, so on a raised floor it is keyed at that floor (key_y) instead of being buried in it at 0.
+    const y = person ? (raised ? +floorY.toFixed(3) : 0) : floorY > 0.002 || a.key_y ? +floorY.toFixed(3) : 0;
     const pos = [+P.x.toFixed(3), y, +P.z.toFixed(3)];
     const keys = this._actorKeys(a);
     if (keys.length <= 1) for (const k of keys) k.position = [...pos];
