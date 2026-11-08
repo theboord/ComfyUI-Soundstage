@@ -183,8 +183,9 @@ export const SUBSTEPS = 12;
  * The whole-shot vertical track of a body's bottom. keyY[f]: its keyed bottom height (with the Physics start height);
  * over[f]: is it over the water at f. Out of the water it is on its keys. The first frame over the water it is let go:
  * keyed above the surface it drops in (with the keyed vertical speed, e.g. off a baked fall); keyed under it it starts
- * there and rises or sinks; keyed at the floor (0, the default placement) it is placed in the water: floating at its
- * waterline or on the bottom. Returns {y, v, s (fraction of its height under), rho, entry (frame or -1), splash (the
+ * there and rises or sinks; keyed at the floor (0, the default placement) from the first frame of the shot it is placed
+ * in the water: floating at its waterline or on the bottom. Coming in from outside later (a car driven in) it goes on
+ * from its keyed height, so the entry is continuous: then it floats up or stays down. Returns {y, v, s (fraction of its height under), rho, entry (frame or -1), splash (the
  * frame it hits the surface, or -1), speedIn (m/s down at the surface), landed (the first frame it is on the floor
  * after entry, or -1)}.
  */
@@ -204,7 +205,9 @@ export function floatTrack(body, { level, floor = 0, fps = 24, keyY, over }) {
       free = true; tw = 0;
       if (entry < 0) entry = f;
       const ky = keyY[f];
-      if (ky <= floor + 0.02) { st.y = restBottom(body, level, floor); st.v = 0; }   // placed in the water
+      // placed in the water (keyed at the floor from the start of the shot); driven or carried in from outside at the
+      // floor (f > 0: the frame before was off the water) it goes on from where its keys have it, then rises or sinks
+      if (ky <= floor + 0.02 && f === 0) { st.y = restBottom(body, level, floor); st.v = 0; }
       else { st.y = ky; st.v = f > 0 ? (keyY[f] - keyY[f - 1]) * fps : 0; }   // let go: the keyed (or baked) speed
     } else {
       for (let k = 0; k < SUBSTEPS; k++) {

@@ -562,3 +562,18 @@ test("scrubbing out of order gives the same pose: a dive in (flutter, frog, stro
     assert.ok(worst < 1e-9, `${swim}: f${at} is ${worst.toFixed(4)} m off when scrubbed to out of order`);
   }
 });
+
+test("a car driven into the tank moves continuously through the wall (was: jumped 2.7 m at f22, then stalled at x -5.39 for f22-f28)", () => {
+  const car = { id: "c", name: "c", kind: "car", position: [-14, 0, 0], keys: [{ frame: 0, position: [-14, 0, 0] }, { frame: 48, position: [0, 0, 0] }], rotation_deg: 90 };
+  const st = tank([car], { frames: 121 });
+  const g = st.actorMeshes.get("c"), xs = [], ys = [];
+  for (let f = 0; f < 121; f++) { st.setFrame(f); xs.push(g.position.x); ys.push(g.position.y); }
+  for (let f = 1; f <= 48; f++) {
+    const dx = xs[f] - xs[f - 1];
+    assert.ok(dx > 0.1 && dx < 0.45, `f${f}: drives on (dx ${dx.toFixed(2)}, x ${xs[f].toFixed(2)})`);
+  }
+  for (let f = 1; f < 121; f++) assert.ok(Math.abs(ys[f] - ys[f - 1]) < 0.2, `f${f}: no jump in height (${ys[f - 1].toFixed(2)} -> ${ys[f].toFixed(2)})`);
+  st.setFrame(100);
+  assert.ok(g.userData.inWater && g.position.y > 1.5, `then floats in the tank (${g.position.y.toFixed(2)})`);
+  for (const f of [25, 90, 3, 60, 30]) { st.setFrame(f); assert.ok(Math.abs(g.position.x - xs[f]) < 1e-9 && Math.abs(g.position.y - ys[f]) < 1e-9, `f${f}: the same scrubbed back`); }
+});

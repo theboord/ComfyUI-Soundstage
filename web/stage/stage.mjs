@@ -4998,15 +4998,27 @@ export class Stage {
     this._buoyCache ||= new WeakMap();
     const c = this._buoyCache.get(a);
     if (c?.sig === sig) return c;
-    const keyY = [], over = [];
+    const keyY = [], over = [], fits = [];
     for (let f = 0; f <= last; f++) {
-      const p = this._actorPosAt(a, f);
-      keyY.push(Math.max(0, (p[1] || 0) + lift + bb.minY)); over.push(this._overWater(p[0], p[2]));
+      const p = this._actorPosAt(a, f), ov = this._overWater(p[0], p[2]);
+      keyY.push(Math.max(0, (p[1] || 0) + lift + bb.minY)); over.push(ov);
+      const xz = ov ? this._insideWater(a, g, p[0], p[2], this._headingAt(a, f)) : null;
+      fits.push(!xz || (Math.abs(xz[0] - p[0]) < 1e-6 && Math.abs(xz[1] - p[2]) < 1e-6));
+    }
+    // Driven (or carried) in from outside: while its footprint is still crossing the wall it stays on its keys, and the
+    // water takes it from the first frame it is wholly inside (clamped from the frame the centre crossed, a car driven
+    // in jumped 2.7 m and stalled for 7 frames). Keyed through the wall from the start it is held inside as before.
+    for (let f = 1; f <= last; f++) {
+      if (!over[f] || over[f - 1]) continue;
+      let e = f;
+      while (e <= last && over[e] && !fits[e]) e++;
+      if (e <= last && over[e]) for (let i = f; i < e; i++) over[i] = false;
+      f = e;
     }
     // A key at the floor is "placed in the water"; the bottom of an object whose origin is its middle is above 0.
     if (bb.minY > 0) for (let f = 0; f <= last; f++) if (keyY[f] <= bb.minY + 0.02 && !lift) keyY[f] = 0;
     const tr = Buoy.floatTrack(bb.body, { level, floor: 0, fps, keyY, over });
-    const out = { sig, tr, body: bb.body, minY: bb.minY };
+    const out = { sig, tr, body: bb.body, minY: bb.minY, over };
     this._buoyCache.set(a, out);
     return out;
   }
@@ -5035,13 +5047,16 @@ export class Stage {
     if (PERSON_KINDS.has(a.kind) && (!a.mocap || Buoy.canStand(level, (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1)))) { g.userData.inWater = false; return; }
     const p = this._actorPosAt(a, this.frame);
     if (!this._overWater(p[0], p[2])) { g.userData.inWater = false; return; }
+    const kind = a.kind, boat = !!LIBRARY[kind]?.boat;
+    // Still crossing the wall on a drive in (_buoyTrack): on its keys until it is wholly inside.
+    const T = boat ? null : this._buoyTrack(a, g), fNow = Math.max(0, Math.min(this._lastFrame(), this.frame));
+    if (T && !T.over[fNow]) { g.userData.inWater = false; return; }
     // Keyed (or dragged and let go) with its centre over the water but its side through the tank wall: the water holds
     // its whole footprint inside the wall (a car at x 7.5 side-on floated half outside the 7.8 m inner wall).
     const xz = this._insideWater(a, g, p[0], p[2], g.rotation.y || 0);
     if (xz) { p[0] = xz[0]; p[2] = xz[1]; g.position.x = p[0]; g.position.z = p[2]; }
     const fps = this.state.shot?.fps || 24;
-    const kind = a.kind;
-    if (LIBRARY[kind]?.boat) {
+    if (boat) {
       if (this._boatFloat?.(a, g, level)) return;   // the hull's own physics on the wave field (watercraft.mjs)
       // A boat sits at its waterline and rides the swell: heave, pitch and roll, the bow lifting with speed.
       const t = this.frame / fps, seed2 = [...String(a.id)].reduce((n, ch) => n + ch.charCodeAt(0), 0);
@@ -5054,7 +5069,6 @@ export class Stage {
       g.userData.inWater = true;
       return;
     }
-    const T = this._buoyTrack(a, g);
     if (!T) return;
     const { tr, body } = T, f = Math.max(0, Math.min(tr.y.length - 1, this.frame));
     const seed = [...String(a.id)].reduce((n, ch) => n + ch.charCodeAt(0), 0);
