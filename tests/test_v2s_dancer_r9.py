@@ -85,3 +85,27 @@ def test_a_second_dancer_by_a_sloped_roof_is_still_a_body(monkeypatch, off):
     cut = _cut(monkeypatch, d, uv, [_entry("woman dancing", box),
                                     _entry("man dancing", [box[0] + off, box[1], box[2] + off, box[3]])])
     assert np.isfinite(cut[his]).sum() <= 0.02 * his.sum()
+
+
+# ------------------------------------------------------------------------------------------------ 4 wardrobe echoes
+from soundstage.video2stage import vlm  # noqa: E402
+from test_v2s_dancer_r3 import _person  # noqa: E402
+
+
+@pytest.mark.parametrize("echo", ["orange cable-knit sweater, brown corduroys",
+                                  "she wears an orange cable-knit sweater and brown corduroy trousers",
+                                  "wearing an orange cable-knit sweater, brown corduroy trousers",
+                                  "She wears brown corduroys and an orange cable knit sweater."],
+                         ids=["corduroys", "she wears", "wearing", "she wears, corduroys"])
+def test_the_missed_rewordings_of_the_example_are_echoes(echo):
+    """Through the public read path (wardrobe_of, parse_reply), as round 6's echo test now is."""
+    assert vlm.wardrobe_of({"wardrobe": echo}) == ""
+    assert vlm.parse_reply(_person(echo))["objects"][0]["wardrobe"] == ""
+
+
+@pytest.mark.parametrize("real", ["brown corduroys", "she wears brown corduroys", "wearing an orange sweater",
+                                  "she wears a red hoodie and blue jeans", "brown corduroys, orange tee",
+                                  "corduroy jacket, brown corduroys"])
+def test_a_real_read_with_corduroys_or_she_wears_is_still_clothing(real):
+    assert vlm.wardrobe_of({"wardrobe": real}) == real
+    assert vlm.parse_reply(_person(real))["objects"][0]["wardrobe"] == real

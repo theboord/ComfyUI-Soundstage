@@ -44,9 +44,10 @@ def test_real_clothing_is_never_an_echo(real):
                                     PLACEHOLDER[1:-1], "every garment with its colour, pattern and length",
                                     "<people only: every garment with its colour>"])
 def test_the_whole_example_or_the_placeholder_is_an_echo(copied):
+    """Only the public read path the old code had (wardrobe_of, parse_reply), so each probe fails or passes on its
+    own merits there, not on a missing helper."""
     assert vlm.wardrobe_of({"wardrobe": copied}) == ""
     assert vlm.parse_reply(_person(copied))["objects"][0]["wardrobe"] == ""
-    assert vlm.wardrobe_echo(copied)
 
 
 # ------------------------------------------------------------------------------------------------ 1 slab, not a body

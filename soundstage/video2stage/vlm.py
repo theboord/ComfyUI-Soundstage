@@ -408,7 +408,8 @@ def _pieces(v) -> list[str]:
 
 # The echo test's normalising: asides a copy carries ("e.g.", "(example)") and the words a copy swaps in.
 _ASIDE = re.compile(r"\b(?:e g|eg|i e|ie|for example|for instance|example|such as|like)\b")
-_SWAPS = (("pants", "trousers"), ("slacks", "trousers"), ("jumper", "sweater"), ("cords", "corduroy trousers"),
+_SWAPS = (("pants", "trousers"), ("slacks", "trousers"), ("jumper", "sweater"),
+          (r"corduroys(?! trousers?\b)", "corduroy trousers"), ("corduroys", "corduroy"), ("cords", "corduroy trousers"),
           ("cord", "corduroy"), ("cableknit", "cable knit"), ("cabled", "cable"))
 
 
@@ -417,12 +418,18 @@ def _singular(w: str) -> str:
     return w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith("ss") else w
 
 
+# A leading "she wears", "he is wearing", "wearing", "dressed in" before a garment piece (the echo test only).
+_WEARS = re.compile(r"^(?:(?:she|he|they|the person|person|dancer|the dancer)\s+(?:is\s+|are\s+)?)?"
+                    r"(?:wears|wear|wearing|dressed in|in)\s+")
+
+
 def _garments(v) -> set[str]:
-    """The reply's garment pieces (_pieces), each without asides ("e.g.", "i.e.", "such as", "like"), with the
-    swapped words put back ("pants", "cableknit") and every word singular ("sweaters", "trouser" alike)."""
+    """The reply's garment pieces (_pieces), each without asides ("e.g.", "i.e.", "such as", "like") or a leading
+    "she wears" / "wearing", with the swapped words put back ("pants", "cableknit", "corduroys") and every word
+    singular ("sweaters", "trouser" alike)."""
     out = set()
     for p in _pieces(v):
-        p = _ASIDE.sub(" ", p)
+        p = _WEARS.sub("", _ASIDE.sub(" ", p).strip())
         for a, b in _SWAPS:
             p = re.sub(rf"\b{a}\b", b, p)
         p = " ".join(_singular(w) for w in p.split())
@@ -469,7 +476,8 @@ def wardrobe_echo(v) -> bool:
     brackets and punctuation ignored; only its own words and the example's, at least one of them the placeholder's),
     a bracket or ellipsis with no words ("<...>", not "-"), or the whole example: every one of its garments is in
     the reply, in any order or wording (articles, hyphens or none, plurals, a 'label:', "e.g.", "i.e.", "such as",
-    "like" or "(example)", ' + ' or ' / ' between them, 'pants' for 'trousers'), with or without
+    "like" or "(example)", a leading "she wears" or "wearing", ' + ' or ' / ' between them, 'pants' for 'trousers',
+    'corduroys' for 'corduroy trousers'), with or without
     more garments. One garment of the example alone, a bare list of garment names, or a phrase the schema uses inside a
     real read is clothing."""
     if not str(v or "").strip():
