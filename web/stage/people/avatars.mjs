@@ -463,7 +463,7 @@ export function avatarsAt(stage) {
     const reason = C.clayReason(a, {
       blocking, holders: users.holders, carriers: users.carriers, gazeKeyed: gazeKeys(a).length > 0, ...body,
       driven: C.drivenInShot(memo, stage.state.active_shot, a.id, stage.drive),
-      airborne: !!stage._airborneAt?.(a, f),   // this frame only: clay in the air, lifelike on the ground
+      airborne: airAt(stage, a, f),   // this frame only: clay in the air, lifelike on the ground
     });
     skin.reason = reason;
     setShown(skin, !reason);
@@ -472,7 +472,7 @@ export function avatarsAt(stage) {
     skin.feetUp = C.feetUpReason(a, body);
     if (reason) continue;
     // The physics lift (stage.setFrame raises an unbaked dynamic / static object by a.physics.lift) is followed too.
-    const p = stage._actorPosAt(a, f), y = stage._heightAt(a, f) + physicsLift(a), yaw = stage._headingAt(a, f);
+    const p = stage._actorPosAt(a, f), y = bodyY(stage, a, f) + physicsLift(a), yaw = stage._headingAt(a, f);
     const scale = C.statureScale(C.clayHeight(a) * (a.scale || 1), skin.kit.stature);
     // Speed and the shared gait phase for the whole shot, cached until the path, the length or the size changes.
     const keys = stage._actorKeys(a);
@@ -489,11 +489,16 @@ export function avatarsAt(stage) {
   }
 }
 
+/** The lifelike body's height at frame f: walked steps, not the clay's hops (stage._walkHeightAt), else the clay's. */
+const bodyY = (stage, a, f) => (stage._walkHeightAt ? stage._walkHeightAt(a, f) : stage._heightAt(a, f));
+/** Is the lifelike body in the air at frame f (a jump or a vault; a walked step up is not)? */
+const airAt = (stage, a, f) => !!(stage._walkAirborneAt ? stage._walkAirborneAt(a, f) : stage._airborneAt?.(a, f));
+
 /** Place and pose the avatar on its clip alone at frame f (no grounding): the actor's ground position and heading,
  *  lowered by the playing clips' own floor (footplant.floorFor), on the shared gait phase. */
 function poseRaw(stage, a, g, skin, f, { fps, scale, last }) {
   const i = Math.max(0, Math.min(last, f));
-  const p = stage._actorPosAt(a, f), y = stage._heightAt(a, f) + physicsLift(a), yaw = stage._headingAt(a, f);
+  const p = stage._actorPosAt(a, f), y = bodyY(stage, a, f) + physicsLift(a), yaw = stage._headingAt(a, f);
   const speed = skin.gait.speed[i] || 0;
   placeHolder(g, skin.holder, { x: p[0], y: y - F.floorFor(skin.kit, C.clipWeights(speed)) * scale, z: p[2], yaw, scale });
   drive(skin, { frame: f, fps, speed, phase: skin.gait.phase[i] || 0, seed: C.phaseSeed(a.id) });
@@ -518,7 +523,7 @@ function footPlanFor(stage, a, g, skin, { last, fps, scale }) {
   const shapes = stage.root ? stage._supportShapes?.() : null;
   const sig = `${skin.gait.sig}|${stage.setFx?.id || ""}|${idOf(shapes)}|${idOf(stage._yCache?.get(a))}|${idOf(stage._swimCache?.get(a)?.stand)}|${physicsLift(a)}|${skin.kit.floors ? 1 : 0}`;
   if (skin.feet?.sig === sig) return skin.feet.plan;
-  const baseY = (f) => stage._heightAt(a, f);
+  const baseY = (f) => bodyY(stage, a, f);
   const ground = (x, z, f) => {
     const by = baseY(f);
     const onKeys = stage._standOnKeys?.(a, g, f);
@@ -529,7 +534,7 @@ function footPlanFor(stage, a, g, skin, { last, fps, scale }) {
   // per frame: the same gate (lifted by physics, in the air) marks the frames not grounded
   const plan = F.planFeet({
     n: last + 1, fps, heightM: C.clayHeight(a) * (a.scale || 1), rig, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, ground, baseY,
-    poseRaw: (f) => { poseRaw(stage, a, g, skin, f, { fps, scale, last }); return !C.feetUpReason(a, { lifted, airborne: !!stage._airborneAt?.(a, f) }); },
+    poseRaw: (f) => { poseRaw(stage, a, g, skin, f, { fps, scale, last }); return !C.feetUpReason(a, { lifted, airborne: airAt(stage, a, f) }); },
   });
   skin.feet = { sig, plan };
   return plan;

@@ -401,8 +401,8 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
   const out = {};
   for (const lr of SIDES) {
     const R = raw[lr], side = rig[lr], K = side.sole.length;
-    const st = new Uint8Array(n), w = new Float32Array(n), P = new Float64Array(3 * n), Q = new Float64Array(4 * n), needs = new Float64Array(n);
-    out[lr] = { st, w, P, Q, needs };
+    const st = new Uint8Array(n), w = new Float32Array(n), P = new Float64Array(3 * n), Q = new Float64Array(4 * n), needs = new Float64Array(n), G = new Float64Array(n).fill(NaN);
+    out[lr] = { st, w, P, Q, needs, G };
     // planted frames: each segment's anchor pose, aligned to the ground's slope, lowered onto it frame by frame
     for (const s of segs[lr]) {
       const a = s.anchor;
@@ -512,7 +512,7 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
         // a planted sole far above or below the body's own footing (a foot over a drop, a box beside) is not planted
         if (Math.abs(at.ground - by) > T.far * k) continue;
         // more pelvis drop than T.dropOK: only a candidate, planted below if it's the only foot the clip has down
-        st[f] = need > T.dropOK * k ? 4 : 1; w[f] = st[f] === 1 ? 1 : 0; needs[f] = need;
+        st[f] = need > T.dropOK * k ? 4 : 1; w[f] = st[f] === 1 ? 1 : 0; needs[f] = need; G[f] = at.ground;
         P[3 * f] = pA.x; P[3 * f + 1] = y; P[3 * f + 2] = pA.z;
         Q.set([qf[i].x, qf[i].y, qf[i].z, qf[i].w], 4 * f);
       }
@@ -551,21 +551,25 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
   // foot lr held planted at frame src's target over frames [from, to) (a step that waits for the other foot, or lands
   // early); false (nothing changed) when the leg can't reach it on one of them
   const holdOf = (lr, src, from, to, lim = T.supportDrop) => {
-    const { st, w, P, Q } = out[lr], R = raw[lr], K = rig[lr].sole.length, ys = new Float64Array(Math.max(0, to - from));
+    const { st, w, P, Q, G } = out[lr], R = raw[lr], K = rig[lr].sole.length, ys = new Float64Array(Math.max(0, to - from)), gs = ys.slice();
     _q0.fromArray(Q, 4 * src);
     for (let f = from; f < to; f++) {
       // the held foot keeps its turn and place; the clip's own toe bend of frame f settles it onto the ground (the
       // lowest sole point touching), so a toe that bends up doesn't lift the held foot off the floor
       _m1.compose(_v1.fromArray(P, 3 * src), _q0, _v2.setScalar(R.scale[f]));
-      let gap = Infinity;
-      for (let q = 0; q < K; q++) { _v0.fromArray(R.loc, 3 * (K * f + q)).applyMatrix4(_m1); gap = Math.min(gap, _v0.y - ground(_v0.x, _v0.z, f)); }
+      let gap = Infinity, gy = NaN;
+      for (let q = 0; q < K; q++) {
+        _v0.fromArray(R.loc, 3 * (K * f + q)).applyMatrix4(_m1);
+        const g = ground(_v0.x, _v0.z, f);
+        if (_v0.y - g < gap) { gap = _v0.y - g; gy = g; }
+      }
       const y = P[3 * src + 1] - (Number.isFinite(gap) ? gap : 0);
       // it is the only foot down meanwhile: the hips may dip as for a support frame
       if (skip[f] || needDropOf(lr, f, P[3 * src], y, P[3 * src + 2]) > lim * k) return false;
-      ys[f - from] = y;
+      ys[f - from] = y; gs[f - from] = gy;
     }
     for (let f = from; f < to; f++) {
-      st[f] = 1; w[f] = 1; P.copyWithin(3 * f, 3 * src, 3 * src + 3); P[3 * f + 1] = ys[f - from]; Q.copyWithin(4 * f, 4 * src, 4 * src + 4);
+      st[f] = 1; w[f] = 1; G[f] = gs[f - from]; P.copyWithin(3 * f, 3 * src, 3 * src + 3); P[3 * f + 1] = ys[f - from]; Q.copyWithin(4 * f, 4 * src, 4 * src + 4);
     }
     return true;
   };
@@ -615,8 +619,8 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
     while (d < n && so[d] !== 1) d++;
     // a step of this length takes at least this many frames (the foot at most ~7 cm a frame, 1.7 m/s on average)
     const len = Math.max(3, Math.ceil(dist(a, b) / (0.07 * k)));
-    const snap = () => [st.slice(), O.w.slice(), P.slice(), O.Q.slice()];
-    const back = (S) => { st.set(S[0]); O.w.set(S[1]); P.set(S[2]); O.Q.set(S[3]); };
+    const snap = () => [st.slice(), O.w.slice(), P.slice(), O.Q.slice(), O.G.slice()];
+    const back = (S) => { st.set(S[0]); O.w.set(S[1]); P.set(S[2]); O.Q.set(S[3]); O.G.set(S[4]); };
     const ownPlanted = (x, y) => { for (let f = x; f <= y; f++) if (f < 0 || f >= n || skip[f] || st[f] !== 1) return false; return true; };
     const otherPlanted = (x, y) => { for (let f = x; f <= y; f++) if (f < 0 || f >= n || so[f] !== 1) return false; return true; };
     // late: planted at a's target until the other foot is down again (d), then the step, landing at b2 in the next
@@ -641,9 +645,9 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
     // neither: the other foot waits planted where it was (c - 1) until this step is down, then goes (a walk starting
     // from standing: the clip's crossfade lifts both feet at once)
     const wait = (lim) => {
-      const So = [so.slice(), out[o].w.slice(), out[o].P.slice(), out[o].Q.slice()];
+      const So = [so.slice(), out[o].w.slice(), out[o].P.slice(), out[o].Q.slice(), out[o].G.slice()];
       if (holdOf(o, c - 1, c, b + 1, lim) && step(a, b)) return true;
-      so.set(So[0]); out[o].w.set(So[1]); out[o].P.set(So[2]); out[o].Q.set(So[3]); return false;
+      so.set(So[0]); out[o].w.set(So[1]); out[o].P.set(So[2]); out[o].Q.set(So[3]); out[o].G.set(So[4]); return false;
     };
     for (const lim of [T.dropOK, T.supportDrop]) if (late(lim) || early(lim) || wait(lim)) break;
   }
@@ -672,11 +676,11 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
     }
     opts.sort((x, y) => x.cost - y.cost);
     const tryOpt = (o, lim) => {
-      const O = out[o.lr], S = [O.st.slice(), O.w.slice(), O.P.slice(), O.Q.slice()];
+      const O = out[o.lr], S = [O.st.slice(), O.w.slice(), O.P.slice(), O.Q.slice(), O.G.slice()];
       let ok;
       if (o.kind === "late") ok = holdOf(o.lr, o.p, o.p + 1, d, lim) && stepOf(o.lr, d - 1, o.q);
       else ok = holdOf(o.lr, o.q, c, o.q, lim) && stepOf(o.lr, o.p, c);
-      if (!ok) { O.st.set(S[0]); O.w.set(S[1]); O.P.set(S[2]); O.Q.set(S[3]); }
+      if (!ok) { O.st.set(S[0]); O.w.set(S[1]); O.P.set(S[2]); O.Q.set(S[3]); O.G.set(S[4]); }
       return ok;
     };
     let done = false;
@@ -710,7 +714,9 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
     // the clip's foot moved up or down by the ground: dY[f] at a planted frame is how far the plant moved the foot
     // bone vertically; between plants it goes smoothly from the last plant's to the next one's (a foot swings from
     // one step of a stair to the next, from a hollow to a bump), faded out next to a jump (the clip's own legs there)
-    const dY = new Float64Array(n), near = new Float64Array(3 * n).fill(NaN), liftK = new Float32Array(n);
+    const dY = new Float64Array(n), near = new Float64Array(3 * n).fill(NaN), liftK = new Float32Array(n), topG = new Float64Array(n).fill(NaN);
+    // the ground under each plant (the swing between two plants may clear up to the higher of them)
+    const pg = (f) => (Number.isFinite(out[lr].G[f]) ? out[lr].G[f] : ground(P[3 * f], P[3 * f + 2], f));
     {
       let prev = -1;
       const nextPlanted = new Int32Array(n).fill(-1);
@@ -728,6 +734,7 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
         // the plant this foot comes from or goes to, the nearer in time (the swing clearance grows with the distance)
         const c = prev < 0 ? nx : nx < 0 ? prev : (f - prev <= nx - f ? prev : nx);
         if (c >= 0) near.set(P.subarray(3 * c, 3 * c + 3), 3 * f);
+        topG[f] = Math.max(prev >= 0 ? pg(prev) : -Infinity, nx >= 0 ? pg(nx) : -Infinity);
         const a = Math.max(0, f - 1), b = Math.min(n - 1, f + 1);
         const sp = b > a ? Math.hypot(R.pos[3 * b] - R.pos[3 * a], R.pos[3 * b + 2] - R.pos[3 * a + 2]) * fps / (b - a) : 0;
         liftK[f] = smooth01(sp / T.liftSpeed);
@@ -743,7 +750,7 @@ export function planFeet({ n, fps = 24, heightM = 1.8, rig, mesh, bones, holder 
       for (let it = 0; it < 10; it++) { const m = 0.5 * (lo + hi); if (at(m) <= T.dropOK * k) lo = m; else hi = m; }
       w[f] = lo;
     }
-    plan.dY[lr] = dY; plan.near[lr] = near; plan.liftK[lr] = liftK;
+    plan.dY[lr] = dY; plan.near[lr] = near; plan.liftK[lr] = liftK; (plan.topG ||= {})[lr] = topG;
     plan.state[lr] = st; plan.w[lr] = w; plan.pos[lr] = P; plan.quat[lr] = Q; plan.gy[lr] = R.gy;
   }
   return plan;
@@ -865,10 +872,11 @@ export function groundFeet({ plan, rig, mesh, bones, holder, frame, saved = null
     const nr = plan.near?.[lr];
     if (nr && Number.isFinite(nr[3 * f])) margin = (plan.liftK?.[lr]?.[f] ?? 1) * Math.min(T.liftMax * plan.k, T.liftPerM * Math.hypot(fp.x - nr[3 * f], fp.z - nr[3 * f + 2]));
     // Only ground the leg could step onto counts: none over the body's own footing for a foot at rest, up to T.far for
-    // one swinging (a kerb, a stair's nosing); a foot standing beside a platform or a ledge is not pushed
-    // up onto its top. And the push never folds the leg closer to the hip than T.minLeg of its length.
+    // one swinging (a kerb, a stair's nosing) or up to the higher of the plants it swings between; a foot standing
+    // beside a platform or a ledge is not pushed up onto its top. And the push never folds the leg closer to the hip than T.minLeg of its length.
     const lk = plan.liftK?.[lr]?.[f] ?? 1, base = plan.base?.[f];
-    const top = Number.isFinite(base) ? base + T.far * plan.k * smooth01(lk / 0.25) : Infinity;
+    const tg = plan.topG?.[lr]?.[f];
+    const top = Number.isFinite(base) ? Math.max(base + T.far * plan.k * smooth01(lk / 0.25), Number.isFinite(tg) ? tg + T.edge * plan.k : -Infinity) : Infinity;
     let under = 0;
     for (let i = 0; i < p.length; i += 3) {
       const gy = Math.min(top, ground ? ground(p[i], p[i + 2], f) : plan.gy[lr][f]);

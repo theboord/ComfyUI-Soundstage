@@ -281,6 +281,8 @@ export const liveKinds = () => ({ PERSON_KINDS, RIDEABLE, SITTABLE, SEATS, NO_CO
 
 /** _obstacles: the grid a parked object's clay group transform is put on (position m, quaternion component, scale). */
 const OBS_TOL = { pos: 0.05, rot: 0.01, scale: 0.01 };
+/** _walkHeightAt: a rise or drop of the footing up to this (m) is walked as a step, a bigger one is a jump. */
+const WALK_STEP = 0.45;
 /** _obstacles / _heightAt: how many recent obstacle lists and height tables per person are kept (jitter on a cell edge). */
 const OBS_LRU = 8, HEIGHT_LRU = 4;
 
@@ -1903,6 +1905,65 @@ export class Stage {
       this._yCache.set(a, c);
     }
     return c.Y[Math.max(0, Math.min(c.Y.length - 1, Math.round(frame)))] || 0;
+  }
+
+  /**
+   * A lifelike person's body height at a frame (people/avatars.mjs places the body and grounds its feet on it). The
+   * clay's height table (_heightAt) takes every rise as a ballistic hop: the body starts up in a gravity curve before
+   * a 20-40 cm step, up to 19 cm over the floor, and those frames count as in the air. A person walking up a step
+   * steps up: here a rise or a drop of at most WALK_STEP is taken over the stride after it (the body's own footing,
+   * averaged over a quarter second behind), only bigger ones are jumps (the gravity arcs, as _heightAt). The footing
+   * also counts the set's own boxes the way the feet do (_supportAt: a stair, a kerb, a landing within reach), which
+   * _heightAt leaves out: keyed flat over set-box stairs, the feet went 75 cm into the landing.
+   */
+  _walkHeightAt(a, frame) {
+    const c = this._walkTable(a);
+    return c ? c.W[Math.max(0, Math.min(c.W.length - 1, Math.round(frame)))] : this._heightAt(a, frame);
+  }
+
+  /** Is a lifelike person in the air at this frame (a jump or a vault, not a walked step; see _walkHeightAt)? */
+  _walkAirborneAt(a, frame) {
+    const c = this._walkTable(a);
+    return c ? !!c.air[Math.max(0, Math.min(c.air.length - 1, Math.round(frame)))] : !!this._airborneAt(a, frame);
+  }
+
+  /** The table behind _walkHeightAt (cached on the person's height table, with the set's shapes). */
+  _walkTable(a) {
+    if (!PERSON_KINDS.has(a.kind) || LIBRARY[a.kind]?.flies) return null;
+    this._heightAt(a, 0);
+    const c = this._yCache?.get(a);
+    if (!c) return null;
+    const shapes = this.root ? this._supportShapes() : null;
+    if (c.walk && c.walk.shapes === shapes) return c.walk;
+    const n = c.S.length, fps = this.state.shot?.fps || 24, kk = 0.5 * 9.8 / (fps * fps), win = Math.max(1, Math.round(0.25 * fps));
+    const S = new Float64Array(n), Y0 = new Float64Array(n);
+    for (let f = 0; f < n; f++) {
+      const p = this._actorPosAt(a, f);
+      // looked for from the footing a frame before too (a flight of stairs is climbed one tread at a time)
+      S[f] = shapes ? Math.max(c.S[f], this._supportAt(p[0], p[2], Math.max(c.S[f], f ? S[f - 1] : 0))) : c.S[f];
+      Y0[f] = Math.max(0, p[1] || 0);   // the keyed height itself is followed as keyed (a body keyed up a stair's line)
+    }
+    // jumps: a rise or a drop of more than WALK_STEP within a quarter second; their gravity arcs, as _heightAt
+    const big = [];
+    for (let q = 0; q < n; q++) {
+      let lo0 = S[q], lo1 = S[q];
+      for (let g = Math.max(0, q - win); g <= q; g++) lo0 = Math.min(lo0, S[g]);
+      for (let g = q; g <= Math.min(n - 1, q + win); g++) lo1 = Math.min(lo1, S[g]);
+      if (S[q] - lo0 > WALK_STEP || S[q] - lo1 > WALK_STEP) big.push(q);
+    }
+    const W = new Float64Array(n), air = new Uint8Array(n);
+    for (let f = 0; f < n; f++) {
+      let yb = -Infinity;
+      for (const q of big) { const d = f - q, v = S[q] - kk * d * d; if (v > yb) yb = v; }
+      // a walked step: the footing's small changes over the last quarter second, averaged (a big one counts as none)
+      // over the keyed height (what the ground under the body adds to it)
+      let m = 0, k = 0;
+      for (let g = Math.max(0, f - win); g <= f; g++) { const d = (S[f] - Y0[f]) - (S[g] - Y0[g]); m += Math.abs(d) <= WALK_STEP ? d : 0; k++; }
+      W[f] = +Math.max(S[f] - m / k, yb).toFixed(4);
+      air[f] = yb - S[f] > 0.06 ? 1 : 0;
+    }
+    c.walk = { shapes, W, air, S };
+    return c.walk;
   }
 
   /**

@@ -149,6 +149,45 @@ test("real Rocketbox over a 15 cm kerb, up a flight of stairs and on uneven grou
   }
 });
 
+test("real Rocketbox walking up onto a 20 / 30 / 40 cm step (parked crates): a walked step, never a jump; no frame hidden or skipped", { skip: NOT_INSTALLED }, async () => {
+  // 3abc644: the height table rose in a gravity curve before the step, frames 54-59 counted as in the air and the
+  // body swapped to clay mid-walk (with the clay retired, the lifelike body would hang up to 19 cm over the floor)
+  const A = await import("../../web/stage/people/avatars.mjs");
+  const Kits = await K.realKits();
+  for (const kind of ["man", "woman"]) for (const h of [0.2, 0.3, 0.4]) {
+    const a = K.walker(kind, {}, [-2.5, 0, 0], [3.5, 0, 0]);
+    const crates = [];
+    for (let x = 1.5 + h / 2, i = 0; x < 4.2; x += h, i++) crates.push({ id: `c${i}`, kind: "crate", height_m: h, position: [x, 0, 0], keys: [{ frame: 0, position: [x, 0, 0] }] });
+    const st = K.bareStage([a, ...crates]);
+    for (const c of crates) K.clayOf(st, c);
+    const g = K.clayOf(st, a);
+    st._loadKit = () => Kits[kind];
+    A.attachKit(st, a, g, Kits[kind]);
+    await null;
+    const top = 1.5 + crates.length * h;
+    const ground = (x, z) => (x >= 1.5 && x <= top && Math.abs(z) <= h / 2 ? h : 0);
+    for (let f = 0; f <= 120; f++) assert.ok(!st._walkAirborneAt(a, f), `${kind} ${h * 100} cm f${f}: a walked step taken as a jump`);
+    const s = K.physical(K.measure(st, a, { ground }));
+    // FLAW (measured 2026-11-08): the woman dips her hips 3-4.6 cm (a single-support frame) stepping up
+    check(s, `${kind} ${h * 100} cm step`, { drop: 0.05 });
+  }
+});
+
+test("set-box stairs keyed flat (the body not keyed up them): the body climbs with the feet, nothing sinks into a tread", { skip: NOT_INSTALLED }, async () => {
+  // 3abc644: the body height (_heightAt) ignores set boxes while the feet stand on them: keyed flat over the stairs
+  // the feet went 75 cm into the landing and slid 21 cm a frame
+  const stairs = [];
+  for (let i = 0; i < 5; i++) stairs.push({ id: `s${i}`, half: [0.15, 0.075 * (i + 1), 1], pos: [0.3 * i + 0.15, 0.075 * (i + 1), 0], quat: [0, 0, 0, 1] });
+  stairs.push({ id: "landing", half: [1.5, 0.375, 1], pos: [3.0, 0.375, 0], quat: [0, 0, 0, 1] });
+  for (const kind of ["man", "woman"]) {
+    const a = K.walker(kind, {}, [-2, 0, 0], [3, 0, 0]);
+    const st = await K.setup(kind, a, { boxes: stairs });
+    assert.ok(Math.abs(st._walkHeightAt(a, 120) - 0.75) < 0.01, `${kind}: on the landing at the end (${st._walkHeightAt(a, 120)})`);
+    check(K.physical(K.measure(st, a, { ground: K.boxGround(stairs) })), `${kind} flat-keyed stairs`, { drift: 0.015 });
+  }
+  // FLAW (measured 2026-11-08): a 40 cm set-box step walked at 1 m/s catches the man's toe: 2.2 cm into it, 2.3 cm slide
+});
+
 test("the station ramp: stationFloor is the ramp the set draws, and a person walking up it onto the platform stands on it", { skip: NOT_INSTALLED }, async () => {
   const THREE = await import("../../web/vendor/three.module.min.mjs");
   const set = buildTrainStation();
