@@ -618,6 +618,32 @@ test("vehicles: the 'car' sedan (no model) is the marked stand-in on every frame
   assert.equal(st.actorMeshes.get("h").userData.peopleLoading, true, "the horse: marked as loading (its GLB load is still pending here)");
 });
 
+/** Recorded Drive takes (L1 review round 4), invented scenes in the shape drive.applyTake writes. A sports car: in at
+ *  31 (the hop from 21), out at 60 (14 frames), an exit walk. */
+const recCar = () => [
+  { ...man("p", [4, 0, 0], [1.3, 0, 0], 21), keys: [kf(0, 4, 0, 0), kf(21, 1.3, 0, 0), kf(59, 1.4, 0, 0.4), kf(74, 1.4, 0, 0.4), kf(80, 1.55, 0, 0.4), kf(86, 1.9, 0, 0.4), kf(110, 3.8, 0, 0.4)],
+    mount_spans: [{ host: "car", seat: 0, pose: null, from: 31, to: 60 }] },
+  { id: "car", kind: "sports_car", position: [0, 0, 0], keys: [kf(0, 0, 0, 0)] },
+];
+/** A horse: up into the saddle at 40, down from it at 70 (20 frames), then a walk back the way they came. */
+const recHorse = () => [
+  { ...man("p", [-3, 0, 1], [-0.8, 0, 1], 30), keys: [kf(0, -3, 0, 1), kf(30, -0.8, 0, 1), kf(69, -0.8, 0, 1), kf(88, -0.8, 0, 1), kf(120, -4, 0, 1)],
+    mount_spans: [{ host: "h", seat: null, pose: null, from: 40, to: 70 }] },
+  { id: "h", kind: "horse", height_m: 1.6, position: [0, 0, 0], keys: [kf(0, 0, 0, 0)] },
+];
+/** A recorded carry: a crate carried live (carry_id) sampled frame by frame, held 4-44, then written as a take
+ *  (applyTake: the crate's baked keys and carry_spans [{by: "p", from: 4, to: 44}], no carry_id). */
+const carryLive = () => [man("p", [-2, 0, 0], [2, 0, 0], 48), { id: "box", kind: "crate", scale: 0.4, position: [-1.6, 0, 0], keys: [kf(0, -1.6, 0, 0)], carry_id: "p", carry_at: 0 }];
+const recCarry = () => carryLive().map((o) => { if (o.id !== "box") return o; const { carry_id, carry_at, ...rest } = o; return rest; });
+async function recordCarry(st) {
+  const { DriveMode, applyTake } = await import("../../web/stage/drive.mjs");
+  const s0 = headless(carryLive(), 49), samples = [];
+  for (let f = 0; f <= 48; f++) { s0.setFrame(f); const og = s0.actorMeshes.get("box"); samples.push({ f, p: og.position.toArray(), q: og.quaternion.toArray(), by: f >= 4 && f < 44 ? "p" : null }); }
+  applyTake(st, { start: 0, end: 48, fps: 24, tracks: { box: { type: "baked", samples } } });
+  st.drive = new DriveMode(st);
+}
+const withDrive = async (st) => { const { DriveMode } = await import("../../web/stage/drive.mjs"); st.drive = new DriveMode(st); };
+
 /** The Color silhouette of a person (every visible mesh of the group, its skinned triangles filled, no dilation) and
  *  the share of keypoints (pixels) inside it. */
 function silhouette(g, cam, N) {
@@ -668,10 +694,15 @@ test("real Rocketbox: silhouette against an independent source: the Pose pass AN
     ["driven live", [man("p", [-3, 0, 0], [3, 0, 0], 48)], 48, undefined, (st) => { st.drive = testDrive(["p"]); }, [8, 30]],
     ["carrying a crate", [man("p", [-2, 0, 0], [2, 0, 0], 48), { id: "box", kind: "crate", scale: 0.4, position: [-1.6, 0, 0], keys: [kf(0, -1.6, 0, 0)], carry_id: "p", carry_at: 8 }], 48, undefined, null, [20, 40]],
     ["carried by another", [man("q", [-2, 0, 0], [2, 0, 0], 48), { ...man("p", [-1.6, 0, 0], [-1.6, 0, 0], 0, { keys: [kf(0, -1.6, 0, 0)] }), kind: "woman", height_m: 1.68, carry_id: "q", carry_at: 8 }], 48, undefined, null, [20, 40]],
+    // review round 4: recorded Drive takes (drive.post() wrote the logic rig after the visible body was posed: the
+    // logic rig 0.67-0.80 inside Color getting out of the car, 0.72-0.78 down from the horse, 0.83 carrying)
+    ["a recorded car exit", recCar(), 110, undefined, withDrive, [45, 61, 63, 65, 67, 70, 73]],
+    ["a recorded horse exit", recHorse(), 120, undefined, withDrive, [60, 72, 78, 81, 84, 87, 89]],
+    ["a recorded carry", recCarry(), 48, undefined, recordCarry, [6, 10, 20, 30, 40]],
   ];
   for (const [what, actors, frames, env, prep, at] of cases) {
     const st = headless(actors, frames + 1, env); await withKit(st, K);
-    prep?.(st);
+    await prep?.(st);
     const g = st.actorMeshes.get("p"), skin = g.userData.humanSkin, a = st.state.actors.find((x) => x.id === "p");
     let list = at;
     if (!list) { const air = [...Array(frames + 1).keys()].filter((f) => st._walkAirborneAt(a, f)); assert.ok(air.length, `${what}: in the air`); list = [air[0] - 2, air[0], air[Math.floor(air.length / 2)], air.at(-1), air.at(-1) + 2]; }
@@ -699,5 +730,97 @@ test("real Rocketbox: silhouette against an independent source: the Pose pass AN
     assert.equal(g.userData.standIn, true);
     look(W(g)); const r = silhouette(g, cam, N)(pixels(personKeypoints(g, cam.position)));
     assert.ok(r >= 0.95, `stand-in f${f}: ${r.toFixed(2)} inside`);
+  }
+});
+
+// ---------------------------------------------------------------- recorded Drive takes (L1 review round 4)
+/** The visible hand acceleration (m/frame^2, second difference, the worse hand) at each middle frame of frames. */
+function handAcc(st, id, frames) {
+  const B = st.actorMeshes.get(id).userData.humanSkin.bones, P = [];
+  for (const f of frames) { st.setFrame(f); P.push([W(B.Bip01_L_Hand), W(B.Bip01_R_Hand)]); }
+  const out = [];
+  for (let i = 1; i < P.length - 1; i++) out.push({ f: frames[i], acc: Math.max(...[0, 1].map((k) => P[i + 1][k].clone().sub(P[i][k]).sub(P[i][k].clone().sub(P[i - 1][k])).length())) });
+  return out;
+}
+const recExits = [["the recorded horse exit", recHorse, 121, 70, 20], ["the recorded car exit", recCar, 111, 60, 14]];
+
+test("real Rocketbox: a recorded take's way out of a saddle and a car seat: on every 'off' frame the visible legs follow the logic rig's (within 2 degrees), and the soles never go under the ground", { skip: NOT_INSTALLED }, async () => {
+  // review round 4 (measured on e7288de): Drive.post() stood the logic rig up after the visible body was posed: down
+  // from the horse the visible thighs stayed 66 degrees off the rig's (f78-83) and the soles 85-93 cm up; out of the
+  // car the visible body stayed seated (legs 90 degrees off, the wrists 66 cm off the rig's at f65-67)
+  const K = await realKits();
+  for (const [what, scene, N, to, ex] of recExits) {
+    const st = headless(scene(), N); await withDrive(st); await withKit(st, K);
+    const a = st.state.actors[0], g = st.actorMeshes.get("p"), skin = g.userData.humanSkin;
+    let offs = 0;
+    for (let f = to - 2; f < to + ex + 8; f++) {
+      st.setFrame(f);
+      const s = soles(st, a, g, skin);
+      assert.ok(s.vis > -0.012, `${what} f${f} (${skin.owner}, ${skin.ownerReason}): a sole ${(s.vis * 100).toFixed(1)} cm under the ground`);
+      if (st._mountPhaseAt(a, f) !== "off" || skin.rigWeight < 1) continue;
+      offs++;
+      const legs = Math.max(...R.AIM.filter(([, , j]) => /hip|knee/.test(j)).map(([bn, cn, jid]) => {
+        const d = W(skin.bones[cn]).sub(W(skin.bones[bn])).normalize();
+        return THREE.MathUtils.radToDeg(d.angleTo(DOWN.clone().applyQuaternion(g.userData.joints[jid].getWorldQuaternion(new THREE.Quaternion())))); }));
+      assert.ok(legs < 2, `${what} f${f}: the visible legs ${legs.toFixed(1)} degrees off the logic rig's`);
+      const wr = Math.max(...["l", "r"].map((lr) => W(g.userData.joints[`${lr}_wrist`]).distanceTo(W(skin.bones[`Bip01_${lr.toUpperCase()}_Hand`]))));
+      assert.ok(wr < 0.03, `${what} f${f}: a logic wrist ${(wr * 100).toFixed(1)} cm off the visible hand`);
+    }
+    assert.ok(offs >= 8, `${what}: ${offs} 'off' frames owned by the rig`);
+  }
+});
+
+test("real Rocketbox: no pop getting down from a saddle or out of a car seat in a recorded take: the visible hands' acceleration under an absolute 30 cm/frame^2 (no allowance from the stage's own pose)", { skip: NOT_INSTALLED }, async () => {
+  // review round 4 (measured on e7288de): the hands reached 48.3 / 43.7 cm/frame^2 at f89-90 on the horse's handover
+  // to the walk (this scene: 46.8 at f89 on e7288de, 20.4 now); with the body now posed from the rig, the stand pose all at once at t = 0.35 was 55 at a car's door
+  const K = await realKits();
+  for (const [what, scene, N, to, ex] of recExits) {
+    const st = headless(scene(), N); await withDrive(st); await withKit(st, K);
+    const frames = [...Array(ex + 24).keys()].map((i) => to - 4 + i);
+    for (const r of handAcc(st, "p", frames)) assert.ok(r.acc <= 0.30, `${what} f${r.f}: a hand ${(r.acc * 100).toFixed(1)} cm/frame^2`);
+  }
+});
+
+test("real Rocketbox: a recorded carry (carry_spans, no carry_id): the visible arms hold the load like a live carrier's (the same hands within 3 cm, within 25 cm of the crate) and the logic wrists are on the visible hands", { skip: NOT_INSTALLED }, async () => {
+  // review round 4 (measured on e7288de): Drive.post() set the carrier's logic shoulders / elbows after the body was
+  // posed (owner clip), so the visible arms kept swinging: logic wrists 47-72 cm from the visible hands, the visible
+  // hands 24-75 cm from the crate
+  const K = await realKits();
+  const st = headless(recCarry(), 49); await withKit(st, K); await recordCarry(st);
+  assert.deepEqual(st.state.actors[1].carry_spans, [{ by: "p", from: 4, to: 44 }]);
+  assert.ok(!st.state.actors[1].carry_id, "a recorded take, not a live carry");
+  const g = st.actorMeshes.get("p"), skin = g.userData.humanSkin, og = st.actorMeshes.get("box");
+  const live = headless(carryLive(), 49); await withKit(live, K);   // (the same carry, live: carry_id)
+  const lskin = live.actorMeshes.get("p").userData.humanSkin;
+  for (let f = 6; f < 44; f++) {
+    st.setFrame(f); live.setFrame(f);
+    const box = new THREE.Box3().setFromObject(og);
+    for (const lr of ["L", "R"]) {
+      const h = W(skin.bones[`Bip01_${lr}_Hand`]), lh = W(lskin.bones[`Bip01_${lr}_Hand`]);
+      assert.ok(h.distanceTo(lh) < 0.03, `f${f}: the ${lr} hand ${(h.distanceTo(lh) * 100).toFixed(1)} cm from the live carrier's`);
+      assert.ok(box.distanceToPoint(h) < 0.25, `f${f}: the ${lr} hand ${(box.distanceToPoint(h) * 100).toFixed(1)} cm from the crate`);
+      const wr = W(g.userData.joints[`${lr.toLowerCase()}_wrist`]).distanceTo(h);
+      assert.ok(wr < 0.03, `f${f}: the ${lr} logic wrist ${(wr * 100).toFixed(1)} cm off the visible hand`);
+    }
+  }
+});
+
+test("real Rocketbox: seated in a car (the rig's sit), the visible soles rest on the cabin floor (0.36 m up), not through it to the street; the logic rig's legs are the visible ones", { skip: NOT_INSTALLED }, async () => {
+  // review round 4 (measured on e7288de): seatedFeetDown is the seat owner's; in a car the rig owns the sit and the
+  // chair's shins straight down put the soles 2.1-2.7 cm under the street (through any real car's floor)
+  const K = await realKits();
+  const FLOOR = 0.36;   // (library.mjs CABIN_FLOOR for the car family, at the car's own height: k = 1)
+  const lowSole = (skin) => { skin.holder.updateMatrixWorld(true); let lo = Infinity; for (const lr of ["l", "r"]) { const p = F.solePoints(skin.mesh, skin.kit.feet[lr]); for (let i = 1; i < p.length; i += 3) lo = Math.min(lo, p[i]); } return lo; };
+  const parked = [man("p", [1, 0, 0], [1, 0, 0], 0, { keys: [kf(0, 1, 0, 0)], mount_id: "car" }), { id: "car", kind: "sports_car", position: [0, 0, 0], keys: [kf(0, 0, 0, 0)] }];
+  for (const [what, scene, N, frames, prep] of [["parked", parked, 25, [2, 12, 22], null], ["the recorded take, seated", recCar(), 111, [33, 45, 58], withDrive]]) {
+    const st = headless(scene, N); await prep?.(st); await withKit(st, K);
+    const g = st.actorMeshes.get("p"), skin = g.userData.humanSkin;
+    for (const f of frames) {
+      st.setFrame(f);
+      assert.equal(skin.owner, "rig", `${what} f${f}`);
+      const lo = lowSole(skin);
+      assert.ok(lo > FLOOR - 0.01 && lo < FLOOR + 0.03, `${what} f${f}: the lowest visible sole ${(lo * 100).toFixed(1)} cm up (the floor ${FLOOR * 100})`);
+      assert.ok(limbAngle(skin, g) < 2, `${what} f${f}: the visible limbs ${limbAngle(skin, g).toFixed(1)} degrees off the logic rig's`);
+    }
   }
 });
