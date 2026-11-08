@@ -141,3 +141,86 @@ def test_a_garment_still_beats_a_longer_vague_read():
 def _obj(wardrobe, bbox=(430, 180, 570, 900)):
     return {"label": "woman dancing", "kind": "person", "color": "#e0b030", "bbox": list(bbox), "facing": "",
             "moving": True, "wardrobe": wardrobe}
+
+
+# ------------------------------------------------------------------------------------------------ 5 her soles
+from soundstage.video2stage import pipeline  # noqa: E402
+from test_v2s_dancer_r7 import TAKE, _render  # noqa: E402
+
+
+def _pose8(kind, z, cx=200, bot=380):
+    """COCO-18 joints of an invented performer z metres away (340 px tall at 4 m, soles at `bot`): a wide squat (knees
+    out, feet apart), or standing with both arms raised above her head."""
+    H = 340 * 4 / z
+    s = H / 340
+    y = lambda f: bot - f * H                                     # noqa: E731
+    x = lambda o: cx + o * s                                      # noqa: E731
+    if kind == "squat":
+        J = {0: (x(0), y(.70)), 1: (x(0), y(.60)), 2: (x(-30), y(.59)), 5: (x(30), y(.59)), 8: (x(-20), y(.32)),
+             11: (x(20), y(.32)), 9: (x(-85), y(.26)), 12: (x(85), y(.26)), 10: (x(-75), y(.04)), 13: (x(75), y(.04)),
+             3: (x(-40), y(.44)), 4: (x(-45), y(.30)), 6: (x(40), y(.44)), 7: (x(45), y(.30))}
+    else:
+        J = {0: (x(0), y(.93)), 1: (x(0), y(.82)), 2: (x(-30), y(.81)), 5: (x(30), y(.81)), 8: (x(-16), y(.52)),
+             11: (x(16), y(.52)), 9: (x(-18), y(.28)), 10: (x(-18), y(.04)), 12: (x(18), y(.28)), 13: (x(18), y(.04)),
+             3: (x(-45), y(.98)), 4: (x(-50), y(1.14)), 6: (x(45), y(.98)), 7: (x(50), y(1.14))}
+    return J, H
+
+
+def _her8(J, kind, H):
+    """_render's silhouette; in the squat each flat foot points sideways out from its ankle, 0.16 of her height."""
+    import cv2
+    m = _render(J, "down", H).astype(np.uint8)
+    if kind == "squat":
+        for k, sg in ((10, -1), (13, 1)):
+            a = np.array(J[k])
+            tip = a + np.array([sg * .16 * H, .035 * H])
+            cv2.line(m, tuple(int(v) for v in a), tuple(int(v) for v in tip), 1, max(1, int(round(.04 * H))))
+    return m.astype(bool)
+
+
+def _sole_cut(monkeypatch, J, her, z, slab_row, gap):
+    d = np.full(her.shape, 40.0, np.float32)
+    d[slab_row:, :] = z + gap                                       # a slab behind her from the chest down
+    d[her] = z * (1 + 0.0125 * np.random.default_rng(3).random(int(her.sum())))
+    uv = np.full((18, 2), np.nan)
+    for k, v in J.items():
+        uv[k] = v
+    monkeypatch.setattr(pipeline.performer, "sam_2d", lambda t, k, size: uv)
+    (x0, y0), (x1, y1) = uv[:14].min(0) * 2.5, uv[:14].max(0) * 2.5   # the read's box: her joints, no margin
+    e = {"kind": "person", "label": "woman dancing", "bbox_start": [x0, y0, x1, y1], "bbox_end": [x0, y0, x1, y1]}
+    cut = scanroute.without_people(d, scanroute.people_masks({"objects": [e]}, [d], [0.0], 1.0, take=TAKE), 0)
+    return d, cut
+
+
+@pytest.mark.parametrize("kind", ["squat", "raised"])
+@pytest.mark.parametrize("z", [2.5, 4.0, 8.0, 12.0])
+def test_her_soles_leave_the_scan_in_a_wide_squat_and_with_arms_raised(monkeypatch, kind, z):
+    pytest.importorskip("cv2")
+    J, H = _pose8(kind, z)
+    her = _her8(J, kind, H)
+    d, cut = _sole_cut(monkeypatch, J, her, z, int(380 - .68 * H), 0.125 * z)   # the slab well behind her
+    slab = d == np.float32(1.125 * z)
+    assert np.isfinite(cut[her]).sum() == 0                          # 26202c9 squat: 694 / 211 / 120 at her soles
+    assert np.isnan(cut[slab]).sum() == 0
+    assert np.isnan(cut[~her & ~slab]).sum() == 0
+
+
+@pytest.mark.parametrize("H, z", [(340, 4.0), (170, 8.0), (113, 12.0)])
+def test_arms_raised_with_a_slab_half_a_metre_behind_her_soles(monkeypatch, H, z):
+    pytest.importorskip("cv2")
+    from test_v2s_dancer_r7 import _pose
+    J = _pose("down", H=H)
+    y = lambda f: 380 - f * H                                     # noqa: E731
+    J.update({3: (162, y(.98)), 4: (160, y(1.14)), 6: (238, y(.98)), 7: (240, y(1.14))})
+    her = _render(J, "down", H=H)
+    d, cut = _sole_cut(monkeypatch, J, her, z, 150, 0.5)            # within 7% of her at 8 m and 12 m
+    assert np.isfinite(cut[her]).sum() == 0                          # 26202c9: 70 at 8 m, 25 at 12 m, at her soles
+
+
+def test_a_wide_squat_at_4_m_on_the_round_7_slab(monkeypatch):
+    pytest.importorskip("cv2")
+    J, H = _pose8("squat", 4.0)
+    her = _her8(J, "squat", H)
+    d, cut = _sole_cut(monkeypatch, J, her, 4.0, 150, 0.5)
+    assert np.isfinite(cut[her]).sum() == 0
+    assert np.isnan(cut[d == 4.5]).sum() == 0

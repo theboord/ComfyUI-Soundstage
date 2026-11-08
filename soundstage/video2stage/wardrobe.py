@@ -372,21 +372,52 @@ CORE = 0.02                           # pixels this close to a bone are surely t
 # Each toe: the knee -> ankle line carried on 0.6 of its length past the ankle (a pointed-toe kick).
 HEAD_TOP, HAND_R, HAND_L, TOE_R, TOE_L = 18, 19, 20, 21, 22
 END_BONES = ((0, HEAD_TOP), (10, TOE_R), (13, TOE_L)), ((4, HAND_R), (7, HAND_L))
+# Each flat foot, pointing either way off its ankle (the take has no toe joint): a sole line at the sole's row, FOOT
+# of her stature long to each side (a foot turned sideways in a wide squat or a turnout), reached within FOOT_BAND of
+# it. Her stature here comes from her bones as well as her joints' height (_stature): a squat or a crouch halves the
+# joints' height but not her feet.
+FOOT_R0, FOOT_R1, FOOT_L0, FOOT_L1 = 23, 24, 25, 26
+FOOT_BONES = ((10, FOOT_R0), (10, FOOT_R1), (13, FOOT_L0), (13, FOOT_L1))
+FOOT, FOOT_DROP, FOOT_BAND = 0.18, 0.045, 0.05
 # Round reaches (joint, share of the height) the bones' bands miss: the shoulders and the neck (the trapezius and the
 # deltoids stand off the shoulder line), the head round the nose, and each foot round its ankle (a flat foot points
 # sideways, off the shin line). They widen the band only; the core (and so the per-row body depth) stays on the bones.
 DISCS = ((1, 0.11), (2, 0.11), (5, 0.11), (0, 0.10), (10, 0.15), (13, 0.15))
+FRONT_ROW = 0.25   # a row's body depth: its core pixels this share of rel behind its nearest tenth
 PIECE = 0.02       # a separate piece of the depth band is the body's when the core reaches it this much (of the most)
 
 
+def _seen(uv, j) -> bool:
+    return j < len(uv) and bool(np.all(np.isfinite(uv[j])))
+
+
+def _stature(uv) -> float:
+    """Her standing height in pixels from the joints: the larger of 1.15 x the joints' height and what her bones say
+    (hip -> knee -> ankle about 0.48 of her height, neck -> hip about 0.3): a wide squat keeps her leg and trunk bones
+    though her joints span far less. 0 when nothing tells."""
+    uv = np.asarray(uv, float)
+    ok = np.isfinite(uv[:18]).all(axis=1)
+    out = 1.15 * float(np.ptp(uv[:18][ok, 1])) if ok.sum() >= 2 else 0.0
+    L = lambda a, b: float(np.hypot(*(uv[a] - uv[b]))) if _seen(uv, a) and _seen(uv, b) else 0.0   # noqa: E731
+    leg = max(L(8, 9) + L(9, 10), L(11, 12) + L(12, 13))
+    trunk = max(L(1, 8), L(1, 11))
+    return max(out, leg / 0.48, trunk / 0.3)
+
+
 def _with_ends(uv):
-    """uv (COCO-18) plus the virtual head-top, hand and toe points (NaN where their joints are missing)."""
-    out = np.full((23, 2), np.nan)
+    """uv (COCO-18) plus the virtual head-top, hand and toe points, and each flat foot's sole line (FOOT_BONES); NaN
+    where their joints are missing."""
+    out = np.full((27, 2), np.nan)
     out[:min(18, len(uv))] = uv[:18]
     for k, (a, b, f) in ((HEAD_TOP, (0, 1, 0.7)), (HAND_R, (4, 3, 0.4)), (HAND_L, (7, 6, 0.4)),
                          (TOE_R, (10, 9, 0.6)), (TOE_L, (13, 12, 0.6))):
         if np.all(np.isfinite(out[a])) and np.all(np.isfinite(out[b])):
             out[k] = out[a] + f * (out[a] - out[b])
+    S = _stature(out[:18])
+    for ank, (k0, k1) in ((10, (FOOT_R0, FOOT_R1)), (13, (FOOT_L0, FOOT_L1))):
+        if S > 0 and _seen(out, ank):
+            out[k0] = out[ank] + (-FOOT * S, FOOT_DROP * S)
+            out[k1] = out[ank] + (FOOT * S, FOOT_DROP * S)
     return out
 
 
@@ -407,7 +438,8 @@ def body_mask(depth: np.ndarray, box_px, uv=None, rel: float = 0.07) -> np.ndarr
     band around the take's own 2D joints (uv, pixels of this depth map) when it has them, and within rel of the BODY's
     depth on that row (not the box's median), then only the connected pieces the body's core reaches (the torso, and an
     arm or hand a gap away from it). The band reaches the crown, the fingertips and the toes (virtual points past the
-    nose, the wrists and the ankles), and is wider round the shoulders, neck, head and feet (DISCS). A concrete slab or a
+    nose, the wrists and the ankles), and is wider round the shoulders, neck, head and feet (DISCS), and each flat
+    foot's sole line reaches FOOT of her stature (from her bones too, so a squat keeps it) to either side of its ankle. A concrete slab or a
     slope half a metre behind the hips is no longer counted as hip. Known limit: a background within ~rel of the body
     (a wall she leans on) and inside the band still joins."""
     d = np.asarray(depth, np.float32)
@@ -431,6 +463,7 @@ def body_mask(depth: np.ndarray, box_px, uv=None, rel: float = 0.07) -> np.ndarr
         dtoe = _bone_dist(X, Y, ends, END_BONES[0][1:])   # band only: a toe line off a flat foot lies on the ground
         band = (dt < BAND_TRUNK * H) | (da < BAND_ARM * H)
         extra = dtoe < BAND_TRUNK * H
+        extra |= _bone_dist(X, Y, ends, FOOT_BONES) < FOOT_BAND * _stature(uv)   # each flat foot, either way
         for j, r in DISCS:
             if j < len(uv) and np.all(np.isfinite(uv[j])):
                 extra |= np.hypot(X - uv[j][0], Y - uv[j][1]) < r * H
@@ -457,13 +490,14 @@ def body_mask(depth: np.ndarray, box_px, uv=None, rel: float = 0.07) -> np.ndarr
     near = core & (np.abs(sub - zall) < 0.25 * zall)
     core = near if near.any() else core
     # On a row the core shares with what is behind her (an ankle's core over the slab below the foot) the body is the
-    # front-most core there: only the core pixels within rel of the row's nearest tenth count. A row whose body depth
+    # front-most core there: only the core pixels within FRONT_ROW x rel of the row's nearest tenth count (a slab just
+    # within rel behind her soles no longer sets the sole rows' depth). A row whose body depth
     # still lies more than 1.5 rel behind the whole body's has no body of its own and takes its neighbour's.
     zr = np.full(sub.shape[0], np.nan)
     for r in np.flatnonzero(core.any(1)):
         zc = sub[r][core[r]]
         zf = float(np.percentile(zc, 10))
-        z = float(np.median(zc[zc <= zf * (1 + rel)]))
+        z = float(np.median(zc[zc <= zf * (1 + FRONT_ROW * rel)]))
         if z <= zall * (1 + 1.5 * rel):
             zr[r] = z
     have = np.flatnonzero(np.isfinite(zr))
