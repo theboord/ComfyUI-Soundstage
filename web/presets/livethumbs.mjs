@@ -114,7 +114,7 @@ export class LiveThumbs {
     Object.assign(this, { stage, makeRunner, setups, doc, budgetMs, slot });
     this.gen = 0;                // halt() bumps it: a preset mid-render stops at its next step
     this.frameMs = 4;            // running estimate of one preview frame, to fit frames into a slot's budget
-    this.makeStage = makeStage || ((el) => new stage.constructor(el, () => {}));
+    this.makeStage = makeStage || ((el) => new stage.constructor(el, () => {}, { firstRender: false }));   // it draws its own frames
     this.cache = new Map();      // `${sig}|${id}` -> entry {id, kind, frames, sprite, w, h, ok}
     this.latest = new Map();     // id -> the newest finished entry for any scene (shown while the current one renders)
     this.queue = [];             // presets to render, in priority order

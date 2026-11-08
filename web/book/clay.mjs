@@ -18,7 +18,7 @@ function sig(scene, shotId) {
 export class ClayFrames {
   constructor({ stage, doc = typeof document !== "undefined" ? document : null, makeStage = null } = {}) {
     this.stage = stage; this.doc = doc;
-    this.makeStage = makeStage || ((el) => new stage.constructor(el, () => {}));
+    this.makeStage = makeStage || ((el) => new stage.constructor(el, () => {}, { firstRender: false }));   // it draws its own frames
     this.cache = new Map();
     this.scratch = null;
     this._mx = Promise.resolve();

@@ -272,6 +272,7 @@ export const DEFAULT_SCENE = {
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
 const SNAPSHOT_VERSION = 1;
+const FIRST_RENDER_WAIT_MS = 1500;   // the first frame waits at most this long for the parallel shader compile
 const isVec3 = (v) => Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === "number" && Number.isFinite(x));
 const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 /** The script scenes a stage's shots belong to (shot.scene_id), sorted. */
@@ -538,7 +539,11 @@ export class Stage {
     this.onChange(this.toJSON());
   }
 
-  constructor(container, onChange) {
+  /** opts.firstRender: false = no first draw at all (the scratch stages of the Presets previews and the Book). */
+  constructor(container, onChange, opts = {}) {
+    // Every render() until the first frame is merged into one, drawn after the shaders compiled in parallel
+    // (_firstRender; Jon's canvas-speed report: synchronous shader compiles, and three draws in this constructor).
+    this._booting = true;
     const userChange = onChange || (() => {});
     this.onChange = (st) => { if (!this._muteRecord) { this._record(); this._worldPoke(); } userChange(st); };
     this.state = clone(DEFAULT_SCENE);
@@ -587,8 +592,24 @@ export class Stage {
     this.resize();
     this._ro = new ResizeObserver(() => this.resize());
     this._ro.observe(container);
-    this.render();
+    if (opts.firstRender === false) this._booting = false;
+    else this._firstRender();
     this._record();
+  }
+
+  /**
+   * The first visible frame: renderer.compileAsync builds this scene's programs without blocking the main thread
+   * (KHR_parallel_shader_compile), then ONE render, which also stands for every render() asked for meanwhile (the
+   * constructor's setFrame and resize, a scene loaded right after). Past FIRST_RENDER_WAIT_MS it draws anyway.
+   */
+  _firstRender() {
+    const go = () => { if (!this._booting) return; this._booting = false; clearTimeout(this._bootT); this.render(); };
+    const r = this.renderer;
+    if (typeof r?.compileAsync !== "function") return go();
+    this._bootT = setTimeout(go, FIRST_RENDER_WAIT_MS);
+    let p;
+    try { p = r.compileAsync(this.scene, this._viewportCamera?.() || this.camera); } catch { return go(); }
+    Promise.resolve(p).then(go, go);
   }
 
   // ---------- scene graph ----------
@@ -7253,6 +7274,7 @@ export class Stage {
   }
 
   render() {
+    if (this._booting) return;   // merged into the first frame (_firstRender)
     this._renderMode(this.view);
   }
 

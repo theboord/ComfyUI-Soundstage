@@ -126,3 +126,33 @@ test("polls write style only when a value changed (setStyles / setProp), in the 
     assert.match(s, /setStyles|setProp/, `${n} uses the write-on-change helpers`);
   }
 });
+
+test("Stage's first frame: renderer.compileAsync first, then ONE render for every render() asked meanwhile (the constructor drew three times, compiling synchronously)", async () => {
+  const { Stage } = await import("../../web/stage/stage.mjs");
+  const order = [];
+  let finish;
+  const st = Object.create(Stage.prototype);
+  Object.assign(st, { _booting: true, view: "color", scene: {}, camera: {}, _viewportCamera: () => ({}),
+    renderer: { compileAsync: () => { order.push("compile"); return new Promise((r) => { finish = r; }); } } });
+  st._renderMode = (m) => order.push(`render:${m}`);
+  st.render(); st.render();
+  st._firstRender();
+  st.render();
+  assert.deepEqual(order, ["compile"], "nothing is drawn while the shaders compile");
+  finish();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(order, ["compile", "render:color"], "then one render");
+  st.render();
+  assert.equal(order.length, 3, "and renders go straight through afterwards");
+  // without compileAsync (an old three / a fake renderer) it draws at once
+  const st2 = Object.assign(Object.create(Stage.prototype), { _booting: true, view: "color", renderer: {} });
+  let n = 0; st2._renderMode = () => n++;
+  st2._firstRender();
+  assert.equal(n, 1);
+  // the constructor itself never calls render() directly; scratch stages can skip the first draw
+  const src = SRC("stage/stage.mjs");
+  const ctor = src.slice(src.indexOf("  constructor(container, onChange, opts = {}) {"), src.indexOf("  _firstRender() {"));
+  assert.ok(!/\n    this\.render\(\);/.test(ctor), "a direct render() in the constructor");
+  assert.match(ctor, /this\._firstRender\(\)/);
+  for (const f of ["presets/livethumbs.mjs", "book/clay.mjs"]) assert.match(SRC(f), /firstRender: false/, `${f} scratch stage draws a first frame it never shows`);
+});
