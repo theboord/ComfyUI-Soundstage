@@ -254,8 +254,9 @@ export function planSwim({ pos, yaw, mode, fps = 24, height = 1.8, style = null,
   const speed = smooth(raw), climbV = smooth(vy);
   const yawRate = yaw.map((_, f) => wrapPi(yaw[Math.min(last, f + 1)] - yaw[Math.max(0, f - 1)]) * fps / Math.max(1, Math.min(last, f + 1) - Math.max(0, f - 1)));
   const weights = [], freq = [], phase = [0], surge = [], main = [];
-  // The water track's own poses (buoyancy.mjs: a drop, a struggle, a limp sink, a back float) override the speed's,
-  // cross-faded over +-6 frames so a change of pose never pops. Plans without them are unchanged.
+  // The water track's own poses (buoyancy.mjs: a drop, a struggle, a limp sink, a back float) override the speed's.
+  // Every change of style is cross-faded over +-6 frames so it never pops: a pose of the track, and a swimmer coming to
+  // a stop at the end of their keys (breaststroke -> tread in two frames, a 0.59 rad tilt).
   const track = styles && styles.some(Boolean);
   const raw0 = [];
   for (let f = 0; f < n; f++) {
@@ -265,7 +266,7 @@ export function planSwim({ pos, yaw, mode, fps = 24, height = 1.8, style = null,
   }
   for (let f = 0; f < n; f++) {
     let sw = raw0[f];
-    if (track) {
+    {
       const acc = {};
       let c = 0;
       for (let j = -6; j <= 6; j++) {
@@ -287,39 +288,82 @@ export function planSwim({ pos, yaw, mode, fps = 24, height = 1.8, style = null,
     for (const [k, w] of Object.entries(weights[f])) s += w * sampleLoop(surgeProfile(k, speed[f], height).disp, phase[f]);
     surge.push(s);
   }
-  const out = { n, fps, height, seed, style, gear, pos, yaw, mode: mode.slice(), speed, climbV, yawRate, weights, main, freq, phase, surge };
+  // The climb / dive pitch, low-passed over +-8 frames: keys that start rising while the swimmer is nearly still turned the
+  // body 0.4 rad in a frame (atan2 of the climb over a 0.25 m/s floor jumps from level to steep as the climb starts).
+  const climbPitch = smooth(climbV.map((cv, f) => clamp(Math.atan2(cv, Math.max(0.25, speed[f])), -0.6, 0.6)), 8);
+  const out = { n, fps, height, seed, style, gear, pos, yaw, mode: mode.slice(), speed, climbV, climbPitch, yawRate, weights, main, freq, phase, surge };
   if (track) out.styles = styles.slice();
   if (hipsY && hipsW && hipsW.some((w) => w > 0)) { out.hipsY = hipsY.slice(); out.hipsW = hipsW.slice(); }
   return out;
 }
 
 /**
- * Ease the hips across a change between swimming under at the keyed depth and swimming at the surface (keys rising to
- * the surface, or going back under): the hips start where they were on the side they leave and ease to the other over
- * `blend` frames (was: a 0.6 m pop at the hips in one frame). Frames the water track already places (hipsW > 0) are
- * left alone. A pure function of the plan (the same whatever order the frames are drawn in). Returns the plan.
+ * Ease the hips, the body's tilt and the pose across a change between swimming under at the keyed depth and swimming at
+ * the surface (keys rising to the surface, or going back under): the hips start where they were on the side they leave
+ * and ease to the other over `blend` frames, and the style weights (tread upright, a level kick) and the "under" share
+ * of the pose (the climb pitch, the trim) cross-fade over the same frames (was: a 0.6 m pop at the hips, then a 0.7 rad
+ * tilt and a 0.44 m head drop in one frame). Frames the water track already places (hipsW > 0) are left alone. A pure function of the plan (the same whatever order the frames are drawn in).
+ * Returns the plan (plan.underW: the eased under share per frame, 0..1).
  */
 export function easeDepthHandoffs(plan, { hipY, surface, blend = Math.max(1, Math.round(0.8 * (plan.fps || 24))) }) {
   const n = plan.n, mode = plan.mode, k = plan.height / 1.8;
   const own = plan.hipsW ? plan.hipsW.slice() : new Array(n).fill(0);
   const surfaceHips = (f) => lerp(surface - 0.12 * k, surface - 0.52 * k, plan.weights[f].tread || 0);
-  let Y = null, W = null;
+  const sideHips = (f) => (mode[f] === "surface" ? surfaceHips(f) : plan.pos[f][1] + hipY);
+  let Y = null, W = null, any = false;
   for (let f = 1; f < n; f++) {
     const was = mode[f - 1], now = mode[f];
     if (!was || !now || was === now || own[f] > 0) continue;
     if (!Y) { Y = plan.hipsY ? plan.hipsY.slice() : new Array(n).fill(null); W = own.slice(); }
+    any = true;
     // where the hips really were at f - 1: that side's own hips, or the water track's ease still finishing there
-    const side = was === "surface" ? surfaceHips(f - 1) : plan.pos[f - 1][1] + hipY;
-    const at = own[f - 1] > 0 && plan.hipsY?.[f - 1] != null ? lerp(side, plan.hipsY[f - 1], own[f - 1]) : side;
+    const at = own[f - 1] > 0 && plan.hipsY?.[f - 1] != null ? lerp(sideHips(f - 1), plan.hipsY[f - 1], own[f - 1]) : sideHips(f - 1);
+    const w0 = { ...plan.weights[f - 1] };
     for (let i = 0; i < blend; i++) {
       const fr = f + i;
       if (fr >= n || mode[fr] !== now || own[fr] > 0) break;
+      const w = 1 - sstep(0, 1, i / blend);
+      // the pose: from the style mix they had at f - 1 to this side's own
+      const mix = {}, mine = plan.weights[fr];
+      for (const key of new Set([...Object.keys(w0), ...Object.keys(mine)])) {
+        const v = lerp(mine[key] || 0, w0[key] || 0, w);
+        if (v > 1e-4) mix[key] = v;
+      }
+      plan.weights[fr] = mix;
+      plan.main[fr] = Object.entries(mix).sort((p, q) => q[1] - p[1])[0][0];
       // left the surface: held where they were; left the keyed depth: still following the keys from there
       Y[fr] = was === "surface" ? at : at + plan.pos[fr][1] - plan.pos[f - 1][1];
-      W[fr] = 1 - sstep(0, 1, i / blend);
+      W[fr] = w;
     }
   }
   if (Y) { plan.hipsY = Y; plan.hipsW = W; }
+  // A handoff the water track times itself (keyed under after a dive in, a tread before the keys go under) starts from the
+  // track's own idea of the surface hips, which the cross-faded style weights can put up to 0.17 m elsewhere: whatever
+  // is left of a step at any change of mode is eased out over `blend` (plan.hipsOff, added to the hips), chained.
+  const shown = (f, off) => {
+    const w = plan.hipsW?.[f] || 0, s = sideHips(f);
+    return (w > 0 && plan.hipsY[f] != null ? lerp(s, plan.hipsY[f], w) : s) + off[f];
+  };
+  let off = null;
+  for (let f = 1; f < n; f++) {
+    if (!mode[f - 1] || !mode[f] || mode[f - 1] === mode[f]) continue;
+    off = off || new Array(n).fill(0);
+    const j = shown(f, off) - shown(f - 1, off) - (mode[f] === "under" && mode[f - 1] === "under" ? plan.pos[f][1] - plan.pos[f - 1][1] : 0);
+    if (Math.abs(j) < 0.02) continue;
+    for (let i = 0; i < blend && f + i < n; i++) off[f + i] -= j * (1 - sstep(0, 1, i / blend));
+  }
+  if (off && off.some((v) => v !== 0)) { plan.hipsOff = off; any = true; }
+  // The "under" share of the pose (the climb pitch, the trim's bob): 1 swimming under on their own, 0 at the surface or
+  // on a pose of the water track (a drop, a tread, a kick up). It eases over `blend` at every change, chained.
+  const gate = mode.map((m, f) => ((m || "under") === "under" && !plan.styles?.[f] ? 1 : 0));
+  const underW = gate.slice();
+  for (let f = 1; f < n; f++) {
+    if (gate[f] === gate[f - 1]) continue;
+    any = true;
+    const u0 = underW[f - 1];
+    for (let i = 0; i < blend && f + i < n && gate[f + i] === gate[f]; i++) underW[f + i] = lerp(gate[f], u0, 1 - sstep(0, 1, i / blend));
+  }
+  if (any) plan.underW = underW;
   return plan;
 }
 
@@ -356,11 +400,12 @@ export function poseAt(plan, f) {
     for (const k of ["spine", "neck", "head"]) out[k] = out[k].map((x) => x * s);
   }
   // Climb / dive: pitched along the vertical velocity. Turns: banked (a diver leans into a turn like a glider).
-  const under = (plan.mode[fi] || "under") === "under";
-  if (under && !plan.styles?.[fi]) {
-    out.pitch -= clamp(Math.atan2(plan.climbV[fi], Math.max(0.25, v)), -0.6, 0.6);
+  // (across a handoff to or from the surface the under share eases, easeDepthHandoffs: no tilt in one frame)
+  const uw = plan.underW ? plan.underW[fi] : (plan.mode[fi] || "under") === "under" && !plan.styles?.[fi] ? 1 : 0;
+  if (uw > 0) {
+    out.pitch -= uw * (plan.climbPitch ? lerp(plan.climbPitch[f0], plan.climbPitch[f1], u) : clamp(Math.atan2(plan.climbV[fi], Math.max(0.25, v)), -0.6, 0.6));
     const by = buoyancyAt(t, plan.seed, h);
-    out.pitch += by.pitch; out.heave += by.dy;
+    out.pitch += uw * by.pitch; out.heave += uw * by.dy;
   }
   out.roll += clamp(Math.atan2(v * plan.yawRate[fi], WATER.g) * 2.2, -0.45, 0.45);
   return out;
@@ -574,6 +619,7 @@ export function bodyAt(plan, f, pose, ctx) {
       if (a != null) hips[1] = lerp(hips[1], lerp(a, b, u), w);
     }
   }
+  if (plan.hipsOff) hips[1] += lerp(plan.hipsOff[f0], plan.hipsOff[f1], u);   // what is left of a handoff's step, easing out
   return { hips, q };
 }
 

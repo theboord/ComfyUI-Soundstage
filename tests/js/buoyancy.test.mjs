@@ -751,25 +751,35 @@ test("walking on and off the lake's dock: keyed at 0 they wade under it, keyed o
 // floor" mark) surfaced at f50 (hips 1.25 -> 2.36) and went back under at f84 (2.41 -> 1.26); keys at 0.3 m were picked
 // up mid-fall and dropped (1.22 -> 2.15 at f50); keys rising to the surface 1.58 -> 2.15 at f102; under, surface and
 // under again 0.64 m at f111. The parent's worst was 0.26 m (the plunge itself).
-test("an underwater stroke dropped in: moving sideways under, rising to the surface, going back under, keys near the floor: the hips never pop", () => {
+test("an underwater stroke dropped in: moving sideways under, rising to the surface, going back under, keys near the floor: the hips, the tilt, the head and the feet never pop", () => {
   const cases = {
     "under, moving sideways x -3 -> 5 at 0.6 m": [[0, [-5, 4.5, 0]], [24, [-3, 0.6, 0]], [144, [5, 0.6, 0]]],
     "under, then the keys rise to the surface": [[0, [0, 4.5, 0]], [24, [0, 0.6, 0]], [96, [0, 0.6, 0]], [144, [0, 2.4, 0]]],
     "keys at 0.3 m (at the floor: swims at the surface)": [[0, [0, 4.5, 0]], [24, [0, 0.3, 0]], [144, [0, 0.3, 0]]],
     "under, surface, under again": [[0, [0, 4.5, 0]], [24, [0, 0.6, 0]], [60, [0, 0.6, 0]], [72, [0, 1.5, 0]], [100, [0, 1.5, 0]], [112, [0, 0.6, 0]]],
     "under, moving sideways and diagonally": [[0, [-5, 4.5, -2]], [24, [-3, 0.7, -1]], [90, [2, 0.5, 2]], [144, [5, 0.8, 0]]],
+    "at the surface, then the keys dive under": [[0, [0, 4.5, 0]], [24, [0, 2.4, 0]], [72, [0, 2.4, 0]], [120, [0, 0.6, 0]], [144, [0, 0.6, 0]]],
   };
+  // Sixth pass: part 2 eased only the hips. At the handoffs the body still turned in one frame (under, surface, under
+  // again: 0.715 rad at f111, the head down 0.44 m, the lowest point up 0.65 m; under then rise and surface then dive
+  // under 0.66-0.67 rad): the tilt, the head and the lowest point are measured too
+  const worstOf = (arr, from, d = (p, q) => Math.abs(p - q)) => { let w = 0, at = 0; for (let f = Math.max(1, from); f < arr.length; f++) { const x = d(arr[f], arr[f - 1]); if (x > w) { w = x; at = f; } } return { w, at }; };
   for (const swim of ["flutter", "frog", "stroke"]) for (const [what, keys] of Object.entries(cases)) {
     const st = tank([keyed("u", "man", keys, { swim })], { frames: 145 });
-    const h = [];
-    for (let f = 0; f < 145; f++) { st.setFrame(f); h.push(hipsY(st, "u")); }
-    let worst = 0, at = 0;
-    for (let f = 1; f < 145; f++) { const d = Math.abs(h[f] - h[f - 1]); if (d > worst) { worst = d; at = f; } }
-    assert.ok(worst < 0.3, `${swim}, ${what}: worst hip step ${worst.toFixed(2)} m at f${at}`);
-    let late = 0;
-    for (let f = 37; f < 145; f++) late = Math.max(late, Math.abs(h[f] - h[f - 1]));
-    assert.ok(late < 0.12, `${swim}, ${what}: after the plunge the hips move smoothly (worst ${late.toFixed(3)} m a frame)`);
-    for (const f of [83, 50, 102, 111, 9, 140]) { st.setFrame(f); assert.ok(Math.abs(hipsY(st, "u") - h[f]) < 1e-9, `${swim}, ${what} f${f}: the same scrubbed out of order`); }
+    const g = st.actorMeshes.get("u"), h = [], hd = [], lo = [], q = [];
+    for (let f = 0; f < 145; f++) { st.setFrame(f); h.push(hipsY(st, "u")); hd.push(headY(st, "u")); lo.push(lowest(g)); q.push(g.quaternion.clone()); }
+    const all = worstOf(h, 1);
+    assert.ok(all.w < 0.3, `${swim}, ${what}: worst hip step ${all.w.toFixed(2)} m at f${all.at}`);
+    const late = worstOf(h, 37);
+    assert.ok(late.w < 0.12, `${swim}, ${what}: after the plunge the hips move smoothly (worst ${late.w.toFixed(3)} m a frame at f${late.at})`);
+    const tilt = worstOf(q, 37, (p, r) => p.angleTo(r)), head = worstOf(hd, 37), low = worstOf(lo, 37);
+    assert.ok(tilt.w < 0.2, `${swim}, ${what}: the body turns smoothly (worst ${tilt.w.toFixed(3)} rad a frame at f${tilt.at})`);
+    assert.ok(head.w < 0.15, `${swim}, ${what}: the head moves smoothly (worst ${head.w.toFixed(3)} m a frame at f${head.at})`);
+    assert.ok(low.w < 0.25, `${swim}, ${what}: the lowest point moves smoothly (worst ${low.w.toFixed(3)} m a frame at f${low.at})`);
+    for (const f of [83, 50, 102, 111, 116, 9, 140]) {
+      st.setFrame(f);
+      assert.ok(Math.abs(hipsY(st, "u") - h[f]) < 1e-9 && Math.abs(headY(st, "u") - hd[f]) < 1e-9 && g.quaternion.angleTo(q[f]) < 1e-6, `${swim}, ${what} f${f}: the same scrubbed out of order`);
+    }
   }
   // the sideways swim really is under the whole way, not at the surface for f50-82
   const st = tank([keyed("u", "man", cases["under, moving sideways x -3 -> 5 at 0.6 m"], { swim: "flutter" })], { frames: 145 });
