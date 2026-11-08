@@ -203,6 +203,32 @@ test("flutter, frog and dive keyed above the surface drop in too (was: treading 
   assert.ok(plan.mode.every((m) => m === "under"), "flutter keyed 0.5 m up swims under water all shot");
 });
 
+test("objects partly over the tank edge stay inside the wall: a car keyed at x 7.5 side-on, and one dragged there", () => {
+  const car = (id, x, extra = {}) => ({ id, name: id, kind: "car", position: [x, 0, 0], keys: [{ frame: 0, position: [x, 0, 0] }], rotation_deg: 90, ...extra });
+  const X = (15.6) / 2;   // the tank's inner wall
+  const extent = (st, id) => { const g = st.actorMeshes.get(id); g.updateMatrixWorld(true); return new THREE.Box3().setFromObject(g); };
+  const st = tank([car("c", 7.5), prop("r", "rock", 0, { x: -7.6, z: 7.6 })]);
+  for (const f of [0, 30, 120]) {
+    st.setFrame(f);
+    const b = extent(st, "c");
+    assert.ok(b.max.x <= X + 0.02, `f${f}: the car's side (${b.max.x.toFixed(2)}) inside the wall at ${X}`);
+    assert.ok(st.actorMeshes.get("c").userData.inWater, "and floating");
+    const r = extent(st, "r");
+    assert.ok(r.min.x >= -X - 0.05 && r.max.z <= X + 0.05, `f${f}: the rock (its settling sway tips it a little) in the corner inside both walls (${r.min.x.toFixed(2)}, ${r.max.z.toFixed(2)})`);
+  }
+  assert.equal(st.state.actors[0].keys[0].position[0], 7.5, "the key is left as keyed");
+  // dragged: the live world shows it where the water will float it
+  const st2 = tank([car("d", 0)]);
+  const ray = (x) => ({ ray: new THREE.Ray(new THREE.Vector3(x, 30, 0), new THREE.Vector3(0, -1, 0)) });
+  assert.ok(st2.live.begin("d", { clientX: 0, clientY: 0 }, ray(0)));
+  for (let i = 1; i <= 40; i++) { st2.live.move({ clientX: i * 5, clientY: 0 }, ray(i * 0.19)); st2.live._tick(1 / 60); }
+  const live = extent(st2, "d");
+  assert.ok(live.max.x <= X + 0.02, `while dragged (${live.max.x.toFixed(2)})`);
+  st2.live.end(); st2.live.finish();
+  st2.setFrame(0);
+  assert.ok(extent(st2, "d").max.x <= X + 0.02, `after the drag (${extent(st2, "d").max.x.toFixed(2)}, key x ${st2.state.actors[0].keys[0].position[0]})`);
+});
+
 // ------------------------------------------------------------------ the physics
 test("weight decides: a rock sinks faster than a can't-swim person, who sinks slower; a soaking crate still floats; a ball floats higher than a crate", () => {
   const rock = B.bodyOf("rock", [0.5, 0.4, 0.5]), crate = B.bodyOf("crate", [0.8, 0.8, 0.8]), ball = B.bodyOf("sphere", [0.5, 0.5, 0.5]);

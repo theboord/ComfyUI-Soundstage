@@ -398,8 +398,10 @@ export class LiveEdit {
       // A prop carried over the water (not lifted above the surface) shows where the water holds it, not on the tank floor.
       const rest = this._wet(p.pos[0], p.pos[2]) ? this.s._waterRestY?.(this._actor(aid), g, p.pos[0], p.pos[2]) : null;
       if (rest != null && p.pos[1] < rest + 0.05) {
-        g.position.set(p.pos[0], rest, p.pos[2]);
-        g.quaternion.set(...qyaw(yawTilt(p.quat).yawDeg * Math.PI / 180));
+        // its whole footprint inside the tank wall, where the render will float it (stage._insideWater)
+        const yaw = yawTilt(p.quat).yawDeg * Math.PI / 180, xz = this.s._insideWater?.(this._actor(aid), g, p.pos[0], p.pos[2], yaw) || [p.pos[0], p.pos[2]];
+        g.position.set(xz[0], rest, xz[1]);
+        g.quaternion.set(...qyaw(yaw));
         continue;
       }
       g.position.set(...p.pos);

@@ -3682,9 +3682,28 @@ export class Stage {
    *  its centre) is inside the water's edge, the tank's inner wall (a car added 0.8 m in reached 1.5 m through the
    *  wall). Something wider than the water is centred on it. */
   _keepInsideWater(a) {
-    const g = this.actorMeshes.get(a.id), box = g && this._localBox(g), w = this.water;
-    if (!box || !w) return;
-    const gp = w.geometry.parameters, yaw = g.rotation.y || 0, c = Math.cos(yaw), sn = Math.sin(yaw), m = 0.05;
+    const g = this.actorMeshes.get(a.id), w = this.water;
+    if (!g || !w) return;
+    const xz = this._insideWater(a, g, a.position[0], a.position[2], g.rotation.y || 0);
+    if (!xz) return;
+    const [x, z] = xz;
+    if (x === a.position[0] && z === a.position[2]) return;
+    a.position = [+x.toFixed(2), a.position[1], +z.toFixed(2)];
+    a.keys = [{ ...a.keys[0], position: [...a.position] }];
+    this._buildSet();
+  }
+
+  /** Where an object at (x, z) with heading yaw has to be for its whole footprint (its own box at that heading, cached
+   *  per kind and size) to be inside the water's edge, the tank's inner wall, with 5 cm to spare; something wider than
+   *  the water is centred on it. [x, z] (unchanged when it fits), or null without a box or water. Pure: the keyed
+   *  (x, z, yaw) in, the place out, so a render and a drag agree. */
+  _insideWater(a, g, x, z, yaw = 0) {
+    const w = this.water;
+    if (!w || !g) return null;
+    const fsig = `${a.kind}|${a.scale || 1}|${a.height_m || 0}|${g.children.length}`;
+    let box = g.userData._foot?.sig === fsig ? g.userData._foot.box : null;
+    if (!box) { box = this._localBox(g); if (!box) return null; g.userData._foot = { sig: fsig, box }; }
+    const gp = w.geometry.parameters, c = Math.cos(yaw), sn = Math.sin(yaw), m = 0.05;
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
       const lx = box.center[0] + sx * box.half[0], lz = box.center[2] + sz * box.half[2];
@@ -3692,12 +3711,7 @@ export class Stage {
       x0 = Math.min(x0, wx); x1 = Math.max(x1, wx); z0 = Math.min(z0, wz); z1 = Math.max(z1, wz);
     }
     const fit = (v, lo, hi, e0, e1) => (hi - lo) - (e1 - e0) < 2 * m ? (lo + hi) / 2 - (e0 + e1) / 2 : Math.max(lo + m - e0, Math.min(hi - m - e1, v));
-    const x = fit(a.position[0], w.position.x - gp.width / 2, w.position.x + gp.width / 2, x0, x1);
-    const z = fit(a.position[2], w.position.z - gp.height / 2, w.position.z + gp.height / 2, z0, z1);
-    if (x === a.position[0] && z === a.position[2]) return;
-    a.position = [+x.toFixed(2), a.position[1], +z.toFixed(2)];
-    a.keys = [{ ...a.keys[0], position: [...a.position] }];
-    this._buildSet();
+    return [fit(x, w.position.x - gp.width / 2, w.position.x + gp.width / 2, x0, x1), fit(z, w.position.z - gp.height / 2, w.position.z + gp.height / 2, z0, z1)];
   }
 
   // ---------- the rigged horse (CC0, Quaternius) ----------
@@ -5021,6 +5035,10 @@ export class Stage {
     if (PERSON_KINDS.has(a.kind) && (!a.mocap || Buoy.canStand(level, (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1)))) { g.userData.inWater = false; return; }
     const p = this._actorPosAt(a, this.frame);
     if (!this._overWater(p[0], p[2])) { g.userData.inWater = false; return; }
+    // Keyed (or dragged and let go) with its centre over the water but its side through the tank wall: the water holds
+    // its whole footprint inside the wall (a car at x 7.5 side-on floated half outside the 7.8 m inner wall).
+    const xz = this._insideWater(a, g, p[0], p[2], g.rotation.y || 0);
+    if (xz) { p[0] = xz[0]; p[2] = xz[1]; g.position.x = p[0]; g.position.z = p[2]; }
     const fps = this.state.shot?.fps || 24;
     const kind = a.kind;
     if (LIBRARY[kind]?.boat) {
@@ -5056,6 +5074,17 @@ export class Stage {
       g.rotation.x = wob * Math.sin(2.1 * ti + seed); g.rotation.z = wob * Math.cos(1.7 * ti + seed * 0.3);
     }
     if (body.sinkRho && tr.entry >= 0 && f >= tr.entry) this._animalSinkPose(a, g, tr, body, f, fps, seed);
+    // Tipped (a sway, a flooding car going nose down) its corners reach further out: near the wall, measure the posed
+    // object and move it back inside (from this frame's pose only: the same on any play order).
+    const w = this.water, gp = w.geometry.parameters, lx = gp.width / 2, lz = gp.height / 2;
+    const reachOut = g.userData._foot?.box ? Math.hypot(...g.userData._foot.box.half) + Math.hypot(g.userData._foot.box.center[0], g.userData._foot.box.center[2]) : 0;
+    if (reachOut && (lx - Math.abs(p[0] - w.position.x) < reachOut || lz - Math.abs(p[2] - w.position.z) < reachOut)) {
+      g.updateMatrixWorld(true);
+      const bx = new THREE.Box3().setFromObject(g), m = 0.05;
+      const push = (lo, hi, a0, a1) => (a1 - a0 > hi - lo - 2 * m ? 0 : a0 < lo + m ? lo + m - a0 : a1 > hi - m ? hi - m - a1 : 0);
+      const dx = push(w.position.x - lx, w.position.x + lx, bx.min.x, bx.max.x), dz = push(w.position.z - lz, w.position.z + lz, bx.min.z, bx.max.z);
+      if (dx || dz) { g.position.x += dx; g.position.z += dz; p[0] += dx; p[2] += dz; }
+    }
     g.userData.inWater = true;
     g.userData.buoy = { s, rho: tr.rho[f], v: tr.v[f] };
     // Splash ring on entry: expands and fades over ~1.2 s.
