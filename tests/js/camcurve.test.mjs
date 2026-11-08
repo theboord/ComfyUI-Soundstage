@@ -335,8 +335,9 @@ test("an old shot keyed, orbited or zoomed at the playhead keeps what was on scr
     assert.equal(st.activeShot().cam_curve, undefined, "an old shot");
     st.frame = 30; st.setFrame(30);
     const shown = structuredClone(st._cameraAt(30));
-    // the old and the new curve really differ here (so this test can see the jump)
-    assert.ok(len(sub(CC.cameraCurveAt(keysC3(), 30).position, shown.position)) > 0.05);
+    // the old and the new curve really differ here (so this test can see the jump; 4.5 cm since the tangent follows
+    // the chords' bisector, 8.8 cm before; the keys are then held to 1 micron / 1 mm, far below either)
+    assert.ok(len(sub(CC.cameraCurveAt(keysC3(), 30).position, shown.position)) > 0.03);
     act(st);
     assert.equal(st.activeShot().cam_curve, CC.CAM_CURVE, `${name}: re-keyed, now on the smooth curve`);
     const k = st.activeShot().camera_keys.find((x) => x.frame === 30);
@@ -380,19 +381,26 @@ test("even speed on a mixed dolly and pan: the combined camera + target measure 
   for (const f of [77, 3, 45, 90, 0, 12, 61]) assert.equal(JSON.stringify(at(f)), seq[f]);
 });
 
-test("an orbit keyed every 36 deg round a 5 m circle keeps its speed through the interior keys (max / min <= 1.05); out-and-back still never swings past its key", () => {
+test("an orbit keyed every 36 or 45 deg round a 5 m circle, at any phase (0 / 10 / 20 / 25 / 45 deg), keeps its speed through the interior keys (max / min <= 1.05); out-and-back still never swings past its key", () => {
   // the reviewer's probe: the per-axis limiter zeroed an axis whose neighbouring keys share a value (z at 72 and 108
-  // deg), so the camera slowed about 16 % at those keys
+  // deg), so the camera slowed about 16 % at those keys. 1d43777 then zeroed any axis whose chord changes sign at a
+  // key, so an orbit whose keys don't sit on the axis extremes slowed again (36 deg keys at 10 deg phase: 1.055x,
+  // 8.9 cm off the circle; 25 deg: 1.065x; 45 deg keys at 20 deg: 1.207x, 31.7 cm).
   const R = 5, step = 24;
-  const orbit = Array.from({ length: 11 }, (_, i) => {
-    const a = (i * 36 * Math.PI) / 180;
-    return { frame: i * step, position: [R * Math.cos(a), 1.6, R * Math.sin(a)], target: [0, 1.2, 0], focal_mm: 35 };
-  });
-  const P = (f) => CC.cameraCurveAt(orbit, f).position;
-  const sp = []; for (let f = step; f < 9 * step; f++) sp.push(len(sub(P(f + 1), P(f))));
-  const r = Math.max(...sp) / Math.min(...sp);
-  assert.ok(r <= 1.05, `orbit speed max / min across interior keys ${r.toFixed(4)} (${Math.min(...sp).toFixed(4)} .. ${Math.max(...sp).toFixed(4)} m/frame)`);
-  for (let f = step; f <= 9 * step; f++) assert.ok(Math.abs(len([P(f)[0], P(f)[2]]) - R) < 0.02, `stays on the circle at ${f} (between the interior keys; the ends ease in from rest)`);
+  for (const deg of [36, 45]) for (const phase of [0, 10, 20, 25, 45]) {
+    const orbit = Array.from({ length: 11 }, (_, i) => {
+      const a = ((phase + i * deg) * Math.PI) / 180;
+      return { frame: i * step, position: [R * Math.cos(a), 1.6, R * Math.sin(a)], target: [0, 1.2, 0], focal_mm: 35 };
+    });
+    const P = (f) => CC.cameraCurveAt(orbit, f).position;
+    const sp = []; for (let f = step; f < 9 * step; f++) sp.push(len(sub(P(f + 1), P(f))));
+    const r = Math.max(...sp) / Math.min(...sp);
+    assert.ok(r <= 1.05, `${deg} deg keys, ${phase} deg phase: orbit speed max / min across interior keys ${r.toFixed(4)} (${Math.min(...sp).toFixed(4)} .. ${Math.max(...sp).toFixed(4)} m/frame)`);
+    for (let f = step; f <= 9 * step; f++) {
+      const off = Math.abs(len([P(f)[0], P(f)[2]]) - R);
+      assert.ok(off < 0.02, `${deg} deg keys, ${phase} deg phase: ${(off * 100).toFixed(1)} cm off the circle at ${f} (between the interior keys; the ends ease in from rest)`);
+    }
+  }
   // out and back with uneven times (12 frames out, 36 back): the turn-around key is the farthest point
   const ob = [{ frame: 0, position: [0, 1.6, 0], target: [0, 1, 5], focal_mm: 35 }, { frame: 12, position: [3, 1.6, 0.2], target: [0, 1, 5], focal_mm: 35 },
     { frame: 48, position: [0, 1.6, 0.4], target: [0, 1, 5], focal_mm: 35 }];

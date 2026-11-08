@@ -17,9 +17,11 @@
 // Version 2, per field (position, target: per component; focal: in log space, so a 24 -> 48 -> 96 mm zoom feels even):
 //   - cubic Hermite through every key at its frame, tangents from the key TIMES (the three-point derivative weighted by
 //     the two segment lengths): velocity is continuous across every key, whatever the spacing;
-//   - an overshoot limiter (see tangents): a component that turns back at a key stops there and its neighbours are
-//     held to 3x that segment's slope, so no axis swings past a key where it turns back, whatever the key spacing;
-//     an axis level between two keys may bulge past them by at most the arc the turn implies (an orbit's arc);
+//   - an overshoot limiter (see tangents): the tangent points along the bisector of the two chords (so uneven times
+//     don't lean it), an axis that turns back at a key swings past it by at most what the arc through that key and
+//     its neighbours does (nil for a symmetric turn or zigzag; an orbit's own peak when its keys don't sit on the
+//     axis extremes, capped at that chord's sagitta), past 90 deg per axis (it stops), and an axis level between
+//     two keys may bulge past them by at most the arc the turn implies (an orbit's arc);
 //   - zero-velocity tangents at hold boundaries (two keys with the same value): the hold is truly still and the move
 //     out of it starts from rest, never bowing backwards first;
 //   - easing only at the shot's first and last keys (zero tangents there): interior keys never stall;
@@ -43,6 +45,63 @@ export function markNewShots(scene, known = new Set()) {
 }
 
 const sameVal = (a, b) => a.every((x, k) => Math.abs(x - b[k]) < 1e-4);
+
+/** Does the circular arc leaving `from` along tangent `u` and landing on `to` peak on axis c inside the segment? Its
+ *  arrival direction is u mirrored in the chord (2 (u.c) c - u, c the unit chord): a peak when departure and arrival
+ *  point opposite ways on that axis. */
+function arcPeaks(u, from, to, c) {
+  const ch = to.map((x, k) => x - from[k]), L = Math.hypot(...ch), nu = Math.hypot(...u);
+  if (L < 1e-9 || nu < 1e-12) return false;
+  const dot = u.reduce((s, x, k) => s + (x / nu) * (ch[k] / L), 0);
+  const arrive = 2 * dot * (ch[c] / L) - u[c] / nu;
+  return (u[c] / nu) * arrive < -1e-9;
+}
+
+/** How far segment s (Hermite, tangents m) goes past value V on axis c, in direction sg (+1: above). */
+function segPast(t, v, m, s, c, V, sg) {
+  const h = t[s + 1] - t[s], a = v[s][c], b = v[s + 1][c];
+  let w = -Infinity;
+  for (let q = 1; q < 64; q++) {
+    const u = q / 64, u2 = u * u, u3 = u2 * u;
+    const x = (2 * u3 - 3 * u2 + 1) * a + (u3 - 2 * u2 + u) * h * m[s][c] + (-2 * u3 + 3 * u2) * b + (u3 - u2) * h * m[s + 1][c];
+    w = Math.max(w, sg * (x - V));
+  }
+  return w;
+}
+
+/** How far the circle through A, B, C goes past B's value on axis c (direction sg) on its arc B -> A and B -> C
+ *  (each the arc that doesn't pass the third key; at most the sagitta of an arc over that chord turning as much as
+ *  B: chord / 2 x tan(turn / 4)), plus a small tolerance for the Hermite's fit to that circle
+ *  (1 mm + 0.3 % of the chord). [beforeKey, afterKey]; collinear keys: no arc, only the tolerance. */
+function arcPast(A, B, C, c, sg) {
+  const u = A.map((x, k) => x - B[k]), w = C.map((x, k) => x - B[k]);
+  const lu = Math.hypot(...u), lw = Math.hypot(...w);
+  const tol = [0.001 + 0.003 * lu, 0.001 + 0.003 * lw];
+  const e1 = u.map((x) => x / lu), wx = w.reduce((s, x, k) => s + x * e1[k], 0);
+  const wp = w.map((x, k) => x - wx * e1[k]), wy = Math.hypot(...wp);
+  if (wy < 1e-9 * (lu + lw)) return tol;
+  const e2 = wp.map((x) => x / wy);
+  const ox = lu / 2, oy = (wx * wx + wy * wy - lu * wx) / (2 * wy), r = Math.hypot(ox, oy);
+  const ang = (x, y) => Math.atan2(y - oy, x - ox);
+  const tB = ang(0, 0), tA = ang(lu, 0), tC = ang(wx, wy);
+  const ccw = (from, to) => ((to - from) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);   // ccw sweep from -> to
+  const past = (tP, tO) => {
+    // the arc from B to P not passing O: ccw if O isn't inside the ccw sweep B -> P, else clockwise
+    let sw = ccw(tB, tP);
+    if (ccw(tB, tO) < sw) sw -= 2 * Math.PI;
+    let best = 0;
+    for (let q = 1; q < 64; q++) {
+      const th = tB + (sw * q) / 64, x = ox + r * Math.cos(th), y = oy + r * Math.sin(th);
+      best = Math.max(best, sg * (x * e1[c] + y * e2[c]));
+    }
+    return best;
+  };
+  // never more than the sagitta of an arc over that chord turning as much as this key (as for a level axis below):
+  // a tight circle through a long flat chord and a short steep one would allow a deep dip the move doesn't imply
+  const th = Math.acos(Math.max(-1, Math.min(1, -(u.reduce((s, x, k) => s + x * w[k], 0)) / (lu * lw))));
+  const sag = (L) => (L / 2) * Math.tan(Math.min(Math.PI / 2, th) / 4);
+  return [Math.min(past(tA, tC), sag(lu)) + tol[0], Math.min(past(tC, tA), sag(lw)) + tol[1]];
+}
 
 /** Hermite tangents (value per frame) for values v[] at frames t[]. Ends 0 (ease out of the first key, into the last). */
 export function tangents(t, v) {
@@ -73,18 +132,40 @@ export function tangents(t, v) {
     if (w > 0) {
       const th = Math.acos(Math.max(-1, Math.min(1, cos)));
       const arc = th > 1e-6 ? th / Math.sin(th) : 1;
+      // Direction: the bisector of the two chords' unit directions (where the path points through the key), not the
+      // time-weighted derivative's. The two differ only when the sides take different times: then the derivative
+      // leans toward the faster side and its component on an axis that turns back here is not zero, so an
+      // uneven-spaced gentle turn swung past its key on that axis (a 50 deg turn at 12 / 36 frames: 16 cm). The
+      // bisector of two equal chords has no component there, whatever the timing; with even spacing it is the
+      // derivative's own direction, so evenly keyed orbits keep their exact arc at any phase. Length: the
+      // derivative's, lengthened from chord to arc and limited to 3x the slower side's speed.
+      const b = d0.map((x, c) => x / n0 + d1[c] / n1), nb = Math.hypot(...b);
       const nm = Math.hypot(...mc) * arc, lim = 3 * Math.min(n0, n1);
-      const s = nm > 1e-12 ? Math.min(nm, lim) / Math.hypot(...mc) : 0;
-      vec = mc.map((x) => x * s);
+      vec = nb > 1e-12 ? b.map((x) => (x / nb) * Math.min(nm, lim)) : mc.map(() => 0);
     }
-    // An axis that strictly turns back at this key (its secant changes sign) stops here whatever the turn: the vector
-    // limit kept the time-weighted derivative's component, which is not zero when the two sides take different times,
-    // so an uneven-spaced gentle turn swung past its key on that axis (a 50 deg turn at 12 / 36 frames: 16 cm). With
-    // even spacing that component is already zero, so evenly keyed turns and orbits are unchanged. An axis flat on one
-    // side (an orbit's z between two keys at the same height) keeps its tangent: that hump is the arc, not a swing.
-    const eps = 1e-9 * (n0 + n1);   // a side flat to rounding (sin 72 vs sin 108) is flat, not a turn-back
-    const back = (c) => Math.abs(d0[c]) > eps && Math.abs(d1[c]) > eps && d0[c] * d1[c] < 0;
-    for (let c = 0; c < D; c++) m[i][c] = back(c) ? 0 : w * vec[c] + (1 - w) * axis[c];
+    for (let c = 0; c < D; c++) m[i][c] = w * vec[c] + (1 - w) * axis[c];
+  }
+  // An axis that turns back at a key (its chord changes sign there) may swing past the key only as far as the arc
+  // through that key and its neighbours does. On an orbit whose keys don't sit on the axis extremes the arc really
+  // peaks between two keys, so the tangent keeps its component there (1d43777 zeroed it, and those orbits slowed at
+  // the keys again: 36 deg keys at a 10 deg phase 1.055x and 8.9 cm off the circle, 45 deg at 20: 1.21x, 32 cm).
+  // Where the arc itself peaks at the key (a symmetric turn, a zigzag) that allowance is nil, so a tangent that would
+  // swing past is shortened on that axis until it doesn't (uneven spacing used to swing a 50 deg turn 16 cm past).
+  for (let i = 1; i < n; i++) {
+    if (sameVal(v[i - 1], v[i]) || sameVal(v[i], v[i + 1])) continue;
+    for (let c = 0; c < D; c++) {
+      const a0 = v[i][c] - v[i - 1][c], a1 = v[i + 1][c] - v[i][c];
+      const eps = 1e-9 * (Math.hypot(...v[i].map((x, k) => x - v[i - 1][k])) + Math.hypot(...v[i + 1].map((x, k) => x - v[i][k])));
+      if (!(Math.abs(a0) > eps && Math.abs(a1) > eps && a0 * a1 < 0) || m[i][c] === 0) continue;
+      const sg = a0 > 0 ? 1 : -1;   // +1: the key is this axis's local top
+      const allow = arcPast(v[i - 1], v[i], v[i + 1], c, sg);
+      const ok = () => [i - 1, i].every((s, j) => segPast(t, v, m, s, c, v[i][c], sg) <= allow[j]);
+      if (ok()) continue;
+      const m0 = m[i][c];
+      let lo = 0, hi = 1;
+      for (let it = 0; it < 24; it++) { const k = (lo + hi) / 2; m[i][c] = m0 * k; if (ok()) lo = k; else hi = k; }
+      m[i][c] = m0 * lo;
+    }
   }
   // Per segment and axis (Fritsch-Carlson with one end at rest): next to a key where the axis stops (a turn-back, a
   // hold, the shot's ends), the other end's tangent is held to 3x the segment's own slope on that axis, or the
@@ -110,6 +191,14 @@ export function tangents(t, v) {
       }
       for (const [a, b] of [[i, i + 1], [i + 1, i]]) {
         if (m[b][c] !== 0) continue;
+        // Next to the shot's first or last key (at rest by choice, not because the axis turns back there), the axis
+        // may truly peak inside the segment: an orbit whose last segment crosses the top of the circle. The arc that
+        // leaves key a along its tangent and lands on the end key arrives along the tangent mirrored in the chord;
+        // when that arrival and the departure point opposite ways on this axis, the peak is the arc's own and the
+        // tangent is kept. Zeroing or clamping it there slowed the camera into the last interior key on any orbit
+        // whose keys don't sit on the axis extremes (36 deg keys at a 10 deg phase: 1.06x; 45 deg at 20: 1.21x).
+        // Otherwise (an axis that keeps going: a turn's or an L move's x) the 3x rule holds it between the keys.
+        if ((b === 0 || b === n) && arcPeaks(m[a], v[a], v[b], c)) continue;
         if (m[a][c] * d < 0) m[a][c] = 0;
         else if (Math.abs(m[a][c]) > 3 * Math.abs(d)) m[a][c] = 3 * d;
       }
