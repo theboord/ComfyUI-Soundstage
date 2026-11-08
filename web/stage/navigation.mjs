@@ -12,6 +12,7 @@
 //
 // The top half is pure (no three.js, no DOM) so node tests cover it; installNavigation() wires it to a Stage.
 
+import { setStyles, setProp } from "../ui/domwrite.mjs";   // polls write only what changed
 const EPS = 1e-9;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -836,16 +837,16 @@ export function installNavigation(stage) {
     function place() {
       const narrow = cv.offsetWidth < 560;
       const x = cv.offsetLeft + cv.offsetWidth / 2, bottom = cv.offsetTop + cv.offsetHeight;
-      bar.hidden = settings.hintDismissed || off() || narrow || !cv.offsetHeight;
+      setProp(bar, "hidden", settings.hintDismissed || off() || narrow || !cv.offsetHeight);   // this runs every 500 ms: write on change (domwrite.mjs)
       // Clear of what sits on the viewport's bottom edge: the shot-camera picture (bottom left) and the Top view inset
       // (bottom right) are measured each time, since either can be shown, hidden or resized.
       const hr = host.getBoundingClientRect?.() || { left: 0, top: 0 };
       const rel = (n) => { if (!n || n.hidden || !n.offsetWidth) return null; const r = n.getBoundingClientRect(); return { left: r.left - hr.left, top: r.top - hr.top, width: r.width, height: r.height }; };
       const obstacles = [...host.querySelectorAll?.(".ss-pip, .ss-top") || []].map(rel);
       const at = hintPlacement({ left: cv.offsetLeft, top: cv.offsetTop, width: cv.offsetWidth, height: cv.offsetHeight }, obstacles);
-      Object.assign(bar.style, { left: `${at.right}px`, top: `${at.top}px`, maxWidth: `${at.maxWidth}px` });
-      Object.assign(panel.style, { left: `${x}px`, top: `${Math.max(cv.offsetTop + 8, bottom - 44 - (panel.offsetHeight || 190))}px` });
-      if (off()) panel.hidden = true;
+      setStyles(bar, { left: `${at.right}px`, top: `${at.top}px`, maxWidth: `${at.maxWidth}px` });
+      setStyles(panel, { left: `${x}px`, top: `${Math.max(cv.offsetTop + 8, bottom - 44 - (panel.offsetHeight || 190))}px` });
+      if (off()) setProp(panel, "hidden", true);
     }
     nav._ui = { remove() { bar.remove(); panel.remove(); clearInterval(tid); } };
     const tid = setInterval(() => { if (!cv.isConnected && nav._seen) { nav.dispose(); return; } nav._seen = true; place(); }, 500);

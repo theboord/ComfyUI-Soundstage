@@ -13,6 +13,7 @@ import { downloadDCCKit } from "../stage/interop/exportdcc.mjs";
 import { FrameCheck, badgeOf, flagged, rank, depthTip, REROLLS, FRAMECHECK_CSS } from "./framecheck.mjs";
 import { stillLoraGroups, stillLoraWarning, LORA_MATCH_LABEL, LORA_OTHER_LABEL, normalizeStack, stackFromLegacy } from "./loras.mjs";
 import { createLoraStack } from "./lorastack.mjs";
+import { setStyles, setProp } from "../ui/domwrite.mjs";   // polls write only what changed
 
 /** ④'s look box placeholder: optional, and no example that fights the scene (QA 2026-11-02: a western example on a rainy night chase). */
 export const FRAME_DESC_PLACEHOLDER = "Optional: the look you want on top of the stage, e.g. light, weather, mood, film stock…";
@@ -383,8 +384,9 @@ export class Pipeline {
       const q = await queueSummary(this.ctx.api, { limit: 1 });   // counts only (GET /queue encodes every prompt)
       if (!q) return;
       const n = q.running + q.pending;
-      this.stopBtn.hidden = n === 0;
-      this.stopBtn.textContent = n > 1 ? `■ Stop (${n})` : "■ Stop";
+      // every 2 s: written only when it changes (domwrite.mjs)
+      setProp(this.stopBtn, "hidden", n === 0);
+      setProp(this.stopBtn, "textContent", n > 1 ? `■ Stop (${n})` : "■ Stop");
     } catch { /* server away */ }
   }
 

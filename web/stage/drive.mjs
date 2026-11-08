@@ -41,6 +41,7 @@ import { SEATS, LIBRARY } from "./library.mjs";
 import { writeKey } from "./objparts.mjs";
 import { setGazeKey } from "./gaze.mjs";
 import { limitsFor, correctTrack, fixWords, sumFixes, reduceKeys, reduceLinear } from "./takefix.mjs";
+import { setStyles, setProp } from "../ui/domwrite.mjs";   // polls write only what changed
 
 const DEG = Math.PI / 180;
 const G = 9.81;
@@ -2040,7 +2041,8 @@ export function installDriveButton(stage) {
       bar.append(Object.assign(document.createElement("i"), { className: "sep" }), b);
     }
     const btnEl = bar?.querySelector("[data-drive]");
-    if (btnEl) { const ok = !!stage.selected && stage.drive?.canDrive(stage.selected); btnEl.style.display = ok ? "" : "none"; if (btnEl.previousSibling) btnEl.previousSibling.style.display = ok ? "" : "none"; }
+    // written only when it changes (domwrite.mjs): this runs every 400 ms
+    if (btnEl) { const ok = !!stage.selected && stage.drive?.canDrive(stage.selected); setStyles(btnEl, { display: ok ? "" : "none" }); if (btnEl.previousSibling) setStyles(btnEl.previousSibling, { display: ok ? "" : "none" }); }
   };
   const id = setInterval(() => { if (!stage.canvas?.isConnected && stage._driveBtnStarted) { clearInterval(id); return; } stage._driveBtnStarted = true; tick(); }, 400);
   return () => clearInterval(id);

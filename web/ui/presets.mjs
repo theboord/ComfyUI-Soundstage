@@ -404,7 +404,7 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
   }
 
   // ---- live previews from the stage (web/presets/livethumbs.mjs): a scratch copy of the scene renders each card in
-  // clay, visible cards first, a slice at a time after the panel has painted; cached per scene, so they come back at once.
+  // Color, visible cards first, a slice at a time after the panel has painted; cached per scene, so they come back at once.
   let live = null, liveSigAt = 0;
   function ensureLive() {
     if (live || typeof document === "undefined" || !stage?.constructor || typeof stage.toJSON !== "function" || !stage.renderer) return live;
@@ -418,11 +418,9 @@ export function mountPresets({ root, topBar = null, before = null, api = null, s
     } catch (e) { console.warn("[Soundstage] preset previews off", e); live = null; }
     return live;
   }
-  // Pre-warm the previews once the App has settled (idle, a few seconds after load), not when the window opens: the
-  // scratch stage, the scene and its shaders are ready before the first open. Cards show their drawn previews meanwhile.
-  if (typeof requestIdleCallback === "function" && typeof window !== "undefined") {
-    setTimeout(() => requestIdleCallback(() => { try { ensureLive()?.warm(); } catch { /* previews stay drawn */ } }, { timeout: 15000 }), 6000);
-  }
+  // No pre-warm at load (Jon's canvas-speed report: the second full Stage, its WebGL context and shader compile cost
+  // ~2.7 s of the App's time to interactive, for a panel many sessions never open). The scratch stage is built the
+  // first time Presets opens (queueLive -> LiveThumbs._loop); cards show their drawn previews until it is ready.
   /** Queue this view's cards for live previews: the ones on screen first, then the rest of the list. */
   function queueLive() {
     if (panel.hidden || !ensureLive()) return;

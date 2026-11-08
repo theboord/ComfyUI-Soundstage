@@ -10,6 +10,7 @@
 //
 // The pure parts (the set's bounds, the home view, "lost", the history) are exported for the tests.
 
+import { setStyles, setProp } from "../ui/domwrite.mjs";   // polls write only what changed
 const D = Math.PI / 180;
 const sub = (a, b) => a.map((v, i) => v - b[i]);
 const len = (a) => Math.hypot(...a);
@@ -156,9 +157,9 @@ export function installViewNav(stage) {
   const place = () => {
     const c = stage.canvas;
     // Under the view badge, at the viewport's top-left (the compass is top-right); out of Drive's way while it runs.
-    Object.assign(bar.style, { left: `${c.offsetLeft + 8}px`, top: `${c.offsetTop + 32}px` });
-    Object.assign(chip.style, { left: `${c.offsetLeft + c.offsetWidth / 2}px`, top: `${c.offsetTop + 64}px` });
-    bar.style.display = stage.drive?.on ? "none" : "flex";
+    // written only when they change (domwrite.mjs): this runs every 250 ms
+    setStyles(bar, { left: `${c.offsetLeft + 8}px`, top: `${c.offsetTop + 32}px`, display: stage.drive?.on ? "none" : "flex" });
+    setStyles(chip, { left: `${c.offsetLeft + c.offsetWidth / 2}px`, top: `${c.offsetTop + 64}px` });
   };
   stage.canvas.addEventListener("keydown", (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey || stage.drive?.on) return;
@@ -172,8 +173,8 @@ export function installViewNav(stage) {
     place();
     const v = view();
     if (v) hist.watch(v, performance.now());
-    backBtn.disabled = !hist.list.some((x) => !ViewHistory.same(x, v));
-    chip.hidden = !nav.lost();
+    setProp(backBtn, "disabled", !hist.list.some((x) => !ViewHistory.same(x, v)));
+    setProp(chip, "hidden", !nav.lost());
   }, 250);
   return nav;
 }

@@ -1048,9 +1048,13 @@ export function createJobTimer() {
   bar.setAttribute("aria-valuemin", "0");
   bar.setAttribute("aria-valuemax", "100");
   el.append(name, clockEl, pct, step, left, node, queue, bar);
+  let last = "";
   const update = (v) => {
     const run = v.running.find((r) => r.own) || v.running[0] || null;
     const m = timerModel(run);
+    const key = m ? JSON.stringify([m, queueLine(v.totals)]) : "";
+    if (key === last) return m;   // nothing changed: no DOM writes (an idle tick touched every field)
+    last = key;
     el.hidden = !m;
     if (!m) return null;
     name.textContent = m.name;
@@ -1146,28 +1150,45 @@ export function mountActivity({ api, row, before = null, theme = null, win = glo
     panel.scrollTop = top;
     for (const [id, st] of lists) { const u = panel.querySelector(`.ss-act-det[data-id="${CSS.escape(id || "")}"] .ss-act-nodes`); if (u) u.scrollTop = st; }
   };
+  // The elapsed clocks tick once a second, but only while a job runs or waits, or the panel is open (Jon's
+  // canvas-speed report: the 1 s clock at idle was most of the 22 % idle GPU, each tick rewriting the pill and so
+  // waking the top row's MutationObserver). Writes happen only when a value changed.
+  let sec = 0;
+  const clock = (on) => {
+    if (on && !sec) sec = setInterval(draw, 1000);
+    else if (!on && sec) { clearInterval(sec); sec = 0; }
+  };
+  let lastPill = "";
   const draw = () => {
     if (!reg.clientId && api.clientId) reg.clientId = api.clientId;
     const v = reg.view();
     const run = v.running.find((r) => r.own) || v.running[0] || null;
     const txt = pillText(v.totals, run);
-    lbl.textContent = txt;
-    btn.title = `Activity: ${txt}. Every job on the GPU queue, which node yours is on, time left and Cancel for yours`;
-    btn.setAttribute("aria-label", btn.title);
-    btn.dataset.busy = String(!!(v.totals.running || v.totals.queued));
+    const busy = !!(v.totals.running || v.totals.queued);
+    const pct = run && run.pct != null ? run.pct : null;
+    const key = `${txt}|${busy}|${pct}`;
+    if (key !== lastPill) {
+      lastPill = key;
+      lbl.textContent = txt;
+      btn.title = `Activity: ${txt}. Every job on the GPU queue, which node yours is on, time left and Cancel for yours`;
+      btn.setAttribute("aria-label", btn.title);
+      btn.dataset.busy = String(busy);
+      mini.hidden = pct == null;
+      if (pct != null) miniFill.style.width = `${pct}%`;
+    }
     timer.update(v);
-    mini.hidden = !(run && run.pct != null);
-    if (run && run.pct != null) miniFill.style.width = `${run.pct}%`;
     if (isOpen() && !pending) pending = setTimeout(paint, 250);
+    clock(busy || v.running.length > 0 || isOpen());
   };
   const onCancel = async (r) => { await cancelJob(api, r); s.poll(); };
   btn.addEventListener("click", () => {
-    if (isOpen()) { closePopover(panel); return; }
+    if (isOpen()) { closePopover(panel); draw(); return; }
     panel = renderPanel(reg.view(), opts());
     panel.classList.add("ss-toppop");
     for (const t of ["pointerdown", "wheel"]) panel.addEventListener(t, (e) => e.stopPropagation(), { passive: true });
     panel.addEventListener("pointerdown", () => { pressed = true; }, { capture: true });
     openPopover(panel, { anchor: btn, owner: btn, theme: theme || row, align: "end", gap: 6, name: "activity", remove: true });
+    draw();   // the clock ticks while the panel is open
     s.poll();
   });
   const up = () => { pressed = false; };
@@ -1181,12 +1202,10 @@ export function mountActivity({ api, row, before = null, theme = null, win = glo
   s.pills.add(pill);
   const offChange = reg.onChange(draw);
   draw();
-  // The elapsed clocks tick once a second (the pill's ETA and the open panel).
-  const sec = setInterval(draw, 1000);
   return {
     button: btn, registry: reg, draw, poll: () => s.poll(),
     dispose() {
-      clearInterval(sec); clearTimeout(pending); clearTimeout(pulseT); offChange(); timer.el.remove?.(); s.pills.delete(pill);
+      clock(false); clearTimeout(pending); clearTimeout(pulseT); offChange(); timer.el.remove?.(); s.pills.delete(pill);
       win?.removeEventListener?.("pointerup", up, true);
       win?.removeEventListener?.("pointercancel", up, true);
       if (isOpen()) closePopover(panel);

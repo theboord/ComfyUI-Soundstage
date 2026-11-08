@@ -391,8 +391,22 @@ export class CanvasPanel {
     this.fit();
   }
 
+  /**
+   * True while Paint Studio is on screen (connected, no [hidden] ancestor). While it is closed, the Stage layer and the
+   * Fill state are only marked stale (Jon's canvas-speed report: a full stage render and two pixel read-backs ran at
+   * load and on every change with the panel closed); showing it again (refreshStage from the view switch) catches up.
+   */
+  _shown() {
+    const r = this.root;
+    if (!r || r.isConnected === false) return false;
+    return !r.closest?.("[hidden]");
+  }
+
   /** Re-render the Stage layer from the 3D stage at its playhead (call after stage edits). */
   refreshStage() {
+    if (!this._shown()) { this._stageStale = true; return; }
+    this._stageStale = false;
+    if (this._fillStale) this._renderFillState();
     const layer = this.layers.find((l) => l.kind === "stage");
     if (!layer || !this.stage?.renderFrameTo) { this.render(); return; }
     try {
@@ -1691,6 +1705,9 @@ export class CanvasPanel {
 
   _renderFillState() {
     if (!this.fillBtn) return;
+    // _hasArea / _hasHole read pixels back: not while Paint Studio is closed (refreshStage catches up when it opens).
+    if (!this._shown()) { this._fillStale = true; return; }
+    this._fillStale = false;
     const area = this._hasArea(), hole = this._hasHole(), busy = this.fill.busy, ok = this.fillReady && this.models.length;
     const refN = this.fill.refs.size;
     this.fillBtn.querySelector("span").textContent = busy ? "Painting…" : refN ? "Fill with reference" : "Generative Fill";
