@@ -439,9 +439,10 @@ def finish_scene(scene: dict, *, take, info, breakdown, depths, scales, poses, K
             try:   # the performer is not the relief: a block where she stands is judged against the set behind her
                 dur, fps0 = float(clip.get("duration") or 1.0), float(clip.get("fps") or 24.0)
                 t1 = times[:1] if times else times
+                hers: set = set()
+                bx = scanroute.people_boxes(breakdown or {}, d0.shape[::-1], t1, dur, take=take, fps=fps0, hers=hers)
                 d0 = scanroute.without_people(d0, scanroute.people_masks(
-                    breakdown or {}, depths[:1], t1, dur, take=take, fps=fps0), 0,
-                    boxes=scanroute.people_boxes(breakdown or {}, d0.shape[::-1], t1, dur, take=take, fps=fps0))
+                    breakdown or {}, depths[:1], t1, dur, take=take, fps=fps0), 0, boxes=bx, hers=hers)
             except Exception as exc:  # noqa: BLE001 - the unmasked relief still triages
                 notes.append(f"set: could not mask the people out of the block triage ({exc})")
             tri = SW.triage_blocks(scene["actors"], poses[0], A, b, K, d0.shape[::-1], d0)

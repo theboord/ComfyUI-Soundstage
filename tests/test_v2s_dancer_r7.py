@@ -163,3 +163,58 @@ def test_the_joint_box_reaches_her_pointed_toe(monkeypatch):
     monkeypatch.setattr(pipeline.performer, "sam_2d", lambda t, k, size: uv)
     _, jb = scanroute.joint_box(TAKE, 0, (400, 400))
     assert jb[2] >= np.flatnonzero(her.any(0))[-1] + 1             # the toe past the ankle is inside her box
+
+
+# ------------------------------------------------------------------------------------------------ 2 + 5 the padding
+from soundstage.video2stage import backdrop as BD  # noqa: E402
+from test_v2s_dancer_r3 import _stage_with_her  # noqa: E402
+from test_v2s_dancer_r6 import _her_joints, _read, _scan_path  # noqa: E402
+
+
+def _bystander(d):
+    """A bystander leaning on the 30 m back wall at the left of frame (head, body, legs a little off the wall)."""
+    by = np.zeros(d.shape, bool)
+    by[126:160, 60:90] = True
+    by[160:300, 40:110] = True
+    by[300:423, 45:70] = True
+    by[300:423, 80:105] = True
+    d[by] = 29.6
+    return by
+
+
+def _wall_cut(cut, d0):
+    return int(np.isnan(cut[d0 == 30.0]).sum())
+
+
+def test_a_bystander_on_the_back_wall_does_not_open_his_box(monkeypatch):
+    d, _ = _stage_with_her()
+    _bystander(d)
+    bd = _read([250, 200, 390, 420], [16, 126, 133, 423])
+    st, notes = _scan_path(monkeypatch, d, bd, None)
+    assert st["dropped"] == ["Wall"], notes                         # 8f04bf1: Wall kept and worded
+    assert st["worded"] == ["Crate"], notes
+    masks = scanroute.people_masks(bd, [d], [0.0], 1.0)
+    cut = scanroute.without_people(d, masks, 0, boxes=scanroute.people_boxes(bd, (640, 480), [0.0], 1.0))
+    one = scanroute.without_people(d, masks, 0)                     # no padding at all: his loose mask alone
+    assert _wall_cut(cut, d) <= _wall_cut(one, d) + 2000            # 8f04bf1: 103,020 (17,664 for the mask alone)
+
+
+def test_a_hallucinated_box_over_the_background_does_not_open_while_the_take_tracks_her(monkeypatch):
+    pytest.importorskip("cv2")
+    d, _ = _stage_with_her()
+    uv = _her_joints()
+    monkeypatch.setattr(pipeline.performer, "sam_2d", lambda t, k, size: uv)
+    bd = _read([250, 200, 390, 420], [430, 40, 560, 300])           # her, and a box over the bare wall
+    st, notes = _scan_path(monkeypatch, d, bd, TAKE)
+    assert st["dropped"] == ["Wall"] and st["worded"] == ["Crate"], notes
+    hers = set()
+    boxes = scanroute.people_boxes(bd, (640, 480), [0.0], 1.0, take=TAKE, hers=hers)
+    assert hers == {"p0"}
+    masks = scanroute.people_masks(bd, [d], [0.0], 1.0, take=TAKE)
+    cut = scanroute.without_people(d, masks, 0, boxes=boxes, hers=hers)
+    x0, y0 = (int(np.floor(v)) for v in boxes["p1"][:2])
+    x1, y1 = (int(np.ceil(v)) for v in boxes["p1"][2:])
+    outside = np.ones(d.shape, bool)
+    outside[y0:y1, x0:x1] = False
+    outside[150:440, 200:440] = False                               # round her
+    assert np.isnan(cut[outside]).sum() == 0                        # nothing past the hallucinated box goes

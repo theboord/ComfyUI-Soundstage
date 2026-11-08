@@ -92,8 +92,8 @@ def joint_box(take, k, size):
     ends = W._with_ends(uv)
     pts = ends[np.isfinite(ends).all(axis=1)]                 # the joints and the crown, fingertips and toes
     (jx0, jy0), (jx1, jy1) = uv[ok].min(0), uv[ok].max(0)
-    H = jy1 - jy0
     (ex0, ey0), (ex1, ey1) = pts.min(0), pts.max(0)
+    H = jy1 - jy0
     return uv, [min(jx0 - 0.12 * H, ex0 - 0.04 * H), min(jy0 - 0.1 * H, ey0 - 0.04 * H),
                 max(jx1 + 0.12 * H, ex1 + 0.04 * H), max(jy1 + 0.05 * H, ey1 + 0.04 * H)]
 
@@ -228,18 +228,20 @@ def people_masks(breakdown: dict, depths, times, duration: float, take=None, fps
     return out
 
 
-def people_boxes(breakdown: dict, size, times, duration: float, take=None, fps: float = 24.0, i: int = 0) -> dict:
+def people_boxes(breakdown: dict, size, times, duration: float, take=None, fps: float = 24.0, i: int = 0,
+                 hers: set | None = None) -> dict:
     """{person_i: [x0, y0, x1, y1]} in pixels of a `size` (w, h) grid at sample i: each person box (interpolated
     start -> end) grown by the loose mask's margin, and for the performer while the take tracks her also her joint
     box; with no entry over her, her joint box alone (TAKE_KEY). The keys match people_masks. without_people uses them
-    so pixels a mask missed still count as the person."""
+    so pixels a mask missed still count as the person. `hers`, when given, is filled with the performer's keys (the
+    entries over her joints, or TAKE_KEY): without_people lets only those, or a person-shaped mask, open its box."""
     w, h = size
     t = float(times[i]) if times else 0.0
     people = [(j, o) for j, o in enumerate((breakdown or {}).get("objects") or []) if o.get("kind") == "person"]
     boxes = {j: _box_at(o, min(1.0, max(0.0, t / max(duration, 1e-6))) if times else 0.0) for j, o in people}
     uv, jbox = joint_box(take, take_frame_at(take, t, fps), (w, h)) if take and times else (None, None)
     out = {}
-    hers = False
+    found = False
     for j, bb in boxes.items():
         if not bb:
             continue
@@ -248,45 +250,102 @@ def people_boxes(breakdown: dict, size, times, duration: float, take=None, fps: 
         r = [x0 - gx, y0 - gy, x1 + gx, y1 + gy]
         if jbox is not None and _over_performer(bb, jbox, w, h):
             r = [min(r[0], jbox[0]), min(r[1], jbox[1]), max(r[2], jbox[2]), max(r[3], jbox[3])]
-            hers = True
+            found = True
+            if hers is not None:
+                hers.add(f"p{j}")
         out[f"p{j}"] = r
-    if jbox is not None and not hers:   # no entry over her: her joint box, under people_masks' own key for her
+    if jbox is not None and not found:   # no entry over her: her joint box, under people_masks' own key for her
         out[TAKE_KEY] = list(jbox)
+        if hers is not None:
+            hers.add(TAKE_KEY)
     return out
 
 
-OPEN_SIDE = 0.8   # a box side the person's mask runs into along this much of the mask's own span is open
+OPEN_FILL = 0.85   # a mask filling more of its box than this is no person's shape (a wall, the background): no padding
+CUT_MIN = 0.03     # a side is cut when the mask crosses it, and carries on past it, along this much of the side
+OPEN_WIDEN = 0.5   # an open side's padding also reaches this much of the box past its two neighbouring sides
 
 
-def _open_box(m, r, w: int, h: int):
-    """The padding region of a person box r (pixels) for mask m: the box, grown by one box size past each side the
-    mask runs into along at least OPEN_SIDE of the mask's own span there (the box covers only part of her: the top
-    or the left half), clipped to the frame. A box that holds the person touches her only at a hand, a foot or the
-    head, so it stays as it is."""
+def _person_shaped(m, x0, y0, x1, y1) -> bool:
+    """A mask a person's: it leaves part of its box free (OPEN_FILL), so it is not a wall or a background the loose
+    box-and-depth stand-in took whole."""
+    sub = m[y0:y1, x0:x1]
+    return bool(sub.size) and float(sub.mean()) <= OPEN_FILL
+
+
+def _open_box(m, r, w: int, h: int, src=None, zm: float | None = None, hers: bool = False, rel: float = 0.1):
+    """The padding region of a person box r (pixels) for mask m: the box, opened to the frame edge past each side the
+    person is cut by (the box covers only part of her: the top third, the left half), and widened there by OPEN_WIDEN
+    of the box on the two neighbouring sides, clipped to the frame. A side is cut when the mask runs into it and the
+    person carries on past it (the pixel just outside within rel of her depth `zm` in `src`; without `src`, the mask
+    at the side is the evidence) along at least CUT_MIN of that side: an arm spread at shoulder level, the legs below
+    a box over her top half. Only her (`hers`: the performer's entry or her joints' key while the take tracks her) or
+    a person-shaped mask (_person_shaped) opens anything: a bystander's loose mask that took the wall he leans on, or
+    a hallucinated box over the background, fills its box and stays as it is. A box that holds the person touches her
+    only at a hand, a foot or the head, with the set past it, so it stays as it is too."""
     x0, y0 = max(0, int(np.floor(r[0]))), max(0, int(np.floor(r[1])))
     x1, y1 = min(w, int(np.ceil(r[2]))), min(h, int(np.ceil(r[3])))
     if x1 <= x0 or y1 <= y0:
         return x0, y0, x1, y1
     sub = m[y0:y1, x0:x1]
-    rows, cols = np.flatnonzero(sub.any(1)), np.flatnonzero(sub.any(0))
-    if not rows.size:
+    if not sub.any() or not (hers or _person_shaped(m, x0, y0, x1, y1)):
         return x0, y0, x1, y1
-    span_r, span_c = rows[-1] - rows[0] + 1, cols[-1] - cols[0] + 1
     bw, bh = x1 - x0, y1 - y0
     kx, ky = max(2, bw // 50), max(2, bh // 50)               # "at the side": within 2% of the box (rounding)
-    g = [0, 0, 0, 0]
-    if x0 > 0 and sub[:, :kx].any(1).sum() >= OPEN_SIDE * span_r:
-        g[0] = bw
-    if x1 < w and sub[:, -kx:].any(1).sum() >= OPEN_SIDE * span_r:
-        g[2] = bw
-    if y0 > 0 and sub[:ky].any(0).sum() >= OPEN_SIDE * span_c:
-        g[1] = bh
-    if y1 < h and sub[-ky:].any(0).sum() >= OPEN_SIDE * span_c:
-        g[3] = bh
-    return max(0, x0 - g[0]), max(0, y0 - g[1]), min(w, x1 + g[2]), min(h, y1 + g[3])
+
+    def cut(at_side, outside, n):
+        if outside is None:
+            return False
+        if src is None or zm is None:
+            on = at_side
+        else:
+            z = np.asarray(outside, np.float32)
+            on = at_side & np.isfinite(z) & (np.abs(z - zm) < rel * zm)
+        return int(on.sum()) >= max(2, CUT_MIN * n)
+
+    S = None if src is None else np.asarray(src, np.float32)
+    out = lambda sl: None if S is None else S[sl]               # noqa: E731
+    g = [False] * 4
+    g[0] = x0 > 0 and cut(sub[:, :kx].any(1), out(np.s_[y0:y1, x0 - 1]) if S is not None else sub[:, 0], bh)
+    g[2] = x1 < w and cut(sub[:, -kx:].any(1), out(np.s_[y0:y1, x1]) if S is not None else sub[:, -1], bh)
+    g[1] = y0 > 0 and cut(sub[:ky].any(0), out(np.s_[y0 - 1, x0:x1]) if S is not None else sub[0], bw)
+    g[3] = y1 < h and cut(sub[-ky:].any(0), out(np.s_[y1, x0:x1]) if S is not None else sub[-1], bw)
+    ox0, oy0, ox1, oy1 = x0, y0, x1, y1
+    if g[0] or g[2]:   # open left / right: to the frame edge there, and a little taller
+        ox0, ox1 = (0 if g[0] else x0), (w if g[2] else x1)
+        oy0, oy1 = y0 - int(OPEN_WIDEN * bh), y1 + int(OPEN_WIDEN * bh)
+    if g[1] or g[3]:   # open up / down: to the frame edge there, and a little wider
+        oy0 = 0 if g[1] else min(oy0, y0)
+        oy1 = h if g[3] else max(oy1, y1)
+        ox0, ox1 = min(ox0, x0 - int(OPEN_WIDEN * bw)), max(ox1, x1 + int(OPEN_WIDEN * bw))
+    return max(0, ox0), max(0, oy0), min(w, ox1), min(h, oy1)
 
 
-def without_people(depth, masks: dict | None, i: int = 0, boxes: dict | None = None, rel: float = 0.1) -> np.ndarray:
+def _reach(cand, seed):
+    """The pixels of `cand` 4-connected to `seed` (the person's mask and her padding inside her box). Without OpenCV
+    or SciPy: `cand` within the seed's own bounding rows and columns."""
+    try:
+        import cv2
+        n, lab = cv2.connectedComponents(cand.astype(np.uint8), connectivity=4)
+    except ImportError:
+        try:
+            from scipy import ndimage
+            lab, n = ndimage.label(cand)
+            n += 1
+        except ImportError:
+            rows, cols = np.flatnonzero(seed.any(1)), np.flatnonzero(seed.any(0))
+            out = np.zeros_like(cand)
+            if rows.size:
+                out[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1] = cand[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
+            return out
+    keep = np.zeros(n, bool)
+    keep[np.unique(lab[seed & cand])] = True
+    keep[0] = False
+    return keep[lab]
+
+
+def without_people(depth, masks: dict | None, i: int = 0, boxes: dict | None = None, rel: float = 0.1,
+                   hers=None) -> np.ndarray:
     """A copy of sample i's depth with every person's pixels (people_masks) set to NaN: the block triage then judges a
     block against the set behind her, not against the performer standing in front of it (a block where she stands
     would otherwise read as 'the scan already shows it' and be dropped).
@@ -294,14 +353,18 @@ def without_people(depth, masks: dict | None, i: int = 0, boxes: dict | None = N
     within `rel` of the median depth under the mask goes too, so her leftover unmasked pixels at her own depth are
     not read as the scan showing a block where she stands. Known limit: a set piece within `rel` of her depth inside
     her box is not seen by the triage either (the block there is kept and worded, not dropped).
-    A box that covers only part of the person (the mask runs out of it along most of a side: _open_box) is no limit
-    to the padding: it reaches one box size past that side. Known limit: so does ground at her depth that the loose
-    mask took along the box's whole bottom side, so a block on it within `rel` of her depth just below her box is
-    kept and worded, not dropped."""
+    A box that cuts the person (_open_box: the top third of her, the left half, an arm spread past it) is no limit to
+    the padding: past each cut side it reaches to the frame edge, but only over pixels at her depth connected to her
+    (_reach), so the set beyond her stays. `hers` (people_boxes' keys for the performer while the take tracks her) may
+    always open; any other key only when its mask is person-shaped, so a bystander's loose mask that took the wall
+    he leans on (or a box over the background) pads only its own box. Known limit: ground at her depth that the
+    loose mask took along the box's bottom side opens it too, and the padding then takes that ground strip below her
+    box (a block on it within `rel` of her depth is kept and worded, not dropped)."""
     from . import backdrop as BD
     src = np.asarray(depth, np.float32)
     d = np.array(src, copy=True)
     h, w = d.shape
+    hers = set(hers or ())
     for key, per in (masks or {}).items():
         m = BD.rle_decode(per.get(i), d.shape) if isinstance(per, dict) and i in per else None
         if m is None or m.shape != d.shape:
@@ -313,10 +376,20 @@ def without_people(depth, masks: dict | None, i: int = 0, boxes: dict | None = N
         if r is None or not z.size:
             continue
         zm = float(np.median(z))
-        x0, y0, x1, y1 = _open_box(m, r, w, h)
-        if x1 > x0 and y1 > y0:
-            sub = d[y0:y1, x0:x1]
-            sub[np.abs(src[y0:y1, x0:x1] - zm) < rel * zm] = np.nan
+        bx0, by0 = max(0, int(np.floor(r[0]))), max(0, int(np.floor(r[1])))
+        bx1, by1 = min(w, int(np.ceil(r[2]))), min(h, int(np.ceil(r[3])))
+        if bx1 <= bx0 or by1 <= by0:
+            continue
+        at = np.isfinite(src) & (np.abs(src - zm) < rel * zm)
+        inbox = np.zeros_like(at)
+        inbox[by0:by1, bx0:bx1] = True
+        pad = at & inbox
+        x0, y0, x1, y1 = _open_box(m, r, w, h, src=src, zm=zm, hers=key in hers, rel=rel)
+        if (x0, y0, x1, y1) != (bx0, by0, bx1, by1):
+            region = np.zeros_like(at)
+            region[y0:y1, x0:x1] = True
+            pad |= _reach(at & region, (m | pad) & region)
+        d[pad] = np.nan
     return d
 
 
@@ -394,8 +467,10 @@ def apply(scene: dict, *, depths, scales, poses, K, files, skies, breakdown, tim
         notes.append(f"set: the set scan failed ({exc}); kept the frame-0 relief")
     mpu = float(np.linalg.norm(A[0]))
     h, w = np.asarray(depths[0]).shape
-    depth0 = without_people(np.asarray(depths[0], np.float32) * float(scales[0]) * mpu, masks, 0,
-                            boxes=people_boxes(breakdown, (w, h), times, duration, take=take, fps=fps))
+    hers: set = set()
+    boxes0 = people_boxes(breakdown, (w, h), times, duration, take=take, fps=fps, hers=hers)
+    depth0 = without_people(np.asarray(depths[0], np.float32) * float(scales[0]) * mpu, masks, 0, boxes=boxes0,
+                            hers=hers)
     tri = SW.triage_blocks(scene["actors"], poses[0], A, b, K, (w, h), depth0)
     stats.update(dropped=tri["dropped"], worded=tri["worded"])
     if tri["dropped"]:

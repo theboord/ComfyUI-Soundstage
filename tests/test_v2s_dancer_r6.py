@@ -195,4 +195,5 @@ def test_a_box_that_holds_her_does_not_open_the_padding():
     m = np.zeros(d.shape, bool)
     m[200:420, 250:390] = True
     assert scanroute._open_box(m, [229, 189, 411, 431], 640, 480) == (229, 189, 411, 431)
-    assert scanroute._open_box(m, [229, 194, 411, 310], 640, 480) == (229, 194, 411, 426)   # the top half: down
+    # the top half: open down to the frame edge, and half a box wider (round 7: one box size was not enough)
+    assert scanroute._open_box(m, [229, 194, 411, 310], 640, 480) == (138, 194, 502, 480)
