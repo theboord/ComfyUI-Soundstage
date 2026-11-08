@@ -7,7 +7,7 @@
 //
 // Determinism: a track is integrated once per actor per shot on fixed sub-steps from its keys (precomputed, cached on
 // the keys by the stage like _floatsInShot), and every frame is a lookup: scrubbing to a frame gives the same pose
-// whatever was shown before. Nothing reads the clock or Math.random; per-person variation is seeded from the id.
+// whatever was shown before. Nothing reads the clock or Math.random; per-person variation is seeded from a stable key (stage._seedKey: a stored seed, or the kind and name; not the clock-made id).
 //
 // Numbers (fresh water 1000, people 985 inhaled / 1040-1045 exhaled, wood 150-700 and waterlogged toward 1000-1200,
 // rock 2650, steel 7850, limp body sinking 0.1-0.35 m/s, a car floating ~30-120 s then going down nose first) are from
@@ -495,7 +495,7 @@ export function personTrack({ mode, keyY, over, level, floor = 0, fps = 24, heig
       // On the bottom: the pose tips over onto the back (the swim plan cross-fades it over +-6 frames) while the hips go
       // down with it; the stage keeps the clay's lowest point on the floor (swim.mjs), so the legs never go through.
       const lying = landed >= 0 && i >= landed + tip;
-      const lie = landed >= 0 ? sstep(landed + tip - 6, landed + tip + 18, i) : 0;
+      const lie = landed >= 0 ? sstep(landed + tip - 6, landed + tip + 6, i) : 0;
       const slip = mode === "cant" && !under ? sstep(0, 2 * fps, j) : 1;   // the arms stop, the head goes under
       styles[fr] = lying ? "limp_floor" : slip < 0.5 && up < fs ? "struggle" : "limp";
       hipsY[fr] = y + (floor + 0.14 * k - y) * lie; hipsW[fr] = 1;

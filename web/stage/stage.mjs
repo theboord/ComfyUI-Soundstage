@@ -3717,7 +3717,8 @@ export class Stage {
       spot.z = Math.max(w.position.z - gp.height / 2 + inset, Math.min(w.position.z + gp.height / 2 - inset, spot.z));
     }
     const p = [+spot.x.toFixed(2), 0, +spot.z.toFixed(2)];
-    const added = { id, name: `${spec.label} ${n}`, kind, position: p, keys: [{ frame: 0, position: [...p] }],
+    // seed: its water variation stays the same when the same steps are taken again, and through a rename (_seedKey)
+    const added = { id, name: `${spec.label} ${n}`, seed: `${kind}|${spec.label} ${n}`, kind, position: p, keys: [{ frame: 0, position: [...p] }],
       height_m: spec.height, rotation_deg: 0, ...(paint ? { appearance: { color: paint } } : {}) };
     this.state.actors.push(added);
     this._buildSet();
@@ -3899,7 +3900,7 @@ export class Stage {
       // In a pool: standing on a dock or a deck, the drop in (timed by the keys), the kick up, and the modes that
       // aren't a stroke (back float, can't swim, sink slowly). The underwater modes and dive get the drop in only.
       if (!reef) {
-        track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(a.id), standHeight: standH, support, below, keyedUnder: kUnder });
+        track = Buoy.personTrack({ mode: smode, keyY, over, level: pool, floor: 0, fps, height: h, hipY, seed: Swim.seedOf(this._seedKey(a)), standHeight: standH, support, below, keyedUnder: kUnder });
         // ground: water they can stand in (auto / can't swim), a dock or a deck under them, or a keyed hold before a
         // jump: off the swim plan, on their keys (the gait walks them)
         for (let f = 0; f <= last; f++) if (track.modes[f]) mode[f] = track.modes[f]; else if (track.ground[f]) mode[f] = null;
@@ -3908,7 +3909,7 @@ export class Stage {
         if (!stand.some((v) => v != null)) stand = null;
         if (!mode.some(Boolean)) { this._swimCache.set(a, { sig, g, plan: null, stand }); return null; }
       }
-      plan = Swim.planSwim({ pos, yaw, mode, fps, height: h, style, seed: Swim.seedOf(a.id), gear,
+      plan = Swim.planSwim({ pos, yaw, mode, fps, height: h, style, seed: Swim.seedOf(this._seedKey(a)), gear,
         styles: track?.styles || null, hipsY: track?.hipsY || null, hipsW: track?.hipsW || null });
       // keys rising to the surface or going back under: the hips ease across, no pop (swim.mjs)
       if (!reef) Swim.easeDepthHandoffs(plan, { hipY, surface: pool });
@@ -4096,7 +4097,7 @@ export class Stage {
         Swim.applySwim(s.g, s.plan, this.frame, s.ctx);
         if (s.a.pose_keys?.length) applyJoints(s.g, this.poseAt(s.a, this.frame));
       }
-      out.push(...Swim.finWashEmitters(tips, fx.floorAt, { fps, seed: this.state.physics?.seed ?? 1, id: s.a.id }));
+      out.push(...Swim.finWashEmitters(tips, fx.floorAt, { fps, seed: this.state.physics?.seed ?? 1, id: this._seedKey(s.a) }));
     }
     return out;
   }
@@ -5058,7 +5059,7 @@ export class Stage {
     if (!a || !this._onSwimPlan(a) || !this.water || this.water.position.y < 0.3 || this.setFx?.underwater) return null;
     const m = Buoy.swimMode(a.swim), h = (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1);
     const stands = Buoy.canStand(this.water.position.y, h) && (m === "auto" || m === "cant");
-    const t = Buoy.struggleSeconds(Swim.seedOf(a.id)).toFixed(1);
+    const t = Buoy.struggleSeconds(Swim.seedOf(this._seedKey(a))).toFixed(1);
     const what = stands ? `stands in ${this.water.position.y.toFixed(1)} m of water (head out)`
       : { cant: `can't swim: struggles ~${t} s at the surface, then sinks slowly (~0.2 m/s) and lies on the bottom`,
         sink: "sinks slowly, limp, and lies on the bottom", back: "floats on the back at the surface", dive: "hovers at the keyed depth (scuba)",
@@ -5131,6 +5132,19 @@ export class Stage {
   }
 
   // ------------------------------------------------------------------ physics: water, fire
+  /**
+   * The key the water's per-object variation is seeded from (a can't-swim struggle's 2-3.5 s, the bob of a crate, a boat
+   * on the swell): the object's own `seed` when it has one (Add object stores it), else its kind and name, else its id.
+   * Not the id alone: Add object makes ids from the clock (`woman_<time>`), so the same scene built again on another
+   * page load got another struggle, another sink and another pose at f240 (y 0.31 / 0.16 / 0.09, lying vs upright), and
+   * floats 2 cm apart. A name is what the same steps give again ("Woman 1"); a seed stored at Add keeps it through a
+   * rename. Two objects with the same kind and name and no seed share their variation.
+   */
+  _seedKey(a) {
+    if (a?.seed != null && a.seed !== "") return String(a.seed);
+    return a?.name ? `${a.kind}|${a.name}` : String(a?.id ?? "");
+  }
+
   /** Is a world (x, z) over the water surface? */
   _overWater(x, z) {
     const w = this.water;
@@ -5175,7 +5189,7 @@ export class Stage {
     const pm = a.physics?.mass, mass = pm != null && pm !== "" && Number.isFinite(+pm) ? +pm : null;
     const sm = Buoy.swimMode(a.swim);
     const sinking = !PERSON_KINDS.has(a.kind) && (sm === "cant" || sm === "sink") && a.swim != null;
-    const struggle = sinking && sm === "cant" ? Buoy.struggleSeconds(Swim.seedOf(a.id)) : 0;
+    const struggle = sinking && sm === "cant" ? Buoy.struggleSeconds(Swim.seedOf(this._seedKey(a))) : 0;
     const sig = `${a.kind}|${a.scale || 1}|${a.height_m || 0}|${a.physics?.density ?? ""}|${mass ?? ""}|${sinking}|${struggle}|${a.buoyancy || ""}`;
     const c = g.userData._buoy;
     if (c?.sig === sig) return c;
@@ -5262,7 +5276,7 @@ export class Stage {
     if (boat) {
       if (this._boatFloat?.(a, g, level)) return;   // the hull's own physics on the wave field (watercraft.mjs)
       // A boat sits at its waterline and rides the swell: heave, pitch and roll, the bow lifting with speed.
-      const t = this.frame / fps, seed2 = [...String(a.id)].reduce((n, ch) => n + ch.charCodeAt(0), 0);
+      const t = this.frame / fps, seed2 = [...String(this._seedKey(a))].reduce((n, ch) => n + ch.charCodeAt(0), 0);
       const draft = kind === "jetski" ? 0.3 : kind === "boat" ? 0.45 : 0.6;
       const sp = g.userData.speed || 0, plane = Math.min(1, sp / 8);
       g.position.y = level - draft + 0.06 * Math.sin(2 * Math.PI * t / 3.1 + seed2) + 0.12 * plane;
@@ -5274,7 +5288,7 @@ export class Stage {
     }
     if (!T) return;
     const { tr, body } = T, f = Math.max(0, Math.min(tr.y.length - 1, this.frame));
-    const seed = [...String(a.id)].reduce((n, ch) => n + ch.charCodeAt(0), 0);
+    const seed = [...String(this._seedKey(a))].reduce((n, ch) => n + ch.charCodeAt(0), 0);
     const s = tr.s[f], floating = s > 0 && s < 1;
     // A floater rides the little ripples of the tank on top of its bob (a lookup on the frame: deterministic).
     const ripple = floating ? 0.012 * Math.sin(2 * Math.PI * (this.frame / fps) / 2.4 + seed) : 0;

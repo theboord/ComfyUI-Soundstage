@@ -345,8 +345,8 @@ test("can't swim: struggles at the surface, then sinks slowly (0.1-0.3 m/s), lim
   // the sink speed, from the hips over a second, mid-way down
   const ys = [];
   for (let f = 0; f < plan.n; f += 12) { st.setFrame(f); ys.push(hipsY(st, "c")); }
-  let vmax = 0;   // while it sinks limp (not the struggle's bob, not the settle onto the bottom)
-  for (let i = 1; i < ys.length; i++) if (plan.main[(i - 1) * 12] === "limp" && plan.main[i * 12] === "limp") vmax = Math.max(vmax, (ys[i - 1] - ys[i]) * 2);
+  let vmax = 0;   // while it sinks limp (not the struggle's bob, not the settle onto the bottom: the hips over 1 m, off it)
+  for (let i = 1; i < ys.length; i++) if (plan.main[(i - 1) * 12] === "limp" && plan.main[i * 12] === "limp" && ys[i] > 1) vmax = Math.max(vmax, (ys[i - 1] - ys[i]) * 2);
   assert.ok(vmax >= 0.1 && vmax <= 0.35, `fastest sink ${vmax.toFixed(3)} m/s`);
   st.setFrame(plan.n - 1);
   assert.ok(hipsY(st, "c") < 0.5, `on the bottom at the end (hips ${hipsY(st, "c").toFixed(2)})`);
@@ -955,4 +955,39 @@ test("swimming at 0 into the speedboat stops at its side, out of the hull, and s
     assert.ok(step < 0.2, `${what}: no jump (worst ${step.toFixed(2)} m a frame at f${sf})`);
     for (const f of [63, 30, 100, 45]) { st.setFrame(f); assert.ok(Math.abs(g.position.x - xs[f]) < 1e-9 && Math.abs(g.position.z - zs[f]) < 1e-9, `${what} f${f}: the same scrubbed`); }
   }
+});
+
+// Sixth pass: the water's per-person and per-object variation was seeded from the id, and Add object makes ids from the
+// clock, so the same scene built again on another page load gave a different can't-swim pose at f240 (y 0.31 / 0.161 /
+// 0.092, z 2.33 vs 1.4, lying vs upright) and floats ~2 cm apart. It is seeded from a stored seed or the kind and name
+// now (stage._seedKey). The "0.93 m z pop" was the body tipping onto its back on the bottom (the origin moves ~0.9 m
+// over 13 frames); while it tipped, the lowest point rose 0.26 m off the floor (the hips went down over 24 frames, the
+// pose over 12): they go down together now.
+test("the same scene built again with other ids sinks, settles and floats the same; tipping onto the back on the bottom stays on the floor (was: a different pose at f240 on each page load; 0.26 m off the floor)", () => {
+  const woman = (id, name, extra = {}) => ({ id, name, kind: "woman", height_m: 1.65, position: [2, 4.5, 0], keys: [{ frame: 0, position: [2, 4.5, 0] }], rotation_deg: 0, swim: "cant", key_y: true, ...extra });
+  const crate = (id) => ({ id, name: "Crate 1", kind: "crate", position: [-3, 0, -3], keys: [{ frame: 0, position: [-3, 0, -3] }], rotation_deg: 0 });
+  const run = (wid, cid, extra) => {
+    const st = tank([woman(wid, "Woman 1", extra), crate(cid)], { frames: 301 });
+    const g = st.actorMeshes.get(wid), c = st.actorMeshes.get(cid), out = [];
+    for (let f = 0; f < 301; f++) { st.setFrame(f); out.push({ p: g.position.toArray(), q: g.quaternion.toArray(), lo: lowest(g), c: c.position.y }); }
+    return out;
+  };
+  const A = run("woman_mh2k9x1q", "crate_mh2k9x2b"), Bq = run("woman_mh2lz0aa", "crate_mh2lz0c7");
+  for (let f = 0; f < 301; f++) {
+    assert.ok(A[f].p.every((v, i) => Math.abs(v - Bq[f].p[i]) < 1e-9) && A[f].q.every((v, i) => Math.abs(v - Bq[f].q[i]) < 1e-9), `f${f}: the same pose with other ids`);
+    assert.ok(Math.abs(A[f].c - Bq[f].c) < 1e-9, `f${f}: the crate floats the same with another id`);
+  }
+  // a stored seed (Add object stores one) keeps the variation through a rename
+  const st1 = tank([woman("w1", "Woman 1", { seed: "woman|Woman 1" })], { frames: 241 }), st2 = tank([woman("w2", "Maya", { seed: "woman|Woman 1" })], { frames: 241 });
+  for (const f of [100, 200, 240]) { st1.setFrame(f); st2.setFrame(f); assert.ok(Math.abs(st1.actorMeshes.get("w1").position.y - st2.actorMeshes.get("w2").position.y) < 1e-9, `f${f}: renamed, the same sink`); }
+  // f192 on, frame by frame: no pop, and once on the bottom the lowest point stays on the floor while she tips over
+  let landed = -1;
+  for (let f = 192; f < 301; f++) {
+    const d = Math.hypot(A[f].p[0] - A[f - 1].p[0], A[f].p[1] - A[f - 1].p[1], A[f].p[2] - A[f - 1].p[2]);
+    assert.ok(d < 0.15, `f${f}: no pop while sinking and settling (${d.toFixed(3)} m)`);
+    if (landed < 0 && A[f].lo < 0.03) landed = f;
+    if (landed >= 0) assert.ok(A[f].lo < 0.06, `f${f}: on the floor after landing at f${landed} (lowest ${A[f].lo.toFixed(3)})`);
+  }
+  assert.ok(landed > 0, "she reaches the bottom");
+  assert.ok(A[300].q[0] ** 2 + A[300].q[2] ** 2 > 0.3, "and ends lying down");
 });
