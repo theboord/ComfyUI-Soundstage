@@ -52,6 +52,7 @@ import { horse as HorseParts, prop as PropParts } from "./rigparts.mjs";
 import { cameraCurveAt, curveVersion, CAM_CURVE } from "./camcurve.mjs";   // the smooth camera curve (version 2)
 import { keysHash } from "./people/avatarcore.mjs";   // a cheap signature of a person's keys (_jumpsInShot)
 import { setStandIn } from "./people/standin.mjs";
+import { probeTier, pickTier, deviceInfo, savedPick, savePick } from "./tier.mjs";
 import { upgradeHuman, avatarsAt, avatarsReady, loadingCount, setShown as setAvatarShown, AVATAR_WAIT_MS, undoAvatarWrites } from "./people/avatars.mjs";   // lifelike people over the hidden logic rig (one motion, Lifelike-only L1)
 import { swapAvatarCutouts, idMaterial } from "./people/cutout.mjs";   // hair / lash cards keep their cut-out in Depth, Clay, Wire and ID
 import { DEPTH_SHADER, depthPassMaterial } from "./depthshader.mjs";   // the skinning Depth shader (also the underwater set's)
@@ -498,6 +499,10 @@ export class Stage {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.setPixelRatio(1);
     this.canvas = this.renderer.domElement;
+    // the device tier (tier.mjs): probed once from this renderer, the viewer's own pick wins (saved per browser)
+    this.tierProbe = probeTier(deviceInfo(this.renderer));
+    this.tierPick = savedPick();
+    this.tier = pickTier(this.tierProbe, this.tierPick);
     this.canvas.style.cssText = "display:block;width:100%;height:auto;border-radius:4px;cursor:grab;touch-action:none";
     container.appendChild(this.canvas);
 
@@ -6108,6 +6113,15 @@ export class Stage {
     if (on) this.state.people_look = "blocking"; else delete this.state.people_look;
     this.setFrame(this.frame);
     this.onChange(this.toJSON());
+  }
+
+  /** The device tier: "auto" (the probe's) or TP / T0 / T1 / Hero. Saved for this browser only (tier.mjs). */
+  setTier(pick) {
+    this.tierPick = ["TP", "T0", "T1", "Hero"].includes(pick) ? pick : "auto";
+    savePick(this.tierPick);
+    this.tier = pickTier(this.tierProbe, this.tierPick);
+    this.setFrame(this.frame);
+    return this.tier;
   }
 
   /** Is this person shown as a lifelike body? {installed, shown, reason (why it is clay), faceless}. */

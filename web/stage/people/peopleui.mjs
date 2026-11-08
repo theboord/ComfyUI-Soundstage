@@ -6,7 +6,8 @@
 // mkSelect is the App's own select builder (web/soundstage.js).
 export const FACE_TIP = "Lifelike people: show the face, or faceless (a plain mannequin face with no brows, eyes, lips or lashes; the hair stays).";
 export const SWIM_TIP = "Swim: what this person does in a pool, a tank or the sea. Tread water (head up), swim a stroke, float on the back, dive with scuba (neutral, hovers), or Can't swim: they struggle at the surface for a few seconds, then sink slowly and settle on the bottom (Sink slowly: unconscious, no struggle). Auto swims as keyed. Ask can set it too (stage.setSwim).";
-export const BLOCKING_TIP = "Blocking look: show every person as the clay figure (the walk, keys and passes run the same either way). Saved with the scene.";
+export const BLOCKING_TIP = "Blocking look: retired. People always show lifelike (or as the marked stand-in when the people kit is not installed).";
+export const TIER_TIP = "Device tier: how much the stage asks of this machine. Auto picks one from the GPU (Phone, Low, Standard); Low shows up to 6 lifelike people per shot and Phone 2, the rest as marked stand-ins. Saved for this browser only.";
 
 /** The Face tooltip for a person right now: a stand-in says why (avatarStatus is recomputed by every setFrame, so
  *  this is read fresh each time, never kept). People are never shown as clay (Lifelike-only plan). */
@@ -42,18 +43,43 @@ export function swimControl(stage, mkSelect, modes) {
   return { swim: sel, sync };
 }
 
-/** The scene-level Blocking toggle, styled like the view-mode buttons (a .ss-views group of one pressed button). */
+/** The scene-level Blocking toggle, styled like the view-mode buttons (a .ss-views group of one pressed button).
+ *  Retired with the clay look (Lifelike-only L1): the button is hidden (it no longer changes people; L2 removes it and
+ *  its words), and the group now holds the device tier picker (tierPicker). */
 export function blockingToggle(stage) {
   const el = document.createElement("div");
   el.className = "ss-views ss-blockview";
   el.style.marginLeft = "4px";
   const b = Object.assign(document.createElement("button"), { type: "button", textContent: "Blocking", title: BLOCKING_TIP });
+  b.hidden = true;
   b.setAttribute("aria-label", "Blocking look");
   b.setAttribute("aria-pressed", "false");
   b.addEventListener("pointerdown", (e) => e.stopPropagation());
   b.addEventListener("click", () => { stage.setBlockingLook(stage.state?.people_look !== "blocking"); sync(); });
   el.append(b);
-  const sync = () => b.setAttribute("aria-pressed", String(stage.state?.people_look === "blocking"));
+  const tier = tierPicker(stage);
+  if (tier) el.append(tier.el);
+  const sync = () => { b.setAttribute("aria-pressed", String(stage.state?.people_look === "blocking")); tier?.sync(); };
   sync();
-  return { el, button: b, sync };
+  return { el, button: b, sync, tier };
+}
+
+/** The device tier picker (web/stage/tier.mjs): Auto (the probe's pick, named) or a tier; saved per browser. */
+export function tierPicker(stage) {
+  if (typeof document === "undefined" || typeof stage?.setTier !== "function") return null;
+  const sel = document.createElement("select");
+  sel.title = TIER_TIP;
+  sel.setAttribute("aria-label", "Device tier");
+  sel.style.marginLeft = "4px";
+  const opts = [["auto", "Auto"], ["TP", "Phone"], ["T0", "Low"], ["T1", "Standard"], ["Hero", "Hero"]];
+  for (const [v, label] of opts) sel.append(Object.assign(document.createElement("option"), { value: v, textContent: label }));
+  sel.addEventListener("pointerdown", (e) => e.stopPropagation());
+  sel.addEventListener("change", () => { stage.setTier(sel.value); sync(); });
+  const sync = () => {
+    sel.value = stage.tierPick || "auto";
+    const auto = sel.querySelector('option[value="auto"]');
+    if (auto) auto.textContent = `Auto (${({ TP: "Phone", T0: "Low", T1: "Standard", Hero: "Hero" })[stage.tierProbe?.tier] || "Standard"})`;
+  };
+  sync();
+  return { el: sel, sync };
 }

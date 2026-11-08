@@ -18,6 +18,7 @@ import * as F from "./footplant.mjs";
 import * as R from "./retarget.mjs";
 import * as O from "./onemotion.mjs";
 import { setStandIn } from "./standin.mjs";
+import { lifelikeSet } from "../tier.mjs";
 
 F.setCloner((o) => SkeletonUtils.clone(o));
 
@@ -526,10 +527,15 @@ export function avatarsAt(stage) {
   }
   let users = null;
   const fps = stage.state.shot?.fps || 24, last = stage._lastFrame(), f = stage.frame;
+  // the tier's cap on lifelike people per shot (tier.mjs, plan 4.5): the first N in the scene's order, the rest the
+  // marked stand-in (the same set on every frame)
+  const capped = lifelikeSet(actors.filter((x) => stage.actorMeshes.get(x.id)?.userData.humanSkin).map((x) => x.id), stage.tier || "T1");
   const memo = (stage._avatarDriven ||= { shot: undefined, ids: new Set() });
   for (const a of actors) {
     const g = stage.actorMeshes.get(a.id), skin = g?.userData.humanSkin;
     if (!skin) { if (g && C.PERSON_KINDS.has(a.kind)) markStandIn(stage, a, g); continue; }
+    if (!capped.has(a.id)) { if (skin.shown) setShown(skin, false); skin.reason = "over the tier's lifelike cap"; setStandIn(g, true); continue; }
+    setStandIn(g, false);
     users ||= C.propUsers(actors);
     if (skin.faceless !== (a.face === "faceless")) applyFace(skin, a.face === "faceless");
     const wet = !!(stage.water || stage.setFx?.underwater);
