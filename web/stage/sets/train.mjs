@@ -212,14 +212,18 @@ function landscapeTile() {
 }
 
 // ------------------------------------------------------------------ station platform
-export const STATION = { platformTop: 0.92, edgeA: 1.62, backA: 9.4, edgeB: -6.22, backB: -12.5, z0: -70, z1: 95, track2: -4.6 };
-/** Height of the walkable surface at (x, z): the platforms, else rail level. */
+export const STATION = { platformTop: 0.92, edgeA: 1.62, backA: 9.4, edgeB: -6.22, backB: -12.5, z0: -70, z1: 95, track2: -4.6, rampLen: 8 };
+/**
+ * Height of the walkable surface at (x, z): the platforms, the ramps down from their z0 ends (platformTop at z0 to
+ * the ground rampLen further on, the same slab buildTrainStation draws), else rail level. The ramps were missing here:
+ * a person walking up one stood at 0 and then jumped to 0.92 m at z0 (their lower foot 465 mm off the drawn ramp).
+ */
 export function stationFloor(x, z) {
   const S = STATION;
-  if (z < S.z0 || z > S.z1) return 0;
-  if (x >= S.edgeA && x <= 16) return S.platformTop;
-  if (x <= S.edgeB && x >= -18) return S.platformTop;
-  return 0;
+  if (z > S.z1 || z < S.z0 - S.rampLen) return 0;
+  const onA = x >= S.edgeA && x <= 16, onB = x <= S.edgeB && x >= -18;
+  if (!onA && !onB) return 0;
+  return z >= S.z0 ? S.platformTop : S.platformTop * (z - (S.z0 - S.rampLen)) / S.rampLen;
 }
 
 export function buildTrainStation() {
@@ -245,8 +249,11 @@ export function buildTrainStation() {
       B.add(new THREE.BoxGeometry(0.5, 0.02, PL), "#c7c1ae", e + sg * 0.85, S.platformTop + 0.005, PZ);            // tactile strip
       B.add(new THREE.BoxGeometry(0.1, 0.012, PL), "#e2c34a", e + sg * 1.25, S.platformTop + 0.007, PZ);           // safety line
       B.add(new THREE.BoxGeometry(0.2, S.platformTop + 0.4, PL), "#8c877c", e - sg * 0.05, (S.platformTop - 0.4) / 2, PZ);   // the platform wall face
-      // ramps at the ends
-      B.add(new THREE.BoxGeometry(w, 0.1, 8), CONC, cx, S.platformTop / 2 - 0.05, S.z0 - 3.6, Math.atan2(S.platformTop, 8), 0, 0);
+      // the ramp down from the platform's z0 end: its top runs from platformTop at z0 to the ground rampLen further on
+      // (stationFloor walks the same slope). It used to tilt the other way: it rose to 0.92 m 8 m out and met the
+      // platform at the ground, a 0.92 m step at z0.
+      const ra = Math.atan2(S.platformTop, S.rampLen), rl = Math.hypot(S.platformTop, S.rampLen);
+      B.add(new THREE.BoxGeometry(w, 0.1, rl), CONC, cx, S.platformTop / 2 - 0.05 / Math.cos(ra), S.z0 - S.rampLen / 2, -ra, 0, 0);
     }
     // the station building behind platform A: brick, tall arched-top windows (dark), doors, a cornice
     const BX = S.backA + 1.2;

@@ -13,6 +13,9 @@ import { FBXLoader } from "../../vendor/addons/FBXLoader.mjs";
 import * as SkeletonUtils from "../../vendor/addons/SkeletonUtils.mjs";
 import { gazeKeys } from "../gaze.mjs";
 import * as C from "./avatarcore.mjs";
+import * as F from "./footplant.mjs";
+
+F.setCloner((o) => SkeletonUtils.clone(o));
 
 export const ROCKETBOX_DIR = new URL("./rocketbox/", import.meta.url).href;
 const TEX_DIR = `${ROCKETBOX_DIR}tex/`;
@@ -100,8 +103,12 @@ export function buildKit(model, clips, { texErrors = [] } = {}) {
   const prepared = {};
   for (const k of C.CLIP_KINDS) if (clips[k]) prepared[k] = C.prepareClip(clips[k], boneNames);
   const { stature, floor, idleBox } = measureStanding(model, prepared.idle?.clip);
+  // Foot grounding (footplant.mjs): the leg bones and sole vertices, found once in the bind pose, and each clip's own
+  // standing sole height (the body offset follows the clip that plays, not only the idle's first frame).
+  const feet = F.footRig(model, keep);
+  const floors = F.clipFloors(model, prepared, feet);
   return {
-    template: model, meshName: keep.name, materials, faceless: { neutral, hidden }, clips: prepared, hipUnits, stature, floor, idleBox,
+    template: model, meshName: keep.name, materials, faceless: { neutral, hidden }, clips: prepared, hipUnits, stature, floor, idleBox, feet, floors,
     report: { meshes: list.map((m) => m.name), kept: keep.name, lightsRemoved: lights.length, missingMaps: C.missingColorMaps(materials), lashTriangles: lashes,
       unbound: Object.fromEntries(C.CLIP_KINDS.map((k) => [k, prepared[k]?.missing || null])), texErrors },
   };
@@ -236,7 +243,7 @@ export function instantiate(kit, a) {
     act.setEffectiveWeight(0);
     actions[k] = act;
   }
-  return { holder, model, mesh, mixer, actions, bones, kit, g: null, shown: false, clay: [], clayVis: [], faceless: false, reason: null };
+  return { holder, model, mesh, mixer, actions, bones, legs: F.legBones(bones, kit.feet), kit, g: null, shown: false, clay: [], clayVis: [], faceless: false, reason: null };
 }
 
 /** Face shown or faceless (head keeps its shape, plain neutral material, no lashes or brows; the hair stays). */
@@ -284,6 +291,7 @@ export function placeHolder(g, holder, { x, y, z, yaw, scale }) {
 
 /** Pose the avatar for this frame: weights by speed, walk and run on one shared gait phase (avatarcore.gaitTable). */
 export function drive(skin, { frame, fps, speed, phase, seed }) {
+  F.restoreClipPose(skin.ikSaved);   // the clip's own legs back before the mixer writes (it skips unchanged values)
   const w = C.clipWeights(speed);
   const meta = {};
   for (const k of C.CLIP_KINDS) if (skin.kit.clips[k]) meta[k] = { duration: skin.kit.clips[k].clip.duration };
@@ -447,35 +455,144 @@ export function avatarsAt(stage) {
     users ||= C.propUsers(actors);
     if (skin.faceless !== (a.face === "faceless")) applyFace(skin, a.face === "faceless");
     const wet = !!(stage.water || stage.setFx?.underwater);
-    const reason = C.clayReason(a, {
-      blocking, holders: users.holders, carriers: users.carriers, gazeKeyed: gazeKeys(a).length > 0,
+    const body = {
       swims: wet && C.swimsInShot(a, () => stage._swimPlan?.(a, g)),
       floats: !!stage._floatsInShot?.(a),   // a video mocap take in water too deep to stand in: the clay floats (stage._waterPhysics)
-      driven: C.drivenInShot(memo, stage.state.active_shot, a.id, stage.drive),
-      airborne: !!stage._airborneAt?.(a, f),   // this frame only: clay in the air, lifelike on the ground
       tipped: tippedNow(g),
+    };
+    const reason = C.clayReason(a, {
+      blocking, holders: users.holders, carriers: users.carriers, gazeKeyed: gazeKeys(a).length > 0, ...body,
+      driven: C.drivenInShot(memo, stage.state.active_shot, a.id, stage.drive),
+      airborne: airAt(stage, a, f),   // this frame only: clay in the air, lifelike on the ground
     });
     skin.reason = reason;
     setShown(skin, !reason);
+    // The grounding gate is the feet, not the clay (C.feetUpReason): today a hidden body isn't posed at all, and once
+    // the clay is retired a person holding a prop, with gaze or Pose keys, on a mocap take ... is lifelike and stands.
+    // Swimming is per frame here (a person who walks and then swims is grounded while walking).
+    skin.feetUp = C.feetUpReason(a, { ...body, swims: swimsNow(stage, a, g, f) });
     if (reason) continue;
-    // The physics lift (stage.setFrame raises an unbaked dynamic / static object by a.physics.lift) is followed too.
-    // Over the water on a dock or a deck (or held before a timed jump): the height the clay stands at there
-    // (stage._standOnKeys, the same support lift the clay's gait gets), not the keys' own height under it.
-    const p = stage._actorPosAt(a, f), yaw = stage._headingAt(a, f);
-    const y = (stage._standOnKeys?.(a, g, f) ?? stage._heightAt(a, f)) + physicsLift(a);
-    const scale = C.statureScale(C.clayHeight(a) * (a.scale || 1), skin.kit.stature);
-    // Speed and the shared gait phase for the whole shot, cached until the path, the length or the size changes.
-    const keys = stage._actorKeys(a);
-    const sig = `${last}|${fps}|${scale}|${C.keysHash(keys)}`;
-    if (skin.gait?.sig !== sig) {
-      const path = keys.length > 1 ? groundPath(stage, a, last) : new Array(last + 1).fill([p[0], p[2]]);
-      skin.gait = { sig, ...C.gaitTable(path, fps, kitStrides(skin.kit, scale)) };
-    }
-    const i = Math.max(0, Math.min(last, f));
-    placeHolder(g, skin.holder, { x: p[0], y: y - (skin.kit.floor || 0) * scale, z: p[2], yaw, scale });
-    drive(skin, { frame: f, fps, speed: skin.gait.speed[i] || 0, phase: skin.gait.phase[i] || 0, seed: C.phaseSeed(a.id) });
+    const { scale } = ensureGait(stage, a, skin, { last, fps, f });
+    const plan = footPlanFor(stage, a, g, skin, { last, fps, scale });
+    poseRaw(stage, a, g, skin, f, { fps, scale, last });
+    skin.footOut = plan ? F.groundFeet({ plan, rig: skin.kit.feet, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, frame: f, saved: (skin.ikSaved ||= []) }) : null;
   }
 }
+
+/**
+ * The person's speed and shared gait phase for the whole shot (skin.gait), cached until the path, the length or the
+ * size changes. Returns {scale} (the avatar's stature scale).
+ */
+function ensureGait(stage, a, skin, { last, fps, f }) {
+  const p = stage._actorPosAt(a, f);
+  const scale = C.statureScale(C.clayHeight(a) * (a.scale || 1), skin.kit.stature);
+  const keys = stage._actorKeys(a);
+  const sig = `${last}|${fps}|${scale}|${C.keysHash(keys)}|${a.rotation_deg || 0}`;
+  if (skin.gait?.sig !== sig) {
+    const path = keys.length > 1 ? groundPath(stage, a, last) : new Array(last + 1).fill([p[0], p[2]]);
+    // the headings too: walking backwards (heading keys facing away from the travel) plays the walk backwards
+    const headings = keys.length > 1 ? Array.from({ length: last + 1 }, (_, i) => stage._headingAt(a, i)) : null;
+    skin.gait = { sig, ...C.gaitTable(path, fps, kitStrides(skin.kit, scale), { headings }) };
+  }
+  return { scale };
+}
+
+/** The swim plan of a person in the water (stage._swimPlan), or null on dry land. */
+const swimPlanOf = (stage, a, g) => ((stage.water || stage.setFx?.underwater) ? stage._swimPlan?.(a, g) || null : null);
+/** Does this person swim at frame f (C.swimsAt on the swim plan)? */
+const swimsNow = (stage, a, g, f) => C.swimsAt(a, f, () => swimPlanOf(stage, a, g));
+
+/**
+ * The foot plan of a person with a lifelike body for this shot, built whether or not the body shows right now (the
+ * same plan avatarsAt grounds the feet with; tests and the one-motion work read it). null without a body or a rig.
+ */
+export function footPlan(stage, a) {
+  const g = stage.actorMeshes.get(a.id), skin = g?.userData.humanSkin;
+  if (!skin) return null;
+  const fps = stage.state.shot?.fps || 24, last = stage._lastFrame();
+  const { scale } = ensureGait(stage, a, skin, { last, fps, f: stage.frame });
+  return footPlanFor(stage, a, g, skin, { last, fps, scale });
+}
+
+/** The lifelike body's height at frame f. Over the water on a dock or a deck (or held before a timed jump): the height
+ *  the clay stands at there (stage._standOnKeys, the same support lift the clay's gait gets), not the keys' own height
+ *  under it. Elsewhere walked steps, not the clay's hops (stage._walkHeightAt), else the clay's. */
+const bodyY = (stage, a, g, f) => stage._standOnKeys?.(a, g, f) ?? (stage._walkHeightAt ? stage._walkHeightAt(a, f) : stage._heightAt(a, f));
+/** Is the lifelike body in the air at frame f (a jump or a vault; a walked step up is not)? */
+const airAt = (stage, a, f) => !!(stage._walkAirborneAt ? stage._walkAirborneAt(a, f) : stage._airborneAt?.(a, f));
+
+/** Place and pose the avatar on its clip alone at frame f (no grounding): the actor's ground position and heading,
+ *  lowered by the playing clips' own floor (footplant.floorFor), on the shared gait phase. */
+function poseRaw(stage, a, g, skin, f, { fps, scale, last }) {
+  const i = Math.max(0, Math.min(last, f));
+  const p = stage._actorPosAt(a, f), y = bodyY(stage, a, g, f) + physicsLift(a), yaw = stage._headingAt(a, f);
+  const speed = skin.gait.speed[i] || 0;
+  placeHolder(g, skin.holder, { x: p[0], y: y - F.floorFor(skin.kit, C.clipWeights(speed)) * scale, z: p[2], yaw, scale });
+  drive(skin, { frame: f, fps, speed, phase: skin.gait.phase[i] || 0, seed: C.phaseSeed(a.id) });
+  skin.holder.updateMatrixWorld(true);   // the bones' world matrices for this pose (the foot plan reads them)
+}
+
+const _ids = new WeakMap();
+let _nextId = 1;
+/** A small stable id per object (for cache signatures); 0 for none. */
+const idOf = (o) => { if (!o || typeof o !== "object") return 0; let v = _ids.get(o); if (!v) { v = _nextId++; _ids.set(o, v); } return v; };
+
+/**
+ * The person's foot plan for this shot (footplant.planFeet), built once from every frame and cached on the skin until
+ * the gait (keys, length, fps, size), what they stand on (the set, the parked props, a dock or deck's height table),
+ * their jumps or the physics lift change. null when the avatar has no foot rig. Building it poses the clip at every
+ * frame; avatarsAt poses the frame shown afterwards.
+ */
+function footPlanFor(stage, a, g, skin, { last, fps, scale }) {
+  const rig = skin.kit.feet;
+  if (!rig || !skin.legs || stage.footGrounding === false) return null;   // footGrounding false: the clips alone (A/B checks)
+  // off their feet all shot (riding, seated, carried, knocked over, floating): no plan. Swimming and the air are per
+  // frame (the plan skips those frames), so a person who walks and then swims is grounded on the walk.
+  if (C.feetUpReason(a, { tipped: tippedNow(g), floats: !!stage._floatsInShot?.(a) })) return null;
+  const shapes = stage.root ? stage._supportShapes?.() : null;
+  const swim = swimPlanOf(stage, a, g);
+  const sig = `${skin.gait.sig}|${stage.setFx?.id || ""}|${idOf(shapes)}|${idOf(stage._yCache?.get(a))}|${idOf(stage._swimCache?.get(a)?.stand)}|${idOf(swim)}|${physicsLift(a)}|${skin.kit.floors ? 1 : 0}`;
+  if (skin.feet?.sig === sig) return skin.feet.plan;
+  // A live drag (a key, the gizmo, a person dragged) changes the plan on every pointer move. A 5 s shot rebuilds in
+  // ~20 ms, a 30 s one in ~115 ms: past LIVE_PLAN_FRAMES the feet keep the clip's own pose while the drag lasts and
+  // the plan is rebuilt on the first frame after it (same result as any other rebuild: the plan is a pure function
+  // of the keys).
+  const dragging = () => !!(stage._dragging || stage._gizmoDragging || stage.live?.drag);
+  if (last + 1 > LIVE_PLAN_FRAMES && dragging()) {
+    if (!stage._footAfterDrag && typeof setTimeout === "function") {
+      // (unref where there is one, Node: a drag a test leaves on must not keep the process alive; in a browser the
+      // timer is a number and this is a no-op)
+      const later = () => { const t = setTimeout(poll, 120); t?.unref?.(); return t; };
+      const poll = () => { if (dragging()) { stage._footAfterDrag = later(); return; } stage._footAfterDrag = 0; stage.setFrame(stage.frame); };
+      stage._footAfterDrag = later();
+    }
+    return null;
+  }
+  // per frame once (the plan asks for the ground under every sole point of every frame: a height-table lookup with its
+  // signature each time made a 5 s plan cost ~100 ms)
+  const n = last + 1, BY = new Float64Array(n), OK = new Float64Array(n);
+  const AIR = new Uint8Array(n);
+  for (let f = 0; f < n; f++) { BY[f] = bodyY(stage, a, g, f); OK[f] = stage._standOnKeys?.(a, g, f) ?? -Infinity; AIR[f] = airAt(stage, a, f) ? 1 : 0; }
+  const fi = (f) => Math.max(0, Math.min(n - 1, Math.round(f)));
+  const baseY = (f) => BY[fi(f)];
+  const floorAt = stage.setFx?.floorAt;
+  const ground = (x, z, f) => {
+    const i = fi(f);
+    const s = shapes ? stage._supportAt(x, z, BY[i], 0.6, shapes) : Math.max(0, floorAt?.(x, z) || 0);
+    return Math.max(s, OK[i]);
+  };
+  const lifted = physicsLift(a) > 0;
+  // per frame: the same gate (lifted by physics, in the air) marks the frames not grounded
+  const plan = F.planFeet({
+    n: last + 1, fps, heightM: C.clayHeight(a) * (a.scale || 1), rig, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, ground, baseY,
+    poseRaw: (f) => { poseRaw(stage, a, g, skin, f, { fps, scale, last }); return !C.feetUpReason(a, { lifted, airborne: !!AIR[fi(f)], swims: C.swimsAt(a, f, () => swim) }); },
+  });
+  skin.feet = { sig, plan };
+  return plan;
+}
+
+/** footPlanFor: longer shots than this (frames) don't rebuild their foot plan during a live drag. */
+const LIVE_PLAN_FRAMES = 240;
 
 /** The lift stage.setFrame gives an unbaked dynamic / static object (stage.mjs: g.position.y += a.physics.lift). */
 export const physicsLift = (a) => (!a.physics?.baked && a.physics?.lift > 0 && (a.physics.mode === "dynamic" || a.physics.mode === "static") ? a.physics.lift : 0);
@@ -513,7 +630,7 @@ export function markLiveTilt(stage, g, q) {
     if (a && skin.shown) {
       const scale = C.statureScale(C.clayHeight(a) * (a.scale || 1), skin.kit.stature);
       const w = g.getWorldPosition(new THREE.Vector3());
-      placeHolder(g, skin.holder, { x: w.x, y: w.y - (skin.kit.floor || 0) * scale, z: w.z, yaw: new THREE.Euler().setFromQuaternion(q, "YXZ").y, scale });
+      placeHolder(g, skin.holder, { x: w.x, y: w.y - F.floorFor(skin.kit, skin.weights) * scale, z: w.z, yaw: new THREE.Euler().setFromQuaternion(q, "YXZ").y, scale });
     }
   }
   return true;

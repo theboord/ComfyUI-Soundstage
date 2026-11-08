@@ -285,6 +285,26 @@ const OBS_TOL = { pos: 0.05, rot: 0.01, scale: 0.01 };
 const OBS_LRU = 8;
 /** _obstacles / _heightAt: the most lists (and height tables per person) kept, however many props are parked. */
 const OBS_LRU_MAX = 64;
+/** _walkHeightAt: a rise or drop of the footing up to this share of the person's leg is walked as a step, a bigger one is
+ *  a jump (0.45 m for a 1.8 m person; a fixed 45 cm had a 1.2 m child walk up a 40 cm box with a shoe 12-17 cm into it). */
+const WALK_STEP_LEG = 0.5;
+/** _walkHeightAt: the leg's length as a share of the person's height (Rocketbox: hip joint to sole ~0.5). */
+const LEG_OF_HEIGHT = 0.5;
+/** _walkHeightAt: the ground is looked at every this far (m) along the path between two frames... */
+const STEP_PROBE = 0.02;
+/** ... and a change of the footing over this (m) between two looks (over 2 cm of travel, steeper than 51 degrees) is a
+ *  break in the ground: a step. Anything smoother is a ramp or a slope and is followed exactly. It used to be a change of
+ *  more than 2.5 cm from one FRAME to the next, so any slope walked fast enough (20 degrees at 1.6 m/s, 10 at 3.4) was
+ *  taken as a run of steps and the body lagged 8-23 cm behind it, and the answer changed with the frame rate. */
+const STEP_JUMP = 0.025;
+/** _walkHeightAt: the set's floor is also looked at this far (m) either way (a body keyed exactly on an edge). */
+const EDGE_EPS = 0.002;
+/** _walkHeightAt: a walked step is spread over at most this much travel (m, for a 1.8 m person) ... */
+const STEP_SPAN = 0.5;
+/** _walkHeightAt: the smooth part of the footing is eased over this much travel either way (m, for a 1.8 m person). */
+const RIDGE_EASE = 0.12;
+/** _walkHeightAt: at most this many looks between two frames (a 50 cm step between two frames is still found). */
+const STEP_PROBES_MAX = 48;
 
 /** _obstacles: a step farther than this between two looks at a group (any position component m, quaternion component,
  *  relative scale) is an edit (a drag, a console move, a rescale), not per-frame motion: the grid is re-anchored there. */
@@ -1975,16 +1995,147 @@ export class Stage {
   }
 
   /**
+   * A lifelike person's body height at a frame (people/avatars.mjs places the body and grounds its feet on it). The
+   * clay's height table (_heightAt) takes every rise as a ballistic hop: the body starts up in a gravity curve before
+   * a 20-40 cm step, up to 19 cm over the floor, and those frames count as in the air. A person walking up a step
+   * steps up: here a break in the ground (a rise or a drop over 2.5 cm within 2 cm of travel, STEP_JUMP / STEP_PROBE)
+   * of at most half the person's leg (WALK_STEP_LEG) is taken as a step (averaged over the last quarter second or
+   * STEP_SPAN of travel), each break on its own (a flight of stairs is never summed into one), only bigger ones are jumps (the gravity arcs, as _heightAt); a slope or a ramp, at any speed and frame rate, is
+   * followed exactly. The footing
+   * also counts the set's own boxes the way the feet do (_supportAt: a stair, a kerb, a landing within reach), which
+   * _heightAt leaves out: keyed flat over set-box stairs, the feet went 75 cm into the landing.
+   */
+  _walkHeightAt(a, frame) {
+    const c = this._walkTable(a);
+    return c ? c.W[Math.max(0, Math.min(c.W.length - 1, Math.round(frame)))] : this._heightAt(a, frame);
+  }
+
+  /** Is a lifelike person in the air at this frame (a jump or a vault, not a walked step; see _walkHeightAt)? */
+  _walkAirborneAt(a, frame) {
+    const c = this._walkTable(a);
+    return c ? !!c.air[Math.max(0, Math.min(c.air.length - 1, Math.round(frame)))] : !!this._airborneAt(a, frame);
+  }
+
+  /** The table behind _walkHeightAt (cached on the person's height table, with the set's shapes). */
+  _walkTable(a) {
+    if (!PERSON_KINDS.has(a.kind) || LIBRARY[a.kind]?.flies) return null;
+    this._heightAt(a, 0);
+    const c = this._yCache?.get(a);
+    if (!c) return null;
+    const shapes = this.root ? this._supportShapes() : null;
+    // the step limit scales with the person's leg (a 1.2 m child does not walk up a 40 cm box)
+    const tall = (a.height_m || LIBRARY[a.kind]?.height || 1.8) * (a.scale || 1), walkStep = WALK_STEP_LEG * LEG_OF_HEIGHT * tall;
+    if (c.walk && c.walk.shapes === shapes && c.walk.walkStep === walkStep) return c.walk;
+    const n = c.S.length, fps = this.state.shot?.fps || 24, kk = 0.5 * 9.8 / (fps * fps), win = Math.max(1, Math.round(0.25 * fps));
+    const floor = this.setFx?.floorAt || null, obs = c.obs || [], R = 0.18;
+    // the footing at (x, z) for a body keyed at y0, as c.S (_heightAt) and the set's boxes looked for from `from`
+    // (the set's floor looked at 2 mm either way too: keyed exactly on a platform's edge, x 1.62, the interpolated key
+    // was 1e-15 off it every other frame and the body fell 92 cm off the platform and back)
+    const floorE = (x, z) => (floor ? Math.max(floor(x, z) || 0, floor(x + EDGE_EPS, z) || 0, floor(x - EDGE_EPS, z) || 0, floor(x, z + EDGE_EPS) || 0, floor(x, z - EDGE_EPS) || 0) : 0);
+    const footing = (x, z, y0, from) => {
+      let s = Math.max(0, y0, floorE(x, z));
+      for (const o of obs) {
+        if (o.rise > 1.7) continue;
+        if (x > o.box.min.x - R && x < o.box.max.x + R && z > o.box.min.z - R && z < o.box.max.z + R) s = Math.max(s, o.top);
+      }
+      return shapes ? Math.max(s, this._supportAt(x, z, Math.max(s, from), 0.6, shapes)) : s;
+    };
+    const S = new Float64Array(n), Y0 = new Float64Array(n), PX = new Float64Array(n), PZ = new Float64Array(n);
+    for (let f = 0; f < n; f++) {
+      const p = this._actorPosAt(a, f);
+      // looked for from the footing a frame before too (a flight of stairs is climbed one tread at a time)
+      const s0 = Math.max(c.S[f], floorE(p[0], p[2]));
+      S[f] = shapes ? Math.max(s0, this._supportAt(p[0], p[2], Math.max(s0, f ? S[f - 1] : 0), 0.6, shapes)) : s0;
+      Y0[f] = Math.max(0, p[1] || 0);   // the keyed height itself is followed as keyed (a body keyed up a stair's line)
+      PX[f] = p[0]; PZ[f] = p[2];
+    }
+    // The footing's breaks (steps), from the ground itself: where the footing (over the keyed height) changes from one
+    // frame to the next by more than STEP_JUMP, the path between the two is looked at every STEP_PROBE and only the
+    // changes over STEP_JUMP between two looks are breaks; the rest is a slope, followed exactly. Standing still, the
+    // whole change is a break (a crate pushed under the feet). Looks that break one after the other the same way are ONE
+    // break (a bank steeper than 51 degrees is one rise, not many). Each break is judged on its own: up to walkStep it
+    // is walked (J sums those), bigger it is a jump (B sums those). A flight of stairs is many walked breaks, each a
+    // riser: their SUM within a quarter second used to be the jump test, so two 17 cm risers (34 cm) were a jump for
+    // anyone 1.3 m or shorter (the library child: 3 frames hidden, the body 16 cm over the treads) and stairs run up at
+    // 2.5 m/s or down at 3 m/s hid 6-11 frames.
+    const walkAdd = new Float64Array(n), jumpAdd = new Float64Array(n);
+    let run = 0, runAt = -1;
+    const flush = () => { if (run) { (Math.abs(run) <= walkStep ? walkAdd : jumpAdd)[runAt] += run; } run = 0; };
+    for (let f = 1; f < n; f++) {
+      const d = (S[f] - Y0[f]) - (S[f - 1] - Y0[f - 1]);
+      if (!(Math.abs(d) > STEP_JUMP)) { flush(); continue; }
+      const dx = PX[f] - PX[f - 1], dz = PZ[f] - PZ[f - 1];
+      const m = Math.max(1, Math.min(STEP_PROBES_MAX, Math.ceil(Math.hypot(dx, dz) / STEP_PROBE)));
+      let prev = S[f - 1] - Y0[f - 1], prevS = S[f - 1];
+      for (let i = 1; i <= m; i++) {
+        const t = i / m, y0 = Y0[f - 1] + t * (Y0[f] - Y0[f - 1]);
+        const s = i === m ? S[f] : footing(PX[f - 1] + t * dx, PZ[f - 1] + t * dz, y0, prevS);
+        const e = (s - y0) - prev;
+        if (Math.abs(e) > STEP_JUMP) { if (run && Math.sign(e) !== Math.sign(run)) flush(); run += e; runAt = f; } else flush();
+        prev = s - y0; prevS = s;
+      }
+    }
+    flush();
+    const J = new Float64Array(n), B = new Float64Array(n);
+    for (let f = 1; f < n; f++) { J[f] = J[f - 1] + walkAdd[f]; B[f] = B[f - 1] + jumpAdd[f]; }
+    // jumps: a break over walkStep, or the keyed height rising or dropping more than walkStep within a quarter second
+    // (a slope walked fast is no jump: 4 m/s up 20 degrees was one, 21 frames hidden); their gravity arcs, as _heightAt
+    const big = [];
+    for (let q = 0; q < n; q++) {
+      const e = B[q] + Y0[q];
+      let lo0 = e, lo1 = e;
+      for (let g = Math.max(0, q - win); g <= q; g++) lo0 = Math.min(lo0, B[g] + Y0[g]);
+      for (let g = q; g <= Math.min(n - 1, q + win); g++) lo1 = Math.min(lo1, B[g] + Y0[g]);
+      if (e - lo0 > walkStep || e - lo1 > walkStep) big.push(q);
+    }
+    // The smooth part of the footing (the breaks taken out) eased over RIDGE_EASE x height / 1.8 of travel either way
+    // (a triangle, at most a quarter second): followed exactly, a sharp 30 degree ridge turned the body's climb into a
+    // drop within one frame (5.8 cm/frame^2 at 1 m/s, a pop); the body now rounds it 2 cm low. A plain slope is
+    // untouched, a slope's foot or crest is rounded by under a centimetre.
+    const U = new Float64Array(n), Us = new Float64Array(n), L = new Float64Array(n), ease = RIDGE_EASE * tall / 1.8;
+    for (let f = 0; f < n; f++) { U[f] = S[f] - J[f] - B[f]; L[f] = f ? L[f - 1] + Math.hypot(PX[f] - PX[f - 1], PZ[f] - PZ[f - 1]) : 0; }
+    for (let f = 0; f < n; f++) {
+      let sw = 0, su = 0;
+      for (let g = Math.max(0, f - win); g <= Math.min(n - 1, f + win); g++) {
+        const w = 1 - Math.abs(L[g] - L[f]) / ease;
+        if (w > 0) { sw += w; su += w * U[g]; }
+      }
+      Us[f] = sw > 0 ? su / sw : U[f];
+    }
+    const W = new Float64Array(n), air = new Uint8Array(n), span = STEP_SPAN * tall / 1.8;
+    for (let f = 0; f < n; f++) {
+      let yb = -Infinity;
+      for (const q of big) { const d = f - q, v = S[q] - kk * d * d; if (v > yb) yb = v; }
+      // a walked step: the footing's breaks (a jump counting as none) averaged over the last quarter second; its smooth
+      // part (a ramp, a slope) and the keyed height are followed exactly (a plain average left the body 2 cm low on the
+      // station ramp)
+      // (over the last quarter second or the last STEP_SPAN x height / 1.8 of travel, whichever is shorter: run up
+      // stairs at 2.5 m/s a quarter second is 62 cm, the body lagged 15 cm under the tread and a swinging shoe went
+      // 2.9 cm into the next riser)
+      let m = 0, cnt = 0, gone = 0;
+      for (let g = f; g >= Math.max(0, f - win); g--) {
+        m += J[f] - J[g]; cnt++;
+        if (g > 0) gone += Math.hypot(PX[g] - PX[g - 1], PZ[g] - PZ[g - 1]);
+        if (gone >= span) break;
+      }
+      m /= cnt;
+      W[f] = +Math.max(Us[f] + B[f] + J[f] - m, yb).toFixed(4);
+      air[f] = yb - S[f] > 0.06 ? 1 : 0;
+    }
+    c.walk = { shapes, walkStep, W, air, S };
+    return c.walk;
+  }
+
+  /**
    * The walkable surface under (x, z) for a performer's foot (motion capture: "Stick feet to ground"). The same
    * surfaces a person stands on when dragged live: the stage floor or the set's own floor (platforms, the seabed), and
    * the up-facing tops of the set's boxes and of parked props (a kerb, a step, a stage riser), found by a ray cast
    * straight down from `reach` metres above the actor's own footing (fromY) - so a low step counts, a table they pass
-   * beside does not, and nothing overhead does.
+   * beside does not, and nothing overhead does. shapes: _supportShapes(), passed in by a caller asking many times.
    */
-  _supportAt(x, z, fromY = 0, reach = 0.6) {
+  _supportAt(x, z, fromY = 0, reach = 0.6, shapes = this._supportShapes()) {
     const floor = this.setFx?.floorAt;
     let y = Math.max(0, floor ? floor(x, z) || 0 : 0);
-    const shapes = this._supportShapes();
     const top = fromY + reach, o = [x, top, z];
     for (const sh of shapes) {
       if (x < sh.min[0] || x > sh.max[0] || z < sh.min[2] || z > sh.max[2] || sh.max[1] <= y) continue;

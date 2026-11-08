@@ -162,8 +162,13 @@ export function blendStride(w, strides) {
  * at 0.25 in both): it advances by the distance of each frame divided by the stride of the clips as they are mixed
  * at that moment, so blended legs stay together in step and the feet don't skate at any speed.
  * strides = {walk, run} in metres. Pure: the same positions always give the same table.
+ * In the idle <-> walk band the stride is also divided by the walk + run weight (at least 0.2): blended with the idle,
+ * the walk's foot travels only that share of its stride under the body, and played at the plain rate its stance foot
+ * crept forward (5 cm/s at 0.5 m/s), so a planted foot fell out of the leg's reach and the hips dipped 7-12 cm.
+ * headings[f] (radians, optional): where the body faces; a frame moving against it (backwards, more than ~107
+ * degrees off) runs the phase backwards, so the clip walks backwards and the feet plant instead of skating.
  */
-export function gaitTable(positions, fps, strides, { window = 6 } = {}) {
+export function gaitTable(positions, fps, strides, { window = 6, headings = null } = {}) {
   const n = positions.length, speed = new Float64Array(n), phase = new Float64Array(n);
   for (let f = 0; f < n; f++) {
     const f0 = Math.max(0, f - window), f1 = Math.min(n - 1, f + window);
@@ -174,7 +179,12 @@ export function gaitTable(positions, fps, strides, { window = 6 } = {}) {
     const a = positions[f - 1], b = positions[f];
     const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
     const w = clipWeights(0.5 * (speed[f - 1] + speed[f]));
-    phase[f] = phase[f - 1] + d / Math.max(1e-6, blendStride(w, strides));
+    let dir = 1;
+    if (headings && d > 1e-9) {
+      const h = headings[f];
+      if (Number.isFinite(h) && ((b[0] - a[0]) * Math.sin(h) + (b[1] - a[1]) * Math.cos(h)) / d < -0.3) dir = -1;
+    }
+    phase[f] = phase[f - 1] + dir * d / Math.max(1e-6, blendStride(w, strides) * Math.max(0.2, (w.walk || 0) + (w.run || 0)));
   }
   return { speed, phase };
 }
@@ -345,6 +355,28 @@ export function clayReason(a, ctx = {}) {
   return null;
 }
 
+/**
+ * Why this person's feet are NOT on the ground (null: they are, and footplant grounds them), whatever the body looks
+ * like. This is the grounding gate, kept apart from clayReason on purpose: clayReason says when the clay figure is
+ * shown instead of the lifelike body, and once the clay is retired (one motion driving the visible body and the logic
+ * rig) people holding or carrying props, with gaze or Pose keys, on a mocap take, driven live or in Blocking look are
+ * lifelike AND standing, so they are grounded. Only a body that is really off its feet is not: riding or seated
+ * (mount_id), carried, moved or lifted by physics, knocked over / tipped / lying, swimming or floating, in the air.
+ * ctx: {swims, floats, tipped, lifted, airborne} as for clayReason (airborne and lifted per frame).
+ */
+export function feetUpReason(a, ctx = {}) {
+  if (a.mount_id) return "rides or sits on something";
+  if (a.carry_id) return "is carried";
+  if (a.physics?.baked) return "is moved by physics";
+  if (ctx.lifted) return "is lifted by physics";
+  if (Array.isArray(a.tilt) && a.tilt.length === 4) return "was knocked over";
+  if (ctx.tipped) return "is tipped over";
+  if (ctx.swims) return "swims";
+  if (ctx.floats) return "floats in the water";
+  if (ctx.airborne) return "is in the air (a jump or vault)";
+  return null;
+}
+
 /** Does this person swim anywhere in the shot? The same gate as stage._swimAt (swimming off, carried) over the
  *  whole-shot swim plan; plan is called only when the gate allows it. */
 export function swimsInShot(a, plan) {
@@ -353,6 +385,15 @@ export function swimsInShot(a, plan) {
   if (!p?.mode) return !!p;
   for (let i = 0; i < p.mode.length; i++) if (p.mode[i]) return true;
   return false;
+}
+
+/** Does this person swim at frame f? swimsInShot's gate, on the swim plan's per-frame mode (a plan without one: the
+ *  whole shot). The grounding gate reads this, so the walk before a swim is grounded. */
+export function swimsAt(a, f, plan) {
+  if (!a || a.carry_id) return false;
+  const p = plan();
+  if (!p?.mode) return !!p;
+  return !!p.mode[Math.max(0, Math.min(p.mode.length - 1, Math.round(f)))];
 }
 
 /**
