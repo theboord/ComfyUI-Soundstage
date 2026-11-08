@@ -3947,11 +3947,18 @@ export class Stage {
         hg.userData.footKey = k;
         hg.userData.foot = box.isEmpty() ? null : { cx: (box.min.x + box.max.x) / 2, cz: (box.min.z + box.max.z) / 2, hx: (box.max.x - box.min.x) / 2, hz: (box.max.z - box.min.z) / 2 };
       }
-      if (hg.userData.foot) boats.push({ b, foot: hg.userData.foot });
+      if (hg.userData.foot) boats.push({ b, hg, foot: hg.userData.foot });
     }
     if (!boats.length) return;
     const fps = this.state.shot?.fps || 24, vmax = 1.5 / fps, reach = 0.6 * h;
     const hop = a.mount_id && a.mount_at > 0 ? a.mount_at - HOP_FRAMES : Infinity, Yax = new THREE.Vector3(0, 1, 0);
+    // The water's edge (the tank's inner wall): a way round a boat that leaves the water is not a way round, and a boat
+    // pushing a swimmer pushes them along its side, never through the wall (was: z 9.80 with the water ending at 7.8).
+    const w = this.water, wg = w?.geometry?.parameters, EDGE = 0.3;
+    const wx0 = w ? w.position.x - wg.width / 2 + EDGE : -Infinity, wx1 = w ? w.position.x + wg.width / 2 - EDGE : Infinity;
+    const wz0 = w ? w.position.z - wg.height / 2 + EDGE : -Infinity, wz1 = w ? w.position.z + wg.height / 2 - EDGE : Infinity;
+    const inWater = (x, z) => x >= wx0 - 1e-9 && x <= wx1 + 1e-9 && z >= wz0 - 1e-9 && z <= wz1 + 1e-9;
+    const keyed = pos.map((p) => [p[0], p[2]]), moved = new Array(pos.length).fill(false);
     for (const B of boats) {
       const F = B.foot, HX = F.hx + reach, HZ = F.hz + reach, PER = 4 * (HX + HZ), E = 1e-6;
       const inside = (p) => Math.abs(p[0]) < HX - E && Math.abs(p[1]) < HZ - E;
@@ -3982,10 +3989,22 @@ export class Stage {
         return [s - 2 * HZ - HX, -HZ];
       };
       const corners = [0, 2 * HZ, 2 * HZ + 2 * HX, 4 * HZ + 2 * HX, PER];
+      // the boat where the water holds it (its footprint inside the wall, as _waterPhysics shows it)
+      const poseAt = (f) => {
+        const p = this._actorPosAt(B.b, f), yaw = this._headingAt(B.b, f);
+        const xz = this._insideWater(B.b, B.hg, p[0], p[2], yaw);
+        return { bp: xz ? [xz[0], p[1], xz[1]] : p, yaw };
+      };
+      const toWorld = (c, bp, yaw) => { const W = new THREE.Vector3(c[0] + F.cx, 0, c[1] + F.cz).applyAxisAngle(Yax, yaw); return [bp[0] + W.x, bp[2] + W.z]; };
+      // is the way along the side from s, dir (+1 / -1), len metres all in the water?
+      const wayIn = (s, dir, len, bp, yaw) => {
+        for (let k = 0, n = Math.max(1, Math.ceil(len / 0.1)); k <= n; k++) { const q = toWorld(atS(s + dir * len * k / n), bp, yaw); if (!inWater(q[0], q[1])) return false; }
+        return true;
+      };
       let cur = null, free = true;
       for (let f = 0; f < pos.length; f++) {
         if (!mode[f] || support[f] != null || f >= hop) { cur = null; free = true; continue; }
-        const bp = this._actorPosAt(B.b, f), yaw = this._headingAt(B.b, f);
+        const { bp, yaw } = poseAt(f);
         const L = new THREE.Vector3(pos[f][0] - bp[0], 0, pos[f][2] - bp[2]).applyAxisAngle(Yax, -yaw);
         const T = [L.x - F.cx, L.z - F.cz];
         if (!cur) {   // the first swimming frame: where the keys are, or on the nearest side when that is inside
@@ -4016,16 +4035,40 @@ export class Stage {
             const st = inside(T) ? sOf(onX ? [Math.sign(cur[0]) * HX, T[1]] : [T[0], Math.sign(cur[1]) * HZ]) : sOf(T);
             const fw = ((st - s) % PER + PER) % PER, bw = PER - fw;
             if (Math.min(fw, bw) < 1e-9) break;   // as near the keys as the side gets: held there
-            const dir = fw <= bw ? 1 : -1, togo = Math.min(fw, bw);
+            // the short way round unless it leaves the water (a boat against the wall: round its other end); neither: held
+            const okF = wayIn(s, 1, fw, bp, yaw), okB = wayIn(s, -1, bw, bp, yaw);
+            if (!okF && !okB) break;
+            const dir = okF && (!okB || fw <= bw) ? 1 : -1, togo = dir > 0 ? fw : bw;
             let edge = Infinity;
             for (const c of corners) { const dd = dir > 0 ? ((c - s) % PER + PER) % PER : ((s - c) % PER + PER) % PER; if (dd > 1e-9) edge = Math.min(edge, dd); }
             const step = Math.min(budget, togo, edge);
             cur = atS(s + dir * step); budget -= step;
           }
         }
-        const W = new THREE.Vector3(cur[0] + F.cx, 0, cur[1] + F.cz).applyAxisAngle(Yax, yaw);
-        pos[f][0] = bp[0] + W.x; pos[f][2] = bp[2] + W.z;
+        if (!free) {
+          // held at the side where the side has gone out of the water (the boat moved up to the wall): along the side
+          // to the nearest point of it still in the water
+          let q = toWorld(cur, bp, yaw);
+          if (!inWater(q[0], q[1])) {
+            const s = sOf(cur);
+            for (let d = 0.05; d <= PER / 2; d += 0.05) {
+              const A = atS(s + d), Bk = atS(s - d), qa = toWorld(A, bp, yaw), qb = toWorld(Bk, bp, yaw);
+              if (inWater(qa[0], qa[1])) { cur = A; break; }
+              if (inWater(qb[0], qb[1])) { cur = Bk; break; }
+            }
+          }
+        }
+        const q = toWorld(cur, bp, yaw);
+        if (Math.abs(q[0] - pos[f][0]) > 1e-9 || Math.abs(q[1] - pos[f][2]) > 1e-9) moved[f] = true;
+        pos[f][0] = q[0]; pos[f][2] = q[1];
       }
+    }
+    // Whatever the boats did, a swimmer they moved stays in the water (no further out than their own keys).
+    for (let f = 0; f < pos.length; f++) {
+      if (!moved[f]) continue;
+      const [kx, kz] = keyed[f];
+      pos[f][0] = Math.max(Math.min(wx0, kx), Math.min(Math.max(wx1, kx), pos[f][0]));
+      pos[f][2] = Math.max(Math.min(wz0, kz), Math.min(Math.max(wz1, kz), pos[f][2]));
     }
   }
 

@@ -991,3 +991,29 @@ test("the same scene built again with other ids sinks, settles and floats the sa
   assert.ok(landed > 0, "she reaches the bottom");
   assert.ok(A[300].q[0] ** 2 + A[300].q[2] ** 2 > 0.3, "and ends lying down");
 });
+
+// Seventh pass: going round a boat ignored the water's edge. With the speedboat near the tank wall (keyed z 5.5 or 6.0,
+// held inside the wall at z 4.53) and keys along z 7.4 / 7.6, the way round its stern ran outside the water: the
+// swimmer reached z 9.80 / 10.30 (the water ends at 7.8, the wall's face at 8). A boat driven over a swimmer at rest
+// pushed them out past the wall too (x 9.14). The way round now stays in the water (round the other end when one end is
+// against the wall), a boat pushes a swimmer along its side, and nothing the boats do puts them past the water's edge.
+test("going round a boat near the tank wall, or pushed by one, the swimmer stays in the water (was: z 9.80 / 10.30, x 9.14, the water ending at 7.8)", () => {
+  const boat = (keys) => ({ id: "b", name: "b", kind: "speedboat", position: keys[0][1], keys: keys.map(([frame, position]) => ({ frame, position })), rotation_deg: 0 });
+  const at0 = (id, keys) => ({ id, name: id, kind: "man", height_m: 1.8, position: keys[0][1], keys: keys.map(([frame, position]) => ({ frame, position })), rotation_deg: 0 });
+  const EDGE = 7.8;
+  for (const [what, b, s] of [
+    ["boat at z 5.5, keys along z 7.4", boat([[0, [0, 0, 5.5]]]), at0("s", [[0, [5, 0, 7.4]], [100, [-5, 0, 7.4]]])],
+    ["boat at z 6.0, keys along z 7.6", boat([[0, [0, 0, 6]]]), at0("s", [[0, [5, 0, 7.6]], [100, [-5, 0, 7.6]]])],
+    ["a boat driven over a swimmer at rest", boat([[0, [-4, 0, 0]], [100, [5, 0, 0]]]), at0("s", [[0, [4, 0, 0]]])],
+  ]) {
+    const st = tank([b, s]), g = st.actorMeshes.get("s");
+    let far = 0, ff = 0;
+    for (let f = 0; f < 121; f++) {
+      st.setFrame(f);
+      assert.ok(g.userData.swimOn, `${what} f${f}: swimming`);
+      const d = Math.max(Math.abs(g.position.x), Math.abs(g.position.z));
+      if (d > far) { far = d; ff = f; }
+    }
+    assert.ok(far <= EDGE, `${what}: never past the water's edge (farthest ${far.toFixed(2)} m at f${ff}, the water ends at ${EDGE})`);
+  }
+});
