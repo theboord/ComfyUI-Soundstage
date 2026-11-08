@@ -56,6 +56,7 @@ test("the activity pill's 1 s clock is off at idle and ticks only while a job ru
       const row = new El("div"); const host = new El("div"); host.append(row);
       const win = { addEventListener() {}, removeEventListener() {}, document: doc, matchMedia: () => ({ matches: false }) };
       const pill = mountActivity({ api, row, win });
+      try {
       const clocks = () => [...live.values()].filter((t) => t.ms === 1000).length;
       assert.equal(clocks(), 0, "no 1 s clock at idle (it ran from mount, forever)");
       const w0 = writes.n;
@@ -70,7 +71,7 @@ test("the activity pill's 1 s clock is off at idle and ticks only while a job ru
       pill.registry.onEvent("execution_success", { prompt_id: "p1" });
       pill.draw();
       assert.equal(clocks(), 0, "and stops when nothing runs");
-      pill.dispose();
+      } finally { pill.dispose(); }   // its 4 s / 20 s queue poll (real timers) must not keep the test process alive
     });
   } finally { for (const [k, v] of Object.entries(had)) { if (v === undefined) delete g[k]; else g[k] = v; } }
 });
