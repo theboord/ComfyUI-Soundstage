@@ -211,31 +211,45 @@ REPLY_TOKENS = 2048         # room kept for the answer when the request sets no 
 IMAGE_TOKENS = 1536         # per image in a message (a vision model's tiles; never counted from the base64 length)
 
 
+CTX_CEILING = 131072        # the hard top of every num_ctx sent to Ollama: the caller's own, OLLAMA_CONTEXT_LENGTH
+                            # and SOUNDSTAGE_ASSISTANT_MAX_CTX are all clamped to it (128K tokens, the largest window
+                            # of the models Ask runs; a bigger value only makes Ollama reserve memory it cannot fill)
+_NUM_STR = re.compile(r"^\s*\d+(\.\d+)?\s*$")   # "8192", "8192.5": plain decimals only ("1e3", "inf", "0x10" refused)
+
+
 def _pos_int(v) -> int | None:
-    """A positive whole number from an int, a float or a numeric string ("8192", 8192.0, "8192.5" -> 8193); else None.
-    Booleans are not numbers here."""
+    """A positive whole number from an int, a float or a plain decimal string ("8192", 8192.0, "8192.5" -> 8193),
+    clamped to CTX_CEILING (1e12 and 1e308 give CTX_CEILING); else None (non-finite, <= 0, booleans, "1e3", "lots").
+    Every context number from a request or the environment goes through here, so none reaches Ollama unbounded."""
     if isinstance(v, bool):
         return None
     if isinstance(v, str):
+        if not _NUM_STR.match(v):
+            return None
         try:
             v = float(v.strip())
         except ValueError:
             return None
-    if isinstance(v, (int, float)) and math.isfinite(v) and v > 0:
-        return int(math.ceil(v))
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        try:
+            f = float(v)
+        except OverflowError:   # an int too big for a float: clamp
+            return CTX_CEILING if v > 0 else None
+        if math.isfinite(f) and f > 0:
+            return min(CTX_CEILING, int(math.ceil(f)))
     return None
 
 
 def server_ctx() -> int:
     """The context the Ollama server already gives every request: OLLAMA_CONTEXT_LENGTH as seen by THIS process (the
     one that starts Ollama through autostart; an Ollama started elsewhere with its own setting is not visible), else
-    Ollama's default 4096. num_ctx is never set below it."""
+    Ollama's default 4096, clamped to CTX_CEILING. num_ctx is never set below it."""
     return max(OLLAMA_DEFAULT_CTX, _pos_int(os.environ.get("OLLAMA_CONTEXT_LENGTH", "")) or 0)
 
 
 def max_ctx() -> int:
-    """The largest num_ctx ✦ Ask asks for on its own (SOUNDSTAGE_ASSISTANT_MAX_CTX, default 32768; never below
-    server_ctx()). A request that asks for more itself still gets what it asked."""
+    """The largest num_ctx ✦ Ask asks for on its own (SOUNDSTAGE_ASSISTANT_MAX_CTX, default 32768, at most CTX_CEILING;
+    never below server_ctx()). A request that asks for more itself gets what it asked, up to CTX_CEILING."""
     v = _pos_int(os.environ.get("SOUNDSTAGE_ASSISTANT_MAX_CTX", "32768"))
     return max(server_ctx(), v if v is not None else 32768)
 
@@ -266,14 +280,15 @@ def prompt_tokens(messages, tools=None) -> int:
 def num_ctx_for(messages, reply=None, asked=None, tools=None) -> int:
     """num_ctx sized to the prompt (messages + tools + images) plus reply room, rounded up to 4096s, at least
     server_ctx() (Ollama's 4096 or OLLAMA_CONTEXT_LENGTH), at most max_ctx(). The request's own num_ctx (an int,
-    float or numeric string) is never cut: it is a floor, even above max_ctx(). A prompt bigger than max_ctx() is
-    still capped (Ollama then drops the oldest part)."""
+    float or plain decimal string) is a floor, even above max_ctx(), but never above CTX_CEILING (1e12 -> 131072;
+    NaN, inf, "1e3", booleans are ignored). A prompt bigger than max_ctx() is still capped (Ollama then drops the
+    oldest part). The result is always a whole number in [4096, CTX_CEILING]."""
     r = _pos_int(reply)
     need = prompt_tokens(messages, tools) + (r or REPLY_TOKENS)
     need = -(-need // CTX_STEP) * CTX_STEP
     out = max(server_ctx(), min(max_ctx(), need))
     a = _pos_int(asked)
-    return max(out, a) if a else out
+    return min(CTX_CEILING, max(out, a) if a else out)
 
 
 def chat_options(st: dict, gpu_busy: bool = False, messages=None, options: dict | None = None, tools=None) -> dict:

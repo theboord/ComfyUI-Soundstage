@@ -257,7 +257,7 @@ def test_num_ctx_counts_tools_and_images_and_never_cuts_what_the_caller_asked(mo
     pics = [{"role": "user", "content": "match this frame", "images": ["aGVsbG8="] * 4}]
     assert A.prompt_tokens(pics) >= 4 * A.IMAGE_TOKENS
     assert A.chat_options({"device": "gpu"}, messages=pics)["num_ctx"] >= 4 * A.IMAGE_TOKENS + A.REPLY_TOKENS
-    # the caller's num_ctx: numeric strings and floats pass through, never lowered, not capped at max_ctx()
+    # the caller's num_ctx: plain decimal strings and floats pass through, never lowered, not capped at max_ctx() (only at CTX_CEILING)
     for asked, want in [("12000", 12000), (12000.0, 12000), ("9000.5", 9001), (65536, 65536), ("65536", 65536)]:
         assert A.chat_options({"device": "gpu"}, messages=short, options={"num_ctx": asked})["num_ctx"] == want, asked
     for junk in ["lots", True, -5, 0, None, float("nan")]:
@@ -328,3 +328,31 @@ def test_chat_route_sizes_num_ctx_from_the_request_messages_tools_and_options(mo
     assert chats[1]["options"]["num_ctx"] == 20000 and chats[1]["options"]["temperature"] == 0.2
     assert chats[2]["options"]["num_ctx"] == 4096
     A._status_cache["v"] = None
+
+
+def test_num_ctx_is_bounded_by_the_ceiling_whatever_the_caller_or_environment_says(monkeypatch):
+    """Fix: the caller's num_ctx and OLLAMA_CONTEXT_LENGTH used to pass through unbounded (1e12, 1e308 went to Ollama
+    as-is). Every value is clamped to CTX_CEILING; non-finite values and exponent strings are ignored."""
+    monkeypatch.delenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", raising=False)
+    monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH", raising=False)
+    short = [{"role": "user", "content": "add a lamp"}]
+    ctx = lambda **o: A.chat_options({"device": "gpu"}, messages=short, options=o)["num_ctx"]
+    assert A.CTX_CEILING == 131072
+    for huge in [1e12, 1e308, 10 ** 400, "1000000000000", "999999999999999999999999", 131073]:
+        assert ctx(num_ctx=huge) == A.CTX_CEILING, huge
+    for refused in ["1e3", "1e12", "inf", "-inf", "nan", float("inf"), float("-inf"), "0x2000", " ", ""]:
+        assert ctx(num_ctx=refused) == 4096, refused
+    assert ctx(num_ctx=131072) == 131072 and ctx(num_ctx="65536") == 65536
+    assert ctx(num_predict=1e308) <= A.CTX_CEILING
+    for env, want in [("1e12", 4096), ("1000000000000", A.CTX_CEILING), ("inf", 4096), ("nan", 4096), ("16384", 16384)]:
+        monkeypatch.setenv("OLLAMA_CONTEXT_LENGTH", env)
+        assert A.server_ctx() == want, env
+        n = ctx()
+        assert isinstance(n, int) and 4096 <= n <= A.CTX_CEILING, (env, n)
+    monkeypatch.setenv("OLLAMA_CONTEXT_LENGTH", "1000000000000")
+    assert ctx(num_ctx=8192) == A.CTX_CEILING
+    monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", "1e308")
+    monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH")
+    assert A.max_ctx() == 32768, "an exponent string max falls back to the default"
+    monkeypatch.setenv("SOUNDSTAGE_ASSISTANT_MAX_CTX", "99999999")
+    assert A.max_ctx() == A.CTX_CEILING
