@@ -150,6 +150,11 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
                      "would give multi-view poses directly")
     rec = stages.load(tag) if reuse else {"tag": tag}
     rec.update(tag=tag, video=video, samples=len(names))
+    # what this rebuild was made from, so Reshoot finds it by the clip itself, not by a file name (stages.matches)
+    try:
+        rec.update(source_path=os.path.realpath(path), source_sha=await asyncio.to_thread(stages.content_hash, path))
+    except OSError:
+        pass
     reuse = {s for s in reuse if stages.usable(rec, s)}
     if "depth" in reuse:
         say("Measuring depth (Depth Anything 3): reused", 0.08)
@@ -193,7 +198,7 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
     ran["breakdown"] = "reused" if "breakdown" in reuse else "ran"
     # The set-scan path (scanroute): the Qwen3-VL inventory reads the wardrobe and the set better than the 4B breakdown.
     inv_model = vlm.inventory_model() if use_vlm else None
-    scan_on, scan_note = scanroute.choose(scan, backdrop, inv_model)
+    scan_on, scan_note = scanroute.choose(scan, backdrop, inv_model, vlm_on=use_vlm)
     notes.append(scan_note)
     inventory = rec.get("inventory") if "breakdown" in reuse else None
     if scan_on and not inventory:
@@ -364,7 +369,9 @@ async def run(base_url: str, video: str, *, samples: int = 16, use_vlm: bool = T
         except Exception as exc:  # noqa: BLE001 - the set and camera still stand without the performer
             notes.append(f"performer: motion capture failed ({exc})")
     try:
-        finish_scene(scene, take=take, info=info, breakdown=breakdown, depths=list(packet["depth"]), scales=scales,
+        # In a worker thread: the fused set scan and the plane fit take seconds to minutes, and running them on the
+        # event loop froze ComfyUI's server (job polling, the websocket) for all of it.
+        await asyncio.to_thread(finish_scene, scene, take=take, info=info, breakdown=breakdown, depths=list(packet["depth"]), scales=scales,
                      poses=poses, K=K, files=files, skies=None if packet.get("sky") is None else list(packet["sky"]),
                      times=times, clip=clip, scan_on=scan_on, has_relief=bool(glb), wardrobe_ref=wardrobe_ref, tag=tag,
                      sub=sub, notes=notes)
@@ -402,6 +409,7 @@ def finish_scene(scene: dict, *, take, info, breakdown, depths, scales, poses, K
         # builder's, exactly as it was, and the record says so.
         before = copy.deepcopy(scene.get("actors") or [])
         before_v2s = {k: copy.deepcopy(v2s[k]) for k in ("backdrop", "sky") if k in v2s}
+        n_notes = len(notes)
         try:
             st = scanroute.apply(scene, depths=depths, scales=scales, poses=poses, K=K, files=files, skies=skies,
                                  breakdown=breakdown, times=times, duration=float(clip.get("duration") or 1.0),
@@ -417,6 +425,11 @@ def finish_scene(scene: dict, *, take, info, breakdown, depths, scales, poses, K
             for k in ("backdrop", "sky"):
                 v2s.pop(k, None)
             v2s.update(before_v2s)
+            # the scan path's own notes ("dropped N blocks the scan shows", "planes fitted") describe a set that was
+            # just put back: only the reasons it failed stay
+            scan_notes = notes[n_notes:]
+            del notes[n_notes:]
+            notes.extend(n for n in scan_notes if "fail" in n.lower())
             notes.append(f"set: {fallback}; fell back to the old block builder's set")
     if not (scan_on and v2s.get("xform") and depths) or fallback is not None:
         v2s["set_path"] = {"path": "blocks", **({"fallback": fallback} if fallback else {})}
@@ -435,10 +448,8 @@ def finish_scene(scene: dict, *, take, info, breakdown, depths, scales, poses, K
             notes.append(f"performer: the vision model named no garment ('{said}'); the clay keeps its default shape "
                          "and colours from the read. Set the wardrobe in the inspector")
         # build: SAM 3D Body's shape when it has one, else the silhouette (the box's pixels at the body's depth)
-        mask = None
-        cut = performer.cutout(take, 1.0) if take else None
-        if cut and depths:
-            mask = W.person_mask_from_depth(depths[0], cut["box"])
+        mask = build_mask(perf, take, depths, times, float(clip.get("fps") or 24.0),
+                          float(clip.get("duration") or 1.0)) if take and depths else None
         girth, src = W.girth_from(take, mask, female=perf.get("kind") == "woman")
         if girth:
             ap["girth"] = round(girth, 3)
@@ -455,6 +466,36 @@ def finish_scene(scene: dict, *, take, info, breakdown, depths, scales, poses, K
             except Exception as exc:  # noqa: BLE001
                 notes.append(f"performer: the wardrobe reference could not be made ({exc})")
     v2s["look_hint"] = SW.look_hint(scene)
+
+
+def build_mask(actor: dict, take, depths, times, fps: float, duration: float):
+    """The performer's silhouette for the build, from ONE moment (ref_frame_pair: the take may start after the first
+    sample, so its first-frame box on depth sample 0 can be the wrong place): the depth of that sample, the take's 2D
+    joints at the matching take frame (the body band), and the box they span; the read's box at that sample's time
+    when the take has no joints. None without either."""
+    from . import wardrobe as W
+    i, k = ref_frame_pair(take, times, fps)
+    i = min(i, len(depths) - 1)
+    d = np.asarray(depths[i], np.float32)
+    h, w = d.shape
+    uv = box = None
+    if k is not None and take.get("focal_px") and take.get("body"):
+        uv = performer.sam_2d(take, k, (w, h))
+        ok = np.isfinite(uv).all(axis=1)
+        if ok.sum() >= 4:
+            (jx0, jy0), (jx1, jy1) = uv[ok].min(0), uv[ok].max(0)
+            H = jy1 - jy0
+            box = [jx0 - 0.12 * H, jy0 - 0.1 * H, jx1 + 0.12 * H, jy1 + 0.05 * H]   # head top and heels beyond the joints
+        else:
+            uv = None
+    if box is None:
+        src = actor.get("source") or {}
+        t = (float(times[i]) / max(duration, 1e-6)) if times else 0.0
+        bb = scanroute._box_at(src, min(1.0, max(0.0, t)))
+        if not bb:
+            return None
+        box = [bb[0] / 1000 * w, bb[1] / 1000 * h, bb[2] / 1000 * w, bb[3] / 1000 * h]
+    return W.body_mask(d, box, uv)
 
 
 def ref_frame_pair(take, times, fps: float) -> tuple[int, int | None]:

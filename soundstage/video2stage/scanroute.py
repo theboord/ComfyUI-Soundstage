@@ -20,12 +20,16 @@ from . import vlm
 SCAN_MODELS = tuple(vlm.INVENTORY_MODELS[:2])   # Qwen3-VL 8B, then 4B (the old Qwen 3.5 4B can't box a whole frame)
 
 
-def choose(scan_opt, backdrop: bool, model: str | None) -> tuple[bool, str]:
-    """The route's pick. scan_opt: the request's `scan` (None = the default)."""
+def choose(scan_opt, backdrop: bool, model: str | None, vlm_on: bool = True) -> tuple[bool, str]:
+    """The route's pick. scan_opt: the request's `scan` (None = the default). vlm_on: the user's "Name things with
+    the vision model" tick (off: model is None because the user turned it off, not because none is installed)."""
     if not backdrop:
         return False, "set: the set scan is switched off; the set is built from the vision model's words (old builder)"
     if scan_opt is False:
         return False, "set: the scan path is switched off in the options; the old block builder made the set"
+    if not vlm_on:
+        return False, ("set: the vision model is turned off in the options, and the scan path needs its Qwen3-VL "
+                       "inventory; the old block builder made the set")
     if model not in SCAN_MODELS:
         if scan_opt:
             return False, ("set: the scan path needs Qwen3-VL (8B or 4B) for its inventory and it is not installed; "

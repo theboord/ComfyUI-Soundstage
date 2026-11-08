@@ -101,6 +101,11 @@ def _classify_lab(L: float, a: float, b: float, C: float) -> str:
         return "clear"
     if (b > 14 or a > 10) and sat >= 0.15:
         return "warm"
+    # A pale, hazy clear sky: little chroma, but what there is is a clear blue cast (RGB 200,212,228 -> b -9, a -1).
+    # A grey overcast sky under a neutral camera keeps b within about -5 (RGB 185,190,196 -> b -3.6). Known limit: an
+    # overcast sky shot with a cool white balance (b below -7) now reads clear.
+    if b < -7 and -b > 3 * abs(a):
+        return "clear"
     if C < 12 and sat < 0.25:
         return "overcast"
     return "unknown"

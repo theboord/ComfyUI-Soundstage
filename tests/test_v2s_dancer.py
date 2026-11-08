@@ -237,23 +237,71 @@ def test_stage_sky_colours_match_the_stage():
 
 
 # ------------------------------------------------------------------------------------------------ 3 reshoot words
-def test_reshoot_gets_scene_words_from_the_rebuild_of_a_stock_clip(tmp_path):
+def test_reshoot_gets_scene_words_from_the_rebuild_of_the_same_clip_not_one_with_the_same_name(tmp_path):
     from soundstage import reshoot as R
     from soundstage.video2stage import stages
+    out = tmp_path / "output"
+    clip = tmp_path / "input" / "street_dance.mp4"
+    clip.parent.mkdir()
+    clip.write_bytes(b"the dance clip" * 1000)
+    other = tmp_path / "elsewhere" / "street_dance.mp4"          # same name, a different clip
+    other.parent.mkdir()
+    other.write_bytes(b"another clip!" * 1000)
+    copy_ = tmp_path / "output" / "takes" / "renamed.mp4"         # the same clip, copied and renamed
+    copy_.parent.mkdir(parents=True)
+    copy_.write_bytes(clip.read_bytes())
     bd = vlm.merge_reads(vlm.parse_reply(_fix("dancer_first.txt")), vlm.parse_reply(_fix("dancer_last.txt")))
-    stages.save("abcdef0123", {"tag": "abcdef0123", "video": "street_dance.mp4", "breakdown": {"read": bd}},
-                str(tmp_path))
-    words = R.stock_scene_words("/somewhere/input/street_dance.mp4", str(tmp_path))
+    stages.save("abcdef0123", {"tag": "abcdef0123", "video": "street_dance.mp4", "breakdown": {"read": bd},
+                               "source_path": str(clip), "source_sha": stages.content_hash(str(clip))}, str(out))
+    words = R.stock_scene_words(str(clip), str(out))
     assert "plaid shirt" in words and "jeans" in words and "trees" in words and "dress" not in words
+    assert R.stock_scene_words(str(copy_), str(out)) == words      # matched by its content
+    assert R.stock_scene_words(str(other), str(out)) == ""         # the name alone is not a match
     notes = []
-    assert R.scene_text("", "/somewhere/input/street_dance.mp4", notes, str(tmp_path)) == words
-    assert notes and "stock" in notes[0]
-    assert R.scene_text("my words", "/x/street_dance.mp4", [], str(tmp_path)) == "my words"
-    assert R.stock_scene_words("/x/other.mp4", str(tmp_path)) == ""
-    # a rebuild that wrote its look hint: that is used as is
-    stages.save("abcdef0124", {"video": "b.mp4", "scene_words": "A woman dancing on a concrete slab."}, str(tmp_path))
-    assert R.stock_scene_words("b.mp4", str(tmp_path)) == "A woman dancing on a concrete slab."
-    assert scenewords.from_read(vlm.merge_inventory([vlm.parse_inventory(_fix("dancer_inventory.txt"), 0)]))
+    assert R.scene_text("", str(clip), notes, str(out)) == words and "stock" in notes[0]
+    assert R.scene_text("my words", str(other), [], str(out)) == "my words"
+    # an older record with only a name is not trusted; one with the real path (no hash) is
+    stages.save("abcdef0124", {"video": "b.mp4", "scene_words": "A woman dancing on a concrete slab."}, str(out))
+    b = tmp_path / "input" / "b.mp4"
+    b.write_bytes(b"b" * 50)
+    assert R.stock_scene_words(str(b), str(out)) == ""
+    stages.save("abcdef0125", {"video": "b.mp4", "source_path": str(b), "scene_words": "On a slab."}, str(out))
+    assert R.stock_scene_words(str(b), str(out)) == "On a slab."
+    assert stages.content_hash(str(clip)) != stages.content_hash(str(other))
+
+
+def test_reshoot_reads_a_stock_clip_nothing_has_rebuilt_with_the_inventory(tmp_path):
+    from soundstage import reshoot as R
+    out, ind = tmp_path / "output", tmp_path / "input" / "rs"
+    clip = tmp_path / "input" / "stock.mp4"
+    ind.mkdir(parents=True)
+    clip.write_bytes(b"stock" * 400)
+    rgb = np.full((12, 48, 64, 3), 128, np.uint8)
+    queued = []
+
+    async def run_graph(base, g, what, timeout_s=900.0, on_wait=None):
+        queued.append((what, sorted(g[k]["inputs"]["image"] for k in g if g[k]["class_type"] == "LoadImage")))
+        n = len([k for k in g if k.startswith("r")])
+        return {f"r{i}": {"text": [_fix("dancer_inventory.txt")]} for i in range(n)}, {"total_ms": 1}
+    lf = lambda folder: ["qwen3vl_8b_fp8_scaled.safetensors"] if folder == "text_encoders" else []  # noqa: E731
+    notes = []
+    words = asyncio.run(R.scene_words("http://x", "", str(clip), rgb, notes=notes, list_files=lf, in_dir=str(ind),
+                                      sub="rs", tag="t1", out_dir=str(out), run_graph=run_graph))
+    assert queued and queued[0][0] == "inventory" and all(n.startswith("rs/t1_inv_") for n in queued[0][1])
+    assert all((ind / os.path.basename(n)).is_file() for n in queued[0][1])
+    assert "jeans" in words and "dress" not in words and any("read it for the scene words" in n for n in notes)
+    # kept by content: the next Reshoot of the same clip (even renamed) queues nothing
+    queued.clear()
+    again = asyncio.run(R.scene_words("http://x", "", str(clip), rgb, notes=[], list_files=lf, in_dir=str(ind),
+                                      sub="rs", tag="t1", out_dir=str(out), run_graph=run_graph))
+    assert again == words and not queued
+    # no Qwen3-VL: says so, and the render keeps only the camera words
+    notes = []
+    other = tmp_path / "input" / "other.mp4"
+    other.write_bytes(b"other" * 400)
+    assert asyncio.run(R.scene_words("http://x", "", str(other), rgb, notes=notes, list_files=lambda f: [],
+                                     in_dir=str(ind), sub="rs", tag="t2", out_dir=str(out), run_graph=run_graph)) == ""
+    assert not queued and "no Qwen3-VL" in notes[-1]
 
 
 # ------------------------------------------------------------------------------------------------ 4 stray blocks
@@ -621,6 +669,11 @@ def test_route_runs_the_real_scan_path_and_falls_back_to_the_blocks_when_the_sca
     assert "Plaza" in names2 and "Rocks (left)" in names2                 # the old builder's blocks, as they were
     assert any("fell back to the old block builder" in n for n in r2["notes"])
     assert any("the set scan failed (no splat)" in n for n in r2["notes"])
+    # the scan path's own notes went with the set they described: only its failure reason stays
+    assert any(n.startswith("set: dropped") or "flat dressing" in n or "stand in front of the scan" in n
+               for n in r["notes"]), r["notes"]
+    assert not any(n.startswith("set: dropped") or "flat dressing" in n or "stand in front of the scan" in n or
+                   n.startswith("planes:") for n in r2["notes"]), r2["notes"]
     # a crash anywhere in the scan path falls back the same way
     monkeypatch.setattr(pipeline.scanroute, "apply", lambda scene, **kw: (_ for _ in ()).throw(ValueError("bad planes")))
     r3 = asyncio.run(pipeline.run("http://x", "clip.mp4"))
@@ -675,15 +728,67 @@ def _silhouette(hip_px, h=400, w=300, arms=True):
     return m, hgt + 1
 
 
+def _dancer_depth(hip_px, slab=True, h=400, w=300):
+    """A depth map of a person (4 m away, the _silhouette shape) with a concrete slab 0.5 m behind her filling the
+    picture from below her chest down and a far background above: the frame the old girth read hit the cap on. Returns
+    (depth, COCO-18 joints in pixels, box, height in pixels)."""
+    sil, hgt = _silhouette(hip_px, h, w)
+    d = np.full((h, w), 40.0, np.float32)
+    if slab:
+        d[150:, :] = 4.5                                                 # the slab, right behind her hips
+    d[sil] = 4.0 + 0.05 * np.random.default_rng(3).random(int(sil.sum()))   # the body, a little relief
+    cx, top, bot = w // 2, 20, 380
+    y = lambda f: bot - f * hgt                                          # noqa: E731 - f of the height above the soles
+    uv = np.full((18, 2), np.nan)
+    uv[0], uv[1] = (cx, y(0.93)), (cx, y(0.82))
+    uv[2], uv[5] = (cx - 36, y(0.80)), (cx + 36, y(0.80))
+    uv[3], uv[6] = (cx - hip_px // 2 - 15, y(0.66)), (cx + hip_px // 2 + 15, y(0.66))
+    uv[4], uv[7] = (cx - hip_px // 2 - 15, y(0.47)), (cx + hip_px // 2 + 15, y(0.47))
+    uv[8], uv[11] = (cx - hip_px // 4, y(0.52)), (cx + hip_px // 4, y(0.52))
+    uv[9], uv[12] = (cx - hip_px // 4, y(0.28)), (cx + hip_px // 4, y(0.28))
+    uv[10], uv[13] = (cx - hip_px // 4, y(0.04)), (cx + hip_px // 4, y(0.04))
+    box = [cx - 0.3 * hgt, top - 5, cx + 0.3 * hgt, bot + 5]
+    return d, uv, box, hgt
+
+
 @pytest.mark.parametrize("hip_px", [62, 70, 84])
-def test_girth_from_the_silhouette_puts_the_clay_hips_within_15_percent(hip_px):
-    mask, hgt = _silhouette(hip_px)
-    g, src = W.girth_from(None, mask, female=True)
-    assert src == "the person's silhouette"
+def test_girth_from_a_depth_mask_with_a_slab_behind_her_is_within_15_percent(hip_px):
+    pytest.importorskip("cv2")
+    d, uv, box, hgt = _dancer_depth(hip_px)
     height_m = 1.66
-    mask_hip_m = hip_px / hgt * height_m
-    assert abs(W.clay_hip_width(height_m, g, True) - mask_hip_m) <= 0.15 * mask_hip_m
-    assert W.nearest_build(g) in W.BUILDS
+    true_hip_m = hip_px / hgt * height_m
+    # the old mask: every pixel within 25 % of the body's depth, so the slab 0.5 m behind joins her hips
+    old = W.person_mask_from_depth(d, [v / s for v, s in zip(box, (300, 400, 300, 400))])
+    g_old, _ = W.girth_from(None, old)
+    assert g_old == 1.5 and W.nearest_build(g_old) == "heavy"
+    # the body mask: the take's joints band it and the body's own depth per row decides
+    m = W.body_mask(d, box, uv)
+    assert not m[200, 5] and not m[300, 290]                            # the slab is not her
+    g, src = W.girth_from(None, m, female=True)
+    assert src == "the person's silhouette"
+    assert abs(W.clay_hip_width(height_m, g, True) - true_hip_m) <= 0.15 * true_hip_m, (g, hip_px)
+    # without joints (the read's box only) the tighter depth test still keeps the slab out
+    g2, _ = W.girth_from(None, W.body_mask(d, box, None), female=True)
+    assert abs(W.clay_hip_width(height_m, g2, True) - true_hip_m) <= 0.15 * true_hip_m, (g2, hip_px)
+
+
+def test_the_build_uses_the_depth_sample_of_the_moment_the_take_starts(monkeypatch):
+    pytest.importorskip("cv2")
+    d, uv, box, hgt = _dancer_depth(70)
+    empty = np.full_like(d, 40.0)
+    empty[150:] = 4.5                                                   # the slab with nobody on it yet
+    depths = [empty, empty, d, d]
+    times = [0.0, 1.0, 2.0, 3.0]
+    take = {"frames": 3, "source_frames": [48, 60, 72], "focal_px": 500.0, "body": [[0]] * 3}   # starts at 2 s
+    seen = []
+    monkeypatch.setattr(pipeline.performer, "sam_2d", lambda t, k, size: (seen.append((k, size)), uv)[1])
+    assert pipeline.ref_frame_pair(take, times, 24.0) == (2, 0)
+    m = pipeline.build_mask({"source": {}}, take, depths, times, 24.0, 4.0)
+    assert seen == [(0, (300, 400))] and m is not None and m[195, 150] and not m[195, 5]
+    g, _ = W.girth_from(None, m, female=True)
+    assert 0.85 < g < 1.25
+    # the old pairing (the take's first frame on depth sample 0, where nobody stands yet) reads the bare slab as her
+    assert W.girth_from(None, W.body_mask(empty, box, uv))[0] == 1.5
 
 
 def test_sam_shape_wins_and_the_clay_formula_matches_the_stage():
@@ -701,6 +806,98 @@ def test_person_mask_from_depth():
     d[40:190, 60:100] = 4.0                                              # the person, 4 m away
     m = W.person_mask_from_depth(d, [0.25, 0.15, 0.75, 0.98])
     assert m[100, 80] and not m[100, 50] and m.sum() == 150 * 40
+
+
+# ------------------------------------------------------------------------------------------------ review round 2
+def test_dress_shirt_and_dress_pants_are_not_a_dress():
+    ap = W.parse("white dress shirt and black dress pants")
+    assert ap["top"] == "shirt" and ap["bottom"] == "trousers" and ap["top_color"] == W.COLORS["white"]
+    assert ap["bottom_color"] == W.COLORS["black"]
+    assert W.parse("a navy dress-shirt")["top"] == "shirt"
+    assert W.parse("a red sundress")["top"] == "dress" and W.parse("woman in a dress")["top"] == "dress"
+    assert not W.said_dress("dress shirt, dress pants") and W.said_dress("a black dress and dress shoes")
+    assert "dress" not in W.words(W.parse("white dress shirt"), "")
+
+
+def test_labelled_wardrobe_replies():
+    ap = W.parse("top: yellow plaid shirt; bottom: jeans")
+    assert ap == {"top": "shirt", "top_color": W.COLORS["yellow"], "top_pattern": "plaid", "bottom": "jeans"}
+    ap = W.parse("Top: black tank top\nBottom: denim shorts")
+    assert ap["top"] == "tank" and ap["bottom"] == "shorts" and ap["top_color"] == W.COLORS["black"]
+    ap = W.parse("top: white; bottom: jeans")            # a label with no garment: its colour does not reach the jeans
+    assert ap == {"bottom": "jeans"}
+    assert W.parse("a white top and jeans")["top"] == "tshirt"   # 'top' as a garment word still counts
+
+
+def test_shade_words_go_with_the_colour_after_them():
+    assert W.parse("light blue jeans")["bottom_color"] == W.JEANS_SHADE["light"]
+    assert W.parse("light-blue jeans")["bottom_color"] == W.JEANS_SHADE["light"]
+    assert W.parse("dark blue jeans")["bottom_color"] == W.JEANS_SHADE["dark"]
+    assert W.parse("blue jeans")["bottom_color"] == W.COLORS["blue"]
+    assert W.parse("black jeans")["bottom_color"] == W.COLORS["black"]
+    dark = W.parse("dark green jacket")["top_color"]
+    light = W.parse("pale pink shirt")["top_color"]
+    assert WX.srgb_to_lab(WX.hex_rgb(dark))[0] < WX.srgb_to_lab(WX.hex_rgb(W.COLORS["green"]))[0] - 5
+    assert WX.srgb_to_lab(WX.hex_rgb(light))[0] > WX.srgb_to_lab(WX.hex_rgb(W.COLORS["pink"]))[0] + 5
+
+
+def test_a_pale_hazy_clear_sky_is_clear_not_overcast():
+    s = WX.sky_sample(*_frames([200, 212, 228]))
+    L, a, b = s["lab"]
+    assert L > 80 and -10.5 < b < -8 and s["chroma"] < 12                 # low chroma, but a clear blue cast
+    assert WX.classify(s) == "clear"
+    preset, wx, _ = WX.preset_for("morning", s, convert.time_preset)
+    assert wx == "clear" and preset == "midday"                           # sun on, not the sunless overcast preset
+    for grey in ([185, 190, 196], [190, 192, 196], [210, 215, 222], [180, 186, 194], [90, 95, 100]):
+        assert WX.classify(WX.sky_sample(*_frames(grey))) == "overcast", grey   # neutral greys stay overcast
+
+
+def test_the_note_says_the_user_turned_the_vision_model_off(fake_server, monkeypatch):
+    on, note = scanroute.choose(None, True, None, vlm_on=False)
+    assert not on and "turned off" in note and "no Qwen3-VL" not in note
+    monkeypatch.setattr(pipeline.vlm, "inventory_model", lambda: "qwen3vl_8b_fp8_scaled.safetensors")
+    r = asyncio.run(pipeline.run("http://x", "clip.mp4", use_vlm=False))
+    assert any("vision model is turned off" in n for n in r["notes"])
+    assert not any("no Qwen3-VL on this server" in n for n in r["notes"])
+
+
+def test_the_scan_runs_off_the_event_loop(fake_server, monkeypatch):
+    import time as _t
+    seen, out = fake_server
+    monkeypatch.setattr(pipeline.vlm, "inventory_model", lambda: "qwen3vl_8b_fp8_scaled.safetensors")
+    real = pipeline.queue.run_graph
+
+    async def run_graph(base, g, what, timeout_s=900.0, on_wait=None):
+        if what == "inventory":
+            n = len([k for k in g if k.startswith("r")])
+            return {f"r{i}": {"text": [_fix("dancer_inventory.txt")]} for i in range(n)}, {"total_ms": 1}
+        return await real(base, g, what, timeout_s, on_wait)
+    monkeypatch.setattr(pipeline.queue, "run_graph", run_graph)
+    span = {}
+
+    def slow_apply(scene, **kw):   # stands in for the fuse + plane fit: blocking CPU work
+        span["t0"] = _t.perf_counter()
+        _t.sleep(0.6)
+        span["t1"] = _t.perf_counter()
+        return {"planes": 0, "scan": True, "dropped": [], "worded": []}
+    monkeypatch.setattr(pipeline.scanroute, "apply", slow_apply)
+
+    async def main():
+        ticks, done = [], []
+
+        async def ticker():   # the server's other work: job polling, the websocket
+            while not done:
+                ticks.append(_t.perf_counter())
+                await asyncio.sleep(0.02)
+        t = asyncio.create_task(ticker())
+        r = await pipeline.run("http://x", "clip.mp4")
+        done.append(1)
+        await t
+        return r, ticks
+    r, ticks = asyncio.run(main())
+    assert r["scene"]["video2stage"]["set_path"]["path"] == "scan"
+    during = [x for x in ticks if span["t0"] < x < span["t1"]]
+    assert len(during) >= 10, len(during)                                  # the loop kept running while it worked
 
 
 # ------------------------------------------------------------------------------------------------ the browser fixture

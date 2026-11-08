@@ -29,7 +29,15 @@ BOTTOMS = {"jeans": "jeans", "trousers": "trousers", "pants": "trousers", "leggi
            "shorts": "shorts", "cutoffs": "shorts", "skirt": "skirt", "miniskirt": "skirt"}
 PHRASES = [(r"\bcrop(?:ped)?[\s-]+tops?\b", "croptop"), (r"\btank[\s-]+tops?\b", "tanktop"), (r"\bt[\s-]shirts?\b", "t-shirt"),
            (r"\btrench[\s-]+coats?\b", "trenchcoat"), (r"\bbutton[\s-](up|down)\b", r"button-\1"),
-           (r"\bdenim\s+shorts\b", "denim shorts"), (r"\bcrop(?:ped)?\b(?=\s+(?:\w+\s+)?(?:shirt|blouse|hoodie|sweater|jacket))", "cropped")]
+           (r"\bdenim\s+shorts\b", "denim shorts"), (r"\bcrop(?:ped)?\b(?=\s+(?:\w+\s+)?(?:shirt|blouse|hoodie|sweater|jacket))", "cropped"),
+           # "dress shirt" / "dress pants" are a smart shirt and trousers, never a dress
+           (r"\bdress[\s-]+(?=(?:shirts?|pants|trousers|slacks|shoes|socks|blouses?|coats?|jackets?)\b)", "smart ")]
+# A labelled reply ("top: yellow plaid shirt; bottom: jeans"): the label is not a garment, and nothing reaches across it.
+LABELS = re.compile(r"\b(?:tops?|bottoms?|upper(?:\s+body)?|lower(?:\s+body)?|outfit|wardrobe|clothing|clothes|"
+                    r"footwear|shoes|accessories|legs|torso)\s*:")
+SEP = "zzsep"          # a barrier word: colour / pattern words never reach back past it
+# Shade words go with the colour after them ("light blue jeans" is light jeans, "dark green jacket" a dark green)
+SHADES = {"light": 1, "pale": 1, "faded": 1, "pastel": 1, "washed": 1, "dark": -1, "deep": -1}
 COLORS = {"black": "#1d1d1f", "white": "#ecebe7", "cream": "#e8dfc8", "grey": "#8a8a8a", "gray": "#8a8a8a",
           "red": "#b3302b", "maroon": "#6e2230", "burgundy": "#6e2230", "blue": "#2e4f8a", "navy": "#1f2b4a",
           "teal": "#2f7a78", "green": "#3f6b3a", "olive": "#6b6b3a", "yellow": "#e3b622", "mustard": "#c99a2e",
@@ -45,9 +53,45 @@ VAGUE = ("outfit", "clothes", "clothing", "attire", "costume", "garments", "wear
 
 def _norm(text: str) -> str:
     t = " " + str(text or "").lower() + " "
+    t = LABELS.sub(f" {SEP} ", t)
+    t = re.sub(r"[;|\n]", f" {SEP} ", t)
     for pat, rep in PHRASES:
         t = re.sub(pat, rep, t)
     return t
+
+
+def said_dress(text: str) -> bool:
+    """Did the model say a dress? 'dress' / 'gown' / 'sundress' as a garment, not 'dress shirt' or 'dress pants'."""
+    return bool(re.search(r"\b(dress|gown|sundress)\b", _norm(text)))
+
+
+def _mix(hex_: str, toward: int, k: float = 0.45) -> str:
+    r, g, b = (int(hex_[i:i + 2], 16) for i in (1, 3, 5))
+    return "#%02x%02x%02x" % tuple(int(round(c + (toward - c) * k)) for c in (r, g, b))
+
+
+def _colour_of(before: list[str], garment: str) -> str | None:
+    """The colour of a garment from the words before it (nearest first), its shade word applied first: 'light blue
+    jeans' -> light jeans, 'dark green jacket' -> a darker green."""
+    for j in range(len(before) - 1, -1, -1):
+        prev = before[j]
+        if garment == "jeans" and prev in JEANS_SHADE:
+            return JEANS_SHADE[prev]
+        parts = prev.split("-")
+        base = parts[-1] if parts[-1] in COLORS else parts[0]
+        c = COLORS.get(base)
+        if not c:
+            continue
+        shade = next((SHADES[p] for p in parts[:-1] if p in SHADES), None) if base == parts[-1] and len(parts) > 1 \
+            else None
+        if shade is None and j > 0 and before[j - 1] in SHADES:
+            shade = SHADES[before[j - 1]]
+        if shade is None:
+            return c
+        if garment == "jeans" and base in ("blue", "denim", "navy"):
+            return JEANS_SHADE["light" if shade > 0 else "dark"]
+        return _mix(c, 255 if shade > 0 else 0)
+    return None
 
 
 def parse(text: str) -> dict:
@@ -58,6 +102,9 @@ def parse(text: str) -> dict:
     last = -1          # the previous garment: colour words never reach back past it
     vague_col = None   # "yellow plaid outfit": the colour / pattern of the whole look
     for i, w in enumerate(words):
+        if w == SEP:
+            last = i
+            continue
         if w in VAGUE:
             for prev in reversed(words[max(last + 1, i - 3):i]):
                 if prev.split("-")[0] in COLORS:
@@ -76,14 +123,9 @@ def parse(text: str) -> dict:
         ap[slot] = garment
         before = words[max(last + 1, i - 4):i]
         last = i
-        for prev in reversed(before):
-            if garment == "jeans" and prev in JEANS_SHADE:
-                ap[f"{slot}_color"] = JEANS_SHADE[prev]
-                break
-            c = COLORS.get(prev.split("-")[0])
-            if c:
-                ap[f"{slot}_color"] = c
-                break
+        c = _colour_of(before, garment)
+        if c:
+            ap[f"{slot}_color"] = c
         pat = next((p for p in PATTERNS if any(b.startswith(p) for b in before)), None) or \
             ("plaid" if w == "flannel" or "flannel" in before else None)
         if pat:
@@ -98,7 +140,7 @@ def parse(text: str) -> dict:
                 ap["length"] = "cropped"
     if vague_col and "top" in ap and "top_color" not in ap:
         ap["top_color"] = vague_col
-    if "dress" in (ap.get("top"),) and not re.search(r"\b(dress|gown|sundress)\b", str(text or "").lower()):
+    if "dress" in (ap.get("top"),) and not said_dress(text):
         ap.pop("top")   # never a dress the model did not say
     return ap
 
@@ -141,7 +183,7 @@ def words(ap: dict, raw: str = "") -> str:
     """The wardrobe as Look words: the model's own wardrobe text when it gave one (cleaned), else built from the
     garments ('a short-sleeve yellow plaid shirt and light jeans'); '' when unknown and nothing was said."""
     raw = " ".join(str(raw or "").split()).strip(" .,;")
-    if raw and not re.search(r"\b(dress|gown|sundress)\b", raw.lower()) and ap.get("top") == "dress":
+    if raw and not said_dress(raw) and ap.get("top") == "dress":
         raw = ""
     if raw:
         return raw
@@ -252,6 +294,78 @@ def person_mask_from_depth(depth: np.ndarray, box, rel: float = 0.25) -> np.ndar
     m = np.zeros((h, w), bool)
     m[y0:y1, x0:x1] = np.isfinite(sub) & (np.abs(sub - z) < rel * z)
     return m
+
+
+# The take's 2D joints (COCO-18, as SAM 3D Body's take stores them: 0 nose, 1 neck, 2-4 right arm, 5-7 left arm,
+# 8-10 right leg, 11-13 left leg) as bones: the trunk and legs, then the arms.
+TRUNK_BONES = ((0, 1), (1, 8), (1, 11), (2, 8), (5, 11), (8, 11), (2, 5), (8, 9), (9, 10), (11, 12), (12, 13))
+ARM_BONES = ((1, 2), (2, 3), (3, 4), (1, 5), (5, 6), (6, 7))
+BAND_TRUNK, BAND_ARM = 0.075, 0.045   # how far from a bone the body can reach, as a share of the person's height
+CORE = 0.02                           # pixels this close to a bone are surely the body (its depth per row)
+
+
+def _bone_dist(X, Y, uv, bones):
+    out = np.full(X.shape, np.inf)
+    for a, b in bones:
+        if a >= len(uv) or b >= len(uv) or not (np.all(np.isfinite(uv[a])) and np.all(np.isfinite(uv[b]))):
+            continue
+        p, q = uv[a], uv[b]
+        d = q - p
+        t = np.clip(((X - p[0]) * d[0] + (Y - p[1]) * d[1]) / max(float(d @ d), 1e-9), 0.0, 1.0)
+        out = np.minimum(out, np.hypot(X - (p[0] + t * d[0]), Y - (p[1] + t * d[1])))
+    return out
+
+
+def body_mask(depth: np.ndarray, box_px, uv=None, rel: float = 0.07) -> np.ndarray | None:
+    """The person's silhouette for the build, tighter than person_mask_from_depth: inside the box (pixels), within a
+    band around the take's own 2D joints (uv, pixels of this depth map) when it has them, and within rel of the BODY's
+    depth on that row (not the box's median), then only the connected piece that holds the body. A concrete slab or a
+    slope half a metre behind the hips is no longer counted as hip. Known limit: a background within ~rel of the body
+    (a wall she leans on) and inside the band still joins."""
+    d = np.asarray(depth, np.float32)
+    h, w = d.shape
+    x0, y0, x1, y1 = box_px
+    x0, x1 = max(0, int(np.floor(x0))), min(w, int(np.ceil(x1)))
+    y0, y1 = max(0, int(np.floor(y0))), min(h, int(np.ceil(y1)))
+    if x1 - x0 < 4 or y1 - y0 < 8:
+        return None
+    sub = d[y0:y1, x0:x1]
+    ok = np.isfinite(sub) & (sub > 0)
+    Y, X = np.mgrid[y0:y1, x0:x1].astype(np.float64)
+    uv = None if uv is None else np.asarray(uv, float)
+    hips = uv is not None and any(i < len(uv) and np.all(np.isfinite(uv[i])) for i in (8, 11))
+    if hips and np.isfinite(uv).all(axis=1).sum() >= 6:
+        H = float(y1 - y0)
+        dt, da = _bone_dist(X, Y, uv, TRUNK_BONES), _bone_dist(X, Y, uv, ARM_BONES)
+        band = (dt < BAND_TRUNK * H) | (da < BAND_ARM * H)
+        core = (dt < CORE * H) | (da < 0.6 * CORE * H)
+    else:
+        band = np.ones_like(ok)
+        core = np.zeros_like(ok)
+        bw = x1 - x0
+        core[: (y1 - y0) * 3 // 4, bw * 2 // 5: max(bw * 3 // 5, bw * 2 // 5 + 1)] = True
+    core &= ok
+    if not core.any():
+        return None
+    # the body's depth on each row: the median of its core pixels there, filled from the nearest row that has some
+    zr = np.full(sub.shape[0], np.nan)
+    for r in np.flatnonzero(core.any(1)):
+        zr[r] = float(np.median(sub[r][core[r]]))
+    have = np.flatnonzero(np.isfinite(zr))
+    zr = zr[have[np.abs(np.arange(len(zr))[:, None] - have[None]).argmin(1)]]
+    m = band & ok & (np.abs(sub - zr[:, None]) < rel * zr[:, None])
+    try:
+        import cv2
+        n, lab = cv2.connectedComponents(m.astype(np.uint8), connectivity=4)
+        if n > 2:
+            hits = np.bincount(lab[m & core], minlength=n)
+            hits[0] = 0
+            m = lab == int(hits.argmax())
+    except ImportError:   # without OpenCV the band and the depth test alone decide
+        pass
+    out = np.zeros((h, w), bool)
+    out[y0:y1, x0:x1] = m
+    return out
 
 
 # ---------------------------------------------------------------------------------------------------------- reference
