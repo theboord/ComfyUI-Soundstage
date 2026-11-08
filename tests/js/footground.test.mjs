@@ -227,6 +227,25 @@ test("real Rocketbox turning on the spot fast (360 in 1 s and in 2 s) steps; a p
   }
 });
 
+test("walking and then swimming in one shot: the walk is grounded (the swim gate is per frame, not the whole shot)", { skip: NOT_INSTALLED }, async () => {
+  // 3abc644: skin.feetUp read swimsInShot and footPlanFor returned no plan at all, so once the clay is retired a
+  // person who walks into the water got no grounding for the walking part either
+  const A = await import("../../web/stage/people/avatars.mjs");
+  for (const kind of ["man", "woman"]) {
+    const a = K.walker(kind, {}, [-3, 0, 0], [3, 0, 0]);
+    const st = await K.setup(kind, a);
+    // in the water from frame 70 on (the swim plan's own per-frame mode, as stage._swimPlan returns it)
+    const swim = { mode: Array.from({ length: 121 }, (_, f) => (f >= 70 ? 1 : 0)) };
+    st.water = { level: 0 }; st._swimPlan = () => swim;
+    const plan = A.footPlan(st, a);
+    assert.ok(plan, `${kind}: a foot plan`);
+    for (let f = 0; f < 121; f++) assert.equal(!!plan.skip[f], f >= 70, `${kind} f${f}: skipped only while swimming`);
+    let planted = 0;
+    for (let f = 0; f < 70; f++) planted += plan.state.l[f] === 1 || plan.state.r[f] === 1 ? 1 : 0;
+    assert.ok(planted >= 60, `${kind}: a foot planted on ${planted} of the 70 walking frames`);
+  }
+});
+
 test("grounding gate: feet on the ground, not 'no clay reason' (props, gaze, Pose keys, mocap, driven, Blocking are grounded; riding, carried, swimming, lying, lifted, airborne are not)", async () => {
   const C = await import("../../web/stage/people/avatarcore.mjs");
   assert.equal(typeof C.feetUpReason, "function");

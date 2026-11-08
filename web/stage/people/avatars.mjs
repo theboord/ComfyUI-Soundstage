@@ -469,24 +469,49 @@ export function avatarsAt(stage) {
     setShown(skin, !reason);
     // The grounding gate is the feet, not the clay (C.feetUpReason): today a hidden body isn't posed at all, and once
     // the clay is retired a person holding a prop, with gaze or Pose keys, on a mocap take ... is lifelike and stands.
-    skin.feetUp = C.feetUpReason(a, body);
+    // Swimming is per frame here (a person who walks and then swims is grounded while walking).
+    skin.feetUp = C.feetUpReason(a, { ...body, swims: swimsNow(stage, a, g, f) });
     if (reason) continue;
-    // The physics lift (stage.setFrame raises an unbaked dynamic / static object by a.physics.lift) is followed too.
-    const p = stage._actorPosAt(a, f), y = bodyY(stage, a, f) + physicsLift(a), yaw = stage._headingAt(a, f);
-    const scale = C.statureScale(C.clayHeight(a) * (a.scale || 1), skin.kit.stature);
-    // Speed and the shared gait phase for the whole shot, cached until the path, the length or the size changes.
-    const keys = stage._actorKeys(a);
-    const sig = `${last}|${fps}|${scale}|${C.keysHash(keys)}|${a.rotation_deg || 0}`;
-    if (skin.gait?.sig !== sig) {
-      const path = keys.length > 1 ? groundPath(stage, a, last) : new Array(last + 1).fill([p[0], p[2]]);
-      // the headings too: walking backwards (heading keys facing away from the travel) plays the walk backwards
-      const headings = keys.length > 1 ? Array.from({ length: last + 1 }, (_, i) => stage._headingAt(a, i)) : null;
-      skin.gait = { sig, ...C.gaitTable(path, fps, kitStrides(skin.kit, scale), { headings }) };
-    }
+    const { scale } = ensureGait(stage, a, skin, { last, fps, f });
     const plan = footPlanFor(stage, a, g, skin, { last, fps, scale });
     poseRaw(stage, a, g, skin, f, { fps, scale, last });
     skin.footOut = plan ? F.groundFeet({ plan, rig: skin.kit.feet, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, frame: f, saved: (skin.ikSaved ||= []) }) : null;
   }
+}
+
+/**
+ * The person's speed and shared gait phase for the whole shot (skin.gait), cached until the path, the length or the
+ * size changes. Returns {scale} (the avatar's stature scale).
+ */
+function ensureGait(stage, a, skin, { last, fps, f }) {
+  const p = stage._actorPosAt(a, f);
+  const scale = C.statureScale(C.clayHeight(a) * (a.scale || 1), skin.kit.stature);
+  const keys = stage._actorKeys(a);
+  const sig = `${last}|${fps}|${scale}|${C.keysHash(keys)}|${a.rotation_deg || 0}`;
+  if (skin.gait?.sig !== sig) {
+    const path = keys.length > 1 ? groundPath(stage, a, last) : new Array(last + 1).fill([p[0], p[2]]);
+    // the headings too: walking backwards (heading keys facing away from the travel) plays the walk backwards
+    const headings = keys.length > 1 ? Array.from({ length: last + 1 }, (_, i) => stage._headingAt(a, i)) : null;
+    skin.gait = { sig, ...C.gaitTable(path, fps, kitStrides(skin.kit, scale), { headings }) };
+  }
+  return { scale };
+}
+
+/** The swim plan of a person in the water (stage._swimPlan), or null on dry land. */
+const swimPlanOf = (stage, a, g) => ((stage.water || stage.setFx?.underwater) ? stage._swimPlan?.(a, g) || null : null);
+/** Does this person swim at frame f (C.swimsAt on the swim plan)? */
+const swimsNow = (stage, a, g, f) => C.swimsAt(a, f, () => swimPlanOf(stage, a, g));
+
+/**
+ * The foot plan of a person with a lifelike body for this shot, built whether or not the body shows right now (the
+ * same plan avatarsAt grounds the feet with; tests and the one-motion work read it). null without a body or a rig.
+ */
+export function footPlan(stage, a) {
+  const g = stage.actorMeshes.get(a.id), skin = g?.userData.humanSkin;
+  if (!skin) return null;
+  const fps = stage.state.shot?.fps || 24, last = stage._lastFrame();
+  const { scale } = ensureGait(stage, a, skin, { last, fps, f: stage.frame });
+  return footPlanFor(stage, a, g, skin, { last, fps, scale });
 }
 
 /** The lifelike body's height at frame f: walked steps, not the clay's hops (stage._walkHeightAt), else the clay's. */
@@ -519,9 +544,12 @@ const idOf = (o) => { if (!o || typeof o !== "object") return 0; let v = _ids.ge
 function footPlanFor(stage, a, g, skin, { last, fps, scale }) {
   const rig = skin.kit.feet;
   if (!rig || !skin.legs || stage.footGrounding === false) return null;   // footGrounding false: the clips alone (A/B checks)
-  if (skin.feetUp) return null;   // off their feet all shot (riding, seated, carried, swimming, knocked over): no plan
+  // off their feet all shot (riding, seated, carried, knocked over, floating): no plan. Swimming and the air are per
+  // frame (the plan skips those frames), so a person who walks and then swims is grounded on the walk.
+  if (C.feetUpReason(a, { tipped: tippedNow(g), floats: !!stage._floatsInShot?.(a) })) return null;
   const shapes = stage.root ? stage._supportShapes?.() : null;
-  const sig = `${skin.gait.sig}|${stage.setFx?.id || ""}|${idOf(shapes)}|${idOf(stage._yCache?.get(a))}|${idOf(stage._swimCache?.get(a)?.stand)}|${physicsLift(a)}|${skin.kit.floors ? 1 : 0}`;
+  const swim = swimPlanOf(stage, a, g);
+  const sig = `${skin.gait.sig}|${stage.setFx?.id || ""}|${idOf(shapes)}|${idOf(stage._yCache?.get(a))}|${idOf(stage._swimCache?.get(a)?.stand)}|${idOf(swim)}|${physicsLift(a)}|${skin.kit.floors ? 1 : 0}`;
   if (skin.feet?.sig === sig) return skin.feet.plan;
   const baseY = (f) => bodyY(stage, a, f);
   const ground = (x, z, f) => {
@@ -534,7 +562,7 @@ function footPlanFor(stage, a, g, skin, { last, fps, scale }) {
   // per frame: the same gate (lifted by physics, in the air) marks the frames not grounded
   const plan = F.planFeet({
     n: last + 1, fps, heightM: C.clayHeight(a) * (a.scale || 1), rig, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, ground, baseY,
-    poseRaw: (f) => { poseRaw(stage, a, g, skin, f, { fps, scale, last }); return !C.feetUpReason(a, { lifted, airborne: airAt(stage, a, f) }); },
+    poseRaw: (f) => { poseRaw(stage, a, g, skin, f, { fps, scale, last }); return !C.feetUpReason(a, { lifted, airborne: airAt(stage, a, f), swims: C.swimsAt(a, f, () => swim) }); },
   });
   skin.feet = { sig, plan };
   return plan;

@@ -387,6 +387,15 @@ export function swimsInShot(a, plan) {
   return false;
 }
 
+/** Does this person swim at frame f? swimsInShot's gate, on the swim plan's per-frame mode (a plan without one: the
+ *  whole shot). The grounding gate reads this, so the walk before a swim is grounded. */
+export function swimsAt(a, f, plan) {
+  if (!a || a.carry_id) return false;
+  const p = plan();
+  if (!p?.mode) return !!p;
+  return !!p.mode[Math.max(0, Math.min(p.mode.length - 1, Math.round(f)))];
+}
+
 /**
  * Driven live, decided for the whole shot: once Drive has had this person in a shot (driving, involved, or a recorded
  * take under review), they stay clay until the shot changes or Drive is switched off, so the body never flips back and
