@@ -308,3 +308,10 @@ test("real Rocketbox: the Pose gizmo: dots, IK handles and the rotate ring on th
   assert.ok(W(skin.bones.Bip01_L_Hand).distanceTo(before) > 0.05, "the visible forearm follows the edit");
   assert.ok(limbAngle(skin, g) < 1, "logic rig and body agree after the edit");
 });
+
+test("clock ban: the one-motion rules read no clock and no randomness (retarget, onemotion, avatarcore, tier, standin)", () => {
+  for (const f of ["people/retarget.mjs", "people/onemotion.mjs", "people/avatarcore.mjs", "tier.mjs", "people/standin.mjs"]) {
+    const src = readFileSync(fileURLToPath(new URL(`../../web/stage/${f}`, import.meta.url)), "utf8").replace(/\/\/.*$/gm, "");
+    assert.ok(!/Date\.now|performance\.now|Math\.random|setTimeout|setInterval|requestAnimationFrame/.test(src), `${f} reads a clock`);
+  }
+});
