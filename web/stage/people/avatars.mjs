@@ -1,12 +1,13 @@
-// Lifelike people on the stage (people overhaul, milestone M1): the Microsoft Rocketbox avatars (MIT) over the clay
-// figure, the way the rigged horse rides over the built one (stage.mjs _upgradeHorse).
-//   - The clay figure stays in the scene as the logic rig: gait, gaze, mounts, mocap, Drive, the ID matte's picking
-//     all keep reading its joints. Only its meshes are hidden while the avatar shows.
-//   - The avatar plays its own Rocketbox idle / walk / run clips, picked and crossfaded by the actor's ground speed,
-//     with walk and run locked to the distance travelled (no skating) and root motion stripped (avatarcore.mjs).
+// Lifelike people on the stage: the Microsoft Rocketbox avatars (MIT) over the hidden logic rig (the old clay figure,
+// now never drawn: Lifelike-only plan, L1).
+//   - The rig stays in the scene as hidden logic (role:'logic'): gait, gaze, mounts, mocap, Drive, colliders and the ID
+//     matte's picking read its joints.
+//   - One motion (onemotion.mjs, retarget.mjs): each frame ONE source drives the visible body (the clip, the rig, or
+//     the seat), and the rig is posed from the same motion, so Pose keypoints, held props, the gizmo and the feet agree.
+//   - The avatar's clips: idle / walk / run, crossfaded by ground speed, walk and run locked to the distance travelled.
 //   - Pure frame -> pose: given the stage frame the pose is always the same (no wall clock), as renders need.
 //   - The asset files are NOT in the repo (web/stage/people/rocketbox/, see web/stage/people/README.md). Without
-//     them every person silently stays clay.
+//     them every person shows as the marked stand-in (standin.mjs), never clay.
 // Pure rules live in avatarcore.mjs (tested in node); this file loads, clones and drives.
 import * as THREE from "../../vendor/three.module.min.mjs";
 import { FBXLoader } from "../../vendor/addons/FBXLoader.mjs";
@@ -14,6 +15,9 @@ import * as SkeletonUtils from "../../vendor/addons/SkeletonUtils.mjs";
 import { gazeKeys } from "../gaze.mjs";
 import * as C from "./avatarcore.mjs";
 import * as F from "./footplant.mjs";
+import * as R from "./retarget.mjs";
+import * as O from "./onemotion.mjs";
+import { setStandIn } from "./standin.mjs";
 
 F.setCloner((o) => SkeletonUtils.clone(o));
 
@@ -291,7 +295,10 @@ export function placeHolder(g, holder, { x, y, z, yaw, scale }) {
 
 /** Pose the avatar for this frame: weights by speed, walk and run on one shared gait phase (avatarcore.gaitTable). */
 export function drive(skin, { frame, fps, speed, phase, seed }) {
-  F.restoreClipPose(skin.ikSaved);   // the clip's own legs back before the mixer writes (it skips unchanged values)
+  // the clip's own values back before the mixer writes (three's PropertyMixer skips a value equal to the one it wrote
+  // last): the feet's IK (ikSaved) and everything one motion writes over the clip (rtSaved: retarget, sitBody, blend)
+  F.restoreClipPose(skin.ikSaved);
+  F.restoreClipPose(skin.rtSaved);
   const w = C.clipWeights(speed);
   const meta = {};
   for (const k of C.CLIP_KINDS) if (skin.kit.clips[k]) meta[k] = { duration: skin.kit.clips[k].clip.duration };
@@ -303,6 +310,10 @@ export function drive(skin, { frame, fps, speed, phase, seed }) {
   }
   skin.mixer.update(0);
   skin.weights = w;
+  // what the mixer just wrote, for the next drive (see above)
+  const saved = (skin.rtSaved ||= []);
+  for (const [b] of R.snapshot(skin).b) saved.push([b, "quaternion", b.quaternion.clone()]);
+  if (skin.bones?.Bip01) saved.push([skin.bones.Bip01, "position", skin.bones.Bip01.position.clone()]);
 }
 
 // ---------------------------------------------------------------- sitting (stage.setPose "sit" / "sit_floor")
@@ -375,7 +386,7 @@ export const AVATAR_WAIT_MS = 60000;
 
 /** Resolves when every lifelike body that started loading has been put on (or given up): {ok, timedOut, pending,
  *  waitedMs, waited (something was loading), message}. captureSequence awaits it so a capture never starts clay and turns lifelike partway. ms caps
- *  the wait; on a timeout the message says so (the people still loading stay clay for this capture, then change). */
+ *  the wait; on a timeout the message says so (the people still loading are the marked stand-in in this capture). */
 export async function avatarsReady(ms = AVATAR_WAIT_MS) {
   const t0 = Date.now();
   if (!inflight.size) return { ok: true, timedOut: false, pending: 0, waitedMs: 0, waited: false, message: "" };
@@ -387,7 +398,7 @@ export async function avatarsReady(ms = AVATAR_WAIT_MS) {
   clearTimeout(timer);
   const pending = inflight.size, waitedMs = Date.now() - t0;
   if (done) return { ok: true, timedOut: false, pending: 0, waitedMs, waited: true, message: "" };
-  const message = `Lifelike people still loading after ${Math.round(ms / 1000)} s: ${pending} ${pending === 1 ? "person is" : "people are"} drawn as the clay figure in this capture. Capture again once they show.`;
+  const message = `People still loading after ${Math.round(ms / 1000)} s: ${pending} ${pending === 1 ? "person is" : "people are"} drawn as the marked stand-in in this capture. Press Run again once they show.`;
   console.warn("Soundstage:", message);
   return { ok: false, timedOut: true, pending, waitedMs, waited: true, message };
 }
@@ -425,8 +436,10 @@ export function attachKit(stage, a, g, kit) {
 function bindSkin(stage, skin, a, g) {
   if (skin.shown) setShown(skin, false);
   skin.holder.removeFromParent();
+  setStandIn(g, false);
   skin.clay = []; skin.clayVis = [];
-  g.traverse((o) => { if (o.isMesh && !o.userData.avatar) skin.clay.push(o); });
+  g.traverse((o) => { if (o.isMesh && !o.userData.avatar) { o.userData.role = "logic"; skin.clay.push(o); } });
+  skin.holder.traverse((o) => { if (o.isMesh) o.userData.role = "look"; });
   skin.g = g;
   skin.reason = null;
   if (skin.faceless !== (a.face === "faceless") || !skin._faced) { applyFace(skin, a.face === "faceless"); skin._faced = true; }
@@ -445,13 +458,13 @@ export function reuseSkin(stage, a, g, spec) {
   return skin;
 }
 
-/** stage._buildSet hook: give a person the lifelike body once its files load; clay stays on any failure. */
+/** stage._buildSet hook: give a person the lifelike body once its files load; the marked stand-in on any failure. */
 export function upgradeHuman(stage, a, g) {
   const spec = C.avatarSpecFor(a);
   if (!spec || !g?.userData?.joints) return;
   if (reuseSkin(stage, a, g, spec)) return;
   const load = stage._loadKit || loadKit;   // stage._loadKit: a test's stand-in loader
-  if (load === loadKit && (typeof window === "undefined" || typeof window.document?.createElement !== "function")) return;   // node tests: clay only
+  if (load === loadKit && (typeof window === "undefined" || typeof window.document?.createElement !== "function")) return;   // node tests: the stand-in
   // One wanted attach per person: a rebuild (or a model change) while the kit loads replaces the ticket, so only the
   // latest build's group gets a clone (N rebuilds during a first load: still one clone per person, never N).
   const ticket = { g, model: spec.model };
@@ -466,9 +479,10 @@ export function upgradeHuman(stage, a, g) {
     if (stage._capturing) (stage._afterCapture ||= []).push(() => attach(kit));
     else attach(kit);
   }).catch((err) => {
+    if (stage._avatarWant?.get(a.id) === ticket) { stage._avatarWant.delete(a.id); requestFrame(stage); }
     if (warned) return;   // a missing install is said once; the next build still tries again (loadKit caches no failure)
     warned = true;
-    console.info("Soundstage: lifelike people not installed (web/stage/people/rocketbox), people stay clay:", err?.message || err);
+    console.info("Soundstage: lifelike people not installed (web/stage/people/rocketbox), people show as marked stand-ins:", err?.message || err);
   });
   trackLoading(job);
 }
@@ -491,9 +505,13 @@ function groundPath(stage, a, last) {
   return out;
 }
 
-/** stage.setFrame hook (after gaze, before held props): show and pose every lifelike person, or keep the clay. */
+/** stage.setFrame hook (after gaze, before held props): pose every lifelike person from this frame's ONE motion
+ *  source (onemotion.mjs), and the clay logic rig with it. The body never swaps to clay (Lifelike-only plan, L1). */
 export function avatarsAt(stage) {
   stage._avatarFramePending = false;   // posed now: a requested frame (requestFrame) isn't needed any more
+  // a second run in the same frame (markLiveTilt) starts from the stage's own clay pose, not from this hook's writes
+  undoAvatarWrites(stage);
+  const undo = (stage._rigUndo ||= []);
   const actors = stage.state.actors || [];
   const skins = stage._avatarSkins;
   // Drop skins no person uses any more: deleted (even with one added in the same build), turned into a non-person,
@@ -508,46 +526,138 @@ export function avatarsAt(stage) {
   }
   let users = null;
   const fps = stage.state.shot?.fps || 24, last = stage._lastFrame(), f = stage.frame;
-  const blocking = stage.state.people_look === "blocking";
   const memo = (stage._avatarDriven ||= { shot: undefined, ids: new Set() });
   for (const a of actors) {
     const g = stage.actorMeshes.get(a.id), skin = g?.userData.humanSkin;
-    if (!skin) continue;
+    if (!skin) { if (g && C.PERSON_KINDS.has(a.kind)) markStandIn(stage, a, g); continue; }
     users ||= C.propUsers(actors);
     if (skin.faceless !== (a.face === "faceless")) applyFace(skin, a.face === "faceless");
     const wet = !!(stage.water || stage.setFx?.underwater);
     // on a chair / bench / sofa or the floor (stage.setPose): the lifelike body sits (sitBody)
     const sit = stage._sitSpec?.(a, f) || null;
-    const body = {
-      swims: wet && C.swimsInShot(a, () => stage._swimPlan?.(a, g)),
-      floats: !!stage._floatsInShot?.(a),   // a video mocap take in water too deep to stand in: the clay floats (stage._waterPhysics)
-      tipped: tippedNow(g),
-      sits: !!sit,
-    };
-    const reason = C.clayReason(a, {
-      blocking, holders: users.holders, carriers: users.carriers, gazeKeyed: gazeKeys(a).length > 0, ...body,
-      driven: C.drivenInShot(memo, stage.state.active_shot, a.id, stage.drive),
-      airborne: airAt(stage, a, f),   // this frame only: clay in the air, lifelike on the ground
-    });
-    skin.reason = reason;
-    setShown(skin, !reason);
-    // The grounding gate is the feet, not the clay (C.feetUpReason): today a hidden body isn't posed at all, and once
-    // the clay is retired a person holding a prop, with gaze or Pose keys, on a mocap take ... is lifelike and stands.
-    // Swimming is per frame here (a person who walks and then swims is grounded while walking). Seated: feet up.
-    skin.feetUp = C.feetUpReason(a, { ...body, swims: swimsNow(stage, a, g, f) });
-    if (reason) continue;
+    const floats = !!stage._floatsInShot?.(a);   // a video mocap take in water too deep to stand in (stage._waterPhysics)
+    const tipped = tippedNow(g);
+    const shotReason = O.rigShotReason(a, { sits: !!sit, driven: C.drivenInShot(memo, stage.state.active_shot, a.id, stage.drive) });
+    const frameCtx = (i) => ({ swims: wet && swimsNow(stage, a, g, i), floats, airborne: airAt(stage, a, i) });
+    const rigAt = (i) => !!O.rigReasonAt(shotReason, frameCtx(i));
+    skin.reason = null;   // never clay: the body below is always the lifelike one
+    setShown(skin, true);
+    // The grounding gate is the feet, not the look (C.feetUpReason). Swimming is per frame (a person who walks and then
+    // swims is grounded while walking). Seated: feet up.
+    skin.feetUp = C.feetUpReason(a, { tipped, floats, sits: !!sit, swims: swimsNow(stage, a, g, f) });
     const { scale } = ensureGait(stage, a, skin, { last, fps, f });
     if (sit) {   // seated (setPose / a mount on a chair, or the floor): idle, then fold the legs onto the seat; no foot plan
+      skin.owner = "seat"; skin.ownerReason = "sits"; skin.rigWeight = 0;
       placeHolder(g, skin.holder, { x: sit.seat[0], y: sit.seat[1] - F.floorFor(skin.kit, C.clipWeights(0)) * scale, z: sit.seat[2], yaw: sit.yaw, scale });
       drive(skin, { frame: f, fps, speed: 0, phase: 0, seed: C.phaseSeed(a.id) });
       sitBody(skin, sit, C.clayHeight(a) * (a.scale || 1));
       skin.footOut = null;
+      solveRig(stage, skin, g, null, undo);
       continue;
     }
-    const plan = footPlanFor(stage, a, g, skin, { last, fps, scale });
-    poseRaw(stage, a, g, skin, f, { fps, scale, last });
-    skin.footOut = plan ? F.groundFeet({ plan, rig: skin.kit.feet, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, frame: f, saved: (skin.ikSaved ||= []) }) : null;
+    const w = tipped ? 1 : O.rigWeight(f, rigAt, last);   // a live knock-over: the rig at once (not a recorded take)
+    skin.rigWeight = w;
+    skin.owner = w >= 0.5 ? "rig" : "clip";
+    skin.ownerReason = tipped ? "is tipped over" : O.rigReasonAt(shotReason, frameCtx(f));
+    let fromRig = null;
+    if (w > 0) {
+      poseFromRig(stage, a, g, skin, f, { fps, scale });
+      if (w < 1) fromRig = R.snapshot(skin);
+    }
+    if (w < 1) {
+      poseFromClip(stage, a, g, skin, f, { fps, scale, last, undo });
+      if (fromRig) {
+        const feet = skin.footOut ? F.footPlaces(skin.legs) : null;   // the grounded clip's feet: they stay put
+        R.blendInto(skin, R.snapshot(skin), fromRig, w);
+        F.holdFeet({ bones: skin.legs, holder: skin.holder, places: feet });
+      }
+      // layers over the clip: gaze turns the head, Pose keys the joints they name, a carrier's arms hold the load
+      const layer = O.layerJoints({ gazeKeyed: gazeKeys(a).length > 0, poseJoints: O.poseKeyJoints(a), carries: users.carriers.has(a.id) }, R.layerable);
+      if (layer.size) R.retargetFromRig(skin, g, { only: layer });
+      solveRig(stage, skin, g, layer, undo);
+    }
   }
+}
+
+/** A person with no lifelike body (not installed, failed, still loading, or a kind with no avatar yet: children)
+ *  shows as the marked stand-in (standin.mjs), never as clay. */
+function markStandIn(stage, a, g) {
+  setStandIn(g, true, { loading: !!stage._avatarWant?.has(a.id) });
+}
+
+/**
+ * Where a clay joint id's VISIBLE bone is (world space, into out): the lifelike body's Bip01 bone (retarget.boneFor)
+ * when the person has one on show, else the logic rig's own joint. The Pose gizmo puts its dots and IK handles here.
+ */
+export function boneWorld(stage, actorId, jointId, out = new THREE.Vector3()) {
+  const g = stage.actorMeshes?.get(actorId), skin = g?.userData.humanSkin;
+  const bn = skin?.shown ? R.boneFor(jointId) : null;
+  const b = bn && skin.bones?.[bn];
+  if (b) { b.updateWorldMatrix(true, false); return b.getWorldPosition(out); }
+  const j = g?.userData.joints?.[jointId];
+  if (!j) return null;
+  j.updateWorldMatrix(true, false);
+  return j.getWorldPosition(out);
+}
+
+/** Undo what avatarsAt wrote over the stage's pose last time (the clay joints the body solve turned, the clay group's
+ *  sideways foot shift): stage.setFrame calls it before posing anything, avatarsAt at its start. */
+export function undoAvatarWrites(stage) {
+  R.undoRig(stage._rigUndo);
+}
+
+/** The logic rig follows the visible body (retarget.solveRigFromBody), joints in skip left as the stage posed them. */
+function solveRig(stage, skin, g, skip, undo) {
+  if (!skin.kit._rtOff) ensureOffsets(skin);
+  R.solveRigFromBody(skin, g, { skip, undo });
+}
+
+/** The kit's rest offsets (retarget.restOffsets), measured on the idle's first frame. Leaves the skin on that pose. */
+function ensureOffsets(skin) {
+  if (skin.kit._rtOff) return skin.kit._rtOff;
+  drive(skin, { frame: 0, fps: 24, speed: 0, phase: 0, seed: 0 });
+  return R.restOffsets(skin);
+}
+
+/** The rig owns the frame: the clip's idle at this frame (fingers, clavicles, breathing), then every trunk and limb
+ *  bone from the clay joints, the hips on the clay's hips. No foot plan (the rig's own pose decides the feet). */
+function poseFromRig(stage, a, g, skin, f, { fps, scale }) {
+  ensureOffsets(skin);
+  g.updateWorldMatrix(true, false);
+  const p = g.getWorldPosition(new THREE.Vector3());
+  const yaw = new THREE.Euler().setFromQuaternion(g.getWorldQuaternion(new THREE.Quaternion()), "YXZ").y;
+  placeHolder(g, skin.holder, { x: p.x, y: p.y, z: p.z, yaw, scale });
+  drive(skin, { frame: f, fps, speed: 0, phase: 0, seed: C.phaseSeed(a.id) });
+  R.retargetFromRig(skin, g);
+  skin.footOut = null;
+}
+
+/** The clip owns the frame: the gait's clip, the body's sideways shift (plan.shift) on the clay group AND the body
+ *  together (the logic rig, shadow and bounds move with it), then the feet grounded. */
+function poseFromClip(stage, a, g, skin, f, { fps, scale, last, undo }) {
+  const plan = footPlanFor(stage, a, g, skin, { last, fps, scale });
+  poseRaw(stage, a, g, skin, f, { fps, scale, last });
+  const i = Math.max(0, Math.min((plan?.n || 1) - 1, Math.round(f)));
+  const sx = plan?.shift?.[2 * i] || 0, sz = plan?.shift?.[2 * i + 1] || 0;
+  if (sx || sz) shiftBody(g, skin.holder, sx, sz, undo);
+  skin.shift = [sx, sz];
+  skin.footOut = plan ? F.groundFeet({ plan, rig: skin.kit.feet, mesh: skin.mesh, bones: skin.legs, holder: skin.holder, frame: f, saved: (skin.ikSaved ||= []), shifted: true }) : null;
+}
+
+/** Move the clay group g and the avatar holder (inside g) by a world x / z shift; g's old place goes on the undo list. */
+function shiftBody(g, holder, sx, sz, undo) {
+  const entry = [g, "position", g.position.clone(), null];
+  undo.push(entry);
+  const par = g.parent;
+  if (par) {
+    par.updateWorldMatrix(true, false);
+    const w = g.getWorldPosition(new THREE.Vector3());
+    w.x += sx; w.z += sz;
+    g.position.copy(par.worldToLocal(w));
+  } else { g.position.x += sx; g.position.z += sz; }
+  entry[3] = g.position.clone();   // undone only while it is still where this put it
+  g.updateMatrixWorld(true);   // (the holder is in g: it moves with it)
+  holder.updateMatrixWorld(true);
 }
 
 /**
@@ -677,7 +787,7 @@ export const tiltedOffUp = (q) => _up.set(0, 1, 0).applyQuaternion(q).y < 0.9986
  * Read from the flag web/stage/live.mjs sets from the PHYSICS pose (markLiveTilt), never from the group's own
  * rotation: Gait.applyHuman leans every keyed walker (up to 0.11 rad running, 0.14 on speed changes, 0.38 into turns)
  * and that ordinary lean must not swap the body. A gizmo tilt is written to a.tilt as it is dragged (rotate.mjs
- * gizmoTurnToActor), so clayReason's "was knocked over" covers that one.
+ * gizmoTurnToActor), so the rig's "was knocked over" (onemotion.rigShotReason) covers that one.
  */
 export const tippedNow = (g) => !!g?.userData?.liveTipped;
 
@@ -692,9 +802,9 @@ export function markLiveTilt(stage, g, q) {
   if (!!g.userData.liveTipped === t) return false;
   g.userData.liveTipped = t;
   const skin = g.userData.humanSkin;
-  if (t) { skin.reason = "is tipped over"; setShown(skin, false); }
-  else {
-    avatarsAt(stage);
+  // never clay: tipped, the rig owns the body (avatarsAt poses it from the knocked-over rig); upright again, the clip
+  avatarsAt(stage);
+  if (!t) {
     // avatarsAt stands the body at the KEY position; the live physics has the clay group somewhere else right now
     // (the drag in progress), so for this tick the body stands where the clay is (the next setFrame agrees again).
     const a = (stage.state?.actors || []).find((x) => x.id === g.userData.actorId);

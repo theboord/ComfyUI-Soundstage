@@ -11,6 +11,7 @@ import { Stage } from "../../web/stage/stage.mjs";
 import { buildObject } from "../../web/stage/library.mjs";
 import * as C from "../../web/stage/people/avatarcore.mjs";
 import * as A from "../../web/stage/people/avatars.mjs";
+import * as O from "../../web/stage/people/onemotion.mjs";
 import { stageHook } from "../../web/hosthooks.mjs";
 
 function sitStage(actors) {
@@ -99,9 +100,9 @@ test("Ask's host.stage.setPose is the stage's", () => {
 });
 
 test("a person sitting on a chair or the floor is not sent back to the clay", () => {
-  assert.equal(C.clayReason({ mount_id: "c1" }, { sits: true }), null);
-  assert.match(C.clayReason({ mount_id: "h1" }, {}), /rides or sits/, "a horse / bike / car rider keeps the old rule");
-  assert.equal(C.clayReason({ pose: "sit_floor" }, {}), null);
+  assert.equal(O.rigShotReason({ mount_id: "c1" }, { sits: true }), null);
+  assert.match(O.rigShotReason({ mount_id: "h1" }, {}), /rides or sits/, "a horse / bike / car rider: the rig owns the (lifelike) body");
+  assert.equal(O.rigShotReason({ pose: "sit_floor" }, {}), null);
   const st = sitStage([man("p1", 0), prop("h", "horse", 2, 1.6)]);
   st.mount("p1", "h");
   assert.equal(st._sitSpec(st.state.actors[0]), null, "riding is not sitting");

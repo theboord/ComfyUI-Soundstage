@@ -970,6 +970,41 @@ export function restoreClipPose(saved) {
   saved.length = 0;
 }
 
+/** The feet's world places right now ({l: {pos, quat}, r}), for holdFeet. */
+export function footPlaces(bones) {
+  if (!bones) return null;
+  const out = {};
+  for (const lr of SIDES) { const F = bones[lr].foot; F.updateWorldMatrix(true, false); out[lr] = { pos: F.getWorldPosition(new THREE.Vector3()), quat: F.getWorldQuaternion(new THREE.Quaternion()) }; }
+  return out;
+}
+
+/**
+ * One motion's handover (avatars.mjs): after the clip's pose is blended toward the rig's, put both feet back where the
+ * clip (grounded) had them (two-bone IK from the blended hips), so the 6 frames of a handover never slide a planted
+ * sole or lift both feet off the ground. The feet go over to the rig on the frame it owns at full weight (a take-off,
+ * a mount), as a real foot leaves the ground.
+ */
+export function holdFeet({ bones, holder, places }) {
+  if (!bones || !places) return;
+  holder.updateMatrixWorld(true);
+  // hips out of the legs' reach of the clip's feet (the rig's take-off crouch rises first): lower the body just enough
+  let need = 0;
+  for (const lr of SIDES) {
+    const B = bones[lr], H = B.thigh.getWorldPosition(new THREE.Vector3()), t = places[lr].pos;
+    const L = (H.distanceTo(B.calf.getWorldPosition(_v1)) + _v1.distanceTo(B.foot.getWorldPosition(_v2))) * 0.995;
+    const hz = Math.hypot(t.x - H.x, t.z - H.z), vy = H.y - t.y;
+    if (hz < L) need = Math.max(need, vy - Math.sqrt(L * L - hz * hz));
+  }
+  if (need > 1e-5) {
+    const par = holder.parent, wp = holder.getWorldPosition(new THREE.Vector3());
+    wp.y -= need;
+    if (par) { par.updateWorldMatrix(true, false); holder.position.copy(par.worldToLocal(wp)); } else holder.position.copy(wp);
+    holder.updateMatrixWorld(true);
+  }
+  const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(holder.getWorldQuaternion(new THREE.Quaternion()));
+  for (const lr of SIDES) twoBoneIK(bones[lr].thigh, bones[lr].calf, bones[lr].foot, places[lr].pos.clone(), places[lr].quat, fwd);
+}
+
 /** The named leg bones of a posed avatar clone ({l: {thigh, calf, foot, toe}, r, root}), or null. */
 export function legBones(skinBones, rig) {
   if (!rig) return null;
@@ -989,7 +1024,7 @@ export function legBones(skinBones, rig) {
  * clear of the ground under EVERY sole point (plan.ground, the same surface the plan planted on: stairs, kerbs, bumps),
  * the more so the further it is from its plant. Returns {drop, feet: {l: w, r: w}, miss: {l, r}} or null.
  */
-export function groundFeet({ plan, rig, mesh, bones, holder, frame, saved = null, T = FOOT }) {
+export function groundFeet({ plan, rig, mesh, bones, holder, frame, saved = null, T = FOOT, shifted = false }) {
   if (!plan || !bones) return null;
   // The clip's own values of every bone this changes, for restoreClipPose: three's PropertyMixer only writes a bone
   // when the clip's value differs from what it wrote last, so the same frame posed again would keep these IK values.
@@ -1001,8 +1036,10 @@ export function groundFeet({ plan, rig, mesh, bones, holder, frame, saved = null
   const f = Math.max(0, Math.min(plan.n - 1, Math.round(frame)));
   if (plan.skip[f]) return { drop: 0, feet: { l: 0, r: 0 }, miss: { l: 0, r: 0 } };
   holder.updateMatrixWorld(true);
-  // the body's sideways shift off a break (planFeet, plan.shift): the root bone moves, the clip's legs with it
-  const sx = plan.shift?.[2 * f] || 0, sz = plan.shift?.[2 * f + 1] || 0;
+  // the body's sideways shift off a break (planFeet, plan.shift): the root bone moves, the clip's legs with it.
+  // shifted: the caller already moved the whole body by it (avatars.mjs moves the logic rig and the holder together,
+  // one motion), so the root bone stays.
+  const sx = shifted ? 0 : plan.shift?.[2 * f] || 0, sz = shifted ? 0 : plan.shift?.[2 * f + 1] || 0;
   if ((sx || sz) && bones.root?.parent) {
     const wp = bones.root.getWorldPosition(new THREE.Vector3());
     wp.x += sx; wp.z += sz;

@@ -17,7 +17,11 @@
 import * as THREE from "../../vendor/three.module.min.mjs";
 import { LIBRARY } from "../library.mjs";
 
-/** Which Rocketbox avatar and clips each person kind gets. Children and everyone else stay clay for now. */
+/** The person kinds (stage.mjs PERSON_KINDS): every one is lifelike or a marked stand-in, never clay. */
+export const PERSON_KINDS = new Set(["man", "woman", "child"]);
+
+/** Which Rocketbox avatar and clips each person kind gets. Children get the marked stand-in until a licence-clean
+ *  child avatar exists (Mike, 2026-11-07). */
 export const ROCKETBOX = {
   man: { model: "Male_Adult_01", clips: { idle: "m_idle_neutral_01", walk: "m_walk_neutral_01", run: "m_run_neutral_01" } },
   woman: { model: "Female_Adult_01", clips: { idle: "f_idle_neutral_01", walk: "f_walk_neutral_01", run: "f_run_neutral_01" } },
@@ -25,9 +29,10 @@ export const ROCKETBOX = {
 export const CLIP_KINDS = ["idle", "walk", "run"];
 export const ROOT_BONE = "Bip01";
 
-/** The avatar spec for an actor, or null (stays clay): men and women only, and not when they asked for the clay model. */
+/** The avatar spec for an actor, or null (the marked stand-in): men and women. The old "simple model" (clay) choice is
+ *  ignored: the clay look is retired (Lifelike-only plan), so a saved simple_model person is lifelike too. */
 export function avatarSpecFor(a) {
-  if (!a || a.simple_model) return null;
+  if (!a) return null;
   if (a.kind === "woman" || (a.kind === "man" && a.appearance?.gender === "female")) return ROCKETBOX.woman;
   if (a.kind === "man") return ROCKETBOX.man;
   return null;
@@ -321,48 +326,12 @@ export function missingColorMaps(materials) {
 }
 
 /**
- * Why this person shows as clay at this point instead of the avatar (null = the avatar shows). M1 plays the avatar's
- * own clips, so anything that poses the clay body in a way the clips can't follow keeps the clay for the whole shot
- * (never a pop mid-shot): riding or sitting, being carried, carrying or holding a prop, video mocap, Pose keys, gaze
- * keys, swimming, physics (a baked fall or a knocked-over lean: the clips stand upright), Drive mode.
- * Every input but two must be a whole-shot fact, never "right now": ctx = {blocking, holders: Set, carriers: Set,
- * swims, gazeKeyed, driven, airborne, tipped}, with swims from swimsInShot and driven from drivenInShot.
- * airborne is per frame: the person is in the air at THIS frame (stage._airborneAt: a hop up, a vault, a drop off an
- * edge, the same ballistic test the clay's knee tuck uses). The clips have no jump, so mid-air the avatar would walk;
- * the clay shows for the airborne frames only and the lifelike body is back on the ground before and after.
- * The other exception is tipped: the person is knocked over RIGHT NOW in a live physics drag, not yet saved as a.tilt
- * (avatars.mjs tippedNow: a flag live.mjs sets from the physics pose, never the group's rotation, which the gait leans
- * into every turn and speed change); the upright clips can't follow it, so the clay shows meanwhile. A Rotate-gizmo
- * tilt is saved as a.tilt while it is dragged, so "was knocked over" covers it.
- */
-export function clayReason(a, ctx = {}) {
-  if (ctx.blocking) return "Blocking look is on";
-  if (a.simple_model) return "set to the clay model";
-  if (a.mount_id && !ctx.sits) return "rides or sits on something";   // sitting on a chair / bench / sofa: lifelike (sits)
-  if (a.carry_id) return "is carried";
-  if (a.mocap) return "plays a video mocap take";
-  if (a.pose_keys?.length) return "has Pose keys";
-  if (a.physics?.baked) return "is moved by physics";
-  if (Array.isArray(a.tilt) && a.tilt.length === 4) return "was knocked over";
-  if (ctx.gazeKeyed) return "has gaze keys";
-  if (ctx.holders?.has(a.id)) return "holds a prop";
-  if (ctx.carriers?.has(a.id)) return "carries something";
-  if (ctx.swims) return "swims";
-  if (ctx.floats) return "floats in the water";
-  if (ctx.driven) return "is driven live";
-  if (ctx.airborne) return "is in the air (a jump or vault)";
-  if (ctx.tipped) return "is tipped over";
-  return null;
-}
-
-/**
  * Why this person's feet are NOT on the ground (null: they are, and footplant grounds them), whatever the body looks
- * like. This is the grounding gate, kept apart from clayReason on purpose: clayReason says when the clay figure is
- * shown instead of the lifelike body, and once the clay is retired (one motion driving the visible body and the logic
- * rig) people holding or carrying props, with gaze or Pose keys, on a mocap take, driven live or in Blocking look are
- * lifelike AND standing, so they are grounded. Only a body that is really off its feet is not: riding or seated
+ * like. This is the grounding gate. Since the clay look is retired (one motion drives the visible body and the logic rig,
+ * onemotion.mjs), people holding or carrying props, with gaze or Pose keys, on a mocap take or driven live are lifelike
+ * AND standing, so they are grounded. Only a body that is really off its feet is not: riding or seated
  * (mount_id), carried, moved or lifted by physics, knocked over / tipped / lying, swimming or floating, in the air.
- * ctx: {swims, floats, tipped, lifted, airborne} as for clayReason (airborne and lifted per frame).
+ * ctx: {swims, floats, tipped, lifted, airborne, sits} (airborne, lifted and swims per frame).
  */
 export function feetUpReason(a, ctx = {}) {
   if (a.mount_id) return "rides or sits on something";
@@ -399,8 +368,8 @@ export function swimsAt(a, f, plan) {
 
 /**
  * Driven live, decided for the whole shot: once Drive has had this person in a shot (driving, involved, or a recorded
- * take under review), they stay clay until the shot changes or Drive is switched off, so the body never flips back and
- * forth while the take is recorded and reviewed. memo = {shot, ids: Set} kept by the caller; drive = stage.drive.
+ * take under review), the rig owns their body (onemotion.mjs) until the shot changes or Drive is switched off, so the
+ * owner never flips back and forth while the take is recorded and reviewed. memo = {shot, ids: Set} kept by the caller; drive = stage.drive.
  */
 export function drivenInShot(memo, shot, id, drive) {
   if (memo.shot !== shot || !drive?.on) { memo.shot = shot; memo.ids = new Set(); }

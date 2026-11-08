@@ -8,6 +8,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as THREE from "../../web/vendor/three.module.min.mjs";
 import * as C from "../../web/stage/people/avatarcore.mjs";
+import * as O from "../../web/stage/people/onemotion.mjs";
 
 // ---------------------------------------------------------------- textures
 test("every .tga the FBX asks for loads as the PNG of the same base name in tex/", () => {
@@ -217,13 +218,14 @@ test("height: the avatar's target is the clay's BUILT height, whatever the kind,
 });
 
 // ---------------------------------------------------------------- who gets an avatar, face option
-test("men and women get an avatar; children, animals and the clay-model flag stay clay", () => {
+test("men and women get an avatar (the retired clay-model flag too); children and animals get none (children: the marked stand-in)", () => {
   assert.equal(C.avatarSpecFor({ kind: "man" }).model, "Male_Adult_01");
   assert.equal(C.avatarSpecFor({ kind: "woman" }).model, "Female_Adult_01");
   assert.equal(C.avatarSpecFor({ kind: "man", appearance: { gender: "female" } }).model, "Female_Adult_01");
   assert.equal(C.avatarSpecFor({ kind: "child" }), null);
   assert.equal(C.avatarSpecFor({ kind: "horse" }), null);
-  assert.equal(C.avatarSpecFor({ kind: "man", simple_model: true }), null);
+  assert.equal(C.avatarSpecFor({ kind: "man", simple_model: true }).model, "Male_Adult_01", "the clay look is retired: no clay model per person");
+  assert.ok(C.PERSON_KINDS.has("child"));
 });
 
 test("face option: faceless swaps the head for a plain material and hides lashes and brows; the hair and body are kept", () => {
@@ -267,29 +269,47 @@ test("keys signature: same keys same hash, any change a new one (no JSON.stringi
   assert.equal(typeof C.keysHash([]), "number");
 });
 
-test("the clay stays (for the whole shot) where the clips can't follow yet; Blocking look keeps everyone clay", () => {
+test("one motion: the rig owns the body where the clips can't follow (never the clay); gaze, Pose keys and carriers are layers over the clip", () => {
   const a = { id: "p1", kind: "man" };
-  assert.equal(C.clayReason(a, {}), null);
-  assert.match(C.clayReason(a, { blocking: true }), /Blocking/);
-  assert.ok(C.clayReason({ ...a, mount_id: "h" }, {}));
-  assert.ok(C.clayReason({ ...a, mocap: { take: "t" } }, {}));
-  assert.ok(C.clayReason({ ...a, pose_keys: [{ frame: 0 }] }, {}));
-  assert.ok(C.clayReason(a, { gazeKeyed: true }));
-  assert.ok(C.clayReason(a, { swims: true }));
+  assert.equal(O.rigShotReason(a, {}), null);
+  assert.equal(O.rigShotReason(a, { blocking: true }), null, "Blocking no longer changes people");
+  assert.ok(O.rigShotReason({ ...a, mount_id: "h" }, {}));
+  assert.equal(O.rigShotReason({ ...a, mount_id: "c" }, { sits: true }), null, "seated: the seat owns it");
+  assert.ok(O.rigShotReason({ ...a, mocap: { take: "t" } }, {}));
+  assert.ok(O.rigShotReason({ ...a, carry_id: "p9" }, {}));
+  assert.ok(O.rigShotReason(a, { driven: true }));
+  assert.equal(O.rigShotReason({ ...a, pose_keys: [{ frame: 0 }] }, {}), null, "Pose keys are a layer");
+  assert.equal(O.rigReasonAt(null, { swims: true }), "swims");
+  assert.equal(O.rigReasonAt(null, { airborne: true }), "is in the air (a jump or vault)");
+  assert.equal(O.rigReasonAt(null, {}), null);
   const users = C.propUsers([{ id: "key", hold: [{ actor: "p1", from: 0, to: 9 }] }, { id: "box", carry_id: "p2" },
     { id: "cup", by_shot: { s2: { hold: [{ actor: "p3" }] } } }]);
   assert.deepEqual([...users.holders].sort(), ["p1", "p3"]);
   assert.deepEqual([...users.carriers], ["p2"]);
-  assert.match(C.clayReason(a, users), /holds a prop/);
-  assert.match(C.clayReason({ id: "p2", kind: "woman" }, users), /carries/);
+  assert.deepEqual([...O.layerJoints({ gazeKeyed: true })], ["neck", "head"]);
+  assert.deepEqual([...O.layerJoints({ carries: true })].sort(), ["l_elbow", "l_shoulder", "l_wrist", "r_elbow", "r_shoulder", "r_wrist"]);
+  assert.deepEqual([...O.layerJoints({ poseJoints: O.poseKeyJoints({ pose_keys: [{ frame: 0, joints: { l_elbow: [1, 0, 0], l_index_1: [5, 0, 0] } }] }) }, (id) => !/_\d$/.test(id))], ["l_elbow"], "fingers are not layered");
 });
 
-test("knocked over or moved by physics: the person stays clay for the whole shot (the clips stand upright)", () => {
+test("knocked over or moved by physics: the rig owns the body for the whole shot (still the lifelike body)", () => {
   const a = { id: "p1", kind: "man" };
-  assert.match(C.clayReason({ ...a, physics: { mode: "dynamic", baked: true } }, {}), /physics/);
-  assert.match(C.clayReason({ ...a, tilt: [0.7071, 0, 0, 0.7071] }, {}), /knocked over/);
-  assert.equal(C.clayReason({ ...a, physics: { mode: "dynamic" } }, {}), null, "set up for physics but not baked: still standing");
-  assert.equal(C.clayReason({ ...a, tilt: [0, 0] }, {}), null);
+  assert.match(O.rigShotReason({ ...a, physics: { mode: "dynamic", baked: true } }, {}), /physics/);
+  assert.match(O.rigShotReason({ ...a, tilt: [0.7071, 0, 0, 0.7071] }, {}), /knocked over/);
+  assert.equal(O.rigShotReason({ ...a, physics: { mode: "dynamic" } }, {}), null, "set up for physics but not baked: still standing");
+  assert.equal(O.rigShotReason({ ...a, tilt: [0, 0] }, {}), null);
+});
+
+test("the handover is an explicit per-frame weight: a 6-frame ease that ENDS on the change frame, none at the shot start", () => {
+  const owner = (i) => i >= 20 && i < 30;   // the rig owns 20..29
+  const w = Array.from({ length: 40 }, (_, f) => O.rigWeight(f, owner, 39));
+  assert.equal(w[13], 0); assert.equal(w[20], 1, "the incoming owner is at full weight on the change frame");
+  assert.ok(w[14] > 0 && w[14] < w[17] && w[17] < w[19] && w[19] < 1, "eases in over the 6 frames before");
+  assert.ok(w[23] === 1 && w[24] < 1 && w[29] < w[24] && w[29] > 0, "the rig eases out over the 6 frames before the clip's frame");
+  assert.equal(w[30], 0, "the clip back at full weight on its frame");
+  assert.equal(O.rigWeight(0, () => true, 39), 1, "the rig from frame 0: no fade at the shot start");
+  // pure: the same frame gives the same weight in any order
+  const shuffled = [...w.keys()].sort(() => 0.5 - Math.random());
+  for (const f of shuffled) assert.equal(O.rigWeight(f, owner, 39), w[f]);
 });
 
 test("swimming: the same gate as the stage's own (swim off, carried) and over the whole shot", () => {
@@ -609,25 +629,25 @@ async function clayStage() {
 const sizeOf = (o) => new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3());
 const near = (v, [x, y, z], tol, what) => assert.ok(Math.abs(v.x - x) < tol && Math.abs(v.y - y) < tol && Math.abs(v.z - z) < tol, `${what}: ${v.x.toFixed(2)} x ${v.y.toFixed(2)} x ${v.z.toFixed(2)}`);
 
-test("a person who stays clay keeps clay-sized bounds after the avatar is attached (no 135 x 182 x 34 m box)", async () => {
+test("never clay: Blocking look and Pose keys keep the lifelike body on show, its bounds person-sized (no 135 x 182 x 34 m box)", async () => {
   const { A, st, a, g } = await clayStage();
   const clay = sizeOf(g);
   near(clay, [0.5, 1.8, 0.3], 0.25, "clay alone");
   const skin = A.attachKit(st, a, g, stubKit());
   await null;   // attach asks for one re-pose a microtask later (requestFrame)
   assert.ok(skin, "attached");
-  assert.equal(skin.reason, "Blocking look is on");
-  assert.equal(skin.shown, false);
-  assert.equal(skin.holder.parent, null, "the hidden holder is not inside the clay group");
-  near(sizeOf(g), [clay.x, clay.y, clay.z], 1e-6, "clay person after attach");
-  // other clay reasons from the first frame too: a Pose key
+  assert.equal(skin.reason, null);
+  assert.equal(skin.shown, true, "Blocking look no longer shows clay");
+  assert.equal(skin.holder.parent, g);
+  assert.ok(skin.clay.every((m) => !m.visible && m.userData.role === "logic"), "the rig is hidden logic");
+  const s0 = sizeOf(g);
+  assert.ok(s0.x < 0.8 && s0.y < 2.0 && s0.y > 1.6 && s0.z < 0.6, `box ${s0.x.toFixed(2)} x ${s0.y.toFixed(2)} x ${s0.z.toFixed(2)}`);
   st.state.people_look = undefined; a.pose_keys = [{ frame: 0 }];
   A.avatarsAt(st);
-  assert.equal(skin.shown, false);
-  near(sizeOf(g), [clay.x, clay.y, clay.z], 1e-6, "clay person with Pose keys");
+  assert.equal(skin.shown, true, "Pose keys: still lifelike");
 });
 
-test("shown avatar: bounds stay person-sized (standing box), and switching back to clay takes the holder out again", async () => {
+test("shown avatar: bounds stay person-sized (standing box); setShown(false) (the clay measure only) takes the holder out again", async () => {
   const { A, st, a, g } = await clayStage();
   st.state.people_look = undefined;
   const skin = A.attachKit(st, a, g, stubKit());
@@ -636,10 +656,11 @@ test("shown avatar: bounds stay person-sized (standing box), and switching back 
   assert.equal(skin.holder.parent, g);
   const s = sizeOf(g);
   assert.ok(s.x < 0.8 && s.y < 2.0 && s.y > 1.6 && s.z < 0.6, `shown box ${s.x.toFixed(2)} x ${s.y.toFixed(2)} x ${s.z.toFixed(2)}`);
-  st.state.people_look = "blocking";
-  A.avatarsAt(st);
+  A.setShown(skin, false);
   assert.equal(skin.shown, false);
   assert.equal(skin.holder.parent, null);
+  A.avatarsAt(st);
+  assert.equal(skin.shown, true, "the next frame shows it again");
 });
 
 test("_localBox and _localHulls measure the clay even while the avatar shows (a bake doesn't depend on the install)", async () => {

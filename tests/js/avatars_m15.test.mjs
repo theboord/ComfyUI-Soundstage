@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import * as THREE from "../../web/vendor/three.module.min.mjs";
 import * as C from "../../web/stage/people/avatarcore.mjs";
 import * as A from "../../web/stage/people/avatars.mjs";
+import * as O from "../../web/stage/people/onemotion.mjs";
 import * as CUT from "../../web/stage/people/cutout.mjs";
 import { DEPTH_SHADER, depthPassMaterial } from "../../web/stage/depthshader.mjs";
 import { Stage } from "../../web/stage/stage.mjs";
@@ -119,10 +120,12 @@ test("swapAvatarCutouts swaps only the card groups of shown people for the pass,
   assert.ok(skin.mesh.material[1].allowOverride === false && skin.mesh.material[1].uniforms.uMap.value === own[1].map);
   back();
   assert.equal(skin.mesh.material, own);
-  // a clay person (not shown): nothing swapped
-  st.state.people_look = "blocking"; A.avatarsAt(st);
+  // a person not on show (the clay measure, _withClayShape): nothing swapped; Blocking look no longer hides anyone
+  A.setShown(skin, false);
   CUT.swapAvatarCutouts(st, depth);
   assert.equal(skin.mesh.material, own);
+  st.state.people_look = "blocking"; A.avatarsAt(st);
+  assert.equal(skin.shown, true, "never clay");
 });
 
 test("ID pass: a card keeps its cut-out in the flat colour; a hidden (faceless) group stays hidden", () => {
@@ -250,7 +253,7 @@ test("the underwater set's own Depth material skins too (the stage's shader, nea
 });
 
 // ---------------------------------------------------------------- 3: jumps
-test("a person who hops onto a crate or vaults is clay only while in the air, lifelike on the ground before and after", async () => {
+test("a person who hops onto a crate or vaults stays lifelike: the rig owns the airborne frames (eased in over the 6 before), the clip the ground", async () => {
   const walker = { id: "p1", kind: "man", height_m: 1.8, position: [-3, 0, 0], keys: [{ frame: 0, position: [-3, 0, 0] }, { frame: 48, position: [3, 0, 0] }] };
   const crate = { id: "c1", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] };
   const st = bareStage([walker, crate]);
@@ -261,22 +264,26 @@ test("a person who hops onto a crate or vaults is clay only while in the air, li
   assert.ok(air.length > 0 && air.length < 40 && !air.includes(0) && !air.includes(48), `airborne only for some frames: ${air}`);
   const skin = A.attachKit(st, walker, g, stubKit());
   await null;
-  let sawClay = 0, sawLife = 0;
+  let sawRig = 0, sawClip = 0;
   for (let f = 0; f <= 48; f++) {
     st.frame = f; A.avatarsAt(st);
     const up = air.includes(f);
-    assert.equal(skin.shown, !up, `frame ${f}: ${up ? "clay in the air" : "lifelike on the ground"} (reason ${skin.reason})`);
-    if (up) { sawClay++; assert.equal(skin.reason, "is in the air (a jump or vault)"); } else { sawLife++; assert.equal(skin.reason, null); }
+    assert.equal(skin.shown, true, `frame ${f}: lifelike, never clay`);
+    assert.equal(skin.reason, null);
+    // take-off frames: the rig at full weight (the plan: a jump's first airborne frame is never the walk clip); every
+    // airborne frame has some rig in it (it eases out over the 6 frames that END on the landing frame)
+    if (up) { sawRig++; assert.ok(skin.rigWeight > 0, `frame ${f}: rig weight ${skin.rigWeight}`); if (!air.includes(f - 1)) assert.equal(skin.rigWeight, 1, `frame ${f}: take-off`); assert.equal(skin.ownerReason, "is in the air (a jump or vault)"); }
+    else if (!air.some((x) => x > f && x - f <= 6)) { sawClip++; assert.equal(skin.rigWeight, 0, `frame ${f}: the clip on the ground`); }
   }
-  assert.ok(sawClay && sawLife);
+  assert.ok(sawRig && sawClip);
   // the ground frames either side of the crate are lifelike: before the take-off and after the landing
   assert.ok(!air.includes(Math.min(...air) - 1) && !air.includes(Math.max(...air) + 1));
   // without the crate: a plain walk shows the avatar on every frame
   st.state.actors = [walker]; st.actorMeshes.delete("c1");
   assert.equal(st._jumpsInShot(walker), false);
   for (const f of [0, 20, 24, 30, 48]) { st.frame = f; A.avatarsAt(st); assert.equal(skin.shown, true, `frame ${f} (reason ${skin.reason})`); }
-  assert.equal(C.clayReason(walker, { airborne: true }), "is in the air (a jump or vault)");
-  assert.equal(C.clayReason(walker, { jumps: true }), null, "no whole-shot jump rule any more");
+  assert.equal(O.rigReasonAt(O.rigShotReason(walker, {}), { airborne: true }), "is in the air (a jump or vault)");
+  assert.equal(O.rigReasonAt(O.rigShotReason(walker, { jumps: true }), {}), null, "no whole-shot jump rule any more");
 });
 
 test("raised floors: a 0.8 m crate on a 0.92 m station platform is climbed (the cut-off is measured from the local floor)", () => {
@@ -368,16 +375,18 @@ test("the physics lift moves the avatar with the clay; a live tilt shows the cla
   // a live knock-over (live.mjs puts the physics pose on the group and calls markLiveTilt): 30 degrees, not saved yet
   g.quaternion.setFromEuler(new THREE.Euler(0, 0, Math.PI / 6));
   assert.equal(A.markLiveTilt(st, g, g.quaternion), true);
-  assert.equal(skin.shown, false);
-  assert.equal(skin.reason, "is tipped over");
+  assert.equal(skin.shown, true, "never clay: the rig owns the tipped body");
+  assert.equal(skin.ownerReason, "is tipped over");
+  assert.equal(skin.rigWeight, 1, "at once (a live drag, not a recorded take)");
   g.quaternion.identity(); A.avatarsAt(st);   // the next setFrame stands the group up: still tipped (the flag)
-  assert.equal(skin.shown, false);
+  assert.equal(skin.ownerReason, "is tipped over");
   // the group's own rotation alone (gait lean, a heading) never counts
   g.userData.liveTipped = false;
   g.quaternion.setFromEuler(new THREE.Euler(0.3, 1.2, -0.38));
   A.avatarsAt(st);
   assert.equal(skin.shown, true);
-  // physics stands it up again: lifelike again at once
+  assert.equal(skin.rigWeight, 0);
+  // physics stands it up again: the clip again at once
   A.markLiveTilt(st, g, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI / 6)));
   assert.equal(A.markLiveTilt(st, g, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 1.2, 0))), true);
   assert.equal(skin.shown, true);
@@ -430,7 +439,7 @@ test("captures wait for loading bodies, with a clear message on a timeout; a fai
   const t = await A.avatarsReady(60);
   assert.equal(t.timedOut, true);
   assert.equal(t.pending, 1);
-  assert.match(t.message, /still loading after 0 s: 1 person is drawn as the clay figure/);
+  assert.match(t.message, /still loading after 0 s: 1 person is drawn as the marked stand-in/);
   const waiting = A.avatarsReady(5000);
   release();
   const r = await waiting;
@@ -598,13 +607,15 @@ test("stage.openPhysicsPanel(id) selects the object and opens the panel", () => 
 
 test("the Face tooltip is recomputed from the stage each time (never a stale reason)", async () => {
   const { faceTip, FACE_TIP } = await import("../../web/stage/people/peopleui.mjs");
-  let st = { installed: true, shown: false, reason: "has Pose keys", faceless: false };
+  // never "shown as clay" any more (L1): only a stand-in says why
+  let st = { installed: false, shown: false, reason: null, faceless: false, shownAs: "standin", loading: true };
   const stage = { avatarStatus: () => st };
-  assert.match(faceTip(stage, "p1"), /Shown as clay now: has Pose keys\./);
-  st = { installed: true, shown: true, reason: null, faceless: false };
+  assert.match(faceTip(stage, "p1"), /stand-in now: the lifelike body is still loading/);
+  st = { installed: true, shown: true, reason: null, faceless: false, shownAs: "lifelike" };
   assert.equal(faceTip(stage, "p1"), FACE_TIP);
-  st = { installed: true, shown: false, reason: "is in the air (a jump or vault)" };
-  assert.match(faceTip(stage, "p1"), /in the air/);
+  st = { installed: false, shown: false, reason: null, shownAs: "standin" };
+  assert.match(faceTip(stage, "p1"), /not installed/);
+  assert.ok(!/clay/i.test(FACE_TIP));
   assert.match(FACE_TIP, /hair stays/);
 });
 
@@ -667,7 +678,7 @@ test("round 2, 1: a keyed walker's gait lean (run, start, stop, sharp turn) neve
   assert.equal(A.tiltedOffUp(new THREE.Quaternion().setFromEuler(new THREE.Euler(0.11, 0, 0))), true, "a 6 deg lean IS off upright; the live flag, not the angle, decides");
 });
 
-test("round 2, 2: a live knock-over through live.mjs _tick shows the clay (after setFrame posed it upright); the saved tilt keeps it", async () => {
+test("round 2, 2: a live knock-over through live.mjs _tick hands the lifelike body to the rig (after setFrame posed it upright); the saved tilt keeps it", async () => {
   const { st, changes } = headlessStage([
     { id: "p1", name: "p1", kind: "man", height_m: 1.8, rotation_deg: 0, position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] },
     { id: "c1", name: "c1", kind: "crate", height_m: 0.8, rotation_deg: 0, position: [3, 0, 0], keys: [{ frame: 0, position: [3, 0, 0] }] },
@@ -688,15 +699,16 @@ test("round 2, 2: a live knock-over through live.mjs _tick shows the clay (after
   L._silentFrame();               // what a drag tick does first: setFrame poses the avatar on the upright group
   assert.equal(skin.shown, true, "upright at setFrame");
   L._tick(1 / 60);                // then the physics pose goes on the group
-  assert.equal(skin.shown, false, "clay while knocked over");
-  assert.equal(skin.reason, "is tipped over");
-  L._silentFrame();               // the next tick's setFrame stands the group up again: still clay (no flicker)
-  assert.equal(skin.shown, false);
-  // let go: _commit writes the tilt down (a stationary person keeps a.tilt) and the clay stays, now for the whole shot
+  assert.equal(skin.shown, true, "never clay while knocked over");
+  assert.equal(skin.ownerReason, "is tipped over");
+  L._silentFrame();               // the next tick's setFrame stands the group up again: still the rig (no flicker)
+  assert.equal(skin.ownerReason, "is tipped over");
+  // let go: _commit writes the tilt down (a stationary person keeps a.tilt) and the rig keeps it, now for the whole shot
   L._commit({ id: "c1", a: st.state.actors[1], moved: true, carried: [] });
   assert.equal(g.userData.liveTipped, false, "the live flag is dropped once written");
   assert.ok(Array.isArray(a.tilt), "tilt saved");
-  assert.equal(skin.reason, "was knocked over");
+  assert.equal(skin.ownerReason, "was knocked over");
+  assert.equal(skin.shown, true);
   assert.ok(changes.length >= 1);
   // stood up again (Reset rotation): lifelike again
   delete a.tilt;
@@ -842,7 +854,7 @@ test("round 3, 4: a single still (stage.capture) waits for bodies still loading,
     const st3 = captureStage(() => {});
     st3.avatarWaitMs = 20;
     await st3.capture("color");
-    assert.match(st3.lastCaptureNote, /still loading after 0 s: 1 person is drawn as the clay figure/);
+    assert.match(st3.lastCaptureNote, /still loading after 0 s: 1 person is drawn as the marked stand-in/);
     assert.equal(st3.notes.length, 2);
     assert.match(st3.notes[0], /^Waiting for 1 lifelike person/);
     assert.equal(st3.notes[1], st3.lastCaptureNote);

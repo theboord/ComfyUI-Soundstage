@@ -582,18 +582,20 @@ test("walking and then swimming in one shot: the walk is grounded (the swim gate
   }
 });
 
-test("grounding gate: feet on the ground, not 'no clay reason' (props, gaze, Pose keys, mocap, driven, Blocking are grounded; riding, carried, swimming, lying, lifted, airborne are not)", async () => {
+test("grounding gate: feet on the ground whatever owns the body (props, gaze, Pose keys, mocap, driven, Blocking are grounded; riding, carried, swimming, lying, lifted, airborne are not)", async () => {
   const C = await import("../../web/stage/people/avatarcore.mjs");
   assert.equal(typeof C.feetUpReason, "function");
   const p = { id: "p", kind: "man" };
   for (const [a, ctx] of [[p, {}], [{ ...p, mocap: { take: "t" } }, {}], [{ ...p, pose_keys: [{ frame: 0 }] }, {}], [{ ...p, simple_model: true }, {}]]) {
     assert.equal(C.feetUpReason(a, ctx), null, JSON.stringify(a));
   }
-  // what clayReason sends to clay for reasons that aren't about the feet: grounded once the clay is retired
-  const users = { holders: new Set(["p"]), carriers: new Set(["p"]) };
-  assert.ok(C.clayReason(p, { holders: users.holders }) && C.feetUpReason(p, {}) === null, "holds a prop: clay today, grounded by the gate");
-  assert.ok(C.clayReason(p, { gazeKeyed: true }) && C.feetUpReason(p, {}) === null);
-  assert.ok(C.clayReason(p, { blocking: true }) && C.feetUpReason(p, {}) === null);
+  // the clay is retired (L1): holding a prop, gaze keys and Blocking look are lifelike AND grounded (the clip owns
+  // the body, gaze is a layer over it); clayReason is gone
+  assert.equal(C.clayReason, undefined);
+  const O = await import("../../web/stage/people/onemotion.mjs");
+  assert.equal(O.rigShotReason(p, {}), null);
+  assert.ok(C.feetUpReason(p, {}) === null, "holds a prop / gaze / Blocking: grounded by the gate");
+  assert.ok(C.feetUpReason(p, { sits: true }), "seated: feet up");
   for (const [a, ctx] of [[{ ...p, mount_id: "horse" }, {}], [{ ...p, carry_id: "q" }, {}], [{ ...p, physics: { baked: true } }, {}], [{ ...p, tilt: [0, 0, 0.7, 0.7] }, {}],
     [p, { lifted: true }], [p, { airborne: true }], [p, { swims: true }], [p, { floats: true }], [p, { tipped: true }]]) {
     assert.ok(C.feetUpReason(a, ctx), `${JSON.stringify(a)} ${JSON.stringify(ctx)} is off their feet`);

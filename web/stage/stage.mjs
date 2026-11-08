@@ -51,7 +51,7 @@ import * as LightRig from "./lightrig.mjs";
 import { horse as HorseParts, prop as PropParts } from "./rigparts.mjs";
 import { cameraCurveAt, curveVersion, CAM_CURVE } from "./camcurve.mjs";   // the smooth camera curve (version 2)
 import { keysHash } from "./people/avatarcore.mjs";   // a cheap signature of a person's keys (_jumpsInShot)
-import { upgradeHuman, avatarsAt, avatarsReady, loadingCount, setShown as setAvatarShown, AVATAR_WAIT_MS } from "./people/avatars.mjs";   // lifelike people over the clay (people overhaul M1)
+import { upgradeHuman, avatarsAt, avatarsReady, loadingCount, setShown as setAvatarShown, AVATAR_WAIT_MS, undoAvatarWrites } from "./people/avatars.mjs";   // lifelike people over the hidden logic rig (one motion, Lifelike-only L1)
 import { swapAvatarCutouts, idMaterial } from "./people/cutout.mjs";   // hair / lash cards keep their cut-out in Depth, Clay, Wire and ID
 import { DEPTH_SHADER, depthPassMaterial } from "./depthshader.mjs";   // the skinning Depth shader (also the underwater set's)
 
@@ -630,7 +630,7 @@ export class Stage {
       g.traverse((o) => (o.userData.actorId = a.id));
       this.actorMeshes.set(a.id, g);
       this.root.add(g);
-      if (a.kind === "horse" && !a.simple_model) this._upgradeHorse(a, g);
+      if (a.kind === "horse") this._upgradeHorse(a, g);   // (the old simple_model "clay horse" choice is retired)
       else if (LIBRARY[a.kind]?.model) this._upgradeVehicle(a, g, LIBRARY[a.kind]);
       else if (PERSON_KINDS.has(a.kind)) upgradeHuman(this, a, g);   // people/avatars.mjs: clay stays if the files are absent
     }
@@ -2564,6 +2564,7 @@ export class Stage {
     // Scrubbing or any edit while dropped things are still settling: write them down first.
     if (this.live?.settling && !this.live.drag && !this.live.internal) this.live.finish();
     this.frame = Math.max(0, Math.min(this._lastFrame(), Math.round(frame)));
+    undoAvatarWrites(this);   // the logic rig back to the stage's own pose before anything poses it (one motion: avatarsAt)
     this.worldMount?.setTime(this.frame / (this.state.shot?.fps || 24));
     this.drive?.pre();   // Drive mode: recorded mount spans (in and out of cars and saddles) for this frame
     if (this._setGroup !== undefined && this._cleanStreetSig() !== this._setCleanSig) this._swapSetGroup();
@@ -2647,7 +2648,10 @@ export class Stage {
           if (!gp.speed[Math.min(gp.n - 1, this.frame)] || gp.speed[Math.min(gp.n - 1, this.frame)] < 0.15) this._bodyMotion(g, a, false, 0, 0);
         } else {
           Gait.release(g);
-          for (const l of g.userData.limbs) l.pivot.rotation.x = moving ? l.amp * Math.sin(cycle + l.phase) : 0;
+          // every turn this frame writes is absolute (one motion, L1: the lifelike body is retargeted from this rig in
+          // the air, so a spine lean or an arm twist left over from the frame scrubbed before must not survive)
+          for (const id of ["spine", "neck", "head"]) g.userData.joints?.[id]?.quaternion.identity();
+          for (const l of g.userData.limbs) l.pivot.rotation.set(moving ? l.amp * Math.sin(cycle + l.phase) : 0, 0, 0);
           if (air) for (const l of g.userData.limbs) {   // mid-jump: knees tucked, arms up for balance
             if (l.part === "hip") l.pivot.rotation.x = -0.7;
             if (l.part === "knee") l.pivot.rotation.x = 1.1;
@@ -3309,13 +3313,18 @@ export class Stage {
   /** World grip point (THREE.Vector3) and wrist quaternion of a person's hand at the current pose, or null. */
   _handGrip(id, hand = "l") {
     const g = this.actorMeshes.get(id), a = this.state.actors.find((x) => x.id === id);
-    const w = g?.userData?.joints?.[`${hand === "r" ? "r" : "l"}_wrist`];
+    const lr = hand === "r" ? "r" : "l", w = g?.userData?.joints?.[`${lr}_wrist`];
     if (!w) return null;
     g.updateMatrixWorld(true);
     const k = ((a?.height_m || 1.8) * (a?.scale || 1)) / 1.8;
-    // between the thumb and the index knuckle (+z is the thumb side of both hands): the bow in the grip, the blade out
-    const p = w.localToWorld(new THREE.Vector3(0, -0.065 * k, 0.06 * k));
-    return { p, q: w.getWorldQuaternion(new THREE.Quaternion()) };
+    const q = w.getWorldQuaternion(new THREE.Quaternion());
+    // between the thumb and the index knuckle (+z is the thumb side of both hands): the bow in the grip, the blade out.
+    // One motion: the grip is on the VISIBLE hand when a lifelike body shows (its wrist bone; the logic rig's wrist is
+    // solved to the same turn, people/retarget.mjs), else on the rig's wrist.
+    const off = new THREE.Vector3(0, -0.065 * k, 0.06 * k);
+    const skin = g.userData.humanSkin, hb = skin?.shown ? skin.bones?.[`Bip01_${lr.toUpperCase()}_Hand`] : null;
+    if (hb) { hb.updateWorldMatrix(true, false); return { p: hb.getWorldPosition(new THREE.Vector3()).add(off.applyQuaternion(q)), q }; }
+    return { p: w.localToWorld(off), q };
   }
 
   _heldPropsAt(f) {
@@ -6090,7 +6099,10 @@ export class Stage {
   /** Is this person shown as a lifelike body? {installed, shown, reason (why it is clay), faceless}. */
   avatarStatus(id) {
     const skin = this.actorMeshes.get(id)?.userData.humanSkin;
-    return skin ? { installed: true, shown: skin.shown, reason: skin.reason, faceless: skin.faceless } : { installed: false, shown: false, reason: null, faceless: false };
+    // (never clay: a person without a body is the marked stand-in; owner = what drives the body this frame)
+    if (skin) return { installed: true, shown: skin.shown, reason: skin.reason, faceless: skin.faceless, shownAs: skin.faceless ? "faceless" : "lifelike", owner: skin.owner || "clip", ownerReason: skin.ownerReason || null };
+    const g = this.actorMeshes.get(id);
+    return { installed: false, shown: false, reason: null, faceless: false, shownAs: g?.userData.standIn ? "standin" : null, loading: !!g?.userData.peopleLoading };
   }
 
   /** Change how a character or object looks (wardrobe, hair, colours…). */

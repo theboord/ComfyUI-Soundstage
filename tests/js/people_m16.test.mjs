@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import * as THREE from "../../web/vendor/three.module.min.mjs";
 import * as C from "../../web/stage/people/avatarcore.mjs";
 import * as A from "../../web/stage/people/avatars.mjs";
+import * as O from "../../web/stage/people/onemotion.mjs";
 import { Stage } from "../../web/stage/stage.mjs";
 import { buildObject } from "../../web/stage/library.mjs";
 import { Highlighter, outlineMaterials } from "../../web/stage/outline.mjs";
@@ -471,9 +472,10 @@ test("a person deleted and another added in one build: the old skin is dropped (
 });
 
 // ---------------------------------------------------------------- 4: floating in a pool with swimming off
-// 2026-11-07 (buoyancy): swimming "off" is Can't swim now: on a swim plan (they struggle, then sink slowly), so the clay
-// shows for the whole shot with the reason "swims"; "floats in the water" is left for a video-mocap person in the pool.
-test("swimming off (can't swim) in a pool: the person stays clay for the shot ('swims')", async () => {
+// 2026-11-07 (buoyancy): swimming "off" is Can't swim now: on a swim plan (they struggle, then sink slowly).
+// 2026-11-08 (Lifelike-only L1): never clay. The rig (the swim's own pose) owns the lifelike body on the swim frames,
+// the clip on the dry ones; "floats in the water" is left for a video-mocap person in the pool.
+test("swimming off (can't swim) in a pool: the person stays lifelike; the rig owns the swim frames ('swims')", async () => {
   const a = person("p1", 0, { swim: "off", keys: [{ frame: 0, position: [-6, 0, 0] }, { frame: 48, position: [0, 0, 0] }] });
   const st = bareStage([a]);
   const g = clayOf(st, a);
@@ -481,8 +483,13 @@ test("swimming off (can't swim) in a pool: the person stays clay for the shot ('
   await null;
   st.water = { position: new THREE.Vector3(0, 2.5, 0), geometry: { parameters: { width: 4, height: 4 } } };
   st.frame = 0; A.avatarsAt(st);   // still on dry ground at frame 0, but the shot ends in the (2.5 m deep) pool
-  assert.equal(skin.shown, false);
-  assert.equal(skin.reason, "swims");
+  assert.equal(skin.shown, true);
+  assert.equal(skin.reason, null);
+  st.frame = 48; A.avatarsAt(st);
+  assert.equal(skin.shown, true, "in the pool: still lifelike");
+  assert.equal(skin.ownerReason, "swims");
+  assert.equal(skin.rigWeight, 1);
+  st.frame = 0;
   st.water.position.y = 1.2;   // a 1.8 m man can stand in 1.2 m: he wades, the lifelike body shows
   A.avatarsAt(st);
   assert.equal(skin.shown, true);
@@ -493,8 +500,8 @@ test("swimming off (can't swim) in a pool: the person stays clay for the shot ('
   a.keys = [{ frame: 0, position: [-6, 0, 0] }, { frame: 48, position: [-4, 0, 0] }];   // never reaches the pool
   A.avatarsAt(st);
   assert.equal(skin.shown, true);
-  assert.equal(C.clayReason(a, { floats: true }), "floats in the water");
-  assert.equal(C.clayReason(a, { swims: true, floats: true }), "swims");
+  assert.equal(O.rigReasonAt(null, { floats: true }), "floats in the water");
+  assert.equal(O.rigReasonAt(null, { swims: true, floats: true }), "swims");
 });
 
 // ---------------------------------------------------------------- 8: outlines follow the cards

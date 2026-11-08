@@ -297,7 +297,7 @@ test("real Rocketbox: turning on the spot takes steps (one foot at a time) inste
 
 test("real Rocketbox: skipped modes are untouched: in the air (a hop) and lifted by physics keep the clip's own legs", { skip: NOT_INSTALLED }, async () => {
   const K = await realKits();
-  // a hop over a crate: the frames in the air show the clay; the plan marks them skipped and plants nothing across them
+  // a hop over a crate: the rig owns the frames in the air; the plan marks them skipped and plants nothing across them
   const a = walker("man", {}, [-3, 0, 0], [3, 0, 0], 48);
   const crate = { id: "c1", kind: "crate", position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }] };
   const st = bareStage([a, crate], { frames: 49 });
@@ -318,13 +318,13 @@ test("real Rocketbox: skipped modes are untouched: in the air (a hop) and lifted
   const q = skin.bones.Bip01_L_Calf.quaternion.clone();
   A.drive(skin, { frame: 10, fps: 24, speed: 0, phase: skin.gait.phase[10], seed: C.phaseSeed(b.id) });
   assert.ok(skin.bones.Bip01_L_Calf.quaternion.angleTo(q) < 1e-6, "the clip's own knee");
-  // clay reasons (swim, ride, sit, tipped / lying) never reach the grounding: the body isn't posed at all
+  // the rig's frames (swim, ride, tipped / lying) never reach the grounding: the body follows the rig (one motion)
   const c = { id: "p3", kind: "man", height_m: 1.8, position: [0, 0, 0], keys: [{ frame: 0, position: [0, 0, 0] }], mount_id: "horse1" };
   const st3 = bareStage([c], { frames: 25 });
   const g3 = clayOf(st3, c);
   const s3 = A.attachKit(st3, c, g3, K.man); await null;
   st3.frame = 5; A.avatarsAt(st3);
-  assert.equal(s3.shown, false); assert.equal(s3.feet, undefined, "no plan for a rider");
+  assert.equal(s3.shown, true, "a rider is lifelike (never clay)"); assert.equal(s3.owner, "rig"); assert.equal(s3.feet, undefined, "no plan for a rider");
 });
 
 test("real Rocketbox: the clips' own floors are measured; the run no longer stands 2 cm into the floor", { skip: NOT_INSTALLED }, async () => {

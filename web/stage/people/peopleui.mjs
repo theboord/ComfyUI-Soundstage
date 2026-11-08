@@ -4,15 +4,16 @@
 //   Blocking (the whole scene, saved with it as state.people_look): a toggle beside the view modes (Wire / Clay /
 //     Color / Depth), because it changes how the whole stage looks, not one person.
 // mkSelect is the App's own select builder (web/soundstage.js).
-export const FACE_TIP = "Lifelike people: show the face, or faceless (a plain mannequin face with no brows, eyes, lips or lashes; the hair stays). The clay figure has no face either way.";
+export const FACE_TIP = "Lifelike people: show the face, or faceless (a plain mannequin face with no brows, eyes, lips or lashes; the hair stays).";
 export const SWIM_TIP = "Swim: what this person does in a pool, a tank or the sea. Tread water (head up), swim a stroke, float on the back, dive with scuba (neutral, hovers), or Can't swim: they struggle at the surface for a few seconds, then sink slowly and settle on the bottom (Sink slowly: unconscious, no struggle). Auto swims as keyed. Ask can set it too (stage.setSwim).";
 export const BLOCKING_TIP = "Blocking look: show every person as the clay figure (the walk, keys and passes run the same either way). Saved with the scene.";
 
-/** The Face tooltip for a person right now: why they show as clay, if they do (avatarStatus is recomputed by every
- *  setFrame, so this is read fresh each time, never kept). */
+/** The Face tooltip for a person right now: a stand-in says why (avatarStatus is recomputed by every setFrame, so
+ *  this is read fresh each time, never kept). People are never shown as clay (Lifelike-only plan). */
 export function faceTip(stage, id) {
   const st = id ? stage.avatarStatus?.(id) : null;
-  return st?.installed && !st.shown && st.reason ? `${FACE_TIP} Shown as clay now: ${st.reason}.` : FACE_TIP;
+  if (st?.shownAs === "standin") return `${FACE_TIP} Shown as a stand-in now: ${st.loading ? "the lifelike body is still loading" : "lifelike people are not installed (or not made yet for this kind)"}.`;
+  return FACE_TIP;
 }
 
 export function peopleLookControls(stage, mkSelect) {

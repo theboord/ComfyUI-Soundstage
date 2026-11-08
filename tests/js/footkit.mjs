@@ -99,7 +99,11 @@ export function measure(st, a, { order = null, ground = () => 0 } = {}) {
   const verts = shoeVerts(skin.mesh), v = new THREE.Vector3(), fb = new THREE.Vector3();
   const n = st._lastFrame() + 1, rows = new Array(n);
   for (const f of order || [...Array(n).keys()]) {
-    st.frame = f; A.avatarsAt(st);
+    st.frame = f;
+    // the logic rig where stage.setFrame puts it (this bare stage has no setFrame of its own): one motion hands the body
+    // to the rig in the air and eases over the 6 frames before, so the rig must be in its place, not at the first key
+    { const p = st._actorPosAt(a, f); g.position.set(p[0], st._heightAt(a, f), p[2]); g.rotation.set(0, st._headingAt(a, f), 0); g.updateMatrixWorld(true); }
+    A.avatarsAt(st);
     skin.holder.updateMatrixWorld(true);
     const plan = skin.feet?.plan;
     const row = { f, shown: skin.shown, drop: skin.footOut?.drop || 0, skip: !!plan?.skip?.[f] };
